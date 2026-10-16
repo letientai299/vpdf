@@ -24,6 +24,11 @@ impl App {
         let pos =
           Position { page: self.reader.cursor.page, line: start + row, glyph };
         let style = self.text_style(pos);
+        let style = if style == theme::RESET && self.panel_focused() {
+          theme::DIM
+        } else {
+          style
+        };
         write!(out, "{style}{}", ch.ch)?;
       }
       write!(out, "\x1b[0m")?;

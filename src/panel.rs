@@ -187,7 +187,8 @@ impl Panel {
       let base = match (start + row == self.selected, self.focused) {
         (true, true) => theme::SELECTED,
         (true, false) => theme::CURRENT,
-        _ => theme::RESET,
+        (false, true) => theme::RESET,
+        (false, false) => theme::DIM,
       };
       write!(out, "\x1b[{};1H{base}", row + 2)?;
       let detail = terminal::clean(&item.detail, inner / 3);
@@ -215,7 +216,7 @@ impl Row {
     keys: usize,
     query: &str,
   ) -> Result<usize> {
-    let plain = base == theme::RESET;
+    let plain = base == theme::RESET || base == theme::DIM;
     match (self.style, self.label.split_once(": ")) {
       (Style::Key, Some((key, text))) => {
         let key = terminal::clean(key, room);

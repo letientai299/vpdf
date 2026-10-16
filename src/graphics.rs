@@ -238,6 +238,27 @@ impl Graphics {
     self.overlay(rect, color, -1, screen, left, out)
   }
 
+  /// Tints the whole page area by stretching one pixel over its cells.
+  pub fn veil(
+    &mut self,
+    color: [u8; 4],
+    screen: Screen,
+    left: u16,
+    out: &mut impl Write,
+  ) -> Result<()> {
+    if self.overlay >= PREVIEW {
+      return Ok(());
+    }
+    let id = self.base + self.overlay;
+    self.overlay += 1;
+    transmit(out, id, 1, 1, 32, &encode(&color)?)?;
+    let rows = screen.rows.saturating_sub(1);
+    let control =
+      format!("a=p,i={id},q=2,C=1,z=1,c={},r={rows}", screen.columns);
+    let rect = Bounds { x0: 0.0, y0: 0.0, x1: 1.0, y1: 1.0 };
+    placement(out, &control, rect, left, screen)
+  }
+
   fn overlay(
     &mut self,
     rect: Bounds,

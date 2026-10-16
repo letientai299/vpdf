@@ -54,7 +54,17 @@ impl App {
       self.worker.request(&missing);
       self.requested = tiles;
     }
-    self.marks(out)
+    self.marks(out)?;
+    if self.panel_focused() {
+      // The side without focus recedes.
+      let (screen, left) = (self.layout.screen, self.left);
+      self.graphics.veil([0, 0, 0, 70], screen, left, out)?;
+    }
+    Ok(())
+  }
+
+  pub fn panel_focused(&self) -> bool {
+    self.panel.as_ref().is_some_and(|panel| panel.focused)
   }
 
   pub fn marks(&mut self, out: &mut impl Write) -> Result<()> {

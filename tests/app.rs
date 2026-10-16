@@ -268,3 +268,28 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
   assert!(app.reader.cursor.page.0 > 1);
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn unfocused_side_is_dimmed() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 120,
+    rows: 40,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
+  app.open_panel(PanelKind::Outline)?;
+  let mut out = Vec::new();
+  app.draw(&mut out)?;
+  let veil = format!(",c={},r=39", 120 - app.left);
+  assert!(String::from_utf8_lossy(&out).contains(&veil), "PDF dims");
+  app.panel.as_mut().unwrap().focused = false;
+  out.clear();
+  app.draw(&mut out)?;
+  let drawn = String::from_utf8_lossy(&out);
+  assert!(!drawn.contains(&veil) && drawn.contains("\x1b[0;2m"), "panel dims");
+  Ok(())
+}

@@ -9,6 +9,8 @@ pub const CURRENT: &str = "\x1b[0;1;34m";
 pub const HEADING: &str = "\x1b[1;34m";
 pub const KEY: &str = "\x1b[33m";
 pub const MUTED: &str = "\x1b[90m";
+/// Faint text for the side that does not have focus.
+pub const DIM: &str = "\x1b[0;2m";
 /// Muted text that keeps the status bar background.
 pub const MUTED_BAR: &str = "\x1b[0;3;100m";
 pub const ERROR: &str = "\x1b[1;31m";

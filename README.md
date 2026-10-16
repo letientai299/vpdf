@@ -83,18 +83,19 @@ and section numbering such as `3.2 Title`, marked `inferred`. `gp` or
 `:overview` shows a grid of page thumbnails; `h j k l` move, Enter or a click
 opens a page, and `q` or Esc returns. `ga` lists the document's highlights,
 underlines, notes, and other annotations with their marked text and comments;
-the reader does not edit them. A focused panel owns the keyboard:
-`j k gg G Ctrl-d Ctrl-u zt zz zb` move through rows, `/ ? n N` search them with
-highlighted matches and smartcase, `{ }` jump between headings, and `yy` yanks a
-row. Text motions and selections do not reach the PDF until `Esc` returns focus.
-Enter follows a panel item; `o` follows while retaining panel focus. The outline
-stays open after Enter. `go` focuses it again; `gq` closes a panel. Enter on the
-PDF follows a link under the cursor and does nothing elsewhere. `K` previews the
-destination of the link under the cursor in an overlay, such as a cited
-reference or footnote, without moving; Enter follows it and any other key closes
-it. `f` labels every visible link; typing a label follows it, and `F` copies a
-URL label instead of opening it. Only explicitly followed HTTP/HTTPS links
-launch a browser. Other URI schemes are rejected.
+the reader does not edit them. The side without focus is dimmed: the PDF while a
+panel has focus, the panel while the PDF has focus. A focused panel owns the
+keyboard: `j k gg G Ctrl-d Ctrl-u zt zz zb` move through rows, `/ ? n N` search
+them with highlighted matches and smartcase, `{ }` jump between headings, and
+`yy` yanks a row. Text motions and selections do not reach the PDF until `Esc`
+returns focus. Enter follows a panel item; `o` follows while retaining panel
+focus. The outline stays open after Enter. `go` focuses it again; `gq` closes a
+panel. Enter on the PDF follows a link under the cursor and does nothing
+elsewhere. `K` previews the destination of the link under the cursor in an
+overlay, such as a cited reference or footnote, without moving; Enter follows it
+and any other key closes it. `f` labels every visible link; typing a label
+follows it, and `F` copies a URL label instead of opening it. Only explicitly
+followed HTTP/HTTPS links launch a browser. Other URI schemes are rejected.
 
 `gx` or `:text` opens text preview; `q` returns to the rendered view. `g?` and
 F1 show the key and command reference. `Esc` cancels selection, search, and
