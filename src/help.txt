@@ -64,7 +64,14 @@ gT: previous tab
 :e :tabe: open here / in a new tab
 
 # Command line
-Tab Shift-Tab: complete
-Up Down: history by prefix
-Ctrl-a Ctrl-e: line start / end
-Ctrl-w Ctrl-u Ctrl-k: delete word / before / after
+Tab Shift-Tab: list, then cycle completions
+Up Down Ctrl-p Ctrl-n: history
+Ctrl-r Ctrl-s: history containing the text
+Ctrl-Space Right End: accept suggestion
+Alt-f: accept next suggested word
+Ctrl-a Ctrl-e Ctrl-b Ctrl-f: line start / end / char
+Alt-b Alt-f Ctrl-Left Ctrl-Right: words
+Ctrl-w Alt-Backspace Alt-d: delete word
+Ctrl-u Ctrl-k Ctrl-y: kill line / to end, yank
+Ctrl-t Ctrl-_: transpose, undo
+Ctrl-x Ctrl-e: edit in $EDITOR

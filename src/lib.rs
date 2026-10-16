@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod document;
+mod editor;
 pub mod search;
 pub mod text;
 
@@ -22,6 +23,7 @@ pub mod inline;
 mod interaction;
 pub mod keys;
 pub mod layout;
+mod line;
 mod marks;
 pub mod motion;
 pub mod ocr;

@@ -142,6 +142,10 @@ impl Home {
         prompt.complete(start, items);
       }
       PromptEvent::Edited if search => self.panel.preview(&prompt.text),
+      PromptEvent::Editor => {
+        let edited = crate::editor::edit(&prompt.text)?;
+        prompt.replace(&edited);
+      }
       PromptEvent::Cancel => {
         self.prompt = None;
         self.panel.abort_search();

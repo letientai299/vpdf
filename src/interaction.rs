@@ -14,12 +14,22 @@ impl App {
     self.relayout()
   }
 
+  /// Rows the completion list takes above the prompt.
+  pub fn menu_rows(&self) -> u16 {
+    let Some(menu) = self.prompt.as_ref().and_then(|p| p.menu.as_ref()) else {
+      return 0;
+    };
+    let limit = crate::statusline::menu_limit(self.screen);
+    let layout = menu.layout(usize::from(self.screen.columns), limit);
+    u16::try_from(layout.visible).unwrap_or(0)
+  }
+
   /// Fits the page area between the panel, menu, and status rows.
   pub fn relayout(&mut self) -> Result<()> {
-    let menu = self.prompt.as_ref().is_some_and(|p| p.menu.is_some());
+    let menu = self.menu_rows();
     self.layout.screen = self.screen;
     self.layout.screen.columns = self.screen.columns.saturating_sub(self.left);
-    self.layout.screen.rows = self.screen.rows.saturating_sub(u16::from(menu));
+    self.layout.screen.rows = self.screen.rows.saturating_sub(menu);
     self.layout.reflow(&self.doc.pages);
     self.ensure_cursor()
   }

@@ -154,47 +154,58 @@ impl App {
   }
 }
 
-/// Completion items by last path component, selection kept visible.
+/// Completion list above the prompt, laid out like zsh's: columns
+/// filled top to bottom, every item shown, scrolled to the selection.
 pub fn menu(
   out: &mut impl Write,
-  row: u16,
+  bottom: u16,
   menu: &crate::prompt::Menu,
-  columns: u16,
+  screen: Screen,
 ) -> Result<()> {
-  let columns = usize::from(columns);
-  let labels: Vec<_> = menu
-    .items
-    .iter()
-    .map(|item| {
-      let start = item.trim_end_matches('/').rfind('/').map_or(0, |i| i + 1);
-      format!(" {} ", terminal::clean(&item[start..], columns))
-    })
-    .collect();
-  let widths: Vec<_> = labels.iter().map(|label| label.width()).collect();
-  let mut first = 0;
-  while widths[first..=menu.selected].iter().sum::<usize>() > columns
-    && first < menu.selected
-  {
-    first += 1;
-  }
-  write!(out, "\x1b[{};1H{}", row + 1, theme::BAR)?;
-  let mut used = 0;
-  for (index, label) in labels.iter().enumerate().skip(first) {
-    if used + widths[index] > columns {
-      break;
+  let columns = usize::from(screen.columns);
+  let layout = menu.layout(columns, menu_limit(screen));
+  let top = bottom + 1 - layout.visible as u16;
+  for line in 0..layout.visible {
+    let row = layout.first + line;
+    write!(out, "\x1b[{};1H{}", top as usize + line + 1, theme::BAR)?;
+    let mut used = 0;
+    for column in 0..layout.columns {
+      let Some(label) = layout.labels.get(column * layout.rows + row) else {
+        break;
+      };
+      let text = terminal::clean(label, layout.width - 2);
+      let pad = layout.width - 1 - text.width();
+      let index = column * layout.rows + row;
+      if menu.selected == Some(index) {
+        write!(
+          out,
+          "{} {text}{}{}",
+          theme::badge(Color::Blue),
+          " ".repeat(pad),
+          theme::BAR
+        )?;
+      } else {
+        write!(out, " {text}{}", " ".repeat(pad))?;
+      }
+      used += layout.width;
     }
-    if index == menu.selected {
-      write!(out, "{}{label}{}", theme::badge(Color::Blue), theme::BAR)?;
-    } else {
-      write!(out, "{label}")?;
-    }
-    used += widths[index];
+    write!(
+      out,
+      "{}{}",
+      " ".repeat(columns.saturating_sub(used)),
+      theme::RESET
+    )?;
   }
-  write!(out, "{}{}", " ".repeat(columns - used), theme::RESET)?;
   Ok(())
 }
 
-/// Prompt on the last row, its menu above, and a block cursor.
+/// Most rows the completion list may take.
+pub fn menu_limit(screen: Screen) -> usize {
+  usize::from(screen.rows / 3).max(1)
+}
+
+/// Prompt on the last row, its list above, a ghost suggestion, and a
+/// block cursor.
 pub fn prompt(
   out: &mut impl Write,
   prompt: &Prompt,
@@ -202,10 +213,18 @@ pub fn prompt(
 ) -> Result<()> {
   let row = screen.rows - 1;
   if let Some(menu) = &prompt.menu {
-    self::menu(out, row - 1, menu, screen.columns)?;
+    self::menu(out, row - 1, menu, screen)?;
   }
-  let (text, column) = prompt.display();
+  let (text, ghost, column) = prompt.display();
   terminal::line(out, row, &text, screen.columns)?;
+  let room = usize::from(screen.columns).saturating_sub(text.width());
+  write!(
+    out,
+    "{}{}{}",
+    theme::MUTED,
+    terminal::clean(ghost, room),
+    theme::RESET
+  )?;
   let column = column.min(usize::from(screen.columns) - 1) + 1;
   write!(out, "\x1b[{};{column}H\x1b[2 q\x1b[?25h", row + 1)?;
   Ok(())

@@ -147,10 +147,18 @@ reports an error and reloads on the next change.
 
 ## Commands
 
-`:` opens the command line. Tab and Shift-Tab cycle completions for command
-names and arguments; Up and Down recall earlier commands or searches that start
-with the typed text. Left, Right, `Ctrl-a`, `Ctrl-e`, `Ctrl-w`, `Ctrl-u`, and
-`Ctrl-k` edit the line. A command name can be shortened to any unique prefix,
+`:` opens the command line, which edits like zsh's emacs keymap. Tab lists
+every completion in columns above the prompt and inserts their common prefix;
+further Tabs and Shift-Tabs cycle through them. Completion falls back to
+ignoring case. Up and Down walk history; `Ctrl-r` and `Ctrl-s` walk entries
+that contain the typed text. The newest history entry that extends the line
+appears as a muted suggestion, as with zsh-autosuggestions: `Ctrl-Space`,
+Right, or End accept it, and `Alt-f` accepts its next word. `Ctrl-w` and
+Ctrl-arrows stop at `/`, `.`, `:`, and `=`, while `Alt-b`, `Alt-f`, `Alt-d`,
+and `Alt-Backspace` use zsh's default `WORDCHARS`. `Ctrl-u`, `Ctrl-k`, and
+`Ctrl-y` kill and yank, `Ctrl-t` transposes, `Ctrl-_` undoes, and `Ctrl-x
+Ctrl-e` edits the line in `$VISUAL` or `$EDITOR`. The [help panel][keys] lists
+every binding. A command name can be shortened to any unique prefix,
 such as `:rel` for `:reload`. `:12` jumps to page 12; `:page iv` jumps to a page
 label. `:ocr [language]` recognizes the current page with [Tesseract][ocr] and
 completes installed languages. The key reference lists every command; the

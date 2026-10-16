@@ -108,24 +108,32 @@ pub fn candidates(before: &str) -> (usize, Vec<String>) {
   let Some((name, rest)) = before[start..].split_once(char::is_whitespace)
   else {
     let word = &before[start..];
-    let names = commands()
-      .filter(|spec| spec.name.starts_with(word))
-      .map(|spec| spec.name.to_owned())
-      .collect();
-    return (start, names);
+    let names = commands().map(|spec| spec.name.to_owned()).collect();
+    return (start, prefixed(names, word));
   };
   let argument = rest.trim_start();
   let start = before.len() - argument.len();
   let items = match lookup(name).map(|spec| spec.complete) {
-    Some(Complete::Language) => languages()
-      .iter()
-      .filter(|language| language.starts_with(argument))
-      .cloned()
-      .collect(),
+    Some(Complete::Language) => prefixed(languages().to_vec(), argument),
     Some(Complete::Path) => paths(argument),
     _ => Vec::new(),
   };
   (start, items)
+}
+
+/// Items starting with `typed`; case-insensitive when nothing matches
+/// exactly, like zsh's `matcher-list '' 'm:{a-zA-Z}={A-Za-z}'`.
+fn prefixed(items: Vec<String>, typed: &str) -> Vec<String> {
+  let exact: Vec<_> =
+    items.iter().filter(|item| item.starts_with(typed)).cloned().collect();
+  if !exact.is_empty() {
+    return exact;
+  }
+  let folded = typed.to_lowercase();
+  items
+    .into_iter()
+    .filter(|item| item.to_lowercase().starts_with(&folded))
+    .collect()
 }
 
 /// Expands a leading `~` to the home directory.
@@ -145,26 +153,27 @@ fn paths(argument: &str) -> Vec<String> {
   let (directory, prefix) = argument.split_at(split);
   let root = if directory.is_empty() { ".".into() } else { expand(directory) };
   let Ok(entries) = std::fs::read_dir(root) else { return Vec::new() };
-  let mut items: Vec<_> = entries
+  let mut names: Vec<_> = entries
     .filter_map(|entry| {
       let entry = entry.ok()?;
       let name = entry.file_name().into_string().ok()?;
-      if !name.starts_with(prefix)
-        || name.starts_with('.') && !prefix.starts_with('.')
-      {
+      if name.starts_with('.') && !prefix.starts_with('.') {
         return None;
       }
       if entry.path().is_dir() {
-        return Some(format!("{directory}{name}/"));
+        return Some(format!("{name}/"));
       }
       Path::new(&name)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
-        .then(|| format!("{directory}{name}"))
+        .then_some(name)
     })
     .collect();
-  items.sort_unstable();
-  items
+  names.sort_unstable();
+  prefixed(names, prefix)
+    .into_iter()
+    .map(|name| format!("{directory}{name}"))
+    .collect()
 }
 
 fn languages() -> &'static [String] {
@@ -229,5 +238,6 @@ mod tests {
   fn completes_command_names() {
     assert_eq!(candidates("  pa"), (2, vec!["page".into(), "password".into()]));
     assert_eq!(candidates("page 1").1, Vec::<String>::new());
+    assert_eq!(candidates("PAG").1, ["page"]);
   }
 }

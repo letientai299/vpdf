@@ -1,8 +1,17 @@
+//! Command and search line with zsh emacs-keymap editing.
+//!
+//! Beyond the emacs defaults, it mirrors zsh-autosuggestions (ghost text
+//! from history, accepted with Ctrl-Space, Right, or End), Ctrl-w and
+//! Ctrl-arrows that stop at punctuation, history search on Ctrl-r, and
+//! `edit-command-line` on Ctrl-x Ctrl-e.
+
+use crate::line::{self, NARROW, SHELL};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use unicode_width::UnicodeWidthStr;
 
 const LIMIT: usize = 4096;
 const HISTORY: usize = 200;
+const UNDO: usize = 100;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PromptKind {
@@ -43,26 +52,71 @@ impl History {
   }
 }
 
-/// Completion candidates replacing `original[start..end]`.
+/// Completion candidates replacing `original[start..end]`, listed like
+/// zsh; `selected` is set once Tab starts cycling.
 pub struct Menu {
   pub items: Vec<String>,
-  pub selected: usize,
+  pub selected: Option<usize>,
   start: usize,
   end: usize,
   original: String,
 }
 
+/// Where completion items land in a zsh-style list.
+pub struct MenuLayout {
+  pub labels: Vec<String>,
+  /// Cell width per item, including padding.
+  pub width: usize,
+  pub columns: usize,
+  pub rows: usize,
+  /// First shown row and how many are shown.
+  pub first: usize,
+  pub visible: usize,
+}
+
+impl Menu {
+  /// Columns fill top to bottom; at most `limit` rows show, scrolled so
+  /// the selection stays visible. Paths show their last component.
+  pub fn layout(&self, columns: usize, limit: usize) -> MenuLayout {
+    let labels: Vec<_> = self
+      .items
+      .iter()
+      .map(|item| {
+        let start = item.trim_end_matches('/').rfind('/').map_or(0, |i| i + 1);
+        item[start..].to_owned()
+      })
+      .collect();
+    let widest = labels.iter().map(|label| label.width()).max().unwrap_or(0);
+    let width = (widest + 2).min(columns.max(3));
+    let per_row = (columns / width).max(1);
+    let rows = labels.len().div_ceil(per_row);
+    let visible = rows.min(limit.max(1));
+    let selected = self.selected.map_or(0, |index| index % rows);
+    let first = selected.saturating_sub(visible - 1);
+    MenuLayout { labels, width, columns: per_row, rows, first, visible }
+  }
+}
+
+/// Position in history while browsing, and the line before browsing.
 struct Recall {
   index: usize,
-  prefix: String,
+  saved: String,
+  /// Ctrl-r search text; `None` for plain Up and Down.
+  pattern: Option<String>,
 }
 
 pub struct Prompt {
   pub kind: PromptKind,
   pub text: String,
   pub menu: Option<Menu>,
+  /// History suffix offered after the cursor, like zsh-autosuggestions.
+  pub ghost: String,
   cursor: usize,
   recall: Option<Recall>,
+  kill: String,
+  undo: Vec<(String, usize)>,
+  /// Ctrl-x was pressed and waits for its second key.
+  prefix: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -70,36 +124,53 @@ pub enum PromptEvent {
   Pending,
   Edited,
   Complete,
+  /// Edit the line in `$EDITOR`.
+  Editor,
   Submit,
   Cancel,
 }
 
 impl Prompt {
   pub fn new(kind: PromptKind) -> Self {
-    Self { kind, text: String::new(), menu: None, cursor: 0, recall: None }
+    Self {
+      kind,
+      text: String::new(),
+      menu: None,
+      ghost: String::new(),
+      cursor: 0,
+      recall: None,
+      kill: String::new(),
+      undo: Vec::new(),
+      prefix: false,
+    }
   }
 
   pub fn before_cursor(&self) -> &str {
     &self.text[..self.cursor]
   }
 
-  /// Text and cursor column as drawn.
-  pub fn display(&self) -> (String, usize) {
-    let (prefix, body, column) = match self.kind {
-      PromptKind::Search(false) => ("/", self.text.clone(), self.text_column()),
-      PromptKind::Search(true) => ("?", self.text.clone(), self.text_column()),
-      PromptKind::Command => (":", self.text.clone(), self.text_column()),
-      PromptKind::Password => (
-        "Password: ",
-        "*".repeat(self.text.chars().count()),
-        self.before_cursor().chars().count(),
-      ),
+  /// Text, ghost suggestion, and cursor column as drawn.
+  pub fn display(&self) -> (String, &str, usize) {
+    let prefix = match self.kind {
+      PromptKind::Search(false) => "/",
+      PromptKind::Search(true) => "?",
+      PromptKind::Command => ":",
+      PromptKind::Password => {
+        let stars = "*".repeat(self.text.chars().count());
+        let column = self.before_cursor().chars().count();
+        return (format!("Password: {stars}"), "", 10 + column);
+      }
     };
-    (format!("{prefix}{body}"), prefix.width() + column)
+    let column = prefix.width() + self.before_cursor().width();
+    (format!("{prefix}{}", self.text), &self.ghost, column)
   }
 
-  fn text_column(&self) -> usize {
-    self.before_cursor().width()
+  /// Replaces the whole line, as after editing it externally.
+  pub fn replace(&mut self, text: &str) {
+    self.snapshot();
+    self.text.clear();
+    self.cursor = 0;
+    self.insert(&text.replace(['\n', '\r'], " "));
   }
 
   pub fn insert(&mut self, text: &str) {
@@ -112,7 +183,31 @@ impl Prompt {
     }
   }
 
+  fn snapshot(&mut self) {
+    if self.undo.last().is_none_or(|(text, _)| *text != self.text) {
+      self.undo.push((self.text.clone(), self.cursor));
+      if self.undo.len() > UNDO {
+        self.undo.remove(0);
+      }
+    }
+  }
+
   pub fn feed(&mut self, key: KeyEvent, history: &History) -> PromptEvent {
+    let event = self.dispatch(key, history);
+    self.suggest(history);
+    event
+  }
+
+  fn dispatch(&mut self, key: KeyEvent, history: &History) -> PromptEvent {
+    let control = key.modifiers.contains(KeyModifiers::CONTROL);
+    let alt = key.modifiers.contains(KeyModifiers::ALT);
+    if std::mem::take(&mut self.prefix) {
+      return match key.code {
+        KeyCode::Char('e') => PromptEvent::Editor,
+        KeyCode::Char('u') if control => self.restore(),
+        _ => PromptEvent::Pending,
+      };
+    }
     match key.code {
       KeyCode::Tab if self.kind != PromptKind::Password => {
         return self.cycle(true);
@@ -120,79 +215,163 @@ impl Prompt {
       KeyCode::BackTab => return self.cycle(false),
       _ => self.menu = None,
     }
-    let control = key.modifiers.contains(KeyModifiers::CONTROL);
-    let recalling = matches!(
+    let browsing = matches!(
       (control, key.code),
-      (true, KeyCode::Char('p' | 'n')) | (_, KeyCode::Up | KeyCode::Down)
+      (true, KeyCode::Char('p' | 'n' | 'r' | 's'))
+        | (_, KeyCode::Up | KeyCode::Down)
     );
-    if !recalling {
+    if !browsing {
       self.recall = None;
     }
     let before = self.text.clone();
-    match (control, key.code) {
-      (true, KeyCode::Char('c')) | (_, KeyCode::Esc) => {
+    let event = match (control, alt, key.code) {
+      (true, _, KeyCode::Char('c' | 'g')) | (_, _, KeyCode::Esc) => {
         return PromptEvent::Cancel;
       }
-      (true, KeyCode::Char('j' | 'm')) | (_, KeyCode::Enter) => {
+      (true, _, KeyCode::Char('j' | 'm')) | (_, _, KeyCode::Enter) => {
         return PromptEvent::Submit;
       }
-      (true, KeyCode::Char('h')) | (_, KeyCode::Backspace) => {
-        if self.text.is_empty() {
-          return PromptEvent::Cancel;
-        }
-        self.delete_back();
+      (true, _, KeyCode::Char('x')) => {
+        self.prefix = true;
+        return PromptEvent::Pending;
       }
-      (true, KeyCode::Char('p')) | (_, KeyCode::Up) => self.recall(history, -1),
-      (true, KeyCode::Char('n')) | (_, KeyCode::Down) => {
-        self.recall(history, 1)
+      (true, _, KeyCode::Char('_' | '7' | '/')) => return self.restore(),
+      (true, _, KeyCode::Char('d')) if self.cursor == self.text.len() => {
+        return self.cycle(true);
       }
-      (true, KeyCode::Char(ch)) => self.control(ch),
-      (_, KeyCode::Char(ch)) if !key.modifiers.contains(KeyModifiers::ALT) => {
-        self.insert(ch.encode_utf8(&mut [0; 4]));
-      }
-      (_, KeyCode::Delete) => {
-        if let Some(ch) = self.text[self.cursor..].chars().next() {
-          self.text.drain(self.cursor..self.cursor + ch.len_utf8());
-        }
-      }
-      (_, KeyCode::Left) => self.step(-1),
-      (_, KeyCode::Right) => self.step(1),
-      (_, KeyCode::Home) => self.cursor = 0,
-      (_, KeyCode::End) => self.cursor = self.text.len(),
-      _ => {}
+      (true, _, KeyCode::Char(ch)) => self.control(ch, history),
+      (true, _, KeyCode::Left) => self.word_motion(false),
+      (true, _, KeyCode::Right) => self.word_motion(true),
+      (_, true, code) => self.meta(code),
+      (_, _, code) => self.plain(code, history),
+    };
+    if event != PromptEvent::Pending {
+      return event;
     }
     if self.text == before { PromptEvent::Pending } else { PromptEvent::Edited }
   }
 
-  fn control(&mut self, ch: char) {
+  fn control(&mut self, ch: char, history: &History) -> PromptEvent {
     match ch {
       'a' => self.cursor = 0,
+      'e' | 'f' if self.accept() => {}
       'e' => self.cursor = self.text.len(),
       'b' => self.step(-1),
       'f' => self.step(1),
-      'k' => self.text.truncate(self.cursor),
-      'u' => {
-        self.text.drain(..self.cursor);
-        self.cursor = 0;
+      ' ' => {
+        self.accept();
       }
-      'w' => {
-        let head = self.before_cursor().trim_end_matches(' ');
-        let start = head.rfind(' ').map_or(0, |space| space + 1);
-        self.text.drain(start..self.cursor);
-        self.cursor = start;
+      'h' => self.edit(Self::delete_back),
+      'd' => self.edit(|p| p.remove(p.cursor..p.next_char())),
+      'k' => self.edit(|p| p.remove(p.cursor..p.text.len())),
+      'u' => self.edit(|p| p.remove(0..p.text.len())),
+      'w' => self.edit(|p| {
+        p.remove(line::word_start(&p.text, p.cursor, NARROW)..p.cursor)
+      }),
+      'y' => {
+        let kill = self.kill.clone();
+        self.edit(|p| p.insert(&kill));
+      }
+      't' => self.edit(Self::transpose),
+      'p' => self.recall(history, -1, false),
+      'n' => self.recall(history, 1, false),
+      'r' => self.recall(history, -1, true),
+      's' => self.recall(history, 1, true),
+      _ => {}
+    }
+    PromptEvent::Pending
+  }
+
+  /// Alt bindings use zsh's default `WORDCHARS`.
+  fn meta(&mut self, code: KeyCode) -> PromptEvent {
+    match code {
+      KeyCode::Char('b') | KeyCode::Left => {
+        self.cursor = line::word_start(&self.text, self.cursor, SHELL);
+      }
+      KeyCode::Char('f') | KeyCode::Right => self.forward_word(SHELL),
+      KeyCode::Char('d') => {
+        self.edit(|p| {
+          p.remove(p.cursor..line::word_end(&p.text, p.cursor, SHELL))
+        });
+      }
+      KeyCode::Backspace => {
+        self.edit(|p| {
+          p.remove(line::word_start(&p.text, p.cursor, SHELL)..p.cursor)
+        });
       }
       _ => {}
     }
+    PromptEvent::Pending
   }
 
-  fn step(&mut self, direction: i32) {
-    if direction < 0 {
-      if let Some(ch) = self.before_cursor().chars().next_back() {
-        self.cursor -= ch.len_utf8();
+  fn plain(&mut self, code: KeyCode, history: &History) -> PromptEvent {
+    match code {
+      KeyCode::Backspace => self.edit(Self::delete_back),
+      KeyCode::Delete => self.edit(|p| p.remove(p.cursor..p.next_char())),
+      KeyCode::Up => self.recall(history, -1, false),
+      KeyCode::Down => self.recall(history, 1, false),
+      KeyCode::Left => self.step(-1),
+      KeyCode::Right | KeyCode::End if self.accept() => {}
+      KeyCode::Right => self.step(1),
+      KeyCode::Home => self.cursor = 0,
+      KeyCode::End => self.cursor = self.text.len(),
+      KeyCode::Char(ch) => {
+        self.snapshot();
+        self.insert(ch.encode_utf8(&mut [0; 4]));
       }
-    } else if let Some(ch) = self.text[self.cursor..].chars().next() {
-      self.cursor += ch.len_utf8();
+      _ => {}
     }
+    PromptEvent::Pending
+  }
+
+  /// Ctrl-arrows move by narrow words, as in the zsh config.
+  fn word_motion(&mut self, forward: bool) -> PromptEvent {
+    if forward {
+      self.forward_word(NARROW);
+    } else {
+      self.cursor = line::word_start(&self.text, self.cursor, NARROW);
+    }
+    PromptEvent::Pending
+  }
+
+  /// At the end of the line, also takes the suggestion's next word.
+  fn forward_word(&mut self, chars: &str) {
+    if self.cursor == self.text.len() && !self.ghost.is_empty() {
+      let end = line::next_word(&self.ghost, 0, chars).max(1);
+      let end =
+        (1..=end).rev().find(|i| self.ghost.is_char_boundary(*i)).unwrap_or(0);
+      let taken = self.ghost[..end].to_owned();
+      self.snapshot();
+      self.insert(&taken);
+      return;
+    }
+    self.cursor = line::next_word(&self.text, self.cursor, chars);
+  }
+
+  fn edit(&mut self, change: impl FnOnce(&mut Self)) {
+    self.snapshot();
+    change(self);
+  }
+
+  /// Deletes `range`, keeping multi-character kills for Ctrl-y.
+  fn remove(&mut self, range: std::ops::Range<usize>) {
+    if range.is_empty() {
+      return;
+    }
+    let removed: String = self.text.drain(range.clone()).collect();
+    if removed.chars().count() > 1 {
+      self.kill = removed;
+    }
+    if self.cursor > range.start {
+      self.cursor = range.start.max(self.cursor.saturating_sub(range.len()));
+    }
+  }
+
+  fn next_char(&self) -> usize {
+    self.text[self.cursor..]
+      .chars()
+      .next()
+      .map_or(self.cursor, |ch| self.cursor + ch.len_utf8())
   }
 
   fn delete_back(&mut self) {
@@ -202,23 +381,96 @@ impl Prompt {
     }
   }
 
-  /// Steps through history entries that start with the typed prefix.
-  fn recall(&mut self, history: &History, direction: i32) {
+  /// Ctrl-t: swaps the characters around the cursor.
+  fn transpose(&mut self) {
+    let at = if self.cursor == self.text.len() {
+      self
+        .before_cursor()
+        .chars()
+        .next_back()
+        .map_or(0, |c| self.cursor - c.len_utf8())
+    } else {
+      self.cursor
+    };
+    let Some(before) = self.text[..at].chars().next_back() else { return };
+    let Some(after) = self.text[at..].chars().next() else { return };
+    let start = at - before.len_utf8();
+    let end = at + after.len_utf8();
+    self.text.replace_range(start..end, &format!("{after}{before}"));
+    self.cursor = end;
+  }
+
+  fn restore(&mut self) -> PromptEvent {
+    let Some((text, cursor)) = self.undo.pop() else {
+      return PromptEvent::Pending;
+    };
+    self.text = text;
+    self.cursor = cursor;
+    PromptEvent::Edited
+  }
+
+  fn step(&mut self, direction: i32) {
+    if direction < 0 {
+      if let Some(ch) = self.before_cursor().chars().next_back() {
+        self.cursor -= ch.len_utf8();
+      }
+    } else {
+      self.cursor = self.next_char();
+    }
+  }
+
+  /// Takes the whole suggestion; false when there is none to take.
+  fn accept(&mut self) -> bool {
+    if self.cursor != self.text.len() || self.ghost.is_empty() {
+      return false;
+    }
+    let ghost = std::mem::take(&mut self.ghost);
+    self.snapshot();
+    self.insert(&ghost);
+    true
+  }
+
+  /// Newest history entry extending the line, shown after the cursor.
+  fn suggest(&mut self, history: &History) {
+    self.ghost.clear();
+    if self.text.is_empty()
+      || self.cursor != self.text.len()
+      || self.recall.is_some()
+    {
+      return;
+    }
+    if let Some(entry) = history.entries(self.kind).iter().rev().find(|entry| {
+      entry.len() > self.text.len() && entry.starts_with(&self.text)
+    }) {
+      self.ghost = entry[self.text.len()..].to_owned();
+    }
+  }
+
+  /// Up and Down walk history like zsh; Ctrl-r and Ctrl-s walk entries
+  /// that contain the text typed before searching.
+  fn recall(&mut self, history: &History, direction: i32, search: bool) {
     let entries = history.entries(self.kind);
     let recall = self.recall.get_or_insert_with(|| Recall {
       index: entries.len(),
-      prefix: self.text.clone(),
+      saved: self.text.clone(),
+      pattern: None,
     });
-    let matches = |entry: &&String| entry.starts_with(&recall.prefix);
+    if search && recall.pattern.is_none() {
+      recall.pattern = Some(recall.saved.clone());
+    }
+    let matches = |entry: &String| {
+      recall
+        .pattern
+        .as_ref()
+        .is_none_or(|pattern| entry.contains(pattern.as_str()))
+    };
     let found = if direction < 0 {
-      entries[..recall.index.min(entries.len())]
-        .iter()
-        .rposition(|entry| matches(&entry))
+      entries[..recall.index.min(entries.len())].iter().rposition(matches)
     } else {
       entries
         .iter()
         .skip(recall.index + 1)
-        .position(|entry| matches(&entry))
+        .position(matches)
         .map(|offset| recall.index + 1 + offset)
     };
     match found {
@@ -228,13 +480,15 @@ impl Prompt {
       }
       None if direction > 0 => {
         recall.index = entries.len();
-        self.text.clone_from(&recall.prefix);
+        self.text.clone_from(&recall.saved);
       }
       None => {}
     }
     self.cursor = self.text.len();
   }
 
+  /// First Tab lists matches and inserts their common prefix, like zsh;
+  /// later Tabs cycle through them.
   fn cycle(&mut self, forward: bool) -> PromptEvent {
     let Some(menu) = &mut self.menu else {
       return if forward {
@@ -244,8 +498,12 @@ impl Prompt {
       };
     };
     let count = menu.items.len();
-    menu.selected =
-      (menu.selected + if forward { 1 } else { count - 1 }) % count;
+    menu.selected = Some(match menu.selected {
+      None if forward => 0,
+      None => count - 1,
+      Some(index) if forward => (index + 1) % count,
+      Some(index) => (index + count - 1) % count,
+    });
     self.apply();
     PromptEvent::Edited
   }
@@ -255,23 +513,33 @@ impl Prompt {
     if items.is_empty() || start > self.cursor {
       return;
     }
+    self.snapshot();
+    let common = common_prefix(&items);
     let single = items.len() == 1;
     self.menu = Some(Menu {
       items,
-      selected: 0,
+      selected: None,
       start,
       end: self.cursor,
       original: self.text.clone(),
     });
-    self.apply();
     if single {
+      if let Some(menu) = &mut self.menu {
+        menu.selected = Some(0);
+      }
+      self.apply();
       self.menu = None;
+    } else if common.len() > self.cursor - start {
+      self.text.replace_range(start..self.cursor, &common);
+      self.cursor = start + common.len();
     }
   }
 
   fn apply(&mut self) {
     let Some(menu) = &self.menu else { return };
-    let item = &menu.items[menu.selected];
+    let Some(item) = menu.selected.map(|index| &menu.items[index]) else {
+      return;
+    };
     self.text = format!(
       "{}{item}{}",
       &menu.original[..menu.start],
@@ -279,6 +547,20 @@ impl Prompt {
     );
     self.cursor = menu.start + item.len();
   }
+}
+
+fn common_prefix(items: &[String]) -> String {
+  let Some(first) = items.first() else { return String::new() };
+  let mut end = first.len();
+  for item in &items[1..] {
+    end = first
+      .char_indices()
+      .zip(item.chars())
+      .find(|((_, a), b)| a != b)
+      .map_or(end.min(item.len()), |((index, _), _)| index)
+      .min(end);
+  }
+  first[..end].to_owned()
 }
 
 pub fn password() -> crate::Result<String> {
@@ -312,57 +594,113 @@ pub fn password() -> crate::Result<String> {
 mod tests {
   use super::*;
 
-  fn feed(prompt: &mut Prompt, history: &History, keys: &[KeyCode]) {
-    for code in keys {
-      prompt.feed(KeyEvent::new(*code, KeyModifiers::NONE), history);
+  fn press(
+    prompt: &mut Prompt,
+    history: &History,
+    keys: &[(KeyCode, KeyModifiers)],
+  ) {
+    for (code, modifiers) in keys {
+      prompt.feed(KeyEvent::new(*code, *modifiers), history);
     }
   }
 
-  #[test]
-  fn edits_at_cursor() {
+  const NONE: KeyModifiers = KeyModifiers::NONE;
+  const CTRL: KeyModifiers = KeyModifiers::CONTROL;
+  const ALT: KeyModifiers = KeyModifiers::ALT;
+
+  fn typed(text: &str, history: &History) -> Prompt {
     let mut prompt = Prompt::new(PromptKind::Command);
-    let history = History::default();
-    prompt.insert("pge 3");
-    feed(&mut prompt, &history, &[KeyCode::Home, KeyCode::Right]);
-    prompt.insert("a");
-    assert_eq!(prompt.text, "page 3");
-    assert_eq!(prompt.display(), (":page 3".into(), 3));
-    feed(&mut prompt, &history, &[KeyCode::End, KeyCode::Backspace]);
-    assert_eq!(prompt.text, "page ");
+    for ch in text.chars() {
+      prompt.feed(KeyEvent::new(KeyCode::Char(ch), NONE), history);
+    }
+    prompt
   }
 
   #[test]
-  fn recalls_history_by_prefix() {
+  fn emacs_editing_keys() {
+    let history = History::default();
+    let mut prompt = typed("e ~/papers/attention.pdf", &history);
+    press(&mut prompt, &history, &[(KeyCode::Char('w'), CTRL)]);
+    assert_eq!(prompt.text, "e ~/papers/attention.");
+    press(&mut prompt, &history, &[(KeyCode::Backspace, ALT)]);
+    assert_eq!(prompt.text, "e ");
+    press(&mut prompt, &history, &[(KeyCode::Char('y'), CTRL)]);
+    assert_eq!(prompt.text, "e ~/papers/attention.");
+    press(&mut prompt, &history, &[(KeyCode::Char('_'), CTRL)]);
+    assert_eq!(prompt.text, "e ");
+    press(&mut prompt, &history, &[(KeyCode::Char('u'), CTRL)]);
+    assert_eq!(prompt.text, "");
+    let mut prompt = typed("pgae", &history);
+    let back = (KeyCode::Char('b'), CTRL);
+    press(&mut prompt, &history, &[back, back, (KeyCode::Char('t'), CTRL)]);
+    assert_eq!(prompt.text, "page");
+    press(
+      &mut prompt,
+      &history,
+      &[(KeyCode::Char('a'), CTRL), (KeyCode::Char('k'), CTRL)],
+    );
+    assert_eq!((prompt.text.as_str(), prompt.display().2), ("", 1));
+  }
+
+  #[test]
+  fn suggestions_come_from_history() {
+    let mut history = History::default();
+    for entry in ["ocr deu", "page 4", "ocr eng"] {
+      history.push(PromptKind::Command, entry);
+    }
+    let mut prompt = typed("oc", &history);
+    assert_eq!(prompt.ghost, "r eng");
+    press(&mut prompt, &history, &[(KeyCode::Char('f'), ALT)]);
+    assert_eq!(prompt.text, "ocr ");
+    press(&mut prompt, &history, &[(KeyCode::Char(' '), CTRL)]);
+    assert_eq!((prompt.text.as_str(), prompt.ghost.as_str()), ("ocr eng", ""));
+  }
+
+  #[test]
+  fn history_walks_like_zsh() {
     let mut history = History::default();
     for entry in ["ocr deu", "page 4", "ocr eng", "page 4"] {
       history.push(PromptKind::Command, entry);
     }
     assert_eq!(history.commands, ["ocr deu", "ocr eng", "page 4"]);
-    let mut prompt = Prompt::new(PromptKind::Command);
-    prompt.insert("ocr");
-    feed(&mut prompt, &history, &[KeyCode::Up]);
-    assert_eq!(prompt.text, "ocr eng");
-    feed(&mut prompt, &history, &[KeyCode::Up, KeyCode::Up]);
+    let mut prompt = typed("x", &history);
+    press(&mut prompt, &history, &[(KeyCode::Up, NONE)]);
+    assert_eq!(prompt.text, "page 4");
+    press(&mut prompt, &history, &[(KeyCode::Down, NONE)]);
+    assert_eq!(prompt.text, "x");
+    let mut prompt = typed("deu", &history);
+    press(&mut prompt, &history, &[(KeyCode::Char('r'), CTRL)]);
     assert_eq!(prompt.text, "ocr deu");
-    feed(&mut prompt, &history, &[KeyCode::Down, KeyCode::Down]);
-    assert_eq!(prompt.text, "ocr");
   }
 
   #[test]
-  fn completion_cycles_and_accepts() {
-    let mut prompt = Prompt::new(PromptKind::Command);
+  fn completion_lists_then_cycles() {
     let history = History::default();
-    prompt.insert("re");
-    assert_eq!(
-      prompt.feed(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &history),
-      PromptEvent::Complete
+    let mut prompt = typed("t", &history);
+    let tab = KeyEvent::new(KeyCode::Tab, NONE);
+    assert_eq!(prompt.feed(tab, &history), PromptEvent::Complete);
+    prompt.complete(0, vec!["tabedit".into(), "tabnext".into(), "text".into()]);
+    assert_eq!(prompt.text, "t");
+    prompt.complete(0, vec!["tabedit".into(), "tabnext".into()]);
+    assert_eq!(prompt.text, "tab");
+    assert_eq!(prompt.menu.as_ref().map(|m| m.selected), Some(None));
+    press(&mut prompt, &history, &[(KeyCode::Tab, NONE), (KeyCode::Tab, NONE)]);
+    assert_eq!(prompt.text, "tabnext");
+    press(
+      &mut prompt,
+      &history,
+      &[(KeyCode::BackTab, NONE), (KeyCode::Char(' '), NONE)],
     );
-    prompt.complete(0, vec!["recent".into(), "reload".into()]);
-    assert_eq!(prompt.text, "recent");
-    feed(&mut prompt, &history, &[KeyCode::Tab]);
-    assert_eq!(prompt.text, "reload");
-    feed(&mut prompt, &history, &[KeyCode::BackTab, KeyCode::Char(' ')]);
-    assert_eq!(prompt.text, "recent ");
+    assert_eq!(prompt.text, "tabedit ");
     assert!(prompt.menu.is_none());
+  }
+
+  #[test]
+  fn ctrl_x_ctrl_e_opens_the_editor() {
+    let history = History::default();
+    let mut prompt = typed("page", &history);
+    prompt.feed(KeyEvent::new(KeyCode::Char('x'), CTRL), &history);
+    let event = prompt.feed(KeyEvent::new(KeyCode::Char('e'), CTRL), &history);
+    assert_eq!(event, PromptEvent::Editor);
   }
 }

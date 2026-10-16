@@ -76,13 +76,14 @@ impl App {
         _ => {}
       }
     }
-    let Some(prompt) = &mut self.prompt else {
+    if self.prompt.is_none() {
       if let Some(input) = self.keys.feed(key) {
         self.action(input)?;
       }
       return Ok(());
-    };
-    let menu = prompt.menu.is_some();
+    }
+    let menu = self.menu_rows();
+    let Some(prompt) = &mut self.prompt else { return Ok(()) };
     let event = prompt.feed(key, history);
     let kind = prompt.kind;
     match event {
@@ -91,6 +92,10 @@ impl App {
         self.incremental(&query)?;
       }
       PromptEvent::Pending | PromptEvent::Edited => {}
+      PromptEvent::Editor => {
+        let edited = crate::editor::edit(&prompt.text)?;
+        prompt.replace(&edited);
+      }
       PromptEvent::Complete => {
         if prompt.kind == PromptKind::Command {
           let (start, items) = cmdline::candidates(prompt.before_cursor());
@@ -117,7 +122,7 @@ impl App {
         return Ok(());
       }
     }
-    if menu != self.prompt.as_ref().is_some_and(|p| p.menu.is_some()) {
+    if menu != self.menu_rows() {
       self.relayout()?;
     }
     Ok(())
