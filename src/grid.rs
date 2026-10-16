@@ -3,7 +3,7 @@
 
 use crate::Result;
 use crate::layout::Screen;
-use crate::terminal;
+use crate::terminal::{self, At};
 use crate::theme::{self, Color};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
@@ -45,7 +45,7 @@ pub fn limit(screen: Screen) -> usize {
 /// label are highlighted as keys.
 pub fn draw(
   out: &mut impl Write,
-  bottom: u16,
+  (at, bottom): (At, u16),
   grid: &Grid,
   selected: Option<usize>,
   keys: usize,
@@ -55,7 +55,7 @@ pub fn draw(
   let top = usize::from(bottom) + 1 - grid.visible;
   for line in 0..grid.visible {
     let row = grid.first + line;
-    write!(out, "\x1b[{};1H{}", top + line + 1, theme::BAR)?;
+    write!(out, "{}{}", at.goto(top + line, 0u16), theme::BAR)?;
     let mut used = 0;
     for column in 0..grid.columns {
       let index = column * grid.rows + row;

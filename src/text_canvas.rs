@@ -14,7 +14,7 @@ impl App {
     let columns = self.screen.columns.saturating_sub(self.left) as usize;
     let horizontal = self.reader.cursor.glyph.saturating_sub(columns / 2);
     for (row, line) in text.lines.iter().skip(start).take(height).enumerate() {
-      write!(out, "\x1b[{};{}H", row + 1, self.left + 1)?;
+      write!(out, "{}", self.at.goto(row, self.left))?;
       let mut width = 0;
       for (glyph, ch) in line.glyphs.iter().enumerate().skip(horizontal) {
         width += ch.ch.width().unwrap_or(0);

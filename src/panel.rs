@@ -153,18 +153,21 @@ impl Panel {
   pub fn draw(
     &mut self,
     out: &mut impl Write,
+    at: terminal::At,
     width: u16,
     height: u16,
   ) -> Result<()> {
     let inner = usize::from(width.saturating_sub(1));
     for row in 1..height {
-      write!(out, "\x1b[{row};{width}H{}│{}", theme::MUTED, theme::RESET)?;
+      let border = at.goto(row - 1, width - 1);
+      write!(out, "{border}{}│{}", theme::MUTED, theme::RESET)?;
     }
     let title = format!(" {} ", self.kind.title());
     let count = format!(" {} {}", self.rows.len(), self.note);
     write!(
       out,
-      "\x1b[1;1H{}{}{}{}{}",
+      "{}{}{}{}{}{}",
+      at.goto(0u16, 0u16),
       theme::badge(Color::Cyan),
       terminal::clean(&title, inner),
       theme::MUTED,
@@ -190,7 +193,7 @@ impl Panel {
         (false, true) => theme::RESET,
         (false, false) => theme::DIM,
       };
-      write!(out, "\x1b[{};1H{base}", row + 2)?;
+      write!(out, "{}{base}", at.goto(row + 1, 0u16))?;
       let detail = terminal::clean(&item.detail, inner / 3);
       let room = inner.saturating_sub(detail.width() + 1);
       let used = item.write(out, base, room, keys, &self.search.query)?;

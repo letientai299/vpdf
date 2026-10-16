@@ -6,7 +6,7 @@ use crate::panel::{Destination, Panel, Row, recent_rows};
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crate::state::Entry;
 use crate::statusline;
-use crate::terminal;
+use crate::terminal::{self, At};
 use crate::theme::{self, Color};
 use crossterm::event::{Event, KeyEvent, KeyEventKind};
 use std::io::Write;
@@ -54,13 +54,13 @@ impl Home {
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
     write!(out, "\x1b[?2026h{}", theme::RESET)?;
     for row in 0..self.screen.rows {
-      terminal::line(out, row, "", self.screen.columns)?;
+      terminal::line(out, At::default(), row, "", self.screen.columns)?;
     }
     let width = self.screen.columns.saturating_add(1);
-    self.panel.draw(out, width, self.screen.rows)?;
+    self.panel.draw(out, At::default(), width, self.screen.rows)?;
     let row = self.screen.rows - 1;
     if let Some(prompt) = &self.prompt {
-      statusline::prompt(out, prompt, self.screen)?;
+      statusline::prompt(out, prompt, self.screen, At::default())?;
     } else {
       let (text, style) = match &self.error {
         Some(error) => (error.as_str(), theme::ERROR),

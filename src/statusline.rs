@@ -5,7 +5,7 @@ use crate::grid;
 use crate::layout::Screen;
 use crate::prompt::Prompt;
 use crate::reader::SelectionKind;
-use crate::terminal;
+use crate::terminal::{self, At};
 use crate::theme::{self, Color};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
@@ -123,7 +123,7 @@ impl App {
       right += &format!(" zoom {:.0}% ", self.layout.zoom * 100.0);
     }
     let left = format!(" {mode} ");
-    write!(out, "\x1b[{};1H", row + 1)?;
+    write!(out, "{}", self.at.goto(row, 0u16))?;
     let Some(room) = columns.checked_sub(left.width() + right.width() + 1)
     else {
       let right = terminal::clean(&right, columns);
@@ -161,23 +161,25 @@ pub fn prompt(
   out: &mut impl Write,
   prompt: &Prompt,
   screen: Screen,
+  at: At,
 ) -> Result<()> {
   let row = screen.rows - 1;
   if let Some(menu) = &prompt.menu {
     let layout = menu.layout(usize::from(screen.columns), grid::limit(screen));
-    grid::draw(out, row - 1, &layout, menu.selected, 0, screen)?;
+    grid::draw(out, (at, row - 1), &layout, menu.selected, 0, screen)?;
   }
   let (text, ghost, column) = prompt.display();
-  terminal::line(out, row, &text, screen.columns)?;
   let room = usize::from(screen.columns).saturating_sub(text.width());
   write!(
     out,
-    "{}{}{}",
-    theme::MUTED,
-    terminal::clean(ghost, room),
-    theme::RESET
+    "{}{}",
+    at.goto(row, 0u16),
+    terminal::clean(&text, usize::from(screen.columns))
   )?;
-  let column = column.min(usize::from(screen.columns) - 1) + 1;
-  write!(out, "\x1b[{};{column}H\x1b[2 q\x1b[?25h", row + 1)?;
+  let ghost = terminal::clean(ghost, room);
+  let pad = " ".repeat(room.saturating_sub(ghost.width()));
+  write!(out, "{}{ghost}{}{pad}", theme::MUTED, theme::RESET)?;
+  let column = column.min(usize::from(screen.columns) - 1);
+  write!(out, "{}\x1b[2 q\x1b[?25h", at.goto(row, column))?;
   Ok(())
 }

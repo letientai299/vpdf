@@ -554,6 +554,7 @@ pub fn password() -> crate::Result<String> {
     let screen = crate::terminal::size()?;
     crate::terminal::line(
       &mut out,
+      crate::terminal::At::default(),
       screen.rows - 1,
       &prompt.display().0,
       screen.columns,

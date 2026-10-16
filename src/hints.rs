@@ -146,9 +146,8 @@ impl App {
       let rest = &hint.label[hints.typed.len()..];
       write!(
         out,
-        "\x1b[{};{}H\x1b[0;1;30;43m{}\x1b[0;30;43m{rest}\x1b[0m",
-        row + 1,
-        column + 1,
+        "{}\x1b[0;1;30;43m{}\x1b[0;30;43m{rest}\x1b[0m",
+        self.at.goto(row, column),
         hints.typed
       )?;
       let x = f32::from(column - self.left) * cell_width;

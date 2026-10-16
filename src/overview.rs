@@ -225,9 +225,8 @@ impl App {
     };
     write!(
       out,
-      "\x1b[{};{}H{style}{label}{}",
-      row + 1,
-      usize::from(self.left) + column + 1,
+      "{}{style}{label}{}",
+      self.at.goto(row, usize::from(self.left) + column),
       theme::RESET
     )?;
     Ok(())

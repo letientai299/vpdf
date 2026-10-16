@@ -138,23 +138,25 @@ impl App {
     } else {
       below.saturating_sub(rows + 2)
     };
-    let column = self.left + 2;
+    let column = usize::from(self.left) + 1;
     let rule = "─".repeat(columns);
-    write!(out, "\x1b[{};{column}H{}╭{rule}╮", top + 1, theme::MUTED)?;
+    let at = self.at;
+    write!(out, "{}{}╭{rule}╮", at.goto(top, column), theme::MUTED)?;
     for (index, line) in preview.lines.iter().enumerate() {
       let text = crate::terminal::clean(line, columns);
       let pad = columns - text.width();
       write!(
         out,
-        "\x1b[{};{column}H{}│{}{text}{}{}│",
-        top + index + 2,
+        "{}{}│{}{text}{}{}│",
+        at.goto(top + index + 1, column),
         theme::MUTED,
         theme::RESET,
         " ".repeat(pad),
         theme::MUTED
       )?;
     }
-    write!(out, "\x1b[{};{column}H╰{rule}╯{}", top + rows, theme::RESET)?;
+    let bottom = at.goto(top + rows - 1, column);
+    write!(out, "{bottom}╰{rule}╯{}", theme::RESET)?;
     Ok(())
   }
 }

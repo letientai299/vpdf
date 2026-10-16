@@ -60,6 +60,8 @@ pub struct App {
   pub text_mode: bool,
   pub screen: Screen,
   pub left: u16,
+  /// Pane origin on the terminal.
+  pub at: crate::terminal::At,
   pub quit: bool,
   pub request: Option<Request>,
   pub tabline: Tabline,
@@ -126,6 +128,7 @@ impl App {
       text_mode,
       screen,
       left: 0,
+      at: crate::terminal::At::default(),
       quit: false,
       request: None,
       tabline: Tabline::default(),

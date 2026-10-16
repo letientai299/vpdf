@@ -4,7 +4,7 @@ use crossterm::{cursor, event, execute, terminal};
 use std::io::{self, Write};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub struct Terminal;
 
@@ -119,18 +119,35 @@ pub fn clean(text: &str, columns: usize) -> String {
     .collect()
 }
 
+/// A pane's top-left cell on the terminal; drawing positions add it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct At {
+  pub column: u16,
+  pub row: u16,
+}
+
+impl At {
+  /// Cursor move to zero-based `row` and `column` inside the pane.
+  pub fn goto(self, row: impl Into<usize>, column: impl Into<usize>) -> String {
+    format!(
+      "\x1b[{};{}H",
+      row.into() + usize::from(self.row) + 1,
+      column.into() + usize::from(self.column) + 1
+    )
+  }
+}
+
+/// Writes `text` on a pane row, padded so only the pane's cells change.
 pub fn line(
   output: &mut impl Write,
+  at: At,
   row: u16,
   text: &str,
   columns: u16,
 ) -> Result<()> {
-  write!(
-    output,
-    "\x1b[{};1H\x1b[2K{}",
-    row + 1,
-    clean(text, usize::from(columns))
-  )?;
+  let text = clean(text, usize::from(columns));
+  let pad = usize::from(columns).saturating_sub(text.width());
+  write!(output, "{}{text}{}", at.goto(row, 0u16), " ".repeat(pad))?;
   Ok(())
 }
 

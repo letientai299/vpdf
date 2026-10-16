@@ -195,7 +195,7 @@ impl App {
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
     write!(out, "\x1b[?2026h\x1b[0m")?;
     for row in 0..self.screen.rows {
-      terminal::line(out, row, "", self.screen.columns)?;
+      terminal::line(out, self.at, row, "", self.screen.columns)?;
     }
     self.graphics.begin(out)?;
     if self.overview.is_some() {
@@ -209,7 +209,7 @@ impl App {
     self.draw_preview(out)?;
     self.track_outline();
     if let Some(panel) = &mut self.panel {
-      panel.draw(out, self.left, self.screen.rows)?;
+      panel.draw(out, self.at, self.left, self.screen.rows)?;
     }
     self.bottom(out)?;
     write!(out, "\x1b[?2026l")?;
@@ -223,12 +223,13 @@ impl App {
     let Some(prompt) = &self.prompt else {
       if let Some(clues) = &self.clues {
         let (grid, keys) = self.clue_grid(clues);
-        crate::grid::draw(out, row - 1, &grid, None, keys, self.screen)?;
+        let bottom = (self.at, row - 1);
+        crate::grid::draw(out, bottom, &grid, None, keys, self.screen)?;
       }
       self.status(out, row)?;
       write!(out, "\x1b[?25l")?;
       return Ok(());
     };
-    crate::statusline::prompt(out, prompt, self.screen)
+    crate::statusline::prompt(out, prompt, self.screen, self.at)
   }
 }
