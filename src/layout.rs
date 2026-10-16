@@ -8,6 +8,7 @@ pub struct Screen {
   pub rows: u16,
   pub cell_width: u16,
   pub cell_height: u16,
+  pub origin: (u16, u16),
 }
 
 impl Screen {

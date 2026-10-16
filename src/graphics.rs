@@ -78,8 +78,7 @@ impl Graphics {
       y1: y + key.height as f32,
     };
     let Some(clip) = clip(rect, layout.screen) else { return Ok(true) };
-    position(out, clip.x0, clip.y0, left, layout.screen)?;
-    graphics(
+    placement(
       out,
       &(format!(
         "a=p,i={id},p=1,q=2,C=1,z=-1,x={},y={},w={},h={}",
@@ -88,7 +87,9 @@ impl Graphics {
         clip.width() as u32,
         clip.height() as u32,
       ) + &offsets(clip, layout.screen)),
-      "",
+      clip,
+      left,
+      layout.screen,
     )?;
     Ok(true)
   }
@@ -111,11 +112,12 @@ impl Graphics {
     let id = self.overlay;
     self.overlay += 1;
     transmit(out, id, width, height, 32, &encode(&pixels)?)?;
-    position(out, rect.x0, rect.y0, left, screen)?;
-    graphics(
+    placement(
       out,
       &(format!("a=p,i={id},q=2,C=1,z=1") + &offsets(rect, screen)),
-      "",
+      rect,
+      left,
+      screen,
     )?;
     Ok(())
   }
@@ -143,17 +145,21 @@ fn offsets(rect: Bounds, screen: Screen) -> String {
   )
 }
 
-fn position(
+fn placement(
   out: &mut impl Write,
-  x: f32,
-  y: f32,
+  control: &str,
+  rect: Bounds,
   left: u16,
   screen: Screen,
 ) -> Result<()> {
-  let col = x as u32 / u32::from(screen.cell_width) + u32::from(left) + 1;
-  let row = y as u32 / u32::from(screen.cell_height) + 1;
-  write!(out, "\x1b[{row};{col}H")?;
-  Ok(())
+  let col = rect.x0 as u32 / u32::from(screen.cell_width) + u32::from(left) + 1;
+  let row = rect.y0 as u32 / u32::from(screen.cell_height) + 1;
+  crate::terminal::placement(
+    out,
+    control,
+    col + u32::from(screen.origin.0),
+    row + u32::from(screen.origin.1),
+  )
 }
 
 fn transmit(

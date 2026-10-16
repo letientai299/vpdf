@@ -44,6 +44,7 @@ pub fn size() -> Result<Screen> {
   Ok(Screen {
     columns,
     rows,
+    origin: pane_origin().unwrap_or_default(),
     cell_width: if size.width == 0 { 8 } else { (size.width / columns).max(1) },
     cell_height: if size.height == 0 {
       16
@@ -91,4 +92,48 @@ pub fn line(
     clean(text, usize::from(columns))
   )?;
   Ok(())
+}
+
+pub fn placement(
+  output: &mut impl Write,
+  control: &str,
+  column: u32,
+  row: u32,
+) -> Result<()> {
+  let sequence =
+    format!("\x1b7\x1b[{row};{column}H\x1b_G{control};\x1b\\\x1b8");
+  if std::env::var_os("TMUX").is_some() {
+    write!(output, "\x1bPtmux;{}\x1b\\", sequence.replace('\x1b', "\x1b\x1b"))?;
+  } else {
+    write!(output, "{sequence}")?;
+  }
+  Ok(())
+}
+
+fn pane_origin() -> Option<(u16, u16)> {
+  let pane = std::env::var_os("TMUX_PANE")?;
+  let output = std::process::Command::new("tmux")
+    .args(["display-message", "-p", "-t"])
+    .arg(pane)
+    .arg("#{pane_left} #{pane_top} #{status-position} #{status}")
+    .stdin(std::process::Stdio::null())
+    .stderr(std::process::Stdio::null())
+    .output()
+    .ok()?;
+  if !output.status.success() {
+    return None;
+  }
+  let text = std::str::from_utf8(&output.stdout).ok()?;
+  let mut fields = text.split_whitespace();
+  let column: u16 = fields.next()?.parse().ok()?;
+  let mut row: u16 = fields.next()?.parse().ok()?;
+  if fields.next()? == "top" {
+    let rows = match fields.next()? {
+      "on" => 1,
+      "off" => 0,
+      value => value.parse().ok()?,
+    };
+    row = row.saturating_add(rows);
+  }
+  Some((column, row))
 }

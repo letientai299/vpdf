@@ -11,8 +11,13 @@ use vpdf::text::PageId;
 #[ignore = "requires verified public PDF corpus"]
 fn reader_workflows() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen =
-    Screen { columns: 120, rows: 50, cell_width: 8, cell_height: 16 };
+  let screen = Screen {
+    columns: 120,
+    rows: 50,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
   let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
   app.command("PdfPage 39")?;
   assert_eq!(app.reader.cursor.page, PageId(38));
@@ -65,8 +70,13 @@ fn reader_workflows() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen =
-    Screen { columns: 120, rows: 50, cell_width: 8, cell_height: 16 };
+  let screen = Screen {
+    columns: 120,
+    rows: 50,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
   let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
   app.scroll(100.0)?;
   app.scroll(100.0)?;

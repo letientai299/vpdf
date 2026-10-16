@@ -118,7 +118,13 @@ fn document(path: &Path, page: usize) -> Result<Report> {
     path,
     "",
     false,
-    Screen { columns: 160, rows: 60, cell_width: 9, cell_height: 18 },
+    Screen {
+      columns: 160,
+      rows: 60,
+      cell_width: 9,
+      cell_height: 18,
+      origin: (0, 0),
+    },
   )?;
   app.reader.edge(PageId(page), false, &mut app.doc)?;
   app.ensure_cursor()?;
