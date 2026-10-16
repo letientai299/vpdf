@@ -130,7 +130,7 @@ fn worker_tiles_equal_full_page_pixels() -> Result<()> {
           crop: vpdf::layout::Crop::default(),
         })
         .collect();
-      let worker = RenderWorker::new(&path, "");
+      let worker = RenderWorker::new(&path, "", doc.lists());
       worker.request(&keys);
       for _ in &keys {
         let tile = worker

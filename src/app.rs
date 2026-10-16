@@ -146,6 +146,7 @@ impl App {
   ) -> Result<Self> {
     let doc = Document::open(path, password)?;
     let layout = Layout::new(&doc.pages, screen);
+    let worker = RenderWorker::new(path, password, doc.lists());
     static NEXT: AtomicU32 = AtomicU32::new(1);
     let mut app = Self {
       id: NEXT.fetch_add(1, Ordering::Relaxed),
@@ -153,7 +154,7 @@ impl App {
       reader: Reader::default(),
       layout,
       graphics: Graphics::default(),
-      worker: RenderWorker::new(path, password),
+      worker,
       keys: Keys::default(),
       path: path.to_owned(),
       password: password.to_owned(),

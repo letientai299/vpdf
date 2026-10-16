@@ -6,7 +6,7 @@ use mupdf::pdf::PdfDocument;
 use mupdf::{DisplayList, TextPageFlags};
 use serde::Serialize;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub const GLYPH_LIMIT: usize = 40_000;
 pub const MIB: usize = 1024 * 1024;
@@ -67,6 +67,15 @@ pub struct Heading {
   pub target: Target,
 }
 
+/// Display lists by page. Handles of one file share them, so a page is
+/// interpreted once for both its text and its tiles; MuPDF renders a
+/// list on any thread while its document stays on one.
+pub type Lists = Mutex<Cache<PageId, Arc<DisplayList>>>;
+
+/// Pages whose display lists stay cached: the visible pages and the
+/// next screen in either direction.
+const LISTS: usize = 8;
+
 pub struct Document {
   pub native: PdfDocument,
   pub pages: Vec<PageInfo>,
@@ -76,7 +85,7 @@ pub struct Document {
   /// The outline was inferred from text layout, not authored.
   pub inferred: bool,
   texts: Cache<PageId, Arc<Text>>,
-  lists: Cache<PageId, Arc<DisplayList>>,
+  lists: Arc<Lists>,
   ocr: Cache<PageId, Arc<Text>>,
 }
 
@@ -120,7 +129,7 @@ impl Document {
       title,
       inferred: false,
       texts: Cache::new(32 * MIB),
-      lists: Cache::new(4),
+      lists: Arc::new(Mutex::new(Cache::new(LISTS))),
       ocr: Cache::new(32 * MIB),
     })
   }
@@ -130,10 +139,20 @@ impl Document {
     if let Some(text) = self.ocr.get(&page).or_else(|| self.texts.get(&page)) {
       return Ok(Arc::clone(text));
     }
-    let native = self.native.load_page(page.0 as i32)?;
-    let text = Arc::new(extract(&native)?);
+    let list = self.display(page)?;
+    let text = Arc::new(extract_list(&list)?);
     self.texts.insert(page, Arc::clone(&text), text.weight());
     Ok(text)
+  }
+
+  /// The display list cache, for another handle of this file.
+  pub fn lists(&self) -> Arc<Lists> {
+    Arc::clone(&self.lists)
+  }
+
+  /// Shares `lists` with the handle that made them.
+  pub fn share(&mut self, lists: Arc<Lists>) {
+    self.lists = lists;
   }
 
   pub fn seed(&mut self, page: PageId, text: Arc<Text>) {
@@ -143,12 +162,19 @@ impl Document {
 
   pub fn display(&mut self, page: PageId) -> Result<Arc<DisplayList>> {
     self.validate(page)?;
-    if let Some(list) = self.lists.get(&page) {
-      return Ok(Arc::clone(list));
+    let cached = self
+      .lists
+      .lock()
+      .ok()
+      .and_then(|mut lists| lists.get(&page).map(Arc::clone));
+    if let Some(list) = cached {
+      return Ok(list);
     }
     let page_data = self.native.load_page(page.0 as i32)?;
     let list = Arc::new(page_data.to_display_list(true)?);
-    self.lists.insert(page, Arc::clone(&list), 1);
+    if let Ok(mut lists) = self.lists.lock() {
+      lists.insert(page, Arc::clone(&list), 1);
+    }
     Ok(list)
   }
 
@@ -314,12 +340,21 @@ fn flatten(items: &[mupdf::Outline], depth: usize, out: &mut Vec<Heading>) {
   }
 }
 
+const TEXT_FLAGS: TextPageFlags = TextPageFlags::PRESERVE_LIGATURES
+  .union(TextPageFlags::PRESERVE_WHITESPACE)
+  .union(TextPageFlags::CLIP)
+  .union(TextPageFlags::USE_CID_FOR_UNKNOWN_UNICODE);
+
 pub fn extract(page: &mupdf::Page) -> Result<Text> {
-  let flags = TextPageFlags::PRESERVE_LIGATURES
-    | TextPageFlags::PRESERVE_WHITESPACE
-    | TextPageFlags::CLIP
-    | TextPageFlags::USE_CID_FOR_UNKNOWN_UNICODE;
-  let raw = page.to_text_page(flags)?;
+  read(&page.to_text_page(TEXT_FLAGS)?)
+}
+
+/// Text from a display list, which skips interpreting the page again.
+pub fn extract_list(list: &DisplayList) -> Result<Text> {
+  read(&list.to_text_page(TEXT_FLAGS)?)
+}
+
+fn read(raw: &mupdf::TextPage) -> Result<Text> {
   let mut text = Text::default();
   let mut count = 0;
   for block in raw.blocks() {

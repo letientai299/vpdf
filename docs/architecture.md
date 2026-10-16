@@ -40,17 +40,20 @@ preemptible through the safe bindings used here.
 
 MuPDF rasterization runs on the CPU. Kitty composites images on its GPU. The
 reader does not claim GPU PDF rendering or a fixed frame rate on unmeasured
-hardware. Cold text extraction and initial metadata loading still happen on
-the foreground thread; documents with expensive native interpretation can
-pause these operations.
+hardware. The foreground handle and the render coordinator share one
+display-list cache per document, so each page is interpreted once for both
+its tiles and its text. Text read from a list the coordinator already built
+costs about 0.1 ms; a page neither has visited is still interpreted on the
+foreground thread, as is initial metadata loading, so documents with expensive
+native interpretation can pause these operations.
 
 ## Memory and limits
 
-Application text, OCR, search, register, and terminal-image caches have
-explicit budgets. Display lists have a page-count bound; their native memory
-size is not exposed by the binding. MuPDF's internal allocations and terminal
-memory remain separate from application accounting. These bounds are not a
-hard process RSS limit.
+Application text, OCR, search, register, and terminal-image caches have explicit
+budgets. Display lists have a page-count bound of eight per document; their
+native memory size is not exposed by the binding. MuPDF's internal allocations
+and terminal memory remain separate from application accounting. These bounds
+are not a hard process RSS limit.
 
 Extraction and yank limits protect text operations. Search caps matches per
 page and per query. OCR raster dimensions, output, and runtime are bounded.

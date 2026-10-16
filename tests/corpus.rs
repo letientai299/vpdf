@@ -58,3 +58,26 @@ fn public_documents() -> Result<()> {
   }
   Ok(())
 }
+
+/// Text read from a page's display list, which the reader shares with
+/// its tiles, equals text read by interpreting the page.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn display_list_text_matches_page_text() -> Result<()> {
+  use vpdf::document::{extract, extract_list};
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  for name in ["book.pdf", "paper.pdf", "form.pdf", "ocr.pdf"] {
+    let doc = Document::open(&root.join(name), "")?;
+    for index in 0..doc.pages.len() as i32 {
+      let page = doc.native.load_page(index)?;
+      let list = page.to_display_list(true)?;
+      assert_eq!(
+        serde_json::to_string(&extract(&page)?)?,
+        serde_json::to_string(&extract_list(&list)?)?,
+        "{name} page {}",
+        index + 1
+      );
+    }
+  }
+  Ok(())
+}

@@ -10,7 +10,7 @@
 //! with large images render whole on the coordinator, which keeps the
 //! last such page.
 use crate::Result;
-use crate::document::Document;
+use crate::document::{Document, Lists};
 use crate::layout::{Crop, page_matrix, transform};
 use crate::text::PageId;
 use crate::tiles::{self, TILE_WIDTH, Tile, TileKey};
@@ -50,14 +50,19 @@ pub struct RenderWorker {
 }
 
 impl RenderWorker {
-  pub fn new(path: &Path, password: &str) -> Self {
+  /// Opens its own handle of `path`, sharing display lists through
+  /// `lists`.
+  pub fn new(path: &Path, password: &str, lists: Arc<Lists>) -> Self {
     let shared = Arc::new(Shared::default());
     let work = Arc::clone(&shared);
     let (send, results) = mpsc::channel();
     let path = path.to_owned();
     let password = password.to_owned();
     thread::spawn(move || match Document::open(&path, &password) {
-      Ok(doc) => Coordinator::new(doc, work, send).run(),
+      Ok(mut doc) => {
+        doc.share(lists);
+        Coordinator::new(doc, work, send).run();
+      }
       Err(error) => drop(send.send(Err(error.to_string()))),
     });
     Self { shared, results }

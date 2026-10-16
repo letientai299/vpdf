@@ -224,7 +224,7 @@ impl App {
     let doc = Document::open(&self.path, password)?;
     self.doc = doc;
     self.password = password.to_owned();
-    self.worker = RenderWorker::new(&self.path, password);
+    self.worker = RenderWorker::new(&self.path, password, self.doc.lists());
     let previous = std::mem::take(&mut self.search);
     self.stamp = crate::watch::stamp(&self.path);
     self.infer_outline();
