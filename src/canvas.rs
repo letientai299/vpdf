@@ -93,6 +93,17 @@ impl App {
     keys
   }
 
+  /// Whether the frame writes no text above the status line.
+  fn plain(&self) -> bool {
+    self.overview.is_none()
+      && !self.text_mode
+      && self.hints.is_none()
+      && self.peek.is_none()
+      && self.panel.is_none()
+      && self.clues.is_none()
+      && self.prompt.is_none()
+  }
+
   pub fn panel_focused(&self) -> bool {
     self.panel.as_ref().is_some_and(|panel| panel.focused)
   }
@@ -225,9 +236,14 @@ impl App {
 
   /// Draws within the pane; the caller starts and ends the frame.
   pub fn draw_pane(&mut self, out: &mut impl Write) -> Result<()> {
-    for row in 0..self.screen.rows {
-      terminal::line(out, self.at, row, "", self.screen.columns)?;
+    // Rows above the status line stay blank between plain frames.
+    let plain = self.plain();
+    if !(plain && self.blank) {
+      for row in 0..self.screen.rows {
+        terminal::clear(out, self.at, row, self.screen.columns)?;
+      }
     }
+    self.blank = plain;
     if self.overview.is_some() {
       self.overview_canvas(out)?;
     } else if self.text_mode {

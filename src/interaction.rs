@@ -26,6 +26,7 @@ impl App {
 
   /// Fits the page area between the panel, menu, and status rows.
   pub fn relayout(&mut self) -> Result<()> {
+    self.blank = false;
     let menu = self.menu_rows();
     self.layout.screen = self.screen;
     self.layout.screen.columns = self.screen.columns.saturating_sub(self.left);

@@ -125,6 +125,8 @@ pub struct App {
   pub(crate) requested: Vec<TileKey>,
   /// Sign of the last scroll; prefetch looks that way first.
   pub(crate) heading: f32,
+  /// The pane's rows above the status line are known blank.
+  pub(crate) blank: bool,
   pub(crate) last_click: Option<(Instant, Position)>,
 }
 
@@ -189,6 +191,7 @@ impl App {
       animation: None,
       requested: Vec::new(),
       heading: 1.0,
+      blank: false,
       last_click: None,
     };
     app.infer_outline();

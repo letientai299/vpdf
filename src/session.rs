@@ -178,6 +178,8 @@ impl Session {
       let Some(index) = tab.index(id) else { continue };
       let focused = index == tab.focus;
       let app = &mut tab.panes[index];
+      // Another tab or pane may have drawn over these rows.
+      app.blank = false;
       app.focused = focused;
       app.tabline = if focused {
         tabline.take().unwrap_or_default()
@@ -518,6 +520,7 @@ impl Session {
     self.app().graphics.lost();
     for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
       app.requested.clear();
+      app.blank = false;
     }
     Ok(true)
   }

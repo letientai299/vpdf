@@ -15,6 +15,9 @@ const BLOCK: u32 = 1 << 16;
 const OVERLAYS: u32 = 1024;
 /// Last overlay id holds the link preview across frames.
 const PREVIEW: u32 = OVERLAYS - 1;
+/// Solid-color image an overlay crops to its size, so frames place
+/// highlights without sending pixels; about 1 MiB per color in Kitty.
+const SWATCH: (i32, i32) = (4096, 64);
 // Four readers fit Kitty's 320 MB quota.
 const BUDGET: usize = 64 * MIB;
 /// Encoded tiles kept after rendering: prefetched tiles wait here until
@@ -39,7 +42,10 @@ pub struct Graphics {
   pictured: bool,
   base: u32,
   next: u32,
-  overlay: u32,
+  /// Overlay image ids by color, kept across frames.
+  swatches: HashMap<[u8; 4], u32>,
+  /// Overlay placements in the current frame.
+  placed: u32,
   pub uploaded: u64,
 }
 
@@ -57,7 +63,8 @@ impl Default for Graphics {
       pictured: false,
       base,
       next: base + OVERLAYS,
-      overlay: 0,
+      swatches: HashMap::new(),
+      placed: 0,
       uploaded: 0,
     }
   }
@@ -165,11 +172,11 @@ impl Graphics {
       graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
       self.free.push(id);
     }
-    if self.overlay > 0 {
-      let (first, last) = (self.base, self.base + self.overlay - 1);
-      graphics(out, &format!("a=d,d=R,x={first},y={last},q=2"), "")?;
+    if self.placed > 0 {
+      let (first, last) = (self.base, self.base + PREVIEW - 1);
+      graphics(out, &format!("a=d,d=r,x={first},y={last},q=2"), "")?;
     }
-    self.overlay = 0;
+    self.placed = 0;
     if self.preview != 0 {
       // Keep the pixels while shown; free them once a frame skips it.
       let id = self.base + PREVIEW;
@@ -295,17 +302,29 @@ impl Graphics {
     left: u16,
     out: &mut impl Write,
   ) -> Result<()> {
-    if self.overlay >= PREVIEW {
-      return Ok(());
-    }
-    let id = self.base + self.overlay;
-    self.overlay += 1;
-    transmit(out, id, 1, 1, 32, &encode(&color)?)?;
+    let id = self.swatch(color, out)?;
+    self.placed += 1;
     let rows = screen.rows.saturating_sub(1);
-    let control =
-      format!("a=p,i={id},q=2,C=1,z=1,c={},r={rows}", screen.columns);
+    let control = format!(
+      "a=p,i={id},p={},q=2,C=1,z=1,x=0,y=0,w=1,h=1,c={},r={rows}",
+      self.placed, screen.columns
+    );
     let rect = Bounds { x0: 0.0, y0: 0.0, x1: 1.0, y1: 1.0 };
     placement(out, &control, rect, left, screen)
+  }
+
+  /// The overlay image of `color`, sent on first use.
+  fn swatch(&mut self, color: [u8; 4], out: &mut impl Write) -> Result<u32> {
+    if let Some(&id) = self.swatches.get(&color) {
+      return Ok(id);
+    }
+    let id = self.base + self.swatches.len() as u32;
+    anyhow::ensure!(id < self.base + PREVIEW, "Too many overlay colors");
+    let (width, height) = SWATCH;
+    let pixels = color.repeat((width * height) as usize);
+    transmit(out, id, width, height, 32, &encode(&pixels)?)?;
+    self.swatches.insert(color, id);
+    Ok(id)
   }
 
   fn overlay(
@@ -318,22 +337,34 @@ impl Graphics {
     out: &mut impl Write,
   ) -> Result<()> {
     let Some(rect) = clip(rect, screen) else { return Ok(()) };
-    if self.overlay >= PREVIEW {
-      return Ok(());
-    }
+    let id = self.swatch(color, out)?;
     let width = rect.width().ceil().max(1.0) as i32;
     let height = rect.height().ceil().max(1.0) as i32;
-    let pixels = color.repeat((width * height) as usize);
-    let id = self.base + self.overlay;
-    self.overlay += 1;
-    transmit(out, id, width, height, 32, &encode(&pixels)?)?;
-    placement(
-      out,
-      &(format!("a=p,i={id},q=2,C=1,z={z}") + &offsets(rect, screen)),
-      rect,
-      left,
-      screen,
-    )?;
+    // Rects larger than the swatch take several crops.
+    for top in (0..height).step_by(SWATCH.1 as usize) {
+      for left_px in (0..width).step_by(SWATCH.0 as usize) {
+        let (w, h) =
+          ((width - left_px).min(SWATCH.0), (height - top).min(SWATCH.1));
+        let part = Bounds {
+          x0: rect.x0 + left_px as f32,
+          y0: rect.y0 + top as f32,
+          x1: rect.x0 + (left_px + w) as f32,
+          y1: rect.y0 + (top + h) as f32,
+        };
+        self.placed += 1;
+        let control = format!(
+          "a=p,i={id},p={},q=2,C=1,z={z},x=0,y=0,w={w},h={h}",
+          self.placed
+        );
+        placement(
+          out,
+          &(control + &offsets(part, screen)),
+          part,
+          left,
+          screen,
+        )?;
+      }
+    }
     Ok(())
   }
 

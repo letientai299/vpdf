@@ -19,7 +19,10 @@ upload when a frame first places them; the terminal retains base images under
 a bounded working-set budget. Scrolling
 changes crop and placement commands. Cursor, selection, and search highlights
 are separate translucent images, so moving the cursor does not rasterize the
-page again. Synchronized terminal updates group each frame. Scroll inputs
+page again. Each highlight color is one solid image sent once; a frame places
+crops of it, so highlights cost a placement each instead of an upload. Rows
+above the status line are erased only when the previous or current frame
+writes text there. Synchronized terminal updates group each frame. Scroll inputs
 accumulate a target and animate toward it; cursor motions, jumps, and Escape
 interrupt the animation. Both current and target viewports request tiles.
 Frames are scheduled at an 8.33 ms interval when work is pending. Idle loops

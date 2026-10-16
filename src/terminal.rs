@@ -151,6 +151,18 @@ pub fn line(
   Ok(())
 }
 
+/// Blanks a pane row by erasing its cells, which costs a few bytes
+/// where spaces cost one per column.
+pub fn clear(
+  output: &mut impl Write,
+  at: At,
+  row: u16,
+  columns: u16,
+) -> Result<()> {
+  write!(output, "{}\x1b[{columns}X", at.goto(row, 0u16))?;
+  Ok(())
+}
+
 pub fn placement(
   output: &mut impl Write,
   control: &str,
