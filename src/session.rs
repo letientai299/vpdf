@@ -5,7 +5,7 @@ use crate::home::{Home, Outcome};
 use crate::keys::PanelKind;
 use crate::layout::Screen;
 use crate::prompt::History;
-use crate::state::State;
+use crate::state::{Mark, State};
 use crate::terminal::{self, Terminal};
 use crate::text::PageId;
 use crossterm::event::{self, Event, KeyEventKind};
@@ -163,9 +163,27 @@ impl Session {
     match app.request.take() {
       Some(Request::Open { path, tab }) => self.open(&path, tab, screen),
       Some(Request::Tab(step)) => self.activate(self.step(step)),
-      Some(Request::Recent) => {
-        let rows = crate::panel::recent_rows(&self.state.recent);
-        self.app().show_panel(PanelKind::Recent, rows)
+      Some(Request::Panel(kind)) => {
+        let rows = if kind == PanelKind::Marks {
+          let global = self.state.marks.clone();
+          self.app().mark_rows(&global)
+        } else {
+          crate::panel::recent_rows(&self.state.recent)
+        };
+        self.app().show_panel(kind, rows)
+      }
+      Some(Request::SetMark(name)) => {
+        let app = &self.tabs[self.active];
+        let mark = Mark { path: app.path.clone(), cursor: app.reader.cursor };
+        self.state.marks.insert(name, mark);
+        Ok(())
+      }
+      Some(Request::GoMark(name, exact)) => {
+        let mark = self.state.marks.get(&name).cloned();
+        let mark =
+          mark.ok_or_else(|| anyhow::anyhow!("Mark not set: {name}"))?;
+        self.open(&mark.path, true, screen)?;
+        self.app().go_to(mark.cursor, exact)
       }
       Some(Request::QuitAll) => {
         self.quit = true;

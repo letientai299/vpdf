@@ -3,6 +3,7 @@ use crate::app::App;
 use crate::prompt::History;
 use crate::text::{PageId, Position};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -18,6 +19,15 @@ pub struct Entry {
   pub rotation: u16,
   /// Unix milliseconds of the last visit.
   pub used: u64,
+  #[serde(default)]
+  pub marks: BTreeMap<char, Position>,
+}
+
+/// An uppercase mark: a position in any document.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct Mark {
+  pub path: PathBuf,
+  pub cursor: Position,
 }
 
 /// Recent documents and prompt history kept across runs.
@@ -29,6 +39,8 @@ pub struct State {
   pub commands: Vec<String>,
   #[serde(default)]
   pub searches: Vec<String>,
+  #[serde(default)]
+  pub marks: BTreeMap<char, Mark>,
 }
 
 /// `$XDG_STATE_HOME/vpdf/state.json`, else under `~/.local/state`.
@@ -69,12 +81,13 @@ impl State {
       zoom: app.layout.zoom,
       rotation: app.layout.rotation,
       used: now(),
+      marks: app.marks.clone(),
     };
     let index = self.recent.iter().position(|old| old.path == entry.path);
     let previous = index.map(|index| self.recent.remove(index));
     let moved = previous.as_ref().is_none_or(|old| {
-      (old.cursor, old.zoom, old.rotation)
-        != (entry.cursor, entry.zoom, entry.rotation)
+      (old.cursor, old.zoom, old.rotation, &old.marks)
+        != (entry.cursor, entry.zoom, entry.rotation, &entry.marks)
     });
     self.recent.insert(0, entry);
     self.recent.truncate(RECENT);
@@ -99,6 +112,9 @@ impl State {
     recent.sort_by_key(|entry| std::cmp::Reverse(entry.used));
     recent.truncate(RECENT);
     self.recent = recent;
+    let mut marks = disk.marks;
+    marks.append(&mut self.marks);
+    self.marks = marks;
     self.commands = merge(disk.commands, &history.commands);
     self.searches = merge(disk.searches, &history.searches);
     let directory = path.parent().unwrap_or(Path::new("."));
@@ -114,6 +130,7 @@ impl App {
   /// Returns to a saved position and view.
   pub fn restore(&mut self, entry: &Entry) -> Result<()> {
     self.layout.zoom = entry.zoom.clamp(0.1, 8.0);
+    self.marks.clone_from(&entry.marks);
     self.layout.rotation = entry.rotation % 360 / 90 * 90;
     self.layout.reflow(&self.doc.pages);
     let page = PageId(entry.cursor.page.0.min(self.doc.pages.len() - 1));
@@ -148,6 +165,7 @@ mod tests {
       zoom: 1.0,
       rotation: 0,
       used,
+      marks: BTreeMap::new(),
     }
   }
 

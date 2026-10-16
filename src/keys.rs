@@ -11,6 +11,7 @@ pub enum PanelKind {
   Help,
   Info,
   Recent,
+  Marks,
 }
 
 impl PanelKind {
@@ -23,6 +24,7 @@ impl PanelKind {
       Self::Help => "HELP",
       Self::Info => "INFO",
       Self::Recent => "RECENT",
+      Self::Marks => "MARKS",
     }
   }
 }
@@ -47,6 +49,9 @@ pub enum Action {
   History(bool),
   Command,
   Tab(bool),
+  Mark(char),
+  /// Mark name and whether to keep the glyph column.
+  GoMark(char, bool),
   Scroll(f32),
   Rows(i32),
   Align(f32),
@@ -93,6 +98,16 @@ impl Keys {
       self.choosing_register = true;
       return None;
     }
+    if matches!(self.prefix.as_str(), "m" | "'" | "`") {
+      let action = mark(&self.prefix, &token);
+      return match action {
+        Some(action) => Some(self.finish(action)),
+        None => {
+          self.clear();
+          None
+        }
+      };
+    }
     if token.len() == 1
       && let Ok(digit) = token.parse::<usize>()
       && (digit != 0 || self.count != 0)
@@ -105,7 +120,10 @@ impl Keys {
     if let Some(action) = binding(&self.prefix) {
       return Some(self.finish(action));
     }
-    if !matches!(self.prefix.as_str(), "g" | "z" | "[" | "]" | "i" | "a") {
+    if !matches!(
+      self.prefix.as_str(),
+      "g" | "z" | "[" | "]" | "i" | "a" | "m" | "'" | "`"
+    ) {
       self.clear();
     }
     None
@@ -160,6 +178,23 @@ fn token(key: KeyEvent) -> Option<String> {
     KeyCode::F(1) => "g?".into(),
     _ => return None,
   })
+}
+
+/// `m`, `'`, and `` ` `` take a mark name; `''` returns like Ctrl-o.
+fn mark(prefix: &str, token: &str) -> Option<Action> {
+  let mut chars = token.chars();
+  let name = chars.next().filter(|_| chars.next().is_none())?;
+  match (prefix, name) {
+    ("'" | "`", '\'' | '`') => Some(Action::History(false)),
+    ("m", name) if name.is_ascii_alphabetic() => Some(Action::Mark(name)),
+    ("'", name) if name.is_ascii_alphabetic() => {
+      Some(Action::GoMark(name, false))
+    }
+    ("`", name) if name.is_ascii_alphabetic() => {
+      Some(Action::GoMark(name, true))
+    }
+    _ => None,
+  }
 }
 
 pub fn binding(key: &str) -> Option<Action> {
@@ -251,6 +286,19 @@ mod tests {
       keys.feed(key('0')).unwrap().action,
       Action::Motion(Motion::LineStart)
     );
+  }
+
+  #[test]
+  fn marks_take_a_name() {
+    let mut keys = Keys::default();
+    let mut feed = |text: &str| {
+      text.chars().filter_map(|ch| keys.feed(key(ch))).map(|i| i.action).last()
+    };
+    assert_eq!(feed("ma"), Some(Action::Mark('a')));
+    assert_eq!(feed("'B"), Some(Action::GoMark('B', false)));
+    assert_eq!(feed("`a"), Some(Action::GoMark('a', true)));
+    assert_eq!(feed("''"), Some(Action::History(false)));
+    assert_eq!(feed("m1j"), Some(Action::Motion(Motion::Down)));
   }
 
   #[test]

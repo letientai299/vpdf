@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::document::Document;
 use crate::graphics::Graphics;
-use crate::keys::Keys;
+use crate::keys::{Keys, PanelKind};
 use crate::layout::{Layout, Screen};
 use crate::reader::Reader;
 use crate::render_worker::RenderWorker;
@@ -15,9 +15,15 @@ use std::time::Instant;
 /// Work a tab hands to the session.
 #[derive(Debug, Eq, PartialEq)]
 pub enum Request {
-  Open { path: PathBuf, tab: bool },
+  Open {
+    path: PathBuf,
+    tab: bool,
+  },
   Tab(TabMove),
-  Recent,
+  /// A panel whose rows the session builds.
+  Panel(PanelKind),
+  SetMark(char),
+  GoMark(char, bool),
   QuitAll,
 }
 
@@ -57,6 +63,8 @@ pub struct App {
   pub error: Option<String>,
   pub render_ms: f64,
   pub search: crate::find::Search,
+  /// Lowercase marks of this document.
+  pub marks: std::collections::BTreeMap<char, Position>,
   /// Where an open search prompt started.
   pub search_origin: Option<crate::reader::Location>,
   pub prompt: Option<crate::prompt::Prompt>,
@@ -110,6 +118,7 @@ impl App {
       error: None,
       render_ms: 0.0,
       search: crate::find::Search::default(),
+      marks: std::collections::BTreeMap::new(),
       search_origin: None,
       prompt: None,
       panel: None,

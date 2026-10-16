@@ -16,6 +16,7 @@ pub mod home;
 mod interaction;
 pub mod keys;
 pub mod layout;
+mod marks;
 pub mod motion;
 pub mod ocr;
 pub mod panel;

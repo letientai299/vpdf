@@ -5,7 +5,9 @@ w b e: word motions
 { }: previous / next paragraph
 [count]gg G: page jump
 ]p [p: next / previous page
-Ctrl-o Ctrl-i: jump back / forward
+Ctrl-o Ctrl-i '': jump back / forward
+ma mA: mark here / across documents
+'a `a: go to mark line / position
 
 # Scroll and zoom
 Ctrl-d Ctrl-u: half-screen scroll

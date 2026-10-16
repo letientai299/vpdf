@@ -37,6 +37,8 @@ impl App {
       Action::Result(reverse) => self.next_result(reverse, input.count)?,
       Action::Follow => self.follow_cursor()?,
       Action::Command => self.prompt = Some(Prompt::new(PromptKind::Command)),
+      Action::Mark(name) => self.set_mark(name),
+      Action::GoMark(name, exact) => self.go_mark(name, exact)?,
       Action::Tab(forward) => {
         self.request = Some(Request::Tab(match (forward, input.explicit) {
           (true, true) => TabMove::Go(input.count),
@@ -129,6 +131,7 @@ impl App {
       "page" => self.page(argument)?,
       "toc" => self.open_panel(PanelKind::Outline)?,
       "recent" => self.open_panel(PanelKind::Recent)?,
+      "marks" => self.open_panel(PanelKind::Marks)?,
       "nohlsearch" => self.search.hidden = true,
       "text" => self.open_panel(PanelKind::Text)?,
       "info" => self.open_panel(PanelKind::Info)?,

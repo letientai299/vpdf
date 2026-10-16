@@ -104,6 +104,13 @@ Command and search history persist too. State lives in
 saved every few seconds while the position changes, when a tab closes, and on
 exit. Concurrent readers merge their entries.
 
+## Marks
+
+`ma` marks the cursor in this document and `mA` marks it across documents,
+as in Vim. `'a` jumps to the mark's line, `` `a `` to its exact glyph, and
+`''` back to where the last jump started. `:marks` lists them. Marks persist
+with the recent-document state.
+
 ## Live reload
 
 The reader polls the open document's modification time and size. After a

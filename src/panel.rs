@@ -18,6 +18,8 @@ pub enum Destination {
   Position(Position),
   Link(Target),
   File(PathBuf),
+  /// A global mark, resolved by the session.
+  Mark(char),
   None,
 }
 
@@ -288,8 +290,8 @@ impl App {
       }
       return Ok(());
     }
-    if kind == PanelKind::Recent {
-      self.request = Some(Request::Recent);
+    if matches!(kind, PanelKind::Recent | PanelKind::Marks) {
+      self.request = Some(Request::Panel(kind));
       return Ok(());
     }
     let rows = self.panel_rows(kind)?;
@@ -363,7 +365,7 @@ impl App {
         .collect(),
       PanelKind::Help => help().iter().map(|line| Row::parse(line)).collect(),
       PanelKind::Info => self.info().lines().map(Row::parse).collect(),
-      PanelKind::Text | PanelKind::Recent => Vec::new(),
+      PanelKind::Text | PanelKind::Recent | PanelKind::Marks => Vec::new(),
     })
   }
 
@@ -422,6 +424,10 @@ impl App {
       Destination::Link(target) => self.follow(&target)?,
       Destination::File(path) => {
         self.request = Some(Request::Open { path, tab: true });
+        return self.close_panel();
+      }
+      Destination::Mark(name) => {
+        self.request = Some(Request::GoMark(name, true));
         return self.close_panel();
       }
       Destination::None => return Ok(()),
