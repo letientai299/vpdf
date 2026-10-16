@@ -60,6 +60,18 @@ depends = ["corpus"]
 env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
 run = "cargo bench --locked --bench reader"
 
+[tasks."bench:latency"]
+description = "Measure cold opens, jumps, zooms, and paced scrolling"
+depends = ["corpus"]
+env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
+run = "cargo bench --locked --bench latency"
+
+[tasks."bench:stages"]
+description = "Attribute cold page cost to load, text, list, raster, encode"
+depends = ["corpus"]
+env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
+run = "cargo bench --locked --bench stages"
+
 [tasks."perf:check"]
 description = "Enforce warm CPU frame and motion budgets"
 depends = ["corpus"]

@@ -217,6 +217,15 @@ warm paired motion p95 below 1 ms, and no warm base-image uploads. These CPU
 budgets do not measure terminal painting or guarantee a display frame rate.
 Set `VPDF_BENCH_OUTPUT=/path/report.json` to save results.
 
+`mise run bench:latency` drives the reader with a live render worker: cold
+open, twenty page jumps, zoom steps, and scrolling paced at 10 to 120 inputs
+per second. It reports input handling time, time to the first and the last
+visible tile, frames with blank tiles, and bytes per frame. `mise run
+bench:stages` splits cold page cost into page load, text extraction, display
+list, tile raster, and encoding. Set `VPDF_EXTRA` to a `PATH`-style list of
+PDFs to measure other documents and `VPDF_COLUMNS` to change the 179-column
+screen.
+
 For an interactive trace, run `VPDF_TRACE=/path/frames.jsonl vpdf document.pdf`.
 The file is overwritten. It records frame construction, output flush, consumed
 input to output flush, and base-image transfer bytes; it contains no document

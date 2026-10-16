@@ -54,3 +54,11 @@ tempfile = "3"
 [[bench]]
 name = "reader"
 harness = false
+
+[[bench]]
+name = "latency"
+harness = false
+
+[[bench]]
+name = "stages"
+harness = false
