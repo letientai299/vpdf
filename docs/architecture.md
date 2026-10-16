@@ -1,13 +1,15 @@
 # Reader architecture
 
-The foreground loop owns every tab's reader state and terminal output. Only
-the active tab polls its workers and draws. A render coordinator owns a
-separate MuPDF document, builds display lists, and accepts the latest viewport
-tile set; a process-wide pool of up to four threads draws those lists.
-Search starts lazily in another worker with a separate document and bounded
-normalized indexes. OCR uses Tesseract in a subprocess. No MuPDF document is
-shared concurrently across threads; display lists are immutable and render
-on any thread.
+The foreground loop owns every tab's reader state and terminal output. Only the
+active tab polls its workers and draws. A render coordinator owns a separate
+MuPDF document, builds display lists, and accepts the latest viewport tile set;
+a process-wide pool of up to four threads draws those lists. Search starts
+lazily in another worker with a separate document and bounded normalized
+indexes; the document drops after three idle seconds, releasing the MuPDF
+objects and resources a full scan loaded, and reopens only for pages whose index
+was evicted. OCR uses Tesseract in a subprocess. No MuPDF document is shared
+concurrently across threads; display lists are immutable and render on any
+thread.
 
 ## Rendering
 

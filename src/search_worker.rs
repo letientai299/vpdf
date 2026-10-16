@@ -3,10 +3,14 @@ use crate::cache::Cache;
 use crate::document::{Document, MIB};
 use crate::search::{self, Hit, Index};
 use crate::text::{PageId, Text};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
+use std::time::Duration;
+
+/// Idle time after which the worker releases its document.
+const IDLE: Duration = Duration::from_secs(3);
 
 pub enum Request {
   Query {
@@ -41,8 +45,8 @@ impl SearchWorker {
     let path = path.to_owned();
     let password = password.to_owned();
     thread::spawn(move || {
-      let mut doc = match Document::open(&path, &password) {
-        Ok(doc) => doc,
+      let mut source = match Source::open(path, password) {
+        Ok(source) => source,
         Err(error) => {
           let _ = events_send.send(SearchEvent {
             generation: current.load(Ordering::Relaxed),
@@ -54,13 +58,24 @@ impl SearchWorker {
         }
       };
       let mut indexes = Cache::new(32 * MIB);
-      while let Ok(request) = receive.recv() {
+      loop {
+        let request = match receive.recv_timeout(IDLE) {
+          Ok(request) => request,
+          Err(mpsc::RecvTimeoutError::Timeout) => {
+            source.doc = None;
+            match receive.recv() {
+              Ok(request) => request,
+              Err(_) => return,
+            }
+          }
+          Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        };
         match request {
           Request::Seed(page, text) => {
             let index = Index::new(page, &text);
             let weight = index.weight();
             indexes.insert(page, index, weight);
-            doc.seed(page, text);
+            source.seed(page, text);
           }
           Request::Query {
             generation,
@@ -79,7 +94,8 @@ impl SearchWorker {
               current: &current,
               send: &events_send,
             };
-            let result = task.run(&mut doc, &mut indexes, &query, whole_word);
+            let result =
+              task.run(&mut source, &mut indexes, &query, whole_word);
             if events_send
               .send(SearchEvent {
                 generation,
@@ -142,24 +158,25 @@ struct SearchTask<'a> {
 impl SearchTask<'_> {
   fn run(
     &self,
-    doc: &mut Document,
+    source: &mut Source,
     indexes: &mut Cache<PageId, Index>,
     query: &str,
     whole_word: bool,
   ) -> Result<()> {
     let pattern = search::compile(query, whole_word)?;
     let mut remaining: usize = 10_000;
-    for offset in 0..doc.pages.len() {
+    let pages = source.pages;
+    for offset in 0..pages {
       if self.current.load(Ordering::Relaxed) != self.generation {
         break;
       }
       let page = if self.backward {
-        PageId((self.origin.0 + doc.pages.len() - offset) % doc.pages.len())
+        PageId((self.origin.0 + pages - offset) % pages)
       } else {
-        PageId((self.origin.0 + offset) % doc.pages.len())
+        PageId((self.origin.0 + offset) % pages)
       };
       if indexes.get(&page).is_none() {
-        let text = doc.text(page)?;
+        let text = source.text(page)?;
         let index = Index::new(page, &text);
         let weight = index.weight();
         indexes.insert(page, index, weight);
@@ -180,5 +197,53 @@ impl SearchTask<'_> {
       }
     }
     Ok(())
+  }
+}
+
+/// Page text for scans. The document drops after the worker idles,
+/// which releases MuPDF's objects and cached resources for every page a
+/// scan read: about 110 MB after scanning a 1370-page book. Indexes stay,
+/// so later queries reopen it only for pages they evicted.
+struct Source {
+  path: PathBuf,
+  password: String,
+  pages: usize,
+  doc: Option<Document>,
+  /// OCR text, which a reopened document must see again.
+  seeds: Vec<(PageId, Arc<Text>)>,
+}
+
+impl Source {
+  fn open(path: PathBuf, password: String) -> Result<Self> {
+    let doc = Document::open(&path, &password)?;
+    Ok(Self {
+      path,
+      password,
+      pages: doc.pages.len(),
+      doc: Some(doc),
+      seeds: Vec::new(),
+    })
+  }
+
+  fn text(&mut self, page: PageId) -> Result<Arc<Text>> {
+    let doc = match &mut self.doc {
+      Some(doc) => doc,
+      None => {
+        let mut doc = Document::open(&self.path, &self.password)?;
+        for (page, text) in &self.seeds {
+          doc.seed(*page, Arc::clone(text));
+        }
+        self.doc.insert(doc)
+      }
+    };
+    doc.text(page)
+  }
+
+  fn seed(&mut self, page: PageId, text: Arc<Text>) {
+    if let Some(doc) = &mut self.doc {
+      doc.seed(page, Arc::clone(&text));
+    }
+    self.seeds.retain(|(old, _)| *old != page);
+    self.seeds.push((page, text));
   }
 }

@@ -120,6 +120,16 @@ impl Coordinator {
 
   fn run(mut self) {
     while let Some((urgent, ahead)) = self.next() {
+      // The last whole page goes once no request wants its tiles.
+      let kept = self.whole.as_ref().map(|(page, ..)| *page);
+      if kept.is_some_and(|page| {
+        !urgent
+          .iter()
+          .chain(&ahead)
+          .any(|k| (k.page, k.scale, k.rotation, k.crop) == page)
+      }) {
+        self.whole = None;
+      }
       for band in bands(&urgent) {
         if !self.current() {
           break;
