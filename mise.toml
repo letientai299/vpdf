@@ -53,3 +53,16 @@ run = "cargo test --locked -- --ignored --skip real_ocr_and_cancel"
 depends = ["corpus"]
 env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
 run = "cargo test --locked --test workers real_ocr_and_cancel -- --ignored"
+
+[tasks.bench]
+description = "Measure real-PDF warm frames and search"
+depends = ["corpus"]
+env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
+run = "cargo bench --locked --bench reader"
+
+[tasks."perf:check"]
+description = "Enforce warm CPU frame and motion budgets"
+depends = ["corpus"]
+env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
+env.VPDF_PERF_CHECK = "1"
+run = "cargo bench --locked --bench reader"

@@ -16,6 +16,7 @@ impl App {
   }
 
   pub fn ensure_cursor(&mut self) -> Result<()> {
+    self.animation = None;
     let cursor = self.reader.cursor;
     let text = self.doc.text(cursor.page)?;
     let Some(glyph) = text.glyph(cursor) else {
@@ -59,6 +60,7 @@ impl App {
       Action::Swap => self.reader.swap(),
       Action::Reselect => self.reader.reselect(),
       Action::History(forward) => {
+        self.animation = None;
         self.reader.history(forward);
         return Ok(true);
       }
@@ -86,6 +88,7 @@ impl App {
         self.scroll(rows as f32 * count * f32::from(self.screen.cell_height))?
       }
       Action::Align(fraction) => {
+        self.animation = None;
         let text = self.doc.text(self.reader.cursor.page)?;
         if let Some(glyph) = text.glyph(self.reader.cursor) {
           let rect =
@@ -118,6 +121,7 @@ impl App {
         self.reflow()?;
       }
       Action::Pan(direction) => {
+        self.animation = None;
         let max = self.layout.pages[self.reader.cursor.page.0].width
           - self.layout.screen.width();
         self.layout.pan = (self.layout.pan
@@ -134,23 +138,6 @@ impl App {
     self.ensure_cursor()
   }
 
-  pub fn scroll(&mut self, delta: f32) -> Result<()> {
-    self.reader.scroll = self.layout.clamp_scroll(self.reader.scroll + delta);
-    let page = self
-      .layout
-      .page_at(self.reader.scroll + self.layout.screen.height() / 2.0);
-    let text = self.doc.text(page)?;
-    let layout = &self.layout.pages[page.0];
-    if let Some(inverse) = layout.matrix.invert() {
-      let (x, y) = inverse.transform_xy(
-        self.layout.pan,
-        self.reader.scroll + self.layout.screen.height() / 2.0 - layout.top,
-      );
-      self.reader.cursor = text.nearest(page, x, y);
-    }
-    Ok(())
-  }
-
   pub fn mouse(&mut self, mouse: event::MouseEvent) -> Result<()> {
     match mouse.kind {
       MouseEventKind::ScrollDown => {
@@ -163,14 +150,17 @@ impl App {
       | MouseEventKind::Drag(MouseButton::Left) => {}
       _ => return Ok(()),
     }
+    self.animation = None;
     if mouse.column < self.left {
       return Ok(());
     }
-    let y = f32::from(mouse.row * self.screen.cell_height) + self.reader.scroll;
+    let y = f32::from(mouse.row) * f32::from(self.screen.cell_height)
+      + self.reader.scroll;
     let page = self.layout.page_at(y);
     let layout = &self.layout.pages[page.0];
     let Some(inverse) = layout.matrix.invert() else { return Ok(()) };
-    let x = f32::from((mouse.column - self.left) * self.screen.cell_width)
+    let x = f32::from(mouse.column - self.left)
+      * f32::from(self.screen.cell_width)
       + self.layout.pan;
     let (x, y) = inverse.transform_xy(x, y - layout.top);
     let pos = self.doc.text(page)?.nearest(page, x, y);

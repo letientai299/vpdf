@@ -33,6 +33,7 @@ pub struct App {
   pub preview: Option<bool>,
   pub ocr: Option<crate::ocr::OcrJob>,
   pub reset_images: bool,
+  pub animation: Option<crate::animation::Scroll>,
   pub(crate) requested: Vec<TileKey>,
   pub(crate) last_click: Option<(Instant, Position)>,
 }
@@ -70,6 +71,7 @@ impl App {
       preview: None,
       ocr: None,
       reset_images: false,
+      animation: None,
       requested: Vec::new(),
       last_click: None,
     })
@@ -101,19 +103,35 @@ pub fn view(
   )?;
   app.ensure_cursor()?;
   let mut out = io::BufWriter::new(io::stdout());
+  let mut trace = crate::trace::Trace::new()?;
+  let mut buffer = Vec::with_capacity(64 * 1024);
   let mut dirty = true;
+  let mut last_frame = Instant::now() - Duration::from_millis(9);
   while !app.quit {
     dirty |= app.raster_updates(&mut out)?;
     dirty |= app.search_updates()?;
     dirty |= app.ocr_updates()?;
     app.clipboard(&mut out)?;
-    if dirty {
-      app.draw(&mut out)?;
-      dirty = false;
+    let frame_due = last_frame.elapsed() >= Duration::from_micros(8333);
+    if frame_due {
+      dirty |= app.animate();
+      if dirty {
+        trace.draw(&mut app, &mut out, &mut buffer)?;
+        dirty = false;
+        last_frame = Instant::now();
+      }
     }
-    if !event::poll(Duration::from_millis(8))? {
+    let wait = if !dirty && app.animation.is_none() {
+      Duration::from_millis(8)
+    } else {
+      Duration::from_micros(8333)
+        .saturating_sub(last_frame.elapsed())
+        .max(Duration::from_millis(1))
+    };
+    if !event::poll(wait)? {
       continue;
     }
+    trace.input();
     let result = match event::read()? {
       Event::Key(key) if key.kind != KeyEventKind::Release => app.key(key),
       Event::Paste(text) => {

@@ -4,6 +4,7 @@ pub mod search;
 pub mod text;
 
 pub type Result<T> = anyhow::Result<T>;
+pub mod animation;
 pub mod app;
 mod canvas;
 mod commands;
@@ -23,3 +24,4 @@ pub mod selection;
 pub mod terminal;
 mod text_canvas;
 pub mod tiles;
+pub mod trace;

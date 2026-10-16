@@ -96,6 +96,7 @@ mise run hooks
 mise run check
 mise run test:corpus
 mise run test:ocr
+mise run perf:check
 ```
 
 Rustfmt uses two spaces and an 80-column target; a separate check enforces the
@@ -104,6 +105,18 @@ maintainability violations. Prek runs formatting, linting, and tests before
 commits. Rumdl formats and checks Markdown. The corpus tasks download public
 PDFs into the local cache and verify their recorded SHA-256 hashes. OCR tests
 require Tesseract; ordinary tests do not.
+
+`mise run bench` measures real-PDF extraction, tiles, navigation, search, and
+serialized terminal frames. `perf:check` requires warm frame p95 below 8.33 ms,
+warm paired motion p95 below 1 ms, and no warm base-image uploads. These CPU
+budgets do not measure terminal painting or guarantee a display frame rate.
+Set `VPDF_BENCH_OUTPUT=/path/report.json` to save results.
+
+For an interactive trace, run `VPDF_TRACE=/path/frames.jsonl vpdf document.pdf`.
+The file is overwritten. It records frame construction, output flush, consumed
+input to output flush, and base-image transfer bytes; it contains no document
+text. Input timing starts when the event loop consumes an event. Terminal
+rendering and physical input latency are outside this measurement.
 
 See [architecture][architecture] for worker ownership and performance limits.
 The [key reference][keys] is also embedded in the executable.

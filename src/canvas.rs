@@ -30,7 +30,14 @@ impl App {
   }
 
   pub fn canvas(&mut self, out: &mut impl Write) -> Result<()> {
-    let tiles = tiles::visible(&self.layout, self.reader.scroll);
+    let mut tiles = tiles::visible(&self.layout, self.reader.scroll);
+    if let Some(animation) = &self.animation {
+      for tile in tiles::visible(&self.layout, animation.target) {
+        if !tiles.contains(&tile) {
+          tiles.push(tile);
+        }
+      }
+    }
     let mut missing = Vec::new();
     for key in &tiles {
       if !self.graphics.place(

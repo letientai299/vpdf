@@ -12,7 +12,11 @@ Visible tiles and one extra tile row are rasterized off the input thread.
 The terminal retains base images under a bounded working-set budget. Scrolling
 changes crop and placement commands. Cursor, selection, and search highlights
 are separate translucent images, so moving the cursor does not rasterize the
-page again. Synchronized terminal updates group each frame.
+page again. Synchronized terminal updates group each frame. Scroll inputs
+accumulate a target and animate toward it; cursor motions, jumps, and Escape
+interrupt the animation. Both current and target viewports request tiles.
+Frames are scheduled at an 8.33 ms interval when work is pending. Idle loops
+poll at 8 ms and do not redraw unchanged content.
 
 The latest viewport replaces queued render work. An in-flight native tile can
 finish before cancellation is observed. Search checks its generation between

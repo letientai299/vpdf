@@ -60,3 +60,39 @@ fn reader_workflows() -> Result<()> {
   assert!(app.reader.cursor.page.0 < app.doc.pages.len());
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen =
+    Screen { columns: 120, rows: 50, cell_width: 8, cell_height: 16 };
+  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  app.scroll(100.0)?;
+  app.scroll(100.0)?;
+  assert_eq!(app.animation.as_ref().unwrap().target, 200.0);
+  assert_eq!(app.reader.scroll, 0.0);
+  for _ in 0..30 {
+    if let Some(animation) = &mut app.animation {
+      animation.updated = Instant::now() - Duration::from_millis(16);
+    }
+    let previous = app.reader.scroll;
+    app.animate();
+    assert!(app.reader.scroll >= previous && app.reader.scroll <= 200.0);
+  }
+  assert!(app.animation.is_none());
+  assert_eq!(app.reader.scroll, 200.0);
+  for action in [Action::Cancel, Action::History(false), Action::Align(0.0)] {
+    app.scroll(100.0)?;
+    app.action(Input { action, count: 1, explicit: false, register: '"' })?;
+    assert!(app.animation.is_none());
+    let stopped = app.reader.scroll;
+    assert!(!app.animate());
+    assert_eq!(app.reader.scroll, stopped);
+  }
+  app.scroll(100.0)?;
+  app.command("PdfPage 39")?;
+  assert!(app.animation.is_none());
+  assert_eq!(app.reader.cursor.page, PageId(38));
+  Ok(())
+}

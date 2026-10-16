@@ -12,10 +12,10 @@ pub struct Screen {
 
 impl Screen {
   pub fn width(self) -> f32 {
-    f32::from(self.columns * self.cell_width)
+    f32::from(self.columns) * f32::from(self.cell_width)
   }
   pub fn height(self) -> f32 {
-    f32::from(self.rows.saturating_sub(1) * self.cell_height)
+    f32::from(self.rows.saturating_sub(1)) * f32::from(self.cell_height)
   }
 }
 

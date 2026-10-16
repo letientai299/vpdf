@@ -15,6 +15,7 @@ use std::process::{Command, Stdio};
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
     if input.action == Action::Cancel {
+      self.animation = None;
       self.search.cancel();
       self.reader.cancel();
       if let Some(ocr) = self.ocr.take() {
