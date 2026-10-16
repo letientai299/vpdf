@@ -1,5 +1,5 @@
 [tools]
-rust = "1.99.0"
+rust = "1.99.1"
 prek = "0.5.5"
 rumdl = "0.2.79"
 taplo = "0.10.0"
@@ -21,7 +21,10 @@ run = ["cargo fmt --check", "taplo fmt --check", "rumdl check ."]
 
 [tasks.lint]
 description = "Reject performance and complexity regressions"
-run = "cargo clippy --locked --all-targets -- -D warnings"
+run = [
+  "cargo clippy --locked --all-targets -- -D warnings",
+  "sh scripts/width.sh",
+]
 
 [tasks.test]
 run = "cargo test --locked"

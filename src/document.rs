@@ -1,0 +1,206 @@
+use crate::Result;
+use crate::cache::Cache;
+use crate::text::{Bounds, Glyph, Line, PageId, Text};
+use anyhow::{bail, ensure};
+use mupdf::pdf::PdfDocument;
+use mupdf::{DisplayList, TextPageFlags};
+use serde::Serialize;
+use std::path::Path;
+use std::sync::Arc;
+
+pub const GLYPH_LIMIT: usize = 40_000;
+pub const MIB: usize = 1024 * 1024;
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PageInfo {
+  pub bounds: Bounds,
+  pub label: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Link {
+  pub bounds: Bounds,
+  pub target: Target,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub enum Target {
+  Page(PageId),
+  Uri(String),
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Heading {
+  pub title: String,
+  pub depth: usize,
+  pub target: Target,
+}
+
+pub struct Document {
+  pub native: PdfDocument,
+  pub pages: Vec<PageInfo>,
+  pub outline: Vec<Heading>,
+  texts: Cache<PageId, Arc<Text>>,
+  lists: Cache<PageId, Arc<DisplayList>>,
+  ocr: Cache<PageId, Arc<Text>>,
+}
+
+impl Document {
+  pub fn open(path: &Path, password: &str) -> Result<Self> {
+    let mut native = PdfDocument::open(path)?;
+    if native.needs_password()? && !native.authenticate(password)? {
+      bail!("PDF password required");
+    }
+    let count = native.page_count()?;
+    ensure!(count > 0, "PDF contains no pages");
+    let mut pages = Vec::with_capacity(count as usize);
+    for index in 0..count {
+      let bounds: Bounds = native.load_page(index)?.bounds()?.into();
+      ensure!(
+        bounds.width() > 0.0
+          && bounds.height() > 0.0
+          && bounds.width().is_finite()
+          && bounds.height().is_finite(),
+        "PDF page has invalid dimensions"
+      );
+      pages.push(PageInfo {
+        bounds,
+        label: native
+          .page_label(index as usize)
+          .unwrap_or_else(|_| (index + 1).to_string()),
+      });
+    }
+    let mut outline = Vec::new();
+    flatten(&native.outlines()?, 0, &mut outline);
+    Ok(Self {
+      native,
+      pages,
+      outline,
+      texts: Cache::new(32 * MIB),
+      lists: Cache::new(4),
+      ocr: Cache::new(32 * MIB),
+    })
+  }
+
+  pub fn text(&mut self, page: PageId) -> Result<Arc<Text>> {
+    self.validate(page)?;
+    if let Some(text) = self.ocr.get(&page).or_else(|| self.texts.get(&page)) {
+      return Ok(Arc::clone(text));
+    }
+    let native = self.native.load_page(page.0 as i32)?;
+    let text = Arc::new(extract(&native)?);
+    self.texts.insert(page, Arc::clone(&text), text.weight());
+    Ok(text)
+  }
+
+  pub fn seed(&mut self, page: PageId, text: Arc<Text>) {
+    let weight = text.weight();
+    self.ocr.insert(page, text, weight);
+  }
+
+  pub fn display(&mut self, page: PageId) -> Result<Arc<DisplayList>> {
+    self.validate(page)?;
+    if let Some(list) = self.lists.get(&page) {
+      return Ok(Arc::clone(list));
+    }
+    let page_data = self.native.load_page(page.0 as i32)?;
+    let list = Arc::new(page_data.to_display_list(true)?);
+    self.lists.insert(page, Arc::clone(&list), 1);
+    Ok(list)
+  }
+
+  pub fn links(&self, page: PageId) -> Result<Vec<Link>> {
+    self.validate(page)?;
+    Ok(
+      self
+        .native
+        .load_page(page.0 as i32)?
+        .links()?
+        .map(|link| Link {
+          bounds: link.bounds.into(),
+          target: link.dest.map_or_else(
+            || Target::Uri(link.uri),
+            |dest| Target::Page(PageId(dest.loc.page_number as usize)),
+          ),
+        })
+        .collect(),
+    )
+  }
+
+  pub fn page_number(&self, label: &str) -> Option<PageId> {
+    if let Ok(number) = label.parse::<usize>() {
+      return (number > 0 && number <= self.pages.len())
+        .then(|| PageId(number - 1));
+    }
+    self.pages.iter().position(|p| p.label == label).map(PageId)
+  }
+
+  pub fn validate(&self, page: PageId) -> Result<()> {
+    ensure!(page.0 < self.pages.len(), "Page outside document");
+    Ok(())
+  }
+
+  pub fn cache_bytes(&self) -> usize {
+    self.texts.used() + self.ocr.used()
+  }
+}
+
+fn flatten(items: &[mupdf::Outline], depth: usize, out: &mut Vec<Heading>) {
+  if depth > 64 || out.len() >= 10_000 {
+    return;
+  }
+  for item in items {
+    if out.len() >= 10_000 {
+      break;
+    }
+    let target = item
+      .dest
+      .map(|d| Target::Page(PageId(d.loc.page_number as usize)))
+      .or_else(|| item.uri.as_ref().map(|u| Target::Uri(u.clone())));
+    if let Some(target) = target {
+      out.push(Heading { title: item.title.clone(), depth, target });
+    }
+    flatten(&item.down, depth + 1, out);
+  }
+}
+
+pub fn extract(page: &mupdf::Page) -> Result<Text> {
+  let flags = TextPageFlags::PRESERVE_LIGATURES
+    | TextPageFlags::PRESERVE_WHITESPACE
+    | TextPageFlags::CLIP
+    | TextPageFlags::USE_CID_FOR_UNKNOWN_UNICODE;
+  let raw = page.to_text_page(flags)?;
+  let mut text = Text::default();
+  let mut count = 0;
+  for block in raw.blocks() {
+    for line in block.lines() {
+      let mut row = Line::default();
+      for glyph in line.chars() {
+        let Some(ch) = glyph.char() else { continue };
+        if ch.is_control() {
+          continue;
+        }
+        if count >= GLYPH_LIMIT {
+          text.truncated = true;
+          break;
+        }
+        let q = glyph.quad();
+        let bounds = Bounds {
+          x0: q.ul.x.min(q.ll.x).min(q.ur.x).min(q.lr.x),
+          y0: q.ul.y.min(q.ll.y).min(q.ur.y).min(q.lr.y),
+          x1: q.ul.x.max(q.ll.x).max(q.ur.x).max(q.lr.x),
+          y1: q.ul.y.max(q.ll.y).max(q.ur.y).max(q.lr.y),
+        };
+        row.glyphs.push(Glyph { ch, bounds });
+        count += 1;
+      }
+      if row.glyphs.iter().any(|g| !g.ch.is_whitespace()) {
+        text.lines.push(row);
+      }
+      if text.truncated {
+        return Ok(text);
+      }
+    }
+  }
+  Ok(text)
+}
