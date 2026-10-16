@@ -105,6 +105,7 @@ pub fn view(
   let mut out = io::BufWriter::new(io::stdout());
   let mut trace = crate::trace::Trace::new()?;
   let mut buffer = Vec::with_capacity(64 * 1024);
+  let mut history = crate::prompt::History::default();
   let mut dirty = true;
   let mut last_frame = Instant::now() - Duration::from_millis(9);
   while !app.quit {
@@ -132,16 +133,17 @@ pub fn view(
       continue;
     }
     trace.input();
-    let result = match event::read()? {
-      Event::Key(key) if key.kind != KeyEventKind::Release => app.key(key),
+    let event = event::read()?;
+    if matches!(event, Event::Key(_)) {
+      app.reader.message.clear();
+    }
+    let result = match event {
+      Event::Key(key) if key.kind != KeyEventKind::Release => {
+        app.key(key, &mut history)
+      }
       Event::Paste(text) => {
         if let Some(prompt) = &mut app.prompt {
-          prompt.text.extend(
-            text
-              .chars()
-              .filter(|c| !c.is_control())
-              .take(4096usize.saturating_sub(prompt.text.len())),
-          );
+          prompt.insert(&text);
         }
         Ok(())
       }

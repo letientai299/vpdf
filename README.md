@@ -72,26 +72,25 @@ stays open after Enter. `go` focuses it again; `gq` closes a panel. Enter on the
 PDF follows a link under the cursor. Only explicitly followed HTTP/HTTPS links
 launch a browser. Other URI schemes are rejected.
 
-`gx` or `:PdfText` opens text preview; `q` returns to the rendered view. `g?`
-and F1 show the key reference. `Esc` cancels selection, search, and OCR. `q`,
-`:q`, or `:bd` exits. Space remains unmapped.
+`gx` or `:text` opens text preview; `q` returns to the rendered view. `g?` and
+F1 show the key and command reference. `Esc` cancels selection, search, and
+OCR. `q` or `:q` exits. Space remains unmapped.
 
 ## Commands
 
-- `:PdfPage 12` or `:PdfPage iv`: physical page or PDF label.
-- `:PdfReload`: reread the source and invalidate document caches.
-- `:PdfInfo`: document, cache, transfer, and last-tile timing information.
-- `:PdfPassword`: prompt for a password and reopen the document.
-- `:PdfOcr [language]`: recognize the current page with [Tesseract][ocr].
-- `:PdfReadme`: show the key reference.
+`:` opens the command line. Tab and Shift-Tab cycle completions for command
+names and arguments; Up and Down recall earlier commands or searches that start
+with the typed text. Left, Right, `Ctrl-a`, `Ctrl-e`, `Ctrl-w`, `Ctrl-u`, and
+`Ctrl-k` edit the line. A command name can be shortened to any unique prefix,
+such as `:rel` for `:reload`. `:12` jumps to page 12; `:page iv` jumps to a page
+label. `:ocr [language]` recognizes the current page with [Tesseract][ocr] and
+completes installed languages. The key reference lists every command; the
+[command table][commands] is the source.
 
 OCR requires the `tesseract` executable and the requested language data. OCR
 runs in a separate process, is cancellable, and stays in memory. Word boxes
 provide approximate character positions. Existing PDF OCR text is available
 without Tesseract.
-
-Neovim's splits, buffers, tabs, notes, and plugin installation commands belong
-to the editor. This standalone reader has no Neovim integration.
 
 ## Development
 
@@ -137,4 +136,5 @@ carry their upstream licenses in the dependency source distributions.
 [mupdf-license]: https://mupdf.readthedocs.io/en/latest/license.html
 [architecture]: docs/architecture.md
 [keys]: src/help.txt
+[commands]: src/cmdline.rs
 [osc52]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Operating-System-Commands

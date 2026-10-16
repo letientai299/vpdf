@@ -1,10 +1,11 @@
 use crate::Result;
 use crate::app::App;
+use crate::cmdline;
 use crate::document::{Document, Target};
 use crate::find::Search;
 use crate::graphics::Graphics;
 use crate::keys::{Action, Input, PanelKind};
-use crate::prompt::{Prompt, PromptEvent, PromptKind};
+use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crate::render_worker::RenderWorker;
 use crate::text::Position;
 use crossterm::event::KeyEvent;
@@ -50,64 +51,84 @@ impl App {
     Ok(())
   }
 
-  pub fn key(&mut self, key: KeyEvent) -> Result<()> {
-    if let Some(prompt) = &mut self.prompt {
-      match prompt.feed(key) {
-        PromptEvent::Pending => {}
-        PromptEvent::Cancel => {
-          self.prompt = None;
-        }
-        PromptEvent::Submit => {
-          let Some(prompt) = self.prompt.take() else { return Ok(()) };
-          match prompt.kind {
-            PromptKind::Search(backward) => {
-              self.start_search(&prompt.text, backward, false)?;
-            }
-            PromptKind::Command => self.command(&prompt.text)?,
-            PromptKind::Password => self.reload_with(&prompt.text)?,
-          }
+  pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
+    let Some(prompt) = &mut self.prompt else {
+      if let Some(input) = self.keys.feed(key) {
+        self.action(input)?;
+      }
+      return Ok(());
+    };
+    let menu = prompt.menu.is_some();
+    match prompt.feed(key, history) {
+      PromptEvent::Pending | PromptEvent::Edited => {}
+      PromptEvent::Complete => {
+        if prompt.kind == PromptKind::Command {
+          let (start, items) = cmdline::candidates(prompt.before_cursor());
+          prompt.complete(start, items);
         }
       }
-    } else if let Some(input) = self.keys.feed(key) {
-      self.action(input)?;
+      PromptEvent::Cancel => self.prompt = None,
+      PromptEvent::Submit => {
+        let Some(prompt) = self.prompt.take() else { return Ok(()) };
+        history.push(prompt.kind, &prompt.text);
+        self.relayout()?;
+        match prompt.kind {
+          PromptKind::Search(backward) => {
+            self.start_search(&prompt.text, backward, false)?;
+          }
+          PromptKind::Command => self.command(&prompt.text)?,
+          PromptKind::Password => self.reload_with(&prompt.text)?,
+        }
+        return Ok(());
+      }
+    }
+    if menu != self.prompt.as_ref().is_some_and(|p| p.menu.is_some()) {
+      self.relayout()?;
     }
     Ok(())
   }
 
-  pub fn command(&mut self, command: &str) -> Result<()> {
-    let mut words = command.split_whitespace();
-    let name = words.next().unwrap_or("");
-    match name {
-      "q" | "q!" | "quit" | "bd" => self.quit = true,
-      "PdfPage" | "page" => {
-        let label =
-          words.next().ok_or_else(|| anyhow::anyhow!("Page required"))?;
-        let page = self
-          .doc
-          .page_number(label)
-          .ok_or_else(|| anyhow::anyhow!("Page label not found"))?;
-        self
-          .reader
-          .jump(Position { page, ..Position::default() }, &mut self.doc)?;
-        self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
-        self.ensure_cursor()?;
+  pub fn command(&mut self, line: &str) -> Result<()> {
+    let line = line.trim();
+    let (name, argument) = line
+      .split_once(char::is_whitespace)
+      .map_or((line, ""), |(name, rest)| (name, rest.trim()));
+    if name.is_empty() {
+      return Ok(());
+    }
+    if name.chars().all(|ch| ch.is_ascii_digit()) {
+      return self.page(name);
+    }
+    let spec = cmdline::lookup(name)
+      .ok_or_else(|| anyhow::anyhow!("Unknown command: {name}"))?;
+    match spec.name {
+      "page" => self.page(argument)?,
+      "toc" => self.open_panel(PanelKind::Outline)?,
+      "nohlsearch" => self.search.hidden = true,
+      "text" => self.open_panel(PanelKind::Text)?,
+      "info" => self.open_panel(PanelKind::Info)?,
+      "reload" => self.reload_with(&self.password.clone())?,
+      "password" => self.prompt = Some(Prompt::new(PromptKind::Password)),
+      "ocr" => {
+        self.start_ocr(if argument.is_empty() { "eng" } else { argument })?
       }
-      "PdfReload" | "reload" => self.reload_with(&self.password.clone())?,
-      "PdfInfo" | "info" => self.open_panel(PanelKind::Info)?,
-      "PdfText" | "text" => self.open_panel(PanelKind::Text)?,
-      "PdfReadme" | "help" => self.open_panel(PanelKind::Help)?,
-      "PdfPassword" | "password" => {
-        self.prompt = Some(Prompt::new(PromptKind::Password));
-      }
-      "PdfOcr" | "ocr" => self.start_ocr(words.next().unwrap_or("eng"))?,
-      "nohlsearch" | "noh" => self.search.hidden = true,
-      "" => {}
-      _ if name.chars().all(|ch| ch.is_ascii_digit()) => {
-        self.command(&format!("page {name}"))?;
-      }
-      _ => self.reader.message = "Unknown command".into(),
+      "help" => self.open_panel(PanelKind::Help)?,
+      _ => self.quit = true,
     }
     Ok(())
+  }
+
+  fn page(&mut self, label: &str) -> Result<()> {
+    anyhow::ensure!(!label.is_empty(), "Page required");
+    let page = self
+      .doc
+      .page_number(label)
+      .ok_or_else(|| anyhow::anyhow!("Page label not found: {label}"))?;
+    self
+      .reader
+      .jump(Position { page, ..Position::default() }, &mut self.doc)?;
+    self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
+    self.ensure_cursor()
   }
 
   pub fn reload_with(&mut self, password: &str) -> Result<()> {

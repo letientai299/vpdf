@@ -13,7 +13,8 @@ o: swap selection ends
 gv: reselect
 y yy yw ye y$: yank
 viw vaw yiw yaw: word objects
-"a: named register; "+: clipboard
+y to "" "+ "*: system clipboard
+"a: named register (A appends)
 / ?: forward / backward search
 n N: next / previous match
 *: find cursor word
@@ -27,15 +28,10 @@ zf: fit page
 zh zl: horizontal pan
 zr: rotate clockwise
 gx: text preview; q: return
-:PdfPage <label>: jump
-:PdfReload: reload file
-:PdfInfo: cache and latency info
-:PdfOcr [lang]: OCR page
-:PdfPassword: unlock document
-:PdfText: text preview
-:PdfReadme: key reference
 Esc: clear selection / cancel
 Left click / drag: cursor / select
 Double click: select word
 Mouse wheel: scroll
-q or :q: quit
+Tab Shift-Tab: complete : commands
+Up Down: prompt history
+q: quit

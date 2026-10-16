@@ -172,20 +172,37 @@ impl App {
     if let Some(panel) = &self.panel {
       panel.draw(out, self.left, self.screen.rows)?;
     }
-    let page = self.reader.cursor.page.0;
-    let status = format!(
-      " {} / {} [{}]  {:.0}%  {}",
-      page + 1,
-      self.doc.pages.len(),
-      self.doc.pages[page].label,
-      self.layout.zoom * 100.0,
-      self.reader.message
-    );
-    let status = self.prompt.as_ref().map_or(status, |p| p.display());
-    write!(out, "\x1b[7m")?;
-    terminal::line(out, self.screen.rows - 1, &status, self.screen.columns)?;
-    write!(out, "\x1b[0m\x1b[?2026l")?;
+    self.bottom(out)?;
+    write!(out, "\x1b[?2026l")?;
     out.flush()?;
+    Ok(())
+  }
+
+  /// Status line, or the prompt with its menu and cursor.
+  fn bottom(&self, out: &mut impl Write) -> Result<()> {
+    let row = self.screen.rows - 1;
+    let Some(prompt) = &self.prompt else {
+      let page = self.reader.cursor.page.0;
+      let status = format!(
+        " {} / {} [{}]  {:.0}%  {}",
+        page + 1,
+        self.doc.pages.len(),
+        self.doc.pages[page].label,
+        self.layout.zoom * 100.0,
+        self.reader.message
+      );
+      write!(out, "\x1b[7m")?;
+      terminal::line(out, row, &status, self.screen.columns)?;
+      write!(out, "\x1b[0m\x1b[?25l")?;
+      return Ok(());
+    };
+    if let Some(menu) = &prompt.menu {
+      terminal::menu(out, row - 1, menu, self.screen.columns)?;
+    }
+    let (text, column) = prompt.display();
+    terminal::line(out, row, &text, self.screen.columns)?;
+    let column = column.min(usize::from(self.screen.columns) - 1) + 1;
+    write!(out, "\x1b[{};{column}H\x1b[2 q\x1b[?25h", row + 1)?;
     Ok(())
   }
 }

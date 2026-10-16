@@ -137,12 +137,9 @@ impl App {
           destination: Destination::Link(link.target.clone()),
         })
         .collect(),
-      PanelKind::Help => include_str!("help.txt")
-        .lines()
-        .map(|line| Row {
-          label: line.to_owned(),
-          destination: Destination::None,
-        })
+      PanelKind::Help => help()
+        .into_iter()
+        .map(|label| Row { label, destination: Destination::None })
         .collect(),
       PanelKind::Info => self
         .info()
@@ -228,4 +225,13 @@ impl App {
       self.search.hits.len()
     )
   }
+}
+
+fn help() -> Vec<String> {
+  let keys = include_str!("help.txt").lines().map(str::to_owned);
+  let commands = crate::cmdline::COMMANDS.iter().map(|spec| {
+    let usage = if spec.usage.is_empty() { "" } else { " " };
+    format!(":{}{usage}{}: {}", spec.name, spec.usage, spec.help)
+  });
+  keys.chain(commands).collect()
 }

@@ -19,7 +19,7 @@ fn reader_workflows() -> Result<()> {
     origin: (0, 0),
   };
   let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
-  app.command("PdfPage 39")?;
+  app.command("page 39")?;
   assert_eq!(app.reader.cursor.page, PageId(38));
   app.open_panel(PanelKind::Outline)?;
   assert!(!app.panel.as_ref().unwrap().rows.is_empty());
@@ -55,7 +55,7 @@ fn reader_workflows() -> Result<()> {
   assert_eq!(app.reader.cursor.page.0, app.doc.pages.len() - 1);
   assert!(app.follow(&Target::Uri("file:///etc/passwd".into())).is_err());
   app.reader.visual(vpdf::reader::SelectionKind::Character);
-  app.command("PdfReload")?;
+  app.command("reload")?;
   assert!(app.reader.last_selection.is_none());
   let mut output = Vec::new();
   app.raster_updates(&mut output)?;
@@ -101,7 +101,7 @@ fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
     assert_eq!(app.reader.scroll, stopped);
   }
   app.scroll(100.0)?;
-  app.command("PdfPage 39")?;
+  app.command("page 39")?;
   assert!(app.animation.is_none());
   assert_eq!(app.reader.cursor.page, PageId(38));
   Ok(())
@@ -131,7 +131,7 @@ fn links_keep_coordinates_and_text_scrolls_lines() -> Result<()> {
   let expected = app.doc.text(page)?.nearest(page, x, y);
   app.follow(&target)?;
   assert_eq!(app.reader.cursor, expected);
-  app.command("PdfPage 39")?;
+  app.command("page 39")?;
   app.text_mode = true;
   app.scroll(48.0)?;
   assert_eq!(app.reader.cursor.line, 3);

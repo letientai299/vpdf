@@ -8,6 +8,7 @@ pub mod animation;
 pub mod app;
 mod canvas;
 mod clipboard;
+pub mod cmdline;
 mod commands;
 pub mod find;
 pub mod graphics;
