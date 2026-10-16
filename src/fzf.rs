@@ -4,8 +4,9 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// Directories that rarely hold documents and are slow to walk.
-const SKIP: &[&str] = &["node_modules", "target", "__pycache__"];
+/// Version-control metadata and dependency trees, which never hold the
+/// user's documents. Hidden and VCS-ignored folders such as `.ai` stay in.
+const SKIP: &[&str] = &[".git", ".hg", ".svn", ".jj", "node_modules"];
 
 /// Runs `fzf` over PDFs below `root`; `None` when cancelled.
 pub fn pick(root: &Path) -> Result<Option<PathBuf>> {
@@ -50,7 +51,7 @@ fn walk(root: &Path, relative: &Path, out: &mut impl Write) -> Result<()> {
   for entry in entries {
     let name = entry.file_name();
     let text = name.to_string_lossy();
-    if text.starts_with('.') || SKIP.contains(&text.as_ref()) {
+    if SKIP.contains(&text.as_ref()) {
       continue;
     }
     let path = relative.join(&name);
@@ -72,16 +73,16 @@ mod tests {
   use super::*;
 
   #[test]
-  fn walk_lists_visible_pdfs_only() -> Result<()> {
+  fn walk_includes_hidden_folders_but_not_vcs() -> Result<()> {
     let root = tempfile::tempdir()?;
-    for path in ["a.pdf", "b.txt", "docs/c.PDF", ".git/d.pdf", "target/e.pdf"] {
+    for path in ["a.pdf", "b.txt", "docs/c.PDF", ".git/d.pdf", ".ai/e.pdf"] {
       let path = root.path().join(path);
       std::fs::create_dir_all(path.parent().unwrap_or(root.path()))?;
       std::fs::write(path, "")?;
     }
     let mut out = Vec::new();
     walk(root.path(), Path::new(""), &mut out)?;
-    assert_eq!(String::from_utf8(out)?, "a.pdf\ndocs/c.PDF\n");
+    assert_eq!(String::from_utf8(out)?, ".ai/e.pdf\na.pdf\ndocs/c.PDF\n");
     Ok(())
   }
 }
