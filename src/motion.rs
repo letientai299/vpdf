@@ -11,6 +11,8 @@ pub enum Motion {
   Word,
   BackWord,
   EndWord,
+  NextParagraph,
+  PreviousParagraph,
   LineStart,
   FirstNonblank,
   LineEnd,
@@ -28,7 +30,7 @@ impl Reader {
     explicit: bool,
     source: &mut impl TextSource,
   ) -> Result<()> {
-    let start = self.cursor;
+    let mut start = self.cursor;
     let count =
       count.saturating_mul(self.operator.map_or(1, |o| o.count)).min(10_000);
     if !matches!(motion, Motion::Down | Motion::Up) {
@@ -38,16 +40,33 @@ impl Reader {
       motion,
       Motion::First | Motion::Last | Motion::NextPage | Motion::PreviousPage
     );
+    let mut paragraph_boundary = false;
     if boundary {
       self.boundary(motion, count, explicit, source)?;
     } else {
       for _ in 0..count {
-        self.small_motion(motion, source)?;
+        if matches!(motion, Motion::NextParagraph | Motion::PreviousParagraph) {
+          paragraph_boundary =
+            self.paragraph(motion == Motion::NextParagraph, source)?;
+        } else {
+          self.small_motion(motion, source)?;
+        }
       }
     }
     if let Some(op) = self.operator.take() {
-      if motion == Motion::Word && self.cursor > start {
+      if (motion == Motion::Word && self.cursor > start)
+        || (motion == Motion::NextParagraph && paragraph_boundary)
+      {
         self.step(-1, false, source)?;
+      }
+      if motion == Motion::PreviousParagraph {
+        let destination = self.cursor;
+        self.cursor = start;
+        if !self.step(-1, false, source)? || destination > self.cursor {
+          self.cursor = start;
+          return Ok(());
+        }
+        start = destination;
       }
       let linewise = boundary || matches!(motion, Motion::Down | Motion::Up);
       self.yank_range(start, self.cursor, linewise, op.register, source)?;

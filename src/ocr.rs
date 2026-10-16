@@ -138,6 +138,7 @@ pub fn parse_tsv(tsv: &str, bounds: Bounds, scale: f32) -> Result<Text> {
   anyhow::ensure!(scale.is_finite() && scale > 0.0, "Invalid OCR scale");
   let mut text = Text::default();
   let mut previous = String::new();
+  let mut previous_paragraph = String::new();
   let mut count = 0;
   for record in tsv.lines().skip(1) {
     let fields: Vec<_> = record.splitn(12, '\t').collect();
@@ -146,7 +147,12 @@ pub fn parse_tsv(tsv: &str, bounds: Bounds, scale: f32) -> Result<Text> {
     }
     let id = fields[1..5].join(":");
     if id != previous {
-      text.lines.push(Line::default());
+      let paragraph = fields[1..4].join(":");
+      text.lines.push(Line {
+        paragraph: paragraph != previous_paragraph,
+        ..Line::default()
+      });
+      previous_paragraph = paragraph;
       previous = id;
     }
     let x = fields[6].parse::<f32>()? / scale + bounds.x0;

@@ -16,6 +16,7 @@ pub mod layout;
 pub mod motion;
 pub mod ocr;
 pub mod panel;
+mod paragraph;
 pub mod prompt;
 pub mod reader;
 pub mod render_worker;

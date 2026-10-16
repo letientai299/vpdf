@@ -1,5 +1,6 @@
 h j k l / arrows: glyph motions
 w b e: word motions
+{ }: previous / next paragraph
 0 ^ $: line motions
 [count]gg/G: page jump
 ]p [p: next / previous page

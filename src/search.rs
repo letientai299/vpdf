@@ -102,6 +102,7 @@ mod tests {
       lines: lines
         .iter()
         .map(|s| Line {
+          paragraph: true,
           glyphs: s
             .chars()
             .map(|ch| Glyph { ch, bounds: Bounds::default() })

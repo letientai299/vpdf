@@ -50,6 +50,7 @@ pub struct Glyph {
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Line {
+  pub paragraph: bool,
   pub glyphs: Vec<Glyph>,
 }
 

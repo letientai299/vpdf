@@ -39,7 +39,8 @@ opens PDF files for reading and does not change annotations or form values.
 
 Counts apply to motions: `10j`, `12gg`, `12G`, `2yw`. `h j k l` and arrows move
 through extracted glyphs. `w b e`, `0 ^ $`, `gg G`, and `]p [p` follow the
-plugin's word, line, document, and page motions.
+plugin's word, line, document, and page motions. `{` and `}` move between
+extracted text blocks as paragraphs; `y}` excludes the next paragraph start.
 
 `Ctrl-d/u` scroll half a screen; `Ctrl-f/b` and PageDown/PageUp scroll a full
 screen. `Ctrl-e/y` and the wheel scroll rows. `zt zz zb` place the cursor at the

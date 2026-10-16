@@ -24,6 +24,7 @@ fn pages() -> Pages {
           lines: lines
             .iter()
             .map(|line| Line {
+              paragraph: true,
               glyphs: line
                 .chars()
                 .map(|ch| Glyph { ch, bounds: Bounds::default() })
@@ -138,5 +139,32 @@ fn reverse_line_selection_has_newline() -> Result<()> {
     reader.pending_yank.take().unwrap().text,
     "one two\ncafé Straße\n"
   );
+  Ok(())
+}
+
+#[test]
+fn paragraphs_skip_blank_pages_and_yank_exclusively() -> Result<()> {
+  let mut source = pages();
+  let mut reader = Reader::default();
+  reader.motion(Motion::NextParagraph, 1, false, &mut source)?;
+  assert_eq!(reader.cursor.line, 1);
+  reader.motion(Motion::NextParagraph, 1, false, &mut source)?;
+  assert_eq!(reader.cursor.page, PageId(2));
+  reader.motion(Motion::PreviousParagraph, 2, false, &mut source)?;
+  assert_eq!(reader.cursor, Position::default());
+  reader.yank(1, 'a', &mut source)?;
+  reader.motion(Motion::NextParagraph, 1, false, &mut source)?;
+  assert_eq!(reader.pending_yank.take().unwrap().text, "one two");
+  reader.cursor.line = 1;
+  reader.cursor.glyph = 2;
+  reader.yank(1, 'a', &mut source)?;
+  reader.motion(Motion::PreviousParagraph, 1, false, &mut source)?;
+  assert_eq!(reader.pending_yank.take().unwrap().text, "ca");
+  assert_eq!(reader.cursor.glyph, 0);
+  reader.motion(Motion::Last, 1, false, &mut source)?;
+  reader.cursor.glyph = 0;
+  reader.yank(1, 'a', &mut source)?;
+  reader.motion(Motion::NextParagraph, 1, false, &mut source)?;
+  assert_eq!(reader.pending_yank.take().unwrap().text, "last page");
   Ok(())
 }

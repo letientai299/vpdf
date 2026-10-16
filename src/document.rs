@@ -179,6 +179,7 @@ pub fn extract(page: &mupdf::Page) -> Result<Text> {
   let mut text = Text::default();
   let mut count = 0;
   for block in raw.blocks() {
+    let mut paragraph = true;
     for line in block.lines() {
       let mut row = Line::default();
       for glyph in line.chars() {
@@ -201,6 +202,8 @@ pub fn extract(page: &mupdf::Page) -> Result<Text> {
         count += 1;
       }
       if row.glyphs.iter().any(|g| !g.ch.is_whitespace()) {
+        row.paragraph = paragraph;
+        paragraph = false;
         text.lines.push(row);
       }
       if text.truncated {

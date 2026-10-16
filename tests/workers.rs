@@ -15,6 +15,7 @@ fn ocr_geometry_preserves_unicode() -> Result<()> {
   );
   let text = parse_tsv(tsv, Bounds::default(), 2.0)?;
   assert_eq!(text.plain(), "café Straße");
+  assert!(text.lines[0].paragraph);
   assert_eq!(text.lines[0].glyphs[0].bounds.x0, 5.0);
   assert_eq!(text.lines[0].glyphs[0].bounds.y0, 10.0);
   assert!(parse_tsv(tsv, Bounds::default(), 0.0).is_err());

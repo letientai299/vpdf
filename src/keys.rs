@@ -142,6 +142,8 @@ pub fn binding(key: &str) -> Option<Action> {
     "w" => Motion(M::Word),
     "b" => Motion(M::BackWord),
     "e" => Motion(M::EndWord),
+    "{" => Motion(M::PreviousParagraph),
+    "}" => Motion(M::NextParagraph),
     "0" => Motion(M::LineStart),
     "^" => Motion(M::FirstNonblank),
     "$" => Motion(M::LineEnd),
