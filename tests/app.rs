@@ -170,3 +170,33 @@ fn changed_file_reloads_after_settling() -> Result<()> {
   assert!(!app.watch()?);
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn link_hints_follow_typed_labels() -> Result<()> {
+  use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 120,
+    rows: 50,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
+  app.command("page 2")?;
+  app.start_hints(false)?;
+  let hints = app.hints.as_ref().unwrap();
+  assert!(hints.items.len() > 3);
+  let label = hints.items[0].label.clone();
+  for ch in label.chars() {
+    app.hint_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))?;
+  }
+  assert!(app.hints.is_none());
+  assert!(app.reader.cursor.page.0 > 1, "citation jumps to the references");
+  app.start_hints(false)?;
+  let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+  app.hint_key(escape)?;
+  assert!(app.hints.is_none());
+  Ok(())
+}

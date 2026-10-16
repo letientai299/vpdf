@@ -264,12 +264,14 @@ fn marked(
 }
 
 impl App {
+  /// Finds the cursor's section and selects it in an idle outline.
   pub fn track_outline(&mut self) {
+    self.current_section = self.section();
     let Some(panel) = &mut self.panel else { return };
     if panel.kind != PanelKind::Outline || panel.focused {
       return;
     }
-    if let Some(index) = section(&self.doc.outline, self.reader.cursor.page) {
+    if let Some(index) = self.current_section {
       panel.selected = index;
     }
   }
@@ -492,9 +494,26 @@ pub fn recent_rows(entries: &[Entry]) -> Vec<Row> {
 }
 
 /// Last outline entry starting at or before `page`.
-pub fn section(outline: &[Heading], page: PageId) -> Option<usize> {
-  outline.iter().rposition(|heading| {
-    matches!(heading.target,
-      Target::Page(start) | Target::Point { page: start, .. } if start <= page)
+pub fn section(outline: &[Heading], page: PageId, y: f32) -> Option<usize> {
+  outline.iter().rposition(|heading| match heading.target {
+    Target::Page(start) => start <= page,
+    Target::Point { page: start, y: top, .. } => {
+      start < page || start == page && top <= y
+    }
+    Target::Uri(_) => false,
   })
+}
+
+impl App {
+  /// Outline entry containing the cursor.
+  pub fn section(&mut self) -> Option<usize> {
+    let cursor = self.reader.cursor;
+    let y = self
+      .doc
+      .text(cursor.page)
+      .ok()
+      .and_then(|text| text.glyph(cursor).map(|g| g.bounds.y1))
+      .unwrap_or(f32::MAX);
+    section(&self.doc.outline, cursor.page, y)
+  }
 }

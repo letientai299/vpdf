@@ -39,6 +39,7 @@ n N: next / previous match
 # Panels
 go: table of contents
 gs: search results
+f: link hints; F copies URLs
 gl: links on this page
 gr: recent documents
 Enter: follow link or row

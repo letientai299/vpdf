@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 impl App {
   pub fn resize(&mut self) -> Result<()> {
+    self.hints = None;
     self.screen = terminal::size().unwrap_or(self.screen);
     self.relayout()
   }
@@ -146,6 +147,7 @@ impl App {
   }
 
   pub fn mouse(&mut self, mouse: event::MouseEvent) -> Result<()> {
+    self.hints = None;
     if mouse.column < self.left && mouse.row < self.screen.rows - 1 {
       return self.panel_mouse(mouse);
     }

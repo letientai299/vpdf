@@ -144,7 +144,7 @@ impl Graphics {
     placement(
       out,
       &(format!(
-        "a=p,i={id},p=1,q=2,C=1,z=-1,x={},y={},w={},h={}",
+        "a=p,i={id},p=1,q=2,C=1,z=-2,x={},y={},w={},h={}",
         (clip.x0 - x) as u32,
         (clip.y0 - y) as u32,
         clip.width() as u32,
@@ -157,10 +157,36 @@ impl Graphics {
     Ok(true)
   }
 
+  /// Tints `rect` above the page and its text.
   pub fn highlight(
     &mut self,
     rect: Bounds,
     color: [u8; 4],
+    screen: Screen,
+    left: u16,
+    out: &mut impl Write,
+  ) -> Result<()> {
+    self.overlay(rect, color, 1, screen, left, out)
+  }
+
+  /// Fills `rect` above the page but below terminal text, as a label
+  /// background.
+  pub fn backdrop(
+    &mut self,
+    rect: Bounds,
+    color: [u8; 4],
+    screen: Screen,
+    left: u16,
+    out: &mut impl Write,
+  ) -> Result<()> {
+    self.overlay(rect, color, -1, screen, left, out)
+  }
+
+  fn overlay(
+    &mut self,
+    rect: Bounds,
+    color: [u8; 4],
+    z: i32,
     screen: Screen,
     left: u16,
     out: &mut impl Write,
@@ -177,7 +203,7 @@ impl Graphics {
     transmit(out, id, width, height, 32, &encode(&pixels)?)?;
     placement(
       out,
-      &(format!("a=p,i={id},q=2,C=1,z=1") + &offsets(rect, screen)),
+      &(format!("a=p,i={id},q=2,C=1,z={z}") + &offsets(rect, screen)),
       rect,
       left,
       screen,

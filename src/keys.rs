@@ -49,6 +49,8 @@ pub enum Action {
   History(bool),
   Command,
   Tab(bool),
+  /// Link hints; `true` copies URIs instead of opening them.
+  Hints(bool),
   Mark(char),
   /// Mark name and whether to keep the glyph column.
   GoMark(char, bool),
@@ -238,6 +240,8 @@ pub fn binding(key: &str) -> Option<Action> {
     "gx" => Panel(PanelKind::Text),
     "g?" => Panel(PanelKind::Help),
     "gq" => ClosePanel,
+    "f" => Hints(false),
+    "F" => Hints(true),
     "gt" => Tab(true),
     "gT" => Tab(false),
     "Enter" => Follow,

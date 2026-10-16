@@ -12,6 +12,7 @@ pub mod cmdline;
 mod commands;
 pub mod find;
 pub mod graphics;
+pub mod hints;
 pub mod home;
 mod interaction;
 pub mod keys;

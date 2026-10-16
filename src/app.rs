@@ -64,11 +64,14 @@ pub struct App {
   pub error: Option<String>,
   pub render_ms: f64,
   pub search: crate::find::Search,
+  /// Outline entry containing the cursor, refreshed each frame.
+  pub current_section: Option<usize>,
   /// Lowercase marks of this document.
   pub marks: std::collections::BTreeMap<char, Position>,
   /// Where an open search prompt started.
   pub search_origin: Option<crate::reader::Location>,
   pub prompt: Option<crate::prompt::Prompt>,
+  pub hints: Option<crate::hints::Hints>,
   pub panel: Option<crate::panel::Panel>,
   pub preview: Option<bool>,
   pub ocr: Option<crate::ocr::OcrJob>,
@@ -119,9 +122,11 @@ impl App {
       error: None,
       render_ms: 0.0,
       search: crate::find::Search::default(),
+      current_section: None,
       marks: std::collections::BTreeMap::new(),
       search_origin: None,
       prompt: None,
+      hints: None,
       panel: None,
       preview: None,
       ocr: None,

@@ -14,6 +14,9 @@ impl App {
     if let Some(panel) = self.panel.as_ref().filter(|panel| panel.focused) {
       return (panel.kind.title(), Color::Cyan);
     }
+    if self.hints.is_some() {
+      return ("HINT", Color::Yellow);
+    }
     if self.preview.is_some() {
       return ("TEXT", Color::Green);
     }
@@ -125,8 +128,7 @@ impl App {
     };
     let (tabs, width) = self.tabs(room);
     let section =
-      crate::panel::section(&self.doc.outline, self.reader.cursor.page)
-        .map(|index| self.doc.outline[index].title.trim());
+      self.current_section.map(|index| self.doc.outline[index].title.trim());
     let (message, style) = match (&self.error, section) {
       (Some(error), _) => (error.as_str(), theme::ERROR),
       (None, Some(title)) if self.reader.message.is_empty() => {

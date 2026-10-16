@@ -53,6 +53,38 @@ impl App {
     Ok(text.clamp(position))
   }
 
+  /// Screen cell of `position` in the text view, when shown.
+  pub fn text_cell(
+    &mut self,
+    position: Position,
+  ) -> Result<Option<(u16, u16)>> {
+    let cursor = self.reader.cursor;
+    if position.page != cursor.page {
+      return Ok(None);
+    }
+    let text = self.doc.text(cursor.page)?;
+    let height = self.screen.rows.saturating_sub(1) as usize;
+    let start = cursor.line.saturating_sub(height / 2);
+    let columns = self.screen.columns.saturating_sub(self.left) as usize;
+    let horizontal = cursor.glyph.saturating_sub(columns / 2);
+    let Some(line) = text.lines.get(position.line) else { return Ok(None) };
+    if position.line < start || position.line >= start + height {
+      return Ok(None);
+    }
+    let width: usize = line
+      .glyphs
+      .iter()
+      .take(position.glyph)
+      .skip(horizontal)
+      .map(|glyph| glyph.ch.width().unwrap_or(0))
+      .sum();
+    if position.glyph < horizontal || width >= columns {
+      return Ok(None);
+    }
+    let row = u16::try_from(position.line - start)?;
+    Ok(Some((self.left + u16::try_from(width)?, row)))
+  }
+
   fn text_style(&self, position: Position) -> &'static str {
     if position == self.reader.cursor {
       return theme::TEXT_CURSOR;

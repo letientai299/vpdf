@@ -38,6 +38,7 @@ impl App {
       Action::Follow => self.follow_cursor()?,
       Action::Command => self.prompt = Some(Prompt::new(PromptKind::Command)),
       Action::Mark(name) => self.set_mark(name),
+      Action::Hints(copy) => self.start_hints(copy)?,
       Action::GoMark(name, exact) => self.go_mark(name, exact)?,
       Action::Tab(forward) => {
         self.request = Some(Request::Tab(match (forward, input.explicit) {
@@ -56,6 +57,9 @@ impl App {
   }
 
   pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
+    if self.hints.is_some() {
+      return self.hint_key(key);
+    }
     let Some(prompt) = &mut self.prompt else {
       if let Some(input) = self.keys.feed(key) {
         self.action(input)?;
