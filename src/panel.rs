@@ -455,21 +455,58 @@ impl App {
     self.ensure_cursor()
   }
 
+  /// PDF metadata, then document facts, then reader statistics.
   pub fn info(&self) -> String {
-    format!(
-      "{}\nPages: {}\nText cache: {} KiB\nImages: {} KiB\n\
-      Transferred: {} KiB\nLast tile: {:.3} ms\nSearch hits: {}\n\
-      Cell: {}x{} px",
-      self.path.display(),
-      self.doc.pages.len(),
-      self.doc.cache_bytes() / 1024,
-      self.graphics.bytes() / 1024,
-      self.graphics.uploaded / 1024,
-      self.render_ms,
-      self.search.hits.len(),
-      self.screen.cell_width,
-      self.screen.cell_height
-    )
+    let mut lines = vec!["# Metadata".to_owned()];
+    lines.extend(
+      self.doc.metadata().into_iter().map(|(k, v)| format!("{k}: {v}")),
+    );
+    let page = &self.doc.pages[self.reader.cursor.page.0];
+    let (width, height) = (page.bounds.width(), page.bounds.height());
+    let bytes = std::fs::metadata(&self.path).map_or(0, |m| m.len());
+    let outline = if self.doc.inferred { " (inferred)" } else { "" };
+    lines.extend([
+      String::new(),
+      "# Document".into(),
+      format!("Path: {}", self.path.display()),
+      format!("Size: {:.1} MiB", bytes as f64 / 1_048_576.0),
+      format!("Pages: {}", self.doc.pages.len()),
+      format!(
+        "Page {}: {width:.0} x {height:.0} pt, {:.0} x {:.0} mm",
+        page.label,
+        width / 72.0 * 25.4,
+        height / 72.0 * 25.4
+      ),
+      format!("Outline: {} entries{outline}", self.doc.outline.len()),
+      format!("Marks: {}", self.marks.len()),
+      String::new(),
+      "# Reader".into(),
+      format!("Zoom: {:.0}%", self.layout.zoom * 100.0),
+      format!("Rotation: {}°", self.layout.rotation),
+      format!(
+        "Margins: {}",
+        if self.layout.crop.is_none() { "shown" } else { "cropped" }
+      ),
+      format!(
+        "Search: {} hits for {:?}",
+        self.search.hits.len(),
+        self.search.query
+      ),
+      format!("Text cache: {} KiB", self.doc.cache_bytes() / 1024),
+      format!("Images: {} KiB resident", self.graphics.bytes() / 1024),
+      format!("Transferred: {} KiB", self.graphics.uploaded / 1024),
+      format!("Last tile: {:.3} ms", self.render_ms),
+      format!(
+        "Cell: {}x{} px",
+        self.screen.cell_width, self.screen.cell_height
+      ),
+      format!("Screen: {}x{} cells", self.screen.columns, self.screen.rows),
+      format!(
+        "Mode: {}",
+        if self.text_mode { "text" } else { "Kitty graphics" }
+      ),
+    ]);
+    lines.join("\n")
   }
 }
 

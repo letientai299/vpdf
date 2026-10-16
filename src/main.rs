@@ -84,10 +84,13 @@ fn run(args: Args) -> Result<()> {
     }
     Command::Info { file } => {
       let doc = Document::open(&file, &password)?;
+      let metadata: serde_json::Map<_, _> =
+        doc.metadata().into_iter().map(|(k, v)| (k, v.into())).collect();
       writeln!(
         out,
         "{}",
         serde_json::to_string_pretty(&serde_json::json!({
+          "metadata": metadata,
           "pages": doc.pages, "outline": doc.outline,
         }))?
       )?;

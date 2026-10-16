@@ -167,6 +167,61 @@ impl Document {
     )
   }
 
+  /// Format, encryption, and every Info dictionary entry, standard keys
+  /// first; dates read as `YYYY-MM-DD HH:MM:SS`.
+  pub fn metadata(&self) -> Vec<(String, String)> {
+    use mupdf::MetadataName as Name;
+    const STANDARD: [&str; 8] = [
+      "Title",
+      "Author",
+      "Subject",
+      "Keywords",
+      "Creator",
+      "Producer",
+      "CreationDate",
+      "ModDate",
+    ];
+    let mut fields = Vec::new();
+    for (key, name) in
+      [("Format", Name::Format), ("Encryption", Name::Encryption)]
+    {
+      if let Ok(value) = self.native.metadata(name) {
+        fields.push((key.to_owned(), value));
+      }
+    }
+    let mut info = Vec::new();
+    let dictionary = self
+      .native
+      .trailer()
+      .ok()
+      .and_then(|t| t.get_dict("Info").ok().flatten());
+    if let Some(dictionary) =
+      dictionary.and_then(|d| d.resolve().ok().flatten())
+    {
+      for index in 0..dictionary.dict_len().unwrap_or(0) as i32 {
+        let key = dictionary.get_dict_key(index).ok().flatten();
+        let value = dictionary.get_dict_val(index).ok().flatten();
+        let (Some(key), Some(value)) = (key, value) else { continue };
+        let key = String::from_utf8_lossy(&key.as_name().unwrap_or_default())
+          .into_owned();
+        let value = value.resolve().ok().flatten().unwrap_or(value);
+        let Ok(text) = value.as_string() else { continue };
+        let text = text.trim();
+        if text.is_empty() {
+          continue;
+        }
+        let text =
+          if key.ends_with("Date") { date(text) } else { text.to_owned() };
+        info.push((key, text));
+      }
+    }
+    info.sort_by_key(|(key, _)| {
+      STANDARD.iter().position(|k| k == key).unwrap_or(STANDARD.len())
+    });
+    fields.extend(info);
+    fields
+  }
+
   /// Annotations other than links, popups, and form widgets.
   pub fn annotations(&self, page: PageId) -> Result<Vec<Annotation>> {
     use mupdf::pdf::PdfAnnotationType as Kind;
@@ -213,6 +268,27 @@ impl Document {
   pub fn cache_bytes(&self) -> usize {
     self.texts.used() + self.ocr.used()
   }
+}
+
+/// `D:20230802120000+02'00'` as `2023-08-02 12:00:00 +02:00`.
+fn date(raw: &str) -> String {
+  let digits = raw.trim_start_matches("D:");
+  let part = |range: std::ops::Range<usize>| {
+    digits.get(range).filter(|s| s.chars().all(|c| c.is_ascii_digit()))
+  };
+  let (Some(year), Some(month), Some(day)) =
+    (part(0..4), part(4..6), part(6..8))
+  else {
+    return raw.to_owned();
+  };
+  let time = match (part(8..10), part(10..12), part(12..14)) {
+    (Some(h), Some(m), Some(s)) => format!(" {h}:{m}:{s}"),
+    _ => String::new(),
+  };
+  let zone = digits.get(14..).unwrap_or("").replace('\'', ":");
+  let zone = zone.trim_end_matches(':');
+  let zone = if zone.is_empty() { String::new() } else { format!(" {zone}") };
+  format!("{year}-{month}-{day}{time}{zone}")
 }
 
 fn quad_bounds(quad: &mupdf::Quad) -> Bounds {
@@ -280,4 +356,22 @@ pub fn extract(page: &mupdf::Page) -> Result<Text> {
     }
   }
   Ok(text)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn dates_read_plainly() {
+    let cases = [
+      ("D:20230802120000+02'00'", "2023-08-02 12:00:00 +02:00"),
+      ("D:20230802000000Z", "2023-08-02 00:00:00 Z"),
+      ("D:20230802", "2023-08-02"),
+      ("yesterday", "yesterday"),
+    ];
+    for (raw, expected) in cases {
+      assert_eq!(date(raw), expected, "{raw}");
+    }
+  }
 }
