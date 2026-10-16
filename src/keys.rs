@@ -1,4 +1,5 @@
 use crate::motion::Motion;
+use crate::motion::Motion as M;
 use crate::reader::SelectionKind;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -136,6 +137,14 @@ impl Keys {
     None
   }
 
+  /// The prefix waiting for its next key, or `"` choosing a register.
+  pub fn awaiting(&self) -> Option<&str> {
+    if self.choosing_register {
+      return Some("\"");
+    }
+    (!self.prefix.is_empty()).then_some(self.prefix.as_str())
+  }
+
   /// Typed count, register, and prefix, like Vim's showcmd.
   pub fn pending(&self) -> String {
     let mut text = String::new();
@@ -208,77 +217,90 @@ fn mark(prefix: &str, token: &str) -> Option<Action> {
   }
 }
 
+/// Keys, action, and description, also shown as prefix-key clues.
+const BINDINGS: &[(&str, Action, &str)] = &[
+  ("h", Action::Motion(M::Left), "left"),
+  ("l", Action::Motion(M::Right), "right"),
+  ("j", Action::Motion(M::Down), "down"),
+  ("k", Action::Motion(M::Up), "up"),
+  ("w", Action::Motion(M::Word), "next word"),
+  ("b", Action::Motion(M::BackWord), "previous word"),
+  ("e", Action::Motion(M::EndWord), "word end"),
+  ("{", Action::Motion(M::PreviousParagraph), "previous paragraph"),
+  ("}", Action::Motion(M::NextParagraph), "next paragraph"),
+  ("0", Action::Motion(M::LineStart), "line start"),
+  ("^", Action::Motion(M::FirstNonblank), "first non-blank"),
+  ("$", Action::Motion(M::LineEnd), "line end"),
+  ("gg", Action::Motion(M::First), "first page, or [count] page"),
+  ("G", Action::Motion(M::Last), "last page, or [count] page"),
+  (" ", Action::Motion(M::NextPage), "next page"),
+  ("S-Space", Action::Motion(M::PreviousPage), "previous page"),
+  ("BS", Action::Motion(M::PreviousPage), "previous page"),
+  ("y", Action::Yank, "yank"),
+  ("Y", Action::YankLine, "yank line"),
+  ("iw", Action::Object(false), "inner word"),
+  ("aw", Action::Object(true), "a word"),
+  ("v", Action::Visual(SelectionKind::Character), "select characters"),
+  ("V", Action::Visual(SelectionKind::Line), "select lines"),
+  ("o", Action::Swap, "other selection end"),
+  ("gv", Action::Reselect, "reselect"),
+  ("q", Action::Quit, "quit"),
+  ("C-c", Action::Quit, "quit"),
+  ("/", Action::Search(false), "search forward"),
+  ("?", Action::Search(true), "search backward"),
+  ("*", Action::WordSearch, "search cursor word"),
+  ("n", Action::Result(false), "next match"),
+  ("N", Action::Result(true), "previous match"),
+  ("go", Action::Panel(PanelKind::Outline), "table of contents"),
+  ("gs", Action::Panel(PanelKind::Results), "search results"),
+  ("gl", Action::Panel(PanelKind::Links), "links on this page"),
+  ("gr", Action::Panel(PanelKind::Recent), "recent documents"),
+  ("ga", Action::Panel(PanelKind::Annotations), "annotations"),
+  ("gx", Action::Panel(PanelKind::Text), "text preview"),
+  ("g?", Action::Panel(PanelKind::Help), "key reference"),
+  ("gq", Action::ClosePanel, "close panel"),
+  ("K", Action::Peek, "preview link target"),
+  ("gp", Action::Overview, "page thumbnails"),
+  ("f", Action::Hints(false), "link hints"),
+  ("F", Action::Hints(true), "link hints, copy URLs"),
+  ("gt", Action::Tab(true), "next tab, or [count] tab"),
+  ("gT", Action::Tab(false), "previous tab"),
+  ("Enter", Action::Follow, "follow link"),
+  ("C-o", Action::History(false), "jump back"),
+  ("C-i", Action::History(true), "jump forward"),
+  (":", Action::Command, "command line"),
+  ("C-d", Action::Scroll(0.5), "half page down"),
+  ("C-u", Action::Scroll(-0.5), "half page up"),
+  ("C-f", Action::Scroll(1.0), "page down"),
+  ("C-b", Action::Scroll(-1.0), "page up"),
+  ("C-e", Action::Rows(1), "scroll down"),
+  ("C-y", Action::Rows(-1), "scroll up"),
+  ("zt", Action::Align(0.0), "cursor to top"),
+  ("zz", Action::Align(0.5), "cursor to middle"),
+  ("zb", Action::Align(1.0), "cursor to bottom"),
+  ("+", Action::Zoom(1), "zoom in"),
+  ("-", Action::Zoom(-1), "zoom out"),
+  ("=", Action::Fit, "fit width"),
+  ("zf", Action::FitPage, "fit page"),
+  ("zh", Action::Pan(-1), "pan left"),
+  ("zl", Action::Pan(1), "pan right"),
+  ("zr", Action::Rotate, "rotate clockwise"),
+  ("zc", Action::Crop, "crop margins"),
+];
+
 pub fn binding(key: &str) -> Option<Action> {
-  use crate::motion::Motion as M;
-  use Action::*;
-  Some(match key {
-    "h" => Motion(M::Left),
-    "l" => Motion(M::Right),
-    "j" => Motion(M::Down),
-    "k" => Motion(M::Up),
-    "w" => Motion(M::Word),
-    "b" => Motion(M::BackWord),
-    "e" => Motion(M::EndWord),
-    "{" => Motion(M::PreviousParagraph),
-    "}" => Motion(M::NextParagraph),
-    "0" => Motion(M::LineStart),
-    "^" => Motion(M::FirstNonblank),
-    "$" => Motion(M::LineEnd),
-    "gg" => Motion(M::First),
-    "G" => Motion(M::Last),
-    " " => Motion(M::NextPage),
-    "S-Space" | "BS" => Motion(M::PreviousPage),
-    "y" => Yank,
-    "Y" => YankLine,
-    "iw" => Object(false),
-    "aw" => Object(true),
-    "v" => Visual(SelectionKind::Character),
-    "V" => Visual(SelectionKind::Line),
-    "o" => Swap,
-    "gv" => Reselect,
-    "q" | "C-c" => Quit,
-    "/" => Search(false),
-    "?" => Search(true),
-    "*" => WordSearch,
-    "n" => Result(false),
-    "N" => Result(true),
-    "go" => Panel(PanelKind::Outline),
-    "gs" => Panel(PanelKind::Results),
-    "gl" => Panel(PanelKind::Links),
-    "gr" => Panel(PanelKind::Recent),
-    "ga" => Panel(PanelKind::Annotations),
-    "gx" => Panel(PanelKind::Text),
-    "g?" => Panel(PanelKind::Help),
-    "gq" => ClosePanel,
-    "K" => Peek,
-    "gp" => Overview,
-    "f" => Hints(false),
-    "F" => Hints(true),
-    "gt" => Tab(true),
-    "gT" => Tab(false),
-    "Enter" => Follow,
-    "C-o" => History(false),
-    "C-i" => History(true),
-    ":" => Command,
-    "C-d" => Scroll(0.5),
-    "C-u" => Scroll(-0.5),
-    "C-f" => Scroll(1.0),
-    "C-b" => Scroll(-1.0),
-    "C-e" => Rows(1),
-    "C-y" => Rows(-1),
-    "zt" => Align(0.0),
-    "zz" => Align(0.5),
-    "zb" => Align(1.0),
-    "+" => Zoom(1),
-    "-" => Zoom(-1),
-    "=" => Fit,
-    "zf" => FitPage,
-    "zh" => Pan(-1),
-    "zl" => Pan(1),
-    "zr" => Rotate,
-    "zc" => Crop,
-    _ => return None,
-  })
+  BINDINGS.iter().find(|(keys, ..)| *keys == key).map(|(_, action, _)| *action)
+}
+
+/// Keys that may follow `prefix`, with descriptions, like mini.clue.
+pub fn clues(prefix: &str) -> Vec<(String, &'static str)> {
+  let mut clues: Vec<_> = BINDINGS
+    .iter()
+    .filter(|(keys, ..)| keys.len() > prefix.len() && keys.starts_with(prefix))
+    .map(|(keys, _, about)| (keys[prefix.len()..].to_owned(), *about))
+    .collect();
+  clues.sort_by(|a, b| a.0.cmp(&b.0));
+  clues
 }
 
 #[cfg(test)]

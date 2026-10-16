@@ -5,6 +5,7 @@
 //! Ctrl-arrows that stop at punctuation, history search on Ctrl-r, and
 //! `edit-command-line` on Ctrl-x Ctrl-e.
 
+use crate::grid::{self, Grid};
 use crate::line::{self, NARROW, SHELL};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use unicode_width::UnicodeWidthStr;
@@ -62,23 +63,10 @@ pub struct Menu {
   original: String,
 }
 
-/// Where completion items land in a zsh-style list.
-pub struct MenuLayout {
-  pub labels: Vec<String>,
-  /// Cell width per item, including padding.
-  pub width: usize,
-  pub columns: usize,
-  pub rows: usize,
-  /// First shown row and how many are shown.
-  pub first: usize,
-  pub visible: usize,
-}
-
 impl Menu {
-  /// Columns fill top to bottom; at most `limit` rows show, scrolled so
-  /// the selection stays visible. Paths show their last component.
-  pub fn layout(&self, columns: usize, limit: usize) -> MenuLayout {
-    let labels: Vec<_> = self
+  /// Paths show their last component.
+  pub fn layout(&self, columns: usize, limit: usize) -> Grid {
+    let labels = self
       .items
       .iter()
       .map(|item| {
@@ -86,14 +74,7 @@ impl Menu {
         item[start..].to_owned()
       })
       .collect();
-    let widest = labels.iter().map(|label| label.width()).max().unwrap_or(0);
-    let width = (widest + 2).min(columns.max(3));
-    let per_row = (columns / width).max(1);
-    let rows = labels.len().div_ceil(per_row);
-    let visible = rows.min(limit.max(1));
-    let selected = self.selected.map_or(0, |index| index % rows);
-    let first = selected.saturating_sub(visible - 1);
-    MenuLayout { labels, width, columns: per_row, rows, first, visible }
+    grid::layout(labels, columns, limit, self.selected)
   }
 }
 

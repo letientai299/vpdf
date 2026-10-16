@@ -145,6 +145,13 @@ mounts can drop events, so a 2 s poll stays as a fallback. A half-written file
 reports an error and reloads on the next change.
 `:reload` forces a reload.
 
+## Key clues
+
+As with [mini.clue][clue], pausing half a second after a prefix such as `g`,
+`z`, `"`, `m`, or `'` lists the keys that can follow it with their
+descriptions above the status line. `"` previews the registers' contents and
+`'` lists the set marks. The next key hides the list.
+
 ## Commands
 
 `:` opens the command line, which edits like zsh's emacs keymap. Tab lists
@@ -217,3 +224,4 @@ carry their upstream licenses in the dependency source distributions.
 [osc52]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Operating-System-Commands
 [notify]: https://docs.rs/notify/8.2.0/notify/
 [fzf]: https://github.com/junegunn/fzf
+[clue]: https://github.com/nvim-mini/mini.nvim/blob/main/readmes/mini-clue.md

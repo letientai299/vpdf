@@ -17,9 +17,9 @@ impl App {
   /// Rows the completion list takes above the prompt.
   pub fn menu_rows(&self) -> u16 {
     let Some(menu) = self.prompt.as_ref().and_then(|p| p.menu.as_ref()) else {
-      return 0;
+      return self.clue_rows();
     };
-    let limit = crate::statusline::menu_limit(self.screen);
+    let limit = crate::grid::limit(self.screen);
     let layout = menu.layout(usize::from(self.screen.columns), limit);
     u16::try_from(layout.visible).unwrap_or(0)
   }

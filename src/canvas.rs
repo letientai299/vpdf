@@ -221,6 +221,10 @@ impl App {
   fn bottom(&self, out: &mut impl Write) -> Result<()> {
     let row = self.screen.rows - 1;
     let Some(prompt) = &self.prompt else {
+      if let Some(clues) = &self.clues {
+        let (grid, keys) = self.clue_grid(clues);
+        crate::grid::draw(out, row - 1, &grid, None, keys, self.screen)?;
+      }
       self.status(out, row)?;
       write!(out, "\x1b[?25l")?;
       return Ok(());

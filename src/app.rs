@@ -74,6 +74,9 @@ pub struct App {
   pub search_origin: Option<crate::reader::Location>,
   pub prompt: Option<crate::prompt::Prompt>,
   pub hints: Option<crate::hints::Hints>,
+  pub clues: Option<crate::clues::Clues>,
+  /// When the pending prefix started waiting for its next key.
+  pub awaiting: Option<Instant>,
   /// Link destination shown by `K`.
   pub peek: Option<crate::preview::Preview>,
   pub overview: Option<crate::overview::Overview>,
@@ -134,6 +137,8 @@ impl App {
       search_origin: None,
       prompt: None,
       hints: None,
+      clues: None,
+      awaiting: None,
       peek: None,
       overview: None,
       panel: None,

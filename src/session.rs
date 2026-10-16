@@ -318,6 +318,7 @@ fn run(session: &mut Session) -> Result<()> {
         .max(Duration::from_millis(1))
     };
     if !event::poll(wait)? {
+      dirty |= app.clue_due()?;
       let touched = session.watcher.touched(&session.tabs[session.active].path);
       let app = session.app();
       if touched
@@ -349,7 +350,7 @@ fn run(session: &mut Session) -> Result<()> {
     }
     let result = match event {
       Event::Key(key) if key.kind != KeyEventKind::Release => {
-        app.key(key, &mut session.history)
+        app.key(key, &mut session.history).and_then(|()| app.after_key())
       }
       Event::Paste(text) => {
         if let Some(prompt) = &mut app.prompt {

@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::{App, Tabline};
 use crate::find::Phase;
+use crate::grid;
 use crate::layout::Screen;
 use crate::prompt::Prompt;
 use crate::reader::SelectionKind;
@@ -154,56 +155,6 @@ impl App {
   }
 }
 
-/// Completion list above the prompt, laid out like zsh's: columns
-/// filled top to bottom, every item shown, scrolled to the selection.
-pub fn menu(
-  out: &mut impl Write,
-  bottom: u16,
-  menu: &crate::prompt::Menu,
-  screen: Screen,
-) -> Result<()> {
-  let columns = usize::from(screen.columns);
-  let layout = menu.layout(columns, menu_limit(screen));
-  let top = bottom + 1 - layout.visible as u16;
-  for line in 0..layout.visible {
-    let row = layout.first + line;
-    write!(out, "\x1b[{};1H{}", top as usize + line + 1, theme::BAR)?;
-    let mut used = 0;
-    for column in 0..layout.columns {
-      let Some(label) = layout.labels.get(column * layout.rows + row) else {
-        break;
-      };
-      let text = terminal::clean(label, layout.width - 2);
-      let pad = layout.width - 1 - text.width();
-      let index = column * layout.rows + row;
-      if menu.selected == Some(index) {
-        write!(
-          out,
-          "{} {text}{}{}",
-          theme::badge(Color::Blue),
-          " ".repeat(pad),
-          theme::BAR
-        )?;
-      } else {
-        write!(out, " {text}{}", " ".repeat(pad))?;
-      }
-      used += layout.width;
-    }
-    write!(
-      out,
-      "{}{}",
-      " ".repeat(columns.saturating_sub(used)),
-      theme::RESET
-    )?;
-  }
-  Ok(())
-}
-
-/// Most rows the completion list may take.
-pub fn menu_limit(screen: Screen) -> usize {
-  usize::from(screen.rows / 3).max(1)
-}
-
 /// Prompt on the last row, its list above, a ghost suggestion, and a
 /// block cursor.
 pub fn prompt(
@@ -213,7 +164,8 @@ pub fn prompt(
 ) -> Result<()> {
   let row = screen.rows - 1;
   if let Some(menu) = &prompt.menu {
-    self::menu(out, row - 1, menu, screen)?;
+    let layout = menu.layout(usize::from(screen.columns), grid::limit(screen));
+    grid::draw(out, row - 1, &layout, menu.selected, 0, screen)?;
   }
   let (text, ghost, column) = prompt.display();
   terminal::line(out, row, &text, screen.columns)?;
