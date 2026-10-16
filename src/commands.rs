@@ -223,10 +223,11 @@ impl App {
     Ok(())
   }
 
+  /// Enter follows a link under the cursor and ignores plain text.
   pub fn follow_cursor(&mut self) -> Result<()> {
     match self.link_at_cursor()? {
       Some(target) => self.follow(&target),
-      None => self.open_panel(PanelKind::Links),
+      None => Ok(()),
     }
   }
 

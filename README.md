@@ -87,12 +87,12 @@ highlighted matches and smartcase, `{ }` jump between headings, and `yy` yanks a
 row. Text motions and selections do not reach the PDF until `Esc` returns focus.
 Enter follows a panel item; `o` follows while retaining panel focus. The outline
 stays open after Enter. `go` focuses it again; `gq` closes a panel. Enter on the
-PDF follows a link under the cursor. `K` previews the destination of the link
-under the cursor in an overlay, such as a cited reference or footnote, without
-moving; Enter follows it and any other key closes it. `f` labels every visible
-link; typing a label follows it, and `F` copies a URL label instead of opening
-it. Only explicitly followed HTTP/HTTPS links launch a browser. Other URI
-schemes are rejected.
+PDF follows a link under the cursor and does nothing elsewhere. `K` previews the
+destination of the link under the cursor in an overlay, such as a cited
+reference or footnote, without moving; Enter follows it and any other key closes
+it. `f` labels every visible link; typing a label follows it, and `F` copies a
+URL label instead of opening it. Only explicitly followed HTTP/HTTPS links
+launch a browser. Other URI schemes are rejected.
 
 `gx` or `:text` opens text preview; `q` returns to the rendered view. `g?` and
 F1 show the key and command reference. `Esc` cancels selection, search, and
