@@ -24,6 +24,7 @@ pub mod reader;
 pub mod render_worker;
 pub mod search_worker;
 pub mod selection;
+pub mod session;
 mod statusline;
 pub mod terminal;
 mod text_canvas;

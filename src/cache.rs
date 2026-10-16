@@ -50,6 +50,12 @@ impl<K: Eq + Hash + Clone, V> Cache<K, V> {
     evicted
   }
 
+  pub fn remove(&mut self, key: &K) -> Option<V> {
+    let entry = self.entries.remove(key)?;
+    self.used -= entry.weight;
+    Some(entry.value)
+  }
+
   pub fn entries(&self) -> impl Iterator<Item = (&K, &V)> {
     self.entries.iter().map(|(key, entry)| (key, &entry.value))
   }

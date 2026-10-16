@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::app::App;
+use crate::app::{App, Tabline};
 use crate::reader::SelectionKind;
 use crate::terminal;
 use crate::theme::{self, Color};
@@ -22,14 +22,42 @@ impl App {
     }
   }
 
-  /// Mode, file, message, then pending keys and position.
+  /// Tab names that fit in `room`, with their display width.
+  fn tabs(&self, room: usize) -> (String, usize) {
+    let Tabline { names, active } = &self.tabline;
+    let plain = |text: String| {
+      let width = text.width();
+      (text, width)
+    };
+    if names.len() < 2 {
+      return plain(format!(" {}  ", self.name()));
+    }
+    let labels: Vec<_> = names
+      .iter()
+      .enumerate()
+      .map(|(index, name)| format!(" {}:{name} ", index + 1))
+      .collect();
+    let width = labels.iter().map(|label| label.width()).sum::<usize>() + 1;
+    if width > room {
+      return plain(format!(
+        " {}/{} {}  ",
+        active + 1,
+        names.len(),
+        self.name()
+      ));
+    }
+    let mut text = String::new();
+    for (index, label) in labels.iter().enumerate() {
+      let style = if index == *active { theme::TAB } else { theme::BAR };
+      text += &format!("{style}{label}{}", theme::BAR);
+    }
+    (text + " ", width)
+  }
+
+  /// Mode, tabs, message, then pending keys and position.
   pub fn status(&self, out: &mut impl Write, row: u16) -> Result<()> {
     let columns = usize::from(self.screen.columns);
     let (mode, color) = self.mode();
-    let name = self.path.file_name().map_or_else(
-      || self.path.display().to_string(),
-      |name| name.to_string_lossy().into_owned(),
-    );
     let page = self.reader.cursor.page.0;
     let mut right = self.keys.pending();
     if !right.is_empty() {
@@ -43,34 +71,69 @@ impl App {
       self.layout.zoom * 100.0,
     );
     let left = format!(" {mode} ");
-    let middle = format!(" {name}  ");
+    write!(out, "\x1b[{};1H", row + 1)?;
+    let Some(room) = columns.checked_sub(left.width() + right.width() + 1)
+    else {
+      let right = terminal::clean(&right, columns);
+      write!(out, "{}{right}{}", theme::BAR, theme::RESET)?;
+      return Ok(());
+    };
+    let (tabs, width) = self.tabs(room);
     let (message, style) = match &self.error {
       Some(error) => (error.as_str(), theme::ERROR),
       None => (self.reader.message.as_str(), theme::BAR),
     };
-    let room =
-      columns.saturating_sub(left.width() + middle.width() + right.width() + 1);
-    let message = terminal::clean(message, room);
-    let fill = room - message.width();
-    let line = format!(
-      "{}{left}{}{middle}{style}{message}{}{}{right}",
+    let message = terminal::clean(message, room.saturating_sub(width));
+    let fill = room.saturating_sub(width + message.width()) + 1;
+    write!(
+      out,
+      "{}{left}{}{tabs}{style}{message}{}{}{right}{}",
       theme::badge(color),
       theme::BAR,
       theme::BAR,
-      " ".repeat(fill + 1),
-    );
-    write!(out, "\x1b[{};1H", row + 1)?;
-    if left.width() + middle.width() + right.width() < columns {
-      write!(out, "{line}{}", theme::RESET)?;
-    } else {
-      write!(
-        out,
-        "{}{}{}",
-        theme::BAR,
-        terminal::clean(&right, columns),
-        theme::RESET
-      )?;
-    }
+      " ".repeat(fill),
+      theme::RESET
+    )?;
     Ok(())
   }
+}
+
+/// Completion items by last path component, selection kept visible.
+pub fn menu(
+  out: &mut impl Write,
+  row: u16,
+  menu: &crate::prompt::Menu,
+  columns: u16,
+) -> Result<()> {
+  let columns = usize::from(columns);
+  let labels: Vec<_> = menu
+    .items
+    .iter()
+    .map(|item| {
+      let start = item.trim_end_matches('/').rfind('/').map_or(0, |i| i + 1);
+      format!(" {} ", terminal::clean(&item[start..], columns))
+    })
+    .collect();
+  let widths: Vec<_> = labels.iter().map(|label| label.width()).collect();
+  let mut first = 0;
+  while widths[first..=menu.selected].iter().sum::<usize>() > columns
+    && first < menu.selected
+  {
+    first += 1;
+  }
+  write!(out, "\x1b[{};1H{}", row + 1, theme::BAR)?;
+  let mut used = 0;
+  for (index, label) in labels.iter().enumerate().skip(first) {
+    if used + widths[index] > columns {
+      break;
+    }
+    if index == menu.selected {
+      write!(out, "{}{label}{}", theme::badge(Color::Blue), theme::BAR)?;
+    } else {
+      write!(out, "{label}")?;
+    }
+    used += widths[index];
+  }
+  write!(out, "{}{}", " ".repeat(columns - used), theme::RESET)?;
+  Ok(())
 }

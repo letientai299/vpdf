@@ -4,6 +4,7 @@
 pub const RESET: &str = "\x1b[0m";
 pub const BAR: &str = "\x1b[0;100m";
 pub const SELECTED: &str = "\x1b[0;1;100m";
+pub const TAB: &str = "\x1b[0;1;34;100m";
 pub const CURRENT: &str = "\x1b[0;1;34m";
 pub const HEADING: &str = "\x1b[1;34m";
 pub const KEY: &str = "\x1b[33m";

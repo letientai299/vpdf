@@ -16,10 +16,16 @@ const OVERLAYS: u32 = 1024;
 // Four readers fit Kitty's 320 MB quota.
 const BUDGET: usize = 64 * MIB;
 
+/// Tiles of one document; tabs share one Kitty budget.
+type Key = (u32, TileKey);
+
 pub struct Graphics {
-  resident: Cache<TileKey, u32>,
-  ids: HashMap<TileKey, u32>,
+  /// Document whose tiles `upload` and `place` address.
+  pub doc: u32,
+  resident: Cache<Key, u32>,
+  ids: HashMap<Key, u32>,
   free: Vec<u32>,
+  stale: Vec<u32>,
   base: u32,
   next: u32,
   overlay: u32,
@@ -30,9 +36,11 @@ impl Default for Graphics {
   fn default() -> Self {
     let base = session();
     Self {
+      doc: 0,
       resident: Cache::new(BUDGET),
       ids: HashMap::new(),
       free: Vec::new(),
+      stale: Vec::new(),
       base,
       next: base + OVERLAYS,
       overlay: 0,
@@ -60,7 +68,17 @@ pub fn release(out: &mut impl Write) -> Result<()> {
 
 impl Graphics {
   pub fn contains(&mut self, key: &TileKey) -> bool {
-    self.resident.get(key).is_some()
+    self.resident.get(&(self.doc, *key)).is_some()
+  }
+
+  /// Deletes a document's tiles at the next frame.
+  pub fn forget(&mut self, doc: u32) {
+    let keys: Vec<_> =
+      self.ids.keys().filter(|key| key.0 == doc).copied().collect();
+    for key in keys {
+      self.resident.remove(&key);
+      self.stale.extend(self.ids.remove(&key));
+    }
   }
 
   pub fn upload(&mut self, tile: &Tile, out: &mut impl Write) -> Result<()> {
@@ -75,13 +93,14 @@ impl Graphics {
     // Weight floor keeps residency within tile ids.
     let weight = ((tile.key.width * tile.key.height * 3) as usize)
       .max(BUDGET.div_ceil((BLOCK - OVERLAYS) as usize));
-    for key in self.resident.insert(tile.key, id, weight) {
+    let key = (self.doc, tile.key);
+    for key in self.resident.insert(key, id, weight) {
       if let Some(id) = self.ids.remove(&key) {
         graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
         self.free.push(id);
       }
     }
-    self.ids.insert(tile.key, id);
+    self.ids.insert(key, id);
     self.uploaded += tile.encoded.len() as u64;
     Ok(())
   }
@@ -90,6 +109,10 @@ impl Graphics {
     let tiles = self.base + OVERLAYS;
     let last = self.base + (BLOCK - 1);
     graphics(out, &format!("a=d,d=r,x={tiles},y={last},q=2"), "")?;
+    for id in self.stale.drain(..) {
+      graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
+      self.free.push(id);
+    }
     if self.overlay > 0 {
       let (first, last) = (self.base, self.base + self.overlay - 1);
       graphics(out, &format!("a=d,d=R,x={first},y={last},q=2"), "")?;
@@ -106,7 +129,9 @@ impl Graphics {
     left: u16,
     out: &mut impl Write,
   ) -> Result<bool> {
-    let Some(&id) = self.resident.get(key) else { return Ok(false) };
+    let Some(&id) = self.resident.get(&(self.doc, *key)) else {
+      return Ok(false);
+    };
     let x = key.x as f32 - layout.pan;
     let y = layout.pages[key.page.0].top + key.y as f32 - scroll;
     let rect = Bounds {
@@ -295,6 +320,39 @@ mod tests {
     }
     assert_eq!(graphics.free.len(), 1);
     assert_eq!(graphics.next, session() + OVERLAYS + 3);
+    Ok(())
+  }
+
+  #[test]
+  fn forgetting_a_document_frees_only_its_tiles() -> Result<()> {
+    let mut graphics = Graphics::default();
+    let mut output = Vec::new();
+    for doc in [1, 2] {
+      graphics.doc = doc;
+      let key = TileKey {
+        page: PageId(0),
+        scale: 1,
+        rotation: 0,
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+      };
+      graphics.upload(
+        &Tile { key, encoded: encode(&[255; 3])?, render_ms: 0.0 },
+        &mut output,
+      )?;
+    }
+    graphics.forget(1);
+    output.clear();
+    graphics.begin(&mut output)?;
+    let deleted: Vec<_> = commands(&output)
+      .into_iter()
+      .filter(|c| c.get("d").is_some_and(|d| d == "I"))
+      .collect();
+    assert_eq!(deleted.len(), 1);
+    assert_eq!(graphics.free.len(), 1);
+    assert!(graphics.ids.keys().all(|key| key.0 == 2));
     Ok(())
   }
 }

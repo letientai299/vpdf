@@ -5,15 +5,37 @@ use crate::keys::Keys;
 use crate::layout::{Layout, Screen};
 use crate::reader::Reader;
 use crate::render_worker::RenderWorker;
-use crate::terminal::{self, Terminal};
-use crate::text::{PageId, Position};
+use crate::terminal;
+use crate::text::Position;
 use crate::tiles::TileKey;
-use crossterm::event::{self, Event, KeyEventKind};
-use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Instant;
+
+/// Work a tab hands to the session.
+#[derive(Debug, Eq, PartialEq)]
+pub enum Request {
+  Open { path: PathBuf, tab: bool },
+  Tab(TabMove),
+  QuitAll,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TabMove {
+  Next(usize),
+  Previous(usize),
+  Go(usize),
+}
+
+/// File names of every tab and the active index.
+#[derive(Default)]
+pub struct Tabline {
+  pub names: Vec<String>,
+  pub active: usize,
+}
 
 pub struct App {
+  pub id: u32,
   pub doc: Document,
   pub reader: Reader,
   pub layout: Layout,
@@ -26,6 +48,8 @@ pub struct App {
   pub screen: Screen,
   pub left: u16,
   pub quit: bool,
+  pub request: Option<Request>,
+  pub tabline: Tabline,
   pub error: Option<String>,
   pub render_ms: f64,
   pub search: crate::find::Search,
@@ -33,13 +57,19 @@ pub struct App {
   pub panel: Option<crate::panel::Panel>,
   pub preview: Option<bool>,
   pub ocr: Option<crate::ocr::OcrJob>,
-  pub reset_images: bool,
   pub animation: Option<crate::animation::Scroll>,
   pub(crate) requested: Vec<TileKey>,
   pub(crate) last_click: Option<(Instant, Position)>,
 }
 
 impl App {
+  pub fn name(&self) -> String {
+    self.path.file_name().map_or_else(
+      || self.path.display().to_string(),
+      |name| name.to_string_lossy().into_owned(),
+    )
+  }
+
   pub fn new(path: &Path, password: &str, text_mode: bool) -> Result<Self> {
     Self::with_screen(path, password, text_mode, terminal::size()?)
   }
@@ -52,7 +82,9 @@ impl App {
   ) -> Result<Self> {
     let doc = Document::open(path, password)?;
     let layout = Layout::new(&doc.pages, screen);
+    static NEXT: AtomicU32 = AtomicU32::new(1);
     Ok(Self {
+      id: NEXT.fetch_add(1, Ordering::Relaxed),
       doc,
       reader: Reader::default(),
       layout,
@@ -65,6 +97,8 @@ impl App {
       screen,
       left: 0,
       quit: false,
+      request: None,
+      tabline: Tabline::default(),
       error: None,
       render_ms: 0.0,
       search: crate::find::Search::default(),
@@ -72,92 +106,9 @@ impl App {
       panel: None,
       preview: None,
       ocr: None,
-      reset_images: false,
       animation: None,
       requested: Vec::new(),
       last_click: None,
     })
   }
-}
-
-pub fn view(
-  path: &Path,
-  password: &str,
-  text: bool,
-  page: usize,
-) -> Result<()> {
-  anyhow::ensure!(io::stdout().is_terminal(), "TUI requires a terminal");
-  let _terminal = Terminal::enter()?;
-  let mut secret = password.to_owned();
-  let mut app = loop {
-    match App::new(path, &secret, text) {
-      Ok(app) => break app,
-      Err(error) if error.to_string() == "PDF password required" => {
-        secret = crate::prompt::password()?;
-      }
-      Err(error) => return Err(error),
-    }
-  };
-  app.reader.edge(
-    PageId(page.saturating_sub(1).min(app.doc.pages.len() - 1)),
-    false,
-    &mut app.doc,
-  )?;
-  app.ensure_cursor()?;
-  let mut out = io::BufWriter::new(io::stdout());
-  let mut trace = crate::trace::Trace::new()?;
-  let mut buffer = Vec::with_capacity(64 * 1024);
-  let mut history = crate::prompt::History::default();
-  let mut dirty = true;
-  let mut last_frame = Instant::now() - Duration::from_millis(9);
-  while !app.quit {
-    dirty |= app.raster_updates(&mut out)?;
-    dirty |= app.search_updates()?;
-    dirty |= app.ocr_updates()?;
-    app.clipboard(&mut out)?;
-    let frame_due = last_frame.elapsed() >= Duration::from_micros(8333);
-    if frame_due {
-      dirty |= app.animate();
-      if dirty {
-        trace.draw(&mut app, &mut out, &mut buffer)?;
-        dirty = false;
-        last_frame = Instant::now();
-      }
-    }
-    let wait = if !dirty && app.animation.is_none() {
-      Duration::from_millis(8)
-    } else {
-      Duration::from_micros(8333)
-        .saturating_sub(last_frame.elapsed())
-        .max(Duration::from_millis(1))
-    };
-    if !event::poll(wait)? {
-      continue;
-    }
-    trace.input();
-    let event = event::read()?;
-    if matches!(event, Event::Key(_)) {
-      app.reader.message.clear();
-      app.error = None;
-    }
-    let result = match event {
-      Event::Key(key) if key.kind != KeyEventKind::Release => {
-        app.key(key, &mut history)
-      }
-      Event::Paste(text) => {
-        if let Some(prompt) = &mut app.prompt {
-          prompt.insert(&text);
-        }
-        Ok(())
-      }
-      Event::Resize(_, _) => app.resize(),
-      Event::Mouse(mouse) => app.mouse(mouse),
-      _ => Ok(()),
-    };
-    if let Err(error) = result {
-      app.error = Some(error.to_string());
-    }
-    dirty = true;
-  }
-  Ok(())
 }

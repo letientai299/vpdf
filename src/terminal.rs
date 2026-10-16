@@ -2,7 +2,7 @@ use crate::Result;
 use crate::layout::Screen;
 use crossterm::{cursor, event, execute, terminal};
 use std::io::{self, Write};
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthChar;
 
 pub struct Terminal;
 
@@ -92,34 +92,6 @@ pub fn line(
     row + 1,
     clean(text, usize::from(columns))
   )?;
-  Ok(())
-}
-
-/// Draws completion items, keeping the selection visible.
-pub fn menu(
-  output: &mut impl Write,
-  row: u16,
-  menu: &crate::prompt::Menu,
-  columns: u16,
-) -> Result<()> {
-  let columns = usize::from(columns);
-  let widths: Vec<_> = menu.items.iter().map(|item| item.width() + 2).collect();
-  let mut first = 0;
-  while widths[first..=menu.selected].iter().sum::<usize>() > columns
-    && first < menu.selected
-  {
-    first += 1;
-  }
-  write!(output, "\x1b[{};1H\x1b[2K", row + 1)?;
-  let mut used = 0;
-  for (index, item) in menu.items.iter().enumerate().skip(first) {
-    if used + widths[index] > columns {
-      break;
-    }
-    let style = if index == menu.selected { "7" } else { "0" };
-    write!(output, "\x1b[{style}m {} \x1b[0m", clean(item, columns))?;
-    used += widths[index];
-  }
   Ok(())
 }
 

@@ -1,9 +1,8 @@
 use crate::Result;
-use crate::app::App;
+use crate::app::{App, Request, TabMove};
 use crate::cmdline;
 use crate::document::{Document, Target};
 use crate::find::Search;
-use crate::graphics::Graphics;
 use crate::keys::{Action, Input, PanelKind};
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crate::render_worker::RenderWorker;
@@ -41,7 +40,13 @@ impl App {
       Action::Result(reverse) => self.next_result(reverse, input.count)?,
       Action::Follow => self.follow_cursor()?,
       Action::Command => self.prompt = Some(Prompt::new(PromptKind::Command)),
-
+      Action::Tab(forward) => {
+        self.request = Some(Request::Tab(match (forward, input.explicit) {
+          (true, true) => TabMove::Go(input.count),
+          (true, false) => TabMove::Next(1),
+          (false, _) => TabMove::Previous(input.count),
+        }));
+      }
       _ => {
         if !self.navigate(input)? {
           self.viewport(input)?;
@@ -102,6 +107,17 @@ impl App {
     let spec = cmdline::lookup(name)
       .ok_or_else(|| anyhow::anyhow!("Unknown command: {name}"))?;
     match spec.name {
+      "edit" | "tabedit" => {
+        anyhow::ensure!(!argument.is_empty(), "File required");
+        let path = cmdline::expand(argument);
+        self.request = Some(Request::Open { path, tab: spec.name != "edit" });
+      }
+      "tabnext" => {
+        let step = argument.parse().map_or(TabMove::Next(1), TabMove::Go);
+        self.request = Some(Request::Tab(step));
+      }
+      "tabprevious" => self.request = Some(Request::Tab(TabMove::Previous(1))),
+      "qall" => self.request = Some(Request::QuitAll),
       "page" => self.page(argument)?,
       "toc" => self.open_panel(PanelKind::Outline)?,
       "nohlsearch" => self.search.hidden = true,
@@ -113,7 +129,8 @@ impl App {
         self.start_ocr(if argument.is_empty() { "eng" } else { argument })?
       }
       "help" => self.open_panel(PanelKind::Help)?,
-      _ => self.quit = true,
+      "quit" | "tabclose" => self.quit = true,
+      name => anyhow::bail!("Unhandled command: {name}"),
     }
     Ok(())
   }
@@ -137,8 +154,7 @@ impl App {
     self.password = password.to_owned();
     self.worker = RenderWorker::new(&self.path, password);
     self.search = Search::default();
-    self.graphics = Graphics::default();
-    self.reset_images = true;
+    self.graphics.forget(self.id);
     if let Some(ocr) = self.ocr.take() {
       ocr.cancel();
     }

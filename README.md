@@ -74,7 +74,17 @@ launch a browser. Other URI schemes are rejected.
 
 `gx` or `:text` opens text preview; `q` returns to the rendered view. `g?` and
 F1 show the key and command reference. `Esc` cancels selection, search, and
-OCR. `q` or `:q` exits. Space remains unmapped.
+OCR. `q` or `:q` closes the current tab and exits after the last one. Space
+remains unmapped.
+
+## Tabs
+
+`vpdf a.pdf b.pdf` opens each document in a tab. `:tabe file.pdf` opens another
+tab, `:e file.pdf` replaces the current one, and both complete directories and
+PDF names. `gt` and `gT` cycle tabs; `3gt` selects the third. `:tabc` closes a
+tab and `:qa` closes all. Opening a document that is already open selects its
+tab. The status line lists tabs when more than one is open. Each tab keeps its
+own position, zoom, panels, search, and workers.
 
 ## Commands
 

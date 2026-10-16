@@ -8,10 +8,6 @@ use std::io::Write;
 
 impl App {
   pub fn raster_updates(&mut self, out: &mut impl Write) -> Result<bool> {
-    if self.reset_images {
-      crate::graphics::release(out)?;
-      self.reset_images = false;
-    }
     let mut changed = false;
     for result in self.worker.results.try_iter() {
       match result {
@@ -188,7 +184,7 @@ impl App {
       return Ok(());
     };
     if let Some(menu) = &prompt.menu {
-      terminal::menu(out, row - 1, menu, self.screen.columns)?;
+      crate::statusline::menu(out, row - 1, menu, self.screen.columns)?;
     }
     let (text, column) = prompt.display();
     terminal::line(out, row, &text, self.screen.columns)?;

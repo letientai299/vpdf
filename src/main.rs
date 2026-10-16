@@ -8,8 +8,9 @@ use vpdf::{Result, document::Document, search, text::PageId};
 struct Args {
   #[command(subcommand)]
   command: Option<Command>,
+  /// Documents to open as tabs.
   #[arg(value_name = "PDF")]
-  file: Option<PathBuf>,
+  files: Vec<PathBuf>,
   #[arg(long)]
   text: bool,
   #[arg(long, global = true)]
@@ -40,11 +41,11 @@ fn run(args: Args) -> Result<()> {
   }
   let mut out = io::BufWriter::new(io::stdout());
   let Some(command) = args.command else {
-    let file = args.file.ok_or_else(|| anyhow::anyhow!("PDF path required"))?;
+    anyhow::ensure!(!args.files.is_empty(), "PDF path required");
     let text = args.text
       || std::env::var_os("KITTY_WINDOW_ID").is_none()
         && std::env::var("TERM").map_or(true, |term| !term.contains("kitty"));
-    return vpdf::app::view(&file, &password, text, args.page);
+    return vpdf::session::view(&args.files, &password, text, args.page);
   };
   match command {
     Command::Text { file, page } => {

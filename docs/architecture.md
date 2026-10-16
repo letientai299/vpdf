@@ -1,6 +1,7 @@
 # Reader architecture
 
-The foreground loop owns reader state and terminal output. A render worker
+The foreground loop owns every tab's reader state and terminal output. Only
+the active tab polls its workers and draws. A render worker
 owns a separate MuPDF document and accepts the latest viewport tile set.
 Search starts lazily in another worker with a separate document and bounded
 normalized indexes. OCR uses Tesseract in a subprocess. No MuPDF document is
@@ -65,16 +66,19 @@ focused pane rather than the sender, where they would arrive as input to an
 unrelated program, so the reader cannot track acknowledgements. Kitty silently
 evicts older images beyond its 320 MB per-window quota; each reader keeps at
 most 64 MiB of decoded tiles so about four readers share a window without
-eviction. Resizing or changing zoom requests another viewport; reloading
-invalidates all image state. Keep terminal compatibility testing separate from
-native rendering and state tests.
+eviction. Tabs share that budget: the graphics cache moves to the active tab and
+keys tiles by document, so a recently viewed tab redraws from resident images.
+Closing or reloading a document deletes only its images. Resizing or changing
+zoom requests another viewport. Keep terminal compatibility testing separate
+from native rendering and state tests.
 
 ## Compatibility
 
-Reader keybindings follow the PDF plugin. Editor window management is outside
-this process. Native MuPDF glyph boxes can differ from PyMuPDF's corrected
-boxes, especially for font ascenders and descenders. Search regexes use a Rust
-engine with bounded backtracking, so Python-specific syntax can differ.
+Reader keybindings follow the PDF plugin. Tabs and `:e` stand in for Neovim
+buffers and tab pages; splits remain the terminal multiplexer's job. Native
+MuPDF glyph boxes can differ from PyMuPDF's corrected boxes, especially for font
+ascenders and descenders. Search regexes use a Rust engine with bounded
+backtracking, so Python-specific syntax can differ.
 
 OCR character positions interpolate Tesseract word boxes. They support cursor
 movement, selection, and search but do not reproduce font-specific glyph

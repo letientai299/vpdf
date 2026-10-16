@@ -59,7 +59,7 @@ fn reader_workflows() -> Result<()> {
   assert!(app.reader.last_selection.is_none());
   let mut output = Vec::new();
   app.raster_updates(&mut output)?;
-  assert!(!app.reset_images);
+  assert_eq!(app.graphics.bytes(), 0);
   assert!(app.search.hits.is_empty());
   app.reader.history(false);
   assert!(app.reader.cursor.page.0 < app.doc.pages.len());

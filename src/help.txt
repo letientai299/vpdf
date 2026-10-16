@@ -44,7 +44,12 @@ gq: close panel
 gx: text preview
 g? F1: this reference
 Esc: cancel / unfocus panel
-q: close panel or quit
+q: close panel, tab, or reader
+
+# Tabs
+gt [count]gt: next / nth tab
+gT: previous tab
+:e :tabe: open here / in a new tab
 
 # Command line
 Tab Shift-Tab: complete
