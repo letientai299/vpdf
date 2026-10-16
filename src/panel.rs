@@ -62,7 +62,8 @@ impl App {
     }
     let current = self.reader.cursor.page;
     if let Some(index) = panel.rows.iter().rposition(|row| {
-      matches!(row.destination, Destination::Link(Target::Page(page))
+      matches!(row.destination,
+        Destination::Link(Target::Page(page) | Target::Point { page, .. })
         if page <= current)
     }) {
       panel.selected = index;
@@ -128,7 +129,9 @@ impl App {
         .iter()
         .map(|link| Row {
           label: match &link.target {
-            Target::Page(page) => format!("Page {}", page.0 + 1),
+            Target::Page(page) | Target::Point { page, .. } => {
+              format!("Page {}", page.0 + 1)
+            }
             Target::Uri(uri) => uri.clone(),
           },
           destination: Destination::Link(link.target.clone()),

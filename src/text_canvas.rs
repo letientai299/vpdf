@@ -30,6 +30,28 @@ impl App {
     Ok(())
   }
 
+  pub fn text_position(&mut self, column: u16, row: u16) -> Result<Position> {
+    let text = self.doc.text(self.reader.cursor.page)?;
+    let height = self.screen.rows.saturating_sub(1) as usize;
+    let start = self.reader.cursor.line.saturating_sub(height / 2);
+    let columns = self.screen.columns.saturating_sub(self.left) as usize;
+    let horizontal = self.reader.cursor.glyph.saturating_sub(columns / 2);
+    let line = start + usize::from(row);
+    let mut position =
+      Position { page: self.reader.cursor.page, line, glyph: horizontal };
+    let mut width = 0;
+    if let Some(line) = text.lines.get(line) {
+      for (index, glyph) in line.glyphs.iter().enumerate().skip(horizontal) {
+        position.glyph = index;
+        width += glyph.ch.width().unwrap_or(0);
+        if width > usize::from(column.saturating_sub(self.left)) {
+          break;
+        }
+      }
+    }
+    Ok(text.clamp(position))
+  }
+
   fn text_style(&self, position: Position) -> &'static str {
     if position == self.reader.cursor {
       return "7;34";

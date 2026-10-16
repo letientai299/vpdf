@@ -106,3 +106,38 @@ fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
   assert_eq!(app.reader.cursor.page, PageId(38));
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn links_keep_coordinates_and_text_scrolls_lines() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 120,
+    rows: 50,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  let target = (0..app.doc.pages.len())
+    .find_map(|page| {
+      app.doc.links(PageId(page)).ok()?.into_iter().find(
+        |link| matches!(link.target, Target::Point { y, .. } if y > 100.0),
+      )
+    })
+    .expect("real book has positioned internal links")
+    .target;
+  let Target::Point { page, x, y } = target else { unreachable!() };
+  let expected = app.doc.text(page)?.nearest(page, x, y);
+  app.follow(&target)?;
+  assert_eq!(app.reader.cursor, expected);
+  app.command("PdfPage 39")?;
+  app.text_mode = true;
+  app.scroll(48.0)?;
+  assert_eq!(app.reader.cursor.line, 3);
+  assert!(app.animation.is_none());
+  let position = app.text_position(2, 1)?;
+  assert_eq!(position.line, 1);
+  assert_eq!(position.glyph, 2);
+  Ok(())
+}

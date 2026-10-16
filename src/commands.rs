@@ -156,11 +156,15 @@ impl App {
 
   pub fn follow(&mut self, target: &Target) -> Result<()> {
     match target {
-      Target::Page(page) => {
-        self.reader.jump(
-          Position { page: *page, ..Position::default() },
-          &mut self.doc,
-        )?;
+      Target::Page(page) | Target::Point { page, .. } => {
+        let page = crate::text::PageId(page.0.min(self.doc.pages.len() - 1));
+        let position = match target {
+          Target::Point { x, y, .. } => {
+            self.doc.text(page)?.nearest(page, *x, *y)
+          }
+          _ => Position { page, ..Position::default() },
+        };
+        self.reader.jump(position, &mut self.doc)?;
         self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
         self.ensure_cursor()?;
       }

@@ -24,6 +24,16 @@ impl App {
   }
 
   pub fn scroll(&mut self, delta: f32) -> Result<()> {
+    if self.text_mode {
+      let motion = if delta < 0.0 {
+        crate::motion::Motion::Up
+      } else {
+        crate::motion::Motion::Down
+      };
+      let rows = (delta.abs() / f32::from(self.screen.cell_height)).round();
+      self.reader.motion(motion, rows as usize, false, &mut self.doc)?;
+      return self.ensure_cursor();
+    }
     let start =
       self.animation.as_ref().map_or(self.reader.scroll, |s| s.target);
     let target = self.layout.clamp_scroll(start + delta);

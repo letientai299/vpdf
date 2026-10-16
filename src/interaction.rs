@@ -151,19 +151,23 @@ impl App {
       _ => return Ok(()),
     }
     self.animation = None;
-    if mouse.column < self.left {
+    if mouse.column < self.left || mouse.row >= self.screen.rows - 1 {
       return Ok(());
     }
-    let y = f32::from(mouse.row) * f32::from(self.screen.cell_height)
-      + self.reader.scroll;
-    let page = self.layout.page_at(y);
-    let layout = &self.layout.pages[page.0];
-    let Some(inverse) = layout.matrix.invert() else { return Ok(()) };
-    let x = f32::from(mouse.column - self.left)
-      * f32::from(self.screen.cell_width)
-      + self.layout.pan;
-    let (x, y) = inverse.transform_xy(x, y - layout.top);
-    let pos = self.doc.text(page)?.nearest(page, x, y);
+    let pos = if self.text_mode {
+      self.text_position(mouse.column, mouse.row)?
+    } else {
+      let y = f32::from(mouse.row) * f32::from(self.screen.cell_height)
+        + self.reader.scroll;
+      let page = self.layout.page_at(y);
+      let layout = &self.layout.pages[page.0];
+      let Some(inverse) = layout.matrix.invert() else { return Ok(()) };
+      let x = f32::from(mouse.column - self.left)
+        * f32::from(self.screen.cell_width)
+        + self.layout.pan;
+      let (x, y) = inverse.transform_xy(x, y - layout.top);
+      self.doc.text(page)?.nearest(page, x, y)
+    };
     if matches!(mouse.kind, MouseEventKind::Drag(_)) {
       if self.reader.selection.is_none() {
         self.reader.visual(SelectionKind::Character);

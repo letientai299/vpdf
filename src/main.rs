@@ -43,7 +43,7 @@ fn run(args: Args) -> Result<()> {
     let file = args.file.ok_or_else(|| anyhow::anyhow!("PDF path required"))?;
     let text = args.text
       || std::env::var_os("KITTY_WINDOW_ID").is_none()
-        && std::env::var("TERM").is_ok_and(|term| !term.contains("kitty"));
+        && std::env::var("TERM").map_or(true, |term| !term.contains("kitty"));
     return vpdf::app::view(&file, &password, text, args.page);
   };
   match command {

@@ -26,7 +26,29 @@ pub struct Link {
 #[derive(Clone, Debug, Serialize)]
 pub enum Target {
   Page(PageId),
+  Point { page: PageId, x: f32, y: f32 },
   Uri(String),
+}
+
+impl From<mupdf::link::LinkDestination> for Target {
+  fn from(dest: mupdf::link::LinkDestination) -> Self {
+    use mupdf::DestinationKind as D;
+    let page = PageId(dest.loc.page_number as usize);
+    let (x, y) = match dest.kind {
+      D::XYZ { left, top, .. } => (left, top),
+      D::FitH { top } | D::FitBH { top } => (None, top),
+      D::FitV { left } | D::FitBV { left } => (left, None),
+      _ => return Self::Page(page),
+    };
+    if x.is_none() && y.is_none() {
+      return Self::Page(page);
+    }
+    Self::Point {
+      page,
+      x: x.filter(|v| v.is_finite()).unwrap_or(0.0),
+      y: y.filter(|v| v.is_finite()).unwrap_or(0.0),
+    }
+  }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -120,10 +142,7 @@ impl Document {
         .links()?
         .map(|link| Link {
           bounds: link.bounds.into(),
-          target: link.dest.map_or_else(
-            || Target::Uri(link.uri),
-            |dest| Target::Page(PageId(dest.loc.page_number as usize)),
-          ),
+          target: link.dest.map_or_else(|| Target::Uri(link.uri), Target::from),
         })
         .collect(),
     )
@@ -161,7 +180,7 @@ fn flatten(items: &[mupdf::Outline], depth: usize, out: &mut Vec<Heading>) {
     }
     let target = item
       .dest
-      .map(|d| Target::Page(PageId(d.loc.page_number as usize)))
+      .map(Target::from)
       .or_else(|| item.uri.as_ref().map(|u| Target::Uri(u.clone())));
     if let Some(target) = target {
       out.push(Heading { title: item.title.clone(), depth, target });
