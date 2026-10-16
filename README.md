@@ -110,11 +110,12 @@ PDF names. `gt` and `gT` cycle tabs; `3gt` selects the third. `:tabc` closes a
 tab and `:qa` closes all. With [fzf][fzf] on `PATH`, `:fzf` picks a PDF below
 the working directory, including hidden and VCS-ignored folders such as `.ai`
 but not `.git`, previewing its first page as an image in Kitty, and opens it in
-a new tab; the command is hidden without fzf. Opening a document that is already
-open selects its tab. The status line lists tabs when more than one is open,
-shows the current outline section, the percentage read, and the zoom when it
-differs from fit width. The terminal title shows the document title. Each tab
-keeps its own position, zoom, panels, search, and workers.
+a new tab, or in the focused pane when the tab is split; the command is hidden
+without fzf. Opening a document that is already open selects its tab. The status
+line lists tabs when more than one is open, shows the current outline section,
+the percentage read, and the zoom when it differs from fit width. The terminal
+title shows the document title. Each tab keeps its own position, zoom, panels,
+search, and workers.
 
 ## Panes
 
