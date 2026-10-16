@@ -8,6 +8,7 @@ use crate::prompt::History;
 use crate::state::{Mark, State};
 use crate::terminal::{self, Terminal};
 use crate::text::PageId;
+use crate::watch::Watcher;
 use crossterm::event::{self, Event, KeyEventKind};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -22,6 +23,7 @@ pub struct Session {
   pub state: State,
   /// Start screen while no document is open.
   pub home: Option<Home>,
+  watcher: Watcher,
   store: Option<PathBuf>,
   password: String,
   text: bool,
@@ -38,6 +40,7 @@ impl Session {
       quit: false,
       state,
       home: None,
+      watcher: Watcher::default(),
       store,
       password: password.to_owned(),
       text,
@@ -79,6 +82,7 @@ impl Session {
       return self.activate(index);
     }
     let mut app = self.load(&path, screen)?;
+    self.watcher.add(&path);
     if let Some(entry) = self.state.entry(&path) {
       app.restore(entry)?;
     }
@@ -92,6 +96,7 @@ impl Session {
       return self.activate(self.active + 1);
     }
     let mut old = std::mem::replace(&mut self.tabs[self.active], app);
+    self.watcher.remove(&old.path);
     self.state.remember(&old);
     old.graphics.forget(old.id);
     self.install(std::mem::take(&mut old.graphics), screen)
@@ -123,6 +128,7 @@ impl Session {
   /// Closes the active tab; the session ends after the last.
   pub fn close(&mut self) -> Result<()> {
     let mut app = self.tabs.remove(self.active);
+    self.watcher.remove(&app.path);
     self.state.remember(&app);
     if self.tabs.is_empty() {
       return self.save();
@@ -293,9 +299,13 @@ fn run(session: &mut Session) -> Result<()> {
         .max(Duration::from_millis(1))
     };
     if !event::poll(wait)? {
-      if watched.elapsed() > Duration::from_millis(400) {
+      let touched = session.watcher.touched(&session.tabs[session.active].path);
+      let app = session.app();
+      if touched
+        || app.settling.is_some()
+        || watched.elapsed() > Duration::from_secs(2)
+      {
         watched = Instant::now();
-        let app = session.app();
         match app.watch() {
           Ok(reloaded) => dirty |= reloaded,
           Err(error) => {

@@ -113,10 +113,13 @@ with the recent-document state.
 
 ## Live reload
 
-The reader polls the open document's modification time and size. After a
-change holds still for one poll (about 0.4 s), it reloads and keeps the cursor,
-zoom, open panel, and search, so it works as a live preview for LaTeX or Typst
-builds. A half-written file reports an error and reloads on the next change.
+The reader watches each open document's directory through OS file events
+(FSEvents, inotify, or kqueue via [notify][notify]), so a build that replaces
+the PDF by rename is still seen. After the file's size and modification time
+hold still for 100 ms, it reloads and keeps the cursor, zoom, marks, open panel,
+and search, which makes it a live preview for LaTeX or Typst builds. Network
+mounts can drop events, so a 2 s poll stays as a fallback. A half-written file
+reports an error and reloads on the next change.
 `:reload` forces a reload.
 
 ## Commands
@@ -181,3 +184,4 @@ carry their upstream licenses in the dependency source distributions.
 [keys]: src/help.txt
 [commands]: src/cmdline.rs
 [osc52]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Operating-System-Commands
+[notify]: https://docs.rs/notify/8.2.0/notify/

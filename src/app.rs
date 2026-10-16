@@ -53,7 +53,8 @@ pub struct App {
   pub password: String,
   /// File modification time and size at the last load.
   pub stamp: Option<crate::watch::Stamp>,
-  pub(crate) changed: Option<crate::watch::Stamp>,
+  /// A changed stamp and when it was first seen.
+  pub(crate) settling: Option<(crate::watch::Stamp, Instant)>,
   pub text_mode: bool,
   pub screen: Screen,
   pub left: u16,
@@ -108,7 +109,7 @@ impl App {
       path: path.to_owned(),
       password: password.to_owned(),
       stamp: crate::watch::stamp(path),
-      changed: None,
+      settling: None,
       text_mode,
       screen,
       left: 0,

@@ -161,7 +161,9 @@ fn changed_file_reloads_after_settling() -> Result<()> {
   app.command("page 3")?;
   assert!(!app.watch()?);
   std::fs::copy(root.join("book.pdf"), &path)?;
-  assert!(!app.watch()?, "first poll waits for the write to settle");
+  assert!(!app.watch()?, "a change waits for the write to settle");
+  assert!(!app.watch()?);
+  std::thread::sleep(std::time::Duration::from_millis(120));
   assert!(app.watch()?);
   assert_ne!(app.doc.pages.len(), pages);
   assert_eq!(app.reader.cursor.page, PageId(2));

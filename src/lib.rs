@@ -35,4 +35,4 @@ mod text_canvas;
 mod theme;
 pub mod tiles;
 pub mod trace;
-mod watch;
+pub mod watch;
