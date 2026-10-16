@@ -1,10 +1,11 @@
 use crate::Result;
-use crate::app::{App, Request, TabMove};
+use crate::app::{App, Request, TabMove, Window};
 use crate::cmdline;
 use crate::document::{Document, Target};
 use crate::keys::{Action, Input, PanelKind};
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crate::render_worker::RenderWorker;
+use crate::split::Axis;
 use crate::text::Position;
 use crossterm::event::KeyEvent;
 use std::process::{Command, Stdio};
@@ -43,6 +44,14 @@ impl App {
       Action::Command => self.prompt = Some(Prompt::new(PromptKind::Command)),
       Action::Mark(name) => self.set_mark(name),
       Action::Hints(copy) => self.start_hints(copy)?,
+      Action::Window(command) => {
+        self.request = Some(Request::Window {
+          command,
+          count: input.count,
+          explicit: input.explicit,
+          file: None,
+        });
+      }
       Action::Peek => self.preview_link()?,
       Action::Overview => self.open_overview()?,
       Action::GoMark(name, exact) => self.go_mark(name, exact)?,
@@ -143,6 +152,27 @@ impl App {
     let spec = cmdline::lookup(name)
       .ok_or_else(|| anyhow::anyhow!("Unknown command: {name}"))?;
     match spec.name {
+      "split" | "vsplit" => {
+        let axis =
+          if spec.name == "split" { Axis::Rows } else { Axis::Columns };
+        let file = (!argument.is_empty()).then(|| cmdline::expand(argument));
+        self.request = Some(Request::Window {
+          command: Window::Split(axis),
+          count: 1,
+          explicit: false,
+          file,
+        });
+      }
+      "close" | "only" => {
+        let command =
+          if spec.name == "close" { Window::Close } else { Window::Only };
+        self.request = Some(Request::Window {
+          command,
+          count: 1,
+          explicit: false,
+          file: None,
+        });
+      }
       "edit" | "tabedit" => {
         anyhow::ensure!(!argument.is_empty(), "File required");
         let path = cmdline::expand(argument);
@@ -224,7 +254,7 @@ impl App {
       self.start_search(&previous.query, previous.backward, false)?;
       self.search.phase = crate::find::Phase::Running { jump: false };
     }
-    self.resize()?;
+    self.relayout()?;
     self.reader.message = "Reloaded".into();
     Ok(())
   }

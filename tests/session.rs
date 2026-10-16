@@ -131,3 +131,65 @@ fn marks_persist_and_cross_documents() -> Result<()> {
   assert!(press(&mut session, Action::GoMark('z', false)).is_err());
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn ctrl_w_splits_moves_and_closes_panes() -> Result<()> {
+  use vpdf::app::Window;
+  use vpdf::keys::{Action, Input};
+  use vpdf::split::{Axis, Direction};
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 121,
+    rows: 40,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut session = Session::new("", false, None);
+  session.open(&root.join("book.pdf"), true, screen)?;
+  session.app().command("page 30")?;
+  let window = |session: &mut Session, command| -> Result<()> {
+    let input = Input {
+      action: Action::Window(command),
+      count: 1,
+      explicit: false,
+      register: '"',
+    };
+    session.app().action(input)?;
+    session.settle()
+  };
+  window(&mut session, Window::Split(Axis::Columns))?;
+  assert_eq!(session.tab().panes.len(), 2);
+  let left = session.app().id;
+  assert_eq!(session.app().reader.cursor.page.0, 29, "split keeps the view");
+  assert_eq!((session.app().at.column, session.app().screen.columns), (0, 60));
+  session.app().request = Some(vpdf::app::Request::Window {
+    command: Window::Split(Axis::Rows),
+    count: 1,
+    explicit: false,
+    file: Some(root.join("paper.pdf")),
+  });
+  session.settle()?;
+  assert_eq!(session.app().name(), "paper.pdf");
+  assert_eq!(session.app().screen.rows, 20);
+  window(&mut session, Window::Focus(Direction::Right))?;
+  assert_eq!(session.app().at.column, 61);
+  window(&mut session, Window::Focus(Direction::Left))?;
+  window(&mut session, Window::Focus(Direction::Down))?;
+  assert_eq!(session.app().id, left);
+  assert!(session.app().focused);
+  window(&mut session, Window::Resize(Axis::Rows, 5))?;
+  assert_eq!(session.app().screen.rows, 25);
+  window(&mut session, Window::Close)?;
+  assert_eq!(session.tab().panes.len(), 2);
+  window(&mut session, Window::ToTab)?;
+  assert_eq!((session.tabs.len(), session.tab().panes.len()), (2, 1));
+  session.app().command("q")?;
+  session.settle()?;
+  assert_eq!(session.tabs.len(), 1);
+  window(&mut session, Window::Only)?;
+  assert_eq!(session.tab().panes.len(), 1);
+  assert_eq!(session.app().screen.columns, 121);
+  Ok(())
+}

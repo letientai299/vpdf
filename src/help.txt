@@ -58,6 +58,15 @@ Esc: cancel / unfocus panel
 Click / wheel in panel: follow / move
 q: close panel, tab, or reader
 
+# Panes
+Ctrl-w s Ctrl-w v: split above / left
+Ctrl-w h j k l: pane left / below / above / right
+Ctrl-w w W p: next / previous / last pane
+Ctrl-w c o: close pane / close others
+Ctrl-w + - < >: taller / shorter / narrower / wider
+Ctrl-w _ | =: tallest / widest / equal
+Ctrl-w x T: swap with sibling / move to new tab
+
 # Tabs
 gt [count]gt: next / nth tab
 gT: previous tab

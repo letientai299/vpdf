@@ -116,6 +116,20 @@ shows the current outline section, the percentage read, and the zoom when it
 differs from fit width. The terminal title shows the document title. Each tab
 keeps its own position, zoom, panels, search, and workers.
 
+## Panes
+
+`Ctrl-w` manages panes within a tab as in Vim. `Ctrl-w s` and `Ctrl-w v` split
+the focused pane above or to the left, showing the same view; `:split file.pdf`
+and `:vsplit file.pdf` open another document instead. `Ctrl-w h j k l` and the
+arrows move focus by direction, `Ctrl-w w`, `W`, and `p` cycle or return to the
+last pane, and `3 Ctrl-w w` picks the third. `Ctrl-w c` or `:close` closes a
+pane, `Ctrl-w o` or `:only` closes the others, and `:q` closes the pane, then
+the tab. `Ctrl-w + - < >` resize by a count of cells, `Ctrl-w _ |` maximize,
+`Ctrl-w =` equalizes, `Ctrl-w x` swaps with the sibling pane, and `Ctrl-w T`
+moves the pane to a new tab. Each pane has its own status line, position,
+zoom, and panels; clicking a pane focuses it. Panes share one Kitty image
+budget.
+
 ## Recent documents
 
 The reader saves each document's cursor, zoom, and rotation, and reopens it

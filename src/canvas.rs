@@ -9,15 +9,6 @@ use std::io::Write;
 impl App {
   pub fn raster_updates(&mut self, out: &mut impl Write) -> Result<bool> {
     let mut changed = false;
-    // fzf and editors may clear Kitty's images while they run.
-    if crate::terminal::images_lost() {
-      crate::graphics::release(out)?;
-      let doc = self.graphics.doc;
-      self.graphics = crate::graphics::Graphics::default();
-      self.graphics.doc = doc;
-      self.requested.clear();
-      changed = true;
-    }
     for result in self.worker.results.try_iter() {
       match result {
         Ok(tile) => {
@@ -192,12 +183,21 @@ impl App {
     Ok(())
   }
 
+  /// One frame with this pane alone on screen.
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
     write!(out, "\x1b[?2026h\x1b[0m")?;
+    self.graphics.begin(out)?;
+    self.draw_pane(out)?;
+    write!(out, "\x1b[?2026l")?;
+    out.flush()?;
+    Ok(())
+  }
+
+  /// Draws within the pane; the caller starts and ends the frame.
+  pub fn draw_pane(&mut self, out: &mut impl Write) -> Result<()> {
     for row in 0..self.screen.rows {
       terminal::line(out, self.at, row, "", self.screen.columns)?;
     }
-    self.graphics.begin(out)?;
     if self.overview.is_some() {
       self.overview_canvas(out)?;
     } else if self.text_mode {
@@ -211,10 +211,7 @@ impl App {
     if let Some(panel) = &mut self.panel {
       panel.draw(out, self.at, self.left, self.screen.rows)?;
     }
-    self.bottom(out)?;
-    write!(out, "\x1b[?2026l")?;
-    out.flush()?;
-    Ok(())
+    self.bottom(out)
   }
 
   /// Status line, or the prompt with its menu and cursor.

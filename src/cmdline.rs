@@ -67,6 +67,12 @@ pub const COMMANDS: &[Spec] = &[
     "open a PDF in a new tab",
   )
   .completes(Complete::Path),
+  spec("split", &["sp"], "[file]", "split this pane above")
+    .completes(Complete::Path),
+  spec("vsplit", &["vs"], "[file]", "split this pane to the left")
+    .completes(Complete::Path),
+  spec("close", &["clo"], "", "close this pane"),
+  spec("only", &["on"], "", "close every other pane"),
   spec("tabnext", &["tabn"], "[n]", "go to the next or nth tab"),
   spec("tabprevious", &["tabp", "tabN"], "", "go to the previous tab"),
   spec("tabclose", &["tabc"], "", "close this tab"),
@@ -86,7 +92,7 @@ pub const COMMANDS: &[Spec] = &[
   spec("ocr", &[], "[lang]", "recognize the page with Tesseract")
     .completes(Complete::Language),
   spec("help", &["h"], "", "show the key reference"),
-  spec("quit", &["q"], "", "close this tab, then the reader"),
+  spec("quit", &["q"], "", "close this pane, tab, then reader"),
   spec("qall", &["qa", "quitall"], "", "close every tab"),
 ];
 

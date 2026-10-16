@@ -1,28 +1,74 @@
 use crate::Result;
-use crate::app::{App, Request, TabMove, Tabline};
+use crate::app::{App, Request, TabMove, Tabline, Window};
 use crate::graphics::Graphics;
 use crate::home::{Home, Outcome};
 use crate::keys::PanelKind;
 use crate::layout::Screen;
 use crate::prompt::History;
+use crate::split::{Axis, Node, Rect, neighbor};
 use crate::state::{Mark, State};
-use crate::terminal::{self, Terminal};
+use crate::terminal::{self, At, Terminal};
 use crate::text::PageId;
+use crate::theme;
+use crate::trace::Drawable;
 use crate::watch::Watcher;
-use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::event::{self, Event, KeyEventKind, MouseEvent};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-/// Open documents as tabs; only the active tab draws and owns graphics.
+/// Panes of one tab, laid out by a split tree.
+pub struct Tab {
+  pub panes: Vec<App>,
+  pub tree: Node,
+  pub focus: usize,
+  /// Pane focused before the current one, for `Ctrl-w p`.
+  last: Option<u32>,
+}
+
+impl Tab {
+  fn new(app: App) -> Self {
+    Self { tree: Node::Leaf(app.id), panes: vec![app], focus: 0, last: None }
+  }
+
+  fn index(&self, id: u32) -> Option<usize> {
+    self.panes.iter().position(|pane| pane.id == id)
+  }
+
+  /// Pane ids in screen order.
+  pub fn order(&self) -> Vec<u32> {
+    self.tree.leaves()
+  }
+
+  /// Runs `work` on pane `index` while it holds the shared graphics,
+  /// which otherwise stay with the focused pane.
+  fn lend<R>(&mut self, index: usize, work: impl FnOnce(&mut App) -> R) -> R {
+    if index == self.focus {
+      return work(&mut self.panes[index]);
+    }
+    let mut graphics = std::mem::take(&mut self.panes[self.focus].graphics);
+    graphics.doc = self.panes[index].id;
+    self.panes[index].graphics = graphics;
+    let result = work(&mut self.panes[index]);
+    let mut graphics = std::mem::take(&mut self.panes[index].graphics);
+    graphics.doc = self.panes[self.focus].id;
+    self.panes[self.focus].graphics = graphics;
+    result
+  }
+}
+
+/// Open documents as tabs of split panes. The focused pane of the active
+/// tab holds the shared Kitty image cache and lends it while others draw.
 pub struct Session {
-  pub tabs: Vec<App>,
+  pub tabs: Vec<Tab>,
   pub active: usize,
   pub history: History,
   pub quit: bool,
   pub state: State,
   /// Start screen while no document is open.
   pub home: Option<Home>,
+  /// The whole terminal; panes divide it.
+  screen: Option<Screen>,
   watcher: Watcher,
   store: Option<PathBuf>,
   password: String,
@@ -40,6 +86,7 @@ impl Session {
       quit: false,
       state,
       home: None,
+      screen: None,
       watcher: Watcher::default(),
       store,
       password: password.to_owned(),
@@ -52,102 +99,308 @@ impl Session {
     self.state.save(store, &self.history)
   }
 
-  /// Records the active tab and saves when it moved.
+  /// Records the focused pane and saves when it moved.
   fn checkpoint(&mut self) -> Result<()> {
-    if self.running() && self.state.remember(&self.tabs[self.active]) {
+    if !self.running() || self.tabs.is_empty() {
+      return Ok(());
+    }
+    let tab = &self.tabs[self.active];
+    if self.state.remember(&tab.panes[tab.focus]) {
       self.save()?;
     }
     Ok(())
   }
 
-  /// Records every tab and saves before exit.
+  /// Records every pane, the focused one last, and saves before exit.
   fn finish(&mut self) -> Result<()> {
-    let active = self.tabs.get(self.active);
-    let others =
-      self.tabs.iter().filter(|app| active.is_none_or(|a| a.id != app.id));
-    for app in others.chain(active) {
+    let focused = self.tabs.get(self.active).map(|tab| tab.panes[tab.focus].id);
+    let panes = self.tabs.iter().flat_map(|tab| &tab.panes);
+    let (last, others): (Vec<_>, Vec<_>) =
+      panes.partition(|app| Some(app.id) == focused);
+    for app in others.into_iter().chain(last) {
       self.state.remember(app);
     }
     self.save()
   }
 
-  pub fn app(&mut self) -> &mut App {
+  pub fn tab(&mut self) -> &mut Tab {
     &mut self.tabs[self.active]
   }
 
-  /// Opens `path` in a new tab, or in place of the active one.
-  pub fn open(&mut self, path: &Path, tab: bool, screen: Screen) -> Result<()> {
-    let path = std::fs::canonicalize(path)?;
-    if let Some(index) = self.tabs.iter().position(|app| app.path == path) {
-      return self.activate(index);
-    }
-    let mut app = self.load(&path, screen)?;
-    self.watcher.add(&path);
-    if let Some(entry) = self.state.entry(&path) {
-      app.restore(entry)?;
-    }
-    self.state.remember(&app);
-    if self.tabs.is_empty() {
-      self.tabs.push(app);
-      return self.install(Graphics::default(), screen);
-    }
-    if tab {
-      self.tabs.insert(self.active + 1, app);
-      return self.activate(self.active + 1);
-    }
-    let mut old = std::mem::replace(&mut self.tabs[self.active], app);
-    self.watcher.remove(&old.path);
-    self.state.remember(&old);
-    old.graphics.forget(old.id);
-    self.install(std::mem::take(&mut old.graphics), screen)
+  pub fn app(&mut self) -> &mut App {
+    let tab = self.tab();
+    &mut tab.panes[tab.focus]
   }
 
-  fn load(&self, path: &Path, screen: Screen) -> Result<App> {
+  fn take_graphics(&mut self) -> Graphics {
+    let Some(tab) = self.tabs.get_mut(self.active) else {
+      return Graphics::default();
+    };
+    let focus = tab.focus;
+    tab
+      .panes
+      .get_mut(focus)
+      .map(|app| std::mem::take(&mut app.graphics))
+      .unwrap_or_default()
+  }
+
+  /// Moves focus to pane `pane` of tab `tab`, with the graphics.
+  fn focus(&mut self, tab: usize, pane: usize) -> Result<()> {
+    let graphics = self.take_graphics();
+    let target = &mut self.tabs[tab];
+    if target.focus != pane {
+      target.last = Some(target.panes[target.focus].id);
+    }
+    target.focus = pane;
+    self.active = tab;
+    self.give(graphics);
+    self.arrange()
+  }
+
+  fn give(&mut self, mut graphics: Graphics) {
+    let app = self.app();
+    graphics.doc = app.id;
+    app.graphics = graphics;
+    app.requested.clear();
+  }
+
+  /// Sizes every pane of the active tab and marks the focused one.
+  fn arrange(&mut self) -> Result<()> {
+    let Some(screen) = self.screen else { return Ok(()) };
+    let names =
+      self.tabs.iter().map(|tab| tab.panes[tab.focus].name()).collect();
+    let active = self.active;
+    let tab = &mut self.tabs[active];
+    let mut rects = Vec::new();
+    tab.tree.layout(full(screen), &mut rects);
+    let mut tabline = Some(Tabline { names, active });
+    for (id, rect) in rects {
+      let Some(index) = tab.index(id) else { continue };
+      let focused = index == tab.focus;
+      let app = &mut tab.panes[index];
+      app.focused = focused;
+      app.tabline = if focused {
+        tabline.take().unwrap_or_default()
+      } else {
+        Tabline::default()
+      };
+      let pane = Screen {
+        columns: rect.columns,
+        rows: rect.rows,
+        origin: (screen.origin.0 + rect.column, screen.origin.1 + rect.row),
+        ..screen
+      };
+      let at = At { column: rect.column, row: rect.row };
+      let before = (app.screen.columns, app.screen.rows, app.screen.origin);
+      if before != (pane.columns, pane.rows, pane.origin) || app.at != at {
+        app.screen = pane;
+        app.at = at;
+        app.requested.clear();
+        app.relayout()?;
+      }
+    }
+    Ok(())
+  }
+
+  /// Opens `path` in a new tab, or in place of the focused pane.
+  pub fn open(&mut self, path: &Path, tab: bool, screen: Screen) -> Result<()> {
+    self.screen = Some(screen);
+    let path = std::fs::canonicalize(path)?;
+    let found = self.tabs.iter().enumerate().find_map(|(t, tab)| {
+      tab.panes.iter().position(|app| app.path == path).map(|p| (t, p))
+    });
+    if let Some((tab, pane)) = found {
+      return self.focus(tab, pane);
+    }
+    let app = self.load(&path, screen)?;
+    let mut graphics = self.take_graphics();
+    if tab || self.tabs.is_empty() {
+      let index = if self.tabs.is_empty() { 0 } else { self.active + 1 };
+      self.tabs.insert(index, Tab::new(app));
+      self.active = index;
+      self.give(graphics);
+      return self.arrange();
+    }
+    let tab = self.tab();
+    let focus = tab.focus;
+    let old = std::mem::replace(&mut tab.panes[focus], app);
+    let id = tab.panes[focus].id;
+    replace_leaf(&mut tab.tree, old.id, id);
+    graphics.forget(old.id);
+    self.retire(&old);
+    self.give(graphics);
+    self.arrange()
+  }
+
+  /// Loads `path` and restores its saved view.
+  fn load(&mut self, path: &Path, screen: Screen) -> Result<App> {
     let mut secret = self.password.clone();
-    loop {
+    let mut app = loop {
       match App::with_screen(path, &secret, self.text, screen) {
         Err(error) if error.to_string() == "PDF password required" => {
           secret = crate::prompt::password()?;
         }
-        result => return result,
+        result => break result?,
       }
+    };
+    self.watcher.add(path);
+    if let Some(entry) = self.state.entry(path) {
+      app.restore(entry)?;
     }
+    self.state.remember(&app);
+    Ok(app)
+  }
+
+  /// Saves a closing pane's place and stops watching its file.
+  fn retire(&mut self, app: &App) {
+    self.watcher.remove(&app.path);
+    self.state.remember(app);
   }
 
   pub fn activate(&mut self, index: usize) -> Result<()> {
     if index == self.active || index >= self.tabs.len() {
       return Ok(());
     }
-    let old = &mut self.tabs[self.active];
-    let screen = old.screen;
-    let graphics = std::mem::take(&mut old.graphics);
-    self.active = index;
-    self.install(graphics, screen)
+    let focus = self.tabs[index].focus;
+    self.focus(index, focus)
   }
 
   /// Closes the active tab; the session ends after the last.
   pub fn close(&mut self) -> Result<()> {
-    let mut app = self.tabs.remove(self.active);
-    self.watcher.remove(&app.path);
-    self.state.remember(&app);
+    let mut graphics = self.take_graphics();
+    let tab = self.tabs.remove(self.active);
+    for app in &tab.panes {
+      graphics.forget(app.id);
+      self.retire(app);
+    }
     if self.tabs.is_empty() {
       return self.save();
     }
-    app.graphics.forget(app.id);
     self.active = self.active.min(self.tabs.len() - 1);
-    self.install(std::mem::take(&mut app.graphics), app.screen)
+    self.give(graphics);
+    self.arrange()
   }
 
-  /// Hands the shared graphics and screen to the active tab.
-  fn install(&mut self, mut graphics: Graphics, screen: Screen) -> Result<()> {
-    let names = self.tabs.iter().map(App::name).collect();
-    let app = &mut self.tabs[self.active];
-    graphics.doc = app.id;
-    app.graphics = graphics;
-    app.requested.clear();
-    app.screen = screen;
-    app.tabline = Tabline { names, active: self.active };
-    app.relayout()
+  /// Closes the focused pane, then its tab when it was the last.
+  fn close_pane(&mut self) -> Result<()> {
+    if self.tab().panes.len() == 1 {
+      return self.close();
+    }
+    let mut graphics = self.take_graphics();
+    let tab = self.tab();
+    let app = tab.panes.remove(tab.focus);
+    tab.tree.remove(app.id);
+    let next = tab.last.and_then(|id| tab.index(id));
+    let next =
+      next.or_else(|| tab.order().first().and_then(|id| tab.index(*id)));
+    tab.focus = next.unwrap_or(0);
+    tab.last = None;
+    graphics.forget(app.id);
+    self.retire(&app);
+    self.give(graphics);
+    self.arrange()
+  }
+
+  /// Splits the focused pane; the new pane shows `file` or the same view.
+  fn split(&mut self, axis: Axis, file: Option<&Path>) -> Result<()> {
+    let screen = self.app().screen;
+    let path = match file {
+      Some(file) => std::fs::canonicalize(file)?,
+      None => self.app().path.clone(),
+    };
+    let mut app = self.load(&path, screen)?;
+    if file.is_none() {
+      app.mirror(self.app())?;
+    }
+    let tab = self.tab();
+    let target = tab.panes[tab.focus].id;
+    tab.tree.split(target, axis, app.id);
+    tab.panes.push(app);
+    let index = tab.panes.len() - 1;
+    self.focus(self.active, index)
+  }
+
+  fn window(
+    &mut self,
+    command: Window,
+    (count, explicit): (usize, bool),
+    file: Option<&Path>,
+  ) -> Result<()> {
+    let area = self.screen.map(full).unwrap_or_default();
+    let tab = self.tab();
+    let id = tab.panes[tab.focus].id;
+    let order = tab.order();
+    let at = order.iter().position(|pane| *pane == id).unwrap_or(0);
+    let total = order.len();
+    let target = match command {
+      Window::Split(axis) => return self.split(axis, file),
+      Window::Close => return self.close_pane(),
+      Window::Only => return self.only(),
+      Window::ToTab => return self.move_to_tab(),
+      Window::Focus(direction) => {
+        let mut rects = Vec::new();
+        tab.tree.layout(area, &mut rects);
+        neighbor(&rects, id, direction)
+      }
+      Window::Next if explicit => Some(order[count.clamp(1, total) - 1]),
+      Window::Next => Some(order[(at + count) % total]),
+      Window::Previous => Some(order[(at + total - count % total) % total]),
+      Window::Last => tab.last,
+      Window::Equalize => {
+        tab.tree.equalize();
+        None
+      }
+      Window::Resize(axis, step) => {
+        let cells = step * i32::try_from(count).unwrap_or(1);
+        tab.tree.resize(id, axis, cells, area);
+        None
+      }
+      Window::Maximize(axis) => {
+        tab.tree.resize(id, axis, i32::from(u16::MAX), area);
+        None
+      }
+      Window::Exchange => {
+        tab.tree.exchange(id);
+        None
+      }
+    };
+    match target.and_then(|id| self.tab().index(id)) {
+      Some(index) => self.focus(self.active, index),
+      None => self.arrange(),
+    }
+  }
+
+  /// `Ctrl-w o`: closes every pane but the focused one.
+  fn only(&mut self) -> Result<()> {
+    let tab = self.tab();
+    let keep = tab.panes[tab.focus].id;
+    let closing: Vec<_> =
+      tab.panes.extract_if(.., |app| app.id != keep).collect();
+    tab.tree = Node::Leaf(keep);
+    tab.focus = 0;
+    tab.last = None;
+    for app in &closing {
+      self.app().graphics.forget(app.id);
+      self.retire(app);
+    }
+    self.arrange()
+  }
+
+  /// `Ctrl-w T`: moves the focused pane into a new tab.
+  fn move_to_tab(&mut self) -> Result<()> {
+    if self.tab().panes.len() == 1 {
+      return Ok(());
+    }
+    let graphics = self.take_graphics();
+    let tab = self.tab();
+    let app = tab.panes.remove(tab.focus);
+    tab.tree.remove(app.id);
+    tab.focus = tab.order().first().and_then(|id| tab.index(*id)).unwrap_or(0);
+    tab.last = None;
+    self.tabs.insert(self.active + 1, Tab::new(app));
+    self.active += 1;
+    self.give(graphics);
+    self.arrange()
   }
 
   fn step(&self, step: TabMove) -> usize {
@@ -159,16 +412,22 @@ impl Session {
     }
   }
 
-  /// Applies what the active tab asked for after an input.
+  /// Applies what the focused pane asked for after an input.
   pub fn settle(&mut self) -> Result<()> {
-    let app = &mut self.tabs[self.active];
-    if app.quit {
-      return self.close();
+    if self.tabs.is_empty() {
+      return Ok(());
     }
-    let screen = app.screen;
-    match app.request.take() {
+    let fallback = self.app().screen;
+    if self.app().quit {
+      return self.close_pane();
+    }
+    let screen = self.screen.unwrap_or(fallback);
+    match self.app().request.take() {
       Some(Request::Open { path, tab }) => self.open(&path, tab, screen),
       Some(Request::Tab(step)) => self.activate(self.step(step)),
+      Some(Request::Window { command, count, explicit, file }) => {
+        self.window(command, (count, explicit), file.as_deref())
+      }
       Some(Request::Panel(kind)) => {
         let rows = if kind == PanelKind::Marks {
           let global = self.state.marks.clone();
@@ -179,7 +438,7 @@ impl Session {
         self.app().show_panel(kind, rows)
       }
       Some(Request::SetMark(name)) => {
-        let app = &self.tabs[self.active];
+        let app = self.app();
         let mark = Mark { path: app.path.clone(), cursor: app.reader.cursor };
         self.state.marks.insert(name, mark);
         Ok(())
@@ -206,6 +465,39 @@ impl Session {
 
   fn running(&self) -> bool {
     !self.quit && (!self.tabs.is_empty() || self.home.is_some())
+  }
+
+  /// Sends a click or scroll to the pane under it, focusing that pane.
+  fn mouse(&mut self, mut mouse: MouseEvent) -> Result<()> {
+    let tab = self.tab();
+    let hit = tab.panes.iter().position(|app| {
+      let (at, screen) = (app.at, app.screen);
+      (at.column..at.column + screen.columns).contains(&mouse.column)
+        && (at.row..at.row + screen.rows).contains(&mouse.row)
+    });
+    let Some(index) = hit else { return Ok(()) };
+    if index != tab.focus {
+      self.focus(self.active, index)?;
+    }
+    let app = self.app();
+    mouse.column -= app.at.column;
+    mouse.row -= app.at.row;
+    app.mouse(mouse)
+  }
+
+  /// Drops cached images after another program had the screen.
+  fn images_lost(&mut self, out: &mut impl Write) -> Result<bool> {
+    if !terminal::images_lost() {
+      return Ok(false);
+    }
+    crate::graphics::release(out)?;
+    let mut graphics = Graphics::default();
+    graphics.doc = self.app().id;
+    self.app().graphics = graphics;
+    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+      app.requested.clear();
+    }
+    Ok(true)
   }
 
   /// Draws the start screen and handles one input.
@@ -237,6 +529,55 @@ impl Session {
     }
     self.home = Some(home);
     Ok(())
+  }
+}
+
+impl Drawable for Session {
+  /// Unfocused panes first, so the focused pane's prompt places the
+  /// terminal cursor last.
+  fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()> {
+    write!(out, "\x1b[?2026h\x1b[0m")?;
+    self.app().graphics.begin(out)?;
+    let area = self.screen.map(full).unwrap_or_default();
+    let tab = self.tab();
+    for index in 0..tab.panes.len() {
+      if index != tab.focus {
+        tab.lend(index, |app| app.draw_pane(out))?;
+      }
+    }
+    let mut separators = Vec::new();
+    tab.tree.separators(area, &mut separators);
+    for rect in separators {
+      let at = At { column: rect.column, row: rect.row };
+      for row in 0..rect.rows {
+        let goto = at.goto(row, 0u16);
+        write!(out, "{goto}{}│{}", theme::MUTED, theme::RESET)?;
+      }
+    }
+    let focus = tab.focus;
+    tab.panes[focus].draw_pane(out)?;
+    write!(out, "\x1b[?2026l")?;
+    Ok(())
+  }
+
+  fn focused(&self) -> &App {
+    let tab = &self.tabs[self.active];
+    &tab.panes[tab.focus]
+  }
+}
+
+fn full(screen: Screen) -> Rect {
+  Rect { column: 0, row: 0, columns: screen.columns, rows: screen.rows }
+}
+
+fn replace_leaf(node: &mut Node, from: u32, to: u32) {
+  match node {
+    Node::Leaf(id) if *id == from => *id = to,
+    Node::Leaf(_) => {}
+    Node::Split { first, second, .. } => {
+      replace_leaf(first, from, to);
+      replace_leaf(second, from, to);
+    }
   }
 }
 
@@ -274,6 +615,66 @@ pub fn view(
   session.finish()
 }
 
+/// Background results for every pane of the active tab.
+fn updates(session: &mut Session, out: &mut impl Write) -> Result<bool> {
+  let mut dirty = session.images_lost(out)?;
+  let tab = session.tab();
+  for index in 0..tab.panes.len() {
+    dirty |= tab.lend(index, |app| app.raster_updates(out))?;
+    let app = &mut tab.panes[index];
+    dirty |= app.search_updates()?;
+    dirty |= app.ocr_updates()?;
+    dirty |= app.outline_updates()?;
+  }
+  Ok(dirty)
+}
+
+/// Reloads the focused pane after its file changes.
+fn watch(session: &mut Session, force: bool) -> bool {
+  let path = session.app().path.clone();
+  let touched = session.watcher.touched(&path);
+  let app = session.app();
+  if !(touched || force || app.settling.is_some()) {
+    return false;
+  }
+  match app.watch() {
+    Ok(reloaded) => reloaded,
+    Err(error) => {
+      app.error = Some(format!("Reload failed: {error}"));
+      true
+    }
+  }
+}
+
+/// Handles one input; errors show in the focused pane.
+fn input(session: &mut Session, event: Event) -> Result<()> {
+  match event {
+    Event::Key(key) if key.kind != KeyEventKind::Release => {
+      let tab = &mut session.tabs[session.active];
+      let app = &mut tab.panes[tab.focus];
+      app.reader.message.clear();
+      app.error = None;
+      app.key(key, &mut session.history)?;
+      app.after_key()
+    }
+    Event::Paste(text) => {
+      if let Some(prompt) = &mut session.app().prompt {
+        prompt.insert(&text);
+      }
+      Ok(())
+    }
+    Event::Resize(_, _) => {
+      session.screen = Some(terminal::size()?);
+      for app in session.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+        app.at = At { column: u16::MAX, row: u16::MAX };
+      }
+      session.arrange()
+    }
+    Event::Mouse(mouse) => session.mouse(mouse),
+    _ => Ok(()),
+  }
+}
+
 fn run(session: &mut Session) -> Result<()> {
   let mut out = io::BufWriter::new(io::stdout());
   let mut trace = crate::trace::Trace::new()?;
@@ -289,28 +690,27 @@ fn run(session: &mut Session) -> Result<()> {
       dirty = true;
       continue;
     }
-    let app = &mut session.tabs[session.active];
-    dirty |= app.raster_updates(&mut out)?;
-    dirty |= app.search_updates()?;
-    dirty |= app.ocr_updates()?;
-    dirty |= app.outline_updates()?;
-    app.clipboard(&mut out)?;
-    let frame_due = last_frame.elapsed() >= Duration::from_micros(8333);
-    if frame_due {
-      dirty |= app.animate();
+    dirty |= updates(session, &mut out)?;
+    session.app().clipboard(&mut out)?;
+    if last_frame.elapsed() >= Duration::from_micros(8333) {
+      for app in &mut session.tab().panes {
+        dirty |= app.animate();
+      }
       if dirty {
-        let current = app.title();
+        let current = session.app().title();
         if current != title {
           let clean = terminal::clean(&current, 200);
           write!(out, "\x1b]2;{clean}\x07")?;
           title = current;
         }
-        trace.draw(app, &mut out, &mut buffer)?;
+        trace.draw(session, &mut out, &mut buffer)?;
         dirty = false;
         last_frame = Instant::now();
       }
     }
-    let wait = if !dirty && app.animation.is_none() {
+    let animating =
+      session.tab().panes.iter().any(|app| app.animation.is_some());
+    let wait = if !dirty && !animating {
       Duration::from_millis(8)
     } else {
       Duration::from_micros(8333)
@@ -318,22 +718,12 @@ fn run(session: &mut Session) -> Result<()> {
         .max(Duration::from_millis(1))
     };
     if !event::poll(wait)? {
-      dirty |= app.clue_due()?;
-      let touched = session.watcher.touched(&session.tabs[session.active].path);
-      let app = session.app();
-      if touched
-        || app.settling.is_some()
-        || watched.elapsed() > Duration::from_secs(2)
-      {
+      dirty |= session.app().clue_due()?;
+      let force = watched.elapsed() > Duration::from_secs(2);
+      if force {
         watched = Instant::now();
-        match app.watch() {
-          Ok(reloaded) => dirty |= reloaded,
-          Err(error) => {
-            app.error = Some(format!("Reload failed: {error}"));
-            dirty = true;
-          }
-        }
       }
+      dirty |= watch(session, force);
       if saved.elapsed() > Duration::from_secs(2) {
         saved = Instant::now();
         if let Err(error) = session.checkpoint() {
@@ -343,26 +733,10 @@ fn run(session: &mut Session) -> Result<()> {
       continue;
     }
     trace.input();
-    let event = event::read()?;
-    if matches!(event, Event::Key(_)) {
-      app.reader.message.clear();
-      app.error = None;
-    }
-    let result = match event {
-      Event::Key(key) if key.kind != KeyEventKind::Release => {
-        app.key(key, &mut session.history).and_then(|()| app.after_key())
-      }
-      Event::Paste(text) => {
-        if let Some(prompt) = &mut app.prompt {
-          prompt.insert(&text);
-        }
-        Ok(())
-      }
-      Event::Resize(_, _) => app.resize(),
-      Event::Mouse(mouse) => app.mouse(mouse),
-      _ => Ok(()),
-    };
-    if let Err(error) = result.and_then(|()| session.settle()) {
+    let result = input(session, event::read()?);
+    if let Err(error) = result.and_then(|()| session.settle())
+      && !session.tabs.is_empty()
+    {
       session.app().error = Some(error.to_string());
     }
     dirty = true;

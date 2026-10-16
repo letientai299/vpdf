@@ -131,6 +131,19 @@ impl State {
 }
 
 impl App {
+  /// Copies another pane's view of the same document, as a new split.
+  pub fn mirror(&mut self, other: &App) -> Result<()> {
+    self.layout.zoom = other.layout.zoom;
+    self.layout.rotation = other.layout.rotation;
+    self.layout.crop = other.layout.crop;
+    self.text_mode = other.text_mode;
+    self.layout.reflow(&self.doc.pages);
+    self.reader.cursor =
+      self.doc.text(other.reader.cursor.page)?.clamp(other.reader.cursor);
+    self.reader.scroll = other.reader.scroll;
+    Ok(())
+  }
+
   /// Returns to a saved position and view.
   pub fn restore(&mut self, entry: &Entry) -> Result<()> {
     self.layout.zoom = entry.zoom.clamp(0.1, 8.0);

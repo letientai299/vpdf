@@ -142,10 +142,11 @@ impl App {
     };
     let message = terminal::clean(message, room.saturating_sub(width));
     let fill = room.saturating_sub(width + message.width()) + 1;
+    let badge =
+      if self.focused { theme::badge(color) } else { theme::BAR.into() };
     write!(
       out,
-      "{}{left}{}{tabs}{style}{message}{}{}{right}{}",
-      theme::badge(color),
+      "{badge}{left}{}{tabs}{style}{message}{}{}{right}{}",
       theme::BAR,
       theme::BAR,
       " ".repeat(fill),

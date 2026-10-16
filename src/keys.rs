@@ -1,6 +1,8 @@
+use crate::app::Window as W;
 use crate::motion::Motion;
 use crate::motion::Motion as M;
 use crate::reader::SelectionKind;
+use crate::split::{Axis, Direction as D};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -54,6 +56,7 @@ pub enum Action {
   Tab(bool),
   /// Link hints; `true` copies URIs instead of opening them.
   Hints(bool),
+  Window(crate::app::Window),
   /// Preview the link under the cursor.
   Peek,
   /// Page thumbnail grid.
@@ -130,8 +133,10 @@ impl Keys {
     if let Some(action) = binding(&self.prefix) {
       return Some(self.finish(action));
     }
-    if !matches!(self.prefix.as_str(), "g" | "z" | "i" | "a" | "m" | "'" | "`")
-    {
+    if !matches!(
+      self.prefix.as_str(),
+      "g" | "z" | "i" | "a" | "m" | "'" | "`" | "C-w"
+    ) {
       self.clear();
     }
     None
@@ -286,6 +291,36 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("zl", Action::Pan(1), "pan right"),
   ("zr", Action::Rotate, "rotate clockwise"),
   ("zc", Action::Crop, "crop margins"),
+  ("C-ws", Action::Window(W::Split(Axis::Rows)), "split above"),
+  ("C-wC-s", Action::Window(W::Split(Axis::Rows)), "split above"),
+  ("C-wv", Action::Window(W::Split(Axis::Columns)), "split left"),
+  ("C-wC-v", Action::Window(W::Split(Axis::Columns)), "split left"),
+  ("C-wh", Action::Window(W::Focus(D::Left)), "pane left"),
+  ("C-wC-h", Action::Window(W::Focus(D::Left)), "pane left"),
+  ("C-wj", Action::Window(W::Focus(D::Down)), "pane below"),
+  ("C-wC-j", Action::Window(W::Focus(D::Down)), "pane below"),
+  ("C-wk", Action::Window(W::Focus(D::Up)), "pane above"),
+  ("C-wC-k", Action::Window(W::Focus(D::Up)), "pane above"),
+  ("C-wl", Action::Window(W::Focus(D::Right)), "pane right"),
+  ("C-wC-l", Action::Window(W::Focus(D::Right)), "pane right"),
+  ("C-ww", Action::Window(W::Next), "next pane, or [count] pane"),
+  ("C-wC-w", Action::Window(W::Next), "next pane, or [count] pane"),
+  ("C-wW", Action::Window(W::Previous), "previous pane"),
+  ("C-wp", Action::Window(W::Last), "last focused pane"),
+  ("C-wc", Action::Window(W::Close), "close pane"),
+  ("C-wq", Action::Window(W::Close), "close pane"),
+  ("C-wC-q", Action::Window(W::Close), "close pane"),
+  ("C-wo", Action::Window(W::Only), "close other panes"),
+  ("C-wC-o", Action::Window(W::Only), "close other panes"),
+  ("C-w=", Action::Window(W::Equalize), "equal sizes"),
+  ("C-w+", Action::Window(W::Resize(Axis::Rows, 1)), "taller"),
+  ("C-w-", Action::Window(W::Resize(Axis::Rows, -1)), "shorter"),
+  ("C-w>", Action::Window(W::Resize(Axis::Columns, 1)), "wider"),
+  ("C-w<", Action::Window(W::Resize(Axis::Columns, -1)), "narrower"),
+  ("C-w_", Action::Window(W::Maximize(Axis::Rows)), "tallest"),
+  ("C-w|", Action::Window(W::Maximize(Axis::Columns)), "widest"),
+  ("C-wx", Action::Window(W::Exchange), "swap with sibling pane"),
+  ("C-wT", Action::Window(W::ToTab), "move pane to a new tab"),
 ];
 
 pub fn binding(key: &str) -> Option<Action> {
@@ -338,6 +373,20 @@ mod tests {
     assert_eq!(feed("`a"), Some(Action::GoMark('a', true)));
     assert_eq!(feed("''"), Some(Action::History(false)));
     assert_eq!(feed("m1j"), Some(Action::Motion(Motion::Down)));
+  }
+
+  #[test]
+  fn ctrl_w_takes_a_window_command() {
+    let mut keys = Keys::default();
+    let ctrl_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
+    assert!(keys.feed(ctrl_w).is_none());
+    assert_eq!(keys.awaiting(), Some("C-w"));
+    let input = keys.feed(key('v')).unwrap();
+    assert_eq!(input.action, Action::Window(W::Split(Axis::Columns)));
+    assert!(keys.feed(ctrl_w).is_none());
+    let ctrl_l = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
+    let input = keys.feed(ctrl_l).unwrap();
+    assert_eq!(input.action, Action::Window(W::Focus(D::Right)));
   }
 
   #[test]

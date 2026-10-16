@@ -23,10 +23,34 @@ pub enum Request {
   /// A panel whose rows the session builds.
   Panel(PanelKind),
   SetMark(char),
+  /// A pane command with its count; `file` opens in a new split.
+  Window {
+    command: Window,
+    count: usize,
+    explicit: bool,
+    file: Option<PathBuf>,
+  },
   GoMark(char, bool),
   /// Pick a file with `fzf` and open it in a new tab.
   Pick,
   QuitAll,
+}
+
+/// `Ctrl-w` commands on the panes of a tab.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Window {
+  Split(crate::split::Axis),
+  Focus(crate::split::Direction),
+  Next,
+  Previous,
+  Last,
+  Close,
+  Only,
+  Equalize,
+  Resize(crate::split::Axis, i32),
+  Maximize(crate::split::Axis),
+  Exchange,
+  ToTab,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,6 +87,8 @@ pub struct App {
   /// Pane origin on the terminal.
   pub at: crate::terminal::At,
   pub quit: bool,
+  /// Whether this pane has the keyboard.
+  pub focused: bool,
   pub request: Option<Request>,
   pub tabline: Tabline,
   pub error: Option<String>,
@@ -130,6 +156,7 @@ impl App {
       left: 0,
       at: crate::terminal::At::default(),
       quit: false,
+      focused: true,
       request: None,
       tabline: Tabline::default(),
       error: None,

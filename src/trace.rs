@@ -24,6 +24,22 @@ struct Frame {
   scroll: f32,
 }
 
+/// Something that draws whole frames around a focused pane.
+pub trait Drawable {
+  fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()>;
+  fn focused(&self) -> &App;
+}
+
+impl Drawable for App {
+  fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()> {
+    self.draw(out)
+  }
+
+  fn focused(&self) -> &App {
+    self
+  }
+}
+
 impl Trace {
   pub fn new() -> Result<Self> {
     let output = std::env::var_os("VPDF_TRACE")
@@ -39,13 +55,14 @@ impl Trace {
 
   pub fn draw(
     &mut self,
-    app: &mut App,
+    target: &mut impl Drawable,
     output: &mut impl Write,
     buffer: &mut Vec<u8>,
   ) -> Result<()> {
     buffer.clear();
     let started = Instant::now();
-    app.draw(buffer)?;
+    target.draw_frame(buffer)?;
+    let app = target.focused();
     let built = Instant::now();
     output.write_all(buffer)?;
     output.flush()?;
