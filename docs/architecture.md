@@ -48,10 +48,11 @@ Kitty placements use terminal cell metrics and pixel offsets. Tmux output is
 wrapped in passthrough sequences. Cursor save, placement, and restore travel
 in one passthrough packet; pane and top status-row offsets are refreshed on
 resize. Isolated full-window and split-pane Kitty/tmux sessions were tested.
-Use one graphics reader per Kitty window: image identifiers and broad cleanup
-are currently window-scoped. The text fallback retains reader motions,
-selection, search, and panels. Clipboard delivery uses OSC 52 and therefore
-follows terminal policy.
+Each reader draws image identifiers from a random per-process block and
+deletes only that block, so readers in sibling panes keep each other's images.
+Scoped cleanup uses Kitty range deletion, added in Kitty 0.33. The text
+fallback retains reader motions, selection, search, and panels. Clipboard
+delivery uses OSC 52 and therefore follows terminal policy.
 
 Terminal-image acknowledgement and loss recovery through every multiplexer
 are not yet qualified. Resizing or changing zoom requests another viewport;

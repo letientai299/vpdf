@@ -9,7 +9,7 @@ use std::io::Write;
 impl App {
   pub fn raster_updates(&mut self, out: &mut impl Write) -> Result<bool> {
     if self.reset_images {
-      terminal::graphics(out, "a=d,d=A,q=2", "")?;
+      crate::graphics::release(out)?;
       self.reset_images = false;
     }
     let mut changed = false;

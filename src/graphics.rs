@@ -6,11 +6,20 @@ use crate::terminal::graphics;
 use crate::text::Bounds;
 use crate::tiles::{Tile, TileKey, encode};
 use std::collections::HashMap;
+use std::collections::hash_map::RandomState;
+use std::hash::{BuildHasher, Hasher};
 use std::io::Write;
+use std::sync::OnceLock;
+
+const BLOCK: u32 = 1 << 16;
+const OVERLAYS: u32 = 1024;
+const BUDGET: usize = 128 * MIB;
 
 pub struct Graphics {
   resident: Cache<TileKey, u32>,
   ids: HashMap<TileKey, u32>,
+  free: Vec<u32>,
+  base: u32,
   next: u32,
   overlay: u32,
   pub uploaded: u64,
@@ -18,14 +27,34 @@ pub struct Graphics {
 
 impl Default for Graphics {
   fn default() -> Self {
+    let base = session();
     Self {
-      resident: Cache::new(128 * MIB),
+      resident: Cache::new(BUDGET),
       ids: HashMap::new(),
-      next: 1000,
-      overlay: 1,
+      free: Vec::new(),
+      base,
+      next: base + OVERLAYS,
+      overlay: 0,
       uploaded: 0,
     }
   }
+}
+
+/// Random id block; sibling panes share Kitty ids.
+pub fn session() -> u32 {
+  static BASE: OnceLock<u32> = OnceLock::new();
+  *BASE.get_or_init(|| {
+    let mut hasher = RandomState::new().build_hasher();
+    hasher.write_u32(std::process::id());
+    let blocks = u64::from(u32::MAX / BLOCK);
+    (hasher.finish() % blocks) as u32 * BLOCK + BLOCK
+  })
+}
+
+/// Deletes this process's images and placements.
+pub fn release(out: &mut impl Write) -> Result<()> {
+  let base = session();
+  graphics(out, &format!("a=d,d=R,x={base},y={},q=2", base + (BLOCK - 1)), "")
 }
 
 impl Graphics {
@@ -37,13 +66,18 @@ impl Graphics {
     if self.contains(&tile.key) {
       return Ok(());
     }
-    let id = self.next;
-    self.next = self.next.checked_add(1).unwrap_or(1000);
+    let id = self.free.pop().unwrap_or_else(|| {
+      self.next += 1;
+      self.next - 1
+    });
     transmit(out, id, tile.key.width, tile.key.height, 24, &tile.encoded)?;
-    let weight = (tile.key.width * tile.key.height * 3) as usize;
+    // Weight floor keeps residency within tile ids.
+    let weight = ((tile.key.width * tile.key.height * 3) as usize)
+      .max(BUDGET.div_ceil((BLOCK - OVERLAYS) as usize));
     for key in self.resident.insert(tile.key, id, weight) {
       if let Some(id) = self.ids.remove(&key) {
         graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
+        self.free.push(id);
       }
     }
     self.ids.insert(tile.key, id);
@@ -52,11 +86,14 @@ impl Graphics {
   }
 
   pub fn begin(&mut self, out: &mut impl Write) -> Result<()> {
-    graphics(out, "a=d,d=a,q=2", "")?;
-    for id in 1..self.overlay {
-      graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
+    let tiles = self.base + OVERLAYS;
+    let last = self.base + (BLOCK - 1);
+    graphics(out, &format!("a=d,d=r,x={tiles},y={last},q=2"), "")?;
+    if self.overlay > 0 {
+      let (first, last) = (self.base, self.base + self.overlay - 1);
+      graphics(out, &format!("a=d,d=R,x={first},y={last},q=2"), "")?;
     }
-    self.overlay = 1;
+    self.overlay = 0;
     Ok(())
   }
 
@@ -103,13 +140,13 @@ impl Graphics {
     out: &mut impl Write,
   ) -> Result<()> {
     let Some(rect) = clip(rect, screen) else { return Ok(()) };
-    if self.overlay >= 999 {
+    if self.overlay >= OVERLAYS {
       return Ok(());
     }
     let width = rect.width().ceil().max(1.0) as i32;
     let height = rect.height().ceil().max(1.0) as i32;
     let pixels = color.repeat((width * height) as usize);
-    let id = self.overlay;
+    let id = self.base + self.overlay;
     self.overlay += 1;
     transmit(out, id, width, height, 32, &encode(&pixels)?)?;
     placement(
@@ -183,4 +220,80 @@ fn transmit(
     first = false;
   }
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::text::PageId;
+
+  fn commands(output: &[u8]) -> Vec<HashMap<String, String>> {
+    let text = String::from_utf8_lossy(output);
+    text
+      .split("_G")
+      .skip(1)
+      .map(|command| {
+        let control = command.split(';').next().unwrap_or_default();
+        control
+          .split(',')
+          .filter_map(|pair| pair.split_once('='))
+          .map(|(key, value)| (key.to_owned(), value.to_owned()))
+          .collect()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn commands_stay_in_session_block() -> Result<()> {
+    let mut graphics = Graphics {
+      resident: Cache::new(2 * BUDGET.div_ceil((BLOCK - OVERLAYS) as usize)),
+      ..Graphics::default()
+    };
+    let block = session()..=session() + (BLOCK - 1);
+    let mut output = Vec::new();
+    for page in 0..4 {
+      let key = TileKey {
+        page: PageId(page),
+        scale: 1,
+        rotation: 0,
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+      };
+      graphics.upload(
+        &Tile { key, encoded: encode(&[255; 3])?, render_ms: 0.0 },
+        &mut output,
+      )?;
+    }
+    let screen = Screen {
+      columns: 10,
+      rows: 10,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let rect = Bounds { x0: 0.0, y0: 0.0, x1: 4.0, y1: 4.0 };
+    graphics.highlight(rect, [0; 4], screen, 0, &mut output)?;
+    graphics.begin(&mut output)?;
+    release(&mut output)?;
+    let commands = commands(&output);
+    assert!(commands.iter().any(|c| c.get("d").is_some_and(|d| d == "I")));
+    for command in commands {
+      if let Some(delete) = command.get("d") {
+        assert!(["I", "r", "R"].contains(&delete.as_str()), "{delete}");
+      }
+      let ids = ["i", "x", "y"].iter().filter(|key| {
+        *key == &"i" || command.get("a").is_some_and(|a| a == "d")
+      });
+      for key in ids {
+        if let Some(id) = command.get(*key) {
+          assert!(block.contains(&id.parse()?), "{key}={id}");
+        }
+      }
+    }
+    assert_eq!(graphics.free.len(), 1);
+    assert_eq!(graphics.next, session() + OVERLAYS + 3);
+    Ok(())
+  }
 }
