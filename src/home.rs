@@ -123,23 +123,41 @@ impl Home {
           self.prompt = Some(Prompt::new(PromptKind::Command));
           Outcome::Stay
         }
+        Action::Search(backward) => {
+          self.panel.begin_search(backward);
+          self.prompt = Some(Prompt::new(PromptKind::Search(backward)));
+          Outcome::Stay
+        }
         Action::Quit => Outcome::Quit,
         _ => Outcome::Stay,
       });
     };
+    let kind = prompt.kind;
+    let search = matches!(kind, PromptKind::Search(_));
     match prompt.feed(key, history) {
-      PromptEvent::Complete => {
+      PromptEvent::Complete if !search => {
         let (start, items) = cmdline::candidates(prompt.before_cursor());
         prompt.complete(start, items);
       }
-      PromptEvent::Cancel => self.prompt = None,
+      PromptEvent::Edited if search => self.panel.preview(&prompt.text),
+      PromptEvent::Cancel => {
+        self.prompt = None;
+        self.panel.abort_search();
+      }
       PromptEvent::Submit => {
         let text = prompt.text.clone();
         self.prompt = None;
-        history.push(PromptKind::Command, &text);
-        return command(&text);
+        history.push(kind, &text);
+        if !search {
+          return command(&text);
+        }
+        anyhow::ensure!(
+          self.panel.finish_search(&text),
+          "Pattern not found: {}",
+          self.panel.search.query
+        );
       }
-      PromptEvent::Pending | PromptEvent::Edited => {}
+      _ => {}
     }
     Ok(Outcome::Stay)
   }

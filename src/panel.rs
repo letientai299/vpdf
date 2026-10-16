@@ -3,6 +3,7 @@ use crate::app::{App, Request};
 use crate::document::Target;
 use crate::keys::{Action, Input, PanelKind};
 use crate::motion::Motion;
+use crate::panel_search::RowSearch;
 use crate::state::Entry;
 use crate::terminal;
 use crate::text::Position;
@@ -41,7 +42,7 @@ impl Row {
   }
 
   /// Reads `# heading` and `keys: description` lines.
-  fn parse(line: &str) -> Self {
+  pub fn parse(line: &str) -> Self {
     let style = if line.starts_with("# ") {
       Style::Heading
     } else if line.contains(": ") {
@@ -61,11 +62,19 @@ pub struct Panel {
   pub focused: bool,
   /// First visible row; moves only to keep the selection shown.
   pub top: usize,
+  pub search: RowSearch,
 }
 
 impl Panel {
   pub fn new(kind: PanelKind, rows: Vec<Row>) -> Self {
-    Self { kind, rows, selected: 0, focused: true, top: 0 }
+    Self {
+      kind,
+      rows,
+      selected: 0,
+      focused: true,
+      top: 0,
+      search: RowSearch::default(),
+    }
   }
 
   /// Applies list motions; `page` rows per full-screen scroll.
@@ -80,6 +89,23 @@ impl Panel {
       Action::Scroll(amount) => {
         let rows = (amount * page as f32 * count as f32) as isize;
         self.selected.saturating_add_signed(rows)
+      }
+      Action::Rows(rows) => {
+        self.selected.saturating_add_signed(rows as isize * count as isize)
+      }
+      Action::Motion(Motion::NextParagraph | Motion::PreviousParagraph) => {
+        let forward = input.action == Action::Motion(Motion::NextParagraph);
+        self.heading(forward, count);
+        self.selected
+      }
+      Action::Align(fraction) => {
+        let visible = page.saturating_sub(3) as f32;
+        self.top = self.selected.saturating_sub((visible * fraction) as usize);
+        self.selected
+      }
+      Action::Result(reverse) => {
+        self.repeat(reverse, count);
+        self.selected
       }
       _ => return false,
     }
@@ -161,7 +187,7 @@ impl Panel {
       write!(out, "\x1b[{};1H{base}", row + 2)?;
       let detail = terminal::clean(&item.detail, inner / 3);
       let room = inner.saturating_sub(detail.width() + 1);
-      let used = item.write(out, base, room, keys)?;
+      let used = item.write(out, base, room, keys, &self.search.query)?;
       write!(
         out,
         "{}{}{detail}{}",
@@ -182,6 +208,7 @@ impl Row {
     base: &str,
     room: usize,
     keys: usize,
+    query: &str,
   ) -> Result<usize> {
     let plain = base == theme::RESET;
     match (self.style, self.label.split_once(": ")) {
@@ -191,21 +218,47 @@ impl Row {
         let text =
           terminal::clean(text, room.saturating_sub(key.width() + pad));
         let style = if plain { theme::KEY } else { "" };
-        write!(out, "{style}{key}{base}{}{text}", " ".repeat(pad))?;
+        marked(out, &key, query, &format!("{base}{style}"))?;
+        write!(out, "{base}{}", " ".repeat(pad))?;
+        marked(out, &text, query, base)?;
         Ok(key.width() + pad + text.width())
       }
       (Style::Heading, _) => {
         let text = terminal::clean(&self.label, room);
-        write!(out, "{}{text}{base}", theme::HEADING)?;
+        marked(out, &text, query, &format!("{base}{}", theme::HEADING))?;
+        write!(out, "{base}")?;
         Ok(text.width())
       }
       _ => {
         let text = terminal::clean(&self.label, room);
-        write!(out, "{text}")?;
+        marked(out, &text, query, base)?;
         Ok(text.width())
       }
     }
   }
+}
+
+/// Writes `text` in `style` with query matches highlighted.
+fn marked(
+  out: &mut impl Write,
+  text: &str,
+  query: &str,
+  style: &str,
+) -> Result<()> {
+  write!(out, "{style}")?;
+  let mut written = 0;
+  for (start, end) in crate::panel_search::ranges(text, query) {
+    write!(
+      out,
+      "{}{}{}{style}",
+      &text[written..start],
+      theme::TEXT_MATCH,
+      &text[start..end]
+    )?;
+    written = end;
+  }
+  write!(out, "{}", &text[written..])?;
+  Ok(())
 }
 
 impl App {
@@ -331,6 +384,18 @@ impl App {
       Action::Quit | Action::ClosePanel => {
         self.close_panel()?;
       }
+      Action::Yank | Action::YankLine => {
+        if let Some(row) = panel.rows.get(panel.selected) {
+          let text = format!("{}\n", row.label.trim());
+          self.reader.store(input.register, text)?;
+        }
+      }
+      // The focused pane owns text motions and selections.
+      Action::Motion(_)
+      | Action::Visual(_)
+      | Action::Object(_)
+      | Action::Reselect
+      | Action::WordSearch => {}
       Action::Cancel => {
         panel.focused = false;
       }

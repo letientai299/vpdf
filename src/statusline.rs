@@ -27,6 +27,11 @@ impl App {
 
   /// Match under or before the cursor, like Neovim's searchcount.
   fn search_count(&self) -> String {
+    if let Some(panel) = self.panel.as_ref().filter(|panel| panel.focused) {
+      return panel
+        .count()
+        .map_or_else(String::new, |(i, n)| format!("[{i}/{n}]  "));
+    }
     let hits = &self.search.hits;
     if self.search.hidden || hits.is_empty() {
       return String::new();

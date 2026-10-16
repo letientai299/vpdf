@@ -68,6 +68,10 @@ hyphenation. Prefix `\v` for regular expressions. The bounded regex engine
 supports lookaround and backreferences; it is not Python's regex implementation.
 
 `gs`, `go`, and `gl` open search results, the table of contents, and links.
+A focused panel owns the keyboard: `j k gg G Ctrl-d Ctrl-u zt zz zb` move
+through rows, `/ ? n N` search them with highlighted matches and smartcase,
+`{ }` jump between headings, and `yy` yanks a row. Text motions and selections
+do not reach the PDF until `Esc` returns focus.
 Enter follows a panel item; `o` follows while retaining panel focus. The outline
 stays open after Enter. `go` focuses it again; `gq` closes a panel. Enter on the
 PDF follows a link under the cursor. Only explicitly followed HTTP/HTTPS links

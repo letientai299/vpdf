@@ -41,6 +41,9 @@ gl: links on this page
 gr: recent documents
 Enter: follow link or row
 o: follow, keep panel focus
+/ ? n N: search rows of a focused panel
+{ }: previous / next heading in a panel
+yy: yank the panel row
 gq: close panel
 gx: text preview
 g? F1: this reference

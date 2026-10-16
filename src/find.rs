@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::keys::PanelKind;
+use crate::panel::Panel;
 use crate::prompt::{Prompt, PromptKind};
 use crate::reader::Location;
 use crate::search::{self, Hit};
@@ -134,15 +135,24 @@ impl App {
     Ok(changed)
   }
 
+  /// Searches the focused panel's rows, else the document.
   pub fn begin_search(&mut self, backward: bool) {
-    let location =
-      Location { cursor: self.reader.cursor, scroll: self.reader.scroll };
-    self.search_origin = Some(location);
+    if let Some(panel) = self.panel.as_mut().filter(|panel| panel.focused) {
+      panel.begin_search(backward);
+    } else {
+      let location =
+        Location { cursor: self.reader.cursor, scroll: self.reader.scroll };
+      self.search_origin = Some(location);
+    }
     self.prompt = Some(Prompt::new(PromptKind::Search(backward)));
   }
 
   /// Searches as the query is typed, like Vim's `incsearch`.
   pub fn incremental(&mut self, query: &str) -> Result<()> {
+    if let Some(panel) = self.row_search() {
+      panel.preview(query);
+      return Ok(());
+    }
     let backward = matches!(
       self.prompt.as_ref().map(|p| p.kind),
       Some(PromptKind::Search(true))
@@ -156,6 +166,12 @@ impl App {
 
   /// Keeps the previewed match and records the start as a jump.
   pub fn finish_search(&mut self, query: &str, backward: bool) -> Result<()> {
+    if let Some(panel) = self.row_search() {
+      if !panel.finish_search(query) {
+        anyhow::bail!("Pattern not found: {}", panel.search.query);
+      }
+      return Ok(());
+    }
     let origin = self.search_origin.take();
     let running = !matches!(self.search.phase, Phase::Idle);
     if !(running && self.search.query == query) {
@@ -171,10 +187,18 @@ impl App {
   }
 
   pub fn abort_search(&mut self) -> Result<()> {
+    if let Some(panel) = self.row_search() {
+      panel.abort_search();
+      return Ok(());
+    }
     self.search.cancel();
     self.return_to_origin()?;
     self.search_origin = None;
     Ok(())
+  }
+
+  fn row_search(&mut self) -> Option<&mut Panel> {
+    self.panel.as_mut().filter(|panel| panel.searching())
   }
 
   fn return_to_origin(&mut self) -> Result<()> {

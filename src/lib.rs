@@ -19,6 +19,7 @@ pub mod layout;
 pub mod motion;
 pub mod ocr;
 pub mod panel;
+mod panel_search;
 mod paragraph;
 pub mod prompt;
 pub mod reader;

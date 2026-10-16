@@ -74,10 +74,16 @@ impl Reader {
     if linewise {
       output.push('\n');
     }
-    self.save_register(register, &output)?;
-    self.message = format!("Yanked {} characters", output.chars().count());
-    self.pending_yank = Some(Yank { text: output, register });
+    self.store(register, output)?;
     self.end_selection();
+    Ok(())
+  }
+
+  /// Saves yanked text to `register` and queues clipboard delivery.
+  pub fn store(&mut self, register: char, text: String) -> Result<()> {
+    self.save_register(register, &text)?;
+    self.message = format!("Yanked {} characters", text.chars().count());
+    self.pending_yank = Some(Yank { text, register });
     Ok(())
   }
 
