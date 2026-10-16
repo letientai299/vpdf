@@ -7,18 +7,28 @@ pub struct Scroll {
   pub updated: Instant,
 }
 
+/// Next scroll toward `target` after `elapsed` seconds, or `None` once
+/// it arrives.
+fn ease(scroll: f32, target: f32, elapsed: f32) -> Option<f32> {
+  let distance = target - scroll;
+  let next = scroll + distance * (1.0 - (-elapsed / 0.018).exp());
+  // f32 spacing reaches 0.5 px past 4M px, where a short step rounds back
+  // and the animation would never end.
+  (distance.abs() >= 0.5 && next != scroll).then_some(next)
+}
+
 impl App {
   pub fn animate(&mut self) -> bool {
     let Some(animation) = &mut self.animation else { return false };
     let now = Instant::now();
     let elapsed = now.duration_since(animation.updated).as_secs_f32();
     animation.updated = now;
-    let distance = animation.target - self.reader.scroll;
-    if distance.abs() < 0.5 {
-      self.reader.scroll = animation.target;
-      self.animation = None;
-    } else {
-      self.reader.scroll += distance * (1.0 - (-elapsed / 0.018).exp());
+    match ease(self.reader.scroll, animation.target, elapsed) {
+      Some(next) => self.reader.scroll = next,
+      None => {
+        self.reader.scroll = animation.target;
+        self.animation = None;
+      }
     }
     true
   }
@@ -54,5 +64,18 @@ impl App {
       self.reader.cursor = text.nearest(page, x, y);
     }
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn easing_arrives_far_down_long_documents() {
+    assert!(ease(0.0, 100.0, 0.008).is_some_and(|next| next > 30.0));
+    assert_eq!(ease(99.8, 100.0, 0.008), None);
+    // 4.38M px: f32 steps by 0.5 px, so 0.18 px rounds back.
+    assert_eq!(ease(4_384_724.5, 4_384_725.0, 0.008), None);
   }
 }
