@@ -45,6 +45,7 @@ gq: close panel
 gx: text preview
 g? F1: this reference
 Esc: cancel / unfocus panel
+Click / wheel in panel: follow / move
 q: close panel, tab, or reader
 
 # Tabs

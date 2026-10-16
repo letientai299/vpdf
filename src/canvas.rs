@@ -166,7 +166,7 @@ impl App {
       self.canvas(out)?;
     }
     self.track_outline();
-    if let Some(panel) = &self.panel {
+    if let Some(panel) = &mut self.panel {
       panel.draw(out, self.left, self.screen.rows)?;
     }
     self.bottom(out)?;

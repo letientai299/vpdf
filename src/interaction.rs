@@ -146,6 +146,9 @@ impl App {
   }
 
   pub fn mouse(&mut self, mouse: event::MouseEvent) -> Result<()> {
+    if mouse.column < self.left && mouse.row < self.screen.rows - 1 {
+      return self.panel_mouse(mouse);
+    }
     match mouse.kind {
       MouseEventKind::ScrollDown => {
         return self.scroll(3.0 * f32::from(self.screen.cell_height));

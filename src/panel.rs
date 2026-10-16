@@ -7,6 +7,7 @@ use crate::state::Entry;
 use crate::terminal;
 use crate::text::Position;
 use crate::theme::{self, Color};
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use unicode_width::UnicodeWidthStr;
@@ -58,12 +59,68 @@ pub struct Panel {
   pub rows: Vec<Row>,
   pub selected: usize,
   pub focused: bool,
+  /// First visible row; moves only to keep the selection shown.
+  pub top: usize,
 }
 
 impl Panel {
+  pub fn new(kind: PanelKind, rows: Vec<Row>) -> Self {
+    Self { kind, rows, selected: 0, focused: true, top: 0 }
+  }
+
+  /// Applies list motions; `page` rows per full-screen scroll.
+  pub fn navigate(&mut self, input: Input, page: usize) -> bool {
+    let last = self.rows.len().saturating_sub(1);
+    let count = input.count;
+    self.selected = match input.action {
+      Action::Motion(Motion::Down) => self.selected.saturating_add(count),
+      Action::Motion(Motion::Up) => self.selected.saturating_sub(count),
+      Action::Motion(Motion::First) => 0,
+      Action::Motion(Motion::Last) => last,
+      Action::Scroll(amount) => {
+        let rows = (amount * page as f32 * count as f32) as isize;
+        self.selected.saturating_add_signed(rows)
+      }
+      _ => return false,
+    }
+    .min(last);
+    true
+  }
+
+  /// Wheel moves the selection; returns a clicked row.
+  pub fn pointer(&mut self, mouse: MouseEvent) -> Option<usize> {
+    let last = self.rows.len().saturating_sub(1);
+    self.focused = true;
+    match mouse.kind {
+      MouseEventKind::ScrollDown => {
+        self.selected = (self.selected + 3).min(last)
+      }
+      MouseEventKind::ScrollUp => {
+        self.selected = self.selected.saturating_sub(3)
+      }
+      MouseEventKind::Down(MouseButton::Left) if mouse.row > 0 => {
+        let index = self.top + usize::from(mouse.row) - 1;
+        if index <= last && !self.rows.is_empty() {
+          self.selected = index;
+          return Some(index);
+        }
+      }
+      _ => {}
+    }
+    None
+  }
+
+  fn reveal(&mut self, count: usize) {
+    if self.selected < self.top {
+      self.top = self.selected;
+    } else if count > 0 && self.selected >= self.top + count {
+      self.top = self.selected + 1 - count;
+    }
+  }
+
   /// Draws rows left of a border at column `width`.
   pub fn draw(
-    &self,
+    &mut self,
     out: &mut impl Write,
     width: u16,
     height: u16,
@@ -93,7 +150,8 @@ impl Panel {
       .unwrap_or(0)
       .min(inner / 2);
     let count = height.saturating_sub(2) as usize;
-    let start = self.selected.saturating_sub(count / 2);
+    self.reveal(count);
+    let start = self.top;
     for (row, item) in self.rows.iter().skip(start).take(count).enumerate() {
       let base = match (start + row == self.selected, self.focused) {
         (true, true) => theme::SELECTED,
@@ -191,7 +249,7 @@ impl App {
   }
 
   pub fn show_panel(&mut self, kind: PanelKind, rows: Vec<Row>) -> Result<()> {
-    self.panel = Some(Panel { kind, rows, selected: 0, focused: true });
+    self.panel = Some(Panel::new(kind, rows));
     let wide = matches!(kind, PanelKind::Help | PanelKind::Info);
     let width =
       if wide { self.screen.columns / 2 } else { self.screen.columns / 3 };
@@ -266,21 +324,10 @@ impl App {
     if !panel.focused {
       return Ok(false);
     }
-    let last = panel.rows.len().saturating_sub(1);
+    if panel.navigate(input, usize::from(self.screen.rows)) {
+      return Ok(true);
+    }
     match input.action {
-      Action::Motion(Motion::Down) => {
-        panel.selected = panel.selected.saturating_add(input.count).min(last)
-      }
-      Action::Motion(Motion::Up) => {
-        panel.selected = panel.selected.saturating_sub(input.count)
-      }
-      Action::Motion(Motion::First) => panel.selected = 0,
-      Action::Motion(Motion::Last) => panel.selected = last,
-      Action::Scroll(amount) => {
-        panel.selected = (panel.selected as i64
-          + (amount * f32::from(self.screen.rows) * input.count as f32) as i64)
-          .clamp(0, last as i64) as usize
-      }
       Action::Quit | Action::ClosePanel => {
         self.close_panel()?;
       }
@@ -293,6 +340,14 @@ impl App {
       _ => return Ok(false),
     }
     Ok(true)
+  }
+
+  pub fn panel_mouse(&mut self, mouse: MouseEvent) -> Result<()> {
+    let Some(panel) = &mut self.panel else { return Ok(()) };
+    if panel.pointer(mouse).is_some() {
+      return self.panel_follow(Action::Swap);
+    }
+    Ok(())
   }
 
   fn panel_follow(&mut self, action: Action) -> Result<()> {
