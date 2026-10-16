@@ -56,6 +56,10 @@ delivery uses OSC 52, which follows terminal policy, and a native clipboard
 tool in local sessions. SSH sessions skip the native tool, which would fill the
 remote host's clipboard.
 
+Panels, the status line, and text-mode marks use the terminal's 16-color
+palette, so they follow the shell theme. Kitty overlays for the cursor,
+selection, and matches are RGBA images with fixed colors.
+
 Graphics commands suppress terminal replies. Tmux delivers replies to the
 focused pane rather than the sender, where they would arrive as input to an
 unrelated program, so the reader cannot track acknowledgements. Kitty silently

@@ -5,7 +5,9 @@ use crate::keys::{Action, Input, PanelKind};
 use crate::motion::Motion;
 use crate::terminal;
 use crate::text::Position;
+use crate::theme::{self, Color};
 use std::io::Write;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone)]
 pub enum Destination {
@@ -14,9 +16,38 @@ pub enum Destination {
   None,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Style {
+  Plain,
+  Heading,
+  /// `keys: description`, with the keys highlighted.
+  Key,
+}
+
 pub struct Row {
   pub label: String,
+  pub detail: String,
+  pub style: Style,
   pub destination: Destination,
+}
+
+impl Row {
+  fn new(label: String, detail: String, destination: Destination) -> Self {
+    Self { label, detail, style: Style::Plain, destination }
+  }
+
+  /// Reads `# heading` and `keys: description` lines.
+  fn parse(line: &str) -> Self {
+    let style = if line.starts_with("# ") {
+      Style::Heading
+    } else if line.contains(": ") {
+      Style::Key
+    } else {
+      Style::Plain
+    };
+    let label = line.strip_prefix("# ").unwrap_or(line).to_owned();
+    Self { label, detail: String::new(), style, destination: Destination::None }
+  }
 }
 
 pub struct Panel {
@@ -27,30 +58,92 @@ pub struct Panel {
 }
 
 impl Panel {
+  /// Draws rows left of a border at column `width`.
   pub fn draw(
     &self,
     out: &mut impl Write,
     width: u16,
     height: u16,
   ) -> Result<()> {
-    let title = format!("{:?}  gq close", self.kind);
+    let inner = usize::from(width.saturating_sub(1));
+    for row in 1..height {
+      write!(out, "\x1b[{row};{width}H{}│{}", theme::MUTED, theme::RESET)?;
+    }
+    let title = format!(" {} ", self.kind.title());
+    let count = format!(" {}", self.rows.len());
     write!(
       out,
-      "\x1b[1;1H\x1b[1m{}\x1b[0m",
-      terminal::clean(&title, usize::from(width))
+      "\x1b[1;1H{}{}{}{}{}",
+      theme::badge(Color::Cyan),
+      terminal::clean(&title, inner),
+      theme::MUTED,
+      terminal::clean(&count, inner.saturating_sub(title.width())),
+      theme::RESET
     )?;
+    let keys = self
+      .rows
+      .iter()
+      .filter(|row| row.style == Style::Key)
+      .filter_map(|row| row.label.split_once(": "))
+      .map(|(key, _)| key.width())
+      .max()
+      .unwrap_or(0)
+      .min(inner / 2);
     let count = height.saturating_sub(2) as usize;
     let start = self.selected.saturating_sub(count / 2);
     for (row, item) in self.rows.iter().skip(start).take(count).enumerate() {
-      let style = if start + row == self.selected { "7" } else { "0" };
+      let base = match (start + row == self.selected, self.focused) {
+        (true, true) => theme::SELECTED,
+        (true, false) => theme::CURRENT,
+        _ => theme::RESET,
+      };
+      write!(out, "\x1b[{};1H{base}", row + 2)?;
+      let detail = terminal::clean(&item.detail, inner / 3);
+      let room = inner.saturating_sub(detail.width() + 1);
+      let used = item.write(out, base, room, keys)?;
       write!(
         out,
-        "\x1b[{};1H\x1b[{style}m{}\x1b[0m",
-        row + 2,
-        terminal::clean(&item.label, width.saturating_sub(1) as usize)
+        "{}{}{detail}{}",
+        " ".repeat(inner.saturating_sub(used + detail.width())),
+        if base == theme::RESET { theme::MUTED } else { "" },
+        theme::RESET
       )?;
     }
     Ok(())
+  }
+}
+
+impl Row {
+  /// Writes the label within `room` columns and returns its width.
+  fn write(
+    &self,
+    out: &mut impl Write,
+    base: &str,
+    room: usize,
+    keys: usize,
+  ) -> Result<usize> {
+    let plain = base == theme::RESET;
+    match (self.style, self.label.split_once(": ")) {
+      (Style::Key, Some((key, text))) => {
+        let key = terminal::clean(key, room);
+        let pad = keys.max(key.width()) + 2 - key.width();
+        let text =
+          terminal::clean(text, room.saturating_sub(key.width() + pad));
+        let style = if plain { theme::KEY } else { "" };
+        write!(out, "{style}{key}{base}{}{text}", " ".repeat(pad))?;
+        Ok(key.width() + pad + text.width())
+      }
+      (Style::Heading, _) => {
+        let text = terminal::clean(&self.label, room);
+        write!(out, "{}{text}{base}", theme::HEADING)?;
+        Ok(text.width())
+      }
+      _ => {
+        let text = terminal::clean(&self.label, room);
+        write!(out, "{text}")?;
+        Ok(text.width())
+      }
+    }
   }
 }
 
@@ -88,8 +181,11 @@ impl App {
     }
     let rows = self.panel_rows(kind)?;
     self.panel = Some(Panel { kind, rows, selected: 0, focused: true });
-    self.left = (self.screen.columns / 3)
-      .clamp(1, 50)
+    let wide = matches!(kind, PanelKind::Help | PanelKind::Info);
+    let width =
+      if wide { self.screen.columns / 2 } else { self.screen.columns / 3 };
+    self.left = width
+      .clamp(1, if wide { 64 } else { 50 })
       .min(self.screen.columns.saturating_sub(12));
     self.resize()
   }
@@ -104,51 +200,52 @@ impl App {
   }
 
   pub fn panel_rows(&mut self, kind: PanelKind) -> Result<Vec<Row>> {
+    let label = |target: &Target| match target {
+      Target::Page(page) | Target::Point { page, .. } => {
+        self.doc.pages.get(page.0).map_or_else(String::new, |p| p.label.clone())
+      }
+      Target::Uri(_) => String::new(),
+    };
     Ok(match kind {
       PanelKind::Outline => self
         .doc
         .outline
         .iter()
         .map(|item| Row {
-          label: format!("{}{}", "  ".repeat(item.depth.min(12)), item.title),
-          destination: Destination::Link(item.target.clone()),
+          style: if item.depth == 0 { Style::Heading } else { Style::Plain },
+          ..Row::new(
+            format!("{}{}", "  ".repeat(item.depth.min(12)), item.title),
+            label(&item.target),
+            Destination::Link(item.target.clone()),
+          )
         })
         .collect(),
       PanelKind::Results => self
         .search
         .hits
         .iter()
-        .map(|hit| Row {
-          label: format!("{}: {}", hit.first.page.0 + 1, hit.excerpt),
-          destination: Destination::Position(hit.first),
+        .map(|hit| {
+          Row::new(
+            hit.excerpt.clone(),
+            self.doc.pages[hit.first.page.0].label.clone(),
+            Destination::Position(hit.first),
+          )
         })
         .collect(),
       PanelKind::Links => self
         .doc
         .links(self.reader.cursor.page)?
-        .iter()
-        .map(|link| Row {
-          label: match &link.target {
-            Target::Page(page) | Target::Point { page, .. } => {
-              format!("Page {}", page.0 + 1)
-            }
-            Target::Uri(uri) => uri.clone(),
-          },
-          destination: Destination::Link(link.target.clone()),
-        })
-        .collect(),
-      PanelKind::Help => help()
         .into_iter()
-        .map(|label| Row { label, destination: Destination::None })
-        .collect(),
-      PanelKind::Info => self
-        .info()
-        .lines()
-        .map(|line| Row {
-          label: line.to_owned(),
-          destination: Destination::None,
+        .map(|link| {
+          let text = match &link.target {
+            Target::Uri(uri) => uri.clone(),
+            _ => "Go to page".into(),
+          };
+          Row::new(text, label(&link.target), Destination::Link(link.target))
         })
         .collect(),
+      PanelKind::Help => help().iter().map(|line| Row::parse(line)).collect(),
+      PanelKind::Info => self.info().lines().map(Row::parse).collect(),
       PanelKind::Text => Vec::new(),
     })
   }
@@ -233,5 +330,5 @@ fn help() -> Vec<String> {
     let usage = if spec.usage.is_empty() { "" } else { " " };
     format!(":{}{usage}{}: {}", spec.name, spec.usage, spec.help)
   });
-  keys.chain(commands).collect()
+  keys.chain(["".into(), "# Commands".into()]).chain(commands).collect()
 }

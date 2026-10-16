@@ -2,6 +2,7 @@ use crate::Result;
 use crate::app::App;
 use crate::reader::SelectionKind;
 use crate::text::Position;
+use crate::theme;
 use std::io::Write;
 use unicode_width::UnicodeWidthChar;
 
@@ -23,7 +24,7 @@ impl App {
         let pos =
           Position { page: self.reader.cursor.page, line: start + row, glyph };
         let style = self.text_style(pos);
-        write!(out, "\x1b[{style}m{}", ch.ch)?;
+        write!(out, "{style}{}", ch.ch)?;
       }
       write!(out, "\x1b[0m")?;
     }
@@ -54,7 +55,7 @@ impl App {
 
   fn text_style(&self, position: Position) -> &'static str {
     if position == self.reader.cursor {
-      return "7;34";
+      return theme::TEXT_CURSOR;
     }
     if let Some(selection) = self.reader.selection {
       let (first, last) =
@@ -66,7 +67,7 @@ impl App {
         position >= first && position <= last
       };
       if selected {
-        return "44;37";
+        return theme::TEXT_SELECTION;
       }
     }
     if !self.search.hidden
@@ -76,8 +77,8 @@ impl App {
         .iter()
         .any(|hit| position >= hit.first && position <= hit.last)
     {
-      return "43;30";
+      return theme::TEXT_MATCH;
     }
-    "0"
+    theme::RESET
   }
 }

@@ -21,7 +21,7 @@ impl App {
           changed = true;
         }
         Err(error) => {
-          self.reader.message = error;
+          self.error = Some(error);
           changed = true;
         }
       }
@@ -183,18 +183,8 @@ impl App {
   fn bottom(&self, out: &mut impl Write) -> Result<()> {
     let row = self.screen.rows - 1;
     let Some(prompt) = &self.prompt else {
-      let page = self.reader.cursor.page.0;
-      let status = format!(
-        " {} / {} [{}]  {:.0}%  {}",
-        page + 1,
-        self.doc.pages.len(),
-        self.doc.pages[page].label,
-        self.layout.zoom * 100.0,
-        self.reader.message
-      );
-      write!(out, "\x1b[7m")?;
-      terminal::line(out, row, &status, self.screen.columns)?;
-      write!(out, "\x1b[0m\x1b[?25l")?;
+      self.status(out, row)?;
+      write!(out, "\x1b[?25l")?;
       return Ok(());
     };
     if let Some(menu) = &prompt.menu {

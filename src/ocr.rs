@@ -219,7 +219,7 @@ impl App {
         self.reader.cursor =
           self.doc.text(self.reader.cursor.page)?.clamp(self.reader.cursor);
       }
-      Err(error) => self.reader.message = error,
+      Err(error) => self.error = Some(error),
     }
     Ok(true)
   }

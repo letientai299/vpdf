@@ -86,7 +86,7 @@ impl App {
       self.search.hits.extend(event.hits);
       self.search.hits.sort_unstable_by_key(|hit| hit.first);
       if let Some(error) = event.error {
-        self.reader.message = error;
+        self.error = Some(error);
         self.search.phase = Phase::Complete;
         continue;
       }

@@ -12,6 +12,19 @@ pub enum PanelKind {
   Info,
 }
 
+impl PanelKind {
+  pub fn title(self) -> &'static str {
+    match self {
+      Self::Outline => "CONTENTS",
+      Self::Results => "RESULTS",
+      Self::Links => "LINKS",
+      Self::Text => "TEXT",
+      Self::Help => "HELP",
+      Self::Info => "INFO",
+    }
+  }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
   Motion(Motion),
@@ -93,6 +106,21 @@ impl Keys {
       self.clear();
     }
     None
+  }
+
+  /// Typed count, register, and prefix, like Vim's showcmd.
+  pub fn pending(&self) -> String {
+    let mut text = String::new();
+    if let Some(register) = self.register {
+      text.push('"');
+      text.push(register);
+    } else if self.choosing_register {
+      text.push('"');
+    }
+    if self.count > 0 {
+      text += &self.count.to_string();
+    }
+    text + &self.prefix
   }
 
   fn finish(&mut self, action: Action) -> Input {

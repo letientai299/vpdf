@@ -26,6 +26,7 @@ pub struct App {
   pub screen: Screen,
   pub left: u16,
   pub quit: bool,
+  pub error: Option<String>,
   pub render_ms: f64,
   pub search: crate::find::Search,
   pub prompt: Option<crate::prompt::Prompt>,
@@ -64,6 +65,7 @@ impl App {
       screen,
       left: 0,
       quit: false,
+      error: None,
       render_ms: 0.0,
       search: crate::find::Search::default(),
       prompt: None,
@@ -136,6 +138,7 @@ pub fn view(
     let event = event::read()?;
     if matches!(event, Event::Key(_)) {
       app.reader.message.clear();
+      app.error = None;
     }
     let result = match event {
       Event::Key(key) if key.kind != KeyEventKind::Release => {
@@ -152,7 +155,7 @@ pub fn view(
       _ => Ok(()),
     };
     if let Err(error) = result {
-      app.reader.message = error.to_string();
+      app.error = Some(error.to_string());
     }
     dirty = true;
   }

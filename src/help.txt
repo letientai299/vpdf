@@ -1,37 +1,53 @@
-h j k l / arrows: glyph motions
+# Move
+h j k l: glyph motions
 w b e: word motions
-{ }: previous / next paragraph
 0 ^ $: line motions
-[count]gg/G: page jump
+{ }: previous / next paragraph
+[count]gg G: page jump
 ]p [p: next / previous page
-Ctrl-d/u: half-screen scroll
-Ctrl-f/b: full-screen scroll
-Ctrl-e/y: row scroll
-zt zz zb: cursor placement
+Ctrl-o Ctrl-i: jump back / forward
+
+# Scroll and zoom
+Ctrl-d Ctrl-u: half-screen scroll
+Ctrl-f Ctrl-b: full-screen scroll
+Ctrl-e Ctrl-y: row scroll
+zt zz zb: cursor at top / middle / bottom
++ - =: zoom in / out / fit width
+zf: fit page
+zh zl: pan left / right
+zr: rotate clockwise
+
+# Select and yank
 v V: character / line selection
 o: swap selection ends
 gv: reselect
 y yy yw ye y$: yank
 viw vaw yiw yaw: word objects
-y to "" "+ "*: system clipboard
-"a: named register (A appends)
-/ ?: forward / backward search
-n N: next / previous match
-*: find cursor word
-gs: search results
-go: table of contents
-gl Enter: links / follow link
-gq: close panel
-Ctrl-o/i: jump back / forward
-+ - =: zoom in / out / fit width
-zf: fit page
-zh zl: horizontal pan
-zr: rotate clockwise
-gx: text preview; q: return
-Esc: clear selection / cancel
-Left click / drag: cursor / select
+"" "+ "*: system clipboard
+"a "A: named register / append
+Click / drag: move / select
 Double click: select word
-Mouse wheel: scroll
-Tab Shift-Tab: complete : commands
-Up Down: prompt history
-q: quit
+
+# Find
+/ ?: search forward / backward
+n N: next / previous match
+*: search cursor word
+\v: regex prefix
+
+# Panels
+go: table of contents
+gs: search results
+gl: links on this page
+Enter: follow link or row
+o: follow, keep panel focus
+gq: close panel
+gx: text preview
+g? F1: this reference
+Esc: cancel / unfocus panel
+q: close panel or quit
+
+# Command line
+Tab Shift-Tab: complete
+Up Down: history by prefix
+Ctrl-a Ctrl-e: line start / end
+Ctrl-w Ctrl-u Ctrl-k: delete word / before / after
