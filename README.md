@@ -97,7 +97,8 @@ remains unmapped.
 tab, `:e file.pdf` replaces the current one, and both complete directories and
 PDF names. `gt` and `gT` cycle tabs; `3gt` selects the third. `:tabc` closes a
 tab and `:qa` closes all. With [fzf][fzf] on `PATH`, `:fzf` picks a PDF below
-the working directory, previewing its first page's text, and opens it in a new
+the working directory, including hidden and VCS-ignored folders such as `.ai`
+but not `.git`, previewing its first page's text, and opens it in a new
 tab; the command is hidden without fzf. Opening a document that is already open
 selects its tab. The status line lists tabs when more than one is open, shows
 the current outline section, the percentage read, and the zoom when it differs
