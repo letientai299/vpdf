@@ -18,6 +18,7 @@ zt zz zb: cursor at top / middle / bottom
 zf: fit page
 zh zl: pan left / right
 zr: rotate clockwise
+zc: crop / restore page margins
 
 # Select and yank
 v V: character / line selection

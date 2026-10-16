@@ -44,7 +44,9 @@ extracted text blocks as paragraphs; `y}` excludes the next paragraph start.
 
 `Ctrl-d/u` scroll half a screen; `Ctrl-f/b` and PageDown/PageUp scroll a full
 screen. `Ctrl-e/y` and the wheel scroll rows. `zt zz zb` place the cursor at the
-top, middle, or bottom. `+ - =` zoom or fit width, `zf` fits a page, `zh zl`
+top, middle, or bottom. `zc` crops white margins with one trim measured across
+sampled pages, so text grows and every page keeps the same scale; the choice
+persists per document. `+ - =` zoom or fit width, `zf` fits a page, `zh zl`
 pan, and `zr` rotates. `Ctrl-o/i` move through jump history.
 
 Use `v` or `V` to select, `o` to swap ends, and `gv` to reselect. `y`, `yy`,

@@ -1,6 +1,7 @@
 use crate::document::PageInfo;
 use crate::text::{Bounds, PageId};
 use mupdf::Matrix;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Screen {
@@ -29,6 +30,31 @@ pub struct PageLayout {
   pub matrix: Matrix,
 }
 
+/// Margins trimmed from every page, in thousandths of its width and
+/// height: left, top, right, bottom.
+#[derive(
+  Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize,
+)]
+pub struct Crop(pub [u16; 4]);
+
+impl Crop {
+  pub fn apply(self, bounds: Bounds) -> Bounds {
+    let [left, top, right, bottom] =
+      self.0.map(|v| f32::from(v.min(450)) / 1000.0);
+    let (width, height) = (bounds.width(), bounds.height());
+    Bounds {
+      x0: bounds.x0 + width * left,
+      y0: bounds.y0 + height * top,
+      x1: bounds.x1 - width * right,
+      y1: bounds.y1 - height * bottom,
+    }
+  }
+
+  pub fn is_none(self) -> bool {
+    self == Self::default()
+  }
+}
+
 pub struct Layout {
   pub pages: Vec<PageLayout>,
   pub total: f32,
@@ -36,6 +62,7 @@ pub struct Layout {
   pub zoom: f32,
   pub rotation: u16,
   pub pan: f32,
+  pub crop: Crop,
 }
 
 impl Layout {
@@ -47,6 +74,7 @@ impl Layout {
       zoom: 1.0,
       rotation: 0,
       pan: 0.0,
+      crop: Crop::default(),
     };
     layout.reflow(pages);
     layout
@@ -56,15 +84,16 @@ impl Layout {
     self.pages.clear();
     let mut top = 0.0;
     for page in pages {
+      let bounds = self.crop.apply(page.bounds);
       let width = if self.rotation.is_multiple_of(180) {
-        page.bounds.width()
+        bounds.width()
       } else {
-        page.bounds.height()
+        bounds.height()
       };
       let scale = (self.screen.width() / width * self.zoom).clamp(0.01, 16.0);
       let scale = (scale * 1024.0).round() as u32;
-      let matrix = page_matrix(page.bounds, scale, self.rotation);
-      let rect = transform(page.bounds, &matrix);
+      let matrix = page_matrix(bounds, scale, self.rotation);
+      let rect = transform(bounds, &matrix);
       self.pages.push(PageLayout {
         top,
         width: rect.width().ceil(),

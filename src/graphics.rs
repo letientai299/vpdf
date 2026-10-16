@@ -312,6 +312,7 @@ mod tests {
         y: 0,
         width: 1,
         height: 1,
+        crop: crate::layout::Crop::default(),
       };
       graphics.upload(
         &Tile { key, encoded: encode(&[255; 3])?, render_ms: 0.0 },
@@ -363,6 +364,7 @@ mod tests {
         y: 0,
         width: 1,
         height: 1,
+        crop: crate::layout::Crop::default(),
       };
       graphics.upload(
         &Tile { key, encoded: encode(&[255; 3])?, render_ms: 0.0 },

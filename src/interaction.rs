@@ -124,6 +124,7 @@ impl App {
         self.layout.pan = 0.0;
         self.reflow()?;
       }
+      Action::Crop => self.toggle_crop()?,
       Action::Rotate => {
         self.layout.rotation = (self.layout.rotation + 90) % 360;
         self.reflow()?;

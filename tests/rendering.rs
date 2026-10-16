@@ -26,6 +26,7 @@ fn tiles_equal_full_page_pixels() -> Result<()> {
       y: 64,
       width: 256,
       height: 128,
+      crop: vpdf::layout::Crop::default(),
     };
     let tile = raster(&mut doc, key)?;
     for row in 0..key.height as usize {
@@ -37,6 +38,36 @@ fn tiles_equal_full_page_pixels() -> Result<()> {
         &full.samples()[start..start + key.width as usize * 3],
         "{file}"
       );
+    }
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn cropped_margins_keep_all_ink() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  for file in ["paper.pdf", "book.pdf"] {
+    let mut doc = Document::open(&root.join(file), "")?;
+    let crop = vpdf::crop::margins(&mut doc)?;
+    assert!(crop.0.iter().all(|trim| *trim < 400), "{file}: {crop:?}");
+    assert!(crop.0[0] + crop.0[2] > 100, "{file} side margins: {crop:?}");
+    for page in 0..doc.pages.len().min(40) {
+      let cropped = crop.apply(doc.pages[page].bounds);
+      for line in &doc.text(PageId(page))?.lines {
+        for glyph in line.glyphs.iter().filter(|g| !g.ch.is_whitespace()) {
+          let (x, y) = (
+            (glyph.bounds.x0 + glyph.bounds.x1) / 2.0,
+            (glyph.bounds.y0 + glyph.bounds.y1) / 2.0,
+          );
+          assert!(
+            cropped.contains(x, y),
+            "{file} p{}: {:?}",
+            page + 1,
+            glyph.ch
+          );
+        }
+      }
     }
   }
   Ok(())

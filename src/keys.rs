@@ -64,6 +64,7 @@ pub enum Action {
   FitPage,
   Pan(i32),
   Rotate,
+  Crop,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -267,6 +268,7 @@ pub fn binding(key: &str) -> Option<Action> {
     "zh" => Pan(-1),
     "zl" => Pan(1),
     "zr" => Rotate,
+    "zc" => Crop,
     _ => return None,
   })
 }

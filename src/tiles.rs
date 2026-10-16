@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::document::Document;
-use crate::layout::{Layout, page_matrix};
+use crate::layout::{Crop, Layout, page_matrix};
 use crate::text::PageId;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use flate2::{Compression, write::ZlibEncoder};
@@ -19,6 +19,7 @@ pub struct TileKey {
   pub y: i32,
   pub width: i32,
   pub height: i32,
+  pub crop: Crop,
 }
 
 pub struct Tile {
@@ -47,6 +48,7 @@ pub fn visible(layout: &Layout, scroll: f32) -> Vec<TileKey> {
           y,
           width: TILE_WIDTH.min(data.width as i32 - x),
           height: TILE_HEIGHT.min(data.height as i32 - y),
+          crop: layout.crop,
         });
       }
     }
@@ -63,7 +65,7 @@ pub fn raster(doc: &mut Document, key: TileKey) -> Result<Vec<u8>> {
     "Invalid tile dimensions"
   );
   doc.validate(key.page)?;
-  let bounds = doc.pages[key.page.0].bounds;
+  let bounds = key.crop.apply(doc.pages[key.page.0].bounds);
   let list = doc.display(key.page)?;
   let bbox = IRect::new(key.x, key.y, key.x + key.width, key.y + key.height);
   let mut pixels =

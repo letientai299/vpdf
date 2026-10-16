@@ -134,6 +134,7 @@ impl App {
       "qall" => self.request = Some(Request::QuitAll),
       "page" => self.page(argument)?,
       "toc" => self.open_panel(PanelKind::Outline)?,
+      "crop" => self.toggle_crop()?,
       "recent" => self.open_panel(PanelKind::Recent)?,
       "marks" => self.open_panel(PanelKind::Marks)?,
       "annotations" => self.open_panel(PanelKind::Annotations)?,

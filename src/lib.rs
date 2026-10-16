@@ -11,6 +11,7 @@ mod canvas;
 mod clipboard;
 pub mod cmdline;
 mod commands;
+pub mod crop;
 pub mod find;
 pub mod fzf;
 pub mod graphics;

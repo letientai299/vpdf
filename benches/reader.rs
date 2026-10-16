@@ -88,6 +88,7 @@ fn document(path: &Path, page: usize) -> Result<Report> {
     y: 256,
     width: 512,
     height: 256,
+    crop: vpdf::layout::Crop::default(),
   };
   tiles::render(&mut doc, key)?;
   let tile = measure(

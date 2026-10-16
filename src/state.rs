@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::app::App;
+use crate::layout::Crop;
 use crate::prompt::History;
 use crate::text::{PageId, Position};
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,8 @@ pub struct Entry {
   pub used: u64,
   #[serde(default)]
   pub marks: BTreeMap<char, Position>,
+  #[serde(default)]
+  pub crop: Crop,
 }
 
 /// An uppercase mark: a position in any document.
@@ -82,12 +85,13 @@ impl State {
       rotation: app.layout.rotation,
       used: now(),
       marks: app.marks.clone(),
+      crop: app.layout.crop,
     };
     let index = self.recent.iter().position(|old| old.path == entry.path);
     let previous = index.map(|index| self.recent.remove(index));
     let moved = previous.as_ref().is_none_or(|old| {
-      (old.cursor, old.zoom, old.rotation, &old.marks)
-        != (entry.cursor, entry.zoom, entry.rotation, &entry.marks)
+      (old.cursor, old.zoom, old.rotation, &old.marks, old.crop)
+        != (entry.cursor, entry.zoom, entry.rotation, &entry.marks, entry.crop)
     });
     self.recent.insert(0, entry);
     self.recent.truncate(RECENT);
@@ -131,6 +135,7 @@ impl App {
   pub fn restore(&mut self, entry: &Entry) -> Result<()> {
     self.layout.zoom = entry.zoom.clamp(0.1, 8.0);
     self.marks.clone_from(&entry.marks);
+    self.layout.crop = entry.crop;
     self.layout.rotation = entry.rotation % 360 / 90 * 90;
     self.layout.reflow(&self.doc.pages);
     let page = PageId(entry.cursor.page.0.min(self.doc.pages.len() - 1));
@@ -166,6 +171,7 @@ mod tests {
       rotation: 0,
       used,
       marks: BTreeMap::new(),
+      crop: Crop::default(),
     }
   }
 
