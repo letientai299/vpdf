@@ -37,4 +37,5 @@ run = "prek install"
 
 [tasks.install]
 description = "Install the optimized executable"
-run = "cargo install --locked --path ."
+depends = ["build"]
+run = "sh scripts/install.sh"

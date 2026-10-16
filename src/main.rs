@@ -6,7 +6,13 @@ use vpdf::{Result, document::Document, search, text::PageId};
 #[command(version, about)]
 struct Args {
   #[command(subcommand)]
-  command: Command,
+  command: Option<Command>,
+  #[arg(value_name = "PDF")]
+  file: Option<PathBuf>,
+  #[arg(long)]
+  text: bool,
+  #[arg(long, default_value_t = 1)]
+  page: usize,
 }
 
 #[derive(Subcommand)]
@@ -24,7 +30,14 @@ enum Command {
 }
 
 fn run(args: Args) -> Result<()> {
-  match args.command {
+  let Some(command) = args.command else {
+    let file = args.file.ok_or_else(|| anyhow::anyhow!("PDF path required"))?;
+    let text = args.text
+      || std::env::var_os("KITTY_WINDOW_ID").is_none()
+        && std::env::var("TERM").is_ok_and(|term| !term.contains("kitty"));
+    return vpdf::app::view(&file, "", text, args.page);
+  };
+  match command {
     Command::Text { file, page } => {
       anyhow::ensure!(page > 0, "Page numbers start at one");
       let mut doc = Document::open(&file, "")?;

@@ -1,0 +1,151 @@
+use crate::document::PageInfo;
+use crate::text::{Bounds, PageId};
+use mupdf::Matrix;
+
+#[derive(Clone, Copy, Debug)]
+pub struct Screen {
+  pub columns: u16,
+  pub rows: u16,
+  pub cell_width: u16,
+  pub cell_height: u16,
+}
+
+impl Screen {
+  pub fn width(self) -> f32 {
+    f32::from(self.columns * self.cell_width)
+  }
+  pub fn height(self) -> f32 {
+    f32::from(self.rows.saturating_sub(1) * self.cell_height)
+  }
+}
+
+#[derive(Clone, Debug)]
+pub struct PageLayout {
+  pub top: f32,
+  pub width: f32,
+  pub height: f32,
+  pub scale: u32,
+  pub matrix: Matrix,
+}
+
+pub struct Layout {
+  pub pages: Vec<PageLayout>,
+  pub total: f32,
+  pub screen: Screen,
+  pub zoom: f32,
+  pub rotation: u16,
+  pub pan: f32,
+}
+
+impl Layout {
+  pub fn new(pages: &[PageInfo], screen: Screen) -> Self {
+    let mut layout = Self {
+      pages: Vec::new(),
+      total: 0.0,
+      screen,
+      zoom: 1.0,
+      rotation: 0,
+      pan: 0.0,
+    };
+    layout.reflow(pages);
+    layout
+  }
+
+  pub fn reflow(&mut self, pages: &[PageInfo]) {
+    self.pages.clear();
+    let mut top = 0.0;
+    for page in pages {
+      let width = if self.rotation.is_multiple_of(180) {
+        page.bounds.width()
+      } else {
+        page.bounds.height()
+      };
+      let scale = (self.screen.width() / width * self.zoom).clamp(0.01, 16.0);
+      let scale = (scale * 1024.0).round() as u32;
+      let matrix = page_matrix(page.bounds, scale, self.rotation);
+      let rect = transform(page.bounds, &matrix);
+      self.pages.push(PageLayout {
+        top,
+        width: rect.width().ceil(),
+        height: rect.height().ceil(),
+        scale,
+        matrix,
+      });
+      top += rect.height().ceil() + f32::from(self.screen.cell_height);
+    }
+    self.total = top;
+  }
+
+  pub fn clamp_scroll(&self, scroll: f32) -> f32 {
+    scroll.clamp(0.0, (self.total - self.screen.height()).max(0.0))
+  }
+
+  pub fn visible(&self, scroll: f32) -> std::ops::Range<usize> {
+    let first = self.pages.partition_point(|p| p.top + p.height < scroll);
+    let last =
+      self.pages.partition_point(|p| p.top < scroll + self.screen.height());
+    first..last
+  }
+
+  pub fn page_at(&self, y: f32) -> PageId {
+    PageId(
+      self
+        .pages
+        .partition_point(|p| p.top <= y)
+        .saturating_sub(1)
+        .min(self.pages.len().saturating_sub(1)),
+    )
+  }
+
+  pub fn project(&self, page: PageId, bounds: Bounds, scroll: f32) -> Bounds {
+    let layout = &self.pages[page.0];
+    let mut rect = transform(bounds, &layout.matrix);
+    rect.x0 -= self.pan;
+    rect.x1 -= self.pan;
+    rect.y0 += layout.top - scroll;
+    rect.y1 += layout.top - scroll;
+    rect
+  }
+}
+
+pub fn page_matrix(bounds: Bounds, scale: u32, rotation: u16) -> Matrix {
+  let scale = scale as f32 / 1024.0;
+  let mut matrix = Matrix::new_rotate(f32::from(rotation));
+  matrix.scale(scale, scale);
+  let rect = transform(bounds, &matrix);
+  matrix.e -= rect.x0;
+  matrix.f -= rect.y0;
+  matrix
+}
+
+pub fn transform(bounds: Bounds, matrix: &Matrix) -> Bounds {
+  let points = [
+    (bounds.x0, bounds.y0),
+    (bounds.x1, bounds.y0),
+    (bounds.x0, bounds.y1),
+    (bounds.x1, bounds.y1),
+  ];
+  let points = points.map(|(x, y)| matrix.transform_xy(x, y));
+  Bounds {
+    x0: points.iter().map(|p| p.0).fold(f32::INFINITY, f32::min),
+    y0: points.iter().map(|p| p.1).fold(f32::INFINITY, f32::min),
+    x1: points.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max),
+    y1: points.iter().map(|p| p.1).fold(f32::NEG_INFINITY, f32::max),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn rotations_preserve_origin_and_dimensions() {
+    let bounds = Bounds { x0: 10.0, y0: 20.0, x1: 110.0, y1: 220.0 };
+    for angle in [0, 90, 180, 270] {
+      let rect = transform(bounds, &page_matrix(bounds, 1024, angle));
+      assert!(rect.x0.abs() < 0.001 && rect.y0.abs() < 0.001);
+      let width = if angle % 180 == 0 { 100.0 } else { 200.0 };
+      assert!((rect.width() - width).abs() < 0.001);
+    }
+  }
+}

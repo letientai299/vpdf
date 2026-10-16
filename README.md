@@ -15,11 +15,10 @@ mise run check
 mise run build
 ```
 
-`mise run install` installs the release executable into Cargo's binary
-directory. Rustfmt uses two spaces and an 80-column target. Clippy rejects
-performance, complexity, and selected maintainability violations. Prek runs
-formatting, linting, and tests before commits. Rumdl formats and checks
-Markdown.
+`mise run install` installs the release executable at `~/.local/bin/vpdf`.
+Rustfmt uses two spaces and an 80-column target. Clippy rejects performance,
+complexity, and selected maintainability violations. Prek runs formatting,
+linting, and tests before commits. Rumdl formats and checks Markdown.
 
 ## License
 

@@ -67,7 +67,9 @@ impl Document {
         bounds,
         label: native
           .page_label(index as usize)
-          .unwrap_or_else(|_| (index + 1).to_string()),
+          .ok()
+          .filter(|label| !label.is_empty())
+          .unwrap_or_else(|| (index + 1).to_string()),
       });
     }
     let mut outline = Vec::new();
