@@ -2,6 +2,7 @@ use crate::Result;
 use crate::layout::Screen;
 use crossterm::{cursor, event, execute, terminal};
 use std::io::{self, Write};
+use std::sync::OnceLock;
 use unicode_width::UnicodeWidthChar;
 
 pub struct Terminal;
@@ -15,6 +16,14 @@ impl Terminal {
   }
 }
 
+/// Whether the terminal speaks Kitty's keyboard protocol, which reports
+/// keys such as Shift-Space that legacy encoding cannot tell apart.
+fn enhanced() -> bool {
+  static ENHANCED: OnceLock<bool> = OnceLock::new();
+  *ENHANCED
+    .get_or_init(|| terminal::supports_keyboard_enhancement().unwrap_or(false))
+}
+
 /// Takes the terminal back after `suspend`.
 pub fn resume() -> Result<()> {
   terminal::enable_raw_mode()?;
@@ -25,11 +34,18 @@ pub fn resume() -> Result<()> {
     event::EnableMouseCapture,
     event::EnableBracketedPaste
   )?;
+  if enhanced() {
+    let flags = event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
+    execute!(io::stdout(), event::PushKeyboardEnhancementFlags(flags))?;
+  }
   Ok(())
 }
 
 /// Hands the terminal to a child program; images stay cached.
 pub fn suspend() -> Result<()> {
+  if enhanced() {
+    execute!(io::stdout(), event::PopKeyboardEnhancementFlags)?;
+  }
   execute!(
     io::stdout(),
     cursor::SetCursorStyle::DefaultUserShape,

@@ -44,9 +44,10 @@ opens PDF files for reading and does not change annotations or form values.
 ## Reading
 
 Counts apply to motions: `10j`, `12gg`, `12G`, `2yw`. `h j k l` and arrows move
-through extracted glyphs. `w b e`, `0 ^ $`, `gg G`, and `]p [p` follow the
-plugin's word, line, document, and page motions. `{` and `}` move between
-extracted text blocks as paragraphs; `y}` excludes the next paragraph start.
+through extracted glyphs. `w b e`, `0 ^ $`, `gg G`, and Space / Shift-Space (or
+Backspace) follow the plugin's word, line, document, and page motions. `{` and
+`}` move between extracted text blocks as paragraphs; `y}` excludes the next
+paragraph start.
 
 `Ctrl-d/u` scroll half a screen; `Ctrl-f/b` and PageDown/PageUp scroll a full
 screen. `Ctrl-e/y` and the wheel scroll rows. `zt zz zb` place the cursor at the
@@ -56,9 +57,10 @@ persists per document. `+ - =` zoom or fit width, `zf` fits a page, `zh zl`
 pan, and `zr` rotates. `Ctrl-o/i` move through jump history.
 
 Use `v` or `V` to select, `o` to swap ends, and `gv` to reselect. `y`, `yy`,
-`yw`, `ye`, `y$`, `yG`, `ygg`, `y]p`, and `y[p` copy character or line ranges.
-`yiw`, `yaw`, `viw`, and `vaw` address words. Selections cross pages and retain
-Unicode and line breaks. A linewise yank includes its final newline.
+`yw`, `ye`, `y$`, `yG`, `ygg`, `y<Space>`, and `y<S-Space>` copy character or
+line ranges. `yiw`, `yaw`, `viw`, and `vaw` address words. Selections cross
+pages and retain Unicode and line breaks. A linewise yank includes its final
+newline.
 
 Yanks to the unnamed register, `"+`, or `"*` reach the system clipboard, as with
 Vim's `clipboard=unnamedplus`. Named registers use `"ayiw`, stay inside the

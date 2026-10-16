@@ -129,10 +129,8 @@ impl Keys {
     if let Some(action) = binding(&self.prefix) {
       return Some(self.finish(action));
     }
-    if !matches!(
-      self.prefix.as_str(),
-      "g" | "z" | "[" | "]" | "i" | "a" | "m" | "'" | "`"
-    ) {
+    if !matches!(self.prefix.as_str(), "g" | "z" | "i" | "a" | "m" | "'" | "`")
+    {
       self.clear();
     }
     None
@@ -173,7 +171,11 @@ fn token(key: KeyEvent) -> Option<String> {
     };
   }
   Some(match key.code {
+    KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+      "S-Space".into()
+    }
     KeyCode::Char(ch) => ch.to_string(),
+    KeyCode::Backspace => "BS".into(),
     KeyCode::Left => "h".into(),
     KeyCode::Right => "l".into(),
     KeyCode::Down => "j".into(),
@@ -224,8 +226,8 @@ pub fn binding(key: &str) -> Option<Action> {
     "$" => Motion(M::LineEnd),
     "gg" => Motion(M::First),
     "G" => Motion(M::Last),
-    "]p" => Motion(M::NextPage),
-    "[p" => Motion(M::PreviousPage),
+    " " => Motion(M::NextPage),
+    "S-Space" | "BS" => Motion(M::PreviousPage),
     "y" => Yank,
     "Y" => YankLine,
     "iw" => Object(false),
@@ -323,6 +325,14 @@ mod tests {
     keys.feed(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert_eq!(keys.feed(key('j')).unwrap().count, 1);
     assert!(keys.feed(key('d')).is_none());
-    assert!(keys.feed(key(' ')).is_none());
+    assert_eq!(
+      keys.feed(key(' ')).unwrap().action,
+      Action::Motion(Motion::NextPage)
+    );
+    let shifted = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::SHIFT);
+    assert_eq!(
+      keys.feed(shifted).unwrap().action,
+      Action::Motion(Motion::PreviousPage)
+    );
   }
 }
