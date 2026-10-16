@@ -65,6 +65,26 @@ costs about 0.1 ms; a page neither has visited is still interpreted on the
 foreground thread, as is initial metadata loading, so documents with expensive
 native interpretation can pause these operations.
 
+Drawing display lists on the GPU was measured and not adopted. A MuPDF device
+replayed each page's display list into a [vello][vello] scene rendered on
+Metal through [wgpu][wgpu], with default device limits, render targets capped
+at 4.5 MP, and 2 s timeouts on every GPU wait. On an M5 Pro, for a 1969x2142 px
+viewport including the readback a terminal needs:
+
+- Text pages: MuPDF drew the viewport in 0.7 to 3 ms once glyphs were cached;
+  the GPU took 2.1 to 2.9 ms plus 0.4 to 2.7 ms to encode the scene.
+- Image pages and scans: the GPU drew in 1.0 to 1.4 ms against MuPDF's 10 to
+  15 ms, but encoding converted each image again (1.3 to 3.9 ms) and an image's
+  first upload took 12 to 15 ms.
+- Coverage: the MuPDF bindings expose no shading geometry, so gradients, soft
+  masks, and image-mask clips were missing; a worksheet lost its gradient
+  background.
+- Pixels differed from MuPDF's by 15 to 31 dB PSNR, so tiles from the two
+  renderers would not join cleanly.
+
+Kitty still receives CPU-side, zlib-encoded pixels, so a GPU replaces only the
+raster step, which the raster pool already runs in parallel.
+
 ## Memory and limits
 
 Application text, OCR, search, register, encoded-tile (48 MiB), and
@@ -120,3 +140,6 @@ movement, selection, and search but do not reproduce font-specific glyph
 advances. No annotation authoring, form editing, PDF export, note management,
 or persistent bookmarks are included; the source plugin does not supply those
 features either.
+
+[vello]: https://github.com/linebender/vello
+[wgpu]: https://github.com/gfx-rs/wgpu
