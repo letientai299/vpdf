@@ -1,12 +1,12 @@
 use crate::Result;
 use crate::app::{App, Request};
-use crate::document::Target;
+use crate::document::{Heading, Target};
 use crate::keys::{Action, Input, PanelKind};
 use crate::motion::Motion;
 use crate::panel_search::RowSearch;
 use crate::state::Entry;
 use crate::terminal;
-use crate::text::Position;
+use crate::text::{PageId, Position};
 use crate::theme::{self, Color};
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use std::io::Write;
@@ -267,12 +267,7 @@ impl App {
     if panel.kind != PanelKind::Outline || panel.focused {
       return;
     }
-    let current = self.reader.cursor.page;
-    if let Some(index) = panel.rows.iter().rposition(|row| {
-      matches!(row.destination,
-        Destination::Link(Target::Page(page) | Target::Point { page, .. })
-        if page <= current)
-    }) {
+    if let Some(index) = section(&self.doc.outline, self.reader.cursor.page) {
       panel.selected = index;
     }
   }
@@ -488,4 +483,12 @@ pub fn recent_rows(entries: &[Entry]) -> Vec<Row> {
       )
     })
     .collect()
+}
+
+/// Last outline entry starting at or before `page`.
+pub fn section(outline: &[Heading], page: PageId) -> Option<usize> {
+  outline.iter().rposition(|heading| {
+    matches!(heading.target,
+      Target::Page(start) | Target::Point { page: start, .. } if start <= page)
+  })
 }

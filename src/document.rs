@@ -62,6 +62,8 @@ pub struct Document {
   pub native: PdfDocument,
   pub pages: Vec<PageInfo>,
   pub outline: Vec<Heading>,
+  /// Info dictionary title; empty when absent.
+  pub title: String,
   texts: Cache<PageId, Arc<Text>>,
   lists: Cache<PageId, Arc<DisplayList>>,
   ocr: Cache<PageId, Arc<Text>>,
@@ -96,10 +98,15 @@ impl Document {
     }
     let mut outline = Vec::new();
     flatten(&native.outlines()?, 0, &mut outline);
+    let title = native
+      .metadata(mupdf::MetadataName::Title)
+      .map(|title| title.trim().to_owned())
+      .unwrap_or_default();
     Ok(Self {
       native,
       pages,
       outline,
+      title,
       texts: Cache::new(32 * MIB),
       lists: Cache::new(4),
       ocr: Cache::new(32 * MIB),

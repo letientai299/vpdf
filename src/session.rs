@@ -239,6 +239,7 @@ fn run(session: &mut Session) -> Result<()> {
   let mut dirty = true;
   let mut last_frame = Instant::now() - Duration::from_millis(9);
   let mut saved = Instant::now();
+  let mut title = String::new();
   while session.running() {
     if session.tabs.is_empty() {
       session.home(&mut out)?;
@@ -254,6 +255,12 @@ fn run(session: &mut Session) -> Result<()> {
     if frame_due {
       dirty |= app.animate();
       if dirty {
+        let current = app.title();
+        if current != title {
+          let clean = terminal::clean(&current, 200);
+          write!(out, "\x1b]2;{clean}\x07")?;
+          title = current;
+        }
         trace.draw(app, &mut out, &mut buffer)?;
         dirty = false;
         last_frame = Instant::now();

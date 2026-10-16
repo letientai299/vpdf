@@ -17,6 +17,8 @@ impl Terminal {
       event::EnableMouseCapture,
       event::EnableBracketedPaste
     )?;
+    // Save the window title; Drop restores it.
+    io::stdout().write_all(b"\x1b[22;0t")?;
     Ok(guard)
   }
 }
@@ -24,7 +26,7 @@ impl Terminal {
 impl Drop for Terminal {
   fn drop(&mut self) {
     let mut output = io::stdout();
-    let _ = output.write_all(b"\x1b[?2026l\x1b[0m");
+    let _ = output.write_all(b"\x1b[?2026l\x1b[0m\x1b[23;0t");
     let _ = crate::graphics::release(&mut output);
     let _ = execute!(
       output,

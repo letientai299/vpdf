@@ -43,6 +43,26 @@ impl App {
     format!("[{index}/{}{more}]  ", hits.len())
   }
 
+  /// Share of the document above the viewport's bottom edge.
+  fn progress(&self) -> u32 {
+    let fraction = if self.text_mode {
+      (self.reader.cursor.page.0 + 1) as f32 / self.doc.pages.len() as f32
+    } else {
+      let bottom = self.reader.scroll + self.layout.screen.height();
+      bottom / self.layout.total.max(1.0)
+    };
+    (fraction.clamp(0.0, 1.0) * 100.0).round() as u32
+  }
+
+  /// Document title for the terminal window.
+  pub fn title(&self) -> String {
+    let name = self.name();
+    if self.doc.title.is_empty() {
+      return name;
+    }
+    format!("{} — {name}", self.doc.title)
+  }
+
   /// Tab names that fit in `room`, with their display width.
   fn tabs(&self, room: usize) -> (String, usize) {
     let Tabline { names, active } = &self.tabline;
@@ -86,12 +106,15 @@ impl App {
     }
     right += &self.search_count();
     right += &format!(
-      "{}/{} [{}]  {:.0}% ",
+      "{}/{} [{}] {}% ",
       page + 1,
       self.doc.pages.len(),
       self.doc.pages[page].label,
-      self.layout.zoom * 100.0,
+      self.progress(),
     );
+    if (self.layout.zoom - 1.0).abs() > 0.005 {
+      right += &format!(" zoom {:.0}% ", self.layout.zoom * 100.0);
+    }
     let left = format!(" {mode} ");
     write!(out, "\x1b[{};1H", row + 1)?;
     let Some(room) = columns.checked_sub(left.width() + right.width() + 1)
@@ -101,9 +124,15 @@ impl App {
       return Ok(());
     };
     let (tabs, width) = self.tabs(room);
-    let (message, style) = match &self.error {
-      Some(error) => (error.as_str(), theme::ERROR),
-      None => (self.reader.message.as_str(), theme::BAR),
+    let section =
+      crate::panel::section(&self.doc.outline, self.reader.cursor.page)
+        .map(|index| self.doc.outline[index].title.trim());
+    let (message, style) = match (&self.error, section) {
+      (Some(error), _) => (error.as_str(), theme::ERROR),
+      (None, Some(title)) if self.reader.message.is_empty() => {
+        (title, theme::MUTED_BAR)
+      }
+      (None, _) => (self.reader.message.as_str(), theme::BAR),
     };
     let message = terminal::clean(message, room.saturating_sub(width));
     let fill = room.saturating_sub(width + message.width()) + 1;
