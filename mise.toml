@@ -1,0 +1,37 @@
+[tools]
+rust = "1.99.0"
+prek = "0.5.5"
+rumdl = "0.2.79"
+taplo = "0.10.0"
+
+[tasks.build]
+description = "Build the optimized reader"
+run = "cargo build --release --locked"
+
+[tasks.run]
+description = "Run the reader"
+run = "cargo run --release --locked -- {{arg(name='args', var=true)}}"
+
+[tasks.fmt]
+description = "Format source and documentation"
+run = ["cargo fmt", "taplo fmt", "rumdl fmt ."]
+
+[tasks."fmt:check"]
+run = ["cargo fmt --check", "taplo fmt --check", "rumdl check ."]
+
+[tasks.lint]
+description = "Reject performance and complexity regressions"
+run = "cargo clippy --locked --all-targets -- -D warnings"
+
+[tasks.test]
+run = "cargo test --locked"
+
+[tasks.check]
+depends = ["fmt:check", "lint", "test"]
+
+[tasks.hooks]
+run = "prek install"
+
+[tasks.install]
+description = "Install the optimized executable"
+run = "cargo install --locked --path ."

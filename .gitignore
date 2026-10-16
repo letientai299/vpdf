@@ -1,0 +1,4 @@
+/target/
+/.ai/
+/agents.local.md
+.DS_Store

@@ -1,0 +1,30 @@
+[package]
+name = "vpdf"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "AGPL-3.0-or-later"
+description = "A keyboard-driven terminal PDF reader"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+cognitive_complexity = "deny"
+too_many_lines = "deny"
+large_stack_arrays = "deny"
+large_types_passed_by_value = "deny"
+needless_pass_by_value = "deny"
+redundant_clone = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.bench]
+debug = true
+strip = false
