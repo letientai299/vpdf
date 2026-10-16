@@ -363,6 +363,18 @@ impl Session {
         tab.tree.exchange(id);
         None
       }
+      Window::Rotate(forward) => {
+        anyhow::ensure!(
+          tab.tree.rotate(id, forward),
+          "Cannot rotate when another pane is split"
+        );
+        None
+      }
+      Window::New => {
+        self.split(Axis::Rows, None)?;
+        let rows = crate::panel::recent_rows(&self.state.recent);
+        return self.app().show_panel(PanelKind::Recent, rows);
+      }
       Window::Move(direction) => {
         tab.tree.move_to_edge(id, direction);
         None
@@ -456,19 +468,23 @@ impl Session {
       }
       Some(Request::Pick) => match crate::fzf::pick(&std::env::current_dir()?)?
       {
-        // In a split, the pick replaces the focused pane, like `:e`.
-        Some(path) => {
-          let tab = self.tab().panes.len() == 1;
-          self.open(&path, tab, screen)
-        }
+        Some(path) => self.choose(&path, screen),
         None => Ok(()),
       },
+      Some(Request::Choose(path)) => self.choose(&path, screen),
       Some(Request::QuitAll) => {
         self.quit = true;
         Ok(())
       }
       None => Ok(()),
     }
+  }
+
+  /// In a split, a picked document replaces the focused pane, like `:e`;
+  /// otherwise it opens a tab.
+  fn choose(&mut self, path: &Path, screen: Screen) -> Result<()> {
+    let tab = self.tab().panes.len() == 1;
+    self.open(path, tab, screen)
   }
 
   fn running(&self) -> bool {

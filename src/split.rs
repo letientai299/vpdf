@@ -223,6 +223,63 @@ impl Node {
     *self = Self::Split { axis, ratio: 0.5, first, second };
   }
 
+  /// `Ctrl-w r` and `R`: rotates the panes of the row or column holding
+  /// `target`. Like Vim, refuses when one of them is itself split.
+  pub fn rotate(&mut self, target: u32, forward: bool) -> bool {
+    let Self::Split { axis, .. } = self else { return false };
+    let axis = *axis;
+    if !self.chain_holds(axis, target) {
+      let Self::Split { first, second, .. } = self else { return false };
+      return first.rotate(target, forward) || second.rotate(target, forward);
+    }
+    let mut ids = Vec::new();
+    if !self.chain_leaves(axis, &mut ids) {
+      return false;
+    }
+    if forward {
+      ids.rotate_right(1);
+    } else {
+      ids.rotate_left(1);
+    }
+    self.assign(&mut ids.into_iter());
+    true
+  }
+
+  /// Whether `target` is a pane directly in this row or column.
+  fn chain_holds(&self, along: Axis, target: u32) -> bool {
+    match self {
+      Self::Leaf(id) => *id == target,
+      Self::Split { axis, first, second, .. } if *axis == along => {
+        first.chain_holds(along, target) || second.chain_holds(along, target)
+      }
+      Self::Split { .. } => false,
+    }
+  }
+
+  /// Panes of this row or column; false when one is split across.
+  fn chain_leaves(&self, along: Axis, out: &mut Vec<u32>) -> bool {
+    match self {
+      Self::Leaf(id) => {
+        out.push(*id);
+        true
+      }
+      Self::Split { axis, first, second, .. } if *axis == along => {
+        first.chain_leaves(along, out) && second.chain_leaves(along, out)
+      }
+      Self::Split { .. } => false,
+    }
+  }
+
+  fn assign(&mut self, ids: &mut impl Iterator<Item = u32>) {
+    match self {
+      Self::Leaf(id) => *id = ids.next().unwrap_or(*id),
+      Self::Split { first, second, .. } => {
+        first.assign(ids);
+        second.assign(ids);
+      }
+    }
+  }
+
   /// `Ctrl-w x`: swaps `target` with its sibling pane.
   pub fn exchange(&mut self, target: u32) -> bool {
     let Self::Split { first, second, .. } = self else { return false };
@@ -339,6 +396,11 @@ mod tests {
     assert_eq!(tree.leaves(), [1, 2, 3]);
     let layout = rects(&tree);
     assert_eq!(layout[2].1, Rect { column: 51, row: 0, columns: 50, rows: 40 });
+    assert!(!tree.rotate(3, true), "its row holds a split column");
+    assert!(tree.rotate(1, true));
+    assert_eq!(tree.leaves(), [2, 1, 3]);
+    assert!(tree.rotate(1, false));
+    assert_eq!(tree.leaves(), [1, 2, 3]);
     tree.move_to_edge(1, Direction::Down);
     assert_eq!(
       rects(&tree)[2].1,

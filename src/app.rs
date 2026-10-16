@@ -19,6 +19,8 @@ pub enum Request {
     path: PathBuf,
     tab: bool,
   },
+  /// A picked document: a new tab, or the focused pane when split.
+  Choose(PathBuf),
   Tab(TabMove),
   /// A panel whose rows the session builds.
   Panel(PanelKind),
@@ -50,6 +52,10 @@ pub enum Window {
   Resize(crate::split::Axis, i32),
   Maximize(crate::split::Axis),
   Exchange,
+  /// Rotates panes in the focused row or column; `true` moves forward.
+  Rotate(bool),
+  /// Splits above and lists recent documents to open there.
+  New,
   /// Moves the pane to the full-height or full-width edge.
   Move(crate::split::Direction),
   ToTab,

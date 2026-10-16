@@ -67,6 +67,8 @@ Ctrl-w + - < >: taller / shorter / narrower / wider
 Ctrl-w _ | =: tallest / widest / equal
 Ctrl-w H J K L: move pane to far left / bottom / top / right
 Ctrl-w x T: swap with sibling / move to new tab
+Ctrl-w r R: rotate panes forward / backward
+Ctrl-w n: new pane listing recent documents
 
 # Tabs
 gt [count]gt: next / nth tab

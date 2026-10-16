@@ -127,20 +127,23 @@ last pane, and `3 Ctrl-w w` picks the third. `Ctrl-w c` or `:close` closes a
 pane, `Ctrl-w o` or `:only` closes the others, and `:q` closes the pane, then
 the tab. `Ctrl-w + - < >` resize by a count of cells, `Ctrl-w _ |` maximize,
 `Ctrl-w =` equalizes, `Ctrl-w H J K L` move the pane to the far left, bottom,
-top, or right edge, `Ctrl-w x` swaps with the sibling pane, and `Ctrl-w T` moves
-the pane to a new tab. Each pane has its own status line, position, zoom, and
-panels; clicking a pane focuses it. Panes share one Kitty image budget.
+top, or right edge, `Ctrl-w r` and `R` rotate the panes of a row or column
+(refused, as in Vim, when one of them is split), `Ctrl-w n` opens a pane above
+listing recent documents, `Ctrl-w x` swaps with the sibling pane, and `Ctrl-w T`
+moves the pane to a new tab. Each pane has its own status line, position, zoom,
+and panels; clicking a pane focuses it. Panes share one Kitty image budget.
 
 ## Recent documents
 
 The reader saves each document's cursor, zoom, and rotation, and reopens it
 there; `--page` overrides the saved page. `gr` or `:recent` lists recent
-documents. `vpdf` without a path opens a start screen with that list: Enter or
-a click opens a document, and `:e` opens any file with path completion.
-Command and search history persist too. State lives in
-`$XDG_STATE_HOME/vpdf/state.json`, or `~/.local/state/vpdf/state.json`, and is
-saved every few seconds while the position changes, when a tab closes, and on
-exit. Concurrent readers merge their entries.
+documents; in a split, a chosen document replaces the focused pane. `vpdf`
+without a path opens a start screen with that list: Enter or a click opens a
+document, and `:e` opens any file with path completion. Command and search
+history persist too. State lives in `$XDG_STATE_HOME/vpdf/state.json`, or
+`~/.local/state/vpdf/state.json`, and is saved every few seconds while the
+position changes, when a tab closes, and on exit. Concurrent readers merge their
+entries.
 
 ## Marks
 

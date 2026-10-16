@@ -450,7 +450,7 @@ impl App {
       }
       Destination::Link(target) => self.follow(&target)?,
       Destination::File(path) => {
-        self.request = Some(Request::Open { path, tab: true });
+        self.request = Some(Request::Choose(path));
         return self.close_panel();
       }
       Destination::Mark(name) => {

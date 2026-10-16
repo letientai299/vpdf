@@ -323,6 +323,11 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("C-wJ", Action::Window(W::Move(D::Down)), "move pane to bottom"),
   ("C-wK", Action::Window(W::Move(D::Up)), "move pane to top"),
   ("C-wL", Action::Window(W::Move(D::Right)), "move pane to far right"),
+  ("C-wr", Action::Window(W::Rotate(true)), "rotate panes forward"),
+  ("C-wC-r", Action::Window(W::Rotate(true)), "rotate panes forward"),
+  ("C-wR", Action::Window(W::Rotate(false)), "rotate panes backward"),
+  ("C-wn", Action::Window(W::New), "new pane with recent documents"),
+  ("C-wC-n", Action::Window(W::New), "new pane with recent documents"),
   ("C-wx", Action::Window(W::Exchange), "swap with sibling pane"),
   ("C-wT", Action::Window(W::ToTab), "move pane to a new tab"),
 ];
