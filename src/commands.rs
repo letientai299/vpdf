@@ -173,6 +173,7 @@ impl App {
     self.worker = RenderWorker::new(&self.path, password);
     let previous = std::mem::take(&mut self.search);
     self.stamp = crate::watch::stamp(&self.path);
+    self.infer_outline();
     self.graphics.forget(self.id);
     if let Some(ocr) = self.ocr.take() {
       ocr.cancel();

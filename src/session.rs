@@ -293,6 +293,7 @@ fn run(session: &mut Session) -> Result<()> {
     dirty |= app.raster_updates(&mut out)?;
     dirty |= app.search_updates()?;
     dirty |= app.ocr_updates()?;
+    dirty |= app.outline_updates()?;
     app.clipboard(&mut out)?;
     let frame_due = last_frame.elapsed() >= Duration::from_micros(8333);
     if frame_due {

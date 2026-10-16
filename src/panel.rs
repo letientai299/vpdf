@@ -65,6 +65,8 @@ pub struct Panel {
   /// First visible row; moves only to keep the selection shown.
   pub top: usize,
   pub search: RowSearch,
+  /// Shown after the row count, such as "inferred".
+  pub note: &'static str,
 }
 
 impl Panel {
@@ -76,6 +78,7 @@ impl Panel {
       focused: true,
       top: 0,
       search: RowSearch::default(),
+      note: "",
     }
   }
 
@@ -158,7 +161,7 @@ impl Panel {
       write!(out, "\x1b[{row};{width}H{}│{}", theme::MUTED, theme::RESET)?;
     }
     let title = format!(" {} ", self.kind.title());
-    let count = format!(" {}", self.rows.len());
+    let count = format!(" {} {}", self.rows.len(), self.note);
     write!(
       out,
       "\x1b[1;1H{}{}{}{}{}",
@@ -301,7 +304,11 @@ impl App {
   }
 
   pub fn show_panel(&mut self, kind: PanelKind, rows: Vec<Row>) -> Result<()> {
-    self.panel = Some(Panel::new(kind, rows));
+    let mut panel = Panel::new(kind, rows);
+    if kind == PanelKind::Outline && self.doc.inferred {
+      panel.note = "inferred";
+    }
+    self.panel = Some(panel);
     let wide = matches!(kind, PanelKind::Help | PanelKind::Info);
     let width =
       if wide { self.screen.columns / 2 } else { self.screen.columns / 3 };

@@ -77,6 +77,8 @@ pub struct App {
   pub panel: Option<crate::panel::Panel>,
   pub preview: Option<bool>,
   pub ocr: Option<crate::ocr::OcrJob>,
+  pub outline_job:
+    Option<std::sync::mpsc::Receiver<Vec<crate::document::Heading>>>,
   pub animation: Option<crate::animation::Scroll>,
   pub(crate) requested: Vec<TileKey>,
   pub(crate) last_click: Option<(Instant, Position)>,
@@ -103,7 +105,7 @@ impl App {
     let doc = Document::open(path, password)?;
     let layout = Layout::new(&doc.pages, screen);
     static NEXT: AtomicU32 = AtomicU32::new(1);
-    Ok(Self {
+    let mut app = Self {
       id: NEXT.fetch_add(1, Ordering::Relaxed),
       doc,
       reader: Reader::default(),
@@ -132,9 +134,12 @@ impl App {
       panel: None,
       preview: None,
       ocr: None,
+      outline_job: None,
       animation: None,
       requested: Vec::new(),
       last_click: None,
-    })
+    };
+    app.infer_outline();
+    Ok(app)
   }
 }

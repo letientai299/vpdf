@@ -22,6 +22,7 @@ pub mod layout;
 mod marks;
 pub mod motion;
 pub mod ocr;
+pub mod outline;
 pub mod panel;
 mod panel_search;
 mod paragraph;

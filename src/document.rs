@@ -73,6 +73,8 @@ pub struct Document {
   pub outline: Vec<Heading>,
   /// Info dictionary title; empty when absent.
   pub title: String,
+  /// The outline was inferred from text layout, not authored.
+  pub inferred: bool,
   texts: Cache<PageId, Arc<Text>>,
   lists: Cache<PageId, Arc<DisplayList>>,
   ocr: Cache<PageId, Arc<Text>>,
@@ -116,6 +118,7 @@ impl Document {
       pages,
       outline,
       title,
+      inferred: false,
       texts: Cache::new(32 * MIB),
       lists: Cache::new(4),
       ocr: Cache::new(32 * MIB),
