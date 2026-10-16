@@ -39,6 +39,7 @@ impl App {
       Action::Command => self.prompt = Some(Prompt::new(PromptKind::Command)),
       Action::Mark(name) => self.set_mark(name),
       Action::Hints(copy) => self.start_hints(copy)?,
+      Action::Peek => self.preview_link()?,
       Action::GoMark(name, exact) => self.go_mark(name, exact)?,
       Action::Tab(forward) => {
         self.request = Some(Request::Tab(match (forward, input.explicit) {
@@ -59,6 +60,17 @@ impl App {
   pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
     if self.hints.is_some() {
       return self.hint_key(key);
+    }
+    if let Some(peek) = self.peek.take() {
+      // Any key closes the preview; Enter also follows it.
+      match key.code {
+        crossterm::event::KeyCode::Enter => return self.follow(&peek.target),
+        crossterm::event::KeyCode::Char('K')
+        | crossterm::event::KeyCode::Esc => {
+          return Ok(());
+        }
+        _ => {}
+      }
     }
     let Some(prompt) = &mut self.prompt else {
       if let Some(input) = self.keys.feed(key) {
@@ -207,20 +219,26 @@ impl App {
   }
 
   pub fn follow_cursor(&mut self) -> Result<()> {
+    match self.link_at_cursor()? {
+      Some(target) => self.follow(&target),
+      None => self.open_panel(PanelKind::Links),
+    }
+  }
+
+  /// Destination of the link covering the cursor glyph.
+  pub fn link_at_cursor(&mut self) -> Result<Option<Target>> {
     let cursor = self.reader.cursor;
     let text = self.doc.text(cursor.page)?;
-    let Some(glyph) = text.glyph(cursor) else {
-      return self.open_panel(PanelKind::Links);
-    };
+    let Some(glyph) = text.glyph(cursor) else { return Ok(None) };
     let x = (glyph.bounds.x0 + glyph.bounds.x1) / 2.0;
     let y = (glyph.bounds.y0 + glyph.bounds.y1) / 2.0;
     let links = self.doc.links(cursor.page)?;
-    if let Some(link) = links.iter().find(|link| link.bounds.contains(x, y)) {
-      self.follow(&link.target)?;
-    } else {
-      self.open_panel(PanelKind::Links)?;
-    }
-    Ok(())
+    Ok(
+      links
+        .into_iter()
+        .find(|link| link.bounds.contains(x, y))
+        .map(|link| link.target),
+    )
   }
 
   pub fn follow(&mut self, target: &Target) -> Result<()> {

@@ -200,3 +200,38 @@ fn link_hints_follow_typed_labels() -> Result<()> {
   assert!(app.hints.is_none());
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn preview_shows_citation_target() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 120,
+    rows: 50,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  for text_mode in [false, true] {
+    let mut app =
+      App::with_screen(&root.join("paper.pdf"), "", text_mode, screen)?;
+    let links = app.doc.links(PageId(1))?;
+    let link =
+      links.iter().find(|link| !matches!(link.target, Target::Uri(_))).unwrap();
+    let (x, y) = (
+      (link.bounds.x0 + link.bounds.x1) / 2.0,
+      (link.bounds.y0 + link.bounds.y1) / 2.0,
+    );
+    app.reader.cursor = app.doc.text(PageId(1))?.nearest(PageId(1), x, y);
+    app.ensure_cursor()?;
+    app.preview_link()?;
+    assert!(app.peek.is_some());
+    let mut out = Vec::new();
+    app.draw(&mut out)?;
+    let drawn = String::from_utf8_lossy(&out);
+    assert_eq!(drawn.contains("z=2"), !text_mode);
+    assert_eq!(drawn.contains('╭'), text_mode);
+    assert_eq!(app.reader.cursor.page, PageId(1), "preview does not move");
+  }
+  Ok(())
+}

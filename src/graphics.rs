@@ -13,6 +13,8 @@ use std::sync::OnceLock;
 
 const BLOCK: u32 = 1 << 16;
 const OVERLAYS: u32 = 1024;
+/// Last overlay id holds the link preview across frames.
+const PREVIEW: u32 = OVERLAYS - 1;
 // Four readers fit Kitty's 320 MB quota.
 const BUDGET: usize = 64 * MIB;
 
@@ -26,6 +28,10 @@ pub struct Graphics {
   ids: HashMap<Key, u32>,
   free: Vec<u32>,
   stale: Vec<u32>,
+  /// Serial of the uploaded preview; zero when none.
+  preview: u64,
+  /// Whether the last frame placed the preview.
+  pictured: bool,
   base: u32,
   next: u32,
   overlay: u32,
@@ -41,6 +47,8 @@ impl Default for Graphics {
       ids: HashMap::new(),
       free: Vec::new(),
       stale: Vec::new(),
+      preview: 0,
+      pictured: false,
       base,
       next: base + OVERLAYS,
       overlay: 0,
@@ -118,7 +126,42 @@ impl Graphics {
       graphics(out, &format!("a=d,d=R,x={first},y={last},q=2"), "")?;
     }
     self.overlay = 0;
+    if self.preview != 0 {
+      // Keep the pixels while shown; free them once a frame skips it.
+      let id = self.base + PREVIEW;
+      let delete = if self.pictured { "i" } else { "I" };
+      graphics(out, &format!("a=d,d={delete},i={id},q=2"), "")?;
+      if !self.pictured {
+        self.preview = 0;
+      }
+    }
+    self.pictured = false;
     Ok(())
+  }
+
+  /// Shows a picture above everything; uploads only when `serial` changes.
+  pub fn picture(
+    &mut self,
+    serial: u64,
+    (width, height, rgb): (i32, i32, &[u8]),
+    rect: Bounds,
+    screen: Screen,
+    left: u16,
+    out: &mut impl Write,
+  ) -> Result<()> {
+    let id = self.base + PREVIEW;
+    self.pictured = true;
+    if self.preview != serial {
+      transmit(out, id, width, height, 24, &encode(rgb)?)?;
+      self.preview = serial;
+    }
+    let Some(rect) = clip(rect, screen) else { return Ok(()) };
+    let control = format!(
+      "a=p,i={id},q=2,C=1,z=2,w={},h={}",
+      rect.width() as u32,
+      rect.height() as u32
+    );
+    placement(out, &(control + &offsets(rect, screen)), rect, left, screen)
   }
 
   pub fn place(
@@ -192,7 +235,7 @@ impl Graphics {
     out: &mut impl Write,
   ) -> Result<()> {
     let Some(rect) = clip(rect, screen) else { return Ok(()) };
-    if self.overlay >= OVERLAYS {
+    if self.overlay >= PREVIEW {
       return Ok(());
     }
     let width = rect.width().ceil().max(1.0) as i32;

@@ -98,6 +98,25 @@ impl App {
     Ok(())
   }
 
+  /// Cursor glyph on screen, in page-area pixels.
+  pub fn cursor_rect(&mut self) -> Result<Option<Bounds>> {
+    let cursor = self.reader.cursor;
+    if self.text_mode {
+      let cell = self.text_cell(cursor)?;
+      let (width, height) =
+        (f32::from(self.screen.cell_width), f32::from(self.screen.cell_height));
+      return Ok(cell.map(|(column, row)| {
+        let (x, y) =
+          (f32::from(column - self.left) * width, f32::from(row) * height);
+        Bounds { x0: x, y0: y, x1: x + width, y1: y + height }
+      }));
+    }
+    let text = self.doc.text(cursor.page)?;
+    Ok(text.glyph(cursor).map(|glyph| {
+      self.layout.project(cursor.page, glyph.bounds, self.reader.scroll)
+    }))
+  }
+
   pub fn mark_range(
     &mut self,
     first: Position,
@@ -166,6 +185,7 @@ impl App {
       self.canvas(out)?;
     }
     self.draw_hints(out)?;
+    self.draw_preview(out)?;
     self.track_outline();
     if let Some(panel) = &mut self.panel {
       panel.draw(out, self.left, self.screen.rows)?;

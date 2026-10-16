@@ -74,6 +74,8 @@ pub struct App {
   pub search_origin: Option<crate::reader::Location>,
   pub prompt: Option<crate::prompt::Prompt>,
   pub hints: Option<crate::hints::Hints>,
+  /// Link destination shown by `K`.
+  pub peek: Option<crate::preview::Preview>,
   pub panel: Option<crate::panel::Panel>,
   pub preview: Option<bool>,
   pub ocr: Option<crate::ocr::OcrJob>,
@@ -131,6 +133,7 @@ impl App {
       search_origin: None,
       prompt: None,
       hints: None,
+      peek: None,
       panel: None,
       preview: None,
       ocr: None,

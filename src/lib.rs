@@ -27,6 +27,7 @@ pub mod outline;
 pub mod panel;
 mod panel_search;
 mod paragraph;
+pub mod preview;
 pub mod prompt;
 pub mod reader;
 pub mod render_worker;

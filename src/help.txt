@@ -41,6 +41,7 @@ n N: next / previous match
 go: table of contents
 gs: search results
 f: link hints; F copies URLs
+K: preview link target; Enter follows
 gl: links on this page
 gr: recent documents
 ga: annotations (read-only)

@@ -64,27 +64,32 @@ pub fn raster(doc: &mut Document, key: TileKey) -> Result<Vec<u8>> {
       && key.height <= TILE_HEIGHT,
     "Invalid tile dimensions"
   );
+  let area = IRect::new(key.x, key.y, key.x + key.width, key.y + key.height);
+  let pixels = raster_area(doc, &key, area)?;
+  Ok(pixels.samples().to_vec())
+}
+
+/// RGB pixels of `area`, in the page space `key` describes.
+pub fn raster_area(
+  doc: &mut Document,
+  key: &TileKey,
+  area: IRect,
+) -> Result<Pixmap> {
   doc.validate(key.page)?;
   let bounds = key.crop.apply(doc.pages[key.page.0].bounds);
   let list = doc.display(key.page)?;
-  let bbox = IRect::new(key.x, key.y, key.x + key.width, key.y + key.height);
   let mut pixels =
-    Pixmap::new_with_rect(&Colorspace::device_rgb(), bbox, false)?;
+    Pixmap::new_with_rect(&Colorspace::device_rgb(), area, false)?;
   pixels.clear_with(255)?;
   let device = Device::from_pixmap(&pixels)?;
   let matrix = page_matrix(bounds, key.scale, key.rotation);
   list.run(
     &device,
     &matrix,
-    Rect::new(
-      key.x as f32,
-      key.y as f32,
-      (key.x + key.width) as f32,
-      (key.y + key.height) as f32,
-    ),
+    Rect::new(area.x0 as f32, area.y0 as f32, area.x1 as f32, area.y1 as f32),
   )?;
   drop(device);
-  Ok(pixels.samples().to_vec())
+  Ok(pixels)
 }
 
 pub fn encode(bytes: &[u8]) -> Result<String> {
