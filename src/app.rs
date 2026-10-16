@@ -54,6 +54,8 @@ pub struct App {
   pub error: Option<String>,
   pub render_ms: f64,
   pub search: crate::find::Search,
+  /// Where an open search prompt started.
+  pub search_origin: Option<crate::reader::Location>,
   pub prompt: Option<crate::prompt::Prompt>,
   pub panel: Option<crate::panel::Panel>,
   pub preview: Option<bool>,
@@ -103,6 +105,7 @@ impl App {
       error: None,
       render_ms: 0.0,
       search: crate::find::Search::default(),
+      search_origin: None,
       prompt: None,
       panel: None,
       preview: None,

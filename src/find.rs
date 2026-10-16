@@ -1,6 +1,8 @@
 use crate::Result;
 use crate::app::App;
 use crate::keys::PanelKind;
+use crate::prompt::{Prompt, PromptKind};
+use crate::reader::Location;
 use crate::search::{self, Hit};
 use crate::search_worker::SearchWorker;
 use crate::text::Position;
@@ -49,6 +51,7 @@ impl App {
       return self.next_result(false, 1);
     }
     search::compile(query, whole)?;
+    let origin = self.search_origin.map_or(self.reader.cursor, |o| o.cursor);
     if self.search.worker.is_none() {
       let worker = SearchWorker::new(&self.path, &self.password);
       for (page, text) in self.doc.seeds() {
@@ -59,14 +62,13 @@ impl App {
     let Some(worker) = &self.search.worker else {
       return Ok(());
     };
-    self.search.generation =
-      worker.query(query, whole, self.reader.cursor.page, backward);
+    self.search.generation = worker.query(query, whole, origin.page, backward);
     self.search.phase = Phase::Running { jump: true };
     self.search.hits.clear();
     self.search.query = query.to_owned();
     self.search.backward = backward;
     self.search.hidden = false;
-    self.search.origin = self.reader.cursor;
+    self.search.origin = origin;
     self.reader.message = "Searching…".into();
     Ok(())
   }
@@ -97,7 +99,12 @@ impl App {
           self.search.hits.iter().find(|h| h.first > self.search.origin)
         };
         if let Some(hit) = next {
-          self.reader.jump(hit.first, &mut self.doc)?;
+          // Typing previews matches without filling the jump list.
+          if self.search_origin.is_some() {
+            self.reader.cursor = hit.first;
+          } else {
+            self.reader.jump(hit.first, &mut self.doc)?;
+          }
           self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
           self.ensure_cursor()?;
           self.search.phase = Phase::Running { jump: false };
@@ -112,6 +119,9 @@ impl App {
       );
       if event.done {
         self.search.phase = Phase::Complete;
+        if self.search.hits.is_empty() {
+          self.return_to_origin()?;
+        }
       }
     }
     if self.panel.as_ref().is_some_and(|p| p.kind == PanelKind::Results) {
@@ -122,6 +132,56 @@ impl App {
       }
     }
     Ok(changed)
+  }
+
+  pub fn begin_search(&mut self, backward: bool) {
+    let location =
+      Location { cursor: self.reader.cursor, scroll: self.reader.scroll };
+    self.search_origin = Some(location);
+    self.prompt = Some(Prompt::new(PromptKind::Search(backward)));
+  }
+
+  /// Searches as the query is typed, like Vim's `incsearch`.
+  pub fn incremental(&mut self, query: &str) -> Result<()> {
+    let backward = matches!(
+      self.prompt.as_ref().map(|p| p.kind),
+      Some(PromptKind::Search(true))
+    );
+    if query.is_empty() || search::compile(query, false).is_err() {
+      self.search.cancel();
+      return self.return_to_origin();
+    }
+    self.start_search(query, backward, false)
+  }
+
+  /// Keeps the previewed match and records the start as a jump.
+  pub fn finish_search(&mut self, query: &str, backward: bool) -> Result<()> {
+    let origin = self.search_origin.take();
+    let running = !matches!(self.search.phase, Phase::Idle);
+    if !(running && self.search.query == query) {
+      self.search_origin = origin;
+      let result = self.start_search(query, backward, false);
+      self.search_origin = None;
+      result?;
+    }
+    if let Some(origin) = origin.filter(|o| o.cursor != self.reader.cursor) {
+      self.reader.record(origin);
+    }
+    Ok(())
+  }
+
+  pub fn abort_search(&mut self) -> Result<()> {
+    self.search.cancel();
+    self.return_to_origin()?;
+    self.search_origin = None;
+    Ok(())
+  }
+
+  fn return_to_origin(&mut self) -> Result<()> {
+    let Some(origin) = self.search_origin else { return Ok(()) };
+    self.reader.cursor = origin.cursor;
+    self.reader.scroll = origin.scroll;
+    self.ensure_cursor()
   }
 
   pub fn next_result(&mut self, reverse: bool, count: usize) -> Result<()> {

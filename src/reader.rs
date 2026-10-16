@@ -88,8 +88,12 @@ impl Reader {
   }
 
   pub fn remember(&mut self) {
-    let location = Location { cursor: self.cursor, scroll: self.scroll };
-    if self.history.last().is_none_or(|p| p.cursor != self.cursor) {
+    self.record(Location { cursor: self.cursor, scroll: self.scroll });
+  }
+
+  /// Adds `location` to the jump list.
+  pub fn record(&mut self, location: Location) {
+    if self.history.last().is_none_or(|p| p.cursor != location.cursor) {
       self.history.push(location);
     }
     if self.history.len() > 100 {

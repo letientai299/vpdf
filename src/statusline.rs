@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::app::{App, Tabline};
+use crate::find::Phase;
 use crate::reader::SelectionKind;
 use crate::terminal;
 use crate::theme::{self, Color};
@@ -20,6 +21,19 @@ impl App {
       None if self.reader.operator.is_some() => ("YANK", Color::Yellow),
       None => ("NORMAL", Color::Blue),
     }
+  }
+
+  /// Match under or before the cursor, like Neovim's searchcount.
+  fn search_count(&self) -> String {
+    let hits = &self.search.hits;
+    if self.search.hidden || hits.is_empty() {
+      return String::new();
+    }
+    let cursor = self.reader.cursor;
+    let index = hits.partition_point(|hit| hit.first <= cursor);
+    let more =
+      if matches!(self.search.phase, Phase::Running { .. }) { "+" } else { "" };
+    format!("[{index}/{}{more}]  ", hits.len())
   }
 
   /// Tab names that fit in `room`, with their display width.
@@ -63,6 +77,7 @@ impl App {
     if !right.is_empty() {
       right.push_str("  ");
     }
+    right += &self.search_count();
     right += &format!(
       "{}/{} [{}]  {:.0}% ",
       page + 1,

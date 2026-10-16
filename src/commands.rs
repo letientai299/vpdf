@@ -33,9 +33,7 @@ impl App {
     match input.action {
       Action::Panel(kind) => self.open_panel(kind)?,
       Action::ClosePanel => self.close_panel()?,
-      Action::Search(backward) => {
-        self.prompt = Some(Prompt::new(PromptKind::Search(backward)));
-      }
+      Action::Search(backward) => self.begin_search(backward),
       Action::WordSearch => self.word_search()?,
       Action::Result(reverse) => self.next_result(reverse, input.count)?,
       Action::Follow => self.follow_cursor()?,
@@ -64,7 +62,13 @@ impl App {
       return Ok(());
     };
     let menu = prompt.menu.is_some();
-    match prompt.feed(key, history) {
+    let event = prompt.feed(key, history);
+    let kind = prompt.kind;
+    match event {
+      PromptEvent::Edited if matches!(kind, PromptKind::Search(_)) => {
+        let query = prompt.text.clone();
+        self.incremental(&query)?;
+      }
       PromptEvent::Pending | PromptEvent::Edited => {}
       PromptEvent::Complete => {
         if prompt.kind == PromptKind::Command {
@@ -72,14 +76,19 @@ impl App {
           prompt.complete(start, items);
         }
       }
-      PromptEvent::Cancel => self.prompt = None,
+      PromptEvent::Cancel => {
+        self.prompt = None;
+        if matches!(kind, PromptKind::Search(_)) {
+          self.abort_search()?;
+        }
+      }
       PromptEvent::Submit => {
         let Some(prompt) = self.prompt.take() else { return Ok(()) };
         history.push(prompt.kind, &prompt.text);
         self.relayout()?;
         match prompt.kind {
           PromptKind::Search(backward) => {
-            self.start_search(&prompt.text, backward, false)?;
+            self.finish_search(&prompt.text, backward)?;
           }
           PromptKind::Command => self.command(&prompt.text)?,
           PromptKind::Password => self.reload_with(&prompt.text)?,

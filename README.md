@@ -60,11 +60,12 @@ outside SSH, also pipes the text to `pbcopy`, `wl-copy`, `xclip`, or `xsel`. OSC
 double-click move the cursor, select a range, and select a word. Editing keys
 leave the PDF unchanged.
 
-`/` and `?` search forward or backward; `n N` cycle matches, and `*` finds the
-cursor word. Literal search folds Unicode case, decomposes compatibility
-forms, collapses whitespace, and joins line-end hyphenation. Prefix `\v` for
-regular expressions. The bounded regex engine supports lookaround and
-backreferences; it is not Python's regex implementation.
+`/` and `?` search forward or backward and preview the first match while you
+type; `Esc` returns to the start. The status line shows `[match/total]`; `n N`
+cycle matches, and `*` finds the cursor word. Literal search folds Unicode case,
+decomposes compatibility forms, collapses whitespace, and joins line-end
+hyphenation. Prefix `\v` for regular expressions. The bounded regex engine
+supports lookaround and backreferences; it is not Python's regex implementation.
 
 `gs`, `go`, and `gl` open search results, the table of contents, and links.
 Enter follows a panel item; `o` follows while retaining panel focus. The outline
