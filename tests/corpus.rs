@@ -81,3 +81,24 @@ fn display_list_text_matches_page_text() -> Result<()> {
   }
   Ok(())
 }
+
+/// Page bounds read from page dictionaries equal those of loaded pages.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn dictionary_bounds_match_loaded_pages() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  for name in ["book.pdf", "paper.pdf", "form.pdf", "ocr.pdf"] {
+    let doc = Document::open(&root.join(name), "")?;
+    for (index, page) in doc.pages.iter().enumerate() {
+      let loaded: vpdf::text::Bounds =
+        doc.native.load_page(index as i32)?.bounds()?.into();
+      assert_eq!(
+        (page.bounds.x0, page.bounds.y0, page.bounds.x1, page.bounds.y1),
+        (loaded.x0, loaded.y0, loaded.x1, loaded.y1),
+        "{name} page {}",
+        index + 1
+      );
+    }
+  }
+  Ok(())
+}

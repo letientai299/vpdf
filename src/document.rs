@@ -99,7 +99,10 @@ impl Document {
     ensure!(count > 0, "PDF contains no pages");
     let mut pages = Vec::with_capacity(count as usize);
     for index in 0..count {
-      let bounds: Bounds = native.load_page(index)?.bounds()?.into();
+      let bounds = match page_bounds(&native, index) {
+        Ok(bounds) => bounds,
+        Err(_) => native.load_page(index)?.bounds()?.into(),
+      };
       ensure!(
         bounds.width() > 0.0
           && bounds.height() > 0.0
@@ -294,6 +297,56 @@ impl Document {
   pub fn cache_bytes(&self) -> usize {
     self.texts.used() + self.ocr.used()
   }
+}
+
+/// A page's crop box bound as `fz_bound_page` computes it, read from the
+/// page dictionary without loading the page, whose annotations can cost
+/// more than the rest of opening a document. Mirrors
+/// `pdf_page_obj_transform_box` in `source/pdf/pdf-page.c`.
+fn page_bounds(native: &PdfDocument, index: i32) -> Result<Bounds> {
+  let page = native.find_page(index)?;
+  let media = match page.get_dict_inheritable("MediaBox")? {
+    Some(media) => pdf_rect(&media)?,
+    None => None,
+  };
+  let used = match (media, page.get_dict_inheritable("CropBox")?) {
+    (media, None) => media,
+    (Some(media), Some(crop)) => pdf_rect(&crop)?.map(|crop| Bounds {
+      x0: media.x0.max(crop.x0),
+      y0: media.y0.max(crop.y0),
+      x1: media.x1.min(crop.x1),
+      y1: media.y1.min(crop.y1),
+    }),
+    (None, Some(_)) => None,
+  };
+  let used = used.filter(|r| r.x0 < r.x1 && r.y0 < r.y1).unwrap_or(Bounds {
+    x0: 0.0,
+    y0: 0.0,
+    x1: 612.0,
+    y1: 792.0,
+  });
+  let used = if used.width() < 1.0 || used.height() < 1.0 {
+    Bounds { x0: 0.0, y0: 0.0, x1: 1.0, y1: 1.0 }
+  } else {
+    used
+  };
+  let rect = mupdf::Rect::new(used.x0, used.y0, used.x1, used.y1);
+  Ok(rect.transform(&page.page_ctm()?).into())
+}
+
+/// A rectangle array as `pdf_to_rect` reads it; none when not an array.
+fn pdf_rect(object: &mupdf::pdf::PdfObject) -> Result<Option<Bounds>> {
+  if !object.is_array()? {
+    return Ok(None);
+  }
+  let mut values = [0.0_f32; 4];
+  for (index, value) in values.iter_mut().enumerate() {
+    if let Some(item) = object.get_array(index as i32)? {
+      *value = item.as_float()?;
+    }
+  }
+  let [a, b, c, d] = values;
+  Ok(Some(Bounds { x0: a.min(c), y0: b.min(d), x1: a.max(c), y1: b.max(d) }))
 }
 
 /// `D:20230802120000+02'00'` as `2023-08-02 12:00:00 +02:00`.
