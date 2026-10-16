@@ -123,6 +123,8 @@ pub struct App {
     Option<std::sync::mpsc::Receiver<Vec<crate::document::Heading>>>,
   pub animation: Option<crate::animation::Scroll>,
   pub(crate) requested: Vec<TileKey>,
+  /// Sign of the last scroll; prefetch looks that way first.
+  pub(crate) heading: f32,
   pub(crate) last_click: Option<(Instant, Position)>,
 }
 
@@ -186,6 +188,7 @@ impl App {
       outline_job: None,
       animation: None,
       requested: Vec::new(),
+      heading: 1.0,
       last_click: None,
     };
     app.infer_outline();

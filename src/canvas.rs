@@ -3,18 +3,20 @@ use crate::app::App;
 use crate::reader::SelectionKind;
 use crate::terminal;
 use crate::text::{Bounds, PageId, Position};
-use crate::tiles;
+use crate::tiles::{self, TileKey};
 use std::io::Write;
 
 impl App {
-  pub fn raster_updates(&mut self, out: &mut impl Write) -> Result<bool> {
+  /// Keeps finished tiles; returns whether a wanted one arrived, since
+  /// prefetched tiles need no frame.
+  pub fn raster_updates(&mut self) -> bool {
     let mut changed = false;
     for result in self.worker.results.try_iter() {
       match result {
         Ok(tile) => {
           self.render_ms = tile.render_ms;
-          self.graphics.upload(&tile, out)?;
-          changed = true;
+          changed |= self.requested.contains(&tile.key);
+          self.graphics.keep(tile);
         }
         Err(error) => {
           self.error = Some(error);
@@ -22,12 +24,13 @@ impl App {
         }
       }
     }
-    Ok(changed)
+    changed
   }
 
   pub fn canvas(&mut self, out: &mut impl Write) -> Result<()> {
     let mut tiles = tiles::visible(&self.layout, self.reader.scroll);
     if let Some(animation) = &self.animation {
+      self.heading = (animation.target - self.reader.scroll).signum();
       for tile in tiles::visible(&self.layout, animation.target) {
         if !tiles.contains(&tile) {
           tiles.push(tile);
@@ -51,7 +54,13 @@ impl App {
         let page = &self.layout.pages[key.page.0];
         ((page.top + key.y as f32 - self.reader.scroll).abs() as u32, key.x)
       });
-      self.worker.request(&missing);
+      let urgent = missing.len();
+      for key in self.ahead(&tiles) {
+        if !self.graphics.has(&key) {
+          missing.push(key);
+        }
+      }
+      self.worker.request(&missing, urgent);
       self.requested = tiles;
     }
     self.marks(out)?;
@@ -61,6 +70,27 @@ impl App {
       self.graphics.veil([0, 0, 0, 70], screen, left, out)?;
     }
     Ok(())
+  }
+
+  /// Tiles a screen beyond the view each way, the way of the last scroll
+  /// first and nearest first, so scrolling finds them already rendered.
+  fn ahead(&self, near: &[TileKey]) -> Vec<TileKey> {
+    let base = self.animation.as_ref().map_or(self.reader.scroll, |a| a.target);
+    let height = self.layout.screen.height();
+    let mut keys = Vec::new();
+    for step in [self.heading, -self.heading] {
+      let scroll = self.layout.clamp_scroll(base + step * height);
+      let mut screen = tiles::visible(&self.layout, scroll);
+      if step < 0.0 {
+        screen.reverse();
+      }
+      for key in screen {
+        if !near.contains(&key) && !keys.contains(&key) {
+          keys.push(key);
+        }
+      }
+    }
+    keys
   }
 
   pub fn panel_focused(&self) -> bool {

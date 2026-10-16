@@ -30,6 +30,8 @@ type Sender = mpsc::Sender<std::result::Result<Tile, String>>;
 struct Queue {
   /// Latest request in priority order; the coordinator drains it.
   tiles: Vec<TileKey>,
+  /// Leading tiles of `tiles` that are on screen; the rest prefetch.
+  urgent: usize,
   /// Every tile of the latest request.
   wanted: HashSet<TileKey>,
   /// Tiles handed to the pool and not yet sent.
@@ -68,10 +70,13 @@ impl RenderWorker {
     Self { shared, results }
   }
 
-  /// Replaces queued work with `tiles`, most urgent first.
-  pub fn request(&self, tiles: &[TileKey]) {
+  /// Replaces queued work with `tiles`, most urgent first. Tiles after
+  /// the first `urgent` prefetch: they draw one band at a time while the
+  /// pool is otherwise idle, so a new viewport waits for one band at most.
+  pub fn request(&self, tiles: &[TileKey], urgent: usize) {
     if let Ok(mut queue) = self.shared.queue.lock() {
       queue.tiles = tiles.to_vec();
+      queue.urgent = urgent.min(tiles.len());
       queue.wanted = tiles.iter().copied().collect();
       queue.fresh = true;
       self.shared.wake.notify_all();
@@ -114,24 +119,50 @@ impl Coordinator {
   }
 
   fn run(mut self) {
-    while let Some(tiles) = self.next() {
-      for band in bands(&tiles) {
-        let superseded =
-          self.shared.queue.lock().map_or(true, |q| q.fresh || q.stop);
-        if superseded {
+    while let Some((urgent, ahead)) = self.next() {
+      for band in bands(&urgent) {
+        if !self.current() {
           break;
         }
-        match self.job(band) {
-          Ok(job) => self.dispatch(job),
-          Err(error) => drop(self.send.send(Err(error.to_string()))),
+        self.start(band);
+      }
+      for band in bands(&ahead) {
+        if !self.idle() {
+          break;
         }
+        self.start(band);
       }
     }
   }
 
+  fn start(&mut self, band: Vec<TileKey>) {
+    match self.job(band) {
+      Ok(job) => self.dispatch(job),
+      Err(error) => drop(self.send.send(Err(error.to_string()))),
+    }
+  }
+
+  /// Whether no newer request has arrived.
+  fn current(&self) -> bool {
+    self.shared.queue.lock().is_ok_and(|q| !q.fresh && !q.stop)
+  }
+
+  /// Waits until this document has no band in flight; false when a newer
+  /// request arrives first.
+  fn idle(&self) -> bool {
+    let Ok(mut queue) = self.shared.queue.lock() else { return false };
+    while !queue.dispatched.is_empty() && !queue.fresh && !queue.stop {
+      queue = match self.shared.wake.wait(queue) {
+        Ok(queue) => queue,
+        Err(_) => return false,
+      };
+    }
+    !queue.fresh && !queue.stop
+  }
+
   /// Waits for a request; drops queued bands it no longer wants and
-  /// returns its tiles not already in flight.
-  fn next(&self) -> Option<Vec<TileKey>> {
+  /// returns its on-screen and prefetch tiles not already in flight.
+  fn next(&self) -> Option<(Vec<TileKey>, Vec<TileKey>)> {
     let mut queue = self.shared.queue.lock().ok()?;
     while !queue.fresh && !queue.stop {
       queue = self.shared.wake.wait(queue).ok()?;
@@ -155,11 +186,13 @@ impl Coordinator {
     if queue.stop {
       return None;
     }
-    let mut tiles = std::mem::take(&mut queue.tiles);
-    tiles.retain(|key| !queue.dispatched.contains(key));
+    let mut urgent = std::mem::take(&mut queue.tiles);
+    let mut ahead = urgent.split_off(queue.urgent);
+    urgent.retain(|key| !queue.dispatched.contains(key));
+    ahead.retain(|key| !queue.dispatched.contains(key));
     drop(queue);
     drop(dropped);
-    Some(tiles)
+    Some((urgent, ahead))
   }
 
   fn job(&mut self, tiles: Vec<TileKey>) -> Result<Job> {
@@ -330,6 +363,7 @@ fn serve(pool: &Pool) {
       for key in &tiles {
         queue.dispatched.remove(key);
       }
+      shared.wake.notify_all();
     }
   }
 }

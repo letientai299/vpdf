@@ -57,8 +57,7 @@ fn reader_workflows() -> Result<()> {
   app.reader.visual(vpdf::reader::SelectionKind::Character);
   app.command("reload")?;
   assert!(app.reader.last_selection.is_none());
-  let mut output = Vec::new();
-  app.raster_updates(&mut output)?;
+  app.raster_updates();
   assert_eq!(app.graphics.bytes(), 0);
   assert!(app.search.hits.is_empty());
   app.reader.history(false);
@@ -259,7 +258,8 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
   let started = Instant::now();
   while app.graphics.bytes() == 0 {
     assert!(started.elapsed() < Duration::from_secs(10), "thumbnails render");
-    app.raster_updates(&mut out)?;
+    app.raster_updates();
+    app.draw(&mut out)?;
     std::thread::sleep(Duration::from_millis(5));
   }
   press(&mut app, Action::Motion(vpdf::motion::Motion::Down))?;

@@ -131,7 +131,7 @@ fn worker_tiles_equal_full_page_pixels() -> Result<()> {
         })
         .collect();
       let worker = RenderWorker::new(&path, "", doc.lists());
-      worker.request(&keys);
+      worker.request(&keys, keys.len());
       for _ in &keys {
         let tile = worker
           .results

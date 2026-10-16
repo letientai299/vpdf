@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
 use std::io::Write;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 const BLOCK: u32 = 1 << 16;
 const OVERLAYS: u32 = 1024;
@@ -17,6 +17,10 @@ const OVERLAYS: u32 = 1024;
 const PREVIEW: u32 = OVERLAYS - 1;
 // Four readers fit Kitty's 320 MB quota.
 const BUDGET: usize = 64 * MIB;
+/// Encoded tiles kept after rendering: prefetched tiles wait here until
+/// they scroll into view, and evicted or lost images upload again without
+/// rendering. Text tiles compress to about 4% of their RGB size.
+const STORED: usize = 48 * MIB;
 
 /// Tiles of one document; tabs share one Kitty budget.
 type Key = (u32, TileKey);
@@ -25,6 +29,7 @@ pub struct Graphics {
   /// Document whose tiles `upload` and `place` address.
   pub doc: u32,
   resident: Cache<Key, u32>,
+  stored: Cache<Key, Arc<str>>,
   ids: HashMap<Key, u32>,
   free: Vec<u32>,
   stale: Vec<u32>,
@@ -44,6 +49,7 @@ impl Default for Graphics {
     Self {
       doc: 0,
       resident: Cache::new(BUDGET),
+      stored: Cache::new(STORED),
       ids: HashMap::new(),
       free: Vec::new(),
       stale: Vec::new(),
@@ -79,6 +85,12 @@ impl Graphics {
     self.resident.get(&(self.doc, *key)).is_some()
   }
 
+  /// Whether `key` is resident or kept for upload.
+  pub fn has(&mut self, key: &TileKey) -> bool {
+    let key = (self.doc, *key);
+    self.resident.get(&key).is_some() || self.stored.get(&key).is_some()
+  }
+
   /// Deletes a document's tiles at the next frame.
   pub fn forget(&mut self, doc: u32) {
     let keys: Vec<_> =
@@ -87,21 +99,53 @@ impl Graphics {
       self.resident.remove(&key);
       self.stale.extend(self.ids.remove(&key));
     }
+    let kept: Vec<_> = self
+      .stored
+      .entries()
+      .map(|(key, _)| *key)
+      .filter(|k| k.0 == doc)
+      .collect();
+    for key in kept {
+      self.stored.remove(&key);
+    }
+  }
+
+  /// Forgets terminal images after another program had the screen; kept
+  /// tiles upload again when next placed.
+  pub fn lost(&mut self) {
+    let stored = std::mem::replace(&mut self.stored, Cache::new(0));
+    *self = Self { doc: self.doc, stored, ..Self::default() };
+  }
+
+  /// Keeps an encoded tile until a frame places it.
+  pub fn keep(&mut self, tile: Tile) {
+    let weight = tile.encoded.len();
+    self.stored.insert((self.doc, tile.key), Arc::from(tile.encoded), weight);
   }
 
   pub fn upload(&mut self, tile: &Tile, out: &mut impl Write) -> Result<()> {
-    if self.contains(&tile.key) {
-      return Ok(());
+    if !self.contains(&tile.key) {
+      self.send((self.doc, tile.key), &tile.encoded, out)?;
     }
+    Ok(())
+  }
+
+  /// Transmits a tile and returns its image id.
+  fn send(
+    &mut self,
+    key: Key,
+    encoded: &str,
+    out: &mut impl Write,
+  ) -> Result<u32> {
     let id = self.free.pop().unwrap_or_else(|| {
       self.next += 1;
       self.next - 1
     });
-    transmit(out, id, tile.key.width, tile.key.height, 24, &tile.encoded)?;
+    let tile = key.1;
+    transmit(out, id, tile.width, tile.height, 24, encoded)?;
     // Weight floor keeps residency within tile ids.
-    let weight = ((tile.key.width * tile.key.height * 3) as usize)
+    let weight = ((tile.width * tile.height * 3) as usize)
       .max(BUDGET.div_ceil((BLOCK - OVERLAYS) as usize));
-    let key = (self.doc, tile.key);
     for key in self.resident.insert(key, id, weight) {
       if let Some(id) = self.ids.remove(&key) {
         graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
@@ -109,8 +153,8 @@ impl Graphics {
       }
     }
     self.ids.insert(key, id);
-    self.uploaded += tile.encoded.len() as u64;
-    Ok(())
+    self.uploaded += encoded.len() as u64;
+    Ok(id)
   }
 
   pub fn begin(&mut self, out: &mut impl Write) -> Result<()> {
@@ -177,8 +221,8 @@ impl Graphics {
     self.place_at(key, (x, y), layout.screen, left, out)
   }
 
-  /// Places a resident tile with its top-left at `origin` pixels;
-  /// returns false when the tile still needs rendering.
+  /// Places a tile with its top-left at `origin` pixels, uploading a
+  /// kept one first; returns false when the tile still needs rendering.
   pub fn place_at(
     &mut self,
     key: &TileKey,
@@ -187,8 +231,13 @@ impl Graphics {
     left: u16,
     out: &mut impl Write,
   ) -> Result<bool> {
-    let Some(&id) = self.resident.get(&(self.doc, *key)) else {
-      return Ok(false);
+    let id = match self.resident.get(&(self.doc, *key)) {
+      Some(&id) => id,
+      None => {
+        let kept = self.stored.get(&(self.doc, *key)).map(Arc::clone);
+        let Some(encoded) = kept else { return Ok(false) };
+        self.send((self.doc, *key), &encoded, out)?
+      }
     };
     let rect = Bounds {
       x0: x,

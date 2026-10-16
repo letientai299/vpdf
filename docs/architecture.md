@@ -11,8 +11,12 @@ on any thread.
 
 ## Rendering
 
-Visible tiles and one extra tile row are rasterized off the input thread.
-The terminal retains base images under a bounded working-set budget. Scrolling
+Visible tiles and one extra tile row are rasterized off the input thread,
+then a screen beyond the view each way, the way of the last scroll first.
+Prefetch draws one band at a time while the pool is otherwise idle, so a new
+viewport waits for one band at most. Finished tiles stay encoded in memory and
+upload when a frame first places them; the terminal retains base images under
+a bounded working-set budget. Scrolling
 changes crop and placement commands. Cursor, selection, and search highlights
 are separate translucent images, so moving the cursor does not rasterize the
 page again. Synchronized terminal updates group each frame. Scroll inputs
@@ -49,11 +53,11 @@ native interpretation can pause these operations.
 
 ## Memory and limits
 
-Application text, OCR, search, register, and terminal-image caches have explicit
-budgets. Display lists have a page-count bound of eight per document; their
-native memory size is not exposed by the binding. MuPDF's internal allocations
-and terminal memory remain separate from application accounting. These bounds
-are not a hard process RSS limit.
+Application text, OCR, search, register, encoded-tile (48 MiB), and
+terminal-image caches have explicit budgets. Display lists have a page-count
+bound of eight per document; their native memory size is not exposed by the
+binding. MuPDF's internal allocations and terminal memory remain separate from
+application accounting. These bounds are not a hard process RSS limit.
 
 Extraction and yank limits protect text operations. Search caps matches per
 page and per query. OCR raster dimensions, output, and runtime are bounded.
@@ -82,11 +86,12 @@ focused pane rather than the sender, where they would arrive as input to an
 unrelated program, so the reader cannot track acknowledgements. Kitty silently
 evicts older images beyond its 320 MB per-window quota; each reader keeps at
 most 64 MiB of decoded tiles so about four readers share a window without
-eviction. Tabs share that budget: the graphics cache moves to the active tab and
-keys tiles by document, so a recently viewed tab redraws from resident images.
-Closing or reloading a document deletes only its images. Resizing or changing
-zoom requests another viewport. Keep terminal compatibility testing separate
-from native rendering and state tests.
+eviction. After another program has the screen, encoded tiles upload again
+without rendering. Tabs share that budget: the graphics cache moves to the
+active tab and keys tiles by document, so a recently viewed tab redraws from
+resident images. Closing or reloading a document deletes only its images.
+Resizing or changing zoom requests another viewport. Keep terminal compatibility
+testing separate from native rendering and state tests.
 
 ## Compatibility
 

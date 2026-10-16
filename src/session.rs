@@ -515,9 +515,7 @@ impl Session {
       return Ok(false);
     }
     crate::graphics::release(out)?;
-    let mut graphics = Graphics::default();
-    graphics.doc = self.app().id;
-    self.app().graphics = graphics;
+    self.app().graphics.lost();
     for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
       app.requested.clear();
     }
@@ -644,7 +642,7 @@ fn updates(session: &mut Session, out: &mut impl Write) -> Result<bool> {
   let mut dirty = session.images_lost(out)?;
   let tab = session.tab();
   for index in 0..tab.panes.len() {
-    dirty |= tab.lend(index, |app| app.raster_updates(out))?;
+    dirty |= tab.lend(index, App::raster_updates);
     let app = &mut tab.panes[index];
     dirty |= app.search_updates()?;
     dirty |= app.ocr_updates()?;

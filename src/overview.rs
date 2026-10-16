@@ -199,7 +199,7 @@ impl App {
       }
     }
     if wanted != self.requested {
-      self.worker.request(&missing);
+      self.worker.request(&missing, missing.len());
       self.requested = wanted;
     }
     Ok(())

@@ -54,20 +54,19 @@ struct Frame {
 struct Sim {
   app: App,
   frame: Vec<u8>,
-  uploads: Vec<u8>,
   uploaded: usize,
 }
 
 impl Sim {
   fn tick(&mut self) -> Result<Frame> {
-    self.uploads.clear();
-    self.app.raster_updates(&mut self.uploads)?;
-    self.uploaded += self.uploads.len();
+    self.app.raster_updates();
     self.app.animate();
     self.frame.clear();
+    let before = self.app.graphics.uploaded;
     let started = Instant::now();
     self.app.draw(&mut self.frame)?;
     let build = ms(started.elapsed());
+    self.uploaded += (self.app.graphics.uploaded - before) as usize;
     let missing = missing(&mut self.app);
     Ok(Frame { build, bytes: self.frame.len(), missing })
   }
@@ -254,8 +253,7 @@ fn document(path: &Path, screen: Screen) -> Result<Report> {
   let started = Instant::now();
   let app = App::with_screen(path, "", false, screen)?;
   let open_ms = ms(started.elapsed());
-  let mut sim =
-    Sim { app, frame: Vec::new(), uploads: Vec::new(), uploaded: 0 };
+  let mut sim = Sim { app, frame: Vec::new(), uploaded: 0 };
   let (_, open_complete_ms) = sim.settle(started)?;
   let jumps = jumps(&mut sim, 20)?;
   let zoom = zooms(&mut sim)?;
