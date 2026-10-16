@@ -46,8 +46,11 @@ fn public_documents() -> Result<()> {
     assert!(!text.truncated);
     assert!(doc.text(PageId(doc.pages.len())).is_err());
     let index = search::Index::new(PageId(page), &text);
-    let first = text.lines[0].text();
-    let first = first.split_whitespace().next().unwrap().trim_end_matches('-');
+    let plain = text.plain();
+    let first = plain
+      .split_whitespace()
+      .find(|word| word.chars().all(char::is_alphabetic))
+      .unwrap();
     assert!(
       !index.matches(&search::compile(first, false)?, 1000)?.is_empty(),
       "{name}"
