@@ -89,10 +89,11 @@ impl App {
     if let Some(glyph) = self.doc.text(cursor.page)?.glyph(cursor) {
       let mut rect =
         self.layout.project(cursor.page, glyph.bounds, self.reader.scroll);
-      rect.x1 = rect.x0 + 2.0;
+      // Translucent block keeps the glyph readable.
+      rect.x1 = rect.x1.max(rect.x0 + 2.0);
       self.graphics.highlight(
         rect,
-        [25, 100, 255, 230],
+        [25, 100, 255, 120],
         self.layout.screen,
         self.left,
         out,
