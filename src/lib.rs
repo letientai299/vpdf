@@ -19,6 +19,7 @@ pub mod find;
 pub mod fzf;
 pub mod graphics;
 mod grid;
+mod hangup;
 pub mod hints;
 pub mod home;
 pub mod inline;

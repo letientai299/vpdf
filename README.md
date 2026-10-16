@@ -141,9 +141,9 @@ documents; in a split, a chosen document replaces the focused pane. `vpdf`
 without a path opens a start screen with that list: Enter or a click opens a
 document, and `:e` opens any file with path completion. Command and search
 history persist too. State lives in `$XDG_STATE_HOME/vpdf/state.json`, or
-`~/.local/state/vpdf/state.json`, and is saved every few seconds while the
-position changes, when a tab closes, and on exit. Concurrent readers merge their
-entries.
+`~/.local/state/vpdf/state.json`. It is written after the position rests for
+five seconds, at most once a minute while it keeps changing, and on exit,
+including when the terminal closes. Concurrent readers merge their entries.
 
 ## Marks
 

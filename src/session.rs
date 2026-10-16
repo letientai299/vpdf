@@ -16,6 +16,8 @@ use crate::watch::Watcher;
 use crossterm::event::{self, Event, KeyEventKind, MouseEvent};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// Panes of one tab, laid out by a split tree.
@@ -74,6 +76,11 @@ pub struct Session {
   store: Option<PathBuf>,
   password: String,
   text: bool,
+  /// Set by SIGHUP or SIGTERM, so the session ends and saves.
+  hangup: Arc<AtomicBool>,
+  latest: crate::hangup::Latest,
+  /// Recorded positions not yet written.
+  unsaved: bool,
 }
 
 impl Session {
@@ -92,6 +99,9 @@ impl Session {
       store,
       password: password.to_owned(),
       text,
+      hangup: Arc::new(AtomicBool::new(false)),
+      latest: crate::hangup::Latest::default(),
+      unsaved: false,
     }
   }
 
@@ -101,15 +111,30 @@ impl Session {
   }
 
   /// Records the focused pane and saves when it moved.
-  fn checkpoint(&mut self) -> Result<()> {
+  /// Records the focused pane in memory, where the hangup thread finds
+  /// it too.
+  fn record(&mut self) {
     if !self.running() || self.tabs.is_empty() {
-      return Ok(());
+      return;
     }
     let tab = &self.tabs[self.active];
-    if self.state.remember(&tab.panes[tab.focus]) {
-      self.save()?;
+    if !self.state.remember(&tab.panes[tab.focus]) {
+      return;
     }
-    Ok(())
+    self.unsaved = true;
+    if let Ok(mut latest) = self.latest.lock() {
+      *latest = Some((self.state.clone(), self.history.clone()));
+    }
+  }
+
+  /// Writes recorded positions; returns whether it wrote.
+  fn flush(&mut self) -> Result<bool> {
+    if !self.unsaved {
+      return Ok(false);
+    }
+    self.save()?;
+    self.unsaved = false;
+    Ok(true)
   }
 
   /// Records every pane, the focused one last, and saves before exit.
@@ -491,7 +516,9 @@ impl Session {
   }
 
   fn running(&self) -> bool {
-    !self.quit && (!self.tabs.is_empty() || self.home.is_some())
+    !self.quit
+      && !self.hangup.load(Ordering::Relaxed)
+      && (!self.tabs.is_empty() || self.home.is_some())
   }
 
   /// Sends a click or scroll to the pane under it, focusing that pane.
@@ -616,12 +643,16 @@ pub fn view(
 ) -> Result<()> {
   anyhow::ensure!(io::stdout().is_terminal(), "TUI requires a terminal");
   let mut session = Session::new(password, text, crate::state::location());
+  crate::hangup::watch(
+    session.store.clone(),
+    Arc::clone(&session.hangup),
+    Arc::clone(&session.latest),
+  )?;
   let _terminal = Terminal::enter()?;
   let screen = terminal::size()?;
   if paths.is_empty() {
     session.home = Some(Home::new(&session.state.recent, screen));
-    run(&mut session)?;
-    return session.finish();
+    return run_saving(&mut session);
   }
   for path in paths {
     session.open(path, true, screen)?;
@@ -637,8 +668,15 @@ pub fn view(
     app.reader.scroll = app.layout.pages[app.reader.cursor.page.0].top;
     app.ensure_cursor()?;
   }
-  run(&mut session)?;
-  session.finish()
+  run_saving(&mut session)
+}
+
+/// Runs the session and saves its state even when the loop fails, as
+/// after the terminal hangs up.
+fn run_saving(session: &mut Session) -> Result<()> {
+  let result = run(session);
+  let saved = session.finish();
+  result.and(saved)
 }
 
 /// Background results for every pane of the active tab.
@@ -707,7 +745,9 @@ fn run(session: &mut Session) -> Result<()> {
   let mut buffer = Vec::with_capacity(64 * 1024);
   let mut dirty = true;
   let mut pacer = Pacer::new(Instant::now());
-  let mut saved = Instant::now();
+  let mut checked = Instant::now();
+  let mut written = Instant::now();
+  let mut touched = Instant::now();
   let mut watched = Instant::now();
   let mut title = String::new();
   while session.running() {
@@ -747,14 +787,24 @@ fn run(session: &mut Session) -> Result<()> {
         watched = Instant::now();
       }
       dirty |= watch(session, force);
-      if saved.elapsed() > Duration::from_secs(2) {
-        saved = Instant::now();
-        if let Err(error) = session.checkpoint() {
-          session.app().error = Some(format!("State not saved: {error}"));
+      // Positions reach memory every 250 ms and disk after a 5 s pause
+      // or once a minute; exits and hangups write the rest.
+      if checked.elapsed() > Duration::from_millis(250) {
+        checked = Instant::now();
+        session.record();
+        let due = touched.elapsed() > Duration::from_secs(5)
+          || written.elapsed() > Duration::from_secs(60);
+        match if due { session.flush() } else { Ok(false) } {
+          Ok(true) => written = checked,
+          Ok(false) => {}
+          Err(error) => {
+            session.app().error = Some(format!("State not saved: {error}"));
+          }
         }
       }
       continue;
     }
+    touched = Instant::now();
     trace.input();
     let result = input(session, event::read()?);
     if let Err(error) = result.and_then(|()| session.settle())

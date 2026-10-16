@@ -34,7 +34,7 @@ pub struct Mark {
 }
 
 /// Recent documents and prompt history kept across runs.
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct State {
   #[serde(default)]
   pub recent: Vec<Entry>,

@@ -21,7 +21,7 @@ pub enum PromptKind {
   Password,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct History {
   pub commands: Vec<String>,
   pub searches: Vec<String>,
