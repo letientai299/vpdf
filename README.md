@@ -104,6 +104,14 @@ Command and search history persist too. State lives in
 saved every few seconds while the position changes, when a tab closes, and on
 exit. Concurrent readers merge their entries.
 
+## Live reload
+
+The reader polls the open document's modification time and size. After a
+change holds still for one poll (about 0.4 s), it reloads and keeps the cursor,
+zoom, open panel, and search, so it works as a live preview for LaTeX or Typst
+builds. A half-written file reports an error and reloads on the next change.
+`:reload` forces a reload.
+
 ## Commands
 
 `:` opens the command line. Tab and Shift-Tab cycle completions for command

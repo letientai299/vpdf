@@ -45,6 +45,9 @@ pub struct App {
   pub keys: Keys,
   pub path: PathBuf,
   pub password: String,
+  /// File modification time and size at the last load.
+  pub stamp: Option<crate::watch::Stamp>,
+  pub(crate) changed: Option<crate::watch::Stamp>,
   pub text_mode: bool,
   pub screen: Screen,
   pub left: u16,
@@ -96,6 +99,8 @@ impl App {
       keys: Keys::default(),
       path: path.to_owned(),
       password: password.to_owned(),
+      stamp: crate::watch::stamp(path),
+      changed: None,
       text_mode,
       screen,
       left: 0,

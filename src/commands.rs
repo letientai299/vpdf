@@ -2,7 +2,6 @@ use crate::Result;
 use crate::app::{App, Request, TabMove};
 use crate::cmdline;
 use crate::document::{Document, Target};
-use crate::find::Search;
 use crate::keys::{Action, Input, PanelKind};
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crate::render_worker::RenderWorker;
@@ -163,7 +162,8 @@ impl App {
     self.doc = doc;
     self.password = password.to_owned();
     self.worker = RenderWorker::new(&self.path, password);
-    self.search = Search::default();
+    let previous = std::mem::take(&mut self.search);
+    self.stamp = crate::watch::stamp(&self.path);
     self.graphics.forget(self.id);
     if let Some(ocr) = self.ocr.take() {
       ocr.cancel();
@@ -171,12 +171,25 @@ impl App {
     self.reader.cancel();
     self.reader.clear_history();
     self.requested.clear();
-    self.panel = None;
-    self.left = 0;
     self.reader.cursor.page.0 =
       self.reader.cursor.page.0.min(self.doc.pages.len() - 1);
     self.reader.cursor =
       self.doc.text(self.reader.cursor.page)?.clamp(self.reader.cursor);
+    if let Some(panel) = &self.panel {
+      let (kind, selected) = (panel.kind, panel.selected);
+      let rows = self.panel_rows(kind)?;
+      if let Some(panel) = self.panel.as_mut().filter(|_| !rows.is_empty()) {
+        panel.selected = selected.min(rows.len() - 1);
+        panel.rows = rows;
+      } else {
+        self.panel = None;
+        self.left = 0;
+      }
+    }
+    if !previous.hidden && !previous.query.is_empty() {
+      self.start_search(&previous.query, previous.backward, false)?;
+      self.search.phase = crate::find::Phase::Running { jump: false };
+    }
     self.resize()?;
     self.reader.message = "Reloaded".into();
     Ok(())

@@ -141,3 +141,30 @@ fn links_keep_coordinates_and_text_scrolls_lines() -> Result<()> {
   assert_eq!(position.glyph, 2);
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn changed_file_reloads_after_settling() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("live.pdf");
+  std::fs::copy(root.join("paper.pdf"), &path)?;
+  let screen = Screen {
+    columns: 120,
+    rows: 50,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut app = App::with_screen(&path, "", false, screen)?;
+  let pages = app.doc.pages.len();
+  app.command("page 3")?;
+  assert!(!app.watch()?);
+  std::fs::copy(root.join("book.pdf"), &path)?;
+  assert!(!app.watch()?, "first poll waits for the write to settle");
+  assert!(app.watch()?);
+  assert_ne!(app.doc.pages.len(), pages);
+  assert_eq!(app.reader.cursor.page, PageId(2));
+  assert!(!app.watch()?);
+  Ok(())
+}

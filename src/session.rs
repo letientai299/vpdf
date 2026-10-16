@@ -239,6 +239,7 @@ fn run(session: &mut Session) -> Result<()> {
   let mut dirty = true;
   let mut last_frame = Instant::now() - Duration::from_millis(9);
   let mut saved = Instant::now();
+  let mut watched = Instant::now();
   let mut title = String::new();
   while session.running() {
     if session.tabs.is_empty() {
@@ -274,6 +275,17 @@ fn run(session: &mut Session) -> Result<()> {
         .max(Duration::from_millis(1))
     };
     if !event::poll(wait)? {
+      if watched.elapsed() > Duration::from_millis(400) {
+        watched = Instant::now();
+        let app = session.app();
+        match app.watch() {
+          Ok(reloaded) => dirty |= reloaded,
+          Err(error) => {
+            app.error = Some(format!("Reload failed: {error}"));
+            dirty = true;
+          }
+        }
+      }
       if saved.elapsed() > Duration::from_secs(2) {
         saved = Instant::now();
         if let Err(error) = session.checkpoint() {
