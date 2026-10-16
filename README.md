@@ -23,6 +23,11 @@ vpdf document.pdf
 `--text` forces text mode. With tmux, enable `allow-passthrough on`. The reader
 uses the terminal's reported cell size for pixel placement.
 
+Scrolling animates at 120 frames per second; `--fps 240` matches a 240 Hz
+display. Kitty paints at most once per `repaint_delay` (10 ms by default) and
+waits `input_delay` (3 ms) before reading program output, so 120 frames per
+second on screen also needs `repaint_delay 8` or lower in `kitty.conf`.
+
 ```sh
 vpdf --page 12 document.pdf
 vpdf text document.pdf --page 12

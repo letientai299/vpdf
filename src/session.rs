@@ -83,6 +83,8 @@ pub struct Session {
   unsaved: bool,
   /// Panes the last arrangement showed; ones hidden since are trimmed.
   shown: Vec<u32>,
+  /// Frame interval while anything moves.
+  frame: Duration,
 }
 
 impl Session {
@@ -105,6 +107,7 @@ impl Session {
       latest: crate::hangup::Latest::default(),
       unsaved: false,
       shown: Vec::new(),
+      frame: crate::pace::FRAME,
     }
   }
 
@@ -647,15 +650,22 @@ fn replace_leaf(node: &mut Node, from: u32, to: u32) {
   }
 }
 
+/// How the reader starts.
+pub struct Launch {
+  /// Extracted text instead of Kitty graphics.
+  pub text: bool,
+  /// Page to open instead of the saved position.
+  pub page: Option<usize>,
+  /// Frames per second while anything moves.
+  pub fps: u32,
+}
+
 /// Opens `paths`, or the start screen without any.
-pub fn view(
-  paths: &[PathBuf],
-  password: &str,
-  text: bool,
-  page: Option<usize>,
-) -> Result<()> {
+pub fn view(paths: &[PathBuf], password: &str, launch: &Launch) -> Result<()> {
   anyhow::ensure!(io::stdout().is_terminal(), "TUI requires a terminal");
-  let mut session = Session::new(password, text, crate::state::location());
+  let mut session =
+    Session::new(password, launch.text, crate::state::location());
+  session.frame = Duration::from_secs(1) / launch.fps.max(1);
   crate::hangup::watch(
     session.store.clone(),
     Arc::clone(&session.hangup),
@@ -672,7 +682,7 @@ pub fn view(
   }
   session.activate(0)?;
   let app = session.app();
-  if let Some(page) = page {
+  if let Some(page) = launch.page {
     app.reader.edge(
       PageId(page.saturating_sub(1).min(app.doc.pages.len() - 1)),
       false,
@@ -757,7 +767,7 @@ fn run(session: &mut Session) -> Result<()> {
   let mut trace = crate::trace::Trace::new()?;
   let mut buffer = Vec::with_capacity(64 * 1024);
   let mut dirty = true;
-  let mut pacer = Pacer::new(Instant::now());
+  let mut pacer = Pacer::new(Instant::now(), session.frame);
   let mut checked = Instant::now();
   let mut written = Instant::now();
   let mut touched = Instant::now();

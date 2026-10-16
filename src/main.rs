@@ -18,6 +18,13 @@ struct Args {
   /// Page to open instead of the saved position.
   #[arg(long)]
   page: Option<usize>,
+  /// Frames per second while scrolling; set the display's refresh rate.
+  #[arg(
+    long,
+    default_value_t = 120,
+    value_parser = clap::value_parser!(u32).range(30..=480)
+  )]
+  fps: u32,
 }
 
 #[derive(Subcommand)]
@@ -63,8 +70,12 @@ fn run(args: Args) -> Result<()> {
   }
   let mut out = io::BufWriter::new(io::stdout());
   let Some(command) = args.command else {
-    let text = args.text || !kitty();
-    return vpdf::session::view(&args.files, &password, text, args.page);
+    let launch = vpdf::session::Launch {
+      text: args.text || !kitty(),
+      page: args.page,
+      fps: args.fps,
+    };
+    return vpdf::session::view(&args.files, &password, &launch);
   };
   match command {
     Command::Text { file, page } => {
