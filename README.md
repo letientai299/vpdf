@@ -29,7 +29,13 @@ vpdf text document.pdf --page 12
 vpdf search document.pdf 'attention'
 vpdf search document.pdf '\vattention(?= mechanism)'
 vpdf info document.pdf
+vpdf preview document.pdf --page 3
 ```
+
+`vpdf preview` prints a page as a Kitty image built from Unicode placeholders,
+so it scrolls like text and works as `fzf --preview 'vpdf preview {}'`, inside
+tmux too. It sizes itself from `FZF_PREVIEW_COLUMNS` and `FZF_PREVIEW_LINES`,
+and prints the page's text in other terminals.
 
 Encrypted PDFs prompt without echoing the password. Batch commands accept
 `--password-stdin`; passwords are never command-line arguments. The reader
@@ -100,12 +106,12 @@ tab, `:e file.pdf` replaces the current one, and both complete directories and
 PDF names. `gt` and `gT` cycle tabs; `3gt` selects the third. `:tabc` closes a
 tab and `:qa` closes all. With [fzf][fzf] on `PATH`, `:fzf` picks a PDF below
 the working directory, including hidden and VCS-ignored folders such as `.ai`
-but not `.git`, previewing its first page's text, and opens it in a new
-tab; the command is hidden without fzf. Opening a document that is already open
-selects its tab. The status line lists tabs when more than one is open, shows
-the current outline section, the percentage read, and the zoom when it differs
-from fit width. The terminal title shows the document title. Each tab keeps its
-own position, zoom, panels, search, and workers.
+but not `.git`, previewing its first page as an image in Kitty, and opens it in
+a new tab; the command is hidden without fzf. Opening a document that is already
+open selects its tab. The status line lists tabs when more than one is open,
+shows the current outline section, the percentage read, and the zoom when it
+differs from fit width. The terminal title shows the document title. Each tab
+keeps its own position, zoom, panels, search, and workers.
 
 ## Recent documents
 

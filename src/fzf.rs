@@ -19,10 +19,10 @@ pub fn pick(root: &Path) -> Result<Option<PathBuf>> {
 fn run(root: &Path) -> Result<Option<PathBuf>> {
   let exe = std::env::current_exe()?;
   let exe = exe.to_string_lossy().replace('\'', r"'\''");
-  let preview = format!("'{exe}' text {{}} --page 1");
+  let preview = format!("'{exe}' preview {{}}");
   let mut child = Command::new("fzf")
     .args(["--prompt", "PDF> ", "--preview", &preview])
-    .args(["--preview-window", "right,55%,wrap"])
+    .args(["--preview-window", "right,55%"])
     .current_dir(root)
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())

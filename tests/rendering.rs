@@ -72,3 +72,19 @@ fn cropped_margins_keep_all_ink() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn inline_page_fits_requested_cells() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut doc = Document::open(&root.join("paper.pdf"), "")?;
+  let mut out = Vec::new();
+  vpdf::inline::print(&mut doc, PageId(0), (40, 12), &mut out)?;
+  let text = String::from_utf8(out)?;
+  let rows: Vec<_> = text.split('\n').collect();
+  assert!(rows.len() <= 12 && !text.ends_with('\n'));
+  let cells = rows[0].chars().filter(|c| *c == '\u{10EEEE}').count();
+  assert!(cells > 0 && cells <= 40);
+  assert!(text.starts_with("\x1b_Ga=T,U=1"));
+  Ok(())
+}

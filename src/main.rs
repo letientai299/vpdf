@@ -32,6 +32,27 @@ enum Command {
   Info { file: PathBuf },
   /// Search document text.
   Search { file: PathBuf, query: String },
+  /// Print a page as an image in Kitty, else as text; sized for
+  /// `fzf --preview` through FZF_PREVIEW_COLUMNS and FZF_PREVIEW_LINES.
+  Preview {
+    file: PathBuf,
+    #[arg(long, default_value_t = 1)]
+    page: usize,
+  },
+}
+
+fn kitty() -> bool {
+  std::env::var_os("KITTY_WINDOW_ID").is_some()
+    || std::env::var("TERM").is_ok_and(|term| term.contains("kitty"))
+}
+
+/// Preview area from fzf, else the terminal, else 80x24.
+fn preview_size() -> (u16, u16) {
+  let read = |name| std::env::var(name).ok().and_then(|v| v.parse().ok());
+  match (read("FZF_PREVIEW_COLUMNS"), read("FZF_PREVIEW_LINES")) {
+    (Some(columns), Some(lines)) => (columns, lines),
+    _ => crossterm::terminal::size().unwrap_or((80, 24)),
+  }
 }
 
 fn run(args: Args) -> Result<()> {
@@ -42,9 +63,7 @@ fn run(args: Args) -> Result<()> {
   }
   let mut out = io::BufWriter::new(io::stdout());
   let Some(command) = args.command else {
-    let text = args.text
-      || std::env::var_os("KITTY_WINDOW_ID").is_none()
-        && std::env::var("TERM").map_or(true, |term| !term.contains("kitty"));
+    let text = args.text || !kitty();
     return vpdf::session::view(&args.files, &password, text, args.page);
   };
   match command {
@@ -52,6 +71,16 @@ fn run(args: Args) -> Result<()> {
       anyhow::ensure!(page > 0, "Page numbers start at one");
       let mut doc = Document::open(&file, &password)?;
       writeln!(out, "{}", doc.text(PageId(page - 1))?.plain())?;
+    }
+    Command::Preview { file, page } => {
+      anyhow::ensure!(page > 0, "Page numbers start at one");
+      let mut doc = Document::open(&file, &password)?;
+      let page = PageId((page - 1).min(doc.pages.len() - 1));
+      if kitty() {
+        vpdf::inline::print(&mut doc, page, preview_size(), &mut out)?;
+      } else {
+        writeln!(out, "{}", doc.text(page)?.plain())?;
+      }
     }
     Command::Info { file } => {
       let doc = Document::open(&file, &password)?;
