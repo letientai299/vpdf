@@ -1,11 +1,13 @@
 # Reader architecture
 
 The foreground loop owns every tab's reader state and terminal output. Only
-the active tab polls its workers and draws. A render worker
-owns a separate MuPDF document and accepts the latest viewport tile set.
+the active tab polls its workers and draws. A render coordinator owns a
+separate MuPDF document, builds display lists, and accepts the latest viewport
+tile set; a process-wide pool of up to four threads draws those lists.
 Search starts lazily in another worker with a separate document and bounded
 normalized indexes. OCR uses Tesseract in a subprocess. No MuPDF document is
-shared concurrently across threads.
+shared concurrently across threads; display lists are immutable and render
+on any thread.
 
 ## Rendering
 
@@ -19,9 +21,20 @@ interrupt the animation. Both current and target viewports request tiles.
 Frames are scheduled at an 8.33 ms interval when work is pending. Idle loops
 poll at 8 ms and do not redraw unchanged content.
 
-The latest viewport replaces queued render work. An in-flight native tile can
-finish before cancellation is observed. Search checks its generation between
-pages and rejects superseded results. A regex backtracking budget bounds
+The coordinator groups requested tiles into bands, runs of adjacent tiles in
+one tile row, and the pool draws each band in one pass before cutting and
+encoding its tiles; a display list replay costs about the same for a band as
+for one tile. Pages with an image of at least 512K pixels render whole, up to
+8 MP, and the coordinator keeps the last such page to cut later tiles from.
+MuPDF decodes only the part of an image a clip covers and its scaler varies
+with the clip origin, so tiles cut from one render match a full-page render,
+and the image decodes once instead of once per tile. Larger image pages decode
+their full-resolution images whole before rendering bands.
+
+The latest viewport replaces queued render work. Queued bands without a wanted
+tile are dropped; tiles already being drawn are not drawn again. An in-flight
+band can finish before cancellation is observed. Search checks its generation
+between pages and rejects superseded results. A regex backtracking budget bounds
 pathological patterns. An individual native PDF interpretation call is not
 preemptible through the safe bindings used here.
 

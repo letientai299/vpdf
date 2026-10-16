@@ -4,7 +4,7 @@ use crate::layout::{Crop, Layout, page_matrix};
 use crate::text::PageId;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use flate2::{Compression, write::ZlibEncoder};
-use mupdf::{Colorspace, Device, IRect, Pixmap, Rect};
+use mupdf::{Colorspace, Device, DisplayList, IRect, Matrix, Pixmap, Rect};
 use std::io::Write;
 
 pub const TILE_WIDTH: i32 = 512;
@@ -78,17 +78,40 @@ pub fn raster_area(
   doc.validate(key.page)?;
   let bounds = key.crop.apply(doc.pages[key.page.0].bounds);
   let list = doc.display(key.page)?;
+  draw(&list, &page_matrix(bounds, key.scale, key.rotation), area)
+}
+
+/// RGB pixels of `area` with `list` drawn through `matrix`.
+pub fn draw(
+  list: &DisplayList,
+  matrix: &Matrix,
+  area: IRect,
+) -> Result<Pixmap> {
   let mut pixels =
     Pixmap::new_with_rect(&Colorspace::device_rgb(), area, false)?;
   pixels.clear_with(255)?;
   let device = Device::from_pixmap(&pixels)?;
-  let matrix = page_matrix(bounds, key.scale, key.rotation);
   list.run(
     &device,
-    &matrix,
+    matrix,
     Rect::new(area.x0 as f32, area.y0 as f32, area.x1 as f32, area.y1 as f32),
   )?;
   drop(device);
+  Ok(pixels)
+}
+
+/// Packed RGB rows of the tile `key` cut from `band`.
+pub fn cut(band: &Pixmap, key: &TileKey) -> Result<Vec<u8>> {
+  let stride = usize::try_from(band.stride())?;
+  let left = usize::try_from(key.x - band.x())? * 3;
+  let top = usize::try_from(key.y - band.y())?;
+  let width = usize::try_from(key.width)? * 3;
+  let height = usize::try_from(key.height)?;
+  let mut pixels = Vec::with_capacity(width * height);
+  for row in band.samples().chunks(stride).skip(top).take(height) {
+    pixels.extend_from_slice(&row[left..left + width]);
+  }
+  anyhow::ensure!(pixels.len() == width * height, "Tile outside band");
   Ok(pixels)
 }
 

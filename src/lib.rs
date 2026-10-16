@@ -35,6 +35,7 @@ pub mod panel;
 mod panel_search;
 mod paragraph;
 pub mod preview;
+mod prime;
 pub mod prompt;
 pub mod reader;
 pub mod render_worker;
