@@ -24,6 +24,8 @@ pub enum Request {
   Panel(PanelKind),
   SetMark(char),
   GoMark(char, bool),
+  /// Pick a file with `fzf` and open it in a new tab.
+  Pick,
   QuitAll,
 }
 

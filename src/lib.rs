@@ -11,6 +11,7 @@ mod clipboard;
 pub mod cmdline;
 mod commands;
 pub mod find;
+pub mod fzf;
 pub mod graphics;
 pub mod hints;
 pub mod home;

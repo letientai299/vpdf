@@ -464,7 +464,7 @@ impl App {
 
 fn help() -> Vec<String> {
   let keys = include_str!("help.txt").lines().map(str::to_owned);
-  let commands = crate::cmdline::COMMANDS.iter().map(|spec| {
+  let commands = crate::cmdline::commands().map(|spec| {
     let usage = if spec.usage.is_empty() { "" } else { " " };
     format!(":{}{usage}{}: {}", spec.name, spec.usage, spec.help)
   });

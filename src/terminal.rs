@@ -8,19 +8,38 @@ pub struct Terminal;
 
 impl Terminal {
   pub fn enter() -> Result<Self> {
-    terminal::enable_raw_mode()?;
-    let guard = Self;
-    execute!(
-      io::stdout(),
-      terminal::EnterAlternateScreen,
-      cursor::Hide,
-      event::EnableMouseCapture,
-      event::EnableBracketedPaste
-    )?;
+    resume()?;
     // Save the window title; Drop restores it.
     io::stdout().write_all(b"\x1b[22;0t")?;
-    Ok(guard)
+    Ok(Self)
   }
+}
+
+/// Takes the terminal back after `suspend`.
+pub fn resume() -> Result<()> {
+  terminal::enable_raw_mode()?;
+  execute!(
+    io::stdout(),
+    terminal::EnterAlternateScreen,
+    cursor::Hide,
+    event::EnableMouseCapture,
+    event::EnableBracketedPaste
+  )?;
+  Ok(())
+}
+
+/// Hands the terminal to a child program; images stay cached.
+pub fn suspend() -> Result<()> {
+  execute!(
+    io::stdout(),
+    cursor::SetCursorStyle::DefaultUserShape,
+    event::DisableMouseCapture,
+    event::DisableBracketedPaste,
+    cursor::Show,
+    terminal::LeaveAlternateScreen
+  )?;
+  terminal::disable_raw_mode()?;
+  Ok(())
 }
 
 impl Drop for Terminal {
@@ -28,15 +47,7 @@ impl Drop for Terminal {
     let mut output = io::stdout();
     let _ = output.write_all(b"\x1b[?2026l\x1b[0m\x1b[23;0t");
     let _ = crate::graphics::release(&mut output);
-    let _ = execute!(
-      output,
-      cursor::SetCursorStyle::DefaultUserShape,
-      event::DisableMouseCapture,
-      event::DisableBracketedPaste,
-      cursor::Show,
-      terminal::LeaveAlternateScreen
-    );
-    let _ = terminal::disable_raw_mode();
+    let _ = suspend();
   }
 }
 

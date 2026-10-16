@@ -191,6 +191,11 @@ impl Session {
         self.open(&mark.path, true, screen)?;
         self.app().go_to(mark.cursor, exact)
       }
+      Some(Request::Pick) => match crate::fzf::pick(&std::env::current_dir()?)?
+      {
+        Some(path) => self.open(&path, true, screen),
+        None => Ok(()),
+      },
       Some(Request::QuitAll) => {
         self.quit = true;
         Ok(())
@@ -214,6 +219,19 @@ impl Session {
         Err(error) => home.error = Some(error.to_string()),
       },
       Ok(Outcome::Quit) => return Ok(()),
+      Ok(Outcome::Pick) => {
+        let picked = std::env::current_dir()
+          .map_err(anyhow::Error::from)
+          .and_then(|root| crate::fzf::pick(&root));
+        match picked {
+          Ok(Some(path)) => match self.open(&path, true, home.screen) {
+            Ok(()) => return Ok(()),
+            Err(error) => home.error = Some(error.to_string()),
+          },
+          Ok(None) => {}
+          Err(error) => home.error = Some(error.to_string()),
+        }
+      }
       Ok(Outcome::Stay) => {}
       Err(error) => home.error = Some(error.to_string()),
     }

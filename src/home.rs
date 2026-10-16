@@ -18,6 +18,8 @@ use unicode_width::UnicodeWidthStr;
 pub enum Outcome {
   Stay,
   Open(PathBuf),
+  /// Choose a file with `fzf`.
+  Pick,
   Quit,
 }
 
@@ -188,6 +190,7 @@ fn command(line: &str) -> Result<Outcome> {
     }
     "quit" | "qall" | "tabclose" => Ok(Outcome::Quit),
     "recent" => Ok(Outcome::Stay),
+    "fzf" => Ok(Outcome::Pick),
     name => anyhow::bail!("Open a document before :{name}"),
   }
 }

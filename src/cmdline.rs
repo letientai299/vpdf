@@ -15,6 +15,8 @@ pub struct Spec {
   pub usage: &'static str,
   pub help: &'static str,
   pub complete: Complete,
+  /// Executable the command needs on `PATH`.
+  pub requires: Option<&'static str>,
 }
 
 const fn spec(
@@ -23,13 +25,36 @@ const fn spec(
   usage: &'static str,
   help: &'static str,
 ) -> Spec {
-  Spec { name, aliases, usage, help, complete: Complete::Nothing }
+  Spec {
+    name,
+    aliases,
+    usage,
+    help,
+    complete: Complete::Nothing,
+    requires: None,
+  }
 }
 
 impl Spec {
   const fn completes(self, complete: Complete) -> Self {
     Self { complete, ..self }
   }
+
+  const fn requires(self, program: &'static str) -> Self {
+    Self { requires: Some(program), ..self }
+  }
+}
+
+/// Whether `program` is an executable file on `PATH`.
+pub fn on_path(program: &str) -> bool {
+  std::env::var_os("PATH").is_some_and(|paths| {
+    std::env::split_paths(&paths).any(|dir| dir.join(program).is_file())
+  })
+}
+
+/// Commands whose required programs are installed.
+pub fn commands() -> impl Iterator<Item = &'static Spec> {
+  COMMANDS.iter().filter(|spec| spec.requires.is_none_or(on_path))
 }
 
 pub const COMMANDS: &[Spec] = &[
@@ -46,6 +71,7 @@ pub const COMMANDS: &[Spec] = &[
   spec("tabprevious", &["tabp", "tabN"], "", "go to the previous tab"),
   spec("tabclose", &["tabc"], "", "close this tab"),
   spec("recent", &["oldfiles"], "", "list recently opened PDFs"),
+  spec("fzf", &[], "", "pick a PDF below this directory").requires("fzf"),
   spec("marks", &[], "", "list marks"),
   spec("page", &[], "<n|label>", "jump to a page number or label"),
   spec("toc", &["outline"], "", "open the table of contents"),
@@ -64,11 +90,11 @@ pub const COMMANDS: &[Spec] = &[
 /// Exact names and aliases win; otherwise a unique prefix.
 pub fn lookup(name: &str) -> Option<&'static Spec> {
   if let Some(spec) =
-    COMMANDS.iter().find(|s| s.name == name || s.aliases.contains(&name))
+    commands().find(|s| s.name == name || s.aliases.contains(&name))
   {
     return Some(spec);
   }
-  let mut matches = COMMANDS.iter().filter(|s| s.name.starts_with(name));
+  let mut matches = commands().filter(|s| s.name.starts_with(name));
   let first = matches.next()?;
   matches.next().is_none().then_some(first)
 }
@@ -79,8 +105,7 @@ pub fn candidates(before: &str) -> (usize, Vec<String>) {
   let Some((name, rest)) = before[start..].split_once(char::is_whitespace)
   else {
     let word = &before[start..];
-    let names = COMMANDS
-      .iter()
+    let names = commands()
       .filter(|spec| spec.name.starts_with(word))
       .map(|spec| spec.name.to_owned())
       .collect();
