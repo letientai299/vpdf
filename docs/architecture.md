@@ -52,7 +52,9 @@ Each reader draws image identifiers from a random per-process block and
 deletes only that block, so readers in sibling panes keep each other's images.
 Scoped cleanup uses Kitty range deletion, added in Kitty 0.33. The text
 fallback retains reader motions, selection, search, and panels. Clipboard
-delivery uses OSC 52 and therefore follows terminal policy.
+delivery uses OSC 52, which follows terminal policy, and a native clipboard
+tool in local sessions. SSH sessions skip the native tool, which would fill the
+remote host's clipboard.
 
 Graphics commands suppress terminal replies. Tmux delivers replies to the
 focused pane rather than the sender, where they would arrive as input to an

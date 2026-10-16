@@ -7,6 +7,7 @@ pub type Result<T> = anyhow::Result<T>;
 pub mod animation;
 pub mod app;
 mod canvas;
+mod clipboard;
 mod commands;
 pub mod find;
 pub mod graphics;

@@ -52,10 +52,13 @@ Use `v` or `V` to select, `o` to swap ends, and `gv` to reselect. `y`, `yy`,
 `yiw`, `yaw`, `viw`, and `vaw` address words. Selections cross pages and retain
 Unicode and line breaks. A linewise yank includes its final newline.
 
-Named registers use `"ayiw`; uppercase names append. `"+y` and `"*y` send
-selected text to the terminal clipboard through OSC 52. Clipboard acceptance
-and size limits depend on the terminal. Click, drag, and double-click move the
-cursor, select a range, and select a word. Editing keys leave the PDF unchanged.
+Yanks to the unnamed register, `"+`, or `"*` reach the system clipboard, as with
+Vim's `clipboard=unnamedplus`. Named registers use `"ayiw`, stay inside the
+reader, and append with uppercase names. The reader sends [OSC 52][osc52] and,
+outside SSH, also pipes the text to `pbcopy`, `wl-copy`, `xclip`, or `xsel`. OSC
+52 acceptance and size limits depend on the terminal. Click, drag, and
+double-click move the cursor, select a range, and select a word. Editing keys
+leave the PDF unchanged.
 
 `/` and `?` search forward or backward; `n N` cycle matches, and `*` finds the
 cursor word. Literal search folds Unicode case, decomposes compatibility
@@ -134,3 +137,4 @@ carry their upstream licenses in the dependency source distributions.
 [mupdf-license]: https://mupdf.readthedocs.io/en/latest/license.html
 [architecture]: docs/architecture.md
 [keys]: src/help.txt
+[osc52]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Operating-System-Commands

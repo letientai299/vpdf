@@ -7,9 +7,7 @@ use crate::keys::{Action, Input, PanelKind};
 use crate::prompt::{Prompt, PromptEvent, PromptKind};
 use crate::render_worker::RenderWorker;
 use crate::text::Position;
-use base64::{Engine, engine::general_purpose::STANDARD};
 use crossterm::event::KeyEvent;
-use std::io::Write;
 use std::process::{Command, Stdio};
 
 impl App {
@@ -184,19 +182,6 @@ impl App {
         std::thread::spawn(move || {
           let _ = child.wait();
         });
-      }
-    }
-    Ok(())
-  }
-
-  pub fn clipboard(&mut self, out: &mut impl Write) -> Result<()> {
-    let Some(yank) = self.reader.pending_yank.take() else { return Ok(()) };
-    if matches!(yank.register, '+' | '*') {
-      let data = STANDARD.encode(&yank.text);
-      if std::env::var_os("TMUX").is_some() {
-        write!(out, "\x1bPtmux;\x1b\x1b]52;c;{data}\x07\x1b\\")?;
-      } else {
-        write!(out, "\x1b]52;c;{data}\x07")?;
       }
     }
     Ok(())
