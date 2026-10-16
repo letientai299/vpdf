@@ -9,6 +9,15 @@ use std::io::Write;
 impl App {
   pub fn raster_updates(&mut self, out: &mut impl Write) -> Result<bool> {
     let mut changed = false;
+    // fzf and editors may clear Kitty's images while they run.
+    if crate::terminal::images_lost() {
+      crate::graphics::release(out)?;
+      let doc = self.graphics.doc;
+      self.graphics = crate::graphics::Graphics::default();
+      self.graphics.doc = doc;
+      self.requested.clear();
+      changed = true;
+    }
     for result in self.worker.results.try_iter() {
       match result {
         Ok(tile) => {

@@ -3,6 +3,7 @@ use crate::layout::Screen;
 use crossterm::{cursor, event, execute, terminal};
 use std::io::{self, Write};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use unicode_width::UnicodeWidthChar;
 
 pub struct Terminal;
@@ -24,8 +25,17 @@ fn enhanced() -> bool {
     .get_or_init(|| terminal::supports_keyboard_enhancement().unwrap_or(false))
 }
 
+/// Set when another program had the screen; it may have deleted images.
+static LOST: AtomicBool = AtomicBool::new(false);
+
+/// Whether images need uploading again since the last call.
+pub fn images_lost() -> bool {
+  LOST.swap(false, Ordering::Relaxed)
+}
+
 /// Takes the terminal back after `suspend`.
 pub fn resume() -> Result<()> {
+  LOST.store(true, Ordering::Relaxed);
   terminal::enable_raw_mode()?;
   execute!(
     io::stdout(),
