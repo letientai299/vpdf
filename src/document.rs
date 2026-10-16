@@ -51,6 +51,15 @@ impl From<mupdf::link::LinkDestination> for Target {
   }
 }
 
+/// A reader-visible annotation: markup, note, or shape.
+#[derive(Clone, Debug, Serialize)]
+pub struct Annotation {
+  pub kind: String,
+  /// Marked areas; markup has one per quad.
+  pub areas: Vec<Bounds>,
+  pub contents: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Heading {
   pub title: String,
@@ -155,6 +164,32 @@ impl Document {
     )
   }
 
+  /// Annotations other than links, popups, and form widgets.
+  pub fn annotations(&self, page: PageId) -> Result<Vec<Annotation>> {
+    use mupdf::pdf::PdfAnnotationType as Kind;
+    self.validate(page)?;
+    let native = self.native.load_pdf_page(page.0 as i32)?;
+    let mut found = Vec::new();
+    for annotation in native.annotations() {
+      let kind = annotation.r#type()?;
+      if matches!(kind, Kind::Link | Kind::Popup | Kind::Widget) {
+        continue;
+      }
+      let quads = annotation.quad_points().unwrap_or_default();
+      let areas = if quads.is_empty() {
+        vec![annotation.rect()?.into()]
+      } else {
+        quads.iter().map(quad_bounds).collect()
+      };
+      let contents =
+        annotation.contents()?.unwrap_or_default().trim().to_owned();
+      let kind =
+        if kind == Kind::Text { "Note".into() } else { format!("{kind:?}") };
+      found.push(Annotation { kind, areas, contents });
+    }
+    Ok(found)
+  }
+
   pub fn page_number(&self, label: &str) -> Option<PageId> {
     if let Ok(number) = label.parse::<usize>() {
       return (number > 0 && number <= self.pages.len())
@@ -175,6 +210,10 @@ impl Document {
   pub fn cache_bytes(&self) -> usize {
     self.texts.used() + self.ocr.used()
   }
+}
+
+fn quad_bounds(quad: &mupdf::Quad) -> Bounds {
+  Bounds::enclosing(&[quad.ul, quad.ur, quad.ll, quad.lr].map(|p| (p.x, p.y)))
 }
 
 fn flatten(items: &[mupdf::Outline], depth: usize, out: &mut Vec<Heading>) {

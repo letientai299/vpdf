@@ -67,7 +67,9 @@ decomposes compatibility forms, collapses whitespace, and joins line-end
 hyphenation. Prefix `\v` for regular expressions. The bounded regex engine
 supports lookaround and backreferences; it is not Python's regex implementation.
 
-`gs`, `go`, and `gl` open search results, the table of contents, and links. A
+`gs`, `go`, and `gl` open search results, the table of contents, and links.
+`ga` lists the document's highlights, underlines, notes, and other annotations
+with their marked text and comments; the reader does not edit them. A
 focused panel owns the keyboard: `j k gg G Ctrl-d Ctrl-u zt zz zb` move through
 rows, `/ ? n N` search them with highlighted matches and smartcase, `{ }` jump
 between headings, and `yy` yanks a row. Text motions and selections do not reach

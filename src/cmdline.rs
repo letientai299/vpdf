@@ -73,6 +73,7 @@ pub const COMMANDS: &[Spec] = &[
   spec("recent", &["oldfiles"], "", "list recently opened PDFs"),
   spec("fzf", &[], "", "pick a PDF below this directory").requires("fzf"),
   spec("marks", &[], "", "list marks"),
+  spec("annotations", &["annots"], "", "list highlights and notes"),
   spec("page", &[], "<n|label>", "jump to a page number or label"),
   spec("toc", &["outline"], "", "open the table of contents"),
   spec("nohlsearch", &["noh"], "", "hide search highlights"),

@@ -136,6 +136,7 @@ impl App {
       "toc" => self.open_panel(PanelKind::Outline)?,
       "recent" => self.open_panel(PanelKind::Recent)?,
       "marks" => self.open_panel(PanelKind::Marks)?,
+      "annotations" => self.open_panel(PanelKind::Annotations)?,
       "fzf" => self.request = Some(Request::Pick),
       "nohlsearch" => self.search.hidden = true,
       "text" => self.open_panel(PanelKind::Text)?,

@@ -126,13 +126,7 @@ pub fn transform(bounds: Bounds, matrix: &Matrix) -> Bounds {
     (bounds.x0, bounds.y1),
     (bounds.x1, bounds.y1),
   ];
-  let points = points.map(|(x, y)| matrix.transform_xy(x, y));
-  Bounds {
-    x0: points.iter().map(|p| p.0).fold(f32::INFINITY, f32::min),
-    y0: points.iter().map(|p| p.1).fold(f32::INFINITY, f32::min),
-    x1: points.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max),
-    y1: points.iter().map(|p| p.1).fold(f32::NEG_INFINITY, f32::max),
-  }
+  Bounds::enclosing(&points.map(|(x, y)| matrix.transform_xy(x, y)))
 }
 
 #[cfg(test)]

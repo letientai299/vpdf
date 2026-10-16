@@ -365,6 +365,7 @@ impl App {
           Row::new(text, label(&link.target), Destination::Link(link.target))
         })
         .collect(),
+      PanelKind::Annotations => self.annotation_rows()?,
       PanelKind::Help => help().iter().map(|line| Row::parse(line)).collect(),
       PanelKind::Info => self.info().lines().map(Row::parse).collect(),
       PanelKind::Text | PanelKind::Recent | PanelKind::Marks => Vec::new(),

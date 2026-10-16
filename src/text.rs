@@ -50,6 +50,20 @@ impl Bounds {
     (self.y1 - self.y0).max(0.0)
   }
 
+  /// Smallest box holding every point.
+  pub fn enclosing(points: &[(f32, f32)]) -> Self {
+    let fold =
+      |pick: fn(&(f32, f32)) -> f32, start: f32, f: fn(f32, f32) -> f32| {
+        points.iter().map(pick).fold(start, f)
+      };
+    Self {
+      x0: fold(|p| p.0, f32::INFINITY, f32::min),
+      y0: fold(|p| p.1, f32::INFINITY, f32::min),
+      x1: fold(|p| p.0, f32::NEG_INFINITY, f32::max),
+      y1: fold(|p| p.1, f32::NEG_INFINITY, f32::max),
+    }
+  }
+
   pub fn contains(self, x: f32, y: f32) -> bool {
     x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1
   }

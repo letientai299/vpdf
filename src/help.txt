@@ -42,6 +42,7 @@ gs: search results
 f: link hints; F copies URLs
 gl: links on this page
 gr: recent documents
+ga: annotations (read-only)
 Enter: follow link or row
 o: follow, keep panel focus
 / ? n N: search rows of a focused panel
