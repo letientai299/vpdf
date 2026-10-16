@@ -1,6 +1,8 @@
 use crate::Result;
 use crate::app::{App, Tabline};
 use crate::find::Phase;
+use crate::layout::Screen;
+use crate::prompt::Prompt;
 use crate::reader::SelectionKind;
 use crate::terminal;
 use crate::theme::{self, Color};
@@ -150,5 +152,22 @@ pub fn menu(
     used += widths[index];
   }
   write!(out, "{}{}", " ".repeat(columns - used), theme::RESET)?;
+  Ok(())
+}
+
+/// Prompt on the last row, its menu above, and a block cursor.
+pub fn prompt(
+  out: &mut impl Write,
+  prompt: &Prompt,
+  screen: Screen,
+) -> Result<()> {
+  let row = screen.rows - 1;
+  if let Some(menu) = &prompt.menu {
+    self::menu(out, row - 1, menu, screen.columns)?;
+  }
+  let (text, column) = prompt.display();
+  terminal::line(out, row, &text, screen.columns)?;
+  let column = column.min(usize::from(screen.columns) - 1) + 1;
+  write!(out, "\x1b[{};{column}H\x1b[2 q\x1b[?25h", row + 1)?;
   Ok(())
 }

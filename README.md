@@ -91,7 +91,8 @@ own position, zoom, panels, search, and workers.
 
 The reader saves each document's cursor, zoom, and rotation, and reopens it
 there; `--page` overrides the saved page. `gr` or `:recent` lists recent
-documents, and `vpdf` without a path reopens the last one with that list open.
+documents. `vpdf` without a path opens a start screen with that list: Enter or
+a click opens a document, and `:e` opens any file with path completion.
 Command and search history persist too. State lives in
 `$XDG_STATE_HOME/vpdf/state.json`, or `~/.local/state/vpdf/state.json`, and is
 saved every few seconds while the position changes, when a tab closes, and on

@@ -183,13 +183,6 @@ impl App {
       write!(out, "\x1b[?25l")?;
       return Ok(());
     };
-    if let Some(menu) = &prompt.menu {
-      crate::statusline::menu(out, row - 1, menu, self.screen.columns)?;
-    }
-    let (text, column) = prompt.display();
-    terminal::line(out, row, &text, self.screen.columns)?;
-    let column = column.min(usize::from(self.screen.columns) - 1) + 1;
-    write!(out, "\x1b[{};{column}H\x1b[2 q\x1b[?25h", row + 1)?;
-    Ok(())
+    crate::statusline::prompt(out, prompt, self.screen)
   }
 }

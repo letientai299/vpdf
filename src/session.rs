@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::{App, Request, TabMove, Tabline};
 use crate::graphics::Graphics;
+use crate::home::{Home, Outcome};
 use crate::keys::PanelKind;
 use crate::layout::Screen;
 use crate::prompt::History;
@@ -8,7 +9,7 @@ use crate::state::State;
 use crate::terminal::{self, Terminal};
 use crate::text::PageId;
 use crossterm::event::{self, Event, KeyEventKind};
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -19,6 +20,8 @@ pub struct Session {
   pub history: History,
   pub quit: bool,
   pub state: State,
+  /// Start screen while no document is open.
+  pub home: Option<Home>,
   store: Option<PathBuf>,
   password: String,
   text: bool,
@@ -34,6 +37,7 @@ impl Session {
       history: state.history(),
       quit: false,
       state,
+      home: None,
       store,
       password: password.to_owned(),
       text,
@@ -172,11 +176,29 @@ impl Session {
   }
 
   fn running(&self) -> bool {
-    !self.quit && !self.tabs.is_empty()
+    !self.quit && (!self.tabs.is_empty() || self.home.is_some())
+  }
+
+  /// Draws the start screen and handles one input.
+  fn home(&mut self, out: &mut impl Write) -> Result<()> {
+    let Some(mut home) = self.home.take() else { return Ok(()) };
+    home.draw(out)?;
+    let outcome = home.event(event::read()?, &mut self.history);
+    match outcome {
+      Ok(Outcome::Open(path)) => match self.open(&path, true, home.screen) {
+        Ok(()) => return Ok(()),
+        Err(error) => home.error = Some(error.to_string()),
+      },
+      Ok(Outcome::Quit) => return Ok(()),
+      Ok(Outcome::Stay) => {}
+      Err(error) => home.error = Some(error.to_string()),
+    }
+    self.home = Some(home);
+    Ok(())
   }
 }
 
-/// Opens `paths`, or the last document with the recent list.
+/// Opens `paths`, or the start screen without any.
 pub fn view(
   paths: &[PathBuf],
   password: &str,
@@ -185,15 +207,14 @@ pub fn view(
 ) -> Result<()> {
   anyhow::ensure!(io::stdout().is_terminal(), "TUI requires a terminal");
   let mut session = Session::new(password, text, crate::state::location());
-  let last = session.state.recent.iter().find(|e| e.path.exists());
-  let last = last.map(|entry| entry.path.clone());
-  anyhow::ensure!(
-    !paths.is_empty() || last.is_some(),
-    "PDF path required; no recent documents"
-  );
   let _terminal = Terminal::enter()?;
   let screen = terminal::size()?;
-  for path in paths.iter().chain(last.iter().filter(|_| paths.is_empty())) {
+  if paths.is_empty() {
+    session.home = Some(Home::new(&session.state.recent, screen));
+    run(&mut session)?;
+    return session.finish();
+  }
+  for path in paths {
     session.open(path, true, screen)?;
   }
   session.activate(0)?;
@@ -207,10 +228,6 @@ pub fn view(
     app.reader.scroll = app.layout.pages[app.reader.cursor.page.0].top;
     app.ensure_cursor()?;
   }
-  if paths.is_empty() {
-    app.open_panel(PanelKind::Recent)?;
-    session.settle()?;
-  }
   run(&mut session)?;
   session.finish()
 }
@@ -223,6 +240,11 @@ fn run(session: &mut Session) -> Result<()> {
   let mut last_frame = Instant::now() - Duration::from_millis(9);
   let mut saved = Instant::now();
   while session.running() {
+    if session.tabs.is_empty() {
+      session.home(&mut out)?;
+      dirty = true;
+      continue;
+    }
     let app = &mut session.tabs[session.active];
     dirty |= app.raster_updates(&mut out)?;
     dirty |= app.search_updates()?;
