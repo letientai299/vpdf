@@ -4,6 +4,7 @@ use crate::graphics::Graphics;
 use crate::home::{Home, Outcome};
 use crate::keys::PanelKind;
 use crate::layout::Screen;
+use crate::pace::Pacer;
 use crate::prompt::History;
 use crate::split::{Axis, Node, Rect, neighbor};
 use crate::state::{Mark, State};
@@ -705,7 +706,7 @@ fn run(session: &mut Session) -> Result<()> {
   let mut trace = crate::trace::Trace::new()?;
   let mut buffer = Vec::with_capacity(64 * 1024);
   let mut dirty = true;
-  let mut last_frame = Instant::now() - Duration::from_millis(9);
+  let mut pacer = Pacer::new(Instant::now());
   let mut saved = Instant::now();
   let mut watched = Instant::now();
   let mut title = String::new();
@@ -717,7 +718,8 @@ fn run(session: &mut Session) -> Result<()> {
     }
     dirty |= updates(session, &mut out)?;
     session.app().clipboard(&mut out)?;
-    if last_frame.elapsed() >= Duration::from_micros(8333) {
+    let now = Instant::now();
+    if pacer.ready(now) {
       for app in &mut session.tab().panes {
         dirty |= app.animate();
       }
@@ -730,18 +732,14 @@ fn run(session: &mut Session) -> Result<()> {
         }
         trace.draw(session, &mut out, &mut buffer)?;
         dirty = false;
-        last_frame = Instant::now();
+        pacer.drawn(now);
       }
     }
     let animating =
       session.tab().panes.iter().any(|app| app.animation.is_some());
-    let wait = if !dirty && !animating {
-      Duration::from_millis(8)
-    } else {
-      Duration::from_micros(8333)
-        .saturating_sub(last_frame.elapsed())
-        .max(Duration::from_millis(1))
-    };
+    let pending = dirty || animating;
+    let now = Instant::now();
+    let wait = if pending { pacer.wait(now) } else { Duration::from_millis(8) };
     if !event::poll(wait)? {
       dirty |= session.app().clue_due()?;
       let force = watched.elapsed() > Duration::from_secs(2);

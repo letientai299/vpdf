@@ -25,8 +25,13 @@ above the status line are erased only when the previous or current frame
 writes text there. Synchronized terminal updates group each frame. Scroll inputs
 accumulate a target and animate toward it; cursor motions, jumps, and Escape
 interrupt the animation. Both current and target viewports request tiles.
-Frames are scheduled at an 8.33 ms interval when work is pending. Idle loops
-poll at 8 ms and do not redraw unchanged content.
+Frames are scheduled at an 8.33 ms interval when work is pending, each from
+the previous deadline rather than from when drawing finished; input after idle
+draws at once. macOS ends a timed wait up to a quarter of its length late, so
+the loop waits three quarters of the time left and checks again. Idle loops
+poll at 8 ms and do not redraw unchanged content. Kept tiles upload as they
+come within a tile of the screen, which spreads a scroll's uploads over its
+frames.
 
 The coordinator groups requested tiles into bands, runs of adjacent tiles in
 one tile row, and the pool draws each band in one pass before cutting and

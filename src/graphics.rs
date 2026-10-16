@@ -4,7 +4,7 @@ use crate::document::MIB;
 use crate::layout::{Layout, Screen};
 use crate::terminal::graphics;
 use crate::text::Bounds;
-use crate::tiles::{Tile, TileKey, encode};
+use crate::tiles::{TILE_HEIGHT, TILE_WIDTH, Tile, TileKey, encode};
 use std::collections::HashMap;
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
@@ -238,19 +238,24 @@ impl Graphics {
     left: u16,
     out: &mut impl Write,
   ) -> Result<bool> {
-    let id = match self.resident.get(&(self.doc, *key)) {
-      Some(&id) => id,
-      None => {
-        let kept = self.stored.get(&(self.doc, *key)).map(Arc::clone);
-        let Some(encoded) = kept else { return Ok(false) };
-        self.send((self.doc, *key), &encoded, out)?
-      }
-    };
     let rect = Bounds {
       x0: x,
       y0: y,
       x1: x + key.width as f32,
       y1: y + key.height as f32,
+    };
+    let id = match self.resident.get(&(self.doc, *key)) {
+      Some(&id) => id,
+      None => {
+        let kept = self.stored.get(&(self.doc, *key)).map(Arc::clone);
+        let Some(encoded) = kept else { return Ok(false) };
+        // Kept tiles upload as they come within a tile of the screen,
+        // spreading a scroll's uploads over its frames.
+        if !near(rect, screen) {
+          return Ok(true);
+        }
+        self.send((self.doc, *key), &encoded, out)?
+      }
     };
     let Some(clip) = clip(rect, screen) else { return Ok(true) };
     placement(
@@ -381,6 +386,15 @@ fn clip(rect: Bounds, screen: Screen) -> Option<Bounds> {
     y1: rect.y1.min(screen.height()).ceil(),
   };
   (clipped.width() > 0.0 && clipped.height() > 0.0).then_some(clipped)
+}
+
+/// Whether `rect` lies within a tile of the screen.
+fn near(rect: Bounds, screen: Screen) -> bool {
+  let (dx, dy) = (TILE_WIDTH as f32, TILE_HEIGHT as f32);
+  rect.x1 > -dx
+    && rect.y1 > -dy
+    && rect.x0 < screen.width() + dx
+    && rect.y0 < screen.height() + dy
 }
 
 fn offsets(rect: Bounds, screen: Screen) -> String {
