@@ -26,11 +26,12 @@ impl App {
       }
       return Ok(());
     }
+    // `q` leaves text preview first and keeps any side panel open.
+    if matches!(input.action, Action::Quit) && self.preview.is_some() {
+      return self.close_text_preview();
+    }
     if self.panel_input(input)? {
       return Ok(());
-    }
-    if matches!(input.action, Action::Quit) && self.preview.is_some() {
-      return self.close_panel();
     }
     match input.action {
       Action::Panel(kind) => self.open_panel(kind)?,

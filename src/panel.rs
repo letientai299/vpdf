@@ -282,8 +282,15 @@ impl App {
 
   pub fn open_panel(&mut self, kind: PanelKind) -> Result<()> {
     if kind == PanelKind::Text {
+      if self.preview.is_some() {
+        return self.close_text_preview();
+      }
       self.preview = Some(self.text_mode);
       self.text_mode = true;
+      // The preview takes focus so its text motions work.
+      if let Some(panel) = &mut self.panel {
+        panel.focused = false;
+      }
       return Ok(());
     }
     if let Some(panel) = &mut self.panel
@@ -322,9 +329,15 @@ impl App {
   pub fn close_panel(&mut self) -> Result<()> {
     self.panel = None;
     self.left = 0;
+    self.relayout()
+  }
+
+  /// Returns from `gx` to the view it replaced.
+  pub fn close_text_preview(&mut self) -> Result<()> {
     if let Some(previous) = self.preview.take() {
       self.text_mode = previous;
     }
+    self.requested.clear();
     self.relayout()
   }
 

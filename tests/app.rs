@@ -293,3 +293,34 @@ fn unfocused_side_is_dimmed() -> Result<()> {
   assert!(!drawn.contains(&veil) && drawn.contains("\x1b[0;2m"), "panel dims");
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn leaving_text_preview_keeps_the_panel() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 120,
+    rows: 40,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  let quit =
+    Input { action: Action::Quit, count: 1, explicit: false, register: '"' };
+  for (open, close) in [
+    (Action::Panel(PanelKind::Outline), quit),
+    (
+      Action::Panel(PanelKind::Outline),
+      Input { action: Action::Panel(PanelKind::Text), ..quit },
+    ),
+  ] {
+    app.action(Input { action: open, ..quit })?;
+    app.action(Input { action: Action::Panel(PanelKind::Text), ..quit })?;
+    assert!(app.text_mode);
+    app.action(close)?;
+    assert!(!app.text_mode, "back to the rendered view");
+    assert!(app.panel.is_some(), "outline stays open");
+  }
+  Ok(())
+}
