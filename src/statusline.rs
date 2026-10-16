@@ -73,7 +73,9 @@ impl App {
   /// Tab names that fit in `room`, with their display width.
   fn tabs(&self, room: usize) -> (String, usize) {
     let Tabline { names, active } = &self.tabline;
+    // Narrow panes cut the name so the status line stays in the pane.
     let plain = |text: String| {
+      let text = terminal::clean(&text, room);
       let width = text.width();
       (text, width)
     };

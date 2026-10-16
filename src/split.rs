@@ -205,6 +205,24 @@ impl Node {
     }
   }
 
+  /// `Ctrl-w H J K L`: makes `target` span that whole edge of the tab.
+  pub fn move_to_edge(&mut self, target: u32, direction: Direction) {
+    if matches!(self, Self::Leaf(_)) || !self.remove(target) {
+      return;
+    }
+    let rest = std::mem::replace(self, Self::Leaf(target));
+    let (axis, first) = match direction {
+      Direction::Left => (Axis::Columns, true),
+      Direction::Right => (Axis::Columns, false),
+      Direction::Up => (Axis::Rows, true),
+      Direction::Down => (Axis::Rows, false),
+    };
+    let moved = Box::new(Self::Leaf(target));
+    let rest = Box::new(rest);
+    let (first, second) = if first { (moved, rest) } else { (rest, moved) };
+    *self = Self::Split { axis, ratio: 0.5, first, second };
+  }
+
   /// `Ctrl-w x`: swaps `target` with its sibling pane.
   pub fn exchange(&mut self, target: u32) -> bool {
     let Self::Split { first, second, .. } = self else { return false };
@@ -316,5 +334,15 @@ mod tests {
     assert_eq!(rects(&tree)[0].1.rows, 20);
     assert!(tree.exchange(1));
     assert_eq!(tree.leaves(), [1, 2]);
+    tree.split(2, Axis::Rows, 3);
+    tree.move_to_edge(3, Direction::Right);
+    assert_eq!(tree.leaves(), [1, 2, 3]);
+    let layout = rects(&tree);
+    assert_eq!(layout[2].1, Rect { column: 51, row: 0, columns: 50, rows: 40 });
+    tree.move_to_edge(1, Direction::Down);
+    assert_eq!(
+      rects(&tree)[2].1,
+      Rect { column: 0, row: 20, columns: 101, rows: 20 }
+    );
   }
 }

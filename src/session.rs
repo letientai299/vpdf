@@ -363,6 +363,10 @@ impl Session {
         tab.tree.exchange(id);
         None
       }
+      Window::Move(direction) => {
+        tab.tree.move_to_edge(id, direction);
+        None
+      }
     };
     match target.and_then(|id| self.tab().index(id)) {
       Some(index) => self.focus(self.active, index),
@@ -452,7 +456,11 @@ impl Session {
       }
       Some(Request::Pick) => match crate::fzf::pick(&std::env::current_dir()?)?
       {
-        Some(path) => self.open(&path, true, screen),
+        // In a split, the pick replaces the focused pane, like `:e`.
+        Some(path) => {
+          let tab = self.tab().panes.len() == 1;
+          self.open(&path, tab, screen)
+        }
         None => Ok(()),
       },
       Some(Request::QuitAll) => {

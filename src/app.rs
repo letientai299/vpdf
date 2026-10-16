@@ -50,6 +50,8 @@ pub enum Window {
   Resize(crate::split::Axis, i32),
   Maximize(crate::split::Axis),
   Exchange,
+  /// Moves the pane to the full-height or full-width edge.
+  Move(crate::split::Direction),
   ToTab,
 }
 

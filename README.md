@@ -125,10 +125,10 @@ arrows move focus by direction, `Ctrl-w w`, `W`, and `p` cycle or return to the
 last pane, and `3 Ctrl-w w` picks the third. `Ctrl-w c` or `:close` closes a
 pane, `Ctrl-w o` or `:only` closes the others, and `:q` closes the pane, then
 the tab. `Ctrl-w + - < >` resize by a count of cells, `Ctrl-w _ |` maximize,
-`Ctrl-w =` equalizes, `Ctrl-w x` swaps with the sibling pane, and `Ctrl-w T`
-moves the pane to a new tab. Each pane has its own status line, position,
-zoom, and panels; clicking a pane focuses it. Panes share one Kitty image
-budget.
+`Ctrl-w =` equalizes, `Ctrl-w H J K L` move the pane to the far left, bottom,
+top, or right edge, `Ctrl-w x` swaps with the sibling pane, and `Ctrl-w T` moves
+the pane to a new tab. Each pane has its own status line, position, zoom, and
+panels; clicking a pane focuses it. Panes share one Kitty image budget.
 
 ## Recent documents
 

@@ -319,6 +319,10 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("C-w<", Action::Window(W::Resize(Axis::Columns, -1)), "narrower"),
   ("C-w_", Action::Window(W::Maximize(Axis::Rows)), "tallest"),
   ("C-w|", Action::Window(W::Maximize(Axis::Columns)), "widest"),
+  ("C-wH", Action::Window(W::Move(D::Left)), "move pane to far left"),
+  ("C-wJ", Action::Window(W::Move(D::Down)), "move pane to bottom"),
+  ("C-wK", Action::Window(W::Move(D::Up)), "move pane to top"),
+  ("C-wL", Action::Window(W::Move(D::Right)), "move pane to far right"),
   ("C-wx", Action::Window(W::Exchange), "swap with sibling pane"),
   ("C-wT", Action::Window(W::ToTab), "move pane to a new tab"),
 ];
@@ -387,6 +391,10 @@ mod tests {
     let ctrl_l = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
     let input = keys.feed(ctrl_l).unwrap();
     assert_eq!(input.action, Action::Window(W::Focus(D::Right)));
+    keys.feed(ctrl_w);
+    let shifted = KeyEvent::new(KeyCode::Char('L'), KeyModifiers::SHIFT);
+    let input = keys.feed(shifted).unwrap();
+    assert_eq!(input.action, Action::Window(W::Move(D::Right)));
   }
 
   #[test]
