@@ -76,6 +76,7 @@ pub const COMMANDS: &[Spec] = &[
   spec("annotations", &["annots"], "", "list highlights and notes"),
   spec("page", &[], "<n|label>", "jump to a page number or label"),
   spec("toc", &["outline"], "", "open the table of contents"),
+  spec("overview", &["pages"], "", "show page thumbnails"),
   spec("crop", &[], "", "toggle cropped page margins"),
   spec("nohlsearch", &["noh"], "", "hide search highlights"),
   spec("text", &[], "", "preview extracted page text"),

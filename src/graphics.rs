@@ -172,18 +172,31 @@ impl Graphics {
     left: u16,
     out: &mut impl Write,
   ) -> Result<bool> {
+    let x = key.x as f32 - layout.pan;
+    let y = layout.pages[key.page.0].top + key.y as f32 - scroll;
+    self.place_at(key, (x, y), layout.screen, left, out)
+  }
+
+  /// Places a resident tile with its top-left at `origin` pixels;
+  /// returns false when the tile still needs rendering.
+  pub fn place_at(
+    &mut self,
+    key: &TileKey,
+    (x, y): (f32, f32),
+    screen: Screen,
+    left: u16,
+    out: &mut impl Write,
+  ) -> Result<bool> {
     let Some(&id) = self.resident.get(&(self.doc, *key)) else {
       return Ok(false);
     };
-    let x = key.x as f32 - layout.pan;
-    let y = layout.pages[key.page.0].top + key.y as f32 - scroll;
     let rect = Bounds {
       x0: x,
       y0: y,
       x1: x + key.width as f32,
       y1: y + key.height as f32,
     };
-    let Some(clip) = clip(rect, layout.screen) else { return Ok(true) };
+    let Some(clip) = clip(rect, screen) else { return Ok(true) };
     placement(
       out,
       &(format!(
@@ -192,10 +205,10 @@ impl Graphics {
         (clip.y0 - y) as u32,
         clip.width() as u32,
         clip.height() as u32,
-      ) + &offsets(clip, layout.screen)),
+      ) + &offsets(clip, screen)),
       clip,
       left,
-      layout.screen,
+      screen,
     )?;
     Ok(true)
   }

@@ -179,7 +179,9 @@ impl App {
       terminal::line(out, row, "", self.screen.columns)?;
     }
     self.graphics.begin(out)?;
-    if self.text_mode {
+    if self.overview.is_some() {
+      self.overview_canvas(out)?;
+    } else if self.text_mode {
       self.text_canvas(out)?;
     } else {
       self.canvas(out)?;

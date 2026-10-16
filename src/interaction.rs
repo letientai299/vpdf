@@ -151,6 +151,9 @@ impl App {
   pub fn mouse(&mut self, mouse: event::MouseEvent) -> Result<()> {
     self.hints = None;
     self.peek = None;
+    if self.overview.is_some() {
+      return self.overview_mouse(mouse);
+    }
     if mouse.column < self.left && mouse.row < self.screen.rows - 1 {
       return self.panel_mouse(mouse);
     }

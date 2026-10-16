@@ -458,14 +458,17 @@ impl App {
   pub fn info(&self) -> String {
     format!(
       "{}\nPages: {}\nText cache: {} KiB\nImages: {} KiB\n\
-      Transferred: {} KiB\nLast tile: {:.3} ms\nSearch hits: {}",
+      Transferred: {} KiB\nLast tile: {:.3} ms\nSearch hits: {}\n\
+      Cell: {}x{} px",
       self.path.display(),
       self.doc.pages.len(),
       self.doc.cache_bytes() / 1024,
       self.graphics.bytes() / 1024,
       self.graphics.uploaded / 1024,
       self.render_ms,
-      self.search.hits.len()
+      self.search.hits.len(),
+      self.screen.cell_width,
+      self.screen.cell_height
     )
   }
 }

@@ -17,6 +17,9 @@ impl App {
     if self.hints.is_some() {
       return ("HINT", Color::Yellow);
     }
+    if self.overview.is_some() {
+      return ("PAGES", Color::Cyan);
+    }
     if self.preview.is_some() {
       return ("TEXT", Color::Green);
     }

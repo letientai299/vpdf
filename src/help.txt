@@ -43,6 +43,7 @@ gs: search results
 f: link hints; F copies URLs
 K: preview link target; Enter follows
 gl: links on this page
+gp: page thumbnails
 gr: recent documents
 ga: annotations (read-only)
 Enter: follow link or row

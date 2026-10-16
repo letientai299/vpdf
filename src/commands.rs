@@ -11,6 +11,9 @@ use std::process::{Command, Stdio};
 
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
+    if self.overview.is_some() && self.overview_input(input)? {
+      return Ok(());
+    }
     if input.action == Action::Cancel {
       self.animation = None;
       self.search.cancel();
@@ -40,6 +43,7 @@ impl App {
       Action::Mark(name) => self.set_mark(name),
       Action::Hints(copy) => self.start_hints(copy)?,
       Action::Peek => self.preview_link()?,
+      Action::Overview => self.open_overview()?,
       Action::GoMark(name, exact) => self.go_mark(name, exact)?,
       Action::Tab(forward) => {
         self.request = Some(Request::Tab(match (forward, input.explicit) {
@@ -146,6 +150,7 @@ impl App {
       "qall" => self.request = Some(Request::QuitAll),
       "page" => self.page(argument)?,
       "toc" => self.open_panel(PanelKind::Outline)?,
+      "overview" => self.open_overview()?,
       "crop" => self.toggle_crop()?,
       "recent" => self.open_panel(PanelKind::Recent)?,
       "marks" => self.open_panel(PanelKind::Marks)?,

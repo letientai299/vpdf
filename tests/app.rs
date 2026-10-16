@@ -235,3 +235,36 @@ fn preview_shows_citation_target() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
+  use vpdf::keys::{Action, Input};
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 137,
+    rows: 36,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  let press = |app: &mut App, action| {
+    app.action(Input { action, count: 1, explicit: false, register: '"' })
+  };
+  press(&mut app, Action::Overview)?;
+  assert!(app.overview.is_some());
+  let mut out = Vec::new();
+  app.draw(&mut out)?;
+  let started = Instant::now();
+  while app.graphics.bytes() == 0 {
+    assert!(started.elapsed() < Duration::from_secs(10), "thumbnails render");
+    app.raster_updates(&mut out)?;
+    std::thread::sleep(Duration::from_millis(5));
+  }
+  press(&mut app, Action::Motion(vpdf::motion::Motion::Down))?;
+  press(&mut app, Action::Follow)?;
+  assert!(app.overview.is_none());
+  assert!(app.reader.cursor.page.0 > 1);
+  Ok(())
+}

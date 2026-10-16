@@ -76,6 +76,7 @@ pub struct App {
   pub hints: Option<crate::hints::Hints>,
   /// Link destination shown by `K`.
   pub peek: Option<crate::preview::Preview>,
+  pub overview: Option<crate::overview::Overview>,
   pub panel: Option<crate::panel::Panel>,
   pub preview: Option<bool>,
   pub ocr: Option<crate::ocr::OcrJob>,
@@ -134,6 +135,7 @@ impl App {
       prompt: None,
       hints: None,
       peek: None,
+      overview: None,
       panel: None,
       preview: None,
       ocr: None,

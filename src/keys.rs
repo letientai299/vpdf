@@ -55,6 +55,8 @@ pub enum Action {
   Hints(bool),
   /// Preview the link under the cursor.
   Peek,
+  /// Page thumbnail grid.
+  Overview,
   Mark(char),
   /// Mark name and whether to keep the glyph column.
   GoMark(char, bool),
@@ -247,6 +249,7 @@ pub fn binding(key: &str) -> Option<Action> {
     "g?" => Panel(PanelKind::Help),
     "gq" => ClosePanel,
     "K" => Peek,
+    "gp" => Overview,
     "f" => Hints(false),
     "F" => Hints(true),
     "gt" => Tab(true),
