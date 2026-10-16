@@ -54,10 +54,14 @@ Scoped cleanup uses Kitty range deletion, added in Kitty 0.33. The text
 fallback retains reader motions, selection, search, and panels. Clipboard
 delivery uses OSC 52 and therefore follows terminal policy.
 
-Terminal-image acknowledgement and loss recovery through every multiplexer
-are not yet qualified. Resizing or changing zoom requests another viewport;
-reloading invalidates all image state. Keep terminal compatibility testing
-separate from native rendering and state tests.
+Graphics commands suppress terminal replies. Tmux delivers replies to the
+focused pane rather than the sender, where they would arrive as input to an
+unrelated program, so the reader cannot track acknowledgements. Kitty silently
+evicts older images beyond its 320 MB per-window quota; each reader keeps at
+most 64 MiB of decoded tiles so about four readers share a window without
+eviction. Resizing or changing zoom requests another viewport; reloading
+invalidates all image state. Keep terminal compatibility testing separate from
+native rendering and state tests.
 
 ## Compatibility
 

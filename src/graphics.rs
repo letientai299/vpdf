@@ -13,7 +13,8 @@ use std::sync::OnceLock;
 
 const BLOCK: u32 = 1 << 16;
 const OVERLAYS: u32 = 1024;
-const BUDGET: usize = 128 * MIB;
+// Four readers fit Kitty's 320 MB quota.
+const BUDGET: usize = 64 * MIB;
 
 pub struct Graphics {
   resident: Cache<TileKey, u32>,
