@@ -17,6 +17,7 @@ use std::time::Instant;
 pub enum Request {
   Open { path: PathBuf, tab: bool },
   Tab(TabMove),
+  Recent,
   QuitAll,
 }
 

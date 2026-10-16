@@ -15,8 +15,9 @@ struct Args {
   text: bool,
   #[arg(long, global = true)]
   password_stdin: bool,
-  #[arg(long, default_value_t = 1)]
-  page: usize,
+  /// Page to open instead of the saved position.
+  #[arg(long)]
+  page: Option<usize>,
 }
 
 #[derive(Subcommand)]
@@ -41,7 +42,6 @@ fn run(args: Args) -> Result<()> {
   }
   let mut out = io::BufWriter::new(io::stdout());
   let Some(command) = args.command else {
-    anyhow::ensure!(!args.files.is_empty(), "PDF path required");
     let text = args.text
       || std::env::var_os("KITTY_WINDOW_ID").is_none()
         && std::env::var("TERM").map_or(true, |term| !term.contains("kitty"));

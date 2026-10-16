@@ -1,12 +1,31 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(
-  Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+  Clone,
+  Copy,
+  Debug,
+  Default,
+  Deserialize,
+  Eq,
+  Hash,
+  Ord,
+  PartialEq,
+  PartialOrd,
+  Serialize,
 )]
 pub struct PageId(pub usize);
 
 #[derive(
-  Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize,
+  Clone,
+  Copy,
+  Debug,
+  Default,
+  Deserialize,
+  Eq,
+  Ord,
+  PartialEq,
+  PartialOrd,
+  Serialize,
 )]
 pub struct Position {
   pub page: PageId,

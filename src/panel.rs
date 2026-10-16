@@ -1,18 +1,21 @@
 use crate::Result;
-use crate::app::App;
+use crate::app::{App, Request};
 use crate::document::Target;
 use crate::keys::{Action, Input, PanelKind};
 use crate::motion::Motion;
+use crate::state::Entry;
 use crate::terminal;
 use crate::text::Position;
 use crate::theme::{self, Color};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone)]
 pub enum Destination {
   Position(Position),
   Link(Target),
+  File(PathBuf),
   None,
 }
 
@@ -32,7 +35,7 @@ pub struct Row {
 }
 
 impl Row {
-  fn new(label: String, detail: String, destination: Destination) -> Self {
+  pub fn new(label: String, detail: String, destination: Destination) -> Self {
     Self { label, detail, style: Style::Plain, destination }
   }
 
@@ -179,7 +182,15 @@ impl App {
       }
       return Ok(());
     }
+    if kind == PanelKind::Recent {
+      self.request = Some(Request::Recent);
+      return Ok(());
+    }
     let rows = self.panel_rows(kind)?;
+    self.show_panel(kind, rows)
+  }
+
+  pub fn show_panel(&mut self, kind: PanelKind, rows: Vec<Row>) -> Result<()> {
     self.panel = Some(Panel { kind, rows, selected: 0, focused: true });
     let wide = matches!(kind, PanelKind::Help | PanelKind::Info);
     let width =
@@ -187,7 +198,7 @@ impl App {
     self.left = width
       .clamp(1, if wide { 64 } else { 50 })
       .min(self.screen.columns.saturating_sub(12));
-    self.resize()
+    self.relayout()
   }
 
   pub fn close_panel(&mut self) -> Result<()> {
@@ -196,7 +207,7 @@ impl App {
     if let Some(previous) = self.preview.take() {
       self.text_mode = previous;
     }
-    self.resize()
+    self.relayout()
   }
 
   pub fn panel_rows(&mut self, kind: PanelKind) -> Result<Vec<Row>> {
@@ -246,7 +257,7 @@ impl App {
         .collect(),
       PanelKind::Help => help().iter().map(|line| Row::parse(line)).collect(),
       PanelKind::Info => self.info().lines().map(Row::parse).collect(),
-      PanelKind::Text => Vec::new(),
+      PanelKind::Text | PanelKind::Recent => Vec::new(),
     })
   }
 
@@ -294,6 +305,10 @@ impl App {
         self.reader.jump(position, &mut self.doc)?
       }
       Destination::Link(target) => self.follow(&target)?,
+      Destination::File(path) => {
+        self.request = Some(Request::Open { path, tab: true });
+        return self.close_panel();
+      }
       Destination::None => return Ok(()),
     }
     if action == Action::Follow {
@@ -331,4 +346,26 @@ fn help() -> Vec<String> {
     format!(":{}{usage}{}: {}", spec.name, spec.usage, spec.help)
   });
   keys.chain(["".into(), "# Commands".into()]).chain(commands).collect()
+}
+
+/// Recent documents that still exist, newest first.
+pub fn recent_rows(entries: &[Entry]) -> Vec<Row> {
+  let home = std::env::var_os("HOME").map(PathBuf::from);
+  entries
+    .iter()
+    .filter(|entry| entry.path.exists())
+    .map(|entry| {
+      let name = entry.path.file_name().unwrap_or_default();
+      let parent = entry.path.parent().unwrap_or(Path::new(""));
+      let folder = match home.as_deref().map(|h| parent.strip_prefix(h)) {
+        Some(Ok(rest)) => Path::new("~").join(rest),
+        _ => parent.to_owned(),
+      };
+      Row::new(
+        format!("{}  {}", name.to_string_lossy(), folder.display()),
+        format!("p{}", entry.cursor.page.0 + 1),
+        Destination::File(entry.path.clone()),
+      )
+    })
+    .collect()
 }

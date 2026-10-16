@@ -10,6 +10,7 @@ pub enum PanelKind {
   Text,
   Help,
   Info,
+  Recent,
 }
 
 impl PanelKind {
@@ -21,6 +22,7 @@ impl PanelKind {
       Self::Text => "TEXT",
       Self::Help => "HELP",
       Self::Info => "INFO",
+      Self::Recent => "RECENT",
     }
   }
 }
@@ -197,6 +199,7 @@ pub fn binding(key: &str) -> Option<Action> {
     "go" => Panel(PanelKind::Outline),
     "gs" => Panel(PanelKind::Results),
     "gl" => Panel(PanelKind::Links),
+    "gr" => Panel(PanelKind::Recent),
     "gx" => Panel(PanelKind::Text),
     "g?" => Panel(PanelKind::Help),
     "gq" => ClosePanel,

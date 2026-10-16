@@ -1,8 +1,10 @@
 use crate::Result;
 use crate::app::{App, Request, TabMove, Tabline};
 use crate::graphics::Graphics;
+use crate::keys::PanelKind;
 use crate::layout::Screen;
 use crate::prompt::History;
+use crate::state::State;
 use crate::terminal::{self, Terminal};
 use crate::text::PageId;
 use crossterm::event::{self, Event, KeyEventKind};
@@ -16,20 +18,50 @@ pub struct Session {
   pub active: usize,
   pub history: History,
   pub quit: bool,
+  pub state: State,
+  store: Option<PathBuf>,
   password: String,
   text: bool,
 }
 
 impl Session {
-  pub fn new(password: &str, text: bool) -> Self {
+  /// `store` holds recent documents and history between runs.
+  pub fn new(password: &str, text: bool, store: Option<PathBuf>) -> Self {
+    let state = store.as_deref().map(State::load).unwrap_or_default();
     Self {
       tabs: Vec::new(),
       active: 0,
-      history: History::default(),
+      history: state.history(),
       quit: false,
+      state,
+      store,
       password: password.to_owned(),
       text,
     }
+  }
+
+  pub fn save(&mut self) -> Result<()> {
+    let Some(store) = &self.store else { return Ok(()) };
+    self.state.save(store, &self.history)
+  }
+
+  /// Records the active tab and saves when it moved.
+  fn checkpoint(&mut self) -> Result<()> {
+    if self.running() && self.state.remember(&self.tabs[self.active]) {
+      self.save()?;
+    }
+    Ok(())
+  }
+
+  /// Records every tab and saves before exit.
+  fn finish(&mut self) -> Result<()> {
+    let active = self.tabs.get(self.active);
+    let others =
+      self.tabs.iter().filter(|app| active.is_none_or(|a| a.id != app.id));
+    for app in others.chain(active) {
+      self.state.remember(app);
+    }
+    self.save()
   }
 
   pub fn app(&mut self) -> &mut App {
@@ -42,7 +74,11 @@ impl Session {
     if let Some(index) = self.tabs.iter().position(|app| app.path == path) {
       return self.activate(index);
     }
-    let app = self.load(&path, screen)?;
+    let mut app = self.load(&path, screen)?;
+    if let Some(entry) = self.state.entry(&path) {
+      app.restore(entry)?;
+    }
+    self.state.remember(&app);
     if self.tabs.is_empty() {
       self.tabs.push(app);
       return self.install(Graphics::default(), screen);
@@ -52,6 +88,7 @@ impl Session {
       return self.activate(self.active + 1);
     }
     let mut old = std::mem::replace(&mut self.tabs[self.active], app);
+    self.state.remember(&old);
     old.graphics.forget(old.id);
     self.install(std::mem::take(&mut old.graphics), screen)
   }
@@ -82,8 +119,9 @@ impl Session {
   /// Closes the active tab; the session ends after the last.
   pub fn close(&mut self) -> Result<()> {
     let mut app = self.tabs.remove(self.active);
+    self.state.remember(&app);
     if self.tabs.is_empty() {
-      return Ok(());
+      return self.save();
     }
     app.graphics.forget(app.id);
     self.active = self.active.min(self.tabs.len() - 1);
@@ -121,6 +159,10 @@ impl Session {
     match app.request.take() {
       Some(Request::Open { path, tab }) => self.open(&path, tab, screen),
       Some(Request::Tab(step)) => self.activate(self.step(step)),
+      Some(Request::Recent) => {
+        let rows = crate::panel::recent_rows(&self.state.recent);
+        self.app().show_panel(PanelKind::Recent, rows)
+      }
       Some(Request::QuitAll) => {
         self.quit = true;
         Ok(())
@@ -134,28 +176,43 @@ impl Session {
   }
 }
 
+/// Opens `paths`, or the last document with the recent list.
 pub fn view(
   paths: &[PathBuf],
   password: &str,
   text: bool,
-  page: usize,
+  page: Option<usize>,
 ) -> Result<()> {
   anyhow::ensure!(io::stdout().is_terminal(), "TUI requires a terminal");
+  let mut session = Session::new(password, text, crate::state::location());
+  let last = session.state.recent.iter().find(|e| e.path.exists());
+  let last = last.map(|entry| entry.path.clone());
+  anyhow::ensure!(
+    !paths.is_empty() || last.is_some(),
+    "PDF path required; no recent documents"
+  );
   let _terminal = Terminal::enter()?;
   let screen = terminal::size()?;
-  let mut session = Session::new(password, text);
-  for path in paths {
+  for path in paths.iter().chain(last.iter().filter(|_| paths.is_empty())) {
     session.open(path, true, screen)?;
   }
   session.activate(0)?;
   let app = session.app();
-  app.reader.edge(
-    PageId(page.saturating_sub(1).min(app.doc.pages.len() - 1)),
-    false,
-    &mut app.doc,
-  )?;
-  app.ensure_cursor()?;
-  run(&mut session)
+  if let Some(page) = page {
+    app.reader.edge(
+      PageId(page.saturating_sub(1).min(app.doc.pages.len() - 1)),
+      false,
+      &mut app.doc,
+    )?;
+    app.reader.scroll = app.layout.pages[app.reader.cursor.page.0].top;
+    app.ensure_cursor()?;
+  }
+  if paths.is_empty() {
+    app.open_panel(PanelKind::Recent)?;
+    session.settle()?;
+  }
+  run(&mut session)?;
+  session.finish()
 }
 
 fn run(session: &mut Session) -> Result<()> {
@@ -164,6 +221,7 @@ fn run(session: &mut Session) -> Result<()> {
   let mut buffer = Vec::with_capacity(64 * 1024);
   let mut dirty = true;
   let mut last_frame = Instant::now() - Duration::from_millis(9);
+  let mut saved = Instant::now();
   while session.running() {
     let app = &mut session.tabs[session.active];
     dirty |= app.raster_updates(&mut out)?;
@@ -187,6 +245,12 @@ fn run(session: &mut Session) -> Result<()> {
         .max(Duration::from_millis(1))
     };
     if !event::poll(wait)? {
+      if saved.elapsed() > Duration::from_secs(2) {
+        saved = Instant::now();
+        if let Err(error) = session.checkpoint() {
+          session.app().error = Some(format!("State not saved: {error}"));
+        }
+      }
       continue;
     }
     trace.input();

@@ -120,6 +120,7 @@ impl App {
       "qall" => self.request = Some(Request::QuitAll),
       "page" => self.page(argument)?,
       "toc" => self.open_panel(PanelKind::Outline)?,
+      "recent" => self.open_panel(PanelKind::Recent)?,
       "nohlsearch" => self.search.hidden = true,
       "text" => self.open_panel(PanelKind::Text)?,
       "info" => self.open_panel(PanelKind::Info)?,

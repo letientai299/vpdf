@@ -45,6 +45,7 @@ pub const COMMANDS: &[Spec] = &[
   spec("tabnext", &["tabn"], "[n]", "go to the next or nth tab"),
   spec("tabprevious", &["tabp", "tabN"], "", "go to the previous tab"),
   spec("tabclose", &["tabc"], "", "close this tab"),
+  spec("recent", &["oldfiles"], "", "list recently opened PDFs"),
   spec("page", &[], "<n|label>", "jump to a page number or label"),
   spec("toc", &["outline"], "", "open the table of contents"),
   spec("nohlsearch", &["noh"], "", "hide search highlights"),

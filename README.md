@@ -86,6 +86,16 @@ tab and `:qa` closes all. Opening a document that is already open selects its
 tab. The status line lists tabs when more than one is open. Each tab keeps its
 own position, zoom, panels, search, and workers.
 
+## Recent documents
+
+The reader saves each document's cursor, zoom, and rotation, and reopens it
+there; `--page` overrides the saved page. `gr` or `:recent` lists recent
+documents, and `vpdf` without a path reopens the last one with that list open.
+Command and search history persist too. State lives in
+`$XDG_STATE_HOME/vpdf/state.json`, or `~/.local/state/vpdf/state.json`, and is
+saved every few seconds while the position changes, when a tab closes, and on
+exit. Concurrent readers merge their entries.
+
 ## Commands
 
 `:` opens the command line. Tab and Shift-Tab cycle completions for command
