@@ -81,6 +81,8 @@ pub struct Session {
   latest: crate::hangup::Latest,
   /// Recorded positions not yet written.
   unsaved: bool,
+  /// Panes the last arrangement showed; ones hidden since are trimmed.
+  shown: Vec<u32>,
 }
 
 impl Session {
@@ -102,6 +104,7 @@ impl Session {
       hangup: Arc::new(AtomicBool::new(false)),
       latest: crate::hangup::Latest::default(),
       unsaved: false,
+      shown: Vec::new(),
     }
   }
 
@@ -193,6 +196,16 @@ impl Session {
   /// Sizes every pane of the active tab and marks the focused one.
   fn arrange(&mut self) -> Result<()> {
     let Some(screen) = self.screen else { return Ok(()) };
+    let showing = self.tabs[self.active].order();
+    for id in std::mem::replace(&mut self.shown, showing.clone()) {
+      if showing.contains(&id) {
+        continue;
+      }
+      let hidden = self.tabs.iter_mut().flat_map(|tab| &mut tab.panes);
+      if let Some(app) = hidden.into_iter().find(|app| app.id == id) {
+        app.trim();
+      }
+    }
     let names =
       self.tabs.iter().map(|tab| tab.panes[tab.focus].name()).collect();
     let active = self.active;

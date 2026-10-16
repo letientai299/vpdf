@@ -158,6 +158,14 @@ impl Document {
     self.lists = lists;
   }
 
+  /// Drops cached text and display lists; OCR text stays.
+  pub fn trim(&mut self) {
+    self.texts.clear();
+    if let Ok(mut lists) = self.lists.lock() {
+      lists.clear();
+    }
+  }
+
   pub fn seed(&mut self, page: PageId, text: Arc<Text>) {
     let weight = text.weight();
     self.ocr.insert(page, text, weight);

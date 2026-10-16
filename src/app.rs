@@ -131,6 +131,19 @@ pub struct App {
 }
 
 impl App {
+  /// Releases what a hidden pane rebuilds on demand: an idle search
+  /// worker with its indexes, cached text and display lists, and the
+  /// render coordinator's document with every page it loaded.
+  pub fn trim(&mut self) {
+    if !matches!(self.search.phase, crate::find::Phase::Running { .. }) {
+      self.search.worker = None;
+    }
+    self.doc.trim();
+    self.worker =
+      RenderWorker::new(&self.path, &self.password, self.doc.lists());
+    self.requested.clear();
+  }
+
   pub fn name(&self) -> String {
     self.path.file_name().map_or_else(
       || self.path.display().to_string(),

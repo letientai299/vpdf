@@ -16,13 +16,17 @@ use crate::text::PageId;
 use crate::tiles::{self, TILE_WIDTH, Tile, TileKey};
 use mupdf::{DisplayList, IRect, Matrix, Pixmap};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, mpsc};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Largest image page rendered whole, in pixels; about 24 MiB of RGB.
 const WHOLE: i64 = 8 << 20;
+/// Pages drawn after which an idle coordinator reopens its document.
+const RELOAD: usize = 64;
+/// Idle time before that reopen.
+const IDLE: Duration = Duration::from_secs(2);
 
 type Sender = mpsc::Sender<std::result::Result<Tile, String>>;
 
@@ -63,7 +67,7 @@ impl RenderWorker {
     thread::spawn(move || match Document::open(&path, &password) {
       Ok(mut doc) => {
         doc.share(lists);
-        Coordinator::new(doc, work, send).run();
+        Coordinator::new(doc, (path, password), work, send).run();
       }
       Err(error) => drop(send.send(Err(error.to_string()))),
     });
@@ -106,16 +110,45 @@ type PageKey = (PageId, u32, u16, Crop);
 
 struct Coordinator {
   doc: Document,
+  /// Path and password to reopen `doc`.
+  source: (PathBuf, String),
   shared: Arc<Shared>,
   send: Sender,
   kinds: HashMap<PageKey, Kind>,
   /// The last whole page and milliseconds it took to draw.
   whole: Option<(PageKey, Pixmap, f64)>,
+  /// Pages drawn since `doc` opened.
+  touched: HashSet<PageId>,
 }
 
 impl Coordinator {
-  fn new(doc: Document, shared: Arc<Shared>, send: Sender) -> Self {
-    Self { doc, shared, send, kinds: HashMap::new(), whole: None }
+  fn new(
+    doc: Document,
+    source: (PathBuf, String),
+    shared: Arc<Shared>,
+    send: Sender,
+  ) -> Self {
+    Self {
+      doc,
+      source,
+      shared,
+      send,
+      kinds: HashMap::new(),
+      whole: None,
+      touched: HashSet::new(),
+    }
+  }
+
+  /// Reopens the document, so MuPDF releases the objects and resources
+  /// of every page drawn since: browsing 320 thumbnails of a 1370-page
+  /// book held about 200 MB. Cached display lists keep their own.
+  fn refresh(&mut self) {
+    if let Ok(mut doc) = Document::open(&self.source.0, &self.source.1) {
+      doc.share(self.doc.lists());
+      self.doc = doc;
+    }
+    self.touched.clear();
+    self.whole = None;
   }
 
   fn run(mut self) {
@@ -172,11 +205,21 @@ impl Coordinator {
 
   /// Waits for a request; drops queued bands it no longer wants and
   /// returns its on-screen and prefetch tiles not already in flight.
-  fn next(&self) -> Option<(Vec<TileKey>, Vec<TileKey>)> {
-    let mut queue = self.shared.queue.lock().ok()?;
-    while !queue.fresh && !queue.stop {
-      queue = self.shared.wake.wait(queue).ok()?;
-    }
+  fn next(&mut self) -> Option<(Vec<TileKey>, Vec<TileKey>)> {
+    let waiting = |queue: &mut Queue| !queue.fresh && !queue.stop;
+    let mut queue = loop {
+      let queue = self.shared.queue.lock().ok()?;
+      if self.touched.len() < RELOAD {
+        break self.shared.wake.wait_while(queue, waiting).ok()?;
+      }
+      let (queue, wait) =
+        self.shared.wake.wait_timeout_while(queue, IDLE, waiting).ok()?;
+      if !wait.timed_out() {
+        break queue;
+      }
+      drop(queue);
+      self.refresh();
+    };
     queue.fresh = false;
     let mut dropped = Vec::new();
     if let Ok(mut tasks) = pool().tasks.lock() {
@@ -208,6 +251,7 @@ impl Coordinator {
   fn job(&mut self, tiles: Vec<TileKey>) -> Result<Job> {
     let key = tiles[0];
     self.doc.validate(key.page)?;
+    self.touched.insert(key.page);
     let page = (key.page, key.scale, key.rotation, key.crop);
     let bounds = key.crop.apply(self.doc.pages[key.page.0].bounds);
     let matrix = page_matrix(bounds, key.scale, key.rotation);

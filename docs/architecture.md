@@ -7,9 +7,13 @@ a process-wide pool of up to four threads draws those lists. Search starts
 lazily in another worker with a separate document and bounded normalized
 indexes; the document drops after three idle seconds, releasing the MuPDF
 objects and resources a full scan loaded, and reopens only for pages whose index
-was evicted. OCR uses Tesseract in a subprocess. No MuPDF document is shared
-concurrently across threads; display lists are immutable and render on any
-thread.
+was evicted. The render coordinator likewise reopens its document after two idle
+seconds once it has drawn 64 pages, as after browsing the page overview. Panes
+hidden by a tab switch drop their search worker, cached text and display lists,
+and render coordinator; their tiles stay in the shared graphics cache, so a
+returning tab redraws without rendering. OCR uses Tesseract in a subprocess. No
+MuPDF document is shared concurrently across threads; display lists are
+immutable and render on any thread.
 
 ## Rendering
 
