@@ -50,6 +50,10 @@ impl<K: Eq + Hash + Clone, V> Cache<K, V> {
     evicted
   }
 
+  pub fn entries(&self) -> impl Iterator<Item = (&K, &V)> {
+    self.entries.iter().map(|(key, entry)| (key, &entry.value))
+  }
+
   pub fn used(&self) -> usize {
     self.used
   }

@@ -125,3 +125,18 @@ fn linewise_yank_and_operator_counts() -> Result<()> {
   );
   Ok(())
 }
+
+#[test]
+fn reverse_line_selection_has_newline() -> Result<()> {
+  let mut source = pages();
+  let mut reader = Reader::default();
+  reader.cursor.line = 1;
+  reader.visual(SelectionKind::Line);
+  reader.motion(Motion::Up, 1, false, &mut source)?;
+  reader.yank(1, '"', &mut source)?;
+  assert_eq!(
+    reader.pending_yank.take().unwrap().text,
+    "one two\ncafé Straße\n"
+  );
+  Ok(())
+}

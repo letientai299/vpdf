@@ -1,29 +1,122 @@
 # vpdf
 
-A keyboard-driven terminal PDF reader. The executable embeds MuPDF; Python is
-not a runtime dependency. Kitty graphics provide the rendered canvas.
+A keyboard-driven terminal PDF reader with continuous scrolling, Vim motions,
+glyph selection, document search, outlines, links, and session OCR. The release
+executable embeds MuPDF and fallback fonts. Python is not required.
 
-## Development
+## Install and run
 
-Install [mise][mise], then run:
+Install [mise][mise], a C/C++ compiler, Make, and libclang. On macOS, the Xcode
+command line tools provide the native build tools. Then run:
 
 ```sh
 mise trust
 mise install
-mise run hooks
-mise run check
-mise run build
+mise run install
+vpdf document.pdf
 ```
 
-`mise run install` installs the release executable at `~/.local/bin/vpdf`.
-Rustfmt uses two spaces and an 80-column target. Clippy rejects performance,
-complexity, and selected maintainability violations. Prek runs formatting,
-linting, and tests before commits. Rumdl formats and checks Markdown.
+`mise run install` builds the release binary and atomically copies it to
+`~/.local/bin/vpdf`. Put that directory on `PATH`.
+
+[Kitty][kitty] displays PDF graphics. Other terminals use extracted text;
+`--text` forces text mode. With tmux, enable `allow-passthrough on`. The reader
+uses the terminal's reported cell size for pixel placement.
+
+```sh
+vpdf --page 12 document.pdf
+vpdf text document.pdf --page 12
+vpdf search document.pdf 'attention'
+vpdf search document.pdf '\vattention(?= mechanism)'
+vpdf info document.pdf
+```
+
+Encrypted PDFs prompt without echoing the password. Batch commands accept
+`--password-stdin`; passwords are never command-line arguments. The reader
+opens PDF files for reading and does not change annotations or form values.
+
+## Reading
+
+Counts apply to motions: `10j`, `12gg`, `12G`, `2yw`. `h j k l` and arrows move
+through extracted glyphs. `w b e`, `0 ^ $`, `gg G`, and `]p [p` follow the
+plugin's word, line, document, and page motions.
+
+`Ctrl-d/u` scroll half a screen; `Ctrl-f/b` and PageDown/PageUp scroll a full
+screen. `Ctrl-e/y` and the wheel scroll rows. `zt zz zb` place the cursor at the
+top, middle, or bottom. `+ - =` zoom or fit width, `zf` fits a page, `zh zl`
+pan, and `zr` rotates. `Ctrl-o/i` move through jump history.
+
+Use `v` or `V` to select, `o` to swap ends, and `gv` to reselect. `y`, `yy`,
+`yw`, `ye`, `y$`, `yG`, `ygg`, `y]p`, and `y[p` copy character or line ranges.
+`yiw`, `yaw`, `viw`, and `vaw` address words. Selections cross pages and retain
+Unicode and line breaks. A linewise yank includes its final newline.
+
+Named registers use `"ayiw`; uppercase names append. `"+y` and `"*y` send
+selected text to the terminal clipboard through OSC 52. Clipboard acceptance
+and size limits depend on the terminal. Click, drag, and double-click move the
+cursor, select a range, and select a word. Editing keys leave the PDF unchanged.
+
+`/` and `?` search forward or backward; `n N` cycle matches, and `*` finds the
+cursor word. Literal search folds Unicode case, decomposes compatibility
+forms, collapses whitespace, and joins line-end hyphenation. Prefix `\v` for
+regular expressions. The bounded regex engine supports lookaround and
+backreferences; it is not Python's regex implementation.
+
+`gs`, `go`, and `gl` open search results, the table of contents, and links.
+Enter follows a panel item; `o` follows while retaining panel focus. The outline
+stays open after Enter. `go` focuses it again; `gq` closes a panel. Enter on the
+PDF follows a link under the cursor. Only explicitly followed HTTP/HTTPS links
+launch a browser. Other URI schemes are rejected.
+
+`gx` or `:PdfText` opens text preview; `q` returns to the rendered view. `g?`
+and F1 show the key reference. `Esc` cancels selection, search, and OCR. `q`,
+`:q`, or `:bd` exits. Space remains unmapped.
+
+## Commands
+
+- `:PdfPage 12` or `:PdfPage iv`: physical page or PDF label.
+- `:PdfReload`: reread the source and invalidate document caches.
+- `:PdfInfo`: document, cache, transfer, and last-tile timing information.
+- `:PdfPassword`: prompt for a password and reopen the document.
+- `:PdfOcr [language]`: recognize the current page with [Tesseract][ocr].
+- `:PdfReadme`: show the key reference.
+
+OCR requires the `tesseract` executable and the requested language data. OCR
+runs in a separate process, is cancellable, and stays in memory. Word boxes
+provide approximate character positions. Existing PDF OCR text is available
+without Tesseract.
+
+Neovim's splits, buffers, tabs, notes, and plugin installation commands belong
+to the editor. This standalone reader has no Neovim integration.
+
+## Development
+
+```sh
+mise run hooks
+mise run check
+mise run test:corpus
+mise run test:ocr
+```
+
+Rustfmt uses two spaces and an 80-column target; a separate check enforces the
+source width. Clippy rejects performance, complexity, and selected
+maintainability violations. Prek runs formatting, linting, and tests before
+commits. Rumdl formats and checks Markdown. The corpus tasks download public
+PDFs into the local cache and verify their recorded SHA-256 hashes. OCR tests
+require Tesseract; ordinary tests do not.
+
+See [architecture][architecture] for worker ownership and performance limits.
+The [key reference][keys] is also embedded in the executable.
 
 ## License
 
 AGPL-3.0-or-later. MuPDF is linked into the executable and carries its own
-copyright notices. See [MuPDF licensing][mupdf-license].
+copyright notices. See [MuPDF licensing][mupdf-license]. Bundled fallback fonts
+carry their upstream licenses in the dependency source distributions.
 
 [mise]: https://mise.jdx.dev/
+[kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
+[ocr]: https://tesseract-ocr.github.io/
 [mupdf-license]: https://mupdf.readthedocs.io/en/latest/license.html
+[architecture]: docs/architecture.md
+[keys]: src/help.txt

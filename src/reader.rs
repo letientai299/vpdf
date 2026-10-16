@@ -81,6 +81,12 @@ impl Default for Reader {
 }
 
 impl Reader {
+  pub fn clear_history(&mut self) {
+    self.history.clear();
+    self.future.clear();
+    self.last_selection = None;
+  }
+
   pub fn remember(&mut self) {
     let location = Location { cursor: self.cursor, scroll: self.scroll };
     if self.history.last().is_none_or(|p| p.cursor != self.cursor) {

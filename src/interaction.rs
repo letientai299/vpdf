@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 impl App {
   pub fn resize(&mut self) -> Result<()> {
-    self.screen = terminal::size()?;
+    self.screen = terminal::size().unwrap_or(self.screen);
     self.layout.screen = self.screen;
     self.layout.screen.columns = self.screen.columns.saturating_sub(self.left);
     self.layout.reflow(&self.doc.pages);

@@ -27,14 +27,28 @@ pub struct App {
   pub left: u16,
   pub quit: bool,
   pub render_ms: f64,
+  pub search: crate::find::Search,
+  pub prompt: Option<crate::prompt::Prompt>,
+  pub panel: Option<crate::panel::Panel>,
+  pub preview: Option<bool>,
+  pub ocr: Option<crate::ocr::OcrJob>,
+  pub reset_images: bool,
   pub(crate) requested: Vec<TileKey>,
   pub(crate) last_click: Option<(Instant, Position)>,
 }
 
 impl App {
   pub fn new(path: &Path, password: &str, text_mode: bool) -> Result<Self> {
+    Self::with_screen(path, password, text_mode, terminal::size()?)
+  }
+
+  pub fn with_screen(
+    path: &Path,
+    password: &str,
+    text_mode: bool,
+    screen: Screen,
+  ) -> Result<Self> {
     let doc = Document::open(path, password)?;
-    let screen = terminal::size()?;
     let layout = Layout::new(&doc.pages, screen);
     Ok(Self {
       doc,
@@ -50,6 +64,12 @@ impl App {
       left: 0,
       quit: false,
       render_ms: 0.0,
+      search: crate::find::Search::default(),
+      prompt: None,
+      panel: None,
+      preview: None,
+      ocr: None,
+      reset_images: false,
       requested: Vec::new(),
       last_click: None,
     })
@@ -63,8 +83,17 @@ pub fn view(
   page: usize,
 ) -> Result<()> {
   anyhow::ensure!(io::stdout().is_terminal(), "TUI requires a terminal");
-  let mut app = App::new(path, password, text)?;
   let _terminal = Terminal::enter()?;
+  let mut secret = password.to_owned();
+  let mut app = loop {
+    match App::new(path, &secret, text) {
+      Ok(app) => break app,
+      Err(error) if error.to_string() == "PDF password required" => {
+        secret = crate::prompt::password()?;
+      }
+      Err(error) => return Err(error),
+    }
+  };
   app.reader.edge(
     PageId(page.saturating_sub(1).min(app.doc.pages.len() - 1)),
     false,
@@ -75,6 +104,9 @@ pub fn view(
   let mut dirty = true;
   while !app.quit {
     dirty |= app.raster_updates(&mut out)?;
+    dirty |= app.search_updates()?;
+    dirty |= app.ocr_updates()?;
+    app.clipboard(&mut out)?;
     if dirty {
       app.draw(&mut out)?;
       dirty = false;
@@ -83,17 +115,17 @@ pub fn view(
       continue;
     }
     let result = match event::read()? {
-      Event::Key(key) if key.kind != KeyEventKind::Release => {
-        if let Some(input) = app.keys.feed(key) {
-          app.navigate(input).and_then(|done| {
-            if !done {
-              app.viewport(input)?;
-            }
-            Ok(())
-          })
-        } else {
-          Ok(())
+      Event::Key(key) if key.kind != KeyEventKind::Release => app.key(key),
+      Event::Paste(text) => {
+        if let Some(prompt) = &mut app.prompt {
+          prompt.text.extend(
+            text
+              .chars()
+              .filter(|c| !c.is_control())
+              .take(4096usize.saturating_sub(prompt.text.len())),
+          );
         }
+        Ok(())
       }
       Event::Resize(_, _) => app.resize(),
       Event::Mouse(mouse) => app.mouse(mouse),

@@ -1,0 +1,40 @@
+h j k l / arrows: glyph motions
+w b e: word motions
+0 ^ $: line motions
+[count]gg/G: page jump
+]p [p: next / previous page
+Ctrl-d/u: half-screen scroll
+Ctrl-f/b: full-screen scroll
+Ctrl-e/y: row scroll
+zt zz zb: cursor placement
+v V: character / line selection
+o: swap selection ends
+gv: reselect
+y yy yw ye y$: yank
+viw vaw yiw yaw: word objects
+"a: named register; "+: clipboard
+/ ?: forward / backward search
+n N: next / previous match
+*: find cursor word
+gs: search results
+go: table of contents
+gl Enter: links / follow link
+gq: close panel
+Ctrl-o/i: jump back / forward
++ - =: zoom in / out / fit width
+zf: fit page
+zh zl: horizontal pan
+zr: rotate clockwise
+gx: text preview; q: return
+:PdfPage <label>: jump
+:PdfReload: reload file
+:PdfInfo: cache and latency info
+:PdfOcr [lang]: OCR page
+:PdfPassword: unlock document
+:PdfText: text preview
+:PdfReadme: key reference
+Esc: clear selection / cancel
+Left click / drag: cursor / select
+Double click: select word
+Mouse wheel: scroll
+q or :q: quit

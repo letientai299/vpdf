@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 use vpdf::{Result, document::Document, search, text::PageId};
 
@@ -11,6 +12,8 @@ struct Args {
   file: Option<PathBuf>,
   #[arg(long)]
   text: bool,
+  #[arg(long, global = true)]
+  password_stdin: bool,
   #[arg(long, default_value_t = 1)]
   page: usize,
 }
@@ -30,30 +33,37 @@ enum Command {
 }
 
 fn run(args: Args) -> Result<()> {
+  let mut password = String::new();
+  if args.password_stdin {
+    io::stdin().lock().read_line(&mut password)?;
+    password = password.trim_end_matches(['\n', '\r']).to_owned();
+  }
+  let mut out = io::BufWriter::new(io::stdout());
   let Some(command) = args.command else {
     let file = args.file.ok_or_else(|| anyhow::anyhow!("PDF path required"))?;
     let text = args.text
       || std::env::var_os("KITTY_WINDOW_ID").is_none()
         && std::env::var("TERM").is_ok_and(|term| !term.contains("kitty"));
-    return vpdf::app::view(&file, "", text, args.page);
+    return vpdf::app::view(&file, &password, text, args.page);
   };
   match command {
     Command::Text { file, page } => {
       anyhow::ensure!(page > 0, "Page numbers start at one");
-      let mut doc = Document::open(&file, "")?;
-      println!("{}", doc.text(PageId(page - 1))?.plain());
+      let mut doc = Document::open(&file, &password)?;
+      writeln!(out, "{}", doc.text(PageId(page - 1))?.plain())?;
     }
     Command::Info { file } => {
-      let doc = Document::open(&file, "")?;
-      println!(
+      let doc = Document::open(&file, &password)?;
+      writeln!(
+        out,
         "{}",
         serde_json::to_string_pretty(&serde_json::json!({
           "pages": doc.pages, "outline": doc.outline,
         }))?
-      );
+      )?;
     }
     Command::Search { file, query } => {
-      let mut doc = Document::open(&file, "")?;
+      let mut doc = Document::open(&file, &password)?;
       let pattern = search::compile(&query, false)?;
       let mut remaining = 10_000;
       for page in 0..doc.pages.len() {
@@ -62,7 +72,7 @@ fn run(args: Args) -> Result<()> {
         let hits = index.matches(&pattern, remaining.min(1000))?;
         remaining -= hits.len();
         for hit in hits {
-          println!("{}", serde_json::to_string(&hit)?);
+          writeln!(out, "{}", serde_json::to_string(&hit)?)?;
         }
         if remaining == 0 {
           break;
@@ -70,11 +80,18 @@ fn run(args: Args) -> Result<()> {
       }
     }
   }
+  out.flush()?;
   Ok(())
 }
 
 fn main() {
   if let Err(error) = run(Args::parse()) {
+    if error
+      .downcast_ref::<io::Error>()
+      .is_some_and(|e| e.kind() == io::ErrorKind::BrokenPipe)
+    {
+      return;
+    }
     eprintln!("vpdf: {error:#}");
     std::process::exit(1);
   }

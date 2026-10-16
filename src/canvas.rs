@@ -8,6 +8,10 @@ use std::io::Write;
 
 impl App {
   pub fn raster_updates(&mut self, out: &mut impl Write) -> Result<bool> {
+    if self.reset_images {
+      terminal::graphics(out, "a=d,d=A,q=2", "")?;
+      self.reset_images = false;
+    }
     let mut changed = false;
     for result in self.worker.results.try_iter() {
       match result {
@@ -51,6 +55,20 @@ impl App {
   }
 
   pub fn marks(&mut self, out: &mut impl Write) -> Result<()> {
+    if !self.search.hidden {
+      let visible = self.layout.visible(self.reader.scroll);
+      let ranges: Vec<_> = self
+        .search
+        .hits
+        .iter()
+        .filter(|hit| visible.contains(&hit.first.page.0))
+        .take(300)
+        .map(|hit| (hit.first, hit.last))
+        .collect();
+      for (first, last) in ranges {
+        self.mark_range(first, last, false, [255, 190, 30, 90], out)?;
+      }
+    }
     if let Some(selection) = self.reader.selection {
       self.mark_range(
         selection.anchor,
@@ -91,6 +109,12 @@ impl App {
       }
       let text = self.doc.text(PageId(page))?;
       for (line, row) in text.lines.iter().enumerate() {
+        if page == first.page.0 && line < first.line {
+          continue;
+        }
+        if page == last.page.0 && line > last.line {
+          break;
+        }
         let mut bounds: Option<Bounds> = None;
         for (glyph, ch) in row.glyphs.iter().enumerate() {
           let pos = Position { page: PageId(page), line, glyph };
@@ -126,23 +150,6 @@ impl App {
     Ok(())
   }
 
-  pub fn text_canvas(&mut self, out: &mut impl Write) -> Result<()> {
-    let text = self.doc.text(self.reader.cursor.page)?;
-    let height = self.screen.rows.saturating_sub(1) as usize;
-    let start = self.reader.cursor.line.saturating_sub(height / 2);
-    for (row, line) in text.lines.iter().skip(start).take(height).enumerate() {
-      let marker =
-        if start + row == self.reader.cursor.line { "> " } else { "  " };
-      terminal::line(
-        out,
-        row as u16,
-        &format!("{marker}{}", line.text()),
-        self.screen.columns,
-      )?;
-    }
-    Ok(())
-  }
-
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
     write!(out, "\x1b[?2026h\x1b[0m")?;
     for row in 0..self.screen.rows {
@@ -154,6 +161,10 @@ impl App {
     } else {
       self.canvas(out)?;
     }
+    self.track_outline();
+    if let Some(panel) = &self.panel {
+      panel.draw(out, self.left, self.screen.rows)?;
+    }
     let page = self.reader.cursor.page.0;
     let status = format!(
       " {} / {} [{}]  {:.0}%  {}",
@@ -163,6 +174,7 @@ impl App {
       self.layout.zoom * 100.0,
       self.reader.message
     );
+    let status = self.prompt.as_ref().map_or(status, |p| p.display());
     write!(out, "\x1b[7m")?;
     terminal::line(out, self.screen.rows - 1, &status, self.screen.columns)?;
     write!(out, "\x1b[0m\x1b[?2026l")?;

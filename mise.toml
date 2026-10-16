@@ -39,3 +39,17 @@ run = "prek install"
 description = "Install the optimized executable"
 depends = ["build"]
 run = "sh scripts/install.sh"
+
+[tasks.corpus]
+description = "Fetch and verify public test PDFs"
+run = "sh scripts/corpus.sh"
+
+[tasks."test:corpus"]
+depends = ["corpus"]
+env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
+run = "cargo test --locked -- --ignored --skip real_ocr_and_cancel"
+
+[tasks."test:ocr"]
+depends = ["corpus"]
+env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
+run = "cargo test --locked --test workers real_ocr_and_cancel -- --ignored"

@@ -142,6 +142,10 @@ impl Document {
     Ok(())
   }
 
+  pub fn seeds(&self) -> Vec<(PageId, Arc<Text>)> {
+    self.ocr.entries().map(|(page, text)| (*page, Arc::clone(text))).collect()
+  }
+
   pub fn cache_bytes(&self) -> usize {
     self.texts.used() + self.ocr.used()
   }
