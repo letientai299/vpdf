@@ -398,6 +398,7 @@ impl App {
       Action::YankLine => {
         self.reader.yank_lines(count, input.register, &mut self.doc)?;
       }
+      Action::YankRaw => self.reader.yank_raw(count, &mut self.doc)?,
       Action::Visual(kind) => self.reader.visual(kind),
       Action::Object(kind, around) => {
         self.reader.select_object(kind, around, count, &mut self.doc)?;
@@ -423,7 +424,7 @@ impl App {
     }
     if matches!(
       input.action,
-      Action::Yank | Action::YankLine | Action::Visual(_)
+      Action::Yank | Action::YankLine | Action::YankRaw | Action::Visual(_)
     ) || (self.reader.selection.is_none()
       && copying
       && matches!(input.action, Action::Motion(_) | Action::Object(..)))

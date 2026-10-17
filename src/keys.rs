@@ -48,6 +48,8 @@ pub enum Action {
   YankLine,
   /// `yp`: the document's full path.
   YankPath,
+  /// `yY`: lines as laid out, without joining.
+  YankRaw,
   Object(crate::objects::Object, bool),
   Visual(SelectionKind),
   Cursor,
@@ -135,8 +137,10 @@ impl Keys {
     };
     if self.prefix == "y" {
       self.prefix.clear();
-      if token == "p" {
-        return Some(self.finish(Action::YankPath));
+      match token.as_str() {
+        "p" => return Some(self.finish(Action::YankPath)),
+        "Y" => return Some(self.finish(Action::YankRaw)),
+        _ => {}
       }
     }
     if token == "\"" && self.prefix.is_empty() {
@@ -175,7 +179,7 @@ impl Keys {
     if let Some(action) = binding(&self.prefix) {
       let register = self.register;
       let input = self.finish(action);
-      // `y` starts its operator now and still takes `p`.
+      // `y` starts its operator now and still takes `p` or `Y`.
       if action == Action::Yank
         && matches!(grammar, Grammar::Normal | Grammar::Cursor)
       {
@@ -334,6 +338,7 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("y", Action::Yank, "yank"),
   ("Y", Action::YankLine, "yank line"),
   ("yp", Action::YankPath, "yank file path"),
+  ("yY", Action::YankRaw, "yank lines as laid out"),
   ("iw", Action::Object(O::Word, false), "inner word"),
   ("iW", Action::Object(O::BigWord, false), "inner WORD"),
   ("is", Action::Object(O::Sentence, false), "inner sentence"),
@@ -655,6 +660,7 @@ mod tests {
       (Grammar::Cursor, "yp", vec![yank('"'), path('"')]),
       (Grammar::Normal, "\"ayp", vec![None, None, yank('a'), path('a')]),
       (Grammar::Normal, "yy", vec![yank('"'), yank('"')]),
+      (Grammar::Cursor, "yY", vec![yank('"'), Some((Action::YankRaw, '"'))]),
       (Grammar::Objects, "yp", vec![yank('"'), None]),
       (Grammar::Other, "yp", vec![yank('"'), None]),
     ];

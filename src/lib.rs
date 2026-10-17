@@ -52,6 +52,7 @@ mod prime;
 pub mod prompt;
 pub mod reader;
 pub mod recent;
+mod reflow;
 pub mod region;
 pub mod render_worker;
 pub mod search_worker;

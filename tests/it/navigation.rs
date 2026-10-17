@@ -114,7 +114,7 @@ fn linewise_yank_and_operator_counts() -> Result<()> {
   reader.yank_lines(2, '"', &mut source)?;
   assert_eq!(
     reader.pending_yank.take().unwrap().text,
-    "one two\ncafé Straße\n"
+    "one two\n\ncafé Straße\n"
   );
   assert_eq!(reader.cursor, Position::default());
   // `Y` in visual mode yanks the selected lines and arms nothing.

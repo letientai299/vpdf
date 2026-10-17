@@ -2,6 +2,7 @@ use crate::Result;
 use crate::document::MIB;
 use crate::motion::{covers, range};
 use crate::reader::{Operator, Reader, SelectionKind, TextSource, Yank};
+use crate::reflow::{Join, joins, reflow};
 use crate::text::{PageId, Position};
 use anyhow::ensure;
 use std::sync::Arc;
@@ -23,16 +24,46 @@ impl Reader {
       );
     }
     if let Some(op) = self.operator.take() {
-      let first = self.cursor;
-      for _ in 1..count.saturating_mul(op.count).min(10_000) {
-        self.step(1, true, source)?;
-      }
-      self.yank_range(first, self.cursor, true, op.register, source)?;
-      self.cursor = first;
+      self.yank_count(op, count, true, source)?;
     } else {
       self.operator = Some(Operator { count, register });
       self.message = "y …".into();
     }
+    Ok(())
+  }
+
+  /// `yY`: yanks lines as laid out, without joining them.
+  pub fn yank_raw(
+    &mut self,
+    count: usize,
+    source: &mut impl TextSource,
+  ) -> Result<()> {
+    let Some(op) = self.operator.take() else { return Ok(()) };
+    self.yank_count(op, count, false, source)
+  }
+
+  /// Yanks `count` times the operator's lines from the cursor.
+  fn yank_count(
+    &mut self,
+    op: Operator,
+    count: usize,
+    joined: bool,
+    source: &mut impl TextSource,
+  ) -> Result<()> {
+    let first = self.cursor;
+    for _ in 1..count.saturating_mul(op.count).min(10_000) {
+      self.step(1, true, source)?;
+    }
+    let last = self.cursor;
+    self.cursor = first;
+    if !joined {
+      return self.yank_range(first, last, true, op.register, source);
+    }
+    let range = range(first, last);
+    let lines = covered_lines(range, true, source)?;
+    let text = reflow(&lines, &context(range, source)?);
+    self.store(op.register, text + "\n")?;
+    self.end_selection();
     Ok(())
   }
 
@@ -64,30 +95,9 @@ impl Reader {
     register: char,
     source: &mut impl TextSource,
   ) -> Result<()> {
-    let range = range(first, last);
-    let (first, last) = range;
-    let mut output = String::new();
-    for page in first.page.0..=last.page.0 {
-      let text = source.page_text(PageId(page))?;
-      let skip = if page == first.page.0 { first.line } else { 0 };
-      for (line, row) in text.lines.iter().enumerate().skip(skip) {
-        if page == last.page.0 && line > last.line {
-          break;
-        }
-        if !output.is_empty() {
-          output.push('\n');
-        }
-        let at = |glyph| Position { page: PageId(page), line, glyph };
-        let glyphs = row.glyphs.iter().enumerate();
-        for (_, ch) in glyphs.filter(|(g, _)| covers(range, linewise, at(*g))) {
-          ensure!(
-            output.len() + ch.ch.len_utf8() < 8 * MIB,
-            "Selection exceeds 8 MiB"
-          );
-          output.push(ch.ch);
-        }
-      }
-    }
+    let lines = covered_lines(range(first, last), linewise, source)?;
+    let mut output =
+      lines.into_iter().map(|(_, line)| line).collect::<Vec<_>>().join("\n");
     if linewise {
       output.push('\n');
     }
@@ -126,4 +136,53 @@ impl Reader {
   ) -> Result<()> {
     self.select_object(crate::objects::Object::Word, around, 1, source)
   }
+}
+
+/// Text of each line `range` covers, with how it joins the previous.
+fn covered_lines(
+  range: (Position, Position),
+  linewise: bool,
+  source: &mut impl TextSource,
+) -> Result<Vec<(Join, String)>> {
+  let (first, last) = range;
+  let mut lines = Vec::new();
+  let mut size = 0;
+  for page in first.page.0..=last.page.0 {
+    let text = source.page_text(PageId(page))?;
+    let skip = if page == first.page.0 { first.line } else { 0 };
+    let end = if page == last.page.0 {
+      (last.line + 1).min(text.lines.len())
+    } else {
+      text.lines.len()
+    };
+    let joins = joins(&text, skip..end);
+    for (line, row) in text.lines.iter().enumerate().take(end).skip(skip) {
+      let at = |glyph| Position { page: PageId(page), line, glyph };
+      let glyphs = row.glyphs.iter().enumerate();
+      let output: String = glyphs
+        .filter(|(g, _)| covers(range, linewise, at(*g)))
+        .map(|(_, ch)| ch.ch)
+        .collect();
+      if lines.is_empty() && output.is_empty() {
+        continue;
+      }
+      size += output.len() + 1;
+      ensure!(size < 8 * MIB, "Selection exceeds 8 MiB");
+      lines.push((joins[line - skip], output));
+    }
+  }
+  Ok(lines)
+}
+
+/// Text of the pages `range` touches, where split words show whole.
+fn context(
+  (first, last): (Position, Position),
+  source: &mut impl TextSource,
+) -> Result<String> {
+  let mut context = String::new();
+  for page in first.page.0..=last.page.0 {
+    context += &source.page_text(PageId(page))?.plain();
+    context.push('\n');
+  }
+  Ok(context)
 }

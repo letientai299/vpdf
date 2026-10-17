@@ -586,6 +586,24 @@ fn transitions() -> Result<()> {
   measure("App::blur", || app.blur().expect("pane blur"))
 }
 
+/// `yy` joining a prose page whole, and three of its lines.
+fn reflow() -> Result<()> {
+  let mut doc = Document::open(&corpus("paper.pdf")?, "")?;
+  let lines = doc.text(PageId(1))?.lines.len();
+  for (name, count) in
+    [("yy paper p2 whole", lines), ("yy paper p2 3 lines", 3)]
+  {
+    measure(name, || {
+      let mut reader = vpdf::reader::Reader::default();
+      reader.cursor.page = PageId(1);
+      reader.yank(1, '"', &mut doc).expect("operator");
+      reader.yank(count, '"', &mut doc).expect("paper lines");
+      black_box(reader.pending_yank);
+    })?;
+  }
+  Ok(())
+}
+
 fn lexical_objects() -> Result<()> {
   let mut app = paper(false)?;
   let text = app.doc.text(PageId(0))?;
@@ -654,6 +672,7 @@ type Case = fn() -> Result<()>;
 const CASES: &[(&str, Case)] = &[
   ("figures", figures),
   ("lexical objects", lexical_objects),
+  ("reflow", reflow),
   ("clean", clean),
   ("clean marks", clean_marks),
   ("text_canvas", text_canvas),

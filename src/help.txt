@@ -55,6 +55,8 @@ gv: reselect
 <Esc> / yank: return to V entry mode
 C <Esc>: return to N when idle
 y yy yw ye y$: yank
+yy Y: join wrapped lines; rejoin hyphenated words
+yY: yank lines as laid out
 yp: yank full file path
 "" "+ "*: system clipboard
 "a "A: named register / append

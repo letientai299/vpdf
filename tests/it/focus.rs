@@ -286,6 +286,43 @@ fn yp_yanks_file_path() -> Result<()> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
+fn yy_joins_prose_and_keeps_code() -> Result<()> {
+  use vpdf::reader::Reader;
+  let cases = [
+    ("paper.pdf", "The dominant sequence", false, "recurrent or convolutional"),
+    ("paper.pdf", "The dominant sequence", true, "recurrent or\nconvolutional"),
+    ("book.pdf", ">>> a = 'banana'", false, "'banana'\n>>> b = 'banana'\n"),
+    ("book.pdf", ">>> a = 'banana'", true, "'banana'\n>>> b = 'banana'\n"),
+  ];
+  for (name, start, raw, want) in cases {
+    let mut doc = vpdf::document::Document::open(&file(name)?, "")?;
+    let mut reader = Reader::default();
+    reader.cursor = (0..doc.pages.len())
+      .find_map(|page| {
+        let text = doc.text(PageId(page)).ok()?;
+        let line =
+          text.lines.iter().position(|l| l.text().starts_with(start))?;
+        Some(Position { page: PageId(page), line, glyph: 0 })
+      })
+      .unwrap();
+    reader.yank(1, '"', &mut doc)?;
+    if raw {
+      reader.yank_raw(3, &mut doc)?;
+    } else {
+      reader.yank(3, '"', &mut doc)?;
+    }
+    let text = reader.pending_yank.take().unwrap().text;
+    assert!(text.contains(want), "{name} raw={raw}: {text:?}");
+    assert_eq!(
+      text.lines().count(),
+      if raw || start.starts_with(">>>") { 3 } else { 1 }
+    );
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
 fn failed_activation_preserves_view() -> Result<()> {
   let mut session = Session::new(None);
   session.open(&file("paper.pdf")?, true, screen())?;
