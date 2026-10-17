@@ -140,6 +140,7 @@ impl App {
     self.layout.zoom = other.layout.zoom;
     self.layout.rotation = other.layout.rotation;
     self.layout.crop = other.layout.crop;
+    self.doc.margins = other.doc.margins;
     // A text preview (`gx`) is the other pane's, not the document's mode.
     self.text_mode = other.preview.unwrap_or(other.text_mode);
     self.layout.reflow(&self.doc.pages);

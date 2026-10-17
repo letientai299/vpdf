@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use vpdf::Result;
-use vpdf::document::Document;
+use vpdf::document::{Document, Handle};
 use vpdf::text::PageId;
 
 fn key(title: &str) -> String {
@@ -19,9 +19,13 @@ fn inferred_outline_matches_authored_one() -> Result<()> {
   for (name, recall_floor, precision_floor) in
     [("paper.pdf", 0.95, 0.75), ("book.pdf", 0.95, 0.7)]
   {
-    let mut doc = Document::open(&root.join(name), "")?;
-    let pages = (0..doc.pages.len())
-      .map(|page| doc.text(PageId(page)).map(|t| vpdf::outline::summarize(&t)))
+    let doc = Document::open(&root.join(name), "")?;
+    // The text the inference worker reads.
+    let handle = Handle::open(&root.join(name), "")?;
+    let pages = (0..handle.pages)
+      .map(|page| {
+        handle.text(PageId(page)).map(|t| vpdf::outline::summarize(&t))
+      })
       .collect::<Result<Vec<_>>>()?;
     let inferred = vpdf::outline::infer(&pages);
     let real: Vec<_> = doc.outline.iter().map(|h| key(&h.title)).collect();

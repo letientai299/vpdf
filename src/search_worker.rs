@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::cache::Cache;
-use crate::document::{Document, MIB, extract};
+use crate::document::{Handle, MIB};
 use crate::search::{self, Hit, Index};
 use crate::text::{PageId, Text};
 use std::path::{Path, PathBuf};
@@ -218,18 +218,18 @@ struct Source {
   path: PathBuf,
   password: String,
   pages: usize,
-  doc: Option<Document>,
+  doc: Option<Handle>,
   /// OCR text, which replaces a page's extracted text.
   seeds: Vec<(PageId, Arc<Text>)>,
 }
 
 impl Source {
   fn open(path: PathBuf, password: String) -> Result<Self> {
-    let doc = Document::open(&path, &password)?;
+    let doc = Handle::open(&path, &password)?;
     Ok(Self {
       path,
       password,
-      pages: doc.pages.len(),
+      pages: doc.pages,
       doc: Some(doc),
       seeds: Vec::new(),
     })
@@ -243,10 +243,9 @@ impl Source {
     }
     let doc = match &mut self.doc {
       Some(doc) => doc,
-      None => self.doc.insert(Document::open(&self.path, &self.password)?),
+      None => self.doc.insert(Handle::open(&self.path, &self.password)?),
     };
-    doc.validate(page)?;
-    Ok(Arc::new(extract(&doc.native.load_page(page.0 as i32)?)?))
+    Ok(Arc::new(doc.text(page)?))
   }
 
   fn seed(&mut self, page: PageId, text: Arc<Text>) {

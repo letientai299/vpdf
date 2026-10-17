@@ -1,9 +1,15 @@
 //! Single hot functions, timed in isolation, so a change is measured
 //! without the noise of whole-reader runs. Arguments filter cases by name.
+use mupdf::IRect;
 use std::hint::black_box;
 use std::io::{self, Write};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use vpdf::Result;
+use vpdf::app::App;
+use vpdf::document::{Document, Handle};
+use vpdf::layout::{Screen, page_matrix, transform};
+use vpdf::text::PageId;
 
 const SAMPLES: usize = 31;
 
@@ -61,19 +67,15 @@ fn clean_marks() -> Result<()> {
 
 /// Text-mode frame; needs `VPDF_CORPUS`.
 fn text_canvas() -> Result<()> {
-  let Some(root) = std::env::var_os("VPDF_CORPUS") else {
-    writeln!(io::stdout(), "text_canvas: VPDF_CORPUS unset, skipped")?;
-    return Ok(());
-  };
-  let screen = vpdf::layout::Screen {
+  let screen = Screen {
     columns: 120,
     rows: 40,
     cell_width: 8,
     cell_height: 16,
     origin: (0, 0),
   };
-  let path = std::path::Path::new(&root).join("paper.pdf");
-  let mut app = vpdf::app::App::with_screen(&path, "", true, screen)?;
+  let path = corpus("paper.pdf")?;
+  let mut app = App::with_screen(&path, "", true, screen)?;
   // Main's centering draws this same view.
   let (rows, columns) = (usize::from(screen.rows), usize::from(screen.columns));
   let page = app.reader.cursor.page;
@@ -134,6 +136,89 @@ fn hover() -> Result<()> {
   measure("Pointer::hover", || black_box(&mut pointer).hover())
 }
 
+/// A file `mise corpus` fetches; `mise bench:micro` sets `VPDF_CORPUS`.
+fn corpus(name: &str) -> Result<PathBuf> {
+  let root = std::env::var_os("VPDF_CORPUS").ok_or_else(|| {
+    anyhow::anyhow!("VPDF_CORPUS unset; run mise bench:micro")
+  })?;
+  let path = PathBuf::from(root).join(name);
+  anyhow::ensure!(path.is_file(), "{name} missing; run mise corpus");
+  Ok(path)
+}
+
+/// One whole draw of a scan 1913 pixels wide: the work a band of
+/// another scan in between repeats.
+fn scan_whole() -> Result<()> {
+  let mut doc = Document::open(&corpus("ocr.pdf")?, "")?;
+  let bounds = doc.pages[0].bounds;
+  let matrix = page_matrix(bounds, 900, 0);
+  let rect = transform(bounds, &matrix);
+  let area = IRect::new(0, 0, rect.x1.ceil() as i32, rect.y1.ceil() as i32);
+  let list = doc.display(PageId(0))?;
+  measure("tiles::draw whole scan", || {
+    drop(black_box(vpdf::tiles::draw(&list, &matrix, area)));
+  })
+}
+
+/// Interpreting a book page, as a visible page `zc` evicted does again.
+fn page_list() -> Result<()> {
+  let doc = Document::open(&corpus("book.pdf")?, "")?;
+  measure("display list book p100", || {
+    let page = doc.native.load_page(99);
+    drop(black_box(page.and_then(|page| page.to_display_list(true))));
+  })
+}
+
+/// `zc` sampling 24 pages of a book for its margins.
+fn crop_margins() -> Result<()> {
+  let mut doc = Document::open(&corpus("book.pdf")?, "")?;
+  vpdf::crop::margins(&mut doc)?;
+  measure("crop::margins book", || {
+    drop(black_box(vpdf::crop::margins(&mut doc)));
+  })
+}
+
+/// `zc` on, then off, at page 100 of a book.
+fn crop_toggle() -> Result<()> {
+  let screen = Screen {
+    columns: 120,
+    rows: 50,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut app = App::with_screen(&corpus("book.pdf")?, "", false, screen)?;
+  app.command("page 100")?;
+  measure("App::toggle_crop on, off", || {
+    drop(black_box(app.toggle_crop()));
+    drop(black_box(app.toggle_crop()));
+  })
+}
+
+/// Every page's bounds and label, the outline, and the title.
+fn document_open() -> Result<()> {
+  let path = corpus("book.pdf")?;
+  measure("Document::open book", || {
+    drop(black_box(Document::open(&path, "")));
+  })
+}
+
+/// The native document and page count, as workers open it.
+fn handle_open() -> Result<()> {
+  let path = corpus("book.pdf")?;
+  measure("Handle::open book", || {
+    drop(black_box(Handle::open(&path, "")));
+  })
+}
+
+/// One page's bounds, which the render coordinator reads per band.
+fn handle_bounds() -> Result<()> {
+  let doc = Handle::open(&corpus("book.pdf")?, "")?;
+  measure("Handle::bounds book p200", || {
+    drop(black_box(doc.bounds(PageId(199))));
+  })
+}
+
 type Case = fn() -> Result<()>;
 
 const CASES: &[(&str, Case)] = &[
@@ -142,16 +227,29 @@ const CASES: &[(&str, Case)] = &[
   ("text_canvas", text_canvas),
   ("route", route),
   ("hover", hover),
+  ("scan whole", scan_whole),
+  ("page list", page_list),
+  ("crop margins", crop_margins),
+  ("crop toggle", crop_toggle),
+  ("document open", document_open),
+  ("handle open", handle_open),
+  ("handle bounds", handle_bounds),
 ];
 
 fn main() -> Result<()> {
   // Cargo passes `--bench`; other arguments name cases.
   let filters: Vec<String> =
     std::env::args().skip(1).filter(|arg| !arg.starts_with("--")).collect();
+  let mut failed = 0;
   for (name, case) in CASES {
     if filters.is_empty() || filters.iter().any(|f| name.contains(f.as_str())) {
-      case()?;
+      // One failing case leaves the others' timings.
+      if let Err(error) = case() {
+        writeln!(io::stderr(), "{name}: {error:#}")?;
+        failed += 1;
+      }
     }
   }
+  anyhow::ensure!(failed == 0, "{failed} cases failed");
   Ok(())
 }

@@ -73,6 +73,45 @@ fn cropped_margins_keep_all_ink() -> Result<()> {
   Ok(())
 }
 
+/// `zc` on, off, and on again samples margins once, so only the first
+/// toggle can evict the visible pages' display lists.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn crop_samples_once() -> Result<()> {
+  use vpdf::app::App;
+  use vpdf::layout::Screen;
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 60,
+    rows: 50,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  app.command("page 100")?;
+  let lists = app.doc.lists();
+  // Display lists a frame interprets, as the render worker shares them.
+  let frame = |app: &mut App| -> Result<usize> {
+    let mut interpreted = 0;
+    for page in app.layout.visible(app.reader.scroll).map(PageId) {
+      interpreted += usize::from(lists.lock().unwrap().get(&page).is_none());
+      app.doc.display(page)?;
+    }
+    Ok(interpreted)
+  };
+  frame(&mut app)?;
+  let mut interpreted = Vec::new();
+  for _ in 0..3 {
+    app.toggle_crop()?;
+    interpreted.push(frame(&mut app)?);
+  }
+  // The first toggle samples, which shows the count sees evictions.
+  assert!(interpreted[0] > 0);
+  assert_eq!(interpreted[1..], [0, 0]);
+  Ok(())
+}
+
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn inline_page_fits_requested_cells() -> Result<()> {

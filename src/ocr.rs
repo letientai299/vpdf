@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::app::App;
-use crate::document::{Document, GLYPH_LIMIT, MIB};
+use crate::document::{GLYPH_LIMIT, Handle, MIB};
 use crate::layout::page_matrix;
 use crate::text::{Bounds, Glyph, Line, PageId, Text};
 use mupdf::{Colorspace, ImageFormat};
@@ -62,9 +62,8 @@ fn recognize(
       .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '+' | '-')),
     "Invalid OCR language"
   );
-  let doc = Document::open(path, password)?;
-  doc.validate(page)?;
-  let bounds = doc.pages[page.0].bounds;
+  let doc = Handle::open(path, password)?;
+  let bounds = doc.bounds(page)?;
   let scale =
     2.5_f32.min((16_000_000.0 / (bounds.width() * bounds.height())).sqrt());
   let scale_key = (scale * 1024.0) as u32;

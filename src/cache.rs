@@ -27,14 +27,22 @@ impl<K: Eq + Hash + Clone, V> Cache<K, V> {
   }
 
   pub fn insert(&mut self, key: K, value: V, weight: usize) -> Vec<K> {
-    let mut evicted = Vec::new();
     if let Some(old) = self.entries.remove(&key) {
       self.used -= old.weight;
     }
     if weight > self.budget {
-      evicted.push(key);
-      return evicted;
+      return vec![key];
     }
+    let evicted = self.reserve(weight);
+    self.clock += 1;
+    self.used += weight;
+    self.entries.insert(key, Entry { value, weight, touched: self.clock });
+    evicted
+  }
+
+  /// Evicts least recently used entries until `weight` more fits.
+  pub fn reserve(&mut self, weight: usize) -> Vec<K> {
+    let mut evicted = Vec::new();
     while self.used + weight > self.budget {
       let oldest = self.entries.iter().min_by_key(|(_, e)| e.touched);
       let Some((key, _)) = oldest else { break };
@@ -44,9 +52,6 @@ impl<K: Eq + Hash + Clone, V> Cache<K, V> {
       }
       evicted.push(key);
     }
-    self.clock += 1;
-    self.used += weight;
-    self.entries.insert(key, Entry { value, weight, touched: self.clock });
     evicted
   }
 

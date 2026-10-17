@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 use vpdf::Result;
+use vpdf::document::{Document, Handle};
 use vpdf::ocr::{OcrJob, parse_tsv};
 use vpdf::search_worker::SearchWorker;
 use vpdf::text::{Bounds, PageId};
@@ -40,6 +41,25 @@ fn superseded_search_completes_latest_query() -> Result<()> {
     if event.done {
       break;
     }
+  }
+  Ok(())
+}
+
+/// Workers skip the page walk yet place every page where the pane does.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn handles_read_document_bounds() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  for file in ["paper.pdf", "book.pdf", "form.pdf", "ocr.pdf"] {
+    let doc = Document::open(&root.join(file), "")?;
+    let handle = Handle::open(&root.join(file), "")?;
+    assert_eq!(handle.pages, doc.pages.len(), "{file}");
+    let corners = |b: Bounds| [b.x0, b.y0, b.x1, b.y1];
+    for (index, page) in doc.pages.iter().enumerate() {
+      let bounds = handle.bounds(PageId(index))?;
+      assert_eq!(corners(bounds), corners(page.bounds), "{file} {index}");
+    }
+    assert!(handle.bounds(PageId(handle.pages)).is_err());
   }
   Ok(())
 }

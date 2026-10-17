@@ -43,7 +43,8 @@ The coordinator groups requested tiles into bands, runs of adjacent tiles in
 one tile row, and the pool draws each band in one pass before cutting and
 encoding its tiles; a display list replay costs about the same for a band as
 for one tile. Pages with an image of at least 512K pixels render whole, up to
-8 MP, and the coordinator keeps the last such page to cut later tiles from.
+8 MP, and the coordinator keeps such pages to cut later tiles from while a
+request wants their tiles, so two scans in one view each draw once.
 MuPDF decodes only the part of an image a clip covers and its scaler varies
 with the clip origin, so tiles cut from one render match a full-page render,
 and the image decodes once instead of once per tile. Larger image pages decode
@@ -87,11 +88,12 @@ raster step, which the raster pool already runs in parallel.
 
 ## Memory and limits
 
-Application text, OCR, search, register, encoded-tile (48 MiB), and
-terminal-image caches have explicit budgets. Display lists have a page-count
-bound of eight per document; their native memory size is not exposed by the
-binding. MuPDF's internal allocations and terminal memory remain separate from
-application accounting. These bounds are not a hard process RSS limit.
+Application text, OCR, search, register, encoded-tile (48 MiB), whole-page
+(48 MiB per render coordinator), and terminal-image caches have explicit
+budgets. Display lists have a page-count bound of eight per document; their
+native memory size is not exposed by the binding. MuPDF's internal allocations
+and terminal memory remain separate from application accounting. These bounds
+are not a hard process RSS limit.
 
 Extraction and yank limits protect text operations. Search caps matches per
 page and per query. OCR raster dimensions, output, and runtime are bounded.

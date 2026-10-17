@@ -6,7 +6,7 @@
 //! page edges (running heads, folios) are ignored.
 
 use crate::app::App;
-use crate::document::{Document, Heading, Target};
+use crate::document::{Handle, Heading, Target};
 use crate::keys::PanelKind;
 use crate::text::{Line, PageId, Text};
 use std::collections::HashMap;
@@ -191,9 +191,9 @@ pub fn spawn(path: &Path, password: &str) -> OutlineJob {
   let stopped = Arc::clone(&stop);
   let (path, password) = (path.to_owned(), password.to_owned());
   std::thread::spawn(move || {
-    let Ok(mut doc) = Document::open(&path, &password) else { return };
+    let Ok(doc) = Handle::open(&path, &password) else { return };
     let mut pages = Vec::new();
-    for page in 0..doc.pages.len().min(PAGES) {
+    for page in 0..doc.pages.min(PAGES) {
       if stopped.load(Ordering::Relaxed) {
         return;
       }

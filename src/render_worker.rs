@@ -7,10 +7,11 @@
 //! renders them from several threads, each with its own context, while
 //! only the coordinator touches the document; a list may outlive it, as
 //! Type3 glyphs draw from lists compiled when their font loads. Pages
-//! with large images render whole on the coordinator, which keeps the
-//! last such page.
+//! with large images render whole on the coordinator, which keeps them
+//! while a request wants their tiles.
 use crate::Result;
-use crate::document::{Document, Lists};
+use crate::cache::Cache;
+use crate::document::{Handle, Lists};
 use crate::layout::{Crop, page_matrix, transform};
 use crate::text::PageId;
 use crate::tiles::{self, TILE_WIDTH, Tile, TileKey};
@@ -23,6 +24,9 @@ use std::time::{Duration, Instant};
 
 /// Largest image page rendered whole, in pixels; about 24 MiB of RGB.
 const WHOLE: i64 = 8 << 20;
+/// Bytes of whole pages kept: two of the largest, so a view across two
+/// scans draws each once.
+const KEPT: usize = 2 * 3 * WHOLE as usize;
 /// Pages drawn after which an idle coordinator reopens its document.
 const RELOAD: usize = 64;
 /// Idle time before that reopen.
@@ -48,6 +52,9 @@ struct Queue {
 struct Shared {
   queue: Mutex<Queue>,
   wake: Condvar,
+  /// Whole pages drawn, which tests count.
+  #[cfg(test)]
+  wholes: std::sync::atomic::AtomicUsize,
 }
 
 pub struct RenderWorker {
@@ -77,10 +84,9 @@ impl RenderWorker {
       if lazy && !requested(&work) {
         return;
       }
-      match Document::open(&path, &password) {
-        Ok(mut doc) => {
-          doc.share(lists);
-          Coordinator::new(doc, (path, password), work, send).run();
+      match Handle::open(&path, &password) {
+        Ok(doc) => {
+          Coordinator::new(doc, lists, (path, password), work, send).run();
         }
         Err(error) => drop(send.send(Err(error.to_string()))),
       }
@@ -132,32 +138,36 @@ enum Kind {
 type PageKey = (PageId, u32, u16, Crop);
 
 struct Coordinator {
-  doc: Document,
+  doc: Handle,
+  /// Display lists shared with the pane's document.
+  lists: Arc<Lists>,
   /// Path and password to reopen `doc`.
   source: (PathBuf, String),
   shared: Arc<Shared>,
   send: Sender,
   kinds: HashMap<PageKey, Kind>,
-  /// The last whole page and milliseconds it took to draw.
-  whole: Option<(PageKey, Pixmap, f64)>,
+  /// Whole pages and milliseconds each took to draw.
+  wholes: Cache<PageKey, (Pixmap, f64)>,
   /// Pages drawn since `doc` opened.
   touched: HashSet<PageId>,
 }
 
 impl Coordinator {
   fn new(
-    doc: Document,
+    doc: Handle,
+    lists: Arc<Lists>,
     source: (PathBuf, String),
     shared: Arc<Shared>,
     send: Sender,
   ) -> Self {
     Self {
       doc,
+      lists,
       source,
       shared,
       send,
       kinds: HashMap::new(),
-      whole: None,
+      wholes: Cache::new(KEPT),
       touched: HashSet::new(),
     }
   }
@@ -166,25 +176,26 @@ impl Coordinator {
   /// of every page drawn since: browsing 320 thumbnails of a 1370-page
   /// book held about 200 MB. Cached display lists keep their own.
   fn refresh(&mut self) {
-    if let Ok(mut doc) = Document::open(&self.source.0, &self.source.1) {
-      doc.share(self.doc.lists());
+    if let Ok(doc) = Handle::open(&self.source.0, &self.source.1) {
       self.doc = doc;
     }
     self.touched.clear();
-    self.whole = None;
+    self.wholes.clear();
   }
 
   fn run(mut self) {
     while let Some((urgent, ahead)) = self.next() {
-      // The last whole page goes once no request wants its tiles.
-      let kept = self.whole.as_ref().map(|(page, ..)| *page);
-      if kept.is_some_and(|page| {
-        !urgent
-          .iter()
-          .chain(&ahead)
-          .any(|k| (k.page, k.scale, k.rotation, k.crop) == page)
-      }) {
-        self.whole = None;
+      // Whole pages go once no request wants their tiles.
+      let stale: Vec<PageKey> = self
+        .wholes
+        .entries()
+        .map(|(page, _)| *page)
+        .filter(|page| {
+          !urgent.iter().chain(&ahead).any(|k| page_of(k) == *page)
+        })
+        .collect();
+      for page in stale {
+        self.wholes.remove(&page);
       }
       for band in bands(&urgent) {
         if !self.current() {
@@ -275,14 +286,13 @@ impl Coordinator {
 
   fn job(&mut self, tiles: Vec<TileKey>) -> Result<Job> {
     let key = tiles[0];
-    self.doc.validate(key.page)?;
+    let bounds = key.crop.apply(self.doc.bounds(key.page)?);
     self.touched.insert(key.page);
-    let page = (key.page, key.scale, key.rotation, key.crop);
-    let bounds = key.crop.apply(self.doc.pages[key.page.0].bounds);
+    let page = page_of(&key);
     let matrix = page_matrix(bounds, key.scale, key.rotation);
     let rect = transform(bounds, &matrix);
     let area = IRect::new(0, 0, rect.x1.ceil() as i32, rect.y1.ceil() as i32);
-    let list = self.doc.display(key.page)?;
+    let list = self.doc.display(key.page, &self.lists)?;
     let kind = match self.kinds.get(&page) {
       Some(kind) => *kind,
       None => {
@@ -310,14 +320,17 @@ impl Coordinator {
     area: IRect,
     tiles: &[TileKey],
   ) -> Result<Work> {
-    if self.whole.as_ref().is_none_or(|(key, ..)| *key != page) {
-      // Frees the previous page before drawing the next.
-      self.whole = None;
+    if self.wholes.get(&page).is_none() {
+      #[cfg(test)]
+      self.shared.wholes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+      // Room first, so the draw stays within `KEPT`.
+      let bytes = 3 * usize::try_from(area.x1)? * usize::try_from(area.y1)?;
+      self.wholes.reserve(bytes);
       let started = Instant::now();
       let pixmap = tiles::draw(list, matrix, area)?;
-      self.whole = Some((page, pixmap, ms(started)));
+      self.wholes.insert(page, (pixmap, ms(started)), bytes);
     }
-    let Some((_, pixmap, drawn)) = &self.whole else {
+    let Some((pixmap, drawn)) = self.wholes.get(&page) else {
       anyhow::bail!("Whole page missing");
     };
     let pixels =
@@ -350,6 +363,10 @@ fn classify(list: &DisplayList, matrix: &Matrix, area: IRect) -> Result<Kind> {
   Ok(Kind::Bands)
 }
 
+fn page_of(tile: &TileKey) -> PageKey {
+  (tile.page, tile.scale, tile.rotation, tile.crop)
+}
+
 fn ms(started: Instant) -> f64 {
   started.elapsed().as_secs_f64() * 1000.0
 }
@@ -359,11 +376,9 @@ fn ms(started: Instant) -> f64 {
 fn bands(tiles: &[TileKey]) -> Vec<Vec<TileKey>> {
   let mut rows: Vec<Vec<TileKey>> = Vec::new();
   for key in tiles {
-    let row = rows.iter_mut().find(|row| {
-      let first = &row[0];
-      (first.page, first.scale, first.rotation, first.crop, first.y)
-        == (key.page, key.scale, key.rotation, key.crop, key.y)
-    });
+    let row = rows
+      .iter_mut()
+      .find(|row| (page_of(&row[0]), row[0].y) == (page_of(key), key.y));
     match row {
       Some(row) => row.push(*key),
       None => rows.push(vec![*key]),
@@ -486,5 +501,66 @@ fn render(tiles: &[TileKey], work: Work, send: &Sender) {
     if send.send(tile).is_err() {
       return;
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::document::Document;
+  use std::sync::atomic::Ordering;
+
+  /// A PDF of `count` letter pages, each one large gray image: scans.
+  fn scans(count: usize) -> Result<tempfile::NamedTempFile> {
+    use mupdf::{ColorParams, Colorspace, DocumentWriter, Image, Rect};
+    let file = tempfile::Builder::new().suffix(".pdf").tempfile()?;
+    let gray = Colorspace::device_gray();
+    let mut pixels = Pixmap::new_with_w_h(&gray, 1024, 1024, false)?;
+    for (index, value) in pixels.samples_mut().iter_mut().enumerate() {
+      *value = (index % 251) as u8;
+    }
+    let scan = Image::from_pixmap(&pixels)?;
+    let path = file.path().to_string_lossy();
+    let mut writer = DocumentWriter::new(path.as_ref(), "pdf", "")?;
+    let page = Matrix::new(612.0, 0.0, 0.0, 792.0, 0.0, 0.0);
+    for _ in 0..count {
+      let device = writer.begin_page(Rect::new(0.0, 0.0, 612.0, 792.0))?;
+      device.fill_image(&scan, &page, 1.0, ColorParams::default())?;
+      writer.end_page(device)?;
+    }
+    drop(writer);
+    Ok(file)
+  }
+
+  /// Two scans in one view: rows alternate when a scroll up adds the
+  /// target's rows above to those below, and prefetch returns to the
+  /// first page after the visible tiles end on the second.
+  #[test]
+  fn two_scans_draw_once() -> Result<()> {
+    let file = scans(2)?;
+    let doc = Document::open(file.path(), "")?;
+    let key = |page, y| TileKey {
+      page: PageId(page),
+      scale: 1024,
+      rotation: 0,
+      x: 0,
+      y,
+      width: TILE_WIDTH,
+      height: 256,
+      crop: Crop::default(),
+    };
+    let tiles = [key(0, 512), key(1, 0), key(0, 256), key(1, 256)];
+    for urgent in [4, 2] {
+      let worker = RenderWorker::new(file.path(), "", doc.lists());
+      worker.request(&tiles, urgent);
+      for _ in &tiles {
+        worker
+          .results
+          .recv_timeout(Duration::from_secs(20))?
+          .map_err(anyhow::Error::msg)?;
+      }
+      assert_eq!(worker.shared.wholes.load(Ordering::Relaxed), 2, "{urgent}");
+    }
+    Ok(())
   }
 }

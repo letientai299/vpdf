@@ -62,7 +62,12 @@ impl App {
   /// `zc`: trims white margins, or restores them.
   pub fn toggle_crop(&mut self) -> Result<()> {
     self.layout.crop = if self.layout.crop.is_none() {
-      margins(&mut self.doc)?
+      let crop = match self.doc.margins {
+        Some(crop) => crop,
+        None => margins(&mut self.doc)?,
+      };
+      self.doc.margins = Some(crop);
+      crop
     } else {
       Crop::default()
     };

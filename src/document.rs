@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::cache::Cache;
+use crate::layout::Crop;
 use crate::text::{Bounds, Glyph, Line, PageId, Text, printable};
 use anyhow::ensure;
 use mupdf::pdf::PdfDocument;
@@ -84,6 +85,8 @@ pub struct Document {
   pub title: String,
   /// The outline was inferred from text layout, not authored.
   pub inferred: bool,
+  /// Margins `zc` found; sampling again evicts the visible lists.
+  pub margins: Option<Crop>,
   texts: Cache<PageId, Arc<Text>>,
   lists: Arc<Lists>,
   ocr: Cache<PageId, Arc<Text>>,
@@ -101,31 +104,62 @@ impl std::fmt::Display for PasswordRequired {
 
 impl std::error::Error for PasswordRequired {}
 
-impl Document {
+/// A worker's handle of a file: the native document and its page count,
+/// opened without the page walk of `Document::open`.
+pub struct Handle {
+  pub native: PdfDocument,
+  pub pages: usize,
+}
+
+impl Handle {
   pub fn open(path: &Path, password: &str) -> Result<Self> {
     let mut native = PdfDocument::open(path)?;
     if native.needs_password()? && !native.authenticate(password)? {
       return Err(PasswordRequired.into());
     }
-    let count = native.page_count()?;
-    ensure!(count > 0, "PDF contains no pages");
-    let mut pages = Vec::with_capacity(count as usize);
+    let pages = usize::try_from(native.page_count()?)?;
+    ensure!(pages > 0, "PDF contains no pages");
+    Ok(Self { native, pages })
+  }
+
+  fn validate(&self, page: PageId) -> Result<()> {
+    ensure!(page.0 < self.pages, "Page outside document");
+    Ok(())
+  }
+
+  /// The bounds `Document::open` reads for `page`.
+  pub fn bounds(&self, page: PageId) -> Result<Bounds> {
+    self.validate(page)?;
+    bounds(&self.native, page.0 as i32)
+  }
+
+  /// `page`'s display list from `lists`, interpreted on a miss.
+  pub fn display(
+    &self,
+    page: PageId,
+    lists: &Lists,
+  ) -> Result<Arc<DisplayList>> {
+    self.validate(page)?;
+    display(&self.native, lists, page)
+  }
+
+  /// The page contents' text, without annotations, uncached: workers
+  /// read a page once.
+  pub fn text(&self, page: PageId) -> Result<Text> {
+    self.validate(page)?;
+    extract(&self.native.load_page(page.0 as i32)?)
+  }
+}
+
+impl Document {
+  pub fn open(path: &Path, password: &str) -> Result<Self> {
+    let Handle { native, pages: count } = Handle::open(path, password)?;
+    let mut pages = Vec::with_capacity(count);
     for index in 0..count {
-      let bounds = match page_bounds(&native, index) {
-        Ok(bounds) => bounds,
-        Err(_) => native.load_page(index)?.bounds()?.into(),
-      };
-      ensure!(
-        bounds.width() > 0.0
-          && bounds.height() > 0.0
-          && bounds.width().is_finite()
-          && bounds.height().is_finite(),
-        "PDF page has invalid dimensions"
-      );
       pages.push(PageInfo {
-        bounds,
+        bounds: bounds(&native, index as i32)?,
         label: native
-          .page_label(index as usize)
+          .page_label(index)
           .ok()
           .map(|label| printable(&label).collect::<String>())
           .filter(|label| !label.is_empty())
@@ -144,6 +178,7 @@ impl Document {
       outline,
       title,
       inferred: false,
+      margins: None,
       texts: Cache::new(32 * MIB),
       lists: Arc::new(Mutex::new(Cache::new(LISTS))),
       ocr: Cache::new(32 * MIB),
@@ -166,11 +201,6 @@ impl Document {
     Arc::clone(&self.lists)
   }
 
-  /// Shares `lists` with the handle that made them.
-  pub fn share(&mut self, lists: Arc<Lists>) {
-    self.lists = lists;
-  }
-
   /// Drops cached text and display lists; OCR text stays.
   pub fn trim(&mut self) {
     self.texts.clear();
@@ -186,20 +216,7 @@ impl Document {
 
   pub fn display(&mut self, page: PageId) -> Result<Arc<DisplayList>> {
     self.validate(page)?;
-    let cached = self
-      .lists
-      .lock()
-      .ok()
-      .and_then(|mut lists| lists.get(&page).map(Arc::clone));
-    if let Some(list) = cached {
-      return Ok(list);
-    }
-    let page_data = self.native.load_page(page.0 as i32)?;
-    let list = Arc::new(page_data.to_display_list(true)?);
-    if let Ok(mut lists) = self.lists.lock() {
-      lists.insert(page, Arc::clone(&list), 1);
-    }
-    Ok(list)
+    display(&self.native, &self.lists, page)
   }
 
   pub fn links(&self, page: PageId) -> Result<Vec<Link>> {
@@ -328,6 +345,40 @@ impl Document {
   pub fn cache_bytes(&self) -> usize {
     self.texts.used() + self.ocr.used()
   }
+}
+
+fn display(
+  native: &PdfDocument,
+  lists: &Lists,
+  page: PageId,
+) -> Result<Arc<DisplayList>> {
+  let cached =
+    lists.lock().ok().and_then(|mut lists| lists.get(&page).map(Arc::clone));
+  if let Some(list) = cached {
+    return Ok(list);
+  }
+  let list = Arc::new(native.load_page(page.0 as i32)?.to_display_list(true)?);
+  if let Ok(mut lists) = lists.lock() {
+    lists.insert(page, Arc::clone(&list), 1);
+  }
+  Ok(list)
+}
+
+/// A page's bounds, from its dictionary when that reads, else from the
+/// loaded page.
+fn bounds(native: &PdfDocument, index: i32) -> Result<Bounds> {
+  let bounds = match page_bounds(native, index) {
+    Ok(bounds) => bounds,
+    Err(_) => native.load_page(index)?.bounds()?.into(),
+  };
+  ensure!(
+    bounds.width() > 0.0
+      && bounds.height() > 0.0
+      && bounds.width().is_finite()
+      && bounds.height().is_finite(),
+    "PDF page has invalid dimensions"
+  );
+  Ok(bounds)
 }
 
 /// A page's crop box bound as `fz_bound_page` computes it, read from the
