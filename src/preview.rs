@@ -1,9 +1,10 @@
 use crate::Result;
 use crate::app::App;
-use crate::document::Target;
+use crate::document::{Annotation, Target};
 use crate::keys::{Action, Input};
 use crate::motion::Motion;
-use crate::text::{Bounds, PageId};
+use crate::panel_layout::wrap;
+use crate::text::{Bounds, PageId, Position};
 use crate::theme;
 use crate::tiles::{TileKey, raster_area};
 use mupdf::IRect;
@@ -13,10 +14,12 @@ use unicode_width::UnicodeWidthStr;
 const HEIGHT: f32 = 0.4;
 const ABOVE: f32 = 6.0;
 const IMAGE_BORDER: &str = "\x1b[0;38;2;60;120;230;48;2;255;255;255m";
+const NOTE_TEXT: &str = "\x1b[0;38;2;20;20;20;48;2;255;255;255m";
 
 pub struct Preview {
   pub target: Target,
   page: PageId,
+  source: Position,
   serial: u64,
   view: View,
 }
@@ -24,14 +27,19 @@ pub struct Preview {
 enum View {
   Image { key: TileKey, rgb: Vec<u8> },
   Text { top: usize, lines: Vec<String> },
+  Note { top: usize, contents: String, columns: usize, lines: Vec<String> },
 }
 
 impl App {
   pub fn preview_link(&mut self) -> Result<()> {
     let Some(position) = self.explicit_target()? else { return Ok(()) };
+    if let Some(annotation) = self.annotation_at(position)? {
+      self.preview_annotation(position, &annotation);
+      return Ok(());
+    }
     let target = self
       .link_target(position)?
-      .ok_or_else(|| anyhow::anyhow!("No link under cursor"))?;
+      .ok_or_else(|| anyhow::anyhow!("No link or note under cursor"))?;
     let (page, x, y) = match &target {
       Target::Uri(uri) => {
         self.reader.message.clone_from(uri);
@@ -60,9 +68,58 @@ impl App {
         self.layout.pages[page.0].matrix.transform_xy(x, y - ABOVE).1;
       self.preview_image(self.preview_key(page, projected as i32)?)?
     };
-    self.peek =
-      Some(Preview { target, page, serial: crate::graphics::serial(), view });
+    self.peek = Some(Preview {
+      target,
+      page,
+      source: position,
+      serial: crate::graphics::serial(),
+      view,
+    });
     Ok(())
+  }
+
+  pub(crate) fn preview_annotation(
+    &mut self,
+    position: Position,
+    annotation: &Annotation,
+  ) {
+    if annotation.contents.is_empty() {
+      return;
+    }
+    let columns = self.note_columns();
+    let target =
+      annotation.areas.first().map_or(Target::Page(position.page), |area| {
+        Target::Point { page: position.page, x: area.x0, y: area.y0 }
+      });
+    self.peek = Some(Preview {
+      target,
+      page: position.page,
+      source: position,
+      serial: crate::graphics::serial(),
+      view: View::Note {
+        top: 0,
+        lines: wrap(&annotation.contents, columns),
+        contents: annotation.contents.clone(),
+        columns,
+      },
+    });
+  }
+
+  fn note_columns(&self) -> usize {
+    usize::from(self.layout.screen.columns).saturating_sub(4).min(72)
+  }
+
+  fn reflow_note(&mut self) {
+    let columns = self.note_columns();
+    if let Some(Preview {
+      view: View::Note { contents, columns: old, lines, .. },
+      ..
+    }) = &mut self.peek
+      && *old != columns
+    {
+      *lines = wrap(contents, columns);
+      *old = columns;
+    }
   }
 
   fn preview_rows(&self) -> usize {
@@ -117,6 +174,9 @@ impl App {
       Action::Command => return self.action(input),
       Action::Follow => {
         let Some(peek) = self.peek.take() else { return Ok(()) };
+        if matches!(peek.view, View::Note { .. }) {
+          return Ok(());
+        }
         return self.follow(&peek.target);
       }
       Action::Quit | Action::Peek => {
@@ -131,6 +191,7 @@ impl App {
 
   /// Scrolls the owned preview by terminal rows.
   pub fn scroll_preview(&mut self, rows: f32) -> Result<()> {
+    self.reflow_note();
     let Some(preview) = &self.peek else { return Ok(()) };
     let page = preview.page;
     if page.0 >= self.doc.pages.len() || page.0 >= self.layout.pages.len() {
@@ -139,13 +200,16 @@ impl App {
     }
     let visible = self.preview_rows();
     match &preview.view {
-      View::Text { top, lines } => {
+      View::Text { top, lines } | View::Note { top, lines, .. } => {
         let step = rows.round() as isize;
         let top = top
           .saturating_add_signed(step)
           .min(lines.len().saturating_sub(visible));
-        if let Some(Preview { view: View::Text { top: current, .. }, .. }) =
-          &mut self.peek
+        if let Some(Preview {
+          view:
+            View::Text { top: current, .. } | View::Note { top: current, .. },
+          ..
+        }) = &mut self.peek
         {
           *current = top;
         }
@@ -185,6 +249,11 @@ impl App {
         self.preview_rows().min(lines.len()),
         (*top > 0, *top + self.preview_rows() < lines.len()),
       ),
+      View::Note { top, lines, columns, .. } => (
+        *columns,
+        self.preview_rows().min(lines.len()),
+        (*top > 0, *top + self.preview_rows() < lines.len()),
+      ),
     }
   }
 
@@ -212,13 +281,10 @@ impl App {
       return Ok(());
     }
     self.scroll_preview(0.0)?;
-    if self.peek.is_none() {
+    let Some(source) = self.peek.as_ref().map(|preview| preview.source) else {
       return Ok(());
-    }
-    let cursor = match self.target {
-      Some(position) => self.position_rect(position)?,
-      None => None,
     };
+    let cursor = self.position_rect(source)?;
     let Some(preview) = &self.peek else { return Ok(()) };
     let screen = self.layout.screen;
     let cell = f32::from(screen.cell_height);
@@ -238,14 +304,14 @@ impl App {
     let label =
       border_label(&self.doc.pages[preview.page.0].label, columns, clipped.0);
     let rule = "─".repeat(columns.saturating_sub(label.width()));
-    if matches!(preview.view, View::Image { .. }) {
+    let over_page = matches!(preview.view, View::Image { .. })
+      || !self.text_mode && matches!(preview.view, View::Note { .. });
+    if over_page {
       self.preview_backdrop(out, (top, column), (rows, columns))?;
     }
     let Some(preview) = &self.peek else { return Ok(()) };
-    let border = match preview.view {
-      View::Image { .. } => IMAGE_BORDER,
-      View::Text { .. } => theme::CURRENT,
-    };
+    let border = if over_page { IMAGE_BORDER } else { theme::CURRENT };
+    let text_style = if over_page { NOTE_TEXT } else { theme::RESET };
     write!(
       out,
       "{}{}╭{label}{rule}╮{}",
@@ -282,7 +348,8 @@ impl App {
           out,
         )?;
       }
-      View::Text { top: first, lines } => {
+      View::Text { top: first, lines }
+      | View::Note { top: first, lines, .. } => {
         for (index, line) in lines.iter().skip(*first).take(rows).enumerate() {
           let text = crate::terminal::clean(line, columns);
           let pad = columns.saturating_sub(text.width());
@@ -291,7 +358,7 @@ impl App {
             "{}{}│{}{text}{}{}│",
             self.at.goto(top + index + 1, column),
             border,
-            theme::RESET,
+            text_style,
             " ".repeat(pad),
             border
           )?;

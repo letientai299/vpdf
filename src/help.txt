@@ -94,6 +94,8 @@ gl: links on this page
 gp: page thumbnails
 gr: recent documents
 ga: annotations (read-only)
+Annotations <CR>: jump, enter Cursor, and show note
+Annotations K: preview selected note
 P <CR>: follow row; focus content in N
 P o / click: follow; keep panel focus
 P / ? n N: search rows
@@ -109,10 +111,11 @@ q: close panel, tab, or reader
 
 # Preview
 K / <CR>: preview / follow visible explicit target
+K: show annotation note when present
 j k: scroll rows
 <C-d><C-u>: scroll half height
 Border: destination page; arrows mark clipped edges
-<CR>: follow original target
+<CR>: follow link or dismiss note
 <Esc>: cancel preview layer
 
 # Panes

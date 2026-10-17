@@ -398,7 +398,7 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("gx", Action::Panel(PanelKind::Text), "text preview"),
   ("g?", Action::Panel(PanelKind::Help), "key reference"),
   ("gq", Action::ClosePanel, "close panel"),
-  ("K", Action::Peek, "preview link target"),
+  ("K", Action::Peek, "preview link or annotation note"),
   ("gp", Action::Overview, "page thumbnails"),
   ("]i", Action::Figure(true), "next figure"),
   ("[i", Action::Figure(false), "previous figure"),

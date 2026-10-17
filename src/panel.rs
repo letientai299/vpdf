@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::app::{App, Request};
-use crate::document::{Heading, Target};
+use crate::document::{Annotation, Heading, Target};
 use crate::graphics::Graphics;
 use crate::keys::{Action, Input, PanelKind};
 use crate::layout::Screen;
@@ -20,6 +20,10 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 #[derive(Clone)]
 pub enum Destination {
   Position(Position),
+  Annotation {
+    position: Position,
+    annotation: Annotation,
+  },
   Link(Target),
   File(PathBuf),
   /// A global mark, resolved by the session.
@@ -719,6 +723,13 @@ impl App {
       | Action::Reselect
       | Action::WordSearch
       | Action::Cancel => {}
+      Action::Peek if panel.kind == PanelKind::Annotations => {
+        if let Some(Destination::Annotation { position, annotation }) =
+          panel.rows.get(panel.selected).map(|row| row.destination.clone())
+        {
+          self.preview_annotation(position, &annotation);
+        }
+      }
       Action::Follow => self.panel_follow(Action::Follow)?,
       // The recent view opens with Enter alone.
       Action::Swap if !covered => self.panel_follow(Action::Swap)?,
@@ -760,7 +771,7 @@ impl App {
     let Some(row) = panel.rows.get(panel.selected) else { return Ok(()) };
     let destination = row.destination.clone();
     let focus = action == Action::Follow;
-    match destination {
+    let annotation = match destination {
       Destination::File(path) => {
         self.request = Some(Request::PanelOpen { path, position: None, focus });
         return Ok(());
@@ -770,19 +781,36 @@ impl App {
         return Ok(());
       }
       Destination::None => return Ok(()),
-      Destination::Position(position) => self.go_to(position, true)?,
-      Destination::Link(target) => self.follow(&target)?,
-    }
+      Destination::Position(position) => {
+        self.go_to(position, true)?;
+        None
+      }
+      Destination::Link(target) => {
+        self.follow(&target)?;
+        None
+      }
+      Destination::Annotation { position, annotation } => {
+        self.go_to(position, true)?;
+        Some((position, annotation))
+      }
+    };
     if self.overview.is_some() {
       self.close_overview();
     }
     if focus {
-      self.reader.normal();
       self.reader.cancel();
+      if annotation.is_some() {
+        self.reader.enter_cursor();
+      } else {
+        self.reader.normal();
+      }
       if let Some(panel) = &mut self.panel {
         panel.focused = false;
       }
       self.relayout()?;
+      if let Some((position, annotation)) = annotation {
+        self.preview_annotation(position, &annotation);
+      }
     }
     Ok(())
   }

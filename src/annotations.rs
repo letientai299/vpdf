@@ -22,19 +22,46 @@ impl App {
         let body = match (marked.is_empty(), annotation.contents.is_empty()) {
           (false, false) => format!("{marked} — {}", annotation.contents),
           (false, true) => marked,
-          _ => annotation.contents,
+          _ => annotation.contents.clone(),
         };
         rows.push(Row {
           style: Style::Key,
           ..Row::new(
             format!("{}: {body}", annotation.kind),
             self.doc.pages[page.0].label.clone(),
-            Destination::Position(position),
+            Destination::Annotation { position, annotation },
           )
         });
       }
     }
     Ok(rows)
+  }
+
+  pub(crate) fn annotation_at(
+    &mut self,
+    position: Position,
+  ) -> Result<Option<Annotation>> {
+    let text = self.doc.text(position.page)?;
+    let Some(glyph) = text.glyph(position) else { return Ok(None) };
+    let x = f32::midpoint(glyph.bounds.x0, glyph.bounds.x1);
+    let y = f32::midpoint(glyph.bounds.y0, glyph.bounds.y1);
+    let annotations = self.doc.annotations(position.page)?;
+    let mut nearest = None;
+    for annotation in annotations {
+      if annotation.contents.is_empty() {
+        continue;
+      }
+      if annotation.areas.iter().any(|area| area.contains(x, y)) {
+        return Ok(Some(annotation));
+      }
+      if nearest.is_none()
+        && !MARKUP.contains(&annotation.kind.as_str())
+        && marked(&text, position.page, &annotation).0 == position
+      {
+        nearest = Some(annotation);
+      }
+    }
+    Ok(nearest)
   }
 }
 
