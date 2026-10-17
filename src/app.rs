@@ -145,6 +145,9 @@ pub struct App {
   pub awaiting: Option<Instant>,
   /// Link destination shown by `K`.
   pub peek: Option<crate::preview::Preview>,
+  /// The link the pointer rests on.
+  pub hover_link: Option<crate::links::HoverLink>,
+  pub(crate) link_press: crate::links::LinkPress,
   pub region: Option<crate::region::Region>,
   pub region_job: Option<crate::region::Job>,
   pub region_send: Option<crate::region::Transfer>,
@@ -232,6 +235,8 @@ impl App {
       clues: None,
       awaiting: None,
       peek: None,
+      hover_link: None,
+      link_press: crate::links::LinkPress::Idle,
       region: None,
       region_job: None,
       region_send: None,

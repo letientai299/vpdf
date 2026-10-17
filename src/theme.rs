@@ -33,6 +33,10 @@ pub const TEXT_CURSORLINE: &str = "\x1b[0;100m";
 pub const TEXT_CURSOR: &str = "\x1b[0;7;34m";
 pub const TEXT_SELECTION: &str = "\x1b[0;7;35m";
 pub const TEXT_MATCH: &str = "\x1b[0;7;33m";
+/// The hovered link's tint.
+pub const LINK: [u8; 4] = [40, 180, 220, 70];
+/// The hovered link in text mode.
+pub const TEXT_LINK: &str = "\x1b[0;4;36m";
 
 #[derive(Clone, Copy)]
 pub enum Color {

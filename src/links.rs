@@ -1,13 +1,50 @@
 use crate::Result;
 use crate::app::App;
-use crate::document::{Link, PageInfo, Target};
+use crate::document::{Heading, Link, PageInfo, Target};
 use crate::panel::{Destination, Row, Style};
 use crate::panel_layout::{Layout, Line, wrap};
 use crate::terminal;
-use crate::text::Text;
+use crate::text::{Bounds, PageId, Text};
 use unicode_width::UnicodeWidthStr;
 
+/// The link under the pointer.
+#[derive(Clone, Debug)]
+pub struct HoverLink {
+  pub page: PageId,
+  /// Index into `Document::links`.
+  pub index: usize,
+  pub bounds: Bounds,
+  /// Destination for the status line.
+  pub label: String,
+}
+
+/// A left press's link.
+#[derive(Clone, Debug, Default)]
+pub enum LinkPress {
+  #[default]
+  Idle,
+  /// Followed on release.
+  Held(Target),
+  /// Its click run is spent.
+  Followed,
+}
+
 impl App {
+  /// Shows a page's link by index.
+  pub fn point_link(&mut self, link: Option<(PageId, usize)>) {
+    let shown = self.hover_link.as_ref().map(|link| (link.page, link.index));
+    if shown == link {
+      return;
+    }
+    // Hover is advisory; failures show nothing.
+    self.hover_link = link.and_then(|(page, index)| {
+      let links = self.doc.links(page).ok()?;
+      let link = links.get(index)?;
+      let label = destination(&link.target, &self.doc.pages, &self.doc.outline);
+      Some(HoverLink { page, index, bounds: link.bounds, label })
+    });
+  }
+
   pub(crate) fn link_rows(&mut self) -> Result<Vec<Row>> {
     let page = self.navigation_position().page;
     let links = self.doc.links(page)?;
@@ -77,11 +114,7 @@ fn link_row(
       (if raw { uri.clone() } else { anchor }, String::new())
     }
     Target::Page(page) | Target::Point { page, .. } => {
-      let label = pages
-        .get(page.0)
-        .map(|info| info.label.as_str())
-        .filter(|label| !label.is_empty())
-        .map_or_else(|| page.0.saturating_add(1).to_string(), str::to_owned);
+      let label = page_name(pages, *page);
       let text = if context.is_empty() {
         anchor
       } else if anchor.is_empty() || context.starts_with(&format!("[{anchor}]"))
@@ -103,6 +136,43 @@ fn link_row(
     }
   };
   Row::new(label, detail, Destination::Link(link.target))
+}
+
+/// `→ p. 43 · Section`, or the address.
+fn destination(
+  target: &Target,
+  pages: &[PageInfo],
+  outline: &[Heading],
+) -> String {
+  let (page, y) = match target {
+    Target::Uri(uri) => return format!("→ {uri}"),
+    Target::Page(page) => (*page, first_heading(outline, *page)),
+    Target::Point { page, y, .. } => (*page, *y),
+  };
+  let page = PageId(page.0.min(pages.len().saturating_sub(1)));
+  let name = page_name(pages, page);
+  match crate::panel::section(outline, page, y) {
+    Some(entry) => format!("→ p. {name} · {}", outline[entry].title.trim()),
+    None => format!("→ p. {name}"),
+  }
+}
+
+/// First heading top on `page`, else 0.
+fn first_heading(outline: &[Heading], page: PageId) -> f32 {
+  let tops = outline.iter().filter_map(|heading| match heading.target {
+    Target::Point { page: on, y, .. } if on == page => Some(y),
+    _ => None,
+  });
+  tops.reduce(f32::min).unwrap_or(0.0)
+}
+
+/// A page's label, else its number.
+fn page_name(pages: &[PageInfo], page: PageId) -> String {
+  pages
+    .get(page.0)
+    .map(|info| info.label.as_str())
+    .filter(|label| !label.is_empty())
+    .map_or_else(|| page.0.saturating_add(1).to_string(), str::to_owned)
 }
 
 impl Layout {

@@ -88,6 +88,11 @@ Files that the source app only promises, such as Mail attachments, exist only
 while the drop lasts, so the reader cannot reload them later. Other terminals
 paste a dropped file's path, so a pasted path to a PDF in Normal mode opens it.
 
+Hovering a link tints it and shows its destination in the status line: the
+page label and outline section, or the web address. A click follows the link
+and records a jump; a drag that starts on a link selects text. The mouse back
+and forward buttons act as Ctrl-o and Ctrl-i in the pane under the pointer.
+
 `K` owns its preview: `j`/`k` scroll rows, Ctrl-d/Ctrl-u scroll half its
 height, and Enter follows the original destination. Counts apply to scrolling.
 The border shows the destination page label and arrows at clipped edges.

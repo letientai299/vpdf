@@ -75,6 +75,10 @@ impl Bounds {
     }
   }
 
+  pub fn centre(self) -> (f32, f32) {
+    (f32::midpoint(self.x0, self.x1), f32::midpoint(self.y0, self.y1))
+  }
+
   pub fn contains(self, x: f32, y: f32) -> bool {
     x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1
   }
@@ -152,8 +156,7 @@ impl Text {
     for (line, row) in self.lines.iter().enumerate() {
       let before = out.len();
       for (glyph, ch) in row.glyphs.iter().enumerate() {
-        let x = f32::midpoint(ch.bounds.x0, ch.bounds.x1);
-        let y = f32::midpoint(ch.bounds.y0, ch.bounds.y1);
+        let (x, y) = ch.bounds.centre();
         if areas.iter().any(|area| area.contains(x, y)) {
           first.get_or_insert(Position { page, line, glyph });
           out.push(ch.ch);

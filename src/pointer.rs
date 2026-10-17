@@ -429,6 +429,11 @@ impl Pointer {
     self.hover
   }
 
+  /// Whether a press holds the pointer.
+  pub fn holding(&self) -> bool {
+    self.capture().is_some()
+  }
+
   /// Bare motion at the last reported spot.
   pub fn spot(&self) -> Option<(MouseEvent, Option<Pixel>)> {
     self.spot

@@ -469,10 +469,8 @@ pub fn region_text(text: &Text, bounds: Bounds) -> String {
         .glyphs
         .iter()
         .filter(|glyph| {
-          bounds.contains(
-            glyph.bounds.x0.midpoint(glyph.bounds.x1),
-            glyph.bounds.y0.midpoint(glyph.bounds.y1),
-          )
+          let (x, y) = glyph.bounds.centre();
+          bounds.contains(x, y)
         })
         .map(|glyph| glyph.ch)
         .collect::<String>()

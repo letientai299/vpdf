@@ -152,6 +152,8 @@ impl App {
     let (text, view) = self.next_text_view()?;
     self.text_top = view.top;
     self.text_drawn = Some(view.top);
+    let hovered = self.hover_link.as_ref().filter(|link| link.page == page);
+    let hovered = hovered.map(|link| link.bounds);
     let lines = text.lines.iter().skip(view.top.line).take(view.height);
     for (row, line) in lines.enumerate() {
       write!(out, "{}", self.at.goto(row, self.left))?;
@@ -166,6 +168,14 @@ impl App {
           self.at.goto(row, self.left)
         )?;
       }
+      // Lines beside the link skip glyph tests.
+      let ends = line.glyphs.first().zip(line.glyphs.last());
+      let hovered = hovered.filter(|bounds| {
+        ends.is_some_and(|(first, last)| {
+          let level = first.bounds.union(last.bounds);
+          level.y1 >= bounds.y0 && level.y0 <= bounds.y1
+        })
+      });
       let mut current = "";
       let mut written = 0;
       for (glyph, column, ch) in view.shown(&line.glyphs) {
@@ -175,7 +185,11 @@ impl App {
         written = column + cells(ch);
         let line = view.top.line + row;
         let pos = Position { page, line, glyph };
-        let style = self.text_style(pos);
+        let linked = hovered.is_some_and(|bounds| {
+          let (x, y) = ch.bounds.centre();
+          bounds.contains(x, y)
+        });
+        let style = self.text_style(pos, linked);
         let style = if style == theme::RESET && self.panel_focused() {
           theme::DIM
         } else {
@@ -192,14 +206,39 @@ impl App {
     Ok(())
   }
 
+  /// Glyph `view` draws at a pane cell.
+  fn glyph_in(
+    &self,
+    (text, view): (Arc<Text>, View),
+    column: u16,
+    row: u16,
+  ) -> Option<Position> {
+    let column = usize::from(column.saturating_sub(self.left));
+    view.hit(&text, column, usize::from(row))
+  }
+
+  /// Text and the view on screen.
+  fn shown_text_view(&mut self) -> Result<(Arc<Text>, View)> {
+    match self.text_drawn {
+      Some(top) => Ok((self.doc.text(top.page)?, self.text_view_from(top))),
+      None => self.next_text_view(),
+    }
+  }
+
   pub fn text_position(&mut self, column: u16, row: u16) -> Result<Position> {
-    // Clicks hit the frame on screen.
-    let (text, view) = match self.text_drawn {
-      Some(top) => (self.doc.text(top.page)?, self.text_view_from(top)),
-      None => self.next_text_view()?,
-    };
+    let (text, view) = self.shown_text_view()?;
     let column = usize::from(column.saturating_sub(self.left));
     Ok(view.position(&text, column, usize::from(row)))
+  }
+
+  /// Glyph at a shown cell.
+  pub(crate) fn text_shown(
+    &mut self,
+    column: u16,
+    row: u16,
+  ) -> Result<Option<Position>> {
+    let shown = self.shown_text_view()?;
+    Ok(self.glyph_in(shown, column, row))
   }
 
   /// Glyph at a cell of the next frame.
@@ -209,9 +248,8 @@ impl App {
     row: u16,
   ) -> Result<Option<Position>> {
     // Hover runs before the frame draws.
-    let (text, view) = self.next_text_view()?;
-    let column = usize::from(column.saturating_sub(self.left));
-    Ok(view.hit(&text, column, usize::from(row)))
+    let next = self.next_text_view()?;
+    Ok(self.glyph_in(next, column, row))
   }
 
   /// Screen cell of `position` in the text view, when shown.
@@ -304,7 +342,7 @@ impl App {
     Ok(())
   }
 
-  fn text_style(&self, position: Position) -> &'static str {
+  fn text_style(&self, position: Position, linked: bool) -> &'static str {
     if self.reader.uses_cursor() && position == self.reader.cursor {
       return theme::TEXT_CURSOR;
     }
@@ -319,6 +357,9 @@ impl App {
       && crate::search::contains(&self.search.hits, position)
     {
       return theme::TEXT_MATCH;
+    }
+    if linked {
+      return theme::TEXT_LINK;
     }
     self.line_style(position)
   }

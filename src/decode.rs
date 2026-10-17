@@ -106,10 +106,7 @@ pub enum Spot {
 impl Mouse {
   /// The crossterm event for buttons 1-7, on cells of `cell` pixels.
   pub fn cells(self, cell: (u16, u16)) -> Option<MouseEvent> {
-    let (column, row) = match self.at {
-      Spot::Cell { column, row } => (column, row),
-      Spot::Pixel { x, y } => (x / cell.0.max(1), y / cell.1.max(1)),
-    };
+    let (column, row) = self.cell(cell);
     let kind = self.action()?;
     Some(MouseEvent { kind, column, row, modifiers: self.modifiers })
   }
@@ -133,6 +130,23 @@ impl Mouse {
       MouseKind::Moved => MouseEventKind::Moved,
     };
     Some(kind)
+  }
+
+  /// Cell under the pointer.
+  pub fn cell(self, cell: (u16, u16)) -> (u16, u16) {
+    match self.at {
+      Spot::Cell { column, row } => (column, row),
+      Spot::Pixel { x, y } => (x / cell.0.max(1), y / cell.1.max(1)),
+    }
+  }
+
+  /// A back or forward press: whether forward.
+  pub fn history(self) -> Option<bool> {
+    match self.kind {
+      MouseKind::Press(Button::BACK) => Some(false),
+      MouseKind::Press(Button::FORWARD) => Some(true),
+      _ => None,
+    }
   }
 
   /// Screen pixels, under mode 1016.

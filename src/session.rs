@@ -8,7 +8,7 @@ use crate::home::{Home, Outcome};
 use crate::keys::PanelKind;
 use crate::layout::Screen;
 use crate::pace::Pacer;
-use crate::pointer::{self, Hover, Pane, Pixel, Pointer, Route};
+use crate::pointer::{self, Hit, Hover, Pane, Pixel, Pointer, Route};
 use crate::prompt::History;
 use crate::split::{Axis, Direction, Node, Rect, neighbor};
 use crate::state::{Mark, State};
@@ -778,15 +778,55 @@ impl Session {
     now: Instant,
   ) -> Result<bool> {
     let Some(screen) = self.screen else { return Ok(false) };
+    // Padding past the grid reports cells beyond it.
+    let (column, row) = report.cell(screen.cell());
+    let column = column.min(screen.columns.saturating_sub(1));
+    let row = row.min(screen.rows.saturating_sub(1));
+    if let Some(forward) = report.history() {
+      return self.history_button(column, row, forward);
+    }
     let Some(mut mouse) = report.cells(screen.cell()) else {
       return Ok(false);
     };
-    // Padding past the grid reports cells beyond it.
-    mouse.column = mouse.column.min(screen.columns.saturating_sub(1));
-    mouse.row = mouse.row.min(screen.rows.saturating_sub(1));
+    (mouse.column, mouse.row) = (column, row);
     let pixel =
       report.pixel().map(|(x, y)| Pixel { x, y, cell: screen.cell() });
     self.pointed(mouse, pixel, now)
+  }
+
+  /// `Ctrl-o` or `Ctrl-i` where pointed.
+  fn history_button(
+    &mut self,
+    column: u16,
+    row: u16,
+    forward: bool,
+  ) -> Result<bool> {
+    let modifiers = crossterm::event::KeyModifiers::NONE;
+    let mouse =
+      MouseEvent { kind: MouseEventKind::Moved, column, row, modifiers };
+    // One button at a time.
+    if self.pointer.holding() || self.on_completion(mouse) {
+      return Ok(false);
+    }
+    if self.app().dismiss_click()? {
+      self.pointer.release();
+      return Ok(true);
+    }
+    let Some((index, _)) = self.under(mouse) else { return Ok(false) };
+    self.app().disarm();
+    let app = self.app();
+    app.error = None;
+    app.reader.message.clear();
+    self.pointer.release();
+    self.focus(self.active, index)?;
+    let history = crate::keys::Input {
+      action: crate::keys::Action::History(forward),
+      count: 1,
+      explicit: false,
+      register: '"',
+    };
+    self.app().action(history)?;
+    Ok(true)
   }
 
   /// A report in cells; whether it needs a frame.
@@ -803,18 +843,18 @@ impl Session {
   ) -> Result<bool> {
     if mouse.kind == MouseEventKind::Moved {
       let hover = self.hit(mouse, pixel);
-      return Ok(self.pointer.hover(mouse, pixel, hover));
+      let changed = self.pointer.hover(mouse, pixel, hover);
+      if changed {
+        self.show_hover();
+      }
+      return Ok(changed);
     }
     let wheel = pointer::Wheel::of(mouse.kind).is_some();
     if wheel && self.app().prompt.is_some() {
       return Ok(false);
     }
     if matches!(mouse.kind, MouseEventKind::Down(_)) {
-      let pane = Pane::of(self.app());
-      let local = pointer::route(&[pane], pane.id, None, mouse);
-      let completion = self.app().prompt.is_some()
-        && local.is_some_and(|route| route.region == pointer::Region::Overlay);
-      if completion {
+      if self.on_completion(mouse) {
         return Ok(false);
       }
       if self.app().dismiss_click()? {
@@ -857,6 +897,11 @@ impl Session {
     }
     // Turns past an end move nothing.
     let view = wheel.then(|| app.wheel_view());
+    // Like keys, presses clear old notes.
+    if matches!(mouse.kind, MouseEventKind::Down(_)) {
+      app.error = None;
+      app.reader.message.clear();
+    }
     app.mouse(route)?;
     let moved = view.is_none_or(|view| view != app.wheel_view());
     let read = before.is_none_or(|before| before != reading(app));
@@ -979,9 +1024,27 @@ impl Session {
     opened.is_ok()
   }
 
+  /// Whether a press hits completions.
+  fn on_completion(&mut self, mouse: MouseEvent) -> bool {
+    let pane = Pane::of(self.app());
+    let local = pointer::route(&[pane], pane.id, None, mouse);
+    self.app().prompt.is_some()
+      && local.is_some_and(|route| route.region == pointer::Region::Overlay)
+  }
+
+  /// Pane index and route under `mouse`.
+  fn under(&mut self, mouse: MouseEvent) -> Option<(usize, Route)> {
+    let tab = self.tabs.get(self.active)?;
+    let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();
+    let route = pointer::route(&panes, tab.panes[tab.focus].id, None, mouse)?;
+    Some((self.tab().index(route.pane)?, route))
+  }
+
   /// The pointer left the window; whether a hover ended.
   pub fn pointer_left(&mut self) -> bool {
-    self.pointer.leave()
+    let changed = self.pointer.leave();
+    self.show_hover();
+    changed
   }
 
   /// Retests the last spot; the view changed.
@@ -990,14 +1053,29 @@ impl Session {
       let hover = self.hit(mouse, pixel);
       self.pointer.refresh(hover);
     }
+    self.show_hover();
+  }
+
+  /// Gives each pane its hovered link.
+  fn show_hover(&mut self) {
+    let hover = self.pointer.target();
+    let Some(tab) = self.tabs.get_mut(self.active) else { return };
+    for app in &mut tab.panes {
+      let link = hover.and_then(|hover| match hover.hit {
+        Hit::Link(page, index)
+          if hover.pane == app.id && hover.region == pointer::Region::Page =>
+        {
+          Some((page, index))
+        }
+        _ => None,
+      });
+      app.point_link(link);
+    }
   }
 
   /// What the pointer rests on at `mouse`.
   fn hit(&mut self, mouse: MouseEvent, pixel: Option<Pixel>) -> Option<Hover> {
-    let tab = self.tabs.get(self.active)?;
-    let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();
-    let route = pointer::route(&panes, tab.panes[tab.focus].id, None, mouse)?;
-    let index = self.tab().index(route.pane)?;
+    let (index, route) = self.under(mouse)?;
     let Route { pane, region, mouse, .. } = route;
     let app = &mut self.tab().panes[index];
     // Hover is advisory; failures find nothing.
@@ -1557,14 +1635,16 @@ impl Act {
 }
 
 /// What `event` asks of the session; None for input it ignores yet,
-/// which must not count as typing: other replies, buttons past 7, and
-/// key releases.
+/// which must not count as typing: other replies, buttons past 9,
+/// back and forward only on press, and key releases.
 fn act(event: Event) -> Option<Act> {
   match event {
     Event::Key(key) if key.kind != KeyEventKind::Release => Some(Act::Key(key)),
     Event::Paste(text) => Some(Act::Paste(text)),
     Event::Resize(report) => Some(Act::Resize(report)),
-    Event::Mouse(mouse) => mouse.action().map(|_| Act::Mouse(mouse)),
+    Event::Mouse(mouse) => (mouse.action().is_some()
+      || mouse.history().is_some())
+    .then_some(Act::Mouse(mouse)),
     Event::Leave => Some(Act::Leave),
     Event::Reply(Reply::Graphics { id: Some(id), message, .. })
       if message.starts_with("ENOENT") =>
@@ -2285,7 +2365,15 @@ mod tests {
         mouse(MouseKind::Press(Button::LEFT), cell),
         Some(Act::Mouse(click(cell))),
       ),
-      (mouse(MouseKind::Press(Button::BACK), cell), None),
+      (
+        mouse(MouseKind::Press(Button::BACK), cell),
+        Some(Act::Mouse(Mouse {
+          kind: MouseKind::Press(Button::BACK),
+          at: cell,
+          modifiers: none,
+        })),
+      ),
+      (mouse(MouseKind::Release(Button::BACK), cell), None),
       (
         mouse(MouseKind::Press(Button::LEFT), pixel),
         Some(Act::Mouse(click(pixel))),

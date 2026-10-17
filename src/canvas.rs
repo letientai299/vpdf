@@ -125,6 +125,12 @@ impl App {
     if let Some(landing) = &self.landing {
       self.line_band(landing.position, crate::theme::LANDING, screen, out)?;
     }
+    if let Some(link) = &self.hover_link {
+      let rect =
+        self.layout.project(link.page, link.bounds, self.reader.scroll);
+      let color = crate::theme::LINK;
+      self.graphics.highlight(rect, color, screen, self.left, out)?;
+    }
     if !self.search.hidden {
       let visible = self.layout.visible(self.reader.scroll);
       let hits = &self.search.hits;

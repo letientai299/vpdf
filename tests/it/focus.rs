@@ -58,7 +58,7 @@ pub(super) fn send(session: &mut Session, bytes: &[u8]) -> Result<()> {
   Ok(())
 }
 
-fn action(app: &mut App, action: Action) -> Result<()> {
+pub(super) fn action(app: &mut App, action: Action) -> Result<()> {
   app.action(Input { action, count: 1, explicit: false, register: '"' })
 }
 

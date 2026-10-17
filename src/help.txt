@@ -28,6 +28,9 @@ C/V { }: previous / next paragraph
 ]i [i: next / previous figure; counts repeat
 <Space><S-Space>: next / previous page
 <C-o><C-i> '': jump back / forward
+Mouse back / forward: jump back / forward
+Hover link: tint; status shows its destination
+Click link: follow and record jump
 Jumps: flash landing line for 600 ms
 ma mA: mark here / across documents
 'a `a: go to mark line / position
@@ -64,6 +67,7 @@ yp: yank full file path
 "" "+ "*: system clipboard
 "a "A: named register / append
 Click / drag: set N target / select
+Drag from a link: select text
 Double click: select word
 
 # Text objects

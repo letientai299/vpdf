@@ -35,7 +35,7 @@ mod interaction;
 pub mod keys;
 pub mod layout;
 mod line;
-mod links;
+pub mod links;
 mod marks;
 pub mod motion;
 pub mod objects;

@@ -7,7 +7,7 @@ use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crate::reader::{self, Mode};
 use crate::render_worker::RenderWorker;
 use crate::split::Axis;
-use crate::text::{Bounds, PageId, Position};
+use crate::text::{PageId, Position};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::process::{Command, Stdio};
 
@@ -394,6 +394,8 @@ impl App {
     self.text_drawn = None;
     self.target = None;
     self.landing = None;
+    self.hover_link = None;
+    self.link_press = crate::links::LinkPress::Idle;
     self.dismiss_overlay();
     if let Some(mut origin) = self.search_origin {
       origin.cursor = reader::clamp(origin.cursor, &mut self.doc)?;
@@ -442,6 +444,16 @@ impl App {
   /// Destination of the link covering the cursor glyph.
   pub fn link_target(&mut self, cursor: Position) -> Result<Option<Target>> {
     let Some((page, x, y)) = self.glyph_point(cursor)? else { return Ok(None) };
+    self.link_on(page, x, y)
+  }
+
+  /// Link destination at a page point.
+  pub(crate) fn link_on(
+    &mut self,
+    page: PageId,
+    x: f32,
+    y: f32,
+  ) -> Result<Option<Target>> {
     let Some(index) = self.link_at(page, x, y)? else { return Ok(None) };
     Ok(Some(self.doc.links(page)?[index].target.clone()))
   }
@@ -453,8 +465,8 @@ impl App {
   ) -> Result<Option<(PageId, f32, f32)>> {
     let text = self.doc.text(position.page)?;
     Ok(text.glyph(position).map(|glyph| {
-      let Bounds { x0, y0, x1, y1 } = glyph.bounds;
-      (position.page, f32::midpoint(x0, x1), f32::midpoint(y0, y1))
+      let (x, y) = glyph.bounds.centre();
+      (position.page, x, y)
     }))
   }
 

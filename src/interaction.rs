@@ -2,6 +2,7 @@ use crate::Result;
 use crate::app::{App, InputOwner};
 use crate::keys::{Action, Input};
 use crate::layout::Screen;
+use crate::links::LinkPress;
 use crate::motion::Motion;
 use crate::panel::Panel;
 use crate::pointer::{Hit, Pixel, Region, Route, WHEEL_ROWS, Wheel};
@@ -688,11 +689,30 @@ impl App {
     }
   }
 
-  /// The left button on the page: presses and drags select.
+  /// Left button: select, or follow links.
   fn page_left(&mut self, route: Route) -> Result<()> {
     let mouse = route.mouse;
-    if matches!(mouse.kind, MouseEventKind::Up(_)) {
-      return Ok(());
+    match mouse.kind {
+      MouseEventKind::Up(_) => {
+        let LinkPress::Held(target) = &self.link_press else { return Ok(()) };
+        let target = target.clone();
+        self.link_press = LinkPress::Followed;
+        return self.follow(&target);
+      }
+      // A followed run's later presses do nothing.
+      _ if route.clicks > 1
+        && matches!(self.link_press, LinkPress::Followed) =>
+      {
+        return Ok(());
+      }
+      MouseEventKind::Drag(_) => self.link_press = LinkPress::Idle,
+      _ => {
+        // A broken link table still selects.
+        let link = (route.clicks == 1)
+          .then(|| self.link_pressed(mouse.column, mouse.row, route.pixel));
+        let link = link.and_then(|link| link.ok().flatten());
+        self.link_press = link.map_or(LinkPress::Idle, LinkPress::Held);
+      }
     }
     self.animation = None;
     let pos = if self.text_mode {
@@ -716,6 +736,25 @@ impl App {
       }
     }
     Ok(())
+  }
+
+  /// Link at a pressed, shown cell.
+  fn link_pressed(
+    &mut self,
+    column: u16,
+    row: u16,
+    pixel: Option<Pixel>,
+  ) -> Result<Option<crate::document::Target>> {
+    let point = if self.text_mode {
+      match self.text_shown(column, row)? {
+        Some(position) => self.glyph_point(position)?,
+        None => None,
+      }
+    } else {
+      self.page_point(column, row, pixel)
+    };
+    let Some((page, x, y)) = point else { return Ok(None) };
+    self.link_on(page, x, y)
   }
 
   /// Page-area pixels at a cell: reported, else centre.

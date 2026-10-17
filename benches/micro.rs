@@ -144,6 +144,29 @@ fn overlay_case(app: &mut App, name: &str) -> Result<()> {
   })
 }
 
+/// Hovered citation: label, then tint.
+fn link_hover() -> Result<()> {
+  let mut app = paper(false)?;
+  app.command("2")?;
+  let page = app.navigation_position().page;
+  anyhow::ensure!(app.doc.links(page)?.len() >= 2, "citations on page 2");
+  let mut index = 0;
+  measure("App::point_link", || {
+    index = 1 - index;
+    app.point_link(Some((page, index)));
+    black_box(&app.hover_link);
+  })?;
+  for text_mode in [false, true] {
+    let mut app = paper(text_mode)?;
+    app.command("2")?;
+    overlay_case(&mut app, &format!("no link text={text_mode}"))?;
+    app.point_link(Some((page, 0)));
+    anyhow::ensure!(app.hover_link.is_some(), "a hovered citation");
+    overlay_case(&mut app, &format!("link tint text={text_mode}"))?;
+  }
+  Ok(())
+}
+
 /// Visible citation labels on the corpus paper.
 fn draw_hints() -> Result<()> {
   let mut app = paper(false)?;
@@ -768,6 +791,7 @@ const CASES: &[(&str, Case)] = &[
   ("handle bounds", handle_bounds),
   ("projection", projection),
   ("menu_rows", menu_rows),
+  ("link hover", link_hover),
   ("frame", frame),
   ("viewport", viewport),
   ("transitions", transitions),

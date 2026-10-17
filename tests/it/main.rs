@@ -11,6 +11,7 @@ mod figures;
 mod focus;
 mod jumps;
 mod modes;
+mod mouse;
 mod navigation;
 mod objects;
 mod outline;

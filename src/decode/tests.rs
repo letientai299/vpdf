@@ -294,6 +294,26 @@ fn crossterm_mouse_keeps_buttons_one_to_seven() {
 }
 
 #[test]
+fn back_and_forward_presses_name_history() {
+  let mouse = |kind| Mouse {
+    kind,
+    at: Spot::Cell { column: 3, row: 4 },
+    modifiers: NONE,
+  };
+  let cases = [
+    (MouseKind::Press(Button::BACK), Some(false)),
+    (MouseKind::Press(Button::FORWARD), Some(true)),
+    (MouseKind::Release(Button::BACK), None),
+    (MouseKind::Drag(Button::FORWARD), None),
+    (MouseKind::Press(Button(10)), None),
+    (MouseKind::Press(Button::LEFT), None),
+  ];
+  for (kind, want) in cases {
+    assert_eq!(mouse(kind).history(), want, "{kind:?}");
+  }
+}
+
+#[test]
 fn kitty_replies_recorded() {
   let events = decode(&[
     b"\x1b[48;36;120;468;840t\x1bP>|kitty(0.49.1)\x1b\\",
