@@ -136,6 +136,31 @@ impl Text {
     self.lines.iter().map(Line::text).collect::<Vec<_>>().join("\n")
   }
 
+  /// First position and text within areas.
+  pub fn in_areas(
+    &self,
+    page: PageId,
+    areas: &[Bounds],
+  ) -> (Option<Position>, String) {
+    let mut out = String::new();
+    let mut first = None;
+    for (line, row) in self.lines.iter().enumerate() {
+      let before = out.len();
+      for (glyph, ch) in row.glyphs.iter().enumerate() {
+        let x = f32::midpoint(ch.bounds.x0, ch.bounds.x1);
+        let y = f32::midpoint(ch.bounds.y0, ch.bounds.y1);
+        if areas.iter().any(|area| area.contains(x, y)) {
+          first.get_or_insert(Position { page, line, glyph });
+          out.push(ch.ch);
+        }
+      }
+      if out.len() > before {
+        out.push(' ');
+      }
+    }
+    (first, out.split_whitespace().collect::<Vec<_>>().join(" "))
+  }
+
   pub fn weight(&self) -> usize {
     self.lines.iter().map(|l| l.glyphs.capacity() * size_of::<Glyph>()).sum()
   }
@@ -188,4 +213,51 @@ pub fn printable(raw: &str) -> impl Iterator<Item = char> + '_ {
     .chars()
     .filter(|ch| !ch.is_control() || ch.is_whitespace())
     .map(|ch| if ch.is_control() { ' ' } else { ch })
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn areas_extract_only_marked_glyphs() {
+    let text = Text {
+      lines: ["xCafé  ", "世界y"]
+        .into_iter()
+        .enumerate()
+        .map(|(line, text)| Line {
+          paragraph: false,
+          glyphs: text
+            .chars()
+            .enumerate()
+            .map(|(glyph, ch)| Glyph {
+              ch,
+              bounds: Bounds {
+                x0: glyph as f32 * 10.0,
+                y0: line as f32 * 20.0,
+                x1: (glyph + 1) as f32 * 10.0,
+                y1: line as f32 * 20.0 + 10.0,
+              },
+            })
+            .collect(),
+        })
+        .collect(),
+      truncated: false,
+    };
+    let first = Bounds { x0: 9.0, y0: 0.0, x1: 70.0, y1: 10.0 };
+    let second = Bounds { x0: 0.0, y0: 20.0, x1: 21.0, y1: 30.0 };
+    let page = PageId(3);
+    for (areas, expected) in [
+      (vec![first, second], "Café 世界"),
+      (vec![first, first, second], "Café 世界"),
+    ] {
+      let (position, marked) = text.in_areas(page, &areas);
+      assert_eq!(position, Some(Position { page, line: 0, glyph: 1 }));
+      assert_eq!(marked, expected);
+    }
+    let blank = Bounds { x0: 0.0, y0: 40.0, x1: 50.0, y1: 50.0 };
+    for areas in [vec![], vec![blank]] {
+      assert_eq!(text.in_areas(page, &areas), (None, String::new()));
+    }
+  }
 }

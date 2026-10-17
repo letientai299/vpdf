@@ -5,6 +5,7 @@ use crate::graphics::Graphics;
 use crate::keys::{Action, Input, PanelKind};
 use crate::layout::Screen;
 use crate::motion::Motion;
+use crate::panel_layout::Layout;
 use crate::panel_search::RowSearch;
 use crate::recent::Shelf;
 use crate::state::Entry;
@@ -29,6 +30,7 @@ pub enum Destination {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Style {
   Plain,
+  Muted,
   Heading,
   /// `keys: description`, with the keys highlighted.
   Key,
@@ -77,7 +79,7 @@ pub struct Panel {
   /// Columns the last frame drew; presses beyond them miss the rows.
   columns: u16,
   height: u16,
-  help: Option<crate::help::Layout>,
+  layout: Option<Layout>,
   /// Cards for recent documents; a reader pane shows them over its page.
   pub shelf: Option<Shelf>,
 }
@@ -94,7 +96,7 @@ impl Panel {
       note: "",
       columns: u16::MAX,
       height: 0,
-      help: None,
+      layout: None,
       shelf: None,
     }
   }
@@ -107,7 +109,7 @@ impl Panel {
       self.top = 0;
     }
     self.search.clamp(rows.len());
-    self.help = None;
+    self.layout = None;
     self.rows = rows;
     self.note = note;
   }
@@ -116,7 +118,7 @@ impl Panel {
   pub fn navigate(&mut self, input: Input, page: usize) -> bool {
     let last = self.rows.len().saturating_sub(1);
     let count = input.count;
-    if self.help.is_some() {
+    if self.kind == PanelKind::Help && self.layout.is_some() {
       let scroll = match input.action {
         Action::Scroll(amount) => {
           Some((amount * page as f32 * count as f32) as isize)
@@ -185,7 +187,7 @@ impl Panel {
       MouseEventKind::Down(MouseButton::Left)
         if mouse.row > 0 && mouse.column < self.columns =>
       {
-        if self.help.is_some() && mouse.row >= self.height.saturating_sub(1) {
+        if self.layout.is_some() && mouse.row >= self.height.saturating_sub(1) {
           return None;
         }
         let line = self.top + usize::from(mouse.row) - 1;
@@ -227,24 +229,25 @@ impl Panel {
   }
 
   fn line_count(&self) -> usize {
-    self.help.as_ref().map_or(self.rows.len(), |help| help.lines.len())
+    self.layout.as_ref().map_or(self.rows.len(), |help| help.lines.len())
   }
 
   fn line_source(&self, line: usize) -> usize {
-    self.help.as_ref().map_or(line, |help| {
+    self.layout.as_ref().map_or(line, |help| {
       help.lines.get(line).map_or(self.rows.len(), |line| line.source)
     })
   }
 
   fn line_start(&self, row: usize) -> usize {
-    self.help.as_ref().map_or(row, |help| {
+    self.layout.as_ref().map_or(row, |help| {
       help.starts.get(row).copied().unwrap_or(help.lines.len())
     })
   }
 
   fn reflow(&mut self, columns: usize) {
-    if self.kind != PanelKind::Help
-      || self.help.as_ref().is_some_and(|help| help.columns == columns)
+    if matches!(self.kind, PanelKind::Help)
+      && self.layout.as_ref().is_some_and(|layout| layout.columns == columns)
+      || !matches!(self.kind, PanelKind::Help | PanelKind::Links)
     {
       return;
     }
@@ -253,7 +256,10 @@ impl Panel {
     let selected = self.line_start(self.selected);
     let visible = usize::from(self.height.saturating_sub(2));
     let shown = (self.top..self.top + visible).contains(&selected);
-    self.help = Some(crate::help::Layout::new(&self.rows, columns));
+    self.layout = Some(match self.kind {
+      PanelKind::Links => Layout::links(&self.rows, columns, self.selected),
+      _ => Layout::help(&self.rows, columns),
+    });
     let start = self.line_start(source);
     let length = self.line_start(source + 1).saturating_sub(start);
     self.top = start + offset.min(length.saturating_sub(1));
@@ -327,7 +333,7 @@ impl Panel {
     self.top = self.top.min(self.line_count().saturating_sub(count.max(1)));
     let start = self.top;
     for (row, index) in (start..self.line_count()).take(count).enumerate() {
-      let (source, item, keys) = self.help.as_ref().map_or_else(
+      let (source, item, keys) = self.layout.as_ref().map_or_else(
         || (index, &self.rows[index], keys),
         |help| {
           let line = &help.lines[index];
@@ -415,6 +421,12 @@ impl Row {
         marked(out, &name, query, &format!("{base}{}", theme::FILE))?;
         write!(out, "{base}")?;
         Ok(parent.width() + name.width())
+      }
+      (Style::Muted, _) => {
+        let text = terminal::clean(&self.label, room);
+        let muted = if plain { theme::MUTED } else { "" };
+        marked(out, &text, query, &format!("{base}{muted}"))?;
+        Ok(text.width())
       }
       (Style::Heading, _) => {
         let text = terminal::clean(&self.label, room);
@@ -636,18 +648,7 @@ impl App {
           )
         })
         .collect(),
-      PanelKind::Links => self
-        .doc
-        .links(self.navigation_position().page)?
-        .into_iter()
-        .map(|link| {
-          let text = match &link.target {
-            Target::Uri(uri) => uri.clone(),
-            _ => "Go to page".into(),
-          };
-          Row::new(text, label(&link.target), Destination::Link(link.target))
-        })
-        .collect(),
+      PanelKind::Links => self.link_rows()?,
       PanelKind::Jumps => self
         .reader
         .jumps()
@@ -685,7 +686,11 @@ impl App {
       }
       Action::Yank | Action::YankLine => {
         if let Some(row) = panel.rows.get(panel.selected) {
-          let text = format!("{}\n", row.label.trim());
+          let value = match (&panel.kind, &row.destination) {
+            (PanelKind::Links, Destination::Link(Target::Uri(uri))) => uri,
+            _ => &row.label,
+          };
+          let text = format!("{}\n", value.trim());
           self.reader.store(input.register, text)?;
         }
       }

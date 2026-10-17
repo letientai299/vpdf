@@ -1,4 +1,5 @@
-use crate::panel::{Panel, Style};
+use crate::document::Target;
+use crate::panel::{Destination, Panel, Row, Style};
 
 /// Row search inside a panel, like `/` in a Vim buffer.
 #[derive(Default)]
@@ -20,6 +21,13 @@ fn matcher(query: &str) -> impl Fn(&str) -> bool {
       label.to_lowercase().contains(&query)
     }
   }
+}
+
+fn matches(row: &Row, hit: &impl Fn(&str) -> bool) -> bool {
+  hit(&row.label)
+    || hit(&row.detail)
+    || matches!(&row.destination, Destination::Link(Target::Uri(uri))
+      if hit(uri))
 }
 
 /// Byte ranges of `query` in `text`, by the same rule as `hit`.
@@ -116,7 +124,8 @@ impl Panel {
           (current + step) % total
         }
       });
-      let Some(index) = next.into_iter().find(|&i| hit(&self.rows[i].label))
+      let Some(index) =
+        next.into_iter().find(|&i| matches(&self.rows[i], &hit))
       else {
         return false;
       };
@@ -134,7 +143,8 @@ impl Panel {
       return None;
     }
     let hit = matcher(query);
-    let hits = self.rows.iter().enumerate().filter(|(_, row)| hit(&row.label));
+    let hits =
+      self.rows.iter().enumerate().filter(|(_, row)| matches(row, &hit));
     let (mut index, mut total) = (0, 0);
     for (i, _) in hits {
       total += 1;
@@ -174,6 +184,28 @@ mod tests {
     assert_eq!(ranges("Next match, MATCH", "match"), [(5, 10), (12, 17)]);
     assert_eq!(ranges("Next match, MATCH", "MATCH"), [(12, 17)]);
     assert_eq!(ranges("Ärger", "är"), []);
+  }
+
+  #[test]
+  fn searches_labels_and_destinations() {
+    let mut panel = Panel::new(
+      PanelKind::Links,
+      vec![
+        Row::new(
+          "Project page".into(),
+          String::new(),
+          Destination::Link(Target::Uri("https://example.com/needle".into())),
+        ),
+        Row::new("Reference text".into(), "p. iv".into(), Destination::None),
+      ],
+    );
+    for (query, selected) in [("project", 0), ("needle", 0), ("p. iv", 1)] {
+      panel.begin_search(false);
+      panel.preview(query);
+      assert_eq!(panel.selected, selected);
+      assert_eq!(panel.count(), Some((1, 1)));
+      panel.abort_search();
+    }
   }
 
   #[test]

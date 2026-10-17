@@ -53,21 +53,6 @@ fn marked(
   if !MARKUP.contains(&annotation.kind.as_str()) {
     return (start, String::new());
   }
-  let mut out = String::new();
-  let mut first = None;
-  for (line, row) in text.lines.iter().enumerate() {
-    let before = out.len();
-    for (glyph, ch) in row.glyphs.iter().enumerate() {
-      let x = f32::midpoint(ch.bounds.x0, ch.bounds.x1);
-      let y = f32::midpoint(ch.bounds.y0, ch.bounds.y1);
-      if annotation.areas.iter().any(|area| area.contains(x, y)) {
-        first.get_or_insert(Position { page, line, glyph });
-        out.push(ch.ch);
-      }
-    }
-    if out.len() > before {
-      out.push(' ');
-    }
-  }
-  (first.unwrap_or(start), out.split_whitespace().collect::<Vec<_>>().join(" "))
+  let (first, marked) = text.in_areas(page, &annotation.areas);
+  (first.unwrap_or(start), marked)
 }

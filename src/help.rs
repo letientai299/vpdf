@@ -1,20 +1,8 @@
 use crate::panel::{Destination, Row, Style, key_width};
-use unicode_width::UnicodeWidthChar;
-
-pub(crate) struct Line {
-  pub source: usize,
-  pub row: Row,
-  pub keys: usize,
-}
-
-pub(crate) struct Layout {
-  pub columns: usize,
-  pub lines: Vec<Line>,
-  pub starts: Vec<usize>,
-}
+use crate::panel_layout::{Layout, Line, wrap};
 
 impl Layout {
-  pub fn new(rows: &[Row], columns: usize) -> Self {
+  pub fn help(rows: &[Row], columns: usize) -> Self {
     let mut layout = Self { columns, lines: Vec::new(), starts: Vec::new() };
     let mut start = 0;
     while start < rows.len() {
@@ -117,38 +105,6 @@ pub(crate) fn key_styles(
   spans
 }
 
-fn wrap(mut text: &str, columns: usize) -> Vec<String> {
-  let mut lines = Vec::new();
-  while !text.is_empty() {
-    let mut width = 0;
-    let end = text
-      .char_indices()
-      .take_while(|(_, ch)| {
-        width += ch.width().unwrap_or(0);
-        width <= columns.max(1)
-      })
-      .last()
-      .map_or(text.len(), |(index, ch)| index + ch.len_utf8());
-    if end == text.len() {
-      lines.push(text.to_owned());
-      break;
-    }
-    let split = if text[end..].starts_with(char::is_whitespace) {
-      Some(end)
-    } else {
-      text[..end].rfind(' ').filter(|&index| index > 0)
-    };
-    let end = split
-      .unwrap_or_else(|| text[..end].rfind('>').map_or(end, |index| index + 1));
-    lines.push(text[..end].to_owned());
-    text = text[end..].trim_start();
-  }
-  if lines.is_empty() {
-    lines.push(String::new());
-  }
-  lines
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -158,7 +114,7 @@ mod tests {
   fn sections_align_independently() {
     let rows =
       ["# A", "long key: first", "x: next", "# B", "y: last"].map(Row::parse);
-    let layout = Layout::new(&rows, 60);
+    let layout = Layout::help(&rows, 60);
     let widths: Vec<_> = layout.lines.iter().map(|line| line.keys).collect();
     assert_eq!(widths, [8, 8, 8, 1, 1]);
   }
@@ -166,7 +122,7 @@ mod tests {
   #[test]
   fn descriptions_keep_their_indent() {
     let rows = ["# A", "j: one two three four five"].map(Row::parse);
-    let layout = Layout::new(&rows, 14);
+    let layout = Layout::help(&rows, 14);
     let labels: Vec<_> =
       layout.lines.iter().map(|line| &*line.row.label).collect();
     assert_eq!(labels, ["A", "j: one two", "   three four", "   five"]);
@@ -192,7 +148,7 @@ mod tests {
     let rows =
       ["C: Cursor mode", "C/V h j: glyphs", "v V: select", "<C-x>: Ctrl"]
         .map(Row::parse);
-    let layout = Layout::new(&rows, 48);
+    let layout = Layout::help(&rows, 48);
     for (index, line) in layout.lines.iter().enumerate() {
       let mut out = Vec::new();
       line.row.write(&mut out, crate::theme::RESET, 48, line.keys, "")?;
@@ -215,7 +171,7 @@ mod tests {
       "[count]gg: jump",
     ]
     .map(Row::parse);
-    let layout = Layout::new(&rows, 48);
+    let layout = Layout::help(&rows, 48);
     for (index, line) in layout.lines.iter().enumerate() {
       let mut out = Vec::new();
       line.row.write(&mut out, crate::theme::RESET, 48, line.keys, "")?;
@@ -238,7 +194,7 @@ mod tests {
     let rows: Vec<_> =
       crate::panel::help().iter().map(|s| Row::parse(s)).collect();
     for columns in [4, 10, 24, 40, 63] {
-      let layout = Layout::new(&rows, columns);
+      let layout = Layout::help(&rows, columns);
       for line in &layout.lines {
         let width = match line.row.label.split_once(": ") {
           Some((key, text))
