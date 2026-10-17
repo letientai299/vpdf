@@ -7,7 +7,7 @@ use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crate::reader::{self, Mode};
 use crate::render_worker::RenderWorker;
 use crate::split::Axis;
-use crate::text::Position;
+use crate::text::{Bounds, PageId, Position};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::process::{Command, Stdio};
 
@@ -432,23 +432,38 @@ impl App {
 
   /// Destination of the link covering the cursor glyph.
   pub fn link_target(&mut self, cursor: Position) -> Result<Option<Target>> {
-    let text = self.doc.text(cursor.page)?;
-    let Some(glyph) = text.glyph(cursor) else { return Ok(None) };
-    let x = f32::midpoint(glyph.bounds.x0, glyph.bounds.x1);
-    let y = f32::midpoint(glyph.bounds.y0, glyph.bounds.y1);
-    let links = self.doc.links(cursor.page)?;
-    Ok(
-      links
-        .into_iter()
-        .find(|link| link.bounds.contains(x, y))
-        .map(|link| link.target),
-    )
+    let Some((page, x, y)) = self.glyph_point(cursor)? else { return Ok(None) };
+    let Some(index) = self.link_at(page, x, y)? else { return Ok(None) };
+    Ok(Some(self.doc.links(page)?[index].target.clone()))
+  }
+
+  /// Centre of the glyph at `position`.
+  pub(crate) fn glyph_point(
+    &mut self,
+    position: Position,
+  ) -> Result<Option<(PageId, f32, f32)>> {
+    let text = self.doc.text(position.page)?;
+    Ok(text.glyph(position).map(|glyph| {
+      let Bounds { x0, y0, x1, y1 } = glyph.bounds;
+      (position.page, f32::midpoint(x0, x1), f32::midpoint(y0, y1))
+    }))
+  }
+
+  /// Index of the link covering a page point.
+  pub(crate) fn link_at(
+    &mut self,
+    page: PageId,
+    x: f32,
+    y: f32,
+  ) -> Result<Option<usize>> {
+    let links = self.doc.links(page)?;
+    Ok(links.iter().position(|link| link.bounds.contains(x, y)))
   }
 
   pub fn follow(&mut self, target: &Target) -> Result<()> {
     match target {
       Target::Page(page) | Target::Point { page, .. } => {
-        let page = crate::text::PageId(page.0.min(self.doc.pages.len() - 1));
+        let page = PageId(page.0.min(self.doc.pages.len() - 1));
         let position = match target {
           Target::Point { x, y, .. } => {
             self.doc.text(page)?.nearest(page, *x, *y)

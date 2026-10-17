@@ -66,16 +66,18 @@ fn clean_marks() -> Result<()> {
   })
 }
 
+/// A 120x40 pane.
+const PANE: Screen = Screen {
+  columns: 120,
+  rows: 40,
+  cell_width: 8,
+  cell_height: 16,
+  origin: (0, 0),
+};
+
 /// The corpus paper on a 120x40 pane.
 fn paper(text_mode: bool) -> Result<App> {
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
-  App::with_screen(&corpus("paper.pdf")?, "", text_mode, screen)
+  App::with_screen(&corpus("paper.pdf")?, "", text_mode, PANE)
 }
 
 /// Text-mode frame.
@@ -204,10 +206,36 @@ fn route() -> Result<()> {
   })
 }
 
-/// Each bare pointer move `run` skips.
+/// Motion along a citation-dense row.
 fn hover() -> Result<()> {
-  let mut pointer = vpdf::pointer::Pointer::default();
-  measure("Pointer::hover", || black_box(&mut pointer).hover())
+  use crossterm::event::{MouseEvent, MouseEventKind};
+  use vpdf::pointer::Region;
+  let motion = |column| MouseEvent {
+    kind: MouseEventKind::Moved,
+    column,
+    row: 20,
+    modifiers: KeyModifiers::NONE,
+  };
+  let mut session = vpdf::session::Session::new(None);
+  session.open(&corpus("paper.pdf")?, true, PANE)?;
+  session.app().command("2")?;
+  let mut column = 0;
+  measure("Session::hover", || {
+    column = (column + 1) % 120;
+    black_box(session.hover(black_box(motion(column))));
+  })?;
+  for text_mode in [false, true] {
+    let mut app = paper(text_mode)?;
+    app.command("2")?;
+    app.draw(&mut Vec::new())?;
+    let mut column = 0;
+    measure(&format!("App::hovered text={text_mode}"), || {
+      column = (column + 1) % 120;
+      let hit = app.hovered(Region::Page, black_box(column), 20);
+      black_box(hit.expect("hit test"));
+    })?;
+  }
+  Ok(())
 }
 
 /// One terminal read: pointer motion, keys, and a graphics reply, as
@@ -306,6 +334,22 @@ fn scan_whole() -> Result<()> {
   measure("tiles::draw whole scan", || {
     drop(black_box(vpdf::tiles::draw(&list, &matrix, area)));
   })
+}
+
+/// A page's first hover: text and links.
+fn cold_page() -> Result<()> {
+  for (name, page) in [("paper.pdf", 1), ("book.pdf", 99)] {
+    let mut doc = Document::open(&corpus(name)?, "")?;
+    measure(&format!("cold text {name}"), || {
+      doc.trim();
+      drop(black_box(doc.text(PageId(page)).expect("text")));
+    })?;
+    measure(&format!("cold links {name}"), || {
+      doc.trim();
+      drop(black_box(doc.links(PageId(page)).expect("links")));
+    })?;
+  }
+  Ok(())
 }
 
 /// Interpreting a book page, as a visible page `zc` evicted does again.
@@ -444,8 +488,9 @@ fn preview_scene(text: bool) -> Result<App> {
   let link = app
     .doc
     .links(PageId(1))?
-    .into_iter()
+    .iter()
     .find(|link| !matches!(link.target, Target::Uri(_)))
+    .cloned()
     .expect("citation");
   let position = app.doc.text(PageId(1))?.nearest(
     PageId(1),
@@ -681,6 +726,7 @@ const CASES: &[(&str, Case)] = &[
   ("draw_hints", draw_hints),
   ("route", route),
   ("hover", hover),
+  ("cold page", cold_page),
   ("decode", decode),
   ("key prefixes", key_prefixes),
   ("scan whole", scan_whole),

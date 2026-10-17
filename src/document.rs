@@ -90,6 +90,7 @@ pub struct Document {
   lists: Arc<Lists>,
   ocr: Cache<PageId, Arc<Text>>,
   figures: Cache<PageId, Arc<Vec<crate::figures::Figure>>>,
+  links: Cache<PageId, Arc<Vec<Link>>>,
 }
 
 /// The document is encrypted and the password did not open it.
@@ -192,6 +193,7 @@ impl Document {
       lists: Arc::new(Mutex::new(Cache::new(LISTS))),
       ocr: Cache::new(32 * MIB),
       figures: Cache::new(4 * MIB),
+      links: Cache::new(MIB),
     })
   }
 
@@ -239,10 +241,11 @@ impl Document {
     Arc::clone(&self.lists)
   }
 
-  /// Drops cached text and display lists; OCR text stays.
+  /// Drops caches except OCR text.
   pub fn trim(&mut self) {
     self.texts.clear();
     self.figures.clear();
+    self.links.clear();
     if let Ok(mut lists) = self.lists.lock() {
       lists.clear();
     }
@@ -259,21 +262,31 @@ impl Document {
     display(&self.native, &self.lists, page)
   }
 
-  pub fn links(&self, page: PageId) -> Result<Vec<Link>> {
+  /// Cached: hover tests them per move.
+  pub fn links(&mut self, page: PageId) -> Result<Arc<Vec<Link>>> {
     self.validate(page)?;
-    Ok(
-      self
-        .native
-        .load_page(page.0 as i32)?
-        .links()?
-        .map(|link| Link {
-          bounds: link.bounds.into(),
-          target: link
-            .dest
-            .map_or_else(|| Target::Uri(uri(&link.uri)), Target::from),
-        })
-        .collect(),
-    )
+    if let Some(links) = self.links.get(&page) {
+      return Ok(Arc::clone(links));
+    }
+    let links: Vec<_> = self
+      .native
+      .load_page(page.0 as i32)?
+      .links()?
+      .map(|link| Link {
+        bounds: link.bounds.into(),
+        target: link
+          .dest
+          .map_or_else(|| Target::Uri(uri(&link.uri)), Target::from),
+      })
+      .collect();
+    let links = Arc::new(links);
+    let uris = links.iter().map(|link| match &link.target {
+      Target::Uri(uri) => uri.capacity(),
+      Target::Page(_) | Target::Point { .. } => 0,
+    });
+    let weight = links.capacity() * size_of::<Link>() + uris.sum::<usize>();
+    self.links.insert(page, Arc::clone(&links), weight.max(1));
+    Ok(links)
   }
 
   pub fn metadata(&self) -> Vec<(String, String)> {

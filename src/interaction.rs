@@ -4,11 +4,10 @@ use crate::keys::{Action, Input};
 use crate::layout::Screen;
 use crate::motion::Motion;
 use crate::panel::Panel;
-use crate::pointer::{Region, Route};
+use crate::pointer::{Hit, Region, Route};
 use crate::reader::{Location, SelectionKind};
 use crate::text::{Bounds, PageId, Position};
 use crossterm::event::{MouseButton, MouseEventKind};
-use std::time::{Duration, Instant};
 
 impl App {
   pub fn input_owner(&self) -> InputOwner {
@@ -523,7 +522,6 @@ impl App {
     self.dismiss_overlay();
     self.hints = None;
     self.cancel_prompt()?;
-    self.last_click = None;
     self.disarm();
     Ok(())
   }
@@ -573,13 +571,7 @@ impl App {
     let pos = if self.text_mode {
       self.text_position(mouse.column, mouse.row)?
     } else {
-      let y = f32::from(mouse.row) * f32::from(self.screen.cell_height);
-      let page = self.layout.page_at(y + self.reader.scroll);
-      let x = f32::from(mouse.column.saturating_sub(self.left))
-        * f32::from(self.screen.cell_width);
-      let Some((x, y)) =
-        self.layout.unproject(page, (x, y), self.reader.scroll)
-      else {
+      let Some((page, x, y)) = self.page_point(mouse.column, mouse.row) else {
         return Ok(());
       };
       self.doc.text(page)?.nearest(page, x, y)
@@ -593,13 +585,64 @@ impl App {
       self.reader.end_selection();
       self.reader.cursor = pos;
       self.target = Some(pos);
-      if self.last_click.is_some_and(|(when, old)| {
-        old == pos && when.elapsed() < Duration::from_millis(350)
-      }) {
+      if route.clicks >= 2 {
         self.reader.object(false, &mut self.doc)?;
       }
-      self.last_click = Some((Instant::now(), pos));
     }
     Ok(())
+  }
+
+  /// Pixel centre of a pane cell.
+  pub(crate) fn cell_centre(&self, column: u16, row: u16) -> (f32, f32) {
+    let (width, height) =
+      (f32::from(self.screen.cell_width), f32::from(self.screen.cell_height));
+    let x = (f32::from(column.saturating_sub(self.left)) + 0.5) * width;
+    (x, (f32::from(row) + 0.5) * height)
+  }
+
+  /// Page and point under a pane cell's centre.
+  pub fn page_point(
+    &self,
+    column: u16,
+    row: u16,
+  ) -> Option<(PageId, f32, f32)> {
+    let (x, y) = self.cell_centre(column, row);
+    let page = self.layout.page_at(y + self.reader.scroll);
+    let (x, y) = self.layout.unproject(page, (x, y), self.reader.scroll)?;
+    Some((page, x, y))
+  }
+
+  /// What a resting pointer covers.
+  pub fn hovered(
+    &mut self,
+    region: Region,
+    column: u16,
+    row: u16,
+  ) -> Result<Hit> {
+    if region != Region::Page {
+      return Ok(Hit::Nothing);
+    }
+    if self.text_mode {
+      let Some(position) = self.text_hit(column, row)? else {
+        return Ok(Hit::Nothing);
+      };
+      let point = self.glyph_point(position)?;
+      let Some((page, x, y)) = point else { return Ok(Hit::Nothing) };
+      let link = self.link_at(page, x, y)?;
+      return Ok(link.map_or(Hit::Text, |index| Hit::Link(page, index)));
+    }
+    let Some((page, x, y)) = self.page_point(column, row) else {
+      return Ok(Hit::Nothing);
+    };
+    if let Some(index) = self.link_at(page, x, y)? {
+      return Ok(Hit::Link(page, index));
+    }
+    let text = self.doc.text(page)?;
+    let mut glyphs = text.lines.iter().flat_map(|line| &line.glyphs);
+    Ok(if glyphs.any(|glyph| glyph.bounds.contains(x, y)) {
+      Hit::Text
+    } else {
+      Hit::Nothing
+    })
   }
 }

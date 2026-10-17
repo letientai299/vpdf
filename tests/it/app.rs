@@ -1,4 +1,6 @@
 use crate::common;
+use crate::focus::{screen, send};
+use unicode_width::UnicodeWidthChar;
 
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::path::PathBuf;
@@ -8,8 +10,8 @@ use vpdf::app::App;
 use vpdf::document::Target;
 use vpdf::keys::{Action, Input, PanelKind};
 use vpdf::layout::Screen;
-use vpdf::pointer::{Region, Route};
-use vpdf::text::PageId;
+use vpdf::pointer::{Hit, Region, Route};
+use vpdf::text::{Bounds, PageId};
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
@@ -135,9 +137,15 @@ fn links_keep_coordinates_and_text_scrolls_lines() -> Result<()> {
   let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
   let target = (0..app.doc.pages.len())
     .find_map(|page| {
-      app.doc.links(PageId(page)).ok()?.into_iter().find(
-        |link| matches!(link.target, Target::Point { y, .. } if y > 100.0),
-      )
+      app
+        .doc
+        .links(PageId(page))
+        .ok()?
+        .iter()
+        .find(
+          |link| matches!(link.target, Target::Point { y, .. } if y > 100.0),
+        )
+        .cloned()
     })
     .expect("real book has positioned internal links")
     .target;
@@ -181,7 +189,8 @@ fn text_clicks_keep_the_view_and_select_words() -> Result<()> {
     row: 17,
     modifiers: KeyModifiers::NONE,
   };
-  let press = Route { pane: app.id, region: Region::Page, focus: true, mouse };
+  let press =
+    Route { pane: app.id, region: Region::Page, focus: true, mouse, clicks: 1 };
   app.draw(&mut Vec::new())?;
   let target = app.text_position(mouse.column, mouse.row)?;
   app.mouse(press)?;
@@ -191,7 +200,7 @@ fn text_clicks_keep_the_view_and_select_words() -> Result<()> {
   assert!(app.reader.selection.is_none());
   let again = app.text_position(mouse.column, mouse.row)?;
   assert_eq!(again, target, "a click keeps the view");
-  app.mouse(press)?;
+  app.mouse(Route { clicks: 2, ..press })?;
   let text = app.doc.text(target.page)?;
   let word = text.lines[target.line].run(target.glyph);
   let selection = app.reader.selection.expect("a double click selects");
@@ -704,5 +713,217 @@ fn recent_view_covers_the_pane() -> Result<()> {
   app.command("text")?;
   assert!(app.text_mode && !app.covered() && !app.panel_focused());
   assert!(app.panel.as_ref().unwrap().shelf.is_some());
+  Ok(())
+}
+
+/// Each page cell with what the pointer hits there.
+type Targets = Vec<((u16, u16), Hit)>;
+
+fn hover_targets(app: &mut App) -> Result<Targets> {
+  let mut targets = Vec::new();
+  for row in 0..app.screen.rows - 1 {
+    for column in 0..app.screen.columns {
+      let hit = app.hovered(Region::Page, column, row)?;
+      targets.push(((column, row), hit));
+    }
+  }
+  Ok(targets)
+}
+
+/// Whether a projected box covers the cell centre.
+fn covers(app: &App, cell: (u16, u16), boxes: &[(PageId, Bounds)]) -> bool {
+  let (x, y) = (
+    (f32::from(cell.0) + 0.5) * f32::from(app.screen.cell_width),
+    (f32::from(cell.1) + 0.5) * f32::from(app.screen.cell_height),
+  );
+  boxes.iter().any(|&(page, bounds)| {
+    app.layout.project(page, bounds, app.reader.scroll).contains(x, y)
+  })
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn hover_hits_links_text_and_blanks() -> Result<()> {
+  for text_mode in [false, true] {
+    let mut app = if text_mode {
+      text_app()?
+    } else {
+      let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+      App::with_screen(&root.join("paper.pdf"), "", false, screen())?
+    };
+    app.command("2")?;
+    app.draw(&mut Vec::new())?;
+    let targets = hover_targets(&mut app)?;
+    let count = |wanted: fn(&Hit) -> bool| {
+      targets.iter().filter(|(_, hit)| wanted(hit)).count()
+    };
+    assert!(count(|hit| matches!(hit, Hit::Link(..))) > 0, "text={text_mode}");
+    assert!(count(|hit| *hit == Hit::Text) > 0, "text={text_mode}");
+    assert!(count(|hit| *hit == Hit::Nothing) > 0, "text={text_mode}");
+    let pages = app.layout.visible(app.reader.scroll);
+    let (mut links, mut glyphs) = (Vec::new(), Vec::new());
+    for page in pages.map(PageId) {
+      let page_links = app.doc.links(page)?;
+      links.extend(page_links.iter().map(|link| (page, link.bounds)));
+      let text = app.doc.text(page)?;
+      let all = text.lines.iter().flat_map(|line| &line.glyphs);
+      glyphs.extend(all.map(|glyph| (page, glyph.bounds)));
+    }
+    for &(cell, hit) in &targets {
+      let at = format!("text={text_mode} {cell:?} {hit:?}");
+      if text_mode {
+        // The drawn glyph starts at or left of the cell.
+        let drawn = app.text_hit(cell.0, cell.1)?;
+        let start = match drawn {
+          Some(position) => app.text_cell(position)?,
+          None => None,
+        };
+        let width = match drawn {
+          Some(position) => {
+            let text = app.doc.text(position.page)?;
+            let glyph = text.glyph(position);
+            glyph.map_or(0, |glyph| glyph.ch.width().unwrap_or(0))
+          }
+          None => 0,
+        };
+        let starts = start.is_some_and(|(column, row)| {
+          let width = u16::try_from(width).unwrap_or(u16::MAX);
+          row == cell.1 && (column..column + width).contains(&cell.0)
+        });
+        assert_eq!(starts, hit != Hit::Nothing, "{at}");
+        let link = match drawn {
+          Some(position) => app.link_target(position)?.is_some(),
+          None => false,
+        };
+        assert_eq!(link, matches!(hit, Hit::Link(..)), "{at}");
+        continue;
+      }
+      let expected = match hit {
+        Hit::Link(page, index) => {
+          let bounds = app.doc.links(page)?[index].bounds;
+          covers(&app, cell, &[(page, bounds)])
+        }
+        Hit::Text => !covers(&app, cell, &links) && covers(&app, cell, &glyphs),
+        Hit::Nothing => {
+          !covers(&app, cell, &links) && !covers(&app, cell, &glyphs)
+        }
+      };
+      assert!(expected, "{at}");
+    }
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn motion_redraws_only_for_new_targets() -> Result<()> {
+  use vpdf::session::Session;
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut session = Session::new(None);
+  session.open(&root.join("paper.pdf"), true, screen())?;
+  let app = session.app();
+  app.command("2")?;
+  app.draw(&mut Vec::new())?;
+  let targets = hover_targets(app)?;
+  let link = targets.iter().find(|(_, hit)| matches!(hit, Hit::Link(..)));
+  let ((column, row), _) = *link.expect("a visible link");
+  // Two neighbours on one text target.
+  let text = targets.windows(2).find(|pair| {
+    pair.iter().all(|(_, hit)| *hit == Hit::Text) && pair[0].0.1 == pair[1].0.1
+  });
+  let [(first, _), (second, _)] = *text.expect("a word") else {
+    unreachable!()
+  };
+  app.start_hints(false)?;
+  let moved = |(column, row)| MouseEvent {
+    kind: MouseEventKind::Moved,
+    column,
+    row,
+    modifiers: KeyModifiers::NONE,
+  };
+  // cell -> redraw
+  let cases = [
+    ((column, row), true),
+    ((column, row), false),
+    (first, true),
+    (second, false),
+    ((column, row), true),
+    ((0, screen().rows - 1), true),
+    ((1, screen().rows - 1), false),
+  ];
+  for (step, (cell, redraw)) in cases.into_iter().enumerate() {
+    assert_eq!(session.hover(moved(cell)), redraw, "step {step}: {cell:?}");
+  }
+  assert!(session.app().hints.is_some(), "motion keeps hints");
+  send(&mut session, b"\x1b[27u")?;
+  let app = session.app();
+  let Hit::Link(page, index) = link.expect("a visible link").1 else {
+    unreachable!()
+  };
+  let bounds = app.doc.links(page)?[index].bounds;
+  let x = f32::midpoint(bounds.x0, bounds.x1);
+  let position =
+    app.doc.text(page)?.nearest(page, x, f32::midpoint(bounds.y0, bounds.y1));
+  app.go_to(position, true)?;
+  send(&mut session, b"K")?;
+  assert!(session.app().peek.is_some(), "K previews the link");
+  // SGR cells count from one.
+  let sgr = |flags, (column, row): (u16, u16)| {
+    format!("\x1b[<{flags};{};{}M", column + 1, row + 1)
+  };
+  for cell in [first, second, (column, row)] {
+    send(&mut session, sgr(35, cell).as_bytes())?;
+  }
+  assert!(session.app().peek.is_some(), "motion keeps the preview");
+  send(&mut session, b"\x1b[27u")?;
+  // Motion after a press: the release got lost.
+  let drag = [sgr(0, first), sgr(35, second), sgr(32, (column, row))];
+  send(&mut session, drag.concat().as_bytes())?;
+  assert!(session.app().reader.selection.is_none(), "no capture to drag");
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn text_hover_hits_the_next_frame() -> Result<()> {
+  let mut app = text_app()?;
+  app.command("2")?;
+  app.draw(&mut Vec::new())?;
+  let before = hover_targets(&mut app)?;
+  for _ in 0..3 {
+    app.scroll(16.0)?;
+  }
+  let upcoming = hover_targets(&mut app)?;
+  assert_ne!(before, upcoming, "scrolling moves the text");
+  app.draw(&mut Vec::new())?;
+  assert_eq!(upcoming, hover_targets(&mut app)?);
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn frames_retest_a_resting_pointer() -> Result<()> {
+  use vpdf::session::Session;
+  use vpdf::trace::Drawable;
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut session = Session::new(None);
+  session.open(&root.join("paper.pdf"), true, screen())?;
+  session.app().command("2")?;
+  session.draw_frame(&mut Vec::new())?;
+  let targets = hover_targets(session.app())?;
+  let link = targets.iter().find(|(_, hit)| matches!(hit, Hit::Link(..)));
+  let (cell, hit) = *link.expect("a visible link");
+  let moved = MouseEvent {
+    kind: MouseEventKind::Moved,
+    column: cell.0,
+    row: cell.1,
+    modifiers: KeyModifiers::NONE,
+  };
+  assert!(session.hover(moved));
+  // Half a screen puts another target there.
+  session.app().reader.scroll += 300.0;
+  assert_ne!(session.app().hovered(Region::Page, cell.0, cell.1)?, hit);
+  session.draw_frame(&mut Vec::new())?;
+  assert!(!session.hover(moved), "the frame retested the pointer");
   Ok(())
 }

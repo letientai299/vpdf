@@ -238,7 +238,7 @@ fn projected_mouse_tracks_glyphs() -> Result<()> {
         .layout
         .unproject(
           anchor.page,
-          (f32::from(column) * 8.0, f32::from(row) * 16.0),
+          ((f32::from(column) + 0.5) * 8.0, (f32::from(row) + 0.5) * 16.0),
           app.reader.scroll,
         )
         .unwrap();
@@ -254,6 +254,7 @@ fn projected_mouse_tracks_glyphs() -> Result<()> {
         region: Region::Page,
         focus: true,
         mouse,
+        clicks: 1,
       })?;
       assert_eq!(app.reader.cursor, expected, "{rotation} {zoom}");
     }

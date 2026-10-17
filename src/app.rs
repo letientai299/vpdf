@@ -159,7 +159,6 @@ pub struct App {
   pub(crate) heading: f32,
   /// The pane's rows above the status line are known blank.
   pub(crate) blank: bool,
-  pub(crate) last_click: Option<(Instant, Position)>,
 }
 
 impl App {
@@ -241,7 +240,6 @@ impl App {
       requested: Vec::new(),
       heading: 1.0,
       blank: false,
-      last_click: None,
     };
     app.load_outline();
     Ok(app)

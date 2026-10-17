@@ -26,8 +26,9 @@ fn open(text: bool) -> Result<App> {
   let link = app
     .doc
     .links(PageId(1))?
-    .into_iter()
+    .iter()
     .find(|link| !matches!(link.target, Target::Uri(_)))
+    .cloned()
     .unwrap();
   let position = app.doc.text(PageId(1))?.nearest(
     PageId(1),

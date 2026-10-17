@@ -106,6 +106,7 @@ impl App {
   pub fn overview_mouse(&mut self, mouse: MouseEvent) -> Result<()> {
     let grid = self.grid();
     let last = self.doc.pages.len() - 1;
+    let (x, y) = self.cell_centre(mouse.column, mouse.row);
     let Some(overview) = &mut self.overview else { return Ok(()) };
     match mouse.kind {
       MouseEventKind::ScrollDown => {
@@ -115,10 +116,6 @@ impl App {
         overview.selected = overview.selected.saturating_sub(grid.columns);
       }
       MouseEventKind::Down(MouseButton::Left) => {
-        let screen = self.layout.screen;
-        let x = f32::from(mouse.column.saturating_sub(self.left))
-          * f32::from(screen.cell_width);
-        let y = f32::from(mouse.row) * f32::from(screen.cell_height);
         let column = ((x - grid.gap / 2.0) / (grid.width + grid.gap)) as usize;
         let row = ((y - grid.gap / 2.0) / grid.row) as usize;
         let index = (overview.top + row) * grid.columns + column;

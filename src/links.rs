@@ -17,7 +17,7 @@ impl App {
     // Unreadable text must not hide destinations.
     let text = self.doc.text(page).ok();
     let mut rows = Vec::with_capacity(links.len());
-    for link in links {
+    for link in links.iter().cloned() {
       let anchor = text
         .as_ref()
         .map_or_else(String::new, |text| text.in_areas(page, &[link.bounds]).1);

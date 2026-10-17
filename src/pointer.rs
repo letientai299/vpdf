@@ -1,8 +1,10 @@
-//! Which pane and region each mouse event reaches.
+//! Mouse routing and what the pointer rests on.
 
 use crate::app::App;
 use crate::split::Rect;
+use crate::text::PageId;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+use std::time::{Duration, Instant};
 
 /// Part of a pane under the pointer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -94,6 +96,26 @@ pub struct Route {
   pub focus: bool,
   /// In pane cells, inside `region`.
   pub mouse: MouseEvent,
+  /// Presses in a row on one cell; drags and releases keep it.
+  pub clicks: u8,
+}
+
+/// What the pointer rests on inside a region.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Hit {
+  #[default]
+  Nothing,
+  Text,
+  /// Index into the page's `Document::links`.
+  Link(PageId, usize),
+}
+
+/// Pane, region, and hit under the pointer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Hover {
+  pub pane: u32,
+  pub region: Region,
+  pub hit: Hit,
 }
 
 /// Drags follow the press; only presses focus.
@@ -126,6 +148,7 @@ pub fn route(
       row: within(row, area.row, area.rows),
       ..mouse
     },
+    clicks: 1,
   })
 }
 
@@ -142,49 +165,155 @@ pub fn interrupts(kind: MouseEventKind) -> bool {
   )
 }
 
+/// Presses this close form one gesture.
+const CLICK: Duration = Duration::from_millis(350);
+
+/// Cells a press moves before it drags.
+const THRESHOLD: u16 = 1;
+
+/// The latest press, for counts and drags.
+#[derive(Clone, Copy, Debug)]
+struct Press {
+  button: MouseButton,
+  /// Opening a thumbnail ends the run.
+  on: Option<(u32, Region)>,
+  /// Until the release, drags follow the press.
+  held: bool,
+  column: u16,
+  row: u16,
+  at: Instant,
+  clicks: u8,
+  dragged: bool,
+}
+
+impl Press {
+  fn near(&self, column: u16, row: u16) -> bool {
+    self.column.abs_diff(column) < THRESHOLD
+      && self.row.abs_diff(row) < THRESHOLD
+  }
+}
+
 /// Pointer state a session keeps between events.
 #[derive(Debug, Default)]
 pub struct Pointer {
-  capture: Option<Capture>,
+  press: Option<Press>,
+  hover: Option<Hover>,
+  /// Last cell, to retest after view changes.
+  spot: Option<(u16, u16)>,
 }
 
 impl Pointer {
-  /// A press captures until its button's release.
+  /// A press captures until its button's release; drags start past the
+  /// threshold.
   pub fn route(
     &mut self,
     panes: &[Pane],
     focused: u32,
     mouse: MouseEvent,
+    now: Instant,
   ) -> Option<Route> {
-    let held = self.capture.map(|capture| capture.button);
+    let capture = self.capture();
+    let held = capture.map(|capture| capture.button);
     if let MouseEventKind::Down(button) = mouse.kind
       && held.is_some_and(|held| held != button)
     {
       // One button at a time.
       return None;
     }
-    let route = route(panes, focused, self.capture, mouse);
+    if let MouseEventKind::Drag(button) = mouse.kind
+      && held == Some(button)
+      && let Some(press) = &mut self.press
+    {
+      press.dragged |= !press.near(mouse.column, mouse.row);
+      if !press.dragged {
+        return None;
+      }
+    }
+    self.spot = Some((mouse.column, mouse.row));
+    let route = route(panes, focused, capture, mouse);
     match mouse.kind {
       MouseEventKind::Down(button) => {
-        self.capture = route.map(|route| Capture {
-          pane: route.pane,
+        let on = route.map(|route| (route.pane, route.region));
+        let again = self.press.filter(|press| {
+          press.button == button
+            && press.on == on
+            && !press.dragged
+            && press.near(mouse.column, mouse.row)
+            && now.saturating_duration_since(press.at) < CLICK
+        });
+        self.press = Some(Press {
           button,
-          region: route.region,
+          on,
+          held: true,
+          column: mouse.column,
+          row: mouse.row,
+          at: now,
+          clicks: again.map_or(1, |press| press.clicks.saturating_add(1)),
+          dragged: false,
         });
       }
       MouseEventKind::Up(button) if held == Some(button) => {
-        self.capture = None;
+        self.hold(false);
       }
-      MouseEventKind::Moved => self.hover(),
+      // The view moved under the next press.
+      MouseEventKind::ScrollDown
+      | MouseEventKind::ScrollUp
+      | MouseEventKind::ScrollLeft
+      | MouseEventKind::ScrollRight
+        if held.is_none() =>
+      {
+        self.press = None;
+      }
       _ => {}
     }
-    route
+    let clicks = match mouse.kind {
+      MouseEventKind::Down(_)
+      | MouseEventKind::Drag(_)
+      | MouseEventKind::Up(_) => self.press.map_or(1, |press| press.clicks),
+      _ => 1,
+    };
+    route.map(|route| Route { clicks, ..route })
   }
 
-  /// Bare motion: no button is down.
-  pub fn hover(&mut self) {
-    // Drops a press whose release was lost.
-    self.capture = None;
+  /// Bare motion; whether the target changed.
+  pub fn hover(&mut self, mouse: MouseEvent, hover: Option<Hover>) -> bool {
+    // No button is down: a release got lost.
+    self.hold(false);
+    self.spot = Some((mouse.column, mouse.row));
+    self.refresh(hover)
+  }
+
+  /// Sets what the pointer rests on; whether it changed.
+  pub fn refresh(&mut self, hover: Option<Hover>) -> bool {
+    std::mem::replace(&mut self.hover, hover) != hover
+  }
+
+  /// Bare motion at the last reported cell.
+  pub fn spot(&self) -> Option<MouseEvent> {
+    self.spot.map(|(column, row)| MouseEvent {
+      kind: MouseEventKind::Moved,
+      column,
+      row,
+      modifiers: crossterm::event::KeyModifiers::NONE,
+    })
+  }
+
+  /// Ends the held press and its click run.
+  pub fn release(&mut self) {
+    self.press = None;
+  }
+
+  /// The pane and region a held press drags.
+  fn capture(&self) -> Option<Capture> {
+    let press = self.press.filter(|press| press.held)?;
+    let (pane, region) = press.on?;
+    Some(Capture { pane, button: press.button, region })
+  }
+
+  fn hold(&mut self, held: bool) {
+    if let Some(press) = &mut self.press {
+      press.held = held;
+    }
   }
 }
 
@@ -289,7 +418,7 @@ mod tests {
     ];
     for (mouse, capture, expected) in cases {
       let got = route(&PANES, 1, capture, mouse).map(|route| {
-        let Route { pane, region, focus, mouse } = route;
+        let Route { pane, region, focus, mouse, .. } = route;
         (pane, region, focus, mouse.column, mouse.row)
       });
       assert_eq!(got, expected, "{mouse:?} {capture:?}");
@@ -299,9 +428,10 @@ mod tests {
   #[test]
   fn press_captures_until_its_release() {
     let mut pointer = Pointer::default();
+    let now = Instant::now();
     let mut feed = |kind, column| {
-      let route = pointer.route(&PANES, 1, event(kind, column, 10));
-      (route.map(|route| route.pane), pointer.capture)
+      let route = pointer.route(&PANES, 1, event(kind, column, 10), now);
+      (route.map(|route| route.pane), pointer.capture())
     };
     let page = Some(held(1, Region::Page));
     let right = Capture { button: Right, ..held(1, Region::Page) };
@@ -317,12 +447,108 @@ mod tests {
       (Down(Left), 60, (None, None)),
       (Down(Right), 90, (Some(2), Some(Capture { pane: 2, ..right }))),
       (Up(Left), 90, (None, Some(Capture { pane: 2, ..right }))),
-      (Moved, 30, (Some(1), None)),
-      (Down(Left), 90, (Some(2), Some(held(2, Region::Page)))),
     ];
     for (step, (kind, column, expected)) in cases.into_iter().enumerate() {
       assert_eq!(feed(kind, column), expected, "step {step}: {kind:?}");
     }
+    // Bare motion means no button is down.
+    pointer.hover(event(Moved, 30, 10), None);
+    assert_eq!(pointer.capture(), None);
+    let route = pointer.route(&PANES, 1, event(Down(Left), 90, 10), now);
+    assert_eq!(route.map(|route| route.pane), Some(2));
+    assert_eq!(pointer.capture(), Some(held(2, Region::Page)));
+  }
+
+  #[test]
+  fn clicks_count_and_drags_wait_for_the_threshold() {
+    use std::time::Duration;
+    let mut pointer = Pointer::default();
+    let start = Instant::now();
+    // (event, column, ms since start) -> routed clicks, None when held
+    let cases = [
+      (Down(Left), 30, 0, Some(1)),
+      (Up(Left), 30, 40, Some(1)),
+      (Down(Left), 30, 200, Some(2)),
+      (Drag(Left), 30, 210, None),
+      (Up(Left), 30, 250, Some(2)),
+      (Down(Left), 30, 400, Some(3)),
+      (Up(Left), 30, 420, Some(3)),
+      // Too slow.
+      (Down(Left), 30, 800, Some(1)),
+      (Up(Left), 30, 820, Some(1)),
+      // Another cell.
+      (Down(Left), 31, 900, Some(1)),
+      (Drag(Left), 32, 950, Some(1)),
+      // Back on the press cell, still dragging.
+      (Drag(Left), 31, 960, Some(1)),
+      (Up(Left), 31, 970, Some(1)),
+      // A drag ends the run.
+      (Down(Left), 31, 1000, Some(1)),
+      (Up(Left), 31, 1010, Some(1)),
+      // Another button.
+      (Down(Right), 31, 1100, Some(1)),
+      (Up(Right), 31, 1110, Some(1)),
+      (Down(Left), 31, 1200, Some(1)),
+      (Up(Left), 31, 1210, Some(1)),
+      // The wheel moves the view.
+      (ScrollDown, 31, 1220, Some(1)),
+      (Down(Left), 31, 1230, Some(1)),
+      (Up(Left), 31, 1240, Some(1)),
+      (Down(Left), 31, 1250, Some(2)),
+    ];
+    for (step, (kind, column, ms, expected)) in cases.into_iter().enumerate() {
+      let now = start + Duration::from_millis(ms);
+      let route = pointer.route(&PANES, 1, event(kind, column, 10), now);
+      let got = route.map(|route| route.clicks);
+      assert_eq!(got, expected, "step {step}: {kind:?} at {column}");
+    }
+    // Focus changes and dismissed clicks end the run.
+    pointer.release();
+    let now = start + Duration::from_millis(1260);
+    let route = pointer.route(&PANES, 1, event(Down(Left), 31, 10), now);
+    assert_eq!(route.map(|route| route.clicks), Some(1));
+    // A thumbnail press opens its page under the next press.
+    let thumbnails = [Pane { overview: true, ..PANES[0] }];
+    let press = |pointer: &mut Pointer, panes: &[Pane], ms| {
+      let now = start + Duration::from_millis(ms);
+      let route = pointer.route(panes, 1, event(Down(Left), 30, 10), now);
+      pointer.route(panes, 1, event(Up(Left), 30, 10), now);
+      route.map(|route| (route.region, route.clicks))
+    };
+    let mut pointer = Pointer::default();
+    let overview = Some((Region::Overview, 1));
+    assert_eq!(press(&mut pointer, &thumbnails, 0), overview);
+    assert_eq!(press(&mut pointer, &PANES, 100), Some((Region::Page, 1)));
+    assert_eq!(press(&mut pointer, &PANES, 200), Some((Region::Page, 2)));
+  }
+
+  #[test]
+  fn hover_reports_target_changes() {
+    let hover = |pane, region, hit| Some(Hover { pane, region, hit });
+    let link = Hit::Link(PageId(1), 0);
+    let mut pointer = Pointer::default();
+    // hover -> changed
+    let cases = [
+      (hover(1, Region::Page, Hit::Text), true),
+      (hover(1, Region::Page, Hit::Text), false),
+      (hover(1, Region::Page, link), true),
+      (hover(1, Region::Page, link), false),
+      (hover(1, Region::Page, Hit::Link(PageId(1), 1)), true),
+      (hover(2, Region::Page, Hit::Link(PageId(1), 1)), true),
+      (hover(2, Region::Status, Hit::Nothing), true),
+      (None, true),
+      (None, false),
+    ];
+    for (step, (target, changed)) in cases.into_iter().enumerate() {
+      let mouse = event(Moved, step as u16, 10);
+      assert_eq!(pointer.hover(mouse, target), changed, "step {step}");
+      assert_eq!(pointer.spot().map(|spot| spot.column), Some(step as u16));
+    }
+    // A press moves the spot without bare motion.
+    let now = Instant::now();
+    pointer.route(&PANES, 1, event(Down(Left), 30, 12), now);
+    let spot = pointer.spot().map(|spot| (spot.kind, spot.column, spot.row));
+    assert_eq!(spot, Some((Moved, 30, 12)));
   }
 
   #[test]

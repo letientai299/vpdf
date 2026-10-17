@@ -41,10 +41,8 @@ impl App {
     &mut self,
     position: Position,
   ) -> Result<Option<Annotation>> {
+    let Some((_, x, y)) = self.glyph_point(position)? else { return Ok(None) };
     let text = self.doc.text(position.page)?;
-    let Some(glyph) = text.glyph(position) else { return Ok(None) };
-    let x = f32::midpoint(glyph.bounds.x0, glyph.bounds.x1);
-    let y = f32::midpoint(glyph.bounds.y0, glyph.bounds.y1);
     let annotations = self.doc.annotations(position.page)?;
     let mut nearest = None;
     for annotation in annotations {

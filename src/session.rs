@@ -7,7 +7,7 @@ use crate::home::{Home, Outcome};
 use crate::keys::PanelKind;
 use crate::layout::Screen;
 use crate::pace::Pacer;
-use crate::pointer::{self, Pane, Pointer};
+use crate::pointer::{self, Hover, Pane, Pointer, Route};
 use crate::prompt::History;
 use crate::split::{Axis, Direction, Node, Rect, neighbor};
 use crate::state::{Mark, State};
@@ -301,7 +301,7 @@ impl Session {
     {
       app.blur()?;
     }
-    self.pointer.hover();
+    self.pointer.release();
     Ok(())
   }
 
@@ -658,7 +658,7 @@ impl Session {
         self.window(command, (count, explicit), file.as_deref())
       }
       Some(Request::Panel(kind)) => {
-        self.pointer.hover();
+        self.pointer.release();
         if kind == PanelKind::Recent {
           self.record();
           let recent = self.state.recent.clone();
@@ -750,8 +750,12 @@ impl Session {
       && (!self.tabs.is_empty() || self.home.is_some())
   }
 
-  /// Presses focus; the wheel scrolls in place.
+  /// Presses focus; the wheel scrolls in place; bare motion hovers.
   pub fn mouse(&mut self, mouse: MouseEvent) -> Result<()> {
+    if mouse.kind == MouseEventKind::Moved {
+      self.hover(mouse);
+      return Ok(());
+    }
     let wheel = matches!(
       mouse.kind,
       MouseEventKind::ScrollDown
@@ -771,7 +775,7 @@ impl Session {
         return Ok(());
       }
       if self.app().dismiss_click()? {
-        self.pointer.hover();
+        self.pointer.release();
         return Ok(());
       }
     }
@@ -779,17 +783,47 @@ impl Session {
     // Snapshot before disarm hides clue rows.
     let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();
     let focused = tab.panes[tab.focus].id;
-    let route = self.pointer.route(&panes, focused, mouse);
+    let route = self.pointer.route(&panes, focused, mouse, Instant::now());
     if pointer::interrupts(mouse.kind) {
       self.app().disarm();
     }
     let Some(route) = route else { return Ok(()) };
     let Some(index) = self.tab().index(route.pane) else { return Ok(()) };
     if route.focus {
-      self.focus(self.active, index)?;
-      self.pointer.route(&panes, route.pane, mouse);
+      // Focusing releases captures; keep this one.
+      let pointer = std::mem::take(&mut self.pointer);
+      let focused = self.focus(self.active, index);
+      self.pointer = pointer;
+      focused?;
     }
     self.tab().panes[index].mouse(route)
+  }
+
+  /// Bare motion; whether the target changed.
+  pub fn hover(&mut self, mouse: MouseEvent) -> bool {
+    let hover = self.hit(mouse);
+    self.pointer.hover(mouse, hover)
+  }
+
+  /// Retests the last cell; the view changed.
+  fn rehover(&mut self) {
+    if let Some(mouse) = self.pointer.spot() {
+      let hover = self.hit(mouse);
+      self.pointer.refresh(hover);
+    }
+  }
+
+  /// What the pointer rests on at `mouse`.
+  fn hit(&mut self, mouse: MouseEvent) -> Option<Hover> {
+    let tab = self.tabs.get(self.active)?;
+    let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();
+    let route = pointer::route(&panes, tab.panes[tab.focus].id, None, mouse)?;
+    let index = self.tab().index(route.pane)?;
+    let Route { pane, region, mouse, .. } = route;
+    let app = &mut self.tab().panes[index];
+    // Hover is advisory; failures find nothing.
+    let hit = app.hovered(region, mouse.column, mouse.row).unwrap_or_default();
+    Some(Hover { pane, region, hit })
   }
 
   /// Fits the start screen or every pane to a new terminal size.
@@ -1111,6 +1145,7 @@ impl Drawable for Session {
   /// Unfocused panes first, so the focused pane's prompt places the
   /// terminal cursor last.
   fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()> {
+    self.rehover();
     write!(out, "{}\x1b[0m", terminal::frame_start())?;
     self.app().graphics.begin(out)?;
     let area = self.screen.map_or_default(full);
@@ -1312,7 +1347,7 @@ fn input(session: &mut Session, act: Act, out: &mut impl Write) -> Result<()> {
       app.after_key();
       let after = app.panel.as_ref().filter(|p| p.focused).map(|p| p.kind);
       if before != after {
-        session.pointer.hover();
+        session.pointer.release();
       }
       result
     }
@@ -1427,8 +1462,11 @@ fn run(session: &mut Session) -> Result<()> {
       }
       continue;
     };
-    if moved(&event) {
-      session.pointer.hover();
+    if let Event::Mouse(mouse) = &event
+      && mouse.kind == MouseKind::Moved
+    {
+      // Motion is not typing.
+      dirty |= mouse.cells().is_some_and(|mouse| session.hover(mouse));
       continue;
     }
     let Some(act) = act(event) else { continue };

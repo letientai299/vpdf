@@ -59,9 +59,9 @@ impl App {
       self.layout.visible(self.reader.scroll)
     };
     for page in pages {
-      for link in self.doc.links(PageId(page))? {
+      for link in self.doc.links(PageId(page))?.iter() {
         if let Some(cell) = self.link_cell(PageId(page), link.bounds)? {
-          found.push((cell, link.target));
+          found.push((cell, link.target.clone()));
         }
       }
     }

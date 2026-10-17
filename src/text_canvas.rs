@@ -38,6 +38,16 @@ impl View {
     text.clamp(Position { line, glyph, ..self.top })
   }
 
+  /// Position drawn at a cell, if any.
+  fn hit(&self, text: &Text, column: usize, row: usize) -> Option<Position> {
+    let line = self.top.line + row;
+    let glyphs = &text.lines.get(line).filter(|_| row < self.height)?.glyphs;
+    let (glyph, ..) = self.shown(glyphs).find(|&(_, start, glyph)| {
+      (start..start + cells(glyph)).contains(&column)
+    })?;
+    Some(Position { line, glyph, ..self.top })
+  }
+
   /// Cell of `position`, when drawn.
   fn cell(&self, text: &Text, position: Position) -> Option<(usize, usize)> {
     if position.page != self.top.page {
@@ -190,6 +200,18 @@ impl App {
     };
     let column = usize::from(column.saturating_sub(self.left));
     Ok(view.position(&text, column, usize::from(row)))
+  }
+
+  /// Glyph at a cell of the next frame.
+  pub fn text_hit(
+    &mut self,
+    column: u16,
+    row: u16,
+  ) -> Result<Option<Position>> {
+    // Hover runs before the frame draws.
+    let (text, view) = self.next_text_view()?;
+    let column = usize::from(column.saturating_sub(self.left));
+    Ok(view.hit(&text, column, usize::from(row)))
   }
 
   /// Screen cell of `position` in the text view, when shown.
@@ -404,6 +426,24 @@ mod tests {
       assert_eq!(view(left).cell(&text, position), expected, "{name}");
     }
     assert_eq!(view(0).cell(&marks, at(0, 0, 4)), Some((3, 0)), "mark");
+    for (name, left, (column, row), expected) in [
+      ("first glyph", 0, (0, 0), Some(at(0, 0, 0))),
+      ("blank by a cut wide glyph", 0, (3, 0), None),
+      ("past the last column", 0, (9, 1), None),
+      ("wide glyph's second cell", 0, (1, 2), Some(at(0, 2, 0))),
+      ("next wide glyph", 0, (2, 2), Some(at(0, 2, 1))),
+      ("empty line", 0, (0, 3), None),
+      ("last line", 0, (2, 4), Some(at(0, 4, 2))),
+      ("below the view", 0, (0, 5), None),
+      ("scrolled right", 2, (0, 1), Some(at(0, 1, 2))),
+      ("row left of the view", 5, (1, 0), None),
+    ] {
+      let view = View { height: 5, ..view(left) };
+      assert_eq!(view.hit(&text, column, row), expected, "{name}");
+    }
+    let short = View { height: 2, ..view(0) };
+    assert_eq!(short.hit(&text, 0, 2), None, "below a short view");
+    assert_eq!(view(0).hit(&marks, 3, 0), Some(at(0, 0, 3)), "mark");
   }
 
   #[test]
