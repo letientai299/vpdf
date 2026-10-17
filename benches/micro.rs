@@ -103,6 +103,32 @@ fn text_canvas() -> Result<()> {
   })
 }
 
+fn cursorline() -> Result<()> {
+  for text_mode in [false, true] {
+    let mut app = paper(text_mode)?;
+    app.reader.cursor.line = 3;
+    app.reader.visual(vpdf::reader::SelectionKind::Character);
+    let screen = app.layout.screen;
+    let mut out = Vec::new();
+    let mut draw = |out: &mut Vec<u8>| {
+      out.clear();
+      if text_mode {
+        app.text_canvas(out).expect("cached text");
+      } else {
+        app.graphics.begin(out).expect("begin marks");
+        app.marks(screen, out).expect("cached marks");
+        app.graphics.end(out).expect("end marks");
+      }
+    };
+    draw(&mut out);
+    measure(&format!("cursorline text={text_mode}"), || {
+      draw(&mut out);
+      black_box(&out);
+    })?;
+  }
+  Ok(())
+}
+
 /// Visible citation labels on the corpus paper.
 fn draw_hints() -> Result<()> {
   let mut app = paper(false)?;
@@ -453,6 +479,7 @@ const CASES: &[(&str, Case)] = &[
   ("clean", clean),
   ("clean marks", clean_marks),
   ("text_canvas", text_canvas),
+  ("cursorline", cursorline),
   ("draw_hints", draw_hints),
   ("route", route),
   ("hover", hover),

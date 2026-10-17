@@ -145,6 +145,16 @@ impl App {
     let lines = text.lines.iter().skip(view.top.line).take(view.height);
     for (row, line) in lines.enumerate() {
       write!(out, "{}", self.at.goto(row, self.left))?;
+      let position = Position { page, line: view.top.line + row, glyph: 0 };
+      if self.on_cursorline(position) {
+        write!(
+          out,
+          "{}{}{}",
+          theme::TEXT_CURSORLINE,
+          " ".repeat(view.columns),
+          self.at.goto(row, self.left)
+        )?;
+      }
       let mut current = "";
       let mut written = 0;
       for (glyph, column, ch) in view.shown(&line.glyphs) {
@@ -287,7 +297,17 @@ impl App {
     {
       return theme::TEXT_MATCH;
     }
+    if self.on_cursorline(position) {
+      return theme::TEXT_CURSORLINE;
+    }
     theme::RESET
+  }
+
+  fn on_cursorline(&self, position: Position) -> bool {
+    self.cursorline
+      && self.reader.selection.is_some()
+      && position.page == self.reader.cursor.page
+      && position.line == self.reader.cursor.line
   }
 }
 

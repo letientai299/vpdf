@@ -27,6 +27,7 @@ zc: crop / restore page margins
 v V: enter character / line Visual
 Entry: visible click/jump target, else first visible text
 Textless view: selection unavailable; :ocr is explicit
+:cursorline: toggle Visual line band (default on)
 o: swap selection ends
 gv: reselect
 y yy yw ye y$: yank

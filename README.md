@@ -28,9 +28,10 @@ click/jump target, or the first visible text. Text motions belong to Visual;
 or the active selection end in Visual. Counts repeat heading jumps;
 Ctrl-o and Ctrl-i return through jump history.
 
-Normal shows no glyph cursor. View scrolling preserves selection endpoints;
-zoom, crop, rotation, panels, and resize keep the reading area anchored.
-`K`, Enter, and `*` use a visible click/jump target. A textless view reports
+Visual highlights the active line; `:cursorline` toggles this band. Normal shows
+no glyph cursor or line band. View scrolling preserves selection endpoints;
+zoom, crop, rotation, panels, and resize keep the reading area anchored. `K`,
+Enter, and `*` use a visible click/jump target. A textless view reports
 selection unavailable; start OCR explicitly with `:ocr`.
 
 Esc cancels transient input and returns Normal while preserving side-panel

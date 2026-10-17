@@ -2,6 +2,7 @@ mod annotations;
 mod app;
 mod common;
 mod corpus;
+mod cursorline;
 mod encrypted;
 mod focus;
 mod jumps;

@@ -277,6 +277,7 @@ impl App {
         self.reader.message = "Jobs canceled".into();
       }
       "nohlsearch" => self.search.hidden = true,
+      "cursorline" => self.cursorline = !self.cursorline,
       "text" => self.open_panel(PanelKind::Text)?,
       "info" => self.open_panel(PanelKind::Info)?,
       "reload" => self.reload_with(&self.password.clone())?,

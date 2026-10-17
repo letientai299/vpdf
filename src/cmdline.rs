@@ -117,6 +117,7 @@ pub const COMMANDS: &[Spec] = &[
   spec("page", &[], "<n|label>", "jump to a page number or label"),
   spec("toc", &["outline"], "", "open the table of contents"),
   spec("overview", &["pages"], "", "show page thumbnails"),
+  spec("cursorline", &[], "", "toggle the Visual cursor line band"),
   spec("crop", &[], "", "toggle cropped page margins"),
   spec("cancel", &[], "", "cancel active-pane background jobs"),
   spec("nohlsearch", &["noh"], "", "hide search highlights"),
@@ -251,6 +252,8 @@ mod tests {
     let cases = [
       ("q", Some("quit")),
       ("noh", Some("nohlsearch")),
+      ("cursorline", Some("cursorline")),
+      ("cu", Some("cursorline")),
       ("rel", Some("reload")),
       ("p", None),
       ("PdfPage", None),
@@ -283,6 +286,7 @@ mod tests {
   fn completes_command_names() {
     assert_eq!(candidates("  pa"), (2, vec!["page".into(), "password".into()]));
     assert_eq!(candidates("page 1").1, Vec::<String>::new());
+    assert_eq!(candidates("cu"), (0, vec!["cursorline".into()]));
     assert_eq!(candidates("PAG").1, ["page"]);
   }
 }

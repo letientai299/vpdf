@@ -110,8 +110,33 @@ impl App {
     self.panel.as_ref().is_some_and(|panel| panel.focused)
   }
 
-  /// Search hits, the selection, and the cursor, clipped to `screen`.
+  /// Selection overlays clipped to `screen`.
   pub fn marks(&mut self, screen: Screen, out: &mut impl Write) -> Result<()> {
+    if self.cursorline && self.reader.selection.is_some() {
+      let cursor = self.reader.cursor;
+      let text = self.doc.text(cursor.page)?;
+      if let Some(bounds) = text.lines.get(cursor.line).and_then(|line| {
+        line.glyphs.iter().map(|glyph| glyph.bounds).reduce(Bounds::union)
+      }) {
+        let page = self.layout.crop.apply(self.doc.pages[cursor.page.0].bounds);
+        let band = Bounds {
+          x0: page.x0,
+          x1: page.x1,
+          y0: bounds.y0.max(page.y0),
+          y1: bounds.y1.min(page.y1),
+        };
+        if band.height() > 0.0 {
+          let rect = self.layout.project(cursor.page, band, self.reader.scroll);
+          self.graphics.backdrop(
+            rect,
+            crate::theme::CURSORLINE,
+            screen,
+            self.left,
+            out,
+          )?;
+        }
+      }
+    }
     if !self.search.hidden {
       let visible = self.layout.visible(self.reader.scroll);
       let hits = &self.search.hits;

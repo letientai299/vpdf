@@ -113,6 +113,7 @@ pub struct App {
   /// A changed stamp and when it was first seen.
   pub(crate) settling: Option<(crate::watch::Stamp, Instant)>,
   pub text_mode: bool,
+  pub cursorline: bool,
   /// Text origin; glyph stores column offset.
   pub(crate) text_top: Position,
   /// Text view origin on screen.
@@ -201,6 +202,7 @@ impl App {
       stamp: crate::watch::stamp(path),
       settling: None,
       text_mode,
+      cursorline: true,
       text_top: Position::default(),
       text_drawn: None,
       screen,
