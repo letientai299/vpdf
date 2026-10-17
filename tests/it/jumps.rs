@@ -97,7 +97,7 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
   app.reader.clear_history();
   app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
   assert_eq!(app.reader.cursor, positions[2]);
-  assert!(app.panel.is_none());
+  assert!(app.panel.is_some() && !app.panel_focused());
   app.key(
     KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
     &mut history,

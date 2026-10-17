@@ -486,20 +486,12 @@ fn leaving_text_preview_keeps_the_panel() -> Result<()> {
   let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
   let quit =
     Input { action: Action::Quit, count: 1, explicit: false, register: '"' };
-  for (open, close) in [
-    (Action::Panel(PanelKind::Outline), quit),
-    (
-      Action::Panel(PanelKind::Outline),
-      Input { action: Action::Panel(PanelKind::Text), ..quit },
-    ),
-  ] {
-    app.action(Input { action: open, ..quit })?;
-    app.action(Input { action: Action::Panel(PanelKind::Text), ..quit })?;
-    assert!(app.text_mode);
-    app.action(close)?;
-    assert!(!app.text_mode, "back to the rendered view");
-    assert!(app.panel.is_some(), "outline stays open");
-  }
+  app.action(Input { action: Action::Panel(PanelKind::Outline), ..quit })?;
+  app.action(Input { action: Action::Panel(PanelKind::Text), ..quit })?;
+  assert!(app.text_mode);
+  app.action(quit)?;
+  assert!(!app.text_mode, "back to the rendered view");
+  assert!(app.panel.is_some(), "outline stays open");
   Ok(())
 }
 
@@ -694,25 +686,25 @@ fn recent_view_covers_the_pane() -> Result<()> {
     |action| Input { action, count: 1, explicit: false, register: '"' };
   // Esc keeps the view; reader keys reach no hidden page.
   let scroll = app.reader.scroll;
-  for action in [
-    Action::Cancel,
-    Action::Rows(5),
-    Action::Panel(PanelKind::Recent),
-    Action::Panel(PanelKind::Text),
-    Action::Overview,
-  ] {
+  for action in
+    [Action::Cancel, Action::Rows(5), Action::Panel(PanelKind::Recent)]
+  {
     app.action(input(action))?;
     assert!(app.panel_focused(), "{action:?}");
     assert!(app.covered(), "{action:?}");
   }
   assert_eq!(app.reader.scroll, scroll);
   // Commands that need the document wait for one, as on the start screen.
-  for command in ["text", "overview", "5", "info", "page 3"] {
+  for command in ["5", "page 3"] {
     assert!(app.command(command).is_err(), "{command}");
     assert!(app.covered() && app.overview.is_none(), "{command}");
   }
   app.draw(&mut Vec::new())?;
   app.action(input(Action::Quit))?;
-  assert!(app.quit);
+  assert!(!app.quit && app.panel.is_none());
+  app.show_recent(&[])?;
+  app.command("text")?;
+  assert!(app.text_mode && !app.covered() && !app.panel_focused());
+  assert!(app.panel.as_ref().unwrap().shelf.is_some());
   Ok(())
 }

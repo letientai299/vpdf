@@ -3,6 +3,7 @@ mod app;
 mod common;
 mod corpus;
 mod encrypted;
+mod focus;
 mod jumps;
 mod modes;
 mod navigation;

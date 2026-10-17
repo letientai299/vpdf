@@ -21,6 +21,15 @@ pub enum Request {
   },
   /// A picked document: a new tab, or the focused pane when split.
   Choose(PathBuf),
+  PanelOpen {
+    path: PathBuf,
+    position: Option<Position>,
+    focus: bool,
+  },
+  PanelMark {
+    name: char,
+    focus: bool,
+  },
   Tab(TabMove),
   /// A panel whose rows the session builds.
   Panel(PanelKind),
@@ -68,6 +77,16 @@ pub enum TabMove {
   Next(usize),
   Previous(usize),
   Go(usize),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InputOwner {
+  Prompt,
+  Hints,
+  Peek,
+  Panel,
+  Overview,
+  Content,
 }
 
 /// File names of every tab and the active index.

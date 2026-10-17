@@ -74,6 +74,7 @@ pub struct Panel {
   pub note: &'static str,
   /// Columns the last frame drew; presses beyond them miss the rows.
   columns: u16,
+  height: u16,
   /// Cards for recent documents; a reader pane shows them over its page.
   pub shelf: Option<Shelf>,
 }
@@ -89,6 +90,7 @@ impl Panel {
       search: RowSearch::default(),
       note: "",
       columns: u16::MAX,
+      height: 0,
       shelf: None,
     }
   }
@@ -138,6 +140,8 @@ impl Panel {
       _ => return false,
     }
     .min(last);
+    self.height = u16::try_from(page).unwrap_or(u16::MAX);
+    self.reveal();
     true
   }
 
@@ -149,10 +153,14 @@ impl Panel {
     }
     match mouse.kind {
       MouseEventKind::ScrollDown => {
-        self.selected = (self.selected + 3).min(last);
+        let visible = usize::from(self.height.saturating_sub(2));
+        self.top = self
+          .top
+          .saturating_add(3)
+          .min(self.rows.len().saturating_sub(visible.max(1)));
       }
       MouseEventKind::ScrollUp => {
-        self.selected = self.selected.saturating_sub(3);
+        self.top = self.top.saturating_sub(3);
       }
       MouseEventKind::Down(MouseButton::Left)
         if mouse.row > 0 && mouse.column < self.columns =>
@@ -168,7 +176,8 @@ impl Panel {
     None
   }
 
-  fn reveal(&mut self, count: usize) {
+  pub(crate) fn reveal(&mut self) {
+    let count = usize::from(self.height.saturating_sub(2));
     if self.selected < self.top {
       self.top = self.selected;
     } else if count > 0 && self.selected >= self.top + count {
@@ -194,6 +203,9 @@ impl Panel {
     screen: Screen,
     graphics: Option<&mut Graphics>,
   ) -> Result<()> {
+    if width < screen.columns || !self.focused {
+      return self.list(out, at, width, screen.rows);
+    }
     let Some(mut cards) = self.shelf.take() else {
       return self.list(out, at, width, screen.rows);
     };
@@ -211,6 +223,7 @@ impl Panel {
     height: u16,
   ) -> Result<()> {
     self.columns = width;
+    self.height = height;
     if width < 2 {
       return Ok(());
     }
@@ -233,7 +246,7 @@ impl Panel {
     )?;
     let keys = key_width(&self.rows, inner);
     let count = height.saturating_sub(2) as usize;
-    self.reveal(count);
+    self.top = self.top.min(self.rows.len().saturating_sub(count.max(1)));
     let start = self.top;
     for (row, item) in self.rows.iter().skip(start).take(count).enumerate() {
       let base = match (start + row == self.selected, self.focused) {
@@ -364,46 +377,36 @@ fn marked(
 }
 
 impl App {
-  /// Finds the cursor's section and selects it in an idle outline.
+  /// Tracks the viewport section independently.
   pub fn track_outline(&mut self) {
     self.current_section = self.section();
-    let Some(panel) = &mut self.panel else { return };
-    if panel.kind != PanelKind::Outline || panel.focused {
-      return;
-    }
-    if let Some(index) = self.current_section {
-      panel.selected = index;
-    }
   }
 
   pub fn open_panel(&mut self, kind: PanelKind) -> Result<()> {
     if kind == PanelKind::Text {
-      if self.preview.is_some() {
-        return self.close_text_preview();
+      if self.overview.is_some() {
+        self.close_overview();
       }
-      self.preview = Some(self.text_mode);
+      if self.preview.is_none() {
+        self.preview = Some(self.text_mode);
+      }
       if !self.text_mode {
         let position =
           self.first_visible()?.unwrap_or_else(|| self.navigation_position());
         self.text_origin(position)?;
       }
       self.text_mode = true;
-      // The preview takes focus so its text motions work.
+      // Presentation retains the reading mode.
       if let Some(panel) = &mut self.panel {
         panel.focused = false;
       }
-      return Ok(());
+      return self.relayout();
     }
     if let Some(panel) = &mut self.panel
       && panel.kind == kind
     {
-      // The covered document counts as closed; pick it to return.
-      if kind == PanelKind::Outline || panel.shelf.is_some() {
-        panel.focused = true;
-      } else {
-        self.close_panel()?;
-      }
-      return Ok(());
+      panel.focused = true;
+      return self.relayout();
     }
     if matches!(kind, PanelKind::Recent | PanelKind::Marks) {
       self.request = Some(Request::Panel(kind));
@@ -416,6 +419,11 @@ impl App {
   pub fn show_panel(&mut self, kind: PanelKind, rows: Vec<Row>) -> Result<()> {
     let mut panel = Panel::new(kind, rows);
     panel.note = self.panel_note(kind);
+    panel.height = self.screen.rows;
+    if kind == PanelKind::Outline {
+      panel.selected = self.section().unwrap_or(0);
+      panel.reveal();
+    }
     self.panel = Some(panel);
     self.relayout()
   }
@@ -453,13 +461,17 @@ impl App {
     self.trim();
     let mut panel = Panel::new(PanelKind::Recent, recent_rows(entries));
     panel.shelf = Some(Shelf::new(entries, &self.password));
+    panel.height = self.screen.rows;
     self.panel = Some(panel);
     self.relayout()
   }
 
   /// Whether the recent view covers the pane.
   pub fn covered(&self) -> bool {
-    self.panel.as_ref().is_some_and(|panel| panel.shelf.is_some())
+    self
+      .panel
+      .as_ref()
+      .is_some_and(|panel| panel.shelf.is_some() && panel.focused)
   }
 
   pub fn close_panel(&mut self) -> Result<()> {
@@ -562,10 +574,6 @@ impl App {
     }
     let covered = panel.shelf.is_some();
     match input.action {
-      // Its document is closed, so the pane goes.
-      Action::Quit | Action::ClosePanel if covered => {
-        self.quit = true;
-      }
       Action::Quit | Action::ClosePanel => {
         self.close_panel()?;
       }
@@ -580,10 +588,8 @@ impl App {
       | Action::Visual(_)
       | Action::Object(_)
       | Action::Reselect
-      | Action::WordSearch => {}
-      Action::Cancel => {
-        panel.focused = false;
-      }
+      | Action::WordSearch
+      | Action::Cancel => {}
       Action::Follow | Action::Swap => {
         self.panel_follow(input.action)?;
       }
@@ -592,7 +598,9 @@ impl App {
       Action::Command
       | Action::Search(_)
       | Action::Window(_)
-      | Action::Tab(_) => {
+      | Action::Tab(_)
+      | Action::Panel(_)
+      | Action::Overview => {
         return Ok(false);
       }
       _ if covered => {}
@@ -602,48 +610,46 @@ impl App {
   }
 
   pub fn panel_mouse(&mut self, mouse: MouseEvent) -> Result<()> {
-    let Some(panel) = &mut self.panel else { return Ok(()) };
-    let Some(index) = panel.pointer(mouse) else { return Ok(()) };
-    let moves = !matches!(panel.rows[index].destination, Destination::None);
-    if moves && self.overview.is_some() {
-      // Show the followed row, not the grid.
-      self.close_overview();
+    let covered = self.covered();
+    let clicked = self.panel.as_mut().and_then(|panel| panel.pointer(mouse));
+    if self.covered() != covered {
+      self.relayout()?;
     }
-    self.panel_follow(Action::Swap)
+    if clicked.is_some() {
+      self.panel_follow(Action::Swap)?;
+    }
+    Ok(())
   }
 
   fn panel_follow(&mut self, action: Action) -> Result<()> {
     let Some(panel) = &self.panel else { return Ok(()) };
     let Some(row) = panel.rows.get(panel.selected) else { return Ok(()) };
     let destination = row.destination.clone();
-    let outline = panel.kind == PanelKind::Outline;
-    match &destination {
+    let focus = action == Action::Follow;
+    match destination {
       Destination::File(path) => {
-        self.request = Some(Request::Choose(path.clone()));
-        return self.close_panel();
+        self.request = Some(Request::PanelOpen { path, position: None, focus });
+        return Ok(());
       }
       Destination::Mark(name) => {
-        self.request = Some(Request::GoMark(*name, true));
-        return self.close_panel();
+        self.request = Some(Request::PanelMark { name, focus });
+        return Ok(());
       }
       Destination::None => return Ok(()),
-      Destination::Position(_) | Destination::Link(_) => {}
+      Destination::Position(position) => self.go_to(position, true)?,
+      Destination::Link(target) => self.follow(&target)?,
     }
-    // Closing first, so the page top is measured in the final layout.
-    if action == Action::Follow {
-      if outline {
-        if let Some(panel) = &mut self.panel {
-          panel.focused = false;
-        }
-      } else {
-        self.close_panel()?;
+    if self.overview.is_some() {
+      self.close_overview();
+    }
+    if focus {
+      self.reader.cancel();
+      if let Some(panel) = &mut self.panel {
+        panel.focused = false;
       }
+      self.relayout()?;
     }
-    match destination {
-      Destination::Position(position) => self.go_to(position, true),
-      Destination::Link(target) => self.follow(&target),
-      _ => Ok(()),
-    }
+    Ok(())
   }
 
   /// PDF metadata, document facts, reader statistics, terminal caps.
@@ -823,6 +829,50 @@ mod tests {
     };
     assert_eq!(panel.pointer(press(25)), None);
     assert_eq!(panel.pointer(press(5)), Some(1));
+    Ok(())
+  }
+}
+
+#[cfg(test)]
+mod focus_tests {
+  use super::*;
+  use crossterm::event::KeyModifiers;
+
+  #[test]
+  fn wheel_moves_viewport_and_keys_reveal_rows() -> Result<()> {
+    let mut panel = Panel::new(
+      PanelKind::Help,
+      (0..80).map(|row| Row::parse(&format!("row {row}"))).collect(),
+    );
+    panel.focused = false;
+    panel.list(&mut Vec::new(), terminal::At::default(), 40, 12)?;
+    let wheel = MouseEvent {
+      kind: MouseEventKind::ScrollDown,
+      column: 2,
+      row: 4,
+      modifiers: KeyModifiers::NONE,
+    };
+    panel.pointer(wheel);
+    panel.list(&mut Vec::new(), terminal::At::default(), 40, 12)?;
+    assert_eq!((panel.selected, panel.top, panel.focused), (0, 3, false));
+    panel.selected = 2;
+    panel.list(&mut Vec::new(), terminal::At::default(), 40, 12)?;
+    assert_eq!(panel.top, 3, "tracking does not undo wheel scrolling");
+    panel.navigate(
+      Input {
+        action: Action::Motion(Motion::Down),
+        count: 1,
+        explicit: false,
+        register: '"',
+      },
+      12,
+    );
+    assert_eq!((panel.selected, panel.top), (3, 3));
+    panel.selected = 0;
+    panel.begin_search(false);
+    panel.preview("row 40");
+    assert_eq!(panel.selected, 40);
+    assert_eq!(panel.top, 31, "search reveals the matching row");
     Ok(())
   }
 }

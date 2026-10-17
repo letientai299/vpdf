@@ -16,7 +16,7 @@ use crate::text::PageId;
 use crate::theme;
 use crate::trace::Drawable;
 use crate::watch::Watcher;
-use crossterm::event::{KeyEvent, KeyEventKind, MouseEvent};
+use crossterm::event::{KeyEvent, KeyEventKind, MouseEvent, MouseEventKind};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -256,6 +256,9 @@ impl Session {
 
   /// Focuses a pane and blurs the old one.
   fn focus(&mut self, tab: usize, pane: usize) -> Result<()> {
+    if self.active == tab && self.tabs[tab].focus == pane {
+      return Ok(());
+    }
     if let Some(tab) = self.tabs.get_mut(self.active)
       && let Some(app) = tab.panes.get_mut(tab.focus)
     {
@@ -334,13 +337,17 @@ impl Session {
     Ok(())
   }
 
+  fn existing(&self, path: &Path) -> Option<(usize, usize)> {
+    self.tabs.iter().enumerate().find_map(|(t, tab)| {
+      tab.panes.iter().position(|app| app.path == path).map(|p| (t, p))
+    })
+  }
+
   /// Opens `path` in a new tab, or in place of the focused pane.
   pub fn open(&mut self, path: &Path, tab: bool, screen: Screen) -> Result<()> {
     self.screen = Some(screen);
     let path = std::fs::canonicalize(path)?;
-    let found = self.tabs.iter().enumerate().find_map(|(t, tab)| {
-      tab.panes.iter().position(|app| app.path == path).map(|p| (t, p))
-    });
+    let found = self.existing(&path);
     if let Some((tab, pane)) = found {
       return self.focus(tab, pane);
     }
@@ -582,6 +589,15 @@ impl Session {
     let screen = self.screen.unwrap_or(fallback);
     match self.app().request.take() {
       Some(Request::Open { path, tab }) => self.open(&path, tab, screen),
+      Some(Request::PanelOpen { path, position, focus }) => {
+        self.panel_open(&path, position, focus, screen)
+      }
+      Some(Request::PanelMark { name, focus }) => {
+        let mark = self.state.marks.get(&name).cloned();
+        let mark =
+          mark.ok_or_else(|| anyhow::anyhow!("Mark not set: {name}"))?;
+        self.panel_open(&mark.path, Some(mark.cursor), focus, screen)
+      }
       Some(Request::Tab(step)) => self.activate(self.step(step)),
       Some(Request::Window { command, count, explicit, file }) => {
         self.window(command, (count, explicit), file.as_deref())
@@ -627,6 +643,43 @@ impl Session {
     }
   }
 
+  fn panel_open(
+    &mut self,
+    path: &Path,
+    position: Option<crate::text::Position>,
+    focus: bool,
+    screen: Screen,
+  ) -> Result<()> {
+    let path = std::fs::canonicalize(path)?;
+    let source = (self.active, self.tab().focus);
+    let found = self.existing(&path);
+    let target = if let Some(target) = found {
+      target
+    } else {
+      if focus {
+        self.open(&path, true, screen)?;
+      } else {
+        self.split(Axis::Columns, Some(&path))?;
+      }
+      (self.active, self.tab().focus)
+    };
+    let app = &mut self.tabs[target.0].panes[target.1];
+    if let Some(position) = position {
+      app.go_to(position, true)?;
+    }
+    app.close_overview();
+    if focus {
+      app.reader.cancel();
+      if let Some(panel) = &mut app.panel {
+        panel.focused = false;
+      }
+      app.relayout()?;
+      self.focus(target.0, target.1)
+    } else {
+      self.focus(source.0, source.1)
+    }
+  }
+
   /// In a split, a picked document replaces the focused pane, like `:e`;
   /// otherwise it opens a tab.
   fn choose(&mut self, path: &Path, screen: Screen) -> Result<()> {
@@ -642,6 +695,29 @@ impl Session {
 
   /// Presses focus; the wheel scrolls in place.
   pub fn mouse(&mut self, mouse: MouseEvent) -> Result<()> {
+    let wheel = matches!(
+      mouse.kind,
+      MouseEventKind::ScrollDown
+        | MouseEventKind::ScrollUp
+        | MouseEventKind::ScrollLeft
+        | MouseEventKind::ScrollRight
+    );
+    if wheel && self.app().prompt.is_some() {
+      return Ok(());
+    }
+    if matches!(mouse.kind, MouseEventKind::Down(_)) {
+      let pane = Pane::of(self.app());
+      let local = pointer::route(&[pane], pane.id, None, mouse);
+      let completion = self.app().prompt.is_some()
+        && local.is_some_and(|route| route.region == pointer::Region::Overlay);
+      if completion {
+        return Ok(());
+      }
+      if self.app().dismiss_click()? {
+        self.pointer.hover();
+        return Ok(());
+      }
+    }
     let tab = &self.tabs[self.active];
     // Snapshot before disarm hides clue rows.
     let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();

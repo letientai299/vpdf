@@ -37,6 +37,15 @@ Esc cancels transient input and returns Normal while preserving side-panel
 focus and committed jobs. `:cancel` stops the active pane's search, OCR, and
 outline work. Extracted text follows the same modes and viewport rules.
 
+Tab and Shift-Tab switch between content and the visible side panel, keeping
+selection and panel state. Ctrl-o/Ctrl-i navigate history; prompt Tab completes.
+Panel commands focus their list. Enter follows a row in Normal while keeping
+the list; `o` or a row click keeps panel focus. An unopened document opens in a
+new tab with Enter, or a split with `o`/click; an open view is reused.
+`gq` or panel-local `q` closes the list. Overview occupies the content slot.
+Hover and wheel preserve keyboard focus. Clicking outside a prompt or preview
+dismisses it; the next click activates the underlying surface.
+
 ## Documentation
 
 Start at the [docs index][docs] for installation, project principles,

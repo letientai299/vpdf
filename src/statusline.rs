@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::app::{App, Tabline};
+use crate::app::{App, InputOwner, Tabline};
 use crate::find::Phase;
 use crate::grid;
 use crate::layout::Screen;
@@ -13,14 +13,17 @@ use unicode_width::UnicodeWidthStr;
 
 impl App {
   fn mode(&self) -> (&'static str, Color) {
-    if let Some(panel) = self.panel.as_ref().filter(|panel| panel.focused) {
-      return (panel.kind.title(), Color::Cyan);
-    }
-    if self.hints.is_some() {
-      return ("HINT", Color::Yellow);
-    }
-    if self.overview.is_some() {
-      return ("PAGES", Color::Cyan);
+    match self.input_owner() {
+      InputOwner::Prompt => return ("PROMPT", Color::Yellow),
+      InputOwner::Hints => return ("HINT", Color::Yellow),
+      InputOwner::Peek => return ("PEEK", Color::Yellow),
+      InputOwner::Panel => {
+        if let Some(panel) = &self.panel {
+          return (panel.kind.title(), Color::Cyan);
+        }
+      }
+      InputOwner::Overview => return ("PAGES", Color::Cyan),
+      InputOwner::Content => {}
     }
     match self.reader.selection.map(|selection| selection.kind) {
       Some(SelectionKind::Character) => ("VISUAL", Color::Magenta),

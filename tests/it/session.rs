@@ -254,11 +254,8 @@ mod pointer {
 
     act(&mut session, Action::Search(false))?;
     session.app().keys.feed(key(KeyCode::Char('g')));
-    session.app().hints = Some(vpdf::hints::Hints {
-      items: Vec::new(),
-      typed: String::new(),
-      copy: false,
-    });
+    mouse(&mut session, Down(Left), 90, 10)?;
+    assert_eq!(session.app().id, left, "prompt consumes the press");
     mouse(&mut session, Down(Left), 90, 10)?;
     assert_eq!(session.app().id, right, "a press focuses");
     let old = pane(&mut session, left);

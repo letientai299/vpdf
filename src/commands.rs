@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::app::{App, Request, TabMove, Window};
+use crate::app::{App, InputOwner, Request, TabMove, Window};
 use crate::cmdline;
 use crate::document::{Document, Target};
 use crate::keys::{Action, Input, PanelKind};
@@ -8,11 +8,11 @@ use crate::reader;
 use crate::render_worker::RenderWorker;
 use crate::split::Axis;
 use crate::text::Position;
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent};
 use std::process::{Command, Stdio};
 
 /// Commands the recent view takes: opening, windows, tabs, quitting.
-const COVERED: [&str; 13] = [
+const COVERED: [&str; 21] = [
   "edit",
   "split",
   "vsplit",
@@ -22,6 +22,14 @@ const COVERED: [&str; 13] = [
   "tabprevious",
   "tabclose",
   "recent",
+  "toc",
+  "overview",
+  "text",
+  "info",
+  "help",
+  "marks",
+  "jumps",
+  "annotations",
   "cancel",
   "fzf",
   "quit",
@@ -30,22 +38,43 @@ const COVERED: [&str; 13] = [
 
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
-    if input.action == Action::Cancel {
-      self.animation = None;
+    if input.action == Action::LocalFocus {
       self.hints = None;
       self.peek = None;
-      if self.overview.is_some() {
-        self.close_overview();
+      if self.panel.is_some() {
+        self.disarm();
+      }
+      if let Some(panel) = &mut self.panel {
+        panel.focused = !panel.focused;
+        self.relayout()?;
+      }
+      return Ok(());
+    }
+    if input.action == Action::Cancel {
+      self.animation = None;
+      match self.input_owner() {
+        InputOwner::Prompt => self.cancel_prompt()?,
+        InputOwner::Hints => self.hints = None,
+        InputOwner::Peek => self.peek = None,
+        _ if self.overview.is_some() => self.close_overview(),
+        _ => {}
       }
       self.reader.cancel();
       self.disarm();
       return Ok(());
     }
-    if self.overview.is_some() && self.overview_input(input)? {
+    if !self.panel_focused()
+      && self.overview.is_some()
+      && !matches!(input.action, Action::Panel(_) | Action::ClosePanel)
+      && self.overview_input(input)?
+    {
       return Ok(());
     }
     // `q` leaves text preview first and keeps any side panel open.
-    if matches!(input.action, Action::Quit) && self.preview.is_some() {
+    if matches!(input.action, Action::Quit)
+      && self.preview.is_some()
+      && !self.panel_focused()
+    {
       return self.close_text_preview();
     }
     if self.panel_input(input)? {
@@ -89,27 +118,45 @@ impl App {
   }
 
   pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
-    if self.hints.is_some() {
-      return self.hint_key(key);
+    let key = crate::keys::normalize(key);
+    if self.prompt.is_some() {
+      return self.edit_prompt(history, |prompt, history| {
+        cmdline::feed(prompt, key, history)
+      });
     }
-    if let Some(peek) = self.peek.take() {
-      // Any key closes the preview.
-      let Some(input) = self.keys.feed(key) else { return Ok(()) };
+    if self.hints.is_some() {
+      if crate::keys::plain(key)
+        && matches!(key.code, KeyCode::Char(ch) if ch.is_ascii_alphabetic())
+        || key.code == KeyCode::Backspace
+      {
+        return self.hint_key(key);
+      }
+      if key.code != KeyCode::Esc {
+        self.hints = None;
+      }
+    }
+    if self.peek.is_some() {
+      let Some(input) = self.keys.feed(key) else {
+        self.peek = None;
+        return Ok(());
+      };
+      if input.action == Action::Command {
+        return self.action(input);
+      }
+      if input.action == Action::Cancel {
+        return self.action(input);
+      }
+      let Some(peek) = self.peek.take() else { return Ok(()) };
       return match input.action {
         Action::Follow => self.follow(&peek.target),
         Action::Quit | Action::Peek => Ok(()),
         _ => self.action(input),
       };
     }
-    if self.prompt.is_none() {
-      if let Some(input) = self.keys.feed(key) {
-        self.action(input)?;
-      }
-      return Ok(());
+    if let Some(input) = self.keys.feed(key) {
+      self.action(input)?;
     }
-    self.edit_prompt(history, |prompt, history| {
-      cmdline::feed(prompt, key, history)
-    })
+    Ok(())
   }
 
   /// Pasted text goes to an open prompt.

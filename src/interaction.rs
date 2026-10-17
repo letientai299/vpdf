@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::app::App;
+use crate::app::{App, InputOwner};
 use crate::keys::{Action, Input};
 use crate::layout::Screen;
 use crate::motion::Motion;
@@ -11,6 +11,35 @@ use crossterm::event::{MouseButton, MouseEventKind};
 use std::time::{Duration, Instant};
 
 impl App {
+  pub fn input_owner(&self) -> InputOwner {
+    if self.prompt.is_some() {
+      InputOwner::Prompt
+    } else if self.hints.is_some() {
+      InputOwner::Hints
+    } else if self.peek.is_some() {
+      InputOwner::Peek
+    } else if self.panel_focused() {
+      InputOwner::Panel
+    } else if self.overview.is_some() {
+      InputOwner::Overview
+    } else {
+      InputOwner::Content
+    }
+  }
+
+  pub(crate) fn dismiss_click(&mut self) -> Result<bool> {
+    match self.input_owner() {
+      InputOwner::Prompt => self.cancel_prompt()?,
+      InputOwner::Hints => self.hints = None,
+      InputOwner::Peek => self.peek = None,
+      _ if self.clues.is_some() => {}
+      _ => return Ok(false),
+    }
+    self.reader.cancel();
+    self.disarm();
+    Ok(true)
+  }
+
   /// Rows the completion list or clues cover right above the status row.
   pub fn menu_rows(&self) -> u16 {
     let Some(menu) = self.prompt.as_ref().and_then(|p| p.menu.as_ref()) else {
@@ -456,8 +485,12 @@ impl App {
   /// Acts on a routed pointer event.
   pub fn mouse(&mut self, route: Route) -> Result<()> {
     let Route { mouse, region, .. } = route;
-    self.hints = None;
-    self.peek = None;
+    if matches!(mouse.kind, MouseEventKind::Down(_)) && self.dismiss_click()? {
+      return Ok(());
+    }
+    if self.prompt.is_some() {
+      return Ok(());
+    }
     match region {
       Region::Panel => return self.panel_mouse(mouse),
       Region::Overlay | Region::Status => return Ok(()),

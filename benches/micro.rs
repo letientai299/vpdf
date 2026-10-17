@@ -368,6 +368,85 @@ fn key_prefixes() -> Result<()> {
   Ok(())
 }
 
+fn routing_key() -> Result<()> {
+  let mut app = paper(false)?;
+  let mut history = vpdf::prompt::History::default();
+  let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+  measure("App::key reading", || {
+    app.reader.scroll = 0.0;
+    app.animation = None;
+    app.key(black_box(key), &mut history).expect("reading key");
+  })
+}
+
+fn routing_pointer() -> Result<()> {
+  use crossterm::event::{MouseEvent, MouseEventKind};
+  let app = paper(false)?;
+  let mut session = vpdf::session::Session::new("", false, None);
+  session.open(&app.path, true, app.screen)?;
+  let mouse = MouseEvent {
+    kind: MouseEventKind::ScrollDown,
+    column: 80,
+    row: 12,
+    modifiers: KeyModifiers::NONE,
+  };
+  measure("Session::mouse wheel", || {
+    session.app().reader.scroll = 0.0;
+    session.app().animation = None;
+    session.mouse(black_box(mouse)).expect("reading wheel");
+  })
+}
+
+fn routing_status() -> Result<()> {
+  let mut app = paper(false)?;
+  app.open_panel(vpdf::keys::PanelKind::Help)?;
+  let mut out = Vec::new();
+  measure("App::status owner", || {
+    out.clear();
+    app.status(&mut out, 39).expect("owner badge");
+    black_box(&out);
+  })
+}
+
+fn routing_panel() -> Result<()> {
+  let mut app = paper(false)?;
+  app.open_panel(vpdf::keys::PanelKind::Help)?;
+  let panel = app.panel.as_mut().expect("help panel");
+  let mut out = Vec::new();
+  measure("Panel::list", || {
+    out.clear();
+    panel
+      .list(&mut out, vpdf::terminal::At::default(), 50, 40)
+      .expect("panel rows");
+    black_box(&out);
+  })
+}
+
+fn routing_outline() -> Result<()> {
+  let mut app = paper(false)?;
+  app.open_panel(vpdf::keys::PanelKind::Outline)?;
+  app.panel.as_mut().expect("outline").focused = false;
+  measure("App::track_outline", || {
+    app.track_outline();
+    black_box(app.current_section);
+  })
+}
+
+fn routing_panel_press() -> Result<()> {
+  use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+  let mut app = paper(false)?;
+  app.open_panel(vpdf::keys::PanelKind::Help)?;
+  let mouse = MouseEvent {
+    kind: MouseEventKind::Down(MouseButton::Left),
+    column: 2,
+    row: 2,
+    modifiers: KeyModifiers::NONE,
+  };
+  measure("App::panel_mouse press", || {
+    app.panel_mouse(black_box(mouse)).expect("help row press");
+  })
+}
+
 type Case = fn() -> Result<()>;
 
 const CASES: &[(&str, Case)] = &[
@@ -390,6 +469,12 @@ const CASES: &[(&str, Case)] = &[
   ("menu_rows", menu_rows),
   ("frame", frame),
   ("viewport", viewport),
+  ("routing key", routing_key),
+  ("routing pointer", routing_pointer),
+  ("routing status", routing_status),
+  ("routing panel", routing_panel),
+  ("routing fixes outline", routing_outline),
+  ("routing fixes panel press", routing_panel_press),
 ];
 
 fn main() -> Result<()> {

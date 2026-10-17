@@ -479,8 +479,7 @@ fn tab_and_ctrl_i_stay_apart() {
   let action = |key| Keys::default().feed(key).map(|input| input.action);
   assert_eq!(action(*ctrl_i), Some(Action::History(true)));
   assert_eq!(action(*ctrl_o), Some(Action::History(false)));
-  // Tab keeps forward history until K1 binds it to panel focus.
-  assert_eq!(action(*tab), Some(Action::History(true)));
+  assert_eq!(action(*tab), Some(Action::LocalFocus));
   let history = History::default();
   let complete = |key| {
     let mut prompt = Prompt::new(PromptKind::Command);

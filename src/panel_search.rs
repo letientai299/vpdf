@@ -87,6 +87,7 @@ impl Panel {
     if let Some((origin, previous)) = self.search.origin.take() {
       self.selected = origin;
       self.search.query = previous;
+      self.reveal();
     }
   }
 
@@ -122,6 +123,7 @@ impl Panel {
       current = index;
     }
     self.selected = current;
+    self.reveal();
     true
   }
 

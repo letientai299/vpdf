@@ -57,7 +57,10 @@ impl App {
     self.overview =
       Some(Overview { selected: self.navigation_position().page.0, top: 0 });
     self.requested.clear();
-    Ok(())
+    if let Some(panel) = &mut self.panel {
+      panel.focused = false;
+    }
+    self.relayout()
   }
 
   /// List motions move between thumbnails; Enter opens the page.

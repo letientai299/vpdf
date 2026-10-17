@@ -52,17 +52,18 @@ gp: page thumbnails
 gr: recent documents
 :jumps: recorded jump destinations
 ga: annotations (read-only)
-Enter: follow link or row
-o: follow, keep panel focus
+Enter: follow row; focus content in Normal
+o / row click: follow; keep panel focus
 / ? n N: search rows of a focused panel
 { }: previous / next heading in a panel
 yy: yank the panel row
-gq: close panel
-gx: text preview
+Tab Shift-Tab: toggle content / panel focus
+gq / panel q: close panel
+gx: focus extracted-text presentation
 g? F1: this reference
 Esc: cancel transient input; return to Normal
 :cancel: stop active-pane search, OCR, outline jobs
-Click / wheel in panel: follow / move
+Panel wheel: scroll list; keep row selection
 q: close panel, tab, or reader
 
 # Panes
@@ -78,6 +79,7 @@ Ctrl-w r R: rotate panes forward / backward
 Ctrl-w n: new pane listing recent documents
 
 # Tabs
+Panel file Enter / o: target tab / split; reuse open view
 gt [count]gt: next / nth tab
 gT: previous tab
 :e :tabe: open here / in a new tab
