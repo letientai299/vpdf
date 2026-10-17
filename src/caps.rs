@@ -152,6 +152,118 @@ impl fmt::Display for Lack {
   }
 }
 
+impl fmt::Display for Profile {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self {
+      Self::Graphics => write!(f, "Kitty graphics"),
+      Self::CropQuirk => write!(f, "Kitty graphics, iTerm2 crop sizing"),
+      Self::Unsupported(lack) => write!(f, "unsupported ({lack})"),
+    }
+  }
+}
+
+impl fmt::Display for Support {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self {
+      Self::Answered => write!(f, "yes"),
+      Self::Named => write!(f, "yes, by name"),
+      Self::Missing => write!(f, "no"),
+    }
+  }
+}
+
+/// The names `allow-passthrough` takes.
+impl fmt::Display for Passthrough {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    f.write_str(match self {
+      Self::Off => "off",
+      Self::On => "on",
+      Self::All => "all",
+    })
+  }
+}
+
+impl fmt::Display for Cell {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "{}x{} px", self.width, self.height)
+  }
+}
+
+/// One `Name: value` line per field, for `:info`. Values drop control
+/// characters, since a terminal's answer can hold a line break.
+impl fmt::Display for Caps {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let version = self.version.as_deref().unwrap_or("none");
+    let mut rows = vec![
+      ("Profile", self.profile().to_string()),
+      ("XTVERSION", version.into()),
+    ];
+    match &self.host {
+      Host::Direct(graphics) => rows.push((
+        "Graphics query",
+        match graphics {
+          Graphics::Ok => "OK".into(),
+          Graphics::Error(error) => format!("failed: {error}"),
+          Graphics::Silent => "no answer".into(),
+        },
+      )),
+      Host::Tmux(None) => rows.push(("tmux", "cannot query".into())),
+      Host::Tmux(Some(tmux)) => rows.extend(tmux.rows()),
+      Host::Screen => rows.push(("GNU screen", "not queried".into())),
+    }
+    let keyboard =
+      self.keyboard.map(|flags| format!("yes, flags {flags} at start"));
+    rows.extend([
+      ("Kitty keyboard", keyboard.unwrap_or_else(|| "no".into())),
+      ("Synchronized output", self.sync.to_string()),
+      ("Pixel mouse", self.pixels.to_string()),
+      ("Resize reports", self.resize.to_string()),
+      ("Pointer shapes", self.pointer.to_string()),
+      ("Drag and drop", self.drop.to_string()),
+    ]);
+    // Asked only without TIOCGWINSZ pixels; absent is the usual case.
+    if let Some(cell) = self.cell {
+      rows.push(("Cell reply", cell.to_string()));
+    }
+    let attributes = self.attributes.as_deref().map(|values| join(values, ";"));
+    rows.push(("DA1", attributes.unwrap_or_else(|| "no answer".into())));
+    for (index, (name, value)) in rows.into_iter().enumerate() {
+      let value: String = crate::text::printable(&value).collect();
+      let separator = if index == 0 { "" } else { "\n" };
+      write!(f, "{separator}{name}: {value}")?;
+    }
+    Ok(())
+  }
+}
+
+impl Tmux {
+  fn rows(&self) -> [(&'static str, String); 4] {
+    let release = join(&self.version, ".");
+    let old = !self.version.is_empty() && self.version[..] < [3, 3][..];
+    let passthrough = match self.passthrough {
+      Some(passthrough) => passthrough.to_string(),
+      None if old => "on, no option before tmux 3.3".into(),
+      None => "unknown".into(),
+    };
+    [
+      (
+        "tmux",
+        if release.is_empty() { "unknown release".into() } else { release },
+      ),
+      ("tmux client", self.client.clone().unwrap_or_else(|| "none".into())),
+      (
+        "tmux cell",
+        self.cell.map_or_else(|| "none".into(), |cell| cell.to_string()),
+      ),
+      ("tmux passthrough at start", passthrough),
+    ]
+  }
+}
+
+fn join(numbers: &[u32], separator: &str) -> String {
+  numbers.iter().map(u32::to_string).collect::<Vec<_>>().join(separator)
+}
+
 impl Caps {
   /// The outer terminal's XTVERSION; under tmux, the client's.
   pub fn terminal(&self) -> Option<&str> {
@@ -387,12 +499,9 @@ fn tmux(display: &str) -> Option<Tmux> {
     version,
     client: Some(client).filter(|client| !client.is_empty()).map(str::to_owned),
     cell: cell(number(width), number(height)),
-    passthrough: match passthrough {
-      "off" => Some(Passthrough::Off),
-      "on" => Some(Passthrough::On),
-      "all" => Some(Passthrough::All),
-      _ => None,
-    },
+    passthrough: [Passthrough::Off, Passthrough::On, Passthrough::All]
+      .into_iter()
+      .find(|value| value.to_string() == passthrough),
   })
 }
 

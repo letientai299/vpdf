@@ -411,3 +411,177 @@ fn versions_compare_numerically() {
   assert_eq!(named("iTerm2 3.5.10"), Named::Crop);
   assert_eq!(named("iTerm2 3.5.5"), named("iTerm2 3.4"));
 }
+
+/// Asserts `caps` shows each `present` line and no line starting
+/// with an `absent` prefix.
+fn shows(name: &str, caps: &Caps, present: &[&str], absent: &[&str]) {
+  let text = caps.to_string();
+  for line in present {
+    assert!(text.lines().any(|shown| shown == *line), "{name}: {line}\n{text}");
+  }
+  for prefix in absent {
+    let shown = text.lines().any(|shown| shown.starts_with(prefix));
+    assert!(!shown, "{name}: {prefix}\n{text}");
+  }
+}
+
+#[test]
+fn info_without_tmux() {
+  let kitty = [
+    &version("kitty(0.49.1)"),
+    OK,
+    b"\x1b[?2026;2$y\x1b[?1016;2$y\x1b[?2048;2$y\x1b[?0u",
+    b"\x1b]22;1\x1b\\\x1b]72;t=q\x1b\\\x1b[6;13;7t\x1b[?62;52;c",
+  ]
+  .concat();
+  assert_eq!(
+    caps(Route::Direct, &replies(&kitty)).to_string(),
+    "Profile: Kitty graphics\n\
+     XTVERSION: kitty(0.49.1)\n\
+     Graphics query: OK\n\
+     Kitty keyboard: yes, flags 0 at start\n\
+     Synchronized output: yes\n\
+     Pixel mouse: yes\n\
+     Resize reports: yes\n\
+     Pointer shapes: yes\n\
+     Drag and drop: yes\n\
+     Cell reply: 7x13 px\n\
+     DA1: 62;52"
+  );
+  let wezterm = [
+    &version("WezTerm 20240203-110809-5046fc22"),
+    OK,
+    b"\x1b[?2026;2$y\x1b[?1016;2$y\x1b[?2048;0$y\x1b[?0u\x1b[?65;4;6c",
+  ]
+  .concat();
+  let named =
+    |name: &str, graphics: &[u8]| [&version(name), graphics, DA1].concat();
+  let cases = [
+    (
+      "wezterm",
+      Route::Direct,
+      wezterm,
+      &[
+        "Profile: Kitty graphics",
+        "Resize reports: no",
+        "Pointer shapes: no",
+        "DA1: 65;4;6",
+      ][..],
+    ),
+    (
+      "ghostty",
+      Route::Direct,
+      named("ghostty 1.3.1", OK),
+      &["Profile: Kitty graphics", "Pointer shapes: yes, by name"],
+    ),
+    (
+      "iterm2",
+      Route::Direct,
+      named("iTerm2 3.7.6", OK),
+      &["Profile: Kitty graphics, iTerm2 crop sizing"],
+    ),
+    (
+      "foot",
+      Route::Direct,
+      named("foot(1.28.0)", b""),
+      &[
+        "Profile: unsupported (No Kitty graphics)",
+        "Graphics query: no answer",
+        "Kitty keyboard: no",
+      ],
+    ),
+    (
+      "error",
+      Route::Direct,
+      named("newterm 1.0", b"\x1b_Gi=31;EINVAL:bad\x1b\\"),
+      &[
+        "Profile: unsupported (Kitty graphics failed: EINVAL:bad)",
+        "Graphics query: failed: EINVAL:bad",
+      ],
+    ),
+    (
+      "warp error",
+      Route::Direct,
+      named("Warp(v0.2026.03.25)", b"\x1b_Gi=31;EINVAL:bad\x1b\\"),
+      &[
+        "Profile: unsupported (Warp lacks image crops and cell offsets)",
+        "Graphics query: failed: EINVAL:bad",
+      ],
+    ),
+    (
+      "screen",
+      Route::Screen,
+      Vec::new(),
+      &[
+        "Profile: unsupported (GNU screen cannot pass Kitty graphics)",
+        "XTVERSION: none",
+        "GNU screen: not queried",
+        "DA1: no answer",
+      ],
+    ),
+  ];
+  for (name, route, bytes, present) in cases {
+    shows(name, &caps(route, &replies(&bytes)), present, &["tmux", "Cell"]);
+  }
+}
+
+/// A line break in an answer cannot add a row or a heading.
+#[test]
+fn info_keeps_answers_on_their_row() {
+  let bytes = [
+    &version("evil\n# Metadata\nProfile: Kitty graphics"),
+    b"\x1b_Gi=31;EINVAL:a\nb\x1b\\".as_slice(),
+    DA1,
+  ]
+  .concat();
+  let caps = caps(Route::Direct, &replies(&bytes));
+  let present = [
+    "XTVERSION: evil # Metadata Profile: Kitty graphics",
+    "Profile: unsupported (Kitty graphics failed: EINVAL:a b)",
+  ];
+  shows("direct", &caps, &present, &["#"]);
+  let tmux = Tmux { client: Some("x\ny".into()), ..tmux_info(None) };
+  let caps = Caps { host: Host::Tmux(Some(tmux)), ..caps };
+  shows("tmux", &caps, &["tmux client: x y"], &["y"]);
+}
+
+#[test]
+fn info_under_tmux() {
+  let bytes = |name: &str| {
+    [&version(name), b"\x1b[?2026;2$y\x1b[?1;2;4c".as_slice()].concat()
+  };
+  let cases = [
+    ("tmux 3.8", vec![3, 8], Some(Passthrough::Off), "3.8", "off"),
+    ("tmux 3.8", vec![3, 8], Some(Passthrough::On), "3.8", "on"),
+    ("tmux 3.8", vec![3, 8], Some(Passthrough::All), "3.8", "all"),
+    ("tmux 3.2a", vec![3, 2], None, "3.2", "on, no option before tmux 3.3"),
+    ("tmux openbsd-7.8", vec![], None, "unknown release", "unknown"),
+  ];
+  for (xtversion, version, passthrough, release, setting) in cases {
+    let tmux =
+      Tmux { version, passthrough, ..tmux_info(Some("kitty(0.49.1)")) };
+    let line = format!("tmux passthrough at start: {setting}");
+    let present = [
+      "Profile: Kitty graphics",
+      &format!("XTVERSION: {xtversion}"),
+      &format!("tmux: {release}"),
+      "tmux client: kitty(0.49.1)",
+      "tmux cell: 7x13 px",
+      &line,
+      "Kitty keyboard: no",
+    ];
+    let caps = caps(Route::Tmux(Some(tmux)), &replies(&bytes(xtversion)));
+    shows(&line, &caps, &present, &["Graphics query", "GNU screen"]);
+  }
+  let bytes = bytes("tmux 3.8");
+  let no_client = caps(tmux_with(None), &replies(&bytes));
+  let present = [
+    "Profile: unsupported (tmux names no client terminal)",
+    "tmux client: none",
+  ];
+  shows("no client", &no_client, &present, &[]);
+  let failed = caps(Route::Tmux(None), &replies(&bytes));
+  let present =
+    ["Profile: unsupported (Cannot query tmux)", "tmux: cannot query"];
+  shows("tmux failed", &failed, &present, &["tmux passthrough"]);
+}

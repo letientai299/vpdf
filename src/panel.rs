@@ -515,7 +515,7 @@ impl App {
     }
   }
 
-  /// PDF metadata, then document facts, then reader statistics.
+  /// PDF metadata, document facts, reader statistics, terminal caps.
   pub fn info(&self) -> String {
     let mut lines = vec!["# Metadata".to_owned()];
     lines.extend(
@@ -562,9 +562,11 @@ impl App {
       ),
       format!("Screen: {}x{} cells", self.screen.columns, self.screen.rows),
       format!(
-        "Mode: {}",
-        if self.text_mode { "text" } else { "Kitty graphics" }
+        "Presentation: {}",
+        if self.text_mode { "text" } else { "images" }
       ),
+      crate::caps::get()
+        .map_or_else(|| "Terminal: not probed".into(), ToString::to_string),
     ]);
     lines.join("\n")
   }

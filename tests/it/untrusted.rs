@@ -155,3 +155,23 @@ fn errors_reach_stderr_clean() -> Result<()> {
   assert!(!stderr.contains(['\x1b', '\x07']), "{stderr:?}");
   Ok(())
 }
+
+/// Tests never probe the terminal.
+#[test]
+fn info_says_the_terminal_was_not_probed() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("plain.pdf");
+  write_pdf(&path, "")?;
+  let screen = Screen {
+    columns: 80,
+    rows: 24,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let app = App::with_screen(&path, "", true, screen)?;
+  let info = app.info();
+  let reader = info.split_once("# Reader\n").map_or("", |(_, rest)| rest);
+  assert!(reader.lines().any(|line| line == "Terminal: not probed"), "{info}");
+  Ok(())
+}

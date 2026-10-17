@@ -119,7 +119,7 @@ pub const COMMANDS: &[Spec] = &[
   spec("crop", &[], "", "toggle cropped page margins"),
   spec("nohlsearch", &["noh"], "", "hide search highlights"),
   spec("text", &[], "", "preview extracted page text"),
-  spec("info", &[], "", "document, cache, and timing info"),
+  spec("info", &[], "", "document, reader, and terminal info"),
   spec("reload", &[], "", "reread the file from disk"),
   spec("password", &[], "", "unlock and reopen the document"),
   spec("ocr", &[], "[lang]", "recognize the page with Tesseract")
