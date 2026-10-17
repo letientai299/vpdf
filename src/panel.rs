@@ -157,7 +157,7 @@ impl Panel {
     width.clamp(1, if wide { 64 } else { 50 }).min(columns.saturating_sub(12))
   }
 
-  /// Draws rows left of a border at column `width`.
+  /// Draws `width` columns; the last is the border.
   pub fn draw(
     &mut self,
     out: &mut impl Write,

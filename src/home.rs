@@ -56,8 +56,12 @@ impl Home {
     for row in 0..self.screen.rows {
       terminal::clear(out, At::default(), row, self.screen.columns)?;
     }
-    let width = self.screen.columns.saturating_add(1);
-    self.panel.draw(out, At::default(), width, self.screen.rows)?;
+    self.panel.draw(
+      out,
+      At::default(),
+      self.screen.columns,
+      self.screen.rows,
+    )?;
     let row = self.screen.rows - 1;
     if let Some(prompt) = &self.prompt {
       statusline::prompt(out, prompt, self.screen, At::default())?;
@@ -200,6 +204,32 @@ fn command(line: &str) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn panel_ends_at_the_last_column() -> Result<()> {
+    let screen = Screen {
+      columns: 40,
+      rows: 10,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut out = Vec::new();
+    Home::new(&[], screen).draw(&mut out)?;
+    let out = String::from_utf8(out)?;
+    let columns = out.split("\x1b[").filter_map(|code| {
+      let (row, column) = code.split_once('H')?.0.split_once(';')?;
+      row.parse::<u16>().ok()?;
+      column.parse::<u16>().ok()
+    });
+    assert_eq!(columns.max(), Some(screen.columns));
+    for row in 0..screen.rows - 1 {
+      let goto = At::default().goto(row, screen.columns - 1);
+      let border = format!("{goto}{}│", theme::MUTED);
+      assert!(out.contains(&border), "border on row {row}");
+    }
+    Ok(())
+  }
 
   #[test]
   fn start_commands_open_or_quit() -> Result<()> {
