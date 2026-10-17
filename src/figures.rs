@@ -9,6 +9,16 @@ use mupdf::{DisplayList, TextPageFlags};
 pub struct Figure {
   pub bounds: Bounds,
   pub caption: String,
+  pub source: Source,
+}
+
+/// What a figure was found from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Source {
+  /// Image or vector blocks.
+  Graphic,
+  /// A caption line alone.
+  Caption,
 }
 
 pub(crate) fn detect(
@@ -60,7 +70,11 @@ fn group(
         index += 1;
       }
     }
-    figures.push(Figure { bounds, caption: String::new() });
+    figures.push(Figure {
+      bounds,
+      caption: String::new(),
+      source: Source::Graphic,
+    });
   }
   for line in &text.lines {
     let caption = line.text();
@@ -86,7 +100,7 @@ fn group(
       figures[index].bounds = figures[index].bounds.union(bounds);
       figures[index].caption = caption;
     } else {
-      figures.push(Figure { bounds, caption });
+      figures.push(Figure { bounds, caption, source: Source::Caption });
     }
   }
   figures.retain(|figure| {

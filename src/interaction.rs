@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::app::{App, InputOwner};
+use crate::gestures::Gesture;
 use crate::keys::{Action, Input};
 use crate::layout::Screen;
 use crate::links::LinkPress;
@@ -15,7 +16,7 @@ const WHEEL_ZOOM: f32 = 0.5;
 
 /// What the turns of one wheel gesture move.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Gesture {
+pub(crate) struct WheelRun {
   pub surface: Surface,
   /// The first turn's axis; turns across it are drift.
   pub sideways: bool,
@@ -63,6 +64,7 @@ impl App {
 
   pub(crate) fn dismiss_overlay(&mut self) {
     self.context_menu = None;
+    self.drop_sweep();
     self.peek = None;
     self.region = None;
   }
@@ -620,6 +622,12 @@ impl App {
       {
         self.page_alt(route)
       }
+      MouseEventKind::Drag(MouseButton::Left)
+      | MouseEventKind::Up(MouseButton::Left)
+        if matches!(self.gesture, Gesture::Sweep(_) | Gesture::Dropped) =>
+      {
+        self.page_alt(route)
+      }
       MouseEventKind::Down(MouseButton::Left)
       | MouseEventKind::Drag(MouseButton::Left)
       | MouseEventKind::Up(MouseButton::Left) => self.page_left(route),
@@ -685,7 +693,7 @@ impl App {
     let under = !zoom
       && self.preview_frame()?.is_some_and(|frame| frame.contains(column, row));
     let surface = if under { Surface::Preview } else { Surface::Page };
-    self.wheel = Some(Gesture { surface, sideways });
+    self.wheel = Some(WheelRun { surface, sideways });
     Ok(Some(surface))
   }
 
@@ -720,6 +728,7 @@ impl App {
       }
       MouseEventKind::Drag(_) => self.link_press = LinkPress::Idle,
       _ => {
+        self.gesture = Gesture::Glyphs;
         // A broken link table still selects.
         let link = (route.clicks == 1)
           .then(|| self.link_pressed(mouse.column, mouse.row, route.pixel));
@@ -730,10 +739,7 @@ impl App {
     self.animation = None;
     let drag = matches!(mouse.kind, MouseEventKind::Drag(_));
     if drag {
-      let rows = self.edge_rows(&route);
-      if rows != 0 {
-        self.edge_scroll(rows)?;
-      }
+      self.edge_follow(&route)?;
     }
     let Some(pos) = self.press_position(&route)? else { return Ok(()) };
     if drag {
@@ -746,8 +752,11 @@ impl App {
   fn page_alt(&mut self, route: Route) -> Result<()> {
     self.link_press = LinkPress::Idle;
     self.animation = None;
-    let Some(pos) = self.press_position(&route)? else { return Ok(()) };
-    self.extend_select(pos)
+    match route.mouse.kind {
+      MouseEventKind::Down(_) => self.alt_press(&route),
+      MouseEventKind::Drag(_) => self.alt_drag(&route),
+      _ => self.alt_release(),
+    }
   }
 
   /// Shown glyph nearest a press.
@@ -761,7 +770,17 @@ impl App {
     }
     let point = self.page_point(mouse.column, mouse.row, route.pixel);
     let Some((page, x, y)) = point else { return Ok(None) };
-    Ok(Some(self.doc.text(page)?.nearest(page, x, y)))
+    self.glyph_near(page, x, y).map(Some)
+  }
+
+  /// The glyph nearest a page point.
+  pub(crate) fn glyph_near(
+    &mut self,
+    page: PageId,
+    x: f32,
+    y: f32,
+  ) -> Result<Position> {
+    Ok(self.doc.text(page)?.nearest(page, x, y))
   }
 
   /// Link at a pressed, shown cell.
@@ -824,6 +843,18 @@ impl App {
     let page = self.layout.page_at(y + self.reader.scroll);
     let (x, y) = self.layout.unproject(page, (x, y), self.reader.scroll)?;
     Some((page, x, y))
+  }
+
+  /// A cell's point in `page` coordinates.
+  pub(crate) fn point_on(
+    &self,
+    page: PageId,
+    column: u16,
+    row: u16,
+    pixel: Option<Pixel>,
+  ) -> Option<(f32, f32)> {
+    let at = self.cell_point(column, row, pixel);
+    self.layout.unproject(page, at, self.reader.scroll)
   }
 
   /// What a resting pointer covers.

@@ -162,6 +162,11 @@ pub fn release(out: &mut impl Write) -> Result<()> {
 }
 
 impl Graphics {
+  /// Whether overlays need exact-size images.
+  pub fn crop_quirk(&self) -> bool {
+    self.quirk
+  }
+
   pub fn contains(&mut self, key: &TileKey) -> bool {
     self.resident.get(&(self.doc, *key)).is_some()
   }

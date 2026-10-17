@@ -848,7 +848,8 @@ impl Session {
       if changed {
         self.show_hover();
       }
-      return Ok(changed);
+      // Bare motion: a release got lost.
+      return Ok(self.app().drop_sweep() || changed);
     }
     let wheel = pointer::Wheel::of(mouse.kind).is_some();
     if wheel && self.app().prompt.is_some() {
@@ -896,7 +897,7 @@ impl Session {
     // Per-pixel drags; edges scroll.
     let reading = |app: &App| {
       let view = (app.reader.scroll.to_bits(), app.text_top);
-      (app.reader.cursor, app.reader.selection, view)
+      (app.reader.cursor, app.reader.selection, view, app.gesture)
     };
     let before =
       matches!(mouse.kind, MouseEventKind::Drag(_)).then(|| reading(app));

@@ -97,8 +97,8 @@ A drag selects characters; a double click selects a word, a triple click a line,
 and a fourth click the paragraph. Dragging after a double or triple click
 extends by words or lines. Dragging past the top or bottom edge scrolls, faster
 the farther the pointer goes; above the window it scrolls one row per move.
-Alt-click moves the selection's free end, or starts Visual from the same entry
-point as `v`. Pointer selections return to their entry mode on Esc.
+Alt-click off a figure moves the selection's free end, or starts Visual from the
+same entry point as `v`. Pointer selections return to their entry mode on Esc.
 
 A right click opens a menu at the pointer with actions for the link, selection,
 text, or figure under it, plus history, fit, outline, and overview. Each item
@@ -120,7 +120,8 @@ Image copy uses native clipboard tools locally and OSC 5522 over SSH when the
 terminal answers its capability query. A remote copy succeeds after terminal
 acknowledgment; a timeout blocks newer image writes until its final status.
 Figure detection groups image/vector bounds and nearby captions; caption-only
-targets capture that caption. Manual region gestures are not implemented yet.
+targets capture that caption. Alt-drag sweeps a region, dimming the rest of
+the page, and its release opens the same bar; Alt-click on a figure picks it.
 
 ## Documentation
 

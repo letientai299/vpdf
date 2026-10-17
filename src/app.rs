@@ -151,8 +151,8 @@ pub struct App {
   /// The link the pointer rests on.
   pub hover_link: Option<crate::links::HoverLink>,
   pub(crate) link_press: crate::links::LinkPress,
-  /// How the click run's drag extends.
-  pub(crate) stretch: Option<crate::gestures::Stretch>,
+  /// What the held left button does.
+  pub(crate) gesture: crate::gestures::Gesture,
   pub region: Option<crate::region::Region>,
   pub region_job: Option<crate::region::Job>,
   pub region_send: Option<crate::region::Transfer>,
@@ -163,7 +163,7 @@ pub struct App {
   pub outline_job: Option<crate::outline::OutlineJob>,
   pub animation: Option<crate::animation::Scroll>,
   /// The current wheel gesture over the page.
-  pub(crate) wheel: Option<crate::interaction::Gesture>,
+  pub(crate) wheel: Option<crate::interaction::WheelRun>,
   pub(crate) requested: Vec<TileKey>,
   /// Sign of the last scroll; prefetch looks that way first.
   pub(crate) heading: f32,
@@ -243,7 +243,7 @@ impl App {
       context_menu: None,
       hover_link: None,
       link_press: crate::links::LinkPress::Idle,
-      stretch: None,
+      gesture: crate::gestures::Gesture::Glyphs,
       region: None,
       region_job: None,
       region_send: None,

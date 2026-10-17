@@ -72,7 +72,7 @@ Double click: select word
 Triple / quadruple click: select line / paragraph
 Drag after double / triple click: extend by word / line
 Drag past top / bottom edge: scroll; farther is faster
-<M-click>: extend selection or start V at entry point
+<M-click> off a figure: extend selection or start V
 Drag / click runs: enter V; <Esc> returns to entry mode
 Right click: menu for link, selection, text, figure
 Menu j k <CR> / click: choose and run; <Esc> closes
@@ -94,6 +94,8 @@ n N: next / previous match
 
 # Figures
 gF: open selected figure actions
+<M-drag>: capture a region; release opens actions
+<M-click> on a figure: pick it and open actions
 h j k l: choose image, text, PNG, or OCR
 <CR>: run action; <Esc> closes bar
 Save PNG: beside document with numbered filename

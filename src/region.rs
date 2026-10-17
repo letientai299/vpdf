@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::{Document, Target};
+use crate::figures::Source;
 use crate::keys::{Action, Input};
 use crate::reader::Yank;
 use crate::text::{Bounds, PageId, Text};
@@ -132,6 +133,20 @@ impl App {
     }
     self.region = Some(Region::Selected(snapshot(page, bounds)));
     Ok(())
+  }
+
+  /// The figure at a page point.
+  pub(crate) fn figure_at(
+    &mut self,
+    page: PageId,
+    x: f32,
+    y: f32,
+  ) -> Result<Option<crate::figures::Figure>> {
+    let figures = self.doc.figures(page)?;
+    let under = figures.iter().filter(|figure| figure.bounds.contains(x, y));
+    // Graphics win over lone captions.
+    let figure = under.min_by_key(|figure| figure.source != Source::Graphic);
+    Ok(figure.cloned())
   }
 
   fn figure_point(&mut self) -> Result<(PageId, f32, f32)> {
@@ -352,12 +367,90 @@ impl App {
   }
 
   pub fn draw_region(&mut self, out: &mut impl Write) -> Result<()> {
+    if let crate::gestures::Gesture::Sweep(sweep) = self.gesture
+      && let Some(bounds) = sweep.bounds()
+    {
+      let mut rect =
+        self.layout.project(sweep.page, bounds, self.reader.scroll);
+      // Quirk overlays cache by size.
+      if self.graphics.crop_quirk() {
+        let (width, height) = (
+          f32::from(self.layout.screen.cell_width),
+          f32::from(self.layout.screen.cell_height),
+        );
+        rect = Bounds {
+          x0: (rect.x0 / width).floor() * width,
+          y0: (rect.y0 / height).floor() * height,
+          x1: (rect.x1 / width).ceil() * width,
+          y1: (rect.y1 / height).ceil() * height,
+        };
+      }
+      self.frame_capture(rect, out)?;
+    }
     let Some(Region::Bar { snapshot, action, status }) = &self.region else {
       return Ok(());
     };
+    let (page, action, status) = (snapshot.page, *action, status.clone());
+    let rect = self.layout.project(page, snapshot.bounds, self.reader.scroll);
+    self.frame_capture(rect, out)?;
     let screen = self.layout.screen;
-    let rect =
-      self.layout.project(snapshot.page, snapshot.bounds, self.reader.scroll);
+    let options = ACTIONS
+      .iter()
+      .enumerate()
+      .map(|(index, (label, _))| {
+        if index == action as usize {
+          format!("[{label}]")
+        } else {
+          (*label).into()
+        }
+      })
+      .collect::<Vec<_>>()
+      .join(" · ");
+    let mut label = format!("p{} {options}", page.0 + 1);
+    if label.chars().count() > usize::from(screen.columns) {
+      label = format!("[{}] p{}", ACTIONS[action as usize].0, page.0 + 1);
+    }
+    if !status.is_empty() {
+      label.push_str(" │ ");
+      label.push_str(&status);
+    }
+    let text = terminal::clean(&label, usize::from(screen.columns));
+    let row = ((rect.y1 / f32::from(screen.cell_height)).ceil() as usize)
+      .min(usize::from(screen.rows.saturating_sub(2)));
+    if !self.text_mode {
+      let y = row as f32 * f32::from(screen.cell_height);
+      let backdrop = Bounds {
+        x0: 0.0,
+        y0: y,
+        x1: screen.width(),
+        y1: y + f32::from(screen.cell_height),
+      };
+      self.graphics.backdrop(
+        backdrop,
+        theme::BADGE_FILL,
+        screen,
+        self.left,
+        out,
+      )?;
+    }
+    write!(
+      out,
+      "{}{}{}{}",
+      self.at.goto(row, usize::from(self.left)),
+      theme::SELECTED,
+      text,
+      theme::RESET
+    )?;
+    Ok(())
+  }
+
+  /// Dims around a rect; outlines it.
+  fn frame_capture(
+    &mut self,
+    rect: Bounds,
+    out: &mut impl Write,
+  ) -> Result<()> {
+    let screen = self.layout.screen;
     if !self.text_mode {
       let w = screen.width();
       let h = screen.height();
@@ -394,54 +487,6 @@ impl App {
         )?;
       }
     }
-    let options = ACTIONS
-      .iter()
-      .enumerate()
-      .map(|(index, (label, _))| {
-        if index == *action as usize {
-          format!("[{label}]")
-        } else {
-          (*label).into()
-        }
-      })
-      .collect::<Vec<_>>()
-      .join(" · ");
-    let mut label = format!("p{} {options}", snapshot.page.0 + 1);
-    if label.chars().count() > usize::from(screen.columns) {
-      label =
-        format!("[{}] p{}", ACTIONS[*action as usize].0, snapshot.page.0 + 1);
-    }
-    if !status.is_empty() {
-      label.push_str(" │ ");
-      label.push_str(status);
-    }
-    let text = terminal::clean(&label, usize::from(screen.columns));
-    let row = ((rect.y1 / f32::from(screen.cell_height)).ceil() as usize)
-      .min(usize::from(screen.rows.saturating_sub(2)));
-    if !self.text_mode {
-      let y = row as f32 * f32::from(screen.cell_height);
-      let backdrop = Bounds {
-        x0: 0.0,
-        y0: y,
-        x1: screen.width(),
-        y1: y + f32::from(screen.cell_height),
-      };
-      self.graphics.backdrop(
-        backdrop,
-        theme::BADGE_FILL,
-        screen,
-        self.left,
-        out,
-      )?;
-    }
-    write!(
-      out,
-      "{}{}{}{}",
-      self.at.goto(row, usize::from(self.left)),
-      theme::SELECTED,
-      text,
-      theme::RESET
-    )?;
     Ok(())
   }
 }

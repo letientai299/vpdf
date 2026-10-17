@@ -245,7 +245,7 @@ impl App {
   /// Selects like a click run, without drags.
   fn select_unit(&mut self, glyph: Position, clicks: u8) -> Result<()> {
     self.click_select(glyph, clicks)?;
-    self.stretch = None;
+    self.gesture = crate::gestures::Gesture::Glyphs;
     Ok(())
   }
 
@@ -289,9 +289,7 @@ impl App {
     let Some((page, x, y)) = self.page_point(column, row, route.pixel) else {
       return Ok(None);
     };
-    let figures = self.doc.figures(page)?;
-    let figure = figures.iter().find(|figure| figure.bounds.contains(x, y));
-    Ok(figure.map(|figure| (page, figure.bounds)))
+    Ok(self.figure_at(page, x, y)?.map(|figure| (page, figure.bounds)))
   }
 
   /// The menu's page-area pixels.

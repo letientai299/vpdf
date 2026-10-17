@@ -119,6 +119,8 @@ impl App {
 
   pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
     let key = crate::keys::normalize(key);
+    // Keys end a sweep in progress.
+    self.drop_sweep();
     if self.prompt.is_some() {
       return self.edit_prompt(history, |prompt, history| {
         cmdline::feed(prompt, key, history)
@@ -195,6 +197,7 @@ impl App {
       return Ok(());
     }
     self.region = None;
+    self.drop_sweep();
     match owner {
       InputOwner::Prompt => self.cancel_prompt()?,
       InputOwner::Hints => self.hints = None,

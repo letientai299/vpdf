@@ -7,12 +7,13 @@ use std::path::Path;
 use vpdf::Result;
 use vpdf::app::{Request, TabMove};
 use vpdf::decode::{Button, Mouse, MouseKind, Spot};
+use vpdf::figures::Source;
 use vpdf::keys::Action;
 use vpdf::pointer::{Hit, Region};
 use vpdf::prompt::{Prompt, PromptKind};
 use vpdf::reader::SelectionKind;
 use vpdf::session::Session;
-use vpdf::text::{PageId, Position};
+use vpdf::text::{Bounds, PageId, Position};
 use vpdf::trace::Drawable;
 
 /// Page 1 links: page 2, web, itself.
@@ -132,6 +133,30 @@ fn side(button: Button, (column, row): (u16, u16)) -> Mouse {
     at: Spot::Cell { column, row },
     modifiers: KeyModifiers::NONE,
   }
+}
+
+/// An Alt mouse event at a cell.
+fn alt(kind: MouseEventKind, (column, row): (u16, u16)) -> MouseEvent {
+  MouseEvent { kind, column, row, modifiers: KeyModifiers::ALT }
+}
+
+fn alt_click(session: &mut Session, at: (u16, u16)) -> Result<()> {
+  session.mouse(alt(MouseEventKind::Down(MouseButton::Left), at))?;
+  session.mouse(alt(MouseEventKind::Up(MouseButton::Left), at))?;
+  Ok(())
+}
+
+/// The cell over a page rectangle's centre.
+fn centre_cell(
+  app: &vpdf::app::App,
+  page: PageId,
+  bounds: Bounds,
+) -> (u16, u16) {
+  let rect = app.layout.project(page, bounds, app.reader.scroll);
+  let (x, y) = rect.centre();
+  let (width, height) =
+    (f32::from(app.screen.cell_width), f32::from(app.screen.cell_height));
+  (app.left + (x / width) as u16, (y / height) as u16)
 }
 
 fn status(session: &mut Session) -> Result<String> {
@@ -479,13 +504,7 @@ fn alt_clicks_skip_unseen_cursors() -> Result<()> {
   action(session.app(), Action::Cursor)?;
   let start = session.app().reader.cursor;
   session.app().reader.cursor = Position { page: PageId(1), line: 1, glyph: 0 };
-  let alt = MouseEvent {
-    kind: MouseEventKind::Down(MouseButton::Left),
-    column: text.0,
-    row: text.1,
-    modifiers: KeyModifiers::ALT,
-  };
-  session.mouse(alt)?;
+  alt_click(&mut session, text)?;
   let anchor = selected(&mut session).map(|(anchor, ..)| anchor);
   assert_eq!(anchor, Some(start));
   Ok(())
@@ -523,20 +542,13 @@ fn drags_return_to_their_entry_mode() -> Result<()> {
 
 #[test]
 fn alt_clicks_extend_the_selection() -> Result<()> {
-  let alt = |kind, (column, row): (u16, u16)| MouseEvent {
-    kind,
-    column,
-    row,
-    modifiers: KeyModifiers::ALT,
-  };
   for text_mode in [false, true] {
     let (_directory, mut session) = words(text_mode)?;
     let gamma = glyph_cell(&mut session, 0, 12)?;
     let delta = glyph_cell(&mut session, 1, 2)?;
     // (cell) -> selection, from first visible text
     for (to, want) in [(gamma, at(0, 12)), (delta, at(1, 2))] {
-      session.mouse(alt(MouseEventKind::Down(MouseButton::Left), to))?;
-      session.mouse(alt(MouseEventKind::Up(MouseButton::Left), to))?;
+      alt_click(&mut session, to)?;
       let want = Some((at(0, 0), want, SelectionKind::Character));
       assert_eq!(selected(&mut session), want, "text={text_mode}");
     }
@@ -544,13 +556,13 @@ fn alt_clicks_extend_the_selection() -> Result<()> {
     session.app().reader.cancel();
     let beta = glyph_cell(&mut session, 0, 7)?;
     click(&mut session, beta)?;
-    session.mouse(alt(MouseEventKind::Down(MouseButton::Left), delta))?;
+    alt_click(&mut session, delta)?;
     let want = Some((at(0, 7), at(1, 2), SelectionKind::Character));
     assert_eq!(selected(&mut session), want, "text={text_mode}");
     session.app().reader.cancel();
     action(session.app(), Action::Cursor)?;
     session.app().reader.cursor = at(1, 0);
-    session.mouse(alt(MouseEventKind::Down(MouseButton::Left), gamma))?;
+    alt_click(&mut session, gamma)?;
     let want = Some((at(1, 0), at(0, 12), SelectionKind::Character));
     assert_eq!(selected(&mut session), want, "text={text_mode}");
   }
@@ -773,12 +785,7 @@ fn figures_offer_copy_and_save() -> Result<()> {
   app.move_figure(true, 1)?;
   let snapshot = app.region.as_ref().expect("a figure").snapshot().clone();
   app.region = None;
-  let rect =
-    app.layout.project(snapshot.page, snapshot.bounds, app.reader.scroll);
-  let (x, y) = rect.centre();
-  let (width, height) =
-    (f32::from(app.screen.cell_width), f32::from(app.screen.cell_height));
-  let cell = (app.left + (x / width) as u16, (y / height) as u16);
+  let cell = centre_cell(app, snapshot.page, snapshot.bounds);
   right(&mut session, cell)?;
   let labels = labels(&mut session);
   assert!(labels.contains(&"Copy image") && labels.contains(&"Save image"));
@@ -845,5 +852,155 @@ fn tab_passes_through_menus() -> Result<()> {
   press(&mut session, KeyCode::Tab)?;
   let app = session.app();
   assert!(app.context_menu.is_none() && app.panel_focused());
+  Ok(())
+}
+
+/// Alt-drags sweep; release opens the bar.
+#[test]
+fn alt_drags_capture_regions() -> Result<()> {
+  use crossterm::event::KeyCode;
+  let (_directory, mut session) = words(false)?;
+  let from = glyph_cell(&mut session, 0, 2)?;
+  let to = glyph_cell(&mut session, 1, 9)?;
+  let backdrops = |session: &mut Session| -> Result<usize> {
+    let mut frame = Vec::new();
+    session.app().draw(&mut frame)?;
+    Ok(String::from_utf8_lossy(&frame).matches("z=-1").count())
+  };
+  let before = backdrops(&mut session)?;
+  session.mouse(alt(MouseEventKind::Down(MouseButton::Left), from))?;
+  assert!(session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), to))?);
+  assert!(backdrops(&mut session)? > before, "the page dims");
+  // Alt released mid-drag still captures.
+  mouse(&mut session, MouseEventKind::Up(MouseButton::Left), to)?;
+  let app = session.app();
+  let Some(region) = &app.region else { panic!("a capture") };
+  assert!(region.is_bar());
+  let bounds = region.snapshot().bounds;
+  // Corners sit under press and release.
+  for (column, row) in [from, to] {
+    let (_, x, y) = app.page_point(column, row, None).expect("on the page");
+    let corner =
+      |a: f32, b: f32, c: f32| (a - b).abs() < 0.01 || (a - c).abs() < 0.01;
+    assert!(corner(x, bounds.x0, bounds.x1) && corner(y, bounds.y0, bounds.y1));
+  }
+  press(&mut session, KeyCode::Esc)?;
+  // Cuts make the drag inert.
+  let cuts: [Cut; 2] = [
+    |session, _| press(session, KeyCode::Esc),
+    |session, at| mouse(session, MouseEventKind::Moved, at).map(drop),
+  ];
+  for (step, cut) in cuts.into_iter().enumerate() {
+    session.app().reader.cancel();
+    session.mouse(alt(MouseEventKind::Down(MouseButton::Left), from))?;
+    session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), to))?;
+    cut(&mut session, to)?;
+    mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), from)?;
+    mouse(&mut session, MouseEventKind::Up(MouseButton::Left), from)?;
+    assert_eq!(backdrops(&mut session)?, before, "step {step}: undimmed");
+    let app = session.app();
+    assert!(app.region.is_none(), "step {step}: no capture");
+    assert!(app.reader.selection.is_none(), "step {step}: inert drag");
+    // A plain drag after it selects.
+    mouse(&mut session, MouseEventKind::Down(MouseButton::Left), from)?;
+    mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), to)?;
+    mouse(&mut session, MouseEventKind::Up(MouseButton::Left), to)?;
+    let app = session.app();
+    assert!(app.region.is_none() && app.reader.selection.is_some(), "{step}");
+  }
+  Ok(())
+}
+
+/// Ends a sweep mid-drag.
+type Cut = fn(&mut Session, (u16, u16)) -> Result<()>;
+
+/// A filled box and a lone caption.
+fn figure_pdf(path: &Path) -> Result<()> {
+  let content = "0.2 0.4 0.8 rg 60 20 180 50 re f \
+    BT /F1 12 Tf 20 180 Td (Table 1 alone here) Tj ET";
+  let objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] \
+     /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+      .to_owned(),
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+    format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+  ];
+  common::write_pdf(path, &objects, "")
+}
+
+/// Alt-click picks graphics; captions extend.
+#[test]
+fn alt_clicks_pick_graphics() -> Result<()> {
+  let (_directory, mut session) = open(figure_pdf, false)?;
+  let app = session.app();
+  let figures = app.doc.figures(PageId(0))?;
+  let graphic = figures.iter().find(|f| f.source == Source::Graphic);
+  let graphic = graphic.expect("a box");
+  assert!(figures.iter().any(|f| f.source == Source::Caption));
+  let inside = centre_cell(app, PageId(0), graphic.bounds);
+  let want = graphic.bounds;
+  let caption = glyph_cell(&mut session, 0, 2)?;
+  alt_click(&mut session, inside)?;
+  let region = session.app().region.as_ref().expect("the box");
+  let got = region.snapshot().bounds;
+  assert_eq!(
+    (got.x0, got.y0, got.x1, got.y1),
+    (want.x0, want.y0, want.x1, want.y1)
+  );
+  session.app().region = None;
+  alt_click(&mut session, caption)?;
+  let app = session.app();
+  assert!(app.region.is_none(), "captions extend");
+  assert!(app.reader.selection.is_some());
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn alt_clicks_pick_figures() -> Result<()> {
+  let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut session = Session::new(None);
+  session.open(&root.join("paper.pdf"), true, screen())?;
+  let app = session.app();
+  app.move_figure(true, 1)?;
+  let figure = app.region.take().expect("a figure").snapshot().clone();
+  let cell = centre_cell(app, figure.page, figure.bounds);
+  alt_click(&mut session, cell)?;
+  let app = session.app();
+  let region = app.region.as_ref().expect("the picked figure");
+  assert!(region.is_bar());
+  let picked = region.snapshot();
+  assert_eq!(
+    (picked.page, picked.bounds.x0, picked.bounds.y0),
+    (figure.page, figure.bounds.x0, figure.bounds.y0)
+  );
+  Ok(())
+}
+
+/// Sweeps stay inside the cropped page.
+#[test]
+fn sweeps_stay_on_page() -> Result<()> {
+  let (_directory, mut session) = words(false)?;
+  action(session.app(), Action::Crop)?;
+  // Zoomed out, the pane edge is off the page.
+  for _ in 0..4 {
+    action(session.app(), Action::Zoom(-1))?;
+  }
+  session.app().draw(&mut Vec::new())?;
+  let from = glyph_cell(&mut session, 0, 2)?;
+  let edge = (session.app().screen.columns - 1, from.1 + 2);
+  let app = session.app();
+  let shown = app.layout.crop.apply(app.doc.pages[0].bounds);
+  let off = app.page_point(edge.0, edge.1, None).expect("a point");
+  assert!(off.1 > shown.x1, "the edge lies past the page");
+  session.mouse(alt(MouseEventKind::Down(MouseButton::Left), from))?;
+  session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), edge))?;
+  session.mouse(alt(MouseEventKind::Up(MouseButton::Left), edge))?;
+  let app = session.app();
+  let got = app.region.as_ref().expect("a capture").snapshot().bounds;
+  assert!(got.x1 <= shown.x1 && got.y1 <= shown.y1, "{got:?} in {shown:?}");
+  assert!(got.x1 > got.x0 + 10.0, "a real sweep");
   Ok(())
 }
