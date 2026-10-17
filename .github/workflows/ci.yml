@@ -95,10 +95,10 @@ jobs:
     permissions:
       contents: write
     concurrency:
-      group: publish-${{ inputs.preview && 'mise-preview' || 'main' }}
+      group: publish-${{ inputs.preview && 'dev' || 'main' }}
       cancel-in-progress: false
     env:
-      RELEASE_TAG: ${{ inputs.preview && 'mise-preview' || 'main' }}
+      RELEASE_TAG: ${{ inputs.preview && 'dev' || 'main' }}
     outputs:
       tag: ${{ steps.release.outputs.tag }}
     steps:
