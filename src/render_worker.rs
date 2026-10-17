@@ -7,15 +7,14 @@
 //! renders them from several threads, each with its own context, while
 //! only the coordinator touches the document; a list may outlive it, as
 //! Type3 glyphs draw from lists compiled when their font loads. Pages
-//! with large images render whole on the coordinator, which keeps them
-//! while a request wants their tiles.
+//! with large images render whole on the pool, which sends every tile of
+//! the page, so later bands and scrolls reuse the one draw.
 use crate::Result;
-use crate::cache::Cache;
 use crate::document::{Handle, Lists};
 use crate::layout::{Crop, page_matrix, transform};
 use crate::text::PageId;
 use crate::tiles::{self, TILE_WIDTH, Tile, TileKey};
-use mupdf::{DisplayList, IRect, Matrix, Pixmap};
+use mupdf::{DisplayList, IRect, Matrix};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, mpsc};
@@ -24,9 +23,6 @@ use std::time::{Duration, Instant};
 
 /// Largest image page rendered whole, in pixels; about 24 MiB of RGB.
 const WHOLE: i64 = 8 << 20;
-/// Bytes of whole pages kept: two of the largest, so a view across two
-/// scans draws each once.
-const KEPT: usize = 2 * 3 * WHOLE as usize;
 /// Pages drawn after which an idle coordinator reopens its document.
 const RELOAD: usize = 64;
 /// Idle time before that reopen.
@@ -146,8 +142,8 @@ struct Coordinator {
   shared: Arc<Shared>,
   send: Sender,
   kinds: HashMap<PageKey, Kind>,
-  /// Whole pages and milliseconds each took to draw.
-  wholes: Cache<PageKey, (Pixmap, f64)>,
+  /// Whole pages the current request has drawn; their tiles are sent.
+  wholes: HashSet<PageKey>,
   /// Pages drawn since `doc` opened.
   touched: HashSet<PageId>,
 }
@@ -167,7 +163,7 @@ impl Coordinator {
       shared,
       send,
       kinds: HashMap::new(),
-      wholes: Cache::new(KEPT),
+      wholes: HashSet::new(),
       touched: HashSet::new(),
     }
   }
@@ -180,23 +176,11 @@ impl Coordinator {
       self.doc = doc;
     }
     self.touched.clear();
-    self.wholes.clear();
   }
 
   fn run(mut self) {
     while let Some((urgent, ahead)) = self.next() {
-      // Whole pages go once no request wants their tiles.
-      let stale: Vec<PageKey> = self
-        .wholes
-        .entries()
-        .map(|(page, _)| *page)
-        .filter(|page| {
-          !urgent.iter().chain(&ahead).any(|k| page_of(k) == *page)
-        })
-        .collect();
-      for page in stale {
-        self.wholes.remove(&page);
-      }
+      self.wholes.clear();
       for band in bands(&urgent) {
         if !self.current() {
           break;
@@ -212,7 +196,15 @@ impl Coordinator {
     }
   }
 
-  fn start(&mut self, band: Vec<TileKey>) {
+  fn start(&mut self, mut band: Vec<TileKey>) {
+    // A whole page drawn for this request already sent its other bands.
+    band.retain(|key| !self.wholes.contains(&page_of(key)));
+    if let Ok(queue) = self.shared.queue.lock() {
+      band.retain(|key| !queue.dispatched.contains(key));
+    }
+    if band.is_empty() {
+      return;
+    }
     match self.job(band) {
       Ok(job) => self.dispatch(job),
       Err(error) => drop(self.send.send(Err(error.to_string()))),
@@ -304,38 +296,26 @@ impl Coordinator {
         kind
       }
     };
-    let work = match kind {
-      Kind::Bands => Work::Band { list, matrix },
-      Kind::Whole => self.cut(page, &list, &matrix, area, &tiles)?,
-    };
-    Ok(Job { tiles, work })
-  }
-
-  /// Cuts `tiles` from the whole page, drawing it on first use.
-  fn cut(
-    &mut self,
-    page: PageKey,
-    list: &DisplayList,
-    matrix: &Matrix,
-    area: IRect,
-    tiles: &[TileKey],
-  ) -> Result<Work> {
-    if self.wholes.get(&page).is_none() {
-      #[cfg(test)]
-      self.shared.wholes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-      // Room first, so the draw stays within `KEPT`.
-      let bytes = 3 * usize::try_from(area.x1)? * usize::try_from(area.y1)?;
-      self.wholes.reserve(bytes);
-      let started = Instant::now();
-      let pixmap = tiles::draw(list, matrix, area)?;
-      self.wholes.insert(page, (pixmap, ms(started)), bytes);
-    }
-    let Some((pixmap, drawn)) = self.wholes.get(&page) else {
-      anyhow::bail!("Whole page missing");
-    };
-    let pixels =
-      tiles.iter().map(|key| tiles::cut(pixmap, key)).collect::<Result<_>>()?;
-    Ok(Work::Cut { pixels, drawn: *drawn })
+    Ok(match kind {
+      Kind::Bands => Job { tiles, work: Work::Band { list, matrix } },
+      Kind::Whole => {
+        self.wholes.insert(page);
+        let whole = TileKey {
+          x: 0,
+          y: 0,
+          width: rect.width().ceil() as i32,
+          height: rect.height().ceil() as i32,
+          ..key
+        };
+        // Requested tiles first, so their rows encode first.
+        let others: Vec<TileKey> =
+          tiles::cover(whole, 0..whole.width, 0..whole.height)
+            .filter(|key| !tiles.contains(key))
+            .collect();
+        let tiles = [tiles, others].concat();
+        Job { tiles, work: Work::Whole { list, matrix, area } }
+      }
+    })
   }
 
   fn dispatch(&self, job: Job) {
@@ -402,7 +382,9 @@ fn bands(tiles: &[TileKey]) -> Vec<Vec<TileKey>> {
 enum Work {
   /// Draw the band in one pass, then cut its tiles.
   Band { list: Arc<DisplayList>, matrix: Matrix },
-  /// Pixels already cut from a whole page.
+  /// Draw the whole page `area`, then hand its tiles back to the pool.
+  Whole { list: Arc<DisplayList>, matrix: Matrix, area: IRect },
+  /// Encode tiles cut from a whole page.
   Cut { pixels: Vec<Vec<u8>>, drawn: f64 },
 }
 
@@ -452,20 +434,35 @@ fn serve(pool: &Pool) {
     drop(tasks);
     let Task { shared, send, job } = task;
     let Job { tiles, work } = job;
-    render(&tiles, work, &send);
+    #[cfg(test)]
+    if matches!(work, Work::Whole { .. }) {
+      shared.wholes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    let handed = render(&tiles, work, &send);
     if let Ok(mut queue) = shared.queue.lock() {
-      for key in &tiles {
+      let kept: HashSet<&TileKey> =
+        handed.iter().flat_map(|job| &job.tiles).collect();
+      for key in tiles.iter().filter(|key| !kept.contains(key)) {
         queue.dispatched.remove(key);
       }
       shared.wake.notify_all();
     }
+    // Rows of a whole page encode on every free thread, before other work.
+    if let Ok(mut tasks) = pool.tasks.lock() {
+      for job in handed.into_iter().rev() {
+        let (shared, send) = (Arc::clone(&shared), send.clone());
+        tasks.push_front(Task { shared, send, job });
+      }
+      pool.ready.notify_all();
+    }
   }
 }
 
-/// Draws or takes the job's pixels and sends each tile encoded.
-fn render(tiles: &[TileKey], work: Work, send: &Sender) {
+/// Draws the job's band and sends each tile encoded; a whole page
+/// returns its rows as jobs for the pool to encode.
+fn render(tiles: &[TileKey], work: Work, send: &Sender) -> Vec<Job> {
   let started = Instant::now();
-  let (pixels, drawn): (Vec<Result<Vec<u8>>>, f64) = match work {
+  let (list, matrix, area, whole) = match work {
     Work::Band { list, matrix } => {
       let (first, last) = (tiles[0], tiles[tiles.len() - 1]);
       let area = IRect::new(
@@ -474,20 +471,52 @@ fn render(tiles: &[TileKey], work: Work, send: &Sender) {
         last.x + last.width,
         first.y + first.height,
       );
-      let band = match tiles::draw(&list, &matrix, area) {
-        Ok(band) => band,
-        Err(error) => {
-          drop(send.send(Err(error.to_string())));
-          return;
-        }
-      };
-      let cut = tiles.iter().map(|key| tiles::cut(&band, key)).collect();
-      (cut, ms(started))
+      (list, matrix, area, false)
     }
+    Work::Whole { list, matrix, area } => (list, matrix, area, true),
     Work::Cut { pixels, drawn } => {
-      (pixels.into_iter().map(Ok).collect(), drawn)
+      let pixels = pixels.into_iter().map(Ok);
+      encode(tiles, pixels, drawn, send);
+      return Vec::new();
     }
   };
+  let drawn = match tiles::draw(&list, &matrix, area) {
+    Ok(drawn) => drawn,
+    Err(error) => {
+      drop(send.send(Err(error.to_string())));
+      return Vec::new();
+    }
+  };
+  let drawn_ms = ms(started);
+  if !whole {
+    let pixels = tiles.iter().map(|key| tiles::cut(&drawn, key));
+    encode(tiles, pixels, drawn_ms, send);
+    return Vec::new();
+  }
+  let mut rows = Vec::new();
+  for row in bands(tiles) {
+    let pixels: Result<Vec<_>> =
+      row.iter().map(|key| tiles::cut(&drawn, key)).collect();
+    match pixels {
+      Ok(pixels) => {
+        rows.push(Job {
+          tiles: row,
+          work: Work::Cut { pixels, drawn: drawn_ms },
+        });
+      }
+      Err(error) => drop(send.send(Err(error.to_string()))),
+    }
+  }
+  rows
+}
+
+/// Encodes and sends `tiles`; `drawn` is the draw's milliseconds.
+fn encode(
+  tiles: &[TileKey],
+  pixels: impl Iterator<Item = Result<Vec<u8>>>,
+  drawn: f64,
+  send: &Sender,
+) {
   for (key, pixels) in tiles.iter().zip(pixels) {
     let started = Instant::now();
     let tile = pixels
@@ -512,7 +541,7 @@ mod tests {
 
   /// A PDF of `count` letter pages, each one large gray image: scans.
   fn scans(count: usize) -> Result<tempfile::NamedTempFile> {
-    use mupdf::{ColorParams, Colorspace, DocumentWriter, Image, Rect};
+    use mupdf::{ColorParams, Colorspace, DocumentWriter, Image, Pixmap, Rect};
     let file = tempfile::Builder::new().suffix(".pdf").tempfile()?;
     let gray = Colorspace::device_gray();
     let mut pixels = Pixmap::new_with_w_h(&gray, 1024, 1024, false)?;
@@ -553,12 +582,16 @@ mod tests {
     for urgent in [4, 2] {
       let worker = RenderWorker::new(file.path(), "", doc.lists());
       worker.request(&tiles, urgent);
-      for _ in &tiles {
-        worker
+      // Whole pages send every tile, not only the requested ones.
+      let mut pending: HashSet<TileKey> = tiles.into_iter().collect();
+      while !pending.is_empty() {
+        let tile = worker
           .results
           .recv_timeout(Duration::from_secs(20))?
           .map_err(anyhow::Error::msg)?;
+        pending.remove(&tile.key);
       }
+      while worker.results.recv_timeout(Duration::from_millis(200)).is_ok() {}
       assert_eq!(worker.shared.wholes.load(Ordering::Relaxed), 2, "{urgent}");
     }
     Ok(())
