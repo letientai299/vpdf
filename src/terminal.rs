@@ -12,6 +12,7 @@ pub struct Terminal;
 
 impl Terminal {
   pub fn enter() -> Result<Self> {
+    crate::input::start()?;
     resume()?;
     // Save the window title; Drop restores it.
     io::stdout().write_all(b"\x1b[22;0t")?;
@@ -65,7 +66,8 @@ pub fn resume() -> Result<()> {
     event::EnableBracketedPaste
   )?;
   if enhanced() {
-    let flags = event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
+    let flags = event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+      | event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS;
     execute!(io::stdout(), event::PushKeyboardEnhancementFlags(flags))?;
   }
   Ok(())

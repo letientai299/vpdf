@@ -209,10 +209,14 @@ impl Prompt {
         _ => PromptEvent::Pending,
       };
     }
+    // Ctrl-i completes as in readline; other Tab chords stay free.
+    let tab = matches!(
+      (key.code, key.modifiers),
+      (KeyCode::Tab, KeyModifiers::NONE)
+        | (KeyCode::Char('i'), KeyModifiers::CONTROL)
+    );
     match key.code {
-      KeyCode::Tab if self.kind != PromptKind::Password => {
-        return self.cycle(true);
-      }
+      _ if tab && self.kind != PromptKind::Password => return self.cycle(true),
       KeyCode::BackTab => return self.cycle(false),
       _ => self.menu = None,
     }
@@ -588,7 +592,8 @@ pub fn password() -> crate::Result<String> {
       screen.columns,
     )?;
     out.flush()?;
-    match password_event(&mut prompt, crossterm::event::read()?) {
+    let Some(event) = crate::input::next(None)? else { continue };
+    match password_event(&mut prompt, event) {
       PromptEvent::Submit => return Ok(prompt.text),
       PromptEvent::Cancel => anyhow::bail!("Password cancelled"),
       _ => {}
@@ -600,15 +605,16 @@ pub fn password() -> crate::Result<String> {
 /// lays out the panes again once the prompt closes.
 fn password_event(
   prompt: &mut Prompt,
-  event: crossterm::event::Event,
+  event: crate::decode::Event,
 ) -> PromptEvent {
-  use crossterm::event::{Event, KeyEventKind};
+  use crate::decode::Event;
+  use crossterm::event::KeyEventKind;
   match event {
     Event::Key(key) if key.kind != KeyEventKind::Release => {
       prompt.feed(key, &History::default())
     }
     Event::Paste(text) => prompt.paste(&text),
-    Event::Resize(..) => {
+    Event::Resize(_) => {
       crate::terminal::defer_resize();
       PromptEvent::Pending
     }
@@ -695,9 +701,9 @@ mod tests {
 
   #[test]
   fn password_prompt_defers_resizes() {
-    use crossterm::event::Event;
+    use crate::decode::Event;
     let mut prompt = Prompt::new(PromptKind::Password);
-    let event = password_event(&mut prompt, Event::Resize(100, 30));
+    let event = password_event(&mut prompt, Event::Resize(None));
     assert_eq!(event, PromptEvent::Pending);
     assert!(crate::terminal::resize_deferred(), "passed on");
     assert!(!crate::terminal::resize_deferred());

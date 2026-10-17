@@ -196,7 +196,7 @@ pub fn spawn(path: &Path, password: &str) -> OutlineJob {
     if let Ok(outline) = doc.outline()
       && !outline.is_empty()
     {
-      let _ = send.send((outline, false));
+      let _ = crate::input::notify(send.send((outline, false)));
       return;
     }
     let mut pages = Vec::new();
@@ -208,7 +208,7 @@ pub fn spawn(path: &Path, password: &str) -> OutlineJob {
       let text = doc.text(PageId(page));
       pages.push(text.map_or_else(|_| Vec::new(), |text| summarize(&text)));
     }
-    let _ = send.send((infer(&pages), true));
+    let _ = crate::input::notify(send.send((infer(&pages), true)));
   });
   OutlineJob { result, stop }
 }

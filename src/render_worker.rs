@@ -11,6 +11,7 @@
 //! the page, so later bands and scrolls reuse the one draw.
 use crate::Result;
 use crate::document::{Handle, Lists};
+use crate::input::notify;
 use crate::layout::{Crop, page_matrix, transform};
 use crate::text::PageId;
 use crate::tiles::{self, TILE_WIDTH, Tile, TileKey};
@@ -84,7 +85,7 @@ impl RenderWorker {
         Ok(doc) => {
           Coordinator::new(doc, lists, (path, password), work, send).run();
         }
-        Err(error) => drop(send.send(Err(error.to_string()))),
+        Err(error) => drop(notify(send.send(Err(error.to_string())))),
       }
     });
     Self { shared, results }
@@ -207,7 +208,7 @@ impl Coordinator {
     }
     match self.job(band) {
       Ok(job) => self.dispatch(job),
-      Err(error) => drop(self.send.send(Err(error.to_string()))),
+      Err(error) => drop(notify(self.send.send(Err(error.to_string())))),
     }
   }
 
@@ -483,7 +484,7 @@ fn render(tiles: &[TileKey], work: Work, send: &Sender) -> Vec<Job> {
   let drawn = match tiles::draw(&list, &matrix, area) {
     Ok(drawn) => drawn,
     Err(error) => {
-      drop(send.send(Err(error.to_string())));
+      drop(notify(send.send(Err(error.to_string()))));
       return Vec::new();
     }
   };
@@ -504,7 +505,7 @@ fn render(tiles: &[TileKey], work: Work, send: &Sender) -> Vec<Job> {
           work: Work::Cut { pixels, drawn: drawn_ms },
         });
       }
-      Err(error) => drop(send.send(Err(error.to_string()))),
+      Err(error) => drop(notify(send.send(Err(error.to_string())))),
     }
   }
   rows
@@ -527,7 +528,7 @@ fn deliver(
         render_ms: drawn + ms(started),
       })
       .map_err(|error| error.to_string());
-    if send.send(tile).is_err() {
+    if notify(send.send(tile)).is_err() {
       return;
     }
   }

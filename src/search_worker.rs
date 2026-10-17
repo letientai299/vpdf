@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::cache::Cache;
 use crate::document::{Handle, MIB};
+use crate::input::notify;
 use crate::search::{self, Hit, Index};
 use crate::text::{PageId, Text};
 use std::path::{Path, PathBuf};
@@ -108,7 +109,7 @@ fn serve(
           done: true,
           error: result.err().map(|e| e.to_string()),
         };
-        if send.send(done).is_err() {
+        if notify(send.send(done)).is_err() {
           return;
         }
       }
@@ -145,7 +146,7 @@ fn fail(
       done: true,
       error: Some(error.to_string()),
     };
-    if send.send(event).is_err() {
+    if notify(send.send(event)).is_err() {
       return;
     }
   }
@@ -195,12 +196,12 @@ impl SearchTask<'_> {
       let hits = index.matches(&pattern, remaining.min(1000))?;
       remaining -= hits.len();
       if !hits.is_empty() {
-        self.send.send(SearchEvent {
+        notify(self.send.send(SearchEvent {
           generation: self.generation,
           hits,
           done: false,
           error: None,
-        })?;
+        }))?;
       }
       if remaining == 0 {
         break;

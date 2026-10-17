@@ -23,6 +23,8 @@ impl App {
     if !due {
       return false;
     }
+    // The wait is over even when the prefix has no clues.
+    self.awaiting = None;
     let Some(prefix) = self.keys.awaiting().map(str::to_owned) else {
       return false;
     };
@@ -32,6 +34,14 @@ impl App {
     }
     self.clues = Some(Clues { items });
     true
+  }
+
+  /// Time left before clues show, while a prefix waits for them.
+  pub fn clue_wait(&self) -> Option<Duration> {
+    if self.clues.is_some() || self.prompt.is_some() {
+      return None;
+    }
+    self.awaiting.map(|since| DELAY.saturating_sub(since.elapsed()))
   }
 
   /// Hides clues and restarts the wait when a prefix remains.

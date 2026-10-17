@@ -183,15 +183,23 @@ impl Keys {
   }
 }
 
-/// Maps protocol chords to their legacy keys.
-pub fn normalize(key: KeyEvent) -> KeyEvent {
+/// Maps protocol chords to their legacy keys. Ctrl-i stays apart from
+/// Tab, which Kitty's keyboard protocol tells apart.
+pub fn normalize(mut key: KeyEvent) -> KeyEvent {
   if !key.modifiers.contains(KeyModifiers::CONTROL) {
     return key;
+  }
+  // Alternate keys report Ctrl-Shift-v as Ctrl-V; legacy bytes and the
+  // bindings know it as Ctrl-v.
+  if let KeyCode::Char(ch) = key.code
+    && ch.is_ascii_uppercase()
+  {
+    key.code = KeyCode::Char(ch.to_ascii_lowercase());
+    key.modifiers |= KeyModifiers::SHIFT;
   }
   let code = match key.code {
     KeyCode::Char('[') => KeyCode::Esc,
     KeyCode::Char('m') => KeyCode::Enter,
-    KeyCode::Char('i') => KeyCode::Tab,
     _ => return key,
   };
   KeyEvent { code, modifiers: key.modifiers - KeyModifiers::CONTROL, ..key }
@@ -442,7 +450,10 @@ mod tests {
     for (code, modifiers, want, left) in [
       (KeyCode::Char('['), ctrl, KeyCode::Esc, none),
       (KeyCode::Char('m'), ctrl, KeyCode::Enter, none),
-      (KeyCode::Char('i'), ctrl, KeyCode::Tab, none),
+      (KeyCode::Char('i'), ctrl, KeyCode::Char('i'), ctrl),
+      (KeyCode::Tab, none, KeyCode::Tab, none),
+      (KeyCode::Char('V'), ctrl, KeyCode::Char('v'), ctrl | shift),
+      (KeyCode::Char('M'), ctrl, KeyCode::Enter, shift),
       (KeyCode::Char('['), ctrl | alt, KeyCode::Esc, alt),
       (KeyCode::Char('m'), ctrl | shift, KeyCode::Enter, shift),
       (KeyCode::Char('['), none, KeyCode::Char('['), none),

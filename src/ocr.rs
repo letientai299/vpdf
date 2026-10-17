@@ -33,7 +33,8 @@ impl OcrJob {
     let language = language.to_owned();
     thread::spawn(move || {
       let result = recognize(&path, &password, page, &language, &stop);
-      let _ = send.send(result.map(Arc::new).map_err(|e| e.to_string()));
+      let result = result.map(Arc::new).map_err(|e| e.to_string());
+      let _ = crate::input::notify(send.send(result));
     });
     Self { page, cancel, result }
   }

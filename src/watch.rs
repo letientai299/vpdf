@@ -10,7 +10,7 @@ pub type Stamp = (SystemTime, u64);
 
 /// Quiet time before reading a changed file, so a build that is still
 /// writing the PDF is not read half-done.
-const SETTLE: Duration = Duration::from_millis(100);
+pub const SETTLE: Duration = Duration::from_millis(100);
 
 pub fn stamp(path: &Path) -> Option<Stamp> {
   let meta = std::fs::metadata(path).ok()?;
@@ -34,7 +34,7 @@ impl Default for Watcher {
     let inner = notify::recommended_watcher(
       move |event: notify::Result<notify::Event>| {
         for path in event.into_iter().flat_map(|event| event.paths) {
-          let _ = send.send(path);
+          let _ = crate::input::notify(send.send(path));
         }
       },
     )

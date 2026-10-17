@@ -612,3 +612,34 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
   }
   Ok(())
 }
+
+/// Once due, a prefix stops waiting, or the idle loop would poll with a
+/// zero timeout.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn clue_wait_ends_once_due() -> Result<()> {
+  use crossterm::event::{KeyCode, KeyEvent};
+  let mut app = text_app()?;
+  let mut history = vpdf::prompt::History::default();
+  let mut press = |app: &mut App, code| {
+    let result = app.key(KeyEvent::new(code, KeyModifiers::NONE), &mut history);
+    app.after_key();
+    result
+  };
+  assert_eq!(app.clue_wait(), None);
+  // A wait with nothing to show ends too.
+  app.awaiting = Instant::now().checked_sub(Duration::from_secs(1));
+  assert!(!app.clue_due());
+  assert_eq!(app.clue_wait(), None);
+  for prefix in ['"', 'm', 'g'] {
+    press(&mut app, KeyCode::Char(prefix))?;
+    let wait = app.clue_wait();
+    assert!(wait.is_some_and(|wait| wait <= Duration::from_secs(1)));
+    app.awaiting = Instant::now().checked_sub(Duration::from_secs(1));
+    assert_eq!(app.clue_wait(), Some(Duration::ZERO), "{prefix}");
+    assert!(app.clue_due(), "{prefix}");
+    assert_eq!(app.clue_wait(), None, "{prefix}");
+    press(&mut app, KeyCode::Esc)?;
+  }
+  Ok(())
+}

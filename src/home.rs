@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::cmdline;
+use crate::decode::Event;
 use crate::keys::{Action, Keys, PanelKind};
 use crate::layout::Screen;
 use crate::panel::{Destination, Panel, Row, recent_rows};
@@ -8,7 +9,7 @@ use crate::state::Entry;
 use crate::statusline;
 use crate::terminal::{self, At};
 use crate::theme::{self, Color};
-use crossterm::event::{Event, KeyEvent, KeyEventKind};
+use crossterm::event::{KeyEvent, KeyEventKind};
 use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
@@ -102,14 +103,16 @@ impl Home {
         let event = prompt.paste(&text);
         self.prompt_event(event, history)
       }
-      Event::Resize(_, _) => {
+      Event::Resize(_) => {
         self.screen = terminal::size().unwrap_or(self.screen);
         Ok(Outcome::Stay)
       }
       // An open prompt owns the input.
-      Event::Mouse(mouse)
-        if self.prompt.is_none() && mouse.row < self.screen.rows - 1 =>
-      {
+      Event::Mouse(mouse) if self.prompt.is_none() => {
+        let rows = self.screen.rows - 1;
+        let Some(mouse) = mouse.cells().filter(|mouse| mouse.row < rows) else {
+          return Ok(Outcome::Stay);
+        };
         Ok(match self.panel.pointer(mouse) {
           Some(_) => self.selected(),
           None => Outcome::Stay,
@@ -247,9 +250,8 @@ mod tests {
 
   #[test]
   fn clicks_wait_for_an_open_prompt() -> Result<()> {
-    use crossterm::event::{
-      KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-    };
+    use crate::decode::{Button, Mouse, MouseKind, Spot};
+    use crossterm::event::{KeyCode, KeyModifiers};
     let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
     let entry = crate::state::tests::entry(file, 0, 0);
     let screen = Screen {
@@ -259,10 +261,9 @@ mod tests {
       cell_height: 16,
       origin: (0, 0),
     };
-    let click = Event::Mouse(MouseEvent {
-      kind: MouseEventKind::Down(MouseButton::Left),
-      column: 5,
-      row: 1,
+    let click = Event::Mouse(Mouse {
+      kind: MouseKind::Press(Button::LEFT),
+      at: Spot::Cell { column: 5, row: 1 },
       modifiers: KeyModifiers::NONE,
     });
     for (typed, expected) in [

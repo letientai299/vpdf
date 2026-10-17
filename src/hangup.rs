@@ -1,10 +1,10 @@
 //! Saves reading positions when the terminal goes away.
 //!
-//! A closed terminal sends SIGHUP, after which crossterm reads the closed
-//! tty in a loop that never returns, so the event loop cannot save. A
-//! thread waits for SIGHUP or SIGTERM, gives the loop a second to exit
-//! and save on its own, then writes the last recorded state, restores
-//! the terminal, and exits.
+//! A closed terminal sends SIGHUP while a child such as fzf may hold
+//! the tty, so the event loop cannot always save. A thread waits for
+//! SIGHUP or SIGTERM, gives the loop a second to exit and save on its
+//! own, then writes the last recorded state, restores the terminal, and
+//! exits.
 use crate::Result;
 use crate::prompt::History;
 use crate::state::State;
@@ -30,6 +30,7 @@ pub fn watch(
   thread::spawn(move || {
     let Some(signal) = signals.forever().next() else { return };
     flag.store(true, Ordering::Relaxed);
+    crate::input::wake();
     thread::sleep(Duration::from_secs(1));
     if let Some(store) = store
       && let Ok(mut latest) = latest.lock()

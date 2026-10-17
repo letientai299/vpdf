@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::app::{App, Request, TabMove, Tabline, Window};
+use crate::decode::{Event, MouseKind};
 use crate::document::PasswordRequired;
 use crate::graphics::Graphics;
 use crate::home::{Home, Outcome};
@@ -15,7 +16,7 @@ use crate::text::PageId;
 use crate::theme;
 use crate::trace::Drawable;
 use crate::watch::Watcher;
-use crossterm::event::{self, Event, KeyEventKind, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyEvent, KeyEventKind, MouseEvent};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -619,7 +620,11 @@ impl Session {
     let Some(mut home) = self.home.take() else { return Ok(()) };
     home.draw(out)?;
     let event = loop {
-      let event = event::read()?;
+      // A wake may come from the hangup thread; the caller checks it.
+      let Some(event) = crate::input::next(None)? else {
+        self.home = Some(home);
+        return Ok(());
+      };
       if !moved(&event) {
         break event;
       }
@@ -801,13 +806,35 @@ fn watch(session: &mut Session, force: bool) -> bool {
 
 /// A bare pointer move, which all-motion mouse tracking reports.
 fn moved(event: &Event) -> bool {
-  matches!(event, Event::Mouse(mouse) if mouse.kind == MouseEventKind::Moved)
+  matches!(event, Event::Mouse(mouse) if mouse.kind == MouseKind::Moved)
+}
+
+/// Input the session acts on.
+#[derive(Debug, PartialEq)]
+enum Act {
+  Key(KeyEvent),
+  Paste(String),
+  Resize,
+  Mouse(MouseEvent),
+}
+
+/// What `event` asks of the session; None for input it ignores yet,
+/// which must not count as typing: replies, focus, the pointer leaving,
+/// buttons past 7, and key releases.
+fn act(event: Event) -> Option<Act> {
+  match event {
+    Event::Key(key) if key.kind != KeyEventKind::Release => Some(Act::Key(key)),
+    Event::Paste(text) => Some(Act::Paste(text)),
+    Event::Resize(_) => Some(Act::Resize),
+    Event::Mouse(mouse) => mouse.cells().map(Act::Mouse),
+    Event::Key(_) | Event::Focus(_) | Event::Reply(_) | Event::Leave => None,
+  }
 }
 
 /// Handles one input; errors show in the focused pane.
-fn input(session: &mut Session, event: Event) -> Result<()> {
-  match event {
-    Event::Key(key) if key.kind != KeyEventKind::Release => {
+fn input(session: &mut Session, act: Act) -> Result<()> {
+  match act {
+    Act::Key(key) => {
       let tab = &mut session.tabs[session.active];
       let app = &mut tab.panes[tab.focus];
       app.reader.message.clear();
@@ -817,15 +844,20 @@ fn input(session: &mut Session, event: Event) -> Result<()> {
       app.after_key();
       result
     }
-    Event::Paste(text) => {
+    Act::Paste(text) => {
       let tab = &mut session.tabs[session.active];
       tab.panes[tab.focus].paste(&text, &mut session.history)
     }
-    Event::Resize(_, _) => session.resize(terminal::size()?),
-    Event::Mouse(mouse) => session.mouse(mouse),
-    _ => Ok(()),
+    Act::Resize => session.resize(terminal::size()?),
+    Act::Mouse(mouse) => session.mouse(mouse),
   }
 }
+
+/// Positions reach memory this often after a change.
+const CHECK: Duration = Duration::from_millis(250);
+
+/// Files are checked this often, in case the OS reports no change.
+const WATCH: Duration = Duration::from_secs(2);
 
 fn run(session: &mut Session) -> Result<()> {
   let mut out = io::BufWriter::new(io::stdout());
@@ -837,6 +869,7 @@ fn run(session: &mut Session) -> Result<()> {
   let mut written = Instant::now();
   let mut touched = Instant::now();
   let mut watched = Instant::now();
+  let mut drawn = Instant::now();
   let mut title = String::new();
   while session.running() {
     if terminal::resize_deferred() {
@@ -866,23 +899,29 @@ fn run(session: &mut Session) -> Result<()> {
         trace.draw(session, &mut out, &mut buffer)?;
         dirty = false;
         pacer.drawn(now);
+        drawn = now;
       }
     }
     let animating =
       session.tab().panes.iter().any(|app| app.animation.is_some());
     let pending = dirty || animating;
     let now = Instant::now();
-    let wait = if pending { pacer.wait(now) } else { Duration::from_millis(8) };
-    if !event::poll(wait)? {
+    let changed = touched.max(drawn) > checked;
+    let wait = if pending {
+      pacer.wait(now)
+    } else {
+      idle(session, checked, watched, changed)
+    };
+    let Some(event) = crate::input::next(Some(wait))? else {
       dirty |= session.app().clue_due();
-      let force = watched.elapsed() > Duration::from_secs(2);
+      let force = watched.elapsed() >= WATCH;
       if force {
         watched = Instant::now();
       }
       dirty |= watch(session, force);
-      // Positions reach memory every 250 ms and disk after a 5 s pause
-      // or once a minute; exits and hangups write the rest.
-      if checked.elapsed() > Duration::from_millis(250) {
+      // Positions reach memory 250 ms after a change and disk after a
+      // 5 s pause or once a minute; exits and hangups write the rest.
+      if checked.elapsed() >= CHECK {
         checked = Instant::now();
         session.record();
         let due = touched.elapsed() > Duration::from_secs(5)
@@ -896,19 +935,40 @@ fn run(session: &mut Session) -> Result<()> {
         }
       }
       continue;
-    }
-    let event = event::read()?;
+    };
     if moved(&event) {
       session.pointer.hover();
       continue;
     }
+    let Some(act) = act(event) else { continue };
     touched = Instant::now();
     trace.input();
-    let result = input(session, event).and_then(|()| session.settle());
+    let result = input(session, act).and_then(|()| session.settle());
     report(session, result);
     dirty = true;
   }
   Ok(())
+}
+
+/// How long the idle loop may sleep: until the next file check, state
+/// check after a change, clue, or settled file change.
+fn idle(
+  session: &mut Session,
+  checked: Instant,
+  watched: Instant,
+  changed: bool,
+) -> Duration {
+  let mut wait = WATCH.saturating_sub(watched.elapsed());
+  if changed || session.unsaved {
+    wait = wait.min(CHECK.saturating_sub(checked.elapsed()));
+  }
+  if let Some(clue) = session.app().clue_wait() {
+    wait = wait.min(clue);
+  }
+  if session.tab().panes.iter().any(|app| app.settling.is_some()) {
+    wait = wait.min(crate::watch::SETTLE);
+  }
+  wait
 }
 
 /// Shows a failure in the focused pane instead of ending the session.
@@ -917,5 +977,44 @@ fn report(session: &mut Session, result: Result<()>) {
     && !session.tabs.is_empty()
   {
     session.app().error = Some(error.to_string());
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::decode::{Button, Mouse, Reply, Spot};
+  use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind};
+
+  #[test]
+  fn only_actionable_input_counts() {
+    let none = KeyModifiers::NONE;
+    let press = KeyEvent::new(KeyCode::Char('j'), none);
+    let release =
+      KeyEvent::new_with_kind(KeyCode::Char('j'), none, KeyEventKind::Release);
+    let mouse = |kind, at| Event::Mouse(Mouse { kind, at, modifiers: none });
+    let cell = Spot::Cell { column: 1, row: 2 };
+    let click = MouseEvent {
+      kind: MouseEventKind::Down(MouseButton::Left),
+      column: 1,
+      row: 2,
+      modifiers: none,
+    };
+    let cases = [
+      (Event::Key(press), Some(Act::Key(press))),
+      (Event::Key(release), None),
+      (Event::Paste("a".into()), Some(Act::Paste("a".into()))),
+      (Event::Resize(None), Some(Act::Resize)),
+      (mouse(MouseKind::Press(Button::LEFT), cell), Some(Act::Mouse(click))),
+      (mouse(MouseKind::Press(Button::BACK), cell), None),
+      (mouse(MouseKind::Press(Button::LEFT), Spot::Pixel { x: 1, y: 2 }), None),
+      (Event::Leave, None),
+      (Event::Focus(true), None),
+      (Event::Reply(Reply::Keyboard(5)), None),
+    ];
+    for (event, want) in cases {
+      let at = format!("{event:?}");
+      assert_eq!(act(event), want, "{at}");
+    }
   }
 }
