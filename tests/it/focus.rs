@@ -116,11 +116,15 @@ fn local_focus_preserves_reading_and_recent_cards() -> Result<()> {
   );
   assert_eq!(app.reader.cursor, cursor);
   assert_eq!(app.panel.as_ref().unwrap().search.query, "focus");
+  key(app, b"\x1b[27u")?;
+  assert_eq!(app.input_owner(), InputOwner::Panel);
+  assert!(app.reader.selection.is_none());
   app.open_panel(PanelKind::Help)?;
   assert!(app.panel_focused(), "reopening keeps the panel");
   key(app, b"q")?;
   assert!(app.panel.is_none() && !app.quit);
 
+  key(session.app(), b"v")?;
   session.app().command("recent")?;
   session.settle()?;
   let app = session.app();
@@ -187,6 +191,8 @@ fn cross_document_panel_placement_and_reuse() -> Result<()> {
     assert_eq!(session.app().id == source, !focus);
     if focus {
       assert_eq!(session.app().input_owner(), InputOwner::Content);
+      send(&mut session, b"vwgo")?;
+      assert!(session.app().reader.selection.is_some());
       session.activate(0)?;
     }
     assert!(session.app().panel_focused());
@@ -198,20 +204,38 @@ fn cross_document_panel_placement_and_reuse() -> Result<()> {
     );
     send(&mut session, b"\r")?;
     assert_ne!(session.app().id, source);
+    assert_eq!(session.app().input_owner(), InputOwner::Content);
+    assert!(session.app().reader.selection.is_none());
     assert_eq!(
       session.tabs.iter().map(|tab| tab.panes.len()).sum::<usize>(),
       2
     );
   }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn failed_activation_preserves_view() -> Result<()> {
   let mut session = Session::new("", false, None);
   session.open(&file("paper.pdf")?, true, screen())?;
+  send(&mut session, b"vw")?;
+  let id = session.app().id;
+  let cursor = session.app().reader.cursor;
+  let anchor = session.app().reader.selection.unwrap().anchor;
   session.app().show_panel(
     PanelKind::Recent,
     vec![row(Destination::File(file("missing.pdf")?))],
   )?;
+  let viewport = session.app().reader.scroll;
   key(session.app(), b"\r")?;
   assert!(session.settle().is_err());
-  assert!(session.app().panel_focused());
+  assert_eq!((session.active, session.app().id), (0, id));
+  assert_eq!((session.tabs.len(), session.tab().panes.len()), (1, 1));
+  assert_eq!(session.app().reader.cursor, cursor);
+  assert_eq!(session.app().reader.scroll, viewport);
+  assert_eq!(session.app().reader.selection.unwrap().anchor, anchor);
+  assert_eq!(session.app().input_owner(), InputOwner::Panel);
   Ok(())
 }
 
@@ -250,6 +274,13 @@ fn transient_prefix_dispatch_and_noop_focus() -> Result<()> {
   action(app, Action::Window(Window::Focus(Direction::Right)))?;
   session.settle()?;
   assert!(session.app().hints.is_some(), "edge focus does not blur");
+  let edge = session.app().id;
+  let cursor = session.app().reader.cursor;
+  send(&mut session, b"\x17l")?;
+  assert_eq!(session.app().id, edge);
+  assert_eq!(session.app().reader.cursor, cursor);
+  assert!(session.app().hints.is_none(), "input dismisses before no-op");
+  assert!(session.app().keys.awaiting().is_none());
   action(session.app(), Action::Window(Window::Next))?;
   session.settle()?;
   assert_eq!(session.app().id, source);
@@ -263,6 +294,21 @@ fn outside_click_consumes_capture_across_panes() -> Result<()> {
   session.open(&file("book.pdf")?, true, screen())?;
   send(&mut session, b"\x17v")?;
   let source = session.app().id;
+  let tab = session.active;
+  let viewport = session.app().reader.scroll;
+  send(&mut session, b"/partial")?;
+  assert_eq!(session.app().input_owner(), InputOwner::Prompt);
+  send(&mut session, b"\x1b[<0;90;10M\x1b[<0;90;10m")?;
+  assert_eq!((session.active, session.app().id), (tab, source));
+  assert_eq!(session.app().input_owner(), InputOwner::Content);
+  assert!(session.app().search_origin.is_none());
+  assert_eq!(session.app().search.query.text, "");
+  assert_eq!(session.app().reader.scroll, viewport);
+  assert!(session.app().reader.selection.is_none());
+  send(&mut session, b"\x1b[<0;90;10M\x1b[<0;90;10m")?;
+  assert_ne!(session.app().id, source);
+  send(&mut session, b"\x17p")?;
+  assert_eq!(session.app().id, source);
   key(session.app(), b"v")?;
   hints(session.app());
   action(session.app(), Action::Command)?;
@@ -317,16 +363,21 @@ fn prompt_wheel_and_passive_motion_keep_owner() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn overview_and_text_use_local_owner() -> Result<()> {
   let mut app = App::with_screen(&file("book.pdf")?, "", false, screen())?;
-  app.open_panel(PanelKind::Help)?;
-  app.command("overview")?;
+  crate::common::outline_loaded(&mut app)?;
+  key(&mut app, b"gogp")?;
   assert_eq!(app.input_owner(), InputOwner::Overview);
   let selected = app.overview.as_ref().unwrap().selected;
   key(&mut app, b"\tj")?;
   assert_eq!(app.input_owner(), InputOwner::Panel);
   assert_eq!(app.overview.as_ref().unwrap().selected, selected);
   assert_eq!(app.panel.as_ref().unwrap().selected, 1);
-  key(&mut app, b"\t")?;
+  key(&mut app, b"\tj")?;
   assert_eq!(app.input_owner(), InputOwner::Overview);
+  assert!(app.overview.as_ref().unwrap().selected > selected);
+  assert_eq!(app.panel.as_ref().unwrap().selected, 1);
+  let mut status = Vec::new();
+  app.status(&mut status, app.screen.rows - 1)?;
+  assert!(String::from_utf8_lossy(&status).contains("PAGES"));
   key(&mut app, b"\x1b[27u")?;
   key(&mut app, b"vjl")?;
   let selection = app.reader.selection.map(|range| (range.anchor, range.kind));
@@ -357,6 +408,14 @@ fn raw_history_is_separate_from_local_focus() -> Result<()> {
   assert_eq!(app.reader.cursor.page, PageId(19));
   key(&mut app, b"\x1b[105;5u")?;
   assert_eq!(app.reader.cursor.page, PageId(29));
+  key(&mut app, b"go")?;
+  let cursor = app.reader.cursor;
+  key(&mut app, b":te\t")?;
+  assert_eq!(app.input_owner(), InputOwner::Prompt);
+  assert_eq!(app.prompt.as_ref().unwrap().text, "text");
+  assert_eq!(app.reader.cursor, cursor);
+  key(&mut app, b"\x1b[27u")?;
+  assert_eq!(app.input_owner(), InputOwner::Panel);
   Ok(())
 }
 
@@ -438,19 +497,36 @@ fn clicked_file_and_global_mark_keep_source_panel() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn outline_row_survives_focus_and_draw() -> Result<()> {
-  let mut app = App::with_screen(&file("book.pdf")?, "", false, screen())?;
-  crate::common::outline_loaded(&mut app)?;
-  app.open_panel(PanelKind::Outline)?;
-  key(&mut app, b"60j")?;
+  let mut session = Session::new("", false, None);
+  session.open(&file("book.pdf")?, true, screen())?;
+  let app = session.app();
+  crate::common::outline_loaded(app)?;
+  key(app, b"go60j")?;
   app.panel.as_mut().unwrap().search.query = "chapter".into();
   let panel = app.panel.as_ref().unwrap();
   let state = (panel.selected, panel.top, panel.search.query.clone());
-  key(&mut app, b"\t")?;
+  key(app, b"\t")?;
   app.draw(&mut Vec::new())?;
-  key(&mut app, b"\x1b[Z")?;
+  key(app, b"\x1b[Z")?;
   let panel = app.panel.as_ref().unwrap();
   assert_eq!((panel.selected, panel.top, panel.search.query.clone()), state);
   assert!(panel.focused);
+  send(&mut session, b"\t")?;
+  let id = session.app().id;
+  let viewport = session.app().reader.scroll;
+  send(&mut session, b"\x1b[<64;2;5M")?;
+  let app = session.app();
+  let panel = app.panel.as_ref().unwrap();
+  let top = panel.top;
+  assert!(top < state.1);
+  assert_eq!(panel.selected, state.0);
+  assert_eq!(app.input_owner(), InputOwner::Content);
+  app.draw(&mut Vec::new())?;
+  app.draw(&mut Vec::new())?;
+  assert_eq!(app.panel.as_ref().unwrap().top, top);
+  assert_eq!(app.panel.as_ref().unwrap().selected, state.0);
+  assert_eq!(app.id, id);
+  assert_eq!(app.reader.scroll, viewport);
   Ok(())
 }
 
@@ -655,6 +731,9 @@ fn detach_returns_to_live_peer() -> Result<()> {
   assert_eq!(session.app().id, top);
   send(&mut session, b"vwgo")?;
   let anchor = session.app().reader.selection.unwrap().anchor;
+  send(&mut session, b"\t\t")?;
+  assert_eq!(session.app().reader.selection.unwrap().anchor, anchor);
+  assert_eq!(session.app().input_owner(), InputOwner::Panel);
   send(&mut session, b"\x17T")?;
   assert_eq!(session.app().id, top);
   assert!(session.app().reader.selection.is_some());
@@ -742,11 +821,28 @@ fn current_split_reuse_is_noop() -> Result<()> {
   session.open(&path, true, screen())?;
   send(&mut session, b":page 30\r\x17vvwgo")?;
   let current = session.app().id;
+  session.app().start_search("chapter", false, false)?;
+  let app = session.app();
+  let anchor = app.reader.selection.unwrap().anchor;
+  let cursor = app.reader.cursor;
+  let viewport = app.reader.scroll;
+  let generation = app.search.generation;
+  let panel = app.panel.as_ref().unwrap();
+  let rows = (panel.selected, panel.top, panel.search.query.clone());
+  let tab = session.active;
   for command in ["e", "tabe", "split", "vsplit"] {
     send(&mut session, format!(":{command} {}\r", path.display()).as_bytes())?;
-    assert_eq!(session.app().id, current, "{command}");
-    assert!(session.app().reader.selection.is_some());
-    assert!(session.app().panel_focused());
+    assert_eq!((session.active, session.app().id), (tab, current), "{command}");
+    let app = session.app();
+    assert_eq!(app.reader.selection.unwrap().anchor, anchor);
+    assert_eq!(app.reader.cursor, cursor);
+    assert_eq!(app.reader.scroll, viewport);
+    assert_eq!(app.input_owner(), InputOwner::Panel);
+    let panel = app.panel.as_ref().unwrap();
+    assert_eq!((panel.selected, panel.top, panel.search.query.clone()), rows);
+    assert_eq!(app.search.query.text, "chapter");
+    assert_eq!(app.search.generation, generation);
+    assert!(matches!(app.search.phase, vpdf::find::Phase::Running { .. }));
     assert_eq!(session.tab().panes.len(), 2);
     assert_eq!(session.tabs.len(), 1);
   }
@@ -775,6 +871,27 @@ fn panel_entry_drops_pending_operator() -> Result<()> {
       Some(vpdf::reader::Operator { count: 1, register: '"' });
     send(&mut session, command.as_bytes())?;
     assert!(session.app().reader.operator.is_none());
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn raw_unopened_placement_routes() -> Result<()> {
+  for (command, tabs, panes) in [("e", 1, 1), ("tabe", 2, 1), ("split", 1, 2)] {
+    let mut session = Session::new("", false, None);
+    session.open(&file("book.pdf")?, true, screen())?;
+    let source = session.app().id;
+    let path = file("paper.pdf")?;
+    send(&mut session, format!(":{command} {}\r", path.display()).as_bytes())?;
+    assert_ne!(session.app().id, source, "{command}");
+    assert_eq!(session.active, tabs - 1);
+    assert_eq!((session.tabs.len(), session.tab().panes.len()), (tabs, panes));
+    let app = session.app();
+    assert_eq!(app.path, path);
+    assert_eq!(app.input_owner(), InputOwner::Content);
+    assert!(app.reader.selection.is_none());
+    assert!(app.search.worker.is_none() && app.ocr.is_none());
   }
   Ok(())
 }

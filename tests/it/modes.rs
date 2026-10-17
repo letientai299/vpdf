@@ -132,8 +132,13 @@ fn visible_entry_selection_and_temporary_copy() -> Result<()> {
     assert!(app.reader.pending_yank.take().unwrap().text.ends_with('\n'));
     keys(&mut app, b"V")?;
     assert_eq!(app.reader.selection.unwrap().kind, SelectionKind::Line);
+    app.draw(&mut Vec::new())?;
+    let viewport = (app.reader.scroll, app.text_position(0, 0)?);
     keys(&mut app, b"\x1b[27uj")?;
+    settle(&mut app);
+    app.draw(&mut Vec::new())?;
     assert!(app.reader.selection.is_none());
+    assert_ne!((app.reader.scroll, app.text_position(0, 0)?), viewport);
   }
   Ok(())
 }
