@@ -1789,7 +1789,7 @@ mod tests {
     let mut events = std::collections::VecDeque::new();
     let mut parser = crate::decode::Parser::default();
     for bytes in [
-      &b":page 30\r\x1b[<0;30;10M\x1b[<32;35;12M"[..],
+      &b":30\r\x1b[<0;30;10M\x1b[<32;35;12M"[..],
       &b"\t"[..],
       &b"\x1b[<32;100;32M\x1b[<0;100;32m"[..],
     ] {
@@ -1829,7 +1829,7 @@ mod tests {
       let mut events = std::collections::VecDeque::new();
       let mut parser = crate::decode::Parser::default();
       for bytes in [
-        b":page 30\r\x1b[<0;30;10M\x1b[<32;35;12M".as_slice(),
+        b":30\r\x1b[<0;30;10M\x1b[<32;35;12M".as_slice(),
         command,
         b"\x1b[<32;40;15M\x1b[<0;40;15m".as_slice(),
       ] {

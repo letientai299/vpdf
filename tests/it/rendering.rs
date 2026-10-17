@@ -89,7 +89,7 @@ fn crop_samples_once() -> Result<()> {
     origin: (0, 0),
   };
   let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
-  app.command("page 100")?;
+  app.command("100")?;
   let lists = app.doc.lists();
   // Display lists a frame interprets, as the render worker shares them.
   let frame = |app: &mut App| -> Result<usize> {

@@ -23,8 +23,20 @@ fn reader_workflows() -> Result<()> {
     origin: (0, 0),
   };
   let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
-  app.command("page 39")?;
+  app.command("39")?;
   assert_eq!(app.reader.cursor.page, PageId(38));
+  // Labels beat the `:info` prefix, not exact names.
+  for (index, page) in app.doc.pages.iter_mut().enumerate() {
+    page.label =
+      ["", "", "i", "iv", "q"].get(index).copied().unwrap_or("").into();
+  }
+  app.command("i")?;
+  assert_eq!(app.reader.cursor.page, PageId(2));
+  app.command("iv")?;
+  assert_eq!(app.reader.cursor.page, PageId(3));
+  app.command("q")?;
+  assert!(app.quit);
+  app.quit = false;
   common::outline_loaded(&mut app)?;
   app.open_panel(PanelKind::Outline)?;
   assert!(!app.panel.as_ref().unwrap().rows.is_empty());
@@ -103,7 +115,7 @@ fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
     assert_eq!(app.reader.scroll, stopped);
   }
   app.scroll(100.0)?;
-  app.command("page 39")?;
+  app.command("39")?;
   assert!(app.animation.is_none());
   assert_eq!(app.reader.cursor.page, PageId(38));
   Ok(())
@@ -133,7 +145,7 @@ fn links_keep_coordinates_and_text_scrolls_lines() -> Result<()> {
   let expected = app.doc.text(page)?.nearest(page, x, y);
   app.follow(&target)?;
   assert_eq!(app.reader.cursor, expected);
-  app.command("page 39")?;
+  app.command("39")?;
   app.open_panel(PanelKind::Text)?;
   let cursor = app.reader.cursor;
   app.scroll(48.0)?;
@@ -231,7 +243,7 @@ fn changed_file_reloads_after_settling() -> Result<()> {
   };
   let mut app = App::with_screen(&path, "", false, screen)?;
   let pages = app.doc.pages.len();
-  app.command("page 3")?;
+  app.command("3")?;
   assert!(!app.watch()?);
   std::fs::copy(root.join("book.pdf"), &path)?;
   assert!(!app.watch()?, "a change waits for the write to settle");
@@ -293,7 +305,7 @@ fn link_hints_follow_typed_labels() -> Result<()> {
     origin: (0, 0),
   };
   let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
-  app.command("page 2")?;
+  app.command("2")?;
   let page = app.reader.cursor.page;
   for modifiers in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
     app.start_hints(false)?;
@@ -581,7 +593,7 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
     app.after_key();
     result
   };
-  app.command("page 2")?;
+  app.command("2")?;
   // The cursor line sits on the bottom row, under either overlay.
   let bottom = Action::Align(1.0);
   app.action(Input {
@@ -681,7 +693,7 @@ fn recent_view_covers_the_pane() -> Result<()> {
   }
   assert_eq!(app.reader.scroll, scroll);
   // Commands that need the document wait for one, as on the start screen.
-  for command in ["5", "page 3"] {
+  for command in ["5", "iv"] {
     assert!(app.command(command).is_err(), "{command}");
     assert!(app.covered() && app.overview.is_none(), "{command}");
   }

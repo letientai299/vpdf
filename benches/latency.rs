@@ -153,7 +153,7 @@ fn jumps(sim: &mut Sim, count: usize) -> Result<Jumps> {
   let (mut input, mut first, mut complete) = (vec![], vec![], vec![]);
   for page in pages(count, sim.app.doc.pages.len()) {
     let started = Instant::now();
-    sim.app.command(&format!("page {}", page + 1))?;
+    sim.app.command(&(page + 1).to_string())?;
     input.push(ms(started.elapsed()));
     let (one, all) = sim.settle(started)?;
     first.push(one);
@@ -237,7 +237,7 @@ fn motion(
 
 fn motions(sim: &mut Sim) -> Result<Vec<Motion>> {
   let start = sim.app.doc.pages.len() / 3;
-  sim.app.command(&format!("page {}", start + 1))?;
+  sim.app.command(&(start + 1).to_string())?;
   sim.settle(Instant::now())?;
   let hz = |rate: u64| Duration::from_micros(1_000_000 / rate);
   Ok(vec![

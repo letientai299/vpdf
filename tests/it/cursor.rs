@@ -56,7 +56,7 @@ fn cursor_entry_positions_visual_ranges() -> Result<()> {
 fn cursor_objects_require_visual_or_copy() -> Result<()> {
   for text in [false, true] {
     let mut app = app("paper.pdf", text)?;
-    app.command("page 2")?;
+    app.command("2")?;
     keys(&mut app, b"i0w")?;
     let positioned = app.reader.cursor;
     let view = app.reader.scroll;
@@ -124,7 +124,7 @@ fn cursor_escape_cancels_only_active_layer() -> Result<()> {
 fn cursor_targets_and_hidden_entry() -> Result<()> {
   for text in [false, true] {
     let mut app = app("paper.pdf", text)?;
-    app.command("page 2")?;
+    app.command("2")?;
     let target = app.reader.cursor;
     keys(&mut app, b"i2l")?;
     let positioned = app.reader.cursor;
@@ -158,7 +158,7 @@ fn cursor_targets_and_hidden_entry() -> Result<()> {
 fn cursor_scroll_and_history_keep_position() -> Result<()> {
   for text in [false, true] {
     let mut app = app("paper.pdf", text)?;
-    app.command("page 2")?;
+    app.command("2")?;
     keys(&mut app, b"i2l")?;
     let positioned = app.reader.cursor;
     let view = app.reader.scroll;

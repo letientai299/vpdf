@@ -27,7 +27,7 @@ fn split() -> Result<(Session, u32, u32)> {
   };
   let mut session = Session::new(None);
   session.open(&root.join("book.pdf"), true, screen)?;
-  session.app().command("page 30")?;
+  session.app().command("30")?;
   let right = session.app().id;
   act(&mut session, Action::Window(Window::Split(vpdf::split::Axis::Columns)))?;
   let left = session.app().id;
@@ -98,7 +98,7 @@ fn reopening_restores_position_and_recent_order() -> Result<()> {
   let mut session = Session::new(Some(store.clone()));
   session.open(&root.join("paper.pdf"), true, screen)?;
   session.open(&root.join("book.pdf"), true, screen)?;
-  session.app().command("page 39")?;
+  session.app().command("39")?;
   session.app().layout.zoom = 1.5;
   session.app().command("q")?;
   session.settle()?;
@@ -134,9 +134,9 @@ fn marks_persist_and_cross_documents() -> Result<()> {
   };
   let mut session = Session::new(Some(store.clone()));
   session.open(&root.join("book.pdf"), true, screen)?;
-  session.app().command("page 30")?;
+  session.app().command("30")?;
   act(&mut session, Action::Mark('a'))?;
-  session.app().command("page 40")?;
+  session.app().command("40")?;
   act(&mut session, Action::Mark('B'))?;
   session.open(&root.join("paper.pdf"), true, screen)?;
   act(&mut session, Action::GoMark('B', true))?;
@@ -413,7 +413,7 @@ mod pointer {
     let mut session = Session::new(None);
     session.open(&root.join("book.pdf"), true, screen)?;
     session.app().text_mode = true;
-    session.app().command("page 30")?;
+    session.app().command("30")?;
     act(&mut session, Action::Yank)?;
     mouse(&mut session, ScrollDown, 30, 10)?;
     act(&mut session, Action::Yank)?;

@@ -181,7 +181,7 @@ fn explicit_targets_expire_outside_view() -> Result<()> {
 fn layout_keeps_view_anchor_and_visual_endpoints() -> Result<()> {
   for text_mode in [false, true] {
     let mut app = app("paper.pdf", text_mode)?;
-    app.command("page 5")?;
+    app.command("5")?;
     keys(&mut app, b"12j")?;
     settle(&mut app);
     let cursor = app.reader.cursor;
@@ -330,7 +330,7 @@ fn scan_selection_fails_without_ocr_or_view_motion() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn normal_marks_search_and_history_use_reading_area() -> Result<()> {
   let mut app = app("book.pdf", false)?;
-  app.command("page 39")?;
+  app.command("39")?;
   keys(&mut app, b"20j")?;
   settle(&mut app);
   let reading = app.reading_position()?;
@@ -355,7 +355,7 @@ fn prompt_cancel_and_history_restore_viewport() -> Result<()> {
     let mut app = app("paper.pdf", text_mode)?;
     app.screen.columns = 32;
     app.relayout()?;
-    app.command("page 4")?;
+    app.command("4")?;
     keys(&mut app, b"+10j4l")?;
     settle(&mut app);
     app.draw(&mut Vec::new())?;
@@ -382,7 +382,7 @@ fn prompt_cancel_and_history_restore_viewport() -> Result<()> {
         app.reader.scroll,
       )
       .unwrap();
-    app.command("page 8")?;
+    app.command("8")?;
     keys(&mut app, b"+\x0f")?;
     app.draw(&mut Vec::new())?;
     if text_mode {
@@ -516,7 +516,7 @@ fn reload_clamps_text_view_and_invalidates_hit_testing() -> Result<()> {
   std::fs::copy(root.join("book.pdf"), &path)?;
   let mut app =
     App::with_screen(&path, "", true, app("paper.pdf", true)?.screen)?;
-  app.command("page 100")?;
+  app.command("100")?;
   keys(&mut app, b"100j10l")?;
   app.draw(&mut Vec::new())?;
   assert!(app.text_position(0, 0)?.page.0 > 99);

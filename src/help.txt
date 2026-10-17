@@ -23,6 +23,7 @@ C/V ( ): previous / next sentence
 C/V 0 ^ $: line motions
 C/V { }: previous / next paragraph
 [count]gg G: page jump
+:<n|label>: jump to a page number or label
 [count][[ ]]: previous / next heading; record jump
 ]i [i: next / previous figure; counts repeat
 <Space><S-Space>: next / previous page
@@ -49,7 +50,6 @@ v V: enter character / line V
 C v/V: select from positioned glyph
 N v/V: visible target, else first visible text
 No text: selection unavailable; run :ocr explicitly
-:cursorline: toggle V line band (default on)
 o: swap selection ends
 gv: reselect
 <Esc> / yank: return to V entry mode
@@ -90,7 +90,6 @@ f F: link hints / copy URLs
 gl: links on this page
 gp: page thumbnails
 gr: recent documents
-:jumps: recorded jump destinations
 ga: annotations (read-only)
 P <CR>: follow row; focus content in N
 P o / click: follow; keep panel focus
@@ -102,7 +101,6 @@ P q / gq: close panel
 gx: focus extracted-text presentation
 g? <F1>: this reference
 <Esc>: cancel transient or pending input first
-:cancel: stop pane search, OCR, outline, region jobs
 P wheel: scroll list; keep row selection
 q: close panel, tab, or reader
 
@@ -131,7 +129,6 @@ P file <CR>/o: target tab / split; reuse open view
 Recent <CR>/click: open in covered pane
 gt [count]gt: next / nth tab
 gT: previous tab
-:e :tabe: open here / in a new tab
 :e :tabe :split :vsplit <file>: reuse open view first
 Pane changes: keep C/V, queries and panel focus
 

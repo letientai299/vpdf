@@ -262,7 +262,10 @@ impl App {
       let kept = spec.is_some_and(|spec| COVERED.contains(&spec.name));
       anyhow::ensure!(kept, "Open a document before :{name}");
     }
-    if name.chars().all(|ch| ch.is_ascii_digit()) {
+    // Labels like `iv` beat prefixes like `:info`, not exact names.
+    let label =
+      cmdline::exact(name).is_none() && self.doc.page_number(name).is_some();
+    if label || name.chars().all(|ch| ch.is_ascii_digit()) {
       return self.page(name);
     }
     let spec =
@@ -300,7 +303,6 @@ impl App {
       }
       "tabprevious" => self.request = Some(Request::Tab(TabMove::Previous(1))),
       "qall" => self.request = Some(Request::QuitAll),
-      "page" => self.page(argument)?,
       "toc" => self.open_panel(PanelKind::Outline)?,
       "overview" => self.open_overview()?,
       "crop" => self.toggle_crop()?,
@@ -336,7 +338,6 @@ impl App {
   }
 
   fn page(&mut self, label: &str) -> Result<()> {
-    anyhow::ensure!(!label.is_empty(), "Page required");
     let page = self
       .doc
       .page_number(label)

@@ -114,12 +114,11 @@ pub const COMMANDS: &[Spec] = &[
   spec("marks", &[], "", "list marks"),
   spec("jumps", &[], "", "list jump destinations"),
   spec("annotations", &["annots"], "", "list highlights and notes"),
-  spec("page", &[], "<n|label>", "jump to a page number or label"),
   spec("toc", &["outline"], "", "open the table of contents"),
   spec("overview", &["pages"], "", "show page thumbnails"),
-  spec("cursorline", &[], "", "toggle the Visual cursor line band"),
+  spec("cursorline", &[], "", "toggle the Visual line band (default on)"),
   spec("crop", &[], "", "toggle cropped page margins"),
-  spec("cancel", &[], "", "cancel active-pane background jobs"),
+  spec("cancel", &[], "", "stop pane search, OCR, outline, region jobs"),
   spec("nohlsearch", &["noh"], "", "hide search highlights"),
   spec("text", &[], "", "preview extracted page text"),
   spec("info", &[], "", "document, reader, and terminal info"),
@@ -132,11 +131,14 @@ pub const COMMANDS: &[Spec] = &[
   spec("qall", &["qa", "quitall"], "", "close every tab"),
 ];
 
+/// Command named `name` or aliased to it.
+pub fn exact(name: &str) -> Option<&'static Spec> {
+  commands().find(|s| s.name == name || s.aliases.contains(&name))
+}
+
 /// Exact names and aliases win; otherwise a unique prefix.
 pub fn lookup(name: &str) -> Option<&'static Spec> {
-  if let Some(spec) =
-    commands().find(|s| s.name == name || s.aliases.contains(&name))
-  {
+  if let Some(spec) = exact(name) {
     return Some(spec);
   }
   let mut matches = commands().filter(|s| s.name.starts_with(name));
@@ -255,7 +257,7 @@ mod tests {
       ("cursorline", Some("cursorline")),
       ("cu", Some("cursorline")),
       ("rel", Some("reload")),
-      ("p", None),
+      ("c", None),
       ("PdfPage", None),
     ];
     for (input, expected) in cases {
@@ -284,9 +286,9 @@ mod tests {
 
   #[test]
   fn completes_command_names() {
-    assert_eq!(candidates("  pa"), (2, vec!["page".into(), "password".into()]));
-    assert_eq!(candidates("page 1").1, Vec::<String>::new());
+    assert_eq!(candidates("  pa"), (2, vec!["password".into()]));
+    assert_eq!(candidates("info 1").1, Vec::<String>::new());
     assert_eq!(candidates("cu"), (0, vec!["cursorline".into()]));
-    assert_eq!(candidates("PAG").1, ["page"]);
+    assert_eq!(candidates("PAS").1, ["password"]);
   }
 }

@@ -209,7 +209,7 @@ mod tests {
   #[test]
   fn arguments_differ_from_key_notation() -> crate::Result<()> {
     let rows = [
-      ":page <n|label>: jump",
+      ":edit <file>: open",
       ":split [file]: split",
       "<C-d><C-u>: scroll",
       "[count]gg: jump",
@@ -223,8 +223,8 @@ mod tests {
       assert_eq!(out.contains(crate::theme::ARGUMENT), index < 2);
     }
     assert_eq!(
-      key_styles(":page <n|label>", Style::CommandKey),
-      [(6, 15, crate::theme::ARGUMENT)]
+      key_styles(":edit <file>", Style::CommandKey),
+      [(6, 12, crate::theme::ARGUMENT)]
     );
     assert_eq!(
       key_styles(":split [file]", Style::CommandKey),

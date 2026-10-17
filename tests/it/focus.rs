@@ -451,8 +451,8 @@ fn overview_and_text_use_local_owner() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn raw_history_is_separate_from_local_focus() -> Result<()> {
   let mut app = App::with_screen(&file("book.pdf")?, "", false, screen())?;
-  app.command("page 20")?;
-  app.command("page 30")?;
+  app.command("20")?;
+  app.command("30")?;
   key(&mut app, b"\x1b[111;5u")?;
   assert_eq!(app.reader.cursor.page, PageId(19));
   key(&mut app, b"\t")?;
@@ -617,7 +617,7 @@ fn placement_reuses_durable_views() -> Result<()> {
   let paper = file("paper.pdf")?;
   let book = file("book.pdf")?;
   session.open(&paper, true, screen())?;
-  send(&mut session, b":page 2\rvw")?;
+  send(&mut session, b":2\rvw")?;
   let target = session.app().id;
   session.app().start_search("attention", false, false)?;
   session.app().show_panel(
@@ -733,7 +733,7 @@ fn new_views_blur_source_and_start_normal() -> Result<()> {
   for command in ["e", "tabe", "split", "vsplit"] {
     let mut session = Session::new(None);
     session.open(&file("book.pdf")?, true, screen())?;
-    send(&mut session, b":page 30\rvwgo")?;
+    send(&mut session, b":30\rvwgo")?;
     let source = session.app().id;
     let anchor = session.app().reader.selection.unwrap().anchor;
     send(&mut session, b"g")?;
@@ -808,7 +808,7 @@ fn detach_returns_to_live_peer() -> Result<()> {
 fn transitions_drop_capture_and_owned_input() -> Result<()> {
   let mut session = Session::new(None);
   session.open(&file("book.pdf")?, true, screen())?;
-  send(&mut session, b":page 30\r\x17v")?;
+  send(&mut session, b":30\r\x17v")?;
   let left = session.app().id;
   send(&mut session, b"\x1b[<0;10;5M\x1b[<32;15;6M")?;
   assert!(session.app().reader.selection.is_some());
@@ -836,7 +836,7 @@ fn transitions_drop_capture_and_owned_input() -> Result<()> {
   send(&mut session, b"gT\x1b[<0;10;5M\x1b[<32;15;6M")?;
   assert_eq!(session.app().id, left);
   assert!(session.app().reader.selection.is_some(), "new press captures");
-  send(&mut session, b"\x1b[<0;15;6m:page")?;
+  send(&mut session, b"\x1b[<0;15;6m:30")?;
   session.app().command(&format!("tabe {}", file("ocr.pdf")?.display()))?;
   session.settle()?;
   let old = session
@@ -870,7 +870,7 @@ fn current_split_reuse_is_noop() -> Result<()> {
   let mut session = Session::new(None);
   let path = file("book.pdf")?;
   session.open(&path, true, screen())?;
-  send(&mut session, b":page 30\r\x17vvwgo")?;
+  send(&mut session, b":30\r\x17vvwgo")?;
   let current = session.app().id;
   session.app().start_search("chapter", false, false)?;
   let app = session.app();

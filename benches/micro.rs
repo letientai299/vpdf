@@ -145,7 +145,7 @@ fn overlay_case(app: &mut App, name: &str) -> Result<()> {
 /// Visible citation labels on the corpus paper.
 fn draw_hints() -> Result<()> {
   let mut app = paper(false)?;
-  app.command("page 2")?;
+  app.command("2")?;
   app.start_hints(false)?;
   let mut out = Vec::new();
   app.draw_hints(&mut out)?;
@@ -261,7 +261,7 @@ fn frame() -> Result<()> {
 fn viewport() -> Result<()> {
   for text_mode in [false, true] {
     let mut app = paper(text_mode)?;
-    app.command("page 4")?;
+    app.command("4")?;
     app.ensure_cursor()?;
     let cursor = app.reader.cursor;
     let scroll = app.reader.scroll;
@@ -336,7 +336,7 @@ fn crop_toggle() -> Result<()> {
     origin: (0, 0),
   };
   let mut app = App::with_screen(&corpus("book.pdf")?, "", false, screen)?;
-  app.command("page 100")?;
+  app.command("100")?;
   measure("App::toggle_crop on, off", || {
     drop(black_box(app.toggle_crop()));
     drop(black_box(app.toggle_crop()));

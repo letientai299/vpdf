@@ -218,7 +218,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn cursorline_stays_below_existing_selection() -> Result<()> {
   let mut app = app(false)?;
-  app.command("page 2")?;
+  app.command("2")?;
   app.command("cursorline")?;
   app.reader.visual(SelectionKind::Character);
   let screen = app.layout.screen;
