@@ -220,6 +220,38 @@ fn cross_document_panel_placement_and_reuse() -> Result<()> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
+fn recent_pick_opens_in_covered_pane() -> Result<()> {
+  let paper = file("paper.pdf")?;
+  let book = file("book.pdf")?;
+  let reuse = format!(":vsplit {}\r\x17pgr", paper.display());
+  for setup in ["gr", "\x17sgr", "\x17n", &reuse] {
+    let mut session = Session::new("", false, None);
+    session.open(&paper, true, screen())?;
+    session.open(&book, false, screen())?;
+    send(&mut session, setup.as_bytes())?;
+    let list = session.app().panel.as_mut().unwrap();
+    assert!(list.shelf.is_some(), "{setup:?}");
+    let picked = |row: &Row| match &row.destination {
+      Destination::File(path) => *path == paper,
+      _ => false,
+    };
+    list.selected = list.rows.iter().position(picked).unwrap();
+    send(&mut session, b"\r")?;
+    assert_eq!(session.tabs.len(), 1, "{setup:?}");
+    assert_eq!(session.app().path, paper, "{setup:?}");
+    assert_eq!(session.app().input_owner(), InputOwner::Content);
+    let panes = &session.tab().panes;
+    assert!(panes.iter().all(|app| !app.covered()), "{setup:?}");
+    let mut paths: Vec<_> = panes.iter().map(|app| &app.path).collect();
+    paths.sort();
+    let want = if setup == "gr" { vec![&paper] } else { vec![&book, &paper] };
+    assert_eq!(paths, want, "{setup:?}");
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
 fn failed_activation_preserves_view() -> Result<()> {
   let mut session = Session::new("", false, None);
   session.open(&file("paper.pdf")?, true, screen())?;

@@ -679,8 +679,6 @@ impl Session {
         Some(path) => self.choose(&path, screen),
         None => Ok(()),
       },
-      // A recent document replaces the pane it was picked in.
-      Some(Request::Choose(path)) => self.open(&path, false, screen),
       Some(Request::TabClose) => self.close(),
       Some(Request::QuitAll) => {
         self.quit = true;
@@ -699,17 +697,26 @@ impl Session {
   ) -> Result<()> {
     let path = std::fs::canonicalize(path)?;
     let source = (self.active, self.tab().focus);
+    // The recent view picks a document for the pane it covers.
+    let here = focus && self.app().covered();
     let found = self.existing(&path);
     let target = if let Some(target) = found {
       target
     } else {
       if focus {
-        self.open(&path, true, screen)?;
+        self.open(&path, !here, screen)?;
       } else {
         self.split(Axis::Columns, Some(&path))?;
       }
       (self.active, self.tab().focus)
     };
+    if here && target != source {
+      let app = &mut self.tabs[source.0].panes[source.1];
+      if let Some(panel) = &mut app.panel {
+        panel.focused = false;
+      }
+      app.relayout()?;
+    }
     let app = &mut self.tabs[target.0].panes[target.1];
     if let Some(position) = position {
       app.go_to(position, true)?;

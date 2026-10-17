@@ -19,8 +19,6 @@ pub enum Request {
     path: PathBuf,
     tab: bool,
   },
-  /// A picked document: a new tab, or the focused pane when split.
-  Choose(PathBuf),
   PanelOpen {
     path: PathBuf,
     position: Option<Position>,

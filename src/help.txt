@@ -108,6 +108,7 @@ Ctrl-w n: new pane listing recent documents
 
 # Tabs
 Panel file Enter / o: target tab / split; reuse open view
+Recent Enter: open in the covered pane
 gt [count]gt: next / nth tab
 gT: previous tab
 :e :tabe: open here / in a new tab

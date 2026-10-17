@@ -58,7 +58,8 @@ Tab and Shift-Tab switch between content and the visible side panel, keeping
 selection and panel state. Ctrl-o/Ctrl-i navigate history; prompt Tab completes.
 Panel commands focus their list. Enter follows a row in Normal while keeping the
 list; `o` or a row click keeps panel focus. An unopened document opens in a new
-tab with Enter, or a split with `o`/click; an open view is reused. `:e`,
+tab with Enter, or a split with `o`/click; an open view is reused. Enter in the
+recent view opens the document in the pane it covers. `:e`,
 `:tabe`, `:split <file>`, and `:vsplit <file>` also focus an existing view
 before applying placement. Pane changes keep Cursor mode, Visual ranges,
 committed searches, panel position, and local focus; incomplete input clears.
