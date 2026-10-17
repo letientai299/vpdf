@@ -230,6 +230,19 @@ impl App {
     }
     if let Some(origin) = origin.filter(|o| o.cursor != self.reader.cursor) {
       self.reader.record(origin);
+      if self.search.query == same
+        && matches!(
+          self.search.phase,
+          Phase::Running { jump: false } | Phase::Complete
+        )
+        && self
+          .search
+          .hits
+          .binary_search_by_key(&self.reader.cursor, |hit| hit.first)
+          .is_ok()
+      {
+        self.flash_landing();
+      }
     }
     Ok(())
   }

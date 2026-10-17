@@ -12,6 +12,7 @@ Cursor/Visual { }: previous / next paragraph
 [count][[ ]]: previous / next heading; record jump
 Space Shift-Space: next / previous page
 Ctrl-o Ctrl-i '': jump back / forward
+Destination jumps: flash landing line for 600 ms
 ma mA: mark here / across documents
 'a `a: go to mark line / position
 

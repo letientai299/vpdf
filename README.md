@@ -41,7 +41,8 @@ or the active glyph in Cursor/Visual. Counts repeat heading jumps;
 Ctrl-o and Ctrl-i return through jump history.
 
 Visual highlights the active line; `:cursorline` toggles this band. Normal shows
-no glyph cursor or line band; Cursor shows only its glyph. Explicit scroll
+no glyph cursor; Cursor shows its glyph. Link, search, mark, and heading jumps
+tint the destination line for 600 ms in PDF and text views. Explicit scroll
 keys preserve glyph and selection positions;
 zoom, crop, rotation, panels, and resize keep the reading area anchored. `K`,
 Enter, and `*` use the visible active glyph in Cursor/Visual, or a visible

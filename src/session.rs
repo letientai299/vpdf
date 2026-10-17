@@ -821,11 +821,19 @@ impl Session {
   /// Shows the next tmux notice once the status line is free; whether
   /// it did.
   fn notify(&mut self) -> bool {
+    let now = Instant::now();
+    let mut changed = false;
+    for app in &mut self.tab().panes {
+      if app.landing.as_ref().is_some_and(|landing| now >= landing.until) {
+        app.landing = None;
+        changed = true;
+      }
+    }
     let reader = &mut self.app().reader;
     if !reader.message.is_empty() {
-      return false;
+      return changed;
     }
-    let Some(notice) = terminal::notice() else { return false };
+    let Some(notice) = terminal::notice() else { return changed };
     reader.message = notice;
     true
   }
@@ -1335,6 +1343,11 @@ fn idle(
   if let Some(clue) = session.app().clue_wait() {
     wait = wait.min(clue);
   }
+  for app in &session.tab().panes {
+    if let Some(landing) = &app.landing {
+      wait = wait.min(landing.until.saturating_duration_since(Instant::now()));
+    }
+  }
   if session.tab().panes.iter().any(|app| app.settling.is_some()) {
     wait = wait.min(crate::watch::SETTLE);
   }
@@ -1355,6 +1368,47 @@ mod tests {
   use super::*;
   use crate::decode::{Button, Mouse, Spot};
   use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind};
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn landing_deadlines_expire_across_panes() -> Result<()> {
+    let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+    let screen = Screen {
+      columns: 120,
+      rows: 40,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut session = Session::new("", false, None);
+    session.open(&root.join("paper.pdf"), true, screen)?;
+    session.app().request = Some(Request::Window {
+      command: Window::Split(Axis::Columns),
+      count: 1,
+      explicit: false,
+      file: None,
+    });
+    session.settle()?;
+    let now = Instant::now();
+    for app in &mut session.tab().panes {
+      app.flash_landing();
+      app.reader.message = "Occupied".into();
+      let remaining = app.landing.as_ref().unwrap().until.duration_since(now);
+      assert!(remaining >= crate::marks::Landing::DURATION);
+      assert!(remaining < Duration::from_millis(650));
+    }
+    let wait = idle(&mut session, now, now, false);
+    assert!(wait <= crate::marks::Landing::DURATION);
+    assert!(!session.notify());
+    for app in &mut session.tab().panes {
+      app.landing.as_mut().unwrap().until = now;
+    }
+    assert_eq!(idle(&mut session, now, now, false), Duration::ZERO);
+    assert!(session.notify());
+    assert!(session.tab().panes.iter().all(|app| app.landing.is_none()));
+    assert!(!session.notify());
+    Ok(())
+  }
 
   #[test]
   fn unmeasured_resize_shows_on_the_last_row() -> Result<()> {

@@ -16,6 +16,8 @@ pub const DIM: &str = "\x1b[0;2m";
 /// Muted text that keeps the status bar background.
 pub const MUTED_BAR: &str = "\x1b[0;3;100m";
 pub const ERROR: &str = "\x1b[1;31m";
+pub const LANDING: [u8; 4] = [255, 190, 30, 65];
+pub const TEXT_LANDING: &str = "\x1b[0;43m";
 pub const CURSORLINE: [u8; 4] = [70, 130, 255, 30];
 pub const TEXT_CURSORLINE: &str = "\x1b[0;100m";
 pub const TEXT_CURSOR: &str = "\x1b[0;7;34m";

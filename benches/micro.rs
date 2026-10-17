@@ -108,25 +108,38 @@ fn cursorline() -> Result<()> {
     let mut app = paper(text_mode)?;
     app.reader.cursor.line = 3;
     app.reader.visual(vpdf::reader::SelectionKind::Character);
-    let screen = app.layout.screen;
-    let mut out = Vec::new();
-    let mut draw = |out: &mut Vec<u8>| {
-      out.clear();
-      if text_mode {
-        app.text_canvas(out).expect("cached text");
-      } else {
-        app.graphics.begin(out).expect("begin marks");
-        app.marks(screen, out).expect("cached marks");
-        app.graphics.end(out).expect("end marks");
-      }
-    };
-    draw(&mut out);
-    measure(&format!("cursorline text={text_mode}"), || {
-      draw(&mut out);
-      black_box(&out);
-    })?;
+    overlay_case(&mut app, &format!("cursorline text={text_mode}"))?;
   }
   Ok(())
+}
+
+fn landing() -> Result<()> {
+  for text_mode in [false, true] {
+    let mut app = paper(text_mode)?;
+    app.go_to(vpdf::text::Position { line: 3, ..Default::default() }, true)?;
+    overlay_case(&mut app, &format!("landing text={text_mode}"))?;
+  }
+  Ok(())
+}
+
+fn overlay_case(app: &mut App, name: &str) -> Result<()> {
+  let screen = app.layout.screen;
+  let mut out = Vec::new();
+  let mut draw = |out: &mut Vec<u8>| {
+    out.clear();
+    if app.text_mode {
+      app.text_canvas(out).expect("cached text");
+    } else {
+      app.graphics.begin(out).expect("begin marks");
+      app.marks(screen, out).expect("cached marks");
+      app.graphics.end(out).expect("end marks");
+    }
+  };
+  draw(&mut out);
+  measure(name, || {
+    draw(&mut out);
+    black_box(&out);
+  })
 }
 
 /// Visible citation labels on the corpus paper.
@@ -551,6 +564,7 @@ const CASES: &[(&str, Case)] = &[
   ("clean marks", clean_marks),
   ("text_canvas", text_canvas),
   ("cursorline", cursorline),
+  ("landing", landing),
   ("draw_hints", draw_hints),
   ("route", route),
   ("hover", hover),

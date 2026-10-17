@@ -39,12 +39,7 @@ fn reader_workflows() -> Result<()> {
   })?;
   assert!(!app.text_mode && !app.quit);
   app.start_search("python", false, false)?;
-  let start = Instant::now();
-  while !matches!(app.search.phase, vpdf::find::Phase::Complete) {
-    assert!(start.elapsed() < Duration::from_secs(15));
-    app.search_updates()?;
-    std::thread::sleep(Duration::from_millis(1));
-  }
+  common::search_loaded(&mut app)?;
   assert!(!app.search.hits.is_empty());
   app.next_result(true, 2)?;
   app.open_panel(PanelKind::Results)?;
@@ -507,22 +502,13 @@ fn escape_restores_the_previous_search() -> Result<()> {
     origin: (0, 0),
   };
   let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
-  let settle = |app: &mut App| -> Result<()> {
-    let start = Instant::now();
-    while !matches!(app.search.phase, vpdf::find::Phase::Complete) {
-      assert!(start.elapsed() < Duration::from_secs(15));
-      app.search_updates()?;
-      std::thread::sleep(Duration::from_millis(1));
-    }
-    Ok(())
-  };
   app.start_search("python", false, false)?;
-  settle(&mut app)?;
+  common::search_loaded(&mut app)?;
   let hits = app.search.hits.len();
   app.begin_search(false)?;
   app.incremental("pyth")?;
   app.abort_search()?;
-  settle(&mut app)?;
+  common::search_loaded(&mut app)?;
   assert_eq!(app.search.query.text, "python");
   assert_eq!(app.search.hits.len(), hits);
   // `?<CR>` repeats the pattern backward.

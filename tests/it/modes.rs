@@ -362,12 +362,7 @@ fn prompt_cancel_and_history_restore_viewport() -> Result<()> {
     let origin = (app.reader.scroll, app.layout.pan, app.text_position(0, 0)?);
     let target = app.target;
     keys(&mut app, b"/attention")?;
-    let started = Instant::now();
-    while !matches!(app.search.phase, vpdf::find::Phase::Complete) {
-      assert!(started.elapsed() < Duration::from_secs(10));
-      app.search_updates()?;
-      std::thread::sleep(Duration::from_millis(1));
-    }
+    super::common::search_loaded(&mut app)?;
     keys(&mut app, b"\x1b[27u")?;
     app.draw(&mut Vec::new())?;
     let restored =

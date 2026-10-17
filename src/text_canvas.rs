@@ -146,11 +146,12 @@ impl App {
     for (row, line) in lines.enumerate() {
       write!(out, "{}", self.at.goto(row, self.left))?;
       let position = Position { page, line: view.top.line + row, glyph: 0 };
-      if self.on_cursorline(position) {
+      let band = self.line_style(position);
+      if band != theme::RESET {
         write!(
           out,
           "{}{}{}",
-          theme::TEXT_CURSORLINE,
+          band,
           " ".repeat(view.columns),
           self.at.goto(row, self.left)
         )?;
@@ -296,6 +297,16 @@ impl App {
       && crate::search::contains(&self.search.hits, position)
     {
       return theme::TEXT_MATCH;
+    }
+    self.line_style(position)
+  }
+
+  fn line_style(&self, position: Position) -> &'static str {
+    if self.landing.as_ref().is_some_and(|landing| {
+      position.page == landing.position.page
+        && position.line == landing.position.line
+    }) {
+      return theme::TEXT_LANDING;
     }
     if self.on_cursorline(position) {
       return theme::TEXT_CURSORLINE;

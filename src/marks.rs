@@ -4,6 +4,16 @@ use crate::panel::{Destination, Row};
 use crate::state::Mark;
 use crate::text::Position;
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
+
+pub struct Landing {
+  pub position: Position,
+  pub until: Instant,
+}
+
+impl Landing {
+  pub const DURATION: Duration = Duration::from_millis(600);
+}
 
 impl App {
   /// `m{a-z}` marks this document; `m{A-Z}` marks across documents.
@@ -40,7 +50,16 @@ impl App {
     self.reader.desired = None;
     self.target = Some(self.reader.cursor);
     self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
-    self.ensure_cursor()
+    self.ensure_cursor()?;
+    self.flash_landing();
+    Ok(())
+  }
+
+  pub(crate) fn flash_landing(&mut self) {
+    self.landing = Some(Landing {
+      position: self.reader.cursor,
+      until: Instant::now() + Landing::DURATION,
+    });
   }
 
   /// Text of the extracted line at `position`, for mark listings.

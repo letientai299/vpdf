@@ -347,6 +347,7 @@ impl App {
     self.text_top = self.clamp_text(self.text_top)?;
     self.text_drawn = None;
     self.target = None;
+    self.landing = None;
     if let Some(mut origin) = self.search_origin {
       origin.cursor = reader::clamp(origin.cursor, &mut self.doc)?;
       origin.anchor =
