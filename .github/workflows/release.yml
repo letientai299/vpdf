@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tap_snapshot:
+        description: Published snapshot to send to Homebrew
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -13,11 +19,13 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
 
   publish:
     name: Publish binaries
     needs: build
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -29,6 +37,7 @@ jobs:
       RELEASE_TAG: main
     outputs:
       tag: ${{ steps.release.outputs.tag }}
+      snapshot: ${{ steps.release.outputs.snapshot }}
     steps:
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
@@ -71,6 +80,7 @@ jobs:
               --title "$RELEASE_TAG" --notes-file notes.md --prerelease --latest=false
           fi
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "snapshot=$snapshot" >> "$GITHUB_OUTPUT"
 
   install:
     name: Mise install (${{ matrix.os }})
@@ -101,3 +111,43 @@ jobs:
           mise exec "$tool" -- vpdf --version
           mise i --force "$tool"
           mise exec "$tool" -- vpdf --version
+
+  tap:
+    name: Update Homebrew tap
+    needs: [publish, install]
+    if: >-
+      always() && !cancelled() &&
+      ((github.event_name == 'push' && needs.install.result == 'success' && needs.publish.outputs.snapshot != '') ||
+      github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: letientai299/homebrew-tap
+          ref: main
+          ssh-key: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
+      - name: Update snapshot formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SNAPSHOT: ${{ inputs.tap_snapshot || needs.publish.outputs.snapshot }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 scripts/update-vpdf.py "$SNAPSHOT"
+      - name: Publish formula
+        run: |
+          if git diff --quiet -- Formula/vpdf.rb; then
+            echo 'Tap already has this snapshot'
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add Formula/vpdf.rb
+            git commit -m 'chore: update vpdf snapshot'
+            git push origin HEAD:main
+          fi
+      - name: Retain latest snapshots
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 scripts/snapshots.py --apply
