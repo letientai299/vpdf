@@ -1,5 +1,5 @@
 [tools]
-rust = { version = "nightly-2026-10-17", components = "clippy,rustfmt" }
+rust = { version = "nightly-2026-10-17", components = "clippy,rustfmt,rust-analyzer,rust-src" }
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.148"
 prek = "0.5.5"
 rumdl = "0.2.79"
