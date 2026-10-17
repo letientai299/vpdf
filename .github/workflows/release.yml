@@ -53,6 +53,12 @@ jobs:
             echo 'Skipping superseded branch build'
             exit 0
           fi
+          snapshot="snapshot-$GITHUB_SHA"
+          printf 'Snapshot build: %s\n' "$GITHUB_SHA" > notes.md
+          if ! gh release view "$snapshot" >/dev/null 2>&1; then
+            gh release create "$snapshot" dist/* --target "$GITHUB_SHA" \
+              --title "$snapshot" --notes-file notes.md --prerelease --latest=false
+          fi
           printf 'Rolling %s build: %s\n' "$RELEASE_TAG" "$GITHUB_SHA" > notes.md
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" dist/* --clobber
