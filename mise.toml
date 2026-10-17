@@ -3,14 +3,21 @@ rust = "1.99.1"
 prek = "0.5.5"
 rumdl = "0.2.79"
 taplo = "0.10.0"
+upx = { version = "5.2.1", os = ["linux"] }
 
 [tasks.build]
 description = "Build the optimized reader"
-run = "cargo build --release --locked"
+run = "sh scripts/build.sh"
+
+[tasks.release]
+description = "Package the release executable with UPX on Linux"
+depends = ["build"]
+run = "sh scripts/release.sh"
 
 [tasks.run]
 description = "Run the reader"
-run = "cargo run --release --locked -- {{arg(name='args', var=true)}}"
+depends = ["build"]
+run = '"${CARGO_TARGET_DIR:-target}/release/vpdf" {{arg(name="args", var=true)}}'
 
 [tasks.fmt]
 description = "Format source and documentation"

@@ -38,9 +38,10 @@ todo = "deny"
 unimplemented = "deny"
 
 [profile.release]
-lto = "thin"
+lto = "fat"
 codegen-units = 1
 strip = true
+debug = false
 
 [profile.bench]
 debug = true

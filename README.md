@@ -19,6 +19,25 @@ vpdf document.pdf
 `mise run install` builds the release binary and atomically copies it to
 `~/.local/bin/vpdf`. Put that directory on `PATH`.
 
+On x86-64 Ubuntu, install the native build dependencies:
+
+```sh
+sudo apt-get install build-essential libclang-dev musl-tools
+```
+
+`mise build` writes `target/release/vpdf` with symbols and debug information
+stripped. On Ubuntu it links statically with musl and requires no shared
+libraries. On macOS it embeds MuPDF and fallback fonts, and links only to
+Apple-provided system libraries. Build separately on each platform; the
+executables use different formats. OCR and clipboard helpers remain optional
+external programs.
+
+`mise release` builds and packages `target/dist/vpdf`. On Ubuntu it compresses
+the executable with [UPX][upx], verifies the packed data, and checks that the
+result starts. It leaves the Cargo build uncompressed. On macOS it packages
+the stripped executable without compression because [UPX does not support
+modern macOS executables][upx-macos].
+
 [Kitty][kitty] displays PDF graphics. Other terminals use extracted text;
 `--text` forces text mode. With tmux, enable `allow-passthrough on`. The reader
 uses the terminal's reported cell size for pixel placement.
@@ -259,3 +278,5 @@ carry their upstream licenses in the dependency source distributions.
 [notify]: https://docs.rs/notify/8.2.0/notify/
 [fzf]: https://github.com/junegunn/fzf
 [clue]: https://github.com/nvim-mini/mini.nvim/blob/main/readmes/mini-clue.md
+[upx]: https://upx.github.io/
+[upx-macos]: https://github.com/upx/upx/discussions/931
