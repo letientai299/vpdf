@@ -217,6 +217,7 @@ impl App {
       "crop" => self.toggle_crop()?,
       "recent" => self.open_panel(PanelKind::Recent)?,
       "marks" => self.open_panel(PanelKind::Marks)?,
+      "jumps" => self.open_panel(PanelKind::Jumps)?,
       "annotations" => self.open_panel(PanelKind::Annotations)?,
       "fzf" => self.request = Some(Request::Pick),
       "nohlsearch" => self.search.hidden = true,

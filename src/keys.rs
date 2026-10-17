@@ -15,6 +15,7 @@ pub enum PanelKind {
   Info,
   Recent,
   Marks,
+  Jumps,
   Annotations,
 }
 
@@ -29,6 +30,7 @@ impl PanelKind {
       Self::Info => "INFO",
       Self::Recent => "RECENT",
       Self::Marks => "MARKS",
+      Self::Jumps => "JUMPS",
       Self::Annotations => "ANNOTATIONS",
     }
   }

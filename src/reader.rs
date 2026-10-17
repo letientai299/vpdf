@@ -103,6 +103,10 @@ impl Reader {
     self.future.clear();
   }
 
+  pub fn jumps(&self) -> impl Iterator<Item = Position> {
+    self.history.iter().chain(self.future.iter().rev()).map(|p| p.cursor)
+  }
+
   pub fn history(&mut self, forward: bool) {
     let (from, to) = if forward {
       (&mut self.future, &mut self.history)

@@ -523,6 +523,21 @@ impl App {
           Row::new(text, label(&link.target), Destination::Link(link.target))
         })
         .collect(),
+      PanelKind::Jumps => self
+        .reader
+        .jumps()
+        .map(|position| {
+          Row::new(
+            format!(
+              "Line {}, column {}",
+              position.line + 1,
+              position.glyph + 1
+            ),
+            self.doc.pages[position.page.0].label.clone(),
+            Destination::Position(position),
+          )
+        })
+        .collect(),
       PanelKind::Annotations => self.annotation_rows()?,
       PanelKind::Help => help().iter().map(|line| Row::parse(line)).collect(),
       PanelKind::Info => self.info().lines().map(Row::parse).collect(),

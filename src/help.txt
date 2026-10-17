@@ -45,6 +45,7 @@ K: preview link target; Enter follows
 gl: links on this page
 gp: page thumbnails
 gr: recent documents
+:jumps: recorded jump destinations
 ga: annotations (read-only)
 Enter: follow link or row
 o: follow, keep panel focus
