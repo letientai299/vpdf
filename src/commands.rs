@@ -126,19 +126,14 @@ impl App {
       self.hints = None;
     }
     if self.peek.is_some() {
-      let Some(input) = self.keys.feed(key, Grammar::Other) else {
+      let input = self.keys.feed(key, Grammar::Other);
+      if self.keys.awaiting() == Some("C-w") {
         self.peek = None;
-        return Ok(());
-      };
-      if input.action == Action::Command {
-        return self.action(input);
       }
-      let Some(peek) = self.peek.take() else { return Ok(()) };
-      return match input.action {
-        Action::Follow => self.follow(&peek.target),
-        Action::Quit | Action::Peek => Ok(()),
-        _ => self.action(input),
-      };
+      if let Some(input) = input {
+        return self.preview_input(input);
+      }
+      return Ok(());
     }
     let grammar = match self.input_owner() {
       InputOwner::Content
@@ -163,10 +158,21 @@ impl App {
     let owner = self.input_owner();
     let pending =
       !self.keys.pending().is_empty() || self.reader.operator.is_some();
+    if owner == InputOwner::Peek {
+      if !pending {
+        self.peek = None;
+      }
+      self.disarm();
+      return Ok(());
+    }
+    if owner == InputOwner::Prompt && self.peek.is_some() {
+      self.cancel_prompt()?;
+      self.disarm();
+      return Ok(());
+    }
     match owner {
       InputOwner::Prompt => self.cancel_prompt()?,
       InputOwner::Hints => self.hints = None,
-      InputOwner::Peek => self.peek = None,
       _ if self.overview.is_some() => self.close_overview(),
       _ => {}
     }
@@ -204,11 +210,7 @@ impl App {
       | PromptEvent::Edited
       | PromptEvent::Editor
       | PromptEvent::Complete => {}
-      PromptEvent::Cancel => {
-        self.cancel_prompt()?;
-        self.reader.cancel();
-        self.disarm();
-      }
+      PromptEvent::Cancel => self.cancel_input()?,
       PromptEvent::Submit => {
         let Some(prompt) = self.prompt.take() else { return Ok(()) };
         history.push(prompt.kind, &prompt.text);
@@ -348,6 +350,7 @@ impl App {
     self.text_drawn = None;
     self.target = None;
     self.landing = None;
+    self.peek = None;
     if let Some(mut origin) = self.search_origin {
       origin.cursor = reader::clamp(origin.cursor, &mut self.doc)?;
       origin.anchor =

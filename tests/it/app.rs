@@ -351,7 +351,7 @@ fn preview_shows_citation_target() -> Result<()> {
     app.draw(&mut out)?;
     let drawn = String::from_utf8_lossy(&out);
     assert_eq!(drawn.contains("z=2"), !text_mode);
-    assert_eq!(drawn.contains('╭'), text_mode);
+    assert!(drawn.contains('╭'));
     assert_eq!(app.reader.cursor.page, PageId(1), "preview does not move");
     // A focused panel shows that closing keys cancel nothing else.
     app.open_panel(PanelKind::Outline)?;

@@ -62,6 +62,9 @@ go: table of contents
 gs: search results
 f: link hints; F copies URLs
 K / Enter: preview / follow visible explicit target
+Preview j k / Ctrl-d Ctrl-u: rows / half height
+Preview border: destination page; arrows mark clipped edges
+Preview Enter: follow original target; Esc: cancel layer
 gl: links on this page
 gp: page thumbnails
 gr: recent documents

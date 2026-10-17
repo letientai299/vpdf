@@ -66,6 +66,11 @@ committed searches, panel position, and local focus; incomplete input clears.
 Hover and wheel preserve keyboard focus. Clicking outside a prompt or preview
 dismisses it; the next click activates the underlying surface.
 
+`K` owns its preview: `j`/`k` scroll rows, Ctrl-d/Ctrl-u scroll half its
+height, and Enter follows the original destination. Counts apply to scrolling.
+The border shows the destination page label and arrows at clipped edges.
+Command prompts return to the preview; Esc clears pending input first.
+
 ## Documentation
 
 Start at the [docs index][docs] for installation, project principles,

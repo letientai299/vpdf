@@ -12,6 +12,7 @@ mod navigation;
 mod objects;
 mod outline;
 mod paragraphs;
+mod preview;
 mod rendering;
 mod sections;
 mod session;

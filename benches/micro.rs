@@ -431,6 +431,68 @@ fn cursor_key() -> Result<()> {
   })
 }
 
+fn preview_idle() -> Result<()> {
+  let mut app = paper(false)?;
+  measure("App::draw_preview absent", || {
+    black_box(&mut app).draw_preview(&mut io::sink()).expect("no preview");
+  })
+}
+
+fn preview_scene(text: bool) -> Result<App> {
+  use vpdf::document::Target;
+  let mut app = paper(text)?;
+  let link = app
+    .doc
+    .links(PageId(1))?
+    .into_iter()
+    .find(|link| !matches!(link.target, Target::Uri(_)))
+    .expect("citation");
+  let position = app.doc.text(PageId(1))?.nearest(
+    PageId(1),
+    f32::midpoint(link.bounds.x0, link.bounds.x1),
+    f32::midpoint(link.bounds.y0, link.bounds.y1),
+  );
+  app.go_to(position, true)?;
+  app.preview_link()?;
+  Ok(app)
+}
+
+fn preview_draw() -> Result<()> {
+  for text in [false, true] {
+    let mut app = preview_scene(text)?;
+    let mut out = Vec::new();
+    app.draw_preview(&mut out)?;
+    app.graphics.end(&mut out)?;
+    measure(&format!("preview draw text={text}"), || {
+      out.clear();
+      app.graphics.begin(&mut out).expect("begin preview");
+      black_box(&mut app).draw_preview(&mut out).expect("warm preview");
+      app.graphics.end(&mut out).expect("end preview");
+      black_box(&out);
+    })?;
+  }
+  Ok(())
+}
+
+fn preview_live() -> Result<()> {
+  preview_draw()?;
+  for text in [false, true] {
+    let mut app = preview_scene(text)?;
+    let mut history = vpdf::prompt::History::default();
+    let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
+    measure(&format!("preview prefix text={text}"), || {
+      app.keys.clear();
+      app.key(black_box(key), &mut history).expect("preview prefix");
+    })?;
+    app.keys.clear();
+    measure(&format!("preview scroll text={text}"), || {
+      black_box(&mut app).scroll_preview(black_box(1.0)).expect("preview down");
+      black_box(&mut app).scroll_preview(black_box(-1.0)).expect("preview up");
+    })?;
+  }
+  Ok(())
+}
+
 fn routing_pointer() -> Result<()> {
   use crossterm::event::{MouseEvent, MouseEventKind};
   let app = paper(false)?;
@@ -584,6 +646,9 @@ const CASES: &[(&str, Case)] = &[
   ("transitions", transitions),
   ("routing key", routing_key),
   ("cursor key", cursor_key),
+  ("preview absent", preview_idle),
+  ("preview live", preview_live),
+  ("preview draw", preview_draw),
   ("routing pointer", routing_pointer),
   ("routing status", routing_status),
   ("routing panel", routing_panel),
