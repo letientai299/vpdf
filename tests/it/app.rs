@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::path::PathBuf;

@@ -62,7 +62,7 @@ run = "cargo nextest run --locked --run-ignored only -E 'not test(real_ocr_and_c
 
 [tasks."test:ocr"]
 depends = ["corpus"]
-run = "cargo nextest run --locked --run-ignored only --test workers real_ocr_and_cancel"
+run = "cargo nextest run --locked --run-ignored only --test it real_ocr_and_cancel"
 
 [tasks.bench]
 description = "Measure real-PDF warm frames and search"

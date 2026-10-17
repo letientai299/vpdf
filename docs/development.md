@@ -127,7 +127,7 @@ a result needs a reproducible release reference.
 [hooks]: ../prek.toml
 [rumdl]: ../rumdl.toml
 [corpus]: ../scripts/corpus.sh
-[corpus-tests]: ../tests/corpus.rs
+[corpus-tests]: ../tests/it/corpus.rs
 [reader-bench]: ../benches/reader.rs
 [latency]: ../benches/latency.rs
 [stages]: ../benches/stages.rs
