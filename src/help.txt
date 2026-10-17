@@ -55,6 +55,7 @@ gv: reselect
 <Esc> / yank: return to V entry mode
 C <Esc>: return to N when idle
 y yy yw ye y$: yank
+yp: yank full file path
 "" "+ "*: system clipboard
 "a "A: named register / append
 Click / drag: set N target / select

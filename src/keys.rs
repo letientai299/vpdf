@@ -46,6 +46,8 @@ pub enum Action {
   Region,
   Yank,
   YankLine,
+  /// `yp`: the document's full path.
+  YankPath,
   Object(crate::objects::Object, bool),
   Visual(SelectionKind),
   Cursor,
@@ -95,6 +97,8 @@ pub struct Input {
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Grammar {
   Normal,
+  /// Cursor mode in the content, without an operator.
+  Cursor,
   Objects,
   Other,
 }
@@ -129,6 +133,12 @@ impl Keys {
       self.clear();
       return None;
     };
+    if self.prefix == "y" {
+      self.prefix.clear();
+      if token == "p" {
+        return Some(self.finish(Action::YankPath));
+      }
+    }
     if token == "\"" && self.prefix.is_empty() {
       self.choosing_register = true;
       return None;
@@ -163,7 +173,16 @@ impl Keys {
     }
     self.prefix.push_str(&token);
     if let Some(action) = binding(&self.prefix) {
-      return Some(self.finish(action));
+      let register = self.register;
+      let input = self.finish(action);
+      // `y` starts its operator now and still takes `p`.
+      if action == Action::Yank
+        && matches!(grammar, Grammar::Normal | Grammar::Cursor)
+      {
+        self.prefix.push('y');
+        self.register = register;
+      }
+      return Some(input);
     }
     if !matches!(
       self.prefix.as_str(),
@@ -314,6 +333,7 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("BS", Action::Motion(M::PreviousPage), "previous page"),
   ("y", Action::Yank, "yank"),
   ("Y", Action::YankLine, "yank line"),
+  ("yp", Action::YankPath, "yank file path"),
   ("iw", Action::Object(O::Word, false), "inner word"),
   ("iW", Action::Object(O::BigWord, false), "inner WORD"),
   ("is", Action::Object(O::Sentence, false), "inner sentence"),
@@ -627,6 +647,29 @@ mod tests {
   }
 
   #[test]
+  fn yank_still_takes_p() {
+    let yank = |register| Some((Action::Yank, register));
+    let path = |register| Some((Action::YankPath, register));
+    let cases = [
+      (Grammar::Normal, "yp", vec![yank('"'), path('"')]),
+      (Grammar::Cursor, "yp", vec![yank('"'), path('"')]),
+      (Grammar::Normal, "\"ayp", vec![None, None, yank('a'), path('a')]),
+      (Grammar::Normal, "yy", vec![yank('"'), yank('"')]),
+      (Grammar::Objects, "yp", vec![yank('"'), None]),
+      (Grammar::Other, "yp", vec![yank('"'), None]),
+    ];
+    for (grammar, typed, want) in cases {
+      let mut keys = Keys::default();
+      let got: Vec<_> = typed
+        .chars()
+        .map(|ch| keys.feed(key(ch), grammar))
+        .map(|input| input.map(|i| (i.action, i.register)))
+        .collect();
+      assert_eq!(got, want, "{typed}");
+    }
+  }
+
+  #[test]
   fn objects_accept_quotes_counts_and_aliases() {
     for (name, kind) in [
       ("w", O::Word),
@@ -665,7 +708,9 @@ mod tests {
 
   #[test]
   fn cursor_and_object_grammar() {
-    for grammar in [Grammar::Normal, Grammar::Objects, Grammar::Other] {
+    let grammars =
+      [Grammar::Normal, Grammar::Cursor, Grammar::Objects, Grammar::Other];
+    for grammar in grammars {
       let mut keys = Keys::default();
       let input = keys.feed(key('i'), grammar);
       match grammar {
@@ -681,7 +726,7 @@ mod tests {
             Action::Object(O::Word, false)
           );
         }
-        Grammar::Other => {
+        Grammar::Cursor | Grammar::Other => {
           assert!(input.is_none());
           assert!(keys.awaiting().is_none());
         }

@@ -55,6 +55,9 @@ impl App {
     if input.action == Action::Cancel {
       return self.cancel_input();
     }
+    if input.action == Action::YankPath {
+      return self.yank_path(input.register);
+    }
     if !self.panel_focused()
       && self.overview.is_some()
       && !matches!(input.action, Action::Panel(_) | Action::ClosePanel)
@@ -157,6 +160,7 @@ impl App {
       InputOwner::Content if self.reader.mode() == Mode::Normal => {
         Grammar::Normal
       }
+      InputOwner::Content => Grammar::Cursor,
       _ => Grammar::Other,
     };
     if let Some(input) = self.keys.feed(key, grammar) {
@@ -334,6 +338,14 @@ impl App {
       "tabclose" => self.request = Some(Request::TabClose),
       name => anyhow::bail!("Unhandled command: {name}"),
     }
+    Ok(())
+  }
+
+  fn yank_path(&mut self, register: char) -> Result<()> {
+    let register =
+      self.reader.operator.take().map_or(register, |op| op.register);
+    self.reader.store(register, self.path.display().to_string())?;
+    self.reader.message = "Yanked file path".into();
     Ok(())
   }
 

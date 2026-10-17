@@ -267,6 +267,23 @@ fn recent_pick_opens_in_covered_pane() -> Result<()> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
+fn yp_yanks_file_path() -> Result<()> {
+  // Scanned pages have no text for `y` to start from.
+  for name in ["paper.pdf", "ocr.pdf"] {
+    let path = std::fs::canonicalize(file(name)?)?;
+    let mut session = Session::new(None);
+    session.open(&path, true, screen())?;
+    send(&mut session, b"\"ayp")?;
+    let reader = &mut session.app().reader;
+    let yanked = reader.registers.get(&'a').map(ToString::to_string);
+    assert_eq!(yanked.as_deref(), path.to_str(), "{name}");
+    assert!(reader.operator.is_none() && reader.viewport_mode(), "{name}");
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
 fn failed_activation_preserves_view() -> Result<()> {
   let mut session = Session::new(None);
   session.open(&file("paper.pdf")?, true, screen())?;
