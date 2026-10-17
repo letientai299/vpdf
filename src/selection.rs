@@ -106,6 +106,34 @@ impl Reader {
     Ok(())
   }
 
+  /// First-page selection text, joined like search.
+  pub(crate) fn search_text(
+    &self,
+    source: &mut impl TextSource,
+  ) -> Result<Option<String>> {
+    let Some(selection) = self.selection else { return Ok(None) };
+    let (first, mut last) = range(selection.anchor, self.cursor);
+    if last.page != first.page {
+      last = source.page_text(first.page)?.clamp(Position {
+        line: usize::MAX,
+        glyph: usize::MAX,
+        ..first
+      });
+    }
+    let linewise = selection.kind == SelectionKind::Line;
+    let mut text = String::new();
+    for (_, line) in covered_lines((first, last), linewise, source)? {
+      text.push_str(&line);
+      if crate::search::hyphenated(&text) {
+        text.pop();
+      } else {
+        text.push(' ');
+      }
+    }
+    let words: Vec<_> = text.split_whitespace().collect();
+    Ok((!words.is_empty()).then(|| words.join(" ")))
+  }
+
   /// Saves yanked text to `register` and queues clipboard delivery.
   pub fn store(&mut self, register: char, text: String) -> Result<()> {
     self.save_register(register, &text)?;

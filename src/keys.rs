@@ -471,6 +471,11 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("C-wT", Action::Window(W::ToTab), "move pane to a new tab"),
 ];
 
+/// The first key bound to `action`.
+pub fn key_for(action: Action) -> Option<&'static str> {
+  BINDINGS.iter().find(|(_, bound, _)| *bound == action).map(|(keys, ..)| *keys)
+}
+
 pub fn binding(key: &str) -> Option<Action> {
   BINDINGS.iter().find(|(keys, ..)| *keys == key).map(|(_, action, _)| *action)
 }

@@ -41,6 +41,28 @@ pub fn limit(screen: Screen) -> usize {
   usize::from(screen.rows / 3).max(1)
 }
 
+/// Paints a label; its keys lead.
+pub fn cell(
+  out: &mut impl Write,
+  label: &str,
+  width: usize,
+  keys: usize,
+  selected: bool,
+) -> Result<()> {
+  let text = terminal::clean(label, width.saturating_sub(2));
+  let pad = " ".repeat(width.saturating_sub(1 + text.width()));
+  if selected {
+    let badge = theme::badge(Color::Blue);
+    write!(out, "{badge} {text}{pad}{}", theme::BAR)?;
+  } else if keys > 0 && text.len() >= keys && text.is_char_boundary(keys) {
+    let (key, rest) = text.split_at(keys);
+    write!(out, " {}{key}{}{rest}{pad}", theme::KEY, theme::BAR)?;
+  } else {
+    write!(out, " {text}{pad}")?;
+  }
+  Ok(())
+}
+
 /// Draws `labels` placed by `grid`, ending at row `bottom`; the first
 /// `keys` columns of each label are highlighted as keys.
 pub fn draw(
@@ -61,17 +83,7 @@ pub fn draw(
     for column in 0..grid.columns {
       let index = column * grid.rows + row;
       let Some(label) = labels.get(index) else { break };
-      let text = terminal::clean(label, grid.width - 2);
-      let pad = " ".repeat(grid.width.saturating_sub(1 + text.width()));
-      if selected == Some(index) {
-        let badge = theme::badge(Color::Blue);
-        write!(out, "{badge} {text}{pad}{}", theme::BAR)?;
-      } else if keys > 0 && text.len() >= keys && text.is_char_boundary(keys) {
-        let (key, rest) = text.split_at(keys);
-        write!(out, " {}{key}{}{rest}{pad}", theme::KEY, theme::BAR)?;
-      } else {
-        write!(out, " {text}{pad}")?;
-      }
+      cell(out, label, grid.width, keys, selected == Some(index))?;
       used += grid.width;
     }
     let fill = " ".repeat(columns.saturating_sub(used));

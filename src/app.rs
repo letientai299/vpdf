@@ -83,6 +83,7 @@ pub enum TabMove {
 pub enum InputOwner {
   Prompt,
   Hints,
+  Context,
   Peek,
   Region,
   Panel,
@@ -145,6 +146,8 @@ pub struct App {
   pub awaiting: Option<Instant>,
   /// Link destination shown by `K`.
   pub peek: Option<crate::preview::Preview>,
+  /// The right-click menu.
+  pub context_menu: Option<crate::context::ContextMenu>,
   /// The link the pointer rests on.
   pub hover_link: Option<crate::links::HoverLink>,
   pub(crate) link_press: crate::links::LinkPress,
@@ -237,6 +240,7 @@ impl App {
       clues: None,
       awaiting: None,
       peek: None,
+      context_menu: None,
       hover_link: None,
       link_press: crate::links::LinkPress::Idle,
       stretch: None,

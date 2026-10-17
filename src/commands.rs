@@ -136,21 +136,21 @@ impl App {
       }
       self.hints = None;
     }
-    if self.peek.is_some()
-      || self.region.as_ref().is_some_and(crate::region::Region::is_bar)
-    {
+    let owner = self.input_owner();
+    if matches!(
+      owner,
+      InputOwner::Context | InputOwner::Peek | InputOwner::Region
+    ) {
       let input = self.keys.feed(key, Grammar::Other);
       if self.keys.awaiting() == Some("C-w") {
         self.dismiss_overlay();
       }
-      if let Some(input) = input {
-        return if self.peek.is_some() {
-          self.preview_input(input)
-        } else {
-          self.action(input)
-        };
-      }
-      return Ok(());
+      let Some(input) = input else { return Ok(()) };
+      return match owner {
+        InputOwner::Context => self.context_input(input),
+        InputOwner::Peek => self.preview_input(input),
+        _ => self.action(input),
+      };
     }
     let grammar = match self.input_owner() {
       InputOwner::Content
@@ -176,7 +176,10 @@ impl App {
     let owner = self.input_owner();
     let pending =
       !self.keys.pending().is_empty() || self.reader.operator.is_some();
-    if matches!(owner, InputOwner::Peek | InputOwner::Region) {
+    if matches!(
+      owner,
+      InputOwner::Peek | InputOwner::Region | InputOwner::Context
+    ) {
       if !pending {
         self.dismiss_overlay();
       }

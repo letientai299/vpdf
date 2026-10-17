@@ -74,6 +74,8 @@ Drag after double / triple click: extend by word / line
 Drag past top / bottom edge: scroll; farther is faster
 <M-click>: extend selection or start V at entry point
 Drag / click runs: enter V; <Esc> returns to entry mode
+Right click: menu for link, selection, text, figure
+Menu j k <CR> / click: choose and run; <Esc> closes
 
 # Text objects
 V / y + i/a: inner / around objects

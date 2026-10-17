@@ -14,6 +14,7 @@ mod clipboard;
 mod clues;
 pub mod cmdline;
 mod commands;
+pub mod context;
 pub mod crop;
 pub mod decode;
 mod diacritics;

@@ -8,6 +8,41 @@ use crate::text::{Bounds, Line, PageId, Position};
 use crate::tiles::{self, TileKey};
 use std::io::Write;
 
+/// Parts of `rect` outside `hole`.
+fn around(rect: Bounds, hole: Bounds) -> impl Iterator<Item = Bounds> {
+  let (top, bottom) = (hole.y0.max(rect.y0), hole.y1.min(rect.y1));
+  [
+    Bounds { y1: hole.y0.min(rect.y1), ..rect },
+    Bounds { y0: hole.y1.max(rect.y0), ..rect },
+    Bounds { y0: top, y1: bottom, x1: hole.x0.min(rect.x1), ..rect },
+    Bounds { y0: top, y1: bottom, x0: hole.x1.max(rect.x0), ..rect },
+  ]
+  .into_iter()
+  .filter(|part| part.x1 > part.x0 && part.y1 > part.y0)
+}
+
+/// Each line's bounds `range` covers on `page`.
+pub(crate) fn covered_rows(
+  text: &crate::text::Text,
+  page: PageId,
+  range: (Position, Position),
+  linewise: bool,
+) -> impl Iterator<Item = Bounds> + '_ {
+  let (first, last) = range;
+  let skip = if page == first.page { first.line } else { 0 };
+  let rows = text.lines.iter().enumerate().skip(skip);
+  let rows =
+    rows.take_while(move |(line, _)| page != last.page || *line <= last.line);
+  rows.filter_map(move |(line, row)| {
+    let glyphs = row.glyphs.iter().enumerate();
+    let covered = glyphs.filter(move |(glyph, _)| {
+      let at = Position { page, line, glyph: *glyph };
+      crate::motion::covers(range, linewise, at)
+    });
+    covered.map(|(_, ch)| ch.bounds).reduce(Bounds::union)
+  })
+}
+
 impl App {
   /// Keeps finished tiles; returns whether a wanted one arrived, since
   /// prefetched tiles need no frame.
@@ -102,6 +137,7 @@ impl App {
       && !self.text_mode
       && self.hints.is_none()
       && self.peek.is_none()
+      && self.context_menu.is_none()
       && self.region.is_none()
       && self.panel.is_none()
       && self.clues.is_none()
@@ -128,8 +164,7 @@ impl App {
     if let Some(link) = &self.hover_link {
       let rect =
         self.layout.project(link.page, link.bounds, self.reader.scroll);
-      let color = crate::theme::LINK;
-      self.graphics.highlight(rect, color, screen, self.left, out)?;
+      self.tint(rect, crate::theme::LINK, screen, out)?;
     }
     if !self.search.hidden {
       let visible = self.layout.visible(self.reader.scroll);
@@ -164,15 +199,31 @@ impl App {
         self.layout.project(cursor.page, glyph.bounds, self.reader.scroll);
       // Translucent block keeps the glyph readable.
       rect.x1 = rect.x1.max(rect.x0 + 2.0);
-      self.graphics.highlight(
-        rect,
-        [25, 100, 255, 120],
-        screen,
-        self.left,
-        out,
-      )?;
+      self.tint(rect, [25, 100, 255, 120], screen, out)?;
     }
     Ok(())
+  }
+
+  /// Tints `rect` around the context menu.
+  fn tint(
+    &mut self,
+    rect: Bounds,
+    color: [u8; 4],
+    screen: Screen,
+    out: &mut impl Write,
+  ) -> Result<()> {
+    for piece in self.beside_menu(rect) {
+      self.graphics.highlight(piece, color, screen, self.left, out)?;
+    }
+    Ok(())
+  }
+
+  /// `rect` minus the context menu.
+  fn beside_menu(&self, rect: Bounds) -> impl Iterator<Item = Bounds> + use<> {
+    let hole = self.context_rect();
+    let whole = hole.is_none().then_some(rect);
+    let parts = hole.into_iter().flat_map(move |hole| around(rect, hole));
+    whole.into_iter().chain(parts)
   }
 
   fn line_band(
@@ -196,7 +247,9 @@ impl App {
     };
     if band.height() > 0.0 {
       let rect = self.layout.project(position.page, band, self.reader.scroll);
-      self.graphics.backdrop(rect, color, screen, self.left, out)?;
+      for piece in self.beside_menu(rect) {
+        self.graphics.backdrop(piece, color, screen, self.left, out)?;
+      }
     }
     Ok(())
   }
@@ -235,30 +288,10 @@ impl App {
         continue;
       }
       let text = self.doc.text(PageId(page))?;
-      let skip = if page == first.page.0 { first.line } else { 0 };
-      for (line, row) in text.lines.iter().enumerate().skip(skip) {
-        if page == last.page.0 && line > last.line {
-          break;
-        }
-        let covered = |glyph| {
-          crate::motion::covers(
-            range,
-            linewise,
-            Position { page: PageId(page), line, glyph },
-          )
-        };
-        let bounds = row
-          .glyphs
-          .iter()
-          .enumerate()
-          .filter(|(glyph, _)| covered(*glyph))
-          .map(|(_, ch)| ch.bounds)
-          .reduce(Bounds::union);
-        if let Some(bounds) = bounds {
-          let rect =
-            self.layout.project(PageId(page), bounds, self.reader.scroll);
-          self.graphics.highlight(rect, color, screen, self.left, out)?;
-        }
+      for bounds in covered_rows(&text, PageId(page), range, linewise) {
+        let rect =
+          self.layout.project(PageId(page), bounds, self.reader.scroll);
+        self.tint(rect, color, screen, out)?;
       }
     }
     Ok(())
@@ -314,6 +347,7 @@ impl App {
     self.draw_hints(out)?;
     self.draw_preview(out)?;
     self.draw_region(out)?;
+    self.draw_context(out)?;
     self.track_outline();
     if let Some(panel) = &mut self.panel {
       panel.draw(out, self.at, self.left, self.screen, None)?;
@@ -337,5 +371,38 @@ impl App {
     self.status_line(out, row, detail.as_deref())?;
     write!(out, "\x1b[?25l")?;
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn tints_skip_the_menu() {
+    let rect = Bounds { x0: 0.0, y0: 0.0, x1: 10.0, y1: 10.0 };
+    let b = |x0, y0, x1, y1| Bounds { x0, y0, x1, y1 };
+    // (hole) -> parts
+    let cases = [
+      (b(20.0, 20.0, 30.0, 30.0), vec![rect]),
+      (b(-5.0, -5.0, 15.0, 15.0), vec![]),
+      (
+        b(2.0, 2.0, 8.0, 8.0),
+        vec![
+          b(0.0, 0.0, 10.0, 2.0),
+          b(0.0, 8.0, 10.0, 10.0),
+          b(0.0, 2.0, 2.0, 8.0),
+          b(8.0, 2.0, 10.0, 8.0),
+        ],
+      ),
+      (b(5.0, -5.0, 15.0, 15.0), vec![b(0.0, 0.0, 5.0, 10.0)]),
+    ];
+    for (hole, want) in cases {
+      let got: Vec<_> = around(rect, hole).collect();
+      let key = |b: &Bounds| (b.x0, b.y0, b.x1, b.y1);
+      let got: Vec<_> = got.iter().map(key).collect();
+      let want: Vec<_> = want.iter().map(key).collect();
+      assert_eq!(got, want, "{hole:?}");
+    }
   }
 }

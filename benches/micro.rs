@@ -167,6 +167,31 @@ fn link_hover() -> Result<()> {
   Ok(())
 }
 
+/// An open context menu each frame.
+fn context_draw() -> Result<()> {
+  use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+  let mut session = vpdf::session::Session::new(None);
+  session.open(&corpus("paper.pdf")?, true, PANE)?;
+  session.app().command("2")?;
+  let right = |kind| MouseEvent {
+    kind,
+    column: 40,
+    row: 20,
+    modifiers: KeyModifiers::NONE,
+  };
+  session.mouse(right(MouseEventKind::Down(MouseButton::Right)))?;
+  let app = session.app();
+  anyhow::ensure!(app.context_menu.is_some(), "an open menu");
+  let mut out = Vec::new();
+  measure("App::draw_context", || {
+    out.clear();
+    app.graphics.begin(&mut out).expect("begin menu frame");
+    app.draw_context(&mut out).expect("menu rows");
+    app.graphics.end(&mut out).expect("menu placements");
+    black_box(&out);
+  })
+}
+
 /// Visible citation labels on the corpus paper.
 fn draw_hints() -> Result<()> {
   let mut app = paper(false)?;
@@ -837,6 +862,7 @@ const CASES: &[(&str, Case)] = &[
   ("menu_rows", menu_rows),
   ("link hover", link_hover),
   ("drag", drag),
+  ("context draw", context_draw),
   ("frame", frame),
   ("viewport", viewport),
   ("transitions", transitions),

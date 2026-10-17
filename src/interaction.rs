@@ -48,6 +48,8 @@ impl App {
       InputOwner::Hints
     } else if self.region.as_ref().is_some_and(crate::region::Region::is_bar) {
       InputOwner::Region
+    } else if self.context_menu.is_some() {
+      InputOwner::Context
     } else if self.peek.is_some() {
       InputOwner::Peek
     } else if self.panel_focused() {
@@ -60,6 +62,7 @@ impl App {
   }
 
   pub(crate) fn dismiss_overlay(&mut self) {
+    self.context_menu = None;
     self.peek = None;
     self.region = None;
   }
@@ -88,7 +91,7 @@ impl App {
       }
       InputOwner::Hints => self.hints = None,
       InputOwner::Peek => self.dismiss_overlay(),
-      InputOwner::Region => {
+      InputOwner::Region | InputOwner::Context => {
         self.dismiss_overlay();
         self.disarm();
         return Ok(true);
@@ -586,6 +589,7 @@ impl App {
       return Ok(());
     }
     if self.prompt.is_some()
+      || self.context_menu.is_some()
       || self.region.as_ref().is_some_and(crate::region::Region::is_bar)
     {
       return Ok(());
@@ -619,6 +623,10 @@ impl App {
       MouseEventKind::Down(MouseButton::Left)
       | MouseEventKind::Drag(MouseButton::Left)
       | MouseEventKind::Up(MouseButton::Left) => self.page_left(route),
+      MouseEventKind::Down(MouseButton::Right) => {
+        self.page_context(route);
+        Ok(())
+      }
       _ => Ok(()),
     }
   }
@@ -743,7 +751,10 @@ impl App {
   }
 
   /// Shown glyph nearest a press.
-  fn press_position(&mut self, route: &Route) -> Result<Option<Position>> {
+  pub(crate) fn press_position(
+    &mut self,
+    route: &Route,
+  ) -> Result<Option<Position>> {
     let mouse = route.mouse;
     if self.text_mode {
       return self.text_position(mouse.column, mouse.row).map(Some);
@@ -754,7 +765,7 @@ impl App {
   }
 
   /// Link at a pressed, shown cell.
-  fn link_pressed(
+  pub(crate) fn link_pressed(
     &mut self,
     column: u16,
     row: u16,

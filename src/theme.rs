@@ -33,6 +33,9 @@ pub const TEXT_CURSORLINE: &str = "\x1b[0;100m";
 pub const TEXT_CURSOR: &str = "\x1b[0;7;34m";
 pub const TEXT_SELECTION: &str = "\x1b[0;7;35m";
 pub const TEXT_MATCH: &str = "\x1b[0;7;33m";
+/// Page-view fills under badge and bar cells.
+pub const BADGE_FILL: [u8; 4] = [60, 120, 230, 255];
+pub const BAR_FILL: [u8; 4] = [70, 70, 70, 255];
 /// The hovered link's tint.
 pub const LINK: [u8; 4] = [40, 180, 220, 70];
 /// The hovered link in text mode.

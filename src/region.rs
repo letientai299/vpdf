@@ -428,7 +428,7 @@ impl App {
       };
       self.graphics.backdrop(
         backdrop,
-        [60, 120, 230, 255],
+        theme::BADGE_FILL,
         screen,
         self.left,
         out,

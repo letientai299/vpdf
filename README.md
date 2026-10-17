@@ -100,6 +100,11 @@ the farther the pointer goes; above the window it scrolls one row per move.
 Alt-click moves the selection's free end, or starts Visual from the same entry
 point as `v`. Pointer selections return to their entry mode on Esc.
 
+A right click opens a menu at the pointer with actions for the link, selection,
+text, or figure under it, plus history, fit, outline, and overview. Each item
+shows its key; `j`/`k` and Enter or a click run one, and Esc or a click outside
+closes it.
+
 `K` owns its preview: `j`/`k` scroll rows, Ctrl-d/Ctrl-u scroll half its
 height, and Enter follows the original destination. Counts apply to scrolling.
 The border shows the destination page label and arrows at clipped edges.

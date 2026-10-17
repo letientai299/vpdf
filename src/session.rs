@@ -374,6 +374,7 @@ impl Session {
         // Hint labels and link previews sit at the old size.
         app.hints = None;
         app.peek = None;
+        app.context_menu = None;
         app.screen = pane;
         app.at = at;
         app.requested.clear();
@@ -856,6 +857,10 @@ impl Session {
     if matches!(mouse.kind, MouseEventKind::Down(_)) {
       if self.on_completion(mouse) {
         return Ok(false);
+      }
+      if self.app().context_press(mouse)? {
+        self.pointer.release();
+        return Ok(true);
       }
       if self.app().dismiss_click()? {
         self.pointer.release();

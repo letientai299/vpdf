@@ -620,3 +620,230 @@ fn text_edge_drags_track_the_pointer() -> Result<()> {
   assert_eq!(app.reader.cursor.line, under.line);
   Ok(())
 }
+
+fn right(session: &mut Session, at: (u16, u16)) -> Result<()> {
+  mouse(session, MouseEventKind::Down(MouseButton::Right), at)?;
+  mouse(session, MouseEventKind::Up(MouseButton::Right), at)?;
+  Ok(())
+}
+
+fn labels(session: &mut Session) -> Vec<&'static str> {
+  let menu = session.app().context_menu.as_ref();
+  menu.map_or_default(|menu| menu.items.iter().map(|item| item.label).collect())
+}
+
+fn press(session: &mut Session, code: crossterm::event::KeyCode) -> Result<()> {
+  let key = crossterm::event::KeyEvent::new(code, KeyModifiers::NONE);
+  session.app().key(key, &mut vpdf::prompt::History::default())
+}
+
+const ANYWHERE: [&str; 6] =
+  ["Back", "Forward", "Fit width", "Fit page", "Outline", "Overview"];
+
+#[test]
+fn right_clicks_open_menus_by_context() -> Result<()> {
+  for text_mode in [false, true] {
+    let (_directory, mut session) = session(text_mode)?;
+    let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
+    let web = cell(&mut session, Hit::Link(PageId(0), 1))?;
+    let plain = cell(&mut session, Hit::Text)?;
+    let link = ["Follow", "Preview"];
+    let address = ["Follow", "Copy address"];
+    // (cell) -> items before the common ones
+    let cases: [(_, &[&str]); 3] = [
+      (internal, &link),
+      (web, &address),
+      (plain, &["Select word", "Select line", "Search word"]),
+    ];
+    let text = ["Select word", "Select line", "Search word"];
+    for (at, want) in cases {
+      right(&mut session, at)?;
+      let got = labels(&mut session);
+      // Text items may follow link items.
+      let middle = &got[want.len()..got.len() - ANYWHERE.len()];
+      assert!(got.starts_with(want), "text={text_mode} {got:?}");
+      assert!(middle.is_empty() || middle == text, "{got:?}");
+      assert!(got.ends_with(&ANYWHERE), "{got:?}");
+      assert!(status(&mut session)?.contains("MENU"));
+      // A press outside only closes it.
+      let cursor = session.app().reader.cursor;
+      let screen = session.app().screen;
+      click(&mut session, (screen.columns - 1, screen.rows - 2))?;
+      assert!(session.app().context_menu.is_none());
+      assert_eq!(session.app().reader.cursor, cursor, "text={text_mode}");
+    }
+    // A selection offers copying and search.
+    click(&mut session, plain)?;
+    for _ in 0..2 {
+      click(&mut session, plain)?;
+    }
+    right(&mut session, plain)?;
+    let want = ["Copy", "Copy as image", "Search for selection"];
+    let want: Vec<_> = want.iter().chain(&ANYWHERE).copied().collect();
+    assert_eq!(labels(&mut session), want, "text={text_mode}");
+    // Closing keeps the selection.
+    let screen = session.app().screen;
+    click(&mut session, (screen.columns - 1, screen.rows - 2))?;
+    assert!(session.app().reader.selection.is_some(), "text={text_mode}");
+    right(&mut session, plain)?;
+    press(&mut session, crossterm::event::KeyCode::Char('j'))?;
+    press(&mut session, crossterm::event::KeyCode::Char('j'))?;
+    press(&mut session, crossterm::event::KeyCode::Enter)?;
+    let app = session.app();
+    assert!(app.context_menu.is_none() && app.reader.selection.is_none());
+    assert_eq!(app.search.query.text, "Plain words here", "text={text_mode}");
+  }
+  Ok(())
+}
+
+#[test]
+fn menu_items_run_by_key_and_click() -> Result<()> {
+  use crossterm::event::KeyCode;
+  let (_directory, mut session) = session(false)?;
+  let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
+  let web = cell(&mut session, Hit::Link(PageId(0), 1))?;
+  let plain = cell(&mut session, Hit::Text)?;
+  // Enter runs the first item: follow.
+  right(&mut session, internal)?;
+  press(&mut session, KeyCode::Enter)?;
+  assert_eq!(session.app().reader.cursor.page, PageId(1));
+  // A click on "Back" goes back.
+  right(&mut session, plain)?;
+  let at =
+    session.app().context_menu.as_ref().map(|menu| menu.at).expect("a menu");
+  let back = labels(&mut session).iter().position(|label| *label == "Back");
+  let row = at.1 + u16::try_from(back.expect("Back"))?;
+  click(&mut session, (at.0 + 1, row))?;
+  assert!(session.app().context_menu.is_none());
+  assert_eq!(session.app().reader.cursor.page, PageId(0));
+  // Copy address fills the register.
+  right(&mut session, web)?;
+  press(&mut session, KeyCode::Char('j'))?;
+  press(&mut session, KeyCode::Enter)?;
+  let register =
+    session.app().reader.registers.get(&'"').map(ToString::to_string);
+  assert_eq!(register.as_deref(), Some("https://example.com/"));
+  // Select line enters line Visual.
+  right(&mut session, plain)?;
+  press(&mut session, KeyCode::Char('j'))?;
+  press(&mut session, KeyCode::Enter)?;
+  let visual = vpdf::reader::Mode::Visual(SelectionKind::Line);
+  assert_eq!(session.app().reader.mode(), visual);
+  // Esc closes; `:` closes and prompts.
+  right(&mut session, plain)?;
+  press(&mut session, KeyCode::Esc)?;
+  assert!(session.app().context_menu.is_none());
+  assert_eq!(session.app().reader.mode(), visual, "Esc only closes");
+  right(&mut session, plain)?;
+  press(&mut session, KeyCode::Char(':'))?;
+  let app = session.app();
+  assert!(app.context_menu.is_none() && app.prompt.is_some());
+  press(&mut session, KeyCode::Esc)?;
+  // Preview shows the pressed link.
+  session.app().reader.cancel();
+  right(&mut session, internal)?;
+  press(&mut session, KeyCode::Char('j'))?;
+  press(&mut session, KeyCode::Enter)?;
+  let target = session.app().peek.as_ref().map(|peek| peek.target.clone());
+  let page = match target {
+    Some(vpdf::document::Target::Point { page, .. }) => Some(page),
+    _ => None,
+  };
+  assert_eq!(page, Some(PageId(1)), "a preview of page 2");
+  // Search word searches the pressed word.
+  session.app().peek = None;
+  right(&mut session, plain)?;
+  let at =
+    labels(&mut session).iter().position(|label| *label == "Search word");
+  for _ in 0..at.expect("Search word") {
+    press(&mut session, KeyCode::Char('j'))?;
+  }
+  press(&mut session, KeyCode::Enter)?;
+  assert_ne!(session.app().search.query.text, "");
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn figures_offer_copy_and_save() -> Result<()> {
+  let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut session = Session::new(None);
+  session.open(&root.join("paper.pdf"), true, screen())?;
+  let app = session.app();
+  app.move_figure(true, 1)?;
+  let snapshot = app.region.as_ref().expect("a figure").snapshot().clone();
+  app.region = None;
+  let rect =
+    app.layout.project(snapshot.page, snapshot.bounds, app.reader.scroll);
+  let (x, y) = rect.centre();
+  let (width, height) =
+    (f32::from(app.screen.cell_width), f32::from(app.screen.cell_height));
+  let cell = (app.left + (x / width) as u16, (y / height) as u16);
+  right(&mut session, cell)?;
+  let labels = labels(&mut session);
+  assert!(labels.contains(&"Copy image") && labels.contains(&"Save image"));
+  Ok(())
+}
+
+/// Menus stay inside short, narrow panes.
+#[test]
+fn menus_fit_small_panes() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  for command in ["split", "split", "vsplit", "vsplit", "vsplit"] {
+    session.app().command(command)?;
+    session.settle()?;
+  }
+  let app = session.app();
+  let (at, screen) = (app.at, app.screen);
+  let corner = (at.column + screen.columns - 1, at.row + screen.rows - 2);
+  right(&mut session, corner)?;
+  let app = session.app();
+  let menu = app.context_menu.as_ref().expect("a menu");
+  let rows = u16::try_from(menu.items.len())?;
+  assert!(menu.at.1 + rows < app.screen.rows, "{:?} {rows}", menu.at);
+  assert!(menu.at.0 + menu.width <= app.screen.columns, "{:?}", menu.at);
+  assert!(menu.at.0 >= app.left);
+  Ok(())
+}
+
+/// Search joins hyphen breaks like its index.
+#[test]
+fn selection_search_finds_hyphenated_words() -> Result<()> {
+  use crossterm::event::KeyCode;
+  let lines = ["an exam-", "ple here"];
+  let (_directory, mut session) =
+    open(|path| common::text_pdf(path, &lines), false)?;
+  let from = glyph_cell(&mut session, 0, 3)?;
+  let to = glyph_cell(&mut session, 1, 2)?;
+  mouse(&mut session, MouseEventKind::Down(MouseButton::Left), from)?;
+  mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), to)?;
+  mouse(&mut session, MouseEventKind::Up(MouseButton::Left), to)?;
+  right(&mut session, to)?;
+  let at =
+    labels(&mut session).iter().position(|l| *l == "Search for selection");
+  for _ in 0..at.expect("the search item") {
+    press(&mut session, KeyCode::Char('j'))?;
+  }
+  press(&mut session, KeyCode::Enter)?;
+  common::search_loaded(session.app())?;
+  let app = session.app();
+  assert_eq!(app.search.query.text, "example");
+  assert_eq!(app.search.hits.len(), 1);
+  Ok(())
+}
+
+/// Tab closes the menu and moves focus.
+#[test]
+fn tab_passes_through_menus() -> Result<()> {
+  use crossterm::event::KeyCode;
+  let (_directory, mut session) = session(false)?;
+  action(session.app(), Action::Panel(vpdf::keys::PanelKind::Outline))?;
+  press(&mut session, KeyCode::Tab)?;
+  assert!(!session.app().panel_focused());
+  let plain = cell(&mut session, Hit::Text)?;
+  right(&mut session, plain)?;
+  press(&mut session, KeyCode::Tab)?;
+  let app = session.app();
+  assert!(app.context_menu.is_none() && app.panel_focused());
+  Ok(())
+}

@@ -18,6 +18,7 @@ impl App {
     match self.input_owner() {
       InputOwner::Prompt => return ("PROMPT", Color::Yellow),
       InputOwner::Hints => return ("HINT", Color::Yellow),
+      InputOwner::Context => return ("MENU", Color::Yellow),
       InputOwner::Peek => return ("PEEK", Color::Yellow),
       InputOwner::Region => return ("REGION", Color::Yellow),
       InputOwner::Panel => {

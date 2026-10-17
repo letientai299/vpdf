@@ -41,6 +41,15 @@ impl App {
     let target = self
       .link_target(position)?
       .ok_or_else(|| anyhow::anyhow!("No link or note under cursor"))?;
+    self.show_preview(target, position)
+  }
+
+  /// Previews `target` beside `source`.
+  pub(crate) fn show_preview(
+    &mut self,
+    target: Target,
+    source: Position,
+  ) -> Result<()> {
     let (page, x, y) = match &target {
       Target::Uri(uri) => {
         self.reader.message.clone_from(uri);
@@ -72,7 +81,7 @@ impl App {
     self.peek = Some(Preview {
       target,
       page,
-      source: position,
+      source,
       serial: crate::graphics::serial(),
       view,
     });

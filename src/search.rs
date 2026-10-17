@@ -19,6 +19,11 @@ pub struct Index {
   anchors: Vec<(u32, u32)>,
 }
 
+/// Whether a hyphen joins lines.
+pub(crate) fn hyphenated(line: &str) -> bool {
+  line.ends_with('-')
+}
+
 impl Index {
   pub fn new(page: PageId, text: &Text) -> Self {
     let mut index = Self { page, text: String::new(), anchors: Vec::new() };
@@ -29,7 +34,7 @@ impl Index {
           index.push(ch, anchor);
         }
       }
-      if index.text.ends_with('-') {
+      if hyphenated(&index.text) {
         index.text.pop();
         index.anchors.pop();
       } else if let Some(anchor) = index.anchors.last().copied() {
