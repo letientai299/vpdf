@@ -526,7 +526,7 @@ mod tests {
     for _ in 0..count {
       let device = writer.begin_page(Rect::new(0.0, 0.0, 612.0, 792.0))?;
       device.fill_image(&scan, &page, 1.0, ColorParams::default())?;
-      writer.end_page(device)?;
+      device.end()?;
     }
     drop(writer);
     Ok(file)

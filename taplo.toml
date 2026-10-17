@@ -1,4 +1,4 @@
-exclude = [".ai/**"]
+exclude = [".ai/**", "target/**"]
 
 [formatting]
 indent_string = "  "
