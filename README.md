@@ -72,6 +72,15 @@ line first. Over a link inside a commented highlight, the link wins; `K` shows
 the note. Clicking outside a prompt or preview dismisses it; the next click
 activates the underlying surface.
 
+The wheel scrolls whatever is under the pointer: the page, the `K` preview or
+note, a panel list, or the page thumbnails, without moving a list's selection. A
+quick run of turns with the pointer at rest stays on one surface and one axis,
+so a preview that scrolls under it does not take over and sideways drift does
+not pan. Over the page, Ctrl-wheel zooms the PDF view and keeps the page point
+under the pointer in place where the view allows; Shift-wheel or a sideways
+wheel pans a zoomed page or wide extracted text. Lists and thumbnails ignore
+the modifiers.
+
 `K` owns its preview: `j`/`k` scroll rows, Ctrl-d/Ctrl-u scroll half its
 height, and Enter follows the original destination. Counts apply to scrolling.
 The border shows the destination page label and arrows at clipped edges.

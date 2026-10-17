@@ -189,6 +189,39 @@ fn within(value: u16, start: u16, length: u16) -> u16 {
   value.clamp(start, start + length.saturating_sub(1))
 }
 
+/// Rows one wheel turn scrolls.
+pub const WHEEL_ROWS: u8 = 3;
+
+/// A wheel turn.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Wheel {
+  Up,
+  Down,
+  Left,
+  Right,
+}
+
+impl Wheel {
+  pub fn of(kind: MouseEventKind) -> Option<Self> {
+    match kind {
+      MouseEventKind::ScrollUp => Some(Self::Up),
+      MouseEventKind::ScrollDown => Some(Self::Down),
+      MouseEventKind::ScrollLeft => Some(Self::Left),
+      MouseEventKind::ScrollRight => Some(Self::Right),
+      _ => None,
+    }
+  }
+
+  /// Down and right are forward.
+  pub fn forward(self) -> bool {
+    matches!(self, Self::Down | Self::Right)
+  }
+
+  pub fn sideways(self) -> bool {
+    matches!(self, Self::Left | Self::Right)
+  }
+}
+
 /// Presses and wheel turns cancel keys.
 pub fn interrupts(kind: MouseEventKind) -> bool {
   !matches!(
@@ -196,6 +229,9 @@ pub fn interrupts(kind: MouseEventKind) -> bool {
     MouseEventKind::Drag(_) | MouseEventKind::Up(_) | MouseEventKind::Moved
   )
 }
+
+/// Wheel turns this close, at one spot, form one gesture.
+const GESTURE: Duration = Duration::from_millis(250);
 
 /// Presses this close form one gesture.
 const CLICK: Duration = Duration::from_millis(350);
@@ -258,6 +294,23 @@ pub struct Pointer {
   hover: Option<Hover>,
   /// Last spot, to retest after view changes.
   spot: Option<(MouseEvent, Option<Pixel>)>,
+  /// The last wheel turn; motion and presses end its gesture.
+  turn: Option<Turn>,
+}
+
+/// Where a wheel turned: a cell, and the pixel under mode 1016.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Spot {
+  column: u16,
+  row: u16,
+  pixel: Option<Pixel>,
+}
+
+/// Where and when a wheel turned.
+#[derive(Clone, Copy, Debug)]
+struct Turn {
+  spot: Spot,
+  at: Instant,
 }
 
 impl Pointer {
@@ -293,6 +346,7 @@ impl Pointer {
     let route = route(panes, focused, capture, mouse);
     match mouse.kind {
       MouseEventKind::Down(button) => {
+        self.turn = None;
         let on = route.map(|route| (route.pane, route.region));
         let again = self.press.filter(|press| {
           press.button == button
@@ -317,14 +371,7 @@ impl Pointer {
         self.hold(false);
       }
       // The view moved under the next press.
-      MouseEventKind::ScrollDown
-      | MouseEventKind::ScrollUp
-      | MouseEventKind::ScrollLeft
-      | MouseEventKind::ScrollRight
-        if held.is_none() =>
-      {
-        self.press = None;
-      }
+      kind if Wheel::of(kind).is_some() && held.is_none() => self.press = None,
       _ => {}
     }
     let clicks = match mouse.kind {
@@ -336,6 +383,22 @@ impl Pointer {
     route.map(|route| Route { clicks, pixel, ..route })
   }
 
+  /// Whether a wheel turn continues the last one's gesture: at the same
+  /// spot, with no motion or press between, and soon after.
+  pub fn turn(
+    &mut self,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    now: Instant,
+  ) -> bool {
+    let spot = Spot { column: mouse.column, row: mouse.row, pixel };
+    let continues = self.turn.is_some_and(|last| {
+      last.spot == spot && now.saturating_duration_since(last.at) < GESTURE
+    });
+    self.turn = Some(Turn { spot, at: now });
+    continues
+  }
+
   /// Bare motion; whether the target changed.
   pub fn hover(
     &mut self,
@@ -345,6 +408,7 @@ impl Pointer {
   ) -> bool {
     // No button is down: a release got lost.
     self.hold(false);
+    self.turn = None;
     self.spot = Some((mouse, pixel));
     self.refresh(hover)
   }
@@ -682,5 +746,40 @@ mod tests {
     assert!(!interrupts(Drag(Left)));
     assert!(!interrupts(Up(Left)));
     assert!(!interrupts(Moved));
+  }
+
+  #[test]
+  fn turns_at_rest_form_one_gesture() {
+    let start = Instant::now();
+    let at = |ms| start + Duration::from_millis(ms);
+    let pixel = |x| Some(Pixel { x, y: 40, cell: (8, 16) });
+    // (column, pixel x, what came before, ms) -> continues the last turn
+    let cases = [
+      (5, pixel(44), None, 0, false),
+      (5, pixel(44), None, 100, true),
+      (5, pixel(44), None, 340, true),
+      (5, pixel(45), None, 360, false),
+      (6, pixel(52), None, 380, false),
+      (6, pixel(52), Some(Moved), 400, false),
+      (6, pixel(52), None, 420, true),
+      (6, pixel(52), Some(Down(Left)), 440, false),
+      (6, pixel(52), None, 680, true),
+      (6, pixel(52), None, 930, false),
+    ];
+    let mut pointer = Pointer::default();
+    for (column, pixel, before, ms, continues) in cases {
+      match before {
+        Some(Moved) => {
+          pointer.hover(event(Moved, column, 2), pixel, None);
+        }
+        Some(kind) => {
+          pointer.route(&PANES, 1, event(kind, column, 2), pixel, at(ms));
+          pointer.release();
+        }
+        None => {}
+      }
+      let turn = event(ScrollDown, column, 2);
+      assert_eq!(pointer.turn(turn, pixel, at(ms)), continues, "{ms} ms");
+    }
   }
 }

@@ -764,6 +764,15 @@ impl Session {
 
   /// One terminal mouse report; whether it needs a frame.
   pub fn mouse_report(&mut self, report: crate::decode::Mouse) -> Result<bool> {
+    self.mouse_report_at(report, Instant::now())
+  }
+
+  /// One mouse report that arrived at `now`; whether it needs a frame.
+  pub fn mouse_report_at(
+    &mut self,
+    report: crate::decode::Mouse,
+    now: Instant,
+  ) -> Result<bool> {
     let Some(screen) = self.screen else { return Ok(false) };
     let Some(mut mouse) = report.cells(screen.cell()) else {
       return Ok(false);
@@ -773,12 +782,12 @@ impl Session {
     mouse.row = mouse.row.min(screen.rows.saturating_sub(1));
     let pixel =
       report.pixel().map(|(x, y)| Pixel { x, y, cell: screen.cell() });
-    self.pointed(mouse, pixel)
+    self.pointed(mouse, pixel, now)
   }
 
   /// A report in cells; whether it needs a frame.
   pub fn mouse(&mut self, mouse: MouseEvent) -> Result<bool> {
-    self.pointed(mouse, None)
+    self.pointed(mouse, None, Instant::now())
   }
 
   /// Presses focus; the wheel scrolls in place; bare motion hovers.
@@ -786,18 +795,13 @@ impl Session {
     &mut self,
     mouse: MouseEvent,
     pixel: Option<Pixel>,
+    now: Instant,
   ) -> Result<bool> {
     if mouse.kind == MouseEventKind::Moved {
       let hover = self.hit(mouse, pixel);
       return Ok(self.pointer.hover(mouse, pixel, hover));
     }
-    let wheel = matches!(
-      mouse.kind,
-      MouseEventKind::ScrollDown
-        | MouseEventKind::ScrollUp
-        | MouseEventKind::ScrollLeft
-        | MouseEventKind::ScrollRight
-    );
+    let wheel = pointer::Wheel::of(mouse.kind).is_some();
     if wheel && self.app().prompt.is_some() {
       return Ok(false);
     }
@@ -818,15 +822,20 @@ impl Session {
     // Snapshot before disarm hides clue rows.
     let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();
     let focused = tab.panes[tab.focus].id;
-    let route =
-      self.pointer.route(&panes, focused, mouse, pixel, Instant::now());
+    let route = self.pointer.route(&panes, focused, mouse, pixel, now);
+    let gesture = wheel && self.pointer.turn(mouse, pixel, now);
     let interrupts = pointer::interrupts(mouse.kind);
+    let app = self.app();
+    // Disarming changes the status line and hides clue rows.
+    let armed = interrupts
+      && (!app.keys.pending().is_empty()
+        || app.clues.is_some()
+        || app.reader.operator.is_some());
     if interrupts {
-      self.app().disarm();
+      app.disarm();
     }
-    // Disarming hides clue rows.
-    let Some(route) = route else { return Ok(interrupts) };
-    let Some(index) = self.tab().index(route.pane) else { return Ok(false) };
+    let Some(route) = route else { return Ok(armed) };
+    let Some(index) = self.tab().index(route.pane) else { return Ok(armed) };
     if route.focus {
       // Focusing releases captures; keep this one.
       let pointer = std::mem::take(&mut self.pointer);
@@ -839,8 +848,16 @@ impl Session {
     let reading = |app: &App| (app.reader.cursor, app.reader.selection);
     let before =
       matches!(mouse.kind, MouseEventKind::Drag(_)).then(|| reading(app));
+    if !gesture {
+      app.wheel = None;
+    }
+    // Turns past an end move nothing.
+    let view = wheel.then(|| app.wheel_view());
     app.mouse(route)?;
-    Ok(before.is_none_or(|before| before != reading(app)))
+    let moved = view.is_none_or(|view| view != app.wheel_view());
+    let read = before.is_none_or(|before| before != reading(app));
+    let changed = read && moved;
+    Ok(armed || changed)
   }
 
   /// Whether the last frame moved the hover.

@@ -7,6 +7,7 @@ use crate::layout::Screen;
 use crate::motion::Motion;
 use crate::panel_layout::Layout;
 use crate::panel_search::RowSearch;
+use crate::pointer::{WHEEL_ROWS, Wheel};
 use crate::recent::Shelf;
 use crate::state::Entry;
 use crate::terminal;
@@ -185,15 +186,15 @@ impl Panel {
       self.focused = true;
     }
     match mouse.kind {
-      MouseEventKind::ScrollDown => {
+      kind if Wheel::of(kind) == Some(Wheel::Down) => {
         let visible = usize::from(self.height.saturating_sub(2));
         self.top = self
           .top
-          .saturating_add(3)
+          .saturating_add(usize::from(WHEEL_ROWS))
           .min(self.line_count().saturating_sub(visible.max(1)));
       }
-      MouseEventKind::ScrollUp => {
-        self.top = self.top.saturating_sub(3);
+      kind if Wheel::of(kind) == Some(Wheel::Up) => {
+        self.top = self.top.saturating_sub(usize::from(WHEEL_ROWS));
       }
       MouseEventKind::Down(MouseButton::Left) => {
         let index = self.row_at(mouse.column, mouse.row)?;

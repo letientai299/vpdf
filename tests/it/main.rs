@@ -19,4 +19,5 @@ mod rendering;
 mod sections;
 mod session;
 mod untrusted;
+mod wheel;
 mod workers;

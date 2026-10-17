@@ -44,6 +44,9 @@ zF: fit selected figure; reserve action bar
 zh zl: pan left / right
 zr: rotate clockwise
 zc: crop / restore page margins
+Wheel: scroll the view, K preview, or note under the pointer
+Page <C-wheel>: zoom; keep the point under the pointer
+Page <S-wheel> / sideways wheel: pan a zoomed page or wide text
 
 # Select and yank
 v V: enter character / line V
@@ -92,6 +95,7 @@ gs: search results
 f F: link hints / copy URLs
 gl: links on this page
 gp: page thumbnails
+gp wheel: scroll thumbnails; keep selection
 gr: recent documents
 ga: annotations (read-only)
 Annotations <CR>: jump, enter Cursor, and show note

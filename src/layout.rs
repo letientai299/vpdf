@@ -161,6 +161,11 @@ impl Layout {
     if max <= 1.0 { 0.0 } else { max }
   }
 
+  /// Pan the page shows: none when it fits.
+  pub fn shown_pan(&self, page: PageId) -> f32 {
+    (-self.origin(page, 0.0).0).max(0.0)
+  }
+
   /// Raster origin within the page pane.
   pub fn origin(&self, page: PageId, scroll: f32) -> (f32, f32) {
     let layout = &self.pages[page.0];

@@ -154,6 +154,8 @@ pub struct App {
   pub ocr: Option<crate::ocr::OcrJob>,
   pub outline_job: Option<crate::outline::OutlineJob>,
   pub animation: Option<crate::animation::Scroll>,
+  /// The current wheel gesture over the page.
+  pub(crate) wheel: Option<crate::interaction::Gesture>,
   pub(crate) requested: Vec<TileKey>,
   /// Sign of the last scroll; prefetch looks that way first.
   pub(crate) heading: f32,
@@ -239,6 +241,7 @@ impl App {
       ocr: None,
       outline_job: None,
       animation: None,
+      wheel: None,
       requested: Vec::new(),
       heading: 1.0,
       blank: false,

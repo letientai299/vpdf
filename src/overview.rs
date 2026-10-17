@@ -3,7 +3,7 @@ use crate::app::App;
 use crate::keys::{Action, Input};
 use crate::layout::{Crop, page_matrix, transform};
 use crate::motion::Motion;
-use crate::pointer::Hit;
+use crate::pointer::{Hit, Wheel};
 use crate::text::{Bounds, PageId, Position};
 use crate::tiles::{self, TileKey};
 use crate::{terminal, theme};
@@ -18,14 +18,9 @@ pub struct Overview {
   pub selected: usize,
   /// First visible grid row.
   top: usize,
-}
-
-impl Overview {
-  /// First grid row that shows the selection.
-  fn shown_top(&self, grid: &Grid) -> usize {
-    let row = self.selected / grid.columns;
-    self.top.clamp((row + 1).saturating_sub(grid.rows), row)
-  }
+  /// Grid columns and rows of the last frame; a new shape reveals the
+  /// selection.
+  shape: (usize, usize),
 }
 
 /// Grid geometry for the current screen, in page-area pixels.
@@ -38,6 +33,40 @@ struct Grid {
   /// Box plus its label row and gap.
   row: f32,
   rows: usize,
+}
+
+impl Grid {
+  /// The top row that shows the last of `pages`.
+  fn last_top(&self, pages: usize) -> usize {
+    pages.div_ceil(self.columns).saturating_sub(self.rows)
+  }
+}
+
+impl Overview {
+  /// First visible grid row.
+  pub fn top(&self) -> usize {
+    self.top
+  }
+
+  /// First grid row the next frame shows: a new grid shape reveals
+  /// the selection.
+  fn shown_top(&self, grid: &Grid, pages: usize) -> usize {
+    let mut next = Self { ..*self };
+    if self.shape != (grid.columns, grid.rows) {
+      next.reveal(grid);
+    }
+    next.top.min(grid.last_top(pages))
+  }
+
+  /// Scrolls the fewest rows that show the selection.
+  fn reveal(&mut self, grid: &Grid) {
+    let row = self.selected / grid.columns;
+    if row < self.top {
+      self.top = row;
+    } else if row >= self.top + grid.rows {
+      self.top = row + 1 - grid.rows;
+    }
+  }
 }
 
 impl App {
@@ -63,8 +92,8 @@ impl App {
 
   pub fn open_overview(&mut self) -> Result<()> {
     anyhow::ensure!(!self.text_mode, "Page overview needs Kitty graphics");
-    self.overview =
-      Some(Overview { selected: self.navigation_position().page.0, top: 0 });
+    let selected = self.navigation_position().page.0;
+    self.overview = Some(Overview { selected, top: 0, shape: (0, 0) });
     self.requested.clear();
     if let Some(panel) = &mut self.panel {
       panel.focused = false;
@@ -109,20 +138,22 @@ impl App {
       }
     }
     .min(last);
+    overview.reveal(&grid);
     Ok(true)
   }
 
   pub fn overview_mouse(&mut self, mouse: MouseEvent) -> Result<()> {
     let grid = self.grid();
-    let last = self.doc.pages.len() - 1;
+    let pages = self.doc.pages.len();
     let hit = self.thumbnail_at(mouse.column, mouse.row);
     let Some(overview) = &mut self.overview else { return Ok(()) };
     match mouse.kind {
-      MouseEventKind::ScrollDown => {
-        overview.selected = (overview.selected + grid.columns).min(last);
+      // The wheel moves rows, not the selection.
+      kind if Wheel::of(kind) == Some(Wheel::Down) => {
+        overview.top = (overview.top + 1).min(grid.last_top(pages));
       }
-      MouseEventKind::ScrollUp => {
-        overview.selected = overview.selected.saturating_sub(grid.columns);
+      kind if Wheel::of(kind) == Some(Wheel::Up) => {
+        overview.top = overview.top.saturating_sub(1);
       }
       MouseEventKind::Down(MouseButton::Left) => {
         if let Some(page) = hit {
@@ -143,9 +174,11 @@ impl App {
     let column = ((x - grid.gap / 2.0) / (grid.width + grid.gap)) as usize;
     let row = ((y - grid.gap / 2.0) / grid.row) as usize;
     // As the next frame scrolls it.
-    let index = (overview.shown_top(&grid) + row) * grid.columns + column;
+    let pages = self.doc.pages.len();
+    let index =
+      (overview.shown_top(&grid, pages) + row) * grid.columns + column;
     let inside = column < grid.columns && row < grid.rows;
-    (inside && index < self.doc.pages.len()).then_some(PageId(index))
+    (inside && index < pages).then_some(PageId(index))
   }
 
   fn open_selected(&mut self) -> Result<()> {
@@ -170,7 +203,8 @@ impl App {
       _ => None,
     };
     let Some(overview) = &mut self.overview else { return Ok(()) };
-    overview.top = overview.shown_top(&grid);
+    overview.top = overview.shown_top(&grid, pages);
+    overview.shape = (grid.columns, grid.rows);
     let (top, selected) = (overview.top, overview.selected);
     let first = top * grid.columns;
     let visible = first..(first + grid.rows * grid.columns).min(pages);

@@ -4,10 +4,40 @@ use crate::keys::{Action, Input};
 use crate::layout::Screen;
 use crate::motion::Motion;
 use crate::panel::Panel;
-use crate::pointer::{Hit, Pixel, Region, Route};
+use crate::pointer::{Hit, Pixel, Region, Route, WHEEL_ROWS, Wheel};
 use crate::reader::{Location, SelectionKind};
 use crate::text::{Bounds, PageId, Position};
-use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyModifiers, MouseButton, MouseEventKind};
+
+/// Zoom steps per wheel turn: touchpads send a turn per cell of travel.
+const WHEEL_ZOOM: f32 = 0.5;
+
+/// What the turns of one wheel gesture move.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Gesture {
+  pub surface: Surface,
+  /// The first turn's axis; turns across it are drift.
+  pub sideways: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Surface {
+  Page,
+  /// The `K` preview.
+  Preview,
+}
+
+/// What a wheel turn moves; an equal view needs no frame.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) struct WheelView {
+  scroll: f32,
+  pan: f32,
+  zoom: f32,
+  text: Position,
+  panel: Option<usize>,
+  overview: Option<usize>,
+  preview: Option<i32>,
+}
 
 impl App {
   pub fn input_owner(&self) -> InputOwner {
@@ -166,23 +196,34 @@ impl App {
   }
 
   fn view_anchor(&self) -> (PageId, (f32, f32)) {
-    let page = self.layout.page_at(self.reader.scroll);
-    let center = (self.layout.screen.width() / 2.0, 0.0);
-    let point = self
-      .layout
-      .unproject(page, center, self.reader.scroll)
-      .unwrap_or((0.0, 0.0));
-    (page, point)
+    self.anchor_at((self.layout.screen.width() / 2.0, 0.0))
   }
 
-  fn restore_view(&mut self, (page, (x, y)): (PageId, (f32, f32))) {
+  /// Page point at a page-area pixel, for a view to return to.
+  fn anchor_at(&self, at: (f32, f32)) -> (PageId, (f32, f32)) {
+    self.pixel_point(at).map_or_else(
+      || (self.layout.page_at(at.1 + self.reader.scroll), (0.0, 0.0)),
+      |(page, x, y)| (page, (x, y)),
+    )
+  }
+
+  fn restore_view(&mut self, anchor: (PageId, (f32, f32))) {
+    self.restore_at(anchor, (self.layout.screen.width() / 2.0, 0.0));
+  }
+
+  /// Scrolls and pans so `anchor` shows at a page-area pixel.
+  fn restore_at(
+    &mut self,
+    (page, (x, y)): (PageId, (f32, f32)),
+    (left, top): (f32, f32),
+  ) {
     self.animation = None;
     let rect =
       self.layout.project(page, Bounds { x0: x, x1: x, y0: y, y1: y }, 0.0);
-    self.reader.scroll = self.layout.clamp_scroll(rect.y0);
-    let width = self.layout.screen.width();
+    self.reader.scroll = self.layout.clamp_scroll(rect.y0 - top);
+    let shown = self.layout.shown_pan(page);
     let max = self.layout.pan_limit(page);
-    self.layout.pan = (self.layout.pan + rect.x0 - width / 2.0).clamp(0.0, max);
+    self.layout.pan = (shown + rect.x0 - left).clamp(0.0, max);
   }
 
   pub(crate) fn visible_position(
@@ -306,7 +347,7 @@ impl App {
     if rect.y1 > self.reader.scroll + self.layout.screen.height() - margin {
       self.reader.scroll = rect.y1 - self.layout.screen.height() + margin;
     }
-    let pan = (-self.layout.origin(cursor.page, 0.0).0).max(0.0);
+    let pan = self.layout.shown_pan(cursor.page);
     if rect.x0 < 0.0 {
       self.layout.pan = (pan + rect.x0).max(0.0);
     }
@@ -467,12 +508,7 @@ impl App {
           );
         }
       }
-      Action::Zoom(direction) => {
-        self.layout.zoom = (self.layout.zoom
-          * 1.15_f32.powf(direction as f32 * count))
-        .clamp(0.1, 8.0);
-        self.relayout()?;
-      }
+      Action::Zoom(direction) => self.zoom_by(direction as f32 * count)?,
       Action::Fit => {
         self.layout.zoom = 1.0;
         self.relayout()?;
@@ -496,6 +532,22 @@ impl App {
       _ => return Ok(false),
     }
     Ok(true)
+  }
+
+  /// Zooms by `steps` of 15 %.
+  fn zoom_by(&mut self, steps: f32) -> Result<()> {
+    self.layout.zoom =
+      (self.layout.zoom * 1.15_f32.powf(steps)).clamp(0.1, 8.0);
+    self.relayout()
+  }
+
+  /// Zooms keeping the page point at a page-area pixel in place, where
+  /// the view allows.
+  fn zoom_at(&mut self, steps: f32, at: (f32, f32)) -> Result<()> {
+    let anchor = self.anchor_at(at);
+    self.zoom_by(steps)?;
+    self.restore_at(anchor, at);
+    Ok(())
   }
 
   fn pan(&mut self, delta: f32) -> Result<()> {
@@ -557,10 +609,7 @@ impl App {
       return Ok(());
     }
     match mouse.kind {
-      MouseEventKind::ScrollDown
-      | MouseEventKind::ScrollUp
-      | MouseEventKind::ScrollLeft
-      | MouseEventKind::ScrollRight => self.page_wheel(mouse),
+      kind if Wheel::of(kind).is_some() => self.page_wheel(route),
       MouseEventKind::Down(MouseButton::Left)
       | MouseEventKind::Drag(MouseButton::Left)
       | MouseEventKind::Up(MouseButton::Left) => self.page_left(route),
@@ -568,14 +617,75 @@ impl App {
     }
   }
 
-  /// The wheel over the page.
-  fn page_wheel(&mut self, mouse: MouseEvent) -> Result<()> {
-    let rows = match mouse.kind {
-      MouseEventKind::ScrollDown => 3.0,
-      MouseEventKind::ScrollUp => -3.0,
-      _ => return Ok(()),
+  /// The wheel over the page scrolls; Ctrl zooms at the pointer; Shift
+  /// or a sideways turn pans; over the `K` preview it scrolls that.
+  fn page_wheel(&mut self, route: Route) -> Result<()> {
+    let mouse = route.mouse;
+    let Some(turn) = Wheel::of(mouse.kind) else { return Ok(()) };
+    let step = if turn.forward() { 1.0 } else { -1.0 };
+    let rows = f32::from(WHEEL_ROWS);
+    let sideways =
+      turn.sideways() || mouse.modifiers.contains(KeyModifiers::SHIFT);
+    let zoom = mouse.modifiers.contains(KeyModifiers::CONTROL);
+    let Some(surface) = self.wheel_surface(route, sideways, zoom)? else {
+      return Ok(());
     };
-    self.scroll(rows * f32::from(self.screen.cell_height))
+    if zoom {
+      // Sideways turns in a Ctrl gesture would pan off the anchor; text
+      // shows no zoom.
+      if sideways || self.text_mode {
+        return Ok(());
+      }
+      let at = self.cell_point(mouse.column, mouse.row, route.pixel);
+      return self.zoom_at(-step * WHEEL_ZOOM, at);
+    }
+    match (surface, sideways) {
+      (Surface::Preview, false) => self.scroll_preview(step * rows),
+      (Surface::Preview, true) => Ok(()),
+      (Surface::Page, true) => {
+        self.pan(step * rows * f32::from(self.screen.cell_width))
+      }
+      (Surface::Page, false) => {
+        self.scroll(step * rows * f32::from(self.screen.cell_height))
+      }
+    }
+  }
+
+  /// What a turn moves: what its gesture's first turn hit, so a preview
+  /// that slides under a resting pointer leaves the page scrolling; None
+  /// for drift across the gesture's axis. Zooms keep the page.
+  fn wheel_surface(
+    &mut self,
+    route: Route,
+    sideways: bool,
+    zoom: bool,
+  ) -> Result<Option<Surface>> {
+    if let Some(gesture) = self.wheel {
+      let surface = match gesture.surface {
+        Surface::Preview if self.peek.is_none() => Surface::Page,
+        surface => surface,
+      };
+      return Ok((gesture.sideways == sideways).then_some(surface));
+    }
+    let (column, row) = (route.mouse.column, route.mouse.row);
+    let under = !zoom
+      && self.preview_frame()?.is_some_and(|frame| frame.contains(column, row));
+    let surface = if under { Surface::Preview } else { Surface::Page };
+    self.wheel = Some(Gesture { surface, sideways });
+    Ok(Some(surface))
+  }
+
+  /// What a wheel turn can move, to tell whether one moved anything.
+  pub(crate) fn wheel_view(&self) -> WheelView {
+    WheelView {
+      scroll: self.animation.as_ref().map_or(self.reader.scroll, |a| a.target),
+      pan: self.layout.pan,
+      zoom: self.layout.zoom,
+      text: self.text_top,
+      panel: self.panel.as_ref().map(|panel| panel.top),
+      overview: self.overview.as_ref().map(crate::overview::Overview::top),
+      preview: self.preview_top(),
+    }
   }
 
   /// The left button on the page: presses and drags select.
@@ -641,7 +751,11 @@ impl App {
     row: u16,
     pixel: Option<Pixel>,
   ) -> Option<(PageId, f32, f32)> {
-    let (x, y) = self.cell_point(column, row, pixel);
+    self.pixel_point(self.cell_point(column, row, pixel))
+  }
+
+  /// Page and point at a page-area pixel.
+  fn pixel_point(&self, (x, y): (f32, f32)) -> Option<(PageId, f32, f32)> {
     let page = self.layout.page_at(y + self.reader.scroll);
     let (x, y) = self.layout.unproject(page, (x, y), self.reader.scroll)?;
     Some((page, x, y))

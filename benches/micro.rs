@@ -238,6 +238,35 @@ fn hover() -> Result<()> {
   Ok(())
 }
 
+/// Wheel turns over the page: scroll, Ctrl zoom, and Shift pan.
+fn wheel() -> Result<()> {
+  use crossterm::event::{MouseEvent, MouseEventKind};
+  let turn =
+    |kind, modifiers| MouseEvent { kind, column: 60, row: 20, modifiers };
+  let mut session = vpdf::session::Session::new(None);
+  session.open(&corpus("paper.pdf")?, true, PANE)?;
+  session.app().command("2")?;
+  let cases = [
+    ("scroll", KeyModifiers::NONE),
+    ("ctrl zoom", KeyModifiers::CONTROL),
+    ("shift pan", KeyModifiers::SHIFT),
+  ];
+  for (name, modifiers) in cases {
+    if modifiers == KeyModifiers::SHIFT {
+      session.app().layout.zoom = 2.0;
+      session.app().relayout()?;
+    }
+    measure(&format!("Session::mouse wheel {name}"), || {
+      for kind in [MouseEventKind::ScrollUp, MouseEventKind::ScrollDown] {
+        black_box(
+          session.mouse(black_box(turn(kind, modifiers))).expect("wheel"),
+        );
+      }
+    })?;
+  }
+  Ok(())
+}
+
 /// One terminal read: pointer motion, keys, and a graphics reply, as
 /// kitty sends them while the reader scrolls.
 fn decode() -> Result<()> {
@@ -726,6 +755,7 @@ const CASES: &[(&str, Case)] = &[
   ("draw_hints", draw_hints),
   ("route", route),
   ("hover", hover),
+  ("wheel", wheel),
   ("cold page", cold_page),
   ("decode", decode),
   ("key prefixes", key_prefixes),

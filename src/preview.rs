@@ -4,6 +4,7 @@ use crate::document::{Annotation, Target};
 use crate::keys::{Action, Input};
 use crate::motion::Motion;
 use crate::panel_layout::wrap;
+use crate::split::Rect;
 use crate::text::{Bounds, PageId, Position};
 use crate::theme;
 use crate::tiles::{TileKey, raster_area};
@@ -189,6 +190,16 @@ impl App {
     self.scroll_preview(rows * input.count as f32)
   }
 
+  /// How far the preview is scrolled: image pixels or text rows.
+  pub fn preview_top(&self) -> Option<i32> {
+    self.peek.as_ref().map(|preview| match &preview.view {
+      View::Image { key, .. } => key.y,
+      View::Text { top, .. } | View::Note { top, .. } => {
+        i32::try_from(*top).unwrap_or(i32::MAX)
+      }
+    })
+  }
+
   /// Scrolls the owned preview by terminal rows.
   pub fn scroll_preview(&mut self, rows: f32) -> Result<()> {
     self.reflow_note();
@@ -276,19 +287,16 @@ impl App {
     self.graphics.backdrop(rect, [255; 4], screen, self.left, out)
   }
 
-  pub fn draw_preview(&mut self, out: &mut impl Write) -> Result<()> {
-    if self.peek.is_none() {
-      return Ok(());
-    }
-    self.scroll_preview(0.0)?;
+  /// Pane cells the preview and its border cover.
+  pub fn preview_frame(&mut self) -> Result<Option<Rect>> {
     let Some(source) = self.peek.as_ref().map(|preview| preview.source) else {
-      return Ok(());
+      return Ok(None);
     };
     let cursor = self.position_rect(source)?;
-    let Some(preview) = &self.peek else { return Ok(()) };
+    let Some(preview) = &self.peek else { return Ok(None) };
     let screen = self.layout.screen;
     let cell = f32::from(screen.cell_height);
-    let (columns, rows, clipped) = self.preview_extent(preview);
+    let (columns, rows, _) = self.preview_extent(preview);
     let available = usize::from(screen.rows.saturating_sub(1));
     let rows = rows.min(available.saturating_sub(2));
     let below = cursor.map_or(0, |r| (r.y1 / cell).ceil() as usize);
@@ -301,6 +309,28 @@ impl App {
     };
     let column = usize::from(self.left)
       + usize::from(screen.columns).saturating_sub(columns + 2) / 2;
+    let cells = |value: usize| u16::try_from(value).unwrap_or(u16::MAX);
+    Ok(Some(Rect {
+      column: cells(column),
+      row: cells(top),
+      columns: cells(columns + 2),
+      rows: cells(rows + 2),
+    }))
+  }
+
+  pub fn draw_preview(&mut self, out: &mut impl Write) -> Result<()> {
+    if self.peek.is_none() {
+      return Ok(());
+    }
+    self.scroll_preview(0.0)?;
+    let Some(frame) = self.preview_frame()? else { return Ok(()) };
+    let Some(preview) = &self.peek else { return Ok(()) };
+    let screen = self.layout.screen;
+    let cell = f32::from(screen.cell_height);
+    let (_, _, clipped) = self.preview_extent(preview);
+    let (top, column) = (usize::from(frame.row), usize::from(frame.column));
+    let rows = usize::from(frame.rows) - 2;
+    let columns = usize::from(frame.columns) - 2;
     let label =
       border_label(&self.doc.pages[preview.page.0].label, columns, clipped.0);
     let rule = "─".repeat(columns.saturating_sub(label.width()));
