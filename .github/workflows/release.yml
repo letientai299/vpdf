@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish binaries
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-main
+      cancel-in-progress: false
+    env:
+      RELEASE_TAG: main
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: vpdf-*
+          merge-multiple: true
+          path: dist
+      - name: Verify archives
+        working-directory: dist
+        run: |
+          for platform in linux-x86_64 macos-aarch64; do
+            sha256sum --check "vpdf-${platform}.tar.gz.sha256"
+            tar -tzf "vpdf-${platform}.tar.gz" | grep -Fx vpdf
+          done
+      - name: Publish rolling release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          current=$(gh api "repos/$GH_REPO/git/ref/${GITHUB_REF#refs/}" --jq .object.sha)
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo 'Skipping superseded branch build'
+            exit 0
+          fi
+          printf 'Rolling %s build: %s\n' "$RELEASE_TAG" "$GITHUB_SHA" > notes.md
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$RELEASE_TAG" \
+              -f sha="$GITHUB_SHA" -F force=true
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file notes.md \
+              --prerelease --latest=false
+          else
+            gh release create "$RELEASE_TAG" dist/* --target "$GITHUB_SHA" \
+              --title "$RELEASE_TAG" --notes-file notes.md --prerelease --latest=false
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+  install:
+    name: Mise install (${{ matrix.os }})
+    needs: publish
+    if: needs.publish.outputs.tag != ''
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        with:
+          install: false
+      - name: Install published binary
+        env:
+          RELEASE_TAG: ${{ needs.publish.outputs.tag }}
+          MISE_DATA_DIR: ${{ runner.temp }}/mise-install/data
+          MISE_CACHE_DIR: ${{ runner.temp }}/mise-install/cache
+          MISE_CONFIG_DIR: ${{ runner.temp }}/mise-install/config
+          MISE_STATE_DIR: ${{ runner.temp }}/mise-install/state
+          MISE_USE_VERSIONS_HOST: 'false'
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tool="github:$GITHUB_REPOSITORY@$RELEASE_TAG"
+          mise i "$tool"
+          mise exec "$tool" -- vpdf --version
+          mise i --force "$tool"
+          mise exec "$tool" -- vpdf --version
