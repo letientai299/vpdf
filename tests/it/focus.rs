@@ -13,7 +13,7 @@ use vpdf::session::Session;
 use vpdf::split::Direction;
 use vpdf::text::{PageId, Position};
 
-fn screen() -> Screen {
+pub(super) fn screen() -> Screen {
   Screen {
     columns: 121,
     rows: 40,
@@ -42,7 +42,7 @@ fn key(app: &mut App, bytes: &[u8]) -> Result<()> {
   Ok(())
 }
 
-fn send(session: &mut Session, bytes: &[u8]) -> Result<()> {
+pub(super) fn send(session: &mut Session, bytes: &[u8]) -> Result<()> {
   for event in events(bytes) {
     match event {
       Event::Key(event) => {
@@ -91,7 +91,11 @@ fn raw_focus_and_history_keys_differ() {
     let decoded = events(bytes);
     assert_eq!(decoded.len(), 1, "{bytes:?}");
     let Event::Key(key) = decoded.front().unwrap() else { panic!("key") };
-    assert_eq!(keys.feed(*key).unwrap().action, expected, "{bytes:?}");
+    assert_eq!(
+      keys.feed(*key, vpdf::keys::Grammar::Normal).unwrap().action,
+      expected,
+      "{bytes:?}"
+    );
   }
 }
 

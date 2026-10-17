@@ -1,12 +1,13 @@
 # Move
 h j k l / arrows: pan / scroll in Normal
-Counts scale viewport and selection motions
-Visual h j k l: glyph motions
-Visual w b e: word motions
-Visual W B E gE: WORD motions
-Visual ( ): previous / next sentence
-Visual 0 ^ $: line motions
-Visual { }: previous / next paragraph
+i: enter Cursor at visible text
+Counts scale viewport and glyph motions
+Cursor/Visual h j k l: glyph motions
+Cursor/Visual w b e: word motions
+Cursor/Visual W B E gE: WORD motions
+Cursor/Visual ( ): previous / next sentence
+Cursor/Visual 0 ^ $: line motions
+Cursor/Visual { }: previous / next paragraph
 [count]gg G: page jump
 [count][[ ]]: previous / next heading; record jump
 Space Shift-Space: next / previous page
@@ -18,6 +19,7 @@ ma mA: mark here / across documents
 Ctrl-d Ctrl-u: half-screen scroll
 Ctrl-f Ctrl-b: full-screen scroll
 Ctrl-e Ctrl-y: row scroll
+Scroll keys keep glyph and selection positions
 zt zz zb: target at top / middle / bottom
 + - =: zoom in / out / fit width
 zf: fit page
@@ -27,13 +29,17 @@ zc: crop / restore page margins
 
 # Select and yank
 v V: enter character / line Visual
-Entry: visible click/jump target, else first visible text
+Cursor v/V: select from positioned glyph
+Normal v/V: visible target, else first visible text
 Textless view: selection unavailable; :ocr is explicit
 :cursorline: toggle Visual line band (default on)
 o: swap selection ends
 gv: reselect
+Esc/yank: return to Visual entry mode
+Idle Cursor Esc: return to viewport Normal
 y yy yw ye y$: yank
 Visual / y + i/a: inner / around objects
+Bare Cursor i/a: no object prefix
 w W s p: word / WORD / sentence / paragraph
 ( ) [ ] { } < >: paired brackets
 b B: parentheses / braces aliases
@@ -47,7 +53,7 @@ Double click: select word
 # Find
 / ?: search forward / backward
 n N: next / previous match
-*: search visible target word
+*: search active glyph or visible target word
 \v: regex prefix
 
 # Panels
@@ -69,7 +75,7 @@ Tab Shift-Tab: toggle content / panel focus
 gq / panel q: close panel
 gx: focus extracted-text presentation
 g? F1: this reference
-Esc: cancel transient input; return to Normal
+Esc: cancel transient or pending input first
 :cancel: stop active-pane search, OCR, outline jobs
 Panel wheel: scroll list; keep row selection
 q: close panel, tab, or reader
@@ -92,7 +98,7 @@ gt [count]gt: next / nth tab
 gT: previous tab
 :e :tabe: open here / in a new tab
 :e :tabe :split :vsplit <file>: reuse open view first
-Pane changes: keep Visual, queries, panel position and focus
+Pane changes: keep Cursor/Visual, queries and panel focus
 
 # Command line
 Tab Shift-Tab: list, then cycle completions

@@ -703,6 +703,7 @@ impl Session {
     }
     app.close_overview();
     if focus {
+      app.reader.normal();
       app.reader.cancel();
       if let Some(panel) = &mut app.panel {
         panel.focused = false;

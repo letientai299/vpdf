@@ -45,6 +45,7 @@ pub enum Action {
   YankLine,
   Object(crate::objects::Object, bool),
   Visual(SelectionKind),
+  Cursor,
   Swap,
   Reselect,
   Cancel,
@@ -88,6 +89,13 @@ pub struct Input {
   pub register: char,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum Grammar {
+  Normal,
+  Objects,
+  Other,
+}
+
 #[derive(Default)]
 pub struct Keys {
   prefix: String,
@@ -101,7 +109,7 @@ impl Keys {
     *self = Self::default();
   }
 
-  pub fn feed(&mut self, key: KeyEvent) -> Option<Input> {
+  pub fn feed(&mut self, key: KeyEvent, grammar: Grammar) -> Option<Input> {
     let key = normalize(key);
     if key.code == KeyCode::Esc {
       self.clear();
@@ -138,6 +146,16 @@ impl Keys {
     {
       self.count =
         self.count.saturating_mul(10).saturating_add(digit).min(10_000);
+      return None;
+    }
+    if self.prefix.is_empty()
+      && matches!(token.as_str(), "i" | "a")
+      && grammar != Grammar::Objects
+    {
+      if token == "i" && grammar == Grammar::Normal {
+        return Some(self.finish(Action::Cursor));
+      }
+      self.clear();
       return None;
     }
     self.prefix.push_str(&token);
@@ -448,14 +466,14 @@ mod tests {
   fn count_register_and_prefix() {
     let mut keys = Keys::default();
     for ch in "\"a12g".chars() {
-      assert!(keys.feed(key(ch)).is_none());
+      assert!(keys.feed(key(ch), Grammar::Objects).is_none());
     }
-    let input = keys.feed(key('g')).unwrap();
+    let input = keys.feed(key('g'), Grammar::Objects).unwrap();
     assert_eq!(input.count, 12);
     assert_eq!(input.register, 'a');
     assert_eq!(input.action, Action::Motion(Motion::First));
     assert_eq!(
-      keys.feed(key('0')).unwrap().action,
+      keys.feed(key('0'), Grammar::Objects).unwrap().action,
       Action::Motion(Motion::LineStart)
     );
   }
@@ -464,7 +482,8 @@ mod tests {
   fn section_prefix_counts() {
     for (text, forward) in [("[[", false), ("]]", true)] {
       let mut keys = Keys::default();
-      let mut inputs = text.chars().filter_map(|ch| keys.feed(key(ch)));
+      let mut inputs =
+        text.chars().filter_map(|ch| keys.feed(key(ch), Grammar::Objects));
       let input = inputs.next().unwrap();
       assert_eq!(input.action, Action::Section(forward));
       assert_eq!(input.count, 1);
@@ -472,19 +491,19 @@ mod tests {
     }
     for (prefix, forward) in [('[', false), (']', true)] {
       let mut keys = Keys::default();
-      keys.feed(key('2'));
-      assert!(keys.feed(key(prefix)).is_none());
+      keys.feed(key('2'), Grammar::Objects);
+      assert!(keys.feed(key(prefix), Grammar::Objects).is_none());
       assert_eq!(keys.pending(), format!("2{prefix}"));
       assert_eq!(clues(&prefix.to_string()).len(), 1);
-      let input = keys.feed(key(prefix)).unwrap();
+      let input = keys.feed(key(prefix), Grammar::Objects).unwrap();
       assert_eq!(input.action, Action::Section(forward));
       assert_eq!(input.count, 2);
       assert!(input.explicit);
       assert_eq!(keys.pending(), "");
-      keys.feed(key(prefix));
-      keys.feed(key('x'));
+      keys.feed(key(prefix), Grammar::Objects);
+      keys.feed(key('x'), Grammar::Objects);
       assert!(keys.awaiting().is_none());
-      assert_eq!(keys.feed(key('j')).unwrap().count, 1);
+      assert_eq!(keys.feed(key('j'), Grammar::Objects).unwrap().count, 1);
     }
   }
 
@@ -492,7 +511,11 @@ mod tests {
   fn marks_take_a_name() {
     let mut keys = Keys::default();
     let mut feed = |text: &str| {
-      text.chars().filter_map(|ch| keys.feed(key(ch))).map(|i| i.action).last()
+      text
+        .chars()
+        .filter_map(|ch| keys.feed(key(ch), Grammar::Objects))
+        .map(|i| i.action)
+        .last()
     };
     assert_eq!(feed("ma"), Some(Action::Mark('a')));
     assert_eq!(feed("'B"), Some(Action::GoMark('B', false)));
@@ -505,17 +528,17 @@ mod tests {
   fn ctrl_w_takes_a_window_command() {
     let mut keys = Keys::default();
     let ctrl_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
-    assert!(keys.feed(ctrl_w).is_none());
+    assert!(keys.feed(ctrl_w, Grammar::Objects).is_none());
     assert_eq!(keys.awaiting(), Some("C-w"));
-    let input = keys.feed(key('v')).unwrap();
+    let input = keys.feed(key('v'), Grammar::Objects).unwrap();
     assert_eq!(input.action, Action::Window(W::Split(Axis::Columns)));
-    assert!(keys.feed(ctrl_w).is_none());
+    assert!(keys.feed(ctrl_w, Grammar::Objects).is_none());
     let ctrl_l = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
-    let input = keys.feed(ctrl_l).unwrap();
+    let input = keys.feed(ctrl_l, Grammar::Objects).unwrap();
     assert_eq!(input.action, Action::Window(W::Focus(D::Right)));
-    keys.feed(ctrl_w);
+    keys.feed(ctrl_w, Grammar::Objects);
     let shifted = KeyEvent::new(KeyCode::Char('L'), KeyModifiers::SHIFT);
-    let input = keys.feed(shifted).unwrap();
+    let input = keys.feed(shifted, Grammar::Objects).unwrap();
     assert_eq!(input.action, Action::Window(W::Move(D::Right)));
   }
 
@@ -585,7 +608,7 @@ mod tests {
       let mut keys = Keys::default();
       let got: Vec<_> = events
         .iter()
-        .map(|event| keys.feed(*event))
+        .map(|event| keys.feed(*event, Grammar::Objects))
         .map(|input| input.map(|i| (i.action, i.count, i.register)))
         .collect();
       assert_eq!(got, want, "{events:?}");
@@ -618,7 +641,7 @@ mod tests {
         let mut keys = Keys::default();
         let input = format!("\"b3{prefix}{name}")
           .chars()
-          .filter_map(|ch| keys.feed(key(ch)))
+          .filter_map(|ch| keys.feed(key(ch), Grammar::Objects))
           .last()
           .unwrap();
         assert_eq!(input.action, Action::Object(kind, around));
@@ -630,19 +653,62 @@ mod tests {
   }
 
   #[test]
+  fn cursor_and_object_grammar() {
+    for grammar in [Grammar::Normal, Grammar::Objects, Grammar::Other] {
+      let mut keys = Keys::default();
+      let input = keys.feed(key('i'), grammar);
+      match grammar {
+        Grammar::Normal => {
+          assert_eq!(input.unwrap().action, Action::Cursor);
+          assert!(keys.awaiting().is_none());
+        }
+        Grammar::Objects => {
+          assert!(input.is_none());
+          assert_eq!(keys.awaiting(), Some("i"));
+          assert_eq!(
+            keys.feed(key('w'), grammar).unwrap().action,
+            Action::Object(O::Word, false)
+          );
+        }
+        Grammar::Other => {
+          assert!(input.is_none());
+          assert!(keys.awaiting().is_none());
+        }
+      }
+      keys.clear();
+      keys.feed(key('a'), grammar);
+      assert_eq!(keys.awaiting(), (grammar == Grammar::Objects).then_some("a"));
+      keys.clear();
+      for ch in "\"i2mi".chars() {
+        let input = keys.feed(key(ch), grammar);
+        if let Some(input) = input {
+          assert_eq!(input.action, Action::Mark('i'));
+          assert_eq!(input.register, 'i');
+          assert_eq!(input.count, 2);
+        }
+      }
+      assert_eq!(keys.pending(), "");
+      keys.feed(key('g'), grammar);
+      assert!(keys.feed(key('i'), grammar).is_none());
+      assert_eq!(keys.pending(), "");
+    }
+  }
+
+  #[test]
   fn escape_resets_pending_count() {
     let mut keys = Keys::default();
-    keys.feed(key('9'));
-    keys.feed(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    assert_eq!(keys.feed(key('j')).unwrap().count, 1);
-    assert!(keys.feed(key('d')).is_none());
+    keys.feed(key('9'), Grammar::Objects);
+    keys
+      .feed(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), Grammar::Objects);
+    assert_eq!(keys.feed(key('j'), Grammar::Objects).unwrap().count, 1);
+    assert!(keys.feed(key('d'), Grammar::Objects).is_none());
     assert_eq!(
-      keys.feed(key(' ')).unwrap().action,
+      keys.feed(key(' '), Grammar::Objects).unwrap().action,
       Action::Motion(Motion::NextPage)
     );
     let shifted = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::SHIFT);
     assert_eq!(
-      keys.feed(shifted).unwrap().action,
+      keys.feed(shifted, Grammar::Objects).unwrap().action,
       Action::Motion(Motion::PreviousPage)
     );
   }

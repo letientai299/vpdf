@@ -10,7 +10,7 @@ use vpdf::prompt::History;
 use vpdf::reader::SelectionKind;
 use vpdf::text::{Bounds, PageId, Position};
 
-fn app(file: &str, text: bool) -> Result<App> {
+pub(super) fn app(file: &str, text: bool) -> Result<App> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   App::with_screen(
     &root.join(file),
@@ -26,7 +26,7 @@ fn app(file: &str, text: bool) -> Result<App> {
   )
 }
 
-fn keys(app: &mut App, bytes: &[u8]) -> Result<()> {
+pub(super) fn keys(app: &mut App, bytes: &[u8]) -> Result<()> {
   let mut events = VecDeque::new();
   Parser::default().feed(bytes, &mut events);
   assert!(!events.is_empty());
@@ -39,7 +39,7 @@ fn keys(app: &mut App, bytes: &[u8]) -> Result<()> {
   Ok(())
 }
 
-fn settle(app: &mut App) {
+pub(super) fn settle(app: &mut App) {
   for _ in 0..40 {
     if let Some(animation) = &mut app.animation {
       animation.updated =
@@ -313,12 +313,13 @@ fn scan_selection_fails_without_ocr_or_view_motion() -> Result<()> {
   for text_mode in [false, true] {
     let mut app = App::with_screen(file.path(), "", text_mode, source.screen)?;
     assert!(app.doc.text(PageId(0))?.lines.is_empty());
-    for bytes in [b"v".as_slice(), b"V", b"yw", b"yy"] {
+    for bytes in [b"i".as_slice(), b"v", b"V", b"yw", b"yy"] {
       let scroll = app.reader.scroll;
       keys(&mut app, bytes)?;
       assert_eq!(app.reader.scroll, scroll);
       assert!(app.reader.selection.is_none() && app.reader.operator.is_none());
       assert!(app.ocr.is_none());
+      assert_eq!(app.reader.mode(), vpdf::reader::Mode::Normal);
       assert!(app.reader.message.contains("Selection unavailable"));
     }
   }

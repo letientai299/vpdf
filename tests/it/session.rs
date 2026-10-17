@@ -242,7 +242,13 @@ mod pointer {
 
     act(&mut session, Action::Cancel)?;
     act(&mut session, Action::Yank)?;
-    assert!(session.app().keys.feed(key(KeyCode::Char('g'))).is_none());
+    assert!(
+      session
+        .app()
+        .keys
+        .feed(key(KeyCode::Char('g')), vpdf::keys::Grammar::Other)
+        .is_none()
+    );
     mouse(&mut session, ScrollDown, 90, 10)?;
     assert_eq!(session.app().id, left, "the wheel leaves focus");
     assert!(pane(&mut session, right).animation.is_some());
@@ -253,7 +259,10 @@ mod pointer {
     assert!(session.app().reader.operator.is_none(), "press drops `y`");
 
     act(&mut session, Action::Search(false))?;
-    session.app().keys.feed(key(KeyCode::Char('g')));
+    session
+      .app()
+      .keys
+      .feed(key(KeyCode::Char('g')), vpdf::keys::Grammar::Other);
     mouse(&mut session, Down(Left), 90, 10)?;
     assert_eq!(session.app().id, left, "prompt consumes the press");
     mouse(&mut session, Down(Left), 90, 10)?;
@@ -318,7 +327,10 @@ mod pointer {
     let cursor = session.app().reader.cursor;
     let second = std::time::Duration::from_secs(1);
     for kind in [Down(Left), ScrollDown] {
-      session.app().keys.feed(key(KeyCode::Char('g')));
+      session
+        .app()
+        .keys
+        .feed(key(KeyCode::Char('g')), vpdf::keys::Grammar::Other);
       session.app().awaiting = std::time::Instant::now().checked_sub(second);
       assert!(session.app().clue_due());
       mouse(&mut session, kind, 40, 38)?;

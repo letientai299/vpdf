@@ -25,8 +25,7 @@ impl App {
     count: usize,
   ) -> Result<()> {
     self.outline_updates()?;
-    let normal =
-      self.reader.selection.is_none() && self.reader.operator.is_none();
+    let normal = self.reader.viewport_mode();
     let position = self.navigation_position();
     let mut headings: Vec<_> = self
       .doc

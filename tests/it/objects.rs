@@ -348,7 +348,7 @@ fn object_raw_keys_preserve_normal_and_copy_blocks() -> Result<()> {
     )?;
     app.doc.trim();
     let cursor = app.reader.cursor;
-    raw(&mut app, "WBEgE()iWaWisisapibab[]i\"i’i“".as_bytes())?;
+    raw(&mut app, b"WBEgE()aWapab[]")?;
     assert_eq!(app.reader.cursor, cursor);
     assert!(app.reader.selection.is_none() && app.reader.operator.is_none());
     assert_eq!(app.doc.cache_bytes(), 0);

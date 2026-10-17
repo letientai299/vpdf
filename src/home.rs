@@ -148,7 +148,9 @@ impl Home {
 
   fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<Outcome> {
     let Some(prompt) = &mut self.prompt else {
-      let Some(input) = self.keys.feed(key) else { return Ok(Outcome::Stay) };
+      let Some(input) = self.keys.feed(key, crate::keys::Grammar::Other) else {
+        return Ok(Outcome::Stay);
+      };
       if self.panel.navigate(input, usize::from(self.screen.rows)) {
         return Ok(Outcome::Stay);
       }

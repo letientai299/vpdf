@@ -19,42 +19,48 @@ The reader requires [Kitty keyboard][keyboard] disambiguation, or tmux's
 extended keys; see [terminal setup][setup].
 
 Normal `h j k l` and arrow keys pan or scroll the viewport; counts scale the
-movement. `v` and `V` enter character or line Visual selection at a visible
-click/jump target, or the first visible text. Text motions belong to Visual;
-`y{motion}` and `yy` also copy from that visible entry point. `o` swaps ends,
-`gv` restores the last range, and `y` copies and returns Normal.
+movement. `i` enters Cursor at a visible click/jump target or the first visible
+text. Cursor shows a glyph cursor: `h j k l`, word, line, paragraph, and page
+motions position it before `v` or `V` starts character or line Visual selection.
+Direct Normal `v`/`V` selects from the same visible entry point. `o` swaps ends,
+`gv` restores the last range, and `y` copies. Visual returns to its entry mode;
+Esc from idle Cursor returns to viewport Normal.
 
-Visual `W B E gE` move between whitespace-separated WORDs; `( )` move between
-sentences, preserving scientific abbreviations such as `Fig.`, `et al.`, and
-`e.g.`. Visual and copy operators accept `i` (inner) and `a` (around) objects:
-`w W s p`, bracket pairs `() [] {} <>` (`b` and `B` alias parentheses and
-braces), and single or double quotes, including typographic quotes. Counts
-repeat words, sentences, paragraphs, or quote pairs; bracket counts select
-outer pairs. Objects can cross extracted lines and pages. Paragraphs follow
-extracted blocks; around objects include adjacent whitespace.
+Cursor and Visual `W B E gE` move between whitespace-separated WORDs; `( )`
+move between sentences, preserving scientific abbreviations such as `Fig.`,
+`et al.`, and `e.g.`. Only Visual and explicit copy operators accept `i` (inner)
+and `a` (around) objects: `w W s p`, bracket pairs `() [] {} <>` (`b` and `B`
+alias parentheses and braces), and single or double quotes, including
+typographic quotes. For example, `yiw` copies a word, while `viw` selects it.
+Counts repeat objects or select enclosing bracket pairs. Objects can cross
+extracted lines and pages; paragraphs follow extracted blocks. Bare Cursor
+`i`/`a` never start an object.
 
 `[[` and `]]` jump to the heading before or after the viewport in Normal,
-or the active selection end in Visual. Counts repeat heading jumps;
+or the active glyph in Cursor/Visual. Counts repeat heading jumps;
 Ctrl-o and Ctrl-i return through jump history.
 
 Visual highlights the active line; `:cursorline` toggles this band. Normal shows
-no glyph cursor or line band. View scrolling preserves selection endpoints;
+no glyph cursor or line band; Cursor shows only its glyph. Explicit scroll
+keys preserve glyph and selection positions;
 zoom, crop, rotation, panels, and resize keep the reading area anchored. `K`,
-Enter, and `*` use a visible click/jump target. A textless view reports
+Enter, and `*` use the visible active glyph in Cursor/Visual, or a visible
+click/jump target in Normal. A textless view reports
 selection unavailable; start OCR explicitly with `:ocr`.
 
-Esc cancels transient input and returns Normal while preserving side-panel
-focus and committed jobs. `:cancel` stops the active pane's search, OCR, and
-outline work. Extracted text follows the same modes and viewport rules.
+Esc cancels an owned transient or pending input before leaving a reading mode.
+It preserves side-panel focus, the underlying entry mode, and committed jobs.
+`:cancel` stops the active pane's search, OCR, and outline work. Extracted text
+follows the same modes and viewport rules.
 
 Tab and Shift-Tab switch between content and the visible side panel, keeping
 selection and panel state. Ctrl-o/Ctrl-i navigate history; prompt Tab completes.
-Panel commands focus their list. Enter follows a row in Normal while keeping
-the list; `o` or a row click keeps panel focus. An unopened document opens in a
-new tab with Enter, or a split with `o`/click; an open view is reused.
-`:e`, `:tabe`, `:split <file>`, and `:vsplit <file>` also focus an existing
-view before applying placement. Pane changes keep Visual ranges, committed
-searches, panel position, and local focus; incomplete input clears.
+Panel commands focus their list. Enter follows a row in Normal while keeping the
+list; `o` or a row click keeps panel focus. An unopened document opens in a new
+tab with Enter, or a split with `o`/click; an open view is reused. `:e`,
+`:tabe`, `:split <file>`, and `:vsplit <file>` also focus an existing view
+before applying placement. Pane changes keep Cursor mode, Visual ranges,
+committed searches, panel position, and local focus; incomplete input clears.
 `gq` or panel-local `q` closes the list. Overview occupies the content slot.
 Hover and wheel preserve keyboard focus. Clicking outside a prompt or preview
 dismisses it; the next click activates the underlying surface.

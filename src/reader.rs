@@ -24,6 +24,20 @@ pub enum SelectionKind {
   Line,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Mode {
+  Normal,
+  Cursor,
+  Visual(SelectionKind),
+}
+
+#[derive(Clone, Copy, Default)]
+enum EntryMode {
+  #[default]
+  Normal,
+  Cursor,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Selection {
   pub anchor: Position,
@@ -62,6 +76,7 @@ pub struct Reader {
   pub pending_yank: Option<Yank>,
   /// Yanked text; the named, `"`, and `0` registers share one copy.
   pub registers: Cache<char, Arc<str>>,
+  entry: EntryMode,
   history: Vec<Location>,
   future: Vec<Location>,
 }
@@ -78,6 +93,7 @@ impl Default for Reader {
       message: String::new(),
       pending_yank: None,
       registers: Cache::new(32 * MIB),
+      entry: EntryMode::Normal,
       history: Vec::new(),
       future: Vec::new(),
     }
@@ -85,6 +101,32 @@ impl Default for Reader {
 }
 
 impl Reader {
+  pub fn mode(&self) -> Mode {
+    if let Some(selection) = self.selection {
+      return Mode::Visual(selection.kind);
+    }
+    match self.entry {
+      EntryMode::Normal => Mode::Normal,
+      EntryMode::Cursor => Mode::Cursor,
+    }
+  }
+
+  pub fn uses_cursor(&self) -> bool {
+    self.mode() != Mode::Normal
+  }
+
+  pub fn viewport_mode(&self) -> bool {
+    !self.uses_cursor() && self.operator.is_none()
+  }
+
+  pub(crate) fn enter_cursor(&mut self) {
+    self.entry = EntryMode::Cursor;
+  }
+
+  pub(crate) fn normal(&mut self) {
+    self.entry = EntryMode::Normal;
+  }
+
   pub fn clear_history(&mut self) {
     self.history.clear();
     self.future.clear();

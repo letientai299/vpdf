@@ -161,7 +161,7 @@ impl App {
         out,
       )?;
     }
-    if self.reader.selection.is_none() {
+    if !self.reader.uses_cursor() {
       return Ok(());
     }
     let cursor = self.reader.cursor;

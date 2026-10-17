@@ -2,9 +2,9 @@ use crate::Result;
 use crate::app::{App, InputOwner, Request, TabMove, Window};
 use crate::cmdline;
 use crate::document::{Document, Target};
-use crate::keys::{Action, Input, PanelKind};
+use crate::keys::{Action, Grammar, Input, PanelKind};
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
-use crate::reader;
+use crate::reader::{self, Mode};
 use crate::render_worker::RenderWorker;
 use crate::split::Axis;
 use crate::text::Position;
@@ -50,17 +50,7 @@ impl App {
       return Ok(());
     }
     if input.action == Action::Cancel {
-      self.animation = None;
-      match self.input_owner() {
-        InputOwner::Prompt => self.cancel_prompt()?,
-        InputOwner::Hints => self.hints = None,
-        InputOwner::Peek => self.peek = None,
-        _ if self.overview.is_some() => self.close_overview(),
-        _ => {}
-      }
-      self.reader.cancel();
-      self.disarm();
-      return Ok(());
+      return self.cancel_input();
     }
     if !self.panel_focused()
       && self.overview.is_some()
@@ -123,6 +113,9 @@ impl App {
         cmdline::feed(prompt, key, history)
       });
     }
+    if key.code == KeyCode::Esc {
+      return self.cancel_input();
+    }
     if self.hints.is_some() {
       if crate::keys::plain(key)
         && matches!(key.code, KeyCode::Char(ch) if ch.is_ascii_alphabetic())
@@ -130,19 +123,14 @@ impl App {
       {
         return self.hint_key(key);
       }
-      if key.code != KeyCode::Esc {
-        self.hints = None;
-      }
+      self.hints = None;
     }
     if self.peek.is_some() {
-      let Some(input) = self.keys.feed(key) else {
+      let Some(input) = self.keys.feed(key, Grammar::Other) else {
         self.peek = None;
         return Ok(());
       };
       if input.action == Action::Command {
-        return self.action(input);
-      }
-      if input.action == Action::Cancel {
         return self.action(input);
       }
       let Some(peek) = self.peek.take() else { return Ok(()) };
@@ -152,9 +140,45 @@ impl App {
         _ => self.action(input),
       };
     }
-    if let Some(input) = self.keys.feed(key) {
+    let grammar = match self.input_owner() {
+      InputOwner::Content
+        if matches!(self.reader.mode(), Mode::Visual(_))
+          || self.reader.operator.is_some() =>
+      {
+        Grammar::Objects
+      }
+      InputOwner::Content if self.reader.mode() == Mode::Normal => {
+        Grammar::Normal
+      }
+      _ => Grammar::Other,
+    };
+    if let Some(input) = self.keys.feed(key, grammar) {
       self.action(input)?;
     }
+    Ok(())
+  }
+
+  fn cancel_input(&mut self) -> Result<()> {
+    self.animation = None;
+    let owner = self.input_owner();
+    let pending =
+      !self.keys.pending().is_empty() || self.reader.operator.is_some();
+    match owner {
+      InputOwner::Prompt => self.cancel_prompt()?,
+      InputOwner::Hints => self.hints = None,
+      InputOwner::Peek => self.peek = None,
+      _ if self.overview.is_some() => self.close_overview(),
+      _ => {}
+    }
+    if owner == InputOwner::Content && pending {
+      self.reader.message.clear();
+    } else {
+      if owner == InputOwner::Content && self.reader.mode() == Mode::Cursor {
+        self.reader.normal();
+      }
+      self.reader.cancel();
+    }
+    self.disarm();
     Ok(())
   }
 

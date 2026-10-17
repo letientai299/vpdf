@@ -282,7 +282,7 @@ impl App {
   }
 
   fn text_style(&self, position: Position) -> &'static str {
-    if self.reader.selection.is_some() && position == self.reader.cursor {
+    if self.reader.uses_cursor() && position == self.reader.cursor {
       return theme::TEXT_CURSOR;
     }
     if let Some(selection) = self.reader.selection {

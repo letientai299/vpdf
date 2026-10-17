@@ -500,7 +500,7 @@ impl App {
       self.text_mode = previous;
     }
     self.requested.clear();
-    if self.reader.selection.is_some() {
+    if self.reader.uses_cursor() {
       self.ensure_cursor()?;
     }
     Ok(())
@@ -655,6 +655,7 @@ impl App {
       self.close_overview();
     }
     if focus {
+      self.reader.normal();
       self.reader.cancel();
       if let Some(panel) = &mut self.panel {
         panel.focused = false;
@@ -780,7 +781,7 @@ impl App {
   /// Outline entry containing the cursor.
   pub fn section(&mut self) -> Option<usize> {
     let cursor = self.navigation_position();
-    if self.reader.selection.is_none() && !self.text_mode {
+    if self.reader.viewport_mode() && !self.text_mode {
       let y = self
         .layout
         .unproject(cursor.page, (0.0, 0.0), self.reader.scroll)

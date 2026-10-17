@@ -387,7 +387,7 @@ fn key_prefixes() -> Result<()> {
     measure(name, || {
       let mut keys = vpdf::keys::Keys::default();
       for event in &events {
-        black_box(keys.feed(black_box(*event)));
+        black_box(keys.feed(black_box(*event), vpdf::keys::Grammar::Objects));
       }
     })?;
   }
@@ -402,6 +402,19 @@ fn routing_key() -> Result<()> {
     app.reader.scroll = 0.0;
     app.animation = None;
     app.key(black_box(key), &mut history).expect("reading key");
+  })
+}
+
+fn cursor_key() -> Result<()> {
+  let mut app = paper(false)?;
+  let mut history = vpdf::prompt::History::default();
+  app
+    .key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE), &mut history)?;
+  let cursor = app.reader.cursor;
+  let key = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE);
+  measure("App::key Cursor glyph", || {
+    app.reader.cursor = cursor;
+    app.key(black_box(key), &mut history).expect("glyph key");
   })
 }
 
@@ -519,12 +532,13 @@ fn lexical_objects() -> Result<()> {
   measure("Keys::feed objects paper", || {
     keys.clear();
     for ch in "3iw".chars() {
-      black_box(
-        keys.feed(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE)),
-      );
+      black_box(keys.feed(
+        KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
+        vpdf::keys::Grammar::Objects,
+      ));
     }
     for key in &letters {
-      black_box(keys.feed(*key));
+      black_box(keys.feed(*key, vpdf::keys::Grammar::Objects));
     }
   })
 }
@@ -555,6 +569,7 @@ const CASES: &[(&str, Case)] = &[
   ("viewport", viewport),
   ("transitions", transitions),
   ("routing key", routing_key),
+  ("cursor key", cursor_key),
   ("routing pointer", routing_pointer),
   ("routing status", routing_status),
   ("routing panel", routing_panel),

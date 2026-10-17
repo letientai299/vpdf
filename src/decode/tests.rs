@@ -476,7 +476,11 @@ fn tab_and_ctrl_i_stay_apart() {
     panic!("not keys");
   };
   assert_ne!(crate::keys::normalize(*tab), crate::keys::normalize(*ctrl_i));
-  let action = |key| Keys::default().feed(key).map(|input| input.action);
+  let action = |key| {
+    Keys::default()
+      .feed(key, crate::keys::Grammar::Normal)
+      .map(|input| input.action)
+  };
   assert_eq!(action(*ctrl_i), Some(Action::History(true)));
   assert_eq!(action(*ctrl_o), Some(Action::History(false)));
   assert_eq!(action(*tab), Some(Action::LocalFocus));
@@ -517,7 +521,9 @@ fn tmux_extended_keys_recorded() {
   assert_eq!(decode(&[b"\x1b[27;5~\x1b[27~"]), []);
   let action = |bytes: &[u8]| {
     let Event::Key(key) = decode(&[bytes])[0] else { panic!("not a key") };
-    Keys::default().feed(key).map(|input| input.action)
+    Keys::default()
+      .feed(key, crate::keys::Grammar::Normal)
+      .map(|input| input.action)
   };
   assert_eq!(action(b"\x1b[27;5;105~"), Some(Action::History(true)));
   assert_eq!(action(b"\x1b[27;5;111~"), Some(Action::History(false)));
@@ -530,8 +536,13 @@ fn ctrl_shift_letters_keep_legacy_bindings() {
     panic!("not a key");
   };
   let mut keys = Keys::default();
-  keys.feed(KeyEvent::new(KeyCode::Char('w'), CTRL));
-  let split = keys.feed(ctrl_shift_v).map(|input| input.action);
+  keys.feed(
+    KeyEvent::new(KeyCode::Char('w'), CTRL),
+    crate::keys::Grammar::Normal,
+  );
+  let split = keys
+    .feed(ctrl_shift_v, crate::keys::Grammar::Normal)
+    .map(|input| input.action);
   assert!(matches!(split, Some(Action::Window(_))), "{split:?}");
 }
 

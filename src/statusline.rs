@@ -4,7 +4,7 @@ use crate::find::Phase;
 use crate::grid;
 use crate::layout::Screen;
 use crate::prompt::Prompt;
-use crate::reader::SelectionKind;
+use crate::reader::{Mode, SelectionKind};
 use crate::terminal::{self, At};
 use crate::theme::{self, Color};
 use std::fmt::Write as _;
@@ -25,11 +25,12 @@ impl App {
       InputOwner::Overview => return ("PAGES", Color::Cyan),
       InputOwner::Content => {}
     }
-    match self.reader.selection.map(|selection| selection.kind) {
-      Some(SelectionKind::Character) => ("VISUAL", Color::Magenta),
-      Some(SelectionKind::Line) => ("V-LINE", Color::Magenta),
-      None if self.reader.operator.is_some() => ("YANK", Color::Yellow),
-      None => ("NORMAL", Color::Blue),
+    match self.reader.mode() {
+      Mode::Visual(SelectionKind::Character) => ("VISUAL", Color::Magenta),
+      Mode::Visual(SelectionKind::Line) => ("V-LINE", Color::Magenta),
+      _ if self.reader.operator.is_some() => ("YANK", Color::Yellow),
+      Mode::Cursor => ("CURSOR", Color::Cyan),
+      Mode::Normal => ("NORMAL", Color::Blue),
     }
   }
 
@@ -46,7 +47,7 @@ impl App {
     }
     let more =
       if matches!(self.search.phase, Phase::Running { .. }) { "+" } else { "" };
-    if self.reader.selection.is_none() && self.reader.operator.is_none() {
+    if self.reader.viewport_mode() {
       return format!("[{}{more} matches]  ", hits.len());
     }
     let cursor = self.reader.cursor;

@@ -93,7 +93,7 @@ impl App {
   }
 
   pub fn navigation_position(&self) -> Position {
-    if self.reader.selection.is_some() || self.reader.operator.is_some() {
+    if !self.reader.viewport_mode() {
       return self.reader.cursor;
     }
     if self.text_mode {
@@ -187,7 +187,12 @@ impl App {
   }
 
   pub(crate) fn explicit_target(&mut self) -> Result<Option<Position>> {
-    if let Some(target) = self.target
+    let target = if self.reader.uses_cursor() {
+      Some(self.reader.cursor)
+    } else {
+      self.target
+    };
+    if let Some(target) = target
       && self.visible_position(target)?
     {
       return Ok(Some(target));
@@ -216,7 +221,7 @@ impl App {
   }
 
   pub fn reading_position(&mut self) -> Result<Position> {
-    if self.reader.selection.is_some() || self.reader.operator.is_some() {
+    if !self.reader.viewport_mode() {
       return Ok(self.reader.cursor);
     }
     if let Some(target) = self.target
@@ -285,6 +290,12 @@ impl App {
   fn normal_input(&mut self, input: Input) -> Result<bool> {
     let count = input.count;
     match input.action {
+      Action::Cursor => {
+        if self.enter_text()? {
+          self.reader.enter_cursor();
+        }
+        return Ok(true);
+      }
       Action::Motion(Motion::Left | Motion::Right) => {
         let direction =
           if input.action == Action::Motion(Motion::Left) { -1.0 } else { 1.0 };
@@ -320,8 +331,8 @@ impl App {
 
   pub fn navigate(&mut self, input: Input) -> Result<bool> {
     let count = input.count;
-    let normal =
-      self.reader.selection.is_none() && self.reader.operator.is_none();
+    let normal = self.reader.viewport_mode();
+    let copying = self.reader.operator.is_some();
     if normal && self.normal_input(input)? {
       return Ok(true);
     }
@@ -383,7 +394,7 @@ impl App {
       input.action,
       Action::Yank | Action::YankLine | Action::Visual(_)
     ) || (self.reader.selection.is_none()
-      && !normal
+      && copying
       && matches!(input.action, Action::Motion(_) | Action::Object(..)))
     {
       return Ok(true);
@@ -406,14 +417,14 @@ impl App {
           .scroll(rows as f32 * count * f32::from(self.screen.cell_height))?;
       }
       Action::Align(fraction) if self.text_mode => {
-        if self.reader.selection.is_none() {
+        if self.reader.viewport_mode() {
           self.reader.cursor = self.reading_position()?;
         }
         self.align_text(fraction)?;
       }
       Action::Align(fraction) => {
         self.animation = None;
-        if self.reader.selection.is_none() {
+        if self.reader.viewport_mode() {
           self.reader.cursor = self.reading_position()?;
         }
         let text = self.doc.text(self.reader.cursor.page)?;
