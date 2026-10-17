@@ -481,6 +481,12 @@ impl Caps {
     matches!(self.host, Host::Tmux(_)) && is(self.terminal(), &["kitty"])
   }
 
+  /// Whether 1016 reports TIOCGWINSZ pixels; iTerm2 sends points.
+  pub fn pixel_mouse(&self) -> bool {
+    self.pixels == Support::Answered
+      && is(self.version.as_deref(), &["kitty", "ghostty"])
+  }
+
   /// Whether what answered keeps a title stack (`CSI 22/23 t`), so a
   /// title vpdf sets goes at exit; Ghostty, `WezTerm`, and Konsole ignore
   /// the stack. Under tmux the title is the pane's, which reaches the

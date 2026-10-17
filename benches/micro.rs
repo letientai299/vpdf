@@ -220,9 +220,9 @@ fn hover() -> Result<()> {
   session.open(&corpus("paper.pdf")?, true, PANE)?;
   session.app().command("2")?;
   let mut column = 0;
-  measure("Session::hover", || {
+  measure("Session::mouse motion", || {
     column = (column + 1) % 120;
-    black_box(session.hover(black_box(motion(column))));
+    black_box(session.mouse(black_box(motion(column))).expect("hover"));
   })?;
   for text_mode in [false, true] {
     let mut app = paper(text_mode)?;
@@ -231,7 +231,7 @@ fn hover() -> Result<()> {
     let mut column = 0;
     measure(&format!("App::hovered text={text_mode}"), || {
       column = (column + 1) % 120;
-      let hit = app.hovered(Region::Page, black_box(column), 20);
+      let hit = app.hovered(Region::Page, black_box(column), 20, None);
       black_box(hit.expect("hit test"));
     })?;
   }

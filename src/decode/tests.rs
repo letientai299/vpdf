@@ -236,19 +236,27 @@ fn mouse_buttons_source() {
 fn pixel_mouse_source() {
   let mut parser = Parser { pixels: true, ..Parser::default() };
   let mut events = VecDeque::new();
-  parser.feed(b"\x1b[<0;419;233M\x1b[<288;12;7M", &mut events);
+  parser.feed(b"\x1b[<0;419;233M\x1b[<288;12;7M\x1b[<32;-4;9M", &mut events);
   let at = |x, y| Spot::Pixel { x, y };
+  let press = Mouse {
+    kind: MouseKind::Press(Button(1)),
+    at: at(419, 233),
+    modifiers: NONE,
+  };
+  let drag =
+    Mouse { kind: MouseKind::Drag(Button(1)), at: at(0, 9), modifiers: NONE };
   assert_eq!(
     Vec::from(events),
-    [
-      Event::Mouse(Mouse {
-        kind: MouseKind::Press(Button(1)),
-        at: at(419, 233),
-        modifiers: NONE
-      }),
-      Event::Leave,
-    ]
+    [Event::Mouse(press), Event::Leave, Event::Mouse(drag)]
   );
+  let cell = press.cells((8, 16)).map(|mouse| (mouse.column, mouse.row));
+  assert_eq!(cell, Some((52, 14)));
+  assert_eq!(press.pixel(), Some((419, 233)));
+  // Without mode 1016 a negative coordinate is malformed.
+  parser.set_pixels(false);
+  let mut events = VecDeque::new();
+  parser.feed(b"\x1b[<32;-4;9M", &mut events);
+  assert!(events.is_empty());
 }
 
 #[test]
@@ -274,10 +282,14 @@ fn crossterm_mouse_keeps_buttons_one_to_seven() {
     ),
     (mouse(MouseKind::Moved, cell), Some(MouseEventKind::Moved)),
     (mouse(MouseKind::Press(Button::BACK), cell), None),
-    (mouse(MouseKind::Press(Button(1)), Spot::Pixel { x: 3, y: 4 }), None),
+    (
+      mouse(MouseKind::Press(Button(1)), Spot::Pixel { x: 3, y: 4 }),
+      Some(MouseEventKind::Down(MouseButton::Left)),
+    ),
   ];
   for (mouse, want) in cases {
-    assert_eq!(mouse.cells().map(|event| event.kind), want, "{mouse:?}");
+    let kind = mouse.cells((8, 16)).map(|event| event.kind);
+    assert_eq!(kind, want, "{mouse:?}");
   }
 }
 

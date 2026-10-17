@@ -934,3 +934,22 @@ fn clipboard_requires_explicit_answer() {
   crate::terminal::passthrough(&mut wrapped, b"\x1b[?5522$p", true).unwrap();
   assert!(request(&tmux_with(None)).ends_with(&wrapped));
 }
+
+#[test]
+fn pixel_mouse_needs_matching_units() {
+  let mode = |state| format!("\x1b[?1016;{state}$y").into_bytes();
+  // (XTVERSION, DECRQM state) -> pixel reports in TIOCGWINSZ units
+  let cases = [
+    ("kitty(0.49.1)", 2, true),
+    ("ghostty 1.3.1", 1, true),
+    ("kitty(0.49.1)", 0, false),
+    // iTerm2 reports points against device pixels.
+    ("iTerm2 3.7.6", 2, false),
+    ("WezTerm 20240203-110809-5046fc22", 2, false),
+  ];
+  for (name, state, want) in cases {
+    let bytes = [named_da1(name), mode(state)].concat();
+    let caps = caps(Route::Direct, &replies(&bytes));
+    assert_eq!(caps.pixel_mouse(), want, "{name} {state}");
+  }
+}

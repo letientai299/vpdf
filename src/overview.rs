@@ -106,7 +106,7 @@ impl App {
   pub fn overview_mouse(&mut self, mouse: MouseEvent) -> Result<()> {
     let grid = self.grid();
     let last = self.doc.pages.len() - 1;
-    let (x, y) = self.cell_centre(mouse.column, mouse.row);
+    let (x, y) = self.cell_point(mouse.column, mouse.row, None);
     let Some(overview) = &mut self.overview else { return Ok(()) };
     match mouse.kind {
       MouseEventKind::ScrollDown => {

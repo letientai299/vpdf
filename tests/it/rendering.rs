@@ -255,6 +255,7 @@ fn projected_mouse_tracks_glyphs() -> Result<()> {
         focus: true,
         mouse,
         clicks: 1,
+        pixel: None,
       })?;
       assert_eq!(app.reader.cursor, expected, "{rotation} {zoom}");
     }

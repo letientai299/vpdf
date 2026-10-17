@@ -38,7 +38,7 @@ enum EntryMode {
   Cursor,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Selection {
   pub anchor: Position,
   pub kind: SelectionKind,

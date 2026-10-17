@@ -101,6 +101,14 @@ pub fn set_keyboard(keyboard: Keyboard) {
   }
 }
 
+/// Mode 1016: mouse reports carry pixels.
+pub fn set_pixels(pixels: bool) {
+  let mut reader = READER.lock().unwrap_or_else(PoisonError::into_inner);
+  if let Some(reader) = reader.as_mut() {
+    reader.parser.set_pixels(pixels);
+  }
+}
+
 /// Makes a waiting `next` return; workers call it after sending results.
 pub fn wake() {
   let Some(mut waker) = WAKER.get() else { return };
@@ -261,6 +269,7 @@ impl Reader {
   /// back to legacy bytes; a failed keyboard stays failed.
   fn release(&mut self) {
     self.owed = 0;
+    self.parser.set_pixels(false);
     if self.keyboard == Keyboard::Disambiguated {
       self.keyboard = Keyboard::Legacy;
     }

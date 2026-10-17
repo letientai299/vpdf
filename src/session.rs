@@ -7,7 +7,7 @@ use crate::home::{Home, Outcome};
 use crate::keys::PanelKind;
 use crate::layout::Screen;
 use crate::pace::Pacer;
-use crate::pointer::{self, Hover, Pane, Pointer, Route};
+use crate::pointer::{self, Hover, Pane, Pixel, Pointer, Route};
 use crate::prompt::History;
 use crate::split::{Axis, Direction, Node, Rect, neighbor};
 use crate::state::{Mark, State};
@@ -750,11 +750,34 @@ impl Session {
       && (!self.tabs.is_empty() || self.home.is_some())
   }
 
+  /// One terminal mouse report; whether it needs a frame.
+  pub fn mouse_report(&mut self, report: crate::decode::Mouse) -> Result<bool> {
+    let Some(screen) = self.screen else { return Ok(false) };
+    let Some(mut mouse) = report.cells(screen.cell()) else {
+      return Ok(false);
+    };
+    // Padding past the grid reports cells beyond it.
+    mouse.column = mouse.column.min(screen.columns.saturating_sub(1));
+    mouse.row = mouse.row.min(screen.rows.saturating_sub(1));
+    let pixel =
+      report.pixel().map(|(x, y)| Pixel { x, y, cell: screen.cell() });
+    self.pointed(mouse, pixel)
+  }
+
+  /// A report in cells; whether it needs a frame.
+  pub fn mouse(&mut self, mouse: MouseEvent) -> Result<bool> {
+    self.pointed(mouse, None)
+  }
+
   /// Presses focus; the wheel scrolls in place; bare motion hovers.
-  pub fn mouse(&mut self, mouse: MouseEvent) -> Result<()> {
+  fn pointed(
+    &mut self,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+  ) -> Result<bool> {
     if mouse.kind == MouseEventKind::Moved {
-      self.hover(mouse);
-      return Ok(());
+      let hover = self.hit(mouse, pixel);
+      return Ok(self.pointer.hover(mouse, pixel, hover));
     }
     let wheel = matches!(
       mouse.kind,
@@ -764,7 +787,7 @@ impl Session {
         | MouseEventKind::ScrollRight
     );
     if wheel && self.app().prompt.is_some() {
-      return Ok(());
+      return Ok(false);
     }
     if matches!(mouse.kind, MouseEventKind::Down(_)) {
       let pane = Pane::of(self.app());
@@ -772,23 +795,26 @@ impl Session {
       let completion = self.app().prompt.is_some()
         && local.is_some_and(|route| route.region == pointer::Region::Overlay);
       if completion {
-        return Ok(());
+        return Ok(false);
       }
       if self.app().dismiss_click()? {
         self.pointer.release();
-        return Ok(());
+        return Ok(true);
       }
     }
     let tab = &self.tabs[self.active];
     // Snapshot before disarm hides clue rows.
     let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();
     let focused = tab.panes[tab.focus].id;
-    let route = self.pointer.route(&panes, focused, mouse, Instant::now());
-    if pointer::interrupts(mouse.kind) {
+    let route =
+      self.pointer.route(&panes, focused, mouse, pixel, Instant::now());
+    let interrupts = pointer::interrupts(mouse.kind);
+    if interrupts {
       self.app().disarm();
     }
-    let Some(route) = route else { return Ok(()) };
-    let Some(index) = self.tab().index(route.pane) else { return Ok(()) };
+    // Disarming hides clue rows.
+    let Some(route) = route else { return Ok(interrupts) };
+    let Some(index) = self.tab().index(route.pane) else { return Ok(false) };
     if route.focus {
       // Focusing releases captures; keep this one.
       let pointer = std::mem::take(&mut self.pointer);
@@ -796,25 +822,30 @@ impl Session {
       self.pointer = pointer;
       focused?;
     }
-    self.tab().panes[index].mouse(route)
+    let app = &mut self.tab().panes[index];
+    // Kitty reports drags per pixel.
+    let reading = |app: &App| (app.reader.cursor, app.reader.selection);
+    let before =
+      matches!(mouse.kind, MouseEventKind::Drag(_)).then(|| reading(app));
+    app.mouse(route)?;
+    Ok(before.is_none_or(|before| before != reading(app)))
   }
 
-  /// Bare motion; whether the target changed.
-  pub fn hover(&mut self, mouse: MouseEvent) -> bool {
-    let hover = self.hit(mouse);
-    self.pointer.hover(mouse, hover)
+  /// The pointer left the window; whether a hover ended.
+  pub fn pointer_left(&mut self) -> bool {
+    self.pointer.leave()
   }
 
-  /// Retests the last cell; the view changed.
+  /// Retests the last spot; the view changed.
   fn rehover(&mut self) {
-    if let Some(mouse) = self.pointer.spot() {
-      let hover = self.hit(mouse);
+    if let Some((mouse, pixel)) = self.pointer.spot() {
+      let hover = self.hit(mouse, pixel);
       self.pointer.refresh(hover);
     }
   }
 
   /// What the pointer rests on at `mouse`.
-  fn hit(&mut self, mouse: MouseEvent) -> Option<Hover> {
+  fn hit(&mut self, mouse: MouseEvent, pixel: Option<Pixel>) -> Option<Hover> {
     let tab = self.tabs.get(self.active)?;
     let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();
     let route = pointer::route(&panes, tab.panes[tab.focus].id, None, mouse)?;
@@ -822,7 +853,8 @@ impl Session {
     let Route { pane, region, mouse, .. } = route;
     let app = &mut self.tab().panes[index];
     // Hover is advisory; failures find nothing.
-    let hit = app.hovered(region, mouse.column, mouse.row).unwrap_or_default();
+    let hit = app.hovered(region, mouse.column, mouse.row, pixel);
+    let hit = hit.unwrap_or_default();
     Some(Hover { pane, region, hit })
   }
 
@@ -1031,13 +1063,14 @@ impl Session {
   /// What `act` proves of tmux showing the pane: only a shown, active
   /// pane gets keys, and only a shown one the pointer. Covers focus
   /// events lost while a prompt, the start screen, or a child read input.
-  fn shown_by(&mut self, act: &Act, out: &mut impl Write) -> Result<()> {
+  /// Whether the reader shows again and needs a frame.
+  fn shown_by(&mut self, act: &Act, out: &mut impl Write) -> Result<bool> {
     let sight = match act {
       Act::Key(_) => Sight::Focused,
       Act::Mouse(_) if self.sight == Sight::Hidden => Sight::Unfocused,
-      _ => return Ok(()),
+      _ => return Ok(false),
     };
-    self.turn(sight, out).map(drop)
+    self.turn(sight, out)
   }
 
   /// Uploads image `id` again after the terminal evicted it.
@@ -1087,7 +1120,7 @@ impl Session {
         self.home = Some(home);
         return Ok(());
       };
-      if !moved(&event) {
+      if !passive(&event) {
         break event;
       }
     };
@@ -1099,9 +1132,12 @@ impl Session {
         self.look(Cause::FocusOut, out).map(drop)
       };
     }
-    // Only a shown pane gets keys.
+    // Only a shown pane gets keys, and the pointer.
     if matches!(event, Event::Key(_)) {
       self.sight = Sight::Focused;
+    }
+    if matches!(event, Event::Mouse(_)) && self.sight == Sight::Hidden {
+      self.sight = Sight::Unfocused;
     }
     if let Event::Resize(report) = event {
       let measured = terminal::resized(report, Some(home.screen));
@@ -1282,9 +1318,15 @@ fn watch(session: &mut Session, force: bool) -> bool {
   dirty
 }
 
-/// A bare pointer move, which all-motion mouse tracking reports.
-fn moved(event: &Event) -> bool {
-  matches!(event, Event::Mouse(mouse) if mouse.kind == MouseKind::Moved)
+/// Pointer input the start screen ignores: motion, drags, leaving.
+fn passive(event: &Event) -> bool {
+  match event {
+    Event::Mouse(mouse) => {
+      matches!(mouse.kind, MouseKind::Moved | MouseKind::Drag(_))
+    }
+    Event::Leave => true,
+    _ => false,
+  }
 }
 
 /// Input the session acts on.
@@ -1294,7 +1336,9 @@ enum Act {
   Paste(String),
   /// With the mode 2048 report, when the terminal sent one.
   Resize(Option<Size>),
-  Mouse(MouseEvent),
+  Mouse(crate::decode::Mouse),
+  /// The pointer left the window; not typing.
+  Leave,
   /// The terminal no longer holds this image; not typing.
   Missing(u32),
   ImageStatus(String),
@@ -1304,21 +1348,29 @@ enum Act {
 }
 
 impl Act {
-  /// Whether the user caused it, as opposed to a terminal reply.
+  /// Typing: user input but motion and leaving.
   fn typed(&self) -> bool {
-    !matches!(self, Self::Missing(_) | Self::Focus(_) | Self::ImageStatus(_))
+    match self {
+      Self::Mouse(mouse) => mouse.kind != MouseKind::Moved,
+      Self::Missing(_)
+      | Self::Focus(_)
+      | Self::ImageStatus(_)
+      | Self::Leave => false,
+      Self::Key(_) | Self::Paste(_) | Self::Resize(_) => true,
+    }
   }
 }
 
 /// What `event` asks of the session; None for input it ignores yet,
-/// which must not count as typing: other replies, the pointer leaving,
-/// buttons past 7, and key releases.
+/// which must not count as typing: other replies, buttons past 7, and
+/// key releases.
 fn act(event: Event) -> Option<Act> {
   match event {
     Event::Key(key) if key.kind != KeyEventKind::Release => Some(Act::Key(key)),
     Event::Paste(text) => Some(Act::Paste(text)),
     Event::Resize(report) => Some(Act::Resize(report)),
-    Event::Mouse(mouse) => mouse.cells().map(Act::Mouse),
+    Event::Mouse(mouse) => mouse.action().map(|_| Act::Mouse(mouse)),
+    Event::Leave => Some(Act::Leave),
     Event::Reply(Reply::Graphics { id: Some(id), message, .. })
       if message.starts_with("ENOENT") =>
     {
@@ -1328,14 +1380,18 @@ fn act(event: Event) -> Option<Act> {
       Some(Act::ImageStatus(body))
     }
     Event::Focus(gained) => Some(Act::Focus(gained)),
-    Event::Key(_) | Event::Reply(_) | Event::Leave => None,
+    Event::Key(_) | Event::Reply(_) => None,
   }
 }
 
-/// Handles one input; errors show in the focused pane.
-fn input(session: &mut Session, act: Act, out: &mut impl Write) -> Result<()> {
-  session.shown_by(&act, out)?;
-  match act {
+/// Handles one input; whether it needs a frame.
+fn input(
+  session: &mut Session,
+  act: Act,
+  out: &mut impl Write,
+) -> Result<bool> {
+  let shown = session.shown_by(&act, out)?;
+  let done = match act {
     Act::Key(key) => {
       let tab = &mut session.tabs[session.active];
       let app = &mut tab.panes[tab.focus];
@@ -1359,7 +1415,8 @@ fn input(session: &mut Session, act: Act, out: &mut impl Write) -> Result<()> {
       let measured = terminal::resized(report, session.screen);
       session.refit(measured, crossterm::terminal::size)
     }
-    Act::Mouse(mouse) => session.mouse(mouse),
+    Act::Mouse(mouse) => return Ok(session.mouse_report(mouse)? || shown),
+    Act::Leave => return Ok(session.pointer_left()),
     Act::ImageStatus(body) => {
       session.image_status(&body);
       Ok(())
@@ -1370,7 +1427,18 @@ fn input(session: &mut Session, act: Act, out: &mut impl Write) -> Result<()> {
     }
     Act::Focus(true) => session.turn(Sight::Focused, out).map(drop),
     Act::Focus(false) => session.look(Cause::FocusOut, out).map(drop),
-  }
+  };
+  done.map(|()| true)
+}
+
+/// Handles and settles one input; whether it needs a frame.
+fn apply(session: &mut Session, act: Act, out: &mut impl Write) -> bool {
+  let result = input(session, act, out)
+    .and_then(|changed| session.settle().map(|()| changed));
+  result.unwrap_or_else(|error| {
+    report(session, Err(error));
+    true
+  })
 }
 
 /// Positions reach memory this often after a change.
@@ -1385,10 +1453,7 @@ fn run(session: &mut Session) -> Result<()> {
   let mut buffer = Vec::with_capacity(64 * 1024);
   let mut dirty = true;
   let mut pacer = Pacer::new(Instant::now());
-  let mut checked = Instant::now();
-  let mut written = Instant::now();
-  let mut touched = Instant::now();
-  let mut watched = Instant::now();
+  let mut chores = Chores::new(Instant::now());
   let mut drawn = Instant::now();
   let mut title = String::new();
   while session.running() {
@@ -1429,56 +1494,77 @@ fn run(session: &mut Session) -> Result<()> {
     // A hidden reader draws nothing until tmux shows it again.
     let pending = (dirty || animating) && shown;
     let now = Instant::now();
-    let changed = touched.max(drawn) > checked;
+    let changed = chores.touched.max(drawn) > chores.checked;
     let wait = if pending {
       pacer.wait(now)
     } else {
-      idle(session, checked, watched, changed)
+      idle(session, chores.checked, chores.watched, changed)
     };
-    let Some(event) = crate::input::next(Some(wait))? else {
-      dirty |= session.app().clue_due();
-      let force = watched.elapsed() >= WATCH;
-      if force {
-        watched = Instant::now();
-      }
-      dirty |= watch(session, force);
-      if force && session.sight != Sight::Focused {
-        dirty |= session.look(Cause::Tick, &mut out)?;
-      }
-      // Positions reach memory 250 ms after a change and disk after a
-      // 5 s pause or once a minute; exits and hangups write the rest.
-      if checked.elapsed() >= CHECK {
-        checked = Instant::now();
-        session.record();
-        let due = touched.elapsed() > Duration::from_secs(5)
-          || written.elapsed() > Duration::from_secs(60);
-        match if due { session.flush() } else { Ok(false) } {
-          Ok(true) => written = checked,
-          Ok(false) => {}
-          Err(error) => {
-            session.app().error = Some(format!("State not saved: {error}"));
-          }
-        }
-      }
-      continue;
-    };
-    if let Event::Mouse(mouse) = &event
-      && mouse.kind == MouseKind::Moved
-    {
-      // Motion is not typing.
-      dirty |= mouse.cells().is_some_and(|mouse| session.hover(mouse));
-      continue;
+    let event = crate::input::next(Some(wait))?;
+    // Streams of pointer reports must not starve them.
+    if event.is_none() || now.elapsed() >= wait {
+      dirty |= chores.run(session, &mut out)?;
     }
-    let Some(act) = act(event) else { continue };
-    if act.typed() {
-      touched = Instant::now();
-      trace.input();
+    let Some(act) = event.and_then(act) else { continue };
+    let (typed, arrived) = (act.typed(), Instant::now());
+    // Motion and per-pixel drags often change nothing.
+    if apply(session, act, &mut out) {
+      if typed {
+        chores.touched = arrived;
+        trace.input(arrived);
+      }
+      dirty = true;
     }
-    let result = input(session, act, &mut out).and_then(|()| session.settle());
-    report(session, result);
-    dirty = true;
   }
   Ok(())
+}
+
+/// When the timed chores last ran, and the last typing.
+struct Chores {
+  checked: Instant,
+  written: Instant,
+  touched: Instant,
+  watched: Instant,
+}
+
+impl Chores {
+  fn new(now: Instant) -> Self {
+    Self { checked: now, written: now, touched: now, watched: now }
+  }
+
+  /// Clues, file checks, tmux looks, and saved positions; whether a
+  /// frame is due.
+  fn run(
+    &mut self,
+    session: &mut Session,
+    out: &mut impl Write,
+  ) -> Result<bool> {
+    let mut dirty = session.app().clue_due();
+    let force = self.watched.elapsed() >= WATCH;
+    if force {
+      self.watched = Instant::now();
+    }
+    dirty |= watch(session, force);
+    if force && session.sight != Sight::Focused {
+      dirty |= session.look(Cause::Tick, out)?;
+    }
+    // Positions reach memory 250 ms after a change and disk after a
+    // 5 s pause or once a minute; exits and hangups write the rest.
+    if self.checked.elapsed() >= CHECK {
+      self.checked = Instant::now();
+      session.record();
+      let due = self.touched.elapsed() > Duration::from_secs(5)
+        || self.written.elapsed() > Duration::from_secs(60);
+      match if due { session.flush() } else { Ok(false) } {
+        Ok(true) => self.written = self.checked,
+        Ok(false) => {}
+        Err(error) => {
+          session.app().error = Some(format!("State not saved: {error}"));
+        }
+      }
+    }
+    Ok(dirty)
+  }
 }
 
 /// Sets the window title, except where the terminal ignores the title
@@ -1532,7 +1618,7 @@ fn report(session: &mut Session, result: Result<()>) {
 mod tests {
   use super::*;
   use crate::decode::{Button, Mouse, Spot};
-  use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind};
+  use crossterm::event::{KeyCode, KeyModifiers};
 
   #[test]
   fn image_timeout_retains_transfer() {
@@ -1760,10 +1846,9 @@ mod tests {
   fn input_proves_the_pane_shown() -> Result<()> {
     use Sight::{Focused, Hidden, Unfocused};
     let key = Act::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
-    let mouse = Act::Mouse(MouseEvent {
-      kind: MouseEventKind::Down(MouseButton::Left),
-      column: 1,
-      row: 1,
+    let mouse = Act::Mouse(Mouse {
+      kind: MouseKind::Press(Button::LEFT),
+      at: Spot::Cell { column: 1, row: 1 },
       modifiers: KeyModifiers::NONE,
     });
     // (sight, act, sight after)
@@ -1784,6 +1869,32 @@ mod tests {
     Ok(())
   }
 
+  /// Pointer input draws only when it reveals or changes something.
+  #[test]
+  fn pointer_input_reports_frames() -> Result<()> {
+    let at = Spot::Cell { column: 1, row: 1 };
+    let motion = || {
+      Act::Mouse(Mouse {
+        kind: MouseKind::Moved,
+        at,
+        modifiers: KeyModifiers::NONE,
+      })
+    };
+    // (sight, act) -> frame
+    let cases = [
+      (Sight::Hidden, motion(), true),
+      (Sight::Unfocused, motion(), false),
+      (Sight::Focused, Act::Leave, false),
+    ];
+    for (sight, act, want) in cases {
+      let mut session = Session::new(None);
+      session.sight = sight;
+      let at = format!("{sight:?} {act:?}");
+      assert_eq!(input(&mut session, act, &mut Vec::new())?, want, "{at}");
+    }
+    Ok(())
+  }
+
   #[test]
   fn only_actionable_input_counts() {
     let none = KeyModifiers::NONE;
@@ -1800,22 +1911,25 @@ mod tests {
         message: message.into(),
       })
     };
-    let click = MouseEvent {
-      kind: MouseEventKind::Down(MouseButton::Left),
-      column: 1,
-      row: 2,
-      modifiers: none,
-    };
+    let click =
+      |at| Mouse { kind: MouseKind::Press(Button::LEFT), at, modifiers: none };
+    let pixel = Spot::Pixel { x: 1, y: 2 };
     let cases = [
       (Event::Key(press), Some(Act::Key(press))),
       (Event::Key(release), None),
       (Event::Paste("a".into()), Some(Act::Paste("a".into()))),
       (Event::Resize(None), Some(Act::Resize(None))),
       (Event::Resize(Some(size)), Some(Act::Resize(Some(size)))),
-      (mouse(MouseKind::Press(Button::LEFT), cell), Some(Act::Mouse(click))),
+      (
+        mouse(MouseKind::Press(Button::LEFT), cell),
+        Some(Act::Mouse(click(cell))),
+      ),
       (mouse(MouseKind::Press(Button::BACK), cell), None),
-      (mouse(MouseKind::Press(Button::LEFT), Spot::Pixel { x: 1, y: 2 }), None),
-      (Event::Leave, None),
+      (
+        mouse(MouseKind::Press(Button::LEFT), pixel),
+        Some(Act::Mouse(click(pixel))),
+      ),
+      (Event::Leave, Some(Act::Leave)),
       (Event::Focus(true), Some(Act::Focus(true))),
       (Event::Reply(Reply::Keyboard(5)), None),
       (graphics(Some(9), "ENOENT:no such image"), Some(Act::Missing(9))),
@@ -1826,6 +1940,9 @@ mod tests {
       let at = format!("{event:?}");
       assert_eq!(act(event), want, "{at}");
     }
+    // Neither moves `touched`.
+    let moved = act(mouse(MouseKind::Moved, cell)).expect("motion");
+    assert!(!moved.typed() && !Act::Leave.typed());
   }
 
   #[test]

@@ -123,8 +123,9 @@ impl Home {
       }
       // An open prompt owns the input.
       Event::Mouse(mouse) if self.prompt.is_none() => {
-        let rows = self.screen.rows - 1;
-        let Some(mouse) = mouse.cells().filter(|mouse| mouse.row < rows) else {
+        let (rows, cell) = (self.screen.rows - 1, self.screen.cell());
+        let Some(mouse) = mouse.cells(cell).filter(|mouse| mouse.row < rows)
+        else {
           return Ok(Outcome::Stay);
         };
         Ok(match self.panel.pointer(mouse) {

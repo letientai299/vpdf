@@ -212,7 +212,7 @@ mod pointer {
     row: u16,
   ) -> Result<()> {
     let modifiers = KeyModifiers::NONE;
-    session.mouse(MouseEvent { kind, column, row, modifiers })
+    session.mouse(MouseEvent { kind, column, row, modifiers }).map(drop)
   }
 
   fn key(code: KeyCode) -> KeyEvent {

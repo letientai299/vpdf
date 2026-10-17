@@ -189,8 +189,14 @@ fn text_clicks_keep_the_view_and_select_words() -> Result<()> {
     row: 17,
     modifiers: KeyModifiers::NONE,
   };
-  let press =
-    Route { pane: app.id, region: Region::Page, focus: true, mouse, clicks: 1 };
+  let press = Route {
+    pane: app.id,
+    region: Region::Page,
+    focus: true,
+    mouse,
+    clicks: 1,
+    pixel: None,
+  };
   app.draw(&mut Vec::new())?;
   let target = app.text_position(mouse.column, mouse.row)?;
   app.mouse(press)?;
@@ -723,7 +729,7 @@ fn hover_targets(app: &mut App) -> Result<Targets> {
   let mut targets = Vec::new();
   for row in 0..app.screen.rows - 1 {
     for column in 0..app.screen.columns {
-      let hit = app.hovered(Region::Page, column, row)?;
+      let hit = app.hovered(Region::Page, column, row, None)?;
       targets.push(((column, row), hit));
     }
   }
@@ -852,7 +858,7 @@ fn motion_redraws_only_for_new_targets() -> Result<()> {
     ((1, screen().rows - 1), false),
   ];
   for (step, (cell, redraw)) in cases.into_iter().enumerate() {
-    assert_eq!(session.hover(moved(cell)), redraw, "step {step}: {cell:?}");
+    assert_eq!(session.mouse(moved(cell))?, redraw, "step {step}: {cell:?}");
   }
   assert!(session.app().hints.is_some(), "motion keeps hints");
   send(&mut session, b"\x1b[27u")?;
@@ -919,11 +925,142 @@ fn frames_retest_a_resting_pointer() -> Result<()> {
     row: cell.1,
     modifiers: KeyModifiers::NONE,
   };
-  assert!(session.hover(moved));
+  assert!(session.mouse(moved)?);
   // Half a screen puts another target there.
   session.app().reader.scroll += 300.0;
-  assert_ne!(session.app().hovered(Region::Page, cell.0, cell.1)?, hit);
+  assert_ne!(session.app().hovered(Region::Page, cell.0, cell.1, None)?, hit);
   session.draw_frame(&mut Vec::new())?;
-  assert!(!session.hover(moved), "the frame retested the pointer");
+  assert!(!session.mouse(moved)?, "the frame retested the pointer");
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn pixel_reports_hit_their_pixel() -> Result<()> {
+  use vpdf::decode::{Button, Mouse, MouseKind, Spot};
+  use vpdf::pointer::Pixel;
+  use vpdf::session::Session;
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut session = Session::new(None);
+  session.open(&root.join("paper.pdf"), true, screen())?;
+  session.app().command("2")?;
+  let at = |x, y| Some(Pixel { x, y, cell: (8, 16) });
+  for panel in [false, true] {
+    let app = session.app();
+    if panel {
+      app.open_panel(PanelKind::Help)?;
+    }
+    let (left, scroll) = (app.left, app.reader.scroll);
+    let (column, row) = (left + 40, 12);
+    // (pixel offset into the cell) -> page-area pixel hit
+    let cases = [
+      ((0, 0), (0, 0)),
+      ((7, 15), (7, 15)),
+      ((3, 9), (3, 9)),
+      ((30, 40), (7, 15)),
+    ];
+    for (offset, hit) in cases {
+      let pixel = at(column * 8 + offset.0, row * 16 + offset.1);
+      let got = app.page_point(column, row, pixel).expect("on a page");
+      let x = f32::from((column - left) * 8 + hit.0);
+      let at = (x, f32::from(row * 16 + hit.1));
+      let (x, y) = app.layout.unproject(got.0, at, scroll).expect("invertible");
+      assert_eq!(got, (got.0, x, y), "panel={panel} {offset:?}");
+    }
+    let centre = at(column * 8 + 4, row * 16 + 8);
+    assert_eq!(
+      app.page_point(column, row, None),
+      app.page_point(column, row, centre)
+    );
+  }
+  session.app().close_panel()?;
+  // A press lands on the glyph nearest its pixel, not the cell centre.
+  let app = session.app();
+  let nearest = |app: &mut App, column, pixel| -> Result<_> {
+    let (page, x, y) = app.page_point(column, 11, pixel).expect("on a page");
+    Ok(app.doc.text(page)?.nearest(page, x, y))
+  };
+  let mut found = None;
+  for column in 20..100 {
+    let centre = nearest(app, column, None)?;
+    for dx in [0, 7] {
+      let pixel = at(column * 8 + dx, 11 * 16 + 8);
+      let glyph = nearest(app, column, pixel)?;
+      if glyph != centre {
+        found = found.or(Some((pixel.expect("a pixel"), glyph)));
+      }
+    }
+  }
+  let (pixel, glyph) = found.expect("a cell spanning two glyphs");
+  let press = Mouse {
+    kind: MouseKind::Press(Button::LEFT),
+    at: Spot::Pixel { x: pixel.x, y: pixel.y },
+    modifiers: KeyModifiers::NONE,
+  };
+  assert!(session.mouse_report(press)?);
+  assert_eq!(session.app().reader.cursor, glyph);
+  // Drags draw only once they move the selection.
+  let drag = |x| Mouse {
+    kind: MouseKind::Drag(Button::LEFT),
+    at: Spot::Pixel { x, y: pixel.y },
+    modifiers: KeyModifiers::NONE,
+  };
+  assert!(!session.mouse_report(drag(pixel.x + 1))?, "below the threshold");
+  assert!(session.mouse_report(drag(pixel.x + 40))?, "a new glyph");
+  assert!(!session.mouse_report(drag(pixel.x + 41))?, "the same glyph");
+  let release =
+    Mouse { kind: MouseKind::Release(Button::LEFT), ..drag(pixel.x + 41) };
+  session.mouse_report(release)?;
+  // Leaving the window ends the hover once.
+  let moved = Mouse { kind: MouseKind::Moved, ..press };
+  assert!(session.mouse_report(moved)?);
+  assert!(session.pointer_left());
+  assert!(!session.pointer_left());
+  Ok(())
+}
+
+#[test]
+fn pixel_drags_draw_on_new_glyphs() -> Result<()> {
+  use vpdf::decode::{Button, Mouse, MouseKind, Spot};
+  use vpdf::session::Session;
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("words.pdf");
+  common::text_pdf(&path, &["Hello pointer world"])?;
+  let mut session = Session::new(None);
+  session.open(&path, true, screen())?;
+  let app = session.app();
+  let (columns, rows) = (app.screen.columns, app.screen.rows - 1);
+  let mut text = None;
+  for (column, row) in
+    (0..rows).flat_map(|row| (0..columns).map(move |c| (c, row)))
+  {
+    if text.is_none()
+      && app.hovered(Region::Page, column, row, None)? == Hit::Text
+    {
+      text = Some((column, row));
+    }
+  }
+  let (column, row) = text.expect("text on the page");
+  let report = |kind, x| Mouse {
+    kind,
+    at: Spot::Pixel { x, y: row * 16 + 8 },
+    modifiers: KeyModifiers::NONE,
+  };
+  let x = column * 8 + 4;
+  // (report, pixel x) -> frame
+  let cases = [
+    (MouseKind::Moved, x, true),
+    (MouseKind::Moved, x + 1, false),
+    (MouseKind::Press(Button::LEFT), x, true),
+    (MouseKind::Drag(Button::LEFT), x + 1, false),
+    (MouseKind::Drag(Button::LEFT), x + 40, true),
+    (MouseKind::Drag(Button::LEFT), x + 40, false),
+    (MouseKind::Release(Button::LEFT), x + 40, true),
+  ];
+  for (step, (kind, x, frame)) in cases.into_iter().enumerate() {
+    assert_eq!(session.mouse_report(report(kind, x))?, frame, "step {step}");
+  }
+  assert!(session.app().reader.selection.is_some(), "the drag selected");
+  assert!(session.pointer_left());
   Ok(())
 }

@@ -13,6 +13,11 @@ pub struct Screen {
 }
 
 impl Screen {
+  /// Cell width and height in pixels.
+  pub fn cell(self) -> (u16, u16) {
+    (self.cell_width, self.cell_height)
+  }
+
   pub fn width(self) -> f32 {
     f32::from(self.columns) * f32::from(self.cell_width)
   }

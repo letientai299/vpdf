@@ -37,6 +37,9 @@ static ACTIVE: AtomicBool = AtomicBool::new(false);
 /// exactly what resume set.
 static PUSHED: AtomicBool = AtomicBool::new(false);
 
+/// Set while mouse reports carry pixels, mode 1016.
+static PIXELS: AtomicBool = AtomicBool::new(false);
+
 /// Set while tmux sends the pane focus events, mode 1004, by which the
 /// session hides placements tmux would leave over another window.
 static FOCUS: AtomicBool = AtomicBool::new(false);
@@ -102,6 +105,15 @@ pub fn resume() -> Result<()> {
     crate::input::set_keyboard(Keyboard::Failed(lack.clone()));
     return Err(lack.into());
   }
+  if caps.pixel_mouse() {
+    // The parser first, so no pixel report reads as cells.
+    crate::input::set_pixels(true);
+    PIXELS.store(true, Ordering::Relaxed);
+    let mut out = io::stdout();
+    out.write_all(b"\x1b[?1016h")?;
+    // Reports switch now, not at the first frame.
+    out.flush()?;
+  }
   match &caps.host {
     Host::Tmux(Some(tmux)) => tmux_setup(caps, tmux),
     _ => {
@@ -152,6 +164,10 @@ pub fn suspend() -> Result<()> {
   }
   if tmux() {
     crate::graphics::release(&mut io::stdout())?;
+  }
+  // Before the parser reads cells again.
+  if PIXELS.swap(false, Ordering::Relaxed) {
+    io::stdout().write_all(b"\x1b[?1016l")?;
   }
   // Before the pop, so a legacy lone ESC is the Esc key again.
   crate::input::release();

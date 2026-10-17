@@ -49,7 +49,7 @@ pub(super) fn send(session: &mut Session, bytes: &[u8]) -> Result<()> {
         session.app().key(event, &mut History::default())?;
       }
       Event::Mouse(mouse) => {
-        session.mouse(mouse.cells().expect("cell report"))?;
+        session.mouse_report(mouse)?;
       }
       _ => panic!("input bytes"),
     }

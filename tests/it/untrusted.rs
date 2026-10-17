@@ -49,25 +49,7 @@ fn write_pdf(path: &Path, trailer: &str) -> Result<()> {
       text(EVIL)
     ),
   ];
-  let mut out = String::from("%PDF-1.7\n");
-  let mut offsets = Vec::new();
-  for (index, body) in objects.iter().enumerate() {
-    offsets.push(out.len());
-    write!(out, "{} 0 obj\n{body}\nendobj\n", index + 1)?;
-  }
-  let xref = out.len();
-  let size = objects.len() + 1;
-  write!(out, "xref\n0 {size}\n0000000000 65535 f \n")?;
-  for offset in offsets {
-    writeln!(out, "{offset:010} 00000 n ")?;
-  }
-  write!(
-    out,
-    "trailer\n<< /Size {size} /Root 1 0 R /Info 2 0 R {trailer} >>\n\
-     startxref\n{xref}\n%%EOF\n"
-  )?;
-  std::fs::write(path, out)?;
-  Ok(())
+  common::write_pdf(path, &objects, &format!("/Info 2 0 R {trailer}"))
 }
 
 fn assert_printable(field: &str, value: &str) {

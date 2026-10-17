@@ -96,8 +96,17 @@ pub struct Route {
   pub focus: bool,
   /// In pane cells, inside `region`.
   pub mouse: MouseEvent,
-  /// Presses in a row on one cell; drags and releases keep it.
+  /// Presses in a row on one spot; drags and releases keep it.
   pub clicks: u8,
+  pub pixel: Option<Pixel>,
+}
+
+/// Screen pixels under mode 1016, with the cell size.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Pixel {
+  pub x: u16,
+  pub y: u16,
+  pub cell: (u16, u16),
 }
 
 /// What the pointer rests on inside a region.
@@ -149,6 +158,7 @@ pub fn route(
       ..mouse
     },
     clicks: 1,
+    pixel: None,
   })
 }
 
@@ -171,6 +181,16 @@ const CLICK: Duration = Duration::from_millis(350);
 /// Cells a press moves before it drags.
 const THRESHOLD: u16 = 1;
 
+/// Pixels a press moves before it drags: half a cell width.
+fn drag(cell: (u16, u16)) -> u16 {
+  cell.0 / 2
+}
+
+/// Click run reach: half a cell height, like Kitty.
+fn click(cell: (u16, u16)) -> u16 {
+  cell.1 / 2
+}
+
 /// The latest press, for counts and drags.
 #[derive(Clone, Copy, Debug)]
 struct Press {
@@ -181,15 +201,31 @@ struct Press {
   held: bool,
   column: u16,
   row: u16,
+  pixel: Option<Pixel>,
   at: Instant,
   clicks: u8,
   dragged: bool,
 }
 
 impl Press {
-  fn near(&self, column: u16, row: u16) -> bool {
-    self.column.abs_diff(column) < THRESHOLD
-      && self.row.abs_diff(row) < THRESHOLD
+  /// Whether a spot stays within `reach` pixels, else one cell.
+  fn near(
+    &self,
+    column: u16,
+    row: u16,
+    pixel: Option<Pixel>,
+    reach: fn((u16, u16)) -> u16,
+  ) -> bool {
+    match self.pixel.zip(pixel) {
+      Some((from, to)) => {
+        let reach = reach(to.cell).max(1);
+        from.x.abs_diff(to.x) < reach && from.y.abs_diff(to.y) < reach
+      }
+      None => {
+        self.column.abs_diff(column) < THRESHOLD
+          && self.row.abs_diff(row) < THRESHOLD
+      }
+    }
   }
 }
 
@@ -198,8 +234,8 @@ impl Press {
 pub struct Pointer {
   press: Option<Press>,
   hover: Option<Hover>,
-  /// Last cell, to retest after view changes.
-  spot: Option<(u16, u16)>,
+  /// Last spot, to retest after view changes.
+  spot: Option<(MouseEvent, Option<Pixel>)>,
 }
 
 impl Pointer {
@@ -210,6 +246,7 @@ impl Pointer {
     panes: &[Pane],
     focused: u32,
     mouse: MouseEvent,
+    pixel: Option<Pixel>,
     now: Instant,
   ) -> Option<Route> {
     let capture = self.capture();
@@ -224,12 +261,13 @@ impl Pointer {
       && held == Some(button)
       && let Some(press) = &mut self.press
     {
-      press.dragged |= !press.near(mouse.column, mouse.row);
+      press.dragged |= !press.near(mouse.column, mouse.row, pixel, drag);
       if !press.dragged {
         return None;
       }
     }
-    self.spot = Some((mouse.column, mouse.row));
+    self.spot =
+      Some((MouseEvent { kind: MouseEventKind::Moved, ..mouse }, pixel));
     let route = route(panes, focused, capture, mouse);
     match mouse.kind {
       MouseEventKind::Down(button) => {
@@ -238,7 +276,7 @@ impl Pointer {
           press.button == button
             && press.on == on
             && !press.dragged
-            && press.near(mouse.column, mouse.row)
+            && press.near(mouse.column, mouse.row, pixel, click)
             && now.saturating_duration_since(press.at) < CLICK
         });
         self.press = Some(Press {
@@ -247,6 +285,7 @@ impl Pointer {
           held: true,
           column: mouse.column,
           row: mouse.row,
+          pixel,
           at: now,
           clicks: again.map_or(1, |press| press.clicks.saturating_add(1)),
           dragged: false,
@@ -272,15 +311,26 @@ impl Pointer {
       | MouseEventKind::Up(_) => self.press.map_or(1, |press| press.clicks),
       _ => 1,
     };
-    route.map(|route| Route { clicks, ..route })
+    route.map(|route| Route { clicks, pixel, ..route })
   }
 
   /// Bare motion; whether the target changed.
-  pub fn hover(&mut self, mouse: MouseEvent, hover: Option<Hover>) -> bool {
+  pub fn hover(
+    &mut self,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    hover: Option<Hover>,
+  ) -> bool {
     // No button is down: a release got lost.
     self.hold(false);
-    self.spot = Some((mouse.column, mouse.row));
+    self.spot = Some((mouse, pixel));
     self.refresh(hover)
+  }
+
+  /// The pointer left the window; whether a hover ended.
+  pub fn leave(&mut self) -> bool {
+    self.spot = None;
+    self.refresh(None)
   }
 
   /// Sets what the pointer rests on; whether it changed.
@@ -288,14 +338,9 @@ impl Pointer {
     std::mem::replace(&mut self.hover, hover) != hover
   }
 
-  /// Bare motion at the last reported cell.
-  pub fn spot(&self) -> Option<MouseEvent> {
-    self.spot.map(|(column, row)| MouseEvent {
-      kind: MouseEventKind::Moved,
-      column,
-      row,
-      modifiers: crossterm::event::KeyModifiers::NONE,
-    })
+  /// Bare motion at the last reported spot.
+  pub fn spot(&self) -> Option<(MouseEvent, Option<Pixel>)> {
+    self.spot
   }
 
   /// Ends the held press and its click run.
@@ -323,6 +368,7 @@ mod tests {
   use MouseButton::{Left, Right};
   use MouseEventKind::{Down, Drag, Moved, ScrollDown, Up};
   use crossterm::event::KeyModifiers;
+  use std::time::Duration;
 
   const fn pane(id: u32, rect: Rect, panel: u16, overlay: u16) -> Pane {
     Pane { id, rect, panel, overlay, overview: false }
@@ -430,7 +476,7 @@ mod tests {
     let mut pointer = Pointer::default();
     let now = Instant::now();
     let mut feed = |kind, column| {
-      let route = pointer.route(&PANES, 1, event(kind, column, 10), now);
+      let route = pointer.route(&PANES, 1, event(kind, column, 10), None, now);
       (route.map(|route| route.pane), pointer.capture())
     };
     let page = Some(held(1, Region::Page));
@@ -452,16 +498,15 @@ mod tests {
       assert_eq!(feed(kind, column), expected, "step {step}: {kind:?}");
     }
     // Bare motion means no button is down.
-    pointer.hover(event(Moved, 30, 10), None);
+    pointer.hover(event(Moved, 30, 10), None, None);
     assert_eq!(pointer.capture(), None);
-    let route = pointer.route(&PANES, 1, event(Down(Left), 90, 10), now);
+    let route = pointer.route(&PANES, 1, event(Down(Left), 90, 10), None, now);
     assert_eq!(route.map(|route| route.pane), Some(2));
     assert_eq!(pointer.capture(), Some(held(2, Region::Page)));
   }
 
   #[test]
   fn clicks_count_and_drags_wait_for_the_threshold() {
-    use std::time::Duration;
     let mut pointer = Pointer::default();
     let start = Instant::now();
     // (event, column, ms since start) -> routed clicks, None when held
@@ -498,21 +543,21 @@ mod tests {
     ];
     for (step, (kind, column, ms, expected)) in cases.into_iter().enumerate() {
       let now = start + Duration::from_millis(ms);
-      let route = pointer.route(&PANES, 1, event(kind, column, 10), now);
+      let route = pointer.route(&PANES, 1, event(kind, column, 10), None, now);
       let got = route.map(|route| route.clicks);
       assert_eq!(got, expected, "step {step}: {kind:?} at {column}");
     }
     // Focus changes and dismissed clicks end the run.
     pointer.release();
     let now = start + Duration::from_millis(1260);
-    let route = pointer.route(&PANES, 1, event(Down(Left), 31, 10), now);
+    let route = pointer.route(&PANES, 1, event(Down(Left), 31, 10), None, now);
     assert_eq!(route.map(|route| route.clicks), Some(1));
     // A thumbnail press opens its page under the next press.
     let thumbnails = [Pane { overview: true, ..PANES[0] }];
     let press = |pointer: &mut Pointer, panes: &[Pane], ms| {
       let now = start + Duration::from_millis(ms);
-      let route = pointer.route(panes, 1, event(Down(Left), 30, 10), now);
-      pointer.route(panes, 1, event(Up(Left), 30, 10), now);
+      let route = pointer.route(panes, 1, event(Down(Left), 30, 10), None, now);
+      pointer.route(panes, 1, event(Up(Left), 30, 10), None, now);
       route.map(|route| (route.region, route.clicks))
     };
     let mut pointer = Pointer::default();
@@ -520,6 +565,38 @@ mod tests {
     assert_eq!(press(&mut pointer, &thumbnails, 0), overview);
     assert_eq!(press(&mut pointer, &PANES, 100), Some((Region::Page, 1)));
     assert_eq!(press(&mut pointer, &PANES, 200), Some((Region::Page, 2)));
+  }
+
+  #[test]
+  fn pixels_refine_the_threshold() {
+    let mut pointer = Pointer::default();
+    let start = Instant::now();
+    let at = |x| Some(Pixel { x, y: 165, cell: (8, 16) });
+    // (event, column, pixel x, ms) -> routed clicks, None when held
+    let cases = [
+      (Down(Left), 30, 245, 0, Some(1)),
+      (Drag(Left), 30, 247, 10, None),
+      (Drag(Left), 31, 248, 20, None),
+      (Up(Left), 31, 248, 30, Some(1)),
+      // Within half a cell height: a double click across cells.
+      (Down(Left), 31, 252, 100, Some(2)),
+      (Up(Left), 31, 252, 110, Some(2)),
+      (Down(Left), 32, 261, 200, Some(1)),
+      // Half a cell width starts a drag inside one cell.
+      (Drag(Left), 32, 265, 210, Some(1)),
+      (Up(Left), 32, 265, 220, Some(1)),
+    ];
+    for (step, (kind, column, x, ms, expected)) in cases.into_iter().enumerate()
+    {
+      let now = start + Duration::from_millis(ms);
+      let route = pointer.route(&PANES, 1, event(kind, column, 10), at(x), now);
+      let got = route.map(|route| (route.clicks, route.pixel));
+      assert_eq!(got, expected.map(|clicks| (clicks, at(x))), "step {step}");
+    }
+    pointer.hover(event(Moved, 32, 10), at(265), None);
+    assert!(pointer.spot().is_some());
+    pointer.leave();
+    assert_eq!(pointer.spot(), None, "leaving forgets the spot");
   }
 
   #[test]
@@ -541,13 +618,17 @@ mod tests {
     ];
     for (step, (target, changed)) in cases.into_iter().enumerate() {
       let mouse = event(Moved, step as u16, 10);
-      assert_eq!(pointer.hover(mouse, target), changed, "step {step}");
-      assert_eq!(pointer.spot().map(|spot| spot.column), Some(step as u16));
+      assert_eq!(pointer.hover(mouse, None, target), changed, "step {step}");
+      assert_eq!(
+        pointer.spot().map(|(spot, _)| spot.column),
+        Some(step as u16)
+      );
     }
     // A press moves the spot without bare motion.
     let now = Instant::now();
-    pointer.route(&PANES, 1, event(Down(Left), 30, 12), now);
-    let spot = pointer.spot().map(|spot| (spot.kind, spot.column, spot.row));
+    pointer.route(&PANES, 1, event(Down(Left), 30, 12), None, now);
+    let spot =
+      pointer.spot().map(|(spot, _)| (spot.kind, spot.column, spot.row));
     assert_eq!(spot, Some((Moved, 30, 12)));
   }
 

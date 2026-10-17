@@ -49,8 +49,8 @@ impl Trace {
     Ok(Self { output, started: Instant::now(), input: None, uploaded: 0 })
   }
 
-  pub fn input(&mut self) {
-    self.input.get_or_insert_with(Instant::now);
+  pub fn input(&mut self, at: Instant) {
+    self.input.get_or_insert(at);
   }
 
   pub fn draw(

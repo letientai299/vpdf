@@ -4,7 +4,7 @@ use crate::keys::{Action, Input};
 use crate::layout::Screen;
 use crate::motion::Motion;
 use crate::panel::Panel;
-use crate::pointer::{Hit, Region, Route};
+use crate::pointer::{Hit, Pixel, Region, Route};
 use crate::reader::{Location, SelectionKind};
 use crate::text::{Bounds, PageId, Position};
 use crossterm::event::{MouseButton, MouseEventKind};
@@ -571,9 +571,8 @@ impl App {
     let pos = if self.text_mode {
       self.text_position(mouse.column, mouse.row)?
     } else {
-      let Some((page, x, y)) = self.page_point(mouse.column, mouse.row) else {
-        return Ok(());
-      };
+      let point = self.page_point(mouse.column, mouse.row, route.pixel);
+      let Some((page, x, y)) = point else { return Ok(()) };
       self.doc.text(page)?.nearest(page, x, y)
     };
     if matches!(mouse.kind, MouseEventKind::Drag(_)) {
@@ -592,21 +591,40 @@ impl App {
     Ok(())
   }
 
-  /// Pixel centre of a pane cell.
-  pub(crate) fn cell_centre(&self, column: u16, row: u16) -> (f32, f32) {
-    let (width, height) =
-      (f32::from(self.screen.cell_width), f32::from(self.screen.cell_height));
-    let x = (f32::from(column.saturating_sub(self.left)) + 0.5) * width;
-    (x, (f32::from(row) + 0.5) * height)
+  /// Page-area pixels at a cell: reported, else centre.
+  pub(crate) fn cell_point(
+    &self,
+    column: u16,
+    row: u16,
+    pixel: Option<Pixel>,
+  ) -> (f32, f32) {
+    // Clamped drags report pixels past the cell.
+    let inside = |at: Option<u16>, cell: u32, size: u16| {
+      at.map_or(f32::from(size) / 2.0, |at| {
+        let offset = u32::from(at).saturating_sub(cell * u32::from(size));
+        let last = size.saturating_sub(1);
+        f32::from(u16::try_from(offset).unwrap_or(last).min(last))
+      })
+    };
+    let (width, height) = (self.screen.cell_width, self.screen.cell_height);
+    let (screen_column, screen_row) = (
+      u32::from(self.at.column) + u32::from(column),
+      u32::from(self.at.row) + u32::from(row),
+    );
+    let left = f32::from(column.saturating_sub(self.left)) * f32::from(width);
+    let x = left + inside(pixel.map(|p| p.x), screen_column, width);
+    let top = f32::from(row) * f32::from(height);
+    (x, top + inside(pixel.map(|p| p.y), screen_row, height))
   }
 
-  /// Page and point under a pane cell's centre.
+  /// Page and point under the pointer in a pane cell.
   pub fn page_point(
     &self,
     column: u16,
     row: u16,
+    pixel: Option<Pixel>,
   ) -> Option<(PageId, f32, f32)> {
-    let (x, y) = self.cell_centre(column, row);
+    let (x, y) = self.cell_point(column, row, pixel);
     let page = self.layout.page_at(y + self.reader.scroll);
     let (x, y) = self.layout.unproject(page, (x, y), self.reader.scroll)?;
     Some((page, x, y))
@@ -618,6 +636,7 @@ impl App {
     region: Region,
     column: u16,
     row: u16,
+    pixel: Option<Pixel>,
   ) -> Result<Hit> {
     if region != Region::Page {
       return Ok(Hit::Nothing);
@@ -631,7 +650,7 @@ impl App {
       let link = self.link_at(page, x, y)?;
       return Ok(link.map_or(Hit::Text, |index| Hit::Link(page, index)));
     }
-    let Some((page, x, y)) = self.page_point(column, row) else {
+    let Some((page, x, y)) = self.page_point(column, row, pixel) else {
       return Ok(Hit::Nothing);
     };
     if let Some(index) = self.link_at(page, x, y)? {

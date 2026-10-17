@@ -104,9 +104,18 @@ pub enum Spot {
 }
 
 impl Mouse {
-  /// The crossterm event for cell reports of buttons 1-7.
-  pub fn cells(self) -> Option<MouseEvent> {
-    let Spot::Cell { column, row } = self.at else { return None };
+  /// The crossterm event for buttons 1-7, on cells of `cell` pixels.
+  pub fn cells(self, cell: (u16, u16)) -> Option<MouseEvent> {
+    let (column, row) = match self.at {
+      Spot::Cell { column, row } => (column, row),
+      Spot::Pixel { x, y } => (x / cell.0.max(1), y / cell.1.max(1)),
+    };
+    let kind = self.action()?;
+    Some(MouseEvent { kind, column, row, modifiers: self.modifiers })
+  }
+
+  /// The crossterm kind for buttons 1-7.
+  pub fn action(self) -> Option<MouseEventKind> {
     let button = |button: Button| match button.0 {
       1 => Some(MouseButton::Left),
       2 => Some(MouseButton::Middle),
@@ -123,7 +132,15 @@ impl Mouse {
       MouseKind::Drag(held) => MouseEventKind::Drag(button(held)?),
       MouseKind::Moved => MouseEventKind::Moved,
     };
-    Some(MouseEvent { kind, column, row, modifiers: self.modifiers })
+    Some(kind)
+  }
+
+  /// Screen pixels, under mode 1016.
+  pub fn pixel(self) -> Option<(u16, u16)> {
+    match self.at {
+      Spot::Pixel { x, y } => Some((x, y)),
+      Spot::Cell { .. } => None,
+    }
   }
 }
 
@@ -202,6 +219,11 @@ impl Parser {
       self.overflow = true;
     }
     self.scanned = self.pending.len();
+  }
+
+  /// Mode 1016: reports carry pixels from now on.
+  pub fn set_pixels(&mut self, pixels: bool) {
+    self.pixels = pixels;
   }
 
   /// Whether a lone ESC waits for the rest of its sequence.
@@ -352,7 +374,8 @@ fn csi(bytes: &[u8], pixels: bool, resume: usize) -> Step {
   let split = rest.iter().position(|byte| (0x20..=0x2f).contains(byte));
   let (params, middle) = rest.split_at(split.unwrap_or(rest.len()));
   let event = match (marker, middle, last) {
-    (Some(b'<'), b"", b'M' | b'm') => mouse(params, last == b'm', pixels),
+    // `-` in pixel reports is an intermediate byte.
+    (Some(b'<'), _, b'M' | b'm') => mouse(rest, last == b'm', pixels),
     (Some(b'?'), b"", b'c') => {
       // kitty ends the list with `;`.
       let fields = params.strip_suffix(b";").unwrap_or(params);
@@ -579,8 +602,13 @@ fn keypad(code: u32) -> Option<KeyCode> {
 /// 16 Ctrl, 32 motion, 256 Kitty's leave.
 fn mouse(params: &[u8], release: bool, pixels: bool) -> Option<Event> {
   let flags = number(params, 0, 0)?;
-  let x = number(params, 1, 0)?;
-  let y = number(params, 2, 0)?;
+  // Drags past the window's top or left go negative.
+  let coordinate = |index| match params.split(|&byte| byte == b';').nth(index) {
+    Some([b'-', rest @ ..]) if pixels => number(rest, 0, 0).map(|_| 0),
+    _ => number(params, index, 0),
+  };
+  let x = coordinate(1)?;
+  let y = coordinate(2)?;
   let modifiers = held(
     flags,
     &[
