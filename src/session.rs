@@ -900,10 +900,20 @@ impl Session {
   /// would cover, and holds frames until tmux shows the pane again.
   pub fn hide(&mut self, out: &mut impl Write) -> Result<()> {
     self.sight = Sight::Hidden;
+    self.release_pointer(out)?;
     if self.tabs.is_empty() {
       return self.home.as_mut().map_or(Ok(()), |home| home.release(out));
     }
     self.app().graphics.clear(out)
+  }
+
+  /// The pointer may rest elsewhere now.
+  fn release_pointer(&mut self, out: &mut impl Write) -> Result<()> {
+    self.pointer.leave();
+    terminal::hand_over(out)?;
+    // Out before the slow `tmux display`.
+    out.flush()?;
+    Ok(())
   }
 
   fn image_message(&mut self, write: &ImageWrite, message: String) {
@@ -1093,6 +1103,8 @@ impl Session {
     }
     crate::graphics::release(out)?;
     self.app().graphics.lost();
+    // The child program read the mouse.
+    self.pointer.leave();
     for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
       app.requested.clear();
       app.blank = false;
@@ -1108,6 +1120,9 @@ impl Session {
     let Some(mut home) = self.home.take() else { return Ok(()) };
     // Its thumbnail would cover what tmux shows instead.
     if self.sight != Sight::Hidden {
+      // Start-screen motion is passive.
+      self.pointer.leave();
+      terminal::point(out, terminal::Shape::Default)?;
       home.draw(out)?;
     }
     if let Some(unmeasured) = &self.unmeasured {
@@ -1182,6 +1197,11 @@ impl Drawable for Session {
   /// terminal cursor last.
   fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()> {
     self.rehover();
+    // Without a spot the pointer is elsewhere.
+    if self.pointer.spot().is_some() {
+      let hover = self.pointer.target();
+      terminal::point(out, hover.map_or_default(|hover| hover.hit.shape()))?;
+    }
     write!(out, "{}\x1b[0m", terminal::frame_start())?;
     self.app().graphics.begin(out)?;
     let area = self.screen.map_or_default(full);
@@ -1426,7 +1446,9 @@ fn input(
       Ok(())
     }
     Act::Focus(true) => session.turn(Sight::Focused, out).map(drop),
-    Act::Focus(false) => session.look(Cause::FocusOut, out).map(drop),
+    Act::Focus(false) => session
+      .release_pointer(out)
+      .and_then(|()| session.look(Cause::FocusOut, out).map(drop)),
   };
   done.map(|()| true)
 }
@@ -1641,6 +1663,85 @@ mod tests {
     assert!(session.image_status("type=write:status=DONE"));
     assert!(session.image_write.is_none());
     assert!(!session.image_status("type=write:status=DONE"));
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn frames_write_changed_shapes() -> Result<()> {
+    use crate::pointer::{Hit, Region};
+    let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+    let screen = Screen {
+      columns: 120,
+      rows: 40,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut session = Session::new(None);
+    session.open(&root.join("paper.pdf"), true, screen)?;
+    session.app().command("2")?;
+    let mut find = |wanted: fn(Hit) -> bool| -> Result<(u16, u16)> {
+      for (row, column) in
+        (0..39).flat_map(|row| (0..120).map(move |c| (row, c)))
+      {
+        if wanted(session.app().hovered(Region::Page, column, row, None)?) {
+          return Ok((column, row));
+        }
+      }
+      anyhow::bail!("no such cell")
+    };
+    let link = find(|hit| matches!(hit, Hit::Link(..)))?;
+    let blank = find(|hit| hit == Hit::Nothing)?;
+    let moved = |(column, row)| MouseEvent {
+      kind: MouseEventKind::Moved,
+      column,
+      row,
+      modifiers: KeyModifiers::NONE,
+    };
+    terminal::arm_shapes();
+    let osc = |out: &[u8]| {
+      let out = String::from_utf8_lossy(out);
+      out
+        .split("\x1b]22;")
+        .skip(1)
+        .map(|rest| rest.split('\x1b').next().unwrap_or("").to_owned())
+        .collect::<Vec<_>>()
+    };
+    let frame = |session: &mut Session,
+                 cell: Option<(u16, u16)>|
+     -> Result<Vec<String>> {
+      if let Some(cell) = cell {
+        session.mouse(moved(cell))?;
+      }
+      let mut out = Vec::new();
+      session.draw_frame(&mut out)?;
+      Ok(osc(&out))
+    };
+    // (move to, written)
+    let steps = [
+      (Some(link), vec!["pointer"]),
+      (None, vec![]),
+      (Some(blank), vec!["default"]),
+      (Some(link), vec!["pointer"]),
+    ];
+    for (step, (cell, want)) in steps.into_iter().enumerate() {
+      assert_eq!(frame(&mut session, cell)?, want, "step {step}");
+    }
+    // A focus-out, then hiding, hands over once.
+    let mut out = Vec::new();
+    input(&mut session, Act::Focus(false), &mut out)?;
+    assert_eq!(osc(&out), ["default"]);
+    out.clear();
+    session.hide(&mut out)?;
+    assert_eq!(osc(&out), Vec::<String>::new());
+    session.sight = Sight::Focused;
+    // (move to, written)
+    let steps =
+      [(None, vec![]), (Some(blank), vec!["default"]), (Some(blank), vec![])];
+    for (step, (cell, want)) in steps.into_iter().enumerate() {
+      assert_eq!(frame(&mut session, cell)?, want, "shown again, step {step}");
+    }
+    Ok(())
   }
 
   #[test]

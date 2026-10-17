@@ -3,7 +3,7 @@ use crate::app::App;
 use crate::layout::Screen;
 use crate::reader::SelectionKind;
 use crate::terminal;
-use crate::text::{Bounds, PageId, Position};
+use crate::text::{Bounds, Line, PageId, Position};
 use crate::tiles::{self, TileKey};
 use std::io::Write;
 
@@ -176,9 +176,8 @@ impl App {
     out: &mut impl Write,
   ) -> Result<()> {
     let text = self.doc.text(position.page)?;
-    let Some(bounds) = text.lines.get(position.line).and_then(|line| {
-      line.glyphs.iter().map(|glyph| glyph.bounds).reduce(Bounds::union)
-    }) else {
+    let Some(bounds) = text.lines.get(position.line).and_then(Line::span)
+    else {
       return Ok(());
     };
     let page = self.layout.crop.apply(self.doc.pages[position.page.0].bounds);

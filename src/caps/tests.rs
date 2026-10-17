@@ -215,14 +215,17 @@ fn profiles_follow_answers_and_names() {
 #[test]
 fn pointer_shapes_answer_or_ghostty() {
   let ghostty = || tmux_with(Some("ghostty 1.3.1"));
-  let cases: [(Route, &[u8], &str, Support); 6] = [
+  let kitty = || tmux_with(Some("kitty(0.49.1)"));
+  let cases: [(Route, &[u8], &str, Support); 8] = [
     (Route::Direct, b"\x1b]22;1\x1b\\", "kitty(0.49.1)", Support::Answered),
     (Route::Direct, b"\x1b]22;0\x1b\\", "kitty(0.49.1)", Support::Missing),
     (Route::Direct, b"", "kitty(0.49.1)", Support::Missing),
     (Route::Direct, b"", "ghostty 1.3.1", Support::Named),
     (Route::Direct, b"\x1b]22;1\x1b\\", "ghostty 1.3.1", Support::Answered),
-    // tmux drops an unwrapped OSC 22, whatever its client.
-    (ghostty(), b"", "tmux 3.8", Support::Missing),
+    // Under tmux the client answers.
+    (kitty(), b"\x1b]22;1\x1b\\", "tmux 3.8", Support::Answered),
+    (kitty(), b"", "tmux 3.8", Support::Missing),
+    (ghostty(), b"", "tmux 3.8", Support::Named),
   ];
   for (route, osc, name, want) in cases {
     let bytes = [&version(name), osc, DA1].concat();
@@ -455,7 +458,7 @@ fn screen_wins_over_tmux() {
 fn requests_per_route() {
   let direct = b"\x1b[>0q\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\
     \x1b[?2026$p\x1b[?1016$p\x1b[?2048$p\x1b[?u\
-    \x1b]22;?pointer\x1b\\\x1b]72;t=q\x1b\\\x1b[?5522$p";
+    \x1b]72;t=q\x1b\\\x1b]22;?pointer\x1b\\\x1b[?5522$p";
   assert_eq!(request(&Route::Direct), direct);
   let tmux = request(&tmux_with(None));
   assert!(!tmux.windows(3).any(|window| window == b"\x1b_G"));
@@ -931,7 +934,8 @@ fn clipboard_requires_explicit_answer() {
     }
   }
   let mut wrapped = Vec::new();
-  crate::terminal::passthrough(&mut wrapped, b"\x1b[?5522$p", true).unwrap();
+  let query = b"\x1b]22;?pointer\x1b\\\x1b[?5522$p";
+  crate::terminal::passthrough(&mut wrapped, query, true).unwrap();
   assert!(request(&tmux_with(None)).ends_with(&wrapped));
 }
 

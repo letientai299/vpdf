@@ -655,8 +655,18 @@ impl App {
     row: u16,
     pixel: Option<Pixel>,
   ) -> Result<Hit> {
-    if region != Region::Page {
-      return Ok(Hit::Nothing);
+    match region {
+      Region::Page => {}
+      Region::Panel => {
+        let row =
+          self.panel.as_ref().and_then(|panel| panel.row_at(column, row));
+        return Ok(row.map_or(Hit::Nothing, Hit::Row));
+      }
+      Region::Overview => {
+        let page = self.thumbnail_at(column, row);
+        return Ok(page.map_or(Hit::Nothing, Hit::Thumbnail));
+      }
+      Region::Overlay | Region::Status => return Ok(Hit::Nothing),
     }
     if self.text_mode {
       let Some(position) = self.text_hit(column, row)? else {
@@ -674,11 +684,6 @@ impl App {
       return Ok(Hit::Link(page, index));
     }
     let text = self.doc.text(page)?;
-    let mut glyphs = text.lines.iter().flat_map(|line| &line.glyphs);
-    Ok(if glyphs.any(|glyph| glyph.bounds.contains(x, y)) {
-      Hit::Text
-    } else {
-      Hit::Nothing
-    })
+    Ok(if text.covers(x, y) { Hit::Text } else { Hit::Nothing })
   }
 }

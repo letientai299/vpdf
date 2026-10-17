@@ -767,13 +767,24 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
     assert!(count(|hit| *hit == Hit::Text) > 0, "text={text_mode}");
     assert!(count(|hit| *hit == Hit::Nothing) > 0, "text={text_mode}");
     let pages = app.layout.visible(app.reader.scroll);
-    let (mut links, mut glyphs) = (Vec::new(), Vec::new());
+    let (mut links, mut glyphs, mut gaps) =
+      (Vec::new(), Vec::new(), Vec::new());
     for page in pages.map(PageId) {
       let page_links = app.doc.links(page)?;
       links.extend(page_links.iter().map(|link| (page, link.bounds)));
       let text = app.doc.text(page)?;
       let all = text.lines.iter().flat_map(|line| &line.glyphs);
       glyphs.extend(all.map(|glyph| (page, glyph.bounds)));
+      // Half-gap boxes per line pair.
+      for pair in text.lines.windows(2).filter(|pair| !pair[1].paragraph) {
+        let (Some(upper), Some(lower)) = (pair[0].span(), pair[1].span())
+        else {
+          continue;
+        };
+        let middle = f32::midpoint(upper.y1, lower.y0);
+        gaps.push((page, Bounds { y0: upper.y1, y1: middle, ..upper }));
+        gaps.push((page, Bounds { y0: middle, y1: lower.y0, ..lower }));
+      }
     }
     for &(cell, hit) in &targets {
       let at = format!("text={text_mode} {cell:?} {hit:?}");
@@ -809,14 +820,81 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
           let bounds = app.doc.links(page)?[index].bounds;
           covers(&app, cell, &[(page, bounds)])
         }
-        Hit::Text => !covers(&app, cell, &links) && covers(&app, cell, &glyphs),
+        Hit::Text => {
+          !covers(&app, cell, &links)
+            && (covers(&app, cell, &glyphs) || covers(&app, cell, &gaps))
+        }
         Hit::Nothing => {
           !covers(&app, cell, &links) && !covers(&app, cell, &glyphs)
         }
+        Hit::Row(_) | Hit::Thumbnail(_) => false,
       };
       assert!(expected, "{at}");
     }
   }
+  Ok(())
+}
+
+#[test]
+fn hover_hits_lines_rows_and_thumbnails() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("lines.pdf");
+  let lines = ["Hover over these lines", "one block of text", "steady shape"];
+  // 27 pt keeps one block, with gaps.
+  common::spaced_pdf(&path, &lines, 27)?;
+  let short = Screen { rows: 170, cell_height: 4, ..screen() };
+  let mut app = App::with_screen(&path, "", false, short)?;
+  app.draw(&mut Vec::new())?;
+  // Text runs unbroken down a column.
+  let column = (0..app.screen.columns)
+    .find(|&column| {
+      let hits = (0..app.screen.rows - 1).filter(|&row| {
+        app.hovered(Region::Page, column, row, None).ok() == Some(Hit::Text)
+      });
+      hits.count() >= 3
+    })
+    .expect("a column across the lines");
+  let mut hits = Vec::new();
+  for row in 0..app.screen.rows - 1 {
+    let (page, x, y) = app.page_point(column, row, None).expect("on the page");
+    let text = app.doc.text(page)?;
+    let glyphs = text.lines.iter().flat_map(|line| &line.glyphs);
+    let on_glyph = glyphs.into_iter().any(|glyph| glyph.bounds.contains(x, y));
+    hits.push((app.hovered(Region::Page, column, row, None)?, on_glyph));
+  }
+  let first = hits.iter().position(|hit| hit.0 == Hit::Text).expect("text");
+  let last = hits.iter().rposition(|hit| hit.0 == Hit::Text).expect("text");
+  assert!(hits[first..=last].iter().all(|hit| hit.0 == Hit::Text), "{hits:?}");
+  assert!(hits[first..=last].iter().any(|hit| !hit.1), "a bridged gap");
+  assert!(hits.iter().all(|hit| hit.0 == Hit::Text || !hit.1), "{hits:?}");
+  // Panel rows hit what a press selects.
+  app.open_panel(PanelKind::Help)?;
+  app.draw(&mut Vec::new())?;
+  let press = |column, row| MouseEvent {
+    kind: MouseEventKind::Down(MouseButton::Left),
+    column,
+    row,
+    modifiers: KeyModifiers::NONE,
+  };
+  for row in 0..app.screen.rows - 1 {
+    let hit = app.hovered(Region::Panel, 1, row, None)?;
+    let pressed = app.panel.as_mut().expect("panel").pointer(press(1, row));
+    assert_eq!(hit, pressed.map_or(Hit::Nothing, Hit::Row), "row {row}");
+    if row < 2 {
+      assert_eq!(hit, [Hit::Nothing, Hit::Row(0)][usize::from(row)]);
+    }
+  }
+  app.close_panel()?;
+  // A thumbnail press opens its page.
+  app.open_overview()?;
+  app.draw(&mut Vec::new())?;
+  let thumbnail =
+    |app: &mut App, column| app.hovered(Region::Overview, column, 2, None);
+  assert_eq!(thumbnail(&mut app, 4)?, Hit::Thumbnail(PageId(0)));
+  let right = app.screen.columns - 4;
+  assert_eq!(thumbnail(&mut app, right)?, Hit::Nothing);
+  app.overview_mouse(press(4, 2))?;
+  assert!(app.overview.is_none(), "the press opened the page");
   Ok(())
 }
 

@@ -175,7 +175,6 @@ impl Panel {
 
   /// Returns a clicked row; only presses focus.
   pub fn pointer(&mut self, mouse: MouseEvent) -> Option<usize> {
-    let last = self.rows.len().saturating_sub(1);
     if matches!(mouse.kind, MouseEventKind::Down(_)) {
       self.focused = true;
     }
@@ -190,25 +189,29 @@ impl Panel {
       MouseEventKind::ScrollUp => {
         self.top = self.top.saturating_sub(3);
       }
-      MouseEventKind::Down(MouseButton::Left)
-        if mouse.row > 0 && mouse.column < self.columns =>
-      {
-        if self.layout.is_some() && mouse.row >= self.height.saturating_sub(1) {
-          return None;
-        }
-        let line = self.top + usize::from(mouse.row) - 1;
-        if line >= self.line_count() {
-          return None;
-        }
-        let index = self.line_source(line);
-        if index <= last && !self.rows.is_empty() {
-          self.selected = index;
-          return Some(index);
-        }
+      MouseEventKind::Down(MouseButton::Left) => {
+        let index = self.row_at(mouse.column, mouse.row)?;
+        self.selected = index;
+        return Some(index);
       }
       _ => {}
     }
     None
+  }
+
+  /// The row drawn at a panel cell.
+  pub fn row_at(&self, column: u16, row: u16) -> Option<usize> {
+    if row == 0 || column >= self.columns {
+      return None;
+    }
+    if self.layout.is_some() && row >= self.height.saturating_sub(1) {
+      return None;
+    }
+    let line = self.top + usize::from(row) - 1;
+    if line >= self.line_count() {
+      return None;
+    }
+    Some(self.line_source(line)).filter(|&index| index < self.rows.len())
   }
 
   pub(crate) fn reveal(&mut self) {

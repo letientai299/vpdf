@@ -50,7 +50,12 @@ pub fn write_pdf(path: &Path, objects: &[String], trailer: &str) -> Result<()> {
 
 /// One page of Helvetica `line`s, 24 pt apart from the top.
 pub fn text_pdf(path: &Path, lines: &[&str]) -> Result<()> {
-  let mut content = String::from("BT /F1 18 Tf 24 TL 20 170 Td");
+  spaced_pdf(path, lines, 24)
+}
+
+/// One page of 18 pt Helvetica `line`s, `leading` pt apart.
+pub fn spaced_pdf(path: &Path, lines: &[&str], leading: u16) -> Result<()> {
+  let mut content = format!("BT /F1 18 Tf {leading} TL 20 170 Td");
   for line in lines {
     write!(content, " ({line}) Tj T*")?;
   }

@@ -612,7 +612,7 @@ fn route(
 
 /// The first round: XTVERSION, the graphics query with a full 1x1
 /// payload (Konsole ignores a short one), modes 2026, 1016, and 2048,
-/// keyboard flags, pointer shapes, and drag and drop.
+/// keyboard flags, drag and drop, pointer shapes, and mode 5522.
 fn request(route: &Route) -> Vec<u8> {
   let mut request = b"\x1b[>0q".to_vec();
   if *route == Route::Direct {
@@ -620,10 +620,10 @@ fn request(route: &Route) -> Vec<u8> {
     request.extend_from_slice(query.as_bytes());
   }
   request.extend_from_slice(
-    b"\x1b[?2026$p\x1b[?1016$p\x1b[?2048$p\x1b[?u\
-      \x1b]22;?pointer\x1b\\\x1b]72;t=q\x1b\\",
+    b"\x1b[?2026$p\x1b[?1016$p\x1b[?2048$p\x1b[?u\x1b]72;t=q\x1b\\",
   );
-  let query = b"\x1b[?5522$p";
+  // tmux drops OSC 22; wrap it.
+  let query = b"\x1b]22;?pointer\x1b\\\x1b[?5522$p";
   if matches!(route, Route::Tmux(_)) {
     // The outer DA1 follows this same path.
     crate::terminal::passthrough(&mut request, query, true)
@@ -687,13 +687,8 @@ fn caps(route: Route, replies: &[Reply]) -> Caps {
       _ => None,
     }),
   };
-  // Ghostty sets pointer shapes but never answers the query. Under tmux
-  // `pointer` is tmux's answer, which the client's name cannot change.
-  let direct = matches!(caps.host, Host::Direct(_));
-  if direct
-    && is(caps.version.as_deref(), &["ghostty"])
-    && caps.pointer == Support::Missing
-  {
+  // Ghostty sets shapes but never answers.
+  if is(caps.terminal(), &["ghostty"]) && caps.pointer == Support::Missing {
     caps.pointer = Support::Named;
   }
   caps

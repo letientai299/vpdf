@@ -44,6 +44,131 @@ static PIXELS: AtomicBool = AtomicBool::new(false);
 /// session hides placements tmux would leave over another window.
 static FOCUS: AtomicBool = AtomicBool::new(false);
 
+/// Pointer shape the reader last wrote.
+static SHAPE: Mutex<Shapes> = Mutex::new(Shapes { owner: None, shown: None });
+
+/// OSC 22 pointer shapes ([spec][spec]).
+///
+/// [spec]: https://sw.kovidgoyal.net/kitty/pointer-shapes/
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Shape {
+  #[default]
+  Default,
+  Pointer,
+  Text,
+}
+
+impl Shape {
+  fn name(self) -> &'static str {
+    match self {
+      Self::Default => "default",
+      Self::Pointer => "pointer",
+      Self::Text => "text",
+    }
+  }
+}
+
+/// How the reader holds the pointer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Owner {
+  /// Kitty: pushed on its shape stack.
+  Stack,
+  /// Ghostty: set by name, starting at `text`.
+  Named,
+}
+
+#[derive(Debug)]
+struct Shapes {
+  /// None without shapes or the screen.
+  owner: Option<Owner>,
+  /// None when unknown: the next shape writes.
+  shown: Option<Shape>,
+}
+
+impl Shapes {
+  /// Takes over the pointer where supported.
+  fn push(
+    &mut self,
+    support: Support,
+    out: &mut impl Write,
+    tmux: bool,
+  ) -> Result<()> {
+    if self.owner.is_some() {
+      return Ok(());
+    }
+    let (owner, body) = match support {
+      Support::Answered => (Owner::Stack, ">default"),
+      Support::Named => (Owner::Named, "default"),
+      Support::Missing => return Ok(()),
+    };
+    osc22(out, body, tmux)?;
+    self.owner = Some(owner);
+    self.shown = Some(Shape::Default);
+    Ok(())
+  }
+
+  /// Writes `shape` when it changed.
+  fn point(
+    &mut self,
+    shape: Shape,
+    out: &mut impl Write,
+    tmux: bool,
+  ) -> Result<()> {
+    if self.owner.is_none() || self.shown == Some(shape) {
+      return Ok(());
+    }
+    osc22(out, shape.name(), tmux)?;
+    self.shown = Some(shape);
+    Ok(())
+  }
+
+  /// Another program may have set one.
+  fn forget(&mut self) {
+    self.shown = None;
+  }
+
+  /// Restores the terminal's own shape.
+  fn pop(&mut self, out: &mut impl Write, tmux: bool) -> Result<()> {
+    self.shown = None;
+    match self.owner.take() {
+      Some(Owner::Stack) => osc22(out, "<", tmux),
+      // Ghostty 1.3 ignores an empty reset.
+      Some(Owner::Named) => osc22(out, Shape::Text.name(), tmux),
+      None => Ok(()),
+    }
+  }
+}
+
+fn osc22(out: &mut impl Write, body: &str, tmux: bool) -> Result<()> {
+  passthrough(out, format!("\x1b]22;{body}\x1b\\").as_bytes(), tmux)
+}
+
+fn shapes() -> std::sync::MutexGuard<'static, Shapes> {
+  SHAPE.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Sets the pointer shape; writes only changes.
+pub fn point(out: &mut impl Write, shape: Shape) -> Result<()> {
+  shapes().point(shape, out, tmux())
+}
+
+/// Sets `default` once; the next shape always writes.
+pub fn hand_over(out: &mut impl Write) -> Result<()> {
+  let mut shapes = shapes();
+  if shapes.shown.is_none() {
+    return Ok(());
+  }
+  shapes.point(Shape::Default, out, tmux())?;
+  shapes.forget();
+  Ok(())
+}
+
+/// Arms frames as a Kitty reader.
+#[cfg(test)]
+pub(crate) fn arm_shapes() {
+  *shapes() = Shapes { owner: Some(Owner::Stack), shown: Some(Shape::Default) };
+}
+
 /// Lines the status line shows once, such as tmux settings vpdf changed
 /// or lacks.
 static NOTICES: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -114,6 +239,7 @@ pub fn resume() -> Result<()> {
     // Reports switch now, not at the first frame.
     out.flush()?;
   }
+  shapes().push(caps.pointer, &mut io::stdout(), tmux())?;
   match &caps.host {
     Host::Tmux(Some(tmux)) => tmux_setup(caps, tmux),
     _ => {
@@ -145,8 +271,9 @@ fn tmux_setup(caps: &Caps, tmux: &crate::caps::Tmux) -> Result<()> {
 fn tmux_notices(caps: &Caps, passthrough: Option<String>) -> Vec<String> {
   let mut notices = Vec::from_iter(passthrough);
   if matches!(&caps.host, Host::Tmux(Some(tmux)) if !tmux.focus_events) {
-    notices
-      .push("tmux focus-events off: images outlast window switches".into());
+    notices.push(
+      "tmux focus-events off: images, shapes outlast window switches".into(),
+    );
   }
   if caps.merges_ctrl_i() {
     notices.push("Ctrl-i is Tab under tmux in Kitty".into());
@@ -169,7 +296,8 @@ pub fn suspend() -> Result<()> {
   if PIXELS.swap(false, Ordering::Relaxed) {
     io::stdout().write_all(b"\x1b[?1016l")?;
   }
-  // Before the pop, so a legacy lone ESC is the Esc key again.
+  shapes().pop(&mut io::stdout(), tmux())?;
+  // Before the keyboard pop, so a lone ESC is Esc.
   crate::input::release();
   resize_reports(false)?;
   if PUSHED.swap(false, Ordering::SeqCst) {
@@ -750,7 +878,7 @@ mod tests {
   #[test]
   fn tmux_notices_say_what_lacks() {
     let set = || Some("Set tmux allow-passthrough all".to_owned());
-    let off = "tmux focus-events off: images outlast window switches";
+    let off = "tmux focus-events off: images, shapes outlast window switches";
     let ctrl_i = "Ctrl-i is Tab under tmux in Kitty";
     let cases = [
       (
@@ -768,6 +896,72 @@ mod tests {
     for (caps, passthrough, want) in cases {
       assert_eq!(tmux_notices(&caps, passthrough), want);
     }
+  }
+
+  #[test]
+  fn shapes_write_only_changes() {
+    use Shape::{Default, Pointer, Text};
+    #[derive(Clone, Copy, Debug)]
+    enum Step {
+      Push,
+      Point(Shape),
+      Forget,
+      Pop,
+    }
+    let steps = [
+      Step::Point(Text),
+      Step::Push,
+      Step::Push,
+      Step::Point(Default),
+      Step::Point(Text),
+      Step::Point(Text),
+      Step::Forget,
+      Step::Point(Text),
+      Step::Point(Pointer),
+      Step::Pop,
+      Step::Point(Text),
+      Step::Pop,
+    ];
+    let run = |support, tmux| {
+      let mut shapes = Shapes { owner: None, shown: None };
+      let mut out = Vec::new();
+      for step in steps {
+        match step {
+          Step::Push => shapes.push(support, &mut out, tmux),
+          Step::Point(shape) => shapes.point(shape, &mut out, tmux),
+          Step::Forget => {
+            shapes.forget();
+            Ok(())
+          }
+          Step::Pop => shapes.pop(&mut out, tmux),
+        }
+        .unwrap();
+      }
+      String::from_utf8(out).unwrap()
+    };
+    let osc = |bodies: &[&str], tmux| {
+      let mut out = Vec::new();
+      for body in bodies {
+        osc22(&mut out, body, tmux).unwrap();
+      }
+      String::from_utf8(out).unwrap()
+    };
+    let kitty = [">default", "text", "text", "pointer", "<"];
+    // Ghostty starts and ends at `text`.
+    let ghostty = ["default", "text", "text", "pointer", "text"];
+    // (support, tmux) -> written
+    let cases = [
+      (Support::Answered, false, osc(&kitty, false)),
+      (Support::Named, false, osc(&ghostty, false)),
+      (Support::Missing, false, String::new()),
+      (Support::Answered, true, osc(&kitty, true)),
+    ];
+    for (support, tmux, want) in cases {
+      assert_eq!(run(support, tmux), want, "{support:?} {tmux}");
+    }
+    let mut wrapped = Vec::new();
+    osc22(&mut wrapped, "<", true).unwrap();
+    assert_eq!(wrapped, b"\x1bPtmux;\x1b\x1b]22;<\x1b\x1b\\\x1b\\");
   }
 
   #[test]

@@ -99,6 +99,11 @@ pub struct Line {
 }
 
 impl Line {
+  /// Box around every glyph; None when empty.
+  pub fn span(&self) -> Option<Bounds> {
+    self.glyphs.iter().map(|glyph| glyph.bounds).reduce(Bounds::union)
+  }
+
   pub fn text(&self) -> String {
     self.glyphs.iter().map(|g| g.ch).collect()
   }
@@ -161,6 +166,16 @@ impl Text {
     (first, out.split_whitespace().collect::<Vec<_>>().join(" "))
   }
 
+  /// On a glyph or a line gap.
+  pub fn covers(&self, x: f32, y: f32) -> bool {
+    let mut glyphs = self.lines.iter().flat_map(|line| &line.glyphs);
+    glyphs.any(|glyph| glyph.bounds.contains(x, y))
+      || self
+        .lines
+        .windows(2)
+        .any(|pair| !pair[1].paragraph && bridges(&pair[0], &pair[1], x, y))
+  }
+
   pub fn weight(&self) -> usize {
     self.lines.iter().map(|l| l.glyphs.capacity() * size_of::<Glyph>()).sum()
   }
@@ -195,6 +210,26 @@ impl Text {
     }
     best
   }
+}
+
+/// In a line gap, nearer a spanning line.
+fn bridges(upper: &Line, lower: &Line, x: f32, y: f32) -> bool {
+  // Spans hold first glyphs: a cheap bound.
+  let (Some(top), Some(bottom)) = (upper.glyphs.first(), lower.glyphs.first())
+  else {
+    return false;
+  };
+  if y < top.bounds.y1 || y > bottom.bounds.y0 {
+    return false;
+  }
+  let (Some(upper), Some(lower)) = (upper.span(), lower.span()) else {
+    return false;
+  };
+  let middle = f32::midpoint(upper.y1, lower.y0);
+  let within = |line: Bounds, from: f32, to: f32| {
+    (line.x0..=line.x1).contains(&x) && (from..=to).contains(&y)
+  };
+  within(upper, upper.y1, middle) || within(lower, middle, lower.y0)
 }
 
 pub fn class(ch: char) -> u8 {
@@ -258,6 +293,51 @@ mod tests {
     let blank = Bounds { x0: 0.0, y0: 40.0, x1: 50.0, y1: 50.0 };
     for areas in [vec![], vec![blank]] {
       assert_eq!(text.in_areas(page, &areas), (None, String::new()));
+    }
+  }
+
+  #[test]
+  fn text_bridges_line_gaps_within_a_block() {
+    // Lines 10 tall, 10 apart; third starts a block.
+    let line = |paragraph, top: f32, x1| Line {
+      paragraph,
+      glyphs: vec![
+        Glyph {
+          ch: 'a',
+          bounds: Bounds { x0: 0.0, y0: top, x1: 10.0, y1: top + 10.0 },
+        },
+        Glyph {
+          ch: 'b',
+          bounds: Bounds { x0: 20.0, y0: top, x1, y1: top + 10.0 },
+        },
+      ],
+    };
+    let text = Text {
+      lines: vec![
+        line(true, 0.0, 100.0),
+        line(false, 20.0, 50.0),
+        line(true, 40.0, 100.0),
+      ],
+      truncated: false,
+    };
+    // (x, y) -> text
+    let cases = [
+      ((5.0, 5.0), true),
+      // Between words on a line.
+      ((15.0, 5.0), false),
+      // Upper half: upper line's width.
+      ((15.0, 12.0), true),
+      ((90.0, 15.0), true),
+      ((90.0, 16.0), false),
+      ((40.0, 16.0), true),
+      // Between blocks.
+      ((5.0, 35.0), false),
+      ((5.0, 45.0), true),
+      ((5.0, 55.0), false),
+      ((101.0, 5.0), false),
+    ];
+    for ((x, y), want) in cases {
+      assert_eq!(text.covers(x, y), want, "{x},{y}");
     }
   }
 }

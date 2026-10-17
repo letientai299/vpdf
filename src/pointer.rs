@@ -2,6 +2,7 @@
 
 use crate::app::App;
 use crate::split::Rect;
+use crate::terminal::Shape;
 use crate::text::PageId;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use std::time::{Duration, Instant};
@@ -117,6 +118,20 @@ pub enum Hit {
   Text,
   /// Index into the page's `Document::links`.
   Link(PageId, usize),
+  /// Index into the panel's rows.
+  Row(usize),
+  /// An overview thumbnail.
+  Thumbnail(PageId),
+}
+
+impl Hit {
+  pub fn shape(self) -> Shape {
+    match self {
+      Self::Nothing => Shape::Default,
+      Self::Text => Shape::Text,
+      Self::Link(..) | Self::Row(_) | Self::Thumbnail(_) => Shape::Pointer,
+    }
+  }
 }
 
 /// Pane, region, and hit under the pointer.
@@ -336,6 +351,11 @@ impl Pointer {
   /// Sets what the pointer rests on; whether it changed.
   pub fn refresh(&mut self, hover: Option<Hover>) -> bool {
     std::mem::replace(&mut self.hover, hover) != hover
+  }
+
+  /// What the pointer rests on.
+  pub fn target(&self) -> Option<Hover> {
+    self.hover
   }
 
   /// Bare motion at the last reported spot.
@@ -630,6 +650,20 @@ mod tests {
     let spot =
       pointer.spot().map(|(spot, _)| (spot.kind, spot.column, spot.row));
     assert_eq!(spot, Some((Moved, 30, 12)));
+  }
+
+  #[test]
+  fn hits_pick_pointer_shapes() {
+    let cases = [
+      (Hit::Nothing, Shape::Default),
+      (Hit::Text, Shape::Text),
+      (Hit::Link(PageId(0), 2), Shape::Pointer),
+      (Hit::Row(3), Shape::Pointer),
+      (Hit::Thumbnail(PageId(4)), Shape::Pointer),
+    ];
+    for (hit, shape) in cases {
+      assert_eq!(hit.shape(), shape, "{hit:?}");
+    }
   }
 
   #[test]

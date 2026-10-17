@@ -106,7 +106,7 @@ impl App {
   pub fn overview_mouse(&mut self, mouse: MouseEvent) -> Result<()> {
     let grid = self.grid();
     let last = self.doc.pages.len() - 1;
-    let (x, y) = self.cell_point(mouse.column, mouse.row, None);
+    let hit = self.thumbnail_at(mouse.column, mouse.row);
     let Some(overview) = &mut self.overview else { return Ok(()) };
     match mouse.kind {
       MouseEventKind::ScrollDown => {
@@ -116,17 +116,26 @@ impl App {
         overview.selected = overview.selected.saturating_sub(grid.columns);
       }
       MouseEventKind::Down(MouseButton::Left) => {
-        let column = ((x - grid.gap / 2.0) / (grid.width + grid.gap)) as usize;
-        let row = ((y - grid.gap / 2.0) / grid.row) as usize;
-        let index = (overview.top + row) * grid.columns + column;
-        if column < grid.columns && row < grid.rows && index <= last {
-          overview.selected = index;
+        if let Some(page) = hit {
+          overview.selected = page.0;
           return self.open_selected();
         }
       }
       _ => {}
     }
     Ok(())
+  }
+
+  /// The thumbnail drawn at a pane cell.
+  pub fn thumbnail_at(&self, column: u16, row: u16) -> Option<PageId> {
+    let overview = self.overview.as_ref()?;
+    let grid = self.grid();
+    let (x, y) = self.cell_point(column, row, None);
+    let column = ((x - grid.gap / 2.0) / (grid.width + grid.gap)) as usize;
+    let row = ((y - grid.gap / 2.0) / grid.row) as usize;
+    let index = (overview.top + row) * grid.columns + column;
+    let inside = column < grid.columns && row < grid.rows;
+    (inside && index < self.doc.pages.len()).then_some(PageId(index))
   }
 
   fn open_selected(&mut self) -> Result<()> {
