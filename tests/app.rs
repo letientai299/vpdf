@@ -391,6 +391,11 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
   }
   press(&mut app, Action::Command)?;
   assert!(app.prompt.take().is_some(), "`:` reaches the command line");
+  for action in [Action::Window(vpdf::app::Window::Next), Action::Tab(true)] {
+    press(&mut app, action)?;
+    assert!(app.request.take().is_some(), "{action:?} reaches the session");
+    assert!(app.overview.is_some(), "{action:?} keeps the overview");
+  }
   press(&mut app, Action::Motion(vpdf::motion::Motion::Down))?;
   press(&mut app, Action::Follow)?;
   assert!(app.overview.is_none());

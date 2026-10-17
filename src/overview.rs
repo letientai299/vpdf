@@ -88,8 +88,13 @@ impl App {
         self.close_overview();
         return Ok(true);
       }
-      // The hidden document takes nothing but `:`.
-      _ => return Ok(input.action != Action::Command),
+      // Only `:`, panes, and tabs pass through.
+      _ => {
+        return Ok(!matches!(
+          input.action,
+          Action::Command | Action::Window(_) | Action::Tab(_)
+        ));
+      }
     }
     .min(last);
     Ok(true)
