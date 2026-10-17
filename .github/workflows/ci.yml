@@ -50,12 +50,12 @@ jobs:
         with:
           key: ${{ matrix.platform }}
           cache-workspace-crates: true
-      - name: Check formatting
-        if: runner.os == 'Linux'
-        run: mise run fmt:check
       - name: Lint
         if: runner.os == 'Linux'
-        run: mise run lint
+        # Lint applies fixes; any change means the commit lacked them.
+        run: |
+          mise run lint
+          git diff --exit-code
       - name: Test
         run: mise run test
       - name: Build and pack executable

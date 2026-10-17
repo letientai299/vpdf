@@ -249,21 +249,23 @@ without Tesseract.
 
 ```sh
 mise run hooks
-mise run check
+mise run lint
+mise run test
 mise run test:corpus
 mise run test:ocr
 mise run perf:check
 ```
 
-Rustfmt uses two spaces and an 80-column target; a separate check enforces the
-source width. Clippy rejects performance, complexity, and selected
-maintainability violations. Prek runs formatting, linting, and tests before
-commits. Rumdl formats and checks Markdown. `mise run corpus` downloads public
-PDFs into `tmp/corpus` in parallel and verifies their recorded SHA-256 hashes;
-corpus tests and benches read them. `mise run corpus:huge` fetches large stress
-PDFs (a 5,364-page manual, vector maps, scans, a 257 MB poster) into
-`tmp/huge`; no task reads them. OCR tests require Tesseract; ordinary tests do
-not.
+`lint` applies every automatic fix (Clippy, Rustfmt, Taplo, and Rumdl), then
+fails on what remains. Rustfmt uses two spaces and an 80-column target; a
+separate check enforces the source width. Clippy rejects performance,
+complexity, and selected maintainability violations. Prek runs `lint` and
+`test` before commits; a commit whose files `lint` fixed stops so the fixes can
+be staged. `mise run corpus` downloads public PDFs into `tmp/corpus` in
+parallel and verifies their recorded SHA-256 hashes; corpus tests and benches
+read them. `mise run corpus:huge` fetches large stress PDFs (a 5,364-page
+manual, vector maps, scans, a 257 MB poster) into `tmp/huge`; no task reads
+them. OCR tests require Tesseract; ordinary tests do not.
 
 `mise run bench` measures real-PDF extraction, tiles, navigation, search, and
 serialized terminal frames. `perf:check` requires warm frame p95 below 8.33 ms,

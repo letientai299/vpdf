@@ -25,25 +25,19 @@ description = "Run the reader"
 depends = ["build"]
 run = '"${CARGO_TARGET_DIR:-target}/release/vpdf" {{arg(name="args", var=true)}}'
 
-[tasks.fmt]
-description = "Format source and documentation"
-run = ["cargo fmt", "taplo fmt", "rumdl fmt ."]
-
-[tasks."fmt:check"]
-run = ["cargo fmt --check", "taplo fmt --check", "rumdl check ."]
-
 [tasks.lint]
-description = "Reject performance and complexity regressions"
+description = "Fix what tools can, then reject the remaining lint and format issues"
 run = [
+  "cargo clippy --locked --all-targets --fix --allow-dirty --allow-staged",
+  "cargo fmt",
+  "taplo fmt",
+  "rumdl check --fix .",
   "cargo clippy --locked --all-targets -- -D warnings",
   "sh scripts/width.sh",
 ]
 
 [tasks.test]
 run = "cargo test --locked"
-
-[tasks.check]
-depends = ["fmt:check", "lint", "test"]
 
 [tasks.hooks]
 run = "prek install"
