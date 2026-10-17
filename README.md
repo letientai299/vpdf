@@ -6,8 +6,22 @@ executable embeds MuPDF and fallback fonts. Python is not required.
 
 ## Install and run
 
-Install [mise][mise], a C/C++ compiler, Make, and libclang. On macOS, the Xcode
-command line tools provide the native build tools. Then run:
+Install [mise][mise], then download the rolling `main` build:
+
+```sh
+mise i github:letientai299/vpdf@main
+mise exec github:letientai299/vpdf@main -- vpdf document.pdf
+```
+
+Prebuilt binaries support Linux x86-64 and macOS ARM64. Successful CI on `main`
+updates this prerelease. It tracks development and can contain breaking changes.
+To activate it globally, run `mise use -g github:letientai299/vpdf@main`.
+To download a newer build, run `mise i --force github:letientai299/vpdf@main`.
+
+### Build from source
+
+Install a C/C++ compiler, Make, and libclang. On macOS, the Xcode command line
+tools provide the native build tools. In a checkout, run:
 
 ```sh
 mise trust
