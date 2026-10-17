@@ -130,6 +130,11 @@ impl App {
     else {
       let right = terminal::clean(&right, columns);
       write!(out, "{}{right}{}", theme::BAR, theme::RESET)?;
+      // Plain frames skip the row clear, so erase what follows.
+      let rest = columns.saturating_sub(right.width());
+      if rest > 0 {
+        write!(out, "\x1b[{rest}X")?;
+      }
       return Ok(());
     };
     let (tabs, width) = self.tabs(room);
