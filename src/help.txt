@@ -10,6 +10,7 @@ Cursor/Visual 0 ^ $: line motions
 Cursor/Visual { }: previous / next paragraph
 [count]gg G: page jump
 [count][[ ]]: previous / next heading; record jump
+]i [i: next / previous figure; counts repeat
 Space Shift-Space: next / previous page
 Ctrl-o Ctrl-i '': jump back / forward
 Destination jumps: flash landing line for 600 ms
@@ -24,6 +25,7 @@ Scroll keys keep glyph and selection positions
 zt zz zb: target at top / middle / bottom
 + - =: zoom in / out / fit width
 zf: fit page
+zF: fit selected figure; reserve action bar
 zh zl: pan left / right
 zr: rotate clockwise
 zc: crop / restore page margins
@@ -57,6 +59,14 @@ n N: next / previous match
 *: search active glyph or visible target word
 \v: regex prefix
 
+# Figures
+gF: open selected figure actions
+h j k l: choose image, text, PNG, or OCR
+Enter: run selected action; Esc: close bar
+Save PNG: beside document with numbered filename
+OCR: needs Tesseract; copies region text
+Closing bar: keep mode, selection, committed jobs
+
 # Panels
 go: table of contents
 gs: search results
@@ -80,7 +90,7 @@ gq / panel q: close panel
 gx: focus extracted-text presentation
 g? F1: this reference
 Esc: cancel transient or pending input first
-:cancel: stop active-pane search, OCR, outline jobs
+:cancel: stop active-pane search, OCR, outline, region jobs
 Panel wheel: scroll list; keep row selection
 q: close panel, tab, or reader
 
