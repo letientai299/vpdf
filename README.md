@@ -6,17 +6,27 @@ executable embeds MuPDF and fallback fonts. Python is not required.
 
 ## Install and run
 
-Install [mise][mise], then download the rolling `main` build:
+Install a prebuilt snapshot with [Homebrew][homebrew]:
 
 ```sh
-mise i github:letientai299/vpdf@main
-mise exec github:letientai299/vpdf@main -- vpdf document.pdf
+brew install letientai299/tap/vpdf
+vpdf document.pdf
+```
+
+The tap follows successful builds of the `main` branch. Run `brew update` and
+`brew upgrade vpdf` to install a newer snapshot.
+
+With [mise][mise], download the rolling `dev` build:
+
+```sh
+mise i github:letientai299/vpdf@dev
+mise exec github:letientai299/vpdf@dev -- vpdf document.pdf
 ```
 
 Prebuilt binaries support Linux x86-64 and macOS ARM64. Successful CI on `main`
 updates this prerelease. It tracks development and can contain breaking changes.
-To activate it globally, run `mise use -g github:letientai299/vpdf@main`.
-To download a newer build, run `mise i --force github:letientai299/vpdf@main`.
+To activate it globally, run `mise use -g github:letientai299/vpdf@dev`.
+To download a newer build, run `mise i --force github:letientai299/vpdf@dev`.
 
 ### Build from source
 
@@ -281,6 +291,7 @@ AGPL-3.0-or-later. MuPDF is linked into the executable and carries its own
 copyright notices. See [MuPDF licensing][mupdf-license]. Bundled fallback fonts
 carry their upstream licenses in the dependency source distributions.
 
+[homebrew]: https://brew.sh/
 [mise]: https://mise.jdx.dev/
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
 [ocr]: https://tesseract-ocr.github.io/
