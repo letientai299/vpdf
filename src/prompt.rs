@@ -192,6 +192,14 @@ impl Prompt {
   }
 
   fn dispatch(&mut self, key: KeyEvent, history: &History) -> PromptEvent {
+    let unbound =
+      KeyModifiers::SUPER | KeyModifiers::HYPER | KeyModifiers::META;
+    if matches!(key.code, KeyCode::Char(_)) && key.modifiers.intersects(unbound)
+    {
+      self.prefix = false;
+      return PromptEvent::Pending;
+    }
+    let key = crate::keys::normalize(key);
     let control = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
     if std::mem::take(&mut self.prefix) {
@@ -221,7 +229,7 @@ impl Prompt {
       (true, _, KeyCode::Char('c' | 'g')) | (_, _, KeyCode::Esc) => {
         return PromptEvent::Cancel;
       }
-      (true, _, KeyCode::Char('j' | 'm')) | (_, _, KeyCode::Enter) => {
+      (true, _, KeyCode::Char('j')) | (_, _, KeyCode::Enter) => {
         return PromptEvent::Submit;
       }
       // The external editor would write a password to disk.
@@ -711,6 +719,31 @@ mod tests {
     );
     assert_eq!(prompt.text, "tabedit ");
     assert!(prompt.menu.is_none());
+  }
+
+  #[test]
+  fn chords_match_legacy_keys() {
+    let history = History::default();
+    for (ch, modifiers, want) in [
+      ('[', CTRL, PromptEvent::Cancel),
+      ('m', CTRL, PromptEvent::Submit),
+      ('i', CTRL, PromptEvent::Complete),
+      ('a', KeyModifiers::SUPER, PromptEvent::Pending),
+      ('a', KeyModifiers::HYPER, PromptEvent::Pending),
+      ('a', KeyModifiers::META, PromptEvent::Pending),
+      ('u', CTRL | KeyModifiers::SUPER, PromptEvent::Pending),
+      ('m', CTRL | KeyModifiers::SUPER, PromptEvent::Pending),
+    ] {
+      let mut prompt = typed("t", &history);
+      let key = KeyEvent::new(KeyCode::Char(ch), modifiers);
+      assert_eq!(prompt.feed(key, &history), want, "{modifiers:?}-{ch}");
+    }
+    let mut prompt = typed("t", &history);
+    prompt.feed(KeyEvent::new(KeyCode::Char('x'), CTRL), &history);
+    let super_e = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::SUPER);
+    assert_eq!(prompt.feed(super_e, &history), PromptEvent::Pending);
+    let e = KeyEvent::new(KeyCode::Char('e'), NONE);
+    assert_eq!(prompt.feed(e, &history), PromptEvent::Edited, "prefix ends");
   }
 
   #[test]

@@ -97,16 +97,22 @@ impl Keys {
   }
 
   pub fn feed(&mut self, key: KeyEvent) -> Option<Input> {
+    let key = normalize(key);
     if key.code == KeyCode::Esc {
       self.clear();
       return Some(self.finish(Action::Cancel));
     }
-    let token = token(key)?;
-    if self.choosing_register {
-      self.register = token.chars().next();
-      self.choosing_register = false;
+    if std::mem::take(&mut self.choosing_register) {
+      match key.code {
+        KeyCode::Char(name) if plain(key) => self.register = Some(name),
+        _ => self.clear(),
+      }
       return None;
     }
+    let Some(token) = token(key) else {
+      self.clear();
+      return None;
+    };
     if token == "\"" {
       self.choosing_register = true;
       return None;
@@ -177,12 +183,35 @@ impl Keys {
   }
 }
 
+/// Maps protocol chords to their legacy keys.
+pub fn normalize(key: KeyEvent) -> KeyEvent {
+  if !key.modifiers.contains(KeyModifiers::CONTROL) {
+    return key;
+  }
+  let code = match key.code {
+    KeyCode::Char('[') => KeyCode::Esc,
+    KeyCode::Char('m') => KeyCode::Enter,
+    KeyCode::Char('i') => KeyCode::Tab,
+    _ => return key,
+  };
+  KeyEvent { code, modifiers: key.modifiers - KeyModifiers::CONTROL, ..key }
+}
+
+/// No modifier but Shift, which uppercase carries.
+pub fn plain(key: KeyEvent) -> bool {
+  (key.modifiers - KeyModifiers::SHIFT).is_empty()
+}
+
+/// Binding name; Alt and Super chords have none.
 fn token(key: KeyEvent) -> Option<String> {
-  if key.modifiers.contains(KeyModifiers::CONTROL) {
+  if key.modifiers - KeyModifiers::SHIFT == KeyModifiers::CONTROL {
     return match key.code {
       KeyCode::Char(ch) => Some(format!("C-{ch}")),
       _ => None,
     };
+  }
+  if !plain(key) {
+    return None;
   }
   Some(match key.code {
     KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -400,6 +429,76 @@ mod tests {
     let shifted = KeyEvent::new(KeyCode::Char('L'), KeyModifiers::SHIFT);
     let input = keys.feed(shifted).unwrap();
     assert_eq!(input.action, Action::Window(W::Move(D::Right)));
+  }
+
+  #[test]
+  fn normalize_matches_legacy_bytes() {
+    let (none, ctrl, alt, shift) = (
+      KeyModifiers::NONE,
+      KeyModifiers::CONTROL,
+      KeyModifiers::ALT,
+      KeyModifiers::SHIFT,
+    );
+    for (code, modifiers, want, left) in [
+      (KeyCode::Char('['), ctrl, KeyCode::Esc, none),
+      (KeyCode::Char('m'), ctrl, KeyCode::Enter, none),
+      (KeyCode::Char('i'), ctrl, KeyCode::Tab, none),
+      (KeyCode::Char('['), ctrl | alt, KeyCode::Esc, alt),
+      (KeyCode::Char('m'), ctrl | shift, KeyCode::Enter, shift),
+      (KeyCode::Char('['), none, KeyCode::Char('['), none),
+      (KeyCode::Char('j'), ctrl, KeyCode::Char('j'), ctrl),
+    ] {
+      let key = normalize(KeyEvent::new(code, modifiers));
+      assert_eq!((key.code, key.modifiers), (want, left), "{code:?}");
+    }
+  }
+
+  #[test]
+  fn chords_and_register_names() {
+    let with = |ch, modifiers| KeyEvent::new(KeyCode::Char(ch), modifiers);
+    let ctrl = |ch| with(ch, KeyModifiers::CONTROL);
+    let alt = |ch| with(ch, KeyModifiers::ALT);
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    let f5 = KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE);
+    let ctrl_left = KeyEvent::new(KeyCode::Left, KeyModifiers::CONTROL);
+    let ctrl_shift_v = with('v', KeyModifiers::CONTROL | KeyModifiers::SHIFT);
+    let shift_a = with('A', KeyModifiers::SHIFT);
+    let out = |action, register| Some((action, 1, register));
+    let down = out(Action::Motion(Motion::Down), '"');
+    let yank = out(Action::Yank, '"');
+    let append = out(Action::Yank, 'A');
+    let cancel = out(Action::Cancel, '"');
+    let split = out(Action::Window(W::Split(Axis::Columns)), '"');
+    let right = out(Action::Motion(Motion::Right), '"');
+    let cases = [
+      (vec![key('5'), ctrl('['), key('j')], vec![None, cancel, down]),
+      (vec![ctrl('m')], vec![out(Action::Follow, '"')]),
+      (vec![ctrl('i')], vec![out(Action::History(true), '"')]),
+      (vec![alt('q')], vec![None]),
+      (vec![with('c', KeyModifiers::CONTROL | KeyModifiers::ALT)], vec![None]),
+      (vec![key('5'), alt('j'), key('j')], vec![None, None, down]),
+      (vec![key('5'), key('"'), enter, key('j')], vec![None, None, None, down]),
+      (vec![key('g'), alt('x'), key('g')], vec![None, None, None]),
+      (
+        vec![key('"'), key('a'), alt('x'), key('y')],
+        vec![None, None, None, yank],
+      ),
+      (vec![ctrl('w'), ctrl_left, key('l')], vec![None, None, right]),
+      (vec![ctrl('w'), ctrl_shift_v], vec![None, split]),
+      (vec![key('"'), enter, key('y')], vec![None, None, yank]),
+      (vec![key('"'), f5, key('y')], vec![None, None, yank]),
+      (vec![key('"'), ctrl('a'), key('y')], vec![None, None, yank]),
+      (vec![key('"'), shift_a, key('y')], vec![None, None, append]),
+    ];
+    for (events, want) in cases {
+      let mut keys = Keys::default();
+      let got: Vec<_> = events
+        .iter()
+        .map(|event| keys.feed(*event))
+        .map(|input| input.map(|i| (i.action, i.count, i.register)))
+        .collect();
+      assert_eq!(got, want, "{events:?}");
+    }
   }
 
   #[test]

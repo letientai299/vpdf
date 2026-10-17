@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Target;
+use crate::keys;
 use crate::text::{Bounds, PageId};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::io::Write;
@@ -96,11 +97,12 @@ impl App {
   /// Narrows by typed characters and follows a unique match.
   pub fn hint_key(&mut self, key: KeyEvent) -> Result<()> {
     let Some(hints) = &mut self.hints else { return Ok(()) };
-    match key.code {
-      KeyCode::Char(ch) if ch.is_ascii_alphabetic() => {
+    let key = keys::normalize(key);
+    match (keys::plain(key), key.code) {
+      (true, KeyCode::Char(ch)) if ch.is_ascii_alphabetic() => {
         hints.typed.push(ch.to_ascii_lowercase());
       }
-      KeyCode::Backspace if !hints.typed.is_empty() => {
+      (true, KeyCode::Backspace) if !hints.typed.is_empty() => {
         hints.typed.pop();
         return Ok(());
       }

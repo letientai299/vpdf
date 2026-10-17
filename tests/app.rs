@@ -185,6 +185,15 @@ fn link_hints_follow_typed_labels() -> Result<()> {
   };
   let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
   app.command("page 2")?;
+  let page = app.reader.cursor.page;
+  for modifiers in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+    app.start_hints(false)?;
+    let hints = app.hints.as_ref().unwrap();
+    let first = hints.items[0].label.chars().next().unwrap();
+    app.hint_key(KeyEvent::new(KeyCode::Char(first), modifiers))?;
+    assert!(app.hints.is_none(), "{modifiers:?} closes hints");
+    assert_eq!(app.reader.cursor.page, page, "{modifiers:?} follows nothing");
+  }
   app.start_hints(false)?;
   let hints = app.hints.as_ref().unwrap();
   assert!(hints.items.len() > 3);
