@@ -114,16 +114,20 @@ impl App {
     if !right.is_empty() {
       right.push_str("  ");
     }
-    right += &self.search_count();
-    write!(
-      right,
-      "{}/{} [{}] {}% ",
-      page + 1,
-      self.doc.pages.len(),
-      self.doc.pages[page].label,
-      self.progress(),
-    )?;
-    if (self.layout.zoom - 1.0).abs() > 0.005 {
+    // The recent view's document is closed; it shows no position.
+    let covered = self.covered();
+    if !covered {
+      right += &self.search_count();
+      write!(
+        right,
+        "{}/{} [{}] {}% ",
+        page + 1,
+        self.doc.pages.len(),
+        self.doc.pages[page].label,
+        self.progress(),
+      )?;
+    }
+    if !covered && (self.layout.zoom - 1.0).abs() > 0.005 {
       write!(right, " zoom {:.0}% ", self.layout.zoom * 100.0)?;
     }
     let left = format!(" {mode} ");
@@ -144,6 +148,7 @@ impl App {
       self.current_section.map(|index| self.doc.outline[index].title.trim());
     let (message, style) = match (&self.error, section) {
       (Some(error), _) => (error.as_str(), theme::ERROR),
+      (None, _) if covered => ("Enter open  :e file  q close", theme::BAR),
       (None, Some(title)) if self.reader.message.is_empty() => {
         (title, theme::MUTED_BAR)
       }

@@ -13,7 +13,7 @@ use std::fmt;
 use std::hash::{BuildHasher, Hasher};
 use std::io::Write;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 const BLOCK: u32 = 1 << 16;
 const OVERLAYS: u32 = 1024;
@@ -139,6 +139,12 @@ pub fn session() -> u32 {
     let blocks = u64::from(u32::MAX / BLOCK);
     (hasher.finish() % blocks) as u32 * BLOCK + BLOCK
   })
+}
+
+/// A fresh serial for `Graphics::picture`; every picture shares one id.
+pub fn serial() -> u64 {
+  static SERIAL: AtomicU64 = AtomicU64::new(1);
+  SERIAL.fetch_add(1, Ordering::Relaxed)
 }
 
 /// Deletes this process's images and placements, one id at a time:
@@ -302,6 +308,14 @@ impl Graphics {
     }
     self.placed = 0;
     self.pictured = false;
+    Ok(())
+  }
+
+  /// Deletes every placement and the picture: an empty frame.
+  pub fn clear(&mut self, out: &mut impl Write) -> Result<()> {
+    self.begin(out)?;
+    self.end(out)?;
+    out.flush()?;
     Ok(())
   }
 

@@ -11,6 +11,22 @@ use crate::text::Position;
 use crossterm::event::KeyEvent;
 use std::process::{Command, Stdio};
 
+/// Commands the recent view takes: opening, windows, tabs, quitting.
+const COVERED: [&str; 12] = [
+  "edit",
+  "split",
+  "vsplit",
+  "close",
+  "only",
+  "tabnext",
+  "tabprevious",
+  "tabclose",
+  "recent",
+  "fzf",
+  "quit",
+  "qall",
+];
+
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
     if self.overview.is_some() && self.overview_input(input)? {
@@ -23,7 +39,10 @@ impl App {
       if let Some(ocr) = self.ocr.take() {
         ocr.cancel();
       }
-      if let Some(panel) = &mut self.panel {
+      // The recent view keeps focus; nothing lies behind it.
+      if let Some(panel) = &mut self.panel
+        && panel.shelf.is_none()
+      {
         panel.focused = false;
       }
       return Ok(());
@@ -148,11 +167,17 @@ impl App {
     if name.is_empty() {
       return Ok(());
     }
+    let spec = cmdline::lookup(name);
+    // The covered document counts as closed, as on the start screen.
+    if self.covered() {
+      let kept = spec.is_some_and(|spec| COVERED.contains(&spec.name));
+      anyhow::ensure!(kept, "Open a document before :{name}");
+    }
     if name.chars().all(|ch| ch.is_ascii_digit()) {
       return self.page(name);
     }
-    let spec = cmdline::lookup(name)
-      .ok_or_else(|| anyhow::anyhow!("Unknown command: {name}"))?;
+    let spec =
+      spec.ok_or_else(|| anyhow::anyhow!("Unknown command: {name}"))?;
     match spec.name {
       "split" | "vsplit" => {
         let axis =

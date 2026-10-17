@@ -45,6 +45,7 @@ pub mod preview;
 mod prime;
 pub mod prompt;
 pub mod reader;
+pub mod recent;
 pub mod render_worker;
 pub mod search_worker;
 pub mod selection;

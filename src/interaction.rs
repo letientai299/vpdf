@@ -31,13 +31,18 @@ impl App {
   pub fn relayout(&mut self) -> Result<()> {
     self.blank = false;
     let columns = self.screen.columns;
-    self.left =
-      self.panel.as_ref().map_or(0, |p| Panel::width(p.kind, columns));
+    // The recent view covers the pane; the page keeps its size beneath.
+    let covered = self.covered();
+    let beside = match &self.panel {
+      Some(panel) if !covered => Panel::width(panel.kind, columns),
+      _ => 0,
+    };
+    self.left = if covered { columns } else { beside };
     // A pane can move without changing size.
     let size = |s: Screen| (s.columns, s.rows, s.cell_width, s.cell_height);
     let before = size(self.layout.screen);
     self.layout.screen = self.screen;
-    self.layout.screen.columns = self.screen.columns.saturating_sub(self.left);
+    self.layout.screen.columns = columns.saturating_sub(beside);
     self.layout.reflow(&self.doc.pages);
     if before == size(self.layout.screen) {
       self.reader.scroll = self.layout.clamp_scroll(self.reader.scroll);

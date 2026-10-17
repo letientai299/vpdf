@@ -1,9 +1,12 @@
 use crate::Result;
 use crate::app::{App, Request};
 use crate::document::{Heading, Target};
+use crate::graphics::Graphics;
 use crate::keys::{Action, Input, PanelKind};
+use crate::layout::Screen;
 use crate::motion::Motion;
 use crate::panel_search::RowSearch;
+use crate::recent::Shelf;
 use crate::state::Entry;
 use crate::terminal;
 use crate::text::{PageId, Position};
@@ -11,7 +14,7 @@ use crate::theme::{self, Color};
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Clone)]
 pub enum Destination {
@@ -29,6 +32,8 @@ pub enum Style {
   Heading,
   /// `keys: description`, with the keys highlighted.
   Key,
+  /// `parent/file`, with the file name highlighted.
+  Path,
 }
 
 pub struct Row {
@@ -67,6 +72,10 @@ pub struct Panel {
   pub search: RowSearch,
   /// Shown after the row count, such as "inferred".
   pub note: &'static str,
+  /// Columns the last frame drew; presses beyond them miss the rows.
+  columns: u16,
+  /// Cards for recent documents; a reader pane shows them over its page.
+  pub shelf: Option<Shelf>,
 }
 
 impl Panel {
@@ -79,6 +88,8 @@ impl Panel {
       top: 0,
       search: RowSearch::default(),
       note: "",
+      columns: u16::MAX,
+      shelf: None,
     }
   }
 
@@ -143,7 +154,9 @@ impl Panel {
       MouseEventKind::ScrollUp => {
         self.selected = self.selected.saturating_sub(3);
       }
-      MouseEventKind::Down(MouseButton::Left) if mouse.row > 0 => {
+      MouseEventKind::Down(MouseButton::Left)
+        if mouse.row > 0 && mouse.column < self.columns =>
+      {
         let index = self.top + usize::from(mouse.row) - 1;
         if index <= last && !self.rows.is_empty() {
           self.selected = index;
@@ -171,14 +184,33 @@ impl Panel {
     width.clamp(1, if wide { 64 } else { 50 }).min(columns.saturating_sub(12))
   }
 
-  /// Draws `width` columns; the last is the border.
+  /// Draws `width` columns of `screen`, with the selected document's
+  /// card when the panel has a shelf; `graphics` places its thumbnail.
   pub fn draw(
+    &mut self,
+    out: &mut impl Write,
+    at: terminal::At,
+    width: u16,
+    screen: Screen,
+    graphics: Option<&mut Graphics>,
+  ) -> Result<()> {
+    let Some(mut cards) = self.shelf.take() else {
+      return self.list(out, at, width, screen.rows);
+    };
+    let drawn = cards.draw(self, out, at, width, screen, graphics);
+    self.shelf = Some(cards);
+    drawn
+  }
+
+  /// Draws the rows in `width` columns; the last is the border.
+  pub fn list(
     &mut self,
     out: &mut impl Write,
     at: terminal::At,
     width: u16,
     height: u16,
   ) -> Result<()> {
+    self.columns = width;
     if width < 2 {
       return Ok(());
     }
@@ -199,15 +231,7 @@ impl Panel {
       terminal::clean(&count, inner.saturating_sub(title.width())),
       theme::RESET
     )?;
-    let keys = self
-      .rows
-      .iter()
-      .filter(|row| row.style == Style::Key)
-      .filter_map(|row| row.label.split_once(": "))
-      .map(|(key, _)| key.width())
-      .max()
-      .unwrap_or(0)
-      .min(inner / 2);
+    let keys = key_width(&self.rows, inner);
     let count = height.saturating_sub(2) as usize;
     self.reveal(count);
     let start = self.top;
@@ -234,9 +258,21 @@ impl Panel {
   }
 }
 
+/// Widest `keys:` column of `rows`, at most half of `inner`.
+pub fn key_width(rows: &[Row], inner: usize) -> usize {
+  rows
+    .iter()
+    .filter(|row| row.style == Style::Key)
+    .filter_map(|row| row.label.split_once(": "))
+    .map(|(key, _)| key.width())
+    .max()
+    .unwrap_or(0)
+    .min(inner / 2)
+}
+
 impl Row {
   /// Writes the label within `room` columns and returns its width.
-  fn write(
+  pub fn write(
     &self,
     out: &mut impl Write,
     base: &str,
@@ -258,6 +294,18 @@ impl Row {
         marked(out, &text, query, base)?;
         Ok(key.width() + pad + text.width())
       }
+      (Style::Path, _) => {
+        let split = self.label.rfind('/').map_or(0, |slash| slash + 1);
+        let (parent, name) = self.label.split_at(split);
+        // The name keeps its room; the parent loses its left end first.
+        let name = terminal::clean(name, room);
+        let parent = tail(parent, room.saturating_sub(name.width()));
+        let muted = if plain { theme::MUTED } else { "" };
+        marked(out, &parent, query, &format!("{base}{muted}"))?;
+        marked(out, &name, query, &format!("{base}{}", theme::FILE))?;
+        write!(out, "{base}")?;
+        Ok(parent.width() + name.width())
+      }
       (Style::Heading, _) => {
         let text = terminal::clean(&self.label, room);
         marked(out, &text, query, &format!("{base}{}", theme::HEADING))?;
@@ -271,6 +319,25 @@ impl Row {
       }
     }
   }
+}
+
+/// `text` within `columns`, cut from the left behind an ellipsis.
+fn tail(text: &str, columns: usize) -> String {
+  let text: String = crate::text::printable(text).collect();
+  if text.width() <= columns {
+    return text;
+  }
+  let Some(room) = columns.checked_sub(1) else { return String::new() };
+  let mut width = 0;
+  let kept: Vec<char> = text
+    .chars()
+    .rev()
+    .take_while(|ch| {
+      width += ch.width().unwrap_or(0);
+      width <= room
+    })
+    .collect();
+  std::iter::once('…').chain(kept.into_iter().rev()).collect()
 }
 
 /// Writes `text` in `style` with query matches highlighted.
@@ -325,7 +392,8 @@ impl App {
     if let Some(panel) = &mut self.panel
       && panel.kind == kind
     {
-      if kind == PanelKind::Outline {
+      // The covered document counts as closed; pick it to return.
+      if kind == PanelKind::Outline || panel.shelf.is_some() {
         panel.focused = true;
       } else {
         self.close_panel()?;
@@ -368,9 +436,36 @@ impl App {
     }
   }
 
-  pub fn close_panel(&mut self) -> Result<()> {
-    self.panel = None;
+  /// Covers the pane with `entries` and a card for the selected one,
+  /// releasing what the hidden document rebuilds on return.
+  pub fn show_recent(&mut self, entries: &[Entry]) -> Result<()> {
+    self.overview = None;
+    self.peek = None;
+    self.hints = None;
+    if self.preview.is_some() {
+      self.close_text_preview()?;
+    }
+    self.trim();
+    let mut panel = Panel::new(PanelKind::Recent, recent_rows(entries));
+    panel.shelf = Some(Shelf::new(entries, &self.password));
+    self.panel = Some(panel);
     self.relayout()
+  }
+
+  /// Whether the recent view covers the pane.
+  pub fn covered(&self) -> bool {
+    self.panel.as_ref().is_some_and(|panel| panel.shelf.is_some())
+  }
+
+  pub fn close_panel(&mut self) -> Result<()> {
+    let covered = self.covered();
+    self.panel = None;
+    self.relayout()?;
+    // Changes while covered waited; settling picks them up.
+    if covered {
+      self.watch()?;
+    }
+    Ok(())
   }
 
   /// Returns from `gx` to the view it replaced.
@@ -443,7 +538,12 @@ impl App {
     if panel.navigate(input, usize::from(self.screen.rows)) {
       return Ok(true);
     }
+    let covered = panel.shelf.is_some();
     match input.action {
+      // Its document is closed, so the pane goes.
+      Action::Quit | Action::ClosePanel if covered => {
+        self.quit = true;
+      }
       Action::Quit | Action::ClosePanel => {
         self.close_panel()?;
       }
@@ -465,6 +565,15 @@ impl App {
       Action::Follow | Action::Swap => {
         self.panel_follow(input.action)?;
       }
+      // Commands, searches, windows, and tabs still work; the covered
+      // document takes nothing else.
+      Action::Command
+      | Action::Search(_)
+      | Action::Window(_)
+      | Action::Tab(_) => {
+        return Ok(false);
+      }
+      _ if covered => {}
       _ => return Ok(false),
     }
     Ok(true)
@@ -517,20 +626,15 @@ impl App {
 
   /// PDF metadata, document facts, reader statistics, terminal caps.
   pub fn info(&self) -> String {
-    let mut lines = vec!["# Metadata".to_owned()];
-    lines.extend(
-      self.doc.metadata().into_iter().map(|(k, v)| format!("{k}: {v}")),
-    );
+    let mut lines = metadata_lines(&self.doc.metadata());
+    lines.push(String::new());
+    let place = format!("Path: {}", self.path.display());
+    let bytes = std::fs::metadata(&self.path).map_or(0, |m| m.len());
+    lines.extend(document_lines(place, bytes, self.doc.pages.len()));
     let page = &self.doc.pages[self.reader.cursor.page.0];
     let (width, height) = (page.bounds.width(), page.bounds.height());
-    let bytes = std::fs::metadata(&self.path).map_or(0, |m| m.len());
     let outline = if self.doc.inferred { " (inferred)" } else { "" };
     lines.extend([
-      String::new(),
-      "# Document".into(),
-      format!("Path: {}", self.path.display()),
-      format!("Size: {:.1} MiB", bytes as f64 / 1_048_576.0),
-      format!("Pages: {}", self.doc.pages.len()),
       format!(
         "Page {}: {width:.0} x {height:.0} pt, {:.0} x {:.0} mm",
         page.label,
@@ -572,6 +676,23 @@ impl App {
   }
 }
 
+/// `:info`'s metadata section, shared with recent document cards.
+pub fn metadata_lines(metadata: &[(String, String)]) -> Vec<String> {
+  let fields = metadata.iter().map(|(k, v)| format!("{k}: {v}"));
+  std::iter::once("# Metadata".to_owned()).chain(fields).collect()
+}
+
+/// `:info`'s file facts, shared with recent document cards; `place`
+/// names where the file lives.
+pub fn document_lines(place: String, bytes: u64, pages: usize) -> Vec<String> {
+  vec![
+    "# Document".into(),
+    place,
+    format!("Size: {:.1} MiB", bytes as f64 / 1_048_576.0),
+    format!("Pages: {pages}"),
+  ]
+}
+
 fn help() -> Vec<String> {
   let keys = include_str!("help.txt").lines().map(str::to_owned);
   let commands = crate::cmdline::commands().map(|spec| {
@@ -588,17 +709,18 @@ pub fn recent_rows(entries: &[Entry]) -> Vec<Row> {
     .iter()
     .filter(|entry| entry.path.exists())
     .map(|entry| {
-      let name = entry.path.file_name().unwrap_or_default();
-      let parent = entry.path.parent().unwrap_or(Path::new(""));
-      let folder = match home.as_deref().map(|h| parent.strip_prefix(h)) {
+      let path = match home.as_deref().map(|h| entry.path.strip_prefix(h)) {
         Some(Ok(rest)) => Path::new("~").join(rest),
-        _ => parent.to_owned(),
+        _ => entry.path.clone(),
       };
-      Row::new(
-        format!("{}  {}", name.to_string_lossy(), folder.display()),
-        format!("p{}", entry.cursor.page.0 + 1),
-        Destination::File(entry.path.clone()),
-      )
+      Row {
+        style: Style::Path,
+        ..Row::new(
+          path.display().to_string(),
+          format!("p{}", entry.cursor.page.0 + 1),
+          Destination::File(entry.path.clone()),
+        )
+      }
     })
     .collect()
 }
@@ -625,5 +747,53 @@ impl App {
       .and_then(|text| text.glyph(cursor).map(|g| g.bounds.y1))
       .unwrap_or(f32::MAX);
     section(&self.doc.outline, cursor.page, y)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn paths_keep_the_file_name() -> Result<()> {
+    let row = Row {
+      style: Style::Path,
+      ..Row::new("~/books/ml/deep.pdf".into(), String::new(), Destination::None)
+    };
+    // (room, visible text)
+    for (room, want) in [
+      (40, "~/books/ml/deep.pdf"),
+      (14, "…s/ml/deep.pdf"),
+      (9, "…deep.pdf"),
+      (8, "deep.pdf"),
+      (5, "deep."),
+    ] {
+      let mut out = Vec::new();
+      let width = row.write(&mut out, theme::RESET, room, 0, "")?;
+      let out = String::from_utf8(out)?;
+      let text: String = out
+        .split('\x1b')
+        .map(|s| s.split_once('m').map_or(s, |(_, t)| t))
+        .collect();
+      assert_eq!(text, want, "{room}");
+      assert_eq!(width, want.width(), "{room}");
+      assert!(out.contains(&format!("{}deep", theme::FILE)), "{room}");
+    }
+    Ok(())
+  }
+  #[test]
+  fn presses_beyond_the_list_miss_its_rows() -> Result<()> {
+    let rows = ["a", "b", "c"].map(Row::parse).into();
+    let mut panel = Panel::new(PanelKind::Recent, rows);
+    panel.list(&mut Vec::new(), terminal::At::default(), 20, 10)?;
+    let press = |column| MouseEvent {
+      kind: MouseEventKind::Down(MouseButton::Left),
+      column,
+      row: 2,
+      modifiers: crossterm::event::KeyModifiers::NONE,
+    };
+    assert_eq!(panel.pointer(press(25)), None);
+    assert_eq!(panel.pointer(press(5)), Some(1));
+    Ok(())
   }
 }

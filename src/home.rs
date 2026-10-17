@@ -1,10 +1,12 @@
 use crate::Result;
 use crate::cmdline;
 use crate::decode::Event;
+use crate::graphics::Graphics;
 use crate::keys::{Action, Keys, PanelKind};
 use crate::layout::Screen;
 use crate::panel::{Destination, Panel, Row, recent_rows};
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
+use crate::recent::Shelf;
 use crate::state::Entry;
 use crate::statusline;
 use crate::terminal::{self, At};
@@ -29,12 +31,19 @@ pub struct Home {
   pub screen: Screen,
   pub error: Option<String>,
   panel: Panel,
+  /// Places thumbnails; none in text mode.
+  graphics: Option<Graphics>,
   prompt: Option<Prompt>,
   keys: Keys,
 }
 
 impl Home {
-  pub fn new(recent: &[Entry], screen: Screen) -> Self {
+  pub fn new(
+    recent: &[Entry],
+    screen: Screen,
+    password: &str,
+    pictures: bool,
+  ) -> Self {
     let mut rows = recent_rows(recent);
     if rows.is_empty() {
       rows.push(Row::new(
@@ -43,10 +52,13 @@ impl Home {
         Destination::None,
       ));
     }
+    let mut panel = Panel::new(PanelKind::Recent, rows);
+    panel.shelf = Some(Shelf::new(recent, password));
     Self {
       screen,
       error: None,
-      panel: Panel::new(PanelKind::Recent, rows),
+      panel,
+      graphics: pictures.then(Graphics::default),
       prompt: None,
       keys: Keys::default(),
     }
@@ -54,6 +66,12 @@ impl Home {
 
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
     write!(out, "{}{}", terminal::frame_start(), theme::RESET)?;
+    if let Some(shelf) = &mut self.panel.shelf {
+      shelf.updates();
+    }
+    if let Some(graphics) = &mut self.graphics {
+      graphics.begin(out)?;
+    }
     for row in 0..self.screen.rows {
       terminal::clear(out, At::default(), row, self.screen.columns)?;
     }
@@ -61,7 +79,8 @@ impl Home {
       out,
       At::default(),
       self.screen.columns,
-      self.screen.rows,
+      self.screen,
+      self.graphics.as_mut(),
     )?;
     let row = self.screen.rows - 1;
     if let Some(prompt) = &self.prompt {
@@ -83,9 +102,18 @@ impl Home {
         theme::RESET
       )?;
     }
+    if let Some(graphics) = &mut self.graphics {
+      graphics.end(out)?;
+    }
     write!(out, "{}", terminal::frame_end())?;
     out.flush()?;
     Ok(())
+  }
+
+  /// Deletes the thumbnail before the screen goes.
+  pub fn release(&mut self, out: &mut impl Write) -> Result<()> {
+    let Some(graphics) = &mut self.graphics else { return Ok(()) };
+    graphics.clear(out)
   }
 
   pub fn event(
@@ -217,7 +245,7 @@ mod tests {
       origin: (0, 0),
     };
     let mut out = Vec::new();
-    Home::new(&[], screen).draw(&mut out)?;
+    Home::new(&[], screen, "", false).draw(&mut out)?;
     let out = String::from_utf8(out)?;
     let columns = out.split("\x1b[").filter_map(|code| {
       let (row, column) = code.split_once('H')?.0.split_once(';')?;
@@ -267,7 +295,7 @@ mod tests {
       ("/", Outcome::Stay),
       ("", Outcome::Open(file.into())),
     ] {
-      let mut home = Home::new(std::slice::from_ref(&entry), screen);
+      let mut home = Home::new(std::slice::from_ref(&entry), screen, "", false);
       let mut history = History::default();
       for ch in typed.chars() {
         let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);

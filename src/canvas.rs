@@ -242,6 +242,15 @@ impl App {
       }
     }
     self.blank = plain;
+    if self.covered()
+      && let Some(panel) = &mut self.panel
+    {
+      // Panes share one picture id, which the focused pane holds.
+      let graphics =
+        (!self.text_mode && self.focused).then_some(&mut self.graphics);
+      panel.draw(out, self.at, self.left, self.screen, graphics)?;
+      return self.bottom(out);
+    }
     if self.overview.is_some() {
       self.overview_canvas(out)?;
     } else if self.text_mode {
@@ -253,7 +262,7 @@ impl App {
     self.draw_preview(out)?;
     self.track_outline();
     if let Some(panel) = &mut self.panel {
-      panel.draw(out, self.at, self.left, self.screen.rows)?;
+      panel.draw(out, self.at, self.left, self.screen, None)?;
     }
     self.bottom(out)
   }

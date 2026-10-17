@@ -643,3 +643,36 @@ fn clue_wait_ends_once_due() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn recent_view_covers_the_pane() -> Result<()> {
+  let mut app = text_app()?;
+  app.show_recent(&[])?;
+  assert_eq!(app.left, app.screen.columns);
+  let input =
+    |action| Input { action, count: 1, explicit: false, register: '"' };
+  // Esc keeps the view; reader keys reach no hidden page.
+  let scroll = app.reader.scroll;
+  for action in [
+    Action::Cancel,
+    Action::Rows(5),
+    Action::Panel(PanelKind::Recent),
+    Action::Panel(PanelKind::Text),
+    Action::Overview,
+  ] {
+    app.action(input(action))?;
+    assert!(app.panel_focused(), "{action:?}");
+    assert!(app.covered(), "{action:?}");
+  }
+  assert_eq!(app.reader.scroll, scroll);
+  // Commands that need the document wait for one, as on the start screen.
+  for command in ["text", "overview", "5", "info", "page 3"] {
+    assert!(app.command(command).is_err(), "{command}");
+    assert!(app.covered() && app.overview.is_none(), "{command}");
+  }
+  app.draw(&mut Vec::new())?;
+  app.action(input(Action::Quit))?;
+  assert!(app.quit);
+  Ok(())
+}

@@ -511,9 +511,10 @@ impl Session {
         None
       }
       Window::New => {
+        self.record();
         self.split(Axis::Rows, None)?;
-        let rows = crate::panel::recent_rows(&self.state.recent);
-        return self.app().show_panel(PanelKind::Recent, rows);
+        let recent = self.state.recent.clone();
+        return self.app().show_recent(&recent);
       }
       Window::Move(direction) => {
         tab.tree.move_to_edge(id, direction);
@@ -586,12 +587,13 @@ impl Session {
         self.window(command, (count, explicit), file.as_deref())
       }
       Some(Request::Panel(kind)) => {
-        let rows = if kind == PanelKind::Marks {
-          let global = self.state.marks.clone();
-          self.app().mark_rows(&global)
-        } else {
-          crate::panel::recent_rows(&self.state.recent)
-        };
+        if kind == PanelKind::Recent {
+          self.record();
+          let recent = self.state.recent.clone();
+          return self.app().show_recent(&recent);
+        }
+        let global = self.state.marks.clone();
+        let rows = self.app().mark_rows(&global);
         self.app().show_panel(kind, rows)
       }
       Some(Request::SetMark(name)) => {
@@ -613,7 +615,8 @@ impl Session {
         Some(path) => self.choose(&path, screen),
         None => Ok(()),
       },
-      Some(Request::Choose(path)) => self.choose(&path, screen),
+      // A recent document replaces the pane it was picked in.
+      Some(Request::Choose(path)) => self.open(&path, false, screen),
       Some(Request::TabClose) => self.close(),
       Some(Request::QuitAll) => {
         self.quit = true;
@@ -697,13 +700,9 @@ impl Session {
   pub fn hide(&mut self, out: &mut impl Write) -> Result<()> {
     self.sight = Sight::Hidden;
     if self.tabs.is_empty() {
-      return Ok(());
+      return self.home.as_mut().map_or(Ok(()), |home| home.release(out));
     }
-    let graphics = &mut self.app().graphics;
-    graphics.begin(out)?;
-    graphics.end(out)?;
-    out.flush()?;
-    Ok(())
+    self.app().graphics.clear(out)
   }
 
   /// Shows the next tmux notice once the status line is free; whether
@@ -789,7 +788,10 @@ impl Session {
   /// Draws the start screen and handles one input.
   fn home(&mut self, out: &mut impl Write) -> Result<()> {
     let Some(mut home) = self.home.take() else { return Ok(()) };
-    home.draw(out)?;
+    // Its thumbnail would cover what tmux shows instead.
+    if self.sight != Sight::Hidden {
+      home.draw(out)?;
+    }
     if let Some(unmeasured) = &self.unmeasured {
       unmeasured.draw(out)?;
       out.flush()?;
@@ -804,6 +806,18 @@ impl Session {
         break event;
       }
     };
+    if let Event::Focus(gained) = event {
+      self.home = Some(home);
+      return if gained {
+        self.turn(Sight::Focused, out).map(drop)
+      } else {
+        self.look(Cause::FocusOut, out).map(drop)
+      };
+    }
+    // Only a shown pane gets keys.
+    if matches!(event, Event::Key(_)) {
+      self.sight = Sight::Focused;
+    }
     if let Event::Resize(report) = event {
       let measured = terminal::resized(report, Some(home.screen));
       self.home = Some(home);
@@ -816,11 +830,12 @@ impl Session {
     let outcome = home.event(event, &mut self.history);
     match outcome {
       Ok(Outcome::Open(path)) => match self.open(&path, true, home.screen) {
-        Ok(()) => return Ok(()),
+        Ok(()) => return home.release(out),
         Err(error) => home.error = Some(error.to_string()),
       },
       Ok(Outcome::Quit) => return Ok(()),
       Ok(Outcome::Pick) => {
+        home.release(out)?;
         let picked = std::env::current_dir()
           .map_err(anyhow::Error::from)
           .and_then(|root| crate::fzf::pick(&root));
@@ -924,7 +939,8 @@ pub fn view(paths: &[PathBuf], password: &str, launch: &Launch) -> Result<()> {
     let _ = crate::spool::start(crate::graphics::session());
   }
   if paths.is_empty() {
-    session.home = Some(Home::new(&session.state.recent, screen));
+    session.home =
+      Some(Home::new(&session.state.recent, screen, password, !launch.text));
     return run_saving(&mut session);
   }
   for path in paths {
@@ -959,6 +975,8 @@ fn updates(session: &mut Session, out: &mut impl Write) -> Result<bool> {
   for index in 0..tab.panes.len() {
     dirty |= tab.lend(index, App::raster_updates);
     let app = &mut tab.panes[index];
+    let shelf = app.panel.as_mut().and_then(|panel| panel.shelf.as_mut());
+    dirty |= shelf.is_some_and(crate::recent::Shelf::updates);
     // A failed update shows in its pane instead of ending the session.
     let updated = app.search_updates().and_then(|search| {
       Ok(search | app.ocr_updates()? | app.outline_updates()?)
@@ -1247,7 +1265,7 @@ mod tests {
     let lost =
       Unmeasured { rows: 20, columns: 70, error: terminal::NO_CELL.into() };
     let mut session = Session::new("", false, None);
-    session.home = Some(Home::new(&[], screen));
+    session.home = Some(Home::new(&[], screen, "", false));
     let failed = || Err(anyhow::anyhow!(terminal::NO_CELL));
     let grid = || Ok((70, 20));
     // (measured, want unmeasured, want start screen rows)

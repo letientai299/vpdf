@@ -57,7 +57,7 @@ pub fn location() -> Option<PathBuf> {
   Some(base.join("vpdf/state.json"))
 }
 
-fn now() -> u64 {
+pub fn now() -> u64 {
   SystemTime::now()
     .duration_since(UNIX_EPOCH)
     .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
@@ -78,6 +78,10 @@ impl State {
 
   /// Records where `app` is; returns whether anything moved.
   pub fn remember(&mut self, app: &App) -> bool {
+    // A covered document counts as closed; its pane may be a stale copy.
+    if app.covered() {
+      return false;
+    }
     let entry = Entry {
       path: app.path.clone(),
       cursor: app.reader.cursor,

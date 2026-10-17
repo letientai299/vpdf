@@ -6,7 +6,6 @@ use crate::theme;
 use crate::tiles::{TileKey, raster_area};
 use mupdf::IRect;
 use std::io::Write;
-use std::sync::atomic::{AtomicU64, Ordering};
 use unicode_width::UnicodeWidthStr;
 
 /// Share of the view a preview may cover.
@@ -29,7 +28,6 @@ pub struct Preview {
 impl App {
   /// `K`: shows where the link under the cursor leads.
   pub fn preview_link(&mut self) -> Result<()> {
-    static SERIAL: AtomicU64 = AtomicU64::new(1);
     let target = self
       .link_at_cursor()?
       .ok_or_else(|| anyhow::anyhow!("No link under cursor"))?;
@@ -44,7 +42,7 @@ impl App {
     let page = PageId(page.0.min(self.doc.pages.len() - 1));
     let lines = self.target_lines(page, y)?;
     let image = if self.text_mode { None } else { Some(self.render(page, y)?) };
-    let serial = SERIAL.fetch_add(1, Ordering::Relaxed);
+    let serial = crate::graphics::serial();
     self.peek = Some(Preview { target, serial, image, lines });
     Ok(())
   }

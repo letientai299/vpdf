@@ -77,6 +77,11 @@ impl App {
   /// Reloads once the file differs from the loaded one and has held
   /// still for `SETTLE`; returns whether it reloaded.
   pub fn watch(&mut self) -> Result<bool> {
+    // A covered document counts as closed; uncovering checks again.
+    if self.covered() {
+      self.settling = None;
+      return Ok(false);
+    }
     let Some(now) = stamp(&self.path).filter(|now| Some(*now) != self.stamp)
     else {
       self.settling = None;
