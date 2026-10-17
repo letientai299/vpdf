@@ -305,7 +305,7 @@ impl App {
       ) => {
         self.reader.cursor = self.reading_position()?;
       }
-      Action::Motion(_) | Action::Object(_) | Action::Swap => {
+      Action::Motion(_) | Action::Object(..) | Action::Swap => {
         return Ok(true);
       }
       Action::Visual(_) | Action::Yank | Action::YankLine => {
@@ -357,7 +357,9 @@ impl App {
         self.reader.yank_lines(count, input.register, &mut self.doc)?;
       }
       Action::Visual(kind) => self.reader.visual(kind),
-      Action::Object(around) => self.reader.object(around, &mut self.doc)?,
+      Action::Object(kind, around) => {
+        self.reader.select_object(kind, around, count, &mut self.doc)?;
+      }
       Action::Swap => self.reader.swap(),
       Action::Reselect => {
         self.reader.reselect();
@@ -382,7 +384,7 @@ impl App {
       Action::Yank | Action::YankLine | Action::Visual(_)
     ) || (self.reader.selection.is_none()
       && !normal
-      && matches!(input.action, Action::Motion(_) | Action::Object(_)))
+      && matches!(input.action, Action::Motion(_) | Action::Object(..)))
     {
       return Ok(true);
     }

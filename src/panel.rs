@@ -595,7 +595,7 @@ impl App {
       // The focused pane owns text motions and selections.
       Action::Motion(_)
       | Action::Visual(_)
-      | Action::Object(_)
+      | Action::Object(..)
       | Action::Reselect
       | Action::WordSearch
       | Action::Cancel => {}

@@ -1,10 +1,8 @@
 use crate::Result;
 use crate::document::MIB;
 use crate::motion::{covers, range};
-use crate::reader::{
-  Operator, Reader, Selection, SelectionKind, TextSource, Yank,
-};
-use crate::text::{PageId, Position, class};
+use crate::reader::{Operator, Reader, SelectionKind, TextSource, Yank};
+use crate::text::{PageId, Position};
 use anyhow::ensure;
 use std::sync::Arc;
 
@@ -126,23 +124,6 @@ impl Reader {
     around: bool,
     source: &mut impl TextSource,
   ) -> Result<()> {
-    let text = source.page_text(self.cursor.page)?;
-    let Some(line) = text.lines.get(self.cursor.line) else { return Ok(()) };
-    let Some((a, mut b)) = line.run(self.cursor.glyph) else { return Ok(()) };
-    if around {
-      while b + 1 < line.glyphs.len() && class(line.glyphs[b + 1].ch) == 0 {
-        b += 1;
-      }
-    }
-    let first = Position { glyph: a, ..self.cursor };
-    let last = Position { glyph: b, ..self.cursor };
-    if let Some(op) = self.operator.take() {
-      self.yank_range(first, last, false, op.register, source)?;
-    } else {
-      self.selection =
-        Some(Selection { anchor: first, kind: SelectionKind::Character });
-      self.cursor = last;
-    }
-    Ok(())
+    self.select_object(crate::objects::Object::Word, around, 1, source)
   }
 }

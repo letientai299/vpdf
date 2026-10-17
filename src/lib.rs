@@ -34,6 +34,7 @@ pub mod layout;
 mod line;
 mod marks;
 pub mod motion;
+pub mod objects;
 pub mod ocr;
 pub mod outline;
 pub mod overview;

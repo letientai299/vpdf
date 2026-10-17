@@ -3,6 +3,8 @@ h j k l / arrows: pan / scroll in Normal
 Counts scale viewport and selection motions
 Visual h j k l: glyph motions
 Visual w b e: word motions
+Visual W B E gE: WORD motions
+Visual ( ): previous / next sentence
 Visual 0 ^ $: line motions
 Visual { }: previous / next paragraph
 [count]gg G: page jump
@@ -31,7 +33,12 @@ Textless view: selection unavailable; :ocr is explicit
 o: swap selection ends
 gv: reselect
 y yy yw ye y$: yank
-viw vaw yiw yaw: word objects
+Visual / y + i/a: inner / around objects
+w W s p: word / WORD / sentence / paragraph
+( ) [ ] { } < >: paired brackets
+b B: parentheses / braces aliases
+Single / double quotes: ASCII or typographic
+Counts: repeated objects / enclosing bracket pairs
 "" "+ "*: system clipboard
 "a "A: named register / append
 Click / drag: set target in Normal / select

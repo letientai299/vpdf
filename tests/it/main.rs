@@ -8,6 +8,7 @@ mod focus;
 mod jumps;
 mod modes;
 mod navigation;
+mod objects;
 mod outline;
 mod paragraphs;
 mod rendering;

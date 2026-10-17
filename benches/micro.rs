@@ -498,9 +498,41 @@ fn transitions() -> Result<()> {
   measure("App::blur", || app.blur().expect("pane blur"))
 }
 
+fn lexical_objects() -> Result<()> {
+  let mut app = paper(false)?;
+  let text = app.doc.text(PageId(0))?;
+  let line = text.lines.iter().position(|line| line.glyphs.len() > 15).unwrap();
+  let cursor = vpdf::text::Position { page: PageId(0), line, glyph: 4 };
+  measure("Reader::object paper", || {
+    app.reader.cursor = cursor;
+    app.reader.object(false, &mut app.doc).expect("paper word");
+    black_box(app.reader.selection);
+  })?;
+  let letters: Vec<_> = text.lines[line]
+    .glyphs
+    .iter()
+    .filter(|g| g.ch.is_alphabetic())
+    .take(8)
+    .map(|g| KeyEvent::new(KeyCode::Char(g.ch), KeyModifiers::NONE))
+    .collect();
+  let mut keys = vpdf::keys::Keys::default();
+  measure("Keys::feed objects paper", || {
+    keys.clear();
+    for ch in "3iw".chars() {
+      black_box(
+        keys.feed(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE)),
+      );
+    }
+    for key in &letters {
+      black_box(keys.feed(*key));
+    }
+  })
+}
+
 type Case = fn() -> Result<()>;
 
 const CASES: &[(&str, Case)] = &[
+  ("lexical objects", lexical_objects),
   ("clean", clean),
   ("clean marks", clean_marks),
   ("text_canvas", text_canvas),

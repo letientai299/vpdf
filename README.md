@@ -24,6 +24,15 @@ click/jump target, or the first visible text. Text motions belong to Visual;
 `y{motion}` and `yy` also copy from that visible entry point. `o` swaps ends,
 `gv` restores the last range, and `y` copies and returns Normal.
 
+Visual `W B E gE` move between whitespace-separated WORDs; `( )` move between
+sentences, preserving scientific abbreviations such as `Fig.`, `et al.`, and
+`e.g.`. Visual and copy operators accept `i` (inner) and `a` (around) objects:
+`w W s p`, bracket pairs `() [] {} <>` (`b` and `B` alias parentheses and
+braces), and single or double quotes, including typographic quotes. Counts
+repeat words, sentences, paragraphs, or quote pairs; bracket counts select
+outer pairs. Objects can cross extracted lines and pages. Paragraphs follow
+extracted blocks; around objects include adjacent whitespace.
+
 `[[` and `]]` jump to the heading before or after the viewport in Normal,
 or the active selection end in Visual. Counts repeat heading jumps;
 Ctrl-o and Ctrl-i return through jump history.

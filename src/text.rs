@@ -105,8 +105,16 @@ impl Line {
 
   /// First and last glyph of the run that shares `glyph`'s class.
   pub fn run(&self, glyph: usize) -> Option<(usize, usize)> {
-    let kind = class(self.glyphs.get(glyph)?.ch);
-    let other = |g: &Glyph| class(g.ch) != kind;
+    self.run_by(glyph, class)
+  }
+
+  pub(crate) fn run_by(
+    &self,
+    glyph: usize,
+    classify: impl Fn(char) -> u8,
+  ) -> Option<(usize, usize)> {
+    let kind = classify(self.glyphs.get(glyph)?.ch);
+    let other = |g: &Glyph| classify(g.ch) != kind;
     let first =
       self.glyphs[..glyph].iter().rposition(other).map_or(0, |i| i + 1);
     let last = self.glyphs[glyph..]

@@ -1,6 +1,7 @@
 use crate::app::Window as W;
 use crate::motion::Motion;
 use crate::motion::Motion as M;
+use crate::objects::Object as O;
 use crate::reader::SelectionKind;
 use crate::split::{Axis, Direction as D};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -42,7 +43,7 @@ pub enum Action {
   Section(bool),
   Yank,
   YankLine,
-  Object(bool),
+  Object(crate::objects::Object, bool),
   Visual(SelectionKind),
   Swap,
   Reselect,
@@ -117,7 +118,7 @@ impl Keys {
       self.clear();
       return None;
     };
-    if token == "\"" {
+    if token == "\"" && self.prefix.is_empty() {
       self.choosing_register = true;
       return None;
     }
@@ -272,6 +273,12 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("w", Action::Motion(M::Word), "next word"),
   ("b", Action::Motion(M::BackWord), "previous word"),
   ("e", Action::Motion(M::EndWord), "word end"),
+  ("W", Action::Motion(M::BigWord), "next WORD"),
+  ("B", Action::Motion(M::BackBigWord), "previous WORD"),
+  ("E", Action::Motion(M::EndBigWord), "WORD end"),
+  ("gE", Action::Motion(M::PreviousBigEnd), "previous WORD end"),
+  ("(", Action::Motion(M::PreviousSentence), "previous sentence"),
+  (")", Action::Motion(M::NextSentence), "next sentence"),
   ("[[", Action::Section(false), "previous section"),
   ("]]", Action::Section(true), "next section"),
   ("{", Action::Motion(M::PreviousParagraph), "previous paragraph"),
@@ -286,8 +293,46 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("BS", Action::Motion(M::PreviousPage), "previous page"),
   ("y", Action::Yank, "yank"),
   ("Y", Action::YankLine, "yank line"),
-  ("iw", Action::Object(false), "inner word"),
-  ("aw", Action::Object(true), "a word"),
+  ("iw", Action::Object(O::Word, false), "inner word"),
+  ("iW", Action::Object(O::BigWord, false), "inner WORD"),
+  ("is", Action::Object(O::Sentence, false), "inner sentence"),
+  ("ip", Action::Object(O::Paragraph, false), "inner paragraph"),
+  ("i(", Action::Object(O::Parentheses, false), "inner parentheses"),
+  ("i)", Action::Object(O::Parentheses, false), "inner parentheses"),
+  ("ib", Action::Object(O::Parentheses, false), "inner parentheses"),
+  ("i[", Action::Object(O::Brackets, false), "inner brackets"),
+  ("i]", Action::Object(O::Brackets, false), "inner brackets"),
+  ("i{", Action::Object(O::Braces, false), "inner braces"),
+  ("i}", Action::Object(O::Braces, false), "inner braces"),
+  ("iB", Action::Object(O::Braces, false), "inner braces"),
+  ("i<", Action::Object(O::Angles, false), "inner angles"),
+  ("i>", Action::Object(O::Angles, false), "inner angles"),
+  ("i\"", Action::Object(O::DoubleQuote, false), "inner double quotes"),
+  ("i'", Action::Object(O::SingleQuote, false), "inner single quotes"),
+  ("i“", Action::Object(O::DoubleQuote, false), "inner double quotes"),
+  ("i”", Action::Object(O::DoubleQuote, false), "inner double quotes"),
+  ("i‘", Action::Object(O::SingleQuote, false), "inner single quotes"),
+  ("i’", Action::Object(O::SingleQuote, false), "inner single quotes"),
+  ("aw", Action::Object(O::Word, true), "around word"),
+  ("aW", Action::Object(O::BigWord, true), "around WORD"),
+  ("as", Action::Object(O::Sentence, true), "around sentence"),
+  ("ap", Action::Object(O::Paragraph, true), "around paragraph"),
+  ("a(", Action::Object(O::Parentheses, true), "around parentheses"),
+  ("a)", Action::Object(O::Parentheses, true), "around parentheses"),
+  ("ab", Action::Object(O::Parentheses, true), "around parentheses"),
+  ("a[", Action::Object(O::Brackets, true), "around brackets"),
+  ("a]", Action::Object(O::Brackets, true), "around brackets"),
+  ("a{", Action::Object(O::Braces, true), "around braces"),
+  ("a}", Action::Object(O::Braces, true), "around braces"),
+  ("aB", Action::Object(O::Braces, true), "around braces"),
+  ("a<", Action::Object(O::Angles, true), "around angles"),
+  ("a>", Action::Object(O::Angles, true), "around angles"),
+  ("a\"", Action::Object(O::DoubleQuote, true), "around double quotes"),
+  ("a'", Action::Object(O::SingleQuote, true), "around single quotes"),
+  ("a“", Action::Object(O::DoubleQuote, true), "around double quotes"),
+  ("a”", Action::Object(O::DoubleQuote, true), "around double quotes"),
+  ("a‘", Action::Object(O::SingleQuote, true), "around single quotes"),
+  ("a’", Action::Object(O::SingleQuote, true), "around single quotes"),
   ("v", Action::Visual(SelectionKind::Character), "select characters"),
   ("V", Action::Visual(SelectionKind::Line), "select lines"),
   ("o", Action::Swap, "other selection end"),
@@ -544,6 +589,43 @@ mod tests {
         .map(|input| input.map(|i| (i.action, i.count, i.register)))
         .collect();
       assert_eq!(got, want, "{events:?}");
+    }
+  }
+
+  #[test]
+  fn objects_accept_quotes_counts_and_aliases() {
+    for (name, kind) in [
+      ("w", O::Word),
+      ("W", O::BigWord),
+      ("s", O::Sentence),
+      ("p", O::Paragraph),
+      ("(", O::Parentheses),
+      (")", O::Parentheses),
+      ("b", O::Parentheses),
+      ("[", O::Brackets),
+      ("]", O::Brackets),
+      ("{", O::Braces),
+      ("}", O::Braces),
+      ("B", O::Braces),
+      ("<", O::Angles),
+      (">", O::Angles),
+      ("\"", O::DoubleQuote),
+      ("'", O::SingleQuote),
+      ("“", O::DoubleQuote),
+      ("’", O::SingleQuote),
+    ] {
+      for (prefix, around) in [("i", false), ("a", true)] {
+        let mut keys = Keys::default();
+        let input = format!("\"b3{prefix}{name}")
+          .chars()
+          .filter_map(|ch| keys.feed(key(ch)))
+          .last()
+          .unwrap();
+        assert_eq!(input.action, Action::Object(kind, around));
+        assert_eq!(input.count, 3);
+        assert_eq!(input.register, 'b');
+        assert!(clues(prefix).iter().any(|(key, _)| key == name));
+      }
     }
   }
 

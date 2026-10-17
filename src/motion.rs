@@ -11,6 +11,12 @@ pub enum Motion {
   Word,
   BackWord,
   EndWord,
+  BigWord,
+  BackBigWord,
+  EndBigWord,
+  PreviousBigEnd,
+  NextSentence,
+  PreviousSentence,
   NextParagraph,
   PreviousParagraph,
   LineStart,
@@ -41,6 +47,7 @@ impl Reader {
       Motion::First | Motion::Last | Motion::NextPage | Motion::PreviousPage
     );
     let mut paragraph_boundary = false;
+    let mut lexical_boundary = false;
     if boundary {
       self.boundary(motion, count, explicit, source)?;
     } else {
@@ -48,6 +55,16 @@ impl Reader {
         if matches!(motion, Motion::NextParagraph | Motion::PreviousParagraph) {
           paragraph_boundary =
             self.paragraph(motion == Motion::NextParagraph, source)?;
+        } else if matches!(
+          motion,
+          Motion::BigWord
+            | Motion::BackBigWord
+            | Motion::EndBigWord
+            | Motion::PreviousBigEnd
+            | Motion::NextSentence
+            | Motion::PreviousSentence
+        ) {
+          lexical_boundary = self.lexical_motion(motion, source)?;
         } else {
           self.small_motion(motion, source)?;
         }
@@ -55,11 +72,18 @@ impl Reader {
     }
     if let Some(op) = self.operator.take() {
       if (motion == Motion::Word && self.cursor > start)
+        || (matches!(motion, Motion::BigWord | Motion::NextSentence)
+          && lexical_boundary)
         || (motion == Motion::NextParagraph && paragraph_boundary)
       {
         self.step(-1, false, source)?;
       }
-      if motion == Motion::PreviousParagraph {
+      if matches!(
+        motion,
+        Motion::PreviousParagraph
+          | Motion::PreviousSentence
+          | Motion::BackBigWord
+      ) {
         let destination = self.cursor;
         self.cursor = start;
         if !self.step(-1, false, source)? || destination > self.cursor {
@@ -185,7 +209,7 @@ impl Reader {
     Ok(true)
   }
 
-  fn character(&self, source: &mut impl TextSource) -> Result<char> {
+  pub(crate) fn character(&self, source: &mut impl TextSource) -> Result<char> {
     Ok(
       source
         .page_text(self.cursor.page)?
