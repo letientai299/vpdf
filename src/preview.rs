@@ -20,9 +20,42 @@ const NOTE_TEXT: &str = "\x1b[0;38;2;20;20;20;48;2;255;255;255m";
 pub struct Preview {
   pub target: Target,
   page: PageId,
-  source: Position,
+  pub(crate) source: Position,
   serial: u64,
   view: View,
+  pub origin: Origin,
+  /// Where the last frame drew it.
+  pub placement: Option<Placement>,
+}
+
+/// A drawn preview's cells.
+#[derive(Clone, Copy, Debug)]
+pub struct Placement {
+  /// The preview, border included.
+  pub area: Rect,
+  /// `area` plus rows over to its source.
+  pub reach: Rect,
+  /// The view it was drawn in.
+  pub(crate) view: (u32, Position),
+}
+
+impl Preview {
+  /// The link a hover preview shows.
+  pub fn hovered(&self) -> Option<(PageId, usize)> {
+    match self.origin {
+      Origin::Hover(page, index) => Some((page, index)),
+      Origin::Key => None,
+    }
+  }
+}
+
+/// What opened a preview.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Origin {
+  /// `K`; it owns keys.
+  Key,
+  /// Resting on a page's link; passive.
+  Hover(PageId, usize),
 }
 
 enum View {
@@ -84,6 +117,8 @@ impl App {
       source,
       serial: crate::graphics::serial(),
       view,
+      origin: Origin::Key,
+      placement: None,
     });
     Ok(())
   }
@@ -106,6 +141,8 @@ impl App {
       page: position.page,
       source: position,
       serial: crate::graphics::serial(),
+      origin: Origin::Key,
+      placement: None,
       view: View::Note {
         top: 0,
         lines: wrap(&annotation.contents, columns),
@@ -182,13 +219,7 @@ impl App {
       Action::Scroll(amount) => amount * self.preview_rows() as f32,
       Action::Rows(rows) => rows as f32,
       Action::Command => return self.action(input),
-      Action::Follow => {
-        let Some(peek) = self.peek.take() else { return Ok(()) };
-        if matches!(peek.view, View::Note { .. }) {
-          return Ok(());
-        }
-        return self.follow(&peek.target);
-      }
+      Action::Follow => return self.follow_preview(),
       Action::Quit | Action::Peek => {
         self.dismiss_overlay();
         return Ok(());
@@ -207,6 +238,20 @@ impl App {
         i32::try_from(*top).unwrap_or(i32::MAX)
       }
     })
+  }
+
+  /// Identifies the view: scroll and text top.
+  pub(crate) fn view_key(&self) -> (u32, Position) {
+    (self.reader.scroll.to_bits(), self.text_top)
+  }
+
+  /// Closes the preview, following its link.
+  pub(crate) fn follow_preview(&mut self) -> Result<()> {
+    let Some(peek) = self.peek.take() else { return Ok(()) };
+    if matches!(peek.view, View::Note { .. }) {
+      return Ok(());
+    }
+    self.follow(&peek.target)
   }
 
   /// Scrolls the owned preview by terminal rows.
@@ -296,6 +341,43 @@ impl App {
     self.graphics.backdrop(rect, [255; 4], screen, self.left, out)
   }
 
+  /// Records the preview's cells and reach.
+  fn preview_area(
+    &mut self,
+    (top, column): (usize, usize),
+    (rows, columns): (usize, usize),
+    source: Option<Bounds>,
+  ) {
+    let screen = self.layout.screen;
+    let (width, height) =
+      (f32::from(screen.cell_width), f32::from(screen.cell_height));
+    let left = usize::from(self.left);
+    let (mut x0, mut y0) = (column, top);
+    let (mut x1, mut y1) = (column + columns + 2, top + rows + 2);
+    // Reach the source's columns and gap rows.
+    if let Some(rect) = source {
+      x0 = x0.min(left + (rect.x0 / width) as usize);
+      x1 = x1.max(left + (rect.x1 / width).ceil() as usize);
+      y0 = y0.min((rect.y1 / height).ceil() as usize);
+      y1 = y1.max((rect.y0 / height) as usize);
+    }
+    let cells = |value: usize| u16::try_from(value).unwrap_or(u16::MAX);
+    let rect = |(x0, y0): (usize, usize), (x1, y1): (usize, usize)| Rect {
+      column: cells(x0),
+      row: cells(y0),
+      columns: cells(x1.saturating_sub(x0)),
+      rows: cells(y1.saturating_sub(y0)),
+    };
+    let placement = Placement {
+      area: rect((column, top), (column + columns + 2, top + rows + 2)),
+      reach: rect((x0, y0), (x1, y1)),
+      view: self.view_key(),
+    };
+    if let Some(peek) = &mut self.peek {
+      peek.placement = Some(placement);
+    }
+  }
+
   /// Pane cells the preview and its border cover.
   pub fn preview_frame(&mut self) -> Result<Option<Rect>> {
     let Some(source) = self.peek.as_ref().map(|preview| preview.source) else {
@@ -333,6 +415,11 @@ impl App {
     }
     self.scroll_preview(0.0)?;
     let Some(frame) = self.preview_frame()? else { return Ok(()) };
+    let source = self.peek.as_ref().map(|preview| preview.source);
+    let cursor = match source {
+      Some(source) => self.position_rect(source)?,
+      None => None,
+    };
     let Some(preview) = &self.peek else { return Ok(()) };
     let screen = self.layout.screen;
     let cell = f32::from(screen.cell_height);
@@ -348,6 +435,7 @@ impl App {
     if over_page {
       self.preview_backdrop(out, (top, column), (rows, columns))?;
     }
+    self.preview_area((top, column), (rows, columns), cursor);
     let Some(preview) = &self.peek else { return Ok(()) };
     let border = if over_page { IMAGE_BORDER } else { theme::CURRENT };
     let text_style = if over_page { NOTE_TEXT } else { theme::RESET };

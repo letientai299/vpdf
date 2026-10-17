@@ -1,10 +1,14 @@
 use crate::Result;
 use crate::app::App;
+use crate::app::InputOwner;
 use crate::document::{Heading, Link, PageInfo, Target};
 use crate::panel::{Destination, Row, Style};
 use crate::panel_layout::{Layout, Line, wrap};
+use crate::preview::{Origin, Preview};
 use crate::terminal;
 use crate::text::{Bounds, PageId, Text};
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 
 /// The link under the pointer.
@@ -14,9 +18,15 @@ pub struct HoverLink {
   /// Index into `Document::links`.
   pub index: usize,
   pub bounds: Bounds,
+  pub target: Target,
   /// Destination for the status line.
   pub label: String,
+  /// When the rest began, if live.
+  pub since: Option<Instant>,
 }
+
+/// Rest before a link previews.
+pub const REST: Duration = Duration::from_millis(400);
 
 /// A left press's link.
 #[derive(Clone, Debug, Default)]
@@ -40,9 +50,107 @@ impl App {
     self.hover_link = link.and_then(|(page, index)| {
       let links = self.doc.links(page).ok()?;
       let link = links.get(index)?;
-      let label = destination(&link.target, &self.doc.pages, &self.doc.outline);
-      Some(HoverLink { page, index, bounds: link.bounds, label })
+      let target = link.target.clone();
+      let label = destination(&target, &self.doc.pages, &self.doc.outline);
+      let since = Some(Instant::now());
+      Some(HoverLink { page, index, bounds: link.bounds, target, label, since })
     });
+  }
+
+  /// When the hovered link previews.
+  pub fn hover_due(&self) -> Option<Instant> {
+    let link = self.hover_link.as_ref()?;
+    let free = self.focused && self.input_owner() == InputOwner::Content;
+    let internal = !matches!(link.target, Target::Uri(_));
+    let since = link.since.filter(|_| free && internal && self.peek.is_none());
+    since.map(|since| since + REST)
+  }
+
+  /// Opens a due preview.
+  pub fn hover_preview(&mut self, now: Instant) -> bool {
+    if self.hover_due().is_none_or(|due| now < due) {
+      return false;
+    }
+    let Some(link) = self.hover_link.as_mut() else { return false };
+    link.since = None;
+    let (page, index, bounds) = (link.page, link.index, link.bounds);
+    let target = link.target.clone();
+    // Previews are advisory; failures show nothing.
+    let Ok(text) = self.doc.text(page) else { return false };
+    // Textless links have no anchor.
+    let Some(source) = text.in_areas(page, &[bounds]).0 else { return false };
+    if self.show_preview(target, source).is_err() {
+      return false;
+    }
+    if let Some(peek) = &mut self.peek {
+      peek.origin = Origin::Hover(page, index);
+    }
+    true
+  }
+
+  /// The open hover preview.
+  pub(crate) fn hover_peek(&self) -> Option<&Preview> {
+    self.peek.as_ref().filter(|peek| peek.hovered().is_some())
+  }
+
+  /// Motion on the link restarts its rest.
+  pub(crate) fn rest_again(&mut self) {
+    if let Some(since) = self.hover_link.as_mut().and_then(|l| l.since.as_mut())
+    {
+      *since = Instant::now();
+    }
+  }
+
+  /// Ends the rest until another link.
+  pub(crate) fn calm_hover(&mut self) {
+    if let Some(link) = &mut self.hover_link {
+      link.since = None;
+    }
+  }
+
+  /// Closes a hover preview the pointer left.
+  pub fn hover_leave(&mut self, at: Option<(u16, u16)>) -> bool {
+    let Some(peek) = self.hover_peek() else { return false };
+    // A moved view leaves it stale.
+    let view = self.view_key();
+    let reach = peek.placement.filter(|at| at.view == view).map(|at| at.reach);
+    let inside = reach
+      .zip(at)
+      .is_some_and(|(area, (column, row))| area.contains(column, row));
+    let opener = peek.hovered();
+    let on_link =
+      self.hover_link.as_ref().map(|link| (link.page, link.index)) == opener;
+    if inside || on_link {
+      return false;
+    }
+    self.peek = None;
+    true
+  }
+
+  /// Closes a hover preview; whether it did.
+  pub(crate) fn drop_hover_preview(&mut self) -> bool {
+    let open = self.hover_peek().is_some();
+    if open {
+      self.peek = None;
+    }
+    self.calm_hover();
+    open
+  }
+
+  /// Presses close it; left inside follows.
+  pub fn hover_press(&mut self, mouse: MouseEvent) -> Result<bool> {
+    let Some(peek) = self.hover_peek() else { return Ok(false) };
+    let column = mouse.column.wrapping_sub(self.at.column);
+    let row = mouse.row.wrapping_sub(self.at.row);
+    let inside = peek.placement.is_some_and(|at| at.area.contains(column, row));
+    let left = mouse.kind == MouseEventKind::Down(MouseButton::Left)
+      && !mouse.modifiers.contains(KeyModifiers::ALT);
+    if inside && left {
+      self.follow_preview()?;
+      return Ok(true);
+    }
+    self.drop_hover_preview();
+    Ok(inside)
   }
 
   pub(crate) fn link_rows(&mut self) -> Result<Vec<Row>> {

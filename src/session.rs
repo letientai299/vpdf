@@ -308,6 +308,8 @@ impl Session {
     target.focus = pane;
     self.active = tab;
     self.give(graphics);
+    // A rest from before focus is stale.
+    self.app().calm_hover();
     self.arrange()
   }
 
@@ -809,6 +811,7 @@ impl Session {
     if self.pointer.holding() || self.on_completion(mouse) {
       return Ok(false);
     }
+    self.app().calm_hover();
     if self.app().dismiss_click()? {
       self.pointer.release();
       return Ok(true);
@@ -847,13 +850,20 @@ impl Session {
       let changed = self.pointer.hover(mouse, pixel, hover);
       if changed {
         self.show_hover();
+      } else {
+        self.app().rest_again();
       }
+      let left = self.leave_check();
       // Bare motion: a release got lost.
-      return Ok(self.app().drop_sweep() || changed);
+      return Ok(self.app().drop_sweep() || changed || left);
     }
     let wheel = pointer::Wheel::of(mouse.kind).is_some();
     if wheel && self.app().prompt.is_some() {
       return Ok(false);
+    }
+    // Presses and releases end a link rest.
+    if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_)) {
+      self.app().calm_hover();
     }
     if matches!(mouse.kind, MouseEventKind::Down(_)) {
       if self.on_completion(mouse) {
@@ -864,6 +874,10 @@ impl Session {
         return Ok(true);
       }
       if self.app().dismiss_click()? {
+        self.pointer.release();
+        return Ok(true);
+      }
+      if self.app().hover_press(mouse)? {
         self.pointer.release();
         return Ok(true);
       }
@@ -896,8 +910,7 @@ impl Session {
     let app = &mut self.tab().panes[index];
     // Per-pixel drags; edges scroll.
     let reading = |app: &App| {
-      let view = (app.reader.scroll.to_bits(), app.text_top);
-      (app.reader.cursor, app.reader.selection, view, app.gesture)
+      (app.reader.cursor, app.reader.selection, app.view_key(), app.gesture)
     };
     let before =
       matches!(mouse.kind, MouseEventKind::Drag(_)).then(|| reading(app));
@@ -1053,7 +1066,20 @@ impl Session {
   pub fn pointer_left(&mut self) -> bool {
     let changed = self.pointer.leave();
     self.show_hover();
-    changed
+    self.leave_check() || changed
+  }
+
+  /// Closes a hover preview the pointer left.
+  fn leave_check(&mut self) -> bool {
+    if self.tabs.is_empty() || self.app().hover_peek().is_none() {
+      return false;
+    }
+    let pane = Pane::of(self.app());
+    let spot = self.pointer.spot().map(|(mouse, _)| mouse);
+    let route =
+      spot.and_then(|mouse| pointer::route(&[pane], pane.id, None, mouse));
+    let at = route.map(|route| (route.mouse.column, route.mouse.row));
+    self.app().hover_leave(at)
   }
 
   /// Retests the last spot; the view changed.
@@ -1063,6 +1089,7 @@ impl Session {
       self.pointer.refresh(hover);
     }
     self.show_hover();
+    self.leave_check();
   }
 
   /// Gives each pane its hovered link.
@@ -1269,6 +1296,9 @@ impl Session {
         app.landing = None;
         changed = true;
       }
+    }
+    if !self.pointer.holding() {
+      changed |= self.app().hover_preview(now);
     }
     let reader = &mut self.app().reader;
     if !reader.message.is_empty() {
@@ -1881,6 +1911,10 @@ fn idle(
   }
   if let Some(clue) = session.app().clue_wait() {
     wait = wait.min(clue);
+  }
+  let held = session.pointer.holding();
+  if let Some(due) = session.app().hover_due().filter(|_| !held) {
+    wait = wait.min(due.saturating_duration_since(Instant::now()));
   }
   for app in &session.tab().panes {
     if let Some(landing) = &app.landing {

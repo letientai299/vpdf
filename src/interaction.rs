@@ -7,6 +7,7 @@ use crate::links::LinkPress;
 use crate::motion::Motion;
 use crate::panel::Panel;
 use crate::pointer::{Hit, Pixel, Region, Route, WHEEL_ROWS, Wheel};
+use crate::preview::Origin;
 use crate::reader::Location;
 use crate::text::{Bounds, PageId, Position};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEventKind};
@@ -51,7 +52,8 @@ impl App {
       InputOwner::Region
     } else if self.context_menu.is_some() {
       InputOwner::Context
-    } else if self.peek.is_some() {
+    } else if self.peek.as_ref().is_some_and(|peek| peek.origin == Origin::Key)
+    {
       InputOwner::Peek
     } else if self.panel_focused() {
       InputOwner::Panel

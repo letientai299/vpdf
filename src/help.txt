@@ -30,6 +30,8 @@ C/V { }: previous / next paragraph
 <C-o><C-i> '': jump back / forward
 Mouse back / forward: jump back / forward
 Hover link: tint; status shows its destination
+Rest on a link 400 ms: preview it; leave to close
+Click the hover preview: follow; keys close it
 Click link: follow and record jump
 Jumps: flash landing line for 600 ms
 ma mA: mark here / across documents

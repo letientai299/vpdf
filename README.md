@@ -92,6 +92,10 @@ Hovering a link tints it and shows its destination in the status line: the
 page label and outline section, or the web address. A click follows the link
 and records a jump; a drag that starts on a link selects text. The mouse back
 and forward buttons act as Ctrl-o and Ctrl-i in the pane under the pointer.
+Resting 400 ms on an internal link opens the `K` preview beside it. The preview
+stays while the pointer is on the link or the preview, a click on it follows
+the link, and leaving both or pressing a key closes it; keys keep their usual
+meaning.
 
 A drag selects characters; a double click selects a word, a triple click a line,
 and a fourth click the paragraph. Dragging after a double or triple click
