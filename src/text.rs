@@ -173,3 +173,11 @@ pub fn class(ch: char) -> u8 {
     2
   }
 }
+
+/// Drops controls; whitespace controls become spaces.
+pub fn printable(raw: &str) -> impl Iterator<Item = char> + '_ {
+  raw
+    .chars()
+    .filter(|ch| !ch.is_control() || ch.is_whitespace())
+    .map(|ch| if ch.is_control() { ' ' } else { ch })
+}

@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::cache::Cache;
-use crate::text::{Bounds, Glyph, Line, PageId, Text};
+use crate::text::{Bounds, Glyph, Line, PageId, Text, printable};
 use anyhow::ensure;
 use mupdf::pdf::PdfDocument;
 use mupdf::{DisplayList, TextPageFlags};
@@ -127,6 +127,7 @@ impl Document {
         label: native
           .page_label(index as usize)
           .ok()
+          .map(|label| printable(&label).collect::<String>())
           .filter(|label| !label.is_empty())
           .unwrap_or_else(|| (index + 1).to_string()),
       });
@@ -135,7 +136,7 @@ impl Document {
     flatten(&native.outlines()?, 0, &mut outline);
     let title = native
       .metadata(mupdf::MetadataName::Title)
-      .map(|title| title.trim().to_owned())
+      .map(|title| printable(&title).collect::<String>().trim().to_owned())
       .unwrap_or_default();
     Ok(Self {
       native,
@@ -210,7 +211,9 @@ impl Document {
         .links()?
         .map(|link| Link {
           bounds: link.bounds.into(),
-          target: link.dest.map_or_else(|| Target::Uri(link.uri), Target::from),
+          target: link
+            .dest
+            .map_or_else(|| Target::Uri(uri(&link.uri)), Target::from),
         })
         .collect(),
     )
@@ -251,10 +254,11 @@ impl Document {
         let key = dictionary.get_dict_key(index).ok().flatten();
         let value = dictionary.get_dict_val(index).ok().flatten();
         let (Some(key), Some(value)) = (key, value) else { continue };
-        let key = String::from_utf8_lossy(&key.as_name().unwrap_or_default())
-          .into_owned();
+        let key = key.as_name().unwrap_or_default();
+        let key: String = printable(&String::from_utf8_lossy(&key)).collect();
         let value = value.resolve().ok().flatten().unwrap_or(value);
         let Ok(text) = value.as_string() else { continue };
+        let text: String = printable(&text).collect();
         let text = text.trim();
         if text.is_empty() {
           continue;
@@ -293,8 +297,10 @@ impl Document {
       } else {
         quads.iter().map(quad_bounds).collect()
       };
-      let contents =
-        annotation.contents()?.unwrap_or_default().trim().to_owned();
+      let contents = printable(annotation.contents()?.unwrap_or_default())
+        .collect::<String>()
+        .trim()
+        .to_owned();
       let kind =
         if kind == Kind::Text { "Note".into() } else { format!("{kind:?}") };
       found.push(Annotation { kind, areas, contents });
@@ -395,6 +401,11 @@ fn date(raw: &str) -> String {
   format!("{year}-{month}-{day}{time}{zone}")
 }
 
+/// Drops controls; URL parsers delete newlines.
+fn uri(raw: &str) -> String {
+  raw.chars().filter(|ch| !ch.is_control()).collect()
+}
+
 fn quad_bounds(quad: &mupdf::Quad) -> Bounds {
   Bounds::enclosing(&[quad.ul, quad.ur, quad.ll, quad.lr].map(|p| (p.x, p.y)))
 }
@@ -410,9 +421,13 @@ fn flatten(items: &[mupdf::Outline], depth: usize, out: &mut Vec<Heading>) {
     let target = item
       .dest
       .map(Target::from)
-      .or_else(|| item.uri.as_ref().map(|u| Target::Uri(u.clone())));
+      .or_else(|| item.uri.as_ref().map(|u| Target::Uri(uri(u))));
     if let Some(target) = target {
-      out.push(Heading { title: item.title.clone(), depth, target });
+      out.push(Heading {
+        title: printable(&item.title).collect(),
+        depth,
+        target,
+      });
     }
     flatten(&item.down, depth + 1, out);
   }

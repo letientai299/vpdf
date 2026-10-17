@@ -1,0 +1,153 @@
+use std::fmt::Write as _;
+use std::path::Path;
+use vpdf::Result;
+use vpdf::app::{App, Tabline};
+use vpdf::document::{Document, Target};
+use vpdf::keys::PanelKind;
+use vpdf::layout::Screen;
+use vpdf::text::PageId;
+
+/// OSC, DCS, C1 OSC, and C1 CSI.
+const EVIL: &str = "\x1b]2;pwn\x07\x1bP0;1|\x1b\\\u{9d}\u{9b}\n";
+
+/// Bytes 0x18-0x1F force `PDFDocEncoding`; UTF-16 keeps them.
+fn text(value: &str) -> String {
+  let mut hex = String::from("<FEFF");
+  for unit in value.encode_utf16() {
+    write!(hex, "{unit:04X}").unwrap();
+  }
+  hex + ">"
+}
+
+/// Every document string carries `EVIL`.
+fn write_pdf(path: &Path, trailer: &str) -> Result<()> {
+  let objects = [
+    format!(
+      "<< /Type /Catalog /Pages 3 0 R /Outlines 5 0 R \
+       /PageLabels << /Nums [0 << /S /D /P {} >>] >> >>",
+      text(EVIL)
+    ),
+    format!("<< /Title {} /Author {} >>", text(EVIL), text(EVIL)),
+    "<< /Type /Pages /Kids [4 0 R] /Count 1 >>".to_owned(),
+    "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 200 200] \
+     /Annots [7 0 R 8 0 R] >>"
+      .to_owned(),
+    "<< /Type /Outlines /First 6 0 R /Last 6 0 R /Count 1 >>".to_owned(),
+    format!(
+      "<< /Title {} /Parent 5 0 R /Dest [4 0 R /XYZ 0 200 0] >>",
+      text(EVIL)
+    ),
+    format!(
+      "<< /Type /Annot /Subtype /Link /Rect [10 10 100 30] \
+       /A << /S /URI /URI {} >> >>",
+      text(&format!("https://example.com/{EVIL}"))
+    ),
+    format!(
+      "<< /Type /Annot /Subtype /Text /Rect [10 50 30 70] /Contents {} >>",
+      text(EVIL)
+    ),
+  ];
+  let mut out = String::from("%PDF-1.7\n");
+  let mut offsets = Vec::new();
+  for (index, body) in objects.iter().enumerate() {
+    offsets.push(out.len());
+    write!(out, "{} 0 obj\n{body}\nendobj\n", index + 1)?;
+  }
+  let xref = out.len();
+  let size = objects.len() + 1;
+  write!(out, "xref\n0 {size}\n0000000000 65535 f \n")?;
+  for offset in offsets {
+    writeln!(out, "{offset:010} 00000 n ")?;
+  }
+  write!(
+    out,
+    "trailer\n<< /Size {size} /Root 1 0 R /Info 2 0 R {trailer} >>\n\
+     startxref\n{xref}\n%%EOF\n"
+  )?;
+  std::fs::write(path, out)?;
+  Ok(())
+}
+
+fn assert_printable(field: &str, value: &str) {
+  assert!(value.contains("]2;pwn"), "{field} kept its text: {value:?}");
+  assert!(!value.chars().any(char::is_control), "{field}: {value:?}");
+}
+
+#[test]
+fn document_strings_reach_the_screen_clean() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join(format!("{}.pdf", EVIL.trim_end()));
+  write_pdf(&path, "")?;
+  let doc = Document::open(&path, "")?;
+  let Target::Uri(uri) = &doc.links(PageId(0))?[0].target else {
+    panic!("URI link");
+  };
+  let notes = doc.annotations(PageId(0))?;
+  let metadata = doc.metadata();
+  let author = metadata.iter().find(|(key, _)| key == "Author").unwrap();
+  for (field, value) in [
+    ("page label", doc.pages[0].label.as_str()),
+    ("outline title", &doc.outline[0].title),
+    ("document title", &doc.title),
+    ("Info entry", &author.1),
+    ("note", &notes[0].contents),
+    ("link", uri),
+  ] {
+    assert_printable(field, value);
+  }
+  assert_eq!(uri, "https://example.com/]2;pwnP0;1|\\");
+
+  let screen = Screen {
+    columns: 160,
+    rows: 30,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  // Graphics add tmux DCS wrappers.
+  let text_mode = true;
+  let mut app = App::with_screen(&path, "", text_mode, screen)?;
+  assert_printable("file name", &app.name());
+  assert_printable("window title", &app.title());
+  app.tabline = Tabline { names: vec![app.name(), app.name()], active: 0 };
+  for panel in [
+    None,
+    Some(PanelKind::Outline),
+    Some(PanelKind::Info),
+    Some(PanelKind::Annotations),
+    Some(PanelKind::Links),
+  ] {
+    if let Some(kind) = panel {
+      app.open_panel(kind)?;
+      let rows = &app.panel.as_ref().unwrap().rows;
+      let shown = rows.iter().any(|row| row.label.contains("]2;pwn"));
+      assert!(shown, "{kind:?} lists the text");
+    }
+    let mut frame = Vec::new();
+    app.draw_pane(&mut frame)?;
+    let frame = String::from_utf8_lossy(&frame);
+    assert!(frame.contains("]2;pwn"), "{panel:?} shows the text");
+    let raw = frame.contains("\x1b]")
+      || frame.contains("\x1bP")
+      || frame.contains('\x07')
+      || frame.chars().any(|ch| ('\u{80}'..='\u{9f}').contains(&ch));
+    assert!(!raw, "{panel:?}: {frame:?}");
+  }
+  Ok(())
+}
+
+/// `MuPDF` quotes `/Filter` names in errors.
+#[test]
+fn errors_reach_stderr_clean() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("locked.pdf");
+  write_pdf(&path, "/Encrypt << /Filter /Evil#1B#5D2;pwn#07 >>")?;
+  let output = std::process::Command::new(env!("CARGO_BIN_EXE_vpdf"))
+    .arg("info")
+    .arg(&path)
+    .output()?;
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(!output.status.success() && stderr.contains("]2;pwn"), "{stderr:?}");
+  assert!(!stderr.contains(['\x1b', '\x07']), "{stderr:?}");
+  Ok(())
+}

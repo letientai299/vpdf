@@ -146,10 +146,11 @@ impl App {
   }
 
   pub fn name(&self) -> String {
-    self.path.file_name().map_or_else(
+    let name = self.path.file_name().map_or_else(
       || self.path.display().to_string(),
       |name| name.to_string_lossy().into_owned(),
-    )
+    );
+    crate::text::printable(&name).collect()
   }
 
   pub fn with_screen(

@@ -22,7 +22,7 @@ impl App {
         let body = match (marked.is_empty(), annotation.contents.is_empty()) {
           (false, false) => format!("{marked} — {}", annotation.contents),
           (false, true) => marked,
-          _ => annotation.contents.replace('\n', " "),
+          _ => annotation.contents,
         };
         rows.push(Row {
           style: Style::Key,

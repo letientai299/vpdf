@@ -51,9 +51,18 @@ fn clean() -> Result<()> {
   })
 }
 
+/// A hostile title: wide emoji, then zero-width marks.
+fn clean_marks() -> Result<()> {
+  let title = "❤\u{FE0F}".repeat(100) + &"\u{301}".repeat(50_000);
+  measure("terminal::clean marks", || {
+    black_box(vpdf::terminal::clean(black_box(&title), 160));
+  })
+}
+
 type Case = fn() -> Result<()>;
 
-const CASES: &[(&str, Case)] = &[("clean", clean)];
+const CASES: &[(&str, Case)] =
+  &[("clean", clean), ("clean marks", clean_marks)];
 
 fn main() -> Result<()> {
   // Cargo passes `--bench`; other arguments name cases.

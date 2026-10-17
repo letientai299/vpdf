@@ -142,12 +142,12 @@ pub fn graphics(
   Ok(())
 }
 
-/// `text` without control characters, cut to `columns` cells.
+/// `text` made printable, cut to `columns` cells.
 pub fn clean(text: &str, columns: usize) -> String {
   let mut width = 0;
-  let mut clean: String = text
-    .chars()
-    .filter(|ch| !ch.is_control())
+  let mut clean: String = crate::text::printable(text)
+    // Caps zero-width marks from hostile text.
+    .take(columns.saturating_mul(8))
     .take_while(|ch| {
       width += ch.width().unwrap_or(0);
       width <= columns
@@ -155,7 +155,8 @@ pub fn clean(text: &str, columns: usize) -> String {
     .collect();
   // Sequences such as an emoji with U+FE0F are wider than their chars.
   while clean.width() > columns {
-    clean.pop();
+    // Marks go with their base char.
+    while clean.pop().is_some_and(|ch| ch.width() == Some(0)) {}
   }
   clean
 }
@@ -278,7 +279,7 @@ mod tests {
 
   #[test]
   fn clean_fits_string_width() {
-    assert_eq!(clean("a\tb", 5), "ab");
+    assert_eq!(clean("a\tb\x1b", 5), "a b");
     // Each heart with U+FE0F is two cells, though its chars sum to one.
     let hearts = "❤\u{FE0F}".repeat(4);
     for columns in 0..8 {
@@ -286,5 +287,8 @@ mod tests {
       assert!(hearts.starts_with(&clean));
       assert!(clean.width() <= columns, "{columns}");
     }
+    let hostile = hearts.repeat(25) + &"\u{301}".repeat(50_000);
+    let clean = clean(&hostile, 160);
+    assert!(clean.width() <= 160 && clean.chars().count() <= 8 * 160);
   }
 }

@@ -136,7 +136,9 @@ fn main() {
     {
       return;
     }
-    eprintln!("vpdf: {error:#}");
+    // MuPDF errors quote document bytes.
+    let error: String = vpdf::text::printable(&format!("{error:#}")).collect();
+    eprintln!("vpdf: {error}");
     std::process::exit(1);
   }
 }
