@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+
+jobs:
+  build:
+    name: ${{ github.event_name == 'pull_request' && 'Test and build' || 'Branch test and build' }} (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            tools: rust rumdl taplo upx
+          - os: macos-14
+            platform: macos-aarch64
+            tools: rust
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y musl-tools libclang-dev
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        with:
+          install_args: ${{ matrix.tools }}
+      - name: Install Rust components
+        if: runner.os == 'Linux'
+        run: rustup component add rustfmt clippy
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          key: ${{ matrix.platform }}
+          cache-workspace-crates: true
+      - name: Check formatting
+        if: runner.os == 'Linux'
+        run: mise run fmt:check
+      - name: Lint
+        if: runner.os == 'Linux'
+        run: mise run lint
+      - name: Test
+        run: mise run test
+      - name: Build and pack executable
+        run: mise run release
+      - name: Archive executable
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          archive="vpdf-${PLATFORM}.tar.gz"
+          tar -czf "target/dist/$archive" -C target/dist vpdf
+          cd target/dist
+          shasum -a 256 "$archive" > "$archive.sha256"
+      - name: Upload binary
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vpdf-${{ matrix.platform }}
+          path: |
+            target/dist/*.tar.gz
+            target/dist/*.sha256
+          compression-level: 0
+          overwrite: true
+          retention-days: 7
+          if-no-files-found: error
