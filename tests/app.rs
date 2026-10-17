@@ -1,3 +1,4 @@
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use vpdf::Result;
@@ -139,6 +140,75 @@ fn links_keep_coordinates_and_text_scrolls_lines() -> Result<()> {
   let position = app.text_position(2, 1)?;
   assert_eq!(position.line, 1);
   assert_eq!(position.glyph, 2);
+  Ok(())
+}
+
+/// `paper.pdf` in text mode, 20 rows tall.
+fn text_app() -> Result<App> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 120,
+    rows: 20,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  App::with_screen(&root.join("paper.pdf"), "", true, screen)
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn text_clicks_keep_the_view_and_select_words() -> Result<()> {
+  let mut app = text_app()?;
+  let press = MouseEvent {
+    kind: MouseEventKind::Down(MouseButton::Left),
+    column: 4,
+    row: 17,
+    modifiers: KeyModifiers::NONE,
+  };
+  app.draw(&mut Vec::new())?;
+  let target = app.text_position(press.column, press.row)?;
+  app.mouse(press)?;
+  app.draw(&mut Vec::new())?;
+  assert_eq!(app.reader.cursor, target);
+  let again = app.text_position(press.column, press.row)?;
+  assert_eq!(again, target, "a click keeps the view");
+  app.mouse(press)?;
+  let text = app.doc.text(target.page)?;
+  let word = text.lines[target.line].run(target.glyph);
+  let selection = app.reader.selection.expect("a double click selects");
+  let ends = (selection.anchor.glyph, app.reader.cursor.glyph);
+  assert_eq!(Some(ends), word, "the word under the pointer");
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn text_view_aligns_and_scrolls_with_the_cursor() -> Result<()> {
+  fn cursor_row(app: &mut App) -> Result<u16> {
+    app.draw(&mut Vec::new())?;
+    let cell = app.text_cell(app.reader.cursor)?;
+    Ok(cell.expect("cursor in view").1)
+  }
+  let mut app = text_app()?;
+  let lines = app.doc.text(PageId(0))?.lines.len();
+  assert!(lines >= 30 + 19, "zt on line 30 fills the view");
+  app.reader.cursor.line = 30;
+  let input =
+    Input { action: Action::Quit, count: 1, explicit: false, register: '"' };
+  for (fraction, row) in [(0.0, 0), (1.0, 18), (0.5, 9)] {
+    app.action(Input { action: Action::Align(fraction), ..input })?;
+    assert_eq!(cursor_row(&mut app)?, row, "align {fraction}");
+  }
+  for (delta, line) in [(5, 35), (-3, 32)] {
+    app.scroll_text(delta)?;
+    assert_eq!(app.reader.cursor.line, line);
+    assert_eq!(cursor_row(&mut app)?, 9, "the cursor keeps its row");
+  }
+  app.scroll_text((lines - 31) as isize)?;
+  assert_eq!(app.reader.cursor.page, PageId(1));
+  let row = usize::from(cursor_row(&mut app)?);
+  assert_eq!(row, app.reader.cursor.line, "a new page starts at its top");
   Ok(())
 }
 

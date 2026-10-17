@@ -93,6 +93,10 @@ pub struct App {
   /// A changed stamp and when it was first seen.
   pub(crate) settling: Option<(crate::watch::Stamp, Instant)>,
   pub text_mode: bool,
+  /// Text view origin for the next frame.
+  pub(crate) text_top: Position,
+  /// Text view origin on screen.
+  pub(crate) text_drawn: Option<Position>,
   pub screen: Screen,
   pub left: u16,
   /// Pane origin on the terminal.
@@ -176,6 +180,8 @@ impl App {
       stamp: crate::watch::stamp(path),
       settling: None,
       text_mode,
+      text_top: Position::default(),
+      text_drawn: None,
       screen,
       left: 0,
       at: terminal::At::default(),

@@ -81,6 +81,7 @@ run = "cargo bench --locked --bench stages"
 
 [tasks."bench:micro"]
 description = "Time single hot functions; arguments filter cases"
+env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
 run = 'cargo bench --locked --bench micro -- {{arg(name="cases", var=true, default="")}}'
 
 [tasks."perf:check"]

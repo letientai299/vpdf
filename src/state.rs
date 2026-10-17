@@ -146,6 +146,7 @@ impl App {
     self.reader.cursor =
       self.doc.text(other.reader.cursor.page)?.clamp(other.reader.cursor);
     self.reader.scroll = other.reader.scroll;
+    self.text_top = other.text_top;
     Ok(())
   }
 

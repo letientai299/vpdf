@@ -59,10 +59,49 @@ fn clean_marks() -> Result<()> {
   })
 }
 
+/// Text-mode frame; needs `VPDF_CORPUS`.
+fn text_canvas() -> Result<()> {
+  let Some(root) = std::env::var_os("VPDF_CORPUS") else {
+    writeln!(io::stdout(), "text_canvas: VPDF_CORPUS unset, skipped")?;
+    return Ok(());
+  };
+  let screen = vpdf::layout::Screen {
+    columns: 120,
+    rows: 40,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let path = std::path::Path::new(&root).join("paper.pdf");
+  let mut app = vpdf::app::App::with_screen(&path, "", true, screen)?;
+  // Main's centering draws this same view.
+  let (rows, columns) = (usize::from(screen.rows), usize::from(screen.columns));
+  let page = app.reader.cursor.page;
+  let text = app.doc.text(page)?;
+  let line = text
+    .lines
+    .iter()
+    .take((rows - 1) / 2)
+    .position(|l| l.glyphs.len() >= columns / 2)
+    .ok_or_else(|| anyhow::anyhow!("no long line near the top"))?;
+  let glyph = columns / 2 - 1;
+  app.reader.cursor = vpdf::text::Position { page, line, glyph };
+  let mut out = Vec::new();
+  app.text_canvas(&mut out)?;
+  measure("App::text_canvas", || {
+    out.clear();
+    app.text_canvas(&mut out).expect("cached page text");
+    black_box(&out);
+  })
+}
+
 type Case = fn() -> Result<()>;
 
-const CASES: &[(&str, Case)] =
-  &[("clean", clean), ("clean marks", clean_marks)];
+const CASES: &[(&str, Case)] = &[
+  ("clean", clean),
+  ("clean marks", clean_marks),
+  ("text_canvas", text_canvas),
+];
 
 fn main() -> Result<()> {
   // Cargo passes `--bench`; other arguments name cases.

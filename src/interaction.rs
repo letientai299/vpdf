@@ -99,6 +99,7 @@ impl App {
         self
           .scroll(rows as f32 * count * f32::from(self.screen.cell_height))?;
       }
+      Action::Align(fraction) if self.text_mode => self.align_text(fraction)?,
       Action::Align(fraction) => {
         self.animation = None;
         let text = self.doc.text(self.reader.cursor.page)?;
