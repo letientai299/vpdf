@@ -5,18 +5,13 @@ on:
     branches: ['**']
   pull_request:
   workflow_dispatch:
-    inputs:
-      preview:
-        description: Publish a preview and test mise installation
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !inputs.preview }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -89,16 +84,16 @@ jobs:
   publish:
     name: Publish binaries
     needs: build
-    if: (github.ref == 'refs/heads/main' && github.event_name != 'pull_request') || (github.event_name == 'workflow_dispatch' && inputs.preview)
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
     concurrency:
-      group: publish-${{ inputs.preview && 'dev' || 'main' }}
+      group: publish-main
       cancel-in-progress: false
     env:
-      RELEASE_TAG: ${{ inputs.preview && 'dev' || 'main' }}
+      RELEASE_TAG: main
     outputs:
       tag: ${{ steps.release.outputs.tag }}
     steps:
@@ -141,7 +136,7 @@ jobs:
   install:
     name: Mise install (${{ matrix.os }})
     needs: publish
-    if: needs.publish.outputs.tag != ''
+    if: github.ref == 'refs/heads/main' && needs.publish.outputs.tag != ''
     strategy:
       fail-fast: false
       matrix:
