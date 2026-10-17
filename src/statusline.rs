@@ -81,13 +81,15 @@ impl App {
   fn tabs(&self, room: usize) -> (String, usize) {
     let Tabline { names, active } = &self.tabline;
     // Narrow panes cut the name so the status line stays in the pane.
-    let plain = |text: String| {
-      let text = terminal::clean(&text, room);
-      let width = text.width();
-      (text, width)
+    let file = || {
+      let label = format!(" {}:{} ", active + 1, self.name());
+      let label = terminal::clean(&label, room.saturating_sub(1));
+      let gap = if room > 0 { " " } else { "" };
+      let width = label.width() + gap.width();
+      (format!("{}{label}{}{gap}", theme::STATUS_FILE, theme::BAR), width)
     };
     if names.len() < 2 {
-      return plain(format!(" {}  ", self.name()));
+      return file();
     }
     let labels: Vec<_> = names
       .iter()
@@ -96,16 +98,12 @@ impl App {
       .collect();
     let width = labels.iter().map(|label| label.width()).sum::<usize>() + 1;
     if width > room {
-      return plain(format!(
-        " {}/{} {}  ",
-        active + 1,
-        names.len(),
-        self.name()
-      ));
+      return file();
     }
     let mut text = String::new();
     for (index, label) in labels.iter().enumerate() {
-      let style = if index == *active { theme::TAB } else { theme::BAR };
+      let style =
+        if index == *active { theme::TAB_ACTIVE } else { theme::TAB_INACTIVE };
       text.extend([style, label.as_str(), theme::BAR]);
     }
     (text + " ", width)
@@ -156,7 +154,7 @@ impl App {
       (Some(error), _) => (error.as_str(), theme::ERROR),
       (None, _) if covered => ("Enter open  :e file  q close", theme::BAR),
       (None, Some(title)) if self.reader.message.is_empty() => {
-        (title, theme::MUTED_BAR)
+        (title, theme::STATUS_SECTION)
       }
       (None, _) => (self.reader.message.as_str(), theme::BAR),
     };
@@ -204,4 +202,82 @@ pub fn prompt(
   let column = column.min(usize::from(screen.columns) - 1);
   write!(out, "{}\x1b[2 q\x1b[?25h", at.goto(row, column))?;
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::path::PathBuf;
+
+  fn app() -> Result<App> {
+    let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+    App::with_screen(
+      &root.join("paper.pdf"),
+      "",
+      true,
+      Screen {
+        columns: 120,
+        rows: 24,
+        cell_width: 8,
+        cell_height: 16,
+        origin: (0, 0),
+      },
+    )
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn filenames_keep_style_and_number() -> Result<()> {
+    let mut app = app()?;
+    let single = format!("{} 1:paper.pdf {} ", theme::STATUS_FILE, theme::BAR);
+    assert_eq!(app.tabs(80), (single.clone(), 14));
+    app.tabline = Tabline { names: vec!["paper.pdf".into()], active: 0 };
+    assert_eq!(app.tabs(80), (single, 14));
+    app.tabline.names.insert(0, "book.pdf".into());
+    for active in 0..2 {
+      app.tabline.active = active;
+      let styles = if active == 0 {
+        [theme::TAB_ACTIVE, theme::TAB_INACTIVE]
+      } else {
+        [theme::TAB_INACTIVE, theme::TAB_ACTIVE]
+      };
+      let expected = format!(
+        "{} 1:book.pdf {}{} 2:paper.pdf {} ",
+        styles[0],
+        theme::BAR,
+        styles[1],
+        theme::BAR
+      );
+      assert_eq!(app.tabs(80), (expected, 26));
+    }
+    let narrow = format!("{} 2:paper.pdf {} ", theme::STATUS_FILE, theme::BAR);
+    assert_eq!(app.tabs(14), (narrow, 14));
+    app.path = "論文.pdf".into();
+    for room in 0..30 {
+      let (tabs, width) = app.tabs(room);
+      let plain = tabs
+        .replace(theme::STATUS_FILE, "")
+        .replace(theme::TAB_INACTIVE, "")
+        .replace(theme::BAR, "");
+      assert_eq!(width, plain.width(), "{room}");
+      assert!(width <= room, "{room}");
+    }
+    Ok(())
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn section_has_separate_style() -> Result<()> {
+    let mut app = app()?;
+    app.doc.load_outline()?;
+    app.current_section = Some(0);
+    let title = app.doc.outline[0].title.trim();
+    let mut out = Vec::new();
+    app.status(&mut out, 23)?;
+    let out = String::from_utf8(out)?;
+    assert!(out.contains(&format!("{} 1:paper.pdf ", theme::STATUS_FILE)));
+    let section = format!("{}{title}{}", theme::STATUS_SECTION, theme::BAR);
+    assert!(out.contains(&section));
+    Ok(())
+  }
 }

@@ -4,7 +4,9 @@
 pub const RESET: &str = "\x1b[0m";
 pub const BAR: &str = "\x1b[0;100m";
 pub const SELECTED: &str = "\x1b[0;1;100m";
-pub const TAB: &str = "\x1b[0;1;34;100m";
+pub const STATUS_FILE: &str = "\x1b[0;1;30;104m";
+pub const TAB_ACTIVE: &str = STATUS_FILE;
+pub const TAB_INACTIVE: &str = "\x1b[0;37;40m";
 pub const CURRENT: &str = "\x1b[0;1;34m";
 pub const HEADING: &str = "\x1b[1;34m";
 pub const KEY: &str = "\x1b[33m";
@@ -16,7 +18,7 @@ pub const MUTED: &str = "\x1b[90m";
 /// Faint text for the side that does not have focus.
 pub const DIM: &str = "\x1b[0;2m";
 /// Muted text that keeps the status bar background.
-pub const MUTED_BAR: &str = "\x1b[0;3;100m";
+pub const STATUS_SECTION: &str = "\x1b[0;3;100m";
 pub const ERROR: &str = "\x1b[1;31m";
 pub const LANDING: [u8; 4] = [255, 190, 30, 65];
 pub const TEXT_LANDING: &str = "\x1b[0;43m";
