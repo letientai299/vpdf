@@ -676,7 +676,7 @@ impl Session {
       }
       Some(Request::Pick) => match crate::fzf::pick(&std::env::current_dir()?)?
       {
-        Some(path) => self.choose(&path, screen),
+        Some(path) => self.open(&path, false, screen),
         None => Ok(()),
       },
       Some(Request::TabClose) => self.close(),
@@ -733,13 +733,6 @@ impl Session {
     } else {
       self.focus(source.0, source.1)
     }
-  }
-
-  /// In a split, a picked document replaces the focused pane, like `:e`;
-  /// otherwise it opens a tab.
-  fn choose(&mut self, path: &Path, screen: Screen) -> Result<()> {
-    let tab = self.tab().panes.len() == 1;
-    self.open(path, tab, screen)
   }
 
   fn running(&self) -> bool {

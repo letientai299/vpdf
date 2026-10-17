@@ -40,7 +40,7 @@ pub enum Request {
     file: Option<PathBuf>,
   },
   GoMark(char, bool),
-  /// Pick a file with `fzf` and open it in a new tab.
+  /// Pick a file with `fzf` and open it in the focused pane.
   Pick,
   /// Close every pane of this tab.
   TabClose,

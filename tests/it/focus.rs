@@ -224,7 +224,8 @@ fn recent_pick_opens_in_covered_pane() -> Result<()> {
   let paper = file("paper.pdf")?;
   let book = file("book.pdf")?;
   let reuse = format!(":vsplit {}\r\x17pgr", paper.display());
-  for setup in ["gr", "\x17sgr", "\x17n", &reuse] {
+  let setups = ["gr", "\x17sgr", "\x17n", &reuse];
+  for (setup, click) in setups.iter().flat_map(|s| [(*s, false), (*s, true)]) {
     let mut session = Session::new("", false, None);
     session.open(&paper, true, screen())?;
     session.open(&book, false, screen())?;
@@ -235,8 +236,22 @@ fn recent_pick_opens_in_covered_pane() -> Result<()> {
       Destination::File(path) => *path == paper,
       _ => false,
     };
-    list.selected = list.rows.iter().position(picked).unwrap();
-    send(&mut session, b"\r")?;
+    let index = list.rows.iter().position(picked).unwrap();
+    list.selected = index;
+    let panes = session.tab().panes.len();
+    send(&mut session, b"o")?;
+    assert!(session.app().covered(), "{setup:?}: o is inert");
+    assert_eq!(session.tab().panes.len(), panes, "{setup:?}");
+    if click {
+      let app = session.app();
+      app.draw(&mut Vec::new())?;
+      let column = app.at.column + 2;
+      let row =
+        usize::from(app.at.row) + index - app.panel.as_ref().unwrap().top;
+      send(&mut session, format!("\x1b[<0;{column};{}M", row + 2).as_bytes())?;
+    } else {
+      send(&mut session, b"\r")?;
+    }
     assert_eq!(session.tabs.len(), 1, "{setup:?}");
     assert_eq!(session.app().path, paper, "{setup:?}");
     assert_eq!(session.app().input_owner(), InputOwner::Content);

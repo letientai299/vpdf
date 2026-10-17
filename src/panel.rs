@@ -599,9 +599,9 @@ impl App {
       | Action::Reselect
       | Action::WordSearch
       | Action::Cancel => {}
-      Action::Follow | Action::Swap => {
-        self.panel_follow(input.action)?;
-      }
+      Action::Follow => self.panel_follow(Action::Follow)?,
+      // The recent view opens with Enter alone.
+      Action::Swap if !covered => self.panel_follow(Action::Swap)?,
       // Commands, searches, windows, and tabs still work; the covered
       // document takes nothing else.
       Action::Command
@@ -627,8 +627,10 @@ impl App {
     if self.covered() != covered {
       self.relayout()?;
     }
+    // A click on the covering recent view opens like Enter.
     if clicked.is_some() {
-      self.panel_follow(Action::Swap)?;
+      let action = if covered { Action::Follow } else { Action::Swap };
+      self.panel_follow(action)?;
     }
     Ok(())
   }
