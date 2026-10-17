@@ -103,8 +103,17 @@ impl Home {
         let event = prompt.paste(&text);
         self.prompt_event(event, history)
       }
-      Event::Resize(_) => {
-        self.screen = terminal::size().unwrap_or(self.screen);
+      Event::Resize(report) => {
+        match terminal::resized(report, Some(self.screen)) {
+          Ok(Some(screen)) => {
+            self.screen = screen;
+            if self.error.as_deref() == Some(terminal::NO_CELL) {
+              self.error = None;
+            }
+          }
+          Ok(None) => {}
+          Err(error) => self.error = Some(error.to_string()),
+        }
         Ok(Outcome::Stay)
       }
       // An open prompt owns the input.

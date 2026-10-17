@@ -1,9 +1,13 @@
 use crate::Result;
+use crate::caps::{Caps, Cell, Host, Support};
+use crate::decode::Size;
 use crate::layout::Screen;
+use anyhow::Context;
+use crossterm::terminal::WindowSize;
 use crossterm::{cursor, event, execute, terminal};
 use std::io::{self, Write};
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock, PoisonError};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub struct Terminal;
@@ -42,7 +46,11 @@ pub fn images_lost() -> bool {
 static RESIZED: AtomicBool = AtomicBool::new(false);
 
 /// Passes a resize a prompt read on to the event loop.
-pub fn defer_resize() {
+pub fn defer_resize(report: Option<Size>) {
+  if let Some(report) = report {
+    PROVOKED.store(false, Ordering::Relaxed);
+    note(report);
+  }
   RESIZED.store(true, Ordering::Relaxed);
 }
 
@@ -66,6 +74,7 @@ pub fn resume() -> Result<()> {
   // Inside the alternate screen, so a terminal that prints an unknown
   // query leaves nothing behind.
   crate::caps::probe()?;
+  resize_reports(true)?;
   if enhanced() {
     let flags = event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
       | event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS;
@@ -81,6 +90,7 @@ pub fn suspend() -> Result<()> {
     return Ok(());
   }
   crate::input::forget_answers();
+  resize_reports(false)?;
   if enhanced() {
     execute!(io::stdout(), event::PopKeyboardEnhancementFlags)?;
   }
@@ -128,20 +138,156 @@ pub fn restore_on_panic() {
   }));
 }
 
+/// Whether the terminal sends mode 2048 resize reports, which carry
+/// the pixel size where TIOCGWINSZ may have none. While they are on,
+/// each resize also sends one, so SIGWINCH adds nothing.
+fn reports() -> bool {
+  crate::caps::get().is_some_and(|caps| caps.resize == Support::Answered)
+}
+
+/// Turns mode 2048 resize reports on or off where the terminal has
+/// them; turning them on also reports the current size.
+fn resize_reports(on: bool) -> Result<()> {
+  if reports() {
+    PROVOKED.store(on, Ordering::Relaxed);
+    let mut out = io::stdout();
+    out.write_all(if on { b"\x1b[?2048h" } else { b"\x1b[?2048l" })?;
+    out.flush()?;
+  }
+  Ok(())
+}
+
+/// Set while the report that turning reports on provokes is due.
+static PROVOKED: AtomicBool = AtomicBool::new(false);
+
+pub const NO_CELL: &str = "Terminal reports no cell size in pixels";
+
+/// What tmux puts in a pane's pixel size when it does not know the
+/// client's cell size ([tmux.h][h]).
+///
+/// [h]: https://github.com/tmux/tmux/blob/master/tmux.h
+const TMUX_FAKE: Cell = Cell { width: 16, height: 32 };
+
+/// The latest cell size the terminal told in band, by a mode 2048
+/// report or a `CSI 16 t` answer after a resize.
+static TOLD: Mutex<Option<Cell>> = Mutex::new(None);
+
+fn told() -> Option<Cell> {
+  *TOLD.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn tell(cell: Cell) {
+  *TOLD.lock().unwrap_or_else(PoisonError::into_inner) = Some(cell);
+}
+
+fn window(report: Size) -> WindowSize {
+  WindowSize {
+    rows: report.rows,
+    columns: report.columns,
+    width: report.width,
+    height: report.height,
+  }
+}
+
+/// The cell size `window`'s pixels imply; None without pixels.
+fn window_cell(window: &WindowSize) -> Option<Cell> {
+  let part = |pixels: u16, cells: u16| {
+    (pixels > 0 && cells > 0).then(|| (pixels / cells).max(1))
+  };
+  Some(Cell {
+    width: part(window.width, window.columns)?,
+    height: part(window.height, window.rows)?,
+  })
+}
+
+/// Picks the cell size: the window's pixels, except tmux's made-up
+/// 16x32, then under tmux the client's cell as tmux knows it now;
+/// elsewhere the latest in-band answer, then the probe's `CSI 16 t`.
+/// None rather than a guess. `tmux` stands in for `caps` before the
+/// probe.
+fn pick(
+  window: Option<Cell>,
+  told: Option<Cell>,
+  caps: Option<&Caps>,
+  tmux: bool,
+  client: impl FnOnce() -> Option<Cell>,
+) -> Option<Cell> {
+  let tmux = caps.map_or(tmux, |caps| matches!(caps.host, Host::Tmux(_)));
+  if tmux {
+    return window.filter(|&cell| cell != TMUX_FAKE).or_else(client);
+  }
+  window.or(told).or(caps.and_then(|caps| caps.cell))
+}
+
+fn metrics(window: &WindowSize) -> Option<Cell> {
+  let client = || crate::caps::tmux_now()?.cell;
+  pick(window_cell(window), told(), crate::caps::get(), tmux(), client)
+}
+
+/// The cell size in pixels, without asking the terminal; None when
+/// nothing reports it.
+pub fn cell() -> Option<Cell> {
+  metrics(&terminal::window_size().ok()?)
+}
+
+/// The screen as TIOCGWINSZ and earlier answers describe it; an error
+/// when nothing reports the cell size in pixels.
 pub fn size() -> Result<Screen> {
-  let size = terminal::window_size()?;
-  let columns = size.columns.max(1);
-  let rows = size.rows.max(2);
+  screen(&terminal::window_size()?)
+}
+
+/// Keeps the cell a mode 2048 report carries for later sizes.
+fn note(report: Size) {
+  if let Some(cell) = window_cell(&window(report)) {
+    tell(cell);
+  }
+}
+
+/// Whether a SIGWINCH should ask `CSI 16 t` again: only without
+/// pixels, and not while a later resize waits in the queue.
+fn asks_again(window: Option<Cell>, queued: bool) -> bool {
+  window.is_none() && !queued
+}
+
+/// The screen a resize event brings, from its mode 2048 `report` when
+/// one came; None when the event changes nothing: SIGWINCH while
+/// reports carry the size, or the report that turning reports on
+/// provokes at the `current` size.
+pub fn resized(
+  report: Option<Size>,
+  current: Option<Screen>,
+) -> Result<Option<Screen>> {
+  let Some(report) = report else {
+    return if reports() { Ok(None) } else { remeasure().map(Some) };
+  };
+  let provoked = PROVOKED.swap(false, Ordering::Relaxed);
+  note(report);
+  let screen = screen(&window(report))?;
+  Ok((!provoked || current != Some(screen)).then_some(screen))
+}
+
+/// The screen after a resize without its report, as SIGWINCH or a
+/// deferred resize leaves it: asks `CSI 16 t` again when needed.
+pub fn remeasure() -> Result<Screen> {
+  let window = terminal::window_size()?;
+  let queued = crate::input::resizing();
+  if !reports()
+    && asks_again(window_cell(&window), queued)
+    && let Some(cell) = crate::caps::ask_cell()
+  {
+    tell(cell);
+  }
+  screen(&window)
+}
+
+fn screen(window: &WindowSize) -> Result<Screen> {
+  let cell = metrics(window).context(NO_CELL)?;
   Ok(Screen {
-    columns,
-    rows,
+    columns: window.columns.max(1),
+    rows: window.rows.max(2),
     origin: pane_origin().unwrap_or_default(),
-    cell_width: if size.width == 0 { 8 } else { (size.width / columns).max(1) },
-    cell_height: if size.height == 0 {
-      16
-    } else {
-      (size.height / rows).max(1)
-    },
+    cell_width: cell.width,
+    cell_height: cell.height,
   })
 }
 
@@ -305,6 +451,101 @@ fn pane_origin() -> Option<(u16, u16)> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn cell_size_never_guesses() {
+    use crate::caps::{Graphics, Tmux};
+    let cell = |width, height| Some(Cell { width, height });
+    let caps = |host, asked| Caps {
+      host,
+      version: None,
+      keyboard: None,
+      sync: Support::Missing,
+      pixels: Support::Missing,
+      resize: Support::Missing,
+      pointer: Support::Missing,
+      drop: Support::Missing,
+      cell: asked,
+      attributes: Some(vec![62]),
+    };
+    let direct = caps(Host::Direct(Graphics::Ok), cell(9, 19));
+    let unasked = caps(Host::Direct(Graphics::Ok), None);
+    // The probe's client cell is stale; tmux is asked again.
+    let tmux = caps(
+      Host::Tmux(Some(Tmux {
+        version: vec![3, 8],
+        client: None,
+        cell: cell(5, 11),
+        passthrough: None,
+      })),
+      None,
+    );
+    let failed = caps(Host::Tmux(None), None);
+    let fake = Some(TMUX_FAKE);
+    // (window, told, caps, TMUX set, client now, want)
+    let cases = [
+      (cell(8, 17), cell(10, 20), Some(&direct), false, None, cell(8, 17)),
+      (None, cell(10, 20), Some(&direct), false, None, cell(10, 20)),
+      (None, None, Some(&direct), false, None, cell(9, 19)),
+      (None, None, Some(&unasked), false, None, None),
+      (fake, None, Some(&direct), false, None, fake),
+      (cell(7, 13), None, Some(&tmux), false, cell(6, 12), cell(7, 13)),
+      (fake, None, Some(&tmux), false, cell(7, 13), cell(7, 13)),
+      (fake, None, Some(&tmux), false, fake, fake),
+      (fake, cell(10, 20), Some(&tmux), false, None, None),
+      (None, None, Some(&tmux), false, cell(7, 13), cell(7, 13)),
+      (fake, None, Some(&failed), true, None, None),
+      (fake, None, None, true, cell(7, 13), cell(7, 13)),
+      (fake, None, None, true, None, None),
+      (cell(9, 18), None, None, true, None, cell(9, 18)),
+      (fake, None, None, false, cell(7, 13), fake),
+      (None, None, None, false, None, None),
+    ];
+    for (index, (window, told, caps, tmux, client, want)) in
+      cases.into_iter().enumerate()
+    {
+      let got = pick(window, told, caps, tmux, || client);
+      assert_eq!(got, want, "case {index}");
+    }
+  }
+
+  #[test]
+  fn resizes_ask_again_without_pixels() {
+    let some = Some(Cell { width: 8, height: 16 });
+    // (window cell, resize queued, want)
+    let cases =
+      [(None, false, true), (None, true, false), (some, false, false)];
+    for (window, queued, want) in cases {
+      assert_eq!(asks_again(window, queued), want, "{window:?} {queued}");
+    }
+  }
+
+  #[test]
+  fn window_pixels_divide_into_cells() {
+    let window = |columns, rows, width, height| WindowSize {
+      rows,
+      columns,
+      width,
+      height,
+    };
+    let cases = [
+      (window(80, 24, 640, 384), Some(Cell { width: 8, height: 16 })),
+      (window(3, 2, 2, 1), Some(Cell { width: 1, height: 1 })),
+      (window(80, 24, 0, 384), None),
+      (window(80, 24, 640, 0), None),
+      (window(0, 24, 640, 384), None),
+    ];
+    for (window, want) in cases {
+      assert_eq!(window_cell(&window), want, "{window:?}");
+    }
+  }
+
+  #[test]
+  fn reports_keep_their_cell() {
+    let report = Size { rows: 24, columns: 80, height: 480, width: 720 };
+    note(report);
+    assert_eq!(told(), Some(Cell { width: 9, height: 20 }));
+  }
 
   #[test]
   fn clean_fits_string_width() {

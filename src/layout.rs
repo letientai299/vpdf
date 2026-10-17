@@ -3,7 +3,7 @@ use crate::text::{Bounds, PageId};
 use mupdf::Matrix;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Screen {
   pub columns: u16,
   pub rows: u16,

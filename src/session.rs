@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::app::{App, Request, TabMove, Tabline, Window};
-use crate::decode::{Event, MouseKind};
+use crate::decode::{Event, MouseKind, Size};
 use crate::document::PasswordRequired;
 use crate::graphics::Graphics;
 use crate::home::{Home, Outcome};
@@ -814,7 +814,8 @@ fn moved(event: &Event) -> bool {
 enum Act {
   Key(KeyEvent),
   Paste(String),
-  Resize,
+  /// With the mode 2048 report, when the terminal sent one.
+  Resize(Option<Size>),
   Mouse(MouseEvent),
 }
 
@@ -825,7 +826,7 @@ fn act(event: Event) -> Option<Act> {
   match event {
     Event::Key(key) if key.kind != KeyEventKind::Release => Some(Act::Key(key)),
     Event::Paste(text) => Some(Act::Paste(text)),
-    Event::Resize(_) => Some(Act::Resize),
+    Event::Resize(report) => Some(Act::Resize(report)),
     Event::Mouse(mouse) => mouse.cells().map(Act::Mouse),
     Event::Key(_) | Event::Focus(_) | Event::Reply(_) | Event::Leave => None,
   }
@@ -848,7 +849,10 @@ fn input(session: &mut Session, act: Act) -> Result<()> {
       let tab = &mut session.tabs[session.active];
       tab.panes[tab.focus].paste(&text, &mut session.history)
     }
-    Act::Resize => session.resize(terminal::size()?),
+    Act::Resize(report) => match terminal::resized(report, session.screen)? {
+      Some(screen) => session.resize(screen),
+      None => Ok(()),
+    },
     Act::Mouse(mouse) => session.mouse(mouse),
   }
 }
@@ -873,7 +877,8 @@ fn run(session: &mut Session) -> Result<()> {
   let mut title = String::new();
   while session.running() {
     if terminal::resize_deferred() {
-      let resized = terminal::size().and_then(|size| session.resize(size));
+      let screen = terminal::remeasure();
+      let resized = screen.and_then(|screen| session.resize(screen));
       report(session, resized);
       dirty = true;
     }
@@ -994,6 +999,7 @@ mod tests {
       KeyEvent::new_with_kind(KeyCode::Char('j'), none, KeyEventKind::Release);
     let mouse = |kind, at| Event::Mouse(Mouse { kind, at, modifiers: none });
     let cell = Spot::Cell { column: 1, row: 2 };
+    let size = Size { rows: 24, columns: 80, height: 384, width: 640 };
     let click = MouseEvent {
       kind: MouseEventKind::Down(MouseButton::Left),
       column: 1,
@@ -1004,7 +1010,8 @@ mod tests {
       (Event::Key(press), Some(Act::Key(press))),
       (Event::Key(release), None),
       (Event::Paste("a".into()), Some(Act::Paste("a".into()))),
-      (Event::Resize(None), Some(Act::Resize)),
+      (Event::Resize(None), Some(Act::Resize(None))),
+      (Event::Resize(Some(size)), Some(Act::Resize(Some(size)))),
       (mouse(MouseKind::Press(Button::LEFT), cell), Some(Act::Mouse(click))),
       (mouse(MouseKind::Press(Button::BACK), cell), None),
       (mouse(MouseKind::Press(Button::LEFT), Spot::Pixel { x: 1, y: 2 }), None),

@@ -77,7 +77,8 @@ pub struct Tmux {
   pub version: Vec<u32>,
   /// The client terminal's XTVERSION, `#{client_termtype}`.
   pub client: Option<String>,
-  /// The client's cell in pixels.
+  /// The client's cell in pixels at the probe; cell sizes read it
+  /// fresh through `tmux_now`.
   pub cell: Option<Cell>,
   /// `allow-passthrough` for vpdf's pane; None before tmux 3.3.
   pub passthrough: Option<Passthrough>,
@@ -433,13 +434,7 @@ fn caps(route: Route, replies: &[Reply]) -> Caps {
     resize: mode(2048).unwrap_or(Support::Missing),
     pointer: answered(osc(22, |body| body.split(',').next() == Some("1"))),
     drop: answered(osc(72, |body| body.starts_with("t=q"))),
-    cell: replies.iter().find_map(|reply| match reply {
-      Reply::Window(values) => match values[..] {
-        [6, height, width] => cell(width, height),
-        _ => None,
-      },
-      _ => None,
-    }),
+    cell: cell_reply(replies),
     attributes: replies.iter().find_map(|reply| match reply {
       Reply::Attributes(values) => Some(values.clone()),
       _ => None,
@@ -467,6 +462,17 @@ fn graphics(replies: &[Reply]) -> Graphics {
     Some(message) => Graphics::Error(message.clone()),
     None => Graphics::Silent,
   }
+}
+
+/// The cell size in a `CSI 16 t` answer, `CSI 6 ; height ; width t`.
+fn cell_reply(replies: &[Reply]) -> Option<Cell> {
+  replies.iter().find_map(|reply| match reply {
+    Reply::Window(values) => match values[..] {
+      [6, height, width] => cell(width, height),
+      _ => None,
+    },
+    _ => None,
+  })
 }
 
 fn cell(width: u32, height: u32) -> Option<Cell> {
@@ -530,6 +536,22 @@ pub fn probe() -> Result<&'static Caps> {
     crate::input::ask(&mut out, request, WAIT)
   })?;
   Ok(CAPS.get_or_init(|| probed))
+}
+
+/// Asks `CSI 16 t` again where the probe would without pixel sizes,
+/// as after a resize; None when it may not ask or gets no answer.
+pub fn ask_cell() -> Option<Cell> {
+  let probed = get()?;
+  if !asks_cell(probed, false) {
+    return None;
+  }
+  let replies = crate::input::ask(&mut io::stdout(), b"\x1b[16t", WAIT).ok()?;
+  cell_reply(&replies)
+}
+
+/// tmux's view now, read as `probe` reads it; None outside tmux.
+pub fn tmux_now() -> Option<Tmux> {
+  tmux(&crate::terminal::tmux_display(TMUX_FORMAT)?)
 }
 
 /// Asks the first round, then `CSI 16 t` when `asks_cell` says so;

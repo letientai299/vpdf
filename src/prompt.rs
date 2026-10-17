@@ -614,8 +614,8 @@ fn password_event(
       prompt.feed(key, &History::default())
     }
     Event::Paste(text) => prompt.paste(&text),
-    Event::Resize(_) => {
-      crate::terminal::defer_resize();
+    Event::Resize(report) => {
+      crate::terminal::defer_resize(report);
       PromptEvent::Pending
     }
     _ => PromptEvent::Pending,

@@ -11,19 +11,17 @@ use crate::tiles::encode;
 use mupdf::Colorspace;
 use std::io::Write;
 
-/// Cell height over width when the terminal does not say.
+/// Cell height over width when the terminal does not say. Kitty fits
+/// the image into its cells with the aspect ratio kept, so a wrong
+/// value only adds margins.
 const CELL_ASPECT: f32 = 2.0;
 
-/// Cell height over width from the controlling terminal's pixel size.
+/// Cell height over width, from the source the reader sizes cells by.
 fn cell_aspect() -> f32 {
-  crossterm::terminal::window_size()
-    .ok()
-    .filter(|size| size.width > 0 && size.height > 0 && size.columns > 0)
-    .map_or(CELL_ASPECT, |size| {
-      (f32::from(size.height) / f32::from(size.rows.max(1)))
-        / (f32::from(size.width) / f32::from(size.columns))
-    })
+  crate::terminal::cell()
+    .map_or(CELL_ASPECT, |cell| f32::from(cell.height) / f32::from(cell.width))
 }
+
 /// Rendered pixels per cell column; Kitty scales to the real cell.
 const PIXELS: f32 = 20.0;
 

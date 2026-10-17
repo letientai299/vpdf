@@ -221,6 +221,14 @@ impl Reader {
   }
 }
 
+/// Whether a resize waits in the queue, read without taking it.
+pub fn resizing() -> bool {
+  let reader = READER.lock().unwrap_or_else(PoisonError::into_inner);
+  reader.as_ref().is_some_and(|reader| {
+    reader.events.iter().any(|event| matches!(event, Event::Resize(_)))
+  })
+}
+
 /// Forgets DA1 answers still owed; another program that takes the
 /// terminal reads them.
 pub fn forget_answers() {
