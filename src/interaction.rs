@@ -7,7 +7,7 @@ use crate::panel::Panel;
 use crate::pointer::{Hit, Pixel, Region, Route};
 use crate::reader::{Location, SelectionKind};
 use crate::text::{Bounds, PageId, Position};
-use crossterm::event::{MouseButton, MouseEventKind};
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
 impl App {
   pub fn input_owner(&self) -> InputOwner {
@@ -557,15 +557,32 @@ impl App {
       return Ok(());
     }
     match mouse.kind {
-      MouseEventKind::ScrollDown => {
-        return self.scroll(3.0 * f32::from(self.screen.cell_height));
-      }
-      MouseEventKind::ScrollUp => {
-        return self.scroll(-3.0 * f32::from(self.screen.cell_height));
-      }
+      MouseEventKind::ScrollDown
+      | MouseEventKind::ScrollUp
+      | MouseEventKind::ScrollLeft
+      | MouseEventKind::ScrollRight => self.page_wheel(mouse),
       MouseEventKind::Down(MouseButton::Left)
-      | MouseEventKind::Drag(MouseButton::Left) => {}
+      | MouseEventKind::Drag(MouseButton::Left)
+      | MouseEventKind::Up(MouseButton::Left) => self.page_left(route),
+      _ => Ok(()),
+    }
+  }
+
+  /// The wheel over the page.
+  fn page_wheel(&mut self, mouse: MouseEvent) -> Result<()> {
+    let rows = match mouse.kind {
+      MouseEventKind::ScrollDown => 3.0,
+      MouseEventKind::ScrollUp => -3.0,
       _ => return Ok(()),
+    };
+    self.scroll(rows * f32::from(self.screen.cell_height))
+  }
+
+  /// The left button on the page: presses and drags select.
+  fn page_left(&mut self, route: Route) -> Result<()> {
+    let mouse = route.mouse;
+    if matches!(mouse.kind, MouseEventKind::Up(_)) {
+      return Ok(());
     }
     self.animation = None;
     let pos = if self.text_mode {
