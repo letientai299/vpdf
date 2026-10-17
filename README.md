@@ -6,7 +6,17 @@ executable embeds MuPDF and fallback fonts. Python is not required.
 
 ## Install and run
 
-Install [mise][mise], then download the rolling `main` build:
+Install a prebuilt snapshot with [Homebrew][homebrew]:
+
+```sh
+brew install letientai299/tap/vpdf
+vpdf document.pdf
+```
+
+The tap follows successful `main` releases. Run `brew update` and
+`brew upgrade vpdf` to install a newer snapshot.
+
+With [mise][mise], download the rolling `main` build:
 
 ```sh
 mise i github:letientai299/vpdf@main
@@ -281,6 +291,7 @@ AGPL-3.0-or-later. MuPDF is linked into the executable and carries its own
 copyright notices. See [MuPDF licensing][mupdf-license]. Bundled fallback fonts
 carry their upstream licenses in the dependency source distributions.
 
+[homebrew]: https://brew.sh/
 [mise]: https://mise.jdx.dev/
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
 [ocr]: https://tesseract-ocr.github.io/
