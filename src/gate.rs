@@ -118,8 +118,13 @@ mod tests {
       client: Some("kitty(0.49.1)".into()),
       cell: None,
       passthrough: None,
+      extended_keys: true,
+      focus_events: true,
+      origin: (0, 0),
     };
+    let off = Tmux { extended_keys: false, ..tmux.clone() };
     let tmux = caps(Host::Tmux(Some(tmux)), "tmux 3.8", true);
+    let off = caps(Host::Tmux(Some(off)), "tmux 3.8", true);
     let protocol = |name: &str| Some(KeyLack::Protocol(Some(name.into())));
     let cases: [Case; 10] = [
       ("kitty", &kitty, None, true, &[]),
@@ -153,10 +158,10 @@ mod tests {
       ),
       (
         "tmux keys",
-        &tmux,
-        protocol("tmux 3.8"),
+        &off,
+        Some(KeyLack::ExtendedKeys),
         true,
-        &["tmux 3.8 lacks Kitty keyboard disambiguation"],
+        &["tmux needs `set -s extended-keys on` in tmux.conf"],
       ),
       (
         "no DA1 says so once",

@@ -33,6 +33,9 @@ fn tmux_info(client: Option<&str>) -> Tmux {
     client: client.map(str::to_owned),
     cell: Some(Cell { width: 7, height: 13 }),
     passthrough: Some(Passthrough::On),
+    extended_keys: true,
+    focus_events: true,
+    origin: (0, 0),
   }
 }
 
@@ -325,47 +328,92 @@ fn named_da1(name: &str) -> Vec<u8> {
   [&version(name), DA1].concat()
 }
 
+/// `TMUX_FORMAT` fields after the version: client, cell width and
+/// height, passthrough, extended keys, focus events, pane left and top,
+/// window offsets, status position and lines.
 #[test]
 fn tmux_reports_parse() {
+  let kitty = Some("kitty(0.49.1)".to_owned());
   let cases = [
     (
-      "3.8\tkitty(0.49.1)\t7\t13\ton\n",
+      "3.8\tkitty(0.49.1)\t7\t13\ton\ton\t1\t0\t0\t\t\tbottom\ton\n",
       Some(Tmux {
         version: vec![3, 8],
-        client: Some("kitty(0.49.1)".into()),
+        client: kitty.clone(),
         cell: Some(Cell { width: 7, height: 13 }),
         passthrough: Some(Passthrough::On),
+        extended_keys: true,
+        focus_events: true,
+        origin: (0, 0),
+      }),
+    ),
+    // tmux 3.8 with an empty config, in the right pane below a 9-row
+    // one, the status line on top.
+    (
+      "3.8\tkitty(0.49.1)\t7\t13\toff\toff\t0\t41\t9\t\t\ttop\ton\n",
+      Some(Tmux {
+        version: vec![3, 8],
+        client: kitty.clone(),
+        cell: Some(Cell { width: 7, height: 13 }),
+        passthrough: Some(Passthrough::Off),
+        extended_keys: false,
+        focus_events: false,
+        origin: (41, 10),
+      }),
+    ),
+    // A window larger than its client, panned right 20 and down 6, and
+    // two status lines on top.
+    (
+      "3.8\tkitty(0.49.1)\t7\t13\tall\talways\t1\t41\t9\t20\t6\ttop\t2",
+      Some(Tmux {
+        version: vec![3, 8],
+        client: kitty.clone(),
+        cell: Some(Cell { width: 7, height: 13 }),
+        passthrough: Some(Passthrough::All),
+        extended_keys: true,
+        focus_events: true,
+        origin: (21, 5),
       }),
     ),
     // No client attached, and tmux before 3.3 without the option.
     (
-      "3.2a\t\t\t\t\n",
+      "3.2a\t\t\t\t\toff\t0\t0\t0\t\t\tbottom\toff\n",
       Some(Tmux {
         version: vec![3, 2],
         client: None,
         cell: None,
         passthrough: None,
+        extended_keys: false,
+        focus_events: false,
+        origin: (0, 0),
       }),
     ),
     (
-      "next-3.9\tWezTerm 20240203\t0\t0\tall",
+      "next-3.9\tWezTerm 20240203\t0\t0\tall\ton\t1\t5\t3\t9\t9\ttop\toff",
       Some(Tmux {
         version: vec![3, 9],
         client: Some("WezTerm 20240203".into()),
         cell: None,
         passthrough: Some(Passthrough::All),
+        extended_keys: true,
+        focus_events: true,
+        origin: (0, 0),
       }),
     ),
     (
-      "openbsd-7.8\tkitty(0.49.1)\t7\t13\toff",
+      "openbsd-7.8\tkitty(0.49.1)\t7\t13\toff\ton\t1\t0\t0\t\t\tbottom\ton",
       Some(Tmux {
         version: vec![],
-        client: Some("kitty(0.49.1)".into()),
+        client: kitty,
         cell: Some(Cell { width: 7, height: 13 }),
         passthrough: Some(Passthrough::Off),
+        extended_keys: true,
+        focus_events: true,
+        origin: (0, 0),
       }),
     ),
-    ("\t\t\t\t\n", None),
+    ("\t\t\t\t\t\t\t\t\t\t\t\t\n", None),
+    ("3.8\tkitty(0.49.1)\t7\t13\ton\n", None),
     ("3.8 kitty 7 13 on\n", None),
     ("", None),
   ];
@@ -376,7 +424,8 @@ fn tmux_reports_parse() {
 
 #[test]
 fn screen_wins_over_tmux() {
-  let tmux = || tmux("3.8\tkitty(0.49.1)\t7\t13\toff");
+  let tmux =
+    || tmux("3.8\tkitty(0.49.1)\t7\t13\toff\ton\t1\t0\t0\t\t\tbottom\ton");
   let cases = [
     (&[][..], Route::Direct),
     (&["TMUX"][..], Route::Tmux(tmux())),
@@ -598,7 +647,7 @@ fn info_under_tmux() {
   for (xtversion, version, passthrough, release, setting) in cases {
     let tmux =
       Tmux { version, passthrough, ..tmux_info(Some("kitty(0.49.1)")) };
-    let line = format!("tmux passthrough at start: {setting}");
+    let line = format!("tmux passthrough: {setting}");
     let present = [
       "Profile: Kitty graphics",
       &format!("XTVERSION: {xtversion}"),
@@ -606,6 +655,8 @@ fn info_under_tmux() {
       "tmux client: kitty(0.49.1)",
       "tmux cell: 7x13 px",
       &line,
+      "tmux extended keys: on",
+      "tmux focus events: on",
       "Kitty keyboard: no",
     ];
     let caps = caps(Route::Tmux(Some(tmux)), &replies(&bytes(xtversion)));
@@ -622,6 +673,70 @@ fn info_under_tmux() {
   let present =
     ["Profile: unsupported (Cannot query tmux)", "tmux: cannot query"];
   shows("tmux failed", &failed, &present, &["tmux passthrough"]);
+}
+
+#[test]
+fn info_names_what_vpdf_set() {
+  let tmux = |passthrough, version| Tmux {
+    version,
+    passthrough,
+    ..tmux_info(Some("kitty(0.49.1)"))
+  };
+  let cases = [
+    (Some(Passthrough::Off), vec![3, 8], None, "off"),
+    (
+      Some(Passthrough::Off),
+      vec![3, 8],
+      Some(Passthrough::On),
+      "off at start, vpdf set on",
+    ),
+    (
+      Some(Passthrough::On),
+      vec![3, 8],
+      Some(Passthrough::All),
+      "on at start, vpdf set all",
+    ),
+    (None, vec![3, 2], None, "on, no option before tmux 3.3"),
+  ];
+  for (start, version, set, want) in cases {
+    assert_eq!(tmux(start, version).passthrough_row(set), want, "{want}");
+  }
+}
+
+/// With focus events vpdf needs `all`, since tmux drops what a hidden
+/// pane sends under `on`, the deletes after a window switch included.
+#[test]
+fn passthrough_wanted_per_focus_events() {
+  use Passthrough::{All, Off, On};
+  let cases = [
+    (Some(Off), true, Some(All)),
+    (Some(On), true, Some(All)),
+    (Some(All), true, None),
+    (Some(Off), false, Some(On)),
+    (Some(On), false, None),
+    (Some(All), false, None),
+    (None, true, None),
+  ];
+  for (passthrough, focus_events, want) in cases {
+    let tmux = Tmux { passthrough, focus_events, ..tmux_info(None) };
+    assert_eq!(tmux.wanted(), want, "{passthrough:?} {focus_events}");
+  }
+}
+
+/// tmux asks its client for modifyOtherKeys, which kitty ignores.
+#[test]
+fn kitty_under_tmux_merges_ctrl_i() {
+  let tmux = [&version("tmux 3.8"), DA1].concat();
+  let cases = [
+    (tmux_with(Some("kitty(0.49.1)")), &tmux, true),
+    (tmux_with(Some("WezTerm 20240203-110809-5046fc22")), &tmux, false),
+    (tmux_with(None), &tmux, false),
+    (Route::Direct, &[&version("kitty(0.49.1)"), OK, DA1].concat(), false),
+  ];
+  for (route, bytes, want) in cases {
+    let caps = caps(route.clone(), &replies(bytes));
+    assert_eq!(caps.merges_ctrl_i(), want, "{route:?}");
+  }
 }
 
 /// Keyboard support comes from its own answers, never from graphics:
@@ -709,6 +824,11 @@ fn keys_need_disambiguation_enabled() {
       "Kitty keyboard disambiguation refused, flags 4",
     ),
     (KeyLack::Refused(None), "Terminal did not confirm Kitty keyboard flags"),
+    (
+      KeyLack::ExtendedKeys,
+      "tmux needs `set -s extended-keys on` in tmux.conf",
+    ),
+    (KeyLack::TmuxRelease, "tmux before 3.2 lacks extended keys"),
   ];
   for (lack, want) in messages {
     assert_eq!(lack.to_string(), want);
@@ -722,16 +842,19 @@ type Negotiation<'a> =
 /// The push and its readback go out in one round, and only where the
 /// probe found the protocol. Rounds without disambiguation, as when a
 /// child program left its answers unread, repeat the readback up to
-/// `READBACKS` times; the last flags win.
+/// `READBACKS` times; the last flags win. tmux never answers `CSI ? u`:
+/// with `extended-keys` it gets modifyOtherKeys mode 2 instead, and
+/// without, nothing.
 #[test]
 fn negotiate_pushes_then_reads_back() -> Result<()> {
   let kitty = [&version("kitty(0.49.1)"), OK, b"\x1b[?0u", DA1].concat();
   let tmux = [&version("tmux 3.8"), DA1].concat();
   let (on, off) = (b"\x1b[?5u".as_slice(), b"\x1b[?4u".as_slice());
   let refused = Some(KeyLack::Refused(Some(ALTERNATE_KEYS)));
-  let tmux_lack = Some(KeyLack::Protocol(Some("tmux 3.8".into())));
   let direct = || Route::Direct;
-  let cases: [Negotiation; 8] = [
+  let plain = Tmux { extended_keys: false, ..tmux_info(None) };
+  let old = Tmux { version: vec![3, 1], ..plain.clone() };
+  let cases: [Negotiation; 11] = [
     ("accepted", direct(), &kitty, &[on], None),
     ("refused", direct(), &kitty, &[off, off, off], refused.clone()),
     ("refused, then silent", direct(), &kitty, &[off, b"", b""], refused),
@@ -745,9 +868,26 @@ fn negotiate_pushes_then_reads_back() -> Result<()> {
     ("stale DA1", direct(), &kitty, &[b"", on], None),
     ("stale flags first", direct(), &kitty, &[b"\x1b[?0u\x1b[?5u"], None),
     ("stale flags round", direct(), &kitty, &[b"\x1b[?0u", b"", on], None),
-    ("tmux", tmux_with(Some("kitty(0.49.1)")), &tmux, &[], tmux_lack),
+    ("tmux", tmux_with(Some("kitty(0.49.1)")), &tmux, &[b""], None),
+    (
+      "tmux, extended-keys off",
+      Route::Tmux(Some(plain)),
+      &tmux,
+      &[],
+      Some(KeyLack::ExtendedKeys),
+    ),
+    (
+      "tmux 3.1",
+      Route::Tmux(Some(old)),
+      &tmux,
+      &[],
+      Some(KeyLack::TmuxRelease),
+    ),
+    // `Lack::Tmux` stops the start alone.
+    ("tmux failed", Route::Tmux(None), &tmux, &[], None),
   ];
   for (label, route, probed, readbacks, want) in cases {
+    let tmux = matches!(route, Route::Tmux(Some(_)));
     let caps = caps(route, &replies(probed));
     let mut asked = Vec::new();
     let lack = caps.negotiate(|request| {
@@ -757,8 +897,9 @@ fn negotiate_pushes_then_reads_back() -> Result<()> {
     assert_eq!(lack, want, "{label}");
     assert_eq!(asked.len(), readbacks.len(), "{label}");
     let mut requests = asked.iter();
+    let push: &[u8] = if tmux { MODIFY_OTHER_KEYS } else { b"\x1b[>5u\x1b[?u" };
     if let Some(first) = requests.next() {
-      assert_eq!(first, b"\x1b[>5u\x1b[?u", "{label}");
+      assert_eq!(first, push, "{label}");
     }
     assert!(requests.all(|request| request == b"\x1b[?u"), "{label}");
   }

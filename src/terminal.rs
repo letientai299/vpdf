@@ -6,9 +6,10 @@ use crate::layout::Screen;
 use anyhow::Context;
 use crossterm::terminal::WindowSize;
 use crossterm::{cursor, event, execute, terminal};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock, PoisonError};
+use std::sync::{Mutex, Once, PoisonError};
+use std::time::{Duration, Instant};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub struct Terminal;
@@ -32,8 +33,24 @@ static LOST: AtomicBool = AtomicBool::new(false);
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Set while the reader's Kitty keyboard flags sit on the terminal's
-/// stack, so suspend pops exactly what resume pushed.
+/// stack, or under tmux its modifyOtherKeys mode, so suspend undoes
+/// exactly what resume set.
 static PUSHED: AtomicBool = AtomicBool::new(false);
+
+/// Set while tmux sends the pane focus events, mode 1004, by which the
+/// session hides placements tmux would leave over another window.
+static FOCUS: AtomicBool = AtomicBool::new(false);
+
+/// Lines the status line shows once, such as tmux settings vpdf changed
+/// or lacks.
+static NOTICES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// The next line the status line should say once; None when nothing
+/// waits.
+pub fn notice() -> Option<String> {
+  let mut notices = NOTICES.lock().unwrap_or_else(PoisonError::into_inner);
+  (!notices.is_empty()).then(|| notices.remove(0))
+}
 
 /// Whether images need uploading again since the last call.
 pub fn images_lost() -> bool {
@@ -81,25 +98,71 @@ pub fn resume() -> Result<()> {
   // Legacy bytes merge Ctrl-i with Tab and make Esc a prefix, so no
   // fallback. Input fails from now on, even where a caller of a resume
   // after a child program shows the error and goes on.
-  let Some(lack) = lack else {
-    crate::input::set_keyboard(Keyboard::Disambiguated);
-    return Ok(());
-  };
-  crate::input::set_keyboard(Keyboard::Failed(lack.clone()));
-  Err(lack.into())
+  if let Some(lack) = lack {
+    crate::input::set_keyboard(Keyboard::Failed(lack.clone()));
+    return Err(lack.into());
+  }
+  match &caps.host {
+    Host::Tmux(Some(tmux)) => tmux_setup(caps, tmux),
+    _ => {
+      crate::input::set_keyboard(Keyboard::Disambiguated);
+      Ok(())
+    }
+  }
 }
 
-/// Hands the terminal to a child program; images stay cached.
+/// Under tmux: keeps the lone-ESC wait, since extended keys leave Esc a
+/// lone byte; asks for focus events where tmux sends them; and on the
+/// first call sets passthrough and queues the notices.
+fn tmux_setup(caps: &Caps, tmux: &crate::caps::Tmux) -> Result<()> {
+  static NOTED: Once = Once::new();
+  crate::input::set_keyboard(Keyboard::Legacy);
+  if tmux.focus_events {
+    FOCUS.store(true, Ordering::Relaxed);
+    io::stdout().write_all(b"\x1b[?1004h")?;
+  }
+  NOTED.call_once(|| {
+    let notices = tmux_notices(caps, crate::caps::allow_passthrough());
+    *NOTICES.lock().unwrap_or_else(PoisonError::into_inner) = notices;
+  });
+  Ok(())
+}
+
+/// What the status line says once under tmux: `passthrough`, the
+/// setting vpdf changed or could not, then what the setup lacks.
+fn tmux_notices(caps: &Caps, passthrough: Option<String>) -> Vec<String> {
+  let mut notices = Vec::from_iter(passthrough);
+  if matches!(&caps.host, Host::Tmux(Some(tmux)) if !tmux.focus_events) {
+    notices
+      .push("tmux focus-events off: images outlast window switches".into());
+  }
+  if caps.merges_ctrl_i() {
+    notices.push("Ctrl-i is Tab under tmux in Kitty".into());
+  }
+  notices
+}
+
+/// Hands the terminal to a child program; images stay cached, except
+/// under tmux, whose alternate screen is its own: the terminal would
+/// keep showing them over the child. Resume uploads them again.
 pub fn suspend() -> Result<()> {
   // Leaving the alternate screen twice moves the cursor back.
   if !ACTIVE.swap(false, Ordering::SeqCst) {
     return Ok(());
   }
+  if tmux() {
+    crate::graphics::release(&mut io::stdout())?;
+  }
   // Before the pop, so a legacy lone ESC is the Esc key again.
   crate::input::release();
   resize_reports(false)?;
   if PUSHED.swap(false, Ordering::SeqCst) {
-    io::stdout().write_all(b"\x1b[<u")?;
+    // tmux takes modifyOtherKeys back to its default; others pop flags.
+    let undo: &[u8] = if tmux() { b"\x1b[>4m" } else { b"\x1b[<u" };
+    io::stdout().write_all(undo)?;
+  }
+  if FOCUS.swap(false, Ordering::Relaxed) {
+    io::stdout().write_all(b"\x1b[?1004l")?;
   }
   execute!(
     io::stdout(),
@@ -126,11 +189,16 @@ pub fn restore() {
     return;
   }
   let mut output = io::stdout();
-  let _ = output.write_all(b"\x1b[?2026l\x1b[0m\x1b[23;0t");
-  let _ = crate::graphics::release(&mut output);
+  let _ = write!(output, "{}\x1b[0m\x1b[23;0t", frame_end());
+  // Under tmux suspend deletes them.
+  if !tmux() {
+    let _ = crate::graphics::release(&mut output);
+  }
   let _ = output.flush();
   crate::spool::remove();
   let _ = suspend();
+  // After suspend's deletes, which a hidden pane sends only with `all`.
+  crate::caps::reset_passthrough();
 }
 
 /// Restores the screen before a panic on the input thread prints, so the
@@ -226,15 +294,17 @@ fn pick(
   window.or(told).or(caps.and_then(|caps| caps.cell))
 }
 
-fn metrics(window: &WindowSize) -> Option<Cell> {
-  let client = || crate::caps::tmux_now()?.cell;
+fn metrics(
+  window: &WindowSize,
+  client: impl FnOnce() -> Option<Cell>,
+) -> Option<Cell> {
   pick(window_cell(window), told(), crate::caps::get(), tmux(), client)
 }
 
 /// The cell size in pixels, without asking the terminal; None when
 /// nothing reports it.
 pub fn cell() -> Option<Cell> {
-  metrics(&terminal::window_size().ok()?)
+  metrics(&terminal::window_size().ok()?, || crate::caps::tmux_now()?.cell)
 }
 
 /// The screen as TIOCGWINSZ and earlier answers describe it; an error
@@ -288,20 +358,40 @@ pub fn remeasure() -> Result<Screen> {
 }
 
 fn screen(window: &WindowSize) -> Result<Screen> {
-  let cell = metrics(window).context(NO_CELL)?;
+  // One `tmux display` gives the pane's origin and the client's cell.
+  let now = if tmux() { crate::caps::tmux_now() } else { None };
+  let client = now.as_ref().and_then(|tmux| tmux.cell);
+  let cell = metrics(window, || client).context(NO_CELL)?;
   Ok(Screen {
     columns: window.columns.max(1),
     rows: window.rows.max(2),
-    origin: pane_origin().unwrap_or_default(),
+    origin: now.map_or_default(|tmux| tmux.origin),
     cell_width: cell.width,
     cell_height: cell.height,
   })
 }
 
-/// Whether output passes through tmux; read once per process.
+/// Whether output passes through tmux, as the probe routes it.
 pub fn tmux() -> bool {
-  static TMUX: OnceLock<bool> = OnceLock::new();
-  *TMUX.get_or_init(|| std::env::var_os("TMUX").is_some())
+  crate::caps::under_tmux()
+}
+
+/// Starts a frame the terminal shows whole (mode 2026), except under
+/// tmux before 3.8: it sends images through at once, ahead of the held
+/// text, and 3.7b and 3.7c drop the next image after the frame ends.
+pub fn frame_start() -> &'static str {
+  if synced(crate::caps::get()) { "\x1b[?2026h" } else { "" }
+}
+
+/// Ends a frame `frame_start` began.
+pub fn frame_end() -> &'static str {
+  if synced(crate::caps::get()) { "\x1b[?2026l" } else { "" }
+}
+
+fn synced(caps: Option<&Caps>) -> bool {
+  caps.is_none_or(|caps| {
+    !matches!(&caps.host, Host::Tmux(Some(tmux)) if tmux.before(&[3, 8]))
+  })
 }
 
 pub fn graphics(
@@ -423,36 +513,91 @@ pub fn placement(
 /// `format` expanded by tmux for vpdf's pane; None outside tmux or
 /// when tmux fails.
 pub fn tmux_display(format: &str) -> Option<String> {
-  let pane = std::env::var_os("TMUX_PANE")?;
-  let output = std::process::Command::new("tmux")
-    .args(["display-message", "-p", "-t"])
-    .arg(pane)
-    .arg(format)
-    .stdin(std::process::Stdio::null())
-    .stderr(std::process::Stdio::null())
-    .output()
-    .ok()?;
-  if !output.status.success() {
-    return None;
-  }
-  String::from_utf8(output.stdout).ok()
+  tmux_pane(&["display-message", "-p"], &[format])
 }
 
-fn pane_origin() -> Option<(u16, u16)> {
-  let text =
-    tmux_display("#{pane_left} #{pane_top} #{status-position} #{status}")?;
-  let mut fields = text.split_whitespace();
-  let column: u16 = fields.next()?.parse().ok()?;
-  let mut row: u16 = fields.next()?.parse().ok()?;
-  if fields.next()? == "top" {
-    let rows = match fields.next()? {
-      "on" => 1,
-      "off" => 0,
-      value => value.parse().ok()?,
-    };
-    row = row.saturating_add(rows);
-  }
-  Some((column, row))
+/// Sets tmux option `name` for vpdf's pane; whether tmux took it.
+pub fn tmux_set(name: &str, value: &str) -> bool {
+  tmux_pane(&["set-option", "-p"], &[name, value]).is_some()
+}
+
+/// What tmux shows of vpdf's pane.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum View {
+  /// No client shows its window, or another pane is zoomed.
+  Hidden,
+  /// Shown, while another pane of its window takes keys.
+  Inactive,
+  /// The pane that takes keys; whether the client has the OS focus.
+  Active { focused: bool },
+}
+
+/// `View` as tmux evaluates it: shown when a client's current window is
+/// the pane's and no other pane is zoomed ([formats][formats]).
+///
+/// [formats]: https://github.com/tmux/tmux/blob/3.8/format.c#L790-L820
+const VIEW: &str = "#{?#{&&:#{window_active_clients},\
+  #{||:#{pane_active},#{?window_zoomed_flag,0,1}}},\
+  #{?pane_active,#{?#{m:*focused*,#{client_flags}},focused,away},inactive},\
+  hidden}";
+
+/// What tmux shows of vpdf's pane now; None outside tmux or when tmux
+/// fails.
+pub fn pane_view() -> Option<View> {
+  view(tmux_display(VIEW)?.trim())
+}
+
+fn view(word: &str) -> Option<View> {
+  Some(match word {
+    "hidden" => View::Hidden,
+    "inactive" => View::Inactive,
+    "focused" => View::Active { focused: true },
+    "away" => View::Active { focused: false },
+    _ => return None,
+  })
+}
+
+/// Whether tmux sends vpdf focus events, mode 1004.
+pub fn focus_reports() -> bool {
+  FOCUS.load(Ordering::Relaxed)
+}
+
+/// How long a `tmux` command may take; a `tmux` that does not match the
+/// server can hang.
+const TMUX_WAIT: Duration = Duration::from_secs(1);
+
+/// The output of tmux `command` aimed at vpdf's pane, then `args`; None
+/// outside tmux, or when tmux fails or takes over `TMUX_WAIT`.
+fn tmux_pane(command: &[&str], args: &[&str]) -> Option<String> {
+  let pane = std::env::var_os("TMUX_PANE")?;
+  let mut child = std::process::Command::new("tmux")
+    .args(command)
+    .arg("-t")
+    .arg(pane)
+    .args(args)
+    .stdin(std::process::Stdio::null())
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::null())
+    .spawn()
+    .ok()?;
+  let deadline = Instant::now() + TMUX_WAIT;
+  // Output fits the pipe, so the child exits before it is read.
+  let status = loop {
+    match child.try_wait() {
+      Ok(Some(status)) => break status,
+      Ok(None) if Instant::now() < deadline => {
+        std::thread::sleep(Duration::from_millis(2));
+      }
+      _ => {
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+      }
+    }
+  };
+  let mut output = String::new();
+  child.stdout.take()?.read_to_string(&mut output).ok()?;
+  status.success().then_some(output)
 }
 
 #[cfg(test)]
@@ -484,6 +629,9 @@ mod tests {
         client: None,
         cell: cell(5, 11),
         passthrough: None,
+        extended_keys: true,
+        focus_events: true,
+        origin: (0, 0),
       })),
       None,
     );
@@ -513,6 +661,89 @@ mod tests {
     {
       let got = pick(window, told, caps, tmux, || client);
       assert_eq!(got, want, "case {index}");
+    }
+  }
+
+  fn tmux_caps(version: Vec<u32>, client: &str, focus_events: bool) -> Caps {
+    use crate::caps::Tmux;
+    Caps {
+      host: Host::Tmux(Some(Tmux {
+        version,
+        client: Some(client.into()),
+        cell: None,
+        passthrough: None,
+        extended_keys: true,
+        focus_events,
+        origin: (0, 0),
+      })),
+      version: Some("tmux 3.8".into()),
+      keyboard: None,
+      sync: Support::Answered,
+      pixels: Support::Missing,
+      resize: Support::Missing,
+      pointer: Support::Missing,
+      drop: Support::Missing,
+      cell: None,
+      attributes: Some(vec![1, 2, 4]),
+    }
+  }
+
+  /// tmux 3.7 sends passthrough ahead of text it holds in a frame, and
+  /// 3.7b and 3.7c drop the next image after one ends.
+  #[test]
+  fn no_frames_under_tmux_before_3_8() {
+    let tmux = |version| tmux_caps(version, "kitty(0.49.1)", true);
+    let direct =
+      Caps { host: Host::Direct(crate::caps::Graphics::Ok), ..tmux(vec![]) };
+    let cases = [
+      (None, true),
+      (Some(direct), true),
+      (Some(tmux(vec![3, 8])), true),
+      (Some(tmux(vec![3, 9])), true),
+      (Some(tmux(vec![])), true),
+      (Some(tmux(vec![3, 7])), false),
+      (Some(tmux(vec![3, 3])), false),
+    ];
+    for (caps, want) in cases {
+      assert_eq!(synced(caps.as_ref()), want, "{caps:?}");
+    }
+  }
+
+  #[test]
+  fn tmux_notices_say_what_lacks() {
+    let set = || Some("Set tmux allow-passthrough all".to_owned());
+    let off = "tmux focus-events off: images outlast window switches";
+    let ctrl_i = "Ctrl-i is Tab under tmux in Kitty";
+    let cases = [
+      (
+        tmux_caps(vec![3, 8], "kitty(0.49.1)", true),
+        set(),
+        vec![set().unwrap(), ctrl_i.into()],
+      ),
+      (
+        tmux_caps(vec![3, 8], "kitty(0.49.1)", false),
+        None,
+        vec![off.into(), ctrl_i.into()],
+      ),
+      (tmux_caps(vec![3, 8], "WezTerm 20240203", true), None, vec![]),
+    ];
+    for (caps, passthrough, want) in cases {
+      assert_eq!(tmux_notices(&caps, passthrough), want);
+    }
+  }
+
+  #[test]
+  fn tmux_view_words() {
+    let cases = [
+      ("hidden", Some(View::Hidden)),
+      ("inactive", Some(View::Inactive)),
+      ("focused", Some(View::Active { focused: true })),
+      ("away", Some(View::Active { focused: false })),
+      ("", None),
+      ("1", None),
+    ];
+    for (word, want) in cases {
+      assert_eq!(view(word), want, "{word}");
     }
   }
 

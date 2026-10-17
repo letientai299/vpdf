@@ -14,8 +14,8 @@ Use `vpdf --help` for CLI options and subcommands, and `:help` inside the reader
 for keys and commands.
 
 The reader requires [Kitty graphics][kitty]; `--text` shows extracted text.
-The reader requires [Kitty keyboard][keyboard] disambiguation, which tmux
-lacks; see [terminal setup][setup].
+The reader requires [Kitty keyboard][keyboard] disambiguation, or tmux's
+extended keys; see [terminal setup][setup].
 
 ## Documentation
 

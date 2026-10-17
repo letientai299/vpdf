@@ -82,8 +82,9 @@ pub fn start() -> Result<()> {
 /// How keys arrive.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Keyboard {
-  /// Legacy bytes, before negotiation or while another program has the
-  /// terminal: a lone ESC is Esc after `ESC_WAIT`.
+  /// Legacy bytes, before negotiation, while another program has the
+  /// terminal, or under tmux, whose extended keys leave Esc a lone
+  /// byte: a lone ESC is Esc after `ESC_WAIT`.
   Legacy,
   /// Esc arrives as `CSI 27 u`, so a lone ESC read from now on waits
   /// for the rest of its sequence.

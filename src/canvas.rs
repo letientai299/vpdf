@@ -219,11 +219,11 @@ impl App {
 
   /// One frame with this pane alone on screen.
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
-    write!(out, "\x1b[?2026h\x1b[0m")?;
+    write!(out, "{}\x1b[0m", terminal::frame_start())?;
     self.graphics.begin(out)?;
     self.draw_pane(out)?;
     self.graphics.end(out)?;
-    write!(out, "\x1b[?2026l")?;
+    write!(out, "{}", terminal::frame_end())?;
     out.flush()?;
     Ok(())
   }

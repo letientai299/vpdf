@@ -83,6 +83,15 @@ pub struct Tmux {
   pub cell: Option<Cell>,
   /// `allow-passthrough` for vpdf's pane; None before tmux 3.3.
   pub passthrough: Option<Passthrough>,
+  /// `extended-keys` is `on` or `always`, so the pane may ask for
+  /// modifyOtherKeys and tell Ctrl chords from their legacy bytes.
+  pub extended_keys: bool,
+  /// `focus-events`: tmux tells panes when they gain or lose focus.
+  pub focus_events: bool,
+  /// The pane's top-left cell on the client at the probe: past a status
+  /// line on top, less the offset into a window larger than the
+  /// client. Screens read it fresh through `tmux_now`.
+  pub origin: (u16, u16),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -239,14 +248,9 @@ impl fmt::Display for Caps {
 }
 
 impl Tmux {
-  fn rows(&self) -> [(&'static str, String); 4] {
+  fn rows(&self) -> [(&'static str, String); 6] {
     let release = join(&self.version, ".");
-    let old = !self.version.is_empty() && self.version[..] < [3, 3][..];
-    let passthrough = match self.passthrough {
-      Some(passthrough) => passthrough.to_string(),
-      None if old => "on, no option before tmux 3.3".into(),
-      None => "unknown".into(),
-    };
+    let on = |yes| if yes { "on" } else { "off" };
     [
       (
         "tmux",
@@ -257,8 +261,72 @@ impl Tmux {
         "tmux cell",
         self.cell.map_or_else(|| "none".into(), |cell| cell.to_string()),
       ),
-      ("tmux passthrough at start", passthrough),
+      ("tmux passthrough", self.passthrough_row(PASSTHROUGH.get().copied())),
+      ("tmux extended keys", on(self.extended_keys).into()),
+      ("tmux focus events", on(self.focus_events).into()),
     ]
+  }
+
+  /// `allow-passthrough` at start, and what vpdf `set` for its pane.
+  fn passthrough_row(&self, set: Option<Passthrough>) -> String {
+    let start = match self.passthrough {
+      Some(passthrough) => passthrough.to_string(),
+      None if self.before(&[3, 3]) => "on, no option before tmux 3.3".into(),
+      None => "unknown".into(),
+    };
+    match set {
+      Some(set) => format!("{start} at start, vpdf set {set}"),
+      None => start,
+    }
+  }
+
+  /// Whether tmux's version comes before `release`; unknown releases,
+  /// such as a distribution's own, count as new.
+  pub fn before(&self, release: &[u32]) -> bool {
+    !self.version.is_empty() && self.version[..] < release[..]
+  }
+
+  /// The `allow-passthrough` vpdf's pane needs; None when it has it, or
+  /// when tmux predates the option. With focus events, `all`: `on` drops
+  /// what a hidden pane sends, so placements would outlive a window
+  /// switch.
+  fn wanted(&self) -> Option<Passthrough> {
+    let wanted =
+      if self.focus_events { Passthrough::All } else { Passthrough::On };
+    match self.passthrough? {
+      Passthrough::All => None,
+      current if current == wanted => None,
+      _ => Some(wanted),
+    }
+  }
+}
+
+/// `allow-passthrough` as vpdf set it for its pane, which `:info` shows
+/// next to the value at start.
+static PASSTHROUGH: OnceLock<Passthrough> = OnceLock::new();
+
+/// Sets `allow-passthrough` for vpdf's pane where it falls short, as
+/// `kitten icat` does; returns what the status line says about it.
+pub fn allow_passthrough() -> Option<String> {
+  let Some(Host::Tmux(Some(tmux))) = get().map(|caps| &caps.host) else {
+    return None;
+  };
+  let wanted = tmux.wanted()?;
+  let value = wanted.to_string();
+  if !crate::terminal::tmux_set("allow-passthrough", &value) {
+    return Some(format!("Cannot set tmux allow-passthrough {value}"));
+  }
+  PASSTHROUGH.set(wanted).ok()?;
+  Some(format!("Set tmux allow-passthrough {value}"))
+}
+
+/// Leaves `allow-passthrough on` where vpdf set it, as `kitten icat`
+/// does: `all` would let what runs next draw over other windows. `on`
+/// still passes the exit's deletes from a shown pane, whichever tmux
+/// takes first.
+pub fn reset_passthrough() {
+  if PASSTHROUGH.get() == Some(&Passthrough::All) {
+    crate::terminal::tmux_set("allow-passthrough", "on");
   }
 }
 
@@ -276,6 +344,9 @@ const DISAMBIGUATE: u32 = 1;
 
 const ALTERNATE_KEYS: u32 = 4;
 
+/// xterm modifyOtherKeys mode 2, which tmux turns into extended keys.
+const MODIFY_OTHER_KEYS: &[u8] = b"\x1b[>4;2m";
+
 /// Rounds that read the flags back before the reader gives up; a
 /// refusing terminal answers each at once.
 const READBACKS: usize = 3;
@@ -291,6 +362,11 @@ pub enum KeyLack {
   Protocol(Option<String>),
   /// Flags in effect after pushing `KEYBOARD`; None without an answer.
   Refused(Option<u32>),
+  /// tmux with `extended-keys off`, so Ctrl chords arrive as legacy
+  /// bytes.
+  ExtendedKeys,
+  /// tmux before 3.2, which has no extended keys.
+  TmuxRelease,
 }
 
 impl fmt::Display for KeyLack {
@@ -313,6 +389,10 @@ impl fmt::Display for KeyLack {
       Self::Refused(None) => {
         write!(f, "Terminal did not confirm Kitty keyboard flags")
       }
+      Self::ExtendedKeys => {
+        write!(f, "tmux needs `set -s extended-keys on` in tmux.conf")
+      }
+      Self::TmuxRelease => write!(f, "tmux before 3.2 lacks extended keys"),
     }
   }
 }
@@ -328,6 +408,23 @@ impl Caps {
     &self,
     mut ask: impl FnMut(&[u8]) -> Result<Vec<Reply>>,
   ) -> Result<Option<KeyLack>> {
+    // `Lack::Tmux` already stops the start.
+    if self.host == Host::Tmux(None) {
+      return Ok(None);
+    }
+    if let Host::Tmux(Some(tmux)) = &self.host {
+      // tmux never answers `CSI ? u`; with `extended-keys` it sends Ctrl
+      // chords as `CSI 27 ; m ; k ~` or `CSI k ; m u` once asked for
+      // modifyOtherKeys mode 2, whichever `extended-keys-format` says.
+      if tmux.before(&[3, 2]) {
+        return Ok(Some(KeyLack::TmuxRelease));
+      }
+      if !tmux.extended_keys {
+        return Ok(Some(KeyLack::ExtendedKeys));
+      }
+      ask(MODIFY_OTHER_KEYS)?;
+      return Ok(None);
+    }
     if self.keyboard.is_none() {
       return Ok(self.key_lack(None));
     }
@@ -373,6 +470,12 @@ impl Caps {
       Host::Tmux(tmux) => tmux.as_ref()?.client.as_deref(),
       _ => self.version.as_deref(),
     }
+  }
+
+  /// Whether Ctrl-i reaches vpdf as Tab: tmux asks its client for
+  /// modifyOtherKeys, which Kitty ignores by design.
+  pub fn merges_ctrl_i(&self) -> bool {
+    matches!(self.host, Host::Tmux(_)) && is(self.terminal(), &["kitty"])
   }
 
   /// Whether what answered keeps a title stack (`CSI 22/23 t`), so a
@@ -619,11 +722,28 @@ fn cell(width: u32, height: u32) -> Option<Cell> {
 /// Formats `tmux display` expands for `Tmux`, tab-separated. Option
 /// names expand to the pane's value, inherited as `show -A` does.
 const TMUX_FORMAT: &str = "#{version}\t#{client_termtype}\t\
-  #{client_cell_width}\t#{client_cell_height}\t#{allow-passthrough}";
+  #{client_cell_width}\t#{client_cell_height}\t#{allow-passthrough}\t\
+  #{extended-keys}\t#{focus-events}\t#{pane_left}\t#{pane_top}\t\
+  #{window_offset_x}\t#{window_offset_y}\t#{status-position}\t#{status}";
 
 fn tmux(display: &str) -> Option<Tmux> {
   let fields: Vec<&str> = display.trim_end_matches('\n').split('\t').collect();
-  let [version, client, width, height, passthrough] = fields[..] else {
+  let [
+    version,
+    client,
+    width,
+    height,
+    passthrough,
+    extended,
+    focus,
+    left,
+    top,
+    x,
+    y,
+    position,
+    status,
+  ] = fields[..]
+  else {
     return None;
   };
   if version.is_empty() {
@@ -636,6 +756,17 @@ fn tmux(display: &str) -> Option<Tmux> {
     Vec::new()
   };
   let number = |text: &str| text.parse().unwrap_or(0);
+  let small = |text: &str| text.parse().unwrap_or(0_u16);
+  // A status line on top pushes panes down by its rows.
+  let status = match (position, status) {
+    ("top", "on") => 1,
+    ("top", rows) => small(rows),
+    _ => 0,
+  };
+  let origin = (
+    small(left).saturating_sub(small(x)),
+    small(top).saturating_sub(small(y)).saturating_add(status),
+  );
   Some(Tmux {
     version,
     client: Some(client).filter(|client| !client.is_empty()).map(str::to_owned),
@@ -643,6 +774,9 @@ fn tmux(display: &str) -> Option<Tmux> {
     passthrough: [Passthrough::Off, Passthrough::On, Passthrough::All]
       .into_iter()
       .find(|value| value.to_string() == passthrough),
+    extended_keys: matches!(extended, "on" | "always"),
+    focus_events: focus == "1",
+    origin,
   })
 }
 
@@ -682,6 +816,19 @@ pub fn ask_cell() -> Option<Cell> {
   }
   let replies = crate::input::ask(&mut io::stdout(), b"\x1b[16t", WAIT).ok()?;
   cell_reply(&replies)
+}
+
+/// Whether output goes through tmux, as `probe` routes it: GNU screen
+/// wins over tmux. Before the probe, from the environment, read once.
+pub fn under_tmux() -> bool {
+  static ENVIRONMENT: OnceLock<bool> = OnceLock::new();
+  match get() {
+    Some(caps) => matches!(caps.host, Host::Tmux(_)),
+    None => *ENVIRONMENT.get_or_init(|| {
+      let set = |name: &str| std::env::var_os(name).is_some();
+      matches!(route(set, || None), Route::Tmux(_))
+    }),
+  }
 }
 
 /// tmux's view now, read as `probe` reads it; None outside tmux.

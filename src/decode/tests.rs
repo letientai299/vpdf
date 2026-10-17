@@ -494,6 +494,36 @@ fn tab_and_ctrl_i_stay_apart() {
   assert!(!complete(chord(KeyCode::Char('i'), CTRL | ALT)));
 }
 
+/// tmux 3.8 in kitty 0.49.1 after `CSI > 4 ; 2 m`, `extended-keys on`;
+/// `\e[105;5u` was sent as raw text, since kitty ignores modifyOtherKeys
+/// and sends Ctrl-i as `\t`. Each chord also in `extended-keys-format
+/// csi-u` ([tmux source][tmux]).
+///
+/// [tmux]: https://github.com/tmux/tmux/blob/3.8/input-keys.c#L425-L473
+#[test]
+fn tmux_extended_keys_recorded() {
+  check(&[
+    (b"\x1b[27;5;111~", char('o', CTRL)),
+    (b"\x1b[27;2;9~", key(KeyCode::BackTab, SHIFT)),
+    (b"\x1b[27;5;105~", char('i', CTRL)),
+    (b"\t", key(KeyCode::Tab, NONE)),
+    (b"\x1b[27;3;120~", char('x', ALT)),
+    (b"\x1b[27;5;13~", key(KeyCode::Enter, CTRL)),
+    (b"\x1b[27;6;86~", char('V', CTRL | SHIFT)),
+    (b"\x1b[111;5u", char('o', CTRL)),
+    (b"\x1b[9;2u", key(KeyCode::BackTab, SHIFT)),
+    (b"\x1b[86;6u", char('V', CTRL | SHIFT)),
+  ]);
+  // Not a key: no code, or the tilde key 27 alone.
+  assert_eq!(decode(&[b"\x1b[27;5~\x1b[27~"]), []);
+  let action = |bytes: &[u8]| {
+    let Event::Key(key) = decode(&[bytes])[0] else { panic!("not a key") };
+    Keys::default().feed(key).map(|input| input.action)
+  };
+  assert_eq!(action(b"\x1b[27;5;105~"), Some(Action::History(true)));
+  assert_eq!(action(b"\x1b[27;5;111~"), Some(Action::History(false)));
+}
+
 #[test]
 fn ctrl_shift_letters_keep_legacy_bindings() {
   // kitty with flag 4 sends Ctrl-Shift-v as `118:86;6`.

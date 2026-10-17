@@ -11,7 +11,7 @@ use crate::pointer::{self, Pane, Pointer};
 use crate::prompt::History;
 use crate::split::{Axis, Node, Rect, neighbor};
 use crate::state::{Mark, State};
-use crate::terminal::{self, At};
+use crate::terminal::{self, At, View};
 use crate::text::PageId;
 use crate::theme;
 use crate::trace::Drawable;
@@ -93,6 +93,47 @@ pub struct Session {
   pointer: Pointer,
   /// Set while a resize could not measure cells.
   unmeasured: Option<Unmeasured>,
+  sight: Sight,
+}
+
+/// What the reader knows of tmux showing its pane. tmux sends focus
+/// events only to a window's active pane, so an unfocused pane asks.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Sight {
+  /// Takes keys, or tmux is not asked: a focus event says what changes.
+  #[default]
+  Focused,
+  /// Shown without keys; the idle tick asks tmux whether it still is.
+  Unfocused,
+  /// tmux shows something else over it, such as another window or a
+  /// popup: frames wait, since tmux leaves placements over it.
+  Hidden,
+}
+
+/// Why the reader asks tmux how it shows the pane.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Cause {
+  Start,
+  FocusOut,
+  Tick,
+}
+
+/// The sight after `cause`, given tmux's `view` of the pane. A focus-out
+/// that leaves the pane active with a focused client is a popup or
+/// menu. Without the OS focus the client tells nothing of a window
+/// switch another client or a script makes, so the pane asks.
+fn sight(now: Sight, cause: Cause, view: View) -> Sight {
+  match (cause, view) {
+    (_, View::Hidden) | (Cause::FocusOut, View::Active { focused: true }) => {
+      Sight::Hidden
+    }
+    (_, View::Inactive)
+    | (Cause::Start | Cause::FocusOut, View::Active { focused: false }) => {
+      Sight::Unfocused
+    }
+    (Cause::Start, View::Active { focused: true }) => Sight::Focused,
+    (Cause::Tick, View::Active { .. }) => now,
+  }
 }
 
 /// A resize without pixel metrics keeps the old layout, whose status
@@ -140,6 +181,7 @@ impl Session {
       frame: crate::pace::FRAME,
       pointer: Pointer::default(),
       unmeasured: None,
+      sight: Sight::Focused,
     }
   }
 
@@ -650,6 +692,70 @@ impl Session {
     }
   }
 
+  /// Deletes every placement once tmux shows something else, which they
+  /// would cover, and holds frames until tmux shows the pane again.
+  pub fn hide(&mut self, out: &mut impl Write) -> Result<()> {
+    self.sight = Sight::Hidden;
+    if self.tabs.is_empty() {
+      return Ok(());
+    }
+    let graphics = &mut self.app().graphics;
+    graphics.begin(out)?;
+    graphics.end(out)?;
+    out.flush()?;
+    Ok(())
+  }
+
+  /// Shows the next tmux notice once the status line is free; whether
+  /// it did.
+  fn notify(&mut self) -> bool {
+    let reader = &mut self.app().reader;
+    if !reader.message.is_empty() {
+      return false;
+    }
+    let Some(notice) = terminal::notice() else { return false };
+    reader.message = notice;
+    true
+  }
+
+  /// Asks tmux how it shows the pane, for `cause`; whether the reader
+  /// shows again and needs a frame.
+  fn look(&mut self, cause: Cause, out: &mut impl Write) -> Result<bool> {
+    match terminal::pane_view() {
+      Some(view) => self.turn(sight(self.sight, cause, view), out),
+      // The tick asks again.
+      None if cause == Cause::Tick => Ok(false),
+      None => self.turn(Sight::Unfocused, out),
+    }
+  }
+
+  /// Moves to `sight`, hiding on the way in; whether the reader shows
+  /// again and needs a frame.
+  fn turn(&mut self, sight: Sight, out: &mut impl Write) -> Result<bool> {
+    let was = self.sight;
+    if sight == was {
+      return Ok(false);
+    }
+    if sight == Sight::Hidden {
+      self.hide(out)?;
+      return Ok(false);
+    }
+    self.sight = sight;
+    Ok(was == Sight::Hidden)
+  }
+
+  /// What `act` proves of tmux showing the pane: only a shown, active
+  /// pane gets keys, and only a shown one the pointer. Covers focus
+  /// events lost while a prompt, the start screen, or a child read input.
+  fn shown_by(&mut self, act: &Act, out: &mut impl Write) -> Result<()> {
+    let sight = match act {
+      Act::Key(_) => Sight::Focused,
+      Act::Mouse(_) if self.sight == Sight::Hidden => Sight::Unfocused,
+      _ => return Ok(()),
+    };
+    self.turn(sight, out).map(drop)
+  }
+
   /// Uploads image `id` again after the terminal evicted it.
   fn missing(&mut self, id: u32) {
     if !self.app().graphics.missing(id) {
@@ -661,7 +767,9 @@ impl Session {
     }
   }
 
-  /// Drops cached images after another program had the screen.
+  /// Drops cached images after another program had the screen, which
+  /// also took the focus events tmux sent meanwhile; asks tmux anew,
+  /// since it sends no focus state when asked for focus events.
   fn images_lost(&mut self, out: &mut impl Write) -> Result<bool> {
     if !terminal::images_lost() {
       return Ok(false);
@@ -671,6 +779,9 @@ impl Session {
     for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
       app.requested.clear();
       app.blank = false;
+    }
+    if terminal::focus_reports() {
+      self.look(Cause::Start, out)?;
     }
     Ok(true)
   }
@@ -734,7 +845,7 @@ impl Drawable for Session {
   /// Unfocused panes first, so the focused pane's prompt places the
   /// terminal cursor last.
   fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()> {
-    write!(out, "\x1b[?2026h\x1b[0m")?;
+    write!(out, "{}\x1b[0m", terminal::frame_start())?;
     self.app().graphics.begin(out)?;
     let area = self.screen.map_or_default(full);
     let unmeasured = self.unmeasured.clone();
@@ -759,7 +870,7 @@ impl Drawable for Session {
       unmeasured.draw(out)?;
     }
     tab.panes[focus].graphics.end(out)?;
-    write!(out, "\x1b[?2026l")?;
+    write!(out, "{}", terminal::frame_end())?;
     Ok(())
   }
 
@@ -896,18 +1007,21 @@ enum Act {
   Mouse(MouseEvent),
   /// The terminal no longer holds this image; not typing.
   Missing(u32),
+  /// Mode 1004, which only tmux is asked for; true when the pane gains
+  /// focus. Not typing.
+  Focus(bool),
 }
 
 impl Act {
   /// Whether the user caused it, as opposed to a terminal reply.
   fn typed(&self) -> bool {
-    !matches!(self, Self::Missing(_))
+    !matches!(self, Self::Missing(_) | Self::Focus(_))
   }
 }
 
 /// What `event` asks of the session; None for input it ignores yet,
-/// which must not count as typing: other replies, focus, the pointer
-/// leaving, buttons past 7, and key releases.
+/// which must not count as typing: other replies, the pointer leaving,
+/// buttons past 7, and key releases.
 fn act(event: Event) -> Option<Act> {
   match event {
     Event::Key(key) if key.kind != KeyEventKind::Release => Some(Act::Key(key)),
@@ -919,12 +1033,14 @@ fn act(event: Event) -> Option<Act> {
     {
       Some(Act::Missing(id))
     }
-    Event::Key(_) | Event::Focus(_) | Event::Reply(_) | Event::Leave => None,
+    Event::Focus(gained) => Some(Act::Focus(gained)),
+    Event::Key(_) | Event::Reply(_) | Event::Leave => None,
   }
 }
 
 /// Handles one input; errors show in the focused pane.
-fn input(session: &mut Session, act: Act) -> Result<()> {
+fn input(session: &mut Session, act: Act, out: &mut impl Write) -> Result<()> {
+  session.shown_by(&act, out)?;
   match act {
     Act::Key(key) => {
       let tab = &mut session.tabs[session.active];
@@ -949,6 +1065,8 @@ fn input(session: &mut Session, act: Act) -> Result<()> {
       session.missing(id);
       Ok(())
     }
+    Act::Focus(true) => session.turn(Sight::Focused, out).map(drop),
+    Act::Focus(false) => session.look(Cause::FocusOut, out).map(drop),
   }
 }
 
@@ -984,8 +1102,10 @@ fn run(session: &mut Session) -> Result<()> {
     }
     dirty |= updates(session, &mut out)?;
     session.app().clipboard(&mut out)?;
+    dirty |= session.notify();
     let now = Instant::now();
-    if pacer.ready(now) {
+    let shown = session.sight != Sight::Hidden;
+    if pacer.ready(now) && shown {
       for app in &mut session.tab().panes {
         dirty |= app.animate();
       }
@@ -1003,7 +1123,8 @@ fn run(session: &mut Session) -> Result<()> {
     }
     let animating =
       session.tab().panes.iter().any(|app| app.animation.is_some());
-    let pending = dirty || animating;
+    // A hidden reader draws nothing until tmux shows it again.
+    let pending = (dirty || animating) && shown;
     let now = Instant::now();
     let changed = touched.max(drawn) > checked;
     let wait = if pending {
@@ -1018,6 +1139,9 @@ fn run(session: &mut Session) -> Result<()> {
         watched = Instant::now();
       }
       dirty |= watch(session, force);
+      if force && session.sight != Sight::Focused {
+        dirty |= session.look(Cause::Tick, &mut out)?;
+      }
       // Positions reach memory 250 ms after a change and disk after a
       // 5 s pause or once a minute; exits and hangups write the rest.
       if checked.elapsed() >= CHECK {
@@ -1044,7 +1168,7 @@ fn run(session: &mut Session) -> Result<()> {
       touched = Instant::now();
       trace.input();
     }
-    let result = input(session, act).and_then(|()| session.settle());
+    let result = input(session, act, &mut out).and_then(|()| session.settle());
     report(session, result);
     dirty = true;
   }
@@ -1140,6 +1264,90 @@ mod tests {
     }
   }
 
+  /// tmux tells only its active pane about focus; the rest is asked.
+  #[test]
+  fn sight_follows_tmux() {
+    use Cause::{FocusOut, Start, Tick};
+    use Sight::{Focused, Hidden, Unfocused};
+    let active = View::Active { focused: true };
+    let away = View::Active { focused: false };
+    // (sight, cause, view, want)
+    let cases = [
+      (Focused, Start, active, Focused),
+      (Focused, Start, View::Inactive, Unfocused),
+      (Focused, Start, View::Hidden, Hidden),
+      (Focused, FocusOut, View::Inactive, Unfocused),
+      (Focused, FocusOut, View::Hidden, Hidden),
+      // A popup or menu over the active pane.
+      (Focused, FocusOut, active, Hidden),
+      // The client lost the OS focus.
+      (Focused, FocusOut, away, Unfocused),
+      (Focused, Start, away, Unfocused),
+      (Unfocused, Tick, View::Hidden, Hidden),
+      (Unfocused, Tick, View::Inactive, Unfocused),
+      (Hidden, Tick, View::Inactive, Unfocused),
+      (Hidden, Tick, View::Hidden, Hidden),
+      // The popup is still open; focus-in ends it.
+      (Hidden, Tick, active, Hidden),
+      (Unfocused, Tick, away, Unfocused),
+    ];
+    for (now, cause, view, want) in cases {
+      assert_eq!(sight(now, cause, view), want, "{now:?} {cause:?} {view:?}");
+    }
+  }
+
+  /// Entering `Hidden` hides; leaving it asks for a frame.
+  #[test]
+  fn turns_report_reveals() -> Result<()> {
+    use Sight::{Focused, Hidden, Unfocused};
+    let mut session = Session::new("", false, None);
+    // (to, frame due, sight after)
+    let steps = [
+      (Unfocused, false, Unfocused),
+      (Hidden, false, Hidden),
+      (Hidden, false, Hidden),
+      (Unfocused, true, Unfocused),
+      (Hidden, false, Hidden),
+      (Focused, true, Focused),
+      (Focused, false, Focused),
+    ];
+    for (to, due, after) in steps {
+      let mut out = Vec::new();
+      assert_eq!(session.turn(to, &mut out)?, due, "{to:?}");
+      assert_eq!(session.sight, after, "{to:?}");
+    }
+    Ok(())
+  }
+
+  /// Keys and the pointer reveal a pane whose focus-in got lost.
+  #[test]
+  fn input_proves_the_pane_shown() -> Result<()> {
+    use Sight::{Focused, Hidden, Unfocused};
+    let key = Act::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    let mouse = Act::Mouse(MouseEvent {
+      kind: MouseEventKind::Down(MouseButton::Left),
+      column: 1,
+      row: 1,
+      modifiers: KeyModifiers::NONE,
+    });
+    // (sight, act, sight after)
+    let cases = [
+      (Hidden, &key, Focused),
+      (Unfocused, &key, Focused),
+      (Hidden, &mouse, Unfocused),
+      (Unfocused, &mouse, Unfocused),
+      (Hidden, &Act::Missing(1), Hidden),
+      (Hidden, &Act::Focus(false), Hidden),
+    ];
+    for (now, act, want) in cases {
+      let mut session = Session::new("", false, None);
+      session.sight = now;
+      session.shown_by(act, &mut Vec::new())?;
+      assert_eq!(session.sight, want, "{now:?} {act:?}");
+    }
+    Ok(())
+  }
+
   #[test]
   fn only_actionable_input_counts() {
     let none = KeyModifiers::NONE;
@@ -1172,7 +1380,7 @@ mod tests {
       (mouse(MouseKind::Press(Button::BACK), cell), None),
       (mouse(MouseKind::Press(Button::LEFT), Spot::Pixel { x: 1, y: 2 }), None),
       (Event::Leave, None),
-      (Event::Focus(true), None),
+      (Event::Focus(true), Some(Act::Focus(true))),
       (Event::Reply(Reply::Keyboard(5)), None),
       (graphics(Some(9), "ENOENT:no such image"), Some(Act::Missing(9))),
       (graphics(Some(9), "OK"), None),

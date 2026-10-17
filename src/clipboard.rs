@@ -21,16 +21,24 @@ impl App {
 
 /// Sends OSC 52 and, on a local session, the native tool.
 pub fn copy(text: String, out: &mut impl Write) -> Result<()> {
-  let data = STANDARD.encode(&text);
-  if std::env::var_os("TMUX").is_some() {
-    write!(out, "\x1bPtmux;\x1b\x1b]52;c;{data}\x07\x1b\\")?;
-  } else {
-    write!(out, "\x1b]52;c;{data}\x07")?;
-  }
+  osc52(out, &STANDARD.encode(&text), crate::terminal::tmux())?;
   if let Some(tools) = native() {
     std::thread::spawn(move || {
       tools.iter().any(|(program, args)| pipe(program, args, &text))
     });
+  }
+  Ok(())
+}
+
+/// OSC 52 with base64 `data`. Under tmux both plainly, which tmux takes
+/// with `set-clipboard on`, and wrapped, which passes through to the
+/// terminal with `allow-passthrough` ([tmux input.c][tmux]).
+///
+/// [tmux]: https://github.com/tmux/tmux/blob/3.8/input.c#L3379-L3380
+fn osc52(out: &mut impl Write, data: &str, tmux: bool) -> Result<()> {
+  write!(out, "\x1b]52;c;{data}\x07")?;
+  if tmux {
+    write!(out, "\x1bPtmux;\x1b\x1b]52;c;{data}\x07\x1b\\")?;
   }
   Ok(())
 }
@@ -80,5 +88,19 @@ mod tests {
   fn default_register_reaches_clipboard() {
     assert!(synced('"') && synced('+') && synced('*'));
     assert!(!synced('a') && !synced('0'));
+  }
+
+  #[test]
+  fn tmux_gets_plain_and_wrapped_osc52() -> Result<()> {
+    let plain: &[u8] = b"\x1b]52;c;aGk=\x07";
+    let wrapped: &[u8] = b"\x1bPtmux;\x1b\x1b]52;c;aGk=\x07\x1b\\";
+    for (tmux, want) in
+      [(false, plain.to_vec()), (true, [plain, wrapped].concat())]
+    {
+      let mut out = Vec::new();
+      osc52(&mut out, "aGk=", tmux)?;
+      assert_eq!(out, want, "tmux {tmux}");
+    }
+    Ok(())
   }
 }

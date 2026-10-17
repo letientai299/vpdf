@@ -3,12 +3,14 @@
 //!
 //! crossterm 0.29 rejects SGR buttons above 3 and drops every reply, so
 //! vpdf parses the stream itself. Keys stay crossterm `KeyEvent`s and
-//! decode as crossterm does, except that Kitty's alternate keys and its
-//! distinct Ctrl-i survive.
-//! Sources: [xterm control sequences][xterm], [Kitty keyboard][kbd].
+//! decode as crossterm does, except that Kitty's alternate keys and the
+//! distinct Ctrl-i of Kitty and of tmux's extended keys survive.
+//! Sources: [xterm control sequences][xterm], [Kitty keyboard][kbd],
+//! [tmux extended keys][tmux].
 //!
 //! [xterm]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
 //! [kbd]: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
+//! [tmux]: https://github.com/tmux/tmux/blob/3.8/input-keys.c#L425-L473
 use crossterm::event::{
   KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton,
   MouseEvent, MouseEventKind,
@@ -366,6 +368,7 @@ fn csi(bytes: &[u8], pixels: bool, resume: usize) -> Step {
     (None, b"", b't') => Some(window(params)),
     (None, b"", b'u') => kitty(params),
     (None, b"", b'~') if params == b"200" => return Step::Paste(used),
+    (None, b"", b'~') if number(params, 0, 0) == Some(27) => other_keys(params),
     (None, b"", b'~') => tilde(params),
     (None, b"", b'Z') => Some(key(KeyCode::BackTab, KeyModifiers::SHIFT)),
     (None, b"", _) => letter(last).map(|code| modified(code, params)),
@@ -489,6 +492,15 @@ fn tilde(params: &[u8]) -> Option<Event> {
     _ => return None,
   };
   Some(modified(code, params))
+}
+
+/// xterm's modifyOtherKeys form, `CSI 27 ; modifiers ; code ~`, which
+/// tmux sends with `extended-keys-format xterm`; read as `CSI code ;
+/// modifiers u`.
+fn other_keys(params: &[u8]) -> Option<Event> {
+  let mut fields = params.split(|&byte| byte == b';').skip(1);
+  let (modifiers, code) = (fields.next()?, fields.next()?);
+  kitty(&[code, b";", modifiers].concat())
 }
 
 /// `CSI code:shifted:base ; modifiers:type ; text u`. With alternate

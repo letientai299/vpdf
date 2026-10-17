@@ -45,8 +45,17 @@ the installed interface.
 The reader, in either presentation, requires the [Kitty keyboard
 protocol][keyboard]'s disambiguation, so Tab and Ctrl-i stay distinct and Esc
 needs no timeout. Without it the reader exits and names what is missing.
-WezTerm needs [`enable_kitty_keyboard = true`][wezterm-keyboard]. tmux ignores
-the protocol's query, so the reader exits under tmux.
+WezTerm needs [`enable_kitty_keyboard = true`][wezterm-keyboard].
+
+tmux ignores the protocol's query. Under tmux 3.2 or later the reader needs
+`set -s extended-keys on`, asks for [modifyOtherKeys][modify-keys] instead, and
+waits briefly after a lone Esc. Kitty ignores modifyOtherKeys, so through tmux
+in Kitty Ctrl-i arrives as Tab ([tmux modifier keys][tmux-keys]). While it
+runs, the reader sets `allow-passthrough` for its own pane: `all` with
+`set -s focus-events on`, so it can remove its images while tmux shows
+something else, else `on`, and leaves `on` at exit, as `kitten icat` does.
+tmux tells an inactive pane nothing about a popup over it, so that pane's
+images stay over the popup.
 
 Image placement depends on the terminal's cell metrics. Reader panes work inside
 one terminal; a multiplexer is optional. Actual painting cadence depends on the
@@ -86,6 +95,8 @@ identifying the dependencies used in a particular build.
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
 [keyboard]: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 [wezterm-keyboard]: https://wezterm.org/config/lua/config/enable_kitty_keyboard.html
+[modify-keys]: https://invisible-island.net/xterm/modified-keys.html
+[tmux-keys]: https://github.com/tmux/tmux/wiki/Modifier-Keys
 [cli]: ../src/main.rs
 [rendering]: rendering.md
 [integrations]: sessions.md#external-actions

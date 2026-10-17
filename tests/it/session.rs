@@ -472,6 +472,43 @@ fn split_frames_keep_every_pane_placed() -> Result<()> {
   Ok(())
 }
 
+/// Hidden under tmux, the reader deletes each placement it left, which
+/// tmux would leave over the window it shows; the next frame places
+/// them all again.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn hiding_deletes_every_placement() -> Result<()> {
+  use vpdf::trace::Drawable;
+  let (mut session, _, _) = split()?;
+  let mut frame = Vec::new();
+  session.draw_frame(&mut frame)?;
+  let pairs = |frame: &[u8], command: &str| {
+    let text = String::from_utf8_lossy(frame);
+    let mut pairs: Vec<(String, String)> = text
+      .split(command)
+      .skip(1)
+      .filter_map(|keys| {
+        let value = |name: &str| {
+          let pair = keys.split([',', ';']).find(|pair| pair.starts_with(name));
+          Some(pair?[name.len()..].to_owned())
+        };
+        Some((value("i=")?, value("p=")?))
+      })
+      .collect();
+    pairs.sort();
+    pairs
+  };
+  let placed = pairs(&frame, "_Ga=p,");
+  assert!(placed.len() >= 2, "{placed:?}");
+  let mut hidden = Vec::new();
+  session.hide(&mut hidden)?;
+  assert_eq!(pairs(&hidden, "_Ga=d,d=i,"), placed);
+  frame.clear();
+  session.draw_frame(&mut frame)?;
+  assert_eq!(pairs(&frame, "_Ga=p,"), placed);
+  Ok(())
+}
+
 /// After a resize, the first frame erases every pane row before it
 /// places an image, which removes images `WezTerm` keeps in cells.
 #[test]

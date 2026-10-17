@@ -53,7 +53,7 @@ impl Home {
   }
 
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
-    write!(out, "\x1b[?2026h{}", theme::RESET)?;
+    write!(out, "{}{}", terminal::frame_start(), theme::RESET)?;
     for row in 0..self.screen.rows {
       terminal::clear(out, At::default(), row, self.screen.columns)?;
     }
@@ -83,7 +83,7 @@ impl Home {
         theme::RESET
       )?;
     }
-    write!(out, "\x1b[?2026l")?;
+    write!(out, "{}", terminal::frame_end())?;
     out.flush()?;
     Ok(())
   }
