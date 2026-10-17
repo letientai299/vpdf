@@ -1,3 +1,6 @@
+use crate::Result;
+use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
+use crossterm::event::KeyEvent;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
@@ -43,6 +46,36 @@ impl Spec {
   const fn requires(self, program: &'static str) -> Self {
     Self { requires: Some(program), ..self }
   }
+}
+
+/// Command name and trimmed argument of `line`.
+pub fn parse(line: &str) -> (&str, &str) {
+  let line = line.trim();
+  line
+    .split_once(char::is_whitespace)
+    .map_or((line, ""), |(name, rest)| (name, rest.trim()))
+}
+
+/// Feeds `key` to `prompt`, completing commands and editing the line in
+/// `$EDITOR`; returns the event left for the caller.
+pub fn feed(
+  prompt: &mut Prompt,
+  key: KeyEvent,
+  history: &History,
+) -> Result<PromptEvent> {
+  Ok(match prompt.feed(key, history) {
+    PromptEvent::Editor => {
+      let edited = crate::editor::edit(&prompt.text)?;
+      prompt.replace(&edited);
+      PromptEvent::Edited
+    }
+    PromptEvent::Complete if prompt.kind == PromptKind::Command => {
+      let (start, items) = candidates(prompt.before_cursor());
+      prompt.complete(start, items);
+      PromptEvent::Edited
+    }
+    event => event,
+  })
 }
 
 /// Whether `program` is an executable file on `PATH`.
@@ -159,14 +192,18 @@ fn paths(argument: &str) -> Vec<String> {
   let (directory, prefix) = argument.split_at(split);
   let root = if directory.is_empty() { ".".into() } else { expand(directory) };
   let Ok(entries) = std::fs::read_dir(root) else { return Vec::new() };
+  let folded = prefix.to_lowercase();
   let mut names: Vec<_> = entries
     .filter_map(|entry| {
       let entry = entry.ok()?;
       let name = entry.file_name().into_string().ok()?;
-      if name.starts_with('.') && !prefix.starts_with('.') {
+      let hidden = name.starts_with('.') && !prefix.starts_with('.');
+      if hidden || !name.to_lowercase().starts_with(&folded) {
         return None;
       }
-      if entry.path().is_dir() {
+      // Only symlinks need a stat to tell folders apart.
+      let kind = entry.file_type().ok()?;
+      if kind.is_dir() || (kind.is_symlink() && entry.path().is_dir()) {
         return Some(format!("{name}/"));
       }
       Path::new(&name)
@@ -222,7 +259,7 @@ mod tests {
   }
 
   #[test]
-  fn completes_pdfs_and_directories() -> crate::Result<()> {
+  fn completes_pdfs_and_directories() -> Result<()> {
     let root = tempfile::tempdir()?;
     for name in ["a.pdf", "b.PDF", "notes.txt", ".hidden.pdf"] {
       std::fs::write(root.path().join(name), "")?;

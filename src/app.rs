@@ -35,6 +35,8 @@ pub enum Request {
   GoMark(char, bool),
   /// Pick a file with `fzf` and open it in a new tab.
   Pick,
+  /// Close every pane of this tab.
+  TabClose,
   QuitAll,
 }
 
@@ -75,6 +77,7 @@ pub struct Tabline {
   pub active: usize,
 }
 
+#[expect(clippy::struct_excessive_bools, reason = "independent pane flags")]
 pub struct App {
   pub id: u32,
   pub doc: Document,
@@ -93,7 +96,7 @@ pub struct App {
   pub screen: Screen,
   pub left: u16,
   /// Pane origin on the terminal.
-  pub at: crate::terminal::At,
+  pub at: terminal::At,
   pub quit: bool,
   /// Whether this pane has the keyboard.
   pub focused: bool,
@@ -119,8 +122,7 @@ pub struct App {
   pub panel: Option<crate::panel::Panel>,
   pub preview: Option<bool>,
   pub ocr: Option<crate::ocr::OcrJob>,
-  pub outline_job:
-    Option<std::sync::mpsc::Receiver<Vec<crate::document::Heading>>>,
+  pub outline_job: Option<crate::outline::OutlineJob>,
   pub animation: Option<crate::animation::Scroll>,
   pub(crate) requested: Vec<TileKey>,
   /// Sign of the last scroll; prefetch looks that way first.
@@ -131,16 +133,15 @@ pub struct App {
 }
 
 impl App {
-  /// Releases what a hidden pane rebuilds on demand: an idle search
-  /// worker with its indexes, cached text and display lists, and the
-  /// render coordinator's document with every page it loaded.
+  /// Releases what a hidden pane rebuilds on demand: the search worker
+  /// with its indexes, cached text and display lists, and the render
+  /// coordinator's document with every page it loaded. A running search
+  /// resumes when the pane shows again.
   pub fn trim(&mut self) {
-    if !matches!(self.search.phase, crate::find::Phase::Running { .. }) {
-      self.search.worker = None;
-    }
+    self.search.worker = None;
     self.doc.trim();
     self.worker =
-      RenderWorker::new(&self.path, &self.password, self.doc.lists());
+      RenderWorker::idle(&self.path, &self.password, self.doc.lists());
     self.requested.clear();
   }
 
@@ -151,20 +152,16 @@ impl App {
     )
   }
 
-  pub fn new(path: &Path, password: &str, text_mode: bool) -> Result<Self> {
-    Self::with_screen(path, password, text_mode, terminal::size()?)
-  }
-
   pub fn with_screen(
     path: &Path,
     password: &str,
     text_mode: bool,
     screen: Screen,
   ) -> Result<Self> {
+    static NEXT: AtomicU32 = AtomicU32::new(1);
     let doc = Document::open(path, password)?;
     let layout = Layout::new(&doc.pages, screen);
     let worker = RenderWorker::new(path, password, doc.lists());
-    static NEXT: AtomicU32 = AtomicU32::new(1);
     let mut app = Self {
       id: NEXT.fetch_add(1, Ordering::Relaxed),
       doc,
@@ -180,7 +177,7 @@ impl App {
       text_mode,
       screen,
       left: 0,
-      at: crate::terminal::At::default(),
+      at: terminal::At::default(),
       quit: false,
       focused: true,
       request: None,

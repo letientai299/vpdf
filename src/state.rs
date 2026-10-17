@@ -27,7 +27,7 @@ pub struct Entry {
 }
 
 /// An uppercase mark: a position in any document.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Mark {
   pub path: PathBuf,
   pub cursor: Position,
@@ -99,7 +99,11 @@ impl State {
   }
 
   pub fn history(&self) -> History {
-    History { commands: self.commands.clone(), searches: self.searches.clone() }
+    History {
+      commands: self.commands.clone(),
+      searches: self.searches.clone(),
+      revision: 0,
+    }
   }
 
   /// Merges with the file on disk, so concurrent readers keep entries.
@@ -132,11 +136,12 @@ impl State {
 
 impl App {
   /// Copies another pane's view of the same document, as a new split.
-  pub fn mirror(&mut self, other: &App) -> Result<()> {
+  pub fn mirror(&mut self, other: &Self) -> Result<()> {
     self.layout.zoom = other.layout.zoom;
     self.layout.rotation = other.layout.rotation;
     self.layout.crop = other.layout.crop;
-    self.text_mode = other.text_mode;
+    // A text preview (`gx`) is the other pane's, not the document's mode.
+    self.text_mode = other.preview.unwrap_or(other.text_mode);
     self.layout.reflow(&self.doc.pages);
     self.reader.cursor =
       self.doc.text(other.reader.cursor.page)?.clamp(other.reader.cursor);
@@ -176,10 +181,7 @@ mod tests {
   fn entry(path: &str, page: usize, used: u64) -> Entry {
     Entry {
       path: path.into(),
-      cursor: Position {
-        page: crate::text::PageId(page),
-        ..Position::default()
-      },
+      cursor: Position { page: PageId(page), ..Position::default() },
       zoom: 1.0,
       rotation: 0,
       used,
@@ -198,7 +200,7 @@ mod tests {
     };
     let history = History {
       commands: vec!["page 3".into(), "ocr".into()],
-      searches: Vec::new(),
+      ..History::default()
     };
     other.save(&file, &history)?;
     let mut own = State {
@@ -208,6 +210,7 @@ mod tests {
     let history = History {
       commands: vec!["ocr".into(), "help".into()],
       searches: vec!["attention".into()],
+      ..History::default()
     };
     own.save(&file, &history)?;
     let saved = State::load(&file);
@@ -230,7 +233,7 @@ mod tests {
     let root = tempfile::tempdir()?;
     let file = root.path().join("state.json");
     std::fs::write(&file, "{not json")?;
-    assert!(State::load(&file).recent.is_empty());
+    assert_eq!(State::load(&file).recent, []);
     Ok(())
   }
 }

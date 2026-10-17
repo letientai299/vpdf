@@ -3,10 +3,11 @@ use crate::app::App;
 use crate::keys::PanelKind;
 use crate::panel::Panel;
 use crate::prompt::{Prompt, PromptKind};
-use crate::reader::Location;
+use crate::reader::{self, Location};
 use crate::search::{self, Hit};
-use crate::search_worker::SearchWorker;
+use crate::search_worker::{SearchEvent, SearchWorker};
 use crate::text::Position;
+use std::sync::mpsc::TryRecvError;
 
 #[derive(Default)]
 pub enum Phase {
@@ -18,16 +19,25 @@ pub enum Phase {
   Complete,
 }
 
+/// A pattern with its direction and word matching.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Query {
+  pub text: String,
+  pub backward: bool,
+  pub whole: bool,
+}
+
 #[derive(Default)]
 pub struct Search {
   pub worker: Option<SearchWorker>,
   pub generation: u64,
   pub phase: Phase,
   pub hits: Vec<Hit>,
-  pub query: String,
-  pub backward: bool,
+  pub query: Query,
   pub hidden: bool,
   pub origin: Position,
+  /// The search an open prompt replaces, and whether it was hidden.
+  pub previous: Option<(Query, bool)>,
 }
 
 impl Search {
@@ -49,6 +59,7 @@ impl App {
     whole: bool,
   ) -> Result<()> {
     if query.is_empty() {
+      self.search.query.backward = backward;
       return self.next_result(false, 1);
     }
     search::compile(query, whole)?;
@@ -63,11 +74,16 @@ impl App {
     let Some(worker) = &self.search.worker else {
       return Ok(());
     };
-    self.search.generation = worker.query(query, whole, origin.page, backward);
+    match worker.query(query, whole, origin.page, backward) {
+      Ok(generation) => self.search.generation = generation,
+      Err(error) => {
+        self.search.worker = None;
+        return Err(error);
+      }
+    }
     self.search.phase = Phase::Running { jump: true };
     self.search.hits.clear();
-    self.search.query = query.to_owned();
-    self.search.backward = backward;
+    self.search.query = Query { text: query.to_owned(), backward, whole };
     self.search.hidden = false;
     self.search.origin = origin;
     self.reader.message = "Searching…".into();
@@ -75,8 +91,29 @@ impl App {
   }
 
   pub fn search_updates(&mut self) -> Result<bool> {
+    if self.search.worker.is_none()
+      && matches!(self.search.phase, Phase::Running { .. })
+    {
+      let query = self.search.query.clone();
+      self.rerun(&query)?;
+    }
     let Some(worker) = &self.search.worker else { return Ok(false) };
-    let events: Vec<_> = worker.events.try_iter().collect();
+    let mut events = Vec::new();
+    loop {
+      match worker.events.try_recv() {
+        Ok(event) => events.push(event),
+        Err(TryRecvError::Empty) => break,
+        Err(TryRecvError::Disconnected) => {
+          events.push(SearchEvent {
+            generation: self.search.generation,
+            hits: Vec::new(),
+            done: true,
+            error: Some("Search worker stopped".into()),
+          });
+          break;
+        }
+      }
+    }
     if events.is_empty() {
       return Ok(false);
     }
@@ -86,32 +123,30 @@ impl App {
         continue;
       }
       changed = true;
-      self.search.hits.extend(event.hits);
-      self.search.hits.sort_unstable_by_key(|hit| hit.first);
+      // Each event holds one page's hits in order.
+      if let Some(first) = event.hits.first().map(|hit| hit.first) {
+        let at = self.search.hits.partition_point(|hit| hit.first < first);
+        self.search.hits.splice(at..at, event.hits);
+      }
       if let Some(error) = event.error {
+        // The next search starts a fresh worker.
+        self.search.worker = None;
         self.error = Some(error);
         self.search.phase = Phase::Complete;
         continue;
       }
-      if matches!(self.search.phase, Phase::Running { jump: true }) {
-        let next = if self.search.backward {
-          self.search.hits.iter().rfind(|h| h.first < self.search.origin)
-        } else {
-          self.search.hits.iter().find(|h| h.first > self.search.origin)
-        };
-        if let Some(hit) = next {
-          // Typing previews matches without filling the jump list.
-          if self.search_origin.is_some() {
-            self.reader.cursor = hit.first;
-          } else {
-            self.reader.jump(hit.first, &mut self.doc)?;
-          }
-          self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
+      if matches!(self.search.phase, Phase::Running { jump: true })
+        && let Some(target) = self.first_match(event.done)
+      {
+        // Typing previews matches without filling the jump list.
+        if self.search_origin.is_some() {
+          self.reader.cursor = target;
+          self.reader.scroll = self.layout.pages[target.page.0].top;
           self.ensure_cursor()?;
-          self.search.phase = Phase::Running { jump: false };
-        } else if event.done && !self.search.hits.is_empty() {
-          self.next_result(false, 1)?;
+        } else {
+          self.go_to(target, true)?;
         }
+        self.search.phase = Phase::Running { jump: false };
       }
       self.reader.message = format!(
         "{} matches{}",
@@ -135,6 +170,18 @@ impl App {
     Ok(changed)
   }
 
+  /// The first match past the search origin; once the scan is done,
+  /// the first from the other end.
+  fn first_match(&self, done: bool) -> Option<Position> {
+    let (hits, origin) = (&self.search.hits, self.search.origin);
+    let next = if self.search.query.backward {
+      hits.iter().rfind(|h| h.first < origin).or(hits.last().filter(|_| done))
+    } else {
+      hits.iter().find(|h| h.first > origin).or(hits.first().filter(|_| done))
+    };
+    next.map(|hit| hit.first)
+  }
+
   /// Searches the focused panel's rows, else the document.
   pub fn begin_search(&mut self, backward: bool) {
     if let Some(panel) = self.panel.as_mut().filter(|panel| panel.focused) {
@@ -143,6 +190,8 @@ impl App {
       let location =
         Location { cursor: self.reader.cursor, scroll: self.reader.scroll };
       self.search_origin = Some(location);
+      self.search.previous =
+        Some((self.search.query.clone(), self.search.hidden));
     }
     self.prompt = Some(Prompt::new(PromptKind::Search(backward)));
   }
@@ -173,8 +222,10 @@ impl App {
       return Ok(());
     }
     let origin = self.search_origin.take();
+    self.search.previous = None;
     let running = !matches!(self.search.phase, Phase::Idle);
-    if !(running && self.search.query == query) {
+    let same = Query { text: query.to_owned(), backward, whole: false };
+    if !(running && self.search.query == same) {
       self.search_origin = origin;
       let result = self.start_search(query, backward, false);
       self.search_origin = None;
@@ -191,9 +242,29 @@ impl App {
       panel.abort_search();
       return Ok(());
     }
+    let running = matches!(self.search.phase, Phase::Running { .. });
     self.search.cancel();
     self.return_to_origin()?;
     self.search_origin = None;
+    let Some((query, hidden)) = self.search.previous.take() else {
+      return Ok(());
+    };
+    if running || query != self.search.query {
+      self.rerun(&query)?;
+    }
+    self.search.hidden = hidden;
+    Ok(())
+  }
+
+  /// Runs `query` again without moving the cursor.
+  pub fn rerun(&mut self, query: &Query) -> Result<()> {
+    if query.text.is_empty() {
+      self.search.hits.clear();
+      self.search.query = Query::default();
+      return Ok(());
+    }
+    self.start_search(&query.text, query.backward, query.whole)?;
+    self.search.phase = Phase::Running { jump: false };
     Ok(())
   }
 
@@ -203,7 +274,7 @@ impl App {
 
   fn return_to_origin(&mut self) -> Result<()> {
     let Some(origin) = self.search_origin else { return Ok(()) };
-    self.reader.cursor = origin.cursor;
+    self.reader.cursor = reader::clamp(origin.cursor, &mut self.doc)?;
     self.reader.scroll = origin.scroll;
     self.ensure_cursor()
   }
@@ -214,7 +285,7 @@ impl App {
       self.reader.message = "No matches".into();
       return Ok(());
     }
-    let backward = self.search.backward != reverse;
+    let backward = self.search.query.backward != reverse;
     let cursor = self.reader.cursor;
     let start = if backward {
       hits.iter().rposition(|h| h.first < cursor).unwrap_or(hits.len() - 1)
@@ -229,9 +300,7 @@ impl App {
     };
     let target = hits[index].first;
     let wrapped = if backward { target >= cursor } else { target <= cursor };
-    self.reader.jump(target, &mut self.doc)?;
-    self.reader.scroll = self.layout.pages[target.page.0].top;
-    self.ensure_cursor()?;
+    self.go_to(target, true)?;
     self.search.hidden = false;
     self.reader.message = if wrapped {
       "Search wrapped".into()
@@ -250,16 +319,7 @@ impl App {
     if line.glyphs.get(at).is_none_or(|g| crate::text::class(g.ch) != 1) {
       return Ok(());
     }
-    let mut first = at;
-    let mut last = at;
-    while first > 0 && crate::text::class(line.glyphs[first - 1].ch) == 1 {
-      first -= 1;
-    }
-    while last + 1 < line.glyphs.len()
-      && crate::text::class(line.glyphs[last + 1].ch) == 1
-    {
-      last += 1;
-    }
+    let Some((first, last)) = line.run(at) else { return Ok(()) };
     let query: String =
       line.glyphs[first..=last].iter().map(|g| g.ch).collect();
     self.start_search(&query, false, true)

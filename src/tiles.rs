@@ -2,10 +2,13 @@ use crate::Result;
 use crate::document::Document;
 use crate::layout::{Crop, Layout, page_matrix};
 use crate::text::PageId;
+use anyhow::Context;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use flate2::{Compression, write::ZlibEncoder};
 use mupdf::{Colorspace, Device, DisplayList, IRect, Matrix, Pixmap, Rect};
 use std::io::Write;
+use std::ops::Range;
+use std::sync::Arc;
 
 pub const TILE_WIDTH: i32 = 512;
 pub const TILE_HEIGHT: i32 = 256;
@@ -24,7 +27,8 @@ pub struct TileKey {
 
 pub struct Tile {
   pub key: TileKey,
-  pub encoded: String,
+  /// Shared with the encoded-tile cache without a copy.
+  pub encoded: Arc<str>,
   pub render_ms: f64,
 }
 
@@ -38,22 +42,36 @@ pub fn visible(layout: &Layout, scroll: f32) -> Vec<TileKey> {
     let bottom =
       (scroll - data.top + layout.screen.height() + TILE_HEIGHT as f32)
         .min(data.height) as i32;
-    for y in (top..bottom).step_by(TILE_HEIGHT as usize) {
-      for x in (left..right).step_by(TILE_WIDTH as usize) {
-        tiles.push(TileKey {
-          page: PageId(page),
-          scale: data.scale,
-          rotation: layout.rotation,
-          x,
-          y,
-          width: TILE_WIDTH.min(data.width as i32 - x),
-          height: TILE_HEIGHT.min(data.height as i32 - y),
-          crop: layout.crop,
-        });
-      }
-    }
+    let whole = TileKey {
+      page: PageId(page),
+      scale: data.scale,
+      rotation: layout.rotation,
+      x: 0,
+      y: 0,
+      width: data.width as i32,
+      height: data.height as i32,
+      crop: layout.crop,
+    };
+    tiles.extend(cover(whole, left..right, top..bottom));
   }
   tiles
+}
+
+/// Tiles of the page `whole` spans, over the `x` and `y` pixel ranges.
+pub fn cover(
+  whole: TileKey,
+  x: Range<i32>,
+  y: Range<i32>,
+) -> impl Iterator<Item = TileKey> {
+  y.step_by(TILE_HEIGHT as usize).flat_map(move |y| {
+    x.clone().step_by(TILE_WIDTH as usize).map(move |x| TileKey {
+      x,
+      y,
+      width: TILE_WIDTH.min(whole.width - x),
+      height: TILE_HEIGHT.min(whole.height - y),
+      ..whole
+    })
+  })
 }
 
 pub fn raster(doc: &mut Document, key: TileKey) -> Result<Vec<u8>> {
@@ -109,7 +127,8 @@ pub fn cut(band: &Pixmap, key: &TileKey) -> Result<Vec<u8>> {
   let height = usize::try_from(key.height)?;
   let mut pixels = Vec::with_capacity(width * height);
   for row in band.samples().chunks(stride).skip(top).take(height) {
-    pixels.extend_from_slice(&row[left..left + width]);
+    let row = row.get(left..left + width).context("Tile outside band")?;
+    pixels.extend_from_slice(row);
   }
   anyhow::ensure!(pixels.len() == width * height, "Tile outside band");
   Ok(pixels)
@@ -123,6 +142,6 @@ pub fn encode(bytes: &[u8]) -> Result<String> {
 
 pub fn render(doc: &mut Document, key: TileKey) -> Result<Tile> {
   let started = std::time::Instant::now();
-  let encoded = encode(&raster(doc, key)?)?;
+  let encoded = encode(&raster(doc, key)?)?.into();
   Ok(Tile { key, encoded, render_ms: started.elapsed().as_secs_f64() * 1000.0 })
 }

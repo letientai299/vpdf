@@ -10,11 +10,15 @@ pub struct RowSearch {
 }
 
 /// Case-insensitive unless the query has uppercase (Vim's smartcase).
-fn hit(label: &str, query: &str) -> bool {
-  if query.chars().any(char::is_uppercase) {
-    label.contains(query)
-  } else {
-    label.to_lowercase().contains(&query.to_lowercase())
+fn matcher(query: &str) -> impl Fn(&str) -> bool {
+  let exact = query.chars().any(char::is_uppercase);
+  let query = if exact { query.to_owned() } else { query.to_lowercase() };
+  move |label| {
+    if exact {
+      label.contains(&query)
+    } else {
+      label.to_lowercase().contains(&query)
+    }
   }
 }
 
@@ -91,6 +95,7 @@ impl Panel {
     backward: bool,
     count: usize,
   ) -> bool {
+    let hit = matcher(query);
     let total = self.rows.len();
     let mut current = from;
     for _ in 0..count {
@@ -101,8 +106,7 @@ impl Panel {
           (current + step) % total
         }
       });
-      let Some(index) =
-        next.into_iter().find(|&i| hit(&self.rows[i].label, query))
+      let Some(index) = next.into_iter().find(|&i| hit(&self.rows[i].label))
       else {
         return false;
       };
@@ -118,11 +122,14 @@ impl Panel {
     if query.is_empty() {
       return None;
     }
-    let hits: Vec<_> = (0..self.rows.len())
-      .filter(|&i| hit(&self.rows[i].label, query))
-      .collect();
-    let index = hits.partition_point(|&i| i <= self.selected);
-    (!hits.is_empty()).then_some((index, hits.len()))
+    let hit = matcher(query);
+    let hits = self.rows.iter().enumerate().filter(|(_, row)| hit(&row.label));
+    let (mut index, mut total) = (0, 0);
+    for (i, _) in hits {
+      total += 1;
+      index += usize::from(i <= self.selected);
+    }
+    (total > 0).then_some((index, total))
   }
 
   /// `{` and `}`: previous or next heading row.
@@ -155,7 +162,7 @@ mod tests {
   fn marks_matches_by_smartcase() {
     assert_eq!(ranges("Next match, MATCH", "match"), [(5, 10), (12, 17)]);
     assert_eq!(ranges("Next match, MATCH", "MATCH"), [(12, 17)]);
-    assert!(ranges("Ärger", "är").is_empty());
+    assert_eq!(ranges("Ärger", "är"), []);
   }
 
   #[test]

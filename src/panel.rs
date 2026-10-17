@@ -124,10 +124,10 @@ impl Panel {
     self.focused = true;
     match mouse.kind {
       MouseEventKind::ScrollDown => {
-        self.selected = (self.selected + 3).min(last)
+        self.selected = (self.selected + 3).min(last);
       }
       MouseEventKind::ScrollUp => {
-        self.selected = self.selected.saturating_sub(3)
+        self.selected = self.selected.saturating_sub(3);
       }
       MouseEventKind::Down(MouseButton::Left) if mouse.row > 0 => {
         let index = self.top + usize::from(mouse.row) - 1;
@@ -149,6 +149,14 @@ impl Panel {
     }
   }
 
+  /// Columns a panel of `kind` takes in a pane `columns` wide; none
+  /// when the page area would keep fewer than 12.
+  pub fn width(kind: PanelKind, columns: u16) -> u16 {
+    let wide = matches!(kind, PanelKind::Help | PanelKind::Info);
+    let width = if wide { columns / 2 } else { columns / 3 };
+    width.clamp(1, if wide { 64 } else { 50 }).min(columns.saturating_sub(12))
+  }
+
   /// Draws rows left of a border at column `width`.
   pub fn draw(
     &mut self,
@@ -157,6 +165,9 @@ impl Panel {
     width: u16,
     height: u16,
   ) -> Result<()> {
+    if width < 2 {
+      return Ok(());
+    }
     let inner = usize::from(width.saturating_sub(1));
     for row in 1..height {
       let border = at.goto(row - 1, width - 1);
@@ -223,7 +234,8 @@ impl Row {
     match (self.style, self.label.split_once(": ")) {
       (Style::Key, Some((key, text))) => {
         let key = terminal::clean(key, room);
-        let pad = keys.max(key.width()) + 2 - key.width();
+        let pad = (keys.max(key.width()) + 2 - key.width())
+          .min(room.saturating_sub(key.width()));
         let text =
           terminal::clean(text, room.saturating_sub(key.width() + pad));
         let style = if plain { theme::KEY } else { "" };
@@ -320,18 +332,11 @@ impl App {
       panel.note = "inferred";
     }
     self.panel = Some(panel);
-    let wide = matches!(kind, PanelKind::Help | PanelKind::Info);
-    let width =
-      if wide { self.screen.columns / 2 } else { self.screen.columns / 3 };
-    self.left = width
-      .clamp(1, if wide { 64 } else { 50 })
-      .min(self.screen.columns.saturating_sub(12));
     self.relayout()
   }
 
   pub fn close_panel(&mut self) -> Result<()> {
     self.panel = None;
-    self.left = 0;
     self.relayout()
   }
 
@@ -444,21 +449,19 @@ impl App {
     let Some(row) = panel.rows.get(panel.selected) else { return Ok(()) };
     let destination = row.destination.clone();
     let outline = panel.kind == PanelKind::Outline;
-    match destination {
-      Destination::Position(position) => {
-        self.reader.jump(position, &mut self.doc)?
-      }
-      Destination::Link(target) => self.follow(&target)?,
+    match &destination {
       Destination::File(path) => {
-        self.request = Some(Request::Choose(path));
+        self.request = Some(Request::Choose(path.clone()));
         return self.close_panel();
       }
       Destination::Mark(name) => {
-        self.request = Some(Request::GoMark(name, true));
+        self.request = Some(Request::GoMark(*name, true));
         return self.close_panel();
       }
       Destination::None => return Ok(()),
+      Destination::Position(_) | Destination::Link(_) => {}
     }
+    // Closing first, so the page top is measured in the final layout.
     if action == Action::Follow {
       if outline {
         if let Some(panel) = &mut self.panel {
@@ -468,8 +471,11 @@ impl App {
         self.close_panel()?;
       }
     }
-    self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
-    self.ensure_cursor()
+    match destination {
+      Destination::Position(position) => self.go_to(position, true),
+      Destination::Link(target) => self.follow(&target),
+      _ => Ok(()),
+    }
   }
 
   /// PDF metadata, then document facts, then reader statistics.
@@ -507,7 +513,7 @@ impl App {
       format!(
         "Search: {} hits for {:?}",
         self.search.hits.len(),
-        self.search.query
+        self.search.query.text
       ),
       format!("Text cache: {} KiB", self.doc.cache_bytes() / 1024),
       format!("Images: {} KiB resident", self.graphics.bytes() / 1024),
@@ -533,7 +539,7 @@ fn help() -> Vec<String> {
     let usage = if spec.usage.is_empty() { "" } else { " " };
     format!(":{}{usage}{}: {}", spec.name, spec.usage, spec.help)
   });
-  keys.chain(["".into(), "# Commands".into()]).chain(commands).collect()
+  keys.chain([String::new(), "# Commands".into()]).chain(commands).collect()
 }
 
 /// Recent documents that still exist, newest first.

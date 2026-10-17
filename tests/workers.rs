@@ -27,9 +27,9 @@ fn ocr_geometry_preserves_unicode() -> Result<()> {
 fn superseded_search_completes_latest_query() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let worker = SearchWorker::new(&root.join("book.pdf"), "");
-  worker.query("the", false, PageId(0), false);
+  worker.query("the", false, PageId(0), false)?;
   let latest =
-    worker.query("vpdf-impossible-query-83729", false, PageId(0), false);
+    worker.query("vpdf-impossible-query-83729", false, PageId(0), false)?;
   loop {
     let event = worker.events.recv_timeout(Duration::from_secs(10))?;
     if event.generation != latest {

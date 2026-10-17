@@ -1,9 +1,9 @@
 //! Tile rendering off the input thread.
 //!
-//! A coordinator per document owns its MuPDF document, builds display
+//! A coordinator per document owns its `MuPDF` document, builds display
 //! lists, and splits each request into bands: runs of adjacent tiles in
 //! one tile row. A process-wide pool draws each band in one pass, cuts
-//! its tiles, and encodes them. Display lists are immutable and MuPDF
+//! its tiles, and encodes them. Display lists are immutable and `MuPDF`
 //! renders them from several threads, each with its own context, while
 //! only the coordinator touches the document; a list may outlive it, as
 //! Type3 glyphs draw from lists compiled when their font loads. Pages
@@ -59,17 +59,31 @@ impl RenderWorker {
   /// Opens its own handle of `path`, sharing display lists through
   /// `lists`.
   pub fn new(path: &Path, password: &str, lists: Arc<Lists>) -> Self {
+    Self::start(path, password, lists, false)
+  }
+
+  /// A worker for a hidden pane: opens its document on the first request.
+  pub fn idle(path: &Path, password: &str, lists: Arc<Lists>) -> Self {
+    Self::start(path, password, lists, true)
+  }
+
+  fn start(path: &Path, password: &str, lists: Arc<Lists>, lazy: bool) -> Self {
     let shared = Arc::new(Shared::default());
     let work = Arc::clone(&shared);
     let (send, results) = mpsc::channel();
     let path = path.to_owned();
     let password = password.to_owned();
-    thread::spawn(move || match Document::open(&path, &password) {
-      Ok(mut doc) => {
-        doc.share(lists);
-        Coordinator::new(doc, (path, password), work, send).run();
+    thread::spawn(move || {
+      if lazy && !requested(&work) {
+        return;
       }
-      Err(error) => drop(send.send(Err(error.to_string()))),
+      match Document::open(&path, &password) {
+        Ok(mut doc) => {
+          doc.share(lists);
+          Coordinator::new(doc, (path, password), work, send).run();
+        }
+        Err(error) => drop(send.send(Err(error.to_string()))),
+      }
     });
     Self { shared, results }
   }
@@ -96,6 +110,15 @@ impl Drop for RenderWorker {
       self.shared.wake.notify_all();
     }
   }
+}
+
+/// Waits for a request; false once the worker stops first.
+fn requested(shared: &Shared) -> bool {
+  let Ok(queue) = shared.queue.lock() else { return false };
+  shared
+    .wake
+    .wait_while(queue, |queue| !queue.fresh && !queue.stop)
+    .is_ok_and(|queue| !queue.stop)
 }
 
 /// How a page renders at one scale.
@@ -139,7 +162,7 @@ impl Coordinator {
     }
   }
 
-  /// Reopens the document, so MuPDF releases the objects and resources
+  /// Reopens the document, so `MuPDF` releases the objects and resources
   /// of every page drawn since: browsing 320 thumbnails of a 1370-page
   /// book held about 200 MB. Cached display lists keep their own.
   fn refresh(&mut self) {
@@ -221,21 +244,7 @@ impl Coordinator {
       self.refresh();
     };
     queue.fresh = false;
-    let mut dropped = Vec::new();
-    if let Ok(mut tasks) = pool().tasks.lock() {
-      for task in std::mem::take(&mut *tasks) {
-        let stale = Arc::ptr_eq(&task.shared, &self.shared)
-          && !task.job.tiles.iter().any(|key| queue.wanted.contains(key));
-        if stale {
-          for key in &task.job.tiles {
-            queue.dispatched.remove(key);
-          }
-          dropped.push(task);
-        } else {
-          tasks.push_back(task);
-        }
-      }
-    }
+    let dropped = self.unqueue(&mut queue);
     if queue.stop {
       return None;
     }
@@ -246,6 +255,22 @@ impl Coordinator {
     drop(queue);
     drop(dropped);
     Some((urgent, ahead))
+  }
+
+  /// Takes this coordinator's queued bands with no tile `queue` still
+  /// wants, for the caller to drop outside the locks.
+  fn unqueue(&self, queue: &mut Queue) -> Vec<Task> {
+    let Ok(mut tasks) = pool().tasks.lock() else { return Vec::new() };
+    let (stale, kept): (Vec<_>, Vec<_>) =
+      std::mem::take(&mut *tasks).into_iter().partition(|task| {
+        Arc::ptr_eq(&task.shared, &self.shared)
+          && !task.job.tiles.iter().any(|key| queue.wanted.contains(key))
+      });
+    *tasks = kept.into();
+    for key in stale.iter().flat_map(|task| &task.job.tiles) {
+      queue.dispatched.remove(key);
+    }
+    stale
   }
 
   fn job(&mut self, tiles: Vec<TileKey>) -> Result<Job> {
@@ -454,7 +479,7 @@ fn render(tiles: &[TileKey], work: Work, send: &Sender) {
       .and_then(|pixels| tiles::encode(&pixels))
       .map(|encoded| Tile {
         key: *key,
-        encoded,
+        encoded: encoded.into(),
         render_ms: drawn + ms(started),
       })
       .map_err(|error| error.to_string());

@@ -28,7 +28,7 @@ pub struct Rect {
 #[derive(Debug)]
 pub enum Node {
   Leaf(u32),
-  Split { axis: Axis, ratio: f32, first: Box<Node>, second: Box<Node> },
+  Split { axis: Axis, ratio: f32, first: Box<Self>, second: Box<Self> },
 }
 
 /// Smallest pane: a status row plus three rows, or ten columns.
@@ -42,7 +42,8 @@ impl Node {
     match axis {
       Axis::Rows => {
         let first = ((f32::from(area.rows) * ratio).round() as u16)
-          .clamp(1, area.rows.saturating_sub(1).max(1));
+          .clamp(1, area.rows.saturating_sub(1).max(1))
+          .min(area.rows);
         (
           Rect { rows: first, ..area },
           Rect { row: area.row + first, rows: area.rows - first, ..area },
@@ -51,7 +52,8 @@ impl Node {
       Axis::Columns => {
         let usable = area.columns.saturating_sub(1);
         let first = ((f32::from(usable) * ratio).round() as u16)
-          .clamp(1, usable.saturating_sub(1).max(1));
+          .clamp(1, usable.saturating_sub(1).max(1))
+          .min(usable);
         (
           Rect { columns: first, ..area },
           Rect {
@@ -89,12 +91,22 @@ impl Node {
   }
 
   pub fn leaves(&self) -> Vec<u32> {
-    let mut rects = Vec::new();
-    self.layout(
-      Rect { columns: 1000, rows: 1000, ..Rect::default() },
-      &mut rects,
-    );
-    rects.into_iter().map(|(id, _)| id).collect()
+    match self {
+      Self::Leaf(id) => vec![*id],
+      Self::Split { first, second, .. } => {
+        let mut ids = first.leaves();
+        ids.extend(second.leaves());
+        ids
+      }
+    }
+  }
+
+  /// Whether `area` holds two panes split along `axis`.
+  pub fn fits(axis: Axis, area: Rect) -> bool {
+    match axis {
+      Axis::Rows => area.rows >= 2 * MIN_ROWS,
+      Axis::Columns => area.columns > 2 * MIN_COLUMNS,
+    }
   }
 
   /// Puts `new` before `target`, above or to its left as in Vim.
@@ -186,7 +198,7 @@ impl Node {
   /// `Ctrl-w =`: splits share space by how many panes each side holds.
   pub fn equalize(&mut self) {
     if let Self::Split { axis, ratio, first, second } = self {
-      let count = |node: &Node| node.count_along(*axis) as f32;
+      let count = |node: &Self| node.count_along(*axis) as f32;
       *ratio = count(first) / (count(first) + count(second));
       first.equalize();
       second.equalize();
@@ -375,6 +387,22 @@ mod tests {
     assert_eq!(tree.leaves(), [2, 1]);
     assert!(tree.remove(2));
     assert!(matches!(tree, Node::Leaf(1)));
+  }
+
+  #[test]
+  fn tiny_areas_fit_their_panes() {
+    let mut tree = Node::Leaf(1);
+    tree.split(1, Axis::Columns, 2);
+    tree.split(2, Axis::Rows, 3);
+    for (columns, rows) in [(0, 0), (1, 1), (2, 2), (3, 0)] {
+      let mut out = Vec::new();
+      tree.layout(Rect { columns, rows, ..Rect::default() }, &mut out);
+      assert!(out.iter().all(|(_, r)| r.columns <= columns && r.rows <= rows));
+    }
+    assert!(!Node::fits(Axis::Rows, Rect { rows: 7, ..AREA }));
+    assert!(Node::fits(Axis::Rows, Rect { rows: 8, ..AREA }));
+    assert!(!Node::fits(Axis::Columns, Rect { columns: 20, ..AREA }));
+    assert!(Node::fits(Axis::Columns, Rect { columns: 21, ..AREA }));
   }
 
   #[test]

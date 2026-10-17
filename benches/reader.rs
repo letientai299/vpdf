@@ -198,7 +198,7 @@ fn searches(path: &Path) -> Result<(f64, f64, f64)> {
   let mut first = 0.0;
   for run in 0..2 {
     let started = Instant::now();
-    let generation = worker.query("the", false, PageId(0), false);
+    let generation = worker.query("the", false, PageId(0), false)?;
     loop {
       let event = worker.events.recv_timeout(Duration::from_secs(30))?;
       if event.generation != generation {

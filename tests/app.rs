@@ -83,7 +83,8 @@ fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
   assert_eq!(app.reader.scroll, 0.0);
   for _ in 0..30 {
     if let Some(animation) = &mut app.animation {
-      animation.updated = Instant::now() - Duration::from_millis(16);
+      animation.updated =
+        Instant::now().checked_sub(Duration::from_millis(16)).unwrap();
     }
     let previous = app.reader.scroll;
     app.animate();
@@ -162,7 +163,7 @@ fn changed_file_reloads_after_settling() -> Result<()> {
   std::fs::copy(root.join("book.pdf"), &path)?;
   assert!(!app.watch()?, "a change waits for the write to settle");
   assert!(!app.watch()?);
-  std::thread::sleep(std::time::Duration::from_millis(120));
+  std::thread::sleep(Duration::from_millis(120));
   assert!(app.watch()?);
   assert_ne!(app.doc.pages.len(), pages);
   assert_eq!(app.reader.cursor.page, PageId(2));
@@ -218,8 +219,8 @@ fn preview_shows_citation_target() -> Result<()> {
     let link =
       links.iter().find(|link| !matches!(link.target, Target::Uri(_))).unwrap();
     let (x, y) = (
-      (link.bounds.x0 + link.bounds.x1) / 2.0,
-      (link.bounds.y0 + link.bounds.y1) / 2.0,
+      f32::midpoint(link.bounds.x0, link.bounds.x1),
+      f32::midpoint(link.bounds.y0, link.bounds.y1),
     );
     app.reader.cursor = app.doc.text(PageId(1))?.nearest(PageId(1), x, y);
     app.ensure_cursor()?;
@@ -322,5 +323,42 @@ fn leaving_text_preview_keeps_the_panel() -> Result<()> {
     assert!(!app.text_mode, "back to the rendered view");
     assert!(app.panel.is_some(), "outline stays open");
   }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn escape_restores_the_previous_search() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 120,
+    rows: 40,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  let settle = |app: &mut App| -> Result<()> {
+    let start = Instant::now();
+    while !matches!(app.search.phase, vpdf::find::Phase::Complete) {
+      assert!(start.elapsed() < Duration::from_secs(15));
+      app.search_updates()?;
+      std::thread::sleep(Duration::from_millis(1));
+    }
+    Ok(())
+  };
+  app.start_search("python", false, false)?;
+  settle(&mut app)?;
+  let hits = app.search.hits.len();
+  app.begin_search(false);
+  app.incremental("pyth")?;
+  app.abort_search()?;
+  settle(&mut app)?;
+  assert_eq!(app.search.query.text, "python");
+  assert_eq!(app.search.hits.len(), hits);
+  // `?<CR>` repeats the pattern backward.
+  app.begin_search(true);
+  app.finish_search("", true)?;
+  assert!(app.search.query.backward);
   Ok(())
 }

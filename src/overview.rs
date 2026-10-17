@@ -1,9 +1,10 @@
 use crate::Result;
 use crate::app::App;
 use crate::keys::{Action, Input};
+use crate::layout::{Crop, page_matrix, transform};
 use crate::motion::Motion;
 use crate::text::{Bounds, PageId, Position};
-use crate::tiles::{TILE_HEIGHT, TILE_WIDTH, TileKey};
+use crate::tiles::{self, TileKey};
 use crate::{terminal, theme};
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use std::io::Write;
@@ -126,11 +127,7 @@ impl App {
     let Some(overview) = self.overview.take() else { return Ok(()) };
     let page = PageId(overview.selected);
     self.requested.clear();
-    self
-      .reader
-      .jump(Position { page, ..Position::default() }, &mut self.doc)?;
-    self.reader.scroll = self.layout.pages[page.0].top;
-    self.ensure_cursor()
+    self.go_to(Position { page, ..Position::default() }, true)
   }
 
   fn close_overview(&mut self) {
@@ -162,29 +159,28 @@ impl App {
       let fit =
         (grid.width / bounds.width()).min(grid.height / bounds.height());
       let scale = (fit * 1024.0).round() as u32;
-      let (w, h) =
-        ((bounds.width() * fit) as i32, (bounds.height() * fit) as i32);
+      // The worker draws at the rounded scale, which can differ by a pixel.
+      let size = transform(bounds, &page_matrix(bounds, scale, 0));
+      let (w, h) = (size.x1.ceil() as i32, size.y1.ceil() as i32);
       let (dx, dy) =
         ((grid.width - w as f32) / 2.0, (grid.height - h as f32) / 2.0);
-      for ty in (0..h).step_by(TILE_HEIGHT as usize) {
-        for tx in (0..w).step_by(TILE_WIDTH as usize) {
-          let key = TileKey {
-            page: PageId(index),
-            scale,
-            rotation: 0,
-            x: tx,
-            y: ty,
-            width: TILE_WIDTH.min(w - tx),
-            height: TILE_HEIGHT.min(h - ty),
-            crop: crate::layout::Crop::default(),
-          };
-          let origin = (x + dx + tx as f32, y + dy + ty as f32);
-          let screen = self.layout.screen;
-          if !self.graphics.place_at(&key, origin, screen, self.left, out)? {
-            missing.push(key);
-          }
-          wanted.push(key);
+      let whole = TileKey {
+        page: PageId(index),
+        scale,
+        rotation: 0,
+        x: 0,
+        y: 0,
+        width: w,
+        height: h,
+        crop: Crop::default(),
+      };
+      for key in tiles::cover(whole, 0..w, 0..h) {
+        let origin = (x + dx + key.x as f32, y + dy + key.y as f32);
+        let screen = self.layout.screen;
+        if !self.graphics.place_at(&key, origin, screen, self.left, out)? {
+          missing.push(key);
         }
+        wanted.push(key);
       }
       self.thumbnail_label(out, index, (x, y + grid.height), grid.width)?;
       if index == selected {

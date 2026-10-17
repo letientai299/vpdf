@@ -3,7 +3,8 @@
 //! A closed terminal sends SIGHUP, after which crossterm reads the closed
 //! tty in a loop that never returns, so the event loop cannot save. A
 //! thread waits for SIGHUP or SIGTERM, gives the loop a second to exit
-//! and save on its own, then writes the last recorded state and exits.
+//! and save on its own, then writes the last recorded state, restores
+//! the terminal, and exits.
 use crate::Result;
 use crate::prompt::History;
 use crate::state::State;
@@ -36,6 +37,8 @@ pub fn watch(
     {
       drop(state.save(&store, history));
     }
+    // The loop may block in a prompt that never sees the flag.
+    crate::terminal::restore();
     std::process::exit(128 + signal);
   });
   Ok(())

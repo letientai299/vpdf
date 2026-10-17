@@ -29,12 +29,13 @@ pub struct Preview {
 impl App {
   /// `K`: shows where the link under the cursor leads.
   pub fn preview_link(&mut self) -> Result<()> {
+    static SERIAL: AtomicU64 = AtomicU64::new(1);
     let target = self
       .link_at_cursor()?
       .ok_or_else(|| anyhow::anyhow!("No link under cursor"))?;
     let (page, y) = match &target {
       Target::Uri(uri) => {
-        self.reader.message = uri.clone();
+        self.reader.message.clone_from(uri);
         return Ok(());
       }
       Target::Page(page) => (*page, 0.0),
@@ -43,7 +44,6 @@ impl App {
     let page = PageId(page.0.min(self.doc.pages.len() - 1));
     let lines = self.target_lines(page, y)?;
     let image = if self.text_mode { None } else { Some(self.render(page, y)?) };
-    static SERIAL: AtomicU64 = AtomicU64::new(1);
     let serial = SERIAL.fetch_add(1, Ordering::Relaxed);
     self.peek = Some(Preview { target, serial, image, lines });
     Ok(())
@@ -144,7 +144,7 @@ impl App {
     write!(out, "{}{}╭{rule}╮", at.goto(top, column), theme::MUTED)?;
     for (index, line) in preview.lines.iter().enumerate() {
       let text = crate::terminal::clean(line, columns);
-      let pad = columns - text.width();
+      let pad = columns.saturating_sub(text.width());
       write!(
         out,
         "{}{}│{}{text}{}{}│",

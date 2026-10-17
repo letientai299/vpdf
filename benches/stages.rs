@@ -1,13 +1,13 @@
 //! Cold per-page stage costs: page load, display list, text, raster, and
 //! encoding, so changes to the render path can be attributed.
-use mupdf::{Colorspace, Device, IRect, Matrix, Pixmap, Rect, TextPageFlags};
+use mupdf::IRect;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use vpdf::Result;
-use vpdf::document::{Document, extract};
+use vpdf::document::{Document, TEXT_FLAGS, extract};
 use vpdf::layout::{Crop, page_matrix};
-use vpdf::tiles::{TILE_HEIGHT, TILE_WIDTH, encode};
+use vpdf::tiles::{TILE_HEIGHT, TILE_WIDTH, draw, encode};
 
 #[derive(Default, Serialize)]
 struct Stages {
@@ -23,29 +23,6 @@ struct Stages {
 
 fn ms(started: Instant) -> f64 {
   started.elapsed().as_secs_f64() * 1000.0
-}
-
-fn flags() -> TextPageFlags {
-  TextPageFlags::PRESERVE_LIGATURES
-    | TextPageFlags::PRESERVE_WHITESPACE
-    | TextPageFlags::CLIP
-    | TextPageFlags::USE_CID_FOR_UNKNOWN_UNICODE
-}
-
-fn raster(
-  list: &mupdf::DisplayList,
-  matrix: &Matrix,
-  area: IRect,
-) -> Result<Pixmap> {
-  let mut pixels =
-    Pixmap::new_with_rect(&Colorspace::device_rgb(), area, false)?;
-  pixels.clear_with(255)?;
-  let device = Device::from_pixmap(&pixels)?;
-  let clip =
-    Rect::new(area.x0 as f32, area.y0 as f32, area.x1 as f32, area.y1 as f32);
-  list.run(&device, matrix, clip)?;
-  drop(device);
-  Ok(pixels)
 }
 
 /// Text extraction and rendering each start from a fresh document, as
@@ -76,7 +53,7 @@ fn page(path: &Path, index: usize, width: f32) -> Result<Stages> {
     for x in (0..w).step_by(TILE_WIDTH as usize) {
       let area =
         IRect::new(x, y, (x + TILE_WIDTH).min(w), (y + TILE_HEIGHT).min(h));
-      tiles.push(raster(&list, &matrix, area)?);
+      tiles.push(draw(&list, &matrix, area)?);
     }
   }
   stages.raster_tiles = ms(started);
@@ -87,7 +64,7 @@ fn page(path: &Path, index: usize, width: f32) -> Result<Stages> {
   }
   stages.encode = ms(started);
   let started = Instant::now();
-  drop(list.to_text_page(flags())?);
+  drop(list.to_text_page(TEXT_FLAGS)?);
   stages.text_list = ms(started);
   Ok(stages)
 }

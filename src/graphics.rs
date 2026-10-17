@@ -121,13 +121,14 @@ impl Graphics {
   /// tiles upload again when next placed.
   pub fn lost(&mut self) {
     let stored = std::mem::replace(&mut self.stored, Cache::new(0));
-    *self = Self { doc: self.doc, stored, ..Self::default() };
+    let (doc, uploaded) = (self.doc, self.uploaded);
+    *self = Self { doc, stored, uploaded, ..Self::default() };
   }
 
   /// Keeps an encoded tile until a frame places it.
   pub fn keep(&mut self, tile: Tile) {
     let weight = tile.encoded.len();
-    self.stored.insert((self.doc, tile.key), Arc::from(tile.encoded), weight);
+    self.stored.insert((self.doc, tile.key), tile.encoded, weight);
   }
 
   pub fn upload(&mut self, tile: &Tile, out: &mut impl Write) -> Result<()> {
@@ -238,6 +239,8 @@ impl Graphics {
     left: u16,
     out: &mut impl Write,
   ) -> Result<bool> {
+    // Whole pixels, so neighboring tiles meet without a seam.
+    let (x, y) = (x.floor(), y.floor());
     let rect = Bounds {
       x0: x,
       y0: y,
@@ -430,19 +433,8 @@ fn transmit(
   format: u8,
   encoded: &str,
 ) -> Result<()> {
-  let mut chunks = encoded.as_bytes().chunks(4096).peekable();
-  let mut first = true;
-  while let Some(chunk) = chunks.next() {
-    let more = u8::from(chunks.peek().is_some());
-    let control = if first {
-      format!("a=t,f={format},o=z,i={id},q=2,s={width},v={height},m={more}")
-    } else {
-      format!("m={more},q=2")
-    };
-    graphics(out, &control, std::str::from_utf8(chunk)?)?;
-    first = false;
-  }
-  Ok(())
+  let control = format!("a=t,f={format},o=z,i={id},q=2,s={width},v={height}");
+  crate::terminal::transmit(out, &control, encoded)
 }
 
 #[cfg(test)]
@@ -486,7 +478,7 @@ mod tests {
         crop: crate::layout::Crop::default(),
       };
       graphics.upload(
-        &Tile { key, encoded: encode(&[255; 3])?, render_ms: 0.0 },
+        &Tile { key, encoded: encode(&[255; 3])?.into(), render_ms: 0.0 },
         &mut output,
       )?;
     }
@@ -538,18 +530,18 @@ mod tests {
         crop: crate::layout::Crop::default(),
       };
       graphics.upload(
-        &Tile { key, encoded: encode(&[255; 3])?, render_ms: 0.0 },
+        &Tile { key, encoded: encode(&[255; 3])?.into(), render_ms: 0.0 },
         &mut output,
       )?;
     }
     graphics.forget(1);
     output.clear();
     graphics.begin(&mut output)?;
-    let deleted: Vec<_> = commands(&output)
+    let deleted = commands(&output)
       .into_iter()
       .filter(|c| c.get("d").is_some_and(|d| d == "I"))
-      .collect();
-    assert_eq!(deleted.len(), 1);
+      .count();
+    assert_eq!(deleted, 1);
     assert_eq!(graphics.free.len(), 1);
     assert!(graphics.ids.keys().all(|key| key.0 == 2));
     Ok(())

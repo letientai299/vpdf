@@ -5,7 +5,7 @@ use crate::Result;
 use crate::diacritics::DIACRITICS;
 use crate::document::Document;
 use crate::layout::page_matrix;
-use crate::terminal::graphics;
+use crate::terminal::transmit;
 use crate::text::PageId;
 use crate::tiles::encode;
 use mupdf::Colorspace;
@@ -54,22 +54,11 @@ pub fn print(
   let id = image_id();
   let (pixels_wide, pixels_high) = (pixmap.width(), pixmap.height());
   let encoded = encode(pixmap.samples())?;
-  let mut chunks = encoded.as_bytes().chunks(4096).peekable();
-  let mut first = true;
-  while let Some(chunk) = chunks.next() {
-    let more = u8::from(chunks.peek().is_some());
-    let control = if first {
-      format!(
-        "a=T,U=1,q=2,f=24,o=z,i={id},s={pixels_wide},v={pixels_high},\
-         c={},r={},m={more}",
-        width as u32, height as u32
-      )
-    } else {
-      format!("m={more},q=2")
-    };
-    graphics(out, &control, std::str::from_utf8(chunk)?)?;
-    first = false;
-  }
+  let control = format!(
+    "a=T,U=1,q=2,f=24,o=z,i={id},s={pixels_wide},v={pixels_high},c={},r={}",
+    width as u32, height as u32
+  );
+  transmit(out, &control, &encoded)?;
   let [_, r, g, b] = id.to_be_bytes();
   for (index, row) in DIACRITICS[..height as usize].iter().enumerate() {
     if index > 0 {

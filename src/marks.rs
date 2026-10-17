@@ -40,15 +40,8 @@ impl App {
   /// Text of the extracted line at `position`, for mark listings.
   fn line_text(&mut self, position: Position) -> String {
     let Ok(text) = self.doc.text(position.page) else { return String::new() };
-    text.lines.get(position.line).map_or_else(String::new, |line| {
-      line
-        .glyphs
-        .iter()
-        .map(|glyph| glyph.ch)
-        .collect::<String>()
-        .trim()
-        .to_owned()
-    })
+    let line = text.lines.get(position.line);
+    line.map_or_else(String::new, |line| line.text().trim().to_owned())
   }
 
   /// This document's marks, then global marks.

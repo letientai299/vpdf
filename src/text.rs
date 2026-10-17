@@ -64,6 +64,17 @@ impl Bounds {
     }
   }
 
+  /// Smallest box holding both.
+  #[must_use]
+  pub fn union(self, other: Self) -> Self {
+    Self {
+      x0: self.x0.min(other.x0),
+      y0: self.y0.min(other.y0),
+      x1: self.x1.max(other.x1),
+      y1: self.y1.max(other.y1),
+    }
+  }
+
   pub fn contains(self, x: f32, y: f32) -> bool {
     x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1
   }
@@ -90,6 +101,19 @@ pub struct Line {
 impl Line {
   pub fn text(&self) -> String {
     self.glyphs.iter().map(|g| g.ch).collect()
+  }
+
+  /// First and last glyph of the run that shares `glyph`'s class.
+  pub fn run(&self, glyph: usize) -> Option<(usize, usize)> {
+    let kind = class(self.glyphs.get(glyph)?.ch);
+    let other = |g: &Glyph| class(g.ch) != kind;
+    let first =
+      self.glyphs[..glyph].iter().rposition(other).map_or(0, |i| i + 1);
+    let last = self.glyphs[glyph..]
+      .iter()
+      .position(other)
+      .map_or(self.glyphs.len(), |i| glyph + i);
+    Some((first, last - 1))
   }
 }
 

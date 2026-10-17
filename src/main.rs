@@ -40,7 +40,7 @@ enum Command {
   /// Search document text.
   Search { file: PathBuf, query: String },
   /// Print a page as an image in Kitty, else as text; sized for
-  /// `fzf --preview` through FZF_PREVIEW_COLUMNS and FZF_PREVIEW_LINES.
+  /// `fzf --preview` through `FZF_PREVIEW_COLUMNS` and `FZF_PREVIEW_LINES`.
   Preview {
     file: PathBuf,
     #[arg(long, default_value_t = 1)]

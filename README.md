@@ -79,8 +79,10 @@ leave the PDF unchanged.
 type; `Esc` returns to the start. The status line shows `[match/total]`; `n N`
 cycle matches, and `*` finds the cursor word. Literal search folds Unicode case,
 decomposes compatibility forms, collapses whitespace, and joins line-end
-hyphenation. Prefix `\v` for regular expressions. The bounded regex engine
-supports lookaround and backreferences; it is not Python's regex implementation.
+hyphenation. Prefix `\v` for regular expressions, which run on that folded,
+decomposed text: `(?-i)` cannot match capitals, and accented letters in classes
+need their decomposed form. The bounded regex engine supports lookaround and
+backreferences; it is not Python's regex implementation.
 
 `gs`, `go`, and `gl` open search results, the table of contents, and links. When
 a PDF has no outline, `go` shows one inferred in the background from larger text

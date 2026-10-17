@@ -111,11 +111,11 @@ impl App {
   pub fn marks(&mut self, out: &mut impl Write) -> Result<()> {
     if !self.search.hidden {
       let visible = self.layout.visible(self.reader.scroll);
-      let ranges: Vec<_> = self
-        .search
-        .hits
+      let hits = &self.search.hits;
+      let start = hits.partition_point(|hit| hit.first.page.0 < visible.start);
+      let ranges: Vec<_> = hits[start..]
         .iter()
-        .filter(|hit| visible.contains(&hit.first.page.0))
+        .take_while(|hit| hit.first.page.0 < visible.end)
         .take(300)
         .map(|hit| (hit.first, hit.last))
         .collect();
@@ -176,38 +176,32 @@ impl App {
     color: [u8; 4],
     out: &mut impl Write,
   ) -> Result<()> {
-    let (first, last) = crate::motion::range(first, last);
+    let range = crate::motion::range(first, last);
+    let (first, last) = range;
     for page in self.layout.visible(self.reader.scroll) {
       if page < first.page.0 || page > last.page.0 {
         continue;
       }
       let text = self.doc.text(PageId(page))?;
-      for (line, row) in text.lines.iter().enumerate() {
-        if page == first.page.0 && line < first.line {
-          continue;
-        }
+      let skip = if page == first.page.0 { first.line } else { 0 };
+      for (line, row) in text.lines.iter().enumerate().skip(skip) {
         if page == last.page.0 && line > last.line {
           break;
         }
-        let mut bounds: Option<Bounds> = None;
-        for (glyph, ch) in row.glyphs.iter().enumerate() {
-          let pos = Position { page: PageId(page), line, glyph };
-          let selected = if linewise {
-            (pos.page, pos.line) >= (first.page, first.line)
-              && (pos.page, pos.line) <= (last.page, last.line)
-          } else {
-            pos >= first && pos <= last
-          };
-          if !selected {
-            continue;
-          }
-          bounds = Some(bounds.map_or(ch.bounds, |b| Bounds {
-            x0: b.x0.min(ch.bounds.x0),
-            y0: b.y0.min(ch.bounds.y0),
-            x1: b.x1.max(ch.bounds.x1),
-            y1: b.y1.max(ch.bounds.y1),
-          }));
-        }
+        let covered = |glyph| {
+          crate::motion::covers(
+            range,
+            linewise,
+            Position { page: PageId(page), line, glyph },
+          )
+        };
+        let bounds = row
+          .glyphs
+          .iter()
+          .enumerate()
+          .filter(|(glyph, _)| covered(*glyph))
+          .map(|(_, ch)| ch.bounds)
+          .reduce(Bounds::union);
         if let Some(bounds) = bounds {
           let rect =
             self.layout.project(PageId(page), bounds, self.reader.scroll);
@@ -236,6 +230,10 @@ impl App {
 
   /// Draws within the pane; the caller starts and ends the frame.
   pub fn draw_pane(&mut self, out: &mut impl Write) -> Result<()> {
+    // A shrunken terminal can leave no room below the status line.
+    if self.screen.rows < 2 || self.screen.columns == 0 {
+      return Ok(());
+    }
     // Rows above the status line stay blank between plain frames.
     let plain = self.plain();
     if !(plain && self.blank) {
@@ -265,9 +263,17 @@ impl App {
     let row = self.screen.rows - 1;
     let Some(prompt) = &self.prompt else {
       if let Some(clues) = &self.clues {
-        let (grid, keys) = self.clue_grid(clues);
+        let (labels, grid, keys) = self.clue_grid(clues);
         let bottom = (self.at, row - 1);
-        crate::grid::draw(out, bottom, &grid, None, keys, self.screen)?;
+        crate::grid::draw(
+          out,
+          bottom,
+          &labels,
+          &grid,
+          None,
+          keys,
+          self.screen,
+        )?;
       }
       self.status(out, row)?;
       write!(out, "\x1b[?25l")?;

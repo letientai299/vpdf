@@ -48,7 +48,7 @@ fn marked(
     .areas
     .first()
     .map_or(Position { page, ..Position::default() }, |area| {
-      text.nearest(page, area.x0, (area.y0 + area.y1) / 2.0)
+      text.nearest(page, area.x0, f32::midpoint(area.y0, area.y1))
     });
   if !MARKUP.contains(&annotation.kind.as_str()) {
     return (start, String::new());
@@ -58,8 +58,8 @@ fn marked(
   for (line, row) in text.lines.iter().enumerate() {
     let before = out.len();
     for (glyph, ch) in row.glyphs.iter().enumerate() {
-      let x = (ch.bounds.x0 + ch.bounds.x1) / 2.0;
-      let y = (ch.bounds.y0 + ch.bounds.y1) / 2.0;
+      let x = f32::midpoint(ch.bounds.x0, ch.bounds.x1);
+      let y = f32::midpoint(ch.bounds.y0, ch.bounds.y1);
       if annotation.areas.iter().any(|area| area.contains(x, y)) {
         first.get_or_insert(Position { page, line, glyph });
         out.push(ch.ch);

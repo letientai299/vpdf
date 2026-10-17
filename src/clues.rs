@@ -79,8 +79,12 @@ impl App {
       .registers
       .entries()
       .map(|(name, text)| {
-        let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
-        let preview: String = line.chars().take(40).collect();
+        let preview: String = text
+          .split_whitespace()
+          .flat_map(|word| std::iter::once(' ').chain(word.chars()))
+          .skip(1)
+          .take(40)
+          .collect();
         (name.to_string(), preview)
       })
       .collect();
@@ -93,28 +97,26 @@ impl App {
   /// Rows the clues take above the status line.
   pub fn clue_rows(&self) -> u16 {
     self.clues.as_ref().map_or(0, |clues| {
-      let grid = self.clue_grid(clues);
-      u16::try_from(grid.0.visible).unwrap_or(0)
+      let (_, grid, _) = self.clue_grid(clues);
+      u16::try_from(grid.visible).unwrap_or(0)
     })
   }
 
   /// Layout and key column width.
-  pub fn clue_grid(&self, clues: &Clues) -> (crate::grid::Grid, usize) {
+  /// Labels, their placement, and the key width of each label.
+  pub fn clue_grid(
+    &self,
+    clues: &Clues,
+  ) -> (Vec<String>, crate::grid::Grid, usize) {
     let keys = clues.items.iter().map(|(key, _)| key.len()).max().unwrap_or(0);
-    let labels = clues
+    let labels: Vec<_> = clues
       .items
       .iter()
       .map(|(key, about)| format!("{key:<keys$}  {about}"))
       .collect();
     let columns = usize::from(self.screen.columns);
-    (
-      crate::grid::layout(
-        labels,
-        columns,
-        crate::grid::limit(self.screen),
-        None,
-      ),
-      keys,
-    )
+    let limit = crate::grid::limit(self.screen);
+    let grid = crate::grid::layout(&labels, columns, limit, None);
+    (labels, grid, keys)
   }
 }

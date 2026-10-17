@@ -164,7 +164,7 @@ fn ctrl_w_splits_moves_and_closes_panes() -> Result<()> {
   let left = session.app().id;
   assert_eq!(session.app().reader.cursor.page.0, 29, "split keeps the view");
   assert_eq!((session.app().at.column, session.app().screen.columns), (0, 60));
-  session.app().request = Some(vpdf::app::Request::Window {
+  session.app().request = Some(Request::Window {
     command: Window::Split(Axis::Rows),
     count: 1,
     explicit: false,

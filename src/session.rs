@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::app::{App, Request, TabMove, Tabline, Window};
+use crate::document::PasswordRequired;
 use crate::graphics::Graphics;
 use crate::home::{Home, Outcome};
 use crate::keys::PanelKind;
@@ -13,7 +14,7 @@ use crate::text::PageId;
 use crate::theme;
 use crate::trace::Drawable;
 use crate::watch::Watcher;
-use crossterm::event::{self, Event, KeyEventKind, MouseEvent};
+use crossterm::event::{self, Event, KeyEventKind, MouseEvent, MouseEventKind};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -81,6 +82,8 @@ pub struct Session {
   latest: crate::hangup::Latest,
   /// Recorded positions not yet written.
   unsaved: bool,
+  /// History revision last handed to the hangup thread.
+  recorded: u64,
   /// Panes the last arrangement showed; ones hidden since are trimmed.
   shown: Vec<u32>,
   /// Frame interval while anything moves.
@@ -106,6 +109,7 @@ impl Session {
       hangup: Arc::new(AtomicBool::new(false)),
       latest: crate::hangup::Latest::default(),
       unsaved: false,
+      recorded: 0,
       shown: Vec::new(),
       frame: crate::pace::FRAME,
     }
@@ -116,18 +120,23 @@ impl Session {
     self.state.save(store, &self.history)
   }
 
-  /// Records the focused pane and saves when it moved.
-  /// Records the focused pane in memory, where the hangup thread finds
-  /// it too.
+  /// Records the focused pane and new history in memory, where the
+  /// hangup thread finds them too.
   fn record(&mut self) {
     if !self.running() || self.tabs.is_empty() {
       return;
     }
     let tab = &self.tabs[self.active];
-    if !self.state.remember(&tab.panes[tab.focus]) {
-      return;
+    let moved = self.state.remember(&tab.panes[tab.focus]);
+    if moved || self.history.revision != self.recorded {
+      self.changed();
     }
+  }
+
+  /// Marks state unsaved and hands the hangup thread a copy.
+  fn changed(&mut self) {
     self.unsaved = true;
+    self.recorded = self.history.revision;
     if let Ok(mut latest) = self.latest.lock() {
       *latest = Some((self.state.clone(), self.history.clone()));
     }
@@ -178,6 +187,12 @@ impl Session {
 
   /// Moves focus to pane `pane` of tab `tab`, with the graphics.
   fn focus(&mut self, tab: usize, pane: usize) -> Result<()> {
+    // Panes share one preview image; only the focused pane shows one.
+    if let Some(tab) = self.tabs.get_mut(self.active)
+      && let Some(app) = tab.panes.get_mut(tab.focus)
+    {
+      app.peek = None;
+    }
     let graphics = self.take_graphics();
     let target = &mut self.tabs[tab];
     if target.focus != pane {
@@ -237,6 +252,9 @@ impl Session {
       let at = At { column: rect.column, row: rect.row };
       let before = (app.screen.columns, app.screen.rows, app.screen.origin);
       if before != (pane.columns, pane.rows, pane.origin) || app.at != at {
+        // Hint labels and link previews sit at the old size.
+        app.hints = None;
+        app.peek = None;
         app.screen = pane;
         app.at = at;
         app.requested.clear();
@@ -256,7 +274,8 @@ impl Session {
     if let Some((tab, pane)) = found {
       return self.focus(tab, pane);
     }
-    let app = self.load(&path, screen)?;
+    let password = self.password.clone();
+    let app = self.load(&path, &password, screen)?;
     let mut graphics = self.take_graphics();
     if tab || self.tabs.is_empty() {
       let index = if self.tabs.is_empty() { 0 } else { self.active + 1 };
@@ -270,18 +289,22 @@ impl Session {
     let old = std::mem::replace(&mut tab.panes[focus], app);
     let id = tab.panes[focus].id;
     replace_leaf(&mut tab.tree, old.id, id);
-    graphics.forget(old.id);
-    self.retire(&old);
+    self.retire(&old, &mut graphics);
     self.give(graphics);
     self.arrange()
   }
 
   /// Loads `path` and restores its saved view.
-  fn load(&mut self, path: &Path, screen: Screen) -> Result<App> {
-    let mut secret = self.password.clone();
+  fn load(
+    &mut self,
+    path: &Path,
+    password: &str,
+    screen: Screen,
+  ) -> Result<App> {
+    let mut secret = password.to_owned();
     let mut app = loop {
       match App::with_screen(path, &secret, self.text, screen) {
-        Err(error) if error.to_string() == "PDF password required" => {
+        Err(error) if error.is::<PasswordRequired>() => {
           secret = crate::prompt::password()?;
         }
         result => break result?,
@@ -292,11 +315,14 @@ impl Session {
       app.restore(entry)?;
     }
     self.state.remember(&app);
+    self.changed();
     Ok(app)
   }
 
-  /// Saves a closing pane's place and stops watching its file.
-  fn retire(&mut self, app: &App) {
+  /// Saves a closing pane's place, deletes its images, and stops
+  /// watching its file.
+  fn retire(&mut self, app: &App, graphics: &mut Graphics) {
+    graphics.forget(app.id);
     self.watcher.remove(&app.path);
     self.state.remember(app);
   }
@@ -314,8 +340,7 @@ impl Session {
     let mut graphics = self.take_graphics();
     let tab = self.tabs.remove(self.active);
     for app in &tab.panes {
-      graphics.forget(app.id);
-      self.retire(app);
+      self.retire(app, &mut graphics);
     }
     if self.tabs.is_empty() {
       return self.save();
@@ -339,8 +364,7 @@ impl Session {
       next.or_else(|| tab.order().first().and_then(|id| tab.index(*id)));
     tab.focus = next.unwrap_or(0);
     tab.last = None;
-    graphics.forget(app.id);
-    self.retire(&app);
+    self.retire(&app, &mut graphics);
     self.give(graphics);
     self.arrange()
   }
@@ -348,11 +372,13 @@ impl Session {
   /// Splits the focused pane; the new pane shows `file` or the same view.
   fn split(&mut self, axis: Axis, file: Option<&Path>) -> Result<()> {
     let screen = self.app().screen;
-    let path = match file {
-      Some(file) => std::fs::canonicalize(file)?,
-      None => self.app().path.clone(),
+    anyhow::ensure!(Node::fits(axis, full(screen)), "Not enough room");
+    // The same document reuses the password that unlocked it.
+    let (path, password) = match file {
+      Some(file) => (std::fs::canonicalize(file)?, self.password.clone()),
+      None => (self.app().path.clone(), self.app().password.clone()),
     };
-    let mut app = self.load(&path, screen)?;
+    let mut app = self.load(&path, &password, screen)?;
     if file.is_none() {
       app.mirror(self.app())?;
     }
@@ -439,10 +465,11 @@ impl Session {
     tab.tree = Node::Leaf(keep);
     tab.focus = 0;
     tab.last = None;
+    let mut graphics = self.take_graphics();
     for app in &closing {
-      self.app().graphics.forget(app.id);
-      self.retire(app);
+      self.retire(app, &mut graphics);
     }
+    self.give(graphics);
     self.arrange()
   }
 
@@ -501,6 +528,7 @@ impl Session {
         let app = self.app();
         let mark = Mark { path: app.path.clone(), cursor: app.reader.cursor };
         self.state.marks.insert(name, mark);
+        self.changed();
         Ok(())
       }
       Some(Request::GoMark(name, exact)) => {
@@ -516,6 +544,7 @@ impl Session {
         None => Ok(()),
       },
       Some(Request::Choose(path)) => self.choose(&path, screen),
+      Some(Request::TabClose) => self.close(),
       Some(Request::QuitAll) => {
         self.quit = true;
         Ok(())
@@ -573,7 +602,13 @@ impl Session {
   fn home(&mut self, out: &mut impl Write) -> Result<()> {
     let Some(mut home) = self.home.take() else { return Ok(()) };
     home.draw(out)?;
-    let outcome = home.event(event::read()?, &mut self.history);
+    let event = loop {
+      let event = event::read()?;
+      if !moved(&event) {
+        break event;
+      }
+    };
+    let outcome = home.event(event, &mut self.history);
     match outcome {
       Ok(Outcome::Open(path)) => match self.open(&path, true, home.screen) {
         Ok(()) => return Ok(()),
@@ -671,6 +706,7 @@ pub fn view(paths: &[PathBuf], password: &str, launch: &Launch) -> Result<()> {
     Arc::clone(&session.hangup),
     Arc::clone(&session.latest),
   )?;
+  terminal::restore_on_panic();
   let _terminal = Terminal::enter()?;
   let screen = terminal::size()?;
   if paths.is_empty() {
@@ -709,28 +745,42 @@ fn updates(session: &mut Session, out: &mut impl Write) -> Result<bool> {
   for index in 0..tab.panes.len() {
     dirty |= tab.lend(index, App::raster_updates);
     let app = &mut tab.panes[index];
-    dirty |= app.search_updates()?;
-    dirty |= app.ocr_updates()?;
-    dirty |= app.outline_updates()?;
+    // A failed update shows in its pane instead of ending the session.
+    let updated = app.search_updates().and_then(|search| {
+      Ok(search | app.ocr_updates()? | app.outline_updates()?)
+    });
+    dirty |= updated.unwrap_or_else(|error| {
+      app.error = Some(error.to_string());
+      true
+    });
   }
   Ok(dirty)
 }
 
-/// Reloads the focused pane after its file changes.
+/// Reloads the active tab's panes after their files change; each holds
+/// the shared graphics while it reloads, so its old images go.
 fn watch(session: &mut Session, force: bool) -> bool {
-  let path = session.app().path.clone();
-  let touched = session.watcher.touched(&path);
-  let app = session.app();
-  if !(touched || force || app.settling.is_some()) {
-    return false;
-  }
-  match app.watch() {
-    Ok(reloaded) => reloaded,
-    Err(error) => {
-      app.error = Some(format!("Reload failed: {error}"));
-      true
+  let touched = session.watcher.touched();
+  let tab = &mut session.tabs[session.active];
+  let mut dirty = false;
+  for index in 0..tab.panes.len() {
+    let app = &tab.panes[index];
+    if !(force || app.settling.is_some() || touched.contains(&app.path)) {
+      continue;
     }
+    dirty |= tab.lend(index, |app| {
+      app.watch().unwrap_or_else(|error| {
+        app.error = Some(format!("Reload failed: {error}"));
+        true
+      })
+    });
   }
+  dirty
+}
+
+/// A bare pointer move, which all-motion mouse tracking reports.
+fn moved(event: &Event) -> bool {
+  matches!(event, Event::Mouse(mouse) if mouse.kind == MouseEventKind::Moved)
 }
 
 /// Handles one input; errors show in the focused pane.
@@ -741,14 +791,14 @@ fn input(session: &mut Session, event: Event) -> Result<()> {
       let app = &mut tab.panes[tab.focus];
       app.reader.message.clear();
       app.error = None;
-      app.key(key, &mut session.history)?;
-      app.after_key()
+      // Clues close even when the key fails.
+      let result = app.key(key, &mut session.history);
+      let cleared = app.after_key();
+      result.and(cleared)
     }
     Event::Paste(text) => {
-      if let Some(prompt) = &mut session.app().prompt {
-        prompt.insert(&text);
-      }
-      Ok(())
+      let tab = &mut session.tabs[session.active];
+      tab.panes[tab.focus].paste(&text, &mut session.history)
     }
     Event::Resize(_, _) => {
       session.screen = Some(terminal::size()?);
@@ -827,9 +877,13 @@ fn run(session: &mut Session) -> Result<()> {
       }
       continue;
     }
+    let event = event::read()?;
+    if moved(&event) {
+      continue;
+    }
     touched = Instant::now();
     trace.input();
-    let result = input(session, event::read()?);
+    let result = input(session, event);
     if let Err(error) = result.and_then(|()| session.settle())
       && !session.tabs.is_empty()
     {

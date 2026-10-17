@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::cache::Cache;
 use crate::text::{Bounds, Glyph, Line, PageId, Text};
-use anyhow::{bail, ensure};
+use anyhow::ensure;
 use mupdf::pdf::PdfDocument;
 use mupdf::{DisplayList, TextPageFlags};
 use serde::Serialize;
@@ -68,7 +68,7 @@ pub struct Heading {
 }
 
 /// Display lists by page. Handles of one file share them, so a page is
-/// interpreted once for both its text and its tiles; MuPDF renders a
+/// interpreted once for both its text and its tiles; `MuPDF` renders a
 /// list on any thread while its document stays on one.
 pub type Lists = Mutex<Cache<PageId, Arc<DisplayList>>>;
 
@@ -89,11 +89,23 @@ pub struct Document {
   ocr: Cache<PageId, Arc<Text>>,
 }
 
+/// The document is encrypted and the password did not open it.
+#[derive(Debug)]
+pub struct PasswordRequired;
+
+impl std::fmt::Display for PasswordRequired {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str("PDF password required")
+  }
+}
+
+impl std::error::Error for PasswordRequired {}
+
 impl Document {
   pub fn open(path: &Path, password: &str) -> Result<Self> {
     let mut native = PdfDocument::open(path)?;
     if native.needs_password()? && !native.authenticate(password)? {
-      bail!("PDF password required");
+      return Err(PasswordRequired.into());
     }
     let count = native.page_count()?;
     ensure!(count > 0, "PDF contains no pages");
@@ -263,6 +275,11 @@ impl Document {
   pub fn annotations(&self, page: PageId) -> Result<Vec<Annotation>> {
     use mupdf::pdf::PdfAnnotationType as Kind;
     self.validate(page)?;
+    // Most pages list none; the lookup skips loading those pages.
+    let listed = self.native.find_page(page.0 as i32)?.get_dict("Annots")?;
+    if listed.map_or(Ok(0), |list| list.len())? == 0 {
+      return Ok(Vec::new());
+    }
     let native = self.native.load_pdf_page(page.0 as i32)?;
     let mut found = Vec::new();
     for annotation in native.annotations() {
@@ -401,21 +418,21 @@ fn flatten(items: &[mupdf::Outline], depth: usize, out: &mut Vec<Heading>) {
   }
 }
 
-const TEXT_FLAGS: TextPageFlags = TextPageFlags::PRESERVE_LIGATURES
+pub const TEXT_FLAGS: TextPageFlags = TextPageFlags::PRESERVE_LIGATURES
   .union(TextPageFlags::PRESERVE_WHITESPACE)
   .union(TextPageFlags::CLIP)
   .union(TextPageFlags::USE_CID_FOR_UNKNOWN_UNICODE);
 
 pub fn extract(page: &mupdf::Page) -> Result<Text> {
-  read(&page.to_text_page(TEXT_FLAGS)?)
+  Ok(read(&page.to_text_page(TEXT_FLAGS)?))
 }
 
 /// Text from a display list, which skips interpreting the page again.
 pub fn extract_list(list: &DisplayList) -> Result<Text> {
-  read(&list.to_text_page(TEXT_FLAGS)?)
+  Ok(read(&list.to_text_page(TEXT_FLAGS)?))
 }
 
-fn read(raw: &mupdf::TextPage) -> Result<Text> {
+fn read(raw: &mupdf::TextPage) -> Text {
   let mut text = Text::default();
   let mut count = 0;
   for block in raw.blocks() {
@@ -431,14 +448,7 @@ fn read(raw: &mupdf::TextPage) -> Result<Text> {
           text.truncated = true;
           break;
         }
-        let q = glyph.quad();
-        let bounds = Bounds {
-          x0: q.ul.x.min(q.ll.x).min(q.ur.x).min(q.lr.x),
-          y0: q.ul.y.min(q.ll.y).min(q.ur.y).min(q.lr.y),
-          x1: q.ul.x.max(q.ll.x).max(q.ur.x).max(q.lr.x),
-          y1: q.ul.y.max(q.ll.y).max(q.ur.y).max(q.lr.y),
-        };
-        row.glyphs.push(Glyph { ch, bounds });
+        row.glyphs.push(Glyph { ch, bounds: quad_bounds(&glyph.quad()) });
         count += 1;
       }
       if row.glyphs.iter().any(|g| !g.ch.is_whitespace()) {
@@ -447,11 +457,11 @@ fn read(raw: &mupdf::TextPage) -> Result<Text> {
         text.lines.push(row);
       }
       if text.truncated {
-        return Ok(text);
+        return text;
       }
     }
   }
-  Ok(text)
+  text
 }
 
 #[cfg(test)]

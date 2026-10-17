@@ -35,7 +35,7 @@ fn paper_blocks_supply_paragraph_boundaries() -> Result<()> {
   reader.motion(Motion::NextParagraph, 1, false, &mut doc)?;
   let expected = text.lines[first..next]
     .iter()
-    .map(|line| line.text())
+    .map(vpdf::text::Line::text)
     .collect::<Vec<_>>()
     .join("\n");
   assert_eq!(reader.pending_yank.take().unwrap().text, expected);

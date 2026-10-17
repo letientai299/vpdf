@@ -25,6 +25,8 @@ pub enum PromptKind {
 pub struct History {
   pub commands: Vec<String>,
   pub searches: Vec<String>,
+  /// Counts pushes, so a saver can tell when entries changed.
+  pub revision: u64,
 }
 
 impl History {
@@ -50,6 +52,7 @@ impl History {
     if entries.len() > HISTORY {
       entries.remove(0);
     }
+    self.revision += 1;
   }
 }
 
@@ -57,6 +60,8 @@ impl History {
 /// zsh; `selected` is set once Tab starts cycling.
 pub struct Menu {
   pub items: Vec<String>,
+  /// What the list shows: the last component of each path.
+  pub labels: Vec<String>,
   pub selected: Option<usize>,
   start: usize,
   end: usize,
@@ -64,17 +69,8 @@ pub struct Menu {
 }
 
 impl Menu {
-  /// Paths show their last component.
   pub fn layout(&self, columns: usize, limit: usize) -> Grid {
-    let labels = self
-      .items
-      .iter()
-      .map(|item| {
-        let start = item.trim_end_matches('/').rfind('/').map_or(0, |i| i + 1);
-        item[start..].to_owned()
-      })
-      .collect();
-    grid::layout(labels, columns, limit, self.selected)
+    grid::layout(&self.labels, columns, limit, self.selected)
   }
 }
 
@@ -100,7 +96,7 @@ pub struct Prompt {
   prefix: bool,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PromptEvent {
   Pending,
   Edited,
@@ -149,9 +145,25 @@ impl Prompt {
   /// Replaces the whole line, as after editing it externally.
   pub fn replace(&mut self, text: &str) {
     self.snapshot();
+    self.ghost.clear();
     self.text.clear();
     self.cursor = 0;
     self.insert(&text.replace(['\n', '\r'], " "));
+  }
+
+  /// Inserts pasted text as one undoable edit.
+  pub fn paste(&mut self, text: &str) -> PromptEvent {
+    self.snapshot();
+    self.menu = None;
+    self.recall = None;
+    self.ghost.clear();
+    let before = self.text.len();
+    self.insert(text);
+    if self.text.len() == before {
+      PromptEvent::Pending
+    } else {
+      PromptEvent::Edited
+    }
   }
 
   pub fn insert(&mut self, text: &str) {
@@ -212,7 +224,8 @@ impl Prompt {
       (true, _, KeyCode::Char('j' | 'm')) | (_, _, KeyCode::Enter) => {
         return PromptEvent::Submit;
       }
-      (true, _, KeyCode::Char('x')) => {
+      // The external editor would write a password to disk.
+      (true, _, KeyCode::Char('x')) if self.kind != PromptKind::Password => {
         self.prefix = true;
         return PromptEvent::Pending;
       }
@@ -247,7 +260,7 @@ impl Prompt {
       'k' => self.edit(|p| p.remove(p.cursor..p.text.len())),
       'u' => self.edit(|p| p.remove(0..p.text.len())),
       'w' => self.edit(|p| {
-        p.remove(line::word_start(&p.text, p.cursor, NARROW)..p.cursor)
+        p.remove(line::word_start(&p.text, p.cursor, NARROW)..p.cursor);
       }),
       'y' => {
         let kill = self.kill.clone();
@@ -272,12 +285,12 @@ impl Prompt {
       KeyCode::Char('f') | KeyCode::Right => self.forward_word(SHELL),
       KeyCode::Char('d') => {
         self.edit(|p| {
-          p.remove(p.cursor..line::word_end(&p.text, p.cursor, SHELL))
+          p.remove(p.cursor..line::word_end(&p.text, p.cursor, SHELL));
         });
       }
       KeyCode::Backspace => {
         self.edit(|p| {
-          p.remove(line::word_start(&p.text, p.cursor, SHELL)..p.cursor)
+          p.remove(line::word_start(&p.text, p.cursor, SHELL)..p.cursor);
         });
       }
       _ => {}
@@ -495,10 +508,19 @@ impl Prompt {
       return;
     }
     self.snapshot();
+    self.ghost.clear();
     let common = common_prefix(&items);
     let single = items.len() == 1;
+    let labels = items
+      .iter()
+      .map(|item| {
+        let start = item.trim_end_matches('/').rfind('/').map_or(0, |i| i + 1);
+        item[start..].to_owned()
+      })
+      .collect();
     self.menu = Some(Menu {
       items,
+      labels,
       selected: None,
       start,
       end: self.cursor,
@@ -560,14 +582,17 @@ pub fn password() -> crate::Result<String> {
       screen.columns,
     )?;
     out.flush()?;
-    if let Event::Key(key) = event::read()?
-      && key.kind != KeyEventKind::Release
-    {
-      match prompt.feed(key, &history) {
-        PromptEvent::Submit => return Ok(prompt.text),
-        PromptEvent::Cancel => anyhow::bail!("Password cancelled"),
-        _ => {}
+    let event = match event::read()? {
+      Event::Key(key) if key.kind != KeyEventKind::Release => {
+        prompt.feed(key, &history)
       }
+      Event::Paste(text) => prompt.paste(&text),
+      _ => continue,
+    };
+    match event {
+      PromptEvent::Submit => return Ok(prompt.text),
+      PromptEvent::Cancel => anyhow::bail!("Password cancelled"),
+      _ => {}
     }
   }
 }
@@ -636,6 +661,17 @@ mod tests {
     assert_eq!(prompt.text, "ocr ");
     press(&mut prompt, &history, &[(KeyCode::Char(' '), CTRL)]);
     assert_eq!((prompt.text.as_str(), prompt.ghost.as_str()), ("ocr eng", ""));
+  }
+
+  #[test]
+  fn password_prompts_skip_the_editor() {
+    let history = History::default();
+    let mut prompt = Prompt::new(PromptKind::Password);
+    press(&mut prompt, &history, &[(KeyCode::Char('x'), CTRL)]);
+    let event = prompt.feed(KeyEvent::new(KeyCode::Char('e'), CTRL), &history);
+    assert_ne!(event, PromptEvent::Editor);
+    assert_eq!(prompt.paste("secret"), PromptEvent::Edited);
+    assert_eq!(prompt.text, "secret");
   }
 
   #[test]

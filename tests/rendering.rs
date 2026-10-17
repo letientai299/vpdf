@@ -57,8 +57,8 @@ fn cropped_margins_keep_all_ink() -> Result<()> {
       for line in &doc.text(PageId(page))?.lines {
         for glyph in line.glyphs.iter().filter(|g| !g.ch.is_whitespace()) {
           let (x, y) = (
-            (glyph.bounds.x0 + glyph.bounds.x1) / 2.0,
-            (glyph.bounds.y0 + glyph.bounds.y1) / 2.0,
+            f32::midpoint(glyph.bounds.x0, glyph.bounds.x1),
+            f32::midpoint(glyph.bounds.y0, glyph.bounds.y1),
           );
           assert!(
             cropped.contains(x, y),
@@ -137,8 +137,8 @@ fn worker_tiles_equal_full_page_pixels() -> Result<()> {
           .results
           .recv_timeout(std::time::Duration::from_secs(20))?
           .map_err(anyhow::Error::msg)?;
-        let packed =
-          base64::engine::general_purpose::STANDARD.decode(&tile.encoded)?;
+        let packed = base64::engine::general_purpose::STANDARD
+          .decode(tile.encoded.as_bytes())?;
         let mut pixels = Vec::new();
         flate2::read::ZlibDecoder::new(&packed[..]).read_to_end(&mut pixels)?;
         let key = tile.key;

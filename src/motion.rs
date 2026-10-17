@@ -200,18 +200,11 @@ impl Reader {
     source: &mut impl TextSource,
   ) -> Result<()> {
     let direction = if motion == Motion::BackWord { -1 } else { 1 };
-    if motion != Motion::Word {
-      if !self.step(direction, false, source)? {
-        return Ok(());
-      }
-      for _ in 0..100_000 {
-        if class(self.character(source)?) != 0 {
-          break;
-        }
-        if !self.step(direction, false, source)? {
-          return Ok(());
-        }
-      }
+    if motion != Motion::Word
+      && !(self.step(direction, false, source)?
+        && self.skip_blank(direction, source)?)
+    {
+      return Ok(());
     }
     let initial = class(self.character(source)?);
     for _ in 0..100_000 {
@@ -219,26 +212,55 @@ impl Reader {
       if !self.step(direction, false, source)? {
         break;
       }
-      if class(self.character(source)?) != initial
-        || self.cursor.page != previous.page
-        || self.cursor.line != previous.line
-      {
-        if motion != Motion::Word {
-          self.cursor = previous;
-          break;
-        }
-        while class(self.character(source)?) == 0 {
-          if !self.step(1, false, source)? {
-            return Ok(());
-          }
-        }
-        break;
+      let run_ended = class(self.character(source)?) != initial
+        || (self.cursor.page, self.cursor.line)
+          != (previous.page, previous.line);
+      if !run_ended {
+        continue;
       }
+      if motion == Motion::Word {
+        self.skip_blank(1, source)?;
+      } else {
+        self.cursor = previous;
+      }
+      break;
     }
     Ok(())
+  }
+
+  /// Steps over blank space; false at the end of the document.
+  fn skip_blank(
+    &mut self,
+    direction: i32,
+    source: &mut impl TextSource,
+  ) -> Result<bool> {
+    for _ in 0..100_000 {
+      if class(self.character(source)?) != 0 {
+        return Ok(true);
+      }
+      if !self.step(direction, false, source)? {
+        return Ok(false);
+      }
+    }
+    Ok(true)
   }
 }
 
 pub fn range(a: Position, b: Position) -> (Position, Position) {
   if a <= b { (a, b) } else { (b, a) }
+}
+
+/// Whether `pos` lies in the ordered range, by whole lines when
+/// `linewise`.
+pub fn covers(
+  (first, last): (Position, Position),
+  linewise: bool,
+  pos: Position,
+) -> bool {
+  if linewise {
+    let line = (pos.page, pos.line);
+    (first.page, first.line) <= line && line <= (last.page, last.line)
+  } else {
+    first <= pos && pos <= last
+  }
 }

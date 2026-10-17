@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use notify::{RecursiveMode, Watcher as _};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime};
@@ -17,7 +17,7 @@ pub fn stamp(path: &Path) -> Option<Stamp> {
   Some((meta.modified().ok()?, meta.len()))
 }
 
-/// OS file events (FSEvents, inotify, kqueue) for open documents.
+/// OS file events (`FSEvents`, inotify, kqueue) for open documents.
 ///
 /// Parent directories are watched because builds often replace the PDF
 /// by rename, which ends a watch on the old inode. Network mounts may
@@ -67,13 +67,9 @@ impl Watcher {
     }
   }
 
-  /// Drains events; whether any named `file` since the last call.
-  pub fn touched(&self, file: &Path) -> bool {
-    let mut hit = false;
-    for path in self.events.try_iter() {
-      hit |= path == file;
-    }
-    hit
+  /// Drains events; the files named since the last call.
+  pub fn touched(&self) -> HashSet<PathBuf> {
+    self.events.try_iter().collect()
   }
 }
 

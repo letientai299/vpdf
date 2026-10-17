@@ -1,4 +1,5 @@
 cognitive-complexity-threshold = 20
+excessive-nesting-threshold = 5
 too-many-lines-threshold = 100
 too-many-arguments-threshold = 7
 type-complexity-threshold = 200

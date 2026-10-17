@@ -4,6 +4,7 @@ use crate::cmdline;
 use crate::document::{Document, Target};
 use crate::keys::{Action, Input, PanelKind};
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
+use crate::reader;
 use crate::render_worker::RenderWorker;
 use crate::split::Axis;
 use crate::text::Position;
@@ -92,26 +93,34 @@ impl App {
       }
       return Ok(());
     }
+    self.edit_prompt(history, |prompt, history| {
+      cmdline::feed(prompt, key, history)
+    })
+  }
+
+  /// Pasted text goes to an open prompt.
+  pub fn paste(&mut self, text: &str, history: &mut History) -> Result<()> {
+    self.edit_prompt(history, |prompt, _| Ok(prompt.paste(text)))
+  }
+
+  /// Applies `edit` to the open prompt and acts on its event.
+  fn edit_prompt(
+    &mut self,
+    history: &mut History,
+    edit: impl FnOnce(&mut Prompt, &History) -> Result<PromptEvent>,
+  ) -> Result<()> {
     let menu = self.menu_rows();
     let Some(prompt) = &mut self.prompt else { return Ok(()) };
-    let event = prompt.feed(key, history);
     let kind = prompt.kind;
-    match event {
+    match edit(prompt, history)? {
       PromptEvent::Edited if matches!(kind, PromptKind::Search(_)) => {
         let query = prompt.text.clone();
         self.incremental(&query)?;
       }
-      PromptEvent::Pending | PromptEvent::Edited => {}
-      PromptEvent::Editor => {
-        let edited = crate::editor::edit(&prompt.text)?;
-        prompt.replace(&edited);
-      }
-      PromptEvent::Complete => {
-        if prompt.kind == PromptKind::Command {
-          let (start, items) = cmdline::candidates(prompt.before_cursor());
-          prompt.complete(start, items);
-        }
-      }
+      PromptEvent::Pending
+      | PromptEvent::Edited
+      | PromptEvent::Editor
+      | PromptEvent::Complete => {}
       PromptEvent::Cancel => {
         self.prompt = None;
         if matches!(kind, PromptKind::Search(_)) {
@@ -139,10 +148,7 @@ impl App {
   }
 
   pub fn command(&mut self, line: &str) -> Result<()> {
-    let line = line.trim();
-    let (name, argument) = line
-      .split_once(char::is_whitespace)
-      .map_or((line, ""), |(name, rest)| (name, rest.trim()));
+    let (name, argument) = cmdline::parse(line);
     if name.is_empty() {
       return Ok(());
     }
@@ -198,10 +204,11 @@ impl App {
       "reload" => self.reload_with(&self.password.clone())?,
       "password" => self.prompt = Some(Prompt::new(PromptKind::Password)),
       "ocr" => {
-        self.start_ocr(if argument.is_empty() { "eng" } else { argument })?
+        self.start_ocr(if argument.is_empty() { "eng" } else { argument })?;
       }
       "help" => self.open_panel(PanelKind::Help)?,
-      "quit" | "tabclose" => self.quit = true,
+      "quit" => self.quit = true,
+      "tabclose" => self.request = Some(Request::TabClose),
       name => anyhow::bail!("Unhandled command: {name}"),
     }
     Ok(())
@@ -213,20 +220,19 @@ impl App {
       .doc
       .page_number(label)
       .ok_or_else(|| anyhow::anyhow!("Page label not found: {label}"))?;
-    self
-      .reader
-      .jump(Position { page, ..Position::default() }, &mut self.doc)?;
-    self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
-    self.ensure_cursor()
+    self.go_to(Position { page, ..Position::default() }, true)
   }
 
   pub fn reload_with(&mut self, password: &str) -> Result<()> {
-    let doc = Document::open(&self.path, password)?;
-    self.doc = doc;
-    self.password = password.to_owned();
+    // A write during the open shows up as a later change.
+    let stamp = crate::watch::stamp(&self.path);
+    self.doc = Document::open(&self.path, password)?;
+    self.layout.reflow(&self.doc.pages);
+    self.stamp = stamp;
+    password.clone_into(&mut self.password);
     self.worker = RenderWorker::new(&self.path, password, self.doc.lists());
     let previous = std::mem::take(&mut self.search);
-    self.stamp = crate::watch::stamp(&self.path);
+    let rerun = !previous.hidden && !previous.query.text.is_empty();
     self.infer_outline();
     self.graphics.forget(self.id);
     if let Some(ocr) = self.ocr.take() {
@@ -235,24 +241,29 @@ impl App {
     self.reader.cancel();
     self.reader.clear_history();
     self.requested.clear();
-    self.reader.cursor.page.0 =
-      self.reader.cursor.page.0.min(self.doc.pages.len() - 1);
-    self.reader.cursor =
-      self.doc.text(self.reader.cursor.page)?.clamp(self.reader.cursor);
+    self.reader.cursor = reader::clamp(self.reader.cursor, &mut self.doc)?;
+    if let Some(origin) = &mut self.search_origin {
+      origin.cursor = reader::clamp(origin.cursor, &mut self.doc)?;
+    }
     if let Some(panel) = &self.panel {
       let (kind, selected) = (panel.kind, panel.selected);
       let rows = self.panel_rows(kind)?;
+      // These rows come from the session or refill when work finishes.
+      let refills = match kind {
+        PanelKind::Recent | PanelKind::Marks => true,
+        PanelKind::Results => rerun,
+        PanelKind::Outline => self.outline_job.is_some(),
+        _ => false,
+      };
       if let Some(panel) = self.panel.as_mut().filter(|_| !rows.is_empty()) {
         panel.selected = selected.min(rows.len() - 1);
         panel.rows = rows;
-      } else {
+      } else if !refills {
         self.panel = None;
-        self.left = 0;
       }
     }
-    if !previous.hidden && !previous.query.is_empty() {
-      self.start_search(&previous.query, previous.backward, false)?;
-      self.search.phase = crate::find::Phase::Running { jump: false };
+    if rerun {
+      self.rerun(&previous.query)?;
     }
     self.relayout()?;
     self.reader.message = "Reloaded".into();
@@ -272,8 +283,8 @@ impl App {
     let cursor = self.reader.cursor;
     let text = self.doc.text(cursor.page)?;
     let Some(glyph) = text.glyph(cursor) else { return Ok(None) };
-    let x = (glyph.bounds.x0 + glyph.bounds.x1) / 2.0;
-    let y = (glyph.bounds.y0 + glyph.bounds.y1) / 2.0;
+    let x = f32::midpoint(glyph.bounds.x0, glyph.bounds.x1);
+    let y = f32::midpoint(glyph.bounds.y0, glyph.bounds.y1);
     let links = self.doc.links(cursor.page)?;
     Ok(
       links
@@ -293,9 +304,7 @@ impl App {
           }
           _ => Position { page, ..Position::default() },
         };
-        self.reader.jump(position, &mut self.doc)?;
-        self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
-        self.ensure_cursor()?;
+        self.go_to(position, true)?;
       }
       Target::Uri(uri) => {
         anyhow::ensure!(

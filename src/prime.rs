@@ -1,6 +1,6 @@
 //! Large images and their whole decodes.
 //!
-//! MuPDF decodes only the part of an image a clip covers and caches it
+//! `MuPDF` decodes only the part of an image a clip covers and caches it
 //! under that exact rectangle, so every tile over a scan decodes the
 //! image again. A lookup that misses its rectangle falls back to a whole
 //! decode at the same reduction (`fz_get_pixmap_from_image` in
@@ -43,7 +43,7 @@ impl Scan {
   }
 }
 
-/// MuPDF's power-of-two reduction for an image drawn with `ctm`.
+/// `MuPDF`'s power-of-two reduction for an image drawn with `ctm`.
 fn reduction(w: u64, h: u64, ctm: &Matrix) -> u32 {
   let dw = (ctm.a.hypot(ctm.b) as u64).min(w);
   let dh = (ctm.c.hypot(ctm.d) as u64).min(h);

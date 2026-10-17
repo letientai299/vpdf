@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::cache::Cache;
-use crate::document::{Document, MIB};
+use crate::document::{Document, MIB, extract};
 use crate::search::{self, Hit, Index};
 use crate::text::{PageId, Text};
 use std::path::{Path, PathBuf};
@@ -44,72 +44,9 @@ impl SearchWorker {
     let current = Arc::clone(&generation);
     let path = path.to_owned();
     let password = password.to_owned();
-    thread::spawn(move || {
-      let mut source = match Source::open(path, password) {
-        Ok(source) => source,
-        Err(error) => {
-          let _ = events_send.send(SearchEvent {
-            generation: current.load(Ordering::Relaxed),
-            hits: Vec::new(),
-            done: true,
-            error: Some(error.to_string()),
-          });
-          return;
-        }
-      };
-      let mut indexes = Cache::new(32 * MIB);
-      loop {
-        let request = match receive.recv_timeout(IDLE) {
-          Ok(request) => request,
-          Err(mpsc::RecvTimeoutError::Timeout) => {
-            source.doc = None;
-            match receive.recv() {
-              Ok(request) => request,
-              Err(_) => return,
-            }
-          }
-          Err(mpsc::RecvTimeoutError::Disconnected) => return,
-        };
-        match request {
-          Request::Seed(page, text) => {
-            let index = Index::new(page, &text);
-            let weight = index.weight();
-            indexes.insert(page, index, weight);
-            source.seed(page, text);
-          }
-          Request::Query {
-            generation,
-            query,
-            whole_word,
-            origin,
-            backward,
-          } => {
-            if current.load(Ordering::Relaxed) != generation {
-              continue;
-            }
-            let task = SearchTask {
-              generation,
-              origin,
-              backward,
-              current: &current,
-              send: &events_send,
-            };
-            let result =
-              task.run(&mut source, &mut indexes, &query, whole_word);
-            if events_send
-              .send(SearchEvent {
-                generation,
-                hits: Vec::new(),
-                done: true,
-                error: result.err().map(|e| e.to_string()),
-              })
-              .is_err()
-            {
-              return;
-            }
-          }
-        }
-      }
+    thread::spawn(move || match Source::open(path, password) {
+      Ok(source) => serve(source, &receive, &events_send, &current),
+      Err(error) => fail(&receive, &events_send, &error),
     });
     Self { send, generation, events }
   }
@@ -120,16 +57,19 @@ impl SearchWorker {
     whole_word: bool,
     origin: PageId,
     backward: bool,
-  ) -> u64 {
+  ) -> Result<u64> {
     let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
-    let _ = self.send.send(Request::Query {
-      generation,
-      query: query.to_owned(),
-      whole_word,
-      origin,
-      backward,
-    });
-    generation
+    self
+      .send
+      .send(Request::Query {
+        generation,
+        query: query.to_owned(),
+        whole_word,
+        origin,
+        backward,
+      })
+      .map_err(|_| anyhow::anyhow!("Search worker stopped"))?;
+    Ok(generation)
   }
 
   pub fn cancel(&self) {
@@ -138,6 +78,76 @@ impl SearchWorker {
 
   pub fn seed(&self, page: PageId, text: Arc<Text>) {
     let _ = self.send.send(Request::Seed(page, text));
+  }
+}
+
+/// Answers requests until the handle drops.
+fn serve(
+  mut source: Source,
+  receive: &mpsc::Receiver<Request>,
+  send: &mpsc::SyncSender<SearchEvent>,
+  current: &AtomicU64,
+) {
+  let mut indexes = Cache::new(32 * MIB);
+  while let Some(request) = next_request(receive, &mut source) {
+    match request {
+      Request::Seed(page, text) => {
+        let index = Index::new(page, &text);
+        let weight = index.weight();
+        indexes.insert(page, index, weight);
+        source.seed(page, text);
+      }
+      Request::Query { generation, .. }
+        if current.load(Ordering::Relaxed) != generation => {}
+      Request::Query { generation, query, whole_word, origin, backward } => {
+        let task = SearchTask { generation, origin, backward, current, send };
+        let result = task.run(&mut source, &mut indexes, &query, whole_word);
+        let done = SearchEvent {
+          generation,
+          hits: Vec::new(),
+          done: true,
+          error: result.err().map(|e| e.to_string()),
+        };
+        if send.send(done).is_err() {
+          return;
+        }
+      }
+    }
+  }
+}
+
+/// The next request; the document drops while none arrives.
+fn next_request(
+  receive: &mpsc::Receiver<Request>,
+  source: &mut Source,
+) -> Option<Request> {
+  match receive.recv_timeout(IDLE) {
+    Ok(request) => Some(request),
+    Err(mpsc::RecvTimeoutError::Timeout) => {
+      source.doc = None;
+      receive.recv().ok()
+    }
+    Err(mpsc::RecvTimeoutError::Disconnected) => None,
+  }
+}
+
+/// Answers every query with `error`, as the document did not open.
+fn fail(
+  receive: &mpsc::Receiver<Request>,
+  send: &mpsc::SyncSender<SearchEvent>,
+  error: &anyhow::Error,
+) {
+  for request in receive {
+    let Request::Query { generation, .. } = request else { continue };
+    let event = SearchEvent {
+      generation,
+      hits: Vec::new(),
+      done: true,
+      error: Some(error.to_string()),
+    };
+    if send.send(event).is_err() {
+      return;
+    }
   }
 }
 
@@ -201,7 +211,7 @@ impl SearchTask<'_> {
 }
 
 /// Page text for scans. The document drops after the worker idles,
-/// which releases MuPDF's objects and cached resources for every page a
+/// which releases `MuPDF`'s objects and cached resources for every page a
 /// scan read: about 110 MB after scanning a 1370-page book. Indexes stay,
 /// so later queries reopen it only for pages they evicted.
 struct Source {
@@ -209,7 +219,7 @@ struct Source {
   password: String,
   pages: usize,
   doc: Option<Document>,
-  /// OCR text, which a reopened document must see again.
+  /// OCR text, which replaces a page's extracted text.
   seeds: Vec<(PageId, Arc<Text>)>,
 }
 
@@ -225,24 +235,21 @@ impl Source {
     })
   }
 
+  /// Page text read straight from the page: the index keeps what a
+  /// scan needs, so text and display list caches would hold it twice.
   fn text(&mut self, page: PageId) -> Result<Arc<Text>> {
+    if let Some((_, text)) = self.seeds.iter().find(|(seed, _)| *seed == page) {
+      return Ok(Arc::clone(text));
+    }
     let doc = match &mut self.doc {
       Some(doc) => doc,
-      None => {
-        let mut doc = Document::open(&self.path, &self.password)?;
-        for (page, text) in &self.seeds {
-          doc.seed(*page, Arc::clone(text));
-        }
-        self.doc.insert(doc)
-      }
+      None => self.doc.insert(Document::open(&self.path, &self.password)?),
     };
-    doc.text(page)
+    doc.validate(page)?;
+    Ok(Arc::new(extract(&doc.native.load_page(page.0 as i32)?)?))
   }
 
   fn seed(&mut self, page: PageId, text: Arc<Text>) {
-    if let Some(doc) = &mut self.doc {
-      doc.seed(page, Arc::clone(&text));
-    }
     self.seeds.retain(|(old, _)| *old != page);
     self.seeds.push((page, text));
   }

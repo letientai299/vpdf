@@ -7,6 +7,7 @@ use crate::prompt::Prompt;
 use crate::reader::SelectionKind;
 use crate::terminal::{self, At};
 use crate::theme::{self, Color};
+use std::fmt::Write as _;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 
@@ -99,7 +100,7 @@ impl App {
     let mut text = String::new();
     for (index, label) in labels.iter().enumerate() {
       let style = if index == *active { theme::TAB } else { theme::BAR };
-      text += &format!("{style}{label}{}", theme::BAR);
+      text.extend([style, label.as_str(), theme::BAR]);
     }
     (text + " ", width)
   }
@@ -114,15 +115,16 @@ impl App {
       right.push_str("  ");
     }
     right += &self.search_count();
-    right += &format!(
+    write!(
+      right,
       "{}/{} [{}] {}% ",
       page + 1,
       self.doc.pages.len(),
       self.doc.pages[page].label,
       self.progress(),
-    );
+    )?;
     if (self.layout.zoom - 1.0).abs() > 0.005 {
-      right += &format!(" zoom {:.0}% ", self.layout.zoom * 100.0);
+      write!(right, " zoom {:.0}% ", self.layout.zoom * 100.0)?;
     }
     let left = format!(" {mode} ");
     write!(out, "{}", self.at.goto(row, 0u16))?;
@@ -174,7 +176,8 @@ pub fn prompt(
   let row = screen.rows - 1;
   if let Some(menu) = &prompt.menu {
     let layout = menu.layout(usize::from(screen.columns), grid::limit(screen));
-    grid::draw(out, (at, row - 1), &layout, menu.selected, 0, screen)?;
+    let bottom = (at, row - 1);
+    grid::draw(out, bottom, &menu.labels, &layout, menu.selected, 0, screen)?;
   }
   let (text, ghost, column) = prompt.display();
   let room = usize::from(screen.columns).saturating_sub(text.width());

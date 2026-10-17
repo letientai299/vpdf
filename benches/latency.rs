@@ -168,7 +168,7 @@ fn jumps(sim: &mut Sim, count: usize) -> Result<Jumps> {
 
 fn zooms(sim: &mut Sim) -> Result<Jumps> {
   let (mut input, mut first, mut complete) = (vec![], vec![], vec![]);
-  for action in [1, 1, 1, -1, -1, -1].map(Action::Zoom).into_iter() {
+  for action in [1, 1, 1, -1, -1, -1].map(Action::Zoom) {
     let started = Instant::now();
     input.push(sim.act(action)?);
     let (one, all) = sim.settle(started)?;
@@ -272,13 +272,13 @@ fn document(path: &Path, screen: Screen) -> Result<Report> {
 
 fn main() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut files: Vec<PathBuf> = ["book", "paper", "form", "ocr"]
-    .iter()
-    .map(|name| root.join(format!("{name}.pdf")))
-    .collect();
-  if let Some(extra) = std::env::var_os("VPDF_EXTRA") {
-    files = std::env::split_paths(&extra).collect();
-  }
+  let files: Vec<PathBuf> = match std::env::var_os("VPDF_EXTRA") {
+    Some(extra) => std::env::split_paths(&extra).collect(),
+    None => ["book", "paper", "form", "ocr"]
+      .iter()
+      .map(|name| root.join(format!("{name}.pdf")))
+      .collect(),
+  };
   let columns = std::env::var("VPDF_COLUMNS")
     .ok()
     .and_then(|value| value.parse().ok())

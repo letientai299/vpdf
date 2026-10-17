@@ -44,7 +44,7 @@ fn words_operators_and_registers() -> Result<()> {
   let mut reader = Reader::default();
   reader.yank(1, 'a', &mut source)?;
   reader.object(false, &mut source)?;
-  assert_eq!(reader.registers.get(&'a').map(String::as_str), Some("one"));
+  assert_eq!(reader.registers.get(&'a').map(|text| &**text), Some("one"));
   reader.yank(1, '"', &mut source)?;
   reader.motion(Motion::Word, 1, false, &mut source)?;
   assert_eq!(reader.pending_yank.take().unwrap().text, "one ");
@@ -111,13 +111,21 @@ fn count_page_and_jump_history() -> Result<()> {
 fn linewise_yank_and_operator_counts() -> Result<()> {
   let mut source = pages();
   let mut reader = Reader::default();
-  reader.yank(2, '"', &mut source)?;
-  reader.yank(1, '"', &mut source)?;
+  reader.yank_lines(2, '"', &mut source)?;
   assert_eq!(
     reader.pending_yank.take().unwrap().text,
     "one two\ncafé Straße\n"
   );
   assert_eq!(reader.cursor, Position::default());
+  // `Y` in visual mode yanks the selected lines and arms nothing.
+  reader.visual(SelectionKind::Character);
+  reader.motion(Motion::Right, 1, false, &mut source)?;
+  // Switching kinds keeps the anchor.
+  reader.visual(SelectionKind::Line);
+  assert_eq!(reader.selection.map(|s| s.anchor), Some(Position::default()));
+  reader.yank_lines(1, '"', &mut source)?;
+  assert_eq!(reader.pending_yank.take().unwrap().text, "one two\n");
+  assert!(reader.operator.is_none());
   reader.yank(1, '"', &mut source)?;
   reader.motion(Motion::Last, 1, false, &mut source)?;
   assert_eq!(

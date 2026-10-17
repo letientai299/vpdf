@@ -8,17 +8,34 @@ description = "A keyboard-driven terminal PDF reader"
 
 [lints.rust]
 unsafe_code = "forbid"
+unused_qualifications = "deny"
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }
-perf = { level = "deny", priority = -1 }
-complexity = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# Pixel and cell math casts on purpose.
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+# The library is not published.
+missing_errors_doc = "allow"
+must_use_candidate = "allow"
+# Long fallback arms read better in `match`.
+single_match_else = "allow"
+# Nursery
 cognitive_complexity = "deny"
-too_many_lines = "deny"
-large_stack_arrays = "deny"
-large_types_passed_by_value = "deny"
-needless_pass_by_value = "deny"
+derive_partial_eq_without_eq = "deny"
 redundant_clone = "deny"
+use_self = "deny"
+useless_let_if_seq = "deny"
+# Restriction
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+dbg_macro = "deny"
+excessive_nesting = "deny"
+todo = "deny"
+unimplemented = "deny"
 
 [profile.release]
 lto = "thin"

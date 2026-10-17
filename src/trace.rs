@@ -76,7 +76,8 @@ impl Trace {
       input_to_flush_ms: input
         .map(|time| flushed.duration_since(time).as_secs_f64() * 1000.0),
       bytes: buffer.len(),
-      base_upload_bytes: app.graphics.uploaded - self.uploaded,
+      // Moving to another tab hands over a different counter.
+      base_upload_bytes: app.graphics.uploaded.saturating_sub(self.uploaded),
       page: app.reader.cursor.page.0 + 1,
       scroll: app.reader.scroll,
     };

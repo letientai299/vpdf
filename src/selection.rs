@@ -1,11 +1,12 @@
 use crate::Result;
 use crate::document::MIB;
-use crate::motion::range;
+use crate::motion::{covers, range};
 use crate::reader::{
   Operator, Reader, Selection, SelectionKind, TextSource, Yank,
 };
 use crate::text::{PageId, Position, class};
 use anyhow::ensure;
+use std::sync::Arc;
 
 impl Reader {
   pub fn yank(
@@ -37,6 +38,26 @@ impl Reader {
     Ok(())
   }
 
+  /// `Y`: yanks `count` lines, or every line the selection touches.
+  pub fn yank_lines(
+    &mut self,
+    count: usize,
+    register: char,
+    source: &mut impl TextSource,
+  ) -> Result<()> {
+    if let Some(selection) = self.selection {
+      return self.yank_range(
+        selection.anchor,
+        self.cursor,
+        true,
+        register,
+        source,
+      );
+    }
+    self.operator = Some(Operator { count, register });
+    self.yank(1, register, source)
+  }
+
   pub fn yank_range(
     &mut self,
     first: Position,
@@ -45,29 +66,27 @@ impl Reader {
     register: char,
     source: &mut impl TextSource,
   ) -> Result<()> {
-    let (first, last) = range(first, last);
+    let range = range(first, last);
+    let (first, last) = range;
     let mut output = String::new();
     for page in first.page.0..=last.page.0 {
       let text = source.page_text(PageId(page))?;
-      for (line, row) in text.lines.iter().enumerate() {
-        if page == first.page.0 && line < first.line {
-          continue;
-        }
+      let skip = if page == first.page.0 { first.line } else { 0 };
+      for (line, row) in text.lines.iter().enumerate().skip(skip) {
         if page == last.page.0 && line > last.line {
           break;
         }
         if !output.is_empty() {
           output.push('\n');
         }
-        for (glyph, ch) in row.glyphs.iter().enumerate() {
-          let pos = Position { page: PageId(page), line, glyph };
-          if linewise || (pos >= first && pos <= last) {
-            ensure!(
-              output.len() + ch.ch.len_utf8() < 8 * MIB,
-              "Selection exceeds 8 MiB"
-            );
-            output.push(ch.ch);
-          }
+        let at = |glyph| Position { page: PageId(page), line, glyph };
+        let glyphs = row.glyphs.iter().enumerate();
+        for (_, ch) in glyphs.filter(|(g, _)| covers(range, linewise, at(*g))) {
+          ensure!(
+            output.len() + ch.ch.len_utf8() < 8 * MIB,
+            "Selection exceeds 8 MiB"
+          );
+          output.push(ch.ch);
         }
       }
     }
@@ -89,15 +108,15 @@ impl Reader {
 
   fn save_register(&mut self, register: char, text: &str) -> Result<()> {
     let name = register.to_ascii_lowercase();
-    let output = if register.is_ascii_uppercase() {
-      let old = self.registers.get(&name).cloned().unwrap_or_default();
+    let output: Arc<str> = if register.is_ascii_uppercase() {
+      let old = self.registers.get(&name).map_or("", |old| &**old);
       ensure!(old.len() + text.len() < 8 * MIB, "Register exceeds 8 MiB");
-      old + text
+      format!("{old}{text}").into()
     } else {
-      text.to_owned()
+      text.into()
     };
     for key in [name, '"', '0'] {
-      self.registers.insert(key, output.clone(), output.len());
+      self.registers.insert(key, Arc::clone(&output), output.len());
     }
     Ok(())
   }
@@ -109,16 +128,7 @@ impl Reader {
   ) -> Result<()> {
     let text = source.page_text(self.cursor.page)?;
     let Some(line) = text.lines.get(self.cursor.line) else { return Ok(()) };
-    let Some(glyph) = line.glyphs.get(self.cursor.glyph) else { return Ok(()) };
-    let kind = class(glyph.ch);
-    let mut a = self.cursor.glyph;
-    let mut b = a;
-    while a > 0 && class(line.glyphs[a - 1].ch) == kind {
-      a -= 1;
-    }
-    while b + 1 < line.glyphs.len() && class(line.glyphs[b + 1].ch) == kind {
-      b += 1;
-    }
+    let Some((a, mut b)) = line.run(self.cursor.glyph) else { return Ok(()) };
     if around {
       while b + 1 < line.glyphs.len() && class(line.glyphs[b + 1].ch) == 0 {
         b += 1;

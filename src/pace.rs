@@ -59,6 +59,6 @@ mod tests {
     assert_eq!(pacer.due, idle + FRAME);
     assert!(!pacer.ready(idle));
     assert!(pacer.wait(idle) * 4 / 3 <= FRAME);
-    assert!(pacer.ready(idle + FRAME - EARLY));
+    assert!(pacer.ready(idle + FRAME.saturating_sub(EARLY)));
   }
 }

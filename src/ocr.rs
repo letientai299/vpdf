@@ -78,12 +78,12 @@ fn recognize(
   let mut png = Vec::new();
   pixels.write_to(&mut png, ImageFormat::PNG)?;
   anyhow::ensure!(!cancel.load(Ordering::Relaxed), "OCR cancelled");
-  let output = tesseract(&png, language, cancel)?;
+  let output = tesseract(png, language, cancel)?;
   parse_tsv(&output, bounds, scale)
 }
 
 fn tesseract(
-  png: &[u8],
+  png: Vec<u8>,
   language: &str,
   cancel: &AtomicBool,
 ) -> Result<String> {
@@ -101,8 +101,7 @@ fn tesseract(
   let errors = thread::spawn(move || bounded_read(stderr, 64 * 1024));
   let mut stdin =
     child.stdin.take().ok_or_else(|| anyhow::anyhow!("OCR stdin missing"))?;
-  let bytes = png.to_owned();
-  let writer = thread::spawn(move || stdin.write_all(&bytes));
+  let writer = thread::spawn(move || stdin.write_all(&png));
   let started = Instant::now();
   let status = loop {
     if cancel.load(Ordering::Relaxed) || started.elapsed().as_secs() > 120 {

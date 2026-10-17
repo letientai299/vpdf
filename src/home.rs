@@ -94,10 +94,9 @@ impl Home {
         self.key(key, history)
       }
       Event::Paste(text) => {
-        if let Some(prompt) = &mut self.prompt {
-          prompt.insert(&text);
-        }
-        Ok(Outcome::Stay)
+        let Some(prompt) = &mut self.prompt else { return Ok(Outcome::Stay) };
+        let event = prompt.paste(&text);
+        self.prompt_event(event, history)
       }
       Event::Resize(_, _) => {
         self.screen = terminal::size().unwrap_or(self.screen);
@@ -134,18 +133,20 @@ impl Home {
         _ => Outcome::Stay,
       });
     };
+    let event = cmdline::feed(prompt, key, history)?;
+    self.prompt_event(event, history)
+  }
+
+  fn prompt_event(
+    &mut self,
+    event: PromptEvent,
+    history: &mut History,
+  ) -> Result<Outcome> {
+    let Some(prompt) = &mut self.prompt else { return Ok(Outcome::Stay) };
     let kind = prompt.kind;
     let search = matches!(kind, PromptKind::Search(_));
-    match prompt.feed(key, history) {
-      PromptEvent::Complete if !search => {
-        let (start, items) = cmdline::candidates(prompt.before_cursor());
-        prompt.complete(start, items);
-      }
+    match event {
       PromptEvent::Edited if search => self.panel.preview(&prompt.text),
-      PromptEvent::Editor => {
-        let edited = crate::editor::edit(&prompt.text)?;
-        prompt.replace(&edited);
-      }
       PromptEvent::Cancel => {
         self.prompt = None;
         self.panel.abort_search();
@@ -178,10 +179,7 @@ impl Home {
 
 /// Commands that make sense before any document is open.
 fn command(line: &str) -> Result<Outcome> {
-  let line = line.trim();
-  let (name, argument) = line
-    .split_once(char::is_whitespace)
-    .map_or((line, ""), |(name, rest)| (name, rest.trim()));
+  let (name, argument) = cmdline::parse(line);
   if name.is_empty() {
     return Ok(Outcome::Stay);
   }

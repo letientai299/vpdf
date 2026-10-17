@@ -8,8 +8,8 @@ use crate::theme::{self, Color};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 
+/// Placement of labels in columns; the labels stay with the caller.
 pub struct Grid {
-  pub labels: Vec<String>,
   /// Cell width per item, including padding.
   pub width: usize,
   pub columns: usize,
@@ -21,7 +21,7 @@ pub struct Grid {
 
 /// At most `limit` rows show, scrolled so `selected` stays visible.
 pub fn layout(
-  labels: Vec<String>,
+  labels: &[String],
   columns: usize,
   limit: usize,
   selected: Option<usize>,
@@ -33,7 +33,7 @@ pub fn layout(
   let visible = rows.min(limit.max(1));
   let selected = selected.map_or(0, |index| index % rows);
   let first = selected.saturating_sub(visible - 1);
-  Grid { labels, width, columns: per_row, rows, first, visible }
+  Grid { width, columns: per_row, rows, first, visible }
 }
 
 /// Most rows a grid may take.
@@ -41,11 +41,12 @@ pub fn limit(screen: Screen) -> usize {
   usize::from(screen.rows / 3).max(1)
 }
 
-/// Draws `grid` ending at row `bottom`; the first `keys` columns of each
-/// label are highlighted as keys.
+/// Draws `labels` placed by `grid`, ending at row `bottom`; the first
+/// `keys` columns of each label are highlighted as keys.
 pub fn draw(
   out: &mut impl Write,
   (at, bottom): (At, u16),
+  labels: &[String],
   grid: &Grid,
   selected: Option<usize>,
   keys: usize,
@@ -59,9 +60,9 @@ pub fn draw(
     let mut used = 0;
     for column in 0..grid.columns {
       let index = column * grid.rows + row;
-      let Some(label) = grid.labels.get(index) else { break };
+      let Some(label) = labels.get(index) else { break };
       let text = terminal::clean(label, grid.width - 2);
-      let pad = " ".repeat(grid.width - 1 - text.width());
+      let pad = " ".repeat(grid.width.saturating_sub(1 + text.width()));
       if selected == Some(index) {
         let badge = theme::badge(Color::Blue);
         write!(out, "{badge} {text}{pad}{}", theme::BAR)?;

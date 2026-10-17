@@ -28,6 +28,9 @@ fn enhanced() -> bool {
 /// Set when another program had the screen; it may have deleted images.
 static LOST: AtomicBool = AtomicBool::new(false);
 
+/// Set while the reader holds the screen in raw mode.
+static ACTIVE: AtomicBool = AtomicBool::new(false);
+
 /// Whether images need uploading again since the last call.
 pub fn images_lost() -> bool {
   LOST.swap(false, Ordering::Relaxed)
@@ -36,6 +39,7 @@ pub fn images_lost() -> bool {
 /// Takes the terminal back after `suspend`.
 pub fn resume() -> Result<()> {
   LOST.store(true, Ordering::Relaxed);
+  ACTIVE.store(true, Ordering::SeqCst);
   terminal::enable_raw_mode()?;
   execute!(
     io::stdout(),
@@ -53,6 +57,10 @@ pub fn resume() -> Result<()> {
 
 /// Hands the terminal to a child program; images stay cached.
 pub fn suspend() -> Result<()> {
+  // Leaving the alternate screen twice moves the cursor back.
+  if !ACTIVE.swap(false, Ordering::SeqCst) {
+    return Ok(());
+  }
   if enhanced() {
     execute!(io::stdout(), event::PopKeyboardEnhancementFlags)?;
   }
@@ -70,11 +78,32 @@ pub fn suspend() -> Result<()> {
 
 impl Drop for Terminal {
   fn drop(&mut self) {
-    let mut output = io::stdout();
-    let _ = output.write_all(b"\x1b[?2026l\x1b[0m\x1b[23;0t");
-    let _ = crate::graphics::release(&mut output);
-    let _ = suspend();
+    restore();
   }
+}
+
+/// Gives the screen back to the shell: ends any frame, restores the
+/// title, deletes this reader's images, and leaves raw mode.
+pub fn restore() {
+  if !ACTIVE.load(Ordering::SeqCst) {
+    return;
+  }
+  let mut output = io::stdout();
+  let _ = output.write_all(b"\x1b[?2026l\x1b[0m\x1b[23;0t");
+  let _ = crate::graphics::release(&mut output);
+  let _ = suspend();
+}
+
+/// Restores the screen before a panic on the input thread prints, so the
+/// message stays visible after the alternate screen closes.
+pub fn restore_on_panic() {
+  let default = std::panic::take_hook();
+  std::panic::set_hook(Box::new(move |info| {
+    if std::thread::current().name() == Some("main") {
+      restore();
+    }
+    default(info);
+  }));
 }
 
 pub fn size() -> Result<Screen> {
@@ -94,12 +123,18 @@ pub fn size() -> Result<Screen> {
   })
 }
 
+/// Whether output passes through tmux; read once per process.
+fn tmux() -> bool {
+  static TMUX: OnceLock<bool> = OnceLock::new();
+  *TMUX.get_or_init(|| std::env::var_os("TMUX").is_some())
+}
+
 pub fn graphics(
   output: &mut impl Write,
   control: &str,
   data: &str,
 ) -> Result<()> {
-  if std::env::var_os("TMUX").is_some() {
+  if tmux() {
     write!(output, "\x1bPtmux;\x1b\x1b_G{control};{data}\x1b\x1b\\\x1b\\")?;
   } else {
     write!(output, "\x1b_G{control};{data}\x1b\\")?;
@@ -107,16 +142,43 @@ pub fn graphics(
   Ok(())
 }
 
+/// `text` without control characters, cut to `columns` cells.
 pub fn clean(text: &str, columns: usize) -> String {
   let mut width = 0;
-  text
+  let mut clean: String = text
     .chars()
     .filter(|ch| !ch.is_control())
     .take_while(|ch| {
       width += ch.width().unwrap_or(0);
       width <= columns
     })
-    .collect()
+    .collect();
+  // Sequences such as an emoji with U+FE0F are wider than their chars.
+  while clean.width() > columns {
+    clean.pop();
+  }
+  clean
+}
+
+/// Sends an encoded image in 4096-byte chunks; `control` leads the first.
+pub fn transmit(
+  output: &mut impl Write,
+  control: &str,
+  encoded: &str,
+) -> Result<()> {
+  let mut chunks = encoded.as_bytes().chunks(4096).peekable();
+  let mut first = true;
+  while let Some(chunk) = chunks.next() {
+    let more = chunks.peek().is_some();
+    let chunk = std::str::from_utf8(chunk)?;
+    if first {
+      graphics(output, &format!("{control},m={}", u8::from(more)), chunk)?;
+      first = false;
+    } else {
+      graphics(output, if more { "m=1,q=2" } else { "m=0,q=2" }, chunk)?;
+    }
+  }
+  Ok(())
 }
 
 /// A pane's top-left cell on the terminal; drawing positions add it.
@@ -169,12 +231,15 @@ pub fn placement(
   column: u32,
   row: u32,
 ) -> Result<()> {
-  let sequence =
-    format!("\x1b7\x1b[{row};{column}H\x1b_G{control};\x1b\\\x1b8");
-  if std::env::var_os("TMUX").is_some() {
-    write!(output, "\x1bPtmux;{}\x1b\\", sequence.replace('\x1b', "\x1b\x1b"))?;
+  // Cursor save, move, placement, and restore travel in one packet.
+  if tmux() {
+    write!(
+      output,
+      "\x1bPtmux;\x1b\x1b7\x1b\x1b[{row};{column}H\
+       \x1b\x1b_G{control};\x1b\x1b\\\x1b\x1b8\x1b\\"
+    )?;
   } else {
-    write!(output, "{sequence}")?;
+    write!(output, "\x1b7\x1b[{row};{column}H\x1b_G{control};\x1b\\\x1b8")?;
   }
   Ok(())
 }
@@ -205,4 +270,21 @@ fn pane_origin() -> Option<(u16, u16)> {
     row = row.saturating_add(rows);
   }
   Some((column, row))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn clean_fits_string_width() {
+    assert_eq!(clean("a\tb", 5), "ab");
+    // Each heart with U+FE0F is two cells, though its chars sum to one.
+    let hearts = "❤\u{FE0F}".repeat(4);
+    for columns in 0..8 {
+      let clean = clean(&hearts, columns);
+      assert!(hearts.starts_with(&clean));
+      assert!(clean.width() <= columns, "{columns}");
+    }
+  }
 }

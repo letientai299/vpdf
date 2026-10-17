@@ -9,6 +9,7 @@ pub struct Scroll {
 
 /// Next scroll toward `target` after `elapsed` seconds, or `None` once
 /// it arrives.
+#[expect(clippy::float_cmp, reason = "detects a step that rounds back")]
 fn ease(scroll: f32, target: f32, elapsed: f32) -> Option<f32> {
   let distance = target - scroll;
   let next = scroll + distance * (1.0 - (-elapsed / 0.018).exp());

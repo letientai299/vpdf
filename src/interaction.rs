@@ -1,19 +1,12 @@
 use crate::Result;
 use crate::app::App;
 use crate::keys::{Action, Input};
+use crate::panel::Panel;
 use crate::reader::SelectionKind;
-use crate::terminal;
 use crossterm::event::{self, MouseButton, MouseEventKind};
 use std::time::{Duration, Instant};
 
 impl App {
-  pub fn resize(&mut self) -> Result<()> {
-    self.hints = None;
-    self.peek = None;
-    self.screen = terminal::size().unwrap_or(self.screen);
-    self.relayout()
-  }
-
   /// Rows the completion list takes above the prompt.
   pub fn menu_rows(&self) -> u16 {
     let Some(menu) = self.prompt.as_ref().and_then(|p| p.menu.as_ref()) else {
@@ -27,6 +20,9 @@ impl App {
   /// Fits the page area between the panel, menu, and status rows.
   pub fn relayout(&mut self) -> Result<()> {
     self.blank = false;
+    let columns = self.screen.columns;
+    self.left =
+      self.panel.as_ref().map_or(0, |p| Panel::width(p.kind, columns));
     let menu = self.menu_rows();
     self.layout.screen = self.screen;
     self.layout.screen.columns = self.screen.columns.saturating_sub(self.left);
@@ -72,21 +68,16 @@ impl App {
         self.reader.yank(count, input.register, &mut self.doc)?;
       }
       Action::YankLine => {
-        self.reader.yank(count, input.register, &mut self.doc)?;
-        self.reader.yank(1, input.register, &mut self.doc)?;
+        self.reader.yank_lines(count, input.register, &mut self.doc)?;
       }
       Action::Visual(kind) => self.reader.visual(kind),
       Action::Object(around) => self.reader.object(around, &mut self.doc)?,
       Action::Swap => self.reader.swap(),
       Action::Reselect => self.reader.reselect(),
       Action::History(forward) => {
-        self.animation = None;
+        // The saved scroll may predate a zoom; keep the cursor in view.
         self.reader.history(forward);
-        return Ok(true);
-      }
-      Action::Cancel => {
-        self.reader.cancel();
-        self.requested.clear();
+        return self.ensure_cursor().map(|()| true);
       }
       Action::Quit => self.quit = true,
       _ => return Ok(false),
@@ -102,10 +93,11 @@ impl App {
     let count = input.count as f32;
     match input.action {
       Action::Scroll(fraction) => {
-        self.scroll(fraction * count * self.layout.screen.height())?
+        self.scroll(fraction * count * self.layout.screen.height())?;
       }
       Action::Rows(rows) => {
-        self.scroll(rows as f32 * count * f32::from(self.screen.cell_height))?
+        self
+          .scroll(rows as f32 * count * f32::from(self.screen.cell_height))?;
       }
       Action::Align(fraction) => {
         self.animation = None;

@@ -57,7 +57,8 @@ pub struct Reader {
   pub desired: Option<usize>,
   pub message: String,
   pub pending_yank: Option<Yank>,
-  pub registers: Cache<char, String>,
+  /// Yanked text; the named, `"`, and `0` registers share one copy.
+  pub registers: Cache<char, Arc<str>>,
   history: Vec<Location>,
   future: Vec<Location>,
 }
@@ -120,8 +121,7 @@ impl Reader {
     pos: Position,
     source: &mut impl TextSource,
   ) -> Result<()> {
-    let page = PageId(pos.page.0.min(source.page_count().saturating_sub(1)));
-    let pos = source.page_text(page)?.clamp(Position { page, ..pos });
+    let pos = clamp(pos, source)?;
     self.remember();
     self.cursor = pos;
     self.desired = None;
@@ -150,11 +150,12 @@ impl Reader {
     self.message.clear();
   }
 
+  /// Starts, ends, or changes the kind of a selection, as `v` and `V`.
   pub fn visual(&mut self, kind: SelectionKind) {
-    if self.selection.is_some_and(|s| s.kind == kind) {
-      self.end_selection();
-    } else {
-      self.selection = Some(Selection { anchor: self.cursor, kind });
+    match &mut self.selection {
+      Some(selection) if selection.kind == kind => self.end_selection(),
+      Some(selection) => selection.kind = kind,
+      None => self.selection = Some(Selection { anchor: self.cursor, kind }),
     }
   }
 
@@ -176,4 +177,10 @@ impl Reader {
       std::mem::swap(&mut selection.anchor, &mut self.cursor);
     }
   }
+}
+
+/// `pos` moved onto a page and glyph of `source`.
+pub fn clamp(pos: Position, source: &mut impl TextSource) -> Result<Position> {
+  let page = PageId(pos.page.0.min(source.page_count().saturating_sub(1)));
+  Ok(source.page_text(page)?.clamp(Position { page, ..pos }))
 }

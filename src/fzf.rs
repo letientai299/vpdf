@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::terminal;
-use std::io::{BufWriter, Write};
+use anyhow::Context;
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -26,7 +27,8 @@ fn run(root: &Path) -> Result<Option<PathBuf>> {
     .current_dir(root)
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
-    .spawn()?;
+    .spawn()
+    .context("Cannot run fzf")?;
   let input = child.stdin.take();
   let start = root.to_owned();
   std::thread::spawn(move || {
@@ -42,11 +44,14 @@ fn run(root: &Path) -> Result<Option<PathBuf>> {
   Ok((output.status.success() && !choice.is_empty()).then(|| root.join(choice)))
 }
 
-/// Streams relative PDF paths; stops when `fzf` closes its input.
-fn walk(root: &Path, relative: &Path, out: &mut impl Write) -> Result<()> {
-  let mut entries: Vec<_> = std::fs::read_dir(root.join(relative))?
-    .filter_map(std::result::Result::ok)
-    .collect();
+/// Streams relative PDF paths, skipping folders it cannot read; stops
+/// when `fzf` closes its input.
+fn walk(root: &Path, relative: &Path, out: &mut impl Write) -> io::Result<()> {
+  let Ok(entries) = std::fs::read_dir(root.join(relative)) else {
+    return Ok(());
+  };
+  let mut entries: Vec<_> =
+    entries.filter_map(std::result::Result::ok).collect();
   entries.sort_by_key(std::fs::DirEntry::file_name);
   for entry in entries {
     let name = entry.file_name();
@@ -57,7 +62,7 @@ fn walk(root: &Path, relative: &Path, out: &mut impl Write) -> Result<()> {
     let path = relative.join(&name);
     let Ok(kind) = entry.file_type() else { continue };
     if kind.is_dir() {
-      let _ = walk(root, &path, out);
+      walk(root, &path, out)?;
     } else if Path::new(&name)
       .extension()
       .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
@@ -83,6 +88,27 @@ mod tests {
     let mut out = Vec::new();
     walk(root.path(), Path::new(""), &mut out)?;
     assert_eq!(String::from_utf8(out)?, ".ai/e.pdf\na.pdf\ndocs/c.PDF\n");
+    Ok(())
+  }
+
+  /// `fzf` closed its input.
+  struct Closed;
+
+  impl Write for Closed {
+    fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+      Err(io::ErrorKind::BrokenPipe.into())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+      Ok(())
+    }
+  }
+
+  #[test]
+  fn walk_stops_when_fzf_closes() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    std::fs::create_dir(root.path().join("docs"))?;
+    std::fs::write(root.path().join("docs/a.pdf"), "")?;
+    assert!(walk(root.path(), Path::new(""), &mut Closed).is_err());
     Ok(())
   }
 }
