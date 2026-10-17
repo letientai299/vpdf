@@ -253,7 +253,7 @@ mise run lint
 mise run test
 mise run test:corpus
 mise run test:ocr
-mise run perf:check
+mise run bench:budget
 ```
 
 `lint` applies every automatic fix (Clippy, Rustfmt, Taplo, and Rumdl), then
@@ -268,10 +268,10 @@ manual, vector maps, scans, a 257 MB poster) into `tmp/huge`; no task reads
 them. OCR tests require Tesseract; ordinary tests do not.
 
 `mise run bench` measures real-PDF extraction, tiles, navigation, search, and
-serialized terminal frames. `perf:check` requires warm frame p95 below 8.33 ms,
-warm paired motion p95 below 1 ms, and no warm base-image uploads. These CPU
-budgets do not measure terminal painting or guarantee a display frame rate.
-Set `VPDF_BENCH_OUTPUT=/path/report.json` to save results.
+serialized terminal frames. `bench:budget` requires warm frame p95 below 8.33
+ms, warm paired motion p95 below 1 ms, and no warm base-image uploads. These CPU
+budgets do not measure terminal painting or guarantee a display frame rate. Set
+`VPDF_BENCH_OUTPUT=/path/report.json` to save results.
 
 `mise run bench:latency` drives the reader with a live render worker: cold
 open, twenty page jumps, zoom steps, and scrolling paced at 10 to 120 inputs

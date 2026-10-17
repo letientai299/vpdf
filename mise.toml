@@ -82,7 +82,7 @@ run = "cargo bench --locked --bench stages"
 description = "Time single hot functions; arguments filter cases"
 run = 'cargo bench --locked --bench micro -- {{arg(name="cases", var=true, default="")}}'
 
-[tasks."perf:check"]
+[tasks."bench:budget"]
 description = "Enforce warm CPU frame and motion budgets"
 depends = ["corpus"]
 env.VPDF_PERF_CHECK = "1"
