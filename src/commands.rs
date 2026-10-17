@@ -210,9 +210,18 @@ impl App {
     Ok(())
   }
 
-  /// Pasted text goes to an open prompt.
+  /// Pasted text goes to an open prompt. In Normal mode a pasted PDF
+  /// path opens, since terminals without drops paste dropped paths.
   pub fn paste(&mut self, text: &str, history: &mut History) -> Result<()> {
-    self.edit_prompt(history, |prompt, _| Ok(prompt.paste(text)))
+    if self.prompt.is_some() {
+      return self.edit_prompt(history, |prompt, _| Ok(prompt.paste(text)));
+    }
+    if self.reader.mode() == Mode::Normal
+      && let Some(path) = crate::dnd::pdf(text)
+    {
+      self.request = Some(Request::Open { path, tab: false });
+    }
+    Ok(())
   }
 
   /// Applies `edit` to the open prompt and acts on its event.

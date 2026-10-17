@@ -17,6 +17,7 @@ mod commands;
 pub mod crop;
 pub mod decode;
 mod diacritics;
+pub mod dnd;
 pub mod figures;
 pub mod find;
 mod fonts;

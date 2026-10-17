@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::{App, Request, TabMove, Tabline, Window};
 use crate::decode::{Event, MouseKind, Reply, Size};
+use crate::dnd::{Dropped, Step, Target};
 use crate::document::PasswordRequired;
 use crate::graphics::Graphics;
 use crate::home::{Home, Outcome};
@@ -110,6 +111,8 @@ pub struct Session {
   sight: Sight,
   rehover: Rehover,
   image_write: Option<ImageWrite>,
+  /// The drag over the window, OSC 72.
+  drops: crate::dnd::Drops,
 }
 
 struct ImageWrite {
@@ -218,6 +221,7 @@ impl Session {
       sight: Sight::Focused,
       rehover: Rehover::Settled,
       image_write: None,
+      drops: crate::dnd::Drops::default(),
     }
   }
 
@@ -869,6 +873,112 @@ impl Session {
     due
   }
 
+  /// An OSC 72 drag and drop event; whether it needs a frame.
+  pub fn drop_event(
+    &mut self,
+    body: &str,
+    out: &mut impl Write,
+  ) -> Result<bool> {
+    let tab = self.tabs.get(self.active);
+    let typing = tab.is_some_and(|tab| tab.panes[tab.focus].prompt.is_some());
+    let Some(drop) = self.drop_step(body, typing, out)? else {
+      return Ok(false);
+    };
+    let done =
+      drop.target(typing).and_then(|target| self.dropped(&drop, target));
+    answer(out, &drop.finish(done.is_ok()))?;
+    done.map(|()| true)
+  }
+
+  /// Answers an OSC 72 event; a finished drop.
+  fn drop_step(
+    &mut self,
+    body: &str,
+    typing: bool,
+    out: &mut impl Write,
+  ) -> Result<Option<Dropped>> {
+    match self.drops.event(body, typing) {
+      Step::Wait => Ok(None),
+      Step::Reply(reply) => answer(out, &reply).map(|()| None),
+      Step::Dropped(drop) => Ok(Some(drop)),
+      Step::Failed(error) => {
+        answer(out, crate::dnd::CANCEL)?;
+        anyhow::bail!("Drop failed: {error}")
+      }
+    }
+  }
+
+  /// Types a drop into the open prompt, or opens its PDF: in the view
+  /// that shows it, or the pane under the drop.
+  fn dropped(&mut self, drop: &Dropped, target: Target) -> Result<()> {
+    let path = match target {
+      Target::Text(text) => {
+        let tab = &mut self.tabs[self.active];
+        return tab.panes[tab.focus].paste(&text, &mut self.history);
+      }
+      Target::Pdf(path) => std::fs::canonicalize(path)?,
+    };
+    if let Some((tab, pane)) = self.existing(&path) {
+      return self.focus(tab, pane);
+    }
+    let (column, row) = drop.cell;
+    let under = |app: &App| Pane::of(app).rect.contains(column, row);
+    // A load that fails says so in the pane the drop chose.
+    if let Some(index) = self.tab().panes.iter().position(under) {
+      self.focus(self.active, index)?;
+    }
+    let screen = self.screen.unwrap_or(self.app().screen);
+    // While the drop lasts, so a file it only promises still exists.
+    self.open(&path, false, screen)
+  }
+
+  /// A drop on the start screen: a prompt takes its text, else its PDF
+  /// opens in a tab.
+  fn home_drop(
+    &mut self,
+    home: &mut Home,
+    body: &str,
+    out: &mut impl Write,
+  ) -> Result<Landing> {
+    let typing = home.typing();
+    let drop = match self.drop_step(body, typing, out) {
+      Ok(Some(drop)) => drop,
+      Ok(None) => return Ok(Landing::Wait),
+      Err(error) => {
+        home.error = Some(error.to_string());
+        return Ok(Landing::Shown);
+      }
+    };
+    let opened = match drop.target(typing) {
+      Ok(Target::Text(text)) => {
+        home.event(Event::Paste(text), &mut self.history).map(|_| false)
+      }
+      Ok(Target::Pdf(path)) => {
+        self.open(&path, true, home.screen).map(|()| true)
+      }
+      Err(error) => Err(error),
+    };
+    answer(out, &drop.finish(opened.is_ok()))?;
+    match opened {
+      Ok(true) => Ok(Landing::Opened),
+      Ok(false) => Ok(Landing::Shown),
+      Err(error) => {
+        home.error = Some(error.to_string());
+        Ok(Landing::Shown)
+      }
+    }
+  }
+
+  /// Opens `path` from the start screen in a new tab; whether it did. A
+  /// failure shows on the start screen.
+  fn leave_home(&mut self, home: &mut Home, path: &Path) -> bool {
+    let opened = self.open(path, true, home.screen);
+    if let Err(error) = &opened {
+      home.error = Some(error.to_string());
+    }
+    opened.is_ok()
+  }
+
   /// The pointer left the window; whether a hover ended.
   pub fn pointer_left(&mut self) -> bool {
     self.pointer.leave()
@@ -1173,6 +1283,16 @@ impl Session {
         self.home = Some(home);
         return Ok(());
       };
+      if let Event::Reply(Reply::Osc { code: 72, body }) = &event {
+        match self.home_drop(&mut home, body, out)? {
+          Landing::Wait => continue,
+          Landing::Opened => return home.release(out),
+          Landing::Shown => {
+            self.home = Some(home);
+            return Ok(());
+          }
+        }
+      }
       if !passive(&event) {
         break event;
       }
@@ -1203,10 +1323,11 @@ impl Session {
     }
     let outcome = home.event(event, &mut self.history);
     match outcome {
-      Ok(Outcome::Open(path)) => match self.open(&path, true, home.screen) {
-        Ok(()) => return home.release(out),
-        Err(error) => home.error = Some(error.to_string()),
-      },
+      Ok(Outcome::Open(path)) => {
+        if self.leave_home(&mut home, &path) {
+          return home.release(out);
+        }
+      }
       Ok(Outcome::Quit) => return Ok(()),
       Ok(Outcome::Pick) => {
         home.release(out)?;
@@ -1214,10 +1335,11 @@ impl Session {
           .map_err(anyhow::Error::from)
           .and_then(|root| crate::fzf::pick(&root));
         match picked {
-          Ok(Some(path)) => match self.open(&path, true, home.screen) {
-            Ok(()) => return Ok(()),
-            Err(error) => home.error = Some(error.to_string()),
-          },
+          Ok(Some(path)) => {
+            if self.leave_home(&mut home, &path) {
+              return Ok(());
+            }
+          }
           Ok(None) => {}
           Err(error) => home.error = Some(error.to_string()),
         }
@@ -1412,6 +1534,8 @@ enum Act {
   /// The terminal no longer holds this image; not typing.
   Missing(u32),
   ImageStatus(String),
+  /// OSC 72: a drag over the window or a drop; not typing.
+  Drop(String),
   /// Mode 1004, which only tmux is asked for; true when the pane gains
   /// focus. Not typing.
   Focus(bool),
@@ -1425,6 +1549,7 @@ impl Act {
       Self::Missing(_)
       | Self::Focus(_)
       | Self::ImageStatus(_)
+      | Self::Drop(_)
       | Self::Leave => false,
       Self::Key(_) | Self::Paste(_) | Self::Resize(_) => true,
     }
@@ -1449,6 +1574,7 @@ fn act(event: Event) -> Option<Act> {
     Event::Reply(Reply::Osc { code: 5522, body }) => {
       Some(Act::ImageStatus(body))
     }
+    Event::Reply(Reply::Osc { code: 72, body }) => Some(Act::Drop(body)),
     Event::Focus(gained) => Some(Act::Focus(gained)),
     Event::Key(_) | Event::Reply(_) => None,
   }
@@ -1487,6 +1613,7 @@ fn input(
     }
     Act::Mouse(mouse) => return Ok(session.mouse_report(mouse)? || shown),
     Act::Leave => return Ok(session.pointer_left()),
+    Act::Drop(body) => return session.drop_event(&body, out),
     Act::ImageStatus(body) => {
       session.image_status(&body);
       Ok(())
@@ -1675,6 +1802,22 @@ fn idle(
     wait = wait.min(crate::watch::SETTLE);
   }
   wait
+}
+
+/// Where a drop on the start screen leaves it.
+enum Landing {
+  Wait,
+  /// A document opened in a tab.
+  Opened,
+  /// The start screen redraws: its prompt took text, or an error shows.
+  Shown,
+}
+
+/// Sends a reply the terminal waits for.
+fn answer(out: &mut impl Write, reply: &str) -> Result<()> {
+  out.write_all(reply.as_bytes())?;
+  out.flush()?;
+  Ok(())
 }
 
 /// Shows a failure in the focused pane instead of ending the session.
@@ -2047,6 +2190,73 @@ mod tests {
   }
 
   #[test]
+  fn start_screen_drops_open_or_type() -> Result<()> {
+    use base64::Engine;
+    let directory = tempfile::tempdir()?;
+    let pdf = directory.path().join("a.pdf");
+    // MuPDF repairs the missing cross-reference table.
+    std::fs::write(
+      &pdf,
+      "%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n\
+       2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n\
+       3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>> endobj\n\
+       trailer <</Root 1 0 R>>\n%%EOF\n",
+    )?;
+    let notes = directory.path().join("notes.txt");
+    std::fs::write(&notes, "text")?;
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let list = |path: &Path| {
+      let uri = format!("file://{}\r\n", path.display());
+      base64::engine::general_purpose::STANDARD.encode(uri)
+    };
+    let drop = |session: &mut Session, home: &mut Home, path: &Path| {
+      let mut out = Vec::new();
+      let mut landed = Landing::Wait;
+      for body in [
+        "t=M:x=1:y=1:o=1;text/uri-list".to_owned(),
+        format!("t=r:x=1;{}", list(path)),
+        "t=r:x=1".to_owned(),
+      ] {
+        landed = session.home_drop(home, &body, &mut out)?;
+      }
+      Ok::<_, anyhow::Error>((landed, String::from_utf8_lossy(&out).into()))
+    };
+    let ended =
+      |out: &String, how: &str| out.ends_with(&format!("t=r:o={how}\x1b\\"));
+    // A prompt takes the path as text.
+    let mut session = Session::new(None);
+    let mut home = Home::new(&[], screen);
+    let colon = KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE);
+    home.event(Event::Key(colon), &mut session.history)?;
+    let (landed, out) = drop(&mut session, &mut home, &pdf)?;
+    assert!(matches!(landed, Landing::Shown) && ended(&out, "1"));
+    assert!(session.tabs.is_empty());
+    // Without a prompt the PDF opens; a list with none is cancelled.
+    let mut home = Home::new(&[], screen);
+    let (landed, out) = drop(&mut session, &mut home, &notes)?;
+    assert!(matches!(landed, Landing::Shown) && ended(&out, "0"));
+    assert_eq!(home.error.as_deref(), Some("No PDF in the drop"));
+    let (landed, out) = drop(&mut session, &mut home, &pdf)?;
+    assert!(matches!(landed, Landing::Opened) && ended(&out, "1"));
+    assert_eq!(session.tabs.len(), 1);
+    // The terminal's error shows and ends the drop.
+    let mut home = Home::new(&[], screen);
+    let mut out = Vec::new();
+    session.home_drop(&mut home, "t=M:x=1:y=1:o=1;text/uri-list", &mut out)?;
+    let landed = session.home_drop(&mut home, "t=R:x=1;EIO", &mut out)?;
+    assert!(matches!(landed, Landing::Shown));
+    assert!(ended(&String::from_utf8_lossy(&out).into(), "0"));
+    assert_eq!(home.error.as_deref(), Some("Drop failed: EIO"));
+    Ok(())
+  }
+
+  #[test]
   fn only_actionable_input_counts() {
     let none = KeyModifiers::NONE;
     let press = KeyEvent::new(KeyCode::Char('j'), none);
@@ -2086,14 +2296,19 @@ mod tests {
       (graphics(Some(9), "ENOENT:no such image"), Some(Act::Missing(9))),
       (graphics(Some(9), "OK"), None),
       (graphics(None, "ENOENT:no such image"), None),
+      (
+        Event::Reply(Reply::Osc { code: 72, body: "t=m".into() }),
+        Some(Act::Drop("t=m".into())),
+      ),
     ];
     for (event, want) in cases {
       let at = format!("{event:?}");
       assert_eq!(act(event), want, "{at}");
     }
-    // Neither moves `touched`.
+    // None of these moves `touched`.
     let moved = act(mouse(MouseKind::Moved, cell)).expect("motion");
     assert!(!moved.typed() && !Act::Leave.typed());
+    assert!(!Act::Drop("t=m".into()).typed());
   }
 
   #[test]

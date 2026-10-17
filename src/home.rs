@@ -101,6 +101,11 @@ impl Home {
     Ok(())
   }
 
+  /// Whether a prompt takes typed and pasted text.
+  pub fn typing(&self) -> bool {
+    self.prompt.is_some()
+  }
+
   /// Deletes the thumbnail before the screen goes.
   pub fn release(&mut self, out: &mut impl Write) -> Result<()> {
     self.graphics.clear(out)
@@ -117,7 +122,12 @@ impl Home {
         self.key(key, history)
       }
       Event::Paste(text) => {
-        let Some(prompt) = &mut self.prompt else { return Ok(Outcome::Stay) };
+        // Terminals without drops paste dropped files' paths.
+        let Some(prompt) = &mut self.prompt else {
+          return Ok(
+            crate::dnd::pdf(&text).map_or(Outcome::Stay, Outcome::Open),
+          );
+        };
         let event = prompt.paste(&text);
         self.prompt_event(event, history)
       }

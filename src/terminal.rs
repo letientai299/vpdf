@@ -37,6 +37,9 @@ static ACTIVE: AtomicBool = AtomicBool::new(false);
 /// exactly what resume set.
 static PUSHED: AtomicBool = AtomicBool::new(false);
 
+/// Set while the terminal sends drops, OSC 72.
+static DROPS: AtomicBool = AtomicBool::new(false);
+
 /// Set while mouse reports carry pixels, mode 1016.
 static PIXELS: AtomicBool = AtomicBool::new(false);
 
@@ -240,6 +243,10 @@ pub fn resume() -> Result<()> {
     out.flush()?;
   }
   shapes().push(caps.pointer, &mut io::stdout(), tmux())?;
+  if caps.drop == Support::Answered {
+    DROPS.store(true, Ordering::Relaxed);
+    io::stdout().write_all(crate::dnd::ACCEPT)?;
+  }
   match &caps.host {
     Host::Tmux(Some(tmux)) => tmux_setup(caps, tmux),
     _ => {
@@ -291,6 +298,9 @@ pub fn suspend() -> Result<()> {
   }
   if tmux() {
     crate::graphics::release(&mut io::stdout())?;
+  }
+  if DROPS.swap(false, Ordering::Relaxed) {
+    io::stdout().write_all(crate::dnd::REFUSE)?;
   }
   // Before the parser reads cells again.
   if PIXELS.swap(false, Ordering::Relaxed) {

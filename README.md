@@ -81,6 +81,13 @@ under the pointer in place where the view allows; Shift-wheel or a sideways
 wheel pans a zoomed page or wide extracted text. Lists and thumbnails ignore
 the modifiers.
 
+Dropping a PDF on a pane opens it there, or focuses the view that already shows
+it; an open prompt takes the dropped path, or dragged text, as typed text.
+Kitty 0.47 and later send drops through its [drag and drop protocol][dnd].
+Files that the source app only promises, such as Mail attachments, exist only
+while the drop lasts, so the reader cannot reload them later. Other terminals
+paste a dropped file's path, so a pasted path to a PDF in Normal mode opens it.
+
 `K` owns its preview: `j`/`k` scroll rows, Ctrl-d/Ctrl-u scroll half its
 height, and Enter follows the original destination. Counts apply to scrolling.
 The border shows the destination page label and arrows at clipped edges.
@@ -111,6 +118,7 @@ MuPDF and its Rust bindings remain subject to their AGPL obligations. See
 
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
 [keyboard]: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
+[dnd]: https://sw.kovidgoyal.net/kitty/dnd-protocol/
 [setup]: docs/installation.md#terminal-setup
 [docs]: docs/readme.md
 [license]: LICENSE

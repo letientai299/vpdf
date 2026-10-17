@@ -5,6 +5,7 @@ mod common;
 mod corpus;
 mod cursor;
 mod cursorline;
+mod drop;
 mod encrypted;
 mod figures;
 mod focus;

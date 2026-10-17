@@ -143,6 +143,8 @@ Recent <CR>/click: open in covered pane
 gt [count]gt: next / nth tab
 gT: previous tab
 :e :tabe :tabnew :split :vsplit <file>: reuse open view first
+Drop a PDF on a pane: open there; reuse view; prompt takes it
+N paste of a PDF path: open it; a prompt takes the text
 Pane changes: keep C/V, queries and panel focus
 
 # Command line
