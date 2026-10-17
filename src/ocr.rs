@@ -196,10 +196,10 @@ impl App {
     self.ocr = Some(OcrJob::start(
       &self.path,
       &self.password,
-      self.reader.cursor.page,
+      self.navigation_position().page,
       language,
     ));
-    self.reader.message = "OCR running; Esc cancels".into();
+    self.reader.message = "OCR running; :cancel stops".into();
     Ok(())
   }
 

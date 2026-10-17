@@ -40,29 +40,12 @@ impl App {
     if self.text_mode {
       let rows = (delta / f32::from(self.screen.cell_height)).round();
       self.scroll_text(rows as isize)?;
-      return self.ensure_cursor();
+      return Ok(());
     }
     let start =
       self.animation.as_ref().map_or(self.reader.scroll, |s| s.target);
     let target = self.layout.clamp_scroll(start + delta);
     self.animation = Some(Scroll { target, updated: Instant::now() });
-    let cursor = self.reader.cursor;
-    if let Some(glyph) = self.doc.text(cursor.page)?.glyph(cursor) {
-      let rect = self.layout.project(cursor.page, glyph.bounds, target);
-      if rect.y0 >= 0.0 && rect.y1 <= self.layout.screen.height() {
-        return Ok(());
-      }
-    }
-    let anchor = target + self.layout.screen.height() / 2.0;
-    let page = self.layout.page_at(anchor);
-    let text = self.doc.text(page)?;
-    if let Some((x, y)) = self.layout.unproject(
-      page,
-      (0.0, self.layout.screen.height() / 2.0),
-      target,
-    ) {
-      self.reader.cursor = text.nearest(page, x, y);
-    }
     Ok(())
   }
 }

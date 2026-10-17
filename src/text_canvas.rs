@@ -1,6 +1,5 @@
 use crate::Result;
 use crate::app::App;
-use crate::motion::Motion;
 use crate::reader::SelectionKind;
 use crate::text::{Glyph, Position, Text};
 use crate::theme;
@@ -21,7 +20,11 @@ impl View {
     &self,
     glyphs: &'a [Glyph],
   ) -> impl Iterator<Item = (usize, usize, &'a Glyph)> {
-    fitting(glyphs.iter().enumerate().skip(self.top.glyph), self.columns)
+    let offset = self.top.glyph;
+    fitting(glyphs.iter().enumerate(), offset.saturating_add(self.columns))
+      .filter_map(move |(index, column, glyph)| {
+        column.checked_sub(offset).map(|column| (index, column, glyph))
+      })
   }
 
   /// Drawn position at a cell, else nearest.
@@ -48,6 +51,24 @@ impl View {
     Some((column.min(self.columns.saturating_sub(1)), row))
   }
 
+  fn clamped(mut self, text: &Text) -> Self {
+    self.top.line =
+      self.top.line.min(text.lines.len().saturating_sub(self.height.max(1)));
+    if self.top.glyph == 0 {
+      return self;
+    }
+    let mut max = 0;
+    for line in text.lines.iter().skip(self.top.line).take(self.height) {
+      let width = line.glyphs.iter().map(cells).sum::<usize>();
+      max = max.max(width.saturating_sub(self.columns));
+      if max >= self.top.glyph {
+        return self;
+      }
+    }
+    self.top.glyph = max;
+    self
+  }
+
   /// Moved least to show `cursor`.
   fn keep_visible(self, cursor: Position, text: &Text) -> Self {
     let top = if self.top.page == cursor.page {
@@ -65,10 +86,9 @@ impl View {
       .max((cursor.line + 1).saturating_sub(self.height))
       .min(text.lines.len().saturating_sub(self.height));
     let glyphs = text.lines.get(cursor.line).map_or(&[][..], |l| &l.glyphs);
-    let glyphs = glyphs.iter().enumerate().take(cursor.glyph + 1).rev();
-    let first =
-      fitting(glyphs, self.columns).last().map_or(cursor.glyph, |(i, ..)| i);
-    let glyph = top.glyph.min(cursor.glyph).max(first);
+    let start = glyphs.iter().take(cursor.glyph).map(cells).sum::<usize>();
+    let end = start + glyphs.get(cursor.glyph).map_or(0, cells);
+    let glyph = top.glyph.min(start).max(end.saturating_sub(self.columns));
     Self { top: Position { line, glyph, ..top }, ..self }
   }
 
@@ -97,6 +117,12 @@ fn fitting<'a>(
 }
 
 impl App {
+  pub(crate) fn clamp_text(&mut self, mut top: Position) -> Result<Position> {
+    top.page.0 = top.page.0.min(self.doc.pages.len().saturating_sub(1));
+    let text = self.doc.text(top.page)?;
+    Ok(self.text_view_from(top).clamped(&text).top)
+  }
+
   /// The text view from `top`, unmoved.
   fn text_view_from(&self, top: Position) -> View {
     let height = usize::from(self.screen.rows.saturating_sub(1));
@@ -104,16 +130,15 @@ impl App {
     View { height, columns, top }
   }
 
-  /// Cursor page text and next frame's view.
+  /// Text and the current viewport.
   fn next_text_view(&mut self) -> Result<(Arc<Text>, View)> {
-    let cursor = self.reader.cursor;
-    let text = self.doc.text(cursor.page)?;
-    let view = self.text_view_from(self.text_top).keep_visible(cursor, &text);
+    let text = self.doc.text(self.text_top.page)?;
+    let view = self.text_view_from(self.text_top);
     Ok((text, view))
   }
 
   pub fn text_canvas(&mut self, out: &mut impl Write) -> Result<()> {
-    let page = self.reader.cursor.page;
+    let page = self.text_top.page;
     let (text, view) = self.next_text_view()?;
     self.text_top = view.top;
     self.text_drawn = Some(view.top);
@@ -121,7 +146,12 @@ impl App {
     for (row, line) in lines.enumerate() {
       write!(out, "{}", self.at.goto(row, self.left))?;
       let mut current = "";
-      for (glyph, _, ch) in view.shown(&line.glyphs) {
+      let mut written = 0;
+      for (glyph, column, ch) in view.shown(&line.glyphs) {
+        if column > written {
+          write!(out, "{}", " ".repeat(column - written))?;
+        }
+        written = column + cells(ch);
         let line = view.top.line + row;
         let pos = Position { page, line, glyph };
         let style = self.text_style(pos);
@@ -166,25 +196,83 @@ impl App {
   /// Cursor line `fraction` down the view.
   pub(crate) fn align_text(&mut self, fraction: f32) -> Result<()> {
     let (_, view) = self.next_text_view()?;
-    self.text_top = view.aligned(self.reader.cursor.line, fraction);
+    self.text_top =
+      self.clamp_text(view.aligned(self.reader.cursor.line, fraction))?;
     Ok(())
   }
 
-  /// Cursor and view move `lines` lines.
+  pub(crate) fn text_origin(&mut self, position: Position) -> Result<()> {
+    let text = self.doc.text(position.page)?;
+    let column = text.lines.get(position.line).map_or(0, |line| {
+      line.glyphs.iter().take(position.glyph).map(cells).sum()
+    });
+    self.text_top = self.clamp_text(Position { glyph: column, ..position })?;
+    Ok(())
+  }
+
+  pub(crate) fn reveal_text(&mut self) -> Result<()> {
+    let text = self.doc.text(self.reader.cursor.page)?;
+    self.text_top = self
+      .text_view_from(self.text_top)
+      .keep_visible(self.reader.cursor, &text)
+      .top;
+    Ok(())
+  }
+
   pub fn scroll_text(&mut self, lines: isize) -> Result<()> {
-    let motion = if lines < 0 { Motion::Up } else { Motion::Down };
-    let before = self.reader.cursor;
-    self.reader.motion(motion, lines.unsigned_abs(), false, &mut self.doc)?;
-    let cursor = self.reader.cursor;
-    if cursor.page == before.page {
-      let line = (self.text_top.line + cursor.line).saturating_sub(before.line);
-      self.text_top.line = line;
+    let mut remaining = lines.unsigned_abs();
+    let down = lines > 0;
+    while remaining > 0 {
+      let text = self.doc.text(self.text_top.page)?;
+      let height = usize::from(self.layout.screen.rows.saturating_sub(1));
+      let last = text.lines.len().saturating_sub(height.max(1));
+      let room = if down {
+        last.saturating_sub(self.text_top.line)
+      } else {
+        self.text_top.line
+      };
+      let step = room.min(remaining);
+      self.text_top.line = self.text_top.line.saturating_add_signed(if down {
+        step as isize
+      } else {
+        -(step as isize)
+      });
+      remaining -= step;
+      if remaining == 0 {
+        break;
+      }
+      if down {
+        if self.text_top.page.0 + 1 >= self.doc.pages.len() {
+          break;
+        }
+        self.text_top.page.0 += 1;
+        self.text_top.line = 0;
+      } else {
+        if self.text_top.page.0 == 0 {
+          break;
+        }
+        self.text_top.page.0 -= 1;
+        self.text_top.line = self
+          .doc
+          .text(self.text_top.page)?
+          .lines
+          .len()
+          .saturating_sub(height.max(1));
+      }
+      remaining -= 1;
     }
+    self.text_top = self.clamp_text(self.text_top)?;
+    Ok(())
+  }
+
+  pub(crate) fn pan_text(&mut self, columns: isize) -> Result<()> {
+    self.text_top.glyph = self.text_top.glyph.saturating_add_signed(columns);
+    self.text_top = self.clamp_text(self.text_top)?;
     Ok(())
   }
 
   fn text_style(&self, position: Position) -> &'static str {
-    if position == self.reader.cursor {
+    if self.reader.selection.is_some() && position == self.reader.cursor {
       return theme::TEXT_CURSOR;
     }
     if let Some(selection) = self.reader.selection {
@@ -240,7 +328,7 @@ mod tests {
       ("left", at(0, 0, 5), at(0, 0, 2), (10, 4), at(0, 0, 2)),
       ("last column", at(0, 0, 0), at(0, 0, 3), (10, 4), at(0, 0, 0)),
       ("right", at(0, 0, 0), at(0, 0, 7), (10, 4), at(0, 0, 4)),
-      ("wide glyphs", at(0, 20, 0), at(0, 28, 4), (10, 4), at(0, 20, 3)),
+      ("wide glyphs", at(0, 20, 0), at(0, 28, 4), (10, 4), at(0, 20, 6)),
       ("empty line", at(0, 20, 5), at(0, 29, 0), (10, 4), at(0, 20, 0)),
       ("no rows", at(0, 5, 2), at(0, 15, 7), (0, 4), at(0, 5, 2)),
       ("no columns", at(0, 5, 2), at(0, 15, 7), (10, 0), at(0, 5, 2)),
@@ -273,6 +361,9 @@ mod tests {
       ("drawn", 0, at(0, 0, 2), Some((2, 0))),
       ("cut wide glyph", 0, at(0, 0, 3), None),
       ("after a wide glyph", 0, at(0, 2, 1), Some((2, 2))),
+      ("clipped left glyph", 1, at(0, 2, 0), None),
+      ("one cell pan", 1, at(0, 2, 1), Some((1, 2))),
+      ("two cell pan", 2, at(0, 2, 1), Some((0, 2))),
       ("empty line", 0, at(0, 3, 0), None),
       ("below the view", 0, at(0, 4, 0), None),
       ("other page", 0, at(1, 0, 0), None),

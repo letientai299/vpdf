@@ -118,6 +118,7 @@ pub const COMMANDS: &[Spec] = &[
   spec("toc", &["outline"], "", "open the table of contents"),
   spec("overview", &["pages"], "", "show page thumbnails"),
   spec("crop", &[], "", "toggle cropped page margins"),
+  spec("cancel", &[], "", "cancel active-pane background jobs"),
   spec("nohlsearch", &["noh"], "", "hide search highlights"),
   spec("text", &[], "", "preview extracted page text"),
   spec("info", &[], "", "document, reader, and terminal info"),

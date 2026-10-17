@@ -598,7 +598,8 @@ impl Session {
       }
       Some(Request::SetMark(name)) => {
         let app = self.app();
-        let mark = Mark { path: app.path.clone(), cursor: app.reader.cursor };
+        let mark =
+          Mark { path: app.path.clone(), cursor: app.reading_position()? };
         self.state.marks.insert(name, mark);
         self.changed();
         Ok(())

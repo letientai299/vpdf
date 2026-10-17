@@ -12,7 +12,7 @@ use crossterm::event::KeyEvent;
 use std::process::{Command, Stdio};
 
 /// Commands the recent view takes: opening, windows, tabs, quitting.
-const COVERED: [&str; 12] = [
+const COVERED: [&str; 13] = [
   "edit",
   "split",
   "vsplit",
@@ -22,6 +22,7 @@ const COVERED: [&str; 12] = [
   "tabprevious",
   "tabclose",
   "recent",
+  "cancel",
   "fzf",
   "quit",
   "qall",
@@ -29,22 +30,18 @@ const COVERED: [&str; 12] = [
 
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
-    if self.overview.is_some() && self.overview_input(input)? {
-      return Ok(());
-    }
     if input.action == Action::Cancel {
       self.animation = None;
-      self.search.cancel();
+      self.hints = None;
+      self.peek = None;
+      if self.overview.is_some() {
+        self.close_overview();
+      }
       self.reader.cancel();
-      if let Some(ocr) = self.ocr.take() {
-        ocr.cancel();
-      }
-      // The recent view keeps focus; nothing lies behind it.
-      if let Some(panel) = &mut self.panel
-        && panel.shelf.is_none()
-      {
-        panel.focused = false;
-      }
+      self.disarm();
+      return Ok(());
+    }
+    if self.overview.is_some() && self.overview_input(input)? {
       return Ok(());
     }
     // `q` leaves text preview first and keeps any side panel open.
@@ -57,12 +54,12 @@ impl App {
     match input.action {
       Action::Panel(kind) => self.open_panel(kind)?,
       Action::ClosePanel => self.close_panel()?,
-      Action::Search(backward) => self.begin_search(backward),
+      Action::Search(backward) => self.begin_search(backward)?,
       Action::WordSearch => self.word_search()?,
       Action::Result(reverse) => self.next_result(reverse, input.count)?,
       Action::Follow => self.follow_cursor()?,
       Action::Command => self.prompt = Some(Prompt::new(PromptKind::Command)),
-      Action::Mark(name) => self.set_mark(name),
+      Action::Mark(name) => self.set_mark(name)?,
       Action::Hints(copy) => self.start_hints(copy)?,
       Action::Window(command) => {
         self.request = Some(Request::Window {
@@ -100,7 +97,7 @@ impl App {
       let Some(input) = self.keys.feed(key) else { return Ok(()) };
       return match input.action {
         Action::Follow => self.follow(&peek.target),
-        Action::Quit | Action::Cancel | Action::Peek => Ok(()),
+        Action::Quit | Action::Peek => Ok(()),
         _ => self.action(input),
       };
     }
@@ -137,7 +134,11 @@ impl App {
       | PromptEvent::Edited
       | PromptEvent::Editor
       | PromptEvent::Complete => {}
-      PromptEvent::Cancel => self.cancel_prompt()?,
+      PromptEvent::Cancel => {
+        self.cancel_prompt()?;
+        self.reader.cancel();
+        self.disarm();
+      }
       PromptEvent::Submit => {
         let Some(prompt) = self.prompt.take() else { return Ok(()) };
         history.push(prompt.kind, &prompt.text);
@@ -220,6 +221,14 @@ impl App {
       "jumps" => self.open_panel(PanelKind::Jumps)?,
       "annotations" => self.open_panel(PanelKind::Annotations)?,
       "fzf" => self.request = Some(Request::Pick),
+      "cancel" => {
+        self.search.cancel();
+        if let Some(job) = self.ocr.take() {
+          job.cancel();
+        }
+        self.outline_job = None;
+        self.reader.message = "Jobs canceled".into();
+      }
       "nohlsearch" => self.search.hidden = true,
       "text" => self.open_panel(PanelKind::Text)?,
       "info" => self.open_panel(PanelKind::Info)?,
@@ -264,8 +273,18 @@ impl App {
     self.reader.clear_history();
     self.requested.clear();
     self.reader.cursor = reader::clamp(self.reader.cursor, &mut self.doc)?;
-    if let Some(origin) = &mut self.search_origin {
+    self.text_top = self.clamp_text(self.text_top)?;
+    self.text_drawn = None;
+    self.target = None;
+    if let Some(mut origin) = self.search_origin {
       origin.cursor = reader::clamp(origin.cursor, &mut self.doc)?;
+      origin.anchor =
+        origin.anchor.filter(|(page, _)| page.0 < self.doc.pages.len());
+      if let Some(top) = origin.text_top {
+        origin.text_top = Some(self.clamp_text(top)?);
+      }
+      origin.target = None;
+      self.search_origin = Some(origin);
     }
     if let Some(panel) = &self.panel {
       let kind = panel.kind;
@@ -288,23 +307,21 @@ impl App {
       self.rerun(&previous.query)?;
     }
     self.relayout()?;
-    // New pages can move the cursor's glyph.
-    self.ensure_cursor()?;
     self.reader.message = "Reloaded".into();
     Ok(())
   }
 
   /// Enter follows a link under the cursor and ignores plain text.
   pub fn follow_cursor(&mut self) -> Result<()> {
-    match self.link_at_cursor()? {
+    let Some(position) = self.explicit_target()? else { return Ok(()) };
+    match self.link_target(position)? {
       Some(target) => self.follow(&target),
       None => Ok(()),
     }
   }
 
   /// Destination of the link covering the cursor glyph.
-  pub fn link_at_cursor(&mut self) -> Result<Option<Target>> {
-    let cursor = self.reader.cursor;
+  pub fn link_target(&mut self, cursor: Position) -> Result<Option<Target>> {
     let text = self.doc.text(cursor.page)?;
     let Some(glyph) = text.glyph(cursor) else { return Ok(None) };
     let x = f32::midpoint(glyph.bounds.x0, glyph.bounds.x1);

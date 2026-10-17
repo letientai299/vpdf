@@ -55,6 +55,8 @@ fn reader_workflows() -> Result<()> {
     explicit: false,
     register: '"',
   })?;
+  assert!(!app.search.hidden);
+  app.command("cancel")?;
   assert!(app.search.hidden);
   app.follow(&Target::Page(PageId(usize::MAX)))?;
   assert_eq!(app.reader.cursor.page.0, app.doc.pages.len() - 1);
@@ -137,12 +139,14 @@ fn links_keep_coordinates_and_text_scrolls_lines() -> Result<()> {
   app.follow(&target)?;
   assert_eq!(app.reader.cursor, expected);
   app.command("page 39")?;
-  app.text_mode = true;
+  app.open_panel(PanelKind::Text)?;
+  let cursor = app.reader.cursor;
   app.scroll(48.0)?;
-  assert_eq!(app.reader.cursor.line, 3);
+  assert_eq!(app.reader.cursor, cursor);
   assert!(app.animation.is_none());
   let position = app.text_position(2, 1)?;
-  assert_eq!(position.line, 1);
+  assert!(position.page.0 >= cursor.page.0);
+  assert!(position.page != cursor.page || position.line > cursor.line);
   assert_eq!(position.glyph, 2);
   Ok(())
 }
@@ -176,6 +180,8 @@ fn text_clicks_keep_the_view_and_select_words() -> Result<()> {
   app.mouse(press)?;
   app.draw(&mut Vec::new())?;
   assert_eq!(app.reader.cursor, target);
+  assert_eq!(app.target, Some(target));
+  assert!(app.reader.selection.is_none());
   let again = app.text_position(mouse.column, mouse.row)?;
   assert_eq!(again, target, "a click keeps the view");
   app.mouse(press)?;
@@ -189,31 +195,28 @@ fn text_clicks_keep_the_view_and_select_words() -> Result<()> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
-fn text_view_aligns_and_scrolls_with_the_cursor() -> Result<()> {
-  fn cursor_row(app: &mut App) -> Result<u16> {
-    app.draw(&mut Vec::new())?;
-    let cell = app.text_cell(app.reader.cursor)?;
-    Ok(cell.expect("cursor in view").1)
-  }
+fn text_view_scrolls_without_moving_the_selection() -> Result<()> {
   let mut app = text_app()?;
   let lines = app.doc.text(PageId(0))?.lines.len();
-  assert!(lines >= 30 + 19, "zt on line 30 fills the view");
   app.reader.cursor.line = 30;
+  app.reader.visual(vpdf::reader::SelectionKind::Character);
+  app.ensure_cursor()?;
   let input =
     Input { action: Action::Quit, count: 1, explicit: false, register: '"' };
   for (fraction, row) in [(0.0, 0), (1.0, 18), (0.5, 9)] {
     app.action(Input { action: Action::Align(fraction), ..input })?;
-    assert_eq!(cursor_row(&mut app)?, row, "align {fraction}");
+    assert_eq!(app.text_cell(app.reader.cursor)?.unwrap().1, row);
   }
-  for (delta, line) in [(5, 35), (-3, 32)] {
-    app.scroll_text(delta)?;
-    assert_eq!(app.reader.cursor.line, line);
-    assert_eq!(cursor_row(&mut app)?, 9, "the cursor keeps its row");
-  }
-  app.scroll_text((lines - 31) as isize)?;
-  assert_eq!(app.reader.cursor.page, PageId(1));
-  let row = usize::from(cursor_row(&mut app)?);
-  assert_eq!(row, app.reader.cursor.line, "a new page starts at its top");
+  let cursor = app.reader.cursor;
+  let before = app.text_position(0, 0)?;
+  app.scroll_text(5)?;
+  assert_eq!(app.reader.cursor, cursor);
+  app.draw(&mut Vec::new())?;
+  assert_eq!(app.text_position(0, 0)?.line, before.line + 5);
+  app.scroll_text(lines as isize)?;
+  assert_eq!(app.navigation_position(), cursor);
+  assert_eq!(app.reader.cursor, cursor);
+  assert!(app.text_cell(cursor)?.is_none());
   Ok(())
 }
 
@@ -346,6 +349,7 @@ fn preview_shows_citation_target() -> Result<()> {
     );
     app.reader.cursor = app.doc.text(PageId(1))?.nearest(PageId(1), x, y);
     app.ensure_cursor()?;
+    app.target = Some(app.reader.cursor);
     app.preview_link()?;
     assert!(app.peek.is_some());
     let mut out = Vec::new();
@@ -377,7 +381,7 @@ fn preview_shows_citation_target() -> Result<()> {
       Target::Uri(_) => unreachable!("a document link"),
     };
     for key in [plain(KeyCode::Enter), control('m')] {
-      app.reader.cursor = on_link;
+      app.go_to(on_link, true)?;
       app.preview_link()?;
       app.key(key, &mut history)?;
       assert!(app.peek.is_none(), "{key:?} closes it");
@@ -523,14 +527,14 @@ fn escape_restores_the_previous_search() -> Result<()> {
   app.start_search("python", false, false)?;
   settle(&mut app)?;
   let hits = app.search.hits.len();
-  app.begin_search(false);
+  app.begin_search(false)?;
   app.incremental("pyth")?;
   app.abort_search()?;
   settle(&mut app)?;
   assert_eq!(app.search.query.text, "python");
   assert_eq!(app.search.hits.len(), hits);
   // `?<CR>` repeats the pattern backward.
-  app.begin_search(true);
+  app.begin_search(true)?;
   app.finish_search("", true)?;
   assert!(app.search.query.backward);
   Ok(())

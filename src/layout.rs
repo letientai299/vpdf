@@ -151,12 +151,20 @@ impl Layout {
       .map(|m| m.transform_xy(x - left, y - top))
   }
 
+  pub fn pan_limit(&self, page: PageId) -> f32 {
+    let max = self.pages[page.0].width - self.screen.width();
+    if max <= 1.0 { 0.0 } else { max }
+  }
+
   /// Raster origin within the page pane.
   pub fn origin(&self, page: PageId, scroll: f32) -> (f32, f32) {
     let layout = &self.pages[page.0];
     let spare = self.screen.width() - layout.width;
-    let x =
-      if spare >= 0.0 { spare / 2.0 } else { -self.pan.clamp(0.0, -spare) };
+    let x = if spare >= 0.0 {
+      spare / 2.0
+    } else {
+      -self.pan.clamp(0.0, self.pan_limit(page))
+    };
     (x, layout.top - scroll)
   }
 }
@@ -226,6 +234,8 @@ mod tests {
       assert!((top + 27.0).abs() < 0.001);
       if spare >= 0.0 {
         assert!((left - spare / 2.0).abs() < 0.001);
+      } else if spare >= -1.0 {
+        assert!(left.abs() < 0.001, "fit-width rounding cannot pan");
       } else {
         assert!((left + pan.clamp(0.0, -spare)).abs() < 0.001);
       }

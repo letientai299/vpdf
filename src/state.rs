@@ -84,7 +84,7 @@ impl State {
     }
     let entry = Entry {
       path: app.path.clone(),
-      cursor: app.reader.cursor,
+      cursor: app.navigation_position(),
       zoom: app.layout.zoom,
       rotation: app.layout.rotation,
       used: now(),
@@ -144,12 +144,14 @@ impl App {
     self.layout.zoom = other.layout.zoom;
     self.layout.rotation = other.layout.rotation;
     self.layout.crop = other.layout.crop;
+    self.layout.pan = other.layout.pan;
     self.doc.margins = other.doc.margins;
     // A text preview (`gx`) is the other pane's, not the document's mode.
     self.text_mode = other.preview.unwrap_or(other.text_mode);
     self.layout.reflow(&self.doc.pages);
-    self.reader.cursor =
-      self.doc.text(other.reader.cursor.page)?.clamp(other.reader.cursor);
+    self.reader.cursor = other.navigation_position();
+    self.reader.cancel();
+    self.target = None;
     self.reader.scroll = other.reader.scroll;
     self.text_top = other.text_top;
     Ok(())
@@ -166,6 +168,7 @@ impl App {
     let cursor = Position { page, ..entry.cursor };
     self.reader.cursor = self.doc.text(page)?.clamp(cursor);
     self.reader.scroll = self.layout.pages[page.0].top;
+    self.target = Some(self.reader.cursor);
     self.ensure_cursor()
   }
 }

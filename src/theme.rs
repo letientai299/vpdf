@@ -24,7 +24,6 @@ pub const TEXT_MATCH: &str = "\x1b[0;7;33m";
 pub enum Color {
   Blue = 34,
   Magenta = 35,
-  Green = 32,
   Yellow = 33,
   Cyan = 36,
 }

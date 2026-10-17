@@ -281,8 +281,11 @@ mod pointer {
     common::outline_loaded(session.app())?;
     act(&mut session, Action::Panel(PanelKind::Outline))?;
     act(&mut session, Action::Cancel)?;
+    assert!(session.app().panel_focused(), "Escape preserves panel focus");
     let width = session.app().left;
     assert!(width > 0);
+    mouse(&mut session, Down(Left), width + 5, 10)?;
+    mouse(&mut session, Up(Left), width + 5, 10)?;
     Ok((session, width))
   }
 
@@ -439,6 +442,23 @@ fn resize_lays_out_panes_and_start_screen() -> Result<()> {
   Ok(())
 }
 
+fn resident_tiles(session: &mut Session) -> Result<()> {
+  let mut tiles = Vec::new();
+  for app in &mut session.tab().panes {
+    for key in vpdf::tiles::visible(&app.layout, app.reader.scroll) {
+      tiles.push((app.id, vpdf::tiles::render(&mut app.doc, key)?));
+    }
+  }
+  let focused = session.app().id;
+  let graphics = &mut session.app().graphics;
+  for (id, tile) in tiles {
+    graphics.doc = id;
+    graphics.upload(&tile, &mut Vec::new())?;
+  }
+  graphics.doc = focused;
+  Ok(())
+}
+
 /// Split panes share one `Graphics`: a frame starts and ends it once,
 /// so the next frame keeps every pane's placements and deletes none.
 #[test]
@@ -446,6 +466,7 @@ fn resize_lays_out_panes_and_start_screen() -> Result<()> {
 fn split_frames_keep_every_pane_placed() -> Result<()> {
   use vpdf::trace::Drawable;
   let (mut session, _, _) = split()?;
+  resident_tiles(&mut session)?;
   let mut frame = Vec::new();
   session.draw_frame(&mut frame)?;
   let placed = |frame: &[u8]| {
@@ -462,7 +483,7 @@ fn split_frames_keep_every_pane_placed() -> Result<()> {
     pairs
   };
   let first = placed(&frame);
-  // Each pane's cursor highlight.
+  // Every pane has resident tiles.
   assert!(first.len() >= 2, "{first:?}");
   frame.clear();
   session.draw_frame(&mut frame)?;
@@ -480,6 +501,7 @@ fn split_frames_keep_every_pane_placed() -> Result<()> {
 fn hiding_deletes_every_placement() -> Result<()> {
   use vpdf::trace::Drawable;
   let (mut session, _, _) = split()?;
+  resident_tiles(&mut session)?;
   let mut frame = Vec::new();
   session.draw_frame(&mut frame)?;
   let pairs = |frame: &[u8], command: &str| {
@@ -516,6 +538,7 @@ fn hiding_deletes_every_placement() -> Result<()> {
 fn resize_erases_rows_before_placing() -> Result<()> {
   use vpdf::trace::Drawable;
   let (mut session, _, _) = split()?;
+  resident_tiles(&mut session)?;
   let mut frame = Vec::new();
   session.draw_frame(&mut frame)?;
   let screen = Screen {
@@ -526,6 +549,7 @@ fn resize_erases_rows_before_placing() -> Result<()> {
     origin: (0, 0),
   };
   session.resize(screen)?;
+  resident_tiles(&mut session)?;
   frame.clear();
   session.draw_frame(&mut frame)?;
   let text = String::from_utf8_lossy(&frame);

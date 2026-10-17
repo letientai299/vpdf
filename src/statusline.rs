@@ -22,9 +22,6 @@ impl App {
     if self.overview.is_some() {
       return ("PAGES", Color::Cyan);
     }
-    if self.preview.is_some() {
-      return ("TEXT", Color::Green);
-    }
     match self.reader.selection.map(|selection| selection.kind) {
       Some(SelectionKind::Character) => ("VISUAL", Color::Magenta),
       Some(SelectionKind::Line) => ("V-LINE", Color::Magenta),
@@ -44,17 +41,21 @@ impl App {
     if self.search.hidden || hits.is_empty() {
       return String::new();
     }
-    let cursor = self.reader.cursor;
-    let index = hits.partition_point(|hit| hit.first <= cursor);
     let more =
       if matches!(self.search.phase, Phase::Running { .. }) { "+" } else { "" };
+    if self.reader.selection.is_none() && self.reader.operator.is_none() {
+      return format!("[{}{more} matches]  ", hits.len());
+    }
+    let cursor = self.reader.cursor;
+    let index = hits.partition_point(|hit| hit.first <= cursor);
     format!("[{index}/{}{more}]  ", hits.len())
   }
 
   /// Share of the document above the viewport's bottom edge.
   fn progress(&self) -> u32 {
     let fraction = if self.text_mode {
-      (self.reader.cursor.page.0 + 1) as f32 / self.doc.pages.len() as f32
+      (self.navigation_position().page.0 + 1) as f32
+        / self.doc.pages.len() as f32
     } else {
       let bottom = self.reader.scroll + self.layout.screen.height();
       bottom / self.layout.total.max(1.0)
@@ -109,7 +110,7 @@ impl App {
   pub fn status(&self, out: &mut impl Write, row: u16) -> Result<()> {
     let columns = usize::from(self.screen.columns);
     let (mode, color) = self.mode();
-    let page = self.reader.cursor.page.0;
+    let page = self.navigation_position().page.0;
     let mut right = self.keys.pending();
     if !right.is_empty() {
       right.push_str("  ");

@@ -55,7 +55,7 @@ impl App {
   pub fn open_overview(&mut self) -> Result<()> {
     anyhow::ensure!(!self.text_mode, "Page overview needs Kitty graphics");
     self.overview =
-      Some(Overview { selected: self.reader.cursor.page.0, top: 0 });
+      Some(Overview { selected: self.navigation_position().page.0, top: 0 });
     self.requested.clear();
     Ok(())
   }

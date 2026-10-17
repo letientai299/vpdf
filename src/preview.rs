@@ -28,8 +28,9 @@ pub struct Preview {
 impl App {
   /// `K`: shows where the link under the cursor leads.
   pub fn preview_link(&mut self) -> Result<()> {
+    let Some(position) = self.explicit_target()? else { return Ok(()) };
     let target = self
-      .link_at_cursor()?
+      .link_target(position)?
       .ok_or_else(|| anyhow::anyhow!("No link under cursor"))?;
     let (page, y) = match &target {
       Target::Uri(uri) => {
@@ -103,7 +104,10 @@ impl App {
     if self.peek.is_none() {
       return Ok(());
     }
-    let cursor = self.cursor_rect()?;
+    let cursor = match self.target {
+      Some(position) => self.position_rect(position)?,
+      None => None,
+    };
     let Some(preview) = &self.peek else { return Ok(()) };
     let screen = self.layout.screen;
     let cell = f32::from(screen.cell_height);

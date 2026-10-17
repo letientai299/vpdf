@@ -3,7 +3,6 @@ use crate::app::App;
 use crate::keys::PanelKind;
 use crate::panel::Panel;
 use crate::prompt::{Prompt, PromptKind};
-use crate::reader::{self, Location};
 use crate::search::{self, Hit};
 use crate::search_worker::{SearchEvent, SearchWorker};
 use crate::text::Position;
@@ -63,7 +62,10 @@ impl App {
       return self.next_result(false, 1);
     }
     search::compile(query, whole)?;
-    let origin = self.search_origin.map_or(self.reader.cursor, |o| o.cursor);
+    let origin = match self.search_origin {
+      Some(origin) => origin.cursor,
+      None => self.reading_position()?,
+    };
     if self.search.worker.is_none() {
       let worker = SearchWorker::new(&self.path, &self.password);
       for (page, text) in self.doc.seeds() {
@@ -141,6 +143,7 @@ impl App {
         // Typing previews matches without filling the jump list.
         if self.search_origin.is_some() {
           self.reader.cursor = target;
+          self.target = Some(target);
           self.reader.scroll = self.layout.pages[target.page.0].top;
           self.ensure_cursor()?;
         } else {
@@ -177,17 +180,17 @@ impl App {
   }
 
   /// Searches the focused panel's rows, else the document.
-  pub fn begin_search(&mut self, backward: bool) {
+  pub fn begin_search(&mut self, backward: bool) -> Result<()> {
     if let Some(panel) = self.panel.as_mut().filter(|panel| panel.focused) {
       panel.begin_search(backward);
     } else {
-      let location =
-        Location { cursor: self.reader.cursor, scroll: self.reader.scroll };
+      let location = self.location()?;
       self.search_origin = Some(location);
       self.search.previous =
         Some((self.search.query.clone(), self.search.hidden));
     }
     self.prompt = Some(Prompt::new(PromptKind::Search(backward)));
+    Ok(())
   }
 
   /// Searches as the query is typed, like Vim's `incsearch`.
@@ -268,19 +271,17 @@ impl App {
 
   fn return_to_origin(&mut self) -> Result<()> {
     let Some(origin) = self.search_origin else { return Ok(()) };
-    self.reader.cursor = reader::clamp(origin.cursor, &mut self.doc)?;
-    self.reader.scroll = origin.scroll;
-    self.ensure_cursor()
+    self.restore_location(origin)
   }
 
   pub fn next_result(&mut self, reverse: bool, count: usize) -> Result<()> {
+    let cursor = self.reading_position()?;
     let hits = &self.search.hits;
     if hits.is_empty() {
       self.reader.message = "No matches".into();
       return Ok(());
     }
     let backward = self.search.query.backward != reverse;
-    let cursor = self.reader.cursor;
     let start = if backward {
       hits.iter().rposition(|h| h.first < cursor).unwrap_or(hits.len() - 1)
     } else {
@@ -305,11 +306,12 @@ impl App {
   }
 
   pub fn word_search(&mut self) -> Result<()> {
-    let text = self.doc.text(self.reader.cursor.page)?;
-    let Some(line) = text.lines.get(self.reader.cursor.line) else {
+    let Some(cursor) = self.explicit_target()? else { return Ok(()) };
+    let text = self.doc.text(cursor.page)?;
+    let Some(line) = text.lines.get(cursor.line) else {
       return Ok(());
     };
-    let at = self.reader.cursor.glyph;
+    let at = cursor.glyph;
     if line.glyphs.get(at).is_none_or(|g| crate::text::class(g.ch) != 1) {
       return Ok(());
     }

@@ -78,7 +78,7 @@ impl Trace {
       bytes: buffer.len(),
       // Moving to another tab hands over a different counter.
       base_upload_bytes: app.graphics.uploaded.saturating_sub(self.uploaded),
-      page: app.reader.cursor.page.0 + 1,
+      page: app.navigation_position().page.0 + 1,
       scroll: app.reader.scroll,
     };
     self.uploaded = app.graphics.uploaded;

@@ -82,6 +82,7 @@ pub struct App {
   pub id: u32,
   pub doc: Document,
   pub reader: Reader,
+  pub target: Option<Position>,
   pub layout: Layout,
   pub graphics: Graphics,
   pub worker: RenderWorker,
@@ -93,7 +94,7 @@ pub struct App {
   /// A changed stamp and when it was first seen.
   pub(crate) settling: Option<(crate::watch::Stamp, Instant)>,
   pub text_mode: bool,
-  /// Text view origin for the next frame.
+  /// Text origin; glyph stores column offset.
   pub(crate) text_top: Position,
   /// Text view origin on screen.
   pub(crate) text_drawn: Option<Position>,
@@ -171,6 +172,7 @@ impl App {
       id: NEXT.fetch_add(1, Ordering::Relaxed),
       doc,
       reader: Reader::default(),
+      target: None,
       layout,
       graphics: Graphics::default(),
       worker,

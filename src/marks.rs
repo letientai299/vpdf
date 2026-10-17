@@ -7,13 +7,15 @@ use std::collections::BTreeMap;
 
 impl App {
   /// `m{a-z}` marks this document; `m{A-Z}` marks across documents.
-  pub fn set_mark(&mut self, name: char) {
+  pub fn set_mark(&mut self, name: char) -> Result<()> {
     if name.is_ascii_uppercase() {
       self.request = Some(Request::SetMark(name));
     } else {
-      self.marks.insert(name, self.reader.cursor);
+      let position = self.reading_position()?;
+      self.marks.insert(name, position);
     }
     self.reader.message = format!("Mark {name} set");
+    Ok(())
   }
 
   /// `'x` goes to the mark's line, `` `x `` to its exact glyph.
@@ -32,7 +34,11 @@ impl App {
   pub fn go_to(&mut self, position: Position, exact: bool) -> Result<()> {
     let target =
       if exact { position } else { Position { glyph: 0, ..position } };
-    self.reader.jump(target, &mut self.doc)?;
+    let origin = self.location()?;
+    self.reader.cursor = crate::reader::clamp(target, &mut self.doc)?;
+    self.reader.record(origin);
+    self.reader.desired = None;
+    self.target = Some(self.reader.cursor);
     self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
     self.ensure_cursor()
   }

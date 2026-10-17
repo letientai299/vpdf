@@ -136,6 +136,9 @@ impl App {
         out,
       )?;
     }
+    if self.reader.selection.is_none() {
+      return Ok(());
+    }
     let cursor = self.reader.cursor;
     if let Some(glyph) = self.doc.text(cursor.page)?.glyph(cursor) {
       let mut rect =
@@ -153,9 +156,8 @@ impl App {
     Ok(())
   }
 
-  /// Cursor glyph on screen, in page-area pixels.
-  pub fn cursor_rect(&mut self) -> Result<Option<Bounds>> {
-    let cursor = self.reader.cursor;
+  /// Glyph rectangle in page-area pixels.
+  pub fn position_rect(&mut self, cursor: Position) -> Result<Option<Bounds>> {
     if self.text_mode {
       let cell = self.text_cell(cursor)?;
       let (width, height) =

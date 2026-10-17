@@ -71,10 +71,7 @@ impl App {
     } else {
       Crop::default()
     };
-    self.layout.pan = 0.0;
     self.relayout()?;
-    self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
-    self.ensure_cursor()?;
     self.reader.message = if self.layout.crop.is_none() {
       "Margins shown"
     } else {

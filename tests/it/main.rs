@@ -4,6 +4,7 @@ mod common;
 mod corpus;
 mod encrypted;
 mod jumps;
+mod modes;
 mod navigation;
 mod outline;
 mod paragraphs;

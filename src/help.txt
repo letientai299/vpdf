@@ -1,8 +1,10 @@
 # Move
-h j k l: glyph motions
-w b e: word motions
-0 ^ $: line motions
-{ }: previous / next paragraph
+h j k l / arrows: pan / scroll in Normal
+Counts scale viewport and selection motions
+Visual h j k l: glyph motions
+Visual w b e: word motions
+Visual 0 ^ $: line motions
+Visual { }: previous / next paragraph
 [count]gg G: page jump
 Space Shift-Space: next / previous page
 Ctrl-o Ctrl-i '': jump back / forward
@@ -13,7 +15,7 @@ ma mA: mark here / across documents
 Ctrl-d Ctrl-u: half-screen scroll
 Ctrl-f Ctrl-b: full-screen scroll
 Ctrl-e Ctrl-y: row scroll
-zt zz zb: cursor at top / middle / bottom
+zt zz zb: target at top / middle / bottom
 + - =: zoom in / out / fit width
 zf: fit page
 zh zl: pan left / right
@@ -21,27 +23,29 @@ zr: rotate clockwise
 zc: crop / restore page margins
 
 # Select and yank
-v V: character / line selection
+v V: enter character / line Visual
+Entry: visible click/jump target, else first visible text
+Textless view: selection unavailable; :ocr is explicit
 o: swap selection ends
 gv: reselect
 y yy yw ye y$: yank
 viw vaw yiw yaw: word objects
 "" "+ "*: system clipboard
 "a "A: named register / append
-Click / drag: move / select
+Click / drag: set target in Normal / select
 Double click: select word
 
 # Find
 / ?: search forward / backward
 n N: next / previous match
-*: search cursor word
+*: search visible target word
 \v: regex prefix
 
 # Panels
 go: table of contents
 gs: search results
 f: link hints; F copies URLs
-K: preview link target; Enter follows
+K / Enter: preview / follow visible explicit target
 gl: links on this page
 gp: page thumbnails
 gr: recent documents
@@ -55,7 +59,8 @@ yy: yank the panel row
 gq: close panel
 gx: text preview
 g? F1: this reference
-Esc: cancel / unfocus panel
+Esc: cancel transient input; return to Normal
+:cancel: stop active-pane search, OCR, outline jobs
 Click / wheel in panel: follow / move
 q: close panel, tab, or reader
 

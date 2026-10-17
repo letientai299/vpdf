@@ -36,10 +36,13 @@ pub struct Operator {
   pub register: char,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Location {
   pub cursor: Position,
   pub scroll: f32,
+  pub anchor: Option<(PageId, (f32, f32))>,
+  pub text_top: Option<Position>,
+  pub target: Option<Position>,
 }
 
 #[derive(Clone, Debug)]
@@ -89,13 +92,20 @@ impl Reader {
   }
 
   pub fn remember(&mut self) {
-    self.record(Location { cursor: self.cursor, scroll: self.scroll });
+    self.record(Location {
+      cursor: self.cursor,
+      scroll: self.scroll,
+      ..Location::default()
+    });
   }
 
   /// Adds `location` to the jump list.
   pub fn record(&mut self, location: Location) {
-    if self.history.last().is_none_or(|p| p.cursor != location.cursor) {
-      self.history.push(location);
+    match self.history.last_mut() {
+      Some(previous) if previous.cursor == location.cursor => {
+        *previous = location;
+      }
+      _ => self.history.push(location),
     }
     if self.history.len() > 100 {
       self.history.remove(0);
@@ -108,16 +118,30 @@ impl Reader {
   }
 
   pub fn history(&mut self, forward: bool) {
+    let current = Location {
+      cursor: self.cursor,
+      scroll: self.scroll,
+      ..Location::default()
+    };
+    if let Some(location) = self.recall(forward, current) {
+      self.cursor = location.cursor;
+      self.scroll = location.scroll;
+    }
+  }
+
+  pub fn recall(
+    &mut self,
+    forward: bool,
+    current: Location,
+  ) -> Option<Location> {
     let (from, to) = if forward {
       (&mut self.future, &mut self.history)
     } else {
       (&mut self.history, &mut self.future)
     };
-    if let Some(location) = from.pop() {
-      to.push(Location { cursor: self.cursor, scroll: self.scroll });
-      self.cursor = location.cursor;
-      self.scroll = location.scroll;
-    }
+    let location = from.pop()?;
+    to.push(current);
+    Some(location)
   }
 
   pub fn jump(

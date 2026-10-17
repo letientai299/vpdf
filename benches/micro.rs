@@ -219,6 +219,32 @@ fn frame() -> Result<()> {
   })
 }
 
+fn viewport() -> Result<()> {
+  for text_mode in [false, true] {
+    let mut app = paper(text_mode)?;
+    app.command("page 4")?;
+    app.ensure_cursor()?;
+    let cursor = app.reader.cursor;
+    let scroll = app.reader.scroll;
+    measure(&format!("App::scroll text={text_mode}"), || {
+      app.reader.cursor = cursor;
+      app.reader.scroll = scroll;
+      app.animation = None;
+      app.scroll(16.0).expect("scroll");
+      app.scroll(-16.0).expect("scroll");
+    })?;
+    let mut narrow = false;
+    measure(&format!("App::relayout text={text_mode}"), || {
+      app.reader.cursor = cursor;
+      app.reader.scroll = scroll;
+      narrow = !narrow;
+      app.screen.columns = if narrow { 100 } else { 120 };
+      app.relayout().expect("layout");
+    })?;
+  }
+  Ok(())
+}
+
 /// A file `mise corpus` fetches; `mise bench:micro` sets `VPDF_CORPUS`.
 fn corpus(name: &str) -> Result<PathBuf> {
   let root = std::env::var_os("VPDF_CORPUS").ok_or_else(|| {
@@ -344,6 +370,7 @@ const CASES: &[(&str, Case)] = &[
   ("projection", projection),
   ("menu_rows", menu_rows),
   ("frame", frame),
+  ("viewport", viewport),
 ];
 
 fn main() -> Result<()> {

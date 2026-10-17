@@ -382,6 +382,11 @@ impl App {
         return self.close_text_preview();
       }
       self.preview = Some(self.text_mode);
+      if !self.text_mode {
+        let position =
+          self.first_visible()?.unwrap_or_else(|| self.navigation_position());
+        self.text_origin(position)?;
+      }
       self.text_mode = true;
       // The preview takes focus so its text motions work.
       if let Some(panel) = &mut self.panel {
@@ -474,8 +479,10 @@ impl App {
       self.text_mode = previous;
     }
     self.requested.clear();
-    // Text mode moves the cursor without the page view.
-    self.ensure_cursor()
+    if self.reader.selection.is_some() {
+      self.ensure_cursor()?;
+    }
+    Ok(())
   }
 
   pub fn panel_rows(&mut self, kind: PanelKind) -> Result<Vec<Row>> {
@@ -513,7 +520,7 @@ impl App {
         .collect(),
       PanelKind::Links => self
         .doc
-        .links(self.reader.cursor.page)?
+        .links(self.navigation_position().page)?
         .into_iter()
         .map(|link| {
           let text = match &link.target {
@@ -646,7 +653,7 @@ impl App {
     let place = format!("Path: {}", self.path.display());
     let bytes = std::fs::metadata(&self.path).map_or(0, |m| m.len());
     lines.extend(document_lines(place, bytes, self.doc.pages.len()));
-    let page = &self.doc.pages[self.reader.cursor.page.0];
+    let page = &self.doc.pages[self.navigation_position().page.0];
     let (width, height) = (page.bounds.width(), page.bounds.height());
     let outline = if self.doc.inferred { " (inferred)" } else { "" };
     lines.extend([
@@ -754,7 +761,14 @@ pub fn section(outline: &[Heading], page: PageId, y: f32) -> Option<usize> {
 impl App {
   /// Outline entry containing the cursor.
   pub fn section(&mut self) -> Option<usize> {
-    let cursor = self.reader.cursor;
+    let cursor = self.navigation_position();
+    if self.reader.selection.is_none() && !self.text_mode {
+      let y = self
+        .layout
+        .unproject(cursor.page, (0.0, 0.0), self.reader.scroll)
+        .map_or(0.0, |(_, y)| y);
+      return section(&self.doc.outline, cursor.page, y);
+    }
     let y = self
       .doc
       .text(cursor.page)

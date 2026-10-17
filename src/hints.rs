@@ -53,7 +53,7 @@ impl App {
   pub fn start_hints(&mut self, copy: bool) -> Result<()> {
     let mut found = Vec::new();
     let pages = if self.text_mode {
-      let page = self.reader.cursor.page.0;
+      let page = self.navigation_position().page.0;
       page..page + 1
     } else {
       self.layout.visible(self.reader.scroll)
@@ -103,6 +103,12 @@ impl App {
   pub fn hint_key(&mut self, key: KeyEvent) -> Result<()> {
     let Some(hints) = &mut self.hints else { return Ok(()) };
     let key = keys::normalize(key);
+    if key.code == KeyCode::Esc {
+      self.hints = None;
+      self.reader.cancel();
+      self.disarm();
+      return Ok(());
+    }
     match (keys::plain(key), key.code) {
       (true, KeyCode::Char(ch)) if ch.is_ascii_alphabetic() => {
         hints.typed.push(ch.to_ascii_lowercase());
