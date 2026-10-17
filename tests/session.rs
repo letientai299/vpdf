@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::{Request, TabMove, Window};
@@ -276,6 +278,7 @@ mod pointer {
   /// returns the session and the panel width.
   fn outline() -> Result<(Session, u16)> {
     let (mut session, _, _) = split()?;
+    common::outline_loaded(session.app())?;
     act(&mut session, Action::Panel(PanelKind::Outline))?;
     act(&mut session, Action::Cancel)?;
     let width = session.app().left;

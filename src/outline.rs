@@ -171,10 +171,10 @@ pub fn infer(pages: &[Vec<Summary>]) -> Vec<Heading> {
 /// Pages read when inferring; later pages rarely start new parts.
 const PAGES: usize = 3000;
 
-/// Outline inference off the input thread; dropping it ends the scan,
-/// as a reload does before starting another.
+/// Outline loading off the input thread; dropping it ends the scan, as a
+/// reload does before starting another. The flag marks an inferred one.
 pub struct OutlineJob {
-  result: mpsc::Receiver<Vec<Heading>>,
+  result: mpsc::Receiver<(Vec<Heading>, bool)>,
   stop: Arc<AtomicBool>,
 }
 
@@ -184,7 +184,8 @@ impl Drop for OutlineJob {
   }
 }
 
-/// Infers an outline on a separate document.
+/// Reads the authored outline on a separate document, or infers one when
+/// there is none.
 pub fn spawn(path: &Path, password: &str) -> OutlineJob {
   let (send, result) = mpsc::channel();
   let stop = Arc::new(AtomicBool::new(false));
@@ -192,6 +193,12 @@ pub fn spawn(path: &Path, password: &str) -> OutlineJob {
   let (path, password) = (path.to_owned(), password.to_owned());
   std::thread::spawn(move || {
     let Ok(doc) = Handle::open(&path, &password) else { return };
+    if let Ok(outline) = doc.outline()
+      && !outline.is_empty()
+    {
+      let _ = send.send((outline, false));
+      return;
+    }
     let mut pages = Vec::new();
     for page in 0..doc.pages.min(PAGES) {
       if stopped.load(Ordering::Relaxed) {
@@ -201,25 +208,28 @@ pub fn spawn(path: &Path, password: &str) -> OutlineJob {
       let text = doc.text(PageId(page));
       pages.push(text.map_or_else(|_| Vec::new(), |text| summarize(&text)));
     }
-    let _ = send.send(infer(&pages));
+    let _ = send.send((infer(&pages), true));
   });
   OutlineJob { result, stop }
 }
 
 impl App {
-  /// Starts inference when the document has no outline of its own.
-  pub fn infer_outline(&mut self) {
-    self.outline_job =
-      self.doc.outline.is_empty().then(|| spawn(&self.path, &self.password));
+  /// Starts loading the outline, which `Document::open` skips.
+  pub fn load_outline(&mut self) {
+    self.outline_job = Some(spawn(&self.path, &self.password));
   }
 
   pub fn outline_updates(&mut self) -> crate::Result<bool> {
     let Some(job) = &self.outline_job else { return Ok(false) };
-    let Ok(outline) = job.result.try_recv() else { return Ok(false) };
+    let Ok((outline, inferred)) = job.result.try_recv() else {
+      return Ok(false);
+    };
     self.outline_job = None;
     self.doc.outline = outline;
-    self.doc.inferred = true;
+    self.doc.inferred = inferred;
     self.refill_panel(PanelKind::Outline)?;
+    // The status line's section, without moving the panel's selection.
+    self.current_section = self.section();
     Ok(true)
   }
 }

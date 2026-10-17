@@ -11,7 +11,10 @@ was evicted. The render coordinator likewise reopens its document after two idle
 seconds once it has drawn 64 pages, as after browsing the page overview. Panes
 hidden by a tab switch drop their search worker, cached text and display lists,
 and render coordinator; their tiles stay in the shared graphics cache, so a
-returning tab redraws without rendering. OCR uses Tesseract in a subprocess. No
+returning tab redraws without rendering. The outline loads in another worker
+with its own document, which drops once read: resolving the named destinations
+of a large book's outline loads most of its objects. OCR uses Tesseract in a
+subprocess. No
 MuPDF document is shared concurrently across threads; display lists are
 immutable and render on any thread.
 

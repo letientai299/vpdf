@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use vpdf::Result;
-use vpdf::document::{Document, Handle};
+use vpdf::document::Handle;
 use vpdf::text::PageId;
 
 fn key(title: &str) -> String {
@@ -19,7 +19,6 @@ fn inferred_outline_matches_authored_one() -> Result<()> {
   for (name, recall_floor, precision_floor) in
     [("paper.pdf", 0.95, 0.75), ("book.pdf", 0.95, 0.7)]
   {
-    let doc = Document::open(&root.join(name), "")?;
     // The text the inference worker reads.
     let handle = Handle::open(&root.join(name), "")?;
     let pages = (0..handle.pages)
@@ -28,7 +27,8 @@ fn inferred_outline_matches_authored_one() -> Result<()> {
       })
       .collect::<Result<Vec<_>>>()?;
     let inferred = vpdf::outline::infer(&pages);
-    let real: Vec<_> = doc.outline.iter().map(|h| key(&h.title)).collect();
+    let authored = handle.outline()?;
+    let real: Vec<_> = authored.iter().map(|h| key(&h.title)).collect();
     let guessed: Vec<_> = inferred.iter().map(|h| key(&h.title)).collect();
     let found = real
       .iter()
@@ -51,8 +51,7 @@ fn inferred_outline_matches_authored_one() -> Result<()> {
     {
       eprintln!("  extra: {} {}", h.depth, h.title);
     }
-    for r in doc
-      .outline
+    for r in authored
       .iter()
       .filter(|r| !guessed.iter().any(|g| g.ends_with(&key(&r.title))))
       .take(15)
@@ -84,9 +83,13 @@ fn documents_without_outline_infer_one_in_background() -> Result<()> {
     std::thread::sleep(std::time::Duration::from_millis(5));
   }
   assert!(app.doc.inferred);
-  let book =
+  let mut book =
     vpdf::app::App::with_screen(&root.join("book.pdf"), "", false, screen)?;
-  assert!(book.outline_job.is_none(), "authored outlines stay");
+  while !book.outline_updates()? {
+    assert!(started.elapsed().as_secs() < 10);
+    std::thread::sleep(std::time::Duration::from_millis(5));
+  }
+  assert!(!book.doc.inferred && !book.doc.outline.is_empty(), "authored");
   Ok(())
 }
 
@@ -132,9 +135,10 @@ fn inferred_outline_keeps_panel_focus_and_selection() -> Result<()> {
     assert_eq!((panel.focused, panel.selected), (focused, selected));
     assert_eq!(panel.note, "inferred");
   }
-  // A rebuild that ships bookmarks drops the note.
+  // A rebuild that ships bookmarks drops the note once they load.
   std::fs::copy(root.join("book.pdf"), &path)?;
   app.command("reload")?;
+  finish(&mut app)?;
   let panel = app.panel.as_ref().unwrap();
   assert!(!panel.rows.is_empty() && panel.note.is_empty());
   Ok(())

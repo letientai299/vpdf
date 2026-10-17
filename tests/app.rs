@@ -1,3 +1,5 @@
+mod common;
+
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -23,6 +25,7 @@ fn reader_workflows() -> Result<()> {
   let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
   app.command("page 39")?;
   assert_eq!(app.reader.cursor.page, PageId(38));
+  common::outline_loaded(&mut app)?;
   app.open_panel(PanelKind::Outline)?;
   assert!(!app.panel.as_ref().unwrap().rows.is_empty());
   app.close_panel()?;
@@ -415,6 +418,7 @@ fn unfocused_side_is_dimmed() -> Result<()> {
     origin: (0, 0),
   };
   let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
+  common::outline_loaded(&mut app)?;
   app.open_panel(PanelKind::Outline)?;
   let mut out = Vec::new();
   app.draw(&mut out)?;

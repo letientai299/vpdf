@@ -229,7 +229,7 @@ impl App {
     self.worker = RenderWorker::new(&self.path, password, self.doc.lists());
     let previous = std::mem::take(&mut self.search);
     let rerun = !previous.hidden && !previous.query.text.is_empty();
-    self.infer_outline();
+    self.load_outline();
     self.graphics.forget(self.id);
     if let Some(ocr) = self.ocr.take() {
       ocr.cancel();

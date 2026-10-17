@@ -211,7 +211,7 @@ impl App {
       blank: false,
       last_click: None,
     };
-    app.infer_outline();
+    app.load_outline();
     Ok(app)
   }
 }

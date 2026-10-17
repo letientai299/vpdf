@@ -1,3 +1,5 @@
+mod common;
+
 use std::fmt::Write as _;
 use std::path::Path;
 use vpdf::Result;
@@ -78,7 +80,8 @@ fn document_strings_reach_the_screen_clean() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join(format!("{}.pdf", EVIL.trim_end()));
   write_pdf(&path, "")?;
-  let doc = Document::open(&path, "")?;
+  let mut doc = Document::open(&path, "")?;
+  doc.load_outline()?;
   let Target::Uri(uri) = &doc.links(PageId(0))?[0].target else {
     panic!("URI link");
   };
@@ -107,6 +110,7 @@ fn document_strings_reach_the_screen_clean() -> Result<()> {
   // Graphics add tmux DCS wrappers.
   let text_mode = true;
   let mut app = App::with_screen(&path, "", text_mode, screen)?;
+  common::outline_loaded(&mut app)?;
   assert_printable("file name", &app.name());
   assert_printable("window title", &app.title());
   app.tabline = Tabline { names: vec![app.name(), app.name()], active: 0 };

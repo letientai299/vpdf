@@ -143,6 +143,12 @@ impl Handle {
     display(&self.native, lists, page)
   }
 
+  /// The authored outline. Resolving its destinations can load most of a
+  /// large book's objects, which a worker's handle releases when dropped.
+  pub fn outline(&self) -> Result<Vec<Heading>> {
+    outline(&self.native)
+  }
+
   /// The page contents' text, without annotations, uncached: workers
   /// read a page once.
   pub fn text(&self, page: PageId) -> Result<Text> {
@@ -166,8 +172,6 @@ impl Document {
           .unwrap_or_else(|| (index + 1).to_string()),
       });
     }
-    let mut outline = Vec::new();
-    flatten(&native.outlines()?, 0, &mut outline);
     let title = native
       .metadata(mupdf::MetadataName::Title)
       .map(|title| printable(&title).collect::<String>().trim().to_owned())
@@ -175,7 +179,7 @@ impl Document {
     Ok(Self {
       native,
       pages,
-      outline,
+      outline: Vec::new(),
       title,
       inferred: false,
       margins: None,
@@ -194,6 +198,13 @@ impl Document {
     let text = Arc::new(extract_list(&list)?);
     self.texts.insert(page, Arc::clone(&text), text.weight());
     Ok(text)
+  }
+
+  /// Reads the authored outline into `outline`; readers load it on a
+  /// worker instead.
+  pub fn load_outline(&mut self) -> Result<()> {
+    self.outline = outline(&self.native)?;
+    Ok(())
   }
 
   /// The display list cache, for another handle of this file.
@@ -459,6 +470,12 @@ fn uri(raw: &str) -> String {
 
 fn quad_bounds(quad: &mupdf::Quad) -> Bounds {
   Bounds::enclosing(&[quad.ul, quad.ur, quad.ll, quad.lr].map(|p| (p.x, p.y)))
+}
+
+fn outline(native: &PdfDocument) -> Result<Vec<Heading>> {
+  let mut outline = Vec::new();
+  flatten(&native.outlines()?, 0, &mut outline);
+  Ok(outline)
 }
 
 fn flatten(items: &[mupdf::Outline], depth: usize, out: &mut Vec<Heading>) {

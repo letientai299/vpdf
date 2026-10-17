@@ -94,7 +94,8 @@ fn run(args: Args) -> Result<()> {
       }
     }
     Command::Info { file } => {
-      let doc = Document::open(&file, &password)?;
+      let mut doc = Document::open(&file, &password)?;
+      doc.load_outline()?;
       let metadata: serde_json::Map<_, _> =
         doc.metadata().into_iter().map(|(k, v)| (k, v.into())).collect();
       writeln!(
