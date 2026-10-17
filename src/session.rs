@@ -95,7 +95,7 @@ pub struct Session {
 impl Session {
   /// `store` holds recent documents and history between runs.
   pub fn new(password: &str, text: bool, store: Option<PathBuf>) -> Self {
-    let state = store.as_deref().map(State::load).unwrap_or_default();
+    let state = store.as_deref().map_or_default(State::load);
     Self {
       tabs: Vec::new(),
       active: 0,
@@ -184,8 +184,7 @@ impl Session {
     tab
       .panes
       .get_mut(focus)
-      .map(|app| std::mem::take(&mut app.graphics))
-      .unwrap_or_default()
+      .map_or_default(|app| std::mem::take(&mut app.graphics))
   }
 
   /// Focuses a pane and blurs the old one.
@@ -398,7 +397,7 @@ impl Session {
     (count, explicit): (usize, bool),
     file: Option<&Path>,
   ) -> Result<()> {
-    let area = self.screen.map(full).unwrap_or_default();
+    let area = self.screen.map_or_default(full);
     let tab = self.tab();
     let id = tab.panes[tab.focus].id;
     let order = tab.order();
@@ -659,7 +658,7 @@ impl Drawable for Session {
   fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()> {
     write!(out, "\x1b[?2026h\x1b[0m")?;
     self.app().graphics.begin(out)?;
-    let area = self.screen.map(full).unwrap_or_default();
+    let area = self.screen.map_or_default(full);
     let tab = self.tab();
     for index in 0..tab.panes.len() {
       if index != tab.focus {

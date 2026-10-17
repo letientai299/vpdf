@@ -1,5 +1,6 @@
 [tools]
-rust = "1.99.1"
+rust = { version = "nightly-2026-10-17", components = "clippy,rustfmt" }
+"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.148"
 prek = "0.5.5"
 rumdl = "0.2.79"
 taplo = "0.10.0"
@@ -37,7 +38,7 @@ run = [
 ]
 
 [tasks.test]
-run = "cargo test --locked"
+run = "cargo nextest run --locked"
 
 [tasks.hooks]
 run = "prek install"
@@ -57,33 +58,33 @@ run = "sh scripts/corpus.sh huge"
 
 [tasks."test:corpus"]
 depends = ["corpus"]
-run = "cargo test --locked -- --ignored --skip real_ocr_and_cancel"
+run = "cargo nextest run --locked --run-ignored only -E 'not test(real_ocr_and_cancel)'"
 
 [tasks."test:ocr"]
 depends = ["corpus"]
-run = "cargo test --locked --test workers real_ocr_and_cancel -- --ignored"
+run = "cargo nextest run --locked --run-ignored only --test workers real_ocr_and_cancel"
 
 [tasks.bench]
 description = "Measure real-PDF warm frames and search"
 depends = ["corpus"]
-run = "cargo bench --locked --bench reader"
+run = "cargo bench --locked --profile release --bench reader"
 
 [tasks."bench:latency"]
 description = "Measure cold opens, jumps, zooms, and paced scrolling"
 depends = ["corpus"]
-run = "cargo bench --locked --bench latency"
+run = "cargo bench --locked --profile release --bench latency"
 
 [tasks."bench:stages"]
 description = "Attribute cold page cost to load, text, list, raster, encode"
 depends = ["corpus"]
-run = "cargo bench --locked --bench stages"
+run = "cargo bench --locked --profile release --bench stages"
 
 [tasks."bench:micro"]
 description = "Time single hot functions; arguments filter cases"
-run = 'cargo bench --locked --bench micro -- {{arg(name="cases", var=true, default="")}}'
+run = 'cargo bench --locked --profile release --bench micro -- {{arg(name="cases", var=true, default="")}}'
 
 [tasks."bench:budget"]
 description = "Enforce warm CPU frame and motion budgets"
 depends = ["corpus"]
 env.VPDF_PERF_CHECK = "1"
-run = "cargo bench --locked --bench reader"
+run = "cargo bench --locked --profile release --bench reader"

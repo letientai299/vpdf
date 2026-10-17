@@ -172,10 +172,10 @@ impl Document {
           .unwrap_or_else(|| (index + 1).to_string()),
       });
     }
-    let title = native
-      .metadata(mupdf::MetadataName::Title)
-      .map(|title| printable(&title).collect::<String>().trim().to_owned())
-      .unwrap_or_default();
+    let title =
+      native.metadata(mupdf::MetadataName::Title).map_or_default(|title| {
+        printable(&title).collect::<String>().trim().to_owned()
+      });
     Ok(Self {
       native,
       pages,
