@@ -1,11 +1,10 @@
 use crate::Result;
 use crate::text::{PageId, Position, Text};
 use fancy_regex::{Regex, RegexBuilder};
-use serde::Serialize;
 use unicode_casefold::UnicodeCaseFold;
 use unicode_normalization::UnicodeNormalization;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Hit {
   pub first: Position,
   pub last: Position,

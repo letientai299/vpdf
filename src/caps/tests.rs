@@ -486,7 +486,7 @@ fn placeholders_follow_name_and_version() {
   let cases = [
     ("kitty(0.49.1)", true),
     ("kitty(0.27.1)", false),
-    ("kitty", true),
+    ("kitty", false),
     ("ghostty 1.3.1", true),
     ("iTerm2 3.5.6beta2", true),
     ("iTerm2 3.5.5", false),

@@ -4,9 +4,8 @@ use crate::layout::clip;
 use crate::text::{Bounds, Text};
 use mupdf::text_page::TextBlockType;
 use mupdf::{DisplayList, TextPageFlags};
-use serde::Serialize;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Figure {
   pub bounds: Bounds,
   pub caption: String,

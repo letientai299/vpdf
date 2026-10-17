@@ -5,26 +5,25 @@ use crate::text::{Bounds, Glyph, Line, PageId, Text, printable};
 use anyhow::ensure;
 use mupdf::pdf::PdfDocument;
 use mupdf::{DisplayList, TextPageFlags};
-use serde::Serialize;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 pub const GLYPH_LIMIT: usize = 40_000;
 pub const MIB: usize = 1024 * 1024;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct PageInfo {
   pub bounds: Bounds,
   pub label: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Link {
   pub bounds: Bounds,
   pub target: Target,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub enum Target {
   Page(PageId),
   Point { page: PageId, x: f32, y: f32 },
@@ -53,7 +52,7 @@ impl From<mupdf::link::LinkDestination> for Target {
 }
 
 /// A reader-visible annotation: markup, note, or shape.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Annotation {
   pub kind: String,
   /// Marked areas; markup has one per quad.
@@ -61,7 +60,7 @@ pub struct Annotation {
   pub contents: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Heading {
   pub title: String,
   pub depth: usize,

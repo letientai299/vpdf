@@ -548,8 +548,7 @@ fn named(xtversion: &str) -> Named {
 }
 
 /// Whether the terminal `xtversion` names draws Unicode placeholders
-/// (`U=1`). A name without a version counts as current; `named`
-/// cannot assume that, since it gates the reader.
+/// (`U=1`).
 pub fn placeholders(xtversion: &str) -> bool {
   let (name, version) = identify(xtversion);
   let since: &[u32] = match name.as_str() {
@@ -559,7 +558,7 @@ pub fn placeholders(xtversion: &str) -> bool {
     "rio" => RIO_PLACEHOLDERS,
     _ => return false,
   };
-  version.is_empty() || version[..] >= since[..]
+  version[..] >= since[..]
 }
 
 /// Whether `xtversion` names one of `names`, given in lowercase.

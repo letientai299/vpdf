@@ -212,7 +212,7 @@ fn cursor_hint_labels_keep_owner() -> Result<()> {
 fn cursor_focus_reuses_durable_mode() -> Result<()> {
   let paper = app("paper.pdf", false)?.path;
   let book = app("book.pdf", false)?.path;
-  let mut session = Session::new(false, None);
+  let mut session = Session::new(None);
   session.open(&paper, true, screen())?;
   send(&mut session, b"i2lgo\ti\t")?;
   assert!(session.app().panel_focused());
@@ -311,7 +311,7 @@ fn cursor_panel_enter_returns_normal() -> Result<()> {
   for cross_document in [false, true] {
     let paper = app("paper.pdf", false)?.path;
     let book = app("book.pdf", false)?.path;
-    let mut session = Session::new(false, None);
+    let mut session = Session::new(None);
     session.open(&paper, true, screen())?;
     send(&mut session, b"i2l")?;
     let pane = session.app().id;

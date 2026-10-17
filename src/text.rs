@@ -33,7 +33,7 @@ pub struct Position {
   pub glyph: usize,
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Bounds {
   pub x0: f32,
   pub y0: f32,
@@ -86,13 +86,13 @@ impl From<mupdf::Rect> for Bounds {
   }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Glyph {
   pub ch: char,
   pub bounds: Bounds,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default)]
 pub struct Line {
   pub paragraph: bool,
   pub glyphs: Vec<Glyph>,
@@ -125,7 +125,7 @@ impl Line {
   }
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default)]
 pub struct Text {
   pub lines: Vec<Line>,
   pub truncated: bool,

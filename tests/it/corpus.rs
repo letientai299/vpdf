@@ -72,8 +72,8 @@ fn display_list_text_matches_page_text() -> Result<()> {
       let page = doc.native.load_page(index)?;
       let list = page.to_display_list(true)?;
       assert_eq!(
-        serde_json::to_string(&extract(&page)?)?,
-        serde_json::to_string(&extract_list(&list)?)?,
+        format!("{:?}", extract(&page)?),
+        format!("{:?}", extract_list(&list)?),
         "{name} page {}",
         index + 1
       );
