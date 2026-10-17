@@ -93,13 +93,10 @@ pub fn commands() -> impl Iterator<Item = &'static Spec> {
 pub const COMMANDS: &[Spec] = &[
   spec("edit", &["e"], "<file>", "open a PDF in this tab")
     .completes(Complete::Path),
-  spec(
-    "tabedit",
-    &["tabe", "tabnew", "open"],
-    "<file>",
-    "open a PDF in a new tab",
-  )
-  .completes(Complete::Path),
+  spec("tabedit", &["tabe", "open"], "<file>", "open a PDF in a new tab")
+    .completes(Complete::Path),
+  spec("tabnew", &[], "[file]", "open a PDF or recent list in a new tab")
+    .completes(Complete::Path),
   spec("split", &["sp"], "[file]", "split this pane above")
     .completes(Complete::Path),
   spec("vsplit", &["vs"], "[file]", "split this pane to the left")
@@ -279,8 +276,10 @@ mod tests {
     assert_eq!(names(paths(&base)), ["a.pdf", "archive/", "b.PDF"]);
     assert_eq!(names(paths(&format!("{base}a"))), ["a.pdf", "archive/"]);
     assert_eq!(names(paths(&format!("{base}."))), [".hidden.pdf"]);
-    let (start, items) = candidates(&format!("tabe {base}b"));
-    assert_eq!((start, names(items)), (5, vec!["b.PDF".to_owned()]));
+    for (command, start) in [("tabe", 5), ("tabnew", 7)] {
+      let items = candidates(&format!("{command} {base}b"));
+      assert_eq!((items.0, names(items.1)), (start, vec!["b.PDF".to_owned()]));
+    }
     Ok(())
   }
 

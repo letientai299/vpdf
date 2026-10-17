@@ -29,6 +29,8 @@ pub enum Request {
     focus: bool,
   },
   Tab(TabMove),
+  /// A new tab listing recent documents over this one.
+  RecentTab,
   /// A panel whose rows the session builds.
   Panel(PanelKind),
   SetMark(char),

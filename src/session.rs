@@ -390,11 +390,7 @@ impl Session {
     self.leave()?;
     let mut graphics = self.take_graphics();
     if tab || self.tabs.is_empty() {
-      let index = if self.tabs.is_empty() { 0 } else { self.active + 1 };
-      self.tabs.insert(index, Tab::new(app));
-      self.active = index;
-      self.give(graphics);
-      return self.arrange();
+      return self.insert_tab(app, graphics);
     }
     let tab = self.tab();
     let focus = tab.focus;
@@ -600,10 +596,30 @@ impl Session {
     let area = self.screen.map_or_default(full);
     let graphics = self.take_graphics();
     let app = self.tab().detach(area);
-    self.tabs.insert(self.active + 1, Tab::new(app));
-    self.active += 1;
+    self.insert_tab(app, graphics)
+  }
+
+  /// Puts `app` in a tab after the active one and focuses it.
+  fn insert_tab(&mut self, app: App, graphics: Graphics) -> Result<()> {
+    let index = if self.tabs.is_empty() { 0 } else { self.active + 1 };
+    self.tabs.insert(index, Tab::new(app));
+    self.active = index;
     self.give(graphics);
     self.arrange()
+  }
+
+  /// Copies the focused view into a new tab covered by recent documents.
+  fn recent_tab(&mut self, screen: Screen) -> Result<()> {
+    self.record();
+    let path = self.app().path.clone();
+    let password = self.app().password.clone();
+    let mut app = self.load(&path, &password, screen)?;
+    app.mirror(self.app())?;
+    self.leave()?;
+    let graphics = self.take_graphics();
+    self.insert_tab(app, graphics)?;
+    let recent = self.state.recent.clone();
+    self.app().show_recent(&recent)
   }
 
   fn step(&self, step: TabMove) -> usize {
@@ -627,6 +643,7 @@ impl Session {
     let screen = self.screen.unwrap_or(fallback);
     match self.app().request.take() {
       Some(Request::Open { path, tab }) => self.open(&path, tab, screen),
+      Some(Request::RecentTab) => self.recent_tab(screen),
       Some(Request::PanelOpen { path, position, focus }) => {
         self.panel_open(&path, position, focus, screen)
       }

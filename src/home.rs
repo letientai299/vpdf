@@ -212,12 +212,12 @@ fn command(line: &str) -> Result<Outcome> {
   let spec = cmdline::lookup(name)
     .ok_or_else(|| anyhow::anyhow!("Unknown command: {name}"))?;
   match spec.name {
-    "edit" | "tabedit" => {
-      anyhow::ensure!(!argument.is_empty(), "File required");
+    "edit" | "tabedit" | "tabnew" if !argument.is_empty() => {
       Ok(Outcome::Open(cmdline::expand(argument)))
     }
+    "edit" | "tabedit" => anyhow::bail!("File required"),
     "quit" | "qall" | "tabclose" => Ok(Outcome::Quit),
-    "recent" => Ok(Outcome::Stay),
+    "recent" | "tabnew" => Ok(Outcome::Stay),
     "fzf" => Ok(Outcome::Pick),
     name => anyhow::bail!("Open a document before :{name}"),
   }

@@ -12,8 +12,10 @@ use crossterm::event::{KeyCode, KeyEvent};
 use std::process::{Command, Stdio};
 
 /// Commands the recent view takes: opening, windows, tabs, quitting.
-const COVERED: [&str; 21] = [
+const COVERED: [&str; 23] = [
   "edit",
+  "tabedit",
+  "tabnew",
   "split",
   "vsplit",
   "close",
@@ -296,7 +298,10 @@ impl App {
           file: None,
         });
       }
-      "edit" | "tabedit" => {
+      "tabnew" if argument.is_empty() => {
+        self.request = Some(Request::RecentTab);
+      }
+      "edit" | "tabedit" | "tabnew" => {
         anyhow::ensure!(!argument.is_empty(), "File required");
         let path = cmdline::expand(argument);
         self.request = Some(Request::Open { path, tab: spec.name != "edit" });

@@ -224,7 +224,7 @@ fn recent_pick_opens_in_covered_pane() -> Result<()> {
   let paper = file("paper.pdf")?;
   let book = file("book.pdf")?;
   let reuse = format!(":vsplit {}\r\x17pgr", paper.display());
-  let setups = ["gr", "\x17sgr", "\x17n", &reuse];
+  let setups = ["gr", "\x17sgr", "\x17n", ":tabnew\r", &reuse];
   for (setup, click) in setups.iter().flat_map(|s| [(*s, false), (*s, true)]) {
     let mut session = Session::new(None);
     session.open(&paper, true, screen())?;
@@ -252,14 +252,16 @@ fn recent_pick_opens_in_covered_pane() -> Result<()> {
     } else {
       send(&mut session, b"\r")?;
     }
-    assert_eq!(session.tabs.len(), 1, "{setup:?}");
+    let tabnew = setup == ":tabnew\r";
+    assert_eq!(session.tabs.len(), 1 + usize::from(tabnew), "{setup:?}");
     assert_eq!(session.app().path, paper, "{setup:?}");
     assert_eq!(session.app().input_owner(), InputOwner::Content);
     let panes = &session.tab().panes;
     assert!(panes.iter().all(|app| !app.covered()), "{setup:?}");
     let mut paths: Vec<_> = panes.iter().map(|app| &app.path).collect();
     paths.sort();
-    let want = if setup == "gr" { vec![&paper] } else { vec![&book, &paper] };
+    let want =
+      if setup == "gr" || tabnew { vec![&paper] } else { vec![&book, &paper] };
     assert_eq!(paths, want, "{setup:?}");
   }
   Ok(())

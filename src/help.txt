@@ -130,7 +130,7 @@ P file <CR>/o: target tab / split; reuse open view
 Recent <CR>/click: open in covered pane
 gt [count]gt: next / nth tab
 gT: previous tab
-:e :tabe :split :vsplit <file>: reuse open view first
+:e :tabe :tabnew :split :vsplit <file>: reuse open view first
 Pane changes: keep C/V, queries and panel focus
 
 # Command line
