@@ -11,7 +11,7 @@ use crate::pointer::{self, Pane, Pointer};
 use crate::prompt::History;
 use crate::split::{Axis, Node, Rect, neighbor};
 use crate::state::{Mark, State};
-use crate::terminal::{self, At, Terminal};
+use crate::terminal::{self, At};
 use crate::text::PageId;
 use crate::theme;
 use crate::trace::Drawable;
@@ -91,6 +91,29 @@ pub struct Session {
   /// Frame interval while anything moves.
   frame: Duration,
   pointer: Pointer,
+  /// Set while a resize could not measure cells.
+  unmeasured: Option<Unmeasured>,
+}
+
+/// A resize without pixel metrics keeps the old layout, whose status
+/// row a shrink can push off the terminal; the error goes on the last
+/// row of the terminal's grid instead.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Unmeasured {
+  rows: u16,
+  columns: u16,
+  error: String,
+}
+
+impl Unmeasured {
+  /// Keeps the cursor where an open prompt put it.
+  fn draw(&self, out: &mut impl Write) -> Result<()> {
+    write!(out, "\x1b7{}", theme::ERROR)?;
+    let row = self.rows.max(1) - 1;
+    terminal::line(out, At::default(), row, &self.error, self.columns)?;
+    write!(out, "{}\x1b8", theme::RESET)?;
+    Ok(())
+  }
 }
 
 impl Session {
@@ -116,6 +139,7 @@ impl Session {
       shown: Vec::new(),
       frame: crate::pace::FRAME,
       pointer: Pointer::default(),
+      unmeasured: None,
     }
   }
 
@@ -603,6 +627,29 @@ impl Session {
     self.arrange()
   }
 
+  /// Fits the start screen or panes to a `measured` screen; when its
+  /// cells could not be measured, keeps the layout and says why on the
+  /// last row of `grid`, the terminal's columns and rows.
+  fn refit(
+    &mut self,
+    measured: Result<Option<Screen>>,
+    grid: impl FnOnce() -> io::Result<(u16, u16)>,
+  ) -> Result<()> {
+    match measured {
+      Ok(Some(screen)) => {
+        self.unmeasured = None;
+        self.resize(screen)
+      }
+      Ok(None) => Ok(()),
+      Err(error) => {
+        let (columns, rows) = grid()?;
+        let error = error.to_string();
+        self.unmeasured = Some(Unmeasured { rows, columns, error });
+        Ok(())
+      }
+    }
+  }
+
   /// Uploads image `id` again after the terminal evicted it.
   fn missing(&mut self, id: u32) {
     if !self.app().graphics.missing(id) {
@@ -632,6 +679,10 @@ impl Session {
   fn home(&mut self, out: &mut impl Write) -> Result<()> {
     let Some(mut home) = self.home.take() else { return Ok(()) };
     home.draw(out)?;
+    if let Some(unmeasured) = &self.unmeasured {
+      unmeasured.draw(out)?;
+      out.flush()?;
+    }
     let event = loop {
       // A wake may come from the hangup thread; the caller checks it.
       let Some(event) = crate::input::next(None)? else {
@@ -642,6 +693,15 @@ impl Session {
         break event;
       }
     };
+    if let Event::Resize(report) = event {
+      let measured = terminal::resized(report, Some(home.screen));
+      self.home = Some(home);
+      let refit = self.refit(measured, crossterm::terminal::size);
+      if let (Err(error), Some(home)) = (refit, &mut self.home) {
+        home.error = Some(error.to_string());
+      }
+      return Ok(());
+    }
     let outcome = home.event(event, &mut self.history);
     match outcome {
       Ok(Outcome::Open(path)) => match self.open(&path, true, home.screen) {
@@ -677,6 +737,7 @@ impl Drawable for Session {
     write!(out, "\x1b[?2026h\x1b[0m")?;
     self.app().graphics.begin(out)?;
     let area = self.screen.map_or_default(full);
+    let unmeasured = self.unmeasured.clone();
     let tab = self.tab();
     for index in 0..tab.panes.len() {
       if index != tab.focus {
@@ -694,6 +755,9 @@ impl Drawable for Session {
     }
     let focus = tab.focus;
     tab.panes[focus].draw_pane(out)?;
+    if let Some(unmeasured) = unmeasured {
+      unmeasured.draw(out)?;
+    }
     tab.panes[focus].graphics.end(out)?;
     write!(out, "\x1b[?2026l")?;
     Ok(())
@@ -742,13 +806,12 @@ pub fn view(paths: &[PathBuf], password: &str, launch: &Launch) -> Result<()> {
     Arc::clone(&session.latest),
   )?;
   terminal::restore_on_panic();
-  let _terminal = Terminal::enter()?;
+  let (_terminal, screen) = crate::gate::enter()?;
   // Before any pane sizes its image budget or reads input; a spool that
   // fails to start leaves tiles encoded.
   if !launch.text {
     let _ = crate::spool::start(crate::graphics::session());
   }
-  let screen = terminal::size()?;
   if paths.is_empty() {
     session.home = Some(Home::new(&session.state.recent, screen));
     return run_saving(&mut session);
@@ -877,10 +940,10 @@ fn input(session: &mut Session, act: Act) -> Result<()> {
       let tab = &mut session.tabs[session.active];
       tab.panes[tab.focus].paste(&text, &mut session.history)
     }
-    Act::Resize(report) => match terminal::resized(report, session.screen)? {
-      Some(screen) => session.resize(screen),
-      None => Ok(()),
-    },
+    Act::Resize(report) => {
+      let measured = terminal::resized(report, session.screen);
+      session.refit(measured, crossterm::terminal::size)
+    }
     Act::Mouse(mouse) => session.mouse(mouse),
     Act::Missing(id) => {
       session.missing(id);
@@ -909,8 +972,8 @@ fn run(session: &mut Session) -> Result<()> {
   let mut title = String::new();
   while session.running() {
     if terminal::resize_deferred() {
-      let screen = terminal::remeasure();
-      let resized = screen.and_then(|screen| session.resize(screen));
+      let measured = terminal::remeasure().map(Some);
+      let resized = session.refit(measured, crossterm::terminal::size);
       report(session, resized);
       dirty = true;
     }
@@ -1032,6 +1095,50 @@ mod tests {
   use super::*;
   use crate::decode::{Button, Mouse, Spot};
   use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind};
+
+  #[test]
+  fn unmeasured_resize_shows_on_the_last_row() -> Result<()> {
+    let error = terminal::NO_CELL.to_owned();
+    let unmeasured = Unmeasured { rows: 10, columns: 12, error };
+    let mut out = Vec::new();
+    unmeasured.draw(&mut out)?;
+    let want = format!(
+      "\x1b7{}\x1b[10;1HTerminal rep{}\x1b8",
+      theme::ERROR,
+      theme::RESET
+    );
+    assert_eq!(String::from_utf8(out)?, want);
+    Ok(())
+  }
+
+  #[test]
+  fn refit_keeps_the_layout_without_metrics() {
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      origin: (0, 0),
+      cell_width: 8,
+      cell_height: 16,
+    };
+    let lost =
+      Unmeasured { rows: 20, columns: 70, error: terminal::NO_CELL.into() };
+    let mut session = Session::new("", false, None);
+    session.home = Some(Home::new(&[], screen));
+    let failed = || Err(anyhow::anyhow!(terminal::NO_CELL));
+    let grid = || Ok((70, 20));
+    // (measured, want unmeasured, want start screen rows)
+    let cases = [
+      (failed(), Some(lost.clone()), 24),
+      (Ok(None), Some(lost), 24),
+      (Ok(Some(Screen { rows: 30, ..screen })), None, 30),
+    ];
+    for (index, (measured, unmeasured, rows)) in cases.into_iter().enumerate() {
+      assert!(session.refit(measured, grid).is_ok(), "case {index}");
+      assert_eq!(session.unmeasured, unmeasured, "case {index}");
+      let home = session.home.as_ref().map(|home| home.screen.rows);
+      assert_eq!(home, Some(rows), "case {index}");
+    }
+  }
 
   #[test]
   fn only_actionable_input_counts() {

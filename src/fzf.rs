@@ -24,6 +24,7 @@ fn run(root: &Path) -> Result<Option<PathBuf>> {
   let mut child = Command::new("fzf")
     .args(["--prompt", "PDF> ", "--preview", &preview])
     .args(["--preview-window", "right,55%"])
+    .env(crate::inline::VAR, crate::inline::Graphics::probed().name())
     .current_dir(root)
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())

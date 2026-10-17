@@ -429,6 +429,27 @@ fn versions_compare_numerically() {
   assert_eq!(named("iTerm2 3.5.5"), named("iTerm2 3.4"));
 }
 
+#[test]
+fn placeholders_follow_name_and_version() {
+  let cases = [
+    ("kitty(0.49.1)", true),
+    ("kitty(0.27.1)", false),
+    ("kitty", true),
+    ("ghostty 1.3.1", true),
+    ("iTerm2 3.5.6beta2", true),
+    ("iTerm2 3.5.5", false),
+    ("Rio 0.5.27", true),
+    ("Rio 0.5.26", false),
+    ("WezTerm 20240203-110809-5046fc22", false),
+    ("Konsole 26.08.2", false),
+    ("Zellij 0.45.1", false),
+    ("tmux 3.8", false),
+  ];
+  for (xtversion, want) in cases {
+    assert_eq!(placeholders(xtversion), want, "{xtversion}");
+  }
+}
+
 /// Asserts `caps` shows each `present` line and no line starting
 /// with an `absent` prefix.
 fn shows(name: &str, caps: &Caps, present: &[&str], absent: &[&str]) {

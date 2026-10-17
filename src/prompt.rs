@@ -580,13 +580,15 @@ pub fn password() -> crate::Result<String> {
   let mut prompt = Prompt::new(PromptKind::Password);
   let mut out = io::stdout();
   loop {
-    let screen = crate::terminal::size()?;
+    // Rows and columns only: a terminal that lost its pixel metrics
+    // still takes a password.
+    let (columns, rows) = crossterm::terminal::size()?;
     crate::terminal::line(
       &mut out,
       crate::terminal::At::default(),
-      screen.rows - 1,
+      rows.max(1) - 1,
       &prompt.display().0,
-      screen.columns,
+      columns,
     )?;
     out.flush()?;
     let Some(event) = crate::input::next(None)? else { continue };

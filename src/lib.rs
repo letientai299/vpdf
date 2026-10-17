@@ -19,6 +19,7 @@ pub mod decode;
 mod diacritics;
 pub mod find;
 pub mod fzf;
+pub mod gate;
 pub mod graphics;
 mod grid;
 mod hangup;

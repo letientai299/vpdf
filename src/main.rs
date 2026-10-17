@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
-use vpdf::{Result, document::Document, search, text::PageId};
+use vpdf::{Result, document::Document, inline, search, text::PageId};
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -11,6 +11,7 @@ struct Args {
   /// Documents to open as tabs.
   #[arg(value_name = "PDF")]
   files: Vec<PathBuf>,
+  /// Show extracted text instead of page images.
   #[arg(long)]
   text: bool,
   #[arg(long, global = true)]
@@ -39,18 +40,18 @@ enum Command {
   Info { file: PathBuf },
   /// Search document text.
   Search { file: PathBuf, query: String },
-  /// Print a page as an image in Kitty, else as text; sized for
-  /// `fzf --preview` through `FZF_PREVIEW_COLUMNS` and `FZF_PREVIEW_LINES`.
+  /// Print a page as a Kitty image with Unicode placeholders, else as
+  /// text; sized for `fzf --preview` through `FZF_PREVIEW_COLUMNS` and
+  /// `FZF_PREVIEW_LINES`.
   Preview {
     file: PathBuf,
     #[arg(long, default_value_t = 1)]
     page: usize,
+    /// Overrides `TERM` and `TERM_PROGRAM`; `VPDF_GRAPHICS` overrides
+    /// this.
+    #[arg(long, value_enum)]
+    graphics: Option<inline::Graphics>,
   },
-}
-
-fn kitty() -> bool {
-  std::env::var_os("KITTY_WINDOW_ID").is_some()
-    || std::env::var("TERM").is_ok_and(|term| term.contains("kitty"))
 }
 
 /// Preview area from fzf, else the terminal, else 80x24.
@@ -70,11 +71,8 @@ fn run(args: Args) -> Result<()> {
   }
   let mut out = io::BufWriter::new(io::stdout());
   let Some(command) = args.command else {
-    let launch = vpdf::session::Launch {
-      text: args.text || !kitty(),
-      page: args.page,
-      fps: args.fps,
-    };
+    let launch =
+      vpdf::session::Launch { text: args.text, page: args.page, fps: args.fps };
     return vpdf::session::view(&args.files, &password, &launch);
   };
   match command {
@@ -83,14 +81,18 @@ fn run(args: Args) -> Result<()> {
       let mut doc = Document::open(&file, &password)?;
       writeln!(out, "{}", doc.text(PageId(page - 1))?.plain())?;
     }
-    Command::Preview { file, page } => {
+    Command::Preview { file, page, graphics } => {
       anyhow::ensure!(page > 0, "Page numbers start at one");
       let mut doc = Document::open(&file, &password)?;
       let page = PageId((page - 1).min(doc.pages.len() - 1));
-      if kitty() {
-        vpdf::inline::print(&mut doc, page, preview_size(), &mut out)?;
-      } else {
-        writeln!(out, "{}", doc.text(page)?.plain())?;
+      let env = |name: &str| std::env::var(name).ok();
+      match inline::Graphics::choose(graphics, env) {
+        inline::Graphics::Kitty => {
+          inline::print(&mut doc, page, preview_size(), &mut out)?;
+        }
+        inline::Graphics::Text => {
+          writeln!(out, "{}", doc.text(page)?.plain())?;
+        }
       }
     }
     Command::Info { file } => {
@@ -137,9 +139,18 @@ fn main() {
     {
       return;
     }
-    // MuPDF errors quote document bytes.
-    let error: String = vpdf::text::printable(&format!("{error:#}")).collect();
-    eprintln!("vpdf: {error}");
+    let text = format!("{error:#}");
+    // The gate names each missing requirement on its own line.
+    let lines = if error.is::<vpdf::gate::Unsupported>() {
+      text.lines().collect()
+    } else {
+      vec![text.as_str()]
+    };
+    for line in lines {
+      // MuPDF errors quote document bytes.
+      let line: String = vpdf::text::printable(line).collect();
+      eprintln!("vpdf: {line}");
+    }
     std::process::exit(1);
   }
 }

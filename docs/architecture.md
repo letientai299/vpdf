@@ -13,7 +13,8 @@ that it can accept, replace, or discard.
 - Reuse page interpretation and pixels before doing more work.
 - Bound application caches and background work without promising a hard process
   memory limit.
-- Keep a text fallback and make OCR and desktop integrations optional.
+- Keep extracted-text presentation and make OCR and desktop integrations
+  optional.
 
 Use `vpdf --help` and `:help` for the current interface. These principles guide
 changes; they do not enumerate the feature set.

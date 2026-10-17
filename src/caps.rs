@@ -410,6 +410,12 @@ impl Caps {
   }
 }
 
+/// Rio releases before this draw Unicode placeholders wrongly.
+const RIO_PLACEHOLDERS: &[u32] = &[0, 5, 27];
+
+/// The first iTerm2 release with Kitty graphics and placeholders.
+const ITERM2_GRAPHICS: &[u32] = &[3, 5, 6];
+
 /// What a terminal's XTVERSION name reveals that no query does.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Named {
@@ -423,9 +429,9 @@ fn named(xtversion: &str) -> Named {
   let (name, version) = identify(xtversion);
   match name.as_str() {
     "kitty" | "ghostty" | "wezterm" | "konsole" => Named::Graphics,
-    "rio" if version[..] >= [0, 5, 27][..] => Named::Graphics,
+    "rio" if version[..] >= RIO_PLACEHOLDERS[..] => Named::Graphics,
     "rio" => Named::Lacks("Rio before 0.5.27 breaks Unicode placeholders"),
-    "iterm2" if version[..] >= [3, 5, 6][..] => Named::Crop,
+    "iterm2" if version[..] >= ITERM2_GRAPHICS[..] => Named::Crop,
     "iterm2" => Named::Lacks("iTerm2 before 3.5.6 lacks Kitty graphics"),
     "warp" => Named::Lacks("Warp lacks image crops and cell offsets"),
     "wayst" => Named::Lacks("Wayst drops graphics keys after o="),
@@ -433,6 +439,21 @@ fn named(xtversion: &str) -> Named {
     "xterm.js" => Named::Lacks("xterm.js ignores placement ids"),
     _ => Named::Unknown,
   }
+}
+
+/// Whether the terminal `xtversion` names draws Unicode placeholders
+/// (`U=1`). A name without a version, as `TERM` gives, counts as
+/// current; `named` cannot assume that, since it gates the reader.
+pub fn placeholders(xtversion: &str) -> bool {
+  let (name, version) = identify(xtversion);
+  let since: &[u32] = match name.as_str() {
+    "kitty" => &[0, 28],
+    "ghostty" => &[1],
+    "iterm2" => ITERM2_GRAPHICS,
+    "rio" => RIO_PLACEHOLDERS,
+    _ => return false,
+  };
+  version.is_empty() || version[..] >= since[..]
 }
 
 /// Whether `xtversion` names one of `names`, given in lowercase.
