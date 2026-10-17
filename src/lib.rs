@@ -25,6 +25,7 @@ pub mod gate;
 pub mod graphics;
 mod grid;
 mod hangup;
+mod help;
 pub mod hints;
 pub mod home;
 pub mod inline;

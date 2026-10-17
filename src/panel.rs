@@ -32,6 +32,8 @@ pub enum Style {
   Heading,
   /// `keys: description`, with the keys highlighted.
   Key,
+  ModeKey,
+  CommandKey,
   /// `parent/file`, with the file name highlighted.
   Path,
 }
@@ -75,6 +77,7 @@ pub struct Panel {
   /// Columns the last frame drew; presses beyond them miss the rows.
   columns: u16,
   height: u16,
+  help: Option<crate::help::Layout>,
   /// Cards for recent documents; a reader pane shows them over its page.
   pub shelf: Option<Shelf>,
 }
@@ -91,6 +94,7 @@ impl Panel {
       note: "",
       columns: u16::MAX,
       height: 0,
+      help: None,
       shelf: None,
     }
   }
@@ -103,6 +107,7 @@ impl Panel {
       self.top = 0;
     }
     self.search.clamp(rows.len());
+    self.help = None;
     self.rows = rows;
     self.note = note;
   }
@@ -111,6 +116,19 @@ impl Panel {
   pub fn navigate(&mut self, input: Input, page: usize) -> bool {
     let last = self.rows.len().saturating_sub(1);
     let count = input.count;
+    if self.help.is_some() {
+      let scroll = match input.action {
+        Action::Scroll(amount) => {
+          Some((amount * page as f32 * count as f32) as isize)
+        }
+        Action::Rows(rows) => Some(rows as isize * count as isize),
+        _ => None,
+      };
+      if let Some(rows) = scroll {
+        self.scroll_lines(rows, page);
+        return true;
+      }
+    }
     self.selected = match input.action {
       Action::Motion(Motion::Down) => self.selected.saturating_add(count),
       Action::Motion(Motion::Up) => self.selected.saturating_sub(count),
@@ -130,7 +148,9 @@ impl Panel {
       }
       Action::Align(fraction) => {
         let visible = page.saturating_sub(3) as f32;
-        self.top = self.selected.saturating_sub((visible * fraction) as usize);
+        self.top = self
+          .line_start(self.selected)
+          .saturating_sub((visible * fraction) as usize);
         self.selected
       }
       Action::Result(reverse) => {
@@ -157,7 +177,7 @@ impl Panel {
         self.top = self
           .top
           .saturating_add(3)
-          .min(self.rows.len().saturating_sub(visible.max(1)));
+          .min(self.line_count().saturating_sub(visible.max(1)));
       }
       MouseEventKind::ScrollUp => {
         self.top = self.top.saturating_sub(3);
@@ -165,7 +185,14 @@ impl Panel {
       MouseEventKind::Down(MouseButton::Left)
         if mouse.row > 0 && mouse.column < self.columns =>
       {
-        let index = self.top + usize::from(mouse.row) - 1;
+        if self.help.is_some() && mouse.row >= self.height.saturating_sub(1) {
+          return None;
+        }
+        let line = self.top + usize::from(mouse.row) - 1;
+        if line >= self.line_count() {
+          return None;
+        }
+        let index = self.line_source(line);
         if index <= last && !self.rows.is_empty() {
           self.selected = index;
           return Some(index);
@@ -178,10 +205,60 @@ impl Panel {
 
   pub(crate) fn reveal(&mut self) {
     let count = usize::from(self.height.saturating_sub(2));
-    if self.selected < self.top {
-      self.top = self.selected;
-    } else if count > 0 && self.selected >= self.top + count {
-      self.top = self.selected + 1 - count;
+    let start = self.line_start(self.selected);
+    let end = self.line_start(self.selected + 1);
+    if start < self.top || end.saturating_sub(start) > count {
+      self.top = start;
+    } else if count > 0 && end > self.top + count {
+      self.top = end - count;
+    }
+  }
+
+  fn scroll_lines(&mut self, rows: isize, page: usize) {
+    self.height = u16::try_from(page).unwrap_or(u16::MAX);
+    let visible = page.saturating_sub(2).max(1);
+    let offset =
+      self.line_start(self.selected).saturating_sub(self.top).min(visible - 1);
+    self.top = self
+      .top
+      .saturating_add_signed(rows)
+      .min(self.line_count().saturating_sub(visible));
+    self.selected = self.line_source(self.top + offset);
+  }
+
+  fn line_count(&self) -> usize {
+    self.help.as_ref().map_or(self.rows.len(), |help| help.lines.len())
+  }
+
+  fn line_source(&self, line: usize) -> usize {
+    self.help.as_ref().map_or(line, |help| {
+      help.lines.get(line).map_or(self.rows.len(), |line| line.source)
+    })
+  }
+
+  fn line_start(&self, row: usize) -> usize {
+    self.help.as_ref().map_or(row, |help| {
+      help.starts.get(row).copied().unwrap_or(help.lines.len())
+    })
+  }
+
+  fn reflow(&mut self, columns: usize) {
+    if self.kind != PanelKind::Help
+      || self.help.as_ref().is_some_and(|help| help.columns == columns)
+    {
+      return;
+    }
+    let source = self.line_source(self.top);
+    let offset = self.top.saturating_sub(self.line_start(source));
+    let selected = self.line_start(self.selected);
+    let visible = usize::from(self.height.saturating_sub(2));
+    let shown = (self.top..self.top + visible).contains(&selected);
+    self.help = Some(crate::help::Layout::new(&self.rows, columns));
+    let start = self.line_start(source);
+    let length = self.line_start(source + 1).saturating_sub(start);
+    self.top = start + offset.min(length.saturating_sub(1));
+    if shown {
+      self.reveal();
     }
   }
 
@@ -244,12 +321,20 @@ impl Panel {
       terminal::clean(&count, inner.saturating_sub(title.width())),
       theme::RESET
     )?;
+    self.reflow(inner);
     let keys = key_width(&self.rows, inner);
     let count = height.saturating_sub(2) as usize;
-    self.top = self.top.min(self.rows.len().saturating_sub(count.max(1)));
+    self.top = self.top.min(self.line_count().saturating_sub(count.max(1)));
     let start = self.top;
-    for (row, item) in self.rows.iter().skip(start).take(count).enumerate() {
-      let base = match (start + row == self.selected, self.focused) {
+    for (row, index) in (start..self.line_count()).take(count).enumerate() {
+      let (source, item, keys) = self.help.as_ref().map_or_else(
+        || (index, &self.rows[index], keys),
+        |help| {
+          let line = &help.lines[index];
+          (line.source, &line.row, line.keys)
+        },
+      );
+      let base = match (source == self.selected, self.focused) {
         (true, true) => theme::SELECTED,
         (true, false) => theme::CURRENT,
         (false, true) => theme::RESET,
@@ -257,7 +342,11 @@ impl Panel {
       };
       write!(out, "{}{base}", at.goto(row + 1, 0u16))?;
       let detail = terminal::clean(&item.detail, inner / 3);
-      let room = inner.saturating_sub(detail.width() + 1);
+      let room = if detail.is_empty() {
+        inner
+      } else {
+        inner.saturating_sub(detail.width() + 1)
+      };
       let used = item.write(out, base, room, keys, &self.search.query)?;
       write!(
         out,
@@ -275,7 +364,9 @@ impl Panel {
 pub fn key_width(rows: &[Row], inner: usize) -> usize {
   rows
     .iter()
-    .filter(|row| row.style == Style::Key)
+    .filter(|row| {
+      matches!(row.style, Style::Key | Style::ModeKey | Style::CommandKey)
+    })
     .filter_map(|row| row.label.split_once(": "))
     .map(|(key, _)| key.width())
     .max()
@@ -295,14 +386,20 @@ impl Row {
   ) -> Result<usize> {
     let plain = base == theme::RESET || base == theme::DIM;
     match (self.style, self.label.split_once(": ")) {
-      (Style::Key, Some((key, text))) => {
+      (Style::Key | Style::ModeKey | Style::CommandKey, Some((key, text))) => {
         let key = terminal::clean(key, room);
         let pad = (keys.max(key.width()) + 2 - key.width())
           .min(room.saturating_sub(key.width()));
         let text =
           terminal::clean(text, room.saturating_sub(key.width() + pad));
         let style = if plain { theme::KEY } else { "" };
-        marked(out, &key, query, &format!("{base}{style}"))?;
+        let mut written = 0;
+        for (start, end, token) in crate::help::key_styles(&key, self.style) {
+          marked(out, &key[written..start], query, &format!("{base}{style}"))?;
+          marked(out, &key[start..end], query, &format!("{base}{token}"))?;
+          written = end;
+        }
+        marked(out, &key[written..], query, &format!("{base}{style}"))?;
         write!(out, "{base}{}", " ".repeat(pad))?;
         marked(out, &text, query, base)?;
         Ok(key.width() + pad + text.width())
@@ -736,7 +833,7 @@ pub fn document_lines(place: String, bytes: u64, pages: usize) -> Vec<String> {
   ]
 }
 
-fn help() -> Vec<String> {
+pub(crate) fn help() -> Vec<String> {
   let keys = include_str!("help.txt").lines().map(str::to_owned);
   let commands = crate::cmdline::commands().map(|spec| {
     let usage = if spec.usage.is_empty() { "" } else { " " };
@@ -888,6 +985,68 @@ mod focus_tests {
     panel.preview("row 40");
     assert_eq!(panel.selected, 40);
     assert_eq!(panel.top, 31, "search reveals the matching row");
+    Ok(())
+  }
+}
+
+#[cfg(test)]
+mod help_tests {
+  use super::*;
+  use crossterm::event::KeyModifiers;
+
+  #[test]
+  fn scrolling_can_enter_wrapped_rows() -> Result<()> {
+    let rows =
+      ["# Move", "j: one two three four five six seven eight nine ten"]
+        .map(Row::parse)
+        .into();
+    let mut panel = Panel::new(PanelKind::Help, rows);
+    panel.list(&mut Vec::new(), terminal::At::default(), 12, 4)?;
+    panel.selected = 1;
+    for top in 1..=3 {
+      panel.navigate(
+        Input {
+          action: Action::Rows(1),
+          count: 1,
+          explicit: false,
+          register: '\"',
+        },
+        4,
+      );
+      panel.list(&mut Vec::new(), terminal::At::default(), 12, 4)?;
+      assert_eq!((panel.top, panel.selected), (top, 1));
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn wrapped_rows_keep_their_source() -> Result<()> {
+    let rows =
+      ["# Move", "j: one two three four five", "k: up"].map(Row::parse).into();
+    let mut panel = Panel::new(PanelKind::Help, rows);
+    panel.list(&mut Vec::new(), terminal::At::default(), 15, 6)?;
+    let press = |row| MouseEvent {
+      kind: MouseEventKind::Down(MouseButton::Left),
+      column: 5,
+      row,
+      modifiers: KeyModifiers::NONE,
+    };
+    assert_eq!(panel.pointer(press(3)), Some(1));
+    assert_eq!(panel.pointer(press(4)), Some(1));
+    panel.begin_search(false);
+    panel.preview("three four");
+    assert_eq!(panel.selected, 1);
+    assert_eq!(panel.count(), Some((1, 1)));
+    assert_eq!(panel.rows[panel.selected].label, "j: one two three four five");
+    panel.finish_search("three four");
+    panel.selected = 2;
+    panel.reveal();
+    assert_eq!(panel.top, 1);
+    panel.list(&mut Vec::new(), terminal::At::default(), 40, 6)?;
+    assert_eq!(panel.selected, 2);
+    assert_eq!(panel.top, 0);
+    assert_eq!(panel.pointer(press(3)), Some(2));
+    assert_eq!(panel.pointer(press(4)), None);
     Ok(())
   }
 }
