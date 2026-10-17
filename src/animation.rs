@@ -35,6 +35,8 @@ impl App {
   }
 
   pub fn scroll(&mut self, delta: f32) -> Result<()> {
+    // Scrolls are not operator motions.
+    self.reader.disarm();
     if self.text_mode {
       let rows = (delta / f32::from(self.screen.cell_height)).round();
       self.scroll_text(rows as isize)?;

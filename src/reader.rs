@@ -146,8 +146,15 @@ impl Reader {
 
   pub fn cancel(&mut self) {
     self.end_selection();
-    self.operator = None;
+    self.disarm();
     self.message.clear();
+  }
+
+  /// Drops a pending operator and message.
+  pub fn disarm(&mut self) {
+    if self.operator.take().is_some() {
+      self.message.clear();
+    }
   }
 
   /// Starts, ends, or changes the kind of a selection, as `v` and `V`.

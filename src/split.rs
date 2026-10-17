@@ -25,6 +25,13 @@ pub struct Rect {
   pub rows: u16,
 }
 
+impl Rect {
+  pub fn contains(self, column: u16, row: u16) -> bool {
+    (self.column..self.column.saturating_add(self.columns)).contains(&column)
+      && (self.row..self.row.saturating_add(self.rows)).contains(&row)
+  }
+}
+
 #[derive(Debug)]
 pub enum Node {
   Leaf(u32),

@@ -36,6 +36,7 @@ mod pace;
 pub mod panel;
 mod panel_search;
 mod paragraph;
+pub mod pointer;
 pub mod preview;
 mod prime;
 pub mod prompt;

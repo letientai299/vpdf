@@ -118,10 +118,12 @@ impl Panel {
     true
   }
 
-  /// Wheel moves the selection; returns a clicked row.
+  /// Returns a clicked row; only presses focus.
   pub fn pointer(&mut self, mouse: MouseEvent) -> Option<usize> {
     let last = self.rows.len().saturating_sub(1);
-    self.focused = true;
+    if matches!(mouse.kind, MouseEventKind::Down(_)) {
+      self.focused = true;
+    }
     match mouse.kind {
       MouseEventKind::ScrollDown => {
         self.selected = (self.selected + 3).min(last);
@@ -438,10 +440,13 @@ impl App {
 
   pub fn panel_mouse(&mut self, mouse: MouseEvent) -> Result<()> {
     let Some(panel) = &mut self.panel else { return Ok(()) };
-    if panel.pointer(mouse).is_some() {
-      return self.panel_follow(Action::Swap);
+    let Some(index) = panel.pointer(mouse) else { return Ok(()) };
+    let moves = !matches!(panel.rows[index].destination, Destination::None);
+    if moves && self.overview.is_some() {
+      // Show the followed row, not the grid.
+      self.close_overview();
     }
-    Ok(())
+    self.panel_follow(Action::Swap)
   }
 
   fn panel_follow(&mut self, action: Action) -> Result<()> {

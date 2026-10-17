@@ -95,12 +95,53 @@ fn text_canvas() -> Result<()> {
   })
 }
 
+/// A drag across a two-pane split.
+fn route() -> Result<()> {
+  use crossterm::event::{
+    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+  };
+  use vpdf::pointer::{Capture, Pane, Region};
+  use vpdf::split::Rect;
+  let pane = |id, column, panel| Pane {
+    id,
+    rect: Rect { column, row: 0, columns: 60, rows: 40 },
+    panel,
+    overlay: 3,
+    overview: false,
+  };
+  let panes = [pane(1, 0, 20), pane(2, 61, 0)];
+  let capture =
+    Some(Capture { pane: 1, button: MouseButton::Left, region: Region::Page });
+  let drag = MouseEvent {
+    kind: MouseEventKind::Drag(MouseButton::Left),
+    column: 90,
+    row: 39,
+    modifiers: KeyModifiers::NONE,
+  };
+  measure("pointer::route", || {
+    black_box(vpdf::pointer::route(
+      black_box(&panes),
+      1,
+      black_box(capture),
+      black_box(drag),
+    ));
+  })
+}
+
+/// Each bare pointer move `run` skips.
+fn hover() -> Result<()> {
+  let mut pointer = vpdf::pointer::Pointer::default();
+  measure("Pointer::hover", || black_box(&mut pointer).hover())
+}
+
 type Case = fn() -> Result<()>;
 
 const CASES: &[(&str, Case)] = &[
   ("clean", clean),
   ("clean marks", clean_marks),
   ("text_canvas", text_canvas),
+  ("route", route),
+  ("hover", hover),
 ];
 
 fn main() -> Result<()> {

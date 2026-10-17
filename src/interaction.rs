@@ -2,8 +2,9 @@ use crate::Result;
 use crate::app::App;
 use crate::keys::{Action, Input};
 use crate::panel::Panel;
+use crate::pointer::{Region, Route};
 use crate::reader::SelectionKind;
-use crossterm::event::{self, MouseButton, MouseEventKind};
+use crossterm::event::{MouseButton, MouseEventKind};
 use std::time::{Duration, Instant};
 
 impl App {
@@ -152,14 +153,43 @@ impl App {
     self.ensure_cursor()
   }
 
-  pub fn mouse(&mut self, mouse: event::MouseEvent) -> Result<()> {
+  /// Cancels pending keys, as `Esc` does.
+  pub fn disarm(&mut self) -> Result<()> {
+    self.keys.clear();
+    self.reader.disarm();
+    self.after_key()
+  }
+
+  /// Closes key-driven state as focus leaves.
+  pub fn blur(&mut self) -> Result<()> {
+    // Panes share one preview image; only the focused pane shows one.
+    self.peek = None;
+    self.hints = None;
+    self.cancel_prompt()?;
+    self.disarm()
+  }
+
+  /// Acts on a routed pointer event.
+  pub fn mouse(&mut self, route: Route) -> Result<()> {
+    let Route { mouse, region, .. } = route;
     self.hints = None;
     self.peek = None;
-    if self.overview.is_some() {
+    match region {
+      Region::Panel => return self.panel_mouse(mouse),
+      Region::Overlay | Region::Status => return Ok(()),
+      Region::Page | Region::Overview => {}
+    }
+    if matches!(mouse.kind, MouseEventKind::Down(_))
+      && let Some(panel) = &mut self.panel
+    {
+      panel.focused = false;
+    }
+    if region == Region::Overview {
       return self.overview_mouse(mouse);
     }
-    if mouse.column < self.left && mouse.row < self.screen.rows - 1 {
-      return self.panel_mouse(mouse);
+    // Drags from before `gp` stay hidden.
+    if self.overview.is_some() {
+      return Ok(());
     }
     match mouse.kind {
       MouseEventKind::ScrollDown => {
@@ -173,9 +203,6 @@ impl App {
       _ => return Ok(()),
     }
     self.animation = None;
-    if mouse.column < self.left || mouse.row >= self.screen.rows - 1 {
-      return Ok(());
-    }
     let pos = if self.text_mode {
       self.text_position(mouse.column, mouse.row)?
     } else {
@@ -184,7 +211,7 @@ impl App {
       let page = self.layout.page_at(y);
       let layout = &self.layout.pages[page.0];
       let Some(inverse) = layout.matrix.invert() else { return Ok(()) };
-      let x = f32::from(mouse.column - self.left)
+      let x = f32::from(mouse.column.saturating_sub(self.left))
         * f32::from(self.screen.cell_width)
         + self.layout.pan;
       let (x, y) = inverse.transform_xy(x, y - layout.top);

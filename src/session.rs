@@ -6,6 +6,7 @@ use crate::home::{Home, Outcome};
 use crate::keys::PanelKind;
 use crate::layout::Screen;
 use crate::pace::Pacer;
+use crate::pointer::{self, Pane, Pointer};
 use crate::prompt::History;
 use crate::split::{Axis, Node, Rect, neighbor};
 use crate::state::{Mark, State};
@@ -88,6 +89,7 @@ pub struct Session {
   shown: Vec<u32>,
   /// Frame interval while anything moves.
   frame: Duration,
+  pointer: Pointer,
 }
 
 impl Session {
@@ -112,6 +114,7 @@ impl Session {
       recorded: 0,
       shown: Vec::new(),
       frame: crate::pace::FRAME,
+      pointer: Pointer::default(),
     }
   }
 
@@ -185,13 +188,12 @@ impl Session {
       .unwrap_or_default()
   }
 
-  /// Moves focus to pane `pane` of tab `tab`, with the graphics.
+  /// Focuses a pane and blurs the old one.
   fn focus(&mut self, tab: usize, pane: usize) -> Result<()> {
-    // Panes share one preview image; only the focused pane shows one.
     if let Some(tab) = self.tabs.get_mut(self.active)
       && let Some(app) = tab.panes.get_mut(tab.focus)
     {
-      app.peek = None;
+      app.blur()?;
     }
     let graphics = self.take_graphics();
     let target = &mut self.tabs[tab];
@@ -566,22 +568,22 @@ impl Session {
       && (!self.tabs.is_empty() || self.home.is_some())
   }
 
-  /// Sends a click or scroll to the pane under it, focusing that pane.
-  fn mouse(&mut self, mut mouse: MouseEvent) -> Result<()> {
-    let tab = self.tab();
-    let hit = tab.panes.iter().position(|app| {
-      let (at, screen) = (app.at, app.screen);
-      (at.column..at.column + screen.columns).contains(&mouse.column)
-        && (at.row..at.row + screen.rows).contains(&mouse.row)
-    });
-    let Some(index) = hit else { return Ok(()) };
-    if index != tab.focus {
+  /// Presses focus; the wheel scrolls in place.
+  pub fn mouse(&mut self, mouse: MouseEvent) -> Result<()> {
+    let tab = &self.tabs[self.active];
+    // Snapshot before disarm hides clue rows.
+    let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();
+    let focused = tab.panes[tab.focus].id;
+    let route = self.pointer.route(&panes, focused, mouse);
+    if pointer::interrupts(mouse.kind) {
+      self.app().disarm()?;
+    }
+    let Some(route) = route else { return Ok(()) };
+    let Some(index) = self.tab().index(route.pane) else { return Ok(()) };
+    if route.focus {
       self.focus(self.active, index)?;
     }
-    let app = self.app();
-    mouse.column -= app.at.column;
-    mouse.row -= app.at.row;
-    app.mouse(mouse)
+    self.tab().panes[index].mouse(route)
   }
 
   /// Drops cached images after another program had the screen.
@@ -879,6 +881,7 @@ fn run(session: &mut Session) -> Result<()> {
     }
     let event = event::read()?;
     if moved(&event) {
+      session.pointer.hover();
       continue;
     }
     touched = Instant::now();

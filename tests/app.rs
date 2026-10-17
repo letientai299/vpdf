@@ -6,6 +6,7 @@ use vpdf::app::App;
 use vpdf::document::Target;
 use vpdf::keys::{Action, Input, PanelKind};
 use vpdf::layout::Screen;
+use vpdf::pointer::{Region, Route};
 use vpdf::text::PageId;
 
 #[test]
@@ -160,18 +161,19 @@ fn text_app() -> Result<App> {
 #[ignore = "requires verified public PDF corpus"]
 fn text_clicks_keep_the_view_and_select_words() -> Result<()> {
   let mut app = text_app()?;
-  let press = MouseEvent {
+  let mouse = MouseEvent {
     kind: MouseEventKind::Down(MouseButton::Left),
     column: 4,
     row: 17,
     modifiers: KeyModifiers::NONE,
   };
+  let press = Route { pane: app.id, region: Region::Page, focus: true, mouse };
   app.draw(&mut Vec::new())?;
-  let target = app.text_position(press.column, press.row)?;
+  let target = app.text_position(mouse.column, mouse.row)?;
   app.mouse(press)?;
   app.draw(&mut Vec::new())?;
   assert_eq!(app.reader.cursor, target);
-  let again = app.text_position(press.column, press.row)?;
+  let again = app.text_position(mouse.column, mouse.row)?;
   assert_eq!(again, target, "a click keeps the view");
   app.mouse(press)?;
   let text = app.doc.text(target.page)?;

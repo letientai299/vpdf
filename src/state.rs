@@ -176,10 +176,10 @@ fn merge(disk: Vec<String>, own: &[String]) -> Vec<String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
   use super::*;
 
-  fn entry(path: &str, page: usize, used: u64) -> Entry {
+  pub(crate) fn entry(path: &str, page: usize, used: u64) -> Entry {
     Entry {
       path: path.into(),
       cursor: Position { page: PageId(page), ..Position::default() },

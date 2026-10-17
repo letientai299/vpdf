@@ -113,7 +113,7 @@ impl App {
         let column = ((x - grid.gap / 2.0) / (grid.width + grid.gap)) as usize;
         let row = ((y - grid.gap / 2.0) / grid.row) as usize;
         let index = (overview.top + row) * grid.columns + column;
-        if column < grid.columns && index <= last {
+        if column < grid.columns && row < grid.rows && index <= last {
           overview.selected = index;
           return self.open_selected();
         }
@@ -130,7 +130,7 @@ impl App {
     self.go_to(Position { page, ..Position::default() }, true)
   }
 
-  fn close_overview(&mut self) {
+  pub fn close_overview(&mut self) {
     self.overview = None;
     self.requested.clear();
   }

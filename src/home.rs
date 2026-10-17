@@ -106,7 +106,10 @@ impl Home {
         self.screen = terminal::size().unwrap_or(self.screen);
         Ok(Outcome::Stay)
       }
-      Event::Mouse(mouse) if mouse.row < self.screen.rows - 1 => {
+      // An open prompt owns the input.
+      Event::Mouse(mouse)
+        if self.prompt.is_none() && mouse.row < self.screen.rows - 1 =>
+      {
         Ok(match self.panel.pointer(mouse) {
           Some(_) => self.selected(),
           None => Outcome::Stay,
@@ -239,6 +242,42 @@ mod tests {
     assert_eq!(command("")?, Outcome::Stay);
     assert!(command("e").is_err());
     assert!(command("toc").is_err());
+    Ok(())
+  }
+
+  #[test]
+  fn clicks_wait_for_an_open_prompt() -> Result<()> {
+    use crossterm::event::{
+      KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
+    let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+    let entry = crate::state::tests::entry(file, 0, 0);
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let click = Event::Mouse(MouseEvent {
+      kind: MouseEventKind::Down(MouseButton::Left),
+      column: 5,
+      row: 1,
+      modifiers: KeyModifiers::NONE,
+    });
+    for (typed, expected) in [
+      (":", Outcome::Stay),
+      ("/", Outcome::Stay),
+      ("", Outcome::Open(file.into())),
+    ] {
+      let mut home = Home::new(std::slice::from_ref(&entry), screen);
+      let mut history = History::default();
+      for ch in typed.chars() {
+        let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+        home.event(Event::Key(key), &mut history)?;
+      }
+      assert_eq!(home.event(click.clone(), &mut history)?, expected, "{typed}");
+    }
     Ok(())
   }
 }

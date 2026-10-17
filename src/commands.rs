@@ -121,12 +121,7 @@ impl App {
       | PromptEvent::Edited
       | PromptEvent::Editor
       | PromptEvent::Complete => {}
-      PromptEvent::Cancel => {
-        self.prompt = None;
-        if matches!(kind, PromptKind::Search(_)) {
-          self.abort_search()?;
-        }
-      }
+      PromptEvent::Cancel => self.cancel_prompt()?,
       PromptEvent::Submit => {
         let Some(prompt) = self.prompt.take() else { return Ok(()) };
         history.push(prompt.kind, &prompt.text);
@@ -140,6 +135,19 @@ impl App {
         }
         return Ok(());
       }
+    }
+    if menu != self.menu_rows() {
+      self.relayout()?;
+    }
+    Ok(())
+  }
+
+  /// Closes the prompt; searches return.
+  pub fn cancel_prompt(&mut self) -> Result<()> {
+    let menu = self.menu_rows();
+    let Some(prompt) = self.prompt.take() else { return Ok(()) };
+    if matches!(prompt.kind, PromptKind::Search(_)) {
+      self.abort_search()?;
     }
     if menu != self.menu_rows() {
       self.relayout()?;

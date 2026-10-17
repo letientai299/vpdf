@@ -181,7 +181,8 @@ top, or right edge, `Ctrl-w r` and `R` rotate the panes of a row or column
 (refused, as in Vim, when one of them is split), `Ctrl-w n` opens a pane above
 listing recent documents, `Ctrl-w x` swaps with the sibling pane, and `Ctrl-w T`
 moves the pane to a new tab. Each pane has its own status line, position, zoom,
-and panels; clicking a pane focuses it. Panes share one Kitty image budget.
+and panels; clicking a pane focuses it, and the wheel scrolls the pane under the
+pointer without focusing it. Panes share one Kitty image budget.
 
 ## Recent documents
 
