@@ -228,8 +228,7 @@ impl App {
     self.doc.outline = outline;
     self.doc.inferred = inferred;
     self.refill_panel(PanelKind::Outline)?;
-    // The status line's section, without moving the panel's selection.
-    self.current_section = self.section();
+    self.track_outline();
     Ok(true)
   }
 }

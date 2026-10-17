@@ -107,6 +107,86 @@ fn section_boundaries_and_counts() -> Result<()> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
+fn outline_follows_reading_section() -> Result<()> {
+  use vpdf::keys::{Action, Input, PanelKind};
+
+  for text_mode in [false, true] {
+    for mode in [b"".as_slice(), b"i", b"v"] {
+      let mut app = app(text_mode)?;
+      app.screen.rows = 8;
+      app.open_panel(PanelKind::Outline)?;
+      keys(&mut app, b"\t")?;
+      if !mode.is_empty() {
+        keys(&mut app, mode)?;
+      }
+      app.draw(&mut Vec::new())?;
+      for title in ["Positional Encoding", "Regularization", "Introduction"] {
+        let index =
+          app.doc.outline.iter().position(|h| h.title.trim() == title).unwrap();
+        let (position, scroll) = heading(&mut app, index)?;
+        app.go_to(Position { line: position.line + 2, ..position }, true)?;
+        match (text_mode, app.reader.viewport_mode()) {
+          (true, true) => keys(&mut app, b"zt")?,
+          (false, true) => app.reader.scroll = scroll + 1.0,
+          _ => {}
+        }
+        app.draw(&mut Vec::new())?;
+        let section = app.current_section.unwrap();
+        assert!(app.reader.viewport_mode() || section == index, "{title}");
+        let panel = app.panel.as_ref().unwrap();
+        assert_eq!(panel.selected, section, "{text_mode} {mode:?} {title}");
+        let visible = panel.top..panel.top + usize::from(app.screen.rows - 2);
+        assert!(visible.contains(&section), "{title} visible");
+      }
+      keys(&mut app, b"\t2j")?;
+      let selected = app.panel.as_ref().unwrap().selected;
+      let (position, _) = heading(&mut app, 1)?;
+      app.go_to(Position { line: position.line + 2, ..position }, true)?;
+      app.viewport(Input {
+        action: Action::Align(0.0),
+        count: 1,
+        explicit: false,
+        register: '"',
+      })?;
+      app.draw(&mut Vec::new())?;
+      assert_eq!(app.panel.as_ref().unwrap().selected, selected);
+      keys(&mut app, b"\t")?;
+      app.draw(&mut Vec::new())?;
+      assert_eq!(
+        app.panel.as_ref().unwrap().selected,
+        app.current_section.unwrap()
+      );
+    }
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn outline_follows_after_loading() -> Result<()> {
+  use vpdf::keys::PanelKind;
+
+  let mut app = app(false)?;
+  let (position, _) = heading(&mut app, 10)?;
+  app.go_to(Position { line: position.line + 2, ..position }, true)?;
+  keys(&mut app, b"i")?;
+  app.doc.outline.clear();
+  app.load_outline();
+  app.open_panel(PanelKind::Outline)?;
+  keys(&mut app, b"\t")?;
+  app.draw(&mut Vec::new())?;
+  assert_eq!(app.current_section, None);
+  super::common::outline_loaded(&mut app)?;
+  app.draw(&mut Vec::new())?;
+  assert_eq!(app.current_section, Some(10));
+  let panel = app.panel.as_ref().unwrap();
+  assert_eq!(panel.selected, 10);
+  assert!(!panel.focused);
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
 fn section_repeat_landing() -> Result<()> {
   let mut app = app(false)?;
   for zoom in [0.73, 1.0, 1.77] {

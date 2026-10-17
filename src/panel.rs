@@ -80,6 +80,7 @@ pub struct Panel {
   columns: u16,
   height: u16,
   layout: Option<Layout>,
+  follow_pending: bool,
   /// Cards for recent documents; a reader pane shows them over its page.
   pub shelf: Option<Shelf>,
 }
@@ -97,6 +98,7 @@ impl Panel {
       columns: u16::MAX,
       height: 0,
       layout: None,
+      follow_pending: false,
       shelf: None,
     }
   }
@@ -486,9 +488,25 @@ fn marked(
 }
 
 impl App {
-  /// Tracks the viewport section independently.
+  /// Follows section changes without interrupting panel browsing.
   pub fn track_outline(&mut self) {
-    self.current_section = self.section();
+    let section = self.section();
+    let changed = self.current_section != section;
+    self.current_section = section;
+    let Some(panel) =
+      self.panel.as_mut().filter(|panel| panel.kind == PanelKind::Outline)
+    else {
+      return;
+    };
+    panel.follow_pending |= changed;
+    if !panel.focused
+      && panel.follow_pending
+      && let Some(index) = section
+    {
+      panel.selected = index;
+      panel.reveal();
+      panel.follow_pending = false;
+    }
   }
 
   pub fn open_panel(&mut self, kind: PanelKind) -> Result<()> {
