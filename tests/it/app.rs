@@ -248,6 +248,42 @@ fn changed_file_reloads_after_settling() -> Result<()> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
+fn hint_labels_keep_their_origin() -> Result<()> {
+  use vpdf::hints::{Hint, Hints};
+  let mut app = text_app()?;
+  app.at = vpdf::terminal::At { column: 17, row: 4 };
+  app.layout.screen.origin = (17, 4);
+  app.left = 9;
+  for text_mode in [true, false] {
+    app.text_mode = text_mode;
+    for typed in ["", "a"] {
+      app.hints = Some(Hints {
+        items: vec![Hint {
+          label: "as".into(),
+          target: Target::Page(PageId(0)),
+          cell: (23, 3),
+        }],
+        typed: typed.into(),
+        copy: false,
+      });
+      let mut out = Vec::new();
+      app.draw_hints(&mut out)?;
+      let drawn = String::from_utf8_lossy(&out);
+      let rest = &"as"[typed.len()..];
+      assert!(drawn.starts_with(&format!(
+        "\x1b[8;39H\x1b[0;1;30;43m{typed}\x1b[0;30;43m{rest}\x1b[0m"
+      )));
+      assert_eq!(drawn.contains("z=-1"), !text_mode);
+      if !text_mode {
+        assert!(drawn.contains("\x1b[8;39H\x1b_Ga=p"));
+      }
+    }
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
 fn link_hints_follow_typed_labels() -> Result<()> {
   use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);

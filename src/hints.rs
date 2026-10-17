@@ -43,6 +43,11 @@ pub fn labels(count: usize) -> Vec<String> {
     .collect()
 }
 
+fn label_column(hint: &Hint, left: u16) -> u16 {
+  let width = u16::try_from(hint.label.len()).unwrap_or(u16::MAX);
+  hint.cell.0.saturating_sub(width).max(left)
+}
+
 impl App {
   /// Labels links in view; `copy` copies URIs instead of opening them.
   pub fn start_hints(&mut self, copy: bool) -> Result<()> {
@@ -144,7 +149,8 @@ impl App {
       if !hint.label.starts_with(&hints.typed) {
         continue;
       }
-      let (column, row) = hint.cell;
+      let column = label_column(hint, self.left);
+      let row = hint.cell.1;
       let rest = &hint.label[hints.typed.len()..];
       write!(
         out,
@@ -181,6 +187,25 @@ impl App {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn labels_stay_left_inside_pane() {
+    for (link, left, label, expected) in [
+      (12, 0, "a", 11),
+      (12, 0, "as", 10),
+      (12, 8, "as", 10),
+      (9, 8, "as", 8),
+      (8, 8, "as", 8),
+      (0, 0, "as", 0),
+    ] {
+      let hint = Hint {
+        label: label.into(),
+        target: Target::Page(PageId(0)),
+        cell: (link, 2),
+      };
+      assert_eq!(label_column(&hint, left), expected, "{link} {left} {label}");
+    }
+  }
 
   #[test]
   fn labels_share_length_and_stay_unique() {

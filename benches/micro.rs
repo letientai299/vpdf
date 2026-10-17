@@ -103,6 +103,22 @@ fn text_canvas() -> Result<()> {
   })
 }
 
+/// Visible citation labels on the corpus paper.
+fn draw_hints() -> Result<()> {
+  let mut app = paper(false)?;
+  app.command("page 2")?;
+  app.start_hints(false)?;
+  let mut out = Vec::new();
+  app.draw_hints(&mut out)?;
+  measure("App::draw_hints", || {
+    out.clear();
+    app.graphics.begin(&mut out).expect("begin hint frame");
+    app.draw_hints(&mut out).expect("visible citation labels");
+    app.graphics.end(&mut out).expect("hint placements");
+    black_box(&out);
+  })
+}
+
 /// Rows each frame clips page graphics to while clues show.
 fn menu_rows() -> Result<()> {
   let mut app = paper(false)?;
@@ -314,6 +330,7 @@ const CASES: &[(&str, Case)] = &[
   ("clean", clean),
   ("clean marks", clean_marks),
   ("text_canvas", text_canvas),
+  ("draw_hints", draw_hints),
   ("route", route),
   ("hover", hover),
   ("decode", decode),
