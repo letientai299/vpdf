@@ -1,3 +1,5 @@
+exclude = [".ai/**"]
+
 [formatting]
 indent_string = "  "
 column_width = 80
