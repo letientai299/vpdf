@@ -169,6 +169,25 @@ impl Layout {
   }
 }
 
+pub(crate) fn clip(bounds: Bounds, page: Bounds) -> Option<Bounds> {
+  if ![
+    bounds.x0, bounds.y0, bounds.x1, bounds.y1, page.x0, page.y0, page.x1,
+    page.y1,
+  ]
+  .into_iter()
+  .all(f32::is_finite)
+  {
+    return None;
+  }
+  let bounds = Bounds {
+    x0: bounds.x0.max(page.x0),
+    y0: bounds.y0.max(page.y0),
+    x1: bounds.x1.min(page.x1),
+    y1: bounds.y1.min(page.y1),
+  };
+  (bounds.x1 > bounds.x0 && bounds.y1 > bounds.y0).then_some(bounds)
+}
+
 pub fn page_matrix(bounds: Bounds, scale: u32, rotation: u16) -> Matrix {
   let scale = scale as f32 / 1024.0;
   let mut matrix = Matrix::new_rotate(f32::from(rotation));

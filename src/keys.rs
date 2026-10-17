@@ -41,6 +41,9 @@ impl PanelKind {
 pub enum Action {
   Motion(Motion),
   Section(bool),
+  Figure(bool),
+  FigureFit,
+  Region,
   Yank,
   YankLine,
   Object(crate::objects::Object, bool),
@@ -372,6 +375,10 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("gq", Action::ClosePanel, "close panel"),
   ("K", Action::Peek, "preview link target"),
   ("gp", Action::Overview, "page thumbnails"),
+  ("]i", Action::Figure(true), "next figure"),
+  ("[i", Action::Figure(false), "previous figure"),
+  ("zF", Action::FigureFit, "fit figure"),
+  ("gF", Action::Region, "figure actions"),
   ("f", Action::Hints(false), "link hints"),
   ("F", Action::Hints(true), "link hints, copy URLs"),
   ("gt", Action::Tab(true), "next tab, or [count] tab"),
@@ -494,7 +501,11 @@ mod tests {
       keys.feed(key('2'), Grammar::Objects);
       assert!(keys.feed(key(prefix), Grammar::Objects).is_none());
       assert_eq!(keys.pending(), format!("2{prefix}"));
-      assert_eq!(clues(&prefix.to_string()).len(), 1);
+      let labels: Vec<_> =
+        clues(&prefix.to_string()).into_iter().map(|(key, _)| key).collect();
+      assert!(labels.contains(&prefix.to_string()));
+      assert!(labels.contains(&"i".into()));
+      assert_eq!(labels.len(), 2);
       let input = keys.feed(key(prefix), Grammar::Objects).unwrap();
       assert_eq!(input.action, Action::Section(forward));
       assert_eq!(input.count, 2);

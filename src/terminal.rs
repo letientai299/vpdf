@@ -394,6 +394,26 @@ fn synced(caps: Option<&Caps>) -> bool {
   })
 }
 
+pub fn passthrough(
+  output: &mut impl Write,
+  bytes: &[u8],
+  tmux: bool,
+) -> Result<()> {
+  if !tmux {
+    output.write_all(bytes)?;
+    return Ok(());
+  }
+  output.write_all(b"\x1bPtmux;")?;
+  for part in bytes.split_inclusive(|&byte| byte == 0x1b) {
+    output.write_all(part)?;
+    if part.last() == Some(&0x1b) {
+      output.write_all(b"\x1b")?;
+    }
+  }
+  output.write_all(b"\x1b\\")?;
+  Ok(())
+}
+
 pub fn graphics(
   output: &mut impl Write,
   control: &str,
@@ -617,6 +637,7 @@ mod tests {
       resize: Support::Missing,
       pointer: Support::Missing,
       drop: Support::Missing,
+      clipboard: None,
       cell: asked,
       attributes: Some(vec![62]),
     };
@@ -683,6 +704,7 @@ mod tests {
       resize: Support::Missing,
       pointer: Support::Missing,
       drop: Support::Missing,
+      clipboard: None,
       cell: None,
       attributes: Some(vec![1, 2, 4]),
     }

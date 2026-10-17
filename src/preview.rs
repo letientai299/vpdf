@@ -117,18 +117,10 @@ impl App {
         return self.follow(&peek.target);
       }
       Action::Quit | Action::Peek => {
-        self.peek = None;
+        self.dismiss_overlay();
         return Ok(());
       }
-      Action::Window(_)
-      | Action::Tab(_)
-      | Action::LocalFocus
-      | Action::History(_)
-      | Action::Panel(_)
-      | Action::ClosePanel => {
-        self.peek = None;
-        return self.action(input);
-      }
+      action if self.overlay_transfer(action) => return self.action(input),
       _ => return Ok(()),
     };
     self.scroll_preview(rows * input.count as f32)

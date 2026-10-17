@@ -90,6 +90,7 @@ pub struct Document {
   texts: Cache<PageId, Arc<Text>>,
   lists: Arc<Lists>,
   ocr: Cache<PageId, Arc<Text>>,
+  figures: Cache<PageId, Arc<Vec<crate::figures::Figure>>>,
 }
 
 /// The document is encrypted and the password did not open it.
@@ -191,6 +192,7 @@ impl Document {
       texts: Cache::new(32 * MIB),
       lists: Arc::new(Mutex::new(Cache::new(LISTS))),
       ocr: Cache::new(32 * MIB),
+      figures: Cache::new(4 * MIB),
     })
   }
 
@@ -203,6 +205,27 @@ impl Document {
     let text = Arc::new(extract_list(&list)?);
     self.texts.insert(page, Arc::clone(&text), text.weight());
     Ok(text)
+  }
+
+  pub fn figures(
+    &mut self,
+    page: PageId,
+  ) -> Result<Arc<Vec<crate::figures::Figure>>> {
+    self.validate(page)?;
+    if let Some(figures) = self.figures.get(&page) {
+      return Ok(Arc::clone(figures));
+    }
+    let list = self.display(page)?;
+    let text = self.text(page)?;
+    let figures = Arc::new(crate::figures::detect(
+      &list,
+      &text,
+      self.pages[page.0].bounds,
+    )?);
+    let weight = figures.capacity() * size_of::<crate::figures::Figure>()
+      + figures.iter().map(|figure| figure.caption.capacity()).sum::<usize>();
+    self.figures.insert(page, Arc::clone(&figures), weight.max(1));
+    Ok(figures)
   }
 
   /// Reads the authored outline into `outline`; readers load it on a
@@ -220,12 +243,14 @@ impl Document {
   /// Drops cached text and display lists; OCR text stays.
   pub fn trim(&mut self) {
     self.texts.clear();
+    self.figures.clear();
     if let Ok(mut lists) = self.lists.lock() {
       lists.clear();
     }
   }
 
   pub fn seed(&mut self, page: PageId, text: Arc<Text>) {
+    self.figures.remove(&page);
     let weight = text.weight();
     self.ocr.insert(page, text, weight);
   }

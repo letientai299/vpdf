@@ -618,9 +618,41 @@ fn lexical_objects() -> Result<()> {
   })
 }
 
+fn figures() -> Result<()> {
+  let mut app = paper(false)?;
+  let page = PageId(2);
+  let figures = app.doc.figures(page)?;
+  let figure = figures
+    .iter()
+    .find(|figure| figure.caption.starts_with("Figure 1"))
+    .ok_or_else(|| anyhow::anyhow!("Figure 1 missing"))?;
+  measure("Document::figures warm", || {
+    black_box(app.doc.figures(black_box(page)).expect("cached figures"));
+  })?;
+  let text = app.doc.text(page)?;
+  measure("region::region_text", || {
+    black_box(vpdf::region::region_text(black_box(&text), figure.bounds));
+  })?;
+  app.select_region(page, figure.bounds)?;
+  app.reader.scroll = app.layout.project(page, figure.bounds, 0.0).y0;
+  let mut out = Vec::new();
+  let mut draw = |out: &mut Vec<u8>| {
+    out.clear();
+    app.graphics.begin(out).expect("begin region");
+    app.draw_region(out).expect("region bar");
+    app.graphics.end(out).expect("end region");
+  };
+  draw(&mut out);
+  measure("App::draw_region warm", || {
+    draw(&mut out);
+    black_box(&out);
+  })
+}
+
 type Case = fn() -> Result<()>;
 
 const CASES: &[(&str, Case)] = &[
+  ("figures", figures),
   ("lexical objects", lexical_objects),
   ("clean", clean),
   ("clean marks", clean_marks),

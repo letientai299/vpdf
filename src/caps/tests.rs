@@ -65,6 +65,7 @@ fn kitty_recorded() {
       resize: Support::Answered,
       pointer: Support::Answered,
       drop: Support::Answered,
+      clipboard: None,
       cell: Some(Cell { width: 7, height: 13 }),
       attributes: Some(vec![62, 52]),
     }
@@ -93,6 +94,7 @@ fn wezterm_recorded() {
       resize: Support::Missing,
       pointer: Support::Missing,
       drop: Support::Missing,
+      clipboard: None,
       cell: None,
       attributes: Some(vec![65, 4, 6, 18, 22]),
     }
@@ -120,6 +122,7 @@ fn tmux_recorded() {
       resize: Support::Missing,
       pointer: Support::Missing,
       drop: Support::Missing,
+      clipboard: None,
       cell: None,
       attributes: Some(vec![1, 2, 4]),
     }
@@ -452,7 +455,7 @@ fn screen_wins_over_tmux() {
 fn requests_per_route() {
   let direct = b"\x1b[>0q\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\
     \x1b[?2026$p\x1b[?1016$p\x1b[?2048$p\x1b[?u\
-    \x1b]22;?pointer\x1b\\\x1b]72;t=q\x1b\\";
+    \x1b]22;?pointer\x1b\\\x1b]72;t=q\x1b\\\x1b[?5522$p";
   assert_eq!(request(&Route::Direct), direct);
   let tmux = request(&tmux_with(None));
   assert!(!tmux.windows(3).any(|window| window == b"\x1b_G"));
@@ -532,6 +535,7 @@ fn info_without_tmux() {
      Resize reports: yes\n\
      Pointer shapes: yes\n\
      Drag and drop: yes\n\
+     Image clipboard: no answer\n\
      Cell reply: 7x13 px\n\
      DA1: 62;52"
   );
@@ -904,4 +908,29 @@ fn negotiate_pushes_then_reads_back() -> Result<()> {
     assert!(requests.all(|request| request == b"\x1b[?u"), "{label}");
   }
   Ok(())
+}
+
+#[test]
+fn clipboard_requires_explicit_answer() {
+  for route in [Route::Direct, tmux_with(Some("kitty(0.49.1)"))] {
+    let unanswered = caps(route.clone(), &replies(DA1));
+    assert_eq!(unanswered.clipboard, None);
+    assert!(unanswered.to_string().contains("Image clipboard: no answer"));
+    for (state, want) in [
+      (0, Support::Missing),
+      (1, Support::Answered),
+      (2, Support::Answered),
+      (3, Support::Answered),
+      (4, Support::Missing),
+    ] {
+      let bytes = format!("\x1b[?5522;{state}$y");
+      assert_eq!(
+        caps(route.clone(), &replies(bytes.as_bytes())).clipboard,
+        Some(want)
+      );
+    }
+  }
+  let mut wrapped = Vec::new();
+  crate::terminal::passthrough(&mut wrapped, b"\x1b[?5522$p", true).unwrap();
+  assert!(request(&tmux_with(None)).ends_with(&wrapped));
 }

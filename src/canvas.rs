@@ -101,6 +101,7 @@ impl App {
       && !self.text_mode
       && self.hints.is_none()
       && self.peek.is_none()
+      && self.region.is_none()
       && self.panel.is_none()
       && self.clues.is_none()
       && self.prompt.is_none()
@@ -300,6 +301,7 @@ impl App {
     }
     self.draw_hints(out)?;
     self.draw_preview(out)?;
+    self.draw_region(out)?;
     self.track_outline();
     if let Some(panel) = &mut self.panel {
       panel.draw(out, self.at, self.left, self.screen, None)?;

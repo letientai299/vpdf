@@ -95,6 +95,7 @@ mod tests {
       resize: Support::Missing,
       pointer: Support::Missing,
       drop: Support::Missing,
+      clipboard: None,
       cell: None,
       attributes: answered.then(|| vec![62]),
     }

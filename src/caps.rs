@@ -1,17 +1,4 @@
-//! What the terminal can do, asked once at startup. One write carries
-//! every query and ends with DA1, which every terminal answers, so a
-//! query without an answer before DA1's is unsupported. Under tmux the
-//! graphics query stays home, since tmux answers DA1 itself and the
-//! terminal's late answer would reach the active pane as keys; tmux
-//! reports the client terminal instead, as `kitten icat` reads it.
-//! GNU screen shows APC strings in its status line, so it gets nothing.
-//! Sources: [graphics query][gp], [tmux answers DA1 first][tmux],
-//! [`kitten icat` under tmux][icat], [Wayst on `CSI 16 t`][wayst].
-//!
-//! [gp]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
-//! [tmux]: https://github.com/tmux/tmux/issues/5530
-//! [icat]: https://github.com/kovidgoyal/kitty/blob/master/tools/tui/tmux.go
-//! [wayst]: https://github.com/91861/wayst/blob/master/src/vt_core.c
+//! Startup capabilities, including the outer clipboard.
 use crate::Result;
 use crate::decode::{ModeState, Reply};
 use std::fmt;
@@ -45,6 +32,8 @@ pub struct Caps {
   pub pointer: Support,
   /// Drag and drop, OSC 72.
   pub drop: Support,
+  /// Mode 5522; None without an answer.
+  pub clipboard: Option<Support>,
   /// Cell size from `CSI 16 t`, asked only when TIOCGWINSZ has none.
   pub cell: Option<Cell>,
   /// DA1's answer; None when it missed `WAIT` or was never asked.
@@ -231,6 +220,12 @@ impl fmt::Display for Caps {
       ("Resize reports", self.resize.to_string()),
       ("Pointer shapes", self.pointer.to_string()),
       ("Drag and drop", self.drop.to_string()),
+      (
+        "Image clipboard",
+        self
+          .clipboard
+          .map_or_else(|| "no answer".into(), |support| support.to_string()),
+      ),
     ]);
     // Asked only without TIOCGWINSZ pixels; absent is the usual case.
     if let Some(cell) = self.cell {
@@ -304,13 +299,21 @@ impl Tmux {
 /// `allow-passthrough` as vpdf set it for its pane, which `:info` shows
 /// next to the value at start.
 static PASSTHROUGH: OnceLock<Passthrough> = OnceLock::new();
+static PASSTHROUGH_NOTICE: OnceLock<Option<String>> = OnceLock::new();
 
 /// Sets `allow-passthrough` for vpdf's pane where it falls short, as
 /// `kitten icat` does; returns what the status line says about it.
 pub fn allow_passthrough() -> Option<String> {
+  if let Some(notice) = PASSTHROUGH_NOTICE.get() {
+    return notice.clone();
+  }
   let Some(Host::Tmux(Some(tmux))) = get().map(|caps| &caps.host) else {
     return None;
   };
+  set_passthrough(tmux)
+}
+
+fn set_passthrough(tmux: &Tmux) -> Option<String> {
   let wanted = tmux.wanted()?;
   let value = wanted.to_string();
   if !crate::terminal::tmux_set("allow-passthrough", &value) {
@@ -615,6 +618,14 @@ fn request(route: &Route) -> Vec<u8> {
     b"\x1b[?2026$p\x1b[?1016$p\x1b[?2048$p\x1b[?u\
       \x1b]22;?pointer\x1b\\\x1b]72;t=q\x1b\\",
   );
+  let query = b"\x1b[?5522$p";
+  if matches!(route, Route::Tmux(_)) {
+    // The outer DA1 follows this same path.
+    crate::terminal::passthrough(&mut request, query, true)
+      .expect("Vec write cannot fail");
+  } else {
+    request.extend_from_slice(query);
+  }
   request
 }
 
@@ -664,6 +675,7 @@ fn caps(route: Route, replies: &[Reply]) -> Caps {
     resize: mode(2048).unwrap_or(Support::Missing),
     pointer: answered(osc(22, |body| body.split(',').next() == Some("1"))),
     drop: answered(osc(72, |body| body.starts_with("t=q"))),
+    clipboard: mode(5522),
     cell: cell_reply(replies),
     attributes: replies.iter().find_map(|reply| match reply {
       Reply::Attributes(values) => Some(values.clone()),
@@ -798,11 +810,21 @@ pub fn probe() -> Result<&'static Caps> {
     |name| std::env::var_os(name).is_some(),
     || tmux(&crate::terminal::tmux_display(TMUX_FORMAT)?),
   );
+  let notice = match &route {
+    Route::Tmux(Some(tmux)) => set_passthrough(tmux),
+    _ => None,
+  };
+  let _ = PASSTHROUGH_NOTICE.set(notice);
+  let outer = matches!(route, Route::Tmux(_));
   let pixels = crossterm::terminal::window_size()
     .is_ok_and(|size| size.width > 0 && size.height > 0);
   let mut out = io::stdout();
   let probed = rounds(route, pixels, |request| {
-    crate::input::ask(&mut out, request, WAIT)
+    if outer {
+      crate::input::ask_outer(&mut out, request, WAIT)
+    } else {
+      crate::input::ask(&mut out, request, WAIT)
+    }
   })?;
   Ok(CAPS.get_or_init(|| probed))
 }

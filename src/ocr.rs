@@ -82,7 +82,7 @@ fn recognize(
   parse_tsv(&output, bounds, scale)
 }
 
-fn tesseract(
+pub(crate) fn tesseract(
   png: Vec<u8>,
   language: &str,
   cancel: &AtomicBool,

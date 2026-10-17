@@ -16,6 +16,8 @@ impl App {
       InputOwner::Prompt
     } else if self.hints.is_some() {
       InputOwner::Hints
+    } else if self.region.as_ref().is_some_and(crate::region::Region::is_bar) {
+      InputOwner::Region
     } else if self.peek.is_some() {
       InputOwner::Peek
     } else if self.panel_focused() {
@@ -27,11 +29,40 @@ impl App {
     }
   }
 
+  pub(crate) fn dismiss_overlay(&mut self) {
+    self.peek = None;
+    self.region = None;
+  }
+
+  pub(crate) fn overlay_transfer(&mut self, action: Action) -> bool {
+    if !matches!(
+      action,
+      Action::Window(_)
+        | Action::Tab(_)
+        | Action::LocalFocus
+        | Action::History(_)
+        | Action::Panel(_)
+        | Action::ClosePanel
+    ) {
+      return false;
+    }
+    self.dismiss_overlay();
+    true
+  }
+
   pub(crate) fn dismiss_click(&mut self) -> Result<bool> {
     match self.input_owner() {
-      InputOwner::Prompt => self.cancel_prompt()?,
+      InputOwner::Prompt => {
+        self.cancel_input()?;
+        return Ok(true);
+      }
       InputOwner::Hints => self.hints = None,
-      InputOwner::Peek => self.peek = None,
+      InputOwner::Peek => self.dismiss_overlay(),
+      InputOwner::Region => {
+        self.dismiss_overlay();
+        self.disarm();
+        return Ok(true);
+      }
       _ if self.clues.is_some() => {}
       _ => return Ok(false),
     }
@@ -488,7 +519,7 @@ impl App {
   /// Closes key-driven state as focus leaves.
   pub fn blur(&mut self) -> Result<()> {
     // Panes share one preview image; only the focused pane shows one.
-    self.peek = None;
+    self.dismiss_overlay();
     self.hints = None;
     self.cancel_prompt()?;
     self.last_click = None;
@@ -502,7 +533,9 @@ impl App {
     if matches!(mouse.kind, MouseEventKind::Down(_)) && self.dismiss_click()? {
       return Ok(());
     }
-    if self.prompt.is_some() {
+    if self.prompt.is_some()
+      || self.region.as_ref().is_some_and(crate::region::Region::is_bar)
+    {
       return Ok(());
     }
     match region {

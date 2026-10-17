@@ -17,6 +17,7 @@ impl App {
       InputOwner::Prompt => return ("PROMPT", Color::Yellow),
       InputOwner::Hints => return ("HINT", Color::Yellow),
       InputOwner::Peek => return ("PEEK", Color::Yellow),
+      InputOwner::Region => return ("REGION", Color::Yellow),
       InputOwner::Panel => {
         if let Some(panel) = &self.panel {
           return (panel.kind.title(), Color::Cyan);

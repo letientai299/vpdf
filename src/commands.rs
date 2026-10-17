@@ -38,6 +38,9 @@ const COVERED: [&str; 21] = [
 
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
+    if self.region_input(input)? {
+      return Ok(());
+    }
     if input.action == Action::LocalFocus {
       if self.panel.is_none() {
         return Ok(());
@@ -89,6 +92,9 @@ impl App {
       }
       Action::Peek => self.preview_link()?,
       Action::Overview => self.open_overview()?,
+      Action::Figure(forward) => self.move_figure(forward, input.count)?,
+      Action::FigureFit => self.fit_figure()?,
+      Action::Region => self.open_region()?,
       Action::GoMark(name, exact) => self.go_mark(name, exact)?,
       Action::Tab(forward) => {
         self.request = Some(Request::Tab(match (forward, input.explicit) {
@@ -125,13 +131,19 @@ impl App {
       }
       self.hints = None;
     }
-    if self.peek.is_some() {
+    if self.peek.is_some()
+      || self.region.as_ref().is_some_and(crate::region::Region::is_bar)
+    {
       let input = self.keys.feed(key, Grammar::Other);
       if self.keys.awaiting() == Some("C-w") {
-        self.peek = None;
+        self.dismiss_overlay();
       }
       if let Some(input) = input {
-        return self.preview_input(input);
+        return if self.peek.is_some() {
+          self.preview_input(input)
+        } else {
+          self.action(input)
+        };
       }
       return Ok(());
     }
@@ -153,23 +165,27 @@ impl App {
     Ok(())
   }
 
-  fn cancel_input(&mut self) -> Result<()> {
+  pub(crate) fn cancel_input(&mut self) -> Result<()> {
     self.animation = None;
     let owner = self.input_owner();
     let pending =
       !self.keys.pending().is_empty() || self.reader.operator.is_some();
-    if owner == InputOwner::Peek {
+    if matches!(owner, InputOwner::Peek | InputOwner::Region) {
       if !pending {
-        self.peek = None;
+        self.dismiss_overlay();
       }
       self.disarm();
       return Ok(());
     }
-    if owner == InputOwner::Prompt && self.peek.is_some() {
+    if owner == InputOwner::Prompt
+      && (self.peek.is_some()
+        || self.region.as_ref().is_some_and(crate::region::Region::is_bar))
+    {
       self.cancel_prompt()?;
       self.disarm();
       return Ok(());
     }
+    self.region = None;
     match owner {
       InputOwner::Prompt => self.cancel_prompt()?,
       InputOwner::Hints => self.hints = None,
@@ -299,6 +315,7 @@ impl App {
           job.cancel();
         }
         self.outline_job = None;
+        self.region_job = None;
         self.reader.message = "Jobs canceled".into();
       }
       "nohlsearch" => self.search.hidden = true,
@@ -350,7 +367,7 @@ impl App {
     self.text_drawn = None;
     self.target = None;
     self.landing = None;
-    self.peek = None;
+    self.dismiss_overlay();
     if let Some(mut origin) = self.search_origin {
       origin.cursor = reader::clamp(origin.cursor, &mut self.doc)?;
       origin.anchor =

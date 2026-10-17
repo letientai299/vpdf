@@ -5,6 +5,7 @@ mod corpus;
 mod cursor;
 mod cursorline;
 mod encrypted;
+mod figures;
 mod focus;
 mod jumps;
 mod modes;

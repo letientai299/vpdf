@@ -130,11 +130,33 @@ pub fn ask(
   request: &[u8],
   timeout: Duration,
 ) -> Result<Vec<Reply>> {
-  out.write_all(request)?;
-  out.write_all(b"\x1b[c")?;
-  out.flush()?;
+  ask_with(out, request, timeout, false)
+}
+
+pub fn ask_outer(
+  out: &mut impl Write,
+  request: &[u8],
+  timeout: Duration,
+) -> Result<Vec<Reply>> {
+  ask_with(out, request, timeout, true)
+}
+
+fn ask_with(
+  out: &mut impl Write,
+  request: &[u8],
+  timeout: Duration,
+  outer: bool,
+) -> Result<Vec<Reply>> {
+  query(out, request, outer)?;
   let mut reader = READER.lock().unwrap_or_else(PoisonError::into_inner);
   reader.as_mut().context("Input not started")?.ask(timeout)
+}
+
+fn query(out: &mut impl Write, request: &[u8], outer: bool) -> Result<()> {
+  out.write_all(request)?;
+  crate::terminal::passthrough(out, b"\x1b[c", outer)?;
+  out.flush()?;
+  Ok(())
 }
 
 impl Reader {
@@ -493,6 +515,54 @@ mod tests {
     reader.release();
     let error = reader.next(Some(Duration::from_millis(1))).unwrap_err();
     assert!(error.is::<KeyLack>(), "{error}");
+    Ok(())
+  }
+  #[test]
+  fn outer_query_orders_terminator() -> Result<()> {
+    let request = b"\x1b[>0q\x1bPtmux;\x1b\x1b[?5522$p\x1b\\";
+    let mut out = Vec::new();
+    query(&mut out, request, true)?;
+    assert_eq!(
+      out,
+      [request.as_slice(), b"\x1bPtmux;\x1b\x1b[c\x1b\\"].concat()
+    );
+    let (mut reader, [mut terminal, _waker, _signal]) = reader()?;
+    let delayed = std::thread::spawn(move || -> Result<()> {
+      terminal.write_all(b"j\x1bP>|tmux 3.8\x1b\\\x1b[?2026;2$y")?;
+      std::thread::sleep(Duration::from_millis(30));
+      terminal.write_all(b"\x1b[?5522;2$y\x1b[?62;52c")?;
+      Ok(())
+    });
+    let replies = reader.ask(Duration::from_secs(1))?;
+    delayed.join().unwrap()?;
+    assert!(replies.contains(&Reply::Mode {
+      mode: 5522,
+      state: crate::decode::ModeState::Reset
+    }));
+    assert_eq!(replies.last(), Some(&Reply::Attributes(vec![62, 52])));
+    assert_eq!(
+      reader.next(Some(Duration::ZERO))?,
+      Some(key(KeyCode::Char('j')))
+    );
+    Ok(())
+  }
+  #[test]
+  fn late_clipboard_stays_unanswered() -> Result<()> {
+    let (mut reader, [mut terminal, _waker, _signal]) = reader()?;
+    terminal.write_all(b"\x1b[?62;52c")?;
+    let replies = reader.ask(Duration::from_millis(30))?;
+    assert_eq!(replies, [Reply::Attributes(vec![62, 52])]);
+    terminal.write_all(b"\x1b[?5522;2$y")?;
+    assert_eq!(
+      reader.next(Some(Duration::from_millis(30)))?,
+      Some(Event::Reply(Reply::Mode {
+        mode: 5522,
+        state: crate::decode::ModeState::Reset
+      }))
+    );
+    let mut request = Vec::new();
+    query(&mut request, b"", true)?;
+    assert_eq!(reader.ask(Duration::from_millis(5))?, []);
     Ok(())
   }
 }
