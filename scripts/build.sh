@@ -3,8 +3,10 @@ set -eu
 build_dir="${CARGO_TARGET_DIR:-target}"
 case $(uname -s) in
   Darwin)
-    cargo build --release --locked
-    dependencies=$(otool -L "$build_dir/release/vpdf")
+    target=$(rustc --print host-tuple)
+    cargo build --release --locked --target "$target"
+    binary="$build_dir/$target/release/vpdf"
+    dependencies=$(otool -L "$binary")
     printf '%s\n' "$dependencies" | tail -n +2 | \
       while read -r dependency _; do
         case "$dependency" in
@@ -29,11 +31,11 @@ case $(uname -s) in
       printf 'Linux executable requires shared libraries\n' >&2
       exit 1
     fi
-    mkdir -p "$build_dir/release"
-    staged=$(mktemp "$build_dir/release/.vpdf.XXXXXX")
-    trap 'rm -f "$staged"' EXIT HUP INT TERM
-    install -m 755 "$binary" "$staged"
-    mv -f "$staged" "$build_dir/release/vpdf"
     ;;
   *) printf 'Build requires macOS or Ubuntu\n' >&2; exit 1 ;;
 esac
+mkdir -p "$build_dir/release"
+staged=$(mktemp "$build_dir/release/.vpdf.XXXXXX")
+trap 'rm -f "$staged"' EXIT HUP INT TERM
+install -m 755 "$binary" "$staged"
+mv -f "$staged" "$build_dir/release/vpdf"
