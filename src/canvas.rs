@@ -222,6 +222,7 @@ impl App {
     write!(out, "\x1b[?2026h\x1b[0m")?;
     self.graphics.begin(out)?;
     self.draw_pane(out)?;
+    self.graphics.end(out)?;
     write!(out, "\x1b[?2026l")?;
     out.flush()?;
     Ok(())

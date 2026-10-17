@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::app::{App, Request, TabMove, Tabline, Window};
-use crate::decode::{Event, MouseKind, Size};
+use crate::decode::{Event, MouseKind, Reply, Size};
 use crate::document::PasswordRequired;
 use crate::graphics::Graphics;
 use crate::home::{Home, Outcome};
@@ -237,7 +237,9 @@ impl Session {
       let Some(index) = tab.index(id) else { continue };
       let focused = index == tab.focus;
       let app = &mut tab.panes[index];
-      // Another tab or pane may have drawn over these rows.
+      // Another tab or pane may have drawn over these rows. After a
+      // resize the clear also erases images `WezTerm` keeps in cells,
+      // which it no longer deletes by placement id.
       app.blank = false;
       app.focused = focused;
       app.tabline = if focused {
@@ -601,6 +603,17 @@ impl Session {
     self.arrange()
   }
 
+  /// Uploads image `id` again after the terminal evicted it.
+  fn missing(&mut self, id: u32) {
+    if !self.app().graphics.missing(id) {
+      return;
+    }
+    // Tiles no longer kept render again.
+    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+      app.requested.clear();
+    }
+  }
+
   /// Drops cached images after another program had the screen.
   fn images_lost(&mut self, out: &mut impl Write) -> Result<bool> {
     if !terminal::images_lost() {
@@ -681,6 +694,7 @@ impl Drawable for Session {
     }
     let focus = tab.focus;
     tab.panes[focus].draw_pane(out)?;
+    tab.panes[focus].graphics.end(out)?;
     write!(out, "\x1b[?2026l")?;
     Ok(())
   }
@@ -817,17 +831,31 @@ enum Act {
   /// With the mode 2048 report, when the terminal sent one.
   Resize(Option<Size>),
   Mouse(MouseEvent),
+  /// The terminal no longer holds this image; not typing.
+  Missing(u32),
+}
+
+impl Act {
+  /// Whether the user caused it, as opposed to a terminal reply.
+  fn typed(&self) -> bool {
+    !matches!(self, Self::Missing(_))
+  }
 }
 
 /// What `event` asks of the session; None for input it ignores yet,
-/// which must not count as typing: replies, focus, the pointer leaving,
-/// buttons past 7, and key releases.
+/// which must not count as typing: other replies, focus, the pointer
+/// leaving, buttons past 7, and key releases.
 fn act(event: Event) -> Option<Act> {
   match event {
     Event::Key(key) if key.kind != KeyEventKind::Release => Some(Act::Key(key)),
     Event::Paste(text) => Some(Act::Paste(text)),
     Event::Resize(report) => Some(Act::Resize(report)),
     Event::Mouse(mouse) => mouse.cells().map(Act::Mouse),
+    Event::Reply(Reply::Graphics { id: Some(id), message, .. })
+      if message.starts_with("ENOENT") =>
+    {
+      Some(Act::Missing(id))
+    }
     Event::Key(_) | Event::Focus(_) | Event::Reply(_) | Event::Leave => None,
   }
 }
@@ -854,6 +882,10 @@ fn input(session: &mut Session, act: Act) -> Result<()> {
       None => Ok(()),
     },
     Act::Mouse(mouse) => session.mouse(mouse),
+    Act::Missing(id) => {
+      session.missing(id);
+      Ok(())
+    }
   }
 }
 
@@ -897,8 +929,7 @@ fn run(session: &mut Session) -> Result<()> {
       if dirty {
         let current = session.app().title();
         if current != title {
-          let clean = terminal::clean(&current, 200);
-          write!(out, "\x1b]2;{clean}\x07")?;
+          set_title(&mut out, &current)?;
           title = current;
         }
         trace.draw(session, &mut out, &mut buffer)?;
@@ -946,11 +977,22 @@ fn run(session: &mut Session) -> Result<()> {
       continue;
     }
     let Some(act) = act(event) else { continue };
-    touched = Instant::now();
-    trace.input();
+    if act.typed() {
+      touched = Instant::now();
+      trace.input();
+    }
     let result = input(session, act).and_then(|()| session.settle());
     report(session, result);
     dirty = true;
+  }
+  Ok(())
+}
+
+/// Sets the window title, except where the terminal ignores the title
+/// stack and would keep it after exit.
+fn set_title(out: &mut impl Write, title: &str) -> Result<()> {
+  if crate::caps::get().is_none_or(crate::caps::Caps::title_stack) {
+    write!(out, "\x1b]2;{}\x07", terminal::clean(title, 200))?;
   }
   Ok(())
 }
@@ -988,7 +1030,7 @@ fn report(session: &mut Session, result: Result<()>) {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::decode::{Button, Mouse, Reply, Spot};
+  use crate::decode::{Button, Mouse, Spot};
   use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind};
 
   #[test]
@@ -1000,6 +1042,13 @@ mod tests {
     let mouse = |kind, at| Event::Mouse(Mouse { kind, at, modifiers: none });
     let cell = Spot::Cell { column: 1, row: 2 };
     let size = Size { rows: 24, columns: 80, height: 384, width: 640 };
+    let graphics = |id, message: &str| {
+      Event::Reply(Reply::Graphics {
+        id,
+        placement: Some(1),
+        message: message.into(),
+      })
+    };
     let click = MouseEvent {
       kind: MouseEventKind::Down(MouseButton::Left),
       column: 1,
@@ -1018,6 +1067,9 @@ mod tests {
       (Event::Leave, None),
       (Event::Focus(true), None),
       (Event::Reply(Reply::Keyboard(5)), None),
+      (graphics(Some(9), "ENOENT:no such image"), Some(Act::Missing(9))),
+      (graphics(Some(9), "OK"), None),
+      (graphics(None, "ENOENT:no such image"), None),
     ];
     for (event, want) in cases {
       let at = format!("{event:?}");

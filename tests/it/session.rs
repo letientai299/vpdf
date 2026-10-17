@@ -438,3 +438,76 @@ fn resize_lays_out_panes_and_start_screen() -> Result<()> {
   assert_eq!((home.screen.columns, home.screen.rows), (100, 30));
   Ok(())
 }
+
+/// Split panes share one `Graphics`: a frame starts and ends it once,
+/// so the next frame keeps every pane's placements and deletes none.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn split_frames_keep_every_pane_placed() -> Result<()> {
+  use vpdf::trace::Drawable;
+  let (mut session, _, _) = split()?;
+  let mut frame = Vec::new();
+  session.draw_frame(&mut frame)?;
+  let placed = |frame: &[u8]| {
+    let text = String::from_utf8_lossy(frame);
+    let mut pairs: Vec<String> = text
+      .split("_Ga=p,")
+      .skip(1)
+      .filter_map(|command| {
+        let mut keys = command.split(',');
+        Some(format!("{},{}", keys.next()?, keys.next()?))
+      })
+      .collect();
+    pairs.sort();
+    pairs
+  };
+  let first = placed(&frame);
+  // Each pane's cursor highlight.
+  assert!(first.len() >= 2, "{first:?}");
+  frame.clear();
+  session.draw_frame(&mut frame)?;
+  assert_eq!(placed(&frame), first);
+  let text = String::from_utf8_lossy(&frame);
+  assert!(!text.contains("a=d,"), "{text}");
+  Ok(())
+}
+
+/// After a resize, the first frame erases every pane row before it
+/// places an image, which removes images `WezTerm` keeps in cells.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn resize_erases_rows_before_placing() -> Result<()> {
+  use vpdf::trace::Drawable;
+  let (mut session, _, _) = split()?;
+  let mut frame = Vec::new();
+  session.draw_frame(&mut frame)?;
+  let screen = Screen {
+    columns: 101,
+    rows: 30,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  session.resize(screen)?;
+  frame.clear();
+  session.draw_frame(&mut frame)?;
+  let text = String::from_utf8_lossy(&frame);
+  // Erases (`CSI n X`) before the first placement, then in all.
+  let erases = |text: &str| {
+    text
+      .split("\x1b[")
+      .skip(1)
+      .filter(|rest| {
+        let digits = rest.chars().take_while(char::is_ascii_digit).count();
+        digits > 0 && rest[digits..].starts_with('X')
+      })
+      .count()
+  };
+  assert!(text.contains("_Ga=p,"), "{text}");
+  let first = text.split("_Ga=p,").next().unwrap_or_default();
+  // The first pane drawn erases its 30 rows before it places a tile,
+  // and both panes erase every row.
+  assert!(erases(first) >= 30, "{}", erases(first));
+  assert!(erases(&text) >= 2 * 30, "{}", erases(&text));
+  Ok(())
+}

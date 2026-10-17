@@ -173,6 +173,36 @@ fn decode() -> Result<()> {
   })
 }
 
+/// A warm frame of the corpus paper, scrolled 4 px from the last one,
+/// with every visible tile resident; prints the frame's bytes too.
+fn frame() -> Result<()> {
+  let mut app = paper(false)?;
+  let base = app.reader.scroll;
+  for scroll in [base, base + 4.0] {
+    for key in vpdf::tiles::visible(&app.layout, scroll) {
+      if !app.graphics.contains(&key) {
+        let tile = vpdf::tiles::render(&mut app.doc, key)?;
+        app.graphics.upload(&tile, &mut io::sink())?;
+      }
+    }
+  }
+  let mut out = Vec::with_capacity(64 * 1024);
+  let mut step = 0_u32;
+  let mut draw = |out: &mut Vec<u8>| {
+    app.reader.scroll = base + f32::from(u8::from(step % 2 == 1)) * 4.0;
+    step += 1;
+    out.clear();
+    app.draw(out).expect("resident tiles");
+  };
+  draw(&mut out);
+  draw(&mut out);
+  writeln!(io::stdout(), "App::draw bytes {}", out.len())?;
+  measure("App::draw scroll", || {
+    draw(&mut out);
+    black_box(&out);
+  })
+}
+
 /// A file `mise corpus` fetches; `mise bench:micro` sets `VPDF_CORPUS`.
 fn corpus(name: &str) -> Result<PathBuf> {
   let root = std::env::var_os("VPDF_CORPUS").ok_or_else(|| {
@@ -273,6 +303,7 @@ const CASES: &[(&str, Case)] = &[
   ("handle open", handle_open),
   ("handle bounds", handle_bounds),
   ("menu_rows", menu_rows),
+  ("frame", frame),
 ];
 
 fn main() -> Result<()> {

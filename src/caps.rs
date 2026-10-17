@@ -375,6 +375,14 @@ impl Caps {
     }
   }
 
+  /// Whether what answered keeps a title stack (`CSI 22/23 t`), so a
+  /// title vpdf sets goes at exit; Ghostty, `WezTerm`, and Konsole ignore
+  /// the stack. Under tmux the title is the pane's, which reaches the
+  /// client only with `set-titles on`, off by default.
+  pub fn title_stack(&self) -> bool {
+    !is(self.version.as_deref(), &["ghostty", "wezterm", "konsole"])
+  }
+
   pub fn profile(&self) -> Profile {
     let named = self.terminal().map_or(Named::Unknown, named);
     let lack = match (&self.host, named) {

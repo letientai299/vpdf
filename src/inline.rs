@@ -49,7 +49,8 @@ pub fn print(
     &Colorspace::device_rgb(),
     false,
   )?;
-  let id = image_id();
+  let tmux = crate::terminal::tmux();
+  let id = image_id(tmux);
   let (pixels_wide, pixels_high) = (pixmap.width(), pixmap.height());
   let encoded = encode(pixmap.samples())?;
   let control = format!(
@@ -57,13 +58,30 @@ pub fn print(
     width as u32, height as u32
   );
   transmit(out, &control, &encoded)?;
-  let [_, r, g, b] = id.to_be_bytes();
-  for (index, row) in DIACRITICS[..height as usize].iter().enumerate() {
+  placeholders(out, id, tmux, (width as usize, height as usize))
+}
+
+/// The placeholder cells of image `id`, which their foreground color
+/// names: 24-bit, or a 256-color index under tmux, which turns a 24-bit
+/// color into an index when the outer terminal lacks the RGB feature.
+fn placeholders(
+  out: &mut impl Write,
+  id: u32,
+  tmux: bool,
+  (columns, rows): (usize, usize),
+) -> Result<()> {
+  let color = if tmux {
+    format!("\x1b[38;5;{id}m")
+  } else {
+    let [_, r, g, b] = id.to_be_bytes();
+    format!("\x1b[38;2;{r};{g};{b}m")
+  };
+  for (index, row) in DIACRITICS[..rows].iter().enumerate() {
     if index > 0 {
       writeln!(out)?;
     }
-    write!(out, "\x1b[38;2;{r};{g};{b}m")?;
-    for column in &DIACRITICS[..width as usize] {
+    out.write_all(color.as_bytes())?;
+    for column in &DIACRITICS[..columns] {
       write!(out, "\u{10EEEE}{row}{column}")?;
     }
     write!(out, "\x1b[39m")?;
@@ -71,8 +89,32 @@ pub fn print(
   Ok(())
 }
 
-/// A 24-bit id carried in the placeholder foreground color.
-fn image_id() -> u32 {
+/// An id the placeholder color carries: 24 bits, or 1-255 under tmux.
+fn image_id(tmux: bool) -> u32 {
   let mixed = std::process::id().wrapping_mul(2_654_435_761);
-  (mixed & 0x00FF_FFFF).max(1)
+  if tmux { mixed % 255 + 1 } else { (mixed & 0x00FF_FFFF).max(1) }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn placeholder_color_carries_the_id() -> Result<()> {
+    // (id, tmux) -> first row's color and cells
+    let cases =
+      [(0x01_02_03, false, "\x1b[38;2;1;2;3m"), (200, true, "\x1b[38;5;200m")];
+    for (id, tmux, color) in cases {
+      let mut out = Vec::new();
+      placeholders(&mut out, id, tmux, (2, 2))?;
+      let text = String::from_utf8(out)?;
+      let first = format!("{color}\u{10EEEE}\u{305}\u{305}");
+      assert!(text.starts_with(&first), "{text:?}");
+      assert_eq!(text.matches(color).count(), 2, "{text:?}");
+      assert_eq!(text.matches('\u{10EEEE}').count(), 4);
+    }
+    assert!((1..=255).contains(&image_id(true)));
+    assert!((1..=0xFF_FFFF).contains(&image_id(false)));
+    Ok(())
+  }
 }

@@ -225,6 +225,23 @@ fn pointer_shapes_answer_or_ghostty() {
   }
 }
 
+#[test]
+fn title_stack_follows_what_answered() {
+  let cases = [
+    (Route::Direct, "kitty(0.49.1)", true),
+    (Route::Direct, "iTerm2 3.7.6", true),
+    (Route::Direct, "ghostty 1.3.1", false),
+    (Route::Direct, "WezTerm 20240203-110809-5046fc22", false),
+    (Route::Direct, "Konsole 260802", false),
+    // tmux keeps the title as the pane's, whatever its client.
+    (tmux_with(Some("ghostty 1.3.1")), "tmux 3.8", true),
+  ];
+  for (route, name, want) in cases {
+    let caps = caps(route, &replies(&named_da1(name)));
+    assert_eq!(caps.title_stack(), want, "{name}");
+  }
+}
+
 /// GNU screen gets no write; the cell round follows the first only
 /// without TIOCGWINSZ pixels, and its report fills `cell`.
 #[test]
