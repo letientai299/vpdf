@@ -6,6 +6,7 @@ Visual w b e: word motions
 Visual 0 ^ $: line motions
 Visual { }: previous / next paragraph
 [count]gg G: page jump
+[count][[ ]]: previous / next heading; record jump
 Space Shift-Space: next / previous page
 Ctrl-o Ctrl-i '': jump back / forward
 ma mA: mark here / across documents

@@ -319,6 +319,10 @@ impl App {
           self.target = Some(self.reader.cursor);
         }
       }
+      Action::Section(forward) => {
+        self.move_section(forward, count)?;
+        return Ok(true);
+      }
       Action::Yank => self.reader.yank(count, input.register, &mut self.doc)?,
       Action::YankLine => {
         self.reader.yank_lines(count, input.register, &mut self.doc)?;

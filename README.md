@@ -24,6 +24,10 @@ click/jump target, or the first visible text. Text motions belong to Visual;
 `y{motion}` and `yy` also copy from that visible entry point. `o` swaps ends,
 `gv` restores the last range, and `y` copies and returns Normal.
 
+`[[` and `]]` jump to the heading before or after the viewport in Normal,
+or the active selection end in Visual. Counts repeat heading jumps;
+Ctrl-o and Ctrl-i return through jump history.
+
 Normal shows no glyph cursor. View scrolling preserves selection endpoints;
 zoom, crop, rotation, panels, and resize keep the reading area anchored.
 `K`, Enter, and `*` use a visible click/jump target. A textless view reports

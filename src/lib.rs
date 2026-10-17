@@ -48,6 +48,7 @@ pub mod reader;
 pub mod recent;
 pub mod render_worker;
 pub mod search_worker;
+mod section;
 pub mod selection;
 pub mod session;
 pub mod split;

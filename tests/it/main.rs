@@ -9,6 +9,7 @@ mod navigation;
 mod outline;
 mod paragraphs;
 mod rendering;
+mod sections;
 mod session;
 mod untrusted;
 mod workers;

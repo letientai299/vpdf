@@ -350,6 +350,24 @@ fn projection() -> Result<()> {
   Ok(())
 }
 
+fn key_prefixes() -> Result<()> {
+  for (name, input) in
+    [("Keys::feed navigation", "12j2gg"), ("Keys::feed sections", "2[[3]]")]
+  {
+    let events: Vec<_> = input
+      .chars()
+      .map(|ch| KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+      .collect();
+    measure(name, || {
+      let mut keys = vpdf::keys::Keys::default();
+      for event in &events {
+        black_box(keys.feed(black_box(*event)));
+      }
+    })?;
+  }
+  Ok(())
+}
+
 type Case = fn() -> Result<()>;
 
 const CASES: &[(&str, Case)] = &[
@@ -360,6 +378,7 @@ const CASES: &[(&str, Case)] = &[
   ("route", route),
   ("hover", hover),
   ("decode", decode),
+  ("key prefixes", key_prefixes),
   ("scan whole", scan_whole),
   ("page list", page_list),
   ("crop margins", crop_margins),

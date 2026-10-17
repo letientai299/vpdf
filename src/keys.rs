@@ -39,6 +39,7 @@ impl PanelKind {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
   Motion(Motion),
+  Section(bool),
   Yank,
   YankLine,
   Object(bool),
@@ -143,7 +144,7 @@ impl Keys {
     }
     if !matches!(
       self.prefix.as_str(),
-      "g" | "z" | "i" | "a" | "m" | "'" | "`" | "C-w"
+      "g" | "z" | "i" | "a" | "m" | "'" | "`" | "C-w" | "[" | "]"
     ) {
       self.clear();
     }
@@ -270,6 +271,8 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("w", Action::Motion(M::Word), "next word"),
   ("b", Action::Motion(M::BackWord), "previous word"),
   ("e", Action::Motion(M::EndWord), "word end"),
+  ("[[", Action::Section(false), "previous section"),
+  ("]]", Action::Section(true), "next section"),
   ("{", Action::Motion(M::PreviousParagraph), "previous paragraph"),
   ("}", Action::Motion(M::NextParagraph), "next paragraph"),
   ("0", Action::Motion(M::LineStart), "line start"),
@@ -408,6 +411,34 @@ mod tests {
       keys.feed(key('0')).unwrap().action,
       Action::Motion(Motion::LineStart)
     );
+  }
+
+  #[test]
+  fn section_prefix_counts() {
+    for (text, forward) in [("[[", false), ("]]", true)] {
+      let mut keys = Keys::default();
+      let mut inputs = text.chars().filter_map(|ch| keys.feed(key(ch)));
+      let input = inputs.next().unwrap();
+      assert_eq!(input.action, Action::Section(forward));
+      assert_eq!(input.count, 1);
+      assert!(!input.explicit);
+    }
+    for (prefix, forward) in [('[', false), (']', true)] {
+      let mut keys = Keys::default();
+      keys.feed(key('2'));
+      assert!(keys.feed(key(prefix)).is_none());
+      assert_eq!(keys.pending(), format!("2{prefix}"));
+      assert_eq!(clues(&prefix.to_string()).len(), 1);
+      let input = keys.feed(key(prefix)).unwrap();
+      assert_eq!(input.action, Action::Section(forward));
+      assert_eq!(input.count, 2);
+      assert!(input.explicit);
+      assert_eq!(keys.pending(), "");
+      keys.feed(key(prefix));
+      keys.feed(key('x'));
+      assert!(keys.awaiting().is_none());
+      assert_eq!(keys.feed(key('j')).unwrap().count, 1);
+    }
   }
 
   #[test]
