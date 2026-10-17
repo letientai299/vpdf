@@ -12,8 +12,7 @@ use unicode_width::UnicodeWidthStr;
 
 const HEIGHT: f32 = 0.4;
 const ABOVE: f32 = 6.0;
-const BORDER: usize = 2;
-const ACCENT: [u8; 4] = [60, 120, 230, 255];
+const IMAGE_BORDER: &str = "\x1b[0;38;2;60;120;230;48;2;255;255;255m";
 
 pub struct Preview {
   pub target: Target,
@@ -77,8 +76,13 @@ impl App {
     let layout = &self.layout.pages[page.0];
     let (x, _) = self.layout.origin(page, 0.0);
     let left = (-x).max(0.0) as i32;
-    let width = (layout.width - left as f32)
-      .min(self.layout.screen.width() * 0.95) as i32;
+    let screen = self.layout.screen;
+    let cell_width = i32::from(screen.cell_width);
+    let width = ((layout.width - left as f32).min(screen.width() * 0.95)
+      as i32
+      / cell_width)
+      .min(i32::from(screen.columns.saturating_sub(2)))
+      * cell_width;
     let height = (self.preview_rows() as f32
       * f32::from(self.layout.screen.cell_height))
     .min(layout.height) as i32;
@@ -100,8 +104,7 @@ impl App {
     let (width, height) = (key.width, key.height);
     let area = IRect::new(key.x, key.y, key.x + width, key.y + height);
     let pixmap = raster_area(&mut self.doc, &key, area)?;
-    let mut rgb = pixmap.samples().to_vec();
-    frame(&mut rgb, width as usize, height as usize);
+    let rgb = pixmap.samples().to_vec();
     Ok(View::Image { key, rgb })
   }
 
@@ -170,7 +173,7 @@ impl App {
     let cell = f32::from(screen.cell_height);
     match &preview.view {
       View::Image { key, .. } => (
-        (key.width as usize / usize::from(screen.cell_width)).saturating_sub(2),
+        key.width as usize / usize::from(screen.cell_width),
         (key.height as f32 / cell).ceil() as usize,
         (
           key.y > 0,
@@ -194,17 +197,14 @@ impl App {
     let screen = self.layout.screen;
     let x =
       (column - usize::from(self.left)) as f32 * f32::from(screen.cell_width);
-    for row in [top, top + rows + 1] {
-      let y = row as f32 * f32::from(screen.cell_height);
-      let rect = Bounds {
-        x0: x,
-        y0: y,
-        x1: x + (columns + 2) as f32 * f32::from(screen.cell_width),
-        y1: y + f32::from(screen.cell_height),
-      };
-      self.graphics.backdrop(rect, ACCENT, screen, self.left, out)?;
-    }
-    Ok(())
+    let y = top as f32 * f32::from(screen.cell_height);
+    let rect = Bounds {
+      x0: x,
+      y0: y,
+      x1: x + (columns + 2) as f32 * f32::from(screen.cell_width),
+      y1: y + (rows + 2) as f32 * f32::from(screen.cell_height),
+    };
+    self.graphics.backdrop(rect, [255; 4], screen, self.left, out)
   }
 
   pub fn draw_preview(&mut self, out: &mut impl Write) -> Result<()> {
@@ -242,16 +242,29 @@ impl App {
       self.preview_backdrop(out, (top, column), (rows, columns))?;
     }
     let Some(preview) = &self.peek else { return Ok(()) };
+    let border = match preview.view {
+      View::Image { .. } => IMAGE_BORDER,
+      View::Text { .. } => theme::CURRENT,
+    };
     write!(
       out,
       "{}{}╭{label}{rule}╮{}",
       self.at.goto(top, column),
-      theme::BAR,
+      border,
       theme::RESET
     )?;
     match &preview.view {
       View::Image { key, rgb } => {
-        let x = (column - usize::from(self.left)) as f32
+        let pad = " ".repeat(columns);
+        for row in top + 1..=top + rows {
+          write!(
+            out,
+            "{}{border}│{pad}│{}",
+            self.at.goto(row, column),
+            theme::RESET
+          )?;
+        }
+        let x = (column + 1 - usize::from(self.left)) as f32
           * f32::from(screen.cell_width);
         let y = (top + 1) as f32 * cell;
         let rect = Bounds {
@@ -277,10 +290,10 @@ impl App {
             out,
             "{}{}│{}{text}{}{}│",
             self.at.goto(top + index + 1, column),
-            theme::MUTED,
+            border,
             theme::RESET,
             " ".repeat(pad),
-            theme::MUTED
+            border
           )?;
         }
       }
@@ -291,7 +304,7 @@ impl App {
       out,
       "{}{}╰{marker}{rule}╯{}",
       self.at.goto(top + rows + 1, column),
-      theme::BAR,
+      border,
       theme::RESET
     )?;
     Ok(())
@@ -305,16 +318,4 @@ fn border_label(label: &str, columns: usize, clipped: bool) -> String {
   }
   let label = crate::terminal::clean(label, columns - marker.width() - 3);
   format!(" {label} {marker} ")
-}
-
-fn frame(rgb: &mut [u8], width: usize, height: usize) {
-  for y in 0..height {
-    for x in 0..width {
-      if x < BORDER || y < BORDER || x + BORDER >= width || y + BORDER >= height
-      {
-        let at = (y * width + x) * 3;
-        rgb[at..at + 3].copy_from_slice(&ACCENT[..3]);
-      }
-    }
-  }
 }
