@@ -10,8 +10,9 @@ use vpdf::decode::{Button, Mouse, MouseKind, Spot};
 use vpdf::keys::Action;
 use vpdf::pointer::{Hit, Region};
 use vpdf::prompt::{Prompt, PromptKind};
+use vpdf::reader::SelectionKind;
 use vpdf::session::Session;
-use vpdf::text::PageId;
+use vpdf::text::{PageId, Position};
 use vpdf::trace::Drawable;
 
 /// Page 1 links: page 2, web, itself.
@@ -60,10 +61,14 @@ fn link_pdf(path: &Path) -> Result<()> {
   common::write_pdf(path, &objects, "")
 }
 
-fn session(text_mode: bool) -> Result<(tempfile::TempDir, Session)> {
+/// A session on a PDF `write` makes.
+fn open(
+  write: impl FnOnce(&Path) -> Result<()>,
+  text_mode: bool,
+) -> Result<(tempfile::TempDir, Session)> {
   let directory = tempfile::tempdir()?;
-  let path = directory.path().join("links.pdf");
-  link_pdf(&path)?;
+  let path = directory.path().join("test.pdf");
+  write(&path)?;
   let mut session = Session::new(None);
   session.open(&path, true, screen())?;
   let app = session.app();
@@ -71,10 +76,14 @@ fn session(text_mode: bool) -> Result<(tempfile::TempDir, Session)> {
   if text_mode {
     app.open_panel(vpdf::keys::PanelKind::Text)?;
     app.close_panel()?;
-    app.draw(&mut Vec::new())?;
   }
+  app.draw(&mut Vec::new())?;
   assert_eq!(app.text_mode, text_mode);
   Ok((directory, session))
+}
+
+fn session(text_mode: bool) -> Result<(tempfile::TempDir, Session)> {
+  open(link_pdf, text_mode)
 }
 
 /// Screen cell of pane `index` hitting `want`.
@@ -327,5 +336,287 @@ fn split_panes_hover_and_focus_apart() -> Result<()> {
   assert!(session.tab().panes.iter().any(|app| app.hover_link.is_some()));
   session.draw_frame(&mut Vec::new())?;
   assert!(session.tab().panes.iter().all(|app| app.hover_link.is_none()));
+  Ok(())
+}
+
+fn words(text_mode: bool) -> Result<(tempfile::TempDir, Session)> {
+  let lines = ["alpha beta gamma", "delta epsilon"];
+  open(|path| common::text_pdf(path, &lines), text_mode)
+}
+
+/// Cell whose press lands on `line`, `glyph`.
+fn glyph_cell(
+  session: &mut Session,
+  line: usize,
+  glyph: usize,
+) -> Result<(u16, u16)> {
+  let app = session.app();
+  let page = PageId(0);
+  let want = Position { page, line, glyph };
+  let (columns, rows) = (app.screen.columns, app.screen.rows - 1);
+  for (column, row) in (0..rows).flat_map(|r| (0..columns).map(move |c| (c, r)))
+  {
+    let got = if app.text_mode {
+      Some(app.text_position(column, row)?)
+    } else {
+      app
+        .page_point(column, row, None)
+        .map(|(page, x, y)| {
+          app.doc.text(page).map(|text| text.nearest(page, x, y))
+        })
+        .transpose()?
+    };
+    if got == Some(want)
+      && app.hovered(Region::Page, column, row, None)? == Hit::Text
+    {
+      return Ok((column, row));
+    }
+  }
+  anyhow::bail!("no cell presses {want:?}")
+}
+
+fn at(line: usize, glyph: usize) -> Position {
+  Position { page: PageId(0), line, glyph }
+}
+
+/// Selection ends and kind, if any.
+fn selected(
+  session: &mut Session,
+) -> Option<(Position, Position, SelectionKind)> {
+  let reader = &session.app().reader;
+  reader.selection.map(|s| (s.anchor, reader.cursor, s.kind))
+}
+
+#[test]
+fn click_runs_select_words_lines_and_paragraphs() -> Result<()> {
+  use SelectionKind::{Character, Line};
+  for text_mode in [false, true] {
+    let (_directory, mut session) = words(text_mode)?;
+    let beta = glyph_cell(&mut session, 0, 7)?;
+    // clicks -> selection
+    let cases = [
+      (1, None),
+      (2, Some((at(0, 6), at(0, 9), Character))),
+      (3, Some((at(0, 7), at(0, 7), Line))),
+    ];
+    // Another cell ends each run.
+    let delta = glyph_cell(&mut session, 1, 2)?;
+    for (clicks, want) in cases {
+      click(&mut session, delta)?;
+      for _ in 0..clicks {
+        click(&mut session, beta)?;
+      }
+      assert_eq!(selected(&mut session), want, "text={text_mode} {clicks}");
+    }
+    click(&mut session, delta)?;
+    for _ in 0..4 {
+      click(&mut session, beta)?;
+    }
+    let want = Some((at(0, 0), at(1, 12), Line));
+    assert_eq!(selected(&mut session), want, "text={text_mode}");
+  }
+  Ok(())
+}
+
+#[test]
+fn run_drags_extend_by_word_and_line() -> Result<()> {
+  use MouseEventKind::{Down, Drag, Up};
+  use SelectionKind::{Character, Line};
+  for text_mode in [false, true] {
+    let (_directory, mut session) = words(text_mode)?;
+    let beta = glyph_cell(&mut session, 0, 7)?;
+    let gamma = glyph_cell(&mut session, 0, 12)?;
+    let alpha = glyph_cell(&mut session, 0, 2)?;
+    let delta = glyph_cell(&mut session, 1, 2)?;
+    // (clicks, drag to) -> selection
+    let cases = [
+      (2, gamma, (at(0, 6), at(0, 15), Character)),
+      (2, alpha, (at(0, 9), at(0, 0), Character)),
+      (3, delta, (at(0, 7), at(1, 2), Line)),
+      (4, gamma, (at(0, 0), at(1, 12), Line)),
+    ];
+    for (clicks, to, want) in cases {
+      click(&mut session, delta)?;
+      for _ in 1..clicks {
+        click(&mut session, beta)?;
+      }
+      mouse(&mut session, Down(MouseButton::Left), beta)?;
+      mouse(&mut session, Drag(MouseButton::Left), to)?;
+      mouse(&mut session, Up(MouseButton::Left), to)?;
+      assert_eq!(selected(&mut session), Some(want), "text={text_mode}");
+    }
+  }
+  Ok(())
+}
+
+/// Wheel scrolls keep both selection ends.
+#[test]
+fn wheel_keeps_the_selection() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  let text = cell(&mut session, Hit::Text)?;
+  let beyond = (text.0 + 6, text.1);
+  mouse(&mut session, MouseEventKind::Down(MouseButton::Left), text)?;
+  mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), beyond)?;
+  mouse(&mut session, MouseEventKind::Up(MouseButton::Left), beyond)?;
+  let before = (selected(&mut session), session.app().reader.scroll);
+  mouse(&mut session, MouseEventKind::ScrollDown, text)?;
+  let started = std::time::Instant::now();
+  while session.app().animation.is_some() {
+    session.app().animate();
+    anyhow::ensure!(started.elapsed().as_secs() < 2, "scroll animation");
+    std::thread::sleep(std::time::Duration::from_millis(2));
+  }
+  assert!(session.app().reader.scroll > before.1, "the view moved");
+  assert_eq!(selected(&mut session), before.0);
+  Ok(())
+}
+
+/// An off-screen Cursor glyph does not anchor.
+#[test]
+fn alt_clicks_skip_unseen_cursors() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  let text = cell(&mut session, Hit::Text)?;
+  action(session.app(), Action::Cursor)?;
+  let start = session.app().reader.cursor;
+  session.app().reader.cursor = Position { page: PageId(1), line: 1, glyph: 0 };
+  let alt = MouseEvent {
+    kind: MouseEventKind::Down(MouseButton::Left),
+    column: text.0,
+    row: text.1,
+    modifiers: KeyModifiers::ALT,
+  };
+  session.mouse(alt)?;
+  let anchor = selected(&mut session).map(|(anchor, ..)| anchor);
+  assert_eq!(anchor, Some(start));
+  Ok(())
+}
+
+/// Drags enter Visual; Esc returns.
+#[test]
+fn drags_return_to_their_entry_mode() -> Result<()> {
+  use crossterm::event::{KeyCode, KeyEvent};
+  use vpdf::reader::Mode;
+  let (_directory, mut session) = words(false)?;
+  let alpha = glyph_cell(&mut session, 0, 0)?;
+  let gamma = glyph_cell(&mut session, 0, 12)?;
+  let key = |session: &mut Session, code| {
+    let event = KeyEvent::new(code, KeyModifiers::NONE);
+    session.app().key(event, &mut vpdf::prompt::History::default())
+  };
+  // (enter Cursor first) -> mode after Esc
+  for (cursor, entry) in [(false, Mode::Normal), (true, Mode::Cursor)] {
+    if cursor {
+      key(&mut session, KeyCode::Char('i'))?;
+    }
+    click(&mut session, gamma)?;
+    assert_eq!(session.app().reader.mode(), entry, "a click keeps it");
+    mouse(&mut session, MouseEventKind::Down(MouseButton::Left), alpha)?;
+    mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), gamma)?;
+    mouse(&mut session, MouseEventKind::Up(MouseButton::Left), gamma)?;
+    let visual = Mode::Visual(SelectionKind::Character);
+    assert_eq!(session.app().reader.mode(), visual);
+    key(&mut session, KeyCode::Esc)?;
+    assert_eq!(session.app().reader.mode(), entry);
+  }
+  Ok(())
+}
+
+#[test]
+fn alt_clicks_extend_the_selection() -> Result<()> {
+  let alt = |kind, (column, row): (u16, u16)| MouseEvent {
+    kind,
+    column,
+    row,
+    modifiers: KeyModifiers::ALT,
+  };
+  for text_mode in [false, true] {
+    let (_directory, mut session) = words(text_mode)?;
+    let gamma = glyph_cell(&mut session, 0, 12)?;
+    let delta = glyph_cell(&mut session, 1, 2)?;
+    // (cell) -> selection, from first visible text
+    for (to, want) in [(gamma, at(0, 12)), (delta, at(1, 2))] {
+      session.mouse(alt(MouseEventKind::Down(MouseButton::Left), to))?;
+      session.mouse(alt(MouseEventKind::Up(MouseButton::Left), to))?;
+      let want = Some((at(0, 0), want, SelectionKind::Character));
+      assert_eq!(selected(&mut session), want, "text={text_mode}");
+    }
+    // A target or Cursor glyph anchors.
+    session.app().reader.cancel();
+    let beta = glyph_cell(&mut session, 0, 7)?;
+    click(&mut session, beta)?;
+    session.mouse(alt(MouseEventKind::Down(MouseButton::Left), delta))?;
+    let want = Some((at(0, 7), at(1, 2), SelectionKind::Character));
+    assert_eq!(selected(&mut session), want, "text={text_mode}");
+    session.app().reader.cancel();
+    action(session.app(), Action::Cursor)?;
+    session.app().reader.cursor = at(1, 0);
+    session.mouse(alt(MouseEventKind::Down(MouseButton::Left), gamma))?;
+    let want = Some((at(1, 0), at(0, 12), SelectionKind::Character));
+    assert_eq!(selected(&mut session), want, "text={text_mode}");
+  }
+  Ok(())
+}
+
+#[test]
+fn drags_past_edges_scroll_faster_with_distance() -> Result<()> {
+  use vpdf::decode::Parser;
+  let (_directory, mut session) = session(false)?;
+  let text = cell(&mut session, Hit::Text)?;
+  let rows = session.app().screen.rows;
+  let x = text.0 * 8 + 4;
+  let report = |bytes: String| {
+    let mut events = std::collections::VecDeque::new();
+    let mut parser = Parser::default();
+    parser.set_pixels(true);
+    parser.feed(bytes.as_bytes(), &mut events);
+    match events.pop_front() {
+      Some(vpdf::decode::Event::Mouse(mouse)) => mouse,
+      other => panic!("a mouse report: {other:?}"),
+    }
+  };
+  let last = i32::from(rows - 1) * 16;
+  // (scroll, drag pixel y) -> rows scrolled
+  let cases = [
+    (0.0, last - 8, 0.0),
+    (0.0, last + 8, 1.0),
+    (0.0, last + 64, 5.0),
+    (64.0, 0, -1.0),
+    (64.0, -40, -1.0),
+  ];
+  for (start, y, want) in cases {
+    session.app().reader.scroll = start;
+    let press = format!("\x1b[<0;{x};{}M", text.1 * 16 + 8);
+    session.mouse_report(report(press))?;
+    let before = session.app().reader.scroll;
+    session.mouse_report(report(format!("\x1b[<32;{x};{y}M")))?;
+    let scrolled = (session.app().reader.scroll - before) / 16.0;
+    assert!((scrolled - want).abs() < 0.01, "{y}: {scrolled}");
+    assert!(session.app().reader.selection.is_some(), "the drag selects");
+    session.mouse_report(report(format!("\x1b[<0;{x};{y}m")))?;
+  }
+  // Cells: the status row scrolls one row.
+  session.app().reader.scroll = 0.0;
+  mouse(&mut session, MouseEventKind::Down(MouseButton::Left), text)?;
+  let status = (text.0, rows - 1);
+  mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), status)?;
+  assert!((session.app().reader.scroll - 16.0).abs() < 0.01);
+  mouse(&mut session, MouseEventKind::Up(MouseButton::Left), status)?;
+  Ok(())
+}
+
+/// Text drags land on the scrolled view.
+#[test]
+fn text_edge_drags_track_the_pointer() -> Result<()> {
+  let (_directory, mut session) = session(true)?;
+  let text = cell(&mut session, Hit::Text)?;
+  let edge = (text.0, session.app().screen.rows - 2);
+  mouse(&mut session, MouseEventKind::Down(MouseButton::Left), text)?;
+  for _ in 0..3 {
+    mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), edge)?;
+  }
+  let app = session.app();
+  app.draw(&mut Vec::new())?;
+  let under = app.text_position(edge.0, edge.1)?;
+  assert_eq!(app.reader.cursor.line, under.line);
   Ok(())
 }

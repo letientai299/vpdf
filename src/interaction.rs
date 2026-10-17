@@ -6,7 +6,7 @@ use crate::links::LinkPress;
 use crate::motion::Motion;
 use crate::panel::Panel;
 use crate::pointer::{Hit, Pixel, Region, Route, WHEEL_ROWS, Wheel};
-use crate::reader::{Location, SelectionKind};
+use crate::reader::Location;
 use crate::text::{Bounds, PageId, Position};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEventKind};
 
@@ -273,7 +273,7 @@ impl App {
     Ok(None)
   }
 
-  fn enter_text(&mut self) -> Result<bool> {
+  pub(crate) fn enter_text(&mut self) -> Result<bool> {
     if let Some(target) = self.target
       && self.visible_position(target)?
     {
@@ -612,6 +612,11 @@ impl App {
     match mouse.kind {
       kind if Wheel::of(kind).is_some() => self.page_wheel(route),
       MouseEventKind::Down(MouseButton::Left)
+        if mouse.modifiers.contains(KeyModifiers::ALT) =>
+      {
+        self.page_alt(route)
+      }
+      MouseEventKind::Down(MouseButton::Left)
       | MouseEventKind::Drag(MouseButton::Left)
       | MouseEventKind::Up(MouseButton::Left) => self.page_left(route),
       _ => Ok(()),
@@ -715,27 +720,37 @@ impl App {
       }
     }
     self.animation = None;
-    let pos = if self.text_mode {
-      self.text_position(mouse.column, mouse.row)?
-    } else {
-      let point = self.page_point(mouse.column, mouse.row, route.pixel);
-      let Some((page, x, y)) = point else { return Ok(()) };
-      self.doc.text(page)?.nearest(page, x, y)
-    };
-    if matches!(mouse.kind, MouseEventKind::Drag(_)) {
-      if self.reader.selection.is_none() {
-        self.reader.visual(SelectionKind::Character);
-      }
-      self.reader.cursor = pos;
-    } else {
-      self.reader.end_selection();
-      self.reader.cursor = pos;
-      self.target = Some(pos);
-      if route.clicks >= 2 {
-        self.reader.object(false, &mut self.doc)?;
+    let drag = matches!(mouse.kind, MouseEventKind::Drag(_));
+    if drag {
+      let rows = self.edge_rows(&route);
+      if rows != 0 {
+        self.edge_scroll(rows)?;
       }
     }
-    Ok(())
+    let Some(pos) = self.press_position(&route)? else { return Ok(()) };
+    if drag {
+      return self.drag_select(pos);
+    }
+    self.click_select(pos, route.clicks)
+  }
+
+  /// Alt-left on the page.
+  fn page_alt(&mut self, route: Route) -> Result<()> {
+    self.link_press = LinkPress::Idle;
+    self.animation = None;
+    let Some(pos) = self.press_position(&route)? else { return Ok(()) };
+    self.extend_select(pos)
+  }
+
+  /// Shown glyph nearest a press.
+  fn press_position(&mut self, route: &Route) -> Result<Option<Position>> {
+    let mouse = route.mouse;
+    if self.text_mode {
+      return self.text_position(mouse.column, mouse.row).map(Some);
+    }
+    let point = self.page_point(mouse.column, mouse.row, route.pixel);
+    let Some((page, x, y)) = point else { return Ok(None) };
+    Ok(Some(self.doc.text(page)?.nearest(page, x, y)))
   }
 
   /// Link at a pressed, shown cell.

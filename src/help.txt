@@ -69,6 +69,11 @@ yp: yank full file path
 Click / drag: set N target / select
 Drag from a link: select text
 Double click: select word
+Triple / quadruple click: select line / paragraph
+Drag after double / triple click: extend by word / line
+Drag past top / bottom edge: scroll; farther is faster
+<M-click>: extend selection or start V at entry point
+Drag / click runs: enter V; <Esc> returns to entry mode
 
 # Text objects
 V / y + i/a: inner / around objects

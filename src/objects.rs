@@ -25,47 +25,14 @@ impl Reader {
     count: usize,
     source: &mut impl TextSource,
   ) -> Result<()> {
-    if source.page_text(self.cursor.page)?.glyph(self.cursor).is_none() {
-      self.disarm();
-      return Ok(());
-    }
-    let mut scan = Self::default();
-    scan.cursor = self.cursor;
     let count = count
       .saturating_mul(self.operator.map_or(1, |o| o.count))
       .clamp(1, 10_000);
-    let bounds = match kind {
-      Object::Word | Object::BigWord => {
-        scan.word_span(kind == Object::BigWord, count, source)?
-      }
-      Object::Sentence => scan.sentence_span(count, source)?,
-      Object::Paragraph => scan.paragraph_span(count, source)?,
-      Object::DoubleQuote | Object::SingleQuote => {
-        scan.quote_span(kind, count, source)?
-      }
-      _ => scan.pair_span(kind, count, source)?,
-    };
-    let Some((mut first, mut last)) = bounds else {
+    let span = Self::object_span(self.cursor, kind, around, count, source)?;
+    let Some((first, last)) = span else {
       self.disarm();
       return Ok(());
     };
-    let prose = matches!(
-      kind,
-      Object::Word | Object::BigWord | Object::Sentence | Object::Paragraph
-    );
-    if prose && around && kind != Object::Paragraph {
-      (first, last) = scan.padded(first, last, source)?;
-    } else if !prose && !around {
-      scan.cursor = first;
-      if !scan.advance(1, source)? || scan.cursor >= last {
-        self.disarm();
-        return Ok(());
-      }
-      first = scan.cursor;
-      scan.cursor = last;
-      scan.advance(-1, source)?;
-      last = scan.cursor;
-    }
     if let Some(op) = self.operator.take() {
       self.yank_range(
         first,
@@ -87,6 +54,50 @@ impl Reader {
       self.desired = None;
     }
     Ok(())
+  }
+
+  /// Ends of `count` objects at `at`.
+  pub(crate) fn object_span(
+    at: Position,
+    kind: Object,
+    around: bool,
+    count: usize,
+    source: &mut impl TextSource,
+  ) -> Result<Option<(Position, Position)>> {
+    if source.page_text(at.page)?.glyph(at).is_none() {
+      return Ok(None);
+    }
+    let mut scan = Self::default();
+    scan.cursor = at;
+    let bounds = match kind {
+      Object::Word | Object::BigWord => {
+        scan.word_span(kind == Object::BigWord, count, source)?
+      }
+      Object::Sentence => scan.sentence_span(count, source)?,
+      Object::Paragraph => scan.paragraph_span(count, source)?,
+      Object::DoubleQuote | Object::SingleQuote => {
+        scan.quote_span(kind, count, source)?
+      }
+      _ => scan.pair_span(kind, count, source)?,
+    };
+    let Some((mut first, mut last)) = bounds else { return Ok(None) };
+    let prose = matches!(
+      kind,
+      Object::Word | Object::BigWord | Object::Sentence | Object::Paragraph
+    );
+    if prose && around && kind != Object::Paragraph {
+      (first, last) = scan.padded(first, last, source)?;
+    } else if !prose && !around {
+      scan.cursor = first;
+      if !scan.advance(1, source)? || scan.cursor >= last {
+        return Ok(None);
+      }
+      first = scan.cursor;
+      scan.cursor = last;
+      scan.advance(-1, source)?;
+      last = scan.cursor;
+    }
+    Ok(Some((first, last)))
   }
 
   pub(crate) fn lexical_motion(

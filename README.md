@@ -93,6 +93,13 @@ page label and outline section, or the web address. A click follows the link
 and records a jump; a drag that starts on a link selects text. The mouse back
 and forward buttons act as Ctrl-o and Ctrl-i in the pane under the pointer.
 
+A drag selects characters; a double click selects a word, a triple click a line,
+and a fourth click the paragraph. Dragging after a double or triple click
+extends by words or lines. Dragging past the top or bottom edge scrolls, faster
+the farther the pointer goes; above the window it scrolls one row per move.
+Alt-click moves the selection's free end, or starts Visual from the same entry
+point as `v`. Pointer selections return to their entry mode on Esc.
+
 `K` owns its preview: `j`/`k` scroll rows, Ctrl-d/Ctrl-u scroll half its
 height, and Enter follows the original destination. Counts apply to scrolling.
 The border shows the destination page label and arrows at clipped edges.

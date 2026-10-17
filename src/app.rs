@@ -148,6 +148,8 @@ pub struct App {
   /// The link the pointer rests on.
   pub hover_link: Option<crate::links::HoverLink>,
   pub(crate) link_press: crate::links::LinkPress,
+  /// How the click run's drag extends.
+  pub(crate) stretch: Option<crate::gestures::Stretch>,
   pub region: Option<crate::region::Region>,
   pub region_job: Option<crate::region::Job>,
   pub region_send: Option<crate::region::Transfer>,
@@ -237,6 +239,7 @@ impl App {
       peek: None,
       hover_link: None,
       link_press: crate::links::LinkPress::Idle,
+      stretch: None,
       region: None,
       region_job: None,
       region_send: None,

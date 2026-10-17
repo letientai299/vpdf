@@ -888,8 +888,11 @@ impl Session {
       focused?;
     }
     let app = &mut self.tab().panes[index];
-    // Kitty reports drags per pixel.
-    let reading = |app: &App| (app.reader.cursor, app.reader.selection);
+    // Per-pixel drags; edges scroll.
+    let reading = |app: &App| {
+      let view = (app.reader.scroll.to_bits(), app.text_top);
+      (app.reader.cursor, app.reader.selection, view)
+    };
     let before =
       matches!(mouse.kind, MouseEventKind::Drag(_)).then(|| reading(app));
     if !gesture {

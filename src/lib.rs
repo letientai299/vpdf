@@ -23,6 +23,7 @@ pub mod find;
 mod fonts;
 pub mod fzf;
 pub mod gate;
+mod gestures;
 pub mod graphics;
 mod grid;
 mod hangup;

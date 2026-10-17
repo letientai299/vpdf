@@ -290,6 +290,50 @@ fn wheel() -> Result<()> {
   Ok(())
 }
 
+/// Row drags: plain, by word, edge.
+fn drag() -> Result<()> {
+  use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+  let event = |kind, column| MouseEvent {
+    kind,
+    column,
+    row: 20,
+    modifiers: KeyModifiers::NONE,
+  };
+  for clicks in [1, 2] {
+    let mut session = vpdf::session::Session::new(None);
+    session.open(&corpus("paper.pdf")?, true, PANE)?;
+    session.app().command("2")?;
+    let press = MouseEventKind::Down(MouseButton::Left);
+    for _ in 1..clicks {
+      session.mouse(event(press, 40))?;
+      session.mouse(event(MouseEventKind::Up(MouseButton::Left), 40))?;
+    }
+    session.mouse(event(press, 40))?;
+    let mut column = 40;
+    measure(&format!("Session::mouse drag clicks={clicks}"), || {
+      column = if column == 80 { 50 } else { 80 };
+      let drag = event(MouseEventKind::Drag(MouseButton::Left), column);
+      black_box(session.mouse(black_box(drag)).expect("drag"));
+    })?;
+  }
+  // The status row scrolls each drag.
+  let mut session = vpdf::session::Session::new(None);
+  session.open(&corpus("paper.pdf")?, true, PANE)?;
+  session.app().command("2")?;
+  let base = session.app().reader.scroll;
+  session.mouse(event(MouseEventKind::Down(MouseButton::Left), 40))?;
+  let mut column = 40;
+  measure("Session::mouse drag edge", || {
+    column = if column == 80 { 50 } else { 80 };
+    session.app().reader.scroll = base;
+    let drag = MouseEvent {
+      row: 39,
+      ..event(MouseEventKind::Drag(MouseButton::Left), column)
+    };
+    black_box(session.mouse(black_box(drag)).expect("drag"));
+  })
+}
+
 /// One terminal read: pointer motion, keys, and a graphics reply, as
 /// kitty sends them while the reader scrolls.
 fn decode() -> Result<()> {
@@ -792,6 +836,7 @@ const CASES: &[(&str, Case)] = &[
   ("projection", projection),
   ("menu_rows", menu_rows),
   ("link hover", link_hover),
+  ("drag", drag),
   ("frame", frame),
   ("viewport", viewport),
   ("transitions", transitions),
