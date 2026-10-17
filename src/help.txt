@@ -84,6 +84,8 @@ Panel file Enter / o: target tab / split; reuse open view
 gt [count]gt: next / nth tab
 gT: previous tab
 :e :tabe: open here / in a new tab
+:e :tabe :split :vsplit <file>: reuse open view first
+Pane changes: keep Visual, queries, panel position and focus
 
 # Command line
 Tab Shift-Tab: list, then cycle completions

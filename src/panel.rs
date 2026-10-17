@@ -384,6 +384,9 @@ impl App {
 
   pub fn open_panel(&mut self, kind: PanelKind) -> Result<()> {
     if kind == PanelKind::Text {
+      if self.panel_focused() {
+        self.blur()?;
+      }
       if self.overview.is_some() {
         self.close_overview();
       }
@@ -402,10 +405,13 @@ impl App {
       }
       return self.relayout();
     }
-    if let Some(panel) = &mut self.panel
-      && panel.kind == kind
-    {
-      panel.focused = true;
+    if self.panel.as_ref().is_some_and(|panel| panel.kind == kind) {
+      if !self.panel_focused() {
+        self.blur()?;
+      }
+      if let Some(panel) = &mut self.panel {
+        panel.focused = true;
+      }
       return self.relayout();
     }
     if matches!(kind, PanelKind::Recent | PanelKind::Marks) {
@@ -417,6 +423,7 @@ impl App {
   }
 
   pub fn show_panel(&mut self, kind: PanelKind, rows: Vec<Row>) -> Result<()> {
+    self.blur()?;
     let mut panel = Panel::new(kind, rows);
     panel.note = self.panel_note(kind);
     panel.height = self.screen.rows;
@@ -452,9 +459,8 @@ impl App {
   /// Covers the pane with `entries` and a card for the selected one,
   /// releasing what the hidden document rebuilds on return.
   pub fn show_recent(&mut self, entries: &[Entry]) -> Result<()> {
+    self.blur()?;
     self.overview = None;
-    self.peek = None;
-    self.hints = None;
     if self.preview.is_some() {
       self.close_text_preview()?;
     }
@@ -475,6 +481,9 @@ impl App {
   }
 
   pub fn close_panel(&mut self) -> Result<()> {
+    if self.panel_focused() {
+      self.blur()?;
+    }
     let covered = self.covered();
     self.panel = None;
     self.relayout()?;
@@ -610,6 +619,9 @@ impl App {
   }
 
   pub fn panel_mouse(&mut self, mouse: MouseEvent) -> Result<()> {
+    if matches!(mouse.kind, MouseEventKind::Down(_)) && !self.panel_focused() {
+      self.blur()?;
+    }
     let covered = self.covered();
     let clicked = self.panel.as_mut().and_then(|panel| panel.pointer(mouse));
     if self.covered() != covered {

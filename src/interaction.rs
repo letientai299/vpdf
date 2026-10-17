@@ -478,6 +478,7 @@ impl App {
     self.peek = None;
     self.hints = None;
     self.cancel_prompt()?;
+    self.last_click = None;
     self.disarm();
     Ok(())
   }
@@ -496,10 +497,12 @@ impl App {
       Region::Overlay | Region::Status => return Ok(()),
       Region::Page | Region::Overview => {}
     }
-    if matches!(mouse.kind, MouseEventKind::Down(_))
-      && let Some(panel) = &mut self.panel
-    {
-      panel.focused = false;
+    if matches!(mouse.kind, MouseEventKind::Down(_)) && self.panel_focused() {
+      self.blur()?;
+      if let Some(panel) = &mut self.panel {
+        panel.focused = false;
+      }
+      self.relayout()?;
     }
     if region == Region::Overview {
       return self.overview_mouse(mouse);

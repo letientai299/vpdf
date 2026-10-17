@@ -43,6 +43,9 @@ selection and panel state. Ctrl-o/Ctrl-i navigate history; prompt Tab completes.
 Panel commands focus their list. Enter follows a row in Normal while keeping
 the list; `o` or a row click keeps panel focus. An unopened document opens in a
 new tab with Enter, or a split with `o`/click; an open view is reused.
+`:e`, `:tabe`, `:split <file>`, and `:vsplit <file>` also focus an existing
+view before applying placement. Pane changes keep Visual ranges, committed
+searches, panel position, and local focus; incomplete input clears.
 `gq` or panel-local `q` closes the list. Overview occupies the content slot.
 Hover and wheel preserve keyboard focus. Clicking outside a prompt or preview
 dismisses it; the next click activates the underlying surface.

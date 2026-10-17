@@ -39,11 +39,10 @@ const COVERED: [&str; 21] = [
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
     if input.action == Action::LocalFocus {
-      self.hints = None;
-      self.peek = None;
-      if self.panel.is_some() {
-        self.disarm();
+      if self.panel.is_none() {
+        return Ok(());
       }
+      self.blur()?;
       if let Some(panel) = &mut self.panel {
         panel.focused = !panel.focused;
         self.relayout()?;

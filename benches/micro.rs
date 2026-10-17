@@ -473,6 +473,31 @@ fn routing_panel_press() -> Result<()> {
   })
 }
 
+fn transitions() -> Result<()> {
+  use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+  let app = paper(false)?;
+  let mut session = vpdf::session::Session::new("", false, None);
+  session.open(&app.path, true, app.screen)?;
+  session.app().command("vsplit")?;
+  session.settle()?;
+  measure("Session::mouse pane press", || {
+    let column = if session.app().at.column == 0 { 90 } else { 10 };
+    let mouse = MouseEvent {
+      kind: MouseEventKind::Down(MouseButton::Left),
+      column,
+      row: 39,
+      modifiers: KeyModifiers::NONE,
+    };
+    session.mouse(black_box(mouse)).expect("pane press");
+  })?;
+  session.open(&corpus("book.pdf")?, true, app.screen)?;
+  measure("Session::activate", || {
+    session.activate(black_box(1 - session.active)).expect("tab activation");
+  })?;
+  let mut app = paper(false)?;
+  measure("App::blur", || app.blur().expect("pane blur"))
+}
+
 type Case = fn() -> Result<()>;
 
 const CASES: &[(&str, Case)] = &[
@@ -496,6 +521,7 @@ const CASES: &[(&str, Case)] = &[
   ("menu_rows", menu_rows),
   ("frame", frame),
   ("viewport", viewport),
+  ("transitions", transitions),
   ("routing key", routing_key),
   ("routing pointer", routing_pointer),
   ("routing status", routing_status),

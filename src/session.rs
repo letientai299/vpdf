@@ -9,7 +9,7 @@ use crate::layout::Screen;
 use crate::pace::Pacer;
 use crate::pointer::{self, Pane, Pointer};
 use crate::prompt::History;
-use crate::split::{Axis, Node, Rect, neighbor};
+use crate::split::{Axis, Direction, Node, Rect, neighbor};
 use crate::state::{Mark, State};
 use crate::terminal::{self, At, View};
 use crate::text::PageId;
@@ -44,6 +44,24 @@ impl Tab {
   /// Pane ids in screen order.
   pub fn order(&self) -> Vec<u32> {
     self.tree.leaves()
+  }
+
+  fn detach(&mut self, area: Rect) -> App {
+    let id = self.panes[self.focus].id;
+    let mut rects = Vec::new();
+    self.tree.layout(area, &mut rects);
+    let peer =
+      self.last.filter(|peer| *peer != id && self.index(*peer).is_some());
+    let next = peer.or_else(|| {
+      [Direction::Right, Direction::Down, Direction::Left, Direction::Up]
+        .into_iter()
+        .find_map(|direction| neighbor(&rects, id, direction))
+    });
+    let app = self.panes.remove(self.focus);
+    self.tree.remove(id);
+    self.focus = next.and_then(|id| self.index(id)).unwrap_or(0);
+    self.last = None;
+    app
   }
 
   /// Runs `work` on pane `index` while it holds the shared graphics,
@@ -259,11 +277,7 @@ impl Session {
     if self.active == tab && self.tabs[tab].focus == pane {
       return Ok(());
     }
-    if let Some(tab) = self.tabs.get_mut(self.active)
-      && let Some(app) = tab.panes.get_mut(tab.focus)
-    {
-      app.blur()?;
-    }
+    self.leave()?;
     let graphics = self.take_graphics();
     let target = &mut self.tabs[tab];
     if target.focus != pane {
@@ -273,6 +287,16 @@ impl Session {
     self.active = tab;
     self.give(graphics);
     self.arrange()
+  }
+
+  fn leave(&mut self) -> Result<()> {
+    if let Some(tab) = self.tabs.get_mut(self.active)
+      && let Some(app) = tab.panes.get_mut(tab.focus)
+    {
+      app.blur()?;
+    }
+    self.pointer.hover();
+    Ok(())
   }
 
   fn give(&mut self, mut graphics: Graphics) {
@@ -338,6 +362,11 @@ impl Session {
   }
 
   fn existing(&self, path: &Path) -> Option<(usize, usize)> {
+    if let Some(tab) = self.tabs.get(self.active)
+      && tab.panes[tab.focus].path == path
+    {
+      return Some((self.active, tab.focus));
+    }
     self.tabs.iter().enumerate().find_map(|(t, tab)| {
       tab.panes.iter().position(|app| app.path == path).map(|p| (t, p))
     })
@@ -353,6 +382,7 @@ impl Session {
     }
     let password = self.password.clone();
     let app = self.load(&path, &password, screen)?;
+    self.leave()?;
     let mut graphics = self.take_graphics();
     if tab || self.tabs.is_empty() {
       let index = if self.tabs.is_empty() { 0 } else { self.active + 1 };
@@ -414,6 +444,7 @@ impl Session {
 
   /// Closes the active tab; the session ends after the last.
   pub fn close(&mut self) -> Result<()> {
+    self.leave()?;
     let mut graphics = self.take_graphics();
     let tab = self.tabs.remove(self.active);
     for app in &tab.panes {
@@ -432,15 +463,10 @@ impl Session {
     if self.tab().panes.len() == 1 {
       return self.close();
     }
+    self.leave()?;
+    let area = self.screen.map_or_default(full);
     let mut graphics = self.take_graphics();
-    let tab = self.tab();
-    let app = tab.panes.remove(tab.focus);
-    tab.tree.remove(app.id);
-    let next = tab.last.and_then(|id| tab.index(id));
-    let next =
-      next.or_else(|| tab.order().first().and_then(|id| tab.index(*id)));
-    tab.focus = next.unwrap_or(0);
-    tab.last = None;
+    let app = self.tab().detach(area);
     self.retire(&app, &mut graphics);
     self.give(graphics);
     self.arrange()
@@ -448,13 +474,18 @@ impl Session {
 
   /// Splits the focused pane; the new pane shows `file` or the same view.
   fn split(&mut self, axis: Axis, file: Option<&Path>) -> Result<()> {
-    let screen = self.app().screen;
-    anyhow::ensure!(Node::fits(axis, full(screen)), "Not enough room");
     // The same document reuses the password that unlocked it.
     let (path, password) = match file {
       Some(file) => (std::fs::canonicalize(file)?, self.password.clone()),
       None => (self.app().path.clone(), self.app().password.clone()),
     };
+    if file.is_some()
+      && let Some((tab, pane)) = self.existing(&path)
+    {
+      return self.focus(tab, pane);
+    }
+    let screen = self.app().screen;
+    anyhow::ensure!(Node::fits(axis, full(screen)), "Not enough room");
     let mut app = self.load(&path, &password, screen)?;
     if file.is_none() {
       app.mirror(self.app())?;
@@ -536,6 +567,10 @@ impl Session {
 
   /// `Ctrl-w o`: closes every pane but the focused one.
   fn only(&mut self) -> Result<()> {
+    if self.tab().panes.len() == 1 {
+      return Ok(());
+    }
+    self.leave()?;
     let tab = self.tab();
     let keep = tab.panes[tab.focus].id;
     let closing: Vec<_> =
@@ -556,12 +591,10 @@ impl Session {
     if self.tab().panes.len() == 1 {
       return Ok(());
     }
+    self.leave()?;
+    let area = self.screen.map_or_default(full);
     let graphics = self.take_graphics();
-    let tab = self.tab();
-    let app = tab.panes.remove(tab.focus);
-    tab.tree.remove(app.id);
-    tab.focus = tab.order().first().and_then(|id| tab.index(*id)).unwrap_or(0);
-    tab.last = None;
+    let app = self.tab().detach(area);
     self.tabs.insert(self.active + 1, Tab::new(app));
     self.active += 1;
     self.give(graphics);
@@ -603,6 +636,7 @@ impl Session {
         self.window(command, (count, explicit), file.as_deref())
       }
       Some(Request::Panel(kind)) => {
+        self.pointer.hover();
         if kind == PanelKind::Recent {
           self.record();
           let recent = self.state.recent.clone();
@@ -730,6 +764,7 @@ impl Session {
     let Some(index) = self.tab().index(route.pane) else { return Ok(()) };
     if route.focus {
       self.focus(self.active, index)?;
+      self.pointer.route(&panes, route.pane, mouse);
     }
     self.tab().panes[index].mouse(route)
   }
@@ -1140,11 +1175,16 @@ fn input(session: &mut Session, act: Act, out: &mut impl Write) -> Result<()> {
     Act::Key(key) => {
       let tab = &mut session.tabs[session.active];
       let app = &mut tab.panes[tab.focus];
+      let before = app.panel.as_ref().filter(|p| p.focused).map(|p| p.kind);
       app.reader.message.clear();
       app.error = None;
       // Clues close even when the key fails.
       let result = app.key(key, &mut session.history);
       app.after_key();
+      let after = app.panel.as_ref().filter(|p| p.focused).map(|p| p.kind);
+      if before != after {
+        session.pointer.hover();
+      }
       result
     }
     Act::Paste(text) => {
@@ -1485,5 +1525,85 @@ mod tests {
       let at = format!("{event:?}");
       assert_eq!(act(event), want, "{at}");
     }
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn local_keys_clear_capture() -> Result<()> {
+    let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+    let screen = Screen {
+      columns: 121,
+      rows: 40,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut session = Session::new("", false, None);
+    session.open(&root.join("book.pdf"), true, screen)?;
+    let mut events = std::collections::VecDeque::new();
+    let mut parser = crate::decode::Parser::default();
+    for bytes in [
+      &b":page 30\r\x1b[<0;30;10M\x1b[<32;35;12M"[..],
+      &b"\t"[..],
+      &b"\x1b[<32;100;32M\x1b[<0;100;32m"[..],
+    ] {
+      if bytes == b"\t" {
+        session.app().open_panel(PanelKind::Help)?;
+      }
+      let cursor = session.app().reader.cursor;
+      parser.feed(bytes, &mut events);
+      for event in events.drain(..) {
+        let act = act(event).expect("actionable bytes");
+        input(&mut session, act, &mut Vec::new())?;
+        session.settle()?;
+      }
+      if bytes.starts_with(b"\x1b[<32;100") {
+        assert_eq!(session.app().reader.cursor, cursor);
+      }
+    }
+    assert!(session.app().reader.selection.is_some());
+    assert!(!session.app().panel_focused());
+    Ok(())
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn deferred_panels_clear_capture() -> Result<()> {
+    let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+    let screen = Screen {
+      columns: 121,
+      rows: 40,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    for command in [b":recent\r".as_slice(), b":marks\r".as_slice()] {
+      let mut session = Session::new("", false, None);
+      session.open(&root.join("book.pdf"), true, screen)?;
+      let mut events = std::collections::VecDeque::new();
+      let mut parser = crate::decode::Parser::default();
+      for bytes in [
+        b":page 30\r\x1b[<0;30;10M\x1b[<32;35;12M".as_slice(),
+        command,
+        b"\x1b[<32;40;15M\x1b[<0;40;15m".as_slice(),
+      ] {
+        let cursor = session.app().reader.cursor;
+        parser.feed(bytes, &mut events);
+        for event in events.drain(..) {
+          input(
+            &mut session,
+            act(event).expect("input bytes"),
+            &mut Vec::new(),
+          )?;
+          session.settle()?;
+        }
+        if bytes.starts_with(b"\x1b[<32;40") {
+          assert_eq!(session.app().reader.cursor, cursor);
+        }
+      }
+      assert!(session.app().panel_focused());
+      assert!(session.app().reader.selection.is_some());
+    }
+    Ok(())
   }
 }
