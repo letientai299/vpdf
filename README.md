@@ -13,20 +13,20 @@ brew install letientai299/tap/vpdf
 vpdf document.pdf
 ```
 
-The tap follows successful `main` releases. Run `brew update` and
+The tap follows successful builds of the `main` branch. Run `brew update` and
 `brew upgrade vpdf` to install a newer snapshot.
 
-With [mise][mise], download the rolling `main` build:
+With [mise][mise], download the rolling `dev` build:
 
 ```sh
-mise i github:letientai299/vpdf@main
-mise exec github:letientai299/vpdf@main -- vpdf document.pdf
+mise i github:letientai299/vpdf@dev
+mise exec github:letientai299/vpdf@dev -- vpdf document.pdf
 ```
 
 Prebuilt binaries support Linux x86-64 and macOS ARM64. Successful CI on `main`
 updates this prerelease. It tracks development and can contain breaking changes.
-To activate it globally, run `mise use -g github:letientai299/vpdf@main`.
-To download a newer build, run `mise i --force github:letientai299/vpdf@main`.
+To activate it globally, run `mise use -g github:letientai299/vpdf@dev`.
+To download a newer build, run `mise i --force github:letientai299/vpdf@dev`.
 
 ### Build from source
 

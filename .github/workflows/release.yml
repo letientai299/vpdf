@@ -34,7 +34,7 @@ jobs:
       group: publish-main
       cancel-in-progress: false
     env:
-      RELEASE_TAG: main
+      RELEASE_TAG: dev
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       snapshot: ${{ steps.release.outputs.snapshot }}
