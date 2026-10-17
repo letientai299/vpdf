@@ -8,6 +8,8 @@ upx = { version = "5.2.1", os = ["linux"] }
 [env]
 # Lets check and build share MuPDF.
 CARGO_BUILD_TARGET = "{{ arch(x64='x86_64', arm64='aarch64') }}-{{ os(macos='apple-darwin', linux='unknown-linux-gnu') }}"
+# Corpus tests and benches; `corpus:huge` fills tmp/huge for ad hoc runs.
+VPDF_CORPUS = "{{config_root}}/tmp/corpus"
 
 [tasks.build]
 description = "Build the optimized reader"
@@ -52,45 +54,42 @@ depends = ["build"]
 run = "sh scripts/install.sh"
 
 [tasks.corpus]
-description = "Fetch and verify public test PDFs"
-run = "sh scripts/corpus.sh"
+description = "Fetch and verify the public test PDFs into tmp/corpus"
+run = "sh scripts/corpus.sh corpus"
+
+[tasks."corpus:huge"]
+description = "Fetch large stress PDFs into tmp/huge for ad hoc runs"
+run = "sh scripts/corpus.sh huge"
 
 [tasks."test:corpus"]
 depends = ["corpus"]
-env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
 run = "cargo test --locked -- --ignored --skip real_ocr_and_cancel"
 
 [tasks."test:ocr"]
 depends = ["corpus"]
-env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
 run = "cargo test --locked --test workers real_ocr_and_cancel -- --ignored"
 
 [tasks.bench]
 description = "Measure real-PDF warm frames and search"
 depends = ["corpus"]
-env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
 run = "cargo bench --locked --bench reader"
 
 [tasks."bench:latency"]
 description = "Measure cold opens, jumps, zooms, and paced scrolling"
 depends = ["corpus"]
-env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
 run = "cargo bench --locked --bench latency"
 
 [tasks."bench:stages"]
 description = "Attribute cold page cost to load, text, list, raster, encode"
 depends = ["corpus"]
-env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
 run = "cargo bench --locked --bench stages"
 
 [tasks."bench:micro"]
 description = "Time single hot functions; arguments filter cases"
-env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
 run = 'cargo bench --locked --bench micro -- {{arg(name="cases", var=true, default="")}}'
 
 [tasks."perf:check"]
 description = "Enforce warm CPU frame and motion budgets"
 depends = ["corpus"]
-env.VPDF_CORPUS = "{{env.HOME}}/.cache/vpdf/corpus"
 env.VPDF_PERF_CHECK = "1"
 run = "cargo bench --locked --bench reader"

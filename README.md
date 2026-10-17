@@ -258,9 +258,12 @@ mise run perf:check
 Rustfmt uses two spaces and an 80-column target; a separate check enforces the
 source width. Clippy rejects performance, complexity, and selected
 maintainability violations. Prek runs formatting, linting, and tests before
-commits. Rumdl formats and checks Markdown. The corpus tasks download public
-PDFs into the local cache and verify their recorded SHA-256 hashes. OCR tests
-require Tesseract; ordinary tests do not.
+commits. Rumdl formats and checks Markdown. `mise run corpus` downloads public
+PDFs into `tmp/corpus` in parallel and verifies their recorded SHA-256 hashes;
+corpus tests and benches read them. `mise run corpus:huge` fetches large stress
+PDFs (a 5,364-page manual, vector maps, scans, a 257 MB poster) into
+`tmp/huge`; no task reads them. OCR tests require Tesseract; ordinary tests do
+not.
 
 `mise run bench` measures real-PDF extraction, tiles, navigation, search, and
 serialized terminal frames. `perf:check` requires warm frame p95 below 8.33 ms,
@@ -274,8 +277,9 @@ per second. It reports input handling time, time to the first and the last
 visible tile, frames with blank tiles, and bytes per frame. `mise run
 bench:stages` splits cold page cost into page load, text extraction, display
 list, tile raster, and encoding. Set `VPDF_EXTRA` to a `PATH`-style list of
-PDFs to measure other documents and `VPDF_COLUMNS` to change the 179-column
-screen.
+PDFs to measure other documents, such as
+`VPDF_EXTRA=tmp/huge/sdm.pdf:tmp/huge/darwin.pdf`, and `VPDF_COLUMNS` to change
+the 179-column screen.
 
 For an interactive trace, run `VPDF_TRACE=/path/frames.jsonl vpdf document.pdf`.
 The file is overwritten. It records frame construction, output flush, consumed
