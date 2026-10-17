@@ -1,5 +1,6 @@
 //! Single hot functions, timed in isolation, so a change is measured
 //! without the noise of whole-reader runs. Arguments filter cases by name.
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use mupdf::IRect;
 use std::hint::black_box;
 use std::io::{self, Write};
@@ -65,8 +66,8 @@ fn clean_marks() -> Result<()> {
   })
 }
 
-/// Text-mode frame; needs `VPDF_CORPUS`.
-fn text_canvas() -> Result<()> {
+/// The corpus paper on a 120x40 pane.
+fn paper(text_mode: bool) -> Result<App> {
   let screen = Screen {
     columns: 120,
     rows: 40,
@@ -74,10 +75,15 @@ fn text_canvas() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let path = corpus("paper.pdf")?;
-  let mut app = App::with_screen(&path, "", true, screen)?;
+  App::with_screen(&corpus("paper.pdf")?, "", text_mode, screen)
+}
+
+/// Text-mode frame.
+fn text_canvas() -> Result<()> {
+  let mut app = paper(true)?;
   // Main's centering draws this same view.
-  let (rows, columns) = (usize::from(screen.rows), usize::from(screen.columns));
+  let (rows, columns) =
+    (usize::from(app.screen.rows), usize::from(app.screen.columns));
   let page = app.reader.cursor.page;
   let text = app.doc.text(page)?;
   let line = text
@@ -94,6 +100,19 @@ fn text_canvas() -> Result<()> {
     out.clear();
     app.text_canvas(&mut out).expect("cached page text");
     black_box(&out);
+  })
+}
+
+/// Rows each frame clips page graphics to while clues show.
+fn menu_rows() -> Result<()> {
+  let mut app = paper(false)?;
+  let prefix = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
+  app.key(prefix, &mut vpdf::prompt::History::default())?;
+  app.awaiting = Instant::now().checked_sub(Duration::from_secs(1));
+  let _ = app.clue_due();
+  assert!(app.clues.is_some());
+  measure("App::menu_rows clues", || {
+    black_box(app.menu_rows());
   })
 }
 
@@ -234,6 +253,7 @@ const CASES: &[(&str, Case)] = &[
   ("document open", document_open),
   ("handle open", handle_open),
   ("handle bounds", handle_bounds),
+  ("menu_rows", menu_rows),
 ];
 
 fn main() -> Result<()> {

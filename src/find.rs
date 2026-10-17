@@ -160,13 +160,7 @@ impl App {
         }
       }
     }
-    if self.panel.as_ref().is_some_and(|p| p.kind == PanelKind::Results) {
-      let rows = self.panel_rows(PanelKind::Results)?;
-      if let Some(panel) = &mut self.panel {
-        panel.rows = rows;
-        panel.selected = panel.selected.min(panel.rows.len().saturating_sub(1));
-      }
-    }
+    self.refill_panel(PanelKind::Results)?;
     Ok(changed)
   }
 

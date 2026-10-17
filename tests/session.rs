@@ -317,7 +317,7 @@ mod pointer {
     for kind in [Down(Left), ScrollDown] {
       session.app().keys.feed(key(KeyCode::Char('g')));
       session.app().awaiting = std::time::Instant::now().checked_sub(second);
-      assert!(session.app().clue_due()?);
+      assert!(session.app().clue_due());
       mouse(&mut session, kind, 40, 38)?;
       let app = session.app();
       assert_eq!(app.reader.cursor, cursor, "{kind:?} on clues");
@@ -330,13 +330,12 @@ mod pointer {
     assert_eq!(session.app().reader.cursor, cursor, "menu rows are inert");
     assert!(session.app().prompt.is_some());
     session.app().key(key(KeyCode::Esc), &mut history)?;
-    let full = |app: &App| app.layout.screen.rows == app.screen.rows;
-    assert!(full(session.app()), "Esc gives back the menu rows");
+    assert_eq!(session.app().menu_rows(), 0, "Esc closes the menu");
     menu(&mut session, &mut history)?;
     let left = session.app().id;
     mouse(&mut session, Down(Left), 90, 10)?;
     let old = pane(&mut session, left);
-    assert!(old.prompt.is_none() && full(old), "blur gives back menu rows");
+    assert!(old.prompt.is_none() && old.menu_rows() == 0, "blur closes it");
     Ok(())
   }
 
@@ -377,8 +376,9 @@ mod pointer {
     mouse(&mut session, Down(Left), 2, 3)?;
     assert!(session.app().overview.is_none(), "a row shows its page");
     assert_ne!(session.app().reader.cursor, cursor);
-    act(&mut session, Action::Overview)?;
+    // The overview takes every key but `:`, so help opens first.
     act(&mut session, Action::Panel(PanelKind::Help))?;
+    act(&mut session, Action::Overview)?;
     mouse(&mut session, Down(Left), 2, 3)?;
     assert!(session.app().overview.is_some(), "help rows keep overview");
     Ok(())
@@ -406,4 +406,32 @@ mod pointer {
     assert!(reader.operator.is_none() && reader.pending_yank.is_none());
     Ok(())
   }
+}
+
+/// Resizing lays out the panes and the start screen.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn resize_lays_out_panes_and_start_screen() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 120,
+    rows: 50,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let small = Screen { columns: 100, rows: 30, ..screen };
+  let mut session = Session::new("", false, None);
+  session.open(&root.join("paper.pdf"), true, screen)?;
+  session.resize(small)?;
+  let app = session.app();
+  assert_eq!((app.screen.columns, app.screen.rows), (100, 30));
+  assert_eq!((app.layout.screen.columns, app.layout.screen.rows), (100, 30));
+  session.app().command("q")?;
+  session.settle()?;
+  session.home = Some(vpdf::home::Home::new(&[], screen));
+  session.resize(small)?;
+  let home = session.home.as_ref().unwrap();
+  assert_eq!((home.screen.columns, home.screen.rows), (100, 30));
+  Ok(())
 }

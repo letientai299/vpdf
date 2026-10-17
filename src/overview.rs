@@ -88,7 +88,8 @@ impl App {
         self.close_overview();
         return Ok(true);
       }
-      _ => return Ok(matches!(input.action, Action::Motion(_))),
+      // The hidden document takes nothing but `:`.
+      _ => return Ok(input.action != Action::Command),
     }
     .min(last);
     Ok(true)
@@ -139,6 +140,7 @@ impl App {
   pub fn overview_canvas(&mut self, out: &mut impl Write) -> Result<()> {
     let grid = self.grid();
     let pages = self.doc.pages.len();
+    let (screen, left) = (self.uncovered(), self.left);
     let Some(overview) = &mut self.overview else { return Ok(()) };
     let row = overview.selected / grid.columns;
     if row < overview.top {
@@ -176,8 +178,7 @@ impl App {
       };
       for key in tiles::cover(whole, 0..w, 0..h) {
         let origin = (x + dx + key.x as f32, y + dy + key.y as f32);
-        let screen = self.layout.screen;
-        if !self.graphics.place_at(&key, origin, screen, self.left, out)? {
+        if !self.graphics.place_at(&key, origin, screen, left, out)? {
           missing.push(key);
         }
         wanted.push(key);
@@ -190,7 +191,6 @@ impl App {
           x1: x + dx + w as f32 + 3.0,
           y1: y + dy + h as f32 + 3.0,
         };
-        let (screen, left) = (self.layout.screen, self.left);
         self.graphics.highlight(ring, [60, 120, 230, 90], screen, left, out)?;
       }
     }

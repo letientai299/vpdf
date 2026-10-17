@@ -36,6 +36,20 @@ pub fn images_lost() -> bool {
   LOST.swap(false, Ordering::Relaxed)
 }
 
+/// Set when a prompt outside the event loop read a resize; only the
+/// session loop clears it.
+static RESIZED: AtomicBool = AtomicBool::new(false);
+
+/// Passes a resize a prompt read on to the event loop.
+pub fn defer_resize() {
+  RESIZED.store(true, Ordering::Relaxed);
+}
+
+/// Whether a deferred resize waits since the last call.
+pub fn resize_deferred() -> bool {
+  RESIZED.swap(false, Ordering::Relaxed)
+}
+
 /// Takes the terminal back after `suspend`.
 pub fn resume() -> Result<()> {
   LOST.store(true, Ordering::Relaxed);

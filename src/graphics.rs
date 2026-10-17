@@ -216,17 +216,19 @@ impl Graphics {
     placement(out, &(control + &offsets(rect, screen)), rect, left, screen)
   }
 
+  /// Places a page tile, cut to the visible area `clip`.
   pub fn place(
     &mut self,
     key: &TileKey,
     layout: &Layout,
     scroll: f32,
+    clip: Screen,
     left: u16,
     out: &mut impl Write,
   ) -> Result<bool> {
     let x = key.x as f32 - layout.pan;
     let y = layout.pages[key.page.0].top + key.y as f32 - scroll;
-    self.place_at(key, (x, y), layout.screen, left, out)
+    self.place_at(key, (x, y), clip, left, out)
   }
 
   /// Places a tile with its top-left at `origin` pixels, uploading a

@@ -576,7 +576,7 @@ impl Session {
     let focused = tab.panes[tab.focus].id;
     let route = self.pointer.route(&panes, focused, mouse);
     if pointer::interrupts(mouse.kind) {
-      self.app().disarm()?;
+      self.app().disarm();
     }
     let Some(route) = route else { return Ok(()) };
     let Some(index) = self.tab().index(route.pane) else { return Ok(()) };
@@ -584,6 +584,21 @@ impl Session {
       self.focus(self.active, index)?;
     }
     self.tab().panes[index].mouse(route)
+  }
+
+  /// Fits the start screen or every pane to a new terminal size.
+  pub fn resize(&mut self, screen: Screen) -> Result<()> {
+    if let Some(home) = &mut self.home {
+      home.screen = screen;
+    }
+    if self.tabs.is_empty() {
+      return Ok(());
+    }
+    self.screen = Some(screen);
+    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+      app.at = At { column: u16::MAX, row: u16::MAX };
+    }
+    self.arrange()
   }
 
   /// Drops cached images after another program had the screen.
@@ -795,20 +810,14 @@ fn input(session: &mut Session, event: Event) -> Result<()> {
       app.error = None;
       // Clues close even when the key fails.
       let result = app.key(key, &mut session.history);
-      let cleared = app.after_key();
-      result.and(cleared)
+      app.after_key();
+      result
     }
     Event::Paste(text) => {
       let tab = &mut session.tabs[session.active];
       tab.panes[tab.focus].paste(&text, &mut session.history)
     }
-    Event::Resize(_, _) => {
-      session.screen = Some(terminal::size()?);
-      for app in session.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
-        app.at = At { column: u16::MAX, row: u16::MAX };
-      }
-      session.arrange()
-    }
+    Event::Resize(_, _) => session.resize(terminal::size()?),
     Event::Mouse(mouse) => session.mouse(mouse),
     _ => Ok(()),
   }
@@ -826,6 +835,11 @@ fn run(session: &mut Session) -> Result<()> {
   let mut watched = Instant::now();
   let mut title = String::new();
   while session.running() {
+    if terminal::resize_deferred() {
+      let resized = terminal::size().and_then(|size| session.resize(size));
+      report(session, resized);
+      dirty = true;
+    }
     if session.tabs.is_empty() {
       session.home(&mut out)?;
       dirty = true;
@@ -856,7 +870,7 @@ fn run(session: &mut Session) -> Result<()> {
     let now = Instant::now();
     let wait = if pending { pacer.wait(now) } else { Duration::from_millis(8) };
     if !event::poll(wait)? {
-      dirty |= session.app().clue_due()?;
+      dirty |= session.app().clue_due();
       let force = watched.elapsed() > Duration::from_secs(2);
       if force {
         watched = Instant::now();
@@ -886,13 +900,18 @@ fn run(session: &mut Session) -> Result<()> {
     }
     touched = Instant::now();
     trace.input();
-    let result = input(session, event);
-    if let Err(error) = result.and_then(|()| session.settle())
-      && !session.tabs.is_empty()
-    {
-      session.app().error = Some(error.to_string());
-    }
+    let result = input(session, event).and_then(|()| session.settle());
+    report(session, result);
     dirty = true;
   }
   Ok(())
+}
+
+/// Shows a failure in the focused pane instead of ending the session.
+fn report(session: &mut Session, result: Result<()>) {
+  if let Err(error) = result
+    && !session.tabs.is_empty()
+  {
+    session.app().error = Some(error.to_string());
+  }
 }

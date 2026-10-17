@@ -15,32 +15,29 @@ pub struct Clues {
 
 impl App {
   /// Shows clues once a prefix has waited `DELAY`; true when shown.
-  pub fn clue_due(&mut self) -> crate::Result<bool> {
+  /// They cover the bottom of the page area, which keeps its size.
+  pub fn clue_due(&mut self) -> bool {
     let due = self.clues.is_none()
       && self.prompt.is_none()
       && self.awaiting.is_some_and(|since: Instant| since.elapsed() >= DELAY);
     if !due {
-      return Ok(false);
+      return false;
     }
     let Some(prefix) = self.keys.awaiting().map(str::to_owned) else {
-      return Ok(false);
+      return false;
     };
     let items = self.clue_items(&prefix);
     if items.is_empty() {
-      return Ok(false);
+      return false;
     }
     self.clues = Some(Clues { items });
-    self.relayout()?;
-    Ok(true)
+    true
   }
 
   /// Hides clues and restarts the wait when a prefix remains.
-  pub fn after_key(&mut self) -> crate::Result<()> {
+  pub fn after_key(&mut self) {
     self.awaiting = self.keys.awaiting().map(|_| Instant::now());
-    if self.clues.take().is_some() {
-      self.relayout()?;
-    }
-    Ok(())
+    self.clues = None;
   }
 
   fn clue_items(&self, prefix: &str) -> Vec<(String, String)> {

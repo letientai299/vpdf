@@ -43,6 +43,15 @@ pub fn ranges(text: &str, query: &str) -> Vec<(usize, usize)> {
     .collect()
 }
 
+impl RowSearch {
+  /// Keeps the saved selection within `rows` rows.
+  pub fn clamp(&mut self, rows: usize) {
+    if let Some((origin, _)) = &mut self.origin {
+      *origin = (*origin).min(rows.saturating_sub(1));
+    }
+  }
+}
+
 impl Panel {
   pub fn searching(&self) -> bool {
     self.search.origin.is_some()
@@ -187,6 +196,20 @@ mod tests {
     panel.heading(false, 1);
     assert_eq!(panel.selected, 2);
     panel.heading(false, 5);
+    assert_eq!(panel.selected, 0);
+  }
+
+  #[test]
+  fn fewer_rows_keep_the_search_origin_in_range() {
+    let fewer = panel(&["# A", "b"]).rows;
+    let mut panel = panel(&["# A", "b", "# C", "d", "e", "f"]);
+    panel.selected = 5;
+    panel.begin_search(false);
+    panel.preview("row");
+    panel.refill(fewer, "");
+    panel.abort_search();
+    assert_eq!(panel.selected, 1);
+    panel.heading(false, 1);
     assert_eq!(panel.selected, 0);
   }
 }

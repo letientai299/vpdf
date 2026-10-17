@@ -575,10 +575,8 @@ fn common_prefix(items: &[String]) -> String {
 }
 
 pub fn password() -> crate::Result<String> {
-  use crossterm::event::{self, Event, KeyEventKind};
   use std::io::{self, Write};
   let mut prompt = Prompt::new(PromptKind::Password);
-  let history = History::default();
   let mut out = io::stdout();
   loop {
     let screen = crate::terminal::size()?;
@@ -590,18 +588,31 @@ pub fn password() -> crate::Result<String> {
       screen.columns,
     )?;
     out.flush()?;
-    let event = match event::read()? {
-      Event::Key(key) if key.kind != KeyEventKind::Release => {
-        prompt.feed(key, &history)
-      }
-      Event::Paste(text) => prompt.paste(&text),
-      _ => continue,
-    };
-    match event {
+    match password_event(&mut prompt, crossterm::event::read()?) {
       PromptEvent::Submit => return Ok(prompt.text),
       PromptEvent::Cancel => anyhow::bail!("Password cancelled"),
       _ => {}
     }
+  }
+}
+
+/// Edits the password line; a resize goes on to the event loop, which
+/// lays out the panes again once the prompt closes.
+fn password_event(
+  prompt: &mut Prompt,
+  event: crossterm::event::Event,
+) -> PromptEvent {
+  use crossterm::event::{Event, KeyEventKind};
+  match event {
+    Event::Key(key) if key.kind != KeyEventKind::Release => {
+      prompt.feed(key, &History::default())
+    }
+    Event::Paste(text) => prompt.paste(&text),
+    Event::Resize(..) => {
+      crate::terminal::defer_resize();
+      PromptEvent::Pending
+    }
+    _ => PromptEvent::Pending,
   }
 }
 
@@ -680,6 +691,18 @@ mod tests {
     assert_ne!(event, PromptEvent::Editor);
     assert_eq!(prompt.paste("secret"), PromptEvent::Edited);
     assert_eq!(prompt.text, "secret");
+  }
+
+  #[test]
+  fn password_prompt_defers_resizes() {
+    use crossterm::event::Event;
+    let mut prompt = Prompt::new(PromptKind::Password);
+    let event = password_event(&mut prompt, Event::Resize(100, 30));
+    assert_eq!(event, PromptEvent::Pending);
+    assert!(crate::terminal::resize_deferred(), "passed on");
+    assert!(!crate::terminal::resize_deferred());
+    let enter = Event::Key(KeyEvent::new(KeyCode::Enter, NONE));
+    assert_eq!(password_event(&mut prompt, enter), PromptEvent::Submit);
   }
 
   #[test]

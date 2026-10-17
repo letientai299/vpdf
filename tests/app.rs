@@ -285,7 +285,9 @@ fn link_hints_follow_typed_labels() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn preview_shows_citation_target() -> Result<()> {
+  use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut history = vpdf::prompt::History::default();
   let screen = Screen {
     columns: 120,
     rows: 50,
@@ -313,6 +315,35 @@ fn preview_shows_citation_target() -> Result<()> {
     assert_eq!(drawn.contains("z=2"), !text_mode);
     assert_eq!(drawn.contains('╭'), text_mode);
     assert_eq!(app.reader.cursor.page, PageId(1), "preview does not move");
+    // A focused panel shows that closing keys cancel nothing else.
+    app.open_panel(PanelKind::Outline)?;
+    let plain = |code| KeyEvent::new(code, KeyModifiers::NONE);
+    let control = |ch| KeyEvent::new(KeyCode::Char(ch), KeyModifiers::CONTROL);
+    for key in [
+      plain(KeyCode::Char('q')),
+      plain(KeyCode::Char('K')),
+      plain(KeyCode::Esc),
+      control('c'),
+      control('['),
+    ] {
+      app.preview_link()?;
+      assert!(app.peek.is_some());
+      app.key(key, &mut history)?;
+      assert!(app.peek.is_none() && !app.quit, "{key:?} only closes it");
+      assert!(app.panel_focused(), "{key:?} cancels nothing");
+    }
+    let on_link = app.reader.cursor;
+    let target = match &link.target {
+      Target::Page(page) | Target::Point { page, .. } => *page,
+      Target::Uri(_) => unreachable!("a document link"),
+    };
+    for key in [plain(KeyCode::Enter), control('m')] {
+      app.reader.cursor = on_link;
+      app.preview_link()?;
+      app.key(key, &mut history)?;
+      assert!(app.peek.is_none(), "{key:?} closes it");
+      assert_eq!(app.reader.cursor.page, target, "{key:?} follows it");
+    }
   }
   Ok(())
 }
@@ -344,6 +375,22 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
     app.draw(&mut out)?;
     std::thread::sleep(Duration::from_millis(5));
   }
+  let view = (app.reader.scroll, app.reader.cursor);
+  for action in [
+    Action::Hints(false),
+    Action::Peek,
+    Action::Result(false),
+    Action::Search(false),
+    Action::Rows(1),
+  ] {
+    press(&mut app, action)?;
+    assert!(app.overview.is_some(), "{action:?} keeps the overview");
+    assert!(app.hints.is_none() && app.peek.is_none() && app.prompt.is_none());
+    assert_eq!((app.reader.scroll, app.reader.cursor), view, "{action:?}");
+    assert!(app.reader.message.is_empty(), "{action:?}");
+  }
+  press(&mut app, Action::Command)?;
+  assert!(app.prompt.take().is_some(), "`:` reaches the command line");
   press(&mut app, Action::Motion(vpdf::motion::Motion::Down))?;
   press(&mut app, Action::Follow)?;
   assert!(app.overview.is_none());
@@ -441,5 +488,118 @@ fn escape_restores_the_previous_search() -> Result<()> {
   app.begin_search(true);
   app.finish_search("", true)?;
   assert!(app.search.query.backward);
+  Ok(())
+}
+
+/// Lowest pixel row any graphics placement in `frame` reaches, with or
+/// without tmux passthrough; a stretched placement spans `r` rows.
+fn placed_bottom(frame: &str, cell_height: u32) -> u32 {
+  let reach = |part: &str| {
+    let (row, rest) = part.split_once(';')?;
+    let control = rest.split_once("\x1b_G")?.1.split_once(';')?.0;
+    let field = |name: &str| {
+      control
+        .split(',')
+        .find_map(|pair| pair.strip_prefix(name)?.parse::<u32>().ok())
+    };
+    let top =
+      (row.parse::<u32>().ok()? - 1) * cell_height + field("Y=").unwrap_or(0);
+    let height = field("r=").map(|rows| rows * cell_height).or(field("h="))?;
+    Some(top + height)
+  };
+  let frame = frame.replace("\x1b\x1b", "\x1b");
+  frame.split("\x1b7\x1b[").skip(1).filter_map(reach).max().unwrap_or(0)
+}
+
+/// Opens a view of the pane, such as the overview.
+type Open = fn(&mut App) -> Result<()>;
+
+fn drawn(app: &mut App) -> Result<String> {
+  let mut out = Vec::new();
+  app.draw(&mut out)?;
+  Ok(String::from_utf8_lossy(&out).into_owned())
+}
+
+/// A frame once rendering stops bringing tiles.
+fn settled(app: &mut App) -> Result<String> {
+  let started = Instant::now();
+  let mut idle = 0;
+  loop {
+    assert!(started.elapsed() < Duration::from_secs(20), "tiles render");
+    idle = if app.raster_updates() { 0 } else { idle + 1 };
+    let frame = drawn(app)?;
+    if frame.contains("z=-2") && idle > 100 {
+      return Ok(frame);
+    }
+    std::thread::sleep(Duration::from_millis(5));
+  }
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
+  use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 120,
+    rows: 40,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
+  let mut history = vpdf::prompt::History::default();
+  let mut key = |app: &mut App, code| {
+    let result = app.key(KeyEvent::new(code, KeyModifiers::NONE), &mut history);
+    app.after_key();
+    result
+  };
+  app.command("page 2")?;
+  // The cursor line sits on the bottom row, under either overlay.
+  let bottom = Action::Align(1.0);
+  app.action(Input {
+    action: bottom,
+    count: 1,
+    explicit: false,
+    register: '"',
+  })?;
+  let scroll = app.reader.scroll;
+  app.relayout()?;
+  assert_eq!(app.reader.scroll, scroll, "the same page area keeps the view");
+  let views: [(&str, Open); 3] = [
+    ("page", |_| Ok(())),
+    ("overview", App::open_overview),
+    ("focused outline", |app| app.open_panel(PanelKind::Outline)),
+  ];
+  // `Esc` after clues closes the overview, so they come last.
+  let menu: &[KeyCode] = &[KeyCode::Char(':'), KeyCode::Tab];
+  let clues: &[KeyCode] = &[KeyCode::Char('g')];
+  for (view, open) in views {
+    for keys in [menu, clues] {
+      open(&mut app)?;
+      let scroll = app.reader.scroll;
+      let full = placed_bottom(&settled(&mut app)?, 16);
+      for &code in keys {
+        key(&mut app, code)?;
+      }
+      // Clues show once a prefix idles.
+      app.awaiting = Instant::now().checked_sub(Duration::from_secs(1));
+      app.clue_due();
+      let rows = app.menu_rows();
+      let uncovered = u32::from(screen.rows - 1 - rows) * 16;
+      let reached = placed_bottom(&drawn(&mut app)?, 16);
+      let at = format!(
+        "{view} {keys:?}: full {full}, reached {reached}, uncovered {uncovered}"
+      );
+      assert!(rows > 0, "{at}");
+      assert_eq!(app.layout.screen.rows, screen.rows, "{at}");
+      assert!(full > uncovered, "the page reaches the overlay: {at}");
+      assert!(reached > 0, "graphics still show: {at}");
+      assert!(reached <= uncovered, "graphics stop above it: {at}");
+      key(&mut app, KeyCode::Esc)?;
+      assert!(app.clues.is_none() && app.prompt.is_none(), "{at}");
+      assert_eq!(app.reader.scroll, scroll, "{at}");
+    }
+  }
   Ok(())
 }

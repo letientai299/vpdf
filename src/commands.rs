@@ -77,15 +77,13 @@ impl App {
       return self.hint_key(key);
     }
     if let Some(peek) = self.peek.take() {
-      // Any key closes the preview; Enter also follows it.
-      match key.code {
-        crossterm::event::KeyCode::Enter => return self.follow(&peek.target),
-        crossterm::event::KeyCode::Char('K')
-        | crossterm::event::KeyCode::Esc => {
-          return Ok(());
-        }
-        _ => {}
-      }
+      // Any key closes the preview.
+      let Some(input) = self.keys.feed(key) else { return Ok(()) };
+      return match input.action {
+        Action::Follow => self.follow(&peek.target),
+        Action::Quit | Action::Cancel | Action::Peek => Ok(()),
+        _ => self.action(input),
+      };
     }
     if self.prompt.is_none() {
       if let Some(input) = self.keys.feed(key) {
@@ -109,7 +107,6 @@ impl App {
     history: &mut History,
     edit: impl FnOnce(&mut Prompt, &History) -> Result<PromptEvent>,
   ) -> Result<()> {
-    let menu = self.menu_rows();
     let Some(prompt) = &mut self.prompt else { return Ok(()) };
     let kind = prompt.kind;
     match edit(prompt, history)? {
@@ -125,7 +122,6 @@ impl App {
       PromptEvent::Submit => {
         let Some(prompt) = self.prompt.take() else { return Ok(()) };
         history.push(prompt.kind, &prompt.text);
-        self.relayout()?;
         match prompt.kind {
           PromptKind::Search(backward) => {
             self.finish_search(&prompt.text, backward)?;
@@ -133,24 +129,16 @@ impl App {
           PromptKind::Command => self.command(&prompt.text)?,
           PromptKind::Password => self.reload_with(&prompt.text)?,
         }
-        return Ok(());
       }
-    }
-    if menu != self.menu_rows() {
-      self.relayout()?;
     }
     Ok(())
   }
 
   /// Closes the prompt; searches return.
   pub fn cancel_prompt(&mut self) -> Result<()> {
-    let menu = self.menu_rows();
     let Some(prompt) = self.prompt.take() else { return Ok(()) };
     if matches!(prompt.kind, PromptKind::Search(_)) {
       self.abort_search()?;
-    }
-    if menu != self.menu_rows() {
-      self.relayout()?;
     }
     Ok(())
   }
@@ -254,7 +242,7 @@ impl App {
       origin.cursor = reader::clamp(origin.cursor, &mut self.doc)?;
     }
     if let Some(panel) = &self.panel {
-      let (kind, selected) = (panel.kind, panel.selected);
+      let kind = panel.kind;
       let rows = self.panel_rows(kind)?;
       // These rows come from the session or refill when work finishes.
       let refills = match kind {
@@ -263,9 +251,9 @@ impl App {
         PanelKind::Outline => self.outline_job.is_some(),
         _ => false,
       };
+      let note = self.panel_note(kind);
       if let Some(panel) = self.panel.as_mut().filter(|_| !rows.is_empty()) {
-        panel.selected = selected.min(rows.len() - 1);
-        panel.rows = rows;
+        panel.refill(rows, note);
       } else if !refills {
         self.panel = None;
       }
@@ -274,6 +262,8 @@ impl App {
       self.rerun(&previous.query)?;
     }
     self.relayout()?;
+    // New pages can move the cursor's glyph.
+    self.ensure_cursor()?;
     self.reader.message = "Reloaded".into();
     Ok(())
   }

@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::keys::{Action, Input};
+use crate::layout::Screen;
 use crate::panel::Panel;
 use crate::pointer::{Region, Route};
 use crate::reader::SelectionKind;
@@ -8,7 +9,7 @@ use crossterm::event::{MouseButton, MouseEventKind};
 use std::time::{Duration, Instant};
 
 impl App {
-  /// Rows the completion list takes above the prompt.
+  /// Rows the completion list or clues cover right above the status row.
   pub fn menu_rows(&self) -> u16 {
     let Some(menu) = self.prompt.as_ref().and_then(|p| p.menu.as_ref()) else {
       return self.clue_rows();
@@ -18,17 +19,30 @@ impl App {
     u16::try_from(layout.visible).unwrap_or(0)
   }
 
-  /// Fits the page area between the panel, menu, and status rows.
+  /// Page area above the menu or clue rows; page graphics stop there.
+  pub fn uncovered(&self) -> Screen {
+    let mut screen = self.layout.screen;
+    screen.rows = screen.rows.saturating_sub(self.menu_rows());
+    screen
+  }
+
+  /// Fits the page area between the panel and the status row. The view
+  /// moves to the cursor only when that area changes size.
   pub fn relayout(&mut self) -> Result<()> {
     self.blank = false;
     let columns = self.screen.columns;
     self.left =
       self.panel.as_ref().map_or(0, |p| Panel::width(p.kind, columns));
-    let menu = self.menu_rows();
+    // A pane can move without changing size.
+    let size = |s: Screen| (s.columns, s.rows, s.cell_width, s.cell_height);
+    let before = size(self.layout.screen);
     self.layout.screen = self.screen;
     self.layout.screen.columns = self.screen.columns.saturating_sub(self.left);
-    self.layout.screen.rows = self.screen.rows.saturating_sub(menu);
     self.layout.reflow(&self.doc.pages);
+    if before == size(self.layout.screen) {
+      self.reader.scroll = self.layout.clamp_scroll(self.reader.scroll);
+      return Ok(());
+    }
     self.ensure_cursor()
   }
 
@@ -154,10 +168,10 @@ impl App {
   }
 
   /// Cancels pending keys, as `Esc` does.
-  pub fn disarm(&mut self) -> Result<()> {
+  pub fn disarm(&mut self) {
     self.keys.clear();
     self.reader.disarm();
-    self.after_key()
+    self.after_key();
   }
 
   /// Closes key-driven state as focus leaves.
@@ -166,7 +180,8 @@ impl App {
     self.peek = None;
     self.hints = None;
     self.cancel_prompt()?;
-    self.disarm()
+    self.disarm();
+    Ok(())
   }
 
   /// Acts on a routed pointer event.

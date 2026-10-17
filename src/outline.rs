@@ -219,10 +219,7 @@ impl App {
     self.outline_job = None;
     self.doc.outline = outline;
     self.doc.inferred = true;
-    if self.panel.as_ref().is_some_and(|p| p.kind == PanelKind::Outline) {
-      let rows = self.panel_rows(PanelKind::Outline)?;
-      self.show_panel(PanelKind::Outline, rows)?;
-    }
+    self.refill_panel(PanelKind::Outline)?;
     Ok(true)
   }
 }

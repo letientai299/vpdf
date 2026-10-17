@@ -89,3 +89,53 @@ fn documents_without_outline_infer_one_in_background() -> Result<()> {
   assert!(book.outline_job.is_none(), "authored outlines stay");
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn inferred_outline_keeps_panel_focus_and_selection() -> Result<()> {
+  use vpdf::keys::PanelKind;
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = vpdf::layout::Screen {
+    columns: 120,
+    rows: 50,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("live.pdf");
+  std::fs::copy(root.join("form.pdf"), &path)?;
+  let mut app = vpdf::app::App::with_screen(&path, "", false, screen)?;
+  let finish = |app: &mut vpdf::app::App| -> Result<()> {
+    let started = std::time::Instant::now();
+    while !app.outline_updates()? {
+      assert!(started.elapsed().as_secs() < 10);
+      std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    Ok(())
+  };
+  // Opened while inferring: rows arrive, and the page keeps the keyboard.
+  app.open_panel(PanelKind::Outline)?;
+  app.panel.as_mut().unwrap().focused = false;
+  finish(&mut app)?;
+  let panel = app.panel.as_ref().unwrap();
+  assert!(panel.rows.len() > 1 && panel.note == "inferred" && !panel.focused);
+  // A reload infers again under the user's focus and selection.
+  for focused in [true, false] {
+    let panel = app.panel.as_mut().unwrap();
+    panel.focused = focused;
+    panel.selected = panel.rows.len() - 1;
+    let selected = panel.selected;
+    app.command("reload")?;
+    finish(&mut app)?;
+    let panel = app.panel.as_ref().unwrap();
+    assert_eq!((panel.focused, panel.selected), (focused, selected));
+    assert_eq!(panel.note, "inferred");
+  }
+  // A rebuild that ships bookmarks drops the note.
+  std::fs::copy(root.join("book.pdf"), &path)?;
+  app.command("reload")?;
+  let panel = app.panel.as_ref().unwrap();
+  assert!(!panel.rows.is_empty() && panel.note.is_empty());
+  Ok(())
+}

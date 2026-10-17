@@ -82,6 +82,18 @@ impl Panel {
     }
   }
 
+  /// Replaces the rows and note, keeping focus and the selection in
+  /// range.
+  pub fn refill(&mut self, rows: Vec<Row>, note: &'static str) {
+    self.selected = self.selected.min(rows.len().saturating_sub(1));
+    if self.top >= rows.len() {
+      self.top = 0;
+    }
+    self.search.clamp(rows.len());
+    self.rows = rows;
+    self.note = note;
+  }
+
   /// Applies list motions; `page` rows per full-screen scroll.
   pub fn navigate(&mut self, input: Input, page: usize) -> bool {
     let last = self.rows.len().saturating_sub(1);
@@ -330,11 +342,30 @@ impl App {
 
   pub fn show_panel(&mut self, kind: PanelKind, rows: Vec<Row>) -> Result<()> {
     let mut panel = Panel::new(kind, rows);
-    if kind == PanelKind::Outline && self.doc.inferred {
-      panel.note = "inferred";
-    }
+    panel.note = self.panel_note(kind);
     self.panel = Some(panel);
     self.relayout()
+  }
+
+  /// Refills an open `kind` panel in place, keeping focus and selection.
+  pub fn refill_panel(&mut self, kind: PanelKind) -> Result<()> {
+    if self.panel.as_ref().is_none_or(|panel| panel.kind != kind) {
+      return Ok(());
+    }
+    let rows = self.panel_rows(kind)?;
+    let note = self.panel_note(kind);
+    if let Some(panel) = &mut self.panel {
+      panel.refill(rows, note);
+    }
+    Ok(())
+  }
+
+  pub(crate) fn panel_note(&self, kind: PanelKind) -> &'static str {
+    if kind == PanelKind::Outline && self.doc.inferred {
+      "inferred"
+    } else {
+      ""
+    }
   }
 
   pub fn close_panel(&mut self) -> Result<()> {
@@ -348,7 +379,8 @@ impl App {
       self.text_mode = previous;
     }
     self.requested.clear();
-    self.relayout()
+    // Text mode moves the cursor without the page view.
+    self.ensure_cursor()
   }
 
   pub fn panel_rows(&mut self, kind: PanelKind) -> Result<Vec<Row>> {

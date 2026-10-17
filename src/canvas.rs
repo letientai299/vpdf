@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::app::App;
+use crate::layout::Screen;
 use crate::reader::SelectionKind;
 use crate::terminal;
 use crate::text::{Bounds, PageId, Position};
@@ -28,6 +29,7 @@ impl App {
   }
 
   pub fn canvas(&mut self, out: &mut impl Write) -> Result<()> {
+    let (screen, left) = (self.uncovered(), self.left);
     let mut tiles = tiles::visible(&self.layout, self.reader.scroll);
     if let Some(animation) = &self.animation {
       self.heading = (animation.target - self.reader.scroll).signum();
@@ -43,7 +45,8 @@ impl App {
         key,
         &self.layout,
         self.reader.scroll,
-        self.left,
+        screen,
+        left,
         out,
       )? {
         missing.push(*key);
@@ -63,10 +66,9 @@ impl App {
       self.worker.request(&missing, urgent);
       self.requested = tiles;
     }
-    self.marks(out)?;
+    self.marks(screen, out)?;
     if self.panel_focused() {
       // The side without focus recedes.
-      let (screen, left) = (self.layout.screen, self.left);
       self.graphics.veil([0, 0, 0, 70], screen, left, out)?;
     }
     Ok(())
@@ -108,7 +110,8 @@ impl App {
     self.panel.as_ref().is_some_and(|panel| panel.focused)
   }
 
-  pub fn marks(&mut self, out: &mut impl Write) -> Result<()> {
+  /// Search hits, the selection, and the cursor, clipped to `screen`.
+  pub fn marks(&mut self, screen: Screen, out: &mut impl Write) -> Result<()> {
     if !self.search.hidden {
       let visible = self.layout.visible(self.reader.scroll);
       let hits = &self.search.hits;
@@ -120,7 +123,7 @@ impl App {
         .map(|hit| (hit.first, hit.last))
         .collect();
       for (first, last) in ranges {
-        self.mark_range(first, last, false, [255, 190, 30, 90], out)?;
+        self.mark_range(first, last, false, [255, 190, 30, 90], screen, out)?;
       }
     }
     if let Some(selection) = self.reader.selection {
@@ -129,6 +132,7 @@ impl App {
         self.reader.cursor,
         selection.kind == SelectionKind::Line,
         [70, 130, 255, 85],
+        screen,
         out,
       )?;
     }
@@ -141,7 +145,7 @@ impl App {
       self.graphics.highlight(
         rect,
         [25, 100, 255, 120],
-        self.layout.screen,
+        screen,
         self.left,
         out,
       )?;
@@ -174,6 +178,7 @@ impl App {
     last: Position,
     linewise: bool,
     color: [u8; 4],
+    screen: Screen,
     out: &mut impl Write,
   ) -> Result<()> {
     let range = crate::motion::range(first, last);
@@ -205,13 +210,7 @@ impl App {
         if let Some(bounds) = bounds {
           let rect =
             self.layout.project(PageId(page), bounds, self.reader.scroll);
-          self.graphics.highlight(
-            rect,
-            color,
-            self.layout.screen,
-            self.left,
-            out,
-          )?;
+          self.graphics.highlight(rect, color, screen, self.left, out)?;
         }
       }
     }
