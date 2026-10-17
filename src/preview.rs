@@ -64,13 +64,20 @@ impl App {
   /// The destination at reading scale, full page width, with a border.
   fn render(&mut self, page: PageId, y: f32) -> Result<(i32, i32, Vec<u8>)> {
     let layout = &self.layout.pages[page.0];
-    let top = crate::layout::transform(
-      Bounds { x0: 0.0, y0: y - ABOVE, x1: 0.0, y1: y - ABOVE },
-      &layout.matrix,
-    )
-    .y0
-    .max(0.0) as i32;
-    let width = (layout.width.min(self.layout.screen.width() * 0.95)) as i32;
+    let (x, y0) = self.layout.origin(page, 0.0);
+    let top = (self
+      .layout
+      .project(
+        page,
+        Bounds { x0: 0.0, y0: y - ABOVE, x1: 0.0, y1: y - ABOVE },
+        0.0,
+      )
+      .y0
+      - y0)
+      .max(0.0) as i32;
+    let left = (-x).max(0.0) as i32;
+    let width = ((layout.width - left as f32)
+      .min(self.layout.screen.width() * 0.95)) as i32;
     let height = (self.layout.screen.height() * HEIGHT)
       .min(layout.height - top as f32) as i32;
     anyhow::ensure!(width > 8 && height > 8, "Preview area too small");
@@ -84,7 +91,6 @@ impl App {
       height: 0,
       crop: self.layout.crop,
     };
-    let left = self.layout.pan.max(0.0) as i32;
     let area = IRect::new(left, top, left + width, top + height);
     let pixmap = raster_area(&mut self.doc, &key, area)?;
     let mut rgb = pixmap.samples().to_vec();

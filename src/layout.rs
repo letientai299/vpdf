@@ -129,12 +129,35 @@ impl Layout {
 
   pub fn project(&self, page: PageId, bounds: Bounds, scroll: f32) -> Bounds {
     let layout = &self.pages[page.0];
+    let (x, y) = self.origin(page, scroll);
     let mut rect = transform(bounds, &layout.matrix);
-    rect.x0 -= self.pan;
-    rect.x1 -= self.pan;
-    rect.y0 += layout.top - scroll;
-    rect.y1 += layout.top - scroll;
+    rect.x0 += x;
+    rect.x1 += x;
+    rect.y0 += y;
+    rect.y1 += y;
     rect
+  }
+
+  pub fn unproject(
+    &self,
+    page: PageId,
+    (x, y): (f32, f32),
+    scroll: f32,
+  ) -> Option<(f32, f32)> {
+    let (left, top) = self.origin(page, scroll);
+    self.pages[page.0]
+      .matrix
+      .invert()
+      .map(|m| m.transform_xy(x - left, y - top))
+  }
+
+  /// Raster origin within the page pane.
+  pub fn origin(&self, page: PageId, scroll: f32) -> (f32, f32) {
+    let layout = &self.pages[page.0];
+    let spare = self.screen.width() - layout.width;
+    let x =
+      if spare >= 0.0 { spare / 2.0 } else { -self.pan.clamp(0.0, -spare) };
+    (x, layout.top - scroll)
   }
 }
 
@@ -170,6 +193,52 @@ mod tests {
       assert!(rect.x0.abs() < 0.001 && rect.y0.abs() < 0.001);
       let width = if angle % 180 == 0 { 100.0 } else { 200.0 };
       assert!((rect.width() - width).abs() < 0.001);
+    }
+  }
+
+  #[test]
+  fn projection_roundtrips() {
+    let pages = [PageInfo {
+      bounds: Bounds { x0: 10.0, y0: 20.0, x1: 210.0, y1: 320.0 },
+      label: String::new(),
+    }];
+    let screen = Screen {
+      columns: 100,
+      rows: 30,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (15, 3),
+    };
+    let mut layout = Layout::new(&pages, screen);
+    let cases = [0, 90, 180, 270].into_iter().flat_map(|rotation| {
+      [0.5, 1.0, 2.0].into_iter().flat_map(move |zoom| {
+        [-100.0, 0.0, 180.0, 10_000.0].map(|pan| (rotation, zoom, pan))
+      })
+    });
+    for (rotation, zoom, pan) in cases {
+      layout.rotation = rotation;
+      layout.zoom = zoom;
+      layout.pan = pan;
+      layout.crop = Crop([50, 100, 150, 50]);
+      layout.reflow(&pages);
+      let spare = screen.width() - layout.pages[0].width;
+      let (left, top) = layout.origin(PageId(0), 27.0);
+      assert!((top + 27.0).abs() < 0.001);
+      if spare >= 0.0 {
+        assert!((left - spare / 2.0).abs() < 0.001);
+      } else {
+        assert!((left + pan.clamp(0.0, -spare)).abs() < 0.001);
+      }
+      for (x, y) in [(30.0, 60.0), (100.0, 150.0), (170.0, 280.0)] {
+        let rect = layout.project(
+          PageId(0),
+          Bounds { x0: x, y0: y, x1: x, y1: y },
+          27.0,
+        );
+        let (px, py) =
+          layout.unproject(PageId(0), (rect.x0, rect.y0), 27.0).unwrap();
+        assert!((px - x).abs() < 0.001 && (py - y).abs() < 0.001);
+      }
     }
   }
 }

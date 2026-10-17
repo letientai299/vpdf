@@ -286,6 +286,28 @@ fn handle_bounds() -> Result<()> {
   })
 }
 
+/// Page-space bounds projected for highlights and hints.
+fn projection() -> Result<()> {
+  let mut app = paper(false)?;
+  let bounds = app.doc.text(PageId(0))?.lines[0].glyphs[0].bounds;
+  for zoom in [0.5, 2.0] {
+    app.layout.zoom = zoom;
+    app.layout.pan = 96.0;
+    app.layout.reflow(&app.doc.pages);
+    measure(&format!("Layout::project zoom {zoom}"), || {
+      black_box(app.layout.project(
+        black_box(PageId(0)),
+        black_box(bounds),
+        27.0,
+      ));
+    })?;
+    measure(&format!("tiles::visible zoom {zoom}"), || {
+      black_box(vpdf::tiles::visible(black_box(&app.layout), 27.0));
+    })?;
+  }
+  Ok(())
+}
+
 type Case = fn() -> Result<()>;
 
 const CASES: &[(&str, Case)] = &[
@@ -302,6 +324,7 @@ const CASES: &[(&str, Case)] = &[
   ("document open", document_open),
   ("handle open", handle_open),
   ("handle bounds", handle_bounds),
+  ("projection", projection),
   ("menu_rows", menu_rows),
   ("frame", frame),
 ];

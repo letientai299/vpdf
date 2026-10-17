@@ -55,12 +55,12 @@ pub fn visible(layout: &Layout, scroll: f32) -> Vec<TileKey> {
   let mut tiles = Vec::new();
   for page in layout.visible(scroll) {
     let data = &layout.pages[page];
-    let left = (layout.pan.max(0.0) as i32 / TILE_WIDTH) * TILE_WIDTH;
-    let top = ((scroll - data.top).max(0.0) as i32 / TILE_HEIGHT) * TILE_HEIGHT;
-    let right = (layout.pan + layout.screen.width()).min(data.width) as i32;
+    let (x, y) = layout.origin(PageId(page), scroll);
+    let left = ((-x).max(0.0) as i32 / TILE_WIDTH) * TILE_WIDTH;
+    let top = ((-y).max(0.0) as i32 / TILE_HEIGHT) * TILE_HEIGHT;
+    let right = (layout.screen.width() - x).min(data.width) as i32;
     let bottom =
-      (scroll - data.top + layout.screen.height() + TILE_HEIGHT as f32)
-        .min(data.height) as i32;
+      (layout.screen.height() - y + TILE_HEIGHT as f32).min(data.height) as i32;
     let whole = TileKey {
       page: PageId(page),
       scale: data.scale,

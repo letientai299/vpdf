@@ -200,3 +200,63 @@ fn worker_tiles_equal_full_page_pixels() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn projected_mouse_tracks_glyphs() -> Result<()> {
+  use crossterm::event::{
+    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+  };
+  use vpdf::app::App;
+  use vpdf::layout::{Crop, Screen};
+  use vpdf::pointer::{Region, Route};
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let screen = Screen {
+    columns: 120,
+    rows: 50,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (12, 3),
+  };
+  for rotation in [0, 90, 180, 270] {
+    for zoom in [0.5, 2.0] {
+      let mut app =
+        App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
+      let anchor = app.reader.cursor;
+      let bounds = app.doc.text(anchor.page)?.glyph(anchor).unwrap().bounds;
+      app.layout.rotation = rotation;
+      app.layout.zoom = zoom;
+      app.layout.pan = 100_000.0;
+      app.layout.crop = Crop([20, 20, 20, 20]);
+      app.layout.reflow(&app.doc.pages);
+      app.ensure_cursor()?;
+      let rect = app.layout.project(anchor.page, bounds, app.reader.scroll);
+      assert!(rect.x0 >= -0.01 && rect.x1 <= screen.width() + 0.01);
+      let column = (f32::midpoint(rect.x0, rect.x1) / 8.0) as u16;
+      let row = (f32::midpoint(rect.y0, rect.y1) / 16.0) as u16;
+      let (x, y) = app
+        .layout
+        .unproject(
+          anchor.page,
+          (f32::from(column) * 8.0, f32::from(row) * 16.0),
+          app.reader.scroll,
+        )
+        .unwrap();
+      let expected = app.doc.text(anchor.page)?.nearest(anchor.page, x, y);
+      let mouse = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+      };
+      app.mouse(Route {
+        pane: app.id,
+        region: Region::Page,
+        focus: true,
+        mouse,
+      })?;
+      assert_eq!(app.reader.cursor, expected, "{rotation} {zoom}");
+    }
+  }
+  Ok(())
+}

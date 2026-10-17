@@ -56,9 +56,11 @@ impl App {
     let anchor = target + self.layout.screen.height() / 2.0;
     let page = self.layout.page_at(anchor);
     let text = self.doc.text(page)?;
-    let layout = &self.layout.pages[page.0];
-    if let Some(inverse) = layout.matrix.invert() {
-      let (x, y) = inverse.transform_xy(self.layout.pan, anchor - layout.top);
+    if let Some((x, y)) = self.layout.unproject(
+      page,
+      (0.0, self.layout.screen.height() / 2.0),
+      target,
+    ) {
       self.reader.cursor = text.nearest(page, x, y);
     }
     Ok(())

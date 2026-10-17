@@ -386,9 +386,8 @@ impl Graphics {
     left: u16,
     out: &mut impl Write,
   ) -> Result<bool> {
-    let x = key.x as f32 - layout.pan;
-    let y = layout.pages[key.page.0].top + key.y as f32 - scroll;
-    self.place_at(key, (x, y), clip, left, out)
+    let (x, y) = layout.origin(key.page, scroll);
+    self.place_at(key, (x + key.x as f32, y + key.y as f32), clip, left, out)
   }
 
   /// Places a tile with its top-left at `origin` pixels, uploading a
@@ -863,6 +862,54 @@ mod tests {
         (c["d"].clone(), number("i").unwrap_or(0), number("p"))
       })
       .collect()
+  }
+
+  #[test]
+  fn centering_moves_resident_tiles() -> Result<()> {
+    use crate::document::PageInfo;
+    use crate::layout::PageLayout;
+    let mut graphics = Graphics::default();
+    let key = tile(&mut graphics, 0)?;
+    let bounds = Bounds { x0: 0.0, y0: 0.0, x1: 64.0, y1: 64.0 };
+    let mut layout =
+      Layout::new(&[PageInfo { bounds, label: String::new() }], SCREEN);
+    layout.pages[0] = PageLayout {
+      top: 0.0,
+      width: 64.0,
+      height: 64.0,
+      scale: key.scale,
+      matrix: mupdf::Matrix::IDENTITY,
+    };
+    let mut output = Vec::new();
+    graphics.begin(&mut output)?;
+    assert!(graphics.place(&key, &layout, 0.0, SCREEN, 0, &mut output)?);
+    graphics.end(&mut output)?;
+    let first =
+      commands(&output).into_iter().find(|c| has(c, &[("a", "p")])).unwrap();
+    let tiles = crate::tiles::visible(&layout, 0.0);
+    layout.screen.columns += 1;
+    assert_eq!(crate::tiles::visible(&layout, 0.0), tiles);
+    output.clear();
+    graphics.begin(&mut output)?;
+    assert!(graphics.place(
+      &key,
+      &layout,
+      0.0,
+      layout.screen,
+      0,
+      &mut output
+    )?);
+    graphics.end(&mut output)?;
+    let placed = commands(&output);
+    assert_eq!(placed.len(), 1);
+    assert!(has(
+      &placed[0],
+      &[("a", "p"), ("i", &first["i"]), ("p", &first["p"])]
+    ));
+    assert_ne!(placed[0]["X"], first["X"]);
+    assert_eq!(graphics.ids.len(), 1);
+    assert_eq!(deletes(&output), []);
+    Ok(())
   }
 
   #[test]
