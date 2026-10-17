@@ -38,12 +38,7 @@ pub struct Home {
 }
 
 impl Home {
-  pub fn new(
-    recent: &[Entry],
-    screen: Screen,
-    password: &str,
-    pictures: bool,
-  ) -> Self {
+  pub fn new(recent: &[Entry], screen: Screen, pictures: bool) -> Self {
     let mut rows = recent_rows(recent);
     if rows.is_empty() {
       rows.push(Row::new(
@@ -53,7 +48,7 @@ impl Home {
       ));
     }
     let mut panel = Panel::new(PanelKind::Recent, rows);
-    panel.shelf = Some(Shelf::new(recent, password));
+    panel.shelf = Some(Shelf::new(recent, ""));
     Self {
       screen,
       error: None,
@@ -247,7 +242,7 @@ mod tests {
       origin: (0, 0),
     };
     let mut out = Vec::new();
-    Home::new(&[], screen, "", false).draw(&mut out)?;
+    Home::new(&[], screen, false).draw(&mut out)?;
     let out = String::from_utf8(out)?;
     let columns = out.split("\x1b[").filter_map(|code| {
       let (row, column) = code.split_once('H')?.0.split_once(';')?;
@@ -297,7 +292,7 @@ mod tests {
       ("/", Outcome::Stay),
       ("", Outcome::Open(file.into())),
     ] {
-      let mut home = Home::new(std::slice::from_ref(&entry), screen, "", false);
+      let mut home = Home::new(std::slice::from_ref(&entry), screen, false);
       let mut history = History::default();
       for ch in typed.chars() {
         let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);

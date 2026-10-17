@@ -205,7 +205,7 @@ fn raw_region_pointer_transfer() -> Result<()> {
   use vpdf::reader::Mode;
   use vpdf::session::Session;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut session = Session::new("", false, None);
+  let mut session = Session::new(false, None);
   session.open(&root.join("paper.pdf"), true, screen())?;
   send(&mut session, b"i]ivgF")?;
   let mode = session.app().reader.mode();

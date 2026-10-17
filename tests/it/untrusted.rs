@@ -147,7 +147,7 @@ fn errors_reach_stderr_clean() -> Result<()> {
   let path = directory.path().join("locked.pdf");
   write_pdf(&path, "/Encrypt << /Filter /Evil#1B#5D2;pwn#07 >>")?;
   let output = std::process::Command::new(env!("CARGO_BIN_EXE_vpdf"))
-    .arg("info")
+    .env(vpdf::inline::VAR, "text")
     .arg(&path)
     .output()?;
   let stderr = String::from_utf8_lossy(&output.stderr);

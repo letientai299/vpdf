@@ -25,7 +25,7 @@ fn split() -> Result<(Session, u32, u32)> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut session = Session::new("", false, None);
+  let mut session = Session::new(false, None);
   session.open(&root.join("book.pdf"), true, screen)?;
   session.app().command("page 30")?;
   let right = session.app().id;
@@ -45,7 +45,7 @@ fn tabs_share_graphics_and_close_in_order() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut session = Session::new("", false, None);
+  let mut session = Session::new(false, None);
   for name in ["book.pdf", "paper.pdf", "form.pdf"] {
     session.open(&root.join(name), true, screen)?;
   }
@@ -95,7 +95,7 @@ fn reopening_restores_position_and_recent_order() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut session = Session::new("", false, Some(store.clone()));
+  let mut session = Session::new(false, Some(store.clone()));
   session.open(&root.join("paper.pdf"), true, screen)?;
   session.open(&root.join("book.pdf"), true, screen)?;
   session.app().command("page 39")?;
@@ -105,7 +105,7 @@ fn reopening_restores_position_and_recent_order() -> Result<()> {
   session.app().command("q")?;
   session.settle()?;
   assert!(session.tabs.is_empty());
-  let mut session = Session::new("", false, Some(store));
+  let mut session = Session::new(false, Some(store));
   let names: Vec<_> = session
     .state
     .recent
@@ -132,7 +132,7 @@ fn marks_persist_and_cross_documents() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut session = Session::new("", false, Some(store.clone()));
+  let mut session = Session::new(false, Some(store.clone()));
   session.open(&root.join("book.pdf"), true, screen)?;
   session.app().command("page 30")?;
   act(&mut session, Action::Mark('a'))?;
@@ -148,7 +148,7 @@ fn marks_persist_and_cross_documents() -> Result<()> {
     session.app().command("q")?;
     session.settle()?;
   }
-  let mut session = Session::new("", false, Some(store));
+  let mut session = Session::new(false, Some(store));
   session.open(&root.join("book.pdf"), true, screen)?;
   act(&mut session, Action::GoMark('a', false))?;
   assert_eq!(session.app().reader.cursor.page.0, 29);
@@ -410,7 +410,7 @@ mod pointer {
       cell_height: 16,
       origin: (0, 0),
     };
-    let mut session = Session::new("", true, None);
+    let mut session = Session::new(true, None);
     session.open(&root.join("book.pdf"), true, screen)?;
     session.app().command("page 30")?;
     act(&mut session, Action::Yank)?;
@@ -436,7 +436,7 @@ fn resize_lays_out_panes_and_start_screen() -> Result<()> {
     origin: (0, 0),
   };
   let small = Screen { columns: 100, rows: 30, ..screen };
-  let mut session = Session::new("", false, None);
+  let mut session = Session::new(false, None);
   session.open(&root.join("paper.pdf"), true, screen)?;
   session.resize(small)?;
   let app = session.app();
@@ -444,7 +444,7 @@ fn resize_lays_out_panes_and_start_screen() -> Result<()> {
   assert_eq!((app.layout.screen.columns, app.layout.screen.rows), (100, 30));
   session.app().command("q")?;
   session.settle()?;
-  session.home = Some(vpdf::home::Home::new(&[], screen, "", false));
+  session.home = Some(vpdf::home::Home::new(&[], screen, false));
   session.resize(small)?;
   let home = session.home.as_ref().unwrap();
   assert_eq!((home.screen.columns, home.screen.rows), (100, 30));

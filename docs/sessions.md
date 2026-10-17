@@ -75,8 +75,8 @@ paragraph's identity across arbitrary document edits.
 
 Opening a document does not automatically launch its links. Explicitly followed
 web links accept HTTP or HTTPS and use the platform opener; other URI schemes
-are rejected. Passwords use a hidden interactive prompt or standard input rather
-than command-line arguments.
+are rejected. Passwords use a hidden interactive prompt rather than command-line
+arguments.
 
 [Clipboard delivery][clipboard] sends OSC 52 and can also invoke a local
 clipboard helper. SSH sessions skip the native helper because it would target

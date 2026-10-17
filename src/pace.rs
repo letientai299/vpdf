@@ -6,19 +6,18 @@
 //! previous deadline rather than from when drawing finished.
 use std::time::{Duration, Instant};
 
-/// Default frame interval: 120 Hz.
+/// Frame interval: 120 Hz.
 pub const FRAME: Duration = Duration::from_micros(8333);
 /// A frame this close to its deadline draws now.
 const EARLY: Duration = Duration::from_micros(250);
 
 pub struct Pacer {
   due: Instant,
-  frame: Duration,
 }
 
 impl Pacer {
-  pub fn new(now: Instant, frame: Duration) -> Self {
-    Self { due: now, frame }
+  pub fn new(now: Instant) -> Self {
+    Self { due: now }
   }
 
   /// Whether a frame drawn now meets its deadline.
@@ -29,9 +28,8 @@ impl Pacer {
   /// Schedules the next frame one interval after this one's deadline,
   /// or after now when the loop fell behind or was idle.
   pub fn drawn(&mut self, now: Instant) {
-    let frame = self.frame;
     self.due =
-      if now < self.due + frame { self.due + frame } else { now + frame };
+      if now < self.due + FRAME { self.due + FRAME } else { now + FRAME };
   }
 
   /// How long to wait for input before checking the deadline again.
@@ -47,7 +45,7 @@ mod tests {
   #[test]
   fn keeps_cadence_and_wakes_early() {
     let start = Instant::now();
-    let mut pacer = Pacer::new(start, FRAME);
+    let mut pacer = Pacer::new(start);
     assert!(pacer.ready(start));
     pacer.drawn(start + Duration::from_millis(1));
     assert_eq!(pacer.due, start + FRAME);

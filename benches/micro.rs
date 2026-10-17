@@ -496,7 +496,7 @@ fn preview_live() -> Result<()> {
 fn routing_pointer() -> Result<()> {
   use crossterm::event::{MouseEvent, MouseEventKind};
   let app = paper(false)?;
-  let mut session = vpdf::session::Session::new("", false, None);
+  let mut session = vpdf::session::Session::new(false, None);
   session.open(&app.path, true, app.screen)?;
   let mouse = MouseEvent {
     kind: MouseEventKind::ScrollDown,
@@ -564,7 +564,7 @@ fn routing_panel_press() -> Result<()> {
 fn transitions() -> Result<()> {
   use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
   let app = paper(false)?;
-  let mut session = vpdf::session::Session::new("", false, None);
+  let mut session = vpdf::session::Session::new(false, None);
   session.open(&app.path, true, app.screen)?;
   session.app().command("vsplit")?;
   session.settle()?;

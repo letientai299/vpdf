@@ -19,12 +19,10 @@ pub fn pick(root: &Path) -> Result<Option<PathBuf>> {
 
 fn run(root: &Path) -> Result<Option<PathBuf>> {
   let exe = std::env::current_exe()?;
-  let exe = exe.to_string_lossy().replace('\'', r"'\''");
-  let preview = format!("'{exe}' preview {{}}");
+  let preview = preview(&exe, crate::inline::Graphics::probed());
   let mut child = Command::new("fzf")
     .args(["--prompt", "PDF> ", "--preview", &preview])
     .args(["--preview-window", "right,55%"])
-    .env(crate::inline::VAR, crate::inline::Graphics::probed().name())
     .current_dir(root)
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
@@ -43,6 +41,14 @@ fn run(root: &Path) -> Result<Option<PathBuf>> {
   let choice = String::from_utf8_lossy(&output.stdout);
   let choice = choice.trim_end_matches(['\n', '\r']);
   Ok((output.status.success() && !choice.is_empty()).then(|| root.join(choice)))
+}
+
+/// The fzf preview command; the variable stays scoped to it, so fzf
+/// binds that run vpdf open the reader.
+fn preview(exe: &Path, graphics: crate::inline::Graphics) -> String {
+  let exe = exe.to_string_lossy().replace('\'', r"'\''");
+  let name = graphics.name();
+  format!("env {}={name} '{exe}' -- {{}}", crate::inline::VAR)
 }
 
 /// Streams relative PDF paths, skipping folders it cannot read; stops
@@ -77,6 +83,13 @@ fn walk(root: &Path, relative: &Path, out: &mut impl Write) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn preview_scopes_its_variable_and_ends_options() {
+    let command =
+      preview(Path::new("/a/it's/vpdf"), crate::inline::Graphics::Kitty);
+    assert_eq!(command, r"env VPDF_PREVIEW=kitty '/a/it'\''s/vpdf' -- {}");
+  }
 
   #[test]
   fn walk_includes_hidden_folders_but_not_vcs() -> Result<()> {

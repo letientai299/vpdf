@@ -33,14 +33,12 @@ policy. For other build environments, see [building from source][development].
 
 The reader requires the [Kitty graphics][kitty] it draws with, Kitty keyboard
 disambiguation, and the cell size in pixels; it asks the terminal at start and
-exits naming each one missing. `--text` shows extracted text instead of page
-images on such a terminal; other terminals cannot use it either. `vpdf
-preview`, which the file picker runs under fzf, cannot ask: it prints an image
-with Unicode placeholders where `TERM` or `TERM_PROGRAM` names a terminal that
-draws them, else text. The reader tells the picker's previews what it found;
-elsewhere, such as under tmux or with an overridden `TERM`, pass
-`--graphics kitty`. The [CLI][cli] owns launch options; use `vpdf --help` for
-the installed interface.
+exits naming each one missing. `:text` shows extracted text instead of page
+images on such a terminal; other terminals cannot use it either. The file
+picker's fzf previews cannot ask the terminal, so the reader passes on what it
+found: an image with Unicode placeholders where the terminal draws them, else
+text. The [CLI][cli] owns launch options; use `vpdf --help` for the installed
+interface.
 
 The reader, in either presentation, requires the [Kitty keyboard
 protocol][keyboard]'s disambiguation, so Tab and Ctrl-i stay distinct and Esc

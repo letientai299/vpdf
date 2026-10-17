@@ -1,7 +1,7 @@
 # Documentation
 
-Use `vpdf --help` and `vpdf <subcommand> --help` for the CLI, and `:help` inside
-the reader for keys and commands. These describe the installed executable.
+Use `vpdf --help` for the CLI, and `:help` inside the reader for keys and
+commands. These describe the installed executable.
 
 | Read | For |
 | --- | --- |

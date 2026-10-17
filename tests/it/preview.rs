@@ -145,7 +145,7 @@ fn preview_prefix_prompt_and_escape_keep_range() -> Result<()> {
 fn preview_pane_chord_dispatches_once() -> Result<()> {
   let app = open(false)?;
   let cursor = app.reader.cursor;
-  let mut session = Session::new("", false, None);
+  let mut session = Session::new(false, None);
   session.open(&app.path, true, screen())?;
   session.app().go_to(cursor, true)?;
   send(&mut session, b"K3g")?;

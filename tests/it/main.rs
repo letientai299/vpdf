@@ -1,5 +1,6 @@
 mod annotations;
 mod app;
+mod cli;
 mod common;
 mod corpus;
 mod cursor;

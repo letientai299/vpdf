@@ -10,11 +10,11 @@ brew install letientai299/tap/vpdf
 vpdf document.pdf
 ```
 
-Use `vpdf --help` for CLI options and subcommands, and `:help` inside the reader
+Use `vpdf --help` for CLI options, and `:help` inside the reader
 for keys and commands. Use `:jumps` to list recorded jump destinations from
 both history directions; Enter follows a row.
 
-The reader requires [Kitty graphics][kitty]; `--text` shows extracted text.
+The reader requires [Kitty graphics][kitty]; `:text` shows extracted text.
 The reader requires [Kitty keyboard][keyboard] disambiguation, or tmux's
 extended keys; see [terminal setup][setup].
 

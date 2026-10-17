@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
-description = "A keyboard-driven terminal PDF reader"
+description = "Vim-inspired PDF reader for terminal with Kitty Graphic Protocol"
+repository = "https://github.com/letientai299/vpdf"
 
 [lints.rust]
 unsafe_code = "forbid"

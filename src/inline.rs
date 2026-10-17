@@ -11,12 +11,13 @@ use crate::tiles::encode;
 use mupdf::Colorspace;
 use std::io::Write;
 
-/// Names the output the reader chose for the `vpdf preview` its fzf
-/// runs, since fzf owns the terminal and the preview cannot query it.
-pub const VAR: &str = "VPDF_GRAPHICS";
+/// Asks the executable to print a page preview, and names the output
+/// the reader chose, since its fzf owns the terminal and the preview
+/// cannot query it.
+pub const VAR: &str = "VPDF_PREVIEW";
 
-/// How `vpdf preview` shows a page.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+/// How the picker's preview shows a page.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Graphics {
   /// An image with Unicode placeholders.
   Kitty,
@@ -25,14 +26,14 @@ pub enum Graphics {
 }
 
 impl Graphics {
-  fn of(placeholders: bool) -> Self {
-    if placeholders { Self::Kitty } else { Self::Text }
-  }
-
   /// What the reader's probed terminal draws.
   pub fn probed() -> Self {
     let terminal = crate::caps::get().and_then(crate::caps::Caps::terminal);
-    Self::of(terminal.is_some_and(crate::caps::placeholders))
+    if terminal.is_some_and(crate::caps::placeholders) {
+      Self::Kitty
+    } else {
+      Self::Text
+    }
   }
 
   pub fn name(self) -> &'static str {
@@ -42,48 +43,18 @@ impl Graphics {
     }
   }
 
-  /// `VAR`, then `flag`, then the terminal `TERM` names, else the one
-  /// `TERM_PROGRAM` names; `env` reads a variable.
-  pub fn choose(
-    flag: Option<Self>,
-    env: impl Fn(&str) -> Option<String>,
-  ) -> Self {
-    use clap::ValueEnum;
-    let exported =
-      env(VAR).and_then(|value| Self::from_str(&value, false).ok());
-    if let Some(graphics) = exported.or(flag) {
-      return graphics;
-    }
-    let program = env("TERM_PROGRAM")
-      .map(|name| if name == "iTerm.app" { "iTerm2".into() } else { name });
-    let version = env("TERM_PROGRAM_VERSION").unwrap_or_default();
-    let term = env("TERM").unwrap_or_default();
-    // A terminal launched from another's shell inherits its
-    // `TERM_PROGRAM`, so a specific `TERM` wins, as XTVERSION would.
-    let named = match (named_by(&term), program) {
-      (Some(term), Some(program)) if term.eq_ignore_ascii_case(&program) => {
-        format!("{term} {version}")
-      }
-      (Some(term), _) => term.to_owned(),
-      (None, Some(program)) => format!("{program} {version}"),
-      (None, None) => return Self::Text,
-    };
-    Self::of(crate::caps::placeholders(&named))
+  /// The output `VAR` names; `None` outside a preview.
+  pub fn exported() -> Option<Self> {
+    Self::parse(std::env::var_os(VAR)?.to_str()?)
   }
-}
 
-/// The terminal a `TERM` value names: `xterm-kitty` names kitty and
-/// `st-256color` st, while `xterm-direct`, `screen`, and `tmux` name
-/// none.
-fn named_by(term: &str) -> Option<&str> {
-  let term = term.strip_prefix("xterm-").unwrap_or(term);
-  let name = term.split('-').next().unwrap_or_default();
-  let generic =
-    ["xterm", "screen", "tmux"].iter().any(|prefix| name.starts_with(prefix))
-      || name.is_empty()
-      || name.ends_with("color")
-      || name == "direct";
-  (!generic).then_some(name)
+  fn parse(name: &str) -> Option<Self> {
+    match name {
+      "kitty" => Some(Self::Kitty),
+      "text" => Some(Self::Text),
+      _ => None,
+    }
+  }
 }
 
 /// Cell height over width when the terminal does not say. Kitty fits
@@ -174,86 +145,17 @@ fn image_id(tmux: bool) -> u32 {
 mod tests {
   use super::*;
 
-  /// (label, flag, `NAME=value` variables, want)
-  type Case<'a> = (&'a str, Option<Graphics>, &'a str, Graphics);
-
   #[test]
-  fn preview_follows_export_then_flag_then_names() {
-    use Graphics::{Kitty, Text};
-    let cases: [Case; 19] = [
-      ("nothing", None, "", Text),
-      ("kitty", None, "TERM=xterm-kitty", Kitty),
-      (
-        "ghostty",
-        None,
-        "TERM_PROGRAM=ghostty TERM_PROGRAM_VERSION=1.3.1",
-        Kitty,
-      ),
-      (
-        "iTerm2",
-        None,
-        "TERM_PROGRAM=iTerm.app TERM_PROGRAM_VERSION=3.5.6",
-        Kitty,
-      ),
-      (
-        "old iTerm2",
-        None,
-        "TERM_PROGRAM=iTerm.app TERM_PROGRAM_VERSION=3.5.5",
-        Text,
-      ),
-      ("rio", None, "TERM_PROGRAM=rio TERM_PROGRAM_VERSION=0.5.27", Kitty),
-      (
-        "old rio",
-        None,
-        "TERM_PROGRAM=rio TERM_PROGRAM_VERSION=0.5.26 TERM=xterm-rio",
-        Text,
-      ),
-      ("rio by TERM", None, "TERM=xterm-rio", Kitty),
-      (
-        "inherited TERM_PROGRAM",
-        None,
-        "TERM_PROGRAM=ghostty TERM_PROGRAM_VERSION=1.3.1 TERM=alacritty",
-        Text,
-      ),
-      (
-        "st inherits TERM_PROGRAM",
-        None,
-        "TERM_PROGRAM=ghostty TERM_PROGRAM_VERSION=1.3.1 TERM=st-256color",
-        Text,
-      ),
-      (
-        "iTerm2 with xterm-direct",
-        None,
-        "TERM_PROGRAM=iTerm.app TERM_PROGRAM_VERSION=3.5.6 TERM=xterm-direct",
-        Kitty,
-      ),
-      (
-        "iTerm2 with a generic TERM",
-        None,
-        "TERM_PROGRAM=iTerm.app TERM_PROGRAM_VERSION=3.5.6 TERM=xterm-256color",
-        Kitty,
-      ),
-      ("wezterm", None, "TERM_PROGRAM=WezTerm TERM=xterm-256color", Text),
-      (
-        "tmux hides the client",
-        None,
-        "TERM_PROGRAM=tmux TERM=tmux-256color",
-        Text,
-      ),
-      ("flag", Some(Kitty), "TERM=xterm-256color", Kitty),
-      ("flag over names", Some(Text), "TERM=xterm-kitty", Text),
-      ("export over flag", Some(Text), "VPDF_GRAPHICS=kitty", Kitty),
-      ("export over names", None, "VPDF_GRAPHICS=text TERM=xterm-kitty", Text),
-      ("bad export", Some(Kitty), "VPDF_GRAPHICS=sixel", Kitty),
+  fn preview_takes_only_reader_names() {
+    let cases = [
+      ("kitty", Some(Graphics::Kitty)),
+      ("text", Some(Graphics::Text)),
+      ("", None),
+      ("0", None),
+      ("Kitty", None),
     ];
-    for (label, flag, variables, want) in cases {
-      let env = |name: &str| {
-        variables.split(' ').find_map(|pair| {
-          let (key, value) = pair.split_once('=')?;
-          (key == name).then(|| value.to_owned())
-        })
-      };
-      assert_eq!(Graphics::choose(flag, env), want, "{label}");
+    for (name, want) in cases {
+      assert_eq!(Graphics::parse(name), want, "{name:?}");
     }
   }
 

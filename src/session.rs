@@ -95,7 +95,6 @@ pub struct Session {
   screen: Option<Screen>,
   watcher: Watcher,
   store: Option<PathBuf>,
-  password: String,
   text: bool,
   /// Set by SIGHUP or SIGTERM, so the session ends and saves.
   hangup: Arc<AtomicBool>,
@@ -106,8 +105,6 @@ pub struct Session {
   recorded: u64,
   /// Panes the last arrangement showed; ones hidden since are trimmed.
   shown: Vec<u32>,
-  /// Frame interval while anything moves.
-  frame: Duration,
   pointer: Pointer,
   /// Set while a resize could not measure cells.
   unmeasured: Option<Unmeasured>,
@@ -189,7 +186,7 @@ impl Unmeasured {
 
 impl Session {
   /// `store` holds recent documents and history between runs.
-  pub fn new(password: &str, text: bool, store: Option<PathBuf>) -> Self {
+  pub fn new(text: bool, store: Option<PathBuf>) -> Self {
     let state = store.as_deref().map_or_default(State::load);
     Self {
       tabs: Vec::new(),
@@ -201,14 +198,12 @@ impl Session {
       screen: None,
       watcher: Watcher::default(),
       store,
-      password: password.to_owned(),
       text,
       hangup: Arc::new(AtomicBool::new(false)),
       latest: crate::hangup::Latest::default(),
       unsaved: false,
       recorded: 0,
       shown: Vec::new(),
-      frame: crate::pace::FRAME,
       pointer: Pointer::default(),
       unmeasured: None,
       sight: Sight::Focused,
@@ -393,8 +388,7 @@ impl Session {
     if let Some((tab, pane)) = found {
       return self.focus(tab, pane);
     }
-    let password = self.password.clone();
-    let app = self.load(&path, &password, screen)?;
+    let app = self.load(&path, "", screen)?;
     self.leave()?;
     let mut graphics = self.take_graphics();
     if tab || self.tabs.is_empty() {
@@ -489,7 +483,7 @@ impl Session {
   fn split(&mut self, axis: Axis, file: Option<&Path>) -> Result<()> {
     // The same document reuses the password that unlocked it.
     let (path, password) = match file {
-      Some(file) => (std::fs::canonicalize(file)?, self.password.clone()),
+      Some(file) => (std::fs::canonicalize(file)?, String::new()),
       None => (self.app().path.clone(), self.app().password.clone()),
     };
     if file.is_some()
@@ -1152,22 +1146,10 @@ fn replace_leaf(node: &mut Node, from: u32, to: u32) {
   }
 }
 
-/// How the reader starts.
-pub struct Launch {
-  /// Extracted text instead of Kitty graphics.
-  pub text: bool,
-  /// Page to open instead of the saved position.
-  pub page: Option<usize>,
-  /// Frames per second while anything moves.
-  pub fps: u32,
-}
-
-/// Opens `paths`, or the start screen without any.
-pub fn view(paths: &[PathBuf], password: &str, launch: &Launch) -> Result<()> {
+/// Opens `paths` at `page`, or the start screen without any.
+pub fn view(paths: &[PathBuf], page: Option<usize>) -> Result<()> {
   anyhow::ensure!(io::stdout().is_terminal(), "TUI requires a terminal");
-  let mut session =
-    Session::new(password, launch.text, crate::state::location());
-  session.frame = Duration::from_secs(1) / launch.fps.max(1);
+  let mut session = Session::new(false, crate::state::location());
   crate::hangup::watch(
     session.store.clone(),
     Arc::clone(&session.hangup),
@@ -1177,12 +1159,9 @@ pub fn view(paths: &[PathBuf], password: &str, launch: &Launch) -> Result<()> {
   let (_terminal, screen) = crate::gate::enter()?;
   // Before any pane sizes its image budget or reads input; a spool that
   // fails to start leaves tiles encoded.
-  if !launch.text {
-    let _ = crate::spool::start(crate::graphics::session());
-  }
+  let _ = crate::spool::start(crate::graphics::session());
   if paths.is_empty() {
-    session.home =
-      Some(Home::new(&session.state.recent, screen, password, !launch.text));
+    session.home = Some(Home::new(&session.state.recent, screen, true));
     return run_saving(&mut session);
   }
   for path in paths {
@@ -1190,7 +1169,7 @@ pub fn view(paths: &[PathBuf], password: &str, launch: &Launch) -> Result<()> {
   }
   session.activate(0)?;
   let app = session.app();
-  if let Some(page) = launch.page {
+  if let Some(page) = page {
     app.reader.edge(
       PageId(page.saturating_sub(1).min(app.doc.pages.len() - 1)),
       false,
@@ -1355,7 +1334,7 @@ fn run(session: &mut Session) -> Result<()> {
   let mut trace = crate::trace::Trace::new()?;
   let mut buffer = Vec::with_capacity(64 * 1024);
   let mut dirty = true;
-  let mut pacer = Pacer::new(Instant::now(), session.frame);
+  let mut pacer = Pacer::new(Instant::now());
   let mut checked = Instant::now();
   let mut written = Instant::now();
   let mut touched = Instant::now();
@@ -1504,7 +1483,7 @@ mod tests {
 
   #[test]
   fn image_timeout_retains_transfer() {
-    let mut session = Session::new("", false, None);
+    let mut session = Session::new(false, None);
     let capture = crate::region::CaptureId::next();
     let now = Instant::now();
     session.image_write = Some(ImageWrite {
@@ -1538,7 +1517,7 @@ mod tests {
       cell_height: 16,
       origin: (0, 0),
     };
-    let mut session = Session::new("", false, None);
+    let mut session = Session::new(false, None);
     session.open(&root.join("paper.pdf"), true, screen)?;
     session.app().move_figure(true, 1)?;
     session.app().open_region()?;
@@ -1594,7 +1573,7 @@ mod tests {
       cell_height: 16,
       origin: (0, 0),
     };
-    let mut session = Session::new("", false, None);
+    let mut session = Session::new(false, None);
     session.open(&root.join("paper.pdf"), true, screen)?;
     session.app().request = Some(Request::Window {
       command: Window::Split(Axis::Columns),
@@ -1650,8 +1629,8 @@ mod tests {
     };
     let lost =
       Unmeasured { rows: 20, columns: 70, error: terminal::NO_CELL.into() };
-    let mut session = Session::new("", false, None);
-    session.home = Some(Home::new(&[], screen, "", false));
+    let mut session = Session::new(false, None);
+    session.home = Some(Home::new(&[], screen, false));
     let failed = || Err(anyhow::anyhow!(terminal::NO_CELL));
     let grid = || Ok((70, 20));
     // (measured, want unmeasured, want start screen rows)
@@ -1704,7 +1683,7 @@ mod tests {
   #[test]
   fn turns_report_reveals() -> Result<()> {
     use Sight::{Focused, Hidden, Unfocused};
-    let mut session = Session::new("", false, None);
+    let mut session = Session::new(false, None);
     // (to, frame due, sight after)
     let steps = [
       (Unfocused, false, Unfocused),
@@ -1744,7 +1723,7 @@ mod tests {
       (Hidden, &Act::Focus(false), Hidden),
     ];
     for (now, act, want) in cases {
-      let mut session = Session::new("", false, None);
+      let mut session = Session::new(false, None);
       session.sight = now;
       session.shown_by(act, &mut Vec::new())?;
       assert_eq!(session.sight, want, "{now:?} {act:?}");
@@ -1807,7 +1786,7 @@ mod tests {
       cell_height: 16,
       origin: (0, 0),
     };
-    let mut session = Session::new("", false, None);
+    let mut session = Session::new(false, None);
     session.open(&root.join("book.pdf"), true, screen)?;
     let mut events = std::collections::VecDeque::new();
     let mut parser = crate::decode::Parser::default();
@@ -1847,7 +1826,7 @@ mod tests {
       origin: (0, 0),
     };
     for command in [b":recent\r".as_slice(), b":marks\r".as_slice()] {
-      let mut session = Session::new("", false, None);
+      let mut session = Session::new(false, None);
       session.open(&root.join("book.pdf"), true, screen)?;
       let mut events = std::collections::VecDeque::new();
       let mut parser = crate::decode::Parser::default();

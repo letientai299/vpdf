@@ -1,6 +1,6 @@
 //! What the interactive reader requires of the terminal path: Kitty
 //! graphics, Kitty keyboard disambiguation, and cells measured in
-//! pixels. `--text` presents extracted text on such a path; it is no
+//! pixels. `:text` presents extracted text on such a path; it is no
 //! fallback, so the same gate applies.
 use crate::Result;
 use crate::caps::{Caps, KeyLack, Lack, Profile};
