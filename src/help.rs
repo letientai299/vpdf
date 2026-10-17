@@ -27,6 +27,7 @@ impl Layout {
       lines.push(Line {
         source,
         keys,
+        clipped: false,
         row: Row {
           label,
           style,

@@ -87,6 +87,10 @@ pub struct Panel {
   follow_pending: bool,
   /// Cards for recent documents; a reader pane shows them over its page.
   pub shelf: Option<Shelf>,
+  /// The row under the pointer.
+  pub(crate) hover: Option<usize>,
+  /// The hovered row's label when drawn clipped.
+  pub(crate) hover_title: Option<String>,
 }
 
 impl Panel {
@@ -104,6 +108,8 @@ impl Panel {
       layout: None,
       follow_pending: false,
       shelf: None,
+      hover: None,
+      hover_title: None,
     }
   }
 
@@ -316,6 +322,7 @@ impl Panel {
   ) -> Result<()> {
     self.columns = width;
     self.height = height;
+    self.hover_title = None;
     if width < 2 {
       return Ok(());
     }
@@ -342,18 +349,27 @@ impl Panel {
     self.top = self.top.min(self.line_count().saturating_sub(count.max(1)));
     let start = self.top;
     for (row, index) in (start..self.line_count()).take(count).enumerate() {
-      let (source, item, keys) = self.layout.as_ref().map_or_else(
-        || (index, &self.rows[index], keys),
+      let (source, item, keys, cut) = self.layout.as_ref().map_or_else(
+        || (index, &self.rows[index], keys, None),
         |help| {
           let line = &help.lines[index];
-          (line.source, &line.row, line.keys)
+          // The row's label line, even scrolled off.
+          let label = &help.lines[help.starts[line.source]];
+          (line.source, &line.row, line.keys, Some(label.clipped))
         },
       );
-      let base = match (source == self.selected, self.focused) {
+      let hovered = self.hover == Some(source);
+      let selected = source == self.selected;
+      let plain = match (selected, self.focused) {
         (true, true) => theme::SELECTED,
         (true, false) => theme::CURRENT,
         (false, true) => theme::RESET,
         (false, false) => theme::DIM,
+      };
+      let base = match (hovered && !selected, self.focused) {
+        (true, true) => theme::HOVER,
+        (true, false) => theme::HOVER_DIM,
+        (false, _) => plain,
       };
       write!(out, "{}{base}", at.goto(row + 1, 0u16))?;
       let detail = terminal::clean(&item.detail, inner / 3);
@@ -363,11 +379,23 @@ impl Panel {
         inner.saturating_sub(detail.width() + 1)
       };
       let used = item.write(out, base, room, keys, &self.search.query)?;
+      if hovered {
+        let full = |item: &Row| {
+          item.write(&mut std::io::sink(), base, usize::MAX, keys, "")
+        };
+        let clipped = match cut {
+          Some(clipped) => clipped,
+          None => full(item)? > used,
+        };
+        if clipped {
+          self.hover_title = Some(self.rows[source].label.clone());
+        }
+      }
       write!(
         out,
-        "{}{}{detail}{}",
+        "{plain}{}{}{detail}{}",
         " ".repeat(inner.saturating_sub(used + detail.width())),
-        if base == theme::RESET { theme::MUTED } else { "" },
+        if plain == theme::RESET { theme::MUTED } else { "" },
         theme::RESET
       )?;
     }
@@ -399,7 +427,8 @@ impl Row {
     keys: usize,
     query: &str,
   ) -> Result<usize> {
-    let plain = base == theme::RESET || base == theme::DIM;
+    let plain = [theme::RESET, theme::DIM, theme::HOVER, theme::HOVER_DIM]
+      .contains(&base);
     match (self.style, self.label.split_once(": ")) {
       (Style::Key | Style::ModeKey | Style::CommandKey, Some((key, text))) => {
         let key = terminal::clean(key, room);

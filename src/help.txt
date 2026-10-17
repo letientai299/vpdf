@@ -107,11 +107,14 @@ gx: focus extracted-text presentation
 g? <F1>: this reference
 <Esc>: cancel transient or pending input first
 P wheel: scroll list; keep row selection
+Panel hover: underline row; show clipped title
+gp hover: show page label and section
 q: close panel, tab, or reader
 
 # Preview
 K / <CR>: preview / follow visible explicit target
 K: show annotation note when present
+Hover note/highlight: show author, comment
 j k: scroll rows
 <C-d><C-u>: scroll half height
 Border: destination page; arrows mark clipped edges

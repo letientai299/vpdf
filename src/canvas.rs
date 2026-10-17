@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::layout::Screen;
+use crate::pointer::Hit;
 use crate::reader::SelectionKind;
 use crate::terminal;
 use crate::text::{Bounds, Line, PageId, Position};
@@ -282,6 +283,12 @@ impl App {
       }
     }
     self.blank = plain;
+    if let Some(panel) = &mut self.panel {
+      panel.hover = match self.hover {
+        Hit::Row(index) => Some(index),
+        _ => None,
+      };
+    }
     if self.covered()
       && let Some(panel) = &mut self.panel
     {
@@ -309,26 +316,20 @@ impl App {
   }
 
   /// Status line, or the prompt with its menu and cursor.
-  fn bottom(&self, out: &mut impl Write) -> Result<()> {
+  fn bottom(&mut self, out: &mut impl Write) -> Result<()> {
     let row = self.screen.rows - 1;
-    let Some(prompt) = &self.prompt else {
-      if let Some(clues) = &self.clues {
-        let (labels, grid, keys) = self.clue_grid(clues);
-        let bottom = (self.at, row - 1);
-        crate::grid::draw(
-          out,
-          bottom,
-          &labels,
-          &grid,
-          None,
-          keys,
-          self.screen,
-        )?;
-      }
-      self.status(out, row)?;
-      write!(out, "\x1b[?25l")?;
-      return Ok(());
-    };
-    crate::statusline::prompt(out, prompt, self.screen, self.at)
+    if let Some(prompt) = &self.prompt {
+      return crate::statusline::prompt(out, prompt, self.screen, self.at);
+    }
+    // After the panel, which finds clipped rows.
+    let detail = self.hover_detail();
+    if let Some(clues) = &self.clues {
+      let (labels, grid, keys) = self.clue_grid(clues);
+      let bottom = (self.at, row - 1);
+      crate::grid::draw(out, bottom, &labels, &grid, None, keys, self.screen)?;
+    }
+    self.status_line(out, row, detail.as_deref())?;
+    write!(out, "\x1b[?25l")?;
+    Ok(())
   }
 }

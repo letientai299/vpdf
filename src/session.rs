@@ -108,6 +108,7 @@ pub struct Session {
   /// Set while a resize could not measure cells.
   unmeasured: Option<Unmeasured>,
   sight: Sight,
+  rehover: Rehover,
   image_write: Option<ImageWrite>,
 }
 
@@ -120,6 +121,16 @@ struct ImageWrite {
 enum ImageState {
   Waiting(Instant),
   TimedOut,
+}
+
+/// Whether a frame moved the hover under a resting pointer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rehover {
+  Settled,
+  /// The next frame shows the new hover.
+  Due,
+  /// That frame is drawing; it asks no more.
+  Following,
 }
 
 /// What the reader knows of tmux showing its pane. tmux sends focus
@@ -205,6 +216,7 @@ impl Session {
       pointer: Pointer::default(),
       unmeasured: None,
       sight: Sight::Focused,
+      rehover: Rehover::Settled,
       image_write: None,
     }
   }
@@ -831,6 +843,15 @@ impl Session {
     Ok(before.is_none_or(|before| before != reading(app)))
   }
 
+  /// Whether the last frame moved the hover.
+  pub fn redraw_due(&mut self) -> bool {
+    let due = self.rehover == Rehover::Due;
+    if due {
+      self.rehover = Rehover::Following;
+    }
+    due
+  }
+
   /// The pointer left the window; whether a hover ended.
   pub fn pointer_left(&mut self) -> bool {
     self.pointer.leave()
@@ -1197,10 +1218,14 @@ impl Drawable for Session {
   /// terminal cursor last.
   fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()> {
     self.rehover();
+    let hover = self.pointer.target();
     // Without a spot the pointer is elsewhere.
     if self.pointer.spot().is_some() {
-      let hover = self.pointer.target();
       terminal::point(out, hover.map_or_default(|hover| hover.hit.shape()))?;
+    }
+    for app in &mut self.tab().panes {
+      let here = hover.filter(|hover| hover.pane == app.id);
+      app.hover = here.map_or_default(|hover| hover.hit);
     }
     write!(out, "{}\x1b[0m", terminal::frame_start())?;
     self.app().graphics.begin(out)?;
@@ -1228,6 +1253,14 @@ impl Drawable for Session {
     }
     tab.panes[focus].graphics.end(out)?;
     write!(out, "{}", terminal::frame_end())?;
+    // Drawing can scroll thumbnails or rewrap rows.
+    let drawn = self.pointer.target();
+    self.rehover();
+    let moved = self.pointer.target() != drawn;
+    // One follow-up, so hover-drawn regions cannot loop.
+    let following = self.rehover == Rehover::Following;
+    self.rehover =
+      if moved && !following { Rehover::Due } else { Rehover::Settled };
     Ok(())
   }
 
@@ -1506,7 +1539,7 @@ fn run(session: &mut Session) -> Result<()> {
           title = current;
         }
         trace.draw(session, &mut out, &mut buffer)?;
-        dirty = false;
+        dirty = session.redraw_due();
         pacer.drawn(now);
         drawn = now;
       }

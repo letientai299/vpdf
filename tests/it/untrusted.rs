@@ -45,7 +45,9 @@ fn write_pdf(path: &Path, trailer: &str) -> Result<()> {
       text(&format!("https://example.com/{EVIL}"))
     ),
     format!(
-      "<< /Type /Annot /Subtype /Text /Rect [10 50 30 70] /Contents {} >>",
+      "<< /Type /Annot /Subtype /Text /Rect [10 50 30 70] /Contents {} \
+       /T {} >>",
+      text(EVIL),
       text(EVIL)
     ),
   ];
@@ -76,6 +78,7 @@ fn document_strings_reach_the_screen_clean() -> Result<()> {
     ("document title", &doc.title),
     ("Info entry", &author.1),
     ("note", &notes[0].contents),
+    ("note author", &notes[0].author),
     ("link", uri),
   ] {
     assert_printable(field, value);

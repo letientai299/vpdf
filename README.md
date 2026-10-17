@@ -64,8 +64,13 @@ view and `:fzf` open the document in place; `o` does nothing there. `:e`,
 before applying placement. Pane changes keep Cursor mode, Visual ranges,
 committed searches, panel position, and local focus; incomplete input clears.
 `gq` or panel-local `q` closes the list. Overview occupies the content slot.
-Hover and wheel preserve keyboard focus. Clicking outside a prompt or preview
-dismisses it; the next click activates the underlying surface.
+Hover and wheel preserve keyboard focus. Hover underlines a panel row other than
+the selected one and tints a thumbnail. In the status line it shows a clipped
+row title in full as room allows (`…` marks a cut), a thumbnail's page label and
+section, or a commented note's author and comment; a message or error takes the
+line first. Over a link inside a commented highlight, the link wins; `K` shows
+the note. Clicking outside a prompt or preview dismisses it; the next click
+activates the underlying surface.
 
 `K` owns its preview: `j`/`k` scroll rows, Ctrl-d/Ctrl-u scroll half its
 height, and Enter follows the original destination. Counts apply to scrolling.

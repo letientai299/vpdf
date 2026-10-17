@@ -5,6 +5,8 @@ pub(crate) struct Line {
   pub source: usize,
   pub row: Row,
   pub keys: usize,
+  /// Cut short of its source row's label.
+  pub clipped: bool,
 }
 
 pub(crate) struct Layout {

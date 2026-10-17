@@ -118,6 +118,13 @@ pub enum Hit {
   Text,
   /// Index into the page's `Document::links`.
   Link(PageId, usize),
+  /// Index into the page's `Document::annotations`.
+  Note {
+    page: PageId,
+    index: usize,
+    /// Over text, not a margin icon.
+    text: bool,
+  },
   /// Index into the panel's rows.
   Row(usize),
   /// An overview thumbnail.
@@ -127,8 +134,8 @@ pub enum Hit {
 impl Hit {
   pub fn shape(self) -> Shape {
     match self {
-      Self::Nothing => Shape::Default,
-      Self::Text => Shape::Text,
+      Self::Nothing | Self::Note { text: false, .. } => Shape::Default,
+      Self::Text | Self::Note { text: true, .. } => Shape::Text,
       Self::Link(..) | Self::Row(_) | Self::Thumbnail(_) => Shape::Pointer,
     }
   }
@@ -657,6 +664,8 @@ mod tests {
     let cases = [
       (Hit::Nothing, Shape::Default),
       (Hit::Text, Shape::Text),
+      (Hit::Note { page: PageId(0), index: 1, text: true }, Shape::Text),
+      (Hit::Note { page: PageId(0), index: 1, text: false }, Shape::Default),
       (Hit::Link(PageId(0), 2), Shape::Pointer),
       (Hit::Row(3), Shape::Pointer),
       (Hit::Thumbnail(PageId(4)), Shape::Pointer),

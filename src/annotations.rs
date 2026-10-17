@@ -17,7 +17,7 @@ impl App {
         continue;
       }
       let text = self.doc.text(page)?;
-      for annotation in annotations {
+      for annotation in annotations.iter().cloned() {
         let (position, marked) = marked(&text, page, &annotation);
         let body = match (marked.is_empty(), annotation.contents.is_empty()) {
           (false, false) => format!("{marked} — {}", annotation.contents),
@@ -45,22 +45,52 @@ impl App {
     let text = self.doc.text(position.page)?;
     let annotations = self.doc.annotations(position.page)?;
     let mut nearest = None;
-    for annotation in annotations {
+    for annotation in annotations.iter() {
       if annotation.contents.is_empty() {
         continue;
       }
-      if annotation.areas.iter().any(|area| area.contains(x, y)) {
-        return Ok(Some(annotation));
+      if noted(annotation, x, y) {
+        return Ok(Some(annotation.clone()));
       }
       if nearest.is_none()
         && !MARKUP.contains(&annotation.kind.as_str())
-        && marked(&text, position.page, &annotation).0 == position
+        && marked(&text, position.page, annotation).0 == position
       {
-        nearest = Some(annotation);
+        nearest = Some(annotation.clone());
       }
     }
     Ok(nearest)
   }
+
+  /// The commented annotation covering a page point.
+  pub(crate) fn note_at(
+    &mut self,
+    page: PageId,
+    x: f32,
+    y: f32,
+  ) -> Result<Option<usize>> {
+    let annotations = self.doc.annotations(page)?;
+    Ok(annotations.iter().position(|annotation| noted(annotation, x, y)))
+  }
+
+  /// A hovered note: kind, author, comment.
+  pub(crate) fn note_line(
+    &mut self,
+    page: PageId,
+    index: usize,
+  ) -> Result<Option<String>> {
+    let annotations = self.doc.annotations(page)?;
+    Ok(annotations.get(index).map(|note| match note.author.as_str() {
+      "" => format!("{}: {}", note.kind, note.contents),
+      author => format!("{} · {author}: {}", note.kind, note.contents),
+    }))
+  }
+}
+
+/// A commented annotation covers the point.
+fn noted(annotation: &Annotation, x: f32, y: f32) -> bool {
+  !annotation.contents.is_empty()
+    && annotation.areas.iter().any(|area| area.contains(x, y))
 }
 
 /// First glyph and text inside a markup annotation's areas.

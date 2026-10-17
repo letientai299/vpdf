@@ -827,7 +827,7 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
         Hit::Nothing => {
           !covers(&app, cell, &links) && !covers(&app, cell, &glyphs)
         }
-        Hit::Row(_) | Hit::Thumbnail(_) => false,
+        Hit::Note { .. } | Hit::Row(_) | Hit::Thumbnail(_) => false,
       };
       assert!(expected, "{at}");
     }
@@ -895,6 +895,34 @@ fn hover_hits_lines_rows_and_thumbnails() -> Result<()> {
   assert_eq!(thumbnail(&mut app, right)?, Hit::Nothing);
   app.overview_mouse(press(4, 2))?;
   assert!(app.overview.is_none(), "the press opened the page");
+  Ok(())
+}
+
+/// Hover follows thumbnails the frame scrolls.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn frames_follow_scrolled_thumbnails() -> Result<()> {
+  use vpdf::session::Session;
+  use vpdf::trace::Drawable;
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut session = Session::new(None);
+  session.open(&root.join("book.pdf"), true, screen())?;
+  session.app().command("39")?;
+  let moved = MouseEvent {
+    kind: MouseEventKind::Moved,
+    column: 20,
+    row: 5,
+    modifiers: KeyModifiers::NONE,
+  };
+  session.mouse(moved)?;
+  session.app().open_overview()?;
+  // The hit predicts the scroll; no second frame.
+  session.draw_frame(&mut Vec::new())?;
+  assert!(!session.redraw_due());
+  let app = session.app();
+  let under = app.hovered(Region::Overview, 20, 5, None)?;
+  assert_eq!(app.hover, under);
+  assert!(matches!(under, Hit::Thumbnail(page) if page.0 > 20), "{under:?}");
   Ok(())
 }
 

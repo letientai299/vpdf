@@ -3,9 +3,11 @@ use crate::app::{App, InputOwner, Tabline};
 use crate::find::Phase;
 use crate::grid;
 use crate::layout::Screen;
+use crate::pointer::Hit;
 use crate::prompt::Prompt;
 use crate::reader::{Mode, SelectionKind};
 use crate::terminal::{self, At};
+use crate::text::PageId;
 use crate::theme::{self, Color};
 use std::fmt::Write as _;
 use std::io::Write;
@@ -109,8 +111,40 @@ impl App {
     (text + " ", width)
   }
 
+  /// Status-line text for the hover.
+  pub(crate) fn hover_detail(&mut self) -> Option<String> {
+    match self.hover {
+      Hit::Note { page, index, .. } => {
+        self.note_line(page, index).ok().flatten()
+      }
+      Hit::Row(_) => self.panel.as_ref()?.hover_title.clone(),
+      Hit::Thumbnail(page) => Some(self.page_line(page)),
+      Hit::Nothing | Hit::Text | Hit::Link(..) => None,
+    }
+  }
+
+  /// A page's label and section.
+  fn page_line(&self, page: PageId) -> String {
+    let label = &self.doc.pages[page.0].label;
+    let section = crate::panel::section(&self.doc.outline, page, f32::MAX);
+    match section.map(|index| self.doc.outline[index].title.trim()) {
+      Some(title) => format!("p. {label} · {title}"),
+      None => format!("p. {label}"),
+    }
+  }
+
   /// Mode, tabs, message, then pending keys and position.
   pub fn status(&self, out: &mut impl Write, row: u16) -> Result<()> {
+    self.status_line(out, row, None)
+  }
+
+  /// `status`, `detail` replacing the section.
+  pub fn status_line(
+    &self,
+    out: &mut impl Write,
+    row: u16,
+    detail: Option<&str>,
+  ) -> Result<()> {
     let columns = usize::from(self.screen.columns);
     let (mode, color) = self.mode();
     let page = self.navigation_position().page.0;
@@ -150,16 +184,25 @@ impl App {
     let (tabs, width) = self.tabs(room);
     let section =
       self.current_section.map(|index| self.doc.outline[index].title.trim());
+    let quiet = covered || self.reader.message.is_empty();
     let (message, style) = match (&self.error, section) {
       (Some(error), _) => (error.as_str(), theme::ERROR),
+      (None, _) if let Some(detail) = detail.filter(|_| quiet) => {
+        (detail, theme::BAR)
+      }
       (None, _) if covered => ("Enter open  :e file  q close", theme::BAR),
       (None, Some(title)) if self.reader.message.is_empty() => {
         (title, theme::STATUS_SECTION)
       }
       (None, _) => (self.reader.message.as_str(), theme::BAR),
     };
-    let message = terminal::clean(message, room.saturating_sub(width));
-    let fill = room.saturating_sub(width + message.width()) + 1;
+    let room = room.saturating_sub(width);
+    // A cut detail says so; `K` shows notes whole.
+    let message = match detail {
+      Some(detail) if message == detail => terminal::clipped(message, room).0,
+      _ => terminal::clean(message, room),
+    };
+    let fill = room.saturating_sub(message.width()) + 1;
     let badge =
       if self.focused { theme::badge(color) } else { theme::BAR.into() };
     write!(

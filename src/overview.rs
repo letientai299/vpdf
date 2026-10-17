@@ -3,6 +3,7 @@ use crate::app::App;
 use crate::keys::{Action, Input};
 use crate::layout::{Crop, page_matrix, transform};
 use crate::motion::Motion;
+use crate::pointer::Hit;
 use crate::text::{Bounds, PageId, Position};
 use crate::tiles::{self, TileKey};
 use crate::{terminal, theme};
@@ -17,6 +18,14 @@ pub struct Overview {
   pub selected: usize,
   /// First visible grid row.
   top: usize,
+}
+
+impl Overview {
+  /// First grid row that shows the selection.
+  fn shown_top(&self, grid: &Grid) -> usize {
+    let row = self.selected / grid.columns;
+    self.top.clamp((row + 1).saturating_sub(grid.rows), row)
+  }
 }
 
 /// Grid geometry for the current screen, in page-area pixels.
@@ -133,7 +142,8 @@ impl App {
     let (x, y) = self.cell_point(column, row, None);
     let column = ((x - grid.gap / 2.0) / (grid.width + grid.gap)) as usize;
     let row = ((y - grid.gap / 2.0) / grid.row) as usize;
-    let index = (overview.top + row) * grid.columns + column;
+    // As the next frame scrolls it.
+    let index = (overview.shown_top(&grid) + row) * grid.columns + column;
     let inside = column < grid.columns && row < grid.rows;
     (inside && index < self.doc.pages.len()).then_some(PageId(index))
   }
@@ -155,13 +165,12 @@ impl App {
     let grid = self.grid();
     let pages = self.doc.pages.len();
     let (screen, left) = (self.uncovered(), self.left);
+    let hovered = match self.hover {
+      Hit::Thumbnail(page) => Some(page.0),
+      _ => None,
+    };
     let Some(overview) = &mut self.overview else { return Ok(()) };
-    let row = overview.selected / grid.columns;
-    if row < overview.top {
-      overview.top = row;
-    } else if row >= overview.top + grid.rows {
-      overview.top = row + 1 - grid.rows;
-    }
+    overview.top = overview.shown_top(&grid);
     let (top, selected) = (overview.top, overview.selected);
     let first = top * grid.columns;
     let visible = first..(first + grid.rows * grid.columns).min(pages);
@@ -198,14 +207,19 @@ impl App {
         wanted.push(key);
       }
       self.thumbnail_label(out, index, (x, y + grid.height), grid.width)?;
-      if index == selected {
-        let ring = Bounds {
-          x0: x + dx - 3.0,
-          y0: y + dy - 3.0,
-          x1: x + dx + w as f32 + 3.0,
-          y1: y + dy + h as f32 + 3.0,
-        };
-        self.graphics.highlight(ring, [60, 120, 230, 90], screen, left, out)?;
+      let ring = Bounds {
+        x0: x + dx - 3.0,
+        y0: y + dy - 3.0,
+        x1: x + dx + w as f32 + 3.0,
+        y1: y + dy + h as f32 + 3.0,
+      };
+      let tint = if index == selected {
+        Some(theme::RING)
+      } else {
+        (hovered == Some(index)).then_some(theme::RING_HOVER)
+      };
+      if let Some(tint) = tint {
+        self.graphics.highlight(ring, tint, screen, left, out)?;
       }
     }
     if wanted != self.requested {

@@ -674,16 +674,30 @@ impl App {
       };
       let point = self.glyph_point(position)?;
       let Some((page, x, y)) = point else { return Ok(Hit::Nothing) };
-      let link = self.link_at(page, x, y)?;
-      return Ok(link.map_or(Hit::Text, |index| Hit::Link(page, index)));
+      return Ok(self.marked_hit(page, x, y)?.unwrap_or(Hit::Text));
     }
     let Some((page, x, y)) = self.page_point(column, row, pixel) else {
       return Ok(Hit::Nothing);
     };
-    if let Some(index) = self.link_at(page, x, y)? {
-      return Ok(Hit::Link(page, index));
+    if let Some(hit) = self.marked_hit(page, x, y)? {
+      return Ok(hit);
     }
     let text = self.doc.text(page)?;
     Ok(if text.covers(x, y) { Hit::Text } else { Hit::Nothing })
+  }
+
+  /// A link, else a note, here.
+  fn marked_hit(
+    &mut self,
+    page: PageId,
+    x: f32,
+    y: f32,
+  ) -> Result<Option<Hit>> {
+    if let Some(index) = self.link_at(page, x, y)? {
+      return Ok(Some(Hit::Link(page, index)));
+    }
+    let Some(index) = self.note_at(page, x, y)? else { return Ok(None) };
+    let text = self.doc.text(page)?.covers(x, y);
+    Ok(Some(Hit::Note { page, index, text }))
   }
 }

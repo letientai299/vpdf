@@ -159,6 +159,8 @@ pub struct App {
   pub(crate) heading: f32,
   /// The pane's rows above the status line are known blank.
   pub(crate) blank: bool,
+  /// What the pointer rests on here.
+  pub hover: crate::pointer::Hit,
 }
 
 impl App {
@@ -240,6 +242,7 @@ impl App {
       requested: Vec::new(),
       heading: 1.0,
       blank: false,
+      hover: crate::pointer::Hit::Nothing,
     };
     app.load_outline();
     Ok(app)

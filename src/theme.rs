@@ -8,6 +8,12 @@ pub const STATUS_FILE: &str = "\x1b[0;1;30;104m";
 pub const TAB_ACTIVE: &str = STATUS_FILE;
 pub const TAB_INACTIVE: &str = "\x1b[0;37;40m";
 pub const CURRENT: &str = "\x1b[0;1;34m";
+/// A row under the pointer.
+pub const HOVER: &str = "\x1b[0;4m";
+pub const HOVER_DIM: &str = "\x1b[0;2;4m";
+/// Thumbnail rings: selected, hovered.
+pub const RING: [u8; 4] = [60, 120, 230, 90];
+pub const RING_HOVER: [u8; 4] = [150, 150, 150, 70];
 pub const HEADING: &str = "\x1b[1;34m";
 pub const KEY: &str = "\x1b[33m";
 pub const MODE: &str = "\x1b[36m";

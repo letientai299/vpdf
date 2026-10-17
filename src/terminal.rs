@@ -590,6 +590,16 @@ pub fn clean(text: &str, columns: usize) -> String {
   clean
 }
 
+/// `text` within `columns`, ending in `…` when cut; whether it was.
+pub fn clipped(text: &str, columns: usize) -> (String, bool) {
+  let clean = clean(text, columns);
+  if clean.width() < text.width() && columns > 0 {
+    (format!("{}…", self::clean(text, columns - 1)), true)
+  } else {
+    (clean, false)
+  }
+}
+
 /// Sends an encoded image in 4096-byte chunks; `control` leads the first.
 pub fn transmit(
   output: &mut impl Write,

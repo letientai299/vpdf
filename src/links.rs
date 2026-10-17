@@ -113,15 +113,17 @@ impl Layout {
       let detail = terminal::clean(&row.detail, columns / 3);
       let room = columns
         .saturating_sub(detail.width() + usize::from(!detail.is_empty()));
-      let labels = if source == selected {
-        wrap(&row.label, room)
+      let (labels, cut) = if source == selected {
+        (wrap(&row.label, room), false)
       } else {
-        vec![clipped(&row.label, room)]
+        let (label, cut) = terminal::clipped(&row.label, room);
+        (vec![label], cut)
       };
       for (index, label) in labels.into_iter().enumerate() {
         layout.lines.push(Line {
           source,
           keys: 0,
+          clipped: cut,
           row: Row::new(
             label,
             if index == 0 { detail.clone() } else { String::new() },
@@ -137,12 +139,13 @@ impl Layout {
         let lines = if source == selected {
           wrap(uri, room)
         } else {
-          vec![clipped(uri, room)]
+          vec![terminal::clipped(uri, room).0]
         };
         for line in lines {
           layout.lines.push(Line {
             source,
             keys: 0,
+            clipped: false,
             row: Row {
               style: Style::Muted,
               ..Row::new(
@@ -157,15 +160,6 @@ impl Layout {
     }
     layout.starts.push(layout.lines.len());
     layout
-  }
-}
-
-fn clipped(text: &str, columns: usize) -> String {
-  let clean = terminal::clean(text, columns);
-  if clean.width() < text.width() && columns > 0 {
-    format!("{}…", terminal::clean(text, columns - 1))
-  } else {
-    clean
   }
 }
 
@@ -188,6 +182,20 @@ mod tests {
       String::new(),
       Destination::Link(Target::Uri(uri.into())),
     )
+  }
+
+  #[test]
+  fn unselected_long_labels_clip() {
+    let long = "A label far wider than the panel";
+    let rows = [row(long, long), row(long, long), row("Short", "Short")];
+    let layout = Layout::links(&rows, 20, 0);
+    // (source) -> its label line clipped
+    let cases = [(0, false), (1, true), (2, false)];
+    for (source, want) in cases {
+      let label = &layout.lines[layout.starts[source]];
+      assert_eq!(label.clipped, want, "row {source}");
+    }
+    assert!(layout.lines.iter().filter(|line| line.source == 0).count() > 1);
   }
 
   #[test]

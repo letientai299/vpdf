@@ -58,6 +58,7 @@ pub struct Annotation {
   /// Marked areas; markup has one per quad.
   pub areas: Vec<Bounds>,
   pub contents: String,
+  pub author: String,
 }
 
 #[derive(Clone, Debug)]
@@ -91,6 +92,7 @@ pub struct Document {
   ocr: Cache<PageId, Arc<Text>>,
   figures: Cache<PageId, Arc<Vec<crate::figures::Figure>>>,
   links: Cache<PageId, Arc<Vec<Link>>>,
+  annotations: Cache<PageId, Arc<Vec<Annotation>>>,
 }
 
 /// The document is encrypted and the password did not open it.
@@ -194,6 +196,7 @@ impl Document {
       ocr: Cache::new(32 * MIB),
       figures: Cache::new(4 * MIB),
       links: Cache::new(MIB),
+      annotations: Cache::new(MIB),
     })
   }
 
@@ -246,6 +249,7 @@ impl Document {
     self.texts.clear();
     self.figures.clear();
     self.links.clear();
+    self.annotations.clear();
     if let Ok(mut lists) = self.lists.lock() {
       lists.clear();
     }
@@ -293,10 +297,28 @@ impl Document {
     metadata(&self.native)
   }
 
-  /// Annotations other than links, popups, and form widgets.
-  pub fn annotations(&self, page: PageId) -> Result<Vec<Annotation>> {
-    use mupdf::pdf::PdfAnnotationType as Kind;
+  /// Non-link annotations, cached for hover.
+  pub fn annotations(&mut self, page: PageId) -> Result<Arc<Vec<Annotation>>> {
     self.validate(page)?;
+    if let Some(found) = self.annotations.get(&page) {
+      return Ok(Arc::clone(found));
+    }
+    let found = Arc::new(self.read_annotations(page)?);
+    let heap = found.iter().map(|note| {
+      note.kind.capacity()
+        + note.areas.capacity() * size_of::<Bounds>()
+        + note.contents.capacity()
+        + note.author.capacity()
+    });
+    let weight =
+      found.capacity() * size_of::<Annotation>() + heap.sum::<usize>();
+    // Heavier pages parse again per use.
+    self.annotations.insert(page, Arc::clone(&found), weight.max(1));
+    Ok(found)
+  }
+
+  fn read_annotations(&self, page: PageId) -> Result<Vec<Annotation>> {
+    use mupdf::pdf::PdfAnnotationType as Kind;
     // Most pages list none; the lookup skips loading those pages.
     let listed = self.native.find_page(page.0 as i32)?.get_dict("Annots")?;
     if listed.map_or(Ok(0), |list| list.len())? == 0 {
@@ -315,13 +337,17 @@ impl Document {
       } else {
         quads.iter().map(quad_bounds).collect()
       };
-      let contents = printable(annotation.contents()?.unwrap_or_default())
-        .collect::<String>()
-        .trim()
-        .to_owned();
+      let clean = |text: Option<&str>| {
+        printable(text.unwrap_or_default())
+          .collect::<String>()
+          .trim()
+          .to_owned()
+      };
+      let contents = clean(annotation.contents()?);
+      let author = clean(annotation.author()?);
       let kind =
         if kind == Kind::Text { "Note".into() } else { format!("{kind:?}") };
-      found.push(Annotation { kind, areas, contents });
+      found.push(Annotation { kind, areas, contents, author });
     }
     Ok(found)
   }

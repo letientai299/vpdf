@@ -259,3 +259,178 @@ fn empty_notes_and_panel_focus() -> Result<()> {
   }
   Ok(())
 }
+
+/// Highlights, a link, a margin note.
+fn noted_pdf(path: &std::path::Path) -> Result<()> {
+  let content = "BT /F1 18 Tf 24 TL 20 170 Td (Hover over these lines) Tj T* \
+                 (a second line) Tj ET";
+  let quads = |top: u32| {
+    let bottom = top - 24;
+    format!("[20 {top} 230 {top} 20 {bottom} 230 {bottom}]")
+  };
+  let objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] \
+     /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R \
+     /Annots [6 0 R 7 0 R 8 0 R 9 0 R] >>"
+      .to_owned(),
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+    format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+    format!(
+      "<< /Type /Annot /Subtype /Highlight /Rect [20 165 230 189] \
+       /QuadPoints {} >>",
+      quads(189)
+    ),
+    format!(
+      "<< /Type /Annot /Subtype /Highlight /Rect [20 141 230 165] \
+       /QuadPoints {} /Contents (check this note please) /T (Ada) >>",
+      quads(165)
+    ),
+    "<< /Type /Annot /Subtype /Link /Rect [20 141 40 165] \
+     /A << /S /URI /URI (https://example.com) >> >>"
+      .to_owned(),
+    "<< /Type /Annot /Subtype /Text /Rect [260 150 280 170] \
+     /Contents (margin note) >>"
+      .to_owned(),
+  ];
+  crate::common::write_pdf(path, &objects, "")
+}
+
+#[test]
+fn hover_details_notes_rows_and_pages() -> Result<()> {
+  use crossterm::event::{MouseEvent, MouseEventKind};
+  use vpdf::document::{Heading, Target};
+  use vpdf::pointer::{Hit, Region};
+  use vpdf::session::Session;
+  use vpdf::trace::Drawable;
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("noted.pdf");
+  noted_pdf(&path)?;
+  let mut session = Session::new(None);
+  session.open(&path, true, screen())?;
+  let cells: Vec<_> =
+    (0..39).flat_map(|row| (0..120).map(move |column| (column, row))).collect();
+  let find = |session: &mut Session, region, wanted: &dyn Fn(Hit) -> bool| {
+    let app = session.app();
+    let cell = cells.iter().copied().find(|&(column, row)| {
+      app.hovered(region, column, row, None).is_ok_and(wanted)
+    });
+    cell.expect("a cell with that hit")
+  };
+  let on_page = |session: &mut Session, wanted: &dyn Fn(Hit) -> bool| {
+    find(session, Region::Page, wanted)
+  };
+  let note =
+    on_page(&mut session, &|hit| matches!(hit, Hit::Note { text: true, .. }));
+  let margin =
+    on_page(&mut session, &|hit| matches!(hit, Hit::Note { text: false, .. }));
+  let link = on_page(&mut session, &|hit| matches!(hit, Hit::Link(..)));
+  let blank = on_page(&mut session, &|hit| hit == Hit::Nothing);
+  // (cell) -> frame, status text
+  let hover =
+    |session: &mut Session, (column, row)| -> Result<(bool, String)> {
+      let kind = MouseEventKind::Moved;
+      let modifiers = KeyModifiers::NONE;
+      let frame = session.mouse(MouseEvent { kind, column, row, modifiers })?;
+      let mut out = Vec::new();
+      session.draw_frame(&mut out)?;
+      Ok((frame, String::from_utf8_lossy(&out).into_owned()))
+    };
+  let ada = "Highlight · Ada: check this note please";
+  // (cell, frame, shown, hidden)
+  let steps = [
+    (note, true, Some(ada), None),
+    (note, false, Some(ada), None),
+    (margin, true, Some("Note: margin note"), Some(" · ")),
+    // The link wins over its note.
+    (link, true, None, Some(ada)),
+    (blank, true, None, Some(ada)),
+  ];
+  for (step, (cell, frame, shown, hidden)) in steps.into_iter().enumerate() {
+    let (framed, drawn) = hover(&mut session, cell)?;
+    assert_eq!(framed, frame, "step {step}");
+    if let Some(shown) = shown {
+      assert!(drawn.contains(shown), "step {step}: {shown}");
+    }
+    if let Some(hidden) = hidden {
+      assert!(!drawn.contains(hidden), "step {step}: {hidden}");
+    }
+  }
+  // Clipped rows show whole; selection stays.
+  session.app().open_panel(PanelKind::Annotations)?;
+  let focused = session.app().panel_focused();
+  let (_, drawn) = hover(&mut session, (1, 2))?;
+  let app = session.app();
+  assert_eq!(app.hover, Hit::Row(1));
+  let row = &app.panel.as_ref().unwrap().rows[1].label;
+  assert!(drawn.contains(row.as_str()), "{row}");
+  assert!(drawn.contains("\x1b[0;4m"), "the row underlines");
+  assert_eq!(app.panel.as_ref().unwrap().selected, 0);
+  assert_eq!(app.panel_focused(), focused);
+  // A short row adds nothing.
+  let (_, drawn) = hover(&mut session, (1, 3))?;
+  assert!(!drawn.contains("Note: margin note"), "{drawn}");
+  session.app().close_panel()?;
+  // A panel opened under a resting pointer.
+  session.app().open_panel(PanelKind::Annotations)?;
+  session.draw_frame(&mut Vec::new())?;
+  if session.redraw_due() {
+    session.draw_frame(&mut Vec::new())?;
+  }
+  assert!(!session.redraw_due(), "one follow-up at most");
+  assert_eq!(session.app().hover, Hit::Row(2));
+  session.app().close_panel()?;
+  // Thumbnails show their page label and section.
+  let app = session.app();
+  app.doc.outline.push(Heading {
+    title: "Opening".into(),
+    depth: 0,
+    target: Target::Page(PageId(0)),
+  });
+  app.open_overview()?;
+  let thumbnail = find(&mut session, Region::Overview, &|hit| {
+    matches!(hit, Hit::Thumbnail(_))
+  });
+  let (_, drawn) = hover(&mut session, thumbnail)?;
+  assert_eq!(session.app().hover, Hit::Thumbnail(PageId(0)));
+  assert!(drawn.contains("p. 1 · Opening"));
+  Ok(())
+}
+
+#[test]
+fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("noted.pdf");
+  noted_pdf(&path)?;
+  // (error, message, covered) -> detail shown
+  let cases = [
+    (None, "", false, true),
+    (Some("Failed"), "", false, false),
+    (None, "Copied", false, false),
+    (None, "Copied", true, true),
+    (Some("Failed"), "", true, false),
+  ];
+  for (error, message, covered, shown) in cases {
+    let mut app = App::with_screen(&path, "", false, screen())?;
+    if covered {
+      app.show_recent(&[])?;
+    }
+    app.error = error.map(str::to_owned);
+    app.reader.message = message.into();
+    let mut out = Vec::new();
+    app.status_line(&mut out, 39, Some("DETAIL"))?;
+    let drawn = String::from_utf8_lossy(&out);
+    let at = format!("{error:?} {message:?} covered={covered}");
+    assert_eq!(drawn.contains("DETAIL"), shown, "{at}");
+  }
+  // Trimming drops the annotation cache.
+  let mut doc = vpdf::document::Document::open(&path, "")?;
+  let first = doc.annotations(PageId(0))?;
+  assert!(std::sync::Arc::ptr_eq(&first, &doc.annotations(PageId(0))?));
+  doc.trim();
+  let again = doc.annotations(PageId(0))?;
+  assert!(!std::sync::Arc::ptr_eq(&first, &again));
+  assert_eq!(again.len(), 3);
+  Ok(())
+}
