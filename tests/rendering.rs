@@ -176,8 +176,11 @@ fn worker_tiles_equal_full_page_pixels() -> Result<()> {
           .results
           .recv_timeout(std::time::Duration::from_secs(20))?
           .map_err(anyhow::Error::msg)?;
+        let vpdf::tiles::Payload::Encoded(encoded) = &tile.payload else {
+          anyhow::bail!("Tests send tiles encoded");
+        };
         let packed = base64::engine::general_purpose::STANDARD
-          .decode(tile.encoded.as_bytes())?;
+          .decode(encoded.as_bytes())?;
         let mut pixels = Vec::new();
         flate2::read::ZlibDecoder::new(&packed[..]).read_to_end(&mut pixels)?;
         let key = tile.key;

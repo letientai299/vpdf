@@ -27,9 +27,28 @@ pub struct TileKey {
 
 pub struct Tile {
   pub key: TileKey,
-  /// Shared with the encoded-tile cache without a copy.
-  pub encoded: Arc<str>,
+  pub payload: Payload,
   pub render_ms: f64,
+}
+
+/// A tile's pixels as the terminal receives them.
+#[derive(Clone, Debug)]
+pub enum Payload {
+  /// zlib-compressed RGB in base64, sent through the terminal; shared
+  /// with the kept-tile cache without a copy.
+  Encoded(Arc<str>),
+  /// RGB in a spool slot the terminal reads itself.
+  Spooled(crate::spool::Slot),
+}
+
+impl Payload {
+  /// Spools `pixels` when the terminal reads the spool, else encodes them.
+  pub fn new(pixels: &[u8]) -> Result<Self> {
+    Ok(match crate::spool::get() {
+      Some(spool) => Self::Spooled(spool.write(pixels)?),
+      None => Self::Encoded(encode(pixels)?.into()),
+    })
+  }
 }
 
 pub fn visible(layout: &Layout, scroll: f32) -> Vec<TileKey> {
@@ -142,6 +161,6 @@ pub fn encode(bytes: &[u8]) -> Result<String> {
 
 pub fn render(doc: &mut Document, key: TileKey) -> Result<Tile> {
   let started = std::time::Instant::now();
-  let encoded = encode(&raster(doc, key)?)?.into();
-  Ok(Tile { key, encoded, render_ms: started.elapsed().as_secs_f64() * 1000.0 })
+  let payload = Payload::new(&raster(doc, key)?)?;
+  Ok(Tile { key, payload, render_ms: started.elapsed().as_secs_f64() * 1000.0 })
 }

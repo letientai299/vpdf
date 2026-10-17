@@ -725,6 +725,11 @@ pub fn view(paths: &[PathBuf], password: &str, launch: &Launch) -> Result<()> {
   )?;
   terminal::restore_on_panic();
   let _terminal = Terminal::enter()?;
+  // Before any pane sizes its image budget or reads input; a spool that
+  // fails to start leaves tiles encoded.
+  if !launch.text {
+    let _ = crate::spool::start(crate::graphics::session());
+  }
   let screen = terminal::size()?;
   if paths.is_empty() {
     session.home = Some(Home::new(&session.state.recent, screen));

@@ -2,14 +2,15 @@ use crate::Result;
 use crate::cache::Cache;
 use crate::document::MIB;
 use crate::layout::{Layout, Screen};
+use crate::spool::Spool;
 use crate::terminal::graphics;
 use crate::text::Bounds;
-use crate::tiles::{TILE_HEIGHT, TILE_WIDTH, Tile, TileKey, encode};
+use crate::tiles::{Payload, TILE_HEIGHT, TILE_WIDTH, Tile, TileKey, encode};
 use std::collections::HashMap;
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
 use std::io::Write;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 const BLOCK: u32 = 1 << 16;
 const OVERLAYS: u32 = 1024;
@@ -20,10 +21,18 @@ const PREVIEW: u32 = OVERLAYS - 1;
 const SWATCH: (i32, i32) = (4096, 64);
 // Four readers fit Kitty's 320 MB quota.
 const BUDGET: usize = 64 * MIB;
+/// Resident budget when tiles come from the spool: an upload costs Kitty
+/// a file read, so scrolling back uploads instead of keeping 64 MiB of
+/// textures, which take about three times their RGB size in Kitty.
+const SPOOLED: usize = 24 * MIB;
 /// Encoded tiles kept after rendering: prefetched tiles wait here until
 /// they scroll into view, and evicted or lost images upload again without
 /// rendering. Text tiles compress to about 4% of their RGB size.
 const STORED: usize = 48 * MIB;
+
+fn budget() -> usize {
+  if crate::spool::get().is_some() { SPOOLED } else { BUDGET }
+}
 
 /// Tiles of one document; tabs share one Kitty budget.
 type Key = (u32, TileKey);
@@ -32,7 +41,7 @@ pub struct Graphics {
   /// Document whose tiles `upload` and `place` address.
   pub doc: u32,
   resident: Cache<Key, u32>,
-  stored: Cache<Key, Arc<str>>,
+  stored: Cache<Key, Payload>,
   ids: HashMap<Key, u32>,
   free: Vec<u32>,
   stale: Vec<u32>,
@@ -54,7 +63,7 @@ impl Default for Graphics {
     let base = session();
     Self {
       doc: 0,
-      resident: Cache::new(BUDGET),
+      resident: Cache::new(budget()),
       stored: Cache::new(STORED),
       ids: HashMap::new(),
       free: Vec::new(),
@@ -125,15 +134,19 @@ impl Graphics {
     *self = Self { doc, stored, uploaded, ..Self::default() };
   }
 
-  /// Keeps an encoded tile until a frame places it.
+  /// Keeps a tile until a frame places it.
   pub fn keep(&mut self, tile: Tile) {
-    let weight = tile.encoded.len();
-    self.stored.insert((self.doc, tile.key), tile.encoded, weight);
+    let weight = match &tile.payload {
+      Payload::Encoded(encoded) => encoded.len(),
+      // The spool holds the pixels; this keeps about one entry per slot.
+      Payload::Spooled(slot) => slot.len * STORED / crate::spool::BYTES,
+    };
+    self.stored.insert((self.doc, tile.key), tile.payload, weight);
   }
 
   pub fn upload(&mut self, tile: &Tile, out: &mut impl Write) -> Result<()> {
     if !self.contains(&tile.key) {
-      self.send((self.doc, tile.key), &tile.encoded, out)?;
+      self.send((self.doc, tile.key), &tile.payload, out)?;
     }
     Ok(())
   }
@@ -142,7 +155,7 @@ impl Graphics {
   fn send(
     &mut self,
     key: Key,
-    encoded: &str,
+    payload: &Payload,
     out: &mut impl Write,
   ) -> Result<u32> {
     let id = self.free.pop().unwrap_or_else(|| {
@@ -150,10 +163,28 @@ impl Graphics {
       self.next - 1
     });
     let tile = key.1;
-    transmit(out, id, tile.width, tile.height, 24, encoded)?;
+    let bytes = match (payload, crate::spool::get()) {
+      (Payload::Encoded(encoded), _) => {
+        transmit(out, id, tile.width, tile.height, 24, encoded)?;
+        encoded.len()
+      }
+      (Payload::Spooled(slot), Some(spool)) => {
+        let control = format!(
+          "a=t,f=24,i={id},q=2,s={},v={},{}",
+          tile.width,
+          tile.height,
+          Spool::keys(*slot)
+        );
+        graphics(out, &control, &spool.payload)?;
+        slot.len
+      }
+      (Payload::Spooled(_), None) => {
+        anyhow::bail!("Spooled tile without spool")
+      }
+    };
     // Weight floor keeps residency within tile ids.
     let weight = ((tile.width * tile.height * 3) as usize)
-      .max(BUDGET.div_ceil((BLOCK - OVERLAYS) as usize));
+      .max(budget().div_ceil((BLOCK - OVERLAYS) as usize));
     for key in self.resident.insert(key, id, weight) {
       if let Some(id) = self.ids.remove(&key) {
         graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
@@ -161,7 +192,7 @@ impl Graphics {
       }
     }
     self.ids.insert(key, id);
-    self.uploaded += encoded.len() as u64;
+    self.uploaded += bytes as u64;
     Ok(id)
   }
 
@@ -252,14 +283,20 @@ impl Graphics {
     let id = match self.resident.get(&(self.doc, *key)) {
       Some(&id) => id,
       None => {
-        let kept = self.stored.get(&(self.doc, *key)).map(Arc::clone);
-        let Some(encoded) = kept else { return Ok(false) };
+        let kept = self.stored.get(&(self.doc, *key)).cloned();
+        let Some(payload) = kept else { return Ok(false) };
+        if let Payload::Spooled(slot) = payload
+          && crate::spool::get().is_none_or(|spool| !spool.holds(slot))
+        {
+          self.stored.remove(&(self.doc, *key));
+          return Ok(false);
+        }
         // Kept tiles upload as they come within a tile of the screen,
         // spreading a scroll's uploads over its frames.
         if !near(rect, screen) {
           return Ok(true);
         }
-        self.send((self.doc, *key), &encoded, out)?
+        self.send((self.doc, *key), &payload, out)?
       }
     };
     let Some(clip) = clip(rect, screen) else { return Ok(true) };
@@ -463,7 +500,7 @@ mod tests {
   #[test]
   fn commands_stay_in_session_block() -> Result<()> {
     let mut graphics = Graphics {
-      resident: Cache::new(2 * BUDGET.div_ceil((BLOCK - OVERLAYS) as usize)),
+      resident: Cache::new(2 * budget().div_ceil((BLOCK - OVERLAYS) as usize)),
       ..Graphics::default()
     };
     let block = session()..=session() + (BLOCK - 1);
@@ -480,7 +517,11 @@ mod tests {
         crop: crate::layout::Crop::default(),
       };
       graphics.upload(
-        &Tile { key, encoded: encode(&[255; 3])?.into(), render_ms: 0.0 },
+        &Tile {
+          key,
+          payload: Payload::Encoded(encode(&[255; 3])?.into()),
+          render_ms: 0.0,
+        },
         &mut output,
       )?;
     }
@@ -532,7 +573,11 @@ mod tests {
         crop: crate::layout::Crop::default(),
       };
       graphics.upload(
-        &Tile { key, encoded: encode(&[255; 3])?.into(), render_ms: 0.0 },
+        &Tile {
+          key,
+          payload: Payload::Encoded(encode(&[255; 3])?.into()),
+          render_ms: 0.0,
+        },
         &mut output,
       )?;
     }

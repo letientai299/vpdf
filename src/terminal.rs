@@ -1,9 +1,11 @@
 use crate::Result;
 use crate::layout::Screen;
 use crossterm::{cursor, event, execute, terminal};
-use std::io::{self, Write};
+use rustix::event::{PollFd, PollFlags, Timespec, poll};
+use std::io::{self, IsTerminal, Write};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub struct Terminal;
@@ -105,6 +107,8 @@ pub fn restore() {
   let mut output = io::stdout();
   let _ = output.write_all(b"\x1b[?2026l\x1b[0m\x1b[23;0t");
   let _ = crate::graphics::release(&mut output);
+  let _ = output.flush();
+  crate::spool::remove();
   let _ = suspend();
 }
 
@@ -138,7 +142,7 @@ pub fn size() -> Result<Screen> {
 }
 
 /// Whether output passes through tmux; read once per process.
-fn tmux() -> bool {
+pub fn tmux() -> bool {
   static TMUX: OnceLock<bool> = OnceLock::new();
   *TMUX.get_or_init(|| std::env::var_os("TMUX").is_some())
 }
@@ -173,6 +177,48 @@ pub fn clean(text: &str, columns: usize) -> String {
     while clean.pop().is_some_and(|ch| ch.width() == Some(0)) {}
   }
   clean
+}
+
+/// Sends `request` and a primary device attributes query, which every
+/// terminal answers, and returns what arrived before that answer; empty
+/// when it does not come within `timeout`. Run before reading input.
+pub fn query(request: &[u8], timeout: Duration) -> Result<Vec<u8>> {
+  let stdin = io::stdin();
+  if !stdin.is_terminal() {
+    return Ok(Vec::new());
+  }
+  let mut output = io::stdout();
+  output.write_all(request)?;
+  output.write_all(b"\x1b[c")?;
+  output.flush()?;
+  let deadline = Instant::now() + timeout;
+  let mut reply = Vec::new();
+  while answered(&reply).is_none() {
+    let left = deadline.saturating_duration_since(Instant::now());
+    let mut fds = [PollFd::new(&stdin, PollFlags::IN)];
+    if left.is_zero() || poll(&mut fds, Some(&Timespec::try_from(left)?))? == 0
+    {
+      return Ok(Vec::new());
+    }
+    let mut chunk = [0; 256];
+    let read = rustix::io::read(&stdin, &mut chunk)?;
+    if read == 0 {
+      return Ok(Vec::new());
+    }
+    reply.extend_from_slice(&chunk[..read]);
+  }
+  reply.truncate(answered(&reply).unwrap_or_default());
+  Ok(reply)
+}
+
+/// Where a primary device attributes answer, `ESC [ ? 6 2 ; 2 2 c`,
+/// starts in `reply`.
+fn answered(reply: &[u8]) -> Option<usize> {
+  (0..reply.len()).find(|&start| {
+    let rest = reply[start..].strip_prefix(b"\x1b[?").unwrap_or_default();
+    let digits = rest.iter().take_while(|&&b| b.is_ascii_digit() || b == b';');
+    rest.get(digits.count()) == Some(&b'c')
+  })
 }
 
 /// Sends an encoded image in 4096-byte chunks; `control` leads the first.
@@ -290,6 +336,14 @@ fn pane_origin() -> Option<(u16, u16)> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn device_attributes_end_a_reply() {
+    let reply = b"\x1b_Gi=1;OK\x1b\\\x1b[?62;22;52c".as_slice();
+    assert_eq!(answered(reply), Some(11));
+    assert_eq!(answered(b"\x1b[?1u"), None);
+    assert_eq!(answered(b"\x1b[?62;22"), None);
+  }
 
   #[test]
   fn clean_fits_string_width() {

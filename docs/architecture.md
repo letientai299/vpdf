@@ -92,11 +92,11 @@ raster step, which the raster pool already runs in parallel.
 
 ## Memory and limits
 
-Application text, OCR, search, register, encoded-tile (48 MiB), and
-terminal-image caches have explicit budgets. Display lists have a page-count
-bound of eight per document; their native memory size is not exposed by the
-binding. MuPDF's internal allocations and terminal memory remain separate from
-application accounting. These bounds are not a hard process RSS limit.
+Application text, OCR, search, register, encoded-tile (48 MiB), spool (128 MiB
+file), and terminal-image caches have explicit budgets. Display lists have a
+page-count bound of eight per document; their native memory size is not exposed
+by the binding. MuPDF's internal allocations and terminal memory remain separate
+from application accounting. These bounds are not a hard process RSS limit.
 
 Extraction and yank limits protect text operations. Search caps matches per
 page and per query. OCR raster dimensions, output, and runtime are bounded.
@@ -122,7 +122,21 @@ selection, and matches are RGBA images with fixed colors.
 
 Graphics commands suppress terminal replies. Tmux delivers replies to the
 focused pane rather than the sender, where they would arrive as input to an
-unrelated program, so the reader cannot track acknowledgements. Kitty silently
+unrelated program, so the reader cannot track acknowledgements.
+
+When the terminal reads files on the reader's host, tiles skip compression
+and base64: pool threads write raw RGB to fixed slots of a spool file in the
+cache directory, and each upload names its slot (`t=f`, `S=`, `O=`). At start
+the reader writes a one-pixel probe to the spool and asks Kitty to load it
+ahead of a device attributes query; only an OK before that answer enables the
+spool. tmux answers the query itself, so sessions under tmux, other hosts, and
+terminals without file transmission send encoded tiles. Kitty inflates encoded
+tiles on its main thread, at 0.35 GB/s in release builds, so a spooled jump
+costs it a file read instead. Uploads being cheap, a spooling reader keeps
+24 MiB of resident tiles instead of 64 MiB; Kitty's textures take about three
+times their RGB size.
+
+Kitty silently
 evicts older images beyond its 320 MB per-window quota; each reader keeps at
 most 64 MiB of decoded tiles so about four readers share a window without
 eviction. After another program has the screen, encoded tiles upload again

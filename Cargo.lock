@@ -1000,6 +1000,7 @@ dependencies = [
  "flate2",
  "mupdf",
  "notify",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",

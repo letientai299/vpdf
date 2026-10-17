@@ -476,7 +476,7 @@ fn render(tiles: &[TileKey], work: Work, send: &Sender) -> Vec<Job> {
     Work::Whole { list, matrix, area } => (list, matrix, area, true),
     Work::Cut { pixels, drawn } => {
       let pixels = pixels.into_iter().map(Ok);
-      encode(tiles, pixels, drawn, send);
+      deliver(tiles, pixels, drawn, send);
       return Vec::new();
     }
   };
@@ -490,7 +490,7 @@ fn render(tiles: &[TileKey], work: Work, send: &Sender) -> Vec<Job> {
   let drawn_ms = ms(started);
   if !whole {
     let pixels = tiles.iter().map(|key| tiles::cut(&drawn, key));
-    encode(tiles, pixels, drawn_ms, send);
+    deliver(tiles, pixels, drawn_ms, send);
     return Vec::new();
   }
   let mut rows = Vec::new();
@@ -510,8 +510,8 @@ fn render(tiles: &[TileKey], work: Work, send: &Sender) -> Vec<Job> {
   rows
 }
 
-/// Encodes and sends `tiles`; `drawn` is the draw's milliseconds.
-fn encode(
+/// Sends `tiles` to the reader; `drawn` is the draw's milliseconds.
+fn deliver(
   tiles: &[TileKey],
   pixels: impl Iterator<Item = Result<Vec<u8>>>,
   drawn: f64,
@@ -520,10 +520,10 @@ fn encode(
   for (key, pixels) in tiles.iter().zip(pixels) {
     let started = Instant::now();
     let tile = pixels
-      .and_then(|pixels| tiles::encode(&pixels))
-      .map(|encoded| Tile {
+      .and_then(|pixels| tiles::Payload::new(&pixels))
+      .map(|payload| Tile {
         key: *key,
-        encoded: encoded.into(),
+        payload,
         render_ms: drawn + ms(started),
       })
       .map_err(|error| error.to_string());

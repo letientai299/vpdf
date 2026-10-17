@@ -46,6 +46,7 @@ pub mod search_worker;
 pub mod selection;
 pub mod session;
 pub mod split;
+pub mod spool;
 pub mod state;
 mod statusline;
 pub mod terminal;
