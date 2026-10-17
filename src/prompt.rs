@@ -209,12 +209,9 @@ impl Prompt {
         _ => PromptEvent::Pending,
       };
     }
-    // Ctrl-i completes as in readline; other Tab chords stay free.
-    let tab = matches!(
-      (key.code, key.modifiers),
-      (KeyCode::Tab, KeyModifiers::NONE)
-        | (KeyCode::Char('i'), KeyModifiers::CONTROL)
-    );
+    // Only bare Tab completes; Kitty's keyboard protocol keeps Ctrl-i a
+    // separate key.
+    let tab = (key.code, key.modifiers) == (KeyCode::Tab, KeyModifiers::NONE);
     match key.code {
       _ if tab && self.kind != PromptKind::Password => return self.cycle(true),
       KeyCode::BackTab => return self.cycle(false),
@@ -756,7 +753,7 @@ mod tests {
     for (ch, modifiers, want) in [
       ('[', CTRL, PromptEvent::Cancel),
       ('m', CTRL, PromptEvent::Submit),
-      ('i', CTRL, PromptEvent::Complete),
+      ('i', CTRL, PromptEvent::Pending),
       ('a', KeyModifiers::SUPER, PromptEvent::Pending),
       ('a', KeyModifiers::HYPER, PromptEvent::Pending),
       ('a', KeyModifiers::META, PromptEvent::Pending),

@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::caps::{Caps, Cell, Host, Support};
 use crate::decode::Size;
+use crate::input::Keyboard;
 use crate::layout::Screen;
 use anyhow::Context;
 use crossterm::terminal::WindowSize;
@@ -24,17 +25,15 @@ impl Terminal {
   }
 }
 
-/// Whether the terminal speaks Kitty's keyboard protocol, which reports
-/// keys such as Shift-Space that legacy encoding cannot tell apart.
-fn enhanced() -> bool {
-  crate::caps::get().is_some_and(|caps| caps.keyboard.is_some())
-}
-
 /// Set when another program had the screen; it may have deleted images.
 static LOST: AtomicBool = AtomicBool::new(false);
 
 /// Set while the reader holds the screen in raw mode.
 static ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Set while the reader's Kitty keyboard flags sit on the terminal's
+/// stack, so suspend pops exactly what resume pushed.
+static PUSHED: AtomicBool = AtomicBool::new(false);
 
 /// Whether images need uploading again since the last call.
 pub fn images_lost() -> bool {
@@ -73,14 +72,21 @@ pub fn resume() -> Result<()> {
   )?;
   // Inside the alternate screen, so a terminal that prints an unknown
   // query leaves nothing behind.
-  crate::caps::probe()?;
+  let caps = crate::caps::probe()?;
   resize_reports(true)?;
-  if enhanced() {
-    let flags = event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-      | event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS;
-    execute!(io::stdout(), event::PushKeyboardEnhancementFlags(flags))?;
-  }
-  Ok(())
+  let lack = caps.negotiate(|request| {
+    PUSHED.store(true, Ordering::SeqCst);
+    crate::input::ask(&mut io::stdout(), request, crate::caps::WAIT)
+  })?;
+  // Legacy bytes merge Ctrl-i with Tab and make Esc a prefix, so no
+  // fallback. Input fails from now on, even where a caller of a resume
+  // after a child program shows the error and goes on.
+  let Some(lack) = lack else {
+    crate::input::set_keyboard(Keyboard::Disambiguated);
+    return Ok(());
+  };
+  crate::input::set_keyboard(Keyboard::Failed(lack.clone()));
+  Err(lack.into())
 }
 
 /// Hands the terminal to a child program; images stay cached.
@@ -89,10 +95,11 @@ pub fn suspend() -> Result<()> {
   if !ACTIVE.swap(false, Ordering::SeqCst) {
     return Ok(());
   }
-  crate::input::forget_answers();
+  // Before the pop, so a legacy lone ESC is the Esc key again.
+  crate::input::release();
   resize_reports(false)?;
-  if enhanced() {
-    execute!(io::stdout(), event::PopKeyboardEnhancementFlags)?;
+  if PUSHED.swap(false, Ordering::SeqCst) {
+    io::stdout().write_all(b"\x1b[<u")?;
   }
   execute!(
     io::stdout(),

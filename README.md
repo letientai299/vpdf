@@ -14,7 +14,8 @@ Use `vpdf --help` for CLI options and subcommands, and `:help` inside the reader
 for keys and commands.
 
 [Kitty][kitty] displays page graphics; other terminals use extracted text.
-With tmux, enable `allow-passthrough on`.
+The reader requires [Kitty keyboard][keyboard] disambiguation, which tmux
+lacks; see [terminal setup][setup].
 
 ## Documentation
 
@@ -28,6 +29,8 @@ MuPDF and its Rust bindings remain subject to their AGPL obligations. See
 [dependency licensing][notices].
 
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
+[keyboard]: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
+[setup]: docs/installation.md#terminal-setup
 [docs]: docs/readme.md
 [license]: LICENSE
 [notices]: docs/installation.md#licensing

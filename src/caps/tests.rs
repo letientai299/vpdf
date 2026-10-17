@@ -585,3 +585,144 @@ fn info_under_tmux() {
     ["Profile: unsupported (Cannot query tmux)", "tmux: cannot query"];
   shows("tmux failed", &failed, &present, &["tmux passthrough"]);
 }
+
+/// Keyboard support comes from its own answers, never from graphics:
+/// tmux and `WezTerm` without `enable_kitty_keyboard` draw but miss it.
+#[test]
+fn keys_need_disambiguation_enabled() {
+  let wezterm = "WezTerm 20240203-110809-5046fc22";
+  let cases = [
+    (
+      "kitty",
+      Route::Direct,
+      [&version("kitty(0.49.1)"), OK, b"\x1b[?0u", DA1].concat(),
+      Some(KEYBOARD),
+      None,
+    ),
+    (
+      "zellij, flag 1 only",
+      Route::Direct,
+      [&version("Zellij 0.45.1"), b"\x1b[?0u".as_slice(), DA1].concat(),
+      Some(DISAMBIGUATE),
+      None,
+    ),
+    (
+      "refused",
+      Route::Direct,
+      [&version("kitty(0.49.1)"), OK, b"\x1b[?0u", DA1].concat(),
+      Some(ALTERNATE_KEYS),
+      Some(KeyLack::Refused(Some(ALTERNATE_KEYS))),
+    ),
+    (
+      "unconfirmed",
+      Route::Direct,
+      [b"\x1b[?0u", DA1].concat(),
+      None,
+      Some(KeyLack::Refused(None)),
+    ),
+    (
+      "tmux",
+      tmux_with(Some("kitty(0.49.1)")),
+      [&version("tmux 3.8"), DA1].concat(),
+      None,
+      Some(KeyLack::Protocol(Some("tmux 3.8".into()))),
+    ),
+    (
+      "WezTerm default",
+      Route::Direct,
+      [&version(wezterm), OK, DA1].concat(),
+      None,
+      Some(KeyLack::Protocol(Some(wezterm.into()))),
+    ),
+    ("screen", Route::Screen, Vec::new(), None, Some(KeyLack::Screen)),
+    (
+      "no DA1",
+      Route::Direct,
+      version("kitty(0.49.1)"),
+      None,
+      Some(KeyLack::Unanswered),
+    ),
+    (
+      "flags without DA1",
+      Route::Direct,
+      [&version("kitty(0.49.1)"), b"\x1b[?0u".as_slice()].concat(),
+      Some(KEYBOARD),
+      None,
+    ),
+  ];
+  for (label, route, bytes, enabled, want) in cases {
+    let caps = caps(route, &replies(&bytes));
+    assert_eq!(caps.key_lack(enabled), want, "{label}");
+  }
+  let messages = [
+    (KeyLack::Screen, "GNU screen lacks Kitty keyboard disambiguation"),
+    (KeyLack::Unanswered, "Terminal did not answer queries"),
+    (
+      KeyLack::Protocol(Some("tmux 3.8".into())),
+      "tmux 3.8 lacks Kitty keyboard disambiguation",
+    ),
+    (KeyLack::Protocol(None), "Terminal lacks Kitty keyboard disambiguation"),
+    (
+      KeyLack::Protocol(Some(wezterm.into())),
+      "WezTerm needs enable_kitty_keyboard = true",
+    ),
+    (
+      KeyLack::Refused(Some(4)),
+      "Kitty keyboard disambiguation refused, flags 4",
+    ),
+    (KeyLack::Refused(None), "Terminal did not confirm Kitty keyboard flags"),
+  ];
+  for (lack, want) in messages {
+    assert_eq!(lack.to_string(), want);
+  }
+}
+
+/// Label, route, probe replies, readback per round, and result.
+type Negotiation<'a> =
+  (&'a str, Route, &'a [u8], &'a [&'a [u8]], Option<KeyLack>);
+
+/// The push and its readback go out in one round, and only where the
+/// probe found the protocol. Rounds without disambiguation, as when a
+/// child program left its answers unread, repeat the readback up to
+/// `READBACKS` times; the last flags win.
+#[test]
+fn negotiate_pushes_then_reads_back() -> Result<()> {
+  let kitty = [&version("kitty(0.49.1)"), OK, b"\x1b[?0u", DA1].concat();
+  let tmux = [&version("tmux 3.8"), DA1].concat();
+  let (on, off) = (b"\x1b[?5u".as_slice(), b"\x1b[?4u".as_slice());
+  let refused = Some(KeyLack::Refused(Some(ALTERNATE_KEYS)));
+  let tmux_lack = Some(KeyLack::Protocol(Some("tmux 3.8".into())));
+  let direct = || Route::Direct;
+  let cases: [Negotiation; 8] = [
+    ("accepted", direct(), &kitty, &[on], None),
+    ("refused", direct(), &kitty, &[off, off, off], refused.clone()),
+    ("refused, then silent", direct(), &kitty, &[off, b"", b""], refused),
+    (
+      "unconfirmed",
+      direct(),
+      &kitty,
+      &[b"", b"", b""],
+      Some(KeyLack::Refused(None)),
+    ),
+    ("stale DA1", direct(), &kitty, &[b"", on], None),
+    ("stale flags first", direct(), &kitty, &[b"\x1b[?0u\x1b[?5u"], None),
+    ("stale flags round", direct(), &kitty, &[b"\x1b[?0u", b"", on], None),
+    ("tmux", tmux_with(Some("kitty(0.49.1)")), &tmux, &[], tmux_lack),
+  ];
+  for (label, route, probed, readbacks, want) in cases {
+    let caps = caps(route, &replies(probed));
+    let mut asked = Vec::new();
+    let lack = caps.negotiate(|request| {
+      asked.push(request.to_vec());
+      Ok(replies(&[readbacks[asked.len() - 1], DA1].concat()))
+    })?;
+    assert_eq!(lack, want, "{label}");
+    assert_eq!(asked.len(), readbacks.len(), "{label}");
+    let mut requests = asked.iter();
+    if let Some(first) = requests.next() {
+      assert_eq!(first, b"\x1b[>5u\x1b[?u", "{label}");
+    }
+    assert!(requests.all(|request| request == b"\x1b[?u"), "{label}");
+  }
+  Ok(())
+}

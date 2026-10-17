@@ -464,7 +464,7 @@ fn junk_is_skipped() {
 }
 
 /// U02: Tab, Ctrl-i, and Ctrl-o keep their identity from bytes through
-/// normalization to actions; prompt Tab still completes.
+/// normalization to actions; only prompt Tab completes.
 #[test]
 fn tab_and_ctrl_i_stay_apart() {
   let tab = &decode(&[b"\t"])[0];
@@ -489,7 +489,7 @@ fn tab_and_ctrl_i_stay_apart() {
   };
   let chord = |code, modifiers| KeyEvent::new(code, modifiers);
   assert!(complete(*tab));
-  assert!(complete(*ctrl_i), "as in readline");
+  assert!(!complete(*ctrl_i), "Ctrl-i is not Tab");
   assert!(!complete(chord(KeyCode::Tab, CTRL)));
   assert!(!complete(chord(KeyCode::Char('i'), CTRL | ALT)));
 }

@@ -1,6 +1,7 @@
 //! Waits for terminal input, SIGWINCH, and worker results with one
 //! `poll`, so an idle reader sleeps instead of waking every few ms.
 use crate::Result;
+use crate::caps::KeyLack;
 use crate::decode::{Event, Parser, Reply};
 use anyhow::Context;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
@@ -11,7 +12,7 @@ use std::io::{self, IsTerminal, Read, Write};
 use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock, PoisonError};
+use std::sync::{Mutex, OnceLock, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
 
 struct Reader {
@@ -22,14 +23,16 @@ struct Reader {
   winch: UnixStream,
   /// When a lone ESC started waiting for the rest of its sequence.
   esc: Option<Instant>,
+  keyboard: Keyboard,
   /// DA1 answers asked for and not yet read; one that missed its
   /// round's deadline still arrives later.
   owed: usize,
 }
 
-/// Quiet time after which a lone ESC is the Esc key. Under Kitty's
-/// keyboard protocol Esc arrives as `CSI 27 u`, so a lone ESC byte is a
-/// sequence cut by the pty (1022-byte reads on macOS) or the network.
+/// Quiet time after which a lone ESC is the Esc key, before keyboard
+/// negotiation. After it Esc arrives as `CSI 27 u`, so a lone ESC byte
+/// is a sequence cut by the pty (1022-byte reads on macOS) or the
+/// network, however late the rest comes, and waits without a timer.
 const ESC_WAIT: Duration = Duration::from_millis(25);
 
 static READER: Mutex<Option<Reader>> = Mutex::new(None);
@@ -70,9 +73,31 @@ pub fn start() -> Result<()> {
     wake,
     winch,
     esc: None,
+    keyboard: Keyboard::Legacy,
     owed: 0,
   });
   Ok(())
+}
+
+/// How keys arrive.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Keyboard {
+  /// Legacy bytes, before negotiation or while another program has the
+  /// terminal: a lone ESC is Esc after `ESC_WAIT`.
+  Legacy,
+  /// Esc arrives as `CSI 27 u`, so a lone ESC read from now on waits
+  /// for the rest of its sequence.
+  Disambiguated,
+  /// Negotiation failed; `next` fails with it from now on, so a caller
+  /// that shows errors and goes on still ends the session.
+  Failed(KeyLack),
+}
+
+pub fn set_keyboard(keyboard: Keyboard) {
+  let mut reader = READER.lock().unwrap_or_else(PoisonError::into_inner);
+  if let Some(reader) = reader.as_mut() {
+    reader.keyboard = keyboard;
+  }
 }
 
 /// Makes a waiting `next` return; workers call it after sending results.
@@ -149,6 +174,9 @@ impl Reader {
   }
 
   fn next(&mut self, timeout: Option<Duration>) -> Result<Option<Event>> {
+    if let Keyboard::Failed(lack) = &self.keyboard {
+      return Err(lack.clone().into());
+    }
     let deadline = timeout.map(|timeout| Instant::now() + timeout);
     loop {
       if let Some(event) = self.events.pop_front() {
@@ -206,6 +234,15 @@ impl Reader {
     }
   }
 
+  /// The other program reads the DA1 answers still owed, and keys go
+  /// back to legacy bytes; a failed keyboard stays failed.
+  fn release(&mut self) {
+    self.owed = 0;
+    if self.keyboard == Keyboard::Disambiguated {
+      self.keyboard = Keyboard::Legacy;
+    }
+  }
+
   fn read(&mut self) -> Result<()> {
     let mut chunk = [0; 16 * 1024];
     let read = match rustix::io::read(&self.tty, &mut chunk) {
@@ -216,7 +253,9 @@ impl Reader {
     anyhow::ensure!(read > 0, "Terminal closed");
     self.parser.feed(&chunk[..read], &mut self.events);
     // A read that leaves a lone ESC ended with it, so its wait starts now.
-    self.esc = self.parser.waiting().then(Instant::now);
+    let waits =
+      self.parser.waiting() && self.keyboard != Keyboard::Disambiguated;
+    self.esc = waits.then(Instant::now);
     Ok(())
   }
 }
@@ -229,12 +268,17 @@ pub fn resizing() -> bool {
   })
 }
 
-/// Forgets DA1 answers still owed; another program that takes the
-/// terminal reads them.
-pub fn forget_answers() {
-  let mut reader = READER.lock().unwrap_or_else(PoisonError::into_inner);
+/// Readies input for another program that takes the terminal. Skips a
+/// held lock: a decoder panic on this thread, or the hangup thread
+/// while input waits.
+pub fn release() {
+  let mut reader = match READER.try_lock() {
+    Ok(reader) => reader,
+    Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+    Err(TryLockError::WouldBlock) => return,
+  };
   if let Some(reader) = reader.as_mut() {
-    reader.owed = 0;
+    reader.release();
   }
 }
 
@@ -250,7 +294,7 @@ fn drain(mut socket: &UnixStream) {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crossterm::event::{KeyCode, KeyEvent};
+  use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
   use std::os::fd::OwnedFd;
 
   /// A reader on sockets; the test writes the first one returned and
@@ -262,8 +306,16 @@ mod tests {
     let tty = File::from(OwnedFd::from(tty));
     let events = VecDeque::new();
     let parser = Parser::default();
-    let reader =
-      Reader { tty, parser, events, wake, winch, esc: None, owed: 0 };
+    let reader = Reader {
+      tty,
+      parser,
+      events,
+      wake,
+      winch,
+      esc: None,
+      keyboard: Keyboard::Legacy,
+      owed: 0,
+    };
     Ok((reader, [terminal, waker, signal]))
   }
 
@@ -397,6 +449,49 @@ mod tests {
       events += 1;
     }
     assert_eq!(events, 100);
+    Ok(())
+  }
+
+  /// Once negotiated, a lone ESC is a cut sequence however late its
+  /// rest comes; an ESC read before keeps its quiet time, and legacy
+  /// keys after suspend get it back.
+  #[test]
+  fn negotiated_esc_waits_for_its_sequence() -> Result<()> {
+    let (mut reader, [mut terminal, _waker, _signal]) = reader()?;
+    terminal.write_all(b"\x1b")?;
+    assert_eq!(reader.next(Some(Duration::from_millis(1)))?, None);
+    reader.keyboard = Keyboard::Disambiguated;
+    let esc = reader.next(Some(ESC_WAIT * 4))?;
+    assert_eq!(esc, Some(key(KeyCode::Esc)), "read before negotiation");
+    terminal.write_all(b"\x1b")?;
+    assert_eq!(reader.next(Some(ESC_WAIT * 4))?, None, "no timer");
+    terminal.write_all(b"[27u")?;
+    let short = Some(Duration::from_millis(1));
+    assert_eq!(reader.next(short)?, Some(key(KeyCode::Esc)));
+    terminal.write_all(b"\x1b")?;
+    assert_eq!(reader.next(Some(ESC_WAIT * 4))?, None);
+    terminal.write_all(b"[105;5u")?;
+    let ctrl_i = KeyEvent::new(KeyCode::Char('i'), KeyModifiers::CONTROL);
+    assert_eq!(reader.next(short)?, Some(Event::Key(ctrl_i)));
+    reader.owed = 1;
+    reader.release();
+    assert_eq!((reader.keyboard.clone(), reader.owed), (Keyboard::Legacy, 0));
+    terminal.write_all(b"\x1b")?;
+    let esc = reader.next(Some(ESC_WAIT * 4))?;
+    assert_eq!(esc, Some(key(KeyCode::Esc)), "timer again after suspend");
+    Ok(())
+  }
+
+  /// A failed negotiation fails every later read, queued input or not,
+  /// and stays failed when another program takes the terminal.
+  #[test]
+  fn failed_keyboard_ends_input() -> Result<()> {
+    let (mut reader, [mut terminal, _waker, _signal]) = reader()?;
+    terminal.write_all(b"j")?;
+    reader.keyboard = Keyboard::Failed(KeyLack::Refused(None));
+    reader.release();
+    let error = reader.next(Some(Duration::from_millis(1))).unwrap_err();
+    assert!(error.is::<KeyLack>(), "{error}");
     Ok(())
   }
 }

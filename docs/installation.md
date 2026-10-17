@@ -36,11 +36,11 @@ terminal environment; other terminals use extracted text. Force the fallback
 with `--text`. The [CLI][cli] owns detection and launch options; use
 `vpdf --help` for the installed interface.
 
-Under tmux, enable passthrough in `tmux.conf`:
-
-```tmux
-set -g allow-passthrough on
-```
+The reader, in either presentation, requires the [Kitty keyboard
+protocol][keyboard]'s disambiguation, so Tab and Ctrl-i stay distinct and Esc
+needs no timeout. Without it the reader exits and names what is missing.
+WezTerm needs [`enable_kitty_keyboard = true`][wezterm-keyboard]. tmux ignores
+the protocol's query, so the reader exits under tmux.
 
 Image placement depends on the terminal's cell metrics. Reader panes work inside
 one terminal; a multiplexer is optional. Actual painting cadence depends on the
@@ -78,6 +78,8 @@ identifying the dependencies used in a particular build.
 [release]: ../.github/workflows/release.yml
 [development]: development.md#build-from-source
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
+[keyboard]: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
+[wezterm-keyboard]: https://wezterm.org/config/lua/config/enable_kitty_keyboard.html
 [cli]: ../src/main.rs
 [rendering]: rendering.md
 [integrations]: sessions.md#external-actions
