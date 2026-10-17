@@ -1,6 +1,6 @@
 # Installation and terminal setup
 
-Prebuilt builds embed MuPDF and fallback fonts. Python is not a runtime
+Prebuilt builds embed MuPDF and the PDF base14 fonts. Python is not a runtime
 dependency. OCR and desktop integrations use optional external programs.
 
 ## Distribution
@@ -68,6 +68,11 @@ choices.
 Install Tesseract and the requested language data to recognize scanned pages.
 Existing PDF text, including an embedded OCR layer, does not need Tesseract.
 
+PDFs that name a font without embedding it draw with installed fonts: Core
+Text finds them on macOS, and [fontconfig][fontconfig]'s `fc-match` on Linux.
+Without a match, Latin text falls back to a base14 font and CJK text draws
+wrong glyphs.
+
 The file picker uses `fzf` when it is on `PATH`. Native clipboard delivery can
 use the platform's clipboard helper; OSC 52 remains subject to terminal policy.
 See `:help` for commands available in the current environment and
@@ -84,9 +89,9 @@ obligations, including corresponding-source requirements. Licensing vpdf's code
 under MIT does not relicense these dependencies. The [AGPL text][agpl] is
 retained for them; see also [MuPDF licensing][mupdf-license].
 
-Bundled fallback fonts retain upstream licenses in the dependency source
-distributions. Consult [the manifest][manifest] and [lockfile][lockfile] when
-identifying the dependencies used in a particular build.
+The base14 fonts inside MuPDF retain their upstream licenses. Consult
+[the manifest][manifest] and [lockfile][lockfile] when identifying the
+dependencies used in a particular build.
 
 [homebrew]: https://brew.sh/
 [mise]: https://mise.jdx.dev/
@@ -100,6 +105,7 @@ identifying the dependencies used in a particular build.
 [cli]: ../src/main.rs
 [rendering]: rendering.md
 [integrations]: sessions.md#external-actions
+[fontconfig]: https://www.freedesktop.org/wiki/Software/fontconfig/
 [license]: ../LICENSE
 [agpl]: ../LICENSE-AGPL
 [mupdf-license]: https://mupdf.readthedocs.io/en/latest/license.html

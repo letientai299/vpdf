@@ -113,6 +113,7 @@ pub struct Handle {
 
 impl Handle {
   pub fn open(path: &Path, password: &str) -> Result<Self> {
+    crate::fonts::install();
     let mut native = PdfDocument::open(path)?;
     if native.needs_password()? && !native.authenticate(password)? {
       return Err(PasswordRequired.into());

@@ -31,9 +31,10 @@ directory on `PATH`. The install task depends on the build task, so it can also
 be run directly after setup.
 
 Build on the target platform. Linux builds use musl and reject shared-library
-dependencies. macOS builds embed MuPDF and fonts and reject non-system dynamic
-libraries. These checks cover the executable; optional helpers remain separate
-programs. [Build scripts][build] and the [CI matrix][ci] define supported hosts.
+dependencies. macOS builds embed MuPDF and its base14 fonts and reject
+non-system dynamic libraries. These checks cover the executable; optional
+helpers remain separate programs. [Build scripts][build] and the [CI matrix][ci]
+define supported hosts.
 
 ## Validation
 

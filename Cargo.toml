@@ -52,7 +52,6 @@ fancy-regex = "0.16"
 flate2 = "1"
 mupdf = { version = "=0.8.0", default-features = false, features = [
   "base14-fonts",
-  "bundled-fonts",
 ] }
 notify = "8.2.0"
 rustix = { version = "1", features = ["event", "process"] }
@@ -62,6 +61,9 @@ signal-hook = "0.3"
 unicode-casefold = "0.2"
 unicode-normalization = "0.1"
 unicode-width = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+font-kit = "0.14"
 
 [dev-dependencies]
 sha2 = "0.10"

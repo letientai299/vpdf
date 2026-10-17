@@ -18,6 +18,7 @@ pub mod crop;
 pub mod decode;
 mod diacritics;
 pub mod find;
+mod fonts;
 pub mod fzf;
 pub mod gate;
 pub mod graphics;
