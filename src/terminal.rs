@@ -1,11 +1,9 @@
 use crate::Result;
 use crate::layout::Screen;
 use crossterm::{cursor, event, execute, terminal};
-use rustix::event::{PollFd, PollFlags, Timespec, poll};
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, Write};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub struct Terminal;
@@ -13,19 +11,19 @@ pub struct Terminal;
 impl Terminal {
   pub fn enter() -> Result<Self> {
     crate::input::start()?;
+    // Built first, so a failed probe still restores the screen.
+    let terminal = Self;
     resume()?;
     // Save the window title; Drop restores it.
     io::stdout().write_all(b"\x1b[22;0t")?;
-    Ok(Self)
+    Ok(terminal)
   }
 }
 
 /// Whether the terminal speaks Kitty's keyboard protocol, which reports
 /// keys such as Shift-Space that legacy encoding cannot tell apart.
 fn enhanced() -> bool {
-  static ENHANCED: OnceLock<bool> = OnceLock::new();
-  *ENHANCED
-    .get_or_init(|| terminal::supports_keyboard_enhancement().unwrap_or(false))
+  crate::caps::get().is_some_and(|caps| caps.keyboard.is_some())
 }
 
 /// Set when another program had the screen; it may have deleted images.
@@ -65,6 +63,9 @@ pub fn resume() -> Result<()> {
     event::EnableMouseCapture,
     event::EnableBracketedPaste
   )?;
+  // Inside the alternate screen, so a terminal that prints an unknown
+  // query leaves nothing behind.
+  crate::caps::probe()?;
   if enhanced() {
     let flags = event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
       | event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS;
@@ -79,6 +80,7 @@ pub fn suspend() -> Result<()> {
   if !ACTIVE.swap(false, Ordering::SeqCst) {
     return Ok(());
   }
+  crate::input::forget_answers();
   if enhanced() {
     execute!(io::stdout(), event::PopKeyboardEnhancementFlags)?;
   }
@@ -181,48 +183,6 @@ pub fn clean(text: &str, columns: usize) -> String {
   clean
 }
 
-/// Sends `request` and a primary device attributes query, which every
-/// terminal answers, and returns what arrived before that answer; empty
-/// when it does not come within `timeout`. Run before reading input.
-pub fn query(request: &[u8], timeout: Duration) -> Result<Vec<u8>> {
-  let stdin = io::stdin();
-  if !stdin.is_terminal() {
-    return Ok(Vec::new());
-  }
-  let mut output = io::stdout();
-  output.write_all(request)?;
-  output.write_all(b"\x1b[c")?;
-  output.flush()?;
-  let deadline = Instant::now() + timeout;
-  let mut reply = Vec::new();
-  while answered(&reply).is_none() {
-    let left = deadline.saturating_duration_since(Instant::now());
-    let mut fds = [PollFd::new(&stdin, PollFlags::IN)];
-    if left.is_zero() || poll(&mut fds, Some(&Timespec::try_from(left)?))? == 0
-    {
-      return Ok(Vec::new());
-    }
-    let mut chunk = [0; 256];
-    let read = rustix::io::read(&stdin, &mut chunk)?;
-    if read == 0 {
-      return Ok(Vec::new());
-    }
-    reply.extend_from_slice(&chunk[..read]);
-  }
-  reply.truncate(answered(&reply).unwrap_or_default());
-  Ok(reply)
-}
-
-/// Where a primary device attributes answer, `ESC [ ? 6 2 ; 2 2 c`,
-/// starts in `reply`.
-fn answered(reply: &[u8]) -> Option<usize> {
-  (0..reply.len()).find(|&start| {
-    let rest = reply[start..].strip_prefix(b"\x1b[?").unwrap_or_default();
-    let digits = rest.iter().take_while(|&&b| b.is_ascii_digit() || b == b';');
-    rest.get(digits.count()) == Some(&b'c')
-  })
-}
-
 /// Sends an encoded image in 4096-byte chunks; `control` leads the first.
 pub fn transmit(
   output: &mut impl Write,
@@ -307,12 +267,14 @@ pub fn placement(
   Ok(())
 }
 
-fn pane_origin() -> Option<(u16, u16)> {
+/// `format` expanded by tmux for vpdf's pane; None outside tmux or
+/// when tmux fails.
+pub fn tmux_display(format: &str) -> Option<String> {
   let pane = std::env::var_os("TMUX_PANE")?;
   let output = std::process::Command::new("tmux")
     .args(["display-message", "-p", "-t"])
     .arg(pane)
-    .arg("#{pane_left} #{pane_top} #{status-position} #{status}")
+    .arg(format)
     .stdin(std::process::Stdio::null())
     .stderr(std::process::Stdio::null())
     .output()
@@ -320,7 +282,12 @@ fn pane_origin() -> Option<(u16, u16)> {
   if !output.status.success() {
     return None;
   }
-  let text = std::str::from_utf8(&output.stdout).ok()?;
+  String::from_utf8(output.stdout).ok()
+}
+
+fn pane_origin() -> Option<(u16, u16)> {
+  let text =
+    tmux_display("#{pane_left} #{pane_top} #{status-position} #{status}")?;
   let mut fields = text.split_whitespace();
   let column: u16 = fields.next()?.parse().ok()?;
   let mut row: u16 = fields.next()?.parse().ok()?;
@@ -338,14 +305,6 @@ fn pane_origin() -> Option<(u16, u16)> {
 #[cfg(test)]
 mod tests {
   use super::*;
-
-  #[test]
-  fn device_attributes_end_a_reply() {
-    let reply = b"\x1b_Gi=1;OK\x1b\\\x1b[?62;22;52c".as_slice();
-    assert_eq!(answered(reply), Some(11));
-    assert_eq!(answered(b"\x1b[?1u"), None);
-    assert_eq!(answered(b"\x1b[?62;22"), None);
-  }
 
   #[test]
   fn clean_fits_string_width() {

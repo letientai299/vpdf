@@ -8,6 +8,8 @@
 //! cache directory, which is on disk where `/tmp` may be RAM, and goes
 //! away on exit; files of readers that died are removed at start.
 use crate::Result;
+use crate::caps::{Graphics, Host};
+use crate::decode::Reply;
 use crate::document::MIB;
 use crate::tiles::{TILE_HEIGHT, TILE_WIDTH};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -16,17 +18,11 @@ use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 
 /// Bytes of the largest tile.
 const SLOT: u64 = (TILE_WIDTH * TILE_HEIGHT * 3) as u64;
 /// Size of the ring: about ten screens of 1969x2142 pixels.
 pub const BYTES: usize = 128 * MIB;
-/// Time the terminal has to answer the probe. Every terminal answers the
-/// device query, so this bounds only a broken one; an answer after it
-/// would reach the reader as keys.
-const PROBE: Duration = Duration::from_secs(2);
-
 /// A tile's region of the spool.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Slot {
@@ -96,10 +92,12 @@ pub fn get() -> Option<&'static Spool> {
 /// Uses a spool when the terminal reads it: a one-pixel probe written to
 /// it must load before the terminal answers a later device query. Other
 /// hosts and terminals without file transmission keep sending encoded
-/// tiles. tmux answers the device query itself, so Kitty's late answer to
-/// the probe would arrive as keys; tmux sessions skip the probe.
+/// tiles. Only a terminal that answered the graphics query directly gets
+/// the probe: tmux answers the device query itself, so the terminal's
+/// late answer would reach the active pane as keys.
 pub fn start(id: u32) -> Result<bool> {
-  if crate::terminal::tmux() {
+  let direct = Some(&Host::Direct(Graphics::Ok));
+  if crate::caps::get().map(|caps| &caps.host) != direct {
     return Ok(false);
   }
   let Some(dir) = directory() else { return Ok(false) };
@@ -108,8 +106,9 @@ pub fn start(id: u32) -> Result<bool> {
   let control = format!("a=q,i={id},f=24,s=1,v=1,{}", Spool::keys(slot));
   let mut request = Vec::new();
   crate::terminal::graphics(&mut request, &control, &spool.payload)?;
-  let reply = crate::terminal::query(&request, PROBE)?;
-  if !loaded(&reply, id) {
+  let replies =
+    crate::input::ask(&mut std::io::stdout(), &request, crate::caps::WAIT)?;
+  if !loaded(&replies, id) {
     drop(std::fs::remove_file(&spool.path));
     return Ok(false);
   }
@@ -123,10 +122,12 @@ pub fn remove() {
   }
 }
 
-/// Whether `reply` holds Kitty's OK for image `id`.
-fn loaded(reply: &[u8], id: u32) -> bool {
-  let ok = format!("\x1b_Gi={id};OK\x1b\\");
-  reply.windows(ok.len()).any(|window| window == ok.as_bytes())
+/// Whether `replies` hold Kitty's OK for image `id`.
+fn loaded(replies: &[Reply], id: u32) -> bool {
+  replies.iter().any(|reply| {
+    matches!(reply, Reply::Graphics { id: Some(answered), message, .. }
+      if *answered == id && message == "OK")
+  })
 }
 
 /// `$XDG_CACHE_HOME/vpdf`, else under `~/.cache`.
@@ -183,11 +184,16 @@ mod tests {
 
   #[test]
   fn probe_needs_the_ok_for_its_image() {
-    let da1 = b"\x1b[?62;22c".as_slice();
-    assert!(loaded(&[b"\x1b_Gi=7;OK\x1b\\".as_slice(), da1].concat(), 7));
-    assert!(!loaded(&[b"\x1b_Gi=7;EBADF:x\x1b\\".as_slice(), da1].concat(), 7));
-    assert!(!loaded(b"\x1b_Gi=70;OK\x1b\\", 7));
-    assert!(!loaded(da1, 7));
+    let answer = |id, message: &str| Reply::Graphics {
+      id: Some(id),
+      placement: None,
+      message: message.into(),
+    };
+    let da1 = Reply::Attributes(vec![62, 22]);
+    assert!(loaded(&[answer(7, "OK"), da1.clone()], 7));
+    assert!(!loaded(&[answer(7, "EBADF:x"), da1.clone()], 7));
+    assert!(!loaded(&[answer(70, "OK")], 7));
+    assert!(!loaded(&[da1], 7));
   }
 
   #[test]

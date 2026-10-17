@@ -9,6 +9,7 @@ pub mod animation;
 mod annotations;
 pub mod app;
 mod canvas;
+pub mod caps;
 mod clipboard;
 mod clues;
 pub mod cmdline;

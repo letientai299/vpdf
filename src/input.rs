@@ -1,7 +1,7 @@
 //! Waits for terminal input, SIGWINCH, and worker results with one
 //! `poll`, so an idle reader sleeps instead of waking every few ms.
 use crate::Result;
-use crate::decode::{Event, Parser};
+use crate::decode::{Event, Parser, Reply};
 use anyhow::Context;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::io::Errno;
@@ -22,6 +22,9 @@ struct Reader {
   winch: UnixStream,
   /// When a lone ESC started waiting for the rest of its sequence.
   esc: Option<Instant>,
+  /// DA1 answers asked for and not yet read; one that missed its
+  /// round's deadline still arrives later.
+  owed: usize,
 }
 
 /// Quiet time after which a lone ESC is the Esc key. Under Kitty's
@@ -67,6 +70,7 @@ pub fn start() -> Result<()> {
     wake,
     winch,
     esc: None,
+    owed: 0,
   });
   Ok(())
 }
@@ -92,11 +96,65 @@ pub fn next(timeout: Option<Duration>) -> Result<Option<Event>> {
   reader.as_mut().context("Input not started")?.next(timeout)
 }
 
+/// Sends `request` and a DA1 query, then reads until DA1's answer or
+/// `timeout`. Returns the replies, ending with DA1's when it came;
+/// other input stays queued, in order, for `next`.
+pub fn ask(
+  out: &mut impl Write,
+  request: &[u8],
+  timeout: Duration,
+) -> Result<Vec<Reply>> {
+  out.write_all(request)?;
+  out.write_all(b"\x1b[c")?;
+  out.flush()?;
+  let mut reader = READER.lock().unwrap_or_else(PoisonError::into_inner);
+  reader.as_mut().context("Input not started")?.ask(timeout)
+}
+
 impl Reader {
+  fn ask(&mut self, timeout: Duration) -> Result<Vec<Reply>> {
+    let deadline = Instant::now() + timeout;
+    let mut replies = Vec::new();
+    let mut typed = VecDeque::new();
+    for event in std::mem::take(&mut self.events) {
+      if da1(&event) {
+        self.owed = self.owed.saturating_sub(1);
+      } else {
+        typed.push_back(event);
+      }
+    }
+    self.owed += 1;
+    // `next` settles one debt per DA1 answer; the last one owed is this
+    // request's, and replies before an older answer are that request's.
+    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+      match self.next(Some(left))? {
+        Some(Event::Reply(reply @ Reply::Attributes(_))) if self.owed == 0 => {
+          replies.push(reply);
+          break;
+        }
+        Some(Event::Reply(reply))
+          if self.owed == 1 && !matches!(reply, Reply::Attributes(_)) =>
+        {
+          replies.push(reply);
+        }
+        Some(Event::Reply(_)) | None => {}
+        Some(event) => typed.push_back(event),
+      }
+    }
+    typed.append(&mut self.events);
+    self.events = typed;
+    // `next` may have taken a wake meant for the caller's loop.
+    wake();
+    Ok(replies)
+  }
+
   fn next(&mut self, timeout: Option<Duration>) -> Result<Option<Event>> {
     let deadline = timeout.map(|timeout| Instant::now() + timeout);
     loop {
       if let Some(event) = self.events.pop_front() {
+        if da1(&event) {
+          self.owed = self.owed.saturating_sub(1);
+        }
         return Ok(Some(event));
       }
       let esc = self.esc.map(|since| since + ESC_WAIT);
@@ -163,6 +221,19 @@ impl Reader {
   }
 }
 
+/// Forgets DA1 answers still owed; another program that takes the
+/// terminal reads them.
+pub fn forget_answers() {
+  let mut reader = READER.lock().unwrap_or_else(PoisonError::into_inner);
+  if let Some(reader) = reader.as_mut() {
+    reader.owed = 0;
+  }
+}
+
+fn da1(event: &Event) -> bool {
+  matches!(event, Event::Reply(Reply::Attributes(_)))
+}
+
 fn drain(mut socket: &UnixStream) {
   let mut sink = [0; 64];
   while socket.read(&mut sink).is_ok_and(|read| read > 0) {}
@@ -183,12 +254,92 @@ mod tests {
     let tty = File::from(OwnedFd::from(tty));
     let events = VecDeque::new();
     let parser = Parser::default();
-    let reader = Reader { tty, parser, events, wake, winch, esc: None };
+    let reader =
+      Reader { tty, parser, events, wake, winch, esc: None, owed: 0 };
     Ok((reader, [terminal, waker, signal]))
   }
 
   fn key(code: KeyCode) -> Event {
     Event::Key(KeyEvent::from(code))
+  }
+
+  /// Keys typed during a probe stay input, in order, around replies.
+  #[test]
+  fn ask_keeps_typeahead() -> Result<()> {
+    let (mut reader, [mut terminal, _waker, _signal]) = reader()?;
+    terminal.write_all(b"j\x1bP>|kitty(0.49.1)\x1b\\k\x1b[?0u")?;
+    terminal.write_all(b"\x1b[?62;52;cl\x1b[?62c")?;
+    let replies = reader.ask(Duration::from_secs(1))?;
+    assert_eq!(
+      replies,
+      [
+        Reply::Version("kitty(0.49.1)".into()),
+        Reply::Keyboard(0),
+        Reply::Attributes(vec![62, 52]),
+      ]
+    );
+    let short = Some(Duration::from_millis(1));
+    for want in ['j', 'k', 'l'] {
+      assert_eq!(reader.next(short)?, Some(key(KeyCode::Char(want))));
+    }
+    let late = Event::Reply(Reply::Attributes(vec![62]));
+    assert_eq!(reader.next(short)?, Some(late));
+    Ok(())
+  }
+
+  /// A DA1 answer that missed its round, and the replies before it,
+  /// do not end or join the next round; the loop reading it settles
+  /// the debt too.
+  #[test]
+  fn late_attributes_stay_with_their_round() -> Result<()> {
+    let (mut reader, [mut terminal, _waker, _signal]) = reader()?;
+    let short = Duration::from_millis(5);
+    assert_eq!(reader.ask(short)?, []);
+    terminal.write_all(b"\x1bP>|kitty(0.49.1)\x1b\\\x1b[?62c")?;
+    terminal.write_all(b"\x1b_Gi=7;OK\x1b\\\x1b[?62;22c")?;
+    let ok =
+      Reply::Graphics { id: Some(7), placement: None, message: "OK".into() };
+    let answer = [ok, Reply::Attributes(vec![62, 22])];
+    assert_eq!(reader.ask(Duration::from_secs(1))?, answer);
+    assert_eq!(reader.owed, 0);
+    assert_eq!(reader.ask(short)?, []);
+    terminal.write_all(b"\x1b[?62c")?;
+    let late = Event::Reply(Reply::Attributes(vec![62]));
+    assert_eq!(reader.next(Some(short))?, Some(late));
+    terminal.write_all(b"\x1b[?62;22c")?;
+    assert_eq!(
+      reader.ask(Duration::from_secs(1))?,
+      [Reply::Attributes(vec![62, 22])]
+    );
+    Ok(())
+  }
+
+  /// A late DA1 answer parsed before the next request settles its own
+  /// debt there.
+  #[test]
+  fn queued_attributes_settle_first() -> Result<()> {
+    let (mut reader, [mut terminal, _waker, _signal]) = reader()?;
+    reader.owed = 1;
+    reader.events.push_back(Event::Reply(Reply::Attributes(vec![62])));
+    terminal.write_all(b"\x1b[?62;22c")?;
+    let replies = reader.ask(Duration::from_secs(1))?;
+    assert_eq!(replies, [Reply::Attributes(vec![62, 22])]);
+    assert_eq!(reader.owed, 0);
+    Ok(())
+  }
+
+  /// Without DA1's answer the probe ends at the deadline with what came.
+  #[test]
+  fn ask_ends_without_attributes() -> Result<()> {
+    let (mut reader, [mut terminal, _waker, _signal]) = reader()?;
+    terminal.write_all(b"\x1bP>|kitty(0.49.1)\x1b\\x")?;
+    let started = Instant::now();
+    let replies = reader.ask(Duration::from_millis(30))?;
+    assert!(started.elapsed() >= Duration::from_millis(30));
+    assert_eq!(replies, [Reply::Version("kitty(0.49.1)".into())]);
+    let short = Some(Duration::from_millis(1));
+    assert_eq!(reader.next(short)?, Some(key(KeyCode::Char('x'))));
+    Ok(())
   }
 
   #[test]
