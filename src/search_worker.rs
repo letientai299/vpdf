@@ -19,6 +19,10 @@ const IDLE: Duration = Duration::from_secs(3);
 /// Idle time after which new indexes go to disk; typing a query rewrites
 /// none.
 const SAVE: Duration = Duration::from_millis(500);
+/// Scan pages decoded from disk at a time, and their decoded bytes at
+/// most, well within the index cache.
+const BATCH: usize = 128;
+const BATCH_BYTES: usize = 8 * MIB;
 
 pub enum Request {
   Query {
@@ -102,9 +106,7 @@ fn serve(
   while let Some(request) = next_request(receive, &mut source) {
     match request {
       Request::Seed(page, text) => {
-        let index = Index::new(page, &text);
-        let weight = index.weight();
-        indexes.insert(page, index, weight);
+        keep(&mut indexes, page, Index::new(page, &text));
         source.seed(page, text);
       }
       Request::Query { generation, .. }
@@ -125,6 +127,11 @@ fn serve(
     }
   }
   source.save();
+}
+
+fn keep(indexes: &mut Cache<PageId, Index>, page: PageId, index: Index) {
+  let weight = index.weight();
+  indexes.insert(page, index, weight);
 }
 
 /// The next request; new indexes save and the document drops while none
@@ -183,12 +190,40 @@ struct SearchTask<'a> {
 }
 
 impl SearchTask<'_> {
-  /// `page`'s index from disk, else from its text once views finish
-  /// drawing; none when a newer query arrives first.
-  fn load(&self, source: &mut Source, page: PageId) -> Result<Option<Index>> {
-    if let Some(index) = source.saved(page) {
-      return Ok(Some(index));
+  /// The page `offset` pages along the scan.
+  fn page(&self, offset: usize, pages: usize) -> PageId {
+    if self.backward {
+      PageId((self.origin.0 + pages - offset) % pages)
+    } else {
+      PageId((self.origin.0 + offset) % pages)
     }
+  }
+
+  /// Decodes the next `BATCH` scan pages from `offset` that the disk
+  /// holds and `indexes` lacks.
+  fn prefetch(
+    &self,
+    source: &mut Source,
+    indexes: &mut Cache<PageId, Index>,
+    offset: usize,
+  ) {
+    if !source.has_pack() {
+      return;
+    }
+    let pages = source.pages;
+    let wanted: Vec<PageId> = (offset..pages.min(offset + BATCH))
+      .map(|offset| self.page(offset, pages))
+      .filter(|page| !indexes.contains(page))
+      .collect();
+    // Inserted last, the scan's next page is the last to evict.
+    for (page, index) in source.saved(&wanted).into_iter().rev() {
+      keep(indexes, page, index);
+    }
+  }
+
+  /// `page`'s index from its text once views finish drawing; none when
+  /// a newer query arrives first.
+  fn load(&self, source: &mut Source, page: PageId) -> Result<Option<Index>> {
     let stale = || self.current.load(Ordering::Relaxed) != self.generation;
     if source.reads_pdf(page) && !crate::render_worker::yield_to_views(stale) {
       return Ok(None);
@@ -210,15 +245,13 @@ impl SearchTask<'_> {
       if self.current.load(Ordering::Relaxed) != self.generation {
         break;
       }
-      let page = if self.backward {
-        PageId((self.origin.0 + pages - offset) % pages)
-      } else {
-        PageId((self.origin.0 + offset) % pages)
-      };
+      let page = self.page(offset, pages);
+      if indexes.get(&page).is_none() {
+        self.prefetch(source, indexes, offset);
+      }
       if indexes.get(&page).is_none() {
         let Some(index) = self.load(source, page)? else { break };
-        let weight = index.weight();
-        indexes.insert(page, index, weight);
+        keep(indexes, page, index);
       }
       let Some(index) = indexes.get(&page) else { continue };
       let hits = index.matches(&pattern, remaining.min(1000))?;
@@ -288,7 +321,7 @@ struct Disk {
   /// The file as the document opened it.
   file: Identity,
   /// Hashing runs beside the first scan, which reads the PDF until the
-  /// pack is known: a 150 MB book takes 270 ms to hash.
+  /// pack is known: a 150 MB book takes about 50 ms to hash.
   hashing: Option<JoinHandle<Option<Alias>>>,
   /// The file's alias and its pack, once hashing ends.
   found: Option<(Alias, Option<Pack>)>,
@@ -371,14 +404,21 @@ impl Source {
     }
   }
 
-  /// `page`'s index from disk, unless OCR replaced its text.
-  fn saved(&mut self, page: PageId) -> Option<Index> {
-    if !self.reads_pdf(page) {
-      return None;
-    }
+  /// The pack, once hashing found one.
+  fn pack(&mut self) -> Option<&Pack> {
     self.settle(false);
-    let (_, pack) = self.disk.as_ref()?.found.as_ref()?;
-    pack.as_ref()?.index(page)
+    self.disk.as_ref()?.found.as_ref()?.1.as_ref()
+  }
+
+  fn has_pack(&mut self) -> bool {
+    self.pack().is_some()
+  }
+
+  /// Indexes from disk of the leading `pages` OCR left alone.
+  fn saved(&mut self, pages: &[PageId]) -> Vec<(PageId, Index)> {
+    let pages: Vec<PageId> =
+      pages.iter().copied().filter(|&page| self.reads_pdf(page)).collect();
+    self.pack().map_or_else(Vec::new, |pack| pack.indexes(&pages, BATCH_BYTES))
   }
 
   /// Indexes `page`'s text, keeping PDF text for the disk.

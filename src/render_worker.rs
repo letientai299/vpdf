@@ -446,15 +446,22 @@ struct Pool {
   ready: Condvar,
 }
 
+/// Threads per pool of CPU-bound helpers: half the cores, 1 to 4.
+pub(crate) fn pool_size() -> usize {
+  static SIZE: OnceLock<usize> = OnceLock::new();
+  *SIZE.get_or_init(|| {
+    thread::available_parallelism()
+      .map_or(2, |count| count.get() / 2)
+      .clamp(1, 4)
+  })
+}
+
 /// Raster threads shared by every document, so panes and tabs do not
 /// multiply them.
 fn pool() -> &'static Pool {
   static POOL: OnceLock<Pool> = OnceLock::new();
   POOL.get_or_init(|| {
-    let threads = thread::available_parallelism()
-      .map_or(2, |count| count.get() / 2)
-      .clamp(1, 4);
-    for _ in 0..threads {
+    for _ in 0..pool_size() {
       thread::spawn(|| serve(pool()));
     }
     Pool { tasks: Mutex::new(VecDeque::new()), ready: Condvar::new() }

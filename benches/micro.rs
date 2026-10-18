@@ -554,6 +554,10 @@ fn pack_read() -> Result<()> {
     for page in (0..pages).map(PageId) {
       drop(black_box(pack.index(page)));
     }
+  })?;
+  let all: Vec<PageId> = (0..pages).map(PageId).collect();
+  measure(&format!("Pack::indexes {pages} pages"), || {
+    drop(black_box(pack.indexes(&all, usize::MAX)));
   })
 }
 

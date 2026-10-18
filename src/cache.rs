@@ -26,6 +26,11 @@ impl<K: Eq + Hash + Clone, V> Cache<K, V> {
     Some(&entry.value)
   }
 
+  /// Whether `key` is present, leaving recency alone.
+  pub fn contains(&self, key: &K) -> bool {
+    self.entries.contains_key(key)
+  }
+
   pub fn insert(&mut self, key: K, value: V, weight: usize) -> Vec<K> {
     if let Some(old) = self.entries.remove(&key) {
       self.used -= old.weight;

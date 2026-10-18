@@ -77,7 +77,8 @@ All MuPDF threads share its global allocation and glyph-cache locks, so a
 background text scan slows the view's rasterization and the foreground's text
 extraction. Search and outline-inference scans therefore wait between pages
 while any pane builds or draws what is on screen. Prefetch does not hold them
-back.
+back. Decoding stored search indexes takes no MuPDF lock and does not wait;
+its threads follow the raster pool's size, half the cores.
 
 Hidden panes release rebuildable text, display lists, search workers, and render
 coordinators. OCR text and view state remain. The shared graphics cache can keep

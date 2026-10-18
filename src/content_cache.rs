@@ -8,7 +8,8 @@ use crate::document::{GLYPH_LIMIT, MIB, TEXT_FLAGS};
 use crate::search::Index;
 use crate::text::PageId;
 use anyhow::{Context, ensure};
-use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
+use flate2::write::ZlibEncoder;
+use flate2::{Compression, Decompress, FlushDecompress, Status};
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::fs::File;
@@ -16,6 +17,7 @@ use std::io::{Read, Write};
 use std::os::unix::fs::{DirBuilderExt, FileExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 const MAGIC: &[u8; 8] = b"VPDFIDX1";
@@ -28,6 +30,11 @@ const RESERVE: u64 = 2 << 30;
 const RECORD: u64 = 16 * MIB as u64;
 /// Age after which a temporary pack counts as abandoned.
 const ABANDONED: Duration = Duration::from_secs(3600);
+/// Table bytes per page: offset, stored size, decoded size.
+const ENTRY: usize = 16;
+/// Fewest pages a decoder thread takes; smaller batches decode on the
+/// calling thread.
+const SHARE: usize = 16;
 
 pub type Alias = [u8; 32];
 
@@ -69,7 +76,7 @@ pub fn alias(file: &mut File) -> Result<Alias> {
 /// What shaped the records: a change makes every pack stale.
 fn provenance() -> String {
   format!(
-    "schema 1; flags {}; glyphs {GLYPH_LIMIT}; code {}; {}",
+    "schema 2; flags {}; glyphs {GLYPH_LIMIT}; code {}; {}",
     TEXT_FLAGS.bits(),
     env!("VPDF_INDEX_CODE"),
     env!("VPDF_INDEX_CRATES")
@@ -93,8 +100,25 @@ fn path(root: &Path, alias: &Alias) -> PathBuf {
 /// OS deletes the path.
 pub struct Pack {
   file: File,
-  /// Offset and length of each page's record; zero length when absent.
-  table: Vec<(u64, u32)>,
+  table: Vec<Entry>,
+  /// Held pages whose records failed to decode, so a save replaces them.
+  damaged: Mutex<Vec<PageId>>,
+}
+
+/// Where a page's record lies and how long it decodes; zero size when
+/// the page is absent.
+#[derive(Clone, Copy)]
+struct Entry {
+  offset: u64,
+  size: u32,
+  len: u32,
+}
+
+/// A compressed record and its decoded length.
+#[derive(Clone)]
+struct Record {
+  raw: Vec<u8>,
+  len: u32,
 }
 
 impl Pack {
@@ -122,47 +146,122 @@ impl Pack {
     ensure!(size == expected.len(), "Stale search pack");
     ensure!(take(size)? == expected.as_bytes(), "Stale search pack");
     ensure!(u32_at(&take(4)?, 0) as usize == pages, "Search pack page count");
-    let raw = take(pages.checked_mul(12).context("Search pack size")?)?;
-    let table: Vec<(u64, u32)> = raw
-      .as_chunks::<12>()
+    let raw = take(pages.checked_mul(ENTRY).context("Search pack size")?)?;
+    let table: Vec<Entry> = raw
+      .as_chunks::<ENTRY>()
       .0
       .iter()
       .map(|entry| {
         let low = u64::from(u32_at(entry, 0));
         let high = u64::from(u32_at(entry, 4));
-        (high << 32 | low, u32_at(entry, 8))
+        Entry {
+          offset: high << 32 | low,
+          size: u32_at(entry, 8),
+          len: u32_at(entry, 12),
+        }
       })
       .collect();
-    let fits = |&(offset, size): &(u64, u32)| {
-      u64::from(size) <= RECORD
-        && offset.checked_add(u64::from(size)).is_some_and(|end| end <= len)
+    let fits = |entry: &Entry| {
+      u64::from(entry.size) <= RECORD
+        && u64::from(entry.len) <= RECORD
+        && (entry.offset.checked_add(u64::from(entry.size)))
+          .is_some_and(|end| end <= len)
     };
     ensure!(table.iter().all(fits), "Truncated search pack");
-    Ok(Self { file, table })
+    Ok(Self { file, table, damaged: Mutex::new(Vec::new()) })
   }
 
   /// `page`'s index; none when absent or damaged.
   pub fn index(&self, page: PageId) -> Option<Index> {
-    let raw = self.raw(page)?;
-    let mut bytes = Vec::new();
-    let mut decoder = ZlibDecoder::new(raw.as_slice()).take(RECORD);
-    decoder.read_to_end(&mut bytes).ok()?;
-    Index::decode(page, &bytes).ok()
+    let record = self.record(page)?;
+    let index = decode(page, &record);
+    if index.is_none() {
+      self.damaged.lock().unwrap_or_else(PoisonError::into_inner).push(page);
+    }
+    index
   }
 
+  /// Indexes of the leading `pages` the pack holds, in order, up to
+  /// `budget` decoded bytes (at least one page), on a few threads.
+  pub fn indexes(
+    &self,
+    pages: &[PageId],
+    budget: usize,
+  ) -> Vec<(PageId, Index)> {
+    let mut used = 0;
+    let pages: Vec<PageId> = pages
+      .iter()
+      .copied()
+      .filter(|&page| self.holds(page))
+      .take_while(|page| {
+        let fits =
+          used == 0 || used + self.table[page.0].len as usize <= budget;
+        used += self.table[page.0].len as usize;
+        fits
+      })
+      .collect();
+    let threads = crate::render_worker::pool_size();
+    let chunk = pages.len().div_ceil(threads).max(SHARE);
+    let decode = |pages: &[PageId]| -> Vec<(PageId, Index)> {
+      pages.iter().filter_map(|&page| Some((page, self.index(page)?))).collect()
+    };
+    let mut chunks = pages.chunks(chunk);
+    let Some(first) = chunks.next() else { return Vec::new() };
+    std::thread::scope(|scope| {
+      let jobs: Vec<_> = chunks
+        .map(|pages| {
+          let job = std::thread::Builder::new()
+            .spawn_scoped(scope, move || decode(pages));
+          // Without a thread, the chunk decodes after the first.
+          job.map_err(|_| pages)
+        })
+        .collect();
+      let mut found = decode(first);
+      for job in jobs {
+        match job {
+          // A panicking decoder leaves its pages to the PDF.
+          Ok(job) => found.extend(job.join().unwrap_or_default()),
+          Err(pages) => found.extend(decode(pages)),
+        }
+      }
+      found
+    })
+  }
+
+  /// Whether the pack has a record for `page` that has not failed.
   fn holds(&self, page: PageId) -> bool {
-    self.table.get(page.0).is_some_and(|&(_, size)| size > 0)
+    self.table.get(page.0).is_some_and(|entry| entry.size > 0)
+      && !self
+        .damaged
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .contains(&page)
   }
 
-  fn raw(&self, page: PageId) -> Option<Vec<u8>> {
-    let &(offset, size) = self.table.get(page.0)?;
-    if size == 0 {
+  fn record(&self, page: PageId) -> Option<Record> {
+    if !self.holds(page) {
       return None;
     }
-    let mut raw = vec![0; size as usize];
-    self.file.read_exact_at(&mut raw, offset).ok()?;
-    Some(raw)
+    let entry = self.table[page.0];
+    let mut raw = vec![0; entry.size as usize];
+    self.file.read_exact_at(&mut raw, entry.offset).ok()?;
+    Some(Record { raw, len: entry.len })
   }
+}
+
+/// The index `record` holds for `page`; none unless it inflates to its
+/// stated length and decodes.
+fn decode(page: PageId, record: &Record) -> Option<Index> {
+  let len = record.len as usize;
+  // One spare byte lets a longer stream show itself.
+  let mut bytes = Vec::with_capacity(len + 1);
+  let status = Decompress::new(true)
+    .decompress_vec(&record.raw, &mut bytes, FlushDecompress::Finish)
+    .ok()?;
+  if status != Status::StreamEnd || bytes.len() != len {
+    return None;
+  }
+  Index::decode(page, &bytes).ok()
 }
 
 fn u32_at(bytes: &[u8], at: usize) -> u32 {
@@ -170,7 +269,7 @@ fn u32_at(bytes: &[u8], at: usize) -> u32 {
 }
 
 /// Compressed page records waiting for a pack.
-pub struct Records(Vec<Option<Vec<u8>>>);
+pub struct Records(Vec<Option<Record>>);
 
 impl Records {
   pub fn new(pages: usize) -> Self {
@@ -181,9 +280,10 @@ impl Records {
     let slot = self.0.get_mut(page.0).context("Page outside document")?;
     let mut bytes = Vec::new();
     index.encode(&mut bytes);
+    let len = u32::try_from(bytes.len())?;
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder.write_all(&bytes)?;
-    *slot = Some(encoder.finish()?);
+    *slot = Some(Record { raw: encoder.finish()?, len });
     Ok(())
   }
 
@@ -193,8 +293,8 @@ impl Records {
 
   /// Whether `old` lacks a page recorded here.
   pub fn adds_to(&self, old: Option<&Pack>) -> bool {
-    self.0.iter().enumerate().any(|(page, raw)| {
-      raw.is_some() && !old.is_some_and(|old| old.holds(PageId(page)))
+    self.0.iter().enumerate().any(|(page, record)| {
+      record.is_some() && !old.is_some_and(|old| old.holds(PageId(page)))
     })
   }
 }
@@ -214,29 +314,30 @@ pub fn save(
   if stats.f_bavail.saturating_mul(stats.f_frsize) < RESERVE {
     return Ok(());
   }
-  let raws: Vec<Option<Vec<u8>>> = records
+  let kept: Vec<Option<Record>> = records
     .0
     .iter()
     .enumerate()
-    .map(|(page, raw)| {
-      raw.clone().or_else(|| old.and_then(|old| old.raw(PageId(page))))
+    .map(|(page, record)| {
+      record.clone().or_else(|| old.and_then(|old| old.record(PageId(page))))
     })
     .collect();
   let mut bytes = MAGIC.to_vec();
   let provenance = provenance();
   put(&mut bytes, provenance.len());
   bytes.extend_from_slice(provenance.as_bytes());
-  put(&mut bytes, raws.len());
-  let mut offset = (bytes.len() + raws.len() * 12) as u64;
-  for raw in &raws {
-    let size = raw.as_ref().map_or(0, Vec::len);
+  put(&mut bytes, kept.len());
+  let mut offset = (bytes.len() + kept.len() * ENTRY) as u64;
+  for record in &kept {
+    let (size, len) = record.as_ref().map_or((0, 0), |r| (r.raw.len(), r.len));
     let start = if size == 0 { 0 } else { offset };
     bytes.extend_from_slice(&(start as u32).to_le_bytes());
     bytes.extend_from_slice(&((start >> 32) as u32).to_le_bytes());
     put(&mut bytes, size);
+    bytes.extend_from_slice(&len.to_le_bytes());
     offset += size as u64;
   }
-  for raw in raws.iter().flatten() {
+  for raw in kept.iter().flatten().map(|record| &record.raw) {
     bytes.extend_from_slice(raw);
   }
   // Writers race by renaming whole packs; readers never see a partial
@@ -341,6 +442,17 @@ mod tests {
     let pack = Pack::open(root.path(), &alias, 3).context("merged")?;
     assert_eq!(hits(&pack.index(PageId(0)).context("kept")?, "alpha"), 1);
     assert_eq!(hits(&pack.index(PageId(2)).context("added")?, "gamma"), 1);
+    let order = [PageId(2), PageId(1), PageId(0)];
+    let found = |budget: usize| -> Vec<(usize, usize)> {
+      (pack.indexes(&order, budget).iter())
+        .map(|(page, index)| {
+          (page.0, hits(index, "alpha") + hits(index, "gamma"))
+        })
+        .collect()
+    };
+    assert_eq!(found(usize::MAX), [(2, 1), (0, 1)]);
+    // A small budget still decodes the first page.
+    assert_eq!(found(1), [(2, 1)]);
     Ok(())
   }
 
@@ -360,6 +472,19 @@ mod tests {
         pack.map(|pack| (pack.index(PageId(0)), pack.index(PageId(1))));
       assert!(!matches!(read, Some((Some(_), Some(_)))), "{len}");
     }
+    // A decoded length off by one either way.
+    let table = MAGIC.len() + 4 + provenance().len() + 4;
+    for len in [3, 5] {
+      let mut wrong = bytes.clone();
+      let at = table + ENTRY + 12;
+      let real = u32_at(&wrong, at);
+      let changed = (real + len - 4).to_le_bytes();
+      wrong[at..at + 4].copy_from_slice(&changed);
+      std::fs::write(&file, &wrong)?;
+      let pack = Pack::open(root.path(), &alias, 2).context("length")?;
+      assert!(pack.index(PageId(0)).is_some(), "{len}");
+      assert!(pack.index(PageId(1)).is_none(), "{len}");
+    }
     let mut stale = bytes.clone();
     stale[MAGIC.len() + 4] ^= 1;
     std::fs::write(&file, &stale)?;
@@ -369,7 +494,15 @@ mod tests {
     flipped[last] ^= 0xff;
     std::fs::write(&file, &flipped)?;
     let pack = Pack::open(root.path(), &alias, 2).context("table intact")?;
+    assert!(!records(2, &[(1, "two")]).adds_to(Some(&pack)), "held");
     assert!(pack.index(PageId(1)).is_none(), "damaged record");
+    // A save replaces the damaged record with the page read again.
+    let again = records(2, &[(1, "two")]);
+    assert!(again.adds_to(Some(&pack)), "damaged counts as missing");
+    save(root.path(), &alias, &again, Some(&pack))?;
+    let repaired = Pack::open(root.path(), &alias, 2).context("repaired")?;
+    assert_eq!(hits(&repaired.index(PageId(1)).context("page 1")?, "two"), 1);
+    assert_eq!(hits(&repaired.index(PageId(0)).context("page 0")?, "one"), 1);
     std::fs::write(&file, &bytes)?;
     let pack = Pack::open(root.path(), &alias, 2).context("restored")?;
     std::fs::remove_file(&file)?;
