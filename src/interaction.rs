@@ -73,7 +73,7 @@ impl App {
 
   pub(crate) fn dismiss_overlay(&mut self) {
     self.context_menu = None;
-    self.drop_sweep();
+    self.end_gestures();
     self.peek = None;
     // The bar's key hint goes with it.
     if self.region.take().is_some() && self.reader.message == BAR_HINT {
@@ -698,6 +698,9 @@ impl App {
   /// Acts on a routed pointer event.
   pub fn mouse(&mut self, route: Route) -> Result<()> {
     let Route { mouse, region, .. } = route;
+    if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_)) {
+      self.autoscroll = None;
+    }
     if matches!(mouse.kind, MouseEventKind::Down(_)) && self.dismiss_click()? {
       return Ok(());
     }
@@ -910,14 +913,11 @@ impl App {
       }
     }
     self.animation = None;
-    let drag = matches!(mouse.kind, MouseEventKind::Drag(_));
-    if drag {
+    if matches!(mouse.kind, MouseEventKind::Drag(_)) {
       self.edge_follow(&route)?;
+      return self.drag_to(&route);
     }
     let Some(pos) = self.press_position(&route)? else { return Ok(()) };
-    if drag {
-      return self.drag_select(pos);
-    }
     self.click_select(pos, route.clicks)
   }
 

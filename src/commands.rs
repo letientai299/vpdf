@@ -123,7 +123,7 @@ impl App {
   pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
     let key = crate::keys::normalize(key);
     // Keys end pointer gestures.
-    self.drop_sweep();
+    self.end_gestures();
     self.drop_hover_preview();
     if self.prompt.is_some() {
       return self.edit_prompt(history, |prompt, history| {
@@ -203,7 +203,7 @@ impl App {
       return Ok(());
     }
     self.region = None;
-    self.drop_sweep();
+    self.end_gestures();
     match owner {
       InputOwner::Prompt => self.cancel_prompt()?,
       InputOwner::Hints => self.hints = None,

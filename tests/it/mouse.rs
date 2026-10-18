@@ -760,23 +760,24 @@ fn alt_clicks_extend_the_selection() -> Result<()> {
   Ok(())
 }
 
+/// An SGR report under mode 1016.
+fn report(bytes: &str) -> Mouse {
+  let mut events = std::collections::VecDeque::new();
+  let mut parser = vpdf::decode::Parser::default();
+  parser.set_pixels(true);
+  parser.feed(bytes.as_bytes(), &mut events);
+  match events.pop_front() {
+    Some(vpdf::decode::Event::Mouse(mouse)) => mouse,
+    other => panic!("a mouse report: {other:?}"),
+  }
+}
+
 #[test]
 fn drags_past_edges_scroll_faster_with_distance() -> Result<()> {
-  use vpdf::decode::Parser;
   let (_directory, mut session) = session(false)?;
   let text = cell(&mut session, Hit::Text)?;
   let rows = session.app().screen.rows;
   let x = text.0 * 8 + 4;
-  let report = |bytes: String| {
-    let mut events = std::collections::VecDeque::new();
-    let mut parser = Parser::default();
-    parser.set_pixels(true);
-    parser.feed(bytes.as_bytes(), &mut events);
-    match events.pop_front() {
-      Some(vpdf::decode::Event::Mouse(mouse)) => mouse,
-      other => panic!("a mouse report: {other:?}"),
-    }
-  };
   let last = i32::from(rows - 1) * 16;
   // (scroll, drag pixel y) -> rows scrolled
   let cases = [
@@ -789,13 +790,13 @@ fn drags_past_edges_scroll_faster_with_distance() -> Result<()> {
   for (start, y, want) in cases {
     session.app().reader.scroll = start;
     let press = format!("\x1b[<0;{x};{}M", text.1 * 16 + 8);
-    session.mouse_report(report(press))?;
+    session.mouse_report(report(&press))?;
     let before = session.app().reader.scroll;
-    session.mouse_report(report(format!("\x1b[<32;{x};{y}M")))?;
+    session.mouse_report(report(&format!("\x1b[<32;{x};{y}M")))?;
     let scrolled = (session.app().reader.scroll - before) / 16.0;
     assert!((scrolled - want).abs() < 0.01, "{y}: {scrolled}");
     assert!(session.app().reader.selection.is_some(), "the drag selects");
-    session.mouse_report(report(format!("\x1b[<0;{x};{y}m")))?;
+    session.mouse_report(report(&format!("\x1b[<0;{x};{y}m")))?;
   }
   // Cells: the status row scrolls one row.
   session.app().reader.scroll = 0.0;
@@ -804,6 +805,164 @@ fn drags_past_edges_scroll_faster_with_distance() -> Result<()> {
   mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), status)?;
   assert!((session.app().reader.scroll - 16.0).abs() < 0.01);
   mouse(&mut session, MouseEventKind::Up(MouseButton::Left), status)?;
+  Ok(())
+}
+
+/// How a held edge drag ends.
+#[derive(Clone, Copy, Debug)]
+enum End {
+  Release,
+  Inside,
+  /// Bare motion: a lost release.
+  Motion,
+  Keys(&'static str),
+}
+
+/// U10: held edge drags scroll until ended.
+#[test]
+fn held_edge_drags_keep_scrolling() -> Result<()> {
+  use crossterm::event::KeyCode::{Char, Esc};
+  use std::time::Duration;
+  let (_directory, mut session) = session(false)?;
+  let text = cell(&mut session, Hit::Text)?;
+  let (x, y) = (text.0 * 8 + 4, text.1 * 16 + 8);
+  let bottom = i32::from(session.app().screen.rows - 1) * 16;
+  let scroll = |session: &mut Session| session.app().reader.scroll / 16.0;
+  // (start row, clicks, drag y, rows, end)
+  let cases = [
+    (0.0, 1, bottom + 8, 1.0, End::Release),
+    (0.0, 2, bottom + 40, 3.0, End::Inside),
+    (20.0, 1, 0, -1.0, End::Motion),
+    (0.0, 1, bottom + 8, 1.0, End::Keys("\x1b")),
+    (0.0, 1, bottom + 8, 1.0, End::Keys(":")),
+    (0.0, 1, bottom + 8, 1.0, End::Keys("gp")),
+  ];
+  for (start, clicks, to, rows, end) in cases {
+    session.app().reader.scroll = start * 16.0;
+    let down = format!("\x1b[<0;{x};{y}M");
+    let up = format!("\x1b[<0;{x};{y}m");
+    for _ in 1..clicks {
+      session.mouse_report(report(&down))?;
+      session.mouse_report(report(&up))?;
+    }
+    session.mouse_report(report(&down))?;
+    let drag = format!("\x1b[<32;{x};{to}M");
+    session.mouse_report(report(&drag))?;
+    let entered = start + rows;
+    assert!((scroll(&mut session) - entered).abs() < 0.01, "{end:?}");
+    // Held reports change only the rate.
+    session.mouse_report(report(&drag))?;
+    assert!((scroll(&mut session) - entered).abs() < 0.01, "{end:?}");
+    let due = session.autoscroll_due().expect("a held edge drag");
+    assert!(
+      !session.autoscroll(due.checked_sub(Duration::from_millis(1)).unwrap())
+    );
+    // Steps extend as reports there would.
+    session.app().reader.cursor = Position::default();
+    assert!(session.autoscroll(due), "{end:?}");
+    let stepped = start + 2.0 * rows;
+    assert!((scroll(&mut session) - stepped).abs() < 0.01, "{end:?}");
+    let cursor = session.app().reader.cursor;
+    assert_ne!(cursor, Position::default(), "{end:?}");
+    session.mouse_report(report(&drag))?;
+    assert_eq!(session.app().reader.cursor, cursor, "{end:?}");
+    match end {
+      End::Release => {
+        session.mouse_report(report(&up))?;
+      }
+      End::Inside => {
+        session.mouse_report(report(&format!("\x1b[<32;{x};{y}M")))?;
+      }
+      End::Motion => {
+        session.mouse_report(report(&format!("\x1b[<35;{x};{y}M")))?;
+      }
+      End::Keys(keys) => {
+        for key in keys.chars() {
+          press(&mut session, if key == '\x1b' { Esc } else { Char(key) })?;
+        }
+      }
+    }
+    let selection = selected(&mut session);
+    assert!(!session.autoscroll(due + Duration::from_secs(1)), "{end:?}");
+    assert_eq!(session.autoscroll_due(), None, "{end:?}");
+    assert_eq!(selected(&mut session), selection, "{end:?}: no step");
+    press(&mut session, Esc)?;
+    press(&mut session, Esc)?;
+    session.mouse_report(report(&up))?;
+  }
+  Ok(())
+}
+
+/// What precedes a held drag's step.
+#[derive(Clone, Copy, Debug)]
+enum Before {
+  Nothing,
+  /// The step comes a second late.
+  Late,
+  /// The view sits at the document's end.
+  End,
+  Wheel,
+}
+
+/// Steps keep pace; ends stop them.
+#[test]
+fn held_edge_steps_keep_pace() -> Result<()> {
+  use std::time::Duration;
+  let (_directory, mut session) = session(false)?;
+  let text = cell(&mut session, Hit::Text)?;
+  let (x, y) = (text.0 * 8 + 4, text.1 * 16 + 8);
+  let bottom = i32::from(session.app().screen.rows - 1) * 16;
+  let end = {
+    let app = session.app();
+    app.layout.clamp_scroll(f32::MAX) / 16.0
+  };
+  let scroll = |session: &mut Session| session.app().reader.scroll / 16.0;
+  let wheel = format!("\x1b[<65;{x};{y}M");
+  // (before, late ms, rows, still held)
+  let cases = [
+    (Before::Nothing, 0, 1.0, true),
+    (Before::Late, 1000, 4.0, true),
+    (Before::End, 0, 0.0, false),
+    (Before::Wheel, 0, 1.0, true),
+  ];
+  for (before, late, rows, held) in cases {
+    let start = if let Before::End = before { end } else { 0.0 };
+    session.app().reader.scroll = start * 16.0;
+    session.mouse_report(report(&format!("\x1b[<0;{x};{y}M")))?;
+    let drag = format!("\x1b[<32;{x};{}M", bottom + 8);
+    session.mouse_report(report(&drag))?;
+    let due = session.autoscroll_due().expect("a held edge drag");
+    if let Before::Wheel = before {
+      session.mouse_report(report(&wheel))?;
+    }
+    let from = scroll(&mut session);
+    let at = due + Duration::from_millis(late);
+    assert_eq!(session.autoscroll(at), rows > 0.0, "{before:?}");
+    let moved = scroll(&mut session) - from;
+    assert!((moved - rows).abs() < 0.01, "{before:?}: {moved}");
+    assert_eq!(session.autoscroll_due().is_some(), held, "{before:?}");
+    session.mouse_report(report(&format!("\x1b[<0;{x};{y}m")))?;
+  }
+  Ok(())
+}
+
+/// Held text drags step across pages.
+#[test]
+fn held_text_edge_drags_keep_scrolling() -> Result<()> {
+  let lines: &[&str] = &["One line of text", "Two lines of text", "Three"];
+  let pages = |path: &Path| common::pages_pdf(path, &[lines; 4]);
+  let (_directory, mut session) = open(pages, true)?;
+  let text = cell(&mut session, Hit::Text)?;
+  let status = (text.0, session.app().screen.rows - 1);
+  mouse(&mut session, MouseEventKind::Down(MouseButton::Left), text)?;
+  mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), status)?;
+  let due = session.autoscroll_due().expect("a held edge drag");
+  let before = session.app().reader.cursor;
+  assert!(session.autoscroll(due));
+  let after = session.app().reader.cursor;
+  assert!(after > before, "{before:?} -> {after:?}");
+  mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), status)?;
+  assert_eq!(session.app().reader.cursor, after);
   Ok(())
 }
 

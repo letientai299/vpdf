@@ -621,6 +621,11 @@ impl Pointer {
     self.capture().is_some()
   }
 
+  /// The pane a held press drags.
+  pub fn held_pane(&self) -> Option<u32> {
+    self.capture().map(|capture| capture.pane)
+  }
+
   /// Bare motion at the last reported spot.
   pub fn spot(&self) -> Option<(MouseEvent, Option<Pixel>)> {
     self.spot

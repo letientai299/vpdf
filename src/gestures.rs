@@ -9,6 +9,7 @@ use crate::pointer::Route;
 use crate::reader::{Mode, Reader, Selection, SelectionKind};
 use crate::text::{Bounds, PageId, Position};
 use crossterm::event::MouseEventKind;
+use std::time::{Duration, Instant};
 
 /// What a click run's drag extends.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -62,6 +63,20 @@ pub enum Gesture {
   Dropped,
 }
 
+/// A drag held past an edge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Autoscroll {
+  /// The drag's last report.
+  route: Route,
+  /// Rows a step scrolls; negative scrolls up.
+  rows: isize,
+  /// When the next step scrolls.
+  pub due: Instant,
+}
+
+/// How often a held edge drag scrolls.
+pub const AUTOSCROLL: Duration = Duration::from_millis(50);
+
 impl App {
   /// Alt-press: starts a capture; text extends.
   pub(crate) fn alt_press(&mut self, route: &Route) -> Result<()> {
@@ -87,16 +102,21 @@ impl App {
       return Ok(());
     };
     self.edge_follow(route)?;
+    self.sweep_to(page, route);
+    Ok(())
+  }
+
+  /// Moves the capture's corner to the pointer.
+  fn sweep_to(&mut self, page: PageId, route: &Route) {
     let (column, row) = (route.mouse.column, route.mouse.row);
     let Some((x, y)) = self.point_on(page, column, row, route.pixel) else {
-      return Ok(());
+      return;
     };
     let shown = self.shown_page(page);
     let to = (x.clamp(shown.x0, shown.x1), y.clamp(shown.y0, shown.y1));
     if let Gesture::Sweep(sweep) = &mut self.gesture {
       sweep.to = Some(to);
     }
-    Ok(())
   }
 
   /// Alt-release: sweep, figure, else extend.
@@ -135,6 +155,12 @@ impl App {
   pub(crate) fn sweep_hint(&self) -> Option<String> {
     let Gesture::Sweep(sweep) = self.gesture else { return None };
     sweep.bounds().map(|_| "Release captures; Esc cancels".into())
+  }
+
+  /// Ends held gestures; whether a sweep was.
+  pub(crate) fn end_gestures(&mut self) -> bool {
+    self.autoscroll = None;
+    self.drop_sweep()
   }
 
   /// Drops a held sweep; whether one was.
@@ -299,13 +325,55 @@ impl App {
     direction * (1 + (past - 1) / height) as isize
   }
 
-  /// Scrolls when a drag nears an edge.
+  /// Scrolls past an edge, then keeps holding.
   pub(crate) fn edge_follow(&mut self, route: &Route) -> Result<()> {
     let rows = self.edge_rows(route);
     if rows == 0 {
+      self.autoscroll = None;
       return Ok(());
     }
-    self.edge_scroll(rows)
+    let due = match self.autoscroll {
+      Some(held) => held.due,
+      None => {
+        self.edge_scroll(rows)?;
+        Instant::now() + AUTOSCROLL
+      }
+    };
+    self.autoscroll = Some(Autoscroll { route: *route, rows, due });
+    Ok(())
+  }
+
+  /// Steps a held edge drag; whether moved.
+  pub(crate) fn autoscroll_step(&mut self, now: Instant) -> Result<bool> {
+    let Some(held) = self.autoscroll.filter(|held| now >= held.due) else {
+      return Ok(false);
+    };
+    // Slow frames keep the pace.
+    let late =
+      now.duration_since(held.due).as_millis() / AUTOSCROLL.as_millis();
+    let steps = 1 + late.min(3) as isize;
+    self.autoscroll = Some(Autoscroll { due: now + AUTOSCROLL, ..held });
+    // A wheel's easing would hide the step.
+    self.animation = None;
+    let before = self.wheel_view();
+    self.edge_scroll(held.rows * steps)?;
+    if self.wheel_view() == before {
+      // At an end; the next report retries.
+      self.autoscroll = None;
+      return Ok(false);
+    }
+    match self.gesture {
+      Gesture::Sweep(Sweep { page, .. }) => self.sweep_to(page, &held.route),
+      Gesture::Dropped => {}
+      Gesture::Glyphs | Gesture::Stretch(_) => self.drag_to(&held.route)?,
+    }
+    Ok(true)
+  }
+
+  /// Extends the drag's selection to the pointer.
+  pub(crate) fn drag_to(&mut self, route: &Route) -> Result<()> {
+    let Some(pos) = self.press_position(route)? else { return Ok(()) };
+    self.drag_select(pos)
   }
 
   /// Scrolls `rows` at once, for drags.

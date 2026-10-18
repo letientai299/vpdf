@@ -15,7 +15,9 @@ selection can start directly from Normal too. Copy the selection to use its
 text elsewhere; the source PDF stays unchanged.
 
 Pointer selection follows the same reading modes. Drag across text to select
-it, or use repeated clicks to select a word, line, or paragraph. The context
+it, or use repeated clicks to select a word, line, or paragraph. Holding a drag
+past the top or bottom edge keeps scrolling, faster farther out, until release,
+a move back inside, or a key. The context
 menu offers actions for the location or selection under the pointer; hover
 chooses an action and a click runs it.
 

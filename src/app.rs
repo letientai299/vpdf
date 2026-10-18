@@ -167,6 +167,8 @@ pub struct App {
   pub(crate) gesture: crate::gestures::Gesture,
   /// The held middle button.
   pub(crate) grab: Option<crate::gestures::Grab>,
+  /// A drag held past an edge.
+  pub(crate) autoscroll: Option<crate::gestures::Autoscroll>,
   pub region: Option<crate::region::Region>,
   pub region_job: Option<crate::region::Job>,
   pub region_send: Option<crate::region::Transfer>,
@@ -267,6 +269,7 @@ impl App {
       link_press: crate::links::LinkPress::Idle,
       gesture: crate::gestures::Gesture::Glyphs,
       grab: None,
+      autoscroll: None,
       region: None,
       region_job: None,
       region_send: None,

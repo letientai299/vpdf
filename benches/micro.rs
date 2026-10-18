@@ -366,21 +366,27 @@ fn drag() -> Result<()> {
     let drag = event(MouseEventKind::Drag(MouseButton::Middle), column);
     black_box(session.mouse(black_box(drag)).expect("pan"));
   })?;
-  // The status row scrolls each drag.
+  // Held at the status row: no scroll.
   let mut session = vpdf::session::Session::new(None);
   session.open(&corpus("paper.pdf")?, true, PANE)?;
   session.app().command("2")?;
   let base = session.app().reader.scroll;
   session.mouse(event(MouseEventKind::Down(MouseButton::Left), 40))?;
   let mut column = 40;
-  measure("Session::mouse drag edge", || {
+  measure("Session::mouse drag held edge", || {
     column = if column == 80 { 50 } else { 80 };
-    session.app().reader.scroll = base;
     let drag = MouseEvent {
       row: 39,
       ..event(MouseEventKind::Drag(MouseButton::Left), column)
     };
     black_box(session.mouse(black_box(drag)).expect("drag"));
+  })?;
+  // A step scrolls a row and extends.
+  let mut now = session.autoscroll_due().expect("a held edge drag");
+  measure("Session::autoscroll step", || {
+    now += Duration::from_millis(50);
+    session.app().reader.scroll = base;
+    black_box(session.autoscroll(black_box(now)));
   })
 }
 

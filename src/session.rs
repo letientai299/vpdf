@@ -954,7 +954,7 @@ impl Session {
       let left = self.leave_check();
       // Bare motion: a release got lost.
       let app = self.app();
-      let dropped = app.drop_sweep() | app.drop_grab() | app.drop_scrub();
+      let dropped = app.end_gestures() | app.drop_grab() | app.drop_scrub();
       let resized = self.resizing.take().is_some();
       return Ok(dropped || resized || seen || left);
     }
@@ -1608,6 +1608,11 @@ impl Session {
   fn release_pointer(&mut self, out: &mut impl Write) -> Result<()> {
     self.pointer.leave();
     self.resizing = None;
+    // Its release may never come.
+    self.pointer.release();
+    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+      app.end_gestures();
+    }
     terminal::hand_over(out)?;
     // Out before the slow `tmux display`.
     out.flush()?;
@@ -1734,6 +1739,7 @@ impl Session {
       }
       changed |= app.bar_expired(now);
     }
+    changed |= self.autoscroll(now);
     changed |= self.hover_preview(now);
     let reader = &mut self.app().reader;
     if !reader.message.is_empty() {
@@ -1742,6 +1748,34 @@ impl Session {
     let Some(notice) = terminal::notice() else { return changed };
     reader.message = notice;
     true
+  }
+
+  /// Steps the held edge drag; whether drawn.
+  pub fn autoscroll(&mut self, now: Instant) -> bool {
+    let held = self.pointer.held_pane();
+    let mut changed = false;
+    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+      // Lost releases stop it too.
+      if held != Some(app.id) {
+        app.autoscroll = None;
+        continue;
+      }
+      match app.autoscroll_step(now) {
+        Ok(moved) => changed |= moved,
+        Err(error) => {
+          app.autoscroll = None;
+          app.error = Some(error.to_string());
+          changed = true;
+        }
+      }
+    }
+    changed
+  }
+
+  /// When the held edge drag next scrolls.
+  pub fn autoscroll_due(&self) -> Option<Instant> {
+    let panes = &self.tabs.get(self.active)?.panes;
+    panes.iter().find_map(|app| app.autoscroll.map(|held| held.due))
   }
 
   /// Asks tmux how it shows the pane, for `cause`; whether the reader
@@ -2337,6 +2371,9 @@ fn idle(
   let held = session.pointer.holding();
   let due = session.resting().and_then(App::hover_due);
   if let Some(due) = due.filter(|_| !held) {
+    wait = wait.min(due.saturating_duration_since(Instant::now()));
+  }
+  if let Some(due) = session.autoscroll_due() {
     wait = wait.min(due.saturating_duration_since(Instant::now()));
   }
   for app in &session.tab().panes {
@@ -2941,6 +2978,62 @@ mod tests {
       let mut out = Vec::new();
       session.draw_frame(&mut out)?;
       assert_eq!(shapes(&out), want, "step {step}: {kind:?}");
+    }
+    Ok(())
+  }
+
+  /// Focus loss ends held drags.
+  #[test]
+  fn edge_drags_scroll_until_focus_loss() -> Result<()> {
+    use crate::gestures::AUTOSCROLL;
+    use crate::pointer::{Hit, Region};
+    use crossterm::event::MouseButton::Left;
+    use crossterm::event::MouseEventKind::{Down, Drag};
+    let directory = tempfile::tempdir()?;
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut session = Session::new(None);
+    session.open(&line_pdf(directory.path(), "")?, true, screen)?;
+    let app = session.app();
+    let mut cells = (0..23).flat_map(|row| (0..80).map(move |c| (c, row)));
+    let text = cells.find(|&(column, row)| {
+      app.hovered(Region::Page, column, row, None).ok() == Some(Hit::Text)
+    });
+    let (column, row) = text.expect("a text cell");
+    let now = Instant::now();
+    assert!(idle(&mut session, now, now, false) > AUTOSCROLL);
+    let (alt, plain) = (KeyModifiers::ALT, KeyModifiers::NONE);
+    let corner = |app: &App| match app.gesture {
+      crate::gestures::Gesture::Sweep(sweep) => sweep.to,
+      _ => None,
+    };
+    for modifiers in [plain, alt] {
+      let event = |kind, row| MouseEvent { kind, column, row, modifiers };
+      session.app().reader.scroll = 0.0;
+      session.mouse(event(Down(Left), row))?;
+      // The status row is past it.
+      session.mouse(event(Drag(Left), 23))?;
+      let due = session.autoscroll_due().expect("a held edge drag");
+      assert!(idle(&mut session, now, now, false) <= AUTOSCROLL);
+      let before = corner(session.app());
+      assert!(session.autoscroll(due), "{modifiers:?}");
+      // Sweeps follow the scroll too.
+      let moved = corner(session.app()) != before;
+      assert_eq!(moved, modifiers == alt, "{modifiers:?}");
+      input(&mut session, Act::Focus(false), &mut Vec::new())?;
+      let later = Instant::now() + AUTOSCROLL;
+      assert!(!session.autoscroll(later), "{modifiers:?}");
+      assert_eq!(session.autoscroll_due(), None);
+      // Drags after it hold nothing.
+      session.mouse(event(Drag(Left), 23))?;
+      assert_eq!(session.autoscroll_due(), None, "{modifiers:?}");
+      assert!(!session.app().sweeping(), "{modifiers:?}");
+      assert_eq!(session.app().sweep_hint(), None);
     }
     Ok(())
   }

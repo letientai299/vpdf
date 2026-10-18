@@ -88,7 +88,7 @@ Drag from a link: select text
 Double click: select word
 Triple / quadruple click: select line / paragraph
 Drag after double / triple click: extend by word / line
-Drag past top / bottom edge: scroll; farther is faster
+Hold drag past top / bottom edge: scroll
 <M-click> off a figure: extend selection or start V
 Drag / click runs: enter V; <Esc> returns to entry mode
 Right click: menu for link, note, selection, text, figure
