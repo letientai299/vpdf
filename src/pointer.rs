@@ -177,6 +177,8 @@ pub enum Hit {
   Edge {
     rows: bool,
   },
+  /// A clickable status item, clue, or completion.
+  Chrome,
 }
 
 /// Overlays whose items the pointer picks.
@@ -220,7 +222,8 @@ impl Hit {
       | Self::Row(_)
       | Self::Thumbnail(_)
       | Self::Preview { follows: true }
-      | Self::Item(_, Some(_)) => Shape::Pointer,
+      | Self::Item(_, Some(_))
+      | Self::Chrome => Shape::Pointer,
       Self::Edge { rows: false } => Shape::ColResize,
       Self::Edge { rows: true } => Shape::RowResize,
     }
@@ -966,6 +969,9 @@ mod tests {
       (Hit::Item(List::Menu, Some(0)), Shape::Pointer),
       (Hit::Item(List::Hints, Some(1)), Shape::Pointer),
       (Hit::Item(List::Actions, None), Shape::Default),
+      (Hit::Chrome, Shape::Pointer),
+      (Hit::Edge { rows: false }, Shape::ColResize),
+      (Hit::Edge { rows: true }, Shape::RowResize),
     ];
     for (hit, shape) in cases {
       assert_eq!(hit.shape(), shape, "{hit:?}");

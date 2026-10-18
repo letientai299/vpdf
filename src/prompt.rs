@@ -511,6 +511,15 @@ impl Prompt {
     PromptEvent::Edited
   }
 
+  /// Picks completion `index`, as Tab would.
+  pub fn pick(&mut self, index: usize) {
+    let Some(menu) = &mut self.menu else { return };
+    if index < menu.items.len() {
+      menu.selected = Some(index);
+      self.apply();
+    }
+  }
+
   /// Offers `items` for the text from byte `start` to the cursor.
   pub fn complete(&mut self, start: usize, items: Vec<String>) {
     if items.is_empty() || start > self.cursor {

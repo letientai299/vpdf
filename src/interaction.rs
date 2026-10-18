@@ -95,6 +95,12 @@ impl App {
     true
   }
 
+  /// Drops the error and the message.
+  pub(crate) fn clear_notes(&mut self) {
+    self.error = None;
+    self.reader.message.clear();
+  }
+
   /// Whether a press only dismisses something.
   pub(crate) fn overlaid(&self) -> bool {
     self.clues.is_some()
@@ -1005,9 +1011,11 @@ impl App {
         let follows = self.hover_peek().is_some();
         return Ok(Hit::Preview { follows });
       }
-      Region::Overlay | Region::Status | Region::Edge => {
-        return Ok(Hit::Nothing);
+      Region::Overlay | Region::Status => {
+        let item = self.chrome_at(region, column, row);
+        return Ok(item.map_or(Hit::Nothing, |_| Hit::Chrome));
       }
+      Region::Edge => return Ok(Hit::Nothing),
     }
     if self.text_mode {
       let Some(position) = glyph(self, column, row)? else {

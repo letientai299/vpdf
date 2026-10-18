@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::app::{App, Request, TabMove, Tabline, Window};
+use crate::chrome::Chrome;
 use crate::decode::{Event, MouseKind, Reply, Size};
 use crate::dnd::{Dropped, Step, Target};
 use crate::document::PasswordRequired;
@@ -484,14 +485,27 @@ impl Session {
 
   /// Closes the active tab; the session ends after the last.
   pub fn close(&mut self) -> Result<()> {
-    self.leave()?;
+    self.close_tab(self.active)
+  }
+
+  /// Closes a tab; the last quits.
+  fn close_tab(&mut self, index: usize) -> Result<()> {
+    if index >= self.tabs.len() {
+      return Ok(());
+    }
+    if index == self.active {
+      self.leave()?;
+    }
     let mut graphics = self.take_graphics();
-    let tab = self.tabs.remove(self.active);
+    let tab = self.tabs.remove(index);
     for app in &tab.panes {
       self.retire(app, &mut graphics);
     }
     if self.tabs.is_empty() {
       return self.save();
+    }
+    if index < self.active {
+      self.active -= 1;
     }
     self.active = self.active.min(self.tabs.len() - 1);
     self.give(graphics);
@@ -763,7 +777,9 @@ impl Session {
         Some(path) => self.open(&path, false, screen),
         None => Ok(()),
       },
-      Some(Request::TabClose) => self.close(),
+      Some(Request::TabClose(index)) => {
+        self.close_tab(index.unwrap_or(self.active))
+      }
       Some(Request::QuitAll) => {
         self.quit = true;
         Ok(())
@@ -872,7 +888,9 @@ impl Session {
     let mouse =
       MouseEvent { kind: MouseEventKind::Moved, column, row, modifiers };
     // One button at a time.
-    if self.pointer.holding() || self.on_completion(mouse) {
+    let completion =
+      self.app().prompt.is_some() && self.on_overlay(mouse).is_some();
+    if self.pointer.holding() || completion {
       return Ok(false);
     }
     self.app().calm_hover();
@@ -883,8 +901,7 @@ impl Session {
     let Some((index, _)) = self.under(mouse) else { return Ok(false) };
     self.app().disarm();
     let app = self.app();
-    app.error = None;
-    app.reader.message.clear();
+    app.clear_notes();
     self.pointer.release();
     self.focus(self.active, index)?;
     let history =
@@ -943,40 +960,10 @@ impl Session {
     {
       return Ok(false);
     }
-    if matches!(mouse.kind, MouseEventKind::Down(_)) {
-      // A new left press: release lost.
-      if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
-        self.resizing = None;
-      }
-      if self.on_completion(mouse) {
-        return Ok(false);
-      }
-      let app = self.app();
-      if app.item_press(mouse)? || app.context_press(mouse) {
-        self.pointer.release();
-        return Ok(true);
-      }
-      if self.app().dismiss_click()? {
-        self.pointer.release();
-        return Ok(true);
-      }
-      if self.app().hover_press(mouse)? {
-        self.pointer.release();
-        return Ok(true);
-      }
-      if let Some(edge) = self.edge_at(mouse.column, mouse.row) {
-        // A press on nothing: keys and notes end.
-        let app = self.app();
-        app.disarm();
-        app.error = None;
-        app.reader.message.clear();
-        // Boundaries never focus; free left presses drag.
-        let left = mouse.kind == MouseEventKind::Down(MouseButton::Left);
-        if !left || self.pointer.holding() {
-          return Ok(true);
-        }
-        return self.edge_press(edge, mouse, pixel, now);
-      }
+    if matches!(mouse.kind, MouseEventKind::Down(_))
+      && let Some(drawn) = self.press_first(mouse, pixel, now)?
+    {
+      return Ok(drawn);
     }
     let tab = &self.tabs[self.active];
     // Snapshot before disarm hides clue rows.
@@ -1017,14 +1004,64 @@ impl Session {
     let view = wheel.then(|| app.wheel_view());
     // Like keys, presses clear old notes.
     if matches!(mouse.kind, MouseEventKind::Down(_)) {
-      app.error = None;
-      app.reader.message.clear();
+      app.clear_notes();
     }
     app.mouse(route)?;
     let moved = view.is_none_or(|view| view != app.wheel_view());
     let read = before.is_none_or(|before| before != reading(app));
     let changed = read && moved;
     Ok(armed || changed)
+  }
+
+  /// Presses taken before panes; whether drawn.
+  fn press_first(
+    &mut self,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    now: Instant,
+  ) -> Result<Option<bool>> {
+    // A new left press: release lost.
+    if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+      self.resizing = None;
+    }
+    if let Some(route) = self.on_overlay(mouse) {
+      if self.overlay_press(route)? {
+        return Ok(Some(true));
+      }
+      // Completion rows stay; clue rows close.
+      if self.app().prompt.is_some() {
+        return Ok(Some(false));
+      }
+    }
+    let app = self.app();
+    if app.item_press(mouse)? || app.context_press(mouse) {
+      self.pointer.release();
+      return Ok(Some(true));
+    }
+    if self.app().dismiss_click()? {
+      self.pointer.release();
+      return Ok(Some(true));
+    }
+    if self.app().hover_press(mouse)? {
+      self.pointer.release();
+      return Ok(Some(true));
+    }
+    if self.status_press(mouse)? {
+      return Ok(Some(true));
+    }
+    if let Some(edge) = self.edge_at(mouse.column, mouse.row) {
+      // Keys and notes end, as on blanks.
+      let app = self.app();
+      app.disarm();
+      app.clear_notes();
+      // Boundaries never focus; free left presses drag.
+      let left = mouse.kind == MouseEventKind::Down(MouseButton::Left);
+      if !left || self.pointer.holding() {
+        return Ok(Some(true));
+      }
+      return self.edge_press(edge, mouse, pixel, now).map(Some);
+    }
+    Ok(None)
   }
 
   /// The boundary at a cell.
@@ -1053,7 +1090,21 @@ impl Session {
     if let Some(pane) = border {
       return Some(Edge::Panel(pane.id));
     }
-    on(Axis::Rows).map(Edge::Split)
+    // Status items stay clickable.
+    let item = || {
+      tab.panes.iter().any(|app| {
+        let pane = Pane::of(app).rect;
+        pane.contains(column, row)
+          && app
+            .chrome_at(
+              Region::Status,
+              column - pane.column,
+              row - pane.row,
+            )
+            .is_some()
+      })
+    };
+    on(Axis::Rows).filter(|_| !item()).map(Edge::Split)
   }
 
   /// Boundary drags and releases; whether drawn.
@@ -1276,12 +1327,91 @@ impl Session {
     opened.is_ok()
   }
 
-  /// Whether a press hits completions.
-  fn on_completion(&mut self, mouse: MouseEvent) -> bool {
+  /// A press on completions or clues, routed.
+  fn on_overlay(&mut self, mouse: MouseEvent) -> Option<Route> {
+    self.focused_in(Region::Overlay, mouse)
+  }
+
+  /// `mouse` routed in the focused pane's `region`.
+  fn focused_in(
+    &mut self,
+    region: Region,
+    mouse: MouseEvent,
+  ) -> Option<Route> {
     let pane = Pane::of(self.app());
     let local = pointer::route(&[pane], pane.id, None, mouse);
-    self.app().prompt.is_some()
-      && local.is_some_and(|route| route.region == Region::Overlay)
+    local.filter(|route| route.region == region)
+  }
+
+  /// Runs a clicked completion or clue.
+  fn overlay_press(&mut self, route: Route) -> Result<bool> {
+    if route.mouse.kind != MouseEventKind::Down(MouseButton::Left) {
+      return Ok(false);
+    }
+    let tab = &mut self.tabs[self.active];
+    let app = &mut tab.panes[tab.focus];
+    let (column, row) = (route.mouse.column, route.mouse.row);
+    match app.chrome_at(Region::Overlay, column, row) {
+      Some(Chrome::Completion(index)) => {
+        if let Some(prompt) = &mut app.prompt {
+          prompt.pick(index);
+        }
+      }
+      Some(Chrome::Clue(index)) => {
+        let label =
+          app.clues.as_ref().map(|clues| clues.items[index].0.clone());
+        let keys = label.as_deref().and_then(crate::chrome::clue_keys);
+        let typed =
+          keys.into_iter().flatten().try_for_each(|key| self.type_key(key));
+        self.pointer.release();
+        typed?;
+      }
+      _ => return Ok(false),
+    }
+    Ok(true)
+  }
+
+  /// Types `key` into the focused pane.
+  fn type_key(&mut self, key: KeyEvent) -> Result<()> {
+    let tab = &mut self.tabs[self.active];
+    let app = &mut tab.panes[tab.focus];
+    let before = app.panel.as_ref().filter(|p| p.focused).map(|p| p.kind);
+    app.clear_notes();
+    // Keys may change the tree mid-drag.
+    self.resizing = None;
+    // Clues close even when the key fails.
+    let result = app.key(key, &mut self.history);
+    app.after_key();
+    let after = app.panel.as_ref().filter(|p| p.focused).map(|p| p.kind);
+    if before != after {
+      self.pointer.release();
+    }
+    result
+  }
+
+  /// Acts on a pressed status item.
+  fn status_press(&mut self, mouse: MouseEvent) -> Result<bool> {
+    let MouseEventKind::Down(button) = mouse.kind else { return Ok(false) };
+    // One button at a time.
+    if self.pointer.holding() {
+      return Ok(false);
+    }
+    let Some(route) = self.focused_in(Region::Status, mouse) else {
+      return Ok(false);
+    };
+    let app = self.app();
+    // The shown item, before notes clear.
+    let item = app.chrome_at(
+      Region::Status,
+      route.mouse.column,
+      route.mouse.row,
+    );
+    let Some(item) = item else { return Ok(false) };
+    app.disarm();
+    app.clear_notes();
+    app.chrome_press(item, button)?;
+    self.pointer.release();
+    Ok(true)
   }
 
   /// Pane index and route under `mouse`.
@@ -1963,23 +2093,7 @@ fn input(
 ) -> Result<bool> {
   let shown = session.shown_by(&act, out)?;
   let done = match act {
-    Act::Key(key) => {
-      let tab = &mut session.tabs[session.active];
-      let app = &mut tab.panes[tab.focus];
-      let before = app.panel.as_ref().filter(|p| p.focused).map(|p| p.kind);
-      app.reader.message.clear();
-      app.error = None;
-      // Keys may change the tree mid-drag.
-      session.resizing = None;
-      // Clues close even when the key fails.
-      let result = app.key(key, &mut session.history);
-      app.after_key();
-      let after = app.panel.as_ref().filter(|p| p.focused).map(|p| p.kind);
-      if before != after {
-        session.pointer.release();
-      }
-      result
-    }
+    Act::Key(key) => session.type_key(key),
     Act::Paste(text) => {
       let tab = &mut session.tabs[session.active];
       tab.panes[tab.focus].paste(&text, &mut session.history)

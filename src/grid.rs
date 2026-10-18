@@ -36,6 +36,23 @@ pub fn layout(
   Grid { width, columns: per_row, rows, first, visible }
 }
 
+impl Grid {
+  /// The label at a column and line.
+  pub fn item_at(
+    &self,
+    column: usize,
+    line: usize,
+    count: usize,
+  ) -> Option<usize> {
+    if line >= self.visible || self.width == 0 {
+      return None;
+    }
+    let slot = column / self.width;
+    let index = slot * self.rows + self.first + line;
+    (slot < self.columns && index < count).then_some(index)
+  }
+}
+
 /// Most rows a grid may take.
 pub fn limit(screen: Screen) -> usize {
   usize::from(screen.rows / 3).max(1)

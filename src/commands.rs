@@ -358,7 +358,7 @@ impl App {
       }
       "help" => self.open_panel(PanelKind::Help)?,
       "quit" => self.quit = true,
-      "tabclose" => self.request = Some(Request::TabClose),
+      "tabclose" => self.request = Some(Request::TabClose(None)),
       name => anyhow::bail!("Unhandled command: {name}"),
     }
     Ok(())

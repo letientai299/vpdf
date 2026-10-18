@@ -813,7 +813,8 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
         | Hit::Preview { .. }
         | Hit::Item(..)
         | Hit::Card(_)
-        | Hit::Edge { .. } => false,
+        | Hit::Edge { .. }
+        | Hit::Chrome => false,
       };
       assert!(expected, "{at}");
     }

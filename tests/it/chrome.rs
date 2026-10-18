@@ -3,7 +3,7 @@
 use crate::mouse::{cell, cell_in, labels, mouse, press, session, status};
 use crossterm::event::{KeyCode, MouseButton, MouseEventKind};
 use vpdf::Result;
-use vpdf::pointer::Hit;
+use vpdf::pointer::{Hit, Region};
 use vpdf::session::Session;
 use vpdf::text::PageId;
 
@@ -238,7 +238,7 @@ fn double_clicks_on_the_new_half_split_once() -> Result<()> {
   let mut right = None;
   for column in 0..app.screen.columns {
     for row in 0..app.screen.rows - 1 {
-      let hit = app.hovered(vpdf::pointer::Region::Page, column, row, None)?;
+      let hit = app.hovered(Region::Page, column, row, None)?;
       if hit == Hit::Link(PageId(0), 0) {
         right = Some((column, row));
       }
@@ -398,5 +398,226 @@ fn boundary_presses_never_focus() -> Result<()> {
   left(&mut session, MouseEventKind::Up(MouseButton::Middle), (5, 30));
   assert_eq!(layout(&mut session), before);
   assert!(!session.app().grabbing());
+  Ok(())
+}
+
+/// The focused pane's screen cell showing `item`.
+fn chrome_cell(
+  session: &mut Session,
+  item: vpdf::chrome::Chrome,
+) -> Result<(u16, u16)> {
+  let app = session.app();
+  for region in [Region::Status, Region::Overlay] {
+    for row in 0..app.screen.rows {
+      for column in 0..app.screen.columns {
+        if app.chrome_at(region, column, row) == Some(item) {
+          return Ok((app.at.column + column, app.at.row + row));
+        }
+      }
+    }
+  }
+  anyhow::bail!("no cell shows {item:?}")
+}
+
+/// A settled left click.
+fn click(session: &mut Session, at: (u16, u16)) {
+  left(session, MouseEventKind::Down(MouseButton::Left), at);
+  left(session, MouseEventKind::Up(MouseButton::Left), at);
+}
+
+#[test]
+fn status_items_act_on_click() -> Result<()> {
+  use vpdf::chrome::Chrome;
+  let (directory, mut session) = session(false)?;
+  for name in ["b.pdf", "c.pdf"] {
+    let other = directory.path().join(name);
+    crate::common::text_pdf(&other, &["Other words"])?;
+    session.open(&other, true, crate::focus::screen())?;
+  }
+  status(&mut session)?;
+  // Item to item motion draws nothing.
+  let first = chrome_cell(&mut session, Chrome::Tab(1))?;
+  let zero = chrome_cell(&mut session, Chrome::Tab(0))?;
+  assert!(left(&mut session, MouseEventKind::Moved, (0, 0)));
+  assert!(left(&mut session, MouseEventKind::Moved, zero));
+  assert!(!left(&mut session, MouseEventKind::Moved, first));
+  // A held drag keeps middle presses off tabs.
+  left(&mut session, MouseEventKind::Down(MouseButton::Left), (40, 10));
+  left(&mut session, MouseEventKind::Down(MouseButton::Middle), first);
+  left(&mut session, MouseEventKind::Up(MouseButton::Left), (40, 10));
+  assert_eq!(session.tabs.len(), 3);
+  // Presses act on the shown item.
+  keys(&mut session, "y")?;
+  status(&mut session)?;
+  let pending = chrome_cell(&mut session, Chrome::Tab(1))?;
+  click(&mut session, pending);
+  assert_eq!(session.active, 1);
+  status(&mut session)?;
+  let id = session.app().id;
+  let before = chrome_cell(&mut session, Chrome::Tab(0))?;
+  middle(&mut session, before)?;
+  assert_eq!((session.tabs.len(), session.app().id), (2, id), "kept active");
+  status(&mut session)?;
+  let after = chrome_cell(&mut session, Chrome::Tab(1))?;
+  middle(&mut session, after)?;
+  assert_eq!(session.tabs.len(), 1);
+  // Zoom fits; the counter opens pages.
+  let (_directory, mut session) = crate::mouse::session(false)?;
+  keys(&mut session, "+")?;
+  status(&mut session)?;
+  let zoom = chrome_cell(&mut session, Chrome::Zoom)?;
+  click(&mut session, zoom);
+  assert!((session.app().layout.zoom - 1.0).abs() < 0.01);
+  status(&mut session)?;
+  let pages = chrome_cell(&mut session, Chrome::Pages)?;
+  click(&mut session, pages);
+  assert!(session.app().overview.is_some());
+  status(&mut session)?;
+  assert!(chrome_cell(&mut session, Chrome::Pages).is_err(), "inert in gp");
+  // Sections open outlines; notes hide them.
+  let (_directory, mut session) = crate::mouse::session(false)?;
+  session.app().command("2")?;
+  status(&mut session)?;
+  let section = chrome_cell(&mut session, Chrome::Section)?;
+  session.app().reader.message = "A note over the section".into();
+  status(&mut session)?;
+  click(&mut session, section);
+  assert!(session.app().panel.is_none(), "the click clears the note");
+  status(&mut session)?;
+  let section = chrome_cell(&mut session, Chrome::Section)?;
+  click(&mut session, section);
+  let app = session.app();
+  let panel = app.panel.as_ref().map(|p| (p.focused, Some(p.selected)));
+  assert_eq!(panel, Some((true, app.current_section)));
+  Ok(())
+}
+
+#[test]
+fn unfocused_status_rows_only_focus() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  session.app().command("vsplit")?;
+  session.settle()?;
+  status(&mut session)?;
+  // That item in the same-sized pane.
+  let pages = chrome_cell(&mut session, vpdf::chrome::Chrome::Pages)?;
+  let index = (session.tab().focus + 1) % 2;
+  let (here, there) = (session.app().at, session.tab().panes[index].at);
+  let at = (pages.0 - here.column + there.column, pages.1);
+  let id = session.tab().panes[index].id;
+  click(&mut session, at);
+  assert_eq!(session.app().id, id);
+  assert!(session.app().overview.is_none());
+  Ok(())
+}
+
+#[test]
+fn status_items_beat_the_divider() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  session.app().command("split")?;
+  session.settle()?;
+  status(&mut session)?;
+  let before = layout(&mut session);
+  let pages = chrome_cell(&mut session, vpdf::chrome::Chrome::Pages)?;
+  assert_eq!(pages.1, 19, "the upper pane's status row");
+  assert!(left(&mut session, MouseEventKind::Moved, pages));
+  left(&mut session, MouseEventKind::Down(MouseButton::Left), pages);
+  left(&mut session, MouseEventKind::Drag(MouseButton::Left), (pages.0, 9));
+  left(&mut session, MouseEventKind::Up(MouseButton::Left), (pages.0, 9));
+  assert!(session.app().overview.is_some());
+  assert_eq!(layout(&mut session), before);
+  Ok(())
+}
+
+#[test]
+fn clues_and_completions_act_on_click() -> Result<()> {
+  use crossterm::event::{KeyEvent, KeyModifiers};
+  use vpdf::chrome::Chrome;
+  let (_directory, mut session) = session(false)?;
+  let ctrl_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
+  session.app().key(ctrl_w, &mut vpdf::prompt::History::default())?;
+  session.app().awaiting =
+    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1));
+  assert!(session.app().clue_due());
+  let clues = session.app().clues.as_ref().map(|c| c.items.clone());
+  let split = clues.and_then(|items| items.iter().position(|(k, _)| k == "v"));
+  let at = chrome_cell(&mut session, Chrome::Clue(split.expect("a v clue")))?;
+  click(&mut session, at);
+  session.settle()?;
+  assert_eq!(session.tab().panes.len(), 2);
+  assert!(session.app().clues.is_none());
+  // A failing clue still closes.
+  let (_text, mut failing) = crate::mouse::session(true)?;
+  keys(&mut failing, "g")?;
+  failing.app().awaiting =
+    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1));
+  assert!(failing.app().clue_due());
+  let clues = failing.app().clues.as_ref().map(|c| c.items.clone());
+  let pages = clues.and_then(|items| items.iter().position(|(k, _)| k == "p"));
+  status(&mut failing)?;
+  let at = chrome_cell(&mut failing, Chrome::Clue(pages.expect("a p clue")))?;
+  let down = mouse(&mut failing, MouseEventKind::Down(MouseButton::Left), at);
+  assert!(down.is_err(), "the session reports it");
+  let app = failing.app();
+  assert!(app.clues.is_none());
+  assert_eq!(app.keys.pending(), "");
+  // Ranges name no key.
+  keys(&mut session, "m")?;
+  session.app().awaiting =
+    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1));
+  assert!(session.app().clue_due());
+  status(&mut session)?;
+  let app = session.app();
+  let rows = app.screen.rows;
+  let columns = app.screen.columns;
+  let items = (0..rows).flat_map(|row| (0..columns).map(move |c| (c, row)));
+  let mut any =
+    items.filter_map(|(c, row)| app.chrome_at(Region::Overlay, c, row));
+  let any = any.next();
+  assert_eq!(any, None);
+  // Blank clue rows close the clues.
+  let app = session.app();
+  let blank = (app.at.column + app.screen.columns - 1, app.screen.rows - 2);
+  click(&mut session, blank);
+  assert!(session.app().clues.is_none());
+  // A click picks a completion.
+  keys(&mut session, ":tab")?;
+  press(&mut session, KeyCode::Tab)?;
+  let items = session.app().prompt.as_ref().and_then(|p| p.menu.as_ref());
+  let second = items.map(|menu| menu.items[1].clone()).expect("a menu");
+  status(&mut session)?;
+  let at = chrome_cell(&mut session, Chrome::Completion(1))?;
+  click(&mut session, at);
+  let text = session.app().prompt.as_ref().map(|p| p.text.clone());
+  assert!(text.is_some_and(|text| text.ends_with(&second)), "{second}");
+  // Blank completion rows keep the prompt.
+  let app = session.app();
+  let blank = (app.at.column + app.screen.columns - 1, app.screen.rows - 2);
+  click(&mut session, blank);
+  assert!(session.app().prompt.is_some());
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn section_clicks_select_their_entry() -> Result<()> {
+  let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut session = Session::new(None);
+  session.open(&root.join("paper.pdf"), true, crate::focus::screen())?;
+  crate::common::outline_loaded(session.app())?;
+  session.app().command("4")?;
+  status(&mut session)?;
+  keys(&mut session, "go")?;
+  if let Some(panel) = &mut session.app().panel {
+    (panel.selected, panel.focused) = (12, false);
+  }
+  status(&mut session)?;
+  let selected = session.app().panel.as_ref().map(|p| p.selected);
+  assert_eq!(selected, Some(12), "a stale selection");
+  let section = chrome_cell(&mut session, vpdf::chrome::Chrome::Section)?;
+  click(&mut session, section);
+  let app = session.app();
+  let panel = app.panel.as_ref().map(|p| (p.focused, Some(p.selected)));
+  assert_eq!(panel, Some((true, app.current_section)));
+  assert_ne!(app.current_section, Some(12));
   Ok(())
 }

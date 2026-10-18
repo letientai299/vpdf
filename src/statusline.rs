@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::app::{App, InputOwner, Tabline};
+use crate::chrome::Chrome;
 use crate::find::Phase;
 use crate::grid;
 use crate::layout::Screen;
@@ -81,7 +82,7 @@ impl App {
   }
 
   /// Tab names that fit in `room`, with their display width.
-  fn tabs(&self, room: usize) -> (String, usize) {
+  fn tabs(&self, room: usize) -> Tabs {
     let Tabline { names, active } = &self.tabline;
     // Narrow panes cut the name so the status line stays in the pane.
     let file = || {
@@ -89,7 +90,8 @@ impl App {
       let label = terminal::clean(&label, room.saturating_sub(1));
       let gap = if room > 0 { " " } else { "" };
       let width = label.width() + gap.width();
-      (format!("{}{label}{}{gap}", theme::STATUS_FILE, theme::BAR), width)
+      let text = format!("{}{label}{}{gap}", theme::STATUS_FILE, theme::BAR);
+      Tabs { text, width, labels: Vec::new() }
     };
     if names.len() < 2 {
       return file();
@@ -109,7 +111,8 @@ impl App {
         if index == *active { theme::TAB_ACTIVE } else { theme::TAB_INACTIVE };
       text.extend([style, label.as_str(), theme::BAR]);
     }
-    (text + " ", width)
+    let labels = labels.iter().map(|label| label.width()).collect();
+    Tabs { text: text + " ", width, labels }
   }
 
   /// Status-line text for the hover.
@@ -123,7 +126,8 @@ impl App {
       Hit::Thumbnail(page) => Some(self.page_line(page)),
       Hit::Link(..) => self.hover_label(),
       Hit::Nothing | Hit::Text | Hit::Preview { .. } | Hit::Item(..)
-      | Hit::Edge { .. } => None,
+      | Hit::Edge { .. }
+      | Hit::Chrome => None,
     }
   }
 
@@ -149,6 +153,38 @@ impl App {
     row: u16,
     detail: Option<&str>,
   ) -> Result<()> {
+    let line = self.line(detail)?;
+    write!(out, "{}", self.at.goto(row, 0u16))?;
+    let Some(tabs) = &line.tabs else {
+      write!(out, "{}{}{}", theme::BAR, line.right, theme::RESET)?;
+      // Plain frames skip clears; erase the rest.
+      let rest =
+        usize::from(self.screen.columns).saturating_sub(line.right.width());
+      if rest > 0 {
+        write!(out, "\x1b[{rest}X")?;
+      }
+      return Ok(());
+    };
+    let badge =
+      if self.focused { theme::badge(line.color) } else { theme::BAR.into() };
+    write!(
+      out,
+      "{badge}{}{}{}{}{}{}{}{}{}",
+      line.left,
+      theme::BAR,
+      tabs.text,
+      line.style,
+      line.message,
+      theme::BAR,
+      " ".repeat(line.fill),
+      line.right,
+      theme::RESET
+    )?;
+    Ok(())
+  }
+
+  /// The status line's parts.
+  fn line(&self, detail: Option<&str>) -> Result<Line> {
     let columns = usize::from(self.screen.columns);
     let (mode, color) = self.mode();
     let page = self.navigation_position().page.0;
@@ -156,10 +192,12 @@ impl App {
     if !right.is_empty() {
       right.push_str("  ");
     }
+    let (mut pages, mut zoom) = (0..0, 0..0);
     // The recent view's document is closed; it shows no position.
     let covered = self.covered();
     if !covered {
       right += &self.search_count();
+      let start = right.width();
       write!(
         right,
         "{}/{} [{}] {}% ",
@@ -168,24 +206,33 @@ impl App {
         self.doc.label(PageId(page)),
         self.progress(),
       )?;
+      pages = start..right.width();
     }
     if !covered && (self.layout.zoom - 1.0).abs() > 0.005 {
+      let start = right.width();
       write!(right, " zoom {:.0}% ", self.layout.zoom * 100.0)?;
+      zoom = start..right.width();
     }
     let left = format!(" {mode} ");
-    write!(out, "{}", self.at.goto(row, 0u16))?;
-    let Some(room) = columns.checked_sub(left.width() + right.width() + 1)
-    else {
-      let right = terminal::clean(&right, columns);
-      write!(out, "{}{right}{}", theme::BAR, theme::RESET)?;
-      // Plain frames skip the row clear, so erase what follows.
-      let rest = columns.saturating_sub(right.width());
-      if rest > 0 {
-        write!(out, "\x1b[{rest}X")?;
-      }
-      return Ok(());
+    let mut line = Line {
+      left,
+      color,
+      tabs: None,
+      message: String::new(),
+      style: theme::BAR,
+      section: false,
+      fill: 0,
+      right,
+      pages,
+      zoom,
     };
-    let (tabs, width) = self.tabs(room);
+    let Some(room) =
+      columns.checked_sub(line.left.width() + line.right.width() + 1)
+    else {
+      line.right = terminal::clean(&line.right, columns);
+      return Ok(line);
+    };
+    let tabs = self.tabs(room);
     let section =
       self.current_section.map(|index| self.doc.outline[index].title.trim());
     let quiet = covered || self.reader.message.is_empty();
@@ -196,29 +243,87 @@ impl App {
       }
       (None, _) if covered => ("Enter open  :e file  q close", theme::BAR),
       (None, Some(title)) if self.reader.message.is_empty() => {
+        line.section = true;
         (title, theme::STATUS_SECTION)
       }
       (None, _) => (self.reader.message.as_str(), theme::BAR),
     };
-    let room = room.saturating_sub(width);
+    let room = room.saturating_sub(tabs.width);
     // A cut detail says so; `K` shows notes whole.
-    let message = match detail {
+    line.message = match detail {
       Some(detail) if message == detail => terminal::clipped(message, room).0,
       _ => terminal::clean(message, room),
     };
-    let fill = room.saturating_sub(message.width()) + 1;
-    let badge =
-      if self.focused { theme::badge(color) } else { theme::BAR.into() };
-    write!(
-      out,
-      "{badge}{left}{}{tabs}{style}{message}{}{}{right}{}",
-      theme::BAR,
-      theme::BAR,
-      " ".repeat(fill),
-      theme::RESET
-    )?;
-    Ok(())
+    line.fill = room.saturating_sub(line.message.width()) + 1;
+    line.style = style;
+    line.tabs = Some(tabs);
+    Ok(line)
   }
+
+  /// The focused pane's status item there.
+  pub(crate) fn status_item(&self, column: u16) -> Option<Chrome> {
+    // Overlays take the press first.
+    if !self.focused || self.overlaid() {
+      return None;
+    }
+    let line = self.line(None).ok()?;
+    let column = usize::from(column);
+    let columns = usize::from(self.screen.columns);
+    let start = if line.tabs.is_some() {
+      columns.saturating_sub(line.right.width())
+    } else {
+      0
+    };
+    let at = column.checked_sub(start);
+    // Thumbnails take neither; text has none.
+    let paged = self.overview.is_none();
+    if paged && !self.text_mode && at.is_some_and(|at| line.pages.contains(&at))
+    {
+      return Some(Chrome::Pages);
+    }
+    if paged && at.is_some_and(|at| line.zoom.contains(&at)) {
+      return Some(Chrome::Zoom);
+    }
+    let tabs = line.tabs?;
+    let mut edge = line.left.width();
+    for (index, width) in tabs.labels.iter().enumerate() {
+      if (edge..edge + width).contains(&column) {
+        return Some(Chrome::Tab(index));
+      }
+      edge += width;
+    }
+    let message = line.left.width() + tabs.width;
+    let section = message..message + line.message.width();
+    (line.section && section.contains(&column)).then_some(Chrome::Section)
+  }
+}
+
+/// Listed tabs, or the active file's name.
+#[derive(Debug)]
+struct Tabs {
+  text: String,
+  width: usize,
+  /// Listed tabs' widths; empty for the file.
+  labels: Vec<usize>,
+}
+
+/// Status line parts; spans in columns.
+struct Line {
+  left: String,
+  color: Color,
+  /// None when only `right` fits.
+  tabs: Option<Tabs>,
+  message: String,
+  style: &'static str,
+  /// The message is the section name.
+  section: bool,
+  /// Blanks between the message and `right`.
+  fill: usize,
+  right: String,
+  /// The page counter within `right`.
+  pages: std::ops::Range<usize>,
+  /// The zoom label within `right`.
+  zoom: std::ops::Range<usize>,
 }
 
 /// Prompt on the last row, its list above, a ghost suggestion, and a
@@ -254,7 +359,13 @@ pub fn prompt(
 #[cfg(test)]
 mod tests {
   use super::*;
+
   use std::path::PathBuf;
+  impl Tabs {
+    fn pair(self) -> (String, usize) {
+      (self.text, self.width)
+    }
+  }
 
   fn app() -> Result<App> {
     let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
@@ -277,9 +388,9 @@ mod tests {
   fn filenames_keep_style_and_number() -> Result<()> {
     let mut app = app()?;
     let single = format!("{} 1:paper.pdf {} ", theme::STATUS_FILE, theme::BAR);
-    assert_eq!(app.tabs(80), (single.clone(), 14));
+    assert_eq!(app.tabs(80).pair(), (single.clone(), 14));
     app.tabline = Tabline { names: vec!["paper.pdf".into()], active: 0 };
-    assert_eq!(app.tabs(80), (single, 14));
+    assert_eq!(app.tabs(80).pair(), (single, 14));
     app.tabline.names.insert(0, "book.pdf".into());
     for active in 0..2 {
       app.tabline.active = active;
@@ -295,13 +406,13 @@ mod tests {
         styles[1],
         theme::BAR
       );
-      assert_eq!(app.tabs(80), (expected, 26));
+      assert_eq!(app.tabs(80).pair(), (expected, 26));
     }
     let narrow = format!("{} 2:paper.pdf {} ", theme::STATUS_FILE, theme::BAR);
-    assert_eq!(app.tabs(14), (narrow, 14));
+    assert_eq!(app.tabs(14).pair(), (narrow, 14));
     app.path = "論文.pdf".into();
     for room in 0..30 {
-      let (tabs, width) = app.tabs(room);
+      let (tabs, width) = app.tabs(room).pair();
       let plain = tabs
         .replace(theme::STATUS_FILE, "")
         .replace(theme::TAB_INACTIVE, "")

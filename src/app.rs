@@ -48,8 +48,8 @@ pub enum Request {
   SplitMark(char),
   /// Pick a file with `fzf` and open it in the focused pane.
   Pick,
-  /// Close every pane of this tab.
-  TabClose,
+  /// Closes a tab, else the active one.
+  TabClose(Option<usize>),
   QuitAll,
 }
 

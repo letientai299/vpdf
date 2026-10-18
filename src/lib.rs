@@ -11,6 +11,7 @@ pub mod app;
 mod autolink;
 mod canvas;
 pub mod caps;
+pub mod chrome;
 mod clipboard;
 mod clues;
 pub mod cmdline;
