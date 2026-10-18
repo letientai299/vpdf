@@ -528,8 +528,9 @@ fn splits_land_near_the_top() -> Result<()> {
       let app = session.app();
       super::common::outline_loaded(app)?;
       if text_mode {
-        app.open_panel(PanelKind::Text)?;
-        app.close_panel()?;
+        // The document's mode, which splits copy; `gx` previews stay.
+        app.text_mode = true;
+        app.relayout()?;
       }
       let at = on(1, 4, 0);
       let bounds = app.doc.text(at.page)?.lines[at.line].glyphs[0].bounds;
@@ -544,6 +545,7 @@ fn splits_land_near_the_top() -> Result<()> {
       let tab = session.tab();
       assert_eq!((tab.panes.len(), tab.focus), (2, 0), "{case}");
       let app = &mut tab.panes[1];
+      assert_eq!(app.text_mode, text_mode, "{case}");
       assert_eq!(app.reader.cursor, at, "{case}");
       let (top, _) = cursor_rows(app)?;
       assert!((top - 1.0).abs() < 0.01, "{case}: {top}");

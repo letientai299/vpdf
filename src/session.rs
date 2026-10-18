@@ -565,8 +565,10 @@ impl Session {
     // A double click must not split twice.
     self.keeping_pointer(|session| {
       session.split(Axis::Columns, None, Place::After)?;
-      land(session.app())?;
-      session.focus(tab, pane)
+      // Focus returns even when landing fails.
+      let landed = land(session.app());
+      session.focus(tab, pane)?;
+      landed
     })
   }
 
