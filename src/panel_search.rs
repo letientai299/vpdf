@@ -35,19 +35,28 @@ pub fn ranges(text: &str, query: &str) -> Vec<(usize, usize)> {
   if query.is_empty() {
     return Vec::new();
   }
-  let folded;
-  let (haystack, needle) = if query.chars().any(char::is_uppercase) {
-    (text, query.to_owned())
-  } else if query.is_ascii() {
-    folded = text.to_ascii_lowercase();
-    (folded.as_str(), query.to_ascii_lowercase())
-  } else {
-    // Unicode folding can shift byte offsets; skip marking.
-    return Vec::new();
-  };
-  haystack
-    .match_indices(&needle)
-    .map(|(start, found)| (start, start + found.len()))
+  if query.chars().any(char::is_uppercase) {
+    return text
+      .match_indices(query)
+      .map(|(at, found)| (at, at + found.len()))
+      .collect();
+  }
+  let mut folded = String::new();
+  let mut offsets = Vec::new();
+  for (start, ch) in text.char_indices() {
+    for lower in ch.to_lowercase() {
+      folded.push(lower);
+      offsets.extend(std::iter::repeat_n(
+        (start, start + ch.len_utf8()),
+        lower.len_utf8(),
+      ));
+    }
+  }
+  folded
+    .match_indices(&query.to_lowercase())
+    .map(|(start, found)| {
+      (offsets[start].0, offsets[start + found.len() - 1].1)
+    })
     .collect()
 }
 
@@ -204,7 +213,10 @@ mod tests {
   fn marks_matches_by_smartcase() {
     assert_eq!(ranges("Next match, MATCH", "match"), [(5, 10), (12, 17)]);
     assert_eq!(ranges("Next match, MATCH", "MATCH"), [(12, 17)]);
-    assert_eq!(ranges("Ärger", "är"), []);
+    assert_eq!(ranges("Ärger", "är"), [(0, 3)]);
+    assert_eq!(ranges("Ⱥ ÄR", "är"), [(3, 6)]);
+    assert_eq!(ranges("İ next", "next"), [(3, 7)]);
+    assert_eq!(ranges("\u{212a}elvin", "kelvin"), [(0, 8)]);
   }
 
   #[test]
