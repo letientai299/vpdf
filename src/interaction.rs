@@ -257,17 +257,18 @@ impl App {
   pub(crate) fn restore_location(&mut self, location: Location) -> Result<()> {
     self.animation = None;
     self.reader.cursor = crate::reader::clamp(location.cursor, &mut self.doc)?;
+    self.target = location.target;
+    // A view from the other presentation is stale; only its position
+    // lands, judged against the current view.
+    if location.text_top.is_some() != self.text_mode {
+      return self.land();
+    }
     match location.anchor {
       Some(anchor) => self.restore_view(anchor),
       None => self.reader.scroll = self.layout.clamp_scroll(location.scroll),
     }
-    self.target = location.target;
     if let Some(top) = location.text_top {
       self.text_top = self.clamp_text(top)?;
-    }
-    // A view from the other presentation keeps only its position.
-    if location.text_top.is_some() != self.text_mode {
-      self.land()?;
     }
     Ok(())
   }

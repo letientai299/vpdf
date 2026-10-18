@@ -371,8 +371,10 @@ fn cursor_rows(app: &mut App) -> Result<(f32, f32)> {
 #[derive(Clone, Copy, Debug)]
 enum Jump {
   Mark,
-  /// `n` to the next search match.
-  Next,
+  /// `n` to the next match of a query.
+  Next(&'static str),
+  /// Typing a query previews its first match.
+  Preview(&'static str),
   Link,
   Outline,
   Result,
@@ -393,7 +395,12 @@ fn heading_on(app: &mut App, at: Position, title: &str) -> Result<Target> {
 fn jump(app: &mut App, kind: Jump, at: Position) -> Result<()> {
   match kind {
     Jump::Mark => app.go_to(at, true),
-    Jump::Next => app.next_result(false, 1),
+    Jump::Next(_) => app.next_result(false, 1),
+    Jump::Preview(query) => {
+      app.begin_search(false)?;
+      app.start_search(query, false, false)?;
+      super::common::search_loaded(app)
+    }
     Jump::Page => app.follow(&Target::Page(at.page)),
     Jump::Link => {
       let text = app.doc.text(at.page)?;
@@ -450,8 +457,14 @@ fn jumps_land_near_the_top() -> Result<()> {
     (false, Jump::Mark, 0.0, on(0, 1, 3), Lands::Stays),
     (true, Jump::Mark, 0.0, on(0, 1, 0), Lands::Stays),
     (true, Jump::Mark, 0.0, on(1, 4, 0), Lands::Top),
-    (false, Jump::Next, 0.0, on(0, 4, 0), Lands::Top),
-    (true, Jump::Next, 0.0, on(1, 4, 0), Lands::Top),
+    (false, Jump::Next("L4 alpha"), 0.0, on(0, 4, 0), Lands::Top),
+    (true, Jump::Next("L4 alpha"), 0.0, on(1, 4, 0), Lands::Top),
+    (false, Jump::Next("alpha"), 0.0, on(0, 1, 3), Lands::Stays),
+    (true, Jump::Next("beta"), 0.0, on(0, 1, 9), Lands::Stays),
+    (false, Jump::Preview("L4 alpha"), 0.0, on(0, 4, 0), Lands::Top),
+    (true, Jump::Preview("L5 alpha"), 0.0, on(0, 5, 0), Lands::Top),
+    (false, Jump::Preview("L2 alpha"), 40.0, on(0, 2, 0), Lands::Stays),
+    (true, Jump::Preview("L2 alpha"), 0.0, on(0, 2, 0), Lands::Stays),
     (false, Jump::Page, 60.0, on(1, 0, 0), Lands::PageTop),
     (true, Jump::Link, 0.0, on(1, 4, 0), Lands::Top),
     (true, Jump::Outline, 0.0, on(0, 4, 0), Lands::Top),
@@ -464,8 +477,13 @@ fn jumps_land_near_the_top() -> Result<()> {
   ] {
     let case = format!("{kind:?} text {text_mode} from {start} to {at:?}");
     let (_dir, mut app) = landing_app(text_mode)?;
-    if matches!(kind, Jump::Result | Jump::Next) {
-      app.start_search("L4 alpha", false, false)?;
+    let query = match kind {
+      Jump::Result => Some("L4 alpha"),
+      Jump::Next(query) => Some(query),
+      _ => None,
+    };
+    if let Some(query) = query {
+      app.start_search(query, false, false)?;
       super::common::search_loaded(&mut app)?;
       app.reader.clear_history();
     }
@@ -489,6 +507,10 @@ fn jumps_land_near_the_top() -> Result<()> {
         assert!((0.0..row).contains(&edge), "{case}: {edge}");
       }
     }
+    // Previews record no jump and tint nothing.
+    if matches!(kind, Jump::Preview(_)) {
+      continue;
+    }
     let landing = app.landing.as_ref().map(|landing| landing.position);
     assert_eq!(landing, Some(at), "{case}");
     if app.panel.is_some() {
@@ -502,6 +524,28 @@ fn jumps_land_near_the_top() -> Result<()> {
       )?;
     }
     assert_eq!(view(&mut app)?, before, "{case}");
+  }
+  Ok(())
+}
+
+/// History from the other presentation lands its position against the
+/// current view; its stale view never returns.
+#[test]
+fn history_across_presentations_lands() -> Result<()> {
+  for text_first in [false, true] {
+    let (_dir, mut app) = landing_app(text_first)?;
+    app.go_to(on(0, 5, 0), true)?;
+    app.reader.clear_history();
+    app.go_to(on(1, 4, 0), true)?;
+    app.text_mode = !text_first;
+    app.relayout()?;
+    // Page 2 shows, away from the origin.
+    app.reader.scroll = app.layout.pages[1].top;
+    let back = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
+    app.key(back, &mut History::default())?;
+    assert_eq!(app.reader.cursor, on(0, 5, 0), "text first {text_first}");
+    let (top, _) = cursor_rows(&mut app)?;
+    assert!((top - 1.0).abs() < 0.01, "text first {text_first}: {top}");
   }
   Ok(())
 }

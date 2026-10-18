@@ -67,13 +67,13 @@ until the next key or click; the detail shows when none is up and takes room
 from the tab names. Link labels can also be picked with the pointer
 before following their destination. Each label sits beside its link, on the
 link's line, clear of other links and labels. Jump history returns to earlier
-destinations; marks keep places worth revisiting. A jump to a place already on
-screen, such as a mark, search match, or link target, keeps the view; one
-elsewhere shows the target one row below the top, in both presentations. Page
-jumps, such as `:12` or a thumbnail, show the page from its top. Following an
-external web link
-opens it through the desktop integration. See [external actions][external] for
-clipboard and SSH boundaries.
+destinations and their views; marks keep places worth revisiting. A jump to a
+place clear of the screen's edge rows, such as a mark, search match, or link
+target, keeps the view; one elsewhere shows the target one row below the top,
+in both presentations, as does a history entry from the other presentation.
+Page jumps, such as `:12` or a thumbnail, show the page from its top.
+Following an external web link opens it through the desktop integration. See
+[external actions][external] for clipboard and SSH boundaries.
 
 Hovering a note or commented highlight shows its author and comment in the
 status line. A click on a note icon opens the whole comment beside it; the
