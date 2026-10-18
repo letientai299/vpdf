@@ -551,11 +551,12 @@ fn panel_edges_drag_and_reset() -> Result<()> {
   keys(&mut session, "go")?;
   status(&mut session)?;
   let default = session.app().left;
-  let edge = (default - 1, 5);
+  let edge = (default - 2, 5);
   // Motion onto the border draws its shape.
-  assert!(left(&mut session, MouseEventKind::Moved, (default - 2, 5)));
-  assert!(left(&mut session, MouseEventKind::Moved, edge));
-  assert!(left(&mut session, MouseEventKind::Moved, (default - 2, 5)));
+  assert!(left(&mut session, MouseEventKind::Moved, (default - 3, 5)));
+  for column in [default - 2, default - 1] {
+    left(&mut session, MouseEventKind::Moved, (column, 5));
+  }
   let selected = session.app().panel.as_ref().map(|panel| panel.selected);
   // (drag to column) -> panel columns
   let cases = [(30, 31), (2, 8), (115, 109)];

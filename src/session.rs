@@ -1117,9 +1117,9 @@ impl Session {
     let border = tab.panes.iter().map(Pane::of).find(|pane| {
       let panel = pane.area(Region::Panel);
       let edge = Rect {
-        column: pane.rect.column + panel.columns.saturating_sub(1),
+        column: pane.rect.column + panel.columns.saturating_sub(2),
         row: pane.rect.row,
-        columns: 1,
+        columns: panel.columns.min(2),
         rows: panel.rows,
       };
       (1..pane.rect.columns).contains(&pane.panel) && edge.contains(column, row)
@@ -2598,8 +2598,11 @@ mod tests {
     session.app().open_panel(PanelKind::Outline)?;
     let edge = session.app().left - 1;
     // (cell) -> written
-    let steps =
-      [((edge, 3), vec!["col-resize"]), ((edge + 2, 3), vec!["default"])];
+    let steps = [
+      ((edge - 1, 3), vec!["col-resize"]),
+      ((edge, 3), vec![]),
+      ((edge + 2, 3), vec!["default"]),
+    ];
     for (cell, want) in steps {
       assert_eq!(shape_after(&mut session, Moved, cell)?, want, "{cell:?}");
     }
@@ -2992,7 +2995,7 @@ mod tests {
     session.app().open_panel(PanelKind::Help)?;
     let left = session.app().left;
     // (pressed column) -> backdrop's page-area x range
-    let cases = [(1, None), (left - 2, Some(0.0))];
+    let cases = [(1, None), (left - 3, Some(0.0))];
     for (column, want) in cases {
       for kind in [Down(Right), Up(Right)] {
         let modifiers = KeyModifiers::NONE;
@@ -3063,7 +3066,7 @@ mod tests {
       text.split("\x1b_G").any(|g| g.contains("z=1,c="))
     };
     // (pressed column) -> veiled
-    let cases = [(None, true), (Some(1), true), (Some(left - 2), false)];
+    let cases = [(None, true), (Some(1), true), (Some(left - 3), false)];
     for (column, want) in cases {
       session.app().context_menu = None;
       for kind in column.map_or_default(|_| vec![Down(Right), Up(Right)]) {
