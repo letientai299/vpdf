@@ -121,6 +121,12 @@ impl App {
     matches!(self.gesture, Gesture::Sweep(_))
   }
 
+  /// The status hint while a sweep would capture.
+  pub(crate) fn sweep_hint(&self) -> Option<String> {
+    let Gesture::Sweep(sweep) = self.gesture else { return None };
+    sweep.bounds().map(|_| "Release captures; Esc cancels".into())
+  }
+
   /// Drops a held sweep; whether one was.
   pub(crate) fn drop_sweep(&mut self) -> bool {
     let held = self.sweeping();

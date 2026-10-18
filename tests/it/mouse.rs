@@ -929,11 +929,19 @@ fn alt_drags_capture_regions() -> Result<()> {
     Ok(String::from_utf8_lossy(&frame).matches("z=-1").count())
   };
   let before = backdrops(&mut session)?;
+  let hint = "Release captures; Esc cancels";
   session.mouse(alt(MouseEventKind::Down(MouseButton::Left), from))?;
+  // Along one row, the sweep has no area yet.
+  let along = (to.0, from.1);
+  session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), along))?;
+  assert!(!status(&mut session)?.contains(hint), "no area, no hint");
   assert!(session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), to))?);
+  assert!(status(&mut session)?.contains(hint), "the drag hints");
   assert!(backdrops(&mut session)? > before, "the page dims");
   // Alt released mid-drag still captures.
   mouse(&mut session, MouseEventKind::Up(MouseButton::Left), to)?;
+  let line = status(&mut session)?;
+  assert!(!line.contains(hint) && line.contains("h/l choose"), "{line:?}");
   let app = session.app();
   let Some(region) = &app.region else { panic!("a capture") };
   assert!(region.is_bar());
@@ -959,6 +967,7 @@ fn alt_drags_capture_regions() -> Result<()> {
     mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), from)?;
     mouse(&mut session, MouseEventKind::Up(MouseButton::Left), from)?;
     assert_eq!(backdrops(&mut session)?, before, "step {step}: undimmed");
+    assert!(!status(&mut session)?.contains(hint), "step {step}: hint ends");
     let app = session.app();
     assert!(app.region.is_none(), "step {step}: no capture");
     assert!(app.reader.selection.is_none(), "step {step}: inert drag");
