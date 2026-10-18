@@ -545,6 +545,32 @@ impl App {
     self.reveal_text()
   }
 
+  pub(crate) fn nearest_text(
+    &mut self,
+    point: (f32, f32),
+  ) -> Result<Option<Position>> {
+    let view = self.next_text_view()?;
+    let mut nearest = None;
+    let mut distance = (f32::INFINITY, f32::INFINITY);
+    for (row, item) in view.rows().enumerate() {
+      let Row::Line(at, line) = item else { continue };
+      for (glyph, column, item) in view.shown(&line.glyphs) {
+        if item.ch.is_whitespace() {
+          continue;
+        }
+        let next = (
+          (row as f32 - point.1).abs(),
+          (column as f32 + f32::from(self.left) - point.0).abs(),
+        );
+        if next < distance {
+          distance = next;
+          nearest = Some(Position { glyph, ..at });
+        }
+      }
+    }
+    Ok(nearest)
+  }
+
   pub fn scroll_text(&mut self, lines: isize) -> Result<()> {
     let top = self.text_step(self.text_top, lines)?;
     self.text_top = self.clamp_text(top)?;

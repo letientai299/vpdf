@@ -113,7 +113,8 @@ fn visible_entry_selection_and_temporary_copy() -> Result<()> {
     keys(&mut app, b"6\x05")?;
     settle(&mut app);
     app.draw(&mut Vec::new())?;
-    assert_eq!(app.reader.cursor, cursor);
+    assert!(app.reader.cursor >= cursor);
+    let cursor = app.reader.cursor;
     assert_eq!(app.reader.selection.unwrap().anchor, selection.anchor);
     keys(&mut app, b"\x1b[27u")?;
     assert!(app.reader.selection.is_none());

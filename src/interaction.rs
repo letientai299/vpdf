@@ -613,11 +613,16 @@ impl App {
     let count = input.count as f32;
     match input.action {
       Action::Scroll(fraction) => {
-        self.scroll(fraction * count * self.layout.screen.height())?;
+        self.keyboard_scroll(
+          fraction * count * self.layout.screen.height(),
+          true,
+        )?;
       }
       Action::Rows(rows) => {
-        self
-          .scroll(rows as f32 * count * f32::from(self.screen.cell_height))?;
+        self.keyboard_scroll(
+          rows as f32 * count * f32::from(self.screen.cell_height),
+          false,
+        )?;
       }
       Action::Align(fraction) if self.text_mode => {
         if self.reader.viewport_mode() {

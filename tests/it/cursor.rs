@@ -155,7 +155,7 @@ fn cursor_targets_and_hidden_entry() -> Result<()> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
-fn cursor_scroll_and_history_keep_position() -> Result<()> {
+fn cursor_scroll_and_history_use_visible_position() -> Result<()> {
   for text in [false, true] {
     let mut app = app("paper.pdf", text)?;
     app.command("2")?;
@@ -164,7 +164,8 @@ fn cursor_scroll_and_history_keep_position() -> Result<()> {
     let view = app.reader.scroll;
     keys(&mut app, b"\x04\x05")?;
     settle(&mut app);
-    assert_eq!(app.reader.cursor, positioned);
+    assert_ne!(app.reader.cursor, positioned);
+    let positioned = app.reader.cursor;
     assert_eq!(app.reader.mode(), Mode::Cursor);
     if !text {
       assert_ne!(app.reader.scroll, view);
@@ -299,7 +300,13 @@ fn cursor_sections_use_position_after_scrolling() -> Result<()> {
     app.scroll(-500.0)?;
     settle(&mut app);
     app.track_outline();
-    assert_eq!(app.current_section, Some(1));
+    assert!(app.reader.cursor < heading);
+    assert_eq!(app.current_section, Some(0));
+    let section = app.current_section.unwrap();
+    let Target::Point { page, x, y } = app.doc.outline[section].target else {
+      panic!("Expected heading point");
+    };
+    let heading = app.doc.text(page)?.nearest(page, x, y);
     keys(&mut app, b"[[")?;
     assert_eq!(app.reader.cursor, heading);
     assert_eq!(app.reader.mode(), Mode::Cursor);
@@ -477,6 +484,101 @@ fn failed_search_yanks_preserve_register() -> Result<()> {
     assert!(app.reader.operator.is_none());
     assert_eq!(&**app.reader.registers.get(&'a').unwrap(), "keep");
     assert!(app.reader.pending_yank.is_none());
+  }
+  Ok(())
+}
+
+#[test]
+fn scroll_then_motion_uses_visible_cursor() -> Result<()> {
+  for text in [false, true] {
+    for scroll in [b"\x04".as_slice(), b"\x06", b"8\x05"] {
+      let (_directory, mut session) = crate::mouse::session(text)?;
+      session.resize(vpdf::layout::Screen {
+        rows: if text { 4 } else { 8 },
+        columns: 60,
+        ..screen()
+      })?;
+      let app = session.app();
+      keys(app, b"i")?;
+      let origin = app.reader.cursor;
+      keys(app, scroll)?;
+      let moved = app.reader.cursor;
+      assert!(moved > origin, "text={text}, scroll={scroll:?}");
+      // No animation tick between the scroll and the next motion.
+      let target = app.animation.as_ref().map(|animation| animation.target);
+      let cell = app.text_cell(moved)?;
+      keys(app, b"l")?;
+      assert_eq!(app.reader.cursor.line, moved.line);
+      assert_eq!(app.reader.cursor.page, moved.page);
+      if text {
+        assert_eq!(app.text_cell(moved)?, cell);
+      }
+      if let Some(target) = target {
+        assert!(
+          (app.reader.scroll - target).abs()
+            <= f32::from(app.screen.cell_height)
+        );
+      }
+      keys(app, b"j")?;
+      assert!(app.reader.cursor >= moved);
+    }
+  }
+  Ok(())
+}
+
+#[test]
+fn visual_keyboard_scroll_moves_only_endpoint() -> Result<()> {
+  for text in [false, true] {
+    let (_directory, mut session) = crate::mouse::session(text)?;
+    session.resize(vpdf::layout::Screen {
+      rows: if text { 4 } else { 8 },
+      columns: 60,
+      ..screen()
+    })?;
+    let app = session.app();
+    keys(app, b"iv")?;
+    let anchor = app.reader.selection;
+    let origin = app.reader.cursor;
+    keys(app, b"\x04")?;
+    let endpoint = app.reader.cursor;
+    assert!(endpoint > origin);
+    assert_eq!(app.reader.selection, anchor);
+    app.scroll(100.0)?;
+    assert_eq!(app.reader.cursor, endpoint);
+    assert_eq!(app.reader.selection, anchor);
+    keys(app, b"j")?;
+    assert!(app.reader.cursor >= endpoint);
+    assert_eq!(app.reader.selection, anchor);
+  }
+  Ok(())
+}
+
+#[test]
+fn cursor_wheel_clamps_without_changing_mode() -> Result<()> {
+  for text in [false, true] {
+    let (_directory, mut session) = crate::mouse::session(text)?;
+    session.resize(vpdf::layout::Screen {
+      rows: if text { 4 } else { 8 },
+      columns: 60,
+      ..screen()
+    })?;
+    let app = session.app();
+    keys(app, b"i")?;
+    let origin = app.reader.cursor;
+    app.scroll(160.0)?;
+    assert!(
+      app.reader.cursor > origin,
+      "text={text}, origin={origin:?}, cursor={:?}, target={:?}",
+      app.reader.cursor,
+      app.animation.as_ref().map(|a| a.target)
+    );
+    let moved = app.reader.cursor;
+    keys(app, b"l")?;
+    assert_eq!(app.reader.cursor.page, moved.page);
+    assert_eq!(app.reader.cursor.line, moved.line);
+    assert_eq!(app.reader.mode(), Mode::Cursor);
+    app.scroll(-160.0)?;
+    assert!(app.reader.cursor <= moved);
   }
   Ok(())
 }

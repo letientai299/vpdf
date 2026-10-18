@@ -45,6 +45,7 @@ const COVERED: [&str; 24] = [
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
     self.search.yank = None;
+    self.finish_scroll_before(input.action);
     if self.reader.operator.is_some()
       && !matches!(
         input.action,

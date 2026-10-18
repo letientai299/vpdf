@@ -37,7 +37,9 @@ ma mA: mark here / across documents
 <C-d><C-u>: half-screen scroll
 <C-f><C-b>: full-screen scroll
 <C-e><C-y>: row scroll
-Scroll keys keep glyph and selection positions
+Page scroll keys move the Cursor or Visual endpoint
+Row scrolling keeps the cursor visible; wheel preserves Visual ranges
+Counts multiply scroll distances; half-screen counts are not remembered
 zt zz zb: target at top / middle / bottom
 + - =: zoom in / out / fit width
 zf: fit page
