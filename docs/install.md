@@ -34,8 +34,7 @@ policy. For other build environments, see [building from source][development].
 The interactive reader requires [Kitty graphics][kitty], keyboard
 disambiguation, and cell dimensions in pixels. It probes these at startup and
 names any missing requirements before exiting. `:text` changes the presentation
-to extracted text; it requires the same terminal capabilities. See
-[Kitty installation][kitty-install] for a terminal implementing these protocols.
+to extracted text; it requires the same terminal capabilities.
 If using tmux, follow its [installation instructions][tmux-install] too.
 
 The file picker's fzf previews use the capabilities detected by the reader:
@@ -45,7 +44,31 @@ images with Unicode placeholders where supported, otherwise text. Use
 The reader, in either presentation, requires the [Kitty keyboard
 protocol][keyboard]'s disambiguation, so Tab and Ctrl-i stay distinct and Esc
 needs no timeout. Without it the reader exits and names what is missing.
-WezTerm needs [`enable_kitty_keyboard = true`][wezterm-keyboard].
+These terminals have been live-tested on macOS with the [demo workflows][demos]:
+
+| Terminal                   | Protocol settings                        |
+| -------------------------- | ---------------------------------------- |
+| [Kitty][kitty-install]     | No extra settings                        |
+| [Ghostty][ghostty-install] | No extra settings                        |
+| [Rio][rio-install]         | No extra settings                        |
+| [iTerm2][iterm-install]    | No extra settings                        |
+| [WezTerm][wezterm-config]  | Enable Kitty keyboard and graphics below |
+
+Use a release accepted by the reader's startup check. Terminal names alone do
+not establish support; the [capability checks][caps] own version requirements.
+
+In WezTerm's existing [Lua configuration][wezterm-config], set:
+
+```lua
+config.enable_kitty_keyboard = true
+config.enable_kitty_graphics = true
+```
+
+Here `config` is the table returned by the configuration file. The
+[keyboard option][wezterm-keyboard] needs explicit enabling. Graphics is enabled
+by default in the tested release; keep it enabled if customizing the config.
+Restart WezTerm after changing these settings. Other terminals need both
+protocols and pixel cell dimensions; graphics support alone is insufficient.
 
 tmux ignores the protocol's query. Under tmux 3.2 or later the reader needs
 `set -s extended-keys on`, asks for [modifyOtherKeys][modify-keys] instead, and
@@ -137,3 +160,9 @@ dependencies used in a particular build.
 [xclip]: https://github.com/astrand/xclip
 [xsel]: https://github.com/kfish/xsel
 [vim]: https://www.vim.org/download.php
+
+[demos]: demos.md
+[ghostty-install]: https://ghostty.org/docs/install/binary
+[rio-install]: https://rioterm.com/docs/install
+[iterm-install]: https://iterm2.com/downloads.html
+[wezterm-config]: https://wezterm.org/config/files.html
