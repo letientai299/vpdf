@@ -116,6 +116,9 @@ impl App {
         selected.saturating_sub(count * grid.columns)
       }
       Action::Motion(Motion::Down) => selected + count * grid.columns,
+      Action::Motion(Motion::First | Motion::Last) if input.explicit => {
+        count.saturating_sub(1)
+      }
       Action::Motion(Motion::First) => 0,
       Action::Motion(Motion::Last) => last,
       Action::Scroll(amount) => {

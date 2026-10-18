@@ -363,3 +363,19 @@ fn control_c_keeps_reading_pane() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn counted_overview_boundaries() -> Result<()> {
+  let mut app = app("paper.pdf", false)?;
+  keys(&mut app, b"gp")?;
+  for command in [b"3gg".as_slice(), b"3G"] {
+    keys(&mut app, command)?;
+    assert_eq!(app.overview.as_ref().unwrap().selected, 2);
+  }
+  keys(&mut app, b"999G")?;
+  assert_eq!(app.overview.as_ref().unwrap().selected, app.doc.pages.len() - 1);
+  keys(&mut app, b"gg")?;
+  assert_eq!(app.overview.as_ref().unwrap().selected, 0);
+  Ok(())
+}

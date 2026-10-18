@@ -204,6 +204,9 @@ impl Panel {
     self.selected = match input.action {
       Action::Motion(Motion::Down) => self.selected.saturating_add(count),
       Action::Motion(Motion::Up) => self.selected.saturating_sub(count),
+      Action::Motion(Motion::First | Motion::Last) if input.explicit => {
+        count.saturating_sub(1)
+      }
       Action::Motion(Motion::First) => 0,
       Action::Motion(Motion::Last) => last,
       Action::Scroll(amount) => {
@@ -1195,6 +1198,27 @@ impl App {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn counted_list_boundaries() {
+    let mut panel =
+      Panel::new(PanelKind::Links, (0..5).map(|_| Row::parse("row")).collect());
+    for motion in [Motion::First, Motion::Last] {
+      for (count, expected) in [(1, 0), (3, 2), (99, 4)] {
+        let input = Input {
+          count,
+          explicit: true,
+          ..Input::plain(Action::Motion(motion))
+        };
+        assert!(panel.navigate(input, 10));
+        assert_eq!(panel.selected, expected);
+      }
+    }
+    panel.navigate(Input::plain(Action::Motion(Motion::First)), 10);
+    assert_eq!(panel.selected, 0);
+    panel.navigate(Input::plain(Action::Motion(Motion::Last)), 10);
+    assert_eq!(panel.selected, 4);
+  }
 
   /// Equal labels part by destination; wrapped rows keep their line;
   /// a panel search's origin follows its row.
