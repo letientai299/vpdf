@@ -86,17 +86,14 @@ impl App {
       Some(origin) => origin.cursor,
       None => self.reading_position()?,
     };
-    if self.search.worker.is_none() {
+    let worker = self.search.worker.get_or_insert_with(|| {
       let worker =
         SearchWorker::new(&self.path, &self.password, self.doc.pages.len());
       for (page, text) in self.doc.seeds() {
         worker.seed(page, text);
       }
-      self.search.worker = Some(worker);
-    }
-    let Some(worker) = &self.search.worker else {
-      return Ok(());
-    };
+      worker
+    });
     match worker.lookup(query, origin.page) {
       Ok(generation) => self.search.generation = generation,
       Err(error) => {
@@ -316,23 +313,14 @@ impl App {
       return Ok(());
     };
     let hits = &self.search.hits;
-    if hits.is_empty() {
+    let Some(index) = search::next(
+      hits,
+      &origin.cursor,
+      self.search.query.backward,
+      operator.count,
+      |hit| hit.first,
+    ) else {
       return Ok(());
-    }
-    let backward = self.search.query.backward;
-    let start = if backward {
-      hits
-        .iter()
-        .rposition(|h| h.first < origin.cursor)
-        .unwrap_or(hits.len() - 1)
-    } else {
-      hits.iter().position(|h| h.first > origin.cursor).unwrap_or(0)
-    };
-    let offset = operator.count.saturating_sub(1) % hits.len();
-    let index = if backward {
-      (start + hits.len() - offset) % hits.len()
-    } else {
-      (start + offset) % hits.len()
     };
     let target = hits[index].first;
     if target != origin.cursor {
@@ -394,21 +382,12 @@ impl App {
   pub fn next_result(&mut self, reverse: bool, count: usize) -> Result<()> {
     let cursor = self.reading_position()?;
     let hits = &self.search.hits;
-    if hits.is_empty() {
+    let backward = self.search.query.backward != reverse;
+    let Some(index) =
+      search::next(hits, &cursor, backward, count, |hit| hit.first)
+    else {
       self.reader.message = "No matches".into();
       return Ok(());
-    }
-    let backward = self.search.query.backward != reverse;
-    let start = if backward {
-      hits.iter().rposition(|h| h.first < cursor).unwrap_or(hits.len() - 1)
-    } else {
-      hits.iter().position(|h| h.first > cursor).unwrap_or(0)
-    };
-    let offset = (count.saturating_sub(1)) % hits.len();
-    let index = if backward {
-      (start + hits.len() - offset) % hits.len()
-    } else {
-      (start + offset) % hits.len()
     };
     let target = hits[index].first;
     let wrapped = if backward { target >= cursor } else { target <= cursor };

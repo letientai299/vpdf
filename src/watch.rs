@@ -96,9 +96,51 @@ impl App {
       }
     }
     self.settling = None;
-    self.stamp = Some(now);
     self.reload_with(&self.password.clone())?;
     self.reader.message = "Reloaded after change".into();
     Ok(true)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::layout::Screen;
+
+  #[test]
+  fn failed_reload_retries() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("live.pdf");
+    crate::fixtures::pdf(&path, &["Original"], "")?;
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut app = App::with_screen(&path, "", false, screen)?;
+    let loaded = app.stamp;
+    std::fs::write(&path, "incomplete PDF")?;
+    for _ in 0..2 {
+      assert!(!app.watch()?);
+      assert!(app.settling.is_some(), "failed reload must retry");
+      app.settling = Some((
+        stamp(&path).unwrap(),
+        Instant::now().checked_sub(SETTLE).unwrap(),
+      ));
+      assert!(app.watch().is_err());
+      assert_eq!(app.stamp, loaded);
+    }
+    crate::fixtures::pdf(&path, &["Recovered", "Second"], "")?;
+    assert!(!app.watch()?);
+    app.settling = Some((
+      stamp(&path).unwrap(),
+      Instant::now().checked_sub(SETTLE).unwrap(),
+    ));
+    assert!(app.watch()?);
+    assert_eq!(app.doc.pages.len(), 2);
+    assert!(!app.watch()?);
+    Ok(())
   }
 }

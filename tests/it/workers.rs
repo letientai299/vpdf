@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use vpdf::Result;
 use vpdf::document::{Document, Handle};
+use vpdf::find::Query;
 use vpdf::ocr::{OcrJob, parse_tsv};
 use vpdf::search_worker::SearchWorker;
 use vpdf::text::{Bounds, PageId};
@@ -30,9 +31,12 @@ fn superseded_search_completes_latest_query() -> Result<()> {
   let path = root.join("book.pdf");
   let pages = Handle::open(&path, "")?.pages;
   let worker = SearchWorker::new(&path, "", pages);
-  worker.query("the", false, PageId(0), false)?;
-  let latest =
-    worker.query("vpdf-impossible-query-83729", false, PageId(0), false)?;
+  worker
+    .lookup(&Query { text: "the".into(), ..Query::default() }, PageId(0))?;
+  let latest = worker.lookup(
+    &Query { text: "vpdf-impossible-query-83729".into(), ..Query::default() },
+    PageId(0),
+  )?;
   loop {
     let event = worker.events.recv_timeout(Duration::from_secs(10))?;
     if event.generation != latest {

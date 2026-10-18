@@ -284,6 +284,29 @@ pub fn contains(hits: &[Hit], pos: Position) -> bool {
   index > 0 && pos <= hits[index - 1].last
 }
 
+/// Selects a counted match among sorted keys.
+pub(crate) fn next<T, K: Ord>(
+  items: &[T],
+  from: &K,
+  backward: bool,
+  count: usize,
+  key: impl Fn(&T) -> K,
+) -> Option<usize> {
+  let total = items.len();
+  if total == 0 {
+    return None;
+  }
+  let offset = count.saturating_sub(1) % total;
+  let index = if backward {
+    let end = items.partition_point(|item| key(item) < *from);
+    (end + total - 1 - offset) % total
+  } else {
+    let start = items.partition_point(|item| key(item) <= *from);
+    (start + offset) % total
+  };
+  Some(index)
+}
+
 pub fn compile(query: &str, whole_word: bool) -> Result<Pattern> {
   let exact = query.chars().any(char::is_uppercase);
   let pattern = if let Some(raw) = query.strip_prefix("\\v") {
@@ -321,6 +344,30 @@ mod tests {
         .collect(),
       truncated: false,
     }
+  }
+
+  #[test]
+  fn counted_matches_wrap() {
+    let items = [2, 5, 9];
+    let cases = [0, 2, 3, 5, 9, 10].into_iter().flat_map(|from| {
+      [false, true].into_iter().flat_map(move |backward| {
+        [0, 1, 2, 3, 4, 10, usize::MAX]
+          .map(move |count| (from, backward, count))
+      })
+    });
+    for (from, backward, count) in cases {
+      let mut expected = from;
+      for _ in 0..=(count.saturating_sub(1) % items.len()) {
+        expected = if backward {
+          *items.iter().rfind(|&&item| item < expected).unwrap_or(&9)
+        } else {
+          *items.iter().find(|&&item| item > expected).unwrap_or(&2)
+        };
+      }
+      let index = next(&items, &from, backward, count, |&item| item).unwrap();
+      assert_eq!(items[index], expected, "{from} {backward} {count}");
+    }
+    assert_eq!(next::<usize, usize>(&[], &0, false, 1, |&item| item), None);
   }
 
   #[test]

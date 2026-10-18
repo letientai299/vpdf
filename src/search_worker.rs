@@ -59,24 +59,6 @@ impl SearchWorker {
     Self { send, generation, events }
   }
 
-  pub fn query(
-    &self,
-    query: &str,
-    whole_word: bool,
-    origin: PageId,
-    backward: bool,
-  ) -> Result<u64> {
-    self.lookup(
-      &crate::find::Query {
-        text: query.to_owned(),
-        whole: whole_word,
-        backward,
-        ..crate::find::Query::default()
-      },
-      origin,
-    )
-  }
-
   pub fn lookup(
     &self,
     query: &crate::find::Query,

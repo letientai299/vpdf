@@ -102,24 +102,19 @@ impl Panel {
     count: usize,
   ) -> bool {
     let hit = matcher(query);
-    let total = self.rows.len();
-    let mut current = from;
-    for _ in 0..count {
-      let next = (1..=total).map(|step| {
-        if backward {
-          (current + total - step % total) % total
-        } else {
-          (current + step) % total
-        }
-      });
-      let Some(index) =
-        next.into_iter().find(|&i| matches(&self.rows[i], &hit))
-      else {
-        return false;
-      };
-      current = index;
-    }
-    self.select(current);
+    let hits: Vec<_> = self
+      .rows
+      .iter()
+      .enumerate()
+      .filter(|(_, row)| matches(row, &hit))
+      .map(|(index, _)| index)
+      .collect();
+    let Some(index) =
+      crate::search::next(&hits, &from, backward, count, |&row| row)
+    else {
+      return false;
+    };
+    self.select(hits[index]);
     true
   }
 
@@ -164,6 +159,21 @@ mod tests {
   fn panel(labels: &[&str]) -> Panel {
     let rows = labels.iter().map(|label| Row::parse(label)).collect();
     Panel::new(PanelKind::Help, rows)
+  }
+
+  #[test]
+  fn large_counts_wrap_matches() {
+    let mut panel = panel(&["match", "skip", "match", "skip", "match"]);
+    panel.begin_search(false);
+    assert!(panel.finish_search("match"));
+    assert_eq!(panel.selected, 2);
+    assert!(panel.repeat(false, usize::MAX));
+    assert_eq!(panel.selected, 2);
+    assert!(panel.repeat(true, usize::MAX - 1));
+    assert_eq!(panel.selected, 4);
+    panel.begin_search(false);
+    assert!(!panel.finish_search("missing"));
+    assert!(!panel.repeat(false, usize::MAX));
   }
 
   #[test]
