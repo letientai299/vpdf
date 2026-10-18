@@ -5,8 +5,10 @@ Each launch runs a binary on a pty that relays the real terminal's queries
 and replies. Pairs alternate which binary starts first. A launch ends once
 its frames stay quiet for --quiet seconds after the first one, then quits
 with `:q`; frames after the quit do not count. Complete is the first frame
-placing as many base tiles as the settled view; with --trace, a launch
-whose own completion marker names another frame fails. Timeouts, nonzero
+placing as many base tiles as the settled view. With --trace, complete is
+the frame the reader itself first marks complete, which also waits for
+requested tiles that place nothing on screen; a marker before the placed
+tiles settle fails the launch. Timeouts, nonzero
 exits, PDF launches without a tile, and terminal geometry changes during a
 launch count as failures: they stay in every median as infinitely slow.
 A pair whose two launches saw different geometry leaves the paired figures.
@@ -187,7 +189,7 @@ def milestones(row, pdf):
 
 
 def traced(row, path):
-    """Fails a launch whose own first complete frame is another one."""
+    """Takes complete from the reader's own marker, matched by order."""
     if row["failure"] or not path.exists() or not row.get("settled_tiles"):
         return
     lines = path.read_text().splitlines()
@@ -196,8 +198,11 @@ def traced(row, path):
         return
     index = next((i for i, flag in enumerate(flags) if flag), None)
     frames = row["frames"]
-    if index is None or index >= len(frames) or frames[index]["ms"] != row["complete_ms"]:
+    if index is None or index >= len(frames) or frames[index]["ms"] < row["complete_ms"]:
         row["failure"] = "complete-mismatch"
+        return
+    row["placed_ms"] = row["complete_ms"]
+    row["complete_ms"] = frames[index]["ms"]
 
 
 def drifted(row):
