@@ -51,10 +51,6 @@ fn wheel(session: &mut Session, flags: u16, at: (u16, u16)) -> Result<bool> {
   wheel_at(session, flags, at, now)
 }
 
-fn input(action: Action) -> Input {
-  Input { action, count: 1, explicit: false, register: '"' }
-}
-
 /// `pages` of Helvetica, each `(size, lines)`, 300 pt wide and as tall
 /// as its lines; page 1 links to page 2 when `link` is set.
 fn pages_pdf(path: &Path, pages: &[(u32, usize)], link: bool) -> Result<()> {
@@ -285,7 +281,7 @@ fn panel_preview_and_text_turns_frame_until_an_end() -> Result<()> {
   assert!(wheel(&mut panel, DOWN, pixel((2, 5)))?);
   // The preview scrolls down, not above its top.
   let mut preview = linked(&path, false)?;
-  let frame = preview.app().preview_frame()?.expect("a preview");
+  let frame = drawn(&mut preview)?;
   let inside = pixel((frame.column + 2, frame.row + 2));
   assert!(!wheel(&mut preview, UP, inside)?);
   assert!(wheel(&mut preview, DOWN, inside)?);
@@ -326,7 +322,7 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
   assert!(!wheel(&mut session, DOWN, (480, 300))?, "the last row");
   assert_eq!(state(&mut session), last);
   // Keys reveal the selection again.
-  session.app().overview_input(input(Action::Motion(Motion::Down)))?;
+  session.app().overview_input(Input::plain(Action::Motion(Motion::Down)))?;
   // `j` moves a row of thumbnails: the selection is the column count.
   let (columns, row) = state(&mut session);
   assert_eq!(row, 1);
@@ -373,6 +369,13 @@ fn linked(path: &Path, text: bool) -> Result<Session> {
   Ok(session)
 }
 
+/// Draws a frame; its preview's cells.
+fn drawn(session: &mut Session) -> Result<vpdf::split::Rect> {
+  use vpdf::trace::Drawable;
+  session.draw_frame(&mut Vec::new())?;
+  session.app().preview_cells().ok_or_else(|| anyhow::anyhow!("a preview"))
+}
+
 /// The pixel at the centre of a cell.
 fn pixel((column, row): (u16, u16)) -> (u16, u16) {
   (column * 8 + 4, row * 16 + 8)
@@ -399,12 +402,13 @@ fn preview_takes_the_wheel_under_the_pointer() -> Result<()> {
   let at = |ms| start + Duration::from_millis(ms);
   for text in [false, true] {
     let mut session = linked(&path, text)?;
-    // (page, preview) scrolled.
+    // (page, preview) scrolled, as drawn.
     let view = |session: &mut Session| -> Result<_> {
+      drawn(session)?;
       let app = session.app();
       Ok((page(app)?, app.preview_top()))
     };
-    let frame = session.app().preview_frame()?.expect("a preview");
+    let frame = drawn(&mut session)?;
     let (page0, preview0) = view(&mut session)?;
     let inside = pixel((frame.column + 2, frame.row + 2));
     assert!(wheel_at(&mut session, DOWN, inside, at(0))?);
@@ -416,7 +420,7 @@ fn preview_takes_the_wheel_under_the_pointer() -> Result<()> {
     let above = pixel((frame.column + 2, frame.row - 1));
     assert!(wheel_at(&mut session, DOWN, above, at(1000))?);
     settle(session.app());
-    let moved = session.app().preview_frame()?.expect("a preview");
+    let moved = drawn(&mut session)?;
     let cell = (above.0 / 8, above.1 / 16);
     assert!(moved.contains(cell.0, cell.1), "text={text}: {moved:?}");
     let (page2, preview2) = view(&mut session)?;

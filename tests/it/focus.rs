@@ -59,7 +59,7 @@ pub(super) fn send(session: &mut Session, bytes: &[u8]) -> Result<()> {
 }
 
 pub(super) fn action(app: &mut App, action: Action) -> Result<()> {
-  app.action(Input { action, count: 1, explicit: false, register: '"' })
+  app.action(Input::plain(action))
 }
 
 fn hints(app: &mut App) {

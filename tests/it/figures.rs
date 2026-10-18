@@ -97,12 +97,7 @@ fn real_figure_navigation_fit() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = super::focus::screen();
   let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
-  app.action(Input {
-    action: Action::Cursor,
-    count: 1,
-    explicit: false,
-    register: '"',
-  })?;
+  app.action(Input::plain(Action::Cursor))?;
   app.move_figure(true, 1)?;
   let first = app.region.as_ref().unwrap().snapshot().clone();
   assert_ne!(first.page, PageId(0), "Title rule remained: {first:?}");
@@ -130,12 +125,7 @@ fn real_figure_navigation_fit() -> Result<()> {
   let selection = app.reader.selection;
   let cursor = app.reader.cursor;
   let mode = app.reader.mode();
-  app.action(Input {
-    action: Action::Region,
-    count: 1,
-    explicit: false,
-    register: '"',
-  })?;
+  app.action(Input::plain(Action::Region))?;
   assert!(matches!(
     app.region,
     Some(Region::Bar { action: vpdf::region::Operation::Image, .. })

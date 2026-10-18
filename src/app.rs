@@ -148,8 +148,6 @@ pub struct App {
   pub peek: Option<crate::preview::Preview>,
   /// The right-click menu.
   pub context_menu: Option<crate::context::ContextMenu>,
-  /// The link the pointer rests on.
-  pub hover_link: Option<crate::links::HoverLink>,
   pub(crate) link_press: crate::links::LinkPress,
   /// What the held left button does.
   pub(crate) gesture: crate::gestures::Gesture,
@@ -171,6 +169,8 @@ pub struct App {
   pub(crate) blank: bool,
   /// What the pointer rests on here.
   pub hover: crate::pointer::Hit,
+  /// The page link under the pointer.
+  pub(crate) rest: Option<crate::links::Rest>,
 }
 
 impl App {
@@ -241,7 +241,6 @@ impl App {
       awaiting: None,
       peek: None,
       context_menu: None,
-      hover_link: None,
       link_press: crate::links::LinkPress::Idle,
       gesture: crate::gestures::Gesture::Glyphs,
       region: None,
@@ -258,6 +257,7 @@ impl App {
       heading: 1.0,
       blank: false,
       hover: crate::pointer::Hit::Nothing,
+      rest: None,
     };
     app.load_outline();
     Ok(app)

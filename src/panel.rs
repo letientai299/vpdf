@@ -1066,15 +1066,7 @@ mod focus_tests {
     panel.selected = 2;
     panel.list(&mut Vec::new(), terminal::At::default(), 40, 12)?;
     assert_eq!(panel.top, 3, "tracking does not undo wheel scrolling");
-    panel.navigate(
-      Input {
-        action: Action::Motion(Motion::Down),
-        count: 1,
-        explicit: false,
-        register: '"',
-      },
-      12,
-    );
+    panel.navigate(Input::plain(Action::Motion(Motion::Down)), 12);
     assert_eq!((panel.selected, panel.top), (3, 3));
     panel.selected = 0;
     panel.begin_search(false);
@@ -1100,15 +1092,7 @@ mod help_tests {
     panel.list(&mut Vec::new(), terminal::At::default(), 12, 4)?;
     panel.selected = 1;
     for top in 1..=3 {
-      panel.navigate(
-        Input {
-          action: Action::Rows(1),
-          count: 1,
-          explicit: false,
-          register: '\"',
-        },
-        4,
-      );
+      panel.navigate(Input::plain(Action::Rows(1)), 4);
       panel.list(&mut Vec::new(), terminal::At::default(), 12, 4)?;
       assert_eq!((panel.top, panel.selected), (top, 1));
     }

@@ -146,22 +146,31 @@ fn overlay_case(app: &mut App, name: &str) -> Result<()> {
 
 /// Hovered citation: label, then tint.
 fn link_hover() -> Result<()> {
+  use vpdf::pointer::{Hit, Hover, Region};
+  let on = |pane, page, index| {
+    let hit = Hit::Link(page, index);
+    let beneath = Some((page, index));
+    Some(Hover { pane, region: Region::Page, hit, beneath })
+  };
   let mut app = paper(false)?;
   app.command("2")?;
   let page = app.navigation_position().page;
   anyhow::ensure!(app.doc.links(page)?.len() >= 2, "citations on page 2");
   let mut index = 0;
-  measure("App::point_link", || {
+  measure("App::point", || {
     index = 1 - index;
-    app.point_link(Some((page, index)));
-    black_box(&app.hover_link);
+    app.point(on(app.id, page, index));
+    black_box(app.hover);
+  })?;
+  measure("App::hover_label", || {
+    black_box(app.hover_label());
   })?;
   for text_mode in [false, true] {
     let mut app = paper(text_mode)?;
     app.command("2")?;
     overlay_case(&mut app, &format!("no link text={text_mode}"))?;
-    app.point_link(Some((page, 0)));
-    anyhow::ensure!(app.hover_link.is_some(), "a hovered citation");
+    app.point(on(app.id, page, 0));
+    anyhow::ensure!(app.hover_link().is_some(), "a hovered citation");
     overlay_case(&mut app, &format!("link tint text={text_mode}"))?;
   }
   Ok(())
@@ -234,6 +243,9 @@ fn route() -> Result<()> {
     panel,
     overlay: 3,
     overview: false,
+    preview: None,
+    menu: None,
+    actions: None,
   };
   let panes = [pane(1, 0, 20), pane(2, 61, 0)];
   let capture =

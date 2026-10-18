@@ -92,12 +92,7 @@ impl Sim {
 
   fn act(&mut self, action: Action) -> Result<f64> {
     let started = Instant::now();
-    self.app.action(Input {
-      action,
-      count: 1,
-      explicit: false,
-      register: '"',
-    })?;
+    self.app.action(Input::plain(action))?;
     Ok(ms(started.elapsed()))
   }
 }

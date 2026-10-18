@@ -45,12 +45,7 @@ fn reader_workflows() -> Result<()> {
   app.close_panel()?;
   app.open_panel(PanelKind::Text)?;
   assert!(app.text_mode);
-  app.action(Input {
-    action: Action::Quit,
-    count: 1,
-    explicit: false,
-    register: '"',
-  })?;
+  app.action(Input::plain(Action::Quit))?;
   assert!(!app.text_mode && !app.quit);
   app.start_search("python", false, false)?;
   common::search_loaded(&mut app)?;
@@ -58,12 +53,7 @@ fn reader_workflows() -> Result<()> {
   app.next_result(true, 2)?;
   app.open_panel(PanelKind::Results)?;
   assert_eq!(app.panel.as_ref().unwrap().rows.len(), app.search.hits.len());
-  app.action(Input {
-    action: Action::Cancel,
-    count: 1,
-    explicit: false,
-    register: '"',
-  })?;
+  app.action(Input::plain(Action::Cancel))?;
   assert!(!app.search.hidden);
   app.command("cancel")?;
   assert!(app.search.hidden);
@@ -110,7 +100,7 @@ fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
   assert_eq!(app.reader.scroll, 200.0);
   for action in [Action::Cancel, Action::History(false), Action::Align(0.0)] {
     app.scroll(100.0)?;
-    app.action(Input { action, count: 1, explicit: false, register: '"' })?;
+    app.action(Input::plain(action))?;
     assert!(app.animation.is_none());
     let stopped = app.reader.scroll;
     assert!(!app.animate());
@@ -223,8 +213,7 @@ fn text_view_scrolls_without_moving_the_selection() -> Result<()> {
   app.reader.cursor.line = 30;
   app.reader.visual(vpdf::reader::SelectionKind::Character);
   app.ensure_cursor()?;
-  let input =
-    Input { action: Action::Quit, count: 1, explicit: false, register: '"' };
+  let input = Input::plain(Action::Quit);
   for (fraction, row) in [(0.0, 0), (1.0, 18), (0.5, 9)] {
     app.action(Input { action: Action::Align(fraction), ..input })?;
     assert_eq!(app.text_cell(app.reader.cursor)?.unwrap().1, row);
@@ -426,9 +415,7 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
     origin: (0, 0),
   };
   let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
-  let press = |app: &mut App, action| {
-    app.action(Input { action, count: 1, explicit: false, register: '"' })
-  };
+  let press = |app: &mut App, action| app.action(Input::plain(action));
   press(&mut app, Action::Overview)?;
   assert!(app.overview.is_some());
   let mut out = Vec::new();
@@ -506,8 +493,7 @@ fn leaving_text_preview_keeps_the_panel() -> Result<()> {
     origin: (0, 0),
   };
   let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
-  let quit =
-    Input { action: Action::Quit, count: 1, explicit: false, register: '"' };
+  let quit = Input::plain(Action::Quit);
   app.action(Input { action: Action::Panel(PanelKind::Outline), ..quit })?;
   app.action(Input { action: Action::Panel(PanelKind::Text), ..quit })?;
   assert!(app.text_mode);
@@ -611,12 +597,7 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
   app.command("2")?;
   // The cursor line sits on the bottom row, under either overlay.
   let bottom = Action::Align(1.0);
-  app.action(Input {
-    action: bottom,
-    count: 1,
-    explicit: false,
-    register: '"',
-  })?;
+  app.action(Input::plain(bottom))?;
   let scroll = app.reader.scroll;
   app.relayout()?;
   assert_eq!(app.reader.scroll, scroll, "the same page area keeps the view");
@@ -695,8 +676,7 @@ fn recent_view_covers_the_pane() -> Result<()> {
   let mut app = text_app()?;
   app.show_recent(&[])?;
   assert_eq!(app.left, app.screen.columns);
-  let input =
-    |action| Input { action, count: 1, explicit: false, register: '"' };
+  let input = Input::plain;
   // Esc keeps the view; reader keys reach no hidden page.
   let scroll = app.reader.scroll;
   for action in
@@ -827,7 +807,12 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
         Hit::Nothing => {
           !covers(&app, cell, &links) && !covers(&app, cell, &glyphs)
         }
-        Hit::Note { .. } | Hit::Row(_) | Hit::Thumbnail(_) => false,
+        Hit::Note { .. }
+        | Hit::Row(_)
+        | Hit::Thumbnail(_)
+        | Hit::Preview { .. }
+        | Hit::Menu(_)
+        | Hit::Action(_) => false,
       };
       assert!(expected, "{at}");
     }

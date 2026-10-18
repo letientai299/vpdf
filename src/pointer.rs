@@ -4,7 +4,7 @@ use crate::app::App;
 use crate::split::Rect;
 use crate::terminal::Shape;
 use crate::text::PageId;
-use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::time::{Duration, Instant};
 
 /// Part of a pane under the pointer.
@@ -17,6 +17,19 @@ pub enum Region {
   /// Key clues or the completion menu.
   Overlay,
   Status,
+  /// The drawn `K` or hover preview.
+  Preview,
+  /// The context menu, over the page.
+  Menu,
+  /// A region capture's action bar.
+  Actions,
+}
+
+impl Region {
+  /// Drawn over the page.
+  pub fn popup(self) -> bool {
+    matches!(self, Self::Preview | Self::Menu | Self::Actions)
+  }
 }
 
 /// A pane's cells and how they divide.
@@ -29,6 +42,12 @@ pub struct Pane {
   /// Overlay rows above the status row.
   pub overlay: u16,
   pub overview: bool,
+  /// Cells the drawn preview covers.
+  pub preview: Option<Rect>,
+  /// Cells the context menu covers.
+  pub menu: Option<Rect>,
+  /// Cells the capture's action bar covers.
+  pub actions: Option<Rect>,
 }
 
 impl Pane {
@@ -45,16 +64,27 @@ impl Pane {
       panel: app.left,
       overlay: app.menu_rows(),
       overview: app.overview.is_some(),
+      preview: app.preview_cells(),
+      menu: app.context_menu.as_ref().map(crate::context::ContextMenu::area),
+      actions: app.bar_cells(),
     }
   }
 
   /// Region at a cell of this pane.
   fn region(&self, column: u16, row: u16) -> Region {
     let page = if self.overview { Region::Overview } else { Region::Page };
-    [Region::Status, Region::Overlay, Region::Panel]
-      .into_iter()
-      .find(|region| self.area(*region).contains(column, row))
-      .unwrap_or(page)
+    // Topmost first.
+    [
+      Region::Status,
+      Region::Overlay,
+      Region::Menu,
+      Region::Actions,
+      Region::Preview,
+      Region::Panel,
+    ]
+    .into_iter()
+    .find(|region| self.area(*region).contains(column, row))
+    .unwrap_or(page)
   }
 
   /// Cells of `region`, relative to the pane.
@@ -76,6 +106,9 @@ impl Pane {
         Rect { column: 0, row: overlay, columns, rows: status - overlay }
       }
       Region::Status => Rect { column: 0, row: status, columns, rows: 1 },
+      Region::Preview => self.preview.unwrap_or_default(),
+      Region::Menu => self.menu.unwrap_or_default(),
+      Region::Actions => self.actions.unwrap_or_default(),
     }
   }
 }
@@ -129,14 +162,30 @@ pub enum Hit {
   Row(usize),
   /// An overview thumbnail.
   Thumbnail(PageId),
+  /// The drawn preview; hover previews follow clicks.
+  Preview {
+    follows: bool,
+  },
+  /// Index into the context menu's items.
+  Menu(usize),
+  /// An action bar item, if any.
+  Action(Option<usize>),
 }
 
 impl Hit {
   pub fn shape(self) -> Shape {
     match self {
-      Self::Nothing | Self::Note { text: false, .. } => Shape::Default,
+      Self::Nothing
+      | Self::Note { text: false, .. }
+      | Self::Preview { follows: false }
+      | Self::Action(None) => Shape::Default,
       Self::Text | Self::Note { text: true, .. } => Shape::Text,
-      Self::Link(..) | Self::Row(_) | Self::Thumbnail(_) => Shape::Pointer,
+      Self::Link(..)
+      | Self::Row(_)
+      | Self::Thumbnail(_)
+      | Self::Preview { follows: true }
+      | Self::Menu(_)
+      | Self::Action(Some(_)) => Shape::Pointer,
     }
   }
 }
@@ -147,6 +196,19 @@ pub struct Hover {
   pub pane: u32,
   pub region: Region,
   pub hit: Hit,
+  /// The page link under it, popups too.
+  pub beneath: Option<(PageId, usize)>,
+}
+
+impl Hover {
+  /// What a frame shows of it.
+  pub fn shown(self) -> (Shape, Option<(u32, Hit)>) {
+    let inert = matches!(
+      self.hit,
+      Hit::Nothing | Hit::Text | Hit::Preview { .. } | Hit::Action(None)
+    );
+    (self.hit.shape(), (!inert).then_some((self.pane, self.hit)))
+  }
 }
 
 /// Drags follow the press; only presses focus.
@@ -253,6 +315,8 @@ fn click(cell: (u16, u16)) -> u16 {
 #[derive(Clone, Copy, Debug)]
 struct Press {
   button: MouseButton,
+  /// Alt-clicks and plain clicks run apart.
+  alt: bool,
   /// Opening a thumbnail ends the run.
   on: Option<(u32, Region)>,
   /// Until the release, drags follow the press.
@@ -347,9 +411,11 @@ impl Pointer {
     match mouse.kind {
       MouseEventKind::Down(button) => {
         self.turn = None;
+        let alt = mouse.modifiers.contains(KeyModifiers::ALT);
         let on = route.map(|route| (route.pane, route.region));
         let again = self.press.filter(|press| {
           press.button == button
+            && press.alt == alt
             && press.on == on
             && !press.dragged
             && press.near(mouse.column, mouse.row, pixel, click)
@@ -357,6 +423,7 @@ impl Pointer {
         });
         self.press = Some(Press {
           button,
+          alt,
           on,
           held: true,
           column: mouse.column,
@@ -467,7 +534,16 @@ mod tests {
   use std::time::Duration;
 
   const fn pane(id: u32, rect: Rect, panel: u16, overlay: u16) -> Pane {
-    Pane { id, rect, panel, overlay, overview: false }
+    Pane {
+      id,
+      rect,
+      panel,
+      overlay,
+      overview: false,
+      preview: None,
+      menu: None,
+      actions: None,
+    }
   }
 
   /// A left pane with a 20-column panel and 3 menu rows, a separator at
@@ -489,7 +565,29 @@ mod tests {
   #[test]
   fn regions_split_rows_then_columns() {
     let thumbnails = Pane { overview: true, ..PANES[0] };
+    let popups = Pane {
+      preview: Some(Rect { column: 25, row: 5, columns: 20, rows: 10 }),
+      menu: Some(Rect { column: 40, row: 12, columns: 10, rows: 30 }),
+      ..PANES[0]
+    };
+    let bar = Pane {
+      actions: Some(Rect { column: 22, row: 20, columns: 30, rows: 1 }),
+      ..PANES[0]
+    };
     let cases = [
+      (popups, (25, 5), Region::Preview),
+      (popups, (30, 14), Region::Preview),
+      (popups, (24, 5), Region::Page),
+      (popups, (25, 15), Region::Page),
+      (popups, (45, 13), Region::Menu),
+      (popups, (42, 13), Region::Menu),
+      (popups, (45, 30), Region::Menu),
+      (popups, (45, 37), Region::Overlay),
+      (popups, (45, 39), Region::Status),
+      (bar, (22, 20), Region::Actions),
+      (bar, (51, 20), Region::Actions),
+      (bar, (22, 21), Region::Page),
+      (bar, (52, 20), Region::Page),
       (PANES[0], (30, 0), Region::Page),
       (PANES[0], (20, 35), Region::Page),
       (PANES[0], (19, 35), Region::Panel),
@@ -664,6 +762,27 @@ mod tests {
   }
 
   #[test]
+  fn alt_clicks_run_apart() {
+    let mut pointer = Pointer::default();
+    let start = Instant::now();
+    let (alt, plain) = (KeyModifiers::ALT, KeyModifiers::NONE);
+    let shift = KeyModifiers::SHIFT;
+    // modifiers -> clicks, one quick burst
+    let cases =
+      [(alt, 1), (plain, 1), (plain, 2), (shift, 3), (alt, 1), (alt, 2)];
+    for (step, (modifiers, want)) in cases.into_iter().enumerate() {
+      let now = start + Duration::from_millis(step as u64 * 20);
+      let mut feed = |kind| {
+        let mouse = MouseEvent { modifiers, ..event(kind, 30, 10) };
+        pointer.route(&PANES, 1, mouse, None, now)
+      };
+      let route = feed(Down(Left));
+      feed(Up(Left));
+      assert_eq!(route.map(|route| route.clicks), Some(want), "step {step}");
+    }
+  }
+
+  #[test]
   fn pixels_refine_the_threshold() {
     let mut pointer = Pointer::default();
     let start = Instant::now();
@@ -697,7 +816,8 @@ mod tests {
 
   #[test]
   fn hover_reports_target_changes() {
-    let hover = |pane, region, hit| Some(Hover { pane, region, hit });
+    let hover =
+      |pane, region, hit| Some(Hover { pane, region, hit, beneath: None });
     let link = Hit::Link(PageId(1), 0);
     let mut pointer = Pointer::default();
     // hover -> changed
@@ -738,6 +858,11 @@ mod tests {
       (Hit::Link(PageId(0), 2), Shape::Pointer),
       (Hit::Row(3), Shape::Pointer),
       (Hit::Thumbnail(PageId(4)), Shape::Pointer),
+      (Hit::Preview { follows: true }, Shape::Pointer),
+      (Hit::Preview { follows: false }, Shape::Default),
+      (Hit::Menu(0), Shape::Pointer),
+      (Hit::Action(Some(1)), Shape::Pointer),
+      (Hit::Action(None), Shape::Default),
     ];
     for (hit, shape) in cases {
       assert_eq!(hit.shape(), shape, "{hit:?}");

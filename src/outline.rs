@@ -227,8 +227,6 @@ impl App {
     self.outline_job = None;
     self.doc.outline = outline;
     self.doc.inferred = inferred;
-    // Link labels name sections.
-    self.hover_link = None;
     self.refill_panel(PanelKind::Outline)?;
     self.track_outline();
     Ok(true)

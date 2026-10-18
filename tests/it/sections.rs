@@ -142,12 +142,7 @@ fn outline_follows_reading_section() -> Result<()> {
       let selected = app.panel.as_ref().unwrap().selected;
       let (position, _) = heading(&mut app, 1)?;
       app.go_to(Position { line: position.line + 2, ..position }, true)?;
-      app.viewport(Input {
-        action: Action::Align(0.0),
-        count: 1,
-        explicit: false,
-        register: '"',
-      })?;
+      app.viewport(Input::plain(Action::Align(0.0)))?;
       app.draw(&mut Vec::new())?;
       assert_eq!(app.panel.as_ref().unwrap().selected, selected);
       keys(&mut app, b"\t")?;

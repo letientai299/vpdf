@@ -182,9 +182,8 @@ fn hovered_links_show_their_destination() -> Result<()> {
     ];
     for (at, want) in cases {
       assert!(mouse(&mut session, MouseEventKind::Moved, at)?, "{at:?}");
-      let app = session.app();
-      let label = app.hover_link.as_ref().map(|link| link.label.as_str());
-      assert_eq!(label, want, "text={text_mode} {at:?}");
+      let label = session.app().hover_label();
+      assert_eq!(label.as_deref(), want, "text={text_mode} {at:?}");
       let line = status(&mut session)?;
       if let Some(want) = want {
         assert!(line.contains(want), "{line:?}");
@@ -203,11 +202,12 @@ fn hovered_links_show_their_destination() -> Result<()> {
     assert!(status(&mut session)?.contains("→ p. 2"));
     // Reloads drop it; the next frame restores.
     session.app().reload_with("")?;
-    assert!(session.app().hover_link.is_none());
+    assert!(session.app().hover_link().is_none());
+    assert!(session.app().hover_due().is_none(), "reloads end the rest");
     session.draw_frame(&mut Vec::new())?;
-    assert!(session.app().hover_link.is_some(), "text={text_mode}");
+    assert!(session.app().hover_link().is_some(), "text={text_mode}");
     assert!(session.pointer_left());
-    assert!(session.app().hover_link.is_none(), "leaving clears the tint");
+    assert!(session.app().hover_link().is_none(), "leaving clears the tint");
   }
   Ok(())
 }
@@ -333,7 +333,12 @@ fn split_panes_hover_and_focus_apart() -> Result<()> {
   let link = cell_in(&mut session, index, Hit::Link(PageId(0), 0))?;
   mouse(&mut session, MouseEventKind::Moved, link)?;
   for app in &session.tab().panes {
-    assert_eq!(app.hover_link.is_some(), app.id == id, "pane {}", app.id);
+    assert_eq!(
+      matches!(app.hover, Hit::Link(..)),
+      app.id == id,
+      "pane {}",
+      app.id
+    );
   }
   assert_eq!(session.app().id, focused, "hover keeps focus");
   click(&mut session, link)?;
@@ -359,9 +364,13 @@ fn split_panes_hover_and_focus_apart() -> Result<()> {
   mouse(&mut session, MouseEventKind::Moved, (0, 0))?;
   session.app().request = Some(Request::Tab(TabMove::Previous(1)));
   session.settle()?;
-  assert!(session.tab().panes.iter().any(|app| app.hover_link.is_some()));
+  assert!(
+    session.tab().panes.iter().any(|app| matches!(app.hover, Hit::Link(..)))
+  );
   session.draw_frame(&mut Vec::new())?;
-  assert!(session.tab().panes.iter().all(|app| app.hover_link.is_none()));
+  assert!(
+    session.tab().panes.iter().all(|app| !matches!(app.hover, Hit::Link(..)))
+  );
   Ok(())
 }
 
@@ -553,6 +562,9 @@ fn alt_clicks_extend_the_selection() -> Result<()> {
       let want = Some((at(0, 0), want, SelectionKind::Character));
       assert_eq!(selected(&mut session), want, "text={text_mode}");
     }
+    // A quick plain click runs anew.
+    click(&mut session, delta)?;
+    assert_eq!(selected(&mut session), None, "text={text_mode}");
     // A target or Cursor glyph anchors.
     session.app().reader.cancel();
     let beta = glyph_cell(&mut session, 0, 7)?;
@@ -1051,6 +1063,242 @@ fn resting_on_links_previews_them() -> Result<()> {
     let away = (screen.columns - 1, screen.rows - 2);
     assert!(mouse(&mut session, MouseEventKind::Moved, away)?);
     assert!(session.app().peek.is_none(), "text={text_mode}");
+  }
+  Ok(())
+}
+
+/// Popups hide links; closing keeps them calm.
+#[test]
+fn popups_hide_links_beneath() -> Result<()> {
+  use crossterm::event::KeyCode;
+  use vpdf::terminal::Shape;
+  // (text mode, popup) -> its hit's shape
+  let cases = [
+    (false, "menu", Shape::Pointer),
+    (true, "menu", Shape::Pointer),
+    (false, "hover", Shape::Pointer),
+    (true, "hover", Shape::Pointer),
+    (false, "key", Shape::Default),
+    (true, "key", Shape::Default),
+  ];
+  for (text_mode, popup, shape) in cases {
+    let (_directory, mut session) = session(text_mode)?;
+    let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
+    let area = match popup {
+      "menu" => {
+        right(&mut session, internal)?;
+        session.app().context_menu.as_ref().expect("a menu").area()
+      }
+      "hover" => hover_open(&mut session, internal)?,
+      _ => {
+        let app = session.app();
+        let link = app.doc.links(PageId(0))?[0].bounds;
+        let text = app.doc.text(PageId(0))?;
+        let (x, y) = link.centre();
+        app.go_to(text.nearest(PageId(0), x, y), true)?;
+        app.preview_link()?;
+        session.draw_frame(&mut Vec::new())?;
+        session.app().preview_cells().expect("a drawn preview")
+      }
+    };
+    let app = session.app();
+    let mut cells = (area.row..area.row + area.rows).flat_map(|row| {
+      (area.column..area.column + area.columns).map(move |c| (c, row))
+    });
+    let under = cells.find(|&(column, row)| {
+      let hit = app.hovered(Region::Page, column, row, None);
+      matches!(hit, Ok(Hit::Link(..)))
+    });
+    let under = under.expect("a link under the popup");
+    let at = format!("text={text_mode} {popup}");
+    // Leaving would close a hover preview.
+    if popup != "hover" {
+      let screen = session.app().screen;
+      let away = (screen.columns - 1, screen.rows - 2);
+      mouse(&mut session, MouseEventKind::Moved, away)?;
+    }
+    let drew = mouse(&mut session, MouseEventKind::Moved, under)?;
+    // Only a new shape shows.
+    let shows = popup == "hover" || shape != Shape::Default;
+    assert_eq!(drew, shows, "{at}: frame");
+    let hover = session.app().hover;
+    let link = matches!(hover, Hit::Link(..));
+    assert!(!link && hover.shape() == shape, "{at}: {hover:?}");
+    assert!(session.app().hover_link().is_none(), "{at}: no tint");
+    assert!(!status(&mut session)?.contains("→"), "{at}: no label");
+    press(&mut session, KeyCode::Esc)?;
+    session.draw_frame(&mut Vec::new())?;
+    let app = session.app();
+    assert!(app.context_menu.is_none() && app.peek.is_none(), "{at}");
+    assert!(matches!(app.hover, Hit::Link(..)), "{at}: uncovered");
+    assert!(app.hover_due().is_none(), "{at}: no rest");
+  }
+  Ok(())
+}
+
+/// Hits with the first cell showing each.
+type Found = Vec<(Hit, (u16, u16))>;
+
+/// First cell of each hit in `area`.
+fn items(
+  session: &mut Session,
+  region: Region,
+  area: vpdf::split::Rect,
+) -> Result<Found> {
+  let app = session.app();
+  let mut found = Found::new();
+  for row in area.row..area.row + area.rows {
+    for column in area.column..area.column + area.columns {
+      let hit = app.hovered(region, column, row, None)?;
+      if hit != Hit::Nothing && found.iter().all(|(seen, _)| *seen != hit) {
+        found.push((hit, (column, row)));
+      }
+    }
+  }
+  Ok(found)
+}
+
+/// Menu rows follow pointer and keys.
+#[test]
+fn menu_rows_follow_the_pointer() -> Result<()> {
+  use crossterm::event::KeyCode;
+  for text_mode in [false, true] {
+    let (_directory, mut session) = session(text_mode)?;
+    let plain = cell(&mut session, Hit::Text)?;
+    right(&mut session, plain)?;
+    let menu = session.app().context_menu.as_ref().expect("a menu").area();
+    let rows = items(&mut session, Region::Menu, menu)?;
+    let at = |index: usize| rows[index].1;
+    let screen = session.app().screen;
+    let away = (screen.columns - 1, screen.rows - 2);
+    let selected = |session: &mut Session| {
+      session.app().context_menu.as_ref().map(|m| m.selected)
+    };
+    // (move to, frame, selected)
+    let steps = [
+      (away, true, 0),
+      // The shape changes on the selected row.
+      (at(0), true, 0),
+      (at(2), true, 2),
+      ((at(2).0 + 3, at(2).1), false, 2),
+      (at(1), true, 1),
+    ];
+    for (step, (to, frame, want)) in steps.into_iter().enumerate() {
+      let drew = mouse(&mut session, MouseEventKind::Moved, to)?;
+      let got = (drew, selected(&mut session));
+      assert_eq!(got, (frame, Some(want)), "text={text_mode} {step}");
+    }
+    press(&mut session, KeyCode::Char('j'))?;
+    assert_eq!(selected(&mut session), Some(2), "keys share it");
+    // Nudges along the row, across links beneath, keep it.
+    for column in menu.column..menu.column + menu.columns {
+      let near = (column, at(1).1);
+      assert!(!mouse(&mut session, MouseEventKind::Moved, near)?);
+      assert_eq!(selected(&mut session), Some(2), "text={text_mode}");
+    }
+  }
+  Ok(())
+}
+
+/// A bar item's first cell, freshly drawn.
+fn bar_item(session: &mut Session, index: usize) -> Result<(u16, u16)> {
+  status(session)?;
+  let bar = session.app().bar_cells().expect("a drawn bar");
+  let found = items(session, Region::Actions, bar)?;
+  let item = found.iter().find(|(hit, _)| *hit == Hit::Action(Some(index)));
+  Ok(item.expect("a shown item").1)
+}
+
+/// Bar items follow the pointer; clicks run.
+#[test]
+fn bar_items_follow_the_pointer() -> Result<()> {
+  use crossterm::event::KeyCode;
+  use vpdf::region::Operation;
+  let (_directory, mut session) = words(false)?;
+  let from = glyph_cell(&mut session, 0, 2)?;
+  let to = glyph_cell(&mut session, 1, 9)?;
+  let capture = |session: &mut Session| -> Result<()> {
+    session.mouse(alt(MouseEventKind::Down(MouseButton::Left), from))?;
+    session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), to))?;
+    session.mouse(alt(MouseEventKind::Up(MouseButton::Left), to))?;
+    status(session).map(drop)
+  };
+  capture(&mut session)?;
+  let action = |session: &mut Session| match &session.app().region {
+    Some(vpdf::region::Region::Bar { action, .. }) => Some(*action),
+    _ => None,
+  };
+  // Prefix and separators show nothing.
+  let bar = session.app().bar_cells().expect("a drawn bar");
+  let screen = session.app().screen;
+  mouse(&mut session, MouseEventKind::Moved, (screen.columns - 1, 0))?;
+  let prefix = (bar.column, bar.row);
+  assert!(!mouse(&mut session, MouseEventKind::Moved, prefix)?, "a gap");
+  // (item, nudge, frame, action)
+  let steps = [
+    (2, 0, true, Operation::Save),
+    (2, 2, false, Operation::Save),
+    (1, 0, true, Operation::Text),
+  ];
+  for (step, (item, nudge, frame, want)) in steps.into_iter().enumerate() {
+    let (column, row) = bar_item(&mut session, item)?;
+    let drew =
+      mouse(&mut session, MouseEventKind::Moved, (column + nudge, row))?;
+    assert_eq!((drew, action(&mut session)), (frame, Some(want)), "{step}");
+  }
+  press(&mut session, KeyCode::Char('l'))?;
+  assert_eq!(action(&mut session), Some(Operation::Save), "keys share it");
+  let text = bar_item(&mut session, 1)?;
+  // A prompt owns the pointer first.
+  press(&mut session, KeyCode::Char(':'))?;
+  mouse(&mut session, MouseEventKind::Moved, (0, 0))?;
+  mouse(&mut session, MouseEventKind::Moved, text)?;
+  assert_eq!(action(&mut session), Some(Operation::Save), "prompt open");
+  click(&mut session, text)?;
+  let app = session.app();
+  assert!(app.prompt.is_none() && app.reader.pending_yank.is_none());
+  click(&mut session, text)?;
+  let app = session.app();
+  assert!(app.reader.pending_yank.is_some(), "Copy text ran");
+  assert!(app.region.as_ref().is_some_and(vpdf::region::Region::is_bar));
+  Ok(())
+}
+
+/// Rests follow the page link beneath popups.
+#[test]
+fn rests_follow_the_link_beneath() -> Result<()> {
+  use vpdf::pointer::Hover;
+  let (_directory, mut session) = session(false)?;
+  let app = session.app();
+  let on = |hit, beneath| {
+    let region = Region::Page;
+    Some(Hover { pane: app.id, region, hit, beneath })
+  };
+  let (first, third) = ((PageId(0), 0), (PageId(0), 2));
+  let link = |(page, index)| Hit::Link(page, index);
+  // (hover, calm first, preview due)
+  let steps = [
+    (on(link(first), Some(first)), false, true),
+    (on(link(first), Some(first)), true, false),
+    // A menu covers the calmed link, closes.
+    (on(Hit::Menu(0), Some(first)), false, false),
+    (on(link(first), Some(first)), false, false),
+    // The view moved another link under it.
+    (on(Hit::Menu(0), Some(first)), false, false),
+    (on(link(third), Some(third)), false, true),
+  ];
+  for (step, (hover, calm, due)) in steps.into_iter().enumerate() {
+    if calm {
+      session.mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: 0,
+        row: 0,
+        modifiers: KeyModifiers::NONE,
+      })?;
+    }
+    let app = session.app();
+    app.point(hover);
+    assert_eq!(app.hover_due().is_some(), due, "step {step}");
   }
   Ok(())
 }

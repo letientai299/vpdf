@@ -8,11 +8,11 @@ use crate::home::{Home, Outcome};
 use crate::keys::PanelKind;
 use crate::layout::Screen;
 use crate::pace::Pacer;
-use crate::pointer::{self, Hit, Hover, Pane, Pixel, Pointer, Route};
+use crate::pointer::{self, Hit, Hover, Pane, Pixel, Pointer, Region, Route};
 use crate::prompt::History;
 use crate::split::{Axis, Direction, Node, Rect, neighbor};
 use crate::state::{Mark, State};
-use crate::terminal::{self, At, View};
+use crate::terminal::{self, At, Shape, View};
 use crate::text::PageId;
 use crate::theme;
 use crate::trace::Drawable;
@@ -823,12 +823,8 @@ impl Session {
     app.reader.message.clear();
     self.pointer.release();
     self.focus(self.active, index)?;
-    let history = crate::keys::Input {
-      action: crate::keys::Action::History(forward),
-      count: 1,
-      explicit: false,
-      register: '"',
-    };
+    let history =
+      crate::keys::Input::plain(crate::keys::Action::History(forward));
     self.app().action(history)?;
     Ok(true)
   }
@@ -846,8 +842,15 @@ impl Session {
     now: Instant,
   ) -> Result<bool> {
     if mouse.kind == MouseEventKind::Moved {
+      let before = self.pointer.target();
       let hover = self.hit(mouse, pixel);
+      let seen = before.map(Hover::shown) != hover.map(Hover::shown);
+      let onto = |hover: Option<Hover>| hover.map(|h| (h.pane, h.hit));
+      let arrived = onto(before) != onto(hover);
       let changed = self.pointer.hover(mouse, pixel, hover);
+      if arrived {
+        self.moved_onto();
+      }
       if changed {
         self.show_hover();
       } else {
@@ -855,7 +858,7 @@ impl Session {
       }
       let left = self.leave_check();
       // Bare motion: a release got lost.
-      return Ok(self.app().drop_sweep() || changed || left);
+      return Ok(self.app().drop_sweep() || seen || left);
     }
     let wheel = pointer::Wheel::of(mouse.kind).is_some();
     if wheel && self.app().prompt.is_some() {
@@ -869,7 +872,7 @@ impl Session {
       if self.on_completion(mouse) {
         return Ok(false);
       }
-      if self.app().context_press(mouse)? {
+      if self.app().context_press(mouse)? || self.app().bar_press(mouse)? {
         self.pointer.release();
         return Ok(true);
       }
@@ -1051,7 +1054,7 @@ impl Session {
     let pane = Pane::of(self.app());
     let local = pointer::route(&[pane], pane.id, None, mouse);
     self.app().prompt.is_some()
-      && local.is_some_and(|route| route.region == pointer::Region::Overlay)
+      && local.is_some_and(|route| route.region == Region::Overlay)
   }
 
   /// Pane index and route under `mouse`.
@@ -1092,20 +1095,22 @@ impl Session {
     self.leave_check();
   }
 
-  /// Gives each pane its hovered link.
+  /// Gives each pane its hover.
   fn show_hover(&mut self) {
     let hover = self.pointer.target();
     let Some(tab) = self.tabs.get_mut(self.active) else { return };
     for app in &mut tab.panes {
-      let link = hover.and_then(|hover| match hover.hit {
-        Hit::Link(page, index)
-          if hover.pane == app.id && hover.region == pointer::Region::Page =>
-        {
-          Some((page, index))
-        }
-        _ => None,
-      });
-      app.point_link(link);
+      app.point(hover.filter(|hover| hover.pane == app.id));
+    }
+  }
+
+  /// Motion picks a menu row or item.
+  fn moved_onto(&mut self) {
+    let Some(hover) = self.pointer.target() else { return };
+    let Some(tab) = self.tabs.get_mut(self.active) else { return };
+    let app = tab.panes.iter_mut().find(|app| app.id == hover.pane);
+    if let Some(app) = app {
+      app.moved_onto(hover.hit);
     }
   }
 
@@ -1114,10 +1119,19 @@ impl Session {
     let (index, route) = self.under(mouse)?;
     let Route { pane, region, mouse, .. } = route;
     let app = &mut self.tab().panes[index];
+    let (column, row) = (mouse.column, mouse.row);
     // Hover is advisory; failures find nothing.
-    let hit = app.hovered(region, mouse.column, mouse.row, pixel);
-    let hit = hit.unwrap_or_default();
-    Some(Hover { pane, region, hit })
+    let hit = app.hovered(region, column, row, pixel).unwrap_or_default();
+    let below = if region.popup() {
+      app.hovered(Region::Page, column, row, pixel)
+    } else {
+      Ok(hit)
+    };
+    let beneath = match below {
+      Ok(Hit::Link(page, index)) => Some((page, index)),
+      _ => None,
+    };
+    Some(Hover { pane, region, hit, beneath })
   }
 
   /// Fits the start screen or every pane to a new terminal size.
@@ -1387,7 +1401,7 @@ impl Session {
     if self.sight != Sight::Hidden {
       // Start-screen motion is passive.
       self.pointer.leave();
-      terminal::point(out, terminal::Shape::Default)?;
+      terminal::point(out, Shape::Default)?;
       home.draw(out)?;
     }
     if let Some(unmeasured) = &self.unmeasured {
@@ -1474,14 +1488,12 @@ impl Drawable for Session {
   /// terminal cursor last.
   fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()> {
     self.rehover();
-    let hover = self.pointer.target();
     // Without a spot the pointer is elsewhere.
     if self.pointer.spot().is_some() {
-      terminal::point(out, hover.map_or_default(|hover| hover.hit.shape()))?;
-    }
-    for app in &mut self.tab().panes {
-      let here = hover.filter(|hover| hover.pane == app.id);
-      app.hover = here.map_or_default(|hover| hover.hit);
+      let hit = self.pointer.target().map_or_default(|hover| hover.hit);
+      let sweeping = self.tab().panes.iter().any(App::sweeping);
+      let shape = if sweeping { Shape::Crosshair } else { hit.shape() };
+      terminal::point(out, shape)?;
     }
     write!(out, "{}\x1b[0m", terminal::frame_start())?;
     self.app().graphics.begin(out)?;
@@ -1510,9 +1522,9 @@ impl Drawable for Session {
     tab.panes[focus].graphics.end(out)?;
     write!(out, "{}", terminal::frame_end())?;
     // Drawing can scroll thumbnails or rewrap rows.
-    let drawn = self.pointer.target();
+    let drawn = self.pointer.target().map(Hover::shown);
     self.rehover();
-    let moved = self.pointer.target() != drawn;
+    let moved = self.pointer.target().map(Hover::shown) != drawn;
     // One follow-up, so hover-drawn regions cannot loop.
     let following = self.rehover == Rehover::Following;
     self.rehover =
@@ -2015,14 +2027,6 @@ mod tests {
       modifiers: KeyModifiers::NONE,
     };
     terminal::arm_shapes();
-    let osc = |out: &[u8]| {
-      let out = String::from_utf8_lossy(out);
-      out
-        .split("\x1b]22;")
-        .skip(1)
-        .map(|rest| rest.split('\x1b').next().unwrap_or("").to_owned())
-        .collect::<Vec<_>>()
-    };
     let frame = |session: &mut Session,
                  cell: Option<(u16, u16)>|
      -> Result<Vec<String>> {
@@ -2031,7 +2035,7 @@ mod tests {
       }
       let mut out = Vec::new();
       session.draw_frame(&mut out)?;
-      Ok(osc(&out))
+      Ok(shapes(&out))
     };
     // (move to, written)
     let steps = [
@@ -2046,10 +2050,10 @@ mod tests {
     // A focus-out, then hiding, hands over once.
     let mut out = Vec::new();
     input(&mut session, Act::Focus(false), &mut out)?;
-    assert_eq!(osc(&out), ["default"]);
+    assert_eq!(shapes(&out), ["default"]);
     out.clear();
     session.hide(&mut out)?;
-    assert_eq!(osc(&out), Vec::<String>::new());
+    assert_eq!(shapes(&out), Vec::<String>::new());
     session.sight = Sight::Focused;
     // (move to, written)
     let steps =
@@ -2312,19 +2316,86 @@ mod tests {
     Ok(())
   }
 
+  /// Pointer shapes a frame writes.
+  fn shapes(out: &[u8]) -> Vec<String> {
+    let out = String::from_utf8_lossy(out);
+    out
+      .split("\x1b]22;")
+      .skip(1)
+      .map(|rest| rest.split('\x1b').next().unwrap_or("").to_owned())
+      .collect()
+  }
+
+  /// A one-line PDF in `directory`.
+  fn line_pdf(directory: &Path) -> Result<PathBuf> {
+    let pdf = directory.join("a.pdf");
+    let content = "BT /F1 24 Tf 20 100 Td (alpha beta gamma) Tj ET";
+    // MuPDF repairs the missing cross-reference table.
+    std::fs::write(
+      &pdf,
+      format!(
+        "%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n\
+         2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n\
+         3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]\
+         /Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>> endobj\n\
+         4 0 obj <</Type/Font/Subtype/Type1/BaseFont/Helvetica>> endobj\n\
+         5 0 obj <</Length {}>> stream\n{content}\nendstream endobj\n\
+         trailer <</Root 1 0 R>>\n%%EOF\n",
+        content.len()
+      ),
+    )?;
+    Ok(pdf)
+  }
+
+  #[test]
+  fn sweeps_show_a_crosshair() -> Result<()> {
+    use crate::pointer::{Hit, Region};
+    use crossterm::event::MouseButton::Left;
+    use crossterm::event::MouseEventKind::{Down, Drag, Moved, Up};
+    let directory = tempfile::tempdir()?;
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut session = Session::new(None);
+    session.open(&line_pdf(directory.path())?, true, screen)?;
+    let app = session.app();
+    let mut cells = (0..23).flat_map(|row| (0..80).map(move |c| (c, row)));
+    let text = cells.find(|&(column, row)| {
+      app.hovered(Region::Page, column, row, None).ok() == Some(Hit::Text)
+    });
+    let (column, row) = text.expect("a text cell");
+    terminal::arm_shapes();
+    let (alt, plain) = (KeyModifiers::ALT, KeyModifiers::NONE);
+    // (event, modifiers, column) -> shapes written
+    let steps = [
+      (Moved, plain, column, vec!["text"]),
+      (Down(Left), alt, column, vec!["crosshair"]),
+      (Drag(Left), alt, column + 6, vec![]),
+      // Lost release: motion drops the sweep.
+      (Moved, plain, column, vec!["text"]),
+      (Down(Left), alt, column, vec!["crosshair"]),
+      (Drag(Left), alt, column + 6, vec![]),
+      (Up(Left), alt, column + 6, vec!["text"]),
+    ];
+    for (step, (kind, modifiers, column, want)) in steps.into_iter().enumerate()
+    {
+      session.mouse(MouseEvent { kind, column, row, modifiers })?;
+      let mut out = Vec::new();
+      session.draw_frame(&mut out)?;
+      assert_eq!(shapes(&out), want, "step {step}: {kind:?}");
+    }
+    Ok(())
+  }
+
   #[test]
   fn start_screen_drops_open_or_type() -> Result<()> {
     use base64::Engine;
     let directory = tempfile::tempdir()?;
-    let pdf = directory.path().join("a.pdf");
-    // MuPDF repairs the missing cross-reference table.
-    std::fs::write(
-      &pdf,
-      "%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n\
-       2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n\
-       3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>> endobj\n\
-       trailer <</Root 1 0 R>>\n%%EOF\n",
-    )?;
+    let pdf = line_pdf(directory.path())?;
     let notes = directory.path().join("notes.txt");
     std::fs::write(&notes, "text")?;
     let screen = Screen {

@@ -10,7 +10,7 @@ use crate::pointer::{Hit, Pixel, Region, Route, WHEEL_ROWS, Wheel};
 use crate::preview::Origin;
 use crate::reader::Location;
 use crate::text::{Bounds, PageId, Position};
-use crossterm::event::{KeyModifiers, MouseButton, MouseEventKind};
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
 /// Zoom steps per wheel turn: touchpads send a turn per cell of travel.
 const WHEEL_ZOOM: f32 = 0.5;
@@ -29,6 +29,9 @@ pub(crate) enum Surface {
   /// The `K` preview.
   Preview,
 }
+
+/// Finds a frame's glyph at a cell.
+type GlyphAt = fn(&mut App, u16, u16) -> Result<Option<Position>>;
 
 /// What a wheel turn moves; an equal view needs no frame.
 #[derive(Clone, Copy, PartialEq)]
@@ -569,6 +572,25 @@ impl App {
     Ok(())
   }
 
+  /// Motion picks a menu row or item.
+  pub(crate) fn moved_onto(&mut self, hit: Hit) {
+    match (hit, self.input_owner()) {
+      (Hit::Menu(index), InputOwner::Context) => {
+        if let Some(menu) = &mut self.context_menu {
+          menu.selected = index;
+        }
+      }
+      (Hit::Action(Some(index)), InputOwner::Region) => self.pick_action(index),
+      _ => {}
+    }
+  }
+
+  /// A screen report's cell in this pane.
+  pub(crate) fn pane_cell(&self, mouse: MouseEvent) -> (u16, u16) {
+    let column = mouse.column.wrapping_sub(self.at.column);
+    (column, mouse.row.wrapping_sub(self.at.row))
+  }
+
   /// Cancels pending keys, as `Esc` does.
   pub fn disarm(&mut self) {
     self.keys.clear();
@@ -600,7 +622,11 @@ impl App {
     }
     match region {
       Region::Panel => return self.panel_mouse(mouse),
-      Region::Overlay | Region::Status => return Ok(()),
+      Region::Overlay | Region::Status | Region::Menu | Region::Actions => {
+        return Ok(());
+      }
+      // Presses close or follow it first.
+      Region::Preview => return self.page_wheel(route),
       Region::Page | Region::Overview => {}
     }
     if matches!(mouse.kind, MouseEventKind::Down(_)) && self.panel_focused() {
@@ -651,7 +677,7 @@ impl App {
     let sideways =
       turn.sideways() || mouse.modifiers.contains(KeyModifiers::SHIFT);
     let zoom = mouse.modifiers.contains(KeyModifiers::CONTROL);
-    let Some(surface) = self.wheel_surface(route, sideways, zoom)? else {
+    let Some(surface) = self.wheel_surface(route.region, sideways, zoom) else {
       return Ok(());
     };
     if zoom {
@@ -680,23 +706,21 @@ impl App {
   /// for drift across the gesture's axis. Zooms keep the page.
   fn wheel_surface(
     &mut self,
-    route: Route,
+    region: Region,
     sideways: bool,
     zoom: bool,
-  ) -> Result<Option<Surface>> {
+  ) -> Option<Surface> {
     if let Some(gesture) = self.wheel {
       let surface = match gesture.surface {
         Surface::Preview if self.peek.is_none() => Surface::Page,
         surface => surface,
       };
-      return Ok((gesture.sideways == sideways).then_some(surface));
+      return (gesture.sideways == sideways).then_some(surface);
     }
-    let (column, row) = (route.mouse.column, route.mouse.row);
-    let under = !zoom
-      && self.preview_frame()?.is_some_and(|frame| frame.contains(column, row));
+    let under = !zoom && region == Region::Preview;
     let surface = if under { Surface::Preview } else { Surface::Page };
     self.wheel = Some(WheelRun { surface, sideways });
-    Ok(Some(surface))
+    Some(surface)
   }
 
   /// What a wheel turn can move, to tell whether one moved anything.
@@ -792,16 +816,10 @@ impl App {
     row: u16,
     pixel: Option<Pixel>,
   ) -> Result<Option<crate::document::Target>> {
-    let point = if self.text_mode {
-      match self.text_shown(column, row)? {
-        Some(position) => self.glyph_point(position)?,
-        None => None,
-      }
-    } else {
-      self.page_point(column, row, pixel)
-    };
-    let Some((page, x, y)) = point else { return Ok(None) };
-    self.link_on(page, x, y)
+    let hit =
+      self.hit_at(Region::Page, column, row, pixel, Self::text_shown)?;
+    let Hit::Link(page, index) = hit else { return Ok(None) };
+    Ok(self.link(page, index)?.map(|link| link.target))
   }
 
   /// Page-area pixels at a cell: reported, else centre.
@@ -828,6 +846,17 @@ impl App {
     let x = left + inside(pixel.map(|p| p.x), screen_column, width);
     let top = f32::from(row) * f32::from(height);
     (x, top + inside(pixel.map(|p| p.y), screen_row, height))
+  }
+
+  /// Page-area pixels of pane cells.
+  pub(crate) fn cell_bounds(&self, cells: crate::split::Rect) -> Bounds {
+    let screen = self.layout.screen;
+    let (width, height) =
+      (f32::from(screen.cell_width), f32::from(screen.cell_height));
+    let x0 = f32::from(cells.column.saturating_sub(self.left)) * width;
+    let y0 = f32::from(cells.row) * height;
+    let x1 = x0 + f32::from(cells.columns) * width;
+    Bounds { x0, y0, x1, y1: y0 + f32::from(cells.rows) * height }
   }
 
   /// Page and point under the pointer in a pane cell.
@@ -859,13 +888,25 @@ impl App {
     self.layout.unproject(page, at, self.reader.scroll)
   }
 
-  /// What a resting pointer covers.
+  /// What the pointer covers next frame.
   pub fn hovered(
     &mut self,
     region: Region,
     column: u16,
     row: u16,
     pixel: Option<Pixel>,
+  ) -> Result<Hit> {
+    self.hit_at(region, column, row, pixel, Self::text_hit)
+  }
+
+  /// What a cell covers; `glyph` reads text.
+  fn hit_at(
+    &mut self,
+    region: Region,
+    column: u16,
+    row: u16,
+    pixel: Option<Pixel>,
+    glyph: GlyphAt,
   ) -> Result<Hit> {
     match region {
       Region::Page => {}
@@ -878,10 +919,22 @@ impl App {
         let page = self.thumbnail_at(column, row);
         return Ok(page.map_or(Hit::Nothing, Hit::Thumbnail));
       }
+      Region::Menu => {
+        let menu = self.context_menu.as_ref();
+        let item = menu.and_then(|menu| menu.item_at(column, row));
+        return Ok(item.map_or(Hit::Nothing, Hit::Menu));
+      }
+      Region::Actions => {
+        return Ok(Hit::Action(self.action_at(column)));
+      }
+      Region::Preview => {
+        let follows = self.hover_peek().is_some();
+        return Ok(Hit::Preview { follows });
+      }
       Region::Overlay | Region::Status => return Ok(Hit::Nothing),
     }
     if self.text_mode {
-      let Some(position) = self.text_hit(column, row)? else {
+      let Some(position) = glyph(self, column, row)? else {
         return Ok(Hit::Nothing);
       };
       let point = self.glyph_point(position)?;

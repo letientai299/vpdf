@@ -9,7 +9,7 @@ use vpdf::session::Session;
 
 /// Runs `action` in the focused pane and applies its request.
 fn act(session: &mut Session, action: Action) -> Result<()> {
-  let input = Input { action, count: 1, explicit: false, register: '"' };
+  let input = Input::plain(action);
   session.app().action(input)?;
   session.settle()
 }

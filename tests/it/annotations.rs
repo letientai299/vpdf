@@ -248,12 +248,7 @@ fn empty_notes_and_panel_focus() -> Result<()> {
     assert!(app.peek.is_none());
     press(&mut app, KeyCode::Tab)?;
     app.panel.as_mut().unwrap().selected = 1;
-    app.action(Input {
-      action: Action::Swap,
-      count: 1,
-      explicit: false,
-      register: '"',
-    })?;
+    app.action(Input::plain(Action::Swap))?;
     assert!(app.panel_focused());
     assert!(app.peek.is_none());
   }

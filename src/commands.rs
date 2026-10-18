@@ -401,7 +401,7 @@ impl App {
     self.text_drawn = None;
     self.target = None;
     self.landing = None;
-    self.hover_link = None;
+    self.point(None);
     self.link_press = crate::links::LinkPress::Idle;
     self.dismiss_overlay();
     if let Some(mut origin) = self.search_origin {
@@ -455,14 +455,23 @@ impl App {
   }
 
   /// Link destination at a page point.
-  pub(crate) fn link_on(
+  fn link_on(
     &mut self,
     page: PageId,
     x: f32,
     y: f32,
   ) -> Result<Option<Target>> {
     let Some(index) = self.link_at(page, x, y)? else { return Ok(None) };
-    Ok(Some(self.doc.links(page)?[index].target.clone()))
+    Ok(self.link(page, index)?.map(|link| link.target))
+  }
+
+  /// A page's link by index.
+  pub(crate) fn link(
+    &mut self,
+    page: PageId,
+    index: usize,
+  ) -> Result<Option<crate::document::Link>> {
+    Ok(self.doc.links(page)?.get(index).cloned())
   }
 
   /// Centre of the glyph at `position`.

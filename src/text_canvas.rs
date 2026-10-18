@@ -152,8 +152,8 @@ impl App {
     let (text, view) = self.next_text_view()?;
     self.text_top = view.top;
     self.text_drawn = Some(view.top);
-    let hovered = self.hover_link.as_ref().filter(|link| link.page == page);
-    let hovered = hovered.map(|link| link.bounds);
+    let hovered = self.hover_link().filter(|(on, _)| *on == page);
+    let hovered = hovered.map(|(_, link)| link.bounds);
     let lines = text.lines.iter().skip(view.top.line).take(view.height);
     for (row, line) in lines.enumerate() {
       write!(out, "{}", self.at.goto(row, self.left))?;

@@ -4,24 +4,11 @@ use crate::app::InputOwner;
 use crate::document::{Heading, Link, PageInfo, Target};
 use crate::panel::{Destination, Row};
 use crate::panel_layout::Layout;
+use crate::pointer::{Hit, Hover};
 use crate::preview::{Origin, Preview};
-use crate::text::{Bounds, PageId, Text};
+use crate::text::{PageId, Text};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::time::{Duration, Instant};
-
-/// The link under the pointer.
-#[derive(Clone, Debug)]
-pub struct HoverLink {
-  pub page: PageId,
-  /// Index into `Document::links`.
-  pub index: usize,
-  pub bounds: Bounds,
-  pub target: Target,
-  /// Destination for the status line.
-  pub label: String,
-  /// When the rest began, if live.
-  pub since: Option<Instant>,
-}
 
 /// Rest before a link previews.
 pub const REST: Duration = Duration::from_millis(400);
@@ -37,31 +24,56 @@ pub enum LinkPress {
   Followed,
 }
 
+/// The link under the pointer, resting.
+#[derive(Clone, Copy, Debug)]
+pub struct Rest {
+  pub page: PageId,
+  /// Index into `Document::links`.
+  pub index: usize,
+  /// When the rest began; None once calmed.
+  pub since: Option<Instant>,
+}
+
 impl App {
-  /// Shows a page's link by index.
-  pub fn point_link(&mut self, link: Option<(PageId, usize)>) {
-    let shown = self.hover_link.as_ref().map(|link| (link.page, link.index));
-    if shown == link {
+  /// Takes `hover`; new links beneath rest.
+  pub fn point(&mut self, hover: Option<Hover>) {
+    self.hover = hover.map_or_default(|hover| hover.hit);
+    let beneath = hover.and_then(|hover| hover.beneath);
+    if self.rest.map(|rest| (rest.page, rest.index)) == beneath {
       return;
     }
-    // Hover is advisory; failures show nothing.
-    self.hover_link = link.and_then(|(page, index)| {
-      let links = self.doc.links(page).ok()?;
-      let link = links.get(index)?;
-      let target = link.target.clone();
-      let label = destination(&target, &self.doc.pages, &self.doc.outline);
-      let since = Some(Instant::now());
-      Some(HoverLink { page, index, bounds: link.bounds, target, label, since })
+    self.rest = beneath.map(|(page, index)| Rest {
+      page,
+      index,
+      since: Some(Instant::now()),
     });
   }
 
-  /// When the hovered link previews.
-  pub fn hover_due(&self) -> Option<Instant> {
-    let link = self.hover_link.as_ref()?;
+  /// The hovered link and its page.
+  pub fn hover_link(&mut self) -> Option<(PageId, Link)> {
+    let Hit::Link(page, index) = self.hover else { return None };
+    // Hover is advisory; failures show nothing.
+    let link = self.link(page, index).ok()??;
+    Some((page, link))
+  }
+
+  /// The hovered link's destination.
+  pub fn hover_label(&mut self) -> Option<String> {
+    let (_, link) = self.hover_link()?;
+    Some(destination(&link.target, &self.doc.pages, &self.doc.outline))
+  }
+
+  /// When the rested link previews.
+  pub fn hover_due(&mut self) -> Option<Instant> {
+    let rest = self.rest?;
+    let since = rest.since?;
     let free = self.focused && self.input_owner() == InputOwner::Content;
+    if !free || self.peek.is_some() {
+      return None;
+    }
+    let link = self.link(rest.page, rest.index).ok()??;
     let internal = !matches!(link.target, Target::Uri(_));
-    let since = link.since.filter(|_| free && internal && self.peek.is_none());
-    since.map(|since| since + REST)
+    internal.then_some(since + REST)
   }
 
   /// Opens a due preview.
@@ -69,15 +81,16 @@ impl App {
     if self.hover_due().is_none_or(|due| now < due) {
       return false;
     }
-    let Some(link) = self.hover_link.as_mut() else { return false };
-    link.since = None;
-    let (page, index, bounds) = (link.page, link.index, link.bounds);
-    let target = link.target.clone();
+    self.calm_hover();
+    let Some(Rest { page, index, .. }) = self.rest else { return false };
+    let Ok(Some(link)) = self.link(page, index) else { return false };
     // Previews are advisory; failures show nothing.
     let Ok(text) = self.doc.text(page) else { return false };
     // Textless links have no anchor.
-    let Some(source) = text.in_areas(page, &[bounds]).0 else { return false };
-    if self.show_preview(target, source).is_err() {
+    let Some(source) = text.in_areas(page, &[link.bounds]).0 else {
+      return false;
+    };
+    if self.show_preview(link.target, source).is_err() {
       return false;
     }
     if let Some(peek) = &mut self.peek {
@@ -93,16 +106,15 @@ impl App {
 
   /// Motion on the link restarts its rest.
   pub(crate) fn rest_again(&mut self) {
-    if let Some(since) = self.hover_link.as_mut().and_then(|l| l.since.as_mut())
-    {
+    if let Some(since) = self.rest.as_mut().and_then(|r| r.since.as_mut()) {
       *since = Instant::now();
     }
   }
 
   /// Ends the rest until another link.
   pub(crate) fn calm_hover(&mut self) {
-    if let Some(link) = &mut self.hover_link {
-      link.since = None;
+    if let Some(rest) = &mut self.rest {
+      rest.since = None;
     }
   }
 
@@ -115,9 +127,8 @@ impl App {
     let inside = reach
       .zip(at)
       .is_some_and(|(area, (column, row))| area.contains(column, row));
-    let opener = peek.hovered();
-    let on_link =
-      self.hover_link.as_ref().map(|link| (link.page, link.index)) == opener;
+    let rested = self.rest.map(|rest| (rest.page, rest.index));
+    let on_link = rested.is_some_and(|link| peek.hovered() == Some(link));
     if inside || on_link {
       return false;
     }
@@ -137,10 +148,12 @@ impl App {
 
   /// Presses close it; left inside follows.
   pub fn hover_press(&mut self, mouse: MouseEvent) -> Result<bool> {
-    let Some(peek) = self.hover_peek() else { return Ok(false) };
-    let column = mouse.column.wrapping_sub(self.at.column);
-    let row = mouse.row.wrapping_sub(self.at.row);
-    let inside = peek.placement.is_some_and(|at| at.area.contains(column, row));
+    if self.hover_peek().is_none() {
+      return Ok(false);
+    }
+    let (column, row) = self.pane_cell(mouse);
+    let inside =
+      self.preview_cells().is_some_and(|at| at.contains(column, row));
     let left = mouse.kind == MouseEventKind::Down(MouseButton::Left)
       && !mouse.modifiers.contains(KeyModifiers::ALT);
     if inside && left {
@@ -463,15 +476,7 @@ mod tests {
       modifiers: KeyModifiers::NONE,
     };
     assert_eq!(panel.pointer(press(2)), Some(0));
-    panel.navigate(
-      Input {
-        action: Action::Motion(Motion::Down),
-        count: 1,
-        explicit: false,
-        register: '"',
-      },
-      20,
-    );
+    panel.navigate(Input::plain(Action::Motion(Motion::Down)), 20);
     panel.list(&mut Vec::new(), terminal::At::default(), 24, 20)?;
     assert_eq!(panel.selected, 1);
     panel.begin_search(false);
@@ -499,15 +504,7 @@ mod tests {
     });
     panel.list(&mut Vec::new(), terminal::At::default(), 20, 6)?;
     assert_eq!((panel.selected, panel.top), (0, 3));
-    panel.navigate(
-      Input {
-        action: Action::Motion(Motion::Down),
-        count: 1,
-        explicit: false,
-        register: '"',
-      },
-      6,
-    );
+    panel.navigate(Input::plain(Action::Motion(Motion::Down)), 6);
     let mut out = Vec::new();
     panel.list(&mut out, terminal::At::default(), 20, 6)?;
     assert_eq!(panel.selected, 1);
@@ -547,12 +544,7 @@ mod tests {
     app.open_panel(PanelKind::Links)?;
     let row = &app.panel.as_ref().unwrap().rows[0];
     assert_eq!(row.label, "arXiv:1610.02357");
-    app.panel_input(Input {
-      action: Action::Yank,
-      count: 1,
-      explicit: false,
-      register: 'a',
-    })?;
+    app.panel_input(Input { register: 'a', ..Input::plain(Action::Yank) })?;
     assert_eq!(
       app.reader.registers.get(&'a').map(|text| &**text),
       Some("http://arxiv.org/abs/1610.02357\n")

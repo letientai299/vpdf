@@ -116,9 +116,14 @@ impl App {
     self.extend_select(pos)
   }
 
+  /// Whether an Alt-press sweeps a capture.
+  pub(crate) fn sweeping(&self) -> bool {
+    matches!(self.gesture, Gesture::Sweep(_))
+  }
+
   /// Drops a held sweep; whether one was.
   pub(crate) fn drop_sweep(&mut self) -> bool {
-    let held = matches!(self.gesture, Gesture::Sweep(_));
+    let held = self.sweeping();
     if held {
       self.gesture = Gesture::Dropped;
     }

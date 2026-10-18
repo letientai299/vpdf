@@ -6,11 +6,14 @@ use crate::keys::{Action, Input};
 use crate::reader::Yank;
 use crate::text::{Bounds, PageId, Text};
 use crate::{clipboard, terminal, theme, tiles};
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CaptureId(u64);
@@ -31,8 +34,25 @@ pub struct Snapshot {
 
 pub enum Region {
   Selected(Snapshot),
-  Bar { snapshot: Snapshot, action: Operation, status: String },
+  Bar {
+    snapshot: Snapshot,
+    action: Operation,
+    status: String,
+    /// Where the last frame drew it.
+    cells: Option<BarCells>,
+  },
 }
+
+/// A drawn action bar's pane cells.
+#[derive(Clone, Debug)]
+pub struct BarCells {
+  row: u16,
+  columns: Range<u16>,
+  items: Spans<u16>,
+}
+
+/// Shown bar items: columns and `ACTIONS` index.
+type Spans<T> = Vec<(Range<T>, usize)>;
 
 impl Region {
   pub fn is_bar(&self) -> bool {
@@ -244,6 +264,7 @@ impl App {
       snapshot,
       action: Operation::Image,
       status: String::new(),
+      cells: None,
     });
     self.reader.message = "h/l choose; Enter runs; Esc closes".into();
     Ok(())
@@ -387,28 +408,19 @@ impl App {
       }
       self.frame_capture(rect, out)?;
     }
-    let Some(Region::Bar { snapshot, action, status }) = &self.region else {
+    let Some(Region::Bar { snapshot, action, status, .. }) = &self.region
+    else {
       return Ok(());
     };
     let (page, action, status) = (snapshot.page, *action, status.clone());
     let rect = self.layout.project(page, snapshot.bounds, self.reader.scroll);
     self.frame_capture(rect, out)?;
     let screen = self.layout.screen;
-    let options = ACTIONS
-      .iter()
-      .enumerate()
-      .map(|(index, (label, _))| {
-        if index == action as usize {
-          format!("[{label}]")
-        } else {
-          (*label).into()
-        }
-      })
-      .collect::<Vec<_>>()
-      .join(" · ");
-    let mut label = format!("p{} {options}", page.0 + 1);
+    let (mut label, mut items) = bar_label(page, action);
     if label.chars().count() > usize::from(screen.columns) {
-      label = format!("[{}] p{}", ACTIONS[action as usize].0, page.0 + 1);
+      let name = ACTIONS[action as usize].0;
+      label = format!("[{name}] p{}", page.0 + 1);
+      items = vec![(0..name.len() + 2, action as usize)];
     }
     if !status.is_empty() {
       label.push_str(" │ ");
@@ -417,14 +429,12 @@ impl App {
     let text = terminal::clean(&label, usize::from(screen.columns));
     let row = ((rect.y1 / f32::from(screen.cell_height)).ceil() as usize)
       .min(usize::from(screen.rows.saturating_sub(2)));
-    if !self.text_mode {
-      let y = row as f32 * f32::from(screen.cell_height);
-      let backdrop = Bounds {
-        x0: 0.0,
-        y0: y,
-        x1: screen.width(),
-        y1: y + f32::from(screen.cell_height),
-      };
+    // Graphics fill the row; text stops.
+    let width =
+      if self.text_mode { text.width() } else { usize::from(screen.columns) };
+    self.place_bar(row, width, items);
+    if let Some(cells) = self.bar_cells().filter(|_| !self.text_mode) {
+      let backdrop = self.cell_bounds(cells);
       self.graphics.backdrop(
         backdrop,
         theme::BADGE_FILL,
@@ -442,6 +452,73 @@ impl App {
       theme::RESET
     )?;
     Ok(())
+  }
+
+  /// Records the drawn bar's cells.
+  fn place_bar(&mut self, row: usize, width: usize, items: Spans<usize>) {
+    let column = |offset: usize| {
+      u16::try_from(usize::from(self.left) + offset.min(width))
+        .unwrap_or(u16::MAX)
+    };
+    let cells = BarCells {
+      row: u16::try_from(row).unwrap_or(u16::MAX),
+      columns: column(0)..column(width),
+      items: items
+        .into_iter()
+        .map(|(span, index)| (column(span.start)..column(span.end), index))
+        .collect(),
+    };
+    if let Some(Region::Bar { cells: drawn, .. }) = &mut self.region {
+      *drawn = Some(cells);
+    }
+  }
+
+  fn drawn_bar(&self) -> Option<&BarCells> {
+    match &self.region {
+      Some(Region::Bar { cells, .. }) => cells.as_ref(),
+      _ => None,
+    }
+  }
+
+  /// Pane cells the drawn bar covers.
+  pub fn bar_cells(&self) -> Option<crate::split::Rect> {
+    let cells = self.drawn_bar()?;
+    let columns = cells.columns.end - cells.columns.start;
+    let (column, row) = (cells.columns.start, cells.row);
+    Some(crate::split::Rect { column, row, columns, rows: 1 })
+  }
+
+  /// The bar item at a pane column.
+  pub(crate) fn action_at(&self, column: u16) -> Option<usize> {
+    let items = &self.drawn_bar()?.items;
+    let item = items.iter().find(|(span, _)| span.contains(&column));
+    item.map(|(_, index)| *index)
+  }
+
+  /// Selects a bar item by `ACTIONS` index.
+  pub(crate) fn pick_action(&mut self, index: usize) {
+    if let Some(Region::Bar { action, .. }) = &mut self.region
+      && let Some((_, operation)) = ACTIONS.get(index)
+    {
+      *action = *operation;
+    }
+  }
+
+  /// Runs a bar item a click hit.
+  pub fn bar_press(&mut self, mouse: MouseEvent) -> Result<bool> {
+    let left = mouse.kind == MouseEventKind::Down(MouseButton::Left)
+      && !mouse.modifiers.contains(KeyModifiers::ALT);
+    if !left || self.input_owner() != crate::app::InputOwner::Region {
+      return Ok(false);
+    }
+    let (column, row) = self.pane_cell(mouse);
+    if !self.bar_cells().is_some_and(|bar| bar.contains(column, row)) {
+      return Ok(false);
+    }
+    let Some(index) = self.action_at(column) else { return Ok(false) };
+    self.pick_action(index);
+    self.region_operation(ACTIONS[index].1)?;
+    Ok(true)
   }
 
   /// Dims around a rect; outlines it.
@@ -489,6 +566,23 @@ impl App {
     }
     Ok(())
   }
+}
+
+/// Bar text and item spans; `action` bracketed.
+fn bar_label(page: PageId, action: Operation) -> (String, Spans<usize>) {
+  let mut label = format!("p{}", page.0 + 1);
+  let mut items = Vec::with_capacity(ACTIONS.len());
+  for (index, (name, operation)) in ACTIONS.iter().enumerate() {
+    label.push_str(if index == 0 { " " } else { " · " });
+    let start = label.chars().count();
+    if *operation == action {
+      label.extend(["[", name, "]"]);
+    } else {
+      label.push_str(name);
+    }
+    items.push((start..label.chars().count(), index));
+  }
+  (label, items)
 }
 
 fn snapshot(page: PageId, bounds: Bounds) -> Snapshot {

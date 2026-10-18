@@ -8,6 +8,7 @@ use crate::motion::Motion;
 use crate::pointer::Route;
 use crate::reader::SelectionKind;
 use crate::region::Operation;
+use crate::split::Rect;
 use crate::text::{Bounds, PageId, Position};
 use crate::theme;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
@@ -71,13 +72,17 @@ impl ContextMenu {
     self.keys() + 2 + label.unwrap_or(0) + 2
   }
 
-  /// Item at a pane cell.
-  fn item_at(&self, column: u16, row: u16) -> Option<usize> {
+  /// Pane cells the rows cover.
+  pub fn area(&self) -> Rect {
+    let (column, row) = self.at;
     let rows = u16::try_from(self.items.len()).unwrap_or(u16::MAX);
-    let (left, top) = self.at;
-    let inside = (left..left.saturating_add(self.width)).contains(&column)
-      && (top..top.saturating_add(rows)).contains(&row);
-    inside.then(|| usize::from(row - top))
+    Rect { column, row, columns: self.width, rows }
+  }
+
+  /// Item at a pane cell.
+  pub(crate) fn item_at(&self, column: u16, row: u16) -> Option<usize> {
+    let inside = self.area().contains(column, row);
+    inside.then(|| usize::from(row - self.at.1))
   }
 }
 
@@ -186,9 +191,8 @@ impl App {
 
   /// Whether a press hit the open menu.
   pub fn context_press(&mut self, mouse: MouseEvent) -> Result<bool> {
+    let (column, row) = self.pane_cell(mouse);
     let Some(menu) = &mut self.context_menu else { return Ok(false) };
-    let column = mouse.column.wrapping_sub(self.at.column);
-    let row = mouse.row.wrapping_sub(self.at.row);
     let Some(index) = menu.item_at(column, row) else { return Ok(false) };
     if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
       menu.selected = index;
@@ -203,8 +207,7 @@ impl App {
     let Some(item) = menu.items.into_iter().nth(menu.selected) else {
       return Ok(());
     };
-    let key =
-      |action| Input { action, count: 1, explicit: false, register: '"' };
+    let key = Input::plain;
     match item.command {
       Command::Follow(target) => self.follow(&target),
       Command::Preview(target, near) => self.show_preview(target, near),
@@ -295,13 +298,7 @@ impl App {
   /// The menu's page-area pixels.
   pub(crate) fn context_rect(&self) -> Option<Bounds> {
     let menu = self.context_menu.as_ref()?;
-    let screen = self.layout.screen;
-    let (width, height) =
-      (f32::from(screen.cell_width), f32::from(screen.cell_height));
-    let x0 = f32::from(menu.at.0.saturating_sub(self.left)) * width;
-    let y0 = f32::from(menu.at.1) * height;
-    let x1 = x0 + f32::from(menu.width) * width;
-    Some(Bounds { x0, y0, x1, y1: y0 + menu.items.len() as f32 * height })
+    Some(self.cell_bounds(menu.area()))
   }
 
   /// Draws the menu, key first, like clues.

@@ -161,9 +161,8 @@ impl App {
     if let Some(landing) = &self.landing {
       self.line_band(landing.position, crate::theme::LANDING, screen, out)?;
     }
-    if let Some(link) = &self.hover_link {
-      let rect =
-        self.layout.project(link.page, link.bounds, self.reader.scroll);
+    if let Some((page, link)) = self.hover_link() {
+      let rect = self.layout.project(page, link.bounds, self.reader.scroll);
       self.tint(rect, crate::theme::LINK, screen, out)?;
     }
     if !self.search.hidden {

@@ -325,35 +325,22 @@ impl App {
   fn preview_backdrop(
     &mut self,
     out: &mut impl Write,
-    (top, column): (usize, usize),
-    (rows, columns): (usize, usize),
+    frame: Rect,
   ) -> Result<()> {
     let screen = self.layout.screen;
-    let x =
-      (column - usize::from(self.left)) as f32 * f32::from(screen.cell_width);
-    let y = top as f32 * f32::from(screen.cell_height);
-    let rect = Bounds {
-      x0: x,
-      y0: y,
-      x1: x + (columns + 2) as f32 * f32::from(screen.cell_width),
-      y1: y + (rows + 2) as f32 * f32::from(screen.cell_height),
-    };
+    let rect = self.cell_bounds(frame);
     self.graphics.backdrop(rect, [255; 4], screen, self.left, out)
   }
 
-  /// Records the preview's cells and reach.
-  fn preview_area(
-    &mut self,
-    (top, column): (usize, usize),
-    (rows, columns): (usize, usize),
-    source: Option<Bounds>,
-  ) {
+  /// Records `frame` and its reach to `source`.
+  fn place_preview(&mut self, frame: Rect, source: Option<Bounds>) {
     let screen = self.layout.screen;
     let (width, height) =
       (f32::from(screen.cell_width), f32::from(screen.cell_height));
     let left = usize::from(self.left);
-    let (mut x0, mut y0) = (column, top);
-    let (mut x1, mut y1) = (column + columns + 2, top + rows + 2);
+    let (mut x0, mut y0) = (usize::from(frame.column), usize::from(frame.row));
+    let mut x1 = x0 + usize::from(frame.columns);
+    let mut y1 = y0 + usize::from(frame.rows);
     // Reach the source's columns and gap rows.
     if let Some(rect) = source {
       x0 = x0.min(left + (rect.x0 / width) as usize);
@@ -362,29 +349,25 @@ impl App {
       y1 = y1.max((rect.y0 / height) as usize);
     }
     let cells = |value: usize| u16::try_from(value).unwrap_or(u16::MAX);
-    let rect = |(x0, y0): (usize, usize), (x1, y1): (usize, usize)| Rect {
+    let reach = Rect {
       column: cells(x0),
       row: cells(y0),
       columns: cells(x1.saturating_sub(x0)),
       rows: cells(y1.saturating_sub(y0)),
     };
-    let placement = Placement {
-      area: rect((column, top), (column + columns + 2, top + rows + 2)),
-      reach: rect((x0, y0), (x1, y1)),
-      view: self.view_key(),
-    };
+    let placement = Placement { area: frame, reach, view: self.view_key() };
     if let Some(peek) = &mut self.peek {
       peek.placement = Some(placement);
     }
   }
 
-  /// Pane cells the preview and its border cover.
-  pub fn preview_frame(&mut self) -> Result<Option<Rect>> {
-    let Some(source) = self.peek.as_ref().map(|preview| preview.source) else {
-      return Ok(None);
-    };
-    let cursor = self.position_rect(source)?;
-    let Some(preview) = &self.peek else { return Ok(None) };
+  /// Pane cells the drawn preview covers.
+  pub fn preview_cells(&self) -> Option<Rect> {
+    self.peek.as_ref()?.placement.map(|at| at.area)
+  }
+
+  /// Cells `preview` covers beside `cursor`.
+  fn preview_frame(&self, preview: &Preview, cursor: Option<Bounds>) -> Rect {
     let screen = self.layout.screen;
     let cell = f32::from(screen.cell_height);
     let (columns, rows, _) = self.preview_extent(preview);
@@ -401,12 +384,12 @@ impl App {
     let column = usize::from(self.left)
       + usize::from(screen.columns).saturating_sub(columns + 2) / 2;
     let cells = |value: usize| u16::try_from(value).unwrap_or(u16::MAX);
-    Ok(Some(Rect {
+    Rect {
       column: cells(column),
       row: cells(top),
       columns: cells(columns + 2),
       rows: cells(rows + 2),
-    }))
+    }
   }
 
   pub fn draw_preview(&mut self, out: &mut impl Write) -> Result<()> {
@@ -414,13 +397,12 @@ impl App {
       return Ok(());
     }
     self.scroll_preview(0.0)?;
-    let Some(frame) = self.preview_frame()? else { return Ok(()) };
-    let source = self.peek.as_ref().map(|preview| preview.source);
-    let cursor = match source {
-      Some(source) => self.position_rect(source)?,
-      None => None,
+    let Some(source) = self.peek.as_ref().map(|preview| preview.source) else {
+      return Ok(());
     };
+    let cursor = self.position_rect(source)?;
     let Some(preview) = &self.peek else { return Ok(()) };
+    let frame = self.preview_frame(preview, cursor);
     let screen = self.layout.screen;
     let cell = f32::from(screen.cell_height);
     let (_, _, clipped) = self.preview_extent(preview);
@@ -433,9 +415,9 @@ impl App {
     let over_page = matches!(preview.view, View::Image { .. })
       || !self.text_mode && matches!(preview.view, View::Note { .. });
     if over_page {
-      self.preview_backdrop(out, (top, column), (rows, columns))?;
+      self.preview_backdrop(out, frame)?;
     }
-    self.preview_area((top, column), (rows, columns), cursor);
+    self.place_preview(frame, cursor);
     let Some(preview) = &self.peek else { return Ok(()) };
     let border = if over_page { IMAGE_BORDER } else { theme::CURRENT };
     let text_style = if over_page { NOTE_TEXT } else { theme::RESET };

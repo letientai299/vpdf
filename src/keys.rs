@@ -96,6 +96,13 @@ pub struct Input {
   pub register: char,
 }
 
+impl Input {
+  /// `action` with no count or register.
+  pub const fn plain(action: Action) -> Self {
+    Self { action, count: 1, explicit: false, register: '"' }
+  }
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Grammar {
   Normal,
