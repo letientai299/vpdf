@@ -236,21 +236,20 @@ fn hovered_links_show_their_destination() -> Result<()> {
   Ok(())
 }
 
-/// U16: notes yield to the detail once the pointer moves past them.
+/// Messages and errors stay until a key; the detail shows after.
 #[test]
-fn hover_details_show_over_passed_messages() -> Result<()> {
+fn messages_stay_over_hover_details() -> Result<()> {
   let label = "→ p. 2 · Results";
   for text_mode in [false, true] {
     let (_directory, mut session) = session(text_mode)?;
     let link = cell(&mut session, Hit::Link(PageId(0), 0))?;
     let near = (link.0 + 1, link.1);
     let plain = cell(&mut session, Hit::Text)?;
-    // (message set before the step, error, motion to) -> frame, shown
+    // (message, error, motion to) -> frame, shown
     let steps = [
-      (Some("20 matches"), None, link, true, label),
-      (Some("Yanked 4 characters"), None, link, true, label),
-      (None, None, near, false, label),
-      (None, None, plain, true, "Yanked 4 characters"),
+      (Some("20 matches"), None, link, true, "20 matches"),
+      (None, None, near, false, "20 matches"),
+      (None, None, plain, true, "20 matches"),
       (Some("Copied link"), Some("Broken"), link, true, "Broken"),
     ];
     for (step, (message, error, to, frame, shown)) in steps.iter().enumerate() {
@@ -258,17 +257,19 @@ fn hover_details_show_over_passed_messages() -> Result<()> {
       app.error = error.map(str::to_owned);
       if let Some(message) = message {
         app.reader.message = (*message).to_owned();
-        // A note made at rest shows over the detail; errors over both.
-        let drawn = status(&mut session)?;
-        let note = error.unwrap_or(message);
-        assert!(drawn.contains(note), "step {step}: {drawn:?}");
       }
       let framed = mouse(&mut session, MouseEventKind::Moved, *to)?;
       assert_eq!(framed, *frame, "text={text_mode} step {step}");
       let drawn = status(&mut session)?;
       let at = format!("text={text_mode} step {step}: {drawn:?}");
-      assert!(drawn.contains(shown), "{at}");
+      assert!(drawn.contains(shown) && !drawn.contains(label), "{at}");
     }
+    // A key clears both; the detail shows.
+    let app = session.app();
+    app.error = None;
+    app.reader.message.clear();
+    let drawn = status(&mut session)?;
+    assert!(drawn.contains(label), "text={text_mode}: {drawn:?}");
   }
   Ok(())
 }
@@ -1415,12 +1416,18 @@ fn alt_drags_capture_regions() -> Result<()> {
   assert!(!status(&mut session)?.contains(hint), "no area, no hint");
   assert!(session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), to))?);
   assert!(status(&mut session)?.contains(hint), "the drag hints");
-  // A note mid-sweep shows until the pointer moves past it.
+  // A note mid-sweep stays until a key; motion does not pass it.
   session.app().reader.message = "Set tmux allow-passthrough all".into();
   assert!(!status(&mut session)?.contains(hint), "a new note shows");
-  // The same spot moves nothing else, so the pass alone draws.
-  assert!(session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), to))?);
-  assert!(status(&mut session)?.contains(hint), "motion passes the note");
+  // The same spot moves nothing, so no frame.
+  assert!(!session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), to))?);
+  let line = status(&mut session)?;
+  assert!(
+    line.contains("allow-passthrough") && !line.contains(hint),
+    "{line:?}"
+  );
+  session.app().reader.message.clear();
+  assert!(status(&mut session)?.contains(hint), "the hint returns");
   assert!(backdrops(&mut session)? > before, "the page dims");
   // Alt released mid-drag still captures.
   mouse(&mut session, MouseEventKind::Up(MouseButton::Left), to)?;

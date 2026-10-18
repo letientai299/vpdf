@@ -264,24 +264,10 @@ impl App {
     Ok(line)
   }
 
-  /// Whether a detail would show: no error, and the message yields.
+  /// Whether a detail would show: messages and errors stay until a
+  /// key or click.
   pub(crate) fn shows_detail(&self) -> bool {
-    self.error.is_none() && (self.covered() || self.message_passed())
-  }
-
-  /// Whether the message yields to hover details: none, or the pointer
-  /// moved since it appeared. Errors never yield.
-  pub(crate) fn message_passed(&self) -> bool {
-    self.reader.message.is_empty() || self.reader.message == self.passed
-  }
-
-  /// Pointer motion moves past the message; whether a shown one did.
-  pub(crate) fn pass_message(&mut self) -> bool {
-    if self.message_passed() {
-      return false;
-    }
-    self.passed.clone_from(&self.reader.message);
-    true
+    self.error.is_none() && (self.covered() || self.reader.message.is_empty())
   }
 
   /// The focused pane's status item there.

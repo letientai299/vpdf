@@ -61,9 +61,9 @@ status line keeps its destination while the pointer is over it. A web address
 wrapped onto the next line, column, or page highlights whole, and link lists
 show a line or column wrap once. The status line names what the pointer rests
 on: a link's destination, the reference a citation cites, a note, a clipped row,
-or a thumbnail's page and the section at its top. Once the pointer moves, that
-detail covers an older message and takes room from the tab names; errors stay
-until the next key or click. Link labels can also be picked with the pointer
+or a thumbnail's page and the section at its top. Messages and errors stay
+until the next key or click; the detail shows when none is up and takes room
+from the tab names. Link labels can also be picked with the pointer
 before following their destination. Each label sits beside its link, on the
 link's line, clear of other links and labels. Jump history returns to earlier
 destinations; marks keep places worth revisiting. Following an external web link
