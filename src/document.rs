@@ -258,6 +258,8 @@ impl Document {
     if let Some(text) = self.ocr.get(&page).or_else(|| self.texts.get(&page)) {
       return Ok(Arc::clone(text));
     }
+    // Motions wait on this text; background scans wait for it.
+    let _urgent = crate::render_worker::Urgent::new();
     let list = self.display(page)?;
     let text = Arc::new(extract_list(&list)?);
     self.texts.insert(page, Arc::clone(&text), text.weight());

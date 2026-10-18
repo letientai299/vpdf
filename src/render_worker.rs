@@ -18,6 +18,7 @@ use crate::tiles::{self, TILE_WIDTH, Tile, TileKey};
 use mupdf::{DisplayList, IRect, Matrix};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -30,6 +31,39 @@ const RELOAD: usize = 64;
 const IDLE: Duration = Duration::from_secs(2);
 
 type Sender = mpsc::Sender<std::result::Result<Tile, String>>;
+
+/// On-screen work in flight across documents: building a view's lists
+/// and drawing its bands.
+static URGENT: AtomicUsize = AtomicUsize::new(0);
+
+/// Counts as on-screen work while alive.
+pub(crate) struct Urgent;
+
+impl Urgent {
+  pub(crate) fn new() -> Self {
+    URGENT.fetch_add(1, Ordering::Relaxed);
+    Self
+  }
+}
+
+impl Drop for Urgent {
+  fn drop(&mut self) {
+    URGENT.fetch_sub(1, Ordering::Relaxed);
+  }
+}
+
+/// Waits while any view's tiles render, as text scans share `MuPDF`'s
+/// global allocation and glyph locks with the raster pool; false once
+/// `stop` holds.
+pub fn yield_to_views(stop: impl Fn() -> bool) -> bool {
+  while URGENT.load(Ordering::Relaxed) > 0 {
+    if stop() {
+      return false;
+    }
+    thread::sleep(Duration::from_millis(1));
+  }
+  !stop()
+}
 
 #[derive(Default)]
 struct Queue {
@@ -51,7 +85,7 @@ struct Shared {
   wake: Condvar,
   /// Whole pages drawn, which tests count.
   #[cfg(test)]
-  wholes: std::sync::atomic::AtomicUsize,
+  wholes: AtomicUsize,
 }
 
 pub struct RenderWorker {
@@ -182,22 +216,24 @@ impl Coordinator {
   fn run(mut self) {
     while let Some((urgent, ahead)) = self.next() {
       self.wholes.clear();
+      let drawing = Urgent::new();
       for band in bands(&urgent) {
         if !self.current() {
           break;
         }
-        self.start(band);
+        self.start(band, true);
       }
+      drop(drawing);
       for band in bands(&ahead) {
         if !self.idle() {
           break;
         }
-        self.start(band);
+        self.start(band, false);
       }
     }
   }
 
-  fn start(&mut self, mut band: Vec<TileKey>) {
+  fn start(&mut self, mut band: Vec<TileKey>, urgent: bool) {
     // A whole page drawn for this request already sent its other bands.
     band.retain(|key| !self.wholes.contains(&page_of(key)));
     if let Ok(queue) = self.shared.queue.lock() {
@@ -207,7 +243,7 @@ impl Coordinator {
       return;
     }
     match self.job(band) {
-      Ok(job) => self.dispatch(job),
+      Ok(job) => self.dispatch(job, urgent),
       Err(error) => drop(notify(self.send.send(Err(error.to_string())))),
     }
   }
@@ -319,12 +355,16 @@ impl Coordinator {
     })
   }
 
-  fn dispatch(&self, job: Job) {
+  fn dispatch(&self, job: Job, urgent: bool) {
     if let Ok(mut queue) = self.shared.queue.lock() {
       queue.dispatched.extend(job.tiles.iter().copied());
     }
-    let task =
-      Task { shared: Arc::clone(&self.shared), send: self.send.clone(), job };
+    let task = Task {
+      shared: Arc::clone(&self.shared),
+      send: self.send.clone(),
+      job,
+      urgent: urgent.then(Urgent::new),
+    };
     let pool = pool();
     if let Ok(mut tasks) = pool.tasks.lock() {
       tasks.push_back(task);
@@ -398,6 +438,7 @@ struct Task {
   shared: Arc<Shared>,
   send: Sender,
   job: Job,
+  urgent: Option<Urgent>,
 }
 
 struct Pool {
@@ -433,13 +474,16 @@ fn serve(pool: &Pool) {
       };
     };
     drop(tasks);
-    let Task { shared, send, job } = task;
+    let Task { shared, send, job, urgent } = task;
     let Job { tiles, work } = job;
     #[cfg(test)]
     if matches!(work, Work::Whole { .. }) {
-      shared.wholes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+      shared.wholes.fetch_add(1, Ordering::Relaxed);
     }
     let handed = render(&tiles, work, &send);
+    // Held through delivery: a scan started between a view's bands would
+    // hold `MuPDF`'s locks while the next band draws.
+    drop(urgent);
     if let Ok(mut queue) = shared.queue.lock() {
       let kept: HashSet<&TileKey> =
         handed.iter().flat_map(|job| &job.tiles).collect();
@@ -452,7 +496,7 @@ fn serve(pool: &Pool) {
     if let Ok(mut tasks) = pool.tasks.lock() {
       for job in handed.into_iter().rev() {
         let (shared, send) = (Arc::clone(&shared), send.clone());
-        tasks.push_front(Task { shared, send, job });
+        tasks.push_front(Task { shared, send, job, urgent: None });
       }
       pool.ready.notify_all();
     }

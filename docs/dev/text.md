@@ -43,7 +43,9 @@ model differ from Python's. Use `:help` for query entry and regex activation.
 
 The [search worker][worker] opens its own document and builds indexes lazily.
 It sends results incrementally, tags them with query generations, and checks for
-supersession between pages. Limits cap matches and regex backtracking. Idling
+supersession between pages. Before reading a page from the PDF, it waits while
+on-screen work is in flight; see [scan priority][priority]. Limits cap matches
+and regex backtracking. Idling
 releases the native handle while keeping cached indexes, so later queries reopen
 the PDF only when missing text is needed.
 
@@ -55,8 +57,8 @@ Do not assume document normalization applies to panel labels.
 The [outline job][outline] uses a separate native handle because resolving named
 destinations can load much of a large document. An authored outline takes
 precedence. If none is available, a bounded scan infers headings from text size
-and numbering. Inferred headings are navigation aids and may differ from the
-author's structure.
+and numbering; like search, it waits while on-screen work is in flight. Inferred
+headings are navigation aids and may differ from the author's structure.
 
 The job waits until a frame has placed every tile of the pane's current view,
 so its interpretation work cannot delay the first page. Text views start it
@@ -83,6 +85,7 @@ its command interface.
 [text]: ../../src/text.rs
 [reader]: ../../src/reader.rs
 [layout]: ../../src/layout.rs
+[priority]: arch.md#work-and-resource-lifetimes
 [search]: ../../src/search.rs
 [worker]: ../../src/search_worker.rs
 [panels]: ../../src/panel_search.rs

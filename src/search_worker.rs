@@ -187,6 +187,12 @@ impl SearchTask<'_> {
         PageId((self.origin.0 + offset) % pages)
       };
       if indexes.get(&page).is_none() {
+        let stale = || self.current.load(Ordering::Relaxed) != self.generation;
+        if source.reads_pdf(page)
+          && !crate::render_worker::yield_to_views(stale)
+        {
+          break;
+        }
         let text = source.text(page)?;
         let index = Index::new(page, &text);
         let weight = index.weight();
@@ -247,6 +253,11 @@ impl Source {
       None => self.doc.insert(Handle::open(&self.path, &self.password)?),
     };
     Ok(Arc::new(doc.text(page)?))
+  }
+
+  /// Whether `page`'s text comes from the PDF rather than OCR.
+  fn reads_pdf(&self, page: PageId) -> bool {
+    self.seeds.iter().all(|(seed, _)| *seed != page)
   }
 
   fn seed(&mut self, page: PageId, text: Arc<Text>) {

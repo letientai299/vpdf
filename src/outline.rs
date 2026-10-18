@@ -204,7 +204,9 @@ pub fn spawn(path: &Path, password: &str) -> OutlineJob {
     }
     let mut pages = Vec::new();
     for page in 0..doc.pages.min(PAGES) {
-      if stopped.load(Ordering::Relaxed) {
+      if !crate::render_worker::yield_to_views(|| {
+        stopped.load(Ordering::Relaxed)
+      }) {
         return;
       }
       // An unreadable page adds no headings instead of failing them all.
