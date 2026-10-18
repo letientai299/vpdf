@@ -3,6 +3,7 @@ use crate::app::App;
 use crate::keys::PanelKind;
 use crate::panel::Panel;
 use crate::prompt::{Prompt, PromptKind};
+use crate::reader::{Location, Operator};
 use crate::search::{self, Hit};
 use crate::search_worker::{SearchEvent, SearchWorker};
 use crate::text::Position;
@@ -37,6 +38,7 @@ pub struct Search {
   pub origin: Position,
   /// The search an open prompt replaces, and whether it was hidden.
   pub previous: Option<(Query, bool)>,
+  pub(crate) yank: Option<(Location, Operator)>,
 }
 
 impl Search {
@@ -44,6 +46,7 @@ impl Search {
     if let Some(worker) = &self.worker {
       worker.cancel();
     }
+    self.yank = None;
     self.generation += 1;
     self.phase = Phase::Idle;
     self.hidden = true;
@@ -134,6 +137,7 @@ impl App {
       if let Some(error) = event.error {
         // The next search starts a fresh worker.
         self.search.worker = None;
+        self.search.yank = None;
         self.error = Some(error);
         self.search.phase = Phase::Complete;
         continue;
@@ -170,6 +174,7 @@ impl App {
         }
       }
     }
+    self.finish_search_yank()?;
     self.refill_panel(PanelKind::Results)?;
     Ok(changed)
   }
@@ -225,6 +230,29 @@ impl App {
       }
       return Ok(());
     }
+    if let Some(operator) = self.reader.operator.take() {
+      let origin = self.search_origin.take().unwrap_or(self.location()?);
+      self.search.previous = None;
+      let query = if query.is_empty() {
+        self.search.query.text.clone()
+      } else {
+        query.to_owned()
+      };
+      self.restore_location(origin)?;
+      search::compile(&query, false)?;
+      if query.is_empty() {
+        return Ok(());
+      }
+      let same = Query { text: query.clone(), backward, whole: false };
+      if matches!(self.search.phase, Phase::Idle) || self.search.query != same {
+        self.start_search(&query, backward, false)?;
+      }
+      if matches!(self.search.phase, Phase::Running { .. }) {
+        self.search.phase = Phase::Running { jump: false };
+      }
+      self.search.yank = Some((origin, operator));
+      return self.finish_search_yank();
+    }
     let origin = self.search_origin.take();
     self.search.previous = None;
     let running = !matches!(self.search.phase, Phase::Idle);
@@ -255,6 +283,49 @@ impl App {
       self.flash_landing();
     }
     Ok(())
+  }
+
+  fn finish_search_yank(&mut self) -> Result<()> {
+    if !matches!(self.search.phase, Phase::Complete) {
+      return Ok(());
+    }
+    let Some((origin, operator)) = self.search.yank.take() else {
+      return Ok(());
+    };
+    let hits = &self.search.hits;
+    if hits.is_empty() {
+      return Ok(());
+    }
+    let backward = self.search.query.backward;
+    let start = if backward {
+      hits
+        .iter()
+        .rposition(|h| h.first < origin.cursor)
+        .unwrap_or(hits.len() - 1)
+    } else {
+      hits.iter().position(|h| h.first > origin.cursor).unwrap_or(0)
+    };
+    let offset = operator.count.saturating_sub(1) % hits.len();
+    let index = if backward {
+      (start + hits.len() - offset) % hits.len()
+    } else {
+      (start + offset) % hits.len()
+    };
+    let target = hits[index].first;
+    if target != origin.cursor {
+      let first = target.min(origin.cursor);
+      self.reader.cursor = target.max(origin.cursor);
+      if self.reader.step(-1, false, &mut self.doc)? {
+        self.reader.yank_range(
+          first,
+          self.reader.cursor,
+          false,
+          operator.register,
+          &mut self.doc,
+        )?;
+      }
+    }
+    self.restore_location(origin)
   }
 
   pub fn abort_search(&mut self) -> Result<()> {

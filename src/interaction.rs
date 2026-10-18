@@ -697,6 +697,7 @@ impl App {
 
   /// Cancels pending keys, as `Esc` does.
   pub fn disarm(&mut self) {
+    self.search.yank = None;
     self.keys.clear();
     self.reader.disarm();
     self.after_key();

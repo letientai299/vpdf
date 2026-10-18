@@ -44,6 +44,7 @@ const COVERED: [&str; 24] = [
 
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
+    self.search.yank = None;
     if self.reader.operator.is_some()
       && !matches!(
         input.action,
@@ -99,7 +100,12 @@ impl App {
     match input.action {
       Action::Panel(kind) => self.open_panel(kind)?,
       Action::ClosePanel => self.close_panel()?,
-      Action::Search(backward) => self.begin_search(backward)?,
+      Action::Search(backward) => {
+        if let Some(operator) = &mut self.reader.operator {
+          operator.count = operator.count.saturating_mul(input.count);
+        }
+        self.begin_search(backward)?;
+      }
       Action::WordSearch => self.word_search()?,
       Action::Result(reverse) => self.next_result(reverse, input.count)?,
       Action::Follow => self.follow_cursor()?,
@@ -138,6 +144,7 @@ impl App {
   }
 
   pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
+    self.search.yank = None;
     let key = crate::keys::normalize(key);
     // Keys end pointer gestures.
     self.end_gestures();

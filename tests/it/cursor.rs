@@ -433,3 +433,50 @@ fn rejected_keys_cancel_yanks() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn search_yank_finishes_at_original_range() -> Result<()> {
+  for preview in [false, true] {
+    for (start, search, expected) in [
+      (b"i0".as_slice(), b"\"ay/the".as_slice(), "See "),
+      (b"i0$".as_slice(), b"\"ay?the".as_slice(), "the result"),
+      (b"i0".as_slice(), b"\"a2y/the".as_slice(), "See the results\nVisit "),
+    ] {
+      let (_directory, mut session) = crate::mouse::session(false)?;
+      let app = session.app();
+      keys(app, start)?;
+      let origin = app.reader.cursor;
+      keys(app, search)?;
+      if preview {
+        crate::common::search_loaded(app)?;
+      }
+      keys(app, b"\r")?;
+      crate::common::search_loaded(app)?;
+      assert_eq!(app.reader.cursor, origin);
+      assert!(app.reader.operator.is_none());
+      assert_eq!(&**app.reader.registers.get(&'a').unwrap(), expected);
+    }
+  }
+  Ok(())
+}
+
+#[test]
+fn failed_search_yanks_preserve_register() -> Result<()> {
+  for query in
+    [b"/absent\r".as_slice(), b"/\\v[\r", b"/the\x1b[27u", b"/the\rj"]
+  {
+    let (_directory, mut session) = crate::mouse::session(false)?;
+    let app = session.app();
+    app.reader.store('a', "keep".into())?;
+    app.reader.pending_yank = None;
+    keys(app, b"i\"ay")?;
+    let _ = keys(app, query);
+    if !matches!(app.search.phase, vpdf::find::Phase::Idle) {
+      crate::common::search_loaded(app)?;
+    }
+    assert!(app.reader.operator.is_none());
+    assert_eq!(&**app.reader.registers.get(&'a').unwrap(), "keep");
+    assert!(app.reader.pending_yank.is_none());
+  }
+  Ok(())
+}
