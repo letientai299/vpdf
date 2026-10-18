@@ -167,6 +167,9 @@ impl App {
           return self.open_split(&crate::document::Target::Page(page));
         }
       }
+      MouseEventKind::Down(MouseButton::Right) => {
+        self.overview_context(mouse, hit);
+      }
       _ => {}
     }
     Ok(())
@@ -259,7 +262,7 @@ impl App {
         (hovered == Some(index)).then_some(theme::RING_HOVER)
       };
       if let Some(tint) = tint {
-        self.graphics.highlight(ring, tint, screen, left, out)?;
+        self.tint(ring, tint, screen, out)?;
       }
     }
     self.complete = missing.is_empty();

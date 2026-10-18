@@ -212,6 +212,12 @@ impl App {
     !self.text_mode && self.grab.is_some_and(|grab| grab.moved)
   }
 
+  /// Ends held drags, pans, and scrubs whose release may never come;
+  /// whether any was held.
+  pub(crate) fn drop_held(&mut self) -> bool {
+    self.end_gestures() | self.drop_grab() | self.drop_scrub()
+  }
+
   /// Ends a lost press; whether it panned.
   pub(crate) fn drop_grab(&mut self) -> bool {
     let grabbing = self.grabbing();

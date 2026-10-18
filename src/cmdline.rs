@@ -10,6 +10,8 @@ pub enum Complete {
   Nothing,
   Language,
   Path,
+  /// `on` or `off`.
+  Switch,
 }
 
 pub struct Spec {
@@ -115,6 +117,8 @@ pub const COMMANDS: &[Spec] = &[
   spec("overview", &["pages"], "", "show page thumbnails"),
   spec("cursorline", &[], "", "toggle the Visual line band (default on)"),
   spec("crop", &[], "", "toggle cropped page margins"),
+  spec("mouse", &[], "[on|off]", "toggle mouse capture; off: terminal selects")
+    .completes(Complete::Switch),
   spec("cancel", &[], "", "stop pane search, OCR, outline, region jobs"),
   spec("nohlsearch", &["noh"], "", "hide search highlights"),
   spec("text", &[], "", "preview extracted page text"),
@@ -157,6 +161,9 @@ pub fn candidates(before: &str) -> (usize, Vec<String>) {
   let items = match lookup(name).map(|spec| spec.complete) {
     Some(Complete::Language) => prefixed(languages().to_vec(), argument),
     Some(Complete::Path) => paths(argument),
+    Some(Complete::Switch) => {
+      prefixed(vec!["on".into(), "off".into()], argument)
+    }
     _ => Vec::new(),
   };
   (start, items)
@@ -289,5 +296,7 @@ mod tests {
     assert_eq!(candidates("info 1").1, Vec::<String>::new());
     assert_eq!(candidates("cu"), (0, vec!["cursorline".into()]));
     assert_eq!(candidates("PAS").1, ["password"]);
+    assert_eq!(candidates("mouse ").1, ["on", "off"]);
+    assert_eq!(candidates("mouse of"), (6, vec!["off".into()]));
   }
 }

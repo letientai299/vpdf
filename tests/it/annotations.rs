@@ -551,7 +551,8 @@ fn notes_open_by_mouse() -> Result<()> {
     let app = session.app();
     let menu = app.context_menu.as_ref().expect("a menu");
     let index = menu.items.iter().position(|item| item.label == label);
-    let keys: Vec<_> = menu.items.iter().map(|item| item.key).collect();
+    let keys: Vec<_> =
+      menu.items.iter().map(|item| item.key.as_str()).collect();
     assert_eq!(
       index.map(|index| keys[index]),
       Some(if shown { "K" } else { "" })
@@ -681,5 +682,36 @@ fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
   let again = doc.annotations(PageId(0))?;
   assert!(!std::sync::Arc::ptr_eq(&first, &again));
   assert_eq!(again.len(), 3);
+  Ok(())
+}
+
+/// Note rows' menus show and run `K`.
+#[test]
+fn note_row_menus_show_notes() -> Result<()> {
+  use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+  use vpdf::session::Session;
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("noted.pdf");
+  noted_pdf(&path)?;
+  let mut session = Session::new(None);
+  session.open(&path, true, screen())?;
+  session.app().open_panel(PanelKind::Annotations)?;
+  session.app().draw(&mut Vec::new())?;
+  for kind in [
+    MouseEventKind::Down(MouseButton::Right),
+    MouseEventKind::Up(MouseButton::Right),
+  ] {
+    let modifiers = KeyModifiers::NONE;
+    session.mouse(MouseEvent { kind, column: 1, row: 2, modifiers })?;
+  }
+  let app = session.app();
+  let menu = app.context_menu.as_mut().expect("a menu");
+  let index = menu.items.iter().position(|item| item.label == "Show note");
+  let index = index.expect("Show note");
+  assert_eq!(menu.items[index].key, "K");
+  menu.selected = index;
+  assert!(app.peek.is_none());
+  press(app, KeyCode::Enter)?;
+  assert!(app.context_menu.is_none() && app.peek.is_some());
   Ok(())
 }

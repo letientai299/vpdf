@@ -788,6 +788,13 @@ impl Session {
         self.quit = true;
         Ok(())
       }
+      Some(Request::Mouse(on)) => {
+        if !on {
+          self.drop_pointer();
+          self.pointer_left();
+        }
+        terminal::capture_mouse(on)
+      }
       None => Ok(()),
     }
   }
@@ -865,6 +872,10 @@ impl Session {
     report: crate::decode::Mouse,
     now: Instant,
   ) -> Result<bool> {
+    // Reports in flight after `:mouse off`.
+    if !terminal::mouse() {
+      return Ok(false);
+    }
     let Some(screen) = self.screen else { return Ok(false) };
     // Padding past the grid reports cells beyond it.
     let (column, row) = report.cell(screen.cell());
@@ -940,7 +951,7 @@ impl Session {
       let left = self.leave_check();
       // Bare motion: a release got lost.
       let app = self.app();
-      let dropped = app.end_gestures() | app.drop_grab() | app.drop_scrub();
+      let dropped = app.drop_held();
       let resized = self.resizing.take().is_some();
       return Ok(dropped || resized || seen || left);
     }
@@ -1586,17 +1597,22 @@ impl Session {
 
   /// The pointer may rest elsewhere now.
   fn release_pointer(&mut self, out: &mut impl Write) -> Result<()> {
+    self.drop_pointer();
+    terminal::hand_over(out)?;
+    // Out before the slow `tmux display`.
+    out.flush()?;
+    Ok(())
+  }
+
+  /// Forgets the pointer: hover, held presses, and gestures.
+  fn drop_pointer(&mut self) {
     self.pointer.leave();
     self.resizing = None;
     // Its release may never come.
     self.pointer.release();
     for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
-      app.end_gestures();
+      app.drop_held();
     }
-    terminal::hand_over(out)?;
-    // Out before the slow `tmux display`.
-    out.flush()?;
-    Ok(())
   }
 
   fn image_message(&mut self, write: &ImageWrite, message: String) {
@@ -2399,6 +2415,7 @@ fn report(session: &mut Session, result: Result<()>) {
 mod tests {
   use super::*;
   use crate::decode::{Button, Mouse, Spot};
+  use crate::text::Bounds;
   use crossterm::event::{KeyCode, KeyModifiers};
 
   #[test]
@@ -2903,6 +2920,206 @@ mod tests {
       session.draw_frame(&mut out)?;
       assert_eq!(shapes(&out), want, "step {step}: {kind:?}");
     }
+    Ok(())
+  }
+
+  /// `:mouse off` drops hover and later reports; `:mouse` toggles.
+  #[test]
+  fn mouse_command_toggles_capture() -> Result<()> {
+    use crate::decode::{Mouse, MouseKind, Spot};
+    use crate::pointer::{Hit, Region};
+    let directory = tempfile::tempdir()?;
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut session = Session::new(None);
+    session.open(&line_pdf(directory.path(), "")?, true, screen)?;
+    session.screen = Some(screen);
+    let app = session.app();
+    let mut cells = (0..23).flat_map(|row| (0..80).map(move |c| (c, row)));
+    let text = cells.find(|&(column, row)| {
+      app.hovered(Region::Page, column, row, None).ok() == Some(Hit::Text)
+    });
+    let (column, row) = text.expect("a text cell");
+    let at = Spot::Cell { column, row };
+    let moved =
+      Mouse { kind: MouseKind::Moved, at, modifiers: KeyModifiers::NONE };
+    let hovered = |session: &Session| session.pointer.target().map(|h| h.hit);
+    assert!(session.mouse_report(moved)?);
+    assert_eq!(hovered(&session), Some(Hit::Text));
+    // (command, capture after, hover after a report)
+    let steps = [
+      ("mouse off", false, None),
+      ("mouse", true, Some(Hit::Text)),
+      ("mouse", false, None),
+      ("mouse on", true, Some(Hit::Text)),
+    ];
+    for (command, on, hover) in steps {
+      // A held pan gets no release once capture ends.
+      let grab = crate::gestures::Grab { last: (0.0, 0.0), moved: true };
+      session.app().grab = Some(grab);
+      session.app().command(command)?;
+      session.settle()?;
+      assert_eq!(terminal::mouse(), on, "{command}");
+      assert_eq!(session.app().grabbing(), on, "{command}: pan");
+      assert_eq!(hovered(&session), None, "{command}: dropped");
+      let info = session.app().info();
+      assert_eq!(info.contains("Mouse: on"), on, "{command}: info");
+      session.mouse_report(moved)?;
+      assert_eq!(hovered(&session), hover, "{command}: report");
+      session.pointer.leave();
+    }
+    assert!(session.app().command("mouse maybe").is_err());
+    Ok(())
+  }
+
+  /// Menu backdrops cover only page cells.
+  #[test]
+  fn menu_backdrops_skip_the_panel() -> Result<()> {
+    use crate::keys::PanelKind;
+    use crossterm::event::MouseButton::Right;
+    use crossterm::event::MouseEventKind::{Down, Up};
+    let directory = tempfile::tempdir()?;
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut session = Session::new(None);
+    session.open(&line_pdf(directory.path(), "")?, true, screen)?;
+    session.app().open_panel(PanelKind::Help)?;
+    let left = session.app().left;
+    // (pressed column) -> backdrop's page-area x range
+    let cases = [(1, None), (left - 2, Some(0.0))];
+    for (column, want) in cases {
+      for kind in [Down(Right), Up(Right)] {
+        let modifiers = KeyModifiers::NONE;
+        session.mouse(MouseEvent { kind, column, row: 3, modifiers })?;
+      }
+      let app = session.app();
+      let area = app.context_menu.as_ref().expect("a menu").area();
+      let rect = app.context_rect();
+      assert_eq!(rect.map(|rect| rect.x0), want, "{column}");
+      if let Some(rect) = rect {
+        let end = f32::from(area.column + area.columns - left) * 8.0;
+        assert_eq!(rect.x1, end, "{column}");
+      } else {
+        assert!(area.column + area.columns <= left, "{column}");
+      }
+      app.context_menu = None;
+    }
+    Ok(())
+  }
+
+  /// Page-area pixels each `z=1` placement in `out` covers.
+  fn highlights(out: &[u8], left: u16) -> Vec<Bounds> {
+    let text = String::from_utf8_lossy(out);
+    let parts = text.split("\x1b7\x1b[").skip(1);
+    let placed = parts.filter_map(|part| {
+      let (at, rest) = part.split_once('H')?;
+      let (row, column) = at.split_once(';')?;
+      let control = rest.strip_prefix("\x1b_G")?.split(';').next()?;
+      let value = |key: &str| {
+        let mut pairs = control.split(',').filter_map(|p| p.split_once('='));
+        pairs.find(|(name, _)| *name == key).map(|(_, value)| value)
+      };
+      let number = |key| value(key).and_then(|v| v.parse::<f32>().ok());
+      if value("z") != Some("1") {
+        return None;
+      }
+      let column = column.parse::<f32>().ok()? - 1.0 - f32::from(left);
+      let row = row.parse::<f32>().ok()? - 1.0;
+      let x0 = column * 8.0 + number("X")?;
+      let y0 = row * 16.0 + number("Y")?;
+      let (x1, y1) = (x0 + number("w")?, y0 + number("h")?);
+      Some(Bounds { x0, y0, x1, y1 })
+    });
+    placed.collect()
+  }
+
+  /// The focused panel's page veil leaves menus over the page clear.
+  #[test]
+  fn veils_skip_menus() -> Result<()> {
+    use crate::keys::PanelKind;
+    use crossterm::event::MouseButton::Right;
+    use crossterm::event::MouseEventKind::{Down, Up};
+    let directory = tempfile::tempdir()?;
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut session = Session::new(None);
+    session.open(&line_pdf(directory.path(), "")?, true, screen)?;
+    session.app().open_panel(PanelKind::Help)?;
+    let left = session.app().left;
+    // A stretched pixel: `c=` columns wide.
+    let veiled = |out: &[u8]| {
+      let text = String::from_utf8_lossy(out);
+      text.split("\x1b_G").any(|g| g.contains("z=1,c="))
+    };
+    // (pressed column) -> veiled
+    let cases = [(None, true), (Some(1), true), (Some(left - 2), false)];
+    for (column, want) in cases {
+      session.app().context_menu = None;
+      for kind in column.map_or_default(|_| vec![Down(Right), Up(Right)]) {
+        let column = column.unwrap_or_default();
+        let modifiers = KeyModifiers::NONE;
+        session.mouse(MouseEvent { kind, column, row: 3, modifiers })?;
+      }
+      let app = session.app();
+      assert!(app.panel_focused(), "{column:?}");
+      let mut out = Vec::new();
+      app.draw(&mut out)?;
+      assert_eq!(veiled(&out), want, "{column:?}");
+    }
+    Ok(())
+  }
+
+  /// Thumbnail rings leave the menu over them clear.
+  #[test]
+  fn overview_rings_skip_the_menu() -> Result<()> {
+    use crossterm::event::MouseButton::Right;
+    use crossterm::event::MouseEventKind::{Down, Up};
+    let directory = tempfile::tempdir()?;
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut session = Session::new(None);
+    session.open(&line_pdf(directory.path(), "")?, true, screen)?;
+    let app = session.app();
+    app.open_overview()?;
+    app.draw(&mut Vec::new())?;
+    let mut cells = (0..23).flat_map(|row| (0..80).map(move |c| (c, row)));
+    let thumbnail =
+      cells.find(|&(column, row)| app.thumbnail_at(column, row).is_some());
+    let (column, row) = thumbnail.expect("a thumbnail");
+    for kind in [Down(Right), Up(Right)] {
+      let modifiers = KeyModifiers::NONE;
+      session.mouse(MouseEvent { kind, column, row, modifiers })?;
+    }
+    let app = session.app();
+    let menu = app.context_rect().expect("a menu over the page");
+    let mut out = Vec::new();
+    app.draw(&mut out)?;
+    let rings = highlights(&out, app.left);
+    assert!(!rings.is_empty(), "the selected ring shows");
+    let over = |b: &Bounds| {
+      b.x0 < menu.x1 && menu.x0 < b.x1 && b.y0 < menu.y1 && menu.y0 < b.y1
+    };
+    assert!(!rings.iter().any(over), "{rings:?} over {menu:?}");
     Ok(())
   }
 

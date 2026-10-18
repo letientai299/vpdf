@@ -734,7 +734,8 @@ impl App {
         return Ok(());
       }
       // Only turns: presses go to them first.
-      Region::Preview | Region::Menu => return self.page_wheel(route),
+      Region::Preview => return self.page_wheel(route),
+      Region::Menu => return self.menu_wheel(route),
       Region::Page | Region::Overview => {}
     }
     if matches!(mouse.kind, MouseEventKind::Down(_)) && self.panel_focused() {
@@ -787,6 +788,17 @@ impl App {
       | MouseEventKind::Up(MouseButton::Middle) => self.page_middle(&route),
       _ => Ok(()),
     }
+  }
+
+  /// A turn over a menu moves the surface beneath it.
+  fn menu_wheel(&mut self, route: Route) -> Result<()> {
+    if self.covered() || route.mouse.column < self.left {
+      return self.panel_mouse(route.mouse, route.clicks);
+    }
+    if self.overview.is_some() {
+      return self.overview_mouse(route.mouse);
+    }
+    self.page_wheel(route)
   }
 
   /// The wheel over the page scrolls; Ctrl zooms at the pointer; Shift

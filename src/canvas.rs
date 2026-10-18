@@ -110,8 +110,8 @@ impl App {
       self.requested = tiles;
     }
     self.marks(screen, out)?;
-    if self.panel_focused() {
-      // The side without focus recedes.
+    // The side without focus recedes; a veil would dim a menu over it.
+    if self.panel_focused() && self.context_rect().is_none() {
       self.graphics.veil([0, 0, 0, 70], screen, left, out)?;
     }
     Ok(())
@@ -232,7 +232,7 @@ impl App {
   }
 
   /// Tints `rect` around the context menu.
-  fn tint(
+  pub(crate) fn tint(
     &mut self,
     rect: Bounds,
     color: [u8; 4],
@@ -365,6 +365,7 @@ impl App {
       let graphics =
         (!self.text_mode && self.focused).then_some(&mut self.graphics);
       panel.draw(out, self.at, self.left, self.screen, graphics)?;
+      self.draw_context(out)?;
       return self.bottom(out);
     }
     if self.overview.is_some() {
@@ -378,11 +379,12 @@ impl App {
     self.draw_hints(out)?;
     self.draw_preview(out)?;
     self.draw_region(out)?;
-    self.draw_context(out)?;
     self.track_outline();
     if let Some(panel) = &mut self.panel {
       panel.draw(out, self.at, self.left, self.screen, None)?;
     }
+    // Over the panel too.
+    self.draw_context(out)?;
     self.bottom(out)
   }
 

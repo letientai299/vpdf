@@ -106,6 +106,11 @@ impl Shelf {
     self.clipped.clear();
   }
 
+  /// The card's first column, once drawn.
+  pub const fn start(&self) -> Option<u16> {
+    self.column
+  }
+
   /// Whether the card covers a pane column.
   pub(crate) fn covers(&self, column: u16) -> bool {
     self.column.is_some_and(|start| column >= start)
@@ -177,6 +182,11 @@ impl Shelf {
     arrived
   }
 
+  /// Columns of a `width` panel the list keeps, left of the card.
+  pub(crate) fn list_columns(panel: &Panel, width: u16) -> u16 {
+    width - Self::columns(panel, width)
+  }
+
   /// Columns of a `width` panel the card takes; none without a file row.
   fn columns(panel: &Panel, width: u16) -> u16 {
     let files = panel
@@ -197,8 +207,8 @@ impl Shelf {
     screen: Screen,
     graphics: Option<&mut Graphics>,
   ) -> Result<()> {
-    let card = Self::columns(panel, width);
-    let list = width - card;
+    let list = Self::list_columns(panel, width);
+    let card = width - list;
     panel.list(out, at, list, screen.rows)?;
     self.hide();
     let row = panel.rows.get(self.shown_row(panel));

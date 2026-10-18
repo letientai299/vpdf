@@ -53,6 +53,8 @@ pub enum Request {
   /// Closes a tab, else the active one.
   TabClose(Option<usize>),
   QuitAll,
+  /// `:mouse`: takes the pointer, or leaves it to the terminal.
+  Mouse(bool),
 }
 
 /// `Ctrl-w` commands on the panes of a tab.

@@ -43,6 +43,9 @@ static DROPS: AtomicBool = AtomicBool::new(false);
 /// Set while mouse reports carry pixels, mode 1016.
 static PIXELS: AtomicBool = AtomicBool::new(false);
 
+/// Cleared by `:mouse off`, which leaves the pointer to the terminal.
+static MOUSE: AtomicBool = AtomicBool::new(true);
+
 /// Set while tmux sends the pane focus events, mode 1004, by which the
 /// session hides placements tmux would leave over another window.
 static FOCUS: AtomicBool = AtomicBool::new(false);
@@ -223,7 +226,6 @@ pub fn resume() -> Result<()> {
     io::stdout(),
     terminal::EnterAlternateScreen,
     cursor::Hide,
-    event::EnableMouseCapture,
     event::EnableBracketedPaste
   )?;
   // Inside the alternate screen, so a terminal that prints an unknown
@@ -241,16 +243,9 @@ pub fn resume() -> Result<()> {
     crate::input::set_keyboard(Keyboard::Failed(lack.clone()));
     return Err(lack.into());
   }
-  if caps.pixel_mouse() {
-    // The parser first, so no pixel report reads as cells.
-    crate::input::set_pixels(true);
-    PIXELS.store(true, Ordering::Relaxed);
-    let mut out = io::stdout();
-    out.write_all(b"\x1b[?1016h")?;
-    // Reports switch now, not at the first frame.
-    out.flush()?;
+  if mouse() {
+    grab_mouse(&mut io::stdout(), caps)?;
   }
-  shapes().push(caps.pointer, &mut io::stdout(), tmux())?;
   if caps.drop == Support::Answered {
     DROPS.store(true, Ordering::Relaxed);
     io::stdout().write_all(crate::dnd::ACCEPT)?;
@@ -262,6 +257,53 @@ pub fn resume() -> Result<()> {
       Ok(())
     }
   }
+}
+
+/// Whether the reader takes mouse reports.
+pub fn mouse() -> bool {
+  MOUSE.load(Ordering::Relaxed)
+}
+
+/// `:mouse`: takes the pointer, or leaves it to the terminal's own
+/// selection; resumes after child programs keep the choice.
+pub fn capture_mouse(on: bool) -> Result<()> {
+  if MOUSE.swap(on, Ordering::Relaxed) == on || !ACTIVE.load(Ordering::SeqCst) {
+    return Ok(());
+  }
+  let mut out = io::stdout();
+  match (on, crate::caps::get()) {
+    (true, Some(caps)) => grab_mouse(&mut out, caps)?,
+    // Unprobed: resume asks first.
+    (true, None) => {}
+    (false, _) => free_mouse(&mut out)?,
+  }
+  out.flush()?;
+  Ok(())
+}
+
+/// Asks for button, motion, and SGR reports, pixels where they are
+/// screen pixels, and pushes a pointer shape.
+fn grab_mouse(out: &mut impl Write, caps: &Caps) -> Result<()> {
+  crossterm::queue!(out, event::EnableMouseCapture)?;
+  if caps.pixel_mouse() {
+    // The parser first, so no pixel report reads as cells.
+    crate::input::set_pixels(true);
+    PIXELS.store(true, Ordering::Relaxed);
+    out.write_all(b"\x1b[?1016h")?;
+  }
+  // Reports switch now, not at the first frame.
+  out.flush()?;
+  shapes().push(caps.pointer, out, tmux())
+}
+
+/// Undoes `grab_mouse`; the parser keeps pixels for reports in flight.
+fn free_mouse(out: &mut impl Write) -> Result<()> {
+  if PIXELS.swap(false, Ordering::Relaxed) {
+    out.write_all(b"\x1b[?1016l")?;
+  }
+  shapes().pop(out, tmux())?;
+  crossterm::queue!(out, event::DisableMouseCapture)?;
+  Ok(())
 }
 
 /// Under tmux: keeps the lone-ESC wait, since extended keys leave Esc a
@@ -311,10 +353,7 @@ pub fn suspend() -> Result<()> {
     io::stdout().write_all(crate::dnd::REFUSE)?;
   }
   // Before the parser reads cells again.
-  if PIXELS.swap(false, Ordering::Relaxed) {
-    io::stdout().write_all(b"\x1b[?1016l")?;
-  }
-  shapes().pop(&mut io::stdout(), tmux())?;
+  free_mouse(&mut io::stdout())?;
   // Before the keyboard pop, so a lone ESC is Esc.
   crate::input::release();
   resize_reports(false)?;
@@ -329,7 +368,6 @@ pub fn suspend() -> Result<()> {
   execute!(
     io::stdout(),
     cursor::SetCursorStyle::DefaultUserShape,
-    event::DisableMouseCapture,
     event::DisableBracketedPaste,
     cursor::Show,
     terminal::LeaveAlternateScreen
@@ -924,6 +962,67 @@ mod tests {
     for (caps, passthrough, want) in cases {
       assert_eq!(tmux_notices(&caps, passthrough), want);
     }
+  }
+
+  /// `:mouse off` undoes each mode and shape `on` set, once.
+  #[test]
+  fn mouse_capture_undoes_itself() -> Result<()> {
+    use crate::caps::Graphics;
+    // (XTVERSION, pixels, shapes) -> (1016 written, push, pop)
+    let cases = [
+      (
+        "kitty(0.49.1)",
+        Support::Answered,
+        Support::Answered,
+        true,
+        ">default",
+        "<",
+      ),
+      (
+        "ghostty 1.3",
+        Support::Answered,
+        Support::Named,
+        true,
+        "default",
+        "text",
+      ),
+      ("WezTerm", Support::Missing, Support::Missing, false, "", ""),
+    ];
+    for (version, pixels, pointer, pixel, push, pop) in cases {
+      let caps = Caps {
+        host: Host::Direct(Graphics::Ok),
+        version: Some(version.into()),
+        keyboard: Some(0),
+        sync: Support::Answered,
+        pixels,
+        resize: Support::Answered,
+        pointer,
+        drop: Support::Missing,
+        clipboard: None,
+        cell: None,
+        attributes: None,
+      };
+      let (mut on, mut off, mut again) = (Vec::new(), Vec::new(), Vec::new());
+      grab_mouse(&mut on, &caps)?;
+      free_mouse(&mut off)?;
+      // Suspend after `:mouse off` frees again.
+      free_mouse(&mut again)?;
+      let (on, off) = (String::from_utf8(on)?, String::from_utf8(off)?);
+      for mode in ["1000", "1002", "1003", "1006"] {
+        assert!(on.contains(&format!("\x1b[?{mode}h")), "{version} {mode}");
+        assert!(off.contains(&format!("\x1b[?{mode}l")), "{version} {mode}");
+      }
+      assert_eq!(on.contains("\x1b[?1016h"), pixel, "{version}");
+      assert_eq!(off.contains("\x1b[?1016l"), pixel, "{version}");
+      let shape = |text: &str, body: &str| {
+        body.is_empty() || text.contains(&format!("\x1b]22;{body}\x1b"))
+      };
+      assert!(shape(&on, push) && shape(&off, pop), "{version}");
+      assert_eq!(on.contains("\x1b]22;"), !push.is_empty(), "{version}");
+      let again = String::from_utf8(again)?;
+      assert!(!again.contains("1016") && !again.contains("\x1b]22;"));
+    }
+    Ok(())
   }
 
   #[test]

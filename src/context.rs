@@ -5,6 +5,7 @@ use crate::app::App;
 use crate::document::Target;
 use crate::keys::{self, Action, Input, PanelKind};
 use crate::motion::Motion;
+use crate::panel::Destination;
 use crate::pointer::{Hit, Items, List, Route};
 use crate::reader::SelectionKind;
 use crate::region::Operation;
@@ -32,8 +33,8 @@ pub struct ContextMenu {
 /// A menu row.
 pub struct Item {
   pub label: &'static str,
-  /// Its key; empty when none.
-  pub key: &'static str,
+  /// Its key in help notation; empty when none.
+  pub key: String,
   pub command: Command,
 }
 
@@ -46,6 +47,8 @@ pub enum Command {
   CopyText(String, &'static str),
   /// As a middle click does.
   Split(Target),
+  /// A panel row in a split, as a middle click does.
+  RowSplit(usize),
   Copy,
   CopyImage,
   SearchSelection,
@@ -62,11 +65,36 @@ pub enum Command {
 
 /// An item showing `action`'s key.
 fn bound(label: &'static str, action: Action, command: Command) -> Item {
-  Item { label, key: keys::key_for(action).unwrap_or(""), command }
+  let key = keys::key_for(action).map_or_default(keys::notation);
+  Item { label, key, command }
 }
 
-fn item(label: &'static str, key: &'static str, command: Command) -> Item {
-  Item { label, key, command }
+fn item(label: &'static str, key: &str, command: Command) -> Item {
+  Item { label, key: key.into(), command }
+}
+
+/// Copies a web address, as a middle click does.
+fn copy_address(uri: String) -> Item {
+  let copy = Command::CopyText(uri, crate::commands::COPIED_LINK);
+  item("Copy address", "", copy)
+}
+
+/// A figure's items; `gF` opens the bar for the selected figure and
+/// copies nothing, so they show no key.
+fn figure_items(page: PageId, bounds: Bounds) -> [Item; 2] {
+  [("Copy image", Operation::Image), ("Save image", Operation::Save)].map(
+    |(label, operation)| {
+      item(label, "", Command::Figure(page, bounds, operation))
+    },
+  )
+}
+
+/// Back and Forward.
+fn history() -> [Item; 2] {
+  [("Back", false), ("Forward", true)].map(|(label, forward)| {
+    let action = Action::History(forward);
+    bound(label, action, Command::Key(action))
+  })
 }
 
 /// Right drags pick past this distance.
@@ -122,8 +150,7 @@ impl App {
       (Some(Target::Uri(uri)), _) => {
         let follow = Command::Follow(Target::Uri(uri.clone()));
         items.push(bound("Follow", Action::Follow, follow));
-        let copy = Command::CopyText(uri, crate::commands::COPIED_LINK);
-        items.push(item("Copy address", "", copy));
+        items.push(copy_address(uri));
       }
       (Some(target), near) => {
         let follow = Command::Follow(target.clone());
@@ -156,15 +183,11 @@ impl App {
       items.push(bound("Search word", Action::WordSearch, search));
     }
     if let Some((page, bounds)) = figure {
-      let copy = Command::Figure(page, bounds, Operation::Image);
-      items.push(bound("Copy image", Action::Region, copy));
-      let save = Command::Figure(page, bounds, Operation::Save);
-      items.push(item("Save image", "", save));
+      items.extend(figure_items(page, bounds));
     }
+    items.extend(history());
     items.extend(
       [
-        ("Back", Action::History(false)),
-        ("Forward", Action::History(true)),
         ("Fit width", Action::Fit),
         ("Fit page", Action::FitPage),
         ("Outline", Action::Panel(PanelKind::Outline)),
@@ -172,24 +195,110 @@ impl App {
       ]
       .map(|(label, action)| bound(label, action, Command::Key(action))),
     );
+    self.open_menu(items, (column, row), (self.left, self.screen.columns));
+  }
+
+  /// Opens the menu at a right press on a panel; a row press selects
+  /// the row its items act on.
+  pub(crate) fn panel_context(&mut self, mouse: MouseEvent) {
+    let (column, row) = (mouse.column, mouse.row);
+    let covered = self.covered();
+    let Some(panel) = &mut self.panel else { return };
+    let mut items = Vec::new();
+    if let Some(index) = panel.row_at(column, row) {
+      panel.selected = index;
+      let destination = &panel.rows[index].destination;
+      let address = match destination {
+        Destination::Link(Target::Uri(uri)) => Some(uri.clone()),
+        _ => None,
+      };
+      if !matches!(destination, Destination::None) {
+        let label = if covered { "Open" } else { "Follow" };
+        items.push(bound(label, Action::Follow, Command::Key(Action::Follow)));
+        if !panel.is_recent_view() {
+          let keep = Command::Key(Action::Swap);
+          items.push(bound("Follow, keep panel", Action::Swap, keep));
+        }
+      }
+      // Addresses split by copying; the copy item does that.
+      if !matches!(destination, Destination::None) && address.is_none() {
+        items.push(item("Open in split", "", Command::RowSplit(index)));
+      }
+      if panel.kind == PanelKind::Annotations {
+        items.push(bound(
+          "Show note",
+          Action::Peek,
+          Command::Key(Action::Peek),
+        ));
+      }
+      if let Some(uri) = address {
+        items.push(copy_address(uri));
+      } else if let Some(text) = panel.yank_text() {
+        let copy = Command::CopyText(text, "Copied row");
+        items.push(item("Copy row", "yy", copy));
+      }
+    }
+    let close = Command::Key(Action::ClosePanel);
+    items.push(bound("Close panel", Action::Quit, close));
+    // Cards draw over cells right of the rows.
+    let columns = self.screen.columns;
+    let right = if covered {
+      crate::recent::Shelf::list_columns(panel, columns)
+    } else {
+      columns
+    };
+    self.open_menu(items, (column, row), (0, right));
+  }
+
+  /// Opens the menu at a right press on the overview; a thumbnail
+  /// press selects its page.
+  pub(crate) fn overview_context(
+    &mut self,
+    mouse: MouseEvent,
+    page: Option<PageId>,
+  ) {
+    let mut items = Vec::new();
+    if let Some(page) = page {
+      if let Some(overview) = &mut self.overview {
+        overview.selected = page.0;
+      }
+      items.push(bound("Open", Action::Follow, Command::Key(Action::Follow)));
+      let split = Command::Split(Target::Page(page));
+      items.push(item("Open in split", "", split));
+    }
+    items.extend(history());
+    let close = Command::Key(Action::Overview);
+    items.push(bound("Close overview", Action::Quit, close));
+    let at = (mouse.column, mouse.row);
+    self.open_menu(items, at, (self.left, self.screen.columns));
+  }
+
+  /// Opens a menu at a pane cell, inside `columns`.
+  fn open_menu(
+    &mut self,
+    items: Vec<Item>,
+    at: (u16, u16),
+    columns: (u16, u16),
+  ) {
     self.disarm();
-    let mut menu = ContextMenu::new(items, (column, row));
-    self.context_fit(&mut menu);
+    let mut menu = ContextMenu::new(items, at);
+    self.context_fit(&mut menu, columns);
     self.context_menu = Some(menu);
   }
 
-  /// Keeps the menu inside the page area.
-  fn context_fit(&self, menu: &mut ContextMenu) {
+  /// Keeps the menu above the status rows and between `left` and
+  /// `right`.
+  fn context_fit(&self, menu: &mut ContextMenu, (left, right): (u16, u16)) {
     let bottom = self.screen.rows.saturating_sub(1 + self.menu_rows());
     // Short panes drop common items first.
     menu.items.truncate(usize::from(bottom));
     let rows = u16::try_from(menu.items.len()).unwrap_or(0);
-    let room = self.screen.columns.saturating_sub(self.left);
+    let room = right.saturating_sub(left);
     let width = u16::try_from(menu.needed()).unwrap_or(u16::MAX).min(room);
     let (column, row) = menu.at;
-    let right = self.screen.columns.saturating_sub(width);
+    let last = right.saturating_sub(width);
     let row = if row + rows <= bottom { row } else { row.saturating_sub(rows) };
-    menu.at = (column.min(right).max(self.left), row.min(bottom - rows));
+    menu.at = (column.min(last).max(left), row.min(bottom - rows));
     menu.width = width;
   }
 
@@ -251,6 +360,7 @@ impl App {
       Command::Preview(target, near) => self.show_preview(target, near),
       Command::CopyText(text, message) => self.copy_text(text, message),
       Command::Split(target) => self.open_split(&target),
+      Command::RowSplit(index) => self.panel_split(index),
       Command::Copy => self.action(key(Action::Yank)),
       Command::CopyImage => {
         let Some((page, bounds)) = self.selection_bounds()? else {
@@ -338,10 +448,13 @@ impl App {
     Ok(self.figure_at(page, x, y)?.map(|figure| (page, figure.bounds)))
   }
 
-  /// The menu's page-area pixels.
+  /// The menu's page-area pixels; panel cells hold no picture.
   pub(crate) fn context_rect(&self) -> Option<Bounds> {
-    let menu = self.context_menu.as_ref()?;
-    Some(self.cell_bounds(menu.area()))
+    let area = self.context_menu.as_ref()?.area();
+    let column = area.column.max(self.left);
+    let columns = (area.column + area.columns).checked_sub(column);
+    let columns = columns.filter(|columns| *columns > 0)?;
+    Some(self.cell_bounds(Rect { column, columns, ..area }))
   }
 
   /// Draws the menu, key first, like clues.
@@ -396,12 +509,12 @@ mod tests {
   #[test]
   fn items_hit_by_cell() {
     let menu = menu((10, 5));
-    assert_eq!(menu.width, 16);
+    assert_eq!(menu.width, 18);
     // (column, row) -> item
     let cases = [
       ((10, 5), Some(0)),
-      ((25, 6), Some(1)),
-      ((26, 6), None),
+      ((27, 6), Some(1)),
+      ((28, 6), None),
       ((9, 5), None),
       ((10, 7), None),
       ((10, 4), None),
@@ -411,31 +524,38 @@ mod tests {
     }
   }
 
-  /// Shown keys name their actions.
+  /// U19: figure items show no key; `gF` only opens the bar.
+  #[test]
+  fn figure_items_show_no_key() {
+    let items = figure_items(PageId(0), Bounds::default());
+    let shown: Vec<_> =
+      items.iter().map(|i| (i.label, i.key.as_str())).collect();
+    assert_eq!(shown, [("Copy image", ""), ("Save image", "")]);
+  }
+
+  /// Shown keys name their actions, in help notation.
   #[test]
   fn keys_match_bindings() {
-    use crate::reader::SelectionKind::{Character, Line};
-    // (key, action)
+    use crate::reader::SelectionKind::Line;
+    // (shown, binding, action)
     let cases = [
-      ("Enter", Action::Follow),
-      ("K", Action::Peek),
-      ("y", Action::Yank),
-      ("V", Action::Visual(Line)),
-      ("v", Action::Visual(Character)),
-      ("*", Action::WordSearch),
-      ("gF", Action::Region),
-      ("C-o", Action::History(false)),
-      ("C-i", Action::History(true)),
-      ("=", Action::Fit),
-      ("zf", Action::FitPage),
-      ("go", Action::Panel(PanelKind::Outline)),
-      ("gp", Action::Overview),
+      ("<CR>", "Enter", Action::Follow),
+      ("K", "K", Action::Peek),
+      ("y", "y", Action::Yank),
+      ("V", "V", Action::Visual(Line)),
+      ("*", "*", Action::WordSearch),
+      ("<C-o>", "C-o", Action::History(false)),
+      ("<C-i>", "C-i", Action::History(true)),
+      ("=", "=", Action::Fit),
+      ("zf", "zf", Action::FitPage),
+      ("go", "go", Action::Panel(PanelKind::Outline)),
+      ("gp", "gp", Action::Overview),
+      ("o", "o", Action::Swap),
+      ("q", "q", Action::Quit),
     ];
-    for (key, action) in cases {
-      assert_eq!(keys::binding(key), Some(action), "{key}");
-      if key != "v" {
-        assert_eq!(keys::key_for(action), Some(key), "{action:?}");
-      }
+    for (shown, binding, action) in cases {
+      assert_eq!(keys::binding(binding), Some(action), "{binding}");
+      assert_eq!(bound("", action, Command::Key(action)).key, shown);
     }
   }
 }

@@ -454,3 +454,54 @@ fn preview_takes_the_wheel_under_the_pointer() -> Result<()> {
   }
   Ok(())
 }
+
+/// Turns over a menu move the surface beneath it, not the hidden page.
+#[test]
+fn menu_turns_move_what_is_beneath() -> Result<()> {
+  use crossterm::event::MouseButton::Right;
+  use vpdf::keys::PanelKind;
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("pages.pdf");
+  pages_pdf(&path, &[(18, 6); 40], None)?;
+  // (surface) -> moved (page scroll, panel top, overview top)
+  let cases = [
+    ("page", (true, false, false)),
+    ("panel", (false, true, false)),
+    ("overview", (false, false, true)),
+  ];
+  for (surface, want) in cases {
+    let mut session = session(&path)?;
+    let app = session.app();
+    match surface {
+      "panel" => app.open_panel(PanelKind::Help)?,
+      "overview" => app.open_overview()?,
+      _ => {}
+    }
+    app.draw(&mut Vec::new())?;
+    let at = if surface == "panel" { (4, 6) } else { (app.left + 20, 6) };
+    for kind in [MouseEventKind::Down(Right), MouseEventKind::Up(Right)] {
+      let modifiers = KeyModifiers::NONE;
+      session.mouse(MouseEvent { kind, column: at.0, row: at.1, modifiers })?;
+    }
+    let state = |session: &mut Session| {
+      let app = session.app();
+      let panel = app.panel.as_ref().map(|panel| panel.top);
+      let overview = app.overview.as_ref().map(vpdf::overview::Overview::top);
+      let scroll =
+        app.animation.as_ref().map_or(app.reader.scroll, |a| a.target);
+      (scroll.to_bits(), panel, overview)
+    };
+    let before = state(&mut session);
+    let menu =
+      session.app().context_menu.as_ref().map(vpdf::context::ContextMenu::area);
+    let area = menu.unwrap_or_else(|| panic!("{surface}: a menu"));
+    let pixel = (area.column * 8 + 4, area.row * 16 + 8);
+    wheel(&mut session, DOWN, pixel)?;
+    session.app().draw(&mut Vec::new())?;
+    let after = state(&mut session);
+    let moved = (before.0 != after.0, before.1 != after.1, before.2 != after.2);
+    assert_eq!(moved, want, "{surface}");
+    assert!(session.app().context_menu.is_some(), "{surface}: menu stays");
+  }
+  Ok(())
+}

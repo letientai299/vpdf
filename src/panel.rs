@@ -251,6 +251,23 @@ impl Panel {
     None
   }
 
+  /// The recent view: it covers the pane while focused and opens rows
+  /// with Enter alone.
+  pub fn is_recent_view(&self) -> bool {
+    self.shelf.is_some()
+  }
+
+  /// What `yy` copies from the selected row: a link's address, else
+  /// its label.
+  pub fn yank_text(&self) -> Option<String> {
+    let row = self.rows.get(self.selected)?;
+    let value = match (&self.kind, &row.destination) {
+      (PanelKind::Links, Destination::Link(Target::Uri(uri))) => uri,
+      _ => &row.label,
+    };
+    Some(format!("{}\n", value.trim()))
+  }
+
   /// The row at a panel cell.
   pub fn row_at(&self, column: u16, row: u16) -> Option<usize> {
     if row == 0 || column + 1 >= self.columns {
@@ -705,7 +722,7 @@ impl App {
     self
       .panel
       .as_ref()
-      .is_some_and(|panel| panel.shelf.is_some() && panel.focused)
+      .is_some_and(|panel| panel.is_recent_view() && panel.focused)
   }
 
   pub fn close_panel(&mut self) -> Result<()> {
@@ -784,18 +801,13 @@ impl App {
     if panel.navigate(input, usize::from(self.screen.rows)) {
       return Ok(true);
     }
-    let covered = panel.shelf.is_some();
+    let covered = panel.is_recent_view();
     match input.action {
       Action::Quit | Action::ClosePanel => {
         self.close_panel()?;
       }
       Action::Yank | Action::YankLine => {
-        if let Some(row) = panel.rows.get(panel.selected) {
-          let value = match (&panel.kind, &row.destination) {
-            (PanelKind::Links, Destination::Link(Target::Uri(uri))) => uri,
-            _ => &row.label,
-          };
-          let text = format!("{}\n", value.trim());
+        if let Some(text) = panel.yank_text() {
           self.reader.store(input.register, text)?;
         }
       }
@@ -814,7 +826,6 @@ impl App {
         }
       }
       Action::Follow => self.panel_follow(Action::Follow)?,
-      // The recent view opens with Enter alone.
       Action::Swap if !covered => self.panel_follow(Action::Swap)?,
       // Commands, searches, windows, and tabs still work; the covered
       // document takes nothing else.
@@ -841,8 +852,14 @@ impl App {
     if self.covered() != covered {
       self.relayout()?;
     }
+    if mouse.kind == MouseEventKind::Down(MouseButton::Right) {
+      self.panel_context(mouse);
+      return Ok(());
+    }
     if mouse.kind == MouseEventKind::Down(MouseButton::Middle) {
-      return self.panel_split(mouse);
+      let panel = self.panel.as_ref();
+      let row = panel.and_then(|panel| panel.row_at(mouse.column, mouse.row));
+      return row.map_or(Ok(()), |index| self.panel_split(index));
     }
     let Some(panel) = &mut self.panel else { return Ok(()) };
     let pressed = matches!(mouse.kind, MouseEventKind::Down(_));
@@ -877,12 +894,10 @@ impl App {
   }
 
   /// Middle click: the row in a split.
-  fn panel_split(&mut self, mouse: MouseEvent) -> Result<()> {
+  pub(crate) fn panel_split(&mut self, index: usize) -> Result<()> {
     let Some(panel) = &self.panel else { return Ok(()) };
-    let Some(index) = panel.row_at(mouse.column, mouse.row) else {
-      return Ok(());
-    };
-    let request = match panel.rows[index].destination.clone() {
+    let Some(row) = panel.rows.get(index) else { return Ok(()) };
+    let request = match row.destination.clone() {
       Destination::Position(position)
       | Destination::Jump { position, .. }
       | Destination::Annotation { position, .. } => Request::SplitAt(position),
@@ -1017,6 +1032,10 @@ impl App {
       format!(
         "Presentation: {}",
         if self.text_mode { "text" } else { "images" }
+      ),
+      format!(
+        "Mouse: {}",
+        if terminal::mouse() { "on" } else { "off (:mouse on)" }
       ),
       crate::caps::get()
         .map_or_else(|| "Terminal: not probed".into(), ToString::to_string),

@@ -180,6 +180,160 @@ fn text_drags_split_nothing() -> Result<()> {
   Ok(())
 }
 
+/// The menu's labels and shown keys.
+fn menu(session: &mut Session) -> Vec<(&'static str, String)> {
+  let menu = session.app().context_menu.as_ref();
+  let items = menu.map(|menu| menu.items.iter());
+  items.into_iter().flatten().map(|i| (i.label, i.key.clone())).collect()
+}
+
+/// U13: panels and the overview open menus of their own keys.
+#[test]
+fn panel_and_overview_menus_run_their_items() -> Result<()> {
+  type Case<'a> = (&'a str, Hit, &'a [(&'a str, &'a str)], &'a str);
+  let row = [
+    ("Follow", "<CR>"),
+    ("Follow, keep panel", "o"),
+    ("Open in split", ""),
+    ("Copy row", "yy"),
+    ("Close panel", "q"),
+  ];
+  let thumbnail = [
+    ("Open", "<CR>"),
+    ("Open in split", ""),
+    ("Back", "<C-o>"),
+    ("Forward", "<C-i>"),
+    ("Close overview", "q"),
+  ];
+  // (keys, hit, items, item run) -> (panes, other page, cursor page)
+  let cases: [(Case, _); 4] = [
+    (("go", Hit::Row(0), &row, "Open in split"), (2, Some(PageId(1)), 0)),
+    (("go", Hit::Row(0), &row, "Follow"), (1, None, 1)),
+    (("gp", Hit::Thumbnail(PageId(1)), &thumbnail, "Open"), (1, None, 1)),
+    (
+      ("gp", Hit::Thumbnail(PageId(1)), &thumbnail, "Open in split"),
+      (2, Some(PageId(1)), 0),
+    ),
+  ];
+  for ((typed, hit, items, run), (count, page, cursor)) in cases {
+    let (_directory, mut session) = session(false)?;
+    let id = session.app().id;
+    keys(&mut session, typed)?;
+    status(&mut session)?;
+    let at = cell(&mut session, hit)?;
+    crate::mouse::right(&mut session, at)?;
+    let got = menu(&mut session);
+    let want: Vec<_> =
+      items.iter().map(|(l, k)| (*l, (*k).to_owned())).collect();
+    assert_eq!(got, want, "{typed} {run}");
+    // Drawn over the panel and page.
+    let frame = status(&mut session)?;
+    assert!(frame.contains(run), "{typed}: {run} drawn");
+    // A click on the item runs it.
+    let index = items.iter().position(|(label, _)| *label == run);
+    let area =
+      session.app().context_menu.as_ref().map(vpdf::context::ContextMenu::area);
+    let area = area.expect("a menu");
+    let row = area.row + u16::try_from(index.expect(run))?;
+    crate::mouse::click(&mut session, (area.column, row))?;
+    session.settle()?;
+    let cursor_page = session.app().reader.cursor.page;
+    assert!(session.app().context_menu.is_none(), "{typed} {run}: closed");
+    assert_eq!(panes(&mut session), (count, id, page), "{typed} {run}");
+    assert_eq!(cursor_page, PageId(cursor), "{typed} {run}");
+  }
+  Ok(())
+}
+
+/// Address rows copy instead of splitting; right drags run row items.
+#[test]
+fn row_menus_copy_and_select() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  keys(&mut session, "gl")?;
+  status(&mut session)?;
+  let web = cell(&mut session, Hit::Row(1))?;
+  crate::mouse::right(&mut session, web)?;
+  let app = session.app();
+  assert_eq!(app.panel.as_ref().map(|panel| panel.selected), Some(1));
+  assert!(app.panel_focused());
+  let want = ["Follow", "Follow, keep panel", "Copy address", "Close panel"];
+  assert_eq!(labels(&mut session), want);
+  // A right drag onto the item and its release run it.
+  let area =
+    session.app().context_menu.as_ref().map(vpdf::context::ContextMenu::area);
+  let area = area.expect("a menu");
+  session.app().context_menu = None;
+  mouse(&mut session, MouseEventKind::Down(MouseButton::Right), web)?;
+  let item = (area.column + 1, area.row + 2);
+  mouse(&mut session, MouseEventKind::Drag(MouseButton::Right), item)?;
+  mouse(&mut session, MouseEventKind::Up(MouseButton::Right), item)?;
+  let app = session.app();
+  assert!(app.context_menu.is_none(), "the release ran it");
+  let got = app.reader.registers.get(&'"').map(ToString::to_string);
+  assert_eq!(got.as_deref(), Some("https://example.com/"));
+  assert_eq!(app.reader.message, "Copied link");
+  Ok(())
+}
+
+/// The covered recent view opens with Enter alone; its menu stays left
+/// of the card.
+#[test]
+fn recent_menus_open_rows() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  let app = session.app();
+  let entry = vpdf::state::Entry {
+    path: app.path.clone(),
+    cursor: vpdf::text::Position::default(),
+    zoom: 1.0,
+    rotation: 0,
+    used: 0,
+    marks: std::collections::BTreeMap::new(),
+    crop: vpdf::layout::Crop::default(),
+  };
+  app.show_recent(&[entry])?;
+  assert!(app.covered());
+  // Before the card first draws, near the list's right end: 121 columns
+  // leave the card 48.
+  let row = cell(&mut session, Hit::Row(0))?;
+  crate::mouse::right(&mut session, (121 - 48 - 3, row.1))?;
+  let want = ["Open", "Open in split", "Copy row", "Close panel"];
+  assert_eq!(labels(&mut session), want);
+  status(&mut session)?;
+  let app = session.app();
+  let area = app.context_menu.as_ref().expect("a menu").area();
+  let card = app.panel.as_ref().and_then(|panel| panel.shelf.as_ref());
+  let start = card.and_then(vpdf::recent::Shelf::start);
+  assert!(area.column + area.columns <= start.expect("a drawn card"));
+  // Turns over the menu leave the hidden page.
+  let scroll = session.app().reader.scroll;
+  mouse(&mut session, MouseEventKind::ScrollDown, (area.column, area.row))?;
+  let app = session.app();
+  assert_eq!(app.reader.scroll.to_bits(), scroll.to_bits());
+  assert!(app.animation.is_none() && app.context_menu.is_some());
+  Ok(())
+}
+
+/// A right drag from a thumbnail onto an item runs it on release.
+#[test]
+fn overview_menus_take_right_drags() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  keys(&mut session, "gp")?;
+  status(&mut session)?;
+  let at = cell(&mut session, Hit::Thumbnail(PageId(1)))?;
+  mouse(&mut session, MouseEventKind::Down(MouseButton::Right), at)?;
+  let area =
+    session.app().context_menu.as_ref().map(vpdf::context::ContextMenu::area);
+  let area = area.expect("a menu");
+  // Open, Open in split, Back, ...
+  let item = (area.column + 2, area.row + 1);
+  mouse(&mut session, MouseEventKind::Drag(MouseButton::Right), item)?;
+  mouse(&mut session, MouseEventKind::Up(MouseButton::Right), item)?;
+  session.settle()?;
+  let id = session.app().id;
+  assert_eq!(panes(&mut session), (2, id, Some(PageId(1))));
+  Ok(())
+}
+
 #[test]
 fn middle_presses_respect_overlays_and_focus() -> Result<()> {
   let (_directory, mut session) = session(false)?;

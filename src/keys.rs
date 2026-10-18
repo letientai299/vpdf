@@ -519,6 +519,27 @@ pub fn binding(key: &str) -> Option<Action> {
   BINDINGS.iter().find(|(keys, ..)| *keys == key).map(|(_, action, _)| *action)
 }
 
+/// A binding name in help notation: `C-o` as `<C-o>`, `Enter` as `<CR>`;
+/// names it cannot write stay as they are.
+pub fn notation(name: &str) -> String {
+  let keys = parse(name).unwrap_or_default();
+  let shown = keys.into_iter().map(|key| match key.code {
+    KeyCode::Char(ch) if key.modifiers == KeyModifiers::CONTROL => {
+      Some(format!("<C-{ch}>"))
+    }
+    KeyCode::Char(' ') if key.modifiers == KeyModifiers::SHIFT => {
+      Some("<S-Space>".into())
+    }
+    KeyCode::Char(' ') => Some("<Space>".into()),
+    KeyCode::Char(ch) => Some(ch.to_string()),
+    KeyCode::Enter => Some("<CR>".into()),
+    KeyCode::Tab => Some("<Tab>".into()),
+    KeyCode::Backspace => Some("<BS>".into()),
+    _ => None,
+  });
+  shown.collect::<Option<String>>().unwrap_or_else(|| name.to_owned())
+}
+
 /// Keys that may follow `prefix`, with descriptions, like mini.clue.
 pub fn clues(prefix: &str) -> Vec<(String, &'static str)> {
   let mut clues: Vec<_> = BINDINGS
@@ -533,6 +554,23 @@ pub fn clues(prefix: &str) -> Vec<(String, &'static str)> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn notation_matches_help() {
+    // (binding, help notation)
+    let cases = [
+      ("C-o", "<C-o>"),
+      ("Enter", "<CR>"),
+      ("S-Space", "<S-Space>"),
+      ("Space", "<Space>"),
+      ("C-wv", "<C-w>v"),
+      ("gg", "gg"),
+      ("", ""),
+    ];
+    for (binding, shown) in cases {
+      assert_eq!(notation(binding), shown, "{binding}");
+    }
+  }
 
   /// Clue names type their bindings back.
   #[test]

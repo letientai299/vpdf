@@ -1286,6 +1286,10 @@ fn figures_offer_copy_and_save() -> Result<()> {
   right(&mut session, cell)?;
   let labels = labels(&mut session);
   assert!(labels.contains(&"Copy image") && labels.contains(&"Save image"));
+  // U19: `gF` only opens the bar, so the item shows no key.
+  let menu = session.app().context_menu.as_ref().expect("a menu");
+  let copy = menu.items.iter().find(|item| item.label == "Copy image");
+  assert_eq!(copy.map(|item| item.key.as_str()), Some(""));
   Ok(())
 }
 
@@ -2532,5 +2536,32 @@ fn closed_popups_start_no_rest() -> Result<()> {
   assert!(session.app().context_menu.is_none(), "Esc closes it");
   session.draw_frame(&mut Vec::new())?;
   assert!(session.app().hover_due().is_none(), "no motion, no rest");
+  Ok(())
+}
+
+/// `:mouse off` closes hover previews and pending rests.
+#[test]
+fn mouse_off_ends_hover() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  let link = cell(&mut session, Hit::Link(PageId(0), 0))?;
+  hover_open(&mut session, link)?;
+  // (rest first) -> previews after the command
+  for rested in [true, false] {
+    if !rested {
+      session.app().command("mouse on")?;
+      session.settle()?;
+      let screen = session.app().screen;
+      let away = (screen.columns - 1, screen.rows - 2);
+      mouse(&mut session, MouseEventKind::Moved, away)?;
+      mouse(&mut session, MouseEventKind::Moved, link)?;
+    }
+    session.app().command("mouse off")?;
+    session.settle()?;
+    let later = std::time::Instant::now() + vpdf::links::REST;
+    assert!(!session.hover_preview(later), "rested={rested}: no rest");
+    let app = session.app();
+    assert!(app.peek.is_none(), "rested={rested}: closed");
+    assert_eq!(app.hover, Hit::Nothing, "rested={rested}");
+  }
   Ok(())
 }
