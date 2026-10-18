@@ -39,3 +39,6 @@ staged=$(mktemp "$build_dir/release/.vpdf.XXXXXX")
 trap 'rm -f "$staged"' EXIT HUP INT TERM
 install -m 755 "$binary" "$staged"
 mv -f "$staged" "$build_dir/release/vpdf"
+if [ "$(uname -s)" = Darwin ]; then
+  "$build_dir/release/vpdf" --version >/dev/null
+fi

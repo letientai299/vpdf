@@ -18,4 +18,7 @@ case $(uname -s) in
 esac
 "$staged/vpdf" --version
 mv -f "$staged/vpdf" "$release_dir/vpdf"
+if [ "$(uname -s)" = Darwin ]; then
+  "$release_dir/vpdf" --version >/dev/null
+fi
 printf 'Release executable: %s/vpdf\n' "$release_dir"

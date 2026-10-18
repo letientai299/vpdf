@@ -36,6 +36,10 @@ The [build script][build] stages the optimized executable at
 directory on `PATH`. The install task depends on the build task, so it can also
 be run directly after setup.
 
+On macOS, build, install, and release run `--version` at the final executable
+path. This pays first-launch security checks during the task before interactive
+use; macOS can repeat checks after security updates.
+
 Build on the target platform. Linux builds use musl and reject shared-library
 dependencies. macOS builds embed MuPDF and its base14 fonts, link the system
 zlib, and reject non-system dynamic libraries. These checks cover the
