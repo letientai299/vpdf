@@ -149,10 +149,22 @@ impl Panel {
     }
   }
 
-  /// Replaces the rows and note, keeping focus and the selection in
-  /// range.
-  pub fn refill(&mut self, rows: Vec<Row>, note: &'static str) {
-    self.selected = self.selected.min(rows.len().saturating_sub(1));
+  /// Replaces the rows and note, keeping focus and the selected row,
+  /// else the selection in range; whether that row stayed.
+  pub fn refill(&mut self, rows: Vec<Row>, note: &'static str) -> bool {
+    let before = self.selected;
+    let same = |row: &Row| {
+      let old = self.rows.get(before);
+      old.is_some_and(|old| old.label == row.label && old.detail == row.detail)
+    };
+    // The match nearest the old place, as rows only shift.
+    let kept = (rows.iter().enumerate())
+      .filter(|(_, row)| same(row))
+      .map(|(index, _)| index)
+      .min_by_key(|index| index.abs_diff(before));
+    self.selected = kept.unwrap_or(before).min(rows.len().saturating_sub(1));
+    // The kept row keeps its line.
+    self.top = (self.top + self.selected).saturating_sub(before);
     if self.top >= rows.len() {
       self.top = 0;
     }
@@ -160,6 +172,7 @@ impl Panel {
     self.layout = None;
     self.rows = rows;
     self.note = note;
+    kept.is_some()
   }
 
   /// Applies list motions; `page` rows per full-screen scroll.
@@ -680,15 +693,18 @@ impl App {
     self.relayout()
   }
 
-  /// Refills an open `kind` panel in place, keeping focus and selection.
+  /// Refills an open `kind` panel in place, keeping focus and the
+  /// selected row; a menu for a row that left closes.
   pub fn refill_panel(&mut self, kind: PanelKind) -> Result<()> {
     if self.panel.as_ref().is_none_or(|panel| panel.kind != kind) {
       return Ok(());
     }
     let rows = self.panel_rows(kind)?;
     let note = self.panel_note(kind);
-    if let Some(panel) = &mut self.panel {
-      panel.refill(rows, note);
+    let Some(panel) = &mut self.panel else { return Ok(()) };
+    let kept = panel.refill(rows, note);
+    if !kept && self.context_menu.as_ref().is_some_and(|menu| menu.row) {
+      self.context_menu = None;
     }
     Ok(())
   }
@@ -1170,6 +1186,30 @@ impl App {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn refills_keep_the_selected_row() {
+    type Case = (&'static [&'static str], (usize, usize, bool));
+    let rows = |labels: &[&str]| -> Vec<Row> {
+      labels.iter().map(|label| Row::parse(label)).collect()
+    };
+    // (new rows) -> (selected, top, kept)
+    let cases: [Case; 6] = [
+      (&["a", "b", "c", "d"], (2, 1, true)),
+      (&["x", "a", "b", "c", "d"], (3, 2, true)),
+      (&["b", "c", "d"], (1, 0, true)),
+      (&["c", "a", "b", "c"], (3, 2, true)),
+      (&["a", "b", "d"], (2, 1, false)),
+      (&["a"], (0, 0, false)),
+    ];
+    for (labels, want) in cases {
+      let mut panel =
+        Panel::new(PanelKind::Outline, rows(&["a", "b", "c", "d"]));
+      (panel.selected, panel.top) = (2, 1);
+      let kept = panel.refill(rows(labels), "");
+      assert_eq!((panel.selected, panel.top, kept), want, "{labels:?}");
+    }
+  }
 
   #[test]
   fn paths_keep_the_file_name() -> Result<()> {

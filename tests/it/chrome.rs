@@ -276,6 +276,46 @@ fn row_menus_copy_and_select() -> Result<()> {
   Ok(())
 }
 
+/// A refill keeps a row menu's row; a row that leaves closes the menu.
+#[test]
+fn panel_refills_keep_the_menu_row() -> Result<()> {
+  use vpdf::document::{Heading, Target};
+  let opening = || Heading {
+    title: "Opening".into(),
+    depth: 0,
+    target: Target::Page(PageId(0)),
+  };
+  for shifted in [true, false] {
+    let (_directory, mut session) = session(false)?;
+    let id = session.app().id;
+    keys(&mut session, "go")?;
+    status(&mut session)?;
+    let row = cell(&mut session, Hit::Row(0))?;
+    crate::mouse::right(&mut session, row)?;
+    let app = session.app();
+    if shifted {
+      app.doc.outline.insert(0, opening());
+    } else {
+      app.doc.outline = vec![opening()];
+    }
+    app.refill_panel(vpdf::keys::PanelKind::Outline)?;
+    let selected = app.panel.as_ref().map(|panel| panel.selected);
+    if !shifted {
+      assert!(app.context_menu.is_none(), "its row left");
+      continue;
+    }
+    assert_eq!(selected, Some(1), "the row moved down");
+    let at = labels(&mut session).iter().position(|l| *l == "Open in split");
+    for _ in 0..at.expect("Open in split") {
+      press(&mut session, KeyCode::Char('j'))?;
+    }
+    press(&mut session, KeyCode::Enter)?;
+    session.settle()?;
+    assert_eq!(panes(&mut session), (2, id, Some(PageId(1))));
+  }
+  Ok(())
+}
+
 /// The covered recent view opens with Enter alone; its menu stays left
 /// of the card.
 #[test]

@@ -28,6 +28,8 @@ pub struct ContextMenu {
   pub press: (u16, u16),
   /// That drag went `ARM` cells away.
   pub armed: bool,
+  /// Its items act on the panel's selected row.
+  pub row: bool,
 }
 
 /// A menu row.
@@ -47,8 +49,8 @@ pub enum Command {
   CopyText(String, &'static str),
   /// As a middle click does.
   Split(Target),
-  /// A panel row in a split, as a middle click does.
-  RowSplit(usize),
+  /// The selected panel row in a split, as a middle click does.
+  RowSplit,
   Copy,
   CopyImage,
   SearchSelection,
@@ -103,7 +105,8 @@ const ARM: u16 = 2;
 impl ContextMenu {
   /// A menu opened at a pane cell.
   fn new(items: Vec<Item>, at: (u16, u16)) -> Self {
-    Self { items, selected: 0, at, width: 0, press: at, armed: false }
+    let (armed, row) = (false, false);
+    Self { items, selected: 0, at, width: 0, press: at, armed, row }
   }
 
   /// Widest key, for the key column.
@@ -205,7 +208,8 @@ impl App {
     let covered = self.covered();
     let Some(panel) = &mut self.panel else { return };
     let mut items = Vec::new();
-    if let Some(index) = panel.row_at(column, row) {
+    let pressed = panel.row_at(column, row);
+    if let Some(index) = pressed {
       panel.selected = index;
       let destination = &panel.rows[index].destination;
       let address = match destination {
@@ -222,7 +226,7 @@ impl App {
       }
       // Addresses split by copying; the copy item does that.
       if !matches!(destination, Destination::None) && address.is_none() {
-        items.push(item("Open in split", "", Command::RowSplit(index)));
+        items.push(item("Open in split", "", Command::RowSplit));
       }
       if panel.kind == PanelKind::Annotations {
         items.push(bound(
@@ -248,6 +252,9 @@ impl App {
       columns
     };
     self.open_menu(items, (column, row), (0, right));
+    if let Some(menu) = &mut self.context_menu {
+      menu.row = pressed.is_some();
+    }
   }
 
   /// Opens the menu at a right press on the overview; a thumbnail
@@ -360,7 +367,10 @@ impl App {
       Command::Preview(target, near) => self.show_preview(target, near),
       Command::CopyText(text, message) => self.copy_text(text, message),
       Command::Split(target) => self.open_split(&target),
-      Command::RowSplit(index) => self.panel_split(index),
+      Command::RowSplit => {
+        let selected = self.panel.as_ref().map(|panel| panel.selected);
+        selected.map_or(Ok(()), |index| self.panel_split(index))
+      }
       Command::Copy => self.action(key(Action::Yank)),
       Command::CopyImage => {
         let Some((page, bounds)) = self.selection_bounds()? else {
