@@ -31,6 +31,12 @@ fn public_documents() -> Result<()> {
       4088,
       "7a161be656c7e82986a1959890eadbdcd0876e15e01b28fd00900190de15eed5",
     ),
+    (
+      "review.pdf",
+      0,
+      3243,
+      "0bbddcd853aebe2e02cd786d43e30a568f2f7eb9c1a6393c6990a82dce1f76a3",
+    ),
   ];
   for (name, page, glyphs, expected) in cases {
     let path = root.join(name);

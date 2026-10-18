@@ -754,6 +754,28 @@ fn click_runs_select_words_lines_and_paragraphs() -> Result<()> {
   Ok(())
 }
 
+/// Pixel presses across rows still run.
+#[test]
+fn pixel_double_clicks_cross_rows() -> Result<()> {
+  use std::time::{Duration, Instant};
+  let (_directory, mut session) = words(false)?;
+  let (column, row) = glyph_cell(&mut session, 0, 7)?;
+  let x = column * 8 + 4;
+  // Astride the row's top edge.
+  let (above, below) = (row * 16 - 2, row * 16 + 2);
+  let start = Instant::now();
+  for (step, y) in [above, below].into_iter().enumerate() {
+    let now = start + Duration::from_millis(50 * step as u64);
+    for kind in ["M", "m"] {
+      let bytes = format!("\x1b[<0;{x};{y}{kind}");
+      session.mouse_report_at(report(&bytes), now)?;
+    }
+  }
+  let want = Some((at(0, 6), at(0, 9), SelectionKind::Character));
+  assert_eq!(selected(&mut session), want);
+  Ok(())
+}
+
 #[test]
 fn run_drags_extend_by_word_and_line() -> Result<()> {
   use MouseEventKind::{Down, Drag, Up};
@@ -1926,6 +1948,115 @@ fn wheel_scrolls_under_menus() -> Result<()> {
   Ok(())
 }
 
+/// X1: labels sit on their link's line.
+#[test]
+fn hint_labels_sit_on_their_line() -> Result<()> {
+  for text_mode in [false, true] {
+    let (_directory, mut session) = session(text_mode)?;
+    session.app().start_hints(false)?;
+    let hints = session.app().hints.take().expect("hints");
+    let links = session.app().doc.links(PageId(0))?;
+    let text = session.app().doc.text(PageId(0))?;
+    for hint in &hints.items {
+      let index = links.iter().position(|link| link.target == hint.target);
+      let index = index.expect("the hint's link");
+      let rows = if text_mode {
+        let row = cell(&mut session, Hit::Link(PageId(0), index))?.1;
+        row..=row
+      } else {
+        // Rows the link's first glyph covers.
+        let first = links[index].first();
+        let glyph = (text.lines.iter().flat_map(|line| &line.glyphs))
+          .find(|glyph| {
+            let (x, y) = glyph.bounds.centre();
+            first.contains(x, y)
+          })
+          .expect("linked text");
+        let app = session.app();
+        let rect =
+          app.layout.project(PageId(0), glyph.bounds, app.reader.scroll);
+        (rect.y0 / 16.0) as u16..=(rect.y1 / 16.0) as u16
+      };
+      assert!(rows.contains(&hint.cell.1), "text={text_mode} link {index}");
+    }
+  }
+  Ok(())
+}
+
+/// Cut links label their shown part.
+#[test]
+fn hint_labels_follow_the_shown_part() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  let app = session.app();
+  let link = app.doc.links(PageId(0))?[0].first();
+  let top = app.layout.project(PageId(0), link, 0.0);
+  // 40 px above the top edge.
+  app.reader.scroll = top.y0 + 40.0;
+  app.start_hints(false)?;
+  let hints = app.hints.take().expect("hints");
+  let shown = (top.y1 - top.y0 - 40.0) / 2.0;
+  assert_eq!(hints.items[0].cell.1, (shown / 16.0) as u16);
+  assert!(shown >= 16.0, "the whole box's middle is above");
+  Ok(())
+}
+
+/// U27: labels keep off links and labels.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn hint_labels_keep_off_neighbours() -> Result<()> {
+  let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  // (text view, page, columns)
+  let cases = [
+    (false, 2, 121),
+    (false, 11, 121),
+    (true, 2, 121),
+    (true, 11, 121),
+    (false, 2, 60),
+  ];
+  for (text_mode, page, columns) in cases {
+    let mut session = Session::new(None);
+    let screen = vpdf::layout::Screen { columns, ..screen() };
+    session.open(&root.join("paper.pdf"), true, screen)?;
+    let app = session.app();
+    app.text_mode = text_mode;
+    app.command(&page.to_string())?;
+    app.draw(&mut Vec::new())?;
+    app.start_hints(false)?;
+    let hints = app.hints.take().expect("hints");
+    let target = |app: &mut vpdf::app::App, column, row| -> Result<_> {
+      let hit = app.hovered(Region::Page, column, row, None)?;
+      let Hit::Link(on, index) = hit else { return Ok(None) };
+      Ok(Some(app.doc.links(on)?[index].target.clone()))
+    };
+    let mut taken = std::collections::HashSet::new();
+    for hint in &hints.items {
+      let at = format!("text={text_mode} p. {page} {columns} {}", hint.label);
+      let (column, row) = hint.cell;
+      let on_line = if text_mode {
+        // Its first glyph may follow.
+        let own = Some(hint.target.clone());
+        target(app, column, row)? == own || target(app, column + 1, row)? == own
+      } else {
+        let page = app.navigation_position().page;
+        let scroll = app.reader.scroll;
+        app.doc.links(page)?.iter().any(|link| {
+          let rect = app.layout.project(page, link.first(), scroll);
+          let rows = (rect.y0 / 16.0) as u16..=(rect.y1 / 16.0) as u16;
+          link.target == hint.target && rows.contains(&row)
+        })
+      };
+      assert!(on_line, "{at}: on its line");
+      let width = u16::try_from(hint.label.len())?;
+      for column in hint.column..hint.column + width {
+        assert!(taken.insert((column, row)), "{at}: labels overlap");
+        let under = target(app, column, row)?;
+        assert!(under.is_none_or(|under| under == hint.target), "{at}");
+      }
+    }
+  }
+  Ok(())
+}
+
 /// Hint labels follow the pointer; clicks act.
 #[test]
 fn hint_labels_follow_the_pointer() -> Result<()> {
@@ -1985,6 +2116,7 @@ fn typing_drops_picked_labels() -> Result<()> {
     label: label.into(),
     target: Target::Page(PageId(1)),
     cell: (10, 2),
+    column: 10 - u16::try_from(label.len()).expect("short"),
   };
   let app = session.app();
   app.hints = Some(Hints {

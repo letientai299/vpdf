@@ -46,7 +46,9 @@ case $set_name in
       ocr https://www.w3.org/WAI/WCAG22/working-examples/pdf-ocr/ocr-example.pdf \
       7a161be656c7e82986a1959890eadbdcd0876e15e01b28fd00900190de15eed5 \
       scan https://web.mit.edu/sts.035/www/PDFs/edvac.pdf \
-      cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32
+      cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32 \
+      review https://egusphere.copernicus.org/preprints/2025/egusphere-2025-2374/egusphere-2025-2374-RC1-supplement.pdf \
+      0bbddcd853aebe2e02cd786d43e30a568f2f7eb9c1a6393c6990a82dce1f76a3
     ;;
   huge)
     # 5,364-page manual; 3,329-page manual; layered vector maps; JPEG 2000

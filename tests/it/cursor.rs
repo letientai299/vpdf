@@ -193,6 +193,7 @@ fn cursor_hint_labels_keep_owner() -> Result<()> {
       label: "ii".into(),
       target: Target::Page(PageId(1)),
       cell: (1, 1),
+      column: 0,
     }],
     typed: String::new(),
     copy: false,

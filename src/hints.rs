@@ -15,8 +15,10 @@ const ALPHABET: &[u8] = b"asdfjklghqweruiopzxcvnm";
 pub struct Hint {
   pub label: String,
   pub target: Target,
-  /// Top-left cell, zero-based.
+  /// The link's first shown cell, zero-based.
   pub cell: (u16, u16),
+  /// The label's first column.
+  pub column: u16,
 }
 
 /// Link labels on screen; typing one follows its link.
@@ -48,9 +50,50 @@ pub fn labels(count: usize) -> Vec<String> {
     .collect()
 }
 
-fn label_column(hint: &Hint, left: u16) -> u16 {
-  let width = u16::try_from(hint.label.len()).unwrap_or(u16::MAX);
-  hint.cell.0.saturating_sub(width).max(left)
+fn width(label: &str) -> u16 {
+  u16::try_from(label.len()).unwrap_or(u16::MAX)
+}
+
+/// Shown links: first cell, last column.
+type Spot = ((u16, u16), u16);
+
+/// Cells a label may take, by row.
+struct Room<'a> {
+  spots: &'a [Spot],
+  /// Placed labels: row, first and last column.
+  placed: Vec<(u16, u16, u16)>,
+  left: u16,
+  right: u16,
+}
+
+impl Room<'_> {
+  /// Left of link `index`, else nearby.
+  fn place(&mut self, index: usize, width: u16) -> u16 {
+    let ((column, row), _) = self.spots[index];
+    let fit =
+      |from: u16| from.min(self.right.saturating_sub(width)).max(self.left);
+    let free = |from: u16| {
+      let to = from + width.saturating_sub(1);
+      let links = self.spots.iter().enumerate().any(|(other, spot)| {
+        let ((start, on), end) = *spot;
+        other != index && on == row && start <= to && end >= from
+      });
+      let labels = (self.placed.iter())
+        .any(|&(on, start, end)| on == row && start <= to && end >= from);
+      !links && !labels
+    };
+    let left = column.saturating_sub(width);
+    // Nearest free span: left, over, then outward.
+    let right = (column + 1..self.right).chain((0..left).rev());
+    let from = [left, column]
+      .into_iter()
+      .chain(right)
+      .map(fit)
+      .find(|&from| free(from))
+      .unwrap_or_else(|| fit(column));
+    self.placed.push((row, from, from + width.saturating_sub(1)));
+    from
+  }
 }
 
 impl App {
@@ -65,33 +108,38 @@ impl App {
     };
     for page in pages {
       for link in self.doc.links(PageId(page))?.iter() {
-        if let Some(cell) = self.link_spot(PageId(page), link)? {
-          found.push((cell, link.target.clone()));
+        if let Some(spot) = self.link_spot(PageId(page), link)? {
+          found.push((spot, link.target.clone()));
         }
       }
     }
     anyhow::ensure!(!found.is_empty(), "No links in view");
-    found.sort_by_key(|((column, row), _)| (*row, *column));
-    let items = labels(found.len())
-      .into_iter()
-      .zip(found)
-      .map(|(label, (cell, target))| Hint { label, target, cell })
+    found.sort_by_key(|(((column, row), _), _)| (*row, *column));
+    let spots: Vec<_> = found.iter().map(|(spot, _)| *spot).collect();
+    let (left, right) = (self.left, self.screen.columns);
+    let mut room = Room { spots: &spots, placed: Vec::new(), left, right };
+    let items = (labels(found.len()).into_iter().zip(found).enumerate())
+      .map(|(index, (label, (spot, target)))| {
+        let column = room.place(index, width(&label));
+        Hint { label, target, cell: spot.0, column }
+      })
       .collect();
     let typed = String::new();
     self.hints = Some(Hints { items, typed, copy, selected: None });
     Ok(())
   }
 
-  /// The first shown part's cell.
+  /// The first shown part's cells.
   fn link_spot(
     &mut self,
     page: PageId,
     link: &crate::document::Link,
-  ) -> Result<Option<(u16, u16)>> {
+  ) -> Result<Option<Spot>> {
     for bounds in link.boxes() {
-      if let Some(cell) = self.link_cell(page, bounds)? {
-        return Ok(Some(cell));
-      }
+      let Some(cell) = self.link_cell(page, bounds)? else { continue };
+      let edge = Bounds { x0: bounds.x1, ..bounds };
+      let end = self.link_cell(page, edge)?.map_or(cell.0, |end| end.0);
+      return Ok(Some((cell, end.max(cell.0))));
     }
     Ok(None)
   }
@@ -101,8 +149,10 @@ impl App {
     page: PageId,
     bounds: Bounds,
   ) -> Result<Option<(u16, u16)>> {
+    // Padded boxes reach the line above.
+    let middle = f32::midpoint(bounds.y0, bounds.y1);
     if self.text_mode {
-      let position = self.doc.text(page)?.nearest(page, bounds.x0, bounds.y0);
+      let position = self.doc.text(page)?.nearest(page, bounds.x0, middle);
       return self.text_cell(position);
     }
     let rect = self.layout.project(page, bounds, self.reader.scroll);
@@ -115,7 +165,11 @@ impl App {
       return Ok(None);
     }
     let column = rect.x0.max(0.0) as u32 / u32::from(screen.cell_width);
-    let row = rect.y0.max(0.0) as u32 / u32::from(screen.cell_height);
+    // The shown part's middle.
+    let (top, bottom) = (rect.y0.max(0.0), rect.y1.min(screen.height()));
+    let middle =
+      f32::midpoint(top, bottom).min((screen.height() - 1.0).max(0.0));
+    let row = middle.max(0.0) as u32 / u32::from(screen.cell_height);
     Ok(Some((self.left + u16::try_from(column)?, u16::try_from(row)?)))
   }
 
@@ -178,7 +232,7 @@ impl App {
     let mut items = Items::default();
     let Some(hints) = &self.hints else { return items };
     for (index, hint) in hints.shown() {
-      items.push(hint.cells(self.left), index);
+      items.push(hint.cells(), index);
     }
     items
   }
@@ -194,7 +248,7 @@ impl App {
       } else {
         (theme::HINT_TYPED, theme::HINT, theme::HINT_FILL)
       };
-      let cells = hint.cells(self.left);
+      let cells = hint.cells();
       write!(
         out,
         "{}{typed}{}{rest}{}\x1b[0m",
@@ -226,14 +280,9 @@ impl Hints {
 
 impl Hint {
   /// The label's pane cells.
-  fn cells(&self, left: u16) -> Rect {
-    let columns = u16::try_from(self.label.len()).unwrap_or(u16::MAX);
-    Rect {
-      column: label_column(self, left),
-      row: self.cell.1,
-      columns,
-      rows: 1,
-    }
+  fn cells(&self) -> Rect {
+    let columns = width(&self.label);
+    Rect { column: self.column, row: self.cell.1, columns, rows: 1 }
   }
 }
 
@@ -242,22 +291,43 @@ mod tests {
   use super::*;
 
   #[test]
-  fn labels_stay_left_inside_pane() {
-    for (link, left, label, expected) in [
-      (12, 0, "a", 11),
-      (12, 0, "as", 10),
-      (12, 8, "as", 10),
-      (9, 8, "as", 8),
-      (8, 8, "as", 8),
-      (0, 0, "as", 0),
-    ] {
-      let hint = Hint {
-        label: label.into(),
-        target: Target::Page(PageId(0)),
-        cell: (link, 2),
-      };
-      assert_eq!(label_column(&hint, left), expected, "{link} {left} {label}");
+  fn labels_take_free_cells() {
+    // `[35, 2, 5]`, then `[1,2,5]`.
+    let spots = [
+      ((10, 3), 11),
+      ((14, 3), 14),
+      ((17, 3), 17),
+      ((10, 4), 10),
+      ((12, 4), 12),
+      ((14, 4), 14),
+      ((10, 5), 10),
+      ((11, 5), 11),
+      ((12, 5), 12),
+    ];
+    // (link, width) in order -> label columns
+    let cases = [
+      (&[(0, 1), (1, 1), (2, 1)][..], &[9, 13, 16][..]),
+      (&[(0, 2), (1, 2), (2, 2)][..], &[8, 12, 15][..]),
+      // Crowded labels sit over their link.
+      (&[(3, 2), (4, 2), (5, 2)][..], &[8, 12, 14][..]),
+      // Adjacent links: labels move right.
+      (&[(6, 2), (7, 2), (8, 2)][..], &[8, 13, 15][..]),
+    ];
+    for (placements, want) in cases {
+      let mut room =
+        Room { spots: &spots, placed: Vec::new(), left: 8, right: 60 };
+      let got: Vec<_> = placements
+        .iter()
+        .map(|&(link, width)| room.place(link, width))
+        .collect();
+      assert_eq!(got, want, "{placements:?}");
     }
+    // The pane's edges hold labels.
+    let edges = [((8, 5), 20), ((19, 6), 19)];
+    let mut room =
+      Room { spots: &edges, placed: Vec::new(), left: 8, right: 20 };
+    assert_eq!(room.place(0, 2), 8, "left edge");
+    assert_eq!(room.place(1, 2), 17, "left of the link");
   }
 
   #[test]

@@ -157,10 +157,9 @@ fn seeded_text_finds_links_again() -> Result<()> {
 }
 
 #[test]
-#[ignore = "requires tmp/public-annotations"]
+#[ignore = "requires verified public PDF corpus"]
 fn real_preprint_addresses_are_links() -> Result<()> {
-  let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-    .join("tmp/public-annotations/urban-co2-review.pdf");
+  let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("review.pdf");
   let mut app = App::with_screen(&path, "", false, screen())?;
   // page, target, anchors
   let cases: [(usize, &str, &[&str]); 3] = [

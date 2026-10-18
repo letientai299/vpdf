@@ -68,6 +68,7 @@ fn hints(app: &mut App) {
       label: "aa".into(),
       target: Target::Page(PageId(1)),
       cell: (10, 5),
+      column: 8,
     }],
     typed: String::new(),
     copy: false,

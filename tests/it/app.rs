@@ -275,6 +275,7 @@ fn hint_labels_keep_their_origin() -> Result<()> {
           label: "as".into(),
           target: Target::Page(PageId(0)),
           cell: (23, 3),
+          column: 21,
         }],
         typed: typed.into(),
         copy: false,
