@@ -173,7 +173,17 @@ fn link_hover() -> Result<()> {
     anyhow::ensure!(app.hover_link().is_some(), "a hovered citation");
     overlay_case(&mut app, &format!("link tint text={text_mode}"))?;
   }
-  Ok(())
+  // A web address wrapped over two lines.
+  let mut app = App::with_screen(&corpus("book.pdf")?, "", false, PANE)?;
+  app.command("4")?;
+  let page = PageId(3);
+  let index = app.doc.links(page)?.iter().position(|link| {
+    matches!(&link.target, vpdf::document::Target::Uri(uri)
+      if uri.contains("greenteapress"))
+  });
+  let index = index.ok_or_else(|| anyhow::anyhow!("an address on p. 4"))?;
+  app.point(on(app.id, page, index));
+  overlay_case(&mut app, "link tint address")
 }
 
 /// An open context menu each frame.
@@ -686,8 +696,8 @@ fn preview_scene(text: bool) -> Result<App> {
     .expect("citation");
   let position = app.doc.text(PageId(1))?.nearest(
     PageId(1),
-    f32::midpoint(link.bounds.x0, link.bounds.x1),
-    f32::midpoint(link.bounds.y0, link.bounds.y1),
+    f32::midpoint(link.first().x0, link.first().x1),
+    f32::midpoint(link.first().y0, link.first().y1),
   );
   app.go_to(position, true)?;
   app.preview_link()?;

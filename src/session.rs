@@ -3219,7 +3219,7 @@ mod tests {
     let tab = session.tab();
     let index = 1 - tab.focus;
     let app = &mut tab.panes[index];
-    let bounds = app.doc.links(PageId(0))?[0].bounds;
+    let bounds = app.doc.links(PageId(0))?[0].first();
     let rect = app.layout.project(PageId(0), bounds, app.reader.scroll);
     let (x, y) = rect.centre();
     let column = app.at.column + app.left + (x / 8.0) as u16;

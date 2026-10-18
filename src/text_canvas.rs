@@ -160,8 +160,9 @@ impl App {
     let (text, view) = self.next_text_view()?;
     self.text_top = view.top;
     self.text_drawn = Some(view.top);
-    let hovered = self.hover_segments().filter(|(on, _)| *on == page);
-    let hovered = hovered.map_or_default(|(_, segments)| segments);
+    let hovered: Vec<_> = (self.hover_segments().into_iter())
+      .filter_map(|(on, bounds)| (on == page).then_some(bounds))
+      .collect();
     let lines = text.lines.iter().skip(view.top.line).take(view.height);
     for (row, line) in lines.enumerate() {
       write!(out, "{}", self.at.goto(row, self.left))?;

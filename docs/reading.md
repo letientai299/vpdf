@@ -57,7 +57,9 @@ open it without moving the reading position. It opens in the pane under the
 pointer, stays while the pointer travels from the link into it, and closes when
 the pointer leaves both or the link leaves the view. A left click inside any
 link preview follows it, a middle click shows its target in a split, and the
-status line keeps its destination while the pointer is over it. The status line
+status line keeps its destination while the pointer is over it. A web address
+wrapped onto the next line, column, or page highlights whole, and link lists
+show a line or column wrap once. The status line
 names what the pointer rests on: a link's destination, the reference a citation
 cites, a note, a clipped row, or a thumbnail's page and the section at its top.
 Once the pointer moves, that detail covers an older message and takes room from

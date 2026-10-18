@@ -537,7 +537,7 @@ impl App {
     let (page, index) = self.peek.as_ref()?.hovered()?;
     let link = self.link(page, index).ok().flatten()?;
     let pdf = !self.text_mode;
-    pdf.then(|| self.layout.project(page, link.bounds, self.reader.scroll))
+    pdf.then(|| self.layout.project(page, link.first(), self.reader.scroll))
   }
 
   /// Sits a note popup beside its icon.

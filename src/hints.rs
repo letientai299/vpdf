@@ -65,7 +65,7 @@ impl App {
     };
     for page in pages {
       for link in self.doc.links(PageId(page))?.iter() {
-        if let Some(cell) = self.link_cell(PageId(page), link.bounds)? {
+        if let Some(cell) = self.link_spot(PageId(page), link)? {
           found.push((cell, link.target.clone()));
         }
       }
@@ -80,6 +80,20 @@ impl App {
     let typed = String::new();
     self.hints = Some(Hints { items, typed, copy, selected: None });
     Ok(())
+  }
+
+  /// The first shown part's cell.
+  fn link_spot(
+    &mut self,
+    page: PageId,
+    link: &crate::document::Link,
+  ) -> Result<Option<(u16, u16)>> {
+    for bounds in link.boxes() {
+      if let Some(cell) = self.link_cell(page, bounds)? {
+        return Ok(Some(cell));
+      }
+    }
+    Ok(None)
   }
 
   fn link_cell(

@@ -45,9 +45,8 @@ fn links(app: &mut App) -> Result<Vec<(String, String)>> {
   let page = PageId(0);
   let text = app.doc.text(page)?;
   let links = app.doc.links(page)?;
-  let found = links
-    .iter()
-    .map(|link| (address(&link.target), text.in_areas(page, &[link.bounds]).1));
+  let found =
+    links.iter().map(|link| (address(&link.target), link.anchor(&text, page)));
   Ok(found.collect())
 }
 
@@ -85,10 +84,7 @@ fn printed_addresses_are_links() -> Result<()> {
         "a third row of equal width.",
       ],
       "",
-      &[
-        ("https://a.org/very/long/path/x", "https://a.org/very/long/"),
-        ("https://a.org/very/long/path/x", "path/x"),
-      ],
+      &[("https://a.org/very/long/path/x", "https://a.org/very/long/path/x")],
     ),
     (
       &["Visit https://b.org/ now", "or www.c.org"],
@@ -177,7 +173,7 @@ fn real_preprint_addresses_are_links() -> Result<()> {
     (
       20,
       "https://doi.org/10.5194/acp-16-5283-2016",
-      &["https://doi.org/10.5194/acp-16-", "5283-2016"],
+      &["https://doi.org/10.5194/acp-16-5283-2016"],
     ),
     (
       0,
@@ -192,7 +188,7 @@ fn real_preprint_addresses_are_links() -> Result<()> {
     let found: Vec<_> = links
       .iter()
       .filter(|link| address(&link.target) == target)
-      .map(|link| text.in_areas(page, &[link.bounds]).1)
+      .map(|link| link.anchor(&text, page))
       .collect();
     assert_eq!(found, anchors, "{target}");
   }
@@ -228,5 +224,29 @@ fn paper_author_addresses_are_links() -> Result<()> {
       "mailto:illia.polosukhin@gmail.com",
     ]
   );
+  Ok(())
+}
+
+/// Page wraps skip headers and whole mentions.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn real_page_wraps_tint_the_continuation() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen())?;
+  // (page, address end) -> tinted next-page tops
+  let cases: [(usize, &str, &[f32]); 2] =
+    [(122, "interlock.py", &[88.0]), (58, "polygon.py", &[])];
+  for (page, end, want) in cases {
+    let page = PageId(page);
+    let links = app.doc.links(page)?;
+    let index =
+      links.iter().position(|link| address(&link.target).ends_with(end));
+    app.hover = Hit::Link(page, index.expect("the address"));
+    let next: Vec<_> = (app.hover_segments().into_iter())
+      .filter(|(on, _)| on.0 == page.0 + 1)
+      .map(|(_, bounds)| bounds.y0.round())
+      .collect();
+    assert_eq!(next, want, "{end}");
+  }
   Ok(())
 }

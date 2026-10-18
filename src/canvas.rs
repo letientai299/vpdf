@@ -174,12 +174,15 @@ impl App {
     if let Some(position) = self.click_mark() {
       self.glyph_block(position, screen, out)?;
     }
-    let tinted = self.hover_segments().or_else(|| self.hover_icon());
-    if let Some((page, segments)) = tinted {
-      for bounds in segments {
-        let rect = self.layout.project(page, bounds, self.reader.scroll);
-        self.tint(rect, crate::theme::LINK, screen, out)?;
-      }
+    let mut tinted = self.hover_segments();
+    if tinted.is_empty()
+      && let Some((page, areas)) = self.hover_icon()
+    {
+      tinted.extend(areas.into_iter().map(|bounds| (page, bounds)));
+    }
+    for (page, bounds) in tinted {
+      let rect = self.layout.project(page, bounds, self.reader.scroll);
+      self.tint(rect, crate::theme::LINK, screen, out)?;
     }
     if !self.search.hidden {
       let visible = self.layout.visible(self.reader.scroll);

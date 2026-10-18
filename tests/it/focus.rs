@@ -540,8 +540,8 @@ fn peek_prompt_retains_destination_and_owner() -> Result<()> {
     .unwrap();
   let position = app.doc.text(PageId(1))?.nearest(
     PageId(1),
-    f32::midpoint(link.bounds.x0, link.bounds.x1),
-    f32::midpoint(link.bounds.y0, link.bounds.y1),
+    f32::midpoint(link.first().x0, link.first().x1),
+    f32::midpoint(link.first().y0, link.first().y1),
   );
   app.go_to(position, true)?;
   app.preview_link()?;

@@ -32,8 +32,8 @@ fn open(text: bool) -> Result<App> {
     .unwrap();
   let position = app.doc.text(PageId(1))?.nearest(
     PageId(1),
-    f32::midpoint(link.bounds.x0, link.bounds.x1),
-    f32::midpoint(link.bounds.y0, link.bounds.y1),
+    f32::midpoint(link.first().x0, link.first().x1),
+    f32::midpoint(link.first().y0, link.first().y1),
   );
   app.go_to(position, true)?;
   Ok(app)
@@ -290,7 +290,7 @@ fn text_previews_load_in_steps() -> Result<()> {
       if page.0 < 5)
   });
   let link = early.cloned().expect("a link to an early page");
-  let (x, y) = link.bounds.centre();
+  let (x, y) = link.first().centre();
   let position = app.doc.text(PageId(1))?.nearest(PageId(1), x, y);
   app.go_to(position, true)?;
   key(&mut app, b"K9999j")?;

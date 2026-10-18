@@ -504,7 +504,7 @@ impl App {
     y: f32,
   ) -> Result<Option<usize>> {
     let links = self.doc.links(page)?;
-    Ok(links.iter().position(|link| link.bounds.contains(x, y)))
+    Ok(links.iter().position(|link| link.contains(x, y)))
   }
 
   /// The glyph a page target lands on.

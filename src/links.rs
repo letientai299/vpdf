@@ -69,10 +69,18 @@ impl App {
     Some((page, links.get(index)?.clone()))
   }
 
-  /// The hovered link's page and wrapped segments.
-  pub fn hover_segments(&mut self) -> Option<(PageId, Vec<Bounds>)> {
-    let (page, links, index) = self.hovered_links()?;
-    Some((page, segments(&links, index)))
+  /// The hovered link's boxes, across pages.
+  pub fn hover_segments(&mut self) -> Vec<(PageId, Bounds)> {
+    let Some((page, links, index)) = self.hovered_links() else {
+      return Vec::new();
+    };
+    let Some(link) = links.get(index) else { return Vec::new() };
+    let mut boxes: Vec<_> = link.boxes().map(|b| (page, b)).collect();
+    // The text view shows one page.
+    if !self.text_mode {
+      boxes.extend(crate::wraps::page_parts(&mut self.doc, page, link));
+    }
+    boxes
   }
 
   /// The hovered link's destination; citations show the reference.
@@ -118,7 +126,8 @@ impl App {
     // Previews are advisory; failures show nothing.
     let Ok(text) = self.doc.text(page) else { return false };
     // Textless links have no anchor.
-    let Some(source) = text.in_areas(page, &[link.bounds]).0 else {
+    let boxes: Vec<_> = link.boxes().collect();
+    let Some(source) = text.in_areas(page, &boxes).0 else {
       return false;
     };
     if self.show_preview(link.target, source).is_err() {
@@ -252,8 +261,7 @@ impl App {
     link: &Link,
     text: Option<&Text>,
   ) -> (String, String) {
-    let anchor = text
-      .map_or_else(String::new, |text| text.in_areas(page, &[link.bounds]).1);
+    let anchor = text.map_or_else(String::new, |text| link.anchor(text, page));
     let context = match link.target {
       Target::Page(page) | Target::Point { page, .. } => self
         .doc
@@ -267,35 +275,6 @@ impl App {
     }
     (anchor, context)
   }
-}
-
-/// A link's rectangles across wrapped lines.
-fn segments(links: &[Link], index: usize) -> Vec<Bounds> {
-  let Some(link) = links.get(index) else { return Vec::new() };
-  let mut segments = vec![link.bounds];
-  // Repeated citations would look wrapped.
-  if !matches!(link.target, Target::Uri(_)) {
-    return segments;
-  }
-  let mut rest: Vec<_> = (links.iter().enumerate())
-    .filter(|(at, other)| *at != index && other.target == link.target)
-    .map(|(_, other)| other.bounds)
-    .collect();
-  while let Some(at) =
-    rest.iter().position(|b| segments.iter().any(|segment| wraps(*segment, *b)))
-  {
-    segments.push(rest.swap_remove(at));
-  }
-  segments
-}
-
-/// Whether one rectangle continues the other's line.
-fn wraps(a: Bounds, b: Bounds) -> bool {
-  let (upper, lower) = if a.y0 <= b.y0 { (a, b) } else { (b, a) };
-  let height = upper.height().max(lower.height());
-  let below = lower.y0 >= upper.y0 + height / 2.0;
-  // Wrapped text restarts at or left.
-  below && lower.y0 - upper.y1 < height && lower.x0 <= upper.x0 + 1.0
 }
 
 /// Whether `anchor` cites what `context` starts: a number, a bracket,
@@ -508,7 +487,7 @@ mod tests {
       ("", "", "Page iv"),
     ] {
       let target = Target::Point { page: PageId(0), x: 12.0, y: 34.0 };
-      let link = Link { bounds: Bounds::default(), target };
+      let link = Link::new(Bounds::default(), target);
       let row = link_row(link, anchor.into(), context.into(), pages);
       assert_eq!(row.label, expected);
       assert!(matches!(
@@ -520,8 +499,7 @@ mod tests {
     for (anchor, expected) in
       [("Read more", "Read more"), ("", uri), (uri, uri)]
     {
-      let link =
-        Link { bounds: Bounds::default(), target: Target::Uri(uri.into()) };
+      let link = Link::new(Bounds::default(), Target::Uri(uri.into()));
       let row = link_row(link, anchor.into(), String::new(), pages);
       assert_eq!(row.label, expected);
       assert_eq!(row.detail, "");
@@ -725,7 +703,7 @@ mod tests {
     let text = app.doc.text(PageId(2))?;
     let first = app.doc.links(PageId(2))?.iter().position(|link| {
       let cites = matches!(link.target, Target::Point { page: PageId(9), .. });
-      cites && text.in_areas(PageId(2), &[link.bounds]).1 == "1"
+      cites && link.anchor(&text, PageId(2)) == "1"
     });
     let cases = [
       (1, 0, "→ p. 11 · [13] Sepp Hochreiter and Jürgen Schmidhuber."),
@@ -745,40 +723,5 @@ mod tests {
       Some("http://arxiv.org/abs/1610.02357\n")
     );
     Ok(())
-  }
-
-  /// Links, the hovered index, segment tops.
-  type Case<'a> = (&'a [Link], usize, &'a [f32]);
-
-  #[test]
-  fn segments_join_wrapped_addresses() {
-    let uri = Target::Uri("https://example.com/".into());
-    let cite = Target::Page(PageId(3));
-    let link = |target: &Target, x0: f32, y0: f32| Link {
-      bounds: Bounds { x0, y0, x1: x0 + 100.0, y1: y0 + 12.0 },
-      target: target.clone(),
-    };
-    let wrapped = [
-      link(&uri, 200.0, 100.0),
-      link(&uri, 50.0, 114.0),
-      link(&uri, 50.0, 128.0),
-    ];
-    // (links, hovered) -> segment tops
-    let cases: [Case; 7] = [
-      (&wrapped, 0, &[100.0, 114.0, 128.0]),
-      (&wrapped, 2, &[100.0, 114.0, 128.0]),
-      (&wrapped[..2], 1, &[100.0, 114.0]),
-      // Starts right of the line above.
-      (&[link(&uri, 50.0, 100.0), link(&uri, 200.0, 114.0)], 0, &[100.0]),
-      (&[link(&uri, 200.0, 100.0), link(&uri, 50.0, 140.0)], 0, &[100.0]),
-      (&[link(&cite, 200.0, 100.0), link(&cite, 50.0, 114.0)], 0, &[100.0]),
-      (&[link(&uri, 50.0, 100.0), link(&cite, 50.0, 114.0)], 0, &[100.0]),
-    ];
-    for (step, (links, index, want)) in cases.into_iter().enumerate() {
-      let mut tops: Vec<_> =
-        segments(links, index).iter().map(|b| b.y0).collect();
-      tops.sort_by(f32::total_cmp);
-      assert_eq!(tops, want, "case {step}");
-    }
   }
 }

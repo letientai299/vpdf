@@ -12,8 +12,7 @@ use crate::text::{Bounds, Text};
 use std::ops::Range;
 use std::ops::RangeInclusive;
 
-/// Printed addresses in `text` that no link in `taken` covers: one link
-/// per line an address spans.
+/// Printed addresses no link in `taken` covers.
 pub fn find(text: &Text, taken: &[Link]) -> Vec<Link> {
   let chars: Vec<Vec<char>> = text
     .lines
@@ -27,14 +26,16 @@ pub fn find(text: &Text, taken: &[Link]) -> Vec<Link> {
     });
     let covered = glyphs.clone().flatten().any(|bounds| {
       let (x, y) = bounds.centre();
-      taken.iter().any(|link| link.bounds.contains(x, y))
+      taken.iter().any(|link| link.contains(x, y))
     });
     if covered {
       continue;
     }
-    links.extend(glyphs.filter_map(|piece| piece.reduce(Bounds::union)).map(
-      |bounds| Link { bounds, target: Target::Uri(found.target.clone()) },
-    ));
+    let mut boxes = glyphs.filter_map(|piece| piece.reduce(Bounds::union));
+    let Some(first) = boxes.next() else { continue };
+    let mut link = Link::new(first, Target::Uri(found.target));
+    boxes.for_each(|bounds| link.push(bounds));
+    links.push(link);
   }
   links
 }

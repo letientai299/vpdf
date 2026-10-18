@@ -22,8 +22,65 @@ pub struct PageInfo {
 
 #[derive(Clone, Debug)]
 pub struct Link {
-  pub bounds: Bounds,
+  first: Bounds,
+  /// Lines or columns it wraps onto.
+  rest: Vec<Bounds>,
   pub target: Target,
+}
+
+impl Link {
+  pub fn new(first: Bounds, target: Target) -> Self {
+    Self { first, rest: Vec::new(), target }
+  }
+
+  pub fn first(&self) -> Bounds {
+    self.first
+  }
+
+  pub fn last(&self) -> Bounds {
+    self.rest.last().copied().unwrap_or(self.first)
+  }
+
+  /// Every rectangle, in reading order.
+  pub fn boxes(&self) -> impl Iterator<Item = Bounds> + '_ {
+    std::iter::once(self.first).chain(self.rest.iter().copied())
+  }
+
+  pub fn contains(&self, x: f32, y: f32) -> bool {
+    self.boxes().any(|bounds| bounds.contains(x, y))
+  }
+
+  /// Its text; wrapped parts join unspaced.
+  pub fn anchor(&self, text: &Text, page: PageId) -> String {
+    self.boxes().map(|bounds| text.in_areas(page, &[bounds]).1).collect()
+  }
+
+  /// Takes `part`'s boxes after its own.
+  pub(crate) fn append(&mut self, part: Self) {
+    self.rest.push(part.first);
+    self.rest.extend(part.rest);
+  }
+
+  /// Takes `part`'s boxes before its own.
+  pub(crate) fn prepend(&mut self, part: Self) {
+    let own = std::mem::replace(&mut self.rest, part.rest);
+    self.rest.push(std::mem::replace(&mut self.first, part.first));
+    self.rest.extend(own);
+  }
+
+  /// Adds a box after its own.
+  pub(crate) fn push(&mut self, bounds: Bounds) {
+    self.rest.push(bounds);
+  }
+
+  /// Heap bytes beyond the struct.
+  pub(crate) fn weight(&self) -> usize {
+    let uri = match &self.target {
+      Target::Uri(uri) => uri.capacity(),
+      Target::Page(_) | Target::Point { .. } => 0,
+    };
+    self.rest.capacity() * size_of::<Bounds>() + uri
+  }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -274,23 +331,20 @@ impl Document {
       .native
       .load_page(page.0 as i32)?
       .links()?
-      .map(|link| Link {
-        bounds: link.bounds.into(),
-        target: link
-          .dest
-          .map_or_else(|| Target::Uri(uri(&link.uri)), Target::from),
+      .map(|link| {
+        let target =
+          link.dest.map_or_else(|| Target::Uri(uri(&link.uri)), Target::from);
+        Link::new(link.bounds.into(), target)
       })
       .collect();
     // Unreadable text must not hide annotation links.
     if let Ok(text) = self.text(page) {
+      links = crate::wraps::join(links, &text, page);
       links.extend(crate::autolink::find(&text, &links));
     }
     let links = Arc::new(links);
-    let uris = links.iter().map(|link| match &link.target {
-      Target::Uri(uri) => uri.capacity(),
-      Target::Page(_) | Target::Point { .. } => 0,
-    });
-    let weight = links.capacity() * size_of::<Link>() + uris.sum::<usize>();
+    let weight = links.capacity() * size_of::<Link>()
+      + links.iter().map(Link::weight).sum::<usize>();
     self.links.insert(page, Arc::clone(&links), weight.max(1));
     Ok(links)
   }

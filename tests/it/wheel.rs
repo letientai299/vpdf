@@ -365,8 +365,8 @@ fn linked(path: &Path, text: bool) -> Result<Session> {
   let link = app.doc.links(PageId(0))?.first().cloned().expect("a link");
   let position = app.doc.text(PageId(0))?.nearest(
     PageId(0),
-    f32::midpoint(link.bounds.x0, link.bounds.x1),
-    f32::midpoint(link.bounds.y0, link.bounds.y1),
+    f32::midpoint(link.first().x0, link.first().x1),
+    f32::midpoint(link.first().y0, link.first().y1),
   );
   app.go_to(position, true)?;
   app.preview_link()?;

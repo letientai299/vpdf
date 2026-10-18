@@ -77,3 +77,4 @@ mod theme;
 pub mod tiles;
 pub mod trace;
 pub mod watch;
+mod wraps;

@@ -273,26 +273,97 @@ fn hover_details_show_over_passed_messages() -> Result<()> {
   Ok(())
 }
 
+/// The address `parts_pdf` links.
+const ADDRESS: &str = "https://ex.org/long/path";
+
+/// A link part: page, x, baseline, text.
+type Part<'a> = (usize, u16, u16, &'a str);
+
+/// Two pages of `parts` linked to `ADDRESS`.
+fn parts_pdf(path: &Path, parts: &[Part]) -> Result<()> {
+  let uri = format!("/A << /S /URI /URI ({ADDRESS}) >>");
+  let on = |page| parts.iter().filter(move |part| part.0 == page);
+  let content = |page| {
+    let mut content = String::new();
+    for (_, x, y, text) in on(page) {
+      write!(content, "BT /F1 10 Tf {x} {y} Td ({text}) Tj ET ")?;
+    }
+    let length = content.len();
+    Ok::<_, anyhow::Error>(format!(
+      "<< /Length {length} >>\nstream\n{content}\nendstream"
+    ))
+  };
+  let page = |page, contents: usize| {
+    let annots: Vec<_> = on(page)
+      .map(|(_, x, y, text)| {
+        let right = x + 6 * u16::try_from(text.len()).unwrap_or(u16::MAX);
+        format!(
+          "<< /Type /Annot /Subtype /Link /Rect [{} {} {right} {}] {uri} >>",
+          x - 1,
+          y - 3,
+          y + 10
+        )
+      })
+      .collect();
+    format!(
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] \
+       /Resources << /Font << /F1 4 0 R >> >> /Contents {contents} 0 R \
+       /Annots [{}] >>",
+      annots.join(" ")
+    )
+  };
+  let objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+    "<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>".to_owned(),
+    page(0, 5),
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+    content(0)?,
+    page(1, 7),
+    content(1)?,
+  ];
+  common::write_pdf(path, &objects, "")
+}
+
 /// Wrapped lines of one address tint together.
 #[test]
 fn wrapped_links_tint_whole() -> Result<()> {
-  let uri = "/A << /S /URI /URI (https://example.com/long) >>";
-  // Line 1's segment ends it; line 2's starts the next.
-  let rects = ["120 162 285 192", "15 138 150 160", LINES[2]];
+  // A line wrap, then a separate mention.
+  let parts: &[Part] = &[
+    (0, 160, 170, "https://ex.org/"),
+    (0, 20, 155, "long/path"),
+    (0, 20, 120, ADDRESS),
+  ];
   for text_mode in [false, true] {
-    let wrapped =
-      |path: &Path| lines_pdf(path, rects.into_iter().zip([uri; 3]));
-    let (_directory, mut session) = open(wrapped, text_mode)?;
+    let (_directory, mut session) =
+      open(|path| parts_pdf(path, parts), text_mode)?;
     let mut plain = Vec::new();
     session.app().draw(&mut plain)?;
+    // Hints and `gl` list the address once.
+    session.app().start_hints(false)?;
+    let hints = session.app().hints.take().map_or(0, |h| h.items.len());
+    assert_eq!(hints, 2, "text={text_mode}");
+    session.app().open_panel(vpdf::keys::PanelKind::Links)?;
+    let rows = &session.app().panel.as_ref().expect("gl").rows;
+    let labels: Vec<_> = rows.iter().map(|row| row.label.as_str()).collect();
+    assert_eq!(labels, [ADDRESS, ADDRESS], "text={text_mode}");
+    session.app().close_panel()?;
+    if !text_mode {
+      // Only the second line in view.
+      let line = session.app().doc.links(PageId(0))?[0].first();
+      session.app().reader.scroll = line.y1 * 968.0 / 300.0 + 1.0;
+      session.app().start_hints(false)?;
+      let hints = session.app().hints.take().map_or(0, |h| h.items.len());
+      assert_eq!(hints, 2, "the continuation keeps its hint");
+      session.app().reader.scroll = 0.0;
+    }
     // Tints drawn per segment.
     let mut each = std::collections::BTreeSet::new();
     // (hovered link) -> tinted segments
-    for (index, want) in [(0, 2), (1, 2), (2, 1)] {
+    for (index, want) in [(0, 2), (1, 1)] {
       let at = cell(&mut session, Hit::Link(PageId(0), index))?;
       mouse(&mut session, MouseEventKind::Moved, at)?;
-      let segments = session.app().hover_segments().map(|(_, s)| s.len());
-      assert_eq!(segments, Some(want), "text={text_mode} link {index}");
+      let segments = session.app().hover_segments().len();
+      assert_eq!(segments, want, "text={text_mode} link {index}");
       let mut tinted = Vec::new();
       session.app().draw(&mut tinted)?;
       let tinted = String::from_utf8_lossy(&tinted);
@@ -308,6 +379,58 @@ fn wrapped_links_tint_whole() -> Result<()> {
     }
     assert_eq!(each.len(), 1, "text={text_mode}: {each:?}");
     assert!(!each.contains(&0), "text={text_mode}: tinted");
+  }
+  Ok(())
+}
+
+/// Parts, hovered page, tinted (page, top).
+type WrapCase<'a> = (&'a [Part<'a>], usize, &'a [(usize, f32)]);
+
+/// Addresses wrapped onto the next page tint whole.
+#[test]
+fn links_wrap_across_pages() -> Result<()> {
+  let cases: [WrapCase; 4] = [
+    // A foot, then the next head.
+    (
+      &[(0, 20, 20, "https://ex.org/"), (1, 20, 180, "long/path")],
+      0,
+      &[(0, 170.0), (1, 10.0)],
+    ),
+    (
+      &[(0, 20, 20, "https://ex.org/"), (1, 20, 180, "long/path")],
+      1,
+      &[(1, 10.0), (0, 170.0)],
+    ),
+    // A linked header before the rest.
+    (
+      &[
+        (0, 20, 20, "https://ex.org/"),
+        (1, 20, 185, "Chapter 10"),
+        (1, 20, 160, "long/path"),
+      ],
+      0,
+      &[(0, 170.0), (1, 30.0)],
+    ),
+    // Whole mentions stay apart.
+    (&[(0, 20, 20, ADDRESS), (1, 20, 180, ADDRESS)], 0, &[(0, 170.0)]),
+  ];
+  for (step, (parts, page, want)) in cases.into_iter().enumerate() {
+    let (_directory, mut session) = open(|path| parts_pdf(path, parts), false)?;
+    let app = session.app();
+    let links = app.doc.links(PageId(page))?;
+    // The page's first part, by its text.
+    let first = parts.iter().find(|part| part.0 == page).map(|part| part.3);
+    let text = app.doc.text(PageId(page))?;
+    let index = links.iter().position(|link| {
+      Some(link.anchor(&text, PageId(page)).as_str()) == first
+    });
+    app.hover = Hit::Link(PageId(page), index.expect("a link"));
+    let tinted: Vec<_> = app
+      .hover_segments()
+      .into_iter()
+      .map(|(on, bounds)| (on.0, (bounds.y0 / 10.0).round() * 10.0))
+      .collect();
+    assert_eq!(tinted, want, "case {step}");
   }
   Ok(())
 }
@@ -1444,7 +1567,7 @@ fn drawn_preview(session: &mut Session) -> Result<vpdf::split::Rect> {
 /// Opens `K` on page 1's first link.
 fn key_open(session: &mut Session) -> Result<vpdf::split::Rect> {
   let app = session.app();
-  let link = app.doc.links(PageId(0))?[0].bounds;
+  let link = app.doc.links(PageId(0))?[0].first();
   let text = app.doc.text(PageId(0))?;
   let (x, y) = link.centre();
   app.go_to(text.nearest(PageId(0), x, y), true)?;
@@ -2013,7 +2136,7 @@ fn pixel_gaps_keep_previews() -> Result<()> {
   let link = cell(&mut session, Hit::Link(PageId(0), 0))?;
   let area = hover_open(&mut session, link)?;
   let app = session.app();
-  let bounds = app.doc.links(PageId(0))?[0].bounds;
+  let bounds = app.doc.links(PageId(0))?[0].first();
   let rect = app.layout.project(PageId(0), bounds, app.reader.scroll);
   let height = app.screen.cell_height;
   let x = f32::midpoint(rect.x0, rect.x1) as u16;

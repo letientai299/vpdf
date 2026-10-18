@@ -355,8 +355,8 @@ fn preview_shows_citation_target() -> Result<()> {
     let link =
       links.iter().find(|link| !matches!(link.target, Target::Uri(_))).unwrap();
     let (x, y) = (
-      f32::midpoint(link.bounds.x0, link.bounds.x1),
-      f32::midpoint(link.bounds.y0, link.bounds.y1),
+      f32::midpoint(link.first().x0, link.first().x1),
+      f32::midpoint(link.first().y0, link.first().y1),
     );
     app.reader.cursor = app.doc.text(PageId(1))?.nearest(PageId(1), x, y);
     app.ensure_cursor()?;
@@ -751,7 +751,7 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
       (Vec::new(), Vec::new(), Vec::new());
     for page in pages.map(PageId) {
       let page_links = app.doc.links(page)?;
-      links.extend(page_links.iter().map(|link| (page, link.bounds)));
+      links.extend(page_links.iter().map(|link| (page, link.first())));
       let text = app.doc.text(page)?;
       let all = text.lines.iter().flat_map(|line| &line.glyphs);
       glyphs.extend(all.map(|glyph| (page, glyph.bounds)));
@@ -801,7 +801,7 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
       }
       let expected = match hit {
         Hit::Link(page, index) => {
-          let bounds = app.doc.links(page)?[index].bounds;
+          let bounds = app.doc.links(page)?[index].first();
           covers(&app, cell, &[(page, bounds)])
         }
         Hit::Text => {
@@ -964,7 +964,7 @@ fn motion_redraws_only_for_new_targets() -> Result<()> {
   let Hit::Link(page, index) = link.expect("a visible link").1 else {
     unreachable!()
   };
-  let bounds = app.doc.links(page)?[index].bounds;
+  let bounds = app.doc.links(page)?[index].first();
   let x = f32::midpoint(bounds.x0, bounds.x1);
   let position =
     app.doc.text(page)?.nearest(page, x, f32::midpoint(bounds.y0, bounds.y1));
