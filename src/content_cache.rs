@@ -4,7 +4,8 @@
 //! compressed `Index` record per page. Packs live where the OS may purge
 //! them; a missing, short, damaged, or stale pack reads as a miss. Where
 //! file versions are exact, a memo per version remembers its hash, so a
-//! reopen need not hash.
+//! reopen need not hash. OCR output lives beside the packs, named by a
+//! hash of the raster and the engine that read it.
 use crate::Result;
 use crate::document::{GLYPH_LIMIT, MIB, TEXT_FLAGS};
 use crate::search::Index;
@@ -23,7 +24,8 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 const MAGIC: &[u8; 8] = b"VPDFIDX1";
-/// Packs kept before the least recently used go.
+const OCR_MAGIC: &[u8; 8] = b"VPDFOCR1";
+/// Packs and OCR output kept before the least recently used go.
 const BUDGET: u64 = 1 << 30;
 /// Free disk space below which nothing is written.
 const RESERVE: u64 = 2 << 30;
@@ -159,8 +161,7 @@ pub fn recall(root: &Path, version: Version) -> Option<Alias> {
   let bytes = std::fs::read(&path).ok()?;
   let (head, alias) = bytes.split_at_checked(bytes.len().checked_sub(32)?)?;
   let alias = (head == version.bytes()).then(|| alias.try_into().ok())??;
-  // Recency for trimming.
-  drop(File::open(&path).and_then(|file| file.set_modified(SystemTime::now())));
+  touch(&path);
   Some(alias)
 }
 
@@ -170,6 +171,54 @@ pub fn remember(root: &Path, version: Version, alias: &Alias) -> Result<()> {
   let mut bytes = version.bytes();
   bytes.extend_from_slice(alias);
   publish(&memo(root, version), &bytes)
+}
+
+/// Makes `root` and tells whether it has room to write.
+fn room(root: &Path) -> Result<bool> {
+  create(root)?;
+  let stats = rustix::fs::statvfs(root)?;
+  Ok(stats.f_bavail.saturating_mul(stats.f_frsize) >= RESERVE)
+}
+
+/// OCR output `key` names; none when absent or damaged.
+pub fn recall_ocr(root: &Path, key: &Alias) -> Option<String> {
+  let path = ocr_path(root, key);
+  let header = (OCR_MAGIC.len() + 4) as u64;
+  if std::fs::metadata(&path).ok()?.len() > RECORD + header {
+    return None;
+  }
+  let bytes = std::fs::read(&path).ok()?;
+  let rest = bytes.strip_prefix(OCR_MAGIC)?;
+  let (len, raw) = rest.split_first_chunk::<4>()?;
+  let len = u32::from_le_bytes(*len) as usize;
+  if u64::try_from(len).ok()? > RECORD {
+    return None;
+  }
+  let text = String::from_utf8(inflate(raw, len)?).ok()?;
+  touch(&path);
+  Some(text)
+}
+
+/// Stores OCR output under `key`, then trims the cache to its budget.
+pub fn remember_ocr(root: &Path, key: &Alias, text: &str) -> Result<()> {
+  // Longer output would never read back.
+  if text.len() as u64 > RECORD || !room(root)? {
+    return Ok(());
+  }
+  let mut bytes = OCR_MAGIC.to_vec();
+  put(&mut bytes, text.len());
+  bytes.extend_from_slice(&deflate(text.as_bytes())?);
+  publish(&ocr_path(root, key), &bytes)?;
+  trim(root, BUDGET)
+}
+
+/// Marks `path` recently used, for trimming.
+fn touch(path: &Path) {
+  drop(File::open(path).and_then(|file| file.set_modified(SystemTime::now())));
+}
+
+fn ocr_path(root: &Path, key: &Alias) -> PathBuf {
+  root.join(format!("{}.ocr", hex(key)))
 }
 
 /// Makes `root`; pages hold the PDF's text, so only its owner reads them.
@@ -361,16 +410,23 @@ impl Pack {
 /// The index `record` holds for `page`; none unless it inflates to its
 /// stated length and decodes.
 fn decode(page: PageId, record: &Record) -> Option<Index> {
-  let len = record.len as usize;
+  Index::decode(page, &inflate(&record.raw, record.len as usize)?).ok()
+}
+
+/// `raw` inflated, when it holds exactly `len` bytes.
+fn inflate(raw: &[u8], len: usize) -> Option<Vec<u8>> {
   // One spare byte lets a longer stream show itself.
   let mut bytes = Vec::with_capacity(len + 1);
   let status = Decompress::new(true)
-    .decompress_vec(&record.raw, &mut bytes, FlushDecompress::Finish)
+    .decompress_vec(raw, &mut bytes, FlushDecompress::Finish)
     .ok()?;
-  if status != Status::StreamEnd || bytes.len() != len {
-    return None;
-  }
-  Index::decode(page, &bytes).ok()
+  (status == Status::StreamEnd && bytes.len() == len).then_some(bytes)
+}
+
+fn deflate(bytes: &[u8]) -> Result<Vec<u8>> {
+  let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+  encoder.write_all(bytes)?;
+  Ok(encoder.finish()?)
 }
 
 fn u32_at(bytes: &[u8], at: usize) -> u32 {
@@ -390,9 +446,7 @@ impl Records {
     let mut bytes = Vec::new();
     index.encode(&mut bytes);
     let len = u32::try_from(bytes.len())?;
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-    encoder.write_all(&bytes)?;
-    *slot = Some(Record { raw: encoder.finish()?, len });
+    *slot = Some(Record { raw: deflate(&bytes)?, len });
     Ok(())
   }
 
@@ -417,9 +471,7 @@ pub fn save(
   records: &Records,
   old: Option<&Pack>,
 ) -> Result<()> {
-  create(root)?;
-  let stats = rustix::fs::statvfs(root)?;
-  if stats.f_bavail.saturating_mul(stats.f_frsize) < RESERVE {
+  if !room(root)? {
     return Ok(());
   }
   let kept: Vec<Option<Record>> = records
@@ -456,9 +508,9 @@ fn put(bytes: &mut Vec<u8>, value: usize) {
   bytes.extend_from_slice(&(value as u32).to_le_bytes());
 }
 
-/// Deletes the least recently used packs until the rest fit `budget`,
-/// memos of deleted packs or unused for a month, and temporary files a
-/// crashed writer left.
+/// Deletes the least recently used packs and OCR output until the rest
+/// fit `budget`, memos of deleted packs or unused for a month, and
+/// temporary files a crashed writer left.
 fn trim(root: &Path, budget: u64) -> Result<()> {
   let mut packs = Vec::new();
   let mut memos = Vec::new();
@@ -468,7 +520,7 @@ fn trim(root: &Path, budget: u64) -> Result<()> {
     let modified = meta.modified().unwrap_or(now);
     let path = entry.path();
     match path.extension().and_then(|extension| extension.to_str()) {
-      Some("pack") => packs.push((modified, meta.len(), path)),
+      Some("pack" | "ocr") => packs.push((modified, meta.len(), path)),
       Some("id") => memos.push((modified, path)),
       Some("tmp")
         if now.duration_since(modified).unwrap_or_default() > ABANDONED =>
@@ -689,6 +741,28 @@ mod tests {
     std::fs::remove_file(path(root.path(), &alias))?;
     trim(root.path(), BUDGET)?;
     assert_eq!(recall(root.path(), version), None, "pack gone");
+    Ok(())
+  }
+
+  /// OCR output reads back by its key; other keys and damage miss; it
+  /// counts toward the budget.
+  #[test]
+  fn ocr_round_trips() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let key = [6; 32];
+    let tsv = "level\tpage\n5\t1\tword\n";
+    remember_ocr(root.path(), &key, tsv)?;
+    assert_eq!(recall_ocr(root.path(), &key).as_deref(), Some(tsv));
+    assert_eq!(recall_ocr(root.path(), &[7; 32]), None);
+    let file = ocr_path(root.path(), &key);
+    let bytes = std::fs::read(&file)?;
+    for len in 0..bytes.len() {
+      std::fs::write(&file, &bytes[..len])?;
+      assert_eq!(recall_ocr(root.path(), &key), None, "{len}");
+    }
+    std::fs::write(&file, &bytes)?;
+    trim(root.path(), 0)?;
+    assert!(!file.exists());
     Ok(())
   }
 

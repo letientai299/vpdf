@@ -1,16 +1,24 @@
 use crate::Result;
 use crate::app::App;
+use crate::content_cache::{self, Alias, Version};
 use crate::document::{GLYPH_LIMIT, Handle, MIB};
 use crate::layout::page_matrix;
 use crate::text::{Bounds, Glyph, Line, PageId, Text};
 use mupdf::{Colorspace, ImageFormat};
+use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
+
+/// Tesseract's output arguments, part of every stored result's key.
+const OUTPUT: [&str; 3] = ["stdin", "stdout", "tsv"];
+/// The header every TSV output starts with.
+const TSV: &str = "level\tpage_num\t";
 
 pub struct OcrJob {
   pub page: PageId,
@@ -75,11 +83,113 @@ fn recognize(
     false,
     true,
   )?;
-  let mut png = Vec::new();
-  pixels.write_to(&mut png, ImageFormat::PNG)?;
+  // Decrypted text stays off disk.
+  let root = content_cache::root().filter(|_| password.is_empty());
+  let key = root.as_ref().and_then(|_| {
+    let rows = Rows {
+      width: pixels.width(),
+      height: pixels.height(),
+      n: pixels.n(),
+      stride: usize::try_from(pixels.stride()).ok()?,
+    };
+    Some(raster_key(&engine(language)?, language, rows, pixels.samples()))
+  });
+  let output = cached(root.as_deref(), key.as_ref(), || {
+    let mut png = Vec::new();
+    pixels.write_to(&mut png, ImageFormat::PNG)?;
+    anyhow::ensure!(!cancel.load(Ordering::Relaxed), "OCR cancelled");
+    tesseract(png, language, cancel)
+  })?;
   anyhow::ensure!(!cancel.load(Ordering::Relaxed), "OCR cancelled");
-  let output = tesseract(png, language, cancel)?;
   parse_tsv(&output, bounds, scale)
+}
+
+/// OCR output stored under `key`, else `run`'s, stored for next time.
+fn cached(
+  root: Option<&Path>,
+  key: Option<&Alias>,
+  run: impl FnOnce() -> Result<String>,
+) -> Result<String> {
+  let (Some(root), Some(key)) = (root, key) else { return run() };
+  if let Some(output) = content_cache::recall_ocr(root, key) {
+    return Ok(output);
+  }
+  let output = run()?;
+  // Tesseract without its tsv config prints plain text and succeeds;
+  // only real TSV is worth keeping.
+  if output.starts_with(TSV) {
+    // A failed store only costs the next run.
+    drop(content_cache::remember_ocr(root, key, &output));
+  }
+  Ok(output)
+}
+
+/// A raster's layout: rows of `width` pixels of `n` bytes, `stride`
+/// bytes apart.
+#[derive(Clone, Copy)]
+struct Rows {
+  width: u32,
+  height: u32,
+  n: u8,
+  stride: usize,
+}
+
+/// What OCR reads: the engine, the language, and the raster's pixels,
+/// without row padding.
+fn raster_key(
+  engine: &str,
+  language: &str,
+  rows: Rows,
+  samples: &[u8],
+) -> Alias {
+  let mut hasher = Sha256::new();
+  let output = OUTPUT.join(" ");
+  for part in
+    [b"ocr 1", engine.as_bytes(), language.as_bytes(), output.as_bytes()]
+  {
+    hasher.update((part.len() as u64).to_le_bytes());
+    hasher.update(part);
+  }
+  for field in [rows.width, rows.height, u32::from(rows.n)] {
+    hasher.update(field.to_le_bytes());
+  }
+  let row = rows.width as usize * usize::from(rows.n);
+  for line in samples.chunks(rows.stride.max(1)).take(rows.height as usize) {
+    hasher.update(line.get(..row).unwrap_or(line));
+  }
+  hasher.finalize().into()
+}
+
+/// Tesseract's version, its tsv config, and each model `language` names,
+/// by file version; none when any cannot be read.
+fn engine(language: &str) -> Option<String> {
+  // Asked once: each answer costs a process.
+  static INSTALL: OnceLock<Option<(String, PathBuf)>> = OnceLock::new();
+  let (version, models) = INSTALL
+    .get_or_init(|| {
+      let output = |arg: &str| {
+        let output = Command::new("tesseract").arg(arg).output().ok()?;
+        Some(String::from_utf8_lossy(&output.stdout).into_owned())
+      };
+      let models = tessdata(&output("--list-langs")?)?.to_owned();
+      Some((output("--version")?, models))
+    })
+    .as_ref()?;
+  let mut engine = version.clone();
+  let config = models.join("configs/tsv");
+  let _ = write!(engine, "\ntsv {:?}", Version::read(&config)?);
+  for name in language.split('+') {
+    let model = models.join(format!("{name}.traineddata"));
+    let _ = write!(engine, "\n{name} {:?}", Version::read(&model)?);
+  }
+  Some(engine)
+}
+
+/// The model directory a `tesseract --list-langs` listing names.
+fn tessdata(listing: &str) -> Option<&Path> {
+  let line = listing.lines().next()?;
+  line.starts_with("List of available languages in ").then_some(())?;
+  Some(Path::new(line.split('"').nth(1)?))
 }
 
 pub(crate) fn tesseract(
@@ -88,7 +198,8 @@ pub(crate) fn tesseract(
   cancel: &AtomicBool,
 ) -> Result<String> {
   let mut child = Command::new("tesseract")
-    .args(["stdin", "stdout", "-l", language, "tsv"])
+    .args(["-l", language])
+    .args(OUTPUT)
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
@@ -221,5 +332,77 @@ impl App {
       Err(error) => self.error = Some(error),
     }
     Ok(true)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::cell::Cell;
+
+  /// Stored output answers the same key without running the engine;
+  /// without a cache, the engine always runs.
+  #[test]
+  fn stored_output_skips_the_engine() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let runs = Cell::new(0);
+    let run = || {
+      runs.set(runs.get() + 1);
+      Ok(format!("{TSV}{}", runs.get()))
+    };
+    let key = [3; 32];
+    let tsv = |run: usize| format!("{TSV}{run}");
+    assert_eq!(cached(Some(root.path()), Some(&key), run)?, tsv(1));
+    assert_eq!(cached(Some(root.path()), Some(&key), run)?, tsv(1));
+    assert_eq!(cached(Some(root.path()), Some(&[4; 32]), run)?, tsv(2));
+    assert_eq!(cached(None, Some(&key), run)?, tsv(3));
+    assert_eq!(cached(Some(root.path()), None, run)?, tsv(4));
+    // Failures and plain text are returned, never kept.
+    let other = [5; 32];
+    assert!(
+      cached(Some(root.path()), Some(&other), || anyhow::bail!("no")).is_err()
+    );
+    let plain = || Ok("plain words".to_owned());
+    assert_eq!(cached(Some(root.path()), Some(&other), plain)?, "plain words");
+    assert_eq!(cached(Some(root.path()), Some(&other), run)?, tsv(5));
+    Ok(())
+  }
+
+  /// Listings name their model directory in Tesseract 5's header.
+  #[test]
+  fn listings_name_their_models() {
+    let cases = [
+      (
+        "List of available languages in \"/opt/tessdata/\" (2):\neng\nosd\n",
+        Some("/opt/tessdata/"),
+      ),
+      ("List of available languages (2):\neng\n", None),
+      ("eng\nosd\n", None),
+      ("", None),
+    ];
+    for (listing, models) in cases {
+      assert_eq!(tessdata(listing), models.map(Path::new), "{listing}");
+    }
+  }
+
+  /// Keys ignore row padding and change with pixels, language, engine.
+  #[test]
+  fn raster_keys_follow_what_ocr_reads() {
+    let rows = Rows { width: 2, height: 2, n: 3, stride: 6 };
+    let pixels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    let padded = [1, 2, 3, 4, 5, 6, 0, 0, 7, 8, 9, 10, 11, 12, 0, 0];
+    let key = raster_key("5.5", "eng", rows, &pixels);
+    let wide = Rows { stride: 8, ..rows };
+    assert_eq!(raster_key("5.5", "eng", wide, &padded), key);
+    let mut changed = pixels;
+    changed[11] = 0;
+    for other in [
+      raster_key("5.5", "eng", rows, &changed),
+      raster_key("5.5", "deu", rows, &pixels),
+      raster_key("5.4", "eng", rows, &pixels),
+      raster_key("5.5", "eng", Rows { width: 1, ..wide }, &padded),
+    ] {
+      assert_ne!(other, key);
+    }
   }
 }

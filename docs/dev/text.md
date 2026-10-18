@@ -59,8 +59,8 @@ when a page misses, so open errors can arrive with that page. Scans decode
 stored pages in batches on a few threads. New indexes save once the worker
 idles, unless the file changed since it opened or the pack already holds those
 pages. [The content cache][cache] treats any missing, damaged, or stale pack as
-a miss and trims the least recently used packs to its budget. OCR text overrides
-stored pages; PDFs opened with a password are never stored.
+a miss and trims the least recently used packs and OCR output to its budget. OCR
+text overrides stored pages; PDFs opened with a password are never stored.
 
 [Panel search][panels] searches displayed rows with its own matching rules.
 Do not assume document normalization applies to panel labels.
@@ -90,7 +90,10 @@ Recognized word boxes yield approximate character positions, rather than
 font-specific glyph advances. Results replace extracted text for that page while
 retained in the pane's OCR cache and seed an existing search worker. They stay
 in memory, can be evicted, and disappear when the document reloads or closes.
-The reader never embeds them into the PDF.
+The reader never embeds them into the PDF. Where the content cache is on and no
+password opened the PDF, Tesseract's output is also kept on disk, named by a
+hash of the raster rows, the language, and the Tesseract version and models, so
+running page OCR again on the same page skips recognition.
 
 See [installation][installation] for the optional OCR dependency and `:help` for
 its command interface.

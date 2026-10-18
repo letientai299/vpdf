@@ -36,8 +36,10 @@ a reading mode.
 Text selection follows the PDF's extracted glyphs and reading order. Complex
 columns or missing text can make that order differ from the visual page.
 The [text guide][text] explains copying fidelity and optional OCR for scans.
-OCR results stay in memory, can be evicted, and disappear when the document
-reloads or closes. vpdf does not embed them in the source PDF.
+Page OCR text stays in memory, can be evicted, and disappears when the document
+reloads or closes. Where search indexes persist (below), Tesseract's output is
+also stored, so running page OCR again on an unchanged page skips recognition.
+vpdf does not embed OCR text in the source PDF.
 
 ## Find a passage and return
 
@@ -170,12 +172,11 @@ State saves during activity and on exit; abrupt process or machine failure can
 lose recent changes. Simultaneous readers can race when saving.
 
 On macOS, search indexes persist in `~/Library/Caches/vpdf/content`, so a
-reopened PDF searches without rereading its pages. They hold the PDF's
-extracted text, readable only by your account; PDFs opened with a password are
-never stored. Small records there remember each PDF's hash by its file
-identity. The system may purge that directory at any time. Set
-`VPDF_CACHE` to another directory, or to `off` to keep indexes in memory
-only.
+reopened PDF searches without rereading its pages. They and stored page OCR
+output hold the PDF's text, readable only by your account; PDFs opened with a
+password are never stored. Small records there remember each PDF's hash by its
+file identity. The system may purge that directory at any time. Set `VPDF_CACHE`
+to another directory, or to `off` to keep indexes and OCR output in memory only.
 
 The reader reloads a changed PDF and retains a useful position, view choices,
 and marks. Arbitrary document edits can change where the passage lands. Reload
