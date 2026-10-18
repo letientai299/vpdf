@@ -2,14 +2,12 @@ use crate::Result;
 use crate::app::App;
 use crate::app::InputOwner;
 use crate::document::{Heading, Link, PageInfo, Target};
-use crate::panel::{Destination, Row, Style};
-use crate::panel_layout::{Layout, Line, wrap};
+use crate::panel::{Destination, Row};
+use crate::panel_layout::Layout;
 use crate::preview::{Origin, Preview};
-use crate::terminal;
 use crate::text::{Bounds, PageId, Text};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::time::{Duration, Instant};
-use unicode_width::UnicodeWidthStr;
 
 /// The link under the pointer.
 #[derive(Clone, Debug)]
@@ -189,7 +187,7 @@ fn reference(anchor: &str) -> bool {
     || anchor.starts_with('[') && anchor.ends_with(']')
 }
 
-fn excerpt(text: &Text, target: &Target) -> String {
+pub(crate) fn excerpt(text: &Text, target: &Target) -> String {
   let start = match target {
     Target::Point { page, x, y } => text.nearest(*page, *x, *y).line,
     _ => 0,
@@ -288,52 +286,11 @@ impl Layout {
     let mut layout = Self { columns, lines: Vec::new(), starts: Vec::new() };
     for (source, row) in rows.iter().enumerate() {
       layout.starts.push(layout.lines.len());
-      let detail = terminal::clean(&row.detail, columns / 3);
-      let room = columns
-        .saturating_sub(detail.width() + usize::from(!detail.is_empty()));
-      let (labels, cut) = if source == selected {
-        (wrap(&row.label, room), false)
-      } else {
-        let (label, cut) = terminal::clipped(&row.label, room);
-        (vec![label], cut)
-      };
-      for (index, label) in labels.into_iter().enumerate() {
-        layout.lines.push(Line {
-          source,
-          keys: 0,
-          clipped: cut,
-          row: Row::new(
-            label,
-            if index == 0 { detail.clone() } else { String::new() },
-            Destination::None,
-          ),
-        });
-      }
+      layout.label(source, &row.label, &row.detail, selected);
       if let Destination::Link(Target::Uri(uri)) = &row.destination
         && *uri != row.label
       {
-        let indent = columns.saturating_sub(1).min(2);
-        let room = columns.saturating_sub(indent);
-        let lines = if source == selected {
-          wrap(uri, room)
-        } else {
-          vec![terminal::clipped(uri, room).0]
-        };
-        for line in lines {
-          layout.lines.push(Line {
-            source,
-            keys: 0,
-            clipped: false,
-            row: Row {
-              style: Style::Muted,
-              ..Row::new(
-                format!("{}{line}", " ".repeat(indent)),
-                String::new(),
-                Destination::None,
-              )
-            },
-          });
-        }
+        layout.secondary(source, uri, selected);
       }
     }
     layout.starts.push(layout.lines.len());
@@ -347,12 +304,14 @@ mod tests {
   use crate::keys::{Action, Input, PanelKind};
   use crate::layout::Screen;
   use crate::motion::Motion;
-  use crate::panel::Panel;
+  use crate::panel::{Panel, Style};
+  use crate::terminal;
   use crate::text::{Bounds, Glyph, Line as TextLine, PageId, Position};
   use crossterm::event::{
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
   };
   use std::path::PathBuf;
+  use unicode_width::UnicodeWidthStr;
 
   fn row(label: &str, uri: &str) -> Row {
     Row::new(

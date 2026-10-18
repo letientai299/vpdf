@@ -148,6 +148,9 @@ impl App {
           self.ensure_cursor()?;
         } else {
           self.go_to(target, true)?;
+          self
+            .reader
+            .describe_jump(Some(self.search_description(self.reader.cursor)));
         }
         self.search.phase = Phase::Running { jump: false };
       }
@@ -158,6 +161,8 @@ impl App {
       );
       if event.done {
         self.search.phase = Phase::Complete;
+        self.reader.finish_search_jumps(&self.search.query, &self.search.hits);
+        self.refill_panel(PanelKind::Jumps)?;
         if self.search.hits.is_empty() {
           self.return_to_origin()?;
         }
@@ -230,19 +235,22 @@ impl App {
     }
     if let Some(origin) = origin.filter(|o| o.cursor != self.reader.cursor) {
       self.reader.record(origin);
-      if self.search.query == same
-        && matches!(
-          self.search.phase,
-          Phase::Running { jump: false } | Phase::Complete
-        )
-        && self
-          .search
-          .hits
-          .binary_search_by_key(&self.reader.cursor, |hit| hit.first)
-          .is_ok()
-      {
-        self.flash_landing();
-      }
+    }
+    if self.search.query == same
+      && matches!(
+        self.search.phase,
+        Phase::Running { jump: false } | Phase::Complete
+      )
+      && self
+        .search
+        .hits
+        .binary_search_by_key(&self.reader.cursor, |hit| hit.first)
+        .is_ok()
+    {
+      self
+        .reader
+        .describe_jump(Some(self.search_description(self.reader.cursor)));
+      self.flash_landing();
     }
     Ok(())
   }
@@ -309,6 +317,9 @@ impl App {
     let target = hits[index].first;
     let wrapped = if backward { target >= cursor } else { target <= cursor };
     self.go_to(target, true)?;
+    self
+      .reader
+      .describe_jump(Some(self.search_description(self.reader.cursor)));
     self.search.hidden = false;
     self.reader.message = if wrapped {
       "Search wrapped".into()

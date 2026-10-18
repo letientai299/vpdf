@@ -34,6 +34,7 @@ pub mod home;
 pub mod inline;
 pub mod input;
 mod interaction;
+mod jumps;
 pub mod keys;
 pub mod layout;
 mod line;

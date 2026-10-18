@@ -47,6 +47,7 @@ impl App {
     let origin = self.location()?;
     self.reader.cursor = crate::reader::clamp(target, &mut self.doc)?;
     self.reader.record(origin);
+    self.reader.describe_jump(None);
     self.reader.desired = None;
     self.target = Some(self.reader.cursor);
     self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;

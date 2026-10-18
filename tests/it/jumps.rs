@@ -78,14 +78,20 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
     let rows = &app.panel.as_ref().unwrap().rows;
     assert_eq!(rows.len(), expected.len());
     for (row, index) in rows.iter().zip(expected) {
-      let Destination::Position(position) = row.destination else {
+      let Destination::Jump { position, .. } = row.destination else {
         panic!("Jump destination");
       };
       assert_eq!(position, positions[index]);
-      assert_eq!(row.detail, app.doc.pages[position.page.0].label);
+      assert!(row.detail.contains(&format!(
+        "L{} C{}",
+        position.line + 1,
+        position.glyph + 1
+      )));
+      let text = app.doc.text(position.page)?;
+      let line = text.lines.get(position.line).unwrap();
       assert_eq!(
         row.label,
-        format!("Line {}, column {}", position.line + 1, position.glyph + 1)
+        line.text().split_whitespace().collect::<Vec<_>>().join(" ")
       );
     }
     app.close_panel()?;
@@ -103,5 +109,204 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
     &mut history,
   )?;
   assert_eq!(app.reader.cursor, origin);
+  Ok(())
+}
+
+fn text_app(lines: &[&str]) -> Result<(tempfile::TempDir, App)> {
+  let dir = tempfile::tempdir()?;
+  let path = dir.path().join("jumps.pdf");
+  super::common::text_pdf(&path, lines)?;
+  let mut app = App::with_screen(
+    &path,
+    "",
+    true,
+    Screen {
+      columns: 120,
+      rows: 50,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    },
+  )?;
+  super::common::outline_loaded(&mut app)?;
+  app.doc.outline.clear();
+  Ok((dir, app))
+}
+
+fn at(line: usize, glyph: usize) -> Position {
+  Position { page: PageId(0), line, glyph }
+}
+
+fn history_key(app: &mut App, forward: bool) -> Result<()> {
+  app.key(
+    KeyEvent::new(
+      KeyCode::Char(if forward { 'i' } else { 'o' }),
+      KeyModifiers::CONTROL,
+    ),
+    &mut History::default(),
+  )?;
+  Ok(())
+}
+
+#[test]
+fn fallback_context() -> Result<()> {
+  let (_dir, mut app) = text_app(&["Opening", "na\\357ve words,"])?;
+  app.doc.pages[0].label = "iv".into();
+  for (glyph, word) in
+    [(0, "“naïve”"), (5, "whitespace"), (6, "“words”"), (11, "“,”")]
+  {
+    app.go_to(at(1, glyph), true)?;
+    app.reader.clear_history();
+    app.go_to(at(0, 0), true)?;
+    let rows = app.panel_rows(PanelKind::Jumps)?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].label, "naïve words,");
+    assert_eq!(
+      rows[0].detail,
+      format!("p. iv (#1) · L2 C{} · word {word}", glyph + 1)
+    );
+  }
+  let (_dir, mut app) = text_app(&[""])?;
+  app.reader.remember();
+  let rows = app.panel_rows(PanelKind::Jumps)?;
+  assert_eq!(rows[0].label, "No text");
+  assert_eq!(rows[0].detail, "p. 1 · L1 C1 · word —");
+  Ok(())
+}
+
+fn heading(app: &mut App, line: usize, title: &str) -> Result<()> {
+  use vpdf::document::{Heading, Target};
+  let bounds = app.doc.text(PageId(0))?.lines[line].glyphs[0].bounds;
+  let (x, y) = bounds.centre();
+  app.doc.outline.push(Heading {
+    title: title.into(),
+    depth: 0,
+    target: Target::Point { page: PageId(0), x, y },
+  });
+  Ok(())
+}
+
+#[test]
+fn semantic_history() -> Result<()> {
+  let (_dir, mut app) = text_app(&[
+    "Opening",
+    "First section",
+    "Second section",
+    "needle target",
+    "End",
+  ])?;
+  heading(&mut app, 1, "First section")?;
+  heading(&mut app, 2, "Second section")?;
+  let mut history = History::default();
+  app.open_panel(PanelKind::Outline)?;
+  app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
+  app.close_panel()?;
+  for _ in 0..2 {
+    app.key(
+      KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE),
+      &mut history,
+    )?;
+  }
+  app.start_search("needle", false, false)?;
+  super::common::search_loaded(&mut app)?;
+  app.go_to(at(4, 0), true)?;
+  let labels = |app: &mut App| -> Result<Vec<String>> {
+    Ok(
+      app
+        .panel_rows(PanelKind::Jumps)?
+        .into_iter()
+        .map(|row| row.label)
+        .collect(),
+    )
+  };
+  let expected = vec![
+    "Opening",
+    "Heading: First section",
+    "Heading: Second section",
+    "Search [1/1] /needle/",
+  ];
+  assert_eq!(labels(&mut app)?, expected);
+  // Later searches cannot relabel earlier visits.
+  app.search.query.text = "other".into();
+  history_key(&mut app, false)?;
+  history_key(&mut app, true)?;
+  assert_eq!(labels(&mut app)?, expected);
+  app.open_panel(PanelKind::Jumps)?;
+  app.panel.as_mut().unwrap().selected = 3;
+  app.reader.clear_history();
+  app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
+  assert_eq!(app.reader.cursor, at(3, 0));
+  app.close_panel()?;
+  app.go_to(at(4, 0), true)?;
+  assert_eq!(labels(&mut app)?.last().unwrap(), "Search [1/1] /needle/");
+  Ok(())
+}
+
+#[test]
+fn committed_searches() -> Result<()> {
+  let (_dir, mut app) = text_app(&["Opening", "needle one", "needle two"])?;
+  app.begin_search(false)?;
+  app.incremental("needle")?;
+  super::common::search_loaded(&mut app)?;
+  assert_eq!(app.reader.jumps().count(), 0);
+  app.finish_search("needle", false)?;
+  app.prompt = None;
+  app.next_result(false, 1)?;
+  app.go_to(at(0, 0), true)?;
+  let rows = app.panel_rows(PanelKind::Jumps)?;
+  let labels: Vec<_> = rows
+    .iter()
+    .filter(|row| row.label.starts_with("Search ["))
+    .map(|row| row.label.as_str())
+    .collect();
+  assert_eq!(labels, ["Search [1/2] /needle/", "Search [2/2] /needle/"]);
+  app.open_panel(PanelKind::Results)?;
+  app.panel.as_mut().unwrap().selected = 1;
+  app.key(
+    KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    &mut History::default(),
+  )?;
+  app.close_panel()?;
+  app.go_to(at(0, 0), true)?;
+  let rows = app.panel_rows(PanelKind::Jumps)?;
+  assert_eq!(rows.last().unwrap().label, "Search [2/2] /needle/");
+  app.start_search("needle", true, false)?;
+  super::common::search_loaded(&mut app)?;
+  app.go_to(at(0, 0), true)?;
+  let rows = app.panel_rows(PanelKind::Jumps)?;
+  assert_eq!(rows.last().unwrap().label, "Search [2/2] ?needle?");
+  Ok(())
+}
+
+#[test]
+fn followed_links() -> Result<()> {
+  use vpdf::document::Target;
+  let (_dir, mut app) = text_app(&["Opening", "Reference title", "End"])?;
+  let bounds = app.doc.text(PageId(0))?.lines[1].glyphs[0].bounds;
+  let (x, y) = bounds.centre();
+  app.follow(&Target::Point { page: PageId(0), x, y })?;
+  app.go_to(at(2, 0), true)?;
+  let rows = app.panel_rows(PanelKind::Jumps)?;
+  assert!(rows[1].label.starts_with("Link: Reference title"));
+  assert!(matches!(rows[1].destination,
+    Destination::Jump { position, .. } if position == at(1, 0)));
+  Ok(())
+}
+
+#[test]
+fn outline_preserves_selected_title() -> Result<()> {
+  let (_dir, mut app) = text_app(&["Opening", "Shared destination", "End"])?;
+  heading(&mut app, 1, "Chapter")?;
+  heading(&mut app, 1, "Section")?;
+  app.open_panel(PanelKind::Outline)?;
+  app.panel.as_mut().unwrap().selected = 1;
+  app.key(
+    KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    &mut History::default(),
+  )?;
+  app.close_panel()?;
+  app.go_to(at(2, 0), true)?;
+  let rows = app.panel_rows(PanelKind::Jumps)?;
+  assert_eq!(rows.last().unwrap().label, "Heading: Section");
   Ok(())
 }

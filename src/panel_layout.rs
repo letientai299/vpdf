@@ -1,5 +1,6 @@
-use crate::panel::Row;
-use unicode_width::UnicodeWidthChar;
+use crate::panel::{Destination, Row, Style};
+use crate::terminal;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub(crate) struct Line {
   pub source: usize,
@@ -45,4 +46,67 @@ pub(crate) fn wrap(mut text: &str, columns: usize) -> Vec<String> {
     lines.push(String::new());
   }
   lines
+}
+
+impl Layout {
+  pub(crate) fn label(
+    &mut self,
+    source: usize,
+    label: &str,
+    detail: &str,
+    selected: usize,
+  ) {
+    let detail = terminal::clean(detail, self.columns / 3);
+    let room = self
+      .columns
+      .saturating_sub(detail.width() + usize::from(!detail.is_empty()));
+    let (labels, cut) = if source == selected {
+      (wrap(label, room), false)
+    } else {
+      let (label, cut) = terminal::clipped(label, room);
+      (vec![label], cut)
+    };
+    for (index, label) in labels.into_iter().enumerate() {
+      self.lines.push(Line {
+        source,
+        keys: 0,
+        clipped: cut,
+        row: Row::new(
+          label,
+          if index == 0 { detail.clone() } else { String::new() },
+          Destination::None,
+        ),
+      });
+    }
+  }
+
+  pub(crate) fn secondary(
+    &mut self,
+    source: usize,
+    text: &str,
+    selected: usize,
+  ) {
+    let indent = self.columns.saturating_sub(1).min(2);
+    let room = self.columns.saturating_sub(indent);
+    let lines = if source == selected {
+      wrap(text, room)
+    } else {
+      vec![terminal::clipped(text, room).0]
+    };
+    for line in lines {
+      self.lines.push(Line {
+        source,
+        keys: 0,
+        clipped: false,
+        row: Row {
+          style: Style::Muted,
+          ..Row::new(
+            format!("{}{line}", " ".repeat(indent)),
+            String::new(),
+            Destination::None,
+          )
+        },
+      });
+    }
+  }
 }

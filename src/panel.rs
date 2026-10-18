@@ -8,6 +8,7 @@ use crate::motion::Motion;
 use crate::panel_layout::Layout;
 use crate::panel_search::RowSearch;
 use crate::pointer::{WHEEL_ROWS, Wheel};
+use crate::reader::JumpDescription;
 use crate::recent::Shelf;
 use crate::state::Entry;
 use crate::terminal;
@@ -21,6 +22,10 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 #[derive(Clone)]
 pub enum Destination {
   Position(Position),
+  Jump {
+    position: Position,
+    description: Option<JumpDescription>,
+  },
   Annotation {
     position: Position,
     annotation: Annotation,
@@ -263,7 +268,10 @@ impl Panel {
   fn reflow(&mut self, columns: usize) {
     if matches!(self.kind, PanelKind::Help)
       && self.layout.as_ref().is_some_and(|layout| layout.columns == columns)
-      || !matches!(self.kind, PanelKind::Help | PanelKind::Links)
+      || !matches!(
+        self.kind,
+        PanelKind::Help | PanelKind::Links | PanelKind::Jumps
+      )
     {
       return;
     }
@@ -274,6 +282,7 @@ impl Panel {
     let shown = (self.top..self.top + visible).contains(&selected);
     self.layout = Some(match self.kind {
       PanelKind::Links => Layout::links(&self.rows, columns, self.selected),
+      PanelKind::Jumps => Layout::jumps(&self.rows, columns, self.selected),
       _ => Layout::help(&self.rows, columns),
     });
     let start = self.line_start(source);
@@ -704,21 +713,7 @@ impl App {
         })
         .collect(),
       PanelKind::Links => self.link_rows()?,
-      PanelKind::Jumps => self
-        .reader
-        .jumps()
-        .map(|position| {
-          Row::new(
-            format!(
-              "Line {}, column {}",
-              position.line + 1,
-              position.glyph + 1
-            ),
-            self.doc.pages[position.page.0].label.clone(),
-            Destination::Position(position),
-          )
-        })
-        .collect(),
+      PanelKind::Jumps => self.jump_rows(),
       PanelKind::Annotations => self.annotation_rows()?,
       PanelKind::Help => help().iter().map(|line| Row::parse(line)).collect(),
       PanelKind::Info => self.info().lines().map(Row::parse).collect(),
@@ -804,6 +799,10 @@ impl App {
     let Some(row) = panel.rows.get(panel.selected) else { return Ok(()) };
     let destination = row.destination.clone();
     let focus = action == Action::Follow;
+    let search = panel.kind == PanelKind::Results;
+    let heading = (panel.kind == PanelKind::Outline)
+      .then(|| row.label.trim().to_owned())
+      .filter(|title| !title.is_empty());
     let annotation = match destination {
       Destination::File(path) => {
         self.request = Some(Request::PanelOpen { path, position: None, focus });
@@ -816,10 +815,23 @@ impl App {
       Destination::None => return Ok(()),
       Destination::Position(position) => {
         self.go_to(position, true)?;
+        self
+          .reader
+          .describe_jump(search.then(|| self.search_description(position)));
+        None
+      }
+      Destination::Jump { position, description } => {
+        self.go_to(position, true)?;
+        self.reader.describe_jump(description);
         None
       }
       Destination::Link(target) => {
         self.follow(&target)?;
+        if !matches!(target, Target::Uri(_))
+          && let Some(title) = heading
+        {
+          self.reader.describe_jump(Some(JumpDescription::Heading(title)));
+        }
         None
       }
       Destination::Annotation { position, annotation } => {

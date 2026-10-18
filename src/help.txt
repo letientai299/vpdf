@@ -108,6 +108,7 @@ go: table of contents
 gs: search results
 f F: link hints / copy URLs
 gl: links on this page
+:jumps: history with context, word, and position
 gp: page thumbnails
 gp wheel: scroll thumbnails; keep selection
 gr: recent documents

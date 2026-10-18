@@ -498,7 +498,9 @@ impl App {
           }
           _ => Position { page, ..Position::default() },
         };
+        let description = self.link_description(target, position);
         self.go_to(position, true)?;
+        self.reader.describe_jump(Some(description));
       }
       Target::Uri(uri) => {
         anyhow::ensure!(

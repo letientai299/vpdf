@@ -1,6 +1,8 @@
 use crate::Result;
 use crate::cache::Cache;
 use crate::document::{Document, MIB};
+use crate::find::Query;
+use crate::search::Hit;
 use crate::text::{PageId, Position, Text};
 use std::sync::Arc;
 
@@ -65,6 +67,18 @@ pub struct Yank {
   pub register: char,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum JumpDescription {
+  Heading(String),
+  Link(String),
+  Search { query: Query, ordinal: Option<(usize, usize)> },
+}
+
+struct Jump {
+  location: Location,
+  description: Option<JumpDescription>,
+}
+
 pub struct Reader {
   pub cursor: Position,
   pub scroll: f32,
@@ -77,8 +91,9 @@ pub struct Reader {
   /// Yanked text; the named, `"`, and `0` registers share one copy.
   pub registers: Cache<char, Arc<str>>,
   entry: EntryMode,
-  history: Vec<Location>,
-  future: Vec<Location>,
+  history: Vec<Jump>,
+  future: Vec<Jump>,
+  description: Option<(Position, JumpDescription)>,
 }
 
 impl Default for Reader {
@@ -96,6 +111,7 @@ impl Default for Reader {
       entry: EntryMode::Normal,
       history: Vec::new(),
       future: Vec::new(),
+      description: None,
     }
   }
 }
@@ -131,6 +147,7 @@ impl Reader {
     self.history.clear();
     self.future.clear();
     self.last_selection = None;
+    self.description = None;
   }
 
   pub fn remember(&mut self) {
@@ -143,11 +160,12 @@ impl Reader {
 
   /// Adds `location` to the jump list.
   pub fn record(&mut self, location: Location) {
+    let jump = self.jump_entry(location);
     match self.history.last_mut() {
-      Some(previous) if previous.cursor == location.cursor => {
-        *previous = location;
+      Some(previous) if previous.location.cursor == location.cursor => {
+        *previous = jump;
       }
-      _ => self.history.push(location),
+      _ => self.history.push(jump),
     }
     if self.history.len() > 100 {
       self.history.remove(0);
@@ -156,7 +174,41 @@ impl Reader {
   }
 
   pub fn jumps(&self) -> impl Iterator<Item = Position> {
-    self.history.iter().chain(self.future.iter().rev()).map(|p| p.cursor)
+    self.described_jumps().map(|(position, _)| position)
+  }
+
+  pub(crate) fn described_jumps(
+    &self,
+  ) -> impl Iterator<Item = (Position, Option<&JumpDescription>)> {
+    self
+      .history
+      .iter()
+      .chain(self.future.iter().rev())
+      .map(|jump| (jump.location.cursor, jump.description.as_ref()))
+  }
+
+  pub(crate) fn describe_jump(&mut self, description: Option<JumpDescription>) {
+    self.description = description.map(|label| (self.cursor, label));
+  }
+
+  pub(crate) fn finish_search_jumps(&mut self, query: &Query, hits: &[Hit]) {
+    for jump in self.history.iter_mut().chain(&mut self.future) {
+      if let Some(description) = &mut jump.description {
+        description.finish_search(query, hits, jump.location.cursor);
+      }
+    }
+    if let Some((position, description)) = &mut self.description {
+      description.finish_search(query, hits, *position);
+    }
+  }
+
+  fn jump_entry(&self, location: Location) -> Jump {
+    let description = self
+      .description
+      .as_ref()
+      .filter(|(position, _)| *position == location.cursor)
+      .map(|(_, description)| description.clone());
+    Jump { location, description }
   }
 
   pub fn history(&mut self, forward: bool) {
@@ -176,14 +228,17 @@ impl Reader {
     forward: bool,
     current: Location,
   ) -> Option<Location> {
+    let current = self.jump_entry(current);
     let (from, to) = if forward {
       (&mut self.future, &mut self.history)
     } else {
       (&mut self.history, &mut self.future)
     };
-    let location = from.pop()?;
+    let jump = from.pop()?;
     to.push(current);
-    Some(location)
+    self.description =
+      jump.description.map(|label| (jump.location.cursor, label));
+    Some(jump.location)
   }
 
   pub fn jump(
