@@ -9,7 +9,7 @@ use vpdf::app::{Request, TabMove};
 use vpdf::decode::{Button, Mouse, MouseKind, Spot};
 use vpdf::figures::Source;
 use vpdf::keys::Action;
-use vpdf::pointer::{Hit, Region};
+use vpdf::pointer::{Hit, List, Region};
 use vpdf::prompt::{Prompt, PromptKind};
 use vpdf::reader::SelectionKind;
 use vpdf::session::Session;
@@ -1205,7 +1205,8 @@ fn bar_item(session: &mut Session, index: usize) -> Result<(u16, u16)> {
   status(session)?;
   let bar = session.app().bar_cells().expect("a drawn bar");
   let found = items(session, Region::Actions, bar)?;
-  let item = found.iter().find(|(hit, _)| *hit == Hit::Action(Some(index)));
+  let item =
+    found.iter().find(|(hit, _)| *hit == Hit::Item(List::Actions, Some(index)));
   Ok(item.expect("a shown item").1)
 }
 
@@ -1261,6 +1262,14 @@ fn bar_items_follow_the_pointer() -> Result<()> {
   let app = session.app();
   assert!(app.reader.pending_yank.is_some(), "Copy text ran");
   assert!(app.region.as_ref().is_some_and(vpdf::region::Region::is_bar));
+  // Clicking off clears the bar hint.
+  click(&mut session, (screen.columns - 1, 0))?;
+  capture(&mut session)?;
+  let hint = "h/l choose; Enter runs; Esc closes";
+  assert_eq!(session.app().reader.message, hint);
+  click(&mut session, (screen.columns - 1, 0))?;
+  let app = session.app();
+  assert!(app.region.is_none() && app.reader.message.is_empty());
   Ok(())
 }
 
@@ -1281,10 +1290,10 @@ fn rests_follow_the_link_beneath() -> Result<()> {
     (on(link(first), Some(first)), false, true),
     (on(link(first), Some(first)), true, false),
     // A menu covers the calmed link, closes.
-    (on(Hit::Menu(0), Some(first)), false, false),
+    (on(Hit::Item(List::Menu, Some(0)), Some(first)), false, false),
     (on(link(first), Some(first)), false, false),
     // The view moved another link under it.
-    (on(Hit::Menu(0), Some(first)), false, false),
+    (on(Hit::Item(List::Menu, Some(0)), Some(first)), false, false),
     (on(link(third), Some(third)), false, true),
   ];
   for (step, (hover, calm, due)) in steps.into_iter().enumerate() {
@@ -1300,6 +1309,152 @@ fn rests_follow_the_link_beneath() -> Result<()> {
     app.point(hover);
     assert_eq!(app.hover_due().is_some(), due, "step {step}");
   }
+  Ok(())
+}
+
+/// Right drags pick; release runs.
+#[test]
+fn right_drags_choose_menu_items() -> Result<()> {
+  for text_mode in [false, true] {
+    let (_directory, mut session) = session(text_mode)?;
+    let plain = cell(&mut session, Hit::Text)?;
+    let press = MouseEventKind::Down(MouseButton::Right);
+    mouse(&mut session, press, plain)?;
+    let menu = session.app().context_menu.as_ref().expect("a menu").area();
+    let outline = labels(&mut session).iter().position(|l| *l == "Outline");
+    let row = menu.row + u16::try_from(outline.expect("Outline"))?;
+    let on = (menu.column + 2, row);
+    let drag = MouseEventKind::Drag(MouseButton::Right);
+    assert!(mouse(&mut session, drag, on)?, "text={text_mode}: picks");
+    mouse(&mut session, MouseEventKind::Up(MouseButton::Right), on)?;
+    let app = session.app();
+    assert!(app.context_menu.is_none(), "text={text_mode}: ran");
+    assert!(app.panel.is_some(), "text={text_mode}: outline open");
+    app.close_panel()?;
+    // Slips and releases off items run nothing.
+    let up = MouseEventKind::Up(MouseButton::Right);
+    let screen = session.app().screen;
+    let off = if menu.column >= 3 { 0 } else { menu.column + menu.columns + 2 };
+    let bottom = (plain.0, screen.rows - 2);
+    // (press, drag path, release runs)
+    let cases = [
+      (plain, vec![(plain.0 + 1, plain.1)], false),
+      (plain, vec![(plain.0, plain.1 + 1)], false),
+      (plain, vec![(off, plain.1)], false),
+      // Flipped above a bottom press.
+      (bottom, vec![(bottom.0, bottom.1 - 1)], false),
+      // Armed, then back on the first item.
+      (plain, vec![(off, plain.1), plain], true),
+    ];
+    for (step, (from, path, runs)) in cases.into_iter().enumerate() {
+      mouse(&mut session, press, from)?;
+      for to in &path {
+        mouse(&mut session, drag, *to)?;
+      }
+      let last = *path.last().expect("a path");
+      mouse(&mut session, up, last)?;
+      let open = session.app().context_menu.is_some();
+      assert_eq!(open, !runs, "text={text_mode} {step}");
+      session.app().context_menu = None;
+      session.app().reader.cancel();
+    }
+  }
+  Ok(())
+}
+
+/// The page scrolls under an open menu.
+#[test]
+fn wheel_scrolls_under_menus() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  let plain = cell(&mut session, Hit::Text)?;
+  right(&mut session, plain)?;
+  let menu = session.app().context_menu.as_ref().expect("a menu").area();
+  let before = session.app().reader.scroll;
+  // (beside, over) the menu
+  let spots =
+    [(menu.column.saturating_sub(2), menu.row), (menu.column, menu.row)];
+  let mut last = before;
+  for at in spots {
+    assert!(mouse(&mut session, MouseEventKind::ScrollDown, at)?, "{at:?}");
+    let app = session.app();
+    assert!(app.context_menu.is_some(), "the menu stays");
+    let scroll = app.animation.as_ref().map_or(app.reader.scroll, |a| a.target);
+    assert!(scroll > last, "the page scrolls at {at:?}");
+    last = scroll;
+  }
+  Ok(())
+}
+
+/// Hint labels follow the pointer; clicks act.
+#[test]
+fn hint_labels_follow_the_pointer() -> Result<()> {
+  use crossterm::event::KeyCode;
+  for text_mode in [false, true] {
+    let (_directory, mut session) = session(text_mode)?;
+    // Label cells; `copy` starts `F`.
+    let start = |session: &mut Session, copy| -> Result<Found> {
+      session.app().start_hints(copy)?;
+      status(session)?;
+      let screen = session.app().screen;
+      let rows = screen.rows - 1;
+      let page =
+        vpdf::split::Rect { column: 0, row: 0, columns: screen.columns, rows };
+      items(session, Region::Page, page)
+    };
+    let at = |labels: &Found, index: usize| {
+      let hit = Hit::Item(List::Hints, Some(index));
+      let label = labels.iter().find(|(seen, _)| *seen == hit);
+      label.map(|(_, cell)| *cell).expect("a label")
+    };
+    let labels = start(&mut session, false)?;
+    let internal = at(&labels, 0);
+    assert!(mouse(&mut session, MouseEventKind::Moved, internal)?);
+    assert!(!mouse(&mut session, MouseEventKind::Moved, internal)?, "B5");
+    let picked = session.app().hints.as_ref().map(|h| h.selected);
+    assert_eq!(picked, Some(Some(0)), "text={text_mode}");
+    assert!(status(&mut session)?.contains("\x1b[0;97;44m"), "drawn picked");
+    // Enter follows the picked label.
+    press(&mut session, KeyCode::Enter)?;
+    let app = session.app();
+    assert!(app.hints.is_none(), "text={text_mode}");
+    assert_eq!(app.reader.cursor.page, PageId(1), "text={text_mode}");
+    action(app, Action::History(false))?;
+    // `F` clicks copy addresses.
+    let labels = start(&mut session, true)?;
+    click(&mut session, at(&labels, 1))?;
+    let app = session.app();
+    assert!(app.hints.is_none() && app.reader.message == "Copied link");
+    assert_eq!(app.reader.cursor.page, PageId(0), "text={text_mode}");
+    let labels = start(&mut session, false)?;
+    click(&mut session, at(&labels, 0))?;
+    let app = session.app();
+    assert!(app.hints.is_none(), "text={text_mode}");
+    assert_eq!(app.reader.cursor.page, PageId(1), "text={text_mode}");
+  }
+  Ok(())
+}
+
+/// Typing drops the picked label.
+#[test]
+fn typing_drops_picked_labels() -> Result<()> {
+  use vpdf::document::Target;
+  use vpdf::hints::{Hint, Hints};
+  let (_directory, mut session) = session(false)?;
+  let hint = |label: &str| Hint {
+    label: label.into(),
+    target: Target::Page(PageId(1)),
+    cell: (10, 2),
+  };
+  let app = session.app();
+  app.hints = Some(Hints {
+    items: vec![hint("aa"), hint("sa")],
+    typed: String::new(),
+    copy: false,
+    selected: Some(1),
+  });
+  press(&mut session, crossterm::event::KeyCode::Char('a'))?;
+  let hints = session.app().hints.as_ref().expect("hints stay");
+  assert_eq!((hints.typed.as_str(), hints.selected), ("a", None));
   Ok(())
 }
 

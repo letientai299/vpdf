@@ -2,7 +2,10 @@ use crate::Result;
 use crate::app::App;
 use crate::document::Target;
 use crate::keys;
+use crate::pointer::Items;
+use crate::split::Rect;
 use crate::text::{Bounds, PageId};
+use crate::theme;
 use crossterm::event::{KeyCode, KeyEvent};
 use std::io::Write;
 
@@ -22,6 +25,8 @@ pub struct Hints {
   pub typed: String,
   /// `F`: copy URIs instead of opening them.
   pub copy: bool,
+  /// The pointer's label; Enter runs it.
+  pub selected: Option<usize>,
 }
 
 /// `count` labels of equal length, so no label prefixes another.
@@ -72,7 +77,8 @@ impl App {
       .zip(found)
       .map(|(label, (cell, target))| Hint { label, target, cell })
       .collect();
-    self.hints = Some(Hints { items, typed: String::new(), copy });
+    let typed = String::new();
+    self.hints = Some(Hints { items, typed, copy, selected: None });
     Ok(())
   }
 
@@ -103,12 +109,19 @@ impl App {
   pub fn hint_key(&mut self, key: KeyEvent) -> Result<()> {
     let Some(hints) = &mut self.hints else { return Ok(()) };
     let key = keys::normalize(key);
+    if key.code == KeyCode::Enter
+      && let Some(index) = hints.selected
+    {
+      return self.run_hint(index);
+    }
     if key.code == KeyCode::Esc {
       self.hints = None;
       self.reader.cancel();
       self.disarm();
       return Ok(());
     }
+    // Typing may hide the picked label.
+    hints.selected = None;
     match (keys::plain(key), key.code) {
       (true, KeyCode::Char(ch)) if ch.is_ascii_alphabetic() => {
         hints.typed.push(ch.to_ascii_lowercase());
@@ -122,20 +135,26 @@ impl App {
         return Ok(());
       }
     }
-    let mut matches =
-      hints.items.iter().filter(|hint| hint.label.starts_with(&hints.typed));
-    let Some(first) = matches.next() else {
-      let typed = std::mem::take(&mut hints.typed);
-      self.hints = None;
-      anyhow::bail!("No link labeled {typed}");
-    };
-    if first.label != hints.typed || matches.next().is_some() {
-      return Ok(());
+    let shown: Vec<_> = hints.shown().map(|(index, _)| index).take(2).collect();
+    match shown[..] {
+      [] => {
+        let typed = std::mem::take(&mut hints.typed);
+        self.hints = None;
+        anyhow::bail!("No link labeled {typed}");
+      }
+      [index] if hints.items[index].label == hints.typed => {
+        self.run_hint(index)
+      }
+      _ => Ok(()),
     }
-    let (target, copy) = (first.target.clone(), hints.copy);
-    self.hints = None;
-    match target {
-      Target::Uri(uri) if copy => {
+  }
+
+  /// Follows or copies a label's link.
+  pub(crate) fn run_hint(&mut self, index: usize) -> Result<()> {
+    let Some(hints) = self.hints.take() else { return Ok(()) };
+    let Some(hint) = hints.items.into_iter().nth(index) else { return Ok(()) };
+    match hint.target {
+      Target::Uri(uri) if hints.copy => {
         self.reader.store('"', uri)?;
         self.reader.message = "Copied link".into();
         Ok(())
@@ -144,49 +163,67 @@ impl App {
     }
   }
 
+  /// Pane cells of the shown labels.
+  pub(crate) fn hint_items(&self) -> Items {
+    let mut items = Items::default();
+    let Some(hints) = &self.hints else { return items };
+    for (index, hint) in hints.shown() {
+      items.push(hint.cells(self.left), index);
+    }
+    items
+  }
+
   /// Draws labels; Kitty gets a backdrop image under each label's text.
   pub fn draw_hints(&mut self, out: &mut impl Write) -> Result<()> {
     let Some(hints) = &self.hints else { return Ok(()) };
-    let screen = self.layout.screen;
-    let (cell_width, cell_height) =
-      (f32::from(screen.cell_width), f32::from(screen.cell_height));
     let mut backdrops = Vec::new();
-    for hint in &hints.items {
-      if !hint.label.starts_with(&hints.typed) {
-        continue;
-      }
-      let column = label_column(hint, self.left);
-      let row = hint.cell.1;
-      let rest = &hint.label[hints.typed.len()..];
+    for (index, hint) in hints.shown() {
+      let picked = hints.selected == Some(index);
+      let (typed, rest, fill) = if picked {
+        (theme::HINT_PICKED_TYPED, theme::HINT_PICKED, theme::BADGE_FILL)
+      } else {
+        (theme::HINT_TYPED, theme::HINT, theme::HINT_FILL)
+      };
+      let cells = hint.cells(self.left);
       write!(
         out,
-        "{}\x1b[0;1;30;43m{}\x1b[0;30;43m{rest}\x1b[0m",
-        self.at.goto(row, column),
-        hints.typed
+        "{}{typed}{}{rest}{}\x1b[0m",
+        self.at.goto(cells.row, cells.column),
+        hints.typed,
+        &hint.label[hints.typed.len()..],
       )?;
-      let x = f32::from(column - self.left) * cell_width;
-      let y = f32::from(row) * cell_height;
-      let width = hint.label.len() as f32 * cell_width;
-      backdrops.push(Bounds {
-        x0: x,
-        y0: y,
-        x1: x + width,
-        y1: y + cell_height,
-      });
+      backdrops.push((self.cell_bounds(cells), fill));
     }
     if self.text_mode {
       return Ok(());
     }
-    for rect in backdrops {
-      self.graphics.backdrop(
-        rect,
-        [255, 205, 60, 255],
-        screen,
-        self.left,
-        out,
-      )?;
+    let screen = self.layout.screen;
+    for (rect, fill) in backdrops {
+      self.graphics.backdrop(rect, fill, screen, self.left, out)?;
     }
     Ok(())
+  }
+}
+
+impl Hints {
+  /// Labels the typed letters still match.
+  fn shown(&self) -> impl Iterator<Item = (usize, &Hint)> {
+    let typed = &self.typed;
+    let all = self.items.iter().enumerate();
+    all.filter(move |(_, hint)| hint.label.starts_with(typed.as_str()))
+  }
+}
+
+impl Hint {
+  /// The label's pane cells.
+  fn cells(&self, left: u16) -> Rect {
+    let columns = u16::try_from(self.label.len()).unwrap_or(u16::MAX);
+    Rect {
+      column: label_column(self, left),
+      row: self.cell.1,
+      columns,
+      rows: 1,
+    }
   }
 }
 

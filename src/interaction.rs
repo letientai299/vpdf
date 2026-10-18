@@ -6,9 +6,10 @@ use crate::layout::Screen;
 use crate::links::LinkPress;
 use crate::motion::Motion;
 use crate::panel::Panel;
-use crate::pointer::{Hit, Pixel, Region, Route, WHEEL_ROWS, Wheel};
+use crate::pointer::{Hit, List, Pixel, Region, Route, WHEEL_ROWS, Wheel};
 use crate::preview::Origin;
 use crate::reader::Location;
+use crate::region::BAR_HINT;
 use crate::text::{Bounds, PageId, Position};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
@@ -71,7 +72,10 @@ impl App {
     self.context_menu = None;
     self.drop_sweep();
     self.peek = None;
-    self.region = None;
+    // The bar's key hint goes with it.
+    if self.region.take().is_some() && self.reader.message == BAR_HINT {
+      self.reader.message.clear();
+    }
   }
 
   pub(crate) fn overlay_transfer(&mut self, action: Action) -> bool {
@@ -572,19 +576,6 @@ impl App {
     Ok(())
   }
 
-  /// Motion picks a menu row or item.
-  pub(crate) fn moved_onto(&mut self, hit: Hit) {
-    match (hit, self.input_owner()) {
-      (Hit::Menu(index), InputOwner::Context) => {
-        if let Some(menu) = &mut self.context_menu {
-          menu.selected = index;
-        }
-      }
-      (Hit::Action(Some(index)), InputOwner::Region) => self.pick_action(index),
-      _ => {}
-    }
-  }
-
   /// A screen report's cell in this pane.
   pub(crate) fn pane_cell(&self, mouse: MouseEvent) -> (u16, u16) {
     let column = mouse.column.wrapping_sub(self.at.column);
@@ -614,19 +605,27 @@ impl App {
     if matches!(mouse.kind, MouseEventKind::Down(_)) && self.dismiss_click()? {
       return Ok(());
     }
+    let right = matches!(
+      mouse.kind,
+      MouseEventKind::Drag(MouseButton::Right)
+        | MouseEventKind::Up(MouseButton::Right)
+    );
+    if right && self.context_menu.is_some() {
+      return self.menu_drag(route);
+    }
+    // The page still scrolls under a menu.
+    let wheel = Wheel::of(mouse.kind).is_some();
     if self.prompt.is_some()
-      || self.context_menu.is_some()
+      || self.context_menu.is_some() && !wheel
       || self.region.as_ref().is_some_and(crate::region::Region::is_bar)
     {
       return Ok(());
     }
     match region {
       Region::Panel => return self.panel_mouse(mouse),
-      Region::Overlay | Region::Status | Region::Menu | Region::Actions => {
-        return Ok(());
-      }
-      // Presses close or follow it first.
-      Region::Preview => return self.page_wheel(route),
+      Region::Overlay | Region::Status | Region::Actions => return Ok(()),
+      // Only turns: presses go to them first.
+      Region::Preview | Region::Menu => return self.page_wheel(route),
       Region::Page | Region::Overview => {}
     }
     if matches!(mouse.kind, MouseEventKind::Down(_)) && self.panel_focused() {
@@ -909,6 +908,11 @@ impl App {
     glyph: GlyphAt,
   ) -> Result<Hit> {
     match region {
+      Region::Page if self.hints.is_some() => {
+        if let Some(index) = self.items(List::Hints).at(column, row) {
+          return Ok(Hit::Item(List::Hints, Some(index)));
+        }
+      }
       Region::Page => {}
       Region::Panel => {
         let row =
@@ -919,13 +923,10 @@ impl App {
         let page = self.thumbnail_at(column, row);
         return Ok(page.map_or(Hit::Nothing, Hit::Thumbnail));
       }
-      Region::Menu => {
-        let menu = self.context_menu.as_ref();
-        let item = menu.and_then(|menu| menu.item_at(column, row));
-        return Ok(item.map_or(Hit::Nothing, Hit::Menu));
-      }
-      Region::Actions => {
-        return Ok(Hit::Action(self.action_at(column)));
+      Region::Menu | Region::Actions => {
+        let list =
+          if region == Region::Menu { List::Menu } else { List::Actions };
+        return Ok(Hit::Item(list, self.items(list).at(column, row)));
       }
       Region::Preview => {
         let follows = self.hover_peek().is_some();

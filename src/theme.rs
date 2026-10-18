@@ -33,6 +33,13 @@ pub const TEXT_CURSORLINE: &str = "\x1b[0;100m";
 pub const TEXT_CURSOR: &str = "\x1b[0;7;34m";
 pub const TEXT_SELECTION: &str = "\x1b[0;7;35m";
 pub const TEXT_MATCH: &str = "\x1b[0;7;33m";
+/// Hint labels: typed, rest, fill.
+pub const HINT_TYPED: &str = "\x1b[0;1;30;43m";
+pub const HINT: &str = "\x1b[0;30;43m";
+pub const HINT_FILL: [u8; 4] = [255, 205, 60, 255];
+/// The label the pointer picked.
+pub const HINT_PICKED_TYPED: &str = "\x1b[0;1;97;44m";
+pub const HINT_PICKED: &str = "\x1b[0;97;44m";
 /// Page-view fills under badge and bar cells.
 pub const BADGE_FILL: [u8; 4] = [60, 120, 230, 255];
 pub const BAR_FILL: [u8; 4] = [70, 70, 70, 255];

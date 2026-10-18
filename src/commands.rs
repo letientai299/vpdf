@@ -130,10 +130,12 @@ impl App {
     if key.code == KeyCode::Esc {
       return self.cancel_input();
     }
-    if self.hints.is_some() {
+    if let Some(hints) = &self.hints {
+      let picked = key.code == KeyCode::Enter && hints.selected.is_some();
       if crate::keys::plain(key)
         && matches!(key.code, KeyCode::Char(ch) if ch.is_ascii_alphabetic())
         || key.code == KeyCode::Backspace
+        || picked
       {
         return self.hint_key(key);
       }

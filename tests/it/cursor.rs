@@ -196,6 +196,7 @@ fn cursor_hint_labels_keep_owner() -> Result<()> {
     }],
     typed: String::new(),
     copy: false,
+    selected: None,
   });
   keys(&mut app, b"i")?;
   assert_eq!(app.hints.as_ref().unwrap().typed, "i");

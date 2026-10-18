@@ -166,10 +166,36 @@ pub enum Hit {
   Preview {
     follows: bool,
   },
-  /// Index into the context menu's items.
-  Menu(usize),
-  /// An action bar item, if any.
-  Action(Option<usize>),
+  /// An overlay's item, if any, by index.
+  Item(List, Option<usize>),
+}
+
+/// Overlays whose items the pointer picks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum List {
+  /// The context menu.
+  Menu,
+  /// A capture's action bar.
+  Actions,
+  /// `f`/`F` link labels.
+  Hints,
+}
+
+/// Drawn items: pane cells and index.
+#[derive(Clone, Debug, Default)]
+pub struct Items(Vec<(Rect, usize)>);
+
+impl Items {
+  pub fn push(&mut self, cells: Rect, index: usize) {
+    self.0.push((cells, index));
+  }
+
+  /// The topmost item at a pane cell.
+  pub fn at(&self, column: u16, row: u16) -> Option<usize> {
+    // Later items draw on top.
+    let item = self.0.iter().rfind(|(cells, _)| cells.contains(column, row));
+    item.map(|(_, index)| *index)
+  }
 }
 
 impl Hit {
@@ -178,14 +204,13 @@ impl Hit {
       Self::Nothing
       | Self::Note { text: false, .. }
       | Self::Preview { follows: false }
-      | Self::Action(None) => Shape::Default,
+      | Self::Item(_, None) => Shape::Default,
       Self::Text | Self::Note { text: true, .. } => Shape::Text,
       Self::Link(..)
       | Self::Row(_)
       | Self::Thumbnail(_)
       | Self::Preview { follows: true }
-      | Self::Menu(_)
-      | Self::Action(Some(_)) => Shape::Pointer,
+      | Self::Item(_, Some(_)) => Shape::Pointer,
     }
   }
 }
@@ -205,7 +230,7 @@ impl Hover {
   pub fn shown(self) -> (Shape, Option<(u32, Hit)>) {
     let inert = matches!(
       self.hit,
-      Hit::Nothing | Hit::Text | Hit::Preview { .. } | Hit::Action(None)
+      Hit::Nothing | Hit::Text | Hit::Preview { .. } | Hit::Item(_, None)
     );
     (self.hit.shape(), (!inert).then_some((self.pane, self.hit)))
   }
@@ -849,6 +874,20 @@ mod tests {
   }
 
   #[test]
+  fn items_pick_the_topmost() {
+    let cells = |column, columns| Rect { column, row: 4, columns, rows: 1 };
+    let mut items = Items::default();
+    items.push(cells(10, 3), 0);
+    items.push(cells(12, 3), 1);
+    // column -> item
+    let cases = [(9, None), (10, Some(0)), (12, Some(1)), (14, Some(1))];
+    for (column, want) in cases {
+      assert_eq!(items.at(column, 4), want, "{column}");
+    }
+    assert_eq!(items.at(10, 5), None);
+  }
+
+  #[test]
   fn hits_pick_pointer_shapes() {
     let cases = [
       (Hit::Nothing, Shape::Default),
@@ -860,9 +899,9 @@ mod tests {
       (Hit::Thumbnail(PageId(4)), Shape::Pointer),
       (Hit::Preview { follows: true }, Shape::Pointer),
       (Hit::Preview { follows: false }, Shape::Default),
-      (Hit::Menu(0), Shape::Pointer),
-      (Hit::Action(Some(1)), Shape::Pointer),
-      (Hit::Action(None), Shape::Default),
+      (Hit::Item(List::Menu, Some(0)), Shape::Pointer),
+      (Hit::Item(List::Hints, Some(1)), Shape::Pointer),
+      (Hit::Item(List::Actions, None), Shape::Default),
     ];
     for (hit, shape) in cases {
       assert_eq!(hit.shape(), shape, "{hit:?}");

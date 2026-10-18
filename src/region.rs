@@ -3,10 +3,11 @@ use crate::app::App;
 use crate::document::{Document, Target};
 use crate::figures::Source;
 use crate::keys::{Action, Input};
+use crate::pointer::Items;
 use crate::reader::Yank;
+use crate::split::Rect;
 use crate::text::{Bounds, PageId, Text};
 use crate::{clipboard, terminal, theme, tiles};
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::ops::Range;
@@ -46,13 +47,12 @@ pub enum Region {
 /// A drawn action bar's pane cells.
 #[derive(Clone, Debug)]
 pub struct BarCells {
-  row: u16,
-  columns: Range<u16>,
-  items: Spans<u16>,
+  area: Rect,
+  items: Items,
 }
 
-/// Shown bar items: columns and `ACTIONS` index.
-type Spans<T> = Vec<(Range<T>, usize)>;
+/// Bar label items: columns and `ACTIONS` index.
+type Spans = Vec<(Range<usize>, usize)>;
 
 impl Region {
   pub fn is_bar(&self) -> bool {
@@ -73,6 +73,9 @@ pub enum Operation {
   Save,
   Ocr,
 }
+
+/// The open bar's status hint.
+pub(crate) const BAR_HINT: &str = "h/l choose; Enter runs; Esc closes";
 
 const ACTIONS: [(&str, Operation); 4] = [
   ("Copy image", Operation::Image),
@@ -266,7 +269,7 @@ impl App {
       status: String::new(),
       cells: None,
     });
-    self.reader.message = "h/l choose; Enter runs; Esc closes".into();
+    self.reader.message = BAR_HINT.into();
     Ok(())
   }
 
@@ -455,21 +458,23 @@ impl App {
   }
 
   /// Records the drawn bar's cells.
-  fn place_bar(&mut self, row: usize, width: usize, items: Spans<usize>) {
+  fn place_bar(&mut self, row: usize, width: usize, spans: Spans) {
     let column = |offset: usize| {
       u16::try_from(usize::from(self.left) + offset.min(width))
         .unwrap_or(u16::MAX)
     };
-    let cells = BarCells {
-      row: u16::try_from(row).unwrap_or(u16::MAX),
-      columns: column(0)..column(width),
-      items: items
-        .into_iter()
-        .map(|(span, index)| (column(span.start)..column(span.end), index))
-        .collect(),
+    let row = u16::try_from(row).unwrap_or(u16::MAX);
+    let cells = |span: Range<usize>| {
+      let (start, end) = (column(span.start), column(span.end));
+      Rect { column: start, row, columns: end - start, rows: 1 }
     };
-    if let Some(Region::Bar { cells: drawn, .. }) = &mut self.region {
-      *drawn = Some(cells);
+    let mut items = Items::default();
+    for (span, index) in spans {
+      items.push(cells(span), index);
+    }
+    let area = cells(0..width);
+    if let Some(Region::Bar { cells, .. }) = &mut self.region {
+      *cells = Some(BarCells { area, items });
     }
   }
 
@@ -481,18 +486,12 @@ impl App {
   }
 
   /// Pane cells the drawn bar covers.
-  pub fn bar_cells(&self) -> Option<crate::split::Rect> {
-    let cells = self.drawn_bar()?;
-    let columns = cells.columns.end - cells.columns.start;
-    let (column, row) = (cells.columns.start, cells.row);
-    Some(crate::split::Rect { column, row, columns, rows: 1 })
+  pub fn bar_cells(&self) -> Option<Rect> {
+    self.drawn_bar().map(|cells| cells.area)
   }
 
-  /// The bar item at a pane column.
-  pub(crate) fn action_at(&self, column: u16) -> Option<usize> {
-    let items = &self.drawn_bar()?.items;
-    let item = items.iter().find(|(span, _)| span.contains(&column));
-    item.map(|(_, index)| *index)
+  pub(crate) fn bar_items(&self) -> Items {
+    self.drawn_bar().map_or_default(|cells| cells.items.clone())
   }
 
   /// Selects a bar item by `ACTIONS` index.
@@ -504,21 +503,10 @@ impl App {
     }
   }
 
-  /// Runs a bar item a click hit.
-  pub fn bar_press(&mut self, mouse: MouseEvent) -> Result<bool> {
-    let left = mouse.kind == MouseEventKind::Down(MouseButton::Left)
-      && !mouse.modifiers.contains(KeyModifiers::ALT);
-    if !left || self.input_owner() != crate::app::InputOwner::Region {
-      return Ok(false);
-    }
-    let (column, row) = self.pane_cell(mouse);
-    if !self.bar_cells().is_some_and(|bar| bar.contains(column, row)) {
-      return Ok(false);
-    }
-    let Some(index) = self.action_at(column) else { return Ok(false) };
+  pub(crate) fn run_action(&mut self, index: usize) -> Result<()> {
     self.pick_action(index);
-    self.region_operation(ACTIONS[index].1)?;
-    Ok(true)
+    let Some((_, operation)) = ACTIONS.get(index) else { return Ok(()) };
+    self.region_operation(*operation)
   }
 
   /// Dims around a rect; outlines it.
@@ -569,7 +557,7 @@ impl App {
 }
 
 /// Bar text and item spans; `action` bracketed.
-fn bar_label(page: PageId, action: Operation) -> (String, Spans<usize>) {
+fn bar_label(page: PageId, action: Operation) -> (String, Spans) {
   let mut label = format!("p{}", page.0 + 1);
   let mut items = Vec::with_capacity(ACTIONS.len());
   for (index, (name, operation)) in ACTIONS.iter().enumerate() {

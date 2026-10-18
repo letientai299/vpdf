@@ -279,6 +279,7 @@ fn hint_labels_keep_their_origin() -> Result<()> {
         }],
         typed: typed.into(),
         copy: false,
+        selected: None,
       });
       let mut out = Vec::new();
       app.draw_hints(&mut out)?;
@@ -811,8 +812,7 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
         | Hit::Row(_)
         | Hit::Thumbnail(_)
         | Hit::Preview { .. }
-        | Hit::Menu(_)
-        | Hit::Action(_) => false,
+        | Hit::Item(..) => false,
       };
       assert!(expected, "{at}");
     }

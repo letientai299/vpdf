@@ -77,6 +77,8 @@ Drag past top / bottom edge: scroll; farther is faster
 Drag / click runs: enter V; <Esc> returns to entry mode
 Right click: menu for link, selection, text, figure
 Menu j k <CR> / click: choose and run; <Esc> closes
+Menu hover: choose; right drag and release: run
+Wheel with a menu open: scroll the page
 
 # Text objects
 V / y + i/a: inner / around objects
@@ -96,6 +98,7 @@ n N: next / previous match
 # Figures
 gF: open selected figure actions
 <M-drag>: capture a region; release opens actions
+Actions hover / click: choose / run; click off closes
 <M-click> on a figure: pick it and open actions
 h j k l: choose image, text, PNG, or OCR
 <CR>: run action; <Esc> closes bar
@@ -107,6 +110,7 @@ Close bar: keep mode, selection, committed jobs
 go: table of contents
 gs: search results
 f F: link hints / copy URLs
+Hint hover: pick a label; <CR> / click acts on it
 gl: links on this page
 :jumps: history with context, word, and position
 gp: page thumbnails

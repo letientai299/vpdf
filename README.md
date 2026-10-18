@@ -111,8 +111,10 @@ same entry point as `v`. Pointer selections return to their entry mode on Esc.
 
 A right click opens a menu at the pointer with actions for the link, selection,
 text, or figure under it, plus history, fit, outline, and overview. Each item
-shows its key; `j`/`k` and Enter or a click run one, and Esc or a click outside
-closes it.
+shows its key; hovering or `j`/`k` choose one, and Enter or a click run it. A
+right press dragged onto an item runs it on release. Esc or a click outside
+closes the menu; the wheel still scrolls the page. Hovering an `f`/`F` label
+picks it, and Enter or a click follows or copies its link.
 
 `K` owns its preview: `j`/`k` scroll rows, Ctrl-d/Ctrl-u scroll half its
 height, and Enter follows the original destination. Counts apply to scrolling.
@@ -120,17 +122,18 @@ The border shows the destination page label and arrows at clipped edges.
 Command prompts return to the preview; Esc clears pending input first.
 
 `]i` and `[i` move between detected figures; counts repeat. `zF` fits the
-selected figure, and `gF` opens its region action bar. `h`/`l` choose Copy
-image, Copy text, Save PNG, or OCR text; Enter runs the selected action. Esc
-closes the bar while preserving Cursor and Visual state. PNG captures use 144
-DPI, capped at 8 MP, and save beside the PDF with a numbered filename. OCR
-requires Tesseract and copies text without replacing the page's extracted text.
-Image copy uses native clipboard tools locally and OSC 5522 over SSH when the
-terminal answers its capability query. A remote copy succeeds after terminal
-acknowledgment; a timeout blocks newer image writes until its final status.
-Figure detection groups image/vector bounds and nearby captions; caption-only
-targets capture that caption. Alt-drag sweeps a region, dimming the rest of
-the page, and its release opens the same bar; Alt-click on a figure picks it.
+selected figure, and `gF` opens its region action bar. `h`/`l` or hovering
+choose Copy image, Copy text, Save PNG, or OCR text; Enter or a click runs the
+selected action. Esc or a click outside closes the bar while preserving Cursor
+and Visual state. PNG captures use 144 DPI, capped at 8 MP, and save beside the
+PDF with a numbered filename. OCR requires Tesseract and copies text without
+replacing the page's extracted text. Image copy uses native clipboard tools
+locally and OSC 5522 over SSH when the terminal answers its capability query. A
+remote copy succeeds after terminal acknowledgment; a timeout blocks newer image
+writes until its final status. Figure detection groups image/vector bounds and
+nearby captions; caption-only targets capture that caption. Alt-drag sweeps a
+region, dimming the rest of the page, and its release opens the same bar;
+Alt-click on a figure picks it.
 
 ## Documentation
 

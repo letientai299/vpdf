@@ -6,12 +6,13 @@ use crate::document::Target;
 use crate::keys::{self, Action, Input, PanelKind};
 use crate::motion::Motion;
 use crate::pointer::Route;
+use crate::pointer::{Items, List};
 use crate::reader::SelectionKind;
 use crate::region::Operation;
 use crate::split::Rect;
 use crate::text::{Bounds, PageId, Position};
 use crate::theme;
-use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{MouseEvent, MouseEventKind};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 
@@ -23,6 +24,10 @@ pub struct ContextMenu {
   pub at: (u16, u16),
   /// Columns, kept inside the pane.
   pub width: u16,
+  /// The opening right press's cell.
+  pub press: (u16, u16),
+  /// That drag went `ARM` cells away.
+  pub armed: bool,
 }
 
 /// A menu row.
@@ -60,7 +65,15 @@ fn item(label: &'static str, key: &'static str, command: Command) -> Item {
   Item { label, key, command }
 }
 
+/// Right drags pick past this distance.
+const ARM: u16 = 2;
+
 impl ContextMenu {
+  /// A menu opened at a pane cell.
+  fn new(items: Vec<Item>, at: (u16, u16)) -> Self {
+    Self { items, selected: 0, at, width: 0, press: at, armed: false }
+  }
+
   /// Widest key, for the key column.
   fn keys(&self) -> usize {
     self.items.iter().map(|item| item.key.width()).max().unwrap_or(0)
@@ -79,10 +92,14 @@ impl ContextMenu {
     Rect { column, row, columns: self.width, rows }
   }
 
-  /// Item at a pane cell.
-  pub(crate) fn item_at(&self, column: u16, row: u16) -> Option<usize> {
-    let inside = self.area().contains(column, row);
-    inside.then(|| usize::from(row - self.at.1))
+  /// Each row's cells.
+  pub(crate) fn items(&self) -> Items {
+    let mut items = Items::default();
+    let area = self.area();
+    for (index, row) in (area.row..area.row + area.rows).enumerate() {
+      items.push(Rect { row, rows: 1, ..area }, index);
+    }
+    items
   }
 }
 
@@ -145,8 +162,7 @@ impl App {
       .map(|(label, action)| bound(label, action, Command::Key(action))),
     );
     self.disarm();
-    let mut menu =
-      ContextMenu { items, selected: 0, at: (column, row), width: 0 };
+    let mut menu = ContextMenu::new(items, (column, row));
     self.context_fit(&mut menu);
     self.context_menu = Some(menu);
   }
@@ -189,20 +205,31 @@ impl App {
     Ok(())
   }
 
-  /// Whether a press hit the open menu.
-  pub fn context_press(&mut self, mouse: MouseEvent) -> Result<bool> {
+  /// Whether a press hit the menu.
+  pub(crate) fn context_press(&self, mouse: MouseEvent) -> bool {
     let (column, row) = self.pane_cell(mouse);
-    let Some(menu) = &mut self.context_menu else { return Ok(false) };
-    let Some(index) = menu.item_at(column, row) else { return Ok(false) };
-    if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
-      menu.selected = index;
-      self.context_run()?;
+    let menu = self.context_menu.as_ref();
+    menu.is_some_and(|menu| menu.area().contains(column, row))
+  }
+
+  /// Right drags pick; their release runs.
+  pub(crate) fn menu_drag(&mut self, route: Route) -> Result<()> {
+    let Some(menu) = &mut self.context_menu else { return Ok(()) };
+    let (column, row) = (route.mouse.column, route.mouse.row);
+    // Slips stay near the press.
+    let far = column.abs_diff(menu.press.0).max(row.abs_diff(menu.press.1));
+    menu.armed |= far >= ARM;
+    let item = menu.items().at(column, row).filter(|_| menu.armed);
+    let Some(index) = item else { return Ok(()) };
+    self.pick_item(List::Menu, index);
+    if matches!(route.mouse.kind, MouseEventKind::Up(_)) {
+      return self.context_run();
     }
-    Ok(true)
+    Ok(())
   }
 
   /// Runs the selected item; the menu closes.
-  fn context_run(&mut self) -> Result<()> {
+  pub(crate) fn context_run(&mut self) -> Result<()> {
     let Some(menu) = self.context_menu.take() else { return Ok(()) };
     let Some(item) = menu.items.into_iter().nth(menu.selected) else {
       return Ok(());
@@ -345,7 +372,7 @@ mod tests {
       ),
       bound("Fit width", Action::Fit, Command::Key(Action::Fit)),
     ];
-    let mut menu = ContextMenu { items, selected: 0, at, width: 0 };
+    let mut menu = ContextMenu::new(items, at);
     menu.width = u16::try_from(menu.needed()).unwrap_or(0);
     menu
   }
@@ -364,7 +391,7 @@ mod tests {
       ((10, 4), None),
     ];
     for ((column, row), want) in cases {
-      assert_eq!(menu.item_at(column, row), want, "{column},{row}");
+      assert_eq!(menu.items().at(column, row), want, "{column},{row}");
     }
   }
 

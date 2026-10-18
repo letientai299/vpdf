@@ -872,7 +872,8 @@ impl Session {
       if self.on_completion(mouse) {
         return Ok(false);
       }
-      if self.app().context_press(mouse)? || self.app().bar_press(mouse)? {
+      let app = self.app();
+      if app.item_press(mouse)? || app.context_press(mouse) {
         self.pointer.release();
         return Ok(true);
       }
@@ -913,7 +914,14 @@ impl Session {
     let app = &mut self.tab().panes[index];
     // Per-pixel drags; edges scroll.
     let reading = |app: &App| {
-      (app.reader.cursor, app.reader.selection, app.view_key(), app.gesture)
+      let menu = app.context_menu.as_ref().map(|menu| menu.selected);
+      (
+        app.reader.cursor,
+        app.reader.selection,
+        app.view_key(),
+        app.gesture,
+        menu,
+      )
     };
     let before =
       matches!(mouse.kind, MouseEventKind::Drag(_)).then(|| reading(app));

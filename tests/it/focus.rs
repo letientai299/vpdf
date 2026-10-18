@@ -71,6 +71,7 @@ fn hints(app: &mut App) {
     }],
     typed: String::new(),
     copy: false,
+    selected: None,
   });
 }
 

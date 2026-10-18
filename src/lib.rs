@@ -45,6 +45,7 @@ pub mod motion;
 pub mod objects;
 pub mod ocr;
 pub mod outline;
+mod overlays;
 pub mod overview;
 mod pace;
 pub mod panel;

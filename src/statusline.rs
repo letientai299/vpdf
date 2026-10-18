@@ -121,11 +121,7 @@ impl App {
       Hit::Row(_) => self.panel.as_ref()?.hover_title.clone(),
       Hit::Thumbnail(page) => Some(self.page_line(page)),
       Hit::Link(..) => self.hover_label(),
-      Hit::Nothing
-      | Hit::Text
-      | Hit::Preview { .. }
-      | Hit::Menu(_)
-      | Hit::Action(_) => None,
+      Hit::Nothing | Hit::Text | Hit::Preview { .. } | Hit::Item(..) => None,
     }
   }
 
