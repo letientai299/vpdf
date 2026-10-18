@@ -710,6 +710,7 @@ impl App {
 
   /// Closes key-driven state as focus leaves.
   pub fn blur(&mut self) -> Result<()> {
+    self.cancel_definition();
     // Focus loss closes this pane's overlays.
     self.dismiss_overlay();
     self.hints = None;
@@ -722,6 +723,9 @@ impl App {
   /// Acts on a routed pointer event.
   pub fn mouse(&mut self, route: Route) -> Result<()> {
     let Route { mouse, region, .. } = route;
+    if mouse.kind != MouseEventKind::Moved {
+      self.cancel_definition();
+    }
     if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_)) {
       self.autoscroll = None;
     }

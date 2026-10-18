@@ -243,6 +243,32 @@ impl Index {
     printed.text.chars().take(80).collect()
   }
 
+  pub fn definitions(
+    &self,
+    reference: &crate::reference::Reference,
+    limit: usize,
+  ) -> Vec<Hit> {
+    self
+      .lines
+      .iter()
+      .enumerate()
+      .filter_map(|(line, text)| {
+        let (start, end) = reference.destination(text)?;
+        let first = Position {
+          page: self.page,
+          line,
+          glyph: text[..start].chars().count(),
+        };
+        let last = Position {
+          glyph: text[..end].chars().count().saturating_sub(1),
+          ..first
+        };
+        Some(Hit { first, last, excerpt: self.excerpt(first) })
+      })
+      .take(limit)
+      .collect()
+  }
+
   pub fn weight(&self) -> usize {
     let lines = self.lines.iter().map(|line| line.len()).sum::<usize>();
     self.text.capacity()

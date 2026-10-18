@@ -24,13 +24,7 @@ const BATCH: usize = 128;
 const BATCH_BYTES: usize = 8 * MIB;
 
 pub enum Request {
-  Query {
-    generation: u64,
-    query: String,
-    whole_word: bool,
-    origin: PageId,
-    backward: bool,
-  },
+  Query { generation: u64, query: crate::find::Query, origin: PageId },
   Seed(PageId, Arc<Text>),
 }
 
@@ -72,16 +66,26 @@ impl SearchWorker {
     origin: PageId,
     backward: bool,
   ) -> Result<u64> {
+    self.lookup(
+      &crate::find::Query {
+        text: query.to_owned(),
+        whole: whole_word,
+        backward,
+        ..crate::find::Query::default()
+      },
+      origin,
+    )
+  }
+
+  pub fn lookup(
+    &self,
+    query: &crate::find::Query,
+    origin: PageId,
+  ) -> Result<u64> {
     let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
     self
       .send
-      .send(Request::Query {
-        generation,
-        query: query.to_owned(),
-        whole_word,
-        origin,
-        backward,
-      })
+      .send(Request::Query { generation, query: query.clone(), origin })
       .map_err(|_| anyhow::anyhow!("Search worker stopped"))?;
     Ok(generation)
   }
@@ -111,9 +115,15 @@ fn serve(
       }
       Request::Query { generation, .. }
         if current.load(Ordering::Relaxed) != generation => {}
-      Request::Query { generation, query, whole_word, origin, backward } => {
-        let task = SearchTask { generation, origin, backward, current, send };
-        let result = task.run(&mut source, &mut indexes, &query, whole_word);
+      Request::Query { generation, query, origin } => {
+        let task = SearchTask {
+          generation,
+          origin,
+          backward: query.backward,
+          current,
+          send,
+        };
+        let result = task.run(&mut source, &mut indexes, &query);
         let done = SearchEvent {
           generation,
           hits: Vec::new(),
@@ -235,10 +245,9 @@ impl SearchTask<'_> {
     &self,
     source: &mut Source,
     indexes: &mut Cache<PageId, Index>,
-    query: &str,
-    whole_word: bool,
+    query: &crate::find::Query,
   ) -> Result<()> {
-    let pattern = search::compile(query, whole_word)?;
+    let pattern = search::compile(&query.text, query.whole)?;
     let mut remaining: usize = 10_000;
     let pages = source.pages;
     for offset in 0..pages {
@@ -254,7 +263,18 @@ impl SearchTask<'_> {
         keep(indexes, page, index);
       }
       let Some(index) = indexes.get(&page) else { continue };
-      let hits = index.matches(&pattern, remaining.min(1000))?;
+      let hits = if let Some(reference) = &query.reference {
+        index
+          .definitions(&reference.reference, remaining.min(1000))
+          .into_iter()
+          .filter(|hit| {
+            (hit.first.page, hit.first.line)
+              != (reference.origin.page, reference.origin.line)
+          })
+          .collect()
+      } else {
+        index.matches(&pattern, remaining.min(1000))?
+      };
       remaining -= hits.len();
       if !hits.is_empty() {
         notify(self.send.send(SearchEvent {
@@ -510,7 +530,11 @@ mod tests {
       send: &send,
     };
     let mut indexes = Cache::new(64 * MIB);
-    task.run(source, &mut indexes, query, false)?;
+    let query = crate::find::Query {
+      text: query.to_owned(),
+      ..crate::find::Query::default()
+    };
+    task.run(source, &mut indexes, &query)?;
     drop(send);
     let hits = events.into_iter().flat_map(|event| event.hits).collect();
     Ok((hits, source.extracted - before))

@@ -1,7 +1,6 @@
 use crate::Result;
 use crate::app::{App, InputOwner, Tabline};
 use crate::chrome::Chrome;
-use crate::find::Phase;
 use crate::grid;
 use crate::layout::Screen;
 use crate::pointer::Hit;
@@ -50,8 +49,7 @@ impl App {
     if self.search.hidden || hits.is_empty() {
       return String::new();
     }
-    let more =
-      if matches!(self.search.phase, Phase::Running { .. }) { "+" } else { "" };
+    let more = if self.search.phase.running() { "+" } else { "" };
     if self.reader.viewport_mode() {
       return format!("[{}{more} matches]  ", hits.len());
     }

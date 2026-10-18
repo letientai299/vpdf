@@ -6,6 +6,7 @@ mod common;
 mod corpus;
 mod cursor;
 mod cursorline;
+mod definitions;
 mod drop;
 mod encrypted;
 mod figures;

@@ -107,6 +107,11 @@ P yy: yank row
 <Tab><S-Tab>: toggle content / panel focus
 P q: close focused panel
 gq: close sidebar from either focus
+gd: follow internal link or resolve section / figure / table / equation label
+Unlinked references: scan text; choose ambiguous candidates in results
+Ambiguous headings: choose a destination in the outline
+Reference lookup replaces search; Esc or another action cancels pending lookup
+Term definitions and unlinked citations / footnotes are not inferred
 gx: open URL at cursor or visible target
 :text: extracted-text preview; q returns
 g? <F1>: this reference

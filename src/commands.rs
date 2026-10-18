@@ -45,6 +45,7 @@ const COVERED: [&str; 25] = [
 
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
+    self.cancel_definition();
     self.search.yank = None;
     self.finish_scroll_before(input.action);
     if self.reader.operator.is_some()
@@ -111,6 +112,7 @@ impl App {
       Action::WordSearch => self.word_search()?,
       Action::Result(reverse) => self.next_result(reverse, input.count)?,
       Action::Follow => self.follow_cursor()?,
+      Action::Definition => self.definition()?,
       Action::OpenUrl => self.open_cursor_url()?,
       Action::Command => self.prompt = Some(Prompt::new(PromptKind::Command)),
       Action::Mark(name) => self.set_mark(name)?,
@@ -211,6 +213,7 @@ impl App {
   }
 
   pub(crate) fn cancel_input(&mut self) -> Result<()> {
+    self.cancel_definition();
     self.animation = None;
     let owner = self.input_owner();
     let pending =

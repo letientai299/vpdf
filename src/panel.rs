@@ -857,6 +857,7 @@ impl App {
       | Action::Object(..)
       | Action::Reselect
       | Action::WordSearch
+      | Action::Definition
       | Action::Cancel => {}
       Action::Peek if panel.kind == PanelKind::Annotations => {
         if let Some(Destination::Annotation { position, annotation }) =

@@ -16,7 +16,14 @@ pub enum Phase {
   Running {
     jump: bool,
   },
+  Definition,
   Complete,
+}
+
+impl Phase {
+  pub fn running(&self) -> bool {
+    matches!(self, Self::Running { .. } | Self::Definition)
+  }
 }
 
 /// A pattern with its direction and word matching.
@@ -25,6 +32,7 @@ pub struct Query {
   pub text: String,
   pub backward: bool,
   pub whole: bool,
+  pub reference: Option<crate::reference::Lookup>,
 }
 
 #[derive(Default)]
@@ -64,7 +72,16 @@ impl App {
       self.search.query.backward = backward;
       return self.next_result(false, 1);
     }
-    search::compile(query, whole)?;
+    self.start_query(&Query {
+      text: query.to_owned(),
+      backward,
+      whole,
+      reference: None,
+    })
+  }
+
+  pub(crate) fn start_query(&mut self, query: &Query) -> Result<()> {
+    search::compile(&query.text, query.whole)?;
     let origin = match self.search_origin {
       Some(origin) => origin.cursor,
       None => self.reading_position()?,
@@ -80,7 +97,7 @@ impl App {
     let Some(worker) = &self.search.worker else {
       return Ok(());
     };
-    match worker.query(query, whole, origin.page, backward) {
+    match worker.lookup(query, origin.page) {
       Ok(generation) => self.search.generation = generation,
       Err(error) => {
         self.search.worker = None;
@@ -89,7 +106,7 @@ impl App {
     }
     self.search.phase = Phase::Running { jump: true };
     self.search.hits.clear();
-    self.search.query = Query { text: query.to_owned(), backward, whole };
+    self.search.query = query.clone();
     self.search.hidden = false;
     self.search.origin = origin;
     self.reader.message = "Searching…".into();
@@ -97,11 +114,13 @@ impl App {
   }
 
   pub fn search_updates(&mut self) -> Result<bool> {
-    if self.search.worker.is_none()
-      && matches!(self.search.phase, Phase::Running { .. })
-    {
+    if self.search.worker.is_none() && self.search.phase.running() {
       let query = self.search.query.clone();
+      let definition = matches!(self.search.phase, Phase::Definition);
       self.rerun(&query)?;
+      if definition {
+        self.search.phase = Phase::Definition;
+      }
     }
     let Some(worker) = &self.search.worker else { return Ok(false) };
     let mut events = Vec::new();
@@ -166,7 +185,11 @@ impl App {
         if event.done { "" } else { " · searching" }
       );
       if event.done {
+        let definition = matches!(self.search.phase, Phase::Definition);
         self.search.phase = Phase::Complete;
+        if definition {
+          self.finish_definition()?;
+        }
         self.reader.finish_search_jumps(&self.search.query, &self.search.hits);
         self.refill_panel(PanelKind::Jumps)?;
         if self.search.hits.is_empty() {
@@ -243,7 +266,7 @@ impl App {
       if query.is_empty() {
         return Ok(());
       }
-      let same = Query { text: query.clone(), backward, whole: false };
+      let same = Query { text: query.clone(), backward, ..Query::default() };
       if matches!(self.search.phase, Phase::Idle) || self.search.query != same {
         self.start_search(&query, backward, false)?;
       }
@@ -256,7 +279,7 @@ impl App {
     let origin = self.search_origin.take();
     self.search.previous = None;
     let running = !matches!(self.search.phase, Phase::Idle);
-    let same = Query { text: query.to_owned(), backward, whole: false };
+    let same = Query { text: query.to_owned(), backward, ..Query::default() };
     if !(running && self.search.query == same) {
       self.search_origin = origin;
       let result = self.start_search(query, backward, false);
@@ -354,7 +377,7 @@ impl App {
       self.search.query = Query::default();
       return Ok(());
     }
-    self.start_search(&query.text, query.backward, query.whole)?;
+    self.start_query(query)?;
     self.search.phase = Phase::Running { jump: false };
     Ok(())
   }
