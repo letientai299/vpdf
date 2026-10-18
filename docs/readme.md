@@ -23,6 +23,7 @@ Use executable help for the complete CLI, keys, and reader commands. These
 guide sections cover requirements and behavior:
 
 - [Terminal setup][terminal] and [optional helpers][helpers].
+- [Mouse][mouse], including terminal notes and known limits.
 - [Saved state and reload][saved-state].
 - [External actions][external], including clipboard and SSH constraints.
 - [Licensing][licensing], including dependency obligations.
@@ -71,6 +72,7 @@ launch options change. Avoid copying their inventories into Markdown.
 [cli]: ../src/main.rs
 [terminal]: install.md#terminal-setup
 [helpers]: install.md#optional-helpers
+[mouse]: reading.md#mouse
 [saved-state]: reading.md#saved-state-and-reload
 [external]: reading.md#external-actions
 [licensing]: install.md#licensing

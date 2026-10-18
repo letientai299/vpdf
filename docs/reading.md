@@ -17,14 +17,14 @@ text elsewhere; the source PDF stays unchanged.
 Pointer selection follows the same reading modes. Drag across text to select
 it, or use repeated clicks to select a word, line, or paragraph. Holding a drag
 past the top or bottom edge keeps scrolling, faster farther out, until release,
-a move back inside, or a key. The context
-menu offers actions for the location or selection under the pointer; hover
-chooses an action and a click runs it.
+a move back inside, or a key. A right click opens a menu of actions for what
+is under the pointer; see [mouse][mouse].
 
 A middle drag pans a zoomed page. While the view moves, or while the pointer
 rests on the page's right edge, a scrollbar shows ticks for top-level headings
 and pages with search matches. A click on the track jumps there and records
-the jump; dragging the thumb scrubs, with the page under the pointer labeled.
+the jump; dragging the thumb scrubs, labeling the page under the pointer and
+the section at its top, as the status line names it while reading.
 
 Glyph positions and the viewport are separate. Scrolling can move a selected
 passage out of view without discarding it. Zooming and resizing keep reading
@@ -105,6 +105,50 @@ Region OCR copies recognized text; page OCR supplies temporary selectable
 text for reading. Both leave the source PDF unchanged. Clipboard support and
 OCR dependencies follow the [installation guide][helpers].
 
+## Mouse
+
+The pointer works on every surface: pages, extracted text, panels, the page
+overview, previews, menus, and the status line. Hover only informs: it tints
+links, names what the pointer rests on, and can preview an internal link, but
+it never moves the text selection or keyboard focus. A press focuses the pane or
+panel under it; the wheel scrolls whatever is under the pointer and leaves
+focus in place. The `Mouse` sections of `:help` list each gesture.
+
+In Kitty and Ghostty the reader takes pointer positions in pixels, so adjacent
+citations and small markers hit separately; under tmux positions are whole
+cells. Where the terminal supports pointer shapes, the pointer shows a hand
+over things a click acts on, a text cursor over text, resize arrows on
+dividers and the panel edge, a crosshair while capturing a region, and a grab
+while panning.
+
+A right click opens a menu at the pointer. On a page it offers actions for the
+link, note, selection, word, or figure there, then common views. On a panel row
+it offers following the row, opening it in a split, copying it, and closing the
+panel; on a thumbnail it offers opening the page here or in a split. Hover or
+`j` and `k` choose an item, and a click or Enter runs it. Items with a key show
+it, so the menu also teaches the keyboard.
+
+Kitty keeps Shift-click and Shift-drag for its own selection while a program
+uses the mouse; see its [mouse actions][kitty-mouse]. `:mouse off` hands every
+click and drag to the terminal, so its selection works without a modifier;
+`:mouse on` takes the pointer back. Under tmux they go to tmux: with its
+`mouse` option on, a drag selects in tmux's copy mode; with it off, the outer
+terminal selects. The choice holds across child programs,
+such as the prompt editor, and shows in `:info`. macOS can turn Ctrl-click into
+a right click; no gesture uses Ctrl-click.
+
+Known limits:
+
+- Past the window's top edge Kitty reports the top row, so a held drag there
+  scrolls at its slowest pace.
+- Outside tmux the reader does not track window focus. A held drag or pan
+  whose release never arrives ends at the next pointer motion; a key also ends
+  a text drag.
+- Without pixel reports, as under tmux, a drag held past an edge scrolls at
+  one pace.
+- A middle drag that starts over a hover preview opens the preview's target in
+  a split instead of panning.
+
 ## Saved state and reload
 
 Reading positions, view choices, marks, and prompt history persist across
@@ -147,3 +191,5 @@ text clipboard support alone does not imply image support. See
 [helpers]: install.md#optional-helpers
 [saved-state]: #saved-state-and-reload
 [terminal]: install.md#terminal-setup
+[kitty-mouse]: https://sw.kovidgoyal.net/kitty/conf/#mouse-actions
+[mouse]: #mouse

@@ -27,9 +27,9 @@ See [terminal setup][setup] for the required graphics and keyboard protocols.
 ## Help and documentation
 
 Use `vpdf --help` for launch options and `:help` inside the reader for current
-keys and commands. The [reading guide][reading] explains modes, panels, and
-working across documents. The [documentation index][docs] covers setup,
-constraints, design, and development.
+keys, mouse gestures, and commands. The [reading guide][reading] explains modes,
+panels, and working across documents. The [documentation index][docs] covers
+setup, constraints, design, and development.
 
 ## License
 

@@ -76,7 +76,9 @@ hashes in the corpus script and [corpus assertions][corpus-tests].
 
 Terminal behavior needs its own interactive checks. Native rendering or state
 tests do not verify Kitty placement, tmux passthrough, clipboard policy, or
-behavior after a child program uses the screen.
+behavior after a child program uses the screen. Hover previews also lack
+fixtures for render failures on later pages and for width centering; check
+those live.
 
 ## Performance validation
 

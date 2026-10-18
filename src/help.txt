@@ -27,21 +27,7 @@ C/V { }: previous / next paragraph
 ]i [i: next / previous figure; counts repeat
 <Space><S-Space>: next / previous page
 <C-o><C-i> '': jump back / forward
-Mouse back / forward: jump back / forward
-gp <C-o><C-i> / back, forward: jump; close overview
-Status click: tab switches; page counter: gp
-Status click on section: outline there; zoom: fit
-Middle click a tab: close it
-Clue / completion click: type that key / pick it
-Hover link: tint; status shows its destination
-Hover citation: status quotes the cited reference
-Move pointer: hover detail covers notes; errors stay
-Rest on a link 400 ms: preview it in the pane under the pointer
-Leave link and preview to close; keys close it
-Left-click a link preview, hover or K: follow
-Middle press on a link preview: its target in a split
-Click link: follow and record jump
-Middle click link: open target in a split; copy a URL
+gp <C-o><C-i>: jump; close overview
 Jumps: flash landing line for 600 ms
 Link and row jumps: target below one row of context
 ma mA: mark here / across documents
@@ -59,13 +45,6 @@ zF: fit selected figure; reserve action bar
 zh zl: pan left / right
 zr: rotate clockwise
 zc: crop / restore page margins
-Wheel: scroll the view, K preview, or note under the pointer
-Page <C-wheel>: zoom; keep the point under the pointer
-Page <S-wheel> / sideways wheel: pan a zoomed page or wide text
-Page middle drag: pan the PDF view both ways
-Scrollbar: shows on scroll or at the right edge
-Scrollbar click / drag: jump / scrub with a page label
-Scrollbar ticks: top-level headings, pages with matches
 
 # Select and yank
 v V: enter character / line V
@@ -82,19 +61,6 @@ yY: yank lines as laid out
 yp: yank full file path
 "" "+ "*: system clipboard
 "a "A: named register / append
-Click / drag: set N target / select
-Click in N: mark target glyph for 600 ms
-Drag from a link: select text
-Double click: select word
-Triple / quadruple click: select line / paragraph
-Drag after double / triple click: extend by word / line
-Hold drag past top / bottom edge: scroll
-<M-click> off a figure: extend selection or start V
-Drag / click runs: enter V; <Esc> returns to entry mode
-Right click: menu for link, note, selection, text, figure
-Menu j k <CR> / click: choose and run; <Esc> closes
-Menu hover: choose; right drag and release: run
-Wheel with a menu open: scroll the page
 
 # Text objects
 V / y + i/a: inner / around objects
@@ -113,9 +79,6 @@ n N: next / previous match
 
 # Figures
 gF: open selected figure actions
-<M-drag>: capture a region; release opens actions
-Actions hover / click: choose / run; click off closes
-<M-click> on a figure: pick it and open actions
 h j k l: choose image, text, PNG, or OCR
 <CR>: run action; <Esc> closes bar
 Save PNG: beside document with numbered filename
@@ -126,19 +89,15 @@ Close bar: keep mode, selection, committed jobs
 go: table of contents
 gs: search results
 f F: link hints / copy URLs
-Hint hover: pick a label; <CR> / click acts on it
 gl: links on this page
 :jumps: history with context, word, and position
 gp: page thumbnails
-gp wheel: scroll thumbnails; keep selection
 gr: recent documents
 ga: annotations (read-only)
 Annotations <CR>: jump, enter Cursor, and show note
 Annotations K: preview selected note
 P <CR>: follow row; focus content in N
-P o / click: follow; keep panel focus
-P double click: follow; focus content
-P / gp middle click: row as o does, in a split
+P o: follow; keep panel focus
 P / ? n N: search rows
 P { }: previous / next heading
 P yy: yank row
@@ -147,24 +106,18 @@ P q / gq: close panel
 gx: focus extracted-text presentation
 g? <F1>: this reference
 <Esc>: cancel transient or pending input first
-P wheel: scroll list; keep row selection
-Panel hover: underline row; show clipped title
-gr hover: show row card; wheel scrolls card
-gp hover: show page label and section at its top
 q: close panel, tab, or reader
 
 # Preview
 K / <CR>: preview / follow visible explicit target
 K: show annotation note when present
-Hover note/highlight: show author, comment
-Click a note icon: show its note
 j k: scroll rows
 <C-d><C-u>: scroll half height
 Border: page at its top; arrows mark clipped edges
 Scrolling runs past the target page's end
 <CR>: follow link or dismiss note
 <Esc>: cancel preview layer
-Click outside: close; pointer over it: status shows destination
+Status line: destination while the pointer is over it
 Closes once its link leaves the view
 
 # Panes
@@ -178,19 +131,88 @@ Closes once its link leaves the view
 <C-w>x/T: swap with sibling / move to new tab
 <C-w>r/R: rotate panes forward / backward
 <C-w>n: new pane listing recent documents
-Drag a divider or status line between panes: resize
-Drag the panel edge: resize the panel
-Double click a divider / panel edge: equal / default size
 
 # Tabs
 P file <CR>/o: target tab / split; reuse open view
-Recent <CR>/click: open in covered pane
+Recent <CR>: open in covered pane
 gt [count]gt: next / nth tab
 gT: previous tab
 :e :tabe :tabnew :split :vsplit <file>: reuse open view first
-Drop a PDF on a pane: open there; reuse view; prompt takes it
 N paste of a PDF path: open it; a prompt takes the text
 Pane changes: keep C/V, queries and panel focus
+
+# Mouse: pointer and hover
+Pointer: pixel exact in Kitty and Ghostty; cells under tmux
+Pointer shape: hand on actions, I-beam on text, arrows on edges
+Held pointer shape: crosshair captures, grabbing pans
+Hover link: tint; status shows its destination
+Hover citation: status quotes the cited reference
+Hover note / highlight: status shows author and comment
+Hover panel row: underline; status shows clipped title
+gp hover: page label and section at its top
+gr hover: that row's card; wheel scrolls the card
+Printed URLs, DOIs, mail addresses: act as links
+Rest on an internal link 400 ms: preview in the pane under the pointer
+Leave link and preview: close it; keys close it too
+Status line: messages and errors stay until a key or click
+Hover detail: shows when no message is up; tabs shrink
+:mouse [on|off]: off leaves the pointer to the terminal
+
+# Mouse: click and drag
+Click: set N target; mark its glyph for 600 ms
+Click link: follow on release; record jump
+Click link preview, hover or K: follow
+Click note icon: show its note
+Drag / click runs: enter V; <Esc> returns to entry mode
+Drag from a link: select text
+Double click: select word
+Triple / quadruple click: select line / paragraph
+Drag after double / triple click: extend by word / line
+Hold drag past top / bottom edge: scroll; faster farther with pixels
+<M-click> off a figure: extend selection or start V
+<M-click> on a figure: pick it and open actions
+<M-drag>: capture a region; release opens actions
+Actions hover / click: choose / run
+Hint hover / click: pick a label / act on it
+P click: follow; keep panel focus
+P double click: follow; focus content
+Recent click: open in covered pane
+gp click: open the page
+Middle click link: target in a split; copy a URL
+Middle click row, thumbnail, link preview: target in a split
+Middle drag: pan the PDF view both ways
+Drop a PDF on a pane: open there; reuse view; prompt takes it
+
+# Mouse: menus
+Right click page: link, note, selection, text, figure items
+Right click P row: follow, split, copy, close
+Right click gp thumbnail: open here or in a split
+Menu hover / j k: choose
+Menu click / <CR>: run
+Right drag and release: run the item under the pointer
+Menu <Esc>: close; click off any overlay: close only it
+
+# Mouse: wheel and buttons
+Wheel: scroll the page, preview, note, list, or card under it
+gp wheel: scroll thumbnails; keep selection
+P wheel: scroll list; keep row selection
+Wheel with a menu open: scroll what is under it
+Page <C-wheel>: zoom; keep the point under the pointer
+Page <S-wheel> / sideways wheel: pan a zoomed page or wide text
+Back / forward buttons: jump back / forward; close gp
+
+# Mouse: chrome
+Tab name click / middle click: switch / close tab
+Page counter click: gp
+Section name click: outline at that entry
+Zoom label click: fit width
+Clue / completion click: type that key / pick it
+Drag a divider or status line between panes: resize
+Drag the panel edge: resize the panel
+Double click a divider / panel edge: equal / default size
+Scrollbar: PDF view; shows on scroll or at the right edge
+Scrollbar click / drag: jump / scrub, labeled page and section
+Scrollbar ticks: top-level headings, pages with matches
 
 # Command line
 <Tab><S-Tab>: list, then cycle completions
