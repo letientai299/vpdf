@@ -86,6 +86,7 @@ pub struct Graphics {
   placing: Vec<Pair>,
   /// iTerm2 draws a crop at the image's size unless `c,r` size it.
   quirk: bool,
+  cell_offsets: bool,
   /// `q` of placements: 1 reports `ENOENT` for an evicted image, which
   /// tmux would hand to the active pane as keys.
   quiet: u8,
@@ -95,7 +96,7 @@ pub struct Graphics {
 impl Default for Graphics {
   fn default() -> Self {
     let base = session();
-    let (quirk, quiet) = traits();
+    let (quirk, cell_offsets, quiet) = traits();
     Self {
       doc: 0,
       resident: Cache::new(budget()),
@@ -114,6 +115,7 @@ impl Default for Graphics {
       shown: Vec::new(),
       placing: Vec::new(),
       quirk,
+      cell_offsets,
       quiet,
       uploaded: 0,
     }
@@ -122,14 +124,14 @@ impl Default for Graphics {
 
 /// iTerm2's crop quirk and the placements' `q`, from the probe. Panes
 /// lend `Graphics` through `Default` on every loop, so this runs once.
-fn traits() -> (bool, u8) {
-  static TRAITS: OnceLock<(bool, u8)> = OnceLock::new();
+fn traits() -> (bool, bool, u8) {
+  static TRAITS: OnceLock<(bool, bool, u8)> = OnceLock::new();
   // Before the probe, as in benches, nothing is cached.
-  let Some(caps) = crate::caps::get() else { return (false, 2) };
+  let Some(caps) = crate::caps::get() else { return (false, false, 2) };
   *TRAITS.get_or_init(|| {
     let quirk = caps.profile() == Profile::CropQuirk;
     let quiet = if matches!(caps.host, Host::Direct(_)) { 1 } else { 2 };
-    (quirk, quiet)
+    (quirk, caps.cell_offsets(), quiet)
   })
 }
 
@@ -659,10 +661,13 @@ impl Graphics {
       return Ok(());
     };
     // Rects larger than the swatch take several crops.
-    for top in (0..height).step_by(SWATCH.1 as usize) {
-      for left_px in (0..width).step_by(SWATCH.0 as usize) {
-        let (w, h) =
-          ((width - left_px).min(SWATCH.0), (height - top).min(SWATCH.1));
+    let (cw, ch) = if self.cell_offsets && z < 0 {
+      (i32::from(screen.cell_width), i32::from(screen.cell_height))
+    } else {
+      (1, 1)
+    };
+    for (top, h) in segments(height, rect.y0 as i32, ch, SWATCH.1) {
+      for (left_px, w) in segments(width, rect.x0 as i32, cw, SWATCH.0) {
         let part = Bounds {
           x0: rect.x0 + left_px as f32,
           y0: rect.y0 + top as f32,
@@ -680,6 +685,26 @@ impl Graphics {
   pub fn bytes(&self) -> usize {
     self.resident.used()
   }
+}
+
+// WezTerm paints negative layers cell by cell.
+fn segments(
+  length: i32,
+  origin: i32,
+  cell: i32,
+  limit: i32,
+) -> Vec<(i32, i32)> {
+  let mut parts = Vec::new();
+  let mut start = 0;
+  while start < length {
+    let offset = (origin + start) % cell;
+    let available =
+      if offset == 0 { (limit / cell).max(1) * cell } else { cell - offset };
+    let size = available.min(limit).min(length - start);
+    parts.push((start, size));
+    start += size;
+  }
+  parts
 }
 
 fn clip(rect: Bounds, screen: Screen) -> Option<Bounds> {
@@ -1083,6 +1108,39 @@ mod tests {
         bytes
       };
       assert_eq!(actual, pixels);
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn negative_overlays_stay_inside_cells() -> Result<()> {
+    let mut graphics = Graphics { cell_offsets: true, ..Graphics::default() };
+    let rect = Bounds { x0: 3.0, y0: 7.0, x1: 93.0, y1: 133.0 };
+    let mut output = Vec::new();
+    graphics.backdrop(rect, [1; 4], SCREEN, 0, &mut output)?;
+    let mut area = 0;
+    for command in commands(&output) {
+      if command.get("a").map(String::as_str) != Some("p") {
+        continue;
+      }
+      let number = |key: &str| command[key].parse::<u32>().unwrap();
+      let (x, y, w, h) = (number("X"), number("Y"), number("w"), number("h"));
+      assert!(x == 0 || x + w <= 8);
+      assert!(y == 0 || y + h <= 16);
+      area += w * h;
+    }
+    assert_eq!(area, 90 * 126);
+    for (length, origin, cell, limit) in [(126, 7, 16, 64), (199, 3, 80, 64)] {
+      let parts = segments(length, origin, cell, limit);
+      let mut end = 0;
+      for (start, size) in parts {
+        assert_eq!(start, end);
+        assert!(size > 0 && size <= limit);
+        let offset = (origin + start) % cell;
+        assert!(offset == 0 || offset + size <= cell);
+        end += size;
+      }
+      assert_eq!(end, length);
     }
     Ok(())
   }

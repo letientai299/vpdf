@@ -957,3 +957,19 @@ fn pixel_mouse_needs_matching_units() {
     assert_eq!(caps.pixel_mouse(), want, "{name} {state}");
   }
 }
+
+#[test]
+fn cell_offsets_follow_outer_terminal() {
+  for (name, expected) in [
+    ("WezTerm 20240203-110809-5046fc22", true),
+    ("kitty(0.49.2)", false),
+    ("iTerm2 3.7.6", false),
+    ("ghostty 1.3.1", false),
+    ("Rio 0.5.28", false),
+  ] {
+    let direct = caps(Route::Direct, &replies(&version(name)));
+    assert_eq!(direct.cell_offsets(), expected);
+    let mux = caps(tmux_with(Some(name)), &replies(&version("tmux 3.8")));
+    assert_eq!(mux.cell_offsets(), expected);
+  }
+}

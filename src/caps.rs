@@ -475,6 +475,11 @@ impl Caps {
     }
   }
 
+  /// Whether negative layers paint per cell.
+  pub fn cell_offsets(&self) -> bool {
+    is(self.terminal(), &["wezterm"])
+  }
+
   /// Whether Ctrl-i reaches vpdf as Tab: tmux asks its client for
   /// modifyOtherKeys, which Kitty ignores by design.
   pub fn merges_ctrl_i(&self) -> bool {
