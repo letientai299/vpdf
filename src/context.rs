@@ -478,7 +478,12 @@ impl App {
       let row = top + u16::try_from(index).unwrap_or(0);
       let label = format!("{:<keys$}  {}", item.key, item.label);
       write!(out, "{}{}", self.at.goto(row, left), theme::BAR)?;
-      crate::grid::cell(out, &label, width, keys, index == selected)?;
+      let shown = if index == selected {
+        crate::grid::Shown::Chosen
+      } else {
+        crate::grid::Shown::Plain
+      };
+      crate::grid::cell(out, &label, width, keys, shown)?;
       write!(out, "{}", theme::RESET)?;
     }
     let Some(area) = self.context_rect().filter(|_| !self.text_mode) else {

@@ -338,7 +338,7 @@ struct Line {
 }
 
 /// Prompt on the last row, its list above, a ghost suggestion, and a
-/// block cursor; the `pointed` completion shows as chosen.
+/// block cursor; the `pointed` completion shows under the pointer.
 pub fn prompt(
   out: &mut impl Write,
   prompt: &Prompt,
@@ -350,7 +350,8 @@ pub fn prompt(
   if let Some(menu) = &prompt.menu {
     let layout = menu.grid(screen);
     let bottom = (at, row - 1);
-    let shown = pointed.or(menu.selected);
+    // Pointing never picks; the line keeps the chosen one.
+    let shown = (menu.selected, pointed);
     grid::draw(out, bottom, &menu.labels, &layout, shown, 0, screen)?;
   }
   let (text, ghost, column) = prompt.display();

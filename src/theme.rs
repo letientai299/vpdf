@@ -11,6 +11,8 @@ pub const CURRENT: &str = "\x1b[0;1;34m";
 /// A row under the pointer.
 pub const HOVER: &str = "\x1b[0;4m";
 pub const HOVER_DIM: &str = "\x1b[0;2;4m";
+/// A pointed item on the bar.
+pub const BAR_HOVER: &str = "\x1b[0;4;100m";
 /// Thumbnail rings: selected, hovered.
 pub const RING: [u8; 4] = [60, 120, 230, 90];
 pub const RING_HOVER: [u8; 4] = [150, 150, 150, 70];

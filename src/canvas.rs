@@ -406,16 +406,10 @@ impl App {
     if let Some(clues) = &self.clues {
       let (labels, grid, keys) = self.clue_grid(clues);
       let bottom = (self.at, row - 1);
-      let pointed = self.pointed_item(List::Clues);
-      crate::grid::draw(
-        out,
-        bottom,
-        &labels,
-        &grid,
-        pointed,
-        keys,
-        self.screen,
-      )?;
+      // Clues have no choice; the pointed one shows chosen, as menu rows.
+      let shown = (self.pointed_item(List::Clues), None);
+      let screen = self.screen;
+      crate::grid::draw(out, bottom, &labels, &grid, shown, keys, screen)?;
     }
     self.status_line(out, row, detail.as_deref())?;
     write!(out, "\x1b[?25l")?;

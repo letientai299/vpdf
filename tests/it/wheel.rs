@@ -306,32 +306,39 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("pages.pdf");
   pages_pdf(&path, &[(18, 6); 40], None)?;
-  let status = (480, 39 * 16 + 8);
-  // (view) -> what a turn moves
-  let cases: [(&str, Moved); 3] = [
-    ("", |app| app.animation.as_ref().map_or(app.reader.scroll, |a| a.target)),
-    ("text", |app| {
+  let row = 39 * 16 + 8;
+  let scroll: Moved =
+    |app| app.animation.as_ref().map_or(app.reader.scroll, |a| a.target);
+  let panel: Moved = |app| app.panel.as_ref().map_or(0, |p| p.top) as f32;
+  // (view, pointer x) -> what a turn moves
+  let cases: [(&str, u16, Moved); 5] = [
+    ("", 480, scroll),
+    ("text", 480, |app| {
       // The first line's row rises, then leaves.
       let first = app.text_cell(vpdf::text::Position::default());
       first.ok().flatten().map_or(1e3, |(_, row)| -f32::from(row))
     }),
-    ("gp", |app| {
+    ("gp", 480, |app| {
       app.overview.as_ref().map_or(0, vpdf::overview::Overview::top) as f32
     }),
+    // Under a side panel, the panel scrolls.
+    ("P", 20, panel),
+    ("P", 480, scroll),
   ];
-  for (view, moved) in cases {
+  for (view, x, moved) in cases {
     let mut session = session(&path)?;
     let app = session.app();
     match view {
       "text" => app.command("text")?,
       "gp" => app.open_overview()?,
+      "P" => app.open_panel(vpdf::keys::PanelKind::Help)?,
       _ => {}
     }
     app.draw(&mut Vec::new())?;
     let before = moved(session.app());
-    assert!(wheel(&mut session, DOWN, status)?, "{view}");
+    assert!(wheel(&mut session, DOWN, (x, row))?, "{view} {x}");
     session.app().draw(&mut Vec::new())?;
-    assert!(moved(session.app()) > before, "{view}");
+    assert!(moved(session.app()) > before, "{view} {x}");
   }
   Ok(())
 }

@@ -65,19 +65,31 @@ pub fn limit(screen: Screen) -> usize {
   usize::from(screen.rows / 3).max(1)
 }
 
+/// How a cell shows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Shown {
+  Plain,
+  /// Under the pointer.
+  Pointed,
+  /// Chosen; a key or click runs it.
+  Chosen,
+}
+
 /// Paints a label; its keys lead.
 pub fn cell(
   out: &mut impl Write,
   label: &str,
   width: usize,
   keys: usize,
-  selected: bool,
+  shown: Shown,
 ) -> Result<()> {
   let text = terminal::clean(label, width.saturating_sub(2));
   let pad = " ".repeat(width.saturating_sub(1 + text.width()));
-  if selected {
+  if shown == Shown::Chosen {
     let badge = theme::badge(Color::Blue);
     write!(out, "{badge} {text}{pad}{}", theme::BAR)?;
+  } else if shown == Shown::Pointed {
+    write!(out, " {}{text}{}{pad}", theme::BAR_HOVER, theme::BAR)?;
   } else if keys > 0 && text.len() >= keys && text.is_char_boundary(keys) {
     let (key, rest) = text.split_at(keys);
     write!(out, " {}{key}{}{rest}{pad}", theme::KEY, theme::BAR)?;
@@ -94,7 +106,7 @@ pub fn draw(
   (at, bottom): (At, u16),
   labels: &[String],
   grid: &Grid,
-  selected: Option<usize>,
+  (chosen, pointed): (Option<usize>, Option<usize>),
   keys: usize,
   screen: Screen,
 ) -> Result<()> {
@@ -107,7 +119,14 @@ pub fn draw(
     for column in 0..grid.columns {
       let index = column * grid.rows + row;
       let Some(label) = labels.get(index) else { break };
-      cell(out, label, grid.width, keys, selected == Some(index))?;
+      let shown = if chosen == Some(index) {
+        Shown::Chosen
+      } else if pointed == Some(index) {
+        Shown::Pointed
+      } else {
+        Shown::Plain
+      };
+      cell(out, label, grid.width, keys, shown)?;
       used += grid.width;
     }
     let fill = " ".repeat(columns.saturating_sub(used));

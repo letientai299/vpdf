@@ -869,6 +869,7 @@ fn clues_and_completions_act_on_click() -> Result<()> {
 fn clues_and_completions_highlight_on_hover() -> Result<()> {
   use vpdf::pointer::List;
   let badge = |label: &str| format!("\x1b[0;1;7;34m {label}");
+  let pointed = |label: &str| format!(" \x1b[0;4;100m{label}");
   let (_directory, mut session) = session(false)?;
   let page = cell(&mut session, Hit::Text)?;
   keys(&mut session, "g")?;
@@ -880,13 +881,19 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
   let clues = app.clues.as_ref().expect("clues");
   let index = clues.items.iter().position(|(k, _)| k == "p").expect("p");
   let label = app.clue_grid(clues).0[index].clone();
+  let count = clues.items.len();
   let at = item_cell(&mut session, List::Clues, index)?;
+  let other = (0..count)
+    .filter(|other| *other != index)
+    .find_map(|other| item_cell(&mut session, List::Clues, other).ok());
+  mouse(&mut session, MouseEventKind::Moved, other.expect("another clue"))?;
   assert!(!drawn(&mut session)?.contains(&badge(&label)));
+  // Same shape, another item.
   assert!(mouse(&mut session, MouseEventKind::Moved, at)?, "a frame");
   assert!(drawn(&mut session)?.contains(&badge(&label)));
   assert!(mouse(&mut session, MouseEventKind::Moved, page)?, "a frame");
   assert!(!drawn(&mut session)?.contains(&badge(&label)));
-  // Hover shows a completion as chosen; the line stays.
+  // Hover marks a completion; the chosen one and the line stay.
   press(&mut session, KeyCode::Esc)?;
   keys(&mut session, ":tab")?;
   press(&mut session, KeyCode::Tab)?;
@@ -894,17 +901,21 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
   let prompt = |session: &mut Session| {
     let prompt = session.app().prompt.as_ref().expect("a prompt");
     let menu = prompt.menu.as_ref().expect("a menu");
-    (prompt.text.clone(), menu.labels[1].clone())
+    let chosen = menu.selected.map(|index| menu.labels[index].clone());
+    (prompt.text.clone(), menu.labels[1].clone(), chosen)
   };
-  let (text, label) = prompt(&mut session);
+  let (text, label, chosen) = prompt(&mut session);
   let first = item_cell(&mut session, List::Completions, 0)?;
   let at = item_cell(&mut session, List::Completions, 1)?;
   mouse(&mut session, MouseEventKind::Moved, first)?;
-  assert!(!drawn(&mut session)?.contains(&badge(&label)));
+  assert!(!drawn(&mut session)?.contains(&pointed(&label)));
   // Same shape, another item.
   assert!(mouse(&mut session, MouseEventKind::Moved, at)?, "a frame");
-  assert!(drawn(&mut session)?.contains(&badge(&label)));
-  assert_eq!(prompt(&mut session).0, text);
+  let shown = drawn(&mut session)?;
+  assert!(shown.contains(&pointed(&label)), "{shown:?}");
+  let marked = chosen.as_ref().is_none_or(|c| shown.contains(&badge(c)));
+  assert!(marked, "{shown:?}");
+  assert_eq!(prompt(&mut session), (text, label, chosen));
   Ok(())
 }
 

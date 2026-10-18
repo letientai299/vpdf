@@ -742,14 +742,9 @@ impl App {
     {
       return Ok(());
     }
-    // The status row's wheel scrolls the pane above it.
-    let region = match region {
-      Region::Status if wheel && self.covered() => Region::Panel,
-      Region::Status if wheel && self.overview.is_some() => Region::Overview,
-      Region::Status if wheel => Region::Page,
-      region => region,
-    };
     match region {
+      // The status row's wheel scrolls the pane above it.
+      Region::Status if wheel => return self.menu_wheel(route),
       Region::Panel => return self.panel_mouse(mouse, route.clicks),
       Region::Overlay | Region::Status | Region::Actions | Region::Edge => {
         return Ok(());
@@ -811,7 +806,7 @@ impl App {
     }
   }
 
-  /// A turn over a menu moves the surface beneath it.
+  /// A turn over a menu or the status row moves the surface beneath it.
   fn menu_wheel(&mut self, route: Route) -> Result<()> {
     if self.covered() || route.mouse.column < self.left {
       return self.panel_mouse(route.mouse, route.clicks);
