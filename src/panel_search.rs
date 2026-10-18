@@ -7,7 +7,7 @@ pub struct RowSearch {
   pub query: String,
   pub backward: bool,
   /// Selection and query when the prompt opened; `Some` while typing.
-  origin: Option<(usize, String)>,
+  origin: Option<(usize, String, bool)>,
 }
 
 /// Case-insensitive unless the query has uppercase (Vim's smartcase).
@@ -54,7 +54,7 @@ pub fn ranges(text: &str, query: &str) -> Vec<(usize, usize)> {
 impl RowSearch {
   /// Moves the saved selection with refilled rows.
   pub fn follow(&mut self, moved: impl Fn(usize) -> usize) {
-    if let Some((origin, _)) = &mut self.origin {
+    if let Some((origin, _, _)) = &mut self.origin {
       *origin = moved(*origin);
     }
   }
@@ -66,13 +66,14 @@ impl Panel {
   }
 
   pub fn begin_search(&mut self, backward: bool) {
-    self.search.origin = Some((self.selected, self.search.query.clone()));
+    self.search.origin =
+      Some((self.selected, self.search.query.clone(), self.search.backward));
     self.search.backward = backward;
   }
 
   /// Selects the first match after the origin while typing.
   pub fn preview(&mut self, query: &str) {
-    let Some((origin, _)) = self.search.origin else { return };
+    let Some((origin, _, _)) = self.search.origin else { return };
     self.selected = origin;
     query.clone_into(&mut self.search.query);
     if !query.is_empty() {
@@ -82,8 +83,11 @@ impl Panel {
 
   /// Keeps the match; an empty query repeats the last one.
   pub fn finish_search(&mut self, query: &str) -> bool {
-    let (origin, previous) =
-      self.search.origin.take().unwrap_or((self.selected, String::new()));
+    let (origin, previous, _) = self.search.origin.take().unwrap_or((
+      self.selected,
+      String::new(),
+      false,
+    ));
     self.search.query =
       if query.is_empty() { previous } else { query.to_owned() };
     let query = self.search.query.clone();
@@ -92,9 +96,10 @@ impl Panel {
   }
 
   pub fn abort_search(&mut self) {
-    if let Some((origin, previous)) = self.search.origin.take() {
+    if let Some((origin, previous, backward)) = self.search.origin.take() {
       self.selected = origin;
       self.search.query = previous;
+      self.search.backward = backward;
       self.reveal();
     }
   }
@@ -176,6 +181,23 @@ mod tests {
   fn panel(labels: &[&str]) -> Panel {
     let rows = labels.iter().map(|label| Row::parse(label)).collect();
     Panel::new(PanelKind::Help, rows)
+  }
+
+  #[test]
+  fn cancelled_search_restores_direction() {
+    let mut panel = panel(&["match one", "match two", "match three"]);
+    for backward in [false, true] {
+      panel.begin_search(backward);
+      assert!(panel.finish_search("match"));
+      let before = panel.selected;
+      panel.begin_search(!backward);
+      panel.preview("missing");
+      panel.abort_search();
+      assert_eq!(panel.selected, before);
+      assert_eq!(panel.search.backward, backward);
+      assert!(panel.repeat(false, 1));
+      assert_eq!(panel.selected, (before + if backward { 2 } else { 1 }) % 3);
+    }
   }
 
   #[test]
