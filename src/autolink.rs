@@ -94,6 +94,12 @@ fn scan(
       at = taken.get(line).copied().unwrap_or(0);
       continue;
     };
+    if let Kind::Email { len } = kind
+      && split_email(lines, &wraps, line, start..start + len)
+    {
+      at = start + 1;
+      continue;
+    }
     let mut pieces = Vec::new();
     let mut raw = Vec::new();
     let (mut row, mut from) = (line, start);
@@ -143,6 +149,38 @@ fn scan(
   out
 }
 
+/// Whether the bare address at `range` of `line` may be part of one
+/// wrapped across rows, which the `url` package breaks after `.`, `-`,
+/// and `@`: `john.` above `smith@…`, or `…@mail.google.` above `com`.
+fn split_email(
+  lines: &[Vec<char>],
+  wraps: impl Fn(usize) -> Option<usize>,
+  line: usize,
+  range: Range<usize>,
+) -> bool {
+  let chars = &lines[line];
+  let lead = chars.iter().take_while(|ch| ch.is_whitespace()).count();
+  let broken = |row: &[char]| {
+    let row: Vec<_> =
+      row.iter().rev().skip_while(|ch| ch.is_whitespace()).collect();
+    let mark = |ch: &char| matches!(ch, '.' | '-' | '_' | '+' | '@');
+    matches!(row.as_slice(), [last, before, ..]
+      if mark(last) && before.is_alphanumeric())
+  };
+  let above = range.start == lead
+    && (line.saturating_sub(4)..line)
+      .any(|row| wraps(row) == Some(line) && broken(&lines[row]));
+  let below = match &chars[range.end..] {
+    [] => false,
+    [mark, rest @ ..] => {
+      matches!(mark, '.' | '-')
+        && rest.iter().all(|ch| ch.is_whitespace())
+        && wraps(line).is_some()
+    }
+  };
+  above || below
+}
+
 /// The first address start in `chars` at or after `at`.
 fn opening(chars: &[char], at: usize) -> Option<(usize, Kind)> {
   let mail = chars[at..].contains(&'@');
@@ -179,15 +217,35 @@ fn opening(chars: &[char], at: usize) -> Option<(usize, Kind)> {
 }
 
 /// Whether a bare e-mail address may start after `before`: a word's
-/// start, or after a list separator or a label's colon.
+/// start, punctuation such as quotes or footnote marks, or the colon of
+/// a `mail:` label; never inside a `user:pass@host` URL.
 fn email_edge(before: &[char]) -> bool {
   match before {
     [] => true,
-    [.., ch] if ch.is_whitespace() || matches!(ch, ':' | ',' | ';') => true,
-    [rest @ .., '(' | '<' | '[' | '"' | '\'' | '`'] => {
-      !rest.last().is_some_and(|ch| ch.is_alphanumeric())
+    [.., ch] if ch.is_whitespace() => true,
+    [rest @ .., ':'] => {
+      let label = |word: &str| {
+        let word: Vec<char> = word.chars().collect();
+        rest.len() >= word.len()
+          && rest[rest.len() - word.len()..]
+            .iter()
+            .zip(&word)
+            .all(|(a, b)| a.to_ascii_lowercase() == *b)
+          && !rest[..rest.len() - word.len()]
+            .last()
+            .is_some_and(|ch| ch.is_alphanumeric())
+      };
+      ["mail", "email", "e-mail"].into_iter().any(label)
     }
-    _ => false,
+    [
+      rest @ ..,
+      '(' | '<' | '[' | '{' | '"' | '\'' | '`' | '\u{201C}' | '\u{2018}'
+      | '\u{AB}',
+    ] => !rest.last().is_some_and(|ch| ch.is_alphanumeric()),
+    [.., ch] => {
+      // RFC 5322 local-part specials continue an address.
+      !ch.is_alphanumeric() && !"!#$%&*+-./=?@^_|~".contains(*ch)
+    }
   }
 }
 
@@ -204,6 +262,7 @@ fn email(chars: &[char]) -> Option<usize> {
   if local == 0
     || chars[0] == '.'
     || chars[local - 1] == '.'
+    || chars[..local].windows(2).any(|pair| pair == ['.', '.'])
     || chars.get(local) != Some(&'@')
   {
     return None;
@@ -228,15 +287,43 @@ fn email(chars: &[char]) -> Option<usize> {
   let one_case = top.iter().all(char::is_ascii_lowercase)
     || top.iter().all(char::is_ascii_uppercase);
   // Prose punctuation may follow; `:org/repo`, `(…)`, `/path` may not.
+  let closing = |ch: &char| {
+    matches!(
+      ch,
+      ','
+        | ';'
+        | '!'
+        | '?'
+        | ')'
+        | ']'
+        | '}'
+        | '>'
+        | '"'
+        | '\''
+        | '\u{201D}'
+        | '\u{2019}'
+        | '\u{BB}'
+        | '\u{2013}'
+        | '\u{2014}'
+        | '\u{2217}'
+        | '*'
+        | '\u{2020}'
+        | '\u{2021}'
+    )
+  };
   let after = match chars.get(end..).unwrap_or_default() {
     [] | [':' | '.'] => true,
     [ch, ..] if ch.is_whitespace() => true,
-    [':' | '.', next, ..] => next.is_whitespace(),
-    [ch, ..] => {
-      matches!(ch, ',' | ';' | '!' | '?' | ')' | ']' | '>' | '"' | '\'')
-    }
+    [':' | '.', next, ..] => next.is_whitespace() || closing(next),
+    [ch, ..] => closing(ch),
   };
-  (labels >= 2 && top.len() >= 2 && one_case && after).then_some(end)
+  // `icon@2x.png` names an image file.
+  let file = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tif", "tiff"]
+    .iter()
+    .any(|extension| {
+      top.iter().map(char::to_ascii_lowercase).eq(extension.chars())
+    });
+  (labels >= 2 && top.len() >= 2 && one_case && after && !file).then_some(end)
 }
 
 /// `chars` begin with lowercase `word`, ignoring ASCII case.
@@ -505,8 +592,42 @@ mod tests {
         &["doi:10.1000/a#b?c"],
         &[("https://doi.org/10.1000/a%23b%3Fc", &[(0, 0..17)])],
       ),
+      (
+        &["\u{2217}ab@x.org \u{201C}cd@y.org\u{201D} {ef@z.org}"],
+        &[
+          ("mailto:ab@x.org", &[(0, 1..9)]),
+          ("mailto:cd@y.org", &[(0, 11..19)]),
+          ("mailto:ef@z.org", &[(0, 22..30)]),
+        ],
+      ),
+      (
+        &["(gh@x.org.) \u{2014}ij@y.org\u{2014}"],
+        &[
+          ("mailto:gh@x.org", &[(0, 1..9)]),
+          ("mailto:ij@y.org", &[(0, 13..21)]),
+        ],
+      ),
     ];
     check(cases);
+  }
+
+  #[test]
+  fn wrapped_mail_is_not_guessed() {
+    // The `url` package breaks addresses after `.`, `-`, and `@`.
+    let cases: &[&[&str]] = &[
+      &["write john.", "smith@cs.toronto.edu now"],
+      &["mary-", "jane@uni.edu"],
+      &["jdoe@mail.google.", "com"],
+    ];
+    for lines in cases {
+      assert_eq!(found(lines), vec![], "{lines:?}");
+    }
+    // Without a wrap the row ends a sentence.
+    let alone = found_with(&["mail jdoe@mail.google."], |_| None);
+    assert_eq!(
+      alone,
+      [("mailto:jdoe@mail.google".to_owned(), vec![(0, 5..21)])]
+    );
   }
 
   fn check(cases: &[Case]) {
@@ -552,6 +673,12 @@ mod tests {
       "o'brien@x.org, user=foo@x.org, a!b@x.org",
       "%41@b.org",
       "ends@uni-heidelberg.deThe",
+      "user:pass@host.example.org",
+      "amqp://guest:guest@rabbit.example.org",
+      "redis://:secret@cache.example.org",
+      "sip:alice@example.org",
+      "icon@2x.png and logo@3x.JPG",
+      "a..b@x.org",
     ];
     for line in cases {
       assert_eq!(found(&[line]), vec![], "{line}");

@@ -89,7 +89,9 @@ while the drop lasts, so the reader cannot reload them later. Other terminals
 paste a dropped file's path, so a pasted path to a PDF in Normal mode opens it.
 
 Web addresses, DOIs, and e-mail addresses printed without a link annotation
-count as links everywhere links do, including addresses wrapped across lines.
+count as links everywhere links do. Web addresses and DOIs wrapped across
+lines join; an e-mail address split at a line break stays unlinked, since the
+break could belong to the address or end a sentence.
 
 Hovering a link tints it and shows its destination in the status line: the
 page label and outline section, or the web address. A click follows the link
