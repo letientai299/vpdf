@@ -33,7 +33,7 @@ pub struct Position {
   pub glyph: usize,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Bounds {
   pub x0: f32,
   pub y0: f32,

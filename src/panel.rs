@@ -19,7 +19,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Destination {
   Position(Position),
   Jump {
@@ -104,6 +104,19 @@ pub struct Panel {
   pub(crate) clicked: Option<usize>,
 }
 
+/// Where `old[index]` sits in `new`: the equal row nearest it, as rows
+/// shift.
+fn moved_row(old: &[Row], index: usize, new: &[Row]) -> Option<usize> {
+  let row = old.get(index)?;
+  let same = |other: &Row| {
+    other.label == row.label
+      && other.detail == row.detail
+      && other.destination == row.destination
+  };
+  let found = new.iter().enumerate().filter(|(_, other)| same(other));
+  found.map(|(at, _)| at).min_by_key(|at| at.abs_diff(index))
+}
+
 /// Where the pointer rests in a panel.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Pointing {
@@ -152,23 +165,19 @@ impl Panel {
   /// Replaces the rows and note, keeping focus and the selected row,
   /// else the selection in range; whether that row stayed.
   pub fn refill(&mut self, rows: Vec<Row>, note: &'static str) -> bool {
+    let last = rows.len().saturating_sub(1);
+    let find = |index: usize| moved_row(&self.rows, index, &rows);
     let before = self.selected;
-    let same = |row: &Row| {
-      let old = self.rows.get(before);
-      old.is_some_and(|old| old.label == row.label && old.detail == row.detail)
-    };
-    // The match nearest the old place, as rows only shift.
-    let kept = (rows.iter().enumerate())
-      .filter(|(_, row)| same(row))
-      .map(|(index, _)| index)
-      .min_by_key(|index| index.abs_diff(before));
-    self.selected = kept.unwrap_or(before).min(rows.len().saturating_sub(1));
-    // The kept row keeps its line.
-    self.top = (self.top + self.selected).saturating_sub(before);
+    let kept = find(before);
+    self.selected = kept.unwrap_or(before).min(last);
+    // Rows, as the cleared layout reads it; the kept row keeps its line.
+    let top = self.line_source(self.top);
+    self.top = (top + self.selected).saturating_sub(before);
     if self.top >= rows.len() {
       self.top = 0;
     }
-    self.search.clamp(rows.len());
+    self.search.follow(|origin| find(origin).unwrap_or(origin).min(last));
+    self.clicked = self.clicked.and_then(find);
     self.layout = None;
     self.rows = rows;
     self.note = note;
@@ -1186,6 +1195,40 @@ impl App {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// Equal labels part by destination; wrapped rows keep their line;
+  /// a panel search's origin follows its row.
+  #[test]
+  fn refills_follow_rows() {
+    let at =
+      |line| Destination::Position(Position { line, ..Position::default() });
+    let row =
+      |label: &str, line| Row::new(label.into(), String::new(), at(line));
+    let twins = || vec![row("same", 1), row("same", 2)];
+    let mut panel = Panel::new(PanelKind::Results, twins());
+    panel.selected = 1;
+    panel.begin_search(false);
+    let mut more = twins();
+    more.insert(0, row("new", 0));
+    assert!(panel.refill(more, ""));
+    assert_eq!(panel.selected, 2);
+    panel.abort_search();
+    assert_eq!(panel.selected, 2, "the origin moved too");
+    // Web rows take two lines; `top` counts lines.
+    let web = |n: usize| {
+      let uri = Target::Uri(format!("https://example.com/{n}"));
+      Row::new(format!("site {n}"), String::new(), Destination::Link(uri))
+    };
+    let rows = |first| (first..9).map(web).collect::<Vec<_>>();
+    let mut panel = Panel::new(PanelKind::Links, rows(1));
+    (panel.selected, panel.height) = (6, 12);
+    panel.reflow(40);
+    panel.top = panel.line_start(4);
+    let line = panel.screen_line(6);
+    assert!(panel.refill(rows(0), ""));
+    panel.reflow(40);
+    assert_eq!((panel.selected, panel.screen_line(7)), (7, line));
+  }
 
   #[test]
   fn refills_keep_the_selected_row() {

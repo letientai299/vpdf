@@ -112,7 +112,7 @@ impl From<mupdf::link::LinkDestination> for Target {
 }
 
 /// A reader-visible annotation: markup, note, or shape.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Annotation {
   pub kind: String,
   /// Marked areas; markup has one per quad.

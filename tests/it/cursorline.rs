@@ -96,7 +96,7 @@ fn cursorline_toggle_preserves_visual_and_copy() -> Result<()> {
     assert_eq!(app.reader.pending_yank.as_ref().unwrap().text, yank);
     if !text {
       let screen = app.layout.screen;
-      assert!(marks(&mut app, screen)?.is_empty());
+      assert_eq!(marks(&mut app, screen)?, [] as [Bounds; 0]);
     }
   }
   Ok(())
@@ -136,7 +136,7 @@ fn cursorline_pdf_projects_and_clips() -> Result<()> {
       }
       app.reader.end_selection();
       app.command("cursorline")?;
-      assert!(marks(&mut app, screen)?.is_empty());
+      assert_eq!(marks(&mut app, screen)?, [] as [Bounds; 0]);
     }
   }
   Ok(())

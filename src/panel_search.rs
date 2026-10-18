@@ -52,10 +52,10 @@ pub fn ranges(text: &str, query: &str) -> Vec<(usize, usize)> {
 }
 
 impl RowSearch {
-  /// Keeps the saved selection within `rows` rows.
-  pub fn clamp(&mut self, rows: usize) {
+  /// Moves the saved selection with refilled rows.
+  pub fn follow(&mut self, moved: impl Fn(usize) -> usize) {
     if let Some((origin, _)) = &mut self.origin {
-      *origin = (*origin).min(rows.saturating_sub(1));
+      *origin = moved(*origin);
     }
   }
 }
