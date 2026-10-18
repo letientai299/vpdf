@@ -440,14 +440,12 @@ impl Pointer {
     pixel: Option<Pixel>,
     now: Instant,
   ) -> Option<Route> {
-    let capture = self.capture();
-    let held = capture.map(|capture| capture.button);
-    if let MouseEventKind::Down(button) = mouse.kind
-      && held.is_some_and(|held| held != button)
-    {
-      // One button at a time.
+    // One button at a time.
+    if self.busy(mouse) {
       return None;
     }
+    let capture = self.capture();
+    let held = capture.map(|capture| capture.button);
     if let MouseEventKind::Drag(button) = mouse.kind
       && held == Some(button)
       && let Some(press) = &mut self.press

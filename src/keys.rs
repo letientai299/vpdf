@@ -537,11 +537,30 @@ mod tests {
   /// Clue names type their bindings back.
   #[test]
   fn names_parse_back_to_their_tokens() {
-    for (name, ..) in BINDINGS {
-      let label = name.replace(' ', "Space");
+    let shown =
+      ["", "g", "z", "C-w", "[", "]"].into_iter().flat_map(|prefix| {
+        let labels = clues(prefix).into_iter().map(|(label, _)| label);
+        labels.map(|label| label.replace(' ', "Space")).collect::<Vec<_>>()
+      });
+    for label in shown {
       let keys = parse(&label).unwrap_or_default();
       let tokens: Option<String> = keys.into_iter().map(token).collect();
-      assert_eq!(tokens.as_deref(), Some(*name), "{label}");
+      let plain = label.replace("S-Space", "\0").replace("Space", " ");
+      let want = plain.replace('\0', "S-Space");
+      assert_eq!(tokens.as_deref(), Some(want.as_str()), "{label}");
+    }
+    // Names are keys, not letters.
+    let none = KeyModifiers::NONE;
+    let cases = [
+      ("BS", KeyCode::Backspace, none),
+      ("Enter", KeyCode::Enter, none),
+      ("Tab", KeyCode::Tab, none),
+      ("Space", KeyCode::Char(' '), none),
+      ("S-Space", KeyCode::Char(' '), KeyModifiers::SHIFT),
+      ("C-w", KeyCode::Char('w'), KeyModifiers::CONTROL),
+    ];
+    for (name, code, modifiers) in cases {
+      assert_eq!(parse(name), Some(vec![KeyEvent::new(code, modifiers)]));
     }
   }
 

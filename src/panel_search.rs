@@ -131,8 +131,7 @@ impl Panel {
       };
       current = index;
     }
-    self.selected = current;
-    self.reveal();
+    self.select(current);
     true
   }
 
