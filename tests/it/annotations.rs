@@ -308,8 +308,7 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   noted_pdf(&path)?;
   let mut session = Session::new(None);
   session.open(&path, true, screen())?;
-  let cells: Vec<_> =
-    (0..39).flat_map(|row| (0..120).map(move |column| (column, row))).collect();
+  let cells: Vec<_> = grid().collect();
   let find = |session: &mut Session, region, wanted: &dyn Fn(Hit) -> bool| {
     let app = session.app();
     let cell = cells.iter().copied().find(|&(column, row)| {
@@ -434,6 +433,217 @@ fn outline_hovers_drop_the_indent() -> Result<()> {
   assert_eq!(session.app().hover, Hit::Row(1));
   assert!(drawn.contains(title), "{drawn}");
   assert!(!drawn.contains(&format!(" {title}")), "{drawn}");
+  Ok(())
+}
+
+/// A left click at a cell, at `now`.
+fn click_at(
+  session: &mut vpdf::session::Session,
+  (column, row): (u16, u16),
+  now: std::time::Instant,
+) -> Result<()> {
+  use vpdf::decode::{Button, Mouse, MouseKind, Spot};
+  for kind in [MouseKind::Press(Button::LEFT), MouseKind::Release(Button::LEFT)]
+  {
+    let at = Spot::Cell { column, row };
+    let mouse = Mouse { kind, at, modifiers: KeyModifiers::NONE };
+    session.mouse_report_at(mouse, now)?;
+  }
+  Ok(())
+}
+
+/// The page cells of `screen`.
+fn grid() -> impl Iterator<Item = (u16, u16)> {
+  (0..39).flat_map(|row| (0..120).map(move |column| (column, row)))
+}
+
+/// Notes whose page cells act as icons.
+fn icon_notes(app: &mut App) -> Vec<usize> {
+  use vpdf::pointer::{Hit, Region};
+  grid()
+    .filter_map(|(column, row)| {
+      match app.hovered(Region::Page, column, row, None) {
+        Ok(Hit::Note { index, text: false, .. }) => Some(index),
+        _ => None,
+      }
+    })
+    .collect()
+}
+
+/// Notes open by mouse (U11).
+#[test]
+fn notes_open_by_mouse() -> Result<()> {
+  use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+  use vpdf::pointer::{Hit, Region};
+  use vpdf::session::Session;
+  use vpdf::terminal::Shape;
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("noted.pdf");
+  noted_pdf(&path)?;
+  let mut session = Session::new(None);
+  session.open(&path, true, screen())?;
+  let mut find = |wanted: &dyn Fn(Hit) -> bool| {
+    let app = session.app();
+    let cell = grid().find(|&(column, row)| {
+      app.hovered(Region::Page, column, row, None).is_ok_and(wanted)
+    });
+    cell.expect("a cell with that hit")
+  };
+  let icon = find(&|hit| matches!(hit, Hit::Note { text: false, .. }));
+  let marked = find(&|hit| matches!(hit, Hit::Note { text: true, .. }));
+  let mouse = |session: &mut Session, kind, (column, row)| {
+    let modifiers = KeyModifiers::NONE;
+    session.mouse(MouseEvent { kind, column, row, modifiers })
+  };
+  let click = |session: &mut Session, button, at| -> Result<()> {
+    mouse(session, MouseEventKind::Down(button), at)?;
+    mouse(session, MouseEventKind::Up(button), at)?;
+    Ok(())
+  };
+  // Icons tint and take the pointer shape.
+  mouse(&mut session, MouseEventKind::Moved, icon)?;
+  let app = session.app();
+  assert_eq!(app.hover.shape(), Shape::Pointer);
+  assert!(app.hover_icon().is_some(), "a tint");
+  // Highlights stay text (H3).
+  let app = session.app();
+  let Hit::Note { index: sticky, .. } = app.hover else { panic!("an icon") };
+  assert!(icon_notes(app).iter().all(|index| *index == sticky));
+  // Clicks open the note, then close it.
+  let target = session.app().target;
+  let start = std::time::Instant::now();
+  let later = |ms| start + std::time::Duration::from_millis(ms);
+  click_at(&mut session, icon, later(0))?;
+  let app = session.app();
+  assert!(drawn(app)?.contains("margin note"));
+  assert_eq!(app.input_owner(), InputOwner::Peek);
+  assert_eq!(app.target, target, "the cursor stays");
+  let area = app.preview_cells().expect("a drawn popup");
+  let near = |row: u16| row.abs_diff(icon.1) <= 5;
+  assert!(near(area.row) || near(area.row + area.rows), "{area:?} {icon:?}");
+  // Past the double-click window, a click closes it.
+  click_at(&mut session, icon, later(1000))?;
+  assert!(session.app().peek.is_none());
+  // The menu's Show note sits by the icon too.
+  click(&mut session, MouseButton::Right, icon)?;
+  let app = session.app();
+  let menu = app.context_menu.as_ref().expect("a menu");
+  let show = menu.items.iter().position(|item| item.label == "Show note");
+  app.context_menu.as_mut().unwrap().selected = show.expect("Show note");
+  press(app, KeyCode::Enter)?;
+  drawn(app)?;
+  let area = app.preview_cells().expect("a drawn popup");
+  assert!(near(area.row) || near(area.row + area.rows), "{area:?} {icon:?}");
+  app.peek = None;
+  // Highlight clicks and icon drags select.
+  click(&mut session, MouseButton::Left, marked)?;
+  assert!(session.app().peek.is_none(), "a highlight click");
+  mouse(&mut session, MouseEventKind::Down(MouseButton::Left), icon)?;
+  mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), marked)?;
+  mouse(&mut session, MouseEventKind::Up(MouseButton::Left), marked)?;
+  let app = session.app();
+  assert!(app.peek.is_none() && app.reader.selection.is_some(), "a drag");
+  app.reader.cancel();
+  // (menu item) -> note shown, register
+  let cases = [("Show note", true, false), ("Copy comment", false, true)];
+  for (label, shown, copied) in cases {
+    click(&mut session, MouseButton::Right, marked)?;
+    let app = session.app();
+    let menu = app.context_menu.as_ref().expect("a menu");
+    let index = menu.items.iter().position(|item| item.label == label);
+    let keys: Vec<_> = menu.items.iter().map(|item| item.key).collect();
+    assert_eq!(
+      index.map(|index| keys[index]),
+      Some(if shown { "K" } else { "" })
+    );
+    app.context_menu.as_mut().unwrap().selected = index.expect(label);
+    press(app, KeyCode::Enter)?;
+    let comment = "check this note please";
+    assert_eq!(drawn(app)?.contains(comment), shown, "{label}");
+    let register = app.reader.registers.get(&'"').map(|text| &**text);
+    if copied {
+      assert_eq!(register, Some(comment), "{label}");
+      assert_eq!(app.reader.message, "Copied comment");
+    }
+    app.peek = None;
+  }
+  Ok(())
+}
+
+/// A sticky note over text, a commented box.
+fn shapes_pdf(path: &std::path::Path) -> Result<()> {
+  let content = "BT /F1 18 Tf 24 TL 20 170 Td (Sticky over this line) Tj T* \
+                 (Boxed second line) Tj ET";
+  let objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] \
+     /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R \
+     /Annots [6 0 R 7 0 R] >>"
+      .to_owned(),
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+    format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+    "<< /Type /Annot /Subtype /Square /Rect [15 138 230 166] \
+     /Contents (box comment) >>"
+      .to_owned(),
+    "<< /Type /Annot /Subtype /Text /Rect [60 165 80 185] \
+     /Contents (sticky comment) >>"
+      .to_owned(),
+  ];
+  crate::common::write_pdf(path, &objects, "")
+}
+
+/// Icons by kind; double clicks; scrolling closes (U11).
+#[test]
+fn note_icons_by_kind() -> Result<()> {
+  use vpdf::pointer::{Hit, Region};
+  use vpdf::session::Session;
+  use vpdf::trace::Drawable;
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("shapes.pdf");
+  shapes_pdf(&path)?;
+  for text_mode in [false, true] {
+    let mut session = Session::new(None);
+    session.open(&path, true, screen())?;
+    if text_mode {
+      session.app().command("text")?;
+    }
+    let app = session.app();
+    let hit = |app: &mut App, kind: &str| {
+      grid().find_map(|(column, row)| {
+        let hit = app.hovered(Region::Page, column, row, None).ok()?;
+        let Hit::Note { page, index, text } = hit else { return None };
+        let notes = app.doc.annotations(page).ok()?;
+        (notes[index].kind == kind).then_some(((column, row), text))
+      })
+    };
+    // (kind) -> an icon in the PDF view
+    for (kind, icon) in [("Square", false), ("Note", !text_mode)] {
+      let (_, text) = hit(app, kind).expect(kind);
+      assert_eq!(!text, icon, "text={text_mode} {kind}");
+    }
+    let (sticky, _) = hit(app, "Note").expect("a sticky note");
+    let (boxed, _) = hit(app, "Square").expect("a box");
+    let start = std::time::Instant::now();
+    let later = |ms| start + std::time::Duration::from_millis(ms);
+    click_at(&mut session, boxed, later(0))?;
+    let app = session.app();
+    assert!(app.peek.is_none(), "text={text_mode}: a box click");
+    let line = app.target.map(|target| target.line);
+    assert_eq!(line, Some(1), "text={text_mode}: the box click targets");
+    // A double click keeps the note open.
+    click_at(&mut session, sticky, later(1000))?;
+    click_at(&mut session, sticky, later(1100))?;
+    let open = session.app().peek.is_some();
+    assert_eq!(open, !text_mode, "text={text_mode}: a double click");
+    if text_mode {
+      continue;
+    }
+    // Scrolling the icon away closes it (U17).
+    session.app().reader.scroll += 400.0;
+    session.draw_frame(&mut Vec::new())?;
+    assert!(session.app().peek.is_none(), "scrolled away");
+  }
   Ok(())
 }
 

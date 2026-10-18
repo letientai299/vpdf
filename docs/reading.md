@@ -65,6 +65,10 @@ to earlier destinations; marks keep places worth revisiting. Following an
 external web link opens it through the desktop integration. See [external
 actions][external] for clipboard and SSH boundaries.
 
+Hovering a note or commented highlight shows its author and comment in the
+status line. A click on a note icon opens the whole comment beside it; the
+right-click menu on any note offers Show note and Copy comment.
+
 ## Compare views
 
 Use tabs to keep multiple documents open. Split a pane to compare passages in

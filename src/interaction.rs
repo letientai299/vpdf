@@ -320,22 +320,24 @@ impl App {
     }
     let text = self.doc.text(position.page)?;
     let Some(glyph) = text.glyph(position) else { return Ok(false) };
-    let crop = self.layout.crop.apply(self.doc.pages[position.page.0].bounds);
-    if glyph.bounds.x1 <= crop.x0
-      || glyph.bounds.x0 >= crop.x1
-      || glyph.bounds.y1 <= crop.y0
-      || glyph.bounds.y0 >= crop.y1
+    Ok(self.bounds_shown(position.page, glyph.bounds))
+  }
+
+  /// Whether page-point `bounds` show, after crop.
+  pub(crate) fn bounds_shown(&self, page: PageId, bounds: Bounds) -> bool {
+    let crop = self.layout.crop.apply(self.doc.pages[page.0].bounds);
+    if bounds.x1 <= crop.x0
+      || bounds.x0 >= crop.x1
+      || bounds.y1 <= crop.y0
+      || bounds.y0 >= crop.y1
     {
-      return Ok(false);
+      return false;
     }
-    let rect =
-      self.layout.project(position.page, glyph.bounds, self.reader.scroll);
-    Ok(
-      rect.x1 > 0.0
-        && rect.x0 < self.layout.screen.width()
-        && rect.y1 > 0.0
-        && rect.y0 < self.uncovered().height(),
-    )
+    let rect = self.layout.project(page, bounds, self.reader.scroll);
+    rect.x1 > 0.0
+      && rect.x0 < self.layout.screen.width()
+      && rect.y1 > 0.0
+      && rect.y0 < self.uncovered().height()
   }
 
   pub(crate) fn explicit_target(&mut self) -> Result<Option<Position>> {
@@ -862,10 +864,20 @@ impl App {
     let mouse = route.mouse;
     match mouse.kind {
       MouseEventKind::Up(_) => {
-        let LinkPress::Held(target) = &self.link_press else { return Ok(()) };
-        let target = target.clone();
-        self.link_press = LinkPress::Followed;
-        return self.follow(&target);
+        return match std::mem::take(&mut self.link_press) {
+          LinkPress::Held(target) => {
+            self.link_press = LinkPress::Followed;
+            self.follow(&target)
+          }
+          LinkPress::Note(page, index, _) => {
+            self.link_press = LinkPress::Followed;
+            self.show_note(page, index)
+          }
+          press => {
+            self.link_press = press;
+            Ok(())
+          }
+        };
       }
       // A followed run's later presses do nothing.
       _ if route.clicks > 1
@@ -873,13 +885,27 @@ impl App {
       {
         return Ok(());
       }
-      MouseEventKind::Drag(_) => self.link_press = LinkPress::Idle,
+      MouseEventKind::Drag(_) => {
+        // An icon press selects once it drags.
+        if let LinkPress::Note(.., Some(from)) = self.link_press {
+          self.click_select(from, 1)?;
+        }
+        self.link_press = LinkPress::Idle;
+      }
       _ => {
         self.gesture = Gesture::Glyphs;
         // A broken link table still selects.
-        let link = (route.clicks == 1)
-          .then(|| self.link_pressed(mouse.column, mouse.row, route.pixel));
-        let link = link.and_then(|link| link.ok().flatten());
+        let hit = (route.clicks == 1)
+          .then(|| self.pressed_hit(mouse.column, mouse.row, route.pixel));
+        let hit = hit.and_then(Result::ok).unwrap_or_default();
+        if let Hit::Note { page, index, text: false } = hit {
+          // The cursor stays until a drag.
+          self.animation = None;
+          let from = self.press_position(&route)?;
+          self.link_press = LinkPress::Note(page, index, from);
+          return Ok(());
+        }
+        let link = self.link_of(hit).ok().flatten();
         self.link_press = link.map_or(LinkPress::Idle, LinkPress::Held);
       }
     }
@@ -937,10 +963,27 @@ impl App {
     row: u16,
     pixel: Option<Pixel>,
   ) -> Result<Option<crate::document::Target>> {
-    let hit =
-      self.hit_at(Region::Page, column, row, pixel, Self::text_shown)?;
+    let hit = self.pressed_hit(column, row, pixel)?;
+    self.link_of(hit)
+  }
+
+  /// The target of a link hit.
+  pub(crate) fn link_of(
+    &mut self,
+    hit: Hit,
+  ) -> Result<Option<crate::document::Target>> {
     let Hit::Link(page, index) = hit else { return Ok(None) };
     Ok(self.link(page, index)?.map(|link| link.target))
+  }
+
+  /// What a pressed, shown page cell hits.
+  pub(crate) fn pressed_hit(
+    &mut self,
+    column: u16,
+    row: u16,
+    pixel: Option<Pixel>,
+  ) -> Result<Hit> {
+    self.hit_at(Region::Page, column, row, pixel, Self::text_shown)
   }
 
   /// Page-area pixels at a cell: reported, else centre.
@@ -1101,7 +1144,7 @@ impl App {
       return Ok(Some(Hit::Link(page, index)));
     }
     let Some(index) = self.note_at(page, x, y)? else { return Ok(None) };
-    let text = self.doc.text(page)?.covers(x, y);
+    let text = !self.note_icon(page, index);
     Ok(Some(Hit::Note { page, index, text }))
   }
 }

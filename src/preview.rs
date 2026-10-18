@@ -4,6 +4,7 @@ use crate::document::{Annotation, Target};
 use crate::keys::{Action, Input};
 use crate::motion::Motion;
 use crate::panel_layout::wrap;
+use crate::pointer::Hit;
 use crate::split::Rect;
 use crate::text::{Bounds, PageId, Position};
 use crate::theme;
@@ -32,6 +33,8 @@ pub struct Preview {
   pub placement: Option<Placement>,
   /// Its source has shown since it opened.
   seen: bool,
+  /// A note icon it sits beside: page, index, area.
+  anchor: Option<(PageId, usize, Bounds)>,
 }
 
 /// A drawn preview's cells.
@@ -143,6 +146,7 @@ impl App {
       origin: Origin::Key,
       placement: None,
       seen,
+      anchor: None,
     });
     // Fill a late target from later pages.
     self.scroll_preview(0.0)
@@ -197,6 +201,7 @@ impl App {
       origin: Origin::Key,
       placement: None,
       seen,
+      anchor: None,
       view: View::Note {
         top: 0,
         lines: wrap(&annotation.contents, columns),
@@ -535,13 +540,58 @@ impl App {
     pdf.then(|| self.layout.project(page, link.bounds, self.reader.scroll))
   }
 
+  /// Sits a note popup beside its icon.
+  pub(crate) fn anchor_preview(
+    &mut self,
+    page: PageId,
+    index: usize,
+    icon: Bounds,
+  ) {
+    if let Some(peek) = &mut self.peek {
+      peek.anchor = Some((page, index, icon));
+      peek.seen = false;
+    }
+    self.drop_stray_preview();
+  }
+
+  /// Whether a press lands on the popup's icon.
+  pub(crate) fn on_anchor(
+    &mut self,
+    mouse: crossterm::event::MouseEvent,
+    pixel: Option<crate::pointer::Pixel>,
+  ) -> bool {
+    let Some((page, at, _)) = self.shown_anchor() else { return false };
+    let (column, row) = self.pane_cell(mouse);
+    // Page cells only: not the panel or status.
+    if column < self.left || row + 1 >= self.screen.rows {
+      return false;
+    }
+    let hit = self.pressed_hit(column, row, pixel).unwrap_or_default();
+    hit == Hit::Note { page, index: at, text: false }
+  }
+
+  /// The popup's icon, in the PDF view.
+  fn shown_anchor(&self) -> Option<(PageId, usize, Bounds)> {
+    let anchor = self.peek.as_ref()?.anchor;
+    anchor.filter(|_| !self.text_mode)
+  }
+
+  /// Page-area pixels of a preview's icon.
+  fn anchor_rect(&self) -> Option<Bounds> {
+    let (page, _, icon) = self.shown_anchor()?;
+    Some(self.layout.project(page, icon, self.reader.scroll))
+  }
+
   /// Closes it once its source leaves (U17).
   pub fn drop_stray_preview(&mut self) {
     let Some(source) = self.peek.as_ref().map(|peek| peek.source) else {
       return;
     };
-    // Unreadable text counts as gone.
-    let shown = self.visible_position(source).unwrap_or(false);
+    let shown = match self.shown_anchor() {
+      Some((page, _, icon)) => self.bounds_shown(page, icon),
+      // Unreadable text counts as gone.
+      None => self.visible_position(source).unwrap_or(false),
+    };
     let Some(peek) = &mut self.peek else { return };
     if shown {
       peek.seen = true;
@@ -584,7 +634,10 @@ impl App {
     let Some(source) = self.peek.as_ref().map(|preview| preview.source) else {
       return Ok(());
     };
-    let cursor = self.position_rect(source)?;
+    let cursor = match self.anchor_rect() {
+      Some(rect) => Some(rect),
+      None => self.position_rect(source)?,
+    };
     let Some(preview) = &self.peek else { return Ok(()) };
     let frame = self.preview_frame(preview, cursor);
     let screen = self.layout.screen;

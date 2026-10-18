@@ -7,7 +7,7 @@ use crate::panel_layout::Layout;
 use crate::pointer::{Hit, Hover};
 use crate::preview::{Origin, Preview};
 use crate::split::Rect;
-use crate::text::{Bounds, PageId, Text};
+use crate::text::{Bounds, PageId, Position, Text};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -18,13 +18,15 @@ type Hovered = (PageId, Arc<Vec<Link>>, usize);
 /// Rest before a link previews.
 pub const REST: Duration = Duration::from_millis(400);
 
-/// A left press's link.
+/// A left press's link or note icon.
 #[derive(Clone, Debug, Default)]
 pub enum LinkPress {
   #[default]
   Idle,
   /// Followed on release.
   Held(Target),
+  /// Note icon, press glyph; shows on release (U11).
+  Note(PageId, usize, Option<Position>),
   /// Its click run is spent.
   Followed,
 }

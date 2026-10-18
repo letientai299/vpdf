@@ -5,8 +5,7 @@ use crate::app::App;
 use crate::document::Target;
 use crate::keys::{self, Action, Input, PanelKind};
 use crate::motion::Motion;
-use crate::pointer::Route;
-use crate::pointer::{Items, List};
+use crate::pointer::{Hit, Items, List, Route};
 use crate::reader::SelectionKind;
 use crate::region::Operation;
 use crate::split::Rect;
@@ -43,7 +42,8 @@ pub enum Command {
   Follow(Target),
   /// Previews a target beside a glyph.
   Preview(Target, Position),
-  CopyAddress(String),
+  /// Copies text, saying `message`.
+  CopyText(String, &'static str),
   /// As a middle click does.
   Split(Target),
   Copy,
@@ -54,6 +54,8 @@ pub enum Command {
   SearchWord(Position),
   /// Copies or saves a figure.
   Figure(PageId, Bounds, Operation),
+  /// Shows a note's popup.
+  Note(PageId, usize),
   /// Runs a key action.
   Key(Action),
 }
@@ -110,7 +112,8 @@ impl App {
   pub(crate) fn page_context(&mut self, route: Route) {
     let (column, row) = (route.mouse.column, route.mouse.row);
     // Menus are advisory; lookups may fail.
-    let link = self.link_pressed(column, row, route.pixel).ok().flatten();
+    let hit = self.pressed_hit(column, row, route.pixel).unwrap_or_default();
+    let link = self.link_of(hit).ok().flatten();
     let near = self.press_position(&route).ok().flatten();
     let glyph = self.glyph_under(&route, near).ok().flatten();
     let figure = self.figure_under(&route).ok().flatten();
@@ -119,7 +122,8 @@ impl App {
       (Some(Target::Uri(uri)), _) => {
         let follow = Command::Follow(Target::Uri(uri.clone()));
         items.push(bound("Follow", Action::Follow, follow));
-        items.push(item("Copy address", "", Command::CopyAddress(uri)));
+        let copy = Command::CopyText(uri, crate::commands::COPIED_LINK);
+        items.push(item("Copy address", "", copy));
       }
       (Some(target), near) => {
         let follow = Command::Follow(target.clone());
@@ -131,6 +135,11 @@ impl App {
         items.push(item("Open in split", "", Command::Split(target)));
       }
       (None, _) => {}
+    }
+    if let Some((page, index, contents)) = self.note_of(hit) {
+      items.push(bound("Show note", Action::Peek, Command::Note(page, index)));
+      let copy = Command::CopyText(contents, "Copied comment");
+      items.push(item("Copy comment", "", copy));
     }
     if let Some(selection) = self.reader.selection {
       items.push(bound("Copy", Action::Yank, Command::Copy));
@@ -240,7 +249,7 @@ impl App {
     match item.command {
       Command::Follow(target) => self.follow(&target),
       Command::Preview(target, near) => self.show_preview(target, near),
-      Command::CopyAddress(uri) => self.copy_address(uri),
+      Command::CopyText(text, message) => self.copy_text(text, message),
       Command::Split(target) => self.open_split(&target),
       Command::Copy => self.action(key(Action::Yank)),
       Command::CopyImage => {
@@ -267,8 +276,16 @@ impl App {
         self.select_region(page, bounds)?;
         self.region_operation(operation)
       }
+      Command::Note(page, index) => self.show_note(page, index),
       Command::Key(action) => self.action(key(action)),
     }
+  }
+
+  /// A note hit and its comment.
+  fn note_of(&mut self, hit: Hit) -> Option<(PageId, usize, String)> {
+    let Hit::Note { page, index, .. } = hit else { return None };
+    let annotations = self.doc.annotations(page).ok()?;
+    Some((page, index, annotations.get(index)?.contents.clone()))
   }
 
   /// Selects like a click run, without drags.

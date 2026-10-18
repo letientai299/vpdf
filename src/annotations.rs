@@ -2,10 +2,13 @@ use crate::Result;
 use crate::app::App;
 use crate::document::Annotation;
 use crate::panel::{Destination, Row, Style};
-use crate::text::{PageId, Position, Text};
+use crate::pointer::Hit;
+use crate::text::{Bounds, PageId, Position, Text};
 
 /// Markup kinds whose marked text matters more than their contents.
 const MARKUP: &[&str] = &["Highlight", "Underline", "Squiggly", "StrikeOut"];
+/// Kinds drawn as fixed-size icons.
+const ICONS: &[&str] = &["Note", "FileAttachment", "Sound"];
 
 impl App {
   /// Every annotation in page order, with marked text or contents.
@@ -53,13 +56,42 @@ impl App {
         return Ok(Some(annotation.clone()));
       }
       if nearest.is_none()
-        && !MARKUP.contains(&annotation.kind.as_str())
+        && !markup(annotation)
         && marked(&text, position.page, annotation).0 == position
       {
         nearest = Some(annotation.clone());
       }
     }
     Ok(nearest)
+  }
+
+  /// Opens a note's popup (U11).
+  pub(crate) fn show_note(&mut self, page: PageId, index: usize) -> Result<()> {
+    let annotations = self.doc.annotations(page)?;
+    let Some(note) = annotations.get(index).cloned() else { return Ok(()) };
+    let text = self.doc.text(page)?;
+    let position = marked(&text, page, &note).0;
+    self.preview_annotation(position, &note);
+    if let Some(area) = note.areas.first().filter(|_| icon(&note)) {
+      self.anchor_preview(page, index, *area);
+    }
+    Ok(())
+  }
+
+  /// Whether a note draws as an icon.
+  pub(crate) fn note_icon(&mut self, page: PageId, index: usize) -> bool {
+    let Ok(notes) = self.doc.annotations(page) else { return false };
+    let icon = notes.get(index).is_some_and(icon);
+    !self.text_mode && icon
+  }
+
+  /// The hovered note icon's areas.
+  pub fn hover_icon(&mut self) -> Option<(PageId, Vec<Bounds>)> {
+    let Hit::Note { page, index, text: false } = self.hover else {
+      return None;
+    };
+    let annotations = self.doc.annotations(page).ok()?;
+    Some((page, annotations.get(index)?.areas.clone()))
   }
 
   /// The commented annotation covering a page point.
@@ -87,6 +119,16 @@ impl App {
   }
 }
 
+/// Whether a note marks text.
+fn markup(note: &Annotation) -> bool {
+  MARKUP.contains(&note.kind.as_str())
+}
+
+/// Whether a note draws as an icon.
+fn icon(note: &Annotation) -> bool {
+  ICONS.contains(&note.kind.as_str())
+}
+
 /// A commented annotation covers the point.
 fn noted(annotation: &Annotation, x: f32, y: f32) -> bool {
   !annotation.contents.is_empty()
@@ -105,7 +147,7 @@ fn marked(
     .map_or(Position { page, ..Position::default() }, |area| {
       text.nearest(page, area.x0, f32::midpoint(area.y0, area.y1))
     });
-  if !MARKUP.contains(&annotation.kind.as_str()) {
+  if !markup(annotation) {
     return (start, String::new());
   }
   let (first, marked) = text.in_areas(page, &annotation.areas);

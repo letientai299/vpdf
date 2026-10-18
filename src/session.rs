@@ -977,6 +977,13 @@ impl Session {
     {
       return Ok(false);
     }
+    // A double click keeps a note open.
+    if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+      && self.app().on_anchor(mouse, pixel)
+      && self.pointer.repeats(mouse, pixel, now)
+    {
+      return Ok(false);
+    }
     if matches!(mouse.kind, MouseEventKind::Down(_))
       && let Some(drawn) = self.press_first(mouse, pixel, now)?
     {

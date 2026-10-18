@@ -174,7 +174,8 @@ impl App {
     if let Some(position) = self.click_mark() {
       self.glyph_block(position, screen, out)?;
     }
-    if let Some((page, segments)) = self.hover_segments() {
+    let tinted = self.hover_segments().or_else(|| self.hover_icon());
+    if let Some((page, segments)) = tinted {
       for bounds in segments {
         let rect = self.layout.project(page, bounds, self.reader.scroll);
         self.tint(rect, crate::theme::LINK, screen, out)?;

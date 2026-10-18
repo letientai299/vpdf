@@ -91,7 +91,7 @@ Drag after double / triple click: extend by word / line
 Drag past top / bottom edge: scroll; farther is faster
 <M-click> off a figure: extend selection or start V
 Drag / click runs: enter V; <Esc> returns to entry mode
-Right click: menu for link, selection, text, figure
+Right click: menu for link, note, selection, text, figure
 Menu j k <CR> / click: choose and run; <Esc> closes
 Menu hover: choose; right drag and release: run
 Wheel with a menu open: scroll the page
@@ -157,6 +157,7 @@ q: close panel, tab, or reader
 K / <CR>: preview / follow visible explicit target
 K: show annotation note when present
 Hover note/highlight: show author, comment
+Click a note icon: show its note
 j k: scroll rows
 <C-d><C-u>: scroll half height
 Border: page at its top; arrows mark clipped edges

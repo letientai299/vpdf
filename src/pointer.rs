@@ -158,7 +158,7 @@ pub enum Hit {
   Note {
     page: PageId,
     index: usize,
-    /// Over text, not a margin icon.
+    /// Not an icon: presses select text.
     text: bool,
   },
   /// Index into the panel's rows.
@@ -219,13 +219,13 @@ impl Hit {
   pub fn shape(self) -> Shape {
     match self {
       Self::Nothing
-      | Self::Note { text: false, .. }
       | Self::Preview { follows: false }
       | Self::Item(_, None)
       | Self::Card(_)
       | Self::Scrollbar => Shape::Default,
       Self::Text | Self::Note { text: true, .. } => Shape::Text,
       Self::Link(..)
+      | Self::Note { text: false, .. }
       | Self::Row(_)
       | Self::Thumbnail(_)
       | Self::Preview { follows: true }
@@ -1011,7 +1011,7 @@ mod tests {
       (Hit::Nothing, Shape::Default),
       (Hit::Text, Shape::Text),
       (Hit::Note { page: PageId(0), index: 1, text: true }, Shape::Text),
-      (Hit::Note { page: PageId(0), index: 1, text: false }, Shape::Default),
+      (Hit::Note { page: PageId(0), index: 1, text: false }, Shape::Pointer),
       (Hit::Link(PageId(0), 2), Shape::Pointer),
       (Hit::Row(3), Shape::Pointer),
       (Hit::Thumbnail(PageId(4)), Shape::Pointer),

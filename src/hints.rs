@@ -154,11 +154,7 @@ impl App {
     let Some(hints) = self.hints.take() else { return Ok(()) };
     let Some(hint) = hints.items.into_iter().nth(index) else { return Ok(()) };
     match hint.target {
-      Target::Uri(uri) if hints.copy => {
-        self.reader.store('"', uri)?;
-        self.reader.message = "Copied link".into();
-        Ok(())
-      }
+      Target::Uri(uri) if hints.copy => self.copy_address(uri),
       target => self.follow(&target),
     }
   }

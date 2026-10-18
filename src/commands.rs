@@ -11,6 +11,9 @@ use crate::text::{PageId, Position};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::process::{Command, Stdio};
 
+/// The note after copying an address.
+pub(crate) const COPIED_LINK: &str = "Copied link";
+
 /// Commands the recent view takes: opening, windows, tabs, quitting.
 const COVERED: [&str; 23] = [
   "edit",
@@ -574,8 +577,17 @@ impl App {
   }
 
   pub(crate) fn copy_address(&mut self, uri: String) -> Result<()> {
-    self.reader.store('"', uri)?;
-    self.reader.message = "Copied link".into();
+    self.copy_text(uri, COPIED_LINK)
+  }
+
+  /// Copies into the `"` register, saying `message`.
+  pub(crate) fn copy_text(
+    &mut self,
+    text: String,
+    message: &str,
+  ) -> Result<()> {
+    self.reader.store('"', text)?;
+    self.reader.message = message.into();
     Ok(())
   }
 }
