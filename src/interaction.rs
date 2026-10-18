@@ -107,6 +107,8 @@ impl App {
   pub(crate) fn clear_notes(&mut self) {
     self.error = None;
     self.reader.message.clear();
+    // A repeated note is new again.
+    self.passed.clear();
   }
 
   /// Whether a press only dismisses something.

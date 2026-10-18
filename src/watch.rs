@@ -99,6 +99,8 @@ impl App {
     self.stamp = Some(now);
     self.reload_with(&self.password.clone())?;
     self.reader.message = "Reloaded after change".into();
+    // Each reload is news, even with the same words.
+    self.passed.clear();
     Ok(true)
   }
 }

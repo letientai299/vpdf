@@ -451,7 +451,8 @@ impl Panel {
           None => full(item)? > used,
         };
         if clipped {
-          self.hover_title = Some(self.rows[source].label.clone());
+          // Outline rows indent by depth.
+          self.hover_title = Some(self.rows[source].label.trim().to_owned());
         }
       }
       write!(
@@ -1087,6 +1088,9 @@ pub fn section(outline: &[Heading], page: PageId, y: f32) -> Option<usize> {
 impl App {
   /// Outline entry containing the cursor.
   pub fn section(&mut self) -> Option<usize> {
+    if let Some(index) = self.landed_section() {
+      return Some(index);
+    }
     let cursor = self.navigation_position();
     if self.reader.viewport_mode() && !self.text_mode {
       let y = self
@@ -1095,13 +1099,44 @@ impl App {
         .map_or(0.0, |(_, y)| y);
       return section(&self.doc.outline, cursor.page, y);
     }
+    self.glyph_section(cursor)
+  }
+
+  /// The section `section` names once a jump shows `page` from its
+  /// top.
+  pub(crate) fn top_section(&mut self, page: PageId) -> Option<usize> {
+    if self.reader.viewport_mode() && !self.text_mode {
+      return section(&self.doc.outline, page, 0.0);
+    }
+    self.glyph_section(Position { page, ..Position::default() })
+  }
+
+  /// Outline entry containing a glyph's bottom.
+  fn glyph_section(&mut self, position: Position) -> Option<usize> {
     let y = self
       .doc
-      .text(cursor.page)
+      .text(position.page)
       .ok()
-      .and_then(|text| text.glyph(cursor).map(|g| g.bounds.y1))
+      .and_then(|text| text.glyph(position).map(|g| g.bounds.y1))
       .unwrap_or(f32::MAX);
-    section(&self.doc.outline, cursor.page, y)
+    section(&self.doc.outline, position.page, y)
+  }
+
+  /// The heading a landing put one row below the view top; the top
+  /// itself is still in the section before.
+  fn landed_section(&mut self) -> Option<usize> {
+    let cursor = self.reader.cursor;
+    if self.landed != Some(self.landed_view(cursor)) {
+      return None;
+    }
+    let text = self.doc.text(cursor.page).ok()?;
+    // Headings land on the glyph nearest their point, as `follow` does.
+    self.doc.outline.iter().rposition(|heading| match heading.target {
+      Target::Point { page, x, y } if page == cursor.page => {
+        text.nearest(page, x, y).line == cursor.line
+      }
+      _ => false,
+    })
   }
 }
 

@@ -72,10 +72,17 @@ impl App {
     Some((page, segments(&links, index)))
   }
 
-  /// The hovered link's destination.
+  /// The hovered link's destination; citations show the reference.
   pub fn hover_label(&mut self) -> Option<String> {
-    let (_, link) = self.hover_link()?;
-    Some(destination(&link.target, &self.doc))
+    let (page, link) = self.hover_link()?;
+    if matches!(link.target, Target::Uri(_)) {
+      return Some(destination(&link.target, &self.doc, ""));
+    }
+    // Hover is advisory; unreadable text reads as a bare reference.
+    let text = self.doc.text(page).ok();
+    let (anchor, context) = self.link_context(page, &link, text.as_deref());
+    let cited = cited(&anchor, context);
+    Some(destination(&link.target, &self.doc, &cited))
   }
 
   /// When the rested link previews.
@@ -189,26 +196,34 @@ impl App {
     let text = self.doc.text(page).ok();
     let mut rows = Vec::with_capacity(links.len());
     for link in links.iter().cloned() {
-      let anchor = text
-        .as_ref()
-        .map_or_else(String::new, |text| text.in_areas(page, &[link.bounds]).1);
-      let context = match link.target {
-        Target::Page(page) | Target::Point { page, .. }
-          if reference(&anchor) =>
-        {
-          self
-            .doc
-            .text(page)
-            .ok()
-            .map_or_else(String::new, |text| excerpt(&text, &link.target))
-        }
-        _ => String::new(),
-      };
+      let (anchor, context) = self.link_context(page, &link, text.as_deref());
       rows.push(link_row(link, anchor, context, |page| {
         page_name(&self.doc, page)
       }));
     }
     Ok(rows)
+  }
+
+  /// A link's text on `page`, and for references, the text they cite.
+  fn link_context(
+    &mut self,
+    page: PageId,
+    link: &Link,
+    text: Option<&Text>,
+  ) -> (String, String) {
+    let anchor = text
+      .map_or_else(String::new, |text| text.in_areas(page, &[link.bounds]).1);
+    let context = match link.target {
+      Target::Page(page) | Target::Point { page, .. } if reference(&anchor) => {
+        self
+          .doc
+          .text(page)
+          .ok()
+          .map_or_else(String::new, |text| excerpt(&text, &link.target))
+      }
+      _ => String::new(),
+    };
+    (anchor, context)
   }
 }
 
@@ -248,7 +263,9 @@ fn reference(anchor: &str) -> bool {
 
 pub(crate) fn excerpt(text: &Text, target: &Target) -> String {
   let start = match target {
-    Target::Point { page, x, y } => text.nearest(*page, *x, *y).line,
+    Target::Point { page, x, y } => {
+      below(text, *x, *y).unwrap_or_else(|| text.nearest(*page, *x, *y).line)
+    }
     _ => 0,
   };
   let context: String = text
@@ -262,6 +279,20 @@ pub(crate) fn excerpt(text: &Text, target: &Target) -> String {
     .take(240)
     .collect();
   context.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The line nearest a point, among those not wholly above it:
+/// reference targets sit in the gap above their entry, often nearer
+/// the heading over the first one.
+fn below(text: &Text, x: f32, y: f32) -> Option<usize> {
+  let lines = text.lines.iter().enumerate();
+  let scored = lines.filter_map(|(index, line)| {
+    let span = line.span().filter(|span| span.y1 > y)?;
+    let dx = (span.x0 - x).max(0.0).max(x - span.x1);
+    let dy = (span.y0 - y).max(0.0);
+    Some((index, dx * dx + 4.0 * dy * dy))
+  });
+  scored.min_by(|a, b| a.1.total_cmp(&b.1)).map(|(index, _)| index)
 }
 
 /// `name` gives a page's label.
@@ -281,19 +312,8 @@ fn link_row(
     }
     Target::Page(page) | Target::Point { page, .. } => {
       let label = name(*page);
-      let text = if context.is_empty() {
-        anchor
-      } else if anchor.is_empty() || context.starts_with(&format!("[{anchor}]"))
-      {
-        context
-      } else if let Some(rest) = context
-        .strip_prefix(&anchor)
-        .filter(|rest| !rest.starts_with(char::is_numeric))
-      {
-        format!("{anchor} {}", rest.trim_start()).trim_end().to_owned()
-      } else {
-        format!("{anchor} {context}").trim().to_owned()
-      };
+      let cited = cited(&anchor, context);
+      let text = if cited.is_empty() { anchor } else { cited };
       if text.is_empty() {
         (format!("Page {label}"), String::new())
       } else {
@@ -304,8 +324,27 @@ fn link_row(
   Row::new(label, detail, Destination::Link(link.target))
 }
 
-/// `→ p. 43 · Section`, or the address.
-fn destination(target: &Target, doc: &Document) -> String {
+/// A reference's anchor joined with the `context` it cites; empty
+/// without context.
+fn cited(anchor: &str, context: String) -> String {
+  if context.is_empty() {
+    return context;
+  }
+  if anchor.is_empty() || context.starts_with(&format!("[{anchor}]")) {
+    context
+  } else if let Some(rest) = context
+    .strip_prefix(anchor)
+    .filter(|rest| !rest.starts_with(char::is_numeric))
+  {
+    format!("{anchor} {}", rest.trim_start()).trim_end().to_owned()
+  } else {
+    format!("{anchor} {context}").trim().to_owned()
+  }
+}
+
+/// `→ p. 43 · Section`, `cited` in place of the section, or the
+/// address.
+fn destination(target: &Target, doc: &Document, cited: &str) -> String {
   let outline = &doc.outline;
   let (page, y) = match target {
     Target::Uri(uri) => return format!("→ {uri}"),
@@ -314,6 +353,9 @@ fn destination(target: &Target, doc: &Document) -> String {
   };
   let page = PageId(page.0.min(doc.pages.len().saturating_sub(1)));
   let name = doc.label(page);
+  if !cited.is_empty() {
+    return format!("→ p. {name} · {cited}");
+  }
   match crate::panel::section(outline, page, y) {
     Some(entry) => format!("→ p. {name} · {}", outline[entry].title.trim()),
     None => format!("→ p. {name}"),
@@ -586,6 +628,24 @@ mod tests {
     app.open_panel(PanelKind::Links)?;
     let row = &app.panel.as_ref().unwrap().rows[0];
     assert_eq!(row.label, "arXiv:1610.02357");
+    // U21: hovers quote what references cite, as the panel does.
+    let text = app.doc.text(PageId(2))?;
+    let first = app.doc.links(PageId(2))?.iter().position(|link| {
+      let cites = matches!(link.target, Target::Point { page: PageId(9), .. });
+      cites && text.in_areas(PageId(2), &[link.bounds]).1 == "1"
+    });
+    let cases = [
+      (1, 0, "→ p. 11 · [13] Sepp Hochreiter and Jürgen Schmidhuber."),
+      // The first entry sits right under the bibliography heading.
+      (2, first.expect("[1] on p. 3"), "→ p. 10 · [1] Jimmy Lei Ba"),
+      (3, 3, "→ p. 4 · 4 To illustrate"),
+      (10, 0, "→ http://arxiv.org/abs/1610.02357"),
+    ];
+    for (page, index, label) in cases {
+      app.hover = Hit::Link(PageId(page), index);
+      let shown = app.hover_label().unwrap_or_default();
+      assert!(shown.starts_with(label), "{shown:?}");
+    }
     app.panel_input(Input { register: 'a', ..Input::plain(Action::Yank) })?;
     assert_eq!(
       app.reader.registers.get(&'a').map(|text| &**text),

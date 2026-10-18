@@ -141,6 +141,8 @@ pub struct App {
   pub request: Option<Request>,
   pub tabline: Tabline,
   pub error: Option<String>,
+  /// The message the pointer last moved past.
+  pub(crate) passed: String,
   pub render_ms: f64,
   pub search: crate::find::Search,
   /// Outline entry containing the cursor, refreshed each frame.
@@ -247,6 +249,7 @@ impl App {
       request: None,
       tabline: Tabline::default(),
       error: None,
+      passed: String::new(),
       render_ms: 0.0,
       search: crate::find::Search::default(),
       current_section: None,

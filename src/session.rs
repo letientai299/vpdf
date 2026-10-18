@@ -916,8 +916,21 @@ impl Session {
     self.pointed(mouse, None, Instant::now())
   }
 
-  /// Presses focus; the wheel scrolls in place; bare motion hovers.
+  /// `pointer_event`, after motion moves past messages.
   fn pointed(
+    &mut self,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    now: Instant,
+  ) -> Result<bool> {
+    let passed =
+      matches!(mouse.kind, MouseEventKind::Moved | MouseEventKind::Drag(_))
+        && self.pass_messages();
+    Ok(self.pointer_event(mouse, pixel, now)? || passed)
+  }
+
+  /// Presses focus; the wheel scrolls in place; bare motion hovers.
+  fn pointer_event(
     &mut self,
     mouse: MouseEvent,
     pixel: Option<Pixel>,
@@ -1412,6 +1425,12 @@ impl Session {
     for app in &mut tab.panes {
       app.point(hover.filter(|hover| hover.pane == app.id));
     }
+  }
+
+  /// Motion moves past each pane's message; whether one was shown.
+  fn pass_messages(&mut self) -> bool {
+    let Some(tab) = self.tabs.get_mut(self.active) else { return false };
+    tab.panes.iter_mut().fold(false, |passed, app| app.pass_message() | passed)
   }
 
   /// Motion picks a menu row or item.
@@ -2747,6 +2766,62 @@ mod tests {
       ),
     )?;
     Ok(pdf)
+  }
+
+  /// U16: motion passes a message; keys and reloads make it new.
+  #[test]
+  fn messages_yield_once_passed() -> Result<()> {
+    type Step = fn(&mut App) -> Result<bool>;
+    let directory = tempfile::tempdir()?;
+    let path = line_pdf(directory.path())?;
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut app = App::with_screen(&path, "", false, screen)?;
+    let note = |app: &mut App, text: &str| app.reader.message = text.into();
+    // (step, message before it) -> whether it asked for a frame, passed
+    let steps: [(&str, Step, &str, bool, bool); 6] = [
+      ("note", |_| Ok(false), "Copied", false, false),
+      ("motion", |app| Ok(app.pass_message()), "Copied", true, true),
+      ("motion again", |app| Ok(app.pass_message()), "Copied", false, true),
+      (
+        "key repeats it",
+        |app| {
+          app.clear_notes();
+          app.reader.message = "Copied".into();
+          Ok(false)
+        },
+        "Copied",
+        false,
+        false,
+      ),
+      (
+        "reload repeats it",
+        |app| {
+          app.pass_message();
+          app.stamp = None;
+          let now = crate::watch::stamp(&app.path);
+          let since =
+            Instant::now().checked_sub(crate::watch::SETTLE * 2).unwrap();
+          app.settling = now.map(|now| (now, since));
+          app.watch()
+        },
+        "Reloaded after change",
+        true,
+        false,
+      ),
+      ("cleared", |_| Ok(false), "", false, true),
+    ];
+    for (name, step, message, framed, passed) in steps {
+      note(&mut app, message);
+      assert_eq!(step(&mut app)?, framed, "{name}");
+      assert_eq!(app.message_passed(), passed, "{name}");
+    }
+    Ok(())
   }
 
   #[test]

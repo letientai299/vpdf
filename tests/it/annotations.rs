@@ -393,6 +393,46 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   Ok(())
 }
 
+/// U22: clipped outline rows show without their indent.
+#[test]
+fn outline_hovers_drop_the_indent() -> Result<()> {
+  use crossterm::event::{MouseEvent, MouseEventKind};
+  use vpdf::document::{Heading, Target};
+  use vpdf::pointer::{Hit, Region};
+  use vpdf::session::Session;
+  use vpdf::trace::Drawable;
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("noted.pdf");
+  noted_pdf(&path)?;
+  let mut session = Session::new(None);
+  session.open(&path, true, screen())?;
+  let title = "Applications of attention in our model, ".repeat(2);
+  let title = title.trim_end();
+  let app = session.app();
+  for (title, depth) in [("Opening", 0), (title, 2)] {
+    let target = Target::Page(PageId(0));
+    app.doc.outline.push(Heading { title: title.into(), depth, target });
+  }
+  app.open_panel(PanelKind::Outline)?;
+  app.draw(&mut Vec::new())?;
+  let (column, row) = (0..app.screen.columns)
+    .find_map(|column| {
+      let hit = app.hovered(Region::Panel, column, 2, None).ok();
+      (hit == Some(Hit::Row(1))).then_some((column, 2))
+    })
+    .expect("the indented row");
+  let kind = MouseEventKind::Moved;
+  let modifiers = KeyModifiers::NONE;
+  session.mouse(MouseEvent { kind, column, row, modifiers })?;
+  let mut out = Vec::new();
+  session.draw_frame(&mut out)?;
+  let drawn = String::from_utf8_lossy(&out);
+  assert_eq!(session.app().hover, Hit::Row(1));
+  assert!(drawn.contains(title), "{drawn}");
+  assert!(!drawn.contains(&format!(" {title}")), "{drawn}");
+  Ok(())
+}
+
 #[test]
 fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
   let directory = tempfile::tempdir()?;

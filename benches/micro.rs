@@ -774,6 +774,14 @@ fn routing_outline() -> Result<()> {
   measure("App::track_outline", || {
     app.track_outline();
     black_box(app.current_section);
+  })?;
+  // Landed views match headings by glyph.
+  app.doc.load_outline()?;
+  let target = app.doc.outline[5].target.clone();
+  app.follow(&target)?;
+  measure("App::track_outline landed", || {
+    app.track_outline();
+    black_box(app.current_section);
   })
 }
 

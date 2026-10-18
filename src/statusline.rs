@@ -81,8 +81,9 @@ impl App {
     format!("{} — {name}", self.doc.title)
   }
 
-  /// Tab names that fit in `room`, with their display width.
-  fn tabs(&self, room: usize) -> Tabs {
+  /// Tab names that fit in `room` beside `detail` columns, with their
+  /// display width; else the active file's name.
+  fn tabs(&self, room: usize, detail: usize) -> Tabs {
     let Tabline { names, active } = &self.tabline;
     // Narrow panes cut the name so the status line stays in the pane.
     let file = || {
@@ -102,7 +103,8 @@ impl App {
       .map(|(index, name)| format!(" {}:{name} ", index + 1))
       .collect();
     let width = labels.iter().map(|label| label.width()).sum::<usize>() + 1;
-    if width > room {
+    // Names yield to the hover detail.
+    if width + detail > room {
       return file();
     }
     let mut text = String::new();
@@ -135,10 +137,10 @@ impl App {
     }
   }
 
-  /// A page's label and section.
-  pub(crate) fn page_line(&self, page: PageId) -> String {
+  /// A page's label and the section the reader names at its top.
+  pub(crate) fn page_line(&mut self, page: PageId) -> String {
+    let section = self.top_section(page);
     let label = self.doc.label(page);
-    let section = crate::panel::section(&self.doc.outline, page, f32::MAX);
     match section.map(|index| self.doc.outline[index].title.trim()) {
       Some(title) => format!("p. {label} · {title}"),
       None => format!("p. {label}"),
@@ -236,15 +238,13 @@ impl App {
       line.right = terminal::clean(&line.right, columns);
       return Ok(line);
     };
-    let tabs = self.tabs(room);
     let section =
       self.current_section.map(|index| self.doc.outline[index].title.trim());
-    let quiet = covered || self.reader.message.is_empty();
+    let quiet = covered || self.message_passed();
+    let detail = detail.filter(|_| quiet && self.error.is_none());
     let (message, style) = match (&self.error, section) {
       (Some(error), _) => (error.as_str(), theme::ERROR),
-      (None, _) if let Some(detail) = detail.filter(|_| quiet) => {
-        (detail, theme::BAR)
-      }
+      (None, _) if let Some(detail) = detail => (detail, theme::BAR),
       (None, _) if covered => ("Enter open  :e file  q close", theme::BAR),
       (None, Some(title)) if self.reader.message.is_empty() => {
         line.section = true;
@@ -252,16 +252,32 @@ impl App {
       }
       (None, _) => (self.reader.message.as_str(), theme::BAR),
     };
+    let tabs = self.tabs(room, detail.map_or(0, UnicodeWidthStr::width));
     let room = room.saturating_sub(tabs.width);
     // A cut detail says so; `K` shows notes whole.
     line.message = match detail {
-      Some(detail) if message == detail => terminal::clipped(message, room).0,
-      _ => terminal::clean(message, room),
+      Some(_) => terminal::clipped(message, room).0,
+      None => terminal::clean(message, room),
     };
     line.fill = room.saturating_sub(line.message.width()) + 1;
     line.style = style;
     line.tabs = Some(tabs);
     Ok(line)
+  }
+
+  /// Whether the message yields to hover details: none, or the pointer
+  /// moved since it appeared. Errors never yield.
+  pub(crate) fn message_passed(&self) -> bool {
+    self.reader.message.is_empty() || self.reader.message == self.passed
+  }
+
+  /// Pointer motion moves past the message; whether a shown one did.
+  pub(crate) fn pass_message(&mut self) -> bool {
+    if self.message_passed() {
+      return false;
+    }
+    self.passed.clone_from(&self.reader.message);
+    true
   }
 
   /// The focused pane's status item there.
@@ -270,6 +286,7 @@ impl App {
     if !self.focused || self.overlaid() {
       return None;
     }
+    // A pointer on this row hovers chrome, which has no detail.
     let line = self.line(None).ok()?;
     let column = usize::from(column);
     let columns = usize::from(self.screen.columns);
@@ -372,11 +389,15 @@ mod tests {
   }
 
   fn app() -> Result<App> {
+    open("paper.pdf", true)
+  }
+
+  fn open(name: &str, text_mode: bool) -> Result<App> {
     let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
     App::with_screen(
-      &root.join("paper.pdf"),
+      &root.join(name),
       "",
-      true,
+      text_mode,
       Screen {
         columns: 120,
         rows: 24,
@@ -392,9 +413,9 @@ mod tests {
   fn filenames_keep_style_and_number() -> Result<()> {
     let mut app = app()?;
     let single = format!("{} 1:paper.pdf {} ", theme::STATUS_FILE, theme::BAR);
-    assert_eq!(app.tabs(80).pair(), (single.clone(), 14));
+    assert_eq!(app.tabs(80, 0).pair(), (single.clone(), 14));
     app.tabline = Tabline { names: vec!["paper.pdf".into()], active: 0 };
-    assert_eq!(app.tabs(80).pair(), (single, 14));
+    assert_eq!(app.tabs(80, 0).pair(), (single, 14));
     app.tabline.names.insert(0, "book.pdf".into());
     for active in 0..2 {
       app.tabline.active = active;
@@ -410,13 +431,13 @@ mod tests {
         styles[1],
         theme::BAR
       );
-      assert_eq!(app.tabs(80).pair(), (expected, 26));
+      assert_eq!(app.tabs(80, 0).pair(), (expected, 26));
     }
     let narrow = format!("{} 2:paper.pdf {} ", theme::STATUS_FILE, theme::BAR);
-    assert_eq!(app.tabs(14).pair(), (narrow, 14));
+    assert_eq!(app.tabs(14, 0).pair(), (narrow, 14));
     app.path = "論文.pdf".into();
     for room in 0..30 {
-      let (tabs, width) = app.tabs(room).pair();
+      let (tabs, width) = app.tabs(room, 0).pair();
       let plain = tabs
         .replace(theme::STATUS_FILE, "")
         .replace(theme::TAB_INACTIVE, "")
@@ -440,6 +461,59 @@ mod tests {
     assert!(out.contains(&format!("{} 1:paper.pdf ", theme::STATUS_FILE)));
     let section = format!("{}{title}{}", theme::STATUS_SECTION, theme::BAR);
     assert!(out.contains(&section));
+    Ok(())
+  }
+
+  /// U20: thumbnails name the section the reader shows at their top,
+  /// and landings name the heading they land on.
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn sections_agree_with_the_reader() -> Result<()> {
+    use crate::document::Target;
+    use crate::text::Position;
+    // (file, text mode, Cursor mode)
+    let cases = ["paper.pdf", "book.pdf"].map(|file| {
+      [(false, false), (false, true), (true, false)]
+        .map(|(text, cursor)| (file, text, cursor))
+    });
+    for (file, text_mode, cursor) in cases.into_iter().flatten() {
+      let name = format!("{file} text={text_mode} cursor={cursor}");
+      let mut app = open(file, text_mode)?;
+      app.doc.load_outline()?;
+      if cursor {
+        app.reader.enter_cursor();
+      }
+      for page in (0..app.doc.pages.len()).map(PageId) {
+        app.go_to(Position { page, ..Position::default() }, true)?;
+        app.track_outline();
+        let line = app.page_line(page);
+        let shown = line.split_once(" · ").map(|(_, title)| title);
+        let section = app.current_section;
+        let title = section.map(|index| app.doc.outline[index].title.trim());
+        assert_eq!(shown, title, "{name} p. {}", page.0 + 1);
+      }
+      let outline = app.doc.outline.clone();
+      for (index, heading) in outline.iter().enumerate() {
+        // Page targets go to the page top; nothing lands.
+        let Target::Point { page, .. } = heading.target else { continue };
+        app.follow(&heading.target)?;
+        app.track_outline();
+        let Some(section) = app.current_section else {
+          panic!("{name} {index}: no section");
+        };
+        // Headings that land on one line share it.
+        let text = app.doc.text(page)?;
+        let landed = |target: &Target| match *target {
+          Target::Point { page: on, x, y } if on == page => {
+            Some(text.nearest(page, x, y).line)
+          }
+          _ => None,
+        };
+        let (at, want) =
+          (landed(&outline[section].target), landed(&heading.target));
+        assert_eq!(at, want, "{name} {index}: {:?}", heading.title);
+      }
+    }
     Ok(())
   }
 }

@@ -512,6 +512,39 @@ fn status_items_act_on_click() -> Result<()> {
   Ok(())
 }
 
+/// U32: tab names yield to a long detail and return on the status row.
+#[test]
+fn tab_names_yield_to_hover_details() -> Result<()> {
+  // Fits beside the file name, not beside all three tabs.
+  let uri = format!("https://example.com/{}", "a".repeat(60));
+  let target = format!("/A << /S /URI /URI ({uri}) >>");
+  let write = |path: &std::path::Path| {
+    let links = [(crate::mouse::LINES[0], target.as_str())];
+    crate::mouse::lines_pdf(path, links.into_iter())
+  };
+  let (directory, mut session) = crate::mouse::open(write, false)?;
+  for name in ["b.pdf", "c.pdf"] {
+    let other = directory.path().join(name);
+    crate::common::text_pdf(&other, &["Other words"])?;
+    session.open(&other, true, crate::focus::screen())?;
+  }
+  session.activate(0)?;
+  status(&mut session)?;
+  let link = cell(&mut session, Hit::Link(PageId(0), 0))?;
+  assert!(left(&mut session, MouseEventKind::Moved, link));
+  let drawn = status(&mut session)?;
+  assert!(drawn.contains(&format!("→ {uri}")), "{drawn:?}");
+  assert!(!drawn.contains("2:b.pdf"), "names yield: {drawn:?}");
+  // On the status row the names return and take clicks.
+  let tab = chrome_cell(&mut session, vpdf::chrome::Chrome::Tab(1))?;
+  assert!(left(&mut session, MouseEventKind::Moved, tab));
+  assert_eq!(session.app().hover, Hit::Chrome);
+  assert!(status(&mut session)?.contains("2:b.pdf"));
+  click(&mut session, tab);
+  assert_eq!(session.active, 1);
+  Ok(())
+}
+
 #[test]
 fn unfocused_status_rows_only_focus() -> Result<()> {
   let (_directory, mut session) = session(false)?;

@@ -34,6 +34,8 @@ Status click on section: outline there; zoom: fit
 Middle click a tab: close it
 Clue / completion click: type that key / pick it
 Hover link: tint; status shows its destination
+Hover citation: status quotes the cited reference
+Move pointer: hover detail covers notes; errors stay
 Rest on a link 400 ms: preview it; leave to close
 Click the hover preview: follow; keys close it
 Click link: follow and record jump
@@ -146,7 +148,7 @@ g? <F1>: this reference
 P wheel: scroll list; keep row selection
 Panel hover: underline row; show clipped title
 gr hover: show row card; wheel scrolls card
-gp hover: show page label and section
+gp hover: show page label and section at its top
 q: close panel, tab, or reader
 
 # Preview

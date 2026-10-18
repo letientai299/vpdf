@@ -50,11 +50,15 @@ another file does not change the selected entry.
 
 Preview an internal reference to inspect its destination before following it.
 The preview is a temporary reading surface with its own scrolling. Hovering an
-internal link can open it without moving the reading position. Link labels can
-also be picked with the pointer before following their destination. Jump
-history returns to earlier destinations; marks keep places worth revisiting.
-Following an external web link opens it through the desktop integration.
-See [external actions][external] for clipboard and SSH boundaries.
+internal link can open it without moving the reading position. The status line
+names what the pointer rests on: a link's destination, the reference a citation
+cites, a note, a clipped row, or a thumbnail's page and the section at its top.
+Once the pointer moves, that detail covers an older message and takes room from
+the tab names; errors stay until the next key or click. Link labels can also be
+picked with the pointer before following their destination. Jump history returns
+to earlier destinations; marks keep places worth revisiting. Following an
+external web link opens it through the desktop integration. See
+[external actions][external] for clipboard and SSH boundaries.
 
 ## Compare views
 
