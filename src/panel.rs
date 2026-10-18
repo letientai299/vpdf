@@ -3,7 +3,7 @@ use crate::app::{App, Request};
 use crate::document::{Annotation, Heading, Target};
 use crate::graphics::Graphics;
 use crate::keys::{Action, Input, PanelKind};
-use crate::layout::Screen;
+use crate::layout::{Screen, screen_step};
 use crate::motion::Motion;
 use crate::panel_layout::Layout;
 use crate::panel_search::RowSearch;
@@ -188,10 +188,14 @@ impl Panel {
   pub fn navigate(&mut self, input: Input, page: usize) -> bool {
     let last = self.rows.len().saturating_sub(1);
     let count = input.count;
+    let screen_rows = screen_step(page.saturating_sub(2));
     if self.kind == PanelKind::Help && self.layout.is_some() {
       let scroll = match input.action {
         Action::Scroll(amount) => {
           Some((amount * page as f32 * count as f32) as isize)
+        }
+        Action::Screen(direction) => {
+          Some(direction as isize * screen_rows as isize * count as isize)
         }
         Action::Rows(rows) => Some(rows as isize * count as isize),
         _ => None,
@@ -211,6 +215,10 @@ impl Panel {
       Action::Motion(Motion::Last) => last,
       Action::Scroll(amount) => {
         let rows = (amount * page as f32 * count as f32) as isize;
+        self.selected.saturating_add_signed(rows)
+      }
+      Action::Screen(direction) => {
+        let rows = direction as isize * screen_rows as isize * count as isize;
         self.selected.saturating_add_signed(rows)
       }
       Action::Rows(rows) => {
@@ -1227,6 +1235,26 @@ mod tests {
       assert_eq!(row.write(&mut out, style, 40, 0, "")?, 9);
       let text = String::from_utf8(out)?;
       assert!(text.contains(&format!("\x1b[24m  {style}Chapter")));
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn screen_scroll_keeps_panel_context() -> Result<()> {
+    for kind in [PanelKind::Help, PanelKind::Links] {
+      let mut panel =
+        Panel::new(kind, (0..40).map(|_| Row::parse("j: down")).collect());
+      panel.list(&mut Vec::new(), terminal::At::default(), 40, 10)?;
+      assert!(panel.navigate(Input::plain(Action::Screen(1)), 10));
+      assert_eq!(panel.selected, 6);
+      if kind == PanelKind::Help {
+        assert_eq!(panel.top, 6);
+      }
+      assert!(panel.navigate(Input::plain(Action::Screen(-1)), 10));
+      assert_eq!(panel.selected, 0);
+      let counted = Input { count: 2, ..Input::plain(Action::Screen(1)) };
+      assert!(panel.navigate(counted, 10));
+      assert_eq!(panel.selected, 12);
     }
     Ok(())
   }

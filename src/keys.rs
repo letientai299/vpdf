@@ -80,6 +80,7 @@ pub enum Action {
   /// Mark name and whether to keep the glyph column.
   GoMark(char, bool),
   Scroll(f32),
+  Screen(i32),
   Rows(i32),
   Align(f32),
   Zoom(i32),
@@ -382,8 +383,8 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("$", Action::Motion(M::LineEnd), "line end"),
   ("gg", Action::Motion(M::First), "first page, or [count] page"),
   ("G", Action::Motion(M::Last), "last page, or [count] page"),
-  (" ", Action::Motion(M::NextPage), "next page"),
-  ("S-Space", Action::Motion(M::PreviousPage), "previous page"),
+  (" ", Action::Screen(1), "screen down with overlap"),
+  ("S-Space", Action::Screen(-1), "screen up with overlap"),
   ("BS", Action::Motion(M::PreviousPage), "previous page"),
   ("y", Action::Yank, "yank"),
   ("Y", Action::YankLine, "yank line"),
@@ -920,12 +921,12 @@ mod tests {
     assert!(keys.feed(key('d'), Grammar::Objects).is_none());
     assert_eq!(
       keys.feed(key(' '), Grammar::Objects).unwrap().action,
-      Action::Motion(Motion::NextPage)
+      Action::Screen(1)
     );
     let shifted = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::SHIFT);
     assert_eq!(
       keys.feed(shifted, Grammar::Objects).unwrap().action,
-      Action::Motion(Motion::PreviousPage)
+      Action::Screen(-1)
     );
   }
 }

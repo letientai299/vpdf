@@ -12,6 +12,11 @@ pub struct Screen {
   pub origin: (u16, u16),
 }
 
+/// Rows advanced while retaining reading context.
+pub(crate) fn screen_step(rows: usize) -> usize {
+  rows.saturating_sub(2).max(1)
+}
+
 impl Screen {
   /// Cell width and height in pixels.
   pub fn cell(self) -> (u16, u16) {

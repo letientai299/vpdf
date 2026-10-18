@@ -571,3 +571,115 @@ fn recent_cover_preserves_view_and_explicit_job_control() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn space_scrolls_with_context() -> Result<()> {
+  for text in [false, true] {
+    for mode in [b"".as_slice(), b"i", b"v"] {
+      let mut app = app("paper.pdf", text)?;
+      if !mode.is_empty() {
+        keys(&mut app, mode)?;
+      }
+      let cursor = app.reader.cursor;
+      let anchor = app.reader.selection.map(|s| s.anchor);
+      let top = app.text_position(0, 0)?;
+      let overlap = app.text_position(0, app.layout.screen.rows - 3)?;
+      let rows = app.layout.screen.rows.saturating_sub(3);
+      let distance = f32::from(rows * app.screen.cell_height);
+      keys(&mut app, b" ")?;
+      settle(&mut app);
+      if text {
+        assert_eq!(app.text_position(0, 0)?, overlap);
+      } else {
+        assert_eq!(app.reader.scroll, distance);
+      }
+      if mode.is_empty() {
+        assert_eq!(app.reader.cursor, cursor);
+      } else {
+        assert_ne!(app.reader.cursor, cursor);
+      }
+      assert_eq!(app.reader.selection.map(|s| s.anchor), anchor);
+      keys(&mut app, b"\x1b[32;2u")?;
+      settle(&mut app);
+      assert_eq!(app.reader.scroll, 0.0);
+      if text {
+        assert_eq!(app.text_position(0, 0)?, top);
+      }
+      keys(&mut app, b"2 ")?;
+      settle(&mut app);
+      if !text {
+        assert_eq!(app.reader.scroll, distance * 2.0);
+      }
+      keys(&mut app, b"999\x1b[32;2u")?;
+      settle(&mut app);
+      assert_eq!(app.reader.scroll, 0.0);
+      if text {
+        assert_eq!(app.text_position(0, 0)?, top);
+      }
+    }
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn space_scrolls_short_screens() -> Result<()> {
+  let mut app = app("paper.pdf", false)?;
+  app.screen.rows = 3;
+  app.relayout()?;
+  keys(&mut app, b" ")?;
+  settle(&mut app);
+  assert_eq!(app.reader.scroll, f32::from(app.screen.cell_height));
+  keys(&mut app, b"\x1b[32;2u")?;
+  settle(&mut app);
+  assert_eq!(app.reader.scroll, 0.0);
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn space_accumulates_queued_scroll() -> Result<()> {
+  for mode in [b"".as_slice(), b"i", b"v"] {
+    let mut app = app("paper.pdf", false)?;
+    if !mode.is_empty() {
+      keys(&mut app, mode)?;
+    }
+    let anchor = app.reader.selection.map(|s| s.anchor);
+    keys(&mut app, b"  ")?;
+    let distance = 2.0
+      * f32::from(
+        app.layout.screen.rows.saturating_sub(3) * app.screen.cell_height,
+      );
+    assert_eq!(app.reader.scroll, 0.0);
+    assert_eq!(app.animation.as_ref().unwrap().target, distance);
+    keys(&mut app, b"\x1b[32;2u")?;
+    settle(&mut app);
+    assert_eq!(app.reader.scroll, distance / 2.0);
+    assert_eq!(app.reader.selection.map(|s| s.anchor), anchor);
+    keys(&mut app, b"9999 ")?;
+    settle(&mut app);
+    assert_eq!(app.reader.scroll, app.layout.clamp_scroll(f32::MAX));
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn counted_text_space_matches_repeats() -> Result<()> {
+  for mode in [b"".as_slice(), b"i", b"v"] {
+    let mut app = app("paper.pdf", true)?;
+    if !mode.is_empty() {
+      keys(&mut app, mode)?;
+    }
+    let top = app.text_position(0, 0)?;
+    keys(&mut app, b"  ")?;
+    let repeated = app.text_position(0, 0)?;
+    assert_ne!(repeated, top);
+    keys(&mut app, b"2\x1b[32;2u")?;
+    assert_eq!(app.text_position(0, 0)?, top);
+    keys(&mut app, b"2 ")?;
+    assert_eq!(app.text_position(0, 0)?, repeated);
+  }
+  Ok(())
+}

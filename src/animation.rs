@@ -39,7 +39,10 @@ impl App {
 
   pub(crate) fn finish_scroll_before(&mut self, action: Action) {
     if self.reader.uses_cursor()
-      && !matches!(action, Action::Scroll(_) | Action::Rows(_))
+      && !matches!(
+        action,
+        Action::Scroll(_) | Action::Screen(_) | Action::Rows(_)
+      )
     {
       self.finish_scroll();
     }

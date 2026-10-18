@@ -2,7 +2,7 @@ use crate::Result;
 use crate::app::{App, InputOwner};
 use crate::gestures::Gesture;
 use crate::keys::{Action, Input};
-use crate::layout::Screen;
+use crate::layout::{Screen, screen_step};
 use crate::links::LinkPress;
 use crate::motion::Motion;
 use crate::panel::Panel;
@@ -617,6 +617,12 @@ impl App {
           fraction * count * self.layout.screen.height(),
           true,
         )?;
+      }
+      Action::Screen(direction) => {
+        let row = f32::from(self.screen.cell_height);
+        let rows = usize::from(self.layout.screen.rows.saturating_sub(1));
+        let distance = screen_step(rows) as f32 * row;
+        self.keyboard_scroll(direction as f32 * count * distance, true)?;
       }
       Action::Rows(rows) => {
         self.keyboard_scroll(

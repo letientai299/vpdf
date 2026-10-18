@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::keys::{Action, Input};
-use crate::layout::{Crop, page_matrix, transform};
+use crate::layout::{Crop, page_matrix, screen_step, transform};
 use crate::motion::Motion;
 use crate::pointer::{Hit, Wheel};
 use crate::text::{Bounds, PageId};
@@ -124,6 +124,10 @@ impl App {
       Action::Scroll(amount) => {
         let step = (amount * page as f32) as isize * count as isize;
         selected.saturating_add_signed(step)
+      }
+      Action::Screen(direction) => {
+        let step = screen_step(grid.rows) * grid.columns * count;
+        selected.saturating_add_signed(direction as isize * step as isize)
       }
       Action::Follow | Action::Swap => {
         return self.open_selected().map(|()| true);

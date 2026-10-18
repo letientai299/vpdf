@@ -2,6 +2,7 @@ use crate::Result;
 use crate::app::App;
 use crate::document::{Annotation, Target};
 use crate::keys::{Action, Input};
+use crate::layout::screen_step;
 use crate::motion::Motion;
 use crate::panel_layout::wrap;
 use crate::pointer::Hit;
@@ -340,6 +341,9 @@ impl App {
       Action::Motion(Motion::Down) => 1.0,
       Action::Motion(Motion::Up) => -1.0,
       Action::Scroll(amount) => amount * self.preview_rows() as f32,
+      Action::Screen(direction) => {
+        direction as f32 * screen_step(self.preview_rows()) as f32
+      }
       Action::Rows(rows) => rows as f32,
       Action::Command => return self.action(input),
       Action::Follow => return self.follow_preview(),
