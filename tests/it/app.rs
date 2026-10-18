@@ -812,7 +812,8 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
         | Hit::Thumbnail(_)
         | Hit::Preview { .. }
         | Hit::Item(..)
-        | Hit::Card(_) => false,
+        | Hit::Card(_)
+        | Hit::Edge { .. } => false,
       };
       assert!(expected, "{at}");
     }

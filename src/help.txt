@@ -163,6 +163,9 @@ Border: destination page; arrows mark clipped edges
 <C-w>x/T: swap with sibling / move to new tab
 <C-w>r/R: rotate panes forward / backward
 <C-w>n: new pane listing recent documents
+Drag a divider or status line between panes: resize
+Drag the panel edge: resize the panel
+Double click a divider / panel edge: equal / default size
 
 # Tabs
 P file <CR>/o: target tab / split; reuse open view

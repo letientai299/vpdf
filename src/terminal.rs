@@ -61,6 +61,8 @@ pub enum Shape {
   Text,
   Crosshair,
   Grabbing,
+  ColResize,
+  RowResize,
 }
 
 impl Shape {
@@ -71,6 +73,8 @@ impl Shape {
       Self::Text => "text",
       Self::Crosshair => "crosshair",
       Self::Grabbing => "grabbing",
+      Self::ColResize => "col-resize",
+      Self::RowResize => "row-resize",
     }
   }
 }

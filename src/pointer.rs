@@ -17,6 +17,8 @@ pub enum Region {
   /// Key clues or the completion menu.
   Overlay,
   Status,
+  /// A divider or panel border.
+  Edge,
   /// The drawn `K` or hover preview.
   Preview,
   /// The context menu, over the page.
@@ -88,7 +90,7 @@ impl Pane {
   }
 
   /// Cells of `region`, relative to the pane.
-  fn area(&self, region: Region) -> Rect {
+  pub(crate) fn area(&self, region: Region) -> Rect {
     let status = self.rect.rows.saturating_sub(1);
     let overlay = status.saturating_sub(self.overlay);
     let columns = self.rect.columns;
@@ -109,6 +111,7 @@ impl Pane {
       Region::Preview => self.preview.unwrap_or_default(),
       Region::Menu => self.menu.unwrap_or_default(),
       Region::Actions => self.actions.unwrap_or_default(),
+      Region::Edge => Rect::default(),
     }
   }
 }
@@ -170,6 +173,10 @@ pub enum Hit {
   Item(List, Option<usize>),
   /// A recent card row.
   Card(u16),
+  /// A boundary drags resize.
+  Edge {
+    rows: bool,
+  },
 }
 
 /// Overlays whose items the pointer picks.
@@ -214,6 +221,8 @@ impl Hit {
       | Self::Thumbnail(_)
       | Self::Preview { follows: true }
       | Self::Item(_, Some(_)) => Shape::Pointer,
+      Self::Edge { rows: false } => Shape::ColResize,
+      Self::Edge { rows: true } => Shape::RowResize,
     }
   }
 }
@@ -433,34 +442,13 @@ impl Pointer {
         return None;
       }
     }
-    self.spot =
-      Some((MouseEvent { kind: MouseEventKind::Moved, ..mouse }, pixel));
+    self.place(mouse, pixel);
     let route = route(panes, focused, capture, mouse);
     match mouse.kind {
       MouseEventKind::Down(button) => {
-        self.turn = None;
-        let alt = mouse.modifiers.contains(KeyModifiers::ALT);
         let on = route.map(|route| (route.pane, route.region));
-        let again = self.press.filter(|press| {
-          press.button == button
-            && press.alt == alt
-            && press.on == on
-            && !press.dragged
-            && press.near(mouse.column, mouse.row, pixel, click)
-            && now.saturating_duration_since(press.at) < CLICK
-        });
-        self.press = Some(Press {
-          button,
-          alt,
-          on,
-          held: true,
-          column: mouse.column,
-          row: mouse.row,
-          pixel,
-          at: now,
-          clicks: again.map_or(1, |press| press.clicks.saturating_add(1)),
-          dragged: false,
-        });
+        let alt = mouse.modifiers.contains(KeyModifiers::ALT);
+        self.press(button, alt, on, mouse, pixel, now);
       }
       MouseEventKind::Up(button) if held == Some(button) => {
         self.hold(false);
@@ -476,6 +464,63 @@ impl Pointer {
       _ => 1,
     };
     route.map(|route| Route { clicks, pixel, ..route })
+  }
+
+  /// Captures a boundary press; its clicks.
+  pub fn press_edge(
+    &mut self,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    now: Instant,
+  ) -> u8 {
+    self.place(mouse, pixel);
+    let on = Some((0, Region::Edge));
+    self.press(MouseButton::Left, false, on, mouse, pixel, now);
+    self.press.map_or(1, |press| press.clicks)
+  }
+
+  /// Moves the spot without a hover test.
+  fn place(&mut self, mouse: MouseEvent, pixel: Option<Pixel>) {
+    self.spot =
+      Some((MouseEvent { kind: MouseEventKind::Moved, ..mouse }, pixel));
+  }
+
+  /// Whether the press passed the threshold.
+  pub fn dragged(&self) -> bool {
+    self.press.is_some_and(|press| press.dragged)
+  }
+
+  /// Starts a press or extends its run.
+  fn press(
+    &mut self,
+    button: MouseButton,
+    alt: bool,
+    on: Option<(u32, Region)>,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    now: Instant,
+  ) {
+    self.turn = None;
+    let again = self.press.filter(|press| {
+      press.button == button
+        && press.alt == alt
+        && press.on == on
+        && !press.dragged
+        && press.near(mouse.column, mouse.row, pixel, click)
+        && now.saturating_duration_since(press.at) < CLICK
+    });
+    self.press = Some(Press {
+      button,
+      alt,
+      on,
+      held: true,
+      column: mouse.column,
+      row: mouse.row,
+      pixel,
+      at: now,
+      clicks: again.map_or(1, |press| press.clicks.saturating_add(1)),
+      dragged: false,
+    });
   }
 
   /// A repeated press, in any pane.

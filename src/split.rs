@@ -32,6 +32,16 @@ impl Rect {
   }
 }
 
+/// A split's boundary, which drags move.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Divider {
+  /// The split's place in tree order.
+  pub index: usize,
+  pub axis: Axis,
+  /// Separator column or first half's last row.
+  pub rect: Rect,
+}
+
 /// Where a new pane goes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Place {
@@ -49,6 +59,14 @@ pub enum Node {
 /// Smallest pane: a status row plus three rows, or ten columns.
 const MIN_ROWS: u16 = 4;
 const MIN_COLUMNS: u16 = 10;
+
+/// Cells a split divides, minus separators.
+fn span(axis: Axis, area: Rect) -> u16 {
+  match axis {
+    Axis::Rows => area.rows,
+    Axis::Columns => area.columns.saturating_sub(1),
+  }
+}
 
 impl Node {
   /// Divides `area` between the halves; side-by-side halves give one
@@ -93,15 +111,81 @@ impl Node {
     }
   }
 
-  /// Separator columns between side-by-side panes.
-  pub fn separators(&self, area: Rect, out: &mut Vec<Rect>) {
+  /// Every split's divider, in tree order.
+  pub fn dividers(&self, area: Rect, out: &mut Vec<Divider>) {
     if let Self::Split { axis, ratio, first, second } = self {
       let (a, b) = Self::halves(*axis, *ratio, area);
-      if *axis == Axis::Columns {
-        out.push(Rect { column: a.column + a.columns, columns: 1, ..area });
-      }
-      first.separators(a, out);
-      second.separators(b, out);
+      let rect = match axis {
+        Axis::Columns => {
+          Rect { column: a.column + a.columns, columns: 1, ..area }
+        }
+        Axis::Rows => {
+          Rect { row: a.row + a.rows.saturating_sub(1), rows: 1, ..area }
+        }
+      };
+      out.push(Divider { index: out.len(), axis: *axis, rect });
+      first.dividers(a, out);
+      second.dividers(b, out);
+    }
+  }
+
+  /// Moves divider `index` to cell `at`.
+  pub fn drag(&mut self, index: usize, at: u16, area: Rect) {
+    let Some((node, area)) = self.nth(index, area) else { return };
+    let cells = match node {
+      Self::Split { axis: Axis::Columns, .. } => at.saturating_sub(area.column),
+      // Its status row is the divider.
+      Self::Split { axis: Axis::Rows, .. } => (at + 1).saturating_sub(area.row),
+      Self::Leaf(_) => return,
+    };
+    node.set_first(f32::from(cells), area);
+    if let Self::Split { axis, .. } = node {
+      let axis = *axis;
+      node.refit(axis, area);
+    }
+  }
+
+  /// Equalizes the panes divider `index` splits.
+  pub fn equalize_at(&mut self, index: usize, area: Rect) {
+    if let Some((node, _)) = self.nth(index, area)
+      && let Self::Split { axis, .. } = node
+    {
+      let axis = *axis;
+      node.equalize_along(axis);
+    }
+  }
+
+  /// `equalize`, leaving cross-axis splits.
+  fn equalize_along(&mut self, along: Axis) {
+    let Self::Split { axis, ratio, first, second } = self else { return };
+    if *axis == along {
+      let count = |node: &Self| node.count_along(along) as f32;
+      *ratio = count(first) / (count(first) + count(second));
+    }
+    first.equalize_along(along);
+    second.equalize_along(along);
+  }
+
+  /// Split `index` in tree order, with area.
+  fn nth(&mut self, index: usize, area: Rect) -> Option<(&mut Self, Rect)> {
+    let Self::Split { axis, ratio, first, .. } = self else { return None };
+    if index == 0 {
+      return Some((self, area));
+    }
+    let (a, b) = Self::halves(*axis, *ratio, area);
+    let before = first.splits();
+    let Self::Split { first, second, .. } = self else { return None };
+    if index <= before {
+      first.nth(index - 1, a)
+    } else {
+      second.nth(index - 1 - before, b)
+    }
+  }
+
+  fn splits(&self) -> usize {
+    match self {
+      Self::Leaf(_) => 0,
+      Self::Split { first, second, .. } => 1 + first.splits() + second.splits(),
     }
   }
 
@@ -196,15 +280,65 @@ impl Node {
     if *axis != along {
       return;
     }
-    let (total, minimum) = match along {
-      Axis::Rows => (area.rows, MIN_ROWS),
-      Axis::Columns => (area.columns.saturating_sub(1), MIN_COLUMNS),
-    };
-    let current = (f32::from(total) * *ratio).round();
+    let current = (f32::from(span(along, area)) * *ratio).round();
     let delta = if in_first { cells as f32 } else { -(cells as f32) };
-    let low = f32::from(minimum.min(total / 2));
-    let high = (f32::from(total) - low).max(low);
-    *ratio = ((current + delta).clamp(low, high)) / f32::from(total.max(1));
+    self.set_first(current + delta, area);
+    self.refit(along, area);
+  }
+
+  /// Sizes the first half within both minimums.
+  fn set_first(&mut self, cells: f32, area: Rect) {
+    let Some((low, high)) = self.bounds(area) else { return };
+    let Self::Split { axis, ratio, .. } = self else { return };
+    let cells = cells.clamp(f32::from(low), f32::from(high));
+    *ratio = cells / f32::from(span(*axis, area).max(1));
+  }
+
+  /// The first half's fewest and most cells.
+  fn bounds(&self, area: Rect) -> Option<(u16, u16)> {
+    let Self::Split { axis, first, second, .. } = self else { return None };
+    let total = span(*axis, area);
+    // Cramped spans still move, within halves.
+    let low = first.least(*axis).min(total / 2);
+    let high = total.saturating_sub(second.least(*axis).min(total / 2));
+    Some((low, high.max(low)))
+  }
+
+  /// Re-clamps nested `along` splits a drag squeezed.
+  fn refit(&mut self, along: Axis, area: Rect) {
+    let bounds = self.bounds(area);
+    let Self::Split { axis, ratio, first, second } = self else { return };
+    if *axis == along
+      && let Some((low, high)) = bounds
+    {
+      let total = f32::from(span(along, area).max(1));
+      let cells = (total * *ratio).round() as u16;
+      let fit = cells.clamp(low, high);
+      // Untouched splits keep their ratios.
+      if fit != cells {
+        *ratio = f32::from(fit) / total;
+      }
+    }
+    let (a, b) = Self::halves(*axis, *ratio, area);
+    first.refit(along, a);
+    second.refit(along, b);
+  }
+
+  /// Fewest cells keeping every pane usable.
+  fn least(&self, along: Axis) -> u16 {
+    match self {
+      Self::Leaf(_) => match along {
+        Axis::Rows => MIN_ROWS,
+        Axis::Columns => MIN_COLUMNS,
+      },
+      Self::Split { axis, first, second, .. } if *axis == along => {
+        let separator = u16::from(along == Axis::Columns);
+        first.least(along) + separator + second.least(along)
+      }
+      Self::Split { first, second, .. } => {
+        first.least(along).max(second.least(along))
+      }
+    }
   }
 
   fn has_split(&self, target: u32, along: Axis) -> bool {
@@ -399,9 +533,16 @@ mod tests {
       layout[2].1,
       Rect { column: 51, row: 20, columns: 50, rows: 20 }
     );
-    let mut separators = Vec::new();
-    tree.separators(AREA, &mut separators);
-    assert_eq!(separators, [Rect { column: 50, row: 0, columns: 1, rows: 40 }]);
+    let mut dividers = Vec::new();
+    tree.dividers(AREA, &mut dividers);
+    let rects: Vec<_> = dividers.iter().map(|d| (d.index, d.rect)).collect();
+    assert_eq!(
+      rects,
+      [
+        (0, Rect { column: 50, row: 0, columns: 1, rows: 40 }),
+        (1, Rect { column: 51, row: 19, columns: 50, rows: 1 }),
+      ]
+    );
     assert_eq!(neighbor(&layout, 2, Direction::Right), Some(3));
     assert_eq!(neighbor(&layout, 1, Direction::Up), Some(3));
     assert_eq!(neighbor(&layout, 3, Direction::Left), Some(2));
@@ -410,6 +551,69 @@ mod tests {
     assert_eq!(tree.leaves(), [2, 1]);
     assert!(tree.remove(2));
     assert!(matches!(tree, Node::Leaf(1)));
+  }
+
+  #[test]
+  fn dividers_follow_drags_and_equalize() {
+    // Columns [1 | Rows [2 / Columns [3 | 4]]].
+    let mut tree = Node::Leaf(1);
+    tree.split(1, Axis::Columns, 2, Place::After);
+    tree.split(2, Axis::Rows, 3, Place::After);
+    tree.split(3, Axis::Columns, 4, Place::After);
+    // (divider, to) -> panes 1-3 (columns, rows)
+    let cases = [
+      (0, 30, [(30, 40), (70, 20), (35, 20)]),
+      (0, 2, [(10, 40), (90, 20), (45, 20)]),
+      // Right panes keep ten columns.
+      (0, 200, [(79, 40), (21, 20), (10, 20)]),
+      (1, 9, [(79, 40), (21, 10), (10, 30)]),
+      (1, 0, [(79, 40), (21, 4), (10, 36)]),
+    ];
+    for (index, at, want) in cases {
+      tree.drag(index, at, AREA);
+      let got: Vec<_> =
+        rects(&tree).iter().take(3).map(|(_, r)| (r.columns, r.rows)).collect();
+      assert_eq!(got, want, "divider {index} to {at}");
+    }
+    tree.equalize_at(1, AREA);
+    let got: Vec<_> = rects(&tree).iter().map(|(_, r)| r.rows).collect();
+    assert_eq!(got, [40, 20, 20, 20]);
+    assert_eq!(rects(&tree)[0].1.columns, 79, "other splits stay");
+  }
+
+  #[test]
+  fn shrinking_refits_nested_splits() {
+    // (axis, area, drags) -> cells along axis
+    let narrow = Rect { columns: 30, rows: 10, ..AREA };
+    let cases = [
+      (Axis::Columns, AREA, vec![(1, 0), (0, 200)], [79, 10, 10]),
+      (Axis::Rows, AREA, vec![(1, 39), (0, 39)], [32, 4, 4]),
+      // Cramped spans still move, within halves.
+      (Axis::Columns, narrow, vec![(0, 3)], [10, 9, 9]),
+    ];
+    for (axis, area, drags, want) in cases {
+      let mut tree = Node::Leaf(1);
+      tree.split(1, axis, 2, Place::After);
+      tree.split(2, axis, 3, Place::After);
+      for (index, at) in drags {
+        tree.drag(index, at, area);
+      }
+      let mut out = Vec::new();
+      tree.layout(area, &mut out);
+      let got: Vec<_> = out
+        .iter()
+        .map(|(_, r)| if axis == Axis::Rows { r.rows } else { r.columns })
+        .collect();
+      assert_eq!(got, want, "{axis:?} {area:?}");
+    }
+    // Column drags keep stacked proportions: [1 | [2 / 3]].
+    let mut tree = Node::Leaf(1);
+    tree.split(1, Axis::Columns, 2, Place::After);
+    tree.split(2, Axis::Rows, 3, Place::After);
+    tree.drag(1, 35, AREA);
+    tree.drag(0, 30, Rect { rows: 12, ..AREA });
+    let rows: Vec<_> = rects(&tree).iter().map(|(_, r)| r.rows).collect();
+    assert_eq!(rows, [40, 36, 4]);
   }
 
   #[test]

@@ -76,6 +76,9 @@ impl Row {
   }
 }
 
+/// Narrowest dragged panel.
+const MIN_WIDTH: u16 = 8;
+
 pub struct Panel {
   pub kind: PanelKind,
   pub rows: Vec<Row>,
@@ -248,9 +251,9 @@ impl Panel {
     None
   }
 
-  /// The row drawn at a panel cell.
+  /// The row at a panel cell.
   pub fn row_at(&self, column: u16, row: u16) -> Option<usize> {
-    if row == 0 || column >= self.columns {
+    if row == 0 || column + 1 >= self.columns {
       return None;
     }
     if self.layout.is_some() && row >= self.height.saturating_sub(1) {
@@ -330,12 +333,17 @@ impl Panel {
     }
   }
 
-  /// Columns a panel of `kind` takes in a pane `columns` wide; none
-  /// when the page area would keep fewer than 12.
-  pub fn width(kind: PanelKind, columns: u16) -> u16 {
+  /// Panel columns: dragged, else by kind.
+  pub fn width(kind: PanelKind, columns: u16, dragged: Option<u16>) -> u16 {
     let wide = matches!(kind, PanelKind::Help | PanelKind::Info);
-    let width = if wide { columns / 2 } else { columns / 3 };
-    width.clamp(1, if wide { 64 } else { 50 }).min(columns.saturating_sub(12))
+    let width = dragged.map_or_else(
+      || {
+        let width = if wide { columns / 2 } else { columns / 3 };
+        width.clamp(1, if wide { 64 } else { 50 })
+      },
+      |dragged| dragged.max(MIN_WIDTH),
+    );
+    width.min(columns.saturating_sub(12))
   }
 
   /// Draws `width` columns of `screen`, with the selected document's

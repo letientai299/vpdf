@@ -432,6 +432,30 @@ fn frame() -> Result<()> {
   })
 }
 
+/// Two panes, the pointer resting on one.
+fn split_frame() -> Result<()> {
+  use crossterm::event::{MouseEvent, MouseEventKind};
+  use vpdf::trace::Drawable;
+  let mut session = vpdf::session::Session::new(None);
+  session.open(&corpus("paper.pdf")?, true, PANE)?;
+  session.app().command("vsplit")?;
+  session.settle()?;
+  let rest = |column| MouseEvent {
+    kind: MouseEventKind::Moved,
+    column,
+    row: 20,
+    modifiers: KeyModifiers::NONE,
+  };
+  session.mouse(rest(30))?;
+  let mut out = Vec::with_capacity(64 * 1024);
+  session.draw_frame(&mut out)?;
+  measure("Session::draw_frame split", || {
+    out.clear();
+    session.draw_frame(&mut out).expect("warm frame");
+    black_box(&out);
+  })
+}
+
 fn viewport() -> Result<()> {
   for text_mode in [false, true] {
     let mut app = paper(text_mode)?;
@@ -913,6 +937,7 @@ const CASES: &[(&str, Case)] = &[
   ("preview absent", preview_idle),
   ("preview live", preview_live),
   ("preview draw", preview_draw),
+  ("split frame", split_frame),
   ("routing pointer", routing_pointer),
   ("routing status", routing_status),
   ("routing panel", routing_panel),

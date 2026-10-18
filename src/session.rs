@@ -10,7 +10,7 @@ use crate::layout::Screen;
 use crate::pace::Pacer;
 use crate::pointer::{self, Hit, Hover, Pane, Pixel, Pointer, Region, Route};
 use crate::prompt::History;
-use crate::split::{Axis, Direction, Node, Place, Rect, neighbor};
+use crate::split::{Axis, Direction, Divider, Node, Place, Rect, neighbor};
 use crate::state::{Mark, State};
 use crate::terminal::{self, At, Shape, View};
 use crate::text::{PageId, Position};
@@ -115,6 +115,23 @@ pub struct Session {
   image_write: Option<ImageWrite>,
   /// The drag over the window, OSC 72.
   drops: crate::dnd::Drops,
+  /// The boundary a press drags.
+  resizing: Option<Edge>,
+}
+
+/// A boundary between panes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Edge {
+  Split(Divider),
+  /// The side panel's border in pane `id`.
+  Panel(u32),
+}
+
+impl Edge {
+  fn hit(self) -> Hit {
+    let rows = matches!(self, Self::Split(Divider { axis: Axis::Rows, .. }));
+    Hit::Edge { rows }
+  }
 }
 
 struct ImageWrite {
@@ -224,6 +241,7 @@ impl Session {
       rehover: Rehover::Settled,
       image_write: None,
       drops: crate::dnd::Drops::default(),
+      resizing: None,
     }
   }
 
@@ -905,7 +923,11 @@ impl Session {
       let left = self.leave_check();
       // Bare motion: a release got lost.
       let dropped = self.app().drop_sweep() | self.app().drop_grab();
-      return Ok(dropped || seen || left);
+      let resized = self.resizing.take().is_some();
+      return Ok(dropped || resized || seen || left);
+    }
+    if let Some(changed) = self.edge_event(mouse, pixel, now)? {
+      return Ok(changed);
     }
     let wheel = pointer::Wheel::of(mouse.kind).is_some();
     if wheel && self.app().prompt.is_some() {
@@ -922,6 +944,10 @@ impl Session {
       return Ok(false);
     }
     if matches!(mouse.kind, MouseEventKind::Down(_)) {
+      // A new left press: release lost.
+      if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+        self.resizing = None;
+      }
       if self.on_completion(mouse) {
         return Ok(false);
       }
@@ -937,6 +963,19 @@ impl Session {
       if self.app().hover_press(mouse)? {
         self.pointer.release();
         return Ok(true);
+      }
+      if let Some(edge) = self.edge_at(mouse.column, mouse.row) {
+        // A press on nothing: keys and notes end.
+        let app = self.app();
+        app.disarm();
+        app.error = None;
+        app.reader.message.clear();
+        // Boundaries never focus; free left presses drag.
+        let left = mouse.kind == MouseEventKind::Down(MouseButton::Left);
+        if !left || self.pointer.holding() {
+          return Ok(true);
+        }
+        return self.edge_press(edge, mouse, pixel, now);
       }
     }
     let tab = &self.tabs[self.active];
@@ -986,6 +1025,140 @@ impl Session {
     let read = before.is_none_or(|before| before != reading(app));
     let changed = read && moved;
     Ok(armed || changed)
+  }
+
+  /// The boundary at a cell.
+  fn edge_at(&self, column: u16, row: u16) -> Option<Edge> {
+    let tab = self.tabs.get(self.active)?;
+    let mut dividers = Vec::new();
+    tab.tree.dividers(full(self.screen?), &mut dividers);
+    let on = |axis| {
+      let mut found = dividers.iter().filter(|divider| divider.axis == axis);
+      found.find(|divider| divider.rect.contains(column, row)).copied()
+    };
+    if let Some(divider) = on(Axis::Columns) {
+      return Some(Edge::Split(divider));
+    }
+    // The panel's last column, beside the page.
+    let border = tab.panes.iter().map(Pane::of).find(|pane| {
+      let panel = pane.area(Region::Panel);
+      let edge = Rect {
+        column: pane.rect.column + panel.columns.saturating_sub(1),
+        row: pane.rect.row,
+        columns: 1,
+        rows: panel.rows,
+      };
+      (1..pane.rect.columns).contains(&pane.panel) && edge.contains(column, row)
+    });
+    if let Some(pane) = border {
+      return Some(Edge::Panel(pane.id));
+    }
+    on(Axis::Rows).map(Edge::Split)
+  }
+
+  /// Boundary drags and releases; whether drawn.
+  fn edge_event(
+    &mut self,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    now: Instant,
+  ) -> Result<Option<bool>> {
+    let Some(edge) = self.resizing else { return Ok(None) };
+    let release = match mouse.kind {
+      MouseEventKind::Drag(MouseButton::Left) => false,
+      MouseEventKind::Up(MouseButton::Left) => true,
+      _ => return Ok(None),
+    };
+    // Ends the capture; keeps the spot.
+    self.pointer.route(&[], 0, mouse, pixel, now);
+    if release {
+      self.resizing = None;
+      return Ok(Some(true));
+    }
+    // Moves past the threshold, as pane drags.
+    if !self.pointer.dragged() {
+      return Ok(Some(false));
+    }
+    self.drag_edge(edge, mouse).map(Some)
+  }
+
+  /// A draggable boundary, as a hover.
+  fn edge_hover(&mut self, mouse: MouseEvent) -> Option<Hover> {
+    // Overlays and held presses take the press.
+    let free = !self.tabs.is_empty()
+      && !self.pointer.holding()
+      && !self.app().overlaid();
+    let edge = self.edge_at(mouse.column, mouse.row).filter(|_| free)?;
+    let pane = match edge {
+      Edge::Split(_) => 0,
+      Edge::Panel(id) => id,
+    };
+    let region = Region::Edge;
+    Some(Hover { pane, region, hit: edge.hit(), beneath: None })
+  }
+
+  /// Starts a drag; double clicks equalize.
+  fn edge_press(
+    &mut self,
+    edge: Edge,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    now: Instant,
+  ) -> Result<bool> {
+    let clicks = self.pointer.press_edge(mouse, pixel, now);
+    self.resizing = Some(edge);
+    if clicks < 2 {
+      return Ok(true);
+    }
+    let area = self.screen.map_or_default(full);
+    match edge {
+      Edge::Split(divider) => self.tab().tree.equalize_at(divider.index, area),
+      Edge::Panel(id) => {
+        if let Some(index) = self.tab().index(id) {
+          let app = &mut self.tab().panes[index];
+          app.panel_width = None;
+          app.relayout()?;
+        }
+      }
+    }
+    self.arrange()?;
+    Ok(true)
+  }
+
+  /// Moves the dragged boundary to the pointer.
+  fn drag_edge(&mut self, edge: Edge, mouse: MouseEvent) -> Result<bool> {
+    let area = self.screen.map_or_default(full);
+    match edge {
+      Edge::Split(divider) => {
+        let at = match divider.axis {
+          Axis::Columns => mouse.column,
+          Axis::Rows => mouse.row,
+        };
+        let tree = &mut self.tab().tree;
+        let mut before = Vec::new();
+        tree.layout(area, &mut before);
+        tree.drag(divider.index, at, area);
+        let mut after = Vec::new();
+        tree.layout(area, &mut after);
+        if before == after {
+          return Ok(false);
+        }
+        self.arrange()?;
+      }
+      Edge::Panel(id) => {
+        let Some(index) = self.tab().index(id) else { return Ok(false) };
+        let app = &mut self.tab().panes[index];
+        let left = app.left;
+        app.panel_width = Some(mouse.column.saturating_sub(app.at.column) + 1);
+        app.relayout()?;
+        // Remembers the width shown, not asked.
+        app.panel_width = Some(app.left);
+        if app.left == left {
+          return Ok(false);
+        }
+      }
+    }
+    Ok(true)
   }
 
   /// Whether the last frame moved the hover.
@@ -1170,6 +1343,9 @@ impl Session {
 
   /// A held gesture's shape, else the hover's.
   fn shape(&self) -> Shape {
+    if let Some(edge) = self.resizing {
+      return edge.hit().shape();
+    }
     if self.focused().grabbing() {
       return Shape::Grabbing;
     }
@@ -1181,6 +1357,9 @@ impl Session {
 
   /// What the pointer rests on at `mouse`.
   fn hit(&mut self, mouse: MouseEvent, pixel: Option<Pixel>) -> Option<Hover> {
+    if let Some(hover) = self.edge_hover(mouse) {
+      return Some(hover);
+    }
     let (index, route) = self.under(mouse)?;
     let Route { pane, region, mouse, .. } = route;
     let app = &mut self.tab().panes[index];
@@ -1251,6 +1430,7 @@ impl Session {
   /// The pointer may rest elsewhere now.
   fn release_pointer(&mut self, out: &mut impl Write) -> Result<()> {
     self.pointer.leave();
+    self.resizing = None;
     terminal::hand_over(out)?;
     // Out before the slow `tmux display`.
     out.flush()?;
@@ -1567,9 +1747,11 @@ impl Drawable for Session {
         tab.lend(index, |app| app.draw_pane(out))?;
       }
     }
-    let mut separators = Vec::new();
-    tab.tree.separators(area, &mut separators);
-    for rect in separators {
+    let mut dividers = Vec::new();
+    tab.tree.dividers(area, &mut dividers);
+    let columns =
+      dividers.iter().filter(|divider| divider.axis == Axis::Columns);
+    for rect in columns.map(|divider| divider.rect) {
       let at = At { column: rect.column, row: rect.row };
       for row in 0..rect.rows {
         let goto = at.goto(row, 0u16);
@@ -1787,6 +1969,8 @@ fn input(
       let before = app.panel.as_ref().filter(|p| p.focused).map(|p| p.kind);
       app.reader.message.clear();
       app.error = None;
+      // Keys may change the tree mid-drag.
+      session.resizing = None;
       // Clues close even when the key fails.
       let result = app.key(key, &mut session.history);
       app.after_key();
@@ -2056,11 +2240,11 @@ mod tests {
     assert!(!session.image_status("type=write:status=DONE"));
   }
 
-  #[test]
-  #[ignore = "requires verified public PDF corpus"]
-  fn frames_write_changed_shapes() -> Result<()> {
-    use crate::pointer::{Hit, Region};
-    use crossterm::event::MouseButton::Middle;
+  /// Shape tests share the global shape state.
+  static SHAPES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+  /// The paper at page 2, 120x40.
+  fn paper() -> Result<Session> {
     let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
     let screen = Screen {
       columns: 120,
@@ -2072,34 +2256,57 @@ mod tests {
     let mut session = Session::new(None);
     session.open(&root.join("paper.pdf"), true, screen)?;
     session.app().command("2")?;
-    let mut find = |wanted: fn(Hit) -> bool| -> Result<(u16, u16)> {
-      for (row, column) in
-        (0..39).flat_map(|row| (0..120).map(move |c| (row, c)))
-      {
-        if wanted(session.app().hovered(Region::Page, column, row, None)?) {
-          return Ok((column, row));
-        }
+    Ok(session)
+  }
+
+  /// The first page cell `wanted` accepts.
+  fn find(
+    session: &mut Session,
+    wanted: fn(Hit) -> bool,
+  ) -> Result<(u16, u16)> {
+    let page = Region::Page;
+    for (row, column) in (0..39).flat_map(|row| (0..120).map(move |c| (row, c)))
+    {
+      if wanted(session.app().hovered(page, column, row, None)?) {
+        return Ok((column, row));
       }
-      anyhow::bail!("no such cell")
-    };
-    let link = find(|hit| matches!(hit, Hit::Link(..)))?;
-    let blank = find(|hit| hit == Hit::Nothing)?;
-    let moved = |(column, row)| MouseEvent {
-      kind: MouseEventKind::Moved,
-      column,
-      row,
-      modifiers: KeyModifiers::NONE,
-    };
+    }
+    anyhow::bail!("no such cell")
+  }
+
+  /// Shapes a frame writes after `kind`.
+  fn shape_after(
+    session: &mut Session,
+    kind: MouseEventKind,
+    (column, row): (u16, u16),
+  ) -> Result<Vec<String>> {
+    let modifiers = KeyModifiers::NONE;
+    session.mouse(MouseEvent { kind, column, row, modifiers })?;
+    session.settle()?;
+    let mut out = Vec::new();
+    session.draw_frame(&mut out)?;
+    Ok(shapes(&out))
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn frames_write_changed_shapes() -> Result<()> {
+    let _shapes = SHAPES.lock();
+    let mut session = paper()?;
+    let link = find(&mut session, |hit| matches!(hit, Hit::Link(..)))?;
+    let blank = find(&mut session, |hit| hit == Hit::Nothing)?;
     terminal::arm_shapes();
     let frame = |session: &mut Session,
                  cell: Option<(u16, u16)>|
      -> Result<Vec<String>> {
-      if let Some(cell) = cell {
-        session.mouse(moved(cell))?;
+      match cell {
+        Some(cell) => shape_after(session, MouseEventKind::Moved, cell),
+        None => {
+          let mut out = Vec::new();
+          session.draw_frame(&mut out)?;
+          Ok(shapes(&out))
+        }
       }
-      let mut out = Vec::new();
-      session.draw_frame(&mut out)?;
-      Ok(shapes(&out))
     };
     // (move to, written)
     let steps = [
@@ -2125,15 +2332,47 @@ mod tests {
     for (step, (cell, want)) in steps.into_iter().enumerate() {
       assert_eq!(frame(&mut session, cell)?, want, "shown again, step {step}");
     }
-    // (middle event, column) -> shape written
+    Ok(())
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn held_gestures_write_shapes() -> Result<()> {
+    use MouseEventKind::{Down, Drag, Moved, Up};
+    use crossterm::event::MouseButton::{Left, Middle};
+    let _shapes = SHAPES.lock();
+    let mut session = paper()?;
+    let blank = find(&mut session, |hit| hit == Hit::Nothing)?;
+    let near = (blank.0 + 3, blank.1);
+    terminal::arm_shapes();
+    // (command first, event, cell) -> written
     let steps = [
-      (MouseEventKind::Down(Middle), blank.0, vec![]),
-      (MouseEventKind::Drag(Middle), blank.0 + 3, vec!["grabbing"]),
-      (MouseEventKind::Up(Middle), blank.0 + 3, vec!["default"]),
+      ("", Moved, blank, vec![]),
+      ("", Down(Middle), blank, vec![]),
+      ("", Drag(Middle), near, vec!["grabbing"]),
+      ("", Up(Middle), near, vec!["default"]),
+      ("vsplit", Moved, (60, 5), vec!["col-resize"]),
+      ("", Down(Left), (60, 5), vec![]),
+      ("", Drag(Left), (40, 5), vec![]),
+      ("", Up(Left), (40, 5), vec![]),
+      ("", Moved, (10, 39), vec!["default"]),
+      ("split", Moved, (5, 19), vec!["row-resize"]),
     ];
-    for (kind, column, want) in steps {
-      session.mouse(MouseEvent { kind, column, ..moved(blank) })?;
-      assert_eq!(frame(&mut session, None)?, want, "{kind:?}");
+    for (command, kind, cell, want) in steps {
+      if !command.is_empty() {
+        session.app().command(command)?;
+        session.settle()?;
+      }
+      let got = shape_after(&mut session, kind, cell)?;
+      assert_eq!(got, want, "{kind:?} at {cell:?}");
+    }
+    session.app().open_panel(PanelKind::Outline)?;
+    let edge = session.app().left - 1;
+    // (cell) -> written
+    let steps =
+      [((edge, 3), vec!["col-resize"]), ((edge + 2, 3), vec!["default"])];
+    for (cell, want) in steps {
+      assert_eq!(shape_after(&mut session, Moved, cell)?, want, "{cell:?}");
     }
     Ok(())
   }

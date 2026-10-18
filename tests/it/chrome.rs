@@ -1,4 +1,4 @@
-//! Middle button and clickable chrome.
+//! Middle button, chrome, and dividers.
 
 use crate::mouse::{cell, cell_in, labels, mouse, press, session, status};
 use crossterm::event::{KeyCode, MouseButton, MouseEventKind};
@@ -269,5 +269,134 @@ fn mark_rows_of_other_documents_split_beside() -> Result<()> {
   middle(&mut session, at)?;
   assert_eq!(panes(&mut session), (2, id, Some(PageId(1))));
   assert_eq!(session.app().at.column, 0, "the source stays left");
+  Ok(())
+}
+
+/// Pane rects in tree order.
+fn layout(session: &mut Session) -> Vec<(u16, u16, u16, u16)> {
+  let tab = session.tab();
+  tab
+    .order()
+    .iter()
+    .filter_map(|id| tab.panes.iter().find(|app| app.id == *id))
+    .map(|app| (app.at.column, app.at.row, app.screen.columns, app.screen.rows))
+    .collect()
+}
+
+/// One settled pointer event; whether it draws.
+fn left(session: &mut Session, kind: MouseEventKind, at: (u16, u16)) -> bool {
+  let drawn = mouse(session, kind, at).expect("pointer event");
+  session.settle().expect("settled event");
+  drawn
+}
+
+#[test]
+fn dividers_drag_and_double_clicks_equalize() -> Result<()> {
+  use MouseEventKind::{Down, Drag, Moved, Up};
+  const L: MouseButton = MouseButton::Left;
+  // (command, divider, drag to) -> layout
+  let cases = [
+    ("vsplit", (60, 5), (40, 9), [(0, 0, 40, 40), (41, 0, 80, 40)]),
+    ("vsplit", (60, 5), (2, 9), [(0, 0, 10, 40), (11, 0, 110, 40)]),
+    ("split", (5, 19), (9, 29), [(0, 0, 121, 30), (0, 30, 121, 10)]),
+  ];
+  for (command, divider, to, want) in cases {
+    let (_directory, mut session) = session(false)?;
+    session.app().command(command)?;
+    session.settle()?;
+    let focused = session.app().id;
+    let equal = layout(&mut session);
+    // Motion onto a divider draws its shape.
+    left(&mut session, Moved, (30, 10));
+    assert!(left(&mut session, Moved, divider), "{command} hover");
+    let hover = session.app().hover;
+    assert!(!matches!(hover, Hit::Edge { .. }), "no pane hovers edges");
+    assert!(left(&mut session, Down(L), divider), "{command}");
+    // One button at a time.
+    left(&mut session, Down(MouseButton::Middle), (100, 35));
+    left(&mut session, Drag(MouseButton::Middle), (90, 30));
+    assert_eq!(session.app().id, focused, "{command} middle");
+    assert!(!session.app().grabbing(), "{command} middle");
+    assert!(left(&mut session, Drag(L), to), "{command} {to:?}");
+    assert!(!left(&mut session, Drag(L), to), "unchanged drags draw nothing");
+    left(&mut session, Up(L), to);
+    assert_eq!(layout(&mut session), want, "{command} {to:?}");
+    assert_eq!(session.app().id, focused, "dividers take no focus");
+    // A lost release ends the drag.
+    let first = want[0];
+    let moved =
+      if command == "split" { (5, first.3 - 1) } else { (first.2, 5) };
+    left(&mut session, Down(L), moved);
+    left(&mut session, Moved, (50, 5));
+    left(&mut session, Drag(L), divider);
+    assert_eq!(layout(&mut session), want, "{command} after Moved");
+    // Double clicks equalize; single ones do not.
+    left(&mut session, Up(L), moved);
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    left(&mut session, Down(L), moved);
+    left(&mut session, Up(L), moved);
+    assert_eq!(layout(&mut session), want, "{command} one click");
+    left(&mut session, Down(L), moved);
+    left(&mut session, Up(L), moved);
+    assert_eq!(layout(&mut session), equal, "{command} equalized");
+  }
+  Ok(())
+}
+
+#[test]
+fn panel_edges_drag_and_reset() -> Result<()> {
+  use MouseEventKind::{Down, Drag, Up};
+  const L: MouseButton = MouseButton::Left;
+  let (_directory, mut session) = session(false)?;
+  keys(&mut session, "go")?;
+  status(&mut session)?;
+  let default = session.app().left;
+  let edge = (default - 1, 5);
+  // Motion onto the border draws its shape.
+  assert!(left(&mut session, MouseEventKind::Moved, (default - 2, 5)));
+  assert!(left(&mut session, MouseEventKind::Moved, edge));
+  assert!(left(&mut session, MouseEventKind::Moved, (default - 2, 5)));
+  let selected = session.app().panel.as_ref().map(|panel| panel.selected);
+  // (drag to column) -> panel columns
+  let cases = [(30, 31), (2, 8), (115, 109)];
+  left(&mut session, Down(L), edge);
+  for (column, want) in cases {
+    left(&mut session, Drag(L), (column, 9));
+    assert_eq!(session.app().left, want, "to {column}");
+  }
+  left(&mut session, Up(L), (115, 9));
+  let panel = session.app().panel.as_ref().map(|panel| panel.selected);
+  assert_eq!(panel, selected, "the border selects no row");
+  // A double click restores the default width.
+  let edge = (session.app().left - 1, 5);
+  for _ in 0..2 {
+    left(&mut session, Down(L), edge);
+    left(&mut session, Up(L), edge);
+  }
+  assert_eq!(session.app().left, default);
+  Ok(())
+}
+
+#[test]
+fn boundary_presses_never_focus() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  session.app().command("split")?;
+  session.settle()?;
+  // Focus the lower pane.
+  crate::mouse::click(&mut session, (5, 30))?;
+  let focused = session.app().id;
+  for button in [MouseButton::Left, MouseButton::Right, MouseButton::Middle] {
+    left(&mut session, MouseEventKind::Down(button), (5, 19));
+    left(&mut session, MouseEventKind::Up(button), (5, 19));
+    assert_eq!(session.app().id, focused, "{button:?}");
+  }
+  // A held pan keeps the left button off boundaries.
+  let before = layout(&mut session);
+  left(&mut session, MouseEventKind::Down(MouseButton::Middle), (5, 30));
+  left(&mut session, MouseEventKind::Down(MouseButton::Left), (5, 19));
+  left(&mut session, MouseEventKind::Drag(MouseButton::Left), (5, 10));
+  left(&mut session, MouseEventKind::Up(MouseButton::Middle), (5, 30));
+  assert_eq!(layout(&mut session), before);
+  assert!(!session.app().grabbing());
   Ok(())
 }

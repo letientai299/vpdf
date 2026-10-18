@@ -129,6 +129,8 @@ pub struct App {
   pub(crate) text_drawn: Option<Position>,
   pub screen: Screen,
   pub left: u16,
+  /// Side panel columns a drag chose.
+  pub panel_width: Option<u16>,
   /// Pane origin on the terminal.
   pub at: terminal::At,
   pub quit: bool,
@@ -235,6 +237,7 @@ impl App {
       text_drawn: None,
       screen,
       left: 0,
+      panel_width: None,
       at: terminal::At::default(),
       quit: false,
       focused: true,

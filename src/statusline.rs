@@ -122,7 +122,8 @@ impl App {
       Hit::Card(row) => self.panel.as_ref()?.shelf.as_ref()?.detail(row),
       Hit::Thumbnail(page) => Some(self.page_line(page)),
       Hit::Link(..) => self.hover_label(),
-      Hit::Nothing | Hit::Text | Hit::Preview { .. } | Hit::Item(..) => None,
+      Hit::Nothing | Hit::Text | Hit::Preview { .. } | Hit::Item(..)
+      | Hit::Edge { .. } => None,
     }
   }
 

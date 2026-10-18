@@ -95,7 +95,23 @@ impl App {
     true
   }
 
+  /// Whether a press only dismisses something.
+  pub(crate) fn overlaid(&self) -> bool {
+    self.clues.is_some()
+      || matches!(
+        self.input_owner(),
+        InputOwner::Prompt
+          | InputOwner::Hints
+          | InputOwner::Peek
+          | InputOwner::Region
+          | InputOwner::Context
+      )
+  }
+
   pub(crate) fn dismiss_click(&mut self) -> Result<bool> {
+    if !self.overlaid() {
+      return Ok(false);
+    }
     match self.input_owner() {
       InputOwner::Prompt => {
         self.cancel_input()?;
@@ -108,8 +124,7 @@ impl App {
         self.disarm();
         return Ok(true);
       }
-      _ if self.clues.is_some() => {}
-      _ => return Ok(false),
+      _ => {}
     }
     self.reader.cancel();
     self.disarm();
@@ -156,7 +171,9 @@ impl App {
     let columns = self.screen.columns;
     let covered = self.covered();
     let beside = match &self.panel {
-      Some(panel) if !covered => Panel::width(panel.kind, columns),
+      Some(panel) if !covered => {
+        Panel::width(panel.kind, columns, self.panel_width)
+      }
       _ => 0,
     };
     self.left = if covered { columns } else { beside };
@@ -669,7 +686,9 @@ impl App {
     }
     match region {
       Region::Panel => return self.panel_mouse(mouse, route.clicks),
-      Region::Overlay | Region::Status | Region::Actions => return Ok(()),
+      Region::Overlay | Region::Status | Region::Actions | Region::Edge => {
+        return Ok(());
+      }
       // Only turns: presses go to them first.
       Region::Preview | Region::Menu => return self.page_wheel(route),
       Region::Page | Region::Overview => {}
@@ -986,7 +1005,9 @@ impl App {
         let follows = self.hover_peek().is_some();
         return Ok(Hit::Preview { follows });
       }
-      Region::Overlay | Region::Status => return Ok(Hit::Nothing),
+      Region::Overlay | Region::Status | Region::Edge => {
+        return Ok(Hit::Nothing);
+      }
     }
     if self.text_mode {
       let Some(position) = glyph(self, column, row)? else {
