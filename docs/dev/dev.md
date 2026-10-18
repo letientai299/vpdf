@@ -216,14 +216,14 @@ commit-specific snapshots after CI. It checks installation through mise before
 updating the Homebrew tap. The rolling tag moves; use the snapshot identity when
 a result needs a reproducible release reference.
 
-[tasks]: ../../mise.toml
+[tasks]: ../../.config/mise.toml
 [mise]: https://mise.jdx.dev/
 [pkgconf]: https://formulae.brew.sh/formula/pkgconf
 [build]: ../../scripts/build.sh
 [install]: ../../scripts/install.sh
 [ci]: ../../.github/workflows/ci.yml
 [hooks]: ../../prek.toml
-[rumdl]: ../../rumdl.toml
+[rumdl]: ../../.config/rumdl.toml
 [corpus]: ../../scripts/corpus.sh
 [corpus-tests]: ../../tests/it/corpus.rs
 [reader-bench]: ../../benches/reader.rs

@@ -2,6 +2,7 @@
 name = "vpdf"
 version = "0.1.0"
 edition = "2024"
+build = "scripts/build.rs"
 rust-version = "1.99"
 license = "MIT"
 description = "A Vim-inspired terminal PDF reader powered by MuPDF and the Kitty graphics protocol."
