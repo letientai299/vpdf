@@ -89,8 +89,7 @@ pub fn get() -> Option<&'static Spool> {
   SPOOL.get()
 }
 
-/// Uses a spool when the terminal reads it: a one-pixel probe written to
-/// it must load before the terminal answers a later device query. Other
+/// Requires valid reads and rejected out-of-bounds offsets. Other
 /// hosts and terminals without file transmission keep sending encoded
 /// tiles. Only a terminal that answered the graphics query directly gets
 /// the probe: tmux answers the device query itself, so the terminal's
@@ -106,9 +105,12 @@ pub fn start(id: u32) -> Result<bool> {
   let control = format!("a=q,i={id},f=24,s=1,v=1,{}", Spool::keys(slot));
   let mut request = Vec::new();
   crate::terminal::graphics(&mut request, &control, &spool.payload)?;
+  // Detect terminals that ignore file offsets.
+  let control = format!("a=q,i={},f=24,s=1,v=1,t=f,S=3,O=3", id ^ 1);
+  crate::terminal::graphics(&mut request, &control, &spool.payload)?;
   let replies =
     crate::input::ask(&mut std::io::stdout(), &request, crate::caps::WAIT)?;
-  if !loaded(&replies, id) {
+  if !regions(&replies, id) {
     drop(std::fs::remove_file(&spool.path));
     return Ok(false);
   }
@@ -122,12 +124,16 @@ pub fn remove() {
   }
 }
 
-/// Whether `replies` hold Kitty's OK for image `id`.
-fn loaded(replies: &[Reply], id: u32) -> bool {
-  replies.iter().any(|reply| {
+fn regions(replies: &[Reply], id: u32) -> bool {
+  let loaded = replies.iter().any(|reply| {
     matches!(reply, Reply::Graphics { id: Some(answered), message, .. }
       if *answered == id && message == "OK")
-  })
+  });
+  let rejected = replies.iter().any(|reply| {
+    matches!(reply, Reply::Graphics { id: Some(answered), message, .. }
+      if *answered == (id ^ 1) && message.starts_with('E'))
+  });
+  loaded && rejected
 }
 
 /// `$XDG_CACHE_HOME/vpdf`, else under `~/.cache`.
@@ -183,17 +189,25 @@ mod tests {
   }
 
   #[test]
-  fn probe_needs_the_ok_for_its_image() {
+  fn probe_checks_file_offsets() {
     let answer = |id, message: &str| Reply::Graphics {
       id: Some(id),
       placement: None,
       message: message.into(),
     };
     let da1 = Reply::Attributes(vec![62, 22]);
-    assert!(loaded(&[answer(7, "OK"), da1.clone()], 7));
-    assert!(!loaded(&[answer(7, "EBADF:x"), da1.clone()], 7));
-    assert!(!loaded(&[answer(70, "OK")], 7));
-    assert!(!loaded(&[da1], 7));
+    let cases = [
+      (vec![answer(7, "OK"), answer(6, "EINVAL:short file")], true),
+      (vec![answer(7, "OK"), answer(6, "OK")], false),
+      (vec![answer(7, "OK")], false),
+      (vec![answer(7, "EBADF:x"), answer(6, "EINVAL:x")], false),
+      (vec![answer(70, "OK"), answer(6, "EINVAL:x")], false),
+      (vec![answer(7, "OK"), answer(60, "EINVAL:x")], false),
+      (vec![da1], false),
+    ];
+    for (replies, expected) in cases {
+      assert_eq!(regions(&replies, 7), expected, "{replies:?}");
+    }
   }
 
   #[test]
