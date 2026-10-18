@@ -377,8 +377,11 @@ mod pointer {
     act(&mut session, Action::Overview)?;
     mouse(&mut session, Down(Left), 40, 39)?;
     assert!(session.app().overview.is_some(), "status row keeps overview");
+    let partial = session.app().thumbnail_at(40, 38).expect("partial row");
     mouse(&mut session, Down(Left), 40, 38)?;
-    assert!(session.app().overview.is_some(), "below the grid is inert");
+    assert!(session.app().overview.is_none(), "partial thumbnail opens");
+    assert_eq!(session.app().reader.cursor.page, partial);
+    act(&mut session, Action::Overview)?;
     mouse(&mut session, Down(Left), width + 5, 2)?;
     assert!(session.app().overview.is_none(), "a thumbnail opens its page");
     mouse(&mut session, Drag(Left), 40, 10)?;

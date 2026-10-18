@@ -36,6 +36,10 @@ struct Grid {
 }
 
 impl Grid {
+  fn visible_rows(&self, height: f32) -> usize {
+    ((height - self.gap / 2.0) / self.row).ceil().max(0.0) as usize
+  }
+
   /// The top row that shows the last of `pages`.
   fn last_top(&self, pages: usize) -> usize {
     pages.div_ceil(self.columns).saturating_sub(self.rows)
@@ -187,13 +191,18 @@ impl App {
     let overview = self.overview.as_ref()?;
     let grid = self.grid();
     let (x, y) = self.cell_point(column, row, None);
+    let screen = self.uncovered();
+    if x < 0.0 || y < 0.0 || x >= screen.width() || y >= screen.height() {
+      return None;
+    }
     let column = ((x - grid.gap / 2.0) / (grid.width + grid.gap)) as usize;
     let row = ((y - grid.gap / 2.0) / grid.row) as usize;
     // As the next frame scrolls it.
     let pages = self.doc.pages.len();
     let index =
       (overview.shown_top(&grid, pages) + row) * grid.columns + column;
-    let inside = column < grid.columns && row < grid.rows;
+    let inside =
+      column < grid.columns && row < grid.visible_rows(screen.height());
     (inside && index < pages).then_some(PageId(index))
   }
 
@@ -223,7 +232,8 @@ impl App {
     overview.shape = (grid.columns, grid.rows);
     let (top, selected) = (overview.top, overview.selected);
     let first = top * grid.columns;
-    let visible = first..(first + grid.rows * grid.columns).min(pages);
+    let visible = first
+      ..(first + grid.visible_rows(screen.height()) * grid.columns).min(pages);
     let mut wanted = Vec::new();
     let mut missing = Vec::new();
     for index in visible {
@@ -249,7 +259,9 @@ impl App {
         height: h,
         crop: Crop::default(),
       };
-      for key in tiles::cover(whole, 0..w, 0..h) {
+      // Keep tile keys reusable after scrolling.
+      let bottom = (screen.height() - (y + dy).floor()).ceil() as i32;
+      for key in tiles::cover(whole, 0..w, 0..bottom.clamp(0, h)) {
         let origin = (x + dx + key.x as f32, y + dy + key.y as f32);
         if !self.graphics.place_at(&key, origin, screen, left, out)? {
           missing.push(key);
@@ -288,11 +300,14 @@ impl App {
     width: f32,
   ) -> Result<()> {
     let screen = self.layout.screen;
+    let row = (y / f32::from(screen.cell_height)).ceil() as usize;
+    if row >= usize::from(self.uncovered().rows.saturating_sub(1)) {
+      return Ok(());
+    }
     let columns = (width / f32::from(screen.cell_width)) as usize;
     let label = terminal::clean(self.doc.label(PageId(index)), columns);
     let column = (x / f32::from(screen.cell_width)) as usize
       + (columns.saturating_sub(label.len())) / 2;
-    let row = (y / f32::from(screen.cell_height)).ceil() as usize;
     let style = if self.overview.as_ref().is_some_and(|o| o.selected == index) {
       theme::badge(theme::Color::Blue)
     } else {
@@ -304,6 +319,95 @@ impl App {
       self.at.goto(row, usize::from(self.left) + column),
       theme::RESET
     )?;
+    Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::layout::Screen;
+  use std::time::{Duration, Instant};
+
+  #[test]
+  fn visible_rows_include_partial() {
+    let grid = Grid {
+      columns: 5,
+      width: 220.0,
+      height: 300.0,
+      gap: 16.0,
+      row: 332.0,
+      rows: 3,
+    };
+    for (height, rows) in
+      [(0.0, 0), (8.0, 0), (9.0, 1), (1004.0, 3), (1005.0, 4), (1200.0, 4)]
+    {
+      assert_eq!(grid.visible_rows(height), rows, "{height}");
+    }
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn partial_thumbnails_reuse_tiles() -> Result<()> {
+    let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
+    let screen = Screen {
+      columns: 156,
+      rows: 76,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+    app.open_overview()?;
+    let grid = app.grid();
+    let partial = grid.rows * grid.columns;
+    let y = grid.gap / 2.0 + grid.rows as f32 * grid.row;
+    assert!(y < screen.height() && screen.height() - y < 256.0);
+    let mut out = Vec::new();
+    app.draw(&mut out)?;
+    let wanted = app.requested.clone();
+    for page in partial..partial + grid.columns {
+      let keys: Vec<_> = wanted.iter().filter(|k| k.page.0 == page).collect();
+      assert_eq!(keys.len(), 1, "only the visible tile of page {page}");
+      assert_eq!(keys[0].y, 0);
+    }
+    assert!(wanted.iter().all(|k| k.page.0 < partial + grid.columns));
+    let mut label = Vec::new();
+    app.thumbnail_label(
+      &mut label,
+      partial,
+      (grid.gap, y + grid.height),
+      grid.width,
+    )?;
+    assert!(label.is_empty(), "hidden labels cannot move the cursor");
+    let row = (y / f32::from(screen.cell_height)).ceil() as u16 + 1;
+    assert_eq!(app.thumbnail_at(4, row), Some(PageId(partial)));
+    assert_eq!(app.thumbnail_at(4, screen.rows - 1), None);
+    let started = Instant::now();
+    while !app.complete {
+      assert!(started.elapsed() < Duration::from_secs(10));
+      app.raster_updates();
+      out.clear();
+      app.draw(&mut out)?;
+      std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(app.requested, wanted);
+    app.overview.as_mut().unwrap().selected = partial - 1;
+    app.overview_input(Input::plain(Action::Motion(Motion::Right)))?;
+    out.clear();
+    app.draw(&mut out)?;
+    assert_eq!(app.overview.as_ref().unwrap().top(), 1);
+    for key in wanted.iter().filter(|k| k.page.0 >= partial) {
+      assert!(app.requested.contains(key), "reuse the partial row's tiles");
+    }
+    app.overview_input(Input::plain(Action::Motion(Motion::Last)))?;
+    out.clear();
+    app.draw(&mut out)?;
+    assert_eq!(
+      app.requested.iter().map(|key| key.page.0).max(),
+      Some(app.doc.pages.len() - 1)
+    );
+    assert_eq!(app.thumbnail_at(4, screen.rows - 2), None);
     Ok(())
   }
 }
