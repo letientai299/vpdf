@@ -486,7 +486,8 @@ impl Graphics {
         let control = format_args!(
           "z={z},x={},y={},w={w},h={h},c={},r={}",
           (part.x0 - rect.x0) as u32,
-          (part.y0 - rect.y0) as u32,
+          // iTerm2 measures crop rows from the bottom.
+          (rect.y1 - part.y1) as u32,
           w.div_ceil(width),
           h.div_ceil(height)
         );
@@ -1097,10 +1098,10 @@ mod tests {
     // (tile, origin) -> shown x and y ranges in tile pixels; None is uncut.
     let cases = [
       (full, (0.0, 0.0), None),
-      (full, (-5.0, -21.0), Some(((5, 512), (21, 256)))),
-      (full, (900.0, 400.0), Some(((0, 220), (0, 170)))),
+      (full, (-5.0, -21.0), Some(((5, 512), (0, 235)))),
+      (full, (900.0, 400.0), Some(((0, 220), (86, 256)))),
       (low, (-5.0, 100.0), Some(((5, 512), (0, 20)))),
-      (thin, (300.0, -21.0), Some(((0, 10), (21, 256)))),
+      (thin, (300.0, -21.0), Some(((0, 10), (0, 235)))),
     ];
     let mut output = Vec::new();
     for (key, origin, want) in cases {
@@ -1137,11 +1138,18 @@ mod tests {
   #[test]
   fn preview_crop_matches_the_image() -> Result<()> {
     let pixels = [0; 2 * 40 * 3];
-    // (quirk, origin) -> placements as (w, h, c, r)
+    // (quirk, origin) -> (w, h, y, cells)
     let cases = [
-      (false, (0.5, 0.5), vec![("2", "40", None)]),
+      (false, (0.5, 0.5), vec![("2", "40", None, None)]),
       // The screen's 144 px cut 24 rows: a cell, then one ending there.
-      (true, (0.0, 120.0), vec![("2", "16", Some(("1", "1"))); 2]),
+      (
+        true,
+        (0.0, 120.0),
+        vec![
+          ("2", "16", Some("24"), Some(("1", "1"))),
+          ("2", "16", Some("16"), Some(("1", "1"))),
+        ],
+      ),
     ];
     for (quirk, (x, y), want) in cases {
       let mut graphics = Graphics { quirk, ..Graphics::default() };
@@ -1153,8 +1161,9 @@ mod tests {
         .filter(|c| has(c, &[("a", "p")]))
         .collect();
       assert_eq!(placed.len(), want.len(), "{placed:?}");
-      for (command, (w, h, cells)) in placed.iter().zip(want) {
+      for (command, (w, h, y, cells)) in placed.iter().zip(want) {
         assert!(has(command, &[("w", w), ("h", h)]), "{command:?}");
+        assert_eq!(command.get("y").map(String::as_str), y);
         let keys = cells.map(|(c, r)| [("c", c), ("r", r)]);
         match keys {
           Some(keys) => assert!(has(command, &keys), "{command:?}"),
