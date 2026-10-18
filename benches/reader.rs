@@ -192,7 +192,8 @@ fn frames(app: &mut App) -> Result<(Timing, u64)> {
 }
 
 fn searches(path: &Path) -> Result<(f64, f64, f64)> {
-  let worker = SearchWorker::new(path, "");
+  let pages = Document::open(path, "")?.pages.len();
+  let worker = SearchWorker::new(path, "", pages);
   let mut total = Vec::new();
   let mut first = 0.0;
   for run in 0..2 {

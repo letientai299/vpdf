@@ -2871,21 +2871,7 @@ mod tests {
   /// One text line; `annots` join the page.
   fn line_pdf(directory: &Path, annots: &str) -> Result<PathBuf> {
     let pdf = directory.join("a.pdf");
-    let content = "BT /F1 24 Tf 20 100 Td (alpha beta gamma) Tj ET";
-    // MuPDF repairs the missing cross-reference table.
-    std::fs::write(
-      &pdf,
-      format!(
-        "%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n\
-         2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n\
-         3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]\
-         /Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R{annots}>> endobj\n\
-         4 0 obj <</Type/Font/Subtype/Type1/BaseFont/Helvetica>> endobj\n\
-         5 0 obj <</Length {}>> stream\n{content}\nendstream endobj\n\
-         trailer <</Root 1 0 R>>\n%%EOF\n",
-        content.len()
-      ),
-    )?;
+    crate::fixtures::pdf(&pdf, &["alpha beta gamma"], annots)?;
     Ok(pdf)
   }
 

@@ -548,7 +548,7 @@ fn pack_read() -> Result<()> {
   let root = tempfile::tempdir()?;
   let alias = alias(&mut std::fs::File::open(&path)?)?;
   save(root.path(), &alias, &records, None)?;
-  let pack = Pack::open(root.path(), &alias, pages)
+  let pack = Pack::open(root.path(), &alias)
     .ok_or_else(|| anyhow::anyhow!("pack missing"))?;
   measure(&format!("Pack::index {pages} pages"), || {
     for page in (0..pages).map(PageId) {

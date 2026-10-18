@@ -1,18 +1,17 @@
 use crate::Result;
 use crate::cache::Cache;
-use crate::content_cache::{self, Alias, Pack, Records};
+use crate::content_cache::{self, Alias, Pack, Records, Version};
 use crate::document::{Handle, MIB};
 use crate::input::notify;
 use crate::search::{self, Hit, Index};
 use crate::text::{PageId, Text};
 use anyhow::Context;
-use std::fs::{File, Metadata};
-use std::os::unix::fs::MetadataExt;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 /// Idle time after which the worker releases its document.
 const IDLE: Duration = Duration::from_secs(3);
@@ -49,7 +48,8 @@ pub struct SearchWorker {
 }
 
 impl SearchWorker {
-  pub fn new(path: &Path, password: &str) -> Self {
+  /// A worker for `path`, which the reader opened with `pages` pages.
+  pub fn new(path: &Path, password: &str, pages: usize) -> Self {
     let (send, receive) = mpsc::channel();
     let (events_send, events) = mpsc::sync_channel(32);
     let generation = Arc::new(AtomicU64::new(0));
@@ -57,7 +57,7 @@ impl SearchWorker {
     let path = path.to_owned();
     let password = password.to_owned();
     thread::spawn(move || {
-      match Source::open(path, password, content_cache::root()) {
+      match Source::open(path, password, content_cache::root(), pages) {
         Ok(source) => serve(source, &receive, &events_send, &current),
         Err(error) => fail(&receive, &events_send, &error),
       }
@@ -291,69 +291,89 @@ struct Source {
   extracted: usize,
 }
 
-/// Inode, size, modification, and change times: a replaced or rewritten
-/// file differs in one.
-type Identity = (u64, u64, Option<SystemTime>, i64, i64);
-
-fn identity(meta: &Metadata) -> Identity {
-  (
-    meta.ino(),
-    meta.len(),
-    meta.modified().ok(),
-    meta.ctime(),
-    meta.ctime_nsec(),
-  )
-}
-
-fn same_file(path: &Path, file: Identity) -> bool {
-  std::fs::metadata(path).is_ok_and(|meta| identity(&meta) == file)
+fn same_file(path: &Path, file: Version) -> bool {
+  Version::read(path) == Some(file)
 }
 
 /// The SHA-256 of `path`, when hashing read the file `file` describes.
-fn hash(path: &Path, file: Identity) -> Option<Alias> {
+fn hash(path: &Path, file: Version) -> Option<Alias> {
   let mut handle = File::open(path).ok()?;
   let alias = content_cache::alias(&mut handle).ok()?;
-  (identity(&handle.metadata().ok()?) == file).then_some(alias)
+  (Version::of(&handle.metadata().ok()?) == file).then_some(alias)
 }
 
 struct Disk {
   root: PathBuf,
-  /// The file as the document opened it.
-  file: Identity,
-  /// Hashing runs beside the first scan, which reads the PDF until the
-  /// pack is known: a 150 MB book takes about 50 ms to hash.
+  /// The file as the worker opened it.
+  file: Version,
+  /// Whether `file` pins its bytes, so memos may stand in for hashing.
+  exact: bool,
+  /// Hashing runs beside scans, which read the PDF until it ends: a
+  /// 150 MB book takes about 50 ms. A remembered alias skips it.
   hashing: Option<JoinHandle<Option<Alias>>>,
-  /// The file's alias and its pack, once hashing ends.
+  /// The file's alias and its pack, once remembered or hashed.
   found: Option<(Alias, Option<Pack>)>,
   /// Pages indexed from the PDF since the last save.
   fresh: Records,
 }
 
+impl Disk {
+  /// `alias`'s pack, when it covers `pages` pages, remembered as this
+  /// file's where versions are exact.
+  fn open_pack(&self, alias: &Alias, pages: usize) -> Option<Pack> {
+    let pack =
+      Pack::open(&self.root, alias).filter(|pack| pack.pages() == pages);
+    if pack.is_some() && self.exact {
+      // A memo that fails to write only costs the next open a hash.
+      drop(content_cache::remember(&self.root, self.file, alias));
+    }
+    pack
+  }
+}
+
 impl Source {
-  /// Opens `path`, with its disk records under `root` unless a password
-  /// protects it: decrypted text stays off disk.
+  /// Opens `path`, which the reader opened with `pages` pages, with its
+  /// disk records under `root` unless a password protects it: decrypted
+  /// text stays off disk. Where versions are exact, a remembered alias
+  /// whose pack has `pages` pages skips hashing, and the PDF opens only
+  /// when a page misses.
   fn open(
     path: PathBuf,
     password: String,
     root: Option<PathBuf>,
+    pages: usize,
   ) -> Result<Self> {
-    let file = identity(&std::fs::metadata(&path)?);
-    let doc = Handle::open(&path, &password)?;
-    let disk = root.filter(|_| password.is_empty()).map(|root| {
+    let file = Version::of(&std::fs::metadata(&path)?);
+    let root = root.filter(|_| password.is_empty());
+    let exact = content_cache::exact(&path);
+    let found = root.as_ref().filter(|_| exact).and_then(|root| {
+      let alias = content_cache::recall(root, file)?;
+      let pack = Pack::open(root, &alias).filter(|pack| pack.pages() == pages);
+      Some((alias, Some(pack?)))
+    });
+    let doc = match found {
+      Some(_) => None,
+      None => Some(Handle::open(&path, &password)?),
+    };
+    let pages = doc.as_ref().map_or(pages, |doc| doc.pages);
+    let disk = root.map(|root| {
       let hashed = path.clone();
       Disk {
         root,
         file,
-        hashing: Some(thread::spawn(move || hash(&hashed, file))),
-        found: None,
-        fresh: Records::new(doc.pages),
+        exact,
+        hashing: found
+          .is_none()
+          .then(|| thread::spawn(move || hash(&hashed, file))),
+        found,
+        fresh: Records::new(pages),
       }
     });
     Ok(Self {
       path,
       password,
-      pages: doc.pages,
-      doc: Some(doc),
+      pages,
+      doc,
       seeds: Vec::new(),
       disk,
       #[cfg(test)]
@@ -368,7 +388,10 @@ impl Source {
       return Ok(Arc::clone(text));
     }
     if self.doc.is_none() {
-      self.doc = Some(Handle::open(&self.path, &self.password)?);
+      let doc = Handle::open(&self.path, &self.password)?;
+      // Hits must stay within the pages the reader shows.
+      anyhow::ensure!(doc.pages == self.pages, "PDF changed; search again");
+      self.doc = Some(doc);
       // A replaced file must not add records under the old alias.
       if self
         .disk
@@ -396,10 +419,7 @@ impl Source {
       return;
     };
     match hashing.join().ok().flatten() {
-      Some(alias) => {
-        let pack = Pack::open(&disk.root, &alias, pages);
-        disk.found = Some((alias, pack));
-      }
+      Some(alias) => disk.found = Some((alias, disk.open_pack(&alias, pages))),
       None => self.disk = None,
     }
   }
@@ -456,7 +476,7 @@ impl Source {
       return;
     }
     if content_cache::save(&disk.root, &alias, &fresh, old).is_ok() {
-      disk.found = Some((alias, Pack::open(&disk.root, &alias, pages)));
+      disk.found = Some((alias, disk.open_pack(&alias, pages)));
     }
   }
 
@@ -475,6 +495,7 @@ impl Source {
 mod tests {
   use super::*;
   use crate::text::Position;
+  use std::os::unix::fs::MetadataExt;
 
   /// First hits of a forward scan for `query`, and pages extracted.
   fn scan(source: &mut Source, query: &str) -> Result<(Vec<Hit>, usize)> {
@@ -503,49 +524,104 @@ mod tests {
     Ok(PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf"))
   }
 
-  /// A reopened file answers from its pack without reading the PDF, with
-  /// the hits its first scan found; OCR text still overrides the pack;
-  /// a password keeps the pack unwritten.
+  fn open(path: &Path, root: &Path) -> Result<Source> {
+    let pages = Handle::open(path, "")?.pages;
+    let mut source =
+      Source::open(path.into(), String::new(), Some(root.into()), pages)?;
+    source.settle(true);
+    Ok(source)
+  }
+
+  fn pack_inode(root: &Path) -> Result<u64> {
+    let entry = std::fs::read_dir(root)?
+      .flatten()
+      .find(|entry| entry.path().extension().is_some_and(|ext| ext == "pack"))
+      .context("No pack")?;
+    Ok(entry.metadata()?.ino())
+  }
+
+  /// A reopened file answers from its pack, without opening the PDF where
+  /// versions are exact; pages read again rewrite nothing; OCR text
+  /// overrides the pack; a password keeps the pack unwritten.
   #[test]
-  #[ignore = "requires verified public PDF corpus"]
   fn reopened_files_search_from_disk() -> Result<()> {
-    let path = corpus_paper()?;
+    let files = tempfile::tempdir()?;
+    let path = files.path().join("two.pdf");
+    crate::fixtures::pdf(&path, &["alpha one", "beta two"], "")?;
     let root = tempfile::tempdir()?;
-    let open = || -> Result<Source> {
-      let mut source =
-        Source::open(path.clone(), String::new(), Some(root.path().into()))?;
-      source.settle(true);
-      Ok(source)
-    };
-    let mut first = open()?;
-    let (hits, extracted) = scan(&mut first, "attention")?;
+    let mut first = open(&path, root.path())?;
+    let (hits, extracted) = scan(&mut first, "beta")?;
     first.save();
-    assert_eq!(extracted, first.pages);
-    assert!(!hits.is_empty());
-    let mut second = open()?;
-    let (again, extracted) = scan(&mut second, "attention")?;
+    assert_eq!((hits.len(), extracted), (1, 2));
+    let mut second = open(&path, root.path())?;
+    let (again, extracted) = scan(&mut second, "beta")?;
     assert_eq!(extracted, 0);
     assert_eq!(ends(&again), ends(&hits));
-    // Pages the pack holds, read again from the PDF, rewrite nothing.
-    let pack = |root: &Path| -> Result<u64> {
-      let entry = std::fs::read_dir(root)?.next().context("No pack")??;
-      Ok(entry.metadata()?.ino())
-    };
-    let written = pack(root.path())?;
+    assert_eq!(second.doc.is_none(), content_cache::exact(&path));
+    let written = pack_inode(root.path())?;
     second.index(PageId(0))?;
     second.save();
-    assert_eq!(pack(root.path())?, written);
-    let mut seeded = open()?;
-    seeded.seed(PageId(0), Arc::new(Text::default()));
-    let (rest, extracted) = scan(&mut seeded, "attention")?;
-    assert_eq!(extracted, 0);
-    assert!(rest.iter().all(|hit| hit.first.page != PageId(0)));
+    assert_eq!(pack_inode(root.path())?, written);
+    // OCR text overrides the pack.
+    let mut seeded = open(&path, root.path())?;
+    seeded.seed(PageId(1), Arc::new(Text::default()));
+    let (rest, extracted) = scan(&mut seeded, "beta")?;
+    assert_eq!((rest.len(), extracted), (0, 0));
+    // A password keeps the disk out.
     let locked = tempfile::tempdir()?;
     let mut source =
-      Source::open(path.clone(), "unused".into(), Some(locked.path().into()))?;
-    scan(&mut source, "attention")?;
+      Source::open(path, "unused".into(), Some(locked.path().into()), 2)?;
+    scan(&mut source, "beta")?;
     source.save();
     assert_eq!(std::fs::read_dir(locked.path())?.count(), 0);
+    Ok(())
+  }
+
+  /// A memo whose pack has another page count is ignored, and its pack
+  /// survives the other file's save.
+  #[test]
+  fn memos_need_the_readers_page_count() -> Result<()> {
+    let files = tempfile::tempdir()?;
+    let (two, three) =
+      (files.path().join("two.pdf"), files.path().join("three.pdf"));
+    crate::fixtures::pdf(&two, &["alpha", "beta"], "")?;
+    crate::fixtures::pdf(&three, &["gamma", "delta", "beta"], "")?;
+    let root = tempfile::tempdir()?;
+    let mut source = open(&two, root.path())?;
+    scan(&mut source, "beta")?;
+    source.save();
+    let alias = content_cache::alias(&mut File::open(&two)?)?;
+    let written = pack_inode(root.path())?;
+    let version = Version::read(&three).context("version")?;
+    content_cache::remember(root.path(), version, &alias)?;
+    let mut source = open(&three, root.path())?;
+    assert!(source.doc.is_some());
+    let (hits, extracted) = scan(&mut source, "beta")?;
+    assert_eq!((source.pages, extracted), (3, 3));
+    assert_eq!(
+      hits.iter().map(|hit| hit.first.page).collect::<Vec<_>>(),
+      [PageId(2)]
+    );
+    source.save();
+    let pack = Pack::open(root.path(), &alias).context("two's pack")?;
+    assert_eq!(pack.pages(), 2);
+    assert!(std::fs::read_dir(root.path())?.flatten().any(|entry| {
+      entry.metadata().is_ok_and(|meta| meta.ino() == written)
+    }));
+    Ok(())
+  }
+
+  /// A document that opens with another page count than the reader's
+  /// stops the scan instead of returning pages the reader lacks.
+  #[test]
+  fn lazy_opens_check_the_page_count() -> Result<()> {
+    let files = tempfile::tempdir()?;
+    let path = files.path().join("two.pdf");
+    crate::fixtures::pdf(&path, &["alpha", "beta"], "")?;
+    let mut source = Source::open(path, String::new(), None, 2)?;
+    source.doc = None;
+    source.pages = 3;
+    assert!(source.text(PageId(0)).is_err());
     Ok(())
   }
 
@@ -563,14 +639,23 @@ mod tests {
       Ok(())
     };
     let root = tempfile::tempdir()?;
-    let mut source =
-      Source::open(path.clone(), String::new(), Some(root.path().into()))?;
+    let pages = Handle::open(&path, "")?.pages;
+    let mut source = Source::open(
+      path.clone(),
+      String::new(),
+      Some(root.path().into()),
+      pages,
+    )?;
     scan(&mut source, "attention")?;
     touch()?;
     source.save();
     assert!(source.disk.is_none());
-    let mut source =
-      Source::open(path.clone(), String::new(), Some(root.path().into()))?;
+    let mut source = Source::open(
+      path.clone(),
+      String::new(),
+      Some(root.path().into()),
+      pages,
+    )?;
     source.doc = None;
     touch()?;
     scan(&mut source, "attention")?;

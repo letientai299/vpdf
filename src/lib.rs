@@ -24,6 +24,8 @@ mod diacritics;
 pub mod dnd;
 pub mod figures;
 pub mod find;
+#[cfg(test)]
+mod fixtures;
 mod fonts;
 pub mod fzf;
 pub mod gate;

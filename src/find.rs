@@ -67,7 +67,8 @@ impl App {
       None => self.reading_position()?,
     };
     if self.search.worker.is_none() {
-      let worker = SearchWorker::new(&self.path, &self.password);
+      let worker =
+        SearchWorker::new(&self.path, &self.password, self.doc.pages.len());
       for (page, text) in self.doc.seeds() {
         worker.seed(page, text);
       }

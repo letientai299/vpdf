@@ -27,7 +27,9 @@ fn ocr_geometry_preserves_unicode() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn superseded_search_completes_latest_query() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let worker = SearchWorker::new(&root.join("book.pdf"), "");
+  let path = root.join("book.pdf");
+  let pages = Handle::open(&path, "")?.pages;
+  let worker = SearchWorker::new(&path, "", pages);
   worker.query("the", false, PageId(0), false)?;
   let latest =
     worker.query("vpdf-impossible-query-83729", false, PageId(0), false)?;

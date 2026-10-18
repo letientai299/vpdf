@@ -172,7 +172,8 @@ lose recent changes. Simultaneous readers can race when saving.
 On macOS, search indexes persist in `~/Library/Caches/vpdf/content`, so a
 reopened PDF searches without rereading its pages. They hold the PDF's
 extracted text, readable only by your account; PDFs opened with a password are
-never stored. The system may purge that directory at any time. Set
+never stored. Small records there remember each PDF's hash by its file
+identity. The system may purge that directory at any time. Set
 `VPDF_CACHE` to another directory, or to `off` to keep indexes in memory
 only.
 

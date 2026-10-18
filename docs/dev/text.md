@@ -52,12 +52,15 @@ the PDF only when missing text is needed.
 On macOS, or wherever `VPDF_CACHE` points, the worker also keeps page indexes on
 disk, in a pack named by the SHA-256 of the PDF's bytes, so reopening an
 unchanged file skips extraction. Hashing runs beside the first scan, which reads
-the PDF until the pack is known. Scans decode stored pages in batches on a few
-threads. New indexes save once the worker idles, unless the file changed since
-it opened or the pack already holds those pages. [The content cache][cache]
-treats any missing, damaged, or stale pack as a miss and trims the least
-recently used packs to its budget. OCR text overrides stored pages; PDFs opened
-with a password are never stored.
+the PDF until the pack is known. On APFS, whose file times are exact, a memo
+keyed by device, inode, size, and times remembers each file's hash: a reopen
+whose pack matches the reader's page count skips hashing, and the PDF opens only
+when a page misses, so open errors can arrive with that page. Scans decode
+stored pages in batches on a few threads. New indexes save once the worker
+idles, unless the file changed since it opened or the pack already holds those
+pages. [The content cache][cache] treats any missing, damaged, or stale pack as
+a miss and trims the least recently used packs to its budget. OCR text overrides
+stored pages; PDFs opened with a password are never stored.
 
 [Panel search][panels] searches displayed rows with its own matching rules.
 Do not assume document normalization applies to panel labels.

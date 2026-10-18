@@ -2,7 +2,9 @@
 //!
 //! One pack per PDF, named by the SHA-256 of its bytes, holds a
 //! compressed `Index` record per page. Packs live where the OS may purge
-//! them; a missing, short, damaged, or stale pack reads as a miss.
+//! them; a missing, short, damaged, or stale pack reads as a miss. Where
+//! file versions are exact, a memo per version remembers its hash, so a
+//! reopen need not hash.
 use crate::Result;
 use crate::document::{GLYPH_LIMIT, MIB, TEXT_FLAGS};
 use crate::search::Index;
@@ -12,9 +14,9 @@ use flate2::write::ZlibEncoder;
 use flate2::{Compression, Decompress, FlushDecompress, Status};
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
-use std::fs::File;
+use std::fs::{File, Metadata};
 use std::io::{Read, Write};
-use std::os::unix::fs::{DirBuilderExt, FileExt, OpenOptionsExt};
+use std::os::unix::fs::{DirBuilderExt, FileExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
@@ -30,6 +32,8 @@ const RESERVE: u64 = 2 << 30;
 const RECORD: u64 = 16 * MIB as u64;
 /// Age after which a temporary pack counts as abandoned.
 const ABANDONED: Duration = Duration::from_secs(3600);
+/// Age after which an unused memo goes.
+const FORGOTTEN: Duration = Duration::from_hours(30 * 24);
 /// Table bytes per page: offset, stored size, decoded size.
 const ENTRY: usize = 16;
 /// Fewest pages a decoder thread takes; smaller batches decode on the
@@ -37,6 +41,36 @@ const ENTRY: usize = 16;
 const SHARE: usize = 16;
 
 pub type Alias = [u8; 32];
+
+/// A file version as `stat` tells it: device, inode, size, and
+/// modification and change times. A hint, except on filesystems whose
+/// times are exact (`exact`): a write within one coarse tick, or cached
+/// network attributes, can keep it unchanged.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Version([u64; 7]);
+
+impl Version {
+  pub fn of(meta: &Metadata) -> Self {
+    Self([
+      meta.dev(),
+      meta.ino(),
+      meta.len(),
+      meta.mtime().cast_unsigned(),
+      meta.mtime_nsec().cast_unsigned(),
+      meta.ctime().cast_unsigned(),
+      meta.ctime_nsec().cast_unsigned(),
+    ])
+  }
+
+  /// `path`'s version now; none when it cannot be read.
+  pub fn read(path: &Path) -> Option<Self> {
+    std::fs::metadata(path).ok().map(|meta| Self::of(&meta))
+  }
+
+  fn bytes(self) -> Vec<u8> {
+    self.0.iter().flat_map(|field| field.to_le_bytes()).collect()
+  }
+}
 
 /// Writes so far, naming each writer's temporary pack.
 static WRITES: AtomicU64 = AtomicU64::new(0);
@@ -96,6 +130,74 @@ fn path(root: &Path, alias: &Alias) -> PathBuf {
   root.join(format!("{}.pack", hex(alias)))
 }
 
+/// Whether `path` lies on a filesystem with nanosecond change times and
+/// unique inodes, where a matching `Version` means unchanged bytes: APFS.
+/// Elsewhere a reopen hashes.
+pub fn exact(path: &Path) -> bool {
+  #[cfg(target_os = "macos")]
+  {
+    rustix::fs::statfs(path).is_ok_and(|stats| {
+      let name = stats.f_fstypename.map(|byte| byte as u8);
+      name.starts_with(b"apfs\0")
+    })
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = path;
+    false
+  }
+}
+
+/// One memo per file, so a new version replaces the old one's.
+fn memo(root: &Path, version: Version) -> PathBuf {
+  root.join(format!("{:x}-{:x}.id", version.0[0], version.0[1]))
+}
+
+/// The alias remembered for the file version `version` names.
+pub fn recall(root: &Path, version: Version) -> Option<Alias> {
+  let path = memo(root, version);
+  let bytes = std::fs::read(&path).ok()?;
+  let (head, alias) = bytes.split_at_checked(bytes.len().checked_sub(32)?)?;
+  let alias = (head == version.bytes()).then(|| alias.try_into().ok())??;
+  // Recency for trimming.
+  drop(File::open(&path).and_then(|file| file.set_modified(SystemTime::now())));
+  Some(alias)
+}
+
+/// Remembers `alias` as the hash of the file version `version` names.
+pub fn remember(root: &Path, version: Version, alias: &Alias) -> Result<()> {
+  create(root)?;
+  let mut bytes = version.bytes();
+  bytes.extend_from_slice(alias);
+  publish(&memo(root, version), &bytes)
+}
+
+/// Makes `root`; pages hold the PDF's text, so only its owner reads them.
+fn create(root: &Path) -> Result<()> {
+  std::fs::DirBuilder::new().recursive(true).mode(0o700).create(root)?;
+  Ok(())
+}
+
+/// Writes `bytes` to `target` whole: writers race by renaming whole
+/// files, so readers never see a partial one.
+fn publish(target: &Path, bytes: &[u8]) -> Result<()> {
+  let write = WRITES.fetch_add(1, Ordering::Relaxed);
+  let temp =
+    target.with_extension(format!("{}-{write}.tmp", std::process::id()));
+  let written = File::options()
+    .write(true)
+    .create_new(true)
+    .mode(0o600)
+    .open(&temp)
+    .and_then(|mut file| file.write_all(bytes))
+    .and_then(|()| std::fs::rename(&temp, target));
+  if let Err(error) = written {
+    drop(std::fs::remove_file(&temp));
+    return Err(error.into());
+  }
+  Ok(())
+}
+
 /// A pack opened for reading. Its open file keeps answering after the
 /// OS deletes the path.
 pub struct Pack {
@@ -122,16 +224,21 @@ struct Record {
 }
 
 impl Pack {
-  /// The valid pack for `alias` with `pages` pages, else none.
-  pub fn open(root: &Path, alias: &Alias, pages: usize) -> Option<Self> {
+  /// The valid pack for `alias`, else none.
+  pub fn open(root: &Path, alias: &Alias) -> Option<Self> {
     let file = File::open(path(root, alias)).ok()?;
-    let pack = Self::read(file, pages).ok()?;
+    let pack = Self::read(file).ok()?;
     // Recency for eviction.
     drop(pack.file.set_modified(SystemTime::now()));
     Some(pack)
   }
 
-  fn read(file: File, pages: usize) -> Result<Self> {
+  /// Pages the pack covers: its document's page count.
+  pub fn pages(&self) -> usize {
+    self.table.len()
+  }
+
+  fn read(file: File) -> Result<Self> {
     let len = file.metadata()?.len();
     let mut at = 0;
     let mut take = |count: usize| -> Result<Vec<u8>> {
@@ -145,8 +252,10 @@ impl Pack {
     let size = u32_at(&take(4)?, 0) as usize;
     ensure!(size == expected.len(), "Stale search pack");
     ensure!(take(size)? == expected.as_bytes(), "Stale search pack");
-    ensure!(u32_at(&take(4)?, 0) as usize == pages, "Search pack page count");
-    let raw = take(pages.checked_mul(ENTRY).context("Search pack size")?)?;
+    let pages = u32_at(&take(4)?, 0) as usize;
+    let table_len = pages.checked_mul(ENTRY).context("Search pack size")?;
+    ensure!(table_len as u64 <= len, "Truncated search pack");
+    let raw = take(table_len)?;
     let table: Vec<Entry> = raw
       .as_chunks::<ENTRY>()
       .0
@@ -308,8 +417,7 @@ pub fn save(
   records: &Records,
   old: Option<&Pack>,
 ) -> Result<()> {
-  // Pages hold the PDF's text: only its owner reads them.
-  std::fs::DirBuilder::new().recursive(true).mode(0o700).create(root)?;
+  create(root)?;
   let stats = rustix::fs::statvfs(root)?;
   if stats.f_bavail.saturating_mul(stats.f_frsize) < RESERVE {
     return Ok(());
@@ -340,23 +448,7 @@ pub fn save(
   for raw in kept.iter().flatten().map(|record| &record.raw) {
     bytes.extend_from_slice(raw);
   }
-  // Writers race by renaming whole packs; readers never see a partial
-  // one.
-  let write = WRITES.fetch_add(1, Ordering::Relaxed);
-  let target = path(root, alias);
-  let temp =
-    target.with_extension(format!("{}-{write}.tmp", std::process::id()));
-  let written = File::options()
-    .write(true)
-    .create_new(true)
-    .mode(0o600)
-    .open(&temp)
-    .and_then(|mut file| file.write_all(&bytes))
-    .and_then(|()| std::fs::rename(&temp, &target));
-  if let Err(error) = written {
-    drop(std::fs::remove_file(&temp));
-    return Err(error.into());
-  }
+  publish(&path(root, alias), &bytes)?;
   trim(root, BUDGET)
 }
 
@@ -365,9 +457,11 @@ fn put(bytes: &mut Vec<u8>, value: usize) {
 }
 
 /// Deletes the least recently used packs until the rest fit `budget`,
-/// and temporary packs a crashed writer left.
+/// memos of deleted packs or unused for a month, and temporary files a
+/// crashed writer left.
 fn trim(root: &Path, budget: u64) -> Result<()> {
   let mut packs = Vec::new();
+  let mut memos = Vec::new();
   let now = SystemTime::now();
   for entry in std::fs::read_dir(root)?.flatten() {
     let Ok(meta) = entry.metadata() else { continue };
@@ -375,6 +469,7 @@ fn trim(root: &Path, budget: u64) -> Result<()> {
     let path = entry.path();
     match path.extension().and_then(|extension| extension.to_str()) {
       Some("pack") => packs.push((modified, meta.len(), path)),
+      Some("id") => memos.push((modified, path)),
       Some("tmp")
         if now.duration_since(modified).unwrap_or_default() > ABANDONED =>
       {
@@ -391,6 +486,14 @@ fn trim(root: &Path, budget: u64) -> Result<()> {
     }
     if std::fs::remove_file(path).is_ok() {
       total -= len;
+    }
+  }
+  for (modified, memo) in memos {
+    let bytes = std::fs::read(&memo).unwrap_or_default();
+    let alias = bytes.last_chunk::<32>();
+    let unused = now.duration_since(modified).unwrap_or_default() > FORGOTTEN;
+    if unused || alias.is_none_or(|alias| !path(root, alias).exists()) {
+      drop(std::fs::remove_file(memo));
     }
   }
   Ok(())
@@ -433,13 +536,13 @@ mod tests {
     let root = tempfile::tempdir()?;
     let alias = [7; 32];
     save(root.path(), &alias, &records(3, &[(0, "alpha beta")]), None)?;
-    let pack = Pack::open(root.path(), &alias, 3).context("pack")?;
+    let pack = Pack::open(root.path(), &alias).context("pack")?;
     assert_eq!(hits(&pack.index(PageId(0)).context("page 0")?, "beta"), 1);
     assert!(pack.index(PageId(1)).is_none());
-    assert!(Pack::open(root.path(), &alias, 4).is_none());
-    assert!(Pack::open(root.path(), &[8; 32], 3).is_none());
+    assert_eq!(pack.pages(), 3);
+    assert!(Pack::open(root.path(), &[8; 32]).is_none());
     save(root.path(), &alias, &records(3, &[(2, "gamma")]), Some(&pack))?;
-    let pack = Pack::open(root.path(), &alias, 3).context("merged")?;
+    let pack = Pack::open(root.path(), &alias).context("merged")?;
     assert_eq!(hits(&pack.index(PageId(0)).context("kept")?, "alpha"), 1);
     assert_eq!(hits(&pack.index(PageId(2)).context("added")?, "gamma"), 1);
     let order = [PageId(2), PageId(1), PageId(0)];
@@ -467,7 +570,7 @@ mod tests {
     let bytes = std::fs::read(&file)?;
     for len in (0..bytes.len()).step_by(3) {
       std::fs::write(&file, &bytes[..len])?;
-      let pack = Pack::open(root.path(), &alias, 2);
+      let pack = Pack::open(root.path(), &alias);
       let read =
         pack.map(|pack| (pack.index(PageId(0)), pack.index(PageId(1))));
       assert!(!matches!(read, Some((Some(_), Some(_)))), "{len}");
@@ -481,33 +584,33 @@ mod tests {
       let changed = (real + len - 4).to_le_bytes();
       wrong[at..at + 4].copy_from_slice(&changed);
       std::fs::write(&file, &wrong)?;
-      let pack = Pack::open(root.path(), &alias, 2).context("length")?;
+      let pack = Pack::open(root.path(), &alias).context("length")?;
       assert!(pack.index(PageId(0)).is_some(), "{len}");
       assert!(pack.index(PageId(1)).is_none(), "{len}");
     }
     let mut stale = bytes.clone();
     stale[MAGIC.len() + 4] ^= 1;
     std::fs::write(&file, &stale)?;
-    assert!(Pack::open(root.path(), &alias, 2).is_none(), "provenance");
+    assert!(Pack::open(root.path(), &alias).is_none(), "provenance");
     let mut flipped = bytes.clone();
     let last = flipped.len() - 2;
     flipped[last] ^= 0xff;
     std::fs::write(&file, &flipped)?;
-    let pack = Pack::open(root.path(), &alias, 2).context("table intact")?;
+    let pack = Pack::open(root.path(), &alias).context("table intact")?;
     assert!(!records(2, &[(1, "two")]).adds_to(Some(&pack)), "held");
     assert!(pack.index(PageId(1)).is_none(), "damaged record");
     // A save replaces the damaged record with the page read again.
     let again = records(2, &[(1, "two")]);
     assert!(again.adds_to(Some(&pack)), "damaged counts as missing");
     save(root.path(), &alias, &again, Some(&pack))?;
-    let repaired = Pack::open(root.path(), &alias, 2).context("repaired")?;
+    let repaired = Pack::open(root.path(), &alias).context("repaired")?;
     assert_eq!(hits(&repaired.index(PageId(1)).context("page 1")?, "two"), 1);
     assert_eq!(hits(&repaired.index(PageId(0)).context("page 0")?, "one"), 1);
     std::fs::write(&file, &bytes)?;
-    let pack = Pack::open(root.path(), &alias, 2).context("restored")?;
+    let pack = Pack::open(root.path(), &alias).context("restored")?;
     std::fs::remove_file(&file)?;
     assert_eq!(hits(&pack.index(PageId(1)).context("deleted")?, "two"), 1);
-    assert!(Pack::open(root.path(), &alias, 2).is_none());
+    assert!(Pack::open(root.path(), &alias).is_none());
     Ok(())
   }
 
@@ -551,8 +654,41 @@ mod tests {
     let file = path(root.path(), &alias);
     let old = SystemTime::now() - Duration::from_secs(3600);
     File::options().write(true).open(&file)?.set_modified(old)?;
-    Pack::open(root.path(), &alias, 1).context("pack")?;
+    Pack::open(root.path(), &alias).context("pack")?;
     assert!(std::fs::metadata(&file)?.modified()? > old);
+    Ok(())
+  }
+
+  /// Memos answer only their exact file version, and trimming drops
+  /// those unused for long or whose pack is gone.
+  #[test]
+  fn memos_recall_their_version() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let file = root.path().join("doc.pdf");
+    std::fs::write(&file, b"%PDF")?;
+    let version = Version::read(&file).context("version")?;
+    assert_eq!(recall(root.path(), version), None);
+    // Temporary directories on macOS lie on APFS.
+    assert_eq!(exact(&file), cfg!(target_os = "macos"));
+    let alias = [5; 32];
+    remember(root.path(), version, &alias)?;
+    assert_eq!(recall(root.path(), version), Some(alias));
+    // A rewrite of the same size still changes the version.
+    std::fs::write(&file, b"%PDX")?;
+    let changed = Version::read(&file).context("changed")?;
+    assert_ne!(changed, version);
+    assert_eq!(recall(root.path(), changed), None);
+    save(root.path(), &alias, &records(1, &[(0, "words")]), None)?;
+    assert_eq!(recall(root.path(), version), Some(alias), "pack kept");
+    let memo = memo(root.path(), version);
+    let old = SystemTime::now() - FORGOTTEN * 2;
+    File::options().write(true).open(&memo)?.set_modified(old)?;
+    trim(root.path(), BUDGET)?;
+    assert!(!memo.exists(), "unused");
+    remember(root.path(), version, &alias)?;
+    std::fs::remove_file(path(root.path(), &alias))?;
+    trim(root.path(), BUDGET)?;
+    assert_eq!(recall(root.path(), version), None, "pack gone");
     Ok(())
   }
 
@@ -571,7 +707,7 @@ mod tests {
         });
       }
     });
-    let pack = Pack::open(root.path(), &alias, 1).context("pack")?;
+    let pack = Pack::open(root.path(), &alias).context("pack")?;
     let page = pack.index(PageId(0)).context("page")?;
     assert_eq!(words.iter().map(|word| hits(&page, word)).sum::<usize>(), 1);
     let files = std::fs::read_dir(root.path())?.count();
