@@ -84,11 +84,7 @@ impl App {
           })
           .unwrap_or_else(|| "—".into());
         let page = position.page.0 + 1;
-        let name = self
-          .doc
-          .pages
-          .get(position.page.0)
-          .map_or("", |info| info.label.as_str());
+        let name = self.doc.get_label(position.page).unwrap_or_default();
         let page = if name.is_empty() || name == page.to_string() {
           page.to_string()
         } else {

@@ -409,8 +409,7 @@ impl App {
     let (top, column) = (usize::from(frame.row), usize::from(frame.column));
     let rows = usize::from(frame.rows) - 2;
     let columns = usize::from(frame.columns) - 2;
-    let label =
-      border_label(&self.doc.pages[preview.page.0].label, columns, clipped.0);
+    let label = border_label(self.doc.label(preview.page), columns, clipped.0);
     let rule = "─".repeat(columns.saturating_sub(label.width()));
     let over_page = matches!(preview.view, View::Image { .. })
       || !self.text_mode && matches!(preview.view, View::Note { .. });

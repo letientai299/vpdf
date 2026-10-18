@@ -28,7 +28,7 @@ impl App {
           style: Style::Key,
           ..Row::new(
             format!("{}: {body}", annotation.kind),
-            self.doc.pages[page.0].label.clone(),
+            self.doc.label(page).to_owned(),
             Destination::Annotation { position, annotation },
           )
         });

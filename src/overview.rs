@@ -273,7 +273,7 @@ impl App {
   ) -> Result<()> {
     let screen = self.layout.screen;
     let columns = (width / f32::from(screen.cell_width)) as usize;
-    let label = terminal::clean(&self.doc.pages[index].label, columns);
+    let label = terminal::clean(self.doc.label(PageId(index)), columns);
     let column = (x / f32::from(screen.cell_width)) as usize
       + (columns.saturating_sub(label.len())) / 2;
     let row = (y / f32::from(screen.cell_height)).ceil() as usize;

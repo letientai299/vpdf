@@ -685,7 +685,7 @@ impl App {
   pub fn panel_rows(&mut self, kind: PanelKind) -> Result<Vec<Row>> {
     let label = |target: &Target| match target {
       Target::Page(page) | Target::Point { page, .. } => {
-        self.doc.pages.get(page.0).map_or_else(String::new, |p| p.label.clone())
+        self.doc.get_label(*page).map_or_else(String::new, str::to_owned)
       }
       Target::Uri(_) => String::new(),
     };
@@ -710,7 +710,7 @@ impl App {
         .map(|hit| {
           Row::new(
             hit.excerpt.clone(),
-            self.doc.pages[hit.first.page.0].label.clone(),
+            self.doc.label(hit.first.page).to_owned(),
             Destination::Position(hit.first),
           )
         })
@@ -870,13 +870,14 @@ impl App {
     let place = format!("Path: {}", self.path.display());
     let bytes = std::fs::metadata(&self.path).map_or(0, |m| m.len());
     lines.extend(document_lines(place, bytes, self.doc.pages.len()));
-    let page = &self.doc.pages[self.navigation_position().page.0];
-    let (width, height) = (page.bounds.width(), page.bounds.height());
+    let page = self.navigation_position().page;
+    let bounds = self.doc.pages[page.0].bounds;
+    let (width, height) = (bounds.width(), bounds.height());
     let outline = if self.doc.inferred { " (inferred)" } else { "" };
     lines.extend([
       format!(
         "Page {}: {width:.0} x {height:.0} pt, {:.0} x {:.0} mm",
-        page.label,
+        self.doc.label(page),
         width / 72.0 * 25.4,
         height / 72.0 * 25.4
       ),

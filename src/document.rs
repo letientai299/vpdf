@@ -5,6 +5,7 @@ use crate::text::{Bounds, Glyph, Line, PageId, Text, printable};
 use anyhow::ensure;
 use mupdf::pdf::PdfDocument;
 use mupdf::{DisplayList, TextPageFlags};
+use std::cell::OnceCell;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -14,7 +15,9 @@ pub const MIB: usize = 1024 * 1024;
 #[derive(Clone, Debug)]
 pub struct PageInfo {
   pub bounds: Bounds,
-  pub label: String,
+  /// Read on first use through `Document::label`: reading every label
+  /// can cost more than the rest of opening a long manual.
+  pub label: OnceCell<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -170,15 +173,8 @@ impl Document {
     let Handle { native, pages: count } = Handle::open(path, password)?;
     let mut pages = Vec::with_capacity(count);
     for index in 0..count {
-      pages.push(PageInfo {
-        bounds: bounds(&native, index as i32)?,
-        label: native
-          .page_label(index)
-          .ok()
-          .map(|label| printable(&label).collect::<String>())
-          .filter(|label| !label.is_empty())
-          .unwrap_or_else(|| (index + 1).to_string()),
-      });
+      let bounds = bounds(&native, index as i32)?;
+      pages.push(PageInfo { bounds, label: OnceCell::new() });
     }
     let title =
       native.metadata(mupdf::MetadataName::Title).map_or_default(|title| {
@@ -358,12 +354,34 @@ impl Document {
     Ok(found)
   }
 
+  /// `page`'s authored label, printable, else its number; none past the
+  /// last page.
+  pub fn get_label(&self, page: PageId) -> Option<&str> {
+    let label = &self.pages.get(page.0)?.label;
+    Some(label.get_or_init(|| {
+      let authored = self.native.page_label(page.0).ok();
+      authored
+        .map(|label| printable(&label).collect::<String>())
+        .filter(|label| !label.is_empty())
+        .unwrap_or_else(|| (page.0 + 1).to_string())
+    }))
+  }
+
+  /// # Panics
+  ///
+  /// When `page` is past the last page.
+  pub fn label(&self, page: PageId) -> &str {
+    self.get_label(page).expect("page inside document")
+  }
+
+  /// Numbers name physical pages; anything else the first page with
+  /// that label, which reads labels up to it.
   pub fn page_number(&self, label: &str) -> Option<PageId> {
     if let Ok(number) = label.parse::<usize>() {
       return (number > 0 && number <= self.pages.len())
         .then(|| PageId(number - 1));
     }
-    self.pages.iter().position(|p| p.label == label).map(PageId)
+    (0..self.pages.len()).map(PageId).find(|page| self.label(*page) == label)
   }
 
   pub fn validate(&self, page: PageId) -> Result<()> {

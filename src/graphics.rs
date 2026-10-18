@@ -876,8 +876,8 @@ mod tests {
     let mut graphics = Graphics::default();
     let key = tile(&mut graphics, 0)?;
     let bounds = Bounds { x0: 0.0, y0: 0.0, x1: 64.0, y1: 64.0 };
-    let mut layout =
-      Layout::new(&[PageInfo { bounds, label: String::new() }], SCREEN);
+    let label = std::cell::OnceCell::new();
+    let mut layout = Layout::new(&[PageInfo { bounds, label }], SCREEN);
     layout.pages[0] = PageLayout {
       top: 0.0,
       width: 64.0,

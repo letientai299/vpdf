@@ -73,7 +73,7 @@ fn document_strings_reach_the_screen_clean() -> Result<()> {
   let metadata = doc.metadata();
   let author = metadata.iter().find(|(key, _)| key == "Author").unwrap();
   for (field, value) in [
-    ("page label", doc.pages[0].label.as_str()),
+    ("page label", doc.label(PageId(0))),
     ("outline title", &doc.outline[0].title),
     ("document title", &doc.title),
     ("Info entry", &author.1),
@@ -158,5 +158,37 @@ fn info_says_the_terminal_was_not_probed() -> Result<()> {
   let info = app.info();
   let reader = info.split_once("# Reader\n").map_or("", |(_, rest)| rest);
   assert!(reader.lines().any(|line| line == "Terminal: not probed"), "{info}");
+  Ok(())
+}
+
+/// Unsorted keys, a first range after page 0, an unknown style, a
+/// negative start, and entries that are not dictionaries.
+#[test]
+fn malformed_page_labels_fall_back() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("labels.pdf");
+  let pages = 5;
+  let kids: Vec<_> =
+    (0..pages).map(|page| format!("{} 0 R", page + 3)).collect();
+  let mut objects = vec![
+    format!(
+      "<< /Type /Catalog /Pages 2 0 R /PageLabels << /Nums [3 << /S /Q \
+       /St -4 /P {} >> 1 (junk) 4 7 2 << /S /r /St 0 >>] >> >>",
+      text("\u{1b}x")
+    ),
+    format!("<< /Type /Pages /Kids [{}] /Count {pages} >>", kids.join(" ")),
+  ];
+  objects.extend((0..pages).map(|_| {
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>".to_owned()
+  }));
+  common::write_pdf(&path, &objects, "")?;
+  let doc = Document::open(&path, "")?;
+  for page in (0..pages).map(PageId) {
+    let label = doc.label(page);
+    assert!(!label.is_empty(), "{page:?}");
+    assert!(!label.chars().any(char::is_control), "{page:?}: {label:?}");
+  }
+  assert_eq!(doc.page_number("junk"), None);
+  assert_eq!(doc.page_number("2"), Some(PageId(1)));
   Ok(())
 }

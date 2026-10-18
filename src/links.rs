@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::app::InputOwner;
-use crate::document::{Heading, Link, PageInfo, Target};
+use crate::document::{Document, Heading, Link, Target};
 use crate::panel::{Destination, Row};
 use crate::panel_layout::Layout;
 use crate::pointer::{Hit, Hover};
@@ -75,7 +75,7 @@ impl App {
   /// The hovered link's destination.
   pub fn hover_label(&mut self) -> Option<String> {
     let (_, link) = self.hover_link()?;
-    Some(destination(&link.target, &self.doc.pages, &self.doc.outline))
+    Some(destination(&link.target, &self.doc))
   }
 
   /// When the rested link previews.
@@ -204,7 +204,9 @@ impl App {
         }
         _ => String::new(),
       };
-      rows.push(link_row(link, anchor, context, &self.doc.pages));
+      rows.push(link_row(link, anchor, context, |page| {
+        page_name(&self.doc, page)
+      }));
     }
     Ok(rows)
   }
@@ -262,11 +264,12 @@ pub(crate) fn excerpt(text: &Text, target: &Target) -> String {
   context.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// `name` gives a page's label.
 fn link_row(
   link: Link,
   anchor: String,
   context: String,
-  pages: &[PageInfo],
+  name: impl Fn(PageId) -> String,
 ) -> Row {
   let (label, detail) = match &link.target {
     Target::Uri(uri) => {
@@ -277,7 +280,7 @@ fn link_row(
       (if raw { uri.clone() } else { anchor }, String::new())
     }
     Target::Page(page) | Target::Point { page, .. } => {
-      let label = page_name(pages, *page);
+      let label = name(*page);
       let text = if context.is_empty() {
         anchor
       } else if anchor.is_empty() || context.starts_with(&format!("[{anchor}]"))
@@ -302,18 +305,15 @@ fn link_row(
 }
 
 /// `→ p. 43 · Section`, or the address.
-fn destination(
-  target: &Target,
-  pages: &[PageInfo],
-  outline: &[Heading],
-) -> String {
+fn destination(target: &Target, doc: &Document) -> String {
+  let outline = &doc.outline;
   let (page, y) = match target {
     Target::Uri(uri) => return format!("→ {uri}"),
     Target::Page(page) => (*page, first_heading(outline, *page)),
     Target::Point { page, y, .. } => (*page, *y),
   };
-  let page = PageId(page.0.min(pages.len().saturating_sub(1)));
-  let name = page_name(pages, page);
+  let page = PageId(page.0.min(doc.pages.len().saturating_sub(1)));
+  let name = doc.label(page);
   match crate::panel::section(outline, page, y) {
     Some(entry) => format!("→ p. {name} · {}", outline[entry].title.trim()),
     None => format!("→ p. {name}"),
@@ -329,12 +329,10 @@ fn first_heading(outline: &[Heading], page: PageId) -> f32 {
   tops.reduce(f32::min).unwrap_or(0.0)
 }
 
-/// A page's label, else its number.
-fn page_name(pages: &[PageInfo], page: PageId) -> String {
-  pages
-    .get(page.0)
-    .map(|info| info.label.as_str())
-    .filter(|label| !label.is_empty())
+/// A page's label; past the last page, its number.
+fn page_name(doc: &Document, page: PageId) -> String {
+  doc
+    .get_label(page)
     .map_or_else(|| page.0.saturating_add(1).to_string(), str::to_owned)
 }
 
@@ -394,7 +392,7 @@ mod tests {
 
   #[test]
   fn labels_distinguish_targets() {
-    let pages = [PageInfo { bounds: Bounds::default(), label: "iv".into() }];
+    let pages = |_| "iv".to_owned();
     for (anchor, context, expected) in [
       ("[12]", "Attention Is All You Need", "[12] Attention Is All You Need"),
       ("†", "Equal contribution", "† Equal contribution"),
@@ -406,7 +404,7 @@ mod tests {
     ] {
       let target = Target::Point { page: PageId(0), x: 12.0, y: 34.0 };
       let link = Link { bounds: Bounds::default(), target };
-      let row = link_row(link, anchor.into(), context.into(), &pages);
+      let row = link_row(link, anchor.into(), context.into(), pages);
       assert_eq!(row.label, expected);
       assert!(matches!(
         row.destination,
@@ -419,7 +417,7 @@ mod tests {
     {
       let link =
         Link { bounds: Bounds::default(), target: Target::Uri(uri.into()) };
-      let row = link_row(link, anchor.into(), String::new(), &pages);
+      let row = link_row(link, anchor.into(), String::new(), pages);
       assert_eq!(row.label, expected);
       assert_eq!(row.detail, "");
       assert!(matches!(row.destination,

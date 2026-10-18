@@ -28,9 +28,8 @@ fn reader_workflows() -> Result<()> {
   app.command("39")?;
   assert_eq!(app.reader.cursor.page, PageId(38));
   // Labels beat the `:info` prefix, not exact names.
-  for (index, page) in app.doc.pages.iter_mut().enumerate() {
-    page.label =
-      ["", "", "i", "iv", "q"].get(index).copied().unwrap_or("").into();
+  for (index, label) in ["cover", "title", "i", "iv", "q"].iter().enumerate() {
+    app.doc.pages[index].label = (*label).to_owned().into();
   }
   app.command("i")?;
   assert_eq!(app.reader.cursor.page, PageId(2));

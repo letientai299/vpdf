@@ -67,7 +67,7 @@ fn preview_scroll_clamps_without_moving_target() -> Result<()> {
       key(&mut app, b"K")?;
       let target = format!("{:?}", app.peek.as_ref().unwrap().target);
       let page = target_page(&app.peek.as_ref().unwrap().target);
-      let label = app.doc.pages[page.0].label.clone();
+      let label = app.doc.label(page).to_owned();
       let cursor = app.reader.cursor;
       let range = app.reader.selection.map(|s| (s.anchor, s.kind));
       let view = (app.reader.scroll, app.text_position(0, 0)?);
@@ -268,8 +268,8 @@ fn preview_label_keeps_arrow() -> Result<()> {
     let mut app = open(text)?;
     key(&mut app, b"K9999k3j")?;
     let page = target_page(&app.peek.as_ref().unwrap().target);
-    app.doc.pages[page.0].label =
-      format!("界{}", app.doc.pages[page.0].label).repeat(200);
+    let wide = format!("界{}", app.doc.label(page)).repeat(200);
+    app.doc.pages[page.0].label = wide.into();
     let out = drawn(&mut app)?;
     let border = out.split_once('╭').unwrap().1.split('╮').next().unwrap();
     assert!(border.contains('↑'));

@@ -237,7 +237,7 @@ mod tests {
   fn projection_roundtrips() {
     let pages = [PageInfo {
       bounds: Bounds { x0: 10.0, y0: 20.0, x1: 210.0, y1: 320.0 },
-      label: String::new(),
+      label: std::cell::OnceCell::new(),
     }];
     let screen = Screen {
       columns: 100,

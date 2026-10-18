@@ -526,11 +526,21 @@ fn crop_toggle() -> Result<()> {
   })
 }
 
-/// Every page's bounds and label, the outline, and the title.
+/// Every page's bounds and the title.
 fn document_open() -> Result<()> {
   let path = corpus("book.pdf")?;
   measure("Document::open book", || {
     drop(black_box(Document::open(&path, "")));
+  })
+}
+
+/// Opening plus a label lookup that matches nothing, which reads every
+/// page's label: the most a later command or outline panel pays once.
+fn label_scan() -> Result<()> {
+  let path = corpus("book.pdf")?;
+  measure("Document::open + label miss", || {
+    let doc = Document::open(&path, "").expect("corpus PDF");
+    black_box(doc.page_number(black_box("missing")));
   })
 }
 
@@ -874,6 +884,7 @@ const CASES: &[(&str, Case)] = &[
   ("crop margins", crop_margins),
   ("crop toggle", crop_toggle),
   ("document open", document_open),
+  ("label scan", label_scan),
   ("handle open", handle_open),
   ("handle bounds", handle_bounds),
   ("projection", projection),

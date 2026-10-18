@@ -151,7 +151,7 @@ fn history_key(app: &mut App, forward: bool) -> Result<()> {
 #[test]
 fn fallback_context() -> Result<()> {
   let (_dir, mut app) = text_app(&["Opening", "na\\357ve words,"])?;
-  app.doc.pages[0].label = "iv".into();
+  app.doc.pages[0].label = "iv".to_owned().into();
   for (glyph, word) in
     [(0, "“naïve”"), (5, "whitespace"), (6, "“words”"), (11, "“,”")]
   {
