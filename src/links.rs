@@ -6,9 +6,13 @@ use crate::panel::{Destination, Row};
 use crate::panel_layout::Layout;
 use crate::pointer::{Hit, Hover};
 use crate::preview::{Origin, Preview};
-use crate::text::{PageId, Text};
+use crate::text::{Bounds, PageId, Text};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// The hovered link's page, that page's links, and index.
+type Hovered = (PageId, Arc<Vec<Link>>, usize);
 
 /// Rest before a link previews.
 pub const REST: Duration = Duration::from_millis(400);
@@ -49,12 +53,23 @@ impl App {
     });
   }
 
-  /// The hovered link and its page.
-  pub fn hover_link(&mut self) -> Option<(PageId, Link)> {
+  fn hovered_links(&mut self) -> Option<Hovered> {
     let Hit::Link(page, index) = self.hover else { return None };
     // Hover is advisory; failures show nothing.
-    let link = self.link(page, index).ok()??;
-    Some((page, link))
+    let links = self.doc.links(page).ok()?;
+    Some((page, links, index))
+  }
+
+  /// The hovered link and its page.
+  pub fn hover_link(&mut self) -> Option<(PageId, Link)> {
+    let (page, links, index) = self.hovered_links()?;
+    Some((page, links.get(index)?.clone()))
+  }
+
+  /// The hovered link's page and wrapped segments.
+  pub fn hover_segments(&mut self) -> Option<(PageId, Vec<Bounds>)> {
+    let (page, links, index) = self.hovered_links()?;
+    Some((page, segments(&links, index)))
   }
 
   /// The hovered link's destination.
@@ -193,6 +208,35 @@ impl App {
     }
     Ok(rows)
   }
+}
+
+/// A link's rectangles across wrapped lines.
+fn segments(links: &[Link], index: usize) -> Vec<Bounds> {
+  let Some(link) = links.get(index) else { return Vec::new() };
+  let mut segments = vec![link.bounds];
+  // Repeated citations would look wrapped.
+  if !matches!(link.target, Target::Uri(_)) {
+    return segments;
+  }
+  let mut rest: Vec<_> = (links.iter().enumerate())
+    .filter(|(at, other)| *at != index && other.target == link.target)
+    .map(|(_, other)| other.bounds)
+    .collect();
+  while let Some(at) =
+    rest.iter().position(|b| segments.iter().any(|segment| wraps(*segment, *b)))
+  {
+    segments.push(rest.swap_remove(at));
+  }
+  segments
+}
+
+/// Whether one rectangle continues the other's line.
+fn wraps(a: Bounds, b: Bounds) -> bool {
+  let (upper, lower) = if a.y0 <= b.y0 { (a, b) } else { (b, a) };
+  let height = upper.height().max(lower.height());
+  let below = lower.y0 >= upper.y0 + height / 2.0;
+  // Wrapped text restarts at or left.
+  below && lower.y0 - upper.y1 < height && lower.x0 <= upper.x0 + 1.0
 }
 
 fn reference(anchor: &str) -> bool {
@@ -550,5 +594,40 @@ mod tests {
       Some("http://arxiv.org/abs/1610.02357\n")
     );
     Ok(())
+  }
+
+  /// Links, the hovered index, segment tops.
+  type Case<'a> = (&'a [Link], usize, &'a [f32]);
+
+  #[test]
+  fn segments_join_wrapped_addresses() {
+    let uri = Target::Uri("https://example.com/".into());
+    let cite = Target::Page(PageId(3));
+    let link = |target: &Target, x0: f32, y0: f32| Link {
+      bounds: Bounds { x0, y0, x1: x0 + 100.0, y1: y0 + 12.0 },
+      target: target.clone(),
+    };
+    let wrapped = [
+      link(&uri, 200.0, 100.0),
+      link(&uri, 50.0, 114.0),
+      link(&uri, 50.0, 128.0),
+    ];
+    // (links, hovered) -> segment tops
+    let cases: [Case; 7] = [
+      (&wrapped, 0, &[100.0, 114.0, 128.0]),
+      (&wrapped, 2, &[100.0, 114.0, 128.0]),
+      (&wrapped[..2], 1, &[100.0, 114.0]),
+      // Starts right of the line above.
+      (&[link(&uri, 50.0, 100.0), link(&uri, 200.0, 114.0)], 0, &[100.0]),
+      (&[link(&uri, 200.0, 100.0), link(&uri, 50.0, 140.0)], 0, &[100.0]),
+      (&[link(&cite, 200.0, 100.0), link(&cite, 50.0, 114.0)], 0, &[100.0]),
+      (&[link(&uri, 50.0, 100.0), link(&cite, 50.0, 114.0)], 0, &[100.0]),
+    ];
+    for (step, (links, index, want)) in cases.into_iter().enumerate() {
+      let mut tops: Vec<_> =
+        segments(links, index).iter().map(|b| b.y0).collect();
+      tops.sort_by(f32::total_cmp);
+      assert_eq!(tops, want, "case {step}");
+    }
   }
 }

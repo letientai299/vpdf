@@ -18,6 +18,20 @@ use vpdf::trace::Drawable;
 
 /// Page 1 links: page 2, web, itself.
 fn link_pdf(path: &Path) -> Result<()> {
+  let page2 = "/Dest [6 0 R /XYZ 0 190 0]";
+  let web = "/A << /S /URI /URI (https://example.com/) >>";
+  let targets = [page2, web, "/Dest [3 0 R /XYZ 0 150 0]"];
+  lines_pdf(path, LINES.into_iter().zip(targets))
+}
+
+/// Link rectangles over lines 1, 2, and 4.
+const LINES: [&str; 3] = ["15 162 285 192", "15 138 285 160", "15 92 285 112"];
+
+/// Page 1 links: (rectangle, target).
+fn lines_pdf<'a>(
+  path: &Path,
+  links: impl Iterator<Item = (&'a str, &'a str)>,
+) -> Result<()> {
   let content = |lines: &[&str]| {
     let mut content = String::from("BT /F1 18 Tf 24 TL 20 170 Td");
     for line in lines {
@@ -49,16 +63,11 @@ fn link_pdf(path: &Path) -> Result<()> {
     "<< /Type /Outlines /First 9 0 R /Last 9 0 R /Count 1 >>".to_owned(),
     "<< /Title (Results) /Parent 8 0 R /Dest [6 0 R /XYZ 0 200 0] >>"
       .to_owned(),
-    "<< /Type /Annot /Subtype /Link /Rect [15 162 285 192] \
-     /Dest [6 0 R /XYZ 0 190 0] >>"
-      .to_owned(),
-    "<< /Type /Annot /Subtype /Link /Rect [15 138 285 160] \
-     /A << /S /URI /URI (https://example.com/) >> >>"
-      .to_owned(),
-    "<< /Type /Annot /Subtype /Link /Rect [15 92 285 112] \
-     /Dest [3 0 R /XYZ 0 150 0] >>"
-      .to_owned(),
   ];
+  let annots = links.map(|(rect, target)| {
+    format!("<< /Type /Annot /Subtype /Link /Rect [{rect}] {target} >>")
+  });
+  let objects: Vec<_> = objects.into_iter().chain(annots).collect();
   common::write_pdf(path, &objects, "")
 }
 
@@ -208,6 +217,45 @@ fn hovered_links_show_their_destination() -> Result<()> {
     assert!(session.app().hover_link().is_some(), "text={text_mode}");
     assert!(session.pointer_left());
     assert!(session.app().hover_link().is_none(), "leaving clears the tint");
+  }
+  Ok(())
+}
+
+/// Wrapped lines of one address tint together.
+#[test]
+fn wrapped_links_tint_whole() -> Result<()> {
+  let uri = "/A << /S /URI /URI (https://example.com/long) >>";
+  // Line 1's segment ends it; line 2's starts the next.
+  let rects = ["120 162 285 192", "15 138 150 160", LINES[2]];
+  for text_mode in [false, true] {
+    let wrapped =
+      |path: &Path| lines_pdf(path, rects.into_iter().zip([uri; 3]));
+    let (_directory, mut session) = open(wrapped, text_mode)?;
+    let mut plain = Vec::new();
+    session.app().draw(&mut plain)?;
+    // Tints drawn per segment.
+    let mut each = std::collections::BTreeSet::new();
+    // (hovered link) -> tinted segments
+    for (index, want) in [(0, 2), (1, 2), (2, 1)] {
+      let at = cell(&mut session, Hit::Link(PageId(0), index))?;
+      mouse(&mut session, MouseEventKind::Moved, at)?;
+      let segments = session.app().hover_segments().map(|(_, s)| s.len());
+      assert_eq!(segments, Some(want), "text={text_mode} link {index}");
+      let mut tinted = Vec::new();
+      session.app().draw(&mut tinted)?;
+      let tinted = String::from_utf8_lossy(&tinted);
+      let drawn = if text_mode {
+        // One underlined run per line.
+        tinted.matches("\x1b[0;4;36m").count()
+      } else {
+        let placements = |frame: &str| frame.matches("a=p,").count();
+        placements(&tinted) - placements(&String::from_utf8_lossy(&plain))
+      };
+      assert_eq!(drawn % want, 0, "text={text_mode} link {index} drawn");
+      each.insert(drawn / want);
+    }
+    assert_eq!(each.len(), 1, "text={text_mode}: {each:?}");
+    assert!(!each.contains(&0), "text={text_mode}: tinted");
   }
   Ok(())
 }

@@ -161,9 +161,11 @@ impl App {
     if let Some(landing) = &self.landing {
       self.line_band(landing.position, crate::theme::LANDING, screen, out)?;
     }
-    if let Some((page, link)) = self.hover_link() {
-      let rect = self.layout.project(page, link.bounds, self.reader.scroll);
-      self.tint(rect, crate::theme::LINK, screen, out)?;
+    if let Some((page, segments)) = self.hover_segments() {
+      for bounds in segments {
+        let rect = self.layout.project(page, bounds, self.reader.scroll);
+        self.tint(rect, crate::theme::LINK, screen, out)?;
+      }
     }
     if !self.search.hidden {
       let visible = self.layout.visible(self.reader.scroll);

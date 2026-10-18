@@ -23,7 +23,7 @@ pub struct Link {
   pub target: Target,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Target {
   Page(PageId),
   Point { page: PageId, x: f32, y: f32 },

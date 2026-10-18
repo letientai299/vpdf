@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::reader::SelectionKind;
-use crate::text::{Glyph, Position, Text};
+use crate::text::{Bounds, Glyph, Position, Text};
 use crate::theme;
 use std::io::Write;
 use std::sync::Arc;
@@ -152,8 +152,8 @@ impl App {
     let (text, view) = self.next_text_view()?;
     self.text_top = view.top;
     self.text_drawn = Some(view.top);
-    let hovered = self.hover_link().filter(|(on, _)| *on == page);
-    let hovered = hovered.map(|(_, link)| link.bounds);
+    let hovered = self.hover_segments().filter(|(on, _)| *on == page);
+    let hovered = hovered.map_or_default(|(_, segments)| segments);
     let lines = text.lines.iter().skip(view.top.line).take(view.height);
     for (row, line) in lines.enumerate() {
       write!(out, "{}", self.at.goto(row, self.left))?;
@@ -168,14 +168,14 @@ impl App {
           self.at.goto(row, self.left)
         )?;
       }
-      // Lines beside the link skip glyph tests.
+      // Test glyphs against this line's segments.
       let ends = line.glyphs.first().zip(line.glyphs.last());
-      let hovered = hovered.filter(|bounds| {
-        ends.is_some_and(|(first, last)| {
-          let level = first.bounds.union(last.bounds);
-          level.y1 >= bounds.y0 && level.y0 <= bounds.y1
-        })
-      });
+      let level = ends.map(|(first, last)| first.bounds.union(last.bounds));
+      let beside = |bounds: &&Bounds| {
+        level
+          .is_some_and(|level| level.y1 >= bounds.y0 && level.y0 <= bounds.y1)
+      };
+      let near: Vec<_> = hovered.iter().filter(beside).collect();
       let mut current = "";
       let mut written = 0;
       for (glyph, column, ch) in view.shown(&line.glyphs) {
@@ -185,7 +185,7 @@ impl App {
         written = column + cells(ch);
         let line = view.top.line + row;
         let pos = Position { page, line, glyph };
-        let linked = hovered.is_some_and(|bounds| {
+        let linked = near.iter().any(|bounds| {
           let (x, y) = ch.bounds.centre();
           bounds.contains(x, y)
         });
