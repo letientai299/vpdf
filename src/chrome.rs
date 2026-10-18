@@ -14,6 +14,7 @@ pub enum Chrome {
   Section,
   /// The page counter: opens the overview.
   Pages,
+  Matches,
   /// The zoom label: fits width.
   Zoom,
 }
@@ -42,6 +43,7 @@ impl App {
       }
       (MouseButton::Left, Chrome::Section) => return self.outline_here(),
       (MouseButton::Left, Chrome::Pages) => Action::Overview,
+      (MouseButton::Left, Chrome::Matches) => Action::Panel(PanelKind::Results),
       (MouseButton::Left, Chrome::Zoom) => Action::Fit,
       _ => return Ok(()),
     };

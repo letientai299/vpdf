@@ -198,11 +198,15 @@ impl App {
     if !right.is_empty() {
       right.push_str("  ");
     }
-    let (mut pages, mut zoom) = (0..0, 0..0);
+    let (mut pages, mut zoom, mut matches) = (0..0, 0..0, 0..0);
     // The recent view's document is closed; it shows no position.
     let covered = self.covered();
     if !covered {
+      let start = right.width();
       right += &self.search_count();
+      if !self.panel_focused() {
+        matches = start..right.width();
+      }
       let start = right.width();
       write!(
         right,
@@ -231,6 +235,7 @@ impl App {
       right,
       pages,
       zoom,
+      matches,
     };
     let Some(room) =
       columns.checked_sub(line.left.width() + line.right.width() + 1)
@@ -286,6 +291,9 @@ impl App {
       0
     };
     let at = column.checked_sub(start);
+    if at.is_some_and(|at| line.matches.contains(&at)) {
+      return Some(Chrome::Matches);
+    }
     // Thumbnails take neither; text has none.
     let paged = self.overview.is_none();
     if paged && !self.text_mode && at.is_some_and(|at| line.pages.contains(&at))
@@ -333,6 +341,7 @@ struct Line {
   right: String,
   /// The page counter within `right`.
   pages: std::ops::Range<usize>,
+  matches: std::ops::Range<usize>,
   /// The zoom label within `right`.
   zoom: std::ops::Range<usize>,
 }

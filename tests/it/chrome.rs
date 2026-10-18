@@ -1208,3 +1208,20 @@ fn outline_follows_show_the_scrollbar() -> Result<()> {
   assert!(app.bar_until().is_some(), "followed rows show the bar");
   Ok(())
 }
+
+#[test]
+fn match_count_opens_results() -> Result<()> {
+  for text in [false, true] {
+    let (_directory, mut session) = session(text)?;
+    session.app().start_search("results", false, false)?;
+    crate::common::search_loaded(session.app())?;
+    let at = chrome_cell(&mut session, vpdf::chrome::Chrome::Matches)?;
+    mouse(&mut session, MouseEventKind::Moved, at)?;
+    assert_eq!(session.app().hover, Hit::Chrome);
+    click(&mut session, at);
+    let panel = session.app().panel.as_ref().unwrap();
+    assert_eq!(panel.kind, vpdf::keys::PanelKind::Results);
+    assert!(panel.focused);
+  }
+  Ok(())
+}
