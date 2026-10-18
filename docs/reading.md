@@ -50,7 +50,11 @@ another file does not change the selected entry.
 
 Preview an internal reference to inspect its destination before following it.
 The preview is a temporary reading surface with its own scrolling. Hovering an
-internal link can open it without moving the reading position. The status line
+internal link can open it without moving the reading position. It opens in the
+pane under the pointer, stays while the pointer travels from the link into it,
+and closes when the pointer leaves both or the link leaves the view. A left
+click inside any link preview follows it, and the status line keeps its
+destination while the pointer is over it. The status line
 names what the pointer rests on: a link's destination, the reference a citation
 cites, a note, a clipped row, or a thumbnail's page and the section at its top.
 Once the pointer moves, that detail covers an older message and takes room from

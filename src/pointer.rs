@@ -165,7 +165,7 @@ pub enum Hit {
   Row(usize),
   /// An overview thumbnail.
   Thumbnail(PageId),
-  /// The drawn preview; hover previews follow clicks.
+  /// The drawn preview; link previews follow clicks.
   Preview {
     follows: bool,
   },

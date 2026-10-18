@@ -684,7 +684,7 @@ impl App {
 
   /// Closes key-driven state as focus leaves.
   pub fn blur(&mut self) -> Result<()> {
-    // Panes share one preview image; only the focused pane shows one.
+    // Focus loss closes this pane's overlays.
     self.dismiss_overlay();
     self.hints = None;
     self.drop_scrub();
@@ -1055,7 +1055,8 @@ impl App {
         return Ok(Hit::Item(list, self.items(list).at(column, row)));
       }
       Region::Preview => {
-        let follows = self.hover_peek().is_some();
+        let peek = self.peek.as_ref();
+        let follows = peek.is_some_and(crate::preview::Preview::follows);
         return Ok(Hit::Preview { follows });
       }
       Region::Overlay => {

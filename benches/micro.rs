@@ -701,6 +701,9 @@ fn preview_draw() -> Result<()> {
       app.graphics.end(&mut out).expect("end preview");
       black_box(&out);
     })?;
+    measure(&format!("preview stray check text={text}"), || {
+      black_box(&mut app).drop_stray_preview();
+    })?;
   }
   Ok(())
 }

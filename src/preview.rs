@@ -26,6 +26,8 @@ pub struct Preview {
   pub origin: Origin,
   /// Where the last frame drew it.
   pub placement: Option<Placement>,
+  /// Its source has shown since it opened.
+  seen: bool,
 }
 
 /// A drawn preview's cells.
@@ -33,8 +35,8 @@ pub struct Preview {
 pub struct Placement {
   /// The preview, border included.
   pub area: Rect,
-  /// `area` plus rows over to its source.
-  pub reach: Rect,
+  /// Gap cells to its link.
+  pub bridge: Rect,
   /// The view it was drawn in.
   pub(crate) view: (u32, Position),
 }
@@ -46,6 +48,11 @@ impl Preview {
       Origin::Hover(page, index) => Some((page, index)),
       Origin::Key => None,
     }
+  }
+
+  /// Clicks and Enter follow; notes have none.
+  pub fn follows(&self) -> bool {
+    !matches!(self.view, View::Note { .. })
   }
 }
 
@@ -111,6 +118,8 @@ impl App {
         self.layout.pages[page.0].matrix.transform_xy(x, y - ABOVE).1;
       self.preview_image(self.preview_key(page, projected as i32)?)?
     };
+    // Panel notes may open off screen.
+    let seen = self.visible_position(source).unwrap_or(false);
     self.peek = Some(Preview {
       target,
       page,
@@ -119,6 +128,7 @@ impl App {
       view,
       origin: Origin::Key,
       placement: None,
+      seen,
     });
     Ok(())
   }
@@ -132,6 +142,7 @@ impl App {
       return;
     }
     let columns = self.note_columns();
+    let seen = self.visible_position(position).unwrap_or(false);
     let target =
       annotation.areas.first().map_or(Target::Page(position.page), |area| {
         Target::Point { page: position.page, x: area.x0, y: area.y0 }
@@ -143,6 +154,7 @@ impl App {
       serial: crate::graphics::serial(),
       origin: Origin::Key,
       placement: None,
+      seen,
       view: View::Note {
         top: 0,
         lines: wrap(&annotation.contents, columns),
@@ -332,38 +344,84 @@ impl App {
     self.graphics.backdrop(rect, [255; 4], screen, self.left, out)
   }
 
-  /// Records `frame` and its reach to `source`.
-  fn place_preview(&mut self, frame: Rect, source: Option<Bounds>) {
+  /// Records `frame` and its bridge to `link`.
+  fn place_preview(&mut self, frame: Rect, link: Option<Bounds>) {
+    let bridge = link.map_or_default(|link| self.bridge(frame, link));
+    let view = self.view_key();
+    let placement = Placement { area: frame, bridge, view };
+    if let Some(peek) = &mut self.peek {
+      peek.placement = Some(placement);
+    }
+  }
+
+  /// Cells from `link`'s edge row to `frame` (U2).
+  fn bridge(&self, frame: Rect, link: Bounds) -> Rect {
     let screen = self.layout.screen;
     let (width, height) =
       (f32::from(screen.cell_width), f32::from(screen.cell_height));
     let left = usize::from(self.left);
-    let (mut x0, mut y0) = (usize::from(frame.column), usize::from(frame.row));
-    let mut x1 = x0 + usize::from(frame.columns);
-    let mut y1 = y0 + usize::from(frame.rows);
-    // Reach the source's columns and gap rows.
-    if let Some(rect) = source {
-      x0 = x0.min(left + (rect.x0 / width) as usize);
-      x1 = x1.max(left + (rect.x1 / width).ceil() as usize);
-      y0 = y0.min((rect.y1 / height).ceil() as usize);
-      y1 = y1.max((rect.y0 / height) as usize);
-    }
+    let (start, end) = (
+      usize::from(frame.column),
+      usize::from(frame.column) + usize::from(frame.columns),
+    );
+    // Touch the frame's nearest column, and its edge row.
+    let x0 = (left + (link.x0 / width) as usize).min(end - 1);
+    let x1 = (left + (link.x1 / width).ceil() as usize).max(start + 1);
+    let below = f32::from(frame.row) * height >= link.y0;
+    let (y0, y1) = if below {
+      ((link.y1 / height) as usize, usize::from(frame.row) + 1)
+    } else {
+      let bottom = usize::from(frame.row) + usize::from(frame.rows);
+      (bottom - 1, (link.y0 / height).ceil() as usize)
+    };
     let cells = |value: usize| u16::try_from(value).unwrap_or(u16::MAX);
-    let reach = Rect {
+    Rect {
       column: cells(x0),
       row: cells(y0),
       columns: cells(x1.saturating_sub(x0)),
       rows: cells(y1.saturating_sub(y0)),
-    };
-    let placement = Placement { area: frame, reach, view: self.view_key() };
-    if let Some(peek) = &mut self.peek {
-      peek.placement = Some(placement);
     }
   }
 
   /// Pane cells the drawn preview covers.
   pub fn preview_cells(&self) -> Option<Rect> {
     self.peek.as_ref()?.placement.map(|at| at.area)
+  }
+
+  /// The previewed link's destination for status.
+  pub(crate) fn preview_label(&mut self) -> Option<String> {
+    let peek = self.peek.as_ref().filter(|peek| peek.follows())?;
+    let (target, hovered) = (peek.target.clone(), peek.hovered());
+    // As on its link: citations show the reference.
+    let link = hovered
+      .and_then(|(page, index)| Some((page, self.link(page, index).ok()??)));
+    if let Some((page, link)) = link {
+      return Some(self.link_label(page, &link));
+    }
+    Some(crate::links::destination(&target, &self.doc, ""))
+  }
+
+  /// The hovered link's box; PDF view only.
+  fn hovered_box(&mut self) -> Option<Bounds> {
+    let (page, index) = self.peek.as_ref()?.hovered()?;
+    let link = self.link(page, index).ok().flatten()?;
+    let pdf = !self.text_mode;
+    pdf.then(|| self.layout.project(page, link.bounds, self.reader.scroll))
+  }
+
+  /// Closes it once its source leaves (U17).
+  pub fn drop_stray_preview(&mut self) {
+    let Some(source) = self.peek.as_ref().map(|peek| peek.source) else {
+      return;
+    };
+    // Unreadable text counts as gone.
+    let shown = self.visible_position(source).unwrap_or(false);
+    let Some(peek) = &mut self.peek else { return };
+    if shown {
+      peek.seen = true;
+    } else if peek.seen {
+      self.peek = None;
+    }
   }
 
   /// Cells `preview` covers beside `cursor`.
@@ -416,7 +474,8 @@ impl App {
     if over_page {
       self.preview_backdrop(out, frame)?;
     }
-    self.place_preview(frame, cursor);
+    let link = self.hovered_box().or(cursor);
+    self.place_preview(frame, link);
     let Some(preview) = &self.peek else { return Ok(()) };
     let border = if over_page { IMAGE_BORDER } else { theme::CURRENT };
     let text_style = if over_page { NOTE_TEXT } else { theme::RESET };

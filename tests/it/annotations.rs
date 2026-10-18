@@ -157,6 +157,10 @@ fn k_previews_selected_note() -> Result<()> {
     let original = app.reader.cursor;
     app.panel.as_mut().unwrap().selected = 2;
     press(&mut app, KeyCode::Char('K'))?;
+    // An off-screen source keeps it (U17).
+    let shown = app.layout.visible(app.reader.scroll);
+    assert!(!shown.contains(&position(&app, 2).page.0), "off screen");
+    app.drop_stray_preview();
     let out = drawn(&mut app)?;
     assert!(out.contains("another note"));
     assert!(!out.contains("margin note"));

@@ -1264,10 +1264,34 @@ fn hover_open(
   mouse(session, MouseEventKind::Moved, (screen.columns - 1, screen.rows - 2))?;
   mouse(session, MouseEventKind::Moved, link)?;
   let later = std::time::Instant::now() + vpdf::links::REST;
-  anyhow::ensure!(session.app().hover_preview(later), "a due preview");
+  anyhow::ensure!(session.hover_preview(later), "a due preview");
   session.draw_frame(&mut Vec::new())?;
-  let at = session.app().peek.as_ref().and_then(|peek| peek.placement);
-  at.map(|at| at.area).ok_or_else(|| anyhow::anyhow!("a drawn preview"))
+  drawn_preview(session)
+}
+
+/// Screen cells of the drawn preview.
+fn drawn_preview(session: &mut Session) -> Result<vpdf::split::Rect> {
+  let shown = session.tab().panes.iter().find_map(|app| {
+    let area = app.peek.as_ref()?.placement?.area;
+    Some(vpdf::split::Rect {
+      column: area.column + app.at.column,
+      row: area.row + app.at.row,
+      ..area
+    })
+  });
+  shown.ok_or_else(|| anyhow::anyhow!("a drawn preview"))
+}
+
+/// Opens `K` on page 1's first link.
+fn key_open(session: &mut Session) -> Result<vpdf::split::Rect> {
+  let app = session.app();
+  let link = app.doc.links(PageId(0))?[0].bounds;
+  let text = app.doc.text(PageId(0))?;
+  let (x, y) = link.centre();
+  app.go_to(text.nearest(PageId(0), x, y), true)?;
+  app.preview_link()?;
+  session.draw_frame(&mut Vec::new())?;
+  drawn_preview(session)
 }
 
 /// Rests open passive previews.
@@ -1290,7 +1314,9 @@ fn resting_on_links_previews_them() -> Result<()> {
     // The row past the link keeps it.
     let below = area.row >= internal.1;
     let gap = if below { internal.1 + 1 } else { internal.1 - 1 };
-    mouse(&mut session, MouseEventKind::Moved, (internal.0, gap))?;
+    // In text, column 0 below is the next link.
+    let column = internal.0.max(area.column);
+    mouse(&mut session, MouseEventKind::Moved, (column, gap))?;
     assert!(session.app().peek.is_some(), "text={text_mode} gap");
     let inside = (area.column + area.columns / 2, area.row + area.rows / 2);
     mouse(&mut session, MouseEventKind::Moved, inside)?;
@@ -1315,8 +1341,9 @@ fn popups_hide_links_beneath() -> Result<()> {
     (true, "menu", Shape::Pointer),
     (false, "hover", Shape::Pointer),
     (true, "hover", Shape::Pointer),
-    (false, "key", Shape::Default),
-    (true, "key", Shape::Default),
+    // Clicks follow in both previews (U14).
+    (false, "key", Shape::Pointer),
+    (true, "key", Shape::Pointer),
   ];
   for (text_mode, popup, shape) in cases {
     let (_directory, mut session) = session(text_mode)?;
@@ -1327,16 +1354,7 @@ fn popups_hide_links_beneath() -> Result<()> {
         session.app().context_menu.as_ref().expect("a menu").area()
       }
       "hover" => hover_open(&mut session, internal)?,
-      _ => {
-        let app = session.app();
-        let link = app.doc.links(PageId(0))?[0].bounds;
-        let text = app.doc.text(PageId(0))?;
-        let (x, y) = link.centre();
-        app.go_to(text.nearest(PageId(0), x, y), true)?;
-        app.preview_link()?;
-        session.draw_frame(&mut Vec::new())?;
-        session.app().preview_cells().expect("a drawn preview")
-      }
+      _ => key_open(&mut session)?,
     };
     let app = session.app();
     let mut cells = (area.row..area.row + area.rows).flat_map(|row| {
@@ -1362,7 +1380,11 @@ fn popups_hide_links_beneath() -> Result<()> {
     let link = matches!(hover, Hit::Link(..));
     assert!(!link && hover.shape() == shape, "{at}: {hover:?}");
     assert!(session.app().hover_link().is_none(), "{at}: no tint");
-    assert!(!status(&mut session)?.contains("→"), "{at}: no label");
+    // Previews name their destination (U24).
+    let bar = status(&mut session)?;
+    let label = (popup != "menu").then_some("→ p. 2 · Results");
+    assert_eq!(bar.contains('→'), label.is_some(), "{at}: label");
+    assert!(label.is_none_or(|label| bar.contains(label)), "{at}: {bar}");
     press(&mut session, KeyCode::Esc)?;
     session.draw_frame(&mut Vec::new())?;
     let app = session.app();
@@ -1722,6 +1744,22 @@ fn hover_previews_answer_input() -> Result<()> {
   Ok(())
 }
 
+/// A click inside cancels pending keys (r15 #8).
+#[test]
+fn preview_clicks_cancel_keys() -> Result<()> {
+  use crossterm::event::KeyCode;
+  let (_directory, mut session) = session(false)?;
+  let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
+  press(&mut session, KeyCode::Char('g'))?;
+  let area = hover_open(&mut session, internal)?;
+  assert!(!session.app().keys.pending().is_empty(), "g waits");
+  click(&mut session, (area.column + 1, area.row + 1))?;
+  let app = session.app();
+  assert_eq!(app.reader.cursor.page, PageId(1), "followed");
+  assert!(app.keys.pending().is_empty(), "g cancelled");
+  Ok(())
+}
+
 /// A click beside the link closes it.
 #[test]
 fn clicks_beside_links_close_previews() -> Result<()> {
@@ -1747,6 +1785,224 @@ fn scrolls_close_hover_previews() -> Result<()> {
   Ok(())
 }
 
+/// Link boxes above the glyphs' descent.
+fn tight_pdf(path: &Path) -> Result<()> {
+  let page2 = "/Dest [6 0 R /XYZ 0 190 0]";
+  lines_pdf(path, [("15 170 285 183", page2)].into_iter())
+}
+
+/// Gap pixel reports keep the preview (U2).
+#[test]
+fn pixel_gaps_keep_previews() -> Result<()> {
+  let (_directory, mut session) = open(tight_pdf, false)?;
+  let link = cell(&mut session, Hit::Link(PageId(0), 0))?;
+  let area = hover_open(&mut session, link)?;
+  let app = session.app();
+  let bounds = app.doc.links(PageId(0))?[0].bounds;
+  let rect = app.layout.project(PageId(0), bounds, app.reader.scroll);
+  let height = app.screen.cell_height;
+  let x = f32::midpoint(rect.x0, rect.x1) as u16;
+  let moved = |y| Mouse {
+    kind: MouseKind::Moved,
+    at: Spot::Pixel { x, y },
+    modifiers: KeyModifiers::NONE,
+  };
+  let gap = rect.y1 as u16 + 1..area.row * height;
+  assert!(!gap.is_empty(), "the box stops above the frame");
+  for y in gap {
+    session.mouse_report(moved(y))?;
+    let app = session.app();
+    assert!(!matches!(app.hover, Hit::Link(..)), "{y}: off the box");
+    assert!(app.peek.is_some(), "{y}: the gap keeps it");
+  }
+  session.mouse_report(moved((area.row + 2) * height))?;
+  assert!(session.app().peek.is_some(), "inside");
+  Ok(())
+}
+
+/// A link rectangle and its target.
+type Annot<'a> = (&'a str, &'a str);
+
+/// Sideways moves close the preview (r9 #1).
+#[test]
+fn sideways_moves_close_previews() -> Result<()> {
+  let page2 = "/Dest [6 0 R /XYZ 0 190 0]";
+  let home = "/Dest [3 0 R /XYZ 0 150 0]";
+  let (left, right) = ("15 162 70 192", "75 162 285 192");
+  // (links, what lies beside the first)
+  let cases: [(&[Annot], Hit); 2] = [
+    (&[(left, page2), (right, home)], Hit::Link(PageId(0), 1)),
+    (&[(left, page2)], Hit::Text),
+  ];
+  for (links, beside) in cases {
+    let write = |path: &Path| lines_pdf(path, links.iter().copied());
+    let (_directory, mut session) = open(write, false)?;
+    let link = cell(&mut session, Hit::Link(PageId(0), 0))?;
+    let area = hover_open(&mut session, link)?;
+    let app = session.app();
+    let link_hit = Hit::Link(PageId(0), 0);
+    let row = (0..area.row).rev().find(|&row| {
+      app.hovered(Region::Page, link.0, row, None).ok() == Some(link_hit)
+    });
+    let row = row.expect("a link row above the frame");
+    let on = |app: &mut vpdf::app::App, column| {
+      app.hovered(Region::Page, column, row, None).ok()
+    };
+    let columns = app.screen.columns;
+    let past = (link.0..columns).find(|&c| on(app, c) != Some(link_hit));
+    // The bridge keeps the edge cell.
+    let past = past.expect("the link's end") + 1;
+    let column = (past..columns).find(|&c| on(app, c) == Some(beside));
+    let to = (column.expect("a cell beside the link"), row);
+    mouse(&mut session, MouseEventKind::Moved, to)?;
+    assert!(session.app().peek.is_none(), "{beside:?}");
+    let later = std::time::Instant::now() + vpdf::links::REST;
+    let next = matches!(beside, Hit::Link(..));
+    assert_eq!(session.hover_preview(later), next, "{beside:?}");
+  }
+  Ok(())
+}
+
+/// `K` previews follow clicks too (U14).
+#[test]
+fn key_previews_follow_clicks() -> Result<()> {
+  let (left, right) = (MouseButton::Left, MouseButton::Right);
+  // (button, inside) -> followed
+  let cases = [(left, true, true), (right, true, false), (left, false, false)];
+  for text_mode in [false, true] {
+    for (button, inside, followed) in cases {
+      let (_directory, mut session) = session(text_mode)?;
+      let area = key_open(&mut session)?;
+      let target = session.app().target;
+      let screen = session.app().screen;
+      let at = if inside {
+        (area.column + 1, area.row + 1)
+      } else {
+        (screen.columns - 1, screen.rows - 2)
+      };
+      mouse(&mut session, MouseEventKind::Down(button), at)?;
+      mouse(&mut session, MouseEventKind::Up(button), at)?;
+      let app = session.app();
+      let case = format!("text={text_mode} {button:?} inside={inside}");
+      assert!(app.peek.is_none() && app.context_menu.is_none(), "{case}");
+      let page = PageId(usize::from(followed));
+      assert_eq!(app.reader.cursor.page, page, "{case}");
+      if !followed {
+        assert_eq!(app.target, target, "{case}: only dismissed");
+      }
+    }
+  }
+  Ok(())
+}
+
+/// Previews move, then close, with links (U17).
+#[test]
+fn previews_follow_links() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  let first = key_open(&mut session)?;
+  let screen = session.app().screen;
+  let away = (screen.columns - 1, screen.rows - 2);
+  let mut rows = vec![first.row];
+  for _ in 0..10 {
+    mouse(&mut session, MouseEventKind::ScrollDown, away)?;
+    let app = session.app();
+    if let Some(scroll) = app.animation.take() {
+      app.reader.scroll = scroll.target;
+    }
+    session.draw_frame(&mut Vec::new())?;
+    match session.app().preview_cells() {
+      Some(area) => rows.push(area.row),
+      None => break,
+    }
+  }
+  assert!(session.app().peek.is_none(), "closed: {rows:?}");
+  assert!(rows.windows(2).all(|pair| pair[1] < pair[0]), "moved: {rows:?}");
+  assert!(rows.len() > 1, "shown while the link was: {rows:?}");
+  // A scroll before its first frame still closes it.
+  session.app().reader.scroll = 0.0;
+  key_open(&mut session)?;
+  session.app().peek.as_mut().expect("a preview").placement = None;
+  session.app().reader.scroll += 300.0;
+  session.draw_frame(&mut Vec::new())?;
+  assert!(session.app().peek.is_none(), "closed before a frame");
+  Ok(())
+}
+
+/// A split session, other pane, link cell.
+type Split = (tempfile::TempDir, Session, usize, (u16, u16));
+
+/// A split; the other pane and its link.
+fn split() -> Result<Split> {
+  let (directory, mut session) = session(false)?;
+  session.app().command("vsplit")?;
+  session.settle()?;
+  let index = 1 - session.tab().focus;
+  let link = cell_in(&mut session, index, Hit::Link(PageId(0), 0))?;
+  Ok((directory, session, index, link))
+}
+
+/// The pane under the pointer previews (U15).
+#[test]
+fn unfocused_panes_preview_too() -> Result<()> {
+  let (left, right) = (MouseButton::Left, MouseButton::Right);
+  // (button, inside) -> focus moves, followed
+  let cases = [
+    (left, true, true, true),
+    (right, true, true, false),
+    (left, false, false, false),
+  ];
+  for (button, inside, moves, followed) in cases {
+    let (_directory, mut session, index, link) = split()?;
+    let focused = session.app().id;
+    let other = session.tab().panes[index].id;
+    let area = hover_open(&mut session, link)?;
+    assert_eq!(session.app().id, focused, "rests keep focus");
+    let showing = session.tab().panes.iter().find(|app| app.peek.is_some());
+    assert_eq!(showing.map(|app| app.id), Some(other));
+    let app = session.app();
+    let blank = (app.at.column + 1, app.at.row);
+    let at = if inside { (area.column + 1, area.row + 1) } else { blank };
+    mouse(&mut session, MouseEventKind::Down(button), at)?;
+    mouse(&mut session, MouseEventKind::Up(button), at)?;
+    let case = format!("{button:?} inside={inside}");
+    let app = session.app();
+    assert_eq!(app.id, if moves { other } else { focused }, "{case}");
+    assert!(session.tab().panes.iter().all(|app| app.peek.is_none()));
+    let page = session.app().reader.cursor.page;
+    assert_eq!(page, PageId(usize::from(followed)), "{case}");
+  }
+  Ok(())
+}
+
+/// Focused overlays hold rests in other panes.
+#[test]
+fn focused_overlays_hold_rests() -> Result<()> {
+  for hold in ["menu", "prompt", "recent", "key"] {
+    let (_directory, mut session, _, link) = split()?;
+    match hold {
+      "menu" => {
+        let plain = cell(&mut session, Hit::Text)?;
+        right(&mut session, plain)?;
+      }
+      "prompt" => {
+        session.app().prompt = Some(Prompt::new(PromptKind::Command));
+      }
+      "recent" => {
+        session.app().command("recent")?;
+        session.settle()?;
+        assert!(session.app().covered(), "the recent view");
+      }
+      _ => {
+        key_open(&mut session)?;
+      }
+    }
+    mouse(&mut session, MouseEventKind::Moved, link)?;
+    let later = std::time::Instant::now() + vpdf::links::REST;
+    assert!(!session.hover_preview(later), "{hold}");
+  }
+  Ok(())
+}
+
 /// Owned overlays and presses hold previews back.
 #[test]
 fn rests_wait_for_free_input() -> Result<()> {
@@ -1765,5 +2021,19 @@ fn rests_wait_for_free_input() -> Result<()> {
   assert!(session.app().hover_due().is_some());
   mouse(&mut session, MouseEventKind::Down(MouseButton::Left), internal)?;
   assert!(session.app().hover_due().is_none(), "a press");
+  // Unfocused panes rest by the same rules (r15 #1).
+  let (_directory, mut session, index, link) = split()?;
+  mouse(&mut session, MouseEventKind::Moved, link)?;
+  let first = session.tab().panes[index].hover_due().expect("a rest");
+  std::thread::sleep(std::time::Duration::from_millis(5));
+  mouse(&mut session, MouseEventKind::Moved, link)?;
+  let again = session.tab().panes[index].hover_due().expect("a rest");
+  assert!(again > first, "motion restarts it");
+  let plain = cell(&mut session, Hit::Text)?;
+  right(&mut session, plain)?;
+  mouse(&mut session, MouseEventKind::Moved, link)?;
+  mouse(&mut session, MouseEventKind::Down(MouseButton::Left), link)?;
+  assert!(session.app().context_menu.is_none(), "the press dismissed");
+  assert!(session.tab().panes[index].hover_due().is_none(), "a press");
   Ok(())
 }

@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::app::{App, Request, TabMove, Tabline, Window};
+use crate::app::{App, InputOwner, Request, TabMove, Tabline, Window};
 use crate::decode::{Event, MouseKind, Reply, Size};
 use crate::dnd::{Dropped, Step, Target};
 use crate::document::PasswordRequired;
@@ -948,8 +948,8 @@ impl Session {
       }
       if changed {
         self.show_hover();
-      } else {
-        self.app().rest_again();
+      } else if let Some(app) = self.pointed_pane() {
+        app.rest_again();
       }
       let left = self.leave_check();
       // Bare motion: a release got lost.
@@ -965,9 +965,11 @@ impl Session {
     if wheel && self.app().prompt.is_some() {
       return Ok(false);
     }
-    // Presses and releases end a link rest.
+    // Presses and releases end rests in every pane.
     if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_)) {
-      self.app().calm_hover();
+      for app in &mut self.tab().panes {
+        app.calm_hover();
+      }
     }
     // A double click splits once.
     if mouse.kind == MouseEventKind::Down(MouseButton::Middle)
@@ -1044,6 +1046,7 @@ impl Session {
     if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
       self.resizing = None;
     }
+    self.press_hover_pane(mouse)?;
     let app = self.app();
     if app.item_press(mouse)? || app.context_press(mouse) {
       self.pointer.release();
@@ -1053,11 +1056,8 @@ impl Session {
     if self.on_completion(mouse) {
       return Ok(Some(false));
     }
-    if self.app().dismiss_click()? {
-      self.pointer.release();
-      return Ok(Some(true));
-    }
-    if self.app().hover_press(mouse)? {
+    let app = self.app();
+    if app.preview_press(mouse)? || app.dismiss_click()? {
       self.pointer.release();
       return Ok(Some(true));
     }
@@ -1349,6 +1349,13 @@ impl Session {
   /// Types `key` into the focused pane.
   fn type_key(&mut self, key: KeyEvent) -> Result<()> {
     let tab = &mut self.tabs[self.active];
+    // `App::key` closes the focused one's.
+    let focus = tab.focus;
+    for (index, app) in tab.panes.iter_mut().enumerate() {
+      if index != focus {
+        app.drop_hover_preview();
+      }
+    }
     let app = &mut tab.panes[tab.focus];
     let before = app.panel.as_ref().filter(|p| p.focused).map(|p| p.kind);
     app.clear_notes();
@@ -1395,17 +1402,67 @@ impl Session {
     self.leave_check() || changed
   }
 
-  /// Closes a hover preview the pointer left.
+  /// Closes hover previews the pointer left.
   fn leave_check(&mut self) -> bool {
-    if self.tabs.is_empty() || self.app().hover_peek().is_none() {
-      return false;
-    }
-    let pane = Pane::of(self.app());
     let spot = self.pointer.spot().map(|(mouse, _)| mouse);
-    let route =
-      spot.and_then(|mouse| pointer::route(&[pane], pane.id, None, mouse));
-    let at = route.map(|route| (route.mouse.column, route.mouse.row));
-    self.app().hover_leave(at)
+    let Some(tab) = self.tabs.get_mut(self.active) else { return false };
+    let mut left = false;
+    for app in &mut tab.panes {
+      if app.hover_peek().is_none() {
+        continue;
+      }
+      let pane = Pane::of(app);
+      let route =
+        spot.and_then(|mouse| pointer::route(&[pane], pane.id, None, mouse));
+      let at = route.map(|route| (route.mouse.column, route.mouse.row));
+      left |= app.hover_leave(at);
+    }
+    left
+  }
+
+  /// Inside another pane's preview focuses it; outside closes it.
+  fn press_hover_pane(&mut self, mouse: MouseEvent) -> Result<()> {
+    let tab = self.tab();
+    let shows = tab.panes.iter().position(|app| app.hover_peek().is_some());
+    let Some(index) = shows.filter(|index| *index != tab.focus) else {
+      return Ok(());
+    };
+    let app = &mut tab.panes[index];
+    if app.in_preview(mouse) {
+      return self.focus(self.active, index);
+    }
+    app.drop_hover_preview();
+    Ok(())
+  }
+
+  /// Opens a due hover preview, if any.
+  pub fn hover_preview(&mut self, now: Instant) -> bool {
+    !self.pointer.holding()
+      && self.resting().is_some_and(|app| app.hover_preview(now))
+  }
+
+  /// The pane under the pointer.
+  fn pointed_pane(&mut self) -> Option<&mut App> {
+    let pane = self.pointer.target()?.pane;
+    let tab = self.tabs.get_mut(self.active)?;
+    tab.panes.iter_mut().find(|app| app.id == pane)
+  }
+
+  /// The pointed pane, when free to preview.
+  fn resting(&mut self) -> Option<&mut App> {
+    let tab = self.tabs.get(self.active)?;
+    // Keyboard overlays hold rests everywhere.
+    let owner = tab.panes[tab.focus].input_owner();
+    let free = matches!(
+      owner,
+      InputOwner::Content | InputOwner::Panel | InputOwner::Overview
+    );
+    // Previews and recent cards share one picture.
+    let pictured = |app: &App| app.peek.is_some() || app.covered();
+    if !free || tab.panes.iter().any(pictured) {
+      return None;
+    }
+    self.pointed_pane()
   }
 
   /// Retests the last spot; the view changed.
@@ -1659,9 +1716,7 @@ impl Session {
       }
       changed |= app.bar_expired(now);
     }
-    if !self.pointer.holding() {
-      changed |= self.app().hover_preview(now);
-    }
+    changed |= self.hover_preview(now);
     let reader = &mut self.app().reader;
     if !reader.message.is_empty() {
       return changed;
@@ -1835,6 +1890,9 @@ impl Drawable for Session {
   /// Unfocused panes first, so the focused pane's prompt places the
   /// terminal cursor last.
   fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()> {
+    for app in &mut self.tab().panes {
+      app.drop_stray_preview();
+    }
     self.rehover();
     // Without a spot the pointer is elsewhere.
     if self.pointer.spot().is_some() {
@@ -2259,7 +2317,8 @@ fn idle(
     wait = wait.min(clue);
   }
   let held = session.pointer.holding();
-  if let Some(due) = session.app().hover_due().filter(|_| !held) {
+  let due = session.resting().and_then(App::hover_due);
+  if let Some(due) = due.filter(|_| !held) {
     wait = wait.min(due.saturating_duration_since(Instant::now()));
   }
   for app in &session.tab().panes {
@@ -2747,8 +2806,8 @@ mod tests {
       .collect()
   }
 
-  /// A one-line PDF in `directory`.
-  fn line_pdf(directory: &Path) -> Result<PathBuf> {
+  /// One text line; `annots` join the page.
+  fn line_pdf(directory: &Path, annots: &str) -> Result<PathBuf> {
     let pdf = directory.join("a.pdf");
     let content = "BT /F1 24 Tf 20 100 Td (alpha beta gamma) Tj ET";
     // MuPDF repairs the missing cross-reference table.
@@ -2758,7 +2817,7 @@ mod tests {
         "%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n\
          2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n\
          3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]\
-         /Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>> endobj\n\
+         /Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R{annots}>> endobj\n\
          4 0 obj <</Type/Font/Subtype/Type1/BaseFont/Helvetica>> endobj\n\
          5 0 obj <</Length {}>> stream\n{content}\nendstream endobj\n\
          trailer <</Root 1 0 R>>\n%%EOF\n",
@@ -2773,7 +2832,7 @@ mod tests {
   fn messages_yield_once_passed() -> Result<()> {
     type Step = fn(&mut App) -> Result<bool>;
     let directory = tempfile::tempdir()?;
-    let path = line_pdf(directory.path())?;
+    let path = line_pdf(directory.path(), "")?;
     let screen = Screen {
       columns: 80,
       rows: 24,
@@ -2838,7 +2897,7 @@ mod tests {
       origin: (0, 0),
     };
     let mut session = Session::new(None);
-    session.open(&line_pdf(directory.path())?, true, screen)?;
+    session.open(&line_pdf(directory.path(), "")?, true, screen)?;
     let app = session.app();
     let mut cells = (0..23).flat_map(|row| (0..80).map(move |c| (c, row)));
     let text = cells.find(|&(column, row)| {
@@ -2872,7 +2931,7 @@ mod tests {
   fn start_screen_drops_open_or_type() -> Result<()> {
     use base64::Engine;
     let directory = tempfile::tempdir()?;
-    let pdf = line_pdf(directory.path())?;
+    let pdf = line_pdf(directory.path(), "")?;
     let notes = directory.path().join("notes.txt");
     std::fs::write(&notes, "text")?;
     let screen = Screen {
@@ -3026,6 +3085,44 @@ mod tests {
     }
     assert!(session.app().reader.selection.is_some());
     assert!(!session.app().panel_focused());
+    Ok(())
+  }
+
+  /// Keys close previews in every pane (U15).
+  #[test]
+  fn keys_close_other_previews() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let link = "/Annots[<</Type/Annot/Subtype/Link/Rect[15 90 200 125]\
+                /Dest[3 0 R/XYZ 0 50 0]>>]";
+    let screen = Screen {
+      columns: 121,
+      rows: 40,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut session = Session::new(None);
+    session.open(&line_pdf(directory.path(), link)?, true, screen)?;
+    session.app().command("vsplit")?;
+    session.settle()?;
+    let tab = session.tab();
+    let index = 1 - tab.focus;
+    let app = &mut tab.panes[index];
+    let bounds = app.doc.links(PageId(0))?[0].bounds;
+    let rect = app.layout.project(PageId(0), bounds, app.reader.scroll);
+    let (x, y) = rect.centre();
+    let column = app.at.column + app.left + (x / 8.0) as u16;
+    let row = app.at.row + (y / 16.0) as u16;
+    let (kind, modifiers) = (MouseEventKind::Moved, KeyModifiers::NONE);
+    session.mouse(MouseEvent { kind, column, row, modifiers })?;
+    assert!(session.hover_preview(Instant::now() + crate::links::REST));
+    assert!(session.tab().panes[index].peek.is_some());
+    let mut events = std::collections::VecDeque::new();
+    crate::decode::Parser::default().feed(b"j", &mut events);
+    for event in events {
+      input(&mut session, act(event).expect("a key"), &mut Vec::new())?;
+    }
+    assert!(session.tab().panes.iter().all(|app| app.peek.is_none()));
     Ok(())
   }
 

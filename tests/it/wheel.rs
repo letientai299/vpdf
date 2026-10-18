@@ -52,8 +52,12 @@ fn wheel(session: &mut Session, flags: u16, at: (u16, u16)) -> Result<bool> {
 }
 
 /// `pages` of Helvetica, each `(size, lines)`, 300 pt wide and as tall
-/// as its lines; page 1 links to page 2 when `link` is set.
-fn pages_pdf(path: &Path, pages: &[(u32, usize)], link: bool) -> Result<()> {
+/// as its lines; page 1's `link` line links to page 2.
+fn pages_pdf(
+  path: &Path,
+  pages: &[(u32, usize)],
+  link: Option<usize>,
+) -> Result<()> {
   let count = pages.len();
   let kids = (0..count).fold(String::new(), |mut kids, page| {
     let _ = write!(kids, "{} 0 R ", 4 + 2 * page);
@@ -73,7 +77,7 @@ fn pages_pdf(path: &Path, pages: &[(u32, usize)], link: bool) -> Result<()> {
       write!(content, " (Line {line} of page {}) Tj T*", page + 1)?;
     }
     content.push_str(" ET");
-    let annots = if link && page == 0 {
+    let annots = if link.is_some() && page == 0 {
       format!("/Annots [{} 0 R]", 4 + 2 * count)
     } else {
       String::new()
@@ -88,9 +92,10 @@ fn pages_pdf(path: &Path, pages: &[(u32, usize)], link: bool) -> Result<()> {
       content.len()
     ));
   }
-  if link {
+  if let Some(line) = link {
     let (size, lines) = pages[0];
-    let top = 20 + (size + size / 3) as usize * lines.max(1);
+    let leading = (size + size / 3) as usize;
+    let top = 20 + leading * lines.max(1) - leading * line;
     objects.push(format!(
       "<< /Type /Annot /Subtype /Link /Rect [15 {} 200 {}] \
        /Dest [6 0 R /XYZ 0 2000 0] >>",
@@ -118,7 +123,7 @@ fn under(app: &App, (x, y): (u16, u16)) -> (usize, f32, f32) {
 fn ctrl_wheel_zooms_at_the_pointer() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("pages.pdf");
-  pages_pdf(&path, &[(18, 6), (18, 6), (18, 6)], false)?;
+  pages_pdf(&path, &[(18, 6), (18, 6), (18, 6)], None)?;
   // (pointer pixel, turns before, the turn, scroll first) -> zoom grows;
   // horizontal anchoring holds only while the page overflows.
   let cases = [
@@ -272,7 +277,7 @@ fn wheel_frames_only_when_something_moves() -> Result<()> {
 fn panel_preview_and_text_turns_frame_until_an_end() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("linked.pdf");
-  pages_pdf(&path, &[(18, 3), (10, 60), (18, 3)], true)?;
+  pages_pdf(&path, &[(18, 3), (10, 60), (18, 3)], Some(0))?;
   // A panel list: the help rows scroll down, not above the first.
   let mut panel = session(&path)?;
   panel.app().open_panel(vpdf::keys::PanelKind::Help)?;
@@ -298,7 +303,7 @@ fn panel_preview_and_text_turns_frame_until_an_end() -> Result<()> {
 fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("pages.pdf");
-  pages_pdf(&path, &[(18, 6); 40], false)?;
+  pages_pdf(&path, &[(18, 6); 40], None)?;
   let mut session = session(&path)?;
   let app = session.app();
   app.open_overview()?;
@@ -397,7 +402,8 @@ fn page(app: &mut App) -> Result<(f32, vpdf::text::Position)> {
 fn preview_takes_the_wheel_under_the_pointer() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("linked.pdf");
-  pages_pdf(&path, &[(18, 3), (10, 60), (18, 3)], true)?;
+  // The link stays shown while scrolling (U17).
+  pages_pdf(&path, &[(10, 60), (10, 60), (18, 3)], Some(30))?;
   let start = Instant::now();
   let at = |ms| start + Duration::from_millis(ms);
   for text in [false, true] {

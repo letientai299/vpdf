@@ -6,6 +6,7 @@ use crate::panel::{Destination, Row};
 use crate::panel_layout::Layout;
 use crate::pointer::{Hit, Hover};
 use crate::preview::{Origin, Preview};
+use crate::split::Rect;
 use crate::text::{Bounds, PageId, Text};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::sync::Arc;
@@ -75,21 +76,27 @@ impl App {
   /// The hovered link's destination; citations show the reference.
   pub fn hover_label(&mut self) -> Option<String> {
     let (page, link) = self.hover_link()?;
+    Some(self.link_label(page, &link))
+  }
+
+  /// A link's destination; citations show the reference.
+  pub(crate) fn link_label(&mut self, page: PageId, link: &Link) -> String {
     if matches!(link.target, Target::Uri(_)) {
-      return Some(destination(&link.target, &self.doc, ""));
+      return destination(&link.target, &self.doc, "");
     }
     // Hover is advisory; unreadable text reads as a bare reference.
     let text = self.doc.text(page).ok();
-    let (anchor, context) = self.link_context(page, &link, text.as_deref());
+    let (anchor, context) = self.link_context(page, link, text.as_deref());
     let cited = cited(&anchor, context);
-    Some(destination(&link.target, &self.doc, &cited))
+    destination(&link.target, &self.doc, &cited)
   }
 
   /// When the rested link previews.
   pub fn hover_due(&mut self) -> Option<Instant> {
     let rest = self.rest?;
     let since = rest.since?;
-    let free = self.focused && self.input_owner() == InputOwner::Content;
+    // Hover follows the pointer across panes (B2).
+    let free = self.input_owner() == InputOwner::Content;
     if !free || self.peek.is_some() {
       return None;
     }
@@ -145,13 +152,15 @@ impl App {
     let Some(peek) = self.hover_peek() else { return false };
     // A moved view leaves it stale.
     let view = self.view_key();
-    let reach = peek.placement.filter(|at| at.view == view).map(|at| at.reach);
-    let inside = reach
-      .zip(at)
-      .is_some_and(|(area, (column, row))| area.contains(column, row));
+    let placement = peek.placement.filter(|at| at.view == view);
+    let on = |cells: Rect| at.is_some_and(|(c, r)| cells.contains(c, r));
+    let inside = placement.is_some_and(|at| on(at.area));
+    let bridged = placement.is_some_and(|at| on(at.bridge));
     let rested = self.rest.map(|rest| (rest.page, rest.index));
     let on_link = rested.is_some_and(|link| peek.hovered() == Some(link));
-    if inside || on_link {
+    // Another link is never a gap.
+    let elsewhere = rested.is_some() && !on_link;
+    if inside || on_link || bridged && !elsewhere {
       return false;
     }
     self.peek = None;
@@ -168,22 +177,36 @@ impl App {
     open
   }
 
-  /// Presses close it; left inside follows.
-  pub fn hover_press(&mut self, mouse: MouseEvent) -> Result<bool> {
-    if self.hover_peek().is_none() {
+  /// Left clicks inside follow; others close it.
+  pub fn preview_press(&mut self, mouse: MouseEvent) -> Result<bool> {
+    let Some(peek) = &self.peek else { return Ok(false) };
+    let key = peek.origin == Origin::Key;
+    if key && self.input_owner() != InputOwner::Peek {
       return Ok(false);
     }
-    let (column, row) = self.pane_cell(mouse);
-    let inside =
-      self.preview_cells().is_some_and(|at| at.contains(column, row));
+    let inside = self.in_preview(mouse);
     let left = mouse.kind == MouseEventKind::Down(MouseButton::Left)
       && !mouse.modifiers.contains(KeyModifiers::ALT);
     if inside && left {
+      // Like `dismiss_click`, it cancels pending keys.
+      self.disarm();
       self.follow_preview()?;
       return Ok(true);
     }
+    if key {
+      return Ok(false);
+    }
     self.drop_hover_preview();
+    if inside {
+      self.disarm();
+    }
     Ok(inside)
+  }
+
+  /// Whether a press lands on the drawn preview.
+  pub(crate) fn in_preview(&self, mouse: MouseEvent) -> bool {
+    let (column, row) = self.pane_cell(mouse);
+    self.preview_cells().is_some_and(|at| at.contains(column, row))
   }
 
   pub(crate) fn link_rows(&mut self) -> Result<Vec<Row>> {
@@ -362,7 +385,11 @@ fn cited(anchor: &str, context: String) -> String {
 
 /// `→ p. 43 · Section`, `cited` in place of the section, or the
 /// address.
-fn destination(target: &Target, doc: &Document, cited: &str) -> String {
+pub(crate) fn destination(
+  target: &Target,
+  doc: &Document,
+  cited: &str,
+) -> String {
   let outline = &doc.outline;
   let (page, y) = match target {
     Target::Uri(uri) => return format!("→ {uri}"),
