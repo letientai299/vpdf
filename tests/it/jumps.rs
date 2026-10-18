@@ -528,6 +528,23 @@ fn jumps_land_near_the_top() -> Result<()> {
   Ok(())
 }
 
+/// Each typed query previews from the view the search started at.
+#[test]
+fn chained_previews_judge_the_start_view() -> Result<()> {
+  for text_mode in [false, true] {
+    let (_dir, mut app) = landing_app(text_mode)?;
+    let before = view(&mut app)?;
+    app.begin_search(false)?;
+    for query in ["L5 alpha", "L1 alpha"] {
+      app.start_search(query, false, false)?;
+      super::common::search_loaded(&mut app)?;
+    }
+    assert_eq!(app.reader.cursor, on(0, 1, 0), "text {text_mode}");
+    assert_eq!(view(&mut app)?, before, "text {text_mode}");
+  }
+  Ok(())
+}
+
 /// History from the other presentation lands its position against the
 /// current view; its stale view never returns.
 #[test]
@@ -539,7 +556,7 @@ fn history_across_presentations_lands() -> Result<()> {
     app.go_to(on(1, 4, 0), true)?;
     app.text_mode = !text_first;
     app.relayout()?;
-    // Page 2 shows, away from the origin.
+    // Away from the origin: page 2 in PDF; text keeps the last landing.
     app.reader.scroll = app.layout.pages[1].top;
     let back = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
     app.key(back, &mut History::default())?;

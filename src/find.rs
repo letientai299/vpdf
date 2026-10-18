@@ -140,8 +140,10 @@ impl App {
       if matches!(self.search.phase, Phase::Running { jump: true })
         && let Some(target) = self.first_match(event.done)
       {
-        // Typing previews matches without filling the jump list.
-        if self.search_origin.is_some() {
+        // Typing previews matches without filling the jump list; each
+        // judges the view the search started from, as Vim's incsearch.
+        if let Some(origin) = self.search_origin {
+          self.restore_location(origin)?;
           self.reader.cursor = target;
           self.target = Some(target);
           self.land()?;

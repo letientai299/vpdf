@@ -70,7 +70,8 @@ link's line, clear of other links and labels. Jump history returns to earlier
 destinations and their views; marks keep places worth revisiting. A jump to a
 place clear of the screen's edge rows, such as a mark, search match, or link
 target, keeps the view; one elsewhere shows the target one row below the top,
-in both presentations, as does a history entry from the other presentation.
+in both presentations. A history entry from the other presentation follows the
+same rule.
 Page jumps, such as `:12` or a thumbnail, show the page from its top.
 Following an external web link opens it through the desktop integration. See
 [external actions][external] for clipboard and SSH boundaries.
