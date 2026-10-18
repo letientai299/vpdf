@@ -15,7 +15,6 @@ P: focused panel
 # Move
 h j k l / arrows: pan / scroll in N
 i: enter C at visible text
-Counts scale viewport and glyph motions
 C/V h j k l: glyph motions
 C/V w b e: word motions
 C/V W B E gE: WORD motions

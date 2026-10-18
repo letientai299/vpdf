@@ -3,14 +3,14 @@
 Use `vpdf --help` for the CLI, and `:help` inside the reader for keys and
 commands. These describe the installed executable.
 
-| Read | For |
-| --- | --- |
-| [Installation][installation] | Distribution, terminal setup, and optional helpers |
-| [Architecture][architecture] | Project principles, ownership, and worker boundaries |
-| [Rendering][rendering] | Tiles, scheduling, terminal transport, and memory tradeoffs |
-| [Text and search][text] | Glyph coordinates, normalized search, outlines, and OCR |
-| [Sessions and state][sessions] | Panes, focus, persistence, and live reload |
-| [Development][development] | Building, validation, benchmarks, and release decisions |
+| Read                           | For                                                         |
+| ------------------------------ | ----------------------------------------------------------- |
+| [Installation][installation]   | Distribution, terminal setup, and optional helpers          |
+| [Architecture][architecture]   | Project principles, ownership, and worker boundaries        |
+| [Rendering][rendering]         | Tiles, scheduling, terminal transport, and memory tradeoffs |
+| [Text and search][text]        | Glyph coordinates, normalized search, outlines, and OCR     |
+| [Sessions and state][sessions] | Panes, focus, persistence, and live reload                  |
+| [Development][development]     | Building, validation, benchmarks, and release decisions     |
 
 ## Documentation boundaries
 

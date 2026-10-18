@@ -84,14 +84,14 @@ Cache weights bound resources the application can account for; they do not set
 a hard RSS limit. Native allocations, in-flight work, and terminal textures have
 separate lifetimes. A terminal can also evict images independently.
 
-| Resource | Policy and source |
-| --- | --- |
-| Extracted and OCR text | Weighted caches in [Document][document] |
-| Display lists | Page-count cache in [Document][document]; native byte size is unavailable |
-| Search indexes | Weighted cache in the [search worker][search] |
-| Prepared tiles and resident images | Separate budgets in [Graphics][graphics], shared across tabs and panes |
-| Raw pixel spool | Fixed-size ring in [Spool][spool] |
-| Copied text and registers | Bounds in [Reader][reader] |
+| Resource                           | Policy and source                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------- |
+| Extracted and OCR text             | Weighted caches in [Document][document]                                   |
+| Display lists                      | Page-count cache in [Document][document]; native byte size is unavailable |
+| Search indexes                     | Weighted cache in the [search worker][search]                             |
+| Prepared tiles and resident images | Separate budgets in [Graphics][graphics], shared across tabs and panes    |
+| Raw pixel spool                    | Fixed-size ring in [Spool][spool]                                         |
+| Copied text and registers          | Bounds in [Reader][reader]                                                |
 
 Spooling uses a smaller resident-image budget because reuploading from a file is
 cheaper than encoded transmission. Keep numerical limits in their owning source
