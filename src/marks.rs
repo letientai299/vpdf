@@ -9,6 +9,16 @@ use std::time::{Duration, Instant};
 pub struct Landing {
   pub position: Position,
   pub until: Instant,
+  pub span: Span,
+}
+
+/// What a landing tints.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Span {
+  /// A jump's destination line.
+  Line,
+  /// A click's target glyph.
+  Glyph,
 }
 
 impl Landing {
@@ -97,10 +107,20 @@ impl App {
   }
 
   pub(crate) fn flash_landing(&mut self) {
-    self.landing = Some(Landing {
-      position: self.reader.cursor,
-      until: Instant::now() + Landing::DURATION,
-    });
+    self.flash(self.reader.cursor, Span::Line);
+  }
+
+  /// The click mark, shown in Normal only.
+  pub(crate) fn click_mark(&self) -> Option<Position> {
+    let landing = self.landing.as_ref()?;
+    let normal = self.reader.viewport_mode() && self.reader.selection.is_none();
+    (landing.span == Span::Glyph && normal).then_some(landing.position)
+  }
+
+  /// Tints `position`'s `span` briefly.
+  pub(crate) fn flash(&mut self, position: Position, span: Span) {
+    let until = Instant::now() + Landing::DURATION;
+    self.landing = Some(Landing { position, until, span });
   }
 
   /// Text of the extracted line at `position`, for mark listings.

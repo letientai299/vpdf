@@ -70,6 +70,7 @@ yp: yank full file path
 "" "+ "*: system clipboard
 "a "A: named register / append
 Click / drag: set N target / select
+Click in N: mark target glyph for 600 ms
 Drag from a link: select text
 Double click: select word
 Triple / quadruple click: select line / paragraph

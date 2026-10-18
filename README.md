@@ -110,12 +110,14 @@ stays while the pointer is on the link or the preview, a click on it follows
 the link, and leaving both or pressing a key closes it; keys keep their usual
 meaning.
 
-A drag selects characters; a double click selects a word, a triple click a line,
-and a fourth click the paragraph. Dragging after a double or triple click
-extends by words or lines. Dragging past the top or bottom edge scrolls, faster
-the farther the pointer goes; above the window it scrolls one row per move.
-Alt-click off a figure moves the selection's free end, or starts Visual from the
-same entry point as `v`. Pointer selections return to their entry mode on Esc.
+A click in Normal sets the target and marks its glyph for 600 ms, where `i`,
+`K`, and `*` act. A drag selects characters; a double click selects a word, a
+triple click a line, and a fourth click the paragraph. Dragging after a double
+or triple click extends by words or lines. Dragging past the top or bottom edge
+scrolls, faster the farther the pointer goes; above the window it scrolls one
+row per move. Alt-click off a figure moves the selection's free end, or starts
+Visual from the same entry point as `v`. Pointer selections return to their
+entry mode on Esc.
 
 A right click opens a menu at the pointer with actions for the link, selection,
 text, or figure under it, plus history, fit, outline, and overview. Each item
@@ -142,6 +144,7 @@ writes until its final status. Figure detection groups image/vector bounds and
 nearby captions; caption-only targets capture that caption. Alt-drag sweeps a
 region, dimming the rest of the page, and its release opens the same bar;
 Alt-click on a figure picks it.
+The frame sits just outside the capture, so labels at its edge stay visible.
 
 ## Documentation
 

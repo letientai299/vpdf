@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::app::App;
+use crate::marks::Span;
 use crate::reader::SelectionKind;
 use crate::text::{Bounds, Glyph, Position, Text};
 use crate::theme;
@@ -361,7 +362,8 @@ impl App {
   }
 
   fn text_style(&self, position: Position, linked: bool) -> &'static str {
-    if self.reader.uses_cursor() && position == self.reader.cursor {
+    let flashed = self.click_mark() == Some(position);
+    if flashed || self.reader.uses_cursor() && position == self.reader.cursor {
       return theme::TEXT_CURSOR;
     }
     if let Some(selection) = self.reader.selection {
@@ -384,7 +386,8 @@ impl App {
 
   fn line_style(&self, position: Position) -> &'static str {
     if self.landing.as_ref().is_some_and(|landing| {
-      position.page == landing.position.page
+      landing.span == Span::Line
+        && position.page == landing.position.page
         && position.line == landing.position.line
     }) {
       return theme::TEXT_LANDING;

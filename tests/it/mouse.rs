@@ -499,6 +499,55 @@ fn selected(
   reader.selection.map(|s| (s.anchor, reader.cursor, s.kind))
 }
 
+/// U30: a Normal click marks its glyph.
+#[test]
+fn clicks_mark_their_target() -> Result<()> {
+  #[derive(Clone, Copy, Debug)]
+  enum Then {
+    Nothing,
+    Double,
+    Drag,
+    Cursor,
+  }
+  // (text view, after the click, marked)
+  for (text_mode, then, marked) in [
+    (false, Then::Nothing, true),
+    (true, Then::Nothing, true),
+    (false, Then::Double, false),
+    (true, Then::Drag, false),
+    (false, Then::Drag, false),
+    (true, Then::Cursor, false),
+  ] {
+    let case = format!("text {text_mode} {then:?}");
+    let (_directory, mut session) = words(text_mode)?;
+    let cell = glyph_cell(&mut session, 0, 7)?;
+    click(&mut session, cell)?;
+    match then {
+      Then::Nothing => {}
+      Then::Double => click(&mut session, cell)?,
+      Then::Drag => {
+        let end = glyph_cell(&mut session, 0, 12)?;
+        mouse(&mut session, MouseEventKind::Down(MouseButton::Left), end)?;
+        mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), cell)?;
+        mouse(&mut session, MouseEventKind::Up(MouseButton::Left), cell)?;
+      }
+      Then::Cursor => action(session.app(), Action::Cursor)?,
+    }
+    // Frames diff placements, so compare steady frames.
+    let app = session.app();
+    let mut frame = Vec::new();
+    for _ in 0..2 {
+      frame.clear();
+      app.draw(&mut frame)?;
+    }
+    app.landing = None;
+    let mut plain = Vec::new();
+    app.draw(&mut plain)?;
+    assert_eq!(frame != plain, marked, "{case}");
+  }
+  Ok(())
+}
+
 #[test]
 fn click_runs_select_words_lines_and_paragraphs() -> Result<()> {
   use SelectionKind::{Character, Line};

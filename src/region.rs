@@ -430,8 +430,8 @@ impl App {
       label.push_str(&status);
     }
     let text = terminal::clean(&label, usize::from(screen.columns));
-    let row = ((rect.y1 / f32::from(screen.cell_height)).ceil() as usize)
-      .min(usize::from(screen.rows.saturating_sub(2)));
+    let last = usize::from(screen.rows.saturating_sub(2));
+    let row = bar_row(rect, f32::from(screen.cell_height), last);
     // Graphics fill the row; text stops.
     let width =
       if self.text_mode { text.width() } else { usize::from(screen.columns) };
@@ -537,12 +537,7 @@ impl App {
           out,
         )?;
       }
-      for bounds in [
-        Bounds { y1: y0 + 2.0, x0, x1, y0 },
-        Bounds { y0: y1 - 2.0, x0, x1, y1 },
-        Bounds { x1: x0 + 2.0, x0, y0, y1 },
-        Bounds { x0: x1 - 2.0, x1, y0, y1 },
-      ] {
+      for bounds in frame_edges(Bounds { x0, y0, x1, y1 }, (w, h)) {
         self.graphics.highlight(
           bounds,
           [60, 120, 230, 220],
@@ -571,6 +566,41 @@ fn bar_label(page: PageId, action: Operation) -> (String, Spans) {
     items.push((start..label.chars().count(), index));
   }
   (label, items)
+}
+
+/// A 2 px frame within `(w, h)`.
+fn frame_edges(rect: Bounds, (w, h): (f32, f32)) -> [Bounds; 4] {
+  // Overlays round out to whole pixels.
+  let (x0, y0) = (rect.x0.floor(), rect.y0.floor());
+  let (x1, y1) = (rect.x1.ceil(), rect.y1.ceil());
+  // U26: outside where room allows.
+  let top = band(y0, -1.0, y0 >= 2.0);
+  let bottom = band(y1, 1.0, y1 + 2.0 <= h);
+  let left = band(x0, -1.0, x0 >= 2.0);
+  let right = band(x1, 1.0, x1 + 2.0 <= w);
+  [
+    Bounds { x0: left.0, x1: right.1, y0: top.0, y1: top.1 },
+    Bounds { x0: left.0, x1: right.1, y0: bottom.0, y1: bottom.1 },
+    Bounds { x0: left.0, x1: left.1, y0, y1 },
+    Bounds { x0: right.0, x1: right.1, y0, y1 },
+  ]
+}
+
+/// A 2 px band, outward if room.
+fn band(edge: f32, dir: f32, fits: bool) -> (f32, f32) {
+  let far = if fits { edge + 2.0 * dir } else { edge - 2.0 * dir };
+  (edge.min(far), edge.max(far))
+}
+
+/// The bar's row: below the frame, else above.
+fn bar_row(rect: Bounds, cell: f32, last: usize) -> usize {
+  let below = ((rect.y1.ceil() + 2.0) / cell).ceil() as usize;
+  let above = ((rect.y0.floor() - 2.0) / cell).floor() as isize - 1;
+  match usize::try_from(above) {
+    _ if below <= last => below,
+    Ok(above) => above,
+    Err(_) => last,
+  }
 }
 
 fn snapshot(page: PageId, bounds: Bounds) -> Snapshot {
@@ -738,6 +768,51 @@ mod tests {
     assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
     assert!(app.reader.message.starts_with("Saved "));
     Ok(())
+  }
+
+  /// U26: frames sit outside when room allows.
+  #[test]
+  fn frames_sit_outside_captures() {
+    let (w, h) = (100.0, 50.0);
+    let rect = |x0, y0, x1, y1| Bounds { x0, y0, x1, y1 };
+    // (capture, inside: top, bottom, left, right)
+    for (capture, inside) in [
+      (rect(10.0, 10.0, 60.0, 40.0), [false; 4]),
+      (rect(10.5, 10.5, 60.5, 40.5), [false; 4]),
+      (rect(0.0, 0.0, 100.0, 50.0), [true; 4]),
+      (rect(1.0, 20.0, 99.5, 50.0), [false, true, true, true]),
+    ] {
+      for (edge, inside) in frame_edges(capture, (w, h)).into_iter().zip(inside)
+      {
+        let covers = edge.x0.max(capture.x0) < edge.x1.min(capture.x1)
+          && edge.y0.max(capture.y0) < edge.y1.min(capture.y1);
+        assert_eq!(covers, inside, "{edge:?} on {capture:?}");
+        assert_eq!(edge.width().min(edge.height()), 2.0, "{edge:?}");
+        let within = edge.x0 >= 0.0 && edge.y0 >= 0.0;
+        assert!(within && edge.x1 <= w && edge.y1 <= h, "{edge:?}");
+        // Bands touch the whole-pixel capture.
+        let touches = edge.x0 <= capture.x1.ceil()
+          && edge.x1 >= capture.x0.floor()
+          && edge.y0 <= capture.y1.ceil()
+          && edge.y1 >= capture.y0.floor();
+        assert!(touches, "{edge:?} off {capture:?}");
+      }
+    }
+  }
+
+  /// The bar never covers the capture.
+  #[test]
+  fn bars_clear_captures() {
+    let rect = |y0, y1| Bounds { x0: 0.0, y0, x1: 10.0, y1 };
+    // (capture, row); 20 px cells, last 38
+    for (capture, row) in [
+      (rect(100.0, 300.0), 16),
+      (rect(100.0, 770.0), 3),
+      (rect(10.0, 770.0), 38),
+      (rect(100.0, 736.0), 37),
+    ] {
+      assert_eq!(bar_row(capture, 20.0, 38), row, "{capture:?}");
+    }
   }
 
   #[test]

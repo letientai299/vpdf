@@ -3,6 +3,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::figures::Source;
+use crate::marks::Span;
 use crate::objects::Object;
 use crate::pointer::Route;
 use crate::reader::{Mode, Reader, Selection, SelectionKind};
@@ -153,6 +154,11 @@ impl App {
     self.target = Some(pos);
     self.gesture = Gesture::Glyphs;
     let (kind, object) = match clicks {
+      // U30: marks where `i`, `K`, `*` act.
+      0 | 1 if self.reader.viewport_mode() => {
+        self.flash(pos, Span::Glyph);
+        return Ok(());
+      }
       0 | 1 => return Ok(()),
       2 => (SelectionKind::Character, Some(Object::Word)),
       3 => (SelectionKind::Line, None),

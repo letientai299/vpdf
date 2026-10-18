@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::layout::Screen;
+use crate::marks::Span;
 use crate::panel::Pointing;
 use crate::pointer::Hit;
 use crate::reader::SelectionKind;
@@ -164,8 +165,13 @@ impl App {
         out,
       )?;
     }
-    if let Some(landing) = &self.landing {
+    if let Some(landing) = &self.landing
+      && landing.span == Span::Line
+    {
       self.line_band(landing.position, crate::theme::LANDING, screen, out)?;
+    }
+    if let Some(position) = self.click_mark() {
+      self.glyph_block(position, screen, out)?;
     }
     if let Some((page, segments)) = self.hover_segments() {
       for bounds in segments {
@@ -200,10 +206,19 @@ impl App {
     if !self.reader.uses_cursor() {
       return Ok(());
     }
-    let cursor = self.reader.cursor;
-    if let Some(glyph) = self.doc.text(cursor.page)?.glyph(cursor) {
+    self.glyph_block(self.reader.cursor, screen, out)
+  }
+
+  /// A Cursor-style block at `position`.
+  fn glyph_block(
+    &mut self,
+    position: Position,
+    screen: Screen,
+    out: &mut impl Write,
+  ) -> Result<()> {
+    if let Some(glyph) = self.doc.text(position.page)?.glyph(position) {
       let mut rect =
-        self.layout.project(cursor.page, glyph.bounds, self.reader.scroll);
+        self.layout.project(position.page, glyph.bounds, self.reader.scroll);
       // Translucent block keeps the glyph readable.
       rect.x1 = rect.x1.max(rect.x0 + 2.0);
       self.tint(rect, [25, 100, 255, 120], screen, out)?;
