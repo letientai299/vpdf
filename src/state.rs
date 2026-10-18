@@ -146,8 +146,8 @@ impl App {
     self.layout.crop = other.layout.crop;
     self.layout.pan = other.layout.pan;
     self.doc.margins = other.doc.margins;
-    // A text preview (`gx`) is the other pane's, not the document's mode.
-    self.text_mode = other.preview.unwrap_or(other.text_mode);
+    self.text_mode = other.text_mode;
+    self.preview = other.preview;
     self.layout.reflow(&self.doc.pages);
     let shown = other.navigation_position();
     self.reader.cursor = crate::reader::clamp(shown, &mut self.doc)?;

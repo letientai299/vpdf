@@ -1267,3 +1267,19 @@ fn unfocused_matches_keep_identity() -> Result<()> {
   );
   Ok(())
 }
+
+#[test]
+fn split_mirrors_text_preview() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  session.app().command("text")?;
+  session.app().command("vsplit")?;
+  session.settle()?;
+  for app in &mut session.tab().panes {
+    assert!(app.text_mode);
+    assert_eq!(app.preview, Some(false));
+    crate::modes::keys(app, b"q")?;
+    assert!(!app.text_mode && !app.quit);
+    assert!(app.preview.is_none());
+  }
+  Ok(())
+}
