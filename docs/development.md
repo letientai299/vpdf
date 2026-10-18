@@ -90,6 +90,17 @@ opens, jumps, zooms, and paced scrolling, including tile readiness and blank
 frames. The [stage benchmark][stages] separates page loading, text extraction,
 display list construction, rasterization, and encoding.
 
+The [startup benchmark][startup] runs inside the terminal under test. It
+launches one or two executables on a relay of that terminal, alternating their
+order per pair, and reports first frame, first page tile, and complete initial
+view, with paired differences. Pass one executable for an A/A noise check and
+`--trace` to compare the reader's own completion marker. Results, hashes, and
+geometry go under `target/startup`.
+
+```sh
+mise run bench:startup -- BASE CANDIDATE
+```
+
 The latency and stage benchmarks accept `VPDF_EXTRA` as a platform path-list of
 PDFs. The latency benchmark also accepts `VPDF_COLUMNS` to vary its simulated
 screen. The warm reader and latency benchmarks can save JSON with
@@ -132,6 +143,7 @@ a result needs a reproducible release reference.
 [reader-bench]: ../benches/reader.rs
 [latency]: ../benches/latency.rs
 [stages]: ../benches/stages.rs
+[startup]: ../scripts/startup.py
 [trace]: ../src/trace.rs
 [package]: ../scripts/release.sh
 [release]: ../.github/workflows/release.yml

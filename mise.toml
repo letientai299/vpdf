@@ -83,6 +83,12 @@ run = "cargo bench --locked --profile release --bench stages"
 description = "Time single hot functions; arguments filter cases"
 run = 'cargo bench --locked --profile release --bench micro -- {{arg(name="cases", var=true, default="")}}'
 
+[tasks."bench:startup"]
+description = "Time launch to complete first view in this terminal"
+depends = ["corpus"]
+raw = true
+run = "python3 scripts/startup.py"
+
 [tasks."bench:budget"]
 description = "Enforce warm CPU frame and motion budgets"
 depends = ["corpus"]
