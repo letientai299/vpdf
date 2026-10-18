@@ -1,4 +1,4 @@
-//! Pointer selection: click runs, drags, and Alt-click.
+//! Pointer gestures: click runs, drags, and buttons.
 
 use crate::Result;
 use crate::app::App;
@@ -8,6 +8,7 @@ use crate::objects::Object;
 use crate::pointer::Route;
 use crate::reader::{Mode, Reader, Selection, SelectionKind};
 use crate::text::{Bounds, PageId, Position};
+use crossterm::event::MouseEventKind;
 
 /// What a click run's drag extends.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,6 +38,14 @@ impl Sweep {
       Bounds { x0: x0.min(x1), y0: y0.min(y1), x1: x0.max(x1), y1: y0.max(y1) };
     (bounds.width() >= 1.0 && bounds.height() >= 1.0).then_some(bounds)
   }
+}
+
+/// A held middle button.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Grab {
+  /// Page-area pixel of the last event.
+  pub last: (f32, f32),
+  pub moved: bool,
 }
 
 /// What the held left button does.
@@ -135,6 +144,53 @@ impl App {
       self.gesture = Gesture::Dropped;
     }
     held
+  }
+
+  /// Middle clicks split links; drags pan.
+  pub(crate) fn page_middle(&mut self, route: &Route) -> Result<()> {
+    let (column, row) = (route.mouse.column, route.mouse.row);
+    let at = self.cell_point(column, row, route.pixel);
+    match route.mouse.kind {
+      MouseEventKind::Down(_) => {
+        self.animation = None;
+        self.grab = Some(Grab { last: at, moved: false });
+      }
+      MouseEventKind::Drag(_) => {
+        let Some(grab) = &mut self.grab else { return Ok(()) };
+        let last = std::mem::replace(&mut grab.last, at);
+        grab.moved = true;
+        // Extracted text moves by whole cells.
+        if self.text_mode {
+          return Ok(());
+        }
+        self.animation = None;
+        let scroll = self.reader.scroll - (at.1 - last.1);
+        self.reader.scroll = self.layout.clamp_scroll(scroll);
+        self.pan(last.0 - at.0)?;
+      }
+      _ => {
+        let Some(grab) = self.grab.take() else { return Ok(()) };
+        if grab.moved {
+          return Ok(());
+        }
+        if let Some(target) = self.link_pressed(column, row, route.pixel)? {
+          self.open_split(&target)?;
+        }
+      }
+    }
+    Ok(())
+  }
+
+  /// Whether a middle drag pans.
+  pub fn grabbing(&self) -> bool {
+    !self.text_mode && self.grab.is_some_and(|grab| grab.moved)
+  }
+
+  /// Ends a lost press; whether it panned.
+  pub(crate) fn drop_grab(&mut self) -> bool {
+    let grabbing = self.grabbing();
+    self.grab = None;
+    grabbing
   }
 
   /// The page's shown bounds, after crop.

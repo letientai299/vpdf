@@ -605,7 +605,7 @@ impl App {
     Ok(())
   }
 
-  fn pan(&mut self, delta: f32) -> Result<()> {
+  pub(crate) fn pan(&mut self, delta: f32) -> Result<()> {
     if self.text_mode {
       let columns = (delta / f32::from(self.screen.cell_width)).round();
       return self.pan_text(columns as isize);
@@ -644,6 +644,12 @@ impl App {
     let Route { mouse, region, .. } = route;
     if matches!(mouse.kind, MouseEventKind::Down(_)) && self.dismiss_click()? {
       return Ok(());
+    }
+    // An overlay opened mid-press keeps the release.
+    if mouse.kind == MouseEventKind::Up(MouseButton::Middle)
+      && self.input_owner() != InputOwner::Content
+    {
+      self.grab = None;
     }
     let right = matches!(
       mouse.kind,
@@ -702,6 +708,9 @@ impl App {
         self.page_context(route);
         Ok(())
       }
+      MouseEventKind::Down(MouseButton::Middle)
+      | MouseEventKind::Drag(MouseButton::Middle)
+      | MouseEventKind::Up(MouseButton::Middle) => self.page_middle(&route),
       _ => Ok(()),
     }
   }

@@ -828,6 +828,9 @@ impl App {
     if self.covered() != covered {
       self.relayout()?;
     }
+    if mouse.kind == MouseEventKind::Down(MouseButton::Middle) {
+      return self.panel_split(mouse);
+    }
     let Some(panel) = &mut self.panel else { return Ok(()) };
     let pressed = matches!(mouse.kind, MouseEventKind::Down(_));
     let followed = if pressed {
@@ -858,6 +861,27 @@ impl App {
       Destination::None => Ok(()),
       _ => self.focus_content(None),
     }
+  }
+
+  /// Middle click: the row in a split.
+  fn panel_split(&mut self, mouse: MouseEvent) -> Result<()> {
+    let Some(panel) = &self.panel else { return Ok(()) };
+    let Some(index) = panel.row_at(mouse.column, mouse.row) else {
+      return Ok(());
+    };
+    let request = match panel.rows[index].destination.clone() {
+      Destination::Position(position)
+      | Destination::Jump { position, .. }
+      | Destination::Annotation { position, .. } => Request::SplitAt(position),
+      Destination::Mark(name) => Request::SplitMark(name),
+      Destination::File(path) => {
+        Request::PanelOpen { path, position: None, focus: false }
+      }
+      Destination::Link(target) => return self.open_split(&target),
+      Destination::None => return Ok(()),
+    };
+    self.request = Some(request);
+    Ok(())
   }
 
   fn panel_follow(&mut self, action: Action) -> Result<()> {

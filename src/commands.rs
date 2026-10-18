@@ -504,43 +504,77 @@ impl App {
     Ok(links.iter().position(|link| link.bounds.contains(x, y)))
   }
 
+  /// The glyph a page target lands on.
+  fn landing(
+    &mut self,
+    page: PageId,
+    point: Option<(f32, f32)>,
+  ) -> Result<Position> {
+    let page = PageId(page.0.min(self.doc.pages.len() - 1));
+    Ok(match point {
+      Some((x, y)) => self.doc.text(page)?.nearest(page, x, y),
+      None => Position { page, ..Position::default() },
+    })
+  }
+
   pub fn follow(&mut self, target: &Target) -> Result<()> {
-    match target {
-      Target::Page(page) | Target::Point { page, .. } => {
-        let page = PageId(page.0.min(self.doc.pages.len() - 1));
-        let description = match target {
-          Target::Point { x, y, .. } => {
-            let position = self.doc.text(page)?.nearest(page, *x, *y);
-            let description = self.link_description(target, position);
-            self.land_at(position)?;
-            description
-          }
-          _ => {
-            let position = Position { page, ..Position::default() };
-            let description = self.link_description(target, position);
-            self.go_to(position, true)?;
-            description
-          }
-        };
-        self.reader.describe_jump(Some(description));
+    let uri = match target {
+      Target::Page(page) => return self.go_landing(target, *page, None),
+      Target::Point { page, x, y } => {
+        return self.go_landing(target, *page, Some((*x, *y)));
       }
-      Target::Uri(uri) => {
-        let Some(uri) = openable(uri) else {
-          anyhow::bail!("Unsupported link scheme");
-        };
-        let executable =
-          if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
-        let mut child = Command::new(executable)
-          .arg(uri)
-          .stdin(Stdio::null())
-          .stdout(Stdio::null())
-          .stderr(Stdio::null())
-          .spawn()?;
-        std::thread::spawn(move || {
-          let _ = child.wait();
-        });
-      }
+      Target::Uri(uri) => uri,
+    };
+    let Some(uri) = openable(uri) else {
+      anyhow::bail!("Unsupported link scheme");
+    };
+    let executable =
+      if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    let mut child = Command::new(executable)
+      .arg(uri)
+      .stdin(Stdio::null())
+      .stdout(Stdio::null())
+      .stderr(Stdio::null())
+      .spawn()?;
+    std::thread::spawn(move || {
+      let _ = child.wait();
+    });
+    Ok(())
+  }
+
+  /// Goes to a page target, describing the jump.
+  fn go_landing(
+    &mut self,
+    target: &Target,
+    page: PageId,
+    point: Option<(f32, f32)>,
+  ) -> Result<()> {
+    let position = self.landing(page, point)?;
+    let description = self.link_description(target, position);
+    // Points land where they aim.
+    if point.is_some() {
+      self.land_at(position)?;
+    } else {
+      self.go_to(position, true)?;
     }
+    self.reader.describe_jump(Some(description));
+    Ok(())
+  }
+
+  /// Splits at an internal target; copies addresses.
+  pub(crate) fn open_split(&mut self, target: &Target) -> Result<()> {
+    let position = match target {
+      Target::Uri(uri) => return self.copy_address(uri.clone()),
+      Target::Page(page) => self.landing(*page, None)?,
+      Target::Point { page, x, y } => self.landing(*page, Some((*x, *y)))?,
+    };
+    self.request = Some(Request::SplitAt(position));
+    Ok(())
+  }
+
+  pub(crate) fn copy_address(&mut self, uri: String) -> Result<()> {
+    self.reader.store('"', uri)?;
+    self.reader.message = "Copied link".into();
     Ok(())
   }
 }

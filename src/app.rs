@@ -42,6 +42,10 @@ pub enum Request {
     file: Option<PathBuf>,
   },
   GoMark(char, bool),
+  /// A new split here; focus stays.
+  SplitAt(Position),
+  /// A global mark beside; focus stays.
+  SplitMark(char),
   /// Pick a file with `fzf` and open it in the focused pane.
   Pick,
   /// Close every pane of this tab.
@@ -153,6 +157,8 @@ pub struct App {
   pub(crate) link_press: crate::links::LinkPress,
   /// What the held left button does.
   pub(crate) gesture: crate::gestures::Gesture,
+  /// The held middle button.
+  pub(crate) grab: Option<crate::gestures::Grab>,
   pub region: Option<crate::region::Region>,
   pub region_job: Option<crate::region::Job>,
   pub region_send: Option<crate::region::Transfer>,
@@ -248,6 +254,7 @@ impl App {
       context_menu: None,
       link_press: crate::links::LinkPress::Idle,
       gesture: crate::gestures::Gesture::Glyphs,
+      grab: None,
       region: None,
       region_job: None,
       region_send: None,

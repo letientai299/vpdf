@@ -32,6 +32,14 @@ impl Rect {
   }
 }
 
+/// Where a new pane goes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Place {
+  /// Above or left, as in Vim.
+  Before,
+  After,
+}
+
 #[derive(Debug)]
 pub enum Node {
   Leaf(u32),
@@ -116,21 +124,29 @@ impl Node {
     }
   }
 
-  /// Puts `new` before `target`, above or to its left as in Vim.
-  pub fn split(&mut self, target: u32, axis: Axis, new: u32) -> bool {
+  /// Puts `new` beside `target`.
+  pub fn split(
+    &mut self,
+    target: u32,
+    axis: Axis,
+    new: u32,
+    place: Place,
+  ) -> bool {
     match self {
       Self::Leaf(id) if *id == target => {
-        *self = Self::Split {
-          axis,
-          ratio: 0.5,
-          first: Box::new(Self::Leaf(new)),
-          second: Box::new(Self::Leaf(target)),
+        let (new, old) =
+          (Box::new(Self::Leaf(new)), Box::new(Self::Leaf(target)));
+        let (first, second) = match place {
+          Place::Before => (new, old),
+          Place::After => (old, new),
         };
+        *self = Self::Split { axis, ratio: 0.5, first, second };
         true
       }
       Self::Leaf(_) => false,
       Self::Split { first, second, .. } => {
-        first.split(target, axis, new) || second.split(target, axis, new)
+        first.split(target, axis, new, place)
+          || second.split(target, axis, new, place)
       }
     }
   }
@@ -373,8 +389,8 @@ mod tests {
   #[test]
   fn splits_place_new_panes_first_and_close_cleanly() {
     let mut tree = Node::Leaf(1);
-    assert!(tree.split(1, Axis::Columns, 2));
-    assert!(tree.split(1, Axis::Rows, 3));
+    assert!(tree.split(1, Axis::Columns, 2, Place::Before));
+    assert!(tree.split(1, Axis::Rows, 3, Place::Before));
     assert_eq!(tree.leaves(), [2, 3, 1]);
     let layout = rects(&tree);
     assert_eq!(layout[0].1, Rect { column: 0, row: 0, columns: 50, rows: 40 });
@@ -397,10 +413,21 @@ mod tests {
   }
 
   #[test]
+  fn places_put_new_panes_on_either_side() {
+    // (place) -> leaves
+    let cases = [(Place::Before, [2, 1]), (Place::After, [1, 2])];
+    for (place, leaves) in cases {
+      let mut tree = Node::Leaf(1);
+      assert!(tree.split(1, Axis::Columns, 2, place));
+      assert_eq!(tree.leaves(), leaves, "{place:?}");
+    }
+  }
+
+  #[test]
   fn tiny_areas_fit_their_panes() {
     let mut tree = Node::Leaf(1);
-    tree.split(1, Axis::Columns, 2);
-    tree.split(2, Axis::Rows, 3);
+    tree.split(1, Axis::Columns, 2, Place::Before);
+    tree.split(2, Axis::Rows, 3, Place::Before);
     for (columns, rows) in [(0, 0), (1, 1), (2, 2), (3, 0)] {
       let mut out = Vec::new();
       tree.layout(Rect { columns, rows, ..Rect::default() }, &mut out);
@@ -415,7 +442,7 @@ mod tests {
   #[test]
   fn resize_equalize_and_exchange() {
     let mut tree = Node::Leaf(1);
-    tree.split(1, Axis::Rows, 2);
+    tree.split(1, Axis::Rows, 2, Place::Before);
     tree.resize(2, Axis::Rows, 6, AREA);
     assert_eq!(rects(&tree)[0].1.rows, 26);
     tree.resize(1, Axis::Rows, 100, AREA);
@@ -426,7 +453,7 @@ mod tests {
     assert_eq!(rects(&tree)[0].1.rows, 20);
     assert!(tree.exchange(1));
     assert_eq!(tree.leaves(), [1, 2]);
-    tree.split(2, Axis::Rows, 3);
+    tree.split(2, Axis::Rows, 3, Place::Before);
     tree.move_to_edge(3, Direction::Right);
     assert_eq!(tree.leaves(), [1, 2, 3]);
     let layout = rects(&tree);

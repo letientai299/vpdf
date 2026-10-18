@@ -72,7 +72,7 @@ fn lines_pdf<'a>(
 }
 
 /// A session on a PDF `write` makes.
-fn open(
+pub(super) fn open(
   write: impl FnOnce(&Path) -> Result<()>,
   text_mode: bool,
 ) -> Result<(tempfile::TempDir, Session)> {
@@ -92,21 +92,26 @@ fn open(
   Ok((directory, session))
 }
 
-fn session(text_mode: bool) -> Result<(tempfile::TempDir, Session)> {
+pub(super) fn session(text_mode: bool) -> Result<(tempfile::TempDir, Session)> {
   open(link_pdf, text_mode)
 }
 
 /// Screen cell of pane `index` hitting `want`.
-fn cell_in(
+pub(super) fn cell_in(
   session: &mut Session,
   index: usize,
   want: Hit,
 ) -> Result<(u16, u16)> {
+  let region = match want {
+    Hit::Row(_) => Region::Panel,
+    Hit::Thumbnail(_) => Region::Overview,
+    _ => Region::Page,
+  };
   let app = &mut session.tab().panes[index];
   let (columns, rows) = (app.screen.columns, app.screen.rows - 1);
   for row in 0..rows {
     for column in 0..columns {
-      if app.hovered(Region::Page, column, row, None)? == want {
+      if app.hovered(region, column, row, None)? == want {
         return Ok((app.at.column + column, app.at.row + row));
       }
     }
@@ -115,12 +120,12 @@ fn cell_in(
 }
 
 /// Focused pane cell hitting `want`.
-fn cell(session: &mut Session, want: Hit) -> Result<(u16, u16)> {
+pub(super) fn cell(session: &mut Session, want: Hit) -> Result<(u16, u16)> {
   let index = session.tab().focus;
   cell_in(session, index, want)
 }
 
-fn mouse(
+pub(super) fn mouse(
   session: &mut Session,
   kind: MouseEventKind,
   (column, row): (u16, u16),
@@ -129,10 +134,19 @@ fn mouse(
   session.mouse(MouseEvent { kind, column, row, modifiers })
 }
 
-fn click(session: &mut Session, at: (u16, u16)) -> Result<()> {
-  mouse(session, MouseEventKind::Down(MouseButton::Left), at)?;
-  mouse(session, MouseEventKind::Up(MouseButton::Left), at)?;
+/// A press and release of `button`.
+pub(super) fn tap(
+  session: &mut Session,
+  button: MouseButton,
+  at: (u16, u16),
+) -> Result<()> {
+  mouse(session, MouseEventKind::Down(button), at)?;
+  mouse(session, MouseEventKind::Up(button), at)?;
   Ok(())
+}
+
+pub(super) fn click(session: &mut Session, at: (u16, u16)) -> Result<()> {
+  tap(session, MouseButton::Left, at)
 }
 
 /// A side button press at a cell.
@@ -169,7 +183,7 @@ fn centre_cell(
 }
 
 /// A frame, whose status line shows the hover detail.
-fn status(session: &mut Session) -> Result<String> {
+pub(super) fn status(session: &mut Session) -> Result<String> {
   use vpdf::trace::Drawable;
   let mut out = Vec::new();
   session.draw_frame(&mut out)?;
@@ -772,18 +786,19 @@ fn text_edge_drags_track_the_pointer() -> Result<()> {
   Ok(())
 }
 
-fn right(session: &mut Session, at: (u16, u16)) -> Result<()> {
-  mouse(session, MouseEventKind::Down(MouseButton::Right), at)?;
-  mouse(session, MouseEventKind::Up(MouseButton::Right), at)?;
-  Ok(())
+pub(super) fn right(session: &mut Session, at: (u16, u16)) -> Result<()> {
+  tap(session, MouseButton::Right, at)
 }
 
-fn labels(session: &mut Session) -> Vec<&'static str> {
+pub(super) fn labels(session: &mut Session) -> Vec<&'static str> {
   let menu = session.app().context_menu.as_ref();
   menu.map_or_default(|menu| menu.items.iter().map(|item| item.label).collect())
 }
 
-fn press(session: &mut Session, code: crossterm::event::KeyCode) -> Result<()> {
+pub(super) fn press(
+  session: &mut Session,
+  code: crossterm::event::KeyCode,
+) -> Result<()> {
   let key = crossterm::event::KeyEvent::new(code, KeyModifiers::NONE);
   session.app().key(key, &mut vpdf::prompt::History::default())
 }
@@ -798,7 +813,7 @@ fn right_clicks_open_menus_by_context() -> Result<()> {
     let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
     let web = cell(&mut session, Hit::Link(PageId(0), 1))?;
     let plain = cell(&mut session, Hit::Text)?;
-    let link = ["Follow", "Preview"];
+    let link = ["Follow", "Preview", "Open in split"];
     let address = ["Follow", "Copy address"];
     // (cell) -> items before the common ones
     let cases: [(_, &[&str]); 3] = [

@@ -44,6 +44,8 @@ pub enum Command {
   /// Previews a target beside a glyph.
   Preview(Target, Position),
   CopyAddress(String),
+  /// As a middle click does.
+  Split(Target),
   Copy,
   CopyImage,
   SearchSelection,
@@ -119,14 +121,14 @@ impl App {
         items.push(bound("Follow", Action::Follow, follow));
         items.push(item("Copy address", "", Command::CopyAddress(uri)));
       }
-      (Some(target), Some(near)) => {
+      (Some(target), near) => {
         let follow = Command::Follow(target.clone());
         items.push(bound("Follow", Action::Follow, follow));
-        let preview = Command::Preview(target, near);
-        items.push(bound("Preview", Action::Peek, preview));
-      }
-      (Some(target), None) => {
-        items.push(bound("Follow", Action::Follow, Command::Follow(target)));
+        if let Some(near) = near {
+          let preview = Command::Preview(target.clone(), near);
+          items.push(bound("Preview", Action::Peek, preview));
+        }
+        items.push(item("Open in split", "", Command::Split(target)));
       }
       (None, _) => {}
     }
@@ -238,11 +240,8 @@ impl App {
     match item.command {
       Command::Follow(target) => self.follow(&target),
       Command::Preview(target, near) => self.show_preview(target, near),
-      Command::CopyAddress(uri) => {
-        self.reader.store('"', uri)?;
-        self.reader.message = "Copied link".into();
-        Ok(())
-      }
+      Command::CopyAddress(uri) => self.copy_address(uri),
+      Command::Split(target) => self.open_split(&target),
       Command::Copy => self.action(key(Action::Yank)),
       Command::CopyImage => {
         let Some((page, bounds)) = self.selection_bounds()? else {

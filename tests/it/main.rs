@@ -1,5 +1,6 @@
 mod annotations;
 mod app;
+mod chrome;
 mod cli;
 mod common;
 mod corpus;

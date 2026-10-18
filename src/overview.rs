@@ -162,6 +162,11 @@ impl App {
           return self.open_selected();
         }
       }
+      MouseEventKind::Down(MouseButton::Middle) => {
+        if let Some(page) = hit {
+          return self.open_split(&crate::document::Target::Page(page));
+        }
+      }
       _ => {}
     }
     Ok(())

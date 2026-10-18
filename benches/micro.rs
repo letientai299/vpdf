@@ -353,6 +353,19 @@ fn drag() -> Result<()> {
       black_box(session.mouse(black_box(drag)).expect("drag"));
     })?;
   }
+  // Middle drags pan a zoomed page.
+  let mut session = vpdf::session::Session::new(None);
+  session.open(&corpus("paper.pdf")?, true, PANE)?;
+  session.app().command("2")?;
+  session.app().layout.zoom = 3.0;
+  session.app().relayout()?;
+  session.mouse(event(MouseEventKind::Down(MouseButton::Middle), 60))?;
+  let mut column = 60;
+  measure("Session::mouse drag middle", || {
+    column = if column == 70 { 50 } else { 70 };
+    let drag = event(MouseEventKind::Drag(MouseButton::Middle), column);
+    black_box(session.mouse(black_box(drag)).expect("pan"));
+  })?;
   // The status row scrolls each drag.
   let mut session = vpdf::session::Session::new(None);
   session.open(&corpus("paper.pdf")?, true, PANE)?;

@@ -33,6 +33,7 @@ Hover link: tint; status shows its destination
 Rest on a link 400 ms: preview it; leave to close
 Click the hover preview: follow; keys close it
 Click link: follow and record jump
+Middle click link: open target in a split; copy a URL
 Jumps: flash landing line for 600 ms
 Link and row jumps: target below one row of context
 ma mA: mark here / across documents
@@ -53,6 +54,7 @@ zc: crop / restore page margins
 Wheel: scroll the view, K preview, or note under the pointer
 Page <C-wheel>: zoom; keep the point under the pointer
 Page <S-wheel> / sideways wheel: pan a zoomed page or wide text
+Page middle drag: pan the PDF view both ways
 
 # Select and yank
 v V: enter character / line V
@@ -125,6 +127,7 @@ Annotations K: preview selected note
 P <CR>: follow row; focus content in N
 P o / click: follow; keep panel focus
 P double click: follow; focus content
+P / gp middle click: row as o does, in a split
 P / ? n N: search rows
 P { }: previous / next heading
 P yy: yank row

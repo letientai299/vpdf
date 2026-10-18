@@ -478,6 +478,22 @@ impl Pointer {
     route.map(|route| Route { clicks, pixel, ..route })
   }
 
+  /// A repeated press, in any pane.
+  pub fn repeats(
+    &self,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    now: Instant,
+  ) -> bool {
+    let MouseEventKind::Down(button) = mouse.kind else { return false };
+    self.press.is_some_and(|press| {
+      press.button == button
+        && !press.dragged
+        && press.near(mouse.column, mouse.row, pixel, click)
+        && now.saturating_duration_since(press.at) < CLICK
+    })
+  }
+
   /// Whether a wheel turn continues the last one's gesture: at the same
   /// spot, with no motion or press between, and soon after.
   pub fn turn(

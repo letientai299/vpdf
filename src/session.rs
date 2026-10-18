@@ -10,14 +10,16 @@ use crate::layout::Screen;
 use crate::pace::Pacer;
 use crate::pointer::{self, Hit, Hover, Pane, Pixel, Pointer, Region, Route};
 use crate::prompt::History;
-use crate::split::{Axis, Direction, Node, Rect, neighbor};
+use crate::split::{Axis, Direction, Node, Place, Rect, neighbor};
 use crate::state::{Mark, State};
 use crate::terminal::{self, At, Shape, View};
-use crate::text::PageId;
+use crate::text::{PageId, Position};
 use crate::theme;
 use crate::trace::Drawable;
 use crate::watch::Watcher;
-use crossterm::event::{KeyEvent, KeyEventKind, MouseEvent, MouseEventKind};
+use crossterm::event::{
+  KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
+};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -493,7 +495,12 @@ impl Session {
   }
 
   /// Splits the focused pane; the new pane shows `file` or the same view.
-  fn split(&mut self, axis: Axis, file: Option<&Path>) -> Result<()> {
+  fn split(
+    &mut self,
+    axis: Axis,
+    file: Option<&Path>,
+    place: Place,
+  ) -> Result<()> {
     // The same document reuses the password that unlocked it.
     let (path, password) = match file {
       Some(file) => (std::fs::canonicalize(file)?, String::new()),
@@ -512,10 +519,29 @@ impl Session {
     }
     let tab = self.tab();
     let target = tab.panes[tab.focus].id;
-    tab.tree.split(target, axis, app.id);
+    tab.tree.split(target, axis, app.id, place);
     tab.panes.push(app);
     let index = tab.panes.len() - 1;
     self.focus(self.active, index)
+  }
+
+  /// A split at `position`; focus stays.
+  fn split_at(&mut self, position: Position) -> Result<()> {
+    let (tab, pane) = (self.active, self.tab().focus);
+    // A double click must not split twice.
+    self.keeping_pointer(|session| {
+      session.split(Axis::Columns, None, Place::After)?;
+      session.app().go_to(position, true)?;
+      session.focus(tab, pane)
+    })
+  }
+
+  /// Keeps the click run across `work`.
+  fn keeping_pointer<R>(&mut self, work: impl FnOnce(&mut Self) -> R) -> R {
+    let pointer = std::mem::take(&mut self.pointer);
+    let result = work(self);
+    self.pointer = pointer;
+    result
   }
 
   fn window(
@@ -531,7 +557,7 @@ impl Session {
     let at = order.iter().position(|pane| *pane == id).unwrap_or(0);
     let total = order.len();
     let target = match command {
-      Window::Split(axis) => return self.split(axis, file),
+      Window::Split(axis) => return self.split(axis, file, Place::Before),
       Window::Close => return self.close_pane(),
       Window::Only => return self.only(),
       Window::ToTab => return self.move_to_tab(),
@@ -570,7 +596,7 @@ impl Session {
       }
       Window::New => {
         self.record();
-        self.split(Axis::Rows, None)?;
+        self.split(Axis::Rows, None, Place::Before)?;
         let recent = self.state.recent.clone();
         return self.app().show_recent(&recent);
       }
@@ -675,9 +701,7 @@ impl Session {
         self.panel_open(&path, position, focus, screen)
       }
       Some(Request::PanelMark { name, focus }) => {
-        let mark = self.state.marks.get(&name).cloned();
-        let mark =
-          mark.ok_or_else(|| anyhow::anyhow!("Mark not set: {name}"))?;
+        let mark = self.global_mark(name)?;
         self.panel_open(&mark.path, Some(mark.cursor), focus, screen)
       }
       Some(Request::Tab(step)) => self.activate(self.step(step)),
@@ -704,11 +728,17 @@ impl Session {
         Ok(())
       }
       Some(Request::GoMark(name, exact)) => {
-        let mark = self.state.marks.get(&name).cloned();
-        let mark =
-          mark.ok_or_else(|| anyhow::anyhow!("Mark not set: {name}"))?;
+        let mark = self.global_mark(name)?;
         self.open(&mark.path, true, screen)?;
         self.app().go_to(mark.cursor, exact)
+      }
+      Some(Request::SplitAt(position)) => self.split_at(position),
+      Some(Request::SplitMark(name)) => {
+        let mark = self.global_mark(name)?;
+        if mark.path == self.app().path {
+          return self.split_at(mark.cursor);
+        }
+        self.panel_open(&mark.path, Some(mark.cursor), false, screen)
       }
       Some(Request::Pick) => match crate::fzf::pick(&std::env::current_dir()?)?
       {
@@ -724,10 +754,15 @@ impl Session {
     }
   }
 
+  fn global_mark(&self, name: char) -> Result<Mark> {
+    let mark = self.state.marks.get(&name).cloned();
+    mark.ok_or_else(|| anyhow::anyhow!("Mark not set: {name}"))
+  }
+
   fn panel_open(
     &mut self,
     path: &Path,
-    position: Option<crate::text::Position>,
+    position: Option<Position>,
     focus: bool,
     screen: Screen,
   ) -> Result<()> {
@@ -742,7 +777,10 @@ impl Session {
       if focus {
         self.open(&path, !here, screen)?;
       } else {
-        self.split(Axis::Columns, Some(&path))?;
+        // Beside the source, which keeps focus.
+        self.keeping_pointer(|session| {
+          session.split(Axis::Columns, Some(&path), Place::After)
+        })?;
       }
       (self.active, self.tab().focus)
     };
@@ -866,7 +904,8 @@ impl Session {
       }
       let left = self.leave_check();
       // Bare motion: a release got lost.
-      return Ok(self.app().drop_sweep() || seen || left);
+      let dropped = self.app().drop_sweep() | self.app().drop_grab();
+      return Ok(dropped || seen || left);
     }
     let wheel = pointer::Wheel::of(mouse.kind).is_some();
     if wheel && self.app().prompt.is_some() {
@@ -875,6 +914,12 @@ impl Session {
     // Presses and releases end a link rest.
     if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_)) {
       self.app().calm_hover();
+    }
+    // A double click splits once.
+    if mouse.kind == MouseEventKind::Down(MouseButton::Middle)
+      && self.pointer.repeats(mouse, pixel, now)
+    {
+      return Ok(false);
     }
     if matches!(mouse.kind, MouseEventKind::Down(_)) {
       if self.on_completion(mouse) {
@@ -914,22 +959,15 @@ impl Session {
     let Some(index) = self.tab().index(route.pane) else { return Ok(armed) };
     if route.focus {
       // Focusing releases captures; keep this one.
-      let pointer = std::mem::take(&mut self.pointer);
-      let focused = self.focus(self.active, index);
-      self.pointer = pointer;
-      focused?;
+      let active = self.active;
+      self.keeping_pointer(|session| session.focus(active, index))?;
     }
     let app = &mut self.tab().panes[index];
     // Per-pixel drags; edges scroll.
     let reading = |app: &App| {
       let menu = app.context_menu.as_ref().map(|menu| menu.selected);
-      (
-        app.reader.cursor,
-        app.reader.selection,
-        app.view_key(),
-        app.gesture,
-        menu,
-      )
+      let view = (app.view_key(), app.layout.pan.to_bits(), app.grabbing());
+      (app.reader.cursor, app.reader.selection, view, app.gesture, menu)
     };
     let before =
       matches!(mouse.kind, MouseEventKind::Drag(_)).then(|| reading(app));
@@ -1128,6 +1166,17 @@ impl Session {
     if let Some(app) = app {
       app.moved_onto(hover.hit);
     }
+  }
+
+  /// A held gesture's shape, else the hover's.
+  fn shape(&self) -> Shape {
+    if self.focused().grabbing() {
+      return Shape::Grabbing;
+    }
+    if self.tabs[self.active].panes.iter().any(App::sweeping) {
+      return Shape::Crosshair;
+    }
+    self.pointer.target().map_or_default(|hover| hover.hit).shape()
   }
 
   /// What the pointer rests on at `mouse`.
@@ -1506,10 +1555,7 @@ impl Drawable for Session {
     self.rehover();
     // Without a spot the pointer is elsewhere.
     if self.pointer.spot().is_some() {
-      let hit = self.pointer.target().map_or_default(|hover| hover.hit);
-      let sweeping = self.tab().panes.iter().any(App::sweeping);
-      let shape = if sweeping { Shape::Crosshair } else { hit.shape() };
-      terminal::point(out, shape)?;
+      terminal::point(out, self.shape())?;
     }
     write!(out, "{}\x1b[0m", terminal::frame_start())?;
     self.app().graphics.begin(out)?;
@@ -2014,6 +2060,7 @@ mod tests {
   #[ignore = "requires verified public PDF corpus"]
   fn frames_write_changed_shapes() -> Result<()> {
     use crate::pointer::{Hit, Region};
+    use crossterm::event::MouseButton::Middle;
     let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
     let screen = Screen {
       columns: 120,
@@ -2077,6 +2124,16 @@ mod tests {
       [(None, vec![]), (Some(blank), vec!["default"]), (Some(blank), vec![])];
     for (step, (cell, want)) in steps.into_iter().enumerate() {
       assert_eq!(frame(&mut session, cell)?, want, "shown again, step {step}");
+    }
+    // (middle event, column) -> shape written
+    let steps = [
+      (MouseEventKind::Down(Middle), blank.0, vec![]),
+      (MouseEventKind::Drag(Middle), blank.0 + 3, vec!["grabbing"]),
+      (MouseEventKind::Up(Middle), blank.0 + 3, vec!["default"]),
+    ];
+    for (kind, column, want) in steps {
+      session.mouse(MouseEvent { kind, column, ..moved(blank) })?;
+      assert_eq!(frame(&mut session, None)?, want, "{kind:?}");
     }
     Ok(())
   }

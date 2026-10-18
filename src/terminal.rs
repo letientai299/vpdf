@@ -60,6 +60,7 @@ pub enum Shape {
   Pointer,
   Text,
   Crosshair,
+  Grabbing,
 }
 
 impl Shape {
@@ -69,6 +70,7 @@ impl Shape {
       Self::Pointer => "pointer",
       Self::Text => "text",
       Self::Crosshair => "crosshair",
+      Self::Grabbing => "grabbing",
     }
   }
 }
