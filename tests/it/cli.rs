@@ -1,8 +1,10 @@
 use std::process::Command;
 use vpdf::Result;
 
-const HEADLINE: &str =
-  "Vim-inspired PDF reader for terminal with Kitty Graphic Protocol";
+const HEADLINE: &str = concat!(
+  "A Vim-inspired terminal PDF reader powered by MuPDF ",
+  "and the Kitty graphics protocol."
+);
 const REPOSITORY: &str = "https://github.com/letientai299/vpdf";
 
 #[test]

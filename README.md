@@ -1,7 +1,9 @@
 # vpdf
 
-A keyboard-driven terminal PDF reader. Read, navigate, and copy text without
-changing the source document.
+A Vim-inspired terminal PDF reader powered by [MuPDF][mupdf] and the
+[Kitty graphics protocol][kitty].
+
+Read, navigate, and copy text without changing the source document.
 
 ## Start
 
@@ -157,6 +159,7 @@ vpdf's original code is [MIT-licensed][license]. Executables that include
 MuPDF and its Rust bindings remain subject to their AGPL obligations. See
 [dependency licensing][notices].
 
+[mupdf]: https://mupdf.com/
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
 [keyboard]: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 [dnd]: https://sw.kovidgoyal.net/kitty/dnd-protocol/
