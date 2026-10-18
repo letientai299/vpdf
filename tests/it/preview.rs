@@ -89,6 +89,8 @@ fn preview_scroll_clamps_without_moving_target() -> Result<()> {
       key(&mut app, b"9999j")?;
       let last = drawn(&mut app)?;
       assert!(!last.contains('↓'));
+      // It runs to the last page (U12).
+      assert!(!last.contains(&format!("╭ {label} ")), "text={text}");
       key(&mut app, b"9999j")?;
       assert_eq!(drawn(&mut app)?, last);
       assert_eq!(format!("{:?}", app.peek.as_ref().unwrap().target), target);

@@ -723,6 +723,12 @@ fn preview_live() -> Result<()> {
       black_box(&mut app).scroll_preview(black_box(1.0)).expect("preview down");
       black_box(&mut app).scroll_preview(black_box(-1.0)).expect("preview up");
     })?;
+    // Warm: pages stay cached between runs.
+    measure(&format!("preview reopen cross text={text}"), || {
+      app.peek = None;
+      app.preview_link().expect("preview");
+      black_box(&mut app).scroll_preview(black_box(40.0)).expect("down");
+    })?;
   }
   Ok(())
 }

@@ -39,7 +39,7 @@ Move pointer: hover detail covers notes; errors stay
 Rest on a link 400 ms: preview it in the pane under the pointer
 Leave link and preview to close; keys close it
 Left-click a link preview, hover or K: follow
-Middle-click a link preview: its target in a split
+Middle press on a link preview: its target in a split
 Click link: follow and record jump
 Middle click link: open target in a split; copy a URL
 Jumps: flash landing line for 600 ms
@@ -159,7 +159,8 @@ K: show annotation note when present
 Hover note/highlight: show author, comment
 j k: scroll rows
 <C-d><C-u>: scroll half height
-Border: destination page; arrows mark clipped edges
+Border: page at its top; arrows mark clipped edges
+Scrolling runs past the target page's end
 <CR>: follow link or dismiss note
 <Esc>: cancel preview layer
 Click outside: close; pointer over it: status shows destination

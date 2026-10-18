@@ -177,7 +177,7 @@ impl App {
     open
   }
 
-  /// Left clicks inside follow, middle split; others close.
+  /// Inside: left follows, middle splits.
   pub fn preview_press(&mut self, mouse: MouseEvent) -> Result<bool> {
     let Some(peek) = &self.peek else { return Ok(false) };
     let key = peek.origin == Origin::Key;
@@ -198,7 +198,7 @@ impl App {
         self.follow_preview()?;
         return Ok(true);
       }
-      // As on the page: its target in a split (C2).
+      // Its target in a split (C2).
       Some(MouseButton::Middle) if follows => {
         self.disarm();
         let target = self.peek.take().map(|peek| peek.target);

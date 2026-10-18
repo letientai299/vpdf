@@ -16,6 +16,10 @@ const HEIGHT: f32 = 0.4;
 const ABOVE: f32 = 6.0;
 const IMAGE_BORDER: &str = "\x1b[0;38;2;60;120;230;48;2;255;255;255m";
 const NOTE_TEXT: &str = "\x1b[0;38;2;20;20;20;48;2;255;255;255m";
+/// Strip rows between pages.
+const GAP: u8 = 200;
+/// Pages one text scroll loads at most.
+const LOADS: usize = 4;
 
 pub struct Preview {
   pub target: Target,
@@ -66,9 +70,23 @@ pub enum Origin {
 }
 
 enum View {
-  Image { key: TileKey, rgb: Vec<u8> },
-  Text { top: usize, lines: Vec<String> },
-  Note { top: usize, contents: String, columns: usize, lines: Vec<String> },
+  /// A strip from its page onward.
+  Image {
+    key: TileKey,
+    rgb: Vec<u8>,
+  },
+  /// Lines from its page onward; page `starts`.
+  Text {
+    top: usize,
+    lines: Vec<String>,
+    starts: Vec<usize>,
+  },
+  Note {
+    top: usize,
+    contents: String,
+    columns: usize,
+    lines: Vec<String>,
+  },
 }
 
 impl App {
@@ -106,13 +124,9 @@ impl App {
         .iter()
         .position(|line| line.glyphs.last().is_some_and(|g| g.bounds.y1 >= y))
         .unwrap_or(text.lines.len());
-      let lines: Vec<_> = text
-        .lines
-        .iter()
-        .map(|line| line.text().trim_end().to_owned())
-        .collect();
-      let top = top.min(lines.len().saturating_sub(self.preview_rows()));
-      View::Text { top, lines }
+      // Past its last line, show that line.
+      let top = top.min(text.lines.len().saturating_sub(1));
+      View::Text { top, lines: page_lines(&text), starts: vec![0] }
     } else {
       let projected =
         self.layout.pages[page.0].matrix.transform_xy(x, y - ABOVE).1;
@@ -130,7 +144,35 @@ impl App {
       placement: None,
       seen,
     });
-    Ok(())
+    // Fill a late target from later pages.
+    self.scroll_preview(0.0)
+  }
+
+  /// Loads later pages toward `need` lines.
+  fn extend_text(&mut self, need: usize) {
+    // Large counts load in steps.
+    for _ in 0..LOADS {
+      let Some(preview @ Preview { view: View::Text { lines, .. }, .. }) =
+        &self.peek
+      else {
+        return;
+      };
+      let Some(next) = self.unloaded(preview).filter(|_| lines.len() < need)
+      else {
+        return;
+      };
+      // Unreadable pages show blank.
+      let text = self.doc.text(next);
+      let more = text.map_or_default(|text| page_lines(&text));
+      if let Some(Preview { view: View::Text { lines, starts, .. }, .. }) =
+        &mut self.peek
+      {
+        // A blank row starts each page.
+        starts.push(lines.len());
+        lines.push(String::new());
+        lines.extend(more);
+      }
+    }
   }
 
   pub(crate) fn preview_annotation(
@@ -190,8 +232,7 @@ impl App {
 
   fn preview_key(&self, page: PageId, top: i32) -> Result<TileKey> {
     let layout = &self.layout.pages[page.0];
-    let (x, _) = self.layout.origin(page, 0.0);
-    let left = (-x).max(0.0) as i32;
+    let left = self.layout.shown_pan(page) as i32;
     let screen = self.layout.screen;
     let cell_width = i32::from(screen.cell_width);
     let width = ((layout.width - left as f32).min(screen.width() * 0.95)
@@ -199,11 +240,13 @@ impl App {
       / cell_width)
       .min(i32::from(screen.columns.saturating_sub(2)))
       * cell_width;
+    // The strip runs to the end (U12).
+    let last = self.layout_end() - layout.top;
     let height = (self.preview_rows() as f32
       * f32::from(self.layout.screen.cell_height))
-    .min(layout.height) as i32;
+    .min(last) as i32;
     anyhow::ensure!(width > 8 && height > 8, "Preview area too small");
-    let top = top.clamp(0, (layout.height as i32 - height).max(0));
+    let top = top.clamp(0, (last as i32 - height).max(0));
     Ok(TileKey {
       page,
       scale: layout.scale,
@@ -216,11 +259,67 @@ impl App {
     })
   }
 
+  /// The first page a text preview lacks.
+  fn unloaded(&self, preview: &Preview) -> Option<PageId> {
+    let View::Text { starts, .. } = &preview.view else { return None };
+    let next = preview.page.0 + starts.len();
+    (next < self.doc.pages.len()).then_some(PageId(next))
+  }
+
+  /// Where the last page ends.
+  fn layout_end(&self) -> f32 {
+    self.layout.pages.last().map_or(0.0, |last| last.top + last.height)
+  }
+
+  /// Rasters the strip `key` names.
   fn preview_image(&mut self, key: TileKey) -> Result<View> {
-    let (width, height) = (key.width, key.height);
-    let area = IRect::new(key.x, key.y, key.x + width, key.y + height);
-    let pixmap = raster_area(&mut self.doc, &key, area)?;
-    let rgb = pixmap.samples().to_vec();
+    let stride = usize::try_from(key.width)? * 3;
+    let mut rgb = vec![GAP; stride * usize::try_from(key.height)?];
+    let first = self.layout.pages[key.page.0].top as i32;
+    let end = key.y + key.height;
+    for index in key.page.0..self.layout.pages.len() {
+      let page = PageId(index);
+      let layout = &self.layout.pages[index];
+      // Page rows in strip coordinates.
+      let start = layout.top as i32 - first;
+      let (from, to) =
+        (key.y.max(start), end.min(start + layout.height as i32));
+      if from >= end {
+        break;
+      }
+      let left = self.layout.shown_pan(page) as i32;
+      let width = key.width.min(layout.width as i32 - left);
+      if from >= to || width <= 0 {
+        continue;
+      }
+      let part = TileKey {
+        page,
+        scale: layout.scale,
+        x: left,
+        y: from - start,
+        width,
+        height: to - from,
+        ..key
+      };
+      let area =
+        IRect::new(part.x, part.y, part.x + width, part.y + part.height);
+      let pixmap = match raster_area(&mut self.doc, &part, area) {
+        Ok(pixmap) => pixmap,
+        Err(error) if index == key.page.0 => return Err(error),
+        // Later failures leave gap rows.
+        Err(_) => continue,
+      };
+      let row = usize::try_from(width)? * 3;
+      let offset = usize::try_from(from - key.y)?;
+      // Fitting pages centre, as in the view.
+      let indent = if left == 0 { (key.width - width) / 2 } else { 0 };
+      let indent = usize::try_from(indent)? * 3;
+      let source = usize::try_from(pixmap.stride())?;
+      for (line, pixels) in pixmap.samples().chunks(source).enumerate() {
+        let at = (offset + line) * stride + indent;
+        rgb[at..at + row].copy_from_slice(&pixels[..row]);
+      }
+    }
     Ok(View::Image { key, rgb })
   }
 
@@ -277,18 +376,15 @@ impl App {
     }
     let visible = self.preview_rows();
     match &preview.view {
-      View::Text { top, lines } | View::Note { top, lines, .. } => {
-        let step = rows.round() as isize;
-        let top = top
-          .saturating_add_signed(step)
-          .min(lines.len().saturating_sub(visible));
+      View::Text { top, .. } | View::Note { top, .. } => {
+        let wanted = top.saturating_add_signed(rows.round() as isize);
+        self.extend_text(wanted + visible);
         if let Some(Preview {
-          view:
-            View::Text { top: current, .. } | View::Note { top: current, .. },
+          view: View::Text { top, lines, .. } | View::Note { top, lines, .. },
           ..
         }) = &mut self.peek
         {
-          *current = top;
+          *top = wanted.min(lines.len().saturating_sub(visible));
         }
       }
       View::Image { key, .. } => {
@@ -313,19 +409,23 @@ impl App {
     let screen = self.layout.screen;
     let cell = f32::from(screen.cell_height);
     match &preview.view {
-      View::Image { key, .. } => (
-        key.width as usize / usize::from(screen.cell_width),
-        (key.height as f32 / cell).ceil() as usize,
+      View::Image { key, .. } => {
+        let top = self.layout.pages[preview.page.0].top;
+        let bottom = top + (key.y + key.height) as f32;
         (
-          key.y > 0,
-          key.y + key.height < self.layout.pages[preview.page.0].height as i32,
-        ),
-      ),
-      View::Text { top, lines } => (
-        usize::from(screen.columns).saturating_sub(4),
-        self.preview_rows().min(lines.len()),
-        (*top > 0, *top + self.preview_rows() < lines.len()),
-      ),
+          key.width as usize / usize::from(screen.cell_width),
+          (key.height as f32 / cell).ceil() as usize,
+          (key.y > 0, bottom < self.layout_end()),
+        )
+      }
+      View::Text { top, lines, .. } => {
+        let more = self.unloaded(preview).is_some();
+        (
+          usize::from(screen.columns).saturating_sub(4),
+          self.preview_rows().min(lines.len()),
+          (*top > 0, more || *top + self.preview_rows() < lines.len()),
+        )
+      }
       View::Note { top, lines, columns, .. } => (
         *columns,
         self.preview_rows().min(lines.len()),
@@ -380,6 +480,25 @@ impl App {
       row: cells(y0),
       columns: cells(x1.saturating_sub(x0)),
       rows: cells(y1.saturating_sub(y0)),
+    }
+  }
+
+  /// The page the preview's top row shows.
+  fn top_page(&self, preview: &Preview) -> PageId {
+    match &preview.view {
+      View::Image { key, .. } => {
+        let pages = &self.layout.pages;
+        let top = pages[key.page.0].top + key.y as f32;
+        // Past a page's gap, the next one.
+        let index = (key.page.0..pages.len())
+          .find(|&index| pages[index].top + pages[index].height > top);
+        index.map_or(key.page, PageId)
+      }
+      View::Text { top, starts, .. } => {
+        let later = starts.partition_point(|start| start <= top);
+        PageId(preview.page.0 + later.saturating_sub(1))
+      }
+      View::Note { .. } => preview.page,
     }
   }
 
@@ -467,7 +586,8 @@ impl App {
     let (top, column) = (usize::from(frame.row), usize::from(frame.column));
     let rows = usize::from(frame.rows) - 2;
     let columns = usize::from(frame.columns) - 2;
-    let label = border_label(self.doc.label(preview.page), columns, clipped.0);
+    let shown = self.top_page(preview);
+    let label = border_label(self.doc.label(shown), columns, clipped.0);
     let rule = "─".repeat(columns.saturating_sub(label.width()));
     let over_page = matches!(preview.view, View::Image { .. })
       || !self.text_mode && matches!(preview.view, View::Note { .. });
@@ -515,7 +635,7 @@ impl App {
           out,
         )?;
       }
-      View::Text { top: first, lines }
+      View::Text { top: first, lines, .. }
       | View::Note { top: first, lines, .. } => {
         for (index, line) in lines.iter().skip(*first).take(rows).enumerate() {
           let text = crate::terminal::clean(line, columns);
@@ -552,4 +672,10 @@ fn border_label(label: &str, columns: usize, clipped: bool) -> String {
   }
   let label = crate::terminal::clean(label, columns - marker.width() - 3);
   format!(" {label} {marker} ")
+}
+
+/// A page's lines for previews.
+fn page_lines(text: &crate::text::Text) -> Vec<String> {
+  let lines = text.lines.iter().map(|line| line.text().trim_end().to_owned());
+  lines.collect()
 }

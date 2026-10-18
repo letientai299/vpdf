@@ -1744,7 +1744,29 @@ fn hover_previews_answer_input() -> Result<()> {
   Ok(())
 }
 
-/// A middle click inside splits to the target (C2).
+/// Previews run past their page's end (U12).
+#[test]
+fn previews_cross_page_ends() -> Result<()> {
+  let low = "/Dest [3 0 R /XYZ 0 40 0]";
+  let write = |path: &Path| lines_pdf(path, [(LINES[0], low)].into_iter());
+  for text_mode in [false, true] {
+    let (_directory, mut session) = open(write, text_mode)?;
+    // Short previews must scroll to page 2.
+    session.resize(vpdf::layout::Screen { rows: 12, ..screen() })?;
+    key_open(&mut session)?;
+    let first = status(&mut session)?;
+    assert!(first.contains("╭ 1 "), "text={text_mode}: starts on page 1");
+    if text_mode {
+      assert!(first.contains("Back to the top"), "a page 1 line shows");
+    }
+    session.app().scroll_preview(100.0)?;
+    let last = status(&mut session)?;
+    assert!(last.contains("╭ 2 "), "text={text_mode}: reaches page 2");
+  }
+  Ok(())
+}
+
+/// Middle clicks split to targets (C2).
 #[test]
 fn middle_clicks_split_previews() -> Result<()> {
   for popup in ["hover", "key"] {
@@ -1769,7 +1791,7 @@ fn middle_clicks_split_previews() -> Result<()> {
   Ok(())
 }
 
-/// A click inside cancels pending keys (r15 #8).
+/// Clicks inside cancel pending keys (r15 #8).
 #[test]
 fn preview_clicks_cancel_keys() -> Result<()> {
   use crossterm::event::KeyCode;
