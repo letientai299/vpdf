@@ -2514,3 +2514,23 @@ fn rests_wait_for_free_input() -> Result<()> {
   assert!(session.tab().panes[index].hover_due().is_none(), "a press");
   Ok(())
 }
+
+/// Closing a popup over a resting pointer starts no new rest.
+#[test]
+fn closed_popups_start_no_rest() -> Result<()> {
+  use crossterm::event::KeyCode;
+  use vpdf::trace::Drawable;
+  let (_directory, mut session) = session(false)?;
+  let link = cell(&mut session, Hit::Link(PageId(0), 0))?;
+  mouse(&mut session, MouseEventKind::Moved, link)?;
+  session.draw_frame(&mut Vec::new())?;
+  mouse(&mut session, MouseEventKind::Down(MouseButton::Right), link)?;
+  mouse(&mut session, MouseEventKind::Up(MouseButton::Right), link)?;
+  session.draw_frame(&mut Vec::new())?;
+  assert!(session.app().context_menu.is_some(), "the menu opens");
+  press(&mut session, KeyCode::Esc)?;
+  assert!(session.app().context_menu.is_none(), "Esc closes it");
+  session.draw_frame(&mut Vec::new())?;
+  assert!(session.app().hover_due().is_none(), "no motion, no rest");
+  Ok(())
+}
