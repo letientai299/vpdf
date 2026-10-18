@@ -23,10 +23,11 @@ description = "Package the release executable with UPX on Linux"
 depends = ["build"]
 run = "sh scripts/release.sh"
 
-[tasks.run]
-description = "Run the reader"
-depends = ["build"]
-run = '"${CARGO_TARGET_DIR:-target}/release/vpdf" {{arg(name="args", var=true)}}'
+[tasks.try]
+description = "Build and run the debug reader"
+raw = true
+raw_args = true
+run = "cargo run --locked --"
 
 [tasks.lint]
 description = "Fix what tools can, then reject the remaining lint and format issues"
