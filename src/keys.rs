@@ -110,6 +110,7 @@ pub enum Grammar {
   /// Cursor mode in the content, without an operator.
   Cursor,
   Objects,
+  Panel,
   Other,
 }
 
@@ -148,6 +149,9 @@ impl Keys {
     if self.prefix == "y" {
       self.prefix.clear();
       match token.as_str() {
+        "y" if grammar == Grammar::Panel => {
+          return Some(self.finish(Action::YankLine));
+        }
         "p" => return Some(self.finish(Action::YankPath)),
         "Y" => return Some(self.finish(Action::YankRaw)),
         _ => {}
@@ -187,6 +191,9 @@ impl Keys {
     }
     self.prefix.push_str(&token);
     if let Some(action) = binding(&self.prefix) {
+      if action == Action::Yank && grammar == Grammar::Panel {
+        return None;
+      }
       let register = self.register;
       let input = self.finish(action);
       // `y` starts its operator now and still takes `p` or `Y`.
@@ -559,6 +566,19 @@ mod tests {
   use super::*;
 
   #[test]
+  fn panel_yank_is_one_action() {
+    let mut keys = Keys::default();
+    let inputs: Vec<_> = "\"ayy"
+      .chars()
+      .filter_map(|ch| keys.feed(key(ch), Grammar::Panel))
+      .collect();
+    assert_eq!(inputs.len(), 1);
+    assert_eq!(inputs[0].action, Action::YankLine);
+    assert_eq!(inputs[0].register, 'a');
+    assert_eq!(keys.pending(), "");
+  }
+
+  #[test]
   fn control_c_cancels_pending_input() {
     let mut keys = Keys::default();
     keys.feed(key('y'), Grammar::Normal);
@@ -841,8 +861,13 @@ mod tests {
 
   #[test]
   fn cursor_and_object_grammar() {
-    let grammars =
-      [Grammar::Normal, Grammar::Cursor, Grammar::Objects, Grammar::Other];
+    let grammars = [
+      Grammar::Normal,
+      Grammar::Cursor,
+      Grammar::Objects,
+      Grammar::Panel,
+      Grammar::Other,
+    ];
     for grammar in grammars {
       let mut keys = Keys::default();
       let input = keys.feed(key('i'), grammar);
@@ -859,7 +884,7 @@ mod tests {
             Action::Object(O::Word, false)
           );
         }
-        Grammar::Cursor | Grammar::Other => {
+        Grammar::Cursor | Grammar::Panel | Grammar::Other => {
           assert!(input.is_none());
           assert!(keys.awaiting().is_none());
         }

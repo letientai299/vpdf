@@ -190,6 +190,7 @@ impl App {
         Grammar::Normal
       }
       InputOwner::Content => Grammar::Cursor,
+      InputOwner::Panel => Grammar::Panel,
       _ => Grammar::Other,
     };
     if let Some(input) = self.keys.feed(key, grammar) {

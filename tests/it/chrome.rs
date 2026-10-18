@@ -1311,3 +1311,18 @@ fn gx_reuses_url_scheme_checks() -> Result<()> {
   assert!(app.text_mode);
   Ok(())
 }
+
+#[test]
+fn panel_yank_keeps_named_register() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  let app = session.app();
+  crate::modes::keys(app, b"go\"ay")?;
+  assert!(app.reader.pending_yank.is_none());
+  crate::modes::keys(app, b"y")?;
+  let yank = app.reader.pending_yank.take().unwrap();
+  assert_eq!(yank.register, 'a');
+  assert_eq!(yank.text, "Results\n");
+  assert!(app.reader.operator.is_none());
+  assert_eq!(app.keys.pending(), "");
+  Ok(())
+}
