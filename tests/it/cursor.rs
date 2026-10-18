@@ -379,3 +379,29 @@ fn counted_overview_boundaries() -> Result<()> {
   assert_eq!(app.overview.as_ref().unwrap().selected, 0);
   Ok(())
 }
+
+#[test]
+fn cancel_layer_preserves_visual() -> Result<()> {
+  for text in [false, true] {
+    for layer in [b"/results".as_slice(), b"gp", b"f"] {
+      if text && layer == b"gp" {
+        continue;
+      }
+      for cancel in [ESC, b"\x03"] {
+        let (_directory, mut session) = crate::mouse::session(text)?;
+        let app = session.app();
+        keys(app, b"ivw")?;
+        let range = (app.reader.cursor, app.reader.selection);
+        keys(app, layer)?;
+        assert_ne!(app.input_owner(), InputOwner::Content);
+        keys(app, cancel)?;
+        assert_eq!(app.input_owner(), InputOwner::Content);
+        assert_eq!((app.reader.cursor, app.reader.selection), range);
+        assert!(!app.quit);
+        keys(app, cancel)?;
+        assert!(app.reader.selection.is_none());
+      }
+    }
+  }
+  Ok(())
+}

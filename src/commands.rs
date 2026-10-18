@@ -8,7 +8,7 @@ use crate::reader::{self, Mode};
 use crate::render_worker::RenderWorker;
 use crate::split::Axis;
 use crate::text::{PageId, Position};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::process::{Command, Stdio};
 
 /// The note after copying an address.
@@ -131,7 +131,9 @@ impl App {
         cmdline::feed(prompt, key, history)
       });
     }
-    if key.code == KeyCode::Esc {
+    if key.code == KeyCode::Esc
+      || key == KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)
+    {
       return self.cancel_input();
     }
     if let Some(hints) = &self.hints {
@@ -205,11 +207,16 @@ impl App {
     }
     self.region = None;
     self.end_gestures();
-    match owner {
-      InputOwner::Prompt => self.cancel_prompt()?,
-      InputOwner::Hints => self.hints = None,
-      _ if self.overview.is_some() => self.close_overview(),
-      _ => {}
+    if matches!(owner, InputOwner::Prompt | InputOwner::Hints)
+      || self.overview.is_some()
+    {
+      match owner {
+        InputOwner::Prompt => self.cancel_prompt()?,
+        InputOwner::Hints => self.hints = None,
+        _ => self.close_overview(),
+      }
+      self.disarm();
+      return Ok(());
     }
     if owner == InputOwner::Content && pending {
       self.reader.message.clear();
