@@ -39,7 +39,7 @@ run = [
 
 [tasks.test]
 depends = ["test:demo"]
-run = "cargo nextest run --locked"
+run = "cargo nextest run --locked --test-threads num-cpus --no-fail-fast"
 
 [tasks.hooks]
 run = "prek install"

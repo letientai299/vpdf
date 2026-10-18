@@ -330,14 +330,13 @@ mod tests {
     let mock = temp.path().join("clipboard mock");
     std::fs::write(
       &mock,
-      r"#!/usr/bin/python3
-import os, pathlib, sys
-if os.environ['MODE'] == 'mac':
-    content = pathlib.Path(sys.argv[-1]).read_bytes()
-else:
-    content = sys.stdin.buffer.read()
-pathlib.Path(os.environ['CAPTURE']).write_bytes(content)
-",
+      r#"#!/bin/sh
+if [ "$MODE" = mac ]; then
+    cat "$3" > "$CAPTURE"
+else
+    cat > "$CAPTURE"
+fi
+"#,
     )?;
     std::fs::set_permissions(&mock, std::fs::Permissions::from_mode(0o700))?;
     let png = b"\x89PNG\r\n\x1a\n\0\xfftest";
