@@ -287,7 +287,14 @@ impl App {
       if from >= end {
         break;
       }
-      let left = self.layout.shown_pan(page) as i32;
+      let pan = self.layout.shown_pan(page) as i32;
+      // Wider fitting pages show their middle.
+      let wide = layout.width as i32 - key.width;
+      let left = match pan {
+        _ if index == key.page.0 => key.x,
+        0 => (wide / 2).max(0),
+        pan => pan,
+      };
       let width = key.width.min(layout.width as i32 - left);
       if from >= to || width <= 0 {
         continue;
@@ -312,7 +319,7 @@ impl App {
       let row = usize::try_from(width)? * 3;
       let offset = usize::try_from(from - key.y)?;
       // Fitting pages centre, as in the view.
-      let indent = if left == 0 { (key.width - width) / 2 } else { 0 };
+      let indent = if pan == 0 { (key.width - width) / 2 } else { 0 };
       let indent = usize::try_from(indent)? * 3;
       let source = usize::try_from(pixmap.stride())?;
       for (line, pixels) in pixmap.samples().chunks(source).enumerate() {

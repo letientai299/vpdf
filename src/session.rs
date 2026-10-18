@@ -1056,8 +1056,19 @@ impl Session {
     if self.on_completion(mouse) {
       return Ok(Some(false));
     }
-    let app = self.app();
-    if app.preview_press(mouse)? || app.dismiss_click()? {
+    if self.app().preview_press(mouse)? {
+      if mouse.kind == MouseEventKind::Down(MouseButton::Middle) {
+        // Its run drops a double click's repeat.
+        let tab = self.tab();
+        let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();
+        let focused = tab.panes[tab.focus].id;
+        self.pointer.route(&panes, focused, mouse, pixel, now);
+      } else {
+        self.pointer.release();
+      }
+      return Ok(Some(true));
+    }
+    if self.app().dismiss_click()? {
       self.pointer.release();
       return Ok(Some(true));
     }

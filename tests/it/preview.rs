@@ -279,3 +279,26 @@ fn preview_label_keeps_arrow() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn text_previews_load_in_steps() -> Result<()> {
+  let mut app = open(true)?;
+  let links = app.doc.links(PageId(1))?;
+  let early = links.iter().find(|link| {
+    matches!(link.target, Target::Page(page) | Target::Point { page, .. }
+      if page.0 < 5)
+  });
+  let link = early.cloned().expect("a link to an early page");
+  let (x, y) = link.bounds.centre();
+  let position = app.doc.text(PageId(1))?.nearest(PageId(1), x, y);
+  app.go_to(position, true)?;
+  key(&mut app, b"K9999j")?;
+  // Four pages per scroll; more remain.
+  assert!(drawn(&mut app)?.contains('↓'), "pages remain");
+  for _ in 0..4 {
+    key(&mut app, b"9999j")?;
+  }
+  assert!(!drawn(&mut app)?.contains('↓'), "the last page");
+  Ok(())
+}

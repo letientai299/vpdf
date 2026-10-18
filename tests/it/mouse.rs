@@ -1759,6 +1759,11 @@ fn previews_cross_page_ends() -> Result<()> {
     if text_mode {
       assert!(first.contains("Back to the top"), "a page 1 line shows");
     }
+    if text_mode {
+      // The break row starts page 2.
+      session.app().scroll_preview(1.0)?;
+      assert!(status(&mut session)?.contains("╭ 2 "), "break row");
+    }
     session.app().scroll_preview(100.0)?;
     let last = status(&mut session)?;
     assert!(last.contains("╭ 2 "), "text={text_mode}: reaches page 2");
@@ -1777,8 +1782,12 @@ fn middle_clicks_split_previews() -> Result<()> {
       _ => key_open(&mut session)?,
     };
     let at = (area.column + 1, area.row + 1);
-    mouse(&mut session, MouseEventKind::Down(MouseButton::Middle), at)?;
-    mouse(&mut session, MouseEventKind::Up(MouseButton::Middle), at)?;
+    // A double click splits once (r3 I1).
+    for _ in 0..2 {
+      mouse(&mut session, MouseEventKind::Down(MouseButton::Middle), at)?;
+      session.settle()?;
+      mouse(&mut session, MouseEventKind::Up(MouseButton::Middle), at)?;
+    }
     session.settle()?;
     let panes = &session.tab().panes;
     assert_eq!(panes.len(), 2, "{popup}");
