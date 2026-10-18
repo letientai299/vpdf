@@ -5,12 +5,16 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
+use vpdf::find::Phase;
 use vpdf::keys::{Action, Input};
 use vpdf::layout::Screen;
+use vpdf::motion::Motion as Move;
 use vpdf::tiles;
 
 const FRAME: Duration = Duration::from_micros(8333);
 const SETTLE: Duration = Duration::from_secs(10);
+/// A full scan of a 5,000-page manual stays well inside this.
+const SCAN: Duration = Duration::from_secs(120);
 
 #[derive(Default, Serialize)]
 struct Timing {
@@ -59,6 +63,8 @@ struct Sim {
 
 impl Sim {
   fn tick(&mut self) -> Result<Frame> {
+    self.app.search_updates()?;
+    self.app.outline_updates()?;
     self.app.raster_updates();
     self.app.animate();
     self.frame.clear();
@@ -119,6 +125,16 @@ struct Motion {
 }
 
 #[derive(Serialize)]
+struct Find {
+  query: &'static str,
+  hits: usize,
+  first_hit_ms: f64,
+  first_view_ms: f64,
+  done_ms: f64,
+  next: Jumps,
+}
+
+#[derive(Serialize)]
 struct Report {
   document: String,
   pages: usize,
@@ -126,13 +142,20 @@ struct Report {
   open_ms: f64,
   open_complete_ms: f64,
   jumps: Jumps,
+  idle_jumps: Jumps,
+  scan_jumps: Jumps,
+  /// The scan outlasted `scan_jumps`.
+  scanning: bool,
   zoom: Jumps,
+  ends: Jumps,
+  history: Jumps,
+  sections: Jumps,
+  finds: Vec<Find>,
   motions: Vec<Motion>,
 }
 
 /// Distinct pseudo-random pages, reproducible across runs.
-fn pages(count: usize, total: usize) -> Vec<usize> {
-  let mut seed = 0x9e37_79b9_u64;
+fn pages(count: usize, total: usize, mut seed: u64) -> Vec<usize> {
   let mut picked = Vec::new();
   while picked.len() < count.min(total) {
     seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
@@ -144,9 +167,9 @@ fn pages(count: usize, total: usize) -> Vec<usize> {
   picked
 }
 
-fn jumps(sim: &mut Sim, count: usize) -> Result<Jumps> {
+fn jumps(sim: &mut Sim, count: usize, seed: u64) -> Result<Jumps> {
   let (mut input, mut first, mut complete) = (vec![], vec![], vec![]);
-  for page in pages(count, sim.app.doc.pages.len()) {
+  for page in pages(count, sim.app.doc.pages.len(), seed) {
     let started = Instant::now();
     sim.app.command(&(page + 1).to_string())?;
     input.push(ms(started.elapsed()));
@@ -161,22 +184,103 @@ fn jumps(sim: &mut Sim, count: usize) -> Result<Jumps> {
   })
 }
 
-fn zooms(sim: &mut Sim) -> Result<Jumps> {
+/// The same pages in a fresh reader, with or without a full search scan
+/// running, which shares `MuPDF`'s locks; whether the scan outlasted them.
+fn fresh_jumps(
+  path: &Path,
+  screen: Screen,
+  scan: bool,
+) -> Result<(Jumps, bool)> {
+  let app = App::with_screen(path, "", false, screen)?;
+  let mut sim = Sim { app, frame: Vec::new(), uploaded: 0 };
+  sim.settle(Instant::now())?;
+  if scan {
+    sim.app.start_search("zkqxjv", false, false)?;
+  }
+  let jumps = jumps(&mut sim, 10, 0xc2b2_ae35)?;
+  Ok((jumps, matches!(sim.app.search.phase, Phase::Running { .. })))
+}
+
+/// Times each action from input to a complete view.
+fn settled(
+  sim: &mut Sim,
+  actions: impl IntoIterator<Item = Action>,
+) -> Result<Jumps> {
   let (mut input, mut first, mut complete) = (vec![], vec![], vec![]);
-  for action in [1, 1, 1, -1, -1, -1].map(Action::Zoom) {
+  for action in actions {
     let started = Instant::now();
     input.push(sim.act(action)?);
     let (one, all) = sim.settle(started)?;
     first.push(one);
     complete.push(all);
   }
-  sim.act(Action::Fit)?;
-  sim.settle(Instant::now())?;
   Ok(Jumps {
     input: timing(input),
     first_tile: timing(first),
     complete: timing(complete),
   })
+}
+
+/// Sections forward once the outline loads; none without one.
+fn sections(sim: &mut Sim, count: usize) -> Result<Jumps> {
+  let started = Instant::now();
+  sim.app.want_outline();
+  while sim.app.outline_pending() {
+    sim.tick()?;
+    anyhow::ensure!(started.elapsed() < SCAN, "Outline never loaded");
+    std::thread::sleep(FRAME);
+  }
+  if sim.app.doc.outline.is_empty() {
+    return settled(sim, []);
+  }
+  sim.app.command("1")?;
+  sim.settle(Instant::now())?;
+  // Steps past the last heading do nothing and would skew the timing.
+  let count = count.min(sim.app.doc.outline.len().saturating_sub(1));
+  settled(sim, std::iter::repeat_n(Action::Section(true), count))
+}
+
+/// Searches from page 1 to the scan's end, then steps through matches.
+fn find(sim: &mut Sim, query: &'static str) -> Result<Find> {
+  sim.app.command("1")?;
+  sim.settle(Instant::now())?;
+  let started = Instant::now();
+  sim.app.start_search(query, false, false)?;
+  let (mut hit, mut view) = (None, None);
+  loop {
+    let frame = sim.tick()?;
+    let now = ms(started.elapsed());
+    if hit.is_none() && !sim.app.search.hits.is_empty() {
+      hit = Some(now);
+    }
+    if hit.is_some() && view.is_none() && frame.missing == 0 {
+      view = Some(now);
+    }
+    if matches!(sim.app.search.phase, Phase::Complete) && frame.missing == 0 {
+      break;
+    }
+    anyhow::ensure!(started.elapsed() < SCAN, "Search never finished");
+    std::thread::sleep(FRAME);
+  }
+  let done_ms = ms(started.elapsed());
+  let hits = sim.app.search.hits.len();
+  let steps = if hits == 0 { 0 } else { 10 };
+  let next = settled(sim, std::iter::repeat_n(Action::Result(false), steps))?;
+  Ok(Find {
+    query,
+    hits,
+    first_hit_ms: hit.unwrap_or(done_ms),
+    first_view_ms: view.unwrap_or(done_ms),
+    done_ms,
+    next,
+  })
+}
+
+fn zooms(sim: &mut Sim) -> Result<Jumps> {
+  let zoom = settled(sim, [1, 1, 1, -1, -1, -1].map(Action::Zoom))?;
+  sim.act(Action::Fit)?;
+  sim.settle(Instant::now())?;
+  Ok(zoom)
 }
 
 /// Sends `action` every `period` for `inputs` inputs while drawing at
@@ -241,6 +345,8 @@ fn motions(sim: &mut Sim) -> Result<Vec<Motion>> {
     motion(sim, "half_10hz", Action::Scroll(0.5), hz(10), 30)?,
     motion(sim, "half_up_10hz", Action::Scroll(-0.5), hz(10), 30)?,
     motion(sim, "page_4hz", Action::Scroll(1.0), hz(4), 12)?,
+    // A held Page Down at key-repeat rate.
+    motion(sim, "page_30hz", Action::Scroll(1.0), hz(30), 60)?,
   ])
 }
 
@@ -250,8 +356,24 @@ fn document(path: &Path, screen: Screen) -> Result<Report> {
   let open_ms = ms(started.elapsed());
   let mut sim = Sim { app, frame: Vec::new(), uploaded: 0 };
   let (_, open_complete_ms) = sim.settle(started)?;
-  let jumps = jumps(&mut sim, 20)?;
+  let random = jumps(&mut sim, 20, 0x9e37_79b9)?;
+  // An untimed pass reads the pages into the OS file cache for both.
+  fresh_jumps(path, screen, false)?;
+  let (idle_jumps, _) = fresh_jumps(path, screen, false)?;
+  let (scan_jumps, scanning) = fresh_jumps(path, screen, true)?;
+  let history =
+    settled(&mut sim, std::iter::repeat_n(Action::History(false), 10))?;
   let zoom = zooms(&mut sim)?;
+  let ends = settled(
+    &mut sim,
+    [Move::Last, Move::First].repeat(3).into_iter().map(Action::Motion),
+  )?;
+  let sections = sections(&mut sim, 15)?;
+  // The last query repeats a full scan over cached indexes.
+  let finds = ["qzxjvw", "the", "vwjxzq"]
+    .into_iter()
+    .map(|query| find(&mut sim, query))
+    .collect::<Result<_>>()?;
   let motions = motions(&mut sim)?;
   Ok(Report {
     document: path.file_name().unwrap_or_default().to_string_lossy().into(),
@@ -259,8 +381,15 @@ fn document(path: &Path, screen: Screen) -> Result<Report> {
     screen: (screen.columns, screen.rows),
     open_ms,
     open_complete_ms,
-    jumps,
+    jumps: random,
+    idle_jumps,
+    scan_jumps,
+    scanning,
     zoom,
+    ends,
+    history,
+    sections,
+    finds,
     motions,
   })
 }

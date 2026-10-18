@@ -98,7 +98,8 @@ mise run bench:stages
 ```
 
 The [latency benchmark][latency] uses a live render worker to measure cold
-opens, jumps, zooms, and paced scrolling, including tile readiness and blank
+opens, page and history jumps, zooms, section and search navigation, jumps
+during a search scan, and paced scrolling, including tile readiness and blank
 frames. The [stage benchmark][stages] separates page loading, text extraction,
 display list construction, rasterization, and encoding.
 

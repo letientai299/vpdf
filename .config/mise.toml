@@ -81,7 +81,7 @@ depends = ["corpus"]
 run = "cargo bench --locked --profile release --bench reader"
 
 [tasks."bench:latency"]
-description = "Measure cold opens, jumps, zooms, and paced scrolling"
+description = "Measure opens, jumps, zooms, searches, and paced scrolling"
 depends = ["corpus"]
 run = "cargo bench --locked --profile release --bench latency"
 
