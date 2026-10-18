@@ -68,7 +68,9 @@ unicode-width = "0.2"
 [target.'cfg(target_os = "macos")'.dependencies]
 font-kit = "0.14"
 # Apple's zlib inflates content and font streams faster than the vendored
-# copy, which Linux keeps for its static build.
+# copy, which Linux keeps for its static build. Its symbols are unprefixed,
+# so flate2 shares Apple's zlib only here.
+flate2 = { version = "1", features = ["zlib"] }
 mupdf = { version = "=0.8.0", default-features = false, features = [
   "sys-lib-zlib",
 ] }
