@@ -824,6 +824,50 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   Ok(())
 }
 
+/// U9: hover highlights clues and completions as menu rows.
+#[test]
+fn clues_and_completions_highlight_on_hover() -> Result<()> {
+  use vpdf::pointer::List;
+  let badge = |label: &str| format!("\x1b[0;1;7;34m {label}");
+  let (_directory, mut session) = session(false)?;
+  let page = cell(&mut session, Hit::Text)?;
+  keys(&mut session, "g")?;
+  session.app().awaiting =
+    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1));
+  assert!(session.app().clue_due());
+  status(&mut session)?;
+  let app = session.app();
+  let clues = app.clues.as_ref().expect("clues");
+  let index = clues.items.iter().position(|(k, _)| k == "p").expect("p");
+  let label = app.clue_grid(clues).0[index].clone();
+  let at = item_cell(&mut session, List::Clues, index)?;
+  assert!(!drawn(&mut session)?.contains(&badge(&label)));
+  assert!(mouse(&mut session, MouseEventKind::Moved, at)?, "a frame");
+  assert!(drawn(&mut session)?.contains(&badge(&label)));
+  assert!(mouse(&mut session, MouseEventKind::Moved, page)?, "a frame");
+  assert!(!drawn(&mut session)?.contains(&badge(&label)));
+  // Hover shows a completion as chosen; the line stays.
+  press(&mut session, KeyCode::Esc)?;
+  keys(&mut session, ":tab")?;
+  press(&mut session, KeyCode::Tab)?;
+  status(&mut session)?;
+  let prompt = |session: &mut Session| {
+    let prompt = session.app().prompt.as_ref().expect("a prompt");
+    let menu = prompt.menu.as_ref().expect("a menu");
+    (prompt.text.clone(), menu.labels[1].clone())
+  };
+  let (text, label) = prompt(&mut session);
+  let first = item_cell(&mut session, List::Completions, 0)?;
+  let at = item_cell(&mut session, List::Completions, 1)?;
+  mouse(&mut session, MouseEventKind::Moved, first)?;
+  assert!(!drawn(&mut session)?.contains(&badge(&label)));
+  // Same shape, another item.
+  assert!(mouse(&mut session, MouseEventKind::Moved, at)?, "a frame");
+  assert!(drawn(&mut session)?.contains(&badge(&label)));
+  assert_eq!(prompt(&mut session).0, text);
+  Ok(())
+}
+
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn section_clicks_select_their_entry() -> Result<()> {

@@ -3,7 +3,7 @@ use crate::app::App;
 use crate::layout::Screen;
 use crate::marks::Span;
 use crate::panel::Pointing;
-use crate::pointer::Hit;
+use crate::pointer::{Hit, List};
 use crate::reader::SelectionKind;
 use crate::terminal;
 use crate::text::{Bounds, Line, PageId, Position};
@@ -392,7 +392,9 @@ impl App {
   fn bottom(&mut self, out: &mut impl Write) -> Result<()> {
     let row = self.screen.rows - 1;
     if let Some(prompt) = &self.prompt {
-      return crate::statusline::prompt(out, prompt, self.screen, self.at);
+      let pointed = self.pointed_item(List::Completions);
+      let (screen, at) = (self.screen, self.at);
+      return crate::statusline::prompt(out, prompt, screen, at, pointed);
     }
     // After the panel, which finds clipped rows.
     // Hidden details cost nothing.
@@ -404,7 +406,16 @@ impl App {
     if let Some(clues) = &self.clues {
       let (labels, grid, keys) = self.clue_grid(clues);
       let bottom = (self.at, row - 1);
-      crate::grid::draw(out, bottom, &labels, &grid, None, keys, self.screen)?;
+      let pointed = self.pointed_item(List::Clues);
+      crate::grid::draw(
+        out,
+        bottom,
+        &labels,
+        &grid,
+        pointed,
+        keys,
+        self.screen,
+      )?;
     }
     self.status_line(out, row, detail.as_deref())?;
     write!(out, "\x1b[?25l")?;

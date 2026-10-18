@@ -77,7 +77,7 @@ impl Home {
     )?;
     let row = self.screen.rows - 1;
     if let Some(prompt) = &self.prompt {
-      statusline::prompt(out, prompt, self.screen, At::default())?;
+      statusline::prompt(out, prompt, self.screen, At::default(), None)?;
     } else {
       let (text, style) = match &self.error {
         Some(error) => (error.as_str(), theme::ERROR),

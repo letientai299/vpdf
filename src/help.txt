@@ -197,6 +197,7 @@ Wheel: scroll the page, preview, note, list, or card under it
 gp wheel: scroll thumbnails; keep selection
 P wheel: scroll list; keep row selection
 Wheel with a menu open: scroll what is under it
+Status line wheel: scroll the pane above it
 Page <C-wheel>: zoom; keep the point under the pointer
 Page <S-wheel> / sideways wheel: pan a zoomed page or wide text
 Back / forward buttons: jump back / forward; close gp
@@ -206,7 +207,7 @@ Tab name click / middle click: switch / close tab
 Page counter click: gp
 Section name click: outline at that entry
 Zoom label click: fit width
-Clue / completion click: type that key / pick it
+Clue / completion hover / click: highlight / type or pick it
 Drag a divider or status line between panes: resize
 Drag the panel edge: resize the panel
 Double click a divider / panel edge: equal / default size

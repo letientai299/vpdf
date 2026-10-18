@@ -338,18 +338,20 @@ struct Line {
 }
 
 /// Prompt on the last row, its list above, a ghost suggestion, and a
-/// block cursor.
+/// block cursor; the `pointed` completion shows as chosen.
 pub fn prompt(
   out: &mut impl Write,
   prompt: &Prompt,
   screen: Screen,
   at: At,
+  pointed: Option<usize>,
 ) -> Result<()> {
   let row = screen.rows - 1;
   if let Some(menu) = &prompt.menu {
     let layout = menu.grid(screen);
     let bottom = (at, row - 1);
-    grid::draw(out, bottom, &menu.labels, &layout, menu.selected, 0, screen)?;
+    let shown = pointed.or(menu.selected);
+    grid::draw(out, bottom, &menu.labels, &layout, shown, 0, screen)?;
   }
   let (text, ghost, column) = prompt.display();
   let room = usize::from(screen.columns).saturating_sub(text.width());

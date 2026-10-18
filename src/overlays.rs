@@ -78,6 +78,14 @@ impl App {
     }
   }
 
+  /// The `list` item under the pointer.
+  pub(crate) fn pointed_item(&self, list: List) -> Option<usize> {
+    match self.hover {
+      Hit::Item(hovered, index) if hovered == list => index,
+      _ => None,
+    }
+  }
+
   /// Motion picks the owning list's item.
   pub(crate) fn moved_onto(&mut self, hit: Hit) {
     if let Hit::Item(list, Some(index)) = hit

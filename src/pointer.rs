@@ -252,12 +252,7 @@ impl Hover {
   pub fn shown(self) -> (Shape, Option<(u32, Hit)>) {
     let inert = matches!(
       self.hit,
-      Hit::Nothing
-        | Hit::Text
-        | Hit::Preview { .. }
-        | Hit::Item(_, None)
-        // No highlight follows them.
-        | Hit::Item(List::Clues | List::Completions, _)
+      Hit::Nothing | Hit::Text | Hit::Preview { .. } | Hit::Item(_, None)
     );
     (self.hit.shape(), (!inert).then_some((self.pane, self.hit)))
   }

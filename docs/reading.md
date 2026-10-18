@@ -20,12 +20,12 @@ past the top or bottom edge keeps scrolling, faster farther out, until release,
 a move back inside, or a key. A right click opens a menu of actions for what
 is under the pointer; see [mouse][mouse].
 
-A middle drag pans a zoomed page or the extracted text. On pages, while the
-view moves, or while the pointer rests on the right edge, a scrollbar shows
-ticks for top-level headings and pages with search matches. A click on the
-track jumps there and records the jump; dragging the thumb scrubs, labeling
-the page under the pointer and the section at its top, as the status line
-names it while reading.
+A middle drag pans a zoomed page or the extracted text. On rendered pages, not
+the extracted text, a scrollbar shows while the view moves or while the
+pointer rests on the right edge, with ticks for top-level headings and pages
+with search matches. A click on the track jumps there and records the jump;
+dragging the thumb scrubs, labeling the page under the pointer and the section
+at its top, as the status line names it while reading.
 
 Glyph positions and the viewport are separate. Scrolling can move a selected
 passage out of view without discarding it. Zooming and resizing keep reading
@@ -111,10 +111,11 @@ OCR dependencies follow the [installation guide][helpers].
 
 The pointer works on every surface: pages, extracted text, panels, the page
 overview, previews, menus, and the status line. Hover only informs: it tints
-links, names what the pointer rests on, and can preview an internal link, but
-it never moves the text selection or keyboard focus. A press focuses the pane or
-panel under it; the wheel scrolls whatever is under the pointer and leaves
-focus in place. The `Mouse` sections of `:help` list each gesture.
+links, names what the pointer rests on, and can preview an internal link, but it
+never moves the text selection or keyboard focus. A press focuses the pane or
+panel under it; the wheel scrolls whatever is under the pointer, or the pane
+above a status line, and leaves focus in place. The `Mouse` sections of `:help`
+list each gesture.
 
 In Kitty and Ghostty the reader takes pointer positions in pixels, so adjacent
 citations and small markers hit separately; under tmux positions are whole
