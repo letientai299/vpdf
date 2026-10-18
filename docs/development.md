@@ -7,8 +7,9 @@ their owning source files.
 ## Build from source
 
 Install [mise][mise] and the native build dependencies: a C/C++ compiler, Make,
-and libclang. On macOS, install the Xcode command line tools and provide
-libclang if the selected toolchain does not expose it to bindgen. On x86-64
+and libclang. On macOS, install the Xcode command line tools and
+[pkgconf][pkgconf], which locates the system zlib, and provide libclang if the
+selected toolchain does not expose it to bindgen. On x86-64
 Ubuntu:
 
 ```sh
@@ -31,10 +32,10 @@ directory on `PATH`. The install task depends on the build task, so it can also
 be run directly after setup.
 
 Build on the target platform. Linux builds use musl and reject shared-library
-dependencies. macOS builds embed MuPDF and its base14 fonts and reject
-non-system dynamic libraries. These checks cover the executable; optional
-helpers remain separate programs. [Build scripts][build] and the [CI matrix][ci]
-define supported hosts.
+dependencies. macOS builds embed MuPDF and its base14 fonts, link the system
+zlib, and reject non-system dynamic libraries. These checks cover the
+executable; optional helpers remain separate programs. [Build scripts][build]
+and the [CI matrix][ci] define supported hosts.
 
 ## Validation
 
@@ -133,6 +134,7 @@ a result needs a reproducible release reference.
 
 [tasks]: ../mise.toml
 [mise]: https://mise.jdx.dev/
+[pkgconf]: https://formulae.brew.sh/formula/pkgconf
 [build]: ../scripts/build.sh
 [install]: ../scripts/install.sh
 [ci]: ../.github/workflows/ci.yml
