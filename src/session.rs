@@ -755,7 +755,7 @@ impl Session {
     }
     let app = &mut self.tabs[target.0].panes[target.1];
     if let Some(position) = position {
-      app.go_to(position, true)?;
+      app.land_at(position)?;
     }
     app.close_overview();
     if focus {

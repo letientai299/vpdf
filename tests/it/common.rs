@@ -56,19 +56,41 @@ pub fn text_pdf(path: &Path, lines: &[&str]) -> Result<()> {
 
 /// One page of 18 pt Helvetica `line`s, `leading` pt apart.
 pub fn spaced_pdf(path: &Path, lines: &[&str], leading: u16) -> Result<()> {
-  let mut content = format!("BT /F1 18 Tf {leading} TL 20 170 Td");
-  for line in lines {
-    write!(content, " ({line}) Tj T*")?;
-  }
-  content.push_str(" ET");
-  let objects = [
+  pages_of(path, &[lines], leading)
+}
+
+/// Pages of `text_pdf` lines.
+pub fn pages_pdf(path: &Path, pages: &[&[&str]]) -> Result<()> {
+  pages_of(path, pages, 24)
+}
+
+fn pages_of(path: &Path, pages: &[&[&str]], leading: u16) -> Result<()> {
+  let kids: Vec<_> =
+    (0..pages.len()).map(|index| format!("{} 0 R", 4 + 2 * index)).collect();
+  let mut objects = vec![
     "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] \
-     /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
-      .to_owned(),
+    format!(
+      "<< /Type /Pages /Kids [{}] /Count {} >>",
+      kids.join(" "),
+      pages.len()
+    ),
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
-    format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
   ];
+  for (index, lines) in pages.iter().enumerate() {
+    let mut content = format!("BT /F1 18 Tf {leading} TL 20 170 Td");
+    for line in *lines {
+      write!(content, " ({line}) Tj T*")?;
+    }
+    content.push_str(" ET");
+    objects.push(format!(
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] \
+       /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
+      5 + 2 * index
+    ));
+    objects.push(format!(
+      "<< /Length {} >>\nstream\n{content}\nendstream",
+      content.len()
+    ));
+  }
   write_pdf(path, &objects, "")
 }

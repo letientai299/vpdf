@@ -817,14 +817,14 @@ impl App {
       }
       Destination::None => return Ok(()),
       Destination::Position(position) => {
-        self.go_to(position, true)?;
+        self.land_at(position)?;
         self
           .reader
           .describe_jump(search.then(|| self.search_description(position)));
         None
       }
       Destination::Jump { position, description } => {
-        self.go_to(position, true)?;
+        self.land_at(position)?;
         self.reader.describe_jump(description);
         None
       }
@@ -838,7 +838,7 @@ impl App {
         None
       }
       Destination::Annotation { position, annotation } => {
-        self.go_to(position, true)?;
+        self.land_at(position)?;
         Some((position, annotation))
       }
     };

@@ -105,6 +105,8 @@ pub struct App {
   pub reader: Reader,
   pub target: Option<Position>,
   pub landing: Option<crate::marks::Landing>,
+  /// Last landed view, for `]]`.
+  pub(crate) landed: Option<crate::marks::Landed>,
   pub layout: Layout,
   pub graphics: Graphics,
   pub worker: RenderWorker,
@@ -212,6 +214,7 @@ impl App {
       reader: Reader::default(),
       target: None,
       landing: None,
+      landed: None,
       layout,
       graphics: Graphics::default(),
       worker,

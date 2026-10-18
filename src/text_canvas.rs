@@ -107,6 +107,13 @@ impl View {
     let above = (fraction * self.height.saturating_sub(1) as f32).round();
     Position { line: line.saturating_sub(above as usize), ..self.top }
   }
+
+  /// Whether `cursor`'s line clears the edge rows.
+  fn inside(&self, cursor: Position) -> bool {
+    let Some(last) = self.height.checked_sub(1) else { return false };
+    let rows = self.top.line + 1..self.top.line + last;
+    cursor.page == self.top.page && rows.contains(&cursor.line)
+  }
 }
 
 fn cells(glyph: &Glyph) -> usize {
@@ -288,6 +295,17 @@ impl App {
       .keep_visible(self.reader.cursor, &text)
       .top;
     Ok(())
+  }
+
+  /// Text `land`, bounded by the page end.
+  pub(crate) fn land_text(&mut self) -> Result<()> {
+    let (_, view) = self.next_text_view()?;
+    let cursor = self.reader.cursor;
+    if !view.inside(cursor) {
+      let line = cursor.line.saturating_sub(1);
+      self.text_top = self.clamp_text(Position { line, glyph: 0, ..cursor })?;
+    }
+    self.reveal_text()
   }
 
   pub fn scroll_text(&mut self, lines: isize) -> Result<()> {

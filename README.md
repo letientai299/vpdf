@@ -42,8 +42,11 @@ Ctrl-o and Ctrl-i return through jump history.
 
 Visual highlights the active line; `:cursorline` toggles this band. Normal shows
 no glyph cursor; Cursor shows its glyph. Link, search, mark, and heading jumps
-tint the destination line for 600 ms in PDF and text views. Explicit scroll
-keys preserve glyph and selection positions;
+tint the destination line for 600 ms in PDF and text views. Links, hints,
+previews, and panel rows land a target that sits outside the view or on its
+first or last row below one row of context; a target already in view stays put,
+and the text view stops at its page's end. Explicit scroll keys preserve glyph
+and selection positions;
 zoom, crop, rotation, panels, and resize keep the reading area anchored. `K`,
 Enter, and `*` use the visible active glyph in Cursor/Visual, or a visible
 click/jump target in Normal. A textless view reports

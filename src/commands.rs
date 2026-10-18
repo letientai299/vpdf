@@ -508,14 +508,20 @@ impl App {
     match target {
       Target::Page(page) | Target::Point { page, .. } => {
         let page = PageId(page.0.min(self.doc.pages.len() - 1));
-        let position = match target {
+        let description = match target {
           Target::Point { x, y, .. } => {
-            self.doc.text(page)?.nearest(page, *x, *y)
+            let position = self.doc.text(page)?.nearest(page, *x, *y);
+            let description = self.link_description(target, position);
+            self.land_at(position)?;
+            description
           }
-          _ => Position { page, ..Position::default() },
+          _ => {
+            let position = Position { page, ..Position::default() };
+            let description = self.link_description(target, position);
+            self.go_to(position, true)?;
+            description
+          }
         };
-        let description = self.link_description(target, position);
-        self.go_to(position, true)?;
         self.reader.describe_jump(Some(description));
       }
       Target::Uri(uri) => {

@@ -72,6 +72,7 @@ impl App {
         self.layout.pan = pan;
       }
     }
+    self.landed = Some(self.landed_view(self.reader.cursor));
     Ok(())
   }
 
@@ -95,7 +96,9 @@ impl App {
       {
         continue;
       }
-      let landed = if self.text_mode {
+      let landed = if self.landed == Some(self.landed_view(target)) {
+        true
+      } else if self.text_mode {
         self.clamp_text(Position { glyph: 0, ..target })? == self.text_top
       } else {
         let (scroll, pan) = self.section_view(point);

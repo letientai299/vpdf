@@ -15,6 +15,15 @@ impl Landing {
   pub const DURATION: Duration = Duration::from_millis(600);
 }
 
+/// A target and its landed view.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Landed {
+  target: Position,
+  scroll: f32,
+  pan: f32,
+  text_top: Position,
+}
+
 impl App {
   /// `m{a-z}` marks this document; `m{A-Z}` marks across documents.
   pub fn set_mark(&mut self, name: char) -> Result<()> {
@@ -44,15 +53,40 @@ impl App {
   pub fn go_to(&mut self, position: Position, exact: bool) -> Result<()> {
     let target =
       if exact { position } else { Position { glyph: 0, ..position } };
+    self.jump_cursor(target)?;
+    self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
+    self.ensure_cursor()?;
+    self.flash_landing();
+    Ok(())
+  }
+
+  /// Follows a link or row to `position`.
+  pub fn land_at(&mut self, position: Position) -> Result<()> {
+    self.jump_cursor(position)?;
+    self.land()?;
+    self.flash_landing();
+    self.landed = Some(self.landed_view(self.reader.cursor));
+    Ok(())
+  }
+
+  /// `target` in the current view.
+  pub(crate) fn landed_view(&self, target: Position) -> Landed {
+    Landed {
+      target,
+      scroll: self.reader.scroll,
+      pan: self.layout.pan,
+      text_top: self.text_top,
+    }
+  }
+
+  /// Moves the cursor as a recorded jump.
+  fn jump_cursor(&mut self, target: Position) -> Result<()> {
     let origin = self.location()?;
     self.reader.cursor = crate::reader::clamp(target, &mut self.doc)?;
     self.reader.record(origin);
     self.reader.describe_jump(None);
     self.reader.desired = None;
     self.target = Some(self.reader.cursor);
-    self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
-    self.ensure_cursor()?;
-    self.flash_landing();
     Ok(())
   }
 

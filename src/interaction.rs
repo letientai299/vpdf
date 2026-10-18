@@ -133,6 +133,18 @@ impl App {
   }
 
   pub fn relayout(&mut self) -> Result<()> {
+    let landed = self
+      .target
+      .filter(|&target| self.landed == Some(self.landed_view(target)));
+    self.reflow_view()?;
+    // The reflowed view keeps the landing.
+    if let Some(target) = landed {
+      self.landed = Some(self.landed_view(target));
+    }
+    Ok(())
+  }
+
+  fn reflow_view(&mut self) -> Result<()> {
     let anchor = self.view_anchor();
     let size = |screen: Screen| {
       (screen.columns, screen.rows, screen.cell_width, screen.cell_height)
@@ -349,12 +361,10 @@ impl App {
       return self.reveal_text();
     }
     let cursor = self.reader.cursor;
-    let text = self.doc.text(cursor.page)?;
-    let Some(glyph) = text.glyph(cursor) else {
+    let Some(rect) = self.glyph_rect(cursor)? else {
       self.reader.scroll = self.layout.pages[cursor.page.0].top;
       return Ok(());
     };
-    let rect = self.layout.project(cursor.page, glyph.bounds, 0.0);
     let margin = f32::from(self.screen.cell_height);
     if rect.y0 < self.reader.scroll + margin {
       self.reader.scroll = rect.y0 - margin;
@@ -370,6 +380,36 @@ impl App {
       self.layout.pan = pan + rect.x1 - self.layout.screen.width();
     }
     self.reader.scroll = self.layout.clamp_scroll(self.reader.scroll);
+    Ok(())
+  }
+
+  /// Glyph pixels of `position` at scroll 0.
+  fn glyph_rect(&mut self, position: Position) -> Result<Option<Bounds>> {
+    let text = self.doc.text(position.page)?;
+    let glyph = text.glyph(position);
+    Ok(glyph.map(|glyph| self.layout.project(position.page, glyph.bounds, 0.0)))
+  }
+
+  /// Scroll that shows `position` below one row.
+  fn landed_scroll(&mut self, position: Position) -> Result<Option<f32>> {
+    let row = f32::from(self.screen.cell_height);
+    let rect = self.glyph_rect(position)?;
+    Ok(rect.map(|rect| self.layout.clamp_scroll(rect.y0 - row)))
+  }
+
+  /// Shows the cursor; scrolling keeps context above.
+  pub(crate) fn land(&mut self) -> Result<()> {
+    if self.text_mode {
+      return self.land_text();
+    }
+    let before = self.reader.scroll;
+    self.ensure_cursor()?;
+    if self.reader.scroll.total_cmp(&before).is_eq() {
+      return Ok(());
+    }
+    if let Some(scroll) = self.landed_scroll(self.reader.cursor)? {
+      self.reader.scroll = scroll;
+    }
     Ok(())
   }
 
@@ -514,10 +554,7 @@ impl App {
         if self.reader.viewport_mode() {
           self.reader.cursor = self.reading_position()?;
         }
-        let text = self.doc.text(self.reader.cursor.page)?;
-        if let Some(glyph) = text.glyph(self.reader.cursor) {
-          let rect =
-            self.layout.project(self.reader.cursor.page, glyph.bounds, 0.0);
+        if let Some(rect) = self.glyph_rect(self.reader.cursor)? {
           self.reader.scroll = self.layout.clamp_scroll(
             rect.y0 - fraction * (self.layout.screen.height() - rect.height()),
           );
