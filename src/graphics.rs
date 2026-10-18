@@ -1091,10 +1091,19 @@ mod tests {
 
   #[test]
   fn tiny_images_skip_compression() -> Result<()> {
-    for (count, compressed) in [(1, false), (14, false), (1000, true)] {
+    // Fixed streams keep backend sizes irrelevant.
+    for (count, encoded, compressed) in [
+      (1, "eAH7z8DQAAAEgAGA", false),
+      (14, "eAH7z8DQ8J8MDABfshTz", false),
+      (
+        1000,
+        "eAHt0jENAAAMw7BCH/MWxh4fIRC5yVUeMMAAAwwwwAADDDDAAAMMMPBqYMyg2GQ=",
+        true,
+      ),
+    ] {
       let pixels = [255, 0, 0, 128].repeat(count);
       let mut output = Vec::new();
-      transmit(&mut output, 99, count as i32, 1, 32, &encode(&pixels)?)?;
+      transmit(&mut output, 99, count as i32, 1, 32, encoded)?;
       let controls = commands(&output);
       assert_eq!(controls[0].contains_key("o"), compressed);
       let text = String::from_utf8(output)?;
