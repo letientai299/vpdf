@@ -56,6 +56,11 @@ precedence. If none is available, a bounded scan infers headings from text size
 and numbering. Inferred headings are navigation aids and may differ from the
 author's structure.
 
+The job waits until a frame has placed every tile of the pane's current view,
+so its interpretation work cannot delay the first page. Text views start it
+after their first frame; hidden panes wait until shown. Opening the outline
+panel or moving by section starts it at once, including after `:cancel`.
+
 ## Session OCR
 
 [OCR][ocr] supplements pages with no usable text. A worker opens its own

@@ -256,6 +256,7 @@ impl App {
         self.graphics.highlight(ring, tint, screen, left, out)?;
       }
     }
+    self.complete = missing.is_empty();
     if wanted != self.requested {
       self.worker.request(&missing, missing.len());
       self.requested = wanted;

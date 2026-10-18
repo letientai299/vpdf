@@ -650,6 +650,14 @@ impl Session {
     }
   }
 
+  /// After a frame reaches the terminal: starts work the shown panes
+  /// deferred until their whole view was on screen.
+  pub fn drawn(&mut self) {
+    if let Some(tab) = self.tabs.get_mut(self.active) {
+      tab.panes.iter_mut().for_each(App::start_deferred);
+    }
+  }
+
   /// Applies what the focused pane asked for after an input.
   pub fn settle(&mut self) -> Result<()> {
     if self.tabs.is_empty() {
@@ -1822,6 +1830,7 @@ fn run(session: &mut Session) -> Result<()> {
           title = current;
         }
         trace.draw(session, &mut out, &mut buffer)?;
+        session.drawn();
         dirty = session.redraw_due();
         pacer.drawn(now);
         drawn = now;

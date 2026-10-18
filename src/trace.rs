@@ -22,6 +22,8 @@ struct Frame {
   base_upload_bytes: u64,
   page: usize,
   scroll: f32,
+  /// Every visible tile of the focused pane was placed.
+  complete: bool,
 }
 
 /// Something that draws whole frames around a focused pane.
@@ -80,6 +82,7 @@ impl Trace {
       base_upload_bytes: app.graphics.uploaded.saturating_sub(self.uploaded),
       page: app.navigation_position().page.0 + 1,
       scroll: app.reader.scroll,
+      complete: app.complete,
     };
     self.uploaded = app.graphics.uploaded;
     serde_json::to_writer(&mut *trace, &frame)?;

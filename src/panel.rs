@@ -578,6 +578,9 @@ impl App {
       }
       return self.relayout();
     }
+    if kind == PanelKind::Outline {
+      self.want_outline();
+    }
     if self.panel.as_ref().is_some_and(|panel| panel.kind == kind) {
       if !self.panel_focused() {
         self.blur()?;

@@ -158,7 +158,7 @@ pub struct App {
   pub panel: Option<crate::panel::Panel>,
   pub preview: Option<bool>,
   pub ocr: Option<crate::ocr::OcrJob>,
-  pub outline_job: Option<crate::outline::OutlineJob>,
+  pub outline_load: crate::outline::Loading,
   pub animation: Option<crate::animation::Scroll>,
   /// The current wheel gesture over the page.
   pub(crate) wheel: Option<crate::interaction::WheelRun>,
@@ -171,6 +171,8 @@ pub struct App {
   pub hover: crate::pointer::Hit,
   /// The page link under the pointer.
   pub(crate) rest: Option<crate::links::Rest>,
+  /// The last frame showed the whole view: every visible tile placed.
+  pub complete: bool,
 }
 
 impl App {
@@ -204,7 +206,7 @@ impl App {
     let doc = Document::open(path, password)?;
     let layout = Layout::new(&doc.pages, screen);
     let worker = RenderWorker::new(path, password, doc.lists());
-    let mut app = Self {
+    Ok(Self {
       id: NEXT.fetch_add(1, Ordering::Relaxed),
       doc,
       reader: Reader::default(),
@@ -250,7 +252,7 @@ impl App {
       panel: None,
       preview: None,
       ocr: None,
-      outline_job: None,
+      outline_load: crate::outline::Loading::Deferred,
       animation: None,
       wheel: None,
       requested: Vec::new(),
@@ -258,8 +260,7 @@ impl App {
       blank: false,
       hover: crate::pointer::Hit::Nothing,
       rest: None,
-    };
-    app.load_outline();
-    Ok(app)
+      complete: false,
+    })
   }
 }

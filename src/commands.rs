@@ -343,7 +343,7 @@ impl App {
         if let Some(job) = self.ocr.take() {
           job.cancel();
         }
-        self.outline_job = None;
+        self.cancel_outline();
         self.region_job = None;
         self.reader.message = "Jobs canceled".into();
       }
@@ -390,7 +390,12 @@ impl App {
     self.worker = RenderWorker::new(&self.path, password, self.doc.lists());
     let previous = std::mem::take(&mut self.search);
     let rerun = !previous.hidden && !previous.query.text.is_empty();
-    self.load_outline();
+    // An open outline panel waits on the new outline now.
+    self.outline_load = crate::outline::Loading::Deferred;
+    if self.panel.as_ref().is_some_and(|panel| panel.kind == PanelKind::Outline)
+    {
+      self.load_outline();
+    }
     self.graphics.forget(self.id);
     if let Some(ocr) = self.ocr.take() {
       ocr.cancel();
@@ -423,7 +428,7 @@ impl App {
       let refills = match kind {
         PanelKind::Recent | PanelKind::Marks => true,
         PanelKind::Results => rerun,
-        PanelKind::Outline => self.outline_job.is_some(),
+        PanelKind::Outline => self.outline_pending(),
         _ => false,
       };
       let note = self.panel_note(kind);

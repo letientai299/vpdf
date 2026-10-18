@@ -47,7 +47,7 @@ impl App {
   /// Keeps finished tiles; returns whether a wanted one arrived, since
   /// prefetched tiles need no frame.
   pub fn raster_updates(&mut self) -> bool {
-    let mut changed = false;
+    let (mut changed, mut failed) = (false, false);
     for result in self.worker.results.try_iter() {
       match result {
         Ok(tile) => {
@@ -57,11 +57,15 @@ impl App {
         }
         Err(error) => {
           self.error = Some(error);
-          changed = true;
+          failed = true;
         }
       }
     }
-    changed
+    // A tile that never comes must not hold back deferred work.
+    if failed {
+      self.resume_outline();
+    }
+    changed || failed
   }
 
   pub fn canvas(&mut self, out: &mut impl Write) -> Result<()> {
@@ -88,6 +92,7 @@ impl App {
         missing.push(*key);
       }
     }
+    self.complete = missing.is_empty();
     if tiles != self.requested {
       missing.sort_by_key(|key| {
         let page = &self.layout.pages[key.page.0];
@@ -311,6 +316,8 @@ impl App {
 
   /// Draws within the pane; the caller starts and ends the frame.
   pub fn draw_pane(&mut self, out: &mut impl Write) -> Result<()> {
+    // Views without tiles show whole at once; a covered one shows none.
+    self.complete = !self.covered();
     // A shrunken terminal can leave no room below the status line.
     if self.screen.rows < 2 || self.screen.columns == 0 {
       return Ok(());

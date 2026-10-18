@@ -271,7 +271,7 @@ fn escape_preserves_focus_and_jobs_cancel_is_explicit() -> Result<()> {
   assert!(app.reader.selection.is_none() && app.reader.operator.is_none());
   assert!(app.ocr.is_some());
   keys(&mut app, b":cancel\r")?;
-  assert!(app.ocr.is_none() && app.outline_job.is_none());
+  assert!(app.ocr.is_none() && !app.outline_pending());
   assert!(app.search.hidden);
   assert!(matches!(app.search.phase, vpdf::find::Phase::Idle));
   Ok(())

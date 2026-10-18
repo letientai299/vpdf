@@ -24,6 +24,7 @@ impl App {
     forward: bool,
     count: usize,
   ) -> Result<()> {
+    self.want_outline();
     self.outline_updates()?;
     let normal = self.reader.viewport_mode();
     let position = self.navigation_position();

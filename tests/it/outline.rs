@@ -1,6 +1,11 @@
 use std::path::PathBuf;
 use vpdf::Result;
+use vpdf::app::App;
 use vpdf::document::Handle;
+use vpdf::keys::{Action, Input, PanelKind};
+use vpdf::layout::Screen;
+use vpdf::outline::Loading;
+use vpdf::session::Session;
 use vpdf::text::PageId;
 
 fn key(title: &str) -> String {
@@ -67,24 +72,17 @@ fn inferred_outline_matches_authored_one() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn documents_without_outline_infer_one_in_background() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = vpdf::layout::Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
-  let mut app =
-    vpdf::app::App::with_screen(&root.join("form.pdf"), "", false, screen)?;
-  assert!(app.outline_job.is_some());
+  let mut app = App::with_screen(&root.join("form.pdf"), "", false, SCREEN)?;
+  assert!(matches!(app.outline_load, Loading::Deferred));
+  app.want_outline();
   let started = std::time::Instant::now();
   while !app.outline_updates()? {
     assert!(started.elapsed().as_secs() < 10);
     std::thread::sleep(std::time::Duration::from_millis(5));
   }
   assert!(app.doc.inferred);
-  let mut book =
-    vpdf::app::App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  let mut book = App::with_screen(&root.join("book.pdf"), "", false, SCREEN)?;
+  book.want_outline();
   while !book.outline_updates()? {
     assert!(started.elapsed().as_secs() < 10);
     std::thread::sleep(std::time::Duration::from_millis(5));
@@ -96,20 +94,12 @@ fn documents_without_outline_infer_one_in_background() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn inferred_outline_keeps_panel_focus_and_selection() -> Result<()> {
-  use vpdf::keys::PanelKind;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = vpdf::layout::Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("live.pdf");
   std::fs::copy(root.join("form.pdf"), &path)?;
-  let mut app = vpdf::app::App::with_screen(&path, "", false, screen)?;
-  let finish = |app: &mut vpdf::app::App| -> Result<()> {
+  let mut app = App::with_screen(&path, "", false, SCREEN)?;
+  let finish = |app: &mut App| -> Result<()> {
     let started = std::time::Instant::now();
     while !app.outline_updates()? {
       assert!(started.elapsed().as_secs() < 10);
@@ -141,5 +131,111 @@ fn inferred_outline_keeps_panel_focus_and_selection() -> Result<()> {
   finish(&mut app)?;
   let panel = app.panel.as_ref().unwrap();
   assert!(!panel.rows.is_empty() && panel.note.is_empty());
+  Ok(())
+}
+
+const SCREEN: Screen = Screen {
+  columns: 120,
+  rows: 50,
+  cell_width: 8,
+  cell_height: 16,
+  origin: (0, 0),
+};
+
+fn deferred(app: &App) -> bool {
+  matches!(app.outline_load, Loading::Deferred)
+}
+
+fn running(app: &App) -> bool {
+  matches!(app.outline_load, Loading::Running(_))
+}
+
+/// Automatic loading starts after a frame shows the shown pane's whole
+/// current view; a hidden tab's pane keeps waiting.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn outline_waits_for_the_whole_first_view() -> Result<()> {
+  use vpdf::trace::Drawable;
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut session = Session::new(None);
+  session.open(&root.join("paper.pdf"), true, SCREEN)?;
+  session.open(&root.join("book.pdf"), true, SCREEN)?;
+  let frame = |session: &mut Session| -> Result<()> {
+    session.draw_frame(&mut Vec::new())?;
+    session.drawn();
+    Ok(())
+  };
+  // No tile has arrived, so the first frame shows no whole view.
+  frame(&mut session)?;
+  assert!(!session.app().complete && deferred(session.app()));
+  // The view moves before its tiles arrive; the new view governs.
+  session.app().command("30")?;
+  let started = std::time::Instant::now();
+  while !session.app().complete {
+    assert!(started.elapsed().as_secs() < 20, "tiles render");
+    assert!(deferred(session.app()));
+    session.app().raster_updates();
+    frame(&mut session)?;
+    std::thread::sleep(std::time::Duration::from_millis(2));
+  }
+  assert_eq!(session.app().reader.cursor.page.0, 29);
+  assert!(running(session.app()));
+  assert!(deferred(&session.tabs[0].panes[0]), "hidden tab waits");
+  // Overview thumbnails count like tiles; a covered pane never completes.
+  let mut app = App::with_screen(&root.join("paper.pdf"), "", false, SCREEN)?;
+  app.open_overview()?;
+  app.draw(&mut Vec::new())?;
+  assert!(!app.complete, "no thumbnail yet");
+  app.close_overview();
+  app.show_recent(&[])?;
+  app.draw(&mut Vec::new())?;
+  assert!(app.covered() && !app.complete);
+  // Text views have no tiles to wait for.
+  let mut text = App::with_screen(&root.join("paper.pdf"), "", true, SCREEN)?;
+  text.draw(&mut Vec::new())?;
+  text.start_deferred();
+  assert!(running(&text));
+  Ok(())
+}
+
+/// Commands that need the outline start it at once; `:cancel` stops
+/// queued and running work alike, and a reload defers it again.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn outline_requests_and_cancels_override_deferral() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let path = root.join("paper.pdf");
+  let mut app = App::with_screen(&path, "", false, SCREEN)?;
+  app.command("cancel")?;
+  assert!(matches!(app.outline_load, Loading::Canceled));
+  app.complete = true;
+  app.start_deferred();
+  assert!(
+    matches!(app.outline_load, Loading::Canceled),
+    "no restart per frame"
+  );
+  app.open_panel(PanelKind::Outline)?;
+  assert!(running(&app), "explicit request restarts");
+  app.command("cancel")?;
+  assert!(matches!(app.outline_load, Loading::Canceled));
+  app.close_panel()?;
+  app.command("reload")?;
+  assert!(deferred(&app));
+  app.load_outline();
+  app.command("reload")?;
+  assert!(deferred(&app), "reload drops the running job");
+  // A section motion before any tile starts loading.
+  let mut section = App::with_screen(&path, "", false, SCREEN)?;
+  let input = Input {
+    action: Action::Section(true),
+    count: 1,
+    explicit: false,
+    register: '"',
+  };
+  section.action(input)?;
+  assert!(running(&section));
+  super::common::outline_loaded(&mut section)?;
+  assert!(matches!(section.outline_load, Loading::Loaded));
+  assert!(!section.doc.outline.is_empty());
   Ok(())
 }
