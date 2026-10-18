@@ -606,6 +606,25 @@ mod tests {
     Ok(file)
   }
 
+  /// Scans wait while on-screen work lives, and a stop ends the wait.
+  #[test]
+  fn scans_yield_to_views() {
+    assert!(yield_to_views(|| false));
+    let drawing = Urgent::new();
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    thread::scope(|scope| {
+      let waiting =
+        scope.spawn(|| yield_to_views(|| stop.load(Ordering::Relaxed)));
+      thread::sleep(Duration::from_millis(20));
+      assert!(!waiting.is_finished(), "returned while a view draws");
+      stop.store(true, Ordering::Relaxed);
+      assert!(!waiting.join().expect("waiting thread"), "stopped");
+    });
+    let waiting = thread::spawn(|| yield_to_views(|| false));
+    drop(drawing);
+    assert!(waiting.join().expect("waiting thread"), "views done");
+  }
+
   /// Two scans in one view: rows alternate when a scroll up adds the
   /// target's rows above to those below, and prefetch returns to the
   /// first page after the visible tiles end on the second.
