@@ -169,6 +169,13 @@ The state file lives at `$XDG_STATE_HOME/vpdf/state.json`, falling back to
 State saves during activity and on exit; abrupt process or machine failure can
 lose recent changes. Simultaneous readers can race when saving.
 
+On macOS, search indexes persist in `~/Library/Caches/vpdf/content`, so a
+reopened PDF searches without rereading its pages. They hold the PDF's
+extracted text, readable only by your account; PDFs opened with a password are
+never stored. The system may purge that directory at any time. Set
+`VPDF_CACHE` to another directory, or to `off` to keep indexes in memory
+only.
+
 The reader reloads a changed PDF and retains a useful position, view choices,
 and marks. Arbitrary document edits can change where the passage lands. Reload
 clears temporary OCR text and jump history. Hidden panes check for changes when

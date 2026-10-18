@@ -56,9 +56,10 @@ mupdf = { version = "=0.8.0", default-features = false, features = [
   "base14-fonts",
 ] }
 notify = "8.2.0"
-rustix = { version = "1", features = ["event", "process"] }
+rustix = { version = "1", features = ["event", "fs", "process"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 signal-hook = "0.3"
 unicode-casefold = "0.2"
 unicode-normalization = "0.1"
@@ -73,7 +74,6 @@ mupdf = { version = "=0.8.0", default-features = false, features = [
 ] }
 
 [dev-dependencies]
-sha2 = "0.10"
 tempfile = "3"
 
 [[bench]]

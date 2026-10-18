@@ -49,6 +49,15 @@ and regex backtracking. Idling
 releases the native handle while keeping cached indexes, so later queries reopen
 the PDF only when missing text is needed.
 
+On macOS, or wherever `VPDF_CACHE` points, the worker also keeps page indexes
+on disk, in a pack named by the SHA-256 of the PDF's bytes, so reopening an
+unchanged file skips extraction. Hashing runs beside the first scan, which
+reads the PDF until the pack is known. New indexes save once the worker idles,
+unless the file changed since it opened. [The content cache][cache] treats any
+missing, damaged, or stale pack as a miss and trims the least recently used
+packs to its budget. OCR text overrides stored pages; PDFs opened with a
+password are never stored.
+
 [Panel search][panels] searches displayed rows with its own matching rules.
 Do not assume document normalization applies to panel labels.
 
@@ -91,4 +100,5 @@ its command interface.
 [panels]: ../../src/panel_search.rs
 [outline]: ../../src/outline.rs
 [ocr]: ../../src/ocr.rs
+[cache]: ../../src/content_cache.rs
 [installation]: ../install.md#optional-helpers

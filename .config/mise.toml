@@ -11,6 +11,8 @@ upx = { version = "5.2.1", os = ["linux"] }
 CARGO_BUILD_TARGET = "{{ arch(x64='x86_64', arm64='aarch64') }}-{{ os(macos='apple-darwin', linux='unknown-linux-gnu') }}"
 # Corpus tests and benches; `corpus:huge` fills tmp/huge for ad hoc runs.
 VPDF_CORPUS = "{{config_root}}/tmp/corpus"
+# Tests and benches start cold and leave the user's search cache alone.
+VPDF_CACHE = "off"
 
 [tasks.build]
 description = "Build the optimized reader"

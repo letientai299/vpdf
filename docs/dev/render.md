@@ -89,7 +89,7 @@ separate lifetimes. A terminal can also evict images independently.
 | ---------------------------------- | ------------------------------------------------------------------------- |
 | Extracted and OCR text             | Weighted caches in [Document][document]                                   |
 | Display lists                      | Page-count cache in [Document][document]; native byte size is unavailable |
-| Search indexes                     | Weighted cache in the [search worker][search]                             |
+| Search indexes                     | Weighted cache in the [search worker][search]; disk packs on macOS        |
 | Prepared tiles and resident images | Separate budgets in [Graphics][graphics], shared across tabs and panes    |
 | Raw pixel spool                    | Fixed-size ring in [Spool][spool]                                         |
 | Copied text and registers          | Bounds in [Reader][reader]                                                |

@@ -16,6 +16,7 @@ mod clipboard;
 mod clues;
 pub mod cmdline;
 mod commands;
+pub mod content_cache;
 pub mod context;
 pub mod crop;
 pub mod decode;

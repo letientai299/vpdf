@@ -4,6 +4,8 @@ use fancy_regex::{Regex, RegexBuilder};
 use unicode_casefold::UnicodeCaseFold;
 use unicode_normalization::UnicodeNormalization;
 
+mod codec;
+
 #[derive(Clone, Debug)]
 pub struct Hit {
   pub first: Position,
@@ -206,7 +208,7 @@ mod tests {
   use super::*;
   use crate::text::{Bounds, Glyph, Line};
 
-  fn sample(lines: &[&str]) -> Text {
+  pub(super) fn sample(lines: &[&str]) -> Text {
     Text {
       lines: lines
         .iter()
