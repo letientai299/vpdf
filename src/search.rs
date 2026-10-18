@@ -6,6 +6,58 @@ use unicode_normalization::UnicodeNormalization;
 
 mod codec;
 
+#[derive(Clone, Copy)]
+enum Form {
+  Printed,
+  Folded,
+  Exact,
+}
+
+pub struct Pattern {
+  regex: Regex,
+  exact: bool,
+}
+
+fn normalized(text: &str, exact: bool) -> String {
+  if exact { text.nfkd().collect() } else { text.nfkd().case_fold().collect() }
+}
+
+impl Pattern {
+  pub fn ranges(&self, text: &str) -> Vec<(usize, usize)> {
+    let mut haystack = String::new();
+    let mut offsets = Vec::new();
+    for (start, ch) in text.char_indices() {
+      let end = start + ch.len_utf8();
+      let mut buffer = [0; 4];
+      for ch in normalized(ch.encode_utf8(&mut buffer), self.exact).chars() {
+        let ch = if ch.is_whitespace() { ' ' } else { ch };
+        if ch == ' ' && haystack.ends_with(' ') {
+          continue;
+        }
+        haystack.push(ch);
+        offsets.extend(std::iter::repeat_n((start, end), ch.len_utf8()));
+      }
+    }
+    let mut ranges = Vec::new();
+    for found in self.regex.find_iter(&haystack) {
+      let Ok(found) = found else { break };
+      if found.start() == found.end() {
+        continue;
+      }
+      let range = (offsets[found.start()].0, offsets[found.end() - 1].1);
+      if let Some(last) = ranges.last_mut() {
+        let last: &mut (usize, usize) = last;
+        if range.0 < last.1 {
+          last.1 = last.1.max(range.1);
+          continue;
+        }
+      }
+      ranges.push(range);
+    }
+    ranges
+  }
+}
+
 #[derive(Clone, Debug)]
 pub struct Hit {
   pub first: Position,
@@ -54,7 +106,7 @@ impl Index {
     let lines = text.lines.iter().map(|line| line.text().into()).collect();
     let mut index = Self { page, text: String::new(), runs: Vec::new(), lines };
     let rows = text.lines.iter().map(|row| row.glyphs.iter().map(|g| g.ch));
-    index.append(rows.enumerate(), 0, true, usize::MAX);
+    index.append(rows.enumerate(), 0, Form::Folded, usize::MAX);
     index.text.shrink_to_fit();
     index.runs.shrink_to_fit();
     index
@@ -65,7 +117,7 @@ impl Index {
     &mut self,
     rows: impl Iterator<Item = (usize, impl Iterator<Item = char> + 'a)>,
     first: usize,
-    fold: bool,
+    form: Form,
     limit: usize,
   ) {
     for (index, (line, row)) in rows.enumerate() {
@@ -74,7 +126,7 @@ impl Index {
         if self.text.len() >= limit {
           return;
         }
-        self.push_glyph(ch, (line as u32, glyph as u32), fold);
+        self.push_glyph(ch, (line as u32, glyph as u32), form);
       }
       if hyphenated(&self.text) {
         self.text.pop();
@@ -91,12 +143,19 @@ impl Index {
     }
   }
 
-  fn push_glyph(&mut self, ch: char, anchor: (u32, u32), fold: bool) {
-    if !fold {
-      return self.push(ch, anchor);
-    }
-    for ch in std::iter::once(ch).nfkd().case_fold() {
-      self.push(ch, anchor);
+  fn push_glyph(&mut self, ch: char, anchor: (u32, u32), form: Form) {
+    match form {
+      Form::Printed => self.push(ch, anchor),
+      Form::Exact => {
+        for ch in std::iter::once(ch).nfkd() {
+          self.push(ch, anchor);
+        }
+      }
+      Form::Folded => {
+        for ch in std::iter::once(ch).nfkd().case_fold() {
+          self.push(ch, anchor);
+        }
+      }
     }
   }
 
@@ -135,20 +194,33 @@ impl Index {
     Position { page: self.page, line: line as usize, glyph: glyph as usize }
   }
 
-  pub fn matches(&self, pattern: &Regex, limit: usize) -> Result<Vec<Hit>> {
+  pub fn matches(&self, pattern: &Pattern, limit: usize) -> Result<Vec<Hit>> {
     let mut hits = Vec::new();
     if limit == 0 {
       return Ok(hits);
     }
-    for found in pattern.find_iter(&self.text) {
+    let mut exact = Self {
+      page: self.page,
+      text: String::new(),
+      runs: Vec::new(),
+      lines: Vec::new(),
+    };
+    let index = if pattern.exact {
+      let rows = self.lines.iter().map(|line| line.chars()).enumerate();
+      exact.append(rows, 0, Form::Exact, usize::MAX);
+      &exact
+    } else {
+      self
+    };
+    for found in pattern.regex.find_iter(&index.text) {
       let found = found?;
       if found.start() == found.end() {
         continue;
       }
       hits.push(Hit {
-        first: self.position(found.start()),
-        last: self.position(found.end() - 1),
-        excerpt: self.excerpt(self.position(found.start())),
+        first: index.position(found.start()),
+        last: index.position(found.end() - 1),
+        excerpt: self.excerpt(index.position(found.start())),
       });
       if hits.len() >= limit {
         break;
@@ -167,7 +239,7 @@ impl Index {
     };
     let rows = self.lines.iter().map(|line| line.chars()).enumerate();
     // Four bytes cover any character.
-    printed.append(rows.skip(from.line), from.glyph, false, 80 * 4);
+    printed.append(rows.skip(from.line), from.glyph, Form::Printed, 80 * 4);
     printed.text.chars().take(80).collect()
   }
 
@@ -186,21 +258,22 @@ pub fn contains(hits: &[Hit], pos: Position) -> bool {
   index > 0 && pos <= hits[index - 1].last
 }
 
-pub fn compile(query: &str, whole_word: bool) -> Result<Regex> {
+pub fn compile(query: &str, whole_word: bool) -> Result<Pattern> {
+  let exact = query.chars().any(char::is_uppercase);
   let pattern = if let Some(raw) = query.strip_prefix("\\v") {
     raw.nfkd().collect::<String>()
   } else {
-    let normalized: String = query.nfkd().case_fold().collect();
+    let normalized = normalized(query, exact);
     let words = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
     fancy_regex::escape(&words).to_string()
   };
   let pattern =
     if whole_word { format!(r"\b(?:{pattern})\b") } else { pattern };
-  Ok(
-    RegexBuilder::new(&format!("(?i){pattern}"))
-      .backtrack_limit(100_000)
-      .build()?,
-  )
+  let flags = if exact { "" } else { "(?i)" };
+  let regex = RegexBuilder::new(&format!("{flags}{pattern}"))
+    .backtrack_limit(100_000)
+    .build()?;
+  Ok(Pattern { regex, exact })
 }
 
 #[cfg(test)]
@@ -225,10 +298,40 @@ mod tests {
   }
 
   #[test]
+  fn panels_share_search_contract() -> Result<()> {
+    let label = "Ärger alpha Alpha beta Straße";
+    let index = Index::new(PageId(0), &sample(&[label]));
+    for (query, count) in [
+      ("alpha", 2),
+      ("Alpha", 1),
+      ("ALPHA", 0),
+      (r"\valpha|beta", 3),
+      (r"\vAlpha|beta", 2),
+      ("alpha|beta", 0),
+      ("är", 1),
+      ("strasse", 1),
+      ("STRASSE", 0),
+    ] {
+      let pattern = compile(query, false)?;
+      assert_eq!(index.matches(&pattern, 100)?.len(), count, "{query}");
+      assert_eq!(
+        crate::panel_search::ranges(label, query).len(),
+        count,
+        "{query}"
+      );
+    }
+    assert_eq!(
+      crate::panel_search::ranges(label, r"\v["),
+      [] as [(usize, usize); 0]
+    );
+    Ok(())
+  }
+
+  #[test]
   fn normalizes_and_maps_unicode() -> Result<()> {
     let text = sample(&["Straße ﬁsh inter-", "national café"]);
     let index = Index::new(PageId(0), &text);
-    for query in ["STRASSE", "fish", "international", "café"] {
+    for query in ["strasse", "fish", "international", "café"] {
       assert_eq!(index.matches(&compile(query, false)?, 1000)?.len(), 1);
     }
     let hits = index.matches(&compile("international", false)?, 1000)?;
@@ -244,7 +347,7 @@ mod tests {
     let index = Index::new(PageId(0), &text);
     for (query, excerpt) in [
       ("strasse", "Straße ﬁsh International Café Next "),
-      ("INTERNATIONAL", "International Café Next "),
+      ("International", "International Café Next "),
       ("café", "Café Next "),
     ] {
       let hits = index.matches(&compile(query, false)?, 1000)?;

@@ -12,14 +12,9 @@ pub struct RowSearch {
 
 /// Case-insensitive unless the query has uppercase (Vim's smartcase).
 fn matcher(query: &str) -> impl Fn(&str) -> bool {
-  let exact = query.chars().any(char::is_uppercase);
-  let query = if exact { query.to_owned() } else { query.to_lowercase() };
+  let pattern = crate::search::compile(query, false).ok();
   move |label| {
-    if exact {
-      label.contains(&query)
-    } else {
-      label.to_lowercase().contains(&query)
-    }
+    pattern.as_ref().is_some_and(|pattern| !pattern.ranges(label).is_empty())
   }
 }
 
@@ -35,29 +30,8 @@ pub fn ranges(text: &str, query: &str) -> Vec<(usize, usize)> {
   if query.is_empty() {
     return Vec::new();
   }
-  if query.chars().any(char::is_uppercase) {
-    return text
-      .match_indices(query)
-      .map(|(at, found)| (at, at + found.len()))
-      .collect();
-  }
-  let mut folded = String::new();
-  let mut offsets = Vec::new();
-  for (start, ch) in text.char_indices() {
-    for lower in ch.to_lowercase() {
-      folded.push(lower);
-      offsets.extend(std::iter::repeat_n(
-        (start, start + ch.len_utf8()),
-        lower.len_utf8(),
-      ));
-    }
-  }
-  folded
-    .match_indices(&query.to_lowercase())
-    .map(|(start, found)| {
-      (offsets[start].0, offsets[start + found.len() - 1].1)
-    })
-    .collect()
+  crate::search::compile(query, false)
+    .map_or_else(|_| Vec::new(), |pattern| pattern.ranges(text))
 }
 
 impl RowSearch {

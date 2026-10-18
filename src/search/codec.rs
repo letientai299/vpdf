@@ -131,7 +131,8 @@ mod tests {
       let bytes = encoded(&index);
       let decoded = Index::decode(PageId(7), &bytes)?;
       assert_eq!(encoded(&decoded), bytes, "{lines:?}");
-      for query in ["international", "café", "日本", "x y"] {
+      for query in ["international", "café", "日本", "x y", "Straße", "STRASSE"]
+      {
         let pattern = compile(query, false)?;
         let hits = |index: &Index| -> Result<Vec<_>> {
           Ok(

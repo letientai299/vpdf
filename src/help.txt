@@ -75,7 +75,8 @@ Counts: repeat objects / enclosing bracket pairs
 / ?: search forward / backward
 n N: next / previous match
 *: search active glyph or visible target word
-\v: regex prefix
+\v: regex prefix in content and panels
+Search: literal; uppercase letters enable case sensitivity
 
 # Figures
 gF: open selected figure actions
