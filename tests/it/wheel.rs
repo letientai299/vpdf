@@ -405,7 +405,10 @@ fn linked(path: &Path, text: bool) -> Result<Session> {
     f32::midpoint(link.first().x0, link.first().x1),
     f32::midpoint(link.first().y0, link.first().y1),
   );
-  app.go_to(position, true)?;
+  // Near the bottom, which leaves room to scroll the page.
+  app.go_to_page(PageId(0))?;
+  (app.reader.cursor, app.target) = (position, Some(position));
+  app.ensure_cursor()?;
   app.preview_link()?;
   assert!(app.peek.is_some());
   Ok(session)

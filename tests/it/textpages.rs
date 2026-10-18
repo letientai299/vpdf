@@ -254,7 +254,8 @@ fn act(app: &mut App, action: Act) -> Result<()> {
   }
 }
 
-/// Motions to drawn lines stay; jumps show the page top.
+/// Motions and jumps to drawn lines stay; jumps elsewhere land one row
+/// below the top.
 #[test]
 fn jumps_move_least_to_show_targets() -> Result<()> {
   let [p0, p1, p2] = PAGES.each_ref().map(|lines| &lines[..]);
@@ -262,16 +263,17 @@ fn jumps_move_least_to_show_targets() -> Result<()> {
   let holes: [&[&str]; 5] = [p0, &[], p1, p2, p0];
   // (pages, top row, Cursor mode at, act, cursor, its row)
   let cases = [
-    (&full, 0, None, Act::Go(on(1, 0, 0)), on(1, 0, 0), 0),
-    (&full, 0, None, Act::Go(on(2, 0, 0)), on(2, 0, 0), 0),
+    (&full, 0, None, Act::Go(on(1, 0, 0)), on(1, 0, 0), 5),
+    (&full, 0, None, Act::Go(on(2, 0, 0)), on(2, 0, 0), 1),
     (&full, 0, Some(on(0, 3, 0)), Act::Key('j'), on(1, 0, 0), 5),
     (&full, 0, Some(on(1, 0, 0)), Act::Key('k'), on(0, 3, 0), 3),
     (&full, 2, Some(on(1, 3, 0)), Act::Key('j'), on(2, 0, 0), 0),
     (&holes, 0, Some(on(0, 3, 0)), Act::Key('j'), on(1, 0, 0), 5),
     (&holes, 0, Some(on(2, 0, 0)), Act::Key('k'), on(1, 0, 0), 5),
     (&full, 0, None, Act::Search(0), on(0, 2, 6), 2),
-    (&full, 0, None, Act::Search(1), on(1, 2, 6), 2),
-    (&full, 0, None, Act::Search(2), on(2, 2, 6), 2),
+    // The last row is the margin, as on pages.
+    (&full, 0, None, Act::Search(1), on(1, 2, 6), 1),
+    (&full, 0, None, Act::Search(2), on(2, 2, 6), 6),
   ];
   for (pages, top, at, action, cursor, row) in cases {
     let (_dir, mut app) = app_of(pages, &[])?;
@@ -296,7 +298,7 @@ fn empty_pages_take_a_blank_row() -> Result<()> {
   let last: [&[&str]; 5] = [p0, p1, p2, p0, &[]];
   // (pages, act, rows with the third and fourth pages' rules)
   for (pages, action, rules) in [
-    (&middle, Act::Go(on(2, 0, 0)), (None, Some(1))),
+    (&middle, Act::Go(on(2, 0, 0)), (Some(0), Some(2))),
     (&middle, Act::Land(on(2, 0, 0)), (Some(0), Some(2))),
     (&last, Act::End, (None, Some(1))),
   ] {

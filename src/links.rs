@@ -442,7 +442,7 @@ mod tests {
   use crate::motion::Motion;
   use crate::panel::{Panel, Style};
   use crate::terminal;
-  use crate::text::{Bounds, Glyph, Line as TextLine, PageId, Position};
+  use crate::text::{Bounds, Glyph, Line as TextLine, PageId};
   use crossterm::event::{
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
   };
@@ -676,7 +676,7 @@ mod tests {
       origin: (0, 0),
     };
     let mut app = App::with_screen(&root.join("paper.pdf"), "", true, screen)?;
-    app.go_to(Position { page: PageId(1), ..Position::default() }, false)?;
+    app.go_to_page(PageId(1))?;
     let rows = app.panel_rows(PanelKind::Links)?;
     assert!(rows[0].label.starts_with("[13] Sepp Hochreiter"));
     assert!(rows[0].label.contains("Long short-term memory"));
@@ -687,12 +687,12 @@ mod tests {
       };
       app.follow(target)?;
     }
-    app.go_to(Position { page: PageId(3), ..Position::default() }, false)?;
+    app.go_to_page(PageId(3))?;
     let rows = app.panel_rows(PanelKind::Links)?;
     assert!(rows[3].label.starts_with("4 To illustrate"));
     assert_eq!(rows[3].detail, "p. 4");
 
-    app.go_to(Position { page: PageId(10), ..Position::default() }, false)?;
+    app.go_to_page(PageId(10))?;
     app.open_panel(PanelKind::Links)?;
     let row = &app.panel.as_ref().unwrap().rows[0];
     assert_eq!(row.label, "arXiv:1610.02357");

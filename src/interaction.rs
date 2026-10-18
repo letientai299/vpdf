@@ -264,12 +264,10 @@ impl App {
     self.target = location.target;
     if let Some(top) = location.text_top {
       self.text_top = self.clamp_text(top)?;
-    } else if self.text_mode {
-      self.reveal_text()?;
     }
-    if location.text_top.is_some() && !self.text_mode {
-      self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
-      self.ensure_cursor()?;
+    // A view from the other presentation keeps only its position.
+    if location.text_top.is_some() != self.text_mode {
+      self.land()?;
     }
     Ok(())
   }

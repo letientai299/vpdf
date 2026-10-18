@@ -144,8 +144,7 @@ impl App {
         if self.search_origin.is_some() {
           self.reader.cursor = target;
           self.target = Some(target);
-          self.show_page(target.page)?;
-          self.ensure_cursor()?;
+          self.land()?;
         } else {
           self.go_to(target, true)?;
           self

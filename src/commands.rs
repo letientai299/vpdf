@@ -392,7 +392,7 @@ impl App {
       .doc
       .page_number(label)
       .ok_or_else(|| anyhow::anyhow!("Page label not found: {label}"))?;
-    self.go_to(Position { page, ..Position::default() }, true)
+    self.go_to_page(page)
   }
 
   pub fn reload_with(&mut self, password: &str) -> Result<()> {
@@ -571,7 +571,7 @@ impl App {
       self.land_at(position)?;
       self.aimed = self.landed.map(|landed| (landed, target.clone()));
     } else {
-      self.go_to(position, true)?;
+      self.go_to_page(position.page)?;
     }
     self.reader.describe_jump(Some(description));
     Ok(())

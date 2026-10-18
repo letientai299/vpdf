@@ -371,6 +371,8 @@ fn cursor_rows(app: &mut App) -> Result<(f32, f32)> {
 #[derive(Clone, Copy, Debug)]
 enum Jump {
   Mark,
+  /// `n` to the next search match.
+  Next,
   Link,
   Outline,
   Result,
@@ -391,6 +393,7 @@ fn heading_on(app: &mut App, at: Position, title: &str) -> Result<Target> {
 fn jump(app: &mut App, kind: Jump, at: Position) -> Result<()> {
   match kind {
     Jump::Mark => app.go_to(at, true),
+    Jump::Next => app.next_result(false, 1),
     Jump::Page => app.follow(&Target::Page(at.page)),
     Jump::Link => {
       let text = app.doc.text(at.page)?;
@@ -428,8 +431,6 @@ enum Lands {
   Top,
   /// Where it already showed.
   Stays,
-  /// Scrolled into view at the bottom margin.
-  Bottom,
   /// The page's top edge on row 0.
   PageTop,
 }
@@ -444,7 +445,13 @@ fn jumps_land_near_the_top() -> Result<()> {
     (false, Jump::Result, 0.0, on(1, 4, 0), Lands::Top),
     (true, Jump::Result, 0.0, on(0, 4, 0), Lands::Top),
     (false, Jump::Link, 40.0, on(0, 2, 0), Lands::Stays),
-    (false, Jump::Mark, 0.0, on(0, 4, 0), Lands::Bottom),
+    // Position targets stay when shown, else land.
+    (false, Jump::Mark, 0.0, on(0, 4, 0), Lands::Top),
+    (false, Jump::Mark, 0.0, on(0, 1, 3), Lands::Stays),
+    (true, Jump::Mark, 0.0, on(0, 1, 0), Lands::Stays),
+    (true, Jump::Mark, 0.0, on(1, 4, 0), Lands::Top),
+    (false, Jump::Next, 0.0, on(0, 4, 0), Lands::Top),
+    (true, Jump::Next, 0.0, on(1, 4, 0), Lands::Top),
     (false, Jump::Page, 60.0, on(1, 0, 0), Lands::PageTop),
     (true, Jump::Link, 0.0, on(1, 4, 0), Lands::Top),
     (true, Jump::Outline, 0.0, on(0, 4, 0), Lands::Top),
@@ -457,7 +464,7 @@ fn jumps_land_near_the_top() -> Result<()> {
   ] {
     let case = format!("{kind:?} text {text_mode} from {start} to {at:?}");
     let (_dir, mut app) = landing_app(text_mode)?;
-    if matches!(kind, Jump::Result) {
+    if matches!(kind, Jump::Result | Jump::Next) {
       app.start_search("L4 alpha", false, false)?;
       super::common::search_loaded(&mut app)?;
       app.reader.clear_history();
@@ -466,8 +473,7 @@ fn jumps_land_near_the_top() -> Result<()> {
     let before = view(&mut app)?;
     jump(&mut app, kind, at)?;
     assert_eq!(app.reader.cursor, at, "{case}");
-    let (top, bottom) = cursor_rows(&mut app)?;
-    let height = f32::from(app.screen.rows - 1);
+    let (top, _) = cursor_rows(&mut app)?;
     match lands {
       Lands::Top => assert!((top - 1.0).abs() < 0.01, "{case}: {top}"),
       Lands::Stays => {
@@ -476,9 +482,6 @@ fn jumps_land_near_the_top() -> Result<()> {
           let row = before.1[at.line].map(|(_, row)| f32::from(row));
           assert_eq!(Some(top), row, "{case}");
         }
-      }
-      Lands::Bottom => {
-        assert!((bottom - (height - 1.0)).abs() < 0.01, "{case}: {bottom}");
       }
       Lands::PageTop => {
         let edge = app.layout.pages[at.page.0].top - app.reader.scroll;

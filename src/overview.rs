@@ -4,7 +4,7 @@ use crate::keys::{Action, Input};
 use crate::layout::{Crop, page_matrix, transform};
 use crate::motion::Motion;
 use crate::pointer::{Hit, Wheel};
-use crate::text::{Bounds, PageId, Position};
+use crate::text::{Bounds, PageId};
 use crate::tiles::{self, TileKey};
 use crate::{terminal, theme};
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
@@ -194,7 +194,7 @@ impl App {
     let Some(overview) = self.overview.take() else { return Ok(()) };
     let page = PageId(overview.selected);
     self.requested.clear();
-    self.go_to(Position { page, ..Position::default() }, true)
+    self.go_to_page(page)
   }
 
   pub fn close_overview(&mut self) {

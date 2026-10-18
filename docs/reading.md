@@ -67,7 +67,11 @@ until the next key or click; the detail shows when none is up and takes room
 from the tab names. Link labels can also be picked with the pointer
 before following their destination. Each label sits beside its link, on the
 link's line, clear of other links and labels. Jump history returns to earlier
-destinations; marks keep places worth revisiting. Following an external web link
+destinations; marks keep places worth revisiting. A jump to a place already on
+screen, such as a mark, search match, or link target, keeps the view; one
+elsewhere shows the target one row below the top, in both presentations. Page
+jumps, such as `:12` or a thumbnail, show the page from its top. Following an
+external web link
 opens it through the desktop integration. See [external actions][external] for
 clipboard and SSH boundaries.
 

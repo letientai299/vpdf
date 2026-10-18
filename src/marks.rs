@@ -2,7 +2,7 @@ use crate::Result;
 use crate::app::{App, Request};
 use crate::panel::{Destination, Row};
 use crate::state::Mark;
-use crate::text::Position;
+use crate::text::{PageId, Position};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
@@ -60,10 +60,17 @@ impl App {
     self.go_to(position, exact)
   }
 
+  /// Goes to a position: a shown one keeps the view, else it lands as
+  /// followed links do.
   pub fn go_to(&mut self, position: Position, exact: bool) -> Result<()> {
     let target =
       if exact { position } else { Position { glyph: 0, ..position } };
-    self.jump_cursor(target)?;
+    self.land_at(target)
+  }
+
+  /// Shows `page` from its top, as page targets do.
+  pub fn go_to_page(&mut self, page: PageId) -> Result<()> {
+    self.jump_cursor(Position { page, ..Position::default() })?;
     self.show_page(self.reader.cursor.page)?;
     self.ensure_cursor()?;
     self.flash_landing();

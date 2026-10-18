@@ -462,7 +462,6 @@ mod tests {
   #[ignore = "requires verified public PDF corpus"]
   fn sections_agree_with_the_reader() -> Result<()> {
     use crate::document::Target;
-    use crate::text::Position;
     // (file, text mode, Cursor mode)
     let cases = ["paper.pdf", "book.pdf"].map(|file| {
       [(false, false), (false, true), (true, false)]
@@ -476,7 +475,7 @@ mod tests {
         app.reader.enter_cursor();
       }
       for page in (0..app.doc.pages.len()).map(PageId) {
-        app.go_to(Position { page, ..Position::default() }, true)?;
+        app.go_to_page(page)?;
         app.track_outline();
         let line = app.page_line(page);
         let shown = line.split_once(" · ").map(|(_, title)| title);
