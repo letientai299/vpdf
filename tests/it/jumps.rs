@@ -705,3 +705,27 @@ fn counted_history_keeps_both_directions() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn history_clears_column_goal() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("columns.pdf");
+  let lines = &[
+    "abcdefghijklmnopqrstuvwxyz",
+    "abcdefghijklmnopqrstuvwxyz",
+    "abcdefghijklmnopqrstuvwxyz",
+  ];
+  crate::common::pages_pdf(&path, &[lines, lines])?;
+  let mut app = App::with_screen(&path, "", true, crate::focus::screen())?;
+  crate::modes::keys(&mut app, b"i20lj:2\r0j\x0fj")?;
+  assert_eq!(
+    app.reader.cursor,
+    Position { page: PageId(0), line: 2, glyph: 20 }
+  );
+  crate::modes::keys(&mut app, b"\x1b[105;5uj")?;
+  assert_eq!(
+    app.reader.cursor,
+    Position { page: PageId(1), line: 2, glyph: 0 }
+  );
+  Ok(())
+}

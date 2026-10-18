@@ -258,6 +258,7 @@ impl App {
   pub(crate) fn restore_location(&mut self, location: Location) -> Result<()> {
     self.animation = None;
     self.reader.cursor = crate::reader::clamp(location.cursor, &mut self.doc)?;
+    self.reader.desired = None;
     self.target = location.target;
     // A view from the other presentation is stale; only its position
     // lands, judged against the current view.
