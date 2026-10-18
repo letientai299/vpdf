@@ -401,22 +401,35 @@ fn boundary_presses_never_focus() -> Result<()> {
   Ok(())
 }
 
+/// The focused pane's screen cell where `region` hits `want`.
+fn find_cell(
+  session: &mut Session,
+  region: Region,
+  want: Hit,
+) -> Result<(u16, u16)> {
+  let app = session.app();
+  for row in 0..app.screen.rows {
+    for column in 0..app.screen.columns {
+      if app.hovered(region, column, row, None)? == want {
+        return Ok((app.at.column + column, app.at.row + row));
+      }
+    }
+  }
+  anyhow::bail!("no cell shows {want:?}")
+}
+
 /// The focused pane's screen cell showing `item`.
 fn chrome_cell(
   session: &mut Session,
   item: vpdf::chrome::Chrome,
 ) -> Result<(u16, u16)> {
   let app = session.app();
-  for region in [Region::Status, Region::Overlay] {
-    for row in 0..app.screen.rows {
-      for column in 0..app.screen.columns {
-        if app.chrome_at(region, column, row) == Some(item) {
-          return Ok((app.at.column + column, app.at.row + row));
-        }
-      }
-    }
-  }
-  anyhow::bail!("no cell shows {item:?}")
+  let row = app.screen.rows - 1;
+  let column =
+    (0..app.screen.columns).find(|c| app.chrome_at(*c, row) == Some(item));
+  let column =
+    column.ok_or_else(|| anyhow::anyhow!("no cell shows {item:?}"))?;
+  Ok((app.at.column + column, app.at.row + row))
 }
 
 /// A settled left click.
@@ -528,10 +541,19 @@ fn status_items_beat_the_divider() -> Result<()> {
   Ok(())
 }
 
+/// The screen cell of an overlay item.
+fn item_cell(
+  session: &mut Session,
+  list: vpdf::pointer::List,
+  index: usize,
+) -> Result<(u16, u16)> {
+  find_cell(session, Region::Overlay, Hit::Item(list, Some(index)))
+}
+
 #[test]
 fn clues_and_completions_act_on_click() -> Result<()> {
   use crossterm::event::{KeyEvent, KeyModifiers};
-  use vpdf::chrome::Chrome;
+  use vpdf::pointer::List;
   let (_directory, mut session) = session(false)?;
   let ctrl_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
   session.app().key(ctrl_w, &mut vpdf::prompt::History::default())?;
@@ -540,7 +562,7 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   assert!(session.app().clue_due());
   let clues = session.app().clues.as_ref().map(|c| c.items.clone());
   let split = clues.and_then(|items| items.iter().position(|(k, _)| k == "v"));
-  let at = chrome_cell(&mut session, Chrome::Clue(split.expect("a v clue")))?;
+  let at = item_cell(&mut session, List::Clues, split.expect("a v clue"))?;
   click(&mut session, at);
   session.settle()?;
   assert_eq!(session.tab().panes.len(), 2);
@@ -554,9 +576,9 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   let clues = failing.app().clues.as_ref().map(|c| c.items.clone());
   let pages = clues.and_then(|items| items.iter().position(|(k, _)| k == "p"));
   status(&mut failing)?;
-  let at = chrome_cell(&mut failing, Chrome::Clue(pages.expect("a p clue")))?;
-  let down = mouse(&mut failing, MouseEventKind::Down(MouseButton::Left), at);
-  assert!(down.is_err(), "the session reports it");
+  let at = item_cell(&mut failing, List::Clues, pages.expect("a p clue"))?;
+  mouse(&mut failing, MouseEventKind::Down(MouseButton::Left), at)?;
+  assert!(failing.settle().is_err(), "the session reports it");
   let app = failing.app();
   assert!(app.clues.is_none());
   assert_eq!(app.keys.pending(), "");
@@ -570,10 +592,10 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   let rows = app.screen.rows;
   let columns = app.screen.columns;
   let items = (0..rows).flat_map(|row| (0..columns).map(move |c| (c, row)));
-  let mut any =
-    items.filter_map(|(c, row)| app.chrome_at(Region::Overlay, c, row));
-  let any = any.next();
-  assert_eq!(any, None);
+  let mut hits =
+    items.map(|(c, row)| app.hovered(Region::Overlay, c, row, None));
+  let any = hits.find(|hit| matches!(hit, Ok(Hit::Item(_, Some(_)))));
+  assert!(any.is_none(), "{any:?}");
   // Blank clue rows close the clues.
   let app = session.app();
   let blank = (app.at.column + app.screen.columns - 1, app.screen.rows - 2);
@@ -585,7 +607,7 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   let items = session.app().prompt.as_ref().and_then(|p| p.menu.as_ref());
   let second = items.map(|menu| menu.items[1].clone()).expect("a menu");
   status(&mut session)?;
-  let at = chrome_cell(&mut session, Chrome::Completion(1))?;
+  let at = item_cell(&mut session, List::Completions, 1)?;
   click(&mut session, at);
   let text = session.app().prompt.as_ref().map(|p| p.text.clone());
   assert!(text.is_some_and(|text| text.ends_with(&second)), "{second}");

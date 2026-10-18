@@ -1,7 +1,7 @@
 //! Overlay items the pointer picks and runs.
 
 use crate::Result;
-use crate::app::{App, InputOwner};
+use crate::app::{App, InputOwner, Request};
 use crate::pointer::{Hit, Items, List};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
@@ -12,7 +12,12 @@ impl App {
       InputOwner::Context => Some(List::Menu),
       InputOwner::Region => Some(List::Actions),
       InputOwner::Hints => Some(List::Hints),
-      _ => None,
+      InputOwner::Prompt => self
+        .prompt
+        .as_ref()
+        .and_then(|prompt| prompt.menu.as_ref())
+        .map(|_| List::Completions),
+      _ => self.clues.as_ref().map(|_| List::Clues),
     }
   }
 
@@ -23,6 +28,8 @@ impl App {
       }
       List::Actions => Some(self.bar_items()),
       List::Hints => Some(self.hint_items()),
+      List::Clues => Some(self.clue_cells()),
+      List::Completions => Some(self.completion_cells()),
     }
     .unwrap_or_default()
   }
@@ -41,6 +48,8 @@ impl App {
           hints.selected = Some(index);
         }
       }
+      // Picking would rewrite the line; clicks do.
+      List::Clues | List::Completions => {}
     }
   }
 
@@ -53,6 +62,19 @@ impl App {
       }
       List::Actions => self.run_action(index),
       List::Hints => self.run_hint(index),
+      List::Clues => {
+        let label = self.clues.as_ref().map(|clues| &clues.items[index].0);
+        let keys = label.and_then(|label| crate::clues::clue_keys(label));
+        // The session types them, as keys.
+        self.request = keys.map(Request::Keys);
+        Ok(())
+      }
+      List::Completions => {
+        if let Some(prompt) = &mut self.prompt {
+          prompt.pick(index);
+        }
+        Ok(())
+      }
     }
   }
 

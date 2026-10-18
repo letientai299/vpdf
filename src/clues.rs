@@ -2,6 +2,8 @@
 
 use crate::app::App;
 use crate::keys;
+use crate::pointer::Items;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::{Duration, Instant};
 
 /// Idle time after a prefix before clues show. mini.clue defaults to a
@@ -109,6 +111,19 @@ impl App {
     })
   }
 
+  /// Clues naming keys, by cells.
+  pub(crate) fn clue_cells(&self) -> Items {
+    let mut items = Items::default();
+    let Some(clues) = &self.clues else { return items };
+    let (labels, grid, _) = self.clue_grid(clues);
+    for (cells, index) in grid.cells(labels.len(), self.menu_top()) {
+      if clue_keys(&clues.items[index].0).is_some() {
+        items.push(cells, index);
+      }
+    }
+    items
+  }
+
   /// Layout and key column width.
   /// Labels, their placement, and the key width of each label.
   pub fn clue_grid(
@@ -125,5 +140,53 @@ impl App {
     let limit = crate::grid::limit(self.screen);
     let grid = crate::grid::layout(&labels, columns, limit, None);
     (labels, grid, keys)
+  }
+}
+
+/// Keys a clue names; ranges name none.
+pub(crate) fn clue_keys(label: &str) -> Option<Vec<KeyEvent>> {
+  let range = label.len() == 3
+    && label.as_bytes()[1] == b'-'
+    && label.as_bytes()[0] != b'C';
+  if range || label.contains(' ') {
+    return None;
+  }
+  let mut keys = Vec::new();
+  let mut rest = label;
+  while let Some(first) = rest.chars().next() {
+    let (code, modifiers, tail) = match rest.strip_prefix("C-") {
+      Some(tail) if !tail.is_empty() => {
+        let ch = tail.chars().next()?;
+        (ch, KeyModifiers::CONTROL, &tail[ch.len_utf8()..])
+      }
+      _ => (first, KeyModifiers::NONE, &rest[first.len_utf8()..]),
+    };
+    keys.push(KeyEvent::new(KeyCode::Char(code), modifiers));
+    rest = tail;
+  }
+  (!keys.is_empty()).then_some(keys)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn clue_labels_name_keys() {
+    let key = |ch, modifiers| KeyEvent::new(KeyCode::Char(ch), modifiers);
+    let (none, ctrl) = (KeyModifiers::NONE, KeyModifiers::CONTROL);
+    // (label) -> keys
+    let cases = [
+      ("v", Some(vec![key('v', none)])),
+      ("gg", Some(vec![key('g', none), key('g', none)])),
+      ("C-s", Some(vec![key('s', ctrl)])),
+      ("-", Some(vec![key('-', none)])),
+      ("a-z", None),
+      ("A-Z", None),
+      ("+ *", None),
+    ];
+    for (label, want) in cases {
+      assert_eq!(clue_keys(label), want, "{label}");
+    }
   }
 }

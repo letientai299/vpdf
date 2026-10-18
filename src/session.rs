@@ -1,6 +1,5 @@
 use crate::Result;
 use crate::app::{App, Request, TabMove, Tabline, Window};
-use crate::chrome::Chrome;
 use crate::decode::{Event, MouseKind, Reply, Size};
 use crate::dnd::{Dropped, Step, Target};
 use crate::document::PasswordRequired;
@@ -765,6 +764,11 @@ impl Session {
         self.app().go_to(mark.cursor, exact)
       }
       Some(Request::SplitAt(position)) => self.split_at(position),
+      // Each key's request applies before the next.
+      Some(Request::Keys(keys)) => keys.into_iter().try_for_each(|key| {
+        self.type_key(key)?;
+        self.settle()
+      }),
       Some(Request::SplitMark(name)) => {
         let mark = self.global_mark(name)?;
         if mark.path == self.app().path {
@@ -888,9 +892,7 @@ impl Session {
     let mouse =
       MouseEvent { kind: MouseEventKind::Moved, column, row, modifiers };
     // One button at a time.
-    let completion =
-      self.app().prompt.is_some() && self.on_overlay(mouse).is_some();
-    if self.pointer.holding() || completion {
+    if self.pointer.holding() || self.on_completion(mouse) {
       return Ok(false);
     }
     self.app().calm_hover();
@@ -1024,19 +1026,16 @@ impl Session {
     if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
       self.resizing = None;
     }
-    if let Some(route) = self.on_overlay(mouse) {
-      if self.overlay_press(route)? {
-        return Ok(Some(true));
-      }
-      // Completion rows stay; clue rows close.
-      if self.app().prompt.is_some() {
-        return Ok(Some(false));
-      }
-    }
+    // One button at a time.
+    let free = !self.pointer.holding();
     let app = self.app();
-    if app.item_press(mouse)? || app.context_press(mouse) {
+    if free && app.item_press(mouse)? || app.context_press(mouse) {
       self.pointer.release();
       return Ok(Some(true));
+    }
+    // Blank completion rows stay; clue rows close.
+    if self.on_completion(mouse) {
+      return Ok(Some(false));
     }
     if self.app().dismiss_click()? {
       self.pointer.release();
@@ -1095,13 +1094,7 @@ impl Session {
       tab.panes.iter().any(|app| {
         let pane = Pane::of(app).rect;
         pane.contains(column, row)
-          && app
-            .chrome_at(
-              Region::Status,
-              column - pane.column,
-              row - pane.row,
-            )
-            .is_some()
+          && app.chrome_at(column - pane.column, row - pane.row).is_some()
       })
     };
     on(Axis::Rows).filter(|_| !item()).map(Edge::Split)
@@ -1327,48 +1320,17 @@ impl Session {
     opened.is_ok()
   }
 
-  /// A press on completions or clues, routed.
-  fn on_overlay(&mut self, mouse: MouseEvent) -> Option<Route> {
-    self.focused_in(Region::Overlay, mouse)
+  /// Whether a press hits completions.
+  fn on_completion(&mut self, mouse: MouseEvent) -> bool {
+    self.app().prompt.is_some()
+      && self.focused_in(Region::Overlay, mouse).is_some()
   }
 
   /// `mouse` routed in the focused pane's `region`.
-  fn focused_in(
-    &mut self,
-    region: Region,
-    mouse: MouseEvent,
-  ) -> Option<Route> {
+  fn focused_in(&mut self, region: Region, mouse: MouseEvent) -> Option<Route> {
     let pane = Pane::of(self.app());
     let local = pointer::route(&[pane], pane.id, None, mouse);
     local.filter(|route| route.region == region)
-  }
-
-  /// Runs a clicked completion or clue.
-  fn overlay_press(&mut self, route: Route) -> Result<bool> {
-    if route.mouse.kind != MouseEventKind::Down(MouseButton::Left) {
-      return Ok(false);
-    }
-    let tab = &mut self.tabs[self.active];
-    let app = &mut tab.panes[tab.focus];
-    let (column, row) = (route.mouse.column, route.mouse.row);
-    match app.chrome_at(Region::Overlay, column, row) {
-      Some(Chrome::Completion(index)) => {
-        if let Some(prompt) = &mut app.prompt {
-          prompt.pick(index);
-        }
-      }
-      Some(Chrome::Clue(index)) => {
-        let label =
-          app.clues.as_ref().map(|clues| clues.items[index].0.clone());
-        let keys = label.as_deref().and_then(crate::chrome::clue_keys);
-        let typed =
-          keys.into_iter().flatten().try_for_each(|key| self.type_key(key));
-        self.pointer.release();
-        typed?;
-      }
-      _ => return Ok(false),
-    }
-    Ok(true)
   }
 
   /// Types `key` into the focused pane.
@@ -1401,11 +1363,7 @@ impl Session {
     };
     let app = self.app();
     // The shown item, before notes clear.
-    let item = app.chrome_at(
-      Region::Status,
-      route.mouse.column,
-      route.mouse.row,
-    );
+    let item = app.chrome_at(route.mouse.column, route.mouse.row);
     let Some(item) = item else { return Ok(false) };
     app.disarm();
     app.clear_notes();

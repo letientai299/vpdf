@@ -125,7 +125,10 @@ impl App {
       Hit::Card(row) => self.panel.as_ref()?.shelf.as_ref()?.detail(row),
       Hit::Thumbnail(page) => Some(self.page_line(page)),
       Hit::Link(..) => self.hover_label(),
-      Hit::Nothing | Hit::Text | Hit::Preview { .. } | Hit::Item(..)
+      Hit::Nothing
+      | Hit::Text
+      | Hit::Preview { .. }
+      | Hit::Item(..)
       | Hit::Edge { .. }
       | Hit::Chrome => None,
     }
@@ -336,7 +339,7 @@ pub fn prompt(
 ) -> Result<()> {
   let row = screen.rows - 1;
   if let Some(menu) = &prompt.menu {
-    let layout = menu.layout(usize::from(screen.columns), grid::limit(screen));
+    let layout = menu.grid(screen);
     let bottom = (at, row - 1);
     grid::draw(out, bottom, &menu.labels, &layout, menu.selected, 0, screen)?;
   }

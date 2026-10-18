@@ -6,7 +6,9 @@ use crate::layout::Screen;
 use crate::links::LinkPress;
 use crate::motion::Motion;
 use crate::panel::Panel;
-use crate::pointer::{Hit, List, Pixel, Region, Route, WHEEL_ROWS, Wheel};
+use crate::pointer::{
+  Hit, Items, List, Pixel, Region, Route, WHEEL_ROWS, Wheel,
+};
 use crate::preview::Origin;
 use crate::reader::Location;
 use crate::region::BAR_HINT;
@@ -142,9 +144,24 @@ impl App {
     let Some(menu) = self.prompt.as_ref().and_then(|p| p.menu.as_ref()) else {
       return self.clue_rows();
     };
-    let limit = crate::grid::limit(self.screen);
-    let layout = menu.layout(usize::from(self.screen.columns), limit);
-    u16::try_from(layout.visible).unwrap_or(0)
+    u16::try_from(menu.grid(self.screen).visible).unwrap_or(0)
+  }
+
+  /// Completions, by cells.
+  pub(crate) fn completion_cells(&self) -> Items {
+    let mut items = Items::default();
+    let menu = self.prompt.as_ref().and_then(|prompt| prompt.menu.as_ref());
+    let Some(menu) = menu else { return items };
+    let grid = menu.grid(self.screen);
+    for (cells, index) in grid.cells(menu.items.len(), self.menu_top()) {
+      items.push(cells, index);
+    }
+    items
+  }
+
+  /// Top row of the menu.
+  pub(crate) fn menu_top(&self) -> u16 {
+    self.screen.rows.saturating_sub(1 + self.menu_rows())
   }
 
   /// Page area above the menu or clue rows; page graphics stop there.
@@ -1011,8 +1028,15 @@ impl App {
         let follows = self.hover_peek().is_some();
         return Ok(Hit::Preview { follows });
       }
-      Region::Overlay | Region::Status => {
-        let item = self.chrome_at(region, column, row);
+      Region::Overlay => {
+        let list = self.owned_list();
+        let list =
+          list.filter(|list| matches!(list, List::Clues | List::Completions));
+        let index = list.and_then(|list| self.items(list).at(column, row));
+        return Ok(list.map_or(Hit::Nothing, |list| Hit::Item(list, index)));
+      }
+      Region::Status => {
+        let item = self.chrome_at(column, row);
         return Ok(item.map_or(Hit::Nothing, |_| Hit::Chrome));
       }
       Region::Edge => return Ok(Hit::Nothing),

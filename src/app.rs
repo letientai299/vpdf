@@ -46,6 +46,8 @@ pub enum Request {
   SplitAt(Position),
   /// A global mark beside; focus stays.
   SplitMark(char),
+  /// Keys a clicked clue names.
+  Keys(Vec<crossterm::event::KeyEvent>),
   /// Pick a file with `fzf` and open it in the focused pane.
   Pick,
   /// Closes a tab, else the active one.

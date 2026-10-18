@@ -37,19 +37,26 @@ pub fn layout(
 }
 
 impl Grid {
-  /// The label at a column and line.
-  pub fn item_at(
+  /// Each shown label's cells, below row `top`.
+  pub fn cells(
     &self,
-    column: usize,
-    line: usize,
     count: usize,
-  ) -> Option<usize> {
-    if line >= self.visible || self.width == 0 {
-      return None;
-    }
-    let slot = column / self.width;
-    let index = slot * self.rows + self.first + line;
-    (slot < self.columns && index < count).then_some(index)
+    top: u16,
+  ) -> impl Iterator<Item = (crate::split::Rect, usize)> + '_ {
+    (0..count).filter_map(move |index| {
+      let line = (index % self.rows).checked_sub(self.first)?;
+      let slot = index / self.rows;
+      (line < self.visible).then(|| {
+        let at = |value: usize| u16::try_from(value).unwrap_or(u16::MAX);
+        let cells = crate::split::Rect {
+          column: at(slot * self.width),
+          row: top.saturating_add(at(line)),
+          columns: at(self.width),
+          rows: 1,
+        };
+        (cells, index)
+      })
+    })
   }
 }
 

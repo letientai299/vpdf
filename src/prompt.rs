@@ -72,6 +72,11 @@ impl Menu {
   pub fn layout(&self, columns: usize, limit: usize) -> Grid {
     grid::layout(&self.labels, columns, limit, self.selected)
   }
+
+  /// The layout in `screen`'s rows above the status row.
+  pub fn grid(&self, screen: crate::layout::Screen) -> Grid {
+    self.layout(usize::from(screen.columns), grid::limit(screen))
+  }
 }
 
 /// Position in history while browsing, and the line before browsing.
