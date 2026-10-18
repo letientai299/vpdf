@@ -44,6 +44,21 @@ const COVERED: [&str; 24] = [
 
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
+    if self.reader.operator.is_some()
+      && !matches!(
+        input.action,
+        Action::Motion(_)
+          | Action::Object(..)
+          | Action::Yank
+          | Action::YankLine
+          | Action::YankRaw
+          | Action::YankPath
+          | Action::Search(_)
+          | Action::Cancel
+      )
+    {
+      self.disarm();
+    }
     if self.region_input(input)? {
       return Ok(());
     }
@@ -179,6 +194,8 @@ impl App {
     };
     if let Some(input) = self.keys.feed(key, grammar) {
       self.action(input)?;
+    } else if self.keys.pending().is_empty() {
+      self.reader.disarm();
     }
     Ok(())
   }

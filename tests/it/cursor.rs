@@ -405,3 +405,31 @@ fn cancel_layer_preserves_visual() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn rejected_keys_cancel_yanks() -> Result<()> {
+  for rejected in [b"x".as_slice(), b"+", b"gZ"] {
+    let (_directory, mut session) = crate::mouse::session(false)?;
+    let app = session.app();
+    app.reader.store('a', "keep".into())?;
+    app.reader.pending_yank = None;
+    keys(app, b"\"ay")?;
+    assert!(app.reader.operator.is_some());
+    keys(app, rejected)?;
+    assert!(app.reader.operator.is_none());
+    keys(app, b"j")?;
+    assert_eq!(
+      app.reader.registers.get(&'a').map(|value| &**value),
+      Some("keep")
+    );
+    assert!(app.reader.pending_yank.is_none());
+  }
+  for valid in [b"\"a2y3w".as_slice(), b"\"ayiw", b"\"ayp"] {
+    let (_directory, mut session) = crate::mouse::session(false)?;
+    let app = session.app();
+    keys(app, valid)?;
+    assert!(app.reader.operator.is_none());
+    assert!(app.reader.registers.get(&'a').is_some());
+  }
+  Ok(())
+}
