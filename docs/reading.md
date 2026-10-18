@@ -184,6 +184,20 @@ clears temporary OCR text and jump history. Hidden panes check for changes when
 shown again. See [sessions and state][sessions] for persistence and reload
 design.
 
+## Performance display
+
+Use `:perf` to toggle session-wide performance statistics. The setting survives
+restarts. The display wraps into columns above the panes as the terminal
+narrows; very short terminals retain space for reading and clip excess statistic
+rows. Executable help explains each label, unit, measurement window, and scope.
+
+Content FPS falls to zero when the view stops changing. The display measures
+application output, not monitor refresh or input-to-photon latency. Resource
+sampling and statistic updates add work, so compare enabled and disabled runs
+when measuring idle overhead. CPU readings cover vpdf, excluding the terminal
+and separate helper processes. Search and cold rendering can consume CPU while
+the interaction loop remains responsive.
+
 ## External actions
 
 Opening a document does not automatically launch its links. Explicitly followed

@@ -92,6 +92,7 @@ pub struct Session {
   pub history: History,
   pub quit: bool,
   pub state: State,
+  perf: crate::perf::Monitor,
   /// Start screen while no document is open.
   pub home: Option<Home>,
   /// The whole terminal; panes divide it.
@@ -226,6 +227,7 @@ impl Session {
       history: state.history(),
       quit: false,
       state,
+      perf: crate::perf::Monitor::default(),
       home: None,
       screen: None,
       watcher: Watcher::default(),
@@ -243,6 +245,55 @@ impl Session {
       drops: crate::dnd::Drops::default(),
       resizing: None,
     }
+  }
+
+  fn content(&self, mut screen: Screen) -> Screen {
+    if self.state.perf {
+      let rows = crate::perf::rows(screen);
+      screen.rows -= rows;
+      screen.origin.1 += rows;
+    }
+    screen
+  }
+
+  fn area(&self) -> Rect {
+    self.screen.map_or_default(|screen| {
+      let content = self.content(screen);
+      Rect { row: content.origin.1 - screen.origin.1, ..full(content) }
+    })
+  }
+
+  fn toggle_perf(&mut self, on: Option<bool>) -> Result<()> {
+    self.state.set_perf(on.unwrap_or(!self.state.perf));
+    self.changed();
+    self.perf.running(self.state.perf && self.sight != Sight::Hidden);
+    if let Some(screen) = self.screen {
+      self.resize(screen)?;
+    }
+    Ok(())
+  }
+
+  fn perf_tick(&mut self, out: &mut impl Write) -> Result<()> {
+    let on = self.state.perf && self.sight != Sight::Hidden;
+    self.perf.running(on);
+    if !on {
+      return Ok(());
+    }
+    let now = Instant::now();
+    if !self.perf.wait(now).is_zero() {
+      return Ok(());
+    }
+    self.perf.sample(now);
+    if let Some(screen) = self.screen {
+      let mut buffer = Vec::new();
+      write!(buffer, "{}", terminal::frame_start())?;
+      if self.perf.draw(&mut buffer, screen, false)? {
+        write!(buffer, "{}", terminal::frame_end())?;
+        out.write_all(&buffer)?;
+        out.flush()?;
+      }
+    }
+    Ok(())
   }
 
   pub fn save(&mut self) -> Result<()> {
@@ -366,9 +417,10 @@ impl Session {
     let names =
       self.tabs.iter().map(|tab| tab.panes[tab.focus].name()).collect();
     let active = self.active;
+    let area = self.area();
     let tab = &mut self.tabs[active];
     let mut rects = Vec::new();
-    tab.tree.layout(full(screen), &mut rects);
+    tab.tree.layout(area, &mut rects);
     let mut tabline = Some(Tabline { names, active });
     for (id, rect) in rects {
       let Some(index) = tab.index(id) else { continue };
@@ -517,7 +569,7 @@ impl Session {
       return self.close();
     }
     self.leave()?;
-    let area = self.screen.map_or_default(full);
+    let area = self.area();
     let mut graphics = self.take_graphics();
     let app = self.tab().detach(area);
     self.retire(&app, &mut graphics);
@@ -586,7 +638,7 @@ impl Session {
     (count, explicit): (usize, bool),
     file: Option<&Path>,
   ) -> Result<()> {
-    let area = self.screen.map_or_default(full);
+    let area = self.area();
     let tab = self.tab();
     let id = tab.panes[tab.focus].id;
     let order = tab.order();
@@ -674,7 +726,7 @@ impl Session {
       return Ok(());
     }
     self.leave()?;
-    let area = self.screen.map_or_default(full);
+    let area = self.area();
     let graphics = self.take_graphics();
     let app = self.tab().detach(area);
     self.insert_tab(app, graphics)
@@ -798,6 +850,7 @@ impl Session {
         self.quit = true;
         Ok(())
       }
+      Some(Request::Perf(on)) => self.toggle_perf(on),
       Some(Request::Mouse(on)) => {
         if !on {
           self.drop_pointer();
@@ -1107,7 +1160,7 @@ impl Session {
   fn edge_at(&self, column: u16, row: u16) -> Option<Edge> {
     let tab = self.tabs.get(self.active)?;
     let mut dividers = Vec::new();
-    tab.tree.dividers(full(self.screen?), &mut dividers);
+    tab.tree.dividers(self.area(), &mut dividers);
     let on = |axis| {
       let mut found = dividers.iter().filter(|divider| divider.axis == axis);
       found.find(|divider| divider.rect.contains(column, row)).copied()
@@ -1194,7 +1247,7 @@ impl Session {
     if clicks < 2 {
       return Ok(true);
     }
-    let area = self.screen.map_or_default(full);
+    let area = self.area();
     match edge {
       Edge::Split(divider) => self.tab().tree.equalize_at(divider.index, area),
       Edge::Panel(id) => {
@@ -1211,7 +1264,7 @@ impl Session {
 
   /// Moves the dragged boundary to the pointer.
   fn drag_edge(&mut self, edge: Edge, mouse: MouseEvent) -> Result<bool> {
-    let area = self.screen.map_or_default(full);
+    let area = self.area();
     match edge {
       Edge::Split(divider) => {
         let at = match divider.axis {
@@ -1334,9 +1387,9 @@ impl Session {
       Ok(Target::Text(text)) => {
         home.event(Event::Paste(text), &mut self.history).map(|_| false)
       }
-      Ok(Target::Pdf(path)) => {
-        self.open(&path, true, home.screen).map(|()| true)
-      }
+      Ok(Target::Pdf(path)) => self
+        .open(&path, true, self.screen.unwrap_or(home.screen))
+        .map(|()| true),
       Err(error) => Err(error),
     };
     answer(out, &drop.finish(opened.is_ok()))?;
@@ -1353,7 +1406,7 @@ impl Session {
   /// Opens `path` from the start screen in a new tab; whether it did. A
   /// failure shows on the start screen.
   fn leave_home(&mut self, home: &mut Home, path: &Path) -> bool {
-    let opened = self.open(path, true, home.screen);
+    let opened = self.open(path, true, self.screen.unwrap_or(home.screen));
     if let Err(error) = &opened {
       home.error = Some(error.to_string());
     }
@@ -1562,13 +1615,16 @@ impl Session {
 
   /// Fits the start screen or every pane to a new terminal size.
   pub fn resize(&mut self, screen: Screen) -> Result<()> {
+    self.perf.invalidate();
+    self.screen = Some(screen);
+    let content = self.content(screen);
     if let Some(home) = &mut self.home {
-      home.screen = screen;
+      home.at.row = content.origin.1 - screen.origin.1;
+      home.screen = content;
     }
     if self.tabs.is_empty() {
       return Ok(());
     }
-    self.screen = Some(screen);
     for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
       app.at = At { column: u16::MAX, row: u16::MAX };
     }
@@ -1845,6 +1901,7 @@ impl Session {
     if !terminal::images_lost() {
       return Ok(false);
     }
+    self.perf.invalidate();
     crate::graphics::release(out)?;
     self.app().graphics.lost();
     // The child program read the mouse.
@@ -1859,23 +1916,47 @@ impl Session {
     Ok(true)
   }
 
-  /// Draws the start screen and handles one input.
-  fn home(&mut self, out: &mut impl Write) -> Result<()> {
-    let Some(mut home) = self.home.take() else { return Ok(()) };
+  fn draw_home(&mut self, home: &mut Home, out: &mut impl Write) -> Result<()> {
     // Its thumbnail would cover what tmux shows instead.
     if self.sight != Sight::Hidden {
       // Start-screen motion is passive.
       self.pointer.leave();
       terminal::point(out, Shape::Default)?;
+      self.perf.running(self.state.perf);
       home.draw(out)?;
+      self.perf.frame(Instant::now());
+      if self.state.perf
+        && let Some(screen) = self.screen
+      {
+        self.perf.draw(out, screen, false)?;
+        out.flush()?;
+      }
     }
     if let Some(unmeasured) = &self.unmeasured {
       unmeasured.draw(out)?;
       out.flush()?;
     }
+    Ok(())
+  }
+
+  /// Draws the start screen and handles one input.
+  fn home(&mut self, out: &mut crate::perf::Output<impl Write>) -> Result<()> {
+    let Some(mut home) = self.home.take() else { return Ok(()) };
+    self.draw_home(&mut home, out)?;
     let event = loop {
       // A wake may come from the hangup thread; the caller checks it.
-      let Some(event) = crate::input::next(None)? else {
+      self.perf.bytes(Instant::now(), out.take());
+      self.perf_tick(out)?;
+      let wait = (self.state.perf && self.sight != Sight::Hidden)
+        .then(|| self.perf.wait(Instant::now()));
+      let Some(event) = crate::input::next(wait)? else {
+        if !self.quit
+          && !self.hangup.load(Ordering::Relaxed)
+          && wait.is_some()
+          && !home.updates()
+        {
+          continue;
+        }
         self.home = Some(home);
         return Ok(());
       };
@@ -1909,7 +1990,7 @@ impl Session {
       self.sight = Sight::Unfocused;
     }
     if let Event::Resize(report) = event {
-      let measured = terminal::resized(report, Some(home.screen));
+      let measured = terminal::resized(report, self.screen);
       self.home = Some(home);
       let refit = self.refit(measured, crossterm::terminal::size);
       if let (Err(error), Some(home)) = (refit, &mut self.home) {
@@ -1940,6 +2021,10 @@ impl Session {
           Err(error) => home.error = Some(error.to_string()),
         }
       }
+      Ok(Outcome::Perf(on)) => {
+        self.home = Some(home);
+        return self.toggle_perf(on);
+      }
       Ok(Outcome::Stay) => {}
       Err(error) => home.error = Some(error.to_string()),
     }
@@ -1962,7 +2047,7 @@ impl Drawable for Session {
     }
     write!(out, "{}\x1b[0m", terminal::frame_start())?;
     self.app().graphics.begin(out)?;
-    let area = self.screen.map_or_default(full);
+    let area = self.area();
     let unmeasured = self.unmeasured.clone();
     let tab = self.tab();
     for index in 0..tab.panes.len() {
@@ -1987,6 +2072,11 @@ impl Drawable for Session {
       unmeasured.draw(out)?;
     }
     tab.panes[focus].graphics.end(out)?;
+    if self.state.perf
+      && let Some(screen) = self.screen
+    {
+      self.perf.draw(out, screen, false)?;
+    }
     write!(out, "{}", terminal::frame_end())?;
     // Drawing can scroll thumbnails or rewrap rows.
     let drawn = self.pointer.target().map(Hover::shown);
@@ -1997,6 +2087,10 @@ impl Drawable for Session {
     self.rehover =
       if moved && !following { Rehover::Due } else { Rehover::Settled };
     Ok(())
+  }
+
+  fn flushed(&mut self, at: Instant) {
+    self.perf.frame(at);
   }
 
   fn focused(&self) -> &App {
@@ -2035,7 +2129,10 @@ pub fn view(paths: &[PathBuf], page: Option<usize>) -> Result<()> {
   // fails to start leaves tiles encoded.
   let _ = crate::spool::start(crate::graphics::session());
   if paths.is_empty() {
-    session.home = Some(Home::new(&session.state.recent, screen));
+    session.screen = Some(screen);
+    session.home =
+      Some(Home::new(&session.state.recent, session.content(screen)));
+    session.resize(screen)?;
     return run_saving(&mut session);
   }
   for path in paths {
@@ -2231,7 +2328,7 @@ const CHECK: Duration = Duration::from_millis(250);
 const WATCH: Duration = Duration::from_secs(2);
 
 fn run(session: &mut Session) -> Result<()> {
-  let mut out = io::BufWriter::new(io::stdout());
+  let mut out = crate::perf::Output::new(io::BufWriter::new(io::stdout()));
   let mut trace = crate::trace::Trace::new()?;
   let mut buffer = Vec::with_capacity(64 * 1024);
   let mut dirty = true;
@@ -2251,6 +2348,8 @@ fn run(session: &mut Session) -> Result<()> {
       dirty = true;
       continue;
     }
+    session.perf.bytes(Instant::now(), out.take());
+    session.perf_tick(&mut out)?;
     dirty |= updates(session, &mut out)?;
     session.app().clipboard(&mut out)?;
     dirty |= session.notify();
@@ -2279,11 +2378,14 @@ fn run(session: &mut Session) -> Result<()> {
     let pending = (dirty || animating) && shown;
     let now = Instant::now();
     let changed = chores.touched.max(drawn) > chores.checked;
-    let wait = if pending {
+    let mut wait = if pending {
       pacer.wait(now)
     } else {
       idle(session, chores.checked, chores.watched, changed)
     };
+    if session.state.perf && shown {
+      wait = wait.min(session.perf.wait(now));
+    }
     let event = crate::input::next(Some(wait))?;
     // Streams of pointer reports must not starve them.
     if event.is_none() || now.elapsed() >= wait {
@@ -2431,6 +2533,73 @@ mod tests {
   use crate::decode::{Button, Mouse, Spot};
   use crate::text::Bounds;
   use crossterm::event::{KeyCode, KeyModifiers};
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn perf_is_global_and_persistent() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let store = root.path().join("state.json");
+    let mut session = paper()?;
+    session.store = Some(store.clone());
+    let screen = session.screen.expect("screen");
+    session.app().command("perf on")?;
+    session.settle()?;
+    assert!(session.state.perf);
+    let content = screen.rows - crate::perf::rows(screen);
+    assert_eq!(session.app().screen.rows, content);
+    assert_eq!(session.app().at.row, crate::perf::rows(screen));
+    session.app().command("vsplit")?;
+    session.settle()?;
+    assert!(session.tab().panes.iter().all(|a| a.screen.rows == content));
+    let mut out = Vec::new();
+    session.draw_frame(&mut out)?;
+    let text = String::from_utf8(out)?;
+    assert_eq!(text.matches("FPS").count(), 1);
+    session.save()?;
+    assert!(Session::new(Some(store)).state.perf);
+    session.app().command("perf")?;
+    session.settle()?;
+    assert!(!session.state.perf);
+    assert!(session.tab().panes.iter().all(|a| a.screen.rows == screen.rows));
+    assert!(session.app().command("perf maybe").is_err());
+    Ok(())
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn perf_split_respects_focused_pane_size() -> Result<()> {
+    let mut session = paper()?;
+    session.toggle_perf(Some(true))?;
+    for _ in 0..16 {
+      let fits = Node::fits(Axis::Columns, full(session.app().screen));
+      let count = session.tab().panes.len();
+      let result = session.split(Axis::Columns, None, Place::After);
+      if !fits {
+        assert!(result.is_err());
+        assert_eq!(session.tab().panes.len(), count);
+        return Ok(());
+      }
+      result?;
+    }
+    panic!("splits never reached the minimum pane width");
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn perf_start_screen_reserves_once() -> Result<()> {
+    let mut session = paper()?;
+    let screen = session.screen.expect("screen");
+    session.tabs.clear();
+    session.home = Some(Home::new(&[], screen));
+    session.toggle_perf(Some(true))?;
+    let content = screen.rows - crate::perf::rows(screen);
+    assert_eq!(session.home.as_ref().expect("home").screen.rows, content);
+    session.toggle_perf(Some(true))?;
+    assert_eq!(session.home.as_ref().expect("home").screen.rows, content);
+    session.toggle_perf(Some(false))?;
+    assert_eq!(session.home.as_ref().expect("home").screen.rows, screen.rows);
+    Ok(())
+  }
 
   #[test]
   fn image_timeout_retains_transfer() {

@@ -20,6 +20,7 @@ use unicode_width::UnicodeWidthStr;
 #[derive(Debug, Eq, PartialEq)]
 pub enum Outcome {
   Stay,
+  Perf(Option<bool>),
   Open(PathBuf),
   /// Choose a file with `fzf`.
   Pick,
@@ -29,6 +30,7 @@ pub enum Outcome {
 /// Start screen: recent documents and a command line to open files.
 pub struct Home {
   pub screen: Screen,
+  pub(crate) at: At,
   pub error: Option<String>,
   panel: Panel,
   /// Places thumbnails.
@@ -51,6 +53,7 @@ impl Home {
     panel.shelf = Some(Shelf::new(recent, ""));
     Self {
       screen,
+      at: At::default(),
       error: None,
       panel,
       graphics: Graphics::default(),
@@ -59,25 +62,28 @@ impl Home {
     }
   }
 
+  pub(crate) fn updates(&mut self) -> bool {
+    self.panel.shelf.as_mut().is_some_and(Shelf::updates)
+  }
+
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
     write!(out, "{}{}", terminal::frame_start(), theme::RESET)?;
-    if let Some(shelf) = &mut self.panel.shelf {
-      shelf.updates();
-    }
+    self.updates();
     self.graphics.begin(out)?;
+    let at = self.at;
     for row in 0..self.screen.rows {
-      terminal::clear(out, At::default(), row, self.screen.columns)?;
+      terminal::clear(out, at, row, self.screen.columns)?;
     }
     self.panel.draw(
       out,
-      At::default(),
+      at,
       self.screen.columns,
       self.screen,
       Some(&mut self.graphics),
     )?;
     let row = self.screen.rows - 1;
     if let Some(prompt) = &self.prompt {
-      statusline::prompt(out, prompt, self.screen, At::default(), None)?;
+      statusline::prompt(out, prompt, self.screen, at, None)?;
     } else {
       let (text, style) = match &self.error {
         Some(error) => (error.as_str(), theme::ERROR),
@@ -88,8 +94,8 @@ impl Home {
       let fill = columns.saturating_sub(7 + text.width());
       write!(
         out,
-        "\x1b[{};1H{} VPDF {style} {text}{}{}\x1b[?25l",
-        row + 1,
+        "{}{} VPDF {style} {text}{}{}\x1b[?25l",
+        at.goto(row, 0u16),
         theme::badge(Color::Blue),
         " ".repeat(fill),
         theme::RESET
@@ -134,8 +140,12 @@ impl Home {
       // An open prompt owns the input.
       Event::Mouse(mouse) if self.prompt.is_none() => {
         let (rows, cell) = (self.screen.rows - 1, self.screen.cell());
-        let Some(mouse) = mouse.cells(cell).filter(|mouse| mouse.row < rows)
-        else {
+        let mouse = mouse.cells(cell).and_then(|mut mouse| {
+          mouse.row = mouse.row.checked_sub(self.at.row)?;
+          mouse.column = mouse.column.checked_sub(self.at.column)?;
+          (mouse.row < rows).then_some(mouse)
+        });
+        let Some(mouse) = mouse else {
           return Ok(Outcome::Stay);
         };
         Ok(match self.panel.pointer(mouse) {
@@ -230,6 +240,7 @@ fn command(line: &str) -> Result<Outcome> {
     "quit" | "qall" | "tabclose" => Ok(Outcome::Quit),
     "recent" | "tabnew" => Ok(Outcome::Stay),
     "fzf" => Ok(Outcome::Pick),
+    "perf" => crate::perf::switch(argument).map(Outcome::Perf),
     name => anyhow::bail!("Open a document before :{name}"),
   }
 }
@@ -272,6 +283,38 @@ mod tests {
     assert_eq!(command("")?, Outcome::Stay);
     assert!(command("e").is_err());
     assert!(command("toc").is_err());
+    Ok(())
+  }
+
+  #[test]
+  fn top_stats_offset_home_and_mouse() -> Result<()> {
+    use crate::decode::{Button, Mouse, MouseKind, Spot};
+    use crossterm::event::KeyModifiers;
+    let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+    let entry = crate::state::tests::entry(file, 0, 0);
+    let screen = Screen {
+      columns: 80,
+      rows: 20,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 4),
+    };
+    let mut home = Home::new(&[entry], screen);
+    home.at.row = 4;
+    let mut out = Vec::new();
+    home.draw(&mut out)?;
+    let text = String::from_utf8(out)?;
+    assert!(text.contains("\x1b[5;1H"));
+    assert!(!text.contains("\x1b[1;1H"));
+    for (row, expected) in [(1, Outcome::Stay), (5, Outcome::Open(file.into()))]
+    {
+      let click = Event::Mouse(Mouse {
+        kind: MouseKind::Press(Button::LEFT),
+        at: Spot::Cell { column: 5, row },
+        modifiers: KeyModifiers::NONE,
+      });
+      assert_eq!(home.event(click, &mut History::default())?, expected);
+    }
     Ok(())
   }
 

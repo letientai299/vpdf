@@ -15,7 +15,7 @@ use std::process::{Command, Stdio};
 pub(crate) const COPIED_LINK: &str = "Copied link";
 
 /// Commands the recent view takes: opening, windows, tabs, quitting.
-const COVERED: [&str; 24] = [
+const COVERED: [&str; 25] = [
   "edit",
   "tabedit",
   "tabnew",
@@ -37,6 +37,7 @@ const COVERED: [&str; 24] = [
   "annotations",
   "cancel",
   "mouse",
+  "perf",
   "fzf",
   "quit",
   "qall",
@@ -387,6 +388,9 @@ impl App {
       }
       "nohlsearch" => self.search.hidden = true,
       "cursorline" => self.cursorline = !self.cursorline,
+      "perf" => {
+        self.request = Some(Request::Perf(crate::perf::switch(argument)?));
+      }
       "mouse" => {
         let on = match argument {
           "" => !crate::terminal::mouse(),

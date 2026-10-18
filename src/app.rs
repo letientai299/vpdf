@@ -57,6 +57,7 @@ pub enum Request {
   QuitAll,
   /// `:mouse`: takes the pointer, or leaves it to the terminal.
   Mouse(bool),
+  Perf(Option<bool>),
 }
 
 /// `Ctrl-w` commands on the panes of a tab.

@@ -30,6 +30,7 @@ struct Frame {
 pub trait Drawable {
   fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()>;
   fn focused(&self) -> &App;
+  fn flushed(&mut self, _at: Instant) {}
 }
 
 impl Drawable for App {
@@ -64,11 +65,12 @@ impl Trace {
     buffer.clear();
     let started = Instant::now();
     target.draw_frame(buffer)?;
-    let app = target.focused();
     let built = Instant::now();
     output.write_all(buffer)?;
     output.flush()?;
     let flushed = Instant::now();
+    target.flushed(flushed);
+    let app = target.focused();
     let input = self.input.take();
     let Some(trace) = &mut self.output else { return Ok(()) };
     let frame = Frame {

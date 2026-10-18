@@ -56,6 +56,7 @@ pub mod panel;
 mod panel_layout;
 mod panel_search;
 mod paragraph;
+mod perf;
 pub mod pointer;
 pub mod preview;
 mod prime;

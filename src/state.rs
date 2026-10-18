@@ -37,6 +37,10 @@ pub struct Mark {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct State {
   #[serde(default)]
+  pub perf: bool,
+  #[serde(default)]
+  perf_updated: u64,
+  #[serde(default)]
   pub recent: Vec<Entry>,
   #[serde(default)]
   pub commands: Vec<String>,
@@ -70,6 +74,11 @@ impl State {
       .ok()
       .and_then(|bytes| serde_json::from_slice(&bytes).ok())
       .unwrap_or_default()
+  }
+
+  pub fn set_perf(&mut self, on: bool) {
+    self.perf = on;
+    self.perf_updated = now().max(self.perf_updated.saturating_add(1));
   }
 
   pub fn entry(&self, path: &Path) -> Option<&Entry> {
@@ -132,7 +141,14 @@ impl State {
     let directory = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(directory)?;
     let staged = path.with_extension(format!("{}.tmp", std::process::id()));
-    std::fs::write(&staged, serde_json::to_vec(self)?)?;
+    // Saving an older reader must not undo a newer preference. Keep its
+    // live layout unchanged; only the persisted snapshot adopts the toggle.
+    let mut saved = self.clone();
+    if disk.perf_updated > self.perf_updated {
+      saved.perf = disk.perf;
+      saved.perf_updated = disk.perf_updated;
+    }
+    std::fs::write(&staged, serde_json::to_vec(&saved)?)?;
     std::fs::rename(&staged, path)?;
     Ok(())
   }
@@ -198,6 +214,42 @@ pub(crate) mod tests {
       marks: BTreeMap::new(),
       crop: Crop::default(),
     }
+  }
+
+  #[test]
+  fn perf_defaults_off_for_old_state() -> Result<()> {
+    let state: State = serde_json::from_str("{}")?;
+    assert!(!state.perf);
+    let root = tempfile::tempdir()?;
+    let file = root.path().join("state.json");
+    let mut state = State::default();
+    state.set_perf(true);
+    state.save(&file, &History::default())?;
+    assert!(State::load(&file).perf);
+    state.set_perf(false);
+    state.save(&file, &History::default())?;
+    assert!(!State::load(&file).perf);
+    Ok(())
+  }
+
+  #[test]
+  fn stale_reader_preserves_newer_perf_preference() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let file = root.path().join("state.json");
+    let mut old = State::default();
+    let mut newer = State::default();
+    newer.set_perf(true);
+    newer.save(&file, &History::default())?;
+    old.save(&file, &History::default())?;
+    assert!(State::load(&file).perf);
+    assert!(!old.perf);
+    let mut stale = State::load(&file);
+    newer.set_perf(false);
+    newer.save(&file, &History::default())?;
+    stale.save(&file, &History::default())?;
+    assert!(!State::load(&file).perf);
+    assert!(stale.perf);
+    Ok(())
   }
 
   #[test]

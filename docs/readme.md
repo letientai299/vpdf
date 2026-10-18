@@ -25,6 +25,7 @@ guide sections cover requirements and behavior:
 - [Terminal setup][terminal] and [optional helpers][helpers].
 - [Mouse][mouse], including terminal notes and known limits.
 - [Saved state and reload][saved-state].
+- [Performance display][performance].
 - [External actions][external], including clipboard and SSH constraints.
 - [Licensing][licensing], including dependency obligations.
 
@@ -76,3 +77,4 @@ launch options change. Avoid copying their inventories into Markdown.
 [saved-state]: reading.md#saved-state-and-reload
 [external]: reading.md#external-actions
 [licensing]: install.md#licensing
+[performance]: reading.md#performance-display

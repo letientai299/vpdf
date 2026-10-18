@@ -119,6 +119,8 @@ pub const COMMANDS: &[Spec] = &[
   spec("crop", &[], "", "toggle cropped page margins"),
   spec("mouse", &[], "[on|off]", "toggle mouse capture; off: terminal selects")
     .completes(Complete::Switch),
+  spec("perf", &[], "[on|off]", "toggle persistent performance stats")
+    .completes(Complete::Switch),
   spec("cancel", &[], "", "stop pane search, OCR, outline, region jobs"),
   spec("nohlsearch", &["noh"], "", "hide search highlights"),
   spec("text", &[], "", "preview extracted page text"),
