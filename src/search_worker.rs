@@ -89,7 +89,7 @@ fn serve(
   send: &mpsc::SyncSender<SearchEvent>,
   current: &AtomicU64,
 ) {
-  let mut indexes = Cache::new(32 * MIB);
+  let mut indexes = Cache::new(64 * MIB);
   while let Some(request) = next_request(receive, &mut source) {
     match request {
       Request::Seed(page, text) => {
