@@ -522,6 +522,41 @@ fn scan_whole() -> Result<()> {
   })
 }
 
+/// One tile deflated, as terminals without the spool receive it.
+fn tile_encode() -> Result<()> {
+  let mut app = paper(false)?;
+  let key = vpdf::tiles::visible(&app.layout, app.reader.scroll)[0];
+  let pixels = vpdf::tiles::raster(&mut app.doc, key)?;
+  let encoded = vpdf::tiles::encode(&pixels)?.len();
+  writeln!(io::stdout(), "tiles::encode bytes {encoded}")?;
+  measure(&format!("tiles::encode {} KiB", pixels.len() / 1024), || {
+    drop(black_box(vpdf::tiles::encode(black_box(&pixels)).expect("encode")));
+  })
+}
+
+/// Every page record of the corpus book, read back from its pack.
+fn pack_read() -> Result<()> {
+  use vpdf::content_cache::{Pack, Records, alias, save};
+  let path = corpus("book.pdf")?;
+  let mut doc = Document::open(&path, "")?;
+  let pages = doc.pages.len();
+  let mut records = Records::new(pages);
+  for page in (0..pages).map(PageId) {
+    let text = doc.text(page)?;
+    records.add(page, &vpdf::search::Index::new(page, &text))?;
+  }
+  let root = tempfile::tempdir()?;
+  let alias = alias(&mut std::fs::File::open(&path)?)?;
+  save(root.path(), &alias, &records, None)?;
+  let pack = Pack::open(root.path(), &alias, pages)
+    .ok_or_else(|| anyhow::anyhow!("pack missing"))?;
+  measure(&format!("Pack::index {pages} pages"), || {
+    for page in (0..pages).map(PageId) {
+      drop(black_box(pack.index(page)));
+    }
+  })
+}
+
 /// A page's first hover: text and links.
 fn cold_page() -> Result<()> {
   for (name, page) in [("paper.pdf", 1), ("book.pdf", 99)] {
@@ -947,6 +982,8 @@ const CASES: &[(&str, Case)] = &[
   ("hover", hover),
   ("wheel", wheel),
   ("cold page", cold_page),
+  ("tile encode", tile_encode),
+  ("pack read", pack_read),
   ("decode", decode),
   ("key prefixes", key_prefixes),
   ("scan whole", scan_whole),
