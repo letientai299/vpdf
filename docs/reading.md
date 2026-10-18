@@ -19,6 +19,11 @@ it, or use repeated clicks to select a word, line, or paragraph. The context
 menu offers actions for the location or selection under the pointer; hover
 chooses an action and a click runs it.
 
+A middle drag pans a zoomed page. While the view moves, or while the pointer
+rests on the page's right edge, a scrollbar shows ticks for top-level headings
+and pages with search matches. A click on the track jumps there and records
+the jump; dragging the thumb scrubs, with the page under the pointer labeled.
+
 Glyph positions and the viewport are separate. Scrolling can move a selected
 passage out of view without discarding it. Zooming and resizing keep reading
 positions tied to document content. Leaving Visual returns to the mode that
@@ -32,12 +37,14 @@ OCR results stay in memory; vpdf does not embed them in the source PDF.
 
 ## Find a passage and return
 
-Browse the outline for document structure or search for a phrase. A side
-panel keeps destinations visible beside the page. Keyboard input follows
-focus: a focused list navigates rows, while focused content navigates the
-document. Following a row can return focus to reading or keep it in the list
-for comparing destinations. Switching focus preserves the current selection.
-In recent documents, the preview card follows the hovered row, so inspecting
+Browse the outline for document structure or search for a phrase. A side panel
+keeps destinations visible beside the page. Keyboard input follows focus: a
+focused list navigates rows, while focused content navigates the document.
+Following a row can return focus to reading or keep it in the list for comparing
+destinations. In the status line, the section name opens the outline at that
+entry and the page counter opens the page overview; key hints and completion
+lists also take clicks. Switching focus preserves the current selection. In
+recent documents, the preview card follows the hovered row, so inspecting
 another file does not change the selected entry.
 
 Preview an internal reference to inspect its destination before following it.
@@ -55,6 +62,13 @@ one PDF, or place another document alongside it. Each pane keeps its own
 position, selection, search, and panel focus, so navigating one view leaves
 the other in place. Pointing and scrolling over a surface can move that
 surface without changing keyboard focus.
+
+A middle click on an internal link, a panel row, or a thumbnail shows that
+place in a split beside the pane, which keeps focus; on a web link it copies
+the address. Drag the separator between panes, the status line between stacked
+panes, or the side panel's edge to resize them; a double click evens the split
+or restores the panel's width. Tab names in the status line switch tabs on a
+click and close on a middle click.
 
 Reading positions and view choices persist across launches. A saved position
 does not restore a full layout of tabs, splits, and panels. The reader also
