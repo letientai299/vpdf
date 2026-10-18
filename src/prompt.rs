@@ -272,7 +272,7 @@ impl Prompt {
       'h' => self.edit(Self::delete_back),
       'd' => self.edit(|p| p.remove(p.cursor..p.next_char())),
       'k' => self.edit(|p| p.remove(p.cursor..p.text.len())),
-      'u' => self.edit(|p| p.remove(0..p.text.len())),
+      'u' => self.edit(|p| p.remove(0..p.cursor)),
       'w' => self.edit(|p| {
         p.remove(line::word_start(&p.text, p.cursor, NARROW)..p.cursor);
       }),
@@ -659,6 +659,27 @@ mod tests {
       prompt.feed(KeyEvent::new(KeyCode::Char(ch), NONE), history);
     }
     prompt
+  }
+
+  #[test]
+  fn control_u_preserves_suffix() {
+    let history = History::default();
+    for (text, cursor, suffix) in [
+      ("edit file.pdf", 5, "file.pdf"),
+      ("edit café.pdf", 10, ".pdf"),
+      ("abc", 0, "abc"),
+    ] {
+      let mut prompt = typed(text, &history);
+      prompt.cursor = cursor;
+      press(&mut prompt, &history, &[(KeyCode::Char('u'), CTRL)]);
+      assert_eq!(prompt.text, suffix);
+      assert_eq!(prompt.cursor, 0);
+      if cursor > 0 {
+        press(&mut prompt, &history, &[(KeyCode::Char('_'), CTRL)]);
+        assert_eq!(prompt.text, text);
+        assert_eq!(prompt.cursor, cursor);
+      }
+    }
   }
 
   #[test]
