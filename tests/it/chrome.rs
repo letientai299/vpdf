@@ -742,7 +742,7 @@ fn tab_names_yield_to_hover_details() -> Result<()> {
 }
 
 #[test]
-fn unfocused_status_rows_only_focus() -> Result<()> {
+fn unfocused_status_items_activate() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   session.app().command("vsplit")?;
   session.settle()?;
@@ -755,7 +755,7 @@ fn unfocused_status_rows_only_focus() -> Result<()> {
   let id = session.tab().panes[index].id;
   click(&mut session, at);
   assert_eq!(session.app().id, id);
-  assert!(session.app().overview.is_none());
+  assert!(session.app().overview.is_some());
   Ok(())
 }
 
@@ -1239,5 +1239,31 @@ fn refocusing_links_refreshes_page() -> Result<()> {
   app.command("2")?;
   app.open_panel(vpdf::keys::PanelKind::Links)?;
   assert!(app.panel.as_ref().unwrap().rows.is_empty());
+  Ok(())
+}
+
+#[test]
+fn unfocused_matches_keep_identity() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  session.app().command("vsplit")?;
+  session.settle()?;
+  let index = (session.tab().focus + 1) % 2;
+  let app = &mut session.tab().panes[index];
+  app.start_search("results", false, false)?;
+  crate::common::search_loaded(app)?;
+  let row = app.screen.rows - 1;
+  let column = (0..app.screen.columns)
+    .find(|&column| {
+      app.chrome_at(column, row) == Some(vpdf::chrome::Chrome::Matches)
+    })
+    .unwrap();
+  let at = (app.at.column + column, app.at.row + row);
+  let id = app.id;
+  click(&mut session, at);
+  assert_eq!(session.app().id, id);
+  assert_eq!(
+    session.app().panel.as_ref().unwrap().kind,
+    vpdf::keys::PanelKind::Results
+  );
   Ok(())
 }

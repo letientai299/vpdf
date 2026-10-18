@@ -275,10 +275,10 @@ impl App {
     self.error.is_none() && (self.covered() || self.reader.message.is_empty())
   }
 
-  /// The focused pane's status item there.
+  /// The pane's status item there.
   pub(crate) fn status_item(&self, column: u16) -> Option<Chrome> {
     // Overlays take the press first.
-    if !self.focused || self.overlaid() {
+    if self.overlaid() {
       return None;
     }
     // A pointer on this row hovers chrome, which has no detail.

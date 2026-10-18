@@ -1399,13 +1399,15 @@ impl Session {
   /// Acts on a pressed status item.
   fn status_press(&mut self, mouse: MouseEvent) -> Result<bool> {
     let MouseEventKind::Down(button) = mouse.kind else { return Ok(false) };
-    let Some(route) = self.focused_in(Region::Status, mouse) else {
+    let Some((index, route)) = self.under(mouse) else { return Ok(false) };
+    if route.region != Region::Status {
       return Ok(false);
-    };
-    let app = self.app();
-    // The shown item, before notes clear.
+    }
+    let app = &self.tabs[self.active].panes[index];
     let item = app.chrome_at(route.mouse.column, route.mouse.row);
     let Some(item) = item else { return Ok(false) };
+    self.focus(self.active, index)?;
+    let app = self.app();
     app.interrupt();
     app.chrome_press(item, button)?;
     self.pointer.release();
