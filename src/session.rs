@@ -556,13 +556,16 @@ impl Session {
     self.focus(self.active, index)
   }
 
-  /// A split at `position`; focus stays.
-  fn split_at(&mut self, position: Position) -> Result<()> {
+  /// A split beside, placed by `land`; focus stays.
+  fn split_beside(
+    &mut self,
+    land: impl FnOnce(&mut App) -> Result<()>,
+  ) -> Result<()> {
     let (tab, pane) = (self.active, self.tab().focus);
     // A double click must not split twice.
     self.keeping_pointer(|session| {
       session.split(Axis::Columns, None, Place::After)?;
-      session.app().go_to(position, true)?;
+      land(session.app())?;
       session.focus(tab, pane)
     })
   }
@@ -763,7 +766,12 @@ impl Session {
         self.open(&mark.path, true, screen)?;
         self.app().go_to(mark.cursor, exact)
       }
-      Some(Request::SplitAt(position)) => self.split_at(position),
+      Some(Request::SplitAt(position)) => {
+        self.split_beside(|app| app.land_at(position))
+      }
+      Some(Request::SplitTo(target)) => {
+        self.split_beside(|app| app.follow(&target))
+      }
       // Each key's request applies before the next.
       Some(Request::Keys(keys)) => keys.into_iter().try_for_each(|key| {
         self.type_key(key)?;
@@ -772,7 +780,7 @@ impl Session {
       Some(Request::SplitMark(name)) => {
         let mark = self.global_mark(name)?;
         if mark.path == self.app().path {
-          return self.split_at(mark.cursor);
+          return self.split_beside(|app| app.land_at(mark.cursor));
         }
         self.panel_open(&mark.path, Some(mark.cursor), false, screen)
       }

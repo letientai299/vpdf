@@ -503,6 +503,52 @@ fn jumps_land_near_the_top() -> Result<()> {
   Ok(())
 }
 
+/// U1: a split lands its target as a follow does.
+#[test]
+fn splits_land_near_the_top() -> Result<()> {
+  for text_mode in [false, true] {
+    for point in [false, true] {
+      let case = format!("text {text_mode} point {point}");
+      let dir = tempfile::tempdir()?;
+      let path = dir.path().join("landing.pdf");
+      super::common::pages_pdf(&path, &[&PAGE, &PAGE])?;
+      let rows = if text_mode { 5 } else { 6 };
+      let screen = Screen {
+        columns: 80,
+        rows,
+        cell_width: 8,
+        cell_height: 16,
+        origin: (0, 0),
+      };
+      let mut session = vpdf::session::Session::new(None);
+      session.open(&path, true, screen)?;
+      let app = session.app();
+      super::common::outline_loaded(app)?;
+      if text_mode {
+        app.open_panel(PanelKind::Text)?;
+        app.close_panel()?;
+      }
+      let at = on(1, 4, 0);
+      let bounds = app.doc.text(at.page)?.lines[at.line].glyphs[0].bounds;
+      let (x, y) = bounds.centre();
+      let target = Target::Point { page: at.page, x, y };
+      app.request = Some(if point {
+        vpdf::app::Request::SplitTo(target)
+      } else {
+        vpdf::app::Request::SplitAt(at)
+      });
+      session.settle()?;
+      let tab = session.tab();
+      assert_eq!((tab.panes.len(), tab.focus), (2, 0), "{case}");
+      let app = &mut tab.panes[1];
+      assert_eq!(app.reader.cursor, at, "{case}");
+      let (top, _) = cursor_rows(app)?;
+      assert!((top - 1.0).abs() < 0.01, "{case}: {top}");
+    }
+  }
+  Ok(())
+}
+
 /// What happens between the landing and `]]`.
 #[derive(Clone, Copy, Debug)]
 enum Then {

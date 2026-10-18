@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 
 /// Work a tab hands to the session.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Request {
   Open {
     path: PathBuf,
@@ -42,8 +42,10 @@ pub enum Request {
     file: Option<PathBuf>,
   },
   GoMark(char, bool),
-  /// A new split here; focus stays.
+  /// A new split lands here; focus stays.
   SplitAt(Position),
+  /// A new split follows a link there; focus stays.
+  SplitTo(crate::document::Target),
   /// A global mark beside; focus stays.
   SplitMark(char),
   /// Keys a clicked clue names.

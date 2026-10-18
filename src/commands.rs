@@ -579,12 +579,10 @@ impl App {
 
   /// Splits at an internal target; copies addresses.
   pub(crate) fn open_split(&mut self, target: &Target) -> Result<()> {
-    let position = match target {
-      Target::Uri(uri) => return self.copy_address(uri.clone()),
-      Target::Page(page) => self.landing(*page, None)?,
-      Target::Point { page, x, y } => self.landing(*page, Some((*x, *y)))?,
-    };
-    self.request = Some(Request::SplitAt(position));
+    if let Target::Uri(uri) = target {
+      return self.copy_address(uri.clone());
+    }
+    self.request = Some(Request::SplitTo(target.clone()));
     Ok(())
   }
 
