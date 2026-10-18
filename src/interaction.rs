@@ -576,9 +576,11 @@ impl App {
       }
       Action::History(forward) => {
         self.animation = None;
-        let current = self.location()?;
-        if let Some(location) = self.reader.recall(forward, current) {
-          // History leaves the grid, as from panels.
+        for _ in 0..count {
+          let current = self.location()?;
+          let Some(location) = self.reader.recall(forward, current) else {
+            break;
+          };
           self.close_overview();
           self.restore_location(location)?;
           self.target = Some(self.reader.cursor);

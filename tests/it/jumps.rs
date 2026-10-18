@@ -679,3 +679,27 @@ fn rowless_text_landing() -> Result<()> {
   assert_eq!(app.reader.cursor, on(1, 4, 0));
   Ok(())
 }
+
+#[test]
+fn counted_history_keeps_both_directions() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("history.pdf");
+  crate::common::pages_pdf(
+    &path,
+    &[&["one"], &["two"], &["three"], &["four"]],
+  )?;
+  let mut app = App::with_screen(&path, "", false, crate::focus::screen())?;
+  for page in ["2", "3", "4"] {
+    app.command(page)?;
+  }
+  for (sequence, page) in [
+    (b"3\x0f".as_slice(), 0),
+    (b"2\x1b[105;5u", 2),
+    (b"99\x1b[105;5u", 3),
+    (b"99\x0f", 0),
+  ] {
+    crate::modes::keys(&mut app, sequence)?;
+    assert_eq!(app.reader.cursor.page, PageId(page));
+  }
+  Ok(())
+}
