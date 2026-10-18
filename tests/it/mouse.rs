@@ -159,11 +159,12 @@ fn centre_cell(
   (app.left + (x / width) as u16, (y / height) as u16)
 }
 
+/// A frame, whose status line shows the hover detail.
 fn status(session: &mut Session) -> Result<String> {
-  let app = session.app();
+  use vpdf::trace::Drawable;
   let mut out = Vec::new();
-  app.status(&mut out, app.screen.rows - 1)?;
-  Ok(String::from_utf8(out)?)
+  session.draw_frame(&mut out)?;
+  Ok(String::from_utf8_lossy(&out).into_owned())
 }
 
 #[test]
