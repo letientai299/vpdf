@@ -585,6 +585,7 @@ impl App {
           self.close_overview();
           self.restore_location(location)?;
           self.target = Some(self.reader.cursor);
+          self.flash_landing();
         }
         return Ok(true);
       }

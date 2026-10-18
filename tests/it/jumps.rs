@@ -698,8 +698,10 @@ fn counted_history_keeps_both_directions() -> Result<()> {
     (b"99\x1b[105;5u", 3),
     (b"99\x0f", 0),
   ] {
+    app.landing = None;
     crate::modes::keys(&mut app, sequence)?;
     assert_eq!(app.reader.cursor.page, PageId(page));
+    assert_eq!(app.landing.as_ref().unwrap().position, app.reader.cursor);
   }
   Ok(())
 }
