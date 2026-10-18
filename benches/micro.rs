@@ -465,8 +465,14 @@ fn cold_page() -> Result<()> {
       doc.trim();
       drop(black_box(doc.text(PageId(page)).expect("text")));
     })?;
-    measure(&format!("cold links {name}"), || {
+    measure(&format!("cold text+links {name}"), || {
       doc.trim();
+      drop(black_box(doc.links(PageId(page)).expect("links")));
+    })?;
+    // Seeding drops the page's links and keeps its text.
+    let text = doc.text(PageId(page))?;
+    measure(&format!("links, text read {name}"), || {
+      doc.seed(PageId(page), std::sync::Arc::clone(&text));
       drop(black_box(doc.links(PageId(page)).expect("links")));
     })?;
   }

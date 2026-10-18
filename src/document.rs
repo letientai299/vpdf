@@ -257,6 +257,7 @@ impl Document {
 
   pub fn seed(&mut self, page: PageId, text: Arc<Text>) {
     self.figures.remove(&page);
+    self.links.remove(&page);
     let weight = text.weight();
     self.ocr.insert(page, text, weight);
   }
@@ -266,13 +267,14 @@ impl Document {
     display(&self.native, &self.lists, page)
   }
 
-  /// Cached: hover tests them per move.
+  /// Annotation links, then addresses printed in the text. Cached:
+  /// hover tests them per move.
   pub fn links(&mut self, page: PageId) -> Result<Arc<Vec<Link>>> {
     self.validate(page)?;
     if let Some(links) = self.links.get(&page) {
       return Ok(Arc::clone(links));
     }
-    let links: Vec<_> = self
+    let mut links: Vec<_> = self
       .native
       .load_page(page.0 as i32)?
       .links()?
@@ -283,6 +285,10 @@ impl Document {
           .map_or_else(|| Target::Uri(uri(&link.uri)), Target::from),
       })
       .collect();
+    // Unreadable text must not hide annotation links.
+    if let Ok(text) = self.text(page) {
+      links.extend(crate::autolink::find(&text, &links));
+    }
     let links = Arc::new(links);
     let uris = links.iter().map(|link| match &link.target {
       Target::Uri(uri) => uri.capacity(),

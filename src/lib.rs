@@ -8,6 +8,7 @@ pub type Result<T> = anyhow::Result<T>;
 pub mod animation;
 mod annotations;
 pub mod app;
+mod autolink;
 mod canvas;
 pub mod caps;
 mod clipboard;

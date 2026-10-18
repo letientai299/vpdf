@@ -54,6 +54,30 @@ fn row_span(line: &Line) -> Option<(f32, f32)> {
   }))
 }
 
+/// The line continuing the word `line` ends with: the next row down in
+/// its column, past lines beside it such as margin line numbers, when
+/// that word filled the row. Block breaks do not matter; some PDFs put
+/// every line in a block of its own.
+pub fn continuation(text: &Text, line: usize) -> Option<usize> {
+  let lines = &text.lines;
+  let (top, bottom) = row_span(&lines[line])?;
+  let (left, right) = (left_edge(&lines[line]), right_edge(&lines[line]));
+  let middle = f32::midpoint(top, bottom);
+  let next = (line + 1..lines.len()).take(4).find(|&index| {
+    let (next, other) = (&lines[index], row_span(&lines[index]));
+    other.is_some_and(|(top, _)| top > middle)
+      && left_edge(next) < right
+      && right_edge(next) > left
+  })?;
+  let (next_top, _) = row_span(&lines[next])?;
+  let spans: Vec<_> =
+    lines.iter().map(|line| (left_edge(line), right_edge(line))).collect();
+  // Without a shared margin, a short row looks full.
+  let margin = column_margin(&spans, left, right)?.max(right);
+  let adjacent = next_top - bottom < bottom - top;
+  (adjacent && !fits(&lines[line], &lines[next], margin)).then_some(next)
+}
+
 /// Right edge each line's block wraps at: its widest line, or its
 /// column's margin when that reaches further, as for code in prose.
 /// Only blocks meeting `wanted` get one.
@@ -74,12 +98,17 @@ fn block_rights(lines: &[Line], wanted: &Range<usize>) -> Vec<f32> {
     }
     let left = block.iter().map(|span| span.0).fold(f32::MAX, f32::min);
     let right = block.iter().map(|span| span.1).fold(f32::MIN, f32::max);
-    let column = spans.iter().filter(|(l, r)| *l < right && *r > left);
-    let margin = margin(column.map(|span| span.1)).unwrap_or(right);
+    let margin = column_margin(&spans, left, right).unwrap_or(right);
     rights[start..end].fill(right.max(margin));
     start = end;
   }
   rights
+}
+
+/// The margin of the lines overlapping `left..right`.
+fn column_margin(spans: &[(f32, f32)], left: f32, right: f32) -> Option<f32> {
+  let column = spans.iter().filter(|(l, r)| *l < right && *r > left);
+  margin(column.map(|span| span.1))
 }
 
 /// The right edge at least three lines share, within 2 pt.
@@ -195,25 +224,27 @@ fn contains_word(text: &str, word: &str) -> bool {
 }
 
 /// `before` ends inside a URL, wrapped after one of its separators.
-fn in_url(before: &str) -> bool {
+pub(crate) fn in_url(before: &str) -> bool {
   let word = before.rsplit(char::is_whitespace).next().unwrap_or_default();
   word.contains("://") && word.ends_with(['/', '-', '_', '?', '=', '&', '#'])
 }
 
 /// Scripts written without spaces between words.
 fn unspaced(before: &str, next: &str) -> bool {
-  let tight = |ch: char| {
-    matches!(ch,
-      '\u{0E00}'..='\u{0E7F}' // Thai
-      | '\u{3000}'..='\u{30FF}' // CJK punctuation, kana
-      | '\u{3400}'..='\u{4DBF}'
-      | '\u{4E00}'..='\u{9FFF}'
-      | '\u{F900}'..='\u{FAFF}'
-      | '\u{FF00}'..='\u{FFEF}' // full-width forms
-      | '\u{20000}'..='\u{2FFFF}')
-  };
   before.chars().next_back().is_some_and(tight)
     || next.chars().next().is_some_and(tight)
+}
+
+/// A character of a script written without spaces.
+pub(crate) fn tight(ch: char) -> bool {
+  matches!(ch,
+    '\u{0E00}'..='\u{0E7F}' // Thai
+    | '\u{3000}'..='\u{30FF}' // CJK punctuation, kana
+    | '\u{3400}'..='\u{4DBF}'
+    | '\u{4E00}'..='\u{9FFF}'
+    | '\u{F900}'..='\u{FAFF}'
+    | '\u{FF00}'..='\u{FFEF}' // full-width forms
+    | '\u{20000}'..='\u{2FFFF}')
 }
 
 #[cfg(test)]
@@ -260,6 +291,54 @@ mod tests {
       let lines: Vec<_> =
         lines.iter().map(|(join, text)| (*join, (*text).to_owned())).collect();
       assert_eq!(reflow(&lines, context), want, "{lines:?}");
+    }
+  }
+
+  #[test]
+  fn continuations_sit_below_full_rows() {
+    // Glyphs are 5 pt wide and 10 pt tall; rows 12 pt apart.
+    let at = |x: f32, y: f32, text: &str| Line {
+      paragraph: true,
+      glyphs: text
+        .chars()
+        .zip(0..)
+        .map(|(ch, index)| {
+          let x0 = x + index as f32 * 5.0;
+          Glyph { ch, bounds: Bounds { x0, y0: y, x1: x0 + 5.0, y1: y + 10.0 } }
+        })
+        .collect(),
+    };
+    let full = |y| at(0.0, y, &"x".repeat(20));
+    let cases = [
+      ("next row", vec![full(0.0), full(12.0), full(24.0)], Some(1)),
+      (
+        "past a margin number",
+        vec![full(0.0), at(-30.0, 0.0, "520"), full(12.0), full(24.0)],
+        Some(2),
+      ),
+      (
+        "short row",
+        vec![
+          at(0.0, 0.0, "xxxx"),
+          at(0.0, 12.0, "ab cd"),
+          full(24.0),
+          full(36.0),
+          full(48.0),
+        ],
+        None,
+      ),
+      ("too far below", vec![full(0.0), full(40.0), full(52.0)], None),
+      ("other column", vec![full(0.0), at(200.0, 24.0, "y"), full(36.0)], None),
+      (
+        "past a lower margin number",
+        vec![full(0.0), at(-30.0, 12.0, "5"), full(12.0), full(24.0)],
+        Some(2),
+      ),
+      ("no shared margin", vec![full(0.0), at(0.0, 12.0, "yy")], None),
+    ];
+    for (name, lines, want) in cases {
+      let text = Text { lines, truncated: false };
+      assert_eq!(continuation(&text, 0), want, "{name}");
     }
   }
 

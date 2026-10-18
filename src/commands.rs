@@ -503,10 +503,9 @@ impl App {
         self.reader.describe_jump(Some(description));
       }
       Target::Uri(uri) => {
-        anyhow::ensure!(
-          uri.starts_with("https://") || uri.starts_with("http://"),
-          "Unsupported link scheme"
-        );
+        let Some(uri) = openable(uri) else {
+          anyhow::bail!("Unsupported link scheme");
+        };
         let executable =
           if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
         let mut child = Command::new(executable)
@@ -521,5 +520,35 @@ impl App {
       }
     }
     Ok(())
+  }
+}
+
+/// What the system opener gets for `uri`: web addresses whole, mail
+/// addresses without the query, whose `attach=` some clients obey.
+fn openable(uri: &str) -> Option<&str> {
+  if uri.starts_with("https://") || uri.starts_with("http://") {
+    return Some(uri);
+  }
+  uri.starts_with("mailto:").then(|| uri.split('?').next().unwrap_or(uri))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn only_web_and_mail_open() {
+    let cases = [
+      ("https://a.org/?q=1", Some("https://a.org/?q=1")),
+      ("http://a.org", Some("http://a.org")),
+      ("mailto:me@a.org", Some("mailto:me@a.org")),
+      ("mailto:me@a.org?attach=/etc/passwd", Some("mailto:me@a.org")),
+      ("file:///etc/passwd", None),
+      ("javascript:alert(1)", None),
+      ("-a", None),
+    ];
+    for (uri, want) in cases {
+      assert_eq!(openable(uri), want, "{uri}");
+    }
   }
 }

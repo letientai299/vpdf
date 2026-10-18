@@ -20,6 +20,7 @@ mod preview;
 mod rendering;
 mod sections;
 mod session;
+mod textlinks;
 mod untrusted;
 mod wheel;
 mod workers;
