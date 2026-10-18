@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::layout::Screen;
+use crate::panel::Pointing;
 use crate::pointer::Hit;
 use crate::reader::SelectionKind;
 use crate::terminal;
@@ -331,9 +332,10 @@ impl App {
     }
     self.blank = plain;
     if let Some(panel) = &mut self.panel {
-      panel.hover = match self.hover {
-        Hit::Row(index) => Some(index),
-        _ => None,
+      panel.pointing = match self.hover {
+        Hit::Row(index) => Pointing::Row(index),
+        Hit::Card(_) => Pointing::Card,
+        _ => Pointing::Away,
       };
     }
     if self.covered()

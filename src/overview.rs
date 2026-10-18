@@ -129,7 +129,8 @@ impl App {
         self.close_overview();
         return Ok(true);
       }
-      // Only `:`, panes, and tabs pass through.
+      Action::History(_) => return Ok(false),
+      // `:`, panes, tabs, and history pass through.
       _ => {
         return Ok(!matches!(
           input.action,

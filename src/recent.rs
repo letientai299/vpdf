@@ -6,7 +6,7 @@ use crate::cache::Cache;
 use crate::document::{Handle, MIB};
 use crate::graphics::Graphics;
 use crate::layout::{Screen, page_matrix};
-use crate::panel::{self, Destination, Panel, Row};
+use crate::panel::{self, Destination, Panel, Pointing, Row};
 use crate::state::Entry;
 use crate::terminal::{self, At};
 use crate::text::{Bounds, PageId};
@@ -15,6 +15,7 @@ use mupdf::IRect;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Mutex, mpsc};
+use unicode_width::UnicodeWidthStr;
 
 /// Panels narrower than this show no card.
 const NARROW: u16 = 60;
@@ -59,6 +60,21 @@ pub struct Shelf {
   asked: Option<(PathBuf, Fit)>,
   asks: mpsc::Sender<Ask>,
   loaded: mpsc::Receiver<(PathBuf, Card)>,
+  /// The document the card shows.
+  shown: Option<PathBuf>,
+  /// First text line shown, and its limit.
+  top: usize,
+  last_top: usize,
+  /// The card's first column, once drawn.
+  column: Option<u16>,
+  /// Clipped lines in full, by row.
+  clipped: Vec<(u16, String)>,
+  /// Last frame's selection and pointer.
+  selected: usize,
+  /// Pointed screen line, card `MIN`, away `MAX`.
+  pointing: Option<isize>,
+  /// Keys moved the selection since.
+  keyed: bool,
 }
 
 impl Shelf {
@@ -73,7 +89,75 @@ impl Shelf {
       asked: None,
       asks,
       loaded,
+      shown: None,
+      top: 0,
+      last_top: 0,
+      column: None,
+      clipped: Vec::new(),
+      selected: 0,
+      pointing: None,
+      keyed: true,
     }
+  }
+
+  /// Forgets the card while not drawn.
+  pub(crate) fn hide(&mut self) {
+    self.column = None;
+    self.clipped.clear();
+  }
+
+  /// Whether the card covers a pane column.
+  pub(crate) fn covers(&self, column: u16) -> bool {
+    self.column.is_some_and(|start| column >= start)
+  }
+
+  /// A clipped card line in full.
+  pub(crate) fn detail(&self, row: u16) -> Option<String> {
+    let line = self.clipped.iter().find(|(at, _)| *at == row);
+    line.map(|(_, text)| text.clone())
+  }
+
+  /// Scrolls the card's text by `rows`.
+  pub(crate) fn scroll(&mut self, rows: isize) {
+    self.top = self.top.saturating_add_signed(rows).min(self.last_top);
+  }
+
+  pub(crate) fn top(&self) -> usize {
+    self.top
+  }
+
+  /// The row whose card shows.
+  fn shown_row(&mut self, panel: &Panel) -> usize {
+    // Keys win until the pointer moves.
+    let pointing = match panel.pointing {
+      Pointing::Row(index) => panel.screen_line(index),
+      Pointing::Card => isize::MIN,
+      Pointing::Away => isize::MAX,
+    };
+    if panel.selected != self.selected {
+      self.keyed = true;
+    }
+    // Resting at open is no move.
+    if self.pointing.is_some_and(|before| before != pointing) {
+      self.keyed = false;
+    }
+    (self.selected, self.pointing) = (panel.selected, Some(pointing));
+    if self.keyed {
+      return panel.selected;
+    }
+    let file = |index: &usize| {
+      matches!(
+        panel.rows.get(*index).map(|row| &row.destination),
+        Some(Destination::File(_))
+      )
+    };
+    let card = panel.pointing == Pointing::Card;
+    let kept = self.shown.as_ref().filter(|_| card).and_then(|path| {
+      panel.rows.iter().position(|row| {
+        matches!(&row.destination, Destination::File(file) if file == path)
+      })
+    });
+    panel.pointing.row().filter(file).or(kept).unwrap_or(panel.selected)
   }
 
   /// Keeps finished loads; true when any arrived.
@@ -116,8 +200,11 @@ impl Shelf {
     let card = Self::columns(panel, width);
     let list = width - card;
     panel.list(out, at, list, screen.rows)?;
-    let row = panel.rows.get(panel.selected).map(|row| &row.destination);
-    let Some(Destination::File(path)) = row else { return Ok(()) };
+    self.hide();
+    let row = panel.rows.get(self.shown_row(panel));
+    let Some(Destination::File(path)) = row.map(|row| &row.destination) else {
+      return Ok(());
+    };
     let Some(entry) = self.entries.iter().find(|e| e.path == *path).cloned()
     else {
       return Ok(());
@@ -125,6 +212,11 @@ impl Shelf {
     if card < 2 {
       return Ok(());
     }
+    if self.shown.as_ref() != Some(path) {
+      self.shown = Some(path.clone());
+      self.top = 0;
+    }
+    self.column = Some(list);
     let area = Area { at, column: list, columns: card, screen };
     self.card(out, area, &entry, graphics)
   }
@@ -145,6 +237,9 @@ impl Shelf {
     // One column of margin on each side of the text.
     let inner = usize::from(columns).saturating_sub(3);
     let name = entry.path.file_name().unwrap_or_default().to_string_lossy();
+    if name.width() > inner {
+      self.clipped.push((0, entry.path.display().to_string()));
+    }
     write!(
       out,
       "{}{}{}{}",
@@ -185,13 +280,20 @@ impl Shelf {
       (None, Some(_)) => None,
     };
     let top = shown.map_or(2, |rows| rows as usize + 2);
-    let lines: Vec<Row> =
-      lines(entry, card).iter().map(|line| Row::parse(line)).collect();
+    let texts = lines(entry, card);
+    let lines: Vec<Row> = texts.iter().map(|line| Row::parse(line)).collect();
     let keys = panel::key_width(&lines, inner);
-    for (index, line) in lines.iter().take(rows.saturating_sub(top)).enumerate()
-    {
-      write!(out, "{}{}", at.goto(top + index, column + 1), theme::RESET)?;
-      line.write(out, theme::RESET, inner, keys, "")?;
+    let room = rows.saturating_sub(top);
+    self.last_top = lines.len().saturating_sub(room);
+    self.top = self.top.min(self.last_top);
+    let shown = lines.iter().zip(&texts).skip(self.top).take(room);
+    for (row, (line, text)) in (top..).zip(shown) {
+      write!(out, "{}{}", at.goto(row, column + 1), theme::RESET)?;
+      let used = line.write(out, theme::RESET, inner, keys, "")?;
+      let full = line.write(&mut std::io::sink(), "", usize::MAX, keys, "")?;
+      if full > used {
+        self.clipped.push((u16::try_from(row)?, text.clone()));
+      }
     }
     write!(out, "{}", theme::RESET)?;
     Ok(())
@@ -359,6 +461,7 @@ fn ago(milliseconds: u64) -> String {
 mod tests {
   use super::*;
   use crate::keys::PanelKind;
+  use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
   use std::time::{Duration, Instant};
 
   #[test]
@@ -375,6 +478,87 @@ mod tests {
     ] {
       assert_eq!(ago(elapsed), want, "{elapsed}");
     }
+  }
+
+  /// U29: the card follows the pointer.
+  #[test]
+  fn cards_follow_the_pointer() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let names = [
+      "first.pdf",
+      "a-very-long-recent-document-name.pdf",
+      "third.pdf",
+      "fourth.pdf",
+      "fifth.pdf",
+      "sixth.pdf",
+    ];
+    let entries: Vec<_> = names
+      .iter()
+      .map(|name| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, "")?;
+        Ok(crate::state::tests::entry(&path.to_string_lossy(), 0, 0))
+      })
+      .collect::<Result<_>>()?;
+    let screen = Screen {
+      columns: 60,
+      rows: 6,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut shelf = Shelf::new(&entries, "");
+    let mut panel = Panel::new(PanelKind::Recent, panel::recent_rows(&entries));
+    let draw = |shelf: &mut Shelf, panel: &mut Panel| -> Result<String> {
+      let mut out = Vec::new();
+      shelf.draw(panel, &mut out, At::default(), 60, screen, None)?;
+      Ok(String::from_utf8(out)?)
+    };
+    // (pointing, list top, selected, shown)
+    let (row, card, away) = (Pointing::Row, Pointing::Card, Pointing::Away);
+    for (step, (pointing, top, selected, shown)) in [
+      (row(2), 0, 0, 0),
+      (row(1), 0, 0, 1),
+      (card, 0, 0, 1),
+      (away, 0, 0, 0),
+      (row(0), 0, 0, 0),
+      (card, 0, 0, 0),
+      (card, 0, 2, 2),
+      (row(1), 0, 2, 1),
+      (row(1), 0, 0, 0),
+      (row(3), 2, 5, 5),
+      (row(4), 2, 5, 4),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+      panel.pointing = pointing;
+      panel.top = top;
+      panel.selected = selected;
+      draw(&mut shelf, &mut panel)?;
+      let path = &entries[shown].path;
+      assert_eq!(shelf.shown.as_ref(), Some(path), "step {step}");
+    }
+    panel.top = 0;
+    panel.pointing = Pointing::Row(1);
+    draw(&mut shelf, &mut panel)?;
+    let column = shelf.column.expect("card drawn");
+    assert!(shelf.covers(column) && !shelf.covers(column - 1));
+    let full = entries[1].path.display().to_string();
+    assert_eq!(shelf.detail(0), Some(full));
+    assert!(!draw(&mut shelf, &mut panel)?.contains("Loading"));
+    // The wheel over the card scrolls it.
+    panel.shelf = Some(shelf);
+    panel.pointer(MouseEvent {
+      kind: MouseEventKind::ScrollDown,
+      column,
+      row: 3,
+      modifiers: KeyModifiers::NONE,
+    });
+    let mut shelf = panel.shelf.take().expect("shelf");
+    assert_eq!(panel.top, 0);
+    assert!(draw(&mut shelf, &mut panel)?.contains("Loading"));
+    Ok(())
   }
 
   #[test]

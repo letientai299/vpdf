@@ -751,7 +751,7 @@ fn routing_panel_press() -> Result<()> {
     modifiers: KeyModifiers::NONE,
   };
   measure("App::panel_mouse press", || {
-    app.panel_mouse(black_box(mouse)).expect("help row press");
+    app.panel_mouse(black_box(mouse), 1).expect("help row press");
   })
 }
 

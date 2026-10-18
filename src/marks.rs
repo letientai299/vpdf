@@ -62,10 +62,16 @@ impl App {
 
   /// Follows a link or row to `position`.
   pub fn land_at(&mut self, position: Position) -> Result<()> {
-    self.jump_cursor(position)?;
-    self.land()?;
+    let position = crate::reader::clamp(position, &mut self.doc)?;
+    // A repeat, as a double click's, stays.
+    let here = self.landed == Some(self.landed_view(position))
+      && self.reader.cursor == position;
+    if !here {
+      self.jump_cursor(position)?;
+      self.land()?;
+      self.landed = Some(self.landed_view(self.reader.cursor));
+    }
     self.flash_landing();
-    self.landed = Some(self.landed_view(self.reader.cursor));
     Ok(())
   }
 

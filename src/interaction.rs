@@ -41,7 +41,8 @@ pub(crate) struct WheelView {
   pan: f32,
   zoom: f32,
   text: Position,
-  panel: Option<usize>,
+  /// List and card tops.
+  panel: Option<(usize, usize)>,
   overview: Option<usize>,
   preview: Option<i32>,
 }
@@ -509,6 +510,8 @@ impl App {
         self.animation = None;
         let current = self.location()?;
         if let Some(location) = self.reader.recall(forward, current) {
+          // History leaves the grid, as from panels.
+          self.close_overview();
           self.restore_location(location)?;
           self.target = Some(self.reader.cursor);
         }
@@ -659,7 +662,7 @@ impl App {
       return Ok(());
     }
     match region {
-      Region::Panel => return self.panel_mouse(mouse),
+      Region::Panel => return self.panel_mouse(mouse, route.clicks),
       Region::Overlay | Region::Status | Region::Actions => return Ok(()),
       // Only turns: presses go to them first.
       Region::Preview | Region::Menu => return self.page_wheel(route),
@@ -766,7 +769,9 @@ impl App {
       pan: self.layout.pan,
       zoom: self.layout.zoom,
       text: self.text_top,
-      panel: self.panel.as_ref().map(|panel| panel.top),
+      panel: self.panel.as_ref().map(|panel| {
+        (panel.top, panel.shelf.as_ref().map_or(0, crate::recent::Shelf::top))
+      }),
       overview: self.overview.as_ref().map(crate::overview::Overview::top),
       preview: self.preview_top(),
     }
@@ -952,9 +957,12 @@ impl App {
       }
       Region::Page => {}
       Region::Panel => {
-        let row =
-          self.panel.as_ref().and_then(|panel| panel.row_at(column, row));
-        return Ok(row.map_or(Hit::Nothing, Hit::Row));
+        let Some(panel) = &self.panel else { return Ok(Hit::Nothing) };
+        if let Some(index) = panel.row_at(column, row) {
+          return Ok(Hit::Row(index));
+        }
+        let card = panel.shelf.as_ref().is_some_and(|s| s.covers(column));
+        return Ok(if card { Hit::Card(row) } else { Hit::Nothing });
       }
       Region::Overview => {
         let page = self.thumbnail_at(column, row);

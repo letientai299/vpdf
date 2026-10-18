@@ -28,6 +28,7 @@ C/V { }: previous / next paragraph
 <Space><S-Space>: next / previous page
 <C-o><C-i> '': jump back / forward
 Mouse back / forward: jump back / forward
+gp <C-o><C-i> / back, forward: jump; close overview
 Hover link: tint; status shows its destination
 Rest on a link 400 ms: preview it; leave to close
 Click the hover preview: follow; keys close it
@@ -122,6 +123,7 @@ Annotations <CR>: jump, enter Cursor, and show note
 Annotations K: preview selected note
 P <CR>: follow row; focus content in N
 P o / click: follow; keep panel focus
+P double click: follow; focus content
 P / ? n N: search rows
 P { }: previous / next heading
 P yy: yank row
@@ -132,6 +134,7 @@ g? <F1>: this reference
 <Esc>: cancel transient or pending input first
 P wheel: scroll list; keep row selection
 Panel hover: underline row; show clipped title
+gr hover: show row card; wheel scrolls card
 gp hover: show page label and section
 q: close panel, tab, or reader
 

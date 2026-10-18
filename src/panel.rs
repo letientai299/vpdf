@@ -93,13 +93,39 @@ pub struct Panel {
   follow_pending: bool,
   /// Cards for recent documents; a reader pane shows them over its page.
   pub shelf: Option<Shelf>,
-  /// The row under the pointer.
-  pub(crate) hover: Option<usize>,
+  /// What the pointer rests on.
+  pub(crate) pointing: Pointing,
   /// The hovered row's label when drawn clipped.
   pub(crate) hover_title: Option<String>,
+  /// The row a click just followed.
+  pub(crate) clicked: Option<usize>,
+}
+
+/// Where the pointer rests in a panel.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Pointing {
+  #[default]
+  Away,
+  Row(usize),
+  /// The recent card.
+  Card,
+}
+
+impl Pointing {
+  pub fn row(self) -> Option<usize> {
+    match self {
+      Self::Row(index) => Some(index),
+      Self::Away | Self::Card => None,
+    }
+  }
 }
 
 impl Panel {
+  /// `index`'s line on screen, as scrolled.
+  pub(crate) fn screen_line(&self, index: usize) -> isize {
+    self.line_start(index) as isize - self.top as isize
+  }
+
   pub fn new(kind: PanelKind, rows: Vec<Row>) -> Self {
     Self {
       kind,
@@ -114,8 +140,9 @@ impl Panel {
       layout: None,
       follow_pending: false,
       shelf: None,
-      hover: None,
+      pointing: Pointing::Away,
       hover_title: None,
+      clicked: None,
     }
   }
 
@@ -189,6 +216,16 @@ impl Panel {
   pub fn pointer(&mut self, mouse: MouseEvent) -> Option<usize> {
     if matches!(mouse.kind, MouseEventKind::Down(_)) {
       self.focused = true;
+    }
+    let card = self.shelf.as_mut().filter(|shelf| shelf.covers(mouse.column));
+    if let (Some(shelf), Some(turn)) = (card, Wheel::of(mouse.kind)) {
+      let rows = isize::from(WHEEL_ROWS);
+      match turn {
+        Wheel::Down => shelf.scroll(rows),
+        Wheel::Up => shelf.scroll(-rows),
+        _ => {}
+      }
+      return None;
     }
     match mouse.kind {
       kind if Wheel::of(kind) == Some(Wheel::Down) => {
@@ -311,12 +348,14 @@ impl Panel {
     screen: Screen,
     graphics: Option<&mut Graphics>,
   ) -> Result<()> {
-    if width < screen.columns || !self.focused {
-      return self.list(out, at, width, screen.rows);
-    }
     let Some(mut cards) = self.shelf.take() else {
       return self.list(out, at, width, screen.rows);
     };
+    if width < screen.columns || !self.focused {
+      cards.hide();
+      self.shelf = Some(cards);
+      return self.list(out, at, width, screen.rows);
+    }
     let drawn = cards.draw(self, out, at, width, screen, graphics);
     self.shelf = Some(cards);
     drawn
@@ -368,7 +407,7 @@ impl Panel {
           (line.source, &line.row, line.keys, Some(label.clipped))
         },
       );
-      let hovered = self.hover == Some(source);
+      let hovered = self.pointing.row() == Some(source);
       let selected = source == self.selected;
       let plain = match (selected, self.focused) {
         (true, true) => theme::SELECTED,
@@ -780,7 +819,7 @@ impl App {
     Ok(true)
   }
 
-  pub fn panel_mouse(&mut self, mouse: MouseEvent) -> Result<()> {
+  pub fn panel_mouse(&mut self, mouse: MouseEvent, clicks: u8) -> Result<()> {
     if matches!(mouse.kind, MouseEventKind::Down(_)) && !self.panel_focused() {
       self.blur()?;
     }
@@ -789,12 +828,36 @@ impl App {
     if self.covered() != covered {
       self.relayout()?;
     }
-    // A click on the covering recent view opens like Enter.
-    if clicked.is_some() {
-      let action = if covered { Action::Follow } else { Action::Swap };
-      self.panel_follow(action)?;
+    let Some(panel) = &mut self.panel else { return Ok(()) };
+    let pressed = matches!(mouse.kind, MouseEventKind::Down(_));
+    let followed = if pressed {
+      std::mem::replace(&mut panel.clicked, clicked)
+    } else {
+      panel.clicked
+    };
+    let Some(index) = clicked else { return Ok(()) };
+    if covered {
+      return self.panel_follow(Action::Follow);
     }
-    Ok(())
+    if clicks > 1 && followed == Some(index) {
+      return self.panel_refocus();
+    }
+    self.panel_follow(Action::Swap)
+  }
+
+  /// Enter for the row just followed.
+  fn panel_refocus(&mut self) -> Result<()> {
+    let Some(panel) = &self.panel else { return Ok(()) };
+    let Some(row) = panel.rows.get(panel.selected) else { return Ok(()) };
+    match row.destination.clone() {
+      // Reuses the view the first click opened.
+      Destination::Mark(_) => self.panel_follow(Action::Follow),
+      Destination::Annotation { position, annotation } => {
+        self.focus_content(Some((position, annotation)))
+      }
+      Destination::None => Ok(()),
+      _ => self.focus_content(None),
+    }
   }
 
   fn panel_follow(&mut self, action: Action) -> Result<()> {
@@ -846,19 +909,28 @@ impl App {
       self.close_overview();
     }
     if focus {
-      self.reader.cancel();
-      if annotation.is_some() {
-        self.reader.enter_cursor();
-      } else {
-        self.reader.normal();
-      }
-      if let Some(panel) = &mut self.panel {
-        panel.focused = false;
-      }
-      self.relayout()?;
-      if let Some((position, annotation)) = annotation {
-        self.preview_annotation(position, &annotation);
-      }
+      self.focus_content(annotation)?;
+    }
+    Ok(())
+  }
+
+  /// Leaves the panel for content; notes open.
+  fn focus_content(
+    &mut self,
+    annotation: Option<(Position, Annotation)>,
+  ) -> Result<()> {
+    self.reader.cancel();
+    if annotation.is_some() {
+      self.reader.enter_cursor();
+    } else {
+      self.reader.normal();
+    }
+    if let Some(panel) = &mut self.panel {
+      panel.focused = false;
+    }
+    self.relayout()?;
+    if let Some((position, annotation)) = annotation {
+      self.preview_annotation(position, &annotation);
     }
     Ok(())
   }

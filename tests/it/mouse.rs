@@ -347,20 +347,49 @@ fn text_clicks_need_a_drawn_link() -> Result<()> {
 
 #[test]
 fn back_and_forward_buttons_walk_history() -> Result<()> {
+  /// U18: only a jump closes the grid.
+  #[derive(Clone, Copy, PartialEq)]
+  enum Origin {
+    Page,
+    Grid,
+    /// The grid over a focused panel.
+    Panel,
+    /// The grid without history.
+    Empty,
+  }
   let (_directory, mut session) = session(false)?;
   let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
   click(&mut session, internal)?;
   let report = |button| side(button, (40, 5));
-  // (button, page after)
+  // (button, from, page after)
   let cases = [
-    (Button::BACK, 0),
-    (Button::FORWARD, 1),
-    (Button::BACK, 0),
-    (Button::BACK, 0),
+    (Button::BACK, Origin::Page, 0),
+    (Button::FORWARD, Origin::Page, 1),
+    (Button::BACK, Origin::Grid, 0),
+    (Button::FORWARD, Origin::Grid, 1),
+    (Button::BACK, Origin::Page, 0),
+    (Button::BACK, Origin::Page, 0),
+    (Button::FORWARD, Origin::Panel, 1),
+    (Button::BACK, Origin::Empty, 1),
   ];
-  for (step, (button, page)) in cases.into_iter().enumerate() {
+  for (step, (button, from, page)) in cases.into_iter().enumerate() {
+    let app = session.app();
+    if from == Origin::Panel {
+      action(app, Action::Panel(vpdf::keys::PanelKind::Outline))?;
+    }
+    if from == Origin::Empty {
+      app.reader.clear_history();
+    }
+    if from != Origin::Page {
+      app.open_overview()?;
+    }
+    if let Some(panel) = app.panel.as_mut() {
+      panel.focused = from == Origin::Panel;
+    }
     assert!(session.mouse_report(report(button))?, "step {step}");
-    assert_eq!(session.app().reader.cursor.page, PageId(page), "step {step}");
+    let app = session.app();
+    assert_eq!(app.reader.cursor.page, PageId(page), "step {step}");
+    assert_eq!(app.overview.is_some(), from == Origin::Empty, "step {step}");
   }
   let release =
     Mouse { kind: MouseKind::Release(Button::BACK), ..report(Button::BACK) };
@@ -913,6 +942,49 @@ fn tab_passes_through_menus() -> Result<()> {
   press(&mut session, KeyCode::Tab)?;
   let app = session.app();
   assert!(app.context_menu.is_none() && app.panel_focused());
+  Ok(())
+}
+
+/// Rows without a target keep focus.
+#[test]
+fn inert_rows_keep_focus() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  action(session.app(), Action::Panel(vpdf::keys::PanelKind::Help))?;
+  for _ in 0..2 {
+    click(&mut session, (2, 2))?;
+  }
+  assert!(session.app().panel_focused());
+  Ok(())
+}
+
+/// U31: a row double click is Enter.
+#[test]
+fn row_double_clicks_focus() -> Result<()> {
+  use vpdf::document::{Heading, Target};
+  // (rows, page target, page, focused, jumps)
+  for (rows, page_target, page, focused, jumps) in [
+    (&[1][..], false, 1, true, 1),
+    (&[1, 1], false, 1, false, 1),
+    (&[1, 1], true, 1, false, 1),
+    (&[1, 2], false, 0, true, 2),
+  ] {
+    let case = format!("{rows:?} page {page_target}");
+    let (_directory, mut session) = session(false)?;
+    let outline = &mut session.app().doc.outline;
+    if page_target {
+      outline[0].target = Target::Page(PageId(1));
+    }
+    let top = Target::Point { page: PageId(0), x: 0.0, y: 0.0 };
+    outline.push(Heading { title: "Top".into(), depth: 0, target: top });
+    action(session.app(), Action::Panel(vpdf::keys::PanelKind::Outline))?;
+    for &row in rows {
+      click(&mut session, (2, row))?;
+    }
+    let app = session.app();
+    assert_eq!(app.reader.cursor.page, PageId(page), "{case}");
+    assert_eq!(app.panel_focused(), focused, "{case}");
+    assert_eq!(app.reader.jumps().count(), jumps, "{case}");
+  }
   Ok(())
 }
 

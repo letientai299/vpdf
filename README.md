@@ -60,18 +60,22 @@ follows the same modes and viewport rules.
 Tab and Shift-Tab switch between content and the visible side panel, keeping
 selection and panel state. Ctrl-o/Ctrl-i navigate history; prompt Tab completes.
 Panel commands focus their list. Enter follows a row in Normal while keeping the
-list; `o` or a row click keeps panel focus. An unopened document opens in a new
-tab with Enter, or a split with `o`/click; an open view is reused. The recent
-view and `:fzf` open the document in place; `o` does nothing there. `:e`,
-`:tabe`, `:split <file>`, and `:vsplit <file>` also focus an existing view
-before applying placement. Pane changes keep Cursor mode, Visual ranges,
-committed searches, panel position, and local focus; incomplete input clears.
+list; `o` or a row click keeps panel focus, and a double click acts as Enter
+(a mark in an unopened document opens in a split).
+An unopened document opens in a new tab with Enter, or a split with `o`/click;
+an open view is reused. The recent view and `:fzf` open the document in place;
+`o` does nothing there. `:e`, `:tabe`, `:split <file>`, and `:vsplit <file>`
+also focus an existing view before applying placement. Pane changes keep Cursor
+mode, Visual ranges, committed searches, panel position, and local focus;
+incomplete input clears.
 `gq` or panel-local `q` closes the list. Overview occupies the content slot.
 Hover and wheel preserve keyboard focus. Hover underlines a panel row other than
 the selected one and tints a thumbnail. In the status line it shows a clipped
 row title in full as room allows (`…` marks a cut), a thumbnail's page label and
 section, or a commented note's author and comment; a message or error takes the
-line first. Over a link inside a commented highlight, the link wins; `K` shows
+line first. In the recent view the card follows the hovered row and stays while
+the pointer rests on it; its clipped lines show in full, and the wheel scrolls
+it. Over a link inside a commented highlight, the link wins; `K` shows
 the note. Clicking outside a prompt or preview dismisses it; the next click
 activates the underlying surface.
 
@@ -100,6 +104,7 @@ Hovering a link tints it and shows its destination in the status line: the
 page label and outline section, or the web address. A click follows the link
 and records a jump; a drag that starts on a link selects text. The mouse back
 and forward buttons act as Ctrl-o and Ctrl-i in the pane under the pointer.
+Both work from the page overview too; a jump closes it.
 Resting 400 ms on an internal link opens the `K` preview beside it. The preview
 stays while the pointer is on the link or the preview, a click on it follows
 the link, and leaving both or pressing a key closes it; keys keep their usual

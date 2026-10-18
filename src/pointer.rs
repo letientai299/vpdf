@@ -168,6 +168,8 @@ pub enum Hit {
   },
   /// An overlay's item, if any, by index.
   Item(List, Option<usize>),
+  /// A recent card row.
+  Card(u16),
 }
 
 /// Overlays whose items the pointer picks.
@@ -204,7 +206,8 @@ impl Hit {
       Self::Nothing
       | Self::Note { text: false, .. }
       | Self::Preview { follows: false }
-      | Self::Item(_, None) => Shape::Default,
+      | Self::Item(_, None)
+      | Self::Card(_) => Shape::Default,
       Self::Text | Self::Note { text: true, .. } => Shape::Text,
       Self::Link(..)
       | Self::Row(_)
