@@ -67,8 +67,9 @@ lives in the cache directory and is removed on normal terminal cleanup.
 
 Tmux sessions skip the file-access probe and use encoded transmission. Tmux can
 answer a device query itself and route a delayed graphics reply to the focused
-pane. Normal graphics commands suppress replies for the same reason: replies
-must not become another program's input.
+pane. Graphics commands under tmux suppress replies so they cannot become
+another program's input. On direct terminal connections, placements allow error
+replies so evicted images can be uploaded again.
 
 [Terminal handling][terminal] wraps graphics in tmux passthrough and uses cell
 metrics and pane offsets for placement. Each reader uses a randomized image ID
@@ -109,15 +110,15 @@ Revisit this choice only with end-to-end measurements and PDF fidelity checks.
 A faster raster stage alone does not establish a faster terminal reader.
 
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
-[layout]: ../src/layout.rs
-[canvas]: ../src/canvas.rs
-[worker]: ../src/render_worker.rs
-[prime]: ../src/prime.rs
-[graphics]: ../src/graphics.rs
-[pace]: ../src/pace.rs
-[performance]: development.md#performance-validation
-[spool]: ../src/spool.rs
-[terminal]: ../src/terminal.rs
-[document]: ../src/document.rs
-[search]: ../src/search_worker.rs
-[reader]: ../src/reader.rs
+[layout]: ../../src/layout.rs
+[canvas]: ../../src/canvas.rs
+[worker]: ../../src/render_worker.rs
+[prime]: ../../src/prime.rs
+[graphics]: ../../src/graphics.rs
+[pace]: ../../src/pace.rs
+[performance]: dev.md#performance-validation
+[spool]: ../../src/spool.rs
+[terminal]: ../../src/terminal.rs
+[document]: ../../src/document.rs
+[search]: ../../src/search_worker.rs
+[reader]: ../../src/reader.rs

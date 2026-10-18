@@ -6,7 +6,7 @@ A Vim-inspired terminal PDF reader powered by [MuPDF][mupdf] and the
 [![Three PDFs with outline, citation preview, search, and OCR selection][overview]][demo]
 
 Read, navigate, and copy without changing the source PDF.
-See the [screenshot gallery][demo] for reading workflows.
+See the [demos][demo] for reading workflows.
 
 - Navigate and select with Vim-style motions, text objects, or the mouse.
 - Search, browse outlines, preview links, and return through marks and history.
@@ -40,9 +40,9 @@ MuPDF and its Rust bindings remain subject to their AGPL obligations. See
 [mupdf]: https://mupdf.com/
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
 [overview]: docs/assets/overview.webp
-[demo]: docs/demo.md
-[setup]: docs/installation.md#terminal-setup
+[demo]: docs/demos.md
+[setup]: docs/install.md#terminal-setup
 [reading]: docs/reading.md
 [docs]: docs/readme.md
 [license]: LICENSE
-[notices]: docs/installation.md#licensing
+[notices]: docs/install.md#licensing

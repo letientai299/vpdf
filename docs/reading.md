@@ -1,8 +1,8 @@
 # Reading a PDF
 
 Open a PDF using the [installation guide][installation]. Use `:help` in the
-reader for current bindings and commands. The [gallery][demo] shows these
-workflows on a real document.
+reader for current bindings and commands. This guide assumes familiarity with
+Vim motions. The [demos][demo] show these workflows on real documents.
 
 ## View, position, select
 
@@ -33,7 +33,8 @@ a reading mode.
 Text selection follows the PDF's extracted glyphs and reading order. Complex
 columns or missing text can make that order differ from the visual page.
 The [text guide][text] explains copying fidelity and optional OCR for scans.
-OCR results stay in memory; vpdf does not embed them in the source PDF.
+OCR results stay in memory, can be evicted, and disappear when the document
+reloads or closes. vpdf does not embed them in the source PDF.
 
 ## Find a passage and return
 
@@ -70,11 +71,7 @@ panes, or the side panel's edge to resize them; a double click evens the split
 or restores the panel's width. Tab names in the status line switch tabs on a
 click and close on a middle click.
 
-Reading positions and view choices persist across launches. A saved position
-does not restore a full layout of tabs, splits, and panels. The reader also
-reloads a changed PDF and retains a useful position; arbitrary document edits
-can change where the passage lands. See [sessions and state][sessions] for
-persistence and reload constraints.
+For saved positions and live reload, see [saved state and reload][saved-state].
 
 ## Take text or a figure
 
@@ -90,9 +87,45 @@ Region OCR copies recognized text; page OCR supplies temporary selectable
 text for reading. Both leave the source PDF unchanged. Clipboard support and
 OCR dependencies follow the [installation guide][helpers].
 
-[installation]: installation.md
-[demo]: demo.md
-[text]: text.md
-[external]: sessions.md#external-actions
-[sessions]: sessions.md
-[helpers]: installation.md#optional-helpers
+## Saved state and reload
+
+Reading positions, view choices, marks, and prompt history persist across
+launches. A saved position does not restore a full layout of tabs, splits,
+panels, and running jobs. An explicit launch page overrides the restored
+position.
+
+The state file lives at `$XDG_STATE_HOME/vpdf/state.json`, falling back to
+`~/.local/state/vpdf/state.json`. Missing or unreadable state starts empty.
+State saves during activity and on exit; abrupt process or machine failure can
+lose recent changes. Simultaneous readers can race when saving.
+
+The reader reloads a changed PDF and retains a useful position, view choices,
+and marks. Arbitrary document edits can change where the passage lands. Reload
+clears temporary OCR text and jump history. Hidden panes check for changes when
+shown again. See [sessions and state][sessions] for persistence and reload
+design.
+
+## External actions
+
+Opening a document does not automatically launch its links. Explicitly followed
+HTTP, HTTPS, and `mailto:` links use the platform opener. Mail links lose their
+query parameters before opening; other URI schemes are rejected. Passwords use
+a hidden interactive prompt rather than command-line arguments.
+
+Text copying sends OSC 52 and can also invoke a local clipboard helper. SSH
+sessions skip the native helper because it would target the remote host's
+clipboard. Terminal policy controls OSC 52 acceptance and size limits.
+
+Figure and region image copying uses a native clipboard helper locally. Over
+SSH it depends on the terminal's image-clipboard protocol and acknowledgment;
+text clipboard support alone does not imply image support. See
+[terminal setup][terminal] and executable help for available actions.
+
+[installation]: install.md
+[demo]: demos.md
+[text]: dev/text.md
+[external]: #external-actions
+[sessions]: dev/sessions.md
+[helpers]: install.md#optional-helpers
+[saved-state]: #saved-state-and-reload
+[terminal]: install.md#terminal-setup

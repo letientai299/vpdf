@@ -8,8 +8,10 @@ while zoom, crop, rotation, and scrolling change the view.
 
 The [text model][text] identifies a position by page, line, and glyph.
 [Reader operations][reader] use those positions; [layout][layout] projects glyph
-bounds onto the screen. Copying preserves extracted Unicode and line boundaries.
-It does not reconstruct the PDF's original authoring format or reading order.
+bounds onto the screen. Selection copying preserves extracted Unicode and line
+boundaries; line-yank operations can join wrapped lines and rejoin hyphenated
+words. See `:help` for the joined and unjoined forms. Neither reconstructs the
+PDF's original authoring format or reading order.
 
 Native glyph boxes reflect MuPDF extraction. They can differ from corrected
 boxes in other PDF wrappers, especially around font ascenders and descenders.
@@ -78,12 +80,12 @@ The reader never embeds them into the PDF.
 See [installation][installation] for the optional OCR dependency and `:help` for
 its command interface.
 
-[text]: ../src/text.rs
-[reader]: ../src/reader.rs
-[layout]: ../src/layout.rs
-[search]: ../src/search.rs
-[worker]: ../src/search_worker.rs
-[panels]: ../src/panel_search.rs
-[outline]: ../src/outline.rs
-[ocr]: ../src/ocr.rs
-[installation]: installation.md#optional-helpers
+[text]: ../../src/text.rs
+[reader]: ../../src/reader.rs
+[layout]: ../../src/layout.rs
+[search]: ../../src/search.rs
+[worker]: ../../src/search_worker.rs
+[panels]: ../../src/panel_search.rs
+[outline]: ../../src/outline.rs
+[ocr]: ../../src/ocr.rs
+[installation]: ../install.md#optional-helpers

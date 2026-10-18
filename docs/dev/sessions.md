@@ -30,9 +30,8 @@ history. Per-document entries include cursor position, zoom, rotation, and crop.
 Document-local and cross-document marks persist too. This state does not restore
 a complete arrangement of tabs, splits, panels, and running jobs.
 
-The state file lives at `$XDG_STATE_HOME/vpdf/state.json`, falling back to
-`~/.local/state/vpdf/state.json`. Missing or unreadable state starts empty.
-An explicit launch page overrides the restored position.
+See [saved state and reload][saved-state] for the state-file location and
+user-visible persistence and reload constraints.
 
 The session records changes in memory, saves after an idle period or
 periodically during activity, and saves again on exit. [Hangup handling][hangup]
@@ -73,27 +72,17 @@ paragraph's identity across arbitrary document edits.
 
 ## External actions
 
-Opening a document does not automatically launch its links. Explicitly followed
-web links accept HTTP or HTTPS and use the platform opener; other URI schemes
-are rejected. Passwords use a hidden interactive prompt rather than command-line
-arguments.
+[Clipboard delivery][clipboard] owns text and image copying across native
+helpers and terminal protocols. See [external actions][external] for
+user-visible clipboard, SSH, link, and password behavior.
 
-[Clipboard delivery][clipboard] sends OSC 52 and can also invoke a local
-clipboard helper. SSH sessions skip the native helper because it would target
-the remote host's clipboard. Terminal policy controls OSC 52 acceptance and size
-limits.
-
-Figure and region image copying uses a native clipboard helper locally. Over
-SSH it depends on the terminal's image-clipboard protocol and acknowledgment;
-text clipboard support alone does not imply image support. See
-[terminal setup][installation] and executable help for available actions.
-
-[session]: ../src/session.rs
-[split]: ../src/split.rs
-[pointer]: ../src/pointer.rs
-[state]: ../src/state.rs
-[hangup]: ../src/hangup.rs
-[watch]: ../src/watch.rs
-[commands]: ../src/commands.rs
-[clipboard]: ../src/clipboard.rs
-[installation]: installation.md#terminal-setup
+[session]: ../../src/session.rs
+[split]: ../../src/split.rs
+[pointer]: ../../src/pointer.rs
+[state]: ../../src/state.rs
+[hangup]: ../../src/hangup.rs
+[watch]: ../../src/watch.rs
+[commands]: ../../src/commands.rs
+[clipboard]: ../../src/clipboard.rs
+[external]: ../reading.md#external-actions
+[saved-state]: ../reading.md#saved-state-and-reload

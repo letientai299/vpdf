@@ -21,7 +21,7 @@ changes; they do not enumerate the feature set.
 
 ## Runtime ownership
 
-A [session][session] owns tabs, shared history, saved state, and terminal
+A [session][session] owns tabs, prompt history, saved state, and terminal
 output. Each tab contains a split layout and panes; each [pane][app] owns an
 independent reader, document handle, view, and worker handles. Two panes showing
 the same file still have independent foreground documents and display-list
@@ -87,12 +87,12 @@ to release native resources. The policy and thresholds live in the
 - [Development][development] distinguishes CPU measurements from terminal paint
   and display latency.
 
-[session]: ../src/session.rs
-[app]: ../src/app.rs
+[session]: ../../src/session.rs
+[app]: ../../src/app.rs
 [sessions]: sessions.md
-[document]: ../src/document.rs
-[worker]: ../src/render_worker.rs
-[search-worker]: ../src/search_worker.rs
-[rendering]: rendering.md
+[document]: ../../src/document.rs
+[worker]: ../../src/render_worker.rs
+[search-worker]: ../../src/search_worker.rs
+[rendering]: render.md
 [text]: text.md
-[development]: development.md
+[development]: dev.md
