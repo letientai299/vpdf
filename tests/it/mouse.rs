@@ -1744,6 +1744,31 @@ fn hover_previews_answer_input() -> Result<()> {
   Ok(())
 }
 
+/// A middle click inside splits to the target (C2).
+#[test]
+fn middle_clicks_split_previews() -> Result<()> {
+  for popup in ["hover", "key"] {
+    let (_directory, mut session) = session(false)?;
+    let link = cell(&mut session, Hit::Link(PageId(0), 0))?;
+    let area = match popup {
+      "hover" => hover_open(&mut session, link)?,
+      _ => key_open(&mut session)?,
+    };
+    let at = (area.column + 1, area.row + 1);
+    mouse(&mut session, MouseEventKind::Down(MouseButton::Middle), at)?;
+    mouse(&mut session, MouseEventKind::Up(MouseButton::Middle), at)?;
+    session.settle()?;
+    let panes = &session.tab().panes;
+    assert_eq!(panes.len(), 2, "{popup}");
+    assert!(panes.iter().all(|app| app.peek.is_none()), "{popup}");
+    let shown: Vec<_> =
+      panes.iter().map(|app| app.reader.cursor.page).collect();
+    assert!(shown.contains(&PageId(1)), "{popup}: {shown:?}");
+    assert_eq!(session.app().reader.cursor.page, PageId(0), "{popup}");
+  }
+  Ok(())
+}
+
 /// A click inside cancels pending keys (r15 #8).
 #[test]
 fn preview_clicks_cancel_keys() -> Result<()> {

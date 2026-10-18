@@ -39,6 +39,7 @@ Move pointer: hover detail covers notes; errors stay
 Rest on a link 400 ms: preview it in the pane under the pointer
 Leave link and preview to close; keys close it
 Left-click a link preview, hover or K: follow
+Middle-click a link preview: its target in a split
 Click link: follow and record jump
 Middle click link: open target in a split; copy a URL
 Jumps: flash landing line for 600 ms

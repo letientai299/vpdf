@@ -177,7 +177,7 @@ impl App {
     open
   }
 
-  /// Left clicks inside follow; others close it.
+  /// Left clicks inside follow, middle split; others close.
   pub fn preview_press(&mut self, mouse: MouseEvent) -> Result<bool> {
     let Some(peek) = &self.peek else { return Ok(false) };
     let key = peek.origin == Origin::Key;
@@ -185,13 +185,29 @@ impl App {
       return Ok(false);
     }
     let inside = self.in_preview(mouse);
-    let left = mouse.kind == MouseEventKind::Down(MouseButton::Left)
-      && !mouse.modifiers.contains(KeyModifiers::ALT);
-    if inside && left {
-      // Like `dismiss_click`, it cancels pending keys.
-      self.disarm();
-      self.follow_preview()?;
-      return Ok(true);
+    let alt = mouse.modifiers.contains(KeyModifiers::ALT);
+    let button = match mouse.kind {
+      MouseEventKind::Down(button) if inside && !alt => Some(button),
+      _ => None,
+    };
+    let follows = self.peek.as_ref().is_some_and(Preview::follows);
+    match button {
+      Some(MouseButton::Left) => {
+        // Like `dismiss_click`, it cancels pending keys.
+        self.disarm();
+        self.follow_preview()?;
+        return Ok(true);
+      }
+      // As on the page: its target in a split (C2).
+      Some(MouseButton::Middle) if follows => {
+        self.disarm();
+        let target = self.peek.take().map(|peek| peek.target);
+        if let Some(target) = target {
+          self.open_split(&target)?;
+        }
+        return Ok(true);
+      }
+      _ => {}
     }
     if key {
       return Ok(false);

@@ -53,16 +53,16 @@ The preview is a temporary reading surface with its own scrolling. Hovering an
 internal link can open it without moving the reading position. It opens in the
 pane under the pointer, stays while the pointer travels from the link into it,
 and closes when the pointer leaves both or the link leaves the view. A left
-click inside any link preview follows it, and the status line keeps its
-destination while the pointer is over it. The status line
-names what the pointer rests on: a link's destination, the reference a citation
-cites, a note, a clipped row, or a thumbnail's page and the section at its top.
-Once the pointer moves, that detail covers an older message and takes room from
-the tab names; errors stay until the next key or click. Link labels can also be
-picked with the pointer before following their destination. Jump history returns
-to earlier destinations; marks keep places worth revisiting. Following an
-external web link opens it through the desktop integration. See
-[external actions][external] for clipboard and SSH boundaries.
+click inside any link preview follows it, a middle click shows its target in a
+split, and the status line keeps its destination while the pointer is over it.
+The status line names what the pointer rests on: a link's destination, the
+reference a citation cites, a note, a clipped row, or a thumbnail's page and the
+section at its top. Once the pointer moves, that detail covers an older message
+and takes room from the tab names; errors stay until the next key or click. Link
+labels can also be picked with the pointer before following their destination.
+Jump history returns to earlier destinations; marks keep places worth
+revisiting. Following an external web link opens it through the desktop
+integration. See [external actions][external] for clipboard and SSH boundaries.
 
 ## Compare views
 
