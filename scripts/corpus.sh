@@ -1,8 +1,10 @@
 #!/bin/sh
-# Usage: corpus.sh [corpus|huge] — fetches a set of public PDFs into
-# tmp/<set> in parallel and verifies their SHA-256 hashes.
+# Usage: corpus.sh [corpus|huge] [name ...]
+# Fetches selected PDFs and verifies SHA-256 hashes.
 set -eu
 set_name=${1:-corpus}
+if [ "$#" -gt 0 ]; then shift; fi
+selection=$*
 dir="$(cd "$(dirname "$0")/.." && pwd)/tmp/$set_name"
 mkdir -p "$dir"
 
@@ -42,7 +44,9 @@ case $set_name in
       form https://www.irs.gov/pub/irs-pdf/f1040.pdf \
       3d31c226df0d189ced80e039d01cf0f8820c1019681a0f0ca6264de277b7e982 \
       ocr https://www.w3.org/WAI/WCAG22/working-examples/pdf-ocr/ocr-example.pdf \
-      7a161be656c7e82986a1959890eadbdcd0876e15e01b28fd00900190de15eed5
+      7a161be656c7e82986a1959890eadbdcd0876e15e01b28fd00900190de15eed5 \
+      scan https://web.mit.edu/sts.035/www/PDFs/edvac.pdf \
+      cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32
     ;;
   huge)
     # 5,364-page manual; 3,329-page manual; layered vector maps; JPEG 2000
@@ -77,13 +81,25 @@ case $set_name in
 esac
 
 pids=
+matched=
 while [ $# -ge 3 ]; do
-  fetch "$1" "$2" "$3" &
-  pids="$pids $!"
+  case " $selection " in
+    "  "|*" $1 "*)
+      fetch "$1" "$2" "$3" &
+      pids="$pids $!"
+      matched="$matched $1"
+      ;;
+  esac
   shift 3
 done
 status=0
 for pid in $pids; do
   wait "$pid" || status=1
+done
+for name in $selection; do
+  case " $matched " in
+    *" $name "*) ;;
+    *) printf 'Unknown PDF: %s\n' "$name" >&2; status=2 ;;
+  esac
 done
 exit $status

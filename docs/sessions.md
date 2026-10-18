@@ -83,6 +83,11 @@ clipboard helper. SSH sessions skip the native helper because it would target
 the remote host's clipboard. Terminal policy controls OSC 52 acceptance and size
 limits.
 
+Figure and region image copying uses a native clipboard helper locally. Over
+SSH it depends on the terminal's image-clipboard protocol and acknowledgment;
+text clipboard support alone does not imply image support. See
+[terminal setup][installation] and executable help for available actions.
+
 [session]: ../src/session.rs
 [split]: ../src/split.rs
 [pointer]: ../src/pointer.rs
@@ -91,3 +96,4 @@ limits.
 [watch]: ../src/watch.rs
 [commands]: ../src/commands.rs
 [clipboard]: ../src/clipboard.rs
+[installation]: installation.md#terminal-setup

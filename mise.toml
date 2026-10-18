@@ -38,6 +38,7 @@ run = [
 ]
 
 [tasks.test]
+depends = ["test:demo"]
 run = "cargo nextest run --locked"
 
 [tasks.hooks]
@@ -51,6 +52,16 @@ run = "sh scripts/install.sh"
 [tasks.corpus]
 description = "Fetch and verify the public test PDFs into tmp/corpus"
 run = "sh scripts/corpus.sh corpus"
+
+[tasks.demo]
+description = "Capture and optimize the QHD screenshot gallery"
+depends = ["build"]
+raw_args = true
+run = 'python3 scripts/demo.py --binary "${CARGO_TARGET_DIR:-target}/release/vpdf" --build-profile release'
+
+[tasks."test:demo"]
+description = "Check screenshot provenance and publication failures"
+run = "python3 -B -m unittest discover -s scripts -p test_demo.py"
 
 [tasks."corpus:huge"]
 description = "Fetch large stress PDFs into tmp/huge for ad hoc runs"

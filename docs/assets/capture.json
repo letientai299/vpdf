@@ -1,0 +1,783 @@
+{
+  "captures": {
+    "2208654b64ec0f1f": {
+      "captured_at": "2026-10-18T06:25:19Z",
+      "commit": "b617f73b07dd82564fca383ad6ff84d44e6fa9f9",
+      "build_profile": "release",
+      "binary_sha256": "70a483cd485f7cfdb06f0a52c52059e03999894f5bdf1ee4c667224ee87278e4",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.2 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "2560",
+        "initial_window_height": "1440",
+        "remember_window_size": "no",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "Iosevka Nerd Font Mono",
+        "font_size": "26",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 2,
+      "base_font_points": 13,
+      "dimensions": [
+        2560,
+        1440
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader and private saved state per scene",
+      "encoding": "lossless WebP; decoded pixels verified against PNG",
+      "ocr": {
+        "engine": "tesseract 5.5.3",
+        "language": "eng",
+        "input_has_embedded_text": false
+      },
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "scan": {
+          "file": "scan.pdf",
+          "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
+        }
+      }
+    },
+    "7dbed3285fd3ec9c": {
+      "captured_at": "2026-10-18T06:28:19Z",
+      "commit": "b617f73b07dd82564fca383ad6ff84d44e6fa9f9",
+      "build_profile": "release",
+      "binary_sha256": "70a483cd485f7cfdb06f0a52c52059e03999894f5bdf1ee4c667224ee87278e4",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.2 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "2560",
+        "initial_window_height": "1440",
+        "remember_window_size": "no",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "Iosevka Nerd Font Mono",
+        "font_size": "26",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 2,
+      "base_font_points": 13,
+      "dimensions": [
+        2560,
+        1440
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader and private saved state per scene",
+      "encoding": "lossless WebP; decoded pixels verified against PNG",
+      "ocr": null,
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "scan": {
+          "file": "scan.pdf",
+          "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
+        }
+      }
+    },
+    "61cabc806f2baf09": {
+      "captured_at": "2026-10-18T06:43:13Z",
+      "commit": "b617f73b07dd82564fca383ad6ff84d44e6fa9f9",
+      "binary_version": "vpdf b617f73 (2026-10-18)",
+      "build_profile": "release",
+      "binary_sha256": "70a483cd485f7cfdb06f0a52c52059e03999894f5bdf1ee4c667224ee87278e4",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.2 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "2560",
+        "initial_window_height": "1440",
+        "remember_window_size": "no",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "Iosevka Nerd Font Mono",
+        "font_size": "26",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 2,
+      "base_font_points": 13,
+      "dimensions": [
+        2560,
+        1440
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader and private saved state per scene",
+      "encoding": "lossless WebP; decoded pixels verified against PNG",
+      "ocr": {
+        "engine": "tesseract 5.5.3",
+        "language": "eng",
+        "input_has_embedded_text": false
+      },
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "scan": {
+          "file": "scan.pdf",
+          "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
+        }
+      }
+    }
+  },
+  "scenes": {
+    "overview": {
+      "image": "overview.webp",
+      "sha256": "167fbef4e2795844bfc806fbdc4b7901efca186abd4c2ea553eef80218167ead",
+      "bytes": 339002,
+      "start_page": 2,
+      "documents": [
+        "paper",
+        "book",
+        "scan"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "open",
+          [
+            "vsplit",
+            "book"
+          ]
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "L"
+        ],
+        [
+          "text",
+          "zc=+59gg/http\r"
+        ],
+        [
+          "wait",
+          "matches"
+        ],
+        [
+          "text",
+          "gs"
+        ],
+        [
+          "wait",
+          "RESULTS"
+        ],
+        [
+          "key",
+          "tab"
+        ],
+        [
+          "text",
+          "16j"
+        ],
+        [
+          "open",
+          [
+            "split",
+            "scan"
+          ]
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "x"
+        ],
+        [
+          "text",
+          "=3+7ggv"
+        ],
+        [
+          "wait",
+          "Selection unavailable"
+        ],
+        [
+          "text",
+          ":ocr eng\r"
+        ],
+        [
+          "wait",
+          "OCR ready"
+        ],
+        [
+          "text",
+          "i}vipzt"
+        ],
+        [
+          "wait",
+          "VISUAL"
+        ],
+        [
+          "key",
+          "ctrl+y"
+        ],
+        [
+          "key",
+          "ctrl+y"
+        ],
+        [
+          "key",
+          "ctrl+y"
+        ],
+        [
+          "key",
+          "ctrl+y"
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "h"
+        ],
+        [
+          "text",
+          "zc=3+2gggo"
+        ],
+        [
+          "wait",
+          "CONTENTS"
+        ],
+        [
+          "key",
+          "tab"
+        ],
+        [
+          "text",
+          "/[13]\r"
+        ],
+        [
+          "wait",
+          "matches"
+        ],
+        [
+          "text",
+          ":nohlsearch\rilK"
+        ],
+        [
+          "wait",
+          "\u256d"
+        ]
+      ],
+      "capture": "61cabc806f2baf09"
+    },
+    "help": {
+      "image": "help.webp",
+      "sha256": "3aff344a0ce2b24039098495b866602f9fad0ebe13d251c5795546287a9d2b42",
+      "bytes": 382228,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "zc=3+2gg:info\r"
+        ],
+        [
+          "wait",
+          "INFO"
+        ],
+        [
+          "text",
+          ":vsplit\r"
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "L"
+        ],
+        [
+          "text",
+          "zc=3+2gg:help\r"
+        ],
+        [
+          "wait",
+          "HELP"
+        ],
+        [
+          "text",
+          "}zt"
+        ],
+        [
+          "text",
+          ":split\r"
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "x"
+        ],
+        [
+          "text",
+          "zc=3+2ggg"
+        ],
+        [
+          "wait",
+          "table of contents"
+        ]
+      ],
+      "capture": "2208654b64ec0f1f"
+    },
+    "search": {
+      "image": "search.webp",
+      "sha256": "590bb980202b823444a26fd174af397018d74e99fe2922da604d667c5f1535a8",
+      "bytes": 291452,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "zc=+/multi-head\r"
+        ],
+        [
+          "wait",
+          "matches"
+        ],
+        [
+          "text",
+          "gs"
+        ],
+        [
+          "wait",
+          "RESULTS"
+        ]
+      ],
+      "capture": "2208654b64ec0f1f"
+    },
+    "preview": {
+      "image": "preview.webp",
+      "sha256": "f6f7c8d999fab58042338047b1b1a83f5343d27ff3979431b2dae5a69e5c330f",
+      "bytes": 172290,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "zc=+/[13]\r"
+        ],
+        [
+          "wait",
+          "matches"
+        ],
+        [
+          "text",
+          ":nohlsearch\rgl"
+        ],
+        [
+          "wait",
+          "LINKS"
+        ],
+        [
+          "key",
+          "tab"
+        ],
+        [
+          "text",
+          "ilK"
+        ],
+        [
+          "wait",
+          "\u256d"
+        ]
+      ],
+      "capture": "2208654b64ec0f1f"
+    },
+    "figure": {
+      "image": "figure.webp",
+      "sha256": "de4a4565c5d9978d2b1dbbb47c6b5c62a75cca7aa6e0171c113324d9de0aed17",
+      "bytes": 87146,
+      "start_page": 3,
+      "documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "]i[izFgF"
+        ],
+        [
+          "wait",
+          "Save PNG"
+        ],
+        [
+          "hover",
+          "Copy text"
+        ]
+      ],
+      "capture": "2208654b64ec0f1f"
+    },
+    "mouse-menu": {
+      "image": "mouse-menu.webp",
+      "sha256": "d56b8c8ae6b6362df5a47b00c1476ff742bf79d7851e170a23a303c29d570d35",
+      "bytes": 138302,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "=+2gg"
+        ],
+        [
+          "mouse",
+          [
+            "left-down",
+            600,
+            510
+          ]
+        ],
+        [
+          "mouse",
+          [
+            "left-drag",
+            1700,
+            690
+          ]
+        ],
+        [
+          "mouse",
+          [
+            "left-up",
+            1700,
+            690
+          ]
+        ],
+        [
+          "wait",
+          "VISUAL"
+        ],
+        [
+          "mouse",
+          [
+            "right-down",
+            700,
+            520
+          ]
+        ],
+        [
+          "mouse",
+          [
+            "right-up",
+            700,
+            520
+          ]
+        ],
+        [
+          "wait",
+          "Copy as image"
+        ],
+        [
+          "hover",
+          "Search for selection"
+        ]
+      ],
+      "capture": "61cabc806f2baf09"
+    },
+    "mouse-hints": {
+      "image": "mouse-hints.webp",
+      "sha256": "d4c4935146dba9de38c5eabd66e06b4be005e1b3f85a18c57eb688afda13d5b4",
+      "bytes": 134084,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "zc=+2ggf"
+        ],
+        [
+          "wait",
+          "HINT"
+        ],
+        [
+          "hover",
+          "a"
+        ]
+      ],
+      "capture": "7dbed3285fd3ec9c"
+    },
+    "mouse-region": {
+      "image": "mouse-region.webp",
+      "sha256": "f87b02c18404957eebcd99a2b172264aef9d613c0ae4087e7d500913e140975a",
+      "bytes": 85480,
+      "start_page": 3,
+      "documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "]i[izF"
+        ],
+        [
+          "mouse",
+          [
+            "alt-down",
+            900,
+            150
+          ]
+        ],
+        [
+          "mouse",
+          [
+            "alt-drag",
+            1650,
+            1250
+          ]
+        ],
+        [
+          "wait",
+          "Release captures; Esc cancels"
+        ]
+      ],
+      "capture": "7dbed3285fd3ec9c"
+    },
+    "pages": {
+      "image": "pages.webp",
+      "sha256": "e19f7d1f1208bc4b759b6432ba9c4712a7a6db52b79c0bc4ed9d956bc15e3c42",
+      "bytes": 246166,
+      "start_page": 64,
+      "documents": [
+        "book",
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "zfgp"
+        ],
+        [
+          "wait",
+          "PAGES"
+        ]
+      ],
+      "capture": "2208654b64ec0f1f"
+    },
+    "recent": {
+      "image": "recent.webp",
+      "sha256": "0a841d24f9cceb23f4eef218757c7eb899a59542e59e0b5eb26eaa22f1f162dd",
+      "bytes": 88572,
+      "start_page": 2,
+      "documents": [
+        "paper",
+        "book",
+        "scan"
+      ],
+      "steps": [
+        [
+          "text",
+          "gt64gg"
+        ],
+        [
+          "text",
+          "gt"
+        ],
+        [
+          "text",
+          "gt3gg"
+        ],
+        [
+          "text",
+          ":recent\r"
+        ],
+        [
+          "wait",
+          "RECENT"
+        ],
+        [
+          "wait",
+          "Metadata"
+        ],
+        [
+          "hover",
+          "scan.pdf"
+        ],
+        [
+          "wait",
+          "49"
+        ]
+      ],
+      "capture": "2208654b64ec0f1f"
+    },
+    "jumps": {
+      "image": "jumps.webp",
+      "sha256": "32291b4d32c4d3fe437d949b6b8734f4bad3121b4d87dcbd9c61b027728d58ca",
+      "bytes": 238732,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "zc=+2gg]]]]]]"
+        ],
+        [
+          "text",
+          "/multi-head\r"
+        ],
+        [
+          "wait",
+          "matches"
+        ],
+        [
+          "text",
+          "nn"
+        ],
+        [
+          "key",
+          "ctrl+o"
+        ],
+        [
+          "text",
+          ":jumps\r"
+        ],
+        [
+          "wait",
+          "JUMPS"
+        ],
+        [
+          "wait",
+          "Heading:"
+        ],
+        [
+          "wait",
+          "Search ["
+        ]
+      ],
+      "capture": "2208654b64ec0f1f"
+    },
+    "ocr": {
+      "image": "ocr.webp",
+      "sha256": "041c167f9e36a4b0e4f03c8ec458a9635979fc216fac7f6cc3d1a55943b38d0c",
+      "bytes": 278882,
+      "start_page": 7,
+      "documents": [
+        "scan"
+      ],
+      "steps": [
+        [
+          "text",
+          "v"
+        ],
+        [
+          "wait",
+          "Selection unavailable"
+        ],
+        [
+          "text",
+          "=3+7gg"
+        ],
+        [
+          "text",
+          ":vsplit\r"
+        ],
+        [
+          "text",
+          "7gg:ocr eng\r"
+        ],
+        [
+          "wait",
+          "OCR ready"
+        ],
+        [
+          "text",
+          ":text\r"
+        ],
+        [
+          "text",
+          "i}vip"
+        ],
+        [
+          "wait",
+          "VISUAL"
+        ]
+      ],
+      "capture": "2208654b64ec0f1f"
+    }
+  }
+}

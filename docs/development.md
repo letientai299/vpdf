@@ -120,6 +120,72 @@ records no document text, but includes page and scroll position. Timing starts
 when the loop consumes input and ends at output flush; terminal painting and
 physical input latency are outside that measurement.
 
+Publish measurements with repeated runs, sample counts, and percentile
+summaries. Label CPU frame construction, render readiness,
+input-consumption-to-flush, and observed display behavior separately. A speedup
+needs a comparable baseline under the same conditions. Keep benchmark JSON,
+input hashes, cache conditions, and build identity in an immutable,
+commit-identified evidence bundle rather than a moving development release.
+
+## Gallery capture
+
+The [capture script][demo-script] drives the real reader inside an isolated
+[Kitty][kitty-capture] instance. It captures the terminal's rendered graphics,
+including PDF images, through Kitty's screenshot API. It needs Python 3,
+Kitty with that API, and [ImageMagick][imagemagick] with WebP support, plus a
+desktop graphics session. It does not require screen-recording permission.
+Captures that run OCR also need Tesseract with English language data and
+Poppler's `pdftotext` to verify that the scanned input has no embedded text.
+
+```sh
+mise run demo
+```
+
+List scene names without opening a terminal, or repeat `--scene` to refresh a
+subset:
+
+```sh
+python3 scripts/demo.py --list-scenes
+mise run demo -- --scene mouse-menu
+mise run demo -- --scene mouse-hints --scene mouse-region
+```
+
+Selected runs replace only those images and merge their records into the capture
+manifest. Each scene references its own capture identity, so refreshing one
+scene on a newer build preserves the provenance of the others. Completed scenes
+save immediately; a later failure keeps their records. Failed input validation
+or publication preserves the previous image and record. Omit `--scene` to
+regenerate the full gallery.
+
+The task builds the reader and fetches or verifies only the required
+[public examples][corpus] before capturing. A custom `--corpus` directory uses
+its existing PDFs. Use the script's `--help` for font, executable, output, and
+individual scene overrides. For a custom executable, `--build-profile` records
+its compiler profile; omitting it records an unknown profile. The manifest reads
+the executable's version rather than attributing it to the checkout. Mouse
+recipes send terminal pixel reports to the reader. The default capture uses QHD
+dimensions and a font scaled to 200% of its base size. It rejects other pixel
+dimensions instead of resizing the screenshot. User terminal configuration and
+saved reader state stay separate from the capture instance.
+
+The [optimizer][demo-optimize] encodes lossless WebP and checks decoded pixels
+against the original PNG. Tracked images and their generated capture manifest
+live in `docs/assets/`; raw PNGs, screen text, and terminal logs stay in
+gitignored `tmp/demo/`. The manifest identifies the executable hash, commit,
+build profile, machine, terminal, font settings, document hashes, and scene
+inputs. Inspect every image for complete rendering and readable content before
+publishing. See the [gallery][demo] for document attribution and capture scope.
+
+Run `mise run test:demo` to check dependency selection, executable identity,
+and publication failure handling without opening Kitty.
+
+Refresh images when the showcased workflow changes. Keep PDFs, raw traces,
+and large recordings outside git. For future feature and performance videos,
+record actual terminal graphics at normal speed and disclose edits or time
+compression. Record the viewport, capture rate, cold and revisited pages,
+cache conditions, and build identity with the demonstration. A video's capture
+rate does not establish application frame rate or physical input latency.
+
 ## Release decisions
 
 [Packaging][package] stages a separate executable under `target/dist`,
@@ -149,3 +215,8 @@ a result needs a reproducible release reference.
 [trace]: ../src/trace.rs
 [package]: ../scripts/release.sh
 [release]: ../.github/workflows/release.yml
+[demo-script]: ../scripts/demo.py
+[demo-optimize]: ../scripts/demo-optimize.sh
+[demo]: demo.md
+[kitty-capture]: https://sw.kovidgoyal.net/kitty/remote-control/#kitten-screenshot
+[imagemagick]: https://imagemagick.org/
