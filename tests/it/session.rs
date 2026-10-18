@@ -337,7 +337,10 @@ mod pointer {
       let app = session.app();
       assert_eq!(app.reader.cursor, cursor, "{kind:?} on clues");
       assert!(app.animation.is_none(), "{kind:?} on clues scrolls");
-      assert!(app.clues.is_none(), "{kind:?} closes clues");
+      assert_eq!(app.clues.is_some(), kind == ScrollDown);
+      if kind == ScrollDown {
+        assert_eq!(app.keys.pending(), "g", "wheel keeps the prefix");
+      }
     }
     let mut history = vpdf::prompt::History::default();
     menu(&mut session, &mut history)?;
