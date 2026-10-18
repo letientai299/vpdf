@@ -411,6 +411,10 @@ impl Source {
     let Some((alias, _)) = disk.found else { return };
     let fresh = std::mem::replace(&mut disk.fresh, Records::new(pages));
     let old = disk.found.as_ref().and_then(|(_, pack)| pack.as_ref());
+    // Pages read while hashing ran are often on disk already.
+    if !fresh.adds_to(old) {
+      return;
+    }
     if content_cache::save(&disk.root, &alias, &fresh, old).is_ok() {
       disk.found = Some((alias, Pack::open(&disk.root, &alias, pages)));
     }
@@ -482,6 +486,15 @@ mod tests {
     let (again, extracted) = scan(&mut second, "attention")?;
     assert_eq!(extracted, 0);
     assert_eq!(ends(&again), ends(&hits));
+    // Pages the pack holds, read again from the PDF, rewrite nothing.
+    let pack = |root: &Path| -> Result<u64> {
+      let entry = std::fs::read_dir(root)?.next().context("No pack")??;
+      Ok(entry.metadata()?.ino())
+    };
+    let written = pack(root.path())?;
+    second.index(PageId(0))?;
+    second.save();
+    assert_eq!(pack(root.path())?, written);
     let mut seeded = open()?;
     seeded.seed(PageId(0), Arc::new(Text::default()));
     let (rest, extracted) = scan(&mut seeded, "attention")?;

@@ -150,6 +150,10 @@ impl Pack {
     Index::decode(page, &bytes).ok()
   }
 
+  fn holds(&self, page: PageId) -> bool {
+    self.table.get(page.0).is_some_and(|&(_, size)| size > 0)
+  }
+
   fn raw(&self, page: PageId) -> Option<Vec<u8>> {
     let &(offset, size) = self.table.get(page.0)?;
     if size == 0 {
@@ -185,6 +189,13 @@ impl Records {
 
   pub fn is_empty(&self) -> bool {
     self.0.iter().all(Option::is_none)
+  }
+
+  /// Whether `old` lacks a page recorded here.
+  pub fn adds_to(&self, old: Option<&Pack>) -> bool {
+    self.0.iter().enumerate().any(|(page, raw)| {
+      raw.is_some() && !old.is_some_and(|old| old.holds(PageId(page)))
+    })
   }
 }
 
