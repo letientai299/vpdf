@@ -901,9 +901,7 @@ impl Session {
       return Ok(true);
     }
     let Some((index, _)) = self.under(mouse) else { return Ok(false) };
-    self.app().disarm();
-    let app = self.app();
-    app.clear_notes();
+    self.app().interrupt();
     self.pointer.release();
     self.focus(self.active, index)?;
     let history =
@@ -1024,14 +1022,16 @@ impl Session {
     pixel: Option<Pixel>,
     now: Instant,
   ) -> Result<Option<bool>> {
+    // One button at a time.
+    if self.pointer.busy(mouse) {
+      return Ok(Some(false));
+    }
     // A new left press: release lost.
     if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
       self.resizing = None;
     }
-    // One button at a time.
-    let free = !self.pointer.holding();
     let app = self.app();
-    if free && app.item_press(mouse)? || app.context_press(mouse) {
+    if app.item_press(mouse)? || app.context_press(mouse) {
       self.pointer.release();
       return Ok(Some(true));
     }
@@ -1052,12 +1052,9 @@ impl Session {
     }
     if let Some(edge) = self.edge_at(mouse.column, mouse.row) {
       // Keys and notes end, as on blanks.
-      let app = self.app();
-      app.disarm();
-      app.clear_notes();
-      // Boundaries never focus; free left presses drag.
-      let left = mouse.kind == MouseEventKind::Down(MouseButton::Left);
-      if !left || self.pointer.holding() {
+      self.app().interrupt();
+      // Boundaries never focus; left presses drag.
+      if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
         return Ok(Some(true));
       }
       return self.edge_press(edge, mouse, pixel, now).map(Some);
@@ -1356,10 +1353,6 @@ impl Session {
   /// Acts on a pressed status item.
   fn status_press(&mut self, mouse: MouseEvent) -> Result<bool> {
     let MouseEventKind::Down(button) = mouse.kind else { return Ok(false) };
-    // One button at a time.
-    if self.pointer.holding() {
-      return Ok(false);
-    }
     let Some(route) = self.focused_in(Region::Status, mouse) else {
       return Ok(false);
     };
@@ -1367,8 +1360,7 @@ impl Session {
     // The shown item, before notes clear.
     let item = app.chrome_at(route.mouse.column, route.mouse.row);
     let Some(item) = item else { return Ok(false) };
-    app.disarm();
-    app.clear_notes();
+    app.interrupt();
     app.chrome_press(item, button)?;
     self.pointer.release();
     Ok(true)

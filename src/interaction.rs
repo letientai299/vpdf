@@ -97,6 +97,12 @@ impl App {
     true
   }
 
+  /// Ends pending keys and notes.
+  pub(crate) fn interrupt(&mut self) {
+    self.disarm();
+    self.clear_notes();
+  }
+
   /// Drops the error and the message.
   pub(crate) fn clear_notes(&mut self) {
     self.error = None;

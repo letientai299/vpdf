@@ -401,7 +401,7 @@ fn boundary_presses_never_focus() -> Result<()> {
   Ok(())
 }
 
-/// The focused pane's screen cell where `region` hits `want`.
+/// Focused pane cell where `region` hits `want`.
 fn find_cell(
   session: &mut Session,
   region: Region,
@@ -454,7 +454,7 @@ fn status_items_act_on_click() -> Result<()> {
   assert!(left(&mut session, MouseEventKind::Moved, (0, 0)));
   assert!(left(&mut session, MouseEventKind::Moved, zero));
   assert!(!left(&mut session, MouseEventKind::Moved, first));
-  // A held drag keeps middle presses off tabs.
+  // Held drags keep middle presses off tabs.
   left(&mut session, MouseEventKind::Down(MouseButton::Left), (40, 10));
   left(&mut session, MouseEventKind::Down(MouseButton::Middle), first);
   left(&mut session, MouseEventKind::Up(MouseButton::Left), (40, 10));
@@ -555,6 +555,11 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   use crossterm::event::{KeyEvent, KeyModifiers};
   use vpdf::pointer::List;
   let (_directory, mut session) = session(false)?;
+  // Clues shown during a held pan.
+  let page = cell(&mut session, Hit::Text)?;
+  let pan = (page.0 + 2, page.1);
+  left(&mut session, MouseEventKind::Down(MouseButton::Middle), page);
+  left(&mut session, MouseEventKind::Drag(MouseButton::Middle), pan);
   let ctrl_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
   session.app().key(ctrl_w, &mut vpdf::prompt::History::default())?;
   session.app().awaiting =
@@ -563,9 +568,14 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   let clues = session.app().clues.as_ref().map(|c| c.items.clone());
   let split = clues.and_then(|items| items.iter().position(|(k, _)| k == "v"));
   let at = item_cell(&mut session, List::Clues, split.expect("a v clue"))?;
-  click(&mut session, at);
-  session.settle()?;
+  // The held pan keeps clues off.
+  left(&mut session, MouseEventKind::Down(MouseButton::Left), at);
+  assert!(session.app().clues.is_some() && session.app().grabbing());
+  left(&mut session, MouseEventKind::Up(MouseButton::Middle), pan);
+  // The press splits, before its release.
+  left(&mut session, MouseEventKind::Down(MouseButton::Left), at);
   assert_eq!(session.tab().panes.len(), 2);
+  left(&mut session, MouseEventKind::Up(MouseButton::Left), at);
   assert!(session.app().clues.is_none());
   // A failing clue still closes.
   let (_text, mut failing) = crate::mouse::session(true)?;

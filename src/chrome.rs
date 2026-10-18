@@ -45,19 +45,18 @@ impl App {
       (MouseButton::Left, Chrome::Zoom) => Action::Fit,
       _ => return Ok(()),
     };
-    self.action(Input { action, count: 1, explicit: false, register: '"' })
+    self.action(Input::plain(action))
   }
 
   /// The outline, focused on the current section.
   fn outline_here(&mut self) -> Result<()> {
     let action = Action::Panel(PanelKind::Outline);
-    self.action(Input { action, count: 1, explicit: false, register: '"' })?;
+    self.action(Input::plain(action))?;
     let section = self.current_section;
     if let Some(panel) = &mut self.panel
       && let Some(index) = section
     {
-      panel.selected = index;
-      panel.reveal();
+      panel.select(index);
     }
     Ok(())
   }

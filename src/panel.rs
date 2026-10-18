@@ -266,6 +266,12 @@ impl Panel {
     Some(self.line_source(line)).filter(|&index| index < self.rows.len())
   }
 
+  /// Selects row `index` and shows it.
+  pub(crate) fn select(&mut self, index: usize) {
+    self.selected = index;
+    self.reveal();
+  }
+
   pub(crate) fn reveal(&mut self) {
     let count = usize::from(self.height.saturating_sub(2));
     let start = self.line_start(self.selected);
@@ -596,8 +602,7 @@ impl App {
       && panel.follow_pending
       && let Some(index) = section
     {
-      panel.selected = index;
-      panel.reveal();
+      panel.select(index);
       panel.follow_pending = false;
     }
   }
@@ -651,8 +656,7 @@ impl App {
     panel.note = self.panel_note(kind);
     panel.height = self.screen.rows;
     if kind == PanelKind::Outline {
-      panel.selected = self.section().unwrap_or(0);
-      panel.reveal();
+      panel.select(self.section().unwrap_or(0));
     }
     self.panel = Some(panel);
     self.relayout()

@@ -3,7 +3,7 @@
 use crate::app::App;
 use crate::keys;
 use crate::pointer::Items;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::KeyEvent;
 use std::time::{Duration, Instant};
 
 /// Idle time after a prefix before clues show. mini.clue defaults to a
@@ -151,25 +151,13 @@ pub(crate) fn clue_keys(label: &str) -> Option<Vec<KeyEvent>> {
   if range || label.contains(' ') {
     return None;
   }
-  let mut keys = Vec::new();
-  let mut rest = label;
-  while let Some(first) = rest.chars().next() {
-    let (code, modifiers, tail) = match rest.strip_prefix("C-") {
-      Some(tail) if !tail.is_empty() => {
-        let ch = tail.chars().next()?;
-        (ch, KeyModifiers::CONTROL, &tail[ch.len_utf8()..])
-      }
-      _ => (first, KeyModifiers::NONE, &rest[first.len_utf8()..]),
-    };
-    keys.push(KeyEvent::new(KeyCode::Char(code), modifiers));
-    rest = tail;
-  }
-  (!keys.is_empty()).then_some(keys)
+  keys::parse(label)
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crossterm::event::{KeyCode, KeyModifiers};
 
   #[test]
   fn clue_labels_name_keys() {

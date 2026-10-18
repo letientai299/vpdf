@@ -266,6 +266,38 @@ pub fn plain(key: KeyEvent) -> bool {
   (key.modifiers - KeyModifiers::SHIFT).is_empty()
 }
 
+/// Keys a binding name types; `token`'s inverse.
+pub fn parse(name: &str) -> Option<Vec<KeyEvent>> {
+  let key = KeyEvent::new;
+  let none = KeyModifiers::NONE;
+  let named = [
+    ("S-Space", key(KeyCode::Char(' '), KeyModifiers::SHIFT)),
+    ("Space", key(KeyCode::Char(' '), none)),
+    ("Enter", key(KeyCode::Enter, none)),
+    ("Tab", key(KeyCode::Tab, none)),
+    ("BS", key(KeyCode::Backspace, none)),
+  ];
+  let mut keys = Vec::new();
+  let mut rest = name;
+  while let Some(first) = rest.chars().next() {
+    if let Some((name, event)) =
+      named.iter().find(|(name, _)| rest.starts_with(name))
+    {
+      keys.push(*event);
+      rest = &rest[name.len()..];
+    } else if let Some(tail) = rest.strip_prefix("C-")
+      && let Some(ch) = tail.chars().next()
+    {
+      keys.push(key(KeyCode::Char(ch), KeyModifiers::CONTROL));
+      rest = &tail[ch.len_utf8()..];
+    } else {
+      keys.push(key(KeyCode::Char(first), none));
+      rest = &rest[first.len_utf8()..];
+    }
+  }
+  (!keys.is_empty()).then_some(keys)
+}
+
 /// Binding name; Alt and Super chords have none.
 fn token(key: KeyEvent) -> Option<String> {
   if key.modifiers - KeyModifiers::SHIFT == KeyModifiers::CONTROL {
@@ -501,6 +533,17 @@ pub fn clues(prefix: &str) -> Vec<(String, &'static str)> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// Clue names type their bindings back.
+  #[test]
+  fn names_parse_back_to_their_tokens() {
+    for (name, ..) in BINDINGS {
+      let label = name.replace(' ', "Space");
+      let keys = parse(&label).unwrap_or_default();
+      let tokens: Option<String> = keys.into_iter().map(token).collect();
+      assert_eq!(tokens.as_deref(), Some(*name), "{label}");
+    }
+  }
 
   fn key(ch: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE)

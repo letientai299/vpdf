@@ -177,7 +177,7 @@ pub enum Hit {
   Edge {
     rows: bool,
   },
-  /// A clickable status item, clue, or completion.
+  /// A clickable status item.
   Chrome,
   /// The page's scrollbar.
   Scrollbar,
@@ -598,6 +598,12 @@ impl Pointer {
   /// What the pointer rests on.
   pub fn target(&self) -> Option<Hover> {
     self.hover
+  }
+
+  /// Whether another button holds the pointer.
+  pub fn busy(&self, mouse: MouseEvent) -> bool {
+    let MouseEventKind::Down(button) = mouse.kind else { return false };
+    self.capture().is_some_and(|capture| capture.button != button)
   }
 
   /// Whether a press holds the pointer.
