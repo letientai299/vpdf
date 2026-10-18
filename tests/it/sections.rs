@@ -37,6 +37,15 @@ fn keys(app: &mut App, bytes: &[u8]) -> Result<()> {
   Ok(())
 }
 
+/// Text view rows of the first `pages` pages, with their breaks.
+fn text_rows(app: &mut App, pages: usize) -> Result<usize> {
+  let mut rows = 0;
+  for page in 0..pages {
+    rows += app.doc.text(vpdf::text::PageId(page))?.lines.len().max(1) + 1;
+  }
+  Ok(rows)
+}
+
 fn heading(app: &mut App, index: usize) -> Result<(Position, f32)> {
   let Target::Point { page, x, y } = app.doc.outline[index].target else {
     panic!("Expected heading point");
@@ -219,11 +228,19 @@ fn section_repeat_landing() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn section_clipped_landings() -> Result<()> {
-  for (text_mode, full) in [(false, false), (false, true), (true, true)] {
+  let cases = [(false, false), (false, true), (true, false), (true, true)];
+  for (text_mode, full) in cases {
     let mut app = app(text_mode)?;
     let height = app.layout.total - app.layout.pages[1].top;
     app.screen.rows = if full {
       u16::MAX
+    } else if text_mode {
+      // The second heading's row tops the end.
+      let pages = app.doc.pages.len();
+      let rows = text_rows(&mut app, pages)? - 1;
+      let second = heading(&mut app, 1)?.0;
+      let above = text_rows(&mut app, second.page.0)? + second.line;
+      u16::try_from(rows - above + 1)?
     } else {
       (height / f32::from(app.screen.cell_height)).ceil() as u16 + 1
     };
@@ -249,11 +266,19 @@ fn section_clipped_landings() -> Result<()> {
         assert_eq!(app.reader.scroll, app.layout.clamp_scroll(f32::MAX));
       }
     }
-    if text_mode {
+    // A full view cannot scroll.
+    if text_mode && !full {
       // A changed viewport invalidates the landing.
-      app.scroll_text(1)?;
+      app.scroll_text(-1)?;
+      let top = app.navigation_position();
       keys(&mut app, b"]]")?;
-      let want = heading(&mut app, 5)?.0;
+      let mut next = 0;
+      while heading(&mut app, next)?.0 <= top {
+        next += 1;
+      }
+      let after_landing = 4;
+      assert_ne!(next, after_landing);
+      let want = heading(&mut app, next)?.0;
       assert_eq!(app.reader.cursor, want);
     }
   }

@@ -2035,7 +2035,7 @@ pub fn view(paths: &[PathBuf], page: Option<usize>) -> Result<()> {
       false,
       &mut app.doc,
     )?;
-    app.reader.scroll = app.layout.pages[app.reader.cursor.page.0].top;
+    app.show_page(app.reader.cursor.page)?;
     app.ensure_cursor()?;
   }
   run_saving(&mut session)

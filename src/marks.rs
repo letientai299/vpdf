@@ -64,7 +64,7 @@ impl App {
     let target =
       if exact { position } else { Position { glyph: 0, ..position } };
     self.jump_cursor(target)?;
-    self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
+    self.show_page(self.reader.cursor.page)?;
     self.ensure_cursor()?;
     self.flash_landing();
     Ok(())

@@ -22,6 +22,7 @@ mod rendering;
 mod sections;
 mod session;
 mod textlinks;
+mod textpages;
 mod untrusted;
 mod wheel;
 mod workers;

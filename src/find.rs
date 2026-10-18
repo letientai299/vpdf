@@ -144,7 +144,7 @@ impl App {
         if self.search_origin.is_some() {
           self.reader.cursor = target;
           self.target = Some(target);
-          self.reader.scroll = self.layout.pages[target.page.0].top;
+          self.show_page(target.page)?;
           self.ensure_cursor()?;
         } else {
           self.go_to(target, true)?;

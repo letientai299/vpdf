@@ -172,7 +172,8 @@ fn text_drags_split_nothing() -> Result<()> {
   mouse(&mut session, MouseEventKind::Down(MouseButton::Middle), internal)?;
   let to = (internal.0 + 3, internal.1 + 1);
   mouse(&mut session, MouseEventKind::Drag(MouseButton::Middle), to)?;
-  assert!(!session.app().grabbing(), "text drags show no grab");
+  assert!(session.app().grabbing(), "text drags grab");
+  // The top left cannot move further.
   assert_eq!(session.app().navigation_position(), view);
   mouse(&mut session, MouseEventKind::Up(MouseButton::Middle), to)?;
   session.settle()?;

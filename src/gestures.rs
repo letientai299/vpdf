@@ -183,12 +183,11 @@ impl App {
       }
       MouseEventKind::Drag(_) => {
         let Some(grab) = &mut self.grab else { return Ok(()) };
-        let last = std::mem::replace(&mut grab.last, at);
         grab.moved = true;
-        // Extracted text moves by whole cells.
         if self.text_mode {
-          return Ok(());
+          return self.grab_text(at);
         }
+        let last = std::mem::replace(&mut grab.last, at);
         self.animation = None;
         let scroll = self.reader.scroll - (at.1 - last.1);
         self.reader.scroll = self.layout.clamp_scroll(scroll);
@@ -207,9 +206,26 @@ impl App {
     Ok(())
   }
 
+  /// Moves text by the whole cells a middle drag crossed.
+  fn grab_text(&mut self, at: (f32, f32)) -> Result<()> {
+    let Some(grab) = &mut self.grab else { return Ok(()) };
+    let width = f32::from(self.screen.cell_width);
+    let height = f32::from(self.screen.cell_height);
+    let columns = ((at.0 - grab.last.0) / width).trunc();
+    let rows = ((at.1 - grab.last.1) / height).trunc();
+    if columns == 0.0 && rows == 0.0 {
+      return Ok(());
+    }
+    // Part cells wait for the next report.
+    grab.last.0 += columns * width;
+    grab.last.1 += rows * height;
+    self.scroll_text(-rows as isize)?;
+    self.pan_text(-columns as isize)
+  }
+
   /// Whether a middle drag pans.
   pub fn grabbing(&self) -> bool {
-    !self.text_mode && self.grab.is_some_and(|grab| grab.moved)
+    self.grab.is_some_and(|grab| grab.moved)
   }
 
   /// Ends held drags, pans, and scrubs whose release may never come;

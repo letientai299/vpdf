@@ -385,12 +385,10 @@ impl App {
   }
 
   pub(crate) fn first_visible(&mut self) -> Result<Option<Position>> {
-    let pages = if self.text_mode {
-      self.text_top.page.0..self.text_top.page.0 + 1
-    } else {
-      self.layout.visible(self.reader.scroll)
-    };
-    for page in pages.map(PageId) {
+    if self.text_mode {
+      return self.first_text();
+    }
+    for page in self.layout.visible(self.reader.scroll).map(PageId) {
       let text = self.doc.text(page)?;
       let positions = text.lines.iter().enumerate().flat_map(|(line, row)| {
         row
@@ -407,6 +405,24 @@ impl App {
       }
     }
     Ok(None)
+  }
+
+  /// Shows `page` from its top; `ensure_cursor` then moves least.
+  pub(crate) fn show_page(&mut self, page: PageId) -> Result<()> {
+    self.reader.scroll = self.layout.pages[page.0].top;
+    if self.text_mode {
+      let top = Position { page, ..Position::default() };
+      self.text_top = self.clamp_text(top)?;
+    }
+    Ok(())
+  }
+
+  /// `show_page` unless text draws `position`'s line.
+  pub(crate) fn show_page_of(&mut self, position: Position) -> Result<()> {
+    if self.text_mode && self.text_row(position)?.is_some() {
+      return Ok(());
+    }
+    self.show_page(position.page)
   }
 
   pub fn ensure_cursor(&mut self) -> Result<()> {
@@ -583,7 +599,7 @@ impl App {
       return Ok(true);
     }
     if self.reader.cursor.page != previous_page {
-      self.reader.scroll = self.layout.pages[self.reader.cursor.page.0].top;
+      self.show_page_of(self.reader.cursor)?;
     }
     self.ensure_cursor()?;
     Ok(true)
@@ -949,6 +965,11 @@ impl App {
   ) -> Result<Option<Position>> {
     let mouse = route.mouse;
     if self.text_mode {
+      // Presses on rules, like page gaps, miss.
+      let down = matches!(mouse.kind, MouseEventKind::Down(_));
+      if down && self.text_break(mouse.row)? {
+        return Ok(None);
+      }
       return self.text_position(mouse.column, mouse.row).map(Some);
     }
     let point = self.page_point(mouse.column, mouse.row, route.pixel);

@@ -56,15 +56,29 @@ pub fn text_pdf(path: &Path, lines: &[&str]) -> Result<()> {
 
 /// One page of 18 pt Helvetica `line`s, `leading` pt apart.
 pub fn spaced_pdf(path: &Path, lines: &[&str], leading: u16) -> Result<()> {
-  pages_of(path, &[lines], leading)
+  pages_of(path, &[lines], leading, &[])
 }
 
 /// Pages of `text_pdf` lines.
 pub fn pages_pdf(path: &Path, pages: &[&[&str]]) -> Result<()> {
-  pages_of(path, pages, 24)
+  pages_of(path, pages, 24, &[])
 }
 
-fn pages_of(path: &Path, pages: &[&[&str]], leading: u16) -> Result<()> {
+/// `pages_pdf` with web links over `(page, line)`s.
+pub fn linked_pages_pdf(
+  path: &Path,
+  pages: &[&[&str]],
+  links: &[(usize, usize)],
+) -> Result<()> {
+  pages_of(path, pages, 24, links)
+}
+
+fn pages_of(
+  path: &Path,
+  pages: &[&[&str]],
+  leading: u16,
+  links: &[(usize, usize)],
+) -> Result<()> {
   let kids: Vec<_> =
     (0..pages.len()).map(|index| format!("{} 0 R", 4 + 2 * index)).collect();
   let mut objects = vec![
@@ -76,20 +90,36 @@ fn pages_of(path: &Path, pages: &[&[&str]], leading: u16) -> Result<()> {
     ),
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
   ];
+  let first = 4 + 2 * pages.len();
   for (index, lines) in pages.iter().enumerate() {
     let mut content = format!("BT /F1 18 Tf {leading} TL 20 170 Td");
     for line in *lines {
       write!(content, " ({line}) Tj T*")?;
     }
     content.push_str(" ET");
+    let annots: Vec<_> = (links.iter().enumerate())
+      .filter(|(_, (page, _))| *page == index)
+      .map(|(link, _)| format!("{} 0 R", first + link))
+      .collect();
     objects.push(format!(
       "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] \
-       /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
-      5 + 2 * index
+       /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R \
+       /Annots [{}] >>",
+      5 + 2 * index,
+      annots.join(" ")
     ));
     objects.push(format!(
       "<< /Length {} >>\nstream\n{content}\nendstream",
       content.len()
+    ));
+  }
+  for (_, line) in links {
+    let base = 170 - i32::from(leading) * i32::try_from(*line)?;
+    objects.push(format!(
+      "<< /Type /Annot /Subtype /Link /Rect [15 {} 285 {}] \
+       /A << /S /URI /URI (https://example.com/) >> >>",
+      base - 6,
+      base + 16
     ));
   }
   write_pdf(path, &objects, "")

@@ -76,10 +76,7 @@ impl App {
     };
     let Some(link) = links.get(index) else { return Vec::new() };
     let mut boxes: Vec<_> = link.boxes().map(|b| (page, b)).collect();
-    // The text view shows one page.
-    if !self.text_mode {
-      boxes.extend(crate::wraps::page_parts(&mut self.doc, page, link));
-    }
+    boxes.extend(crate::wraps::page_parts(&mut self.doc, page, link));
     boxes
   }
 

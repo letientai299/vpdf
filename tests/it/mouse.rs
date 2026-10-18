@@ -415,8 +415,13 @@ fn links_wrap_across_pages() -> Result<()> {
     // Whole mentions stay apart.
     (&[(0, 20, 20, ADDRESS), (1, 20, 180, ADDRESS)], 0, &[(0, 170.0)]),
   ];
-  for (step, (parts, page, want)) in cases.into_iter().enumerate() {
-    let (_directory, mut session) = open(|path| parts_pdf(path, parts), false)?;
+  let all = cases.into_iter().enumerate();
+  for (text_mode, (step, (parts, page, want))) in [false, true]
+    .into_iter()
+    .flat_map(|text| all.clone().map(move |c| (text, c)))
+  {
+    let pdf = |path: &Path| parts_pdf(path, parts);
+    let (_directory, mut session) = open(pdf, text_mode)?;
     let app = session.app();
     let links = app.doc.links(PageId(page))?;
     // The page's first part, by its text.
@@ -431,7 +436,14 @@ fn links_wrap_across_pages() -> Result<()> {
       .into_iter()
       .map(|(on, bounds)| (on.0, (bounds.y0 / 10.0).round() * 10.0))
       .collect();
-    assert_eq!(tinted, want, "case {step}");
+    assert_eq!(tinted, want, "case {step} text={text_mode}");
+    if text_mode {
+      // The text view tints each shown part.
+      let mut out = Vec::new();
+      app.text_canvas(&mut out)?;
+      let rows = String::from_utf8(out)?.matches("\x1b[0;4;36m").count();
+      assert_eq!(rows, want.len(), "case {step} rows");
+    }
   }
   Ok(())
 }
@@ -1092,11 +1104,11 @@ fn held_edge_steps_keep_pace() -> Result<()> {
   Ok(())
 }
 
-/// Held text drags step across pages.
+/// Held text drags step across pages; 16 pages overfill the view.
 #[test]
 fn held_text_edge_drags_keep_scrolling() -> Result<()> {
   let lines: &[&str] = &["One line of text", "Two lines of text", "Three"];
-  let pages = |path: &Path| common::pages_pdf(path, &[lines; 4]);
+  let pages = |path: &Path| common::pages_pdf(path, &[lines; 16]);
   let (_directory, mut session) = open(pages, true)?;
   let text = cell(&mut session, Hit::Text)?;
   let status = (text.0, session.app().screen.rows - 1);

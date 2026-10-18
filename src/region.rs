@@ -208,11 +208,13 @@ impl App {
 
   fn check_region(&mut self) {
     let Some(Region::Selected(selected)) = &self.region else { return };
+    let page = selected.page;
     let valid = self.doc.pages.get(selected.page.0).is_some_and(|page| {
       crate::layout::clip(selected.bounds, page.bounds).is_some()
     });
     let visible = if self.text_mode {
-      selected.page == self.navigation_position().page
+      let pages = self.text_pages();
+      pages.is_ok_and(|pages| pages.contains(&page.0))
     } else if valid {
       let rect =
         self.layout.project(selected.page, selected.bounds, self.reader.scroll);

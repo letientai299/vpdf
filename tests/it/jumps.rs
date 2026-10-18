@@ -450,6 +450,10 @@ fn jumps_land_near_the_top() -> Result<()> {
     (true, Jump::Outline, 0.0, on(0, 4, 0), Lands::Top),
     (true, Jump::Link, 0.0, on(0, 2, 0), Lands::Stays),
     (true, Jump::Link, 0.0, on(0, 2, 15), Lands::Stays),
+    // A page's last screenful lands too.
+    (true, Jump::Link, 0.0, on(0, 6, 0), Lands::Top),
+    (true, Jump::Outline, 0.0, on(0, 5, 0), Lands::Top),
+    (true, Jump::Link, 0.0, on(1, 0, 0), Lands::Top),
   ] {
     let case = format!("{kind:?} text {text_mode} from {start} to {at:?}");
     let (_dir, mut app) = landing_app(text_mode)?;

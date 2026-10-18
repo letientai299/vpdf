@@ -101,8 +101,7 @@ impl App {
   pub fn start_hints(&mut self, copy: bool) -> Result<()> {
     let mut found = Vec::new();
     let pages = if self.text_mode {
-      let page = self.navigation_position().page.0;
-      page..page + 1
+      self.text_pages()?
     } else {
       self.layout.visible(self.reader.scroll)
     };

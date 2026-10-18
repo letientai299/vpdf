@@ -149,7 +149,8 @@ impl App {
     // A text preview (`gx`) is the other pane's, not the document's mode.
     self.text_mode = other.preview.unwrap_or(other.text_mode);
     self.layout.reflow(&self.doc.pages);
-    self.reader.cursor = other.navigation_position();
+    let shown = other.navigation_position();
+    self.reader.cursor = crate::reader::clamp(shown, &mut self.doc)?;
     self.reader.cancel();
     self.target = None;
     self.reader.scroll = other.reader.scroll;
@@ -167,7 +168,7 @@ impl App {
     let page = PageId(entry.cursor.page.0.min(self.doc.pages.len() - 1));
     let cursor = Position { page, ..entry.cursor };
     self.reader.cursor = self.doc.text(page)?.clamp(cursor);
-    self.reader.scroll = self.layout.pages[page.0].top;
+    self.show_page(page)?;
     self.target = Some(self.reader.cursor);
     self.ensure_cursor()
   }
