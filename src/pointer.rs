@@ -514,14 +514,9 @@ impl Pointer {
     now: Instant,
   ) {
     self.turn = None;
-    let again = self.press.filter(|press| {
-      press.button == button
-        && press.alt == alt
-        && press.on == on
-        && !press.dragged
-        && press.near(mouse.column, mouse.row, pixel, click)
-        && now.saturating_duration_since(press.at) < CLICK
-    });
+    let again = self
+      .repeated(button, mouse, pixel, now)
+      .filter(|press| press.alt == alt && press.on == on);
     self.press = Some(Press {
       button,
       alt,
@@ -536,20 +531,37 @@ impl Pointer {
     });
   }
 
-  /// A repeated press, in any pane.
-  pub fn repeats(
+  /// The last press when one of `button` at `mouse` continues its run.
+  fn repeated(
     &self,
+    button: MouseButton,
     mouse: MouseEvent,
     pixel: Option<Pixel>,
     now: Instant,
-  ) -> bool {
-    let MouseEventKind::Down(button) = mouse.kind else { return false };
-    self.press.is_some_and(|press| {
+  ) -> Option<Press> {
+    self.press.filter(|press| {
       press.button == button
         && !press.dragged
         && press.near(mouse.column, mouse.row, pixel, click)
         && now.saturating_duration_since(press.at) < CLICK
     })
+  }
+
+  /// A repeated press, in any pane; it extends the run as a press would.
+  pub fn repeats(
+    &mut self,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    now: Instant,
+  ) -> bool {
+    let MouseEventKind::Down(button) = mouse.kind else { return false };
+    if self.repeated(button, mouse, pixel, now).is_none() {
+      return false;
+    }
+    if let Some(press) = &mut self.press {
+      press.at = now;
+    }
+    true
   }
 
   /// Whether a wheel turn continues the last one's gesture: at the same
@@ -920,6 +932,29 @@ mod tests {
     assert!(pointer.spot().is_some());
     pointer.leave();
     assert_eq!(pointer.spot(), None, "leaving forgets the spot");
+  }
+
+  #[test]
+  fn dropped_repeats_extend_the_run() {
+    let mut pointer = Pointer::default();
+    let start = Instant::now();
+    let at = |ms| start + Duration::from_millis(ms);
+    let middle = event(Down(MouseButton::Middle), 30, 10);
+    pointer.route(&PANES, 1, middle, None, at(0));
+    pointer.route(
+      &PANES,
+      1,
+      event(Up(MouseButton::Middle), 30, 10),
+      None,
+      at(20),
+    );
+    // Each repeat counts from the last, not the first press.
+    for ms in [200, 400, 600] {
+      assert!(pointer.repeats(middle, None, at(ms)), "{ms} ms");
+    }
+    assert!(!pointer.repeats(middle, None, at(1000)), "too slow");
+    let elsewhere = event(Down(MouseButton::Middle), 40, 10);
+    assert!(!pointer.repeats(elsewhere, None, at(1100)), "another cell");
   }
 
   #[test]

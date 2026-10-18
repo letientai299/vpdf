@@ -843,7 +843,8 @@ impl Session {
       app.relayout()?;
       self.focus(target.0, target.1)
     } else {
-      self.focus(source.0, source.1)
+      // A second middle press must still find its run.
+      self.keeping_pointer(|session| session.focus(source.0, source.1))
     }
   }
 

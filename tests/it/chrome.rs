@@ -266,7 +266,12 @@ fn mark_rows_of_other_documents_split_beside() -> Result<()> {
   status(&mut session)?;
   let at = cell(&mut session, Hit::Row(0))?;
   middle(&mut session, at)?;
-  middle(&mut session, at)?;
+  // A double click splits once; its second press is dropped.
+  let again =
+    mouse(&mut session, MouseEventKind::Down(MouseButton::Middle), at)?;
+  assert!(!again, "the repeat is dropped");
+  mouse(&mut session, MouseEventKind::Up(MouseButton::Middle), at)?;
+  session.settle()?;
   assert_eq!(panes(&mut session), (2, id, Some(PageId(1))));
   assert_eq!(session.app().at.column, 0, "the source stays left");
   Ok(())
@@ -393,6 +398,8 @@ fn boundary_presses_never_focus() -> Result<()> {
   // A held pan keeps the left button off boundaries.
   let before = layout(&mut session);
   left(&mut session, MouseEventKind::Down(MouseButton::Middle), (5, 30));
+  left(&mut session, MouseEventKind::Drag(MouseButton::Middle), (12, 34));
+  assert!(session.app().grabbing(), "the pan holds");
   left(&mut session, MouseEventKind::Down(MouseButton::Left), (5, 19));
   left(&mut session, MouseEventKind::Drag(MouseButton::Left), (5, 10));
   left(&mut session, MouseEventKind::Up(MouseButton::Middle), (5, 30));
@@ -893,5 +900,25 @@ fn outline_jumps_show_the_scrollbar() -> Result<()> {
   session.settle()?;
   drawn(&mut session)?;
   assert!(session.app().bar_until().is_some(), "followed rows show the bar");
+  Ok(())
+}
+
+#[test]
+fn outline_follows_show_the_scrollbar() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  let app = session.app();
+  app.layout.zoom = 3.0;
+  app.relayout()?;
+  keys(&mut session, "go")?;
+  drawn(&mut session)?;
+  let start = session.app().reader.scroll;
+  let later = std::time::Instant::now() + std::time::Duration::from_secs(9);
+  session.app().bar_expired(later);
+  press(&mut session, KeyCode::Enter)?;
+  session.settle()?;
+  drawn(&mut session)?;
+  let app = session.app();
+  assert_ne!(app.reader.scroll.to_bits(), start.to_bits(), "the row moves");
+  assert!(app.bar_until().is_some(), "followed rows show the bar");
   Ok(())
 }

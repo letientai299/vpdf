@@ -614,6 +614,14 @@ mod tests {
     tree.drag(0, 30, Rect { rows: 12, ..AREA });
     let rows: Vec<_> = rects(&tree).iter().map(|(_, r)| r.rows).collect();
     assert_eq!(rows, [40, 36, 4]);
+    // Unclamped nested splits keep exact ratios.
+    let mut tree = Node::Leaf(1);
+    tree.split(1, Axis::Columns, 2, Place::After);
+    tree.split(2, Axis::Columns, 3, Place::After);
+    tree.drag(0, 78, AREA);
+    tree.drag(0, 10, AREA);
+    let columns: Vec<_> = rects(&tree).iter().map(|(_, r)| r.columns).collect();
+    assert_eq!(columns, [10, 45, 44]);
   }
 
   #[test]
