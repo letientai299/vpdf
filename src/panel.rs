@@ -614,6 +614,15 @@ fn marked(
   style: &str,
 ) -> Result<()> {
   write!(out, "{style}")?;
+  let text =
+    if style.starts_with(theme::HOVER) || style.starts_with(theme::HOVER_DIM) {
+      let title = text.trim_start_matches(' ');
+      let indent = &text[..text.len() - title.len()];
+      write!(out, "\x1b[24m{indent}{style}")?;
+      title
+    } else {
+      text
+    };
   let mut written = 0;
   for (start, end) in crate::panel_search::ranges(text, query) {
     write!(
@@ -1201,6 +1210,18 @@ impl App {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn hover_skips_indentation() -> Result<()> {
+    for style in [theme::HOVER, theme::HOVER_DIM] {
+      let row = Row::parse("  Chapter");
+      let mut out = Vec::new();
+      assert_eq!(row.write(&mut out, style, 40, 0, "")?, 9);
+      let text = String::from_utf8(out)?;
+      assert!(text.contains(&format!("\x1b[24m  {style}Chapter")));
+    }
+    Ok(())
+  }
 
   #[test]
   fn counted_list_boundaries() {
