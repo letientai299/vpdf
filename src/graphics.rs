@@ -7,11 +7,14 @@ use crate::spool::Spool;
 use crate::terminal::graphics;
 use crate::text::Bounds;
 use crate::tiles::{Payload, TILE_HEIGHT, TILE_WIDTH, Tile, TileKey, encode};
+use base64::{Engine, engine::general_purpose::STANDARD};
+use flate2::read::ZlibDecoder;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::hash_map::RandomState;
 use std::fmt;
 use std::hash::{BuildHasher, Hasher};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
@@ -749,8 +752,18 @@ fn transmit(
   format: u8,
   encoded: &str,
 ) -> Result<()> {
-  let control = format!("a=t,f={format},o=z,i={id},q=2,s={width},v={height}");
-  crate::terminal::transmit(out, &control, encoded)
+  // iTerm2 rejects short compressed payloads.
+  let (compression, encoded) = if encoded.len() <= 20 {
+    let compressed = STANDARD.decode(encoded)?;
+    let mut pixels = Vec::new();
+    ZlibDecoder::new(compressed.as_slice()).read_to_end(&mut pixels)?;
+    ("", Cow::Owned(STANDARD.encode(pixels)))
+  } else {
+    ("o=z,", Cow::Borrowed(encoded))
+  };
+  let control =
+    format!("a=t,f={format},{compression}i={id},q=2,s={width},v={height}");
+  crate::terminal::transmit(out, &control, &encoded)
 }
 
 #[cfg(test)]
@@ -1047,6 +1060,29 @@ mod tests {
       graphics.place_at(&a, (0.0, 0.0), SCREEN, 0, &mut output)?;
       let q = quiet.to_string();
       assert!(has(&commands(&output)[0], &[("a", "p"), ("q", &q)]));
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn tiny_images_skip_compression() -> Result<()> {
+    for (count, compressed) in [(1, false), (14, false), (1000, true)] {
+      let pixels = [255, 0, 0, 128].repeat(count);
+      let mut output = Vec::new();
+      transmit(&mut output, 99, count as i32, 1, 32, &encode(&pixels)?)?;
+      let controls = commands(&output);
+      assert_eq!(controls[0].contains_key("o"), compressed);
+      let text = String::from_utf8(output)?;
+      let payload = text.split_once(';').unwrap().1.trim_end_matches("\x1b\\");
+      let bytes = STANDARD.decode(payload)?;
+      let actual = if compressed {
+        let mut decoded = Vec::new();
+        ZlibDecoder::new(bytes.as_slice()).read_to_end(&mut decoded)?;
+        decoded
+      } else {
+        bytes
+      };
+      assert_eq!(actual, pixels);
     }
     Ok(())
   }
