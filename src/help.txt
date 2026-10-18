@@ -105,7 +105,7 @@ P yy: yank row
 P q / gq: close panel
 gx: focus extracted-text presentation
 g? <F1>: this reference
-<Esc>: cancel transient or pending input first
+<Esc> / Ctrl-C: cancel transient or pending input first
 q: close panel, tab, or reader
 
 # Preview

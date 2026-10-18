@@ -348,3 +348,18 @@ fn cursor_panel_enter_returns_normal() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn control_c_keeps_reading_pane() -> Result<()> {
+  for mode in [b"iV".as_slice(), b"v", b"i", b""] {
+    let mut app = app("paper.pdf", false)?;
+    if !mode.is_empty() {
+      keys(&mut app, mode)?;
+    }
+    keys(&mut app, b"\x03")?;
+    assert!(!app.quit);
+    assert!(app.reader.selection.is_none());
+  }
+  Ok(())
+}

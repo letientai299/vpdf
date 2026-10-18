@@ -127,7 +127,9 @@ impl Keys {
 
   pub fn feed(&mut self, key: KeyEvent, grammar: Grammar) -> Option<Input> {
     let key = normalize(key);
-    if key.code == KeyCode::Esc {
+    if key.code == KeyCode::Esc
+      || key == KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)
+    {
       self.clear();
       return Some(self.finish(Action::Cancel));
     }
@@ -423,7 +425,7 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("o", Action::Swap, "other selection end"),
   ("gv", Action::Reselect, "reselect"),
   ("q", Action::Quit, "quit"),
-  ("C-c", Action::Quit, "quit"),
+  ("C-c", Action::Cancel, "cancel"),
   ("/", Action::Search(false), "search forward"),
   ("?", Action::Search(true), "search backward"),
   ("*", Action::WordSearch, "search cursor word"),
@@ -554,6 +556,18 @@ pub fn clues(prefix: &str) -> Vec<(String, &'static str)> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn control_c_cancels_pending_input() {
+    let mut keys = Keys::default();
+    keys.feed(key('y'), Grammar::Normal);
+    let cancel = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    assert_eq!(
+      keys.feed(cancel, Grammar::Objects).unwrap().action,
+      Action::Cancel
+    );
+    assert_eq!(keys.pending(), "");
+  }
 
   #[test]
   fn notation_matches_help() {
