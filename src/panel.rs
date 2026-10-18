@@ -1129,6 +1129,14 @@ impl App {
     if self.landed != Some(self.landed_view(cursor)) {
       return None;
     }
+    // Followed entries name themselves, even sharing a line.
+    if let Some((landed, target)) = &self.aimed
+      && self.landed == Some(*landed)
+      && let Some(index) =
+        self.doc.outline.iter().rposition(|heading| heading.target == *target)
+    {
+      return Some(index);
+    }
     let text = self.doc.text(cursor.page).ok()?;
     // Headings land on the glyph nearest their point, as `follow` does.
     self.doc.outline.iter().rposition(|heading| match heading.target {

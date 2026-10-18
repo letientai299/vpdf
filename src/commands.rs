@@ -554,6 +554,7 @@ impl App {
     // Points land where they aim.
     if point.is_some() {
       self.land_at(position)?;
+      self.aimed = self.landed.map(|landed| (landed, target.clone()));
     } else {
       self.go_to(position, true)?;
     }

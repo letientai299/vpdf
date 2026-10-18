@@ -389,7 +389,12 @@ impl App {
       return crate::statusline::prompt(out, prompt, self.screen, self.at);
     }
     // After the panel, which finds clipped rows.
-    let detail = self.sweep_hint().or_else(|| self.hover_detail());
+    // Hidden details cost nothing.
+    let detail = if self.shows_detail() {
+      self.sweep_hint().or_else(|| self.hover_detail())
+    } else {
+      None
+    };
     if let Some(clues) = &self.clues {
       let (labels, grid, keys) = self.clue_grid(clues);
       let bottom = (self.at, row - 1);

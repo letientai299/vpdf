@@ -240,8 +240,7 @@ impl App {
     };
     let section =
       self.current_section.map(|index| self.doc.outline[index].title.trim());
-    let quiet = covered || self.message_passed();
-    let detail = detail.filter(|_| quiet && self.error.is_none());
+    let detail = detail.filter(|_| self.shows_detail());
     let (message, style) = match (&self.error, section) {
       (Some(error), _) => (error.as_str(), theme::ERROR),
       (None, _) if let Some(detail) = detail => (detail, theme::BAR),
@@ -263,6 +262,11 @@ impl App {
     line.style = style;
     line.tabs = Some(tabs);
     Ok(line)
+  }
+
+  /// Whether a detail would show: no error, and the message yields.
+  pub(crate) fn shows_detail(&self) -> bool {
+    self.error.is_none() && (self.covered() || self.message_passed())
   }
 
   /// Whether the message yields to hover details: none, or the pointer
@@ -495,23 +499,15 @@ mod tests {
       let outline = app.doc.outline.clone();
       for (index, heading) in outline.iter().enumerate() {
         // Page targets go to the page top; nothing lands.
-        let Target::Point { page, .. } = heading.target else { continue };
+        let Target::Point { .. } = heading.target else { continue };
         app.follow(&heading.target)?;
         app.track_outline();
         let Some(section) = app.current_section else {
           panic!("{name} {index}: no section");
         };
-        // Headings that land on one line share it.
-        let text = app.doc.text(page)?;
-        let landed = |target: &Target| match *target {
-          Target::Point { page: on, x, y } if on == page => {
-            Some(text.nearest(page, x, y).line)
-          }
-          _ => None,
-        };
-        let (at, want) =
-          (landed(&outline[section].target), landed(&heading.target));
-        assert_eq!(at, want, "{name} {index}: {:?}", heading.title);
+        // Duplicate entries share a target.
+        let target = &outline[section].target;
+        assert_eq!(*target, heading.target, "{name} {index}: {section}");
       }
     }
     Ok(())

@@ -113,6 +113,8 @@ pub struct App {
   pub landing: Option<crate::marks::Landing>,
   /// Last landed view, for `]]`.
   pub(crate) landed: Option<crate::marks::Landed>,
+  /// The followed target of a landed view.
+  pub(crate) aimed: Option<(crate::marks::Landed, crate::document::Target)>,
   pub layout: Layout,
   pub graphics: Graphics,
   pub worker: RenderWorker,
@@ -228,6 +230,7 @@ impl App {
       target: None,
       landing: None,
       landed: None,
+      aimed: None,
       layout,
       graphics: Graphics::default(),
       worker,

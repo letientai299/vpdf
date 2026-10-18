@@ -214,15 +214,16 @@ impl App {
     let anchor = text
       .map_or_else(String::new, |text| text.in_areas(page, &[link.bounds]).1);
     let context = match link.target {
-      Target::Page(page) | Target::Point { page, .. } if reference(&anchor) => {
-        self
-          .doc
-          .text(page)
-          .ok()
-          .map_or_else(String::new, |text| excerpt(&text, &link.target))
-      }
-      _ => String::new(),
+      Target::Page(page) | Target::Point { page, .. } => self
+        .doc
+        .text(page)
+        .ok()
+        .map_or_else(String::new, |text| excerpt(&text, &link.target)),
+      Target::Uri(_) => String::new(),
     };
+    if !cites(&anchor, &context) {
+      return (anchor, String::new());
+    }
     (anchor, context)
   }
 }
@@ -256,9 +257,22 @@ fn wraps(a: Bounds, b: Bounds) -> bool {
   below && lower.y0 - upper.y1 < height && lower.x0 <= upper.x0 + 1.0
 }
 
-fn reference(anchor: &str) -> bool {
-  anchor.chars().filter(|ch| ch.is_alphabetic()).take(3).count() < 3
+/// Whether `anchor` cites what `context` starts: a number, a bracket,
+/// or the author the entry starts with.
+fn cites(anchor: &str, context: &str) -> bool {
+  let numeric = anchor.chars().filter(|ch| ch.is_alphabetic()).take(3).count();
+  numeric < 3
     || anchor.starts_with('[') && anchor.ends_with(']')
+    || leads(anchor, context)
+}
+
+/// Whether both start with the same word.
+fn leads(anchor: &str, context: &str) -> bool {
+  let word = |text: &str| -> String {
+    text.chars().take_while(|ch| ch.is_alphabetic()).collect()
+  };
+  let first = word(anchor);
+  !first.is_empty() && first == word(context)
 }
 
 pub(crate) fn excerpt(text: &Text, target: &Target) -> String {
@@ -281,13 +295,14 @@ pub(crate) fn excerpt(text: &Text, target: &Target) -> String {
   context.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// The line nearest a point, among those not wholly above it:
+/// The line nearest a point, among those not mostly above it:
 /// reference targets sit in the gap above their entry, often nearer
 /// the heading over the first one.
 fn below(text: &Text, x: f32, y: f32) -> Option<usize> {
   let lines = text.lines.iter().enumerate();
   let scored = lines.filter_map(|(index, line)| {
-    let span = line.span().filter(|span| span.y1 > y)?;
+    // Anchors can sit inside the line above, not past its middle.
+    let span = line.span().filter(|span| span.y0 + span.y1 >= 2.0 * y)?;
     let dx = (span.x0 - x).max(0.0).max(x - span.x1);
     let dy = (span.y0 - y).max(0.0);
     Some((index, dx * dx + 4.0 * dy * dy))
@@ -330,7 +345,10 @@ fn cited(anchor: &str, context: String) -> String {
   if context.is_empty() {
     return context;
   }
-  if anchor.is_empty() || context.starts_with(&format!("[{anchor}]")) {
+  if anchor.is_empty()
+    || context.starts_with(&format!("[{anchor}]"))
+    || leads(anchor, &context)
+  {
     context
   } else if let Some(rest) = context
     .strip_prefix(anchor)
@@ -472,7 +490,7 @@ mod tests {
       ("[Smith, 2020]", true),
       ("Introduction", false),
     ] {
-      assert_eq!(reference(anchor), expected);
+      assert_eq!(cites(anchor, "Unrelated text"), expected);
     }
   }
 
@@ -512,6 +530,36 @@ mod tests {
       "† Equal contribution Authors listed together"
     );
     assert_eq!(excerpt(&Text::default(), &target), "");
+    // An anchor inside the line above starts below it.
+    let inside = Target::Point { page: PageId(0), x: 0.0, y: 8.0 };
+    assert_eq!(
+      excerpt(&text, &inside),
+      "† Equal contribution Authors listed together"
+    );
+  }
+
+  /// U21: numbers, brackets, and leading authors quote their entry.
+  #[test]
+  fn citations_quote_their_entry() {
+    let vaswani = "Vaswani, A., Shazeer, N. (2017). Attention is all you need.";
+    // (anchor, excerpt) -> label text, or None for the section
+    let cases = [
+      ("13", "[13] Sepp Hochreiter.", Some("[13] Sepp Hochreiter.")),
+      ("[2]", "Jimmy Ba.", Some("[2] Jimmy Ba.")),
+      ("Vaswani et al., 2017", vaswani, Some(vaswani)),
+      ("Section 3", "3 Model Architecture", None),
+      ("See the results", "Results heading", None),
+      (
+        "Ba",
+        "Ba, J. Layer normalization.",
+        Some("Ba, J. Layer normalization."),
+      ),
+    ];
+    for (anchor, context, label) in cases {
+      let quoted =
+        cites(anchor, context).then(|| cited(anchor, context.to_owned()));
+      assert_eq!(quoted.as_deref(), label, "{anchor}");
+    }
   }
 
   #[test]
