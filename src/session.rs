@@ -941,7 +941,8 @@ impl Session {
       }
       let left = self.leave_check();
       // Bare motion: a release got lost.
-      let dropped = self.app().drop_sweep() | self.app().drop_grab();
+      let app = self.app();
+      let dropped = app.drop_sweep() | app.drop_grab() | app.drop_scrub();
       let resized = self.resizing.take().is_some();
       return Ok(dropped || resized || seen || left);
     }
@@ -994,7 +995,8 @@ impl Session {
     // Per-pixel drags; edges scroll.
     let reading = |app: &App| {
       let menu = app.context_menu.as_ref().map(|menu| menu.selected);
-      let view = (app.view_key(), app.layout.pan.to_bits(), app.grabbing());
+      let held = (app.grabbing(), app.scrub_row());
+      let view = (app.view_key(), app.layout.pan.to_bits(), held);
       (app.reader.cursor, app.reader.selection, view, app.gesture, menu)
     };
     let before =
@@ -1643,6 +1645,7 @@ impl Session {
         app.landing = None;
         changed = true;
       }
+      changed |= app.bar_expired(now);
     }
     if !self.pointer.holding() {
       changed |= self.app().hover_preview(now);
@@ -2251,6 +2254,9 @@ fn idle(
     if let Some(landing) = &app.landing {
       wait = wait.min(landing.until.saturating_duration_since(Instant::now()));
     }
+    if let Some(until) = app.bar.until {
+      wait = wait.min(until.saturating_duration_since(Instant::now()));
+    }
   }
   if session.tab().panes.iter().any(|app| app.settling.is_some()) {
     wait = wait.min(crate::watch::SETTLE);
@@ -2404,6 +2410,24 @@ mod tests {
     for (step, (cell, want)) in steps.into_iter().enumerate() {
       assert_eq!(frame(&mut session, cell)?, want, "shown again, step {step}");
     }
+    Ok(())
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn scrollbars_wake_and_hide() -> Result<()> {
+    let mut session = paper()?;
+    session.draw_frame(&mut Vec::new())?;
+    session.app().reader.scroll += 64.0;
+    session.draw_frame(&mut Vec::new())?;
+    let now = Instant::now();
+    let wait = idle(&mut session, now, now, false);
+    assert!(wait <= crate::scrollbar::SHOWN, "{wait:?}");
+    assert!(!session.notify(), "shown until the deadline");
+    let past = now.checked_sub(Duration::from_secs(1));
+    session.app().bar.until = past;
+    assert!(session.notify(), "the deadline draws a frame");
+    assert_eq!(session.app().bar_until(), None);
     Ok(())
   }
 

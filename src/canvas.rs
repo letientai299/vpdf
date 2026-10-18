@@ -149,6 +149,7 @@ impl App {
       && self.panel.is_none()
       && self.clues.is_none()
       && self.prompt.is_none()
+      && self.bar.scrub.is_none()
   }
 
   pub fn panel_focused(&self) -> bool {
@@ -368,6 +369,7 @@ impl App {
       self.text_canvas(out)?;
     } else {
       self.canvas(out)?;
+      self.draw_bar(out)?;
     }
     self.draw_hints(out)?;
     self.draw_preview(out)?;

@@ -179,6 +179,8 @@ pub enum Hit {
   },
   /// A clickable status item, clue, or completion.
   Chrome,
+  /// The page's scrollbar.
+  Scrollbar,
 }
 
 /// Overlays whose items the pointer picks.
@@ -220,7 +222,8 @@ impl Hit {
       | Self::Note { text: false, .. }
       | Self::Preview { follows: false }
       | Self::Item(_, None)
-      | Self::Card(_) => Shape::Default,
+      | Self::Card(_)
+      | Self::Scrollbar => Shape::Default,
       Self::Text | Self::Note { text: true, .. } => Shape::Text,
       Self::Link(..)
       | Self::Row(_)

@@ -554,7 +554,7 @@ fn placed_bottom(frame: &str, cell_height: u32) -> u32 {
 /// Opens a view of the pane, such as the overview.
 type Open = fn(&mut App) -> Result<()>;
 
-fn drawn(app: &mut App) -> Result<String> {
+pub(super) fn drawn(app: &mut App) -> Result<String> {
   let mut out = Vec::new();
   app.draw(&mut out)?;
   Ok(String::from_utf8_lossy(&out).into_owned())
@@ -795,6 +795,10 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
         assert_eq!(link, matches!(hit, Hit::Link(..)), "{at}");
         continue;
       }
+      if hit == Hit::Scrollbar {
+        assert_eq!(cell.0 + 1, app.screen.columns, "{at}");
+        continue;
+      }
       let expected = match hit {
         Hit::Link(page, index) => {
           let bounds = app.doc.links(page)?[index].bounds;
@@ -814,7 +818,8 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
         | Hit::Item(..)
         | Hit::Card(_)
         | Hit::Edge { .. }
-        | Hit::Chrome => false,
+        | Hit::Chrome
+        | Hit::Scrollbar => false,
       };
       assert!(expected, "{at}");
     }

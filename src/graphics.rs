@@ -548,11 +548,26 @@ impl Graphics {
     left: u16,
     out: &mut impl Write,
   ) -> Result<()> {
+    let rows = screen.rows.saturating_sub(1);
+    let cells = (0, screen.columns, rows);
+    self.stretch(color, 1, cells, screen, left, out)
+  }
+
+  /// One stretched pixel over cells.
+  pub fn stretch(
+    &mut self,
+    color: [u8; 4],
+    z: i32,
+    (column, columns, rows): (u16, u16, u16),
+    screen: Screen,
+    left: u16,
+    out: &mut impl Write,
+  ) -> Result<()> {
     let Some(id) = self.solid((color, 1, 1), out)? else { return Ok(()) };
     self.placed += 1;
-    let rows = screen.rows.saturating_sub(1);
-    let control = format_args!("z=1,c={},r={rows}", screen.columns);
-    let rect = Bounds { x0: 0.0, y0: 0.0, x1: 1.0, y1: 1.0 };
+    let control = format_args!("z={z},c={columns},r={rows}");
+    let x = f32::from(column) * f32::from(screen.cell_width);
+    let rect = Bounds { x0: x, y0: 0.0, x1: x + 1.0, y1: 1.0 };
     self.put(out, (id, self.placed), control, rect, left, screen)
   }
 

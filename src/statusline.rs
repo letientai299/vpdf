@@ -130,12 +130,13 @@ impl App {
       | Hit::Preview { .. }
       | Hit::Item(..)
       | Hit::Edge { .. }
-      | Hit::Chrome => None,
+      | Hit::Chrome
+      | Hit::Scrollbar => None,
     }
   }
 
   /// A page's label and section.
-  fn page_line(&self, page: PageId) -> String {
+  pub(crate) fn page_line(&self, page: PageId) -> String {
     let label = self.doc.label(page);
     let section = crate::panel::section(&self.doc.outline, page, f32::MAX);
     match section.map(|index| self.doc.outline[index].title.trim()) {

@@ -59,6 +59,9 @@ Wheel: scroll the view, K preview, or note under the pointer
 Page <C-wheel>: zoom; keep the point under the pointer
 Page <S-wheel> / sideways wheel: pan a zoomed page or wide text
 Page middle drag: pan the PDF view both ways
+Scrollbar: shows on scroll or at the right edge
+Scrollbar click / drag: jump / scrub with a page label
+Scrollbar ticks: top-level headings, pages with matches
 
 # Select and yank
 v V: enter character / line V

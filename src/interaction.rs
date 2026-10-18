@@ -185,6 +185,7 @@ impl App {
 
   fn reflow_view(&mut self) -> Result<()> {
     let anchor = self.view_anchor();
+    let scrolled = self.reader.scroll;
     let size = |screen: Screen| {
       (screen.columns, screen.rows, screen.cell_width, screen.cell_height)
     };
@@ -214,9 +215,13 @@ impl App {
       self.reader.scroll = self.layout.clamp_scroll(self.reader.scroll);
       self.layout.pan =
         self.layout.pan.clamp(0.0, self.layout.pan_limit(anchor.0));
-      return Ok(());
+    } else {
+      self.restore_view(anchor);
     }
-    self.restore_view(anchor);
+    // Only user moves show the bar.
+    if self.bar.seen.is_some_and(|seen| seen.to_bits() == scrolled.to_bits()) {
+      self.bar.seen = Some(self.reader.scroll);
+    }
     Ok(())
   }
 
@@ -674,6 +679,7 @@ impl App {
     // Panes share one preview image; only the focused pane shows one.
     self.dismiss_overlay();
     self.hints = None;
+    self.drop_scrub();
     self.cancel_prompt()?;
     self.disarm();
     Ok(())
@@ -684,6 +690,10 @@ impl App {
     let Route { mouse, region, .. } = route;
     if matches!(mouse.kind, MouseEventKind::Down(_)) && self.dismiss_click()? {
       return Ok(());
+    }
+    // A new press means a lost release.
+    if matches!(mouse.kind, MouseEventKind::Down(_)) {
+      self.drop_scrub();
     }
     // An overlay opened mid-press keeps the release.
     if mouse.kind == MouseEventKind::Up(MouseButton::Middle)
@@ -732,6 +742,17 @@ impl App {
     }
     match mouse.kind {
       kind if Wheel::of(kind).is_some() => self.page_wheel(route),
+      MouseEventKind::Down(MouseButton::Left)
+        if self.on_bar(mouse.column) && mouse.modifiers.is_empty() =>
+      {
+        self.bar_mouse(&route)
+      }
+      MouseEventKind::Drag(MouseButton::Left)
+      | MouseEventKind::Up(MouseButton::Left)
+        if self.bar.scrub.is_some() =>
+      {
+        self.bar_mouse(&route)
+      }
       MouseEventKind::Down(MouseButton::Left)
         if mouse.modifiers.contains(KeyModifiers::ALT) =>
       {
@@ -1001,6 +1022,7 @@ impl App {
     glyph: GlyphAt,
   ) -> Result<Hit> {
     match region {
+      Region::Page if self.on_bar(column) => return Ok(Hit::Scrollbar),
       Region::Page if self.hints.is_some() => {
         if let Some(index) = self.items(List::Hints).at(column, row) {
           return Ok(Hit::Item(List::Hints, Some(index)));

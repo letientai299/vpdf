@@ -62,6 +62,7 @@ pub mod recent;
 mod reflow;
 pub mod region;
 pub mod render_worker;
+mod scrollbar;
 pub mod search_worker;
 mod section;
 pub mod selection;

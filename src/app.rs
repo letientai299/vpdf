@@ -185,6 +185,7 @@ pub struct App {
   pub(crate) rest: Option<crate::links::Rest>,
   /// The last frame showed the whole view: every visible tile placed.
   pub complete: bool,
+  pub(crate) bar: crate::scrollbar::Bar,
 }
 
 impl App {
@@ -276,6 +277,7 @@ impl App {
       hover: crate::pointer::Hit::Nothing,
       rest: None,
       complete: false,
+      bar: crate::scrollbar::Bar::default(),
     })
   }
 }

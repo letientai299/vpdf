@@ -643,3 +643,245 @@ fn section_clicks_select_their_entry() -> Result<()> {
   assert_ne!(app.current_section, Some(12));
   Ok(())
 }
+
+/// The draw of the focused pane alone.
+fn drawn(session: &mut Session) -> Result<String> {
+  crate::app::drawn(session.app())
+}
+
+/// Ctrl-o, back in history.
+fn back(session: &mut Session) -> Result<()> {
+  let key = crossterm::event::KeyEvent::new(
+    KeyCode::Char('o'),
+    crossterm::event::KeyModifiers::CONTROL,
+  );
+  session.app().key(key, &mut vpdf::prompt::History::default())
+}
+
+/// A PDF of `count` one-line pages.
+fn pages_pdf(path: &std::path::Path, count: usize) -> Result<()> {
+  let mut objects = vec![
+    "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+    String::new(),
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+  ];
+  let mut kids = Vec::new();
+  for page in 0..count {
+    let content = format!("BT /F1 18 Tf 20 170 Td (Page {page}) Tj ET");
+    kids.push(format!("{} 0 R", objects.len() + 1));
+    objects.push(format!(
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] \
+       /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
+      objects.len() + 2
+    ));
+    objects.push(format!(
+      "<< /Length {} >>\nstream\n{content}\nendstream",
+      content.len()
+    ));
+  }
+  objects[1] =
+    format!("<< /Type /Pages /Kids [{}] /Count {count} >>", kids.join(" "));
+  crate::common::write_pdf(path, &objects, "")
+}
+
+#[test]
+fn scrollbars_show_near_the_edge_and_after_scrolls() -> Result<()> {
+  for text_mode in [false, true] {
+    let (_directory, mut session) = session(text_mode)?;
+    let app = session.app();
+    let edge = app.screen.columns - 1;
+    let hit = app.hovered(Region::Page, edge, 5, None)?;
+    if text_mode {
+      assert_ne!(hit, Hit::Scrollbar, "text shows no bar");
+      continue;
+    }
+    assert_eq!(hit, Hit::Scrollbar);
+    // Resting, hovering, and scrolling frames.
+    // The track places in the last column.
+    let track = format!(";{}H\x1b_Ga=p", edge + 1);
+    assert!(!drawn(&mut session)?.contains(&track), "hidden at rest");
+    session.app().hover = Hit::Scrollbar;
+    assert!(drawn(&mut session)?.contains(&track), "shown near the edge");
+    session.app().hover = Hit::Nothing;
+    session.app().reader.scroll += 32.0;
+    assert!(drawn(&mut session)?.contains(&track), "shown after a scroll");
+    // Relayouts are no scrolls.
+    session.app().bar_expired(
+      std::time::Instant::now() + std::time::Duration::from_secs(9),
+    );
+    keys(&mut session, "go")?;
+    drawn(&mut session)?;
+    assert_eq!(session.app().bar_until(), None, "panels show no bar");
+    keys(&mut session, "q")?;
+    session.app().reader.scroll += 16.0;
+    drawn(&mut session)?;
+    let until = session.app().bar_until();
+    let later =
+      until.expect("a deadline") + std::time::Duration::from_millis(1);
+    assert!(session.app().bar_expired(later));
+    assert!(!session.app().bar_expired(later), "expires once");
+  }
+  Ok(())
+}
+
+#[test]
+fn track_presses_jump_and_drags_scrub() -> Result<()> {
+  use MouseEventKind::{Down, Drag, Up};
+  const L: MouseButton = MouseButton::Left;
+  let (_directory, mut session) = session(false)?;
+  let app = session.app();
+  let edge = app.screen.columns - 1;
+  let rows = app.screen.rows - 1;
+  let room = app.layout.total - app.layout.screen.height();
+  // Halfway presses jump halfway, recorded.
+  left(&mut session, Down(L), (edge, rows / 2));
+  let scroll = session.app().reader.scroll;
+  assert!((scroll / room - 0.5).abs() < 0.05, "{scroll} of {room}");
+  let label = drawn(&mut session)?;
+  assert!(label.contains(" p. "), "scrubs show a page label");
+  // Thumb presses grip; drags move it.
+  let (_directory, mut grabbed) = crate::mouse::session(false)?;
+  left(&mut grabbed, Down(L), (edge, 2));
+  assert_eq!(grabbed.app().reader.scroll, 0.0);
+  left(&mut grabbed, Drag(L), (edge, 4));
+  let total = grabbed.app().layout.total;
+  let moved = 32.0 / grabbed.app().layout.screen.height() * total;
+  assert!((grabbed.app().reader.scroll - moved).abs() < 0.5);
+  // Moved thumbs record a jump on release.
+  left(&mut grabbed, Up(L), (edge, 4));
+  back(&mut grabbed)?;
+  assert_eq!(grabbed.app().reader.scroll, 0.0);
+  // A lost release ends the scrub.
+  left(&mut grabbed, Down(L), (edge, 2));
+  assert!(left(&mut grabbed, MouseEventKind::Moved, (10, 10)));
+  assert!(!drawn(&mut grabbed)?.contains(" p. "));
+  // Drags reach the end; releases end.
+  left(&mut session, Drag(L), (edge, rows));
+  assert_eq!(session.app().reader.scroll, room);
+  left(&mut session, Drag(L), (0, 0));
+  assert_eq!(session.app().reader.scroll, 0.0, "drags off the track scrub");
+  left(&mut session, Drag(L), (edge, rows));
+  left(&mut session, Up(L), (edge, rows));
+  assert!(!drawn(&mut session)?.contains(" p. "));
+  assert_eq!(session.app().reader.selection, None, "no text selects");
+  // Ctrl-o returns from the jump.
+  back(&mut session)?;
+  assert_eq!(session.app().reader.scroll, 0.0);
+  Ok(())
+}
+
+#[test]
+fn long_documents_reach_both_ends() -> Result<()> {
+  use MouseEventKind::{Down, Drag, Up};
+  const L: MouseButton = MouseButton::Left;
+  let (_directory, mut session) =
+    crate::mouse::open(|path| pages_pdf(path, 60), false)?;
+  let app = session.app();
+  let (edge, rows) = (app.screen.columns - 1, app.screen.rows - 2);
+  let room = app.layout.total - app.layout.screen.height();
+  let cell = f32::from(app.screen.cell_height);
+  let size = app.layout.screen.height() / app.layout.total;
+  assert!(size * app.layout.screen.height() < cell, "a tiny thumb");
+  // (press, drag to) -> end scroll
+  let cases =
+    [((edge, rows), None, room), ((edge, 0), Some((edge, rows)), room)];
+  for (press, drag, want) in cases {
+    session.app().reader.scroll = 0.0;
+    left(&mut session, Down(L), press);
+    if let Some(to) = drag {
+      left(&mut session, Drag(L), to);
+    }
+    left(&mut session, Up(L), drag.unwrap_or(press));
+    assert_eq!(session.app().reader.scroll, want, "{press:?} {drag:?}");
+  }
+  // Cell presses touching a straddling thumb grip.
+  let height = session.app().layout.screen.height();
+  let top = 18.5 * cell;
+  session.app().reader.scroll = top / (height - cell) * room;
+  let partial = 18;
+  for row in [partial, partial + 1] {
+    let before = session.app().reader.scroll;
+    left(&mut session, Down(L), (edge, row));
+    left(&mut session, Up(L), (edge, row));
+    assert_eq!(session.app().reader.scroll, before, "row {row}");
+  }
+  Ok(())
+}
+
+#[test]
+fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
+  use MouseEventKind::{Down, Drag, Moved};
+  const L: MouseButton = MouseButton::Left;
+  let (_directory, mut session) = session(false)?;
+  let edge = session.app().screen.columns - 1;
+  // New searches redraw same-count ticks.
+  let hit = |page| {
+    let at = vpdf::text::Position { page: PageId(page), line: 0, glyph: 0 };
+    vpdf::search::Hit { first: at, last: at, excerpt: String::new() }
+  };
+  // Last-column placements: rows and crops.
+  let column = format!(";{}H\x1b_Ga=p", edge + 1);
+  let track = |frame: String| -> Vec<String> {
+    let parts = frame.split("\x1b[").filter(|part| part.contains(&column));
+    parts
+      .map(|part| part.split(",i=").next().unwrap_or("").to_owned())
+      .collect()
+  };
+  session.app().hover = Hit::Scrollbar;
+  session.app().search.hits = vec![hit(0)];
+  let first = track(drawn(&mut session)?);
+  session.app().search.hits = vec![hit(1)];
+  session.app().search.generation += 1;
+  assert_ne!(track(drawn(&mut session)?), first, "ticks follow the search");
+  session.app().hover = Hit::Nothing;
+  // Following an outline entry shows the bar.
+  session
+    .app()
+    .bar_expired(std::time::Instant::now() + std::time::Duration::from_secs(9));
+  keys(&mut session, "+++")?;
+  drawn(&mut session)?;
+  keys(&mut session, "go")?;
+  drawn(&mut session)?;
+  assert_eq!(session.app().bar_until(), None, "panels show no bar");
+  keys(&mut session, "q=")?;
+  // Pinned thumbs' labels follow the pointer.
+  session.app().reader.scroll = 0.0;
+  left(&mut session, Down(L), (edge, 3));
+  assert!(left(&mut session, Drag(L), (edge, 0)), "the label moves");
+  // Motionless presses end lost scrubs.
+  left(&mut session, Down(L), (5, 5));
+  assert!(!drawn(&mut session)?.contains(" p. "));
+  // Presses elsewhere end this pane's scrub.
+  session.app().command("vsplit")?;
+  session.settle()?;
+  let app = session.app();
+  let edge = app.at.column + app.screen.columns - 1;
+  let id = app.id;
+  left(&mut session, Down(L), (edge, 3));
+  left(&mut session, Moved, (edge, 3));
+  left(&mut session, Down(L), (edge + 10, 5));
+  let pane = session.tab().panes.iter_mut().find(|app| app.id == id);
+  let label = crate::app::drawn(pane.expect("the first pane"))?;
+  assert!(!label.contains(" p. "), "blurred panes end scrubs");
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn outline_jumps_show_the_scrollbar() -> Result<()> {
+  let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut session = Session::new(None);
+  session.open(&root.join("paper.pdf"), true, crate::focus::screen())?;
+  crate::common::outline_loaded(session.app())?;
+  drawn(&mut session)?;
+  keys(&mut session, "gojjjj")?;
+  drawn(&mut session)?;
+  session
+    .app()
+    .bar_expired(std::time::Instant::now() + std::time::Duration::from_secs(9));
+  press(&mut session, KeyCode::Enter)?;
+  session.settle()?;
+  drawn(&mut session)?;
+  assert!(session.app().bar_until().is_some(), "followed rows show the bar");
+  Ok(())
+}

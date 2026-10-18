@@ -43,6 +43,11 @@ pub const HINT_PICKED: &str = "\x1b[0;97;44m";
 /// Page-view fills under badge and bar cells.
 pub const BADGE_FILL: [u8; 4] = [60, 120, 230, 255];
 pub const BAR_FILL: [u8; 4] = [70, 70, 70, 255];
+/// Scrollbar track, thumb, and ticks.
+pub const TRACK: [u8; 4] = [128, 128, 128, 50];
+pub const THUMB: [u8; 4] = [110, 110, 110, 190];
+pub const HEADING_TICK: [u8; 4] = [60, 120, 230, 230];
+pub const MATCH_TICK: [u8; 4] = [255, 190, 30, 240];
 /// The hovered link's tint.
 pub const LINK: [u8; 4] = [40, 180, 220, 70];
 /// The hovered link in text mode.
