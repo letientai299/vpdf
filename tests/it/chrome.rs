@@ -896,6 +896,8 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
   // Hover marks a completion; the chosen one and the line stay.
   press(&mut session, KeyCode::Esc)?;
   keys(&mut session, ":tab")?;
+  // Lists, then chooses the first.
+  press(&mut session, KeyCode::Tab)?;
   press(&mut session, KeyCode::Tab)?;
   status(&mut session)?;
   let prompt = |session: &mut Session| {
@@ -905,6 +907,7 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
     (prompt.text.clone(), menu.labels[1].clone(), chosen)
   };
   let (text, label, chosen) = prompt(&mut session);
+  assert!(chosen.is_some(), "a chosen completion");
   let first = item_cell(&mut session, List::Completions, 0)?;
   let at = item_cell(&mut session, List::Completions, 1)?;
   mouse(&mut session, MouseEventKind::Moved, first)?;
@@ -913,7 +916,7 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
   assert!(mouse(&mut session, MouseEventKind::Moved, at)?, "a frame");
   let shown = drawn(&mut session)?;
   assert!(shown.contains(&pointed(&label)), "{shown:?}");
-  let marked = chosen.as_ref().is_none_or(|c| shown.contains(&badge(c)));
+  let marked = chosen.as_ref().is_some_and(|c| shown.contains(&badge(c)));
   assert!(marked, "{shown:?}");
   assert_eq!(prompt(&mut session), (text, label, chosen));
   Ok(())

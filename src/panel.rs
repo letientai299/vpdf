@@ -1206,14 +1206,17 @@ mod tests {
       |label: &str, line| Row::new(label.into(), String::new(), at(line));
     let twins = || vec![row("same", 1), row("same", 2)];
     let mut panel = Panel::new(PanelKind::Results, twins());
-    panel.selected = 1;
+    (panel.selected, panel.clicked) = (1, Some(0));
     panel.begin_search(false);
     let mut more = twins();
     more.insert(0, row("new", 0));
     assert!(panel.refill(more, ""));
-    assert_eq!(panel.selected, 2);
+    assert_eq!((panel.selected, panel.clicked), (2, Some(1)));
     panel.abort_search();
     assert_eq!(panel.selected, 2, "the origin moved too");
+    // A clicked row that leaves ends its double click.
+    panel.refill(vec![row("same", 2)], "");
+    assert_eq!(panel.clicked, None);
     // Web rows take two lines; `top` counts lines.
     let web = |n: usize| {
       let uri = Target::Uri(format!("https://example.com/{n}"));
