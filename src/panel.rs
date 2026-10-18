@@ -677,6 +677,9 @@ impl App {
       self.want_outline();
     }
     if self.panel.as_ref().is_some_and(|panel| panel.kind == kind) {
+      if kind == PanelKind::Links {
+        self.refill_panel(kind)?;
+      }
       if !self.panel_focused() {
         self.blur()?;
       }

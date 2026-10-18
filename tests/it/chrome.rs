@@ -1226,3 +1226,18 @@ fn match_count_opens_results() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn refocusing_links_refreshes_page() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  let app = session.app();
+  app.open_panel(vpdf::keys::PanelKind::Links)?;
+  app.panel.as_mut().unwrap().selected = 1;
+  app.open_panel(vpdf::keys::PanelKind::Links)?;
+  assert_eq!(app.panel.as_ref().unwrap().selected, 1);
+  crate::modes::keys(app, b"\ti")?;
+  app.command("2")?;
+  app.open_panel(vpdf::keys::PanelKind::Links)?;
+  assert!(app.panel.as_ref().unwrap().rows.is_empty());
+  Ok(())
+}
