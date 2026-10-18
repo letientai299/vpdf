@@ -88,6 +88,7 @@ impl App {
       Action::WordSearch => self.word_search()?,
       Action::Result(reverse) => self.next_result(reverse, input.count)?,
       Action::Follow => self.follow_cursor()?,
+      Action::OpenUrl => self.open_cursor_url()?,
       Action::Command => self.prompt = Some(Prompt::new(PromptKind::Command)),
       Action::Mark(name) => self.set_mark(name)?,
       Action::Hints(copy) => self.start_hints(copy)?,
@@ -475,6 +476,14 @@ impl App {
       Some(target) => self.follow(&target),
       None => Ok(()),
     }
+  }
+
+  fn open_cursor_url(&mut self) -> Result<()> {
+    let Some(position) = self.explicit_target()? else { return Ok(()) };
+    if let Some(target @ Target::Uri(_)) = self.link_target(position)? {
+      self.follow(&target)?;
+    }
+    Ok(())
   }
 
   /// Destination of the link covering the cursor glyph.

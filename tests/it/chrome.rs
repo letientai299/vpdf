@@ -1283,3 +1283,31 @@ fn split_mirrors_text_preview() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn gx_reuses_url_scheme_checks() -> Result<()> {
+  let (_directory, mut session) = session(false)?;
+  let app = session.app();
+  crate::modes::keys(app, b"igx")?;
+  assert_eq!(app.reader.cursor.page, PageId(0));
+  assert!(!app.text_mode);
+  app.show_panel(
+    vpdf::keys::PanelKind::Links,
+    vec![vpdf::panel::Row::new(
+      "unsafe".into(),
+      String::new(),
+      vpdf::panel::Destination::Link(vpdf::document::Target::Uri(
+        "file:///etc/passwd".into(),
+      )),
+    )],
+  )?;
+  assert!(
+    crate::modes::keys(app, b"gx")
+      .unwrap_err()
+      .to_string()
+      .contains("Unsupported link scheme")
+  );
+  app.command("text")?;
+  assert!(app.text_mode);
+  Ok(())
+}

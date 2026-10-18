@@ -589,7 +589,7 @@ fn splits_land_near_the_top() -> Result<()> {
       let app = session.app();
       super::common::outline_loaded(app)?;
       if text_mode {
-        // The document's mode, which splits copy; `gx` previews stay.
+        // Both panes keep the visible presentation.
         app.text_mode = true;
         app.relayout()?;
       }

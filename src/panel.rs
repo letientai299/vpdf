@@ -779,7 +779,7 @@ impl App {
     Ok(())
   }
 
-  /// Returns from `gx` to the view it replaced.
+  /// Returns from the text preview.
   pub fn close_text_preview(&mut self) -> Result<()> {
     if let Some(previous) = self.preview.take() {
       self.text_mode = previous;
@@ -863,6 +863,13 @@ impl App {
           panel.rows.get(panel.selected).map(|row| row.destination.clone())
         {
           self.preview_annotation(position, &annotation);
+        }
+      }
+      Action::OpenUrl => {
+        if let Some(Destination::Link(target @ Target::Uri(_))) =
+          panel.rows.get(panel.selected).map(|row| row.destination.clone())
+        {
+          self.follow(&target)?;
         }
       }
       Action::Follow => self.panel_follow(Action::Follow)?,

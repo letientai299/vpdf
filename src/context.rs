@@ -152,7 +152,7 @@ impl App {
     match (link, near) {
       (Some(Target::Uri(uri)), _) => {
         let follow = Command::Follow(Target::Uri(uri.clone()));
-        items.push(bound("Follow", Action::Follow, follow));
+        items.push(bound("Follow", Action::OpenUrl, follow));
         items.push(copy_address(uri));
       }
       (Some(target), near) => {
@@ -218,7 +218,9 @@ impl App {
       };
       if !matches!(destination, Destination::None) {
         let label = if covered { "Open" } else { "Follow" };
-        items.push(bound(label, Action::Follow, Command::Key(Action::Follow)));
+        let action =
+          if address.is_some() { Action::OpenUrl } else { Action::Follow };
+        items.push(bound(label, action, Command::Key(action)));
         if !panel.is_recent_view() {
           let keep = Command::Key(Action::Swap);
           items.push(bound("Follow, keep panel", Action::Swap, keep));

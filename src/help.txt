@@ -105,7 +105,8 @@ P yy: yank row
 <Tab><S-Tab>: toggle content / panel focus
 P q: close focused panel
 gq: close sidebar from either focus
-gx: focus extracted-text presentation
+gx: open URL at cursor or visible target
+:text: extracted-text preview; q returns
 g? <F1>: this reference
 <Esc> / Ctrl-C: cancel transient or pending input first
 q: close reading pane with content focus
