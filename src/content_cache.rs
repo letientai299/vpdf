@@ -76,14 +76,17 @@ fn provenance() -> String {
   )
 }
 
-fn path(root: &Path, alias: &Alias) -> PathBuf {
-  let mut name = alias.iter().fold(String::new(), |mut name, byte| {
+/// Lowercase hex of `bytes`.
+pub fn hex(bytes: &[u8]) -> String {
+  bytes.iter().fold(String::new(), |mut out, byte| {
     // Writing to a String cannot fail.
-    let _ = write!(name, "{byte:02x}");
-    name
-  });
-  name.push_str(".pack");
-  root.join(name)
+    let _ = write!(out, "{byte:02x}");
+    out
+  })
+}
+
+fn path(root: &Path, alias: &Alias) -> PathBuf {
+  root.join(format!("{}.pack", hex(alias)))
 }
 
 /// A pack opened for reading. Its open file keeps answering after the

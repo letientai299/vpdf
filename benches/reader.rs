@@ -1,11 +1,11 @@
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use std::hint::black_box;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
+use vpdf::content_cache::{alias, hex};
 use vpdf::document::{Document, extract};
 use vpdf::layout::Screen;
 use vpdf::motion::Motion;
@@ -62,8 +62,7 @@ struct Report {
 }
 
 fn document(path: &Path, page: usize) -> Result<Report> {
-  let bytes = std::fs::read(path)?;
-  let hash = format!("{:x}", Sha256::digest(&bytes));
+  let hash = hex(&alias(&mut std::fs::File::open(path)?)?);
   let open = measure(
     || {
       black_box(Document::open(path, "")?);

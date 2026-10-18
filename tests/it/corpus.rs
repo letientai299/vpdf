@@ -1,5 +1,6 @@
-use sha2::{Digest, Sha256};
+use std::fs::File;
 use std::path::PathBuf;
+use vpdf::content_cache::{alias, hex};
 use vpdf::{Result, document::Document, search, text::PageId};
 
 #[test]
@@ -40,8 +41,7 @@ fn public_documents() -> Result<()> {
   ];
   for (name, page, glyphs, expected) in cases {
     let path = root.join(name);
-    let bytes = std::fs::read(&path)?;
-    assert_eq!(format!("{:x}", Sha256::digest(&bytes)), expected);
+    assert_eq!(hex(&alias(&mut File::open(&path)?)?), expected);
     let mut doc = Document::open(&path, "")?;
     let text = doc.text(PageId(page))?;
     assert_eq!(
