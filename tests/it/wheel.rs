@@ -552,3 +552,36 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn clue_wheel_stays_in_overlay() -> Result<()> {
+  for count in [2, 100] {
+    let (_directory, mut session) = crate::mouse::session(false)?;
+    let app = session.app();
+    crate::modes::keys(app, b"g")?;
+    app.awaiting =
+      Some(Instant::now().checked_sub(Duration::from_secs(1)).unwrap());
+    assert!(app.clue_due());
+    app.clues.as_mut().unwrap().items =
+      (0..count).map(|i| (i.to_string(), "description".into())).collect();
+    let scroll = app.reader.scroll;
+    let row = app.screen.rows - 2;
+    let id = app.id;
+    for _ in 0..30 {
+      crate::mouse::mouse(&mut session, MouseEventKind::ScrollDown, (5, row))?;
+    }
+    let app = session.app();
+    let clues = app.clues.as_ref().unwrap();
+    let (_, grid, _) = app.clue_grid(clues);
+    assert_eq!(clues.top, grid.rows - grid.visible);
+    assert_eq!(app.reader.scroll, scroll);
+    assert!(app.animation.is_none());
+    assert_eq!(app.id, id);
+    for _ in 0..30 {
+      crate::mouse::mouse(&mut session, MouseEventKind::ScrollUp, (5, row))?;
+    }
+    assert_eq!(session.app().clues.as_ref().unwrap().top, 0);
+    assert_eq!(session.app().reader.scroll, scroll);
+  }
+  Ok(())
+}

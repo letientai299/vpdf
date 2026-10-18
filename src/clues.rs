@@ -13,6 +13,7 @@ pub const DELAY: Duration = Duration::from_millis(500);
 /// Shown clues: next key and what it does.
 pub struct Clues {
   pub items: Vec<(String, String)>,
+  pub top: usize,
 }
 
 impl App {
@@ -34,7 +35,7 @@ impl App {
     if items.is_empty() {
       return false;
     }
-    self.clues = Some(Clues { items });
+    self.clues = Some(Clues { items, top: 0 });
     true
   }
 
@@ -103,6 +104,16 @@ impl App {
     items
   }
 
+  pub(crate) fn scroll_clues(&mut self, rows: isize) {
+    let Some(clues) = &self.clues else { return };
+    let (_, grid, _) = self.clue_grid(clues);
+    let top =
+      grid.first.saturating_add_signed(rows).min(grid.rows - grid.visible);
+    if let Some(clues) = &mut self.clues {
+      clues.top = top;
+    }
+  }
+
   /// Rows the clues take above the status line.
   pub fn clue_rows(&self) -> u16 {
     self.clues.as_ref().map_or(0, |clues| {
@@ -138,7 +149,8 @@ impl App {
       .collect();
     let columns = usize::from(self.screen.columns);
     let limit = crate::grid::limit(self.screen);
-    let grid = crate::grid::layout(&labels, columns, limit, None);
+    let mut grid = crate::grid::layout(&labels, columns, limit, None);
+    grid.first = clues.top.min(grid.rows.saturating_sub(grid.visible));
     (labels, grid, keys)
   }
 }

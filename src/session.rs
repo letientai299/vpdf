@@ -1002,7 +1002,9 @@ impl Session {
     let focused = tab.panes[tab.focus].id;
     let route = self.pointer.route(&panes, focused, mouse, pixel, now);
     let gesture = wheel && self.pointer.turn(mouse, pixel, now);
-    let interrupts = pointer::interrupts(mouse.kind);
+    let interrupts = pointer::interrupts(mouse.kind)
+      && !(wheel
+        && route.as_ref().is_some_and(|route| route.region == Region::Overlay));
     let app = self.app();
     // Disarming changes the status line and hides clue rows.
     let armed = interrupts

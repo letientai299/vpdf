@@ -46,6 +46,7 @@ pub(crate) struct WheelView {
   /// List and card tops.
   panel: Option<(usize, usize)>,
   overview: Option<usize>,
+  clues: Option<usize>,
   preview: Option<i32>,
 }
 
@@ -749,6 +750,13 @@ impl App {
       // The status row's wheel scrolls the pane above it.
       Region::Status if wheel => return self.menu_wheel(route),
       Region::Panel => return self.panel_mouse(mouse, route.clicks),
+      Region::Overlay if wheel => {
+        if let Some(turn) = Wheel::of(mouse.kind) {
+          let step = if turn.forward() { 1 } else { -1 };
+          self.scroll_clues(step * WHEEL_ROWS as isize);
+        }
+        return Ok(());
+      }
       Region::Overlay | Region::Status | Region::Actions | Region::Edge => {
         return Ok(());
       }
@@ -888,6 +896,7 @@ impl App {
       }),
       overview: self.overview.as_ref().map(crate::overview::Overview::top),
       preview: self.preview_top(),
+      clues: self.clues.as_ref().map(|clues| clues.top),
     }
   }
 
