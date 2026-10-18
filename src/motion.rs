@@ -50,6 +50,12 @@ impl Reader {
     let mut lexical_boundary = false;
     if boundary {
       self.boundary(motion, count, explicit, source)?;
+    } else if motion == Motion::LineEnd {
+      for _ in 1..count {
+        self.step(1, true, source)?;
+      }
+      self.small_motion(motion, source)?;
+      self.desired = self.operator.is_none().then_some(usize::MAX);
     } else {
       for _ in 0..count {
         if matches!(motion, Motion::NextParagraph | Motion::PreviousParagraph) {

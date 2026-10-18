@@ -176,3 +176,33 @@ fn paragraphs_skip_blank_pages_and_yank_exclusively() -> Result<()> {
   assert_eq!(reader.pending_yank.take().unwrap().text, "last page");
   Ok(())
 }
+
+#[test]
+fn line_end_counts_and_goal() -> Result<()> {
+  let mut source = pages();
+  for visual in [false, true] {
+    let mut reader = Reader::default();
+    if visual {
+      reader.visual(SelectionKind::Character);
+    }
+    reader.motion(Motion::LineEnd, 2, true, &mut source)?;
+    assert_eq!((reader.cursor.line, reader.cursor.glyph), (1, 10));
+    reader.motion(Motion::Up, 1, false, &mut source)?;
+    assert_eq!(reader.cursor.glyph, 6);
+    reader.motion(Motion::Down, 1, false, &mut source)?;
+    assert_eq!(reader.cursor.glyph, 10);
+    if visual {
+      assert_eq!(reader.selection.unwrap().anchor, Position::default());
+    }
+  }
+  let mut reader = Reader::default();
+  reader.yank(2, 'a', &mut source)?;
+  reader.motion(Motion::LineEnd, 1, false, &mut source)?;
+  assert_eq!(
+    reader.registers.get(&'a').map(|value| &**value),
+    Some("one two\ncafé Straße")
+  );
+  assert_eq!(reader.cursor, Position::default());
+  assert_eq!(reader.desired, None);
+  Ok(())
+}
