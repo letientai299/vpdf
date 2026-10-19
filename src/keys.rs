@@ -86,7 +86,6 @@ pub enum Action {
   Zoom(i32),
   Fit,
   FitPage,
-  Pan(i32),
   Rotate,
   Crop,
 }
@@ -478,8 +477,6 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("-", Action::Zoom(-1), "zoom out"),
   ("=", Action::Fit, "fit width"),
   ("zf", Action::FitPage, "fit page"),
-  ("zh", Action::Pan(-1), "pan left"),
-  ("zl", Action::Pan(1), "pan right"),
   ("zr", Action::Rotate, "rotate clockwise"),
   ("zc", Action::Crop, "crop margins"),
   ("C-ws", Action::Window(W::Split(Axis::Rows)), "split above"),
@@ -567,6 +564,23 @@ pub fn clues(prefix: &str) -> Vec<(String, &'static str)> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn obsolete_pan_keys_are_unbound() {
+    for grammar in [Grammar::Normal, Grammar::Cursor, Grammar::Objects] {
+      for typed in ["zh", "zl", "4zh", "4zl"] {
+        let mut keys = Keys::default();
+        for ch in typed.chars() {
+          assert!(keys.feed(key(ch), grammar).is_none(), "{typed}");
+        }
+        assert_eq!(keys.pending(), "");
+        let input = keys.feed(key('l'), grammar).unwrap();
+        assert_eq!(input.action, Action::Motion(Motion::Right));
+        assert_eq!(input.count, 1);
+      }
+    }
+    assert!(clues("z").iter().all(|(key, _)| key != "h" && key != "l"));
+  }
 
   #[test]
   fn panel_yank_is_one_action() {

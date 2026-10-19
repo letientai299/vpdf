@@ -45,7 +45,6 @@ zt zz zb: target at top / middle / bottom
 + - =: zoom in / out / fit width
 zf: fit page
 zF: fit selected figure; reserve action bar
-zh zl: pan left / right
 zr: rotate clockwise
 zc: crop / restore page margins
 

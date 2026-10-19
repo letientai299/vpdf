@@ -663,11 +663,6 @@ impl App {
         self.layout.rotation = (self.layout.rotation + 90) % 360;
         self.relayout()?;
       }
-      Action::Pan(direction) => {
-        self.pan(
-          direction as f32 * count * f32::from(self.screen.cell_width) * 4.0,
-        )?;
-      }
       _ => return Ok(false),
     }
     Ok(true)
