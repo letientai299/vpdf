@@ -710,17 +710,16 @@ fn info_names_what_vpdf_set() {
   }
 }
 
-/// With focus events vpdf needs `all`, since tmux drops what a hidden
-/// pane sends under `on`, the deletes after a window switch included.
+/// Hidden-pane deletes require passthrough from invisible panes.
 #[test]
-fn passthrough_wanted_per_focus_events() {
+fn passthrough_allows_hidden_cleanup() {
   use Passthrough::{All, Off, On};
   let cases = [
     (Some(Off), true, Some(All)),
     (Some(On), true, Some(All)),
     (Some(All), true, None),
-    (Some(Off), false, Some(On)),
-    (Some(On), false, None),
+    (Some(Off), false, Some(All)),
+    (Some(On), false, Some(All)),
     (Some(All), false, None),
     (None, true, None),
   ];
@@ -972,5 +971,44 @@ fn cell_offsets_follow_outer_terminal() {
     assert_eq!(direct.cell_offsets(), expected);
     let mux = caps(tmux_with(Some(name)), &replies(&version("tmux 3.8")));
     assert_eq!(mux.cell_offsets(), expected);
+  }
+}
+
+#[test]
+fn wire_tmux_without_metadata() -> Result<()> {
+  let caps = caps(
+    Route::Direct,
+    &replies(&[version("tmux 3.8"), DA1.to_vec()].concat()),
+  );
+  assert_eq!(caps.host, Host::Tmux(None));
+  assert_eq!(caps.terminal(), None);
+  assert_eq!(caps.profile(), Profile::Unsupported(Lack::Tmux));
+  assert_eq!(caps.negotiate(|_| panic!("unverified keys"))?, None);
+  Ok(())
+}
+
+#[test]
+fn passthrough_reset_preserves_changes() {
+  use Passthrough::{All, Off, On};
+  use std::cell::Cell as State;
+  for (changed, current, expected) in [
+    (Some(All), Some(All), Some(On)),
+    (Some(All), Some(Off), Some(Off)),
+    (Some(All), Some(On), Some(On)),
+    (Some(All), None, None),
+    (None, Some(All), Some(All)),
+  ] {
+    let state = State::new(current);
+    let queried = State::new(false);
+    reset_passthrough_with(
+      changed,
+      || {
+        queried.set(true);
+        state.get()
+      },
+      |value| state.set(Some(value)),
+    );
+    assert_eq!(state.get(), expected);
+    assert_eq!(queried.get(), changed == Some(All));
   }
 }

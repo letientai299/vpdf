@@ -141,11 +141,12 @@ it, so the menu also teaches the keyboard.
 Kitty keeps Shift-click and Shift-drag for its own selection while a program
 uses the mouse; see its [mouse actions][kitty-mouse]. `:mouse off` hands every
 click and drag to the terminal, so its selection works without a modifier;
-`:mouse on` takes the pointer back. Under tmux they go to tmux: with its
-`mouse` option on, a drag selects in tmux's copy mode; with it off, the outer
-terminal selects. The choice holds across child programs,
-such as the prompt editor, and shows in `:info`. macOS can turn Ctrl-click into
-a right click; no gesture uses Ctrl-click.
+`:mouse on` takes the pointer back. Under tmux they go to tmux: with its `mouse`
+option on, a drag selects in tmux's copy mode; with it off, the outer terminal
+selects. For Alt-drag capture, tmux may need the optional
+[forwarding binding][tmux-drag]. The choice holds across child programs, such as
+the prompt editor, and shows in `:info`. macOS can turn Ctrl-click into a right
+click; no gesture uses Ctrl-click.
 
 Known limits:
 
@@ -224,3 +225,4 @@ text clipboard support alone does not imply image support. See
 [terminal]: install.md#terminal-setup
 [kitty-mouse]: https://sw.kovidgoyal.net/kitty/conf/#mouse-actions
 [mouse]: #mouse
+[tmux-drag]: install.md#alt-drag-under-tmux

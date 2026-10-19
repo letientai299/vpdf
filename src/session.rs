@@ -112,6 +112,8 @@ pub struct Session {
   /// Set while a resize could not measure cells.
   unmeasured: Option<Unmeasured>,
   sight: Sight,
+  observer: Option<crate::tmux::Observer>,
+  observed: Option<crate::tmux::Snapshot>,
   rehover: Rehover,
   image_write: Option<ImageWrite>,
   /// The drag over the window, OSC 72.
@@ -240,6 +242,8 @@ impl Session {
       pointer: Pointer::default(),
       unmeasured: None,
       sight: Sight::Focused,
+      observer: None,
+      observed: None,
       rehover: Rehover::Settled,
       image_write: None,
       drops: crate::dnd::Drops::default(),
@@ -1658,6 +1662,7 @@ impl Session {
   /// would cover, and holds frames until tmux shows the pane again.
   pub fn hide(&mut self, out: &mut impl Write) -> Result<()> {
     self.sight = Sight::Hidden;
+    write!(out, "{}", terminal::frame_end())?;
     self.release_pointer(out)?;
     if self.tabs.is_empty() {
       return self.home.as_mut().map_or(Ok(()), |home| home.release(out));
@@ -1901,19 +1906,67 @@ impl Session {
     if !terminal::images_lost() {
       return Ok(false);
     }
-    self.perf.invalidate();
-    crate::graphics::release(out)?;
-    self.app().graphics.lost();
-    // The child program read the mouse.
-    self.pointer.leave();
-    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
-      app.requested.clear();
-      app.blank = false;
-    }
+    self.lose_images(out)?;
     if terminal::focus_reports() {
       self.look(Cause::Start, out)?;
     }
     Ok(true)
+  }
+
+  fn lose_images(&mut self, out: &mut impl Write) -> Result<()> {
+    self.perf.invalidate();
+    crate::graphics::release(out)?;
+    if !self.tabs.is_empty() {
+      self.app().graphics.lost();
+    }
+    if let Some(home) = &mut self.home {
+      home.images_lost();
+    }
+    self.drop_pointer();
+    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+      app.requested.clear();
+      app.blank = false;
+    }
+    Ok(())
+  }
+
+  fn observe(&mut self, out: &mut impl Write) -> Result<bool> {
+    let Some(next) =
+      self.observer.as_ref().and_then(super::tmux::Observer::take)
+    else {
+      return Ok(false);
+    };
+    self.observation(next, out)
+  }
+
+  fn observation(
+    &mut self,
+    next: crate::tmux::Snapshot,
+    out: &mut impl Write,
+  ) -> Result<bool> {
+    let initial = self.observed.is_none();
+    let lost =
+      self.observed.as_ref().is_some_and(|old| old.clients != next.clients);
+    let returned = self
+      .observed
+      .as_ref()
+      .is_some_and(|old| old.view == View::Hidden && next.view != View::Hidden);
+    if lost {
+      self.lose_images(out)?;
+    }
+    let cause =
+      if initial || returned || lost { Cause::Start } else { Cause::Tick };
+    let dirty = self.turn(sight(self.sight, cause, next.view), out)?;
+    let resized = if let Some(screen) = next.screen
+      && self.screen != Some(screen)
+    {
+      self.resize(screen)?;
+      true
+    } else {
+      false
+    };
+    self.observed = Some(next);
+    Ok(dirty || resized || lost)
   }
 
   fn draw_home(&mut self, home: &mut Home, out: &mut impl Write) -> Result<()> {
@@ -2125,6 +2178,7 @@ pub fn view(paths: &[PathBuf], page: Option<usize>) -> Result<()> {
   )?;
   terminal::restore_on_panic();
   let (_terminal, screen) = crate::gate::enter()?;
+  session.observer = crate::tmux::Observer::start();
   // Before any pane sizes its image budget or reads input; a spool that
   // fails to start leaves tiles encoded.
   let _ = crate::spool::start(crate::graphics::session());
@@ -2348,6 +2402,7 @@ fn run(session: &mut Session) -> Result<()> {
       report(session, resized);
       dirty = true;
     }
+    dirty |= session.observe(&mut out)?;
     if session.tabs.is_empty() {
       session.home(&mut out)?;
       dirty = true;
@@ -2436,7 +2491,7 @@ impl Chores {
       self.watched = Instant::now();
     }
     dirty |= watch(session, force);
-    if force && session.sight != Sight::Focused {
+    if force && session.observer.is_none() && session.sight != Sight::Focused {
       dirty |= session.look(Cause::Tick, out)?;
     }
     // Positions reach memory 250 ms after a change and disk after a
@@ -2960,6 +3015,70 @@ mod tests {
     for (now, cause, view, want) in cases {
       assert_eq!(sight(now, cause, view), want, "{now:?} {cause:?} {view:?}");
     }
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn client_changes_preserve_positions() -> Result<()> {
+    let mut session = paper()?;
+    session.app().command("vsplit")?;
+    session.settle()?;
+    session.app().command("3")?;
+    let before: Vec<_> = session
+      .tabs
+      .iter()
+      .flat_map(|tab| &tab.panes)
+      .map(App::navigation_position)
+      .collect();
+    let snapshot = |pid| {
+      crate::tmux::parse(&format!("$0\t@0\tfocused\n{pid}:100:$0:@0:9:26:0;\n"))
+        .unwrap()
+    };
+    session.observation(snapshot(10), &mut Vec::new())?;
+    let pane = session.app().id;
+    session.resizing = Some(Edge::Panel(pane));
+    assert!(session.observation(snapshot(11), &mut Vec::new())?);
+    let after: Vec<_> = session
+      .tabs
+      .iter()
+      .flat_map(|tab| &tab.panes)
+      .map(App::navigation_position)
+      .collect();
+    assert_eq!(after, before);
+    assert_eq!(session.resizing, None);
+    assert!(!session.observation(snapshot(11), &mut Vec::new())?);
+    Ok(())
+  }
+
+  #[test]
+  fn observations_recover_without_focus() -> Result<()> {
+    let mut session = Session::new(None);
+    let snapshot = |view, clients: &str| {
+      crate::tmux::parse(&format!("$0\t@0\t{view}\n{clients}\n")).unwrap()
+    };
+    let client = "10:100:$0:@0:9:26:0;";
+    let mut output = Vec::new();
+    session.observation(snapshot("focused", client), &mut output)?;
+    assert_eq!(session.sight, Sight::Focused);
+    session.observation(snapshot("hidden", client), &mut output)?;
+    assert_eq!(session.sight, Sight::Hidden);
+    assert!(output.starts_with(terminal::frame_end().as_bytes()));
+    assert!(session.observation(snapshot("focused", client), &mut output)?);
+    assert_eq!(session.sight, Sight::Focused);
+    session.observation(snapshot("inactive", client), &mut output)?;
+    assert_eq!(session.sight, Sight::Unfocused);
+    assert!(!session.observation(snapshot("inactive", client), &mut output)?);
+    session.observation(snapshot("hidden", ""), &mut output)?;
+    assert_eq!(session.sight, Sight::Hidden);
+    let replacement = "11:100:$0:@0:9:26:0;";
+    assert!(
+      session.observation(snapshot("focused", replacement), &mut output)?
+    );
+    assert_eq!(session.sight, Sight::Focused);
+    assert!(
+      !session.observation(snapshot("focused", replacement), &mut output)?
+    );
+    Ok(())
   }
 
   /// Entering `Hidden` hides; leaving it asks for a frame.

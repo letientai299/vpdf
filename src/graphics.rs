@@ -1077,6 +1077,38 @@ mod tests {
   }
 
   #[test]
+  fn loss_keeps_encoded_tiles() -> Result<()> {
+    let mut graphics = Graphics::default();
+    let key = tile(&mut graphics, 0)?;
+    let payload = Payload::Encoded(encode(&[255; 64 * 64 * 3])?.into());
+    graphics.keep(Tile { key, payload, render_ms: 0.0 });
+    let rect = Bounds { x0: 0.0, y0: 0.0, x1: 4.0, y1: 4.0 };
+    let frame = |graphics: &mut Graphics| -> Result<Vec<u8>> {
+      let mut output = Vec::new();
+      graphics.begin(&mut output)?;
+      graphics.place_at(&key, (0.0, 0.0), SCREEN, 0, &mut output)?;
+      graphics.highlight(rect, [3; 4], SCREEN, 0, &mut output)?;
+      graphics.picture(7, (2, 2, &[0; 12]), rect, SCREEN, 0, &mut output)?;
+      graphics.end(&mut output)?;
+      Ok(output)
+    };
+    frame(&mut graphics)?;
+    let cached = graphics.stored.entries().count();
+    graphics.lost();
+    assert_eq!(graphics.stored.entries().count(), cached);
+    assert!(!graphics.contains(&key));
+    assert_eq!(graphics.shown, []);
+    assert!(graphics.solids.is_empty());
+    let uploaded = frame(&mut graphics)?;
+    let commands = commands(&uploaded);
+    assert_eq!(commands.iter().filter(|c| has(c, &[("a", "t")])).count(), 3);
+    let reused = frame(&mut graphics)?;
+    assert!(!String::from_utf8_lossy(&reused).contains("a=t,"));
+    assert!(graphics.contains(&key));
+    Ok(())
+  }
+
+  #[test]
   fn placements_report_errors_only_when_asked() -> Result<()> {
     for quiet in [1, 2] {
       let mut graphics = Graphics { quiet, ..Graphics::default() };

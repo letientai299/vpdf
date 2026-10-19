@@ -183,6 +183,7 @@ Hold drag past top / bottom edge: scroll; faster farther with pixels
 <M-click> off a figure: extend selection or start V
 <M-click> on a figure: pick it and open actions
 <M-drag>: capture a region; release opens actions
+tmux may consume <M-drag>; configure conditional forwarding
 Actions hover / click: choose / run
 Hint hover / click: pick a label / act on it
 P click: follow; keep panel focus

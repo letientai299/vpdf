@@ -82,6 +82,7 @@ pub mod terminal;
 mod text_canvas;
 mod theme;
 pub mod tiles;
+mod tmux;
 pub mod trace;
 pub mod watch;
 mod wraps;

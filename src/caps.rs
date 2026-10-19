@@ -281,17 +281,11 @@ impl Tmux {
     !self.version.is_empty() && self.version[..] < release[..]
   }
 
-  /// The `allow-passthrough` vpdf's pane needs; None when it has it, or
-  /// when tmux predates the option. With focus events, `all`: `on` drops
-  /// what a hidden pane sends, so placements would outlive a window
-  /// switch.
+  /// Hidden-pane cleanup needs `all` passthrough.
   fn wanted(&self) -> Option<Passthrough> {
-    let wanted =
-      if self.focus_events { Passthrough::All } else { Passthrough::On };
     match self.passthrough? {
       Passthrough::All => None,
-      current if current == wanted => None,
-      _ => Some(wanted),
+      Passthrough::Off | Passthrough::On => Some(Passthrough::All),
     }
   }
 }
@@ -328,8 +322,22 @@ fn set_passthrough(tmux: &Tmux) -> Option<String> {
 /// still passes the exit's deletes from a shown pane, whichever tmux
 /// takes first.
 pub fn reset_passthrough() {
-  if PASSTHROUGH.get() == Some(&Passthrough::All) {
-    crate::terminal::tmux_set("allow-passthrough", "on");
+  reset_passthrough_with(
+    PASSTHROUGH.get().copied(),
+    || tmux_now()?.passthrough,
+    |value| {
+      crate::terminal::tmux_set("allow-passthrough", &value.to_string());
+    },
+  );
+}
+
+fn reset_passthrough_with(
+  changed: Option<Passthrough>,
+  current: impl FnOnce() -> Option<Passthrough>,
+  set: impl FnOnce(Passthrough),
+) {
+  if changed == Some(Passthrough::All) && current() == changed {
+    set(Passthrough::On);
   }
 }
 
@@ -693,6 +701,11 @@ fn caps(route: Route, replies: &[Reply]) -> Caps {
       _ => None,
     }),
   };
+  if matches!(caps.host, Host::Direct(_))
+    && is(caps.version.as_deref(), &["tmux"])
+  {
+    caps.host = Host::Tmux(None);
+  }
   // Ghostty sets shapes but never answers.
   if is(caps.terminal(), &["ghostty"]) && caps.pointer == Support::Missing {
     caps.pointer = Support::Named;
@@ -739,12 +752,12 @@ fn cell(width: u32, height: u32) -> Option<Cell> {
 
 /// Formats `tmux display` expands for `Tmux`, tab-separated. Option
 /// names expand to the pane's value, inherited as `show -A` does.
-const TMUX_FORMAT: &str = "#{version}\t#{client_termtype}\t\
+pub(crate) const TMUX_FORMAT: &str = "#{version}\t#{client_termtype}\t\
   #{client_cell_width}\t#{client_cell_height}\t#{allow-passthrough}\t\
   #{extended-keys}\t#{focus-events}\t#{pane_left}\t#{pane_top}\t\
   #{window_offset_x}\t#{window_offset_y}\t#{status-position}\t#{status}";
 
-fn tmux(display: &str) -> Option<Tmux> {
+pub(crate) fn tmux(display: &str) -> Option<Tmux> {
   let fields: Vec<&str> = display.trim_end_matches('\n').split('\t').collect();
   let [
     version,

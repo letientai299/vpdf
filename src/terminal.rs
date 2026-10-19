@@ -328,9 +328,8 @@ fn tmux_setup(caps: &Caps, tmux: &crate::caps::Tmux) -> Result<()> {
 fn tmux_notices(caps: &Caps, passthrough: Option<String>) -> Vec<String> {
   let mut notices = Vec::from_iter(passthrough);
   if matches!(&caps.host, Host::Tmux(Some(tmux)) if !tmux.focus_events) {
-    notices.push(
-      "tmux focus-events off: images, shapes outlast window switches".into(),
-    );
+    notices
+      .push("tmux focus-events off: pointer cleanup waits for polling".into());
   }
   if caps.merges_ctrl_i() {
     notices.push("Ctrl-i is Tab under tmux in Kitty".into());
@@ -560,8 +559,21 @@ pub fn remeasure() -> Result<Screen> {
 fn screen(window: &WindowSize) -> Result<Screen> {
   // One `tmux display` gives the pane's origin and the client's cell.
   let now = if tmux() { crate::caps::tmux_now() } else { None };
-  let client = now.as_ref().and_then(|tmux| tmux.cell);
-  let cell = metrics(window, || client).context(NO_CELL)?;
+  screen_with(window, now.as_ref())
+}
+
+pub(crate) fn screen_with(
+  window: &WindowSize,
+  now: Option<&crate::caps::Tmux>,
+) -> Result<Screen> {
+  let cell = pick(
+    window_cell(window),
+    told(),
+    crate::caps::get(),
+    now.is_some() || tmux(),
+    || now.and_then(|tmux| tmux.cell),
+  )
+  .context(NO_CELL)?;
   Ok(Screen {
     columns: window.columns.max(1),
     rows: window.rows.max(2),
@@ -766,7 +778,7 @@ pub enum View {
 /// the pane's and no other pane is zoomed ([formats][formats]).
 ///
 /// [formats]: https://github.com/tmux/tmux/blob/3.8/format.c#L790-L820
-const VIEW: &str = "#{?#{&&:#{window_active_clients},\
+pub(crate) const VIEW: &str = "#{?#{&&:#{window_active_clients},\
   #{||:#{pane_active},#{?window_zoomed_flag,0,1}}},\
   #{?pane_active,#{?#{m:*focused*,#{client_flags}},focused,away},inactive},\
   hidden}";
@@ -777,7 +789,7 @@ pub fn pane_view() -> Option<View> {
   view(tmux_display(VIEW)?.trim())
 }
 
-fn view(word: &str) -> Option<View> {
+pub(crate) fn view(word: &str) -> Option<View> {
   Some(match word {
     "hidden" => View::Hidden,
     "inactive" => View::Inactive,
@@ -895,6 +907,40 @@ mod tests {
     }
   }
 
+  #[test]
+  fn screen_preserves_window_metrics() -> Result<()> {
+    let caps = tmux_caps(vec![3, 8], "kitty", true);
+    let Host::Tmux(Some(mut meta)) = caps.host else { unreachable!() };
+    meta.origin = (17, 4);
+    meta.cell = Some(Cell { width: 8, height: 22 });
+    for (pixels, client, expected) in [
+      ((900, 1200), meta.cell, Some((9, 20))),
+      ((900, 1200), None, Some((9, 20))),
+      ((1600, 1920), meta.cell, Some((8, 22))),
+      ((0, 0), meta.cell, Some((8, 22))),
+      ((1600, 1920), None, None),
+    ] {
+      meta.cell = client;
+      let window = WindowSize {
+        columns: 100,
+        rows: 60,
+        width: pixels.0,
+        height: pixels.1,
+      };
+      let screen = screen_with(&window, Some(&meta));
+      match expected {
+        Some((width, height)) => {
+          let screen = screen?;
+          assert_eq!((screen.cell_width, screen.cell_height), (width, height));
+          assert_eq!((screen.columns, screen.rows), (100, 60));
+          assert_eq!(screen.origin, (17, 4));
+        }
+        None => assert!(screen.is_err()),
+      }
+    }
+    Ok(())
+  }
+
   fn tmux_caps(version: Vec<u32>, client: &str, focus_events: bool) -> Caps {
     use crate::caps::Tmux;
     Caps {
@@ -944,7 +990,7 @@ mod tests {
   #[test]
   fn tmux_notices_say_what_lacks() {
     let set = || Some("Set tmux allow-passthrough all".to_owned());
-    let off = "tmux focus-events off: images, shapes outlast window switches";
+    let off = "tmux focus-events off: pointer cleanup waits for polling";
     let ctrl_i = "Ctrl-i is Tab under tmux in Kitty";
     let cases = [
       (

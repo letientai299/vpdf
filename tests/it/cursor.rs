@@ -172,7 +172,7 @@ fn cursor_scroll_and_history_use_visible_position() -> Result<()> {
     }
     keys(&mut app, b"zt")?;
     assert_eq!(app.reader.cursor, positioned);
-    keys(&mut app, b"2 ")?;
+    keys(&mut app, b"4G")?;
     let destination = app.reader.cursor;
     assert_ne!(destination.page, positioned.page);
     keys(&mut app, b"\x0f")?;

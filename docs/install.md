@@ -75,11 +75,28 @@ tmux ignores the protocol's query. Under tmux 3.2 or later the reader needs
 waits briefly after a lone Esc. Kitty ignores modifyOtherKeys, so through tmux
 in Kitty Ctrl-i arrives as Tab. See the [keyboard negotiation][caps] for the
 reader's handling and the [tmux manual][tmux-manual] for current options. While
-it runs, the reader sets `allow-passthrough` for its own pane: `all` with
-`set -s focus-events on`, so it can remove its images while tmux shows something
-else, else `on`, and leaves `on` at exit, as `kitten icat` does. tmux tells an
-inactive pane nothing about a popup over it, so that pane's images stay over the
-popup.
+it runs, the reader sets `allow-passthrough all` for its own pane so it can
+remove images while hidden, then leaves `on` at exit, as `kitten icat` does.
+`set -s focus-events on` gives prompt cleanup; background polling covers missed
+focus events and terminal client changes. tmux tells an inactive pane nothing
+about a popup over it, so that pane's images stay over the popup.
+
+### Alt-drag under tmux
+
+tmux can bind Alt-drag to moving floating panes before the reader sees it. If
+`tmux list-keys -T root M-MouseDrag1Pane` shows `move-pane -M`, this optional
+replacement forwards capture drags while the application requests mouse input
+and keeps that pane-movement action otherwise:
+
+```tmux
+bind-key -n M-MouseDrag1Pane if-shell -F '#{mouse_any_flag}' 'send-keys -M' 'move-pane -M'
+```
+
+Apply it to the intended server or add it to your existing tmux configuration.
+Inspect and preserve any different existing binding. The reader never changes
+the root key table. Forwarding the drag alone suffices with the default press
+and release handling; leave those bindings unchanged. `:mouse off` restores
+tmux's pane-movement branch.
 
 Image placement depends on the terminal's cell metrics. Reader panes work inside
 one terminal; a multiplexer is optional. Actual painting cadence depends on the
@@ -160,7 +177,6 @@ dependencies used in a particular build.
 [xclip]: https://github.com/astrand/xclip
 [xsel]: https://github.com/kfish/xsel
 [vim]: https://www.vim.org/download.php
-
 [demos]: demos.md
 [ghostty-install]: https://ghostty.org/docs/install/binary
 [rio-install]: https://rioterm.com/docs/install

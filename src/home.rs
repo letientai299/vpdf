@@ -112,6 +112,10 @@ impl Home {
     self.prompt.is_some()
   }
 
+  pub(crate) fn images_lost(&mut self) {
+    self.graphics.lost();
+  }
+
   /// Deletes the thumbnail before the screen goes.
   pub fn release(&mut self, out: &mut impl Write) -> Result<()> {
     self.graphics.clear(out)
