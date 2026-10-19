@@ -11,7 +11,7 @@
 //! the page, so later bands and scrolls reuse the one draw.
 use crate::Result;
 use crate::document::{Handle, Lists};
-use crate::input::notify;
+use crate::jobs::{Wake, WakingSender};
 use crate::layout::{Crop, page_matrix, transform};
 use crate::text::PageId;
 use crate::tiles::{self, TILE_WIDTH, Tile, TileKey};
@@ -31,7 +31,7 @@ const RELOAD: usize = 64;
 /// Idle time before that reopen.
 const IDLE: Duration = Duration::from_secs(2);
 
-type Sender = mpsc::Sender<std::result::Result<Tile, String>>;
+type Sender = WakingSender<mpsc::Sender<std::result::Result<Tile, String>>>;
 
 use vpdf_pdf::scheduling::Urgent;
 pub use vpdf_pdf::scheduling::yield_to_views;
@@ -68,19 +68,36 @@ pub struct RenderWorker {
 impl RenderWorker {
   /// Opens its own handle of `path`, sharing display lists through
   /// `lists`.
-  pub fn new(path: &Path, password: &str, lists: Arc<Lists>) -> Self {
-    Self::start(path, password, lists, false)
+  pub fn new(
+    path: &Path,
+    password: &str,
+    lists: Arc<Lists>,
+    wake: &Wake,
+  ) -> Self {
+    Self::start(path, password, lists, wake, false)
   }
 
   /// A worker for a hidden pane: opens its document on the first request.
-  pub fn idle(path: &Path, password: &str, lists: Arc<Lists>) -> Self {
-    Self::start(path, password, lists, true)
+  pub fn idle(
+    path: &Path,
+    password: &str,
+    lists: Arc<Lists>,
+    wake: &Wake,
+  ) -> Self {
+    Self::start(path, password, lists, wake, true)
   }
 
-  fn start(path: &Path, password: &str, lists: Arc<Lists>, lazy: bool) -> Self {
+  fn start(
+    path: &Path,
+    password: &str,
+    lists: Arc<Lists>,
+    wake: &Wake,
+    lazy: bool,
+  ) -> Self {
     let shared = Arc::new(Shared::default());
     let work = Arc::clone(&shared);
     let (send, results) = mpsc::channel();
+    let send = wake.sender(send);
     let path = path.to_owned();
     let password = password.to_owned();
     thread::spawn(move || {
@@ -91,7 +108,7 @@ impl RenderWorker {
         Ok(doc) => {
           Coordinator::new(doc, lists, (path, password), work, send).run();
         }
-        Err(error) => drop(notify(send.send(Err(error.to_string())))),
+        Err(error) => drop(send.send(Err(error.to_string()))),
       }
     });
     Self { shared, results }
@@ -241,7 +258,7 @@ impl Coordinator {
     }
     match self.job(band) {
       Ok(job) => self.dispatch(job, urgent),
-      Err(error) => drop(notify(self.send.send(Err(error.to_string())))),
+      Err(error) => drop(self.send.send(Err(error.to_string()))),
     }
   }
 
@@ -533,7 +550,7 @@ fn render(tiles: &[TileKey], work: Work, send: &Sender) -> Vec<Job> {
   let drawn = match tiles::draw(&list, &matrix, area) {
     Ok(drawn) => drawn,
     Err(error) => {
-      drop(notify(send.send(Err(error.to_string()))));
+      drop(send.send(Err(error.to_string())));
       return Vec::new();
     }
   };
@@ -554,7 +571,7 @@ fn render(tiles: &[TileKey], work: Work, send: &Sender) -> Vec<Job> {
           work: Work::Cut { pixels, drawn: drawn_ms },
         });
       }
-      Err(error) => drop(notify(send.send(Err(error.to_string())))),
+      Err(error) => drop(send.send(Err(error.to_string()))),
     }
   }
   rows
@@ -577,7 +594,7 @@ fn deliver(
         render_ms: drawn + ms(started),
       })
       .map_err(|error| error.to_string());
-    if notify(send.send(tile)).is_err() {
+    if send.send(tile).is_err() {
       return;
     }
   }
@@ -612,11 +629,37 @@ mod tests {
   }
 
   #[test]
+  fn tiles_wake_the_loop() -> Result<()> {
+    let file = tempfile::NamedTempFile::new()?;
+    crate::fixtures::pdf(file.path(), &["body"], "")?;
+    let doc = Document::open(file.path(), "")?;
+    let (wake, woken) = crate::fixtures::wake();
+    let worker = RenderWorker::new(file.path(), "", doc.lists(), &wake);
+    let key = TileKey {
+      page: PageId(0),
+      scale: 1024,
+      rotation: 0,
+      x: 0,
+      y: 0,
+      width: 64,
+      height: 64,
+      crop: Crop::default(),
+    };
+    worker.request(&[key], 1);
+    woken.recv_timeout(Duration::from_secs(10))?;
+    let tile = worker.results.try_recv()?.map_err(anyhow::Error::msg)?;
+    assert_eq!(tile.key, key);
+    assert_eq!(woken.try_iter().count(), 0);
+    Ok(())
+  }
+
+  #[test]
   fn prepares_latest_neighborhood() -> Result<()> {
     let file = tempfile::Builder::new().suffix(".pdf").tempfile()?;
     crate::fixtures::pdf(file.path(), &["body"; 30], "")?;
     let doc = Document::open(file.path(), "")?;
-    let worker = RenderWorker::idle(file.path(), "", doc.lists());
+    let worker =
+      RenderWorker::idle(file.path(), "", doc.lists(), &Wake::none());
     let drawing = Urgent::new();
     worker.prepare(&[], 0, &crate::prefetch::nearby(30, PageId(0), true));
     let latest = crate::prefetch::nearby(30, PageId(29), false);
@@ -680,7 +723,8 @@ mod tests {
     };
     let tiles = [key(0, 512), key(1, 0), key(0, 256), key(1, 256)];
     for urgent in [4, 2] {
-      let worker = RenderWorker::new(file.path(), "", doc.lists());
+      let worker =
+        RenderWorker::new(file.path(), "", doc.lists(), &Wake::none());
       worker.request(&tiles, urgent);
       // Whole pages send every tile, not only the requested ones.
       let mut pending: HashSet<TileKey> = tiles.into_iter().collect();

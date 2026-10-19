@@ -1,5 +1,5 @@
-use crate::app::Window as W;
 use crate::split::{Axis, Direction as D};
+use crate::window::Window as W;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_reader::motion::Motion;
 use vpdf_reader::motion::Motion as M;
@@ -71,7 +71,7 @@ pub enum Action {
   Tab(bool),
   /// Link hints; `true` copies URIs instead of opening them.
   Hints(bool),
-  Window(crate::app::Window),
+  Window(crate::window::Window),
   /// Preview the link under the cursor.
   Peek,
   /// Page thumbnail grid.

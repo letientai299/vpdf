@@ -1,8 +1,7 @@
 use super::{
-  App, Drawable, Dropped, Event, Hit, Home, Hover, InputOwner, Instant,
-  Landing, MouseButton, MouseEvent, MouseEventKind, Pane, Path, Pixel, Region,
-  Rehover, Result, Route, Session, Shape, Step, Target, Write, answer,
-  terminal,
+  App, Dropped, Event, Hit, Home, Hover, InputOwner, Instant, Landing,
+  MouseButton, MouseEvent, MouseEventKind, Pane, Path, Pixel, Region, Rehover,
+  Result, Route, Session, Shape, Step, Target, Write, answer, terminal,
 };
 
 impl Session {
@@ -504,7 +503,8 @@ impl Session {
     if let Some(edge) = self.resizing {
       return edge.hit().shape();
     }
-    if self.focused().grabbing() {
+    let tab = &self.tabs[self.active];
+    if tab.panes[tab.focus].grabbing() {
       return Shape::Grabbing;
     }
     if self.tabs[self.active].panes.iter().any(App::sweeping) {

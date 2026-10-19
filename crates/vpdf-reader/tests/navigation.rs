@@ -2,40 +2,29 @@ use std::sync::Arc;
 use vpdf_model::text::{Bounds, Glyph, Line, PageId, Position, Text};
 use vpdf_reader::Result;
 use vpdf_reader::motion::Motion;
-use vpdf_reader::reader::{Reader, SelectionKind, TextSource};
+use vpdf_reader::reader::{Reader, SelectionKind};
 
-struct Pages(Vec<Arc<Text>>);
-
-impl TextSource for Pages {
-  fn page_count(&self) -> usize {
-    self.0.len()
-  }
-  fn page_text(&mut self, page: PageId) -> Result<Arc<Text>> {
-    Ok(Arc::clone(&self.0[page.0]))
-  }
-}
+type Pages = Vec<Arc<Text>>;
 
 fn pages() -> Pages {
-  Pages(
-    [vec!["one two", "café Straße"], vec![], vec!["last page"]]
-      .into_iter()
-      .map(|lines| {
-        Arc::new(Text {
-          lines: lines
-            .iter()
-            .map(|line| Line {
-              paragraph: true,
-              glyphs: line
-                .chars()
-                .map(|ch| Glyph { ch, bounds: Bounds::default() })
-                .collect(),
-            })
-            .collect(),
-          truncated: false,
-        })
+  [vec!["one two", "café Straße"], vec![], vec!["last page"]]
+    .into_iter()
+    .map(|lines| {
+      Arc::new(Text {
+        lines: lines
+          .iter()
+          .map(|line| Line {
+            paragraph: true,
+            glyphs: line
+              .chars()
+              .map(|ch| Glyph { ch, bounds: Bounds::default() })
+              .collect(),
+          })
+          .collect(),
+        truncated: false,
       })
-      .collect(),
-  )
+    })
+    .collect()
 }
 
 #[test]

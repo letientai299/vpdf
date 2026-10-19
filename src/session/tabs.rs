@@ -1,6 +1,4 @@
-use super::{
-  App, Direction, Graphics, Node, Rect, Session, Tab, TabMove, neighbor,
-};
+use super::{App, Direction, Node, Rect, Session, Tab, TabMove, neighbor};
 
 impl Tab {
   pub(super) fn new(app: App) -> Self {
@@ -33,26 +31,6 @@ impl Tab {
     self.last = None;
     app
   }
-
-  /// Runs `work` on pane `index` while it holds the shared graphics,
-  /// which otherwise stay with the focused pane.
-  pub(super) fn lend<R>(
-    &mut self,
-    index: usize,
-    work: impl FnOnce(&mut App) -> R,
-  ) -> R {
-    if index == self.focus {
-      return work(&mut self.panes[index]);
-    }
-    let mut graphics = std::mem::take(&mut self.panes[self.focus].graphics);
-    graphics.doc = self.panes[index].id;
-    self.panes[index].graphics = graphics;
-    let result = work(&mut self.panes[index]);
-    let mut graphics = std::mem::take(&mut self.panes[index].graphics);
-    graphics.doc = self.panes[self.focus].id;
-    self.panes[self.focus].graphics = graphics;
-    result
-  }
 }
 
 impl Session {
@@ -65,22 +43,9 @@ impl Session {
     &mut tab.panes[tab.focus]
   }
 
-  pub(super) fn take_graphics(&mut self) -> Graphics {
-    let Some(tab) = self.tabs.get_mut(self.active) else {
-      return Graphics::default();
-    };
-    let focus = tab.focus;
-    tab
-      .panes
-      .get_mut(focus)
-      .map_or_default(|app| std::mem::take(&mut app.graphics))
-  }
-
-  pub(super) fn give(&mut self, mut graphics: Graphics) {
-    let app = self.app();
-    graphics.doc = app.id;
-    app.graphics = graphics;
-    app.requested.clear();
+  /// Readies the newly focused pane to request its view again.
+  pub(super) fn refocus(&mut self) {
+    self.app().requested.clear();
   }
 
   pub(super) fn step(&self, step: TabMove) -> usize {

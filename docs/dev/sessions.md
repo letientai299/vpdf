@@ -9,7 +9,7 @@ changes to the source document.
 [Session][session] owns tab selection and a [split tree][split] for each tab. A
 pane holds its own cursor, view, panels, search, and jobs, even when another
 pane shows the same file. The split tree controls screen rectangles; the session
-routes input and lends the shared graphics cache while drawing visible panes.
+routes input and owns the shared graphics cache that visible panes draw with.
 
 Keyboard input belongs to the focused pane. Within it, a focused panel handles
 row navigation and search before page motions. [Pointer routing][pointer] uses
@@ -79,7 +79,7 @@ user-visible clipboard, SSH, link, and password behavior.
 [session]: ../../src/session/mod.rs
 [split]: ../../src/split.rs
 [pointer]: ../../src/pointer.rs
-[state]: ../../src/state.rs
+[state]: ../../src/state/mod.rs
 [hangup]: ../../src/hangup.rs
 [watch]: ../../src/watch.rs
 [commands]: ../../src/commands.rs

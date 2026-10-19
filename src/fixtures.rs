@@ -34,3 +34,12 @@ pub fn pdf(path: &Path, pages: &[&str], annots: &str) -> Result<()> {
   std::fs::write(path, out)?;
   Ok(())
 }
+
+/// Records each worker wake.
+pub fn wake() -> (crate::jobs::Wake, std::sync::mpsc::Receiver<()>) {
+  let (send, receive) = std::sync::mpsc::channel();
+  let wake = crate::jobs::Wake::new(move || {
+    let _ = send.send(());
+  });
+  (wake, receive)
+}

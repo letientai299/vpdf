@@ -48,8 +48,8 @@ fn budget() -> usize {
   if crate::spool::get().is_some() { SPOOLED } else { BUDGET }
 }
 
-/// Tiles of one document; tabs share one Kitty budget.
-type Key = (u32, TileKey);
+/// A pane's tile; every pane shares one Kitty budget.
+pub type Key = (u32, TileKey);
 
 /// An image id and a placement id.
 type Pair = (u32, u32);
@@ -57,9 +57,14 @@ type Pair = (u32, u32);
 /// A solid overlay image: its color and size in pixels.
 type Solid = ([u8; 4], i32, i32);
 
+/// Image memory and transfer so far.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Usage {
+  pub bytes: usize,
+  pub uploaded: u64,
+}
+
 pub struct Graphics {
-  /// Document whose tiles `upload` and `place` address.
-  pub doc: u32,
   resident: Cache<Key, u32>,
   stored: Cache<Key, Payload>,
   ids: HashMap<Key, u32>,
@@ -98,7 +103,6 @@ impl Default for Graphics {
     let base = session();
     let (quirk, cell_offsets, quiet) = traits();
     Self {
-      doc: 0,
       resident: Cache::new(budget()),
       stored: Cache::new(STORED),
       ids: HashMap::new(),
@@ -122,8 +126,8 @@ impl Default for Graphics {
   }
 }
 
-/// iTerm2's crop quirk and the placements' `q`, from the probe. Panes
-/// lend `Graphics` through `Default` on every loop, so this runs once.
+/// iTerm2's crop quirk and the placements' `q`, from the probe; every
+/// `Graphics` reads them, so this runs once.
 fn traits() -> (bool, bool, u8) {
   static TRAITS: OnceLock<(bool, bool, u8)> = OnceLock::new();
   // Before the probe, as in benches, nothing is cached.

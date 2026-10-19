@@ -2,17 +2,17 @@ use super::common::keys;
 use super::common::{pages_pdf, search_loaded};
 use super::focus::screen;
 use vpdf::Result;
-use vpdf::app::App;
 use vpdf::find::Phase;
 use vpdf::keys::PanelKind;
 use vpdf::reference::Reference;
+use vpdf::solo::Solo;
 use vpdf::text::{PageId, Position};
 
-fn open(pages: &[&[&str]], text: bool) -> Result<(tempfile::TempDir, App)> {
+fn open(pages: &[&[&str]], text: bool) -> Result<(tempfile::TempDir, Solo)> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("references.pdf");
   pages_pdf(&path, pages)?;
-  let mut app = App::with_screen(&path, "", text, screen())?;
+  let mut app = Solo::open(&path, "", text, screen())?;
   app.target = Some(Position::default());
   Ok((directory, app))
 }
@@ -132,7 +132,7 @@ fn embedded_definition_keeps_history() -> Result<()> {
     content.len()
   ));
   super::common::write_pdf(&path, &objects, "")?;
-  let mut app = App::with_screen(&path, "", false, screen())?;
+  let mut app = Solo::open(&path, "", false, screen())?;
   app.target = Some(Position::default());
   keys(&mut app, b"gd")?;
   assert_eq!(app.reader.cursor.page, PageId(1));
@@ -147,7 +147,7 @@ fn external_definition_does_not_open_browser() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("external.pdf");
   super::common::linked_pages_pdf(&path, &[&["Figure 4"]], &[(0, 0)])?;
-  let mut app = App::with_screen(&path, "", false, screen())?;
+  let mut app = Solo::open(&path, "", false, screen())?;
   app.target = Some(Position::default());
   keys(&mut app, b"gd")?;
   assert_eq!(app.reader.message, "External link: use gx");

@@ -5,12 +5,13 @@ use vpdf::Result;
 use vpdf::app::App;
 use vpdf::keys::PanelKind;
 use vpdf::layout::Screen;
+use vpdf::solo::Solo;
 use vpdf::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::SelectionKind;
 
-pub(super) fn app(file: &str, text: bool) -> Result<App> {
+pub(super) fn app(file: &str, text: bool) -> Result<Solo> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  App::with_screen(
+  Solo::open(
     &root.join(file),
     "",
     text,
@@ -72,7 +73,11 @@ fn normal_keys_move_view_without_text_extraction() -> Result<()> {
   let scroll = app.reader.scroll;
   keys(&mut app, b"gv")?;
   assert_eq!(app.reader.scroll, scroll);
-  app.marks(app.layout.screen, &mut Vec::new())?;
+  let screen = app.layout.screen;
+  {
+    let (app, graphics) = app.parts();
+    app.marks(graphics, screen, &mut Vec::new())?;
+  }
   app.track_outline();
   app.status(&mut Vec::new(), app.screen.rows - 1)?;
   assert_eq!(app.doc.cache_bytes(), 0);
@@ -297,7 +302,7 @@ fn scan_selection_fails_without_ocr_or_view_motion() -> Result<()> {
   device.end()?;
   drop(writer);
   for text_mode in [false, true] {
-    let mut app = App::with_screen(file.path(), "", text_mode, source.screen)?;
+    let mut app = Solo::open(file.path(), "", text_mode, source.screen)?;
     assert!(app.doc.text(PageId(0))?.lines.is_empty());
     for bytes in [b"i".as_slice(), b"v", b"V", b"yw", b"yy"] {
       let scroll = app.reader.scroll;
@@ -500,8 +505,7 @@ fn reload_clamps_text_view_and_invalidates_hit_testing() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("reload.pdf");
   std::fs::copy(root.join("book.pdf"), &path)?;
-  let mut app =
-    App::with_screen(&path, "", true, app("paper.pdf", true)?.screen)?;
+  let mut app = Solo::open(&path, "", true, app("paper.pdf", true)?.screen)?;
   app.command("100")?;
   keys(&mut app, b"100j10l")?;
   app.draw(&mut Vec::new())?;
@@ -569,7 +573,10 @@ fn space_scrolls_with_context() -> Result<()> {
       let cursor = app.reader.cursor;
       let anchor = app.reader.selection.map(|s| s.anchor);
       let top = app.text_position(0, 0)?;
-      let overlap = app.text_position(0, app.layout.screen.rows - 3)?;
+      let overlap = {
+        let (app, _) = app.parts();
+        app.text_position(0, app.layout.screen.rows - 3)?
+      };
       let rows = app.layout.screen.rows.saturating_sub(3);
       let distance = f32::from(rows * app.screen.cell_height);
       keys(&mut app, b" ")?;

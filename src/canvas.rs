@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::app::App;
+use crate::graphics::Graphics;
 use crate::layout::Screen;
 use crate::marks::Span;
 use crate::panel::Pointing;
@@ -48,14 +49,15 @@ pub(crate) fn covered_rows(
 impl App {
   /// Keeps finished tiles; returns whether a wanted one arrived, since
   /// prefetched tiles need no frame.
-  pub fn raster_updates(&mut self) -> bool {
+  pub fn raster_updates(&mut self, graphics: &mut Graphics) -> bool {
+    self.settle_images(graphics);
     let (mut changed, mut failed) = (false, false);
     for result in self.worker.results.try_iter() {
       match result {
         Ok(tile) => {
           self.render_ms = tile.render_ms;
           changed |= self.requested.contains(&tile.key);
-          self.graphics.keep(tile);
+          graphics.keep(self.id, tile);
         }
         Err(error) => {
           self.error = Some(error);
@@ -70,7 +72,11 @@ impl App {
     changed || failed
   }
 
-  pub fn canvas(&mut self, out: &mut impl Write) -> Result<()> {
+  pub fn canvas(
+    &mut self,
+    graphics: &mut Graphics,
+    out: &mut impl Write,
+  ) -> Result<()> {
     self.request_crop();
     let (screen, left) = (self.uncovered(), self.left);
     let mut tiles = tiles::visible(&self.layout, self.reader.scroll);
@@ -84,8 +90,8 @@ impl App {
     }
     let mut missing = Vec::new();
     for key in &tiles {
-      if !self.graphics.place(
-        key,
+      if !graphics.place(
+        (self.id, *key),
         &self.layout,
         self.reader.scroll,
         screen,
@@ -103,7 +109,7 @@ impl App {
       });
       let urgent = missing.len();
       for key in self.ahead(&tiles) {
-        if !self.graphics.has(&key) {
+        if !graphics.has(&(self.id, key)) {
           missing.push(key);
         }
       }
@@ -112,10 +118,10 @@ impl App {
       self.worker.prepare(&missing, urgent, &nearby);
       self.requested = tiles;
     }
-    self.marks(screen, out)?;
+    self.marks(graphics, screen, out)?;
     // The side without focus recedes; a veil would dim a menu over it.
     if self.panel_focused() && self.context_rect().is_none() {
-      self.graphics.veil([0, 0, 0, 70], screen, left, out)?;
+      graphics.veil([0, 0, 0, 70], screen, left, out)?;
     }
     Ok(())
   }
@@ -170,9 +176,15 @@ impl App {
   }
 
   /// Selection overlays clipped to `screen`.
-  pub fn marks(&mut self, screen: Screen, out: &mut impl Write) -> Result<()> {
+  pub fn marks(
+    &mut self,
+    graphics: &mut Graphics,
+    screen: Screen,
+    out: &mut impl Write,
+  ) -> Result<()> {
     if self.cursorline && self.reader.selection.is_some() {
       self.line_band(
+        graphics,
         self.reader.cursor,
         crate::theme::CURSORLINE,
         screen,
@@ -182,10 +194,16 @@ impl App {
     if let Some(landing) = &self.landing
       && landing.span == Span::Line
     {
-      self.line_band(landing.position, crate::theme::LANDING, screen, out)?;
+      self.line_band(
+        graphics,
+        landing.position,
+        crate::theme::LANDING,
+        screen,
+        out,
+      )?;
     }
     if let Some(position) = self.click_mark() {
-      self.glyph_block(position, screen, out)?;
+      self.glyph_block(graphics, position, screen, out)?;
     }
     let mut tinted = self.hover_segments();
     if tinted.is_empty()
@@ -195,7 +213,7 @@ impl App {
     }
     for (page, bounds) in tinted {
       let rect = self.layout.project(page, bounds, self.reader.scroll);
-      self.tint(rect, crate::theme::LINK, screen, out)?;
+      self.tint(graphics, rect, crate::theme::LINK, screen, out)?;
     }
     if !self.search.hidden() {
       let visible = self.layout.visible(self.reader.scroll);
@@ -207,14 +225,21 @@ impl App {
         .take(300)
         .map(|hit| (hit.first, hit.last))
         .collect();
-      for (first, last) in ranges {
-        self.mark_range(first, last, false, [255, 190, 30, 90], screen, out)?;
+      for span in ranges {
+        self.mark_range(
+          graphics,
+          span,
+          false,
+          [255, 190, 30, 90],
+          screen,
+          out,
+        )?;
       }
     }
     if let Some(selection) = self.reader.selection {
       self.mark_range(
-        selection.anchor,
-        self.reader.cursor,
+        graphics,
+        (selection.anchor, self.reader.cursor),
         selection.kind == SelectionKind::Line,
         [70, 130, 255, 85],
         screen,
@@ -224,12 +249,13 @@ impl App {
     if !self.reader.uses_cursor() {
       return Ok(());
     }
-    self.glyph_block(self.reader.cursor, screen, out)
+    self.glyph_block(graphics, self.reader.cursor, screen, out)
   }
 
   /// A Cursor-style block at `position`.
   fn glyph_block(
     &mut self,
+    graphics: &mut Graphics,
     position: Position,
     screen: Screen,
     out: &mut impl Write,
@@ -239,7 +265,7 @@ impl App {
         self.layout.project(position.page, glyph.bounds, self.reader.scroll);
       // Translucent block keeps the glyph readable.
       rect.x1 = rect.x1.max(rect.x0 + 2.0);
-      self.tint(rect, [25, 100, 255, 120], screen, out)?;
+      self.tint(graphics, rect, [25, 100, 255, 120], screen, out)?;
     }
     Ok(())
   }
@@ -247,13 +273,14 @@ impl App {
   /// Tints `rect` around the context menu.
   pub(crate) fn tint(
     &mut self,
+    graphics: &mut Graphics,
     rect: Bounds,
     color: [u8; 4],
     screen: Screen,
     out: &mut impl Write,
   ) -> Result<()> {
     for piece in self.beside_menu(rect) {
-      self.graphics.highlight(piece, color, screen, self.left, out)?;
+      graphics.highlight(piece, color, screen, self.left, out)?;
     }
     Ok(())
   }
@@ -268,6 +295,7 @@ impl App {
 
   fn line_band(
     &mut self,
+    graphics: &mut Graphics,
     position: Position,
     color: [u8; 4],
     screen: Screen,
@@ -291,7 +319,7 @@ impl App {
     if band.height() > 0.0 {
       let rect = self.layout.project(position.page, band, self.reader.scroll);
       for piece in self.beside_menu(rect) {
-        self.graphics.backdrop(piece, color, screen, self.left, out)?;
+        graphics.backdrop(piece, color, screen, self.left, out)?;
       }
     }
     Ok(())
@@ -317,8 +345,8 @@ impl App {
 
   pub fn mark_range(
     &mut self,
-    first: Position,
-    last: Position,
+    graphics: &mut Graphics,
+    (first, last): (Position, Position),
     linewise: bool,
     color: [u8; 4],
     screen: Screen,
@@ -334,25 +362,42 @@ impl App {
       for bounds in covered_rows(&text, PageId(page), range, linewise) {
         let rect =
           self.layout.project(PageId(page), bounds, self.reader.scroll);
-        self.tint(rect, color, screen, out)?;
+        self.tint(graphics, rect, color, screen, out)?;
       }
     }
     Ok(())
   }
 
+  /// Deletes the images of a document this pane has since reloaded.
+  fn settle_images(&mut self, graphics: &mut Graphics) {
+    if std::mem::take(&mut self.images_stale) {
+      graphics.forget(self.id);
+    }
+  }
+
   /// One frame with this pane alone on screen.
-  pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
+  pub fn draw_alone(
+    &mut self,
+    graphics: &mut Graphics,
+    out: &mut impl Write,
+  ) -> Result<()> {
     write!(out, "{}\x1b[0m", terminal::frame_start())?;
-    self.graphics.begin(out)?;
-    self.draw_pane(out)?;
-    self.graphics.end(out)?;
+    graphics.begin(out)?;
+    self.draw_pane(graphics, out)?;
+    graphics.end(out)?;
     write!(out, "{}", terminal::frame_end())?;
     out.flush()?;
     Ok(())
   }
 
   /// Draws within the pane; the caller starts and ends the frame.
-  pub fn draw_pane(&mut self, out: &mut impl Write) -> Result<()> {
+  pub fn draw_pane(
+    &mut self,
+    graphics: &mut Graphics,
+    out: &mut impl Write,
+  ) -> Result<()> {
+    self.settle_images(graphics);
+    self.image_usage = graphics.usage();
     // Views without tiles show whole at once; a covered one shows none.
     self.complete = !self.covered();
     // A shrunken terminal can leave no room below the status line.
@@ -377,30 +422,29 @@ impl App {
     if self.covered()
       && let Some(panel) = &mut self.panel
     {
-      // Panes share one picture id, which the focused pane holds.
-      let graphics =
-        (!self.text_mode && self.focused).then_some(&mut self.graphics);
-      panel.draw(out, self.at, self.left, self.screen, graphics)?;
-      self.draw_context(out)?;
+      // Panes share one picture id; only the focused pane shows it.
+      let picture = (!self.text_mode && self.focused).then_some(&mut *graphics);
+      panel.draw(out, self.at, self.left, self.screen, picture)?;
+      self.draw_context(graphics, out)?;
       return self.bottom(out);
     }
     if self.overview.is_some() {
-      self.overview_canvas(out)?;
+      self.overview_canvas(graphics, out)?;
     } else if self.text_mode {
       self.text_canvas(out)?;
     } else {
-      self.canvas(out)?;
-      self.draw_bar(out)?;
+      self.canvas(graphics, out)?;
+      self.draw_bar(graphics, out)?;
     }
-    self.draw_hints(out)?;
-    self.draw_preview(out)?;
-    self.draw_region(out)?;
+    self.draw_hints(graphics, out)?;
+    self.draw_preview(graphics, out)?;
+    self.draw_region(graphics, out)?;
     self.track_outline();
     if let Some(panel) = &mut self.panel {
       panel.draw(out, self.at, self.left, self.screen, None)?;
     }
     // Over the panel too.
-    self.draw_context(out)?;
+    self.draw_context(graphics, out)?;
     self.bottom(out)
   }
 

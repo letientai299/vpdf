@@ -16,10 +16,11 @@ pub fn view(paths: &[PathBuf], page: Option<usize>) -> Result<()> {
   )?;
   terminal::restore_on_panic();
   let (_terminal, screen) = crate::gate::enter()?;
-  session.observer = crate::tmux::Observer::start();
-  // Before any pane sizes its image budget or reads input; a spool that
-  // fails to start leaves tiles encoded.
+  session.observer = crate::tmux_observer::Observer::start();
+  // Before input; a spool that fails to start leaves tiles encoded.
   let _ = crate::spool::start(crate::graphics::session());
+  // The image cache reads the probe and the spool for its budget.
+  session.graphics = crate::graphics::Graphics::default();
   if paths.is_empty() {
     session.screen = Some(screen);
     session.home =
@@ -59,10 +60,9 @@ pub(super) fn updates(
 ) -> Result<bool> {
   let mut dirty = session.images_lost(out)?;
   dirty |= session.image_updates(out);
-  let tab = session.tab();
-  for index in 0..tab.panes.len() {
-    dirty |= tab.lend(index, App::raster_updates);
-    let app = &mut tab.panes[index];
+  let tab = &mut session.tabs[session.active];
+  for app in &mut tab.panes {
+    dirty |= app.raster_updates(&mut session.graphics);
     let shelf = app.panel.as_mut().and_then(|panel| panel.shelf.as_mut());
     dirty |= shelf.is_some_and(crate::recent::Shelf::updates);
     // A failed update shows in its pane instead of ending the session.
@@ -82,8 +82,8 @@ pub(super) fn updates(
   Ok(dirty)
 }
 
-/// Reloads the active tab's panes after their files change; each holds
-/// the shared graphics while it reloads, so its old images go.
+/// Reloads the active tab's panes after their files change; their old
+/// images go at the next draw.
 pub(super) fn watch(session: &mut Session, force: bool) -> bool {
   let touched = session.watcher.touched();
   let tab = &mut session.tabs[session.active];
@@ -93,11 +93,10 @@ pub(super) fn watch(session: &mut Session, force: bool) -> bool {
     if !(force || app.settling.is_some() || touched.contains(&app.path)) {
       continue;
     }
-    dirty |= tab.lend(index, |app| {
-      app.watch().unwrap_or_else(|error| {
-        app.error = Some(format!("Reload failed: {error}"));
-        true
-      })
+    let app = &mut tab.panes[index];
+    dirty |= app.watch().unwrap_or_else(|error| {
+      app.error = Some(format!("Reload failed: {error}"));
+      true
     });
   }
   dirty
@@ -477,7 +476,7 @@ impl Session {
 
   fn observe(&mut self, out: &mut impl Write) -> Result<bool> {
     let Some(next) =
-      self.observer.as_ref().and_then(crate::tmux::Observer::take)
+      self.observer.as_ref().and_then(crate::tmux_observer::Observer::take)
     else {
       return Ok(false);
     };
@@ -486,7 +485,7 @@ impl Session {
 
   pub(super) fn observation(
     &mut self,
-    next: crate::tmux::Snapshot,
+    next: crate::tmux_observer::Snapshot,
     out: &mut impl Write,
   ) -> Result<bool> {
     let initial = self.observed.is_none();

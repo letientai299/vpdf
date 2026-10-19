@@ -9,6 +9,7 @@ use vpdf::document::Target;
 use vpdf::keys::PanelKind;
 use vpdf::panel::Destination;
 use vpdf::pointer::{Hit, Region};
+use vpdf::solo::Solo;
 use vpdf::text::{Bounds, Glyph, Line, PageId, Text};
 
 /// One page of 12 pt Courier `lines`, 24 pt apart, with `annots`;
@@ -50,11 +51,11 @@ fn links(app: &mut App) -> Result<Vec<(String, String)>> {
   Ok(found.collect())
 }
 
-fn open(lines: &[&str], annots: &str) -> Result<(tempfile::TempDir, App)> {
+fn open(lines: &[&str], annots: &str) -> Result<(tempfile::TempDir, Solo)> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("test.pdf");
   page_pdf(&path, lines, annots)?;
-  let mut app = App::with_screen(&path, "", false, screen())?;
+  let mut app = Solo::open(&path, "", false, screen())?;
   app.draw(&mut Vec::new())?;
   Ok((directory, app))
 }
@@ -160,7 +161,7 @@ fn seeded_text_finds_links_again() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn real_preprint_addresses_are_links() -> Result<()> {
   let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("review.pdf");
-  let mut app = App::with_screen(&path, "", false, screen())?;
+  let mut app = Solo::open(&path, "", false, screen())?;
   // page, target, anchors
   let cases: [(usize, &str, &[&str]); 3] = [
     (
@@ -231,7 +232,7 @@ fn paper_author_addresses_are_links() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn real_page_wraps_tint_the_continuation() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen())?;
+  let mut app = Solo::open(&root.join("book.pdf"), "", false, screen())?;
   // (page, address end) -> tinted next-page tops
   let cases: [(usize, &str, &[f32]); 2] =
     [(122, "interlock.py", &[88.0]), (58, "polygon.py", &[])];

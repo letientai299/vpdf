@@ -7,6 +7,7 @@ use vpdf::keys::PanelKind;
 use vpdf::layout::Screen;
 use vpdf::panel::Destination;
 use vpdf::prompt::History;
+use vpdf::solo::Solo;
 use vpdf::text::{PageId, Position};
 use vpdf_reader::reader::Reader;
 
@@ -55,7 +56,7 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   let mut history = History::default();
   command(&mut app, &mut history, "jumps")?;
   let panel = app.panel.as_ref().unwrap();
@@ -76,24 +77,27 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
     let code = KeyCode::Char(if forward { 'i' } else { 'o' });
     app.key(KeyEvent::new(code, KeyModifiers::CONTROL), &mut history)?;
     command(&mut app, &mut history, "jumps")?;
-    let rows = &app.panel.as_ref().unwrap().rows;
-    assert_eq!(rows.len(), expected.len());
-    for (row, index) in rows.iter().zip(expected) {
-      let Destination::Jump { position, .. } = row.destination else {
-        panic!("Jump destination");
-      };
-      assert_eq!(position, positions[index]);
-      assert!(row.detail.contains(&format!(
-        "L{} C{}",
-        position.line + 1,
-        position.glyph + 1
-      )));
-      let text = app.doc.text(position.page)?;
-      let line = text.lines.get(position.line).unwrap();
-      assert_eq!(
-        row.label,
-        line.text().split_whitespace().collect::<Vec<_>>().join(" ")
-      );
+    {
+      let (app, _) = app.parts();
+      let rows = &app.panel.as_ref().unwrap().rows;
+      assert_eq!(rows.len(), expected.len());
+      for (row, index) in rows.iter().zip(expected) {
+        let Destination::Jump { position, .. } = row.destination else {
+          panic!("Jump destination");
+        };
+        assert_eq!(position, positions[index]);
+        assert!(row.detail.contains(&format!(
+          "L{} C{}",
+          position.line + 1,
+          position.glyph + 1
+        )));
+        let text = app.doc.text(position.page)?;
+        let line = text.lines.get(position.line).unwrap();
+        assert_eq!(
+          row.label,
+          line.text().split_whitespace().collect::<Vec<_>>().join(" ")
+        );
+      }
     }
     app.close_panel()?;
   }
@@ -113,11 +117,11 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
   Ok(())
 }
 
-fn text_app(lines: &[&str]) -> Result<(tempfile::TempDir, App)> {
+fn text_app(lines: &[&str]) -> Result<(tempfile::TempDir, Solo)> {
   let dir = tempfile::tempdir()?;
   let path = dir.path().join("jumps.pdf");
   super::common::text_pdf(&path, lines)?;
-  let mut app = App::with_screen(
+  let mut app = Solo::open(
     &path,
     "",
     true,
@@ -323,14 +327,14 @@ const PAGE: [&str; 7] = [
   "L6 alpha beta gamma",
 ];
 
-fn landing_app(text_mode: bool) -> Result<(tempfile::TempDir, App)> {
+fn landing_app(text_mode: bool) -> Result<(tempfile::TempDir, Solo)> {
   let dir = tempfile::tempdir()?;
   let path = dir.path().join("landing.pdf");
   super::common::pages_pdf(&path, &[&PAGE, &PAGE])?;
   let (columns, rows) = if text_mode { (10, 5) } else { (40, 6) };
   let screen =
     Screen { columns, rows, cell_width: 8, cell_height: 16, origin: (0, 0) };
-  let mut app = App::with_screen(&path, "", text_mode, screen)?;
+  let mut app = Solo::open(&path, "", text_mode, screen)?;
   super::common::outline_loaded(&mut app)?;
   app.doc.outline.clear();
   Ok((dir, app))
@@ -689,7 +693,7 @@ fn counted_history_keeps_both_directions() -> Result<()> {
     &path,
     &[&["one"], &["two"], &["three"], &["four"]],
   )?;
-  let mut app = App::with_screen(&path, "", false, crate::focus::screen())?;
+  let mut app = Solo::open(&path, "", false, crate::focus::screen())?;
   for page in ["2", "3", "4"] {
     app.command(page)?;
   }
@@ -717,7 +721,7 @@ fn history_clears_column_goal() -> Result<()> {
     "abcdefghijklmnopqrstuvwxyz",
   ];
   crate::common::pages_pdf(&path, &[lines, lines])?;
-  let mut app = App::with_screen(&path, "", true, crate::focus::screen())?;
+  let mut app = Solo::open(&path, "", true, crate::focus::screen())?;
   crate::common::keys(&mut app, b"i20lj:2\r0j\x0fj")?;
   assert_eq!(
     app.reader.cursor,

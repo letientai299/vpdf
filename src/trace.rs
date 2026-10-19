@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::app::App;
+use crate::graphics::Graphics;
 use serde::Serialize;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -26,21 +27,32 @@ struct Frame {
   complete: bool,
 }
 
+/// What a frame showed of the focused pane.
+pub struct Observation {
+  /// Image bytes sent so far.
+  pub uploaded: u64,
+  pub page: usize,
+  pub scroll: f32,
+  /// Every visible tile of the focused pane was placed.
+  pub complete: bool,
+}
+
+impl Observation {
+  pub fn of(app: &App, graphics: &Graphics) -> Self {
+    Self {
+      uploaded: graphics.uploaded,
+      page: app.navigation_position().page.0 + 1,
+      scroll: app.reader.scroll,
+      complete: app.complete,
+    }
+  }
+}
+
 /// Something that draws whole frames around a focused pane.
 pub trait Drawable {
   fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()>;
-  fn focused(&self) -> &App;
+  fn observe(&self) -> Observation;
   fn flushed(&mut self, _at: Instant) {}
-}
-
-impl Drawable for App {
-  fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()> {
-    self.draw(out)
-  }
-
-  fn focused(&self) -> &App {
-    self
-  }
 }
 
 impl Trace {
@@ -70,7 +82,7 @@ impl Trace {
     output.flush()?;
     let flushed = Instant::now();
     target.flushed(flushed);
-    let app = target.focused();
+    let seen = target.observe();
     let input = self.input.take();
     let Some(trace) = &mut self.output else { return Ok(()) };
     let frame = Frame {
@@ -80,13 +92,12 @@ impl Trace {
       input_to_flush_ms: input
         .map(|time| flushed.duration_since(time).as_secs_f64() * 1000.0),
       bytes: buffer.len(),
-      // Moving to another tab hands over a different counter.
-      base_upload_bytes: app.graphics.uploaded.saturating_sub(self.uploaded),
-      page: app.navigation_position().page.0 + 1,
-      scroll: app.reader.scroll,
-      complete: app.complete,
+      base_upload_bytes: seen.uploaded.saturating_sub(self.uploaded),
+      page: seen.page,
+      scroll: seen.scroll,
+      complete: seen.complete,
     };
-    self.uploaded = app.graphics.uploaded;
+    self.uploaded = seen.uploaded;
     serde_json::to_writer(&mut *trace, &frame)?;
     writeln!(trace)?;
     Ok(())

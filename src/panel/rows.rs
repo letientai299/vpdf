@@ -137,7 +137,7 @@ fn marked(
       text
     };
   let mut written = 0;
-  for (start, end) in crate::panel_search::ranges(text, query) {
+  for (start, end) in crate::panel::search::ranges(text, query) {
     write!(
       out,
       "{}{}{}{style}",

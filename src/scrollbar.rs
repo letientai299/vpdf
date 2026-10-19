@@ -3,6 +3,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Target;
+use crate::graphics::Graphics;
 use crate::pointer::{Hit, Route};
 use crate::text::Bounds;
 use crate::theme;
@@ -145,7 +146,11 @@ impl App {
   }
 
   /// Draws track, ticks, thumb, and label.
-  pub(crate) fn draw_bar(&mut self, out: &mut impl Write) -> Result<()> {
+  pub(crate) fn draw_bar(
+    &mut self,
+    graphics: &mut Graphics,
+    out: &mut impl Write,
+  ) -> Result<()> {
     let now = Instant::now();
     let scroll = self.reader.scroll;
     if self.bar.seen.is_some_and(|seen| seen.to_bits() != scroll.to_bits()) {
@@ -163,21 +168,21 @@ impl App {
     let rows = screen.rows.saturating_sub(1);
     let left = self.left;
     let track = (column, 1, rows);
-    self.graphics.stretch(theme::TRACK, -1, track, screen, left, out)?;
+    graphics.stretch(theme::TRACK, -1, track, screen, left, out)?;
     let x1 = screen.width();
     let x0 = x1 - f32::from(screen.cell_width);
     let rect = |y0: f32, y1: f32| Bounds { x0, y0, x1, y1 };
     self.refresh_runs(height);
     let cached = self.bar.runs.take();
     for &(y0, y1, color) in cached.iter().flat_map(|(_, runs)| runs) {
-      self.graphics.backdrop(rect(y0, y1), color, screen, left, out)?;
+      graphics.backdrop(rect(y0, y1), color, screen, left, out)?;
     }
     self.bar.runs = cached;
     let (top, size, _) = self.thumb(height);
     let thumb = rect(top, top + size);
-    self.graphics.backdrop(thumb, theme::THUMB, screen, left, out)?;
+    graphics.backdrop(thumb, theme::THUMB, screen, left, out)?;
     if let Some(scrub) = self.bar.scrub {
-      self.draw_scrub_label(scrub.row, out)?;
+      self.draw_scrub_label(graphics, scrub.row, out)?;
     }
     Ok(())
   }
@@ -229,7 +234,12 @@ impl App {
   }
 
   /// The scrubbed page, left of the track.
-  fn draw_scrub_label(&mut self, row: u16, out: &mut impl Write) -> Result<()> {
+  fn draw_scrub_label(
+    &mut self,
+    graphics: &mut Graphics,
+    row: u16,
+    out: &mut impl Write,
+  ) -> Result<()> {
     let screen = self.uncovered();
     let y = f32::from(row) * f32::from(screen.cell_height);
     let page = self.layout.page_at(self.reader.scroll + y);
@@ -255,7 +265,7 @@ impl App {
       y0: y,
       y1: y + cell_height,
     };
-    self.graphics.backdrop(area, theme::BAR_FILL, screen, self.left, out)
+    graphics.backdrop(area, theme::BAR_FILL, screen, self.left, out)
   }
 }
 

@@ -214,8 +214,8 @@ fn cursor_hint_labels_keep_owner() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn cursor_focus_reuses_durable_mode() -> Result<()> {
-  let paper = app("paper.pdf", false)?.path;
-  let book = app("book.pdf", false)?.path;
+  let paper = app("paper.pdf", false)?.app.path;
+  let book = app("book.pdf", false)?.app.path;
   let mut session = Session::new(None);
   session.open(&paper, true, screen())?;
   send(&mut session, b"i2lgo\ti\t")?;
@@ -265,7 +265,10 @@ fn cursor_rendering_keeps_visual_band_separate() -> Result<()> {
       assert!(frame.contains("\x1b[0;7;33m"));
     } else {
       app.graphics.begin(&mut out)?;
-      app.marks(app.layout.screen, &mut out)?;
+      {
+        let (app, graphics) = app.parts();
+        app.marks(graphics, app.layout.screen, &mut out)?;
+      }
       app.graphics.end(&mut out)?;
       let frame = String::from_utf8_lossy(&out);
       assert!(frame.contains("z=1,"));
@@ -317,8 +320,8 @@ fn cursor_sections_use_position_after_scrolling() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn cursor_panel_enter_returns_normal() -> Result<()> {
   for cross_document in [false, true] {
-    let paper = app("paper.pdf", false)?.path;
-    let book = app("book.pdf", false)?.path;
+    let paper = app("paper.pdf", false)?.app.path;
+    let book = app("book.pdf", false)?.app.path;
     let mut session = Session::new(None);
     session.open(&paper, true, screen())?;
     send(&mut session, b"i2l")?;

@@ -3,6 +3,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Target;
+use crate::graphics::Graphics;
 use crate::keys::{self, Action, Input, PanelKind};
 use crate::panel::Destination;
 use crate::pdf_text::PdfText;
@@ -474,7 +475,11 @@ impl App {
   }
 
   /// Draws the menu, key first, like clues.
-  pub fn draw_context(&mut self, out: &mut impl Write) -> Result<()> {
+  pub fn draw_context(
+    &mut self,
+    graphics: &mut Graphics,
+    out: &mut impl Write,
+  ) -> Result<()> {
     let Some(menu) = &self.context_menu else { return Ok(()) };
     let (left, top) = menu.at;
     let keys = menu.keys();
@@ -503,7 +508,7 @@ impl App {
         if row == selected { theme::BADGE_FILL } else { theme::BAR_FILL };
       let y0 = area.y0 + row as f32 * height;
       let rect = Bounds { y0, y1: y0 + height, ..area };
-      self.graphics.backdrop(rect, color, screen, self.left, out)?;
+      graphics.backdrop(rect, color, screen, self.left, out)?;
     }
     Ok(())
   }

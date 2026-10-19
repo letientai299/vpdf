@@ -5,6 +5,7 @@ use crate::Result;
 use crate::cache::Cache;
 use crate::document::{Handle, MIB};
 use crate::graphics::Graphics;
+use crate::jobs::{Wake, WakingSender};
 use crate::layout::{Screen, page_matrix};
 use crate::panel::{self, Destination, Panel, Pointing, Row};
 use crate::state::Entry;
@@ -78,9 +79,10 @@ pub struct Shelf {
 }
 
 impl Shelf {
-  pub fn new(entries: &[Entry], password: &str) -> Self {
+  pub fn new(entries: &[Entry], password: &str, wake: &Wake) -> Self {
     let (asks, inbox) = mpsc::channel();
     let (send, loaded) = mpsc::channel();
+    let send = wake.sender(send);
     let password = password.to_owned();
     std::thread::spawn(move || work(&password, &inbox, &send));
     Self {
@@ -337,7 +339,7 @@ struct Area {
 fn work(
   password: &str,
   inbox: &mpsc::Receiver<Ask>,
-  send: &mpsc::Sender<(PathBuf, Card)>,
+  send: &WakingSender<mpsc::Sender<(PathBuf, Card)>>,
 ) {
   while let Ok(mut ask) = inbox.recv() {
     // A selection moved past is not worth reading.
@@ -346,7 +348,7 @@ fn work(
     }
     let facts = read(&ask, password).map_err(|error| error.to_string());
     let card = Card { fit: ask.fit, facts };
-    if crate::input::notify(send.send((ask.entry.path, card))).is_err() {
+    if send.send((ask.entry.path, card)).is_err() {
       return;
     }
   }
@@ -475,6 +477,25 @@ mod tests {
   use std::time::{Duration, Instant};
 
   #[test]
+  fn cards_wake_the_loop() -> Result<()> {
+    let file = tempfile::NamedTempFile::new()?;
+    crate::fixtures::pdf(file.path(), &["body"], "")?;
+    let entry =
+      crate::state::tests::entry(&file.path().to_string_lossy(), 0, 0);
+    let (wake, woken) = crate::fixtures::wake();
+    let mut shelf = Shelf::new(std::slice::from_ref(&entry), "", &wake);
+    shelf.ask(&entry, Some((64, 64)));
+    woken.recv_timeout(Duration::from_secs(10))?;
+    let (path, card) = shelf.loaded.try_recv()?;
+    assert_eq!(path, entry.path);
+    let facts = card.facts.map_err(anyhow::Error::msg)?;
+    assert_eq!(facts.pages, 1);
+    assert!(facts.thumb.is_some());
+    assert_eq!(woken.try_iter().count(), 0);
+    Ok(())
+  }
+
+  #[test]
   fn ago_names_the_largest_unit() {
     let minute = 60_000;
     for (elapsed, want) in [
@@ -517,7 +538,7 @@ mod tests {
       cell_height: 16,
       origin: (0, 0),
     };
-    let mut shelf = Shelf::new(&entries, "");
+    let mut shelf = Shelf::new(&entries, "", &Wake::none());
     let mut panel = Panel::new(PanelKind::Recent, panel::recent_rows(&entries));
     let draw = |shelf: &mut Shelf, panel: &mut Panel| -> Result<String> {
       let mut out = Vec::new();
@@ -585,7 +606,7 @@ mod tests {
       cell_height: 16,
       origin: (0, 0),
     };
-    let mut shelf = Shelf::new(entries, "");
+    let mut shelf = Shelf::new(entries, "", &Wake::none());
     let mut panel = Panel::new(PanelKind::Recent, panel::recent_rows(entries));
     let mut graphics = Graphics::default();
     let mut draw = |shelf: &mut Shelf| -> Result<String> {

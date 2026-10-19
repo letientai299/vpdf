@@ -112,7 +112,7 @@ A faster raster stage alone does not establish a faster terminal reader.
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
 [layout]: ../../crates/vpdf-pdf/src/layout.rs
 [canvas]: ../../src/canvas.rs
-[worker]: ../../src/render_worker.rs
+[worker]: ../../src/jobs/render.rs
 [prime]: ../../crates/vpdf-pdf/src/prime.rs
 [graphics]: ../../src/graphics/mod.rs
 [pace]: ../../src/pace.rs
@@ -120,5 +120,5 @@ A faster raster stage alone does not establish a faster terminal reader.
 [spool]: ../../src/spool.rs
 [terminal]: ../../src/terminal/mod.rs
 [document]: ../../crates/vpdf-pdf/src/document/mod.rs
-[search]: ../../src/search_worker.rs
+[search]: ../../src/jobs/search.rs
 [reader]: ../../crates/vpdf-reader/src/reader.rs

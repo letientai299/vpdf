@@ -5,7 +5,8 @@ use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::fmt::Write as _;
 use std::path::Path;
 use vpdf::Result;
-use vpdf::app::{Request, TabMove};
+use vpdf::app::App;
+use vpdf::app::Request;
 use vpdf::figures::Source;
 use vpdf::keys::Action;
 use vpdf::pointer::{Hit, List, Region};
@@ -13,6 +14,7 @@ use vpdf::prompt::{Prompt, PromptKind};
 use vpdf::session::Session;
 use vpdf::text::{Bounds, PageId, Position};
 use vpdf::trace::Drawable;
+use vpdf::window::TabMove;
 use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
 use vpdf_reader::reader::SelectionKind;
 
@@ -88,7 +90,8 @@ pub(super) fn open(
     app.open_panel(vpdf::keys::PanelKind::Text)?;
     app.close_panel()?;
   }
-  app.draw(&mut Vec::new())?;
+  session.draw_focused(&mut Vec::new())?;
+  let app = session.app();
   assert_eq!(app.text_mode, text_mode);
   Ok((directory, session))
 }
@@ -171,11 +174,7 @@ fn alt_click(session: &mut Session, at: (u16, u16)) -> Result<()> {
 }
 
 /// The cell over a page rectangle's centre.
-fn centre_cell(
-  app: &vpdf::app::App,
-  page: PageId,
-  bounds: Bounds,
-) -> (u16, u16) {
+fn centre_cell(app: &App, page: PageId, bounds: Bounds) -> (u16, u16) {
   let rect = app.layout.project(page, bounds, app.reader.scroll);
   let (x, y) = rect.centre();
   let (width, height) =
@@ -338,7 +337,7 @@ fn wrapped_links_tint_whole() -> Result<()> {
     let (_directory, mut session) =
       open(|path| parts_pdf(path, parts), text_mode)?;
     let mut plain = Vec::new();
-    session.app().draw(&mut plain)?;
+    session.draw_focused(&mut plain)?;
     // Hints and `gl` list the address once.
     session.app().start_hints(false)?;
     let hints = session.app().hints.take().map_or(0, |h| h.items.len());
@@ -366,7 +365,7 @@ fn wrapped_links_tint_whole() -> Result<()> {
       let segments = session.app().hover_segments().len();
       assert_eq!(segments, want, "text={text_mode} link {index}");
       let mut tinted = Vec::new();
-      session.app().draw(&mut tinted)?;
+      session.draw_focused(&mut tinted)?;
       let tinted = String::from_utf8_lossy(&tinted);
       let drawn = if text_mode {
         // One underlined run per line.
@@ -454,10 +453,10 @@ fn hovered_links_draw_a_tint() -> Result<()> {
     let (_directory, mut session) = session(text_mode)?;
     let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
     let mut plain = Vec::new();
-    session.app().draw(&mut plain)?;
+    session.draw_focused(&mut plain)?;
     mouse(&mut session, MouseEventKind::Moved, internal)?;
     let mut tinted = Vec::new();
-    session.app().draw(&mut tinted)?;
+    session.draw_focused(&mut tinted)?;
     let (plain, tinted) =
       (String::from_utf8_lossy(&plain), String::from_utf8_lossy(&tinted));
     if text_mode {
@@ -722,15 +721,14 @@ fn clicks_mark_their_target() -> Result<()> {
       Then::Cursor => action(session.app(), Action::Cursor)?,
     }
     // Frames diff placements, so compare steady frames.
-    let app = session.app();
     let mut frame = Vec::new();
     for _ in 0..2 {
       frame.clear();
-      app.draw(&mut frame)?;
+      session.draw_focused(&mut frame)?;
     }
-    app.landing = None;
+    session.app().landing = None;
     let mut plain = Vec::new();
-    app.draw(&mut plain)?;
+    session.draw_focused(&mut plain)?;
     assert_eq!(frame != plain, marked, "{case}");
   }
   Ok(())
@@ -1134,8 +1132,8 @@ fn text_edge_drags_track_the_pointer() -> Result<()> {
   for _ in 0..3 {
     mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), edge)?;
   }
+  session.draw_focused(&mut Vec::new())?;
   let app = session.app();
-  app.draw(&mut Vec::new())?;
   let under = app.text_position(edge.0, edge.1)?;
   assert_eq!(app.reader.cursor.line, under.line);
   Ok(())
@@ -1420,7 +1418,7 @@ fn alt_drags_capture_regions() -> Result<()> {
   let to = glyph_cell(&mut session, 1, 9)?;
   let backdrops = |session: &mut Session| -> Result<usize> {
     let mut frame = Vec::new();
-    session.app().draw(&mut frame)?;
+    session.draw_focused(&mut frame)?;
     Ok(String::from_utf8_lossy(&frame).matches("z=-1").count())
   };
   let before = backdrops(&mut session)?;
@@ -1566,7 +1564,7 @@ fn sweeps_stay_on_page() -> Result<()> {
   for _ in 0..4 {
     action(session.app(), Action::Zoom(-1))?;
   }
-  session.app().draw(&mut Vec::new())?;
+  session.draw_focused(&mut Vec::new())?;
   let from = glyph_cell(&mut session, 0, 2)?;
   let edge = (session.app().screen.columns - 1, from.1 + 2);
   let app = session.app();
@@ -2044,10 +2042,11 @@ fn hint_labels_keep_off_neighbours() -> Result<()> {
     let app = session.app();
     app.text_mode = text_mode;
     app.command(&page.to_string())?;
-    app.draw(&mut Vec::new())?;
+    session.draw_focused(&mut Vec::new())?;
+    let app = session.app();
     app.start_hints(false)?;
     let hints = app.hints.take().expect("hints");
-    let target = |app: &mut vpdf::app::App, column, row| -> Result<_> {
+    let target = |app: &mut App, column, row| -> Result<_> {
       let hit = app.hovered(Region::Page, column, row, None)?;
       let Hit::Link(on, index) = hit else { return Ok(None) };
       Ok(Some(app.doc.links(on)?[index].target.clone()))
@@ -2339,9 +2338,8 @@ fn sideways_moves_close_previews() -> Result<()> {
       app.hovered(Region::Page, link.0, row, None).ok() == Some(link_hit)
     });
     let row = row.expect("a link row above the frame");
-    let on = |app: &mut vpdf::app::App, column| {
-      app.hovered(Region::Page, column, row, None).ok()
-    };
+    let on =
+      |app: &mut App, column| app.hovered(Region::Page, column, row, None).ok();
     let columns = app.screen.columns;
     let past = (link.0..columns).find(|&c| on(app, c) != Some(link_hit));
     // The bridge keeps the edge cell.

@@ -950,7 +950,7 @@ fn section_clicks_select_their_entry() -> Result<()> {
 
 /// The draw of the focused pane alone.
 fn drawn(session: &mut Session) -> Result<String> {
-  crate::app::drawn(session.app())
+  crate::common::focused_frame(session)
 }
 
 /// Ctrl-o, back in history.
@@ -1164,8 +1164,9 @@ fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
   left(&mut session, Down(L), (edge, 3));
   left(&mut session, Moved, (edge, 3));
   left(&mut session, Down(L), (edge + 10, 5));
-  let pane = session.tab().panes.iter_mut().find(|app| app.id == id);
-  let label = crate::app::drawn(pane.expect("the first pane"))?;
+  let tab = session.tab();
+  tab.focus = tab.panes.iter().position(|app| app.id == id).unwrap();
+  let label = drawn(&mut session)?;
   assert!(!label.contains(" p. "), "blurred panes end scrubs");
   Ok(())
 }

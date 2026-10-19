@@ -5,38 +5,27 @@ use vpdf_reader::motion::Motion;
 use vpdf_reader::objects::Object;
 use vpdf_reader::reader::{Reader, SelectionKind, TextSource};
 
-struct Pages(Vec<Arc<Text>>);
-
-impl TextSource for Pages {
-  fn page_count(&self) -> usize {
-    self.0.len()
-  }
-  fn page_text(&mut self, page: PageId) -> Result<Arc<Text>> {
-    Ok(Arc::clone(&self.0[page.0]))
-  }
-}
+type Pages = Vec<Arc<Text>>;
 
 fn pages(pages: &[&[(&str, bool)]]) -> Pages {
-  Pages(
-    pages
-      .iter()
-      .map(|lines| {
-        Arc::new(Text {
-          truncated: false,
-          lines: lines
-            .iter()
-            .map(|(text, paragraph)| Line {
-              paragraph: *paragraph,
-              glyphs: text
-                .chars()
-                .map(|ch| Glyph { ch, bounds: Bounds::default() })
-                .collect(),
-            })
-            .collect(),
-        })
+  pages
+    .iter()
+    .map(|lines| {
+      Arc::new(Text {
+        truncated: false,
+        lines: lines
+          .iter()
+          .map(|(text, paragraph)| Line {
+            paragraph: *paragraph,
+            glyphs: text
+              .chars()
+              .map(|ch| Glyph { ch, bounds: Bounds::default() })
+              .collect(),
+          })
+          .collect(),
       })
-      .collect(),
-  )
+    })
+    .collect()
 }
 
 fn copy(

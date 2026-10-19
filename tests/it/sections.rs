@@ -4,11 +4,12 @@ use vpdf::Result;
 use vpdf::app::App;
 use vpdf::document::Target;
 use vpdf::layout::Screen;
+use vpdf::solo::Solo;
 use vpdf::text::{Bounds, Position};
 
-fn app(text_mode: bool) -> Result<App> {
+fn app(text_mode: bool) -> Result<Solo> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut app = App::with_screen(
+  let mut app = Solo::open(
     &root.join("paper.pdf"),
     "",
     text_mode,

@@ -7,40 +7,26 @@
 //! reopen need not hash. OCR output lives beside the packs, named by a
 //! hash of the raster and the engine that read it.
 use crate::Result;
-use crate::document::{GLYPH_LIMIT, MIB, TEXT_FLAGS};
-use crate::search::Index;
-use crate::text::PageId;
-use anyhow::{Context, ensure};
-use flate2::write::ZlibEncoder;
-use flate2::{Compression, Decompress, FlushDecompress, Status};
+use crate::document::MIB;
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::fs::{File, Metadata};
-use std::io::{Read, Write};
-use std::os::unix::fs::{DirBuilderExt, FileExt, MetadataExt, OpenOptionsExt};
+use std::io::Read;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, PoisonError};
-use std::time::{Duration, SystemTime};
 
-const MAGIC: &[u8; 8] = b"VPDFIDX1";
 const OCR_MAGIC: &[u8; 8] = b"VPDFOCR1";
-/// Packs and OCR output kept before the least recently used go.
-const BUDGET: u64 = 1 << 30;
-/// Free disk space below which nothing is written.
-const RESERVE: u64 = 2 << 30;
 /// Largest decoded page record; a page holds at most `GLYPH_LIMIT`
 /// glyphs.
 const RECORD: u64 = 16 * MIB as u64;
-/// Age after which a temporary pack counts as abandoned.
-const ABANDONED: Duration = Duration::from_secs(3600);
-/// Age after which an unused memo goes.
-const FORGOTTEN: Duration = Duration::from_hours(30 * 24);
-/// Table bytes per page: offset, stored size, decoded size.
-const ENTRY: usize = 16;
-/// Fewest pages a decoder thread takes; smaller batches decode on the
-/// calling thread.
-const SHARE: usize = 16;
+
+mod pack;
+mod provenance;
+mod store;
+
+pub use pack::{Pack, Records, save};
+use pack::{deflate, inflate, put};
+use store::{BUDGET, create, publish, room, touch, trim};
 
 pub type Alias = [u8; 32];
 
@@ -74,9 +60,6 @@ impl Version {
   }
 }
 
-/// Writes so far, naming each writer's temporary pack.
-static WRITES: AtomicU64 = AtomicU64::new(0);
-
 /// Where packs live: the user caches directory on macOS, which the OS
 /// may purge. `VPDF_CACHE` names another directory on any system, or
 /// `off` disables the cache. Without it, other systems stay off until a
@@ -107,16 +90,6 @@ pub fn alias(file: &mut File) -> Result<Alias> {
       read => hasher.update(&buffer[..read]),
     }
   }
-}
-
-/// What shaped the records: a change makes every pack stale.
-fn provenance() -> String {
-  format!(
-    "schema 2; flags {}; glyphs {GLYPH_LIMIT}; code {}; {}",
-    TEXT_FLAGS.bits(),
-    env!("VPDF_INDEX_CODE"),
-    env!("VPDF_INDEX_CRATES")
-  )
 }
 
 /// Lowercase hex of `bytes`.
@@ -173,13 +146,6 @@ pub fn remember(root: &Path, version: Version, alias: &Alias) -> Result<()> {
   publish(&memo(root, version), &bytes)
 }
 
-/// Makes `root` and tells whether it has room to write.
-fn room(root: &Path) -> Result<bool> {
-  create(root)?;
-  let stats = rustix::fs::statvfs(root)?;
-  Ok(stats.f_bavail.saturating_mul(stats.f_frsize) >= RESERVE)
-}
-
 /// OCR output `key` names; none when absent or damaged.
 pub fn recall_ocr(root: &Path, key: &Alias) -> Option<String> {
   let path = ocr_path(root, key);
@@ -212,350 +178,22 @@ pub fn remember_ocr(root: &Path, key: &Alias, text: &str) -> Result<()> {
   trim(root, BUDGET)
 }
 
-/// Marks `path` recently used, for trimming.
-fn touch(path: &Path) {
-  drop(File::open(path).and_then(|file| file.set_modified(SystemTime::now())));
-}
-
 fn ocr_path(root: &Path, key: &Alias) -> PathBuf {
   root.join(format!("{}.ocr", hex(key)))
 }
 
-/// Makes `root`; pages hold the PDF's text, so only its owner reads them.
-fn create(root: &Path) -> Result<()> {
-  std::fs::DirBuilder::new().recursive(true).mode(0o700).create(root)?;
-  Ok(())
-}
-
-/// Writes `bytes` to `target` whole: writers race by renaming whole
-/// files, so readers never see a partial one.
-fn publish(target: &Path, bytes: &[u8]) -> Result<()> {
-  let write = WRITES.fetch_add(1, Ordering::Relaxed);
-  let temp =
-    target.with_extension(format!("{}-{write}.tmp", std::process::id()));
-  let written = File::options()
-    .write(true)
-    .create_new(true)
-    .mode(0o600)
-    .open(&temp)
-    .and_then(|mut file| file.write_all(bytes))
-    .and_then(|()| std::fs::rename(&temp, target));
-  if let Err(error) = written {
-    drop(std::fs::remove_file(&temp));
-    return Err(error.into());
-  }
-  Ok(())
-}
-
-/// A pack opened for reading. Its open file keeps answering after the
-/// OS deletes the path.
-pub struct Pack {
-  file: File,
-  table: Vec<Entry>,
-  /// Held pages whose records failed to decode, so a save replaces them.
-  damaged: Mutex<Vec<PageId>>,
-}
-
-/// Where a page's record lies and how long it decodes; zero size when
-/// the page is absent.
-#[derive(Clone, Copy)]
-struct Entry {
-  offset: u64,
-  size: u32,
-  len: u32,
-}
-
-/// A compressed record and its decoded length.
-#[derive(Clone)]
-struct Record {
-  raw: Vec<u8>,
-  len: u32,
-}
-
-impl Pack {
-  /// The valid pack for `alias`, else none.
-  pub fn open(root: &Path, alias: &Alias) -> Option<Self> {
-    let file = File::open(path(root, alias)).ok()?;
-    let pack = Self::read(file).ok()?;
-    // Recency for eviction.
-    drop(pack.file.set_modified(SystemTime::now()));
-    Some(pack)
-  }
-
-  /// Pages the pack covers: its document's page count.
-  pub fn pages(&self) -> usize {
-    self.table.len()
-  }
-
-  fn read(file: File) -> Result<Self> {
-    let len = file.metadata()?.len();
-    let mut at = 0;
-    let mut take = |count: usize| -> Result<Vec<u8>> {
-      let mut bytes = vec![0; count];
-      file.read_exact_at(&mut bytes, at)?;
-      at += count as u64;
-      Ok(bytes)
-    };
-    ensure!(take(MAGIC.len())? == MAGIC, "Not a search pack");
-    let expected = provenance();
-    let size = u32_at(&take(4)?, 0) as usize;
-    ensure!(size == expected.len(), "Stale search pack");
-    ensure!(take(size)? == expected.as_bytes(), "Stale search pack");
-    let pages = u32_at(&take(4)?, 0) as usize;
-    let table_len = pages.checked_mul(ENTRY).context("Search pack size")?;
-    ensure!(table_len as u64 <= len, "Truncated search pack");
-    let raw = take(table_len)?;
-    let table: Vec<Entry> = raw
-      .as_chunks::<ENTRY>()
-      .0
-      .iter()
-      .map(|entry| {
-        let low = u64::from(u32_at(entry, 0));
-        let high = u64::from(u32_at(entry, 4));
-        Entry {
-          offset: high << 32 | low,
-          size: u32_at(entry, 8),
-          len: u32_at(entry, 12),
-        }
-      })
-      .collect();
-    let fits = |entry: &Entry| {
-      u64::from(entry.size) <= RECORD
-        && u64::from(entry.len) <= RECORD
-        && (entry.offset.checked_add(u64::from(entry.size)))
-          .is_some_and(|end| end <= len)
-    };
-    ensure!(table.iter().all(fits), "Truncated search pack");
-    Ok(Self { file, table, damaged: Mutex::new(Vec::new()) })
-  }
-
-  /// `page`'s index; none when absent or damaged.
-  pub fn index(&self, page: PageId) -> Option<Index> {
-    let record = self.record(page)?;
-    let index = decode(page, &record);
-    if index.is_none() {
-      self.damaged.lock().unwrap_or_else(PoisonError::into_inner).push(page);
-    }
-    index
-  }
-
-  /// Indexes of the leading `pages` the pack holds, in order, up to
-  /// `budget` decoded bytes (at least one page), on a few threads.
-  pub fn indexes(
-    &self,
-    pages: &[PageId],
-    budget: usize,
-  ) -> Vec<(PageId, Index)> {
-    let mut used = 0;
-    let pages: Vec<PageId> = pages
-      .iter()
-      .copied()
-      .filter(|&page| self.holds(page))
-      .take_while(|page| {
-        let fits =
-          used == 0 || used + self.table[page.0].len as usize <= budget;
-        used += self.table[page.0].len as usize;
-        fits
-      })
-      .collect();
-    let threads = crate::render_worker::pool_size();
-    let chunk = pages.len().div_ceil(threads).max(SHARE);
-    let decode = |pages: &[PageId]| -> Vec<(PageId, Index)> {
-      pages.iter().filter_map(|&page| Some((page, self.index(page)?))).collect()
-    };
-    let mut chunks = pages.chunks(chunk);
-    let Some(first) = chunks.next() else { return Vec::new() };
-    std::thread::scope(|scope| {
-      let jobs: Vec<_> = chunks
-        .map(|pages| {
-          let job = std::thread::Builder::new()
-            .spawn_scoped(scope, move || decode(pages));
-          // Without a thread, the chunk decodes after the first.
-          job.map_err(|_| pages)
-        })
-        .collect();
-      let mut found = decode(first);
-      for job in jobs {
-        match job {
-          // A panicking decoder leaves its pages to the PDF.
-          Ok(job) => found.extend(job.join().unwrap_or_default()),
-          Err(pages) => found.extend(decode(pages)),
-        }
-      }
-      found
-    })
-  }
-
-  /// Whether the pack has a record for `page` that has not failed.
-  fn holds(&self, page: PageId) -> bool {
-    self.table.get(page.0).is_some_and(|entry| entry.size > 0)
-      && !self
-        .damaged
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .contains(&page)
-  }
-
-  fn record(&self, page: PageId) -> Option<Record> {
-    if !self.holds(page) {
-      return None;
-    }
-    let entry = self.table[page.0];
-    let mut raw = vec![0; entry.size as usize];
-    self.file.read_exact_at(&mut raw, entry.offset).ok()?;
-    Some(Record { raw, len: entry.len })
-  }
-}
-
-/// The index `record` holds for `page`; none unless it inflates to its
-/// stated length and decodes.
-fn decode(page: PageId, record: &Record) -> Option<Index> {
-  Index::decode(page, &inflate(&record.raw, record.len as usize)?).ok()
-}
-
-/// `raw` inflated, when it holds exactly `len` bytes.
-fn inflate(raw: &[u8], len: usize) -> Option<Vec<u8>> {
-  // One spare byte lets a longer stream show itself.
-  let mut bytes = Vec::with_capacity(len + 1);
-  let status = Decompress::new(true)
-    .decompress_vec(raw, &mut bytes, FlushDecompress::Finish)
-    .ok()?;
-  (status == Status::StreamEnd && bytes.len() == len).then_some(bytes)
-}
-
-fn deflate(bytes: &[u8]) -> Result<Vec<u8>> {
-  let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-  encoder.write_all(bytes)?;
-  Ok(encoder.finish()?)
-}
-
-fn u32_at(bytes: &[u8], at: usize) -> u32 {
-  u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]])
-}
-
-/// Compressed page records waiting for a pack.
-pub struct Records(Vec<Option<Record>>);
-
-impl Records {
-  pub fn new(pages: usize) -> Self {
-    Self(vec![None; pages])
-  }
-
-  pub fn add(&mut self, page: PageId, index: &Index) -> Result<()> {
-    let slot = self.0.get_mut(page.0).context("Page outside document")?;
-    let mut bytes = Vec::new();
-    index.encode(&mut bytes);
-    let len = u32::try_from(bytes.len())?;
-    *slot = Some(Record { raw: deflate(&bytes)?, len });
-    Ok(())
-  }
-
-  pub fn is_empty(&self) -> bool {
-    self.0.iter().all(Option::is_none)
-  }
-
-  /// Whether `old` lacks a page recorded here.
-  pub fn adds_to(&self, old: Option<&Pack>) -> bool {
-    self.0.iter().enumerate().any(|(page, record)| {
-      record.is_some() && !old.is_some_and(|old| old.holds(PageId(page)))
-    })
-  }
-}
-
-/// Writes the pack for `alias` from `records`, keeping `old`'s records
-/// of other pages, then trims the cache to its budget. Skips the write
-/// when the disk is nearly full.
-pub fn save(
-  root: &Path,
-  alias: &Alias,
-  records: &Records,
-  old: Option<&Pack>,
-) -> Result<()> {
-  if !room(root)? {
-    return Ok(());
-  }
-  let kept: Vec<Option<Record>> = records
-    .0
-    .iter()
-    .enumerate()
-    .map(|(page, record)| {
-      record.clone().or_else(|| old.and_then(|old| old.record(PageId(page))))
-    })
-    .collect();
-  let mut bytes = MAGIC.to_vec();
-  let provenance = provenance();
-  put(&mut bytes, provenance.len());
-  bytes.extend_from_slice(provenance.as_bytes());
-  put(&mut bytes, kept.len());
-  let mut offset = (bytes.len() + kept.len() * ENTRY) as u64;
-  for record in &kept {
-    let (size, len) = record.as_ref().map_or((0, 0), |r| (r.raw.len(), r.len));
-    let start = if size == 0 { 0 } else { offset };
-    bytes.extend_from_slice(&(start as u32).to_le_bytes());
-    bytes.extend_from_slice(&((start >> 32) as u32).to_le_bytes());
-    put(&mut bytes, size);
-    bytes.extend_from_slice(&len.to_le_bytes());
-    offset += size as u64;
-  }
-  for raw in kept.iter().flatten().map(|record| &record.raw) {
-    bytes.extend_from_slice(raw);
-  }
-  publish(&path(root, alias), &bytes)?;
-  trim(root, BUDGET)
-}
-
-fn put(bytes: &mut Vec<u8>, value: usize) {
-  bytes.extend_from_slice(&(value as u32).to_le_bytes());
-}
-
-/// Deletes the least recently used packs and OCR output until the rest
-/// fit `budget`, memos of deleted packs or unused for a month, and
-/// temporary files a crashed writer left.
-fn trim(root: &Path, budget: u64) -> Result<()> {
-  let mut packs = Vec::new();
-  let mut memos = Vec::new();
-  let now = SystemTime::now();
-  for entry in std::fs::read_dir(root)?.flatten() {
-    let Ok(meta) = entry.metadata() else { continue };
-    let modified = meta.modified().unwrap_or(now);
-    let path = entry.path();
-    match path.extension().and_then(|extension| extension.to_str()) {
-      Some("pack" | "ocr") => packs.push((modified, meta.len(), path)),
-      Some("id") => memos.push((modified, path)),
-      Some("tmp")
-        if now.duration_since(modified).unwrap_or_default() > ABANDONED =>
-      {
-        drop(std::fs::remove_file(path));
-      }
-      _ => {}
-    }
-  }
-  let mut total: u64 = packs.iter().map(|(_, len, _)| len).sum();
-  packs.sort_by_key(|(modified, ..)| *modified);
-  for (_, len, path) in packs {
-    if total <= budget {
-      break;
-    }
-    if std::fs::remove_file(path).is_ok() {
-      total -= len;
-    }
-  }
-  for (modified, memo) in memos {
-    let bytes = std::fs::read(&memo).unwrap_or_default();
-    let alias = bytes.last_chunk::<32>();
-    let unused = now.duration_since(modified).unwrap_or_default() > FORGOTTEN;
-    if unused || alias.is_none_or(|alias| !path(root, alias).exists()) {
-      drop(std::fs::remove_file(memo));
-    }
-  }
-  Ok(())
-}
-
 #[cfg(test)]
 mod tests {
+  use super::pack::{ENTRY, MAGIC, u32_at};
+  use super::provenance::provenance;
+  use super::store::{ABANDONED, FORGOTTEN};
   use super::*;
+  use crate::search::Index;
   use crate::search::compile;
+  use crate::text::PageId;
   use crate::text::{Bounds, Glyph, Line, Text};
+  use anyhow::Context;
+  use std::time::{Duration, SystemTime};
 
   fn index(page: usize, words: &str) -> Index {
     let line = Line {

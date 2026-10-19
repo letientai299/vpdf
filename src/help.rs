@@ -1,5 +1,5 @@
+use crate::panel::layout::{Layout, Line, wrap};
 use crate::panel::{Destination, Row, Style, key_width};
-use crate::panel_layout::{Layout, Line, wrap};
 
 impl Layout {
   pub fn help(rows: &[Row], columns: usize) -> Self {

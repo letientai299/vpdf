@@ -2,7 +2,7 @@ use crate::Result;
 use crate::cache::Cache;
 use crate::content_cache::{self, Alias, Pack, Records, Version};
 use crate::document::{Handle, MIB};
-use crate::input::notify;
+use crate::jobs::{Wake, WakingSender};
 use crate::search::{self, Hit, Index};
 use crate::text::{PageId, Text};
 use anyhow::Context;
@@ -43,9 +43,10 @@ pub struct SearchWorker {
 
 impl SearchWorker {
   /// A worker for `path`, which the reader opened with `pages` pages.
-  pub fn new(path: &Path, password: &str, pages: usize) -> Self {
+  pub fn new(path: &Path, password: &str, pages: usize, wake: &Wake) -> Self {
     let (send, receive) = mpsc::channel();
     let (events_send, events) = mpsc::sync_channel(32);
+    let events_send = wake.sender(events_send);
     let generation = Arc::new(AtomicU64::new(0));
     let current = Arc::clone(&generation);
     let path = path.to_owned();
@@ -106,7 +107,7 @@ impl SearchWorker {
 fn serve(
   mut source: Source,
   receive: &mpsc::Receiver<Request>,
-  send: &mpsc::SyncSender<SearchEvent>,
+  send: &WakingSender<mpsc::SyncSender<SearchEvent>>,
   current: &AtomicU64,
 ) {
   let mut indexes = Cache::new(64 * MIB);
@@ -133,7 +134,7 @@ fn serve(
           done: true,
           error: result.err().map(|e| e.to_string()),
         };
-        if notify(send.send(done)).is_err() {
+        if send.send(done).is_err() {
           break;
         }
       }
@@ -171,7 +172,7 @@ fn next_request(
 /// Answers every query with `error`, as the document did not open.
 fn fail(
   receive: &mpsc::Receiver<Request>,
-  send: &mpsc::SyncSender<SearchEvent>,
+  send: &WakingSender<mpsc::SyncSender<SearchEvent>>,
   error: &anyhow::Error,
 ) {
   for request in receive {
@@ -182,7 +183,7 @@ fn fail(
       done: true,
       error: Some(error.to_string()),
     };
-    if notify(send.send(event)).is_err() {
+    if send.send(event).is_err() {
       return;
     }
   }
@@ -199,7 +200,7 @@ struct SearchTask<'a> {
   origin: PageId,
   backward: bool,
   current: &'a AtomicU64,
-  send: &'a mpsc::SyncSender<SearchEvent>,
+  send: &'a WakingSender<mpsc::SyncSender<SearchEvent>>,
 }
 
 impl SearchTask<'_> {
@@ -238,7 +239,7 @@ impl SearchTask<'_> {
   /// a newer query arrives first.
   fn load(&self, source: &mut Source, page: PageId) -> Result<Option<Index>> {
     let stale = || self.current.load(Ordering::Relaxed) != self.generation;
-    if source.reads_pdf(page) && !crate::render_worker::yield_to_views(stale) {
+    if source.reads_pdf(page) && !crate::jobs::render::yield_to_views(stale) {
       return Ok(None);
     }
     source.index(page).map(Some)
@@ -280,12 +281,12 @@ impl SearchTask<'_> {
       };
       remaining -= hits.len();
       if !hits.is_empty() {
-        notify(self.send.send(SearchEvent {
+        self.send.send(SearchEvent {
           generation: self.generation,
           hits,
           done: false,
           error: None,
-        }))?;
+        })?;
       }
       if remaining == 0 {
         break;
@@ -524,6 +525,7 @@ mod tests {
   fn scan(source: &mut Source, query: &str) -> Result<(Vec<Hit>, usize)> {
     let before = source.extracted;
     let (send, events) = mpsc::sync_channel(4096);
+    let send = Wake::none().sender(send);
     let current = AtomicU64::new(1);
     let task = SearchTask {
       generation: 1,

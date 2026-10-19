@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::app::{App, InputOwner, Request, TabMove, Tabline, Window};
+use crate::app::{App, InputOwner, Request, Tabline};
 use crate::dnd::{Dropped, Step, Target};
 use crate::document::PasswordRequired;
 use crate::graphics::Graphics;
@@ -16,6 +16,7 @@ use crate::text::{PageId, Position};
 use crate::theme;
 use crate::trace::Drawable;
 use crate::watch::Watcher;
+use crate::window::{TabMove, Window};
 use crossterm::event::{
   KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
 };
@@ -35,12 +36,14 @@ pub struct Tab {
   last: Option<u32>,
 }
 
-/// Open documents as tabs of split panes. The focused pane of the active
-/// tab holds the shared Kitty image cache and lends it while others draw.
+/// Open documents as tabs of split panes, which draw with one shared
+/// Kitty image cache.
 pub struct Session {
   pub tabs: Vec<Tab>,
   pub active: usize,
   pub history: History,
+  /// Images every pane of every tab shares.
+  pub graphics: Graphics,
   pub quit: bool,
   pub state: State,
   perf: crate::perf::Monitor,
@@ -63,8 +66,8 @@ pub struct Session {
   /// Set while a resize could not measure cells.
   unmeasured: Option<Unmeasured>,
   sight: Sight,
-  observer: Option<crate::tmux::Observer>,
-  observed: Option<crate::tmux::Snapshot>,
+  observer: Option<crate::tmux_observer::Observer>,
+  observed: Option<crate::tmux_observer::Snapshot>,
   rehover: Rehover,
   image_write: Option<ImageWrite>,
   /// The drag over the window, OSC 72.
@@ -217,8 +220,13 @@ impl Session {
     Self {
       tabs: Vec::new(),
       active: 0,
-      history: state.history(),
+      history: History {
+        commands: state.commands.clone(),
+        searches: state.searches.clone(),
+        revision: 0,
+      },
       quit: false,
+      graphics: Graphics::default(),
       state,
       perf: crate::perf::Monitor::default(),
       home: None,
@@ -244,7 +252,8 @@ impl Session {
 
   pub fn save(&mut self) -> Result<()> {
     let Some(store) = &self.store else { return Ok(()) };
-    self.state.save(store, &self.history)
+    let history = &self.history;
+    self.state.save(store, &history.commands, &history.searches)
   }
 
   /// Records the focused pane and new history in memory, where the
@@ -254,7 +263,7 @@ impl Session {
       return;
     }
     let tab = &self.tabs[self.active];
-    let moved = self.state.remember(&tab.panes[tab.focus]);
+    let moved = self.state.remember_pane(&tab.panes[tab.focus]);
     if moved || self.history.revision != self.recorded {
       self.changed();
     }
@@ -286,7 +295,7 @@ impl Session {
     let (last, others): (Vec<_>, Vec<_>) =
       panes.partition(|app| Some(app.id) == focused);
     for app in others.into_iter().chain(last) {
-      self.state.remember(app);
+      self.state.remember_pane(app);
     }
     self.save()
   }

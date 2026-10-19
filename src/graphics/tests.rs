@@ -40,6 +40,7 @@ fn commands_stay_in_session_block() -> Result<()> {
       crop: crate::layout::Crop::default(),
     };
     graphics.upload(
+      0,
       &Tile {
         key,
         payload: Payload::Encoded(encode(&[255; 3])?.into()),
@@ -109,7 +110,11 @@ fn tile_sized(
   };
   let pixels = vec![255; (width * height * 3) as usize];
   let payload = Payload::Encoded(encode(&pixels)?.into());
-  graphics.upload(&Tile { key, payload, render_ms: 0.0 }, &mut Vec::new())?;
+  graphics.upload(
+    0,
+    &Tile { key, payload, render_ms: 0.0 },
+    &mut Vec::new(),
+  )?;
   Ok(key)
 }
 
@@ -152,7 +157,7 @@ fn centering_moves_resident_tiles() -> Result<()> {
   };
   let mut output = Vec::new();
   graphics.begin(&mut output)?;
-  assert!(graphics.place(&key, &layout, 0.0, SCREEN, 0, &mut output)?);
+  assert!(graphics.place((0, key), &layout, 0.0, SCREEN, 0, &mut output)?);
   graphics.end(&mut output)?;
   let first =
     commands(&output).into_iter().find(|c| has(c, &[("a", "p")])).unwrap();
@@ -161,7 +166,14 @@ fn centering_moves_resident_tiles() -> Result<()> {
   assert_eq!(crate::tiles::visible(&layout, 0.0), tiles);
   output.clear();
   graphics.begin(&mut output)?;
-  assert!(graphics.place(&key, &layout, 0.0, layout.screen, 0, &mut output)?);
+  assert!(graphics.place(
+    (0, key),
+    &layout,
+    0.0,
+    layout.screen,
+    0,
+    &mut output
+  )?);
   graphics.end(&mut output)?;
   let placed = commands(&output);
   assert_eq!(placed.len(), 1);
@@ -183,8 +195,8 @@ fn frames_delete_only_what_they_leave() -> Result<()> {
   let rect = Bounds { x0: 0.0, y0: 0.0, x1: 4.0, y1: 4.0 };
   let mut output = Vec::new();
   graphics.begin(&mut output)?;
-  graphics.place_at(&a, (0.0, 0.0), SCREEN, 0, &mut output)?;
-  graphics.place_at(&b, (0.0, 64.0), SCREEN, 0, &mut output)?;
+  graphics.place_at((0, a), (0.0, 0.0), SCREEN, 0, &mut output)?;
+  graphics.place_at((0, b), (0.0, 64.0), SCREEN, 0, &mut output)?;
   graphics.highlight(rect, [1; 4], SCREEN, 0, &mut output)?;
   graphics.end(&mut output)?;
   assert_eq!(deletes(&output), []);
@@ -192,7 +204,7 @@ fn frames_delete_only_what_they_leave() -> Result<()> {
   // The next frame moves `a` and drops `b` and the highlight.
   output.clear();
   graphics.begin(&mut output)?;
-  graphics.place_at(&a, (0.0, 3.0), SCREEN, 0, &mut output)?;
+  graphics.place_at((0, a), (0.0, 3.0), SCREEN, 0, &mut output)?;
   graphics.end(&mut output)?;
   let mut deleted = deletes(&output);
   deleted.sort();
@@ -207,7 +219,7 @@ fn frames_delete_only_what_they_leave() -> Result<()> {
   // An unchanged frame deletes nothing.
   output.clear();
   graphics.begin(&mut output)?;
-  graphics.place_at(&a, (0.0, 3.0), SCREEN, 0, &mut output)?;
+  graphics.place_at((0, a), (0.0, 3.0), SCREEN, 0, &mut output)?;
   graphics.end(&mut output)?;
   assert_eq!(deletes(&output), []);
   Ok(())
@@ -266,7 +278,7 @@ fn missing_images_upload_again() -> Result<()> {
   let swatch = graphics.solids[&([1; 4], SWATCH.0, SWATCH.1)];
   graphics.preview = 3;
   assert!(graphics.missing(id));
-  assert!(!graphics.contains(&a));
+  assert!(!graphics.contains(&(0, a)));
   assert!(graphics.missing(swatch));
   assert!(graphics.solids.is_empty());
   assert!(graphics.missing(graphics.base + PREVIEW));
@@ -280,12 +292,12 @@ fn loss_keeps_encoded_tiles() -> Result<()> {
   let mut graphics = Graphics::default();
   let key = tile(&mut graphics, 0)?;
   let payload = Payload::Encoded(encode(&[255; 64 * 64 * 3])?.into());
-  graphics.keep(Tile { key, payload, render_ms: 0.0 });
+  graphics.keep(0, Tile { key, payload, render_ms: 0.0 });
   let rect = Bounds { x0: 0.0, y0: 0.0, x1: 4.0, y1: 4.0 };
   let frame = |graphics: &mut Graphics| -> Result<Vec<u8>> {
     let mut output = Vec::new();
     graphics.begin(&mut output)?;
-    graphics.place_at(&key, (0.0, 0.0), SCREEN, 0, &mut output)?;
+    graphics.place_at((0, key), (0.0, 0.0), SCREEN, 0, &mut output)?;
     graphics.highlight(rect, [3; 4], SCREEN, 0, &mut output)?;
     graphics.picture(7, (2, 2, &[0; 12]), rect, SCREEN, 0, &mut output)?;
     graphics.end(&mut output)?;
@@ -295,7 +307,7 @@ fn loss_keeps_encoded_tiles() -> Result<()> {
   let cached = graphics.stored.entries().count();
   graphics.lost();
   assert_eq!(graphics.stored.entries().count(), cached);
-  assert!(!graphics.contains(&key));
+  assert!(!graphics.contains(&(0, key)));
   assert_eq!(graphics.shown, []);
   assert!(graphics.solids.is_empty());
   let uploaded = frame(&mut graphics)?;
@@ -303,7 +315,7 @@ fn loss_keeps_encoded_tiles() -> Result<()> {
   assert_eq!(commands.iter().filter(|c| has(c, &[("a", "t")])).count(), 3);
   let reused = frame(&mut graphics)?;
   assert!(!String::from_utf8_lossy(&reused).contains("a=t,"));
-  assert!(graphics.contains(&key));
+  assert!(graphics.contains(&(0, key)));
   Ok(())
 }
 
@@ -313,7 +325,7 @@ fn placements_report_errors_only_when_asked() -> Result<()> {
     let mut graphics = Graphics { quiet, ..Graphics::default() };
     let a = tile(&mut graphics, 0)?;
     let mut output = Vec::new();
-    graphics.place_at(&a, (0.0, 0.0), SCREEN, 0, &mut output)?;
+    graphics.place_at((0, a), (0.0, 0.0), SCREEN, 0, &mut output)?;
     let q = quiet.to_string();
     assert!(has(&commands(&output)[0], &[("a", "p"), ("q", &q)]));
   }
@@ -440,7 +452,7 @@ fn crop_quirk_edge_tiles_leave_no_gap() -> Result<()> {
   let mut output = Vec::new();
   for (key, origin, want) in cases {
     output.clear();
-    graphics.place_at(&key, origin, screen, 0, &mut output)?;
+    graphics.place_at((0, key), origin, screen, 0, &mut output)?;
     let placed = commands(&output);
     let Some((xs, ys)) = want else {
       assert_eq!(placed.len(), 1);
@@ -464,7 +476,7 @@ fn crop_quirk_edge_tiles_leave_no_gap() -> Result<()> {
   }
   // A cut side under a cell draws nothing.
   output.clear();
-  graphics.place_at(&full, (0.0, -250.0), screen, 0, &mut output)?;
+  graphics.place_at((0, full), (0.0, -250.0), screen, 0, &mut output)?;
   assert_eq!(commands(&output).len(), 0);
   Ok(())
 }
@@ -534,14 +546,14 @@ fn late_missing_replies_keep_placements_known() -> Result<()> {
   let mut graphics = Graphics::default();
   let key = tile(&mut graphics, 0)?;
   let payload = Payload::Encoded(encode(&[255; 64 * 64 * 3])?.into());
-  graphics.keep(Tile { key, payload, render_ms: 0.0 });
+  graphics.keep(0, Tile { key, payload, render_ms: 0.0 });
   let id = graphics.ids[&(0, key)];
   let rect = Bounds { x0: 0.0, y0: 0.0, x1: 4.0, y1: 4.0 };
   let mut output = Vec::new();
   let frame = |graphics: &mut Graphics| -> Result<Vec<u8>> {
     let mut output = Vec::new();
     graphics.begin(&mut output)?;
-    graphics.place_at(&key, (0.0, 0.0), SCREEN, 0, &mut output)?;
+    graphics.place_at((0, key), (0.0, 0.0), SCREEN, 0, &mut output)?;
     graphics.highlight(rect, [3; 4], SCREEN, 0, &mut output)?;
     graphics.end(&mut output)?;
     Ok(output)
@@ -620,8 +632,7 @@ fn release_deletes_each_owned_id() -> Result<()> {
 fn forgetting_a_document_frees_only_its_tiles() -> Result<()> {
   let mut graphics = Graphics::default();
   let mut output = Vec::new();
-  for doc in [1, 2] {
-    graphics.doc = doc;
+  for pane in [1, 2] {
     let key = TileKey {
       page: PageId(0),
       scale: 1,
@@ -633,6 +644,7 @@ fn forgetting_a_document_frees_only_its_tiles() -> Result<()> {
       crop: crate::layout::Crop::default(),
     };
     graphics.upload(
+      pane,
       &Tile {
         key,
         payload: Payload::Encoded(encode(&[255; 3])?.into()),

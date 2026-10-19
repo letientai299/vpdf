@@ -1,13 +1,10 @@
 use crate::Result;
-use crate::app::App;
-use crate::layout::Crop;
-use crate::pdf_text::PdfText;
-use crate::prompt::History;
-use crate::text::{PageId, Position};
+use crate::text::Position;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use vpdf_model::geometry::Crop;
 
 const RECENT: usize = 100;
 const HISTORY: usize = 200;
@@ -86,21 +83,8 @@ impl State {
     self.recent.iter().find(|entry| entry.path == path)
   }
 
-  /// Records where `app` is; returns whether anything moved.
-  pub fn remember(&mut self, app: &App) -> bool {
-    // A covered document counts as closed; its pane may be a stale copy.
-    if app.covered() {
-      return false;
-    }
-    let entry = Entry {
-      path: app.path.clone(),
-      cursor: app.navigation_position(),
-      zoom: app.layout.zoom,
-      rotation: app.layout.rotation,
-      used: now(),
-      marks: app.marks.clone(),
-      crop: app.layout.crop,
-    };
+  /// Records `entry` as the latest visit; returns whether anything moved.
+  pub fn remember(&mut self, entry: Entry) -> bool {
     let index = self.recent.iter().position(|old| old.path == entry.path);
     let previous = index.map(|index| self.recent.remove(index));
     let moved = previous.as_ref().is_none_or(|old| {
@@ -112,16 +96,14 @@ impl State {
     moved
   }
 
-  pub fn history(&self) -> History {
-    History {
-      commands: self.commands.clone(),
-      searches: self.searches.clone(),
-      revision: 0,
-    }
-  }
-
-  /// Merges with the file on disk, so concurrent readers keep entries.
-  pub fn save(&mut self, path: &Path, history: &History) -> Result<()> {
+  /// Merges with the file on disk, so concurrent readers keep entries;
+  /// `commands` and `searches` are this session's history.
+  pub fn save(
+    &mut self,
+    path: &Path,
+    commands: &[String],
+    searches: &[String],
+  ) -> Result<()> {
     let disk = Self::load(path);
     let mut recent = std::mem::take(&mut self.recent);
     for entry in disk.recent {
@@ -137,8 +119,8 @@ impl State {
     let mut marks = disk.marks;
     marks.append(&mut self.marks);
     self.marks = marks;
-    self.commands = merge(disk.commands, &history.commands);
-    self.searches = merge(disk.searches, &history.searches);
+    self.commands = merge(disk.commands, commands);
+    self.searches = merge(disk.searches, searches);
     let directory = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(directory)?;
     let staged = path.with_extension(format!("{}.tmp", std::process::id()));
@@ -155,53 +137,6 @@ impl State {
   }
 }
 
-impl App {
-  /// Copies another pane's view of the same document, as a new split.
-  pub fn mirror(&mut self, other: &Self) -> Result<()> {
-    self.crop_job = None;
-    self.layout.zoom = other.layout.zoom;
-    self.layout.rotation = other.layout.rotation;
-    self.layout.crop = other.layout.crop;
-    self.layout.crops = std::sync::Arc::clone(&other.layout.crops);
-    self.layout.pan = other.layout.pan;
-    self.doc.margins.clone_from(&other.doc.margins);
-    self.text_mode = other.text_mode;
-    self.preview = other.preview;
-    self.layout.reflow(&self.doc.pages);
-    let shown = other.navigation_position();
-    self.reader.cursor =
-      vpdf_reader::reader::clamp(shown, &mut PdfText(&mut self.doc))?;
-    self.reader.cancel();
-    self.target = None;
-    self.reader.scroll = other.reader.scroll;
-    self.text_top = other.text_top;
-    if !self.layout.crop.is_none() && self.layout.crops.is_empty() {
-      self.start_crop();
-    }
-    Ok(())
-  }
-
-  /// Returns to a saved position and view.
-  pub fn restore(&mut self, entry: &Entry) -> Result<()> {
-    self.crop_job = None;
-    self.layout.zoom = entry.zoom.clamp(0.1, 8.0);
-    self.marks.clone_from(&entry.marks);
-    self.layout.crop = entry.crop;
-    self.layout.rotation = entry.rotation % 360 / 90 * 90;
-    self.layout.reflow(&self.doc.pages);
-    let page = PageId(entry.cursor.page.0.min(self.doc.pages.len() - 1));
-    let cursor = Position { page, ..entry.cursor };
-    self.reader.cursor = self.doc.text(page)?.clamp(cursor);
-    self.show_page(page)?;
-    self.target = Some(self.reader.cursor);
-    self.ensure_cursor()?;
-    if !entry.crop.is_none() && self.layout.crops.is_empty() {
-      self.start_crop();
-    }
-    Ok(())
-  }
-}
-
 /// Disk-only entries first, then this session's in order.
 fn merge(disk: Vec<String>, own: &[String]) -> Vec<String> {
   let mut merged: Vec<_> =
@@ -212,9 +147,12 @@ fn merge(disk: Vec<String>, own: &[String]) -> Vec<String> {
   merged
 }
 
+mod pane;
+
 #[cfg(test)]
 pub(crate) mod tests {
   use super::*;
+  use crate::text::PageId;
 
   pub(crate) fn entry(path: &str, page: usize, used: u64) -> Entry {
     Entry {
@@ -236,10 +174,10 @@ pub(crate) mod tests {
     let file = root.path().join("state.json");
     let mut state = State::default();
     state.set_perf(true);
-    state.save(&file, &History::default())?;
+    state.save(&file, &[], &[])?;
     assert!(State::load(&file).perf);
     state.set_perf(false);
-    state.save(&file, &History::default())?;
+    state.save(&file, &[], &[])?;
     assert!(!State::load(&file).perf);
     Ok(())
   }
@@ -251,14 +189,14 @@ pub(crate) mod tests {
     let mut old = State::default();
     let mut newer = State::default();
     newer.set_perf(true);
-    newer.save(&file, &History::default())?;
-    old.save(&file, &History::default())?;
+    newer.save(&file, &[], &[])?;
+    old.save(&file, &[], &[])?;
     assert!(State::load(&file).perf);
     assert!(!old.perf);
     let mut stale = State::load(&file);
     newer.set_perf(false);
-    newer.save(&file, &History::default())?;
-    stale.save(&file, &History::default())?;
+    newer.save(&file, &[], &[])?;
+    stale.save(&file, &[], &[])?;
     assert!(!State::load(&file).perf);
     assert!(stale.perf);
     Ok(())
@@ -272,21 +210,14 @@ pub(crate) mod tests {
       recent: vec![entry("/b.pdf", 2, 20), entry("/a.pdf", 9, 5)],
       ..State::default()
     };
-    let history = History {
-      commands: vec!["page 3".into(), "ocr".into()],
-      ..History::default()
-    };
-    other.save(&file, &history)?;
+    let commands = ["page 3".into(), "ocr".into()];
+    other.save(&file, &commands, &[])?;
     let mut own = State {
       recent: vec![entry("/a.pdf", 4, 30), entry("/c.pdf", 1, 10)],
       ..State::default()
     };
-    let history = History {
-      commands: vec!["ocr".into(), "help".into()],
-      searches: vec!["attention".into()],
-      ..History::default()
-    };
-    own.save(&file, &history)?;
+    let commands = ["ocr".into(), "help".into()];
+    own.save(&file, &commands, &["attention".into()])?;
     let saved = State::load(&file);
     let pages: Vec<_> = saved
       .recent

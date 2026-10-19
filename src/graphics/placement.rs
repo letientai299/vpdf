@@ -1,6 +1,6 @@
 use super::{
-  Bounds, Graphics, Layout, PREVIEW, Pair, Payload, Result, Screen,
-  TILE_HEIGHT, TILE_WIDTH, TileKey, Write, encode, fmt, graphics, transmit,
+  Bounds, Graphics, Key, Layout, PREVIEW, Pair, Payload, Result, Screen,
+  TILE_HEIGHT, TILE_WIDTH, Write, encode, fmt, graphics, transmit,
 };
 
 impl Graphics {
@@ -89,25 +89,26 @@ impl Graphics {
     self.put(out, (id, 1), control, clip, left, screen)
   }
 
-  /// Places a page tile, cut to the visible area `clip`.
+  /// Places a pane's page tile, cut to the visible area `clip`.
   pub fn place(
     &mut self,
-    key: &TileKey,
+    key: Key,
     layout: &Layout,
     scroll: f32,
     clip: Screen,
     left: u16,
     out: &mut impl Write,
   ) -> Result<bool> {
-    let (x, y) = layout.origin(key.page, scroll);
-    self.place_at(key, (x + key.x as f32, y + key.y as f32), clip, left, out)
+    let (x, y) = layout.origin(key.1.page, scroll);
+    let origin = (x + key.1.x as f32, y + key.1.y as f32);
+    self.place_at(key, origin, clip, left, out)
   }
 
   /// Places a tile with its top-left at `origin` pixels, uploading a
   /// kept one first; returns false when the tile still needs rendering.
   pub fn place_at(
     &mut self,
-    key: &TileKey,
+    key: Key,
     (x, y): (f32, f32),
     screen: Screen,
     left: u16,
@@ -118,18 +119,18 @@ impl Graphics {
     let rect = Bounds {
       x0: x,
       y0: y,
-      x1: x + key.width as f32,
-      y1: y + key.height as f32,
+      x1: x + key.1.width as f32,
+      y1: y + key.1.height as f32,
     };
-    let id = match self.resident.get(&(self.doc, *key)) {
+    let id = match self.resident.get(&key) {
       Some(&id) => id,
       None => {
-        let kept = self.stored.get(&(self.doc, *key)).cloned();
+        let kept = self.stored.get(&key).cloned();
         let Some(payload) = kept else { return Ok(false) };
         if let Payload::Spooled(slot) = payload
           && crate::spool::get().is_none_or(|spool| !spool.holds(slot))
         {
-          self.stored.remove(&(self.doc, *key));
+          self.stored.remove(&key);
           return Ok(false);
         }
         // Kept tiles upload as they come within a tile of the screen,
@@ -137,7 +138,7 @@ impl Graphics {
         if !near(rect, screen) {
           return Ok(true);
         }
-        self.send((self.doc, *key), &payload, out)?
+        self.send(key, &payload, out)?
       }
     };
     let Some(clip) = clip(rect, screen) else { return Ok(true) };

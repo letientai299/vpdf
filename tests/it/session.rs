@@ -2,10 +2,11 @@ use crate::common;
 
 use std::path::PathBuf;
 use vpdf::Result;
-use vpdf::app::{Request, TabMove, Window};
+use vpdf::app::Request;
 use vpdf::keys::{Action, Input};
 use vpdf::layout::Screen;
 use vpdf::session::Session;
+use vpdf::window::{TabMove, Window};
 
 /// Runs `action` in the focused pane and applies its request.
 fn act(session: &mut Session, action: Action) -> Result<()> {
@@ -66,12 +67,11 @@ fn tabs_share_graphics_and_close_in_order() -> Result<()> {
     assert_eq!(session.active, expected, "{step:?}");
   }
   let id = session.app().id;
-  assert_eq!(session.app().graphics.doc, id);
   session.app().request =
     Some(Request::Open { path: root.join("ocr.pdf"), tab: false });
   session.settle()?;
   assert_eq!(session.app().name(), "ocr.pdf");
-  assert_ne!(session.app().graphics.doc, id);
+  assert_ne!(session.app().id, id);
   session.app().command("tabclose")?;
   session.settle()?;
   assert_eq!((session.tabs.len(), session.active), (2, 0));
@@ -465,13 +465,10 @@ fn resident_tiles(session: &mut Session) -> Result<()> {
       tiles.push((app.id, vpdf::tiles::render(&mut app.doc, key)?));
     }
   }
-  let focused = session.app().id;
-  let graphics = &mut session.app().graphics;
+  let graphics = &mut session.graphics;
   for (id, tile) in tiles {
-    graphics.doc = id;
-    graphics.upload(&tile, &mut Vec::new())?;
+    graphics.upload(id, &tile, &mut Vec::new())?;
   }
-  graphics.doc = focused;
   Ok(())
 }
 
@@ -586,5 +583,64 @@ fn resize_erases_rows_before_placing() -> Result<()> {
   // and both panes erase every row.
   assert!(erases(first) >= 30, "{}", erases(first));
   assert!(erases(&text) >= 2 * 30, "{}", erases(&text));
+  Ok(())
+}
+
+/// Focus moves no images; a reload drops only its own pane's at the next
+/// frame.
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn focus_keeps_images_and_reload_drops_its_own() -> Result<()> {
+  use vpdf::trace::Drawable;
+  let (mut session, left, right) = split()?;
+  resident_tiles(&mut session)?;
+  let bytes = session.graphics.bytes();
+  act(&mut session, Action::Window(Window::Next))?;
+  assert_eq!(session.app().id, right);
+  assert_eq!(session.graphics.bytes(), bytes, "focus moves nothing");
+  session.app().reload_with("")?;
+  session.draw_frame(&mut Vec::new())?;
+  let visible = |session: &mut Session, id| {
+    let tab = session.tab();
+    let app = tab.panes.iter().find(|app| app.id == id).unwrap();
+    vpdf::tiles::visible(&app.layout, app.reader.scroll)
+  };
+  let kept = visible(&mut session, left);
+  assert!(kept.iter().all(|&key| session.graphics.contains(&(left, key))));
+  let dropped = visible(&mut session, right);
+  assert!(!dropped.iter().any(|&key| session.graphics.contains(&(right, key))));
+  Ok(())
+}
+
+/// Closing a pane deletes its images and keeps its sibling's.
+#[test]
+fn closed_panes_drop_their_images() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("split.pdf");
+  common::text_pdf(&path, &["Images per pane"])?;
+  let screen = Screen {
+    columns: 121,
+    rows: 40,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut session = Session::new(None);
+  session.open(&path, true, screen)?;
+  let kept = session.app().id;
+  act(&mut session, Action::Window(Window::Split(vpdf::split::Axis::Columns)))?;
+  let closed = session.app().id;
+  resident_tiles(&mut session)?;
+  let owned = |session: &mut Session, id| {
+    let app = session.tab().panes.iter().find(|app| app.id == id).unwrap();
+    vpdf::tiles::visible(&app.layout, app.reader.scroll)
+  };
+  let keys = owned(&mut session, kept);
+  let gone = owned(&mut session, closed);
+  assert!(gone.iter().all(|&key| session.graphics.contains(&(closed, key))));
+  act(&mut session, Action::Window(Window::Close))?;
+  assert_eq!(session.app().id, kept);
+  assert!(!gone.iter().any(|&key| session.graphics.contains(&(closed, key))));
+  assert!(keys.iter().all(|&key| session.graphics.contains(&(kept, key))));
   Ok(())
 }

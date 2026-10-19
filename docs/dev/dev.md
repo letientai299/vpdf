@@ -56,8 +56,8 @@ mise run test
 ```
 
 Checks cover every workspace member. Support crates own their unit tests;
-package selection avoids compiling the reader and its native dependencies when
-the selected crate does not need them:
+package selection avoids compiling the application and its native dependencies
+when the selected crate does not need them:
 
 ```sh
 mise run test:model

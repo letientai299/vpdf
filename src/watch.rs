@@ -34,7 +34,8 @@ impl Default for Watcher {
     let inner = notify::recommended_watcher(
       move |event: notify::Result<notify::Event>| {
         for path in event.into_iter().flat_map(|event| event.paths) {
-          let _ = crate::input::notify(send.send(path));
+          let _ = send.send(path);
+          crate::input::wake();
         }
       },
     )

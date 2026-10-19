@@ -2,15 +2,16 @@ use super::common::keys;
 use super::focus::{screen, send};
 use std::path::PathBuf;
 use vpdf::Result;
-use vpdf::app::{App, InputOwner};
+use vpdf::app::InputOwner;
 use vpdf::document::Target;
 use vpdf::session::Session;
+use vpdf::solo::Solo;
 use vpdf::text::PageId;
 use vpdf_reader::reader::{Mode, SelectionKind};
 
-fn open(text: bool) -> Result<App> {
+fn open(text: bool) -> Result<Solo> {
   let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
-  let mut app = App::with_screen(&path, "", text, screen())?;
+  let mut app = Solo::open(&path, "", text, screen())?;
   let link = app
     .doc
     .links(PageId(1))?
@@ -34,13 +35,19 @@ fn target_page(target: &Target) -> PageId {
   }
 }
 
-fn drawn(app: &mut App) -> Result<String> {
+fn drawn(app: &mut Solo) -> Result<String> {
   app.graphics.begin(&mut std::io::sink())?;
-  app.draw_preview(&mut std::io::sink())?;
+  {
+    let (app, graphics) = app.parts();
+    app.draw_preview(graphics, &mut std::io::sink())?;
+  }
   app.graphics.end(&mut std::io::sink())?;
   let mut out = Vec::new();
   app.graphics.begin(&mut out)?;
-  app.draw_preview(&mut out)?;
+  {
+    let (app, graphics) = app.parts();
+    app.draw_preview(graphics, &mut out)?;
+  }
   app.graphics.end(&mut out)?;
   Ok(String::from_utf8_lossy(&out).into_owned())
 }
@@ -240,7 +247,10 @@ fn preview_invalid_keeps_reader() -> Result<()> {
     let cursor = app.reader.cursor;
     let range = app.reader.selection.unwrap();
     app.doc = vpdf::document::Document::open(&corpus.join("form.pdf"), "")?;
-    app.layout.reflow(&app.doc.pages);
+    {
+      let (app, _) = app.parts();
+      app.layout.reflow(&app.doc.pages);
+    }
     assert_eq!(drawn(&mut app)?, "");
     assert!(app.peek.is_none());
     assert_eq!(app.reader.cursor, cursor);

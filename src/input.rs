@@ -117,10 +117,9 @@ pub fn wake() {
   }
 }
 
-/// Passes on a send to the event loop's channel and wakes the loop.
-pub fn notify<T>(sent: T) -> T {
-  wake();
-  sent
+/// A wake for jobs this loop waits on.
+pub fn loop_wake() -> crate::jobs::Wake {
+  crate::jobs::Wake::new(wake)
 }
 
 /// The next input; None once `timeout` passes or a worker wakes the

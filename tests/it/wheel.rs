@@ -281,7 +281,7 @@ fn panel_preview_and_text_turns_frame_until_an_end() -> Result<()> {
   // A panel list: the help rows scroll down, not above the first.
   let mut panel = session(&path)?;
   panel.app().open_panel(vpdf::keys::PanelKind::Help)?;
-  panel.app().draw(&mut Vec::new())?;
+  panel.draw_focused(&mut Vec::new())?;
   assert!(!wheel(&mut panel, UP, pixel((2, 5)))?);
   assert!(wheel(&mut panel, DOWN, pixel((2, 5)))?);
   // The preview scrolls down, not above its top.
@@ -334,10 +334,10 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
       "P" => app.open_panel(vpdf::keys::PanelKind::Help)?,
       _ => {}
     }
-    app.draw(&mut Vec::new())?;
+    session.draw_focused(&mut Vec::new())?;
     let before = moved(session.app());
     assert!(wheel(&mut session, DOWN, (x, row))?, "{view} {x}");
-    session.app().draw(&mut Vec::new())?;
+    session.draw_focused(&mut Vec::new())?;
     assert!(moved(session.app()) > before, "{view} {x}");
   }
   Ok(())
@@ -351,7 +351,7 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
   let mut session = session(&path)?;
   let app = session.app();
   app.open_overview()?;
-  app.draw(&mut Vec::new())?;
+  session.draw_focused(&mut Vec::new())?;
   // (selected page, top row)
   let state = |session: &mut Session| {
     let overview = session.app().overview.as_ref().expect("an overview");
@@ -360,13 +360,13 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
   assert_eq!(state(&mut session), (0, 0));
   for (flags, row) in [(DOWN, 1), (DOWN, 2), (UP, 1), (DOWN | CTRL, 2)] {
     assert!(wheel(&mut session, flags, (480, 300))?);
-    session.app().draw(&mut Vec::new())?;
+    session.draw_focused(&mut Vec::new())?;
     assert_eq!(state(&mut session), (0, row), "{flags}");
   }
   for _ in 0..40 {
     wheel(&mut session, DOWN, (480, 300))?;
   }
-  session.app().draw(&mut Vec::new())?;
+  session.draw_focused(&mut Vec::new())?;
   let last = state(&mut session);
   assert!(!wheel(&mut session, DOWN, (480, 300))?, "the last row");
   assert_eq!(state(&mut session), last);
@@ -382,7 +382,7 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
   assert!(state(&mut session).1 > 1);
   session.app().screen.rows = 30;
   session.app().relayout()?;
-  session.app().draw(&mut Vec::new())?;
+  session.draw_focused(&mut Vec::new())?;
   assert_eq!(state(&mut session), (columns, 1));
   // A click opens the page under it after the wheel scrolled.
   wheel(&mut session, DOWN, (480, 300))?;
@@ -524,7 +524,8 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
       "overview" => app.open_overview()?,
       _ => {}
     }
-    app.draw(&mut Vec::new())?;
+    session.draw_focused(&mut Vec::new())?;
+    let app = session.app();
     let at = if surface == "panel" { (4, 6) } else { (app.left + 20, 6) };
     for kind in [MouseEventKind::Down(Right), MouseEventKind::Up(Right)] {
       let modifiers = KeyModifiers::NONE;
@@ -544,7 +545,7 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
     let area = menu.unwrap_or_else(|| panic!("{surface}: a menu"));
     let pixel = (area.column * 8 + 4, area.row * 16 + 8);
     wheel(&mut session, DOWN, pixel)?;
-    session.app().draw(&mut Vec::new())?;
+    session.draw_focused(&mut Vec::new())?;
     let after = state(&mut session);
     let moved = (before.0 != after.0, before.1 != after.1, before.2 != after.2);
     assert_eq!(moved, want, "{surface}");

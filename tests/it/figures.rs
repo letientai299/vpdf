@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use vpdf::Result;
+use vpdf::solo::Solo;
 use vpdf::text::PageId;
 
 #[test]
@@ -30,12 +31,11 @@ fn raw_figure_bindings() {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn real_figure_navigation_fit() -> Result<()> {
-  use vpdf::app::App;
   use vpdf::keys::{Action, Input};
   use vpdf::region::Region;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = super::focus::screen();
-  let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
+  let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
   app.action(Input::plain(Action::Cursor))?;
   app.move_figure(true, 1)?;
   let first = app.region.as_ref().unwrap().snapshot().clone();

@@ -1,6 +1,6 @@
 use super::{
   BLOCK, Cache, Graphics, HashMap, Key, LOST, OVERLAYS, Ordering, PREVIEW,
-  Payload, Result, STORED, Spool, TILE_END, Tile, TileKey, Write, budget,
+  Payload, Result, STORED, Spool, TILE_END, Tile, Usage, Write, budget,
   graphics, transmit,
 };
 
@@ -10,20 +10,19 @@ impl Graphics {
     self.quirk
   }
 
-  pub fn contains(&mut self, key: &TileKey) -> bool {
-    self.resident.get(&(self.doc, *key)).is_some()
+  pub fn contains(&mut self, key: &Key) -> bool {
+    self.resident.get(key).is_some()
   }
 
   /// Whether `key` is resident or kept for upload.
-  pub fn has(&mut self, key: &TileKey) -> bool {
-    let key = (self.doc, *key);
-    self.resident.get(&key).is_some() || self.stored.get(&key).is_some()
+  pub fn has(&mut self, key: &Key) -> bool {
+    self.resident.get(key).is_some() || self.stored.get(key).is_some()
   }
 
-  /// Deletes a document's tiles at the next frame.
-  pub fn forget(&mut self, doc: u32) {
+  /// Deletes a pane's tiles at the next frame.
+  pub fn forget(&mut self, pane: u32) {
     let keys: Vec<_> =
-      self.ids.keys().filter(|key| key.0 == doc).copied().collect();
+      self.ids.keys().filter(|key| key.0 == pane).copied().collect();
     for key in keys {
       self.resident.remove(&key);
       self.stale.extend(self.ids.remove(&key));
@@ -32,7 +31,7 @@ impl Graphics {
       .stored
       .entries()
       .map(|(key, _)| *key)
-      .filter(|k| k.0 == doc)
+      .filter(|k| k.0 == pane)
       .collect();
     for key in kept {
       self.stored.remove(&key);
@@ -43,8 +42,8 @@ impl Graphics {
   /// tiles upload again when next placed.
   pub fn lost(&mut self) {
     let stored = std::mem::replace(&mut self.stored, Cache::new(0));
-    let (doc, uploaded) = (self.doc, self.uploaded);
-    *self = Self { doc, stored, uploaded, ..Self::default() };
+    let uploaded = self.uploaded;
+    *self = Self { stored, uploaded, ..Self::default() };
   }
 
   /// Handles the terminal's `ENOENT` for image `id`: it evicted the
@@ -75,19 +74,25 @@ impl Graphics {
     self.placing.retain(|pair| pair.0 != id);
   }
 
-  /// Keeps a tile until a frame places it.
-  pub fn keep(&mut self, tile: Tile) {
+  /// Keeps pane `pane`'s tile until a frame places it.
+  pub fn keep(&mut self, pane: u32, tile: Tile) {
     let weight = match &tile.payload {
       Payload::Encoded(encoded) => encoded.len(),
       // The spool holds the pixels; this keeps about one entry per slot.
       Payload::Spooled(slot) => slot.len * STORED / crate::spool::BYTES,
     };
-    self.stored.insert((self.doc, tile.key), tile.payload, weight);
+    self.stored.insert((pane, tile.key), tile.payload, weight);
   }
 
-  pub fn upload(&mut self, tile: &Tile, out: &mut impl Write) -> Result<()> {
-    if !self.contains(&tile.key) {
-      self.send((self.doc, tile.key), &tile.payload, out)?;
+  pub fn upload(
+    &mut self,
+    pane: u32,
+    tile: &Tile,
+    out: &mut impl Write,
+  ) -> Result<()> {
+    let key = (pane, tile.key);
+    if !self.contains(&key) {
+      self.send(key, &tile.payload, out)?;
     }
     Ok(())
   }
@@ -137,6 +142,10 @@ impl Graphics {
     self.ids.insert(key, id);
     self.uploaded += bytes as u64;
     Ok(id)
+  }
+
+  pub fn usage(&self) -> Usage {
+    Usage { bytes: self.bytes(), uploaded: self.uploaded }
   }
 
   pub fn bytes(&self) -> usize {

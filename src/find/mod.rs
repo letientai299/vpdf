@@ -1,11 +1,11 @@
 use crate::Result;
 use crate::app::App;
+use crate::jobs::search::SearchWorker;
 use crate::keys::PanelKind;
 use crate::panel::Panel;
 use crate::pdf_text::PdfText;
 use crate::prompt::{Prompt, PromptKind};
 use crate::search;
-use crate::search_worker::SearchWorker;
 
 mod state;
 
@@ -39,8 +39,12 @@ impl App {
       None => self.reading_position()?,
     };
     let worker = self.search_worker.get_or_insert_with(|| {
-      let worker =
-        SearchWorker::new(&self.path, &self.password, self.doc.pages.len());
+      let worker = SearchWorker::new(
+        &self.path,
+        &self.password,
+        self.doc.pages.len(),
+        &self.wake,
+      );
       for (page, text) in self.doc.seeds() {
         worker.seed(page, text);
       }

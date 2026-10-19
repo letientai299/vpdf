@@ -1,11 +1,12 @@
 use crate::Result;
-use crate::app::{App, InputOwner, Request, TabMove, Window};
+use crate::app::{App, InputOwner, Request};
 use crate::cmdline;
 use crate::document::Target;
 use crate::keys::{Action, Grammar, Input, PanelKind};
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crate::split::Axis;
 use crate::text::{PageId, Position};
+use crate::window::{TabMove, Window};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::process::{Command, Stdio};
 use vpdf_reader::reader::Mode;

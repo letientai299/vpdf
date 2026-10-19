@@ -21,16 +21,16 @@ changes; they do not enumerate the feature set.
 
 ## Package boundaries
 
-The root application owns panes, workers, persistence, and terminal UI.
-The private [model crate][model] owns shared text values and line reflow,
-geometry, and cache values.
-[Search][search-crate] and [PDF][pdf-crate] each depend on model; neither
-imports the application or each other. The [reader crate][reader-crate] owns
-cursor, motion, text-object, selection, register, and jump semantics over model
-text, with search types for jump labels; the application adapts native
-documents to it. The [protocol crate][protocol] decodes
-terminal input bytes into events and depends only on crossterm. The
-[development guide][development] describes independent package tests.
+The root application owns panes, workers, persistence, and terminal UI. The
+private [model crate][model] owns shared text values and line reflow, geometry,
+and cache values. [Search][search-crate] and [PDF][pdf-crate] each depend on
+model; neither imports the application or each other. The
+[reader crate][reader-crate] owns cursor, motion, text-object, selection,
+register, and jump semantics over model text; it uses search for jump ordinals
+and hyphen joins, and the application adapts native documents to it. The
+[protocol crate][protocol] decodes terminal input bytes into events and depends
+only on crossterm. The [development guide][development] describes independent
+package tests.
 
 ## Runtime ownership
 
@@ -50,7 +50,7 @@ flowchart TD
     Pane --> Outline[Outline job: own document]
     Pane --> OCR[OCR job: own document and Tesseract child]
     Coordinator --> Pool[Process-wide raster pool]
-    Pane --> Graphics[Shared graphics cache]
+    Session --> Graphics[Shared graphics cache]
     Pool --> Results[Prepared tile results]
     Results --> Session
     Session --> Output[Terminal output]
@@ -58,8 +58,9 @@ flowchart TD
 
 Every pane of the active tab receives worker updates and draws. Keyboard input
 belongs to the focused pane; pointer routing can target another visible pane.
-The focused pane holds the shared graphics cache and lends it to other panes
-while they draw. Tabs and panes share this image budget.
+The session owns the shared graphics cache and passes it to each pane that
+draws; images are keyed by pane, and focus changes move nothing. Tabs and panes
+share this image budget.
 
 See [sessions and state][sessions] for focus, hidden panes, and persistence.
 
@@ -84,7 +85,9 @@ do not provide preemption of an individual native call.
 
 The latest viewport replaces pending render requests. Search generations keep
 superseded queries from changing the current results. Dropping job handles
-signals cancellation; an in-flight native call may finish first.
+signals cancellation; an in-flight native call may finish first. [Jobs][jobs]
+queue each result before waking the event loop through a callback, so they
+never import terminal input.
 
 All MuPDF threads share its global allocation and glyph-cache locks, so a
 background text scan slows the view's rasterization and the foreground's text
@@ -111,8 +114,9 @@ to release native resources. The policy and thresholds live in the
 [app]: ../../src/app.rs
 [sessions]: sessions.md
 [document]: ../../crates/vpdf-pdf/src/document/mod.rs
-[worker]: ../../src/render_worker.rs
-[search-worker]: ../../src/search_worker.rs
+[worker]: ../../src/jobs/render.rs
+[jobs]: ../../src/jobs/mod.rs
+[search-worker]: ../../src/jobs/search.rs
 [rendering]: render.md
 [text]: text.md
 [development]: dev.md

@@ -438,8 +438,10 @@ fn client_changes_preserve_positions() -> Result<()> {
     .map(App::navigation_position)
     .collect();
   let snapshot = |pid| {
-    crate::tmux::parse(&format!("$0\t@0\tfocused\n{pid}:100:$0:@0:9:26:0;\n"))
-      .unwrap()
+    crate::tmux_observer::parse(&format!(
+      "$0\t@0\tfocused\n{pid}:100:$0:@0:9:26:0;\n"
+    ))
+    .unwrap()
   };
   session.observation(snapshot(10), &mut Vec::new())?;
   let pane = session.app().id;
@@ -461,7 +463,8 @@ fn client_changes_preserve_positions() -> Result<()> {
 fn observations_recover_without_focus() -> Result<()> {
   let mut session = Session::new(None);
   let snapshot = |view, clients: &str| {
-    crate::tmux::parse(&format!("$0\t@0\t{view}\n{clients}\n")).unwrap()
+    crate::tmux_observer::parse(&format!("$0\t@0\t{view}\n{clients}\n"))
+      .unwrap()
   };
   let client = "10:100:$0:@0:9:26:0;";
   let mut output = Vec::new();
@@ -773,10 +776,9 @@ fn veils_skip_menus() -> Result<()> {
       let modifiers = KeyModifiers::NONE;
       session.mouse(MouseEvent { kind, column, row: 3, modifiers })?;
     }
-    let app = session.app();
-    assert!(app.panel_focused(), "{column:?}");
+    assert!(session.app().panel_focused(), "{column:?}");
     let mut out = Vec::new();
-    app.draw(&mut out)?;
+    session.draw_focused(&mut out)?;
     assert_eq!(veiled(&out), want, "{column:?}");
   }
   Ok(())
@@ -797,9 +799,9 @@ fn overview_rings_skip_the_menu() -> Result<()> {
   };
   let mut session = Session::new(None);
   session.open(&line_pdf(directory.path(), "")?, true, screen)?;
+  session.app().open_overview()?;
+  session.draw_focused(&mut Vec::new())?;
   let app = session.app();
-  app.open_overview()?;
-  app.draw(&mut Vec::new())?;
   let mut cells = (0..23).flat_map(|row| (0..80).map(move |c| (c, row)));
   let thumbnail =
     cells.find(|&(column, row)| app.thumbnail_at(column, row).is_some());
@@ -808,11 +810,10 @@ fn overview_rings_skip_the_menu() -> Result<()> {
     let modifiers = KeyModifiers::NONE;
     session.mouse(MouseEvent { kind, column, row, modifiers })?;
   }
-  let app = session.app();
-  let menu = app.context_rect().expect("a menu over the page");
+  let menu = session.app().context_rect().expect("a menu over the page");
   let mut out = Vec::new();
-  app.draw(&mut out)?;
-  let rings = highlights(&out, app.left);
+  session.draw_focused(&mut out)?;
+  let rings = highlights(&out, session.app().left);
   assert!(!rings.is_empty(), "the selected ring shows");
   let over = |b: &Bounds| {
     b.x0 < menu.x1 && menu.x0 < b.x1 && b.y0 < menu.y1 && menu.y0 < b.y1

@@ -103,9 +103,6 @@ fn main() {
     "crates/vpdf-search/src/search.rs",
     "crates/vpdf-search/src/search/codec.rs",
     "crates/vpdf-model/src/text.rs",
-    "crates/vpdf-model/src/reflow.rs",
-    "crates/vpdf-pdf/src/autolink.rs",
-    "crates/vpdf-pdf/src/wraps.rs",
     "crates/vpdf-model/src/geometry.rs",
   ]);
   println!("cargo::rustc-env=VPDF_INDEX_CODE={code:016x}");

@@ -21,7 +21,8 @@ impl TextSource for Vec<Arc<Text>> {
     self.len()
   }
   fn page_text(&mut self, page: PageId) -> Result<Arc<Text>> {
-    Ok(Arc::clone(&self[page.0]))
+    let text = self.get(page.0).ok_or_else(|| anyhow::anyhow!("No page"))?;
+    Ok(Arc::clone(text))
   }
 }
 

@@ -1,6 +1,6 @@
 use super::{
-  App, At, Axis, Graphics, Node, PasswordRequired, Path, Place, Rect, Result,
-  Screen, Session, Tab, Tabline, Unmeasured, Window, io, neighbor,
+  App, At, Axis, Node, PasswordRequired, Path, Place, Rect, Result, Screen,
+  Session, Tab, Tabline, Unmeasured, Window, io, neighbor,
 };
 
 pub(super) fn full(screen: Screen) -> Rect {
@@ -41,14 +41,13 @@ impl Session {
       return Ok(());
     }
     self.leave()?;
-    let graphics = self.take_graphics();
     let target = &mut self.tabs[tab];
     if target.focus != pane {
       target.last = Some(target.panes[target.focus].id);
     }
     target.focus = pane;
     self.active = tab;
-    self.give(graphics);
+    self.refocus();
     // A rest from before focus is stale.
     self.app().calm_hover();
     self.arrange()
@@ -142,17 +141,16 @@ impl Session {
     }
     let app = self.load(&path, "", screen)?;
     self.leave()?;
-    let mut graphics = self.take_graphics();
     if tab || self.tabs.is_empty() {
-      return self.insert_tab(app, graphics);
+      return self.insert_tab(app);
     }
     let tab = self.tab();
     let focus = tab.focus;
     let old = std::mem::replace(&mut tab.panes[focus], app);
     let id = tab.panes[focus].id;
     replace_leaf(&mut tab.tree, old.id, id);
-    self.retire(&old, &mut graphics);
-    self.give(graphics);
+    self.retire(&old);
+    self.refocus();
     self.arrange()
   }
 
@@ -176,17 +174,17 @@ impl Session {
     if let Some(entry) = self.state.entry(path) {
       app.restore(entry)?;
     }
-    self.state.remember(&app);
+    self.state.remember_pane(&app);
     self.changed();
     Ok(app)
   }
 
   /// Saves a closing pane's place, deletes its images, and stops
   /// watching its file.
-  fn retire(&mut self, app: &App, graphics: &mut Graphics) {
-    graphics.forget(app.id);
+  fn retire(&mut self, app: &App) {
+    self.graphics.forget(app.id);
     self.watcher.remove(&app.path);
-    self.state.remember(app);
+    self.state.remember_pane(app);
   }
 
   pub fn activate(&mut self, index: usize) -> Result<()> {
@@ -210,10 +208,9 @@ impl Session {
     if index == self.active {
       self.leave()?;
     }
-    let mut graphics = self.take_graphics();
     let tab = self.tabs.remove(index);
     for app in &tab.panes {
-      self.retire(app, &mut graphics);
+      self.retire(app);
     }
     if self.tabs.is_empty() {
       return self.save();
@@ -222,7 +219,7 @@ impl Session {
       self.active -= 1;
     }
     self.active = self.active.min(self.tabs.len() - 1);
-    self.give(graphics);
+    self.refocus();
     self.arrange()
   }
 
@@ -233,10 +230,9 @@ impl Session {
     }
     self.leave()?;
     let area = self.area();
-    let mut graphics = self.take_graphics();
     let app = self.tab().detach(area);
-    self.retire(&app, &mut graphics);
-    self.give(graphics);
+    self.retire(&app);
+    self.refocus();
     self.arrange()
   }
 
@@ -378,11 +374,10 @@ impl Session {
     tab.tree = Node::Leaf(keep);
     tab.focus = 0;
     tab.last = None;
-    let mut graphics = self.take_graphics();
     for app in &closing {
-      self.retire(app, &mut graphics);
+      self.retire(app);
     }
-    self.give(graphics);
+    self.refocus();
     self.arrange()
   }
 
@@ -393,17 +388,16 @@ impl Session {
     }
     self.leave()?;
     let area = self.area();
-    let graphics = self.take_graphics();
     let app = self.tab().detach(area);
-    self.insert_tab(app, graphics)
+    self.insert_tab(app)
   }
 
   /// Puts `app` in a tab after the active one and focuses it.
-  fn insert_tab(&mut self, app: App, graphics: Graphics) -> Result<()> {
+  fn insert_tab(&mut self, app: App) -> Result<()> {
     let index = if self.tabs.is_empty() { 0 } else { self.active + 1 };
     self.tabs.insert(index, Tab::new(app));
     self.active = index;
-    self.give(graphics);
+    self.refocus();
     self.arrange()
   }
 
@@ -415,8 +409,7 @@ impl Session {
     let mut app = self.load(&path, &password, screen)?;
     app.mirror(self.app())?;
     self.leave()?;
-    let graphics = self.take_graphics();
-    self.insert_tab(app, graphics)?;
+    self.insert_tab(app)?;
     let recent = self.state.recent.clone();
     self.app().show_recent(&recent)
   }

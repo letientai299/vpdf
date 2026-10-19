@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Target;
+use crate::graphics::Graphics;
 use crate::keys;
 use crate::pointer::Items;
 use crate::split::Rect;
@@ -237,7 +238,11 @@ impl App {
   }
 
   /// Draws labels; Kitty gets a backdrop image under each label's text.
-  pub fn draw_hints(&mut self, out: &mut impl Write) -> Result<()> {
+  pub fn draw_hints(
+    &mut self,
+    graphics: &mut Graphics,
+    out: &mut impl Write,
+  ) -> Result<()> {
     let Some(hints) = &self.hints else { return Ok(()) };
     let mut backdrops = Vec::new();
     for (index, hint) in hints.shown() {
@@ -262,7 +267,7 @@ impl App {
     }
     let screen = self.layout.screen;
     for (rect, fill) in backdrops {
-      self.graphics.backdrop(rect, fill, screen, self.left, out)?;
+      graphics.backdrop(rect, fill, screen, self.left, out)?;
     }
     Ok(())
   }

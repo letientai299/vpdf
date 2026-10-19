@@ -50,7 +50,8 @@ impl Home {
       ));
     }
     let mut panel = Panel::new(PanelKind::Recent, rows);
-    panel.shelf = Some(Shelf::new(recent, ""));
+    let wake = crate::input::loop_wake();
+    panel.shelf = Some(Shelf::new(recent, "", &wake));
     Self {
       screen,
       at: At::default(),

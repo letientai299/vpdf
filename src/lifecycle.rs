@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Document;
+use crate::jobs::render::RenderWorker;
 use crate::keys::PanelKind;
 use crate::pdf_text::PdfText;
-use crate::render_worker::RenderWorker;
 use vpdf_reader::reader;
 
 impl App {
@@ -15,8 +15,12 @@ impl App {
     self.crop_job = None;
     self.search_worker = None;
     self.doc.trim();
-    self.worker =
-      RenderWorker::idle(&self.path, &self.password, self.doc.lists());
+    self.worker = RenderWorker::idle(
+      &self.path,
+      &self.password,
+      self.doc.lists(),
+      &self.wake,
+    );
     self.requested.clear();
   }
 
@@ -33,7 +37,8 @@ impl App {
     if !self.layout.crop.is_none() {
       self.start_crop();
     }
-    self.worker = RenderWorker::new(&self.path, password, self.doc.lists());
+    self.worker =
+      RenderWorker::new(&self.path, password, self.doc.lists(), &self.wake);
     self.search_worker = None;
     let previous = std::mem::take(&mut self.search);
     let rerun = !previous.hidden() && !previous.query().text.is_empty();
@@ -43,7 +48,7 @@ impl App {
     {
       self.load_outline();
     }
-    self.graphics.forget(self.id);
+    self.images_stale = true;
     if let Some(ocr) = self.ocr.take() {
       ocr.cancel();
     }
@@ -92,6 +97,30 @@ impl App {
     }
     self.relayout()?;
     self.reader.message = "Reloaded".into();
+    Ok(())
+  }
+
+  /// Copies another pane's view of the same document, as a new split.
+  pub fn mirror(&mut self, other: &Self) -> Result<()> {
+    self.crop_job = None;
+    self.layout.zoom = other.layout.zoom;
+    self.layout.rotation = other.layout.rotation;
+    self.layout.crop = other.layout.crop;
+    self.layout.crops = std::sync::Arc::clone(&other.layout.crops);
+    self.layout.pan = other.layout.pan;
+    self.doc.margins.clone_from(&other.doc.margins);
+    self.text_mode = other.text_mode;
+    self.preview = other.preview;
+    self.layout.reflow(&self.doc.pages);
+    let shown = other.navigation_position();
+    self.reader.cursor = reader::clamp(shown, &mut PdfText(&mut self.doc))?;
+    self.reader.cancel();
+    self.target = None;
+    self.reader.scroll = other.reader.scroll;
+    self.text_top = other.text_top;
+    if !self.layout.crop.is_none() && self.layout.crops.is_empty() {
+      self.start_crop();
+    }
     Ok(())
   }
 }

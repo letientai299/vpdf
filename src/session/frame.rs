@@ -2,6 +2,7 @@ use super::{
   App, At, Axis, Cause, Drawable, Duration, Hover, ImageState, ImageWrite,
   Instant, Rehover, Result, Session, Sight, Write, terminal, theme,
 };
+use crate::trace::Observation;
 
 impl Drawable for Session {
   /// Unfocused panes first, so the focused pane's prompt places the
@@ -16,13 +17,13 @@ impl Drawable for Session {
       terminal::point(out, self.shape())?;
     }
     write!(out, "{}\x1b[0m", terminal::frame_start())?;
-    self.app().graphics.begin(out)?;
+    self.graphics.begin(out)?;
     let area = self.area();
     let unmeasured = self.unmeasured.clone();
-    let tab = self.tab();
+    let (tab, graphics) = (&mut self.tabs[self.active], &mut self.graphics);
     for index in 0..tab.panes.len() {
       if index != tab.focus {
-        tab.lend(index, |app| app.draw_pane(out))?;
+        tab.panes[index].draw_pane(graphics, out)?;
       }
     }
     let mut dividers = Vec::new();
@@ -37,11 +38,11 @@ impl Drawable for Session {
       }
     }
     let focus = tab.focus;
-    tab.panes[focus].draw_pane(out)?;
+    tab.panes[focus].draw_pane(graphics, out)?;
     if let Some(unmeasured) = unmeasured {
       unmeasured.draw(out)?;
     }
-    tab.panes[focus].graphics.end(out)?;
+    graphics.end(out)?;
     if self.state.perf
       && let Some(screen) = self.screen
     {
@@ -63,13 +64,20 @@ impl Drawable for Session {
     self.perf.frame(at);
   }
 
-  fn focused(&self) -> &App {
+  fn observe(&self) -> Observation {
     let tab = &self.tabs[self.active];
-    &tab.panes[tab.focus]
+    Observation::of(&tab.panes[tab.focus], &self.graphics)
   }
 }
 
 impl Session {
+  /// One frame of the focused pane alone, as tests drive it.
+  #[doc(hidden)]
+  pub fn draw_focused(&mut self, out: &mut impl Write) -> Result<()> {
+    let tab = &mut self.tabs[self.active];
+    tab.panes[tab.focus].draw_alone(&mut self.graphics, out)
+  }
+
   pub(super) fn perf_tick(&mut self, out: &mut impl Write) -> Result<()> {
     let on = self.state.perf && self.sight != Sight::Hidden;
     self.perf.running(on);
@@ -110,7 +118,7 @@ impl Session {
     if self.tabs.is_empty() {
       return self.home.as_mut().map_or(Ok(()), |home| home.release(out));
     }
-    self.app().graphics.clear(out)
+    self.graphics.clear(out)
   }
 
   fn image_message(&mut self, write: &ImageWrite, message: String) {
@@ -223,7 +231,7 @@ impl Session {
 
   /// Uploads image `id` again after the terminal evicted it.
   pub(super) fn missing(&mut self, id: u32) {
-    if !self.app().graphics.missing(id) {
+    if !self.graphics.missing(id) {
       return;
     }
     // Tiles no longer kept render again.
@@ -249,9 +257,7 @@ impl Session {
   pub(super) fn lose_images(&mut self, out: &mut impl Write) -> Result<()> {
     self.perf.invalidate();
     crate::graphics::release(out)?;
-    if !self.tabs.is_empty() {
-      self.app().graphics.lost();
-    }
+    self.graphics.lost();
     if let Some(home) = &mut self.home {
       home.images_lost();
     }

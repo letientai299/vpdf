@@ -1,7 +1,7 @@
 use super::common::{events, keys};
 use std::path::PathBuf;
 use vpdf::Result;
-use vpdf::app::{App, InputOwner, Window};
+use vpdf::app::{App, InputOwner};
 use vpdf::document::Target;
 use vpdf::hints::{Hint, Hints};
 use vpdf::keys::{Action, Input, Keys, PanelKind};
@@ -10,8 +10,10 @@ use vpdf::panel::{Destination, Row};
 use vpdf::pdf_text::PdfText;
 use vpdf::prompt::History;
 use vpdf::session::Session;
+use vpdf::solo::Solo;
 use vpdf::split::Direction;
 use vpdf::text::{PageId, Position};
+use vpdf::window::Window;
 use vpdf_protocol::decode::Event;
 
 pub(super) fn screen() -> Screen {
@@ -140,7 +142,7 @@ fn local_focus_preserves_reading_and_recent_cards() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn panel_activation_retains_lists_and_failure_focus() -> Result<()> {
-  let mut app = App::with_screen(&file("book.pdf")?, "", false, screen())?;
+  let mut app = Solo::open(&file("book.pdf")?, "", false, screen())?;
   let destination = Position { page: PageId(20), ..Position::default() };
   app.show_panel(
     PanelKind::Results,
@@ -231,8 +233,8 @@ fn recent_pick_opens_in_covered_pane() -> Result<()> {
     assert!(session.app().covered(), "{setup:?}: o is inert");
     assert_eq!(session.tab().panes.len(), panes, "{setup:?}");
     if click {
+      session.draw_focused(&mut Vec::new())?;
       let app = session.app();
-      app.draw(&mut Vec::new())?;
       let column = app.at.column + 2;
       let row =
         usize::from(app.at.row) + index - app.panel.as_ref().unwrap().top;
@@ -459,7 +461,7 @@ fn prompt_wheel_and_passive_motion_keep_owner() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn overview_and_text_use_local_owner() -> Result<()> {
-  let mut app = App::with_screen(&file("book.pdf")?, "", false, screen())?;
+  let mut app = Solo::open(&file("book.pdf")?, "", false, screen())?;
   crate::common::outline_loaded(&mut app)?;
   keys(&mut app, b"gogp")?;
   assert_eq!(app.input_owner(), InputOwner::Overview);
@@ -496,7 +498,7 @@ fn overview_and_text_use_local_owner() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn raw_history_is_separate_from_local_focus() -> Result<()> {
-  let mut app = App::with_screen(&file("book.pdf")?, "", false, screen())?;
+  let mut app = Solo::open(&file("book.pdf")?, "", false, screen())?;
   app.command("20")?;
   app.command("30")?;
   keys(&mut app, b"\x1b[111;5u")?;
@@ -519,7 +521,7 @@ fn raw_history_is_separate_from_local_focus() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn peek_prompt_retains_destination_and_owner() -> Result<()> {
-  let mut app = App::with_screen(&file("paper.pdf")?, "", true, screen())?;
+  let mut app = Solo::open(&file("paper.pdf")?, "", true, screen())?;
   let link = app
     .doc
     .links(PageId(1))?
@@ -570,7 +572,7 @@ fn clicked_file_and_global_mark_keep_source_panel() -> Result<()> {
     PanelKind::Recent,
     vec![row(Destination::File(file("book.pdf")?))],
   )?;
-  session.app().draw(&mut Vec::new())?;
+  session.draw_focused(&mut Vec::new())?;
   send(&mut session, b"\x1b[<0;2;2M\x1b[<0;2;2m")?;
   assert_eq!(session.app().id, source);
   assert!(session.app().panel_focused());
@@ -604,7 +606,8 @@ fn outline_row_survives_focus_and_draw() -> Result<()> {
   let panel = app.panel.as_ref().unwrap();
   let state = (panel.selected, panel.top, panel.search.query.clone());
   keys(app, b"\t")?;
-  app.draw(&mut Vec::new())?;
+  session.draw_focused(&mut Vec::new())?;
+  let app = session.app();
   keys(app, b"\x1b[Z")?;
   let panel = app.panel.as_ref().unwrap();
   assert_eq!((panel.selected, panel.top, panel.search.query.clone()), state);
@@ -619,8 +622,9 @@ fn outline_row_survives_focus_and_draw() -> Result<()> {
   assert!(top < state.1);
   assert_eq!(panel.selected, state.0);
   assert_eq!(app.input_owner(), InputOwner::Content);
-  app.draw(&mut Vec::new())?;
-  app.draw(&mut Vec::new())?;
+  session.draw_focused(&mut Vec::new())?;
+  session.draw_focused(&mut Vec::new())?;
+  let app = session.app();
   assert_eq!(app.panel.as_ref().unwrap().top, top);
   assert_eq!(app.panel.as_ref().unwrap().selected, state.0);
   assert_eq!(app.id, id);
@@ -642,7 +646,7 @@ fn narrow_recent_press_restores_cover_geometry() -> Result<()> {
   ] {
     send(&mut session, b"\t")?;
     assert!(!session.app().covered());
-    session.app().draw(&mut Vec::new())?;
+    session.draw_focused(&mut Vec::new())?;
     send(&mut session, click)?;
     assert_eq!(session.app().id, source);
     let app = session.app();
@@ -651,7 +655,7 @@ fn narrow_recent_press_restores_cover_geometry() -> Result<()> {
     assert_eq!(app.layout.screen.columns, app.screen.columns);
     assert!(app.panel.as_ref().unwrap().shelf.is_some());
     let mut out = Vec::new();
-    app.draw(&mut out)?;
+    session.draw_focused(&mut out)?;
     assert!(String::from_utf8_lossy(&out).contains("Enter open"));
   }
   Ok(())

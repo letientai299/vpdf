@@ -7,6 +7,13 @@ use vpdf::app::App;
 use vpdf::prompt::History;
 use vpdf_protocol::decode::{Event, Parser};
 
+/// The focused pane of `session` drawn alone.
+pub fn focused_frame(session: &mut vpdf::session::Session) -> Result<String> {
+  let mut out = Vec::new();
+  session.draw_focused(&mut out)?;
+  Ok(String::from_utf8_lossy(&out).into_owned())
+}
+
 /// Events decoded from `bytes`, without waiting for a quiet pause.
 pub fn events(bytes: &[u8]) -> VecDeque<Event> {
   let mut events = VecDeque::new();

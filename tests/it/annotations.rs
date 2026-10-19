@@ -8,6 +8,7 @@ use vpdf::keys::{Action, Input, PanelKind};
 use vpdf::layout::Screen;
 use vpdf::panel::Destination;
 use vpdf::prompt::History;
+use vpdf::solo::Solo;
 use vpdf::text::{PageId, Position};
 use vpdf_reader::reader::Mode;
 
@@ -75,10 +76,13 @@ fn press(app: &mut App, code: KeyCode) -> Result<()> {
   app.key(KeyEvent::new(code, KeyModifiers::NONE), &mut History::default())
 }
 
-fn drawn(app: &mut App) -> Result<String> {
+fn drawn(app: &mut Solo) -> Result<String> {
   let mut out = Vec::new();
   app.graphics.begin(&mut out)?;
-  app.draw_preview(&mut out)?;
+  {
+    let (app, graphics) = app.parts();
+    app.draw_preview(graphics, &mut out)?;
+  }
   app.graphics.end(&mut out)?;
   Ok(String::from_utf8_lossy(&out).into_owned())
 }
@@ -94,7 +98,7 @@ fn position(app: &App, index: usize) -> Position {
 #[ignore = "requires verified public PDF corpus"]
 fn panel_lists_marked_text_and_notes() -> Result<()> {
   let (file, words) = annotated()?;
-  let mut app = App::with_screen(file.path(), "", false, screen())?;
+  let mut app = Solo::open(file.path(), "", false, screen())?;
   app.open_panel(PanelKind::Annotations)?;
   let rows = &app.panel.as_ref().unwrap().rows;
   let labels: Vec<_> =
@@ -113,7 +117,7 @@ fn enter_positions_cursor_and_note() -> Result<()> {
   let (file, _) = annotated()?;
   for text in [false, true] {
     for entry in [0, 1, 2] {
-      let mut app = App::with_screen(file.path(), "", text, screen())?;
+      let mut app = Solo::open(file.path(), "", text, screen())?;
       if entry > 0 {
         press(&mut app, KeyCode::Char('i'))?;
       }
@@ -151,7 +155,7 @@ fn enter_positions_cursor_and_note() -> Result<()> {
 fn k_previews_selected_note() -> Result<()> {
   let (file, _) = annotated()?;
   for text in [false, true] {
-    let mut app = App::with_screen(file.path(), "", text, screen())?;
+    let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
     assert_eq!(position(&app, 1), position(&app, 2));
     let original = app.reader.cursor;
@@ -182,7 +186,7 @@ fn k_previews_selected_note() -> Result<()> {
 fn k_preserves_visual_range() -> Result<()> {
   let (file, _) = annotated()?;
   for text in [false, true] {
-    let mut app = App::with_screen(file.path(), "", text, screen())?;
+    let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
     app.panel.as_mut().unwrap().selected = 1;
     press(&mut app, KeyCode::Enter)?;
@@ -206,7 +210,7 @@ fn k_preserves_visual_range() -> Result<()> {
 fn notes_scroll_and_resize() -> Result<()> {
   let (file, _) = annotated()?;
   for text in [false, true] {
-    let mut app = App::with_screen(file.path(), "", text, screen())?;
+    let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
     app.panel.as_mut().unwrap().selected = 3;
     press(&mut app, KeyCode::Enter)?;
@@ -242,7 +246,7 @@ fn notes_scroll_and_resize() -> Result<()> {
 fn empty_notes_and_panel_focus() -> Result<()> {
   let (file, _) = annotated()?;
   for text in [false, true] {
-    let mut app = App::with_screen(file.path(), "", text, screen())?;
+    let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
     app.panel.as_mut().unwrap().selected = 4;
     let expected = position(&app, 4);
@@ -417,7 +421,8 @@ fn outline_hovers_drop_the_indent() -> Result<()> {
     app.doc.outline.push(Heading { title: title.into(), depth, target });
   }
   app.open_panel(PanelKind::Outline)?;
-  app.draw(&mut Vec::new())?;
+  session.draw_focused(&mut Vec::new())?;
+  let app = session.app();
   let (column, row) = (0..app.screen.columns)
     .find_map(|column| {
       let hit = app.hovered(Region::Panel, column, 2, None).ok();
@@ -514,8 +519,9 @@ fn notes_open_by_mouse() -> Result<()> {
   let start = std::time::Instant::now();
   let later = |ms| start + std::time::Duration::from_millis(ms);
   click_at(&mut session, icon, later(0))?;
+  let frame = crate::common::focused_frame(&mut session)?;
+  assert!(frame.contains("margin note"));
   let app = session.app();
-  assert!(drawn(app)?.contains("margin note"));
   assert_eq!(app.input_owner(), InputOwner::Peek);
   assert_eq!(app.target, target, "the cursor stays");
   let area = app.preview_cells().expect("a drawn popup");
@@ -531,7 +537,8 @@ fn notes_open_by_mouse() -> Result<()> {
   let show = menu.items.iter().position(|item| item.label == "Show note");
   app.context_menu.as_mut().unwrap().selected = show.expect("Show note");
   press(app, KeyCode::Enter)?;
-  drawn(app)?;
+  crate::common::focused_frame(&mut session)?;
+  let app = session.app();
   let area = app.preview_cells().expect("a drawn popup");
   assert!(near(area.row) || near(area.row + area.rows), "{area:?} {icon:?}");
   app.peek = None;
@@ -560,7 +567,9 @@ fn notes_open_by_mouse() -> Result<()> {
     app.context_menu.as_mut().unwrap().selected = index.expect(label);
     press(app, KeyCode::Enter)?;
     let comment = "check this note please";
-    assert_eq!(drawn(app)?.contains(comment), shown, "{label}");
+    let frame = crate::common::focused_frame(&mut session)?;
+    assert_eq!(frame.contains(comment), shown, "{label}");
+    let app = session.app();
     let register = app.reader.registers.get(&'"').map(|text| &**text);
     if copied {
       assert_eq!(register, Some(comment), "{label}");
@@ -662,7 +671,7 @@ fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
     (Some("Failed"), "", true, false),
   ];
   for (error, message, covered, shown) in cases {
-    let mut app = App::with_screen(&path, "", false, screen())?;
+    let mut app = Solo::open(&path, "", false, screen())?;
     if covered {
       app.show_recent(&[])?;
     }
@@ -696,7 +705,7 @@ fn note_row_menus_show_notes() -> Result<()> {
   let mut session = Session::new(None);
   session.open(&path, true, screen())?;
   session.app().open_panel(PanelKind::Annotations)?;
-  session.app().draw(&mut Vec::new())?;
+  session.draw_focused(&mut Vec::new())?;
   for kind in [
     MouseEventKind::Down(MouseButton::Right),
     MouseEventKind::Up(MouseButton::Right),

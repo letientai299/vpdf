@@ -11,6 +11,7 @@ use vpdf::document::Target;
 use vpdf::keys::{Action, Input, PanelKind};
 use vpdf::layout::Screen;
 use vpdf::pointer::{Hit, Region, Route};
+use vpdf::solo::Solo;
 use vpdf::text::{Bounds, PageId};
 
 #[test]
@@ -24,7 +25,7 @@ fn reader_workflows() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   app.command("39")?;
   assert_eq!(app.reader.cursor.page, PageId(38));
   // Labels beat the `:info` prefix, not exact names.
@@ -81,7 +82,7 @@ fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   app.scroll(100.0)?;
   app.scroll(100.0)?;
   assert_eq!(app.animation.as_ref().unwrap().target, 200.0);
@@ -123,7 +124,7 @@ fn links_keep_coordinates_and_text_scrolls_lines() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   let target = (0..app.doc.pages.len())
     .find_map(|page| {
       app
@@ -156,7 +157,7 @@ fn links_keep_coordinates_and_text_scrolls_lines() -> Result<()> {
 }
 
 /// `paper.pdf` in text mode, 20 rows tall.
-fn text_app() -> Result<App> {
+fn text_app() -> Result<Solo> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = Screen {
     columns: 120,
@@ -165,7 +166,7 @@ fn text_app() -> Result<App> {
     cell_height: 16,
     origin: (0, 0),
   };
-  App::with_screen(&root.join("paper.pdf"), "", true, screen)
+  Solo::open(&root.join("paper.pdf"), "", true, screen)
 }
 
 #[test]
@@ -215,7 +216,10 @@ fn text_view_scrolls_without_moving_the_selection() -> Result<()> {
   let input = Input::plain(Action::Quit);
   for (fraction, row) in [(0.0, 0), (1.0, 18), (0.5, 9)] {
     app.action(Input { action: Action::Align(fraction), ..input })?;
-    assert_eq!(app.text_cell(app.reader.cursor)?.unwrap().1, row);
+    {
+      let (app, _) = app.parts();
+      assert_eq!(app.text_cell(app.reader.cursor)?.unwrap().1, row);
+    }
   }
   let cursor = app.reader.cursor;
   let before = app.text_position(0, 0)?;
@@ -244,7 +248,7 @@ fn changed_file_reloads_after_settling() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = App::with_screen(&path, "", false, screen)?;
+  let mut app = Solo::open(&path, "", false, screen)?;
   let pages = app.doc.pages.len();
   app.command("3")?;
   assert!(!app.watch()?);
@@ -282,7 +286,10 @@ fn hint_labels_keep_their_origin() -> Result<()> {
         selected: None,
       });
       let mut out = Vec::new();
-      app.draw_hints(&mut out)?;
+      {
+        let (app, graphics) = app.parts();
+        app.draw_hints(graphics, &mut out)?;
+      }
       let drawn = String::from_utf8_lossy(&out);
       let rest = &"as"[typed.len()..];
       assert!(drawn.starts_with(&format!(
@@ -309,7 +316,7 @@ fn link_hints_follow_typed_labels() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
+  let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
   app.command("2")?;
   let page = app.reader.cursor.page;
   for modifiers in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
@@ -350,8 +357,7 @@ fn preview_shows_citation_target() -> Result<()> {
     origin: (0, 0),
   };
   for text_mode in [false, true] {
-    let mut app =
-      App::with_screen(&root.join("paper.pdf"), "", text_mode, screen)?;
+    let mut app = Solo::open(&root.join("paper.pdf"), "", text_mode, screen)?;
     let links = app.doc.links(PageId(1))?;
     let link =
       links.iter().find(|link| !matches!(link.target, Target::Uri(_))).unwrap();
@@ -415,7 +421,7 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   let press = |app: &mut App, action| app.action(Input::plain(action));
   press(&mut app, Action::Overview)?;
   assert!(app.overview.is_some());
@@ -444,7 +450,8 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
   }
   press(&mut app, Action::Command)?;
   assert!(app.prompt.take().is_some(), "`:` reaches the command line");
-  for action in [Action::Window(vpdf::app::Window::Next), Action::Tab(true)] {
+  for action in [Action::Window(vpdf::window::Window::Next), Action::Tab(true)]
+  {
     press(&mut app, action)?;
     assert!(app.request.take().is_some(), "{action:?} reaches the session");
     assert!(app.overview.is_some(), "{action:?} keeps the overview");
@@ -467,7 +474,7 @@ fn unfocused_side_is_dimmed() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
+  let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
   common::outline_loaded(&mut app)?;
   app.open_panel(PanelKind::Outline)?;
   let mut out = Vec::new();
@@ -493,7 +500,7 @@ fn leaving_text_preview_keeps_the_panel() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   let quit = Input::plain(Action::Quit);
   app.action(Input { action: Action::Panel(PanelKind::Outline), ..quit })?;
   app.action(Input { action: Action::Panel(PanelKind::Text), ..quit })?;
@@ -515,7 +522,7 @@ fn escape_restores_the_previous_search() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+  let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   app.start_search("python", false, false)?;
   common::search_loaded(&mut app)?;
   let hits = app.search.hits().len();
@@ -555,14 +562,14 @@ fn placed_bottom(frame: &str, cell_height: u32) -> u32 {
 /// Opens a view of the pane, such as the overview.
 type Open = fn(&mut App) -> Result<()>;
 
-pub(super) fn drawn(app: &mut App) -> Result<String> {
+pub(super) fn drawn(app: &mut Solo) -> Result<String> {
   let mut out = Vec::new();
   app.draw(&mut out)?;
   Ok(String::from_utf8_lossy(&out).into_owned())
 }
 
 /// A frame once rendering stops bringing tiles.
-fn settled(app: &mut App) -> Result<String> {
+fn settled(app: &mut Solo) -> Result<String> {
   let started = Instant::now();
   let mut idle = 0;
   loop {
@@ -588,7 +595,7 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
+  let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
   let mut history = vpdf::prompt::History::default();
   let mut key = |app: &mut App, code| {
     let result = app.key(KeyEvent::new(code, KeyModifiers::NONE), &mut history);
@@ -736,7 +743,7 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
       text_app()?
     } else {
       let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-      App::with_screen(&root.join("paper.pdf"), "", false, screen())?
+      Solo::open(&root.join("paper.pdf"), "", false, screen())?
     };
     app.command("2")?;
     app.draw(&mut Vec::new())?;
@@ -836,7 +843,7 @@ fn hover_hits_lines_rows_and_thumbnails() -> Result<()> {
   // 27 pt keeps one block, with gaps.
   common::spaced_pdf(&path, &lines, 27)?;
   let short = Screen { rows: 170, cell_height: 4, ..screen() };
-  let mut app = App::with_screen(&path, "", false, short)?;
+  let mut app = Solo::open(&path, "", false, short)?;
   app.draw(&mut Vec::new())?;
   // Text runs unbroken down a column.
   let column = (0..app.screen.columns)
@@ -928,7 +935,8 @@ fn motion_redraws_only_for_new_targets() -> Result<()> {
   session.open(&root.join("paper.pdf"), true, screen())?;
   let app = session.app();
   app.command("2")?;
-  app.draw(&mut Vec::new())?;
+  session.draw_focused(&mut Vec::new())?;
+  let app = session.app();
   let targets = hover_targets(app)?;
   let link = targets.iter().find(|(_, hit)| matches!(hit, Hit::Link(..)));
   let ((column, row), _) = *link.expect("a visible link");
@@ -1161,5 +1169,29 @@ fn pixel_drags_draw_on_new_glyphs() -> Result<()> {
   }
   assert!(session.app().reader.selection.is_some(), "the drag selected");
   assert!(session.pointer_left());
+  Ok(())
+}
+
+/// A covered pane counts as closed, so it adds no recent entry.
+#[test]
+fn covered_panes_record_no_visit() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let path = root.path().join("visit.pdf");
+  common::text_pdf(&path, &["Visited text"])?;
+  let screen = Screen {
+    columns: 80,
+    rows: 24,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut app = Solo::open(&path, "", false, screen)?;
+  let mut state = vpdf::state::State::default();
+  app.show_recent(&[])?;
+  assert!(!state.remember_pane(&app));
+  assert_eq!(state.recent, [] as [vpdf::state::Entry; 0]);
+  app.close_panel()?;
+  assert!(state.remember_pane(&app));
+  assert_eq!(state.recent.len(), 1);
   Ok(())
 }

@@ -97,7 +97,7 @@ impl App {
     }
     self.trim();
     let mut panel = Panel::new(PanelKind::Recent, recent_rows(entries));
-    panel.shelf = Some(Shelf::new(entries, &self.password));
+    panel.shelf = Some(Shelf::new(entries, &self.password, &self.wake));
     panel.height = self.screen.rows;
     self.panel = Some(panel);
     self.relayout()

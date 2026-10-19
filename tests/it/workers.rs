@@ -1,10 +1,13 @@
 use std::path::PathBuf;
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::document::{Document, Handle};
 use vpdf::find::Query;
-use vpdf::ocr::{OcrJob, parse_tsv};
-use vpdf::search_worker::SearchWorker;
+use vpdf::jobs::Wake;
+use vpdf::jobs::ocr::{OcrJob, parse_tsv};
+use vpdf::jobs::search::SearchWorker;
 use vpdf::text::{Bounds, PageId};
 
 #[test]
@@ -30,7 +33,8 @@ fn superseded_search_completes_latest_query() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let path = root.join("book.pdf");
   let pages = Handle::open(&path, "")?.pages;
-  let worker = SearchWorker::new(&path, "", pages);
+  let (wake, woken) = counted();
+  let worker = SearchWorker::new(&path, "", pages, &wake);
   worker
     .lookup(&Query { text: "the".into(), ..Query::default() }, PageId(0))?;
   let latest = worker.lookup(
@@ -48,7 +52,55 @@ fn superseded_search_completes_latest_query() -> Result<()> {
       break;
     }
   }
+  assert!(woke(&woken, 1), "results wake the loop");
   Ok(())
+}
+
+/// Waits for `count` wakes; each follows its send.
+fn woke(woken: &AtomicUsize, count: usize) -> bool {
+  let started = Instant::now();
+  while woken.load(Ordering::Relaxed) < count {
+    if started.elapsed() > Duration::from_secs(5) {
+      return false;
+    }
+    std::thread::sleep(Duration::from_millis(1));
+  }
+  true
+}
+
+#[test]
+fn search_results_wake_the_loop() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let path = root.path().join("words.pdf");
+  crate::common::text_pdf(&path, &["needle in a haystack"])?;
+  let (wake, woken) = counted();
+  let worker = SearchWorker::new(&path, "", 1, &wake);
+  let query = Query { text: "needle".into(), ..Query::default() };
+  let generation = worker.lookup(&query, PageId(0))?;
+  let mut hits = 0;
+  loop {
+    let event = worker.events.recv_timeout(Duration::from_secs(10))?;
+    if event.generation != generation {
+      continue;
+    }
+    hits += event.hits.len();
+    if event.done {
+      break;
+    }
+  }
+  assert!(woke(&woken, 1));
+  assert_eq!(hits, 1);
+  Ok(())
+}
+
+/// A wake that counts its calls.
+fn counted() -> (Wake, Arc<AtomicUsize>) {
+  let woken = Arc::new(AtomicUsize::new(0));
+  let count = Arc::clone(&woken);
+  let wake = Wake::new(move || {
+    count.fetch_add(1, Ordering::Relaxed);
+  });
+  (wake, woken)
 }
 
 /// Workers skip the page walk yet place every page where the pane does.
@@ -74,14 +126,18 @@ fn handles_read_document_bounds() -> Result<()> {
 #[ignore = "requires corpus and Tesseract"]
 fn real_ocr_and_cancel() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let job = OcrJob::start(&root.join("ocr.pdf"), "", PageId(0), "eng");
+  let (wake, woken) = counted();
+  let job = OcrJob::start(&root.join("ocr.pdf"), "", PageId(0), "eng", &wake);
   let text = job
     .result
     .recv_timeout(Duration::from_secs(60))?
     .map_err(anyhow::Error::msg)?;
   assert!(text.plain().to_lowercase().contains("cheese"));
-  let cancelled = OcrJob::start(&root.join("ocr.pdf"), "", PageId(0), "eng");
+  assert!(woke(&woken, 1));
+  let cancelled =
+    OcrJob::start(&root.join("ocr.pdf"), "", PageId(0), "eng", &wake);
   cancelled.cancel();
   assert!(cancelled.result.recv_timeout(Duration::from_secs(10))?.is_err());
+  assert!(woke(&woken, 2), "cancellation wakes too");
   Ok(())
 }

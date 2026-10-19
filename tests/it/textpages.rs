@@ -9,6 +9,7 @@ use vpdf::app::App;
 use vpdf::document::{Heading, Target};
 use vpdf::layout::Screen;
 use vpdf::pointer::{Hit, Region, Route};
+use vpdf::solo::Solo;
 use vpdf::text::{PageId, Position};
 use vpdf_reader::reader::SelectionKind;
 
@@ -27,7 +28,7 @@ const WIDE: &str = "P1 L0 a wide line";
 
 /// Three pages of four lines in an eight-row text view, with web
 /// links over `(page, line)`s.
-fn app(links: &[(usize, usize)]) -> Result<(tempfile::TempDir, App)> {
+fn app(links: &[(usize, usize)]) -> Result<(tempfile::TempDir, Solo)> {
   let pages = PAGES.each_ref().map(|lines| &lines[..]);
   app_of(&pages, links)
 }
@@ -36,7 +37,7 @@ fn app(links: &[(usize, usize)]) -> Result<(tempfile::TempDir, App)> {
 fn app_of(
   pages: &[&[&str]],
   links: &[(usize, usize)],
-) -> Result<(tempfile::TempDir, App)> {
+) -> Result<(tempfile::TempDir, Solo)> {
   let dir = tempfile::tempdir()?;
   let path = dir.path().join("pages.pdf");
   common::linked_pages_pdf(&path, pages, links)?;
@@ -47,7 +48,7 @@ fn app_of(
     cell_height: 16,
     origin: (0, 0),
   };
-  let app = App::with_screen(&path, "", true, screen)?;
+  let app = Solo::open(&path, "", true, screen)?;
   Ok((dir, app))
 }
 
@@ -83,7 +84,7 @@ fn drawn(app: &mut App) -> Result<Vec<String>> {
 }
 
 /// Rows scrolled down from the top, as the wheel does.
-fn scrolled(rows: i16) -> Result<(tempfile::TempDir, App)> {
+fn scrolled(rows: i16) -> Result<(tempfile::TempDir, Solo)> {
   let (dir, mut app) = app(&[])?;
   app.scroll(f32::from(rows) * 16.0)?;
   Ok((dir, app))
@@ -391,7 +392,7 @@ fn rules_show_page_labels() -> Result<()> {
   doc.native.set_page_label_rule(rule)?;
   let mut file = std::fs::File::create(&path)?;
   doc.native.write_to_with_options(&mut file, PdfWriteOptions::default())?;
-  let mut app = App::with_screen(&path, "", true, app.screen)?;
+  let mut app = Solo::open(&path, "", true, app.screen)?;
   let rows = drawn(&mut app)?;
   assert!(rows[4].contains("── ii ─"), "{rows:?}");
   Ok(())

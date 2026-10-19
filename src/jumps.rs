@@ -1,8 +1,8 @@
 use crate::app::App;
 use crate::document::Target;
 use crate::find::Phase;
+use crate::panel::layout::Layout;
 use crate::panel::{Destination, Row};
-use crate::panel_layout::Layout;
 use crate::text::{Line, Position};
 use vpdf_reader::reader::JumpDescription;
 

@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::app::App;
+use crate::graphics::Graphics;
 use crate::keys::{Action, Input};
 use crate::layout::{Crop, page_matrix, screen_step, transform};
 use crate::pointer::{Hit, Wheel};
@@ -219,7 +220,11 @@ impl App {
   }
 
   /// Draws visible thumbnails and requests the missing ones.
-  pub fn overview_canvas(&mut self, out: &mut impl Write) -> Result<()> {
+  pub fn overview_canvas(
+    &mut self,
+    graphics: &mut Graphics,
+    out: &mut impl Write,
+  ) -> Result<()> {
     let grid = self.grid();
     let pages = self.doc.pages.len();
     let (screen, left) = (self.uncovered(), self.left);
@@ -263,7 +268,8 @@ impl App {
       let bottom = (screen.height() - (y + dy).floor()).ceil() as i32;
       for key in tiles::cover(whole, 0..w, 0..bottom.clamp(0, h)) {
         let origin = (x + dx + key.x as f32, y + dy + key.y as f32);
-        if !self.graphics.place_at(&key, origin, screen, left, out)? {
+        let pane = (self.id, key);
+        if !graphics.place_at(pane, origin, screen, left, out)? {
           missing.push(key);
         }
         wanted.push(key);
@@ -281,7 +287,7 @@ impl App {
         (hovered == Some(index)).then_some(theme::RING_HOVER)
       };
       if let Some(tint) = tint {
-        self.tint(ring, tint, screen, out)?;
+        self.tint(graphics, ring, tint, screen, out)?;
       }
     }
     self.complete = missing.is_empty();
@@ -357,7 +363,8 @@ mod tests {
       cell_height: 16,
       origin: (0, 0),
     };
-    let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
+    let mut app =
+      crate::solo::Solo::open(&root.join("book.pdf"), "", false, screen)?;
     app.open_overview()?;
     let grid = app.grid();
     let partial = grid.rows * grid.columns;

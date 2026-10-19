@@ -4,8 +4,8 @@ use crate::document::{Annotation, Heading, Target};
 use crate::graphics::Graphics;
 use crate::keys::{Action, Input, PanelKind};
 use crate::layout::{Screen, screen_step};
-use crate::panel_layout::Layout;
-use crate::panel_search::RowSearch;
+use crate::panel::layout::Layout;
+use crate::panel::search::RowSearch;
 use crate::pointer::{WHEEL_ROWS, Wheel};
 use crate::recent::Shelf;
 use crate::state::Entry;
@@ -126,7 +126,9 @@ mod focus_tests;
 mod help_tests;
 
 mod actions;
+pub(crate) mod layout;
 mod rows;
+mod search;
 mod sections;
 #[cfg(test)]
 mod tests;

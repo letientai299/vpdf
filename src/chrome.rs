@@ -1,8 +1,9 @@
 //! Clickable status items.
 
 use crate::Result;
-use crate::app::{App, Request, TabMove};
+use crate::app::{App, Request};
 use crate::keys::{Action, Input, PanelKind};
+use crate::window::TabMove;
 use crossterm::event::MouseButton;
 
 /// A clickable status item.

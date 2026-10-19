@@ -3,10 +3,11 @@ use crate::common;
 use std::fmt::Write as _;
 use std::path::Path;
 use vpdf::Result;
-use vpdf::app::{App, Tabline};
+use vpdf::app::Tabline;
 use vpdf::document::{Document, Target};
 use vpdf::keys::PanelKind;
 use vpdf::layout::Screen;
+use vpdf::solo::Solo;
 use vpdf::text::PageId;
 
 /// OSC, DCS, C1 OSC, and C1 CSI.
@@ -94,7 +95,7 @@ fn document_strings_reach_the_screen_clean() -> Result<()> {
   };
   // Graphics add tmux DCS wrappers.
   let text_mode = true;
-  let mut app = App::with_screen(&path, "", text_mode, screen)?;
+  let mut app = Solo::open(&path, "", text_mode, screen)?;
   common::outline_loaded(&mut app)?;
   assert_printable("file name", &app.name());
   assert_printable("window title", &app.title());
@@ -113,7 +114,10 @@ fn document_strings_reach_the_screen_clean() -> Result<()> {
       assert!(shown, "{kind:?} lists the text");
     }
     let mut frame = Vec::new();
-    app.draw_pane(&mut frame)?;
+    {
+      let (app, graphics) = app.parts();
+      app.draw_pane(graphics, &mut frame)?;
+    }
     let frame = String::from_utf8_lossy(&frame);
     assert!(frame.contains("]2;pwn"), "{panel:?} shows the text");
     let raw = frame.contains("\x1b]")
@@ -154,7 +158,7 @@ fn info_says_the_terminal_was_not_probed() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let app = App::with_screen(&path, "", true, screen)?;
+  let app = Solo::open(&path, "", true, screen)?;
   let info = app.info();
   let reader = info.split_once("# Reader\n").map_or("", |(_, rest)| rest);
   assert!(reader.lines().any(|line| line == "Terminal: not probed"), "{info}");

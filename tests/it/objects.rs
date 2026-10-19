@@ -2,6 +2,7 @@
 use super::common::keys;
 use vpdf::Result;
 use vpdf::pdf_text::PdfText;
+use vpdf::solo::Solo;
 use vpdf::text::{Line, PageId, Position};
 use vpdf_reader::objects::Object;
 use vpdf_reader::reader::{Reader, SelectionKind};
@@ -9,11 +10,10 @@ use vpdf_reader::reader::{Reader, SelectionKind};
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn object_raw_keys_preserve_normal_and_copy_blocks() -> Result<()> {
-  use vpdf::app::App;
   use vpdf::layout::Screen;
   let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
   for text_mode in [false, true] {
-    let mut app = App::with_screen(
+    let mut app = Solo::open(
       &root.join("paper.pdf"),
       "",
       text_mode,

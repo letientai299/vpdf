@@ -4,10 +4,10 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use vpdf::Result;
-use vpdf::app::App;
 use vpdf::find::Phase;
 use vpdf::keys::{Action, Input};
 use vpdf::layout::Screen;
+use vpdf::solo::Solo;
 use vpdf::tiles;
 use vpdf_reader::motion::Motion as Move;
 
@@ -43,9 +43,9 @@ fn ms(duration: Duration) -> f64 {
 }
 
 /// Pending visible tiles at the current scroll.
-fn missing(app: &mut App) -> usize {
+fn missing(app: &mut Solo) -> usize {
   let keys = tiles::visible(&app.layout, app.reader.scroll);
-  keys.iter().filter(|key| !app.graphics.contains(key)).count()
+  keys.iter().filter(|&&key| !app.graphics.contains(&(app.id, key))).count()
 }
 
 /// One loop iteration of the session: results, animation, frame.
@@ -56,7 +56,7 @@ struct Frame {
 }
 
 struct Sim {
-  app: App,
+  app: Solo,
   frame: Vec<u8>,
   uploaded: usize,
 }
@@ -199,7 +199,7 @@ fn fresh_jumps(
   screen: Screen,
   scan: bool,
 ) -> Result<(Jumps, bool)> {
-  let app = App::with_screen(path, "", false, screen)?;
+  let app = Solo::open(path, "", false, screen)?;
   let mut sim = Sim { app, frame: Vec::new(), uploaded: 0 };
   sim.settle(Instant::now())?;
   if scan {
@@ -369,7 +369,7 @@ fn motions(sim: &mut Sim) -> Result<Vec<Motion>> {
 
 fn document(path: &Path, screen: Screen) -> Result<Report> {
   let started = Instant::now();
-  let app = App::with_screen(path, "", false, screen)?;
+  let app = Solo::open(path, "", false, screen)?;
   let open_ms = ms(started.elapsed());
   let mut sim = Sim { app, frame: Vec::new(), uploaded: 0 };
   let (_, open_complete_ms) = sim.settle(started)?;
@@ -434,7 +434,7 @@ type ScreenSize = (u16, u16, u16, u16);
 
 fn crop_document(path: &Path, screen: Screen) -> Result<CropReport> {
   let started = Instant::now();
-  let app = App::with_screen(path, "", false, screen)?;
+  let app = Solo::open(path, "", false, screen)?;
   let open_ms = ms(started.elapsed());
   let mut sim = Sim { app, frame: Vec::new(), uploaded: 0 };
   let (_, open_complete_ms) = sim.settle(started)?;
@@ -461,12 +461,12 @@ fn crop_document(path: &Path, screen: Screen) -> Result<CropReport> {
   sim.app.command(&page)?;
   sim.settle(Instant::now())?;
   let mut state = vpdf::state::State::default();
-  state.remember(&sim.app);
+  state.remember(sim.app.saved_entry().expect("an uncovered pane"));
   let entry = state.recent[0].clone();
   let pages = sim.app.doc.pages.len();
   drop(sim);
   let started = Instant::now();
-  let mut app = App::with_screen(path, "", false, screen)?;
+  let mut app = Solo::open(path, "", false, screen)?;
   app.restore(&entry)?;
   let restored_open_ms = ms(started.elapsed());
   let mut sim = Sim { app, frame: Vec::new(), uploaded: 0 };

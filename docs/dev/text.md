@@ -73,10 +73,11 @@ precedence. If none is available, a bounded scan infers headings from text size
 and numbering; like search, it waits while on-screen work is in flight. Inferred
 headings are navigation aids and may differ from the author's structure.
 
-The job waits until a frame has placed every tile of the pane's current view,
-so its interpretation work cannot delay the first page. Text views start it
-after their first frame; hidden panes wait until shown. Opening the outline
-panel or moving by section starts it at once, including after `:cancel`.
+The [outline loader][outline-loader] waits until a frame has placed every tile
+of the pane's current view, so its interpretation work cannot delay the first
+page. Text views start it after their first frame; hidden panes wait until
+shown. Opening the outline panel or moving by section starts it at once,
+including after `:cancel`.
 
 ## Session OCR
 
@@ -103,9 +104,10 @@ its command interface.
 [layout]: ../../crates/vpdf-pdf/src/layout.rs
 [priority]: arch.md#work-and-resource-lifetimes
 [search]: ../../crates/vpdf-search/src/search.rs
-[worker]: ../../src/search_worker.rs
-[panels]: ../../src/panel_search.rs
-[outline]: ../../src/outline.rs
-[ocr]: ../../src/ocr.rs
-[cache]: ../../src/content_cache.rs
+[worker]: ../../src/jobs/search.rs
+[panels]: ../../src/panel/search.rs
+[outline-loader]: ../../src/outline.rs
+[outline]: ../../src/jobs/outline.rs
+[ocr]: ../../src/jobs/ocr.rs
+[cache]: ../../src/content_cache/mod.rs
 [installation]: ../install.md#optional-helpers

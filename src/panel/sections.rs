@@ -100,8 +100,8 @@ impl App {
         self.search.query().text
       ),
       format!("Text cache: {} KiB", self.doc.cache_bytes() / 1024),
-      format!("Images: {} KiB resident", self.graphics.bytes() / 1024),
-      format!("Transferred: {} KiB", self.graphics.uploaded / 1024),
+      format!("Images: {} KiB resident", self.image_usage.bytes / 1024),
+      format!("Transferred: {} KiB", self.image_usage.uploaded / 1024),
       format!("Last tile: {:.3} ms", self.render_ms),
       format!(
         "Cell: {}x{} px",

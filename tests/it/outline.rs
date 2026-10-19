@@ -6,6 +6,7 @@ use vpdf::keys::{Action, Input, PanelKind};
 use vpdf::layout::Screen;
 use vpdf::outline::Loading;
 use vpdf::session::Session;
+use vpdf::solo::Solo;
 use vpdf::text::PageId;
 
 fn key(title: &str) -> String {
@@ -28,10 +29,10 @@ fn inferred_outline_matches_authored_one() -> Result<()> {
     let handle = Handle::open(&root.join(name), "")?;
     let pages = (0..handle.pages)
       .map(|page| {
-        handle.text(PageId(page)).map(|t| vpdf::outline::summarize(&t))
+        handle.text(PageId(page)).map(|t| vpdf::jobs::outline::summarize(&t))
       })
       .collect::<Result<Vec<_>>>()?;
-    let inferred = vpdf::outline::infer(&pages);
+    let inferred = vpdf::jobs::outline::infer(&pages);
     let authored = handle.outline()?;
     let real: Vec<_> = authored.iter().map(|h| key(&h.title)).collect();
     let guessed: Vec<_> = inferred.iter().map(|h| key(&h.title)).collect();
@@ -72,7 +73,7 @@ fn inferred_outline_matches_authored_one() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn documents_without_outline_infer_one_in_background() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut app = App::with_screen(&root.join("form.pdf"), "", false, SCREEN)?;
+  let mut app = Solo::open(&root.join("form.pdf"), "", false, SCREEN)?;
   assert!(matches!(app.outline_load, Loading::Deferred));
   app.want_outline();
   let started = std::time::Instant::now();
@@ -81,7 +82,7 @@ fn documents_without_outline_infer_one_in_background() -> Result<()> {
     std::thread::sleep(std::time::Duration::from_millis(5));
   }
   assert!(app.doc.inferred);
-  let mut book = App::with_screen(&root.join("book.pdf"), "", false, SCREEN)?;
+  let mut book = Solo::open(&root.join("book.pdf"), "", false, SCREEN)?;
   book.want_outline();
   while !book.outline_updates()? {
     assert!(started.elapsed().as_secs() < 10);
@@ -98,7 +99,7 @@ fn inferred_outline_keeps_panel_focus_and_selection() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("live.pdf");
   std::fs::copy(root.join("form.pdf"), &path)?;
-  let mut app = App::with_screen(&path, "", false, SCREEN)?;
+  let mut app = Solo::open(&path, "", false, SCREEN)?;
   let finish = |app: &mut App| -> Result<()> {
     let started = std::time::Instant::now();
     while !app.outline_updates()? {
@@ -174,7 +175,8 @@ fn outline_waits_for_the_whole_first_view() -> Result<()> {
   while !session.app().complete {
     assert!(started.elapsed().as_secs() < 20, "tiles render");
     assert!(deferred(session.app()));
-    session.app().raster_updates();
+    let tab = &mut session.tabs[session.active];
+    tab.panes[tab.focus].raster_updates(&mut session.graphics);
     frame(&mut session)?;
     std::thread::sleep(std::time::Duration::from_millis(2));
   }
@@ -182,7 +184,7 @@ fn outline_waits_for_the_whole_first_view() -> Result<()> {
   assert!(running(session.app()));
   assert!(deferred(&session.tabs[0].panes[0]), "hidden tab waits");
   // Overview thumbnails count like tiles; a covered pane never completes.
-  let mut app = App::with_screen(&root.join("paper.pdf"), "", false, SCREEN)?;
+  let mut app = Solo::open(&root.join("paper.pdf"), "", false, SCREEN)?;
   app.open_overview()?;
   app.draw(&mut Vec::new())?;
   assert!(!app.complete, "no thumbnail yet");
@@ -191,7 +193,7 @@ fn outline_waits_for_the_whole_first_view() -> Result<()> {
   app.draw(&mut Vec::new())?;
   assert!(app.covered() && !app.complete);
   // Text views have no tiles to wait for.
-  let mut text = App::with_screen(&root.join("paper.pdf"), "", true, SCREEN)?;
+  let mut text = Solo::open(&root.join("paper.pdf"), "", true, SCREEN)?;
   text.draw(&mut Vec::new())?;
   text.start_deferred();
   assert!(running(&text));
@@ -205,7 +207,7 @@ fn outline_waits_for_the_whole_first_view() -> Result<()> {
 fn outline_requests_and_cancels_override_deferral() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let path = root.join("paper.pdf");
-  let mut app = App::with_screen(&path, "", false, SCREEN)?;
+  let mut app = Solo::open(&path, "", false, SCREEN)?;
   app.command("cancel")?;
   assert!(matches!(app.outline_load, Loading::Canceled));
   app.complete = true;
@@ -225,7 +227,7 @@ fn outline_requests_and_cancels_override_deferral() -> Result<()> {
   app.command("reload")?;
   assert!(deferred(&app), "reload drops the running job");
   // A section motion before any tile starts loading.
-  let mut section = App::with_screen(&path, "", false, SCREEN)?;
+  let mut section = Solo::open(&path, "", false, SCREEN)?;
   let input = Input {
     action: Action::Section(true),
     count: 1,

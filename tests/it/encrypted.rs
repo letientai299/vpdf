@@ -96,7 +96,7 @@ fn page_labels_resolve_on_demand() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = vpdf::app::App::with_screen(file.path(), "", false, screen)?;
+  let mut app = vpdf::solo::Solo::open(file.path(), "", false, screen)?;
   app.draw(&mut Vec::new())?;
   assert!(resolved(&app.doc) <= 2, "first frame reads visible labels");
   app.command("1")?;

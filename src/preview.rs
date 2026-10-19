@@ -1,9 +1,10 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::{Annotation, Target};
+use crate::graphics::Graphics;
 use crate::keys::{Action, Input};
 use crate::layout::screen_step;
-use crate::panel_layout::wrap;
+use crate::panel::layout::wrap;
 use crate::pointer::Hit;
 use crate::split::Rect;
 use crate::text::{Bounds, PageId, Position};
@@ -453,12 +454,13 @@ impl App {
 
   fn preview_backdrop(
     &mut self,
+    graphics: &mut Graphics,
     out: &mut impl Write,
     frame: Rect,
   ) -> Result<()> {
     let screen = self.layout.screen;
     let rect = self.cell_bounds(frame);
-    self.graphics.backdrop(rect, [255; 4], screen, self.left, out)
+    graphics.backdrop(rect, [255; 4], screen, self.left, out)
   }
 
   /// Records `frame` and its bridge to `link`.
@@ -631,7 +633,11 @@ impl App {
     }
   }
 
-  pub fn draw_preview(&mut self, out: &mut impl Write) -> Result<()> {
+  pub fn draw_preview(
+    &mut self,
+    graphics: &mut Graphics,
+    out: &mut impl Write,
+  ) -> Result<()> {
     if self.peek.is_none() {
       return Ok(());
     }
@@ -657,7 +663,7 @@ impl App {
     let over_page = matches!(preview.view, View::Image { .. })
       || !self.text_mode && matches!(preview.view, View::Note { .. });
     if over_page {
-      self.preview_backdrop(out, frame)?;
+      self.preview_backdrop(graphics, out, frame)?;
     }
     let link = self.hovered_box().or(cursor);
     self.place_preview(frame, link);
@@ -691,7 +697,7 @@ impl App {
           x1: x + key.width as f32,
           y1: y + key.height as f32,
         };
-        self.graphics.picture(
+        graphics.picture(
           preview.serial,
           (key.width, key.height, rgb),
           rect,

@@ -1,9 +1,8 @@
 use crate::Result;
 use crate::app::App;
-use crate::document::Handle;
+use crate::jobs::crop::Job;
 use crate::layout::Crop;
 use crate::text::{Bounds, PageId};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
 pub use vpdf_pdf::crop::{Margins, margins};
@@ -30,18 +29,6 @@ fn samples(count: usize, nearby: impl Iterator<Item = PageId>) -> Vec<PageId> {
   unique
 }
 
-pub struct Job {
-  result: mpsc::Receiver<std::result::Result<Arc<Margins>, String>>,
-  stop: Arc<AtomicBool>,
-  pages: Vec<PageId>,
-}
-
-impl Drop for Job {
-  fn drop(&mut self) {
-    self.stop.store(true, Ordering::Relaxed);
-  }
-}
-
 impl App {
   pub(crate) fn start_crop(&mut self) {
     let pages = samples(self.doc.pages.len(), self.nearby_pages().into_iter());
@@ -51,25 +38,15 @@ impl App {
   }
 
   fn crop_batch(&mut self, pages: Vec<PageId>) {
-    let (send, result) = mpsc::channel();
-    let stop = Arc::new(AtomicBool::new(false));
-    let canceled = Arc::clone(&stop);
-    let (path, password) = (self.path.clone(), self.password.clone());
-    let cached = self.doc.margins.clone();
-    let lists = self.doc.lists();
-    let wanted = pages.clone();
-    let nearby = self.nearby_pages();
-    std::thread::spawn(move || {
-      let found = (|| -> Result<Arc<Margins>> {
-        let handle = Handle::open(&path, &password)?;
-        let mut margins = cached.as_deref().cloned().unwrap_or_default();
-        margins.update(&handle, &pages, &nearby, &lists, &canceled)?;
-        Ok(Arc::new(margins))
-      })()
-      .map_err(|error| error.to_string());
-      let _ = crate::input::notify(send.send(found));
-    });
-    self.crop_job = Some(Job { result, stop, pages: wanted });
+    self.crop_job = Some(Job::start(
+      &self.path,
+      &self.password,
+      self.doc.margins.clone(),
+      self.doc.lists(),
+      pages,
+      self.nearby_pages(),
+      &self.wake,
+    ));
   }
 
   fn apply_crop(&mut self, crops: Arc<Margins>) -> Result<()> {
@@ -116,7 +93,7 @@ impl App {
       if target_ready && nearby.iter().any(|page| job.pages.contains(page)) {
         return;
       }
-      job.stop.store(true, Ordering::Relaxed);
+      job.cancel();
       return;
     }
     let Some(cached) = &self.doc.margins else {
@@ -141,7 +118,7 @@ impl App {
       Err(mpsc::TryRecvError::Empty) => return Ok(false),
       Err(mpsc::TryRecvError::Disconnected) => Err("Cropping stopped".into()),
     };
-    let canceled = job.stop.load(Ordering::Relaxed);
+    let canceled = job.canceled();
     self.crop_job = None;
     if canceled {
       self.request_crop();

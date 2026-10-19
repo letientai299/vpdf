@@ -2,8 +2,8 @@ use super::common::keys;
 use std::path::PathBuf;
 use std::sync::Arc;
 use vpdf::Result;
-use vpdf::app::App;
 use vpdf::layout::{Crop, Screen};
+use vpdf::solo::Solo;
 use vpdf::text::{Bounds, Glyph, Line, PageId, Position, Text};
 use vpdf_reader::reader::SelectionKind;
 const BAND: &str = "\x1b[0;100m";
@@ -12,9 +12,9 @@ const CURSOR: &str = "\x1b[0;7;34m";
 const LANDING: &str = "\x1b[0;43m";
 const SEARCH: &str = "\x1b[0;7;33m";
 
-fn app(text: bool) -> Result<App> {
+fn app(text: bool) -> Result<Solo> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  App::with_screen(
+  Solo::open(
     &root.join("paper.pdf"),
     "",
     text,
@@ -28,10 +28,13 @@ fn app(text: bool) -> Result<App> {
   )
 }
 
-fn marks(app: &mut App, screen: Screen) -> Result<Vec<Bounds>> {
+fn marks(app: &mut Solo, screen: Screen) -> Result<Vec<Bounds>> {
   let mut out = Vec::new();
   app.graphics.begin(&mut out)?;
-  app.marks(screen, &mut out)?;
+  {
+    let (app, graphics) = app.parts();
+    app.marks(graphics, screen, &mut out)?;
+  }
   app.graphics.end(&mut out)?;
   let frame = String::from_utf8(out)?;
   let mut rects = Vec::new();
@@ -102,7 +105,10 @@ fn cursorline_pdf_projects_and_clips() -> Result<()> {
       app.layout.rotation = rotation;
       app.layout.zoom = zoom;
       app.layout.crop = Crop([30, 30, 30, 30]);
-      app.layout.reflow(&app.doc.pages);
+      {
+        let (app, _) = app.parts();
+        app.layout.reflow(&app.doc.pages);
+      }
       let text = app.doc.text(PageId(0))?;
       let line =
         text.lines.iter().position(|line| line.glyphs.len() > 10).unwrap();
@@ -215,7 +221,10 @@ fn cursorline_stays_below_existing_selection() -> Result<()> {
   app.command("cursorline")?;
   let mut out = Vec::new();
   app.graphics.begin(&mut out)?;
-  app.marks(screen, &mut out)?;
+  {
+    let (app, graphics) = app.parts();
+    app.marks(graphics, screen, &mut out)?;
+  }
   app.graphics.end(&mut out)?;
   let frame = String::from_utf8(out)?;
   assert!(frame.contains("z=-1,"), "band stays below selection images");
@@ -271,7 +280,10 @@ fn landing_pdf_reuses_projected_clipped_band() -> Result<()> {
       app.layout.rotation = rotation;
       app.layout.zoom = zoom;
       app.layout.crop = Crop([30, 30, 30, 30]);
-      app.layout.reflow(&app.doc.pages);
+      {
+        let (app, _) = app.parts();
+        app.layout.reflow(&app.doc.pages);
+      }
       let text = app.doc.text(PageId(0))?;
       let line =
         text.lines.iter().position(|line| line.glyphs.len() > 10).unwrap();
@@ -289,10 +301,14 @@ fn landing_pdf_reuses_projected_clipped_band() -> Result<()> {
         assert!(flash.x0 >= 80.0 && flash.x1 <= 80.0 + screen.width());
         assert!(flash.y0 >= 0.0 && flash.y1 <= screen.height());
       }
-      app.go_to(app.reader.cursor, true)?;
+      let cursor = app.reader.cursor;
+      app.go_to(cursor, true)?;
       let mut out = Vec::new();
       app.graphics.begin(&mut out)?;
-      app.marks(screen, &mut out)?;
+      {
+        let (app, graphics) = app.parts();
+        app.marks(graphics, screen, &mut out)?;
+      }
       app.graphics.end(&mut out)?;
       let frame = String::from_utf8(out)?;
       assert!(frame.contains("z=-1,"));

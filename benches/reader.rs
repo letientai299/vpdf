@@ -8,10 +8,12 @@ use vpdf::app::App;
 use vpdf::content_cache::{alias, hex};
 use vpdf::document::{Document, extract};
 use vpdf::find::Query;
+use vpdf::jobs::Wake;
+use vpdf::jobs::search::SearchWorker;
 use vpdf::layout::Screen;
 use vpdf::pdf_text::PdfText;
 use vpdf::search::{self, Index};
-use vpdf::search_worker::SearchWorker;
+use vpdf::solo::Solo;
 use vpdf::text::PageId;
 use vpdf::tiles::{self, TileKey};
 use vpdf_reader::motion::Motion;
@@ -141,6 +143,7 @@ fn document(path: &Path, page: usize) -> Result<Report> {
     },
     1000,
   )?;
+  let mut app = Solo::new(app);
   let (frame, uploaded) = frames(&mut app)?;
   let text = Query { text: QUERY.into(), ..Query::default() };
   app.search.show(text, index.matches(&query, 1000)?);
@@ -166,15 +169,15 @@ fn document(path: &Path, page: usize) -> Result<Report> {
   })
 }
 
-fn frames(app: &mut App) -> Result<(Timing, u64)> {
+fn frames(app: &mut Solo) -> Result<(Timing, u64)> {
   let base = app.reader.scroll;
   let mut out = io::sink();
   for frame in 0..40 {
     let scroll = app.layout.clamp_scroll(base + frame as f32 * 4.0);
     for key in tiles::visible(&app.layout, scroll) {
-      if !app.graphics.contains(&key) {
+      if !app.graphics.contains(&(app.id, key)) {
         let tile = tiles::render(&mut app.doc, key)?;
-        app.graphics.upload(&tile, &mut out)?;
+        app.graphics.upload(app.id, &tile, &mut out)?;
       }
     }
   }
@@ -199,7 +202,7 @@ fn frames(app: &mut App) -> Result<(Timing, u64)> {
 
 fn searches(path: &Path) -> Result<(f64, f64, f64)> {
   let pages = Document::open(path, "")?.pages.len();
-  let worker = SearchWorker::new(path, "", pages);
+  let worker = SearchWorker::new(path, "", pages, &Wake::none());
   let mut total = Vec::new();
   let mut first = 0.0;
   for run in 0..2 {

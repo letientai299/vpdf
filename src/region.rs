@@ -2,6 +2,7 @@ use crate::Result;
 use crate::app::App;
 use crate::document::{Document, Target};
 use crate::figures::Source;
+use crate::graphics::Graphics;
 use crate::keys::{Action, Input};
 use crate::pointer::Items;
 use crate::split::Rect;
@@ -339,11 +340,12 @@ impl App {
     let cancel = Arc::new(AtomicBool::new(false));
     let stop = Arc::clone(&cancel);
     let (send, result) = mpsc::channel();
+    let send = self.wake.sender(send);
     let id = selected.id;
     std::thread::spawn(move || {
       let result = run(&path, &password, &selected, rotation, operation, &stop)
         .map_err(|error| error.to_string());
-      crate::input::notify(send.send(result)).ok();
+      send.send(result).ok();
     });
     self.region_job = Some(Job { id, cancel, result });
     self.region_status(id, "Region operation running".into());
@@ -392,14 +394,18 @@ impl App {
     self.reader.message = message;
   }
 
-  pub fn draw_region(&mut self, out: &mut impl Write) -> Result<()> {
+  pub fn draw_region(
+    &mut self,
+    graphics: &mut Graphics,
+    out: &mut impl Write,
+  ) -> Result<()> {
     if let crate::gestures::Gesture::Sweep(sweep) = self.gesture
       && let Some(bounds) = sweep.bounds()
     {
       let mut rect =
         self.layout.project(sweep.page, bounds, self.reader.scroll);
       // Quirk overlays cache by size.
-      if self.graphics.crop_quirk() {
+      if graphics.crop_quirk() {
         let (width, height) = (
           f32::from(self.layout.screen.cell_width),
           f32::from(self.layout.screen.cell_height),
@@ -411,7 +417,7 @@ impl App {
           y1: (rect.y1 / height).ceil() * height,
         };
       }
-      self.frame_capture(rect, out)?;
+      self.frame_capture(graphics, rect, out)?;
     }
     let Some(Region::Bar { snapshot, action, status, .. }) = &self.region
     else {
@@ -419,7 +425,7 @@ impl App {
     };
     let (page, action, status) = (snapshot.page, *action, status.clone());
     let rect = self.layout.project(page, snapshot.bounds, self.reader.scroll);
-    self.frame_capture(rect, out)?;
+    self.frame_capture(graphics, rect, out)?;
     let screen = self.layout.screen;
     let (mut label, mut items) = bar_label(page, action);
     if label.chars().count() > usize::from(screen.columns) {
@@ -440,13 +446,7 @@ impl App {
     self.place_bar(row, width, items);
     if let Some(cells) = self.bar_cells().filter(|_| !self.text_mode) {
       let backdrop = self.cell_bounds(cells);
-      self.graphics.backdrop(
-        backdrop,
-        theme::BADGE_FILL,
-        screen,
-        self.left,
-        out,
-      )?;
+      graphics.backdrop(backdrop, theme::BADGE_FILL, screen, self.left, out)?;
     }
     write!(
       out,
@@ -514,6 +514,7 @@ impl App {
   /// Dims around a rect; outlines it.
   fn frame_capture(
     &mut self,
+    graphics: &mut Graphics,
     rect: Bounds,
     out: &mut impl Write,
   ) -> Result<()> {
@@ -531,16 +532,10 @@ impl App {
         Bounds { x0: 0.0, y0, x1: x0, y1 },
         Bounds { x0: x1, y0, x1: w, y1 },
       ] {
-        self.graphics.backdrop(
-          bounds,
-          [0, 0, 0, 100],
-          screen,
-          self.left,
-          out,
-        )?;
+        graphics.backdrop(bounds, [0, 0, 0, 100], screen, self.left, out)?;
       }
       for bounds in frame_edges(Bounds { x0, y0, x1, y1 }, (w, h)) {
-        self.graphics.highlight(
+        graphics.highlight(
           bounds,
           [60, 120, 230, 220],
           screen,
@@ -664,8 +659,8 @@ fn run(
       Ok(Outcome::Message(format!("Saved {}", saved.display())))
     }
     Operation::Ocr => {
-      let output = crate::ocr::tesseract(capture.png, "eng", cancel)?;
-      let text = crate::ocr::parse_tsv(&output, Bounds::default(), 1.0)?;
+      let output = crate::jobs::ocr::tesseract(capture.png, "eng", cancel)?;
+      let text = crate::jobs::ocr::parse_tsv(&output, Bounds::default(), 1.0)?;
       Ok(Outcome::Text(
         text
           .lines
@@ -703,6 +698,56 @@ fn save(path: &Path, page: PageId, png: &[u8]) -> Result<PathBuf> {
 mod tests {
   use super::*;
   use crate::text::{Glyph, Line};
+
+  #[test]
+  fn results_wake_the_loop() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("region.pdf");
+    crate::fixtures::pdf(&path, &["body"], "")?;
+    let screen = crate::layout::Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut app = App::with_screen(&path, "", true, screen)?;
+    let (wake, woken) = crate::fixtures::wake();
+    app.wake = wake;
+    app.select_region(
+      PageId(0),
+      Bounds { x0: 10.0, y0: 10.0, x1: 50.0, y1: 50.0 },
+    )?;
+    app.region_operation(Operation::Save)?;
+    woken.recv_timeout(std::time::Duration::from_secs(10))?;
+    let result = app.region_job.as_ref().unwrap().result.try_recv()?;
+    assert!(matches!(result, Ok(Outcome::Message(_))));
+    let png = std::fs::read(dir.path().join("region-p1-region-1.png"))?;
+    assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert_eq!(woken.try_iter().count(), 0);
+    Ok(())
+  }
+
+  #[test]
+  fn dropping_cancels_region() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("region.pdf");
+    crate::fixtures::pdf(&path, &["body"], "")?;
+    let region = Snapshot {
+      id: CaptureId::next(),
+      page: PageId(0),
+      bounds: Bounds { x0: 10.0, y0: 10.0, x1: 50.0, y1: 50.0 },
+    };
+    let cancel = Arc::new(AtomicBool::new(false));
+    let (_send, result) = mpsc::channel();
+    let job = Job { id: region.id, cancel: Arc::clone(&cancel), result };
+    drop(job);
+    assert!(cancel.load(Ordering::Relaxed));
+    let result = run(&path, "", &region, 0, Operation::Save, &cancel);
+    assert_eq!(result.err().unwrap().to_string(), "Region operation cancelled");
+    assert!(!dir.path().join("region-p1-region-1.png").exists());
+    Ok(())
+  }
 
   #[test]
   fn text_centers_preserve_order() {

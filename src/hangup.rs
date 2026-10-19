@@ -36,7 +36,7 @@ pub fn watch(
       && let Ok(mut latest) = latest.lock()
       && let Some((state, history)) = latest.as_mut()
     {
-      drop(state.save(&store, history));
+      drop(state.save(&store, &history.commands, &history.searches));
     }
     // The loop may block in a prompt that never sees the flag.
     crate::terminal::restore();

@@ -7,10 +7,10 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use vpdf::Result;
-use vpdf::app::App;
 use vpdf::document::{Document, Handle};
 use vpdf::layout::{Screen, page_matrix, transform};
 use vpdf::pdf_text::PdfText;
+use vpdf::solo::Solo;
 use vpdf::text::PageId;
 
 const SAMPLES: usize = 31;
@@ -77,8 +77,8 @@ const PANE: Screen = Screen {
 };
 
 /// The corpus paper on a 120x40 pane.
-fn paper(text_mode: bool) -> Result<App> {
-  App::with_screen(&corpus("paper.pdf")?, "", text_mode, PANE)
+fn paper(text_mode: bool) -> Result<Solo> {
+  Solo::open(&corpus("paper.pdf")?, "", text_mode, PANE)
 }
 
 /// Text-mode frame.
@@ -125,7 +125,7 @@ fn landing() -> Result<()> {
   Ok(())
 }
 
-fn overlay_case(app: &mut App, name: &str) -> Result<()> {
+fn overlay_case(app: &mut Solo, name: &str) -> Result<()> {
   let screen = app.layout.screen;
   let mut out = Vec::new();
   let mut draw = |out: &mut Vec<u8>| {
@@ -134,7 +134,10 @@ fn overlay_case(app: &mut App, name: &str) -> Result<()> {
       app.text_canvas(out).expect("cached text");
     } else {
       app.graphics.begin(out).expect("begin marks");
-      app.marks(screen, out).expect("cached marks");
+      {
+        let (app, graphics) = app.parts();
+        app.marks(graphics, screen, out).expect("cached marks");
+      }
       app.graphics.end(out).expect("end marks");
     }
   };
@@ -160,7 +163,10 @@ fn link_hover() -> Result<()> {
   let mut index = 0;
   measure("App::point", || {
     index = 1 - index;
-    app.point(on(app.id, page, index));
+    {
+      let (app, _) = app.parts();
+      app.point(on(app.id, page, index));
+    }
     black_box(app.hover);
   })?;
   measure("App::hover_label", || {
@@ -170,12 +176,15 @@ fn link_hover() -> Result<()> {
     let mut app = paper(text_mode)?;
     app.command("2")?;
     overlay_case(&mut app, &format!("no link text={text_mode}"))?;
-    app.point(on(app.id, page, 0));
+    {
+      let (app, _) = app.parts();
+      app.point(on(app.id, page, 0));
+    }
     anyhow::ensure!(app.hover_link().is_some(), "a hovered citation");
     overlay_case(&mut app, &format!("link tint text={text_mode}"))?;
   }
   // A web address wrapped over two lines.
-  let mut app = App::with_screen(&corpus("book.pdf")?, "", false, PANE)?;
+  let mut app = Solo::open(&corpus("book.pdf")?, "", false, PANE)?;
   app.command("4")?;
   let page = PageId(3);
   let index = app.doc.links(page)?.iter().position(|link| {
@@ -183,7 +192,10 @@ fn link_hover() -> Result<()> {
       if uri.contains("greenteapress"))
   });
   let index = index.ok_or_else(|| anyhow::anyhow!("an address on p. 4"))?;
-  app.point(on(app.id, page, index));
+  {
+    let (app, _) = app.parts();
+    app.point(on(app.id, page, index));
+  }
   overlay_case(&mut app, "link tint address")
 }
 
@@ -200,14 +212,15 @@ fn context_draw() -> Result<()> {
     modifiers: KeyModifiers::NONE,
   };
   session.mouse(right(MouseEventKind::Down(MouseButton::Right)))?;
-  let app = session.app();
-  anyhow::ensure!(app.context_menu.is_some(), "an open menu");
+  anyhow::ensure!(session.app().context_menu.is_some(), "an open menu");
+  let tab = &mut session.tabs[session.active];
+  let (app, graphics) = (&mut tab.panes[tab.focus], &mut session.graphics);
   let mut out = Vec::new();
   measure("App::draw_context", || {
     out.clear();
-    app.graphics.begin(&mut out).expect("begin menu frame");
-    app.draw_context(&mut out).expect("menu rows");
-    app.graphics.end(&mut out).expect("menu placements");
+    graphics.begin(&mut out).expect("begin menu frame");
+    app.draw_context(graphics, &mut out).expect("menu rows");
+    graphics.end(&mut out).expect("menu placements");
     black_box(&out);
   })
 }
@@ -218,11 +231,17 @@ fn draw_hints() -> Result<()> {
   app.command("2")?;
   app.start_hints(false)?;
   let mut out = Vec::new();
-  app.draw_hints(&mut out)?;
+  {
+    let (app, graphics) = app.parts();
+    app.draw_hints(graphics, &mut out)?;
+  }
   measure("App::draw_hints", || {
     out.clear();
     app.graphics.begin(&mut out).expect("begin hint frame");
-    app.draw_hints(&mut out).expect("visible citation labels");
+    app
+      .app
+      .draw_hints(&mut app.graphics, &mut out)
+      .expect("visible citation labels");
     app.graphics.end(&mut out).expect("hint placements");
     black_box(&out);
   })
@@ -426,9 +445,9 @@ fn frame() -> Result<()> {
   let base = app.reader.scroll;
   for scroll in [base, base + 4.0] {
     for key in vpdf::tiles::visible(&app.layout, scroll) {
-      if !app.graphics.contains(&key) {
+      if !app.graphics.contains(&(app.id, key)) {
         let tile = vpdf::tiles::render(&mut app.doc, key)?;
-        app.graphics.upload(&tile, &mut io::sink())?;
+        app.graphics.upload(app.id, &tile, &mut io::sink())?;
       }
     }
   }
@@ -611,7 +630,7 @@ fn crop_toggle() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = App::with_screen(&corpus("book.pdf")?, "", false, screen)?;
+  let mut app = Solo::open(&corpus("book.pdf")?, "", false, screen)?;
   app.command("100")?;
   app.toggle_crop()?;
   let started = Instant::now();
@@ -671,7 +690,10 @@ fn projection() -> Result<()> {
   for zoom in [0.5, 2.0] {
     app.layout.zoom = zoom;
     app.layout.pan = 96.0;
-    app.layout.reflow(&app.doc.pages);
+    {
+      let (app, _) = app.parts();
+      app.layout.reflow(&app.doc.pages);
+    }
     measure(&format!("Layout::project zoom {zoom}"), || {
       black_box(app.layout.project(
         black_box(PageId(0)),
@@ -731,11 +753,12 @@ fn cursor_key() -> Result<()> {
 fn preview_idle() -> Result<()> {
   let mut app = paper(false)?;
   measure("App::draw_preview absent", || {
-    black_box(&mut app).draw_preview(&mut io::sink()).expect("no preview");
+    let Solo { app, graphics } = black_box(&mut app);
+    app.draw_preview(graphics, &mut io::sink()).expect("no preview");
   })
 }
 
-fn preview_scene(text: bool) -> Result<App> {
+fn preview_scene(text: bool) -> Result<Solo> {
   use vpdf::document::Target;
   let mut app = paper(text)?;
   let link = app
@@ -759,13 +782,17 @@ fn preview_draw() -> Result<()> {
   for text in [false, true] {
     let mut app = preview_scene(text)?;
     let mut out = Vec::new();
-    app.draw_preview(&mut out)?;
+    {
+      let (app, graphics) = app.parts();
+      app.draw_preview(graphics, &mut out)?;
+    }
     app.graphics.end(&mut out)?;
     measure(&format!("preview draw text={text}"), || {
       out.clear();
-      app.graphics.begin(&mut out).expect("begin preview");
-      black_box(&mut app).draw_preview(&mut out).expect("warm preview");
-      app.graphics.end(&mut out).expect("end preview");
+      let Solo { app, graphics } = black_box(&mut app);
+      graphics.begin(&mut out).expect("begin preview");
+      app.draw_preview(graphics, &mut out).expect("warm preview");
+      graphics.end(&mut out).expect("end preview");
       black_box(&out);
     })?;
     measure(&format!("preview stray check text={text}"), || {
@@ -925,6 +952,7 @@ fn lexical_objects() -> Result<()> {
   let line = text.lines.iter().position(|line| line.glyphs.len() > 15).unwrap();
   let cursor = vpdf::text::Position { page: PageId(0), line, glyph: 4 };
   measure("Reader::object paper", || {
+    let (app, _) = app.parts();
     app.reader.cursor = cursor;
     app.reader.object(false, &mut PdfText(&mut app.doc)).expect("paper word");
     black_box(app.reader.selection);
@@ -972,7 +1000,10 @@ fn figures() -> Result<()> {
   let mut draw = |out: &mut Vec<u8>| {
     out.clear();
     app.graphics.begin(out).expect("begin region");
-    app.draw_region(out).expect("region bar");
+    {
+      let (app, graphics) = app.parts();
+      app.draw_region(graphics, out).expect("region bar");
+    }
     app.graphics.end(out).expect("end region");
   };
   draw(&mut out);

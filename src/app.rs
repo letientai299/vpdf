@@ -1,12 +1,13 @@
 use crate::Result;
 use crate::document::Document;
-use crate::graphics::Graphics;
+use crate::graphics::Usage;
+use crate::jobs::render::RenderWorker;
 use crate::keys::{Keys, PanelKind};
 use crate::layout::{Layout, Screen};
-use crate::render_worker::RenderWorker;
 use crate::terminal;
 use crate::text::Position;
 use crate::tiles::TileKey;
+use crate::window::{TabMove, Window};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
@@ -60,36 +61,6 @@ pub enum Request {
   Perf(Option<bool>),
 }
 
-/// `Ctrl-w` commands on the panes of a tab.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Window {
-  Split(crate::split::Axis),
-  Focus(crate::split::Direction),
-  Next,
-  Previous,
-  Last,
-  Close,
-  Only,
-  Equalize,
-  Resize(crate::split::Axis, i32),
-  Maximize(crate::split::Axis),
-  Exchange,
-  /// Rotates panes in the focused row or column; `true` moves forward.
-  Rotate(bool),
-  /// Splits above and lists recent documents to open there.
-  New,
-  /// Moves the pane to the full-height or full-width edge.
-  Move(crate::split::Direction),
-  ToTab,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TabMove {
-  Next(usize),
-  Previous(usize),
-  Go(usize),
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InputOwner {
   Prompt,
@@ -121,7 +92,10 @@ pub struct App {
   /// The followed target of a landed view.
   pub(crate) aimed: Option<(crate::marks::Landed, crate::document::Target)>,
   pub layout: Layout,
-  pub graphics: Graphics,
+  /// Reloaded since the session last drew: its old images go first.
+  pub(crate) images_stale: bool,
+  /// The shared images as this pane last drew them.
+  pub(crate) image_usage: Usage,
   pub worker: RenderWorker,
   pub keys: Keys,
   pub path: PathBuf,
@@ -151,7 +125,9 @@ pub struct App {
   /// The message the pointer last moved past.
   pub render_ms: f64,
   pub search: crate::find::Search,
-  pub search_worker: Option<crate::search_worker::SearchWorker>,
+  pub search_worker: Option<crate::jobs::search::SearchWorker>,
+  /// Wakes the event loop when a job finishes.
+  pub wake: crate::jobs::Wake,
   /// Outline entry containing the cursor, refreshed each frame.
   pub current_section: Option<usize>,
   /// Lowercase marks of this document.
@@ -180,9 +156,9 @@ pub struct App {
   pub overview: Option<crate::overview::Overview>,
   pub panel: Option<crate::panel::Panel>,
   pub preview: Option<bool>,
-  pub ocr: Option<crate::ocr::OcrJob>,
+  pub ocr: Option<crate::jobs::ocr::OcrJob>,
   pub outline_load: crate::outline::Loading,
-  pub crop_job: Option<crate::crop::Job>,
+  pub crop_job: Option<crate::jobs::crop::Job>,
   pub animation: Option<crate::animation::Scroll>,
   /// The current wheel gesture over the page.
   pub(crate) wheel: Option<crate::interaction::WheelRun>,
@@ -218,7 +194,8 @@ impl App {
     static NEXT: AtomicU32 = AtomicU32::new(1);
     let doc = Document::open(path, password)?;
     let layout = Layout::new(&doc.pages, screen);
-    let worker = RenderWorker::new(path, password, doc.lists());
+    let wake = crate::input::loop_wake();
+    let worker = RenderWorker::new(path, password, doc.lists(), &wake);
     Ok(Self {
       id: NEXT.fetch_add(1, Ordering::Relaxed),
       doc,
@@ -228,7 +205,8 @@ impl App {
       landed: None,
       aimed: None,
       layout,
-      graphics: Graphics::default(),
+      images_stale: false,
+      image_usage: Usage::default(),
       worker,
       keys: Keys::default(),
       path: path.to_owned(),
@@ -251,6 +229,7 @@ impl App {
       render_ms: 0.0,
       search: crate::find::Search::default(),
       search_worker: None,
+      wake,
       current_section: None,
       marks: std::collections::BTreeMap::new(),
       search_origin: None,

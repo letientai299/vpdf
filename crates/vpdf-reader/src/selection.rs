@@ -147,7 +147,11 @@ impl Reader {
     let name = register.to_ascii_lowercase();
     let output: Arc<str> = if register.is_ascii_uppercase() {
       let old = self.registers.get(&name).map_or("", |old| &**old);
-      ensure!(old.len() + text.len() < YANK_LIMIT, "Register exceeds 8 MiB");
+      ensure!(
+        old.len() + text.len() < YANK_LIMIT,
+        "Register exceeds {} MiB",
+        YANK_LIMIT >> 20
+      );
       format!("{old}{text}").into()
     } else {
       text.into()
@@ -196,7 +200,7 @@ fn covered_lines(
         continue;
       }
       size += output.len() + 1;
-      ensure!(size < YANK_LIMIT, "Selection exceeds 8 MiB");
+      ensure!(size < YANK_LIMIT, "Selection exceeds {} MiB", YANK_LIMIT >> 20);
       lines.push((joins[line - skip], output));
     }
   }
