@@ -26,19 +26,14 @@ impl Loader {
 
   pub fn request(&self, cards: &mut Shelf) {
     if let Some(request) = cards.take_request() {
-      let _ = self.worker.requests.send(vpdf_pdf::jobs::recent::Request {
-        path: request.path,
-        cursor: request.cursor,
-        rotation: request.rotation,
-        fit: request.fit,
-      });
+      self.worker.request(request);
     }
   }
 
   pub fn updates(&self, cards: &mut Shelf) -> bool {
     let mut arrived = false;
-    while let Ok((path, loaded)) = self.worker.results.try_recv() {
-      cards.accept(path, loaded.fit, loaded.facts);
+    for (path, loaded) in self.worker.updates() {
+      cards.accept(path, loaded);
       arrived = true;
     }
     arrived
@@ -49,6 +44,7 @@ impl Loader {
 mod tests {
   use super::*;
   use crate::Result;
+  use anyhow::Context;
   use std::path::PathBuf;
   use std::time::{Duration, Instant};
   use vpdf_terminal::{graphics::Graphics, terminal::At};
@@ -82,7 +78,8 @@ mod tests {
     )?;
     loader.request(&mut cards);
     woken.recv_timeout(Duration::from_secs(10))?;
-    let (path, card) = loader.worker.results.try_recv()?;
+    let (path, card) =
+      loader.worker.updates().next().context("Card never arrived")?;
     assert_eq!(path, entry.path);
     let facts = card.facts.map_err(anyhow::Error::msg)?;
     assert_eq!(facts.pages, 1);
@@ -133,9 +130,8 @@ mod tests {
     }
     // A drawn card asks nothing more.
     draw(&mut cards)?;
-    assert!(
-      loader.worker.results.recv_timeout(Duration::from_millis(200)).is_err()
-    );
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(loader.worker.updates().next().is_none());
     Ok(())
   }
 }

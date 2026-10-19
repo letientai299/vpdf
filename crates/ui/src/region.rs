@@ -324,7 +324,7 @@ impl Canvas<'_> {
       ] {
         graphics.backdrop(
           bounds,
-          [0, 0, 0, 100],
+          theme::REGION_VEIL,
           screen,
           self.frame.left,
           out,
@@ -333,7 +333,7 @@ impl Canvas<'_> {
       for bounds in frame_edges(Bounds { x0, y0, x1, y1 }, (w, h)) {
         graphics.highlight(
           bounds,
-          [60, 120, 230, 220],
+          theme::REGION_EDGE,
           screen,
           self.frame.left,
           out,

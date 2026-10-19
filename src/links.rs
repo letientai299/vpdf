@@ -1,11 +1,14 @@
+//! Links and notes: hover, follow, and listing.
+
 use crate::Result;
 use crate::app::App;
 use crossterm::event::MouseEvent;
 use std::sync::Arc;
 use std::time::Instant;
-use vpdf_model::document::{Link, Target};
-use vpdf_model::text::{Bounds, PageId, Text};
+use vpdf_model::document::{Annotation, Link, Target};
+use vpdf_model::text::{Bounds, PageId, Position, Text};
 use vpdf_pdf::document::Document;
+use vpdf_ui::annotations::{icon, marked};
 use vpdf_ui::panel::Row;
 use vpdf_ui::panel::links::{cited, link_row};
 use vpdf_ui::pointer::{Hit, Hover};
@@ -69,7 +72,7 @@ impl App {
   /// When the rested link previews.
   pub fn hover_due(&mut self) -> Option<Instant> {
     let (page, index, due) =
-      self.hover.due(self.input_owner(), self.peek.is_some())?;
+      self.hover.due(self.input_owner(), self.overlays.preview().is_some())?;
     let link = self.link(page, index).ok()??;
     (!matches!(link.target, Target::Uri(_))).then_some(due)
   }
@@ -81,18 +84,15 @@ impl App {
     }
     self.calm_hover();
     let Some((page, index)) = self.hover.resting() else { return false };
-    let Ok(Some(link)) = self.link(page, index) else { return false };
-    // Previews are advisory; failures show nothing.
-    let Ok(text) = self.doc.text(page) else { return false };
-    // Textless links have no anchor.
-    let boxes: Vec<_> = link.boxes().collect();
-    let Some(source) = text.in_areas(page, &boxes).0 else {
+    let Ok(Some((target, source))) =
+      self.reading_view().hover_target(page, index)
+    else {
       return false;
     };
-    if self.show_preview(link.target, source).is_err() {
+    if self.show_preview(target, source).is_err() {
       return false;
     }
-    if let Some(peek) = &mut self.peek {
+    if let Some(peek) = self.overlays.preview_mut() {
       peek.hover(page, index);
     }
     true
@@ -100,7 +100,7 @@ impl App {
 
   /// The open hover preview.
   pub(crate) fn hover_peek(&self) -> Option<&Preview> {
-    self.peek.as_ref().filter(|peek| peek.hovered().is_some())
+    self.overlays.preview().filter(|peek| peek.hovered().is_some())
   }
 
   /// Motion on the link restarts its rest.
@@ -121,7 +121,7 @@ impl App {
     if peek.retains_hover(at, view, rested) {
       return false;
     }
-    self.peek = None;
+    self.overlays.close_preview();
     true
   }
 
@@ -129,7 +129,7 @@ impl App {
   pub(crate) fn drop_hover_preview(&mut self) -> bool {
     let open = self.hover_peek().is_some();
     if open {
-      self.peek = None;
+      self.overlays.close_preview();
     }
     self.calm_hover();
     open
@@ -137,7 +137,7 @@ impl App {
 
   /// Inside: left follows, middle splits.
   pub fn preview_press(&mut self, mouse: MouseEvent) -> Result<bool> {
-    let Some(peek) = &self.peek else { return Ok(false) };
+    let Some(peek) = self.overlays.preview() else { return Ok(false) };
     match peek.press(mouse, self.in_preview(mouse), self.input_owner()) {
       Press::Ignored => Ok(false),
       Press::Follow => {
@@ -147,7 +147,9 @@ impl App {
       }
       Press::Split => {
         self.disarm();
-        if let Some(target) = self.peek.take().and_then(Preview::into_target) {
+        if let Some(target) =
+          self.overlays.close_preview().and_then(Preview::into_target)
+        {
           self.open_split(&target)?;
         }
         Ok(true)
@@ -212,6 +214,71 @@ pub(crate) fn destination(
     |page| doc.label(page),
     cited,
   )
+}
+
+impl App {
+  /// Every annotation in page order, with marked text or contents.
+  pub fn annotation_rows(&mut self) -> Result<Vec<Row>> {
+    let mut rows = Vec::new();
+    for page in (0..self.doc.pages.len()).map(PageId) {
+      let annotations = self.doc.annotations(page)?;
+      if annotations.is_empty() {
+        continue;
+      }
+      let text = self.doc.text(page)?;
+      for annotation in annotations.iter().cloned() {
+        rows.push(vpdf_ui::annotations::row(
+          &text,
+          page,
+          annotation,
+          self.doc.label(page),
+        ));
+      }
+    }
+    Ok(rows)
+  }
+
+  pub(crate) fn annotation_at(
+    &mut self,
+    position: Position,
+  ) -> Result<Option<Annotation>> {
+    let Some((_, x, y)) = self.glyph_point(position)? else { return Ok(None) };
+    let text = self.doc.text(position.page)?;
+    let annotations = self.doc.annotations(position.page)?;
+    Ok(vpdf_ui::annotations::at(&annotations, &text, position, x, y))
+  }
+
+  /// Opens a note's popup (U11).
+  pub(crate) fn show_note(&mut self, page: PageId, index: usize) -> Result<()> {
+    let annotations = self.doc.annotations(page)?;
+    let Some(note) = annotations.get(index).cloned() else { return Ok(()) };
+    let text = self.doc.text(page)?;
+    let position = marked(&text, page, &note).0;
+    self.preview_annotation(position, &note);
+    if let Some(area) = note.areas.first().filter(|_| icon(&note)) {
+      self.anchor_preview(page, index, *area);
+    }
+    Ok(())
+  }
+
+  /// The hovered note icon's areas.
+  pub fn hover_icon(&mut self) -> Option<(PageId, Vec<Bounds>)> {
+    let Hit::Note { page, index, text: false } = self.hover.hit() else {
+      return None;
+    };
+    let annotations = self.doc.annotations(page).ok()?;
+    Some((page, annotations.get(index)?.areas.clone()))
+  }
+
+  /// A hovered note: kind, author, comment.
+  pub(crate) fn note_line(
+    &mut self,
+    page: PageId,
+    index: usize,
+  ) -> Result<Option<String>> {
+    let annotations = self.doc.annotations(page)?;
+    Ok(annotations.get(index).map(vpdf_ui::annotations::label))
+  }
 }
 
 #[cfg(test)]

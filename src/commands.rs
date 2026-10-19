@@ -1,13 +1,14 @@
 use crate::Result;
 use crate::app::{App, Request};
 use crate::cmdline;
+use crate::pdf_text::PdfText;
 use crossterm::event::KeyEvent;
 use std::process::{Command, Stdio};
 use vpdf_model::document::Target;
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Mode;
-use vpdf_ui::commands::{self, View};
-use vpdf_ui::input::InputOwner;
+use vpdf_ui::commands::{self, Id, View};
+use vpdf_ui::input::{Cancel, InputOwner, Reset};
 use vpdf_ui::keys::{Action, Grammar, Input, PanelKind};
 use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
 use vpdf_ui::split::Axis;
@@ -44,7 +45,7 @@ impl App {
       return self.yank_path(input.register);
     }
     if !self.panel_focused()
-      && self.overview.is_some()
+      && self.overlays.overview().is_some()
       && self.overview_input(input)?
     {
       return Ok(());
@@ -71,7 +72,9 @@ impl App {
       Action::Follow => self.follow_cursor()?,
       Action::Definition => self.definition()?,
       Action::OpenUrl => self.open_cursor_url()?,
-      Action::Command => self.prompt = Some(Prompt::new(PromptKind::Command)),
+      Action::Command => {
+        self.overlays.open_prompt(Prompt::new(PromptKind::Command));
+      }
       Action::Mark(name) => self.set_mark(name)?,
       Action::Hints(copy) => self.start_hints(copy)?,
       Action::Window(command) => {
@@ -110,7 +113,7 @@ impl App {
     // Keys end pointer gestures.
     self.end_gestures();
     self.drop_hover_preview();
-    if self.prompt.is_some() {
+    if self.overlays.prompt().is_some() {
       let view = self.command_view();
       return self.edit_prompt(history, |prompt, history| {
         cmdline::feed(prompt, key, history, view)
@@ -119,11 +122,11 @@ impl App {
     if vpdf_ui::keys::cancels(key) {
       return self.cancel_input();
     }
-    if let Some(hints) = &self.hints {
+    if let Some(hints) = self.overlays.hints() {
       if hints.accepts(key) {
         return self.hint_key(key);
       }
-      self.hints = None;
+      self.overlays.close_hints();
     }
     let owner = self.input_owner();
     if matches!(
@@ -157,44 +160,23 @@ impl App {
     let owner = self.input_owner();
     let pending =
       !self.keys.pending().is_empty() || self.reader.operator.is_some();
-    if matches!(
-      owner,
-      InputOwner::Peek | InputOwner::Region | InputOwner::Context
-    ) {
-      if !pending {
-        self.dismiss_overlay();
+    let cancel = self.overlays.cancel(owner, pending);
+    match cancel {
+      Cancel::Disarm => {}
+      Cancel::Overlay => self.dismiss_overlay(),
+      Cancel::Prompt => self.cancel_prompt()?,
+      Cancel::Reset(reset) => {
+        self.overlays.close_region();
+        self.end_gestures();
+        match reset {
+          Reset::Prompt => self.cancel_prompt()?,
+          Reset::Hints => drop(self.overlays.close_hints()),
+          Reset::Overview => self.close_overview(),
+          Reset::Pending => self.reader.notice(""),
+          Reset::Content => self.reader.cancel_content(),
+          Reset::Selection => self.reader.cancel(),
+        }
       }
-      self.disarm();
-      return Ok(());
-    }
-    if owner == InputOwner::Prompt
-      && (self.peek.is_some()
-        || self.region.as_ref().is_some_and(vpdf_ui::region::Region::is_bar))
-    {
-      self.cancel_prompt()?;
-      self.disarm();
-      return Ok(());
-    }
-    self.region = None;
-    self.end_gestures();
-    if matches!(owner, InputOwner::Prompt | InputOwner::Hints)
-      || self.overview.is_some()
-    {
-      match owner {
-        InputOwner::Prompt => self.cancel_prompt()?,
-        InputOwner::Hints => self.hints = None,
-        _ => self.close_overview(),
-      }
-      self.disarm();
-      return Ok(());
-    }
-    if owner == InputOwner::Content && pending {
-      self.reader.notice("");
-    } else {
-      if owner == InputOwner::Content && self.reader.mode() == Mode::Cursor {
-        self.reader.normal();
-      }
-      self.reader.cancel();
     }
     self.disarm();
     Ok(())
@@ -203,7 +185,7 @@ impl App {
   /// Pasted text goes to an open prompt. In Normal mode a pasted PDF
   /// path opens, since terminals without drops paste dropped paths.
   pub fn paste(&mut self, text: &str, history: &mut History) -> Result<()> {
-    if self.prompt.is_some() {
+    if self.overlays.prompt().is_some() {
       return self.edit_prompt(history, |prompt, _| Ok(prompt.paste(text)));
     }
     if self.reader.mode() == Mode::Normal
@@ -220,7 +202,7 @@ impl App {
     history: &mut History,
     edit: impl FnOnce(&mut Prompt, &History) -> Result<PromptEvent>,
   ) -> Result<()> {
-    let Some(prompt) = &mut self.prompt else { return Ok(()) };
+    let Some(prompt) = self.overlays.prompt_mut() else { return Ok(()) };
     let kind = prompt.kind();
     match edit(prompt, history)? {
       PromptEvent::Edited if matches!(kind, PromptKind::Search(_)) => {
@@ -233,7 +215,7 @@ impl App {
       | PromptEvent::Complete => {}
       PromptEvent::Cancel => self.cancel_input()?,
       PromptEvent::Submit => {
-        let Some(prompt) = self.prompt.take() else { return Ok(()) };
+        let Some(prompt) = self.overlays.close_prompt() else { return Ok(()) };
         history.push(prompt.kind(), prompt.text());
         match prompt.kind() {
           PromptKind::Search(backward) => {
@@ -249,7 +231,7 @@ impl App {
 
   /// Closes the prompt; searches return.
   pub fn cancel_prompt(&mut self) -> Result<()> {
-    let Some(prompt) = self.prompt.take() else { return Ok(()) };
+    let Some(prompt) = self.overlays.close_prompt() else { return Ok(()) };
     if matches!(prompt.kind(), PromptKind::Search(_)) {
       self.abort_search()?;
     }
@@ -271,10 +253,10 @@ impl App {
       commands::Resolution::Page(name) => return self.page(name),
       commands::Resolution::Command { spec, argument } => (spec, argument),
     };
-    match spec.name {
-      "split" | "vsplit" => {
+    match spec.id {
+      Id::Split | Id::VSplit => {
         let axis =
-          if spec.name == "split" { Axis::Rows } else { Axis::Columns };
+          if spec.id == Id::Split { Axis::Rows } else { Axis::Columns };
         let file = (!argument.is_empty()).then(|| cmdline::expand(argument));
         self.request = Some(Request::Window {
           command: Window::Split(axis),
@@ -283,9 +265,9 @@ impl App {
           file,
         });
       }
-      "close" | "only" => {
+      Id::Close | Id::Only => {
         let command =
-          if spec.name == "close" { Window::Close } else { Window::Only };
+          if spec.id == Id::Close { Window::Close } else { Window::Only };
         self.request = Some(Request::Window {
           command,
           count: 1,
@@ -293,29 +275,31 @@ impl App {
           file: None,
         });
       }
-      "tabnew" if argument.is_empty() => {
+      Id::TabNew if argument.is_empty() => {
         self.request = Some(Request::RecentTab);
       }
-      "edit" | "tabedit" | "tabnew" => {
+      Id::Edit | Id::TabEdit | Id::TabNew => {
         anyhow::ensure!(!argument.is_empty(), "File required");
         let path = cmdline::expand(argument);
-        self.request = Some(Request::Open { path, tab: spec.name != "edit" });
+        self.request = Some(Request::Open { path, tab: spec.id != Id::Edit });
       }
-      "tabnext" => {
+      Id::TabNext => {
         let step = argument.parse().map_or(TabMove::Next(1), TabMove::Go);
         self.request = Some(Request::Tab(step));
       }
-      "tabprevious" => self.request = Some(Request::Tab(TabMove::Previous(1))),
-      "qall" => self.request = Some(Request::QuitAll),
-      "toc" => self.open_panel(PanelKind::Outline)?,
-      "overview" => self.open_overview()?,
-      "crop" => self.toggle_crop()?,
-      "recent" => self.open_panel(PanelKind::Recent)?,
-      "marks" => self.open_panel(PanelKind::Marks)?,
-      "jumps" => self.open_panel(PanelKind::Jumps)?,
-      "annotations" => self.open_panel(PanelKind::Annotations)?,
-      "fzf" => self.request = Some(Request::Pick),
-      "cancel" => {
+      Id::TabPrevious => {
+        self.request = Some(Request::Tab(TabMove::Previous(1)));
+      }
+      Id::QuitAll => self.request = Some(Request::QuitAll),
+      Id::Toc => self.open_panel(PanelKind::Outline)?,
+      Id::Overview => self.open_overview()?,
+      Id::Crop => self.toggle_crop()?,
+      Id::Recent => self.open_panel(PanelKind::Recent)?,
+      Id::Marks => self.open_panel(PanelKind::Marks)?,
+      Id::Jumps => self.open_panel(PanelKind::Jumps)?,
+      Id::Annotations => self.open_panel(PanelKind::Annotations)?,
+      Id::Fzf => self.request = Some(Request::Pick),
+      Id::Cancel => {
         self.cancel_search();
         if let Some(job) = self.ocr.take() {
           job.cancel();
@@ -325,12 +309,12 @@ impl App {
         self.region_job = None;
         self.reader.notice("Jobs canceled");
       }
-      "nohlsearch" => self.search.set_hidden(true),
-      "cursorline" => self.cursorline = !self.cursorline,
-      "perf" => {
+      Id::NoHlSearch => self.search.set_hidden(true),
+      Id::CursorLine => self.cursorline = !self.cursorline,
+      Id::Perf => {
         self.request = Some(Request::Perf(crate::perf::switch(argument)?));
       }
-      "mouse" => {
+      Id::Mouse => {
         let on = match argument {
           "" => !vpdf_terminal::terminal::mouse(),
           "on" => true,
@@ -342,17 +326,18 @@ impl App {
           if on { "Mouse on" } else { "Mouse off; :mouse on restores" };
         self.reader.notice(message);
       }
-      "text" => self.open_panel(PanelKind::Text)?,
-      "info" => self.open_panel(PanelKind::Info)?,
-      "reload" => self.reload_with(&self.password.clone())?,
-      "password" => self.prompt = Some(Prompt::new(PromptKind::Password)),
-      "ocr" => {
+      Id::Text => self.open_panel(PanelKind::Text)?,
+      Id::Info => self.open_panel(PanelKind::Info)?,
+      Id::Reload => self.reload_with(&self.password.clone())?,
+      Id::Password => {
+        self.overlays.open_prompt(Prompt::new(PromptKind::Password));
+      }
+      Id::Ocr => {
         self.start_ocr(if argument.is_empty() { "eng" } else { argument })?;
       }
-      "help" => self.open_panel(PanelKind::Help)?,
-      "quit" => self.quit = true,
-      "tabclose" => self.request = Some(Request::TabClose(None)),
-      name => anyhow::bail!("Unhandled command: {name}"),
+      Id::Help => self.open_panel(PanelKind::Help)?,
+      Id::Quit => self.quit = true,
+      Id::TabClose => self.request = Some(Request::TabClose(None)),
     }
     Ok(())
   }
@@ -421,11 +406,7 @@ impl App {
     &mut self,
     position: Position,
   ) -> Result<Option<(PageId, f32, f32)>> {
-    let text = self.doc.text(position.page)?;
-    Ok(text.glyph(position).map(|glyph| {
-      let (x, y) = glyph.bounds.centre();
-      (position.page, x, y)
-    }))
+    vpdf_ui::reading::glyph_point(&mut PdfText(&mut self.doc), position)
   }
 
   /// Index of the link covering a page point.
@@ -435,8 +416,7 @@ impl App {
     x: f32,
     y: f32,
   ) -> Result<Option<usize>> {
-    let links = self.doc.links(page)?;
-    Ok(links.iter().position(|link| link.contains(x, y)))
+    vpdf_ui::reading::link_at(&mut PdfText(&mut self.doc), page, x, y)
   }
 
   pub fn follow(&mut self, target: &Target) -> Result<()> {
@@ -565,13 +545,13 @@ mod tests {
       assert_eq!(app.covered(), covered);
       let mut prompt = Prompt::new(PromptKind::Command);
       prompt.replace("re");
-      app.prompt = Some(prompt);
+      app.overlays.open_prompt(prompt);
       app.key(
         KeyEvent::new(crossterm::event::KeyCode::Tab, KeyModifiers::NONE),
         &mut History::default(),
       )?;
       assert_eq!(
-        app.prompt.as_ref().unwrap().text(),
+        app.overlays.prompt().unwrap().text(),
         if covered { "recent" } else { "re" }
       );
     }

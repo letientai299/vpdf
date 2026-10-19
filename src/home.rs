@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use vpdf_terminal::decode::Event;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::terminal;
-use vpdf_ui::commands::{self, View};
+use vpdf_ui::commands::{self, Id, View};
 use vpdf_ui::home::Effect;
 use vpdf_ui::layout::Screen;
 use vpdf_ui::prompt::History;
@@ -77,7 +77,7 @@ impl Home {
         crate::dnd::pdf(&text).map_or(Outcome::Stay, Outcome::Open)
       }
       Effect::Editor(text) => {
-        let edited = crate::editor::edit(&text)?;
+        let edited = crate::programs::edit(&text)?;
         self.view.replace_prompt(&edited);
         Outcome::Stay
       }
@@ -97,17 +97,16 @@ fn command(line: &str) -> Result<Outcome> {
   let commands::Resolution::Command { spec, argument } = resolved else {
     return Ok(Outcome::Stay);
   };
-  let name = spec.name;
-  match name {
-    "edit" | "tabedit" | "tabnew" if !argument.is_empty() => {
+  match spec.id {
+    Id::Edit | Id::TabEdit | Id::TabNew if !argument.is_empty() => {
       Ok(Outcome::Open(cmdline::expand(argument)))
     }
-    "edit" | "tabedit" => anyhow::bail!("File required"),
-    "quit" | "qall" | "tabclose" => Ok(Outcome::Quit),
-    "recent" | "tabnew" => Ok(Outcome::Stay),
-    "fzf" => Ok(Outcome::Pick),
-    "perf" => crate::perf::switch(argument).map(Outcome::Perf),
-    name => anyhow::bail!("Open a document before :{name}"),
+    Id::Edit | Id::TabEdit => anyhow::bail!("File required"),
+    Id::Quit | Id::QuitAll | Id::TabClose => Ok(Outcome::Quit),
+    Id::Recent | Id::TabNew => Ok(Outcome::Stay),
+    Id::Fzf => Ok(Outcome::Pick),
+    Id::Perf => crate::perf::switch(argument).map(Outcome::Perf),
+    _ => anyhow::bail!("Open a document before :{}", spec.name),
   }
 }
 

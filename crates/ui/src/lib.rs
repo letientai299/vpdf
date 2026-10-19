@@ -15,6 +15,7 @@ pub mod input;
 pub mod keys;
 pub mod layout;
 mod line;
+pub mod overlays;
 pub mod overview;
 pub mod page;
 pub mod paint;

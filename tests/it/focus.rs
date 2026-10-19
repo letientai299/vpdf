@@ -52,7 +52,11 @@ pub(super) fn action(app: &mut App, action: Action) -> Result<()> {
 }
 
 fn hints(app: &mut App) {
-  app.hints = Some(super::common::hints(24, (10, 5), &Target::Page(PageId(1))));
+  app.overlays.open_hints(super::common::hints(
+    24,
+    (10, 5),
+    &Target::Page(PageId(1)),
+  ));
 }
 
 fn row(destination: Destination) -> Row {
@@ -339,7 +343,7 @@ fn transient_prefix_dispatch_and_noop_focus() -> Result<()> {
   let left = session.app().reader.cursor;
   hints(session.app());
   send(&mut session, b"\x1b[119;5u")?;
-  assert!(session.app().hints.is_none());
+  assert!(session.app().overlays.hints().is_none());
   assert_eq!(session.app().keys.awaiting(), Some("C-w"));
   send(&mut session, b"l")?;
   assert_ne!(session.app().id, source);
@@ -363,13 +367,16 @@ fn transient_prefix_dispatch_and_noop_focus() -> Result<()> {
   hints(app);
   action(app, Action::Window(Window::Focus(Direction::Right)))?;
   session.settle()?;
-  assert!(session.app().hints.is_some(), "edge focus does not blur");
+  assert!(session.app().overlays.hints().is_some(), "edge focus does not blur");
   let edge = session.app().id;
   let cursor = session.app().reader.cursor;
   send(&mut session, b"\x17l")?;
   assert_eq!(session.app().id, edge);
   assert_eq!(session.app().reader.cursor, cursor);
-  assert!(session.app().hints.is_none(), "input dismisses before no-op");
+  assert!(
+    session.app().overlays.hints().is_none(),
+    "input dismisses before no-op"
+  );
   assert!(session.app().keys.awaiting().is_none());
   action(session.app(), Action::Window(Window::Next))?;
   session.settle()?;
@@ -406,8 +413,11 @@ fn outside_click_consumes_capture_across_panes() -> Result<()> {
   action(session.app(), Action::Command)?;
   send(&mut session, b"\x1b[<0;90;10M")?;
   assert_eq!(session.app().id, source);
-  assert!(session.app().prompt.is_none());
-  assert!(session.app().hints.is_some(), "only the top transient closes");
+  assert!(session.app().overlays.prompt().is_none());
+  assert!(
+    session.app().overlays.hints().is_some(),
+    "only the top transient closes"
+  );
   assert_eq!(session.app().reader.selection, selection);
   send(&mut session, b"\x1b[<32;90;20M\x1b[<0;90;20m")?;
   assert_eq!(session.app().id, source);
@@ -428,7 +438,7 @@ fn prompt_wheel_and_passive_motion_keep_owner() -> Result<()> {
   let source = session.app().id;
   hints(session.app());
   send(&mut session, b"\x1b[<35;90;10M")?;
-  assert!(session.app().hints.is_some());
+  assert!(session.app().overlays.hints().is_some());
   assert_eq!(session.app().id, source);
   action(session.app(), Action::Command)?;
   let before: Vec<_> = session
@@ -447,7 +457,7 @@ fn prompt_wheel_and_passive_motion_keep_owner() -> Result<()> {
   assert_eq!(before, after);
   assert_eq!(session.app().input_owner(), InputOwner::Prompt);
   send(&mut session, b"\t\x1b[Z")?;
-  assert!(session.app().prompt.is_some());
+  assert!(session.app().overlays.prompt().is_some());
   Ok(())
 }
 
@@ -458,14 +468,14 @@ fn overview_and_text_use_local_owner() -> Result<()> {
   crate::common::outline_loaded(&mut app)?;
   keys(&mut app, b"gogp")?;
   assert_eq!(app.input_owner(), InputOwner::Overview);
-  let selected = app.overview.as_ref().unwrap().selected();
+  let selected = app.overlays.overview().unwrap().selected();
   keys(&mut app, b"\tj")?;
   assert_eq!(app.input_owner(), InputOwner::Panel);
-  assert_eq!(app.overview.as_ref().unwrap().selected(), selected);
+  assert_eq!(app.overlays.overview().unwrap().selected(), selected);
   assert_eq!(app.panel.as_ref().unwrap().view.selected(), 1);
   keys(&mut app, b"\tj")?;
   assert_eq!(app.input_owner(), InputOwner::Overview);
-  assert!(app.overview.as_ref().unwrap().selected() > selected);
+  assert!(app.overlays.overview().unwrap().selected() > selected);
   assert_eq!(app.panel.as_ref().unwrap().view.selected(), 1);
   let mut status = Vec::new();
   app.status(&mut status, app.screen.rows - 1)?;
@@ -504,7 +514,7 @@ fn raw_history_is_separate_from_local_focus() -> Result<()> {
   let cursor = app.reader.cursor;
   keys(&mut app, b":te\t")?;
   assert_eq!(app.input_owner(), InputOwner::Prompt);
-  assert_eq!(app.prompt.as_ref().unwrap().text(), "text");
+  assert_eq!(app.overlays.prompt().unwrap().text(), "text");
   assert_eq!(app.reader.cursor, cursor);
   keys(&mut app, b"\x1b[27u")?;
   assert_eq!(app.input_owner(), InputOwner::Panel);
@@ -529,17 +539,17 @@ fn peek_prompt_retains_destination_and_owner() -> Result<()> {
   );
   app.go_to(position, true)?;
   app.preview_link()?;
-  let target = format!("{:?}", app.peek.as_ref().unwrap().target());
+  let target = format!("{:?}", app.overlays.preview().unwrap().target());
   keys(&mut app, b":")?;
   assert_eq!(app.input_owner(), InputOwner::Prompt);
-  assert_eq!(format!("{:?}", app.peek.as_ref().unwrap().target()), target);
+  assert_eq!(format!("{:?}", app.overlays.preview().unwrap().target()), target);
   keys(&mut app, b"\t\x1b[Z")?;
-  assert!(app.peek.is_some() && app.prompt.is_some());
+  assert!(app.overlays.preview().is_some() && app.overlays.prompt().is_some());
   keys(&mut app, b"\x1b[27u")?;
   assert_eq!(app.input_owner(), InputOwner::Peek);
-  assert_eq!(format!("{:?}", app.peek.as_ref().unwrap().target()), target);
+  assert_eq!(format!("{:?}", app.overlays.preview().unwrap().target()), target);
   keys(&mut app, b"\x1b[119;5u")?;
-  assert!(app.peek.is_none());
+  assert!(app.overlays.preview().is_none());
   assert_eq!(app.keys.awaiting(), Some("C-w"));
   keys(&mut app, b"w")?;
   assert!(app.keys.awaiting().is_none());
@@ -768,10 +778,13 @@ fn current_view_requests_keep_transients() -> Result<()> {
     assert_eq!(app.reader.cursor, cursor);
     assert!(app.reader.selection.is_some());
     assert!(app.reader.operator.is_some());
-    assert!(app.prompt.is_some() && app.hints.is_some());
+    assert!(app.overlays.prompt().is_some() && app.overlays.hints().is_some());
   }
   action(session.app(), Action::LocalFocus)?;
-  assert!(session.app().prompt.is_some() && session.app().hints.is_some());
+  assert!(
+    session.app().overlays.prompt().is_some()
+      && session.app().overlays.hints().is_some()
+  );
   assert_eq!(session.tabs.len(), 1);
   assert_eq!(session.tab().panes.len(), 1);
   Ok(())
@@ -805,7 +818,9 @@ fn new_views_blur_source_and_start_normal() -> Result<()> {
       assert_eq!(old.input_owner(), InputOwner::Panel);
       assert!(old.keys.awaiting().is_none());
       assert!(
-        old.prompt.is_none() && old.hints.is_none() && old.peek.is_none()
+        old.overlays.prompt().is_none()
+          && old.overlays.hints().is_none()
+          && old.overlays.preview().is_none()
       );
     }
     let expected = match command {
@@ -839,7 +854,7 @@ fn detach_returns_to_live_peer() -> Result<()> {
   assert_eq!(session.app().id, top);
   assert!(session.app().reader.selection.is_some());
   assert!(session.app().panel_focused());
-  assert!(session.app().prompt.is_none());
+  assert!(session.app().overlays.prompt().is_none());
   assert_eq!(session.tabs.len(), 2);
   send(&mut session, b"gT")?;
   assert_eq!(session.app().id, right, "detach prefers the live last peer");
@@ -895,7 +910,7 @@ fn transitions_drop_capture_and_owned_input() -> Result<()> {
     .flat_map(|tab| &tab.panes)
     .find(|app| app.id == left)
     .unwrap();
-  assert!(old.prompt.is_none(), "new tab closes source prompt");
+  assert!(old.overlays.prompt().is_none(), "new tab closes source prompt");
   Ok(())
 }
 

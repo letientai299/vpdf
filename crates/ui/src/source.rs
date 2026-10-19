@@ -46,3 +46,30 @@ impl<S: Outline + ?Sized> Outline for &mut S {
     (**self).outline()
   }
 }
+
+/// Links and annotations in document order.
+pub trait Markup {
+  fn links(
+    &mut self,
+    page: PageId,
+  ) -> crate::Result<std::sync::Arc<Vec<vpdf_model::document::Link>>>;
+  fn annotations(
+    &mut self,
+    page: PageId,
+  ) -> crate::Result<std::sync::Arc<Vec<vpdf_model::document::Annotation>>>;
+}
+
+impl<S: Markup + ?Sized> Markup for &mut S {
+  fn links(
+    &mut self,
+    page: PageId,
+  ) -> crate::Result<std::sync::Arc<Vec<vpdf_model::document::Link>>> {
+    (**self).links(page)
+  }
+  fn annotations(
+    &mut self,
+    page: PageId,
+  ) -> crate::Result<std::sync::Arc<Vec<vpdf_model::document::Annotation>>> {
+    (**self).annotations(page)
+  }
+}

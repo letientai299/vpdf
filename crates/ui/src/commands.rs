@@ -14,7 +14,44 @@ pub enum View {
   Document,
 }
 
+/// What a command does, one per `COMMANDS` entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Id {
+  Edit,
+  TabEdit,
+  TabNew,
+  Split,
+  VSplit,
+  Close,
+  Only,
+  TabNext,
+  TabPrevious,
+  TabClose,
+  Recent,
+  Fzf,
+  Marks,
+  Jumps,
+  Annotations,
+  Toc,
+  Overview,
+  CursorLine,
+  Crop,
+  Mouse,
+  Perf,
+  Cancel,
+  NoHlSearch,
+  Text,
+  Info,
+  Reload,
+  Password,
+  Ocr,
+  Help,
+  Quit,
+  QuitAll,
+}
+
 pub struct Spec {
+  pub id: Id,
   pub name: &'static str,
   pub aliases: &'static [&'static str],
   pub usage: &'static str,
@@ -26,12 +63,14 @@ pub struct Spec {
 }
 
 const fn spec(
+  id: Id,
   name: &'static str,
   aliases: &'static [&'static str],
   usage: &'static str,
   help: &'static str,
 ) -> Spec {
   Spec {
+    id,
     name,
     aliases,
     usage,
@@ -80,63 +119,118 @@ pub fn commands(
 }
 
 pub const COMMANDS: &[Spec] = &[
-  spec("edit", &["e"], "<file>", "open a PDF in this tab")
+  spec(Id::Edit, "edit", &["e"], "<file>", "open a PDF in this tab")
     .completes(Complete::Path)
     .in_view(View::Home),
-  spec("tabedit", &["tabe", "open"], "<file>", "open a PDF in a new tab")
+  spec(
+    Id::TabEdit,
+    "tabedit",
+    &["tabe", "open"],
+    "<file>",
+    "open a PDF in a new tab",
+  )
+  .completes(Complete::Path)
+  .in_view(View::Home),
+  spec(
+    Id::TabNew,
+    "tabnew",
+    &[],
+    "[file]",
+    "open a PDF or recent list in a new tab",
+  )
+  .completes(Complete::Path)
+  .in_view(View::Home),
+  spec(Id::Split, "split", &["sp"], "[file]", "split this pane above")
     .completes(Complete::Path)
+    .in_view(View::Recent),
+  spec(Id::VSplit, "vsplit", &["vs"], "[file]", "split this pane to the left")
+    .completes(Complete::Path)
+    .in_view(View::Recent),
+  spec(Id::Close, "close", &["clo"], "", "close this pane")
+    .in_view(View::Recent),
+  spec(Id::Only, "only", &["on"], "", "close every other pane")
+    .in_view(View::Recent),
+  spec(Id::TabNext, "tabnext", &["tabn"], "[n]", "go to the next or nth tab")
+    .in_view(View::Recent),
+  spec(
+    Id::TabPrevious,
+    "tabprevious",
+    &["tabp", "tabN"],
+    "",
+    "go to the previous tab",
+  )
+  .in_view(View::Recent),
+  spec(Id::TabClose, "tabclose", &["tabc"], "", "close this tab")
     .in_view(View::Home),
-  spec("tabnew", &[], "[file]", "open a PDF or recent list in a new tab")
-    .completes(Complete::Path)
+  spec(Id::Recent, "recent", &["oldfiles"], "", "list recently opened PDFs")
     .in_view(View::Home),
-  spec("split", &["sp"], "[file]", "split this pane above")
-    .completes(Complete::Path)
-    .in_view(View::Recent),
-  spec("vsplit", &["vs"], "[file]", "split this pane to the left")
-    .completes(Complete::Path)
-    .in_view(View::Recent),
-  spec("close", &["clo"], "", "close this pane").in_view(View::Recent),
-  spec("only", &["on"], "", "close every other pane").in_view(View::Recent),
-  spec("tabnext", &["tabn"], "[n]", "go to the next or nth tab")
-    .in_view(View::Recent),
-  spec("tabprevious", &["tabp", "tabN"], "", "go to the previous tab")
-    .in_view(View::Recent),
-  spec("tabclose", &["tabc"], "", "close this tab").in_view(View::Home),
-  spec("recent", &["oldfiles"], "", "list recently opened PDFs")
-    .in_view(View::Home),
-  spec("fzf", &[], "", "pick a PDF below this directory")
+  spec(Id::Fzf, "fzf", &[], "", "pick a PDF below this directory")
     .requires("fzf")
     .in_view(View::Home),
-  spec("marks", &[], "", "list marks").in_view(View::Recent),
-  spec("jumps", &[], "", "list jump destinations").in_view(View::Recent),
-  spec("annotations", &["annots"], "", "list highlights and notes")
+  spec(Id::Marks, "marks", &[], "", "list marks").in_view(View::Recent),
+  spec(Id::Jumps, "jumps", &[], "", "list jump destinations")
     .in_view(View::Recent),
-  spec("toc", &["outline"], "", "open the table of contents")
+  spec(
+    Id::Annotations,
+    "annotations",
+    &["annots"],
+    "",
+    "list highlights and notes",
+  )
+  .in_view(View::Recent),
+  spec(Id::Toc, "toc", &["outline"], "", "open the table of contents")
     .in_view(View::Recent),
-  spec("overview", &["pages"], "", "show page thumbnails")
+  spec(Id::Overview, "overview", &["pages"], "", "show page thumbnails")
     .in_view(View::Recent),
-  spec("cursorline", &[], "", "toggle the Visual line band (default on)"),
-  spec("crop", &[], "", "toggle cropped page margins"),
-  spec("mouse", &[], "[on|off]", "toggle mouse capture; off: terminal selects")
-    .completes(Complete::Switch)
+  spec(
+    Id::CursorLine,
+    "cursorline",
+    &[],
+    "",
+    "toggle the Visual line band (default on)",
+  ),
+  spec(Id::Crop, "crop", &[], "", "toggle cropped page margins"),
+  spec(
+    Id::Mouse,
+    "mouse",
+    &[],
+    "[on|off]",
+    "toggle mouse capture; off: terminal selects",
+  )
+  .completes(Complete::Switch)
+  .in_view(View::Recent),
+  spec(
+    Id::Perf,
+    "perf",
+    &[],
+    "[on|off]",
+    "toggle persistent performance stats",
+  )
+  .completes(Complete::Switch)
+  .in_view(View::Home),
+  spec(
+    Id::Cancel,
+    "cancel",
+    &[],
+    "",
+    "stop pane search, OCR, outline, region jobs",
+  )
+  .in_view(View::Recent),
+  spec(Id::NoHlSearch, "nohlsearch", &["noh"], "", "hide search highlights"),
+  spec(Id::Text, "text", &[], "", "preview extracted page text")
     .in_view(View::Recent),
-  spec("perf", &[], "[on|off]", "toggle persistent performance stats")
-    .completes(Complete::Switch)
-    .in_view(View::Home),
-  spec("cancel", &[], "", "stop pane search, OCR, outline, region jobs")
+  spec(Id::Info, "info", &[], "", "document, reader, and terminal info")
     .in_view(View::Recent),
-  spec("nohlsearch", &["noh"], "", "hide search highlights"),
-  spec("text", &[], "", "preview extracted page text").in_view(View::Recent),
-  spec("info", &[], "", "document, reader, and terminal info")
-    .in_view(View::Recent),
-  spec("reload", &[], "", "reread the file from disk"),
-  spec("password", &[], "", "unlock and reopen the document"),
-  spec("ocr", &[], "[lang]", "recognize the page with Tesseract")
+  spec(Id::Reload, "reload", &[], "", "reread the file from disk"),
+  spec(Id::Password, "password", &[], "", "unlock and reopen the document"),
+  spec(Id::Ocr, "ocr", &[], "[lang]", "recognize the page with Tesseract")
     .completes(Complete::Language),
-  spec("help", &["h"], "", "show the key reference").in_view(View::Recent),
-  spec("quit", &["q"], "", "close this pane, tab, then reader")
+  spec(Id::Help, "help", &["h"], "", "show the key reference")
+    .in_view(View::Recent),
+  spec(Id::Quit, "quit", &["q"], "", "close this pane, tab, then reader")
     .in_view(View::Home),
-  spec("qall", &["qa", "quitall"], "", "close every tab").in_view(View::Home),
+  spec(Id::QuitAll, "qall", &["qa", "quitall"], "", "close every tab")
+    .in_view(View::Home),
 ];
 
 /// Command named `name` or aliased to it.
@@ -273,6 +367,14 @@ mod tests {
         expected,
         "{input}"
       );
+    }
+  }
+
+  #[test]
+  fn each_command_has_one_spec() {
+    for spec in COMMANDS {
+      let same = COMMANDS.iter().filter(|other| other.id == spec.id).count();
+      assert_eq!(same, 1, "{}", spec.name);
     }
   }
 

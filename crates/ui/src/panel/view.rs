@@ -5,6 +5,23 @@ use super::{
   key_width, moved_row, screen_step, terminal, theme,
 };
 
+/// Reader geometry beside or behind a panel.
+pub fn page_space(
+  screen: Screen,
+  panel: Option<&Panel>,
+  dragged: Option<u16>,
+) -> (u16, Screen) {
+  let covered = panel.is_some_and(Panel::covers_page);
+  let beside = match panel {
+    Some(panel) if !covered => {
+      Panel::width(panel.kind(), screen.columns, dragged)
+    }
+    _ => 0,
+  };
+  let left = if covered { screen.columns } else { beside };
+  (left, Screen { columns: screen.columns.saturating_sub(beside), ..screen })
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum Navigation {
   Vertical(bool),

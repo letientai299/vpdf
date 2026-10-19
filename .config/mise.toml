@@ -86,11 +86,11 @@ run = "sh scripts/corpus.sh huge"
 
 [tasks."test:corpus"]
 depends = ["corpus"]
-run = "cargo nextest run --locked --workspace --run-ignored only -E 'not test(real_ocr_and_cancel)'"
+run = "cargo nextest run --locked --workspace --run-ignored only -E 'not (test(real_ocr_and_cancel) | test(real_ocr_cache_policy))'"
 
 [tasks."test:ocr"]
 depends = ["corpus"]
-run = "cargo nextest run --locked --workspace --run-ignored only --test it real_ocr_and_cancel"
+run = "cargo nextest run --locked --workspace --run-ignored only -E 'test(real_ocr_and_cancel) | test(real_ocr_cache_policy)'"
 
 [tasks.bench]
 description = "Measure real-PDF warm frames and search"

@@ -271,7 +271,7 @@ mod pointer {
     mouse(&mut session, Down(Left), 90, 10)?;
     assert_eq!(session.app().id, right, "a press focuses");
     let old = pane(&mut session, left);
-    assert!(old.prompt.is_none() && old.hints.is_none());
+    assert!(old.overlays.prompt().is_none() && old.overlays.hints().is_none());
     assert!(old.keys.awaiting().is_none());
     assert!(old.search.prompt_origin().is_none(), "the search was aborted");
 
@@ -337,14 +337,15 @@ mod pointer {
         .feed(key(KeyCode::Char('g')), vpdf_ui::keys::Grammar::Other);
       session
         .app()
-        .clues
+        .overlays
+        .clues_mut()
         .restart(std::time::Instant::now().checked_sub(second));
       assert!(session.app().clue_due());
       mouse(&mut session, kind, 40, 38)?;
       let app = session.app();
       assert_eq!(app.reader.cursor, cursor, "{kind:?} on clues");
       assert!(!app.reader.animation().active(), "{kind:?} on clues scrolls");
-      assert_eq!(app.clues.shown().is_some(), kind == ScrollDown);
+      assert_eq!(app.overlays.clues().shown().is_some(), kind == ScrollDown);
       if kind == ScrollDown {
         assert_eq!(app.keys.pending(), "g", "wheel keeps the prefix");
       }
@@ -353,14 +354,17 @@ mod pointer {
     menu(&mut session, &mut history)?;
     mouse(&mut session, Down(Left), 40, 38)?;
     assert_eq!(session.app().reader.cursor, cursor, "menu rows are inert");
-    assert!(session.app().prompt.is_some());
+    assert!(session.app().overlays.prompt().is_some());
     session.app().key(key(KeyCode::Esc), &mut history)?;
     assert_eq!(session.app().menu_rows(), 0, "Esc closes the menu");
     menu(&mut session, &mut history)?;
     let left = session.app().id;
     mouse(&mut session, Down(Left), 90, 10)?;
     let old = pane(&mut session, left);
-    assert!(old.prompt.is_none() && old.menu_rows() == 0, "blur closes it");
+    assert!(
+      old.overlays.prompt().is_none() && old.menu_rows() == 0,
+      "blur closes it"
+    );
     Ok(())
   }
 
@@ -383,14 +387,23 @@ mod pointer {
     let (mut session, width) = outline()?;
     act(&mut session, Action::Overview)?;
     mouse(&mut session, Down(Left), 40, 39)?;
-    assert!(session.app().overview.is_some(), "status row keeps overview");
+    assert!(
+      session.app().overlays.overview().is_some(),
+      "status row keeps overview"
+    );
     let partial = session.app().thumbnail_at(40, 38).expect("partial row");
     mouse(&mut session, Down(Left), 40, 38)?;
-    assert!(session.app().overview.is_none(), "partial thumbnail opens");
+    assert!(
+      session.app().overlays.overview().is_none(),
+      "partial thumbnail opens"
+    );
     assert_eq!(session.app().reader.cursor.page, partial);
     act(&mut session, Action::Overview)?;
     mouse(&mut session, Down(Left), width + 5, 2)?;
-    assert!(session.app().overview.is_none(), "a thumbnail opens its page");
+    assert!(
+      session.app().overlays.overview().is_none(),
+      "a thumbnail opens its page"
+    );
     mouse(&mut session, Drag(Left), 40, 10)?;
     mouse(&mut session, Up(Left), 40, 10)?;
     assert!(session.app().reader.selection.is_none(), "no drag from overview");
@@ -402,13 +415,19 @@ mod pointer {
     assert!(session.app().reader.selection.is_none(), "no drag under `gp`");
     let cursor = session.app().reader.cursor;
     mouse(&mut session, Down(Left), 2, 3)?;
-    assert!(session.app().overview.is_none(), "a row shows its page");
+    assert!(
+      session.app().overlays.overview().is_none(),
+      "a row shows its page"
+    );
     assert_ne!(session.app().reader.cursor, cursor);
     // The overview takes every key but `:`, so help opens first.
     act(&mut session, Action::Panel(PanelKind::Help))?;
     act(&mut session, Action::Overview)?;
     mouse(&mut session, Down(Left), 2, 3)?;
-    assert!(session.app().overview.is_some(), "help rows keep overview");
+    assert!(
+      session.app().overlays.overview().is_some(),
+      "help rows keep overview"
+    );
     Ok(())
   }
 
@@ -472,7 +491,7 @@ fn resident_tiles(session: &mut Session) -> Result<()> {
   let mut tiles = Vec::new();
   for app in &mut session.tab().panes {
     for key in vpdf_ui::layout::visible(&app.layout, app.reader.scroll) {
-      tiles.push((app.id, vpdf::tiles::render(&mut app.doc, key)?));
+      tiles.push((app.id, vpdf::raster::render(&mut app.doc, key)?));
     }
   }
   let graphics = &mut session.graphics;

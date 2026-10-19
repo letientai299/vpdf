@@ -3,20 +3,26 @@ use crate::app::App;
 use std::io::Write;
 use std::time::Instant;
 use vpdf_terminal::graphics::Graphics;
-use vpdf_ui::paint::Frame;
 use vpdf_ui::pointer::{Hit, Route};
 use vpdf_ui::scrollbar::{Input, Ticks, View};
 
 impl App {
   fn has_bar(&self) -> bool {
-    !self.text_mode
-      && self.overview.is_none()
-      && !self.covered()
-      && self.layout.total() > self.layout.screen().height()
+    vpdf_ui::scrollbar::available(
+      &self.layout,
+      self.text_mode,
+      self.overlays.overview().is_some(),
+      self.covered(),
+    )
   }
 
   pub(crate) fn on_bar(&self, column: u16) -> bool {
-    self.has_bar() && column + 1 == self.screen.columns && !self.overlaid()
+    vpdf_ui::scrollbar::hit(
+      column,
+      self.screen.columns,
+      self.has_bar(),
+      self.overlaid(),
+    )
   }
 
   pub fn bar_until(&self) -> Option<Instant> {
@@ -36,12 +42,7 @@ impl App {
   }
 
   pub(crate) fn bar_mouse(&mut self, route: &Route) -> Result<()> {
-    let frame = Frame {
-      screen: self.uncovered(),
-      at: self.at,
-      left: self.left,
-      text: self.text_mode,
-    };
+    let frame = self.frame(self.uncovered());
     let view = View {
       layout: &self.layout,
       scroll: self.reader.scroll,
@@ -73,12 +74,7 @@ impl App {
     out: &mut impl Write,
   ) -> Result<()> {
     let now = Instant::now();
-    let frame = Frame {
-      screen: self.uncovered(),
-      at: self.at,
-      left: self.left,
-      text: self.text_mode,
-    };
+    let frame = self.frame(self.uncovered());
     let view = View {
       layout: &self.layout,
       scroll: self.reader.scroll,

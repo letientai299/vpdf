@@ -38,17 +38,17 @@ fn real_figure_navigation_fit() -> Result<()> {
   let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
   app.action(Input::plain(Action::Cursor))?;
   app.move_figure(true, 1)?;
-  let first = app.region.as_ref().unwrap().snapshot().clone();
+  let first = app.overlays.region().unwrap().snapshot().clone();
   assert_ne!(first.page, PageId(0), "Title rule remained: {first:?}");
   app.move_figure(true, 1)?;
-  let second = app.region.as_ref().unwrap().snapshot().clone();
+  let second = app.overlays.region().unwrap().snapshot().clone();
   assert!(
     second.page > first.page
       || second.bounds.y0 > first.bounds.y0
       || second.bounds.x0 > first.bounds.x0
   );
   app.move_figure(false, 1)?;
-  let returned = app.region.as_ref().unwrap().snapshot();
+  let returned = app.overlays.region().unwrap().snapshot();
   assert_eq!(returned.page, first.page);
   assert_eq!(returned.bounds.y0, first.bounds.y0);
   assert_eq!(returned.bounds.x0, first.bounds.x0);
@@ -66,7 +66,7 @@ fn real_figure_navigation_fit() -> Result<()> {
   let mode = app.reader.mode();
   app.action(Input::plain(Action::Region))?;
   assert_eq!(
-    app.region.as_ref().and_then(Region::action),
+    app.overlays.region().and_then(Region::action),
     Some(vpdf_ui::region::Operation::Image)
   );
   assert_eq!(app.reader.mode(), mode);
@@ -94,10 +94,10 @@ fn raw_region_preserves_state() -> Result<()> {
   let cursor = app.reader.cursor;
   let selection = app.reader.selection.map(|range| (range.anchor, range.kind));
   let scroll = app.reader.scroll;
-  let capture = app.region.as_ref().unwrap().snapshot().clone();
+  let capture = app.overlays.region().unwrap().snapshot().clone();
   keys(&mut app, b"hjkl")?;
   assert_eq!(
-    app.region.as_ref().and_then(Region::action),
+    app.overlays.region().and_then(Region::action),
     Some(Operation::Image)
   );
   assert_eq!(app.reader.cursor, cursor);
@@ -109,7 +109,7 @@ fn raw_region_preserves_state() -> Result<()> {
   assert_eq!(app.keys.pending(), "");
   keys(&mut app, b":\x1b[27u")?;
   assert_eq!(app.input_owner(), InputOwner::Region);
-  assert_eq!(app.region.as_ref().unwrap().snapshot().id, capture.id);
+  assert_eq!(app.overlays.region().unwrap().snapshot().id, capture.id);
   keys(&mut app, b":\r")?;
   assert_eq!(app.input_owner(), InputOwner::Region);
   assert!(keys(&mut app, b":unknown-region-command\r").is_err());
@@ -158,6 +158,6 @@ fn raw_region_pointer_transfer() -> Result<()> {
   send(&mut session, b"\x17p")?;
   assert_eq!(session.app().reader.mode(), mode);
   assert_eq!(session.app().reader.cursor, cursor);
-  assert!(session.app().region.is_none());
+  assert!(session.app().overlays.region().is_none());
   Ok(())
 }

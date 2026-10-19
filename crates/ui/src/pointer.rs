@@ -196,6 +196,13 @@ impl Items {
 }
 
 impl Hit {
+  pub fn item(self, list: List) -> Option<usize> {
+    match self {
+      Self::Item(hovered, index) if hovered == list => index,
+      _ => None,
+    }
+  }
+
   pub fn shape(self) -> Shape {
     match self {
       Self::Nothing

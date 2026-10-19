@@ -3,29 +3,16 @@
 use crate::Result;
 use crate::app::App;
 use crate::pdf_text::PdfText;
-use crossterm::event::MouseEventKind;
 use std::time::Instant;
-use vpdf_model::text::{Bounds, PageId, Position};
+use vpdf_model::text::{PageId, Position};
 use vpdf_ui::input::gesture::Swept;
 use vpdf_ui::pointer::Route;
 
 impl App {
   /// Alt-press: starts a capture; text extends.
   pub(crate) fn alt_press(&mut self, route: &Route) -> Result<()> {
-    self.gesture.reset();
-    if self.text_mode {
-      return self.alt_extend(route);
-    }
-    let (column, row) = (route.mouse.column, route.mouse.row);
-    let Some((page, x, y)) = self.page_point(column, row, route.pixel) else {
-      return Ok(());
-    };
-    // Presses off the shown page extend.
-    if !self.shown_page(page).contains(x, y) {
-      return self.alt_extend(route);
-    }
-    self.gesture.begin_sweep(page, (x, y));
-    Ok(())
+    let mut reading = self.reading_parts();
+    reading.view.alt_press(reading.gesture, route)
   }
 
   /// Alt-drag: moves the capture's corner.
@@ -39,12 +26,8 @@ impl App {
 
   /// Moves the capture's corner to the pointer.
   fn sweep_to(&mut self, page: PageId, route: &Route) {
-    let (column, row) = (route.mouse.column, route.mouse.row);
-    let Some((x, y)) = self.point_on(page, column, row, route.pixel) else {
-      return;
-    };
-    let shown = self.shown_page(page);
-    self.gesture.sweep_to((x, y), shown);
+    let mut reading = self.reading_parts();
+    reading.view.sweep_to(reading.gesture, page, route);
   }
 
   /// Alt-release: sweep, figure, else extend.
@@ -54,12 +37,6 @@ impl App {
       Swept::Region(page, bounds) => self.select_region(page, bounds),
       Swept::Extend(position) => self.extend_select(position),
     }
-  }
-
-  /// Extends to the press's glyph.
-  fn alt_extend(&mut self, route: &Route) -> Result<()> {
-    let Some(pos) = self.press_position(route)? else { return Ok(()) };
-    self.extend_select(pos)
   }
 
   /// Whether an Alt-press sweeps a capture.
@@ -85,40 +62,14 @@ impl App {
 
   /// Middle clicks split links; drags pan.
   pub(crate) fn page_middle(&mut self, route: &Route) -> Result<()> {
-    let (column, row) = (route.mouse.column, route.mouse.row);
-    let at = self.cell_point(column, row, route.pixel);
-    match route.mouse.kind {
-      MouseEventKind::Down(_) => {
-        self.reader.cancel_scroll();
-        self.grab.begin(at);
-      }
-      MouseEventKind::Drag(_) => {
-        if self.text_mode {
-          return self.grab_text(at);
-        }
-        let Some((pan, delta)) = self.grab.pixels(at) else { return Ok(()) };
-        self.reading_view().grab_page(delta, pan)?;
-      }
-      _ => {
-        if !self.grab.release() {
-          return Ok(());
-        }
-        if let Some(target) = self.link_pressed(column, row, route.pixel)? {
-          self.open_split(&target)?;
-        }
+    let mut reading = self.reading_parts();
+    if reading.view.middle(reading.grab, route)? {
+      let (column, row) = (route.mouse.column, route.mouse.row);
+      if let Some(target) = self.link_pressed(column, row, route.pixel)? {
+        self.open_split(&target)?;
       }
     }
     Ok(())
-  }
-
-  /// Moves text by the whole cells a middle drag crossed.
-  fn grab_text(&mut self, at: (f32, f32)) -> Result<()> {
-    let cell = (self.screen.cell_width, self.screen.cell_height);
-    let Some((columns, rows)) = self.grab.cells(at, cell) else {
-      return Ok(());
-    };
-    self.text().scroll(rows)?;
-    self.text().pan(columns)
   }
 
   /// Whether a middle drag pans.
@@ -135,11 +86,6 @@ impl App {
   /// Ends a lost press; whether it panned.
   pub(crate) fn drop_grab(&mut self) -> bool {
     self.grab.cancel()
-  }
-
-  /// The page's shown bounds, after crop.
-  fn shown_page(&self, page: PageId) -> Bounds {
-    self.layout.crop_for(page).apply(self.doc.pages[page.0].bounds)
   }
 
   /// Click runs: target, word, line, paragraph.
@@ -164,12 +110,7 @@ impl App {
 
   /// Rows an edge drag scrolls.
   pub(crate) fn edge_rows(&self, route: &Route) -> isize {
-    let frame = vpdf_ui::paint::Frame {
-      screen: self.screen,
-      at: self.at,
-      left: self.left,
-      text: self.text_mode,
-    };
+    let frame = self.frame(self.screen);
     vpdf_ui::input::edge::rows(frame, self.menu_rows(), route)
   }
 

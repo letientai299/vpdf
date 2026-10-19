@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::pdf_text::PdfText;
+use vpdf::raster;
 use vpdf::solo::Solo;
-use vpdf::tiles;
 use vpdf_model::text::PageId;
 use vpdf_model::tile::TileKey;
 use vpdf_pdf::content_cache::{alias, hex};
@@ -97,10 +97,10 @@ fn document(path: &Path, page: usize) -> Result<Report> {
     height: 256,
     crop: vpdf_ui::layout::Crop::default(),
   };
-  tiles::render(&mut doc, key)?;
+  raster::render(&mut doc, key)?;
   let tile = measure(
     || {
-      black_box(tiles::render(&mut doc, key)?);
+      black_box(raster::render(&mut doc, key)?);
       Ok(())
     },
     100,
@@ -188,7 +188,7 @@ fn frames(app: &mut Solo) -> Result<(Timing, u64)> {
     let scroll = app.layout.clamp_scroll(base + frame as f32 * 4.0);
     for key in vpdf_ui::layout::visible(&app.layout, scroll) {
       if !app.graphics.contains(&(app.id, key)) {
-        let tile = tiles::render(&mut app.doc, key)?;
+        let tile = raster::render(&mut app.doc, key)?;
         app.graphics.upload(app.id, &tile, &mut out)?;
       }
     }
@@ -222,7 +222,7 @@ fn searches(path: &Path) -> Result<(f64, f64, f64)> {
     let generation = worker
       .lookup(&Query { text: QUERY.into(), ..Query::default() }, PageId(0))?;
     loop {
-      let event = worker.events.recv_timeout(Duration::from_secs(30))?;
+      let event = worker.wait(Duration::from_secs(30))?;
       if event.generation != generation {
         continue;
       }

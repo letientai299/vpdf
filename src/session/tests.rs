@@ -6,7 +6,7 @@ use crate::SeedReader;
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use vpdf_model::text::Bounds;
-use vpdf_terminal::decode::{Button, Mouse, Spot};
+use vpdf_terminal::decode::{Button, Mouse, Reply, Spot};
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
@@ -76,29 +76,6 @@ fn perf_start_screen_reserves_once() -> Result<()> {
     screen.rows
   );
   Ok(())
-}
-
-#[test]
-fn image_timeout_retains_transfer() {
-  let mut session = Session::new(None);
-  let capture = crate::region::next_capture();
-  let now = Instant::now();
-  session.image_write = Some(ImageWrite {
-    pane: 999,
-    capture,
-    state: ImageState::Waiting(now + Duration::from_secs(10)),
-  });
-  assert!(!session.image_timeout(now));
-  assert!(session.image_timeout(now + Duration::from_secs(10)));
-  assert!(!session.image_timeout(now + Duration::from_secs(20)));
-  let original = session.image_write.as_ref().unwrap();
-  assert_eq!(original.capture, capture);
-  assert!(matches!(original.state, ImageState::TimedOut));
-  assert!(!session.image_status("type=read:status=DONE"));
-  assert!(session.image_write.is_some());
-  assert!(session.image_status("type=write:status=DONE"));
-  assert!(session.image_write.is_none());
-  assert!(!session.image_status("type=write:status=DONE"));
 }
 
 /// Shape tests share the global shape state.
@@ -268,64 +245,6 @@ fn held_gestures_write_shapes() -> Result<()> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
-fn image_status_preserves_bar() -> Result<()> {
-  use crate::region::Transfer;
-  use std::collections::VecDeque;
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
-  let mut session = Session::new(None);
-  session.open(&root.join("paper.pdf"), true, screen)?;
-  session.app().move_figure(true, 1)?;
-  session.app().open_region()?;
-  let old = session.app().region.as_ref().unwrap().snapshot().clone();
-  let pane = session.app().id;
-  session.image_write = Some(ImageWrite {
-    pane,
-    capture: old.id,
-    state: ImageState::Waiting(Instant::now() + Duration::from_millis(500)),
-  });
-  let now = Instant::now();
-  assert!(idle(&mut session, now, now, false) <= Duration::from_millis(500));
-  session.app().select_region(old.page, old.bounds)?;
-  let new = session.app().region.as_ref().unwrap().snapshot().clone();
-  assert_ne!(old.id, new.id);
-  session.app().region_status(new.id, "New operation".into());
-  let mut events = VecDeque::new();
-  vpdf_terminal::decode::Parser::default()
-    .feed(b"\x1b]5522;type=write:status=DONE\x1b\\", &mut events);
-  let event = act(events.pop_front().unwrap()).unwrap();
-  assert!(!event.typed());
-  input(&mut session, event, &mut Vec::new())?;
-  assert!(session.image_write.is_none());
-  assert_eq!(
-    session.app().region.as_ref().unwrap().status(),
-    Some("New operation")
-  );
-  assert_eq!(session.app().reader.message, "New operation");
-  session.image_write =
-    Some(ImageWrite { pane, capture: old.id, state: ImageState::TimedOut });
-  session.app().region_send = Some(Transfer { id: new.id, png: vec![1] });
-  let mut output = Vec::new();
-  assert!(session.image_updates(&mut output));
-  assert_eq!(output, [] as [u8; 0]);
-  assert_eq!(session.image_write.as_ref().unwrap().capture, old.id);
-  assert_eq!(
-    session.app().reader.message,
-    "Image clipboard awaiting previous status"
-  );
-  assert!(session.image_status("type=write:status=EPERM"));
-  assert!(session.image_write.is_none());
-  Ok(())
-}
-
-#[test]
-#[ignore = "requires verified public PDF corpus"]
 fn landing_deadlines_expire_across_panes() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = Screen {
@@ -405,38 +324,6 @@ fn refit_keeps_the_layout_without_metrics() {
     assert_eq!(session.unmeasured, unmeasured, "case {index}");
     let home = session.home.as_ref().map(|home| home.view.screen().rows);
     assert_eq!(home, Some(rows), "case {index}");
-  }
-}
-
-/// tmux tells only its active pane about focus; the rest is asked.
-#[test]
-fn sight_follows_tmux() {
-  use Cause::{FocusOut, Start, Tick};
-  use Sight::{Focused, Hidden, Unfocused};
-  let active = View::Active { focused: true };
-  let away = View::Active { focused: false };
-  // (sight, cause, view, want)
-  let cases = [
-    (Focused, Start, active, Focused),
-    (Focused, Start, View::Inactive, Unfocused),
-    (Focused, Start, View::Hidden, Hidden),
-    (Focused, FocusOut, View::Inactive, Unfocused),
-    (Focused, FocusOut, View::Hidden, Hidden),
-    // A popup or menu over the active pane.
-    (Focused, FocusOut, active, Hidden),
-    // The client lost the OS focus.
-    (Focused, FocusOut, away, Unfocused),
-    (Focused, Start, away, Unfocused),
-    (Unfocused, Tick, View::Hidden, Hidden),
-    (Unfocused, Tick, View::Inactive, Unfocused),
-    (Hidden, Tick, View::Inactive, Unfocused),
-    (Hidden, Tick, View::Hidden, Hidden),
-    // The popup is still open; focus-in ends it.
-    (Hidden, Tick, active, Hidden),
-    (Unfocused, Tick, away, Unfocused),
-  ];
-  for (now, cause, view, want) in cases {
-    assert_eq!(sight(now, cause, view), want, "{now:?} {cause:?} {view:?}");
   }
 }
 
@@ -724,7 +611,7 @@ fn menu_backdrops_skip_the_panel() -> Result<()> {
       session.mouse(MouseEvent { kind, column, row: 3, modifiers })?;
     }
     let app = session.app();
-    let area = app.context_menu.as_ref().expect("a menu").area();
+    let area = app.overlays.menu().expect("a menu").area();
     let rect = app.context_rect();
     assert_eq!(rect.map(|rect| rect.x0), want, "{column}");
     if let Some(rect) = rect {
@@ -733,7 +620,7 @@ fn menu_backdrops_skip_the_panel() -> Result<()> {
     } else {
       assert!(area.column + area.columns <= left, "{column}");
     }
-    app.context_menu = None;
+    app.overlays.close_menu();
   }
   Ok(())
 }
@@ -790,7 +677,7 @@ fn veils_skip_menus() -> Result<()> {
   // (pressed column) -> veiled
   let cases = [(None, true), (Some(1), true), (Some(left - 3), false)];
   for (column, want) in cases {
-    session.app().context_menu = None;
+    session.app().overlays.close_menu();
     for kind in column.map_or_default(|_| vec![Down(Right), Up(Right)]) {
       let column = column.unwrap_or_default();
       let modifiers = KeyModifiers::NONE;
@@ -1086,13 +973,15 @@ fn keys_close_other_previews() -> Result<()> {
   let (kind, modifiers) = (MouseEventKind::Moved, KeyModifiers::NONE);
   session.mouse(MouseEvent { kind, column, row, modifiers })?;
   assert!(session.hover_preview(Instant::now() + vpdf_ui::input::links::REST));
-  assert!(session.tab().panes[index].peek.is_some());
+  assert!(session.tab().panes[index].overlays.preview().is_some());
   let mut events = std::collections::VecDeque::new();
   vpdf_terminal::decode::Parser::default().feed(b"j", &mut events);
   for event in events {
     input(&mut session, act(event).expect("a key"), &mut Vec::new())?;
   }
-  assert!(session.tab().panes.iter().all(|app| app.peek.is_none()));
+  assert!(
+    session.tab().panes.iter().all(|app| app.overlays.preview().is_none())
+  );
   Ok(())
 }
 

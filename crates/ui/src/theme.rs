@@ -34,6 +34,9 @@ pub const CURSOR: [u8; 4] = [25, 100, 255, 120];
 pub const SELECTION: [u8; 4] = [70, 130, 255, 85];
 pub const MATCH: [u8; 4] = [255, 190, 30, 90];
 pub const PANE_VEIL: [u8; 4] = [0, 0, 0, 70];
+/// Dims the page around a capture region.
+pub const REGION_VEIL: [u8; 4] = [0, 0, 0, 100];
+pub const REGION_EDGE: [u8; 4] = [60, 120, 230, 220];
 pub const CURSORLINE: [u8; 4] = [70, 130, 255, 30];
 pub const TEXT_CURSORLINE: &str = "\x1b[0;100m";
 pub const TEXT_CURSOR: &str = "\x1b[0;7;34m";
@@ -76,3 +79,5 @@ pub fn badge(color: Color) -> String {
 pub const PREVIEW_BORDER: &str = "\x1b[0;38;2;60;120;230;48;2;255;255;255m";
 pub const PREVIEW_TEXT: &str = "\x1b[0;38;2;20;20;20;48;2;255;255;255m";
 pub const PREVIEW_FILL: [u8; 4] = [255; 4];
+/// Gray gaps between preview pages.
+pub const PREVIEW_GAP: u8 = 200;

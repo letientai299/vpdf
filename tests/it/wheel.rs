@@ -324,7 +324,7 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
       first.ok().flatten().map_or(1e3, |(_, row)| -f32::from(row))
     }),
     ("gp", 480, |app| {
-      app.overview.as_ref().map_or(0, vpdf_ui::overview::Overview::top) as f32
+      app.overlays.overview().map_or(0, vpdf_ui::overview::Overview::top) as f32
     }),
     // Under a side panel, the panel scrolls.
     ("P", 20, panel),
@@ -359,7 +359,7 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
   session.draw_focused(&mut Vec::new())?;
   // (selected page, top row)
   let state = |session: &mut Session| {
-    let overview = session.app().overview.as_ref().expect("an overview");
+    let overview = session.app().overlays.overview().expect("an overview");
     (overview.selected(), overview.top())
   };
   assert_eq!(state(&mut session), (0, 0));
@@ -398,7 +398,7 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
     row: 2,
     modifiers: KeyModifiers::NONE,
   })?;
-  assert!(session.app().overview.is_none());
+  assert!(session.app().overlays.overview().is_none());
   assert_eq!(session.app().reader.cursor.page, PageId(2 * columns));
   Ok(())
 }
@@ -423,7 +423,7 @@ fn linked(path: &Path, text: bool) -> Result<Session> {
   app.reader.point_to(position);
   app.ensure_cursor()?;
   app.preview_link()?;
-  assert!(app.peek.is_some());
+  assert!(app.overlays.preview().is_some());
   Ok(session)
 }
 
@@ -541,16 +541,13 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
       let app = session.app();
       let panel = app.panel.as_ref().map(|panel| panel.view.top());
       let overview =
-        app.overview.as_ref().map(vpdf_ui::overview::Overview::top);
+        app.overlays.overview().map(vpdf_ui::overview::Overview::top);
       let scroll = app.reader.animation().target().unwrap_or(app.reader.scroll);
       (scroll.to_bits(), panel, overview)
     };
     let before = state(&mut session);
-    let menu = session
-      .app()
-      .context_menu
-      .as_ref()
-      .map(vpdf_ui::context::ContextMenu::area);
+    let menu =
+      session.app().overlays.menu().map(vpdf_ui::context::ContextMenu::area);
     let area = menu.unwrap_or_else(|| panic!("{surface}: a menu"));
     let pixel = (area.column * 8 + 4, area.row * 16 + 8);
     wheel(&mut session, DOWN, pixel)?;
@@ -558,7 +555,7 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
     let after = state(&mut session);
     let moved = (before.0 != after.0, before.1 != after.1, before.2 != after.2);
     assert_eq!(moved, want, "{surface}");
-    assert!(session.app().context_menu.is_some(), "{surface}: menu stays");
+    assert!(session.app().overlays.menu().is_some(), "{surface}: menu stays");
   }
   Ok(())
 }
@@ -569,11 +566,11 @@ fn clue_wheel_stays_in_overlay() -> Result<()> {
     let (_directory, mut session) = crate::mouse::session(false)?;
     let app = session.app();
     common::keys(app, b"g")?;
-    app.clues.restart(Some(
+    app.overlays.clues_mut().restart(Some(
       Instant::now().checked_sub(Duration::from_secs(1)).unwrap(),
     ));
     assert!(app.clue_due());
-    app.clues.show(
+    app.overlays.clues_mut().show(
       (0..count).map(|i| (i.to_string(), "description".into())).collect(),
     );
     let scroll = app.reader.scroll;
@@ -583,7 +580,7 @@ fn clue_wheel_stays_in_overlay() -> Result<()> {
       crate::mouse::mouse(&mut session, MouseEventKind::ScrollDown, (5, row))?;
     }
     let app = session.app();
-    let clues = app.clues.shown().unwrap();
+    let clues = app.overlays.clues().shown().unwrap();
     let grid = clues.grid(app.screen);
     assert_eq!(clues.top(), grid.rows - grid.visible);
     assert_eq!(app.reader.scroll, scroll);
@@ -592,7 +589,7 @@ fn clue_wheel_stays_in_overlay() -> Result<()> {
     for _ in 0..30 {
       crate::mouse::mouse(&mut session, MouseEventKind::ScrollUp, (5, row))?;
     }
-    assert_eq!(session.app().clues.shown().unwrap().top(), 0);
+    assert_eq!(session.app().overlays.clues().shown().unwrap().top(), 0);
     assert_eq!(session.app().reader.scroll, scroll);
   }
   Ok(())

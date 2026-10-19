@@ -1,9 +1,13 @@
+//! Raster results encoded for the terminal.
+
 use std::path::Path;
 use std::sync::{Arc, mpsc};
 use std::time::Instant;
-use vpdf_pdf::document::Lists;
+use vpdf_model::tile::TileKey;
+use vpdf_pdf::document::{Document, Lists};
 use vpdf_pdf::jobs::Wake;
 use vpdf_pdf::jobs::render::{RenderWorker, Sink};
+use vpdf_pdf::raster::raster;
 use vpdf_terminal::payload::{Encoder, Tile};
 
 pub struct Raster {
@@ -45,14 +49,7 @@ impl Raster {
     let sink = Sink::new(move |result| {
       let started = Instant::now();
       let result = result.and_then(|tile| {
-        encoder
-          .encode(&tile.pixels)
-          .map(|payload| Tile {
-            key: tile.key,
-            payload,
-            render_ms: tile.render_ms
-              + started.elapsed().as_secs_f64() * 1000.0,
-          })
+        encode(&encoder, tile.key, &tile.pixels, tile.render_ms, started)
           .map_err(|error| error.to_string())
       });
       send.send(result).is_ok()
@@ -63,19 +60,38 @@ impl Raster {
   }
 }
 
+/// A terminal tile of raster pixels; its time adds encoding since
+/// `started` to `render_ms`.
+pub fn encode(
+  encoder: &Encoder,
+  key: TileKey,
+  pixels: &[u8],
+  render_ms: f64,
+  started: Instant,
+) -> anyhow::Result<Tile> {
+  let payload = encoder.encode(pixels)?;
+  let render_ms = render_ms + started.elapsed().as_secs_f64() * 1000.0;
+  Ok(Tile { key, payload, render_ms })
+}
+
+pub fn render(doc: &mut Document, key: TileKey) -> anyhow::Result<Tile> {
+  let started = Instant::now();
+  let pixels = raster(doc, key)?;
+  encode(&Encoder::live(), key, &pixels, 0.0, started)
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
   use vpdf_model::geometry::Crop;
   use vpdf_model::text::PageId;
-  use vpdf_model::tile::TileKey;
   use vpdf_terminal::spool::Spool;
 
   #[test]
   fn encoding_failure_wakes_receiver() -> anyhow::Result<()> {
     let file = tempfile::NamedTempFile::new()?;
     crate::fixtures::pdf(file.path(), &["body"], "")?;
-    let doc = vpdf_pdf::document::Document::open(file.path(), "")?;
+    let doc = Document::open(file.path(), "")?;
     let directory = tempfile::tempdir()?;
     let spool = Arc::new(Spool::create(directory.path())?);
     let encoder = Encoder::new(Some(Arc::clone(&spool)));

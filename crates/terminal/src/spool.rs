@@ -7,10 +7,9 @@
 //! slot when it parses the command, long before. The file lives in the
 //! cache directory, which is on disk where `/tmp` may be RAM, and goes
 //! away on exit; files of readers that died are removed at start.
-use crate::Result;
 use crate::caps::{Graphics, Host};
-const MIB: usize = 1 << 20;
 use crate::payload::{TILE_HEIGHT, TILE_WIDTH};
+use crate::{MIB, Result};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::fs::File;
 use std::os::unix::fs::{FileExt, OpenOptionsExt};

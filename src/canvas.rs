@@ -1,5 +1,8 @@
+//! Draws a pane: page tiles, text view, and overlays.
+
 use crate::Result;
 use crate::app::App;
+use crate::pdf_text::PdfText;
 use std::io::Write;
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_terminal::graphics::Graphics;
@@ -7,6 +10,7 @@ use vpdf_terminal::terminal;
 use vpdf_ui::layout::Screen;
 use vpdf_ui::panel::Pointing;
 use vpdf_ui::pointer::{Hit, List};
+use vpdf_ui::text_view::{Frame, Pane};
 
 impl App {
   /// Keeps finished tiles; returns whether a wanted one arrived, since
@@ -75,15 +79,9 @@ impl App {
 
   /// Whether the frame writes no text above the status line.
   fn plain(&self) -> bool {
-    self.overview.is_none()
+    self.overlays.quiet()
       && !self.text_mode
-      && self.hints.is_none()
-      && self.peek.is_none()
-      && self.context_menu.is_none()
-      && self.region.is_none()
       && self.panel.is_none()
-      && self.clues.shown().is_none()
-      && self.prompt.is_none()
       && !self.bar.scrubbing()
   }
 
@@ -104,45 +102,20 @@ impl App {
     {
       hovered.extend(areas.into_iter().map(|bounds| (page, bounds)));
     }
-    let paint = vpdf_ui::paint::Marks {
-      reader: &self.reader,
-      matches: if self.search.hidden() { &[] } else { self.search.hits() },
-      flash: self.reader.landing().glyph(&self.reader),
-      landing: self.reader.landing().line(),
-      cursorline: self.cursorline,
-      dim: self.panel_focused(),
-      hovered: &hovered,
-    };
+    let dim = self.panel_focused();
+    let paint = self.reader.marks(&self.search, self.cursorline, dim, &hovered);
     let canvas = vpdf_ui::page::Canvas {
       layout: &self.layout,
       screen,
       left: self.left,
       menu: self.context_rect(),
     };
-    canvas.draw(
-      &mut crate::pdf_text::PdfText(&mut self.doc),
-      &paint,
-      graphics,
-      out,
-    )
+    canvas.draw(&mut PdfText(&mut self.doc), &paint, graphics, out)
   }
 
   /// Glyph rectangle in page-area pixels.
   pub fn position_rect(&mut self, cursor: Position) -> Result<Option<Bounds>> {
-    if self.text_mode {
-      let cell = self.text().cell(cursor)?;
-      let (width, height) =
-        (f32::from(self.screen.cell_width), f32::from(self.screen.cell_height));
-      return Ok(cell.map(|(column, row)| {
-        let (x, y) =
-          (f32::from(column - self.left) * width, f32::from(row) * height);
-        Bounds { x0: x, y0: y, x1: x + width, y1: y + height }
-      }));
-    }
-    let text = self.doc.text(cursor.page)?;
-    Ok(text.glyph(cursor).map(|glyph| {
-      self.layout.project(cursor.page, glyph.bounds, self.reader.scroll)
-    }))
+    self.reading_view().position_rect(cursor)
   }
 
   /// Deletes the images of a document this pane has since reloaded.
@@ -158,7 +131,7 @@ impl App {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
-    write!(out, "{}\x1b[0m", terminal::frame_start())?;
+    write!(out, "{}{}", terminal::frame_start(), vpdf_ui::theme::RESET)?;
     graphics.begin(out)?;
     self.draw_pane(graphics, out)?;
     graphics.end(out)?;
@@ -205,7 +178,7 @@ impl App {
       self.draw_context(graphics, out)?;
       return self.bottom(out);
     }
-    if self.overview.is_some() {
+    if self.overlays.overview().is_some() {
       self.overview_canvas(graphics, out)?;
     } else if self.text_mode {
       self.text_canvas(out)?;
@@ -228,7 +201,7 @@ impl App {
   /// Status line, or the prompt with its menu and cursor.
   fn bottom(&mut self, out: &mut impl Write) -> Result<()> {
     let row = self.screen.rows - 1;
-    if let Some(prompt) = &self.prompt {
+    if let Some(prompt) = self.overlays.prompt() {
       let pointed = self.pointed_item(List::Completions);
       let (screen, at) = (self.screen, self.at);
       return prompt.draw(out, screen, at, pointed);
@@ -240,7 +213,7 @@ impl App {
     } else {
       None
     };
-    if let Some(clues) = self.clues.shown() {
+    if let Some(clues) = self.overlays.clues().shown() {
       clues.draw(
         out,
         (self.at, row - 1),
@@ -249,7 +222,26 @@ impl App {
       )?;
     }
     self.status_line(out, row, detail.as_deref())?;
-    write!(out, "\x1b[?25l")?;
+    out.write_all(terminal::HIDE_CURSOR.as_bytes())?;
     Ok(())
+  }
+}
+
+impl App {
+  fn text_frame(&self) -> Frame {
+    Frame { screen: self.screen, at: self.at, left: self.left }
+  }
+
+  pub fn text(&mut self) -> Pane<'_, PdfText<'_>> {
+    let frame = self.text_frame();
+    self.text_view.bind(PdfText(&mut self.doc), frame)
+  }
+
+  pub fn text_canvas(&mut self, out: &mut impl Write) -> Result<()> {
+    let frame = self.text_frame();
+    let hovered = self.hover_segments();
+    let dim = self.panel_focused();
+    let paint = self.reader.marks(&self.search, self.cursorline, dim, &hovered);
+    self.text_view.bind(PdfText(&mut self.doc), frame).draw(out, &paint)
   }
 }

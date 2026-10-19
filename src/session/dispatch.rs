@@ -80,11 +80,12 @@ impl Session {
         }
         self.panel_open(&mark.path, Some(mark.cursor), false, screen)
       }
-      Some(Request::Pick) => match crate::fzf::pick(&std::env::current_dir()?)?
-      {
-        Some(path) => self.open(&path, false, screen),
-        None => Ok(()),
-      },
+      Some(Request::Pick) => {
+        match crate::programs::pick_pdf(&std::env::current_dir()?)? {
+          Some(path) => self.open(&path, false, screen),
+          None => Ok(()),
+        }
+      }
       Some(Request::TabClose(index)) => {
         self.close_tab(index.unwrap_or(self.active))
       }

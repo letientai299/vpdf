@@ -280,7 +280,11 @@ fn hint_labels_keep_their_origin() -> Result<()> {
   for text_mode in [true, false] {
     app.text_mode = text_mode;
     for typed in ["", "a"] {
-      app.hints = Some(common::hints(24, (23, 3), &Target::Page(PageId(0))));
+      app.overlays.open_hints(common::hints(
+        24,
+        (23, 3),
+        &Target::Page(PageId(0)),
+      ));
       if !typed.is_empty() {
         common::keys(&mut app, typed.as_bytes())?;
       }
@@ -320,25 +324,25 @@ fn link_hints_follow_typed_labels() -> Result<()> {
   let page = app.reader.cursor.page;
   for modifiers in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
     app.start_hints(false)?;
-    let hints = app.hints.as_ref().unwrap();
+    let hints = app.overlays.hints().unwrap();
     let first = hints.items()[0].label.chars().next().unwrap();
     app.hint_key(KeyEvent::new(KeyCode::Char(first), modifiers))?;
-    assert!(app.hints.is_none(), "{modifiers:?} closes hints");
+    assert!(app.overlays.hints().is_none(), "{modifiers:?} closes hints");
     assert_eq!(app.reader.cursor.page, page, "{modifiers:?} follows nothing");
   }
   app.start_hints(false)?;
-  let hints = app.hints.as_ref().unwrap();
+  let hints = app.overlays.hints().unwrap();
   assert!(hints.items().len() > 3);
   let label = hints.items()[0].label.clone();
   for ch in label.chars() {
     app.hint_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))?;
   }
-  assert!(app.hints.is_none());
+  assert!(app.overlays.hints().is_none());
   assert!(app.reader.cursor.page.0 > 1, "citation jumps to the references");
   app.start_hints(false)?;
   let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
   app.hint_key(escape)?;
-  assert!(app.hints.is_none());
+  assert!(app.overlays.hints().is_none());
   Ok(())
 }
 
@@ -372,7 +376,7 @@ fn preview_shows_citation_target() -> Result<()> {
     let cursor = app.reader.cursor;
     app.reader.point_to(cursor);
     app.preview_link()?;
-    assert!(app.peek.is_some());
+    assert!(app.overlays.preview().is_some());
     let mut out = Vec::new();
     app.draw(&mut out)?;
     let drawn = String::from_utf8_lossy(&out);
@@ -391,9 +395,12 @@ fn preview_shows_citation_target() -> Result<()> {
       control('['),
     ] {
       app.preview_link()?;
-      assert!(app.peek.is_some());
+      assert!(app.overlays.preview().is_some());
       app.key(key, &mut history)?;
-      assert!(app.peek.is_none() && !app.quit, "{key:?} only closes it");
+      assert!(
+        app.overlays.preview().is_none() && !app.quit,
+        "{key:?} only closes it"
+      );
       assert!(app.panel_focused(), "{key:?} cancels nothing");
     }
     let on_link = app.reader.cursor;
@@ -405,7 +412,7 @@ fn preview_shows_citation_target() -> Result<()> {
       app.go_to(on_link, true)?;
       app.preview_link()?;
       app.key(key, &mut history)?;
-      assert!(app.peek.is_none(), "{key:?} closes it");
+      assert!(app.overlays.preview().is_none(), "{key:?} closes it");
       assert_eq!(app.reader.cursor.page, target, "{key:?} follows it");
     }
   }
@@ -427,7 +434,7 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
   let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   let press = |app: &mut App, action| app.action(Input::plain(action));
   press(&mut app, Action::Overview)?;
-  assert!(app.overview.is_some());
+  assert!(app.overlays.overview().is_some());
   let mut out = Vec::new();
   app.draw(&mut out)?;
   let started = Instant::now();
@@ -446,23 +453,30 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
     Action::Rows(1),
   ] {
     press(&mut app, action)?;
-    assert!(app.overview.is_some(), "{action:?} keeps the overview");
-    assert!(app.hints.is_none() && app.peek.is_none() && app.prompt.is_none());
+    assert!(app.overlays.overview().is_some(), "{action:?} keeps the overview");
+    assert!(
+      app.overlays.hints().is_none()
+        && app.overlays.preview().is_none()
+        && app.overlays.prompt().is_none()
+    );
     assert_eq!((app.reader.scroll, app.reader.cursor), view, "{action:?}");
     assert!(app.reader.message.is_empty(), "{action:?}");
   }
   press(&mut app, Action::Command)?;
-  assert!(app.prompt.take().is_some(), "`:` reaches the command line");
+  assert!(
+    app.overlays.close_prompt().is_some(),
+    "`:` reaches the command line"
+  );
   for action in
     [Action::Window(vpdf_ui::window::Window::Next), Action::Tab(true)]
   {
     press(&mut app, action)?;
     assert!(app.request.take().is_some(), "{action:?} reaches the session");
-    assert!(app.overview.is_some(), "{action:?} keeps the overview");
+    assert!(app.overlays.overview().is_some(), "{action:?} keeps the overview");
   }
   press(&mut app, Action::Motion(vpdf_reader::motion::Motion::Down))?;
   press(&mut app, Action::Follow)?;
-  assert!(app.overview.is_none());
+  assert!(app.overlays.overview().is_none());
   assert!(app.reader.cursor.page.0 > 1);
   Ok(())
 }
@@ -630,7 +644,10 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
         key(&mut app, code)?;
       }
       // Clues show once a prefix idles.
-      app.clues.restart(Instant::now().checked_sub(Duration::from_secs(1)));
+      app
+        .overlays
+        .clues_mut()
+        .restart(Instant::now().checked_sub(Duration::from_secs(1)));
       app.clue_due();
       let rows = app.menu_rows();
       let uncovered = u32::from(screen.rows - 1 - rows) * 16;
@@ -644,7 +661,11 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
       assert!(reached > 0, "graphics still show: {at}");
       assert!(reached <= uncovered, "graphics stop above it: {at}");
       key(&mut app, KeyCode::Esc)?;
-      assert!(app.clues.shown().is_none() && app.prompt.is_none(), "{at}");
+      assert!(
+        app.overlays.clues().shown().is_none()
+          && app.overlays.prompt().is_none(),
+        "{at}"
+      );
       assert_eq!(app.reader.scroll, scroll, "{at}");
     }
   }
@@ -666,14 +687,20 @@ fn clue_wait_ends_once_due() -> Result<()> {
   };
   assert_eq!(app.clue_wait(), None);
   // A wait with nothing to show ends too.
-  app.clues.restart(Instant::now().checked_sub(Duration::from_secs(1)));
+  app
+    .overlays
+    .clues_mut()
+    .restart(Instant::now().checked_sub(Duration::from_secs(1)));
   assert!(!app.clue_due());
   assert_eq!(app.clue_wait(), None);
   for prefix in ['"', 'm', 'g'] {
     press(&mut app, KeyCode::Char(prefix))?;
     let wait = app.clue_wait();
     assert!(wait.is_some_and(|wait| wait <= Duration::from_secs(1)));
-    app.clues.restart(Instant::now().checked_sub(Duration::from_secs(1)));
+    app
+      .overlays
+      .clues_mut()
+      .restart(Instant::now().checked_sub(Duration::from_secs(1)));
     assert_eq!(app.clue_wait(), Some(Duration::ZERO), "{prefix}");
     assert!(app.clue_due(), "{prefix}");
     assert_eq!(app.clue_wait(), None, "{prefix}");
@@ -702,7 +729,7 @@ fn recent_view_covers_the_pane() -> Result<()> {
   // Commands that need the document wait for one, as on the start screen.
   for command in ["5", "iv"] {
     assert!(app.command(command).is_err(), "{command}");
-    assert!(app.covered() && app.overview.is_none(), "{command}");
+    assert!(app.covered() && app.overlays.overview().is_none(), "{command}");
   }
   app.draw(&mut Vec::new())?;
   app.action(input(Action::Quit))?;
@@ -899,7 +926,7 @@ fn hover_hits_lines_rows_and_thumbnails() -> Result<()> {
   let right = app.screen.columns - 4;
   assert_eq!(thumbnail(&mut app, right)?, Hit::Nothing);
   app.overview_mouse(press(4, 2))?;
-  assert!(app.overview.is_none(), "the press opened the page");
+  assert!(app.overlays.overview().is_none(), "the press opened the page");
   Ok(())
 }
 
@@ -972,7 +999,7 @@ fn motion_redraws_only_for_new_targets() -> Result<()> {
   for (step, (cell, redraw)) in cases.into_iter().enumerate() {
     assert_eq!(session.mouse(moved(cell))?, redraw, "step {step}: {cell:?}");
   }
-  assert!(session.app().hints.is_some(), "motion keeps hints");
+  assert!(session.app().overlays.hints().is_some(), "motion keeps hints");
   send(&mut session, b"\x1b[27u")?;
   let app = session.app();
   let Hit::Link(page, index) = link.expect("a visible link").1 else {
@@ -984,7 +1011,7 @@ fn motion_redraws_only_for_new_targets() -> Result<()> {
     app.doc.text(page)?.nearest(page, x, f32::midpoint(bounds.y0, bounds.y1));
   app.go_to(position, true)?;
   send(&mut session, b"K")?;
-  assert!(session.app().peek.is_some(), "K previews the link");
+  assert!(session.app().overlays.preview().is_some(), "K previews the link");
   // SGR cells count from one.
   let sgr = |flags, (column, row): (u16, u16)| {
     format!("\x1b[<{flags};{};{}M", column + 1, row + 1)
@@ -992,7 +1019,10 @@ fn motion_redraws_only_for_new_targets() -> Result<()> {
   for cell in [first, second, (column, row)] {
     send(&mut session, sgr(35, cell).as_bytes())?;
   }
-  assert!(session.app().peek.is_some(), "motion keeps the preview");
+  assert!(
+    session.app().overlays.preview().is_some(),
+    "motion keeps the preview"
+  );
   send(&mut session, b"\x1b[27u")?;
   // Motion after a press: the release got lost.
   let drag = [sgr(0, first), sgr(35, second), sgr(32, (column, row))];
@@ -1214,9 +1244,12 @@ fn panel_clues_use_current_focus_and_scope() -> Result<()> {
       app.key(key, history)?;
       app.after_key();
     }
-    app.clues.restart(Instant::now().checked_sub(Duration::from_secs(1)));
+    app
+      .overlays
+      .clues_mut()
+      .restart(Instant::now().checked_sub(Duration::from_secs(1)));
     app.clue_due();
-    Ok(app.clues.shown().map_or_else(Vec::new, |list| {
+    Ok(app.overlays.clues().shown().map_or_else(Vec::new, |list| {
       list.items().iter().map(|(key, _)| key.clone()).collect()
     }))
   };
@@ -1256,21 +1289,22 @@ fn overlay_clues_follow_policy() -> Result<()> {
   ] {
     match owner {
       InputOwner::Context => {
-        app.context_menu =
-          Some(ContextMenu::new(Vec::new(), (0, 0), (0, 80), 23, false));
+        let menu = ContextMenu::new(Vec::new(), (0, 0), (0, 80), 23, false);
+        app.overlays.open_menu(menu);
       }
       InputOwner::Peek => {
-        app.peek = Some(Preview::open(
+        let preview = Preview::open(
           Target::Page(PageId(0)),
           Position::default(),
           false,
           false,
           &app.layout,
           &mut PdfText(&mut app.doc),
-        )?);
+        )?;
+        app.overlays.open_preview(preview);
       }
       InputOwner::Region => {
-        app.region = Some(Region::open(Snapshot {
+        app.overlays.open_region(Region::open(Snapshot {
           id: CaptureId::new(1),
           page: PageId(0),
           bounds: app.doc.pages[0].bounds,
@@ -1283,10 +1317,13 @@ fn overlay_clues_follow_policy() -> Result<()> {
       for key in vpdf_ui::keys::parse(prefix).unwrap() {
         app.key(key, &mut history)?;
       }
-      app.clues.restart(Instant::now().checked_sub(Duration::from_secs(1)));
+      app
+        .overlays
+        .clues_mut()
+        .restart(Instant::now().checked_sub(Duration::from_secs(1)));
       assert_eq!(app.clue_due(), prefix == "g");
       assert_eq!(app.clue_wait(), None);
-      if let Some(list) = app.clues.shown() {
+      if let Some(list) = app.overlays.clues().shown() {
         let has = |key| list.items().iter().any(|(shown, _)| shown == key);
         assert!(has("q") && has("?"));
         assert!(!has("d") && !has("E") && !has("v"));
@@ -1295,9 +1332,9 @@ fn overlay_clues_follow_policy() -> Result<()> {
       }
     }
     app.keys.clear();
-    app.context_menu = None;
-    app.peek = None;
-    app.region = None;
+    app.overlays.close_menu();
+    app.overlays.close_preview();
+    app.overlays.close_region();
     app.close_overview();
   }
   Ok(())

@@ -70,7 +70,7 @@ fn main() {
     }
     let text = format!("{error:#}");
     // The gate names each missing requirement on its own line.
-    let lines = if error.is::<vpdf::gate::Unsupported>() {
+    let lines = if error.is::<vpdf_terminal::gate::Unsupported>() {
       text.lines().collect()
     } else {
       vec![text.as_str()]

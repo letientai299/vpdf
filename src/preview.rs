@@ -5,8 +5,7 @@ use vpdf_model::document::{Annotation, Target};
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::keys::Input;
-use vpdf_ui::pointer::Hit;
-use vpdf_ui::preview::{Event, Frame, Preview};
+use vpdf_ui::preview::{Event, Preview};
 use vpdf_ui::split::Rect;
 
 impl App {
@@ -27,21 +26,8 @@ impl App {
     target: Target,
     source: Position,
   ) -> Result<()> {
-    if let Target::Uri(uri) = target {
-      self.reader.notice(uri);
-      return Ok(());
-    }
-    let mut preview = Preview::open(
-      target,
-      source,
-      false,
-      self.text_mode,
-      &self.layout,
-      &mut crate::pdf_text::PdfText(&mut self.doc),
-    )?;
-    preview.keep(self.visible_position(source).unwrap_or(false));
-    self.peek = Some(preview);
-    self.scroll_preview(0.0)
+    let mut reading = self.reading_parts();
+    reading.view.show_preview(reading.overlays, target, source)
   }
 
   pub(crate) fn preview_annotation(
@@ -49,11 +35,8 @@ impl App {
     position: Position,
     annotation: &Annotation,
   ) {
-    if annotation.contents.is_empty() {
-      return;
-    }
-    let seen = self.visible_position(position).unwrap_or(false);
-    self.peek = Preview::note(position, annotation, seen, &self.layout);
+    let mut reading = self.reading_parts();
+    reading.view.preview_annotation(reading.overlays, position, annotation);
   }
 
   pub(crate) fn preview_input(&mut self, input: Input) -> Result<()> {
@@ -74,7 +57,7 @@ impl App {
   }
 
   pub fn preview_top(&self) -> Option<i32> {
-    self.peek.as_ref().map(Preview::top)
+    self.overlays.preview().map(Preview::top)
   }
 
   /// Identifies the view: scroll and text top.
@@ -83,31 +66,29 @@ impl App {
   }
 
   pub(crate) fn follow_preview(&mut self) -> Result<()> {
-    let Some(target) = self.peek.take().and_then(Preview::into_target) else {
+    let Some(target) =
+      self.overlays.close_preview().and_then(Preview::into_target)
+    else {
       return Ok(());
     };
     self.follow(&target)
   }
 
   pub fn scroll_preview(&mut self, rows: f32) -> Result<()> {
-    let Some(preview) = &mut self.peek else { return Ok(()) };
-    if !preview.scroll(
-      rows,
-      &self.layout,
-      &mut crate::pdf_text::PdfText(&mut self.doc),
-    )? {
-      self.peek = None;
+    if self.overlays.preview().is_none() {
+      return Ok(());
     }
-    Ok(())
+    let mut reading = self.reading_parts();
+    reading.view.scroll_preview(reading.overlays, rows)
   }
 
   pub fn preview_cells(&self) -> Option<Rect> {
-    self.peek.as_ref().and_then(Preview::cells)
+    self.overlays.preview().and_then(Preview::cells)
   }
 
   /// The previewed link's destination for status.
   pub(crate) fn preview_label(&mut self) -> Option<String> {
-    let peek = self.peek.as_ref().filter(|peek| peek.follows())?;
+    let peek = self.overlays.preview().filter(|peek| peek.follows())?;
     let (target, hovered) = (peek.target().clone(), peek.hovered());
     // As on its link: citations show the reference.
     let link = hovered
@@ -118,21 +99,13 @@ impl App {
     Some(crate::links::destination(&target, &self.doc, ""))
   }
 
-  /// The hovered link's box; PDF view only.
-  fn hovered_box(&mut self) -> Option<Bounds> {
-    let (page, index) = self.peek.as_ref()?.hovered()?;
-    let link = self.link(page, index).ok().flatten()?;
-    let pdf = !self.text_mode;
-    pdf.then(|| self.layout.project(page, link.first(), self.reader.scroll))
-  }
-
   pub(crate) fn anchor_preview(
     &mut self,
     page: PageId,
     index: usize,
     icon: Bounds,
   ) {
-    if let Some(peek) = &mut self.peek {
+    if let Some(peek) = self.overlays.preview_mut() {
       peek.anchor(page, index, icon);
     }
     self.drop_stray_preview();
@@ -144,35 +117,22 @@ impl App {
     mouse: crossterm::event::MouseEvent,
     pixel: Option<vpdf_ui::pointer::Pixel>,
   ) -> bool {
-    let Some((page, at, _)) = self.shown_anchor() else { return false };
-    let (column, row) = self.pane_cell(mouse);
-    // Page cells only: not the panel or status.
-    if column < self.left || row + 1 >= self.screen.rows {
-      return false;
-    }
-    let hit = self.pressed_hit(column, row, pixel).unwrap_or_default();
-    hit == Hit::Note { page, index: at, text: false }
-  }
-
-  fn shown_anchor(&self) -> Option<(PageId, usize, Bounds)> {
-    self.peek.as_ref()?.shown_anchor(self.text_mode)
-  }
-
-  /// Page-area pixels of a preview's icon.
-  fn anchor_rect(&self) -> Option<Bounds> {
-    let (page, _, icon) = self.shown_anchor()?;
-    Some(self.layout.project(page, icon, self.reader.scroll))
+    let anchor = self
+      .overlays
+      .preview()
+      .and_then(|peek| peek.shown_anchor(self.text_mode));
+    let frame = self.frame(self.screen);
+    vpdf_ui::preview::on_anchor(anchor, frame, mouse, |column, row| {
+      self.pressed_hit(column, row, pixel).unwrap_or_default()
+    })
   }
 
   pub fn drop_stray_preview(&mut self) {
-    let Some(source) = self.peek.as_ref().map(Preview::source) else { return };
-    let shown = match self.shown_anchor() {
-      Some((page, _, icon)) => self.page_view().shows(page, icon),
-      None => self.visible_position(source).unwrap_or(false),
-    };
-    if self.peek.as_mut().is_some_and(|peek| !peek.keep(shown)) {
-      self.peek = None;
+    if self.overlays.preview().is_none() {
+      return;
     }
+    let mut reading = self.reading_parts();
+    reading.view.drop_stray_preview(reading.overlays);
   }
 
   pub fn draw_preview(
@@ -180,36 +140,10 @@ impl App {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
-    if self.peek.is_none() {
+    if self.overlays.preview().is_none() {
       return Ok(());
     }
-    self.scroll_preview(0.0)?;
-    let Some(source) = self.peek.as_ref().map(Preview::source) else {
-      return Ok(());
-    };
-    let cursor = match self.anchor_rect() {
-      Some(rect) => Some(rect),
-      None => self.position_rect(source)?,
-    };
-    let link = self.hovered_box();
-    let identity = self.view_key();
-    let Some(preview) = &mut self.peek else { return Ok(()) };
-    preview.draw(
-      graphics,
-      out,
-      Frame {
-        layout: &self.layout,
-        pane: vpdf_ui::paint::Frame {
-          at: self.at,
-          screen: self.screen,
-          left: self.left,
-          text: self.text_mode,
-        },
-        identity,
-        cursor,
-        link,
-      },
-      &crate::pdf_text::PdfText(&mut self.doc),
-    )
+    let mut reading = self.reading_parts();
+    reading.view.draw_preview(reading.overlays, graphics, out)
   }
 }

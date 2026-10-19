@@ -306,6 +306,47 @@ mod tests {
   use super::*;
   use std::cell::Cell;
 
+  #[test]
+  #[ignore = "requires corpus and Tesseract"]
+  fn real_ocr_cache_policy() -> Result<()> {
+    if std::env::var_os("VPDF_OCR_CACHE_CHILD").is_none() {
+      let cache = tempfile::tempdir()?;
+      let status = Command::new(std::env::current_exe()?)
+        .args(["--exact", "jobs::ocr::tests::real_ocr_cache_policy"])
+        .args(["--ignored", "--nocapture"])
+        .env("VPDF_OCR_CACHE_CHILD", "1")
+        .env("VPDF_CACHE", cache.path())
+        .status()?;
+      anyhow::ensure!(status.success(), "OCR cache test failed");
+      return Ok(());
+    }
+    let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("ocr.pdf");
+    let hash =
+      |path: &Path| content_cache::alias(&mut std::fs::File::open(path)?);
+    let original = hash(&path)?;
+    let root = content_cache::root().expect("cache enabled");
+    let cancel = AtomicBool::new(false);
+    let expected = recognize(&path, "", PageId(0), "eng", &cancel)?.plain();
+    assert!(expected.to_lowercase().contains("cheese"));
+    let files =
+      std::fs::read_dir(&root)?.collect::<std::io::Result<Vec<_>>>()?;
+    assert_eq!(files.len(), 1, "unencrypted OCR writes its cache");
+    assert_eq!(files[0].path().extension().unwrap(), "ocr");
+    std::fs::remove_file(files[0].path())?;
+
+    let mut doc = Handle::open(&path, "")?;
+    let file = crate::encryption::encrypt(&mut doc.native)?;
+    let before = hash(file.path())?;
+    assert!(Handle::open(file.path(), "").is_err());
+    let text =
+      recognize(file.path(), "test-reader", PageId(0), "eng", &cancel)?;
+    assert_eq!(text.plain(), expected);
+    assert_eq!(std::fs::read_dir(&root)?.count(), 0);
+    assert_eq!(hash(&path)?, original);
+    assert_eq!(hash(file.path())?, before);
+    Ok(())
+  }
+
   /// Stored output answers the same key without running the engine;
   /// without a cache, the engine always runs.
   #[test]

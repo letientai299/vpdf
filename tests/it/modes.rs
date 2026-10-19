@@ -144,7 +144,7 @@ fn explicit_targets_expire_outside_view() -> Result<()> {
     for bytes in [b"K".as_slice(), b"\r", b"*"] {
       keys(&mut app, bytes)?;
       assert!(app.reader.message.contains("Click text"));
-      assert!(app.peek.is_none());
+      assert!(app.overlays.preview().is_none());
       assert_eq!(app.search.query().text, "");
     }
     let target = app.reading_position()?;

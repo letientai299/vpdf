@@ -106,7 +106,7 @@ its command interface.
 [search]: ../../crates/vpdf-search/src/search.rs
 [worker]: ../../crates/vpdf-pdf/src/jobs/search.rs
 [panels]: ../../crates/ui/src/panel/search.rs
-[outline-loader]: ../../src/outline.rs
+[outline-loader]: ../../src/jobs.rs
 [outline]: ../../crates/vpdf-pdf/src/jobs/outline.rs
 [ocr]: ../../crates/vpdf-pdf/src/jobs/ocr.rs
 [cache]: ../../crates/vpdf-pdf/src/content_cache/mod.rs

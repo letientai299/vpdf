@@ -88,3 +88,44 @@ impl Wheel {
     Some(surface)
   }
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Background {
+  Panel,
+  Overview,
+  Page,
+}
+
+pub fn background(
+  column: u16,
+  left: u16,
+  covered: bool,
+  overview: bool,
+) -> Background {
+  if covered || column < left {
+    Background::Panel
+  } else if overview {
+    Background::Overview
+  } else {
+    Background::Page
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn background_follows_panel_coverage() {
+    for (column, covered, overview, expected) in [
+      (19, false, false, Background::Panel),
+      (19, false, true, Background::Panel),
+      (20, false, false, Background::Page),
+      (20, false, true, Background::Overview),
+      (79, true, false, Background::Panel),
+      (79, true, true, Background::Panel),
+    ] {
+      assert_eq!(background(column, 20, covered, overview), expected);
+    }
+  }
+}

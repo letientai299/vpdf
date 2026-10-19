@@ -1,4 +1,5 @@
-use crate::text::{Bounds, PageId, Text};
+use crate::text::{Bounds, PageId, Position, Text};
+use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub struct Link {
@@ -115,6 +116,23 @@ pub struct Facts {
   pub metadata: Vec<(String, String)>,
   pub section: Option<String>,
   pub thumb: Option<Thumbnail>,
+}
+
+/// Pixel box a thumbnail fits; none without graphics.
+pub type Fit = Option<(u32, u32)>;
+
+/// A recent document whose facts and thumbnail to load.
+pub struct FactsRequest {
+  pub path: PathBuf,
+  pub cursor: Position,
+  pub rotation: u16,
+  pub fit: Fit,
+}
+
+/// Facts loaded for a request's path and fit.
+pub struct LoadedFacts {
+  pub fit: Fit,
+  pub facts: Result<Facts, String>,
 }
 
 /// Last outline entry starting at or before `page`.

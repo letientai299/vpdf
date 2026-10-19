@@ -3,7 +3,7 @@ pub mod crop;
 pub mod document;
 pub mod figures;
 mod fonts;
-pub mod prime;
+mod prime;
 pub mod raster;
 mod scheduling;
 pub mod wraps;
@@ -16,6 +16,9 @@ pub mod content_cache;
 pub mod jobs;
 #[cfg(test)]
 use jobs::Wake;
+#[cfg(test)]
+#[path = "../../../tests/support/encryption.rs"]
+mod encryption;
 #[cfg(test)]
 #[path = "../../../tests/support/native.rs"]
 mod fixtures;

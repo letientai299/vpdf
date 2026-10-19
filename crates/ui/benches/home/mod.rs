@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::hint::black_box;
 use std::path::PathBuf;
-use vpdf_model::document::{Facts, Thumbnail};
+use vpdf_model::document::{Facts, LoadedFacts, Thumbnail};
 use vpdf_model::text::Position;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::home::Home;
@@ -50,18 +50,20 @@ pub fn draw() -> Result<()> {
   );
   home.shelf_mut().expect("recent shelf").accept(
     data.path,
-    data.fit,
-    Ok(Facts {
-      pages: data.pages,
-      bytes: data.bytes,
-      metadata: data.metadata,
-      section: data.section,
-      thumb: Some(Thumbnail {
-        width: data.thumb.width,
-        height: data.thumb.height,
-        rgb: data.thumb.rgb,
+    LoadedFacts {
+      fit: data.fit,
+      facts: Ok(Facts {
+        pages: data.pages,
+        bytes: data.bytes,
+        metadata: data.metadata,
+        section: data.section,
+        thumb: Some(Thumbnail {
+          width: data.thumb.width,
+          height: data.thumb.height,
+          rgb: data.thumb.rgb,
+        }),
       }),
-    }),
+    },
   );
   let mut graphics = Graphics::default();
   let mut output = Vec::new();

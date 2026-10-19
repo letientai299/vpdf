@@ -11,7 +11,7 @@ use crate::theme;
 use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
-use vpdf_model::document::Facts;
+use vpdf_model::document::{Facts, FactsRequest, Fit, LoadedFacts};
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::terminal::{self, At};
 
@@ -20,9 +20,6 @@ const NARROW: u16 = 60;
 /// Thumbnail pixels kept across selections.
 const BUDGET: usize = 16 * MIB;
 
-/// Pixel box a thumbnail fits; none without graphics.
-pub type Fit = Option<(u32, u32)>;
-
 #[derive(Clone)]
 pub struct Entry {
   pub path: PathBuf,
@@ -30,13 +27,6 @@ pub struct Entry {
   pub rotation: u16,
   pub used: u64,
   pub marks: usize,
-}
-
-pub struct Request {
-  pub path: PathBuf,
-  pub cursor: vpdf_model::text::Position,
-  pub rotation: u16,
-  pub fit: Fit,
 }
 
 #[derive(Clone, Copy)]
@@ -59,7 +49,7 @@ pub struct Shelf {
   cards: Cache<PathBuf, Card>,
   /// The last load sent, so a frame asks once.
   asked: Option<(PathBuf, Fit)>,
-  pending: Option<Request>,
+  pending: Option<FactsRequest>,
   /// The document the card shows.
   shown: Option<PathBuf>,
   /// First text line shown, and its limit.
@@ -160,16 +150,12 @@ impl Shelf {
     panel.pointing.row().filter(file).or(kept).unwrap_or(panel.selected)
   }
 
-  pub fn take_request(&mut self) -> Option<Request> {
+  pub fn take_request(&mut self) -> Option<FactsRequest> {
     self.pending.take()
   }
 
-  pub fn accept(
-    &mut self,
-    path: PathBuf,
-    fit: Fit,
-    facts: std::result::Result<Facts, String>,
-  ) {
+  pub fn accept(&mut self, path: PathBuf, loaded: LoadedFacts) {
+    let LoadedFacts { fit, facts } = loaded;
     let card = Card { fit, facts, serial: vpdf_terminal::graphics::serial() };
     let answers =
       |(asked, fit): &(PathBuf, Fit)| *asked == path && *fit == card.fit;
@@ -318,7 +304,7 @@ impl Shelf {
       return;
     }
     self.asked = Some((entry.path.clone(), fit));
-    self.pending = Some(Request {
+    self.pending = Some(FactsRequest {
       path: entry.path.clone(),
       cursor: entry.cursor,
       rotation: entry.rotation,
@@ -465,8 +451,7 @@ mod tests {
     assert_ne!(first.path, second.path);
     panel.shelf_mut().unwrap().accept(
       first.path,
-      first.fit,
-      Err("Old path".into()),
+      LoadedFacts { fit: first.fit, facts: Err("Old path".into()) },
     );
     assert!(!draw(&mut panel, screen)?.contains("Old path"));
     assert!(panel.shelf_mut().unwrap().take_request().is_none());
@@ -476,16 +461,14 @@ mod tests {
     assert_ne!(current.fit, second.fit);
     panel.shelf_mut().unwrap().accept(
       second.path,
-      second.fit,
-      Err("Old fit".into()),
+      LoadedFacts { fit: second.fit, facts: Err("Old fit".into()) },
     );
     let pending = draw(&mut panel, resized)?;
     assert!(pending.contains("Loading…") && !pending.contains("Old fit"));
     assert!(panel.shelf_mut().unwrap().take_request().is_none());
     panel.shelf_mut().unwrap().accept(
       current.path,
-      current.fit,
-      Err("Current error".into()),
+      LoadedFacts { fit: current.fit, facts: Err("Current error".into()) },
     );
     let ready = draw(&mut panel, resized)?;
     assert!(ready.contains("Current error") && !ready.contains("Loading…"));

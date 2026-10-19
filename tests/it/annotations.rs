@@ -138,13 +138,13 @@ fn enter_positions_cursor_and_note() -> Result<()> {
       assert_eq!(app.panel.as_ref().unwrap().view.rows().len(), 5);
       assert!(drawn(&mut app)?.contains("check this"));
       press(&mut app, KeyCode::Esc)?;
-      assert!(app.peek.is_none());
+      assert!(app.overlays.preview().is_none());
       assert_eq!(app.reader.mode(), Mode::Cursor);
       press(&mut app, KeyCode::Char('K'))?;
       assert!(drawn(&mut app)?.contains("check this"));
       let jumps = app.reader.jumps().count();
       press(&mut app, KeyCode::Enter)?;
-      assert!(app.peek.is_none());
+      assert!(app.overlays.preview().is_none());
       assert_eq!(app.reader.cursor, expected);
       assert_eq!(app.reader.mode(), Mode::Cursor);
       assert_eq!(app.reader.jumps().count(), jumps);
@@ -256,12 +256,12 @@ fn empty_notes_and_panel_focus() -> Result<()> {
     press(&mut app, KeyCode::Enter)?;
     assert_eq!(app.reader.cursor, expected);
     assert_eq!(app.reader.mode(), Mode::Cursor);
-    assert!(app.peek.is_none());
+    assert!(app.overlays.preview().is_none());
     press(&mut app, KeyCode::Tab)?;
     app.panel.as_mut().unwrap().view.choose(1);
     app.action(Input::plain(Action::Swap))?;
     assert!(app.panel_focused());
-    assert!(app.peek.is_none());
+    assert!(app.overlays.preview().is_none());
   }
   Ok(())
 }
@@ -534,34 +534,37 @@ fn notes_open_by_mouse() -> Result<()> {
   assert!(near(area.row) || near(area.row + area.rows), "{area:?} {icon:?}");
   // Past the double-click window, a click closes it.
   click_at(&mut session, icon, later(1000))?;
-  assert!(session.app().peek.is_none());
+  assert!(session.app().overlays.preview().is_none());
   // The menu's Show note sits by the icon too.
   click(&mut session, MouseButton::Right, icon)?;
   let app = session.app();
-  let menu = app.context_menu.as_ref().expect("a menu");
+  let menu = app.overlays.menu().expect("a menu");
   let show = menu.entries().iter().position(|item| item.label == "Show note");
-  app.context_menu.as_mut().unwrap().select(show.expect("Show note"));
+  app.overlays.menu_mut().unwrap().select(show.expect("Show note"));
   press(app, KeyCode::Enter)?;
   crate::common::focused_frame(&mut session)?;
   let app = session.app();
   let area = app.preview_cells().expect("a drawn popup");
   assert!(near(area.row) || near(area.row + area.rows), "{area:?} {icon:?}");
-  app.peek = None;
+  app.overlays.close_preview();
   // Highlight clicks and icon drags select.
   click(&mut session, MouseButton::Left, marked)?;
-  assert!(session.app().peek.is_none(), "a highlight click");
+  assert!(session.app().overlays.preview().is_none(), "a highlight click");
   mouse(&mut session, MouseEventKind::Down(MouseButton::Left), icon)?;
   mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), marked)?;
   mouse(&mut session, MouseEventKind::Up(MouseButton::Left), marked)?;
   let app = session.app();
-  assert!(app.peek.is_none() && app.reader.selection.is_some(), "a drag");
+  assert!(
+    app.overlays.preview().is_none() && app.reader.selection.is_some(),
+    "a drag"
+  );
   app.reader.cancel();
   // (menu item) -> note shown, register
   let cases = [("Show note", true, false), ("Copy comment", false, true)];
   for (label, shown, copied) in cases {
     click(&mut session, MouseButton::Right, marked)?;
     let app = session.app();
-    let menu = app.context_menu.as_ref().expect("a menu");
+    let menu = app.overlays.menu().expect("a menu");
     let index = menu.entries().iter().position(|item| item.label == label);
     let keys: Vec<_> =
       menu.entries().iter().map(|item| item.key.as_str()).collect();
@@ -569,7 +572,7 @@ fn notes_open_by_mouse() -> Result<()> {
       index.map(|index| keys[index]),
       Some(if shown { "K" } else { "" })
     );
-    app.context_menu.as_mut().unwrap().select(index.expect(label));
+    app.overlays.menu_mut().unwrap().select(index.expect(label));
     press(app, KeyCode::Enter)?;
     let comment = "check this note please";
     let frame = crate::common::focused_frame(&mut session)?;
@@ -580,7 +583,7 @@ fn notes_open_by_mouse() -> Result<()> {
       assert_eq!(register, Some(comment), "{label}");
       assert_eq!(app.reader.message, "Copied comment");
     }
-    app.peek = None;
+    app.overlays.close_preview();
   }
   Ok(())
 }
@@ -643,13 +646,13 @@ fn note_icons_by_kind() -> Result<()> {
     let later = |ms| start + std::time::Duration::from_millis(ms);
     click_at(&mut session, boxed, later(0))?;
     let app = session.app();
-    assert!(app.peek.is_none(), "text={text_mode}: a box click");
+    assert!(app.overlays.preview().is_none(), "text={text_mode}: a box click");
     let line = app.reader.target().map(|target| target.line);
     assert_eq!(line, Some(1), "text={text_mode}: the box click targets");
     // A double click keeps the note open.
     click_at(&mut session, sticky, later(1000))?;
     click_at(&mut session, sticky, later(1100))?;
-    let open = session.app().peek.is_some();
+    let open = session.app().overlays.preview().is_some();
     assert_eq!(open, !text_mode, "text={text_mode}: a double click");
     if text_mode {
       continue;
@@ -657,7 +660,7 @@ fn note_icons_by_kind() -> Result<()> {
     // Scrolling the icon away closes it (U17).
     session.app().reader.seed_reader(|reader| reader.scroll += 400.0);
     session.draw_frame(&mut Vec::new())?;
-    assert!(session.app().peek.is_none(), "scrolled away");
+    assert!(session.app().overlays.preview().is_none(), "scrolled away");
   }
   Ok(())
 }
@@ -719,13 +722,13 @@ fn note_row_menus_show_notes() -> Result<()> {
     session.mouse(MouseEvent { kind, column: 1, row: 2, modifiers })?;
   }
   let app = session.app();
-  let menu = app.context_menu.as_mut().expect("a menu");
+  let menu = app.overlays.menu_mut().expect("a menu");
   let index = menu.entries().iter().position(|item| item.label == "Show note");
   let index = index.expect("Show note");
   assert_eq!(menu.entries()[index].key, "K");
   menu.select(index);
-  assert!(app.peek.is_none());
+  assert!(app.overlays.preview().is_none());
   press(app, KeyCode::Enter)?;
-  assert!(app.context_menu.is_none() && app.peek.is_some());
+  assert!(app.overlays.menu().is_none() && app.overlays.preview().is_some());
   Ok(())
 }

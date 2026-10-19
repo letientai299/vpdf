@@ -5,9 +5,23 @@ use crate::Result;
 use crate::layout::Layout;
 use crate::source::Raster;
 use crate::text::PageId;
+use crate::theme;
 use vpdf_model::tile::TileKey;
 
-const GAP: u8 = 200;
+pub fn on_anchor(
+  anchor: Option<(PageId, usize, crate::text::Bounds)>,
+  frame: crate::paint::Frame,
+  mouse: crossterm::event::MouseEvent,
+  hit: impl FnOnce(u16, u16) -> crate::pointer::Hit,
+) -> bool {
+  let Some((page, index, _)) = anchor else { return false };
+  let column = mouse.column.wrapping_sub(frame.at.column);
+  let row = mouse.row.wrapping_sub(frame.at.row);
+  if column < frame.left || row + 1 >= frame.screen.rows {
+    return false;
+  }
+  hit(column, row) == crate::pointer::Hit::Note { page, index, text: false }
+}
 
 pub fn image(
   layout: &Layout,
@@ -15,7 +29,7 @@ pub fn image(
   source: &mut impl Raster,
 ) -> Result<Vec<u8>> {
   let stride = usize::try_from(key.width)? * 3;
-  let mut rgb = vec![GAP; stride * usize::try_from(key.height)?];
+  let mut rgb = vec![theme::PREVIEW_GAP; stride * usize::try_from(key.height)?];
   let first = layout.pages()[key.page.0].top as i32;
   let end = key.y + key.height;
   for index in key.page.0..layout.pages().len() {
@@ -140,7 +154,7 @@ mod tests {
         } else if (15..31).contains(&y) && (52..68).contains(&x) {
           2
         } else {
-          GAP
+          theme::PREVIEW_GAP
         };
         assert_eq!(pixel, &[expected; 3], "{x}, {y}");
       }
@@ -153,7 +167,7 @@ mod tests {
     let (layout, key) = strip();
     let mut source = Source { failed: Some(PageId(1)), ..Source::default() };
     let rgb = image(&layout, key, &mut source)?;
-    assert!(rgb[5 * 360..].iter().all(|&byte| byte == GAP));
+    assert!(rgb[5 * 360..].iter().all(|&byte| byte == theme::PREVIEW_GAP));
     source.failed = Some(PageId(0));
     assert!(image(&layout, key, &mut source).is_err());
     Ok(())

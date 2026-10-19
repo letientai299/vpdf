@@ -8,9 +8,9 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, mpsc};
 use vpdf_model::document::Target;
 use vpdf_model::text::{Bounds, PageId};
+use vpdf_pdf::jobs::capture;
 use vpdf_reader::reader::Yank;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::figures;
@@ -38,14 +38,7 @@ enum Outcome {
 
 pub struct Job {
   id: CaptureId,
-  cancel: Arc<AtomicBool>,
-  result: mpsc::Receiver<std::result::Result<Outcome, String>>,
-}
-
-impl Drop for Job {
-  fn drop(&mut self) {
-    self.cancel.store(true, Ordering::Relaxed);
-  }
+  work: capture::Job<Outcome>,
 }
 
 impl App {
@@ -60,39 +53,18 @@ impl App {
     };
     self.follow(&Target::Point { page, x: bounds.x0, y: bounds.y0 })?;
     self.reading_view().align_region(page, bounds);
-    self.region = Some(Region::selected(snapshot(page, bounds)));
+    self.overlays.open_region(Region::selected(snapshot(page, bounds)));
     Ok(())
   }
 
   fn figure_point(&mut self) -> Result<Point> {
-    if let Some(region) = &self.region {
-      let selected = region.snapshot();
-      return Ok(Point {
-        page: selected.page,
-        x: selected.bounds.x0,
-        y: selected.bounds.y0,
-      });
-    }
-    let position = self.reading_position()?;
-    let text = self.doc.text(position.page)?;
-    if let Some(glyph) = text.glyph(position) {
-      return Ok(Point {
-        page: position.page,
-        x: glyph.bounds.x0,
-        y: glyph.bounds.y0,
-      });
-    }
-    let page = self.navigation_position().page;
-    let (x, y) = self
-      .layout
-      .unproject(page, (0.0, 0.0), self.reader.scroll)
-      .unwrap_or((0.0, 0.0));
-    Ok(Point { page, x, y })
+    let mut reading = self.reading_parts();
+    reading.view.figure_point(reading.overlays.region())
   }
 
   fn figure_snapshot(&mut self) -> Result<Snapshot> {
     self.check_region();
-    if let Some(region) = &self.region {
+    if let Some(region) = self.overlays.region() {
       return Ok(region.snapshot().clone());
     }
     let point = self.figure_point()?;
@@ -102,31 +74,8 @@ impl App {
   }
 
   fn check_region(&mut self) {
-    let Some(region) = self.region.as_ref().filter(|region| !region.is_bar())
-    else {
-      return;
-    };
-    let selected = region.snapshot();
-    let page = selected.page;
-    let valid = self.doc.pages.get(selected.page.0).is_some_and(|page| {
-      vpdf_ui::layout::clip(selected.bounds, page.bounds).is_some()
-    });
-    let visible = if self.text_mode {
-      let pages = self.text().pages();
-      pages.is_ok_and(|pages| pages.contains(&page.0))
-    } else if valid {
-      let rect =
-        self.layout.project(selected.page, selected.bounds, self.reader.scroll);
-      rect.x1 > 0.0
-        && rect.y1 > 0.0
-        && rect.x0 < self.layout.screen().width()
-        && rect.y0 < self.layout.screen().height()
-    } else {
-      false
-    };
-    if !valid || !visible {
-      self.region = None;
-    }
+    let mut reading = self.reading_parts();
+    reading.view.check_region(reading.overlays);
   }
 
   pub fn fit_figure(&mut self) -> Result<()> {
@@ -135,7 +84,7 @@ impl App {
     let fit = self.layout.fit_region(snapshot.page, snapshot.bounds);
     self.relayout()?;
     self.reading_view().finish_fit(fit);
-    self.region = Some(Region::selected(snapshot));
+    self.overlays.open_region(Region::selected(snapshot));
     Ok(())
   }
 
@@ -149,16 +98,16 @@ impl App {
     let bounds = vpdf_ui::layout::clip(bounds, self.doc.pages[page.0].bounds)
       .ok_or_else(|| anyhow::anyhow!("Empty capture region"))?;
     let snapshot = snapshot(page, bounds);
-    self.peek = None;
+    self.overlays.close_preview();
     self.reader.cancel_scroll();
     self.disarm();
-    self.region = Some(Region::open(snapshot));
+    self.overlays.open_region(Region::open(snapshot));
     self.reader.notice(BAR_HINT);
     Ok(())
   }
 
   pub(crate) fn region_input(&mut self, input: Input) -> Result<bool> {
-    let Some(region) = &mut self.region else { return Ok(false) };
+    let Some(region) = self.overlays.region_mut() else { return Ok(false) };
     match region.input(input.action) {
       Transition::Stay => {}
       Transition::Run(operation) => self.region_operation(operation)?,
@@ -167,7 +116,7 @@ impl App {
         self.disarm();
       }
       Transition::Clear => {
-        self.region = None;
+        self.overlays.close_region();
         return Ok(false);
       }
       Transition::Command | Transition::Unhandled => return Ok(false),
@@ -185,8 +134,8 @@ impl App {
       "Region operation running"
     );
     let selected = self
-      .region
-      .as_mut()
+      .overlays
+      .region_mut()
       .ok_or_else(|| anyhow::anyhow!("No selected region"))?
       .request(next_capture());
     if matches!(operation, Operation::Text) {
@@ -196,33 +145,25 @@ impl App {
       self.region_status(selected.id, "Text copied".into());
       return Ok(());
     }
-    let path = self.path.clone();
-    let password = self.password.clone();
-    let rotation = self.layout.rotation();
-    let cancel = Arc::new(AtomicBool::new(false));
-    let stop = Arc::clone(&cancel);
-    let (send, result) = mpsc::channel();
-    let send = self.wake.sender(send);
-    let id = selected.id;
-    std::thread::spawn(move || {
-      let result = run(&path, &password, &selected, rotation, operation, &stop)
-        .map_err(|error| error.to_string());
-      send.send(result).ok();
+    let request = capture::Request {
+      path: self.path.clone(),
+      password: self.password.clone(),
+      page: selected.page,
+      bounds: selected.bounds,
+      rotation: self.layout.rotation(),
+    };
+    let (path, page, id) = (self.path.clone(), selected.page, selected.id);
+    let work = capture::Job::start(request, &self.wake, move |shot, cancel| {
+      finish(&path, page, shot.png, operation, cancel)
     });
-    self.region_job = Some(Job { id, cancel, result });
+    self.region_job = Some(Job { id, work });
     self.region_status(id, "Region operation running".into());
     Ok(())
   }
 
   pub(crate) fn region_updates(&mut self) -> Result<bool> {
     let Some(job) = &self.region_job else { return Ok(false) };
-    let result = match job.result.try_recv() {
-      Ok(result) => result,
-      Err(mpsc::TryRecvError::Empty) => return Ok(false),
-      Err(mpsc::TryRecvError::Disconnected) => {
-        Err("Region worker disconnected".into())
-      }
-    };
+    let Some(result) = job.work.poll() else { return Ok(false) };
     let id = job.id;
     self.region_job = None;
     match result {
@@ -246,7 +187,11 @@ impl App {
   }
 
   pub(crate) fn region_status(&mut self, id: CaptureId, message: String) {
-    if self.region.as_mut().is_some_and(|region| !region.update(id, &message)) {
+    if self
+      .overlays
+      .region_mut()
+      .is_some_and(|region| !region.update(id, &message))
+    {
       return;
     }
     self.reader.notice(message);
@@ -264,14 +209,9 @@ impl App {
     vpdf_ui::region::Canvas {
       layout: &self.layout,
       scroll: self.reader.scroll,
-      frame: vpdf_ui::paint::Frame {
-        screen: self.layout.screen(),
-        at: self.at,
-        left: self.left,
-        text: self.text_mode,
-      },
+      frame: self.frame(self.layout.screen()),
     }
-    .draw(self.region.as_mut(), sweep, graphics, out)
+    .draw(self.overlays.region_mut(), sweep, graphics, out)
   }
 }
 
@@ -279,37 +219,27 @@ fn snapshot(page: PageId, bounds: Bounds) -> Snapshot {
   Snapshot { id: next_capture(), page, bounds }
 }
 
-fn run(
+/// Delivers a captured region on the worker.
+fn finish(
   path: &Path,
-  password: &str,
-  region: &Snapshot,
-  rotation: u16,
+  page: PageId,
+  png: Vec<u8>,
   operation: Operation,
   cancel: &AtomicBool,
 ) -> Result<Outcome> {
-  let capture = vpdf_pdf::jobs::capture::capture(
-    path,
-    password,
-    region.page,
-    region.bounds,
-    rotation,
-    cancel,
-  )?;
   match operation {
-    Operation::Image if clipboard::remote() => Ok(Outcome::Remote(capture.png)),
+    Operation::Image if clipboard::remote() => Ok(Outcome::Remote(png)),
     Operation::Image => {
-      clipboard::image_native(capture.png)?;
+      clipboard::image_native(png)?;
       Ok(Outcome::Message("Image copied".into()))
     }
     Operation::Save => {
-      let saved = save(path, region.page, &capture.png)?;
+      let saved = save(path, page, &png)?;
       Ok(Outcome::Message(format!("Saved {}", saved.display())))
     }
-    Operation::Ocr => Ok(Outcome::Text(vpdf_pdf::jobs::capture::recognize(
-      capture.png,
-      "eng",
-      cancel,
-    )?)),
+    Operation::Ocr => {
+      Ok(Outcome::Text(capture::recognize(png, "eng", cancel)?))
+    }
     Operation::Text => unreachable!(),
   }
 }
@@ -359,32 +289,11 @@ mod tests {
     )?;
     app.region_operation(Operation::Save)?;
     woken.recv_timeout(std::time::Duration::from_secs(10))?;
-    let result = app.region_job.as_ref().unwrap().result.try_recv()?;
+    let result = app.region_job.as_ref().unwrap().work.poll().unwrap();
     assert!(matches!(result, Ok(Outcome::Message(_))));
     let png = std::fs::read(dir.path().join("region-p1-region-1.png"))?;
     assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
     assert_eq!(woken.try_iter().count(), 0);
-    Ok(())
-  }
-
-  #[test]
-  fn dropping_cancels_region() -> Result<()> {
-    let dir = tempfile::tempdir()?;
-    let path = dir.path().join("region.pdf");
-    crate::fixtures::pdf(&path, &["body"], "")?;
-    let region = Snapshot {
-      id: next_capture(),
-      page: PageId(0),
-      bounds: Bounds { x0: 10.0, y0: 10.0, x1: 50.0, y1: 50.0 },
-    };
-    let cancel = Arc::new(AtomicBool::new(false));
-    let (_send, result) = mpsc::channel();
-    let job = Job { id: region.id, cancel: Arc::clone(&cancel), result };
-    drop(job);
-    assert!(cancel.load(Ordering::Relaxed));
-    let result = run(&path, "", &region, 0, Operation::Save, &cancel);
-    assert_eq!(result.err().unwrap().to_string(), "Region operation cancelled");
-    assert!(!dir.path().join("region-p1-region-1.png").exists());
     Ok(())
   }
 
@@ -405,11 +314,11 @@ mod tests {
     let mut app = App::with_screen(&path, "", false, screen)?;
     app.move_figure(true, 1)?;
     app.open_region()?;
-    let page = app.region.as_ref().unwrap().snapshot().page;
+    let page = app.overlays.region().unwrap().snapshot().page;
     app.region_operation(Operation::Save)?;
     let original = app.region_job.as_ref().unwrap().id;
     app.blur()?;
-    assert!(app.region.is_none());
+    assert!(app.overlays.region().is_none());
     assert_eq!(app.region_job.as_ref().unwrap().id, original);
     app.focused = false;
     {

@@ -21,7 +21,7 @@ pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {
   graphics.begin(&mut output)?;
   app.draw_context(&mut graphics, &mut output)?;
   graphics.end(&mut output)?;
-  let menu = app.context_menu.as_ref().context("No menu at fixture press")?;
+  let menu = app.overlays.menu().context("No menu at fixture press")?;
   let area = menu.area();
   let screen = app.layout.screen();
   serde_json::to_vec(&serde_json::json!({

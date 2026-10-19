@@ -59,7 +59,8 @@ pub fn prepare(path: &Path, screen: Screen) -> Result<Vec<u8>> {
     let position = app.doc.text(PageId(1))?.nearest(PageId(1), x, y);
     app.go_to(position, true)?;
     app.preview_link()?;
-    let target = app.peek.as_ref().context("Missing preview")?.target().clone();
+    let target =
+      app.overlays.preview().context("Missing preview")?.target().clone();
     let cursor = app.position_rect(position)?;
     let mut output_sha256 = Vec::new();
     let mut graphics = Graphics::default();

@@ -184,7 +184,7 @@ fn text_drags_split_nothing() -> Result<()> {
 
 /// The menu's labels and shown keys.
 fn menu(session: &mut Session) -> Vec<(&str, String)> {
-  let menu = session.app().context_menu.as_ref();
+  let menu = session.app().overlays.menu();
   let items = menu.map(|menu| menu.entries().iter());
   items
     .into_iter()
@@ -237,17 +237,14 @@ fn panel_and_overview_menus_run_their_items() -> Result<()> {
     assert!(frame.contains(run), "{typed}: {run} drawn");
     // A click on the item runs it.
     let index = items.iter().position(|(label, _)| *label == run);
-    let area = session
-      .app()
-      .context_menu
-      .as_ref()
-      .map(vpdf_ui::context::ContextMenu::area);
+    let area =
+      session.app().overlays.menu().map(vpdf_ui::context::ContextMenu::area);
     let area = area.expect("a menu");
     let row = area.row + u16::try_from(index.expect(run))?;
     crate::mouse::click(&mut session, (area.column, row))?;
     session.settle()?;
     let cursor_page = session.app().reader.cursor.page;
-    assert!(session.app().context_menu.is_none(), "{typed} {run}: closed");
+    assert!(session.app().overlays.menu().is_none(), "{typed} {run}: closed");
     assert_eq!(panes(&mut session), (count, id, page), "{typed} {run}");
     assert_eq!(cursor_page, PageId(cursor), "{typed} {run}");
   }
@@ -268,19 +265,16 @@ fn row_menus_copy_and_select() -> Result<()> {
   let want = ["Follow", "Follow, keep panel", "Copy address", "Close panel"];
   assert_eq!(labels(&mut session), want);
   // A right drag onto the item and its release run it.
-  let area = session
-    .app()
-    .context_menu
-    .as_ref()
-    .map(vpdf_ui::context::ContextMenu::area);
+  let area =
+    session.app().overlays.menu().map(vpdf_ui::context::ContextMenu::area);
   let area = area.expect("a menu");
-  session.app().context_menu = None;
+  session.app().overlays.close_menu();
   mouse(&mut session, MouseEventKind::Down(MouseButton::Right), web)?;
   let item = (area.column + 1, area.row + 2);
   mouse(&mut session, MouseEventKind::Drag(MouseButton::Right), item)?;
   mouse(&mut session, MouseEventKind::Up(MouseButton::Right), item)?;
   let app = session.app();
-  assert!(app.context_menu.is_none(), "the release ran it");
+  assert!(app.overlays.menu().is_none(), "the release ran it");
   let got = app.reader.register('"').map(ToString::to_string);
   assert_eq!(got.as_deref(), Some("https://example.com/"));
   assert_eq!(app.reader.message, "Copied link");
@@ -312,7 +306,7 @@ fn panel_refills_keep_the_menu_row() -> Result<()> {
     app.refill_panel(vpdf_ui::keys::PanelKind::Outline)?;
     let selected = app.panel.as_ref().map(|panel| panel.view.selected());
     if !shifted {
-      assert!(app.context_menu.is_none(), "its row left");
+      assert!(app.overlays.menu().is_none(), "its row left");
       continue;
     }
     assert_eq!(selected, Some(1), "the row moved down");
@@ -352,7 +346,7 @@ fn recent_menus_open_rows() -> Result<()> {
   assert_eq!(labels(&mut session), want);
   status(&mut session)?;
   let app = session.app();
-  let area = app.context_menu.as_ref().expect("a menu").area();
+  let area = app.overlays.menu().expect("a menu").area();
   let card = app.panel.as_ref().and_then(|panel| panel.view.shelf());
   let start = card.and_then(vpdf_ui::panel::recent::Shelf::start);
   assert!(area.column + area.columns <= start.expect("a drawn card"));
@@ -361,7 +355,7 @@ fn recent_menus_open_rows() -> Result<()> {
   mouse(&mut session, MouseEventKind::ScrollDown, (area.column, area.row))?;
   let app = session.app();
   assert_eq!(app.reader.scroll.to_bits(), scroll.to_bits());
-  assert!(!app.reader.animation().active() && app.context_menu.is_some());
+  assert!(!app.reader.animation().active() && app.overlays.menu().is_some());
   Ok(())
 }
 
@@ -373,11 +367,8 @@ fn overview_menus_take_right_drags() -> Result<()> {
   status(&mut session)?;
   let at = cell(&mut session, Hit::Thumbnail(PageId(1)))?;
   mouse(&mut session, MouseEventKind::Down(MouseButton::Right), at)?;
-  let area = session
-    .app()
-    .context_menu
-    .as_ref()
-    .map(vpdf_ui::context::ContextMenu::area);
+  let area =
+    session.app().overlays.menu().map(vpdf_ui::context::ContextMenu::area);
   let area = area.expect("a menu");
   // Open, Open in split, Back, ...
   let item = (area.column + 2, area.row + 1);
@@ -402,8 +393,9 @@ fn middle_presses_respect_overlays_and_focus() -> Result<()> {
     }
     middle(&mut session, internal)?;
     let app = session.app();
-    let open = app.context_menu.is_some() || app.peek.is_some();
-    assert!(!open && app.prompt.is_none(), "{overlay}");
+    let open =
+      app.overlays.menu().is_some() || app.overlays.preview().is_some();
+    assert!(!open && app.overlays.prompt().is_none(), "{overlay}");
     assert_eq!(session.tab().panes.len(), 1, "{overlay}");
   }
   // Middle presses focus and split their pane.
@@ -702,7 +694,7 @@ fn status_items_act_on_click() -> Result<()> {
   status(&mut session)?;
   let pages = chrome_cell(&mut session, Chrome::Pages)?;
   click(&mut session, pages);
-  assert!(session.app().overview.is_some());
+  assert!(session.app().overlays.overview().is_some());
   status(&mut session)?;
   assert!(chrome_cell(&mut session, Chrome::Pages).is_err(), "inert in gp");
   // Sections open outlines; notes hide them.
@@ -771,7 +763,7 @@ fn unfocused_status_items_activate() -> Result<()> {
   let id = session.tab().panes[index].id;
   click(&mut session, at);
   assert_eq!(session.app().id, id);
-  assert!(session.app().overview.is_some());
+  assert!(session.app().overlays.overview().is_some());
   Ok(())
 }
 
@@ -788,7 +780,7 @@ fn status_items_beat_the_divider() -> Result<()> {
   left(&mut session, MouseEventKind::Down(MouseButton::Left), pages);
   left(&mut session, MouseEventKind::Drag(MouseButton::Left), (pages.0, 9));
   left(&mut session, MouseEventKind::Up(MouseButton::Left), (pages.0, 9));
-  assert!(session.app().overview.is_some());
+  assert!(session.app().overlays.overview().is_some());
   assert_eq!(layout(&mut session), before);
   Ok(())
 }
@@ -814,41 +806,46 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   left(&mut session, MouseEventKind::Drag(MouseButton::Middle), pan);
   let ctrl_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
   session.app().key(ctrl_w, &mut vpdf_ui::prompt::History::default())?;
-  session.app().clues.restart(
+  session.app().overlays.clues_mut().restart(
     std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
   );
   assert!(session.app().clue_due());
-  let clues = session.app().clues.shown().map(|c| c.items().to_vec());
+  let clues =
+    session.app().overlays.clues().shown().map(|c| c.items().to_vec());
   let split = clues.and_then(|items| items.iter().position(|(k, _)| k == "v"));
   let at = item_cell(&mut session, List::Clues, split.expect("a v clue"))?;
   // The held pan keeps clues off.
   left(&mut session, MouseEventKind::Down(MouseButton::Left), at);
-  assert!(session.app().clues.shown().is_some() && session.app().grabbing());
+  assert!(
+    session.app().overlays.clues().shown().is_some()
+      && session.app().grabbing()
+  );
   left(&mut session, MouseEventKind::Up(MouseButton::Middle), pan);
   // The press splits, before its release.
   left(&mut session, MouseEventKind::Down(MouseButton::Left), at);
   assert_eq!(session.tab().panes.len(), 2);
   left(&mut session, MouseEventKind::Up(MouseButton::Left), at);
-  assert!(session.app().clues.shown().is_none());
+  assert!(session.app().overlays.clues().shown().is_none());
   // A failing clue still closes.
   let (_text, mut failing) = crate::mouse::session(true)?;
   keys(&mut failing, "g")?;
-  failing.app().clues.restart(
+  failing.app().overlays.clues_mut().restart(
     std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
   );
   assert!(failing.app().clue_due());
-  let clues = failing.app().clues.shown().map(|c| c.items().to_vec());
+  let clues =
+    failing.app().overlays.clues().shown().map(|c| c.items().to_vec());
   let pages = clues.and_then(|items| items.iter().position(|(k, _)| k == "p"));
   status(&mut failing)?;
   let at = item_cell(&mut failing, List::Clues, pages.expect("a p clue"))?;
   mouse(&mut failing, MouseEventKind::Down(MouseButton::Left), at)?;
   assert!(failing.settle().is_err(), "the session reports it");
   let app = failing.app();
-  assert!(app.clues.shown().is_none());
+  assert!(app.overlays.clues().shown().is_none());
   assert_eq!(app.keys.pending(), "");
   // Ranges name no key.
   keys(&mut session, "m")?;
-  session.app().clues.restart(
+  session.app().overlays.clues_mut().restart(
     std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
   );
   assert!(session.app().clue_due());
@@ -865,22 +862,22 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   let app = session.app();
   let blank = (app.at.column + app.screen.columns - 1, app.screen.rows - 2);
   click(&mut session, blank);
-  assert!(session.app().clues.shown().is_none());
+  assert!(session.app().overlays.clues().shown().is_none());
   // A click picks a completion.
   keys(&mut session, ":tab")?;
   press(&mut session, KeyCode::Tab)?;
-  let items = session.app().prompt.as_ref().and_then(|p| p.menu());
+  let items = session.app().overlays.prompt().and_then(|p| p.menu());
   let second = items.map(|menu| menu.items()[1].clone()).expect("a menu");
   status(&mut session)?;
   let at = item_cell(&mut session, List::Completions, 1)?;
   click(&mut session, at);
-  let text = session.app().prompt.as_ref().map(|p| p.text().to_owned());
+  let text = session.app().overlays.prompt().map(|p| p.text().to_owned());
   assert!(text.is_some_and(|text| text.ends_with(&second)), "{second}");
   // Blank completion rows keep the prompt.
   let app = session.app();
   let blank = (app.at.column + app.screen.columns - 1, app.screen.rows - 2);
   click(&mut session, blank);
-  assert!(session.app().prompt.is_some());
+  assert!(session.app().overlays.prompt().is_some());
   Ok(())
 }
 
@@ -893,13 +890,13 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let page = cell(&mut session, Hit::Text)?;
   keys(&mut session, "g")?;
-  session.app().clues.restart(
+  session.app().overlays.clues_mut().restart(
     std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
   );
   assert!(session.app().clue_due());
   status(&mut session)?;
   let app = session.app();
-  let clues = app.clues.shown().expect("clues");
+  let clues = app.overlays.clues().shown().expect("clues");
   let index = clues.items().iter().position(|(k, _)| k == "p").expect("p");
   let label = clues.labels()[index].clone();
   let count = clues.items().len();
@@ -922,7 +919,7 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
   press(&mut session, KeyCode::Tab)?;
   status(&mut session)?;
   let prompt = |session: &mut Session| {
-    let prompt = session.app().prompt.as_ref().expect("a prompt");
+    let prompt = session.app().overlays.prompt().expect("a prompt");
     let menu = prompt.menu().expect("a menu");
     let chosen = menu.selected().map(|index| menu.labels()[index].clone());
     (prompt.text().to_owned(), menu.labels()[1].clone(), chosen)

@@ -114,7 +114,7 @@ fn prompts_take_drops_and_failures_cancel() -> Result<()> {
   drop_on(&mut session, on_right, FILES, &uri(&c)).1?;
   assert_eq!(shown(&mut session), before);
   let typed = |session: &mut Session| {
-    session.app().prompt.as_ref().map(|prompt| prompt.text().to_owned())
+    session.app().overlays.prompt().map(|prompt| prompt.text().to_owned())
   };
   assert_eq!(typed(&mut session), Some(c.display().to_string()));
   let (replies, ended) =

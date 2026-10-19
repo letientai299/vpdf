@@ -42,7 +42,7 @@ fn superseded_search_completes_latest_query() -> Result<()> {
     PageId(0),
   )?;
   loop {
-    let event = worker.events.recv_timeout(Duration::from_secs(10))?;
+    let event = worker.wait(Duration::from_secs(10))?;
     if event.generation != latest {
       continue;
     }
@@ -79,7 +79,7 @@ fn search_results_wake_the_loop() -> Result<()> {
   let generation = worker.lookup(&query, PageId(0))?;
   let mut hits = 0;
   loop {
-    let event = worker.events.recv_timeout(Duration::from_secs(10))?;
+    let event = worker.wait(Duration::from_secs(10))?;
     if event.generation != generation {
       continue;
     }

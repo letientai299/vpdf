@@ -79,8 +79,8 @@ user-visible clipboard, SSH, link, and password behavior.
 [session]: ../../src/session/mod.rs
 [split]: ../../crates/ui/src/split.rs
 [pointer]: ../../crates/ui/src/pointer.rs
-[state]: ../../src/state/mod.rs
-[hangup]: ../../src/hangup.rs
+[state]: ../../src/state.rs
+[hangup]: ../../src/state.rs
 [watch]: ../../src/watch.rs
 [commands]: ../../src/commands.rs
 [clipboard]: ../../src/clipboard.rs

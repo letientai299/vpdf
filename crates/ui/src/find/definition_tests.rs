@@ -56,7 +56,7 @@ fn links_skip_text_reads() -> Result<()> {
     &mut source,
   )?;
   assert_eq!(external, Definition::External);
-  assert_eq!(external.message(), Some("External link: use gx"));
+  assert_eq!(external.message().as_deref(), Some("External link: use gx"));
   assert_eq!(source.reads, 0);
   assert!(Definition::resolve(position, None, &mut source).is_err());
   assert_eq!(source.reads, 1);
@@ -102,7 +102,10 @@ fn absent_targets_keep_notices() -> Result<()> {
   let mut source = source("No reference here");
   let missing = Definition::resolve(Position::default(), None, &mut source)?;
   assert_eq!(missing, Definition::NoReference);
-  assert_eq!(missing.message(), Some("No document reference at target"));
+  assert_eq!(
+    missing.message().as_deref(),
+    Some("No document reference at target")
+  );
   let absent = Position { line: 1, ..Position::default() };
   let unchanged = Definition::resolve(absent, None, &mut source)?;
   assert_eq!(unchanged, Definition::Unchanged);
@@ -124,7 +127,7 @@ fn results_choose_navigation() {
     definition,
     Definition::Found { position, description: search.description(position) }
   );
-  assert_eq!(definition.message(), Some("Reference found"));
+  assert_eq!(definition.message().as_deref(), Some("Reference found"));
   search
     .show(query, vec![hit.clone(), Hit { first: Position::default(), ..hit }]);
   assert_eq!(search.definition_result(), Definition::Candidates);

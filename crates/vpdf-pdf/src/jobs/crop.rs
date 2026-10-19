@@ -82,7 +82,8 @@ impl Scan {
     false
   }
 
-  pub fn poll(&mut self) -> Option<Update> {
+  /// A finished scan; its margins also stay with `doc`.
+  pub fn poll(&mut self, doc: &mut Document) -> Option<Update> {
     let job = self.job.as_ref()?;
     let result = match job.result.try_recv() {
       Ok(result) => result,
@@ -91,7 +92,13 @@ impl Scan {
     };
     let canceled = job.canceled();
     self.clear();
-    Some(if canceled { Update::Canceled } else { Update::Ready(result) })
+    if canceled {
+      return Some(Update::Canceled);
+    }
+    if let Ok(margins) = &result {
+      doc.margins = Some(Arc::clone(margins));
+    }
+    Some(Update::Ready(result))
   }
 }
 
@@ -162,6 +169,12 @@ mod tests {
 
   type Sender = mpsc::Sender<std::result::Result<Arc<Margins>, String>>;
 
+  fn document() -> Result<(Document, tempfile::NamedTempFile)> {
+    let file = tempfile::NamedTempFile::new()?;
+    crate::fixtures::pdf(file.path(), &["body"], "")?;
+    Ok((Document::open(file.path(), "")?, file))
+  }
+
   fn pending() -> (Scan, Sender, Arc<AtomicBool>) {
     let (send, result) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
@@ -174,23 +187,27 @@ mod tests {
   }
 
   #[test]
-  fn polling_preserves_ready_results() {
+  fn polling_preserves_ready_results() -> Result<()> {
+    let (mut doc, _file) = document()?;
     let (mut scan, send, stop) = pending();
-    assert!(scan.poll().is_none());
+    assert!(scan.poll(&mut doc).is_none());
     assert!(scan.active());
     let margins = Arc::new(Margins::default());
     send.send(Ok(Arc::clone(&margins))).unwrap();
-    let Some(Update::Ready(Ok(found))) = scan.poll() else {
+    let Some(Update::Ready(Ok(found))) = scan.poll(&mut doc) else {
       panic!("Missing margins")
     };
     assert!(Arc::ptr_eq(&found, &margins));
+    assert!(doc.margins().is_some_and(|kept| Arc::ptr_eq(kept, &margins)));
     assert!(!scan.active());
     assert!(stop.load(Ordering::Relaxed));
-    assert!(scan.poll().is_none());
+    assert!(scan.poll(&mut doc).is_none());
+    Ok(())
   }
 
   #[test]
-  fn canceled_results_are_discarded() {
+  fn canceled_results_are_discarded() -> Result<()> {
+    let (mut doc, _file) = document()?;
     for disconnected in [false, true] {
       let (mut scan, send, stop) = pending();
       stop.store(true, Ordering::Relaxed);
@@ -198,15 +215,17 @@ mod tests {
         send.send(Err("Failed crop".into())).unwrap();
       }
       drop(send);
-      assert!(matches!(scan.poll(), Some(Update::Canceled)));
+      assert!(matches!(scan.poll(&mut doc), Some(Update::Canceled)));
       assert!(!scan.active());
     }
     let (mut scan, send, _) = pending();
     drop(send);
-    let Some(Update::Ready(Err(message))) = scan.poll() else {
+    let Some(Update::Ready(Err(message))) = scan.poll(&mut doc) else {
       panic!("Missing error")
     };
     assert_eq!(message, "Cropping stopped");
+    assert!(doc.margins().is_none());
+    Ok(())
   }
 
   #[test]

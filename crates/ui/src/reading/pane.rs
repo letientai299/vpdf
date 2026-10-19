@@ -1,11 +1,10 @@
 use super::{Frame, View};
 use crate::Result;
 use crate::layout::Layout;
-use crate::page::{Viewport, scroll::Scroll};
+use crate::page::scroll::Scroll;
 use crate::text::Position;
 use crate::text_view::TextView;
 use std::ops::Deref;
-use vpdf_model::geometry::Screen;
 use vpdf_reader::reader::{
   JumpDescription, Location, Operator, Reader, SelectionKind, Yank,
 };
@@ -92,6 +91,26 @@ impl Pane {
     &self.tracking.landing
   }
 
+  /// What a frame paints over the text: cursor, selection, matches,
+  /// landing, and hovered link areas.
+  pub fn marks<'a>(
+    &'a self,
+    search: &'a crate::find::Search,
+    cursorline: bool,
+    dim: bool,
+    hovered: &'a [(crate::text::PageId, crate::text::Bounds)],
+  ) -> crate::paint::Marks<'a> {
+    crate::paint::Marks {
+      reader: &self.reader,
+      matches: if search.hidden() { &[] } else { search.hits() },
+      flash: self.tracking.landing.glyph(&self.reader),
+      landing: self.tracking.landing.line(),
+      cursorline,
+      dim,
+      hovered,
+    }
+  }
+
   pub fn flash(
     &mut self,
     position: Position,
@@ -111,15 +130,6 @@ impl Pane {
 
   pub fn aim(&mut self, target: vpdf_model::document::Target) {
     self.tracking.landing.aim(target);
-  }
-
-  pub fn page<'a, S>(
-    &'a mut self,
-    layout: &'a mut Layout,
-    source: S,
-    screen: Screen,
-  ) -> Viewport<'a, S> {
-    Viewport::new(layout, &mut self.reader.scroll, source, screen)
   }
 
   pub fn animate(&mut self, now: std::time::Instant) -> bool {
@@ -197,6 +207,13 @@ impl Pane {
     self.reader.cancel();
   }
 
+  pub fn cancel_content(&mut self) {
+    if self.reader.mode() == vpdf_reader::reader::Mode::Cursor {
+      self.reader.normal();
+    }
+    self.reader.cancel();
+  }
+
   pub fn disarm(&mut self) {
     self.reader.disarm();
   }
@@ -219,6 +236,15 @@ impl Pane {
 
   pub fn clear_history(&mut self) {
     self.reader.clear_history();
+  }
+
+  /// Forgets state tied to the replaced document: pending input,
+  /// jumps, the scroll target, and the landing flash.
+  pub fn reload(&mut self) {
+    self.reader.cancel();
+    self.reader.clear_history();
+    self.tracking.target = None;
+    self.tracking.landing.clear_flash();
   }
 
   pub fn describe_jump(&mut self, description: Option<JumpDescription>) {

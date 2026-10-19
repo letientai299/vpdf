@@ -169,7 +169,7 @@ fn hints_and_tints_reach_later_pages() -> Result<()> {
   let (_dir, mut app) = app(&[(0, 0), (1, 1)])?;
   drawn(&mut app)?;
   app.start_hints(false)?;
-  let hints = app.hints.take().expect("hints");
+  let hints = app.overlays.close_hints().expect("hints");
   let rows: Vec<_> = hints.items().iter().map(|hint| hint.cell.1).collect();
   assert_eq!(rows, [0, 6]);
   let hit = app.hovered(Region::Page, 2, 6, None)?;

@@ -69,7 +69,7 @@ impl App {
     mouse: MouseEvent,
     page: Option<PageId>,
   ) {
-    if let (Some(page), Some(overview)) = (page, &mut self.overview) {
+    if let (Some(page), Some(overview)) = (page, self.overlays.overview_mut()) {
       overview.choose(page);
     }
     let items = vpdf_ui::context::overview_items(page);
@@ -86,18 +86,18 @@ impl App {
     row: bool,
   ) {
     self.disarm();
-    let bottom = self.screen.rows.saturating_sub(1 + self.menu_rows());
-    self.context_menu = Some(ContextMenu::new(items, at, columns, bottom, row));
+    let bottom = self.menu_top();
+    self.overlays.open_menu(ContextMenu::new(items, at, columns, bottom, row));
   }
 
   /// Keys while the menu is open.
   pub(crate) fn context_input(&mut self, input: Input) -> Result<()> {
-    let Some(menu) = &mut self.context_menu else { return Ok(()) };
+    let Some(menu) = self.overlays.menu_mut() else { return Ok(()) };
     match menu.input(input.action) {
       Transition::Run => return self.context_run(),
-      Transition::Close => self.context_menu = None,
+      Transition::Close => drop(self.overlays.close_menu()),
       Transition::Command => {
-        self.context_menu = None;
+        self.overlays.close_menu();
         return self.action(input);
       }
       Transition::Transfer => {
@@ -112,13 +112,13 @@ impl App {
   /// Whether a press hit the menu.
   pub(crate) fn context_press(&self, mouse: MouseEvent) -> bool {
     let (column, row) = self.pane_cell(mouse);
-    let menu = self.context_menu.as_ref();
+    let menu = self.overlays.menu();
     menu.is_some_and(|menu| menu.area().contains(column, row))
   }
 
   /// Right drags pick; their release runs.
   pub(crate) fn menu_drag(&mut self, route: Route) -> Result<()> {
-    let Some(menu) = &mut self.context_menu else { return Ok(()) };
+    let Some(menu) = self.overlays.menu_mut() else { return Ok(()) };
     if menu.drag(route.mouse) {
       return self.context_run();
     }
@@ -127,7 +127,7 @@ impl App {
 
   /// Runs the selected item; the menu closes.
   pub(crate) fn context_run(&mut self) -> Result<()> {
-    let Some(menu) = self.context_menu.take() else { return Ok(()) };
+    let Some(menu) = self.overlays.close_menu() else { return Ok(()) };
     let Some(command) = menu.into_command() else {
       return Ok(());
     };
@@ -239,7 +239,7 @@ impl App {
   }
 
   pub(crate) fn context_rect(&self) -> Option<Bounds> {
-    self.context_menu.as_ref()?.pixel_area(self.layout.screen(), self.left)
+    self.overlays.menu()?.pixel_area(self.layout.screen(), self.left)
   }
 
   pub fn draw_context(
@@ -247,16 +247,7 @@ impl App {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
-    let Some(menu) = &self.context_menu else { return Ok(()) };
-    menu.draw(
-      graphics,
-      out,
-      vpdf_ui::paint::Frame {
-        at: self.at,
-        screen: self.layout.screen(),
-        left: self.left,
-        text: self.text_mode,
-      },
-    )
+    let Some(menu) = self.overlays.menu() else { return Ok(()) };
+    menu.draw(graphics, out, self.frame(self.layout.screen()))
   }
 }

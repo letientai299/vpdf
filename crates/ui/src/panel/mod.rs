@@ -137,6 +137,7 @@ mod search;
 #[cfg(test)]
 mod tests;
 mod view;
+pub use view::page_space;
 
 mod jumps;
 pub mod links;

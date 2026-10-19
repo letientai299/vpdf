@@ -38,7 +38,7 @@ pub struct SearchEvent {
 pub struct SearchWorker {
   send: mpsc::Sender<Request>,
   generation: Arc<AtomicU64>,
-  pub events: mpsc::Receiver<SearchEvent>,
+  events: mpsc::Receiver<SearchEvent>,
 }
 
 impl SearchWorker {
@@ -83,6 +83,14 @@ impl SearchWorker {
 
   /// Events received so far; a stopped worker reports a failure of
   /// scan `generation`.
+  /// The next event, waiting up to `timeout`.
+  pub fn wait(
+    &self,
+    timeout: Duration,
+  ) -> std::result::Result<SearchEvent, mpsc::RecvTimeoutError> {
+    self.events.recv_timeout(timeout)
+  }
+
   pub fn updates(&self, generation: u64) -> Vec<SearchEvent> {
     let mut events = Vec::new();
     loop {
@@ -669,6 +677,52 @@ mod tests {
     source.doc = None;
     source.pages = 3;
     assert!(source.text(PageId(0)).is_err());
+    Ok(())
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn encrypted_search_stays_private() -> Result<()> {
+    let path = corpus_paper()?;
+    let original = content_cache::alias(&mut File::open(&path)?)?;
+    let cache = tempfile::tempdir()?;
+    let mut plain = open(&path, cache.path())?;
+    let (expected, _) = scan(&mut plain, "attention")?;
+    assert!(!expected.is_empty());
+    plain.save();
+    pack_inode(cache.path())?;
+
+    let mut doc = Handle::open(&path, "")?;
+    let file = crate::encryption::encrypt(&mut doc.native)?;
+    let before = content_cache::alias(&mut File::open(file.path())?)?;
+    let cache = tempfile::tempdir()?;
+    for password in ["", "incorrect"] {
+      assert!(
+        Source::open(
+          file.path().into(),
+          password.into(),
+          Some(cache.path().into()),
+          doc.pages,
+        )
+        .is_err()
+      );
+    }
+    let mut encrypted = Source::open(
+      file.path().into(),
+      "test-reader".into(),
+      Some(cache.path().into()),
+      doc.pages,
+    )?;
+    for _ in 0..2 {
+      let (actual, extracted) = scan(&mut encrypted, "attention")?;
+      assert_eq!(ends(&actual), ends(&expected));
+      assert_eq!(extracted, doc.pages);
+      encrypted.save();
+      assert_eq!(std::fs::read_dir(cache.path())?.count(), 0);
+      encrypted.doc = None;
+    }
+    assert_eq!(content_cache::alias(&mut File::open(&path)?)?, original);
+    assert_eq!(content_cache::alias(&mut File::open(file.path())?)?, before);
     Ok(())
   }
 

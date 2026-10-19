@@ -2,12 +2,9 @@ use crate::Result;
 use crate::app::App;
 use anyhow::{Context, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use std::fs::OpenOptions;
 use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use vpdf_terminal::clipboard::osc52;
 
@@ -98,30 +95,10 @@ struct TempPng(PathBuf);
 
 impl TempPng {
   fn new(png: &[u8]) -> Result<Self> {
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    for _ in 0..100 {
-      let name = format!(
-        "vpdf-clipboard-{}-{}.png",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-      );
-      let path = std::env::temp_dir().join(name);
-      match OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&path)
-      {
-        Ok(mut file) => {
-          let temp = Self(path);
-          file.write_all(png)?;
-          return Ok(temp);
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(error) => return Err(error.into()),
-      }
-    }
-    anyhow::bail!("Clipboard temporary file unavailable")
+    let (path, mut file) = crate::programs::scratch_file("clipboard", "png")?;
+    let temp = Self(path);
+    file.write_all(png)?;
+    Ok(temp)
   }
 }
 

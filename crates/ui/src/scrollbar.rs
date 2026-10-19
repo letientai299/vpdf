@@ -88,6 +88,19 @@ impl View<'_> {
   }
 }
 
+pub fn available(
+  layout: &Layout,
+  text: bool,
+  overview: bool,
+  covered: bool,
+) -> bool {
+  !text && !overview && !covered && layout.total() > layout.screen().height()
+}
+
+pub fn hit(column: u16, columns: u16, available: bool, blocked: bool) -> bool {
+  available && column + 1 == columns && !blocked
+}
+
 impl Bar {
   pub const SHOWN: Duration = Duration::from_secs(1);
 

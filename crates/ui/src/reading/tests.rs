@@ -9,6 +9,10 @@ struct Source {
   reads: usize,
   fail: usize,
   headings: Vec<vpdf_model::document::Heading>,
+  links: Vec<vpdf_model::document::Link>,
+  notes: Vec<vpdf_model::document::Annotation>,
+  lookups: Vec<&'static str>,
+  fail_lookup: usize,
 }
 
 impl Pages for Source {
@@ -66,6 +70,10 @@ impl Fixture {
       reads: 0,
       fail: 0,
       headings: Vec::new(),
+      links: Vec::new(),
+      notes: Vec::new(),
+      lookups: Vec::new(),
+      fail_lookup: 0,
     };
     let screen = Screen {
       columns: 10,
@@ -519,6 +527,29 @@ fn owned_reader_binds_navigation() -> Result<()> {
 }
 
 #[test]
+fn content_cancel_restores_modes() {
+  for cursor in [false, true] {
+    for visual in [false, true] {
+      let mut pane = Pane::default();
+      if cursor {
+        pane.enter_cursor();
+      }
+      if visual {
+        pane.visual(SelectionKind::Character);
+      }
+      pane.notice("pending");
+      pane.cancel_content();
+      let expected = if cursor && visual { Mode::Cursor } else { Mode::Normal };
+      assert_eq!(pane.mode(), expected);
+      assert!(pane.selection.is_none());
+      assert_eq!(pane.message, "");
+      pane.cancel_content();
+      assert_eq!(pane.mode(), Mode::Normal);
+    }
+  }
+}
+
+#[test]
 fn reader_seed_copies_state_without_aliasing() -> Result<()> {
   let mut reader = Reader::default();
   reader.cursor.line = 5;
@@ -538,6 +569,33 @@ fn reader_seed_copies_state_without_aliasing() -> Result<()> {
   assert_eq!(reader.pending_yank.as_ref().unwrap().text, "original");
   assert_eq!(pane.take_yank().unwrap().text, "changed");
   assert!(pane.take_yank().is_none());
+  Ok(())
+}
+
+#[test]
+fn reload_forgets_document_state() -> Result<()> {
+  use crate::page::landing::Span;
+  let now = Instant::now();
+  let position = Position { line: 5, ..Position::default() };
+  let mut fixture = Fixture::new();
+  let mut reader = Reader::default();
+  reader.remember();
+  reader.visual(SelectionKind::Line);
+  let mut pane = Pane::new(reader, Tracking::default());
+  pane
+    .bind(
+      &mut fixture.layout,
+      &mut fixture.text,
+      fixture.frame,
+      &mut fixture.source,
+    )
+    .land_at(position)?;
+  pane.flash(position, Span::Glyph, now);
+  pane.reload();
+  assert_eq!(pane.mode(), Mode::Normal);
+  assert_eq!(pane.jumps().count(), 0);
+  assert_eq!(pane.target(), None);
+  assert_eq!(pane.landing().deadline(), None);
   Ok(())
 }
 
@@ -860,3 +918,239 @@ fn viewport_failure_cancels_yank() {
   assert!(fixture.reader.operator.is_none());
   assert!(search.take_yank().is_none());
 }
+
+fn pointer_route(
+  kind: crossterm::event::MouseEventKind,
+  column: u16,
+  row: u16,
+) -> crate::pointer::Route {
+  crate::pointer::Route {
+    pane: 1,
+    region: crate::pointer::Region::Page,
+    focus: false,
+    clicks: 1,
+    pixel: None,
+    mouse: crossterm::event::MouseEvent {
+      kind,
+      column,
+      row,
+      modifiers: crossterm::event::KeyModifiers::NONE,
+    },
+  }
+}
+
+#[test]
+fn capture_avoids_text_and_clamps_corners() -> Result<()> {
+  use crate::input::gesture::Gesture;
+  use crossterm::event::{
+    MouseButton::Left,
+    MouseEventKind::{Down, Drag},
+  };
+  let mut fixture = Fixture::new();
+  fixture.source.fail = 1;
+  let mut gesture = Gesture::default();
+  fixture.view().alt_press(&mut gesture, &pointer_route(Down(Left), 1, 1))?;
+  assert!(gesture.sweep().is_some());
+  fixture.view().sweep_to(
+    &mut gesture,
+    PageId(0),
+    &pointer_route(Drag(Left), u16::MAX, u16::MAX),
+  );
+  assert_eq!(gesture.sweep().unwrap().corner(), Some((100.0, 1000.0)));
+  assert_eq!(fixture.source.reads, 0);
+  assert!(fixture.reader.selection.is_none());
+  Ok(())
+}
+
+#[test]
+fn failed_extensions_reset_previous_sweeps() {
+  use crate::input::gesture::Gesture;
+  use crossterm::event::{MouseButton::Left, MouseEventKind::Down};
+  for text in [false, true] {
+    let mut fixture = Fixture::new();
+    fixture.frame.pane.text = text;
+    fixture.source.fail = 1;
+    let mut gesture = Gesture::default();
+    gesture.begin_sweep(PageId(0), (10.0, 10.0));
+    let press = pointer_route(Down(Left), u16::MAX, 1);
+    assert!(fixture.view().alt_press(&mut gesture, &press).is_err());
+    assert!(gesture.sweep().is_none());
+    assert!(!gesture.dropped());
+    assert_eq!(fixture.source.reads, 1);
+    assert_eq!(fixture.reader.cursor, Position::default());
+    assert!(fixture.reader.selection.is_none());
+  }
+}
+
+#[test]
+fn middle_drags_suppress_link_activation() -> Result<()> {
+  use crate::input::grab::Grab;
+  use crossterm::event::{
+    MouseButton::Middle,
+    MouseEventKind::{Down, Drag, Up},
+  };
+  for text in [false, true] {
+    let mut fixture = Fixture::new();
+    fixture.frame.pane.text = text;
+    fixture.reader.scroll = 50.0;
+    fixture.animation.start(200.0, Instant::now());
+    let mut grab = Grab::default();
+    assert!(
+      !fixture.view().middle(&mut grab, &pointer_route(Down(Middle), 3, 4))?
+    );
+    assert_eq!(fixture.animation.target(), None);
+    assert!(
+      fixture.view().middle(&mut grab, &pointer_route(Up(Middle), 3, 4))?
+    );
+    for row in [4, 2] {
+      fixture.view().middle(&mut grab, &pointer_route(Down(Middle), 3, 4))?;
+      fixture.view().middle(&mut grab, &pointer_route(Drag(Middle), 3, row))?;
+      assert!(
+        !fixture
+          .view()
+          .middle(&mut grab, &pointer_route(Up(Middle), 3, row))?
+      );
+    }
+    if text {
+      assert_eq!(fixture.text.top().line, 2);
+      assert_eq!(fixture.reader.scroll, 50.0);
+    } else {
+      assert_eq!(fixture.reader.scroll, 70.0);
+      assert_eq!(fixture.source.reads, 0);
+    }
+  }
+  Ok(())
+}
+
+impl crate::source::Markup for Source {
+  fn links(
+    &mut self,
+    _: PageId,
+  ) -> Result<Arc<Vec<vpdf_model::document::Link>>> {
+    self.lookups.push("links");
+    anyhow::ensure!(
+      self.lookups.len() != self.fail_lookup,
+      "Links unavailable"
+    );
+    Ok(Arc::new(self.links.clone()))
+  }
+  fn annotations(
+    &mut self,
+    _: PageId,
+  ) -> Result<Arc<Vec<vpdf_model::document::Annotation>>> {
+    self.lookups.push("notes");
+    anyhow::ensure!(
+      self.lookups.len() != self.fail_lookup,
+      "Notes unavailable"
+    );
+    Ok(Arc::new(self.notes.clone()))
+  }
+}
+
+#[test]
+fn page_hits_preserve_precedence() -> Result<()> {
+  use crate::pointer::Hit;
+  use vpdf_model::document::{Annotation, Link, Target};
+  for (link, fail, expected) in [
+    (true, 2, Some(Hit::Link(PageId(0), 0))),
+    (false, 0, Some(Hit::Note { page: PageId(0), index: 0, text: false })),
+    (false, 3, Some(Hit::Note { page: PageId(0), index: 0, text: true })),
+    (false, 1, None),
+    (false, 2, None),
+  ] {
+    let mut fixture = Fixture::new();
+    let bounds = fixture.source.text.lines[0].glyphs[0].bounds;
+    fixture.source.fail = 1;
+    fixture.source.fail_lookup = fail;
+    if link {
+      fixture.source.links.push(Link::new(bounds, Target::Page(PageId(0))));
+    }
+    fixture.source.notes.push(Annotation {
+      kind: "Note".into(),
+      areas: vec![bounds],
+      contents: "note".into(),
+      author: String::new(),
+    });
+    let result = fixture.view().hit(HitFrame::Pending, 1, 1, None);
+    if let Some(expected) = expected {
+      assert_eq!(result?, expected);
+    } else {
+      assert!(result.is_err());
+    }
+    let calls = if link {
+      1
+    } else if fail > 0 {
+      fail
+    } else {
+      3
+    };
+    assert_eq!(fixture.source.lookups, ["links", "notes", "notes"][..calls]);
+    assert_eq!(fixture.source.reads, 0);
+  }
+  Ok(())
+}
+
+#[test]
+fn unmarked_hits_read_text() -> Result<()> {
+  use crate::pointer::Hit;
+  for (column, expected) in [(1, Hit::Text), (8, Hit::Nothing)] {
+    let mut fixture = Fixture::new();
+    assert_eq!(
+      fixture.view().hit(HitFrame::Pending, column, 1, None)?,
+      expected
+    );
+    assert_eq!(fixture.source.lookups, ["links", "notes"]);
+    assert_eq!(fixture.source.reads, 1);
+  }
+  let mut fixture = Fixture::new();
+  fixture.source.fail = 1;
+  assert!(fixture.view().hit(HitFrame::Pending, 1, 1, None).is_err());
+  assert_eq!(fixture.source.lookups, ["links", "notes"]);
+  assert_eq!(fixture.source.reads, 1);
+  Ok(())
+}
+
+#[test]
+fn text_hits_follow_frames() -> Result<()> {
+  use crate::pointer::Hit;
+  use vpdf_model::document::{Link, Target};
+  let mut fixture = Fixture::new();
+  fixture.frame.pane.text = true;
+  fixture.source.links = [0, 2]
+    .into_iter()
+    .map(|line| {
+      Link::new(
+        fixture.source.text.lines[line].glyphs[0].bounds,
+        Target::Page(PageId(0)),
+      )
+    })
+    .collect();
+  let reader = Reader::default();
+  let marks = paint::Marks {
+    reader: &reader,
+    matches: &[],
+    flash: None,
+    landing: None,
+    cursorline: false,
+    dim: false,
+    hovered: &[],
+  };
+  fixture.view().text().draw(&mut Vec::new(), &marks)?;
+  fixture.view().text().scroll(2)?;
+  for (frame, index) in
+    [(HitFrame::Drawn, 0), (HitFrame::Pending, 1), (HitFrame::Drawn, 0)]
+  {
+    assert_eq!(
+      fixture.view().hit(frame, 0, 0, None)?,
+      Hit::Link(PageId(0), index)
+    );
+  }
+  fixture.view().text().draw(&mut Vec::new(), &marks)?;
+  assert_eq!(
+    fixture.view().hit(HitFrame::Drawn, 0, 0, None)?,
+    Hit::Link(PageId(0), 1)
+  );
+  Ok(())
+}
+
+mod overlays;

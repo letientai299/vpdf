@@ -112,11 +112,12 @@ impl Home {
       let fill = columns.saturating_sub(7 + text.width());
       write!(
         out,
-        "{}{} VPDF {style} {text}{}{}\x1b[?25l",
+        "{}{} VPDF {style} {text}{}{}{}",
         at.goto(row, 0u16),
         theme::badge(Color::Blue),
         " ".repeat(fill),
-        theme::RESET
+        theme::RESET,
+        terminal::HIDE_CURSOR
       )?;
     }
     Ok(())

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::outline::Loading;
+use vpdf::jobs::Loading;
 use vpdf::session::Session;
 use vpdf::solo::Solo;
 use vpdf_model::text::PageId;

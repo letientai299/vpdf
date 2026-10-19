@@ -52,3 +52,18 @@ impl vpdf_ui::source::Outline for PdfText<'_> {
     &self.0.outline
   }
 }
+
+impl vpdf_ui::source::Markup for PdfText<'_> {
+  fn links(
+    &mut self,
+    page: PageId,
+  ) -> Result<Arc<Vec<vpdf_model::document::Link>>> {
+    self.0.links(page)
+  }
+  fn annotations(
+    &mut self,
+    page: PageId,
+  ) -> Result<Arc<Vec<vpdf_model::document::Annotation>>> {
+    self.0.annotations(page)
+  }
+}

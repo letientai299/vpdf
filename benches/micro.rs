@@ -54,9 +54,12 @@ fn menu_rows() -> Result<()> {
   let mut app = paper(false)?;
   let prefix = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
   app.key(prefix, &mut vpdf_ui::prompt::History::default())?;
-  app.clues.restart(Instant::now().checked_sub(Duration::from_secs(1)));
+  app
+    .overlays
+    .clues_mut()
+    .restart(Instant::now().checked_sub(Duration::from_secs(1)));
   let _ = app.clue_due();
-  assert!(app.clues.shown().is_some());
+  assert!(app.overlays.clues().shown().is_some());
   measure("App::menu_rows clues", || {
     black_box(app.menu_rows());
   })
@@ -194,7 +197,7 @@ fn frame() -> Result<()> {
   for scroll in [base, base + 4.0] {
     for key in vpdf_ui::layout::visible(&app.layout, scroll) {
       if !app.graphics.contains(&(app.id, key)) {
-        let tile = vpdf::tiles::render(&mut app.doc, key)?;
+        let tile = vpdf::raster::render(&mut app.doc, key)?;
         app.graphics.upload(app.id, &tile, &mut io::sink())?;
       }
     }
@@ -364,7 +367,7 @@ fn preview_live() -> Result<()> {
     })?;
     // Warm: pages stay cached between runs.
     measure(&format!("preview reopen cross text={text}"), || {
-      app.peek = None;
+      app.overlays.close_preview();
       app.preview_link().expect("preview");
       black_box(&mut app).scroll_preview(black_box(40.0)).expect("down");
     })?;

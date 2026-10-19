@@ -5,25 +5,13 @@ use mupdf::IRect;
 use std::path::PathBuf;
 use std::sync::{Mutex, mpsc};
 use vpdf_model::cache::Cache;
-use vpdf_model::document::{Facts, Thumbnail};
+use vpdf_model::document::{Facts, FactsRequest, LoadedFacts, Thumbnail};
 use vpdf_model::geometry::page_matrix;
-use vpdf_model::text::{PageId, Position};
-
-pub struct Request {
-  pub path: PathBuf,
-  pub cursor: Position,
-  pub rotation: u16,
-  pub fit: Option<(u32, u32)>,
-}
-
-pub struct Loaded {
-  pub fit: Option<(u32, u32)>,
-  pub facts: std::result::Result<Facts, String>,
-}
+use vpdf_model::text::PageId;
 
 pub struct Worker {
-  pub requests: mpsc::Sender<Request>,
-  pub results: mpsc::Receiver<(PathBuf, Loaded)>,
+  requests: mpsc::Sender<FactsRequest>,
+  results: mpsc::Receiver<(PathBuf, LoadedFacts)>,
 }
 
 impl Worker {
@@ -35,13 +23,24 @@ impl Worker {
     std::thread::spawn(move || work(&password, &inbox, &send));
     Self { requests, results }
   }
+
+  /// Queues a load; the worker reads only the newest.
+  pub fn request(&self, request: FactsRequest) {
+    // A stopped worker drops the request, as its results stop too.
+    let _ = self.requests.send(request);
+  }
+
+  /// Loads finished since the last call.
+  pub fn updates(&self) -> mpsc::TryIter<'_, (PathBuf, LoadedFacts)> {
+    self.results.try_iter()
+  }
 }
 
 /// Loads each newest ask until the shelf drops.
 fn work(
   password: &str,
-  inbox: &mpsc::Receiver<Request>,
-  send: &WakingSender<mpsc::Sender<(PathBuf, Loaded)>>,
+  inbox: &mpsc::Receiver<FactsRequest>,
+  send: &WakingSender<mpsc::Sender<(PathBuf, LoadedFacts)>>,
 ) {
   while let Ok(mut ask) = inbox.recv() {
     // A selection moved past is not worth reading.
@@ -49,14 +48,14 @@ fn work(
       ask = newer;
     }
     let facts = read(&ask, password).map_err(|error| error.to_string());
-    let card = Loaded { fit: ask.fit, facts };
+    let card = LoadedFacts { fit: ask.fit, facts };
     if send.send((ask.path, card)).is_err() {
       return;
     }
   }
 }
 
-fn read(ask: &Request, password: &str) -> Result<Facts> {
+fn read(ask: &FactsRequest, password: &str) -> Result<Facts> {
   let handle = Handle::open(&ask.path, password)?;
   let thumb =
     ask.fit.map(|fit| thumbnail(&handle, fit, ask.rotation)).transpose()?;

@@ -16,7 +16,7 @@ pub fn feed(
 ) -> Result<PromptEvent> {
   Ok(match prompt.feed(key, history) {
     PromptEvent::Editor => {
-      let edited = crate::editor::edit(prompt.text())?;
+      let edited = crate::programs::edit(prompt.text())?;
       prompt.replace(&edited);
       PromptEvent::Edited
     }
@@ -75,10 +75,7 @@ fn paths(argument: &str) -> Vec<String> {
       if kind.is_dir() || (kind.is_symlink() && entry.path().is_dir()) {
         return Some(format!("{name}/"));
       }
-      Path::new(&name)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
-        .then_some(name)
+      is_pdf(Path::new(&name)).then_some(name)
     })
     .collect();
   names.sort_unstable();
@@ -107,6 +104,11 @@ fn languages() -> &'static [String] {
       .map(str::to_owned)
       .collect()
   })
+}
+
+/// Whether `path` names a PDF by its extension.
+pub(crate) fn is_pdf(path: &Path) -> bool {
+  path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
 }
 
 #[cfg(test)]

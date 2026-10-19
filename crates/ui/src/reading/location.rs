@@ -1,10 +1,31 @@
 use super::View;
 use crate::Result;
 use crate::source::Pages;
-use crate::text::{PageId, Position};
+use crate::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::{Location, TextSource};
 
 impl<S: TextSource + Pages> View<'_, S> {
+  pub fn position_rect(
+    &mut self,
+    position: Position,
+  ) -> Result<Option<Bounds>> {
+    if self.frame.pane.text {
+      let cell = self.text().cell(position)?;
+      let frame = self.frame.pane;
+      return Ok(cell.map(|(column, row)| {
+        crate::paint::cell_bounds(
+          frame.screen,
+          frame.left,
+          crate::split::Rect { column, row, columns: 1, rows: 1 },
+        )
+      }));
+    }
+    let text = self.source.page_text(position.page)?;
+    Ok(text.glyph(position).map(|glyph| {
+      self.layout.project(position.page, glyph.bounds, self.reader.scroll)
+    }))
+  }
+
   pub fn location(&mut self) -> Result<Location> {
     Ok(Location {
       cursor: self.position()?,

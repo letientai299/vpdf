@@ -16,10 +16,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use vpdf_model::text::{PageId, Position};
 use vpdf_pdf::document::PasswordRequired;
-use vpdf_terminal::decode::{Event, MouseKind, Reply, Size};
+use vpdf_terminal::decode::{Event, MouseKind, Size};
 use vpdf_terminal::dnd::{Dropped, Step};
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::terminal::{self, At, Shape, View};
+use vpdf_terminal::terminal::{self, At, Cause, Shape, Sight, View, sight};
 use vpdf_ui::chrome::Notice;
 use vpdf_ui::keys::PanelKind;
 use vpdf_ui::layout::Screen;
@@ -56,7 +56,7 @@ pub struct Session {
   store: Option<PathBuf>,
   /// Set by SIGHUP or SIGTERM, so the session ends and saves.
   hangup: Arc<AtomicBool>,
-  latest: crate::hangup::Latest,
+  latest: crate::state::Latest,
   /// Recorded positions not yet written.
   unsaved: bool,
   /// History revision last handed to the hangup thread.
@@ -70,7 +70,7 @@ pub struct Session {
   observer: Option<vpdf_terminal::tmux_observer::Observer>,
   observed: Option<vpdf_terminal::tmux_observer::Snapshot>,
   rehover: Rehover,
-  image_write: Option<ImageWrite>,
+  image_write: Option<clipboard::ImageWrite>,
   /// The drag over the window, OSC 72.
   drops: vpdf_terminal::dnd::Drops,
   /// The boundary a press drags.
@@ -92,17 +92,6 @@ impl Edge {
   }
 }
 
-struct ImageWrite {
-  pane: u32,
-  capture: vpdf_ui::region::CaptureId,
-  state: ImageState,
-}
-
-enum ImageState {
-  Waiting(Instant),
-  TimedOut,
-}
-
 /// Whether a frame moved the hover under a resting pointer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Rehover {
@@ -111,46 +100,6 @@ enum Rehover {
   Due,
   /// That frame is drawing; it asks no more.
   Following,
-}
-
-/// What the reader knows of tmux showing its pane. tmux sends focus
-/// events only to a window's active pane, so an unfocused pane asks.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum Sight {
-  /// Takes keys, or tmux is not asked: a focus event says what changes.
-  #[default]
-  Focused,
-  /// Shown without keys; the idle tick asks tmux whether it still is.
-  Unfocused,
-  /// tmux shows something else over it, such as another window or a
-  /// popup: frames wait, since tmux leaves placements over it.
-  Hidden,
-}
-
-/// Why the reader asks tmux how it shows the pane.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Cause {
-  Start,
-  FocusOut,
-  Tick,
-}
-
-/// The sight after `cause`, given tmux's `view` of the pane. A focus-out
-/// that leaves the pane active with a focused client is a popup or
-/// menu. Without the OS focus the client tells nothing of a window
-/// switch another client or a script makes, so the pane asks.
-fn sight(now: Sight, cause: Cause, view: View) -> Sight {
-  match (cause, view) {
-    (_, View::Hidden) | (Cause::FocusOut, View::Active { focused: true }) => {
-      Sight::Hidden
-    }
-    (_, View::Inactive)
-    | (Cause::Start | Cause::FocusOut, View::Active { focused: false }) => {
-      Sight::Unfocused
-    }
-    (Cause::Start, View::Active { focused: true }) => Sight::Focused,
-    (Cause::Tick, View::Active { .. }) => now,
-  }
 }
 
 /// Input the session acts on.
@@ -210,7 +159,7 @@ impl Session {
       watcher: Watcher::default(),
       store,
       hangup: Arc::new(AtomicBool::new(false)),
-      latest: crate::hangup::Latest::default(),
+      latest: crate::state::Latest::default(),
       unsaved: false,
       recorded: 0,
       shown: Vec::new(),
@@ -277,12 +226,12 @@ impl Session {
   }
 }
 
+mod clipboard;
 mod dispatch;
 mod edges;
 mod frame;
 mod pointer;
 mod run;
-mod tabs;
 #[cfg(test)]
 mod tests;
 mod windows;

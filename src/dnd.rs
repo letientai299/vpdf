@@ -41,10 +41,9 @@ pub fn pdf(text: &str) -> Option<PathBuf> {
 /// The first existing PDF a file list names: `file://` URIs, plain
 /// paths, or shell words, one or more per line.
 fn first_pdf(text: &str) -> Option<PathBuf> {
-  entries(text).flat_map(candidates).find(|path| {
-    path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
-      && path.is_file()
-  })
+  entries(text)
+    .flat_map(candidates)
+    .find(|path| crate::cmdline::is_pdf(path) && path.is_file())
 }
 
 /// Lines but blanks and `#` comments, trimmed.

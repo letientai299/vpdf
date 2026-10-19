@@ -29,7 +29,7 @@ pub struct Document {
   /// The outline was inferred from text layout, not authored.
   pub inferred: bool,
   /// Cached page margins for `zc`.
-  pub margins: Option<Arc<crate::crop::Margins>>,
+  pub(crate) margins: Option<Arc<crate::crop::Margins>>,
   texts: Cache<PageId, Arc<Text>>,
   lists: Arc<Lists>,
   ocr: Cache<PageId, Arc<Text>>,
@@ -260,6 +260,16 @@ impl Document {
       + figures.iter().map(|figure| figure.caption.capacity()).sum::<usize>();
     self.figures.insert(page, Arc::clone(&figures), weight.max(1));
     Ok(figures)
+  }
+
+  /// Page margins a crop scan measured.
+  pub fn margins(&self) -> Option<&Arc<crate::crop::Margins>> {
+    self.margins.as_ref()
+  }
+
+  /// Takes the margins of another document of the same file.
+  pub fn share_margins(&mut self, other: &Self) {
+    self.margins.clone_from(&other.margins);
   }
 
   /// The display list cache, for another handle of this file.

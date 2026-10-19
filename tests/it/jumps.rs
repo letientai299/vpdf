@@ -258,7 +258,7 @@ fn committed_searches() -> Result<()> {
   super::common::search_loaded(&mut app)?;
   assert_eq!(app.reader.jumps().count(), 0);
   app.finish_search("needle", false)?;
-  app.prompt = None;
+  app.overlays.close_prompt();
   app.next_result(false, 1)?;
   app.go_to(at(0, 0), true)?;
   let rows = app.panel_rows(PanelKind::Jumps)?;

@@ -1,20 +1,21 @@
 use super::{
   Act, App, Arc, Cause, Duration, Event, Home, Instant, IsTerminal,
-  KeyEventKind, MouseKind, Ordering, Outcome, Pacer, PageId, PathBuf, Reply,
-  Result, Session, Shape, Sight, View, Write, io, sight, terminal,
+  KeyEventKind, MouseKind, Ordering, Outcome, Pacer, PageId, PathBuf, Result,
+  Session, Shape, Sight, View, Write, io, sight, terminal,
 };
+use vpdf_terminal::input::{Notice, notice};
 
 /// Opens paths or the start screen.
 pub fn view(paths: &[PathBuf], page: Option<usize>) -> Result<()> {
   anyhow::ensure!(io::stdout().is_terminal(), "TUI requires a terminal");
   let mut session = Session::new(crate::state::location());
-  crate::hangup::watch(
+  crate::state::watch_hangup(
     session.store.clone(),
     Arc::clone(&session.hangup),
     Arc::clone(&session.latest),
   )?;
   terminal::restore_on_panic();
-  let (_terminal, screen) = crate::gate::enter()?;
+  let (_terminal, screen) = vpdf_terminal::gate::enter()?;
   session.observer = vpdf_terminal::tmux_observer::Observer::start();
   // Before input; a spool that fails to start leaves tiles encoded.
   let _ = vpdf_terminal::spool::start(vpdf_terminal::graphics::session());
@@ -116,17 +117,13 @@ pub(super) fn act(event: Event) -> Option<Act> {
       || mouse.history().is_some())
     .then_some(Act::Mouse(mouse)),
     Event::Leave => Some(Act::Leave),
-    Event::Reply(Reply::Graphics { id: Some(id), message, .. })
-      if message.starts_with("ENOENT") =>
-    {
-      Some(Act::Missing(id))
-    }
-    Event::Reply(Reply::Osc { code: 5522, body }) => {
-      Some(Act::ImageStatus(body))
-    }
-    Event::Reply(Reply::Osc { code: 72, body }) => Some(Act::Drop(body)),
+    Event::Reply(reply) => notice(&reply).map(|notice| match notice {
+      Notice::Missing(id) => Act::Missing(id),
+      Notice::ImageStatus(body) => Act::ImageStatus(body.into()),
+      Notice::Drop(body) => Act::Drop(body.into()),
+    }),
     Event::Focus(gained) => Some(Act::Focus(gained)),
-    Event::Key(_) | Event::Reply(_) => None,
+    Event::Key(_) => None,
   }
 }
 
@@ -222,7 +219,7 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
       if dirty {
         let current = session.app().title();
         if current != title {
-          set_title(&mut out, &current)?;
+          terminal::set_title(&mut out, &current)?;
           title = current;
         }
         trace.draw(session, &mut out, &mut buffer)?;
@@ -311,17 +308,6 @@ impl Chores {
     }
     Ok(dirty)
   }
-}
-
-/// Sets the window title, except where the terminal ignores the title
-/// stack and would keep it after exit.
-pub(super) fn set_title(out: &mut impl Write, title: &str) -> Result<()> {
-  if vpdf_terminal::caps::get()
-    .is_none_or(vpdf_terminal::caps::Caps::title_stack)
-  {
-    write!(out, "\x1b]2;{}\x07", terminal::clean(title, 200))?;
-  }
-  Ok(())
 }
 
 /// How long the idle loop may sleep: until the next file check, state
@@ -555,7 +541,9 @@ impl Session {
         self.home = Some(home);
         return Ok(());
       };
-      if let Event::Reply(Reply::Osc { code: 72, body }) = &event {
+      if let Event::Reply(reply) = &event
+        && let Some(Notice::Drop(body)) = notice(reply)
+      {
         match self.home_drop(&mut home, body, out)? {
           Landing::Wait => continue,
           Landing::Opened => return home.release(out),
@@ -605,7 +593,7 @@ impl Session {
         home.release(out)?;
         let picked = std::env::current_dir()
           .map_err(anyhow::Error::from)
-          .and_then(|root| crate::fzf::pick(&root));
+          .and_then(|root| crate::programs::pick_pdf(&root));
         match picked {
           Ok(Some(path)) => {
             if self.leave_home(&mut home, &path) {

@@ -2,6 +2,18 @@ use super::{
   Caps, Host, Result, UnicodeWidthChar, UnicodeWidthStr, Write, tmux,
 };
 
+/// Hides the text cursor, which frames move.
+pub const HIDE_CURSOR: &str = "\x1b[?25l";
+
+/// Sets the window title, except where the terminal ignores the title
+/// stack and would keep it after exit.
+pub fn set_title(out: &mut impl Write, title: &str) -> Result<()> {
+  if crate::caps::get().is_none_or(Caps::title_stack) {
+    write!(out, "\x1b]2;{}\x07", clean(title, 200))?;
+  }
+  Ok(())
+}
+
 /// Starts a frame the terminal shows whole (mode 2026), except under
 /// tmux before 3.8: it sends images through at once, ahead of the held
 /// text, and 3.7b and 3.7c drop the next image after the frame ends.

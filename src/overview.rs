@@ -16,7 +16,7 @@ impl App {
   pub fn open_overview(&mut self) -> Result<()> {
     anyhow::ensure!(!self.text_mode, "Page overview needs Kitty graphics");
     let selected = self.navigation_position().page;
-    self.overview = Some(Overview::new(selected));
+    self.overlays.open_overview(Overview::new(selected));
     self.tiles.invalidate();
     if let Some(panel) = &mut self.panel {
       panel.view.focus(false);
@@ -27,7 +27,7 @@ impl App {
   pub fn overview_input(&mut self, input: Input) -> Result<bool> {
     let grid = self.grid();
     let pages = self.doc.pages.len();
-    let Some(overview) = &mut self.overview else { return Ok(false) };
+    let Some(overview) = self.overlays.overview_mut() else { return Ok(false) };
     match overview.navigate(input, &grid, pages) {
       Navigation::Open => self.open_selected().map(|()| true),
       Navigation::Close => {
@@ -43,7 +43,7 @@ impl App {
     let grid = self.grid();
     let pages = self.doc.pages.len();
     let hit = self.thumbnail_at(mouse.column, mouse.row);
-    let Some(overview) = &mut self.overview else { return Ok(()) };
+    let Some(overview) = self.overlays.overview_mut() else { return Ok(()) };
     match overview.pointer(mouse.kind, hit, &grid, pages) {
       Pointer::None => Ok(()),
       Pointer::Open => self.open_selected(),
@@ -58,7 +58,7 @@ impl App {
   }
 
   pub fn thumbnail_at(&self, column: u16, row: u16) -> Option<PageId> {
-    let overview = self.overview.as_ref()?;
+    let overview = self.overlays.overview()?;
     overview.hit(
       self.cell_point(column, row, None),
       &self.grid(),
@@ -67,14 +67,14 @@ impl App {
     )
   }
   fn open_selected(&mut self) -> Result<()> {
-    let Some(overview) = self.overview.take() else { return Ok(()) };
+    let Some(overview) = self.overlays.close_overview() else { return Ok(()) };
     let page = PageId(overview.selected());
     self.tiles.invalidate();
     self.go_to_page(page)
   }
 
   pub fn close_overview(&mut self) {
-    self.overview = None;
+    self.overlays.close_overview();
     self.tiles.invalidate();
   }
 
@@ -95,7 +95,7 @@ impl App {
       },
       mask: self.context_rect(),
     };
-    let Some(overview) = &mut self.overview else { return Ok(()) };
+    let Some(overview) = self.overlays.overview_mut() else { return Ok(()) };
     let tiles = overview.draw(&PdfText(&mut self.doc), frame, graphics, out)?;
     let update = self.tiles.update(tiles);
     self.complete = update.complete;
@@ -153,11 +153,11 @@ mod tests {
       std::thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(app.tiles.wanted(), wanted.as_slice());
-    app.overview.as_mut().unwrap().choose(PageId(partial - 1));
+    app.overlays.overview_mut().unwrap().choose(PageId(partial - 1));
     app.overview_input(Input::plain(Action::Motion(Motion::Right)))?;
     out.clear();
     app.draw(&mut out)?;
-    assert_eq!(app.overview.as_ref().unwrap().top(), 1);
+    assert_eq!(app.overlays.overview().unwrap().top(), 1);
     for key in wanted.iter().filter(|k| k.page.0 >= partial) {
       assert!(app.tiles.wants(key), "reuse the partial row's tiles");
     }

@@ -94,3 +94,80 @@ fn tmux_pane(command: &[&str], args: &[&str]) -> Option<String> {
   child.stdout.take()?.read_to_string(&mut output).ok()?;
   status.success().then_some(output)
 }
+
+/// What the reader knows of tmux showing its pane. tmux sends focus
+/// events only to a window's active pane, so an unfocused pane asks.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Sight {
+  /// Takes keys, or tmux is not asked: a focus event says what changes.
+  #[default]
+  Focused,
+  /// Shown without keys; the idle tick asks tmux whether it still is.
+  Unfocused,
+  /// tmux shows something else over it, such as another window or a
+  /// popup: frames wait, since tmux leaves placements over it.
+  Hidden,
+}
+
+/// Why the reader asks tmux how it shows the pane.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Cause {
+  Start,
+  FocusOut,
+  Tick,
+}
+
+/// The sight after `cause`, given tmux's `view` of the pane. A focus-out
+/// that leaves the pane active with a focused client is a popup or
+/// menu. Without the OS focus the client tells nothing of a window
+/// switch another client or a script makes, so the pane asks.
+pub fn sight(now: Sight, cause: Cause, view: View) -> Sight {
+  match (cause, view) {
+    (_, View::Hidden) | (Cause::FocusOut, View::Active { focused: true }) => {
+      Sight::Hidden
+    }
+    (_, View::Inactive)
+    | (Cause::Start | Cause::FocusOut, View::Active { focused: false }) => {
+      Sight::Unfocused
+    }
+    (Cause::Start, View::Active { focused: true }) => Sight::Focused,
+    (Cause::Tick, View::Active { .. }) => now,
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// tmux tells only its active pane about focus; the rest is asked.
+  #[test]
+  fn sight_follows_tmux() {
+    use Cause::{FocusOut, Start, Tick};
+    use Sight::{Focused, Hidden, Unfocused};
+    let active = View::Active { focused: true };
+    let away = View::Active { focused: false };
+    // (sight, cause, view, want)
+    let cases = [
+      (Focused, Start, active, Focused),
+      (Focused, Start, View::Inactive, Unfocused),
+      (Focused, Start, View::Hidden, Hidden),
+      (Focused, FocusOut, View::Inactive, Unfocused),
+      (Focused, FocusOut, View::Hidden, Hidden),
+      // A popup or menu over the active pane.
+      (Focused, FocusOut, active, Hidden),
+      // The client lost the OS focus.
+      (Focused, FocusOut, away, Unfocused),
+      (Focused, Start, away, Unfocused),
+      (Unfocused, Tick, View::Hidden, Hidden),
+      (Unfocused, Tick, View::Inactive, Unfocused),
+      (Hidden, Tick, View::Inactive, Unfocused),
+      (Hidden, Tick, View::Hidden, Hidden),
+      // The popup is still open; focus-in ends it.
+      (Hidden, Tick, active, Hidden),
+      (Unfocused, Tick, away, Unfocused),
+    ];
+    for (now, cause, view, want) in cases {
+      assert_eq!(sight(now, cause, view), want, "{now:?} {cause:?} {view:?}");
+    }
+  }
+}

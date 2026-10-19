@@ -286,6 +286,30 @@ impl Reader {
   }
 }
 
+/// A terminal reply the reader acts on outside negotiation.
+#[derive(Debug, Eq, PartialEq)]
+pub enum Notice<'a> {
+  /// The terminal no longer holds this image.
+  Missing(u32),
+  /// OSC 5522: an image clipboard status.
+  ImageStatus(&'a str),
+  /// OSC 72: a drag over the window or a drop.
+  Drop(&'a str),
+}
+
+pub fn notice(reply: &Reply) -> Option<Notice<'_>> {
+  match reply {
+    Reply::Graphics { id: Some(id), message, .. }
+      if message.starts_with("ENOENT") =>
+    {
+      Some(Notice::Missing(*id))
+    }
+    Reply::Osc { code: 5522, body } => Some(Notice::ImageStatus(body)),
+    Reply::Osc { code: 72, body } => Some(Notice::Drop(body)),
+    _ => None,
+  }
+}
+
 /// Whether a resize waits in the queue, read without taking it.
 pub fn resizing() -> bool {
   let reader = READER.lock().unwrap_or_else(PoisonError::into_inner);
@@ -322,6 +346,28 @@ mod tests {
   use super::*;
   use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
   use std::os::fd::OwnedFd;
+
+  #[test]
+  fn notices_name_reader_replies() {
+    let graphics = |id, message: &str| Reply::Graphics {
+      id,
+      placement: Some(1),
+      message: message.into(),
+    };
+    let osc = |code, body: &str| Reply::Osc { code, body: body.into() };
+    let cases = [
+      (graphics(Some(9), "ENOENT:gone"), Some(Notice::Missing(9))),
+      (graphics(Some(9), "OK"), None),
+      (graphics(None, "ENOENT:gone"), None),
+      (osc(5522, "status=DONE"), Some(Notice::ImageStatus("status=DONE"))),
+      (osc(72, "t=m"), Some(Notice::Drop("t=m"))),
+      (osc(52, "c;aGk="), None),
+      (Reply::Keyboard(5), None),
+    ];
+    for (reply, want) in &cases {
+      assert_eq!(notice(reply), *want, "{reply:?}");
+    }
+  }
 
   /// A reader on sockets; the test writes the first one returned and
   /// keeps the others open.

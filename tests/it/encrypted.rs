@@ -1,8 +1,11 @@
-use mupdf::pdf::{Encryption, PageLabelRule, PageLabelStyle, PdfWriteOptions};
+use mupdf::pdf::{PageLabelRule, PageLabelStyle, PdfWriteOptions};
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf_model::text::PageId;
 use vpdf_pdf::document::Document;
+
+#[path = "../support/encryption.rs"]
+mod encryption;
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
@@ -13,13 +16,7 @@ fn password_and_page_labels() -> Result<()> {
   source
     .native
     .set_page_label_rule(PageLabelRule::new(0, PageLabelStyle::LowerRoman))?;
-  let mut options = PdfWriteOptions::default();
-  options
-    .set_encryption(Encryption::Aes256)
-    .set_owner_password("test-owner")
-    .set_user_password("test-reader");
-  let mut file = tempfile::NamedTempFile::new()?;
-  source.native.write_to_with_options(&mut file, options)?;
+  let file = encryption::encrypt(&mut source.native)?;
   assert!(Document::open(file.path(), "").is_err());
   assert!(Document::open(file.path(), "incorrect").is_err());
   let mut opened = Document::open(file.path(), "test-reader")?;

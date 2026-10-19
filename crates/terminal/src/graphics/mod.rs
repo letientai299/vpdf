@@ -1,13 +1,12 @@
-use crate::Result;
 use crate::cache::Cache;
 use crate::caps::{Host, Profile};
-const MIB: usize = 1 << 20;
 use crate::payload::{
   Encoder, Payload, TILE_HEIGHT, TILE_WIDTH, Tile, TileKey, encode,
 };
 use crate::spool::Spool;
 use crate::terminal::Transport;
 use crate::text::Bounds;
+use crate::{MIB, Result};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use flate2::read::ZlibDecoder;
 use std::borrow::Cow;

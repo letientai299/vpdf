@@ -106,7 +106,7 @@ impl Session {
       return Ok(changed);
     }
     let wheel = vpdf_ui::pointer::Wheel::of(mouse.kind).is_some();
-    if wheel && self.app().prompt.is_some() {
+    if wheel && self.app().overlays.prompt().is_some() {
       return Ok(false);
     }
     // Presses and releases end rests in every pane.
@@ -146,7 +146,7 @@ impl Session {
     // Disarming changes the status line and hides clue rows.
     let armed = interrupts
       && (!app.keys.pending().is_empty()
-        || app.clues.shown().is_some()
+        || app.overlays.clues().shown().is_some()
         || app.reader.operator.is_some());
     if interrupts {
       app.disarm();
@@ -162,7 +162,7 @@ impl Session {
     // Per-pixel drags; edges scroll.
     let reading = |app: &App| {
       let menu =
-        app.context_menu.as_ref().map(vpdf_ui::context::ContextMenu::selected);
+        app.overlays.menu().map(vpdf_ui::context::ContextMenu::selected);
       let held = (app.grabbing(), app.scrub_row());
       let view = (app.view_key(), app.layout.pan().to_bits(), held);
       (
@@ -263,7 +263,8 @@ impl Session {
     out: &mut impl Write,
   ) -> Result<bool> {
     let tab = self.tabs.get(self.active);
-    let typing = tab.is_some_and(|tab| tab.panes[tab.focus].prompt.is_some());
+    let typing =
+      tab.is_some_and(|tab| tab.panes[tab.focus].overlays.prompt().is_some());
     let Some(drop) = self.drop_step(body, typing, out)? else {
       return Ok(false);
     };
@@ -369,7 +370,7 @@ impl Session {
 
   /// Whether a press hits completions.
   fn on_completion(&mut self, mouse: MouseEvent) -> bool {
-    self.app().prompt.is_some()
+    self.app().overlays.prompt().is_some()
       && self.focused_in(Region::Overlay, mouse).is_some()
   }
 
@@ -468,7 +469,8 @@ impl Session {
     let owner = tab.panes[tab.focus].input_owner();
     let free = !owner.is_overlay();
     // Previews and recent cards share one picture.
-    let pictured = |app: &App| app.peek.is_some() || app.covered();
+    let pictured =
+      |app: &App| app.overlays.preview().is_some() || app.covered();
     if !free || tab.panes.iter().any(pictured) {
       return None;
     }

@@ -341,7 +341,8 @@ fn wrapped_links_tint_whole() -> Result<()> {
     session.draw_focused(&mut plain)?;
     // Hints and `gl` list the address once.
     session.app().start_hints(false)?;
-    let hints = session.app().hints.take().map_or(0, |h| h.items().len());
+    let hints =
+      session.app().overlays.close_hints().map_or(0, |h| h.items().len());
     assert_eq!(hints, 2, "text={text_mode}");
     session.app().open_panel(vpdf_ui::keys::PanelKind::Links)?;
     let rows = &session.app().panel.as_ref().expect("gl").view.rows();
@@ -356,7 +357,8 @@ fn wrapped_links_tint_whole() -> Result<()> {
         .reader
         .seed_reader(|reader| reader.scroll = line.y1 * 968.0 / 300.0 + 1.0);
       session.app().start_hints(false)?;
-      let hints = session.app().hints.take().map_or(0, |h| h.items().len());
+      let hints =
+        session.app().overlays.close_hints().map_or(0, |h| h.items().len());
       assert_eq!(hints, 2, "the continuation keeps its hint");
       session.app().reader.seed_reader(|reader| reader.scroll = 0.0);
     }
@@ -515,7 +517,7 @@ fn clicks_follow_links_and_drags_select() -> Result<()> {
     }
     // Presses that close a prompt follow nothing.
     let app = session.app();
-    app.prompt = Some(Prompt::new(PromptKind::Command));
+    app.overlays.open_prompt(Prompt::new(PromptKind::Command));
     let before = app.reader.cursor;
     click(&mut session, internal)?;
     assert_eq!(session.app().reader.cursor, before, "text={text_mode}");
@@ -584,7 +586,11 @@ fn back_and_forward_buttons_walk_history() -> Result<()> {
     assert!(session.mouse_report(report(button))?, "step {step}");
     let app = session.app();
     assert_eq!(app.reader.cursor.page, PageId(page), "step {step}");
-    assert_eq!(app.overview.is_some(), from == Origin::Empty, "step {step}");
+    assert_eq!(
+      app.overlays.overview().is_some(),
+      from == Origin::Empty,
+      "step {step}"
+    );
   }
   let release =
     Mouse { kind: MouseKind::Release(Button::BACK), ..report(Button::BACK) };
@@ -618,9 +624,9 @@ fn split_panes_hover_and_focus_apart() -> Result<()> {
   assert_eq!(session.app().reader.cursor.page, PageId(1));
   // A prompt eats one back press.
   let back = side(Button::BACK, link);
-  session.app().prompt = Some(Prompt::new(PromptKind::Command));
+  session.app().overlays.open_prompt(Prompt::new(PromptKind::Command));
   assert!(session.mouse_report(back)?);
-  assert!(session.app().prompt.is_none());
+  assert!(session.app().overlays.prompt().is_none());
   assert_eq!(session.app().reader.cursor.page, PageId(1));
   assert!(session.mouse_report(back)?);
   assert_eq!(session.app().reader.cursor.page, PageId(0));
@@ -1165,7 +1171,7 @@ pub(super) fn right(session: &mut Session, at: (u16, u16)) -> Result<()> {
 }
 
 pub(super) fn labels(session: &mut Session) -> Vec<&str> {
-  let menu = session.app().context_menu.as_ref();
+  let menu = session.app().overlays.menu();
   menu.map_or_default(|menu| {
     menu.entries().iter().map(|item| item.label.as_ref()).collect()
   })
@@ -1211,7 +1217,7 @@ fn right_clicks_open_menus_by_context() -> Result<()> {
       let cursor = session.app().reader.cursor;
       let screen = session.app().screen;
       click(&mut session, (screen.columns - 1, screen.rows - 2))?;
-      assert!(session.app().context_menu.is_none());
+      assert!(session.app().overlays.menu().is_none());
       assert_eq!(session.app().reader.cursor, cursor, "text={text_mode}");
     }
     // A selection offers copying and search.
@@ -1232,7 +1238,7 @@ fn right_clicks_open_menus_by_context() -> Result<()> {
     press(&mut session, crossterm::event::KeyCode::Char('j'))?;
     press(&mut session, crossterm::event::KeyCode::Enter)?;
     let app = session.app();
-    assert!(app.context_menu.is_none() && app.reader.selection.is_none());
+    assert!(app.overlays.menu().is_none() && app.reader.selection.is_none());
     assert_eq!(app.search.query().text, "Plain words here", "text={text_mode}");
   }
   Ok(())
@@ -1253,14 +1259,14 @@ fn menu_items_run_by_key_and_click() -> Result<()> {
   right(&mut session, plain)?;
   let at = session
     .app()
-    .context_menu
-    .as_ref()
+    .overlays
+    .menu()
     .map(vpdf_ui::context::ContextMenu::at)
     .expect("a menu");
   let back = labels(&mut session).iter().position(|label| *label == "Back");
   let row = at.1 + u16::try_from(back.expect("Back"))?;
   click(&mut session, (at.0 + 1, row))?;
-  assert!(session.app().context_menu.is_none());
+  assert!(session.app().overlays.menu().is_none());
   assert_eq!(session.app().reader.cursor.page, PageId(0));
   // Copy address fills the register.
   right(&mut session, web)?;
@@ -1277,26 +1283,27 @@ fn menu_items_run_by_key_and_click() -> Result<()> {
   // Esc closes; `:` closes and prompts.
   right(&mut session, plain)?;
   press(&mut session, KeyCode::Esc)?;
-  assert!(session.app().context_menu.is_none());
+  assert!(session.app().overlays.menu().is_none());
   assert_eq!(session.app().reader.mode(), visual, "Esc only closes");
   right(&mut session, plain)?;
   press(&mut session, KeyCode::Char(':'))?;
   let app = session.app();
-  assert!(app.context_menu.is_none() && app.prompt.is_some());
+  assert!(app.overlays.menu().is_none() && app.overlays.prompt().is_some());
   press(&mut session, KeyCode::Esc)?;
   // Preview shows the pressed link.
   session.app().reader.cancel();
   right(&mut session, internal)?;
   press(&mut session, KeyCode::Char('j'))?;
   press(&mut session, KeyCode::Enter)?;
-  let target = session.app().peek.as_ref().map(|peek| peek.target().clone());
+  let target =
+    session.app().overlays.preview().map(|peek| peek.target().clone());
   let page = match target {
     Some(vpdf_model::document::Target::Point { page, .. }) => Some(page),
     _ => None,
   };
   assert_eq!(page, Some(PageId(1)), "a preview of page 2");
   // Search word searches the pressed word.
-  session.app().peek = None;
+  session.app().overlays.close_preview();
   right(&mut session, plain)?;
   let at =
     labels(&mut session).iter().position(|label| *label == "Search word");
@@ -1316,14 +1323,14 @@ fn figures_offer_copy_and_save() -> Result<()> {
   session.open(&root.join("paper.pdf"), true, screen())?;
   let app = session.app();
   app.move_figure(true, 1)?;
-  let snapshot = app.region.as_ref().expect("a figure").snapshot().clone();
-  app.region = None;
+  let snapshot = app.overlays.region().expect("a figure").snapshot().clone();
+  app.overlays.close_region();
   let cell = centre_cell(app, snapshot.page, snapshot.bounds);
   right(&mut session, cell)?;
   let labels = labels(&mut session);
   assert!(labels.contains(&"Copy image") && labels.contains(&"Save image"));
   // U19: `gF` only opens the bar, so the item shows no key.
-  let menu = session.app().context_menu.as_ref().expect("a menu");
+  let menu = session.app().overlays.menu().expect("a menu");
   let copy = menu.entries().iter().find(|item| item.label == "Copy image");
   assert_eq!(copy.map(|item| item.key.as_str()), Some(""));
   Ok(())
@@ -1342,7 +1349,7 @@ fn menus_fit_small_panes() -> Result<()> {
   let corner = (at.column + screen.columns - 1, at.row + screen.rows - 2);
   right(&mut session, corner)?;
   let app = session.app();
-  let menu = app.context_menu.as_ref().expect("a menu");
+  let menu = app.overlays.menu().expect("a menu");
   let rows = u16::try_from(menu.entries().len())?;
   assert!(menu.at().1 + rows < app.screen.rows, "{:?} {rows}", menu.at());
   assert!(menu.at().0 + menu.width() <= app.screen.columns, "{:?}", menu.at());
@@ -1388,7 +1395,7 @@ fn tab_passes_through_menus() -> Result<()> {
   right(&mut session, plain)?;
   press(&mut session, KeyCode::Tab)?;
   let app = session.app();
-  assert!(app.context_menu.is_none() && app.panel_focused());
+  assert!(app.overlays.menu().is_none() && app.panel_focused());
   Ok(())
 }
 
@@ -1474,7 +1481,7 @@ fn alt_drags_capture_regions() -> Result<()> {
   let line = status(&mut session)?;
   assert!(!line.contains(hint) && line.contains("h/l choose"), "{line:?}");
   let app = session.app();
-  let Some(region) = &app.region else { panic!("a capture") };
+  let Some(region) = app.overlays.region() else { panic!("a capture") };
   assert!(region.is_bar());
   let bounds = region.snapshot().bounds;
   // Corners sit under press and release.
@@ -1500,14 +1507,17 @@ fn alt_drags_capture_regions() -> Result<()> {
     assert_eq!(backdrops(&mut session)?, before, "step {step}: undimmed");
     assert!(!status(&mut session)?.contains(hint), "step {step}: hint ends");
     let app = session.app();
-    assert!(app.region.is_none(), "step {step}: no capture");
+    assert!(app.overlays.region().is_none(), "step {step}: no capture");
     assert!(app.reader.selection.is_none(), "step {step}: inert drag");
     // A plain drag after it selects.
     mouse(&mut session, MouseEventKind::Down(MouseButton::Left), from)?;
     mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), to)?;
     mouse(&mut session, MouseEventKind::Up(MouseButton::Left), to)?;
     let app = session.app();
-    assert!(app.region.is_none() && app.reader.selection.is_some(), "{step}");
+    assert!(
+      app.overlays.region().is_none() && app.reader.selection.is_some(),
+      "{step}"
+    );
   }
   Ok(())
 }
@@ -1544,16 +1554,16 @@ fn alt_clicks_pick_graphics() -> Result<()> {
   let want = graphic.bounds;
   let caption = glyph_cell(&mut session, 0, 2)?;
   alt_click(&mut session, inside)?;
-  let region = session.app().region.as_ref().expect("the box");
+  let region = session.app().overlays.region().expect("the box");
   let got = region.snapshot().bounds;
   assert_eq!(
     (got.x0, got.y0, got.x1, got.y1),
     (want.x0, want.y0, want.x1, want.y1)
   );
-  session.app().region = None;
+  session.app().overlays.close_region();
   alt_click(&mut session, caption)?;
   let app = session.app();
-  assert!(app.region.is_none(), "captions extend");
+  assert!(app.overlays.region().is_none(), "captions extend");
   assert!(app.reader.selection.is_some());
   Ok(())
 }
@@ -1566,11 +1576,12 @@ fn alt_clicks_pick_figures() -> Result<()> {
   session.open(&root.join("paper.pdf"), true, screen())?;
   let app = session.app();
   app.move_figure(true, 1)?;
-  let figure = app.region.take().expect("a figure").snapshot().clone();
+  let figure =
+    app.overlays.close_region().expect("a figure").snapshot().clone();
   let cell = centre_cell(app, figure.page, figure.bounds);
   alt_click(&mut session, cell)?;
   let app = session.app();
-  let region = app.region.as_ref().expect("the picked figure");
+  let region = app.overlays.region().expect("the picked figure");
   assert!(region.is_bar());
   let picked = region.snapshot();
   assert_eq!(
@@ -1601,7 +1612,7 @@ fn sweeps_stay_on_page() -> Result<()> {
   session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), edge))?;
   session.mouse(alt(MouseEventKind::Up(MouseButton::Left), edge))?;
   let app = session.app();
-  let got = app.region.as_ref().expect("a capture").snapshot().bounds;
+  let got = app.overlays.region().expect("a capture").snapshot().bounds;
   assert!(got.x1 <= shown.x1 && got.y1 <= shown.y1, "{got:?} in {shown:?}");
   assert!(got.x1 > got.x0 + 10.0, "a real sweep");
   Ok(())
@@ -1624,7 +1635,7 @@ fn hover_open(
 /// Screen cells of the drawn preview.
 fn drawn_preview(session: &mut Session) -> Result<vpdf_ui::split::Rect> {
   let shown = session.tab().panes.iter().find_map(|app| {
-    let area = app.peek.as_ref()?.cells()?;
+    let area = app.overlays.preview()?.cells()?;
     Some(vpdf_ui::split::Rect {
       column: area.column + app.at.column,
       row: area.row + app.at.row,
@@ -1661,7 +1672,7 @@ fn resting_on_links_previews_them() -> Result<()> {
     assert!(!session.app().hover_preview(std::time::Instant::now()));
     let area = hover_open(&mut session, internal)?;
     let origin =
-      session.app().peek.as_ref().map(vpdf_ui::preview::Preview::origin);
+      session.app().overlays.preview().map(vpdf_ui::preview::Preview::origin);
     assert_eq!(origin, Some(Origin::Hover(PageId(0), 0)));
     assert!(status(&mut session)?.contains("NORMAL"), "passive");
     // The row past the link keeps it.
@@ -1670,15 +1681,15 @@ fn resting_on_links_previews_them() -> Result<()> {
     // In text, column 0 below is the next link.
     let column = internal.0.max(area.column);
     mouse(&mut session, MouseEventKind::Moved, (column, gap))?;
-    assert!(session.app().peek.is_some(), "text={text_mode} gap");
+    assert!(session.app().overlays.preview().is_some(), "text={text_mode} gap");
     let inside = (area.column + area.columns / 2, area.row + area.rows / 2);
     mouse(&mut session, MouseEventKind::Moved, inside)?;
-    assert!(session.app().peek.is_some(), "text={text_mode}");
+    assert!(session.app().overlays.preview().is_some(), "text={text_mode}");
     // Off both, it closes.
     let screen = session.app().screen;
     let away = (screen.columns - 1, screen.rows - 2);
     assert!(mouse(&mut session, MouseEventKind::Moved, away)?);
-    assert!(session.app().peek.is_none(), "text={text_mode}");
+    assert!(session.app().overlays.preview().is_none(), "text={text_mode}");
   }
   Ok(())
 }
@@ -1704,7 +1715,7 @@ fn popups_hide_links_beneath() -> Result<()> {
     let area = match popup {
       "menu" => {
         right(&mut session, internal)?;
-        session.app().context_menu.as_ref().expect("a menu").area()
+        session.app().overlays.menu().expect("a menu").area()
       }
       "hover" => hover_open(&mut session, internal)?,
       _ => key_open(&mut session)?,
@@ -1741,7 +1752,10 @@ fn popups_hide_links_beneath() -> Result<()> {
     press(&mut session, KeyCode::Esc)?;
     session.draw_frame(&mut Vec::new())?;
     let app = session.app();
-    assert!(app.context_menu.is_none() && app.peek.is_none(), "{at}");
+    assert!(
+      app.overlays.menu().is_none() && app.overlays.preview().is_none(),
+      "{at}"
+    );
     assert!(matches!(app.hover.hit(), Hit::Link(..)), "{at}: uncovered");
     assert!(app.hover_due().is_none(), "{at}: no rest");
   }
@@ -1778,17 +1792,13 @@ fn menu_rows_follow_the_pointer() -> Result<()> {
     let (_directory, mut session) = session(text_mode)?;
     let plain = cell(&mut session, Hit::Text)?;
     right(&mut session, plain)?;
-    let menu = session.app().context_menu.as_ref().expect("a menu").area();
+    let menu = session.app().overlays.menu().expect("a menu").area();
     let rows = items(&mut session, Region::Menu, menu)?;
     let at = |index: usize| rows[index].1;
     let screen = session.app().screen;
     let away = (screen.columns - 1, screen.rows - 2);
     let selected = |session: &mut Session| {
-      session
-        .app()
-        .context_menu
-        .as_ref()
-        .map(vpdf_ui::context::ContextMenu::selected)
+      session.app().overlays.menu().map(vpdf_ui::context::ContextMenu::selected)
     };
     // (move to, frame, selected)
     let steps = [
@@ -1821,8 +1831,8 @@ fn bar_item(session: &mut Session, index: usize) -> Result<(u16, u16)> {
   status(session)?;
   let bar = session
     .app()
-    .region
-    .as_ref()
+    .overlays
+    .region()
     .and_then(vpdf_ui::region::Region::cells)
     .expect("a drawn bar");
   let found = items(session, Region::Actions, bar)?;
@@ -1847,13 +1857,13 @@ fn bar_items_follow_the_pointer() -> Result<()> {
   };
   capture(&mut session)?;
   let action = |session: &mut Session| {
-    session.app().region.as_ref().and_then(vpdf_ui::region::Region::action)
+    session.app().overlays.region().and_then(vpdf_ui::region::Region::action)
   };
   // Prefix and separators show nothing.
   let bar = session
     .app()
-    .region
-    .as_ref()
+    .overlays
+    .region()
     .and_then(vpdf_ui::region::Region::cells)
     .expect("a drawn bar");
   let screen = session.app().screen;
@@ -1882,11 +1892,11 @@ fn bar_items_follow_the_pointer() -> Result<()> {
   assert_eq!(action(&mut session), Some(Operation::Save), "prompt open");
   click(&mut session, text)?;
   let app = session.app();
-  assert!(app.prompt.is_none() && app.reader.pending_yank.is_none());
+  assert!(app.overlays.prompt().is_none() && app.reader.pending_yank.is_none());
   click(&mut session, text)?;
   let app = session.app();
   assert!(app.reader.pending_yank.is_some(), "Copy text ran");
-  assert!(app.region.as_ref().is_some_and(vpdf_ui::region::Region::is_bar));
+  assert!(app.overlays.region().is_some_and(vpdf_ui::region::Region::is_bar));
   // Clicking off clears the bar hint.
   click(&mut session, (screen.columns - 1, 0))?;
   capture(&mut session)?;
@@ -1894,7 +1904,7 @@ fn bar_items_follow_the_pointer() -> Result<()> {
   assert_eq!(session.app().reader.message, hint);
   click(&mut session, (screen.columns - 1, 0))?;
   let app = session.app();
-  assert!(app.region.is_none() && app.reader.message.is_empty());
+  assert!(app.overlays.region().is_none() && app.reader.message.is_empty());
   Ok(())
 }
 
@@ -1945,7 +1955,7 @@ fn right_drags_choose_menu_items() -> Result<()> {
     let plain = cell(&mut session, Hit::Text)?;
     let press = MouseEventKind::Down(MouseButton::Right);
     mouse(&mut session, press, plain)?;
-    let menu = session.app().context_menu.as_ref().expect("a menu").area();
+    let menu = session.app().overlays.menu().expect("a menu").area();
     let outline = labels(&mut session).iter().position(|l| *l == "Outline");
     let row = menu.row + u16::try_from(outline.expect("Outline"))?;
     let on = (menu.column + 2, row);
@@ -1953,7 +1963,7 @@ fn right_drags_choose_menu_items() -> Result<()> {
     assert!(mouse(&mut session, drag, on)?, "text={text_mode}: picks");
     mouse(&mut session, MouseEventKind::Up(MouseButton::Right), on)?;
     let app = session.app();
-    assert!(app.context_menu.is_none(), "text={text_mode}: ran");
+    assert!(app.overlays.menu().is_none(), "text={text_mode}: ran");
     assert!(app.panel.is_some(), "text={text_mode}: outline open");
     app.close_panel()?;
     // Slips and releases off items run nothing.
@@ -1978,9 +1988,9 @@ fn right_drags_choose_menu_items() -> Result<()> {
       }
       let last = *path.last().expect("a path");
       mouse(&mut session, up, last)?;
-      let open = session.app().context_menu.is_some();
+      let open = session.app().overlays.menu().is_some();
       assert_eq!(open, !runs, "text={text_mode} {step}");
-      session.app().context_menu = None;
+      session.app().overlays.close_menu();
       session.app().reader.cancel();
     }
   }
@@ -1993,7 +2003,7 @@ fn wheel_scrolls_under_menus() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let plain = cell(&mut session, Hit::Text)?;
   right(&mut session, plain)?;
-  let menu = session.app().context_menu.as_ref().expect("a menu").area();
+  let menu = session.app().overlays.menu().expect("a menu").area();
   let before = session.app().reader.scroll;
   // (beside, over) the menu
   let spots =
@@ -2002,7 +2012,7 @@ fn wheel_scrolls_under_menus() -> Result<()> {
   for at in spots {
     assert!(mouse(&mut session, MouseEventKind::ScrollDown, at)?, "{at:?}");
     let app = session.app();
-    assert!(app.context_menu.is_some(), "the menu stays");
+    assert!(app.overlays.menu().is_some(), "the menu stays");
     let scroll = app.reader.animation().target().unwrap_or(app.reader.scroll);
     assert!(scroll > last, "the page scrolls at {at:?}");
     last = scroll;
@@ -2016,7 +2026,7 @@ fn hint_labels_sit_on_their_line() -> Result<()> {
   for text_mode in [false, true] {
     let (_directory, mut session) = session(text_mode)?;
     session.app().start_hints(false)?;
-    let hints = session.app().hints.take().expect("hints");
+    let hints = session.app().overlays.close_hints().expect("hints");
     let links = session.app().doc.links(PageId(0))?;
     let text = session.app().doc.text(PageId(0))?;
     for hint in hints.items() {
@@ -2055,7 +2065,7 @@ fn hint_labels_follow_the_shown_part() -> Result<()> {
   // 40 px above the top edge.
   app.reader.seed_reader(|reader| reader.scroll = top.y0 + 40.0);
   app.start_hints(false)?;
-  let hints = app.hints.take().expect("hints");
+  let hints = app.overlays.close_hints().expect("hints");
   let shown = (top.y1 - top.y0 - 40.0) / 2.0;
   assert_eq!(hints.items()[0].cell.1, (shown / 16.0) as u16);
   assert!(shown >= 16.0, "the whole box's middle is above");
@@ -2085,7 +2095,7 @@ fn hint_labels_keep_off_neighbours() -> Result<()> {
     session.draw_focused(&mut Vec::new())?;
     let app = session.app();
     app.start_hints(false)?;
-    let hints = app.hints.take().expect("hints");
+    let hints = app.overlays.close_hints().expect("hints");
     let target = |app: &mut App, column, row| -> Result<_> {
       let hit = app.hovered(Region::Page, column, row, None)?;
       let Hit::Link(on, index) = hit else { return Ok(None) };
@@ -2150,25 +2160,27 @@ fn hint_labels_follow_the_pointer() -> Result<()> {
     assert!(mouse(&mut session, MouseEventKind::Moved, internal)?);
     assert!(!mouse(&mut session, MouseEventKind::Moved, internal)?, "B5");
     let picked =
-      session.app().hints.as_ref().map(vpdf_ui::hints::Hints::selected);
+      session.app().overlays.hints().map(vpdf_ui::hints::Hints::selected);
     assert_eq!(picked, Some(Some(0)), "text={text_mode}");
     assert!(status(&mut session)?.contains("\x1b[0;97;44m"), "drawn picked");
     // Enter follows the picked label.
     press(&mut session, KeyCode::Enter)?;
     let app = session.app();
-    assert!(app.hints.is_none(), "text={text_mode}");
+    assert!(app.overlays.hints().is_none(), "text={text_mode}");
     assert_eq!(app.reader.cursor.page, PageId(1), "text={text_mode}");
     action(app, Action::History(false))?;
     // `F` clicks copy addresses.
     let labels = start(&mut session, true)?;
     click(&mut session, at(&labels, 1))?;
     let app = session.app();
-    assert!(app.hints.is_none() && app.reader.message == "Copied link");
+    assert!(
+      app.overlays.hints().is_none() && app.reader.message == "Copied link"
+    );
     assert_eq!(app.reader.cursor.page, PageId(0), "text={text_mode}");
     let labels = start(&mut session, false)?;
     click(&mut session, at(&labels, 0))?;
     let app = session.app();
-    assert!(app.hints.is_none(), "text={text_mode}");
+    assert!(app.overlays.hints().is_none(), "text={text_mode}");
     assert_eq!(app.reader.cursor.page, PageId(1), "text={text_mode}");
   }
   Ok(())
@@ -2183,9 +2195,9 @@ fn typing_drops_picked_labels() -> Result<()> {
   let hidden =
     hints.items().iter().position(|hint| hint.label == "sa").expect("sa");
   hints.select(hidden);
-  session.app().hints = Some(hints);
+  session.app().overlays.open_hints(hints);
   press(&mut session, crossterm::event::KeyCode::Char('a'))?;
-  let hints = session.app().hints.as_ref().expect("hints stay");
+  let hints = session.app().overlays.hints().expect("hints stay");
   assert_eq!((hints.typed(), hints.selected()), ("a", None));
   Ok(())
 }
@@ -2199,19 +2211,19 @@ fn hover_previews_answer_input() -> Result<()> {
     let area = hover_open(&mut session, internal)?;
     click(&mut session, (area.column + 1, area.row + 1))?;
     let app = session.app();
-    assert!(app.peek.is_none());
+    assert!(app.overlays.preview().is_none());
     assert_eq!(app.reader.cursor.page, PageId(1), "text={text_mode}");
     action(app, Action::History(false))?;
     session.draw_frame(&mut Vec::new())?;
     hover_open(&mut session, internal)?;
     press(&mut session, crossterm::event::KeyCode::Esc)?;
-    assert!(session.app().peek.is_none(), "text={text_mode}");
+    assert!(session.app().overlays.preview().is_none(), "text={text_mode}");
     assert!(session.app().hover_due().is_none(), "keys end the rest");
     let area = hover_open(&mut session, internal)?;
     let on = (area.column + 1, area.row + 1);
     mouse(&mut session, MouseEventKind::Down(MouseButton::Right), on)?;
     let app = session.app();
-    assert!(app.peek.is_none() && app.context_menu.is_none());
+    assert!(app.overlays.preview().is_none() && app.overlays.menu().is_none());
     assert_eq!(app.reader.cursor.page, PageId(0), "text={text_mode}");
   }
   Ok(())
@@ -2264,7 +2276,10 @@ fn middle_clicks_split_previews() -> Result<()> {
     session.settle()?;
     let panes = &session.tab().panes;
     assert_eq!(panes.len(), 2, "{popup}");
-    assert!(panes.iter().all(|app| app.peek.is_none()), "{popup}");
+    assert!(
+      panes.iter().all(|app| app.overlays.preview().is_none()),
+      "{popup}"
+    );
     let shown: Vec<_> =
       panes.iter().map(|app| app.reader.cursor.page).collect();
     assert!(shown.contains(&PageId(1)), "{popup}: {shown:?}");
@@ -2297,7 +2312,7 @@ fn clicks_beside_links_close_previews() -> Result<()> {
   hover_open(&mut session, internal)?;
   click(&mut session, (internal.0 + 40, internal.1))?;
   let app = session.app();
-  assert!(app.peek.is_none());
+  assert!(app.overlays.preview().is_none());
   assert_eq!(app.reader.cursor.page, PageId(0), "nothing followed");
   Ok(())
 }
@@ -2310,7 +2325,7 @@ fn scrolls_close_hover_previews() -> Result<()> {
   hover_open(&mut session, internal)?;
   session.app().reader.seed_reader(|reader| reader.scroll += 300.0);
   session.draw_frame(&mut Vec::new())?;
-  assert!(session.app().peek.is_none());
+  assert!(session.app().overlays.preview().is_none());
   Ok(())
 }
 
@@ -2342,10 +2357,10 @@ fn pixel_gaps_keep_previews() -> Result<()> {
     session.mouse_report(moved(y))?;
     let app = session.app();
     assert!(!matches!(app.hover.hit(), Hit::Link(..)), "{y}: off the box");
-    assert!(app.peek.is_some(), "{y}: the gap keeps it");
+    assert!(app.overlays.preview().is_some(), "{y}: the gap keeps it");
   }
   session.mouse_report(moved((area.row + 2) * height))?;
-  assert!(session.app().peek.is_some(), "inside");
+  assert!(session.app().overlays.preview().is_some(), "inside");
   Ok(())
 }
 
@@ -2383,7 +2398,7 @@ fn sideways_moves_close_previews() -> Result<()> {
     let column = (past..columns).find(|&c| on(app, c) == Some(beside));
     let to = (column.expect("a cell beside the link"), row);
     mouse(&mut session, MouseEventKind::Moved, to)?;
-    assert!(session.app().peek.is_none(), "{beside:?}");
+    assert!(session.app().overlays.preview().is_none(), "{beside:?}");
     let later = std::time::Instant::now() + vpdf_ui::input::links::REST;
     let next = matches!(beside, Hit::Link(..));
     assert_eq!(session.hover_preview(later), next, "{beside:?}");
@@ -2412,7 +2427,10 @@ fn key_previews_follow_clicks() -> Result<()> {
       mouse(&mut session, MouseEventKind::Up(button), at)?;
       let app = session.app();
       let case = format!("text={text_mode} {button:?} inside={inside}");
-      assert!(app.peek.is_none() && app.context_menu.is_none(), "{case}");
+      assert!(
+        app.overlays.preview().is_none() && app.overlays.menu().is_none(),
+        "{case}"
+      );
       let page = PageId(usize::from(followed));
       assert_eq!(app.reader.cursor.page, page, "{case}");
       if !followed {
@@ -2443,7 +2461,7 @@ fn previews_follow_links() -> Result<()> {
       None => break,
     }
   }
-  assert!(session.app().peek.is_none(), "closed: {rows:?}");
+  assert!(session.app().overlays.preview().is_none(), "closed: {rows:?}");
   assert!(rows.windows(2).all(|pair| pair[1] < pair[0]), "moved: {rows:?}");
   assert!(rows.len() > 1, "shown while the link was: {rows:?}");
   // A scroll before its first frame still closes it.
@@ -2453,7 +2471,7 @@ fn previews_follow_links() -> Result<()> {
   assert!(session.app().preview_cells().is_none(), "not drawn yet");
   session.app().reader.seed_reader(|reader| reader.scroll += 300.0);
   session.draw_frame(&mut Vec::new())?;
-  assert!(session.app().peek.is_none(), "closed before a frame");
+  assert!(session.app().overlays.preview().is_none(), "closed before a frame");
   Ok(())
 }
 
@@ -2486,7 +2504,8 @@ fn unfocused_panes_preview_too() -> Result<()> {
     let other = session.tab().panes[index].id;
     let area = hover_open(&mut session, link)?;
     assert_eq!(session.app().id, focused, "rests keep focus");
-    let showing = session.tab().panes.iter().find(|app| app.peek.is_some());
+    let showing =
+      session.tab().panes.iter().find(|app| app.overlays.preview().is_some());
     assert_eq!(showing.map(|app| app.id), Some(other));
     let app = session.app();
     let blank = (app.at.column + 1, app.at.row);
@@ -2496,7 +2515,9 @@ fn unfocused_panes_preview_too() -> Result<()> {
     let case = format!("{button:?} inside={inside}");
     let app = session.app();
     assert_eq!(app.id, if moves { other } else { focused }, "{case}");
-    assert!(session.tab().panes.iter().all(|app| app.peek.is_none()));
+    assert!(
+      session.tab().panes.iter().all(|app| app.overlays.preview().is_none())
+    );
     let page = session.app().reader.cursor.page;
     assert_eq!(page, PageId(usize::from(followed)), "{case}");
   }
@@ -2514,7 +2535,7 @@ fn focused_overlays_hold_rests() -> Result<()> {
         right(&mut session, plain)?;
       }
       "prompt" => {
-        session.app().prompt = Some(Prompt::new(PromptKind::Command));
+        session.app().overlays.open_prompt(Prompt::new(PromptKind::Command));
       }
       "recent" => {
         session.app().command("recent")?;
@@ -2562,7 +2583,7 @@ fn rests_wait_for_free_input() -> Result<()> {
   right(&mut session, plain)?;
   mouse(&mut session, MouseEventKind::Moved, link)?;
   mouse(&mut session, MouseEventKind::Down(MouseButton::Left), link)?;
-  assert!(session.app().context_menu.is_none(), "the press dismissed");
+  assert!(session.app().overlays.menu().is_none(), "the press dismissed");
   assert!(session.tab().panes[index].hover_due().is_none(), "a press");
   Ok(())
 }
@@ -2579,9 +2600,9 @@ fn closed_popups_start_no_rest() -> Result<()> {
   mouse(&mut session, MouseEventKind::Down(MouseButton::Right), link)?;
   mouse(&mut session, MouseEventKind::Up(MouseButton::Right), link)?;
   session.draw_frame(&mut Vec::new())?;
-  assert!(session.app().context_menu.is_some(), "the menu opens");
+  assert!(session.app().overlays.menu().is_some(), "the menu opens");
   press(&mut session, KeyCode::Esc)?;
-  assert!(session.app().context_menu.is_none(), "Esc closes it");
+  assert!(session.app().overlays.menu().is_none(), "Esc closes it");
   session.draw_frame(&mut Vec::new())?;
   assert!(session.app().hover_due().is_none(), "no motion, no rest");
   Ok(())
@@ -2608,7 +2629,7 @@ fn mouse_off_ends_hover() -> Result<()> {
     let later = std::time::Instant::now() + vpdf_ui::input::links::REST;
     assert!(!session.hover_preview(later), "rested={rested}: no rest");
     let app = session.app();
-    assert!(app.peek.is_none(), "rested={rested}: closed");
+    assert!(app.overlays.preview().is_none(), "rested={rested}: closed");
     assert_eq!(app.hover.hit(), Hit::Nothing, "rested={rested}");
   }
   Ok(())

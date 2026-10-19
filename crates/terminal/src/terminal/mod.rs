@@ -31,13 +31,16 @@ pub(crate) use metrics::screen_with;
 
 use metrics::{PROVOKED, note};
 
-pub use tmux::{View, focus_reports, pane_view, tmux, tmux_display, tmux_set};
+pub use tmux::{
+  Cause, Sight, View, focus_reports, pane_view, sight, tmux, tmux_display,
+  tmux_set,
+};
 
 pub(crate) use tmux::{VIEW, view};
 
 pub use output::{
-  At, Transport, clean, clear, clipped, frame_end, frame_start, graphics, line,
-  passthrough, placement, transmit,
+  At, HIDE_CURSOR, Transport, clean, clear, clipped, frame_end, frame_start,
+  graphics, line, passthrough, placement, set_title, transmit,
 };
 
 mod lifecycle;

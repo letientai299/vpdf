@@ -1,11 +1,18 @@
+mod cancel;
 #[cfg(test)]
 mod contracts;
+pub use cancel::{Cancel, Dismiss, Reset};
 pub mod edge;
 pub mod gesture;
 pub mod grab;
 pub mod links;
+pub mod mouse;
+mod overlay;
+pub use overlay::Overlay;
 #[cfg(test)]
 mod overlay_tests;
+mod targets;
+pub use targets::Targets;
 pub mod wheel;
 use crate::keys::{Action, Grammar};
 use vpdf_reader::reader::Mode;

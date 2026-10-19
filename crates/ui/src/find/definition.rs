@@ -1,5 +1,6 @@
 use super::Search;
 use crate::Result;
+use crate::keys::{self, Action};
 use crate::source::Outline;
 use crate::text::Position;
 use vpdf_model::document::Target;
@@ -46,10 +47,15 @@ impl Definition {
     })
   }
 
-  pub fn message(&self) -> Option<&'static str> {
-    Some(match self {
+  pub fn message(&self) -> Option<String> {
+    let message = match self {
       Self::Unchanged | Self::Follow(_) => return None,
-      Self::External => "External link: use gx",
+      Self::External => {
+        return Some(keys::key_for(Action::OpenUrl).map_or_else(
+          || "External link".to_owned(),
+          |key| format!("External link: use {}", keys::notation(key)),
+        ));
+      }
       Self::NoReference => "No document reference at target",
       Self::Outline(_) => {
         "Multiple heading candidates; choose an outline entry"
@@ -58,7 +64,8 @@ impl Definition {
       Self::Found { .. } => "Reference found",
       Self::Candidates => "Multiple reference candidates; choose a result",
       Self::NotFound => "Reference not found",
-    })
+    };
+    Some(message.to_owned())
   }
 }
 

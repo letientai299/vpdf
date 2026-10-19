@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use vpdf_model::geometry::Crop;
 use vpdf_model::text::Position;
 use vpdf_pdf::jobs::{Wake, recent::Worker};
@@ -33,13 +33,15 @@ pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {
   let request = pending.context("Missing home thumbnail request")?;
   let fit = request.fit;
   let worker = Worker::new("", &Wake::none());
-  worker.requests.send(vpdf_pdf::jobs::recent::Request {
-    path: request.path,
-    cursor: request.cursor,
-    rotation: request.rotation,
-    fit,
-  })?;
-  let (_, loaded) = worker.results.recv_timeout(Duration::from_secs(30))?;
+  worker.request(request);
+  let deadline = Instant::now() + Duration::from_secs(30);
+  let loaded = loop {
+    if let Some((_, loaded)) = worker.updates().next() {
+      break loaded;
+    }
+    anyhow::ensure!(Instant::now() < deadline, "Home thumbnail timed out");
+    std::thread::sleep(Duration::from_millis(5));
+  };
   let facts = loaded.facts.map_err(anyhow::Error::msg)?;
   let thumb = facts.thumb.context("Missing home thumbnail")?;
   serde_json::to_vec(&serde_json::json!({

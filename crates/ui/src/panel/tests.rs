@@ -151,3 +151,36 @@ fn presses_beyond_the_list_miss_its_rows() -> Result<()> {
   assert_eq!(panel.pointer(press(5)), Some(1));
   Ok(())
 }
+
+#[test]
+fn covered_pages_keep_width() {
+  let screen = Screen {
+    columns: 100,
+    rows: 24,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (3, 5),
+  };
+  let outline = Panel::new(PanelKind::Outline, Vec::new());
+  let help = Panel::new(PanelKind::Help, Vec::new());
+  let recent = Panel::recent(Vec::new(), &[]);
+  for (panel, dragged, left, columns) in [
+    (None, None, 0, 100),
+    (Some(&outline), None, 33, 67),
+    (Some(&help), None, 50, 50),
+    (Some(&outline), Some(1), 8, 92),
+    (Some(&outline), Some(100), 88, 12),
+    (Some(&recent), Some(100), 100, 100),
+  ] {
+    let (offset, page) = page_space(screen, panel, dragged);
+    assert_eq!((offset, page.columns), (left, columns));
+    assert_eq!(
+      (page.rows, page.cell_width, page.cell_height, page.origin),
+      (24, 8, 16, (3, 5))
+    );
+  }
+  let mut recent = recent;
+  recent.focus(false);
+  let (left, page) = page_space(screen, Some(&recent), None);
+  assert_eq!((left, page.columns), (33, 67));
+}
