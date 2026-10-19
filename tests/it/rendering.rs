@@ -45,16 +45,32 @@ fn tiles_equal_full_page_pixels() -> Result<()> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
-fn cropped_margins_keep_all_ink() -> Result<()> {
+fn crop_preserves_body_ink() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  for file in ["paper.pdf", "book.pdf"] {
+  for file in
+    ["paper.pdf", "book.pdf", "form.pdf", "ocr.pdf", "scan.pdf", "review.pdf"]
+  {
     let mut doc = Document::open(&root.join(file), "")?;
     let crop = vpdf::crop::margins(&mut doc)?;
     assert!(crop.0.iter().all(|trim| *trim < 400), "{file}: {crop:?}");
-    assert!(crop.0[0] + crop.0[2] > 100, "{file} side margins: {crop:?}");
-    for page in 0..doc.pages.len().min(40) {
+    if matches!(file, "paper.pdf" | "book.pdf") {
+      assert!(crop.0[0] + crop.0[2] > 100, "{file} side margins: {crop:?}");
+    }
+    if file == "paper.pdf" {
+      assert!(crop.0[0].abs_diff(crop.0[2]) <= 10, "{crop:?}");
+      assert!(crop.0[0] > 140, "{crop:?}");
+    }
+    eprintln!("{file}: {} pages, {crop:?}", doc.pages.len());
+    for page in 0..doc.pages.len() {
       let cropped = crop.apply(doc.pages[page].bounds);
+      let mut stamp = None;
       for line in &doc.text(PageId(page))?.lines {
+        if file == "paper.pdf" && page == 0 && line.text().starts_with("arXiv:")
+        {
+          stamp = line.span();
+          assert!(stamp.unwrap().x1 < cropped.x0);
+          continue;
+        }
         for glyph in line.glyphs.iter().filter(|g| !g.ch.is_whitespace()) {
           let (x, y) = (
             f32::midpoint(glyph.bounds.x0, glyph.bounds.x1),
@@ -68,7 +84,105 @@ fn cropped_margins_keep_all_ink() -> Result<()> {
           );
         }
       }
+      check_crop_pixels(&mut doc, PageId(page), crop, stamp)?;
     }
+  }
+  Ok(())
+}
+
+fn check_crop_pixels(
+  doc: &mut Document,
+  page: PageId,
+  crop: vpdf::layout::Crop,
+  stamp: Option<vpdf::text::Bounds>,
+) -> Result<()> {
+  use vpdf::layout::{page_matrix, transform};
+  let bounds = doc.pages[page.0].bounds;
+  let scale = (320.0 / bounds.width() * 1024.0) as u32;
+  let matrix = page_matrix(bounds, scale, 0);
+  let cropped = transform(crop.apply(bounds), &matrix);
+  let stamp = stamp.map(|stamp| transform(stamp, &matrix));
+  let pixmap =
+    doc.display(page)?.to_pixmap(&matrix, &Colorspace::device_gray(), false)?;
+  let stride = usize::try_from(pixmap.stride())?;
+  for (y, row) in pixmap.samples().chunks(stride).enumerate() {
+    for (x, value) in row[..pixmap.width() as usize].iter().enumerate() {
+      if *value >= 235 {
+        continue;
+      }
+      let (px, py) = (
+        x as f32 + pixmap.x() as f32 + 0.5,
+        y as f32 + pixmap.y() as f32 + 0.5,
+      );
+      assert!(
+        cropped.contains(px, py)
+          || stamp.is_some_and(|stamp| stamp.contains(px, py)),
+        "p{} lost ink at {px},{py}: {crop:?}",
+        page.0 + 1
+      );
+    }
+  }
+  Ok(())
+}
+
+#[test]
+fn crop_ignores_margin_stamps() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("stamps.pdf");
+  for (matrix, label, graphic, trimmed) in [
+    ("0 1 -1 0 20 40", "arXiv:1706.03762", "", (true, true)),
+    ("0 1 -1 0 290 40", "arXiv:1706.03762", "", (true, true)),
+    ("0 -1 1 0 10 160", "arXiv:1706.03762", "", (true, true)),
+    ("0 1 -1 0 20 40", "Important label", "", (false, true)),
+    ("1 0 0 1 10 20", "arXiv:1706.03762", "", (false, true)),
+    ("0 1 -1 0 55 40", "arXiv:1706.03762", "", (false, true)),
+    ("0 1 -1 0 20 40", "arXiv:1706.03762", "12 80 5 5 re f", (false, true)),
+    ("0 1 -1 0 20 40", "arXiv:1706.03762", "6 80 1 5 re f", (false, true)),
+    (
+      "0 1 -1 0 20 40",
+      "arXiv:1706.03762",
+      "BT /F1 6 Tf 1 0 0 1 12 80 Tm (x) Tj ET",
+      (false, true),
+    ),
+    (
+      "0 1 -1 0 20 40",
+      "arXiv:1706.03762",
+      "q 5 0 0 5 12 80 cm BI /W 1 /H 1 /CS /RGB /BPC 8 /F /AHx ID 000000> EI Q",
+      (false, true),
+    ),
+  ] {
+    let content = format!(
+      "60 40 180 120 re f BT /F1 10 Tf {matrix} Tm ({label}) Tj ET {graphic}"
+    );
+    crate::common::write_pdf(
+      &path,
+      &[
+        "<< /Type /Catalog /Pages 2 0 R >>".into(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".into(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] \
+       /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+          .into(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into(),
+        format!(
+          "<< /Length {} >>\nstream\n{content}\nendstream",
+          content.len()
+        ),
+      ],
+      "",
+    )?;
+    let mut doc = Document::open(&path, "")?;
+    let crop = vpdf::crop::margins(&mut doc)?;
+    assert_eq!(doc.cache_bytes(), 0, "margin detection filled the text cache");
+    assert_eq!(
+      crop.0[0] > 170,
+      trimmed.0,
+      "{matrix}: {label}: {graphic}: {crop:?}"
+    );
+    assert_eq!(
+      crop.0[2] > 170,
+      trimmed.1,
+      "{matrix}: {label}: {graphic}: {crop:?}"
+    );
   }
   Ok(())
 }

@@ -1,9 +1,10 @@
 use crate::Result;
 use crate::app::App;
-use crate::document::Document;
-use crate::layout::{Crop, page_matrix};
-use crate::text::PageId;
-use mupdf::Colorspace;
+use crate::document::{Document, TEXT_FLAGS};
+use crate::layout::{Crop, clip, page_matrix, transform};
+use crate::text::{Bounds, PageId};
+use mupdf::text_page::TextBlockType;
+use mupdf::{Colorspace, DisplayList, Matrix, TextPageFlags};
 
 /// Pages sampled for margins; enough to cover odd and even layouts.
 const SAMPLES: usize = 24;
@@ -14,23 +15,82 @@ const INK: u8 = 235;
 /// Margin kept around the detected content, in thousandths.
 const PAD: u16 = 15;
 
+fn stamps(
+  list: &DisplayList,
+  bounds: Bounds,
+  matrix: &Matrix,
+) -> Result<Vec<Bounds>> {
+  let flags = TEXT_FLAGS
+    | TextPageFlags::PRESERVE_IMAGES
+    | TextPageFlags::COLLECT_VECTORS;
+  let raw = list.to_text_page(flags)?;
+  let mut content: Vec<Bounds> = raw
+    .blocks()
+    .filter(|block| {
+      matches!(block.r#type(), TextBlockType::Image | TextBlockType::Vector)
+    })
+    .map(|block| transform(block.bounds().into(), matrix))
+    .collect();
+  let mut candidates = Vec::new();
+  for block in raw.blocks() {
+    for line in block.lines() {
+      let text: String = line.chars().filter_map(|ch| ch.char()).collect();
+      let rect = Bounds::from(line.bounds());
+      if text.trim_start().starts_with("arXiv:")
+        && rect.height() > 4.0 * rect.width()
+        && (rect.x1 < bounds.x0 + bounds.width() * 0.1
+          || rect.x0 > bounds.x1 - bounds.width() * 0.1)
+      {
+        candidates.push(rect);
+      } else {
+        content.push(transform(rect, matrix));
+      }
+    }
+  }
+  Ok(
+    candidates
+      .into_iter()
+      .map(|stamp| {
+        let mut rect = transform(stamp, matrix);
+        // Include antialiased edges in the thumbnail.
+        rect.x0 = rect.x0.floor() - 1.0;
+        rect.y0 = rect.y0.floor() - 1.0;
+        rect.x1 = rect.x1.ceil() + 1.0;
+        rect.y1 = rect.y1.ceil() + 1.0;
+        rect
+      })
+      .filter(|stamp| {
+        !content.iter().any(|bounds| clip(*stamp, *bounds).is_some())
+      })
+      .collect(),
+  )
+}
+
 /// Ink box of one page as fractions of its width and height.
 fn ink(doc: &mut Document, page: PageId) -> Result<Option<[f32; 4]>> {
   let bounds = doc.pages[page.0].bounds;
   let scale = (WIDTH / bounds.width() * 1024.0) as u32;
+  let matrix = page_matrix(bounds, scale, 0);
   let list = doc.display(page)?;
-  let pixmap = list.to_pixmap(
-    &page_matrix(bounds, scale, 0),
-    &Colorspace::device_gray(),
-    false,
-  )?;
+  let pixmap = list.to_pixmap(&matrix, &Colorspace::device_gray(), false)?;
   let (width, height) = (pixmap.width() as usize, pixmap.height() as usize);
   let stride = usize::try_from(pixmap.stride())?;
   let samples = pixmap.samples();
+  let edge = width.div_ceil(10);
+  let peripheral = samples.chunks(stride).take(height).any(|row| {
+    row[..edge]
+      .iter()
+      .chain(&row[width - edge..width])
+      .any(|value| *value < INK)
+  });
+  let stamps =
+    if peripheral { stamps(&list, bounds, &matrix)? } else { Vec::new() };
+  let origin = (pixmap.x() as f32, pixmap.y() as f32);
   let (mut x0, mut y0, mut x1, mut y1) = (width, height, 0, 0);
   for y in 0..height {
     for (x, value) in samples[y * stride..][..width].iter().enumerate() {
-      if *value < INK {
+      let (px, py) = (x as f32 + origin.0, y as f32 + origin.1);
+      if *value < INK && !stamps.iter().any(|stamp| stamp.contains(px, py)) {
         (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x + 1), y1.max(y + 1));
       }
     }
