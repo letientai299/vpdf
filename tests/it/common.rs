@@ -1,8 +1,29 @@
+use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::path::Path;
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
+use vpdf::prompt::History;
+use vpdf_protocol::decode::{Event, Parser};
+
+/// Events decoded from `bytes`, without waiting for a quiet pause.
+pub fn events(bytes: &[u8]) -> VecDeque<Event> {
+  let mut events = VecDeque::new();
+  Parser::default().feed(bytes, &mut events);
+  events
+}
+
+/// Feeds key `bytes` to `app`.
+pub fn keys(app: &mut App, bytes: &[u8]) -> Result<()> {
+  let events = events(bytes);
+  assert!(bytes.is_empty() || !events.is_empty(), "undecoded key bytes");
+  for event in events {
+    let Event::Key(key) = event else { panic!("Expected key") };
+    app.key(key, &mut History::default())?;
+  }
+  Ok(())
+}
 
 /// Starts the outline the app loads off the input thread and waits.
 pub fn outline_loaded(app: &mut App) -> Result<()> {
@@ -18,7 +39,7 @@ pub fn outline_loaded(app: &mut App) -> Result<()> {
 
 pub fn search_loaded(app: &mut App) -> Result<()> {
   let started = Instant::now();
-  while !matches!(app.search.phase, vpdf::find::Phase::Complete) {
+  while !matches!(app.search.phase(), vpdf::find::Phase::Complete) {
     app.search_updates()?;
     anyhow::ensure!(started.elapsed() < Duration::from_secs(15), "Search");
     std::thread::sleep(Duration::from_millis(1));

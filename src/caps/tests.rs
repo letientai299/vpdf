@@ -3,9 +3,14 @@
 //! size), a `WezTerm` 20240203-110809-5046fc22 headless mux, and tmux 3.8
 //! in kitty; the others follow each terminal's XTVERSION and protocol
 //! sources.
+
+use super::keyboard::*;
+use super::probe::*;
+use super::types::*;
 use super::*;
-use crate::decode::{Event, Parser};
+
 use std::collections::VecDeque;
+use vpdf_protocol::decode::{Event, Parser};
 
 /// The replies in `bytes`, decoded as the reader does.
 fn replies(bytes: &[u8]) -> Vec<Reply> {

@@ -1,0 +1,18 @@
+[package]
+name = "vpdf-pdf"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+mupdf.workspace = true
+vpdf-model.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+font-kit.workspace = true
+mupdf = { workspace = true, features = ["sys-lib-zlib"] }

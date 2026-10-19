@@ -4,11 +4,11 @@ use crate::layout::Screen;
 use crate::marks::Span;
 use crate::panel::Pointing;
 use crate::pointer::{Hit, List};
-use crate::reader::SelectionKind;
 use crate::terminal;
 use crate::text::{Bounds, Line, PageId, Position};
 use crate::tiles::{self, TileKey};
 use std::io::Write;
+use vpdf_reader::reader::SelectionKind;
 
 /// Parts of `rect` outside `hole`.
 fn around(rect: Bounds, hole: Bounds) -> impl Iterator<Item = Bounds> {
@@ -39,7 +39,7 @@ pub(crate) fn covered_rows(
     let glyphs = row.glyphs.iter().enumerate();
     let covered = glyphs.filter(move |(glyph, _)| {
       let at = Position { page, line, glyph: *glyph };
-      crate::motion::covers(range, linewise, at)
+      vpdf_reader::motion::covers(range, linewise, at)
     });
     covered.map(|(_, ch)| ch.bounds).reduce(Bounds::union)
   })
@@ -197,9 +197,9 @@ impl App {
       let rect = self.layout.project(page, bounds, self.reader.scroll);
       self.tint(rect, crate::theme::LINK, screen, out)?;
     }
-    if !self.search.hidden {
+    if !self.search.hidden() {
       let visible = self.layout.visible(self.reader.scroll);
-      let hits = &self.search.hits;
+      let hits = self.search.hits();
       let start = hits.partition_point(|hit| hit.first.page.0 < visible.start);
       let ranges: Vec<_> = hits[start..]
         .iter()
@@ -324,7 +324,7 @@ impl App {
     screen: Screen,
     out: &mut impl Write,
   ) -> Result<()> {
-    let range = crate::motion::range(first, last);
+    let range = vpdf_reader::motion::range(first, last);
     let (first, last) = range;
     for page in self.layout.visible(self.reader.scroll) {
       if page < first.page.0 || page > last.page.0 {

@@ -2,7 +2,6 @@
 //! `poll`, so an idle reader sleeps instead of waking every few ms.
 use crate::Result;
 use crate::caps::KeyLack;
-use crate::decode::{Event, Parser, Reply};
 use anyhow::Context;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::io::Errno;
@@ -14,6 +13,7 @@ use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
+use vpdf_protocol::decode::{Event, Parser, Reply};
 
 struct Reader {
   tty: File,
@@ -546,7 +546,7 @@ mod tests {
     delayed.join().unwrap()?;
     assert!(replies.contains(&Reply::Mode {
       mode: 5522,
-      state: crate::decode::ModeState::Reset
+      state: vpdf_protocol::decode::ModeState::Reset
     }));
     assert_eq!(replies.last(), Some(&Reply::Attributes(vec![62, 52])));
     assert_eq!(
@@ -566,7 +566,7 @@ mod tests {
       reader.next(Some(Duration::from_millis(30)))?,
       Some(Event::Reply(Reply::Mode {
         mode: 5522,
-        state: crate::decode::ModeState::Reset
+        state: vpdf_protocol::decode::ModeState::Reset
       }))
     );
     let mut request = Vec::new();

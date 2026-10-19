@@ -43,7 +43,7 @@ pub struct Scrub {
   /// Pixels from thumb top to pointer.
   grip: f32,
   /// A grip's start, recorded once moved.
-  origin: Option<crate::reader::Location>,
+  origin: Option<vpdf_reader::reader::Location>,
 }
 
 impl App {
@@ -186,9 +186,9 @@ impl App {
   fn refresh_runs(&mut self, height: f32) {
     let key = (
       self.doc.outline.len(),
-      self.search.generation,
-      self.search.hits.len(),
-      self.search.hidden,
+      self.search.generation(),
+      self.search.hits().len(),
+      self.search.hidden(),
       self.layout.total.to_bits(),
       height.to_bits(),
     );
@@ -214,10 +214,10 @@ impl App {
       };
       ticks.push((at(y), theme::HEADING_TICK));
     }
-    let hits = &self.search.hits;
+    let hits = self.search.hits();
     let mut index = 0;
     // Hits carry no y: mark their pages.
-    while !self.search.hidden && index < hits.len() {
+    while !self.search.hidden() && index < hits.len() {
       let page = hits[index].first.page;
       let layout = &self.layout.pages[page.0];
       ticks.push((at(layout.top + layout.height / 2.0), theme::MATCH_TICK));
@@ -316,13 +316,14 @@ mod tests {
       Found { first: at, last: at, excerpt: String::new() }
     };
     // Three matches on two pages: two ticks.
-    app.search.hits = vec![found(2), found(2), found(9)];
+    let query = crate::find::Query::default();
+    app.search.show(query, vec![found(2), found(2), found(9)]);
     let matches = app.ticks(height).into_iter();
     let matches = matches.filter(|(_, color)| *color == theme::MATCH_TICK);
     let ys: Vec<_> = matches.map(|(y, _)| y).collect();
     assert_eq!(ys.len(), 2);
     assert!(ys.iter().all(|y| (0.0..height).contains(y)));
-    app.search.hidden = true;
+    app.search.set_hidden(true);
     assert_eq!(app.ticks(height), headings, "hidden matches mark nothing");
     Ok(())
   }

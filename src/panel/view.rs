@@ -1,0 +1,387 @@
+use super::{
+  Action, Color, Destination, Graphics, Input, Layout, MIN_WIDTH, Motion,
+  MouseButton, MouseEvent, MouseEventKind, Panel, PanelKind, Pointing, Result,
+  Row, RowSearch, Screen, Target, UnicodeWidthStr, WHEEL_ROWS, Wheel, Write,
+  key_width, moved_row, screen_step, terminal, theme,
+};
+
+impl Panel {
+  /// `index`'s line on screen, as scrolled.
+  pub(crate) fn screen_line(&self, index: usize) -> isize {
+    self.line_start(index) as isize - self.top as isize
+  }
+
+  pub fn new(kind: PanelKind, rows: Vec<Row>) -> Self {
+    Self {
+      kind,
+      rows,
+      selected: 0,
+      focused: true,
+      top: 0,
+      search: RowSearch::default(),
+      note: "",
+      columns: u16::MAX,
+      height: 0,
+      layout: None,
+      follow_pending: false,
+      shelf: None,
+      pointing: Pointing::Away,
+      hover_title: None,
+      clicked: None,
+    }
+  }
+
+  /// Replaces the rows and note, keeping focus and the selected row,
+  /// else the selection in range; whether that row stayed.
+  pub fn refill(&mut self, rows: Vec<Row>, note: &'static str) -> bool {
+    let last = rows.len().saturating_sub(1);
+    let find = |index: usize| moved_row(&self.rows, index, &rows);
+    let before = self.selected;
+    let kept = find(before);
+    self.selected = kept.unwrap_or(before).min(last);
+    // Rows, as the cleared layout reads it; the kept row keeps its line.
+    let top = self.line_source(self.top);
+    self.top = (top + self.selected).saturating_sub(before);
+    if self.top >= rows.len() {
+      self.top = 0;
+    }
+    self.search.follow(|origin| find(origin).unwrap_or(origin).min(last));
+    self.clicked = self.clicked.and_then(find);
+    self.layout = None;
+    self.rows = rows;
+    self.note = note;
+    kept.is_some()
+  }
+
+  /// Applies list motions; `page` rows per full-screen scroll.
+  pub fn navigate(&mut self, input: Input, page: usize) -> bool {
+    let last = self.rows.len().saturating_sub(1);
+    let count = input.count;
+    let screen_rows = screen_step(page.saturating_sub(2));
+    if self.kind == PanelKind::Help && self.layout.is_some() {
+      let scroll = match input.action {
+        Action::Scroll(amount) => {
+          Some((amount * page as f32 * count as f32) as isize)
+        }
+        Action::Screen(direction) => {
+          Some(direction as isize * screen_rows as isize * count as isize)
+        }
+        Action::Rows(rows) => Some(rows as isize * count as isize),
+        _ => None,
+      };
+      if let Some(rows) = scroll {
+        self.scroll_lines(rows, page);
+        return true;
+      }
+    }
+    self.selected = match input.action {
+      Action::Motion(Motion::Down) => self.selected.saturating_add(count),
+      Action::Motion(Motion::Up) => self.selected.saturating_sub(count),
+      Action::Motion(Motion::First | Motion::Last) if input.explicit => {
+        count.saturating_sub(1)
+      }
+      Action::Motion(Motion::First) => 0,
+      Action::Motion(Motion::Last) => last,
+      Action::Scroll(amount) => {
+        let rows = (amount * page as f32 * count as f32) as isize;
+        self.selected.saturating_add_signed(rows)
+      }
+      Action::Screen(direction) => {
+        let rows = direction as isize * screen_rows as isize * count as isize;
+        self.selected.saturating_add_signed(rows)
+      }
+      Action::Rows(rows) => {
+        self.selected.saturating_add_signed(rows as isize * count as isize)
+      }
+      Action::Motion(Motion::NextParagraph | Motion::PreviousParagraph) => {
+        let forward = input.action == Action::Motion(Motion::NextParagraph);
+        self.heading(forward, count);
+        self.selected
+      }
+      Action::Align(fraction) => {
+        let visible = page.saturating_sub(3) as f32;
+        self.top = self
+          .line_start(self.selected)
+          .saturating_sub((visible * fraction) as usize);
+        self.selected
+      }
+      Action::Result(reverse) => {
+        self.repeat(reverse, count);
+        self.selected
+      }
+      _ => return false,
+    }
+    .min(last);
+    self.height = u16::try_from(page).unwrap_or(u16::MAX);
+    self.reveal();
+    true
+  }
+
+  /// Returns a clicked row; only presses focus.
+  pub fn pointer(&mut self, mouse: MouseEvent) -> Option<usize> {
+    if matches!(mouse.kind, MouseEventKind::Down(_)) {
+      self.focused = true;
+    }
+    let card = self.shelf.as_mut().filter(|shelf| shelf.covers(mouse.column));
+    if let (Some(shelf), Some(turn)) = (card, Wheel::of(mouse.kind)) {
+      let rows = isize::from(WHEEL_ROWS);
+      match turn {
+        Wheel::Down => shelf.scroll(rows),
+        Wheel::Up => shelf.scroll(-rows),
+        _ => {}
+      }
+      return None;
+    }
+    match mouse.kind {
+      kind if Wheel::of(kind) == Some(Wheel::Down) => {
+        let visible = usize::from(self.height.saturating_sub(2));
+        self.top = self
+          .top
+          .saturating_add(usize::from(WHEEL_ROWS))
+          .min(self.line_count().saturating_sub(visible.max(1)));
+      }
+      kind if Wheel::of(kind) == Some(Wheel::Up) => {
+        self.top = self.top.saturating_sub(usize::from(WHEEL_ROWS));
+      }
+      MouseEventKind::Down(MouseButton::Left) => {
+        let index = self.row_at(mouse.column, mouse.row)?;
+        self.selected = index;
+        return Some(index);
+      }
+      _ => {}
+    }
+    None
+  }
+
+  /// The recent view: it covers the pane while focused and opens rows
+  /// with Enter alone.
+  pub fn is_recent_view(&self) -> bool {
+    self.shelf.is_some()
+  }
+
+  /// What `yy` copies from the selected row: a link's address, else
+  /// its label.
+  pub fn yank_text(&self) -> Option<String> {
+    let row = self.rows.get(self.selected)?;
+    let value = match (&self.kind, &row.destination) {
+      (PanelKind::Links, Destination::Link(Target::Uri(uri))) => uri,
+      _ => &row.label,
+    };
+    Some(format!("{}\n", value.trim()))
+  }
+
+  /// The row at a panel cell.
+  pub fn row_at(&self, column: u16, row: u16) -> Option<usize> {
+    if row == 0 || column + 1 >= self.columns {
+      return None;
+    }
+    if self.layout.is_some() && row >= self.height.saturating_sub(1) {
+      return None;
+    }
+    let line = self.top + usize::from(row) - 1;
+    if line >= self.line_count() {
+      return None;
+    }
+    Some(self.line_source(line)).filter(|&index| index < self.rows.len())
+  }
+
+  /// Selects row `index` and shows it.
+  pub(crate) fn select(&mut self, index: usize) {
+    self.selected = index;
+    self.reveal();
+  }
+
+  pub(crate) fn reveal(&mut self) {
+    let count = usize::from(self.height.saturating_sub(2));
+    let start = self.line_start(self.selected);
+    let end = self.line_start(self.selected + 1);
+    if start < self.top || end.saturating_sub(start) > count {
+      self.top = start;
+    } else if count > 0 && end > self.top + count {
+      self.top = end - count;
+    }
+  }
+
+  fn scroll_lines(&mut self, rows: isize, page: usize) {
+    self.height = u16::try_from(page).unwrap_or(u16::MAX);
+    let visible = page.saturating_sub(2).max(1);
+    let offset =
+      self.line_start(self.selected).saturating_sub(self.top).min(visible - 1);
+    self.top = self
+      .top
+      .saturating_add_signed(rows)
+      .min(self.line_count().saturating_sub(visible));
+    self.selected = self.line_source(self.top + offset);
+  }
+
+  fn line_count(&self) -> usize {
+    self.layout.as_ref().map_or(self.rows.len(), |help| help.lines.len())
+  }
+
+  fn line_source(&self, line: usize) -> usize {
+    self.layout.as_ref().map_or(line, |help| {
+      help.lines.get(line).map_or(self.rows.len(), |line| line.source)
+    })
+  }
+
+  pub(super) fn line_start(&self, row: usize) -> usize {
+    self.layout.as_ref().map_or(row, |help| {
+      help.starts.get(row).copied().unwrap_or(help.lines.len())
+    })
+  }
+
+  pub(super) fn reflow(&mut self, columns: usize) {
+    if matches!(self.kind, PanelKind::Help)
+      && self.layout.as_ref().is_some_and(|layout| layout.columns == columns)
+      || !matches!(
+        self.kind,
+        PanelKind::Help | PanelKind::Links | PanelKind::Jumps
+      )
+    {
+      return;
+    }
+    let source = self.line_source(self.top);
+    let offset = self.top.saturating_sub(self.line_start(source));
+    let selected = self.line_start(self.selected);
+    let visible = usize::from(self.height.saturating_sub(2));
+    let shown = (self.top..self.top + visible).contains(&selected);
+    self.layout = Some(match self.kind {
+      PanelKind::Links => Layout::links(&self.rows, columns, self.selected),
+      PanelKind::Jumps => Layout::jumps(&self.rows, columns, self.selected),
+      _ => Layout::help(&self.rows, columns),
+    });
+    let start = self.line_start(source);
+    let length = self.line_start(source + 1).saturating_sub(start);
+    self.top = start + offset.min(length.saturating_sub(1));
+    if shown {
+      self.reveal();
+    }
+  }
+
+  /// Panel columns: dragged, else by kind.
+  pub fn width(kind: PanelKind, columns: u16, dragged: Option<u16>) -> u16 {
+    let wide = matches!(kind, PanelKind::Help | PanelKind::Info);
+    let width = dragged.map_or_else(
+      || {
+        let width = if wide { columns / 2 } else { columns / 3 };
+        width.clamp(1, if wide { 64 } else { 50 })
+      },
+      |dragged| dragged.max(MIN_WIDTH),
+    );
+    width.min(columns.saturating_sub(12))
+  }
+
+  /// Draws `width` columns of `screen`, with the selected document's
+  /// card when the panel has a shelf; `graphics` places its thumbnail.
+  pub fn draw(
+    &mut self,
+    out: &mut impl Write,
+    at: terminal::At,
+    width: u16,
+    screen: Screen,
+    graphics: Option<&mut Graphics>,
+  ) -> Result<()> {
+    let Some(mut cards) = self.shelf.take() else {
+      return self.list(out, at, width, screen.rows);
+    };
+    if width < screen.columns || !self.focused {
+      cards.hide();
+      self.shelf = Some(cards);
+      return self.list(out, at, width, screen.rows);
+    }
+    let drawn = cards.draw(self, out, at, width, screen, graphics);
+    self.shelf = Some(cards);
+    drawn
+  }
+
+  /// Draws the rows in `width` columns; the last is the border.
+  pub fn list(
+    &mut self,
+    out: &mut impl Write,
+    at: terminal::At,
+    width: u16,
+    height: u16,
+  ) -> Result<()> {
+    self.columns = width;
+    self.height = height;
+    self.hover_title = None;
+    if width < 2 {
+      return Ok(());
+    }
+    let inner = usize::from(width.saturating_sub(1));
+    for row in 1..height {
+      let border = at.goto(row - 1, width - 1);
+      write!(out, "{border}{}│{}", theme::MUTED, theme::RESET)?;
+    }
+    let title = format!(" {} ", self.kind.title());
+    let count = format!(" {} {}", self.rows.len(), self.note);
+    write!(
+      out,
+      "{}{}{}{}{}{}",
+      at.goto(0u16, 0u16),
+      theme::badge(Color::Cyan),
+      terminal::clean(&title, inner),
+      theme::MUTED,
+      terminal::clean(&count, inner.saturating_sub(title.width())),
+      theme::RESET
+    )?;
+    self.reflow(inner);
+    let keys = key_width(&self.rows, inner);
+    let count = height.saturating_sub(2) as usize;
+    self.top = self.top.min(self.line_count().saturating_sub(count.max(1)));
+    let start = self.top;
+    for (row, index) in (start..self.line_count()).take(count).enumerate() {
+      let (source, item, keys, cut) = self.layout.as_ref().map_or_else(
+        || (index, &self.rows[index], keys, None),
+        |help| {
+          let line = &help.lines[index];
+          // The row's label line, even scrolled off.
+          let label = &help.lines[help.starts[line.source]];
+          (line.source, &line.row, line.keys, Some(label.clipped))
+        },
+      );
+      let hovered = self.pointing.row() == Some(source);
+      let selected = source == self.selected;
+      let plain = match (selected, self.focused) {
+        (true, true) => theme::SELECTED,
+        (true, false) => theme::CURRENT,
+        (false, true) => theme::RESET,
+        (false, false) => theme::DIM,
+      };
+      let base = match (hovered && !selected, self.focused) {
+        (true, true) => theme::HOVER,
+        (true, false) => theme::HOVER_DIM,
+        (false, _) => plain,
+      };
+      write!(out, "{}{base}", at.goto(row + 1, 0u16))?;
+      let detail = terminal::clean(&item.detail, inner / 3);
+      let room = if detail.is_empty() {
+        inner
+      } else {
+        inner.saturating_sub(detail.width() + 1)
+      };
+      let used = item.write(out, base, room, keys, &self.search.query)?;
+      if hovered {
+        let full = |item: &Row| {
+          item.write(&mut std::io::sink(), base, usize::MAX, keys, "")
+        };
+        let clipped = match cut {
+          Some(clipped) => clipped,
+          None => full(item)? > used,
+        };
+        if clipped {
+          // Outline rows indent by depth.
+          self.hover_title = Some(self.rows[source].label.trim().to_owned());
+        }
+      }
+      write!(
+        out,
+        "{plain}{}{}{detail}{}",
+        " ".repeat(inner.saturating_sub(used + detail.width())),
+        if plain == theme::RESET { theme::MUTED } else { "" },
+        theme::RESET
+      )?;
+    }
+    Ok(())
+  }
+}

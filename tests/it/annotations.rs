@@ -8,8 +8,8 @@ use vpdf::keys::{Action, Input, PanelKind};
 use vpdf::layout::Screen;
 use vpdf::panel::Destination;
 use vpdf::prompt::History;
-use vpdf::reader::Mode;
 use vpdf::text::{PageId, Position};
+use vpdf_reader::reader::Mode;
 
 fn annotated() -> Result<(tempfile::NamedTempFile, String)> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
@@ -442,7 +442,7 @@ fn click_at(
   (column, row): (u16, u16),
   now: std::time::Instant,
 ) -> Result<()> {
-  use vpdf::decode::{Button, Mouse, MouseKind, Spot};
+  use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
   for kind in [MouseKind::Press(Button::LEFT), MouseKind::Release(Button::LEFT)]
   {
     let at = Spot::Cell { column, row };

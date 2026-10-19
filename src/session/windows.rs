@@ -1,0 +1,464 @@
+use super::{
+  App, At, Axis, Graphics, Node, PasswordRequired, Path, Place, Rect, Result,
+  Screen, Session, Tab, Tabline, Unmeasured, Window, io, neighbor,
+};
+
+pub(super) fn full(screen: Screen) -> Rect {
+  Rect { column: 0, row: 0, columns: screen.columns, rows: screen.rows }
+}
+
+pub(super) fn replace_leaf(node: &mut Node, from: u32, to: u32) {
+  match node {
+    Node::Leaf(id) if *id == from => *id = to,
+    Node::Leaf(_) => {}
+    Node::Split { first, second, .. } => {
+      replace_leaf(first, from, to);
+      replace_leaf(second, from, to);
+    }
+  }
+}
+
+impl Session {
+  pub(super) fn content(&self, mut screen: Screen) -> Screen {
+    if self.state.perf {
+      let rows = crate::perf::rows(screen);
+      screen.rows -= rows;
+      screen.origin.1 += rows;
+    }
+    screen
+  }
+
+  pub(super) fn area(&self) -> Rect {
+    self.screen.map_or_default(|screen| {
+      let content = self.content(screen);
+      Rect { row: content.origin.1 - screen.origin.1, ..full(content) }
+    })
+  }
+
+  /// Focuses a pane and blurs the old one.
+  pub(super) fn focus(&mut self, tab: usize, pane: usize) -> Result<()> {
+    if self.active == tab && self.tabs[tab].focus == pane {
+      return Ok(());
+    }
+    self.leave()?;
+    let graphics = self.take_graphics();
+    let target = &mut self.tabs[tab];
+    if target.focus != pane {
+      target.last = Some(target.panes[target.focus].id);
+    }
+    target.focus = pane;
+    self.active = tab;
+    self.give(graphics);
+    // A rest from before focus is stale.
+    self.app().calm_hover();
+    self.arrange()
+  }
+
+  pub(super) fn leave(&mut self) -> Result<()> {
+    if let Some(tab) = self.tabs.get_mut(self.active)
+      && let Some(app) = tab.panes.get_mut(tab.focus)
+    {
+      app.blur()?;
+    }
+    self.pointer.release();
+    Ok(())
+  }
+
+  /// Sizes every pane of the active tab and marks the focused one.
+  pub(super) fn arrange(&mut self) -> Result<()> {
+    let Some(screen) = self.screen else { return Ok(()) };
+    let showing = self.tabs[self.active].order();
+    for id in std::mem::replace(&mut self.shown, showing.clone()) {
+      if showing.contains(&id) {
+        continue;
+      }
+      let hidden = self.tabs.iter_mut().flat_map(|tab| &mut tab.panes);
+      if let Some(app) = hidden.into_iter().find(|app| app.id == id) {
+        app.trim();
+      }
+    }
+    let names =
+      self.tabs.iter().map(|tab| tab.panes[tab.focus].name()).collect();
+    let active = self.active;
+    let area = self.area();
+    let tab = &mut self.tabs[active];
+    let mut rects = Vec::new();
+    tab.tree.layout(area, &mut rects);
+    let mut tabline = Some(Tabline { names, active });
+    for (id, rect) in rects {
+      let Some(index) = tab.index(id) else { continue };
+      let focused = index == tab.focus;
+      let app = &mut tab.panes[index];
+      // Another tab or pane may have drawn over these rows. After a
+      // resize the clear also erases images `WezTerm` keeps in cells,
+      // which it no longer deletes by placement id.
+      app.blank = false;
+      app.focused = focused;
+      app.tabline = if focused {
+        tabline.take().unwrap_or_default()
+      } else {
+        Tabline::default()
+      };
+      let pane = Screen {
+        columns: rect.columns,
+        rows: rect.rows,
+        origin: (screen.origin.0 + rect.column, screen.origin.1 + rect.row),
+        ..screen
+      };
+      let at = At { column: rect.column, row: rect.row };
+      let before = (app.screen.columns, app.screen.rows, app.screen.origin);
+      if before != (pane.columns, pane.rows, pane.origin) || app.at != at {
+        // Hint labels and link previews sit at the old size.
+        app.hints = None;
+        app.peek = None;
+        app.context_menu = None;
+        app.screen = pane;
+        app.at = at;
+        app.requested.clear();
+        app.relayout()?;
+      }
+    }
+    Ok(())
+  }
+
+  pub(super) fn existing(&self, path: &Path) -> Option<(usize, usize)> {
+    if let Some(tab) = self.tabs.get(self.active)
+      && tab.panes[tab.focus].path == path
+    {
+      return Some((self.active, tab.focus));
+    }
+    self.tabs.iter().enumerate().find_map(|(t, tab)| {
+      tab.panes.iter().position(|app| app.path == path).map(|p| (t, p))
+    })
+  }
+
+  /// Opens `path` in a new tab, or in place of the focused pane.
+  pub fn open(&mut self, path: &Path, tab: bool, screen: Screen) -> Result<()> {
+    self.screen = Some(screen);
+    let path = std::fs::canonicalize(path)?;
+    let found = self.existing(&path);
+    if let Some((tab, pane)) = found {
+      return self.focus(tab, pane);
+    }
+    let app = self.load(&path, "", screen)?;
+    self.leave()?;
+    let mut graphics = self.take_graphics();
+    if tab || self.tabs.is_empty() {
+      return self.insert_tab(app, graphics);
+    }
+    let tab = self.tab();
+    let focus = tab.focus;
+    let old = std::mem::replace(&mut tab.panes[focus], app);
+    let id = tab.panes[focus].id;
+    replace_leaf(&mut tab.tree, old.id, id);
+    self.retire(&old, &mut graphics);
+    self.give(graphics);
+    self.arrange()
+  }
+
+  /// Loads `path` and restores its saved view.
+  pub(super) fn load(
+    &mut self,
+    path: &Path,
+    password: &str,
+    screen: Screen,
+  ) -> Result<App> {
+    let mut secret = password.to_owned();
+    let mut app = loop {
+      match App::with_screen(path, &secret, false, screen) {
+        Err(error) if error.is::<PasswordRequired>() => {
+          secret = crate::prompt::password()?;
+        }
+        result => break result?,
+      }
+    };
+    self.watcher.add(path);
+    if let Some(entry) = self.state.entry(path) {
+      app.restore(entry)?;
+    }
+    self.state.remember(&app);
+    self.changed();
+    Ok(app)
+  }
+
+  /// Saves a closing pane's place, deletes its images, and stops
+  /// watching its file.
+  fn retire(&mut self, app: &App, graphics: &mut Graphics) {
+    graphics.forget(app.id);
+    self.watcher.remove(&app.path);
+    self.state.remember(app);
+  }
+
+  pub fn activate(&mut self, index: usize) -> Result<()> {
+    if index == self.active || index >= self.tabs.len() {
+      return Ok(());
+    }
+    let focus = self.tabs[index].focus;
+    self.focus(index, focus)
+  }
+
+  /// Closes the active tab; the session ends after the last.
+  pub fn close(&mut self) -> Result<()> {
+    self.close_tab(self.active)
+  }
+
+  /// Closes a tab; the last quits.
+  pub(super) fn close_tab(&mut self, index: usize) -> Result<()> {
+    if index >= self.tabs.len() {
+      return Ok(());
+    }
+    if index == self.active {
+      self.leave()?;
+    }
+    let mut graphics = self.take_graphics();
+    let tab = self.tabs.remove(index);
+    for app in &tab.panes {
+      self.retire(app, &mut graphics);
+    }
+    if self.tabs.is_empty() {
+      return self.save();
+    }
+    if index < self.active {
+      self.active -= 1;
+    }
+    self.active = self.active.min(self.tabs.len() - 1);
+    self.give(graphics);
+    self.arrange()
+  }
+
+  /// Closes the focused pane, then its tab when it was the last.
+  pub(super) fn close_pane(&mut self) -> Result<()> {
+    if self.tab().panes.len() == 1 {
+      return self.close();
+    }
+    self.leave()?;
+    let area = self.area();
+    let mut graphics = self.take_graphics();
+    let app = self.tab().detach(area);
+    self.retire(&app, &mut graphics);
+    self.give(graphics);
+    self.arrange()
+  }
+
+  /// Splits the focused pane; the new pane shows `file` or the same view.
+  pub(super) fn split(
+    &mut self,
+    axis: Axis,
+    file: Option<&Path>,
+    place: Place,
+  ) -> Result<()> {
+    // The same document reuses the password that unlocked it.
+    let (path, password) = match file {
+      Some(file) => (std::fs::canonicalize(file)?, String::new()),
+      None => (self.app().path.clone(), self.app().password.clone()),
+    };
+    if file.is_some()
+      && let Some((tab, pane)) = self.existing(&path)
+    {
+      return self.focus(tab, pane);
+    }
+    let screen = self.app().screen;
+    anyhow::ensure!(Node::fits(axis, full(screen)), "Not enough room");
+    let mut app = self.load(&path, &password, screen)?;
+    if file.is_none() {
+      app.mirror(self.app())?;
+    }
+    let tab = self.tab();
+    let target = tab.panes[tab.focus].id;
+    tab.tree.split(target, axis, app.id, place);
+    tab.panes.push(app);
+    let index = tab.panes.len() - 1;
+    self.focus(self.active, index)
+  }
+
+  /// A split beside, placed by `land`; focus stays.
+  pub(super) fn split_beside(
+    &mut self,
+    land: impl FnOnce(&mut App) -> Result<()>,
+  ) -> Result<()> {
+    let (tab, pane) = (self.active, self.tab().focus);
+    // A double click must not split twice.
+    self.keeping_pointer(|session| {
+      session.split(Axis::Columns, None, Place::After)?;
+      // Focus returns even when landing fails.
+      let landed = land(session.app());
+      session.focus(tab, pane)?;
+      landed
+    })
+  }
+
+  /// Keeps the click run across `work`.
+  pub(super) fn keeping_pointer<R>(
+    &mut self,
+    work: impl FnOnce(&mut Self) -> R,
+  ) -> R {
+    let pointer = std::mem::take(&mut self.pointer);
+    let result = work(self);
+    self.pointer = pointer;
+    result
+  }
+
+  pub(super) fn window(
+    &mut self,
+    command: Window,
+    (count, explicit): (usize, bool),
+    file: Option<&Path>,
+  ) -> Result<()> {
+    let area = self.area();
+    let tab = self.tab();
+    let id = tab.panes[tab.focus].id;
+    let order = tab.order();
+    let at = order.iter().position(|pane| *pane == id).unwrap_or(0);
+    let total = order.len();
+    let target = match command {
+      Window::Split(axis) => return self.split(axis, file, Place::Before),
+      Window::Close => return self.close_pane(),
+      Window::Only => return self.only(),
+      Window::ToTab => return self.move_to_tab(),
+      Window::Focus(direction) => {
+        let mut rects = Vec::new();
+        tab.tree.layout(area, &mut rects);
+        neighbor(&rects, id, direction)
+      }
+      Window::Next if explicit => Some(order[count.clamp(1, total) - 1]),
+      Window::Next => Some(order[(at + count) % total]),
+      Window::Previous => Some(order[(at + total - count % total) % total]),
+      Window::Last => tab.last,
+      Window::Equalize => {
+        tab.tree.equalize();
+        None
+      }
+      Window::Resize(axis, step) => {
+        let cells = step * i32::try_from(count).unwrap_or(1);
+        tab.tree.resize(id, axis, cells, area);
+        None
+      }
+      Window::Maximize(axis) => {
+        tab.tree.resize(id, axis, i32::from(u16::MAX), area);
+        None
+      }
+      Window::Exchange => {
+        tab.tree.exchange(id);
+        None
+      }
+      Window::Rotate(forward) => {
+        anyhow::ensure!(
+          tab.tree.rotate(id, forward),
+          "Cannot rotate when another pane is split"
+        );
+        None
+      }
+      Window::New => {
+        self.record();
+        self.split(Axis::Rows, None, Place::Before)?;
+        let recent = self.state.recent.clone();
+        return self.app().show_recent(&recent);
+      }
+      Window::Move(direction) => {
+        tab.tree.move_to_edge(id, direction);
+        None
+      }
+    };
+    match target.and_then(|id| self.tab().index(id)) {
+      Some(index) => self.focus(self.active, index),
+      None => self.arrange(),
+    }
+  }
+
+  /// `Ctrl-w o`: closes every pane but the focused one.
+  pub(super) fn only(&mut self) -> Result<()> {
+    if self.tab().panes.len() == 1 {
+      return Ok(());
+    }
+    self.leave()?;
+    let tab = self.tab();
+    let keep = tab.panes[tab.focus].id;
+    let closing: Vec<_> =
+      tab.panes.extract_if(.., |app| app.id != keep).collect();
+    tab.tree = Node::Leaf(keep);
+    tab.focus = 0;
+    tab.last = None;
+    let mut graphics = self.take_graphics();
+    for app in &closing {
+      self.retire(app, &mut graphics);
+    }
+    self.give(graphics);
+    self.arrange()
+  }
+
+  /// `Ctrl-w T`: moves the focused pane into a new tab.
+  fn move_to_tab(&mut self) -> Result<()> {
+    if self.tab().panes.len() == 1 {
+      return Ok(());
+    }
+    self.leave()?;
+    let area = self.area();
+    let graphics = self.take_graphics();
+    let app = self.tab().detach(area);
+    self.insert_tab(app, graphics)
+  }
+
+  /// Puts `app` in a tab after the active one and focuses it.
+  fn insert_tab(&mut self, app: App, graphics: Graphics) -> Result<()> {
+    let index = if self.tabs.is_empty() { 0 } else { self.active + 1 };
+    self.tabs.insert(index, Tab::new(app));
+    self.active = index;
+    self.give(graphics);
+    self.arrange()
+  }
+
+  /// Copies the focused view into a new tab covered by recent documents.
+  pub(super) fn recent_tab(&mut self, screen: Screen) -> Result<()> {
+    self.record();
+    let path = self.app().path.clone();
+    let password = self.app().password.clone();
+    let mut app = self.load(&path, &password, screen)?;
+    app.mirror(self.app())?;
+    self.leave()?;
+    let graphics = self.take_graphics();
+    self.insert_tab(app, graphics)?;
+    let recent = self.state.recent.clone();
+    self.app().show_recent(&recent)
+  }
+
+  /// Fits the start screen or every pane to a new terminal size.
+  pub fn resize(&mut self, screen: Screen) -> Result<()> {
+    self.perf.invalidate();
+    self.screen = Some(screen);
+    let content = self.content(screen);
+    if let Some(home) = &mut self.home {
+      home.at.row = content.origin.1 - screen.origin.1;
+      home.screen = content;
+    }
+    if self.tabs.is_empty() {
+      return Ok(());
+    }
+    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+      app.at = At { column: u16::MAX, row: u16::MAX };
+    }
+    self.arrange()
+  }
+
+  /// Fits the start screen or panes to a `measured` screen; when its
+  /// cells could not be measured, keeps the layout and says why on the
+  /// last row of `grid`, the terminal's columns and rows.
+  pub(super) fn refit(
+    &mut self,
+    measured: Result<Option<Screen>>,
+    grid: impl FnOnce() -> io::Result<(u16, u16)>,
+  ) -> Result<()> {
+    match measured {
+      Ok(Some(screen)) => {
+        self.unmeasured = None;
+        self.resize(screen)
+      }
+      Ok(None) => Ok(()),
+      Err(error) => {
+        let (columns, rows) = grid()?;
+        let error = error.to_string();
+        self.unmeasured = Some(Unmeasured { rows, columns, error });
+        Ok(())
+      }
+    }
+  }
+}

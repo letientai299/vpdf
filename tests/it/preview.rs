@@ -1,24 +1,12 @@
+use super::common::keys;
 use super::focus::{screen, send};
-use std::collections::VecDeque;
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::{App, InputOwner};
-use vpdf::decode::{Event, Parser};
 use vpdf::document::Target;
-use vpdf::prompt::History;
-use vpdf::reader::{Mode, SelectionKind};
 use vpdf::session::Session;
 use vpdf::text::PageId;
-
-fn key(app: &mut App, bytes: &[u8]) -> Result<()> {
-  let mut events = VecDeque::new();
-  Parser::default().feed(bytes, &mut events);
-  for event in events {
-    let Event::Key(key) = event else { panic!("key bytes") };
-    app.key(key, &mut History::default())?;
-  }
-  Ok(())
-}
+use vpdf_reader::reader::{Mode, SelectionKind};
 
 fn open(text: bool) -> Result<App> {
   let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
@@ -63,41 +51,41 @@ fn preview_scroll_clamps_without_moving_target() -> Result<()> {
   for text in [false, true] {
     for entry in [b"".as_slice(), b"i", b"iv"] {
       let mut app = open(text)?;
-      key(&mut app, entry)?;
-      key(&mut app, b"K")?;
+      keys(&mut app, entry)?;
+      keys(&mut app, b"K")?;
       let target = format!("{:?}", app.peek.as_ref().unwrap().target);
       let page = target_page(&app.peek.as_ref().unwrap().target);
       let label = app.doc.label(page).to_owned();
       let cursor = app.reader.cursor;
       let range = app.reader.selection.map(|s| (s.anchor, s.kind));
       let view = (app.reader.scroll, app.text_position(0, 0)?);
-      key(&mut app, b"9999k")?;
+      keys(&mut app, b"9999k")?;
       let first = drawn(&mut app)?;
       assert!(first.contains(&format!("╭ {label} ")));
       assert!(!first.contains('↑'));
       assert!(first.contains('↓'));
-      key(&mut app, b"3j")?;
+      keys(&mut app, b"3j")?;
       let advanced = drawn(&mut app)?;
       assert!(advanced.contains('↑'));
       assert_ne!(advanced, first);
-      key(&mut app, b"3k")?;
+      keys(&mut app, b"3k")?;
       assert_eq!(drawn(&mut app)?, first);
-      key(&mut app, b"2\x1b[100;5u")?;
+      keys(&mut app, b"2\x1b[100;5u")?;
       assert!(drawn(&mut app)?.contains('↑'));
-      key(&mut app, b"2\x1b[117;5u")?;
+      keys(&mut app, b"2\x1b[117;5u")?;
       assert_eq!(drawn(&mut app)?, first);
-      key(&mut app, b"9999j")?;
+      keys(&mut app, b"9999j")?;
       let last = drawn(&mut app)?;
       assert!(!last.contains('↓'));
       // It runs to the last page (U12).
       assert!(!last.contains(&format!("╭ {label} ")), "text={text}");
-      key(&mut app, b"9999j")?;
+      keys(&mut app, b"9999j")?;
       assert_eq!(drawn(&mut app)?, last);
       assert_eq!(format!("{:?}", app.peek.as_ref().unwrap().target), target);
       assert_eq!(app.reader.cursor, cursor);
       assert_eq!(app.reader.selection.map(|s| (s.anchor, s.kind)), range);
       assert_eq!((app.reader.scroll, app.text_position(0, 0)?), view);
-      key(&mut app, b"\r")?;
+      keys(&mut app, b"\r")?;
       assert!(app.peek.is_none());
       let destination = target_page(&app.link_target(cursor)?.unwrap());
       assert_eq!(app.reader.cursor.page, destination);
@@ -111,33 +99,33 @@ fn preview_scroll_clamps_without_moving_target() -> Result<()> {
 fn preview_prefix_prompt_and_escape_keep_range() -> Result<()> {
   for text in [false, true] {
     let mut app = open(text)?;
-    key(&mut app, b"ivK")?;
+    keys(&mut app, b"ivK")?;
     let cursor = app.reader.cursor;
     let anchor = app.reader.selection.unwrap().anchor;
     let target = format!("{:?}", app.peek.as_ref().unwrap().target);
-    key(&mut app, b"g")?;
+    keys(&mut app, b"g")?;
     assert_eq!(app.keys.awaiting(), Some("g"));
     assert_eq!(app.input_owner(), InputOwner::Peek);
-    key(&mut app, b"\x1b[27u")?;
+    keys(&mut app, b"\x1b[27u")?;
     assert!(app.peek.is_some() && app.keys.awaiting().is_none());
-    key(&mut app, b"gglwi")?;
+    keys(&mut app, b"gglwi")?;
     assert_eq!(app.reader.cursor, cursor);
     for prompt in [b":\x1b[27u".as_slice(), b":\r", b":nohlsearch\r"] {
-      key(&mut app, prompt)?;
+      keys(&mut app, prompt)?;
       assert_eq!(app.input_owner(), InputOwner::Peek);
       assert_eq!(format!("{:?}", app.peek.as_ref().unwrap().target), target);
       assert_eq!(app.reader.cursor, cursor);
       assert_eq!(app.reader.selection.unwrap().anchor, anchor);
     }
-    assert!(key(&mut app, b":unknown\r").is_err());
+    assert!(keys(&mut app, b":unknown\r").is_err());
     assert_eq!(app.input_owner(), InputOwner::Peek);
     assert_eq!(format!("{:?}", app.peek.as_ref().unwrap().target), target);
-    key(&mut app, b"\x1b[27u")?;
+    keys(&mut app, b"\x1b[27u")?;
     assert!(app.peek.is_none());
     assert_eq!(app.reader.mode(), Mode::Visual(SelectionKind::Character));
-    key(&mut app, b"\x1b[27u")?;
+    keys(&mut app, b"\x1b[27u")?;
     assert_eq!(app.reader.mode(), Mode::Cursor);
-    key(&mut app, b"\x1b[27u")?;
+    keys(&mut app, b"\x1b[27u")?;
     assert_eq!(app.reader.mode(), Mode::Normal);
   }
   Ok(())
@@ -176,7 +164,7 @@ fn preview_border_stays_inside_resized_pane() -> Result<()> {
     app.open_panel(PanelKind::Help)?;
     app.panel.as_mut().unwrap().focused = false;
     app.go_to(cursor, true)?;
-    key(&mut app, b"K")?;
+    keys(&mut app, b"K")?;
     let target = format!("{:?}", app.peek.as_ref().unwrap().target);
     app.at = vpdf::terminal::At { column: 7, row: 3 };
     app.screen.origin = (7, 3);
@@ -219,7 +207,7 @@ fn preview_reload_discards_target() -> Result<()> {
     let mut app = open(text)?;
     std::fs::copy(corpus.join("paper.pdf"), &path)?;
     app.path.clone_from(&path);
-    key(&mut app, b"ivK")?;
+    keys(&mut app, b"ivK")?;
     let target = format!("{:?}", app.peek.as_ref().unwrap().target);
     let cursor = app.reader.cursor;
     let range = app.reader.selection.unwrap();
@@ -248,7 +236,7 @@ fn preview_invalid_keeps_reader() -> Result<()> {
   let corpus = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   for text in [false, true] {
     let mut app = open(text)?;
-    key(&mut app, b"ivK")?;
+    keys(&mut app, b"ivK")?;
     let cursor = app.reader.cursor;
     let range = app.reader.selection.unwrap();
     app.doc = vpdf::document::Document::open(&corpus.join("form.pdf"), "")?;
@@ -268,7 +256,7 @@ fn preview_label_keeps_arrow() -> Result<()> {
   use unicode_width::UnicodeWidthStr;
   for text in [false, true] {
     let mut app = open(text)?;
-    key(&mut app, b"K9999k3j")?;
+    keys(&mut app, b"K9999k3j")?;
     let page = target_page(&app.peek.as_ref().unwrap().target);
     let wide = format!("界{}", app.doc.label(page)).repeat(200);
     app.doc.pages[page.0].label = wide.into();
@@ -293,11 +281,11 @@ fn text_previews_load_in_steps() -> Result<()> {
   let (x, y) = link.first().centre();
   let position = app.doc.text(PageId(1))?.nearest(PageId(1), x, y);
   app.go_to(position, true)?;
-  key(&mut app, b"K9999j")?;
+  keys(&mut app, b"K9999j")?;
   // Four pages per scroll; more remain.
   assert!(drawn(&mut app)?.contains('↓'), "pages remain");
   for _ in 0..4 {
-    key(&mut app, b"9999j")?;
+    keys(&mut app, b"9999j")?;
   }
   assert!(!drawn(&mut app)?.contains('↓'), "the last page");
   Ok(())

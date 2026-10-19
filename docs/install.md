@@ -159,7 +159,7 @@ dependencies used in a particular build.
 [keyboard]: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 [wezterm-keyboard]: https://wezterm.org/config/lua/config/enable_kitty_keyboard.html
 [modify-keys]: https://invisible-island.net/xterm/modified-keys.html
-[caps]: ../src/caps.rs
+[caps]: ../src/caps/mod.rs
 [tmux-manual]: https://man.openbsd.org/tmux
 [rendering]: dev/render.md
 [integrations]: reading.md#external-actions

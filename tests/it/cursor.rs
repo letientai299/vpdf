@@ -1,14 +1,15 @@
+use super::common::keys;
 use super::focus::{screen, send};
-use super::modes::{app, keys, settle};
+use super::modes::{app, settle};
 use vpdf::Result;
 use vpdf::app::InputOwner;
 use vpdf::document::Target;
 use vpdf::hints::{Hint, Hints};
 use vpdf::keys::PanelKind;
 use vpdf::panel::{Destination, Row};
-use vpdf::reader::{Mode, SelectionKind};
 use vpdf::session::Session;
 use vpdf::text::{PageId, Position};
+use vpdf_reader::reader::{Mode, SelectionKind};
 
 const ESC: &[u8] = b"\x1b[27u";
 
@@ -134,8 +135,8 @@ fn cursor_targets_and_hidden_entry() -> Result<()> {
     assert_eq!(app.navigation_position(), positioned);
     assert_eq!(app.reading_position()?, positioned);
     app.word_search()?;
-    assert_ne!(app.search.query.text, "");
-    assert_eq!(app.search.origin, positioned);
+    assert_ne!(app.search.query().text, "");
+    assert_eq!(app.search.origin(), positioned);
     keys(&mut app, b"/partial")?;
     keys(&mut app, ESC)?;
     assert_eq!(app.reader.mode(), Mode::Cursor);
@@ -248,11 +249,9 @@ fn cursor_rendering_keeps_visual_band_separate() -> Result<()> {
   for text in [false, true] {
     let mut app = app("paper.pdf", text)?;
     let hit = Position { glyph: 5, ..app.reading_position()? };
-    app.search.hits.push(vpdf::search::Hit {
-      first: hit,
-      last: hit,
-      excerpt: String::new(),
-    });
+    let hit =
+      vpdf::search::Hit { first: hit, last: hit, excerpt: String::new() };
+    app.search.show(vpdf::find::Query::default(), vec![hit]);
     keys(&mut app, b"i")?;
     let mut out = Vec::new();
     app.status(&mut out, app.screen.rows - 1)?;
@@ -496,7 +495,7 @@ fn failed_search_yanks_preserve_register() -> Result<()> {
     app.reader.pending_yank = None;
     keys(app, b"i\"ay")?;
     let _ = keys(app, query);
-    if !matches!(app.search.phase, vpdf::find::Phase::Idle) {
+    if !matches!(app.search.phase(), vpdf::find::Phase::Idle) {
       crate::common::search_loaded(app)?;
     }
     assert!(app.reader.operator.is_none());

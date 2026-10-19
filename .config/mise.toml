@@ -27,22 +27,26 @@ run = "sh scripts/release.sh"
 description = "Build and run the debug reader"
 raw = true
 raw_args = true
-run = "cargo run --locked --"
+run = "cargo run --locked -p vpdf --"
+
+[tasks.check]
+description = "Check every workspace target"
+run = "cargo check --locked --workspace --all-targets"
 
 [tasks.lint]
 description = "Fix what tools can, then reject the remaining lint and format issues"
 run = [
-  "cargo clippy --locked --all-targets --fix --allow-dirty --allow-staged",
-  "cargo fmt",
+  "cargo clippy --locked --workspace --all-targets --fix --allow-dirty --allow-staged",
+  "cargo fmt --all",
   "taplo fmt",
   "rumdl check --fix .",
-  "cargo clippy --locked --all-targets -- -D warnings",
+  "cargo clippy --locked --workspace --all-targets -- -D warnings",
   "sh scripts/width.sh",
 ]
 
 [tasks.test]
 depends = ["test:demo"]
-run = "cargo nextest run --locked --test-threads num-cpus --no-fail-fast"
+run = "cargo nextest run --locked --workspace --test-threads num-cpus --no-fail-fast"
 
 [tasks.hooks]
 run = "prek install"
@@ -72,30 +76,30 @@ run = "sh scripts/corpus.sh huge"
 
 [tasks."test:corpus"]
 depends = ["corpus"]
-run = "cargo nextest run --locked --run-ignored only -E 'not test(real_ocr_and_cancel)'"
+run = "cargo nextest run --locked --workspace --run-ignored only -E 'not test(real_ocr_and_cancel)'"
 
 [tasks."test:ocr"]
 depends = ["corpus"]
-run = "cargo nextest run --locked --run-ignored only --test it real_ocr_and_cancel"
+run = "cargo nextest run --locked --workspace --run-ignored only --test it real_ocr_and_cancel"
 
 [tasks.bench]
 description = "Measure real-PDF warm frames and search"
 depends = ["corpus"]
-run = "cargo bench --locked --profile release --bench reader"
+run = "cargo bench --locked -p vpdf --profile release --bench reader"
 
 [tasks."bench:latency"]
 description = "Measure opens, jumps, zooms, searches, and paced scrolling"
 depends = ["corpus"]
-run = "cargo bench --locked --profile release --bench latency"
+run = "cargo bench --locked -p vpdf --profile release --bench latency"
 
 [tasks."bench:stages"]
 description = "Attribute cold page cost to load, text, list, raster, encode"
 depends = ["corpus"]
-run = "cargo bench --locked --profile release --bench stages"
+run = "cargo bench --locked -p vpdf --profile release --bench stages"
 
 [tasks."bench:micro"]
 description = "Time single hot functions; arguments filter cases"
-run = 'cargo bench --locked --profile release --bench micro -- {{arg(name="cases", var=true, default="")}}'
+run = 'cargo bench --locked -p vpdf --profile release --bench micro -- {{arg(name="cases", var=true, default="")}}'
 
 [tasks."bench:startup"]
 description = "Time launch to complete first view in this terminal"
@@ -107,4 +111,24 @@ run = "python3 scripts/startup.py"
 description = "Enforce warm CPU frame and motion budgets"
 depends = ["corpus"]
 env.VPDF_PERF_CHECK = "1"
-run = "cargo bench --locked --profile release --bench reader"
+run = "cargo bench --locked -p vpdf --profile release --bench reader"
+
+[tasks."test:model"]
+description = "Test shared values without native code"
+run = "cargo nextest run --locked -p vpdf-model"
+
+[tasks."test:search"]
+description = "Test search without native code or UI"
+run = "cargo nextest run --locked -p vpdf-search"
+
+[tasks."test:pdf"]
+description = "Test native PDF helpers without the reader"
+run = "cargo nextest run --locked -p vpdf-pdf"
+
+[tasks."test:reader"]
+description = "Test reading motions and selections without native code or UI"
+run = "cargo nextest run --locked -p vpdf-reader"
+
+[tasks."test:protocol"]
+description = "Test terminal input decoding without native code or UI"
+run = "cargo nextest run --locked -p vpdf-protocol"

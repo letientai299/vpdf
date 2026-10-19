@@ -1,0 +1,97 @@
+use crate::Result;
+use crate::app::App;
+use crate::document::Document;
+use crate::keys::PanelKind;
+use crate::pdf_text::PdfText;
+use crate::render_worker::RenderWorker;
+use vpdf_reader::reader;
+
+impl App {
+  /// Releases what a hidden pane rebuilds on demand: the search worker
+  /// with its indexes, cached text and display lists, and the render
+  /// coordinator's document with every page it loaded. A running search
+  /// resumes when the pane shows again.
+  pub fn trim(&mut self) {
+    self.crop_job = None;
+    self.search_worker = None;
+    self.doc.trim();
+    self.worker =
+      RenderWorker::idle(&self.path, &self.password, self.doc.lists());
+    self.requested.clear();
+  }
+
+  /// Reopens the document, keeping the view where it still applies.
+  pub fn reload_with(&mut self, password: &str) -> Result<()> {
+    // A write during the open shows up as a later change.
+    let stamp = crate::watch::stamp(&self.path);
+    self.doc = Document::open(&self.path, password)?;
+    self.crop_job = None;
+    self.layout.crops = std::sync::Arc::default();
+    self.layout.reflow(&self.doc.pages);
+    self.stamp = stamp;
+    password.clone_into(&mut self.password);
+    if !self.layout.crop.is_none() {
+      self.start_crop();
+    }
+    self.worker = RenderWorker::new(&self.path, password, self.doc.lists());
+    self.search_worker = None;
+    let previous = std::mem::take(&mut self.search);
+    let rerun = !previous.hidden() && !previous.query().text.is_empty();
+    // An open outline panel waits on the new outline now.
+    self.outline_load = crate::outline::Loading::Deferred;
+    if self.panel.as_ref().is_some_and(|panel| panel.kind == PanelKind::Outline)
+    {
+      self.load_outline();
+    }
+    self.graphics.forget(self.id);
+    if let Some(ocr) = self.ocr.take() {
+      ocr.cancel();
+    }
+    self.reader.cancel();
+    self.reader.clear_history();
+    self.requested.clear();
+    self.reader.cursor =
+      reader::clamp(self.reader.cursor, &mut PdfText(&mut self.doc))?;
+    self.text_top = self.clamp_text(self.text_top)?;
+    self.text_drawn = None;
+    self.target = None;
+    self.landing = None;
+    self.point(None);
+    self.link_press = crate::links::LinkPress::Idle;
+    self.dismiss_overlay();
+    if let Some(mut origin) = self.search_origin {
+      origin.cursor =
+        reader::clamp(origin.cursor, &mut PdfText(&mut self.doc))?;
+      origin.anchor =
+        origin.anchor.filter(|(page, _)| page.0 < self.doc.pages.len());
+      if let Some(top) = origin.text_top {
+        origin.text_top = Some(self.clamp_text(top)?);
+      }
+      origin.target = None;
+      self.search_origin = Some(origin);
+    }
+    if let Some(panel) = &self.panel {
+      let kind = panel.kind;
+      let rows = self.panel_rows(kind)?;
+      // These rows come from the session or refill when work finishes.
+      let refills = match kind {
+        PanelKind::Recent | PanelKind::Marks => true,
+        PanelKind::Results => rerun,
+        PanelKind::Outline => self.outline_pending(),
+        _ => false,
+      };
+      let note = self.panel_note(kind);
+      if let Some(panel) = self.panel.as_mut().filter(|_| !rows.is_empty()) {
+        panel.refill(rows, note);
+      } else if !refills {
+        self.panel = None;
+      }
+    }
+    if rerun {
+      self.rerun(previous.query())?;
+    }
+    self.relayout()?;
+    self.reader.message = "Reloaded".into();
+    Ok(())
+  }
+}

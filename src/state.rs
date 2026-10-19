@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::layout::Crop;
+use crate::pdf_text::PdfText;
 use crate::prompt::History;
 use crate::text::{PageId, Position};
 use serde::{Deserialize, Serialize};
@@ -168,7 +169,8 @@ impl App {
     self.preview = other.preview;
     self.layout.reflow(&self.doc.pages);
     let shown = other.navigation_position();
-    self.reader.cursor = crate::reader::clamp(shown, &mut self.doc)?;
+    self.reader.cursor =
+      vpdf_reader::reader::clamp(shown, &mut PdfText(&mut self.doc))?;
     self.reader.cancel();
     self.target = None;
     self.reader.scroll = other.reader.scroll;

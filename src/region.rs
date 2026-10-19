@@ -4,7 +4,6 @@ use crate::document::{Document, Target};
 use crate::figures::Source;
 use crate::keys::{Action, Input};
 use crate::pointer::Items;
-use crate::reader::Yank;
 use crate::split::Rect;
 use crate::text::{Bounds, PageId, Text};
 use crate::{clipboard, terminal, theme, tiles};
@@ -15,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
 use unicode_width::UnicodeWidthStr;
+use vpdf_reader::reader::Yank;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CaptureId(u64);
@@ -287,12 +287,12 @@ impl App {
     };
     match input.action {
       Action::Motion(
-        crate::motion::Motion::Left | crate::motion::Motion::Up,
+        vpdf_reader::motion::Motion::Left | vpdf_reader::motion::Motion::Up,
       ) => {
         *action = ACTIONS[(*action as usize + 3) % ACTIONS.len()].1;
       }
       Action::Motion(
-        crate::motion::Motion::Right | crate::motion::Motion::Down,
+        vpdf_reader::motion::Motion::Right | vpdf_reader::motion::Motion::Down,
       ) => {
         *action = ACTIONS[(*action as usize + 1) % ACTIONS.len()].1;
       }

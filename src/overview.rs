@@ -2,13 +2,13 @@ use crate::Result;
 use crate::app::App;
 use crate::keys::{Action, Input};
 use crate::layout::{Crop, page_matrix, screen_step, transform};
-use crate::motion::Motion;
 use crate::pointer::{Hit, Wheel};
 use crate::text::{Bounds, PageId};
 use crate::tiles::{self, TileKey};
 use crate::{terminal, theme};
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use std::io::Write;
+use vpdf_reader::motion::Motion;
 
 /// Thumbnails per row aim for this width in pixels.
 const TARGET: f32 = 220.0;

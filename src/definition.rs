@@ -7,16 +7,14 @@ use crate::reference::{Lookup, Reference};
 
 impl App {
   pub(crate) fn cancel_definition(&mut self) {
-    if matches!(self.search.phase, Phase::Definition) {
-      self.search.cancel();
+    if matches!(self.search.phase(), Phase::Definition) {
+      self.cancel_search();
     }
   }
 
   pub(crate) fn definition(&mut self) -> Result<()> {
     let Some(position) = self.explicit_target()? else { return Ok(()) };
-    if let Phase::Running { jump } = &mut self.search.phase {
-      *jump = false;
-    }
+    self.search.stop_jumping();
     if let Some(target) = self.link_target(position)? {
       if matches!(target, Target::Uri(_)) {
         self.reader.message = "External link: use gx".into();
@@ -41,8 +39,7 @@ impl App {
       ..Query::default()
     };
     self.start_query(&query)?;
-    self.search.origin = position;
-    self.search.phase = Phase::Definition;
+    self.search.define(position);
     self.reader.message = "Finding reference…".into();
     Ok(())
   }
@@ -79,7 +76,7 @@ impl App {
   }
 
   pub(crate) fn finish_definition(&mut self) -> Result<()> {
-    match self.search.hits.as_slice() {
+    match self.search.hits() {
       [] => self.reader.message = "Reference not found".into(),
       [hit] => {
         let position = hit.first;

@@ -1,0 +1,98 @@
+use super::{Action, App, BAR_HINT, InputOwner, Origin, Result};
+
+impl App {
+  pub fn input_owner(&self) -> InputOwner {
+    if self.prompt.is_some() {
+      InputOwner::Prompt
+    } else if self.hints.is_some() {
+      InputOwner::Hints
+    } else if self.region.as_ref().is_some_and(crate::region::Region::is_bar) {
+      InputOwner::Region
+    } else if self.context_menu.is_some() {
+      InputOwner::Context
+    } else if self.peek.as_ref().is_some_and(|peek| peek.origin == Origin::Key)
+    {
+      InputOwner::Peek
+    } else if self.panel_focused() {
+      InputOwner::Panel
+    } else if self.overview.is_some() {
+      InputOwner::Overview
+    } else {
+      InputOwner::Content
+    }
+  }
+
+  pub(crate) fn dismiss_overlay(&mut self) {
+    self.context_menu = None;
+    self.end_gestures();
+    self.peek = None;
+    // The bar's key hint goes with it.
+    if self.region.take().is_some() && self.reader.message == BAR_HINT {
+      self.reader.message.clear();
+    }
+  }
+
+  pub(crate) fn overlay_transfer(&mut self, action: Action) -> bool {
+    if !matches!(
+      action,
+      Action::Window(_)
+        | Action::Tab(_)
+        | Action::LocalFocus
+        | Action::History(_)
+        | Action::Panel(_)
+        | Action::ClosePanel
+    ) {
+      return false;
+    }
+    self.dismiss_overlay();
+    true
+  }
+
+  /// Ends pending keys and notes.
+  pub(crate) fn interrupt(&mut self) {
+    self.disarm();
+    self.clear_notes();
+  }
+
+  /// Drops the error and the message.
+  pub(crate) fn clear_notes(&mut self) {
+    self.error = None;
+    self.reader.message.clear();
+  }
+
+  /// Whether a press only dismisses something.
+  pub(crate) fn overlaid(&self) -> bool {
+    self.clues.is_some()
+      || matches!(
+        self.input_owner(),
+        InputOwner::Prompt
+          | InputOwner::Hints
+          | InputOwner::Peek
+          | InputOwner::Region
+          | InputOwner::Context
+      )
+  }
+
+  pub(crate) fn dismiss_click(&mut self) -> Result<bool> {
+    if !self.overlaid() {
+      return Ok(false);
+    }
+    match self.input_owner() {
+      InputOwner::Prompt => {
+        self.cancel_input()?;
+        return Ok(true);
+      }
+      InputOwner::Hints => self.hints = None,
+      InputOwner::Peek => self.dismiss_overlay(),
+      InputOwner::Region | InputOwner::Context => {
+        self.dismiss_overlay();
+        self.disarm();
+        return Ok(true);
+      }
+      _ => {}
+    }
+    self.reader.cancel();
+    self.disarm();
+    Ok(true)
+  }
+}

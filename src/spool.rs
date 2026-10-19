@@ -9,7 +9,6 @@
 //! away on exit; files of readers that died are removed at start.
 use crate::Result;
 use crate::caps::{Graphics, Host};
-use crate::decode::Reply;
 use crate::document::MIB;
 use crate::tiles::{TILE_HEIGHT, TILE_WIDTH};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -18,6 +17,7 @@ use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use vpdf_protocol::decode::Reply;
 
 /// Bytes of the largest tile.
 const SLOT: u64 = (TILE_WIDTH * TILE_HEIGHT * 3) as u64;

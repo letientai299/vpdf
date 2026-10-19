@@ -50,8 +50,37 @@ and the [CI matrix][ci] define supported hosts.
 
 ```sh
 mise run hooks
+mise run check
 mise run lint
 mise run test
+```
+
+Checks cover every workspace member. Support crates own their unit tests;
+package selection avoids compiling the reader and its native dependencies when
+the selected crate does not need them:
+
+```sh
+mise run test:model
+mise run test:search
+mise run test:pdf
+mise run test:protocol
+mise run test:reader
+mise exec -- cargo nextest run --locked -p vpdf-model text::tests
+mise exec -- cargo nextest run --locked -p vpdf-search search::tests
+```
+
+PDF tests require MuPDF; ignored corpus tests also require the verified
+public PDFs from `mise run corpus`. Run them independently:
+
+```sh
+mise exec -- cargo nextest run --locked -p vpdf-pdf --run-ignored only
+```
+
+Root modules retain the application compilation unit and support test filters:
+
+```sh
+mise exec -- cargo nextest run --locked -p vpdf --lib session::tests
+mise exec -- cargo nextest run --locked -p vpdf-pdf layout::tests
 ```
 
 The lint task applies automatic fixes before checking for remaining issues;

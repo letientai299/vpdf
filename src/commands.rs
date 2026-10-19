@@ -1,15 +1,14 @@
 use crate::Result;
 use crate::app::{App, InputOwner, Request, TabMove, Window};
 use crate::cmdline;
-use crate::document::{Document, Target};
+use crate::document::Target;
 use crate::keys::{Action, Grammar, Input, PanelKind};
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
-use crate::reader::{self, Mode};
-use crate::render_worker::RenderWorker;
 use crate::split::Axis;
 use crate::text::{PageId, Position};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::process::{Command, Stdio};
+use vpdf_reader::reader::Mode;
 
 /// The note after copying an address.
 pub(crate) const COPIED_LINK: &str = "Copied link";
@@ -46,7 +45,7 @@ const COVERED: [&str; 25] = [
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
     self.cancel_definition();
-    self.search.yank = None;
+    self.search.forget_yank();
     self.finish_scroll_before(input.action);
     if self.reader.operator.is_some()
       && !matches!(
@@ -148,7 +147,7 @@ impl App {
   }
 
   pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
-    self.search.yank = None;
+    self.search.forget_yank();
     let key = crate::keys::normalize(key);
     // Keys end pointer gestures.
     self.end_gestures();
@@ -379,7 +378,7 @@ impl App {
       "annotations" => self.open_panel(PanelKind::Annotations)?,
       "fzf" => self.request = Some(Request::Pick),
       "cancel" => {
-        self.search.cancel();
+        self.cancel_search();
         if let Some(job) = self.ocr.take() {
           job.cancel();
         }
@@ -388,7 +387,7 @@ impl App {
         self.region_job = None;
         self.reader.message = "Jobs canceled".into();
       }
-      "nohlsearch" => self.search.hidden = true,
+      "nohlsearch" => self.search.set_hidden(true),
       "cursorline" => self.cursorline = !self.cursorline,
       "perf" => {
         self.request = Some(Request::Perf(crate::perf::switch(argument)?));
@@ -433,77 +432,6 @@ impl App {
       .page_number(label)
       .ok_or_else(|| anyhow::anyhow!("Page label not found: {label}"))?;
     self.go_to_page(page)
-  }
-
-  pub fn reload_with(&mut self, password: &str) -> Result<()> {
-    // A write during the open shows up as a later change.
-    let stamp = crate::watch::stamp(&self.path);
-    self.doc = Document::open(&self.path, password)?;
-    self.crop_job = None;
-    self.layout.crops = std::sync::Arc::default();
-    self.layout.reflow(&self.doc.pages);
-    self.stamp = stamp;
-    password.clone_into(&mut self.password);
-    if !self.layout.crop.is_none() {
-      self.start_crop();
-    }
-    self.worker = RenderWorker::new(&self.path, password, self.doc.lists());
-    let previous = std::mem::take(&mut self.search);
-    let rerun = !previous.hidden && !previous.query.text.is_empty();
-    // An open outline panel waits on the new outline now.
-    self.outline_load = crate::outline::Loading::Deferred;
-    if self.panel.as_ref().is_some_and(|panel| panel.kind == PanelKind::Outline)
-    {
-      self.load_outline();
-    }
-    self.graphics.forget(self.id);
-    if let Some(ocr) = self.ocr.take() {
-      ocr.cancel();
-    }
-    self.reader.cancel();
-    self.reader.clear_history();
-    self.requested.clear();
-    self.reader.cursor = reader::clamp(self.reader.cursor, &mut self.doc)?;
-    self.text_top = self.clamp_text(self.text_top)?;
-    self.text_drawn = None;
-    self.target = None;
-    self.landing = None;
-    self.point(None);
-    self.link_press = crate::links::LinkPress::Idle;
-    self.dismiss_overlay();
-    if let Some(mut origin) = self.search_origin {
-      origin.cursor = reader::clamp(origin.cursor, &mut self.doc)?;
-      origin.anchor =
-        origin.anchor.filter(|(page, _)| page.0 < self.doc.pages.len());
-      if let Some(top) = origin.text_top {
-        origin.text_top = Some(self.clamp_text(top)?);
-      }
-      origin.target = None;
-      self.search_origin = Some(origin);
-    }
-    if let Some(panel) = &self.panel {
-      let kind = panel.kind;
-      let rows = self.panel_rows(kind)?;
-      // These rows come from the session or refill when work finishes.
-      let refills = match kind {
-        PanelKind::Recent | PanelKind::Marks => true,
-        PanelKind::Results => rerun,
-        PanelKind::Outline => self.outline_pending(),
-        _ => false,
-      };
-      let note = self.panel_note(kind);
-      if let Some(panel) = self.panel.as_mut().filter(|_| !rows.is_empty()) {
-        panel.refill(rows, note);
-      } else if !refills {
-        self.panel = None;
-      }
-    }
-    if rerun {
-      self.rerun(&previous.query)?;
-    }
-    self.relayout()?;
-    self.reader.message = "Reloaded".into();
-    Ok(())
   }
 
   /// Enter follows a link under the cursor and ignores plain text.

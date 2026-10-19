@@ -618,10 +618,10 @@ pub fn password() -> crate::Result<String> {
 /// lays out the panes again once the prompt closes.
 fn password_event(
   prompt: &mut Prompt,
-  event: crate::decode::Event,
+  event: vpdf_protocol::decode::Event,
 ) -> PromptEvent {
-  use crate::decode::Event;
   use crossterm::event::KeyEventKind;
+  use vpdf_protocol::decode::Event;
   match event {
     Event::Key(key) if key.kind != KeyEventKind::Release => {
       prompt.feed(key, &History::default())
@@ -735,7 +735,7 @@ mod tests {
 
   #[test]
   fn password_prompt_defers_resizes() {
-    use crate::decode::Event;
+    use vpdf_protocol::decode::Event;
     let mut prompt = Prompt::new(PromptKind::Password);
     let event = password_event(&mut prompt, Event::Resize(None));
     assert_eq!(event, PromptEvent::Pending);

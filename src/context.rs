@@ -4,10 +4,9 @@ use crate::Result;
 use crate::app::App;
 use crate::document::Target;
 use crate::keys::{self, Action, Input, PanelKind};
-use crate::motion::Motion;
 use crate::panel::Destination;
+use crate::pdf_text::PdfText;
 use crate::pointer::{Hit, Items, List, Route};
-use crate::reader::SelectionKind;
 use crate::region::Operation;
 use crate::split::Rect;
 use crate::text::{Bounds, PageId, Position};
@@ -15,6 +14,8 @@ use crate::theme;
 use crossterm::event::{MouseEvent, MouseEventKind};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_reader::motion::Motion;
+use vpdf_reader::reader::SelectionKind;
 
 /// An open context menu.
 pub struct ContextMenu {
@@ -382,7 +383,9 @@ impl App {
         self.region_operation(Operation::Image)
       }
       Command::SearchSelection => {
-        let Some(text) = self.reader.search_text(&mut self.doc)? else {
+        let Some(text) =
+          self.reader.search_text(&mut PdfText(&mut self.doc))?
+        else {
           return Ok(());
         };
         self.reader.end_selection();
@@ -420,7 +423,8 @@ impl App {
   /// The selection's first-page bounds.
   fn selection_bounds(&mut self) -> Result<Option<(PageId, Bounds)>> {
     let Some(selection) = self.reader.selection else { return Ok(None) };
-    let range = crate::motion::range(selection.anchor, self.reader.cursor);
+    let range =
+      vpdf_reader::motion::range(selection.anchor, self.reader.cursor);
     let linewise = selection.kind == SelectionKind::Line;
     let page = range.0.page;
     let text = self.doc.text(page)?;
@@ -553,7 +557,7 @@ mod tests {
   /// Shown keys name their actions, in help notation.
   #[test]
   fn keys_match_bindings() {
-    use crate::reader::SelectionKind::Line;
+    use vpdf_reader::reader::SelectionKind::Line;
     // (shown, binding, action)
     let cases = [
       ("<CR>", "Enter", Action::Follow),

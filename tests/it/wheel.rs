@@ -7,12 +7,12 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::decode::{Event, Parser};
 use vpdf::keys::{Action, Input};
-use vpdf::motion::Motion;
 use vpdf::pointer::Pixel;
 use vpdf::session::Session;
 use vpdf::text::PageId;
+use vpdf_protocol::decode::{Event, Parser};
+use vpdf_reader::motion::Motion;
 
 /// SGR wheel flags: 64 up, 65 down, 66 left, 67 right; 4 Shift, 16 Ctrl.
 const UP: u16 = 64;
@@ -558,7 +558,7 @@ fn clue_wheel_stays_in_overlay() -> Result<()> {
   for count in [2, 100] {
     let (_directory, mut session) = crate::mouse::session(false)?;
     let app = session.app();
-    crate::modes::keys(app, b"g")?;
+    common::keys(app, b"g")?;
     app.awaiting =
       Some(Instant::now().checked_sub(Duration::from_secs(1)).unwrap());
     assert!(app.clue_due());

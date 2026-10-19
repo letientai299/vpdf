@@ -18,6 +18,7 @@ use crate::tiles::{self, TILE_WIDTH, Tile, TileKey};
 use mupdf::{DisplayList, IRect, Matrix};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+#[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, mpsc};
 use std::thread;
@@ -32,38 +33,8 @@ const IDLE: Duration = Duration::from_secs(2);
 
 type Sender = mpsc::Sender<std::result::Result<Tile, String>>;
 
-/// On-screen work in flight across documents: building a view's lists
-/// and drawing its bands.
-static URGENT: AtomicUsize = AtomicUsize::new(0);
-
-/// Counts as on-screen work while alive.
-pub(crate) struct Urgent;
-
-impl Urgent {
-  pub(crate) fn new() -> Self {
-    URGENT.fetch_add(1, Ordering::Relaxed);
-    Self
-  }
-}
-
-impl Drop for Urgent {
-  fn drop(&mut self) {
-    URGENT.fetch_sub(1, Ordering::Relaxed);
-  }
-}
-
-/// Waits while any view's tiles render, as text scans share `MuPDF`'s
-/// global allocation and glyph locks with the raster pool; false once
-/// `stop` holds.
-pub fn yield_to_views(stop: impl Fn() -> bool) -> bool {
-  while URGENT.load(Ordering::Relaxed) > 0 {
-    if stop() {
-      return false;
-    }
-    thread::sleep(Duration::from_millis(1));
-  }
-  !stop()
-}
+use vpdf_pdf::scheduling::Urgent;
+pub use vpdf_pdf::scheduling::yield_to_views;
 
 #[derive(Default)]
 struct Queue {

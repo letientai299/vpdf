@@ -6,15 +6,15 @@ use std::fmt::Write as _;
 use std::path::Path;
 use vpdf::Result;
 use vpdf::app::{Request, TabMove};
-use vpdf::decode::{Button, Mouse, MouseKind, Spot};
 use vpdf::figures::Source;
 use vpdf::keys::Action;
 use vpdf::pointer::{Hit, List, Region};
 use vpdf::prompt::{Prompt, PromptKind};
-use vpdf::reader::SelectionKind;
 use vpdf::session::Session;
 use vpdf::text::{Bounds, PageId, Position};
 use vpdf::trace::Drawable;
+use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
+use vpdf_reader::reader::SelectionKind;
 
 /// Page 1 links: page 2, web, itself.
 fn link_pdf(path: &Path) -> Result<()> {
@@ -860,7 +860,7 @@ fn alt_clicks_skip_unseen_cursors() -> Result<()> {
 #[test]
 fn drags_return_to_their_entry_mode() -> Result<()> {
   use crossterm::event::{KeyCode, KeyEvent};
-  use vpdf::reader::Mode;
+  use vpdf_reader::reader::Mode;
   let (_directory, mut session) = words(false)?;
   let alpha = glyph_cell(&mut session, 0, 0)?;
   let gamma = glyph_cell(&mut session, 0, 12)?;
@@ -921,11 +921,11 @@ fn alt_clicks_extend_the_selection() -> Result<()> {
 /// An SGR report under mode 1016.
 fn report(bytes: &str) -> Mouse {
   let mut events = std::collections::VecDeque::new();
-  let mut parser = vpdf::decode::Parser::default();
+  let mut parser = vpdf_protocol::decode::Parser::default();
   parser.set_pixels(true);
   parser.feed(bytes.as_bytes(), &mut events);
   match events.pop_front() {
-    Some(vpdf::decode::Event::Mouse(mouse)) => mouse,
+    Some(vpdf_protocol::decode::Event::Mouse(mouse)) => mouse,
     other => panic!("a mouse report: {other:?}"),
   }
 }
@@ -1212,7 +1212,7 @@ fn right_clicks_open_menus_by_context() -> Result<()> {
     press(&mut session, crossterm::event::KeyCode::Enter)?;
     let app = session.app();
     assert!(app.context_menu.is_none() && app.reader.selection.is_none());
-    assert_eq!(app.search.query.text, "Plain words here", "text={text_mode}");
+    assert_eq!(app.search.query().text, "Plain words here", "text={text_mode}");
   }
   Ok(())
 }
@@ -1248,7 +1248,7 @@ fn menu_items_run_by_key_and_click() -> Result<()> {
   right(&mut session, plain)?;
   press(&mut session, KeyCode::Char('j'))?;
   press(&mut session, KeyCode::Enter)?;
-  let visual = vpdf::reader::Mode::Visual(SelectionKind::Line);
+  let visual = vpdf_reader::reader::Mode::Visual(SelectionKind::Line);
   assert_eq!(session.app().reader.mode(), visual);
   // Esc closes; `:` closes and prompts.
   right(&mut session, plain)?;
@@ -1280,7 +1280,7 @@ fn menu_items_run_by_key_and_click() -> Result<()> {
     press(&mut session, KeyCode::Char('j'))?;
   }
   press(&mut session, KeyCode::Enter)?;
-  assert_ne!(session.app().search.query.text, "");
+  assert_ne!(session.app().search.query().text, "");
   Ok(())
 }
 
@@ -1347,8 +1347,8 @@ fn selection_search_finds_hyphenated_words() -> Result<()> {
   press(&mut session, KeyCode::Enter)?;
   common::search_loaded(session.app())?;
   let app = session.app();
-  assert_eq!(app.search.query.text, "example");
-  assert_eq!(app.search.hits.len(), 1);
+  assert_eq!(app.search.query().text, "example");
+  assert_eq!(app.search.hits().len(), 1);
   Ok(())
 }
 

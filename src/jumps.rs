@@ -1,11 +1,10 @@
 use crate::app::App;
 use crate::document::Target;
-use crate::find::{Phase, Query};
+use crate::find::Phase;
 use crate::panel::{Destination, Row};
 use crate::panel_layout::Layout;
-use crate::reader::JumpDescription;
-use crate::search::Hit;
 use crate::text::{Line, Position};
+use vpdf_reader::reader::JumpDescription;
 
 impl App {
   pub(crate) fn search_description(
@@ -13,13 +12,13 @@ impl App {
     position: Position,
   ) -> JumpDescription {
     let mut description = JumpDescription::Search {
-      query: self.search.query.clone(),
+      query: self.search.query().clone(),
       ordinal: None,
     };
-    if matches!(self.search.phase, Phase::Complete) {
+    if matches!(self.search.phase(), Phase::Complete) {
       description.finish_search(
-        &self.search.query,
-        &self.search.hits,
+        self.search.query(),
+        self.search.hits(),
         position,
       );
     }
@@ -69,7 +68,7 @@ impl App {
               .filter(|text| !text.trim().is_empty())
               .unwrap_or_else(|| "No text".into())
           },
-          JumpDescription::label,
+          label,
         );
         let word = line
           .and_then(|line| {
@@ -104,39 +103,23 @@ impl App {
   }
 }
 
-impl JumpDescription {
-  fn label(&self) -> String {
-    match self {
-      Self::Heading(title) => format!("Heading: {title}"),
-      Self::Link(excerpt) => {
-        if excerpt.is_empty() {
-          "Link".into()
-        } else {
-          format!("Link: {excerpt}")
-        }
-      }
-      Self::Search { query, ordinal } => {
-        let delimiter = if query.backward { '?' } else { '/' };
-        let count = ordinal.map_or_else(
-          || "counting…".into(),
-          |(index, total)| format!("{index}/{total}"),
-        );
-        format!("Search [{count}] {delimiter}{}{delimiter}", query.text)
+fn label(description: &JumpDescription) -> String {
+  match description {
+    JumpDescription::Heading(title) => format!("Heading: {title}"),
+    JumpDescription::Link(excerpt) => {
+      if excerpt.is_empty() {
+        "Link".into()
+      } else {
+        format!("Link: {excerpt}")
       }
     }
-  }
-
-  pub(crate) fn finish_search(
-    &mut self,
-    query: &Query,
-    hits: &[Hit],
-    position: Position,
-  ) {
-    if let Self::Search { query: saved, ordinal } = self
-      && saved == query
-      && let Ok(index) = hits.binary_search_by_key(&position, |hit| hit.first)
-    {
-      *ordinal = Some((index + 1, hits.len()));
+    JumpDescription::Search { query, ordinal } => {
+      let delimiter = if query.backward { '?' } else { '/' };
+      let count = ordinal.map_or_else(
+        || "counting…".into(),
+        |(index, total)| format!("{index}/{total}"),
+      );
+      format!("Search [{count}] {delimiter}{}{delimiter}", query.text)
     }
   }
 }
@@ -157,14 +140,16 @@ impl Layout {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::find::Query;
   use crate::keys::{Action, Input, PanelKind};
-  use crate::motion::Motion;
   use crate::panel::{Panel, Style};
+  use crate::search::Hit;
   use crate::terminal;
   use crossterm::event::{
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
   };
   use unicode_width::UnicodeWidthStr;
+  use vpdf_reader::motion::Motion;
 
   #[test]
   fn search_counts_survive_clipping() {
@@ -174,7 +159,7 @@ mod tests {
     };
     let rows = [
       Row::new("Other".into(), String::new(), Destination::None),
-      Row::new(description.label(), String::new(), Destination::None),
+      Row::new(label(&description), String::new(), Destination::None),
     ];
     let layout = Layout::jumps(&rows, 28, 0);
     let label = &layout.lines[layout.starts[1]].row.label;
@@ -183,8 +168,8 @@ mod tests {
 
   #[test]
   fn completed_search_numbers_history() {
-    use crate::reader::Reader;
     use crate::text::PageId;
+    use vpdf_reader::reader::Reader;
     let query = Query { text: "needle".into(), ..Query::default() };
     let hits: Vec<_> = [0, 2, 4]
       .into_iter()
@@ -208,7 +193,7 @@ mod tests {
     let labels = |reader: &Reader| -> Vec<String> {
       reader
         .described_jumps()
-        .map(|(_, description)| description.unwrap().label())
+        .map(|(_, description)| label(description.unwrap()))
         .collect()
     };
     let other = Query { text: "other".into(), ..query.clone() };

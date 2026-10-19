@@ -3,7 +3,6 @@ use crate::document::Document;
 use crate::graphics::Graphics;
 use crate::keys::{Keys, PanelKind};
 use crate::layout::{Layout, Screen};
-use crate::reader::Reader;
 use crate::render_worker::RenderWorker;
 use crate::terminal;
 use crate::text::Position;
@@ -11,6 +10,7 @@ use crate::tiles::TileKey;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
+use vpdf_reader::reader::Reader;
 
 /// Work a tab hands to the session.
 #[derive(Debug, PartialEq)]
@@ -151,12 +151,13 @@ pub struct App {
   /// The message the pointer last moved past.
   pub render_ms: f64,
   pub search: crate::find::Search,
+  pub search_worker: Option<crate::search_worker::SearchWorker>,
   /// Outline entry containing the cursor, refreshed each frame.
   pub current_section: Option<usize>,
   /// Lowercase marks of this document.
   pub marks: std::collections::BTreeMap<char, Position>,
   /// Where an open search prompt started.
-  pub search_origin: Option<crate::reader::Location>,
+  pub search_origin: Option<vpdf_reader::reader::Location>,
   pub prompt: Option<crate::prompt::Prompt>,
   pub hints: Option<crate::hints::Hints>,
   pub clues: Option<crate::clues::Clues>,
@@ -200,19 +201,6 @@ pub struct App {
 }
 
 impl App {
-  /// Releases what a hidden pane rebuilds on demand: the search worker
-  /// with its indexes, cached text and display lists, and the render
-  /// coordinator's document with every page it loaded. A running search
-  /// resumes when the pane shows again.
-  pub fn trim(&mut self) {
-    self.crop_job = None;
-    self.search.worker = None;
-    self.doc.trim();
-    self.worker =
-      RenderWorker::idle(&self.path, &self.password, self.doc.lists());
-    self.requested.clear();
-  }
-
   pub fn name(&self) -> String {
     let name = self.path.file_name().map_or_else(
       || self.path.display().to_string(),
@@ -262,6 +250,7 @@ impl App {
       error: None,
       render_ms: 0.0,
       search: crate::find::Search::default(),
+      search_worker: None,
       current_section: None,
       marks: std::collections::BTreeMap::new(),
       search_origin: None,

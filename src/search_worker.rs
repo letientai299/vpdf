@@ -24,7 +24,7 @@ const BATCH: usize = 128;
 const BATCH_BYTES: usize = 8 * MIB;
 
 pub enum Request {
-  Query { generation: u64, query: crate::find::Query, origin: PageId },
+  Query { generation: u64, query: vpdf_search::query::Query, origin: PageId },
   Seed(PageId, Arc<Text>),
 }
 
@@ -61,7 +61,7 @@ impl SearchWorker {
 
   pub fn lookup(
     &self,
-    query: &crate::find::Query,
+    query: &vpdf_search::query::Query,
     origin: PageId,
   ) -> Result<u64> {
     let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
@@ -78,6 +78,27 @@ impl SearchWorker {
 
   pub fn seed(&self, page: PageId, text: Arc<Text>) {
     let _ = self.send.send(Request::Seed(page, text));
+  }
+
+  /// Events received so far; a stopped worker reports a failure of
+  /// scan `generation`.
+  pub fn updates(&self, generation: u64) -> Vec<SearchEvent> {
+    let mut events = Vec::new();
+    loop {
+      match self.events.try_recv() {
+        Ok(event) => events.push(event),
+        Err(mpsc::TryRecvError::Empty) => return events,
+        Err(mpsc::TryRecvError::Disconnected) => {
+          events.push(SearchEvent {
+            generation,
+            hits: Vec::new(),
+            done: true,
+            error: Some("Search worker stopped".into()),
+          });
+          return events;
+        }
+      }
+    }
   }
 }
 
@@ -227,7 +248,7 @@ impl SearchTask<'_> {
     &self,
     source: &mut Source,
     indexes: &mut Cache<PageId, Index>,
-    query: &crate::find::Query,
+    query: &vpdf_search::query::Query,
   ) -> Result<()> {
     let pattern = search::compile(&query.text, query.whole)?;
     let mut remaining: usize = 10_000;
@@ -512,14 +533,30 @@ mod tests {
       send: &send,
     };
     let mut indexes = Cache::new(64 * MIB);
-    let query = crate::find::Query {
+    let query = vpdf_search::query::Query {
       text: query.to_owned(),
-      ..crate::find::Query::default()
+      ..vpdf_search::query::Query::default()
     };
     task.run(source, &mut indexes, &query)?;
     drop(send);
     let hits = events.into_iter().flat_map(|event| event.hits).collect();
     Ok((hits, source.extracted - before))
+  }
+
+  #[test]
+  fn stopped_worker_fails_the_scan() {
+    let (send, _) = mpsc::channel();
+    let (events_send, events) = mpsc::sync_channel(1);
+    let worker = SearchWorker { send, generation: Arc::default(), events };
+    let hits = Vec::new();
+    let event = SearchEvent { generation: 3, hits, done: false, error: None };
+    events_send.send(event).unwrap();
+    drop(events_send);
+    let updates = worker.updates(4);
+    let seen: Vec<_> = updates.iter().map(|u| (u.generation, u.done)).collect();
+    assert_eq!(seen, [(3, false), (4, true)]);
+    assert_eq!(updates[1].error.as_deref(), Some("Search worker stopped"));
+    assert!(worker.updates(4)[0].error.is_some(), "still stopped");
   }
 
   fn ends(hits: &[Hit]) -> Vec<(Position, Position, &str)> {

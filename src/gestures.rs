@@ -4,12 +4,13 @@ use crate::Result;
 use crate::app::App;
 use crate::figures::Source;
 use crate::marks::Span;
-use crate::objects::Object;
+use crate::pdf_text::PdfText;
 use crate::pointer::Route;
-use crate::reader::{Mode, Reader, Selection, SelectionKind};
 use crate::text::{Bounds, PageId, Position};
 use crossterm::event::MouseEventKind;
 use std::time::{Duration, Instant};
+use vpdf_reader::objects::Object;
+use vpdf_reader::reader::{Mode, Reader, Selection, SelectionKind};
 
 /// What a click run's drag extends.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -417,6 +418,6 @@ impl App {
     pos: Position,
     object: Object,
   ) -> Result<Option<(Position, Position)>> {
-    Reader::object_span(pos, object, false, 1, &mut self.doc)
+    Reader::object_span(pos, object, false, 1, &mut PdfText(&mut self.doc))
   }
 }

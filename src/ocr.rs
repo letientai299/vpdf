@@ -321,7 +321,7 @@ impl App {
     self.ocr = None;
     match result {
       Ok(text) => {
-        if let Some(worker) = &self.search.worker {
+        if let Some(worker) = &self.search_worker {
           worker.seed(page, Arc::clone(&text));
         }
         self.doc.seed(page, text);

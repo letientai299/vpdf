@@ -98,11 +98,11 @@ running page OCR again on the same page skips recognition.
 See [installation][installation] for the optional OCR dependency and `:help` for
 its command interface.
 
-[text]: ../../src/text.rs
-[reader]: ../../src/reader.rs
-[layout]: ../../src/layout.rs
+[text]: ../../crates/vpdf-model/src/text.rs
+[reader]: ../../crates/vpdf-reader/src/reader.rs
+[layout]: ../../crates/vpdf-pdf/src/layout.rs
 [priority]: arch.md#work-and-resource-lifetimes
-[search]: ../../src/search.rs
+[search]: ../../crates/vpdf-search/src/search.rs
 [worker]: ../../src/search_worker.rs
 [panels]: ../../src/panel_search.rs
 [outline]: ../../src/outline.rs

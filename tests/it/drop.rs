@@ -3,10 +3,10 @@ use crate::focus::{screen, send};
 use base64::Engine;
 use std::path::{Path, PathBuf};
 use vpdf::Result;
-use vpdf::decode::Event;
 use vpdf::home::{Home, Outcome};
 use vpdf::prompt::History;
 use vpdf::session::Session;
+use vpdf_protocol::decode::Event;
 
 fn pdf(directory: &Path, name: &str) -> Result<PathBuf> {
   let path = directory.join(name);

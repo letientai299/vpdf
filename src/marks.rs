@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::app::{App, Request};
 use crate::panel::{Destination, Row};
+use crate::pdf_text::PdfText;
 use crate::state::Mark;
 use crate::text::{PageId, Position};
 use std::collections::BTreeMap;
@@ -79,7 +80,8 @@ impl App {
 
   /// Follows a link or row to `position`.
   pub fn land_at(&mut self, position: Position) -> Result<()> {
-    let position = crate::reader::clamp(position, &mut self.doc)?;
+    let position =
+      vpdf_reader::reader::clamp(position, &mut PdfText(&mut self.doc))?;
     // A repeat, as a double click's, stays.
     let here = self.landed == Some(self.landed_view(position))
       && self.reader.cursor == position;
@@ -105,7 +107,8 @@ impl App {
   /// Moves the cursor as a recorded jump.
   fn jump_cursor(&mut self, target: Position) -> Result<()> {
     let origin = self.location()?;
-    self.reader.cursor = crate::reader::clamp(target, &mut self.doc)?;
+    self.reader.cursor =
+      vpdf_reader::reader::clamp(target, &mut PdfText(&mut self.doc))?;
     self.reader.record(origin);
     self.reader.describe_jump(None);
     self.reader.desired = None;

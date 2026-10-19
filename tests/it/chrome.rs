@@ -1132,10 +1132,10 @@ fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
       .collect()
   };
   session.app().hover = Hit::Scrollbar;
-  session.app().search.hits = vec![hit(0)];
+  let query = vpdf::find::Query::default();
+  session.app().search.show(query.clone(), vec![hit(0)]);
   let first = track(drawn(&mut session)?);
-  session.app().search.hits = vec![hit(1)];
-  session.app().search.generation += 1;
+  session.app().search.show(query, vec![hit(1)]);
   assert_ne!(track(drawn(&mut session)?), first, "ticks follow the search");
   session.app().hover = Hit::Nothing;
   // Following an outline entry shows the bar.
@@ -1235,7 +1235,7 @@ fn refocusing_links_refreshes_page() -> Result<()> {
   app.panel.as_mut().unwrap().selected = 1;
   app.open_panel(vpdf::keys::PanelKind::Links)?;
   assert_eq!(app.panel.as_ref().unwrap().selected, 1);
-  crate::modes::keys(app, b"\ti")?;
+  crate::common::keys(app, b"\ti")?;
   app.command("2")?;
   app.open_panel(vpdf::keys::PanelKind::Links)?;
   assert!(app.panel.as_ref().unwrap().rows.is_empty());
@@ -1277,7 +1277,7 @@ fn split_mirrors_text_preview() -> Result<()> {
   for app in &mut session.tab().panes {
     assert!(app.text_mode);
     assert_eq!(app.preview, Some(false));
-    crate::modes::keys(app, b"q")?;
+    crate::common::keys(app, b"q")?;
     assert!(!app.text_mode && !app.quit);
     assert!(app.preview.is_none());
   }
@@ -1288,7 +1288,7 @@ fn split_mirrors_text_preview() -> Result<()> {
 fn gx_reuses_url_scheme_checks() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let app = session.app();
-  crate::modes::keys(app, b"igx")?;
+  crate::common::keys(app, b"igx")?;
   assert_eq!(app.reader.cursor.page, PageId(0));
   assert!(!app.text_mode);
   app.show_panel(
@@ -1302,7 +1302,7 @@ fn gx_reuses_url_scheme_checks() -> Result<()> {
     )],
   )?;
   assert!(
-    crate::modes::keys(app, b"gx")
+    crate::common::keys(app, b"gx")
       .unwrap_err()
       .to_string()
       .contains("Unsupported link scheme")
@@ -1316,9 +1316,9 @@ fn gx_reuses_url_scheme_checks() -> Result<()> {
 fn panel_yank_keeps_named_register() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let app = session.app();
-  crate::modes::keys(app, b"go\"ay")?;
+  crate::common::keys(app, b"go\"ay")?;
   assert!(app.reader.pending_yank.is_none());
-  crate::modes::keys(app, b"y")?;
+  crate::common::keys(app, b"y")?;
   let yank = app.reader.pending_yank.take().unwrap();
   assert_eq!(yank.register, 'a');
   assert_eq!(yank.text, "Results\n");

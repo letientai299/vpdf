@@ -1,0 +1,153 @@
+use super::*;
+
+#[test]
+fn hover_skips_indentation() -> Result<()> {
+  for style in [theme::HOVER, theme::HOVER_DIM] {
+    let row = Row::parse("  Chapter");
+    let mut out = Vec::new();
+    assert_eq!(row.write(&mut out, style, 40, 0, "")?, 9);
+    let text = String::from_utf8(out)?;
+    assert!(text.contains(&format!("\x1b[24m  {style}Chapter")));
+  }
+  Ok(())
+}
+
+#[test]
+fn screen_scroll_keeps_panel_context() -> Result<()> {
+  for kind in [PanelKind::Help, PanelKind::Links] {
+    let mut panel =
+      Panel::new(kind, (0..40).map(|_| Row::parse("j: down")).collect());
+    panel.list(&mut Vec::new(), terminal::At::default(), 40, 10)?;
+    assert!(panel.navigate(Input::plain(Action::Screen(1)), 10));
+    assert_eq!(panel.selected, 6);
+    if kind == PanelKind::Help {
+      assert_eq!(panel.top, 6);
+    }
+    assert!(panel.navigate(Input::plain(Action::Screen(-1)), 10));
+    assert_eq!(panel.selected, 0);
+    let counted = Input { count: 2, ..Input::plain(Action::Screen(1)) };
+    assert!(panel.navigate(counted, 10));
+    assert_eq!(panel.selected, 12);
+  }
+  Ok(())
+}
+
+#[test]
+fn counted_list_boundaries() {
+  let mut panel =
+    Panel::new(PanelKind::Links, (0..5).map(|_| Row::parse("row")).collect());
+  for motion in [Motion::First, Motion::Last] {
+    for (count, expected) in [(1, 0), (3, 2), (99, 4)] {
+      let input =
+        Input { count, explicit: true, ..Input::plain(Action::Motion(motion)) };
+      assert!(panel.navigate(input, 10));
+      assert_eq!(panel.selected, expected);
+    }
+  }
+  panel.navigate(Input::plain(Action::Motion(Motion::First)), 10);
+  assert_eq!(panel.selected, 0);
+  panel.navigate(Input::plain(Action::Motion(Motion::Last)), 10);
+  assert_eq!(panel.selected, 4);
+}
+
+/// Equal labels part by destination; wrapped rows keep their line;
+/// a panel search's origin follows its row.
+#[test]
+fn refills_follow_rows() {
+  let at =
+    |line| Destination::Position(Position { line, ..Position::default() });
+  let row = |label: &str, line| Row::new(label.into(), String::new(), at(line));
+  let twins = || vec![row("same", 1), row("same", 2)];
+  let mut panel = Panel::new(PanelKind::Results, twins());
+  (panel.selected, panel.clicked) = (1, Some(0));
+  panel.begin_search(false);
+  let mut more = twins();
+  more.insert(0, row("new", 0));
+  assert!(panel.refill(more, ""));
+  assert_eq!((panel.selected, panel.clicked), (2, Some(1)));
+  panel.abort_search();
+  assert_eq!(panel.selected, 2, "the origin moved too");
+  // A clicked row that leaves ends its double click.
+  panel.refill(vec![row("same", 2)], "");
+  assert_eq!(panel.clicked, None);
+  // Web rows take two lines; `top` counts lines.
+  let web = |n: usize| {
+    let uri = Target::Uri(format!("https://example.com/{n}"));
+    Row::new(format!("site {n}"), String::new(), Destination::Link(uri))
+  };
+  let rows = |first| (first..9).map(web).collect::<Vec<_>>();
+  let mut panel = Panel::new(PanelKind::Links, rows(1));
+  (panel.selected, panel.height) = (6, 12);
+  panel.reflow(40);
+  panel.top = panel.line_start(4);
+  let line = panel.screen_line(6);
+  assert!(panel.refill(rows(0), ""));
+  panel.reflow(40);
+  assert_eq!((panel.selected, panel.screen_line(7)), (7, line));
+}
+
+#[test]
+fn refills_keep_the_selected_row() {
+  type Case = (&'static [&'static str], (usize, usize, bool));
+  let rows = |labels: &[&str]| -> Vec<Row> {
+    labels.iter().map(|label| Row::parse(label)).collect()
+  };
+  // (new rows) -> (selected, top, kept)
+  let cases: [Case; 6] = [
+    (&["a", "b", "c", "d"], (2, 1, true)),
+    (&["x", "a", "b", "c", "d"], (3, 2, true)),
+    (&["b", "c", "d"], (1, 0, true)),
+    (&["c", "a", "b", "c"], (3, 2, true)),
+    (&["a", "b", "d"], (2, 1, false)),
+    (&["a"], (0, 0, false)),
+  ];
+  for (labels, want) in cases {
+    let mut panel = Panel::new(PanelKind::Outline, rows(&["a", "b", "c", "d"]));
+    (panel.selected, panel.top) = (2, 1);
+    let kept = panel.refill(rows(labels), "");
+    assert_eq!((panel.selected, panel.top, kept), want, "{labels:?}");
+  }
+}
+
+#[test]
+fn paths_keep_the_file_name() -> Result<()> {
+  let row = Row {
+    style: Style::Path,
+    ..Row::new("~/books/ml/deep.pdf".into(), String::new(), Destination::None)
+  };
+  // (room, visible text)
+  for (room, want) in [
+    (40, "~/books/ml/deep.pdf"),
+    (14, "…s/ml/deep.pdf"),
+    (9, "…deep.pdf"),
+    (8, "deep.pdf"),
+    (5, "deep."),
+  ] {
+    let mut out = Vec::new();
+    let width = row.write(&mut out, theme::RESET, room, 0, "")?;
+    let out = String::from_utf8(out)?;
+    let text: String = out
+      .split('\x1b')
+      .map(|s| s.split_once('m').map_or(s, |(_, t)| t))
+      .collect();
+    assert_eq!(text, want, "{room}");
+    assert_eq!(width, want.width(), "{room}");
+    assert!(out.contains(&format!("{}deep", theme::FILE)), "{room}");
+  }
+  Ok(())
+}
+#[test]
+fn presses_beyond_the_list_miss_its_rows() -> Result<()> {
+  let rows = ["a", "b", "c"].map(Row::parse).into();
+  let mut panel = Panel::new(PanelKind::Recent, rows);
+  panel.list(&mut Vec::new(), terminal::At::default(), 20, 10)?;
+  let press = |column| MouseEvent {
+    kind: MouseEventKind::Down(MouseButton::Left),
+    column,
+    row: 2,
+    modifiers: crossterm::event::KeyModifiers::NONE,
+  };
+  assert_eq!(panel.pointer(press(25)), None);
+  assert_eq!(panel.pointer(press(5)), Some(1));
+  Ok(())
+}

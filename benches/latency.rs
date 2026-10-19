@@ -8,8 +8,8 @@ use vpdf::app::App;
 use vpdf::find::Phase;
 use vpdf::keys::{Action, Input};
 use vpdf::layout::Screen;
-use vpdf::motion::Motion as Move;
 use vpdf::tiles;
+use vpdf_reader::motion::Motion as Move;
 
 const FRAME: Duration = Duration::from_micros(8333);
 const SETTLE: Duration = Duration::from_secs(10);
@@ -206,7 +206,7 @@ fn fresh_jumps(
     sim.app.start_search("zkqxjv", false, false)?;
   }
   let jumps = jumps(&mut sim, 10, 0xc2b2_ae35)?;
-  Ok((jumps, matches!(sim.app.search.phase, Phase::Running { .. })))
+  Ok((jumps, matches!(sim.app.search.phase(), Phase::Running { .. })))
 }
 
 /// Times each action from input to a complete view.
@@ -258,20 +258,20 @@ fn find(sim: &mut Sim, query: &'static str) -> Result<Find> {
   loop {
     let frame = sim.tick()?;
     let now = ms(started.elapsed());
-    if hit.is_none() && !sim.app.search.hits.is_empty() {
+    if hit.is_none() && !sim.app.search.hits().is_empty() {
       hit = Some(now);
     }
     if hit.is_some() && view.is_none() && frame.missing == 0 {
       view = Some(now);
     }
-    if matches!(sim.app.search.phase, Phase::Complete) && frame.missing == 0 {
+    if matches!(sim.app.search.phase(), Phase::Complete) && frame.missing == 0 {
       break;
     }
     anyhow::ensure!(started.elapsed() < SCAN, "Search never finished");
     std::thread::sleep(FRAME);
   }
   let done_ms = ms(started.elapsed());
-  let hits = sim.app.search.hits.len();
+  let hits = sim.app.search.hits().len();
   let steps = if hits == 0 { 0 } else { 10 };
   let next = settled(sim, std::iter::repeat_n(Action::Result(false), steps))?;
   Ok(Find {

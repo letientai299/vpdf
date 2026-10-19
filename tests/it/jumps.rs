@@ -7,8 +7,8 @@ use vpdf::keys::PanelKind;
 use vpdf::layout::Screen;
 use vpdf::panel::Destination;
 use vpdf::prompt::History;
-use vpdf::reader::Reader;
 use vpdf::text::{PageId, Position};
+use vpdf_reader::reader::Reader;
 
 #[test]
 fn jumps_include_both_history_directions() {
@@ -228,7 +228,8 @@ fn semantic_history() -> Result<()> {
   ];
   assert_eq!(labels(&mut app)?, expected);
   // Later searches cannot relabel earlier visits.
-  app.search.query.text = "other".into();
+  let other = vpdf::find::Query { text: "other".into(), ..Default::default() };
+  app.search.show(other, Vec::new());
   history_key(&mut app, false)?;
   history_key(&mut app, true)?;
   assert_eq!(labels(&mut app)?, expected);
@@ -409,7 +410,7 @@ fn jump(app: &mut App, kind: Jump, at: Position) -> Result<()> {
       app.follow(&Target::Point { page: at.page, x, y })
     }
     Jump::Result => {
-      let index = app.search.hits.iter().position(|hit| hit.first == at);
+      let index = app.search.hits().iter().position(|hit| hit.first == at);
       app.open_panel(PanelKind::Results)?;
       app.panel.as_mut().unwrap().selected = index.expect("hit at target");
       app.key(
@@ -699,7 +700,7 @@ fn counted_history_keeps_both_directions() -> Result<()> {
     (b"99\x0f", 0),
   ] {
     app.landing = None;
-    crate::modes::keys(&mut app, sequence)?;
+    crate::common::keys(&mut app, sequence)?;
     assert_eq!(app.reader.cursor.page, PageId(page));
     assert_eq!(app.landing.as_ref().unwrap().position, app.reader.cursor);
   }
@@ -717,12 +718,12 @@ fn history_clears_column_goal() -> Result<()> {
   ];
   crate::common::pages_pdf(&path, &[lines, lines])?;
   let mut app = App::with_screen(&path, "", true, crate::focus::screen())?;
-  crate::modes::keys(&mut app, b"i20lj:2\r0j\x0fj")?;
+  crate::common::keys(&mut app, b"i20lj:2\r0j\x0fj")?;
   assert_eq!(
     app.reader.cursor,
     Position { page: PageId(0), line: 2, glyph: 20 }
   );
-  crate::modes::keys(&mut app, b"\x1b[105;5uj")?;
+  crate::common::keys(&mut app, b"\x1b[105;5uj")?;
   assert_eq!(
     app.reader.cursor,
     Position { page: PageId(1), line: 2, glyph: 0 }

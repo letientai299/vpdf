@@ -1,18 +1,36 @@
 [package]
 name = "vpdf"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 build = "scripts/build.rs"
-rust-version = "1.99"
+rust-version.workspace = true
 license = "MIT"
 description = "A Vim-inspired terminal PDF reader powered by MuPDF and the Kitty graphics protocol."
 repository = "https://github.com/letientai299/vpdf"
 
-[lints.rust]
+[lints]
+workspace = true
+
+[workspace]
+members = [
+  ".",
+  "crates/vpdf-model",
+  "crates/vpdf-search",
+  "crates/vpdf-pdf",
+  "crates/vpdf-protocol",
+  "crates/vpdf-reader",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+
+[workspace.lints.rust]
 unsafe_code = "forbid"
 unused_qualifications = "deny"
 
-[lints.clippy]
+[workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
 # Pixel and cell math casts on purpose.
@@ -45,7 +63,12 @@ lto = "thin"
 strip = true
 debug = false
 
-[dependencies]
+[workspace.dependencies]
+vpdf-pdf = { path = "crates/vpdf-pdf" }
+vpdf-search = { path = "crates/vpdf-search" }
+vpdf-model = { path = "crates/vpdf-model" }
+vpdf-protocol = { path = "crates/vpdf-protocol" }
+vpdf-reader = { path = "crates/vpdf-reader" }
 anyhow = "1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
@@ -67,19 +90,39 @@ sysinfo = { version = "0.39.6", default-features = false, features = [
 unicode-casefold = "0.2"
 unicode-normalization = "0.1"
 unicode-width = "0.2"
+tempfile = "3"
+font-kit = "0.14"
+
+[dependencies]
+vpdf-pdf.workspace = true
+vpdf-search.workspace = true
+vpdf-model.workspace = true
+vpdf-protocol.workspace = true
+vpdf-reader.workspace = true
+anyhow = { workspace = true }
+base64 = { workspace = true }
+clap = { workspace = true }
+crossterm = { workspace = true }
+flate2 = { workspace = true }
+mupdf = { workspace = true }
+notify = { workspace = true }
+rustix = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+signal-hook = { workspace = true }
+sysinfo = { workspace = true }
+unicode-width = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-font-kit = "0.14"
 # Apple's zlib inflates content and font streams faster than the vendored
 # copy, which Linux keeps for its static build. Its symbols are unprefixed,
 # so flate2 shares Apple's zlib only here.
-flate2 = { version = "1", features = ["zlib"] }
-mupdf = { version = "=0.8.0", default-features = false, features = [
-  "sys-lib-zlib",
-] }
+flate2 = { workspace = true, features = ["zlib"] }
+mupdf = { workspace = true, features = ["sys-lib-zlib"] }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
 
 [[bench]]
 name = "reader"

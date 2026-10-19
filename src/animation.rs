@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::app::App;
 use crate::keys::Action;
-use crate::reader::Mode;
 use crate::text::{PageId, Position};
 use std::time::Instant;
+use vpdf_reader::reader::Mode;
 
 pub struct Scroll {
   pub target: f32,
@@ -122,7 +122,7 @@ impl App {
     follow: bool,
     sync: bool,
   ) -> Result<()> {
-    self.search.yank = None;
+    self.search.forget_yank();
     self.reader.disarm();
     let displayed = self.reader.scroll;
     self.finish_scroll();

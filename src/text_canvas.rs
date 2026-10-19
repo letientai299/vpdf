@@ -1,12 +1,13 @@
 use crate::Result;
 use crate::app::App;
 use crate::marks::Span;
-use crate::reader::{SelectionKind, TextSource};
+use crate::pdf_text::PdfText;
 use crate::text::{Bounds, Glyph, Line, PageId, Position, Text};
 use crate::theme;
 use std::io::Write;
 use std::sync::Arc;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use vpdf_reader::reader::{SelectionKind, TextSource};
 
 /// A line that stands in for an empty page.
 static BLANK: Line = Line { paragraph: false, glyphs: Vec::new() };
@@ -326,7 +327,7 @@ fn fitting<'a>(
 impl App {
   pub(crate) fn clamp_text(&mut self, top: Position) -> Result<Position> {
     let size = self.text_size();
-    clamp(&mut self.doc, top, size)
+    clamp(&mut PdfText(&mut self.doc), top, size)
   }
 
   /// Text view rows and columns.
@@ -339,7 +340,7 @@ impl App {
   /// The text view from `top`, unmoved.
   fn text_view_from(&mut self, top: Position) -> Result<View> {
     let size = self.text_size();
-    View::new(&mut self.doc, size, top)
+    View::new(&mut PdfText(&mut self.doc), size, top)
   }
 
   /// The next frame's view.
@@ -349,7 +350,7 @@ impl App {
 
   /// `at` moved `rows` text view rows.
   fn text_step(&mut self, at: Position, rows: isize) -> Result<Position> {
-    Ok(step(&mut self.doc, at, rows)?.0)
+    Ok(step(&mut PdfText(&mut self.doc), at, rows)?.0)
   }
 
   /// Pages the next frame shows.
@@ -515,8 +516,11 @@ impl App {
   /// Cursor line `fraction` down the view.
   pub(crate) fn align_text(&mut self, fraction: f32) -> Result<()> {
     let view = self.next_text_view()?;
-    self.text_top =
-      view.aligned(self.reader.cursor, fraction, &mut self.doc)?;
+    self.text_top = view.aligned(
+      self.reader.cursor,
+      fraction,
+      &mut PdfText(&mut self.doc),
+    )?;
     Ok(())
   }
 
@@ -531,7 +535,8 @@ impl App {
 
   pub(crate) fn reveal_text(&mut self) -> Result<()> {
     let view = self.next_text_view()?;
-    self.text_top = view.keep_visible(self.reader.cursor, &mut self.doc)?;
+    self.text_top =
+      view.keep_visible(self.reader.cursor, &mut PdfText(&mut self.doc))?;
     Ok(())
   }
 
@@ -591,8 +596,8 @@ impl App {
     if self.selects(position) {
       return theme::TEXT_SELECTION;
     }
-    if !self.search.hidden
-      && crate::search::contains(&self.search.hits, position)
+    if !self.search.hidden()
+      && crate::search::contains(self.search.hits(), position)
     {
       return theme::TEXT_MATCH;
     }
@@ -605,9 +610,10 @@ impl App {
   /// Whether the selection covers `position`.
   fn selects(&self, position: Position) -> bool {
     self.reader.selection.is_some_and(|selection| {
-      let range = crate::motion::range(selection.anchor, self.reader.cursor);
+      let range =
+        vpdf_reader::motion::range(selection.anchor, self.reader.cursor);
       let linewise = selection.kind == SelectionKind::Line;
-      crate::motion::covers(range, linewise, position)
+      vpdf_reader::motion::covers(range, linewise, position)
     })
   }
 
@@ -647,16 +653,6 @@ mod tests {
         .collect(),
     });
     Arc::new(Text { lines: lines.collect(), truncated: false })
-  }
-
-  impl TextSource for Vec<Arc<Text>> {
-    fn page_count(&self) -> usize {
-      self.len()
-    }
-
-    fn page_text(&mut self, page: PageId) -> Result<Arc<Text>> {
-      Ok(Arc::clone(&self[page.0]))
-    }
   }
 
   fn at(page: usize, line: usize, glyph: usize) -> Position {

@@ -1,14 +1,12 @@
-use std::collections::VecDeque;
+use super::common::keys;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::decode::{Event, Parser};
 use vpdf::keys::PanelKind;
 use vpdf::layout::Screen;
-use vpdf::prompt::History;
-use vpdf::reader::SelectionKind;
 use vpdf::text::{Bounds, PageId, Position};
+use vpdf_reader::reader::SelectionKind;
 
 pub(super) fn app(file: &str, text: bool) -> Result<App> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
@@ -24,19 +22,6 @@ pub(super) fn app(file: &str, text: bool) -> Result<App> {
       origin: (0, 0),
     },
   )
-}
-
-pub(super) fn keys(app: &mut App, bytes: &[u8]) -> Result<()> {
-  let mut events = VecDeque::new();
-  Parser::default().feed(bytes, &mut events);
-  assert!(!events.is_empty());
-  for event in events {
-    let Event::Key(key) = event else {
-      panic!("Expected key");
-    };
-    app.key(key, &mut History::default())?;
-  }
-  Ok(())
 }
 
 pub(super) fn settle(app: &mut App) {
@@ -153,7 +138,7 @@ fn explicit_targets_expire_outside_view() -> Result<()> {
       keys(&mut app, bytes)?;
       assert!(app.reader.message.contains("Click text"));
       assert!(app.peek.is_none());
-      assert_eq!(app.search.query.text, "");
+      assert_eq!(app.search.query().text, "");
     }
     let target = app.reading_position()?;
     app.go_to(target, true)?;
@@ -260,12 +245,12 @@ fn escape_preserves_focus_and_jobs_cancel_is_explicit() -> Result<()> {
   keys(&mut app, b"vwy")?;
   app.start_search("attention", false, false)?;
   app.start_ocr("eng")?;
-  let generation = app.search.generation;
+  let generation = app.search.generation();
   app.open_panel(PanelKind::Outline)?;
   keys(&mut app, b"\x1b[27u\x1b[27u")?;
   assert!(app.panel_focused());
-  assert_eq!(app.search.generation, generation);
-  assert!(!app.search.hidden);
+  assert_eq!(app.search.generation(), generation);
+  assert!(!app.search.hidden());
   assert!(app.ocr.is_some());
   app.close_panel()?;
   keys(&mut app, b"vy\x1b[27u")?;
@@ -273,8 +258,8 @@ fn escape_preserves_focus_and_jobs_cancel_is_explicit() -> Result<()> {
   assert!(app.ocr.is_some());
   keys(&mut app, b":cancel\r")?;
   assert!(app.ocr.is_none() && !app.outline_pending());
-  assert!(app.search.hidden);
-  assert!(matches!(app.search.phase, vpdf::find::Phase::Idle));
+  assert!(app.search.hidden());
+  assert!(matches!(app.search.phase(), vpdf::find::Phase::Idle));
   Ok(())
 }
 
@@ -320,7 +305,7 @@ fn scan_selection_fails_without_ocr_or_view_motion() -> Result<()> {
       assert_eq!(app.reader.scroll, scroll);
       assert!(app.reader.selection.is_none() && app.reader.operator.is_none());
       assert!(app.ocr.is_none());
-      assert_eq!(app.reader.mode(), vpdf::reader::Mode::Normal);
+      assert_eq!(app.reader.mode(), vpdf_reader::reader::Mode::Normal);
       assert!(app.reader.message.contains("Selection unavailable"));
     }
   }
@@ -549,18 +534,18 @@ fn recent_cover_preserves_view_and_explicit_job_control() -> Result<()> {
     let columns = app.layout.screen.columns;
     app.start_search("attention", false, false)?;
     app.start_ocr("eng")?;
-    let generation = app.search.generation;
+    let generation = app.search.generation();
     app.show_recent(&[])?;
     keys(&mut app, b"\x1b[27u")?;
     assert!(app.covered() && app.panel_focused());
     assert_eq!(app.layout.screen.columns, columns);
     assert_eq!((app.reader.scroll, app.layout.pan), view);
-    assert_eq!(app.search.generation, generation);
-    assert!(!app.search.hidden && app.ocr.is_some());
+    assert_eq!(app.search.generation(), generation);
+    assert!(!app.search.hidden() && app.ocr.is_some());
     app.command("cancel")?;
     assert!(app.covered() && app.panel_focused());
     assert!(app.ocr.is_none());
-    assert!(matches!(app.search.phase, vpdf::find::Phase::Idle));
+    assert!(matches!(app.search.phase(), vpdf::find::Phase::Idle));
     app.close_panel()?;
     app.draw(&mut Vec::new())?;
     assert_eq!((app.reader.scroll, app.layout.pan), view);

@@ -1,6 +1,5 @@
 use crate::Result;
 use crate::cmdline;
-use crate::decode::Event;
 use crate::graphics::Graphics;
 use crate::keys::{Action, Keys, PanelKind};
 use crate::layout::Screen;
@@ -15,6 +14,7 @@ use crossterm::event::{KeyEvent, KeyEventKind};
 use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
+use vpdf_protocol::decode::Event;
 
 /// What the start screen asks the session to do.
 #[derive(Debug, Eq, PartialEq)]
@@ -292,8 +292,8 @@ mod tests {
 
   #[test]
   fn top_stats_offset_home_and_mouse() -> Result<()> {
-    use crate::decode::{Button, Mouse, MouseKind, Spot};
     use crossterm::event::KeyModifiers;
+    use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
     let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
     let entry = crate::state::tests::entry(file, 0, 0);
     let screen = Screen {
@@ -324,8 +324,8 @@ mod tests {
 
   #[test]
   fn clicks_wait_for_an_open_prompt() -> Result<()> {
-    use crate::decode::{Button, Mouse, MouseKind, Spot};
     use crossterm::event::{KeyCode, KeyModifiers};
+    use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
     let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
     let entry = crate::state::tests::entry(file, 0, 0);
     let screen = Screen {

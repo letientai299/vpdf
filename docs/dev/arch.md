@@ -19,6 +19,19 @@ that it can accept, replace, or discard.
 Use `vpdf --help` and `:help` for the current interface. These principles guide
 changes; they do not enumerate the feature set.
 
+## Package boundaries
+
+The root application owns panes, workers, persistence, and terminal UI.
+The private [model crate][model] owns shared text values and line reflow,
+geometry, and cache values.
+[Search][search-crate] and [PDF][pdf-crate] each depend on model; neither
+imports the application or each other. The [reader crate][reader-crate] owns
+cursor, motion, text-object, selection, register, and jump semantics over model
+text, with search types for jump labels; the application adapts native
+documents to it. The [protocol crate][protocol] decodes
+terminal input bytes into events and depends only on crossterm. The
+[development guide][development] describes independent package tests.
+
 ## Runtime ownership
 
 A [session][session] owns tabs, prompt history, saved state, and terminal
@@ -94,12 +107,17 @@ to release native resources. The policy and thresholds live in the
 - [Development][development] distinguishes CPU measurements from terminal paint
   and display latency.
 
-[session]: ../../src/session.rs
+[session]: ../../src/session/mod.rs
 [app]: ../../src/app.rs
 [sessions]: sessions.md
-[document]: ../../src/document.rs
+[document]: ../../crates/vpdf-pdf/src/document/mod.rs
 [worker]: ../../src/render_worker.rs
 [search-worker]: ../../src/search_worker.rs
 [rendering]: render.md
 [text]: text.md
 [development]: dev.md
+[model]: ../../crates/vpdf-model/src/lib.rs
+[search-crate]: ../../crates/vpdf-search/src/lib.rs
+[pdf-crate]: ../../crates/vpdf-pdf/src/lib.rs
+[protocol]: ../../crates/vpdf-protocol/src/lib.rs
+[reader-crate]: ../../crates/vpdf-reader/src/lib.rs

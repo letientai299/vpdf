@@ -1,11 +1,9 @@
-use std::collections::VecDeque;
+use super::common::keys;
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::decode::{Event, Parser};
 use vpdf::document::Target;
 use vpdf::layout::Screen;
-use vpdf::prompt::History;
 use vpdf::text::{Bounds, Position};
 
 fn app(text_mode: bool) -> Result<App> {
@@ -24,17 +22,6 @@ fn app(text_mode: bool) -> Result<App> {
   )?;
   super::common::outline_loaded(&mut app)?;
   Ok(app)
-}
-
-fn keys(app: &mut App, bytes: &[u8]) -> Result<()> {
-  let mut events = VecDeque::new();
-  Parser::default().feed(bytes, &mut events);
-  assert!(!events.is_empty());
-  for event in events {
-    let Event::Key(key) = event else { panic!("Expected key") };
-    app.key(key, &mut History::default())?;
-  }
-  Ok(())
 }
 
 /// Text view rows of the first `pages` pages, with their breaks.

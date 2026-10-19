@@ -439,7 +439,6 @@ mod tests {
   use super::*;
   use crate::keys::{Action, Input, PanelKind};
   use crate::layout::Screen;
-  use crate::motion::Motion;
   use crate::panel::{Panel, Style};
   use crate::terminal;
   use crate::text::{Bounds, Glyph, Line as TextLine, PageId};
@@ -448,6 +447,7 @@ mod tests {
   };
   use std::path::PathBuf;
   use unicode_width::UnicodeWidthStr;
+  use vpdf_reader::motion::Motion;
 
   fn row(label: &str, uri: &str) -> Row {
     Row::new(

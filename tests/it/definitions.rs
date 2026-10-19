@@ -1,6 +1,6 @@
+use super::common::keys;
 use super::common::{pages_pdf, search_loaded};
 use super::focus::screen;
-use super::modes::keys;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::find::Phase;
@@ -100,7 +100,7 @@ fn missing_and_canceled_definitions_stay_put() -> Result<()> {
     app.target = Some(Position::default());
     keys(&mut app, b"gd")?;
     keys(&mut app, cancel)?;
-    assert!(matches!(app.search.phase, Phase::Idle));
+    assert!(matches!(app.search.phase(), Phase::Idle));
     app.search_updates()?;
     assert_eq!(app.reader.cursor.page, PageId(0));
   }
@@ -136,7 +136,7 @@ fn embedded_definition_keeps_history() -> Result<()> {
   app.target = Some(Position::default());
   keys(&mut app, b"gd")?;
   assert_eq!(app.reader.cursor.page, PageId(1));
-  assert!(app.search.worker.is_none());
+  assert!(app.search_worker.is_none());
   keys(&mut app, b"\x1b[111;5u")?;
   assert_eq!(app.reader.cursor.page, PageId(0));
   Ok(())
@@ -151,7 +151,7 @@ fn external_definition_does_not_open_browser() -> Result<()> {
   app.target = Some(Position::default());
   keys(&mut app, b"gd")?;
   assert_eq!(app.reader.message, "External link: use gx");
-  assert!(app.search.worker.is_none());
+  assert!(app.search_worker.is_none());
   Ok(())
 }
 
@@ -164,7 +164,7 @@ fn section_and_equation_definitions() -> Result<()> {
     keys(&mut app, b"gd")?;
     search_loaded(&mut app)?;
     assert_eq!(app.reader.cursor.page, PageId(1));
-    assert_eq!(app.search.hits.len(), 1);
+    assert_eq!(app.search.hits().len(), 1);
   }
   Ok(())
 }
@@ -179,7 +179,7 @@ fn outline_definition_avoids_scan() -> Result<()> {
   }];
   keys(&mut app, b"gd")?;
   assert_eq!(app.reader.cursor.page, PageId(1));
-  assert!(app.search.worker.is_none());
+  assert!(app.search_worker.is_none());
   Ok(())
 }
 
@@ -207,12 +207,12 @@ fn definition_replay_excludes_source() -> Result<()> {
     open(&[&["Figure 4"], &["Figure 4: Results"]], false)?;
   keys(&mut app, b"gd")?;
   search_loaded(&mut app)?;
-  assert_eq!(app.search.hits.len(), 1);
-  let query = app.search.query.clone();
+  assert_eq!(app.search.hits().len(), 1);
+  let query = app.search.query().clone();
   app.rerun(&query)?;
   search_loaded(&mut app)?;
-  assert_eq!(app.search.hits.len(), 1);
-  assert_eq!(app.search.hits[0].first.page, PageId(1));
+  assert_eq!(app.search.hits().len(), 1);
+  assert_eq!(app.search.hits()[0].first.page, PageId(1));
   Ok(())
 }
 
@@ -227,7 +227,7 @@ fn definition_uses_explicit_heading_titles() -> Result<()> {
     }];
     keys(&mut app, b"gd")?;
     assert_eq!(app.reader.cursor.page, PageId(1), "{title}");
-    assert!(app.search.worker.is_none());
+    assert!(app.search_worker.is_none());
   }
   Ok(())
 }
@@ -274,7 +274,7 @@ fn definition_focus_loss_cancels_jump() -> Result<()> {
     open(&[&["Figure 4"], &["Figure 4: Results"]], false)?;
   keys(&mut app, b"gd")?;
   app.blur()?;
-  assert!(matches!(app.search.phase, Phase::Idle));
+  assert!(matches!(app.search.phase(), Phase::Idle));
   app.search_updates()?;
   assert_eq!(app.reader.cursor.page, PageId(0));
   Ok(())

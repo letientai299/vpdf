@@ -79,7 +79,9 @@ fn code(paths: &[&str]) -> u64 {
   for path in paths {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
     println!("cargo::rerun-if-changed={}", path.display());
-    std::fs::read(&path).unwrap_or_default().hash(&mut hasher);
+    std::fs::read(&path)
+      .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+      .hash(&mut hasher);
   }
   hasher.finish()
 }
@@ -91,6 +93,20 @@ fn main() {
   let index =
     locked(&["mupdf-sys", "unicode-casefold", "unicode-normalization"]);
   println!("cargo::rustc-env=VPDF_INDEX_CRATES={index}");
-  let code = code(&["src/document.rs", "src/search.rs", "src/search/codec.rs"]);
+  let code = code(&[
+    "crates/vpdf-pdf/src/fonts.rs",
+    "crates/vpdf-pdf/src/document/mod.rs",
+    "crates/vpdf-pdf/src/document/types.rs",
+    "crates/vpdf-pdf/src/document/extraction.rs",
+    "crates/vpdf-pdf/src/document/metadata.rs",
+    "crates/vpdf-pdf/src/document/annotations.rs",
+    "crates/vpdf-search/src/search.rs",
+    "crates/vpdf-search/src/search/codec.rs",
+    "crates/vpdf-model/src/text.rs",
+    "crates/vpdf-model/src/reflow.rs",
+    "crates/vpdf-pdf/src/autolink.rs",
+    "crates/vpdf-pdf/src/wraps.rs",
+    "crates/vpdf-model/src/geometry.rs",
+  ]);
   println!("cargo::rustc-env=VPDF_INDEX_CODE={code:016x}");
 }

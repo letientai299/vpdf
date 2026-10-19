@@ -273,8 +273,8 @@ mod tests {
   }
   #[test]
   fn image_packets_roundtrip() -> Result<()> {
-    use crate::decode::{Event, Parser, Reply};
     use std::collections::VecDeque;
+    use vpdf_protocol::decode::{Event, Parser, Reply};
     for size in [1, 4095, 4096, 8191] {
       let png: Vec<u8> = (0..size).map(|n| n as u8).collect();
       let mut out = Vec::new();

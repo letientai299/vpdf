@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::document::Document;
-use vpdf::motion::Motion;
-use vpdf::reader::Reader;
+use vpdf::pdf_text::PdfText;
 use vpdf::text::{PageId, Position};
+use vpdf_reader::motion::Motion;
+use vpdf_reader::reader::Reader;
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
@@ -23,16 +24,16 @@ fn paper_blocks_supply_paragraph_boundaries() -> Result<()> {
   let middle = Position { page: PageId(0), line: first + 1, glyph: 1 };
   let mut reader = Reader::default();
   reader.cursor = middle;
-  reader.motion(Motion::NextParagraph, 1, false, &mut doc)?;
+  reader.motion(Motion::NextParagraph, 1, false, &mut PdfText(&mut doc))?;
   assert_eq!(reader.cursor.line, next);
   assert_eq!(reader.cursor.glyph, 0);
-  reader.motion(Motion::PreviousParagraph, 1, false, &mut doc)?;
+  reader.motion(Motion::PreviousParagraph, 1, false, &mut PdfText(&mut doc))?;
   assert_eq!(reader.cursor.line, first);
   reader.cursor = middle;
-  reader.motion(Motion::PreviousParagraph, 1, false, &mut doc)?;
+  reader.motion(Motion::PreviousParagraph, 1, false, &mut PdfText(&mut doc))?;
   assert_eq!(reader.cursor.line, first);
-  reader.yank(1, 'a', &mut doc)?;
-  reader.motion(Motion::NextParagraph, 1, false, &mut doc)?;
+  reader.yank(1, 'a', &mut PdfText(&mut doc))?;
+  reader.motion(Motion::NextParagraph, 1, false, &mut PdfText(&mut doc))?;
   let expected = text.lines[first..next]
     .iter()
     .map(vpdf::text::Line::text)

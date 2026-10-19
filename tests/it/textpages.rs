@@ -9,8 +9,8 @@ use vpdf::app::App;
 use vpdf::document::{Heading, Target};
 use vpdf::layout::Screen;
 use vpdf::pointer::{Hit, Region, Route};
-use vpdf::reader::SelectionKind;
 use vpdf::text::{PageId, Position};
+use vpdf_reader::reader::SelectionKind;
 
 const PAGES: [[&str; 4]; 3] = [
   ["P0 L0 alpha", "P0 L1 beta", "P0 L2 gamma", "P0 L3 delta"],

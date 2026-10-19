@@ -1,73 +1,12 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 use vpdf::Result;
-use vpdf::document::Document;
-use vpdf::text::{Bounds, PageId};
-use vpdf::tiles::capture;
-
-#[test]
-#[ignore = "requires verified public PDF corpus"]
-fn real_figures_and_capture() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut doc = Document::open(&root.join("paper.pdf"), "")?;
-  let page = PageId(2);
-  let figures = doc.figures(page)?;
-  let figure = figures
-    .iter()
-    .find(|figure| figure.caption.starts_with("Figure 1"))
-    .ok_or_else(|| anyhow::anyhow!("Figure 1 missing: {figures:?}"))?;
-  assert!(figure.bounds.height() > 100.0, "{figure:?}");
-  assert!(Arc::ptr_eq(&figures, &doc.figures(page)?));
-  let text = doc.text(page)?;
-  doc.seed(page, text);
-  let seeded = doc.figures(page)?;
-  assert!(!Arc::ptr_eq(&figures, &seeded));
-  doc.trim();
-  assert!(!Arc::ptr_eq(&seeded, &doc.figures(page)?));
-  assert!(doc.figures(PageId(doc.pages.len())).is_err());
-  for rotation in [0, 90, 180, 270] {
-    let capture = capture(&mut doc, page, figure.bounds, rotation)?;
-    assert!(capture.png.starts_with(b"\x89PNG\r\n\x1a\n"));
-    let decoded = mupdf::Image::from_bytes(&capture.png)?.to_pixmap()?;
-    let list = doc.display(page)?;
-    let full = list.to_pixmap(
-      &capture.matrix,
-      &mupdf::Colorspace::device_rgb(),
-      false,
-    )?;
-    assert_eq!(decoded.width(), (capture.area.x1 - capture.area.x0) as u32);
-    assert_eq!(decoded.height(), (capture.area.y1 - capture.area.y0) as u32);
-    for row in 0..decoded.height() as usize {
-      let offset = (capture.area.y0 - full.y()) as usize + row;
-      let left = (capture.area.x0 - full.x()) as usize;
-      let first = offset * full.stride() as usize + left * 3;
-      let width = decoded.width() as usize * 3;
-      let actual = row * decoded.stride() as usize;
-      assert_eq!(
-        &decoded.samples()[actual..actual + width],
-        &full.samples()[first..first + width]
-      );
-    }
-    assert!(
-      u64::from(decoded.width()) * u64::from(decoded.height()) <= 8_000_000
-    );
-  }
-  for region in [
-    Bounds::default(),
-    Bounds { x0: f32::NAN, x1: 100.0, y1: 100.0, ..Bounds::default() },
-  ] {
-    assert!(capture(&mut doc, page, region, 0).is_err());
-  }
-  let mut scan = Document::open(&root.join("ocr.pdf"), "")?;
-  assert!(!scan.figures(PageId(0))?.is_empty());
-  Ok(())
-}
+use vpdf::text::PageId;
 
 #[test]
 fn raw_figure_bindings() {
   use std::collections::VecDeque;
-  use vpdf::decode::{Event, Parser};
   use vpdf::keys::{Action, Grammar, Keys};
+  use vpdf_protocol::decode::{Event, Parser};
   for (bytes, expected) in [
     (&b"]i"[..], Action::Figure(true)),
     (&b"[i"[..], Action::Figure(false)),
@@ -121,7 +60,7 @@ fn real_figure_navigation_fit() -> Result<()> {
     rect.y1 <= screen.height() - f32::from(screen.cell_height) + 1.0,
     "Action bar overlaps figure: {rect:?}"
   );
-  app.reader.visual(vpdf::reader::SelectionKind::Character);
+  app.reader.visual(vpdf_reader::reader::SelectionKind::Character);
   let selection = app.reader.selection;
   let cursor = app.reader.cursor;
   let mode = app.reader.mode();
@@ -142,10 +81,11 @@ fn real_figure_navigation_fit() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn raw_region_preserves_state() -> Result<()> {
-  use super::modes::{app, keys};
+  use super::common::keys;
+  use super::modes::app;
   use vpdf::app::InputOwner;
-  use vpdf::reader::Mode;
   use vpdf::region::{Operation, Region};
+  use vpdf_reader::reader::Mode;
   let mut app = app("paper.pdf", false)?;
   keys(&mut app, b"i]ivgF")?;
   let mode = app.reader.mode();
@@ -192,8 +132,8 @@ fn raw_region_preserves_state() -> Result<()> {
 fn raw_region_pointer_transfer() -> Result<()> {
   use super::focus::{screen, send};
   use vpdf::app::InputOwner;
-  use vpdf::reader::Mode;
   use vpdf::session::Session;
+  use vpdf_reader::reader::Mode;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let mut session = Session::new(None);
   session.open(&root.join("paper.pdf"), true, screen())?;

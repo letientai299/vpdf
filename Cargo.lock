@@ -1282,9 +1282,7 @@ dependencies = [
  "base64",
  "clap",
  "crossterm",
- "fancy-regex",
  "flate2",
- "font-kit",
  "mupdf",
  "notify",
  "rustix",
@@ -1294,9 +1292,56 @@ dependencies = [
  "signal-hook",
  "sysinfo",
  "tempfile",
+ "unicode-width",
+ "vpdf-model",
+ "vpdf-pdf",
+ "vpdf-protocol",
+ "vpdf-reader",
+ "vpdf-search",
+]
+
+[[package]]
+name = "vpdf-model"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "vpdf-pdf"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "font-kit",
+ "mupdf",
+ "vpdf-model",
+]
+
+[[package]]
+name = "vpdf-protocol"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+]
+
+[[package]]
+name = "vpdf-reader"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "vpdf-model",
+ "vpdf-search",
+]
+
+[[package]]
+name = "vpdf-search"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "fancy-regex",
  "unicode-casefold",
  "unicode-normalization",
- "unicode-width",
+ "vpdf-model",
 ]
 
 [[package]]

@@ -5,13 +5,13 @@ use crate::grid;
 use crate::layout::Screen;
 use crate::pointer::Hit;
 use crate::prompt::Prompt;
-use crate::reader::{Mode, SelectionKind};
 use crate::terminal::{self, At};
 use crate::text::PageId;
 use crate::theme::{self, Color};
 use std::fmt::Write as _;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_reader::reader::{Mode, SelectionKind};
 
 impl App {
   fn mode(&self) -> (&'static str, Color) {
@@ -45,11 +45,11 @@ impl App {
         .count()
         .map_or_else(String::new, |(i, n)| format!("[{i}/{n}]  "));
     }
-    let hits = &self.search.hits;
-    if self.search.hidden || hits.is_empty() {
+    let hits = self.search.hits();
+    if self.search.hidden() || hits.is_empty() {
       return String::new();
     }
-    let more = if self.search.phase.running() { "+" } else { "" };
+    let more = if self.search.phase().running() { "+" } else { "" };
     if self.reader.viewport_mode() {
       return format!("[{}{more} matches]  ", hits.len());
     }

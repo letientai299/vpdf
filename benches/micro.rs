@@ -10,6 +10,7 @@ use vpdf::Result;
 use vpdf::app::App;
 use vpdf::document::{Document, Handle};
 use vpdf::layout::{Screen, page_matrix, transform};
+use vpdf::pdf_text::PdfText;
 use vpdf::text::PageId;
 
 const SAMPLES: usize = 31;
@@ -109,7 +110,7 @@ fn cursorline() -> Result<()> {
   for text_mode in [false, true] {
     let mut app = paper(text_mode)?;
     app.reader.cursor.line = 3;
-    app.reader.visual(vpdf::reader::SelectionKind::Character);
+    app.reader.visual(vpdf_reader::reader::SelectionKind::Character);
     overlay_case(&mut app, &format!("cursorline text={text_mode}"))?;
   }
   Ok(())
@@ -404,7 +405,7 @@ fn drag() -> Result<()> {
 /// kitty sends them while the reader scrolls.
 fn decode() -> Result<()> {
   use std::collections::VecDeque;
-  use vpdf::decode::Parser;
+  use vpdf_protocol::decode::Parser;
   let mut read = Vec::new();
   for column in 0..64 {
     write!(read, "\x1b[<35;{};14M", column + 1)?;
@@ -908,10 +909,10 @@ fn reflow() -> Result<()> {
     [("yy paper p2 whole", lines), ("yy paper p2 3 lines", 3)]
   {
     measure(name, || {
-      let mut reader = vpdf::reader::Reader::default();
+      let mut reader = vpdf_reader::reader::Reader::default();
       reader.cursor.page = PageId(1);
-      reader.yank(1, '"', &mut doc).expect("operator");
-      reader.yank(count, '"', &mut doc).expect("paper lines");
+      reader.yank(1, '"', &mut PdfText(&mut doc)).expect("operator");
+      reader.yank(count, '"', &mut PdfText(&mut doc)).expect("paper lines");
       black_box(reader.pending_yank);
     })?;
   }
@@ -925,7 +926,7 @@ fn lexical_objects() -> Result<()> {
   let cursor = vpdf::text::Position { page: PageId(0), line, glyph: 4 };
   measure("Reader::object paper", || {
     app.reader.cursor = cursor;
-    app.reader.object(false, &mut app.doc).expect("paper word");
+    app.reader.object(false, &mut PdfText(&mut app.doc)).expect("paper word");
     black_box(app.reader.selection);
   })?;
   let letters: Vec<_> = text.lines[line]

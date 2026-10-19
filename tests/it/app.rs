@@ -48,23 +48,23 @@ fn reader_workflows() -> Result<()> {
   assert!(!app.text_mode && !app.quit);
   app.start_search("python", false, false)?;
   common::search_loaded(&mut app)?;
-  assert!(!app.search.hits.is_empty());
+  assert!(!app.search.hits().is_empty());
   app.next_result(true, 2)?;
   app.open_panel(PanelKind::Results)?;
-  assert_eq!(app.panel.as_ref().unwrap().rows.len(), app.search.hits.len());
+  assert_eq!(app.panel.as_ref().unwrap().rows.len(), app.search.hits().len());
   app.action(Input::plain(Action::Cancel))?;
-  assert!(!app.search.hidden);
+  assert!(!app.search.hidden());
   app.command("cancel")?;
-  assert!(app.search.hidden);
+  assert!(app.search.hidden());
   app.follow(&Target::Page(PageId(usize::MAX)))?;
   assert_eq!(app.reader.cursor.page.0, app.doc.pages.len() - 1);
   assert!(app.follow(&Target::Uri("file:///etc/passwd".into())).is_err());
-  app.reader.visual(vpdf::reader::SelectionKind::Character);
+  app.reader.visual(vpdf_reader::reader::SelectionKind::Character);
   app.command("reload")?;
   assert!(app.reader.last_selection.is_none());
   app.raster_updates();
   assert_eq!(app.graphics.bytes(), 0);
-  assert!(app.search.hits.is_empty());
+  assert!(app.search.hits().is_empty());
   app.reader.history(false);
   assert!(app.reader.cursor.page.0 < app.doc.pages.len());
   Ok(())
@@ -210,7 +210,7 @@ fn text_view_scrolls_without_moving_the_selection() -> Result<()> {
   let mut app = text_app()?;
   let lines = app.doc.text(PageId(0))?.lines.len();
   app.reader.cursor.line = 30;
-  app.reader.visual(vpdf::reader::SelectionKind::Character);
+  app.reader.visual(vpdf_reader::reader::SelectionKind::Character);
   app.ensure_cursor()?;
   let input = Input::plain(Action::Quit);
   for (fraction, row) in [(0.0, 0), (1.0, 18), (0.5, 9)] {
@@ -449,7 +449,7 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
     assert!(app.request.take().is_some(), "{action:?} reaches the session");
     assert!(app.overview.is_some(), "{action:?} keeps the overview");
   }
-  press(&mut app, Action::Motion(vpdf::motion::Motion::Down))?;
+  press(&mut app, Action::Motion(vpdf_reader::motion::Motion::Down))?;
   press(&mut app, Action::Follow)?;
   assert!(app.overview.is_none());
   assert!(app.reader.cursor.page.0 > 1);
@@ -518,17 +518,17 @@ fn escape_restores_the_previous_search() -> Result<()> {
   let mut app = App::with_screen(&root.join("book.pdf"), "", false, screen)?;
   app.start_search("python", false, false)?;
   common::search_loaded(&mut app)?;
-  let hits = app.search.hits.len();
+  let hits = app.search.hits().len();
   app.begin_search(false)?;
   app.incremental("pyth")?;
   app.abort_search()?;
   common::search_loaded(&mut app)?;
-  assert_eq!(app.search.query.text, "python");
-  assert_eq!(app.search.hits.len(), hits);
+  assert_eq!(app.search.query().text, "python");
+  assert_eq!(app.search.hits().len(), hits);
   // `?<CR>` repeats the pattern backward.
   app.begin_search(true)?;
   app.finish_search("", true)?;
-  assert!(app.search.query.backward);
+  assert!(app.search.query().backward);
   Ok(())
 }
 
@@ -1036,9 +1036,9 @@ fn frames_retest_a_resting_pointer() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn pixel_reports_hit_their_pixel() -> Result<()> {
-  use vpdf::decode::{Button, Mouse, MouseKind, Spot};
   use vpdf::pointer::Pixel;
   use vpdf::session::Session;
+  use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let mut session = Session::new(None);
   session.open(&root.join("paper.pdf"), true, screen())?;
@@ -1120,8 +1120,8 @@ fn pixel_reports_hit_their_pixel() -> Result<()> {
 
 #[test]
 fn pixel_drags_draw_on_new_glyphs() -> Result<()> {
-  use vpdf::decode::{Button, Mouse, MouseKind, Spot};
   use vpdf::session::Session;
+  use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("words.pdf");
   common::text_pdf(&path, &["Hello pointer world"])?;

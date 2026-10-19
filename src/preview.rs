@@ -3,7 +3,6 @@ use crate::app::App;
 use crate::document::{Annotation, Target};
 use crate::keys::{Action, Input};
 use crate::layout::screen_step;
-use crate::motion::Motion;
 use crate::panel_layout::wrap;
 use crate::pointer::Hit;
 use crate::split::Rect;
@@ -13,6 +12,7 @@ use crate::tiles::{TileKey, raster_area};
 use mupdf::IRect;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_reader::motion::Motion;
 
 const HEIGHT: f32 = 0.4;
 const ABOVE: f32 = 6.0;

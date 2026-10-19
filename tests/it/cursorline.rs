@@ -1,13 +1,11 @@
-use std::collections::VecDeque;
+use super::common::keys;
 use std::path::PathBuf;
 use std::sync::Arc;
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::decode::{Event, Parser};
 use vpdf::layout::{Crop, Screen};
-use vpdf::prompt::History;
-use vpdf::reader::SelectionKind;
 use vpdf::text::{Bounds, Glyph, Line, PageId, Position, Text};
+use vpdf_reader::reader::SelectionKind;
 const BAND: &str = "\x1b[0;100m";
 const SELECTION: &str = "\x1b[0;7;35m";
 const CURSOR: &str = "\x1b[0;7;34m";
@@ -28,16 +26,6 @@ fn app(text: bool) -> Result<App> {
       origin: (7, 3),
     },
   )
-}
-
-fn keys(app: &mut App, bytes: &[u8]) -> Result<()> {
-  let mut events = VecDeque::new();
-  Parser::default().feed(bytes, &mut events);
-  for event in events {
-    let Event::Key(key) = event else { panic!("Expected key") };
-    app.key(key, &mut History::default())?;
-  }
-  Ok(())
 }
 
 fn marks(app: &mut App, screen: Screen) -> Result<Vec<Bounds>> {
@@ -168,11 +156,12 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
   );
   app.reader.visual(SelectionKind::Character);
   app.reader.cursor.glyph = 1;
-  app.search.hits.push(vpdf::search::Hit {
+  let hit = vpdf::search::Hit {
     first: Position { glyph: 2, ..Position::default() },
     last: Position { glyph: 2, ..Position::default() },
     excerpt: "c".into(),
-  });
+  };
+  app.search.show(vpdf::find::Query::default(), vec![hit]);
   let mut out = Vec::new();
   app.text_canvas(&mut out)?;
   let frame = String::from_utf8(out)?;
@@ -321,11 +310,12 @@ fn landing_text_fills_row_below_glyph_styles() -> Result<()> {
   let position = Position { line: 5, glyph: 1, ..Position::default() };
   app.go_to(position, true)?;
   let position = app.reader.cursor;
-  app.search.hits.push(vpdf::search::Hit {
+  let hit = vpdf::search::Hit {
     first: Position { glyph: 3, ..position },
     last: Position { glyph: 3, ..position },
     excerpt: String::new(),
-  });
+  };
+  app.search.show(vpdf::find::Query::default(), vec![hit]);
   let mut out = Vec::new();
   app.text_canvas(&mut out)?;
   let frame = String::from_utf8(out)?;
@@ -406,20 +396,20 @@ fn landing_search_early_commit_uses_current_query() -> Result<()> {
       assert!(app.landing.is_none());
       app.incremental(query)?;
       assert!(matches!(
-        app.search.phase,
+        app.search.phase(),
         vpdf::find::Phase::Running { jump: true }
       ));
       app.finish_search(query, false)?;
       assert_eq!(app.reader.cursor, previous);
       assert!(app.landing.is_none(), "previous query must not flash");
       super::common::search_loaded(&mut app)?;
-      assert_eq!(app.search.query.text, query);
+      assert_eq!(app.search.query().text, query);
       if query == "model" {
         let target = app.landing.as_ref().unwrap().position;
         assert_eq!(target, app.reader.cursor);
-        assert!(app.search.hits.iter().any(|hit| hit.first == target));
+        assert!(app.search.hits().iter().any(|hit| hit.first == target));
       } else {
-        assert!(app.search.hits.is_empty());
+        assert!(app.search.hits().is_empty());
         assert!(app.landing.is_none(), "failed query must not flash");
       }
     }

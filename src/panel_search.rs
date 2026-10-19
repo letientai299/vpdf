@@ -263,4 +263,43 @@ mod tests {
     panel.heading(false, 1);
     assert_eq!(panel.selected, 0);
   }
+
+  use crate::Result;
+  use crate::search::{Index, compile};
+  use crate::text::{Bounds, Glyph, Line, PageId, Text};
+
+  #[test]
+  fn panels_share_search_contract() -> Result<()> {
+    let label = "Ärger alpha Alpha beta Straße";
+    let index = Index::new(
+      PageId(0),
+      &Text {
+        lines: vec![Line {
+          paragraph: true,
+          glyphs: label
+            .chars()
+            .map(|ch| Glyph { ch, bounds: Bounds::default() })
+            .collect(),
+        }],
+        ..Text::default()
+      },
+    );
+    for (query, count) in [
+      ("alpha", 2),
+      ("Alpha", 1),
+      ("ALPHA", 0),
+      (r"\valpha|beta", 3),
+      (r"\vAlpha|beta", 2),
+      ("alpha|beta", 0),
+      ("är", 1),
+      ("strasse", 1),
+      ("STRASSE", 0),
+    ] {
+      let pattern = compile(query, false)?;
+      assert_eq!(index.matches(&pattern, 100)?.len(), count, "{query}");
+      assert_eq!(ranges(label, query).len(), count, "{query}");
+    }
+    assert_eq!(ranges(label, r"\v["), [] as [(usize, usize); 0]);
+    Ok(())
+  }
 }

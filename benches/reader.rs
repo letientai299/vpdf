@@ -9,11 +9,15 @@ use vpdf::content_cache::{alias, hex};
 use vpdf::document::{Document, extract};
 use vpdf::find::Query;
 use vpdf::layout::Screen;
-use vpdf::motion::Motion;
+use vpdf::pdf_text::PdfText;
 use vpdf::search::{self, Index};
 use vpdf::search_worker::SearchWorker;
 use vpdf::text::PageId;
 use vpdf::tiles::{self, TileKey};
+use vpdf_reader::motion::Motion;
+
+/// The query every search case measures.
+const QUERY: &str = "the";
 
 #[derive(Serialize)]
 struct Timing {
@@ -107,7 +111,7 @@ fn document(path: &Path, page: usize) -> Result<Report> {
     100,
   )?;
   let index = Index::new(PageId(page), &text);
-  let query = search::compile("the", false)?;
+  let query = search::compile(QUERY, false)?;
   let index_search = measure(
     || {
       black_box(index.matches(&query, 1000)?);
@@ -127,18 +131,19 @@ fn document(path: &Path, page: usize) -> Result<Report> {
       origin: (0, 0),
     },
   )?;
-  app.reader.edge(PageId(page), false, &mut app.doc)?;
+  app.reader.edge(PageId(page), false, &mut PdfText(&mut app.doc))?;
   app.ensure_cursor()?;
   let motion = measure(
     || {
-      app.reader.motion(Motion::Right, 1, false, &mut app.doc)?;
-      app.reader.motion(Motion::Left, 1, false, &mut app.doc)?;
+      app.reader.motion(Motion::Right, 1, false, &mut PdfText(&mut app.doc))?;
+      app.reader.motion(Motion::Left, 1, false, &mut PdfText(&mut app.doc))?;
       Ok(())
     },
     1000,
   )?;
   let (frame, uploaded) = frames(&mut app)?;
-  app.search.hits = index.matches(&query, 1000)?;
+  let text = Query { text: QUERY.into(), ..Query::default() };
+  app.search.show(text, index.matches(&query, 1000)?);
   let (search_frame, _) = frames(&mut app)?;
   let (cold_search_ms, first_hit_ms, warm_search_ms) = searches(path)?;
   Ok(Report {
@@ -200,7 +205,7 @@ fn searches(path: &Path) -> Result<(f64, f64, f64)> {
   for run in 0..2 {
     let started = Instant::now();
     let generation = worker
-      .lookup(&Query { text: "the".into(), ..Query::default() }, PageId(0))?;
+      .lookup(&Query { text: QUERY.into(), ..Query::default() }, PageId(0))?;
     loop {
       let event = worker.events.recv_timeout(Duration::from_secs(30))?;
       if event.generation != generation {
