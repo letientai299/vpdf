@@ -1,7 +1,5 @@
 use crate::Result;
 use crate::app::App;
-use crate::links::LinkPress;
-use crate::preview::Origin;
 use crate::text::{PageId, Position};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use vpdf_reader::reader::Location;
@@ -12,6 +10,7 @@ use vpdf_ui::panel::Panel;
 use vpdf_ui::pointer::{
   Hit, Items, List, Pixel, Region, Route, WHEEL_ROWS, Wheel,
 };
+use vpdf_ui::preview::Origin;
 use vpdf_ui::region::BAR_HINT;
 
 /// Finds a frame's glyph at a cell.

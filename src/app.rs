@@ -117,10 +117,10 @@ pub struct App {
   pub hints: Option<vpdf_ui::hints::Hints>,
   pub clues: vpdf_ui::clues::Clues,
   /// Link destination shown by `K`.
-  pub peek: Option<crate::preview::Preview>,
+  pub peek: Option<vpdf_ui::preview::Preview>,
   /// The right-click menu.
   pub context_menu: Option<vpdf_ui::context::ContextMenu>,
-  pub(crate) link_press: crate::links::LinkPress,
+  pub(crate) link_press: vpdf_ui::input::links::Press,
   /// What the held left button does.
   pub(crate) gesture: vpdf_ui::input::gesture::Gesture,
   /// The held middle button.
@@ -135,16 +135,14 @@ pub struct App {
   pub preview: Option<bool>,
   pub ocr: Option<vpdf_pdf::jobs::ocr::OcrJob>,
   pub outline_load: crate::outline::Loading,
-  pub crop_job: Option<vpdf_pdf::jobs::crop::Job>,
+  pub crop_scan: vpdf_pdf::jobs::crop::Scan,
   /// The current wheel gesture over the page.
   pub(crate) wheel: vpdf_ui::input::wheel::Wheel,
   pub(crate) tiles: vpdf_ui::layout::tiles::Tiles,
   /// The pane's rows above the status line are known blank.
   pub(crate) blank: bool,
   /// What the pointer rests on here.
-  pub hover: vpdf_ui::pointer::Hit,
-  /// The page link under the pointer.
-  pub(crate) rest: Option<crate::links::Rest>,
+  pub hover: vpdf_ui::input::links::Hover,
   /// The last frame showed the whole view: every visible tile placed.
   pub complete: bool,
   pub(crate) bar: vpdf_ui::scrollbar::Bar,
@@ -213,7 +211,7 @@ impl App {
       clues: vpdf_ui::clues::Clues::default(),
       peek: None,
       context_menu: None,
-      link_press: crate::links::LinkPress::Idle,
+      link_press: vpdf_ui::input::links::Press::default(),
       gesture: vpdf_ui::input::gesture::Gesture::default(),
       grab: vpdf_ui::input::grab::Grab::default(),
       autoscroll: vpdf_ui::input::edge::Edge::default(),
@@ -225,12 +223,11 @@ impl App {
       preview: None,
       ocr: None,
       outline_load: crate::outline::Loading::Deferred,
-      crop_job: None,
+      crop_scan: vpdf_pdf::jobs::crop::Scan::default(),
       wheel: vpdf_ui::input::wheel::Wheel::default(),
       tiles: vpdf_ui::layout::tiles::Tiles::default(),
       blank: false,
-      hover: vpdf_ui::pointer::Hit::Nothing,
-      rest: None,
+      hover: vpdf_ui::input::links::Hover::default(),
       complete: false,
       bar: vpdf_ui::scrollbar::Bar::default(),
     })

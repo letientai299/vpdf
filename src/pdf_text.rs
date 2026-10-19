@@ -36,3 +36,13 @@ impl vpdf_ui::source::Figures for PdfText<'_> {
     self.0.figures(page)
   }
 }
+
+impl vpdf_ui::source::Raster for PdfText<'_> {
+  fn raster(
+    &mut self,
+    key: vpdf_model::tile::TileKey,
+    visit: impl FnOnce(&[u8], usize) -> Result<()>,
+  ) -> Result<()> {
+    vpdf_pdf::raster::visit_area(self.0, key, visit)
+  }
+}

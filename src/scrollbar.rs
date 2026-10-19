@@ -47,7 +47,7 @@ impl App {
       scroll: self.reader.scroll,
       frame,
       available: self.has_bar(),
-      hovered: self.hover == Hit::Scrollbar,
+      hovered: self.hover.hit() == Hit::Scrollbar,
     };
     let scroll = match self.bar.input(&view, route) {
       Input::None => None,
@@ -84,7 +84,7 @@ impl App {
       scroll: self.reader.scroll,
       frame,
       available: self.has_bar(),
-      hovered: self.hover == Hit::Scrollbar,
+      hovered: self.hover.hit() == Hit::Scrollbar,
     };
     let ticks = Ticks { outline: &self.doc.outline, search: &self.search };
     if let Some(label) = self.bar.draw(view, ticks, now, graphics, out)? {

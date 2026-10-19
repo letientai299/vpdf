@@ -228,8 +228,11 @@ impl Panel {
     None
   }
 
-  /// The recent view: it covers the pane while focused and opens rows
-  /// with Enter alone.
+  pub fn covers_page(&self) -> bool {
+    self.is_recent_view() && self.focused()
+  }
+
+  /// Recent rows open with Enter alone.
   pub fn is_recent_view(&self) -> bool {
     self.shelf.is_some()
   }

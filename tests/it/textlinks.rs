@@ -241,7 +241,11 @@ fn real_page_wraps_tint_the_continuation() -> Result<()> {
     let links = app.doc.links(page)?;
     let index =
       links.iter().position(|link| address(&link.target).ends_with(end));
-    app.hover = Hit::Link(page, index.expect("the address"));
+    app.hover.point(
+      Hit::Link(page, index.expect("the address")),
+      None,
+      std::time::Instant::now,
+    );
     let next: Vec<_> = (app.hover_segments().into_iter())
       .filter(|(on, _)| on.0 == page.0 + 1)
       .map(|(_, bounds)| bounds.y0.round())

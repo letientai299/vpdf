@@ -154,7 +154,7 @@ impl App {
       }
       Region::Preview => {
         let peek = self.peek.as_ref();
-        let follows = peek.is_some_and(crate::preview::Preview::follows);
+        let follows = peek.is_some_and(vpdf_ui::preview::Preview::follows);
         return Ok(Hit::Preview { follows });
       }
       Region::Overlay => {

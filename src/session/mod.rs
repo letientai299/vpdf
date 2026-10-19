@@ -19,12 +19,12 @@ use std::time::{Duration, Instant};
 use vpdf_terminal::decode::{Event, MouseKind, Reply, Size};
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::terminal::{self, At, Shape, View};
+use vpdf_ui::chrome::Notice;
 use vpdf_ui::keys::PanelKind;
 use vpdf_ui::layout::Screen;
 use vpdf_ui::pointer::{Hit, Hover, Pixel, Pointer, Region, Route};
 use vpdf_ui::prompt::History;
 use vpdf_ui::split::{Axis, Direction, Divider, Node, Place, Rect, neighbor};
-use vpdf_ui::theme;
 use vpdf_ui::window::{TabMove, Window};
 
 /// Panes of one tab, laid out by a split tree.
@@ -64,7 +64,7 @@ pub struct Session {
   shown: Vec<u32>,
   pointer: Pointer,
   /// Set while a resize could not measure cells.
-  unmeasured: Option<Unmeasured>,
+  unmeasured: Option<Notice>,
   sight: Sight,
   observer: Option<vpdf_terminal::tmux_observer::Observer>,
   observed: Option<vpdf_terminal::tmux_observer::Snapshot>,
@@ -149,27 +149,6 @@ fn sight(now: Sight, cause: Cause, view: View) -> Sight {
     }
     (Cause::Start, View::Active { focused: true }) => Sight::Focused,
     (Cause::Tick, View::Active { .. }) => now,
-  }
-}
-
-/// A resize without pixel metrics keeps the old layout, whose status
-/// row a shrink can push off the terminal; the error goes on the last
-/// row of the terminal's grid instead.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct Unmeasured {
-  rows: u16,
-  columns: u16,
-  error: String,
-}
-
-impl Unmeasured {
-  /// Keeps the cursor where an open prompt put it.
-  fn draw(&self, out: &mut impl Write) -> Result<()> {
-    write!(out, "\x1b7{}", theme::ERROR)?;
-    let row = self.rows.max(1) - 1;
-    terminal::line(out, At::default(), row, &self.error, self.columns)?;
-    write!(out, "{}\x1b8", theme::RESET)?;
-    Ok(())
   }
 }
 

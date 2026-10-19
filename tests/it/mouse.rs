@@ -433,7 +433,11 @@ fn links_wrap_across_pages() -> Result<()> {
     let index = links.iter().position(|link| {
       Some(link.anchor(&text, PageId(page)).as_str()) == first
     });
-    app.hover = Hit::Link(PageId(page), index.expect("a link"));
+    app.hover.point(
+      Hit::Link(PageId(page), index.expect("a link")),
+      None,
+      std::time::Instant::now,
+    );
     let tinted: Vec<_> = app
       .hover_segments()
       .into_iter()
@@ -602,7 +606,7 @@ fn split_panes_hover_and_focus_apart() -> Result<()> {
   mouse(&mut session, MouseEventKind::Moved, link)?;
   for app in &session.tab().panes {
     assert_eq!(
-      matches!(app.hover, Hit::Link(..)),
+      matches!(app.hover.hit(), Hit::Link(..)),
       app.id == id,
       "pane {}",
       app.id
@@ -633,11 +637,19 @@ fn split_panes_hover_and_focus_apart() -> Result<()> {
   session.app().request = Some(Request::Tab(TabMove::Previous(1)));
   session.settle()?;
   assert!(
-    session.tab().panes.iter().any(|app| matches!(app.hover, Hit::Link(..)))
+    session
+      .tab()
+      .panes
+      .iter()
+      .any(|app| matches!(app.hover.hit(), Hit::Link(..)))
   );
   session.draw_frame(&mut Vec::new())?;
   assert!(
-    session.tab().panes.iter().all(|app| !matches!(app.hover, Hit::Link(..)))
+    session
+      .tab()
+      .panes
+      .iter()
+      .all(|app| !matches!(app.hover.hit(), Hit::Link(..)))
   );
   Ok(())
 }
@@ -1277,7 +1289,7 @@ fn menu_items_run_by_key_and_click() -> Result<()> {
   right(&mut session, internal)?;
   press(&mut session, KeyCode::Char('j'))?;
   press(&mut session, KeyCode::Enter)?;
-  let target = session.app().peek.as_ref().map(|peek| peek.target.clone());
+  let target = session.app().peek.as_ref().map(|peek| peek.target().clone());
   let page = match target {
     Some(vpdf::document::Target::Point { page, .. }) => Some(page),
     _ => None,
@@ -1603,7 +1615,7 @@ fn hover_open(
   let screen = session.app().screen;
   mouse(session, MouseEventKind::Moved, (screen.columns - 1, screen.rows - 2))?;
   mouse(session, MouseEventKind::Moved, link)?;
-  let later = std::time::Instant::now() + vpdf::links::REST;
+  let later = std::time::Instant::now() + vpdf_ui::input::links::REST;
   anyhow::ensure!(session.hover_preview(later), "a due preview");
   session.draw_frame(&mut Vec::new())?;
   drawn_preview(session)
@@ -1612,7 +1624,7 @@ fn hover_open(
 /// Screen cells of the drawn preview.
 fn drawn_preview(session: &mut Session) -> Result<vpdf_ui::split::Rect> {
   let shown = session.tab().panes.iter().find_map(|app| {
-    let area = app.peek.as_ref()?.placement?.area;
+    let area = app.peek.as_ref()?.cells()?;
     Some(vpdf_ui::split::Rect {
       column: area.column + app.at.column,
       row: area.row + app.at.row,
@@ -1637,7 +1649,7 @@ fn key_open(session: &mut Session) -> Result<vpdf_ui::split::Rect> {
 /// Rests open passive previews.
 #[test]
 fn resting_on_links_previews_them() -> Result<()> {
-  use vpdf::preview::Origin;
+  use vpdf_ui::preview::Origin;
   for text_mode in [false, true] {
     let (_directory, mut session) = session(text_mode)?;
     let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
@@ -1648,7 +1660,8 @@ fn resting_on_links_previews_them() -> Result<()> {
     mouse(&mut session, MouseEventKind::Moved, internal)?;
     assert!(!session.app().hover_preview(std::time::Instant::now()));
     let area = hover_open(&mut session, internal)?;
-    let origin = session.app().peek.as_ref().map(|peek| peek.origin);
+    let origin =
+      session.app().peek.as_ref().map(vpdf_ui::preview::Preview::origin);
     assert_eq!(origin, Some(Origin::Hover(PageId(0), 0)));
     assert!(status(&mut session)?.contains("NORMAL"), "passive");
     // The row past the link keeps it.
@@ -1716,7 +1729,7 @@ fn popups_hide_links_beneath() -> Result<()> {
     // Only a new shape shows.
     let shows = popup == "hover" || shape != Shape::Default;
     assert_eq!(drew, shows, "{at}: frame");
-    let hover = session.app().hover;
+    let hover = session.app().hover.hit();
     let link = matches!(hover, Hit::Link(..));
     assert!(!link && hover.shape() == shape, "{at}: {hover:?}");
     assert!(session.app().hover_link().is_none(), "{at}: no tint");
@@ -1729,7 +1742,7 @@ fn popups_hide_links_beneath() -> Result<()> {
     session.draw_frame(&mut Vec::new())?;
     let app = session.app();
     assert!(app.context_menu.is_none() && app.peek.is_none(), "{at}");
-    assert!(matches!(app.hover, Hit::Link(..)), "{at}: uncovered");
+    assert!(matches!(app.hover.hit(), Hit::Link(..)), "{at}: uncovered");
     assert!(app.hover_due().is_none(), "{at}: no rest");
   }
   Ok(())
@@ -2328,7 +2341,7 @@ fn pixel_gaps_keep_previews() -> Result<()> {
   for y in gap {
     session.mouse_report(moved(y))?;
     let app = session.app();
-    assert!(!matches!(app.hover, Hit::Link(..)), "{y}: off the box");
+    assert!(!matches!(app.hover.hit(), Hit::Link(..)), "{y}: off the box");
     assert!(app.peek.is_some(), "{y}: the gap keeps it");
   }
   session.mouse_report(moved((area.row + 2) * height))?;
@@ -2371,7 +2384,7 @@ fn sideways_moves_close_previews() -> Result<()> {
     let to = (column.expect("a cell beside the link"), row);
     mouse(&mut session, MouseEventKind::Moved, to)?;
     assert!(session.app().peek.is_none(), "{beside:?}");
-    let later = std::time::Instant::now() + vpdf::links::REST;
+    let later = std::time::Instant::now() + vpdf_ui::input::links::REST;
     let next = matches!(beside, Hit::Link(..));
     assert_eq!(session.hover_preview(later), next, "{beside:?}");
   }
@@ -2436,7 +2449,8 @@ fn previews_follow_links() -> Result<()> {
   // A scroll before its first frame still closes it.
   session.app().reader.seed_reader(|reader| reader.scroll = 0.0);
   key_open(&mut session)?;
-  session.app().peek.as_mut().expect("a preview").placement = None;
+  session.app().preview_link()?;
+  assert!(session.app().preview_cells().is_none(), "not drawn yet");
   session.app().reader.seed_reader(|reader| reader.scroll += 300.0);
   session.draw_frame(&mut Vec::new())?;
   assert!(session.app().peek.is_none(), "closed before a frame");
@@ -2512,7 +2526,7 @@ fn focused_overlays_hold_rests() -> Result<()> {
       }
     }
     mouse(&mut session, MouseEventKind::Moved, link)?;
-    let later = std::time::Instant::now() + vpdf::links::REST;
+    let later = std::time::Instant::now() + vpdf_ui::input::links::REST;
     assert!(!session.hover_preview(later), "{hold}");
   }
   Ok(())
@@ -2591,11 +2605,11 @@ fn mouse_off_ends_hover() -> Result<()> {
     }
     session.app().command("mouse off")?;
     session.settle()?;
-    let later = std::time::Instant::now() + vpdf::links::REST;
+    let later = std::time::Instant::now() + vpdf_ui::input::links::REST;
     assert!(!session.hover_preview(later), "rested={rested}: no rest");
     let app = session.app();
     assert!(app.peek.is_none(), "rested={rested}: closed");
-    assert_eq!(app.hover, Hit::Nothing, "rested={rested}");
+    assert_eq!(app.hover.hit(), Hit::Nothing, "rested={rested}");
   }
   Ok(())
 }

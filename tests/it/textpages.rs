@@ -174,7 +174,7 @@ fn hints_and_tints_reach_later_pages() -> Result<()> {
   assert_eq!(rows, [0, 6]);
   let hit = app.hovered(Region::Page, 2, 6, None)?;
   assert_eq!(hit, Hit::Link(PageId(1), 0));
-  app.hover = hit;
+  app.hover.point(hit, None, std::time::Instant::now);
   let rows = drawn(&mut app)?;
   assert!(rows[6].contains(&format!("{LINK}P1 L1")), "{rows:?}");
   assert!(!rows[0].contains(LINK), "{rows:?}");

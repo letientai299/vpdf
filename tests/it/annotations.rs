@@ -366,7 +366,7 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   let focused = session.app().panel_focused();
   let (_, drawn) = hover(&mut session, (1, 2))?;
   let app = session.app();
-  assert_eq!(app.hover, Hit::Row(1));
+  assert_eq!(app.hover.hit(), Hit::Row(1));
   let row = &app.panel.as_ref().unwrap().view.rows()[1].label;
   assert!(drawn.contains(row.as_str()), "{row}");
   assert!(drawn.contains("\x1b[0;4m"), "the row underlines");
@@ -383,7 +383,7 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
     session.draw_frame(&mut Vec::new())?;
   }
   assert!(!session.redraw_due(), "one follow-up at most");
-  assert_eq!(session.app().hover, Hit::Row(2));
+  assert_eq!(session.app().hover.hit(), Hit::Row(2));
   session.app().close_panel()?;
   // Thumbnails show their page label and section.
   let app = session.app();
@@ -397,7 +397,7 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
     matches!(hit, Hit::Thumbnail(_))
   });
   let (_, drawn) = hover(&mut session, thumbnail)?;
-  assert_eq!(session.app().hover, Hit::Thumbnail(PageId(0)));
+  assert_eq!(session.app().hover.hit(), Hit::Thumbnail(PageId(0)));
   assert!(drawn.contains("p. 1 · Opening"));
   Ok(())
 }
@@ -437,7 +437,7 @@ fn outline_hovers_drop_the_indent() -> Result<()> {
   let mut out = Vec::new();
   session.draw_frame(&mut out)?;
   let drawn = String::from_utf8_lossy(&out);
-  assert_eq!(session.app().hover, Hit::Row(1));
+  assert_eq!(session.app().hover.hit(), Hit::Row(1));
   assert!(drawn.contains(title), "{drawn}");
   assert!(!drawn.contains(&format!(" {title}")), "{drawn}");
   Ok(())
@@ -510,11 +510,13 @@ fn notes_open_by_mouse() -> Result<()> {
   // Icons tint and take the pointer shape.
   mouse(&mut session, MouseEventKind::Moved, icon)?;
   let app = session.app();
-  assert_eq!(app.hover.shape(), Shape::Pointer);
+  assert_eq!(app.hover.hit().shape(), Shape::Pointer);
   assert!(app.hover_icon().is_some(), "a tint");
   // Highlights stay text (H3).
   let app = session.app();
-  let Hit::Note { index: sticky, .. } = app.hover else { panic!("an icon") };
+  let Hit::Note { index: sticky, .. } = app.hover.hit() else {
+    panic!("an icon")
+  };
   assert!(icon_notes(app).iter().all(|index| *index == sticky));
   // Clicks open the note, then close it.
   let target = session.app().reader.target();

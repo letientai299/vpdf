@@ -155,7 +155,7 @@ fn pages_of(
 
 pub fn crop_loaded(app: &mut App) -> Result<()> {
   let started = Instant::now();
-  while app.crop_job.is_some() {
+  while app.crop_scan.active() {
     app.crop_updates()?;
     anyhow::ensure!(
       started.elapsed() < Duration::from_secs(30),

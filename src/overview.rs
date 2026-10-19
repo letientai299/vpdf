@@ -89,7 +89,7 @@ impl App {
       clip: self.uncovered(),
       at: self.at,
       left: self.left,
-      hovered: match self.hover {
+      hovered: match self.hover.hit() {
         Hit::Thumbnail(page) => Some(page),
         _ => None,
       },

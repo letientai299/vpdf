@@ -26,3 +26,12 @@ pub trait Figures: Pages {
     page: PageId,
   ) -> crate::Result<std::sync::Arc<Vec<vpdf_model::document::Figure>>>;
 }
+
+/// Borrowed RGB rows from a raster owner.
+pub trait Raster {
+  fn raster(
+    &mut self,
+    key: vpdf_model::tile::TileKey,
+    visit: impl FnOnce(&[u8], usize) -> crate::Result<()>,
+  ) -> crate::Result<()>;
+}

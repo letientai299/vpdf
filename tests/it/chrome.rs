@@ -523,7 +523,7 @@ fn dividers_drag_and_double_clicks_equalize() -> Result<()> {
     // Motion onto a divider draws its shape.
     left(&mut session, Moved, (30, 10));
     assert!(left(&mut session, Moved, divider), "{command} hover");
-    let hover = session.app().hover;
+    let hover = session.app().hover.hit();
     assert!(!matches!(hover, Hit::Edge { .. }), "no pane hovers edges");
     assert!(left(&mut session, Down(L), divider), "{command}");
     // One button at a time.
@@ -639,7 +639,7 @@ fn find_cell(
 /// The focused pane's screen cell showing `item`.
 fn chrome_cell(
   session: &mut Session,
-  item: vpdf::chrome::Chrome,
+  item: vpdf_ui::chrome::Item,
 ) -> Result<(u16, u16)> {
   let app = session.app();
   let row = app.screen.rows - 1;
@@ -658,7 +658,7 @@ fn click(session: &mut Session, at: (u16, u16)) {
 
 #[test]
 fn status_items_act_on_click() -> Result<()> {
-  use vpdf::chrome::Chrome;
+  use vpdf_ui::chrome::Item as Chrome;
   let (directory, mut session) = session(false)?;
   for name in ["b.pdf", "c.pdf"] {
     let other = directory.path().join(name);
@@ -748,9 +748,9 @@ fn tab_names_yield_to_hover_details() -> Result<()> {
   assert!(drawn.contains(&format!("→ {uri}")), "{drawn:?}");
   assert!(!drawn.contains("2:b.pdf"), "names yield: {drawn:?}");
   // On the status row the names return and take clicks.
-  let tab = chrome_cell(&mut session, vpdf::chrome::Chrome::Tab(1))?;
+  let tab = chrome_cell(&mut session, vpdf_ui::chrome::Item::Tab(1))?;
   assert!(left(&mut session, MouseEventKind::Moved, tab));
-  assert_eq!(session.app().hover, Hit::Chrome);
+  assert_eq!(session.app().hover.hit(), Hit::Chrome);
   assert!(status(&mut session)?.contains("2:b.pdf"));
   click(&mut session, tab);
   assert_eq!(session.active, 1);
@@ -764,7 +764,7 @@ fn unfocused_status_items_activate() -> Result<()> {
   session.settle()?;
   status(&mut session)?;
   // That item in the same-sized pane.
-  let pages = chrome_cell(&mut session, vpdf::chrome::Chrome::Pages)?;
+  let pages = chrome_cell(&mut session, vpdf_ui::chrome::Item::Pages)?;
   let index = (session.tab().focus + 1) % 2;
   let (here, there) = (session.app().at, session.tab().panes[index].at);
   let at = (pages.0 - here.column + there.column, pages.1);
@@ -782,7 +782,7 @@ fn status_items_beat_the_divider() -> Result<()> {
   session.settle()?;
   status(&mut session)?;
   let before = layout(&mut session);
-  let pages = chrome_cell(&mut session, vpdf::chrome::Chrome::Pages)?;
+  let pages = chrome_cell(&mut session, vpdf_ui::chrome::Item::Pages)?;
   assert_eq!(pages.1, 19, "the upper pane's status row");
   assert!(left(&mut session, MouseEventKind::Moved, pages));
   left(&mut session, MouseEventKind::Down(MouseButton::Left), pages);
@@ -960,7 +960,7 @@ fn section_clicks_select_their_entry() -> Result<()> {
   status(&mut session)?;
   let selected = session.app().panel.as_ref().map(|p| p.view.selected());
   assert_eq!(selected, Some(12), "a stale selection");
-  let section = chrome_cell(&mut session, vpdf::chrome::Chrome::Section)?;
+  let section = chrome_cell(&mut session, vpdf_ui::chrome::Item::Section)?;
   click(&mut session, section);
   let app = session.app();
   let panel =
@@ -1026,9 +1026,9 @@ fn scrollbars_show_near_the_edge_and_after_scrolls() -> Result<()> {
     // The track places in the last column.
     let track = format!(";{}H\x1b_Ga=p", edge + 1);
     assert!(!drawn(&mut session)?.contains(&track), "hidden at rest");
-    session.app().hover = Hit::Scrollbar;
+    session.app().hover.point(Hit::Scrollbar, None, std::time::Instant::now);
     assert!(drawn(&mut session)?.contains(&track), "shown near the edge");
-    session.app().hover = Hit::Nothing;
+    session.app().hover.point(Hit::Nothing, None, std::time::Instant::now);
     session.app().reader.seed_reader(|reader| reader.scroll += 32.0);
     assert!(drawn(&mut session)?.contains(&track), "shown after a scroll");
     // Relayouts are no scrolls.
@@ -1156,13 +1156,13 @@ fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
       .map(|part| part.split(",i=").next().unwrap_or("").to_owned())
       .collect()
   };
-  session.app().hover = Hit::Scrollbar;
+  session.app().hover.point(Hit::Scrollbar, None, std::time::Instant::now);
   let query = vpdf_search::query::Query::default();
   session.app().search.show(query.clone(), vec![hit(0)]);
   let first = track(drawn(&mut session)?);
   session.app().search.show(query, vec![hit(1)]);
   assert_ne!(track(drawn(&mut session)?), first, "ticks follow the search");
-  session.app().hover = Hit::Nothing;
+  session.app().hover.point(Hit::Nothing, None, std::time::Instant::now);
   // Following an outline entry shows the bar.
   session
     .app()
@@ -1242,9 +1242,9 @@ fn match_count_opens_results() -> Result<()> {
     let (_directory, mut session) = session(text)?;
     session.app().start_search("results", false, false)?;
     crate::common::search_loaded(session.app())?;
-    let at = chrome_cell(&mut session, vpdf::chrome::Chrome::Matches)?;
+    let at = chrome_cell(&mut session, vpdf_ui::chrome::Item::Matches)?;
     mouse(&mut session, MouseEventKind::Moved, at)?;
-    assert_eq!(session.app().hover, Hit::Chrome);
+    assert_eq!(session.app().hover.hit(), Hit::Chrome);
     click(&mut session, at);
     let panel = session.app().panel.as_ref().unwrap();
     assert_eq!(panel.view.kind(), vpdf_ui::keys::PanelKind::Results);
@@ -1280,7 +1280,7 @@ fn unfocused_matches_keep_identity() -> Result<()> {
   let row = app.screen.rows - 1;
   let column = (0..app.screen.columns)
     .find(|&column| {
-      app.chrome_at(column, row) == Some(vpdf::chrome::Chrome::Matches)
+      app.chrome_at(column, row) == Some(vpdf_ui::chrome::Item::Matches)
     })
     .unwrap();
   let at = (app.at.column + column, app.at.row + row);

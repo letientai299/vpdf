@@ -19,9 +19,9 @@ fn perf_is_global_and_persistent() -> Result<()> {
   session.app().command("perf on")?;
   session.settle()?;
   assert!(session.state.perf);
-  let content = screen.rows - crate::perf::rows(screen);
+  let content = screen.rows - vpdf_ui::perf::rows(screen);
   assert_eq!(session.app().screen.rows, content);
-  assert_eq!(session.app().at.row, crate::perf::rows(screen));
+  assert_eq!(session.app().at.row, vpdf_ui::perf::rows(screen));
   session.app().command("vsplit")?;
   session.settle()?;
   assert!(session.tab().panes.iter().all(|a| a.screen.rows == content));
@@ -66,12 +66,15 @@ fn perf_start_screen_reserves_once() -> Result<()> {
   session.tabs.clear();
   session.home = Some(Home::new(&[], screen));
   session.toggle_perf(Some(true))?;
-  let content = screen.rows - crate::perf::rows(screen);
-  assert_eq!(session.home.as_ref().expect("home").screen.rows, content);
+  let content = screen.rows - vpdf_ui::perf::rows(screen);
+  assert_eq!(session.home.as_ref().expect("home").view.screen().rows, content);
   session.toggle_perf(Some(true))?;
-  assert_eq!(session.home.as_ref().expect("home").screen.rows, content);
+  assert_eq!(session.home.as_ref().expect("home").view.screen().rows, content);
   session.toggle_perf(Some(false))?;
-  assert_eq!(session.home.as_ref().expect("home").screen.rows, screen.rows);
+  assert_eq!(
+    session.home.as_ref().expect("home").view.screen().rows,
+    screen.rows
+  );
   Ok(())
 }
 
@@ -374,18 +377,6 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
 }
 
 #[test]
-fn unmeasured_resize_shows_on_the_last_row() -> Result<()> {
-  let error = terminal::NO_CELL.to_owned();
-  let unmeasured = Unmeasured { rows: 10, columns: 12, error };
-  let mut out = Vec::new();
-  unmeasured.draw(&mut out)?;
-  let want =
-    format!("\x1b7{}\x1b[10;1HTerminal rep{}\x1b8", theme::ERROR, theme::RESET);
-  assert_eq!(String::from_utf8(out)?, want);
-  Ok(())
-}
-
-#[test]
 fn refit_keeps_the_layout_without_metrics() {
   let screen = Screen {
     columns: 80,
@@ -394,8 +385,7 @@ fn refit_keeps_the_layout_without_metrics() {
     cell_width: 8,
     cell_height: 16,
   };
-  let lost =
-    Unmeasured { rows: 20, columns: 70, error: terminal::NO_CELL.into() };
+  let lost = Notice::new(20, 70, terminal::NO_CELL.into());
   let mut session = Session::new(None);
   session.home = Some(Home::new(&[], screen));
   let failed = || Err(anyhow::anyhow!(terminal::NO_CELL));
@@ -409,7 +399,7 @@ fn refit_keeps_the_layout_without_metrics() {
   for (index, (measured, unmeasured, rows)) in cases.into_iter().enumerate() {
     assert!(session.refit(measured, grid).is_ok(), "case {index}");
     assert_eq!(session.unmeasured, unmeasured, "case {index}");
-    let home = session.home.as_ref().map(|home| home.screen.rows);
+    let home = session.home.as_ref().map(|home| home.view.screen().rows);
     assert_eq!(home, Some(rows), "case {index}");
   }
 }
@@ -947,7 +937,7 @@ fn start_screen_drops_open_or_type() -> Result<()> {
   let mut home = Home::new(&[], screen);
   let (landed, out) = drop(&mut session, &mut home, &notes)?;
   assert!(matches!(landed, Landing::Shown) && ended(&out, "0"));
-  assert_eq!(home.error.as_deref(), Some("No PDF in the drop"));
+  assert_eq!(home.view.error(), Some("No PDF in the drop"));
   let (landed, out) = drop(&mut session, &mut home, &pdf)?;
   assert!(matches!(landed, Landing::Opened) && ended(&out, "1"));
   assert_eq!(session.tabs.len(), 1);
@@ -958,7 +948,7 @@ fn start_screen_drops_open_or_type() -> Result<()> {
   let landed = session.home_drop(&mut home, "t=R:x=1;EIO", &mut out)?;
   assert!(matches!(landed, Landing::Shown));
   assert!(ended(&String::from_utf8_lossy(&out).into(), "0"));
-  assert_eq!(home.error.as_deref(), Some("Drop failed: EIO"));
+  assert_eq!(home.view.error(), Some("Drop failed: EIO"));
   Ok(())
 }
 
@@ -1091,7 +1081,7 @@ fn keys_close_other_previews() -> Result<()> {
   let row = app.at.row + (y / 16.0) as u16;
   let (kind, modifiers) = (MouseEventKind::Moved, KeyModifiers::NONE);
   session.mouse(MouseEvent { kind, column, row, modifiers })?;
-  assert!(session.hover_preview(Instant::now() + crate::links::REST));
+  assert!(session.hover_preview(Instant::now() + vpdf_ui::input::links::REST));
   assert!(session.tab().panes[index].peek.is_some());
   let mut events = std::collections::VecDeque::new();
   vpdf_terminal::decode::Parser::default().feed(b"j", &mut events);

@@ -926,7 +926,7 @@ fn frames_follow_scrolled_thumbnails() -> Result<()> {
   assert!(!session.redraw_due());
   let app = session.app();
   let under = app.hovered(Region::Overview, 20, 5, None)?;
-  assert_eq!(app.hover, under);
+  assert_eq!(app.hover.hit(), under);
   assert!(matches!(under, Hit::Thumbnail(page) if page.0 > 20), "{under:?}");
   Ok(())
 }

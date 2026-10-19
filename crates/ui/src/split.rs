@@ -1,5 +1,9 @@
 //! Window splits within a tab, as a binary tree like Vim's layout.
 
+use crate::{Result, theme};
+use std::io::Write;
+use vpdf_terminal::terminal::At;
+
 /// `Rows` stacks panes (`Ctrl-w s`); `Columns` sets them side by side
 /// (`Ctrl-w v`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,6 +80,21 @@ fn span(axis: Axis, area: Rect) -> u16 {
 impl Node {
   pub fn leaf(id: u32) -> Self {
     Self { kind: Kind::Leaf(id) }
+  }
+
+  pub fn draw_dividers(&self, out: &mut impl Write, area: Rect) -> Result<()> {
+    let mut dividers = Vec::new();
+    self.dividers(area, &mut dividers);
+    let columns =
+      dividers.iter().filter(|divider| divider.axis == Axis::Columns);
+    for rect in columns.map(|divider| divider.rect) {
+      let at = At { column: rect.column, row: rect.row };
+      for row in 0..rect.rows {
+        let goto = at.goto(row, 0u16);
+        write!(out, "{goto}{}│{}", theme::MUTED, theme::RESET)?;
+      }
+    }
+    Ok(())
   }
 
   pub fn replace(&mut self, from: u32, to: u32) {
@@ -605,6 +624,24 @@ mod tests {
     assert_eq!(tree.leaves(), [2, 1]);
     assert!(tree.remove(2));
     assert_eq!(tree.leaves(), [1]);
+  }
+
+  #[test]
+  fn draws_only_column_dividers() -> Result<()> {
+    let mut tree = Node::leaf(1);
+    tree.split(1, Axis::Rows, 2, Place::After);
+    tree.split(2, Axis::Columns, 3, Place::After);
+    let area = Rect { column: 3, row: 2, columns: 21, rows: 8 };
+    let mut out = Vec::new();
+    tree.draw_dividers(&mut out, area)?;
+    let want = [7, 8, 9, 10]
+      .map(|row| format!("\x1b[{row};14H{}│{}", theme::MUTED, theme::RESET))
+      .concat();
+    assert_eq!(String::from_utf8(out)?, want);
+    let mut out = Vec::new();
+    tree.draw_dividers(&mut out, Rect { rows: 0, ..area })?;
+    assert_eq!(out, [] as [u8; 0]);
+    Ok(())
   }
 
   #[test]

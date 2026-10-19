@@ -1,12 +1,13 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 #[path = "../../../benches/support/hash.rs"]
 mod hash;
+#[path = "../../../benches/support/raster.rs"]
+mod raster;
+use raster::fixture;
 use std::hint::black_box;
 use std::io::{self, Write};
-use std::path::PathBuf;
 use std::sync::Arc;
-use vpdf_model::geometry::{Crop, Screen};
-use vpdf_model::text::PageId;
+use vpdf_model::geometry::Screen;
 use vpdf_model::tile::TileKey;
 use vpdf_terminal::graphics::{Graphics, Presentation};
 use vpdf_terminal::payload::{Encoder, Tile};
@@ -33,45 +34,6 @@ fn clean_marks() -> Result<()> {
   })
 }
 
-#[derive(serde::Deserialize)]
-struct Manifest {
-  width: i32,
-  height: i32,
-  rgb_sha256: String,
-  source_sha256: String,
-  revision: String,
-}
-
-fn fixture() -> Result<(Manifest, Vec<u8>)> {
-  let directory = std::env::var_os("VPDF_BENCH_FIXTURES").map_or_else(
-    || {
-      PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/bench-fixtures")
-    },
-    PathBuf::from,
-  );
-  let metadata = std::fs::read(directory.join("manifest.json"))
-    .context("Run mise run bench:fixtures first")?;
-  let manifest: Manifest = serde_json::from_slice(&metadata)?;
-  let pixels = std::fs::read(directory.join("tile.rgb"))?;
-  anyhow::ensure!(
-    manifest.width > 0
-      && manifest.height > 0
-      && pixels.len() as i64
-        == i64::from(manifest.width) * i64::from(manifest.height) * 3,
-    "Invalid raster fixture dimensions"
-  );
-  anyhow::ensure!(
-    hash::digest(&pixels) == manifest.rgb_sha256,
-    "Raster fixture hash mismatch"
-  );
-  println!(
-    "fixture {} source {} revision {}",
-    manifest.rgb_sha256, manifest.source_sha256, manifest.revision
-  );
-  Ok((manifest, pixels))
-}
-
 fn tile_encode() -> Result<()> {
   let (_, pixels) = fixture()?;
   let encoder = Encoder::default();
@@ -80,6 +42,36 @@ fn tile_encode() -> Result<()> {
   measure(&format!("tiles::encode {} KiB", pixels.len() / 1024), || {
     drop(black_box(encoder.encode(black_box(&pixels)).expect("encode")));
   })?;
+  Ok(())
+}
+
+fn inline() -> Result<()> {
+  let (manifest, pixels) = fixture()?;
+  let bounds = vpdf_model::text::Bounds {
+    x0: 0.0,
+    y0: 0.0,
+    x1: manifest.width as f32,
+    y1: manifest.height as f32,
+  };
+  let fit = vpdf_terminal::inline::Fit::new(bounds, (40, 12), 2.0)?;
+  for tmux in [false, true] {
+    let mut out = Vec::new();
+    let transport = vpdf_terminal::terminal::Transport { tmux };
+    measure(&format!("inline::print tmux {tmux}"), || {
+      out.clear();
+      fit
+        .print(
+          transport,
+          123,
+          (manifest.width as u32, manifest.height as u32),
+          &pixels,
+          &mut out,
+        )
+        .expect("inline output");
+      black_box(&out);
+    })?;
+    println!("inline output {}", hash::digest(&out));
+  }
   Ok(())
 }
 
@@ -98,16 +90,7 @@ fn resident() -> Result<(Graphics, TileKey, Screen)> {
   let (manifest, pixels) = fixture()?;
   let encoder = Encoder::default();
   let mut graphics = Graphics::new(Presentation::default(), &encoder);
-  let key = TileKey {
-    page: PageId(0),
-    scale: 1024,
-    rotation: 0,
-    x: 0,
-    y: 0,
-    width: manifest.width,
-    height: manifest.height,
-    crop: Crop::default(),
-  };
+  let key = manifest.key();
   let tile = Tile { key, payload: encoder.encode(&pixels)?, render_ms: 0.0 };
   graphics.upload(0, &tile, &mut Vec::new())?;
   let screen = Screen {
@@ -152,6 +135,7 @@ fn main() -> Result<()> {
     ("clean", clean),
     ("clean marks", clean_marks),
     ("tile encode", tile_encode),
+    ("inline", inline),
     ("spool", spool),
     ("placement", placement),
     ("residency", residency),

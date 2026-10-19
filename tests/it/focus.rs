@@ -529,15 +529,15 @@ fn peek_prompt_retains_destination_and_owner() -> Result<()> {
   );
   app.go_to(position, true)?;
   app.preview_link()?;
-  let target = format!("{:?}", app.peek.as_ref().unwrap().target);
+  let target = format!("{:?}", app.peek.as_ref().unwrap().target());
   keys(&mut app, b":")?;
   assert_eq!(app.input_owner(), InputOwner::Prompt);
-  assert_eq!(format!("{:?}", app.peek.as_ref().unwrap().target), target);
+  assert_eq!(format!("{:?}", app.peek.as_ref().unwrap().target()), target);
   keys(&mut app, b"\t\x1b[Z")?;
   assert!(app.peek.is_some() && app.prompt.is_some());
   keys(&mut app, b"\x1b[27u")?;
   assert_eq!(app.input_owner(), InputOwner::Peek);
-  assert_eq!(format!("{:?}", app.peek.as_ref().unwrap().target), target);
+  assert_eq!(format!("{:?}", app.peek.as_ref().unwrap().target()), target);
   keys(&mut app, b"\x1b[119;5u")?;
   assert!(app.peek.is_none());
   assert_eq!(app.keys.awaiting(), Some("C-w"));

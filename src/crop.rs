@@ -1,51 +1,23 @@
 use crate::Result;
 use crate::app::App;
-use crate::text::PageId;
-use std::sync::{Arc, mpsc};
-use vpdf_pdf::jobs::crop::Job;
+use std::sync::Arc;
+use vpdf_pdf::jobs::crop::{Request, Update};
 
 pub use vpdf_pdf::crop::{Margins, margins};
 
-const SAMPLES: usize = 24;
-
-fn samples(count: usize, nearby: impl Iterator<Item = PageId>) -> Vec<PageId> {
-  let batch = vpdf_pdf::jobs::Config::default().prefetch_pages;
-  let mut pages: Vec<_> = nearby.take(batch).collect();
-  if count <= SAMPLES {
-    pages.extend((0..count).map(PageId));
-  } else {
-    for pair in 0..(SAMPLES - batch) / 2 {
-      let first = pair * count.saturating_sub(2) / ((SAMPLES - batch) / 2 - 1);
-      pages.extend([PageId(first), PageId((first + 1).min(count - 1))]);
-    }
-  }
-  let mut unique = Vec::new();
-  for page in pages {
-    if !unique.contains(&page) {
-      unique.push(page);
-    }
-  }
-  unique
-}
-
 impl App {
   pub(crate) fn start_crop(&mut self) {
-    let pages = samples(self.doc.pages.len(), self.nearby_pages().into_iter());
-    self.crop_batch(pages);
+    self.crop_scan.start(
+      Request {
+        path: &self.path,
+        password: &self.password,
+        doc: &self.doc,
+        wake: &self.wake,
+      },
+      self.nearby_pages(),
+    );
     self.layout.request_crop();
     self.reader.notice("Detecting margins");
-  }
-
-  fn crop_batch(&mut self, pages: Vec<PageId>) {
-    self.crop_job = Some(Job::start(
-      &self.path,
-      &self.password,
-      self.doc.margins.clone(),
-      self.doc.lists(),
-      pages,
-      self.nearby_pages(),
-      &self.wake,
-    ));
   }
 
   fn apply_crop(
@@ -66,50 +38,31 @@ impl App {
     if self.layout.crop().is_none() {
       return;
     }
-    let nearby = self.nearby_pages();
-    if let Some(job) = &self.crop_job {
-      let target_ready = nearby.first().is_some_and(|page| {
-        job.pages.contains(page)
-          || self
-            .doc
-            .margins
-            .as_ref()
-            .is_some_and(|cached| cached.contains(*page))
-      });
-      if target_ready && nearby.iter().any(|page| job.pages.contains(page)) {
-        return;
-      }
-      job.cancel();
-      return;
-    }
-    let Some(cached) = &self.doc.margins else {
-      self.start_crop();
-      return;
-    };
-    let pages: Vec<_> = self
-      .nearby_pages()
-      .into_iter()
-      .filter(|page| !cached.contains(*page))
-      .collect();
-    if !pages.is_empty() {
-      self.crop_batch(pages);
+    let initial = self.crop_scan.request(
+      Request {
+        path: &self.path,
+        password: &self.password,
+        doc: &self.doc,
+        wake: &self.wake,
+      },
+      self.nearby_pages(),
+    );
+    if initial {
+      self.layout.request_crop();
+      self.reader.notice("Detecting margins");
     }
   }
 
   pub fn crop_updates(&mut self) -> Result<bool> {
     self.request_crop();
-    let Some(job) = &self.crop_job else { return Ok(false) };
-    let result = match job.result.try_recv() {
-      Ok(result) => result,
-      Err(mpsc::TryRecvError::Empty) => return Ok(false),
-      Err(mpsc::TryRecvError::Disconnected) => Err("Cropping stopped".into()),
+    let Some(update) = self.crop_scan.poll() else { return Ok(false) };
+    let result = match update {
+      Update::Canceled => {
+        self.request_crop();
+        return Ok(true);
+      }
+      Update::Ready(result) => result,
     };
-    let canceled = job.canceled();
-    self.crop_job = None;
-    if canceled {
-      self.request_crop();
-      return Ok(true);
-    }
     let crops = match result {
       Ok(crops) => crops,
       Err(error) => {
@@ -124,7 +77,7 @@ impl App {
   }
 
   pub(crate) fn cancel_crop(&mut self) -> Result<()> {
-    if self.crop_job.take().is_some() {
+    if self.crop_scan.clear() {
       self.layout.show_margins();
       self.relayout()?;
     }
@@ -133,7 +86,7 @@ impl App {
 
   /// `zc`: trims white margins, or restores them.
   pub fn toggle_crop(&mut self) -> Result<()> {
-    if self.crop_job.take().is_some() || !self.layout.crop().is_none() {
+    if self.crop_scan.clear() || !self.layout.crop().is_none() {
       self.layout.show_margins();
       self.relayout()?;
       self.reader.notice("Margins shown");
@@ -143,25 +96,5 @@ impl App {
       self.start_crop();
     }
     Ok(())
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn sampling_is_bounded() {
-    for count in [1, 2, 15, 17, 24, 244, 3329, 100_000] {
-      let pages = samples(count, (0..count).map(PageId));
-      assert!(pages.len() <= SAMPLES);
-      if count <= SAMPLES {
-        assert_eq!(pages.len(), count);
-      }
-      assert!(pages.iter().all(|page| page.0 < count));
-      assert!(pages.contains(&PageId(0)));
-      assert!(pages.contains(&PageId(count - 1)));
-    }
-    assert!(Margins::default().get(PageId(100)).is_none());
   }
 }

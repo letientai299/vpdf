@@ -1,10 +1,14 @@
 use anyhow::{Context, Result};
 #[path = "../benches/support/hash.rs"]
 mod hash;
+#[path = "support/home.rs"]
+mod home;
 #[path = "support/menu.rs"]
 mod menu;
 #[path = "support/overlays.rs"]
 mod overlays;
+#[path = "support/preview.rs"]
+mod preview;
 #[path = "../tests/support/reader.rs"]
 mod reader_fixture;
 #[path = "support/region.rs"]
@@ -59,6 +63,8 @@ fn main() -> Result<()> {
     "page": page,
     "scroll": scroll,
   }))?;
+  let home = home::prepare(&source, screen)?;
+  let preview = preview::prepare(&source, screen)?;
   let context = menu::prepare(&source, screen)?;
   let region = region::prepare(&source, screen)?;
   let book_path = source.with_file_name("book.pdf");
@@ -79,6 +85,8 @@ fn main() -> Result<()> {
     "hints_sha256": hash::digest(&hints),
     "region_sha256": hash::digest(&region),
     "context_sha256": hash::digest(&context),
+    "home_sha256": hash::digest(&home),
+    "preview_sha256": hash::digest(&preview),
     "rgb_sha256": hash::digest(&pixels),
     "width": key.width, "height": key.height,
     "page": key.page.0, "scale": key.scale, "rotation": key.rotation,
@@ -93,6 +101,8 @@ fn main() -> Result<()> {
   std::fs::write(destination.join("scrollbar.json"), scrollbar)?;
   std::fs::write(destination.join("hints.json"), hints)?;
   std::fs::write(destination.join("context.json"), context)?;
+  std::fs::write(destination.join("home.json"), home)?;
+  std::fs::write(destination.join("preview.json"), preview)?;
   std::fs::write(destination.join("region.json"), region)?;
   std::fs::write(
     destination.join("manifest.json"),

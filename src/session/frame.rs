@@ -1,6 +1,6 @@
 use super::{
-  App, At, Axis, Cause, Drawable, Duration, Hover, ImageState, ImageWrite,
-  Instant, Rehover, Result, Session, Sight, Write, terminal, theme,
+  App, Cause, Drawable, Duration, Hover, ImageState, ImageWrite, Instant,
+  Rehover, Result, Session, Sight, Write, terminal,
 };
 use crate::trace::Observation;
 
@@ -26,17 +26,7 @@ impl Drawable for Session {
         tab.panes[index].draw_pane(graphics, out)?;
       }
     }
-    let mut dividers = Vec::new();
-    tab.tree.dividers(area, &mut dividers);
-    let columns =
-      dividers.iter().filter(|divider| divider.axis == Axis::Columns);
-    for rect in columns.map(|divider| divider.rect) {
-      let at = At { column: rect.column, row: rect.row };
-      for row in 0..rect.rows {
-        let goto = at.goto(row, 0u16);
-        write!(out, "{goto}{}│{}", theme::MUTED, theme::RESET)?;
-      }
-    }
+    tab.tree.draw_dividers(out, area)?;
     let focus = tab.focus;
     tab.panes[focus].draw_pane(graphics, out)?;
     if let Some(unmeasured) = unmeasured {
@@ -46,7 +36,7 @@ impl Drawable for Session {
     if self.state.perf
       && let Some(screen) = self.screen
     {
-      self.perf.draw(out, screen, false)?;
+      self.perf.view.draw(out, screen, false)?;
     }
     write!(out, "{}", terminal::frame_end())?;
     // Drawing can scroll thumbnails or rewrap rows.
@@ -92,7 +82,7 @@ impl Session {
     if let Some(screen) = self.screen {
       let mut buffer = Vec::new();
       write!(buffer, "{}", terminal::frame_start())?;
-      if self.perf.draw(&mut buffer, screen, false)? {
+      if self.perf.view.draw(&mut buffer, screen, false)? {
         write!(buffer, "{}", terminal::frame_end())?;
         out.write_all(&buffer)?;
         out.flush()?;
@@ -258,7 +248,7 @@ impl Session {
   }
 
   pub(super) fn lose_images(&mut self, out: &mut impl Write) -> Result<()> {
-    self.perf.invalidate();
+    self.perf.view.invalidate();
     vpdf_terminal::graphics::release(out)?;
     self.graphics.lost();
     if let Some(home) = &mut self.home {

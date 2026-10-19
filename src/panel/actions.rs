@@ -114,10 +114,7 @@ impl App {
 
   /// Whether the recent view covers the pane.
   pub fn covered(&self) -> bool {
-    self
-      .panel
-      .as_ref()
-      .is_some_and(|panel| panel.view.is_recent_view() && panel.view.focused())
+    self.panel.as_ref().is_some_and(|panel| panel.view.covers_page())
   }
 
   pub fn close_panel(&mut self) -> Result<()> {

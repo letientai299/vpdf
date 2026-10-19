@@ -24,6 +24,33 @@ pub fn raster(doc: &mut Document, key: TileKey) -> Result<Vec<u8>> {
   Ok(pixels.samples().to_vec())
 }
 
+/// Visits pixels while their native owner lives.
+pub fn visit_area<T>(
+  doc: &mut Document,
+  key: TileKey,
+  visit: impl FnOnce(&[u8], usize) -> Result<T>,
+) -> Result<T> {
+  let area = IRect::new(key.x, key.y, key.x + key.width, key.y + key.height);
+  let pixels = raster_area(doc, &key, area)?;
+  visit(pixels.samples(), usize::try_from(pixels.stride())?)
+}
+
+pub fn visit_page<T>(
+  doc: &mut Document,
+  page: PageId,
+  scale: u32,
+  visit: impl FnOnce(u32, u32, &[u8]) -> Result<T>,
+) -> Result<T> {
+  doc.validate(page)?;
+  let bounds = doc.pages[page.0].bounds;
+  let pixels = doc.display(page)?.to_pixmap(
+    &matrix(&page_matrix(bounds, scale, 0)),
+    &Colorspace::device_rgb(),
+    false,
+  )?;
+  visit(pixels.width(), pixels.height(), pixels.samples())
+}
+
 /// RGB pixels of `area`, in the page space `key` describes.
 pub fn raster_area(
   doc: &mut Document,

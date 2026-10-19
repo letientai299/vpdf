@@ -1,62 +1,29 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::{Document, Heading, Link, Target};
-use crate::preview::{Origin, Preview};
-use crate::text::{Bounds, PageId, Position, Text};
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::text::{Bounds, PageId, Text};
+use crossterm::event::MouseEvent;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use vpdf_ui::input::InputOwner;
+use std::time::Instant;
 use vpdf_ui::panel::{Destination, Row};
 use vpdf_ui::pointer::{Hit, Hover};
-use vpdf_ui::split::Rect;
+use vpdf_ui::preview::{Press, Preview};
 
 /// The hovered link's page, that page's links, and index.
 type Hovered = (PageId, Arc<Vec<Link>>, usize);
 
-/// Rest before a link previews.
-pub const REST: Duration = Duration::from_millis(400);
-
-/// A left press's link or note icon.
-#[derive(Clone, Debug, Default)]
-pub enum LinkPress {
-  #[default]
-  Idle,
-  /// Followed on release.
-  Held(Target),
-  /// Note icon, press glyph; shows on release (U11).
-  Note(PageId, usize, Option<Position>),
-  /// Its click run is spent.
-  Followed,
-}
-
-/// The link under the pointer, resting.
-#[derive(Clone, Copy, Debug)]
-pub struct Rest {
-  pub page: PageId,
-  /// Index into `Document::links`.
-  pub index: usize,
-  /// When the rest began; None once calmed.
-  pub since: Option<Instant>,
-}
-
 impl App {
   /// Takes `hover`; new links beneath rest.
   pub fn point(&mut self, hover: Option<Hover>) {
-    self.hover = hover.map_or_default(|hover| hover.hit);
-    let beneath = hover.and_then(|hover| hover.beneath);
-    if self.rest.map(|rest| (rest.page, rest.index)) == beneath {
-      return;
-    }
-    self.rest = beneath.map(|(page, index)| Rest {
-      page,
-      index,
-      since: Some(Instant::now()),
-    });
+    self.hover.point(
+      hover.map_or_default(|hover| hover.hit),
+      hover.and_then(|hover| hover.beneath),
+      Instant::now,
+    );
   }
 
   fn hovered_links(&mut self) -> Option<Hovered> {
-    let Hit::Link(page, index) = self.hover else { return None };
+    let Hit::Link(page, index) = self.hover.hit() else { return None };
     // Hover is advisory; failures show nothing.
     let links = self.doc.links(page).ok()?;
     Some((page, links, index))
@@ -99,16 +66,10 @@ impl App {
 
   /// When the rested link previews.
   pub fn hover_due(&mut self) -> Option<Instant> {
-    let rest = self.rest?;
-    let since = rest.since?;
-    // Hover follows the pointer across panes (B2).
-    let free = self.input_owner() == InputOwner::Content;
-    if !free || self.peek.is_some() {
-      return None;
-    }
-    let link = self.link(rest.page, rest.index).ok()??;
-    let internal = !matches!(link.target, Target::Uri(_));
-    internal.then_some(since + REST)
+    let (page, index, due) =
+      self.hover.due(self.input_owner(), self.peek.is_some())?;
+    let link = self.link(page, index).ok()??;
+    (!matches!(link.target, Target::Uri(_))).then_some(due)
   }
 
   /// Opens a due preview.
@@ -117,7 +78,7 @@ impl App {
       return false;
     }
     self.calm_hover();
-    let Some(Rest { page, index, .. }) = self.rest else { return false };
+    let Some((page, index)) = self.hover.resting() else { return false };
     let Ok(Some(link)) = self.link(page, index) else { return false };
     // Previews are advisory; failures show nothing.
     let Ok(text) = self.doc.text(page) else { return false };
@@ -130,7 +91,7 @@ impl App {
       return false;
     }
     if let Some(peek) = &mut self.peek {
-      peek.origin = Origin::Hover(page, index);
+      peek.hover(page, index);
     }
     true
   }
@@ -142,32 +103,20 @@ impl App {
 
   /// Motion on the link restarts its rest.
   pub(crate) fn rest_again(&mut self) {
-    if let Some(since) = self.rest.as_mut().and_then(|r| r.since.as_mut()) {
-      *since = Instant::now();
-    }
+    self.hover.restart(Instant::now);
   }
 
   /// Ends the rest until another link.
   pub(crate) fn calm_hover(&mut self) {
-    if let Some(rest) = &mut self.rest {
-      rest.since = None;
-    }
+    self.hover.calm();
   }
 
   /// Closes a hover preview the pointer left.
   pub fn hover_leave(&mut self, at: Option<(u16, u16)>) -> bool {
     let Some(peek) = self.hover_peek() else { return false };
-    // A moved view leaves it stale.
     let view = self.view_key();
-    let placement = peek.placement.filter(|at| at.view == view);
-    let on = |cells: Rect| at.is_some_and(|(c, r)| cells.contains(c, r));
-    let inside = placement.is_some_and(|at| on(at.area));
-    let bridged = placement.is_some_and(|at| on(at.bridge));
-    let rested = self.rest.map(|rest| (rest.page, rest.index));
-    let on_link = rested.is_some_and(|link| peek.hovered() == Some(link));
-    // Another link is never a gap.
-    let elsewhere = rested.is_some() && !on_link;
-    if inside || on_link || bridged && !elsewhere {
+    let rested = self.hover.resting();
+    if peek.retains_hover(at, view, rested) {
       return false;
     }
     self.peek = None;
@@ -187,43 +136,28 @@ impl App {
   /// Inside: left follows, middle splits.
   pub fn preview_press(&mut self, mouse: MouseEvent) -> Result<bool> {
     let Some(peek) = &self.peek else { return Ok(false) };
-    let key = peek.origin == Origin::Key;
-    if key && self.input_owner() != InputOwner::Peek {
-      return Ok(false);
-    }
-    let inside = self.in_preview(mouse);
-    let alt = mouse.modifiers.contains(KeyModifiers::ALT);
-    let button = match mouse.kind {
-      MouseEventKind::Down(button) if inside && !alt => Some(button),
-      _ => None,
-    };
-    let follows = self.peek.as_ref().is_some_and(Preview::follows);
-    match button {
-      Some(MouseButton::Left) => {
-        // Like `dismiss_click`, it cancels pending keys.
+    match peek.press(mouse, self.in_preview(mouse), self.input_owner()) {
+      Press::Ignored => Ok(false),
+      Press::Follow => {
         self.disarm();
         self.follow_preview()?;
-        return Ok(true);
+        Ok(true)
       }
-      // Its target in a split (C2).
-      Some(MouseButton::Middle) if follows => {
+      Press::Split => {
         self.disarm();
-        let target = self.peek.take().map(|peek| peek.target);
-        if let Some(target) = target {
+        if let Some(target) = self.peek.take().and_then(Preview::into_target) {
           self.open_split(&target)?;
         }
-        return Ok(true);
+        Ok(true)
       }
-      _ => {}
+      Press::Dismiss { inside } => {
+        self.drop_hover_preview();
+        if inside {
+          self.disarm();
+        }
+        Ok(inside)
+      }
     }
-    if key {
-      return Ok(false);
-    }
-    self.drop_hover_preview();
-    if inside {
-      self.disarm();
-    }
-    Ok(inside)
   }
 
   /// Whether a press lands on the drawn preview.
@@ -581,7 +515,7 @@ mod tests {
       (10, 0, "→ http://arxiv.org/abs/1610.02357"),
     ];
     for (page, index, label) in cases {
-      app.hover = Hit::Link(PageId(page), index);
+      app.hover.point(Hit::Link(PageId(page), index), None, Instant::now);
       let shown = app.hover_label().unwrap_or_default();
       assert!(shown.starts_with(label), "{shown:?}");
     }

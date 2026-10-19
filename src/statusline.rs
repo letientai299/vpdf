@@ -1,76 +1,11 @@
 use crate::Result;
-use crate::app::{App, Tabline};
-use crate::chrome::Chrome;
+use crate::app::App;
 use crate::text::PageId;
-use std::fmt::Write as _;
 use std::io::Write;
-use unicode_width::UnicodeWidthStr;
-use vpdf_reader::reader::{Mode, SelectionKind};
-use vpdf_terminal::terminal;
-use vpdf_ui::input::InputOwner;
+use vpdf_ui::chrome::{Bar, Document, Names, View};
 use vpdf_ui::pointer::Hit;
-use vpdf_ui::theme::{self, Color};
 
 impl App {
-  fn mode(&self) -> (&'static str, Color) {
-    match self.input_owner() {
-      InputOwner::Prompt => return ("PROMPT", Color::Yellow),
-      InputOwner::Hints => return ("HINT", Color::Yellow),
-      InputOwner::Context => return ("MENU", Color::Yellow),
-      InputOwner::Peek => return ("PEEK", Color::Yellow),
-      InputOwner::Region => return ("REGION", Color::Yellow),
-      InputOwner::Panel => {
-        if let Some(panel) = &self.panel {
-          return (panel.view.kind().title(), Color::Cyan);
-        }
-      }
-      InputOwner::Overview => return ("PAGES", Color::Cyan),
-      InputOwner::Content => {}
-    }
-    match self.reader.mode() {
-      Mode::Visual(SelectionKind::Character) => ("VISUAL", Color::Magenta),
-      Mode::Visual(SelectionKind::Line) => ("V-LINE", Color::Magenta),
-      _ if self.reader.operator.is_some() => ("YANK", Color::Yellow),
-      Mode::Cursor => ("CURSOR", Color::Cyan),
-      Mode::Normal => ("NORMAL", Color::Blue),
-    }
-  }
-
-  /// Match under or before the cursor, like Neovim's searchcount.
-  fn search_count(&self) -> String {
-    if let Some(panel) =
-      self.panel.as_ref().filter(|panel| panel.view.focused())
-    {
-      return panel
-        .view
-        .count()
-        .map_or_else(String::new, |(i, n)| format!("[{i}/{n}]  "));
-    }
-    let hits = self.search.hits();
-    if self.search.hidden() || hits.is_empty() {
-      return String::new();
-    }
-    let more = if self.search.phase().running() { "+" } else { "" };
-    if self.reader.viewport_mode() {
-      return format!("[{}{more} matches]  ", hits.len());
-    }
-    let cursor = self.reader.cursor;
-    let index = hits.partition_point(|hit| hit.first <= cursor);
-    format!("[{index}/{}{more}]  ", hits.len())
-  }
-
-  /// Share of the document above the viewport's bottom edge.
-  fn progress(&self) -> u32 {
-    let fraction = if self.text_mode {
-      (self.navigation_position().page.0 + 1) as f32
-        / self.doc.pages.len() as f32
-    } else {
-      let bottom = self.reader.scroll + self.layout.screen().height();
-      bottom / self.layout.total().max(1.0)
-    };
-    (fraction.clamp(0.0, 1.0) * 100.0).round() as u32
-  }
-
   /// Document title for the terminal window.
   pub fn title(&self) -> String {
     let name = self.name();
@@ -80,45 +15,9 @@ impl App {
     format!("{} — {name}", self.doc.title)
   }
 
-  /// Tab names that fit in `room` beside `detail` columns, with their
-  /// display width; else the active file's name.
-  fn tabs(&self, room: usize, detail: usize) -> Tabs {
-    let Tabline { names, active } = &self.tabline;
-    // Narrow panes cut the name so the status line stays in the pane.
-    let file = || {
-      let label = format!(" {}:{} ", active + 1, self.name());
-      let label = terminal::clean(&label, room.saturating_sub(1));
-      let gap = if room > 0 { " " } else { "" };
-      let width = label.width() + gap.width();
-      let text = format!("{}{label}{}{gap}", theme::STATUS_FILE, theme::BAR);
-      Tabs { text, width, labels: Vec::new() }
-    };
-    if names.len() < 2 {
-      return file();
-    }
-    let labels: Vec<_> = names
-      .iter()
-      .enumerate()
-      .map(|(index, name)| format!(" {}:{name} ", index + 1))
-      .collect();
-    let width = labels.iter().map(|label| label.width()).sum::<usize>() + 1;
-    // Names yield to the hover detail.
-    if width + detail > room {
-      return file();
-    }
-    let mut text = String::new();
-    for (index, label) in labels.iter().enumerate() {
-      let style =
-        if index == *active { theme::TAB_ACTIVE } else { theme::TAB_INACTIVE };
-      text.extend([style, label.as_str(), theme::BAR]);
-    }
-    let labels = labels.iter().map(|label| label.width()).collect();
-    Tabs { text: text + " ", width, labels }
-  }
-
   /// Status-line text for the hover.
   pub(crate) fn hover_detail(&mut self) -> Option<String> {
-    match self.hover {
+    match self.hover.hit() {
       Hit::Note { page, index, .. } => {
         self.note_line(page, index).ok().flatten()
       }
@@ -146,203 +45,57 @@ impl App {
     }
   }
 
-  /// Mode, tabs, message, then pending keys and position.
+  pub(crate) fn chrome_view<'a>(&'a self, file: &'a str) -> Bar<'a> {
+    let page = self.navigation_position().page;
+    Bar {
+      view: View {
+        reader: &self.reader,
+        layout: &self.layout,
+        search: &self.search,
+        keys: &self.keys,
+        panel: self.panel.as_ref().map(|panel| &panel.view),
+        owner: self.input_owner(),
+        text: self.text_mode,
+        overview: self.overview.is_some(),
+      },
+      document: Document {
+        page,
+        pages: self.doc.pages.len(),
+        label: if self.covered() { "" } else { self.doc.label(page) },
+        section: self
+          .current_section
+          .map(|index| self.doc.outline[index].title.trim()),
+      },
+      names: Names {
+        file,
+        names: &self.tabline.names,
+        active: self.tabline.active,
+      },
+      screen: self.screen,
+      error: self.error.as_deref(),
+    }
+  }
+
   pub fn status(&self, out: &mut impl Write, row: u16) -> Result<()> {
     self.status_line(out, row, None)
   }
 
-  /// `status`, `detail` replacing the section.
   pub fn status_line(
     &self,
     out: &mut impl Write,
     row: u16,
     detail: Option<&str>,
   ) -> Result<()> {
-    let line = self.line(detail)?;
-    write!(out, "{}", self.at.goto(row, 0u16))?;
-    let Some(tabs) = &line.tabs else {
-      write!(out, "{}{}{}", theme::BAR, line.right, theme::RESET)?;
-      // Plain frames skip clears; erase the rest.
-      let rest =
-        usize::from(self.screen.columns).saturating_sub(line.right.width());
-      if rest > 0 {
-        write!(out, "\x1b[{rest}X")?;
-      }
-      return Ok(());
-    };
-    let badge =
-      if self.focused { theme::badge(line.color) } else { theme::BAR.into() };
-    write!(
-      out,
-      "{badge}{}{}{}{}{}{}{}{}{}",
-      line.left,
-      theme::BAR,
-      tabs.text,
-      line.style,
-      line.message,
-      theme::BAR,
-      " ".repeat(line.fill),
-      line.right,
-      theme::RESET
-    )?;
-    Ok(())
+    self.chrome_view(&self.name()).draw(out, self.at, row, self.focused, detail)
   }
 
-  /// The status line's parts.
-  fn line(&self, detail: Option<&str>) -> Result<Line> {
-    let columns = usize::from(self.screen.columns);
-    let (mode, color) = self.mode();
-    let page = self.navigation_position().page.0;
-    let mut right = self.keys.pending();
-    if !right.is_empty() {
-      right.push_str("  ");
-    }
-    let (mut pages, mut zoom, mut matches) = (0..0, 0..0, 0..0);
-    // The recent view's document is closed; it shows no position.
-    let covered = self.covered();
-    if !covered {
-      let start = right.width();
-      right += &self.search_count();
-      if !self.panel_focused() {
-        matches = start..right.width();
-      }
-      let start = right.width();
-      write!(
-        right,
-        "{}/{} [{}] {}% ",
-        page + 1,
-        self.doc.pages.len(),
-        self.doc.label(PageId(page)),
-        self.progress(),
-      )?;
-      pages = start..right.width();
-    }
-    if !covered && (self.layout.zoom() - 1.0).abs() > 0.005 {
-      let start = right.width();
-      write!(right, " zoom {:.0}% ", self.layout.zoom() * 100.0)?;
-      zoom = start..right.width();
-    }
-    let left = format!(" {mode} ");
-    let mut line = Line {
-      left,
-      color,
-      tabs: None,
-      message: String::new(),
-      style: theme::BAR,
-      section: false,
-      fill: 0,
-      right,
-      pages,
-      zoom,
-      matches,
-    };
-    let Some(room) =
-      columns.checked_sub(line.left.width() + line.right.width() + 1)
-    else {
-      line.right = terminal::clean(&line.right, columns);
-      return Ok(line);
-    };
-    let section =
-      self.current_section.map(|index| self.doc.outline[index].title.trim());
-    let detail = detail.filter(|_| self.shows_detail());
-    let (message, style) = match (&self.error, section) {
-      (Some(error), _) => (error.as_str(), theme::ERROR),
-      (None, _) if let Some(detail) = detail => (detail, theme::BAR),
-      (None, _) if covered => ("Enter open  :e file  q close", theme::BAR),
-      (None, Some(title)) if self.reader.message.is_empty() => {
-        line.section = true;
-        (title, theme::STATUS_SECTION)
-      }
-      (None, _) => (self.reader.message.as_str(), theme::BAR),
-    };
-    let tabs = self.tabs(room, detail.map_or(0, UnicodeWidthStr::width));
-    let room = room.saturating_sub(tabs.width);
-    // A cut detail says so; `K` shows notes whole.
-    line.message = match detail {
-      Some(_) => terminal::clipped(message, room).0,
-      None => terminal::clean(message, room),
-    };
-    line.fill = room.saturating_sub(line.message.width()) + 1;
-    line.style = style;
-    line.tabs = Some(tabs);
-    Ok(line)
-  }
-
-  /// Whether a detail would show: messages and errors stay until a
-  /// key or click.
   pub(crate) fn shows_detail(&self) -> bool {
-    self.error.is_none() && (self.covered() || self.reader.message.is_empty())
+    vpdf_ui::chrome::shows_detail(
+      self.error.as_deref(),
+      &self.reader.message,
+      self.covered(),
+    )
   }
-
-  /// The pane's status item there.
-  pub(crate) fn status_item(&self, column: u16) -> Option<Chrome> {
-    // Overlays take the press first.
-    if self.overlaid() {
-      return None;
-    }
-    // A pointer on this row hovers chrome, which has no detail.
-    let line = self.line(None).ok()?;
-    let column = usize::from(column);
-    let columns = usize::from(self.screen.columns);
-    let start = if line.tabs.is_some() {
-      columns.saturating_sub(line.right.width())
-    } else {
-      0
-    };
-    let at = column.checked_sub(start);
-    if at.is_some_and(|at| line.matches.contains(&at)) {
-      return Some(Chrome::Matches);
-    }
-    // Thumbnails take neither; text has none.
-    let paged = self.overview.is_none();
-    if paged && !self.text_mode && at.is_some_and(|at| line.pages.contains(&at))
-    {
-      return Some(Chrome::Pages);
-    }
-    if paged && at.is_some_and(|at| line.zoom.contains(&at)) {
-      return Some(Chrome::Zoom);
-    }
-    let tabs = line.tabs?;
-    let mut edge = line.left.width();
-    for (index, width) in tabs.labels.iter().enumerate() {
-      if (edge..edge + width).contains(&column) {
-        return Some(Chrome::Tab(index));
-      }
-      edge += width;
-    }
-    let message = line.left.width() + tabs.width;
-    let section = message..message + line.message.width();
-    (line.section && section.contains(&column)).then_some(Chrome::Section)
-  }
-}
-
-/// Listed tabs, or the active file's name.
-#[derive(Debug)]
-struct Tabs {
-  text: String,
-  width: usize,
-  /// Listed tabs' widths; empty for the file.
-  labels: Vec<usize>,
-}
-
-/// Status line parts; spans in columns.
-struct Line {
-  left: String,
-  color: Color,
-  /// None when only `right` fits.
-  tabs: Option<Tabs>,
-  message: String,
-  style: &'static str,
-  /// The message is the section name.
-  section: bool,
-  /// Blanks between the message and `right`.
-  fill: usize,
-  right: String,
-  /// The page counter within `right`.
-  pages: std::ops::Range<usize>,
-  matches: std::ops::Range<usize>,
-  /// The zoom label within `right`.
-  zoom: std::ops::Range<usize>,
 }
 
 #[cfg(test)]
@@ -351,12 +104,7 @@ mod tests {
   use vpdf_ui::layout::Screen;
 
   use std::path::PathBuf;
-  impl Tabs {
-    fn pair(self) -> (String, usize) {
-      (self.text, self.width)
-    }
-  }
-
+  use vpdf_ui::theme;
   fn app() -> Result<App> {
     open("paper.pdf", true)
   }
@@ -375,46 +123,6 @@ mod tests {
         origin: (0, 0),
       },
     )
-  }
-
-  #[test]
-  #[ignore = "requires verified public PDF corpus"]
-  fn filenames_keep_style_and_number() -> Result<()> {
-    let mut app = app()?;
-    let single = format!("{} 1:paper.pdf {} ", theme::STATUS_FILE, theme::BAR);
-    assert_eq!(app.tabs(80, 0).pair(), (single.clone(), 14));
-    app.tabline = Tabline { names: vec!["paper.pdf".into()], active: 0 };
-    assert_eq!(app.tabs(80, 0).pair(), (single, 14));
-    app.tabline.names.insert(0, "book.pdf".into());
-    for active in 0..2 {
-      app.tabline.active = active;
-      let styles = if active == 0 {
-        [theme::TAB_ACTIVE, theme::TAB_INACTIVE]
-      } else {
-        [theme::TAB_INACTIVE, theme::TAB_ACTIVE]
-      };
-      let expected = format!(
-        "{} 1:book.pdf {}{} 2:paper.pdf {} ",
-        styles[0],
-        theme::BAR,
-        styles[1],
-        theme::BAR
-      );
-      assert_eq!(app.tabs(80, 0).pair(), (expected, 26));
-    }
-    let narrow = format!("{} 2:paper.pdf {} ", theme::STATUS_FILE, theme::BAR);
-    assert_eq!(app.tabs(14, 0).pair(), (narrow, 14));
-    app.path = "論文.pdf".into();
-    for room in 0..30 {
-      let (tabs, width) = app.tabs(room, 0).pair();
-      let plain = tabs
-        .replace(theme::STATUS_FILE, "")
-        .replace(theme::TAB_INACTIVE, "")
-        .replace(theme::BAR, "");
-      assert_eq!(width, plain.width(), "{room}");
-      assert!(width <= room, "{room}");
-    }
-    Ok(())
   }
 
   #[test]

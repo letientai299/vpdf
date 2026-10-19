@@ -30,7 +30,7 @@ impl App {
 
   /// Returns to a saved position and view.
   pub fn restore(&mut self, entry: &Entry) -> Result<()> {
-    self.crop_job = None;
+    self.crop_scan.clear();
     self.marks.clone_from(&entry.marks);
     self.layout.restore(entry.zoom, entry.rotation, entry.crop);
     self.layout.reflow(self.doc.pages.iter().map(|page| page.bounds));

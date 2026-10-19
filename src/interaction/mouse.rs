@@ -1,7 +1,8 @@
 use super::{
-  App, Hit, InputOwner, KeyModifiers, LinkPress, MouseButton, MouseEvent,
-  MouseEventKind, Region, Result, Route, WHEEL_ROWS, Wheel,
+  App, Hit, InputOwner, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+  Region, Result, Route, WHEEL_ROWS, Wheel,
 };
+use vpdf_ui::input::links::Step;
 
 impl App {
   /// A screen report's cell in this pane.
@@ -142,51 +143,31 @@ impl App {
   /// Left button: select, or follow links.
   fn page_left(&mut self, route: Route) -> Result<()> {
     let mouse = route.mouse;
-    match mouse.kind {
-      MouseEventKind::Up(_) => {
-        return match std::mem::take(&mut self.link_press) {
-          LinkPress::Held(target) => {
-            self.link_press = LinkPress::Followed;
-            self.follow(&target)
-          }
-          LinkPress::Note(page, index, _) => {
-            self.link_press = LinkPress::Followed;
-            self.show_note(page, index)
-          }
-          press => {
-            self.link_press = press;
-            Ok(())
-          }
-        };
-      }
-      // A followed run's later presses do nothing.
-      _ if route.clicks > 1
-        && matches!(self.link_press, LinkPress::Followed) =>
-      {
-        return Ok(());
-      }
-      MouseEventKind::Drag(_) => {
-        // An icon press selects once it drags.
-        if let LinkPress::Note(.., Some(from)) = self.link_press {
+    match self.link_press.step(mouse.kind, route.clicks) {
+      Step::Stop => return Ok(()),
+      Step::Follow(target) => return self.follow(&target),
+      Step::Note(page, index) => return self.show_note(page, index),
+      Step::Drag(from) => {
+        if let Some(from) = from {
           self.click_select(from, 1)?;
         }
-        self.link_press = LinkPress::Idle;
+        self.link_press.cancel();
       }
-      _ => {
+      Step::Begin { inspect } => {
         self.gesture.reset();
         // A broken link table still selects.
-        let hit = (route.clicks == 1)
+        let hit = inspect
           .then(|| self.pressed_hit(mouse.column, mouse.row, route.pixel));
         let hit = hit.and_then(Result::ok).unwrap_or_default();
         if let Hit::Note { page, index, text: false } = hit {
           // The cursor stays until a drag.
           self.reader.cancel_scroll();
           let from = self.press_position(&route)?;
-          self.link_press = LinkPress::Note(page, index, from);
+          self.link_press.note(page, index, from);
           return Ok(());
         }
         let link = self.link_of(hit).ok().flatten();
-        self.link_press = link.map_or(LinkPress::Idle, LinkPress::Held);
+        self.link_press.link(link);
       }
     }
     self.reader.cancel_scroll();
@@ -200,7 +181,7 @@ impl App {
 
   /// Alt-left on the page.
   fn page_alt(&mut self, route: Route) -> Result<()> {
-    self.link_press = LinkPress::Idle;
+    self.link_press.cancel();
     self.reader.cancel_scroll();
     match route.mouse.kind {
       MouseEventKind::Down(_) => self.alt_press(&route),

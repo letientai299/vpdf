@@ -1,7 +1,9 @@
 pub mod caps;
 pub mod clipboard;
+mod diacritics;
 pub mod dnd;
 pub mod graphics;
+pub mod inline;
 pub mod input;
 pub mod payload;
 pub mod spool;

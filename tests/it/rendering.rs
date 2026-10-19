@@ -457,17 +457,17 @@ fn crop_cancel_and_cache() -> Result<()> {
   let mut saved = vpdf::state::State::default();
   saved.remember(app.saved_entry().unwrap());
   app.toggle_crop()?;
-  assert!(app.crop_job.is_some());
+  assert!(app.crop_scan.active());
   app.toggle_crop()?;
-  assert!(app.crop_job.is_none() && app.layout.crop().is_none());
+  assert!(!app.crop_scan.active() && app.layout.crop().is_none());
   assert!(!app.crop_updates()?);
   app.toggle_crop()?;
   app.command("cancel")?;
-  assert!(app.crop_job.is_none() && app.layout.crop().is_none());
+  assert!(!app.crop_scan.active() && app.layout.crop().is_none());
   assert!(!app.crop_updates()?);
   app.toggle_crop()?;
   app.restore(&saved.recent[0])?;
-  assert!(app.crop_job.is_none() && app.layout.crop().is_none());
+  assert!(!app.crop_scan.active() && app.layout.crop().is_none());
   app.toggle_crop()?;
   crate::common::crop_loaded(&mut app)?;
   assert!(!app.layout.crop().is_none());
@@ -476,7 +476,7 @@ fn crop_cancel_and_cache() -> Result<()> {
   app.toggle_crop()?;
   assert!(app.layout.crop_for(PageId(0)).is_none());
   app.toggle_crop()?;
-  assert!(app.crop_job.is_none());
+  assert!(!app.crop_scan.active());
   assert_eq!(app.layout.crop_for(PageId(0)), crop);
   let mut mirrored = Solo::open(&path, "", false, screen)?;
   mirrored.mirror(&app)?;
@@ -487,7 +487,7 @@ fn crop_cancel_and_cache() -> Result<()> {
   crate::common::crop_loaded(&mut restored)?;
   assert_eq!(restored.layout.crop_for(PageId(0)), crop);
   restored.reload_with("")?;
-  assert!(restored.crop_job.is_some());
+  assert!(restored.crop_scan.active());
   crate::common::crop_loaded(&mut restored)?;
   assert_eq!(restored.layout.crop_for(PageId(0)), crop);
   Ok(())
@@ -533,7 +533,7 @@ fn crop_follows_rapid_space() -> Result<()> {
   let started = Instant::now();
   loop {
     app.crop_updates()?;
-    if app.crop_job.is_none() {
+    if !app.crop_scan.active() {
       break;
     }
     anyhow::ensure!(

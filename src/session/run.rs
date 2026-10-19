@@ -520,7 +520,7 @@ impl Session {
       if self.state.perf
         && let Some(screen) = self.screen
       {
-        self.perf.draw(out, screen, false)?;
+        self.perf.view.draw(out, screen, false)?;
         out.flush()?;
       }
     }
@@ -589,7 +589,7 @@ impl Session {
       self.home = Some(home);
       let refit = self.refit(measured, crossterm::terminal::size);
       if let (Err(error), Some(home)) = (refit, &mut self.home) {
-        home.error = Some(error.to_string());
+        home.view.fail(error.to_string());
       }
       return Ok(());
     }
@@ -613,7 +613,7 @@ impl Session {
             }
           }
           Ok(None) => {}
-          Err(error) => home.error = Some(error.to_string()),
+          Err(error) => home.view.fail(error.to_string()),
         }
       }
       Ok(Outcome::Perf(on)) => {
@@ -621,7 +621,7 @@ impl Session {
         return self.toggle_perf(on);
       }
       Ok(Outcome::Stay) => {}
-      Err(error) => home.error = Some(error.to_string()),
+      Err(error) => home.view.fail(error.to_string()),
     }
     self.home = Some(home);
     Ok(())

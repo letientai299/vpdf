@@ -1,6 +1,6 @@
 use super::{
-  App, At, Axis, Node, PasswordRequired, Path, Place, Rect, Result, Screen,
-  Session, Tab, Tabline, Unmeasured, Window, io, neighbor,
+  App, At, Axis, Node, Notice, PasswordRequired, Path, Place, Rect, Result,
+  Screen, Session, Tab, Tabline, Window, io, neighbor,
 };
 
 pub(super) fn full(screen: Screen) -> Rect {
@@ -10,7 +10,7 @@ pub(super) fn full(screen: Screen) -> Rect {
 impl Session {
   pub(super) fn content(&self, mut screen: Screen) -> Screen {
     if self.state.perf {
-      let rows = crate::perf::rows(screen);
+      let rows = vpdf_ui::perf::rows(screen);
       screen.rows -= rows;
       screen.origin.1 += rows;
     }
@@ -405,12 +405,14 @@ impl Session {
 
   /// Fits the start screen or every pane to a new terminal size.
   pub fn resize(&mut self, screen: Screen) -> Result<()> {
-    self.perf.invalidate();
+    self.perf.view.invalidate();
     self.screen = Some(screen);
     let content = self.content(screen);
     if let Some(home) = &mut self.home {
-      home.at.row = content.origin.1 - screen.origin.1;
-      home.screen = content;
+      home.view.resize(
+        content,
+        At { row: content.origin.1 - screen.origin.1, ..At::default() },
+      );
     }
     if self.tabs.is_empty() {
       return Ok(());
@@ -438,7 +440,7 @@ impl Session {
       Err(error) => {
         let (columns, rows) = grid()?;
         let error = error.to_string();
-        self.unmeasured = Some(Unmeasured { rows, columns, error });
+        self.unmeasured = Some(Notice::new(rows, columns, error));
         Ok(())
       }
     }

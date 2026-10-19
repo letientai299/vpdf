@@ -327,12 +327,12 @@ impl Session {
     body: &str,
     out: &mut impl Write,
   ) -> Result<Landing> {
-    let typing = home.typing();
+    let typing = home.view.typing();
     let drop = match self.drop_step(body, typing, out) {
       Ok(Some(drop)) => drop,
       Ok(None) => return Ok(Landing::Wait),
       Err(error) => {
-        home.error = Some(error.to_string());
+        home.view.fail(error.to_string());
         return Ok(Landing::Shown);
       }
     };
@@ -341,7 +341,7 @@ impl Session {
         home.event(Event::Paste(text), &mut self.history).map(|_| false)
       }
       Ok(Target::Pdf(path)) => self
-        .open(&path, true, self.screen.unwrap_or(home.screen))
+        .open(&path, true, self.screen.unwrap_or(home.view.screen()))
         .map(|()| true),
       Err(error) => Err(error),
     };
@@ -350,7 +350,7 @@ impl Session {
       Ok(true) => Ok(Landing::Opened),
       Ok(false) => Ok(Landing::Shown),
       Err(error) => {
-        home.error = Some(error.to_string());
+        home.view.fail(error.to_string());
         Ok(Landing::Shown)
       }
     }
@@ -359,9 +359,10 @@ impl Session {
   /// Opens `path` from the start screen in a new tab; whether it did. A
   /// failure shows on the start screen.
   pub(super) fn leave_home(&mut self, home: &mut Home, path: &Path) -> bool {
-    let opened = self.open(path, true, self.screen.unwrap_or(home.screen));
+    let opened =
+      self.open(path, true, self.screen.unwrap_or(home.view.screen()));
     if let Err(error) = &opened {
-      home.error = Some(error.to_string());
+      home.view.fail(error.to_string());
     }
     opened.is_ok()
   }

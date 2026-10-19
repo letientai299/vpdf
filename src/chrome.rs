@@ -6,47 +6,32 @@ use crossterm::event::MouseButton;
 use vpdf_ui::keys::{Action, Input, PanelKind};
 use vpdf_ui::window::TabMove;
 
-/// A clickable status item.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Chrome {
-  /// A listed tab.
-  Tab(usize),
-  /// The section name: opens the outline there.
-  Section,
-  /// The page counter: opens the overview.
-  Pages,
-  Matches,
-  /// The zoom label: fits width.
-  Zoom,
-}
+use vpdf_ui::chrome::{Item, Press};
 
 impl App {
   /// The status item at a pane cell.
-  pub fn chrome_at(&self, column: u16, row: u16) -> Option<Chrome> {
-    let status = row + 1 == self.screen.rows;
-    status.then(|| self.status_item(column)).flatten()
+  pub fn chrome_at(&self, column: u16, row: u16) -> Option<Item> {
+    self.chrome_view(&self.name()).hit(column, row, self.overlaid())
   }
 
   /// Acts on a pressed status item.
   pub(crate) fn chrome_press(
     &mut self,
-    item: Chrome,
+    item: Item,
     button: MouseButton,
   ) -> Result<()> {
-    let action = match (button, item) {
-      (MouseButton::Left, Chrome::Tab(index)) => {
+    let Some(press) = item.press(button) else { return Ok(()) };
+    let action = match press {
+      Press::Tab(index) => {
         self.request = Some(Request::Tab(TabMove::Go(index + 1)));
         return Ok(());
       }
-      (MouseButton::Middle, Chrome::Tab(index)) => {
+      Press::CloseTab(index) => {
         self.request = Some(Request::TabClose(Some(index)));
         return Ok(());
       }
-      (MouseButton::Left, Chrome::Section) => return self.outline_here(),
-      (MouseButton::Left, Chrome::Pages) => Action::Overview,
-      (MouseButton::Left, Chrome::Matches) => Action::Panel(PanelKind::Results),
-      (MouseButton::Left, Chrome::Zoom) => Action::Fit,
-      _ => return Ok(()),
+      Press::Section => return self.outline_here(),
+      Press::Action(action) => action,
     };
     self.action(Input::plain(action))
   }

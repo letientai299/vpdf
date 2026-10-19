@@ -464,7 +464,7 @@ fn resize_lays_out_panes_and_start_screen() -> Result<()> {
   session.home = Some(vpdf::home::Home::new(&[], screen));
   session.resize(small)?;
   let home = session.home.as_ref().unwrap();
-  assert_eq!((home.screen.columns, home.screen.rows), (100, 30));
+  assert_eq!((home.view.screen().columns, home.view.screen().rows), (100, 30));
   Ok(())
 }
 

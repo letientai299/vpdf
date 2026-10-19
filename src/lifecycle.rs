@@ -12,7 +12,7 @@ impl App {
   /// coordinator's document with every page it loaded. A running search
   /// resumes when the pane shows again.
   pub fn trim(&mut self) {
-    self.crop_job = None;
+    self.crop_scan.clear();
     self.search_worker = None;
     self.doc.trim();
     self.worker = Raster::idle(
@@ -30,7 +30,7 @@ impl App {
     // A write during the open shows up as a later change.
     let stamp = crate::watch::stamp(&self.path);
     self.doc = Document::open(&self.path, password)?;
-    self.crop_job = None;
+    self.crop_scan.clear();
     self.layout.clear_crops();
     self.layout.reflow(self.doc.pages.iter().map(|page| page.bounds));
     self.stamp = stamp;
@@ -70,7 +70,7 @@ impl App {
     self.reader.clear_target();
     self.reader.clear_flash();
     self.point(None);
-    self.link_press = crate::links::LinkPress::Idle;
+    self.link_press.cancel();
     self.dismiss_overlay();
     if let Some(mut origin) = self.search_origin {
       origin.cursor =
@@ -110,7 +110,7 @@ impl App {
 
   /// Copies another pane's view of the same document, as a new split.
   pub fn mirror(&mut self, other: &Self) -> Result<()> {
-    self.crop_job = None;
+    self.crop_scan.clear();
     self.layout.copy_view(&other.layout);
     self.doc.margins.clone_from(&other.doc.margins);
     self.text_mode = other.text_mode;

@@ -51,7 +51,7 @@ impl App {
     self.complete = update.complete;
     if let Some(request) = update.request {
       let nearby =
-        if self.crop_job.is_none() { self.nearby_pages() } else { Vec::new() };
+        if self.crop_scan.active() { Vec::new() } else { self.nearby_pages() };
       self.worker.service.prepare(request.keys(), request.urgent(), &nearby);
     }
     self.marks(graphics, screen, out)?;
@@ -190,7 +190,7 @@ impl App {
     }
     self.blank = plain;
     if let Some(panel) = &mut self.panel {
-      panel.view.point(match self.hover {
+      panel.view.point(match self.hover.hit() {
         Hit::Row(index) => Pointing::Row(index),
         Hit::Card(_) => Pointing::Card,
         _ => Pointing::Away,

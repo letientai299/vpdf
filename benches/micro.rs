@@ -42,15 +42,8 @@ fn link_hover() -> Result<()> {
   app.command("2")?;
   let page = app.navigation_position().page;
   anyhow::ensure!(app.doc.links(page)?.len() >= 2, "citations on page 2");
-  let mut index = 0;
-  measure("App::point", || {
-    index = 1 - index;
-    {
-      let (app, _) = app.parts();
-      app.point(on(app.id, page, index));
-    }
-    black_box(app.hover);
-  })?;
+  let hover = on(app.id, page, 0);
+  app.point(hover);
   measure("App::hover_label", || {
     black_box(app.hover_label());
   })?;
@@ -382,7 +375,7 @@ fn crop_toggle() -> Result<()> {
   app.command("100")?;
   app.toggle_crop()?;
   let started = Instant::now();
-  while app.crop_job.is_some() {
+  while app.crop_scan.active() {
     app.crop_updates()?;
     anyhow::ensure!(
       started.elapsed() < Duration::from_secs(30),
@@ -485,32 +478,7 @@ fn preview_scene(text: bool) -> Result<Solo> {
   Ok(app)
 }
 
-fn preview_draw() -> Result<()> {
-  for text in [false, true] {
-    let mut app = preview_scene(text)?;
-    let mut out = Vec::new();
-    {
-      let (app, graphics) = app.parts();
-      app.draw_preview(graphics, &mut out)?;
-    }
-    app.graphics.end(&mut out)?;
-    measure(&format!("preview draw text={text}"), || {
-      out.clear();
-      let Solo { app, graphics } = black_box(&mut app);
-      graphics.begin(&mut out).expect("begin preview");
-      app.draw_preview(graphics, &mut out).expect("warm preview");
-      graphics.end(&mut out).expect("end preview");
-      black_box(&out);
-    })?;
-    measure(&format!("preview stray check text={text}"), || {
-      black_box(&mut app).drop_stray_preview();
-    })?;
-  }
-  Ok(())
-}
-
 fn preview_live() -> Result<()> {
-  preview_draw()?;
   for text in [false, true] {
     let mut app = preview_scene(text)?;
     let mut history = vpdf_ui::prompt::History::default();
@@ -548,17 +516,6 @@ fn routing_pointer() -> Result<()> {
   measure("Session::mouse wheel", || {
     session.app().reading_view().scrub_scroll(0.0);
     session.mouse(black_box(mouse)).expect("reading wheel");
-  })
-}
-
-fn routing_status() -> Result<()> {
-  let mut app = paper(false)?;
-  app.open_panel(vpdf_ui::keys::PanelKind::Help)?;
-  let mut out = Vec::new();
-  measure("App::status owner", || {
-    out.clear();
-    app.status(&mut out, 39).expect("owner badge");
-    black_box(&out);
   })
 }
 
@@ -709,10 +666,8 @@ const CASES: &[(&str, Case)] = &[
   ("cursor key", cursor_key),
   ("preview absent", preview_idle),
   ("preview live", preview_live),
-  ("preview draw", preview_draw),
   ("split frame", split_frame),
   ("routing pointer", routing_pointer),
-  ("routing status", routing_status),
   ("routing fixes outline", routing_outline),
   ("routing fixes panel press", routing_panel_press),
 ];

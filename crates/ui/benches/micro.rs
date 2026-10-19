@@ -4,17 +4,23 @@ use std::hint::black_box;
 use vpdf_model::geometry::Screen;
 use vpdf_model::text::PageId;
 use vpdf_ui::layout::{Layout, visible};
+mod chrome;
 mod clues;
 mod context;
 #[path = "../../../benches/support/fixtures.rs"]
 mod fixtures;
 mod gestures;
+mod home;
 mod overlays;
 mod page;
+mod preview;
+#[path = "../../../benches/support/raster.rs"]
+mod raster;
 use fixtures::{bounds, read as fixture};
 #[path = "../../../benches/support/hash.rs"]
 mod hash;
 mod jumps;
+mod links;
 mod reading;
 mod region;
 mod scrollbar;
@@ -165,6 +171,8 @@ fn main() -> Result<()> {
     ("key prefixes", key_prefixes as fn() -> Result<()>),
     ("projection", projection),
     ("page tiles", tiles::draw),
+    ("preview raster", preview::compose),
+    ("preview draw", preview::draw),
     ("page navigation", page::navigation),
     ("reading scroll", reading::scroll),
     ("reading navigation", reading::navigation),
@@ -175,13 +183,16 @@ fn main() -> Result<()> {
     ("cursorline", || overlays::draw("cursorline")),
     ("landing", || overlays::draw("landing")),
     ("link hover", || overlays::draw("link")),
+    ("link state", links::transitions),
     ("draw_hints", hints),
     ("context draw", context::draw),
+    ("home draw", home::draw),
     ("clues draw", clues::draw),
     ("region draw", region::draw),
     ("scrollbar draw", scrollbar::draw),
     ("route", route),
     ("routing panel", panel),
+    ("routing status", chrome::draw),
   ] {
     if support::selected(name) {
       case()?;

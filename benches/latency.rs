@@ -106,7 +106,7 @@ impl Sim {
   }
 
   fn cropping(&self) -> bool {
-    self.app.crop_job.is_some()
+    self.app.crop_scan.active()
   }
 }
 

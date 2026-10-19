@@ -1,122 +1,64 @@
 use crate::Result;
 use crate::cmdline;
-use crate::panel::{PanelSession, recent_rows};
+use crate::recent::Loader;
 use crate::state::Entry;
-use crossterm::event::{KeyEvent, KeyEventKind};
 use std::io::Write;
 use std::path::PathBuf;
-use unicode_width::UnicodeWidthStr;
 use vpdf_terminal::decode::Event;
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::terminal::{self, At};
+use vpdf_terminal::terminal;
 use vpdf_ui::commands::{self, View};
-use vpdf_ui::keys::{Action, Keys};
+use vpdf_ui::home::Effect;
 use vpdf_ui::layout::Screen;
-use vpdf_ui::panel::{Destination, Row};
-use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
-use vpdf_ui::theme::{self, Color};
+use vpdf_ui::prompt::History;
 
-/// What the start screen asks the session to do.
 #[derive(Debug, Eq, PartialEq)]
 pub enum Outcome {
   Stay,
   Perf(Option<bool>),
   Open(PathBuf),
-  /// Choose a file with `fzf`.
   Pick,
   Quit,
 }
 
-/// Start screen: recent documents and a command line to open files.
 pub struct Home {
-  pub screen: Screen,
-  pub(crate) at: At,
-  pub error: Option<String>,
-  panel: PanelSession,
-  /// Places thumbnails.
+  pub view: vpdf_ui::home::Home,
+  loader: Loader,
   graphics: Graphics,
-  prompt: Option<Prompt>,
-  keys: Keys,
 }
 
 impl Home {
   pub fn new(recent: &[Entry], screen: Screen) -> Self {
-    let mut rows = recent_rows(recent);
-    if rows.is_empty() {
-      rows.push(Row::new(
-        "No recent documents; type :e <file>".into(),
-        String::new(),
-        Destination::None,
-      ));
-    }
-    let wake = vpdf_pdf::jobs::Wake::new(vpdf_terminal::input::wake);
-    let panel = PanelSession::recent(rows, recent, "", &wake);
-    Self {
+    let view = vpdf_ui::home::Home::new(
+      crate::panel::recent_rows(recent),
+      &crate::recent::entries(recent),
       screen,
-      at: At::default(),
-      error: None,
-      panel,
-      graphics: Graphics::live(),
-      prompt: None,
-      keys: Keys::default(),
-    }
+    );
+    let wake = vpdf_pdf::jobs::Wake::new(vpdf_terminal::input::wake);
+    Self { view, loader: Loader::new("", &wake), graphics: Graphics::live() }
   }
 
   pub(crate) fn updates(&mut self) -> bool {
-    self.panel.updates()
+    self.view.shelf_mut().is_some_and(|cards| self.loader.updates(cards))
   }
 
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
-    write!(out, "{}{}", terminal::frame_start(), theme::RESET)?;
+    write!(out, "{}{}", terminal::frame_start(), vpdf_ui::theme::RESET)?;
     self.updates();
     self.graphics.begin(out)?;
-    let at = self.at;
-    for row in 0..self.screen.rows {
-      terminal::clear(out, at, row, self.screen.columns)?;
-    }
-    self.panel.draw(
-      out,
-      at,
-      self.screen.columns,
-      self.screen,
-      Some(&mut self.graphics),
-    )?;
-    let row = self.screen.rows - 1;
-    if let Some(prompt) = &self.prompt {
-      prompt.draw(out, self.screen, at, None)?;
-    } else {
-      let (text, style) = match &self.error {
-        Some(error) => (error.as_str(), theme::ERROR),
-        None => ("Enter open  :e file  :q quit", theme::BAR),
-      };
-      let columns = usize::from(self.screen.columns);
-      let text = terminal::clean(text, columns.saturating_sub(8));
-      let fill = columns.saturating_sub(7 + text.width());
-      write!(
-        out,
-        "{}{} VPDF {style} {text}{}{}\x1b[?25l",
-        at.goto(row, 0u16),
-        theme::badge(Color::Blue),
-        " ".repeat(fill),
-        theme::RESET
-      )?;
-    }
+    self.view.draw(out, &mut self.graphics, crate::state::now(), |cards| {
+      self.loader.request(cards);
+    })?;
     self.graphics.end(out)?;
     write!(out, "{}", terminal::frame_end())?;
     out.flush()?;
     Ok(())
   }
 
-  /// Whether a prompt takes typed and pasted text.
-  pub fn typing(&self) -> bool {
-    self.prompt.is_some()
-  }
-
   pub(crate) fn images_lost(&mut self) {
     self.graphics.lost();
   }
 
-  /// Deletes the thumbnail before the screen goes.
   pub fn release(&mut self, out: &mut impl Write) -> Result<()> {
     self.graphics.clear(out)
   }
@@ -126,112 +68,25 @@ impl Home {
     event: Event,
     history: &mut History,
   ) -> Result<Outcome> {
-    match event {
-      Event::Key(key) if key.kind != KeyEventKind::Release => {
-        self.error = None;
-        self.key(key, history)
+    Ok(match self.view.event(event, history)? {
+      Effect::Stay => Outcome::Stay,
+      Effect::Open(path) => Outcome::Open(path),
+      Effect::Quit => Outcome::Quit,
+      Effect::Command(line) => return command(&line),
+      Effect::Paste(text) => {
+        crate::dnd::pdf(&text).map_or(Outcome::Stay, Outcome::Open)
       }
-      Event::Paste(text) => {
-        // Terminals without drops paste dropped files' paths.
-        let Some(prompt) = &mut self.prompt else {
-          return Ok(
-            crate::dnd::pdf(&text).map_or(Outcome::Stay, Outcome::Open),
-          );
-        };
-        let event = prompt.paste(&text);
-        self.prompt_event(event, history)
+      Effect::Editor(text) => {
+        let edited = crate::editor::edit(&text)?;
+        self.view.replace_prompt(&edited);
+        Outcome::Stay
       }
-      // An open prompt owns the input.
-      Event::Mouse(mouse) if self.prompt.is_none() => {
-        let (rows, cell) = (self.screen.rows - 1, self.screen.cell());
-        let mouse = mouse.cells(cell).and_then(|mut mouse| {
-          mouse.row = mouse.row.checked_sub(self.at.row)?;
-          mouse.column = mouse.column.checked_sub(self.at.column)?;
-          (mouse.row < rows).then_some(mouse)
-        });
-        let Some(mouse) = mouse else {
-          return Ok(Outcome::Stay);
-        };
-        Ok(match self.panel.view.pointer(mouse) {
-          Some(_) => self.selected(),
-          None => Outcome::Stay,
-        })
+      Effect::Complete(before) => {
+        let (start, items) = cmdline::candidates(&before);
+        self.view.complete_prompt(start, items);
+        Outcome::Stay
       }
-      _ => Ok(Outcome::Stay),
-    }
-  }
-
-  fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<Outcome> {
-    let Some(prompt) = &mut self.prompt else {
-      let Some(input) = self.keys.feed(key, vpdf_ui::keys::Grammar::Other)
-      else {
-        return Ok(Outcome::Stay);
-      };
-      if self.panel.view.navigate(input, usize::from(self.screen.rows)) {
-        return Ok(Outcome::Stay);
-      }
-      return Ok(match input.action {
-        Action::Follow | Action::Swap => self.selected(),
-        Action::Command => {
-          self.prompt = Some(Prompt::new(PromptKind::Command));
-          Outcome::Stay
-        }
-        Action::Search(backward) => {
-          self.panel.view.begin_search(backward);
-          self.prompt = Some(Prompt::new(PromptKind::Search(backward)));
-          Outcome::Stay
-        }
-        Action::Quit => Outcome::Quit,
-        _ => Outcome::Stay,
-      });
-    };
-    let event = cmdline::feed(prompt, key, history)?;
-    self.prompt_event(event, history)
-  }
-
-  fn prompt_event(
-    &mut self,
-    event: PromptEvent,
-    history: &mut History,
-  ) -> Result<Outcome> {
-    let Some(prompt) = &mut self.prompt else { return Ok(Outcome::Stay) };
-    let kind = prompt.kind();
-    let search = matches!(kind, PromptKind::Search(_));
-    match event {
-      PromptEvent::Edited if search => self.panel.view.preview(prompt.text()),
-      PromptEvent::Cancel => {
-        self.prompt = None;
-        self.panel.view.abort_search();
-      }
-      PromptEvent::Submit => {
-        let text = prompt.text().to_owned();
-        self.prompt = None;
-        history.push(kind, &text);
-        if !search {
-          return command(&text);
-        }
-        anyhow::ensure!(
-          self.panel.view.finish_search(&text),
-          "Pattern not found: {}",
-          self.panel.view.query()
-        );
-      }
-      _ => {}
-    }
-    Ok(Outcome::Stay)
-  }
-
-  fn selected(&self) -> Outcome {
-    match self
-      .panel
-      .view
-      .rows()
-      .get(self.panel.view.selected())
-      .map(|r| &r.destination)
-    {
-      Some(Destination::File(path)) => Outcome::Open(path.clone()),
-      _ => Outcome::Stay,
-    }
+    })
   }
 }
 
@@ -263,28 +118,37 @@ mod tests {
   use super::*;
 
   #[test]
-  fn panel_ends_at_the_last_column() -> Result<()> {
+  #[ignore = "requires verified public PDF corpus"]
+  fn home_loads_recent_card() -> Result<()> {
+    use std::time::{Duration, Instant};
+    let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
+    let entry = crate::state::tests::entry(&path.to_string_lossy(), 0, 0);
     let screen = Screen {
-      columns: 40,
-      rows: 10,
+      columns: 120,
+      rows: 40,
       cell_width: 8,
       cell_height: 16,
       origin: (0, 0),
     };
-    let mut out = Vec::new();
-    Home::new(&[], screen).draw(&mut out)?;
-    let out = String::from_utf8(out)?;
-    let columns = out.split("\x1b[").filter_map(|code| {
-      let (row, column) = code.split_once('H')?.0.split_once(';')?;
-      row.parse::<u16>().ok()?;
-      column.parse::<u16>().ok()
-    });
-    assert_eq!(columns.max(), Some(screen.columns));
-    for row in 0..screen.rows - 1 {
-      let goto = At::default().goto(row, screen.columns - 1);
-      let border = format!("{goto}{}│", theme::MUTED);
-      assert!(out.contains(&border), "border on row {row}");
+    let mut home = Home::new(&[entry], screen);
+    home.graphics = Graphics::default();
+    let mut output = Vec::new();
+    home.draw(&mut output)?;
+    assert!(String::from_utf8_lossy(&output).contains("Loading…"));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !home.updates() {
+      anyhow::ensure!(Instant::now() < deadline, "Home card never loaded");
+      std::thread::sleep(Duration::from_millis(5));
     }
+    output.clear();
+    home.draw(&mut output)?;
+    let text = String::from_utf8_lossy(&output);
+    for expected in ["Pages", "Metadata", "a=t,"] {
+      assert!(text.contains(expected), "{expected}");
+    }
+    output.clear();
+    home.draw(&mut output)?;
+    assert!(!output.windows(4).any(|bytes| bytes == b"a=t,"));
     Ok(())
   }
 
@@ -296,72 +160,6 @@ mod tests {
     assert_eq!(command("")?, Outcome::Stay);
     assert!(command("e").is_err());
     assert!(command("toc").is_err());
-    Ok(())
-  }
-
-  #[test]
-  fn top_stats_offset_home_and_mouse() -> Result<()> {
-    use crossterm::event::KeyModifiers;
-    use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
-    let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
-    let entry = crate::state::tests::entry(file, 0, 0);
-    let screen = Screen {
-      columns: 80,
-      rows: 20,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 4),
-    };
-    let mut home = Home::new(&[entry], screen);
-    home.at.row = 4;
-    let mut out = Vec::new();
-    home.draw(&mut out)?;
-    let text = String::from_utf8(out)?;
-    assert!(text.contains("\x1b[5;1H"));
-    assert!(!text.contains("\x1b[1;1H"));
-    for (row, expected) in [(1, Outcome::Stay), (5, Outcome::Open(file.into()))]
-    {
-      let click = Event::Mouse(Mouse {
-        kind: MouseKind::Press(Button::LEFT),
-        at: Spot::Cell { column: 5, row },
-        modifiers: KeyModifiers::NONE,
-      });
-      assert_eq!(home.event(click, &mut History::default())?, expected);
-    }
-    Ok(())
-  }
-
-  #[test]
-  fn clicks_wait_for_an_open_prompt() -> Result<()> {
-    use crossterm::event::{KeyCode, KeyModifiers};
-    use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
-    let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
-    let entry = crate::state::tests::entry(file, 0, 0);
-    let screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
-    let click = Event::Mouse(Mouse {
-      kind: MouseKind::Press(Button::LEFT),
-      at: Spot::Cell { column: 5, row: 1 },
-      modifiers: KeyModifiers::NONE,
-    });
-    for (typed, expected) in [
-      (":", Outcome::Stay),
-      ("/", Outcome::Stay),
-      ("", Outcome::Open(file.into())),
-    ] {
-      let mut home = Home::new(std::slice::from_ref(&entry), screen);
-      let mut history = History::default();
-      for ch in typed.chars() {
-        let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
-        home.event(Event::Key(key), &mut history)?;
-      }
-      assert_eq!(home.event(click.clone(), &mut history)?, expected, "{typed}");
-    }
     Ok(())
   }
 }

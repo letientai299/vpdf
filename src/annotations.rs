@@ -87,7 +87,7 @@ impl App {
 
   /// The hovered note icon's areas.
   pub fn hover_icon(&mut self) -> Option<(PageId, Vec<Bounds>)> {
-    let Hit::Note { page, index, text: false } = self.hover else {
+    let Hit::Note { page, index, text: false } = self.hover.hit() else {
       return None;
     };
     let annotations = self.doc.annotations(page).ok()?;

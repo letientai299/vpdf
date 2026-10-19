@@ -71,3 +71,8 @@ pub enum Color {
 pub fn badge(color: Color) -> String {
   format!("\x1b[0;1;7;{}m", color as u8)
 }
+
+/// Preview borders and text over page pixels.
+pub const PREVIEW_BORDER: &str = "\x1b[0;38;2;60;120;230;48;2;255;255;255m";
+pub const PREVIEW_TEXT: &str = "\x1b[0;38;2;20;20;20;48;2;255;255;255m";
+pub const PREVIEW_FILL: [u8; 4] = [255; 4];

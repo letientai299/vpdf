@@ -5,14 +5,10 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
-use vpdf_terminal::terminal::{self, At};
-use vpdf_ui::layout::Screen;
-use vpdf_ui::theme;
+use vpdf_ui::perf::{Overlay, Snapshot};
 
 pub const INTERVAL: Duration = Duration::from_millis(100);
 const SECOND: Duration = Duration::from_secs(1);
-const CELLS: usize = 4;
-const WIDTH: u16 = 16;
 
 #[derive(Clone, Copy)]
 struct Resources {
@@ -80,10 +76,7 @@ pub(crate) struct Monitor {
   started: Instant,
   frames: VecDeque<Instant>,
   output: VecDeque<(Instant, usize)>,
-  cells: Vec<String>,
-  painted: Vec<String>,
-  layout: Option<(u16, u16)>,
-  changed: bool,
+  pub(crate) view: Overlay,
 }
 
 impl Default for Monitor {
@@ -95,10 +88,7 @@ impl Default for Monitor {
       started: now,
       frames: VecDeque::new(),
       output: VecDeque::new(),
-      cells: Vec::new(),
-      painted: Vec::new(),
-      layout: None,
-      changed: true,
+      view: Overlay::default(),
     }
   }
 }
@@ -111,10 +101,6 @@ impl Monitor {
     } else if !on && self.sampler.is_some() {
       *self = Self::default();
     }
-  }
-
-  pub fn invalidate(&mut self) {
-    self.layout = None;
   }
 
   pub fn wait(&self, now: Instant) -> Duration {
@@ -159,75 +145,13 @@ impl Monitor {
       .and_then(|s| s.latest.lock().ok().and_then(|value| *value))
       .filter(|sample| now.saturating_duration_since(sample.at) < SECOND);
     let output: usize = self.output.iter().map(|(_, bytes)| bytes).sum();
-    self.changed = true;
-    self.cells = vec![
-      format!("FPS {:.0}", fps as f64 / span.max(0.001)),
-      number("CPU", resources.and_then(|r| r.cpu), "%"),
-      number("RSS", resources.map(|r| r.rss as f64 / 1_048_576.0), "M"),
-      format!("Out {:.1}K/s", output as f64 / 1024.0 / span.max(0.001)),
-    ];
+    self.view.update(Snapshot {
+      fps: fps as f64 / span.max(0.001),
+      cpu: resources.and_then(|r| r.cpu),
+      rss: resources.map(|r| r.rss),
+      bytes_per_second: output as f64 / span.max(0.001),
+    });
   }
-
-  pub fn draw(
-    &mut self,
-    out: &mut impl Write,
-    screen: Screen,
-    force: bool,
-  ) -> Result<bool> {
-    let layout = (screen.columns, screen.rows);
-    if !force && !self.changed && self.layout == Some(layout) {
-      return Ok(false);
-    }
-    let force = force || self.layout != Some(layout);
-    self.layout = Some(layout);
-    self.changed = false;
-    let lines = self.lines(screen);
-    if !force && lines == self.painted {
-      return Ok(false);
-    }
-    write!(out, "\x1b7{}", theme::BAR)?;
-    let top = 0;
-    for (row, line) in lines.iter().enumerate() {
-      terminal::line(
-        out,
-        At::default(),
-        top + row as u16,
-        line,
-        screen.columns,
-      )?;
-    }
-    write!(out, "{}\x1b8", theme::RESET)?;
-    self.painted = lines;
-    Ok(true)
-  }
-
-  fn lines(&self, screen: Screen) -> Vec<String> {
-    let columns = usize::from((screen.columns / WIDTH).max(1));
-    let width = usize::from(screen.columns.min(WIDTH));
-    let mut cells = self.cells.clone();
-    if cells.is_empty() {
-      cells =
-        ["FPS", "CPU", "RSS", "Out"].map(|label| format!("{label} —")).to_vec();
-    }
-    cells
-      .chunks(columns)
-      .take(usize::from(rows(screen)))
-      .map(|chunk| {
-        chunk.iter().fold(String::new(), |mut line, cell| {
-          let cell: String = cell.chars().take(width).collect();
-          let padding = width.saturating_sub(cell.chars().count());
-          line.push_str(&cell);
-          line.extend(std::iter::repeat_n(' ', padding));
-          line
-        })
-      })
-      .collect()
-  }
-}
-
-pub fn rows(screen: Screen) -> u16 {
-  let columns = (screen.columns / WIDTH).max(1);
-  (CELLS as u16).div_ceil(columns).min(screen.rows.saturating_sub(3))
 }
 
 pub fn switch(argument: &str) -> Result<Option<bool>> {
@@ -237,13 +161,6 @@ pub fn switch(argument: &str) -> Result<Option<bool>> {
     "off" => Ok(Some(false)),
     _ => anyhow::bail!("Usage: :perf [on|off]"),
   }
-}
-
-fn number(label: &str, value: Option<f64>, unit: &str) -> String {
-  value.map_or_else(
-    || format!("{label} —"),
-    |value| format!("{label} {value:.1}{unit}"),
-  )
 }
 
 pub(crate) struct Output<W> {
@@ -284,41 +201,14 @@ fn cpu_percent(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use vpdf_ui::layout::Screen;
 
   fn screen(columns: u16, rows: u16) -> Screen {
     Screen { columns, rows, cell_width: 8, cell_height: 16, origin: (0, 0) }
   }
 
   #[test]
-  fn wraps_and_preserves_content() {
-    let mut monitor = Monitor::default();
-    monitor.sample(Instant::now());
-    for width in [22, 40, 80, 120, 286, 400] {
-      let screen = screen(width, 30);
-      let lines = monitor.lines(screen);
-      assert_eq!(lines.len(), usize::from(rows(screen)));
-      assert!(lines.iter().all(|line| line.chars().count() <= width as usize));
-      let text = lines.join(" ");
-      for label in ["FPS", "CPU", "RSS", "Out"] {
-        assert_eq!(text.matches(label).count(), 1, "{width}: {label}");
-      }
-    }
-    for height in 0..8 {
-      for width in 0..22 {
-        let screen = screen(width, height);
-        assert!(rows(screen) <= height.saturating_sub(3));
-        assert!(
-          monitor
-            .lines(screen)
-            .iter()
-            .all(|line| line.chars().count() <= width as usize)
-        );
-      }
-    }
-  }
-
-  #[test]
-  fn idle_expires_frames_and_output() {
+  fn idle_expires_frames_and_output() -> Result<()> {
     let mut monitor = Monitor::default();
     let start = monitor.started;
     for i in 1..=120 {
@@ -326,12 +216,18 @@ mod tests {
     }
     monitor.output.push_back((start + SECOND, 1024));
     monitor.sample(start + SECOND);
-    assert_eq!(monitor.cells[0], "FPS 120");
-    assert_eq!(monitor.cells[3], "Out 1.0K/s");
-    assert_eq!(monitor.cells.len(), 4);
+    let mut out = Vec::new();
+    monitor.view.draw(&mut out, screen(80, 30), false)?;
+    let text = String::from_utf8(out)?;
+    assert!(text.contains("FPS 120"));
+    assert!(text.contains("Out 1.0K/s"));
     monitor.sample(start + SECOND * 2);
-    assert_eq!(monitor.cells[0], "FPS 0");
-    assert_eq!(monitor.cells[3], "Out 0.0K/s");
+    let mut out = Vec::new();
+    monitor.view.draw(&mut out, screen(80, 30), false)?;
+    let text = String::from_utf8(out)?;
+    assert!(text.contains("FPS 0"));
+    assert!(text.contains("Out 0.0K/s"));
+    Ok(())
   }
 
   #[test]
@@ -348,14 +244,8 @@ mod tests {
   fn repaint_does_not_count_frames() -> Result<()> {
     let mut monitor = Monitor::default();
     let mut out = Vec::new();
-    assert!(monitor.draw(&mut out, screen(80, 30), false)?);
-    assert!(String::from_utf8_lossy(&out).contains("\x1b[1;1H"));
-    out.clear();
-    assert!(!monitor.draw(&mut out, screen(80, 30), false)?);
-    assert_eq!(out, [] as [u8; 0]);
+    assert!(monitor.view.draw(&mut out, screen(80, 30), false)?);
     assert!(monitor.frames.is_empty());
-    assert!(monitor.draw(&mut out, screen(80, 31), false)?);
-    assert!(String::from_utf8(out)?.contains("\x1b8"));
     Ok(())
   }
 

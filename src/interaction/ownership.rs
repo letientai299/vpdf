@@ -10,7 +10,7 @@ impl App {
       }
       InputOwner::Context => self.context_menu.is_some(),
       InputOwner::Peek => {
-        self.peek.as_ref().is_some_and(|peek| peek.origin == Origin::Key)
+        self.peek.as_ref().is_some_and(|peek| peek.origin() == Origin::Key)
       }
       InputOwner::Panel => self.panel_focused(),
       InputOwner::Overview => self.overview.is_some(),
