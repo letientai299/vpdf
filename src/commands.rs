@@ -384,6 +384,7 @@ impl App {
           job.cancel();
         }
         self.cancel_outline();
+        self.cancel_crop()?;
         self.region_job = None;
         self.reader.message = "Jobs canceled".into();
       }
@@ -438,9 +439,14 @@ impl App {
     // A write during the open shows up as a later change.
     let stamp = crate::watch::stamp(&self.path);
     self.doc = Document::open(&self.path, password)?;
+    self.crop_job = None;
+    self.layout.crops = std::sync::Arc::default();
     self.layout.reflow(&self.doc.pages);
     self.stamp = stamp;
     password.clone_into(&mut self.password);
+    if !self.layout.crop.is_none() {
+      self.start_crop();
+    }
     self.worker = RenderWorker::new(&self.path, password, self.doc.lists());
     let previous = std::mem::take(&mut self.search);
     let rerun = !previous.hidden && !previous.query.text.is_empty();

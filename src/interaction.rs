@@ -324,7 +324,7 @@ impl App {
 
   /// Whether page-point `bounds` show, after crop.
   pub(crate) fn bounds_shown(&self, page: PageId, bounds: Bounds) -> bool {
-    let crop = self.layout.crop.apply(self.doc.pages[page.0].bounds);
+    let crop = self.layout.crop_for(page).apply(self.doc.pages[page.0].bounds);
     if bounds.x1 <= crop.x0
       || bounds.x0 >= crop.x1
       || bounds.y1 <= crop.y0

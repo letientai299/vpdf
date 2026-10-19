@@ -2172,7 +2172,12 @@ fn updates(session: &mut Session, out: &mut impl Write) -> Result<bool> {
     dirty |= shelf.is_some_and(crate::recent::Shelf::updates);
     // A failed update shows in its pane instead of ending the session.
     let updated = app.search_updates().and_then(|search| {
-      Ok(search | app.ocr_updates()? | app.outline_updates()?)
+      Ok(
+        search
+          | app.ocr_updates()?
+          | app.outline_updates()?
+          | app.crop_updates()?,
+      )
     });
     dirty |= updated.unwrap_or_else(|error| {
       app.error = Some(error.to_string());

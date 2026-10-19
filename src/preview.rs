@@ -261,7 +261,7 @@ impl App {
       y: top,
       width,
       height,
-      crop: self.layout.crop,
+      crop: self.layout.crop_for(page),
     })
   }
 
@@ -307,6 +307,7 @@ impl App {
       }
       let part = TileKey {
         page,
+        crop: self.layout.crop_for(page),
         scale: layout.scale,
         x: left,
         y: from - start,

@@ -243,7 +243,7 @@ impl App {
 
   /// The page's shown bounds, after crop.
   fn shown_page(&self, page: PageId) -> Bounds {
-    self.layout.crop.apply(self.doc.pages[page.0].bounds)
+    self.layout.crop_for(page).apply(self.doc.pages[page.0].bounds)
   }
 
   /// Click runs: target, word, line, paragraph.

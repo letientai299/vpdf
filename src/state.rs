@@ -157,11 +157,13 @@ impl State {
 impl App {
   /// Copies another pane's view of the same document, as a new split.
   pub fn mirror(&mut self, other: &Self) -> Result<()> {
+    self.crop_job = None;
     self.layout.zoom = other.layout.zoom;
     self.layout.rotation = other.layout.rotation;
     self.layout.crop = other.layout.crop;
+    self.layout.crops = std::sync::Arc::clone(&other.layout.crops);
     self.layout.pan = other.layout.pan;
-    self.doc.margins = other.doc.margins;
+    self.doc.margins.clone_from(&other.doc.margins);
     self.text_mode = other.text_mode;
     self.preview = other.preview;
     self.layout.reflow(&self.doc.pages);
@@ -171,11 +173,15 @@ impl App {
     self.target = None;
     self.reader.scroll = other.reader.scroll;
     self.text_top = other.text_top;
+    if !self.layout.crop.is_none() && self.layout.crops.is_empty() {
+      self.start_crop();
+    }
     Ok(())
   }
 
   /// Returns to a saved position and view.
   pub fn restore(&mut self, entry: &Entry) -> Result<()> {
+    self.crop_job = None;
     self.layout.zoom = entry.zoom.clamp(0.1, 8.0);
     self.marks.clone_from(&entry.marks);
     self.layout.crop = entry.crop;
@@ -186,7 +192,11 @@ impl App {
     self.reader.cursor = self.doc.text(page)?.clamp(cursor);
     self.show_page(page)?;
     self.target = Some(self.reader.cursor);
-    self.ensure_cursor()
+    self.ensure_cursor()?;
+    if !entry.crop.is_none() && self.layout.crops.is_empty() {
+      self.start_crop();
+    }
+    Ok(())
   }
 }
 

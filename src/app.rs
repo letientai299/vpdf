@@ -181,6 +181,7 @@ pub struct App {
   pub preview: Option<bool>,
   pub ocr: Option<crate::ocr::OcrJob>,
   pub outline_load: crate::outline::Loading,
+  pub crop_job: Option<crate::crop::Job>,
   pub animation: Option<crate::animation::Scroll>,
   /// The current wheel gesture over the page.
   pub(crate) wheel: Option<crate::interaction::WheelRun>,
@@ -204,6 +205,7 @@ impl App {
   /// coordinator's document with every page it loaded. A running search
   /// resumes when the pane shows again.
   pub fn trim(&mut self) {
+    self.crop_job = None;
     self.search.worker = None;
     self.doc.trim();
     self.worker =
@@ -281,6 +283,7 @@ impl App {
       preview: None,
       ocr: None,
       outline_load: crate::outline::Loading::Deferred,
+      crop_job: None,
       animation: None,
       wheel: None,
       requested: Vec::new(),

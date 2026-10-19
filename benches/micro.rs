@@ -592,7 +592,7 @@ fn page_list() -> Result<()> {
   })
 }
 
-/// `zc` sampling 24 pages of a book for its margins.
+/// Uncached margin detection across a book.
 fn crop_margins() -> Result<()> {
   let mut doc = Document::open(&corpus("book.pdf")?, "")?;
   vpdf::crop::margins(&mut doc)?;
@@ -612,9 +612,20 @@ fn crop_toggle() -> Result<()> {
   };
   let mut app = App::with_screen(&corpus("book.pdf")?, "", false, screen)?;
   app.command("100")?;
+  app.toggle_crop()?;
+  let started = Instant::now();
+  while app.crop_job.is_some() {
+    app.crop_updates()?;
+    anyhow::ensure!(
+      started.elapsed() < Duration::from_secs(30),
+      "Crop timeout"
+    );
+    std::thread::sleep(Duration::from_millis(1));
+  }
+  app.toggle_crop()?;
   measure("App::toggle_crop on, off", || {
-    drop(black_box(app.toggle_crop()));
-    drop(black_box(app.toggle_crop()));
+    black_box(app.toggle_crop()).expect("crop toggle");
+    black_box(app.toggle_crop()).expect("crop toggle");
   })
 }
 

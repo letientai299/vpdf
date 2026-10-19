@@ -71,6 +71,7 @@ impl App {
   }
 
   pub fn canvas(&mut self, out: &mut impl Write) -> Result<()> {
+    self.request_crop();
     let (screen, left) = (self.uncovered(), self.left);
     let mut tiles = tiles::visible(&self.layout, self.reader.scroll);
     if let Some(animation) = &self.animation {
@@ -106,7 +107,9 @@ impl App {
           missing.push(key);
         }
       }
-      self.worker.request(&missing, urgent);
+      let nearby =
+        if self.crop_job.is_none() { self.nearby_pages() } else { Vec::new() };
+      self.worker.prepare(&missing, urgent, &nearby);
       self.requested = tiles;
     }
     self.marks(screen, out)?;
@@ -115,6 +118,16 @@ impl App {
       self.graphics.veil([0, 0, 0, 70], screen, left, out)?;
     }
     Ok(())
+  }
+
+  pub(crate) fn nearby_pages(&self) -> Vec<PageId> {
+    let scroll =
+      self.animation.as_ref().map_or(self.reader.scroll, |a| a.target);
+    crate::prefetch::nearby(
+      self.doc.pages.len(),
+      self.layout.page_at(scroll),
+      self.heading >= 0.0,
+    )
   }
 
   /// Tiles a screen beyond the view each way, the way of the last scroll
@@ -265,7 +278,10 @@ impl App {
     else {
       return Ok(());
     };
-    let page = self.layout.crop.apply(self.doc.pages[position.page.0].bounds);
+    let page = self
+      .layout
+      .crop_for(position.page)
+      .apply(self.doc.pages[position.page.0].bounds);
     let band = Bounds {
       x0: page.x0,
       x1: page.x1,

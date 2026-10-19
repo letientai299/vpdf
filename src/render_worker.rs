@@ -69,6 +69,7 @@ pub fn yield_to_views(stop: impl Fn() -> bool) -> bool {
 struct Queue {
   /// Latest request in priority order; the coordinator drains it.
   tiles: Vec<TileKey>,
+  pages: Vec<PageId>,
   /// Leading tiles of `tiles` that are on screen; the rest prefetch.
   urgent: usize,
   /// Every tile of the latest request.
@@ -129,7 +130,18 @@ impl RenderWorker {
   /// the first `urgent` prefetch: they draw one band at a time while the
   /// pool is otherwise idle, so a new viewport waits for one band at most.
   pub fn request(&self, tiles: &[TileKey], urgent: usize) {
+    self.prepare(tiles, urgent, &[]);
+  }
+
+  pub(crate) fn prepare(
+    &self,
+    tiles: &[TileKey],
+    urgent: usize,
+    pages: &[PageId],
+  ) {
     if let Ok(mut queue) = self.shared.queue.lock() {
+      queue.pages =
+        pages.iter().take(crate::prefetch::PAGES).copied().collect();
       queue.tiles = tiles.to_vec();
       queue.urgent = urgent.min(tiles.len());
       queue.wanted = tiles.iter().copied().collect();
@@ -167,6 +179,12 @@ enum Kind {
 }
 
 type PageKey = (PageId, u32, u16, Crop);
+
+struct Pending {
+  urgent: Vec<TileKey>,
+  ahead: Vec<TileKey>,
+  pages: Vec<PageId>,
+}
 
 struct Coordinator {
   doc: Handle,
@@ -214,7 +232,7 @@ impl Coordinator {
   }
 
   fn run(mut self) {
-    while let Some((urgent, ahead)) = self.next() {
+    while let Some(Pending { urgent, ahead, pages }) = self.next() {
       self.wholes.clear();
       let drawing = Urgent::new();
       for band in bands(&urgent) {
@@ -229,6 +247,14 @@ impl Coordinator {
           break;
         }
         self.start(band, false);
+      }
+      for page in pages {
+        if !self.idle() || !yield_to_views(|| !self.current()) {
+          break;
+        }
+        self.touched.insert(page);
+        // Speculative failures must not interrupt reading.
+        let _ = self.doc.display(page, &self.lists);
       }
     }
   }
@@ -268,7 +294,7 @@ impl Coordinator {
 
   /// Waits for a request; drops queued bands it no longer wants and
   /// returns its on-screen and prefetch tiles not already in flight.
-  fn next(&mut self) -> Option<(Vec<TileKey>, Vec<TileKey>)> {
+  fn next(&mut self) -> Option<Pending> {
     let waiting = |queue: &mut Queue| !queue.fresh && !queue.stop;
     let mut queue = loop {
       let queue = self.shared.queue.lock().ok()?;
@@ -292,9 +318,10 @@ impl Coordinator {
     let mut ahead = urgent.split_off(queue.urgent);
     urgent.retain(|key| !queue.dispatched.contains(key));
     ahead.retain(|key| !queue.dispatched.contains(key));
+    let pages = std::mem::take(&mut queue.pages);
     drop(queue);
     drop(dropped);
-    Some((urgent, ahead))
+    Some(Pending { urgent, ahead, pages })
   }
 
   /// Takes this coordinator's queued bands with no tile `queue` still
@@ -613,7 +640,38 @@ mod tests {
     Ok(file)
   }
 
-  /// Scans wait while on-screen work lives, and a stop ends the wait.
+  #[test]
+  fn prepares_latest_neighborhood() -> Result<()> {
+    let file = tempfile::Builder::new().suffix(".pdf").tempfile()?;
+    crate::fixtures::pdf(file.path(), &["body"; 30], "")?;
+    let doc = Document::open(file.path(), "")?;
+    let worker = RenderWorker::idle(file.path(), "", doc.lists());
+    let drawing = Urgent::new();
+    worker.prepare(&[], 0, &crate::prefetch::nearby(30, PageId(0), true));
+    let latest = crate::prefetch::nearby(30, PageId(29), false);
+    worker.prepare(&[], 0, &latest);
+    drop(drawing);
+    let started = Instant::now();
+    loop {
+      let lists = doc.lists();
+      let lists = lists.lock().expect("display lists");
+      if latest.iter().all(|page| lists.contains(page)) {
+        break;
+      }
+      drop(lists);
+      anyhow::ensure!(
+        started.elapsed() < Duration::from_secs(10),
+        "Prefetch timeout"
+      );
+      thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+      worker.results.try_recv().is_err(),
+      "preprocessing does not rasterize"
+    );
+    Ok(())
+  }
+
   #[test]
   fn scans_yield_to_views() {
     assert!(yield_to_views(|| false));

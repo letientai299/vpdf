@@ -1561,6 +1561,7 @@ fn alt_clicks_pick_figures() -> Result<()> {
 fn sweeps_stay_on_page() -> Result<()> {
   let (_directory, mut session) = words(false)?;
   action(session.app(), Action::Crop)?;
+  common::crop_loaded(session.app())?;
   // Zoomed out, the pane edge is off the page.
   for _ in 0..4 {
     action(session.app(), Action::Zoom(-1))?;
@@ -1569,7 +1570,7 @@ fn sweeps_stay_on_page() -> Result<()> {
   let from = glyph_cell(&mut session, 0, 2)?;
   let edge = (session.app().screen.columns - 1, from.1 + 2);
   let app = session.app();
-  let shown = app.layout.crop.apply(app.doc.pages[0].bounds);
+  let shown = app.layout.crop_for(PageId(0)).apply(app.doc.pages[0].bounds);
   let off = app.page_point(edge.0, edge.1, None).expect("a point");
   assert!(off.1 > shown.x1, "the edge lies past the page");
   session.mouse(alt(MouseEventKind::Down(MouseButton::Left), from))?;

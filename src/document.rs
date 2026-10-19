@@ -1,6 +1,5 @@
 use crate::Result;
 use crate::cache::Cache;
-use crate::layout::Crop;
 use crate::text::{Bounds, Glyph, Line, PageId, Text, printable};
 use anyhow::ensure;
 use mupdf::pdf::PdfDocument;
@@ -134,8 +133,8 @@ pub struct Heading {
 pub type Lists = Mutex<Cache<PageId, Arc<DisplayList>>>;
 
 /// Pages whose display lists stay cached: the visible pages and the
-/// next screen in either direction.
-const LISTS: usize = 8;
+/// ten-page neighborhood and nearby render tiles.
+const LISTS: usize = 16;
 
 pub struct Document {
   pub native: PdfDocument,
@@ -145,8 +144,8 @@ pub struct Document {
   pub title: String,
   /// The outline was inferred from text layout, not authored.
   pub inferred: bool,
-  /// Margins `zc` found; sampling again evicts the visible lists.
-  pub margins: Option<Crop>,
+  /// Cached page margins for `zc`.
+  pub margins: Option<Arc<crate::crop::Margins>>,
   texts: Cache<PageId, Arc<Text>>,
   lists: Arc<Lists>,
   ocr: Cache<PageId, Arc<Text>>,

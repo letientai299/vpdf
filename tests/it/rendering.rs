@@ -50,8 +50,21 @@ fn crop_preserves_body_ink() -> Result<()> {
   for file in
     ["paper.pdf", "book.pdf", "form.pdf", "ocr.pdf", "scan.pdf", "review.pdf"]
   {
-    let mut doc = Document::open(&root.join(file), "")?;
-    let crop = vpdf::crop::margins(&mut doc)?;
+    let mut app = vpdf::app::App::with_screen(
+      &root.join(file),
+      "",
+      false,
+      vpdf::layout::Screen {
+        columns: 80,
+        rows: 50,
+        cell_width: 8,
+        cell_height: 16,
+        origin: (0, 0),
+      },
+    )?;
+    app.toggle_crop()?;
+    crate::common::crop_loaded(&mut app)?;
+    let crop = app.layout.crop_for(PageId(0));
     assert!(crop.0.iter().all(|trim| *trim < 400), "{file}: {crop:?}");
     if matches!(file, "paper.pdf" | "book.pdf") {
       assert!(crop.0[0] + crop.0[2] > 100, "{file} side margins: {crop:?}");
@@ -60,8 +73,12 @@ fn crop_preserves_body_ink() -> Result<()> {
       assert!(crop.0[0].abs_diff(crop.0[2]) <= 10, "{crop:?}");
       assert!(crop.0[0] > 140, "{crop:?}");
     }
-    eprintln!("{file}: {} pages, {crop:?}", doc.pages.len());
-    for page in 0..doc.pages.len() {
+    for page in 0..app.doc.pages.len() {
+      app.command(&(page + 1).to_string())?;
+      app.crop_updates()?;
+      crate::common::crop_loaded(&mut app)?;
+      let crop = app.layout.crop_for(PageId(page));
+      let doc = &mut app.doc;
       let cropped = crop.apply(doc.pages[page].bounds);
       let mut stamp = None;
       for line in &doc.text(PageId(page))?.lines {
@@ -84,7 +101,7 @@ fn crop_preserves_body_ink() -> Result<()> {
           );
         }
       }
-      check_crop_pixels(&mut doc, PageId(page), crop, stamp)?;
+      check_crop_pixels(doc, PageId(page), crop, stamp)?;
     }
   }
   Ok(())
@@ -171,7 +188,7 @@ fn crop_ignores_margin_stamps() -> Result<()> {
       "",
     )?;
     let mut doc = Document::open(&path, "")?;
-    let crop = vpdf::crop::margins(&mut doc)?;
+    let crop = vpdf::crop::margins(&mut doc)?[0];
     assert_eq!(doc.cache_bytes(), 0, "margin detection filled the text cache");
     assert_eq!(
       crop.0[0] > 170,
@@ -187,8 +204,7 @@ fn crop_ignores_margin_stamps() -> Result<()> {
   Ok(())
 }
 
-/// `zc` on, off, and on again samples margins once, so only the first
-/// toggle can evict the visible pages' display lists.
+/// Cropping keeps visible display lists cached.
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn crop_samples_once() -> Result<()> {
@@ -215,13 +231,15 @@ fn crop_samples_once() -> Result<()> {
     Ok(interpreted)
   };
   frame(&mut app)?;
+  let kept: Vec<_> =
+    app.layout.visible(app.reader.scroll).map(PageId).collect();
   let mut interpreted = Vec::new();
   for _ in 0..3 {
     app.toggle_crop()?;
+    crate::common::crop_loaded(&mut app)?;
+    assert!(kept.iter().all(|page| lists.lock().unwrap().contains(page)));
     interpreted.push(frame(&mut app)?);
   }
-  // The first toggle samples, which shows the count sees evictions.
-  assert!(interpreted[0] > 0);
   assert_eq!(interpreted[1..], [0, 0]);
   Ok(())
 }
@@ -373,6 +391,186 @@ fn projected_mouse_tracks_glyphs() -> Result<()> {
       })?;
       assert_eq!(app.reader.cursor, expected, "{rotation} {zoom}");
     }
+  }
+  Ok(())
+}
+
+#[test]
+fn crop_cancel_and_cache() -> Result<()> {
+  use vpdf::app::App;
+  use vpdf::layout::Screen;
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("crop.pdf");
+  crate::common::text_pdf(&path, &["Body text for crop testing"])?;
+  let screen = Screen {
+    columns: 80,
+    rows: 40,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut app = App::with_screen(&path, "", false, screen)?;
+  let mut saved = vpdf::state::State::default();
+  saved.remember(&app);
+  app.toggle_crop()?;
+  assert!(app.crop_job.is_some());
+  app.toggle_crop()?;
+  assert!(app.crop_job.is_none() && app.layout.crop.is_none());
+  assert!(!app.crop_updates()?);
+  app.toggle_crop()?;
+  app.command("cancel")?;
+  assert!(app.crop_job.is_none() && app.layout.crop.is_none());
+  assert!(!app.crop_updates()?);
+  app.toggle_crop()?;
+  app.restore(&saved.recent[0])?;
+  assert!(app.crop_job.is_none() && app.layout.crop.is_none());
+  app.toggle_crop()?;
+  crate::common::crop_loaded(&mut app)?;
+  assert!(!app.layout.crop.is_none());
+  assert_eq!(app.layout.crops.len(), 1);
+  let crop = app.layout.crop_for(PageId(0));
+  app.toggle_crop()?;
+  assert!(app.layout.crop_for(PageId(0)).is_none());
+  app.toggle_crop()?;
+  assert!(app.crop_job.is_none());
+  assert_eq!(app.layout.crop_for(PageId(0)), crop);
+  let mut mirrored = App::with_screen(&path, "", false, screen)?;
+  mirrored.mirror(&app)?;
+  assert_eq!(mirrored.layout.crop_for(PageId(0)), crop);
+  saved.remember(&app);
+  let mut restored = App::with_screen(&path, "", false, screen)?;
+  restored.restore(&saved.recent[0])?;
+  crate::common::crop_loaded(&mut restored)?;
+  assert_eq!(restored.layout.crop_for(PageId(0)), crop);
+  restored.reload_with("")?;
+  assert!(restored.crop_job.is_some());
+  crate::common::crop_loaded(&mut restored)?;
+  assert_eq!(restored.layout.crop_for(PageId(0)), crop);
+  Ok(())
+}
+
+#[test]
+fn crop_follows_rapid_space() -> Result<()> {
+  use std::time::{Duration, Instant};
+  use vpdf::app::App;
+  use vpdf::keys::{Action, Input};
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("nearby.pdf");
+  crate::common::pages_pdf(&path, &[&["Body text for nearby crops"][..]; 100])?;
+  let mut app = App::with_screen(
+    &path,
+    "",
+    false,
+    vpdf::layout::Screen {
+      columns: 80,
+      rows: 40,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    },
+  )?;
+  app.toggle_crop()?;
+  crate::common::crop_loaded(&mut app)?;
+  assert!(app.layout.crops.len() <= 24);
+  app.command("40")?;
+  app.crop_updates()?;
+  for _ in 0..30 {
+    app.action(Input::plain(Action::Screen(1)))?;
+    app.crop_updates()?;
+  }
+  let target = app
+    .animation
+    .as_ref()
+    .map_or(app.reader.scroll, |animation| animation.target);
+  let page = app.layout.page_at(target);
+  assert!(page.0 > 40);
+  crate::common::crop_loaded(&mut app)?;
+  let target = app.animation.as_ref().expect("crop keeps scrolling").target;
+  assert_eq!(app.layout.page_at(target), page);
+  app.animation = None;
+  app.reader.scroll = target;
+  let started = Instant::now();
+  loop {
+    app.crop_updates()?;
+    if app.crop_job.is_none() {
+      break;
+    }
+    anyhow::ensure!(
+      started.elapsed() < Duration::from_secs(10),
+      "Crop timeout"
+    );
+    std::thread::sleep(Duration::from_millis(5));
+  }
+  let anchor = app.layout.page_at(app.reader.scroll);
+  for index in anchor.0.saturating_sub(4)..(anchor.0 + 5).min(100) {
+    assert!(!app.layout.crop_for(PageId(index)).is_none(), "page {index}");
+  }
+  assert!(app.layout.crops.len() <= 44, "unvisited pages stay lazy");
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn book_body_stays_centered() -> Result<()> {
+  use vpdf::app::App;
+  use vpdf::layout::Screen;
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut paths = vec![root.join("book.pdf")];
+  if let Some(extra) = std::env::var_os("VPDF_EXTRA") {
+    paths.extend(std::env::split_paths(&extra));
+  }
+  let screen = Screen {
+    columns: 80,
+    rows: 50,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  for path in paths {
+    let mut app = App::with_screen(&path, "", false, screen)?;
+    app.toggle_crop()?;
+    crate::common::crop_loaded(&mut app)?;
+    let mut scales = Vec::new();
+    for index in 182..185 {
+      let page = PageId(index);
+      app.reader.scroll = app.layout.pages[index].top;
+      app.crop_updates()?;
+      crate::common::crop_loaded(&mut app)?;
+      let text = app.doc.text(page)?;
+      let body = text
+        .lines
+        .iter()
+        .filter_map(vpdf::text::Line::span)
+        .filter(|line| line.width() > app.doc.pages[index].bounds.width() * 0.5)
+        .reduce(vpdf::text::Bounds::union)
+        .expect("body text");
+      let projected = app.layout.project(page, body, 0.0);
+      let center = projected.centre().0;
+      assert!(
+        (center - screen.width() / 2.0).abs() < 5.0,
+        "{} page {}: center {center}",
+        path.display(),
+        index + 1
+      );
+      scales.push(app.layout.pages[index].scale);
+      let crop = app.layout.crop_for(page);
+      eprintln!(
+        "{} page {}: center {center:.2}, scale {}, {crop:?}",
+        path.display(),
+        index + 1,
+        app.layout.pages[index].scale
+      );
+      assert!(
+        vpdf::tiles::visible(&app.layout, app.layout.pages[index].top)
+          .iter()
+          .filter(|tile| tile.page == page)
+          .all(|tile| tile.crop == crop)
+      );
+    }
+    assert!(
+      scales.iter().max().unwrap().abs_diff(*scales.iter().min().unwrap()) <= 5,
+      "{scales:?}"
+    );
   }
   Ok(())
 }

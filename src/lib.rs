@@ -59,6 +59,7 @@ mod panel_search;
 mod paragraph;
 mod perf;
 pub mod pointer;
+mod prefetch;
 pub mod preview;
 mod prime;
 pub mod prompt;

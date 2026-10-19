@@ -73,6 +73,7 @@ pub struct Layout {
   pub rotation: u16,
   pub pan: f32,
   pub crop: Crop,
+  pub crops: std::sync::Arc<crate::crop::Margins>,
 }
 
 impl Layout {
@@ -85,6 +86,7 @@ impl Layout {
       rotation: 0,
       pan: 0.0,
       crop: Crop::default(),
+      crops: std::sync::Arc::default(),
     };
     layout.reflow(pages);
     layout
@@ -93,8 +95,8 @@ impl Layout {
   pub fn reflow(&mut self, pages: &[PageInfo]) {
     self.pages.clear();
     let mut top = 0.0;
-    for page in pages {
-      let bounds = self.crop.apply(page.bounds);
+    for (index, page) in pages.iter().enumerate() {
+      let bounds = self.crop_for(PageId(index)).apply(page.bounds);
       let width = if self.rotation.is_multiple_of(180) {
         bounds.width()
       } else {
@@ -118,6 +120,13 @@ impl Layout {
 
   pub fn clamp_scroll(&self, scroll: f32) -> f32 {
     scroll.clamp(0.0, (self.total - self.screen.height()).max(0.0))
+  }
+
+  pub fn crop_for(&self, page: PageId) -> Crop {
+    if self.crop.is_none() {
+      return self.crop;
+    }
+    self.crops.get(page)
   }
 
   pub fn visible(&self, scroll: f32) -> std::ops::Range<usize> {

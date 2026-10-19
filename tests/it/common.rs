@@ -124,3 +124,16 @@ fn pages_of(
   }
   write_pdf(path, &objects, "")
 }
+
+pub fn crop_loaded(app: &mut App) -> Result<()> {
+  let started = Instant::now();
+  while app.crop_job.is_some() {
+    app.crop_updates()?;
+    anyhow::ensure!(
+      started.elapsed() < Duration::from_secs(30),
+      "Crop timeout"
+    );
+    std::thread::sleep(Duration::from_millis(5));
+  }
+  Ok(())
+}

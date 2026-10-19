@@ -74,7 +74,7 @@ pub fn visible(layout: &Layout, scroll: f32) -> Vec<TileKey> {
       y: 0,
       width: data.width as i32,
       height: data.height as i32,
-      crop: layout.crop,
+      crop: layout.crop_for(PageId(page)),
     };
     tiles.extend(cover(whole, left..right, top..bottom));
   }
