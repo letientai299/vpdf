@@ -856,7 +856,7 @@ type Negotiation<'a> =
 fn negotiate_pushes_then_reads_back() -> Result<()> {
   let kitty = [&version("kitty(0.49.1)"), OK, b"\x1b[?0u", DA1].concat();
   let tmux = [&version("tmux 3.8"), DA1].concat();
-  let (on, off) = (b"\x1b[?5u".as_slice(), b"\x1b[?4u".as_slice());
+  let (on, off) = (b"\x1b[?29u".as_slice(), b"\x1b[?4u".as_slice());
   let refused = Some(KeyLack::Refused(Some(ALTERNATE_KEYS)));
   let direct = || Route::Direct;
   let plain = Tmux { extended_keys: false, ..tmux_info(None) };
@@ -873,7 +873,7 @@ fn negotiate_pushes_then_reads_back() -> Result<()> {
       Some(KeyLack::Refused(None)),
     ),
     ("stale DA1", direct(), &kitty, &[b"", on], None),
-    ("stale flags first", direct(), &kitty, &[b"\x1b[?0u\x1b[?5u"], None),
+    ("stale flags first", direct(), &kitty, &[b"\x1b[?0u\x1b[?29u"], None),
     ("stale flags round", direct(), &kitty, &[b"\x1b[?0u", b"", on], None),
     ("tmux", tmux_with(Some("kitty(0.49.1)")), &tmux, &[b""], None),
     (
@@ -904,7 +904,8 @@ fn negotiate_pushes_then_reads_back() -> Result<()> {
     assert_eq!(lack, want, "{label}");
     assert_eq!(asked.len(), readbacks.len(), "{label}");
     let mut requests = asked.iter();
-    let push: &[u8] = if tmux { MODIFY_OTHER_KEYS } else { b"\x1b[>5u\x1b[?u" };
+    let push: &[u8] =
+      if tmux { MODIFY_OTHER_KEYS } else { b"\x1b[>29u\x1b[?u" };
     if let Some(first) = requests.next() {
       assert_eq!(first, push, "{label}");
     }

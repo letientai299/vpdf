@@ -116,6 +116,51 @@ fn kitty_keys_source() {
   assert_eq!(decode(&[b"\x1b[57441;2u\x1b[57428u"]), []);
 }
 
+#[test]
+fn shift_space_scrolls_up() {
+  let cases: &[(&[u8], i32)] = &[
+    (b" ", 1),
+    (b"\x1b[32;2u", -1),
+    (b"\x1b[32:32;2u", -1),
+    (b"\x1b[32:32;2;32u", -1),
+    (b"\x1b[32:32:32;2u", -1),
+    (b"\x1b[32::32;2u", -1),
+    (b"\x1b[27;2;32~", -1),
+  ];
+  for &(bytes, direction) in cases {
+    let Event::Key(event) = decode(&[bytes])[0] else {
+      panic!("not a key");
+    };
+    for grammar in [crate::keys::Grammar::Normal, crate::keys::Grammar::Objects]
+    {
+      let input = Keys::default().feed(event, grammar).unwrap();
+      assert_eq!(input.action, Action::Screen(direction), "{bytes:?}");
+    }
+  }
+}
+
+#[test]
+fn associated_text_preserves_typing() {
+  check(&[
+    (b"\x1b[97;1;97u", char('a', NONE)),
+    (b"\x1b[97:65;2;65u", char('A', NONE)),
+    (b"\x1b[101;;233u", char('é', NONE)),
+    (b"\x1b[0;;229u", char('å', NONE)),
+    (b"\x1b[0;;20320:22909u", Event::Paste("你好".into())),
+    (b"\x1b[97;5;97u", char('a', CTRL)),
+  ]);
+  let history = History::default();
+  let mut prompt = Prompt::new(PromptKind::Search(true));
+  for event in decode(&[b"\x1b[101;;233u\x1b[0;;20320:22909u"]) {
+    match event {
+      Event::Key(key) => prompt.feed(key, &history),
+      Event::Paste(text) => prompt.paste(&text),
+      _ => panic!("not text"),
+    };
+  }
+  assert_eq!(prompt.text, "é你好");
+}
+
 /// Legacy bytes, as crossterm decodes them.
 #[test]
 fn legacy_keys() {

@@ -130,9 +130,7 @@ impl Keys {
 
   pub fn feed(&mut self, key: KeyEvent, grammar: Grammar) -> Option<Input> {
     let key = normalize(key);
-    if key.code == KeyCode::Esc
-      || key == KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)
-    {
+    if cancels(key) {
       self.clear();
       return Some(self.finish(Action::Cancel));
     }
@@ -275,6 +273,12 @@ pub fn normalize(mut key: KeyEvent) -> KeyEvent {
 /// No modifier but Shift, which uppercase carries.
 pub fn plain(key: KeyEvent) -> bool {
   (key.modifiers - KeyModifiers::SHIFT).is_empty()
+}
+
+pub fn cancels(key: KeyEvent) -> bool {
+  key.code == KeyCode::Esc
+    || (key.code == KeyCode::Char('c')
+      && key.modifiers == KeyModifiers::CONTROL)
 }
 
 /// Keys a binding name types; `token`'s inverse.

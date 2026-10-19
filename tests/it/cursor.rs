@@ -388,6 +388,24 @@ fn counted_overview_boundaries() -> Result<()> {
 }
 
 #[test]
+fn count_cancel_preserves_cursor() -> Result<()> {
+  for text in [false, true] {
+    for cancel in [b"\x1b[99;5u".as_slice(), b"\x1b[99;69u", b"\x1b[99;133u"] {
+      let (_directory, mut session) = crate::mouse::session(text)?;
+      let app = session.app();
+      keys(app, b"i3")?;
+      assert_eq!(app.reader.mode(), Mode::Cursor);
+      keys(app, cancel)?;
+      assert_eq!(app.reader.mode(), Mode::Cursor, "{cancel:?}");
+      assert_eq!(app.keys.pending(), "");
+      keys(app, cancel)?;
+      assert_eq!(app.reader.mode(), Mode::Normal);
+    }
+  }
+  Ok(())
+}
+
+#[test]
 fn cancel_layer_preserves_visual() -> Result<()> {
   for text in [false, true] {
     for layer in [b"/results".as_slice(), b"gp", b"f"] {

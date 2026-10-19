@@ -337,15 +337,16 @@ fn join(numbers: &[u32], separator: &str) -> String {
   numbers.iter().map(u32::to_string).collect::<Vec<_>>().join(separator)
 }
 
-/// Kitty keyboard flags the reader pushes: disambiguation, which it
-/// requires, and alternate keys, which serve other layouts.
-const KEYBOARD: u32 = DISAMBIGUATE | ALTERNATE_KEYS;
+/// Preserve text and text-producing key modifiers.
+const KEYBOARD: u32 = DISAMBIGUATE | ALTERNATE_KEYS | ALL_KEYS | TEXT;
 
 /// The required flag: without it Esc, Ctrl-i, and Alt chords share
 /// bytes with other keys.
 const DISAMBIGUATE: u32 = 1;
 
 const ALTERNATE_KEYS: u32 = 4;
+const ALL_KEYS: u32 = 8;
+const TEXT: u32 = 16;
 
 /// xterm modifyOtherKeys mode 2, which tmux turns into extended keys.
 const MODIFY_OTHER_KEYS: &[u8] = b"\x1b[>4;2m";

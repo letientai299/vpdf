@@ -571,6 +571,7 @@ fn kitty(params: &[u8]) -> Option<Event> {
   };
   if modifiers.contains(KeyModifiers::SHIFT)
     && let Some(shifted) = number(params, 0, 1).and_then(char::from_u32)
+    && code != KeyCode::Char(shifted)
   {
     code = KeyCode::Char(shifted);
     modifiers -= KeyModifiers::SHIFT;
@@ -580,6 +581,25 @@ fn kitty(params: &[u8]) -> Option<Event> {
     && let Some(base) = number(params, 0, 2).and_then(char::from_u32)
   {
     code = KeyCode::Char(base);
+  }
+  if (modifiers - KeyModifiers::SHIFT).is_empty()
+    && kind != KeyEventKind::Release
+    && matches!(code, KeyCode::Char(_))
+    && let Some(text) = params.split(|&byte| byte == b';').nth(2)
+  {
+    let text: String = std::str::from_utf8(text)
+      .ok()?
+      .split(':')
+      .map(|code| {
+        code.parse().ok().and_then(char::from_u32).filter(|ch| !ch.is_control())
+      })
+      .collect::<Option<_>>()?;
+    let mut chars = text.chars();
+    let ch = chars.next()?;
+    if chars.next().is_some() {
+      return Some(Event::Paste(text));
+    }
+    code = KeyCode::Char(ch);
   }
   Some(Event::Key(KeyEvent::new_with_kind_and_state(
     code, modifiers, kind, state,
