@@ -525,7 +525,7 @@ fn routing_outline() -> Result<()> {
   app.panel.as_mut().expect("outline").view.focus(false);
   measure("App::track_outline", || {
     app.track_outline();
-    black_box(app.current_section);
+    black_box(app.outline.current());
   })?;
   // Landed views match headings by glyph.
   app.doc.load_outline()?;
@@ -533,7 +533,7 @@ fn routing_outline() -> Result<()> {
   app.follow(&target)?;
   measure("App::track_outline landed", || {
     app.track_outline();
-    black_box(app.current_section);
+    black_box(app.outline.current());
   })
 }
 

@@ -1,7 +1,12 @@
 use crate::text::Position;
-use vpdf_reader::reader::{Location, Operator};
+use vpdf_reader::reader::{JumpDescription, Location, Operator};
 use vpdf_search::query::Query;
 use vpdf_search::search::{self, Hit};
+
+mod definition;
+pub use definition::Definition;
+#[cfg(test)]
+mod definition_tests;
 
 #[derive(Default)]
 pub enum Phase {
@@ -41,10 +46,45 @@ pub struct Search {
   origin: Position,
   /// The search an open prompt replaces, and whether it was hidden.
   previous: Option<(Query, bool)>,
+  prompt_origin: Option<Location>,
   yank: Option<(Location, Operator)>,
 }
 
 impl Search {
+  pub fn prompt_origin(&self) -> Option<Location> {
+    self.prompt_origin
+  }
+
+  pub(crate) fn begin_prompt(&mut self, origin: Location) {
+    self.prompt_origin = Some(origin);
+    self.remember_previous();
+  }
+
+  pub(crate) fn take_prompt_origin(&mut self) -> Option<Location> {
+    self.prompt_origin.take()
+  }
+
+  pub(crate) fn relocate_prompt(&mut self, origin: Location) {
+    self.prompt_origin = Some(origin);
+  }
+
+  /// Reload keeps the open prompt's location.
+  pub fn reset_document(&mut self) -> Option<Query> {
+    let previous = std::mem::take(self);
+    self.prompt_origin = previous.prompt_origin;
+    (!previous.hidden && !previous.query.text.is_empty())
+      .then_some(previous.query)
+  }
+
+  pub fn description(&self, position: Position) -> JumpDescription {
+    let mut description =
+      JumpDescription::Search { query: self.query.clone(), ordinal: None };
+    if matches!(self.phase, Phase::Complete) {
+      description.finish_search(&self.query, &self.hits, position);
+    }
+    description
+  }
+
   pub fn generation(&self) -> u64 {
     self.generation
   }
@@ -136,15 +176,15 @@ impl Search {
     definition
   }
 
-  pub fn remember_previous(&mut self) {
+  pub(crate) fn remember_previous(&mut self) {
     self.previous = Some((self.query.clone(), self.hidden));
   }
 
-  pub fn forget_previous(&mut self) {
+  pub(crate) fn forget_previous(&mut self) {
     self.previous = None;
   }
 
-  pub fn take_previous(&mut self) -> Option<(Query, bool)> {
+  pub(crate) fn take_previous(&mut self) -> Option<(Query, bool)> {
     self.previous.take()
   }
 

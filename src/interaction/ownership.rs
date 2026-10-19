@@ -1,4 +1,4 @@
-use super::{Action, App, BAR_HINT, InputOwner, Origin, Result};
+use super::{App, BAR_HINT, InputOwner, Origin, Result};
 
 impl App {
   pub fn input_owner(&self) -> InputOwner {
@@ -26,22 +26,6 @@ impl App {
     if self.region.take().is_some() && self.reader.message == BAR_HINT {
       self.reader.notice("");
     }
-  }
-
-  pub(crate) fn overlay_transfer(&mut self, action: Action) -> bool {
-    if !matches!(
-      action,
-      Action::Window(_)
-        | Action::Tab(_)
-        | Action::LocalFocus
-        | Action::History(_)
-        | Action::Panel(_)
-        | Action::ClosePanel
-    ) {
-      return false;
-    }
-    self.dismiss_overlay();
-    true
   }
 
   /// Ends pending keys and notes.

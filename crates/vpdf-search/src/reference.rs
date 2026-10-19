@@ -1,11 +1,22 @@
-use crate::text::Position;
+use crate::text::{Line, Position};
 use fancy_regex::Regex;
 use std::sync::OnceLock;
+use vpdf_model::document::{Heading, Target};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Lookup {
   pub reference: Reference,
   pub origin: Position,
+}
+
+impl From<Lookup> for crate::query::Query {
+  fn from(lookup: Lookup) -> Self {
+    Self {
+      text: lookup.reference.title(),
+      reference: Some(lookup),
+      ..Self::default()
+    }
+  }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -49,6 +60,34 @@ fn kind(name: &str) -> Kind {
 }
 
 impl Reference {
+  pub fn at_glyph(line: &Line, glyph: usize) -> Option<Self> {
+    let byte = line.glyphs.iter().take(glyph).map(|g| g.ch.len_utf8()).sum();
+    Self::at(&line.text(), byte)
+  }
+
+  pub fn headings<'a>(
+    &self,
+    outline: &'a [Heading],
+    pages: usize,
+  ) -> Vec<(usize, &'a Target)> {
+    let mut targets = Vec::new();
+    for (index, heading) in outline.iter().enumerate() {
+      if !self.heading(&heading.title) {
+        continue;
+      }
+      let page = match heading.target {
+        Target::Page(page) | Target::Point { page, .. } => page,
+        Target::Uri(_) => continue,
+      };
+      if page.0 < pages
+        && !targets.iter().any(|(_, target)| *target == &heading.target)
+      {
+        targets.push((index, &heading.target));
+      }
+    }
+    targets
+  }
+
   pub fn at(line: &str, byte: usize) -> Option<Self> {
     for found in references().captures_iter(line) {
       let found = found.ok()?;
@@ -123,3 +162,6 @@ impl Reference {
     None
   }
 }
+
+#[cfg(test)]
+mod tests;

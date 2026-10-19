@@ -37,12 +37,7 @@ impl App {
 
   /// A page's label and the section the reader names at its top.
   pub(crate) fn page_line(&mut self, page: PageId) -> String {
-    let section = self.top_section(page);
-    let label = self.doc.label(page);
-    match section.map(|index| self.doc.outline[index].title.trim()) {
-      Some(title) => format!("p. {label} · {title}"),
-      None => format!("p. {label}"),
-    }
+    self.reading_view().page_line(page)
   }
 
   pub(crate) fn chrome_view<'a>(&'a self, file: &'a str) -> Bar<'a> {
@@ -63,7 +58,8 @@ impl App {
         pages: self.doc.pages.len(),
         label: if self.covered() { "" } else { self.doc.label(page) },
         section: self
-          .current_section
+          .outline
+          .current()
           .map(|index| self.doc.outline[index].title.trim()),
       },
       names: Names {
@@ -130,7 +126,10 @@ mod tests {
   fn section_has_separate_style() -> Result<()> {
     let mut app = app()?;
     app.doc.load_outline()?;
-    app.current_section = Some(0);
+    let target = app.doc.outline[0].target.clone();
+    app.follow(&target)?;
+    app.track_outline();
+    assert_eq!(app.outline.current(), Some(0));
     let title = app.doc.outline[0].title.trim();
     let mut out = Vec::new();
     app.status(&mut out, 23)?;
@@ -164,7 +163,7 @@ mod tests {
         app.track_outline();
         let line = app.page_line(page);
         let shown = line.split_once(" · ").map(|(_, title)| title);
-        let section = app.current_section;
+        let section = app.outline.current();
         let title = section.map(|index| app.doc.outline[index].title.trim());
         assert_eq!(shown, title, "{name} p. {}", page.0 + 1);
       }
@@ -174,7 +173,7 @@ mod tests {
         let Target::Point { .. } = heading.target else { continue };
         app.follow(&heading.target)?;
         app.track_outline();
-        let Some(section) = app.current_section else {
+        let Some(section) = app.outline.current() else {
           panic!("{name} {index}: no section");
         };
         // Duplicate entries share a target.

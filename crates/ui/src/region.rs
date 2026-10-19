@@ -76,7 +76,29 @@ pub enum Transition {
   Close,
   Clear,
   Command,
+  Transfer,
   Unhandled,
+}
+
+enum Route {
+  Select(bool),
+  Run,
+  Close,
+  Command,
+  Transfer,
+  Ignore,
+}
+
+fn route(action: Action) -> Route {
+  match action {
+    Action::Motion(Motion::Left | Motion::Up) => Route::Select(false),
+    Action::Motion(Motion::Right | Motion::Down) => Route::Select(true),
+    Action::Follow => Route::Run,
+    Action::Quit | Action::Cancel | Action::Region => Route::Close,
+    Action::Command => Route::Command,
+    _ if crate::input::transfers_overlay(action) => Route::Transfer,
+    _ => Route::Ignore,
+  }
 }
 
 impl Region {
@@ -128,6 +150,10 @@ impl Region {
     true
   }
 
+  pub fn allows(&self, action: Action) -> bool {
+    self.bar.is_none() || !matches!(route(action), Route::Ignore)
+  }
+
   pub fn input(&mut self, action: Action) -> Transition {
     let Some(bar) = &mut self.bar else {
       return if matches!(
@@ -139,19 +165,20 @@ impl Region {
         Transition::Clear
       };
     };
-    match action {
-      Action::Motion(Motion::Left | Motion::Up) => {
+    match route(action) {
+      Route::Select(false) => {
         bar.action = ACTIONS[(bar.action as usize + 3) % ACTIONS.len()].1;
         Transition::Stay
       }
-      Action::Motion(Motion::Right | Motion::Down) => {
+      Route::Select(true) => {
         bar.action = ACTIONS[(bar.action as usize + 1) % ACTIONS.len()].1;
         Transition::Stay
       }
-      Action::Follow => Transition::Run(bar.action),
-      Action::Quit | Action::Cancel | Action::Region => Transition::Close,
-      Action::Command => Transition::Command,
-      _ => Transition::Unhandled,
+      Route::Run => Transition::Run(bar.action),
+      Route::Close => Transition::Close,
+      Route::Command => Transition::Command,
+      Route::Transfer => Transition::Transfer,
+      Route::Ignore => Transition::Stay,
     }
   }
 

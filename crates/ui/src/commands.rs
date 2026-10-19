@@ -47,7 +47,7 @@ impl Spec {
     Self { view, ..self }
   }
 
-  pub fn available(&self, view: View) -> bool {
+  fn available(&self, view: View) -> bool {
     match view {
       View::Document => true,
       View::Recent => self.view != View::Document,
@@ -65,7 +65,7 @@ impl Spec {
 }
 
 /// Command name and trimmed argument of `line`.
-pub fn parse(line: &str) -> (&str, &str) {
+fn parse(line: &str) -> (&str, &str) {
   let line = line.trim();
   line
     .split_once(char::is_whitespace)
@@ -140,7 +140,7 @@ pub const COMMANDS: &[Spec] = &[
 ];
 
 /// Command named `name` or aliased to it.
-pub fn exact(
+fn exact(
   name: &str,
   installed: impl Fn(&str) -> bool,
 ) -> Option<&'static Spec> {
@@ -148,7 +148,7 @@ pub fn exact(
 }
 
 /// Exact names and aliases win; otherwise a unique prefix.
-pub fn lookup(
+fn lookup(
   name: &str,
   installed: impl Fn(&str) -> bool,
 ) -> Option<&'static Spec> {
@@ -160,9 +160,53 @@ pub fn lookup(
   matches.next().is_none().then_some(first)
 }
 
+pub enum Resolution<'a> {
+  Empty,
+  Page(&'a str),
+  Command { spec: &'static Spec, argument: &'a str },
+}
+
+pub fn resolve(
+  line: &str,
+  view: View,
+  installed: impl Fn(&str) -> bool,
+  label: impl Fn(&str) -> bool,
+) -> crate::Result<Resolution<'_>> {
+  let (name, argument) = parse(line);
+  if name.is_empty() {
+    return Ok(Resolution::Empty);
+  }
+  let spec = lookup(name, &installed);
+  if view == View::Home {
+    let spec =
+      spec.ok_or_else(|| anyhow::anyhow!("Unknown command: {name}"))?;
+    anyhow::ensure!(
+      spec.available(view),
+      "Open a document before :{}",
+      spec.name
+    );
+    return Ok(Resolution::Command { spec, argument });
+  }
+  // Labels must not bypass command availability in a recent-document view.
+  if view == View::Recent {
+    anyhow::ensure!(
+      spec.is_some_and(|spec| spec.available(view)),
+      "Open a document before :{name}"
+    );
+  }
+  // Labels like `iv` beat prefixes like `:info`, not exact names or aliases.
+  let page = exact(name, installed).is_none() && label(name);
+  if page || name.chars().all(|ch| ch.is_ascii_digit()) {
+    return Ok(Resolution::Page(name));
+  }
+  let spec = spec.ok_or_else(|| anyhow::anyhow!("Unknown command: {name}"))?;
+  Ok(Resolution::Command { spec, argument })
+}
+
 /// Byte offset and replacements for the word before the cursor.
 pub fn candidates(
   before: &str,
+  view: View,
   installed: impl Fn(&str) -> bool,
   supply: impl Fn(Complete, &str) -> Vec<String>,
 ) -> (usize, Vec<String>) {
@@ -170,12 +214,18 @@ pub fn candidates(
   let Some((name, rest)) = before[start..].split_once(char::is_whitespace)
   else {
     let word = &before[start..];
-    let names = commands(&installed).map(|spec| spec.name.to_owned()).collect();
+    let names = commands(&installed)
+      .filter(|spec| spec.available(view))
+      .map(|spec| spec.name.to_owned())
+      .collect();
     return (start, prefixed(names, word));
   };
   let argument = rest.trim_start();
   let start = before.len() - argument.len();
-  let items = match lookup(name, installed).map(|spec| spec.complete) {
+  let items = match lookup(name, installed)
+    .filter(|spec| spec.available(view))
+    .map(|spec| spec.complete)
+  {
     Some(Complete::Language) => {
       prefixed(supply(Complete::Language, argument), argument)
     }
@@ -228,7 +278,8 @@ mod tests {
 
   #[test]
   fn completes_command_names() {
-    let candidates = |before| candidates(before, |_| true, |_, _| Vec::new());
+    let candidates =
+      |before| candidates(before, View::Document, |_| true, |_, _| Vec::new());
     assert_eq!(candidates("  pa"), (2, vec!["password".into()]));
     assert_eq!(candidates("info 1").1, Vec::<String>::new());
     assert_eq!(candidates("cu"), (0, vec!["cursorline".into()]));
@@ -243,7 +294,8 @@ mod tests {
       lookup("fz", |program| program == "fzf").map(|s| s.name),
       Some("fzf")
     );
-    let missing = candidates("fz", |_| false, |_, _| unreachable!());
+    let missing =
+      candidates("fz", View::Document, |_| false, |_, _| unreachable!());
     assert_eq!(missing.1, [] as [String; 0]);
   }
 
@@ -272,5 +324,89 @@ mod tests {
         assert_eq!(alias.available(View::Recent), recent);
       }
     }
+  }
+
+  #[test]
+  fn resolution_preserves_labels_and_view_error_order() {
+    for (view, line, found, expected, reads) in [
+      (View::Document, "  ", true, "empty", 0),
+      (View::Document, " i ", true, "page:i", 1),
+      (View::Document, "info", true, "info:", 0),
+      (View::Document, "e  paper.pdf ", true, "edit:paper.pdf", 0),
+      (View::Document, "3", false, "page:3", 1),
+      (View::Document, "c", true, "page:c", 1),
+      (View::Document, "c", false, "Unknown command: c", 1),
+      (View::Recent, "rel", true, "Open a document before :rel", 0),
+      (View::Recent, "3", true, "Open a document before :3", 0),
+      (View::Recent, "per on", true, "page:per", 1),
+      (View::Home, "rel", true, "Open a document before :reload", 0),
+      (View::Home, "c", true, "Unknown command: c", 0),
+      (View::Home, "e paper.pdf", true, "edit:paper.pdf", 0),
+    ] {
+      let consulted = std::cell::Cell::new(0);
+      let resolved = resolve(
+        line,
+        view,
+        |_| true,
+        |_| {
+          consulted.set(consulted.get() + 1);
+          found
+        },
+      );
+      let actual = match resolved {
+        Ok(Resolution::Empty) => "empty".into(),
+        Ok(Resolution::Page(name)) => format!("page:{name}"),
+        Ok(Resolution::Command { spec, argument }) => {
+          format!("{}:{argument}", spec.name)
+        }
+        Err(error) => error.to_string(),
+      };
+      assert_eq!(actual, expected, "{view:?} {line}");
+      assert_eq!(consulted.get(), reads, "{view:?} {line}");
+    }
+  }
+
+  #[test]
+  fn completion_uses_execution_scope() {
+    for view in [View::Home, View::Recent, View::Document] {
+      let complete =
+        |before| candidates(before, view, |_| true, |_, _| unreachable!());
+      let expected = if view == View::Document {
+        vec!["recent", "reload"]
+      } else {
+        vec!["recent"]
+      };
+      assert_eq!(
+        complete("  re"),
+        (2, expected.into_iter().map(str::to_owned).collect())
+      );
+      assert_eq!(complete("RE").1, complete("re").1);
+      assert_eq!(
+        complete("mouse ").1,
+        if view == View::Home { vec![] } else { vec!["on", "off"] }
+      );
+      assert_eq!(complete("tab ").1, Vec::<String>::new());
+    }
+    assert_eq!(
+      candidates("ocr e", View::Home, |_| true, |_, _| unreachable!()).1,
+      Vec::<String>::new()
+    );
+    assert_eq!(
+      candidates("split p", View::Home, |_| true, |_, _| unreachable!()).1,
+      Vec::<String>::new()
+    );
+    assert_eq!(
+      candidates(
+        "e p",
+        View::Home,
+        |_| true,
+        |kind, prefix| {
+          assert_eq!(kind, Complete::Path);
+          assert_eq!(prefix, "p");
+          vec!["paper.pdf".into()]
+        }
+      ),
+      (2, vec!["paper.pdf".into()])
+    );
   }
 }

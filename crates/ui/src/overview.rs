@@ -103,6 +103,42 @@ impl Grid {
   }
 }
 
+enum Route {
+  Horizontal(bool),
+  Vertical(bool),
+  Edge(bool),
+  Scroll(f32),
+  Screen(i32),
+  Open,
+  Close,
+  Pass,
+  Ignore,
+}
+
+fn route(action: Action) -> Route {
+  match action {
+    Action::Motion(Motion::Left) => Route::Horizontal(false),
+    Action::Motion(Motion::Right) => Route::Horizontal(true),
+    Action::Motion(Motion::Up) => Route::Vertical(false),
+    Action::Motion(Motion::Down) => Route::Vertical(true),
+    Action::Motion(Motion::First) => Route::Edge(false),
+    Action::Motion(Motion::Last) => Route::Edge(true),
+    Action::Scroll(amount) => Route::Scroll(amount),
+    Action::Screen(direction) => Route::Screen(direction),
+    Action::Follow | Action::Swap => Route::Open,
+    Action::Quit | Action::Cancel | Action::Overview => Route::Close,
+    Action::History(_)
+    | Action::Command
+    | Action::Window(_)
+    | Action::Tab(_)
+    | Action::Panel(_)
+    | Action::ClosePanel
+    | Action::LocalFocus
+    | Action::YankPath => Route::Pass,
+    _ => Route::Ignore,
+  }
+}
+
 pub enum Navigation {
   Handled,
   Open,
@@ -137,6 +173,10 @@ impl Overview {
   pub fn choose(&mut self, page: PageId) {
     self.selected = page.0;
   }
+  pub fn allows(action: Action) -> bool {
+    !matches!(route(action), Route::Ignore)
+  }
+
   pub fn navigate(
     &mut self,
     input: Input,
@@ -147,44 +187,26 @@ impl Overview {
     let count = input.count;
     let page = grid.columns * grid.rows;
     let selected = self.selected;
-    self.selected = match input.action {
-      Action::Motion(Motion::Left) => selected.saturating_sub(count),
-      Action::Motion(Motion::Right) => selected + count,
-      Action::Motion(Motion::Up) => {
-        selected.saturating_sub(count * grid.columns)
-      }
-      Action::Motion(Motion::Down) => selected + count * grid.columns,
-      Action::Motion(Motion::First | Motion::Last) if input.explicit => {
-        count.saturating_sub(1)
-      }
-      Action::Motion(Motion::First) => 0,
-      Action::Motion(Motion::Last) => last,
-      Action::Scroll(amount) => {
+    self.selected = match route(input.action) {
+      Route::Horizontal(false) => selected.saturating_sub(count),
+      Route::Horizontal(true) => selected + count,
+      Route::Vertical(false) => selected.saturating_sub(count * grid.columns),
+      Route::Vertical(true) => selected + count * grid.columns,
+      Route::Edge(_) if input.explicit => count.saturating_sub(1),
+      Route::Edge(false) => 0,
+      Route::Edge(true) => last,
+      Route::Scroll(amount) => {
         let step = (amount * page as f32) as isize * count as isize;
         selected.saturating_add_signed(step)
       }
-      Action::Screen(direction) => {
+      Route::Screen(direction) => {
         let step = screen_step(grid.rows) * grid.columns * count;
         selected.saturating_add_signed(direction as isize * step as isize)
       }
-      Action::Follow | Action::Swap => {
-        return Navigation::Open;
-      }
-      Action::Quit | Action::Cancel | Action::Overview => {
-        return Navigation::Close;
-      }
-      Action::History(_) => return Navigation::Pass,
-      // `:`, panes, tabs, and history pass through.
-      _ => {
-        return if matches!(
-          input.action,
-          Action::Command | Action::Window(_) | Action::Tab(_)
-        ) {
-          Navigation::Pass
-        } else {
-          Navigation::Handled
-        };
-      }
+      Route::Open => return Navigation::Open,
+      Route::Close => return Navigation::Close,
+      Route::Pass => return Navigation::Pass,
+      Route::Ignore => return Navigation::Handled,
     }
     .min(last);
     self.reveal(grid);

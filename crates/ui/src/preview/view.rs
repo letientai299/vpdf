@@ -35,6 +35,34 @@ pub enum Event {
   Follow,
   Dismiss,
   Action(Input),
+  Transfer(Input),
+  Ignored,
+}
+
+enum Route {
+  Rows(f32),
+  Scroll(f32),
+  Screen(i32),
+  Follow,
+  Dismiss,
+  Command,
+  Transfer,
+  Ignore,
+}
+
+fn route(action: Action) -> Route {
+  match action {
+    Action::Motion(Motion::Down) => Route::Rows(1.0),
+    Action::Motion(Motion::Up) => Route::Rows(-1.0),
+    Action::Rows(rows) => Route::Rows(rows as f32),
+    Action::Scroll(amount) => Route::Scroll(amount),
+    Action::Screen(direction) => Route::Screen(direction),
+    Action::Follow => Route::Follow,
+    Action::Quit | Action::Peek => Route::Dismiss,
+    Action::Command => Route::Command,
+    _ if crate::input::transfers_overlay(action) => Route::Transfer,
+    _ => Route::Ignore,
+  }
 }
 
 pub enum Press {
@@ -258,18 +286,22 @@ impl Preview {
     }
   }
 
+  pub fn allows(action: Action) -> bool {
+    !matches!(route(action), Route::Ignore)
+  }
+
   pub fn input(input: Input, layout: &Layout) -> Event {
-    let rows = match input.action {
-      Action::Motion(Motion::Down) => 1.0,
-      Action::Motion(Motion::Up) => -1.0,
-      Action::Scroll(amount) => amount * preview_rows(layout) as f32,
-      Action::Screen(direction) => {
+    let rows = match route(input.action) {
+      Route::Rows(rows) => rows,
+      Route::Scroll(amount) => amount * preview_rows(layout) as f32,
+      Route::Screen(direction) => {
         direction as f32 * screen_step(preview_rows(layout)) as f32
       }
-      Action::Rows(rows) => rows as f32,
-      Action::Follow => return Event::Follow,
-      Action::Quit | Action::Peek => return Event::Dismiss,
-      _ => return Event::Action(input),
+      Route::Follow => return Event::Follow,
+      Route::Dismiss => return Event::Dismiss,
+      Route::Command => return Event::Action(input),
+      Route::Transfer => return Event::Transfer(input),
+      Route::Ignore => return Event::Ignored,
     };
     Event::Scroll(rows * input.count as f32)
   }

@@ -100,7 +100,8 @@ impl App {
         self.context_menu = None;
         return self.action(input);
       }
-      Transition::Unhandled if self.overlay_transfer(input.action) => {
+      Transition::Transfer => {
+        self.dismiss_overlay();
         return self.action(input);
       }
       Transition::Stay | Transition::Unhandled => {}

@@ -62,11 +62,12 @@ fn notation_matches_help() {
 /// Clue names type their bindings back.
 #[test]
 fn names_parse_back_to_their_tokens() {
-  let shown = ["", "g", "z", "C-w", "[", "]"].into_iter().flat_map(|prefix| {
+  let shown = ["g", "z", "C-w", "[", "]"].into_iter().flat_map(|prefix| {
     let labels = clues(prefix).into_iter().map(|(label, _)| label);
     labels.map(|label| label.replace(' ', "Space")).collect::<Vec<_>>()
   });
-  for label in shown {
+  let bindings = BINDINGS.iter().map(|(sequence, ..)| sequence.to_string());
+  for label in shown.chain(bindings) {
     let keys = parse(&label).unwrap_or_default();
     let tokens: Option<String> = keys.into_iter().map(token).collect();
     let plain = label.replace("S-Space", "\0").replace("Space", " ");
@@ -375,4 +376,81 @@ fn escape_resets_pending_count() {
     keys.feed(shifted, Grammar::Objects).unwrap().action,
     Action::Screen(-1)
   );
+}
+
+#[test]
+fn yank_clue_names_the_panel_continuation() {
+  assert!(clues("y").iter().any(|(key, _)| key == "y"));
+  assert_eq!(key_for(Action::YankLine), Some("yy"));
+  let mut keys = Keys::default();
+  assert!(keys.feed(key('y'), Grammar::Panel).is_none());
+  assert_eq!(
+    keys.feed(key('y'), Grammar::Panel).unwrap().action,
+    Action::YankLine
+  );
+}
+
+fn clues(prefix: &str) -> Vec<(String, &'static str)> {
+  let mut keys = Keys::default();
+  let grammar = if prefix == "y" { Grammar::Panel } else { Grammar::Objects };
+  for key in parse(prefix).unwrap() {
+    keys.feed(key, grammar);
+  }
+  keys.clues(grammar, |_| true)
+}
+
+#[test]
+fn clues_preserve_pending_counts_and_registers() {
+  for grammar in [
+    Grammar::Normal,
+    Grammar::Cursor,
+    Grammar::Objects,
+    Grammar::Panel,
+    Grammar::Other,
+  ] {
+    for prefix in ["g", "z", "i", "a", "y", "C-w", "[", "]"] {
+      let mut keys = Keys::default();
+      let mut remaining = 2;
+      for key in parse(&format!("\"a2{prefix}")).unwrap() {
+        if let Some(input) = keys.feed(key, grammar) {
+          assert_eq!(input.count, 2);
+          remaining = 1;
+        }
+      }
+      let before = keys.pending();
+      let clues = keys.clues(grammar, |_| true);
+      for (suffix, _) in clues {
+        let mut replay = keys.clone();
+        let inputs: Vec<_> = parse(&suffix)
+          .unwrap()
+          .into_iter()
+          .filter_map(|key| replay.feed(key, grammar))
+          .collect();
+        assert_eq!(inputs.len(), 1, "{prefix} {suffix}");
+        assert_eq!(inputs[0].count, remaining);
+        assert_eq!(inputs[0].register, 'a');
+      }
+      assert_eq!(keys.pending(), before);
+    }
+  }
+}
+
+#[test]
+fn yank_clues_follow_the_live_operator_grammar() {
+  let mut keys = Keys::default();
+  keys.feed(key('y'), Grammar::Normal);
+  let labels: Vec<_> = keys
+    .clues(Grammar::Objects, |action| action != Action::Yank)
+    .into_iter()
+    .map(|(key, _)| key)
+    .collect();
+  assert_eq!(labels, ["Y", "p"]);
+  assert_eq!(keys.awaiting(), Some("y"));
+  assert_eq!(
+    keys.feed(key('y'), Grammar::Objects).unwrap().action,
+    Action::Yank
+  );
+  let mut keys = Keys::default();
+  keys.feed(key('i'), Grammar::Cursor);
+  assert_eq!(keys.clues(Grammar::Cursor, |_| true), [] as [(String, &str); 0]);
 }

@@ -292,8 +292,8 @@ fn cursor_sections_use_position_after_scrolling() -> Result<()> {
     settle(&mut app);
     app.track_outline();
     assert!(app.reader.cursor < heading);
-    assert_eq!(app.current_section, Some(0));
-    let section = app.current_section.unwrap();
+    assert_eq!(app.outline.current(), Some(0));
+    let section = app.outline.current().unwrap();
     let Target::Point { page, x, y } = app.doc.outline[section].target else {
       panic!("Expected heading point");
     };

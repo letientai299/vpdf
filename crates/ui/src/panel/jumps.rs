@@ -1,6 +1,6 @@
 use super::layout::Layout;
 use super::{JumpDescription, Row};
-pub fn label(description: &JumpDescription) -> String {
+pub(super) fn label(description: &JumpDescription) -> String {
   match description {
     JumpDescription::Heading(title) => format!("Heading: {title}"),
     JumpDescription::Link(excerpt) => {

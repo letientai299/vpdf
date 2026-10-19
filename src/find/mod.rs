@@ -28,9 +28,17 @@ impl App {
   }
 
   pub(crate) fn start_query(&mut self, query: &Query) -> Result<()> {
+    self.start_query_from(query, self.search.prompt_origin().map(|o| o.cursor))
+  }
+
+  fn start_query_from(
+    &mut self,
+    query: &Query,
+    origin: Option<crate::text::Position>,
+  ) -> Result<()> {
     search::compile(&query.text, query.whole)?;
-    let origin = match self.search_origin {
-      Some(origin) => origin.cursor,
+    let origin = match origin {
+      Some(origin) => origin,
       None => self.reading_position()?,
     };
     let worker = self.search_worker.get_or_insert_with(|| {
@@ -89,24 +97,8 @@ impl App {
           continue;
         }
       };
-      if let Some(target) = self.search.preview(done) {
-        // Typing previews matches without filling the jump list; each
-        // judges the view the search started from, as Vim's incsearch.
-        if let Some(origin) = self.search_origin {
-          self.reading_view().preview(origin, target)?;
-        } else {
-          self.go_to(target, true)?;
-          self
-            .reader
-            .describe_jump(Some(self.search_description(self.reader.cursor)));
-        }
-        self.search.stop_jumping();
-      }
-      self.reader.notice(format!(
-        "{} matches{}",
-        self.search.hits().len(),
-        if done { "" } else { " · searching" }
-      ));
+      let mut reading = self.reading_parts();
+      reading.view.preview_search(reading.search, done)?;
       if done {
         if self.search.complete() {
           self.finish_definition()?;
@@ -132,9 +124,8 @@ impl App {
     {
       panel.view.begin_search(backward);
     } else {
-      let location = self.location()?;
-      self.search_origin = Some(location);
-      self.search.remember_previous();
+      let mut reading = self.reading_parts();
+      reading.view.begin_search(reading.search)?;
     }
     self.prompt = Some(Prompt::new(PromptKind::Search(backward)));
     Ok(())
@@ -165,59 +156,14 @@ impl App {
       }
       return Ok(());
     }
-    if let Some(operator) = self.reader.take_operator() {
-      let origin = self.search_origin.take().unwrap_or(self.location()?);
-      self.search.forget_previous();
-      let query = if query.is_empty() {
-        self.search.query().text.clone()
-      } else {
-        query.to_owned()
-      };
-      self.restore_location(origin)?;
-      search::compile(&query, false)?;
-      if query.is_empty() {
-        return Ok(());
-      }
-      let same = Query { text: query.clone(), backward, ..Query::default() };
-      if matches!(self.search.phase(), Phase::Idle)
-        || self.search.query() != &same
-      {
-        self.start_search(&query, backward, false)?;
-      }
-      self.search.stop_jumping();
-      self.search.yank_after(origin, operator);
-      return self.finish_search_yank();
+    let mut reading = self.reading_parts();
+    let submission =
+      reading.view.prepare_search(reading.search, query, backward)?;
+    if let Some(query) = submission.query() {
+      self.start_query_from(query, submission.origin())?;
     }
-    let origin = self.search_origin.take();
-    self.search.forget_previous();
-    let running = !matches!(self.search.phase(), Phase::Idle);
-    let same = Query { text: query.to_owned(), backward, ..Query::default() };
-    if !(running && self.search.query() == &same) {
-      self.search_origin = origin;
-      let result = self.start_search(query, backward, false);
-      self.search_origin = None;
-      result?;
-    }
-    if let Some(origin) = origin.filter(|o| o.cursor != self.reader.cursor) {
-      self.reader.record(origin);
-    }
-    if self.search.query() == &same
-      && matches!(
-        self.search.phase(),
-        Phase::Running { jump: false } | Phase::Complete
-      )
-      && self
-        .search
-        .hits()
-        .binary_search_by_key(&self.reader.cursor, |hit| hit.first)
-        .is_ok()
-    {
-      self
-        .reader
-        .describe_jump(Some(self.search_description(self.reader.cursor)));
-      self.flash_landing();
-    }
-    Ok(())
+    let mut reading = self.reading_parts();
+    reading.view.finish_search(reading.search, submission)
   }
 
   fn finish_search_yank(&mut self) -> Result<()> {
@@ -232,15 +178,15 @@ impl App {
     }
     let running = matches!(self.search.phase(), Phase::Running { .. });
     self.cancel_search();
-    self.return_to_origin()?;
-    self.search_origin = None;
-    let Some((query, hidden)) = self.search.take_previous() else {
+    let mut reading = self.reading_parts();
+    let Some(restore) = reading.view.abort_search(reading.search, running)?
+    else {
       return Ok(());
     };
-    if running || &query != self.search.query() {
+    if let Some(query) = restore.query {
       self.rerun(&query)?;
     }
-    self.search.set_hidden(hidden);
+    self.search.set_hidden(restore.hidden);
     Ok(())
   }
 
@@ -272,48 +218,17 @@ impl App {
   }
 
   fn return_to_origin(&mut self) -> Result<()> {
-    let Some(origin) = self.search_origin else { return Ok(()) };
-    self.restore_location(origin)
+    let mut reading = self.reading_parts();
+    reading.view.return_to_origin(reading.search)
   }
 
   pub fn next_result(&mut self, reverse: bool, count: usize) -> Result<()> {
-    let cursor = self.reading_position()?;
-    let hits = self.search.hits();
-    let backward = self.search.query().backward != reverse;
-    let Some(index) =
-      search::next(hits, &cursor, backward, count, |hit| hit.first)
-    else {
-      self.reader.notice("No matches");
-      return Ok(());
-    };
-    let target = hits[index].first;
-    let wrapped = if backward { target >= cursor } else { target <= cursor };
-    self.go_to(target, true)?;
-    self
-      .reader
-      .describe_jump(Some(self.search_description(self.reader.cursor)));
-    self.search.set_hidden(false);
-    self.reader.notice(if wrapped {
-      "Search wrapped".into()
-    } else {
-      format!("Match {} / {}", index + 1, self.search.hits().len())
-    });
-    Ok(())
+    let mut reading = self.reading_parts();
+    reading.view.next_result(reading.search, reverse, count)
   }
 
   pub fn word_search(&mut self) -> Result<()> {
-    let Some(cursor) = self.explicit_target()? else { return Ok(()) };
-    let text = self.doc.text(cursor.page)?;
-    let Some(line) = text.lines.get(cursor.line) else {
-      return Ok(());
-    };
-    let at = cursor.glyph;
-    if line.glyphs.get(at).is_none_or(|g| crate::text::class(g.ch) != 1) {
-      return Ok(());
-    }
-    let Some((first, last)) = line.run(at) else { return Ok(()) };
-    let query: String =
-      line.glyphs[first..=last].iter().map(|g| g.ch).collect();
+    let Some(query) = self.reading_view().word_query()? else { return Ok(()) };
     self.start_search(&query, false, true)
   }
 }

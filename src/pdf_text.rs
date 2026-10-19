@@ -46,3 +46,9 @@ impl vpdf_ui::source::Raster for PdfText<'_> {
     vpdf_pdf::raster::visit_area(self.0, key, visit)
   }
 }
+
+impl vpdf_ui::source::Outline for PdfText<'_> {
+  fn outline(&self) -> &[vpdf_model::document::Heading] {
+    &self.0.outline
+  }
+}

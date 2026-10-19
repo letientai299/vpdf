@@ -6,6 +6,8 @@ pub(crate) struct Reading<'a> {
   pub search: &'a mut vpdf_ui::find::Search,
   pub bar: &'a mut vpdf_ui::scrollbar::Bar,
   pub gesture: &'a mut vpdf_ui::input::gesture::Gesture,
+  pub outline: &'a mut vpdf_ui::reading::Outline,
+  pub panel: Option<&'a mut Panel>,
 }
 
 impl App {
@@ -34,6 +36,8 @@ impl App {
       search: &mut self.search,
       bar: &mut self.bar,
       gesture: &mut self.gesture,
+      outline: &mut self.outline,
+      panel: self.panel.as_mut().map(|panel| &mut panel.view),
     }
   }
 
@@ -104,10 +108,6 @@ impl App {
 
   pub(crate) fn location(&mut self) -> Result<Location> {
     self.reading_view().location()
-  }
-
-  pub(crate) fn restore_location(&mut self, location: Location) -> Result<()> {
-    self.reading_view().restore_location(location)
   }
 
   /// Page point at a page-area pixel, for a view to return to.

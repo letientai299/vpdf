@@ -1,5 +1,6 @@
 use crate::app::App;
 use std::time::{Duration, Instant};
+use vpdf_ui::input::InputOwner;
 use vpdf_ui::pointer::Items;
 
 impl App {
@@ -10,16 +11,36 @@ impl App {
     if !self.clues.poll(Instant::now()) {
       return false;
     }
-    let Some(prefix) = self.keys.awaiting().map(str::to_owned) else {
-      return false;
-    };
     let registers = self
       .reader
       .registers
       .entries()
       .map(|(&name, text)| (name, text.as_ref()));
     let marks = self.marks.iter().map(|(&name, &at)| (name, at));
-    self.clues.show(vpdf_ui::clues::items(&prefix, registers, marks))
+    let owner = self.input_owner();
+    let grammar =
+      owner.grammar(self.reader.mode(), self.reader.operator.is_some());
+    let items = vpdf_ui::clues::items(
+      &self.keys,
+      grammar,
+      |action| match owner {
+        InputOwner::Context => {
+          self.context_menu.as_ref().is_some_and(|menu| menu.allows(action))
+        }
+        InputOwner::Peek => vpdf_ui::preview::Preview::allows(action),
+        InputOwner::Region => {
+          self.region.as_ref().is_some_and(|region| region.allows(action))
+        }
+        InputOwner::Overview => vpdf_ui::overview::Overview::allows(action),
+        InputOwner::Panel => {
+          self.panel.as_ref().is_some_and(|panel| panel.view.allows(action))
+        }
+        _ => true,
+      },
+      registers,
+      marks,
+    );
+    self.clues.show(items)
   }
 
   pub fn clue_wait(&self) -> Option<Duration> {

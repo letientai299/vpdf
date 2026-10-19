@@ -115,15 +115,22 @@ impl Pointing {
   }
 }
 
-pub use info::{document_lines, help, metadata_lines};
+pub use info::{DocumentInfo, Info, document_lines, help, metadata_lines};
 pub use rows::key_width;
 mod info;
 
 #[cfg(test)]
 mod focus_tests;
 #[cfg(test)]
+mod follow_tests;
+#[cfg(test)]
 mod help_tests;
 
+mod content;
+mod follow;
+pub use follow::{Activation, Focus, Follow, Press};
+mod input;
+pub use input::Event;
 pub(crate) mod layout;
 mod rows;
 mod search;
@@ -132,8 +139,7 @@ mod tests;
 mod view;
 
 mod jumps;
-mod links;
-pub use jumps::label as jump_label;
+pub mod links;
 pub use layout::wrap;
 
 pub mod recent;

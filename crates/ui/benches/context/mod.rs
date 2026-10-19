@@ -27,13 +27,20 @@ pub fn draw() -> Result<()> {
     .into_iter()
     .map(|(label, key)| Item { label: label.into(), key, command: () })
     .collect();
-  let menu = ContextMenu::new(
+  let mut menu = ContextMenu::new(
     items,
     prepared.press,
     prepared.columns,
     prepared.bottom,
     prepared.row,
   );
+  super::measure("ContextMenu::input pair", || {
+    for motion in
+      [vpdf_reader::motion::Motion::Down, vpdf_reader::motion::Motion::Up]
+    {
+      black_box(menu.input(black_box(vpdf_ui::keys::Action::Motion(motion))));
+    }
+  })?;
   let area = menu.area();
   anyhow::ensure!(
     [area.column, area.row, area.columns, area.rows] == prepared.area,

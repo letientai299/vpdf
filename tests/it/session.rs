@@ -273,7 +273,7 @@ mod pointer {
     let old = pane(&mut session, left);
     assert!(old.prompt.is_none() && old.hints.is_none());
     assert!(old.keys.awaiting().is_none());
-    assert!(old.search_origin.is_none(), "the search was aborted");
+    assert!(old.search.prompt_origin().is_none(), "the search was aborted");
 
     act(&mut session, Action::Yank)?;
     act(&mut session, Action::Window(Window::Next))?;

@@ -1,9 +1,7 @@
 use crate::Result;
 use crate::app::App;
-use crate::document::Target;
-use crate::reference::{Lookup, Reference};
-use vpdf_search::query::Query;
-use vpdf_ui::find::Phase;
+use crate::pdf_text::PdfText;
+use vpdf_ui::find::{Definition, Phase};
 use vpdf_ui::keys::PanelKind;
 
 impl App {
@@ -16,80 +14,43 @@ impl App {
   pub(crate) fn definition(&mut self) -> Result<()> {
     let Some(position) = self.explicit_target()? else { return Ok(()) };
     self.search.stop_jumping();
-    if let Some(target) = self.link_target(position)? {
-      if matches!(target, Target::Uri(_)) {
-        self.reader.notice("External link: use gx");
-        return Ok(());
-      }
-      return self.follow(&target);
-    }
-    let text = self.doc.text(position.page)?;
-    let Some(line) = text.lines.get(position.line) else { return Ok(()) };
-    let byte =
-      line.glyphs.iter().take(position.glyph).map(|g| g.ch.len_utf8()).sum();
-    let Some(reference) = Reference::at(&line.text(), byte) else {
-      self.reader.notice("No document reference at target");
-      return Ok(());
-    };
-    if self.definition_heading(&reference)? {
-      return Ok(());
-    }
-    let query = Query {
-      text: reference.title(),
-      reference: Some(Lookup { reference, origin: position }),
-      ..Query::default()
-    };
-    self.start_query(&query)?;
-    self.search.define(position);
-    self.reader.notice("Finding reference…");
-    Ok(())
-  }
-
-  fn definition_heading(&mut self, reference: &Reference) -> Result<bool> {
-    let mut targets = Vec::new();
-    for (index, heading) in self.doc.outline.iter().enumerate() {
-      if !reference.heading(&heading.title) {
-        continue;
-      }
-      let page = match heading.target {
-        Target::Page(page) | Target::Point { page, .. } => page,
-        Target::Uri(_) => continue,
-      };
-      if page.0 < self.doc.pages.len()
-        && !targets.iter().any(|(_, target)| target == &heading.target)
-      {
-        targets.push((index, heading.target.clone()));
-      }
-    }
-    match targets.as_slice() {
-      [] => return Ok(false),
-      [(_, target)] => self.follow(target)?,
-      [(first, _), ..] => {
-        self.open_panel(PanelKind::Outline)?;
-        if let Some(panel) = &mut self.panel {
-          panel.view.select(*first);
-        }
-        self
-          .reader
-          .notice("Multiple heading candidates; choose an outline entry");
-      }
-    }
-    Ok(true)
+    let link = self.link_target(position)?;
+    let definition =
+      Definition::resolve(position, link, &mut PdfText(&mut self.doc))?;
+    self.apply_definition(definition)
   }
 
   pub(crate) fn finish_definition(&mut self) -> Result<()> {
-    match self.search.hits() {
-      [] => self.reader.notice("Reference not found"),
-      [hit] => {
-        let position = hit.first;
+    self.apply_definition(self.search.definition_result())
+  }
+
+  fn apply_definition(&mut self, definition: Definition) -> Result<()> {
+    let message = definition.message();
+    match definition {
+      Definition::Follow(target) => self.follow(&target)?,
+      Definition::Outline(selected) => {
+        self.open_panel(PanelKind::Outline)?;
+        if let Some(panel) = &mut self.panel {
+          panel.view.select(selected);
+        }
+      }
+      Definition::Search(lookup) => {
+        let origin = lookup.origin;
+        self.start_query(&lookup.into())?;
+        self.search.define(origin);
+      }
+      Definition::Found { position, description } => {
         self.go_to(position, true)?;
-        self.reader.describe_jump(Some(self.search_description(position)));
-        self.reader.notice("Reference found");
+        self.reader.describe_jump(Some(description));
       }
-      _ => {
-        self.open_panel(PanelKind::Results)?;
-        self.reader.notice("Multiple reference candidates; choose a result");
-      }
+      Definition::Candidates => self.open_panel(PanelKind::Results)?,
+      Definition::Unchanged
+      | Definition::External
+      | Definition::NoReference
+      | Definition::NotFound => {}
+    }
+    if let Some(message) = message {
+      self.reader.notice(message);
     }
     Ok(())
   }

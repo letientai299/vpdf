@@ -32,6 +32,13 @@ pub fn draw() -> Result<()> {
     page: PageId(prepared.page),
     bounds: super::bounds(prepared.bounds),
   });
+  super::measure("Region::input pair", || {
+    for motion in
+      [vpdf_reader::motion::Motion::Right, vpdf_reader::motion::Motion::Left]
+    {
+      black_box(region.input(black_box(vpdf_ui::keys::Action::Motion(motion))));
+    }
+  })?;
   let canvas = Canvas {
     layout: &layout,
     scroll: prepared.scroll,

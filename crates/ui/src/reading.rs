@@ -12,12 +12,18 @@ use vpdf_reader::reader::{Mode, Reader, TextSource};
 mod jump;
 mod location;
 mod navigation;
+mod outline;
+pub use outline::Outline;
 mod pane;
 mod reflow;
 pub use pane::{Pane, Tracking};
+mod search;
+pub use search::{RestoreSearch, Submission};
 mod section;
 mod transitions;
+mod viewport;
 pub use section::{Section, Sections};
+pub use viewport::ViewportEvent;
 
 #[cfg(test)]
 mod tests;

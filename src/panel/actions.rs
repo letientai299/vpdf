@@ -1,8 +1,8 @@
 use super::{
-  Action, Annotation, App, Destination, Entry, Input, JumpDescription,
-  MouseButton, MouseEvent, MouseEventKind, PanelKind, PanelSession, Position,
-  Request, Result, Row, Target, recent_rows,
+  App, Destination, Entry, Input, MouseEvent, MouseEventKind, PanelKind,
+  PanelSession, Request, Result, Row, Target, recent_rows,
 };
+use vpdf_ui::panel::{Activation, Focus, Follow};
 
 impl App {
   pub fn open_panel(&mut self, kind: PanelKind) -> Result<()> {
@@ -57,7 +57,7 @@ impl App {
     panel.view.set_note(self.panel_note(kind));
     panel.view.resize(self.screen.rows);
     if kind == PanelKind::Outline {
-      panel.view.select(self.section().unwrap_or(0));
+      panel.view.select(self.reading_view().current_section().unwrap_or(0));
     }
     self.panel = Some(panel);
     self.relayout()
@@ -145,64 +145,21 @@ impl App {
 
   pub fn panel_input(&mut self, input: Input) -> Result<bool> {
     let Some(panel) = &mut self.panel else { return Ok(false) };
-    if !panel.view.focused() {
-      return Ok(false);
-    }
-    if panel.view.navigate(input, usize::from(self.screen.rows)) {
-      return Ok(true);
-    }
-    let covered = panel.view.is_recent_view();
-    match input.action {
-      Action::Quit | Action::ClosePanel => {
-        self.close_panel()?;
+    match panel.view.input(input, usize::from(self.screen.rows)) {
+      vpdf_ui::panel::Event::Unhandled => return Ok(false),
+      vpdf_ui::panel::Event::Stay => {}
+      vpdf_ui::panel::Event::Close => self.close_panel()?,
+      vpdf_ui::panel::Event::Copy { text, register } => {
+        self.reader.store(register, text)?;
       }
-      Action::Yank | Action::YankLine => {
-        if let Some(text) = panel.view.yank_text() {
-          self.reader.store(input.register, text)?;
-        }
+      vpdf_ui::panel::Event::Preview { position, annotation } => {
+        self.preview_annotation(position, &annotation);
       }
-      // The focused pane owns text motions and selections.
-      Action::Motion(_)
-      | Action::Visual(_)
-      | Action::Object(..)
-      | Action::Reselect
-      | Action::WordSearch
-      | Action::Definition
-      | Action::Cancel => {}
-      Action::Peek if panel.view.kind() == PanelKind::Annotations => {
-        if let Some(Destination::Annotation { position, annotation }) = panel
-          .view
-          .rows()
-          .get(panel.view.selected())
-          .map(|row| row.destination.clone())
-        {
-          self.preview_annotation(position, &annotation);
-        }
+      vpdf_ui::panel::Event::OpenUri(uri) => self.follow(&Target::Uri(uri))?,
+      vpdf_ui::panel::Event::Follow { focus } => {
+        let follow = panel.view.follow(&self.search);
+        self.follow_panel(follow, focus)?;
       }
-      Action::OpenUrl => {
-        if let Some(Destination::Link(target @ Target::Uri(_))) = panel
-          .view
-          .rows()
-          .get(panel.view.selected())
-          .map(|row| row.destination.clone())
-        {
-          self.follow(&target)?;
-        }
-      }
-      Action::Follow => self.panel_follow(Action::Follow)?,
-      Action::Swap if !covered => self.panel_follow(Action::Swap)?,
-      // Commands, searches, windows, and tabs still work; the covered
-      // document takes nothing else.
-      Action::Command
-      | Action::Search(_)
-      | Action::Window(_)
-      | Action::Tab(_)
-      | Action::Panel(_)
-      | Action::Overview => {
-        return Ok(false);
-      }
-      _ if covered => {}
-      _ => return Ok(false),
     }
     Ok(true)
   }
@@ -212,52 +169,28 @@ impl App {
       self.blur()?;
     }
     let covered = self.covered();
-    let clicked =
-      self.panel.as_mut().and_then(|panel| panel.view.pointer(mouse));
+    let press = self.panel.as_mut().map(|panel| panel.view.press(mouse));
     if self.covered() != covered {
       self.relayout()?;
     }
-    if mouse.kind == MouseEventKind::Down(MouseButton::Right) {
-      self.panel_context(mouse);
-      return Ok(());
-    }
-    if mouse.kind == MouseEventKind::Down(MouseButton::Middle) {
-      let panel = self.panel.as_ref();
-      let row =
-        panel.and_then(|panel| panel.view.row_at(mouse.column, mouse.row));
-      return row.map_or(Ok(()), |index| self.panel_split(index));
-    }
-    let Some(panel) = &mut self.panel else { return Ok(()) };
-    let pressed = matches!(mouse.kind, MouseEventKind::Down(_));
-    let followed = if pressed {
-      panel.view.remember_click(clicked)
-    } else {
-      panel.view.clicked()
-    };
-    let Some(index) = clicked else { return Ok(()) };
-    if covered {
-      return self.panel_follow(Action::Follow);
-    }
-    if clicks > 1 && followed == Some(index) {
-      return self.panel_refocus();
-    }
-    self.panel_follow(Action::Swap)
-  }
-
-  /// Enter for the row just followed.
-  fn panel_refocus(&mut self) -> Result<()> {
-    let Some(panel) = &self.panel else { return Ok(()) };
-    let Some(row) = panel.view.rows().get(panel.view.selected()) else {
+    let (Some(panel), Some(press)) = (&mut self.panel, press) else {
       return Ok(());
     };
-    match row.destination.clone() {
-      // Reuses the view the first click opened.
-      Destination::Mark(_) => self.panel_follow(Action::Follow),
-      Destination::Annotation { position, annotation } => {
-        self.focus_content(Some((position, annotation)))
+    match press.activate(&mut panel.view, clicks) {
+      Activation::Stay => Ok(()),
+      Activation::Context => {
+        self.panel_context(mouse);
+        Ok(())
       }
-      Destination::None => Ok(()),
-      _ => self.focus_content(None),
+      Activation::Split(index) => self.panel_split(index),
+      Activation::Follow { focus } => {
+        let follow = panel.view.follow(&self.search);
+        self.follow_panel(follow, focus)
+      }
+      Activation::Refocus => {
+        let follow = panel.view.refocus();
+        self.follow_panel(follow, true)
+      }
     }
   }
 
@@ -280,73 +213,51 @@ impl App {
     Ok(())
   }
 
-  fn panel_follow(&mut self, action: Action) -> Result<()> {
-    let Some(panel) = &self.panel else { return Ok(()) };
-    let Some(row) = panel.view.rows().get(panel.view.selected()) else {
-      return Ok(());
-    };
-    let destination = row.destination.clone();
-    let focus = action == Action::Follow;
-    let search = panel.view.kind() == PanelKind::Results;
-    let heading = (panel.view.kind() == PanelKind::Outline)
-      .then(|| row.label.trim().to_owned())
-      .filter(|title| !title.is_empty());
-    let annotation = match destination {
-      Destination::File(path) => {
+  fn follow_panel(
+    &mut self,
+    follow: Option<Follow>,
+    focus: bool,
+  ) -> Result<()> {
+    let Some(follow) = follow else { return Ok(()) };
+    let content = match follow {
+      Follow::File(path) => {
         self.request = Some(Request::PanelOpen { path, position: None, focus });
         return Ok(());
       }
-      Destination::Mark(name) => {
+      Follow::Mark(name) => {
         self.request = Some(Request::PanelMark { name, focus });
         return Ok(());
       }
-      Destination::None => return Ok(()),
-      Destination::Position(position) => {
-        self.land_at(position)?;
-        self
-          .reader
-          .describe_jump(search.then(|| self.search_description(position)));
-        None
-      }
-      Destination::Jump { position, description } => {
+      Follow::Focus(content) => return self.focus_content(content),
+      Follow::Land { position, description } => {
         self.land_at(position)?;
         self.reader.describe_jump(description);
-        None
+        Focus::Content
       }
-      Destination::Link(target) => {
+      Follow::Link { target, description } => {
         self.follow(&target)?;
-        if !matches!(target, Target::Uri(_))
-          && let Some(title) = heading
-        {
-          self.reader.describe_jump(Some(JumpDescription::Heading(title)));
+        if description.is_some() {
+          self.reader.describe_jump(description);
         }
-        None
+        Focus::Content
       }
-      Destination::Annotation { position, annotation } => {
+      Follow::Annotation { position, annotation } => {
         self.land_at(position)?;
-        Some((position, annotation))
+        Focus::Annotation { position, annotation }
       }
     };
     if self.overview.is_some() {
       self.close_overview();
     }
     if focus {
-      self.focus_content(annotation)?;
+      self.focus_content(content)?;
     }
     Ok(())
   }
 
   /// Leaves the panel for content; notes open.
-  fn focus_content(
-    &mut self,
-    annotation: Option<(Position, Annotation)>,
-  ) -> Result<()> {
-    self.reader.cancel();
-    if annotation.is_some() {
-      self.reader.enter_cursor();
-    } else {
-      self.reader.normal();
-    }
+  fn focus_content(&mut self, focus: Focus) -> Result<()> {
+    let annotation = focus.apply(&mut self.reader);
     if let Some(panel) = &mut self.panel {
       panel.view.focus(false);
     }

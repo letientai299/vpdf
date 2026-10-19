@@ -115,7 +115,7 @@ pub enum Grammar {
   Other,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Keys {
   prefix: String,
   count: usize,
@@ -390,6 +390,7 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("S-Space", Action::Screen(-1), "screen up with overlap"),
   ("BS", Action::Motion(M::PreviousPage), "previous page"),
   ("y", Action::Yank, "yank"),
+  ("yy", Action::YankLine, "yank line"),
   ("Y", Action::YankLine, "yank line"),
   ("yp", Action::YankPath, "yank file path"),
   ("yY", Action::YankRaw, "yank lines as laid out"),
@@ -554,16 +555,35 @@ pub fn notation(name: &str) -> String {
   shown.collect::<Option<String>>().unwrap_or_else(|| name.to_owned())
 }
 
-/// Keys that may follow `prefix`, with descriptions, like mini.clue.
-pub fn clues(prefix: &str) -> Vec<(String, &'static str)> {
-  let mut clues: Vec<_> = BINDINGS
-    .iter()
-    .filter(|(keys, ..)| keys.len() > prefix.len() && keys.starts_with(prefix))
-    .map(|(keys, _, about)| (keys[prefix.len()..].to_owned(), *about))
-    .collect();
-  clues.sort_by(|a, b| a.0.cmp(&b.0));
-  clues
+impl Keys {
+  pub fn clues(
+    &self,
+    grammar: Grammar,
+    allows: impl Fn(Action) -> bool,
+  ) -> Vec<(String, &'static str)> {
+    let Some(prefix) = self.awaiting() else { return Vec::new() };
+    let mut clues: Vec<_> = BINDINGS
+      .iter()
+      .filter_map(|(sequence, _, about)| {
+        let suffix = sequence.strip_prefix(prefix).filter(|s| !s.is_empty())?;
+        let mut pending = self.clone();
+        let mut action = None;
+        for key in parse(suffix)? {
+          if action.is_some() {
+            return None;
+          }
+          action = pending.feed(key, grammar).map(|input| input.action);
+        }
+        allows(action?).then(|| (suffix.to_owned(), *about))
+      })
+      .collect();
+    clues.sort_by(|a, b| a.0.cmp(&b.0));
+    clues
+  }
 }
 
 #[cfg(test)]
 mod tests;
+
+mod reference;
+pub(crate) use reference::text as reference;

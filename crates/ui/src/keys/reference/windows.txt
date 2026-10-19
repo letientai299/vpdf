@@ -1,0 +1,20 @@
+# Panes
+{pane_splits}: split above / left
+{pane_focus}: pane left / below / above / right
+{pane_cycle}: next / previous / last pane
+{pane_closing}: close pane / close others
+{pane_size}: taller / shorter / narrower / wider
+{pane_maximize}: tallest / widest / equal
+{pane_move}: move to far left / bottom / top / right
+{pane_exchange_tab}: swap with sibling / move to new tab
+{pane_rotation}: rotate panes forward / backward
+{pane_new}: new pane listing recent documents
+
+# Tabs
+P file {panel_follow}/{panel_keep}: target tab / split; reuse open view
+Recent {recent_follow}: open in covered pane
+{next_tab} [count]{next_tab}: next / nth tab
+{previous_tab}: previous tab
+:e :tabe :tabnew :split :vsplit <file>: reuse open view first
+N paste of a PDF path: open it; a prompt takes the text
+Pane changes: keep C/V, queries and panel focus

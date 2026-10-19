@@ -132,7 +132,7 @@ fn outline_follows_reading_section() -> Result<()> {
           _ => {}
         }
         app.draw(&mut Vec::new())?;
-        let section = app.current_section.unwrap();
+        let section = app.outline.current().unwrap();
         assert!(app.reader.viewport_mode() || section == index, "{title}");
         let panel = app.panel.as_ref().unwrap();
         assert_eq!(
@@ -155,7 +155,7 @@ fn outline_follows_reading_section() -> Result<()> {
       app.draw(&mut Vec::new())?;
       assert_eq!(
         app.panel.as_ref().unwrap().view.selected(),
-        app.current_section.unwrap()
+        app.outline.current().unwrap()
       );
     }
   }
@@ -176,10 +176,10 @@ fn outline_follows_after_loading() -> Result<()> {
   app.open_panel(PanelKind::Outline)?;
   keys(&mut app, b"\t")?;
   app.draw(&mut Vec::new())?;
-  assert_eq!(app.current_section, None);
+  assert_eq!(app.outline.current(), None);
   super::common::outline_loaded(&mut app)?;
   app.draw(&mut Vec::new())?;
-  assert_eq!(app.current_section, Some(10));
+  assert_eq!(app.outline.current(), Some(10));
   let panel = app.panel.as_ref().unwrap();
   assert_eq!(panel.view.selected(), 10);
   assert!(!panel.view.focused());

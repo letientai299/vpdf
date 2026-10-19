@@ -1,14 +1,10 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Annotation;
-use crate::text::{Bounds, PageId, Position, Text};
-use vpdf_ui::panel::{Destination, Row, Style};
+use crate::text::{Bounds, PageId, Position};
+use vpdf_ui::annotations::{icon, marked};
+use vpdf_ui::panel::Row;
 use vpdf_ui::pointer::Hit;
-
-/// Markup kinds whose marked text matters more than their contents.
-const MARKUP: &[&str] = &["Highlight", "Underline", "Squiggly", "StrikeOut"];
-/// Kinds drawn as fixed-size icons.
-const ICONS: &[&str] = &["Note", "FileAttachment", "Sound"];
 
 impl App {
   /// Every annotation in page order, with marked text or contents.
@@ -21,20 +17,12 @@ impl App {
       }
       let text = self.doc.text(page)?;
       for annotation in annotations.iter().cloned() {
-        let (position, marked) = marked(&text, page, &annotation);
-        let body = match (marked.is_empty(), annotation.contents.is_empty()) {
-          (false, false) => format!("{marked} — {}", annotation.contents),
-          (false, true) => marked,
-          _ => annotation.contents.clone(),
-        };
-        rows.push(Row {
-          style: Style::Key,
-          ..Row::new(
-            format!("{}: {body}", annotation.kind),
-            self.doc.label(page).to_owned(),
-            Destination::Annotation { position, annotation },
-          )
-        });
+        rows.push(vpdf_ui::annotations::row(
+          &text,
+          page,
+          annotation,
+          self.doc.label(page),
+        ));
       }
     }
     Ok(rows)
@@ -47,22 +35,7 @@ impl App {
     let Some((_, x, y)) = self.glyph_point(position)? else { return Ok(None) };
     let text = self.doc.text(position.page)?;
     let annotations = self.doc.annotations(position.page)?;
-    let mut nearest = None;
-    for annotation in annotations.iter() {
-      if annotation.contents.is_empty() {
-        continue;
-      }
-      if noted(annotation, x, y) {
-        return Ok(Some(annotation.clone()));
-      }
-      if nearest.is_none()
-        && !markup(annotation)
-        && marked(&text, position.page, annotation).0 == position
-      {
-        nearest = Some(annotation.clone());
-      }
-    }
-    Ok(nearest)
+    Ok(vpdf_ui::annotations::at(&annotations, &text, position, x, y))
   }
 
   /// Opens a note's popup (U11).
@@ -102,7 +75,7 @@ impl App {
     y: f32,
   ) -> Result<Option<usize>> {
     let annotations = self.doc.annotations(page)?;
-    Ok(annotations.iter().position(|annotation| noted(annotation, x, y)))
+    Ok(vpdf_ui::annotations::hit(&annotations, x, y))
   }
 
   /// A hovered note: kind, author, comment.
@@ -112,44 +85,6 @@ impl App {
     index: usize,
   ) -> Result<Option<String>> {
     let annotations = self.doc.annotations(page)?;
-    Ok(annotations.get(index).map(|note| match note.author.as_str() {
-      "" => format!("{}: {}", note.kind, note.contents),
-      author => format!("{} · {author}: {}", note.kind, note.contents),
-    }))
+    Ok(annotations.get(index).map(vpdf_ui::annotations::label))
   }
-}
-
-/// Whether a note marks text.
-fn markup(note: &Annotation) -> bool {
-  MARKUP.contains(&note.kind.as_str())
-}
-
-/// Whether a note draws as an icon.
-fn icon(note: &Annotation) -> bool {
-  ICONS.contains(&note.kind.as_str())
-}
-
-/// A commented annotation covers the point.
-fn noted(annotation: &Annotation, x: f32, y: f32) -> bool {
-  !annotation.contents.is_empty()
-    && annotation.areas.iter().any(|area| area.contains(x, y))
-}
-
-/// First glyph and text inside a markup annotation's areas.
-fn marked(
-  text: &Text,
-  page: PageId,
-  annotation: &Annotation,
-) -> (Position, String) {
-  let start = annotation
-    .areas
-    .first()
-    .map_or(Position { page, ..Position::default() }, |area| {
-      text.nearest(page, area.x0, f32::midpoint(area.y0, area.y1))
-    });
-  if !markup(annotation) {
-    return (start, String::new());
-  }
-  let (first, marked) = text.in_areas(page, &annotation.areas);
-  (first.unwrap_or(start), marked)
 }

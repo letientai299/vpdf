@@ -1,4 +1,5 @@
-use super::{Action, App, Input, Result, screen_step};
+use super::{Action, App, Input, Result};
+use vpdf_ui::reading::ViewportEvent;
 
 impl App {
   pub fn navigate(&mut self, input: Input) -> Result<bool> {
@@ -27,44 +28,12 @@ impl App {
   }
 
   pub fn viewport(&mut self, input: Input) -> Result<bool> {
-    let count = input.count as f32;
-    match input.action {
-      Action::Scroll(fraction) => {
-        self.keyboard_scroll(
-          fraction * count * self.layout.screen().height(),
-          true,
-        )?;
-      }
-      Action::Screen(direction) => {
-        let row = f32::from(self.screen.cell_height);
-        let rows = usize::from(self.layout.screen().rows.saturating_sub(1));
-        let distance = screen_step(rows) as f32 * row;
-        self.keyboard_scroll(direction as f32 * count * distance, true)?;
-      }
-      Action::Rows(rows) => {
-        self.keyboard_scroll(
-          rows as f32 * count * f32::from(self.screen.cell_height),
-          false,
-        )?;
-      }
-      Action::Align(fraction) => self.reading_view().align(fraction)?,
-      Action::Zoom(direction) => self.zoom_by(direction as f32 * count)?,
-      Action::Fit => {
-        self.layout.request_zoom(vpdf_ui::layout::Zoom::Width);
-        self.relayout()?;
-      }
-      Action::FitPage => {
-        self.layout.request_zoom(vpdf_ui::layout::Zoom::Page(
-          self.navigation_position().page,
-        ));
-        self.relayout()?;
-      }
-      Action::Crop => self.toggle_crop()?,
-      Action::Rotate => {
-        self.layout.rotate();
-        self.relayout()?;
-      }
-      _ => return Ok(false),
+    let mut reading = self.reading_parts();
+    match reading.view.viewport(input, reading.search)? {
+      ViewportEvent::Handled => {}
+      ViewportEvent::Relayout => self.relayout()?,
+      ViewportEvent::Crop => self.toggle_crop()?,
+      ViewportEvent::Unhandled => return Ok(false),
     }
     Ok(true)
   }

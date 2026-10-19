@@ -4,8 +4,10 @@ pub mod edge;
 pub mod gesture;
 pub mod grab;
 pub mod links;
+#[cfg(test)]
+mod overlay_tests;
 pub mod wheel;
-use crate::keys::Grammar;
+use crate::keys::{Action, Grammar};
 use vpdf_reader::reader::Mode;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,6 +53,18 @@ impl InputOwner {
       _ => Grammar::Other,
     }
   }
+}
+
+pub(crate) fn transfers_overlay(action: Action) -> bool {
+  matches!(
+    action,
+    Action::Window(_)
+      | Action::Tab(_)
+      | Action::LocalFocus
+      | Action::History(_)
+      | Action::Panel(_)
+      | Action::ClosePanel
+  )
 }
 
 #[cfg(test)]

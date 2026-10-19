@@ -12,15 +12,26 @@ use vpdf_ui::paint;
 use vpdf_ui::reading::{Frame, Pane, ScrollInput, Tracking};
 use vpdf_ui::text_view::TextView;
 
+#[derive(Clone, Copy)]
+enum Operation {
+  Scroll,
+  Navigate,
+  Viewport,
+}
+
 pub fn scroll() -> Result<()> {
-  run(false)
+  run(Operation::Scroll)
 }
 
 pub fn navigation() -> Result<()> {
-  run(true)
+  run(Operation::Navigate)
 }
 
-fn run(navigate: bool) -> Result<()> {
+pub fn viewport() -> Result<()> {
+  run(Operation::Viewport)
+}
+
+fn run(operation: Operation) -> Result<()> {
   let prepared = super::fixtures::text()?;
   let screen = Screen {
     columns: 100,
@@ -31,7 +42,7 @@ fn run(navigate: bool) -> Result<()> {
   };
   for text in [false, true] {
     for cursor in [false, true] {
-      case(&prepared, screen, text, cursor, navigate)?;
+      case(&prepared, screen, text, cursor, operation)?;
     }
   }
   Ok(())
@@ -42,7 +53,7 @@ fn case(
   screen: Screen,
   text: bool,
   cursor: bool,
-  navigate: bool,
+  operation: Operation,
 ) -> Result<()> {
   let bounds = || prepared.metadata.iter().map(|(_, bounds)| *bounds);
   let mut layout = Layout::new(bounds(), screen);
@@ -64,29 +75,45 @@ fn case(
     visible: screen,
   };
   let mut search = Search::default();
-  let operation = if navigate { "navigate" } else { "scroll" };
+  let label = match operation {
+    Operation::Scroll => "scroll",
+    Operation::Navigate => "navigate",
+    Operation::Viewport => "viewport",
+  };
   super::measure(
-    &format!("Reading::{operation} text={text} cursor={cursor}"),
+    &format!("Reading::{label} text={text} cursor={cursor}"),
     || {
       for delta in [16.0, -16.0] {
         let mut view = pane.bind(&mut layout, &mut text_view, frame, prepared);
-        if navigate {
-          let motion = if delta > 0.0 { Motion::Down } else { Motion::Up };
-          let input = Input {
-            action: Action::Motion(motion),
-            count: 1,
-            explicit: false,
-            register: '"',
-          };
-          black_box(
+        match operation {
+          Operation::Navigate => {
+            let motion = if delta > 0.0 { Motion::Down } else { Motion::Up };
+            let input = Input {
+              action: Action::Motion(motion),
+              count: 1,
+              explicit: false,
+              register: '"',
+            };
+            black_box(
+              view
+                .navigate(black_box(input), &mut search)
+                .expect("prepared navigation"),
+            );
+          }
+          Operation::Scroll => {
             view
-              .navigate(black_box(input), &mut search)
-              .expect("prepared navigation"),
-          );
-        } else {
-          view
-            .scroll(black_box(delta), ScrollInput::Wheel)
-            .expect("prepared scroll");
+              .scroll(black_box(delta), ScrollInput::Wheel)
+              .expect("prepared scroll");
+          }
+          Operation::Viewport => {
+            let rows = if delta > 0.0 { 1 } else { -1 };
+            let input = Input::plain(Action::Rows(rows));
+            black_box(
+              view
+                .viewport(black_box(input), &mut search)
+                .expect("prepared viewport"),
+            );
+          }
         }
       }
       black_box((

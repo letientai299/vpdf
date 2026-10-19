@@ -15,13 +15,4 @@ impl App {
     self.search.forget_yank();
     self.reading_view().scroll(delta, ScrollInput::Wheel)
   }
-
-  pub(crate) fn keyboard_scroll(
-    &mut self,
-    delta: f32,
-    follow: bool,
-  ) -> Result<()> {
-    self.search.forget_yank();
-    self.reading_view().scroll(delta, ScrollInput::Keyboard { follow })
-  }
 }

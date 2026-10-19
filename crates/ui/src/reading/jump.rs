@@ -78,7 +78,7 @@ impl<S: TextSource + Pages> View<'_, S> {
     Ok(())
   }
 
-  fn flash_landing(&mut self) {
+  pub(super) fn flash_landing(&mut self) {
     self.landing.show(self.reader.cursor, Span::Line, Instant::now());
   }
 

@@ -3,7 +3,7 @@ use crossterm::event::KeyEvent;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
-use vpdf_ui::commands::{self, Complete};
+use vpdf_ui::commands::{self, Complete, View};
 use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
 
 /// Feeds `key` to `prompt`, completing commands and editing the line in
@@ -12,6 +12,7 @@ pub fn feed(
   prompt: &mut Prompt,
   key: KeyEvent,
   history: &History,
+  view: View,
 ) -> Result<PromptEvent> {
   Ok(match prompt.feed(key, history) {
     PromptEvent::Editor => {
@@ -20,7 +21,7 @@ pub fn feed(
       PromptEvent::Edited
     }
     PromptEvent::Complete if prompt.kind() == PromptKind::Command => {
-      let (start, items) = candidates(prompt.before_cursor());
+      let (start, items) = candidates(prompt.before_cursor(), view);
       prompt.complete(start, items);
       PromptEvent::Edited
     }
@@ -35,8 +36,8 @@ pub fn on_path(program: &str) -> bool {
   })
 }
 
-pub fn candidates(before: &str) -> (usize, Vec<String>) {
-  commands::candidates(before, on_path, |kind, argument| match kind {
+pub fn candidates(before: &str, view: View) -> (usize, Vec<String>) {
+  commands::candidates(before, view, on_path, |kind, argument| match kind {
     Complete::Path => paths(argument),
     Complete::Language => languages().to_vec(),
     _ => Vec::new(),
@@ -126,7 +127,7 @@ mod tests {
     assert_eq!(names(paths(&format!("{base}a"))), ["a.pdf", "archive/"]);
     assert_eq!(names(paths(&format!("{base}."))), [".hidden.pdf"]);
     for (command, start) in [("tabe", 5), ("tabnew", 7)] {
-      let items = candidates(&format!("{command} {base}b"));
+      let items = candidates(&format!("{command} {base}b"), View::Document);
       assert_eq!((items.0, names(items.1)), (start, vec!["b.PDF".to_owned()]));
     }
     Ok(())

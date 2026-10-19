@@ -22,12 +22,26 @@ pub fn draw() -> Result<()> {
   for (columns, rows) in [(80, 24), (30, 10)] {
     let screen =
       Screen { columns, rows, cell_width: 8, cell_height: 16, origin: (0, 0) };
-    for prefix in ["g", "\"", "'"] {
+    for prefix in ["g", "y", "\"", "'"] {
       let registers =
         entries.iter().map(|(name, text, _)| (*name, text.as_str()));
       let marks = entries.iter().map(|(name, _, position)| (*name, *position));
       let mut clues = Clues::default();
-      assert!(clues.show(clues::items(prefix, registers, marks)));
+      let mut keys = vpdf_ui::keys::Keys::default();
+      let grammar = vpdf_ui::keys::Grammar::Panel;
+      for key in vpdf_ui::keys::parse(prefix).expect("clue prefix") {
+        keys.feed(key, grammar);
+      }
+      assert!(clues.show(clues::items(
+        &keys,
+        grammar,
+        |_| true,
+        registers,
+        marks
+      )));
+      super::measure(&format!("Keys::clues {prefix:?}"), || {
+        black_box(keys.clues(grammar, |_| true));
+      })?;
       let list = clues.shown().expect("prepared clues");
       let mut out = Vec::new();
       let bottom = (At { column: 3, row: 2 }, rows - 2);

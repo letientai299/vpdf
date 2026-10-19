@@ -159,7 +159,6 @@ impl App {
 
   pub(crate) fn region_input(&mut self, input: Input) -> Result<bool> {
     let Some(region) = &mut self.region else { return Ok(false) };
-    let bar = region.is_bar();
     match region.input(input.action) {
       Transition::Stay => {}
       Transition::Run(operation) => self.region_operation(operation)?,
@@ -171,11 +170,10 @@ impl App {
         self.region = None;
         return Ok(false);
       }
-      Transition::Command => return Ok(false),
-      Transition::Unhandled => {
-        if !bar || self.overlay_transfer(input.action) {
-          return Ok(false);
-        }
+      Transition::Command | Transition::Unhandled => return Ok(false),
+      Transition::Transfer => {
+        self.dismiss_overlay();
+        return Ok(false);
       }
     }
     Ok(true)

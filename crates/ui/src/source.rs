@@ -35,3 +35,14 @@ pub trait Raster {
     visit: impl FnOnce(&[u8], usize) -> crate::Result<()>,
   ) -> crate::Result<()>;
 }
+
+/// Ready outline entries in document order.
+pub trait Outline {
+  fn outline(&self) -> &[vpdf_model::document::Heading];
+}
+
+impl<S: Outline + ?Sized> Outline for &mut S {
+  fn outline(&self) -> &[vpdf_model::document::Heading] {
+    (**self).outline()
+  }
+}

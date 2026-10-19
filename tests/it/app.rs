@@ -1200,3 +1200,105 @@ fn covered_panes_record_no_visit() -> Result<()> {
   assert_eq!(state.recent.len(), 1);
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn panel_clues_use_current_focus_and_scope() -> Result<()> {
+  let mut app = text_app()?;
+  let mut history = vpdf_ui::prompt::History::default();
+  let show = |app: &mut App,
+              history: &mut vpdf_ui::prompt::History,
+              prefix|
+   -> Result<Vec<String>> {
+    for key in vpdf_ui::keys::parse(prefix).unwrap() {
+      app.key(key, history)?;
+      app.after_key();
+    }
+    app.clues.restart(Instant::now().checked_sub(Duration::from_secs(1)));
+    app.clue_due();
+    Ok(app.clues.shown().map_or_else(Vec::new, |list| {
+      list.items().iter().map(|(key, _)| key.clone()).collect()
+    }))
+  };
+  app.show_recent(&[])?;
+  assert_eq!(show(&mut app, &mut history, "y")?, ["p", "y"]);
+  app.action(Input::plain(Action::Cancel))?;
+  assert_eq!(show(&mut app, &mut history, "m")?, [] as [String; 0]);
+  assert_eq!(app.clue_wait(), None);
+  app.action(Input::plain(Action::Cancel))?;
+  app.close_panel()?;
+  app.open_panel(PanelKind::Outline)?;
+  let focused = show(&mut app, &mut history, "g")?;
+  assert!(focused.contains(&"g".into()) && !focused.contains(&"d".into()));
+  app.action(Input::plain(Action::Cancel))?;
+  app.action(Input::plain(Action::LocalFocus))?;
+  assert!(show(&mut app, &mut history, "g")?.contains(&"d".into()));
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn overlay_clues_follow_policy() -> Result<()> {
+  use vpdf::pdf_text::PdfText;
+  use vpdf::text::Position;
+  use vpdf_ui::context::ContextMenu;
+  use vpdf_ui::input::InputOwner;
+  use vpdf_ui::preview::Preview;
+  use vpdf_ui::region::{CaptureId, Region, Snapshot};
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen())?;
+  let mut history = vpdf_ui::prompt::History::default();
+  for owner in [
+    InputOwner::Context,
+    InputOwner::Peek,
+    InputOwner::Region,
+    InputOwner::Overview,
+  ] {
+    match owner {
+      InputOwner::Context => {
+        app.context_menu =
+          Some(ContextMenu::new(Vec::new(), (0, 0), (0, 80), 23, false));
+      }
+      InputOwner::Peek => {
+        app.peek = Some(Preview::open(
+          Target::Page(PageId(0)),
+          Position::default(),
+          false,
+          false,
+          &app.layout,
+          &mut PdfText(&mut app.doc),
+        )?);
+      }
+      InputOwner::Region => {
+        app.region = Some(Region::open(Snapshot {
+          id: CaptureId::new(1),
+          page: PageId(0),
+          bounds: app.doc.pages[0].bounds,
+        }));
+      }
+      _ => app.open_overview()?,
+    }
+    for prefix in ["g", "z"] {
+      app.keys.clear();
+      for key in vpdf_ui::keys::parse(prefix).unwrap() {
+        app.key(key, &mut history)?;
+      }
+      app.clues.restart(Instant::now().checked_sub(Duration::from_secs(1)));
+      assert_eq!(app.clue_due(), prefix == "g");
+      assert_eq!(app.clue_wait(), None);
+      if let Some(list) = app.clues.shown() {
+        let has = |key| list.items().iter().any(|(shown, _)| shown == key);
+        assert!(has("q") && has("?"));
+        assert!(!has("d") && !has("E") && !has("v"));
+        assert_eq!(has("F"), owner == InputOwner::Region);
+        assert_eq!(has("p"), owner == InputOwner::Overview);
+      }
+    }
+    app.keys.clear();
+    app.context_menu = None;
+    app.peek = None;
+    app.region = None;
+    app.close_overview();
+  }
+  Ok(())
+}

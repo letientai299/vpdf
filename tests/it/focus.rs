@@ -391,7 +391,7 @@ fn outside_click_consumes_capture_across_panes() -> Result<()> {
   send(&mut session, b"\x1b[<0;90;10M\x1b[<0;90;10m")?;
   assert_eq!((session.active, session.app().id), (tab, source));
   assert_eq!(session.app().input_owner(), InputOwner::Content);
-  assert!(session.app().search_origin.is_none());
+  assert!(session.app().search.prompt_origin().is_none());
   assert_eq!(session.app().search.query().text, "");
   assert_eq!(session.app().reader.scroll, viewport);
   assert!(session.app().reader.selection.is_none());

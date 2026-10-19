@@ -139,6 +139,13 @@ pub fn draw() -> Result<()> {
       &layout,
       &mut source,
     )?;
+    super::measure(&format!("Preview::input text={}", case.text), || {
+      use vpdf_ui::keys::{Action, Input};
+      for action in [Action::Scroll(0.5), Action::Tab(true), Action::Zoom(1)] {
+        let input = Input { action, count: 3, explicit: true, register: 'a' };
+        black_box(Preview::input(black_box(input), &layout));
+      }
+    })?;
     let mut graphics = Graphics::default();
     let mut out = Vec::new();
     let frame = || Frame {

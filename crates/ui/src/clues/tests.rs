@@ -69,3 +69,61 @@ fn clue_labels_name_keys() {
     assert_eq!(clue_keys(label), want, "{label}");
   }
 }
+
+fn items<'a>(
+  prefix: &str,
+  registers: impl Iterator<Item = (char, &'a str)>,
+  marks: impl Iterator<Item = (char, Position)>,
+) -> Vec<(String, String)> {
+  let mut keys = keys::Keys::default();
+  for key in keys::parse(prefix).unwrap() {
+    keys.feed(key, keys::Grammar::Objects);
+  }
+  super::items(&keys, keys::Grammar::Objects, |_| true, registers, marks)
+}
+
+#[test]
+fn focused_panels_filter_ignored_continuations() {
+  use crate::keys::{Grammar, Keys, PanelKind};
+  use crate::panel::Panel;
+  for recent in [false, true] {
+    let mut panel = if recent {
+      Panel::recent(Vec::new(), &[])
+    } else {
+      Panel::new(PanelKind::Outline, Vec::new())
+    };
+    let shown = |panel: &Panel, prefix| {
+      let mut keys = Keys::default();
+      for key in keys::parse(prefix).unwrap() {
+        keys.feed(key, Grammar::Panel);
+      }
+      super::items(
+        &keys,
+        Grammar::Panel,
+        |action| panel.allows(action),
+        std::iter::empty(),
+        std::iter::empty(),
+      )
+      .into_iter()
+      .map(|(key, _)| key)
+      .collect::<Vec<_>>()
+    };
+    let go = shown(&panel, "g");
+    assert!(go.contains(&"g".into()));
+    assert!(go.contains(&"q".into()));
+    assert!(!go.contains(&"d".into()));
+    assert!(!go.contains(&"v".into()));
+    assert!(!go.contains(&"E".into()));
+    let zoom = shown(&panel, "z");
+    assert!(zoom.contains(&"z".into()));
+    assert_eq!(zoom.contains(&"f".into()), !recent);
+    let yank = shown(&panel, "y");
+    assert!(yank.contains(&"y".into()));
+    assert!(yank.contains(&"p".into()));
+    assert_eq!(yank.contains(&"Y".into()), !recent);
+    assert_eq!(shown(&panel, "m").is_empty(), recent);
+    assert_eq!(shown(&panel, "'").is_empty(), recent);
+    panel.focus(false);
+    assert!(shown(&panel, "g").contains(&"d".into()));
+  }
+}

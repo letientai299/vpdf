@@ -2,21 +2,17 @@ use crate::Result;
 use crate::app::{App, Request};
 use crate::recent::Loader;
 use crate::state::Entry;
-use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{MouseEvent, MouseEventKind};
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use vpdf_model::document::{Annotation, Target};
-use vpdf_model::text::{PageId, Position};
-use vpdf_reader::reader::JumpDescription;
+use std::path::PathBuf;
+use vpdf_model::document::Target;
 use vpdf_terminal::{
   graphics::Graphics,
   terminal::{self, At},
 };
-use vpdf_ui::keys::{Action, Input, PanelKind};
+use vpdf_ui::keys::{Input, PanelKind};
 use vpdf_ui::layout::Screen;
-use vpdf_ui::panel::{
-  Destination, Panel, Row, Style, document_lines, help, metadata_lines,
-};
+use vpdf_ui::panel::{Destination, Panel, Row, help};
 
 pub struct PanelSession {
   pub view: Panel,

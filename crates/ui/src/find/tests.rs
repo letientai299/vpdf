@@ -145,3 +145,22 @@ fn show_installs_finished_hits() {
   assert_eq!(search.generation(), 1);
   assert!(!search.hidden() && matches!(search.phase(), Phase::Complete));
 }
+
+#[test]
+fn reload_keeps_only_prompt_location() {
+  let mut search = running(false, 0);
+  let origin = Location { cursor: at(2), ..Location::default() };
+  search.begin_prompt(origin);
+  search.accept(7, hits(&[1]), Ok(true));
+  let previous = search.reset_document();
+  assert_eq!(search.prompt_origin().unwrap().cursor, origin.cursor);
+  assert!(search.take_previous().is_none());
+  assert!(search.hits().is_empty());
+  assert_eq!(search.query().text, "");
+  assert!(matches!(search.phase(), Phase::Idle));
+  assert_eq!(previous.unwrap().text, "a");
+  assert!(search.reset_document().is_none());
+  search = running(false, 0);
+  search.set_hidden(true);
+  assert!(search.reset_document().is_none());
+}

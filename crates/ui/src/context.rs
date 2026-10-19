@@ -22,7 +22,29 @@ pub enum Transition {
   Run,
   Close,
   Command,
+  Transfer,
   Unhandled,
+}
+
+enum Route {
+  Move(bool),
+  Run,
+  Close,
+  Command,
+  Transfer,
+  Ignore,
+}
+
+fn route(action: Action) -> Route {
+  match action {
+    Action::Motion(Motion::Down) => Route::Move(true),
+    Action::Motion(Motion::Up) => Route::Move(false),
+    Action::Follow => Route::Run,
+    Action::Quit | Action::Cancel => Route::Close,
+    Action::Command => Route::Command,
+    _ if crate::input::transfers_overlay(action) => Route::Transfer,
+    _ => Route::Ignore,
+  }
 }
 
 /// An open context menu.
@@ -78,6 +100,16 @@ pub enum Command {
 /// An item showing `action`'s key.
 fn bound(label: &'static str, action: Action, command: Command) -> Item {
   let key = keys::key_for(action).map_or_default(keys::notation);
+  Item { label: label.into(), key, command }
+}
+
+fn panel_bound(
+  panel: &Panel,
+  label: &'static str,
+  action: Action,
+  command: Command,
+) -> Item {
+  let key = panel.shortcut(action).map_or_default(keys::notation);
   Item { label: label.into(), key, command }
 }
 
@@ -192,19 +224,20 @@ impl<C> ContextMenu<C> {
     self.width = width;
   }
 
+  pub fn allows(&self, action: Action) -> bool {
+    !matches!(route(action), Route::Ignore)
+  }
+
   pub fn input(&mut self, action: Action) -> Transition {
     let count = self.items.len().max(1);
-    match action {
-      Action::Motion(Motion::Down) => {
-        self.selected = (self.selected + 1) % count;
-      }
-      Action::Motion(Motion::Up) => {
-        self.selected = (self.selected + count - 1) % count;
-      }
-      Action::Follow => return Transition::Run,
-      Action::Quit | Action::Cancel => return Transition::Close,
-      Action::Command => return Transition::Command,
-      _ => return Transition::Unhandled,
+    match route(action) {
+      Route::Move(true) => self.selected = (self.selected + 1) % count,
+      Route::Move(false) => self.selected = (self.selected + count - 1) % count,
+      Route::Run => return Transition::Run,
+      Route::Close => return Transition::Close,
+      Route::Command => return Transition::Command,
+      Route::Transfer => return Transition::Transfer,
+      Route::Ignore => return Transition::Unhandled,
     }
     Transition::Stay
   }
@@ -348,28 +381,38 @@ pub fn panel_items(
       let label = if covered { "Open" } else { "Follow" };
       let action =
         if address.is_some() { Action::OpenUrl } else { Action::Follow };
-      items.push(bound(label, action, Command::Key(action)));
-      if !panel.is_recent_view() {
+      items.push(panel_bound(panel, label, action, Command::Key(action)));
+      if panel.shortcut(Action::Swap).is_some() {
         let keep = Command::Key(Action::Swap);
-        items.push(bound("Follow, keep panel", Action::Swap, keep));
+        items.push(panel_bound(
+          panel,
+          "Follow, keep panel",
+          Action::Swap,
+          keep,
+        ));
       }
     }
     // Addresses split by copying; the copy item does that.
     if !matches!(destination, Destination::None) && address.is_none() {
       items.push(item("Open in split", "", Command::RowSplit));
     }
-    if panel.kind() == PanelKind::Annotations {
-      items.push(bound("Show note", Action::Peek, Command::Key(Action::Peek)));
+    if panel.shortcut(Action::Peek).is_some() {
+      items.push(panel_bound(
+        panel,
+        "Show note",
+        Action::Peek,
+        Command::Key(Action::Peek),
+      ));
     }
     if let Some(uri) = address {
       items.push(copy_address(uri));
     } else if let Some(text) = panel.yank_text() {
       let copy = Command::CopyText(text, "Copied row");
-      items.push(item("Copy row", "yy", copy));
+      items.push(panel_bound(panel, "Copy row", Action::YankLine, copy));
     }
   }
   let close = Command::Key(Action::ClosePanel);
-  items.push(bound("Close panel", Action::Quit, close));
+  items.push(panel_bound(panel, "Close panel", Action::ClosePanel, close));
   items
 }
 pub fn overview_items(page: Option<PageId>) -> Vec<Item> {

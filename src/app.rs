@@ -108,11 +108,9 @@ pub struct App {
   /// Wakes the event loop when a job finishes.
   pub wake: vpdf_pdf::jobs::Wake,
   /// Outline entry containing the cursor, refreshed each frame.
-  pub current_section: Option<usize>,
+  pub outline: vpdf_ui::reading::Outline,
   /// Lowercase marks of this document.
   pub marks: std::collections::BTreeMap<char, Position>,
-  /// Where an open search prompt started.
-  pub search_origin: Option<vpdf_reader::reader::Location>,
   pub prompt: Option<vpdf_ui::prompt::Prompt>,
   pub hints: Option<vpdf_ui::hints::Hints>,
   pub clues: vpdf_ui::clues::Clues,
@@ -203,9 +201,8 @@ impl App {
       search: vpdf_ui::find::Search::default(),
       search_worker: None,
       wake,
-      current_section: None,
+      outline: vpdf_ui::reading::Outline::default(),
       marks: std::collections::BTreeMap::new(),
-      search_origin: None,
       prompt: None,
       hints: None,
       clues: vpdf_ui::clues::Clues::default(),

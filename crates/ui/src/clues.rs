@@ -141,20 +141,23 @@ impl List {
 }
 
 pub fn items<'a>(
-  prefix: &str,
+  keys: &keys::Keys,
+  grammar: keys::Grammar,
+  allows: impl Fn(keys::Action) -> bool,
   registers: impl Iterator<Item = (char, &'a str)>,
   marks: impl Iterator<Item = (char, Position)>,
 ) -> Vec<(String, String)> {
+  let Some(prefix) = keys.awaiting() else { return Vec::new() };
   let owned = |(key, about): (&str, &str)| (key.to_owned(), about.to_owned());
   match prefix {
     "\"" => register_clues(registers),
-    "m" => [
+    "m" if allows(keys::Action::Mark('a')) => [
       ("a-z", "mark here in this document"),
       ("A-Z", "mark here across documents"),
     ]
     .map(owned)
     .to_vec(),
-    "'" | "`" => {
+    "'" | "`" if allows(keys::Action::GoMark('a', prefix == "`")) => {
       let mut items: Vec<_> = marks
         .map(|(name, at)| (name.to_string(), format!("page {}", at.page.0 + 1)))
         .collect();
@@ -162,7 +165,8 @@ pub fn items<'a>(
       items.push((prefix.into(), "back to the last jump".into()));
       items
     }
-    _ => keys::clues(prefix)
+    _ => keys
+      .clues(grammar, allows)
       .into_iter()
       .map(|(key, about)| (key.replace(' ', "Space"), about.to_owned()))
       .collect(),

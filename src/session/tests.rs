@@ -346,7 +346,11 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
   session.settle()?;
   let now = Instant::now();
   for app in &mut session.tab().panes {
-    app.flash_landing();
+    app.reader.flash(
+      app.reader.cursor,
+      vpdf_ui::page::landing::Span::Line,
+      Instant::now(),
+    );
     app.reader.notice("Occupied");
     let remaining =
       app.reader.landing().deadline().unwrap().duration_since(now);

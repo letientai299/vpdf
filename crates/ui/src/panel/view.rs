@@ -5,6 +5,37 @@ use super::{
   key_width, moved_row, screen_step, terminal, theme,
 };
 
+#[derive(Clone, Copy)]
+pub(super) enum Navigation {
+  Vertical(bool),
+  Edge(bool),
+  Scroll(f32),
+  Screen(i32),
+  Rows(i32),
+  Heading(bool),
+  Align(f32),
+  Result(bool),
+}
+
+impl Navigation {
+  pub(super) fn of(action: Action) -> Option<Self> {
+    Some(match action {
+      Action::Motion(Motion::Down) => Self::Vertical(true),
+      Action::Motion(Motion::Up) => Self::Vertical(false),
+      Action::Motion(Motion::First) => Self::Edge(false),
+      Action::Motion(Motion::Last) => Self::Edge(true),
+      Action::Scroll(amount) => Self::Scroll(amount),
+      Action::Screen(direction) => Self::Screen(direction),
+      Action::Rows(rows) => Self::Rows(rows),
+      Action::Motion(Motion::NextParagraph) => Self::Heading(true),
+      Action::Motion(Motion::PreviousParagraph) => Self::Heading(false),
+      Action::Align(fraction) => Self::Align(fraction),
+      Action::Result(reverse) => Self::Result(reverse),
+      _ => return None,
+    })
+  }
+}
+
 impl Panel {
   /// `index`'s line on screen, as scrolled.
   pub(crate) fn screen_line(&self, index: usize) -> isize {
@@ -87,13 +118,6 @@ impl Panel {
     self.selected = index.min(self.rows.len().saturating_sub(1));
   }
 
-  pub fn clicked(&self) -> Option<usize> {
-    self.clicked
-  }
-  pub fn remember_click(&mut self, clicked: Option<usize>) -> Option<usize> {
-    std::mem::replace(&mut self.clicked, clicked)
-  }
-
   /// Follows sections after panel browsing ends.
   pub fn track(&mut self, section: Option<usize>, changed: bool) {
     self.follow_pending |= changed;
@@ -130,18 +154,19 @@ impl Panel {
 
   /// Applies list motions; `page` rows per full-screen scroll.
   pub fn navigate(&mut self, input: Input, page: usize) -> bool {
+    let Some(navigation) = Navigation::of(input.action) else { return false };
     let last = self.rows.len().saturating_sub(1);
     let count = input.count;
     let screen_rows = screen_step(page.saturating_sub(2));
     if self.kind == PanelKind::Help && self.layout.is_some() {
-      let scroll = match input.action {
-        Action::Scroll(amount) => {
+      let scroll = match navigation {
+        Navigation::Scroll(amount) => {
           Some((amount * page as f32 * count as f32) as isize)
         }
-        Action::Screen(direction) => {
+        Navigation::Screen(direction) => {
           Some(direction as isize * screen_rows as isize * count as isize)
         }
-        Action::Rows(rows) => Some(rows as isize * count as isize),
+        Navigation::Rows(rows) => Some(rows as isize * count as isize),
         _ => None,
       };
       if let Some(rows) = scroll {
@@ -149,42 +174,38 @@ impl Panel {
         return true;
       }
     }
-    self.selected = match input.action {
-      Action::Motion(Motion::Down) => self.selected.saturating_add(count),
-      Action::Motion(Motion::Up) => self.selected.saturating_sub(count),
-      Action::Motion(Motion::First | Motion::Last) if input.explicit => {
-        count.saturating_sub(1)
-      }
-      Action::Motion(Motion::First) => 0,
-      Action::Motion(Motion::Last) => last,
-      Action::Scroll(amount) => {
+    self.selected = match navigation {
+      Navigation::Vertical(true) => self.selected.saturating_add(count),
+      Navigation::Vertical(false) => self.selected.saturating_sub(count),
+      Navigation::Edge(_) if input.explicit => count.saturating_sub(1),
+      Navigation::Edge(false) => 0,
+      Navigation::Edge(true) => last,
+      Navigation::Scroll(amount) => {
         let rows = (amount * page as f32 * count as f32) as isize;
         self.selected.saturating_add_signed(rows)
       }
-      Action::Screen(direction) => {
+      Navigation::Screen(direction) => {
         let rows = direction as isize * screen_rows as isize * count as isize;
         self.selected.saturating_add_signed(rows)
       }
-      Action::Rows(rows) => {
+      Navigation::Rows(rows) => {
         self.selected.saturating_add_signed(rows as isize * count as isize)
       }
-      Action::Motion(Motion::NextParagraph | Motion::PreviousParagraph) => {
-        let forward = input.action == Action::Motion(Motion::NextParagraph);
+      Navigation::Heading(forward) => {
         self.heading(forward, count);
         self.selected
       }
-      Action::Align(fraction) => {
+      Navigation::Align(fraction) => {
         let visible = page.saturating_sub(3) as f32;
         self.top = self
           .line_start(self.selected)
           .saturating_sub((visible * fraction) as usize);
         self.selected
       }
-      Action::Result(reverse) => {
+      Navigation::Result(reverse) => {
         self.repeat(reverse, count);
         self.selected
       }
-      _ => return false,
     }
     .min(last);
     self.height = u16::try_from(page).unwrap_or(u16::MAX);

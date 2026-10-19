@@ -20,6 +20,15 @@ pub enum Transition {
   Miss(String),
 }
 
+enum Route {
+  Run(usize),
+  Cancel,
+  Type(char),
+  Erase,
+  Close,
+  Pass,
+}
+
 /// Home-row first, like Vimium's default hint characters.
 const ALPHABET: &[u8] = b"asdfjklghqweruiopzxcvnm";
 
@@ -147,29 +156,46 @@ impl Hints {
     self.items.into_iter().nth(index).map(|hint| (hint.target, self.copy))
   }
 
-  pub fn key(&mut self, key: KeyEvent) -> Transition {
+  fn route(&self, key: KeyEvent) -> Route {
     let key = keys::normalize(key);
     if key.code == KeyCode::Enter
       && let Some(index) = self.selected
     {
-      return Transition::Run(index);
+      return Route::Run(index);
     }
     if key.code == KeyCode::Esc {
-      return Transition::Cancel;
+      return Route::Cancel;
     }
-    // Typing may hide the picked label.
-    self.selected = None;
     match (keys::plain(key), key.code) {
       (true, KeyCode::Char(ch)) if ch.is_ascii_alphabetic() => {
-        self.typed.push(ch.to_ascii_lowercase());
+        Route::Type(ch.to_ascii_lowercase())
       }
-      (true, KeyCode::Backspace) if !self.typed.is_empty() => {
+      (true, KeyCode::Backspace) if !self.typed.is_empty() => Route::Erase,
+      (_, KeyCode::Backspace) => Route::Close,
+      _ => Route::Pass,
+    }
+  }
+
+  /// Keys retained after global cancellation handling.
+  pub fn accepts(&self, key: KeyEvent) -> bool {
+    !matches!(self.route(key), Route::Cancel | Route::Pass)
+  }
+
+  pub fn key(&mut self, key: KeyEvent) -> Transition {
+    let route = self.route(key);
+    // Typing may hide the picked label.
+    if !matches!(route, Route::Run(_) | Route::Cancel) {
+      self.selected = None;
+    }
+    match route {
+      Route::Run(index) => return Transition::Run(index),
+      Route::Cancel => return Transition::Cancel,
+      Route::Type(ch) => self.typed.push(ch),
+      Route::Erase => {
         self.typed.pop();
         return Transition::Stay;
       }
-      _ => {
-        return Transition::Close;
-      }
+      Route::Close | Route::Pass => return Transition::Close,
     }
     let shown: Vec<_> = self.shown().map(|(index, _)| index).take(2).collect();
     match shown[..] {
@@ -367,6 +393,47 @@ mod tests {
     );
     assert_eq!(hints.into_target(0), Some((Target::Page(PageId(0)), true)));
     assert!(Hints::new(Vec::new(), false, 0, 80).is_err());
+    Ok(())
+  }
+
+  #[test]
+  fn hint_gate_preserves_state() -> Result<()> {
+    use crossterm::event::KeyModifiers;
+    for (selected, typed) in
+      [(false, false), (false, true), (true, false), (true, true)]
+    {
+      let found =
+        (0..25).map(|row| (((10, row), 12), Target::Page(PageId(0)))).collect();
+      let mut hints = Hints::new(found, false, 0, 80)?;
+      if typed {
+        hints.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+      }
+      if selected {
+        hints.select(0);
+      }
+      let before = (hints.typed().to_owned(), hints.selected());
+      for (code, modifiers, accepts) in [
+        (KeyCode::Char('A'), KeyModifiers::SHIFT, true),
+        (KeyCode::Char('a'), KeyModifiers::CONTROL, false),
+        (KeyCode::Char('a'), KeyModifiers::ALT, false),
+        (KeyCode::Backspace, KeyModifiers::NONE, true),
+        (KeyCode::Backspace, KeyModifiers::CONTROL, true),
+        (KeyCode::Enter, KeyModifiers::ALT, selected),
+        (KeyCode::Char('1'), KeyModifiers::NONE, false),
+        (KeyCode::Down, KeyModifiers::NONE, false),
+        (KeyCode::Esc, KeyModifiers::NONE, false),
+      ] {
+        assert_eq!(hints.accepts(KeyEvent::new(code, modifiers)), accepts);
+        assert_eq!(
+          (hints.typed(), hints.selected()),
+          (before.0.as_str(), before.1)
+        );
+      }
+      assert_eq!(
+        hints.key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL)),
+        Transition::Close
+      );
+    }
     Ok(())
   }
 }

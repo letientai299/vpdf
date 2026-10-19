@@ -55,9 +55,11 @@ Keep changing measurements in versioned evidence. Historical demonstrations
 must identify their build and capture conditions; they do not describe every
 current build. Keep interface inventories in executable help.
 
-Update the [embedded key reference][keys] when bindings change, the
-[command table][commands] when reader commands change, and the [CLI][cli] when
-launch options change. Avoid copying their inventories into Markdown.
+Keep bindings in the [key table][keys], reader commands in the
+[command table][commands], and launch options in the [CLI][cli]. The
+[embedded reference][key-help] derives binding labels from those keys; update
+its prose when grammar or context changes. Avoid copying inventories into
+Markdown.
 
 [installation]: install.md
 [reading]: reading.md
@@ -68,7 +70,8 @@ launch options change. Avoid copying their inventories into Markdown.
 [sessions]: dev/sessions.md
 [development]: dev/dev.md
 [readme]: ../README.md
-[keys]: ../crates/ui/src/help.txt
+[keys]: ../crates/ui/src/keys.rs
+[key-help]: ../crates/ui/src/keys/reference.rs
 [commands]: ../crates/ui/src/commands.rs
 [cli]: ../src/main.rs
 [terminal]: install.md#terminal-setup

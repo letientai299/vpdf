@@ -331,7 +331,7 @@ fn normal_marks_search_and_history_use_reading_area() -> Result<()> {
   keys(&mut app, b"ma")?;
   assert_eq!(app.marks[&'a'], reading);
   keys(&mut app, b"/")?;
-  assert_eq!(app.search_origin.unwrap().cursor, reading);
+  assert_eq!(app.search.prompt_origin().unwrap().cursor, reading);
   keys(&mut app, b"\x1b[27u")?;
   let scroll = app.reader.scroll;
   app.go_to(Position { page: PageId(60), ..Position::default() }, true)?;

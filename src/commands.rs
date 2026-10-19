@@ -3,7 +3,7 @@ use crate::app::{App, Request};
 use crate::cmdline;
 use crate::document::Target;
 use crate::text::{PageId, Position};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 use std::process::{Command, Stdio};
 use vpdf_reader::reader::Mode;
 use vpdf_ui::commands::{self, View};
@@ -20,20 +20,7 @@ impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
     self.cancel_definition();
     self.search.forget_yank();
-    self.reader.prepare(input.action);
-    if self.reader.operator.is_some()
-      && !matches!(
-        input.action,
-        Action::Motion(_)
-          | Action::Object(..)
-          | Action::Yank
-          | Action::YankLine
-          | Action::YankRaw
-          | Action::YankPath
-          | Action::Search(_)
-          | Action::Cancel
-      )
-    {
+    if self.reader.prepare(input.action) {
       self.disarm();
     }
     if self.region_input(input)? {
@@ -58,7 +45,6 @@ impl App {
     }
     if !self.panel_focused()
       && self.overview.is_some()
-      && !matches!(input.action, Action::Panel(_) | Action::ClosePanel)
       && self.overview_input(input)?
     {
       return Ok(());
@@ -125,20 +111,16 @@ impl App {
     self.end_gestures();
     self.drop_hover_preview();
     if self.prompt.is_some() {
+      let view = self.command_view();
       return self.edit_prompt(history, |prompt, history| {
-        cmdline::feed(prompt, key, history)
+        cmdline::feed(prompt, key, history, view)
       });
     }
     if vpdf_ui::keys::cancels(key) {
       return self.cancel_input();
     }
     if let Some(hints) = &self.hints {
-      let picked = key.code == KeyCode::Enter && hints.selected().is_some();
-      if vpdf_ui::keys::plain(key)
-        && matches!(key.code, KeyCode::Char(ch) if ch.is_ascii_alphabetic())
-        || key.code == KeyCode::Backspace
-        || picked
-      {
+      if hints.accepts(key) {
         return self.hint_key(key);
       }
       self.hints = None;
@@ -274,25 +256,21 @@ impl App {
     Ok(())
   }
 
+  fn command_view(&self) -> View {
+    if self.covered() { View::Recent } else { View::Document }
+  }
+
   pub fn command(&mut self, line: &str) -> Result<()> {
-    let (name, argument) = commands::parse(line);
-    if name.is_empty() {
-      return Ok(());
-    }
-    let spec = commands::lookup(name, cmdline::on_path);
-    // The covered document counts as closed, as on the start screen.
-    if self.covered() {
-      let kept = spec.is_some_and(|spec| spec.available(View::Recent));
-      anyhow::ensure!(kept, "Open a document before :{name}");
-    }
-    // Labels like `iv` beat prefixes like `:info`, not exact names.
-    let label = commands::exact(name, cmdline::on_path).is_none()
-      && self.doc.page_number(name).is_some();
-    if label || name.chars().all(|ch| ch.is_ascii_digit()) {
-      return self.page(name);
-    }
-    let spec =
-      spec.ok_or_else(|| anyhow::anyhow!("Unknown command: {name}"))?;
+    let (spec, argument) = match commands::resolve(
+      line,
+      self.command_view(),
+      cmdline::on_path,
+      |name| self.doc.page_number(name).is_some(),
+    )? {
+      commands::Resolution::Empty => return Ok(()),
+      commands::Resolution::Page(name) => return self.page(name),
+      commands::Resolution::Command { spec, argument } => (spec, argument),
+    };
     match spec.name {
       "split" | "vsplit" => {
         let axis =
@@ -558,5 +536,45 @@ mod tests {
     for (uri, want) in cases {
       assert_eq!(openable(uri), want, "{uri}");
     }
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn completion_tracks_document_visibility() -> Result<()> {
+    use crossterm::event::KeyModifiers;
+    use vpdf_ui::layout::Screen;
+    let path =
+      std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    for covered in [false, true] {
+      let mut app = App::with_screen(&path, "", false, screen)?;
+      if covered {
+        app.panel = Some(crate::panel::PanelSession::recent(
+          Vec::new(),
+          &[],
+          "",
+          &app.wake,
+        ));
+      }
+      assert_eq!(app.covered(), covered);
+      let mut prompt = Prompt::new(PromptKind::Command);
+      prompt.replace("re");
+      app.prompt = Some(prompt);
+      app.key(
+        KeyEvent::new(crossterm::event::KeyCode::Tab, KeyModifiers::NONE),
+        &mut History::default(),
+      )?;
+      assert_eq!(
+        app.prompt.as_ref().unwrap().text(),
+        if covered { "recent" } else { "re" }
+      );
+    }
+    Ok(())
   }
 }

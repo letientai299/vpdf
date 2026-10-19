@@ -5,7 +5,7 @@ use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use vpdf_reader::reader::Location;
 use vpdf_ui::input::InputOwner;
 use vpdf_ui::keys::{Action, Input};
-use vpdf_ui::layout::{Screen, screen_step};
+use vpdf_ui::layout::Screen;
 use vpdf_ui::panel::Panel;
 use vpdf_ui::pointer::{
   Hit, Items, List, Pixel, Region, Route, WHEEL_ROWS, Wheel,

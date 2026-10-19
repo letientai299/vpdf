@@ -196,7 +196,11 @@ fn the_top_row_names_page_and_section() -> Result<()> {
         target: Target::Point { page: PageId(page), x, y },
       });
     }
-    assert_eq!(app.section(), Some(section), "{rows} rows");
+    assert_eq!(
+      app.reading_view().current_section(),
+      Some(section),
+      "{rows} rows"
+    );
     assert_eq!(app.reading_position()?, position, "{rows} rows");
   }
   Ok(())

@@ -40,7 +40,7 @@ impl App {
   fn outline_here(&mut self) -> Result<()> {
     let action = Action::Panel(PanelKind::Outline);
     self.action(Input::plain(action))?;
-    let section = self.current_section;
+    let section = self.outline.current();
     if let Some(panel) = &mut self.panel
       && let Some(index) = section
     {

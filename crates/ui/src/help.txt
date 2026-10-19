@@ -13,144 +13,125 @@ P: focused panel
 :cmd [arg]: optional argument
 
 # Move
-h j k l / arrows: pan / scroll in N
+{left} {down} {up} {right} / arrows: pan / scroll in N
 i: enter C at visible text
-C/V h j k l: glyph motions
-C/V w b e: word motions
-C/V W B E gE: WORD motions
-C/V ( ): previous / next sentence
-C/V 0 ^ $: line motions
-C/V { }: previous / next paragraph
-[count]gg G: page jump
+C/V {left} {down} {up} {right}: glyph motions
+C/V {word} {back_word} {end_word}: word motions
+C/V {big_word} {back_big_word} {big_end} {previous_big_end}: WORD motions
+C/V {previous_sentence} {next_sentence}: previous / next sentence
+C/V {line_start} {first_nonblank} {line_end}: line motions
+C/V {previous_paragraph} {next_paragraph}: previous / next paragraph
+[count]{first_page} {last_page}: page jump
 :<n|label>: jump to a page number or label
-[count][[ ]]: previous / next heading; record jump
-]i [i: next / previous figure; counts repeat
-<BS>: previous page
-<C-o><C-i> '': jump back / forward
-gp <C-o><C-i>: jump; close overview
+[count]{previous_section} {next_section}: previous / next heading; record jump
+{next_figure} {previous_figure}: next / previous figure; counts repeat
+{previous_page}: previous page
+{history_back}{history_forward} '': jump back / forward
+{overview} {history_back}{history_forward}: jump; close overview
 Jumps: flash landing line for 600 ms
 Link and row jumps: target below one row of context
 ma mA: mark here / across documents
 'a `a: go to mark line / position
 
 # Scroll and zoom
-<Space><S-Space>: screen down / up, two rows overlap
-<C-d><C-u>: half-screen scroll
-<C-f><C-b>: full-screen scroll
-<C-e><C-y>: row scroll
+{screen_down}{screen_up}: screen down / up, two rows overlap
+{half_down}{half_up}: half-screen scroll
+{page_down}{page_up}: full-screen scroll
+{row_down}{row_up}: row scroll
 Page scroll keys move the Cursor or Visual endpoint
 Row scrolling keeps the cursor visible; wheel preserves Visual ranges
 Counts multiply scroll distances; half-screen counts are not remembered
-zt zz zb: target at top / middle / bottom
-+ - =: zoom in / out / fit width
-zf: fit page
-zF: fit selected figure; reserve action bar
-zr: rotate clockwise
-zc: crop / restore page margins
+{align_top} {align_middle} {align_bottom}: target at top / middle / bottom
+{zoom_in} {zoom_out} {fit}: zoom in / out / fit width
+{fit_page}: fit page
+{figure_fit}: fit selected figure; reserve action bar
+{rotate}: rotate clockwise
+{crop}: crop / restore page margins
 
 # Select and yank
-v V: enter character / line V
-C v/V: select from positioned glyph
-N v/V: visible target, else first visible text
+{visual} {visual_line}: enter character / line V
+C {visual}/{visual_line}: select from positioned glyph
+N {visual}/{visual_line}: visible target, else first visible text
 No text: selection unavailable; run :ocr explicitly
-o: swap selection ends
-gv: reselect
+{swap}: swap selection ends
+{reselect}: reselect
 <Esc> / yank: return to V entry mode
 C <Esc>: return to N when idle
-y yy yw ye y$: yank
-yy Y: join wrapped lines; rejoin hyphenated words
-yY: yank lines as laid out
-yp: yank full file path
+{yank} {yank}{yank} {yank}{word} {yank}{end_word} {yank}{line_end}: yank
+{yank_lines}: join wrapped lines; rejoin hyphenated words
+{yank_raw}: yank lines as laid out
+{yank_path}: yank full file path
 "" "+ "*: system clipboard
 "a "A: named register / append
 
 # Text objects
-V / y + i/a: inner / around objects
+{visual_line} / {yank} + i/a: inner / around objects
 C i/a: no object prefix
 w W s p: word / WORD / sentence / paragraph
-( ) [ ] { } < >: paired brackets
+( ) [ ] {{ }} < >: paired brackets
 b B: parentheses / braces aliases
 ' ": ASCII or typographic quotes
 Counts: repeat objects / enclosing bracket pairs
 
 # Find
-/ ?: search forward / backward
-n N: next / previous match
-*: search active glyph or visible target word
+{search_forward} {search_backward}: search forward / backward
+{result_next} {result_previous}: next / previous match
+{word_search}: search active glyph or visible target word
 \v: regex prefix in content and panels
 Search: literal; uppercase letters enable case sensitivity
 
 # Figures
-gF: open selected figure actions
-h j k l: choose image, text, PNG, or OCR
-<CR>: run action; <Esc> closes bar
+{region}: open selected figure actions
+{left} {down} {up} {right}: choose image, text, PNG, or OCR
+{follow}: run action; <Esc> closes bar
 Save PNG: beside document with numbered filename
 OCR: needs Tesseract; copies region text
 Close bar: keep mode, selection, committed jobs
 
 # Panels
-go: table of contents
-gs: search results
-f F: link hints / copy URLs
-gl: links on this page
+{outline}: table of contents
+{results}: search results
+{hints} {copy_hints}: link hints / copy URLs
+{links}: links on this page
 :jumps: history with context, word, and position
-gp: page thumbnails
-gr: recent documents
-ga: annotations (read-only)
-Annotations <CR>: jump, enter Cursor, and show note
-Annotations K: preview selected note
-P <CR>: follow row; focus content in N
-P o: follow; keep panel focus
-P / ? n N: search rows
-P { }: previous / next heading
-P yy: yank row
-<Tab><S-Tab>: toggle content / panel focus
-P q: close focused panel
-gq: close sidebar from either focus
-gd: follow internal link or resolve section / figure / table / equation label
+{overview}: page thumbnails
+{recent}: recent documents
+{annotations}: annotations (read-only)
+Annotations {panel_follow}: jump, enter Cursor, and show note
+Annotations {panel_note}: preview selected note
+P {panel_follow}: follow row; focus content in N
+P {panel_keep}: follow; keep panel focus
+P {search_forward} {search_backward} {result_next} {result_previous}: search rows
+P {previous_paragraph} {next_paragraph}: previous / next heading
+P {panel_yank}: yank row
+{local_focus}<S-Tab>: toggle content / panel focus
+P {panel_close}: close focused panel
+{close_panel}: close sidebar from either focus
+{definition}: follow internal link or resolve section / figure / table / equation label
 Unlinked references: scan text; choose ambiguous candidates in results
 Ambiguous headings: choose a destination in the outline
 Reference lookup replaces search; Esc or another action cancels pending lookup
 Term definitions and unlinked citations / footnotes are not inferred
-gx: open URL at cursor or visible target
-:text: extracted-text preview; q returns
-g? <F1>: this reference
-<Esc> / Ctrl-C: cancel transient or pending input first
-q: close reading pane with content focus
-Last pane q: close tab; last tab q: exit
+{open_url}: open URL at cursor or visible target
+:text: extracted-text preview; {quit} returns
+{help} <F1>: this reference
+<Esc> / {cancel}: cancel transient or pending input first
+{quit}: close reading pane with content focus
+Last pane {quit}: close tab; last tab {quit}: exit
 
 # Preview
-K / <CR>: preview / follow visible explicit target
-K: show annotation note when present
-j k: scroll rows
-<C-d><C-u>: scroll half height
+{peek} / {follow}: preview / follow visible explicit target
+{peek}: show annotation note when present
+{down} {up}: scroll rows
+{half_down}{half_up}: scroll half height
 Border: page at its top; arrows mark clipped edges
 Scrolling runs past the target page's end
-<CR>: follow link or dismiss note
+{follow}: follow link or dismiss note
 <Esc>: cancel preview layer
 Status line: destination while the pointer is over it
 Closes once its link leaves the view
 
-# Panes
-<C-w>s/v: split above / left
-<C-w>h/j/k/l: pane left / below / above / right
-<C-w>w/W/p: next / previous / last pane
-<C-w>c/o: close pane / close others
-<C-w>+/-/</>: taller / shorter / narrower / wider
-<C-w>_/|/=: tallest / widest / equal
-<C-w>H/J/K/L: move to far left / bottom / top / right
-<C-w>x/T: swap with sibling / move to new tab
-<C-w>r/R: rotate panes forward / backward
-<C-w>n: new pane listing recent documents
-
-# Tabs
-P file <CR>/o: target tab / split; reuse open view
-Recent <CR>: open in covered pane
-gt [count]gt: next / nth tab
-gT: previous tab
-:e :tabe :tabnew :split :vsplit <file>: reuse open view first
-N paste of a PDF path: open it; a prompt takes the text
-Pane changes: keep C/V, queries and panel focus
+{windows}
 
 # Mouse: pointer and hover
 Pointer: pixel exact in Kitty and Ghostty; cells under tmux
@@ -160,8 +141,8 @@ Hover link: tint; status shows its destination
 Hover citation: status quotes the cited reference
 Hover note / highlight: status shows author and comment
 Hover panel row: underline; status shows clipped title
-gp hover: page label and section at its top
-gr hover: that row's card; wheel scrolls the card
+{overview} hover: page label and section at its top
+{recent} hover: that row's card; wheel scrolls the card
 Printed URLs, DOIs, mail addresses: act as links
 Rest on an internal link 400 ms: preview in the pane under the pointer
 Leave link and preview: close it; keys close it too
@@ -172,7 +153,7 @@ Hover detail: shows when no message is up; tabs shrink
 # Mouse: click and drag
 Click: set N target; mark its glyph for 600 ms
 Click link: follow on release; record jump
-Click link preview, hover or K: follow
+Click link preview, hover or {peek}: follow
 Click note icon: show its note
 Drag / click runs: enter V; <Esc> returns to entry mode
 Drag from a link: select text
@@ -189,7 +170,7 @@ Hint hover / click: pick a label / act on it
 P click: follow; keep panel focus
 P double click: follow; focus content
 Recent click: open in covered pane
-gp click: open the page
+{overview} click: open the page
 Middle click link: target in a split; copy a URL
 Middle click row, thumbnail, link preview: target in a split
 Middle drag: pan the PDF view or text both ways
@@ -198,25 +179,25 @@ Drop a PDF on a pane: open there; reuse view; prompt takes it
 # Mouse: menus
 Right click page: link, note, selection, text, figure items
 Right click P row: follow, split, copy, close
-Right click gp thumbnail: open here or in a split
-Menu hover / j k: choose
-Menu click / <CR>: run
+Right click {overview} thumbnail: open here or in a split
+Menu hover / {down} {up}: choose
+Menu click / {follow}: run
 Right drag and release: run the item under the pointer
 Menu <Esc>: close; click off any overlay: close only it
 
 # Mouse: wheel and buttons
 Wheel: scroll the page, preview, note, list, or card under it
-gp wheel: scroll thumbnails; keep selection
+{overview} wheel: scroll thumbnails; keep selection
 P wheel: scroll list; keep row selection
 Wheel with a menu open: scroll what is under it
 Status line wheel: scroll the pane above it
 Page <C-wheel>: zoom; keep the point under the pointer
 Page <S-wheel> / sideways wheel: pan a zoomed page or wide text
-Back / forward buttons: jump back / forward; close gp
+Back / forward buttons: jump back / forward; close {overview}
 
 # Mouse: chrome
 Tab name click / middle click: switch / close tab
-Page counter click: gp
+Page counter click: {overview}
 Section name click: outline at that entry
 Zoom label click: fit width
 Clue / completion hover / click: highlight / type or pick it

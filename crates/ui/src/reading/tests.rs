@@ -8,6 +8,7 @@ struct Source {
   text: Arc<Text>,
   reads: usize,
   fail: usize,
+  headings: Vec<vpdf_model::document::Heading>,
 }
 
 impl Pages for Source {
@@ -64,6 +65,7 @@ impl Fixture {
       text: Arc::new(Text { lines, truncated: false }),
       reads: 0,
       fail: 0,
+      headings: Vec::new(),
     };
     let screen = Screen {
       columns: 10,
@@ -602,4 +604,259 @@ fn resize_preserves_landing_after_completed_reflow() -> Result<()> {
     }
   }
   Ok(())
+}
+
+#[test]
+fn search_submission_preserves_failure_order() {
+  for cursor in [false, true] {
+    let mut fixture = Fixture::new();
+    if cursor {
+      fixture.reader.enter_cursor();
+    }
+    let mut search = crate::find::Search::default();
+    search.begin_prompt(Location::default());
+    fixture.reader.operator = Some(Operator { count: 1, register: 'a' });
+    fixture.source.fail = 1;
+    assert!(fixture.view().prepare_search(&mut search, "a", false).is_err());
+    assert_eq!(fixture.source.reads, 1);
+    assert!(fixture.reader.operator.is_none());
+    assert!(search.prompt_origin().is_none());
+    assert_eq!(search.take_previous().is_some(), !cursor);
+    assert_eq!(fixture.reader.jumps().count(), 0);
+  }
+}
+
+#[test]
+fn search_abort_retains_failed_origin() {
+  let mut fixture = Fixture::new();
+  let mut search = crate::find::Search::default();
+  search.begin_prompt(Location::default());
+  search.cancel();
+  fixture.source.fail = 1;
+  assert!(fixture.view().abort_search(&mut search, true).is_err());
+  assert!(search.prompt_origin().is_some());
+  assert!(search.take_previous().is_some());
+}
+
+#[test]
+fn search_submission_waits_for_scan() -> Result<()> {
+  let mut fixture = Fixture::new();
+  fixture.reader.enter_cursor();
+  let mut search = crate::find::Search::default();
+  let origin = Location::default();
+  search.begin_prompt(origin);
+  fixture.reader.cursor.line = 3;
+  let submission = fixture.view().prepare_search(&mut search, "a", false)?;
+  assert_eq!(submission.query().unwrap().text, "a");
+  assert_eq!(submission.origin(), Some(origin.cursor));
+  assert!(search.prompt_origin().is_none());
+  assert_eq!(fixture.reader.jumps().count(), 0);
+  search.begin(submission.query().unwrap().clone(), 1, origin.cursor);
+  fixture.view().finish_search(&mut search, submission)?;
+  assert_eq!(fixture.reader.jumps().count(), 1);
+  assert!(fixture.landing.position().is_none());
+  Ok(())
+}
+
+impl crate::source::Outline for Source {
+  fn outline(&self) -> &[vpdf_model::document::Heading] {
+    &self.headings
+  }
+}
+
+fn named_headings() -> Vec<vpdf_model::document::Heading> {
+  [15.0, 16.0, 110.0]
+    .into_iter()
+    .map(|y| vpdf_model::document::Heading {
+      title: format!("Heading {y}"),
+      depth: 0,
+      target: vpdf_model::document::Target::Point {
+        page: PageId(0),
+        x: 10.0,
+        y,
+      },
+    })
+    .collect()
+}
+
+#[test]
+fn named_section_prefers_aim_then_last_same_line() {
+  let mut fixture = Fixture::new();
+  fixture.source.headings = named_headings();
+  let landed = fixture.view().landed_view(Position::default());
+  fixture.landing.record(landed);
+  fixture.landing.aim(fixture.source.headings[0].target.clone());
+  fixture.source.fail = 1;
+  assert_eq!(fixture.view().current_section(), Some(0));
+  assert_eq!(fixture.source.reads, 0);
+  fixture.landing = crate::page::landing::Landing::default();
+  fixture.landing.record(landed);
+  fixture.source.fail = 0;
+  assert_eq!(fixture.view().current_section(), Some(1));
+  assert_eq!(fixture.source.reads, 1);
+}
+
+#[test]
+fn named_section_preserves_source_failure_fallback() {
+  for text in [false, true] {
+    let mut fixture = Fixture::new();
+    fixture.source.headings = named_headings();
+    fixture.frame.pane.text = text;
+    fixture.source.fail = 1;
+    assert_eq!(
+      fixture.view().current_section(),
+      if text { Some(2) } else { None }
+    );
+    assert_eq!(fixture.source.reads, usize::from(text));
+  }
+}
+
+#[test]
+fn outline_waits_for_focus_and_ignores_other_panels() {
+  use crate::keys::PanelKind;
+  use crate::panel::{Panel, Row};
+
+  for kind in [PanelKind::Outline, PanelKind::Help] {
+    let mut fixture = Fixture::new();
+    fixture.source.headings = named_headings();
+    fixture.reader.enter_cursor();
+    fixture.reader.cursor.line = 5;
+    let mut outline = Outline::default();
+    let mut panel = Panel::new(
+      kind,
+      fixture
+        .source
+        .headings
+        .iter()
+        .map(|heading| Row::outline(heading, "1".into()))
+        .collect(),
+    );
+    panel.focus(true);
+    outline.track(&mut fixture.view(), Some(&mut panel));
+    assert_eq!(outline.current(), Some(2));
+    assert_eq!(panel.selected(), 0);
+    panel.focus(false);
+    outline.track(&mut fixture.view(), Some(&mut panel));
+    assert_eq!(
+      panel.selected(),
+      if kind == PanelKind::Outline { 2 } else { 0 }
+    );
+    fixture.source.headings.clear();
+    outline.track(&mut fixture.view(), Some(&mut panel));
+    assert_eq!(outline.current(), None);
+    fixture.source.headings = named_headings();
+    fixture.reader.cursor.line = 0;
+    outline.track(&mut fixture.view(), Some(&mut panel));
+    assert_eq!(outline.current(), Some(1));
+    assert_eq!(panel.selected(), usize::from(kind == PanelKind::Outline));
+  }
+}
+
+#[test]
+fn preparation_preserves_pending_operators() {
+  use crate::keys::Action;
+  use vpdf_reader::{motion::Motion, objects::Object};
+  for pending in [false, true] {
+    for (action, interrupts) in [
+      (Action::Motion(Motion::Down), false),
+      (Action::Object(Object::Word, true), false),
+      (Action::Yank, false),
+      (Action::YankLine, false),
+      (Action::YankRaw, false),
+      (Action::YankPath, false),
+      (Action::Search(true), false),
+      (Action::Cancel, false),
+      (Action::Definition, true),
+      (Action::Scroll(0.5), true),
+      (Action::Zoom(1), true),
+    ] {
+      let mut reader = Reader::default();
+      reader.operator = pending.then_some(Operator { count: 3, register: 'a' });
+      let mut pane = Pane::new(reader, Tracking::default());
+      assert_eq!(pane.prepare(action), pending && interrupts);
+      assert_eq!(
+        pane.operator.as_ref().map(|op| (op.count, op.register)),
+        pending.then_some((3, 'a'))
+      );
+    }
+  }
+  let mut reader = Reader::default();
+  reader.enter_cursor();
+  reader.operator = Some(Operator { count: 2, register: 'a' });
+  let mut pane = Pane::new(reader, Tracking::default());
+  pane.animate_to(200.0, Instant::now());
+  assert!(pane.prepare(Action::Zoom(1)));
+  assert_eq!(pane.scroll, 200.0);
+  assert!(!pane.animation().active());
+}
+
+#[test]
+fn viewport_uses_page_geometry() -> Result<()> {
+  use crate::find::Search;
+  use crate::keys::Action;
+  for (action, delta) in [
+    (Action::Scroll(0.5), 90.0),
+    (Action::Screen(1), 168.0),
+    (Action::Rows(3), 72.0),
+    (Action::Screen(-1), -168.0),
+    (Action::Rows(-2), -48.0),
+  ] {
+    let mut fixture = Fixture::new();
+    fixture.frame.pane.screen.rows = 30;
+    fixture.frame.pane.screen.cell_height = 12;
+    fixture.frame.visible.rows = 2;
+    fixture.reader.scroll = 300.0;
+    let input = crate::keys::Input { count: 2, ..input(action) };
+    assert_eq!(
+      fixture.view().viewport(input, &mut Search::default())?,
+      ViewportEvent::Handled
+    );
+    assert_eq!(fixture.animation.target(), Some(300.0 + delta));
+    assert_eq!(fixture.reader.scroll, 300.0);
+  }
+  let mut fixture = Fixture::new();
+  for (action, expected) in [
+    (Action::Crop, ViewportEvent::Crop),
+    (Action::Definition, ViewportEvent::Unhandled),
+    (Action::Zoom(1), ViewportEvent::Relayout),
+    (Action::Fit, ViewportEvent::Relayout),
+    (Action::FitPage, ViewportEvent::Relayout),
+    (Action::Rotate, ViewportEvent::Relayout),
+  ] {
+    assert_eq!(
+      fixture.view().viewport(input(action), &mut Search::default())?,
+      expected
+    );
+  }
+  assert_eq!(fixture.source.reads, 0);
+  assert_eq!(fixture.layout.rotation(), 90);
+  Ok(())
+}
+
+#[test]
+fn viewport_failure_cancels_yank() {
+  use crate::find::Search;
+  use crate::keys::Action;
+  use vpdf_search::{query::Query, search::Hit};
+  let mut fixture = Fixture::new();
+  fixture.reader.enter_cursor();
+  fixture.reader.scroll = 50.0;
+  fixture.reader.operator = Some(Operator { count: 1, register: 'a' });
+  fixture.animation.start(200.0, Instant::now());
+  fixture.source.fail = 1;
+  let mut search = Search::default();
+  let found = Position { line: 1, ..Position::default() };
+  search.show(
+    Query::default(),
+    vec![Hit { first: found, last: found, excerpt: "a".into() }],
+  );
+  search.yank_after(Location::default(), Operator { count: 1, register: 'a' });
+  assert!(
+    fixture.view().viewport(input(Action::Rows(1)), &mut search).is_err()
+  );
+  assert_eq!(fixture.source.reads, 1);
+  assert_eq!(fixture.reader.scroll, 200.0);
+  assert_eq!(fixture.animation.target(), None);
+  assert!(fixture.reader.operator.is_none());
+  assert!(search.take_yank().is_none());
 }

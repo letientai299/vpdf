@@ -131,8 +131,23 @@ impl Pane {
     true
   }
 
-  pub fn prepare(&mut self, action: crate::keys::Action) {
+  /// Whether the action interrupts a pending operator.
+  #[must_use]
+  pub fn prepare(&mut self, action: crate::keys::Action) -> bool {
+    use crate::keys::Action;
     self.tracking.animation.finish_before(action, &mut self.reader);
+    self.reader.operator.is_some()
+      && !matches!(
+        action,
+        Action::Motion(_)
+          | Action::Object(..)
+          | Action::Yank
+          | Action::YankLine
+          | Action::YankRaw
+          | Action::YankPath
+          | Action::Search(_)
+          | Action::Cancel
+      )
   }
 
   pub fn release_bar(&mut self, bar: &mut crate::scrollbar::Bar) -> bool {

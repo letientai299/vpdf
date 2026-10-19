@@ -720,7 +720,7 @@ fn status_items_act_on_click() -> Result<()> {
   let app = session.app();
   let panel =
     app.panel.as_ref().map(|p| (p.view.focused(), Some(p.view.selected())));
-  assert_eq!(panel, Some((true, app.current_section)));
+  assert_eq!(panel, Some((true, app.outline.current())));
   Ok(())
 }
 
@@ -965,8 +965,8 @@ fn section_clicks_select_their_entry() -> Result<()> {
   let app = session.app();
   let panel =
     app.panel.as_ref().map(|p| (p.view.focused(), Some(p.view.selected())));
-  assert_eq!(panel, Some((true, app.current_section)));
-  assert_ne!(app.current_section, Some(12));
+  assert_eq!(panel, Some((true, app.outline.current())));
+  assert_ne!(app.outline.current(), Some(12));
   Ok(())
 }
 

@@ -1,9 +1,7 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Document;
-use crate::pdf_text::PdfText;
 use crate::raster::Raster;
-use vpdf_reader::reader;
 use vpdf_ui::keys::PanelKind;
 
 impl App {
@@ -46,8 +44,7 @@ impl App {
       vpdf_terminal::payload::Encoder::live(),
     );
     self.search_worker = None;
-    let previous = std::mem::take(&mut self.search);
-    let rerun = !previous.hidden() && !previous.query().text.is_empty();
+    let rerun = self.search.reset_document();
     // An open outline panel waits on the new outline now.
     self.outline_load = crate::outline::Loading::Deferred;
     if self
@@ -72,24 +69,15 @@ impl App {
     self.point(None);
     self.link_press.cancel();
     self.dismiss_overlay();
-    if let Some(mut origin) = self.search_origin {
-      origin.cursor =
-        reader::clamp(origin.cursor, &mut PdfText(&mut self.doc))?;
-      origin.anchor =
-        origin.anchor.filter(|(page, _)| page.0 < self.doc.pages.len());
-      if let Some(top) = origin.text_top {
-        origin.text_top = Some(self.text().clamp(top)?);
-      }
-      origin.target = None;
-      self.search_origin = Some(origin);
-    }
+    let mut reading = self.reading_parts();
+    reading.view.reclamp_search(reading.search)?;
     if let Some(panel) = &self.panel {
       let kind = panel.view.kind();
       let rows = self.panel_rows(kind)?;
       // These rows come from the session or refill when work finishes.
       let refills = match kind {
         PanelKind::Recent | PanelKind::Marks => true,
-        PanelKind::Results => rerun,
+        PanelKind::Results => rerun.is_some(),
         PanelKind::Outline => self.outline_pending(),
         _ => false,
       };
@@ -100,8 +88,8 @@ impl App {
         self.panel = None;
       }
     }
-    if rerun {
-      self.rerun(previous.query())?;
+    if let Some(query) = rerun {
+      self.rerun(&query)?;
     }
     self.relayout()?;
     self.reader.notice("Reloaded");

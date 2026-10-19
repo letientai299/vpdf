@@ -82,7 +82,7 @@ impl Home {
         Outcome::Stay
       }
       Effect::Complete(before) => {
-        let (start, items) = cmdline::candidates(&before);
+        let (start, items) = cmdline::candidates(&before, View::Home);
         self.view.complete_prompt(start, items);
         Outcome::Stay
       }
@@ -92,14 +92,12 @@ impl Home {
 
 /// Commands that make sense before any document is open.
 fn command(line: &str) -> Result<Outcome> {
-  let (name, argument) = commands::parse(line);
-  if name.is_empty() {
+  let resolved =
+    commands::resolve(line, View::Home, cmdline::on_path, |_| false)?;
+  let commands::Resolution::Command { spec, argument } = resolved else {
     return Ok(Outcome::Stay);
-  }
-  let spec = commands::lookup(name, cmdline::on_path)
-    .ok_or_else(|| anyhow::anyhow!("Unknown command: {name}"))?;
+  };
   let name = spec.name;
-  anyhow::ensure!(spec.available(View::Home), "Open a document before :{name}");
   match name {
     "edit" | "tabedit" | "tabnew" if !argument.is_empty() => {
       Ok(Outcome::Open(cmdline::expand(argument)))
@@ -160,6 +158,27 @@ mod tests {
     assert_eq!(command("")?, Outcome::Stay);
     assert!(command("e").is_err());
     assert!(command("toc").is_err());
+    Ok(())
+  }
+
+  #[test]
+  fn start_completion_uses_home_scope() -> Result<()> {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut home = Home::new(&[], screen);
+    let mut history = History::default();
+    let key = |code| Event::Key(KeyEvent::new(code, KeyModifiers::NONE));
+    home.event(key(KeyCode::Char(':')), &mut history)?;
+    home.event(Event::Paste("re".into()), &mut history)?;
+    home.event(key(KeyCode::Tab), &mut history)?;
+    assert_eq!(home.event(key(KeyCode::Enter), &mut history)?, Outcome::Stay);
+    assert_eq!(history.commands().last().map(String::as_str), Some("recent"));
     Ok(())
   }
 }

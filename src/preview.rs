@@ -4,7 +4,7 @@ use crate::document::{Annotation, Target};
 use crate::text::{Bounds, PageId, Position};
 use std::io::Write;
 use vpdf_terminal::graphics::Graphics;
-use vpdf_ui::keys::{Action, Input};
+use vpdf_ui::keys::Input;
 use vpdf_ui::pointer::Hit;
 use vpdf_ui::preview::{Event, Frame, Preview};
 use vpdf_ui::split::Rect;
@@ -64,14 +64,12 @@ impl App {
         self.dismiss_overlay();
         Ok(())
       }
-      Event::Action(input) => {
-        if input.action == Action::Command
-          || self.overlay_transfer(input.action)
-        {
-          self.action(input)?;
-        }
-        Ok(())
+      Event::Action(input) => self.action(input),
+      Event::Transfer(input) => {
+        self.dismiss_overlay();
+        self.action(input)
       }
+      Event::Ignored => Ok(()),
     }
   }
 
