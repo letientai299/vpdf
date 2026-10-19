@@ -146,7 +146,7 @@ impl Session {
     // Disarming changes the status line and hides clue rows.
     let armed = interrupts
       && (!app.keys.pending().is_empty()
-        || app.clues.is_some()
+        || app.clues.shown().is_some()
         || app.reader.operator.is_some());
     if interrupts {
       app.disarm();
@@ -161,15 +161,22 @@ impl Session {
     let app = &mut self.tab().panes[index];
     // Per-pixel drags; edges scroll.
     let reading = |app: &App| {
-      let menu = app.context_menu.as_ref().map(|menu| menu.selected);
+      let menu =
+        app.context_menu.as_ref().map(vpdf_ui::context::ContextMenu::selected);
       let held = (app.grabbing(), app.scrub_row());
-      let view = (app.view_key(), app.layout.pan.to_bits(), held);
-      (app.reader.cursor, app.reader.selection, view, app.gesture, menu)
+      let view = (app.view_key(), app.layout.pan().to_bits(), held);
+      (
+        app.reader.cursor,
+        app.reader.selection,
+        view,
+        app.gesture.snapshot(),
+        menu,
+      )
     };
     let before =
       matches!(mouse.kind, MouseEventKind::Drag(_)).then(|| reading(app));
     if !gesture {
-      app.wheel = None;
+      app.wheel.cancel();
     }
     // Turns past an end move nothing.
     let view = wheel.then(|| app.wheel_view());
@@ -565,13 +572,13 @@ impl Session {
     for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
       // Lost releases stop it too.
       if held != Some(app.id) {
-        app.autoscroll = None;
+        app.autoscroll.cancel();
         continue;
       }
       match app.autoscroll_step(now) {
         Ok(moved) => changed |= moved,
         Err(error) => {
-          app.autoscroll = None;
+          app.autoscroll.cancel();
           app.error = Some(error.to_string());
           changed = true;
         }
@@ -583,6 +590,6 @@ impl Session {
   /// When the held edge drag next scrolls.
   pub fn autoscroll_due(&self) -> Option<Instant> {
     let panes = &self.tabs.get(self.active)?.panes;
-    panes.iter().find_map(|app| app.autoscroll.map(|held| held.due))
+    panes.iter().find_map(|app| app.autoscroll.deadline())
   }
 }

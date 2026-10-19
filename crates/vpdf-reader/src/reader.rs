@@ -15,6 +15,15 @@ pub trait TextSource {
   fn page_text(&mut self, page: PageId) -> Result<Arc<Text>>;
 }
 
+impl<S: TextSource + ?Sized> TextSource for &mut S {
+  fn page_count(&self) -> usize {
+    (**self).page_count()
+  }
+  fn page_text(&mut self, page: PageId) -> Result<Arc<Text>> {
+    (**self).page_text(page)
+  }
+}
+
 /// Pages held in memory.
 impl TextSource for Vec<Arc<Text>> {
   fn page_count(&self) -> usize {

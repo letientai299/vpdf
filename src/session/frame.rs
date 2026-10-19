@@ -239,7 +239,7 @@ impl Session {
     }
     // Tiles no longer kept render again.
     for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
-      app.requested.clear();
+      app.tiles.invalidate();
     }
   }
 
@@ -266,7 +266,7 @@ impl Session {
     }
     self.drop_pointer();
     for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
-      app.requested.clear();
+      app.tiles.invalidate();
       app.blank = false;
     }
     Ok(())

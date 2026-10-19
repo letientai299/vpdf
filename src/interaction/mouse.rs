@@ -1,6 +1,6 @@
 use super::{
-  App, Gesture, Hit, InputOwner, KeyModifiers, LinkPress, MouseButton,
-  MouseEvent, MouseEventKind, Region, Result, Route, WHEEL_ROWS, Wheel,
+  App, Hit, InputOwner, KeyModifiers, LinkPress, MouseButton, MouseEvent,
+  MouseEventKind, Region, Result, Route, WHEEL_ROWS, Wheel,
 };
 
 impl App {
@@ -37,7 +37,7 @@ impl App {
       self.cancel_definition();
     }
     if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_)) {
-      self.autoscroll = None;
+      self.autoscroll.cancel();
     }
     if matches!(mouse.kind, MouseEventKind::Down(_)) && self.dismiss_click()? {
       return Ok(());
@@ -50,7 +50,7 @@ impl App {
     if mouse.kind == MouseEventKind::Up(MouseButton::Middle)
       && self.input_owner() != InputOwner::Content
     {
-      self.grab = None;
+      self.grab.cancel();
     }
     let right = matches!(
       mouse.kind,
@@ -64,7 +64,7 @@ impl App {
     let wheel = Wheel::of(mouse.kind).is_some();
     if self.prompt.is_some()
       || self.context_menu.is_some() && !wheel
-      || self.region.as_ref().is_some_and(crate::region::Region::is_bar)
+      || self.region.as_ref().is_some_and(vpdf_ui::region::Region::is_bar)
     {
       return Ok(());
     }
@@ -110,7 +110,7 @@ impl App {
       }
       MouseEventKind::Drag(MouseButton::Left)
       | MouseEventKind::Up(MouseButton::Left)
-        if self.bar.scrub.is_some() =>
+        if self.bar.scrubbing() =>
       {
         self.bar_mouse(&route)
       }
@@ -121,7 +121,7 @@ impl App {
       }
       MouseEventKind::Drag(MouseButton::Left)
       | MouseEventKind::Up(MouseButton::Left)
-        if matches!(self.gesture, Gesture::Sweep(_) | Gesture::Dropped) =>
+        if self.gesture.alt() =>
       {
         self.page_alt(route)
       }
@@ -173,14 +173,14 @@ impl App {
         self.link_press = LinkPress::Idle;
       }
       _ => {
-        self.gesture = Gesture::Glyphs;
+        self.gesture.reset();
         // A broken link table still selects.
         let hit = (route.clicks == 1)
           .then(|| self.pressed_hit(mouse.column, mouse.row, route.pixel));
         let hit = hit.and_then(Result::ok).unwrap_or_default();
         if let Hit::Note { page, index, text: false } = hit {
           // The cursor stays until a drag.
-          self.animation = None;
+          self.animation.cancel();
           let from = self.press_position(&route)?;
           self.link_press = LinkPress::Note(page, index, from);
           return Ok(());
@@ -189,7 +189,7 @@ impl App {
         self.link_press = link.map_or(LinkPress::Idle, LinkPress::Held);
       }
     }
-    self.animation = None;
+    self.animation.cancel();
     if matches!(mouse.kind, MouseEventKind::Drag(_)) {
       self.edge_follow(&route)?;
       return self.drag_to(&route);
@@ -201,7 +201,7 @@ impl App {
   /// Alt-left on the page.
   fn page_alt(&mut self, route: Route) -> Result<()> {
     self.link_press = LinkPress::Idle;
-    self.animation = None;
+    self.animation.cancel();
     match route.mouse.kind {
       MouseEventKind::Down(_) => self.alt_press(&route),
       MouseEventKind::Drag(_) => self.alt_drag(&route),

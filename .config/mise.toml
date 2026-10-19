@@ -138,7 +138,7 @@ description = "Test terminal delivery without native PDF code"
 run = "cargo nextest run --locked -p vpdf-terminal"
 
 [tasks."bench:fixtures"]
-description = "Prepare verified native-free raster fixtures"
+description = "Prepare verified native-free render fixtures"
 depends = ["corpus"]
 run = 'cargo run --locked --release --example bench-fixtures -- "$VPDF_CORPUS/paper.pdf" "${VPDF_BENCH_FIXTURES:-target/bench-fixtures}"'
 

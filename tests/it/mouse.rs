@@ -340,7 +340,7 @@ fn wrapped_links_tint_whole() -> Result<()> {
     session.draw_focused(&mut plain)?;
     // Hints and `gl` list the address once.
     session.app().start_hints(false)?;
-    let hints = session.app().hints.take().map_or(0, |h| h.items.len());
+    let hints = session.app().hints.take().map_or(0, |h| h.items().len());
     assert_eq!(hints, 2, "text={text_mode}");
     session.app().open_panel(vpdf_ui::keys::PanelKind::Links)?;
     let rows = &session.app().panel.as_ref().expect("gl").view.rows();
@@ -352,7 +352,7 @@ fn wrapped_links_tint_whole() -> Result<()> {
       let line = session.app().doc.links(PageId(0))?[0].first();
       session.app().reader.scroll = line.y1 * 968.0 / 300.0 + 1.0;
       session.app().start_hints(false)?;
-      let hints = session.app().hints.take().map_or(0, |h| h.items.len());
+      let hints = session.app().hints.take().map_or(0, |h| h.items().len());
       assert_eq!(hints, 2, "the continuation keeps its hint");
       session.app().reader.scroll = 0.0;
     }
@@ -656,7 +656,7 @@ fn glyph_cell(
   for (column, row) in (0..rows).flat_map(|r| (0..columns).map(move |c| (c, r)))
   {
     let got = if app.text_mode {
-      Some(app.text_position(column, row)?)
+      Some(app.text().position(column, row)?)
     } else {
       app
         .page_point(column, row, None)
@@ -726,7 +726,7 @@ fn clicks_mark_their_target() -> Result<()> {
       frame.clear();
       session.draw_focused(&mut frame)?;
     }
-    session.app().landing = None;
+    session.app().landing.clear_flash();
     let mut plain = Vec::new();
     session.draw_focused(&mut plain)?;
     assert_eq!(frame != plain, marked, "{case}");
@@ -830,7 +830,7 @@ fn wheel_keeps_the_selection() -> Result<()> {
   let before = (selected(&mut session), session.app().reader.scroll);
   mouse(&mut session, MouseEventKind::ScrollDown, text)?;
   let started = std::time::Instant::now();
-  while session.app().animation.is_some() {
+  while session.app().animation.active() {
     session.app().animate();
     anyhow::ensure!(started.elapsed().as_secs() < 2, "scroll animation");
     std::thread::sleep(std::time::Duration::from_millis(2));
@@ -1134,7 +1134,7 @@ fn text_edge_drags_track_the_pointer() -> Result<()> {
   }
   session.draw_focused(&mut Vec::new())?;
   let app = session.app();
-  let under = app.text_position(edge.0, edge.1)?;
+  let under = app.text().position(edge.0, edge.1)?;
   assert_eq!(app.reader.cursor.line, under.line);
   Ok(())
 }
@@ -1143,9 +1143,11 @@ pub(super) fn right(session: &mut Session, at: (u16, u16)) -> Result<()> {
   tap(session, MouseButton::Right, at)
 }
 
-pub(super) fn labels(session: &mut Session) -> Vec<&'static str> {
+pub(super) fn labels(session: &mut Session) -> Vec<&str> {
   let menu = session.app().context_menu.as_ref();
-  menu.map_or_default(|menu| menu.items.iter().map(|item| item.label).collect())
+  menu.map_or_default(|menu| {
+    menu.entries().iter().map(|item| item.label.as_ref()).collect()
+  })
 }
 
 pub(super) fn press(
@@ -1228,8 +1230,12 @@ fn menu_items_run_by_key_and_click() -> Result<()> {
   assert_eq!(session.app().reader.cursor.page, PageId(1));
   // A click on "Back" goes back.
   right(&mut session, plain)?;
-  let at =
-    session.app().context_menu.as_ref().map(|menu| menu.at).expect("a menu");
+  let at = session
+    .app()
+    .context_menu
+    .as_ref()
+    .map(vpdf_ui::context::ContextMenu::at)
+    .expect("a menu");
   let back = labels(&mut session).iter().position(|label| *label == "Back");
   let row = at.1 + u16::try_from(back.expect("Back"))?;
   click(&mut session, (at.0 + 1, row))?;
@@ -1298,7 +1304,7 @@ fn figures_offer_copy_and_save() -> Result<()> {
   assert!(labels.contains(&"Copy image") && labels.contains(&"Save image"));
   // U19: `gF` only opens the bar, so the item shows no key.
   let menu = session.app().context_menu.as_ref().expect("a menu");
-  let copy = menu.items.iter().find(|item| item.label == "Copy image");
+  let copy = menu.entries().iter().find(|item| item.label == "Copy image");
   assert_eq!(copy.map(|item| item.key.as_str()), Some(""));
   Ok(())
 }
@@ -1317,10 +1323,10 @@ fn menus_fit_small_panes() -> Result<()> {
   right(&mut session, corner)?;
   let app = session.app();
   let menu = app.context_menu.as_ref().expect("a menu");
-  let rows = u16::try_from(menu.items.len())?;
-  assert!(menu.at.1 + rows < app.screen.rows, "{:?} {rows}", menu.at);
-  assert!(menu.at.0 + menu.width <= app.screen.columns, "{:?}", menu.at);
-  assert!(menu.at.0 >= app.left);
+  let rows = u16::try_from(menu.entries().len())?;
+  assert!(menu.at().1 + rows < app.screen.rows, "{:?} {rows}", menu.at());
+  assert!(menu.at().0 + menu.width() <= app.screen.columns, "{:?}", menu.at());
+  assert!(menu.at().0 >= app.left);
   Ok(())
 }
 
@@ -1757,7 +1763,11 @@ fn menu_rows_follow_the_pointer() -> Result<()> {
     let screen = session.app().screen;
     let away = (screen.columns - 1, screen.rows - 2);
     let selected = |session: &mut Session| {
-      session.app().context_menu.as_ref().map(|m| m.selected)
+      session
+        .app()
+        .context_menu
+        .as_ref()
+        .map(vpdf_ui::context::ContextMenu::selected)
     };
     // (move to, frame, selected)
     let steps = [
@@ -1788,7 +1798,12 @@ fn menu_rows_follow_the_pointer() -> Result<()> {
 /// A bar item's first cell, freshly drawn.
 fn bar_item(session: &mut Session, index: usize) -> Result<(u16, u16)> {
   status(session)?;
-  let bar = session.app().bar_cells().expect("a drawn bar");
+  let bar = session
+    .app()
+    .region
+    .as_ref()
+    .and_then(vpdf_ui::region::Region::cells)
+    .expect("a drawn bar");
   let found = items(session, Region::Actions, bar)?;
   let item =
     found.iter().find(|(hit, _)| *hit == Hit::Item(List::Actions, Some(index)));
@@ -1799,7 +1814,7 @@ fn bar_item(session: &mut Session, index: usize) -> Result<(u16, u16)> {
 #[test]
 fn bar_items_follow_the_pointer() -> Result<()> {
   use crossterm::event::KeyCode;
-  use vpdf::region::Operation;
+  use vpdf_ui::region::Operation;
   let (_directory, mut session) = words(false)?;
   let from = glyph_cell(&mut session, 0, 2)?;
   let to = glyph_cell(&mut session, 1, 9)?;
@@ -1810,12 +1825,16 @@ fn bar_items_follow_the_pointer() -> Result<()> {
     status(session).map(drop)
   };
   capture(&mut session)?;
-  let action = |session: &mut Session| match &session.app().region {
-    Some(vpdf::region::Region::Bar { action, .. }) => Some(*action),
-    _ => None,
+  let action = |session: &mut Session| {
+    session.app().region.as_ref().and_then(vpdf_ui::region::Region::action)
   };
   // Prefix and separators show nothing.
-  let bar = session.app().bar_cells().expect("a drawn bar");
+  let bar = session
+    .app()
+    .region
+    .as_ref()
+    .and_then(vpdf_ui::region::Region::cells)
+    .expect("a drawn bar");
   let screen = session.app().screen;
   mouse(&mut session, MouseEventKind::Moved, (screen.columns - 1, 0))?;
   let prefix = (bar.column, bar.row);
@@ -1846,7 +1865,7 @@ fn bar_items_follow_the_pointer() -> Result<()> {
   click(&mut session, text)?;
   let app = session.app();
   assert!(app.reader.pending_yank.is_some(), "Copy text ran");
-  assert!(app.region.as_ref().is_some_and(vpdf::region::Region::is_bar));
+  assert!(app.region.as_ref().is_some_and(vpdf_ui::region::Region::is_bar));
   // Clicking off clears the bar hint.
   click(&mut session, (screen.columns - 1, 0))?;
   capture(&mut session)?;
@@ -1963,7 +1982,7 @@ fn wheel_scrolls_under_menus() -> Result<()> {
     assert!(mouse(&mut session, MouseEventKind::ScrollDown, at)?, "{at:?}");
     let app = session.app();
     assert!(app.context_menu.is_some(), "the menu stays");
-    let scroll = app.animation.as_ref().map_or(app.reader.scroll, |a| a.target);
+    let scroll = app.animation.target().unwrap_or(app.reader.scroll);
     assert!(scroll > last, "the page scrolls at {at:?}");
     last = scroll;
   }
@@ -1979,7 +1998,7 @@ fn hint_labels_sit_on_their_line() -> Result<()> {
     let hints = session.app().hints.take().expect("hints");
     let links = session.app().doc.links(PageId(0))?;
     let text = session.app().doc.text(PageId(0))?;
-    for hint in &hints.items {
+    for hint in hints.items() {
       let index = links.iter().position(|link| link.target == hint.target);
       let index = index.expect("the hint's link");
       let rows = if text_mode {
@@ -2017,7 +2036,7 @@ fn hint_labels_follow_the_shown_part() -> Result<()> {
   app.start_hints(false)?;
   let hints = app.hints.take().expect("hints");
   let shown = (top.y1 - top.y0 - 40.0) / 2.0;
-  assert_eq!(hints.items[0].cell.1, (shown / 16.0) as u16);
+  assert_eq!(hints.items()[0].cell.1, (shown / 16.0) as u16);
   assert!(shown >= 16.0, "the whole box's middle is above");
   Ok(())
 }
@@ -2052,7 +2071,7 @@ fn hint_labels_keep_off_neighbours() -> Result<()> {
       Ok(Some(app.doc.links(on)?[index].target.clone()))
     };
     let mut taken = std::collections::HashSet::new();
-    for hint in &hints.items {
+    for hint in hints.items() {
       let at = format!("text={text_mode} p. {page} {columns} {}", hint.label);
       let (column, row) = hint.cell;
       let on_line = if text_mode {
@@ -2109,7 +2128,8 @@ fn hint_labels_follow_the_pointer() -> Result<()> {
     let internal = at(&labels, 0);
     assert!(mouse(&mut session, MouseEventKind::Moved, internal)?);
     assert!(!mouse(&mut session, MouseEventKind::Moved, internal)?, "B5");
-    let picked = session.app().hints.as_ref().map(|h| h.selected);
+    let picked =
+      session.app().hints.as_ref().map(vpdf_ui::hints::Hints::selected);
     assert_eq!(picked, Some(Some(0)), "text={text_mode}");
     assert!(status(&mut session)?.contains("\x1b[0;97;44m"), "drawn picked");
     // Enter follows the picked label.
@@ -2137,24 +2157,15 @@ fn hint_labels_follow_the_pointer() -> Result<()> {
 #[test]
 fn typing_drops_picked_labels() -> Result<()> {
   use vpdf::document::Target;
-  use vpdf::hints::{Hint, Hints};
   let (_directory, mut session) = session(false)?;
-  let hint = |label: &str| Hint {
-    label: label.into(),
-    target: Target::Page(PageId(1)),
-    cell: (10, 2),
-    column: 10 - u16::try_from(label.len()).expect("short"),
-  };
-  let app = session.app();
-  app.hints = Some(Hints {
-    items: vec![hint("aa"), hint("sa")],
-    typed: String::new(),
-    copy: false,
-    selected: Some(1),
-  });
+  let mut hints = common::hints(24, (10, 2), &Target::Page(PageId(1)));
+  let hidden =
+    hints.items().iter().position(|hint| hint.label == "sa").expect("sa");
+  hints.select(hidden);
+  session.app().hints = Some(hints);
   press(&mut session, crossterm::event::KeyCode::Char('a'))?;
   let hints = session.app().hints.as_ref().expect("hints stay");
-  assert_eq!((hints.typed.as_str(), hints.selected), ("a", None));
+  assert_eq!((hints.typed(), hints.selected()), ("a", None));
   Ok(())
 }
 
@@ -2402,8 +2413,8 @@ fn previews_follow_links() -> Result<()> {
   for _ in 0..10 {
     mouse(&mut session, MouseEventKind::ScrollDown, away)?;
     let app = session.app();
-    if let Some(scroll) = app.animation.take() {
-      app.reader.scroll = scroll.target;
+    if let Some(target) = app.animation.finish() {
+      app.reader.scroll = target;
     }
     session.draw_frame(&mut Vec::new())?;
     match session.app().preview_cells() {

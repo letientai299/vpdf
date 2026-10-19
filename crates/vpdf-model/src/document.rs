@@ -63,7 +63,7 @@ impl Link {
   }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum Target {
   Page(PageId),
   Point { page: PageId, x: f32, y: f32 },

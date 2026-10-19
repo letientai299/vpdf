@@ -87,11 +87,11 @@ impl App {
       format!("Marks: {}", self.marks.len()),
       String::new(),
       "# Reader".into(),
-      format!("Zoom: {:.0}%", self.layout.zoom * 100.0),
-      format!("Rotation: {}°", self.layout.rotation),
+      format!("Zoom: {:.0}%", self.layout.zoom() * 100.0),
+      format!("Rotation: {}°", self.layout.rotation()),
       format!(
         "Margins: {}",
-        if self.layout.crop.is_none() { "shown" } else { "cropped" }
+        if self.layout.crop().is_none() { "shown" } else { "cropped" }
       ),
       format!(
         "Search: {} hits for {:?}",
@@ -161,12 +161,11 @@ impl App {
   /// itself is still in the section before.
   fn landed_section(&mut self) -> Option<usize> {
     let cursor = self.reader.cursor;
-    if self.landed != Some(self.landed_view(cursor)) {
+    if !self.landing.matches(self.landed_view(cursor)) {
       return None;
     }
     // Followed entries name themselves, even sharing a line.
-    if let Some((landed, target)) = &self.aimed
-      && self.landed == Some(*landed)
+    if let Some(target) = self.landing.aimed()
       && let Some(index) =
         self.doc.outline.iter().rposition(|heading| heading.target == *target)
     {

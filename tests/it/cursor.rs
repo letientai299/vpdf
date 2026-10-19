@@ -3,7 +3,6 @@ use super::focus::{screen, send};
 use super::modes::{app, settle};
 use vpdf::Result;
 use vpdf::document::Target;
-use vpdf::hints::{Hint, Hints};
 use vpdf::session::Session;
 use vpdf::text::{PageId, Position};
 use vpdf_reader::reader::{Mode, SelectionKind};
@@ -190,19 +189,9 @@ fn cursor_scroll_and_history_use_visible_position() -> Result<()> {
 fn cursor_hint_labels_keep_owner() -> Result<()> {
   let mut app = app("paper.pdf", false)?;
   keys(&mut app, b"i")?;
-  app.hints = Some(Hints {
-    items: vec![Hint {
-      label: "ii".into(),
-      target: Target::Page(PageId(1)),
-      cell: (1, 1),
-      column: 0,
-    }],
-    typed: String::new(),
-    copy: false,
-    selected: None,
-  });
+  app.hints = Some(super::common::hints(400, (1, 1), &Target::Page(PageId(1))));
   keys(&mut app, b"i")?;
-  assert_eq!(app.hints.as_ref().unwrap().typed, "i");
+  assert_eq!(app.hints.as_ref().unwrap().typed(), "i");
   assert_eq!(app.input_owner(), InputOwner::Hints);
   keys(&mut app, ESC)?;
   assert_eq!(app.reader.mode(), Mode::Cursor);
@@ -267,7 +256,7 @@ fn cursor_rendering_keeps_visual_band_separate() -> Result<()> {
       app.graphics.begin(&mut out)?;
       {
         let (app, graphics) = app.parts();
-        app.marks(graphics, app.layout.screen, &mut out)?;
+        app.marks(graphics, app.layout.screen(), &mut out)?;
       }
       app.graphics.end(&mut out)?;
       let frame = String::from_utf8_lossy(&out);
@@ -380,12 +369,15 @@ fn counted_overview_boundaries() -> Result<()> {
   keys(&mut app, b"gp")?;
   for command in [b"3gg".as_slice(), b"3G"] {
     keys(&mut app, command)?;
-    assert_eq!(app.overview.as_ref().unwrap().selected, 2);
+    assert_eq!(app.overview.as_ref().unwrap().selected(), 2);
   }
   keys(&mut app, b"999G")?;
-  assert_eq!(app.overview.as_ref().unwrap().selected, app.doc.pages.len() - 1);
+  assert_eq!(
+    app.overview.as_ref().unwrap().selected(),
+    app.doc.pages.len() - 1
+  );
   keys(&mut app, b"gg")?;
-  assert_eq!(app.overview.as_ref().unwrap().selected, 0);
+  assert_eq!(app.overview.as_ref().unwrap().selected(), 0);
   Ok(())
 }
 
@@ -525,13 +517,13 @@ fn scroll_then_motion_uses_visible_cursor() -> Result<()> {
       let moved = app.reader.cursor;
       assert!(moved > origin, "text={text}, scroll={scroll:?}");
       // No animation tick between the scroll and the next motion.
-      let target = app.animation.as_ref().map(|animation| animation.target);
-      let cell = app.text_cell(moved)?;
+      let target = app.animation.target();
+      let cell = app.text().cell(moved)?;
       keys(app, b"l")?;
       assert_eq!(app.reader.cursor.line, moved.line);
       assert_eq!(app.reader.cursor.page, moved.page);
       if text {
-        assert_eq!(app.text_cell(moved)?, cell);
+        assert_eq!(app.text().cell(moved)?, cell);
       }
       if let Some(target) = target {
         assert!(
@@ -590,7 +582,7 @@ fn cursor_wheel_clamps_without_changing_mode() -> Result<()> {
       app.reader.cursor > origin,
       "text={text}, origin={origin:?}, cursor={:?}, target={:?}",
       app.reader.cursor,
-      app.animation.as_ref().map(|a| a.target)
+      app.animation.target()
     );
     let moved = app.reader.cursor;
     keys(app, b"l")?;

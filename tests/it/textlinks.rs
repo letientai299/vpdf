@@ -135,7 +135,7 @@ fn printed_links_reach_every_consumer() -> Result<()> {
   app.close_panel()?;
   // `F` labels them.
   app.start_hints(true)?;
-  let labels = &app.hints.as_ref().expect("hints").items;
+  let labels = app.hints.as_ref().expect("hints").items();
   assert_eq!(labels.len(), 2);
   assert!(labels.iter().any(|hint| is_doi(&hint.target)));
   Ok(())

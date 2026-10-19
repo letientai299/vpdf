@@ -1,6 +1,6 @@
 use super::{
-  App, Bounds, GlyphAt, Hit, List, MouseEventKind, PageId, Pixel, Position,
-  Region, Result, Route,
+  App, GlyphAt, Hit, List, MouseEventKind, PageId, Pixel, Position, Region,
+  Result, Route,
 };
 
 impl App {
@@ -13,10 +13,10 @@ impl App {
     if self.text_mode {
       // Presses on rules, like page gaps, miss.
       let down = matches!(mouse.kind, MouseEventKind::Down(_));
-      if down && self.text_break(mouse.row)? {
+      if down && self.text().is_break(mouse.row)? {
         return Ok(None);
       }
-      return self.text_position(mouse.column, mouse.row).map(Some);
+      return self.text().position(mouse.column, mouse.row).map(Some);
     }
     let point = self.page_point(mouse.column, mouse.row, route.pixel);
     let Some((page, x, y)) = point else { return Ok(None) };
@@ -30,7 +30,7 @@ impl App {
     x: f32,
     y: f32,
   ) -> Result<Position> {
-    Ok(self.doc.text(page)?.nearest(page, x, y))
+    self.page_view().nearest_at(page, (x, y))
   }
 
   /// Link at a pressed, shown cell.
@@ -60,7 +60,9 @@ impl App {
     row: u16,
     pixel: Option<Pixel>,
   ) -> Result<Hit> {
-    self.hit_at(Region::Page, column, row, pixel, Self::text_shown)
+    self.hit_at(Region::Page, column, row, pixel, |app, column, row| {
+      app.text().shown(column, row)
+    })
   }
 
   /// Page-area pixels at a cell: reported, else centre.
@@ -70,34 +72,13 @@ impl App {
     row: u16,
     pixel: Option<Pixel>,
   ) -> (f32, f32) {
-    // Clamped drags report pixels past the cell.
-    let inside = |at: Option<u16>, cell: u32, size: u16| {
-      at.map_or(f32::from(size) / 2.0, |at| {
-        let offset = u32::from(at).saturating_sub(cell * u32::from(size));
-        let last = size.saturating_sub(1);
-        f32::from(u16::try_from(offset).unwrap_or(last).min(last))
-      })
-    };
-    let (width, height) = (self.screen.cell_width, self.screen.cell_height);
-    let (screen_column, screen_row) = (
-      u32::from(self.at.column) + u32::from(column),
-      u32::from(self.at.row) + u32::from(row),
-    );
-    let left = f32::from(column.saturating_sub(self.left)) * f32::from(width);
-    let x = left + inside(pixel.map(|p| p.x), screen_column, width);
-    let top = f32::from(row) * f32::from(height);
-    (x, top + inside(pixel.map(|p| p.y), screen_row, height))
-  }
-
-  /// Page-area pixels of pane cells.
-  pub(crate) fn cell_bounds(&self, cells: vpdf_ui::split::Rect) -> Bounds {
-    let screen = self.layout.screen;
-    let (width, height) =
-      (f32::from(screen.cell_width), f32::from(screen.cell_height));
-    let x0 = f32::from(cells.column.saturating_sub(self.left)) * width;
-    let y0 = f32::from(cells.row) * height;
-    let x1 = x0 + f32::from(cells.columns) * width;
-    Bounds { x0, y0, x1, y1: y0 + f32::from(cells.rows) * height }
+    vpdf_ui::paint::Frame {
+      at: self.at,
+      screen: self.screen,
+      left: self.left,
+      text: self.text_mode,
+    }
+    .point(column, row, pixel)
   }
 
   /// Page and point under the pointer in a pane cell.
@@ -107,17 +88,9 @@ impl App {
     row: u16,
     pixel: Option<Pixel>,
   ) -> Option<(PageId, f32, f32)> {
-    self.pixel_point(self.cell_point(column, row, pixel))
-  }
-
-  /// Page and point at a page-area pixel.
-  pub(super) fn pixel_point(
-    &self,
-    (x, y): (f32, f32),
-  ) -> Option<(PageId, f32, f32)> {
-    let page = self.layout.page_at(y + self.reader.scroll);
-    let (x, y) = self.layout.unproject(page, (x, y), self.reader.scroll)?;
-    Some((page, x, y))
+    self
+      .layout
+      .point_at(self.cell_point(column, row, pixel), self.reader.scroll)
   }
 
   /// A cell's point in `page` coordinates.
@@ -140,7 +113,9 @@ impl App {
     row: u16,
     pixel: Option<Pixel>,
   ) -> Result<Hit> {
-    self.hit_at(region, column, row, pixel, Self::text_hit)
+    self.hit_at(region, column, row, pixel, |app, column, row| {
+      app.text().hit(column, row)
+    })
   }
 
   /// What a cell covers; `glyph` reads text.

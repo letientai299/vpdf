@@ -146,11 +146,11 @@ fn ctrl_wheel_zooms_at_the_pointer() -> Result<()> {
       wheel(&mut session, UP | CTRL, at)?;
     }
     let app = session.app();
-    let (zoom, point) = (app.layout.zoom, under(app, at));
+    let (zoom, point) = (app.layout.zoom(), under(app, at));
     assert!(wheel(&mut session, turn | CTRL, at)?);
     let app = session.app();
     let label = format!("{at:?} {before} {scroll}");
-    assert_eq!(app.layout.zoom > zoom, grows, "{label}");
+    assert_eq!(app.layout.zoom() > zoom, grows, "{label}");
     let after = under(app, at);
     assert_eq!(after.0, point.0, "{label}");
     let overflows = app.layout.pan_limit(PageId(after.0)) > 0.0;
@@ -160,7 +160,7 @@ fn ctrl_wheel_zooms_at_the_pointer() -> Result<()> {
         && (!overflows || (after.1 - point.1).abs() < 0.5),
       "{label}: {point:?} -> {after:?}"
     );
-    assert!(app.animation.is_none());
+    assert!(!app.animation.active());
   }
   Ok(())
 }
@@ -187,20 +187,20 @@ fn shift_and_sideways_wheel_pan_zoomed_pages() -> Result<()> {
   for (flags, change, scrolls) in cases {
     let mut session = session(&path)?;
     let moved = wheel(&mut session, flags, at)?;
-    assert_eq!(session.app().layout.pan, 0.0, "fit width cannot pan");
+    assert_eq!(session.app().layout.pan(), 0.0, "fit width cannot pan");
     assert_eq!(moved, scrolls, "{flags}: frames only when moved");
-    session.app().layout.zoom = 3.0;
+    session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
     session.app().relayout()?;
-    session.app().layout.pan = 400.0;
+    session.app().layout.pan_to(400.0);
     let app = session.app();
     let (pan, scroll, zoom) =
-      (app.layout.pan, app.reader.scroll, app.layout.zoom);
+      (app.layout.pan(), app.reader.scroll, app.layout.zoom());
     wheel(&mut session, flags, at)?;
     let app = session.app();
-    assert!((app.layout.pan - pan - change).abs() < 0.01, "{flags}");
-    let target = app.animation.as_ref().map_or(scroll, |a| a.target);
+    assert!((app.layout.pan() - pan - change).abs() < 0.01, "{flags}");
+    let target = app.animation.target().unwrap_or(scroll);
     assert_eq!((target - scroll).abs() > 1.0, scrolls, "{flags}");
-    assert!((app.layout.zoom - zoom).abs() < f32::EPSILON, "{flags}");
+    assert!((app.layout.zoom() - zoom).abs() < f32::EPSILON, "{flags}");
   }
   Ok(())
 }
@@ -211,15 +211,15 @@ fn sideways_drift_in_a_gesture_is_ignored() -> Result<()> {
   let path = directory.path().join("lines.pdf");
   common::text_pdf(&path, &["Rails for a zoomed page"])?;
   let mut session = session(&path)?;
-  session.app().layout.zoom = 3.0;
+  session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
   session.app().relayout()?;
-  session.app().layout.pan = 400.0;
+  session.app().layout.pan_to(400.0);
   let (at, start) = ((480, 300), Instant::now());
   assert!(wheel_at(&mut session, DOWN, at, start)?);
   let later = start + Duration::from_millis(50);
   assert!(!wheel_at(&mut session, RIGHT, at, later)?, "drift");
   assert!(!wheel_at(&mut session, SHIFT | DOWN, at, later)?, "drift");
-  assert!((session.app().layout.pan - 400.0).abs() < 0.01);
+  assert!((session.app().layout.pan() - 400.0).abs() < 0.01);
   assert!(wheel(&mut session, RIGHT, at)?, "a sideways gesture pans");
   assert!(!wheel_at(&mut session, DOWN, at, Instant::now())?, "drift");
   Ok(())
@@ -234,14 +234,17 @@ fn text_wheel_pans_columns_and_ignores_ctrl() -> Result<()> {
   let narrow = vpdf_ui::layout::Screen { columns: 16, ..screen() };
   session.open(&path, true, narrow)?;
   session.app().command("text")?;
-  let first = session.app().text_position(0, 0)?;
-  let zoom = session.app().layout.zoom;
+  let first = session.app().text().position(0, 0)?;
+  let zoom = session.app().layout.zoom();
   assert!(!wheel(&mut session, UP | CTRL, (36, 8))?);
   let app = session.app();
-  assert!((app.layout.zoom - zoom).abs() < f32::EPSILON, "text shows no zoom");
-  assert_eq!(app.text_position(0, 0)?, first);
+  assert!(
+    (app.layout.zoom() - zoom).abs() < f32::EPSILON,
+    "text shows no zoom"
+  );
+  assert_eq!(app.text().position(0, 0)?, first);
   assert!(wheel(&mut session, RIGHT, (36, 8))?);
-  let panned = session.app().text_position(0, 0)?;
+  let panned = session.app().text().position(0, 0)?;
   assert_eq!(panned.glyph, first.glyph + 3, "a turn pans three columns");
   Ok(())
 }
@@ -255,12 +258,12 @@ fn wheel_frames_only_when_something_moves() -> Result<()> {
   let at = (480, 300);
   assert!(wheel(&mut session, DOWN, at)?);
   assert!(!wheel(&mut session, RIGHT, at)?, "fit width cannot pan");
-  session.app().layout.zoom = 8.0;
+  session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(8.0));
   session.app().relayout()?;
   assert!(!wheel(&mut session, UP | CTRL, at)?, "zoom at its limit");
   assert!(wheel(&mut session, DOWN | CTRL, at)?);
   // A pending count clears, which the status line shows.
-  session.app().layout.zoom = 1.0;
+  session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(1.0));
   session.app().relayout()?;
   let mut history = vpdf_ui::prompt::History::default();
   let two = crossterm::event::KeyEvent::new(
@@ -307,8 +310,7 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
   let path = directory.path().join("pages.pdf");
   pages_pdf(&path, &[(18, 6); 40], None)?;
   let row = 39 * 16 + 8;
-  let scroll: Moved =
-    |app| app.animation.as_ref().map_or(app.reader.scroll, |a| a.target);
+  let scroll: Moved = |app| app.animation.target().unwrap_or(app.reader.scroll);
   let panel: Moved =
     |app| app.panel.as_ref().map_or(0, |p| p.view.top()) as f32;
   // (view, pointer x) -> what a turn moves
@@ -316,11 +318,11 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
     ("", 480, scroll),
     ("text", 480, |app| {
       // The first line's row rises, then leaves.
-      let first = app.text_cell(vpdf::text::Position::default());
+      let first = app.text().cell(vpdf::text::Position::default());
       first.ok().flatten().map_or(1e3, |(_, row)| -f32::from(row))
     }),
     ("gp", 480, |app| {
-      app.overview.as_ref().map_or(0, vpdf::overview::Overview::top) as f32
+      app.overview.as_ref().map_or(0, vpdf_ui::overview::Overview::top) as f32
     }),
     // Under a side panel, the panel scrolls.
     ("P", 20, panel),
@@ -356,7 +358,7 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
   // (selected page, top row)
   let state = |session: &mut Session| {
     let overview = session.app().overview.as_ref().expect("an overview");
-    (overview.selected, overview.top())
+    (overview.selected(), overview.top())
   };
   assert_eq!(state(&mut session), (0, 0));
   for (flags, row) in [(DOWN, 1), (DOWN, 2), (UP, 1), (DOWN | CTRL, 2)] {
@@ -435,15 +437,15 @@ fn pixel((column, row): (u16, u16)) -> (u16, u16) {
 }
 
 fn settle(app: &mut App) {
-  if let Some(animation) = app.animation.take() {
-    app.reader.scroll = animation.target;
+  if let Some(target) = app.animation.finish() {
+    app.reader.scroll = target;
   }
 }
 
 /// Where the page is scrolled, in PDF or text presentation.
 fn page(app: &mut App) -> Result<(f32, vpdf::text::Position)> {
-  let scroll = app.animation.as_ref().map_or(app.reader.scroll, |a| a.target);
-  Ok((scroll, app.text_position(0, 0)?))
+  let scroll = app.animation.target().unwrap_or(app.reader.scroll);
+  Ok((scroll, app.text().position(0, 0)?))
 }
 
 #[test]
@@ -535,14 +537,17 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
     let state = |session: &mut Session| {
       let app = session.app();
       let panel = app.panel.as_ref().map(|panel| panel.view.top());
-      let overview = app.overview.as_ref().map(vpdf::overview::Overview::top);
-      let scroll =
-        app.animation.as_ref().map_or(app.reader.scroll, |a| a.target);
+      let overview =
+        app.overview.as_ref().map(vpdf_ui::overview::Overview::top);
+      let scroll = app.animation.target().unwrap_or(app.reader.scroll);
       (scroll.to_bits(), panel, overview)
     };
     let before = state(&mut session);
-    let menu =
-      session.app().context_menu.as_ref().map(vpdf::context::ContextMenu::area);
+    let menu = session
+      .app()
+      .context_menu
+      .as_ref()
+      .map(vpdf_ui::context::ContextMenu::area);
     let area = menu.unwrap_or_else(|| panic!("{surface}: a menu"));
     let pixel = (area.column * 8 + 4, area.row * 16 + 8);
     wheel(&mut session, DOWN, pixel)?;
@@ -561,11 +566,13 @@ fn clue_wheel_stays_in_overlay() -> Result<()> {
     let (_directory, mut session) = crate::mouse::session(false)?;
     let app = session.app();
     common::keys(app, b"g")?;
-    app.awaiting =
-      Some(Instant::now().checked_sub(Duration::from_secs(1)).unwrap());
+    app.clues.restart(Some(
+      Instant::now().checked_sub(Duration::from_secs(1)).unwrap(),
+    ));
     assert!(app.clue_due());
-    app.clues.as_mut().unwrap().items =
-      (0..count).map(|i| (i.to_string(), "description".into())).collect();
+    app.clues.show(
+      (0..count).map(|i| (i.to_string(), "description".into())).collect(),
+    );
     let scroll = app.reader.scroll;
     let row = app.screen.rows - 2;
     let id = app.id;
@@ -573,16 +580,16 @@ fn clue_wheel_stays_in_overlay() -> Result<()> {
       crate::mouse::mouse(&mut session, MouseEventKind::ScrollDown, (5, row))?;
     }
     let app = session.app();
-    let clues = app.clues.as_ref().unwrap();
-    let (_, grid, _) = app.clue_grid(clues);
-    assert_eq!(clues.top, grid.rows - grid.visible);
+    let clues = app.clues.shown().unwrap();
+    let grid = clues.grid(app.screen);
+    assert_eq!(clues.top(), grid.rows - grid.visible);
     assert_eq!(app.reader.scroll, scroll);
-    assert!(app.animation.is_none());
+    assert!(!app.animation.active());
     assert_eq!(app.id, id);
     for _ in 0..30 {
       crate::mouse::mouse(&mut session, MouseEventKind::ScrollUp, (5, row))?;
     }
-    assert_eq!(session.app().clues.as_ref().unwrap().top, 0);
+    assert_eq!(session.app().clues.shown().unwrap().top(), 0);
     assert_eq!(session.app().reader.scroll, scroll);
   }
   Ok(())

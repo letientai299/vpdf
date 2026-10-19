@@ -235,7 +235,7 @@ fn notes_scroll_and_resize() -> Result<()> {
     assert_ne!(first, narrow);
     let label = narrow.split_once('╭').unwrap().1.split('╮').next().unwrap();
     assert!(
-      label.chars().count() + 2 <= usize::from(app.layout.screen.columns)
+      label.chars().count() + 2 <= usize::from(app.layout.screen().columns)
     );
     assert_eq!(app.reader.cursor, cursor);
   }
@@ -535,8 +535,8 @@ fn notes_open_by_mouse() -> Result<()> {
   click(&mut session, MouseButton::Right, icon)?;
   let app = session.app();
   let menu = app.context_menu.as_ref().expect("a menu");
-  let show = menu.items.iter().position(|item| item.label == "Show note");
-  app.context_menu.as_mut().unwrap().selected = show.expect("Show note");
+  let show = menu.entries().iter().position(|item| item.label == "Show note");
+  app.context_menu.as_mut().unwrap().select(show.expect("Show note"));
   press(app, KeyCode::Enter)?;
   crate::common::focused_frame(&mut session)?;
   let app = session.app();
@@ -558,14 +558,14 @@ fn notes_open_by_mouse() -> Result<()> {
     click(&mut session, MouseButton::Right, marked)?;
     let app = session.app();
     let menu = app.context_menu.as_ref().expect("a menu");
-    let index = menu.items.iter().position(|item| item.label == label);
+    let index = menu.entries().iter().position(|item| item.label == label);
     let keys: Vec<_> =
-      menu.items.iter().map(|item| item.key.as_str()).collect();
+      menu.entries().iter().map(|item| item.key.as_str()).collect();
     assert_eq!(
       index.map(|index| keys[index]),
       Some(if shown { "K" } else { "" })
     );
-    app.context_menu.as_mut().unwrap().selected = index.expect(label);
+    app.context_menu.as_mut().unwrap().select(index.expect(label));
     press(app, KeyCode::Enter)?;
     let comment = "check this note please";
     let frame = crate::common::focused_frame(&mut session)?;
@@ -716,10 +716,10 @@ fn note_row_menus_show_notes() -> Result<()> {
   }
   let app = session.app();
   let menu = app.context_menu.as_mut().expect("a menu");
-  let index = menu.items.iter().position(|item| item.label == "Show note");
+  let index = menu.entries().iter().position(|item| item.label == "Show note");
   let index = index.expect("Show note");
-  assert_eq!(menu.items[index].key, "K");
-  menu.selected = index;
+  assert_eq!(menu.entries()[index].key, "K");
+  menu.select(index);
   assert!(app.peek.is_none());
   press(app, KeyCode::Enter)?;
   assert!(app.context_menu.is_none() && app.peek.is_some());

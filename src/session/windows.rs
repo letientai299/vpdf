@@ -102,7 +102,7 @@ impl Session {
         app.context_menu = None;
         app.screen = pane;
         app.at = at;
-        app.requested.clear();
+        app.tiles.invalidate();
         app.relayout()?;
       }
     }

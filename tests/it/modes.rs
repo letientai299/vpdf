@@ -27,15 +27,17 @@ pub(super) fn app(file: &str, text: bool) -> Result<Solo> {
 
 pub(super) fn settle(app: &mut App) {
   for _ in 0..40 {
-    if let Some(animation) = &mut app.animation {
-      animation.updated =
-        Instant::now().checked_sub(Duration::from_millis(16)).unwrap();
+    if let Some(target) = app.animation.target() {
+      app.animation.start(
+        target,
+        Instant::now().checked_sub(Duration::from_millis(16)).unwrap(),
+      );
     }
     if !app.animate() {
       return;
     }
   }
-  assert!(app.animation.is_none());
+  assert!(!app.animation.active());
 }
 
 #[test]
@@ -62,18 +64,18 @@ fn normal_keys_move_view_without_text_extraction() -> Result<()> {
   settle(&mut app);
   assert_eq!(app.reader.scroll, app.layout.clamp_scroll(f32::MAX));
   keys(&mut app, b"l\x1b[C")?;
-  assert_eq!(app.layout.pan, 0.0);
+  assert_eq!(app.layout.pan(), 0.0);
   keys(&mut app, b"+")?;
-  let pan = app.layout.pan;
+  let pan = app.layout.pan();
   keys(&mut app, b"3l\x1b[D")?;
-  assert_eq!(app.layout.pan, pan + 16.0);
+  assert_eq!(app.layout.pan(), pan + 16.0);
   keys(&mut app, b"9999h")?;
-  assert_eq!(app.layout.pan, 0.0);
+  assert_eq!(app.layout.pan(), 0.0);
   assert_eq!(app.doc.cache_bytes(), 0);
   let scroll = app.reader.scroll;
   keys(&mut app, b"gv")?;
   assert_eq!(app.reader.scroll, scroll);
-  let screen = app.layout.screen;
+  let screen = app.layout.screen();
   {
     let (app, graphics) = app.parts();
     app.marks(graphics, screen, &mut Vec::new())?;
@@ -92,7 +94,7 @@ fn visible_entry_selection_and_temporary_copy() -> Result<()> {
     keys(&mut app, b"10j")?;
     settle(&mut app);
     let entry = app.reading_position()?;
-    let view = (app.reader.scroll, app.text_position(0, 0)?);
+    let view = (app.reader.scroll, app.text().position(0, 0)?);
     keys(&mut app, b"v")?;
     assert_eq!(app.reader.cursor, entry);
     assert_eq!(app.reader.selection.unwrap().kind, SelectionKind::Character);
@@ -124,12 +126,12 @@ fn visible_entry_selection_and_temporary_copy() -> Result<()> {
     keys(&mut app, b"V")?;
     assert_eq!(app.reader.selection.unwrap().kind, SelectionKind::Line);
     app.draw(&mut Vec::new())?;
-    let viewport = (app.reader.scroll, app.text_position(0, 0)?);
+    let viewport = (app.reader.scroll, app.text().position(0, 0)?);
     keys(&mut app, b"\x1b[27uj")?;
     settle(&mut app);
     app.draw(&mut Vec::new())?;
     assert!(app.reader.selection.is_none());
-    assert_ne!((app.reader.scroll, app.text_position(0, 0)?), viewport);
+    assert_ne!((app.reader.scroll, app.text().position(0, 0)?), viewport);
   }
   Ok(())
 }
@@ -176,14 +178,14 @@ fn layout_keeps_view_anchor_and_visual_endpoints() -> Result<()> {
     keys(&mut app, b"12j")?;
     settle(&mut app);
     let cursor = app.reader.cursor;
-    let top = app.text_position(0, 0)?;
+    let top = app.text().position(0, 0)?;
     for bytes in [b"+".as_slice(), b"zr", b"zc", b"-"] {
       let page = app.layout.page_at(app.reader.scroll);
       let point = app
         .layout
         .unproject(
           page,
-          (app.layout.screen.width() / 2.0, 0.0),
+          (app.layout.screen().width() / 2.0, 0.0),
           app.reader.scroll,
         )
         .unwrap();
@@ -196,7 +198,7 @@ fn layout_keeps_view_anchor_and_visual_endpoints() -> Result<()> {
       assert!(projected.y0.abs() < 1.0, "{bytes:?}: {projected:?}");
       assert_eq!(app.reader.cursor, cursor);
       if text_mode {
-        assert_eq!(app.text_position(0, 0)?, top);
+        assert_eq!(app.text().position(0, 0)?, top);
       }
     }
     let page = app.layout.page_at(app.reader.scroll);
@@ -204,7 +206,7 @@ fn layout_keeps_view_anchor_and_visual_endpoints() -> Result<()> {
       .layout
       .unproject(
         page,
-        (app.layout.screen.width() / 2.0, 0.0),
+        (app.layout.screen().width() / 2.0, 0.0),
         app.reader.scroll,
       )
       .unwrap();
@@ -217,14 +219,14 @@ fn layout_keeps_view_anchor_and_visual_endpoints() -> Result<()> {
       .layout
       .unproject(
         page,
-        (app.layout.screen.width() / 2.0, 0.0),
+        (app.layout.screen().width() / 2.0, 0.0),
         app.reader.scroll,
       )
       .unwrap();
     assert!((point.1 - after.1).abs() < 1.0);
     assert_eq!(app.reader.cursor, cursor);
     if text_mode {
-      assert_eq!(app.text_position(0, 0)?, top);
+      assert_eq!(app.text().position(0, 0)?, top);
     }
     keys(&mut app, b"vwo")?;
     let cursor = app.reader.cursor;
@@ -350,14 +352,15 @@ fn prompt_cancel_and_history_restore_viewport() -> Result<()> {
     keys(&mut app, b"+10j4l")?;
     settle(&mut app);
     app.draw(&mut Vec::new())?;
-    let origin = (app.reader.scroll, app.layout.pan, app.text_position(0, 0)?);
+    let origin =
+      (app.reader.scroll, app.layout.pan(), app.text().position(0, 0)?);
     let target = app.target;
     keys(&mut app, b"/attention")?;
     super::common::search_loaded(&mut app)?;
     keys(&mut app, b"\x1b[27u")?;
     app.draw(&mut Vec::new())?;
     let restored =
-      (app.reader.scroll, app.layout.pan, app.text_position(0, 0)?);
+      (app.reader.scroll, app.layout.pan(), app.text().position(0, 0)?);
     assert!((origin.0 - restored.0).abs() < 0.01);
     assert!((origin.1 - restored.1).abs() < 0.01);
     if text_mode {
@@ -369,7 +372,7 @@ fn prompt_cancel_and_history_restore_viewport() -> Result<()> {
       .layout
       .unproject(
         page,
-        (app.layout.screen.width() / 2.0, 0.0),
+        (app.layout.screen().width() / 2.0, 0.0),
         app.reader.scroll,
       )
       .unwrap();
@@ -377,7 +380,7 @@ fn prompt_cancel_and_history_restore_viewport() -> Result<()> {
     keys(&mut app, b"+\x0f")?;
     app.draw(&mut Vec::new())?;
     if text_mode {
-      assert_eq!(app.text_position(0, 0)?, origin.2);
+      assert_eq!(app.text().position(0, 0)?, origin.2);
     } else {
       let projected = app.layout.project(
         page,
@@ -402,7 +405,7 @@ fn text_normal_counts_pan_clamps_and_cursor_style() -> Result<()> {
   let mut frame = Vec::new();
   app.draw(&mut frame)?;
   assert!(!String::from_utf8_lossy(&frame).contains("\x1b[0;7;34m"));
-  let top = app.text_position(0, 0)?;
+  let top = app.text().position(0, 0)?;
   assert_eq!(top.page, PageId(0));
   assert_eq!(top.line, 9);
   assert_eq!(top.glyph, 2);
@@ -413,15 +416,15 @@ fn text_normal_counts_pan_clamps_and_cursor_style() -> Result<()> {
   assert!(String::from_utf8_lossy(&frame).contains("\x1b[0;7;34m"));
   keys(&mut app, b"\x1b[27u9999h9999k")?;
   app.draw(&mut Vec::new())?;
-  assert_eq!(app.text_position(0, 0)?, Position::default());
+  assert_eq!(app.text().position(0, 0)?, Position::default());
   keys(&mut app, b"9999j")?;
   app.draw(&mut Vec::new())?;
   let last = PageId(app.doc.pages.len() - 1);
-  assert_eq!(app.text_position(0, 0)?.page, last);
-  let top = app.text_position(0, 0)?;
+  assert_eq!(app.text().position(0, 0)?.page, last);
+  let top = app.text().position(0, 0)?;
   keys(&mut app, b"j")?;
   app.draw(&mut Vec::new())?;
-  assert_eq!(app.text_position(0, 0)?, top);
+  assert_eq!(app.text().position(0, 0)?, top);
   Ok(())
 }
 
@@ -435,10 +438,10 @@ fn horizontal_keys_preserve_queued_scroll() -> Result<()> {
   ] {
     let mut app = app("paper.pdf", false)?;
     keys(&mut app, bytes)?;
-    assert_eq!(app.animation.as_ref().unwrap().target, expected);
+    assert_eq!(app.animation.target().unwrap(), expected);
     settle(&mut app);
     assert_eq!(app.reader.scroll, expected);
-    assert_eq!(app.layout.pan, 0.0);
+    assert_eq!(app.layout.pan(), 0.0);
   }
   Ok(())
 }
@@ -467,7 +470,7 @@ fn text_offsets_clamp_after_rows_pages_and_resize() -> Result<()> {
   app.go_to(position, true)?;
   keys(&mut app, b"zt9999l")?;
   app.draw(&mut Vec::new())?;
-  assert_eq!(app.text_position(0, 0)?.glyph, width - 12);
+  assert_eq!(app.text().position(0, 0)?.glyph, width - 12);
   let motion = format!(
     "{}{}",
     wide.abs_diff(narrow),
@@ -475,14 +478,14 @@ fn text_offsets_clamp_after_rows_pages_and_resize() -> Result<()> {
   );
   keys(&mut app, motion.as_bytes())?;
   app.draw(&mut Vec::new())?;
-  assert_eq!(app.text_position(0, 0)?.line, narrow);
+  assert_eq!(app.text().position(0, 0)?.line, narrow);
   keys(&mut app, b"v")?;
   assert!(app.reader.selection.is_some());
   keys(&mut app, b"\x1b[27u")?;
   app.go_to(position, true)?;
   keys(&mut app, b"zt9999l9999j")?;
   app.draw(&mut Vec::new())?;
-  let top = app.text_position(0, 0)?;
+  let top = app.text().position(0, 0)?;
   assert_eq!(top.page.0, app.doc.pages.len() - 1);
   assert_eq!(top.glyph, 0, "the final page footer fits");
   keys(&mut app, b"v\x1b[27u")?;
@@ -492,7 +495,7 @@ fn text_offsets_clamp_after_rows_pages_and_resize() -> Result<()> {
   app.screen.columns = u16::try_from(width + 1)?;
   app.relayout()?;
   app.draw(&mut Vec::new())?;
-  assert_eq!(app.text_position(0, 0)?.glyph, 0);
+  assert_eq!(app.text().position(0, 0)?.glyph, 0);
   keys(&mut app, b"v")?;
   assert!(app.reader.selection.is_some());
   Ok(())
@@ -509,18 +512,18 @@ fn reload_clamps_text_view_and_invalidates_hit_testing() -> Result<()> {
   app.command("100")?;
   keys(&mut app, b"100j10l")?;
   app.draw(&mut Vec::new())?;
-  assert!(app.text_position(0, 0)?.page.0 > 99);
+  assert!(app.text().position(0, 0)?.page.0 > 99);
   app.begin_search(false)?;
   std::fs::copy(root.join("ocr.pdf"), &path)?;
   app.command("reload")?;
-  assert_eq!(app.text_position(0, 0)?.page, PageId(0));
+  assert_eq!(app.text().position(0, 0)?.page, PageId(0));
   app.cancel_prompt()?;
-  assert_eq!(app.text_position(0, 0)?.page, PageId(0));
+  assert_eq!(app.text().position(0, 0)?.page, PageId(0));
   app.draw(&mut Vec::new())?;
-  let before = app.text_position(0, 0)?;
+  let before = app.text().position(0, 0)?;
   app.command("reload")?;
   app.draw(&mut Vec::new())?;
-  assert_eq!(app.text_position(0, 0)?, before);
+  assert_eq!(app.text().position(0, 0)?, before);
   assert!(app.ocr.is_none());
   Ok(())
 }
@@ -533,17 +536,17 @@ fn recent_cover_preserves_view_and_explicit_job_control() -> Result<()> {
     keys(&mut app, b"10j+3l")?;
     settle(&mut app);
     app.draw(&mut Vec::new())?;
-    let view = (app.reader.scroll, app.layout.pan);
-    let top = app.text_position(0, 0)?;
-    let columns = app.layout.screen.columns;
+    let view = (app.reader.scroll, app.layout.pan());
+    let top = app.text().position(0, 0)?;
+    let columns = app.layout.screen().columns;
     app.start_search("attention", false, false)?;
     app.start_ocr("eng")?;
     let generation = app.search.generation();
     app.show_recent(&[])?;
     keys(&mut app, b"\x1b[27u")?;
     assert!(app.covered() && app.panel_focused());
-    assert_eq!(app.layout.screen.columns, columns);
-    assert_eq!((app.reader.scroll, app.layout.pan), view);
+    assert_eq!(app.layout.screen().columns, columns);
+    assert_eq!((app.reader.scroll, app.layout.pan()), view);
     assert_eq!(app.search.generation(), generation);
     assert!(!app.search.hidden() && app.ocr.is_some());
     app.command("cancel")?;
@@ -552,9 +555,9 @@ fn recent_cover_preserves_view_and_explicit_job_control() -> Result<()> {
     assert!(matches!(app.search.phase(), vpdf_ui::find::Phase::Idle));
     app.close_panel()?;
     app.draw(&mut Vec::new())?;
-    assert_eq!((app.reader.scroll, app.layout.pan), view);
+    assert_eq!((app.reader.scroll, app.layout.pan()), view);
     if text_mode {
-      assert_eq!(app.text_position(0, 0)?, top);
+      assert_eq!(app.text().position(0, 0)?, top);
     }
     assert!(app.reader.selection.is_none());
   }
@@ -572,17 +575,18 @@ fn space_scrolls_with_context() -> Result<()> {
       }
       let cursor = app.reader.cursor;
       let anchor = app.reader.selection.map(|s| s.anchor);
-      let top = app.text_position(0, 0)?;
+      let top = app.text().position(0, 0)?;
       let overlap = {
         let (app, _) = app.parts();
-        app.text_position(0, app.layout.screen.rows - 3)?
+        let row = app.layout.screen().rows - 3;
+        app.text().position(0, row)?
       };
-      let rows = app.layout.screen.rows.saturating_sub(3);
+      let rows = app.layout.screen().rows.saturating_sub(3);
       let distance = f32::from(rows * app.screen.cell_height);
       keys(&mut app, b" ")?;
       settle(&mut app);
       if text {
-        assert_eq!(app.text_position(0, 0)?, overlap);
+        assert_eq!(app.text().position(0, 0)?, overlap);
       } else {
         assert_eq!(app.reader.scroll, distance);
       }
@@ -596,7 +600,7 @@ fn space_scrolls_with_context() -> Result<()> {
       settle(&mut app);
       assert_eq!(app.reader.scroll, 0.0);
       if text {
-        assert_eq!(app.text_position(0, 0)?, top);
+        assert_eq!(app.text().position(0, 0)?, top);
       }
       keys(&mut app, b"2 ")?;
       settle(&mut app);
@@ -607,7 +611,7 @@ fn space_scrolls_with_context() -> Result<()> {
       settle(&mut app);
       assert_eq!(app.reader.scroll, 0.0);
       if text {
-        assert_eq!(app.text_position(0, 0)?, top);
+        assert_eq!(app.text().position(0, 0)?, top);
       }
     }
   }
@@ -641,10 +645,10 @@ fn space_accumulates_queued_scroll() -> Result<()> {
     keys(&mut app, b"  ")?;
     let distance = 2.0
       * f32::from(
-        app.layout.screen.rows.saturating_sub(3) * app.screen.cell_height,
+        app.layout.screen().rows.saturating_sub(3) * app.screen.cell_height,
       );
     assert_eq!(app.reader.scroll, 0.0);
-    assert_eq!(app.animation.as_ref().unwrap().target, distance);
+    assert_eq!(app.animation.target().unwrap(), distance);
     keys(&mut app, b"\x1b[32;2u")?;
     settle(&mut app);
     assert_eq!(app.reader.scroll, distance / 2.0);
@@ -664,14 +668,14 @@ fn counted_text_space_matches_repeats() -> Result<()> {
     if !mode.is_empty() {
       keys(&mut app, mode)?;
     }
-    let top = app.text_position(0, 0)?;
+    let top = app.text().position(0, 0)?;
     keys(&mut app, b"  ")?;
-    let repeated = app.text_position(0, 0)?;
+    let repeated = app.text().position(0, 0)?;
     assert_ne!(repeated, top);
     keys(&mut app, b"2\x1b[32;2u")?;
-    assert_eq!(app.text_position(0, 0)?, top);
+    assert_eq!(app.text().position(0, 0)?, top);
     keys(&mut app, b"2 ")?;
-    assert_eq!(app.text_position(0, 0)?, repeated);
+    assert_eq!(app.text().position(0, 0)?, repeated);
   }
   Ok(())
 }

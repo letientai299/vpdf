@@ -18,17 +18,17 @@ impl App {
         .as_ref()
         .and_then(|prompt| prompt.menu())
         .map(|_| List::Completions),
-      _ => self.clues.as_ref().map(|_| List::Clues),
+      _ => self.clues.shown().map(|_| List::Clues),
     }
   }
 
   pub(crate) fn items(&self, list: List) -> Items {
     match list {
       List::Menu => {
-        self.context_menu.as_ref().map(crate::context::ContextMenu::items)
+        self.context_menu.as_ref().map(vpdf_ui::context::ContextMenu::items)
       }
-      List::Actions => Some(self.bar_items()),
-      List::Hints => Some(self.hint_items()),
+      List::Actions => self.region.as_ref().map(vpdf_ui::region::Region::items),
+      List::Hints => self.hints.as_ref().map(vpdf_ui::hints::Hints::hit_items),
       List::Clues => Some(self.clue_cells()),
       List::Completions => Some(self.completion_cells()),
     }
@@ -40,13 +40,17 @@ impl App {
     match list {
       List::Menu => {
         if let Some(menu) = &mut self.context_menu {
-          menu.selected = index;
+          menu.select(index);
         }
       }
-      List::Actions => self.pick_action(index),
+      List::Actions => {
+        if let Some(region) = &mut self.region {
+          region.select(index);
+        }
+      }
       List::Hints => {
         if let Some(hints) = &mut self.hints {
-          hints.selected = Some(index);
+          hints.select(index);
         }
       }
       // Picking would rewrite the line; clicks do.
@@ -61,11 +65,16 @@ impl App {
         self.pick_item(list, index);
         self.context_run()
       }
-      List::Actions => self.run_action(index),
+      List::Actions => {
+        self.pick_item(list, index);
+        if let Some(operation) = vpdf_ui::region::Operation::at(index) {
+          self.region_operation(operation)?;
+        }
+        Ok(())
+      }
       List::Hints => self.run_hint(index),
       List::Clues => {
-        let label = self.clues.as_ref().map(|clues| &clues.items[index].0);
-        let keys = label.and_then(|label| crate::clues::clue_keys(label));
+        let keys = self.clues.shown().and_then(|clues| clues.keys(index));
         // The session types them, as keys.
         self.request = keys.map(Request::Keys);
         Ok(())

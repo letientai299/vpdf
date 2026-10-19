@@ -1,50 +1,12 @@
 use crate::Result;
 use crate::app::App;
-use crate::marks::Span;
-use crate::text::{Bounds, Line, PageId, Position};
-use crate::tiles::TileKey;
+use crate::text::{Bounds, PageId, Position};
 use std::io::Write;
-use vpdf_reader::reader::SelectionKind;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::terminal;
 use vpdf_ui::layout::Screen;
 use vpdf_ui::panel::Pointing;
 use vpdf_ui::pointer::{Hit, List};
-
-/// Parts of `rect` outside `hole`.
-fn around(rect: Bounds, hole: Bounds) -> impl Iterator<Item = Bounds> {
-  let (top, bottom) = (hole.y0.max(rect.y0), hole.y1.min(rect.y1));
-  [
-    Bounds { y1: hole.y0.min(rect.y1), ..rect },
-    Bounds { y0: hole.y1.max(rect.y0), ..rect },
-    Bounds { y0: top, y1: bottom, x1: hole.x0.min(rect.x1), ..rect },
-    Bounds { y0: top, y1: bottom, x0: hole.x1.max(rect.x0), ..rect },
-  ]
-  .into_iter()
-  .filter(|part| part.x1 > part.x0 && part.y1 > part.y0)
-}
-
-/// Each line's bounds `range` covers on `page`.
-pub(crate) fn covered_rows(
-  text: &crate::text::Text,
-  page: PageId,
-  range: (Position, Position),
-  linewise: bool,
-) -> impl Iterator<Item = Bounds> + '_ {
-  let (first, last) = range;
-  let skip = if page == first.page { first.line } else { 0 };
-  let rows = text.lines.iter().enumerate().skip(skip);
-  let rows =
-    rows.take_while(move |(line, _)| page != last.page || *line <= last.line);
-  rows.filter_map(move |(line, row)| {
-    let glyphs = row.glyphs.iter().enumerate();
-    let covered = glyphs.filter(move |(glyph, _)| {
-      let at = Position { page, line, glyph: *glyph };
-      vpdf_reader::motion::covers(range, linewise, at)
-    });
-    covered.map(|(_, ch)| ch.bounds).reduce(Bounds::union)
-  })
-}
 
 impl App {
   /// Keeps finished tiles; returns whether a wanted one arrived, since
@@ -56,7 +18,7 @@ impl App {
       match result {
         Ok(tile) => {
           self.render_ms = tile.render_ms;
-          changed |= self.requested.contains(&tile.key);
+          changed |= self.tiles.wants(&tile.key);
           graphics.keep(self.id, tile);
         }
         Err(error) => {
@@ -79,83 +41,36 @@ impl App {
   ) -> Result<()> {
     self.request_crop();
     let (screen, left) = (self.uncovered(), self.left);
-    let mut tiles = vpdf_ui::layout::visible(&self.layout, self.reader.scroll);
-    if let Some(animation) = &self.animation {
-      self.heading = (animation.target - self.reader.scroll).signum();
-      for tile in vpdf_ui::layout::visible(&self.layout, animation.target) {
-        if !tiles.contains(&tile) {
-          tiles.push(tile);
-        }
-      }
-    }
-    let mut missing = Vec::new();
-    for key in &tiles {
-      let (x, y) = self.layout.origin(key.page, self.reader.scroll);
-      if !graphics.place_at(
-        (self.id, *key),
-        (x + key.x as f32, y + key.y as f32),
-        screen,
-        left,
-        out,
-      )? {
-        missing.push(*key);
-      }
-    }
-    self.complete = missing.is_empty();
-    if tiles != self.requested {
-      missing.sort_by_key(|key| {
-        let page = &self.layout.pages[key.page.0];
-        ((page.top + key.y as f32 - self.reader.scroll).abs() as u32, key.x)
-      });
-      let urgent = missing.len();
-      for key in self.ahead(&tiles) {
-        if !graphics.has(&(self.id, key)) {
-          missing.push(key);
-        }
-      }
+    let view = vpdf_ui::layout::tiles::View {
+      layout: &self.layout,
+      scroll: self.reader.scroll,
+      target: self.animation.target(),
+    };
+    let frame = vpdf_ui::layout::tiles::Frame { pane: self.id, screen, left };
+    let update = self.tiles.draw(view, frame, graphics, out)?;
+    self.complete = update.complete;
+    if let Some(request) = update.request {
       let nearby =
         if self.crop_job.is_none() { self.nearby_pages() } else { Vec::new() };
-      self.worker.service.prepare(&missing, urgent, &nearby);
-      self.requested = tiles;
+      self.worker.service.prepare(request.keys(), request.urgent(), &nearby);
     }
     self.marks(graphics, screen, out)?;
     // The side without focus recedes; a veil would dim a menu over it.
     if self.panel_focused() && self.context_rect().is_none() {
-      graphics.veil([0, 0, 0, 70], screen, left, out)?;
+      graphics.veil(vpdf_ui::theme::PANE_VEIL, screen, left, out)?;
     }
     Ok(())
   }
 
   pub(crate) fn nearby_pages(&self) -> Vec<PageId> {
-    let scroll =
-      self.animation.as_ref().map_or(self.reader.scroll, |a| a.target);
-    crate::prefetch::nearby(
-      self.doc.pages.len(),
-      self.layout.page_at(scroll),
-      self.heading >= 0.0,
+    self.tiles.nearby(
+      vpdf_ui::layout::tiles::View {
+        layout: &self.layout,
+        scroll: self.reader.scroll,
+        target: self.animation.target(),
+      },
       vpdf_pdf::jobs::Config::default().prefetch_pages,
     )
-  }
-
-  /// Tiles a screen beyond the view each way, the way of the last scroll
-  /// first and nearest first, so scrolling finds them already rendered.
-  fn ahead(&self, near: &[TileKey]) -> Vec<TileKey> {
-    let base = self.animation.as_ref().map_or(self.reader.scroll, |a| a.target);
-    let height = self.layout.screen.height();
-    let mut keys = Vec::new();
-    for step in [self.heading, -self.heading] {
-      let scroll = self.layout.clamp_scroll(base + step * height);
-      let mut screen = vpdf_ui::layout::visible(&self.layout, scroll);
-      if step < 0.0 {
-        screen.reverse();
-      }
-      for key in screen {
-        if !near.contains(&key) && !keys.contains(&key) {
-          keys.push(key);
-        }
-      }
-    }
-    keys
   }
 
   /// Whether the frame writes no text above the status line.
@@ -167,9 +82,9 @@ impl App {
       && self.context_menu.is_none()
       && self.region.is_none()
       && self.panel.is_none()
-      && self.clues.is_none()
+      && self.clues.shown().is_none()
       && self.prompt.is_none()
-      && self.bar.scrub.is_none()
+      && !self.bar.scrubbing()
   }
 
   pub fn panel_focused(&self) -> bool {
@@ -183,153 +98,39 @@ impl App {
     screen: Screen,
     out: &mut impl Write,
   ) -> Result<()> {
-    if self.cursorline && self.reader.selection.is_some() {
-      self.line_band(
-        graphics,
-        self.reader.cursor,
-        vpdf_ui::theme::CURSORLINE,
-        screen,
-        out,
-      )?;
-    }
-    if let Some(landing) = &self.landing
-      && landing.span == Span::Line
-    {
-      self.line_band(
-        graphics,
-        landing.position,
-        vpdf_ui::theme::LANDING,
-        screen,
-        out,
-      )?;
-    }
-    if let Some(position) = self.click_mark() {
-      self.glyph_block(graphics, position, screen, out)?;
-    }
-    let mut tinted = self.hover_segments();
-    if tinted.is_empty()
+    let mut hovered = self.hover_segments();
+    if hovered.is_empty()
       && let Some((page, areas)) = self.hover_icon()
     {
-      tinted.extend(areas.into_iter().map(|bounds| (page, bounds)));
+      hovered.extend(areas.into_iter().map(|bounds| (page, bounds)));
     }
-    for (page, bounds) in tinted {
-      let rect = self.layout.project(page, bounds, self.reader.scroll);
-      self.tint(graphics, rect, vpdf_ui::theme::LINK, screen, out)?;
-    }
-    if !self.search.hidden() {
-      let visible = self.layout.visible(self.reader.scroll);
-      let hits = self.search.hits();
-      let start = hits.partition_point(|hit| hit.first.page.0 < visible.start);
-      let ranges: Vec<_> = hits[start..]
-        .iter()
-        .take_while(|hit| hit.first.page.0 < visible.end)
-        .take(300)
-        .map(|hit| (hit.first, hit.last))
-        .collect();
-      for span in ranges {
-        self.mark_range(
-          graphics,
-          span,
-          false,
-          [255, 190, 30, 90],
-          screen,
-          out,
-        )?;
-      }
-    }
-    if let Some(selection) = self.reader.selection {
-      self.mark_range(
-        graphics,
-        (selection.anchor, self.reader.cursor),
-        selection.kind == SelectionKind::Line,
-        [70, 130, 255, 85],
-        screen,
-        out,
-      )?;
-    }
-    if !self.reader.uses_cursor() {
-      return Ok(());
-    }
-    self.glyph_block(graphics, self.reader.cursor, screen, out)
-  }
-
-  /// A Cursor-style block at `position`.
-  fn glyph_block(
-    &mut self,
-    graphics: &mut Graphics,
-    position: Position,
-    screen: Screen,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    if let Some(glyph) = self.doc.text(position.page)?.glyph(position) {
-      let mut rect =
-        self.layout.project(position.page, glyph.bounds, self.reader.scroll);
-      // Translucent block keeps the glyph readable.
-      rect.x1 = rect.x1.max(rect.x0 + 2.0);
-      self.tint(graphics, rect, [25, 100, 255, 120], screen, out)?;
-    }
-    Ok(())
-  }
-
-  /// Tints `rect` around the context menu.
-  pub(crate) fn tint(
-    &mut self,
-    graphics: &mut Graphics,
-    rect: Bounds,
-    color: [u8; 4],
-    screen: Screen,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    for piece in self.beside_menu(rect) {
-      graphics.highlight(piece, color, screen, self.left, out)?;
-    }
-    Ok(())
-  }
-
-  /// `rect` minus the context menu.
-  fn beside_menu(&self, rect: Bounds) -> impl Iterator<Item = Bounds> + use<> {
-    let hole = self.context_rect();
-    let whole = hole.is_none().then_some(rect);
-    let parts = hole.into_iter().flat_map(move |hole| around(rect, hole));
-    whole.into_iter().chain(parts)
-  }
-
-  fn line_band(
-    &mut self,
-    graphics: &mut Graphics,
-    position: Position,
-    color: [u8; 4],
-    screen: Screen,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    let text = self.doc.text(position.page)?;
-    let Some(bounds) = text.lines.get(position.line).and_then(Line::span)
-    else {
-      return Ok(());
+    let paint = vpdf_ui::paint::Marks {
+      reader: &self.reader,
+      matches: if self.search.hidden() { &[] } else { self.search.hits() },
+      flash: self.landing.glyph(&self.reader),
+      landing: self.landing.line(),
+      cursorline: self.cursorline,
+      dim: self.panel_focused(),
+      hovered: &hovered,
     };
-    let page = self
-      .layout
-      .crop_for(position.page)
-      .apply(self.doc.pages[position.page.0].bounds);
-    let band = Bounds {
-      x0: page.x0,
-      x1: page.x1,
-      y0: bounds.y0.max(page.y0),
-      y1: bounds.y1.min(page.y1),
+    let canvas = vpdf_ui::page::Canvas {
+      layout: &self.layout,
+      screen,
+      left: self.left,
+      menu: self.context_rect(),
     };
-    if band.height() > 0.0 {
-      let rect = self.layout.project(position.page, band, self.reader.scroll);
-      for piece in self.beside_menu(rect) {
-        graphics.backdrop(piece, color, screen, self.left, out)?;
-      }
-    }
-    Ok(())
+    canvas.draw(
+      &mut crate::pdf_text::PdfText(&mut self.doc),
+      &paint,
+      graphics,
+      out,
+    )
   }
 
   /// Glyph rectangle in page-area pixels.
   pub fn position_rect(&mut self, cursor: Position) -> Result<Option<Bounds>> {
     if self.text_mode {
-      let cell = self.text_cell(cursor)?;
+      let cell = self.text().cell(cursor)?;
       let (width, height) =
         (f32::from(self.screen.cell_width), f32::from(self.screen.cell_height));
       return Ok(cell.map(|(column, row)| {
@@ -342,31 +143,6 @@ impl App {
     Ok(text.glyph(cursor).map(|glyph| {
       self.layout.project(cursor.page, glyph.bounds, self.reader.scroll)
     }))
-  }
-
-  pub fn mark_range(
-    &mut self,
-    graphics: &mut Graphics,
-    (first, last): (Position, Position),
-    linewise: bool,
-    color: [u8; 4],
-    screen: Screen,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    let range = vpdf_reader::motion::range(first, last);
-    let (first, last) = range;
-    for page in self.layout.visible(self.reader.scroll) {
-      if page < first.page.0 || page > last.page.0 {
-        continue;
-      }
-      let text = self.doc.text(PageId(page))?;
-      for bounds in covered_rows(&text, PageId(page), range, linewise) {
-        let rect =
-          self.layout.project(PageId(page), bounds, self.reader.scroll);
-        self.tint(graphics, rect, color, screen, out)?;
-      }
-    }
-    Ok(())
   }
 
   /// Deletes the images of a document this pane has since reloaded.
@@ -464,49 +240,16 @@ impl App {
     } else {
       None
     };
-    if let Some(clues) = &self.clues {
-      let (labels, grid, keys) = self.clue_grid(clues);
-      let bottom = (self.at, row - 1);
-      // Clues have no choice; the pointed one shows chosen, as menu rows.
-      let shown = (self.pointed_item(List::Clues), None);
-      let screen = self.screen;
-      vpdf_ui::grid::draw(out, bottom, &labels, &grid, shown, keys, screen)?;
+    if let Some(clues) = self.clues.shown() {
+      clues.draw(
+        out,
+        (self.at, row - 1),
+        self.screen,
+        self.pointed_item(List::Clues),
+      )?;
     }
     self.status_line(out, row, detail.as_deref())?;
     write!(out, "\x1b[?25l")?;
     Ok(())
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn tints_skip_the_menu() {
-    let rect = Bounds { x0: 0.0, y0: 0.0, x1: 10.0, y1: 10.0 };
-    let b = |x0, y0, x1, y1| Bounds { x0, y0, x1, y1 };
-    // (hole) -> parts
-    let cases = [
-      (b(20.0, 20.0, 30.0, 30.0), vec![rect]),
-      (b(-5.0, -5.0, 15.0, 15.0), vec![]),
-      (
-        b(2.0, 2.0, 8.0, 8.0),
-        vec![
-          b(0.0, 0.0, 10.0, 2.0),
-          b(0.0, 8.0, 10.0, 10.0),
-          b(0.0, 2.0, 2.0, 8.0),
-          b(8.0, 2.0, 10.0, 8.0),
-        ],
-      ),
-      (b(5.0, -5.0, 15.0, 15.0), vec![b(0.0, 0.0, 5.0, 10.0)]),
-    ];
-    for (hole, want) in cases {
-      let got: Vec<_> = around(rect, hole).collect();
-      let key = |b: &Bounds| (b.x0, b.y0, b.x1, b.y1);
-      let got: Vec<_> = got.iter().map(key).collect();
-      let want: Vec<_> = want.iter().map(key).collect();
-      assert_eq!(got, want, "{hole:?}");
-    }
   }
 }

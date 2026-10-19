@@ -113,7 +113,7 @@ impl App {
         }
       }
       Action::History(forward) => {
-        self.animation = None;
+        self.animation.cancel();
         for _ in 0..count {
           let current = self.location()?;
           let Some(location) = self.reader.recall(forward, current) else {
@@ -150,13 +150,13 @@ impl App {
     match input.action {
       Action::Scroll(fraction) => {
         self.keyboard_scroll(
-          fraction * count * self.layout.screen.height(),
+          fraction * count * self.layout.screen().height(),
           true,
         )?;
       }
       Action::Screen(direction) => {
         let row = f32::from(self.screen.cell_height);
-        let rows = usize::from(self.layout.screen.rows.saturating_sub(1));
+        let rows = usize::from(self.layout.screen().rows.saturating_sub(1));
         let distance = screen_step(rows) as f32 * row;
         self.keyboard_scroll(direction as f32 * count * distance, true)?;
       }
@@ -166,37 +166,21 @@ impl App {
           false,
         )?;
       }
-      Action::Align(fraction) if self.text_mode => {
-        if self.reader.viewport_mode() {
-          self.reader.cursor = self.reading_position()?;
-        }
-        self.align_text(fraction)?;
-      }
-      Action::Align(fraction) => {
-        self.animation = None;
-        if self.reader.viewport_mode() {
-          self.reader.cursor = self.reading_position()?;
-        }
-        if let Some(rect) = self.glyph_rect(self.reader.cursor)? {
-          self.reader.scroll = self.layout.clamp_scroll(
-            rect.y0 - fraction * (self.layout.screen.height() - rect.height()),
-          );
-        }
-      }
+      Action::Align(fraction) => self.reading_view().align(fraction)?,
       Action::Zoom(direction) => self.zoom_by(direction as f32 * count)?,
       Action::Fit => {
-        self.layout.zoom = 1.0;
+        self.layout.request_zoom(vpdf_ui::layout::Zoom::Width);
         self.relayout()?;
       }
       Action::FitPage => {
-        let page = &self.layout.pages[self.navigation_position().page.0];
-        self.layout.zoom *= (self.layout.screen.height() / page.height)
-          .min(self.layout.screen.width() / page.width);
+        self.layout.request_zoom(vpdf_ui::layout::Zoom::Page(
+          self.navigation_position().page,
+        ));
         self.relayout()?;
       }
       Action::Crop => self.toggle_crop()?,
       Action::Rotate => {
-        self.layout.rotation = (self.layout.rotation + 90) % 360;
+        self.layout.rotate();
         self.relayout()?;
       }
       _ => return Ok(false),
@@ -206,8 +190,7 @@ impl App {
 
   /// Zooms by `steps` of 15 %.
   fn zoom_by(&mut self, steps: f32) -> Result<()> {
-    self.layout.zoom =
-      (self.layout.zoom * 1.15_f32.powf(steps)).clamp(0.1, 8.0);
+    self.layout.request_zoom(vpdf_ui::layout::Zoom::Steps(steps));
     self.relayout()
   }
 
@@ -221,13 +204,6 @@ impl App {
   }
 
   pub(crate) fn pan(&mut self, delta: f32) -> Result<()> {
-    if self.text_mode {
-      let columns = (delta / f32::from(self.screen.cell_width)).round();
-      return self.pan_text(columns as isize);
-    }
-    let page = self.navigation_position().page;
-    let max = self.layout.pan_limit(page);
-    self.layout.pan = (self.layout.pan + delta).clamp(0.0, max);
-    Ok(())
+    self.reading_view().pan(delta)
   }
 }

@@ -93,7 +93,7 @@ impl Edge {
 
 struct ImageWrite {
   pane: u32,
-  capture: crate::region::CaptureId,
+  capture: vpdf_ui::region::CaptureId,
   state: ImageState,
 }
 

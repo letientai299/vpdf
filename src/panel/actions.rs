@@ -19,7 +19,7 @@ impl App {
       if !self.text_mode {
         let position =
           self.first_visible()?.unwrap_or_else(|| self.navigation_position());
-        self.text_origin(position)?;
+        self.text().origin(position)?;
       }
       self.text_mode = true;
       // Presentation retains the reading mode.
@@ -73,7 +73,12 @@ impl App {
     let note = self.panel_note(kind);
     let Some(panel) = &mut self.panel else { return Ok(()) };
     let kept = panel.view.refill(rows, note);
-    if !kept && self.context_menu.as_ref().is_some_and(|menu| menu.row) {
+    if !kept
+      && self
+        .context_menu
+        .as_ref()
+        .is_some_and(vpdf_ui::context::ContextMenu::is_row)
+    {
       self.context_menu = None;
     }
     Ok(())
@@ -134,7 +139,7 @@ impl App {
     if let Some(previous) = self.preview.take() {
       self.text_mode = previous;
     }
-    self.requested.clear();
+    self.tiles.invalidate();
     if self.reader.uses_cursor() {
       self.ensure_cursor()?;
     }

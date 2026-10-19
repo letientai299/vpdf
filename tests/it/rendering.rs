@@ -398,10 +398,8 @@ fn projected_mouse_tracks_glyphs() -> Result<()> {
       let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
       let anchor = app.reader.cursor;
       let bounds = app.doc.text(anchor.page)?.glyph(anchor).unwrap().bounds;
-      app.layout.rotation = rotation;
-      app.layout.zoom = zoom;
-      app.layout.pan = 100_000.0;
-      app.layout.crop = Crop([20, 20, 20, 20]);
+      app.layout.restore(zoom, rotation, Crop([20, 20, 20, 20]));
+      app.layout.pan_to(100_000.0);
       {
         let (app, _) = app.parts();
         app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));
@@ -460,19 +458,19 @@ fn crop_cancel_and_cache() -> Result<()> {
   app.toggle_crop()?;
   assert!(app.crop_job.is_some());
   app.toggle_crop()?;
-  assert!(app.crop_job.is_none() && app.layout.crop.is_none());
+  assert!(app.crop_job.is_none() && app.layout.crop().is_none());
   assert!(!app.crop_updates()?);
   app.toggle_crop()?;
   app.command("cancel")?;
-  assert!(app.crop_job.is_none() && app.layout.crop.is_none());
+  assert!(app.crop_job.is_none() && app.layout.crop().is_none());
   assert!(!app.crop_updates()?);
   app.toggle_crop()?;
   app.restore(&saved.recent[0])?;
-  assert!(app.crop_job.is_none() && app.layout.crop.is_none());
+  assert!(app.crop_job.is_none() && app.layout.crop().is_none());
   app.toggle_crop()?;
   crate::common::crop_loaded(&mut app)?;
-  assert!(!app.layout.crop.is_none());
-  assert_eq!(app.layout.crops.len(), 1);
+  assert!(!app.layout.crop().is_none());
+  assert_eq!(app.layout.crops().len(), 1);
   let crop = app.layout.crop_for(PageId(0));
   app.toggle_crop()?;
   assert!(app.layout.crop_for(PageId(0)).is_none());
@@ -516,23 +514,20 @@ fn crop_follows_rapid_space() -> Result<()> {
   )?;
   app.toggle_crop()?;
   crate::common::crop_loaded(&mut app)?;
-  assert!(app.layout.crops.len() <= 24);
+  assert!(app.layout.crops().len() <= 24);
   app.command("40")?;
   app.crop_updates()?;
   for _ in 0..30 {
     app.action(Input::plain(Action::Screen(1)))?;
     app.crop_updates()?;
   }
-  let target = app
-    .animation
-    .as_ref()
-    .map_or(app.reader.scroll, |animation| animation.target);
+  let target = app.animation.target().unwrap_or(app.reader.scroll);
   let page = app.layout.page_at(target);
   assert!(page.0 > 40);
   crate::common::crop_loaded(&mut app)?;
-  let target = app.animation.as_ref().expect("crop keeps scrolling").target;
+  let target = app.animation.target().expect("crop keeps scrolling");
   assert_eq!(app.layout.page_at(target), page);
-  app.animation = None;
+  app.animation.cancel();
   app.reader.scroll = target;
   let started = Instant::now();
   loop {
@@ -550,7 +545,7 @@ fn crop_follows_rapid_space() -> Result<()> {
   for index in anchor.0.saturating_sub(4)..(anchor.0 + 5).min(100) {
     assert!(!app.layout.crop_for(PageId(index)).is_none(), "page {index}");
   }
-  assert!(app.layout.crops.len() <= 44, "unvisited pages stay lazy");
+  assert!(app.layout.crops().len() <= 44, "unvisited pages stay lazy");
   Ok(())
 }
 
@@ -577,7 +572,7 @@ fn book_body_stays_centered() -> Result<()> {
     let mut scales = Vec::new();
     for index in 182..185 {
       let page = PageId(index);
-      app.reader.scroll = app.layout.pages[index].top;
+      app.reader.scroll = app.layout.pages()[index].top;
       app.crop_updates()?;
       crate::common::crop_loaded(&mut app)?;
       let text = app.doc.text(page)?;
@@ -596,16 +591,16 @@ fn book_body_stays_centered() -> Result<()> {
         path.display(),
         index + 1
       );
-      scales.push(app.layout.pages[index].scale);
+      scales.push(app.layout.pages()[index].scale);
       let crop = app.layout.crop_for(page);
       eprintln!(
         "{} page {}: center {center:.2}, scale {}, {crop:?}",
         path.display(),
         index + 1,
-        app.layout.pages[index].scale
+        app.layout.pages()[index].scale
       );
       assert!(
-        vpdf_ui::layout::visible(&app.layout, app.layout.pages[index].top)
+        vpdf_ui::layout::visible(&app.layout, app.layout.pages()[index].top)
           .iter()
           .filter(|tile| tile.page == page)
           .all(|tile| tile.crop == crop)

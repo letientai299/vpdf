@@ -22,7 +22,7 @@ impl App {
       &self.wake,
       vpdf_terminal::payload::Encoder::live(),
     );
-    self.requested.clear();
+    self.tiles.invalidate();
   }
 
   /// Reopens the document, keeping the view where it still applies.
@@ -31,11 +31,11 @@ impl App {
     let stamp = crate::watch::stamp(&self.path);
     self.doc = Document::open(&self.path, password)?;
     self.crop_job = None;
-    self.layout.crops = std::sync::Arc::default();
+    self.layout.clear_crops();
     self.layout.reflow(self.doc.pages.iter().map(|page| page.bounds));
     self.stamp = stamp;
     password.clone_into(&mut self.password);
-    if !self.layout.crop.is_none() {
+    if !self.layout.crop().is_none() {
       self.start_crop();
     }
     self.worker = Raster::new(
@@ -63,13 +63,13 @@ impl App {
     }
     self.reader.cancel();
     self.reader.clear_history();
-    self.requested.clear();
+    self.tiles.invalidate();
     self.reader.cursor =
       reader::clamp(self.reader.cursor, &mut PdfText(&mut self.doc))?;
-    self.text_top = self.clamp_text(self.text_top)?;
-    self.text_drawn = None;
+    self.text().reclamp()?;
+    self.text_view.invalidate();
     self.target = None;
-    self.landing = None;
+    self.landing.clear_flash();
     self.point(None);
     self.link_press = crate::links::LinkPress::Idle;
     self.dismiss_overlay();
@@ -79,7 +79,7 @@ impl App {
       origin.anchor =
         origin.anchor.filter(|(page, _)| page.0 < self.doc.pages.len());
       if let Some(top) = origin.text_top {
-        origin.text_top = Some(self.clamp_text(top)?);
+        origin.text_top = Some(self.text().clamp(top)?);
       }
       origin.target = None;
       self.search_origin = Some(origin);
@@ -112,11 +112,7 @@ impl App {
   /// Copies another pane's view of the same document, as a new split.
   pub fn mirror(&mut self, other: &Self) -> Result<()> {
     self.crop_job = None;
-    self.layout.zoom = other.layout.zoom;
-    self.layout.rotation = other.layout.rotation;
-    self.layout.crop = other.layout.crop;
-    self.layout.crops = std::sync::Arc::clone(&other.layout.crops);
-    self.layout.pan = other.layout.pan;
+    self.layout.copy_view(&other.layout);
     self.doc.margins.clone_from(&other.doc.margins);
     self.text_mode = other.text_mode;
     self.preview = other.preview;
@@ -126,8 +122,8 @@ impl App {
     self.reader.cancel();
     self.target = None;
     self.reader.scroll = other.reader.scroll;
-    self.text_top = other.text_top;
-    if !self.layout.crop.is_none() && self.layout.crops.is_empty() {
+    self.text_view.copy_origin(&other.text_view);
+    if !self.layout.crop().is_none() && self.layout.crops().is_empty() {
       self.start_crop();
     }
     Ok(())

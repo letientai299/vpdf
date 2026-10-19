@@ -353,7 +353,7 @@ fn view(app: &mut App) -> Result<View> {
   for page in 0..app.doc.pages.len() {
     let lines = app.doc.text(PageId(page))?.lines.len();
     for line in 0..lines {
-      cells.push(app.text_cell(on(page, line, 0))?);
+      cells.push(app.text().cell(on(page, line, 0))?);
     }
   }
   Ok((app.reader.scroll, cells))
@@ -363,7 +363,7 @@ fn view(app: &mut App) -> Result<View> {
 fn cursor_rows(app: &mut App) -> Result<(f32, f32)> {
   let cursor = app.reader.cursor;
   if app.text_mode {
-    let cell = app.text_cell(cursor)?.expect("cursor shows");
+    let cell = app.text().cell(cursor)?.expect("cursor shows");
     let row = f32::from(cell.1);
     return Ok((row, row + 1.0));
   }
@@ -508,7 +508,7 @@ fn jumps_land_near_the_top() -> Result<()> {
         }
       }
       Lands::PageTop => {
-        let edge = app.layout.pages[at.page.0].top - app.reader.scroll;
+        let edge = app.layout.pages()[at.page.0].top - app.reader.scroll;
         let row = f32::from(app.screen.cell_height);
         assert!((0.0..row).contains(&edge), "{case}: {edge}");
       }
@@ -517,7 +517,7 @@ fn jumps_land_near_the_top() -> Result<()> {
     if matches!(kind, Jump::Preview(_)) {
       continue;
     }
-    let landing = app.landing.as_ref().map(|landing| landing.position);
+    let landing = app.landing.position();
     assert_eq!(landing, Some(at), "{case}");
     if app.panel.is_some() {
       app.close_panel()?;
@@ -563,7 +563,7 @@ fn history_across_presentations_lands() -> Result<()> {
     app.text_mode = !text_first;
     app.relayout()?;
     // Away from the origin: page 2 in PDF; text keeps the last landing.
-    app.reader.scroll = app.layout.pages[1].top;
+    app.reader.scroll = app.layout.pages()[1].top;
     let back = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
     app.key(back, &mut History::default())?;
     assert_eq!(app.reader.cursor, on(0, 5, 0), "text first {text_first}");
@@ -645,7 +645,7 @@ fn sections_continue_after_landing() -> Result<()> {
   ] {
     let case = format!("text {text_mode} zoom {zoom} {first:?} {then:?}");
     let (_dir, mut app) = landing_app(text_mode)?;
-    app.layout.zoom = zoom;
+    app.layout.request_zoom(vpdf_ui::layout::Zoom::To(zoom));
     app.relayout()?;
     let target = heading_on(&mut app, first, "First")?;
     heading_on(&mut app, on(1, 2, 0), "Second")?;
@@ -704,10 +704,10 @@ fn counted_history_keeps_both_directions() -> Result<()> {
     (b"99\x1b[105;5u", 3),
     (b"99\x0f", 0),
   ] {
-    app.landing = None;
+    app.landing.clear_flash();
     crate::common::keys(&mut app, sequence)?;
     assert_eq!(app.reader.cursor.page, PageId(page));
-    assert_eq!(app.landing.as_ref().unwrap().position, app.reader.cursor);
+    assert_eq!(app.landing.position().unwrap(), app.reader.cursor);
   }
   Ok(())
 }

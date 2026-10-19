@@ -134,7 +134,7 @@ impl App {
       View::Text { top, lines: page_lines(&text), starts: vec![0] }
     } else {
       let projected =
-        self.layout.pages[page.0].matrix.transform_xy(x, y - ABOVE).1;
+        self.layout.pages()[page.0].matrix.transform_xy(x, y - ABOVE).1;
       self.preview_image(self.preview_key(page, projected as i32)?)?
     };
     // Panel notes may open off screen.
@@ -214,7 +214,7 @@ impl App {
   }
 
   fn note_columns(&self) -> usize {
-    usize::from(self.layout.screen.columns).saturating_sub(4).min(72)
+    usize::from(self.layout.screen().columns).saturating_sub(4).min(72)
   }
 
   fn reflow_note(&mut self) {
@@ -231,16 +231,16 @@ impl App {
   }
 
   fn preview_rows(&self) -> usize {
-    ((f32::from(self.layout.screen.rows) * HEIGHT) as usize)
+    ((f32::from(self.layout.screen().rows) * HEIGHT) as usize)
       .max(3)
-      .min(usize::from(self.layout.screen.rows.saturating_sub(1)))
+      .min(usize::from(self.layout.screen().rows.saturating_sub(1)))
       .saturating_sub(2)
   }
 
   fn preview_key(&self, page: PageId, top: i32) -> Result<TileKey> {
-    let layout = &self.layout.pages[page.0];
+    let layout = &self.layout.pages()[page.0];
     let left = self.layout.shown_pan(page) as i32;
-    let screen = self.layout.screen;
+    let screen = self.layout.screen();
     let cell_width = i32::from(screen.cell_width);
     let width = ((layout.width - left as f32).min(screen.width() * 0.95)
       as i32
@@ -250,14 +250,14 @@ impl App {
     // The strip runs to the end (U12).
     let last = self.layout_end() - layout.top;
     let height = (self.preview_rows() as f32
-      * f32::from(self.layout.screen.cell_height))
+      * f32::from(self.layout.screen().cell_height))
     .min(last) as i32;
     anyhow::ensure!(width > 8 && height > 8, "Preview area too small");
     let top = top.clamp(0, (last as i32 - height).max(0));
     Ok(TileKey {
       page,
       scale: layout.scale,
-      rotation: self.layout.rotation,
+      rotation: self.layout.rotation(),
       x: left,
       y: top,
       width,
@@ -275,18 +275,18 @@ impl App {
 
   /// Where the last page ends.
   fn layout_end(&self) -> f32 {
-    self.layout.pages.last().map_or(0.0, |last| last.top + last.height)
+    self.layout.pages().last().map_or(0.0, |last| last.top + last.height)
   }
 
   /// Rasters the strip `key` names.
   fn preview_image(&mut self, key: TileKey) -> Result<View> {
     let stride = usize::try_from(key.width)? * 3;
     let mut rgb = vec![GAP; stride * usize::try_from(key.height)?];
-    let first = self.layout.pages[key.page.0].top as i32;
+    let first = self.layout.pages()[key.page.0].top as i32;
     let end = key.y + key.height;
-    for index in key.page.0..self.layout.pages.len() {
+    for index in key.page.0..self.layout.pages().len() {
       let page = PageId(index);
-      let layout = &self.layout.pages[index];
+      let layout = &self.layout.pages()[index];
       // Page rows in strip coordinates.
       let start = layout.top as i32 - first;
       let (from, to) =
@@ -371,7 +371,7 @@ impl App {
 
   /// Identifies the view: scroll and text top.
   pub(crate) fn view_key(&self) -> (u32, Position) {
-    (self.reader.scroll.to_bits(), self.text_top)
+    (self.reader.scroll.to_bits(), self.text_view.top())
   }
 
   /// Closes the preview, following its link.
@@ -388,7 +388,7 @@ impl App {
     self.reflow_note();
     let Some(preview) = &self.peek else { return Ok(()) };
     let page = preview.page;
-    if page.0 >= self.doc.pages.len() || page.0 >= self.layout.pages.len() {
+    if page.0 >= self.doc.pages.len() || page.0 >= self.layout.pages().len() {
       self.peek = None;
       return Ok(());
     }
@@ -407,7 +407,7 @@ impl App {
       }
       View::Image { key, .. } => {
         let top = (key.y as f32
-          + rows * f32::from(self.layout.screen.cell_height))
+          + rows * f32::from(self.layout.screen().cell_height))
           as i32;
         let next = self.preview_key(page, top)?;
         if *key == next {
@@ -424,11 +424,11 @@ impl App {
   }
 
   fn preview_extent(&self, preview: &Preview) -> (usize, usize, (bool, bool)) {
-    let screen = self.layout.screen;
+    let screen = self.layout.screen();
     let cell = f32::from(screen.cell_height);
     match &preview.view {
       View::Image { key, .. } => {
-        let top = self.layout.pages[preview.page.0].top;
+        let top = self.layout.pages()[preview.page.0].top;
         let bottom = top + (key.y + key.height) as f32;
         (
           key.width as usize / usize::from(screen.cell_width),
@@ -458,8 +458,9 @@ impl App {
     out: &mut impl Write,
     frame: Rect,
   ) -> Result<()> {
-    let screen = self.layout.screen;
-    let rect = self.cell_bounds(frame);
+    let screen = self.layout.screen();
+    let rect =
+      vpdf_ui::paint::cell_bounds(self.layout.screen(), self.left, frame);
     graphics.backdrop(rect, [255; 4], screen, self.left, out)
   }
 
@@ -475,7 +476,7 @@ impl App {
 
   /// Cells from `link`'s edge row to `frame` (U2).
   fn bridge(&self, frame: Rect, link: Bounds) -> Rect {
-    let screen = self.layout.screen;
+    let screen = self.layout.screen();
     let (width, height) =
       (f32::from(screen.cell_width), f32::from(screen.cell_height));
     let left = usize::from(self.left);
@@ -506,7 +507,7 @@ impl App {
   fn top_page(&self, preview: &Preview) -> PageId {
     match &preview.view {
       View::Image { key, .. } => {
-        let pages = &self.layout.pages;
+        let pages = &self.layout.pages();
         let top = pages[key.page.0].top + key.y as f32;
         // Past a page's gap, the next one.
         let index = (key.page.0..pages.len())
@@ -595,7 +596,7 @@ impl App {
       return;
     };
     let shown = match self.shown_anchor() {
-      Some((page, _, icon)) => self.bounds_shown(page, icon),
+      Some((page, _, icon)) => self.page_view().shows(page, icon),
       // Unreadable text counts as gone.
       None => self.visible_position(source).unwrap_or(false),
     };
@@ -609,7 +610,7 @@ impl App {
 
   /// Cells `preview` covers beside `cursor`.
   fn preview_frame(&self, preview: &Preview, cursor: Option<Bounds>) -> Rect {
-    let screen = self.layout.screen;
+    let screen = self.layout.screen();
     let cell = f32::from(screen.cell_height);
     let (columns, rows, _) = self.preview_extent(preview);
     let available = usize::from(screen.rows.saturating_sub(1));
@@ -651,7 +652,7 @@ impl App {
     };
     let Some(preview) = &self.peek else { return Ok(()) };
     let frame = self.preview_frame(preview, cursor);
-    let screen = self.layout.screen;
+    let screen = self.layout.screen();
     let cell = f32::from(screen.cell_height);
     let (_, _, clipped) = self.preview_extent(preview);
     let (top, column) = (usize::from(frame.row), usize::from(frame.column));

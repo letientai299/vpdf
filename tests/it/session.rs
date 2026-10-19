@@ -102,7 +102,7 @@ fn reopening_restores_position_and_recent_order() -> Result<()> {
   session.open(&root.join("paper.pdf"), true, screen)?;
   session.open(&root.join("book.pdf"), true, screen)?;
   session.app().command("39")?;
-  session.app().layout.zoom = 1.5;
+  session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(1.5));
   session.app().command("q")?;
   session.settle()?;
   session.app().command("q")?;
@@ -118,7 +118,7 @@ fn reopening_restores_position_and_recent_order() -> Result<()> {
   assert_eq!(names, ["paper.pdf", "book.pdf"], "closed last, listed first");
   session.open(&root.join("book.pdf"), true, screen)?;
   assert_eq!(session.app().reader.cursor.page.0, 38);
-  assert!((session.app().layout.zoom - 1.5).abs() < f32::EPSILON);
+  assert!((session.app().layout.zoom() - 1.5).abs() < f32::EPSILON);
   Ok(())
 }
 
@@ -241,7 +241,7 @@ mod pointer {
     let other = pane(&mut session, right);
     assert_eq!(other.reader.cursor, cursor);
     assert!(other.reader.selection.is_none());
-    assert!(other.animation.is_none());
+    assert!(!other.animation.active());
 
     act(&mut session, Action::Cancel)?;
     act(&mut session, Action::Yank)?;
@@ -254,7 +254,7 @@ mod pointer {
     );
     mouse(&mut session, ScrollDown, 90, 10)?;
     assert_eq!(session.app().id, left, "the wheel leaves focus");
-    assert!(pane(&mut session, right).animation.is_some());
+    assert!(pane(&mut session, right).animation.active());
     assert!(session.app().reader.operator.is_none(), "wheel drops `y`");
     assert_eq!(session.app().keys.awaiting(), None, "wheel drops `g`");
     act(&mut session, Action::Yank)?;
@@ -335,13 +335,16 @@ mod pointer {
         .app()
         .keys
         .feed(key(KeyCode::Char('g')), vpdf_ui::keys::Grammar::Other);
-      session.app().awaiting = std::time::Instant::now().checked_sub(second);
+      session
+        .app()
+        .clues
+        .restart(std::time::Instant::now().checked_sub(second));
       assert!(session.app().clue_due());
       mouse(&mut session, kind, 40, 38)?;
       let app = session.app();
       assert_eq!(app.reader.cursor, cursor, "{kind:?} on clues");
-      assert!(app.animation.is_none(), "{kind:?} on clues scrolls");
-      assert_eq!(app.clues.is_some(), kind == ScrollDown);
+      assert!(!app.animation.active(), "{kind:?} on clues scrolls");
+      assert_eq!(app.clues.shown().is_some(), kind == ScrollDown);
       if kind == ScrollDown {
         assert_eq!(app.keys.pending(), "g", "wheel keeps the prefix");
       }
@@ -452,7 +455,10 @@ fn resize_lays_out_panes_and_start_screen() -> Result<()> {
   session.resize(small)?;
   let app = session.app();
   assert_eq!((app.screen.columns, app.screen.rows), (100, 30));
-  assert_eq!((app.layout.screen.columns, app.layout.screen.rows), (100, 30));
+  assert_eq!(
+    (app.layout.screen().columns, app.layout.screen().rows),
+    (100, 30)
+  );
   session.app().command("q")?;
   session.settle()?;
   session.home = Some(vpdf::home::Home::new(&[], screen));

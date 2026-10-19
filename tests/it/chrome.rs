@@ -61,10 +61,10 @@ fn middle_clicks_split_links_and_copy_addresses() -> Result<()> {
 fn middle_drags_pan_both_axes() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let app = session.app();
-  app.layout.zoom = 3.0;
+  app.layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
   app.relayout()?;
   app.reader.scroll = 64.0;
-  let (scroll, pan) = (app.reader.scroll, app.layout.pan);
+  let (scroll, pan) = (app.reader.scroll, app.layout.pan());
   let link = cell(&mut session, Hit::Link(PageId(0), 0))?;
   let (column, row) = (link.0 + 20, link.1 + 10);
   let down = MouseEventKind::Down(MouseButton::Middle);
@@ -82,7 +82,7 @@ fn middle_drags_pan_both_axes() -> Result<()> {
     let app = session.app();
     assert!(app.grabbing());
     assert_eq!(app.reader.scroll, scroll + down, "{at:?}");
-    assert_eq!(app.layout.pan, pan + right, "{at:?}");
+    assert_eq!(app.layout.pan(), pan + right, "{at:?}");
   }
   // Releasing a dragged link opens nothing.
   mouse(&mut session, MouseEventKind::Up(MouseButton::Middle), link)?;
@@ -182,10 +182,14 @@ fn text_drags_split_nothing() -> Result<()> {
 }
 
 /// The menu's labels and shown keys.
-fn menu(session: &mut Session) -> Vec<(&'static str, String)> {
+fn menu(session: &mut Session) -> Vec<(&str, String)> {
   let menu = session.app().context_menu.as_ref();
-  let items = menu.map(|menu| menu.items.iter());
-  items.into_iter().flatten().map(|i| (i.label, i.key.clone())).collect()
+  let items = menu.map(|menu| menu.entries().iter());
+  items
+    .into_iter()
+    .flatten()
+    .map(|i| (i.label.as_ref(), i.key.clone()))
+    .collect()
 }
 
 /// U13: panels and the overview open menus of their own keys.
@@ -232,8 +236,11 @@ fn panel_and_overview_menus_run_their_items() -> Result<()> {
     assert!(frame.contains(run), "{typed}: {run} drawn");
     // A click on the item runs it.
     let index = items.iter().position(|(label, _)| *label == run);
-    let area =
-      session.app().context_menu.as_ref().map(vpdf::context::ContextMenu::area);
+    let area = session
+      .app()
+      .context_menu
+      .as_ref()
+      .map(vpdf_ui::context::ContextMenu::area);
     let area = area.expect("a menu");
     let row = area.row + u16::try_from(index.expect(run))?;
     crate::mouse::click(&mut session, (area.column, row))?;
@@ -260,8 +267,11 @@ fn row_menus_copy_and_select() -> Result<()> {
   let want = ["Follow", "Follow, keep panel", "Copy address", "Close panel"];
   assert_eq!(labels(&mut session), want);
   // A right drag onto the item and its release run it.
-  let area =
-    session.app().context_menu.as_ref().map(vpdf::context::ContextMenu::area);
+  let area = session
+    .app()
+    .context_menu
+    .as_ref()
+    .map(vpdf_ui::context::ContextMenu::area);
   let area = area.expect("a menu");
   session.app().context_menu = None;
   mouse(&mut session, MouseEventKind::Down(MouseButton::Right), web)?;
@@ -350,7 +360,7 @@ fn recent_menus_open_rows() -> Result<()> {
   mouse(&mut session, MouseEventKind::ScrollDown, (area.column, area.row))?;
   let app = session.app();
   assert_eq!(app.reader.scroll.to_bits(), scroll.to_bits());
-  assert!(app.animation.is_none() && app.context_menu.is_some());
+  assert!(!app.animation.active() && app.context_menu.is_some());
   Ok(())
 }
 
@@ -362,8 +372,11 @@ fn overview_menus_take_right_drags() -> Result<()> {
   status(&mut session)?;
   let at = cell(&mut session, Hit::Thumbnail(PageId(1)))?;
   mouse(&mut session, MouseEventKind::Down(MouseButton::Right), at)?;
-  let area =
-    session.app().context_menu.as_ref().map(vpdf::context::ContextMenu::area);
+  let area = session
+    .app()
+    .context_menu
+    .as_ref()
+    .map(vpdf_ui::context::ContextMenu::area);
   let area = area.expect("a menu");
   // Open, Open in split, Back, ...
   let item = (area.column + 2, area.row + 1);
@@ -684,7 +697,7 @@ fn status_items_act_on_click() -> Result<()> {
   status(&mut session)?;
   let zoom = chrome_cell(&mut session, Chrome::Zoom)?;
   click(&mut session, zoom);
-  assert!((session.app().layout.zoom - 1.0).abs() < 0.01);
+  assert!((session.app().layout.zoom() - 1.0).abs() < 0.01);
   status(&mut session)?;
   let pages = chrome_cell(&mut session, Chrome::Pages)?;
   click(&mut session, pages);
@@ -800,40 +813,43 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   left(&mut session, MouseEventKind::Drag(MouseButton::Middle), pan);
   let ctrl_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
   session.app().key(ctrl_w, &mut vpdf_ui::prompt::History::default())?;
-  session.app().awaiting =
-    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1));
+  session.app().clues.restart(
+    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
+  );
   assert!(session.app().clue_due());
-  let clues = session.app().clues.as_ref().map(|c| c.items.clone());
+  let clues = session.app().clues.shown().map(|c| c.items().to_vec());
   let split = clues.and_then(|items| items.iter().position(|(k, _)| k == "v"));
   let at = item_cell(&mut session, List::Clues, split.expect("a v clue"))?;
   // The held pan keeps clues off.
   left(&mut session, MouseEventKind::Down(MouseButton::Left), at);
-  assert!(session.app().clues.is_some() && session.app().grabbing());
+  assert!(session.app().clues.shown().is_some() && session.app().grabbing());
   left(&mut session, MouseEventKind::Up(MouseButton::Middle), pan);
   // The press splits, before its release.
   left(&mut session, MouseEventKind::Down(MouseButton::Left), at);
   assert_eq!(session.tab().panes.len(), 2);
   left(&mut session, MouseEventKind::Up(MouseButton::Left), at);
-  assert!(session.app().clues.is_none());
+  assert!(session.app().clues.shown().is_none());
   // A failing clue still closes.
   let (_text, mut failing) = crate::mouse::session(true)?;
   keys(&mut failing, "g")?;
-  failing.app().awaiting =
-    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1));
+  failing.app().clues.restart(
+    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
+  );
   assert!(failing.app().clue_due());
-  let clues = failing.app().clues.as_ref().map(|c| c.items.clone());
+  let clues = failing.app().clues.shown().map(|c| c.items().to_vec());
   let pages = clues.and_then(|items| items.iter().position(|(k, _)| k == "p"));
   status(&mut failing)?;
   let at = item_cell(&mut failing, List::Clues, pages.expect("a p clue"))?;
   mouse(&mut failing, MouseEventKind::Down(MouseButton::Left), at)?;
   assert!(failing.settle().is_err(), "the session reports it");
   let app = failing.app();
-  assert!(app.clues.is_none());
+  assert!(app.clues.shown().is_none());
   assert_eq!(app.keys.pending(), "");
   // Ranges name no key.
   keys(&mut session, "m")?;
-  session.app().awaiting =
-    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1));
+  session.app().clues.restart(
+    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
+  );
   assert!(session.app().clue_due());
   status(&mut session)?;
   let app = session.app();
@@ -848,7 +864,7 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   let app = session.app();
   let blank = (app.at.column + app.screen.columns - 1, app.screen.rows - 2);
   click(&mut session, blank);
-  assert!(session.app().clues.is_none());
+  assert!(session.app().clues.shown().is_none());
   // A click picks a completion.
   keys(&mut session, ":tab")?;
   press(&mut session, KeyCode::Tab)?;
@@ -876,15 +892,16 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let page = cell(&mut session, Hit::Text)?;
   keys(&mut session, "g")?;
-  session.app().awaiting =
-    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1));
+  session.app().clues.restart(
+    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
+  );
   assert!(session.app().clue_due());
   status(&mut session)?;
   let app = session.app();
-  let clues = app.clues.as_ref().expect("clues");
-  let index = clues.items.iter().position(|(k, _)| k == "p").expect("p");
-  let label = app.clue_grid(clues).0[index].clone();
-  let count = clues.items.len();
+  let clues = app.clues.shown().expect("clues");
+  let index = clues.items().iter().position(|(k, _)| k == "p").expect("p");
+  let label = clues.labels()[index].clone();
+  let count = clues.items().len();
   let at = item_cell(&mut session, List::Clues, index)?;
   let other = (0..count)
     .filter(|other| *other != index)
@@ -1040,7 +1057,7 @@ fn track_presses_jump_and_drags_scrub() -> Result<()> {
   let app = session.app();
   let edge = app.screen.columns - 1;
   let rows = app.screen.rows - 1;
-  let room = app.layout.total - app.layout.screen.height();
+  let room = app.layout.total() - app.layout.screen().height();
   // Halfway presses jump halfway, recorded.
   left(&mut session, Down(L), (edge, rows / 2));
   let scroll = session.app().reader.scroll;
@@ -1052,8 +1069,8 @@ fn track_presses_jump_and_drags_scrub() -> Result<()> {
   left(&mut grabbed, Down(L), (edge, 2));
   assert_eq!(grabbed.app().reader.scroll, 0.0);
   left(&mut grabbed, Drag(L), (edge, 4));
-  let total = grabbed.app().layout.total;
-  let moved = 32.0 / grabbed.app().layout.screen.height() * total;
+  let total = grabbed.app().layout.total();
+  let moved = 32.0 / grabbed.app().layout.screen().height() * total;
   assert!((grabbed.app().reader.scroll - moved).abs() < 0.5);
   // Moved thumbs record a jump on release.
   left(&mut grabbed, Up(L), (edge, 4));
@@ -1086,10 +1103,10 @@ fn long_documents_reach_both_ends() -> Result<()> {
     crate::mouse::open(|path| pages_pdf(path, 60), false)?;
   let app = session.app();
   let (edge, rows) = (app.screen.columns - 1, app.screen.rows - 2);
-  let room = app.layout.total - app.layout.screen.height();
+  let room = app.layout.total() - app.layout.screen().height();
   let cell = f32::from(app.screen.cell_height);
-  let size = app.layout.screen.height() / app.layout.total;
-  assert!(size * app.layout.screen.height() < cell, "a tiny thumb");
+  let size = app.layout.screen().height() / app.layout.total();
+  assert!(size * app.layout.screen().height() < cell, "a tiny thumb");
   // (press, drag to) -> end scroll
   let cases =
     [((edge, rows), None, room), ((edge, 0), Some((edge, rows)), room)];
@@ -1103,7 +1120,7 @@ fn long_documents_reach_both_ends() -> Result<()> {
     assert_eq!(session.app().reader.scroll, want, "{press:?} {drag:?}");
   }
   // Cell presses touching a straddling thumb grip.
-  let height = session.app().layout.screen.height();
+  let height = session.app().layout.screen().height();
   let top = 18.5 * cell;
   session.app().reader.scroll = top / (height - cell) * room;
   let partial = 18;
@@ -1199,7 +1216,7 @@ fn outline_jumps_show_the_scrollbar() -> Result<()> {
 fn outline_follows_show_the_scrollbar() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let app = session.app();
-  app.layout.zoom = 3.0;
+  app.layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
   app.relayout()?;
   keys(&mut session, "go")?;
   drawn(&mut session)?;

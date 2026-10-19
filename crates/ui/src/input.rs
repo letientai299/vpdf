@@ -1,3 +1,9 @@
+#[cfg(test)]
+mod contracts;
+pub mod edge;
+pub mod gesture;
+pub mod grab;
+pub mod wheel;
 use crate::keys::Grammar;
 use vpdf_reader::reader::Mode;
 

@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::reader::{Reader, TextSource};
-use vpdf_model::text::{PageId, Position, class};
+use vpdf_model::text::{Bounds, PageId, Position, Text, class};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Motion {
@@ -274,6 +274,28 @@ impl Reader {
     }
     Ok(true)
   }
+}
+
+/// Each line's bounds `range` covers on `page`.
+pub fn covered_rows(
+  text: &Text,
+  page: PageId,
+  range: (Position, Position),
+  linewise: bool,
+) -> impl Iterator<Item = Bounds> + '_ {
+  let (first, last) = range;
+  let skip = if page == first.page { first.line } else { 0 };
+  let rows = text.lines.iter().enumerate().skip(skip);
+  let rows =
+    rows.take_while(move |(line, _)| page != last.page || *line <= last.line);
+  rows.filter_map(move |(line, row)| {
+    let glyphs = row.glyphs.iter().enumerate();
+    let covered = glyphs.filter(move |(glyph, _)| {
+      let at = Position { page, line, glyph: *glyph };
+      covers(range, linewise, at)
+    });
+    covered.map(|(_, ch)| ch.bounds).reduce(Bounds::union)
+  })
 }
 
 pub fn range(a: Position, b: Position) -> (Position, Position) {

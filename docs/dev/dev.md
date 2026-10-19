@@ -129,14 +129,17 @@ mise run bench:stages
 ```
 
 The [microbenchmarks][micro] accept case filters and `--package` selection.
-Terminal and UI cases use prepared real-PDF raster and geometry data, with
-dimensions, source identity, and pixel hashes checked outside the timed loops.
-Preparation requires MuPDF; terminal, UI, and protocol benchmark execution does
-not. Set `VPDF_BENCH_FIXTURES` to share a prepared fixture directory between
+Model, terminal, and UI cases use prepared real-PDF raster, geometry, text,
+links, menu frames, capture regions, scrollbar headings, and page/text overlays.
+Fixture hashes are checked and source identity is recorded outside the timed
+loops. Preparation requires MuPDF; model, terminal, UI, and protocol benchmark
+execution does not.
+Set `VPDF_BENCH_FIXTURES` to share a prepared fixture directory between
 checkouts.
 
 ```sh
 mise run bench:fixtures
+mise run bench:micro -- --package vpdf-model
 mise run bench:micro -- --package vpdf-terminal
 mise run bench:micro -- --package vpdf-ui
 mise run bench:micro -- --package vpdf-protocol decode

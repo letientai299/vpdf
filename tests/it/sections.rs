@@ -187,7 +187,7 @@ fn outline_follows_after_loading() -> Result<()> {
 fn section_repeat_landing() -> Result<()> {
   let mut app = app(false)?;
   for zoom in [0.73, 1.0, 1.77] {
-    app.layout.zoom = zoom;
+    app.layout.request_zoom(vpdf_ui::layout::Zoom::To(zoom));
     app.relayout()?;
     let (_, second) = heading(&mut app, 1)?;
     app.reader.scroll = second + 40.0;
@@ -224,7 +224,7 @@ fn section_clipped_landings() -> Result<()> {
   let cases = [(false, false), (false, true), (true, false), (true, true)];
   for (text_mode, full) in cases {
     let mut app = app(text_mode)?;
-    let height = app.layout.total - app.layout.pages[1].top;
+    let height = app.layout.total() - app.layout.pages()[1].top;
     app.screen.rows = if full {
       u16::MAX
     } else if text_mode {
@@ -262,7 +262,7 @@ fn section_clipped_landings() -> Result<()> {
     // A full view cannot scroll.
     if text_mode && !full {
       // A changed viewport invalidates the landing.
-      app.scroll_text(-1)?;
+      app.text().scroll(-1)?;
       let top = app.navigation_position();
       keys(&mut app, b"]]")?;
       let mut next = 0;
@@ -288,7 +288,7 @@ fn section_scroll_invalidates_landing() -> Result<()> {
   let (want, second) = heading(&mut app, 1)?;
   assert_eq!(app.target, Some(want));
   keys(&mut app, b"3j")?;
-  app.reader.scroll = app.animation.take().unwrap().target;
+  app.reader.scroll = app.animation.finish().unwrap();
   keys(&mut app, b"[[")?;
   assert_eq!(app.reader.cursor, want);
   assert_eq!(app.reader.scroll, second);
@@ -341,17 +341,17 @@ fn section_same_baseline_targets() -> Result<()> {
 fn section_pan_invalidates_landing() -> Result<()> {
   let mut app = app(false)?;
   app.screen.rows = u16::MAX;
-  app.layout.zoom = 2.0;
+  app.layout.request_zoom(vpdf_ui::layout::Zoom::To(2.0));
   app.relayout()?;
   app.target = None;
   keys(&mut app, b"]]")?;
   let first = heading(&mut app, 0)?.0;
   assert_eq!(app.reader.cursor, first);
-  let pan = app.layout.pan;
+  let pan = app.layout.pan();
   keys(&mut app, b"l")?;
-  assert!(app.layout.pan > pan);
+  assert!(app.layout.pan() > pan);
   keys(&mut app, b"]]")?;
   assert_eq!(app.reader.cursor, first);
-  assert_eq!(app.layout.pan, pan);
+  assert_eq!(app.layout.pan(), pan);
   Ok(())
 }

@@ -45,7 +45,7 @@ impl Session {
 
   /// Readies the newly focused pane to request its view again.
   pub(super) fn refocus(&mut self) {
-    self.app().requested.clear();
+    self.app().tiles.invalidate();
   }
 
   pub(super) fn step(&self, step: TabMove) -> usize {

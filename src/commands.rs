@@ -20,7 +20,7 @@ impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
     self.cancel_definition();
     self.search.forget_yank();
-    self.finish_scroll_before(input.action);
+    self.animation.finish_before(input.action, &mut self.reader);
     if self.reader.operator.is_some()
       && !matches!(
         input.action,
@@ -135,7 +135,7 @@ impl App {
       return self.cancel_input();
     }
     if let Some(hints) = &self.hints {
-      let picked = key.code == KeyCode::Enter && hints.selected.is_some();
+      let picked = key.code == KeyCode::Enter && hints.selected().is_some();
       if vpdf_ui::keys::plain(key)
         && matches!(key.code, KeyCode::Char(ch) if ch.is_ascii_alphabetic())
         || key.code == KeyCode::Backspace
@@ -173,7 +173,7 @@ impl App {
 
   pub(crate) fn cancel_input(&mut self) -> Result<()> {
     self.cancel_definition();
-    self.animation = None;
+    self.animation.cancel();
     let owner = self.input_owner();
     let pending =
       !self.keys.pending().is_empty() || self.reader.operator.is_some();
@@ -189,7 +189,7 @@ impl App {
     }
     if owner == InputOwner::Prompt
       && (self.peek.is_some()
-        || self.region.as_ref().is_some_and(crate::region::Region::is_bar))
+        || self.region.as_ref().is_some_and(vpdf_ui::region::Region::is_bar))
     {
       self.cancel_prompt()?;
       self.disarm();
@@ -512,7 +512,7 @@ impl App {
     // Points land where they aim.
     if point.is_some() {
       self.land_at(position)?;
-      self.aimed = self.landed.map(|landed| (landed, target.clone()));
+      self.landing.aim(target.clone());
     } else {
       self.go_to_page(position.page)?;
     }

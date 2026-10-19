@@ -103,14 +103,14 @@ fn rows_show_later_pages_after_a_break() -> Result<()> {
     ("last row", on(1, 2, 0), Some((0, 7))),
     ("below the view", on(1, 3, 0), None),
   ] {
-    assert_eq!(app.text_cell(position)?, cell, "{name}");
+    assert_eq!(app.text().cell(position)?, cell, "{name}");
   }
   let end = app.doc.text(PageId(0))?.lines[3].glyphs.len() - 1;
   for (name, (column, row), position, hit) in [
     ("next page", (1, 5), on(1, 0, 1), Hit::Text),
     ("the break", (1, 4), on(0, 3, end), Hit::Nothing),
   ] {
-    assert_eq!(app.text_position(column, row)?, position, "{name}");
+    assert_eq!(app.text().position(column, row)?, position, "{name}");
     assert_eq!(app.hovered(Region::Page, column, row, None)?, hit, "{name}");
   }
   Ok(())
@@ -122,16 +122,16 @@ fn scrolling_steps_rows_through_breaks() -> Result<()> {
     [(1, Some((0, 4))), (4, Some((0, 1))), (5, Some((0, 0))), (6, None)]
   {
     let (_dir, mut app) = scrolled(rows)?;
-    assert_eq!(app.text_cell(on(1, 0, 0))?, cell, "{rows} rows");
+    assert_eq!(app.text().cell(on(1, 0, 0))?, cell, "{rows} rows");
     app.scroll(-f32::from(rows) * 16.0)?;
-    assert_eq!(app.text_cell(on(1, 0, 0))?, Some((0, 5)), "{rows} back");
+    assert_eq!(app.text().cell(on(1, 0, 0))?, Some((0, 5)), "{rows} back");
   }
   // The last line stays at the bottom.
   let (_dir, mut app) = scrolled(100)?;
-  assert_eq!(app.text_cell(on(2, 3, 0))?, Some((0, 7)));
+  assert_eq!(app.text().cell(on(2, 3, 0))?, Some((0, 7)));
   app.screen.rows = 13;
   app.relayout()?;
-  assert_eq!(app.text_cell(on(2, 3, 0))?, Some((0, 11)), "taller");
+  assert_eq!(app.text().cell(on(2, 3, 0))?, Some((0, 11)), "taller");
   Ok(())
 }
 
@@ -169,7 +169,7 @@ fn hints_and_tints_reach_later_pages() -> Result<()> {
   drawn(&mut app)?;
   app.start_hints(false)?;
   let hints = app.hints.take().expect("hints");
-  let rows: Vec<_> = hints.items.iter().map(|hint| hint.cell.1).collect();
+  let rows: Vec<_> = hints.items().iter().map(|hint| hint.cell.1).collect();
   assert_eq!(rows, [0, 6]);
   let hit = app.hovered(Region::Page, 2, 6, None)?;
   assert_eq!(hit, Hit::Link(PageId(1), 0));
@@ -217,7 +217,7 @@ fn middle_drags_move_text_by_whole_rows() -> Result<()> {
   // (drag to row) -> row of the second page's first line
   for (row, shown) in [(6, 5), (4, 3), (1, 0), (2, 1), (6, 5), (8, 5)] {
     app.mouse(press(MouseEventKind::Drag(MouseButton::Middle), row))?;
-    assert_eq!(app.text_cell(on(1, 0, 0))?, Some((0, shown)), "row {row}");
+    assert_eq!(app.text().cell(on(1, 0, 0))?, Some((0, shown)), "row {row}");
   }
   assert!(app.grabbing());
   app.mouse(press(MouseEventKind::Up(MouseButton::Middle), 8))?;
@@ -251,7 +251,7 @@ fn act(app: &mut App, action: Act) -> Result<()> {
       common::search_loaded(app)?;
       (0..next).try_for_each(|_| key(app, 'n'))
     }
-    Act::End => app.scroll_text(100),
+    Act::End => app.text().scroll(100),
   }
 }
 
@@ -278,14 +278,14 @@ fn jumps_move_least_to_show_targets() -> Result<()> {
   ];
   for (pages, top, at, action, cursor, row) in cases {
     let (_dir, mut app) = app_of(pages, &[])?;
-    app.scroll_text(top)?;
+    app.text().scroll(top)?;
     if let Some(at) = at {
       key(&mut app, 'i')?;
       app.reader.cursor = at;
     }
     act(&mut app, action)?;
     assert_eq!(app.reader.cursor, cursor, "{action:?} from {at:?}");
-    let drawn = app.text_row(cursor)?;
+    let drawn = app.text().row(cursor)?;
     assert_eq!(drawn, Some(row), "{action:?} from {at:?}");
   }
   Ok(())
@@ -332,15 +332,15 @@ fn panning_spans_pages() -> Result<()> {
   };
   app.mouse(press(MouseEventKind::Down(MouseButton::Middle), 10))?;
   app.mouse(press(MouseEventKind::Drag(MouseButton::Middle), 7))?;
-  assert_eq!(app.text_cell(on(1, 0, 3))?, Some((0, 5)), "drag");
-  assert_eq!(app.text_cell(on(0, 0, 3))?, Some((0, 0)), "drag");
+  assert_eq!(app.text().cell(on(1, 0, 3))?, Some((0, 5)), "drag");
+  assert_eq!(app.text().cell(on(0, 0, 3))?, Some((0, 0)), "drag");
   // The widest drawn line bounds the offset.
   app.mouse(press(MouseEventKind::Drag(MouseButton::Middle), 0))?;
-  assert_eq!(app.text_cell(on(1, 0, 5))?, Some((0, 5)), "bound");
+  assert_eq!(app.text().cell(on(1, 0, 5))?, Some((0, 5)), "bound");
   app.mouse(press(MouseEventKind::Up(MouseButton::Middle), 0))?;
   // Scrolling the wide line away resets it.
   app.scroll(6.0 * 16.0)?;
-  assert_eq!(app.text_cell(on(1, 3, 0))?, Some((0, 2)), "scrolled");
+  assert_eq!(app.text().cell(on(1, 3, 0))?, Some((0, 2)), "scrolled");
   Ok(())
 }
 
@@ -350,11 +350,11 @@ fn rowless_views_move_safely() -> Result<()> {
   let (_dir, mut app) = app(&[])?;
   app.screen.rows = 1;
   app.relayout()?;
-  app.scroll_text(5)?;
+  app.text().scroll(5)?;
   app.go_to(on(2, 3, 0), false)?;
   app.land_at(on(1, 2, 0))?;
   assert_eq!(drawn(&mut app)?.len(), 0);
-  assert_eq!(app.text_cell(on(1, 2, 0))?, None);
+  assert_eq!(app.text().cell(on(1, 2, 0))?, None);
   assert_eq!(app.reader.cursor, on(1, 2, 0));
   Ok(())
 }

@@ -4,36 +4,9 @@ use crate::pdf_text::PdfText;
 use crate::state::Mark;
 use crate::text::{PageId, Position};
 use std::collections::BTreeMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
+use vpdf_ui::page::landing::{Landed, Span};
 use vpdf_ui::panel::{Destination, Row};
-
-pub struct Landing {
-  pub position: Position,
-  pub until: Instant,
-  pub span: Span,
-}
-
-/// What a landing tints.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Span {
-  /// A jump's destination line.
-  Line,
-  /// A click's target glyph.
-  Glyph,
-}
-
-impl Landing {
-  pub const DURATION: Duration = Duration::from_millis(600);
-}
-
-/// A target and its landed view.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Landed {
-  target: Position,
-  scroll: f32,
-  pan: f32,
-  text_top: Position,
-}
 
 impl App {
   /// `m{a-z}` marks this document; `m{A-Z}` marks across documents.
@@ -83,12 +56,12 @@ impl App {
     let position =
       vpdf_reader::reader::clamp(position, &mut PdfText(&mut self.doc))?;
     // A repeat, as a double click's, stays.
-    let here = self.landed == Some(self.landed_view(position))
+    let here = self.landing.matches(self.landed_view(position))
       && self.reader.cursor == position;
     if !here {
       self.jump_cursor(position)?;
       self.land()?;
-      self.landed = Some(self.landed_view(self.reader.cursor));
+      self.landing.record(self.landed_view(self.reader.cursor));
     }
     self.flash_landing();
     Ok(())
@@ -96,12 +69,12 @@ impl App {
 
   /// `target` in the current view.
   pub(crate) fn landed_view(&self, target: Position) -> Landed {
-    Landed {
+    Landed::new(
       target,
-      scroll: self.reader.scroll,
-      pan: self.layout.pan,
-      text_top: self.text_top,
-    }
+      self.reader.scroll,
+      self.layout.pan(),
+      self.text_view.top(),
+    )
   }
 
   /// Moves the cursor as a recorded jump.
@@ -117,20 +90,7 @@ impl App {
   }
 
   pub(crate) fn flash_landing(&mut self) {
-    self.flash(self.reader.cursor, Span::Line);
-  }
-
-  /// The click mark, shown in Normal only.
-  pub(crate) fn click_mark(&self) -> Option<Position> {
-    let landing = self.landing.as_ref()?;
-    let normal = self.reader.viewport_mode() && self.reader.selection.is_none();
-    (landing.span == Span::Glyph && normal).then_some(landing.position)
-  }
-
-  /// Tints `position`'s `span` briefly.
-  pub(crate) fn flash(&mut self, position: Position, span: Span) {
-    let until = Instant::now() + Landing::DURATION;
-    self.landing = Some(Landing { position, until, span });
+    self.landing.show(self.reader.cursor, Span::Line, Instant::now());
   }
 
   /// Text of the extracted line at `position`, for mark listings.

@@ -30,74 +30,7 @@ fn paper(text_mode: bool) -> Result<Solo> {
   Solo::open(&corpus("paper.pdf")?, "", text_mode, PANE)
 }
 
-/// Text-mode frame.
-fn text_canvas() -> Result<()> {
-  let mut app = paper(true)?;
-  // Main's centering draws this same view.
-  let (rows, columns) =
-    (usize::from(app.screen.rows), usize::from(app.screen.columns));
-  let page = app.reader.cursor.page;
-  let text = app.doc.text(page)?;
-  let line = text
-    .lines
-    .iter()
-    .take((rows - 1) / 2)
-    .position(|l| l.glyphs.len() >= columns / 2)
-    .ok_or_else(|| anyhow::anyhow!("no long line near the top"))?;
-  let glyph = columns / 2 - 1;
-  app.reader.cursor = vpdf::text::Position { page, line, glyph };
-  let mut out = Vec::new();
-  app.text_canvas(&mut out)?;
-  measure("App::text_canvas", || {
-    out.clear();
-    app.text_canvas(&mut out).expect("cached page text");
-    black_box(&out);
-  })
-}
-
-fn cursorline() -> Result<()> {
-  for text_mode in [false, true] {
-    let mut app = paper(text_mode)?;
-    app.reader.cursor.line = 3;
-    app.reader.visual(vpdf_reader::reader::SelectionKind::Character);
-    overlay_case(&mut app, &format!("cursorline text={text_mode}"))?;
-  }
-  Ok(())
-}
-
-fn landing() -> Result<()> {
-  for text_mode in [false, true] {
-    let mut app = paper(text_mode)?;
-    app.go_to(vpdf::text::Position { line: 3, ..Default::default() }, true)?;
-    overlay_case(&mut app, &format!("landing text={text_mode}"))?;
-  }
-  Ok(())
-}
-
-fn overlay_case(app: &mut Solo, name: &str) -> Result<()> {
-  let screen = app.layout.screen;
-  let mut out = Vec::new();
-  let mut draw = |out: &mut Vec<u8>| {
-    out.clear();
-    if app.text_mode {
-      app.text_canvas(out).expect("cached text");
-    } else {
-      app.graphics.begin(out).expect("begin marks");
-      {
-        let (app, graphics) = app.parts();
-        app.marks(graphics, screen, out).expect("cached marks");
-      }
-      app.graphics.end(out).expect("end marks");
-    }
-  };
-  draw(&mut out);
-  measure(name, || {
-    draw(&mut out);
-    black_box(&out);
-  })
-}
-
-/// Hovered citation: label, then tint.
+/// Hovered citation discovery and labels.
 fn link_hover() -> Result<()> {
   use vpdf_ui::pointer::{Hit, Hover, Region};
   let on = |pane, page, index| {
@@ -121,79 +54,7 @@ fn link_hover() -> Result<()> {
   measure("App::hover_label", || {
     black_box(app.hover_label());
   })?;
-  for text_mode in [false, true] {
-    let mut app = paper(text_mode)?;
-    app.command("2")?;
-    overlay_case(&mut app, &format!("no link text={text_mode}"))?;
-    {
-      let (app, _) = app.parts();
-      app.point(on(app.id, page, 0));
-    }
-    anyhow::ensure!(app.hover_link().is_some(), "a hovered citation");
-    overlay_case(&mut app, &format!("link tint text={text_mode}"))?;
-  }
-  // A web address wrapped over two lines.
-  let mut app = Solo::open(&corpus("book.pdf")?, "", false, PANE)?;
-  app.command("4")?;
-  let page = PageId(3);
-  let index = app.doc.links(page)?.iter().position(|link| {
-    matches!(&link.target, vpdf::document::Target::Uri(uri)
-      if uri.contains("greenteapress"))
-  });
-  let index = index.ok_or_else(|| anyhow::anyhow!("an address on p. 4"))?;
-  {
-    let (app, _) = app.parts();
-    app.point(on(app.id, page, index));
-  }
-  overlay_case(&mut app, "link tint address")
-}
-
-/// An open context menu each frame.
-fn context_draw() -> Result<()> {
-  use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
-  let mut session = vpdf::session::Session::new(None);
-  session.open(&corpus("paper.pdf")?, true, PANE)?;
-  session.app().command("2")?;
-  let right = |kind| MouseEvent {
-    kind,
-    column: 40,
-    row: 20,
-    modifiers: KeyModifiers::NONE,
-  };
-  session.mouse(right(MouseEventKind::Down(MouseButton::Right)))?;
-  anyhow::ensure!(session.app().context_menu.is_some(), "an open menu");
-  let tab = &mut session.tabs[session.active];
-  let (app, graphics) = (&mut tab.panes[tab.focus], &mut session.graphics);
-  let mut out = Vec::new();
-  measure("App::draw_context", || {
-    out.clear();
-    graphics.begin(&mut out).expect("begin menu frame");
-    app.draw_context(graphics, &mut out).expect("menu rows");
-    graphics.end(&mut out).expect("menu placements");
-    black_box(&out);
-  })
-}
-
-/// Visible citation labels on the corpus paper.
-fn draw_hints() -> Result<()> {
-  let mut app = paper(false)?;
-  app.command("2")?;
-  app.start_hints(false)?;
-  let mut out = Vec::new();
-  {
-    let (app, graphics) = app.parts();
-    app.draw_hints(graphics, &mut out)?;
-  }
-  measure("App::draw_hints", || {
-    out.clear();
-    app.graphics.begin(&mut out).expect("begin hint frame");
-    app
-      .app
-      .draw_hints(&mut app.graphics, &mut out)
-      .expect("visible citation labels");
-    app.graphics.end(&mut out).expect("hint placements");
-    black_box(&out);
-  })
+  Ok(())
 }
 
 /// Rows each frame clips page graphics to while clues show.
@@ -201,9 +62,9 @@ fn menu_rows() -> Result<()> {
   let mut app = paper(false)?;
   let prefix = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
   app.key(prefix, &mut vpdf_ui::prompt::History::default())?;
-  app.awaiting = Instant::now().checked_sub(Duration::from_secs(1));
+  app.clues.restart(Instant::now().checked_sub(Duration::from_secs(1)));
   let _ = app.clue_due();
-  assert!(app.clues.is_some());
+  assert!(app.clues.shown().is_some());
   measure("App::menu_rows clues", || {
     black_box(app.menu_rows());
   })
@@ -256,7 +117,7 @@ fn wheel() -> Result<()> {
   ];
   for (name, modifiers) in cases {
     if modifiers == KeyModifiers::SHIFT {
-      session.app().layout.zoom = 2.0;
+      session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(2.0));
       session.app().relayout()?;
     }
     measure(&format!("Session::mouse wheel {name}"), || {
@@ -300,7 +161,7 @@ fn drag() -> Result<()> {
   let mut session = vpdf::session::Session::new(None);
   session.open(&corpus("paper.pdf")?, true, PANE)?;
   session.app().command("2")?;
-  session.app().layout.zoom = 3.0;
+  session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
   session.app().relayout()?;
   session.mouse(event(MouseEventKind::Down(MouseButton::Middle), 60))?;
   let mut column = 60;
@@ -397,7 +258,7 @@ fn viewport() -> Result<()> {
     measure(&format!("App::scroll text={text_mode}"), || {
       app.reader.cursor = cursor;
       app.reader.scroll = scroll;
-      app.animation = None;
+      app.animation.cancel();
       app.scroll(16.0).expect("scroll");
       app.scroll(-16.0).expect("scroll");
     })?;
@@ -576,7 +437,7 @@ fn routing_key() -> Result<()> {
   let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
   measure("App::key reading", || {
     app.reader.scroll = 0.0;
-    app.animation = None;
+    app.animation.cancel();
     app.key(black_box(key), &mut history).expect("reading key");
   })
 }
@@ -684,7 +545,7 @@ fn routing_pointer() -> Result<()> {
   };
   measure("Session::mouse wheel", || {
     session.app().reader.scroll = 0.0;
-    session.app().animation = None;
+    session.app().animation.cancel();
     session.mouse(black_box(mouse)).expect("reading wheel");
   })
 }
@@ -812,35 +673,11 @@ fn lexical_objects() -> Result<()> {
 fn figures() -> Result<()> {
   let mut app = paper(false)?;
   let page = PageId(2);
-  let figures = app.doc.figures(page)?;
-  let figure = figures
-    .iter()
-    .find(|figure| figure.caption.starts_with("Figure 1"))
-    .ok_or_else(|| anyhow::anyhow!("Figure 1 missing"))?;
+  app.doc.figures(page)?;
   measure("Document::figures warm", || {
     black_box(app.doc.figures(black_box(page)).expect("cached figures"));
   })?;
-  let text = app.doc.text(page)?;
-  measure("region::region_text", || {
-    black_box(vpdf::region::region_text(black_box(&text), figure.bounds));
-  })?;
-  app.select_region(page, figure.bounds)?;
-  app.reader.scroll = app.layout.project(page, figure.bounds, 0.0).y0;
-  let mut out = Vec::new();
-  let mut draw = |out: &mut Vec<u8>| {
-    out.clear();
-    app.graphics.begin(out).expect("begin region");
-    {
-      let (app, graphics) = app.parts();
-      app.draw_region(graphics, out).expect("region bar");
-    }
-    app.graphics.end(out).expect("end region");
-  };
-  draw(&mut out);
-  measure("App::draw_region warm", || {
-    draw(&mut out);
-    black_box(&out);
-  })
+  Ok(())
 }
 
 type Case = fn() -> Result<()>;
@@ -849,10 +686,6 @@ const CASES: &[(&str, Case)] = &[
   ("figures", figures),
   ("lexical objects", lexical_objects),
   ("reflow", reflow),
-  ("text_canvas", text_canvas),
-  ("cursorline", cursorline),
-  ("landing", landing),
-  ("draw_hints", draw_hints),
   ("hover", hover),
   ("wheel", wheel),
   ("cold page", cold_page),
@@ -868,7 +701,6 @@ const CASES: &[(&str, Case)] = &[
   ("menu_rows", menu_rows),
   ("link hover", link_hover),
   ("drag", drag),
-  ("context draw", context_draw),
   ("frame", frame),
   ("viewport", viewport),
   ("transitions", transitions),

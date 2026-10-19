@@ -64,15 +64,15 @@ impl App {
     self.follow(&Target::Point { page, x, y })?;
     if normal {
       if self.text_mode {
-        self.text_top =
-          self.clamp_text(Position { glyph: 0, ..self.reader.cursor })?;
+        let cursor = self.reader.cursor;
+        self.text().restore(Position { glyph: 0, ..cursor })?;
       } else {
         let (scroll, pan) = self.section_view(point);
         self.reader.scroll = self.layout.clamp_scroll(scroll);
-        self.layout.pan = pan;
+        self.layout.pan_to(pan);
       }
     }
-    self.landed = Some(self.landed_view(self.reader.cursor));
+    self.landing.record(self.landed_view(self.reader.cursor));
     Ok(())
   }
 
@@ -87,7 +87,7 @@ impl App {
 
   fn section_landing(&mut self, headings: &[Point]) -> Result<Option<Point>> {
     let Some(target) = self.target else { return Ok(None) };
-    if self.animation.is_some() || !self.visible_position(target)? {
+    if self.animation.active() || !self.visible_position(target)? {
       return Ok(None);
     }
     for &point @ (page, x, y) in headings {
@@ -96,14 +96,15 @@ impl App {
       {
         continue;
       }
-      let landed = if self.landed == Some(self.landed_view(target)) {
+      let landed = if self.landing.matches(self.landed_view(target)) {
         true
       } else if self.text_mode {
-        self.clamp_text(Position { glyph: 0, ..target })? == self.text_top
+        self.text().clamp(Position { glyph: 0, ..target })?
+          == self.text_view.top()
       } else {
         let (scroll, pan) = self.section_view(point);
         self.layout.clamp_scroll(scroll).total_cmp(&self.reader.scroll).is_eq()
-          && pan.total_cmp(&self.layout.pan).is_eq()
+          && pan.total_cmp(&self.layout.pan()).is_eq()
       };
       if landed {
         return Ok(Some(point));

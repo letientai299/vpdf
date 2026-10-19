@@ -65,7 +65,7 @@ fn preview_scroll_clamps_without_moving_target() -> Result<()> {
       let label = app.doc.label(page).to_owned();
       let cursor = app.reader.cursor;
       let range = app.reader.selection.map(|s| (s.anchor, s.kind));
-      let view = (app.reader.scroll, app.text_position(0, 0)?);
+      let view = (app.reader.scroll, app.text().position(0, 0)?);
       keys(&mut app, b"9999k")?;
       let first = drawn(&mut app)?;
       assert!(first.contains(&format!("╭ {label} ")));
@@ -91,7 +91,7 @@ fn preview_scroll_clamps_without_moving_target() -> Result<()> {
       assert_eq!(format!("{:?}", app.peek.as_ref().unwrap().target), target);
       assert_eq!(app.reader.cursor, cursor);
       assert_eq!(app.reader.selection.map(|s| (s.anchor, s.kind)), range);
-      assert_eq!((app.reader.scroll, app.text_position(0, 0)?), view);
+      assert_eq!((app.reader.scroll, app.text().position(0, 0)?), view);
       keys(&mut app, b"\r")?;
       assert!(app.peek.is_none());
       let destination = target_page(&app.link_target(cursor)?.unwrap());
@@ -178,15 +178,13 @@ fn preview_border_stays_inside_resized_pane() -> Result<()> {
     for rotation in [0, 90, 180, 270] {
       app.screen.columns = 78;
       app.screen.rows = 19;
-      app.layout.rotation = rotation;
-      app.layout.crop = Crop([50, 50, 50, 50]);
-      app.layout.zoom = 1.5;
+      app.layout.restore(1.5, rotation, Crop([50, 50, 50, 50]));
       app.relayout()?;
       let out = drawn(&mut app)?;
       assert_eq!(out.matches('╭').count(), 1);
       assert_eq!(out.matches('╰').count(), 1);
       let label = out.split_once('╭').unwrap().1.split('╮').next().unwrap();
-      assert!(label.width() + 2 <= usize::from(app.layout.screen.columns));
+      assert!(label.width() + 2 <= usize::from(app.layout.screen().columns));
       for part in out.split("\x1b[") {
         let Some((position, _)) = part.split_once('H') else { continue };
         let Some((row, column)) = position.split_once(';') else { continue };
@@ -273,7 +271,7 @@ fn preview_label_keeps_arrow() -> Result<()> {
     let out = drawn(&mut app)?;
     let border = out.split_once('╭').unwrap().1.split('╮').next().unwrap();
     assert!(border.contains('↑'));
-    assert!(border.width() + 2 <= usize::from(app.layout.screen.columns));
+    assert!(border.width() + 2 <= usize::from(app.layout.screen().columns));
   }
   Ok(())
 }

@@ -21,21 +21,19 @@ impl App {
     Some(Entry {
       path: self.path.clone(),
       cursor: self.navigation_position(),
-      zoom: self.layout.zoom,
-      rotation: self.layout.rotation,
+      zoom: self.layout.zoom(),
+      rotation: self.layout.rotation(),
       used: now(),
       marks: self.marks.clone(),
-      crop: self.layout.crop,
+      crop: self.layout.crop(),
     })
   }
 
   /// Returns to a saved position and view.
   pub fn restore(&mut self, entry: &Entry) -> Result<()> {
     self.crop_job = None;
-    self.layout.zoom = entry.zoom.clamp(0.1, 8.0);
     self.marks.clone_from(&entry.marks);
-    self.layout.crop = entry.crop;
-    self.layout.rotation = entry.rotation % 360 / 90 * 90;
+    self.layout.restore(entry.zoom, entry.rotation, entry.crop);
     self.layout.reflow(self.doc.pages.iter().map(|page| page.bounds));
     let page = PageId(entry.cursor.page.0.min(self.doc.pages.len() - 1));
     let cursor = Position { page, ..entry.cursor };
@@ -43,7 +41,7 @@ impl App {
     self.show_page(page)?;
     self.target = Some(self.reader.cursor);
     self.ensure_cursor()?;
-    if !entry.crop.is_none() && self.layout.crops.is_empty() {
+    if !entry.crop.is_none() && self.layout.crops().is_empty() {
       self.start_crop();
     }
     Ok(())

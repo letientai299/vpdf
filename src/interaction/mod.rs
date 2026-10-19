@@ -1,10 +1,8 @@
 use crate::Result;
 use crate::app::App;
-use crate::gestures::Gesture;
 use crate::links::LinkPress;
 use crate::preview::Origin;
-use crate::region::BAR_HINT;
-use crate::text::{Bounds, PageId, Position};
+use crate::text::{PageId, Position};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::Location;
@@ -15,24 +13,7 @@ use vpdf_ui::panel::Panel;
 use vpdf_ui::pointer::{
   Hit, Items, List, Pixel, Region, Route, WHEEL_ROWS, Wheel,
 };
-
-/// Zoom steps per wheel turn: touchpads send a turn per cell of travel.
-const WHEEL_ZOOM: f32 = 0.5;
-
-/// What the turns of one wheel gesture move.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct WheelRun {
-  pub surface: Surface,
-  /// The first turn's axis; turns across it are drift.
-  pub sideways: bool,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Surface {
-  Page,
-  /// The `K` preview.
-  Preview,
-}
+use vpdf_ui::region::BAR_HINT;
 
 /// Finds a frame's glyph at a cell.
 type GlyphAt = fn(&mut App, u16, u16) -> Result<Option<Position>>;
@@ -73,8 +54,8 @@ impl App {
       overlay: self.menu_rows(),
       overview: self.overview.is_some(),
       preview: self.preview_cells(),
-      menu: self.context_menu.as_ref().map(crate::context::ContextMenu::area),
-      actions: self.bar_cells(),
+      menu: self.context_menu.as_ref().map(vpdf_ui::context::ContextMenu::area),
+      actions: self.region.as_ref().and_then(vpdf_ui::region::Region::cells),
     }
   }
 }

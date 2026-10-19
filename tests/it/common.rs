@@ -165,3 +165,15 @@ pub fn crop_loaded(app: &mut App) -> Result<()> {
   }
   Ok(())
 }
+
+/// Generated labels with separate rows.
+pub fn hints(
+  count: u16,
+  cell: (u16, u16),
+  target: &vpdf::document::Target,
+) -> vpdf_ui::hints::Hints {
+  let found = (0..count)
+    .map(|row| (((cell.0, cell.1 + row), cell.0), target.clone()))
+    .collect();
+  vpdf_ui::hints::Hints::new(found, false, 0, 80).expect("hint candidates")
+}

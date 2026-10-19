@@ -86,7 +86,7 @@ fn cursorline_toggle_preserves_visual_and_copy() -> Result<()> {
     app.command("cursorline")?;
     assert_eq!(app.reader.pending_yank.as_ref().unwrap().text, yank);
     if !text {
-      let screen = app.layout.screen;
+      let screen = app.layout.screen();
       assert_eq!(marks(&mut app, screen)?, [] as [Bounds; 0]);
     }
   }
@@ -102,9 +102,7 @@ fn cursorline_pdf_projects_and_clips() -> Result<()> {
       app.screen.columns = 40;
       app.screen.rows = 15;
       app.relayout()?;
-      app.layout.rotation = rotation;
-      app.layout.zoom = zoom;
-      app.layout.crop = Crop([30, 30, 30, 30]);
+      app.layout.restore(zoom, rotation, Crop([30, 30, 30, 30]));
       {
         let (app, _) = app.parts();
         app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));
@@ -116,7 +114,7 @@ fn cursorline_pdf_projects_and_clips() -> Result<()> {
       app.reader.visual(SelectionKind::Character);
       app.ensure_cursor()?;
       app.left = 10;
-      let screen = Screen { rows: 14, ..app.layout.screen };
+      let screen = Screen { rows: 14, ..app.layout.screen() };
       let on = marks(&mut app, screen)?;
       app.command("cursorline")?;
       let off = marks(&mut app, screen)?;
@@ -216,7 +214,7 @@ fn cursorline_stays_below_existing_selection() -> Result<()> {
   app.command("2")?;
   app.command("cursorline")?;
   app.reader.visual(SelectionKind::Character);
-  let screen = app.layout.screen;
+  let screen = app.layout.screen();
   marks(&mut app, screen)?;
   app.command("cursorline")?;
   let mut out = Vec::new();
@@ -243,26 +241,29 @@ fn landing_jump_modes_and_fixed_destination() -> Result<()> {
       let target = Position { line: 5, ..Position::default() };
       app.go_to(target, true)?;
       let target = app.reader.cursor;
-      assert_eq!(app.landing.as_ref().unwrap().position, target);
+      assert_eq!(app.landing.position().unwrap(), target);
       assert_eq!(app.reader.mode(), initial_mode);
-      let until = app.landing.as_ref().unwrap().until;
+      let until = app.landing.deadline().unwrap();
       keys(&mut app, b"j")?;
-      assert_eq!(app.landing.as_ref().unwrap().position, target);
-      assert_eq!(app.landing.as_ref().unwrap().until, until);
-      app.landing = None;
+      assert_eq!(app.landing.position().unwrap(), target);
+      assert_eq!(app.landing.deadline().unwrap(), until);
+      app.landing.clear_flash();
       keys(&mut app, b"j\x04")?;
-      assert!(app.landing.is_none(), "ordinary motions must not flash");
+      assert!(
+        app.landing.position().is_none(),
+        "ordinary motions must not flash"
+      );
       app.marks.insert('a', target);
       app.go_mark('a', true)?;
-      assert_eq!(app.landing.as_ref().unwrap().position, target);
-      app.landing = None;
+      assert_eq!(app.landing.position().unwrap(), target);
+      app.landing.clear_flash();
       app.follow(&vpdf::document::Target::Page(PageId(1)))?;
-      assert_eq!(app.landing.as_ref().unwrap().position, app.reader.cursor);
+      assert_eq!(app.landing.position().unwrap(), app.reader.cursor);
       assert_eq!(app.reader.cursor.page, PageId(1));
-      app.landing = None;
+      app.landing.clear_flash();
       super::common::outline_loaded(&mut app)?;
       keys(&mut app, b"]]")?;
-      assert_eq!(app.landing.as_ref().unwrap().position, app.reader.cursor);
+      assert_eq!(app.landing.position().unwrap(), app.reader.cursor);
     }
   }
   Ok(())
@@ -277,9 +278,7 @@ fn landing_pdf_reuses_projected_clipped_band() -> Result<()> {
       app.screen.columns = 40;
       app.screen.rows = 15;
       app.relayout()?;
-      app.layout.rotation = rotation;
-      app.layout.zoom = zoom;
-      app.layout.crop = Crop([30, 30, 30, 30]);
+      app.layout.restore(zoom, rotation, Crop([30, 30, 30, 30]));
       {
         let (app, _) = app.parts();
         app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));
@@ -289,10 +288,10 @@ fn landing_pdf_reuses_projected_clipped_band() -> Result<()> {
         text.lines.iter().position(|line| line.glyphs.len() > 10).unwrap();
       app.go_to(Position { page: PageId(0), line, glyph: 5 }, true)?;
       app.left = 10;
-      let screen = Screen { rows: 14, ..app.layout.screen };
+      let screen = Screen { rows: 14, ..app.layout.screen() };
       let band = marks(&mut app, screen)?;
       assert!(!band.is_empty(), "Normal has landing feedback");
-      app.landing = None;
+      app.landing.clear_flash();
       app.reader.visual(SelectionKind::Character);
       let visual = marks(&mut app, screen)?;
       let coords = |b: Bounds| (b.x0, b.y0, b.x1, b.y1);
@@ -346,7 +345,7 @@ fn landing_text_fills_row_below_glyph_styles() -> Result<()> {
   for style in [LANDING, CURSOR, SELECTION, SEARCH] {
     assert!(frame.contains(style), "missing {style:?}");
   }
-  app.landing = None;
+  app.landing.clear_flash();
   out = Vec::new();
   app.text_canvas(&mut out)?;
   let frame = String::from_utf8(out)?;
@@ -363,25 +362,25 @@ fn landing_search_acceptance_and_cancellation() -> Result<()> {
     app.begin_search(false)?;
     app.incremental("attention")?;
     super::common::search_loaded(&mut app)?;
-    assert!(app.landing.is_none(), "typing only previews");
+    assert!(app.landing.position().is_none(), "typing only previews");
     app.abort_search()?;
-    assert!(app.landing.is_none(), "canceling never jumps");
+    assert!(app.landing.position().is_none(), "canceling never jumps");
     app.begin_search(false)?;
     app.incremental("attention")?;
     super::common::search_loaded(&mut app)?;
     app.finish_search("attention", false)?;
-    assert_eq!(app.landing.as_ref().unwrap().position, app.reader.cursor);
-    app.landing = None;
+    assert_eq!(app.landing.position().unwrap(), app.reader.cursor);
+    app.landing.clear_flash();
     app.next_result(false, 1)?;
-    assert_eq!(app.landing.as_ref().unwrap().position, app.reader.cursor);
-    app.landing = None;
+    assert_eq!(app.landing.position().unwrap(), app.reader.cursor);
+    app.landing.clear_flash();
     app.start_search("model", false, false)?;
     super::common::search_loaded(&mut app)?;
-    assert_eq!(app.landing.as_ref().unwrap().position, app.reader.cursor);
-    app.landing = None;
+    assert_eq!(app.landing.position().unwrap(), app.reader.cursor);
+    app.landing.clear_flash();
     app.start_search("qqqnothingzzznomatch", false, false)?;
     super::common::search_loaded(&mut app)?;
-    assert!(app.landing.is_none());
+    assert!(app.landing.position().is_none());
   }
   Ok(())
 }
@@ -392,9 +391,9 @@ fn landing_reload_clears_feedback() -> Result<()> {
   for text_mode in [false, true] {
     let mut app = app(text_mode)?;
     app.go_to(Position { line: 5, ..Position::default() }, true)?;
-    assert!(app.landing.is_some());
+    assert!(app.landing.position().is_some());
     app.reload_with("")?;
-    assert!(app.landing.is_none());
+    assert!(app.landing.position().is_none());
   }
   Ok(())
 }
@@ -409,7 +408,7 @@ fn landing_search_early_commit_uses_current_query() -> Result<()> {
       app.incremental("attention")?;
       super::common::search_loaded(&mut app)?;
       let previous = app.reader.cursor;
-      assert!(app.landing.is_none());
+      assert!(app.landing.position().is_none());
       app.incremental(query)?;
       assert!(matches!(
         app.search.phase(),
@@ -417,16 +416,22 @@ fn landing_search_early_commit_uses_current_query() -> Result<()> {
       ));
       app.finish_search(query, false)?;
       assert_eq!(app.reader.cursor, previous);
-      assert!(app.landing.is_none(), "previous query must not flash");
+      assert!(
+        app.landing.position().is_none(),
+        "previous query must not flash"
+      );
       super::common::search_loaded(&mut app)?;
       assert_eq!(app.search.query().text, query);
       if query == "model" {
-        let target = app.landing.as_ref().unwrap().position;
+        let target = app.landing.position().unwrap();
         assert_eq!(target, app.reader.cursor);
         assert!(app.search.hits().iter().any(|hit| hit.first == target));
       } else {
         assert!(app.search.hits().is_empty());
-        assert!(app.landing.is_none(), "failed query must not flash");
+        assert!(
+          app.landing.position().is_none(),
+          "failed query must not flash"
+        );
       }
     }
   }

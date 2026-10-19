@@ -239,7 +239,7 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
       }
     }
     let animating =
-      session.tab().panes.iter().any(|app| app.animation.is_some());
+      session.tab().panes.iter().any(|app| app.animation.active());
     // A hidden reader draws nothing until tmux shows it again.
     let pending = (dirty || animating) && shown;
     let now = Instant::now();
@@ -357,10 +357,10 @@ pub(super) fn idle(
     wait = wait.min(due.saturating_duration_since(Instant::now()));
   }
   for app in &session.tab().panes {
-    if let Some(landing) = &app.landing {
-      wait = wait.min(landing.until.saturating_duration_since(Instant::now()));
+    if let Some(until) = app.landing.deadline() {
+      wait = wait.min(until.saturating_duration_since(Instant::now()));
     }
-    if let Some(until) = app.bar.until {
+    if let Some(until) = app.bar.deadline() {
       wait = wait.min(until.saturating_duration_since(Instant::now()));
     }
   }
@@ -408,10 +408,7 @@ impl Session {
     let now = Instant::now();
     let mut changed = self.image_timeout(now);
     for app in &mut self.tab().panes {
-      if app.landing.as_ref().is_some_and(|landing| now >= landing.until) {
-        app.landing = None;
-        changed = true;
-      }
+      changed |= app.landing.expire(now);
       changed |= app.bar_expired(now);
     }
     changed |= self.autoscroll(now);

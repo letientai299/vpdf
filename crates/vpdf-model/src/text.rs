@@ -135,6 +135,27 @@ pub struct Text {
 }
 
 impl Text {
+  /// Selected glyphs, preserving lines and spacing.
+  pub fn in_region(&self, bounds: Bounds) -> String {
+    self
+      .lines
+      .iter()
+      .map(|line| {
+        line
+          .glyphs
+          .iter()
+          .filter(|glyph| {
+            let (x, y) = glyph.bounds.centre();
+            bounds.contains(x, y)
+          })
+          .map(|glyph| glyph.ch)
+          .collect::<String>()
+      })
+      .filter(|line| !line.trim().is_empty())
+      .collect::<Vec<_>>()
+      .join("\n")
+  }
+
   pub fn plain(&self) -> String {
     self.lines.iter().map(Line::text).collect::<Vec<_>>().join("\n")
   }
@@ -250,6 +271,44 @@ pub fn printable(raw: &str) -> impl Iterator<Item = char> + '_ {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn text_centers_preserve_order() {
+    let text = Text {
+      lines: ["abcd", "efgh"]
+        .into_iter()
+        .enumerate()
+        .map(|(line, value)| Line {
+          paragraph: true,
+          glyphs: value
+            .chars()
+            .enumerate()
+            .map(|(index, ch)| Glyph {
+              ch,
+              bounds: Bounds {
+                x0: index as f32 * 10.0,
+                x1: index as f32 * 10.0 + 10.0,
+                y0: line as f32 * 10.0,
+                y1: line as f32 * 10.0 + 10.0,
+              },
+            })
+            .collect(),
+        })
+        .collect(),
+      truncated: false,
+    };
+    let bounds = Bounds { x0: 10.0, y0: 0.0, x1: 30.0, y1: 20.0 };
+    assert_eq!(text.in_region(bounds), "bc\nfg");
+    assert_eq!(text.in_region(Bounds::default()), "");
+    let mut spaced = text;
+    spaced.lines[0].glyphs[0].ch = ' ';
+    spaced.lines[0].glyphs[2].ch = ' ';
+    for glyph in &mut spaced.lines[1].glyphs {
+      glyph.ch = ' ';
+    }
+    let whole = Bounds { x0: 0.0, y0: 0.0, x1: 40.0, y1: 20.0 };
+    assert_eq!(spaced.in_region(whole), " b d");
+  }
 
   #[test]
   fn areas_extract_only_marked_glyphs() {

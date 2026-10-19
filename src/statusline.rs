@@ -65,8 +65,8 @@ impl App {
       (self.navigation_position().page.0 + 1) as f32
         / self.doc.pages.len() as f32
     } else {
-      let bottom = self.reader.scroll + self.layout.screen.height();
-      bottom / self.layout.total.max(1.0)
+      let bottom = self.reader.scroll + self.layout.screen().height();
+      bottom / self.layout.total().max(1.0)
     };
     (fraction.clamp(0.0, 1.0) * 100.0).round() as u32
   }
@@ -217,9 +217,9 @@ impl App {
       )?;
       pages = start..right.width();
     }
-    if !covered && (self.layout.zoom - 1.0).abs() > 0.005 {
+    if !covered && (self.layout.zoom() - 1.0).abs() > 0.005 {
       let start = right.width();
-      write!(right, " zoom {:.0}% ", self.layout.zoom * 100.0)?;
+      write!(right, " zoom {:.0}% ", self.layout.zoom() * 100.0)?;
       zoom = start..right.width();
     }
     let left = format!(" {mode} ");

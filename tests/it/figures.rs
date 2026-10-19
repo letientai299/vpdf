@@ -31,8 +31,8 @@ fn raw_figure_bindings() {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn real_figure_navigation_fit() -> Result<()> {
-  use vpdf::region::Region;
   use vpdf_ui::keys::{Action, Input};
+  use vpdf_ui::region::Region;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = super::focus::screen();
   let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
@@ -65,10 +65,10 @@ fn real_figure_navigation_fit() -> Result<()> {
   let cursor = app.reader.cursor;
   let mode = app.reader.mode();
   app.action(Input::plain(Action::Region))?;
-  assert!(matches!(
-    app.region,
-    Some(Region::Bar { action: vpdf::region::Operation::Image, .. })
-  ));
+  assert_eq!(
+    app.region.as_ref().and_then(Region::action),
+    Some(vpdf_ui::region::Operation::Image)
+  );
   assert_eq!(app.reader.mode(), mode);
   assert_eq!(app.reader.cursor, cursor);
   assert_eq!(
@@ -83,9 +83,10 @@ fn real_figure_navigation_fit() -> Result<()> {
 fn raw_region_preserves_state() -> Result<()> {
   use super::common::keys;
   use super::modes::app;
-  use vpdf::region::{Operation, Region};
   use vpdf_reader::reader::Mode;
   use vpdf_ui::input::InputOwner;
+  use vpdf_ui::region::Operation;
+  use vpdf_ui::region::Region;
   let mut app = app("paper.pdf", false)?;
   keys(&mut app, b"i]ivgF")?;
   let mode = app.reader.mode();
@@ -95,10 +96,10 @@ fn raw_region_preserves_state() -> Result<()> {
   let scroll = app.reader.scroll;
   let capture = app.region.as_ref().unwrap().snapshot().clone();
   keys(&mut app, b"hjkl")?;
-  assert!(matches!(
-    app.region,
-    Some(Region::Bar { action: Operation::Image, .. })
-  ));
+  assert_eq!(
+    app.region.as_ref().and_then(Region::action),
+    Some(Operation::Image)
+  );
   assert_eq!(app.reader.cursor, cursor);
   assert_eq!(app.reader.scroll, scroll);
   keys(&mut app, b"g")?;

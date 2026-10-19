@@ -76,7 +76,7 @@ fn perf_start_screen_reserves_once() -> Result<()> {
 #[test]
 fn image_timeout_retains_transfer() {
   let mut session = Session::new(None);
-  let capture = crate::region::CaptureId::next();
+  let capture = crate::region::next_capture();
   let now = Instant::now();
   session.image_write = Some(ImageWrite {
     pane: 999,
@@ -202,10 +202,11 @@ fn scrollbars_wake_and_hide() -> Result<()> {
   session.draw_frame(&mut Vec::new())?;
   let now = Instant::now();
   let wait = idle(&mut session, now, now, false);
-  assert!(wait <= crate::scrollbar::SHOWN, "{wait:?}");
+  assert!(wait <= vpdf_ui::scrollbar::Bar::SHOWN, "{wait:?}");
   assert!(!session.notify(), "shown until the deadline");
-  let past = now.checked_sub(Duration::from_secs(1));
-  session.app().bar.until = past;
+  let past = now.checked_sub(vpdf_ui::scrollbar::Bar::SHOWN * 2).unwrap();
+  let app = session.app();
+  app.bar.observe(app.reader.scroll + 1.0, past);
   assert!(session.notify(), "the deadline draws a frame");
   assert_eq!(session.app().bar_until(), None);
   Ok(())
@@ -263,7 +264,7 @@ fn held_gestures_write_shapes() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn image_status_preserves_bar() -> Result<()> {
-  use crate::region::{Region, Transfer};
+  use crate::region::Transfer;
   use std::collections::VecDeque;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = Screen {
@@ -297,10 +298,10 @@ fn image_status_preserves_bar() -> Result<()> {
   assert!(!event.typed());
   input(&mut session, event, &mut Vec::new())?;
   assert!(session.image_write.is_none());
-  let Some(Region::Bar { status, .. }) = &session.app().region else {
-    panic!("new bar")
-  };
-  assert_eq!(status, "New operation");
+  assert_eq!(
+    session.app().region.as_ref().unwrap().status(),
+    Some("New operation")
+  );
   assert_eq!(session.app().reader.message, "New operation");
   session.image_write =
     Some(ImageWrite { pane, capture: old.id, state: ImageState::TimedOut });
@@ -342,19 +343,25 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
   for app in &mut session.tab().panes {
     app.flash_landing();
     app.reader.message = "Occupied".into();
-    let remaining = app.landing.as_ref().unwrap().until.duration_since(now);
-    assert!(remaining >= crate::marks::Landing::DURATION);
+    let remaining = app.landing.deadline().unwrap().duration_since(now);
+    assert!(remaining >= vpdf_ui::page::landing::Landing::DURATION);
     assert!(remaining < Duration::from_millis(650));
   }
   let wait = idle(&mut session, now, now, false);
-  assert!(wait <= crate::marks::Landing::DURATION);
+  assert!(wait <= vpdf_ui::page::landing::Landing::DURATION);
   assert!(!session.notify());
   for app in &mut session.tab().panes {
-    app.landing.as_mut().unwrap().until = now;
+    app.landing.show(
+      app.reader.cursor,
+      vpdf_ui::page::landing::Span::Line,
+      now.checked_sub(vpdf_ui::page::landing::Landing::DURATION).unwrap(),
+    );
   }
   assert_eq!(idle(&mut session, now, now, false), Duration::ZERO);
   assert!(session.notify());
-  assert!(session.tab().panes.iter().all(|app| app.landing.is_none()));
+  assert!(
+    session.tab().panes.iter().all(|app| app.landing.position().is_none())
+  );
   assert!(!session.notify());
   Ok(())
 }
@@ -673,8 +680,8 @@ fn mouse_command_toggles_capture() -> Result<()> {
   ];
   for (command, on, hover) in steps {
     // A held pan gets no release once capture ends.
-    let grab = crate::gestures::Grab { last: (0.0, 0.0), moved: true };
-    session.app().grab = Some(grab);
+    session.app().grab.begin((0.0, 0.0));
+    session.app().grab.pixels((0.0, 0.0));
     session.app().command(command)?;
     session.settle()?;
     assert_eq!(terminal::mouse(), on, "{command}");
@@ -837,9 +844,9 @@ fn overview_rings_skip_the_menu() -> Result<()> {
 /// Focus loss ends held drags.
 #[test]
 fn edge_drags_scroll_until_focus_loss() -> Result<()> {
-  use crate::gestures::AUTOSCROLL;
   use crossterm::event::MouseButton::Left;
   use crossterm::event::MouseEventKind::{Down, Drag};
+  use vpdf_ui::input::edge::Edge;
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let screen = Screen {
@@ -858,11 +865,10 @@ fn edge_drags_scroll_until_focus_loss() -> Result<()> {
   });
   let (column, row) = text.expect("a text cell");
   let now = Instant::now();
-  assert!(idle(&mut session, now, now, false) > AUTOSCROLL);
+  assert!(idle(&mut session, now, now, false) > Edge::INTERVAL);
   let (alt, plain) = (KeyModifiers::ALT, KeyModifiers::NONE);
-  let corner = |app: &App| match app.gesture {
-    crate::gestures::Gesture::Sweep(sweep) => sweep.to,
-    _ => None,
+  let corner = |app: &App| {
+    app.gesture.sweep().and_then(vpdf_ui::input::gesture::Sweep::corner)
   };
   for modifiers in [plain, alt] {
     let event = |kind, row| MouseEvent { kind, column, row, modifiers };
@@ -871,14 +877,14 @@ fn edge_drags_scroll_until_focus_loss() -> Result<()> {
     // The status row is past it.
     session.mouse(event(Drag(Left), 23))?;
     let due = session.autoscroll_due().expect("a held edge drag");
-    assert!(idle(&mut session, now, now, false) <= AUTOSCROLL);
+    assert!(idle(&mut session, now, now, false) <= Edge::INTERVAL);
     let before = corner(session.app());
     assert!(session.autoscroll(due), "{modifiers:?}");
     // Sweeps follow the scroll too.
     let moved = corner(session.app()) != before;
     assert_eq!(moved, modifiers == alt, "{modifiers:?}");
     input(&mut session, Act::Focus(false), &mut Vec::new())?;
-    let later = Instant::now() + AUTOSCROLL;
+    let later = Instant::now() + Edge::INTERVAL;
     assert!(!session.autoscroll(later), "{modifiers:?}");
     assert_eq!(session.autoscroll_due(), None);
     // Drags after it hold nothing.

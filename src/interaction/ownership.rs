@@ -6,7 +6,7 @@ impl App {
       InputOwner::Prompt => self.prompt.is_some(),
       InputOwner::Hints => self.hints.is_some(),
       InputOwner::Region => {
-        self.region.as_ref().is_some_and(crate::region::Region::is_bar)
+        self.region.as_ref().is_some_and(vpdf_ui::region::Region::is_bar)
       }
       InputOwner::Context => self.context_menu.is_some(),
       InputOwner::Peek => {
@@ -58,7 +58,7 @@ impl App {
 
   /// Whether a press only dismisses something.
   pub(crate) fn overlaid(&self) -> bool {
-    self.clues.is_some() || self.input_owner().is_overlay()
+    self.clues.shown().is_some() || self.input_owner().is_overlay()
   }
 
   pub(crate) fn dismiss_click(&mut self) -> Result<bool> {

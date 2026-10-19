@@ -1,22 +1,27 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::hint::black_box;
-use std::path::PathBuf;
 use vpdf_model::geometry::Screen;
-use vpdf_model::text::{Bounds, PageId};
+use vpdf_model::text::PageId;
 use vpdf_ui::layout::{Layout, visible};
+mod clues;
+mod context;
+#[path = "../../../benches/support/fixtures.rs"]
+mod fixtures;
+mod gestures;
+mod overlays;
+mod page;
+use fixtures::{bounds, read as fixture};
 #[path = "../../../benches/support/hash.rs"]
 mod hash;
+mod reading;
+mod region;
+mod scrollbar;
 #[path = "../../../benches/support/mod.rs"]
 mod support;
+mod text;
+mod tiles;
 use support::measure;
-
-#[derive(serde::Deserialize)]
-struct Manifest {
-  geometry_sha256: String,
-  source_sha256: String,
-  revision: String,
-}
 
 #[derive(serde::Deserialize)]
 struct Geometry {
@@ -24,36 +29,8 @@ struct Geometry {
   glyph: [f32; 4],
 }
 
-fn bounds([x0, y0, x1, y1]: [f32; 4]) -> Bounds {
-  Bounds { x0, y0, x1, y1 }
-}
-
-fn fixture() -> Result<Geometry> {
-  let directory = std::env::var_os("VPDF_BENCH_FIXTURES").map_or_else(
-    || {
-      PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/bench-fixtures")
-    },
-    PathBuf::from,
-  );
-  let manifest: Manifest = serde_json::from_slice(
-    &std::fs::read(directory.join("manifest.json"))
-      .context("Run mise run bench:fixtures first")?,
-  )?;
-  let bytes = std::fs::read(directory.join("geometry.json"))?;
-  anyhow::ensure!(
-    hash::digest(&bytes) == manifest.geometry_sha256,
-    "Geometry fixture hash mismatch"
-  );
-  println!(
-    "fixture {} source {} revision {}",
-    manifest.geometry_sha256, manifest.source_sha256, manifest.revision
-  );
-  Ok(serde_json::from_slice(&bytes)?)
-}
-
 fn projection() -> Result<()> {
-  let geometry = fixture()?;
+  let geometry: Geometry = fixture("geometry")?;
   let pages: Vec<_> = geometry.pages.into_iter().map(bounds).collect();
   let glyph = bounds(geometry.glyph);
   let mut layout = Layout::new(
@@ -67,8 +44,8 @@ fn projection() -> Result<()> {
     },
   );
   for zoom in [0.5, 2.0] {
-    layout.zoom = zoom;
-    layout.pan = 96.0;
+    layout.request_zoom(vpdf_ui::layout::Zoom::To(zoom));
+    layout.pan_to(96.0);
     layout.reflow(pages.iter().copied());
     measure(&format!("Layout::project zoom {zoom}"), || {
       black_box(layout.project(black_box(PageId(0)), black_box(glyph), 27.0));
@@ -153,10 +130,51 @@ fn panel() -> Result<()> {
   })
 }
 
+fn hints() -> Result<()> {
+  use vpdf_model::document::Target;
+  use vpdf_terminal::{graphics::Graphics, terminal::At};
+  use vpdf_ui::hints::{Hints, Spot};
+  use vpdf_ui::paint::Frame;
+  #[derive(serde::Deserialize)]
+  struct Prepared {
+    screen: [u16; 4],
+    found: Vec<(Spot, Target)>,
+  }
+  let prepared: Prepared = fixture("hints")?;
+  let [columns, rows, cell_width, cell_height] = prepared.screen;
+  let screen =
+    Screen { columns, rows, cell_width, cell_height, origin: (0, 0) };
+  let hints = Hints::new(prepared.found, false, 0, columns)?;
+  let mut graphics = Graphics::default();
+  let mut out = Vec::new();
+  let frame = || Frame { at: At::default(), screen, left: 0, text: false };
+  hints.draw(&mut graphics, &mut out, frame())?;
+  measure("Hints::draw", || {
+    out.clear();
+    graphics.begin(&mut out).expect("begin hint frame");
+    hints.draw(&mut graphics, &mut out, frame()).expect("prepared labels");
+    graphics.end(&mut out).expect("hint placements");
+    black_box(&out);
+  })
+}
+
 fn main() -> Result<()> {
   for (name, case) in [
     ("key prefixes", key_prefixes as fn() -> Result<()>),
     ("projection", projection),
+    ("page tiles", tiles::draw),
+    ("page navigation", page::navigation),
+    ("reading scroll", reading::scroll),
+    ("gesture selection", gestures::selection),
+    ("text_canvas", text::canvas),
+    ("cursorline", || overlays::draw("cursorline")),
+    ("landing", || overlays::draw("landing")),
+    ("link hover", || overlays::draw("link")),
+    ("draw_hints", hints),
+    ("context draw", context::draw),
+    ("clues draw", clues::draw),
+    ("region draw", region::draw),
+    ("scrollbar draw", scrollbar::draw),
     ("route", route),
     ("routing panel", panel),
   ] {

@@ -3,7 +3,6 @@ use crate::app::App;
 use crate::text::{Bounds, PageId};
 use std::sync::{Arc, mpsc};
 use vpdf_pdf::jobs::crop::Job;
-use vpdf_ui::layout::Crop;
 
 pub use vpdf_pdf::crop::{Margins, margins};
 
@@ -33,7 +32,7 @@ impl App {
   pub(crate) fn start_crop(&mut self) {
     let pages = samples(self.doc.pages.len(), self.nearby_pages().into_iter());
     self.crop_batch(pages);
-    self.layout.crop = Crop([1, 0, 0, 0]);
+    self.layout.request_crop();
     self.reader.message = "Detecting margins".into();
   }
 
@@ -53,34 +52,32 @@ impl App {
     &mut self,
     crops: Arc<vpdf_model::geometry::Crops>,
   ) -> Result<()> {
-    let animation = self.animation.take().and_then(|animation| {
-      let page = self.layout.page_at(animation.target);
+    let animation = self.animation.finish().and_then(|target| {
+      let page = self.layout.page_at(target);
       let point = self.layout.unproject(
         page,
-        (self.layout.screen.width() / 2.0, 0.0),
-        animation.target,
+        (self.layout.screen().width() / 2.0, 0.0),
+        target,
       )?;
-      Some((animation, page, point))
+      Some((page, point))
     });
-    self.layout.crop = Crop([1, 0, 0, 0]);
-    self.layout.crops = crops;
+    self.layout.resolve_crops(crops);
     self.relayout()?;
-    if let Some((mut animation, page, (x, y))) = animation {
+    if let Some((page, (x, y))) = animation {
       let bounds = Bounds { x0: x, y0: y, x1: x, y1: y };
       let rect = self.layout.project(page, bounds, 0.0);
-      let shown = &self.layout.pages[page.0];
-      animation.target = self
+      let shown = &self.layout.pages()[page.0];
+      let target = self
         .layout
         .clamp_scroll(rect.y0.clamp(shown.top, shown.top + shown.height));
-      animation.updated = std::time::Instant::now();
-      self.animation = Some(animation);
+      self.animation.start(target, std::time::Instant::now());
     }
     self.reader.message = "Margins cropped".into();
     Ok(())
   }
 
   pub(crate) fn request_crop(&mut self) {
-    if self.layout.crop.is_none() {
+    if self.layout.crop().is_none() {
       return;
     }
     let nearby = self.nearby_pages();
@@ -130,7 +127,7 @@ impl App {
     let crops = match result {
       Ok(crops) => crops,
       Err(error) => {
-        self.layout.crop = Crop::default();
+        self.layout.show_margins();
         self.relayout()?;
         return Err(anyhow::Error::msg(error));
       }
@@ -142,7 +139,7 @@ impl App {
 
   pub(crate) fn cancel_crop(&mut self) -> Result<()> {
     if self.crop_job.take().is_some() {
-      self.layout.crop = Crop::default();
+      self.layout.show_margins();
       self.relayout()?;
     }
     Ok(())
@@ -150,8 +147,8 @@ impl App {
 
   /// `zc`: trims white margins, or restores them.
   pub fn toggle_crop(&mut self) -> Result<()> {
-    if self.crop_job.take().is_some() || !self.layout.crop.is_none() {
-      self.layout.crop = Crop::default();
+    if self.crop_job.take().is_some() || !self.layout.crop().is_none() {
+      self.layout.show_margins();
       self.relayout()?;
       self.reader.message = "Margins shown".into();
     } else if let Some(crops) = &self.doc.margins {

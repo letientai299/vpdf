@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::document::Target;
-use vpdf::hints::{Hint, Hints};
 use vpdf::pdf_text::PdfText;
 use vpdf::session::Session;
 use vpdf::solo::Solo;
@@ -52,17 +51,7 @@ pub(super) fn action(app: &mut App, action: Action) -> Result<()> {
 }
 
 fn hints(app: &mut App) {
-  app.hints = Some(Hints {
-    items: vec![Hint {
-      label: "aa".into(),
-      target: Target::Page(PageId(1)),
-      cell: (10, 5),
-      column: 8,
-    }],
-    typed: String::new(),
-    copy: false,
-    selected: None,
-  });
+  app.hints = Some(super::common::hints(24, (10, 5), &Target::Page(PageId(1))));
 }
 
 fn row(destination: Destination) -> Row {
@@ -126,7 +115,7 @@ fn local_focus_preserves_reading_and_recent_cards() -> Result<()> {
   assert!(app.covered());
   let selected = app.panel.as_ref().unwrap().view.selected();
   keys(app, b"\t")?;
-  assert!(!app.covered() && app.layout.screen.columns > 0);
+  assert!(!app.covered() && app.layout.screen().columns > 0);
   assert!(app.panel.as_ref().unwrap().view.is_recent_view());
   keys(app, b"\t")?;
   assert!(app.covered());
@@ -445,14 +434,14 @@ fn prompt_wheel_and_passive_motion_keep_owner() -> Result<()> {
     .tab()
     .panes
     .iter()
-    .map(|app| (app.reader.scroll, app.animation.is_some()))
+    .map(|app| (app.reader.scroll, app.animation.active()))
     .collect();
   send(&mut session, b"\x1b[<65;90;10M")?;
   let after: Vec<_> = session
     .tab()
     .panes
     .iter()
-    .map(|app| (app.reader.scroll, app.animation.is_some()))
+    .map(|app| (app.reader.scroll, app.animation.active()))
     .collect();
   assert_eq!(before, after);
   assert_eq!(session.app().input_owner(), InputOwner::Prompt);
@@ -468,14 +457,14 @@ fn overview_and_text_use_local_owner() -> Result<()> {
   crate::common::outline_loaded(&mut app)?;
   keys(&mut app, b"gogp")?;
   assert_eq!(app.input_owner(), InputOwner::Overview);
-  let selected = app.overview.as_ref().unwrap().selected;
+  let selected = app.overview.as_ref().unwrap().selected();
   keys(&mut app, b"\tj")?;
   assert_eq!(app.input_owner(), InputOwner::Panel);
-  assert_eq!(app.overview.as_ref().unwrap().selected, selected);
+  assert_eq!(app.overview.as_ref().unwrap().selected(), selected);
   assert_eq!(app.panel.as_ref().unwrap().view.selected(), 1);
   keys(&mut app, b"\tj")?;
   assert_eq!(app.input_owner(), InputOwner::Overview);
-  assert!(app.overview.as_ref().unwrap().selected > selected);
+  assert!(app.overview.as_ref().unwrap().selected() > selected);
   assert_eq!(app.panel.as_ref().unwrap().view.selected(), 1);
   let mut status = Vec::new();
   app.status(&mut status, app.screen.rows - 1)?;
@@ -659,7 +648,7 @@ fn narrow_recent_press_restores_cover_geometry() -> Result<()> {
     let app = session.app();
     assert!(app.covered() && app.panel_focused());
     assert_eq!(app.left, app.screen.columns);
-    assert_eq!(app.layout.screen.columns, app.screen.columns);
+    assert_eq!(app.layout.screen().columns, app.screen.columns);
     assert!(app.panel.as_ref().unwrap().view.is_recent_view());
     let mut out = Vec::new();
     session.draw_focused(&mut out)?;

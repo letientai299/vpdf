@@ -88,30 +88,32 @@ fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
   let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   app.scroll(100.0)?;
   app.scroll(100.0)?;
-  assert_eq!(app.animation.as_ref().unwrap().target, 200.0);
+  assert_eq!(app.animation.target().unwrap(), 200.0);
   assert_eq!(app.reader.scroll, 0.0);
   for _ in 0..30 {
-    if let Some(animation) = &mut app.animation {
-      animation.updated =
-        Instant::now().checked_sub(Duration::from_millis(16)).unwrap();
+    if let Some(target) = app.animation.target() {
+      app.animation.start(
+        target,
+        Instant::now().checked_sub(Duration::from_millis(16)).unwrap(),
+      );
     }
     let previous = app.reader.scroll;
     app.animate();
     assert!(app.reader.scroll >= previous && app.reader.scroll <= 200.0);
   }
-  assert!(app.animation.is_none());
+  assert!(!app.animation.active());
   assert_eq!(app.reader.scroll, 200.0);
   for action in [Action::Cancel, Action::History(false), Action::Align(0.0)] {
     app.scroll(100.0)?;
     app.action(Input::plain(action))?;
-    assert!(app.animation.is_none());
+    assert!(!app.animation.active());
     let stopped = app.reader.scroll;
     assert!(!app.animate());
     assert_eq!(app.reader.scroll, stopped);
   }
   app.scroll(100.0)?;
   app.command("39")?;
-  assert!(app.animation.is_none());
+  assert!(!app.animation.active());
   assert_eq!(app.reader.cursor.page, PageId(38));
   Ok(())
 }
@@ -151,8 +153,8 @@ fn links_keep_coordinates_and_text_scrolls_lines() -> Result<()> {
   let cursor = app.reader.cursor;
   app.scroll(48.0)?;
   assert_eq!(app.reader.cursor, cursor);
-  assert!(app.animation.is_none());
-  let position = app.text_position(2, 1)?;
+  assert!(!app.animation.active());
+  let position = app.text().position(2, 1)?;
   assert!(position.page.0 >= cursor.page.0);
   assert!(position.page != cursor.page || position.line > cursor.line);
   assert_eq!(position.glyph, 2);
@@ -191,13 +193,13 @@ fn text_clicks_keep_the_view_and_select_words() -> Result<()> {
     pixel: None,
   };
   app.draw(&mut Vec::new())?;
-  let target = app.text_position(mouse.column, mouse.row)?;
+  let target = app.text().position(mouse.column, mouse.row)?;
   app.mouse(press)?;
   app.draw(&mut Vec::new())?;
   assert_eq!(app.reader.cursor, target);
   assert_eq!(app.target, Some(target));
   assert!(app.reader.selection.is_none());
-  let again = app.text_position(mouse.column, mouse.row)?;
+  let again = app.text().position(mouse.column, mouse.row)?;
   assert_eq!(again, target, "a click keeps the view");
   app.mouse(Route { clicks: 2, ..press })?;
   let text = app.doc.text(target.page)?;
@@ -221,19 +223,20 @@ fn text_view_scrolls_without_moving_the_selection() -> Result<()> {
     app.action(Input { action: Action::Align(fraction), ..input })?;
     {
       let (app, _) = app.parts();
-      assert_eq!(app.text_cell(app.reader.cursor)?.unwrap().1, row);
+      let cursor = app.reader.cursor;
+      assert_eq!(app.text().cell(cursor)?.unwrap().1, row);
     }
   }
   let cursor = app.reader.cursor;
-  let before = app.text_position(0, 0)?;
-  app.scroll_text(5)?;
+  let before = app.text().position(0, 0)?;
+  app.text().scroll(5)?;
   assert_eq!(app.reader.cursor, cursor);
   app.draw(&mut Vec::new())?;
-  assert_eq!(app.text_position(0, 0)?.line, before.line + 5);
-  app.scroll_text(lines as isize)?;
+  assert_eq!(app.text().position(0, 0)?.line, before.line + 5);
+  app.text().scroll(lines as isize)?;
   assert_eq!(app.navigation_position(), cursor);
   assert_eq!(app.reader.cursor, cursor);
-  assert!(app.text_cell(cursor)?.is_none());
+  assert!(app.text().cell(cursor)?.is_none());
   Ok(())
 }
 
@@ -269,32 +272,24 @@ fn changed_file_reloads_after_settling() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn hint_labels_keep_their_origin() -> Result<()> {
-  use vpdf::hints::{Hint, Hints};
   let mut app = text_app()?;
   app.at = vpdf_terminal::terminal::At { column: 17, row: 4 };
-  app.layout.screen.origin = (17, 4);
+  app.layout.relocate((17, 4));
   app.left = 9;
   for text_mode in [true, false] {
     app.text_mode = text_mode;
     for typed in ["", "a"] {
-      app.hints = Some(Hints {
-        items: vec![Hint {
-          label: "as".into(),
-          target: Target::Page(PageId(0)),
-          cell: (23, 3),
-          column: 21,
-        }],
-        typed: typed.into(),
-        copy: false,
-        selected: None,
-      });
+      app.hints = Some(common::hints(24, (23, 3), &Target::Page(PageId(0))));
+      if !typed.is_empty() {
+        common::keys(&mut app, typed.as_bytes())?;
+      }
       let mut out = Vec::new();
       {
         let (app, graphics) = app.parts();
         app.draw_hints(graphics, &mut out)?;
       }
       let drawn = String::from_utf8_lossy(&out);
-      let rest = &"as"[typed.len()..];
+      let rest = &"aa"[typed.len()..];
       assert!(drawn.starts_with(&format!(
         "\x1b[8;39H\x1b[0;1;30;43m{typed}\x1b[0;30;43m{rest}\x1b[0m"
       )));
@@ -325,15 +320,15 @@ fn link_hints_follow_typed_labels() -> Result<()> {
   for modifiers in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
     app.start_hints(false)?;
     let hints = app.hints.as_ref().unwrap();
-    let first = hints.items[0].label.chars().next().unwrap();
+    let first = hints.items()[0].label.chars().next().unwrap();
     app.hint_key(KeyEvent::new(KeyCode::Char(first), modifiers))?;
     assert!(app.hints.is_none(), "{modifiers:?} closes hints");
     assert_eq!(app.reader.cursor.page, page, "{modifiers:?} follows nothing");
   }
   app.start_hints(false)?;
   let hints = app.hints.as_ref().unwrap();
-  assert!(hints.items.len() > 3);
-  let label = hints.items[0].label.clone();
+  assert!(hints.items().len() > 3);
+  let label = hints.items()[0].label.clone();
   for ch in label.chars() {
     app.hint_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))?;
   }
@@ -630,7 +625,7 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
         key(&mut app, code)?;
       }
       // Clues show once a prefix idles.
-      app.awaiting = Instant::now().checked_sub(Duration::from_secs(1));
+      app.clues.restart(Instant::now().checked_sub(Duration::from_secs(1)));
       app.clue_due();
       let rows = app.menu_rows();
       let uncovered = u32::from(screen.rows - 1 - rows) * 16;
@@ -639,12 +634,12 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
         "{view} {keys:?}: full {full}, reached {reached}, uncovered {uncovered}"
       );
       assert!(rows > 0, "{at}");
-      assert_eq!(app.layout.screen.rows, screen.rows, "{at}");
+      assert_eq!(app.layout.screen().rows, screen.rows, "{at}");
       assert!(full > uncovered, "the page reaches the overlay: {at}");
       assert!(reached > 0, "graphics still show: {at}");
       assert!(reached <= uncovered, "graphics stop above it: {at}");
       key(&mut app, KeyCode::Esc)?;
-      assert!(app.clues.is_none() && app.prompt.is_none(), "{at}");
+      assert!(app.clues.shown().is_none() && app.prompt.is_none(), "{at}");
       assert_eq!(app.reader.scroll, scroll, "{at}");
     }
   }
@@ -666,14 +661,14 @@ fn clue_wait_ends_once_due() -> Result<()> {
   };
   assert_eq!(app.clue_wait(), None);
   // A wait with nothing to show ends too.
-  app.awaiting = Instant::now().checked_sub(Duration::from_secs(1));
+  app.clues.restart(Instant::now().checked_sub(Duration::from_secs(1)));
   assert!(!app.clue_due());
   assert_eq!(app.clue_wait(), None);
   for prefix in ['"', 'm', 'g'] {
     press(&mut app, KeyCode::Char(prefix))?;
     let wait = app.clue_wait();
     assert!(wait.is_some_and(|wait| wait <= Duration::from_secs(1)));
-    app.awaiting = Instant::now().checked_sub(Duration::from_secs(1));
+    app.clues.restart(Instant::now().checked_sub(Duration::from_secs(1)));
     assert_eq!(app.clue_wait(), Some(Duration::ZERO), "{prefix}");
     assert!(app.clue_due(), "{prefix}");
     assert_eq!(app.clue_wait(), None, "{prefix}");
@@ -782,9 +777,9 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
       let at = format!("text={text_mode} {cell:?} {hit:?}");
       if text_mode {
         // The drawn glyph starts at or left of the cell.
-        let drawn = app.text_hit(cell.0, cell.1)?;
+        let drawn = app.text().hit(cell.0, cell.1)?;
         let start = match drawn {
-          Some(position) => app.text_cell(position)?,
+          Some(position) => app.text().cell(position)?,
           None => None,
         };
         let width = match drawn {

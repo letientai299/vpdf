@@ -2,7 +2,6 @@ use crate::Result;
 use crate::document::Document;
 use crate::raster::Raster;
 use crate::text::Position;
-use crate::tiles::TileKey;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
@@ -74,11 +73,7 @@ pub struct App {
   pub doc: Document,
   pub reader: Reader,
   pub target: Option<Position>,
-  pub landing: Option<crate::marks::Landing>,
-  /// Last landed view, for `]]`.
-  pub(crate) landed: Option<crate::marks::Landed>,
-  /// The followed target of a landed view.
-  pub(crate) aimed: Option<(crate::marks::Landed, crate::document::Target)>,
+  pub landing: vpdf_ui::page::landing::Landing,
   pub layout: Layout,
   /// Reloaded since the session last drew: its old images go first.
   pub(crate) images_stale: bool,
@@ -94,10 +89,8 @@ pub struct App {
   pub(crate) settling: Option<(crate::watch::Stamp, Instant)>,
   pub text_mode: bool,
   pub cursorline: bool,
-  /// Text origin; glyph stores column offset.
-  pub(crate) text_top: Position,
-  /// Text view origin on screen.
-  pub(crate) text_drawn: Option<Position>,
+  /// Pending and drawn text frames.
+  pub(crate) text_view: vpdf_ui::text_view::TextView,
   pub screen: Screen,
   pub left: u16,
   /// Side panel columns a drag chose.
@@ -123,36 +116,32 @@ pub struct App {
   /// Where an open search prompt started.
   pub search_origin: Option<vpdf_reader::reader::Location>,
   pub prompt: Option<vpdf_ui::prompt::Prompt>,
-  pub hints: Option<crate::hints::Hints>,
-  pub clues: Option<crate::clues::Clues>,
-  /// When the pending prefix started waiting for its next key.
-  pub awaiting: Option<Instant>,
+  pub hints: Option<vpdf_ui::hints::Hints>,
+  pub clues: vpdf_ui::clues::Clues,
   /// Link destination shown by `K`.
   pub peek: Option<crate::preview::Preview>,
   /// The right-click menu.
-  pub context_menu: Option<crate::context::ContextMenu>,
+  pub context_menu: Option<vpdf_ui::context::ContextMenu>,
   pub(crate) link_press: crate::links::LinkPress,
   /// What the held left button does.
-  pub(crate) gesture: crate::gestures::Gesture,
+  pub(crate) gesture: vpdf_ui::input::gesture::Gesture,
   /// The held middle button.
-  pub(crate) grab: Option<crate::gestures::Grab>,
+  pub(crate) grab: vpdf_ui::input::grab::Grab,
   /// A drag held past an edge.
-  pub(crate) autoscroll: Option<crate::gestures::Autoscroll>,
-  pub region: Option<crate::region::Region>,
+  pub(crate) autoscroll: vpdf_ui::input::edge::Edge,
+  pub region: Option<vpdf_ui::region::Region>,
   pub region_job: Option<crate::region::Job>,
   pub region_send: Option<crate::region::Transfer>,
-  pub overview: Option<crate::overview::Overview>,
+  pub overview: Option<vpdf_ui::overview::Overview>,
   pub panel: Option<crate::panel::PanelSession>,
   pub preview: Option<bool>,
   pub ocr: Option<vpdf_pdf::jobs::ocr::OcrJob>,
   pub outline_load: crate::outline::Loading,
   pub crop_job: Option<vpdf_pdf::jobs::crop::Job>,
-  pub animation: Option<crate::animation::Scroll>,
+  pub animation: vpdf_ui::page::scroll::Scroll,
   /// The current wheel gesture over the page.
-  pub(crate) wheel: Option<crate::interaction::WheelRun>,
-  pub(crate) requested: Vec<TileKey>,
-  /// Sign of the last scroll; prefetch looks that way first.
-  pub(crate) heading: f32,
+  pub(crate) wheel: vpdf_ui::input::wheel::Wheel,
+  pub(crate) tiles: vpdf_ui::layout::tiles::Tiles,
   /// The pane's rows above the status line are known blank.
   pub(crate) blank: bool,
   /// What the pointer rests on here.
@@ -161,7 +150,7 @@ pub struct App {
   pub(crate) rest: Option<crate::links::Rest>,
   /// The last frame showed the whole view: every visible tile placed.
   pub complete: bool,
-  pub(crate) bar: crate::scrollbar::Bar,
+  pub(crate) bar: vpdf_ui::scrollbar::Bar,
 }
 
 impl App {
@@ -195,9 +184,7 @@ impl App {
       doc,
       reader: Reader::default(),
       target: None,
-      landing: None,
-      landed: None,
-      aimed: None,
+      landing: vpdf_ui::page::landing::Landing::default(),
       layout,
       images_stale: false,
       image_usage: Usage::default(),
@@ -209,8 +196,7 @@ impl App {
       settling: None,
       text_mode,
       cursorline: true,
-      text_top: Position::default(),
-      text_drawn: None,
+      text_view: vpdf_ui::text_view::TextView::default(),
       screen,
       left: 0,
       panel_width: None,
@@ -229,14 +215,13 @@ impl App {
       search_origin: None,
       prompt: None,
       hints: None,
-      clues: None,
-      awaiting: None,
+      clues: vpdf_ui::clues::Clues::default(),
       peek: None,
       context_menu: None,
       link_press: crate::links::LinkPress::Idle,
-      gesture: crate::gestures::Gesture::Glyphs,
-      grab: None,
-      autoscroll: None,
+      gesture: vpdf_ui::input::gesture::Gesture::default(),
+      grab: vpdf_ui::input::grab::Grab::default(),
+      autoscroll: vpdf_ui::input::edge::Edge::default(),
       region: None,
       region_job: None,
       region_send: None,
@@ -246,15 +231,14 @@ impl App {
       ocr: None,
       outline_load: crate::outline::Loading::Deferred,
       crop_job: None,
-      animation: None,
-      wheel: None,
-      requested: Vec::new(),
-      heading: 1.0,
+      animation: vpdf_ui::page::scroll::Scroll::default(),
+      wheel: vpdf_ui::input::wheel::Wheel::default(),
+      tiles: vpdf_ui::layout::tiles::Tiles::default(),
       blank: false,
       hover: vpdf_ui::pointer::Hit::Nothing,
       rest: None,
       complete: false,
-      bar: crate::scrollbar::Bar::default(),
+      bar: vpdf_ui::scrollbar::Bar::default(),
     })
   }
 }
