@@ -1,12 +1,9 @@
 use crate::Result;
 use crate::app::App;
+use crate::clipboard;
 use crate::document::Target;
 use crate::figures::Source;
-use crate::keys::{Action, Input};
-use crate::pointer::Items;
-use crate::split::Rect;
 use crate::text::{Bounds, PageId, Text};
-use crate::{clipboard, theme};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::ops::Range;
@@ -17,6 +14,10 @@ use unicode_width::UnicodeWidthStr;
 use vpdf_reader::reader::Yank;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::terminal;
+use vpdf_ui::keys::{Action, Input};
+use vpdf_ui::pointer::Items;
+use vpdf_ui::split::Rect;
+use vpdf_ui::theme;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CaptureId(u64);
@@ -212,7 +213,7 @@ impl App {
     let Some(Region::Selected(selected)) = &self.region else { return };
     let page = selected.page;
     let valid = self.doc.pages.get(selected.page.0).is_some_and(|page| {
-      crate::layout::clip(selected.bounds, page.bounds).is_some()
+      vpdf_ui::layout::clip(selected.bounds, page.bounds).is_some()
     });
     let visible = if self.text_mode {
       let pages = self.text_pages();
@@ -261,7 +262,7 @@ impl App {
 
   pub fn select_region(&mut self, page: PageId, bounds: Bounds) -> Result<()> {
     self.doc.validate(page)?;
-    let bounds = crate::layout::clip(bounds, self.doc.pages[page.0].bounds)
+    let bounds = vpdf_ui::layout::clip(bounds, self.doc.pages[page.0].bounds)
       .ok_or_else(|| anyhow::anyhow!("Empty capture region"))?;
     let snapshot = snapshot(page, bounds);
     self.peek = None;
@@ -700,7 +701,7 @@ mod tests {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("region.pdf");
     crate::fixtures::pdf(&path, &["body"], "")?;
-    let screen = crate::layout::Screen {
+    let screen = vpdf_ui::layout::Screen {
       columns: 80,
       rows: 24,
       cell_width: 8,
@@ -782,7 +783,7 @@ mod tests {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("paper.pdf");
     std::fs::copy(root.join("paper.pdf"), &path)?;
-    let screen = crate::layout::Screen {
+    let screen = vpdf_ui::layout::Screen {
       columns: 120,
       rows: 40,
       cell_width: 8,

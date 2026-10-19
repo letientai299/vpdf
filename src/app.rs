@@ -1,17 +1,17 @@
 use crate::Result;
 use crate::document::Document;
-use crate::keys::{Keys, PanelKind};
-use crate::layout::{Layout, Screen};
 use crate::raster::Raster;
 use crate::text::Position;
 use crate::tiles::TileKey;
-use crate::window::{TabMove, Window};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 use vpdf_reader::reader::Reader;
 use vpdf_terminal::graphics::Usage;
 use vpdf_terminal::terminal;
+use vpdf_ui::keys::{Keys, PanelKind};
+use vpdf_ui::layout::{Layout, Screen};
+use vpdf_ui::window::{TabMove, Window};
 
 /// Work a tab hands to the session.
 #[derive(Debug, PartialEq)]
@@ -59,18 +59,6 @@ pub enum Request {
   /// `:mouse`: takes the pointer, or leaves it to the terminal.
   Mouse(bool),
   Perf(Option<bool>),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InputOwner {
-  Prompt,
-  Hints,
-  Context,
-  Peek,
-  Region,
-  Panel,
-  Overview,
-  Content,
 }
 
 /// File names of every tab and the active index.
@@ -124,7 +112,7 @@ pub struct App {
   pub error: Option<String>,
   /// The message the pointer last moved past.
   pub render_ms: f64,
-  pub search: crate::find::Search,
+  pub search: vpdf_ui::find::Search,
   pub search_worker: Option<vpdf_pdf::jobs::search::SearchWorker>,
   /// Wakes the event loop when a job finishes.
   pub wake: vpdf_pdf::jobs::Wake,
@@ -134,7 +122,7 @@ pub struct App {
   pub marks: std::collections::BTreeMap<char, Position>,
   /// Where an open search prompt started.
   pub search_origin: Option<vpdf_reader::reader::Location>,
-  pub prompt: Option<crate::prompt::Prompt>,
+  pub prompt: Option<vpdf_ui::prompt::Prompt>,
   pub hints: Option<crate::hints::Hints>,
   pub clues: Option<crate::clues::Clues>,
   /// When the pending prefix started waiting for its next key.
@@ -154,7 +142,7 @@ pub struct App {
   pub region_job: Option<crate::region::Job>,
   pub region_send: Option<crate::region::Transfer>,
   pub overview: Option<crate::overview::Overview>,
-  pub panel: Option<crate::panel::Panel>,
+  pub panel: Option<crate::panel::PanelSession>,
   pub preview: Option<bool>,
   pub ocr: Option<vpdf_pdf::jobs::ocr::OcrJob>,
   pub outline_load: crate::outline::Loading,
@@ -168,7 +156,7 @@ pub struct App {
   /// The pane's rows above the status line are known blank.
   pub(crate) blank: bool,
   /// What the pointer rests on here.
-  pub hover: crate::pointer::Hit,
+  pub hover: vpdf_ui::pointer::Hit,
   /// The page link under the pointer.
   pub(crate) rest: Option<crate::links::Rest>,
   /// The last frame showed the whole view: every visible tile placed.
@@ -233,7 +221,7 @@ impl App {
       tabline: Tabline::default(),
       error: None,
       render_ms: 0.0,
-      search: crate::find::Search::default(),
+      search: vpdf_ui::find::Search::default(),
       search_worker: None,
       wake,
       current_section: None,
@@ -263,7 +251,7 @@ impl App {
       requested: Vec::new(),
       heading: 1.0,
       blank: false,
-      hover: crate::pointer::Hit::Nothing,
+      hover: vpdf_ui::pointer::Hit::Nothing,
       rest: None,
       complete: false,
       bar: crate::scrollbar::Bar::default(),

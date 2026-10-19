@@ -1,47 +1,20 @@
 use crate::Result;
-use crate::app::{App, InputOwner, Request};
+use crate::app::{App, Request};
 use crate::cmdline;
 use crate::document::Target;
-use crate::keys::{Action, Grammar, Input, PanelKind};
-use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
-use crate::split::Axis;
 use crate::text::{PageId, Position};
-use crate::window::{TabMove, Window};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::process::{Command, Stdio};
 use vpdf_reader::reader::Mode;
+use vpdf_ui::commands::{self, View};
+use vpdf_ui::input::InputOwner;
+use vpdf_ui::keys::{Action, Grammar, Input, PanelKind};
+use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
+use vpdf_ui::split::Axis;
+use vpdf_ui::window::{TabMove, Window};
 
 /// The note after copying an address.
 pub(crate) const COPIED_LINK: &str = "Copied link";
-
-/// Commands the recent view takes: opening, windows, tabs, quitting.
-const COVERED: [&str; 25] = [
-  "edit",
-  "tabedit",
-  "tabnew",
-  "split",
-  "vsplit",
-  "close",
-  "only",
-  "tabnext",
-  "tabprevious",
-  "tabclose",
-  "recent",
-  "toc",
-  "overview",
-  "text",
-  "info",
-  "help",
-  "marks",
-  "jumps",
-  "annotations",
-  "cancel",
-  "mouse",
-  "perf",
-  "fzf",
-  "quit",
-  "qall",
-];
 
 impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
@@ -72,7 +45,7 @@ impl App {
       }
       self.blur()?;
       if let Some(panel) = &mut self.panel {
-        panel.focused = !panel.focused;
+        panel.view.focus(!panel.view.focused());
         self.relayout()?;
       }
       return Ok(());
@@ -149,7 +122,7 @@ impl App {
 
   pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
     self.search.forget_yank();
-    let key = crate::keys::normalize(key);
+    let key = vpdf_ui::keys::normalize(key);
     // Keys end pointer gestures.
     self.end_gestures();
     self.drop_hover_preview();
@@ -158,12 +131,12 @@ impl App {
         cmdline::feed(prompt, key, history)
       });
     }
-    if crate::keys::cancels(key) {
+    if vpdf_ui::keys::cancels(key) {
       return self.cancel_input();
     }
     if let Some(hints) = &self.hints {
       let picked = key.code == KeyCode::Enter && hints.selected.is_some();
-      if crate::keys::plain(key)
+      if vpdf_ui::keys::plain(key)
         && matches!(key.code, KeyCode::Char(ch) if ch.is_ascii_alphabetic())
         || key.code == KeyCode::Backspace
         || picked
@@ -188,20 +161,8 @@ impl App {
         _ => self.action(input),
       };
     }
-    let grammar = match self.input_owner() {
-      InputOwner::Content
-        if matches!(self.reader.mode(), Mode::Visual(_))
-          || self.reader.operator.is_some() =>
-      {
-        Grammar::Objects
-      }
-      InputOwner::Content if self.reader.mode() == Mode::Normal => {
-        Grammar::Normal
-      }
-      InputOwner::Content => Grammar::Cursor,
-      InputOwner::Panel => Grammar::Panel,
-      _ => Grammar::Other,
-    };
+    let grammar =
+      owner.grammar(self.reader.mode(), self.reader.operator.is_some());
     if let Some(input) = self.keys.feed(key, grammar) {
       self.action(input)?;
     } else if self.keys.pending().is_empty() {
@@ -280,10 +241,10 @@ impl App {
     edit: impl FnOnce(&mut Prompt, &History) -> Result<PromptEvent>,
   ) -> Result<()> {
     let Some(prompt) = &mut self.prompt else { return Ok(()) };
-    let kind = prompt.kind;
+    let kind = prompt.kind();
     match edit(prompt, history)? {
       PromptEvent::Edited if matches!(kind, PromptKind::Search(_)) => {
-        let query = prompt.text.clone();
+        let query = prompt.text().to_owned();
         self.incremental(&query)?;
       }
       PromptEvent::Pending
@@ -293,13 +254,13 @@ impl App {
       PromptEvent::Cancel => self.cancel_input()?,
       PromptEvent::Submit => {
         let Some(prompt) = self.prompt.take() else { return Ok(()) };
-        history.push(prompt.kind, &prompt.text);
-        match prompt.kind {
+        history.push(prompt.kind(), prompt.text());
+        match prompt.kind() {
           PromptKind::Search(backward) => {
-            self.finish_search(&prompt.text, backward)?;
+            self.finish_search(prompt.text(), backward)?;
           }
-          PromptKind::Command => self.command(&prompt.text)?,
-          PromptKind::Password => self.reload_with(&prompt.text)?,
+          PromptKind::Command => self.command(prompt.text())?,
+          PromptKind::Password => self.reload_with(prompt.text())?,
         }
       }
     }
@@ -309,26 +270,26 @@ impl App {
   /// Closes the prompt; searches return.
   pub fn cancel_prompt(&mut self) -> Result<()> {
     let Some(prompt) = self.prompt.take() else { return Ok(()) };
-    if matches!(prompt.kind, PromptKind::Search(_)) {
+    if matches!(prompt.kind(), PromptKind::Search(_)) {
       self.abort_search()?;
     }
     Ok(())
   }
 
   pub fn command(&mut self, line: &str) -> Result<()> {
-    let (name, argument) = cmdline::parse(line);
+    let (name, argument) = commands::parse(line);
     if name.is_empty() {
       return Ok(());
     }
-    let spec = cmdline::lookup(name);
+    let spec = commands::lookup(name, cmdline::on_path);
     // The covered document counts as closed, as on the start screen.
     if self.covered() {
-      let kept = spec.is_some_and(|spec| COVERED.contains(&spec.name));
+      let kept = spec.is_some_and(|spec| spec.available(View::Recent));
       anyhow::ensure!(kept, "Open a document before :{name}");
     }
     // Labels like `iv` beat prefixes like `:info`, not exact names.
-    let label =
-      cmdline::exact(name).is_none() && self.doc.page_number(name).is_some();
+    let label = commands::exact(name, cmdline::on_path).is_none()
+      && self.doc.page_number(name).is_some();
     if label || name.chars().all(|ch| ch.is_ascii_digit()) {
       return self.page(name);
     }

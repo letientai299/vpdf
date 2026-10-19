@@ -1,9 +1,9 @@
 //! Decoded terminal bytes reach key actions and prompt text.
 use super::common::events;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use vpdf::keys::{Action, Grammar, Keys, normalize};
-use vpdf::prompt::{History, Prompt, PromptEvent, PromptKind};
 use vpdf_terminal::decode::Event;
+use vpdf_ui::keys::{Action, Grammar, Keys, normalize};
+use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
 
 const NONE: KeyModifiers = KeyModifiers::NONE;
 const CTRL: KeyModifiers = KeyModifiers::CONTROL;
@@ -50,7 +50,7 @@ fn associated_text_preserves_typing() {
       _ => panic!("not text"),
     };
   }
-  assert_eq!(prompt.text, "é你好");
+  assert_eq!(prompt.text(), "é你好");
 }
 
 /// U02: Tab, Ctrl-i, and Ctrl-o keep their identity from bytes through

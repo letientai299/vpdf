@@ -6,8 +6,8 @@ use vpdf::text::PageId;
 #[test]
 fn raw_figure_bindings() {
   use std::collections::VecDeque;
-  use vpdf::keys::{Action, Grammar, Keys};
   use vpdf_terminal::decode::{Event, Parser};
+  use vpdf_ui::keys::{Action, Grammar, Keys};
   for (bytes, expected) in [
     (&b"]i"[..], Action::Figure(true)),
     (&b"[i"[..], Action::Figure(false)),
@@ -31,8 +31,8 @@ fn raw_figure_bindings() {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn real_figure_navigation_fit() -> Result<()> {
-  use vpdf::keys::{Action, Input};
   use vpdf::region::Region;
+  use vpdf_ui::keys::{Action, Input};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = super::focus::screen();
   let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
@@ -83,9 +83,9 @@ fn real_figure_navigation_fit() -> Result<()> {
 fn raw_region_preserves_state() -> Result<()> {
   use super::common::keys;
   use super::modes::app;
-  use vpdf::app::InputOwner;
   use vpdf::region::{Operation, Region};
   use vpdf_reader::reader::Mode;
+  use vpdf_ui::input::InputOwner;
   let mut app = app("paper.pdf", false)?;
   keys(&mut app, b"i]ivgF")?;
   let mode = app.reader.mode();
@@ -131,9 +131,9 @@ fn raw_region_preserves_state() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn raw_region_pointer_transfer() -> Result<()> {
   use super::focus::{screen, send};
-  use vpdf::app::InputOwner;
   use vpdf::session::Session;
   use vpdf_reader::reader::Mode;
+  use vpdf_ui::input::InputOwner;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let mut session = Session::new(None);
   session.open(&root.join("paper.pdf"), true, screen())?;

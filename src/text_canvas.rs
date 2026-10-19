@@ -3,11 +3,11 @@ use crate::app::App;
 use crate::marks::Span;
 use crate::pdf_text::PdfText;
 use crate::text::{Bounds, Glyph, Line, PageId, Position, Text};
-use crate::theme;
 use std::io::Write;
 use std::sync::Arc;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use vpdf_reader::reader::{SelectionKind, TextSource};
+use vpdf_ui::theme;
 
 /// A line that stands in for an empty page.
 static BLANK: Line = Line { paragraph: false, glyphs: Vec::new() };

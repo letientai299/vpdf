@@ -1,14 +1,14 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Target;
-use crate::keys;
-use crate::pointer::Items;
-use crate::split::Rect;
 use crate::text::{Bounds, PageId};
-use crate::theme;
 use crossterm::event::{KeyCode, KeyEvent};
 use std::io::Write;
 use vpdf_terminal::graphics::Graphics;
+use vpdf_ui::keys;
+use vpdf_ui::pointer::Items;
+use vpdf_ui::split::Rect;
+use vpdf_ui::theme;
 
 /// Home-row first, like Vimium's default hint characters.
 const ALPHABET: &[u8] = b"asdfjklghqweruiopzxcvnm";

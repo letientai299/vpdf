@@ -6,7 +6,7 @@ use crate::pdf_text::PdfText;
 impl App {
   /// Rows the completion list or clues cover right above the status row.
   pub fn menu_rows(&self) -> u16 {
-    let Some(menu) = self.prompt.as_ref().and_then(|p| p.menu.as_ref()) else {
+    let Some(menu) = self.prompt.as_ref().and_then(|p| p.menu()) else {
       return self.clue_rows();
     };
     u16::try_from(menu.grid(self.screen).visible).unwrap_or(0)
@@ -15,10 +15,10 @@ impl App {
   /// Completions, by cells.
   pub(crate) fn completion_cells(&self) -> Items {
     let mut items = Items::default();
-    let menu = self.prompt.as_ref().and_then(|prompt| prompt.menu.as_ref());
+    let menu = self.prompt.as_ref().and_then(|prompt| prompt.menu());
     let Some(menu) = menu else { return items };
     let grid = menu.grid(self.screen);
-    for (cells, index) in grid.cells(menu.items.len(), self.menu_top()) {
+    for (cells, index) in grid.cells(menu.items().len(), self.menu_top()) {
       items.push(cells, index);
     }
     items
@@ -61,7 +61,7 @@ impl App {
     let covered = self.covered();
     let beside = match &self.panel {
       Some(panel) if !covered => {
-        Panel::width(panel.kind, columns, self.panel_width)
+        Panel::width(panel.view.kind(), columns, self.panel_width)
       }
       _ => 0,
     };

@@ -4,11 +4,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::document::{Document, Handle};
-use vpdf::find::Query;
 use vpdf::text::{Bounds, PageId};
 use vpdf_pdf::jobs::Wake;
 use vpdf_pdf::jobs::ocr::{OcrJob, parse_tsv};
 use vpdf_pdf::jobs::search::SearchWorker;
+use vpdf_search::query::Query;
 
 #[test]
 fn ocr_geometry_preserves_unicode() -> Result<()> {

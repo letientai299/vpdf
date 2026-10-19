@@ -63,8 +63,8 @@ pub(super) fn updates(
   let tab = &mut session.tabs[session.active];
   for app in &mut tab.panes {
     dirty |= app.raster_updates(&mut session.graphics);
-    let shelf = app.panel.as_mut().and_then(|panel| panel.shelf.as_mut());
-    dirty |= shelf.is_some_and(crate::recent::Shelf::updates);
+    dirty |=
+      app.panel.as_mut().is_some_and(crate::panel::PanelSession::updates);
     // A failed update shows in its pane instead of ending the session.
     let updated = app.search_updates().and_then(|search| {
       Ok(

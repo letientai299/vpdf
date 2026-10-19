@@ -20,6 +20,7 @@ members = [
   "crates/vpdf-protocol",
   "crates/vpdf-reader",
   "crates/terminal",
+  "crates/ui",
 ]
 resolver = "3"
 
@@ -65,6 +66,7 @@ strip = true
 debug = false
 
 [workspace.dependencies]
+vpdf-ui = { path = "crates/ui" }
 vpdf-terminal = { path = "crates/terminal" }
 vpdf-pdf = { path = "crates/vpdf-pdf" }
 vpdf-search = { path = "crates/vpdf-search" }
@@ -96,6 +98,7 @@ tempfile = "3"
 font-kit = "0.14"
 
 [dependencies]
+vpdf-ui.workspace = true
 vpdf-terminal.workspace = true
 vpdf-pdf.workspace = true
 vpdf-search.workspace = true

@@ -3,13 +3,13 @@ use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::document::{Heading, Target};
-use vpdf::keys::PanelKind;
-use vpdf::layout::Screen;
-use vpdf::panel::Destination;
-use vpdf::prompt::History;
 use vpdf::solo::Solo;
 use vpdf::text::{PageId, Position};
 use vpdf_reader::reader::Reader;
+use vpdf_ui::keys::PanelKind;
+use vpdf_ui::layout::Screen;
+use vpdf_ui::panel::Destination;
+use vpdf_ui::prompt::History;
 
 #[test]
 fn jumps_include_both_history_directions() {
@@ -60,8 +60,8 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
   let mut history = History::default();
   command(&mut app, &mut history, "jumps")?;
   let panel = app.panel.as_ref().unwrap();
-  assert_eq!(panel.kind, PanelKind::Jumps);
-  assert!(panel.rows.is_empty());
+  assert_eq!(panel.view.kind(), PanelKind::Jumps);
+  assert!(panel.view.rows().is_empty());
   let origin = app.reader.cursor;
   app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
   assert_eq!(app.reader.cursor, origin);
@@ -79,7 +79,7 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
     command(&mut app, &mut history, "jumps")?;
     {
       let (app, _) = app.parts();
-      let rows = &app.panel.as_ref().unwrap().rows;
+      let rows = &app.panel.as_ref().unwrap().view.rows();
       assert_eq!(rows.len(), expected.len());
       for (row, index) in rows.iter().zip(expected) {
         let Destination::Jump { position, .. } = row.destination else {
@@ -103,7 +103,7 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
   }
   command(&mut app, &mut history, "jumps")?;
   let origin = app.reader.cursor;
-  app.panel.as_mut().unwrap().selected = 1;
+  app.panel.as_mut().unwrap().view.choose(1);
   // History changes must preserve recorded destinations.
   app.reader.clear_history();
   app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
@@ -232,13 +232,14 @@ fn semantic_history() -> Result<()> {
   ];
   assert_eq!(labels(&mut app)?, expected);
   // Later searches cannot relabel earlier visits.
-  let other = vpdf::find::Query { text: "other".into(), ..Default::default() };
+  let other =
+    vpdf_search::query::Query { text: "other".into(), ..Default::default() };
   app.search.show(other, Vec::new());
   history_key(&mut app, false)?;
   history_key(&mut app, true)?;
   assert_eq!(labels(&mut app)?, expected);
   app.open_panel(PanelKind::Jumps)?;
-  app.panel.as_mut().unwrap().selected = 3;
+  app.panel.as_mut().unwrap().view.choose(3);
   app.reader.clear_history();
   app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
   assert_eq!(app.reader.cursor, at(3, 0));
@@ -267,7 +268,7 @@ fn committed_searches() -> Result<()> {
     .collect();
   assert_eq!(labels, ["Search [1/2] /needle/", "Search [2/2] /needle/"]);
   app.open_panel(PanelKind::Results)?;
-  app.panel.as_mut().unwrap().selected = 1;
+  app.panel.as_mut().unwrap().view.choose(1);
   app.key(
     KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
     &mut History::default(),
@@ -305,7 +306,7 @@ fn outline_preserves_selected_title() -> Result<()> {
   heading(&mut app, 1, "Chapter")?;
   heading(&mut app, 1, "Section")?;
   app.open_panel(PanelKind::Outline)?;
-  app.panel.as_mut().unwrap().selected = 1;
+  app.panel.as_mut().unwrap().view.choose(1);
   app.key(
     KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
     &mut History::default(),
@@ -416,7 +417,7 @@ fn jump(app: &mut App, kind: Jump, at: Position) -> Result<()> {
     Jump::Result => {
       let index = app.search.hits().iter().position(|hit| hit.first == at);
       app.open_panel(PanelKind::Results)?;
-      app.panel.as_mut().unwrap().selected = index.expect("hit at target");
+      app.panel.as_mut().unwrap().view.choose(index.expect("hit at target"));
       app.key(
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
         &mut History::default(),

@@ -3,14 +3,15 @@ use mupdf::pdf::PdfAnnotationType;
 use mupdf::{Point, Quad, Rect};
 use std::path::PathBuf;
 use vpdf::Result;
-use vpdf::app::{App, InputOwner};
-use vpdf::keys::{Action, Input, PanelKind};
-use vpdf::layout::Screen;
-use vpdf::panel::Destination;
-use vpdf::prompt::History;
+use vpdf::app::App;
 use vpdf::solo::Solo;
 use vpdf::text::{PageId, Position};
 use vpdf_reader::reader::Mode;
+use vpdf_ui::input::InputOwner;
+use vpdf_ui::keys::{Action, Input, PanelKind};
+use vpdf_ui::layout::Screen;
+use vpdf_ui::panel::Destination;
+use vpdf_ui::prompt::History;
 
 fn annotated() -> Result<(tempfile::NamedTempFile, String)> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
@@ -88,7 +89,7 @@ fn drawn(app: &mut Solo) -> Result<String> {
 }
 
 fn position(app: &App, index: usize) -> Position {
-  match &app.panel.as_ref().unwrap().rows[index].destination {
+  match &app.panel.as_ref().unwrap().view.rows()[index].destination {
     Destination::Annotation { position, .. } => *position,
     _ => panic!("Annotation destination"),
   }
@@ -100,7 +101,7 @@ fn panel_lists_marked_text_and_notes() -> Result<()> {
   let (file, words) = annotated()?;
   let mut app = Solo::open(file.path(), "", false, screen())?;
   app.open_panel(PanelKind::Annotations)?;
-  let rows = &app.panel.as_ref().unwrap().rows;
+  let rows = &app.panel.as_ref().unwrap().view.rows();
   let labels: Vec<_> =
     rows.iter().take(2).map(|row| row.label.as_str()).collect();
   assert_eq!(
@@ -132,7 +133,7 @@ fn enter_positions_cursor_and_note() -> Result<()> {
       assert_eq!(app.reader.mode(), Mode::Cursor);
       assert_eq!(app.input_owner(), InputOwner::Peek);
       assert!(!app.panel_focused());
-      assert_eq!(app.panel.as_ref().unwrap().rows.len(), 5);
+      assert_eq!(app.panel.as_ref().unwrap().view.rows().len(), 5);
       assert!(drawn(&mut app)?.contains("check this"));
       press(&mut app, KeyCode::Esc)?;
       assert!(app.peek.is_none());
@@ -159,7 +160,7 @@ fn k_previews_selected_note() -> Result<()> {
     app.open_panel(PanelKind::Annotations)?;
     assert_eq!(position(&app, 1), position(&app, 2));
     let original = app.reader.cursor;
-    app.panel.as_mut().unwrap().selected = 2;
+    app.panel.as_mut().unwrap().view.choose(2);
     press(&mut app, KeyCode::Char('K'))?;
     // An off-screen source keeps it (U17).
     let shown = app.layout.visible(app.reader.scroll);
@@ -188,7 +189,7 @@ fn k_preserves_visual_range() -> Result<()> {
   for text in [false, true] {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
-    app.panel.as_mut().unwrap().selected = 1;
+    app.panel.as_mut().unwrap().view.choose(1);
     press(&mut app, KeyCode::Enter)?;
     press(&mut app, KeyCode::Esc)?;
     let cursor = app.reader.cursor;
@@ -212,7 +213,7 @@ fn notes_scroll_and_resize() -> Result<()> {
   for text in [false, true] {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
-    app.panel.as_mut().unwrap().selected = 3;
+    app.panel.as_mut().unwrap().view.choose(3);
     press(&mut app, KeyCode::Enter)?;
     let cursor = app.reader.cursor;
     let first = drawn(&mut app)?;
@@ -248,14 +249,14 @@ fn empty_notes_and_panel_focus() -> Result<()> {
   for text in [false, true] {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
-    app.panel.as_mut().unwrap().selected = 4;
+    app.panel.as_mut().unwrap().view.choose(4);
     let expected = position(&app, 4);
     press(&mut app, KeyCode::Enter)?;
     assert_eq!(app.reader.cursor, expected);
     assert_eq!(app.reader.mode(), Mode::Cursor);
     assert!(app.peek.is_none());
     press(&mut app, KeyCode::Tab)?;
-    app.panel.as_mut().unwrap().selected = 1;
+    app.panel.as_mut().unwrap().view.choose(1);
     app.action(Input::plain(Action::Swap))?;
     assert!(app.panel_focused());
     assert!(app.peek.is_none());
@@ -304,9 +305,9 @@ fn noted_pdf(path: &std::path::Path) -> Result<()> {
 fn hover_details_notes_rows_and_pages() -> Result<()> {
   use crossterm::event::{MouseEvent, MouseEventKind};
   use vpdf::document::{Heading, Target};
-  use vpdf::pointer::{Hit, Region};
   use vpdf::session::Session;
   use vpdf::trace::Drawable;
+  use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("noted.pdf");
   noted_pdf(&path)?;
@@ -365,10 +366,10 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   let (_, drawn) = hover(&mut session, (1, 2))?;
   let app = session.app();
   assert_eq!(app.hover, Hit::Row(1));
-  let row = &app.panel.as_ref().unwrap().rows[1].label;
+  let row = &app.panel.as_ref().unwrap().view.rows()[1].label;
   assert!(drawn.contains(row.as_str()), "{row}");
   assert!(drawn.contains("\x1b[0;4m"), "the row underlines");
-  assert_eq!(app.panel.as_ref().unwrap().selected, 0);
+  assert_eq!(app.panel.as_ref().unwrap().view.selected(), 0);
   assert_eq!(app.panel_focused(), focused);
   // A short row adds nothing.
   let (_, drawn) = hover(&mut session, (1, 3))?;
@@ -405,9 +406,9 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
 fn outline_hovers_drop_the_indent() -> Result<()> {
   use crossterm::event::{MouseEvent, MouseEventKind};
   use vpdf::document::{Heading, Target};
-  use vpdf::pointer::{Hit, Region};
   use vpdf::session::Session;
   use vpdf::trace::Drawable;
+  use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("noted.pdf");
   noted_pdf(&path)?;
@@ -464,7 +465,7 @@ fn grid() -> impl Iterator<Item = (u16, u16)> {
 
 /// Notes whose page cells act as icons.
 fn icon_notes(app: &mut App) -> Vec<usize> {
-  use vpdf::pointer::{Hit, Region};
+  use vpdf_ui::pointer::{Hit, Region};
   grid()
     .filter_map(|(column, row)| {
       match app.hovered(Region::Page, column, row, None) {
@@ -479,9 +480,9 @@ fn icon_notes(app: &mut App) -> Vec<usize> {
 #[test]
 fn notes_open_by_mouse() -> Result<()> {
   use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
-  use vpdf::pointer::{Hit, Region};
   use vpdf::session::Session;
   use vpdf_terminal::terminal::Shape;
+  use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("noted.pdf");
   noted_pdf(&path)?;
@@ -606,9 +607,9 @@ fn shapes_pdf(path: &std::path::Path) -> Result<()> {
 /// Icons by kind; double clicks; scrolling closes (U11).
 #[test]
 fn note_icons_by_kind() -> Result<()> {
-  use vpdf::pointer::{Hit, Region};
   use vpdf::session::Session;
   use vpdf::trace::Drawable;
+  use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("shapes.pdf");
   shapes_pdf(&path)?;

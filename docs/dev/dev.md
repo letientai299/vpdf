@@ -65,6 +65,7 @@ mise run test:search
 mise run test:pdf
 mise run test:protocol
 mise run test:terminal
+mise run test:ui
 mise run test:reader
 mise exec -- cargo nextest run --locked -p vpdf-model text::tests
 mise exec -- cargo nextest run --locked -p vpdf-search search::tests
@@ -81,7 +82,7 @@ Root modules retain the application compilation unit and support test filters:
 
 ```sh
 mise exec -- cargo nextest run --locked -p vpdf --lib session::tests
-mise exec -- cargo nextest run --locked -p vpdf --lib layout::tests
+mise exec -- cargo nextest run --locked -p vpdf-ui --lib layout::tests
 ```
 
 The lint task applies automatic fixes before checking for remaining issues;
@@ -128,14 +129,16 @@ mise run bench:stages
 ```
 
 The [microbenchmarks][micro] accept case filters and `--package` selection.
-Terminal cases use prepared real-PDF raster data, with dimensions, source
-identity, and pixel hashes checked outside the timed loops. Preparation requires
-MuPDF; terminal and protocol benchmark execution does not. Set
-`VPDF_BENCH_FIXTURES` to share a prepared fixture directory between checkouts.
+Terminal and UI cases use prepared real-PDF raster and geometry data, with
+dimensions, source identity, and pixel hashes checked outside the timed loops.
+Preparation requires MuPDF; terminal, UI, and protocol benchmark execution does
+not. Set `VPDF_BENCH_FIXTURES` to share a prepared fixture directory between
+checkouts.
 
 ```sh
 mise run bench:fixtures
 mise run bench:micro -- --package vpdf-terminal
+mise run bench:micro -- --package vpdf-ui
 mise run bench:micro -- --package vpdf-protocol decode
 ```
 

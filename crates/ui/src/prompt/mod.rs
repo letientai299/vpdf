@@ -6,9 +6,13 @@
 //! `edit-command-line` on Ctrl-x Ctrl-e.
 
 use crate::grid::{self, Grid};
+use crate::layout::Screen;
 use crate::line::{self, NARROW, SHELL};
+use crate::{Result, theme};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_terminal::terminal::{self, At};
 
 const LIMIT: usize = 4096;
 const HISTORY: usize = 200;
@@ -23,13 +27,27 @@ pub enum PromptKind {
 
 #[derive(Clone, Default)]
 pub struct History {
-  pub commands: Vec<String>,
-  pub searches: Vec<String>,
+  commands: Vec<String>,
+  searches: Vec<String>,
   /// Counts pushes, so a saver can tell when entries changed.
-  pub revision: u64,
+  revision: u64,
 }
 
 impl History {
+  pub fn new(commands: Vec<String>, searches: Vec<String>) -> Self {
+    Self { commands, searches, revision: 0 }
+  }
+
+  pub fn commands(&self) -> &[String] {
+    &self.commands
+  }
+  pub fn searches(&self) -> &[String] {
+    &self.searches
+  }
+  pub fn revision(&self) -> u64 {
+    self.revision
+  }
+
   fn entries(&self, kind: PromptKind) -> &[String] {
     match kind {
       PromptKind::Search(_) => &self.searches,
@@ -59,22 +77,32 @@ impl History {
 /// Completion candidates replacing `original[start..end]`, listed like
 /// zsh; `selected` is set once Tab starts cycling.
 pub struct Menu {
-  pub items: Vec<String>,
+  items: Vec<String>,
   /// What the list shows: the last component of each path.
-  pub labels: Vec<String>,
-  pub selected: Option<usize>,
+  labels: Vec<String>,
+  selected: Option<usize>,
   start: usize,
   end: usize,
   original: String,
 }
 
 impl Menu {
+  pub fn items(&self) -> &[String] {
+    &self.items
+  }
+  pub fn labels(&self) -> &[String] {
+    &self.labels
+  }
+  pub fn selected(&self) -> Option<usize> {
+    self.selected
+  }
+
   pub fn layout(&self, columns: usize, limit: usize) -> Grid {
     grid::layout(&self.labels, columns, limit, self.selected)
   }
 
   /// Layout above the status row.
-  pub fn grid(&self, screen: crate::layout::Screen) -> Grid {
+  pub fn grid(&self, screen: Screen) -> Grid {
     self.layout(usize::from(screen.columns), grid::limit(screen))
   }
 }
@@ -88,11 +116,11 @@ struct Recall {
 }
 
 pub struct Prompt {
-  pub kind: PromptKind,
-  pub text: String,
-  pub menu: Option<Menu>,
+  kind: PromptKind,
+  text: String,
+  menu: Option<Menu>,
   /// History suffix offered after the cursor, like zsh-autosuggestions.
-  pub ghost: String,
+  ghost: String,
   cursor: usize,
   recall: Option<Recall>,
   kill: String,
@@ -113,6 +141,50 @@ pub enum PromptEvent {
 }
 
 impl Prompt {
+  pub fn draw(
+    &self,
+    out: &mut impl Write,
+    screen: Screen,
+    at: At,
+    pointed: Option<usize>,
+  ) -> Result<()> {
+    let row = screen.rows - 1;
+    if let Some(menu) = &self.menu {
+      let layout = menu.grid(screen);
+      let bottom = (at, row - 1);
+      // Pointing never picks; the line keeps the chosen one.
+      let shown = (menu.selected, pointed);
+      grid::draw(out, bottom, &menu.labels, &layout, shown, 0, screen)?;
+    }
+    let (text, ghost, column) = self.display();
+    let room = usize::from(screen.columns).saturating_sub(text.width());
+    write!(
+      out,
+      "{}{}",
+      at.goto(row, 0u16),
+      terminal::clean(&text, usize::from(screen.columns))
+    )?;
+    let ghost = terminal::clean(ghost, room);
+    let pad = " ".repeat(room.saturating_sub(ghost.width()));
+    write!(out, "{}{ghost}{}{pad}", theme::MUTED, theme::RESET)?;
+    let column = column.min(usize::from(screen.columns) - 1);
+    write!(out, "{}\x1b[2 q\x1b[?25h", at.goto(row, column))?;
+    Ok(())
+  }
+
+  pub fn kind(&self) -> PromptKind {
+    self.kind
+  }
+  pub fn text(&self) -> &str {
+    &self.text
+  }
+  pub fn into_text(self) -> String {
+    self.text
+  }
+  pub fn menu(&self) -> Option<&Menu> {
+    self.menu.as_ref()
+  }
+
   pub fn new(kind: PromptKind) -> Self {
     Self {
       kind,
@@ -588,10 +660,6 @@ fn common_prefix(items: &[String]) -> String {
   }
   first[..end].to_owned()
 }
-
-mod password;
-
-pub use password::password;
 
 #[cfg(test)]
 mod tests {

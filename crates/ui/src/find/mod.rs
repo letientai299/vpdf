@@ -1,8 +1,7 @@
-use crate::search::{self, Hit};
 use crate::text::Position;
-use vpdf_pdf::jobs::search::SearchEvent;
 use vpdf_reader::reader::{Location, Operator};
 use vpdf_search::query::Query;
+use vpdf_search::search::{self, Hit};
 
 #[derive(Default)]
 pub enum Phase {
@@ -16,14 +15,14 @@ pub enum Phase {
 }
 
 impl Phase {
-  pub(crate) fn running(&self) -> bool {
+  pub fn running(&self) -> bool {
     matches!(self, Self::Running { .. } | Self::Definition)
   }
 }
 
 /// What an accepted worker event means for the pane.
 #[derive(Debug, Eq, PartialEq)]
-pub(super) enum Update {
+pub enum Update {
   Progress {
     done: bool,
   },
@@ -71,12 +70,7 @@ impl Search {
   }
 
   /// Starts showing scan `generation` of `query` from `origin`.
-  pub(super) fn begin(
-    &mut self,
-    query: Query,
-    generation: u64,
-    origin: Position,
-  ) {
+  pub fn begin(&mut self, query: Query, generation: u64, origin: Position) {
     self.generation = generation;
     self.phase = Phase::Running { jump: true };
     self.hits.clear();
@@ -97,74 +91,74 @@ impl Search {
   }
 
   /// Ignores the running scan and hides its hits.
-  pub(super) fn cancel(&mut self) {
+  pub fn cancel(&mut self) {
     self.yank = None;
     self.generation += 1;
     self.phase = Phase::Idle;
     self.hidden = true;
   }
 
-  pub(super) fn clear(&mut self) {
+  pub fn clear(&mut self) {
     self.hits.clear();
     self.query = Query::default();
   }
 
-  pub(crate) fn set_hidden(&mut self, hidden: bool) {
+  pub fn set_hidden(&mut self, hidden: bool) {
     self.hidden = hidden;
   }
 
-  pub(super) fn set_backward(&mut self, backward: bool) {
+  pub fn set_backward(&mut self, backward: bool) {
     self.query.backward = backward;
   }
 
   /// Stops the running scan from moving the cursor.
-  pub(crate) fn stop_jumping(&mut self) {
+  pub fn stop_jumping(&mut self) {
     if let Phase::Running { jump } = &mut self.phase {
       *jump = false;
     }
   }
 
   /// Marks the scan as a reference lookup from `origin`.
-  pub(crate) fn define(&mut self, origin: Position) {
+  pub fn define(&mut self, origin: Position) {
     self.origin = origin;
     self.phase = Phase::Definition;
   }
 
   /// Restores the reference-lookup phase after a rerun.
-  pub(super) fn resume_definition(&mut self) {
+  pub fn resume_definition(&mut self) {
     self.phase = Phase::Definition;
   }
 
   /// Ends the scan; true when it was a reference lookup.
-  pub(super) fn complete(&mut self) -> bool {
+  pub fn complete(&mut self) -> bool {
     let definition = matches!(self.phase, Phase::Definition);
     self.phase = Phase::Complete;
     definition
   }
 
-  pub(super) fn remember_previous(&mut self) {
+  pub fn remember_previous(&mut self) {
     self.previous = Some((self.query.clone(), self.hidden));
   }
 
-  pub(super) fn forget_previous(&mut self) {
+  pub fn forget_previous(&mut self) {
     self.previous = None;
   }
 
-  pub(super) fn take_previous(&mut self) -> Option<(Query, bool)> {
+  pub fn take_previous(&mut self) -> Option<(Query, bool)> {
     self.previous.take()
   }
 
-  pub(super) fn yank_after(&mut self, origin: Location, operator: Operator) {
+  pub fn yank_after(&mut self, origin: Location, operator: Operator) {
     self.yank = Some((origin, operator));
   }
 
-  pub(crate) fn forget_yank(&mut self) {
+  pub fn forget_yank(&mut self) {
     self.yank = None;
   }
 
   /// The pending search yank once the scan completes, with the hit it
   /// reaches; the yank ends either way.
-  pub(super) fn take_yank(&mut self) -> Option<(Location, Operator, Position)> {
+  pub fn take_yank(&mut self) -> Option<(Location, Operator, Position)> {
     if !matches!(self.phase, Phase::Complete) {
       return None;
     }
@@ -179,27 +173,33 @@ impl Search {
     Some((origin, operator, self.hits[index].first))
   }
 
-  /// Merges `event` when it belongs to the current scan.
-  pub(super) fn accept(&mut self, event: SearchEvent) -> Option<Update> {
-    if event.generation != self.generation {
+  /// Merges ordered hits for the current scan.
+  pub fn accept(
+    &mut self,
+    generation: u64,
+    hits: Vec<Hit>,
+    completion: Result<bool, String>,
+  ) -> Option<Update> {
+    if generation != self.generation {
       return None;
     }
-    // Each event holds one page's hits in order.
-    if let Some(first) = event.hits.first().map(|hit| hit.first) {
+    if let Some(first) = hits.first().map(|hit| hit.first) {
       let at = self.hits.partition_point(|hit| hit.first < first);
-      self.hits.splice(at..at, event.hits);
+      self.hits.splice(at..at, hits);
     }
-    if let Some(error) = event.error {
-      self.yank = None;
-      self.phase = Phase::Complete;
-      return Some(Update::Failed(error));
+    match completion {
+      Ok(done) => Some(Update::Progress { done }),
+      Err(error) => {
+        self.yank = None;
+        self.phase = Phase::Complete;
+        Some(Update::Failed(error))
+      }
     }
-    Some(Update::Progress { done: event.done })
   }
 
   /// The match a typed query previews: the first past the origin; once
   /// the scan is done, the first from the other end.
-  pub(super) fn preview(&self, done: bool) -> Option<Position> {
+  pub fn preview(&self, done: bool) -> Option<Position> {
     if !matches!(self.phase, Phase::Running { jump: true }) {
       return None;
     }

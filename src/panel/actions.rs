@@ -1,7 +1,7 @@
 use super::{
   Action, Annotation, App, Destination, Entry, Input, JumpDescription,
-  MouseButton, MouseEvent, MouseEventKind, Panel, PanelKind, Position, Request,
-  Result, Row, Shelf, Target, recent_rows,
+  MouseButton, MouseEvent, MouseEventKind, PanelKind, PanelSession, Position,
+  Request, Result, Row, Target, recent_rows,
 };
 
 impl App {
@@ -24,14 +24,14 @@ impl App {
       self.text_mode = true;
       // Presentation retains the reading mode.
       if let Some(panel) = &mut self.panel {
-        panel.focused = false;
+        panel.view.focus(false);
       }
       return self.relayout();
     }
     if kind == PanelKind::Outline {
       self.want_outline();
     }
-    if self.panel.as_ref().is_some_and(|panel| panel.kind == kind) {
+    if self.panel.as_ref().is_some_and(|panel| panel.view.kind() == kind) {
       if kind == PanelKind::Links {
         self.refill_panel(kind)?;
       }
@@ -39,7 +39,7 @@ impl App {
         self.blur()?;
       }
       if let Some(panel) = &mut self.panel {
-        panel.focused = true;
+        panel.view.focus(true);
       }
       return self.relayout();
     }
@@ -53,11 +53,11 @@ impl App {
 
   pub fn show_panel(&mut self, kind: PanelKind, rows: Vec<Row>) -> Result<()> {
     self.blur()?;
-    let mut panel = Panel::new(kind, rows);
-    panel.note = self.panel_note(kind);
-    panel.height = self.screen.rows;
+    let mut panel = PanelSession::new(kind, rows);
+    panel.view.set_note(self.panel_note(kind));
+    panel.view.resize(self.screen.rows);
     if kind == PanelKind::Outline {
-      panel.select(self.section().unwrap_or(0));
+      panel.view.select(self.section().unwrap_or(0));
     }
     self.panel = Some(panel);
     self.relayout()
@@ -66,13 +66,13 @@ impl App {
   /// Refills an open `kind` panel in place, keeping focus and the
   /// selected row; a menu for a row that left closes.
   pub fn refill_panel(&mut self, kind: PanelKind) -> Result<()> {
-    if self.panel.as_ref().is_none_or(|panel| panel.kind != kind) {
+    if self.panel.as_ref().is_none_or(|panel| panel.view.kind() != kind) {
       return Ok(());
     }
     let rows = self.panel_rows(kind)?;
     let note = self.panel_note(kind);
     let Some(panel) = &mut self.panel else { return Ok(()) };
-    let kept = panel.refill(rows, note);
+    let kept = panel.view.refill(rows, note);
     if !kept && self.context_menu.as_ref().is_some_and(|menu| menu.row) {
       self.context_menu = None;
     }
@@ -96,9 +96,13 @@ impl App {
       self.close_text_preview()?;
     }
     self.trim();
-    let mut panel = Panel::new(PanelKind::Recent, recent_rows(entries));
-    panel.shelf = Some(Shelf::new(entries, &self.password, &self.wake));
-    panel.height = self.screen.rows;
+    let mut panel = PanelSession::recent(
+      recent_rows(entries),
+      entries,
+      &self.password,
+      &self.wake,
+    );
+    panel.view.resize(self.screen.rows);
     self.panel = Some(panel);
     self.relayout()
   }
@@ -108,7 +112,7 @@ impl App {
     self
       .panel
       .as_ref()
-      .is_some_and(|panel| panel.is_recent_view() && panel.focused)
+      .is_some_and(|panel| panel.view.is_recent_view() && panel.view.focused())
   }
 
   pub fn close_panel(&mut self) -> Result<()> {
@@ -139,19 +143,19 @@ impl App {
 
   pub fn panel_input(&mut self, input: Input) -> Result<bool> {
     let Some(panel) = &mut self.panel else { return Ok(false) };
-    if !panel.focused {
+    if !panel.view.focused() {
       return Ok(false);
     }
-    if panel.navigate(input, usize::from(self.screen.rows)) {
+    if panel.view.navigate(input, usize::from(self.screen.rows)) {
       return Ok(true);
     }
-    let covered = panel.is_recent_view();
+    let covered = panel.view.is_recent_view();
     match input.action {
       Action::Quit | Action::ClosePanel => {
         self.close_panel()?;
       }
       Action::Yank | Action::YankLine => {
-        if let Some(text) = panel.yank_text() {
+        if let Some(text) = panel.view.yank_text() {
           self.reader.store(input.register, text)?;
         }
       }
@@ -163,16 +167,22 @@ impl App {
       | Action::WordSearch
       | Action::Definition
       | Action::Cancel => {}
-      Action::Peek if panel.kind == PanelKind::Annotations => {
-        if let Some(Destination::Annotation { position, annotation }) =
-          panel.rows.get(panel.selected).map(|row| row.destination.clone())
+      Action::Peek if panel.view.kind() == PanelKind::Annotations => {
+        if let Some(Destination::Annotation { position, annotation }) = panel
+          .view
+          .rows()
+          .get(panel.view.selected())
+          .map(|row| row.destination.clone())
         {
           self.preview_annotation(position, &annotation);
         }
       }
       Action::OpenUrl => {
-        if let Some(Destination::Link(target @ Target::Uri(_))) =
-          panel.rows.get(panel.selected).map(|row| row.destination.clone())
+        if let Some(Destination::Link(target @ Target::Uri(_))) = panel
+          .view
+          .rows()
+          .get(panel.view.selected())
+          .map(|row| row.destination.clone())
         {
           self.follow(&target)?;
         }
@@ -200,7 +210,8 @@ impl App {
       self.blur()?;
     }
     let covered = self.covered();
-    let clicked = self.panel.as_mut().and_then(|panel| panel.pointer(mouse));
+    let clicked =
+      self.panel.as_mut().and_then(|panel| panel.view.pointer(mouse));
     if self.covered() != covered {
       self.relayout()?;
     }
@@ -210,15 +221,16 @@ impl App {
     }
     if mouse.kind == MouseEventKind::Down(MouseButton::Middle) {
       let panel = self.panel.as_ref();
-      let row = panel.and_then(|panel| panel.row_at(mouse.column, mouse.row));
+      let row =
+        panel.and_then(|panel| panel.view.row_at(mouse.column, mouse.row));
       return row.map_or(Ok(()), |index| self.panel_split(index));
     }
     let Some(panel) = &mut self.panel else { return Ok(()) };
     let pressed = matches!(mouse.kind, MouseEventKind::Down(_));
     let followed = if pressed {
-      std::mem::replace(&mut panel.clicked, clicked)
+      panel.view.remember_click(clicked)
     } else {
-      panel.clicked
+      panel.view.clicked()
     };
     let Some(index) = clicked else { return Ok(()) };
     if covered {
@@ -233,7 +245,9 @@ impl App {
   /// Enter for the row just followed.
   fn panel_refocus(&mut self) -> Result<()> {
     let Some(panel) = &self.panel else { return Ok(()) };
-    let Some(row) = panel.rows.get(panel.selected) else { return Ok(()) };
+    let Some(row) = panel.view.rows().get(panel.view.selected()) else {
+      return Ok(());
+    };
     match row.destination.clone() {
       // Reuses the view the first click opened.
       Destination::Mark(_) => self.panel_follow(Action::Follow),
@@ -248,7 +262,7 @@ impl App {
   /// Middle click: the row in a split.
   pub(crate) fn panel_split(&mut self, index: usize) -> Result<()> {
     let Some(panel) = &self.panel else { return Ok(()) };
-    let Some(row) = panel.rows.get(index) else { return Ok(()) };
+    let Some(row) = panel.view.rows().get(index) else { return Ok(()) };
     let request = match row.destination.clone() {
       Destination::Position(position)
       | Destination::Jump { position, .. }
@@ -266,11 +280,13 @@ impl App {
 
   fn panel_follow(&mut self, action: Action) -> Result<()> {
     let Some(panel) = &self.panel else { return Ok(()) };
-    let Some(row) = panel.rows.get(panel.selected) else { return Ok(()) };
+    let Some(row) = panel.view.rows().get(panel.view.selected()) else {
+      return Ok(());
+    };
     let destination = row.destination.clone();
     let focus = action == Action::Follow;
-    let search = panel.kind == PanelKind::Results;
-    let heading = (panel.kind == PanelKind::Outline)
+    let search = panel.view.kind() == PanelKind::Results;
+    let heading = (panel.view.kind() == PanelKind::Outline)
       .then(|| row.label.trim().to_owned())
       .filter(|title| !title.is_empty());
     let annotation = match destination {
@@ -330,7 +346,7 @@ impl App {
       self.reader.normal();
     }
     if let Some(panel) = &mut self.panel {
-      panel.focused = false;
+      panel.view.focus(false);
     }
     self.relayout()?;
     if let Some((position, annotation)) = annotation {

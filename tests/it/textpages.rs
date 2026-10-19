@@ -7,11 +7,11 @@ use crossterm::event::{
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::document::{Heading, Target};
-use vpdf::layout::Screen;
-use vpdf::pointer::{Hit, Region, Route};
 use vpdf::solo::Solo;
 use vpdf::text::{PageId, Position};
 use vpdf_reader::reader::SelectionKind;
+use vpdf_ui::layout::Screen;
+use vpdf_ui::pointer::{Hit, Region, Route};
 
 const PAGES: [[&str; 4]; 3] = [
   ["P0 L0 alpha", "P0 L1 beta", "P0 L2 gamma", "P0 L3 delta"],
@@ -227,7 +227,7 @@ fn middle_drags_move_text_by_whole_rows() -> Result<()> {
 
 fn key(app: &mut App, ch: char) -> Result<()> {
   let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
-  app.key(key, &mut vpdf::prompt::History::default())
+  app.key(key, &mut vpdf_ui::prompt::History::default())
 }
 
 /// What a case does to the view.

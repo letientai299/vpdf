@@ -4,12 +4,11 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use vpdf::Result;
-use vpdf::find::Phase;
-use vpdf::keys::{Action, Input};
-use vpdf::layout::Screen;
 use vpdf::solo::Solo;
-use vpdf::tiles;
 use vpdf_reader::motion::Motion as Move;
+use vpdf_ui::find::Phase;
+use vpdf_ui::keys::{Action, Input};
+use vpdf_ui::layout::Screen;
 
 const FRAME: Duration = Duration::from_micros(8333);
 const SETTLE: Duration = Duration::from_secs(10);
@@ -44,7 +43,7 @@ fn ms(duration: Duration) -> f64 {
 
 /// Pending visible tiles at the current scroll.
 fn missing(app: &mut Solo) -> usize {
-  let keys = tiles::visible(&app.layout, app.reader.scroll);
+  let keys = vpdf_ui::layout::visible(&app.layout, app.reader.scroll);
   keys.iter().filter(|&&key| !app.graphics.contains(&(app.id, key))).count()
 }
 

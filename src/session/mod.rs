@@ -1,20 +1,13 @@
 use crate::Result;
-use crate::app::{App, InputOwner, Request, Tabline};
+use crate::app::{App, Request, Tabline};
 use crate::dnd::{Dropped, Step, Target};
 use crate::document::PasswordRequired;
 use crate::home::{Home, Outcome};
-use crate::keys::PanelKind;
-use crate::layout::Screen;
 use crate::pace::Pacer;
-use crate::pointer::{Hit, Hover, Pane, Pixel, Pointer, Region, Route};
-use crate::prompt::History;
-use crate::split::{Axis, Direction, Divider, Node, Place, Rect, neighbor};
 use crate::state::{Mark, State};
 use crate::text::{PageId, Position};
-use crate::theme;
 use crate::trace::Drawable;
 use crate::watch::Watcher;
-use crate::window::{TabMove, Window};
 use crossterm::event::{
   KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
 };
@@ -26,6 +19,13 @@ use std::time::{Duration, Instant};
 use vpdf_terminal::decode::{Event, MouseKind, Reply, Size};
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::terminal::{self, At, Shape, View};
+use vpdf_ui::keys::PanelKind;
+use vpdf_ui::layout::Screen;
+use vpdf_ui::pointer::{Hit, Hover, Pixel, Pointer, Region, Route};
+use vpdf_ui::prompt::History;
+use vpdf_ui::split::{Axis, Direction, Divider, Node, Place, Rect, neighbor};
+use vpdf_ui::theme;
+use vpdf_ui::window::{TabMove, Window};
 
 /// Panes of one tab, laid out by a split tree.
 pub struct Tab {
@@ -220,11 +220,7 @@ impl Session {
     Self {
       tabs: Vec::new(),
       active: 0,
-      history: History {
-        commands: state.commands.clone(),
-        searches: state.searches.clone(),
-        revision: 0,
-      },
+      history: History::new(state.commands.clone(), state.searches.clone()),
       quit: false,
       graphics: Graphics::default(),
       state,
@@ -253,7 +249,7 @@ impl Session {
   pub fn save(&mut self) -> Result<()> {
     let Some(store) = &self.store else { return Ok(()) };
     let history = &self.history;
-    self.state.save(store, &history.commands, &history.searches)
+    self.state.save(store, history.commands(), history.searches())
   }
 
   /// Records the focused pane and new history in memory, where the
@@ -264,7 +260,7 @@ impl Session {
     }
     let tab = &self.tabs[self.active];
     let moved = self.state.remember_pane(&tab.panes[tab.focus]);
-    if moved || self.history.revision != self.recorded {
+    if moved || self.history.revision() != self.recorded {
       self.changed();
     }
   }
@@ -272,7 +268,7 @@ impl Session {
   /// Marks state unsaved and hands the hangup thread a copy.
   fn changed(&mut self) {
     self.unsaved = true;
-    self.recorded = self.history.revision;
+    self.recorded = self.history.revision();
     if let Ok(mut latest) = self.latest.lock() {
       *latest = Some((self.state.clone(), self.history.clone()));
     }

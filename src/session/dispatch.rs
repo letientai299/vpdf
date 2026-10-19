@@ -137,7 +137,7 @@ impl Session {
     if here && target != source {
       let app = &mut self.tabs[source.0].panes[source.1];
       if let Some(panel) = &mut app.panel {
-        panel.focused = false;
+        panel.view.focus(false);
       }
       app.relayout()?;
     }
@@ -150,7 +150,7 @@ impl Session {
       app.reader.normal();
       app.reader.cancel();
       if let Some(panel) = &mut app.panel {
-        panel.focused = false;
+        panel.view.focus(false);
       }
       app.relayout()?;
       self.focus(target.0, target.1)
@@ -171,14 +171,16 @@ impl Session {
       }
     }
     let app = &mut tab.panes[tab.focus];
-    let before = app.panel.as_ref().filter(|p| p.focused).map(|p| p.kind);
+    let before =
+      app.panel.as_ref().filter(|p| p.view.focused()).map(|p| p.view.kind());
     app.clear_notes();
     // Keys may change the tree mid-drag.
     self.resizing = None;
     // Clues close even when the key fails.
     let result = app.key(key, &mut self.history);
     app.after_key();
-    let after = app.panel.as_ref().filter(|p| p.focused).map(|p| p.kind);
+    let after =
+      app.panel.as_ref().filter(|p| p.view.focused()).map(|p| p.view.kind());
     if before != after {
       self.pointer.release();
     }

@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use vpdf::Result;
 use vpdf::document::{Document, TEXT_FLAGS, extract};
-use vpdf::layout::{Crop, page_matrix};
 use vpdf::tiles::{TILE_HEIGHT, TILE_WIDTH, draw, encode};
+use vpdf_ui::layout::{Crop, page_matrix};
 
 #[derive(Default, Serialize)]
 struct Stages {

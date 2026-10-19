@@ -51,9 +51,14 @@ pub enum Place {
 }
 
 #[derive(Debug)]
-pub enum Node {
+pub struct Node {
+  kind: Kind,
+}
+
+#[derive(Debug)]
+enum Kind {
   Leaf(u32),
-  Split { axis: Axis, ratio: f32, first: Box<Self>, second: Box<Self> },
+  Split { axis: Axis, ratio: f32, first: Box<Node>, second: Box<Node> },
 }
 
 /// Smallest pane: a status row plus three rows, or ten columns.
@@ -69,6 +74,21 @@ fn span(axis: Axis, area: Rect) -> u16 {
 }
 
 impl Node {
+  pub fn leaf(id: u32) -> Self {
+    Self { kind: Kind::Leaf(id) }
+  }
+
+  pub fn replace(&mut self, from: u32, to: u32) {
+    match &mut self.kind {
+      Kind::Leaf(id) if *id == from => *id = to,
+      Kind::Leaf(_) => {}
+      Kind::Split { first, second, .. } => {
+        first.replace(from, to);
+        second.replace(from, to);
+      }
+    }
+  }
+
   /// Divides `area` between the halves; side-by-side halves give one
   /// column to the separator.
   fn halves(axis: Axis, ratio: f32, area: Rect) -> (Rect, Rect) {
@@ -101,9 +121,9 @@ impl Node {
 
   /// Pane areas, in tree order.
   pub fn layout(&self, area: Rect, out: &mut Vec<(u32, Rect)>) {
-    match self {
-      Self::Leaf(id) => out.push((*id, area)),
-      Self::Split { axis, ratio, first, second } => {
+    match &self.kind {
+      Kind::Leaf(id) => out.push((*id, area)),
+      Kind::Split { axis, ratio, first, second } => {
         let (a, b) = Self::halves(*axis, *ratio, area);
         first.layout(a, out);
         second.layout(b, out);
@@ -113,7 +133,7 @@ impl Node {
 
   /// Every split's divider, in tree order.
   pub fn dividers(&self, area: Rect, out: &mut Vec<Divider>) {
-    if let Self::Split { axis, ratio, first, second } = self {
+    if let Kind::Split { axis, ratio, first, second } = &self.kind {
       let (a, b) = Self::halves(*axis, *ratio, area);
       let rect = match axis {
         Axis::Columns => {
@@ -132,14 +152,14 @@ impl Node {
   /// Moves divider `index` to cell `at`.
   pub fn drag(&mut self, index: usize, at: u16, area: Rect) {
     let Some((node, area)) = self.nth(index, area) else { return };
-    let cells = match node {
-      Self::Split { axis: Axis::Columns, .. } => at.saturating_sub(area.column),
+    let cells = match &node.kind {
+      Kind::Split { axis: Axis::Columns, .. } => at.saturating_sub(area.column),
       // Its status row is the divider.
-      Self::Split { axis: Axis::Rows, .. } => (at + 1).saturating_sub(area.row),
-      Self::Leaf(_) => return,
+      Kind::Split { axis: Axis::Rows, .. } => (at + 1).saturating_sub(area.row),
+      Kind::Leaf(_) => return,
     };
     node.set_first(f32::from(cells), area);
-    if let Self::Split { axis, .. } = node {
+    if let Kind::Split { axis, .. } = &node.kind {
       let axis = *axis;
       node.refit(axis, area);
     }
@@ -148,7 +168,7 @@ impl Node {
   /// Equalizes the panes divider `index` splits.
   pub fn equalize_at(&mut self, index: usize, area: Rect) {
     if let Some((node, _)) = self.nth(index, area)
-      && let Self::Split { axis, .. } = node
+      && let Kind::Split { axis, .. } = &node.kind
     {
       let axis = *axis;
       node.equalize_along(axis);
@@ -157,7 +177,9 @@ impl Node {
 
   /// `equalize`, leaving cross-axis splits.
   fn equalize_along(&mut self, along: Axis) {
-    let Self::Split { axis, ratio, first, second } = self else { return };
+    let Kind::Split { axis, ratio, first, second } = &mut self.kind else {
+      return;
+    };
     if *axis == along {
       let count = |node: &Self| node.count_along(along) as f32;
       *ratio = count(first) / (count(first) + count(second));
@@ -168,13 +190,15 @@ impl Node {
 
   /// Split `index` in tree order, with area.
   fn nth(&mut self, index: usize, area: Rect) -> Option<(&mut Self, Rect)> {
-    let Self::Split { axis, ratio, first, .. } = self else { return None };
+    let Kind::Split { axis, ratio, first, .. } = &mut self.kind else {
+      return None;
+    };
     if index == 0 {
       return Some((self, area));
     }
     let (a, b) = Self::halves(*axis, *ratio, area);
     let before = first.splits();
-    let Self::Split { first, second, .. } = self else { return None };
+    let Kind::Split { first, second, .. } = &mut self.kind else { return None };
     if index <= before {
       first.nth(index - 1, a)
     } else {
@@ -183,16 +207,16 @@ impl Node {
   }
 
   fn splits(&self) -> usize {
-    match self {
-      Self::Leaf(_) => 0,
-      Self::Split { first, second, .. } => 1 + first.splits() + second.splits(),
+    match &self.kind {
+      Kind::Leaf(_) => 0,
+      Kind::Split { first, second, .. } => 1 + first.splits() + second.splits(),
     }
   }
 
   pub fn leaves(&self) -> Vec<u32> {
-    match self {
-      Self::Leaf(id) => vec![*id],
-      Self::Split { first, second, .. } => {
+    match &self.kind {
+      Kind::Leaf(id) => vec![*id],
+      Kind::Split { first, second, .. } => {
         let mut ids = first.leaves();
         ids.extend(second.leaves());
         ids
@@ -216,19 +240,19 @@ impl Node {
     new: u32,
     place: Place,
   ) -> bool {
-    match self {
-      Self::Leaf(id) if *id == target => {
+    match &mut self.kind {
+      Kind::Leaf(id) if *id == target => {
         let (new, old) =
-          (Box::new(Self::Leaf(new)), Box::new(Self::Leaf(target)));
+          (Box::new(Self::leaf(new)), Box::new(Self::leaf(target)));
         let (first, second) = match place {
           Place::Before => (new, old),
           Place::After => (old, new),
         };
-        *self = Self::Split { axis, ratio: 0.5, first, second };
+        self.kind = Kind::Split { axis, ratio: 0.5, first, second };
         true
       }
-      Self::Leaf(_) => false,
-      Self::Split { first, second, .. } => {
+      Kind::Leaf(_) => false,
+      Kind::Split { first, second, .. } => {
         first.split(target, axis, new, place)
           || second.split(target, axis, new, place)
       }
@@ -237,13 +261,15 @@ impl Node {
 
   /// Drops `target`; its sibling takes the space.
   pub fn remove(&mut self, target: u32) -> bool {
-    let Self::Split { first, second, .. } = self else { return false };
-    let survivor = match (first.as_ref(), second.as_ref()) {
-      (Self::Leaf(id), _) if *id == target => {
-        Some(std::mem::replace(second.as_mut(), Self::Leaf(0)))
+    let Kind::Split { first, second, .. } = &mut self.kind else {
+      return false;
+    };
+    let survivor = match (&first.kind, &second.kind) {
+      (Kind::Leaf(id), _) if *id == target => {
+        Some(std::mem::replace(second.as_mut(), Self::leaf(0)))
       }
-      (_, Self::Leaf(id)) if *id == target => {
-        Some(std::mem::replace(first.as_mut(), Self::Leaf(0)))
+      (_, Kind::Leaf(id)) if *id == target => {
+        Some(std::mem::replace(first.as_mut(), Self::leaf(0)))
       }
       _ => None,
     };
@@ -255,9 +281,9 @@ impl Node {
   }
 
   fn contains(&self, target: u32) -> bool {
-    match self {
-      Self::Leaf(id) => *id == target,
-      Self::Split { first, second, .. } => {
+    match &self.kind {
+      Kind::Leaf(id) => *id == target,
+      Kind::Split { first, second, .. } => {
         first.contains(target) || second.contains(target)
       }
     }
@@ -266,7 +292,9 @@ impl Node {
   /// Grows `target` by `cells` along `along` through its nearest split on
   /// that axis.
   pub fn resize(&mut self, target: u32, along: Axis, cells: i32, area: Rect) {
-    let Self::Split { axis, ratio, first, second } = self else { return };
+    let Kind::Split { axis, ratio, first, second } = &mut self.kind else {
+      return;
+    };
     let (a, b) = Self::halves(*axis, *ratio, area);
     let inside = if first.contains(target) { Some(true) } else { None };
     let inside = inside.or_else(|| second.contains(target).then_some(false));
@@ -289,14 +317,16 @@ impl Node {
   /// Sizes the first half within both minimums.
   fn set_first(&mut self, cells: f32, area: Rect) {
     let Some((low, high)) = self.bounds(area) else { return };
-    let Self::Split { axis, ratio, .. } = self else { return };
+    let Kind::Split { axis, ratio, .. } = &mut self.kind else { return };
     let cells = cells.clamp(f32::from(low), f32::from(high));
     *ratio = cells / f32::from(span(*axis, area).max(1));
   }
 
   /// The first half's fewest and most cells.
   fn bounds(&self, area: Rect) -> Option<(u16, u16)> {
-    let Self::Split { axis, first, second, .. } = self else { return None };
+    let Kind::Split { axis, first, second, .. } = &self.kind else {
+      return None;
+    };
     let total = span(*axis, area);
     // Cramped spans still move, within halves.
     let low = first.least(*axis).min(total / 2);
@@ -307,7 +337,9 @@ impl Node {
   /// Re-clamps nested `along` splits a drag squeezed.
   fn refit(&mut self, along: Axis, area: Rect) {
     let bounds = self.bounds(area);
-    let Self::Split { axis, ratio, first, second } = self else { return };
+    let Kind::Split { axis, ratio, first, second } = &mut self.kind else {
+      return;
+    };
     if *axis == along
       && let Some((low, high)) = bounds
     {
@@ -326,25 +358,25 @@ impl Node {
 
   /// Fewest cells keeping every pane usable.
   fn least(&self, along: Axis) -> u16 {
-    match self {
-      Self::Leaf(_) => match along {
+    match &self.kind {
+      Kind::Leaf(_) => match along {
         Axis::Rows => MIN_ROWS,
         Axis::Columns => MIN_COLUMNS,
       },
-      Self::Split { axis, first, second, .. } if *axis == along => {
+      Kind::Split { axis, first, second, .. } if *axis == along => {
         let separator = u16::from(along == Axis::Columns);
         first.least(along) + separator + second.least(along)
       }
-      Self::Split { first, second, .. } => {
+      Kind::Split { first, second, .. } => {
         first.least(along).max(second.least(along))
       }
     }
   }
 
   fn has_split(&self, target: u32, along: Axis) -> bool {
-    match self {
-      Self::Leaf(_) => false,
-      Self::Split { axis, first, second, .. } => {
+    match &self.kind {
+      Kind::Leaf(_) => false,
+      Kind::Split { axis, first, second, .. } => {
         (*axis == along && self.contains(target))
           || first.has_split(target, along)
           || second.has_split(target, along)
@@ -354,7 +386,7 @@ impl Node {
 
   /// `Ctrl-w =`: splits share space by how many panes each side holds.
   pub fn equalize(&mut self) {
-    if let Self::Split { axis, ratio, first, second } = self {
+    if let Kind::Split { axis, ratio, first, second } = &mut self.kind {
       let count = |node: &Self| node.count_along(*axis) as f32;
       *ratio = count(first) / (count(first) + count(second));
       first.equalize();
@@ -363,12 +395,12 @@ impl Node {
   }
 
   fn count_along(&self, along: Axis) -> usize {
-    match self {
-      Self::Leaf(_) => 1,
-      Self::Split { axis, first, second, .. } if *axis == along => {
+    match &self.kind {
+      Kind::Leaf(_) => 1,
+      Kind::Split { axis, first, second, .. } if *axis == along => {
         first.count_along(along) + second.count_along(along)
       }
-      Self::Split { first, second, .. } => {
+      Kind::Split { first, second, .. } => {
         first.count_along(along).max(second.count_along(along))
       }
     }
@@ -376,29 +408,31 @@ impl Node {
 
   /// `Ctrl-w H J K L`: makes `target` span that whole edge of the tab.
   pub fn move_to_edge(&mut self, target: u32, direction: Direction) {
-    if matches!(self, Self::Leaf(_)) || !self.remove(target) {
+    if matches!(&self.kind, Kind::Leaf(_)) || !self.remove(target) {
       return;
     }
-    let rest = std::mem::replace(self, Self::Leaf(target));
+    let rest = std::mem::replace(self, Self::leaf(target));
     let (axis, first) = match direction {
       Direction::Left => (Axis::Columns, true),
       Direction::Right => (Axis::Columns, false),
       Direction::Up => (Axis::Rows, true),
       Direction::Down => (Axis::Rows, false),
     };
-    let moved = Box::new(Self::Leaf(target));
+    let moved = Box::new(Self::leaf(target));
     let rest = Box::new(rest);
     let (first, second) = if first { (moved, rest) } else { (rest, moved) };
-    *self = Self::Split { axis, ratio: 0.5, first, second };
+    self.kind = Kind::Split { axis, ratio: 0.5, first, second };
   }
 
   /// `Ctrl-w r` and `R`: rotates the panes of the row or column holding
   /// `target`. Like Vim, refuses when one of them is itself split.
   pub fn rotate(&mut self, target: u32, forward: bool) -> bool {
-    let Self::Split { axis, .. } = self else { return false };
+    let Kind::Split { axis, .. } = &mut self.kind else { return false };
     let axis = *axis;
     if !self.chain_holds(axis, target) {
-      let Self::Split { first, second, .. } = self else { return false };
+      let Kind::Split { first, second, .. } = &mut self.kind else {
+        return false;
+      };
       return first.rotate(target, forward) || second.rotate(target, forward);
     }
     let mut ids = Vec::new();
@@ -416,33 +450,33 @@ impl Node {
 
   /// Whether `target` is a pane directly in this row or column.
   fn chain_holds(&self, along: Axis, target: u32) -> bool {
-    match self {
-      Self::Leaf(id) => *id == target,
-      Self::Split { axis, first, second, .. } if *axis == along => {
+    match &self.kind {
+      Kind::Leaf(id) => *id == target,
+      Kind::Split { axis, first, second, .. } if *axis == along => {
         first.chain_holds(along, target) || second.chain_holds(along, target)
       }
-      Self::Split { .. } => false,
+      Kind::Split { .. } => false,
     }
   }
 
   /// Panes of this row or column; false when one is split across.
   fn chain_leaves(&self, along: Axis, out: &mut Vec<u32>) -> bool {
-    match self {
-      Self::Leaf(id) => {
+    match &self.kind {
+      Kind::Leaf(id) => {
         out.push(*id);
         true
       }
-      Self::Split { axis, first, second, .. } if *axis == along => {
+      Kind::Split { axis, first, second, .. } if *axis == along => {
         first.chain_leaves(along, out) && second.chain_leaves(along, out)
       }
-      Self::Split { .. } => false,
+      Kind::Split { .. } => false,
     }
   }
 
   fn assign(&mut self, ids: &mut impl Iterator<Item = u32>) {
-    match self {
-      Self::Leaf(id) => *id = ids.next().unwrap_or(*id),
-      Self::Split { first, second, .. } => {
+    match &mut self.kind {
+      Kind::Leaf(id) => *id = ids.next().unwrap_or(*id),
+      Kind::Split { first, second, .. } => {
         first.assign(ids);
         second.assign(ids);
       }
@@ -451,8 +485,10 @@ impl Node {
 
   /// `Ctrl-w x`: swaps `target` with its sibling pane.
   pub fn exchange(&mut self, target: u32) -> bool {
-    let Self::Split { first, second, .. } = self else { return false };
-    if let (Self::Leaf(a), Self::Leaf(b)) = (first.as_mut(), second.as_mut())
+    let Kind::Split { first, second, .. } = &mut self.kind else {
+      return false;
+    };
+    if let (Kind::Leaf(a), Kind::Leaf(b)) = (&mut first.kind, &mut second.kind)
       && (*a == target || *b == target)
     {
       std::mem::swap(a, b);
@@ -521,8 +557,26 @@ mod tests {
   }
 
   #[test]
+  fn replacing_preserves_layout() {
+    let mut tree = Node::leaf(1);
+    tree.split(1, Axis::Columns, 2, Place::Before);
+    tree.split(1, Axis::Rows, 3, Place::After);
+    tree.drag(0, 35, AREA);
+    for old in [1, 2, 3, 99] {
+      let mut expected = rects(&tree);
+      for (id, _) in &mut expected {
+        if *id == old {
+          *id += 10;
+        }
+      }
+      tree.replace(old, old + 10);
+      assert_eq!(rects(&tree), expected);
+    }
+  }
+
+  #[test]
   fn splits_place_new_panes_first_and_close_cleanly() {
-    let mut tree = Node::Leaf(1);
+    let mut tree = Node::leaf(1);
     assert!(tree.split(1, Axis::Columns, 2, Place::Before));
     assert!(tree.split(1, Axis::Rows, 3, Place::Before));
     assert_eq!(tree.leaves(), [2, 3, 1]);
@@ -550,13 +604,13 @@ mod tests {
     assert!(tree.remove(3));
     assert_eq!(tree.leaves(), [2, 1]);
     assert!(tree.remove(2));
-    assert!(matches!(tree, Node::Leaf(1)));
+    assert_eq!(tree.leaves(), [1]);
   }
 
   #[test]
   fn dividers_follow_drags_and_equalize() {
     // Columns [1 | Rows [2 / Columns [3 | 4]]].
-    let mut tree = Node::Leaf(1);
+    let mut tree = Node::leaf(1);
     tree.split(1, Axis::Columns, 2, Place::After);
     tree.split(2, Axis::Rows, 3, Place::After);
     tree.split(3, Axis::Columns, 4, Place::After);
@@ -592,7 +646,7 @@ mod tests {
       (Axis::Columns, narrow, vec![(0, 3)], [10, 9, 9]),
     ];
     for (axis, area, drags, want) in cases {
-      let mut tree = Node::Leaf(1);
+      let mut tree = Node::leaf(1);
       tree.split(1, axis, 2, Place::After);
       tree.split(2, axis, 3, Place::After);
       for (index, at) in drags {
@@ -607,7 +661,7 @@ mod tests {
       assert_eq!(got, want, "{axis:?} {area:?}");
     }
     // Column drags keep stacked proportions: [1 | [2 / 3]].
-    let mut tree = Node::Leaf(1);
+    let mut tree = Node::leaf(1);
     tree.split(1, Axis::Columns, 2, Place::After);
     tree.split(2, Axis::Rows, 3, Place::After);
     tree.drag(1, 35, AREA);
@@ -615,7 +669,7 @@ mod tests {
     let rows: Vec<_> = rects(&tree).iter().map(|(_, r)| r.rows).collect();
     assert_eq!(rows, [40, 36, 4]);
     // Unclamped nested splits keep exact ratios.
-    let mut tree = Node::Leaf(1);
+    let mut tree = Node::leaf(1);
     tree.split(1, Axis::Columns, 2, Place::After);
     tree.split(2, Axis::Columns, 3, Place::After);
     tree.drag(0, 78, AREA);
@@ -629,7 +683,7 @@ mod tests {
     // (place) -> leaves
     let cases = [(Place::Before, [2, 1]), (Place::After, [1, 2])];
     for (place, leaves) in cases {
-      let mut tree = Node::Leaf(1);
+      let mut tree = Node::leaf(1);
       assert!(tree.split(1, Axis::Columns, 2, place));
       assert_eq!(tree.leaves(), leaves, "{place:?}");
     }
@@ -637,7 +691,7 @@ mod tests {
 
   #[test]
   fn tiny_areas_fit_their_panes() {
-    let mut tree = Node::Leaf(1);
+    let mut tree = Node::leaf(1);
     tree.split(1, Axis::Columns, 2, Place::Before);
     tree.split(2, Axis::Rows, 3, Place::Before);
     for (columns, rows) in [(0, 0), (1, 1), (2, 2), (3, 0)] {
@@ -653,7 +707,7 @@ mod tests {
 
   #[test]
   fn resize_equalize_and_exchange() {
-    let mut tree = Node::Leaf(1);
+    let mut tree = Node::leaf(1);
     tree.split(1, Axis::Rows, 2, Place::Before);
     tree.resize(2, Axis::Rows, 6, AREA);
     assert_eq!(rects(&tree)[0].1.rows, 26);

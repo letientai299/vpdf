@@ -3,11 +3,11 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::keys::PanelKind;
-use vpdf::layout::Screen;
 use vpdf::solo::Solo;
 use vpdf::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::SelectionKind;
+use vpdf_ui::keys::PanelKind;
+use vpdf_ui::layout::Screen;
 
 pub(super) fn app(file: &str, text: bool) -> Result<Solo> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
@@ -264,7 +264,7 @@ fn escape_preserves_focus_and_jobs_cancel_is_explicit() -> Result<()> {
   keys(&mut app, b":cancel\r")?;
   assert!(app.ocr.is_none() && !app.outline_pending());
   assert!(app.search.hidden());
-  assert!(matches!(app.search.phase(), vpdf::find::Phase::Idle));
+  assert!(matches!(app.search.phase(), vpdf_ui::find::Phase::Idle));
   Ok(())
 }
 
@@ -549,7 +549,7 @@ fn recent_cover_preserves_view_and_explicit_job_control() -> Result<()> {
     app.command("cancel")?;
     assert!(app.covered() && app.panel_focused());
     assert!(app.ocr.is_none());
-    assert!(matches!(app.search.phase(), vpdf::find::Phase::Idle));
+    assert!(matches!(app.search.phase(), vpdf_ui::find::Phase::Idle));
     app.close_panel()?;
     app.draw(&mut Vec::new())?;
     assert_eq!((app.reader.scroll, app.layout.pan), view);

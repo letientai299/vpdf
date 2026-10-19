@@ -2,24 +2,20 @@ use super::{Action, App, BAR_HINT, InputOwner, Origin, Result};
 
 impl App {
   pub fn input_owner(&self) -> InputOwner {
-    if self.prompt.is_some() {
-      InputOwner::Prompt
-    } else if self.hints.is_some() {
-      InputOwner::Hints
-    } else if self.region.as_ref().is_some_and(crate::region::Region::is_bar) {
-      InputOwner::Region
-    } else if self.context_menu.is_some() {
-      InputOwner::Context
-    } else if self.peek.as_ref().is_some_and(|peek| peek.origin == Origin::Key)
-    {
-      InputOwner::Peek
-    } else if self.panel_focused() {
-      InputOwner::Panel
-    } else if self.overview.is_some() {
-      InputOwner::Overview
-    } else {
-      InputOwner::Content
-    }
+    InputOwner::resolve(|owner| match owner {
+      InputOwner::Prompt => self.prompt.is_some(),
+      InputOwner::Hints => self.hints.is_some(),
+      InputOwner::Region => {
+        self.region.as_ref().is_some_and(crate::region::Region::is_bar)
+      }
+      InputOwner::Context => self.context_menu.is_some(),
+      InputOwner::Peek => {
+        self.peek.as_ref().is_some_and(|peek| peek.origin == Origin::Key)
+      }
+      InputOwner::Panel => self.panel_focused(),
+      InputOwner::Overview => self.overview.is_some(),
+      InputOwner::Content => true,
+    })
   }
 
   pub(crate) fn dismiss_overlay(&mut self) {
@@ -62,15 +58,7 @@ impl App {
 
   /// Whether a press only dismisses something.
   pub(crate) fn overlaid(&self) -> bool {
-    self.clues.is_some()
-      || matches!(
-        self.input_owner(),
-        InputOwner::Prompt
-          | InputOwner::Hints
-          | InputOwner::Peek
-          | InputOwner::Region
-          | InputOwner::Context
-      )
+    self.clues.is_some() || self.input_owner().is_overlay()
   }
 
   pub(crate) fn dismiss_click(&mut self) -> Result<bool> {

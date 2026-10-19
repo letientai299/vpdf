@@ -1,17 +1,13 @@
 use crate::Result;
 use crate::app::App;
-use crate::keys::PanelKind;
-use crate::panel::Panel;
 use crate::pdf_text::PdfText;
-use crate::prompt::{Prompt, PromptKind};
 use crate::search;
 use vpdf_pdf::jobs::search::SearchWorker;
-
-mod state;
-
-use state::Update;
-pub use state::{Phase, Search};
-pub use vpdf_search::query::Query;
+use vpdf_search::query::Query;
+use vpdf_ui::find::{Phase, Update};
+use vpdf_ui::keys::PanelKind;
+use vpdf_ui::panel::Panel;
+use vpdf_ui::prompt::{Prompt, PromptKind};
 
 impl App {
   pub fn start_search(
@@ -78,7 +74,12 @@ impl App {
     }
     let mut changed = false;
     for event in events {
-      let Some(update) = self.search.accept(event) else { continue };
+      let completion = event.error.map_or(Ok(event.done), Err);
+      let Some(update) =
+        self.search.accept(event.generation, event.hits, completion)
+      else {
+        continue;
+      };
       changed = true;
       let done = match update {
         Update::Progress { done } => done,
@@ -130,8 +131,10 @@ impl App {
 
   /// Searches the focused panel's rows, else the document.
   pub fn begin_search(&mut self, backward: bool) -> Result<()> {
-    if let Some(panel) = self.panel.as_mut().filter(|panel| panel.focused) {
-      panel.begin_search(backward);
+    if let Some(panel) =
+      self.panel.as_mut().filter(|panel| panel.view.focused())
+    {
+      panel.view.begin_search(backward);
     } else {
       let location = self.location()?;
       self.search_origin = Some(location);
@@ -148,7 +151,7 @@ impl App {
       return Ok(());
     }
     let backward = matches!(
-      self.prompt.as_ref().map(|p| p.kind),
+      self.prompt.as_ref().map(Prompt::kind),
       Some(PromptKind::Search(true))
     );
     if query.is_empty() || search::compile(query, false).is_err() {
@@ -162,7 +165,7 @@ impl App {
   pub fn finish_search(&mut self, query: &str, backward: bool) -> Result<()> {
     if let Some(panel) = self.row_search() {
       if !panel.finish_search(query) {
-        anyhow::bail!("Pattern not found: {}", panel.search.query);
+        anyhow::bail!("Pattern not found: {}", panel.query());
       }
       return Ok(());
     }
@@ -280,7 +283,11 @@ impl App {
   }
 
   fn row_search(&mut self) -> Option<&mut Panel> {
-    self.panel.as_mut().filter(|panel| panel.searching())
+    self
+      .panel
+      .as_mut()
+      .map(|panel| &mut panel.view)
+      .filter(|panel| panel.searching())
   }
 
   fn return_to_origin(&mut self) -> Result<()> {

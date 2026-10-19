@@ -28,7 +28,7 @@ fn tiles_equal_full_page_pixels() -> Result<()> {
       y: 64,
       width: 256,
       height: 128,
-      crop: vpdf::layout::Crop::default(),
+      crop: vpdf_ui::layout::Crop::default(),
     };
     let tile = raster(&mut doc, key)?;
     for row in 0..key.height as usize {
@@ -56,7 +56,7 @@ fn crop_preserves_body_ink() -> Result<()> {
       &root.join(file),
       "",
       false,
-      vpdf::layout::Screen {
+      vpdf_ui::layout::Screen {
         columns: 80,
         rows: 50,
         cell_width: 8,
@@ -112,10 +112,10 @@ fn crop_preserves_body_ink() -> Result<()> {
 fn check_crop_pixels(
   doc: &mut Document,
   page: PageId,
-  crop: vpdf::layout::Crop,
+  crop: vpdf_ui::layout::Crop,
   stamp: Option<vpdf::text::Bounds>,
 ) -> Result<()> {
-  use vpdf::layout::{page_matrix, transform};
+  use vpdf_ui::layout::{page_matrix, transform};
   let bounds = doc.pages[page.0].bounds;
   let scale = (320.0 / bounds.width() * 1024.0) as u32;
   let matrix = page_matrix(bounds, scale, 0);
@@ -214,7 +214,7 @@ fn crop_ignores_margin_stamps() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn crop_samples_once() -> Result<()> {
   use vpdf::app::App;
-  use vpdf::layout::Screen;
+  use vpdf_ui::layout::Screen;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = Screen {
     columns: 60,
@@ -270,8 +270,8 @@ fn inline_page_fits_requested_cells() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn worker_tiles_equal_full_page_pixels() -> Result<()> {
-  use vpdf::layout::page_matrix;
   use vpdf::raster::Raster;
+  use vpdf_ui::layout::page_matrix;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let text = [1024, 2048, 3277];
   for (file, scales) in [
@@ -305,7 +305,7 @@ fn worker_tiles_equal_full_page_pixels() -> Result<()> {
           y,
           width: 512.min(w - x),
           height: 256.min(h - y),
-          crop: vpdf::layout::Crop::default(),
+          crop: vpdf_ui::layout::Crop::default(),
         })
         .collect();
       let directory = tempfile::tempdir()?;
@@ -383,8 +383,8 @@ fn projected_mouse_tracks_glyphs() -> Result<()> {
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
   };
 
-  use vpdf::layout::{Crop, Screen};
-  use vpdf::pointer::{Region, Route};
+  use vpdf_ui::layout::{Crop, Screen};
+  use vpdf_ui::pointer::{Region, Route};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = Screen {
     columns: 120,
@@ -443,7 +443,7 @@ fn projected_mouse_tracks_glyphs() -> Result<()> {
 
 #[test]
 fn crop_cancel_and_cache() -> Result<()> {
-  use vpdf::layout::Screen;
+  use vpdf_ui::layout::Screen;
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("crop.pdf");
   crate::common::text_pdf(&path, &["Body text for crop testing"])?;
@@ -498,7 +498,7 @@ fn crop_cancel_and_cache() -> Result<()> {
 fn crop_follows_rapid_space() -> Result<()> {
   use std::time::{Duration, Instant};
 
-  use vpdf::keys::{Action, Input};
+  use vpdf_ui::keys::{Action, Input};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("nearby.pdf");
   crate::common::pages_pdf(&path, &[&["Body text for nearby crops"][..]; 100])?;
@@ -506,7 +506,7 @@ fn crop_follows_rapid_space() -> Result<()> {
     &path,
     "",
     false,
-    vpdf::layout::Screen {
+    vpdf_ui::layout::Screen {
       columns: 80,
       rows: 40,
       cell_width: 8,
@@ -557,7 +557,7 @@ fn crop_follows_rapid_space() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn book_body_stays_centered() -> Result<()> {
-  use vpdf::layout::Screen;
+  use vpdf_ui::layout::Screen;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let mut paths = vec![root.join("book.pdf")];
   if let Some(extra) = std::env::var_os("VPDF_EXTRA") {
@@ -605,7 +605,7 @@ fn book_body_stays_centered() -> Result<()> {
         app.layout.pages[index].scale
       );
       assert!(
-        vpdf::tiles::visible(&app.layout, app.layout.pages[index].top)
+        vpdf_ui::layout::visible(&app.layout, app.layout.pages[index].top)
           .iter()
           .filter(|tile| tile.page == page)
           .all(|tile| tile.crop == crop)

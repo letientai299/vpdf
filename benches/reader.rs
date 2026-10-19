@@ -6,8 +6,6 @@ use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::document::{Document, extract};
-use vpdf::find::Query;
-use vpdf::layout::Screen;
 use vpdf::pdf_text::PdfText;
 use vpdf::search::{self, Index};
 use vpdf::solo::Solo;
@@ -17,6 +15,8 @@ use vpdf_pdf::content_cache::{alias, hex};
 use vpdf_pdf::jobs::Wake;
 use vpdf_pdf::jobs::search::SearchWorker;
 use vpdf_reader::motion::Motion;
+use vpdf_search::query::Query;
+use vpdf_ui::layout::Screen;
 
 /// The query every search case measures.
 const QUERY: &str = "the";
@@ -94,7 +94,7 @@ fn document(path: &Path, page: usize) -> Result<Report> {
     y: 256,
     width: 512,
     height: 256,
-    crop: vpdf::layout::Crop::default(),
+    crop: vpdf_ui::layout::Crop::default(),
   };
   tiles::render(&mut doc, key)?;
   let tile = measure(
@@ -174,7 +174,7 @@ fn frames(app: &mut Solo) -> Result<(Timing, u64)> {
   let mut out = io::sink();
   for frame in 0..40 {
     let scroll = app.layout.clamp_scroll(base + frame as f32 * 4.0);
-    for key in tiles::visible(&app.layout, scroll) {
+    for key in vpdf_ui::layout::visible(&app.layout, scroll) {
       if !app.graphics.contains(&(app.id, key)) {
         let tile = tiles::render(&mut app.doc, key)?;
         app.graphics.upload(app.id, &tile, &mut out)?;

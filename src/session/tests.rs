@@ -591,9 +591,9 @@ fn line_pdf(directory: &Path, annots: &str) -> Result<PathBuf> {
 
 #[test]
 fn sweeps_show_a_crosshair() -> Result<()> {
-  use crate::pointer::{Hit, Region};
   use crossterm::event::MouseButton::Left;
   use crossterm::event::MouseEventKind::{Down, Drag, Moved, Up};
+  use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let screen = Screen {
     columns: 80,
@@ -639,8 +639,8 @@ fn sweeps_show_a_crosshair() -> Result<()> {
 /// `:mouse off` drops hover and later reports; `:mouse` toggles.
 #[test]
 fn mouse_command_toggles_capture() -> Result<()> {
-  use crate::pointer::{Hit, Region};
   use vpdf_terminal::decode::{Mouse, MouseKind, Spot};
+  use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let screen = Screen {
     columns: 80,
@@ -693,9 +693,9 @@ fn mouse_command_toggles_capture() -> Result<()> {
 /// Menu backdrops cover only page cells.
 #[test]
 fn menu_backdrops_skip_the_panel() -> Result<()> {
-  use crate::keys::PanelKind;
   use crossterm::event::MouseButton::Right;
   use crossterm::event::MouseEventKind::{Down, Up};
+  use vpdf_ui::keys::PanelKind;
   let directory = tempfile::tempdir()?;
   let screen = Screen {
     columns: 80,
@@ -759,9 +759,9 @@ fn highlights(out: &[u8], left: u16) -> Vec<Bounds> {
 /// The focused panel's page veil leaves menus over the page clear.
 #[test]
 fn veils_skip_menus() -> Result<()> {
-  use crate::keys::PanelKind;
   use crossterm::event::MouseButton::Right;
   use crossterm::event::MouseEventKind::{Down, Up};
+  use vpdf_ui::keys::PanelKind;
   let directory = tempfile::tempdir()?;
   let screen = Screen {
     columns: 80,
@@ -838,9 +838,9 @@ fn overview_rings_skip_the_menu() -> Result<()> {
 #[test]
 fn edge_drags_scroll_until_focus_loss() -> Result<()> {
   use crate::gestures::AUTOSCROLL;
-  use crate::pointer::{Hit, Region};
   use crossterm::event::MouseButton::Left;
   use crossterm::event::MouseEventKind::{Down, Drag};
+  use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let screen = Screen {
     columns: 80,

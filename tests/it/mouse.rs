@@ -8,15 +8,15 @@ use vpdf::Result;
 use vpdf::app::App;
 use vpdf::app::Request;
 use vpdf::figures::Source;
-use vpdf::keys::Action;
-use vpdf::pointer::{Hit, List, Region};
-use vpdf::prompt::{Prompt, PromptKind};
 use vpdf::session::Session;
 use vpdf::text::{Bounds, PageId, Position};
 use vpdf::trace::Drawable;
-use vpdf::window::TabMove;
 use vpdf_reader::reader::SelectionKind;
 use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
+use vpdf_ui::keys::Action;
+use vpdf_ui::pointer::{Hit, List, Region};
+use vpdf_ui::prompt::{Prompt, PromptKind};
+use vpdf_ui::window::TabMove;
 
 /// Page 1 links: page 2, web, itself.
 fn link_pdf(path: &Path) -> Result<()> {
@@ -87,7 +87,7 @@ pub(super) fn open(
   let app = session.app();
   common::outline_loaded(app)?;
   if text_mode {
-    app.open_panel(vpdf::keys::PanelKind::Text)?;
+    app.open_panel(vpdf_ui::keys::PanelKind::Text)?;
     app.close_panel()?;
   }
   session.draw_focused(&mut Vec::new())?;
@@ -342,8 +342,8 @@ fn wrapped_links_tint_whole() -> Result<()> {
     session.app().start_hints(false)?;
     let hints = session.app().hints.take().map_or(0, |h| h.items.len());
     assert_eq!(hints, 2, "text={text_mode}");
-    session.app().open_panel(vpdf::keys::PanelKind::Links)?;
-    let rows = &session.app().panel.as_ref().expect("gl").rows;
+    session.app().open_panel(vpdf_ui::keys::PanelKind::Links)?;
+    let rows = &session.app().panel.as_ref().expect("gl").view.rows();
     let labels: Vec<_> = rows.iter().map(|row| row.label.as_str()).collect();
     assert_eq!(labels, [ADDRESS, ADDRESS], "text={text_mode}");
     session.app().close_panel()?;
@@ -539,7 +539,7 @@ fn back_and_forward_buttons_walk_history() -> Result<()> {
   enum Origin {
     Page,
     Grid,
-    /// The grid over a focused panel.
+    /// The grid over a focused panel.view.
     Panel,
     /// The grid without history.
     Empty,
@@ -562,7 +562,7 @@ fn back_and_forward_buttons_walk_history() -> Result<()> {
   for (step, (button, from, page)) in cases.into_iter().enumerate() {
     let app = session.app();
     if from == Origin::Panel {
-      action(app, Action::Panel(vpdf::keys::PanelKind::Outline))?;
+      action(app, Action::Panel(vpdf_ui::keys::PanelKind::Outline))?;
     }
     if from == Origin::Empty {
       app.reader.clear_history();
@@ -571,7 +571,7 @@ fn back_and_forward_buttons_walk_history() -> Result<()> {
       app.open_overview()?;
     }
     if let Some(panel) = app.panel.as_mut() {
-      panel.focused = from == Origin::Panel;
+      panel.view.focus(from == Origin::Panel);
     }
     assert!(session.mouse_report(report(button))?, "step {step}");
     let app = session.app();
@@ -864,7 +864,7 @@ fn drags_return_to_their_entry_mode() -> Result<()> {
   let gamma = glyph_cell(&mut session, 0, 12)?;
   let key = |session: &mut Session, code| {
     let event = KeyEvent::new(code, KeyModifiers::NONE);
-    session.app().key(event, &mut vpdf::prompt::History::default())
+    session.app().key(event, &mut vpdf_ui::prompt::History::default())
   };
   // (enter Cursor first) -> mode after Esc
   for (cursor, entry) in [(false, Mode::Normal), (true, Mode::Cursor)] {
@@ -1153,7 +1153,7 @@ pub(super) fn press(
   code: crossterm::event::KeyCode,
 ) -> Result<()> {
   let key = crossterm::event::KeyEvent::new(code, KeyModifiers::NONE);
-  session.app().key(key, &mut vpdf::prompt::History::default())
+  session.app().key(key, &mut vpdf_ui::prompt::History::default())
 }
 
 const ANYWHERE: [&str; 6] =
@@ -1355,7 +1355,7 @@ fn selection_search_finds_hyphenated_words() -> Result<()> {
 fn tab_passes_through_menus() -> Result<()> {
   use crossterm::event::KeyCode;
   let (_directory, mut session) = session(false)?;
-  action(session.app(), Action::Panel(vpdf::keys::PanelKind::Outline))?;
+  action(session.app(), Action::Panel(vpdf_ui::keys::PanelKind::Outline))?;
   press(&mut session, KeyCode::Tab)?;
   assert!(!session.app().panel_focused());
   let plain = cell(&mut session, Hit::Text)?;
@@ -1370,7 +1370,7 @@ fn tab_passes_through_menus() -> Result<()> {
 #[test]
 fn inert_rows_keep_focus() -> Result<()> {
   let (_directory, mut session) = session(false)?;
-  action(session.app(), Action::Panel(vpdf::keys::PanelKind::Help))?;
+  action(session.app(), Action::Panel(vpdf_ui::keys::PanelKind::Help))?;
   for _ in 0..2 {
     click(&mut session, (2, 2))?;
   }
@@ -1397,7 +1397,7 @@ fn row_double_clicks_focus() -> Result<()> {
     }
     let top = Target::Point { page: PageId(0), x: 0.0, y: 0.0 };
     outline.push(Heading { title: "Top".into(), depth: 0, target: top });
-    action(session.app(), Action::Panel(vpdf::keys::PanelKind::Outline))?;
+    action(session.app(), Action::Panel(vpdf_ui::keys::PanelKind::Outline))?;
     for &row in rows {
       click(&mut session, (2, row))?;
     }
@@ -1585,7 +1585,7 @@ fn sweeps_stay_on_page() -> Result<()> {
 fn hover_open(
   session: &mut Session,
   link: (u16, u16),
-) -> Result<vpdf::split::Rect> {
+) -> Result<vpdf_ui::split::Rect> {
   let screen = session.app().screen;
   mouse(session, MouseEventKind::Moved, (screen.columns - 1, screen.rows - 2))?;
   mouse(session, MouseEventKind::Moved, link)?;
@@ -1596,10 +1596,10 @@ fn hover_open(
 }
 
 /// Screen cells of the drawn preview.
-fn drawn_preview(session: &mut Session) -> Result<vpdf::split::Rect> {
+fn drawn_preview(session: &mut Session) -> Result<vpdf_ui::split::Rect> {
   let shown = session.tab().panes.iter().find_map(|app| {
     let area = app.peek.as_ref()?.placement?.area;
-    Some(vpdf::split::Rect {
+    Some(vpdf_ui::split::Rect {
       column: area.column + app.at.column,
       row: area.row + app.at.row,
       ..area
@@ -1609,7 +1609,7 @@ fn drawn_preview(session: &mut Session) -> Result<vpdf::split::Rect> {
 }
 
 /// Opens `K` on page 1's first link.
-fn key_open(session: &mut Session) -> Result<vpdf::split::Rect> {
+fn key_open(session: &mut Session) -> Result<vpdf_ui::split::Rect> {
   let app = session.app();
   let link = app.doc.links(PageId(0))?[0].first();
   let text = app.doc.text(PageId(0))?;
@@ -1728,7 +1728,7 @@ type Found = Vec<(Hit, (u16, u16))>;
 fn items(
   session: &mut Session,
   region: Region,
-  area: vpdf::split::Rect,
+  area: vpdf_ui::split::Rect,
 ) -> Result<Found> {
   let app = session.app();
   let mut found = Found::new();
@@ -1861,7 +1861,7 @@ fn bar_items_follow_the_pointer() -> Result<()> {
 /// Rests follow the page link beneath popups.
 #[test]
 fn rests_follow_the_link_beneath() -> Result<()> {
-  use vpdf::pointer::Hover;
+  use vpdf_ui::pointer::Hover;
   let (_directory, mut session) = session(false)?;
   let app = session.app();
   let on = |hit, beneath| {
@@ -2037,7 +2037,7 @@ fn hint_labels_keep_off_neighbours() -> Result<()> {
   ];
   for (text_mode, page, columns) in cases {
     let mut session = Session::new(None);
-    let screen = vpdf::layout::Screen { columns, ..screen() };
+    let screen = vpdf_ui::layout::Screen { columns, ..screen() };
     session.open(&root.join("paper.pdf"), true, screen)?;
     let app = session.app();
     app.text_mode = text_mode;
@@ -2092,8 +2092,12 @@ fn hint_labels_follow_the_pointer() -> Result<()> {
       status(session)?;
       let screen = session.app().screen;
       let rows = screen.rows - 1;
-      let page =
-        vpdf::split::Rect { column: 0, row: 0, columns: screen.columns, rows };
+      let page = vpdf_ui::split::Rect {
+        column: 0,
+        row: 0,
+        columns: screen.columns,
+        rows,
+      };
       items(session, Region::Page, page)
     };
     let at = |labels: &Found, index: usize| {
@@ -2189,7 +2193,7 @@ fn previews_cross_page_ends() -> Result<()> {
   for text_mode in [false, true] {
     let (_directory, mut session) = open(write, text_mode)?;
     // Short previews must scroll to page 2.
-    session.resize(vpdf::layout::Screen { rows: 12, ..screen() })?;
+    session.resize(vpdf_ui::layout::Screen { rows: 12, ..screen() })?;
     key_open(&mut session)?;
     let first = status(&mut session)?;
     assert!(first.contains("╭ 1 "), "text={text_mode}: starts on page 1");

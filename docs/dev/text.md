@@ -101,11 +101,11 @@ its command interface.
 
 [text]: ../../crates/vpdf-model/src/text.rs
 [reader]: ../../crates/vpdf-reader/src/reader.rs
-[layout]: ../../src/layout.rs
+[layout]: ../../crates/ui/src/layout.rs
 [priority]: arch.md#work-and-resource-lifetimes
 [search]: ../../crates/vpdf-search/src/search.rs
 [worker]: ../../crates/vpdf-pdf/src/jobs/search.rs
-[panels]: ../../src/panel/search.rs
+[panels]: ../../crates/ui/src/panel/search.rs
 [outline-loader]: ../../src/outline.rs
 [outline]: ../../crates/vpdf-pdf/src/jobs/outline.rs
 [ocr]: ../../crates/vpdf-pdf/src/jobs/ocr.rs

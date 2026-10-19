@@ -1,15 +1,15 @@
 use crate::Result;
 use crate::app::App;
-use crate::layout::Screen;
 use crate::marks::Span;
-use crate::panel::Pointing;
-use crate::pointer::{Hit, List};
 use crate::text::{Bounds, Line, PageId, Position};
-use crate::tiles::{self, TileKey};
+use crate::tiles::TileKey;
 use std::io::Write;
 use vpdf_reader::reader::SelectionKind;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::terminal;
+use vpdf_ui::layout::Screen;
+use vpdf_ui::panel::Pointing;
+use vpdf_ui::pointer::{Hit, List};
 
 /// Parts of `rect` outside `hole`.
 fn around(rect: Bounds, hole: Bounds) -> impl Iterator<Item = Bounds> {
@@ -79,10 +79,10 @@ impl App {
   ) -> Result<()> {
     self.request_crop();
     let (screen, left) = (self.uncovered(), self.left);
-    let mut tiles = tiles::visible(&self.layout, self.reader.scroll);
+    let mut tiles = vpdf_ui::layout::visible(&self.layout, self.reader.scroll);
     if let Some(animation) = &self.animation {
       self.heading = (animation.target - self.reader.scroll).signum();
-      for tile in tiles::visible(&self.layout, animation.target) {
+      for tile in vpdf_ui::layout::visible(&self.layout, animation.target) {
         if !tiles.contains(&tile) {
           tiles.push(tile);
         }
@@ -145,7 +145,7 @@ impl App {
     let mut keys = Vec::new();
     for step in [self.heading, -self.heading] {
       let scroll = self.layout.clamp_scroll(base + step * height);
-      let mut screen = tiles::visible(&self.layout, scroll);
+      let mut screen = vpdf_ui::layout::visible(&self.layout, scroll);
       if step < 0.0 {
         screen.reverse();
       }
@@ -173,7 +173,7 @@ impl App {
   }
 
   pub fn panel_focused(&self) -> bool {
-    self.panel.as_ref().is_some_and(|panel| panel.focused)
+    self.panel.as_ref().is_some_and(|panel| panel.view.focused())
   }
 
   /// Selection overlays clipped to `screen`.
@@ -187,7 +187,7 @@ impl App {
       self.line_band(
         graphics,
         self.reader.cursor,
-        crate::theme::CURSORLINE,
+        vpdf_ui::theme::CURSORLINE,
         screen,
         out,
       )?;
@@ -198,7 +198,7 @@ impl App {
       self.line_band(
         graphics,
         landing.position,
-        crate::theme::LANDING,
+        vpdf_ui::theme::LANDING,
         screen,
         out,
       )?;
@@ -214,7 +214,7 @@ impl App {
     }
     for (page, bounds) in tinted {
       let rect = self.layout.project(page, bounds, self.reader.scroll);
-      self.tint(graphics, rect, crate::theme::LINK, screen, out)?;
+      self.tint(graphics, rect, vpdf_ui::theme::LINK, screen, out)?;
     }
     if !self.search.hidden() {
       let visible = self.layout.visible(self.reader.scroll);
@@ -414,11 +414,11 @@ impl App {
     }
     self.blank = plain;
     if let Some(panel) = &mut self.panel {
-      panel.pointing = match self.hover {
+      panel.view.point(match self.hover {
         Hit::Row(index) => Pointing::Row(index),
         Hit::Card(_) => Pointing::Card,
         _ => Pointing::Away,
-      };
+      });
     }
     if self.covered()
       && let Some(panel) = &mut self.panel
@@ -455,7 +455,7 @@ impl App {
     if let Some(prompt) = &self.prompt {
       let pointed = self.pointed_item(List::Completions);
       let (screen, at) = (self.screen, self.at);
-      return crate::statusline::prompt(out, prompt, screen, at, pointed);
+      return prompt.draw(out, screen, at, pointed);
     }
     // After the panel, which finds clipped rows.
     // Hidden details cost nothing.
@@ -470,7 +470,7 @@ impl App {
       // Clues have no choice; the pointed one shows chosen, as menu rows.
       let shown = (self.pointed_item(List::Clues), None);
       let screen = self.screen;
-      crate::grid::draw(out, bottom, &labels, &grid, shown, keys, screen)?;
+      vpdf_ui::grid::draw(out, bottom, &labels, &grid, shown, keys, screen)?;
     }
     self.status_line(out, row, detail.as_deref())?;
     write!(out, "\x1b[?25l")?;

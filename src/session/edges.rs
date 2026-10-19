@@ -1,5 +1,5 @@
 use super::{
-  Axis, Edge, Hover, Instant, MouseButton, MouseEvent, MouseEventKind, Pane,
+  App, Axis, Edge, Hover, Instant, MouseButton, MouseEvent, MouseEventKind,
   Pixel, Rect, Region, Result, Session,
 };
 
@@ -17,7 +17,7 @@ impl Session {
       return Some(Edge::Split(divider));
     }
     // The panel's last column, beside the page.
-    let border = tab.panes.iter().map(Pane::of).find(|pane| {
+    let border = tab.panes.iter().map(App::pointer_pane).find(|pane| {
       let panel = pane.area(Region::Panel);
       let edge = Rect {
         column: pane.rect.column + panel.columns.saturating_sub(2),
@@ -33,7 +33,7 @@ impl Session {
     // Status items stay clickable.
     let item = || {
       tab.panes.iter().any(|app| {
-        let pane = Pane::of(app).rect;
+        let pane = app.pointer_pane().rect;
         pane.contains(column, row)
           && app.chrome_at(column - pane.column, row - pane.row).is_some()
       })

@@ -118,7 +118,7 @@ Revisit this choice only with end-to-end measurements and PDF fidelity checks.
 A faster raster stage alone does not establish a faster terminal reader.
 
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
-[layout]: ../../src/layout.rs
+[layout]: ../../crates/ui/src/layout.rs
 [canvas]: ../../src/canvas.rs
 [worker]: ../../crates/vpdf-pdf/src/jobs/render.rs
 [prime]: ../../crates/vpdf-pdf/src/prime.rs

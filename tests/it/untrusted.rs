@@ -5,10 +5,10 @@ use std::path::Path;
 use vpdf::Result;
 use vpdf::app::Tabline;
 use vpdf::document::{Document, Target};
-use vpdf::keys::PanelKind;
-use vpdf::layout::Screen;
 use vpdf::solo::Solo;
 use vpdf::text::PageId;
+use vpdf_ui::keys::PanelKind;
+use vpdf_ui::layout::Screen;
 
 /// OSC, DCS, C1 OSC, and C1 CSI.
 const EVIL: &str = "\x1b]2;pwn\x07\x1bP0;1|\x1b\\\u{9d}\u{9b}\n";
@@ -109,7 +109,7 @@ fn document_strings_reach_the_screen_clean() -> Result<()> {
   ] {
     if let Some(kind) = panel {
       app.open_panel(kind)?;
-      let rows = &app.panel.as_ref().unwrap().rows;
+      let rows = &app.panel.as_ref().unwrap().view.rows();
       let shown = rows.iter().any(|row| row.label.contains("]2;pwn"));
       assert!(shown, "{kind:?} lists the text");
     }

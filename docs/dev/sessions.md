@@ -77,8 +77,8 @@ helpers and terminal protocols. See [external actions][external] for
 user-visible clipboard, SSH, link, and password behavior.
 
 [session]: ../../src/session/mod.rs
-[split]: ../../src/split.rs
-[pointer]: ../../src/pointer.rs
+[split]: ../../crates/ui/src/split.rs
+[pointer]: ../../crates/ui/src/pointer.rs
 [state]: ../../src/state/mod.rs
 [hangup]: ../../src/hangup.rs
 [watch]: ../../src/watch.rs

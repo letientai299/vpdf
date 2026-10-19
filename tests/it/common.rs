@@ -4,8 +4,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::prompt::History;
 use vpdf_terminal::decode::{Event, Parser};
+use vpdf_ui::prompt::History;
 
 /// The focused pane of `session` drawn alone.
 pub fn focused_frame(session: &mut vpdf::session::Session) -> Result<String> {
@@ -46,7 +46,7 @@ pub fn outline_loaded(app: &mut App) -> Result<()> {
 
 pub fn search_loaded(app: &mut App) -> Result<()> {
   let started = Instant::now();
-  while !matches!(app.search.phase(), vpdf::find::Phase::Complete) {
+  while !matches!(app.search.phase(), vpdf_ui::find::Phase::Complete) {
     app.search_updates()?;
     anyhow::ensure!(started.elapsed() < Duration::from_secs(15), "Search");
     std::thread::sleep(Duration::from_millis(1));

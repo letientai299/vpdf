@@ -1,11 +1,11 @@
 use crate::Result;
 use crate::app::App;
-use crate::layout::Screen;
 use crate::trace::{Drawable, Observation};
 use std::io::Write;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use vpdf_terminal::graphics::Graphics;
+use vpdf_ui::layout::Screen;
 
 /// A pane drawn alone with images of its own, as tests and benches drive
 /// one; a session shares its images among panes instead.

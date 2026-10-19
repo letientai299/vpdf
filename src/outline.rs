@@ -1,7 +1,7 @@
 use crate::app::App;
-use crate::keys::PanelKind;
 use std::sync::mpsc;
 use vpdf_pdf::jobs::outline::{OutlineJob, spawn};
+use vpdf_ui::keys::PanelKind;
 
 /// Where a pane's outline stands. Automatic loading waits for the first
 /// frame that shows the whole view, so it cannot slow the first page.

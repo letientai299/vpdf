@@ -2,12 +2,12 @@ use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::document::Handle;
-use vpdf::keys::{Action, Input, PanelKind};
-use vpdf::layout::Screen;
 use vpdf::outline::Loading;
 use vpdf::session::Session;
 use vpdf::solo::Solo;
 use vpdf::text::PageId;
+use vpdf_ui::keys::{Action, Input, PanelKind};
+use vpdf_ui::layout::Screen;
 
 fn key(title: &str) -> String {
   title
@@ -112,28 +112,35 @@ fn inferred_outline_keeps_panel_focus_and_selection() -> Result<()> {
   };
   // Opened while inferring: rows arrive, and the page keeps the keyboard.
   app.open_panel(PanelKind::Outline)?;
-  app.panel.as_mut().unwrap().focused = false;
+  app.panel.as_mut().unwrap().view.focus(false);
   finish(&mut app)?;
   let panel = app.panel.as_ref().unwrap();
-  assert!(panel.rows.len() > 1 && panel.note == "inferred" && !panel.focused);
+  assert!(
+    panel.view.rows().len() > 1
+      && panel.view.note() == "inferred"
+      && !panel.view.focused()
+  );
   // A reload infers again under the user's focus and selection.
   for focused in [true, false] {
     let panel = app.panel.as_mut().unwrap();
-    panel.focused = focused;
-    panel.selected = panel.rows.len() - 1;
-    let selected = panel.selected;
+    panel.view.focus(focused);
+    panel.view.choose(panel.view.rows().len() - 1);
+    let selected = panel.view.selected();
     app.command("reload")?;
     finish(&mut app)?;
     let panel = app.panel.as_ref().unwrap();
-    assert_eq!((panel.focused, panel.selected), (focused, selected));
-    assert_eq!(panel.note, "inferred");
+    assert_eq!(
+      (panel.view.focused(), panel.view.selected()),
+      (focused, selected)
+    );
+    assert_eq!(panel.view.note(), "inferred");
   }
   // A rebuild that ships bookmarks drops the note once they load.
   std::fs::copy(root.join("book.pdf"), &path)?;
   app.command("reload")?;
   finish(&mut app)?;
   let panel = app.panel.as_ref().unwrap();
-  assert!(!panel.rows.is_empty() && panel.note.is_empty());
+  assert!(!panel.view.rows().is_empty() && panel.view.note().is_empty());
   Ok(())
 }
 

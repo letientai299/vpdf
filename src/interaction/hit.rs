@@ -90,7 +90,7 @@ impl App {
   }
 
   /// Page-area pixels of pane cells.
-  pub(crate) fn cell_bounds(&self, cells: crate::split::Rect) -> Bounds {
+  pub(crate) fn cell_bounds(&self, cells: vpdf_ui::split::Rect) -> Bounds {
     let screen = self.layout.screen;
     let (width, height) =
       (f32::from(screen.cell_width), f32::from(screen.cell_height));
@@ -162,10 +162,10 @@ impl App {
       Region::Page => {}
       Region::Panel => {
         let Some(panel) = &self.panel else { return Ok(Hit::Nothing) };
-        if let Some(index) = panel.row_at(column, row) {
+        if let Some(index) = panel.view.row_at(column, row) {
           return Ok(Hit::Row(index));
         }
-        let card = panel.shelf.as_ref().is_some_and(|s| s.covers(column));
+        let card = panel.view.shelf().is_some_and(|s| s.covers(column));
         return Ok(if card { Hit::Card(row) } else { Hit::Nothing });
       }
       Region::Overview => {

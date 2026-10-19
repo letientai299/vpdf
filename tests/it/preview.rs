@@ -2,12 +2,12 @@ use super::common::keys;
 use super::focus::{screen, send};
 use std::path::PathBuf;
 use vpdf::Result;
-use vpdf::app::InputOwner;
 use vpdf::document::Target;
 use vpdf::session::Session;
 use vpdf::solo::Solo;
 use vpdf::text::PageId;
 use vpdf_reader::reader::{Mode, SelectionKind};
+use vpdf_ui::input::InputOwner;
 
 fn open(text: bool) -> Result<Solo> {
   let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
@@ -163,13 +163,13 @@ fn preview_pane_chord_dispatches_once() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn preview_border_stays_inside_resized_pane() -> Result<()> {
   use unicode_width::UnicodeWidthStr;
-  use vpdf::keys::PanelKind;
-  use vpdf::layout::Crop;
+  use vpdf_ui::keys::PanelKind;
+  use vpdf_ui::layout::Crop;
   for text in [false, true] {
     let mut app = open(text)?;
     let cursor = app.reader.cursor;
     app.open_panel(PanelKind::Help)?;
-    app.panel.as_mut().unwrap().focused = false;
+    app.panel.as_mut().unwrap().view.focus(false);
     app.go_to(cursor, true)?;
     keys(&mut app, b"K")?;
     let target = format!("{:?}", app.peek.as_ref().unwrap().target);

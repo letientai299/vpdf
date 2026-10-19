@@ -1,6 +1,5 @@
 //! Mouse routing and what the pointer rests on.
 
-use crate::app::App;
 use crate::split::Rect;
 use crate::text::PageId;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -53,25 +52,6 @@ pub struct Pane {
 }
 
 impl Pane {
-  pub fn of(app: &App) -> Self {
-    let rect = Rect {
-      column: app.at.column,
-      row: app.at.row,
-      columns: app.screen.columns,
-      rows: app.screen.rows,
-    };
-    Self {
-      id: app.id,
-      rect,
-      panel: app.left,
-      overlay: app.menu_rows(),
-      overview: app.overview.is_some(),
-      preview: app.preview_cells(),
-      menu: app.context_menu.as_ref().map(crate::context::ContextMenu::area),
-      actions: app.bar_cells(),
-    }
-  }
-
   /// Region at a cell of this pane.
   fn region(&self, column: u16, row: u16) -> Region {
     let page = if self.overview { Region::Overview } else { Region::Page };
@@ -90,7 +70,7 @@ impl Pane {
   }
 
   /// Cells of `region`, relative to the pane.
-  pub(crate) fn area(&self, region: Region) -> Rect {
+  pub fn area(&self, region: Region) -> Rect {
     let status = self.rect.rows.saturating_sub(1);
     let overlay = status.saturating_sub(self.overlay);
     let columns = self.rect.columns;

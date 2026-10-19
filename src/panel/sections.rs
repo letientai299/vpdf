@@ -1,6 +1,6 @@
 use super::{
   App, Destination, Entry, PageId, PanelKind, Path, PathBuf, Position, Result,
-  Row, Style, Target, terminal,
+  Row, Style, Target, document_lines, help, metadata_lines, terminal,
 };
 use vpdf_model::document::section;
 
@@ -10,19 +10,14 @@ impl App {
     let section = self.section();
     let changed = self.current_section != section;
     self.current_section = section;
-    let Some(panel) =
-      self.panel.as_mut().filter(|panel| panel.kind == PanelKind::Outline)
+    let Some(panel) = self
+      .panel
+      .as_mut()
+      .filter(|panel| panel.view.kind() == PanelKind::Outline)
     else {
       return;
     };
-    panel.follow_pending |= changed;
-    if !panel.focused
-      && panel.follow_pending
-      && let Some(index) = section
-    {
-      panel.select(index);
-      panel.follow_pending = false;
-    }
+    panel.view.track(section, changed);
   }
 
   pub fn panel_rows(&mut self, kind: PanelKind) -> Result<Vec<Row>> {
@@ -61,7 +56,10 @@ impl App {
       PanelKind::Links => self.link_rows()?,
       PanelKind::Jumps => self.jump_rows(),
       PanelKind::Annotations => self.annotation_rows()?,
-      PanelKind::Help => help().iter().map(|line| Row::parse(line)).collect(),
+      PanelKind::Help => help(crate::cmdline::on_path)
+        .iter()
+        .map(|line| Row::parse(line))
+        .collect(),
       PanelKind::Info => self.info().lines().map(Row::parse).collect(),
       PanelKind::Text | PanelKind::Recent | PanelKind::Marks => Vec::new(),
     })
@@ -183,31 +181,6 @@ impl App {
       _ => false,
     })
   }
-}
-
-pub fn metadata_lines(metadata: &[(String, String)]) -> Vec<String> {
-  let fields = metadata.iter().map(|(k, v)| format!("{k}: {v}"));
-  std::iter::once("# Metadata".to_owned()).chain(fields).collect()
-}
-
-/// `:info`'s file facts, shared with recent document cards; `place`
-/// names where the file lives.
-pub fn document_lines(place: String, bytes: u64, pages: usize) -> Vec<String> {
-  vec![
-    "# Document".into(),
-    place,
-    format!("Size: {:.1} MiB", bytes as f64 / 1_048_576.0),
-    format!("Pages: {pages}"),
-  ]
-}
-
-pub(crate) fn help() -> Vec<String> {
-  let keys = include_str!("../help.txt").lines().map(str::to_owned);
-  let commands = crate::cmdline::commands().map(|spec| {
-    let usage = if spec.usage.is_empty() { "" } else { " " };
-    format!(":{}{usage}{}: {}", spec.name, spec.usage, spec.help)
-  });
-  keys.chain([String::new(), "# Commands".into()]).chain(commands).collect()
 }
 
 /// Recent documents that still exist, newest first.

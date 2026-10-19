@@ -1,16 +1,16 @@
 use crate::Result;
 use crate::app::App;
-use crate::keys::{Action, Input};
-use crate::layout::{Crop, page_matrix, screen_step, transform};
-use crate::pointer::{Hit, Wheel};
 use crate::text::{Bounds, PageId};
-use crate::theme;
 use crate::tiles::{self, TileKey};
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use std::io::Write;
 use vpdf_reader::motion::Motion;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::terminal;
+use vpdf_ui::keys::{Action, Input};
+use vpdf_ui::layout::{Crop, page_matrix, screen_step, transform};
+use vpdf_ui::pointer::{Hit, Wheel};
+use vpdf_ui::theme;
 
 /// Thumbnails per row aim for this width in pixels.
 const TARGET: f32 = 220.0;
@@ -102,7 +102,7 @@ impl App {
     self.overview = Some(Overview { selected, top: 0, shape: (0, 0) });
     self.requested.clear();
     if let Some(panel) = &mut self.panel {
-      panel.focused = false;
+      panel.view.focus(false);
     }
     self.relayout()
   }
@@ -333,8 +333,8 @@ impl App {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::layout::Screen;
   use std::time::{Duration, Instant};
+  use vpdf_ui::layout::Screen;
 
   #[test]
   fn visible_rows_include_partial() {

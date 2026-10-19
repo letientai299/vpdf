@@ -2,7 +2,7 @@ use super::{App, Direction, Node, Rect, Session, Tab, TabMove, neighbor};
 
 impl Tab {
   pub(super) fn new(app: App) -> Self {
-    Self { tree: Node::Leaf(app.id), panes: vec![app], focus: 0, last: None }
+    Self { tree: Node::leaf(app.id), panes: vec![app], focus: 0, last: None }
   }
 
   pub(super) fn index(&self, id: u32) -> Option<usize> {

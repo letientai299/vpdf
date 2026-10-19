@@ -7,12 +7,12 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::keys::{Action, Input};
-use vpdf::pointer::Pixel;
 use vpdf::session::Session;
 use vpdf::text::PageId;
 use vpdf_reader::motion::Motion;
 use vpdf_terminal::decode::{Event, Parser};
+use vpdf_ui::keys::{Action, Input};
+use vpdf_ui::pointer::Pixel;
 
 /// SGR wheel flags: 64 up, 65 down, 66 left, 67 right; 4 Shift, 16 Ctrl.
 const UP: u16 = 64;
@@ -171,7 +171,7 @@ fn shift_and_sideways_wheel_pan_zoomed_pages() -> Result<()> {
   let path = directory.path().join("lines.pdf");
   common::text_pdf(&path, &["Pan a zoomed page sideways"])?;
   let at = (480, 300);
-  let notch = f32::from(vpdf::pointer::WHEEL_ROWS) * 8.0;
+  let notch = f32::from(vpdf_ui::pointer::WHEEL_ROWS) * 8.0;
   // (flags) -> pan change, scrolls
   let cases = [
     (SHIFT | DOWN, notch, false),
@@ -231,7 +231,7 @@ fn text_wheel_pans_columns_and_ignores_ctrl() -> Result<()> {
   let path = directory.path().join("lines.pdf");
   common::text_pdf(&path, &["A line far wider than the narrow view"])?;
   let mut session = Session::new(None);
-  let narrow = vpdf::layout::Screen { columns: 16, ..screen() };
+  let narrow = vpdf_ui::layout::Screen { columns: 16, ..screen() };
   session.open(&path, true, narrow)?;
   session.app().command("text")?;
   let first = session.app().text_position(0, 0)?;
@@ -262,7 +262,7 @@ fn wheel_frames_only_when_something_moves() -> Result<()> {
   // A pending count clears, which the status line shows.
   session.app().layout.zoom = 1.0;
   session.app().relayout()?;
-  let mut history = vpdf::prompt::History::default();
+  let mut history = vpdf_ui::prompt::History::default();
   let two = crossterm::event::KeyEvent::new(
     crossterm::event::KeyCode::Char('2'),
     KeyModifiers::NONE,
@@ -280,7 +280,7 @@ fn panel_preview_and_text_turns_frame_until_an_end() -> Result<()> {
   pages_pdf(&path, &[(18, 3), (10, 60), (18, 3)], Some(0))?;
   // A panel list: the help rows scroll down, not above the first.
   let mut panel = session(&path)?;
-  panel.app().open_panel(vpdf::keys::PanelKind::Help)?;
+  panel.app().open_panel(vpdf_ui::keys::PanelKind::Help)?;
   panel.draw_focused(&mut Vec::new())?;
   assert!(!wheel(&mut panel, UP, pixel((2, 5)))?);
   assert!(wheel(&mut panel, DOWN, pixel((2, 5)))?);
@@ -309,7 +309,8 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
   let row = 39 * 16 + 8;
   let scroll: Moved =
     |app| app.animation.as_ref().map_or(app.reader.scroll, |a| a.target);
-  let panel: Moved = |app| app.panel.as_ref().map_or(0, |p| p.top) as f32;
+  let panel: Moved =
+    |app| app.panel.as_ref().map_or(0, |p| p.view.top()) as f32;
   // (view, pointer x) -> what a turn moves
   let cases: [(&str, u16, Moved); 5] = [
     ("", 480, scroll),
@@ -331,7 +332,7 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
     match view {
       "text" => app.command("text")?,
       "gp" => app.open_overview()?,
-      "P" => app.open_panel(vpdf::keys::PanelKind::Help)?,
+      "P" => app.open_panel(vpdf_ui::keys::PanelKind::Help)?,
       _ => {}
     }
     session.draw_focused(&mut Vec::new())?;
@@ -422,7 +423,7 @@ fn linked(path: &Path, text: bool) -> Result<Session> {
 }
 
 /// Draws a frame; its preview's cells.
-fn drawn(session: &mut Session) -> Result<vpdf::split::Rect> {
+fn drawn(session: &mut Session) -> Result<vpdf_ui::split::Rect> {
   use vpdf::trace::Drawable;
   session.draw_frame(&mut Vec::new())?;
   session.app().preview_cells().ok_or_else(|| anyhow::anyhow!("a preview"))
@@ -506,7 +507,7 @@ fn preview_takes_the_wheel_under_the_pointer() -> Result<()> {
 #[test]
 fn menu_turns_move_what_is_beneath() -> Result<()> {
   use crossterm::event::MouseButton::Right;
-  use vpdf::keys::PanelKind;
+  use vpdf_ui::keys::PanelKind;
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("pages.pdf");
   pages_pdf(&path, &[(18, 6); 40], None)?;
@@ -533,7 +534,7 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
     }
     let state = |session: &mut Session| {
       let app = session.app();
-      let panel = app.panel.as_ref().map(|panel| panel.top);
+      let panel = app.panel.as_ref().map(|panel| panel.view.top());
       let overview = app.overview.as_ref().map(vpdf::overview::Overview::top);
       let scroll =
         app.animation.as_ref().map_or(app.reader.scroll, |a| a.target);

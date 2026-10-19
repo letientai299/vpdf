@@ -16,7 +16,7 @@ pub(crate) struct Layout {
   pub starts: Vec<usize>,
 }
 
-pub(crate) fn wrap(mut text: &str, columns: usize) -> Vec<String> {
+pub fn wrap(mut text: &str, columns: usize) -> Vec<String> {
   let mut lines = Vec::new();
   while !text.is_empty() {
     let mut width = 0;

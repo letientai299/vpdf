@@ -7,17 +7,6 @@ pub(super) fn full(screen: Screen) -> Rect {
   Rect { column: 0, row: 0, columns: screen.columns, rows: screen.rows }
 }
 
-pub(super) fn replace_leaf(node: &mut Node, from: u32, to: u32) {
-  match node {
-    Node::Leaf(id) if *id == from => *id = to,
-    Node::Leaf(_) => {}
-    Node::Split { first, second, .. } => {
-      replace_leaf(first, from, to);
-      replace_leaf(second, from, to);
-    }
-  }
-}
-
 impl Session {
   pub(super) fn content(&self, mut screen: Screen) -> Screen {
     if self.state.perf {
@@ -148,7 +137,7 @@ impl Session {
     let focus = tab.focus;
     let old = std::mem::replace(&mut tab.panes[focus], app);
     let id = tab.panes[focus].id;
-    replace_leaf(&mut tab.tree, old.id, id);
+    tab.tree.replace(old.id, id);
     self.retire(&old);
     self.refocus();
     self.arrange()
@@ -165,7 +154,7 @@ impl Session {
     let mut app = loop {
       match App::with_screen(path, &secret, false, screen) {
         Err(error) if error.is::<PasswordRequired>() => {
-          secret = crate::prompt::password()?;
+          secret = crate::password::password()?;
         }
         result => break result?,
       }
@@ -371,7 +360,7 @@ impl Session {
     let keep = tab.panes[tab.focus].id;
     let closing: Vec<_> =
       tab.panes.extract_if(.., |app| app.id != keep).collect();
-    tab.tree = Node::Leaf(keep);
+    tab.tree = Node::leaf(keep);
     tab.focus = 0;
     tab.last = None;
     for app in &closing {

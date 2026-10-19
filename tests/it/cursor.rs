@@ -2,14 +2,14 @@ use super::common::keys;
 use super::focus::{screen, send};
 use super::modes::{app, settle};
 use vpdf::Result;
-use vpdf::app::InputOwner;
 use vpdf::document::Target;
 use vpdf::hints::{Hint, Hints};
-use vpdf::keys::PanelKind;
-use vpdf::panel::{Destination, Row};
 use vpdf::session::Session;
 use vpdf::text::{PageId, Position};
 use vpdf_reader::reader::{Mode, SelectionKind};
+use vpdf_ui::input::InputOwner;
+use vpdf_ui::keys::PanelKind;
+use vpdf_ui::panel::{Destination, Row};
 
 const ESC: &[u8] = b"\x1b[27u";
 
@@ -100,7 +100,7 @@ fn cursor_escape_cancels_only_active_layer() -> Result<()> {
   keys(&mut app, ESC)?;
   assert_eq!(app.reader.mode(), Mode::Cursor);
   keys(&mut app, b":i")?;
-  assert_eq!(app.prompt.as_ref().unwrap().text, "i");
+  assert_eq!(app.prompt.as_ref().unwrap().text(), "i");
   keys(&mut app, ESC)?;
   assert_eq!(app.reader.mode(), Mode::Cursor);
   app.open_panel(PanelKind::Help)?;
@@ -251,7 +251,7 @@ fn cursor_rendering_keeps_visual_band_separate() -> Result<()> {
     let hit = Position { glyph: 5, ..app.reading_position()? };
     let hit =
       vpdf::search::Hit { first: hit, last: hit, excerpt: String::new() };
-    app.search.show(vpdf::find::Query::default(), vec![hit]);
+    app.search.show(vpdf_search::query::Query::default(), vec![hit]);
     keys(&mut app, b"i")?;
     let mut out = Vec::new();
     app.status(&mut out, app.screen.rows - 1)?;
@@ -498,7 +498,7 @@ fn failed_search_yanks_preserve_register() -> Result<()> {
     app.reader.pending_yank = None;
     keys(app, b"i\"ay")?;
     let _ = keys(app, query);
-    if !matches!(app.search.phase(), vpdf::find::Phase::Idle) {
+    if !matches!(app.search.phase(), vpdf_ui::find::Phase::Idle) {
       crate::common::search_loaded(app)?;
     }
     assert!(app.reader.operator.is_none());
@@ -513,7 +513,7 @@ fn scroll_then_motion_uses_visible_cursor() -> Result<()> {
   for text in [false, true] {
     for scroll in [b"\x04".as_slice(), b"\x06", b"8\x05"] {
       let (_directory, mut session) = crate::mouse::session(text)?;
-      session.resize(vpdf::layout::Screen {
+      session.resize(vpdf_ui::layout::Screen {
         rows: if text { 4 } else { 8 },
         columns: 60,
         ..screen()
@@ -550,7 +550,7 @@ fn scroll_then_motion_uses_visible_cursor() -> Result<()> {
 fn visual_keyboard_scroll_moves_only_endpoint() -> Result<()> {
   for text in [false, true] {
     let (_directory, mut session) = crate::mouse::session(text)?;
-    session.resize(vpdf::layout::Screen {
+    session.resize(vpdf_ui::layout::Screen {
       rows: if text { 4 } else { 8 },
       columns: 60,
       ..screen()
@@ -577,7 +577,7 @@ fn visual_keyboard_scroll_moves_only_endpoint() -> Result<()> {
 fn cursor_wheel_clamps_without_changing_mode() -> Result<()> {
   for text in [false, true] {
     let (_directory, mut session) = crate::mouse::session(text)?;
-    session.resize(vpdf::layout::Screen {
+    session.resize(vpdf_ui::layout::Screen {
       rows: if text { 4 } else { 8 },
       columns: 60,
       ..screen()

@@ -31,6 +31,81 @@ impl Panel {
     }
   }
 
+  pub fn recent(rows: Vec<Row>, entries: &[super::recent::Entry]) -> Self {
+    Self {
+      shelf: Some(super::Shelf::new(entries)),
+      ..Self::new(PanelKind::Recent, rows)
+    }
+  }
+
+  pub fn kind(&self) -> PanelKind {
+    self.kind
+  }
+  pub fn rows(&self) -> &[Row] {
+    &self.rows
+  }
+  pub fn selected(&self) -> usize {
+    self.selected
+  }
+  pub fn focused(&self) -> bool {
+    self.focused
+  }
+  pub fn top(&self) -> usize {
+    self.top
+  }
+  pub fn query(&self) -> &str {
+    &self.search.query
+  }
+  pub fn note(&self) -> &'static str {
+    self.note
+  }
+  pub fn hover_title(&self) -> Option<&str> {
+    self.hover_title.as_deref()
+  }
+  pub fn shelf(&self) -> Option<&super::Shelf> {
+    self.shelf.as_ref()
+  }
+  pub fn shelf_mut(&mut self) -> Option<&mut super::Shelf> {
+    self.shelf.as_mut()
+  }
+
+  pub fn focus(&mut self, focused: bool) {
+    self.focused = focused;
+  }
+  pub fn set_note(&mut self, note: &'static str) {
+    self.note = note;
+  }
+  pub fn resize(&mut self, height: u16) {
+    self.height = height;
+  }
+  pub fn point(&mut self, pointing: Pointing) {
+    self.pointing = pointing;
+  }
+
+  /// Chooses without moving the viewport.
+  pub fn choose(&mut self, index: usize) {
+    self.selected = index.min(self.rows.len().saturating_sub(1));
+  }
+
+  pub fn clicked(&self) -> Option<usize> {
+    self.clicked
+  }
+  pub fn remember_click(&mut self, clicked: Option<usize>) -> Option<usize> {
+    std::mem::replace(&mut self.clicked, clicked)
+  }
+
+  /// Follows sections after panel browsing ends.
+  pub fn track(&mut self, section: Option<usize>, changed: bool) {
+    self.follow_pending |= changed;
+    if !self.focused
+      && self.follow_pending
+      && let Some(index) = section
+    {
+      self.select(index);
+      self.follow_pending = false;
+    }
+  }
+
   /// Replaces the rows and note, keeping focus and the selected row,
   /// else the selection in range; whether that row stayed.
   pub fn refill(&mut self, rows: Vec<Row>, note: &'static str) -> bool {
@@ -186,12 +261,12 @@ impl Panel {
   }
 
   /// Selects row `index` and shows it.
-  pub(crate) fn select(&mut self, index: usize) {
+  pub fn select(&mut self, index: usize) {
     self.selected = index;
     self.reveal();
   }
 
-  pub(crate) fn reveal(&mut self) {
+  pub fn reveal(&mut self) {
     let count = usize::from(self.height.saturating_sub(2));
     let start = self.line_start(self.selected);
     let end = self.line_start(self.selected + 1);
@@ -280,6 +355,7 @@ impl Panel {
     width: u16,
     screen: Screen,
     graphics: Option<&mut Graphics>,
+    now: u64,
   ) -> Result<()> {
     let Some(mut cards) = self.shelf.take() else {
       return self.list(out, at, width, screen.rows);
@@ -289,7 +365,12 @@ impl Panel {
       self.shelf = Some(cards);
       return self.list(out, at, width, screen.rows);
     }
-    let drawn = cards.draw(self, out, at, width, screen, graphics);
+    let drawn = cards.draw(
+      self,
+      out,
+      crate::panel::recent::Frame { at, width, screen, now },
+      graphics,
+    );
     self.shelf = Some(cards);
     drawn
   }

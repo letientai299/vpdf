@@ -2,10 +2,10 @@ use super::common::keys;
 use std::path::PathBuf;
 use std::sync::Arc;
 use vpdf::Result;
-use vpdf::layout::{Crop, Screen};
 use vpdf::solo::Solo;
 use vpdf::text::{Bounds, Glyph, Line, PageId, Position, Text};
 use vpdf_reader::reader::SelectionKind;
+use vpdf_ui::layout::{Crop, Screen};
 const BAND: &str = "\x1b[0;100m";
 const SELECTION: &str = "\x1b[0;7;35m";
 const CURSOR: &str = "\x1b[0;7;34m";
@@ -167,7 +167,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
     last: Position { glyph: 2, ..Position::default() },
     excerpt: "c".into(),
   };
-  app.search.show(vpdf::find::Query::default(), vec![hit]);
+  app.search.show(vpdf_search::query::Query::default(), vec![hit]);
   let mut out = Vec::new();
   app.text_canvas(&mut out)?;
   let frame = String::from_utf8(out)?;
@@ -331,7 +331,7 @@ fn landing_text_fills_row_below_glyph_styles() -> Result<()> {
     last: Position { glyph: 3, ..position },
     excerpt: String::new(),
   };
-  app.search.show(vpdf::find::Query::default(), vec![hit]);
+  app.search.show(vpdf_search::query::Query::default(), vec![hit]);
   let mut out = Vec::new();
   app.text_canvas(&mut out)?;
   let frame = String::from_utf8(out)?;
@@ -413,7 +413,7 @@ fn landing_search_early_commit_uses_current_query() -> Result<()> {
       app.incremental(query)?;
       assert!(matches!(
         app.search.phase(),
-        vpdf::find::Phase::Running { jump: true }
+        vpdf_ui::find::Phase::Running { jump: true }
       ));
       app.finish_search(query, false)?;
       assert_eq!(app.reader.cursor, previous);

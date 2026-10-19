@@ -4,12 +4,12 @@
 use crate::Result;
 use crate::diacritics::DIACRITICS;
 use crate::document::Document;
-use crate::layout::page_matrix;
 use crate::text::PageId;
 use crate::tiles::encode;
 use mupdf::Colorspace;
 use std::io::Write;
 use vpdf_terminal::terminal::transmit;
+use vpdf_ui::layout::page_matrix;
 
 /// Asks the executable to print a page preview, and names the output
 /// the reader chose, since its fzf owns the terminal and the preview

@@ -6,11 +6,11 @@ use std::sync::Arc;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::document::Target;
-use vpdf::keys::PanelKind;
-use vpdf::panel::Destination;
-use vpdf::pointer::{Hit, Region};
 use vpdf::solo::Solo;
 use vpdf::text::{Bounds, Glyph, Line, PageId, Text};
+use vpdf_ui::keys::PanelKind;
+use vpdf_ui::panel::Destination;
+use vpdf_ui::pointer::{Hit, Region};
 
 /// One page of 12 pt Courier `lines`, 24 pt apart, with `annots`;
 /// equal lengths share a right margin.
@@ -128,7 +128,7 @@ fn printed_links_reach_every_consumer() -> Result<()> {
   assert_eq!(hits, [Hit::Link(PageId(0), 0), Hit::Link(PageId(0), 1)]);
   // `gl` lists them.
   app.open_panel(PanelKind::Links)?;
-  let rows = &app.panel.as_ref().expect("link panel").rows;
+  let rows = &app.panel.as_ref().expect("link panel").view.rows();
   let labels: Vec<_> = rows.iter().map(|row| row.label.as_str()).collect();
   assert_eq!(labels, ["https://a.org/x", "doi:10.1000/abc"]);
   assert!(matches!(&rows[1].destination, Destination::Link(t) if is_doi(t)));
@@ -194,7 +194,7 @@ fn real_preprint_addresses_are_links() -> Result<()> {
   }
   app.command("17")?;
   app.open_panel(PanelKind::Links)?;
-  let rows = &app.panel.as_ref().expect("link panel").rows;
+  let rows = &app.panel.as_ref().expect("link panel").view.rows();
   assert!(rows.iter().any(|row| row.label == cases[0].1), "gl lists the DOI");
   Ok(())
 }

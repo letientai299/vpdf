@@ -3,10 +3,10 @@ use crate::common;
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::Request;
-use vpdf::keys::{Action, Input};
-use vpdf::layout::Screen;
 use vpdf::session::Session;
-use vpdf::window::{TabMove, Window};
+use vpdf_ui::keys::{Action, Input};
+use vpdf_ui::layout::Screen;
+use vpdf_ui::window::{TabMove, Window};
 
 /// Runs `action` in the focused pane and applies its request.
 fn act(session: &mut Session, action: Action) -> Result<()> {
@@ -30,7 +30,10 @@ fn split() -> Result<(Session, u32, u32)> {
   session.open(&root.join("book.pdf"), true, screen)?;
   session.app().command("30")?;
   let right = session.app().id;
-  act(&mut session, Action::Window(Window::Split(vpdf::split::Axis::Columns)))?;
+  act(
+    &mut session,
+    Action::Window(Window::Split(vpdf_ui::split::Axis::Columns)),
+  )?;
   let left = session.app().id;
   Ok((session, left, right))
 }
@@ -159,7 +162,7 @@ fn marks_persist_and_cross_documents() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn ctrl_w_splits_moves_and_closes_panes() -> Result<()> {
-  use vpdf::split::{Axis, Direction};
+  use vpdf_ui::split::{Axis, Direction};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let (mut session, left, _) = split()?;
   assert_eq!(session.tab().panes.len(), 2);
@@ -203,7 +206,7 @@ mod pointer {
     KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
   };
   use vpdf::app::App;
-  use vpdf::keys::PanelKind;
+  use vpdf_ui::keys::PanelKind;
 
   fn mouse(
     session: &mut Session,
@@ -246,7 +249,7 @@ mod pointer {
       session
         .app()
         .keys
-        .feed(key(KeyCode::Char('g')), vpdf::keys::Grammar::Other)
+        .feed(key(KeyCode::Char('g')), vpdf_ui::keys::Grammar::Other)
         .is_none()
     );
     mouse(&mut session, ScrollDown, 90, 10)?;
@@ -262,7 +265,7 @@ mod pointer {
     session
       .app()
       .keys
-      .feed(key(KeyCode::Char('g')), vpdf::keys::Grammar::Other);
+      .feed(key(KeyCode::Char('g')), vpdf_ui::keys::Grammar::Other);
     mouse(&mut session, Down(Left), 90, 10)?;
     assert_eq!(session.app().id, left, "prompt consumes the press");
     mouse(&mut session, Down(Left), 90, 10)?;
@@ -299,8 +302,9 @@ mod pointer {
   #[ignore = "requires verified public PDF corpus"]
   fn only_presses_move_panel_focus() -> Result<()> {
     let (mut session, width) = outline()?;
-    let panel =
-      |session: &mut Session| session.app().panel.as_ref().unwrap().focused;
+    let panel = |session: &mut Session| {
+      session.app().panel.as_ref().unwrap().view.focused()
+    };
     mouse(&mut session, ScrollDown, 2, 5)?;
     assert!(!panel(&mut session), "the wheel leaves the panel unfocused");
     mouse(&mut session, Down(Left), 2, 3)?;
@@ -330,7 +334,7 @@ mod pointer {
       session
         .app()
         .keys
-        .feed(key(KeyCode::Char('g')), vpdf::keys::Grammar::Other);
+        .feed(key(KeyCode::Char('g')), vpdf_ui::keys::Grammar::Other);
       session.app().awaiting = std::time::Instant::now().checked_sub(second);
       assert!(session.app().clue_due());
       mouse(&mut session, kind, 40, 38)?;
@@ -342,7 +346,7 @@ mod pointer {
         assert_eq!(app.keys.pending(), "g", "wheel keeps the prefix");
       }
     }
-    let mut history = vpdf::prompt::History::default();
+    let mut history = vpdf_ui::prompt::History::default();
     menu(&mut session, &mut history)?;
     mouse(&mut session, Down(Left), 40, 38)?;
     assert_eq!(session.app().reader.cursor, cursor, "menu rows are inert");
@@ -360,7 +364,7 @@ mod pointer {
   /// Opens `:` with its completion menu.
   fn menu(
     session: &mut Session,
-    history: &mut vpdf::prompt::History,
+    history: &mut vpdf_ui::prompt::History,
   ) -> Result<()> {
     act(session, Action::Command)?;
     for code in [KeyCode::Char('t'), KeyCode::Tab] {
@@ -461,7 +465,7 @@ fn resize_lays_out_panes_and_start_screen() -> Result<()> {
 fn resident_tiles(session: &mut Session) -> Result<()> {
   let mut tiles = Vec::new();
   for app in &mut session.tab().panes {
-    for key in vpdf::tiles::visible(&app.layout, app.reader.scroll) {
+    for key in vpdf_ui::layout::visible(&app.layout, app.reader.scroll) {
       tiles.push((app.id, vpdf::tiles::render(&mut app.doc, key)?));
     }
   }
@@ -603,7 +607,7 @@ fn focus_keeps_images_and_reload_drops_its_own() -> Result<()> {
   let visible = |session: &mut Session, id| {
     let tab = session.tab();
     let app = tab.panes.iter().find(|app| app.id == id).unwrap();
-    vpdf::tiles::visible(&app.layout, app.reader.scroll)
+    vpdf_ui::layout::visible(&app.layout, app.reader.scroll)
   };
   let kept = visible(&mut session, left);
   assert!(kept.iter().all(|&key| session.graphics.contains(&(left, key))));
@@ -628,12 +632,15 @@ fn closed_panes_drop_their_images() -> Result<()> {
   let mut session = Session::new(None);
   session.open(&path, true, screen)?;
   let kept = session.app().id;
-  act(&mut session, Action::Window(Window::Split(vpdf::split::Axis::Columns)))?;
+  act(
+    &mut session,
+    Action::Window(Window::Split(vpdf_ui::split::Axis::Columns)),
+  )?;
   let closed = session.app().id;
   resident_tiles(&mut session)?;
   let owned = |session: &mut Session, id| {
     let app = session.tab().panes.iter().find(|app| app.id == id).unwrap();
-    vpdf::tiles::visible(&app.layout, app.reader.scroll)
+    vpdf_ui::layout::visible(&app.layout, app.reader.scroll)
   };
   let keys = owned(&mut session, kept);
   let gone = owned(&mut session, closed);

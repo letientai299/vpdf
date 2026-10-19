@@ -1,11 +1,11 @@
 use crate::Result;
 use crate::app::{App, Request};
-use crate::panel::{Destination, Row};
 use crate::pdf_text::PdfText;
 use crate::state::Mark;
 use crate::text::{PageId, Position};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
+use vpdf_ui::panel::{Destination, Row};
 
 pub struct Landing {
   pub position: Position,

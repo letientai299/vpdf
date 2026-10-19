@@ -1,16 +1,15 @@
 use crate::Result;
 use crate::app::App;
-use crate::app::InputOwner;
 use crate::document::{Document, Heading, Link, Target};
-use crate::panel::layout::Layout;
-use crate::panel::{Destination, Row};
-use crate::pointer::{Hit, Hover};
 use crate::preview::{Origin, Preview};
-use crate::split::Rect;
 use crate::text::{Bounds, PageId, Position, Text};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use vpdf_ui::input::InputOwner;
+use vpdf_ui::panel::{Destination, Row};
+use vpdf_ui::pointer::{Hit, Hover};
+use vpdf_ui::split::Rect;
 
 /// The hovered link's page, that page's links, and index.
 type Hovered = (PageId, Arc<Vec<Link>>, usize);
@@ -417,59 +416,13 @@ fn page_name(doc: &Document, page: PageId) -> String {
     .map_or_else(|| page.0.saturating_add(1).to_string(), str::to_owned)
 }
 
-impl Layout {
-  pub fn links(rows: &[Row], columns: usize, selected: usize) -> Self {
-    let mut layout = Self { columns, lines: Vec::new(), starts: Vec::new() };
-    for (source, row) in rows.iter().enumerate() {
-      layout.starts.push(layout.lines.len());
-      layout.label(source, &row.label, &row.detail, selected);
-      if let Destination::Link(Target::Uri(uri)) = &row.destination
-        && *uri != row.label
-      {
-        layout.secondary(source, uri, selected);
-      }
-    }
-    layout.starts.push(layout.lines.len());
-    layout
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::keys::{Action, Input, PanelKind};
-  use crate::layout::Screen;
-  use crate::panel::{Panel, Style};
   use crate::text::{Bounds, Glyph, Line as TextLine, PageId};
-  use crossterm::event::{
-    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-  };
   use std::path::PathBuf;
-  use unicode_width::UnicodeWidthStr;
-  use vpdf_reader::motion::Motion;
-  use vpdf_terminal::terminal;
-
-  fn row(label: &str, uri: &str) -> Row {
-    Row::new(
-      label.into(),
-      String::new(),
-      Destination::Link(Target::Uri(uri.into())),
-    )
-  }
-
-  #[test]
-  fn unselected_long_labels_clip() {
-    let long = "A label far wider than the panel";
-    let rows = [row(long, long), row(long, long), row("Short", "Short")];
-    let layout = Layout::links(&rows, 20, 0);
-    // (source) -> its label line clipped
-    let cases = [(0, false), (1, true), (2, false)];
-    for (source, want) in cases {
-      let label = &layout.lines[layout.starts[source]];
-      assert_eq!(label.clipped, want, "row {source}");
-    }
-    assert!(layout.lines.iter().filter(|line| line.source == 0).count() > 1);
-  }
+  use vpdf_ui::keys::{Action, Input, PanelKind};
+  use vpdf_ui::layout::Screen;
 
   #[test]
   fn labels_distinguish_targets() {
@@ -583,88 +536,6 @@ mod tests {
   }
 
   #[test]
-  fn selected_urls_expand() {
-    let uri = "https://example.com/long/path?query=needle";
-    let rows = [row("Project page", uri), row(uri, uri)];
-    for columns in [4, 12, 30, 50] {
-      let layout = Layout::links(&rows, columns, 0);
-      let secondary: String = layout
-        .lines
-        .iter()
-        .filter(|line| line.source == 0 && line.row.style == Style::Muted)
-        .map(|line| line.row.label.trim_start())
-        .collect();
-      assert_eq!(secondary, uri);
-      assert!(layout.lines.iter().all(|line| line.row.label.width()
-        + line.row.detail.width()
-        <= columns));
-      assert_eq!(
-        layout.lines.iter().filter(|line| line.source == 1).count(),
-        1
-      );
-      let layout = Layout::links(&rows, columns, 1);
-      let raw: String = layout
-        .lines
-        .iter()
-        .filter(|line| line.source == 1)
-        .map(|line| line.row.label.as_str())
-        .collect();
-      assert_eq!(raw, uri);
-    }
-  }
-
-  #[test]
-  fn expanded_links_keep_targets() -> Result<()> {
-    let uri = "https://example.com/long/path?query=needle";
-    let mut panel = Panel::new(
-      PanelKind::Links,
-      vec![row("Project page", uri), row("Other", "https://example.org")],
-    );
-    panel.list(&mut Vec::new(), terminal::At::default(), 24, 20)?;
-    let press = |line| MouseEvent {
-      kind: MouseEventKind::Down(MouseButton::Left),
-      column: 4,
-      row: line,
-      modifiers: KeyModifiers::NONE,
-    };
-    assert_eq!(panel.pointer(press(2)), Some(0));
-    panel.navigate(Input::plain(Action::Motion(Motion::Down)), 20);
-    panel.list(&mut Vec::new(), terminal::At::default(), 24, 20)?;
-    assert_eq!(panel.selected, 1);
-    panel.begin_search(false);
-    panel.preview("needle");
-    assert_eq!(panel.selected, 0);
-    assert_eq!(panel.count(), Some((1, 1)));
-    panel.list(&mut Vec::new(), terminal::At::default(), 12, 20)?;
-    assert_eq!(panel.pointer(press(3)), Some(0));
-    Ok(())
-  }
-
-  #[test]
-  fn wheel_scrolls_expanded_links() -> Result<()> {
-    let uri = format!("https://example.com/{}", "long-path/".repeat(20));
-    let mut panel = Panel::new(
-      PanelKind::Links,
-      vec![row(&uri, &uri), row("Other", "https://example.org")],
-    );
-    panel.list(&mut Vec::new(), terminal::At::default(), 20, 6)?;
-    panel.pointer(MouseEvent {
-      kind: MouseEventKind::ScrollDown,
-      column: 4,
-      row: 2,
-      modifiers: KeyModifiers::NONE,
-    });
-    panel.list(&mut Vec::new(), terminal::At::default(), 20, 6)?;
-    assert_eq!((panel.selected, panel.top), (0, 3));
-    panel.navigate(Input::plain(Action::Motion(Motion::Down)), 6);
-    let mut out = Vec::new();
-    panel.list(&mut out, terminal::At::default(), 20, 6)?;
-    assert_eq!(panel.selected, 1);
-    assert!(String::from_utf8(out)?.contains("Other"));
-    Ok(())
-  }
-
-  #[test]
   #[ignore = "requires verified public PDF corpus"]
   fn real_links_resolve_text() -> Result<()> {
     let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
@@ -694,7 +565,7 @@ mod tests {
 
     app.go_to_page(PageId(10))?;
     app.open_panel(PanelKind::Links)?;
-    let row = &app.panel.as_ref().unwrap().rows[0];
+    let row = &app.panel.as_ref().unwrap().view.rows()[0];
     assert_eq!(row.label, "arXiv:1610.02357");
     // U21: hovers quote what references cite, as the panel does.
     let text = app.doc.text(PageId(2))?;

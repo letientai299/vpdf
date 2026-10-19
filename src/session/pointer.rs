@@ -1,7 +1,7 @@
 use super::{
-  App, Dropped, Event, Hit, Home, Hover, InputOwner, Instant, Landing,
-  MouseButton, MouseEvent, MouseEventKind, Pane, Path, Pixel, Region, Rehover,
-  Result, Route, Session, Shape, Step, Target, Write, answer, terminal,
+  App, Dropped, Event, Hit, Home, Hover, Instant, Landing, MouseButton,
+  MouseEvent, MouseEventKind, Path, Pixel, Region, Rehover, Result, Route,
+  Session, Shape, Step, Target, Write, answer, terminal,
 };
 
 impl Session {
@@ -64,7 +64,7 @@ impl Session {
     self.pointer.release();
     self.focus(self.active, index)?;
     let history =
-      crate::keys::Input::plain(crate::keys::Action::History(forward));
+      vpdf_ui::keys::Input::plain(vpdf_ui::keys::Action::History(forward));
     self.app().action(history)?;
     Ok(true)
   }
@@ -105,7 +105,7 @@ impl Session {
     if let Some(changed) = self.edge_event(mouse, pixel, now)? {
       return Ok(changed);
     }
-    let wheel = crate::pointer::Wheel::of(mouse.kind).is_some();
+    let wheel = vpdf_ui::pointer::Wheel::of(mouse.kind).is_some();
     if wheel && self.app().prompt.is_some() {
       return Ok(false);
     }
@@ -135,11 +135,11 @@ impl Session {
     }
     let tab = &self.tabs[self.active];
     // Snapshot before disarm hides clue rows.
-    let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();
+    let panes: Vec<_> = tab.panes.iter().map(App::pointer_pane).collect();
     let focused = tab.panes[tab.focus].id;
     let route = self.pointer.route(&panes, focused, mouse, pixel, now);
     let gesture = wheel && self.pointer.turn(mouse, pixel, now);
-    let interrupts = crate::pointer::interrupts(mouse.kind)
+    let interrupts = vpdf_ui::pointer::interrupts(mouse.kind)
       && !(wheel
         && route.as_ref().is_some_and(|route| route.region == Region::Overlay));
     let app = self.app();
@@ -213,7 +213,7 @@ impl Session {
       if mouse.kind == MouseEventKind::Down(MouseButton::Middle) {
         // Its run drops a double click's repeat.
         let tab = self.tab();
-        let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();
+        let panes: Vec<_> = tab.panes.iter().map(App::pointer_pane).collect();
         let focused = tab.panes[tab.focus].id;
         self.pointer.route(&panes, focused, mouse, pixel, now);
       } else {
@@ -302,7 +302,7 @@ impl Session {
       return self.focus(tab, pane);
     }
     let (column, row) = drop.cell;
-    let under = |app: &App| Pane::of(app).rect.contains(column, row);
+    let under = |app: &App| app.pointer_pane().rect.contains(column, row);
     // A load that fails says so in the pane the drop chose.
     if let Some(index) = self.tab().panes.iter().position(under) {
       self.focus(self.active, index)?;
@@ -367,8 +367,8 @@ impl Session {
 
   /// `mouse` routed in the focused pane's `region`.
   fn focused_in(&mut self, region: Region, mouse: MouseEvent) -> Option<Route> {
-    let pane = Pane::of(self.app());
-    let local = crate::pointer::route(&[pane], pane.id, None, mouse);
+    let pane = self.app().pointer_pane();
+    let local = vpdf_ui::pointer::route(&[pane], pane.id, None, mouse);
     local.filter(|route| route.region == region)
   }
 
@@ -393,9 +393,9 @@ impl Session {
   /// Pane index and route under `mouse`.
   pub(super) fn under(&mut self, mouse: MouseEvent) -> Option<(usize, Route)> {
     let tab = self.tabs.get(self.active)?;
-    let panes: Vec<_> = tab.panes.iter().map(Pane::of).collect();
+    let panes: Vec<_> = tab.panes.iter().map(App::pointer_pane).collect();
     let route =
-      crate::pointer::route(&panes, tab.panes[tab.focus].id, None, mouse)?;
+      vpdf_ui::pointer::route(&panes, tab.panes[tab.focus].id, None, mouse)?;
     Some((self.tab().index(route.pane)?, route))
   }
 
@@ -415,9 +415,10 @@ impl Session {
       if app.hover_peek().is_none() {
         continue;
       }
-      let pane = Pane::of(app);
-      let route = spot
-        .and_then(|mouse| crate::pointer::route(&[pane], pane.id, None, mouse));
+      let pane = app.pointer_pane();
+      let route = spot.and_then(|mouse| {
+        vpdf_ui::pointer::route(&[pane], pane.id, None, mouse)
+      });
       let at = route.map(|route| (route.mouse.column, route.mouse.row));
       left |= app.hover_leave(at);
     }
@@ -457,10 +458,7 @@ impl Session {
     let tab = self.tabs.get(self.active)?;
     // Keyboard overlays hold rests everywhere.
     let owner = tab.panes[tab.focus].input_owner();
-    let free = matches!(
-      owner,
-      InputOwner::Content | InputOwner::Panel | InputOwner::Overview
-    );
+    let free = !owner.is_overlay();
     // Previews and recent cards share one picture.
     let pictured = |app: &App| app.peek.is_some() || app.covered();
     if !free || tab.panes.iter().any(pictured) {

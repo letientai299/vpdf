@@ -3,14 +3,14 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Target;
-use crate::pointer::{Hit, Route};
 use crate::text::Bounds;
-use crate::theme;
 use crossterm::event::MouseEventKind;
 use std::io::Write;
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 use vpdf_terminal::graphics::Graphics;
+use vpdf_ui::pointer::{Hit, Route};
+use vpdf_ui::theme;
 
 /// The bar's time after a move.
 pub(crate) const SHOWN: Duration = Duration::from_secs(1);
@@ -285,9 +285,9 @@ fn runs(ticks: Vec<(f32, [u8; 4])>) -> Vec<Run> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::layout::Screen;
   use crate::search::Hit as Found;
   use crate::text::{PageId, Position};
+  use vpdf_ui::layout::Screen;
 
   #[test]
   fn touching_ticks_of_one_color_merge() {
@@ -327,7 +327,7 @@ mod tests {
       Found { first: at, last: at, excerpt: String::new() }
     };
     // Three matches on two pages: two ticks.
-    let query = crate::find::Query::default();
+    let query = vpdf_search::query::Query::default();
     app.search.show(query, vec![found(2), found(2), found(9)]);
     let matches = app.ticks(height).into_iter();
     let matches = matches.filter(|(_, color)| *color == theme::MATCH_TICK);

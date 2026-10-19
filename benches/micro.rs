@@ -8,10 +8,10 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::document::{Document, Handle};
-use vpdf::layout::{Screen, page_matrix, transform};
 use vpdf::pdf_text::PdfText;
 use vpdf::solo::Solo;
 use vpdf::text::PageId;
+use vpdf_ui::layout::{Screen, page_matrix, transform};
 
 mod support;
 use support::measure;
@@ -99,7 +99,7 @@ fn overlay_case(app: &mut Solo, name: &str) -> Result<()> {
 
 /// Hovered citation: label, then tint.
 fn link_hover() -> Result<()> {
-  use vpdf::pointer::{Hit, Hover, Region};
+  use vpdf_ui::pointer::{Hit, Hover, Region};
   let on = |pane, page, index| {
     let hit = Hit::Link(page, index);
     let beneath = Some((page, index));
@@ -200,7 +200,7 @@ fn draw_hints() -> Result<()> {
 fn menu_rows() -> Result<()> {
   let mut app = paper(false)?;
   let prefix = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
-  app.key(prefix, &mut vpdf::prompt::History::default())?;
+  app.key(prefix, &mut vpdf_ui::prompt::History::default())?;
   app.awaiting = Instant::now().checked_sub(Duration::from_secs(1));
   let _ = app.clue_due();
   assert!(app.clues.is_some());
@@ -209,46 +209,10 @@ fn menu_rows() -> Result<()> {
   })
 }
 
-/// A drag across a two-pane split.
-fn route() -> Result<()> {
-  use crossterm::event::{
-    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-  };
-  use vpdf::pointer::{Capture, Pane, Region};
-  use vpdf::split::Rect;
-  let pane = |id, column, panel| Pane {
-    id,
-    rect: Rect { column, row: 0, columns: 60, rows: 40 },
-    panel,
-    overlay: 3,
-    overview: false,
-    preview: None,
-    menu: None,
-    actions: None,
-  };
-  let panes = [pane(1, 0, 20), pane(2, 61, 0)];
-  let capture =
-    Some(Capture { pane: 1, button: MouseButton::Left, region: Region::Page });
-  let drag = MouseEvent {
-    kind: MouseEventKind::Drag(MouseButton::Left),
-    column: 90,
-    row: 39,
-    modifiers: KeyModifiers::NONE,
-  };
-  measure("pointer::route", || {
-    black_box(vpdf::pointer::route(
-      black_box(&panes),
-      1,
-      black_box(capture),
-      black_box(drag),
-    ));
-  })
-}
-
 /// Motion along a citation-dense row.
 fn hover() -> Result<()> {
   use crossterm::event::{MouseEvent, MouseEventKind};
-  use vpdf::pointer::Region;
+  use vpdf_ui::pointer::Region;
   let motion = |column| MouseEvent {
     kind: MouseEventKind::Moved,
     column,
@@ -375,7 +339,7 @@ fn frame() -> Result<()> {
   let mut app = paper(false)?;
   let base = app.reader.scroll;
   for scroll in [base, base + 4.0] {
-    for key in vpdf::tiles::visible(&app.layout, scroll) {
+    for key in vpdf_ui::layout::visible(&app.layout, scroll) {
       if !app.graphics.contains(&(app.id, key)) {
         let tile = vpdf::tiles::render(&mut app.doc, key)?;
         app.graphics.upload(app.id, &tile, &mut io::sink())?;
@@ -606,52 +570,9 @@ fn handle_bounds() -> Result<()> {
   })
 }
 
-/// Page-space bounds projected for highlights and hints.
-fn projection() -> Result<()> {
-  let mut app = paper(false)?;
-  let bounds = app.doc.text(PageId(0))?.lines[0].glyphs[0].bounds;
-  for zoom in [0.5, 2.0] {
-    app.layout.zoom = zoom;
-    app.layout.pan = 96.0;
-    {
-      let (app, _) = app.parts();
-      app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));
-    }
-    measure(&format!("Layout::project zoom {zoom}"), || {
-      black_box(app.layout.project(
-        black_box(PageId(0)),
-        black_box(bounds),
-        27.0,
-      ));
-    })?;
-    measure(&format!("tiles::visible zoom {zoom}"), || {
-      black_box(vpdf::tiles::visible(black_box(&app.layout), 27.0));
-    })?;
-  }
-  Ok(())
-}
-
-fn key_prefixes() -> Result<()> {
-  for (name, input) in
-    [("Keys::feed navigation", "12j2gg"), ("Keys::feed sections", "2[[3]]")]
-  {
-    let events: Vec<_> = input
-      .chars()
-      .map(|ch| KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
-      .collect();
-    measure(name, || {
-      let mut keys = vpdf::keys::Keys::default();
-      for event in &events {
-        black_box(keys.feed(black_box(*event), vpdf::keys::Grammar::Objects));
-      }
-    })?;
-  }
-  Ok(())
-}
-
 fn routing_key() -> Result<()> {
   let mut app = paper(false)?;
-  let mut history = vpdf::prompt::History::default();
+  let mut history = vpdf_ui::prompt::History::default();
   let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
   measure("App::key reading", || {
     app.reader.scroll = 0.0;
@@ -662,7 +583,7 @@ fn routing_key() -> Result<()> {
 
 fn cursor_key() -> Result<()> {
   let mut app = paper(false)?;
-  let mut history = vpdf::prompt::History::default();
+  let mut history = vpdf_ui::prompt::History::default();
   app
     .key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE), &mut history)?;
   let cursor = app.reader.cursor;
@@ -729,7 +650,7 @@ fn preview_live() -> Result<()> {
   preview_draw()?;
   for text in [false, true] {
     let mut app = preview_scene(text)?;
-    let mut history = vpdf::prompt::History::default();
+    let mut history = vpdf_ui::prompt::History::default();
     let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
     measure(&format!("preview prefix text={text}"), || {
       app.keys.clear();
@@ -770,7 +691,7 @@ fn routing_pointer() -> Result<()> {
 
 fn routing_status() -> Result<()> {
   let mut app = paper(false)?;
-  app.open_panel(vpdf::keys::PanelKind::Help)?;
+  app.open_panel(vpdf_ui::keys::PanelKind::Help)?;
   let mut out = Vec::new();
   measure("App::status owner", || {
     out.clear();
@@ -779,24 +700,10 @@ fn routing_status() -> Result<()> {
   })
 }
 
-fn routing_panel() -> Result<()> {
-  let mut app = paper(false)?;
-  app.open_panel(vpdf::keys::PanelKind::Help)?;
-  let panel = app.panel.as_mut().expect("help panel");
-  let mut out = Vec::new();
-  measure("Panel::list", || {
-    out.clear();
-    panel
-      .list(&mut out, vpdf_terminal::terminal::At::default(), 50, 40)
-      .expect("panel rows");
-    black_box(&out);
-  })
-}
-
 fn routing_outline() -> Result<()> {
   let mut app = paper(false)?;
-  app.open_panel(vpdf::keys::PanelKind::Outline)?;
-  app.panel.as_mut().expect("outline").focused = false;
+  app.open_panel(vpdf_ui::keys::PanelKind::Outline)?;
+  app.panel.as_mut().expect("outline").view.focus(false);
   measure("App::track_outline", || {
     app.track_outline();
     black_box(app.current_section);
@@ -814,7 +721,7 @@ fn routing_outline() -> Result<()> {
 fn routing_panel_press() -> Result<()> {
   use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
   let mut app = paper(false)?;
-  app.open_panel(vpdf::keys::PanelKind::Help)?;
+  app.open_panel(vpdf_ui::keys::PanelKind::Help)?;
   let mouse = MouseEvent {
     kind: MouseEventKind::Down(MouseButton::Left),
     column: 2,
@@ -887,17 +794,17 @@ fn lexical_objects() -> Result<()> {
     .take(8)
     .map(|g| KeyEvent::new(KeyCode::Char(g.ch), KeyModifiers::NONE))
     .collect();
-  let mut keys = vpdf::keys::Keys::default();
+  let mut keys = vpdf_ui::keys::Keys::default();
   measure("Keys::feed objects paper", || {
     keys.clear();
     for ch in "3iw".chars() {
       black_box(keys.feed(
         KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
-        vpdf::keys::Grammar::Objects,
+        vpdf_ui::keys::Grammar::Objects,
       ));
     }
     for key in &letters {
-      black_box(keys.feed(*key, vpdf::keys::Grammar::Objects));
+      black_box(keys.feed(*key, vpdf_ui::keys::Grammar::Objects));
     }
   })
 }
@@ -946,12 +853,10 @@ const CASES: &[(&str, Case)] = &[
   ("cursorline", cursorline),
   ("landing", landing),
   ("draw_hints", draw_hints),
-  ("route", route),
   ("hover", hover),
   ("wheel", wheel),
   ("cold page", cold_page),
   ("pack read", pack_read),
-  ("key prefixes", key_prefixes),
   ("scan whole", scan_whole),
   ("page list", page_list),
   ("crop margins", crop_margins),
@@ -960,7 +865,6 @@ const CASES: &[(&str, Case)] = &[
   ("label scan", label_scan),
   ("handle open", handle_open),
   ("handle bounds", handle_bounds),
-  ("projection", projection),
   ("menu_rows", menu_rows),
   ("link hover", link_hover),
   ("drag", drag),
@@ -976,7 +880,6 @@ const CASES: &[(&str, Case)] = &[
   ("split frame", split_frame),
   ("routing pointer", routing_pointer),
   ("routing status", routing_status),
-  ("routing panel", routing_panel),
   ("routing fixes outline", routing_outline),
   ("routing fixes panel press", routing_panel_press),
 ];

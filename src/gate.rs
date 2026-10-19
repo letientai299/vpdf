@@ -3,10 +3,10 @@
 //! pixels. `:text` presents extracted text on such a path; it is no
 //! fallback, so the same gate applies.
 use crate::Result;
-use crate::layout::Screen;
 use std::fmt;
 use vpdf_terminal::caps::{Caps, KeyLack, Lack, Profile};
 use vpdf_terminal::terminal::{self, Terminal};
+use vpdf_ui::layout::Screen;
 
 /// A requirement the terminal path misses.
 #[derive(Clone, Debug, Eq, PartialEq)]

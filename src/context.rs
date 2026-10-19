@@ -3,20 +3,20 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Target;
-use crate::keys::{self, Action, Input, PanelKind};
-use crate::panel::Destination;
 use crate::pdf_text::PdfText;
-use crate::pointer::{Hit, Items, List, Route};
 use crate::region::Operation;
-use crate::split::Rect;
 use crate::text::{Bounds, PageId, Position};
-use crate::theme;
 use crossterm::event::{MouseEvent, MouseEventKind};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::SelectionKind;
 use vpdf_terminal::graphics::Graphics;
+use vpdf_ui::keys::{self, Action, Input, PanelKind};
+use vpdf_ui::panel::Destination;
+use vpdf_ui::pointer::{Hit, Items, List, Route};
+use vpdf_ui::split::Rect;
+use vpdf_ui::theme;
 
 /// An open context menu.
 pub struct ContextMenu {
@@ -210,10 +210,10 @@ impl App {
     let covered = self.covered();
     let Some(panel) = &mut self.panel else { return };
     let mut items = Vec::new();
-    let pressed = panel.row_at(column, row);
+    let pressed = panel.view.row_at(column, row);
     if let Some(index) = pressed {
-      panel.selected = index;
-      let destination = &panel.rows[index].destination;
+      panel.view.choose(index);
+      let destination = &panel.view.rows()[index].destination;
       let address = match destination {
         Destination::Link(Target::Uri(uri)) => Some(uri.clone()),
         _ => None,
@@ -223,7 +223,7 @@ impl App {
         let action =
           if address.is_some() { Action::OpenUrl } else { Action::Follow };
         items.push(bound(label, action, Command::Key(action)));
-        if !panel.is_recent_view() {
+        if !panel.view.is_recent_view() {
           let keep = Command::Key(Action::Swap);
           items.push(bound("Follow, keep panel", Action::Swap, keep));
         }
@@ -232,7 +232,7 @@ impl App {
       if !matches!(destination, Destination::None) && address.is_none() {
         items.push(item("Open in split", "", Command::RowSplit));
       }
-      if panel.kind == PanelKind::Annotations {
+      if panel.view.kind() == PanelKind::Annotations {
         items.push(bound(
           "Show note",
           Action::Peek,
@@ -241,7 +241,7 @@ impl App {
       }
       if let Some(uri) = address {
         items.push(copy_address(uri));
-      } else if let Some(text) = panel.yank_text() {
+      } else if let Some(text) = panel.view.yank_text() {
         let copy = Command::CopyText(text, "Copied row");
         items.push(item("Copy row", "yy", copy));
       }
@@ -251,7 +251,7 @@ impl App {
     // Cards draw over cells right of the rows.
     let columns = self.screen.columns;
     let right = if covered {
-      crate::recent::Shelf::list_columns(panel, columns)
+      vpdf_ui::panel::recent::Shelf::list_columns(&panel.view, columns)
     } else {
       columns
     };
@@ -372,7 +372,7 @@ impl App {
       Command::CopyText(text, message) => self.copy_text(text, message),
       Command::Split(target) => self.open_split(&target),
       Command::RowSplit => {
-        let selected = self.panel.as_ref().map(|panel| panel.selected);
+        let selected = self.panel.as_ref().map(|panel| panel.view.selected());
         selected.map_or(Ok(()), |index| self.panel_split(index))
       }
       Command::Copy => self.action(key(Action::Yank)),
@@ -490,11 +490,11 @@ impl App {
       let label = format!("{:<keys$}  {}", item.key, item.label);
       write!(out, "{}{}", self.at.goto(row, left), theme::BAR)?;
       let shown = if index == selected {
-        crate::grid::Shown::Chosen
+        vpdf_ui::grid::Shown::Chosen
       } else {
-        crate::grid::Shown::Plain
+        vpdf_ui::grid::Shown::Plain
       };
-      crate::grid::cell(out, &label, width, keys, shown)?;
+      vpdf_ui::grid::cell(out, &label, width, keys, shown)?;
       write!(out, "{}", theme::RESET)?;
     }
     let Some(area) = self.context_rect().filter(|_| !self.text_mode) else {

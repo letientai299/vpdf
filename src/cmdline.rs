@@ -1,62 +1,10 @@
 use crate::Result;
-use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crossterm::event::KeyEvent;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Complete {
-  Nothing,
-  Language,
-  Path,
-  /// `on` or `off`.
-  Switch,
-}
-
-pub struct Spec {
-  pub name: &'static str,
-  pub aliases: &'static [&'static str],
-  pub usage: &'static str,
-  pub help: &'static str,
-  pub complete: Complete,
-  /// Executable the command needs on `PATH`.
-  pub requires: Option<&'static str>,
-}
-
-const fn spec(
-  name: &'static str,
-  aliases: &'static [&'static str],
-  usage: &'static str,
-  help: &'static str,
-) -> Spec {
-  Spec {
-    name,
-    aliases,
-    usage,
-    help,
-    complete: Complete::Nothing,
-    requires: None,
-  }
-}
-
-impl Spec {
-  const fn completes(self, complete: Complete) -> Self {
-    Self { complete, ..self }
-  }
-
-  const fn requires(self, program: &'static str) -> Self {
-    Self { requires: Some(program), ..self }
-  }
-}
-
-/// Command name and trimmed argument of `line`.
-pub fn parse(line: &str) -> (&str, &str) {
-  let line = line.trim();
-  line
-    .split_once(char::is_whitespace)
-    .map_or((line, ""), |(name, rest)| (name, rest.trim()))
-}
+use vpdf_ui::commands::{self, Complete};
+use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
 
 /// Feeds `key` to `prompt`, completing commands and editing the line in
 /// `$EDITOR`; returns the event left for the caller.
@@ -67,11 +15,11 @@ pub fn feed(
 ) -> Result<PromptEvent> {
   Ok(match prompt.feed(key, history) {
     PromptEvent::Editor => {
-      let edited = crate::editor::edit(&prompt.text)?;
+      let edited = crate::editor::edit(prompt.text())?;
       prompt.replace(&edited);
       PromptEvent::Edited
     }
-    PromptEvent::Complete if prompt.kind == PromptKind::Command => {
+    PromptEvent::Complete if prompt.kind() == PromptKind::Command => {
       let (start, items) = candidates(prompt.before_cursor());
       prompt.complete(start, items);
       PromptEvent::Edited
@@ -87,103 +35,12 @@ pub fn on_path(program: &str) -> bool {
   })
 }
 
-/// Commands whose required programs are installed.
-pub fn commands() -> impl Iterator<Item = &'static Spec> {
-  COMMANDS.iter().filter(|spec| spec.requires.is_none_or(on_path))
-}
-
-pub const COMMANDS: &[Spec] = &[
-  spec("edit", &["e"], "<file>", "open a PDF in this tab")
-    .completes(Complete::Path),
-  spec("tabedit", &["tabe", "open"], "<file>", "open a PDF in a new tab")
-    .completes(Complete::Path),
-  spec("tabnew", &[], "[file]", "open a PDF or recent list in a new tab")
-    .completes(Complete::Path),
-  spec("split", &["sp"], "[file]", "split this pane above")
-    .completes(Complete::Path),
-  spec("vsplit", &["vs"], "[file]", "split this pane to the left")
-    .completes(Complete::Path),
-  spec("close", &["clo"], "", "close this pane"),
-  spec("only", &["on"], "", "close every other pane"),
-  spec("tabnext", &["tabn"], "[n]", "go to the next or nth tab"),
-  spec("tabprevious", &["tabp", "tabN"], "", "go to the previous tab"),
-  spec("tabclose", &["tabc"], "", "close this tab"),
-  spec("recent", &["oldfiles"], "", "list recently opened PDFs"),
-  spec("fzf", &[], "", "pick a PDF below this directory").requires("fzf"),
-  spec("marks", &[], "", "list marks"),
-  spec("jumps", &[], "", "list jump destinations"),
-  spec("annotations", &["annots"], "", "list highlights and notes"),
-  spec("toc", &["outline"], "", "open the table of contents"),
-  spec("overview", &["pages"], "", "show page thumbnails"),
-  spec("cursorline", &[], "", "toggle the Visual line band (default on)"),
-  spec("crop", &[], "", "toggle cropped page margins"),
-  spec("mouse", &[], "[on|off]", "toggle mouse capture; off: terminal selects")
-    .completes(Complete::Switch),
-  spec("perf", &[], "[on|off]", "toggle persistent performance stats")
-    .completes(Complete::Switch),
-  spec("cancel", &[], "", "stop pane search, OCR, outline, region jobs"),
-  spec("nohlsearch", &["noh"], "", "hide search highlights"),
-  spec("text", &[], "", "preview extracted page text"),
-  spec("info", &[], "", "document, reader, and terminal info"),
-  spec("reload", &[], "", "reread the file from disk"),
-  spec("password", &[], "", "unlock and reopen the document"),
-  spec("ocr", &[], "[lang]", "recognize the page with Tesseract")
-    .completes(Complete::Language),
-  spec("help", &["h"], "", "show the key reference"),
-  spec("quit", &["q"], "", "close this pane, tab, then reader"),
-  spec("qall", &["qa", "quitall"], "", "close every tab"),
-];
-
-/// Command named `name` or aliased to it.
-pub fn exact(name: &str) -> Option<&'static Spec> {
-  commands().find(|s| s.name == name || s.aliases.contains(&name))
-}
-
-/// Exact names and aliases win; otherwise a unique prefix.
-pub fn lookup(name: &str) -> Option<&'static Spec> {
-  if let Some(spec) = exact(name) {
-    return Some(spec);
-  }
-  let mut matches = commands().filter(|s| s.name.starts_with(name));
-  let first = matches.next()?;
-  matches.next().is_none().then_some(first)
-}
-
-/// Byte offset and replacements for the word before the cursor.
 pub fn candidates(before: &str) -> (usize, Vec<String>) {
-  let start = before.len() - before.trim_start().len();
-  let Some((name, rest)) = before[start..].split_once(char::is_whitespace)
-  else {
-    let word = &before[start..];
-    let names = commands().map(|spec| spec.name.to_owned()).collect();
-    return (start, prefixed(names, word));
-  };
-  let argument = rest.trim_start();
-  let start = before.len() - argument.len();
-  let items = match lookup(name).map(|spec| spec.complete) {
-    Some(Complete::Language) => prefixed(languages().to_vec(), argument),
-    Some(Complete::Path) => paths(argument),
-    Some(Complete::Switch) => {
-      prefixed(vec!["on".into(), "off".into()], argument)
-    }
+  commands::candidates(before, on_path, |kind, argument| match kind {
+    Complete::Path => paths(argument),
+    Complete::Language => languages().to_vec(),
     _ => Vec::new(),
-  };
-  (start, items)
-}
-
-/// Items starting with `typed`; case-insensitive when nothing matches
-/// exactly, like zsh's `matcher-list '' 'm:{a-zA-Z}={A-Za-z}'`.
-fn prefixed(items: Vec<String>, typed: &str) -> Vec<String> {
-  let exact: Vec<_> =
-    items.iter().filter(|item| item.starts_with(typed)).cloned().collect();
-  if !exact.is_empty() {
-    return exact;
-  }
-  let folded = typed.to_lowercase();
-  items
-    .into_iter()
-    .filter(|item| item.to_lowercase().starts_with(&folded))
-    .collect()
+  })
 }
 
 /// Expands a leading `~` to the home directory.
@@ -224,7 +81,7 @@ fn paths(argument: &str) -> Vec<String> {
     })
     .collect();
   names.sort_unstable();
-  prefixed(names, prefix)
+  commands::prefixed(names, prefix)
     .into_iter()
     .map(|name| format!("{directory}{name}"))
     .collect()
@@ -254,23 +111,6 @@ fn languages() -> &'static [String] {
 #[cfg(test)]
 mod tests {
   use super::*;
-
-  #[test]
-  fn resolves_names_aliases_and_prefixes() {
-    let cases = [
-      ("q", Some("quit")),
-      ("noh", Some("nohlsearch")),
-      ("cursorline", Some("cursorline")),
-      ("cu", Some("cursorline")),
-      ("rel", Some("reload")),
-      ("c", None),
-      ("PdfPage", None),
-    ];
-    for (input, expected) in cases {
-      assert_eq!(lookup(input).map(|spec| spec.name), expected, "{input}");
-    }
-  }
-
   #[test]
   fn completes_pdfs_and_directories() -> Result<()> {
     let root = tempfile::tempdir()?;
@@ -290,15 +130,5 @@ mod tests {
       assert_eq!((items.0, names(items.1)), (start, vec!["b.PDF".to_owned()]));
     }
     Ok(())
-  }
-
-  #[test]
-  fn completes_command_names() {
-    assert_eq!(candidates("  pa"), (2, vec!["password".into()]));
-    assert_eq!(candidates("info 1").1, Vec::<String>::new());
-    assert_eq!(candidates("cu"), (0, vec!["cursorline".into()]));
-    assert_eq!(candidates("PAS").1, ["password"]);
-    assert_eq!(candidates("mouse ").1, ["on", "off"]);
-    assert_eq!(candidates("mouse of"), (6, vec!["off".into()]));
   }
 }

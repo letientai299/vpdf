@@ -1,17 +1,15 @@
 use crate::Result;
-use crate::app::{App, InputOwner, Tabline};
+use crate::app::{App, Tabline};
 use crate::chrome::Chrome;
-use crate::grid;
-use crate::layout::Screen;
-use crate::pointer::Hit;
-use crate::prompt::Prompt;
 use crate::text::PageId;
-use crate::theme::{self, Color};
 use std::fmt::Write as _;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_reader::reader::{Mode, SelectionKind};
-use vpdf_terminal::terminal::{self, At};
+use vpdf_terminal::terminal;
+use vpdf_ui::input::InputOwner;
+use vpdf_ui::pointer::Hit;
+use vpdf_ui::theme::{self, Color};
 
 impl App {
   fn mode(&self) -> (&'static str, Color) {
@@ -23,7 +21,7 @@ impl App {
       InputOwner::Region => return ("REGION", Color::Yellow),
       InputOwner::Panel => {
         if let Some(panel) = &self.panel {
-          return (panel.kind.title(), Color::Cyan);
+          return (panel.view.kind().title(), Color::Cyan);
         }
       }
       InputOwner::Overview => return ("PAGES", Color::Cyan),
@@ -40,8 +38,11 @@ impl App {
 
   /// Match under or before the cursor, like Neovim's searchcount.
   fn search_count(&self) -> String {
-    if let Some(panel) = self.panel.as_ref().filter(|panel| panel.focused) {
+    if let Some(panel) =
+      self.panel.as_ref().filter(|panel| panel.view.focused())
+    {
       return panel
+        .view
         .count()
         .map_or_else(String::new, |(i, n)| format!("[{i}/{n}]  "));
     }
@@ -121,8 +122,8 @@ impl App {
       Hit::Note { page, index, .. } => {
         self.note_line(page, index).ok().flatten()
       }
-      Hit::Row(_) => self.panel.as_ref()?.hover_title.clone(),
-      Hit::Card(row) => self.panel.as_ref()?.shelf.as_ref()?.detail(row),
+      Hit::Row(_) => self.panel.as_ref()?.view.hover_title().map(str::to_owned),
+      Hit::Card(row) => self.panel.as_ref()?.view.shelf()?.detail(row),
       Hit::Thumbnail(page) => Some(self.page_line(page)),
       Hit::Link(..) => self.hover_label(),
       Hit::Preview { .. } => self.preview_label(),
@@ -344,42 +345,10 @@ struct Line {
   zoom: std::ops::Range<usize>,
 }
 
-/// Prompt on the last row, its list above, a ghost suggestion, and a
-/// block cursor; the `pointed` completion shows under the pointer.
-pub fn prompt(
-  out: &mut impl Write,
-  prompt: &Prompt,
-  screen: Screen,
-  at: At,
-  pointed: Option<usize>,
-) -> Result<()> {
-  let row = screen.rows - 1;
-  if let Some(menu) = &prompt.menu {
-    let layout = menu.grid(screen);
-    let bottom = (at, row - 1);
-    // Pointing never picks; the line keeps the chosen one.
-    let shown = (menu.selected, pointed);
-    grid::draw(out, bottom, &menu.labels, &layout, shown, 0, screen)?;
-  }
-  let (text, ghost, column) = prompt.display();
-  let room = usize::from(screen.columns).saturating_sub(text.width());
-  write!(
-    out,
-    "{}{}",
-    at.goto(row, 0u16),
-    terminal::clean(&text, usize::from(screen.columns))
-  )?;
-  let ghost = terminal::clean(ghost, room);
-  let pad = " ".repeat(room.saturating_sub(ghost.width()));
-  write!(out, "{}{ghost}{}{pad}", theme::MUTED, theme::RESET)?;
-  let column = column.min(usize::from(screen.columns) - 1);
-  write!(out, "{}\x1b[2 q\x1b[?25h", at.goto(row, column))?;
-  Ok(())
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
+  use vpdf_ui::layout::Screen;
 
   use std::path::PathBuf;
   impl Tabs {

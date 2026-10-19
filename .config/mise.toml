@@ -145,3 +145,11 @@ run = 'cargo run --locked --release --example bench-fixtures -- "$VPDF_CORPUS/pa
 [tasks."bench:terminal"]
 description = "Measure headless terminal delivery using prepared fixtures"
 run = 'cargo bench --locked --profile release -p vpdf-terminal --bench micro -- {{arg(name="cases", var=true, default="")}}'
+
+[tasks."test:ui"]
+description = "Test interface components without native PDF code"
+run = "cargo nextest run --locked -p vpdf-ui"
+
+[tasks."bench:ui"]
+description = "Measure interface components using prepared fixtures"
+run = 'cargo bench --locked --profile release -p vpdf-ui --bench micro -- {{arg(name="cases", var=true, default="")}}'

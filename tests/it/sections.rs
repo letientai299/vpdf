@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::document::Target;
-use vpdf::layout::Screen;
 use vpdf::solo::Solo;
 use vpdf::text::{Bounds, Position};
+use vpdf_ui::layout::Screen;
 
 fn app(text_mode: bool) -> Result<Solo> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
@@ -105,7 +105,7 @@ fn section_boundaries_and_counts() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn outline_follows_reading_section() -> Result<()> {
-  use vpdf::keys::{Action, Input, PanelKind};
+  use vpdf_ui::keys::{Action, Input, PanelKind};
 
   for text_mode in [false, true] {
     for mode in [b"".as_slice(), b"i", b"v"] {
@@ -131,21 +131,26 @@ fn outline_follows_reading_section() -> Result<()> {
         let section = app.current_section.unwrap();
         assert!(app.reader.viewport_mode() || section == index, "{title}");
         let panel = app.panel.as_ref().unwrap();
-        assert_eq!(panel.selected, section, "{text_mode} {mode:?} {title}");
-        let visible = panel.top..panel.top + usize::from(app.screen.rows - 2);
+        assert_eq!(
+          panel.view.selected(),
+          section,
+          "{text_mode} {mode:?} {title}"
+        );
+        let visible =
+          panel.view.top()..panel.view.top() + usize::from(app.screen.rows - 2);
         assert!(visible.contains(&section), "{title} visible");
       }
       keys(&mut app, b"\t2j")?;
-      let selected = app.panel.as_ref().unwrap().selected;
+      let selected = app.panel.as_ref().unwrap().view.selected();
       let (position, _) = heading(&mut app, 1)?;
       app.go_to(Position { line: position.line + 2, ..position }, true)?;
       app.viewport(Input::plain(Action::Align(0.0)))?;
       app.draw(&mut Vec::new())?;
-      assert_eq!(app.panel.as_ref().unwrap().selected, selected);
+      assert_eq!(app.panel.as_ref().unwrap().view.selected(), selected);
       keys(&mut app, b"\t")?;
       app.draw(&mut Vec::new())?;
       assert_eq!(
-        app.panel.as_ref().unwrap().selected,
+        app.panel.as_ref().unwrap().view.selected(),
         app.current_section.unwrap()
       );
     }
@@ -156,7 +161,7 @@ fn outline_follows_reading_section() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn outline_follows_after_loading() -> Result<()> {
-  use vpdf::keys::PanelKind;
+  use vpdf_ui::keys::PanelKind;
 
   let mut app = app(false)?;
   let (position, _) = heading(&mut app, 10)?;
@@ -172,8 +177,8 @@ fn outline_follows_after_loading() -> Result<()> {
   app.draw(&mut Vec::new())?;
   assert_eq!(app.current_section, Some(10));
   let panel = app.panel.as_ref().unwrap();
-  assert_eq!(panel.selected, 10);
-  assert!(!panel.focused);
+  assert_eq!(panel.view.selected(), 10);
+  assert!(!panel.view.focused());
   Ok(())
 }
 

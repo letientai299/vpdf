@@ -89,7 +89,7 @@ fn page_labels_resolve_on_demand() -> Result<()> {
   ] {
     assert_eq!(doc.page_number(query), page.map(PageId), "{query}");
   }
-  let screen = vpdf::layout::Screen {
+  let screen = vpdf_ui::layout::Screen {
     columns: 120,
     rows: 50,
     cell_width: 8,

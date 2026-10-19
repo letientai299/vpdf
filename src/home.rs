@@ -1,13 +1,7 @@
 use crate::Result;
 use crate::cmdline;
-use crate::keys::{Action, Keys, PanelKind};
-use crate::layout::Screen;
-use crate::panel::{Destination, Panel, Row, recent_rows};
-use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
-use crate::recent::Shelf;
+use crate::panel::{PanelSession, recent_rows};
 use crate::state::Entry;
-use crate::statusline;
-use crate::theme::{self, Color};
 use crossterm::event::{KeyEvent, KeyEventKind};
 use std::io::Write;
 use std::path::PathBuf;
@@ -15,6 +9,12 @@ use unicode_width::UnicodeWidthStr;
 use vpdf_terminal::decode::Event;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::terminal::{self, At};
+use vpdf_ui::commands::{self, View};
+use vpdf_ui::keys::{Action, Keys};
+use vpdf_ui::layout::Screen;
+use vpdf_ui::panel::{Destination, Row};
+use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
+use vpdf_ui::theme::{self, Color};
 
 /// What the start screen asks the session to do.
 #[derive(Debug, Eq, PartialEq)]
@@ -32,7 +32,7 @@ pub struct Home {
   pub screen: Screen,
   pub(crate) at: At,
   pub error: Option<String>,
-  panel: Panel,
+  panel: PanelSession,
   /// Places thumbnails.
   graphics: Graphics,
   prompt: Option<Prompt>,
@@ -49,9 +49,8 @@ impl Home {
         Destination::None,
       ));
     }
-    let mut panel = Panel::new(PanelKind::Recent, rows);
     let wake = vpdf_pdf::jobs::Wake::new(vpdf_terminal::input::wake);
-    panel.shelf = Some(Shelf::new(recent, "", &wake));
+    let panel = PanelSession::recent(rows, recent, "", &wake);
     Self {
       screen,
       at: At::default(),
@@ -64,7 +63,7 @@ impl Home {
   }
 
   pub(crate) fn updates(&mut self) -> bool {
-    self.panel.shelf.as_mut().is_some_and(Shelf::updates)
+    self.panel.updates()
   }
 
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
@@ -84,7 +83,7 @@ impl Home {
     )?;
     let row = self.screen.rows - 1;
     if let Some(prompt) = &self.prompt {
-      statusline::prompt(out, prompt, self.screen, at, None)?;
+      prompt.draw(out, self.screen, at, None)?;
     } else {
       let (text, style) = match &self.error {
         Some(error) => (error.as_str(), theme::ERROR),
@@ -153,7 +152,7 @@ impl Home {
         let Some(mouse) = mouse else {
           return Ok(Outcome::Stay);
         };
-        Ok(match self.panel.pointer(mouse) {
+        Ok(match self.panel.view.pointer(mouse) {
           Some(_) => self.selected(),
           None => Outcome::Stay,
         })
@@ -164,10 +163,11 @@ impl Home {
 
   fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<Outcome> {
     let Some(prompt) = &mut self.prompt else {
-      let Some(input) = self.keys.feed(key, crate::keys::Grammar::Other) else {
+      let Some(input) = self.keys.feed(key, vpdf_ui::keys::Grammar::Other)
+      else {
         return Ok(Outcome::Stay);
       };
-      if self.panel.navigate(input, usize::from(self.screen.rows)) {
+      if self.panel.view.navigate(input, usize::from(self.screen.rows)) {
         return Ok(Outcome::Stay);
       }
       return Ok(match input.action {
@@ -177,7 +177,7 @@ impl Home {
           Outcome::Stay
         }
         Action::Search(backward) => {
-          self.panel.begin_search(backward);
+          self.panel.view.begin_search(backward);
           self.prompt = Some(Prompt::new(PromptKind::Search(backward)));
           Outcome::Stay
         }
@@ -195,25 +195,25 @@ impl Home {
     history: &mut History,
   ) -> Result<Outcome> {
     let Some(prompt) = &mut self.prompt else { return Ok(Outcome::Stay) };
-    let kind = prompt.kind;
+    let kind = prompt.kind();
     let search = matches!(kind, PromptKind::Search(_));
     match event {
-      PromptEvent::Edited if search => self.panel.preview(&prompt.text),
+      PromptEvent::Edited if search => self.panel.view.preview(prompt.text()),
       PromptEvent::Cancel => {
         self.prompt = None;
-        self.panel.abort_search();
+        self.panel.view.abort_search();
       }
       PromptEvent::Submit => {
-        let text = prompt.text.clone();
+        let text = prompt.text().to_owned();
         self.prompt = None;
         history.push(kind, &text);
         if !search {
           return command(&text);
         }
         anyhow::ensure!(
-          self.panel.finish_search(&text),
+          self.panel.view.finish_search(&text),
           "Pattern not found: {}",
-          self.panel.search.query
+          self.panel.view.query()
         );
       }
       _ => {}
@@ -222,7 +222,13 @@ impl Home {
   }
 
   fn selected(&self) -> Outcome {
-    match self.panel.rows.get(self.panel.selected).map(|r| &r.destination) {
+    match self
+      .panel
+      .view
+      .rows()
+      .get(self.panel.view.selected())
+      .map(|r| &r.destination)
+    {
       Some(Destination::File(path)) => Outcome::Open(path.clone()),
       _ => Outcome::Stay,
     }
@@ -231,13 +237,15 @@ impl Home {
 
 /// Commands that make sense before any document is open.
 fn command(line: &str) -> Result<Outcome> {
-  let (name, argument) = cmdline::parse(line);
+  let (name, argument) = commands::parse(line);
   if name.is_empty() {
     return Ok(Outcome::Stay);
   }
-  let spec = cmdline::lookup(name)
+  let spec = commands::lookup(name, cmdline::on_path)
     .ok_or_else(|| anyhow::anyhow!("Unknown command: {name}"))?;
-  match spec.name {
+  let name = spec.name;
+  anyhow::ensure!(spec.available(View::Home), "Open a document before :{name}");
+  match name {
     "edit" | "tabedit" | "tabnew" if !argument.is_empty() => {
       Ok(Outcome::Open(cmdline::expand(argument)))
     }

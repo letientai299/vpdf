@@ -193,7 +193,7 @@ mod tests {
   #[test]
   fn help_fits_narrow_panes() {
     let rows: Vec<_> =
-      crate::panel::help().iter().map(|s| Row::parse(s)).collect();
+      crate::panel::help(|_| true).iter().map(|s| Row::parse(s)).collect();
     for columns in [4, 10, 24, 40, 63] {
       let layout = Layout::help(&rows, columns);
       for line in &layout.lines {

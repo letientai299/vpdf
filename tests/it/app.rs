@@ -8,11 +8,11 @@ use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::document::Target;
-use vpdf::keys::{Action, Input, PanelKind};
-use vpdf::layout::Screen;
-use vpdf::pointer::{Hit, Region, Route};
 use vpdf::solo::Solo;
 use vpdf::text::{Bounds, PageId};
+use vpdf_ui::keys::{Action, Input, PanelKind};
+use vpdf_ui::layout::Screen;
+use vpdf_ui::pointer::{Hit, Region, Route};
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
@@ -41,7 +41,7 @@ fn reader_workflows() -> Result<()> {
   app.quit = false;
   common::outline_loaded(&mut app)?;
   app.open_panel(PanelKind::Outline)?;
-  assert!(!app.panel.as_ref().unwrap().rows.is_empty());
+  assert!(!app.panel.as_ref().unwrap().view.rows().is_empty());
   app.close_panel()?;
   app.open_panel(PanelKind::Text)?;
   assert!(app.text_mode);
@@ -52,7 +52,10 @@ fn reader_workflows() -> Result<()> {
   assert!(!app.search.hits().is_empty());
   app.next_result(true, 2)?;
   app.open_panel(PanelKind::Results)?;
-  assert_eq!(app.panel.as_ref().unwrap().rows.len(), app.search.hits().len());
+  assert_eq!(
+    app.panel.as_ref().unwrap().view.rows().len(),
+    app.search.hits().len()
+  );
   app.action(Input::plain(Action::Cancel))?;
   assert!(!app.search.hidden());
   app.command("cancel")?;
@@ -348,7 +351,7 @@ fn link_hints_follow_typed_labels() -> Result<()> {
 fn preview_shows_citation_target() -> Result<()> {
   use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut history = vpdf::prompt::History::default();
+  let mut history = vpdf_ui::prompt::History::default();
   let screen = Screen {
     columns: 120,
     rows: 50,
@@ -412,7 +415,7 @@ fn preview_shows_citation_target() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
-  use vpdf::keys::{Action, Input};
+  use vpdf_ui::keys::{Action, Input};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = Screen {
     columns: 137,
@@ -450,7 +453,8 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
   }
   press(&mut app, Action::Command)?;
   assert!(app.prompt.take().is_some(), "`:` reaches the command line");
-  for action in [Action::Window(vpdf::window::Window::Next), Action::Tab(true)]
+  for action in
+    [Action::Window(vpdf_ui::window::Window::Next), Action::Tab(true)]
   {
     press(&mut app, action)?;
     assert!(app.request.take().is_some(), "{action:?} reaches the session");
@@ -481,7 +485,7 @@ fn unfocused_side_is_dimmed() -> Result<()> {
   app.draw(&mut out)?;
   let veil = format!(",c={},r=39", 120 - app.left);
   assert!(String::from_utf8_lossy(&out).contains(&veil), "PDF dims");
-  app.panel.as_mut().unwrap().focused = false;
+  app.panel.as_mut().unwrap().view.focus(false);
   out.clear();
   app.draw(&mut out)?;
   let drawn = String::from_utf8_lossy(&out);
@@ -596,7 +600,7 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
     origin: (0, 0),
   };
   let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
-  let mut history = vpdf::prompt::History::default();
+  let mut history = vpdf_ui::prompt::History::default();
   let mut key = |app: &mut App, code| {
     let result = app.key(KeyEvent::new(code, KeyModifiers::NONE), &mut history);
     app.after_key();
@@ -654,7 +658,7 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
 fn clue_wait_ends_once_due() -> Result<()> {
   use crossterm::event::{KeyCode, KeyEvent};
   let mut app = text_app()?;
-  let mut history = vpdf::prompt::History::default();
+  let mut history = vpdf_ui::prompt::History::default();
   let mut press = |app: &mut App, code| {
     let result = app.key(KeyEvent::new(code, KeyModifiers::NONE), &mut history);
     app.after_key();
@@ -706,7 +710,7 @@ fn recent_view_covers_the_pane() -> Result<()> {
   app.show_recent(&[])?;
   app.command("text")?;
   assert!(app.text_mode && !app.covered() && !app.panel_focused());
-  assert!(app.panel.as_ref().unwrap().shelf.is_some());
+  assert!(app.panel.as_ref().unwrap().view.is_recent_view());
   Ok(())
 }
 
@@ -878,7 +882,8 @@ fn hover_hits_lines_rows_and_thumbnails() -> Result<()> {
   };
   for row in 0..app.screen.rows - 1 {
     let hit = app.hovered(Region::Panel, 1, row, None)?;
-    let pressed = app.panel.as_mut().expect("panel").pointer(press(1, row));
+    let pressed =
+      app.panel.as_mut().expect("panel").view.pointer(press(1, row));
     assert_eq!(hit, pressed.map_or(Hit::Nothing, Hit::Row), "row {row}");
     if row < 2 {
       assert_eq!(hit, [Hit::Nothing, Hit::Row(0)][usize::from(row)]);
@@ -1044,9 +1049,9 @@ fn frames_retest_a_resting_pointer() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn pixel_reports_hit_their_pixel() -> Result<()> {
-  use vpdf::pointer::Pixel;
   use vpdf::session::Session;
   use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
+  use vpdf_ui::pointer::Pixel;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let mut session = Session::new(None);
   session.open(&root.join("paper.pdf"), true, screen())?;

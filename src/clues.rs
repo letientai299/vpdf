@@ -1,10 +1,10 @@
 //! Next-key hints after a prefix key, like mini.clue.
 
 use crate::app::App;
-use crate::keys;
-use crate::pointer::Items;
 use crossterm::event::KeyEvent;
 use std::time::{Duration, Instant};
+use vpdf_ui::keys;
+use vpdf_ui::pointer::Items;
 
 /// Idle time after a prefix before clues show. mini.clue defaults to a
 /// second; a shorter wait suits a reader with few prefixes.
@@ -140,7 +140,7 @@ impl App {
   pub fn clue_grid(
     &self,
     clues: &Clues,
-  ) -> (Vec<String>, crate::grid::Grid, usize) {
+  ) -> (Vec<String>, vpdf_ui::grid::Grid, usize) {
     let keys = clues.items.iter().map(|(key, _)| key.len()).max().unwrap_or(0);
     let labels: Vec<_> = clues
       .items
@@ -148,8 +148,8 @@ impl App {
       .map(|(key, about)| format!("{key:<keys$}  {about}"))
       .collect();
     let columns = usize::from(self.screen.columns);
-    let limit = crate::grid::limit(self.screen);
-    let mut grid = crate::grid::layout(&labels, columns, limit, None);
+    let limit = vpdf_ui::grid::limit(self.screen);
+    let mut grid = vpdf_ui::grid::layout(&labels, columns, limit, None);
     grid.first = clues.top.min(grid.rows.saturating_sub(grid.visible));
     (labels, grid, keys)
   }

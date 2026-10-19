@@ -3,9 +3,9 @@
 use crate::mouse::{cell, cell_in, labels, mouse, press, session, status};
 use crossterm::event::{KeyCode, MouseButton, MouseEventKind};
 use vpdf::Result;
-use vpdf::pointer::{Hit, Region};
 use vpdf::session::Session;
 use vpdf::text::PageId;
+use vpdf_ui::pointer::{Hit, Region};
 
 /// A middle click, settled after each event.
 fn middle(session: &mut Session, at: (u16, u16)) -> Result<()> {
@@ -125,7 +125,7 @@ fn middle_clicks_split_rows_and_thumbnails() -> Result<()> {
       keys(&mut session, "mA")?;
       session.app().command("1")?;
       session.app().request =
-        Some(vpdf::app::Request::Panel(vpdf::keys::PanelKind::Marks));
+        Some(vpdf::app::Request::Panel(vpdf_ui::keys::PanelKind::Marks));
       session.settle()?;
     } else {
       keys(&mut session, typed)?;
@@ -145,13 +145,13 @@ fn middle_clicks_copy_web_rows() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   keys(&mut session, "gl")?;
   status(&mut session)?;
-  let rows = session.app().panel.as_ref().map(|p| p.rows.len());
+  let rows = session.app().panel.as_ref().map(|p| p.view.rows().len());
   let web = (0..rows.unwrap_or(0)).find(|&index| {
     let panel = session.tab().panes[0].panel.as_ref();
     panel.is_some_and(|panel| {
       matches!(
-        panel.rows[index].destination,
-        vpdf::panel::Destination::Link(vpdf::document::Target::Uri(_))
+        panel.view.rows()[index].destination,
+        vpdf_ui::panel::Destination::Link(vpdf::document::Target::Uri(_))
       )
     })
   });
@@ -255,7 +255,7 @@ fn row_menus_copy_and_select() -> Result<()> {
   let web = cell(&mut session, Hit::Row(1))?;
   crate::mouse::right(&mut session, web)?;
   let app = session.app();
-  assert_eq!(app.panel.as_ref().map(|panel| panel.selected), Some(1));
+  assert_eq!(app.panel.as_ref().map(|panel| panel.view.selected()), Some(1));
   assert!(app.panel_focused());
   let want = ["Follow", "Follow, keep panel", "Copy address", "Close panel"];
   assert_eq!(labels(&mut session), want);
@@ -298,8 +298,8 @@ fn panel_refills_keep_the_menu_row() -> Result<()> {
     } else {
       app.doc.outline = vec![opening()];
     }
-    app.refill_panel(vpdf::keys::PanelKind::Outline)?;
-    let selected = app.panel.as_ref().map(|panel| panel.selected);
+    app.refill_panel(vpdf_ui::keys::PanelKind::Outline)?;
+    let selected = app.panel.as_ref().map(|panel| panel.view.selected());
     if !shifted {
       assert!(app.context_menu.is_none(), "its row left");
       continue;
@@ -329,7 +329,7 @@ fn recent_menus_open_rows() -> Result<()> {
     rotation: 0,
     used: 0,
     marks: std::collections::BTreeMap::new(),
-    crop: vpdf::layout::Crop::default(),
+    crop: vpdf_ui::layout::Crop::default(),
   };
   app.show_recent(&[entry])?;
   assert!(app.covered());
@@ -342,8 +342,8 @@ fn recent_menus_open_rows() -> Result<()> {
   status(&mut session)?;
   let app = session.app();
   let area = app.context_menu.as_ref().expect("a menu").area();
-  let card = app.panel.as_ref().and_then(|panel| panel.shelf.as_ref());
-  let start = card.and_then(vpdf::recent::Shelf::start);
+  let card = app.panel.as_ref().and_then(|panel| panel.view.shelf());
+  let start = card.and_then(vpdf_ui::panel::recent::Shelf::start);
   assert!(area.column + area.columns <= start.expect("a drawn card"));
   // Turns over the menu leave the hidden page.
   let scroll = session.app().reader.scroll;
@@ -456,7 +456,7 @@ fn mark_rows_of_other_documents_split_beside() -> Result<()> {
   session.open(&other, false, crate::focus::screen())?;
   let id = session.app().id;
   session.app().request =
-    Some(vpdf::app::Request::Panel(vpdf::keys::PanelKind::Marks));
+    Some(vpdf::app::Request::Panel(vpdf_ui::keys::PanelKind::Marks));
   session.settle()?;
   status(&mut session)?;
   let at = cell(&mut session, Hit::Row(0))?;
@@ -557,7 +557,8 @@ fn panel_edges_drag_and_reset() -> Result<()> {
   for column in [default - 2, default - 1] {
     left(&mut session, MouseEventKind::Moved, (column, 5));
   }
-  let selected = session.app().panel.as_ref().map(|panel| panel.selected);
+  let selected =
+    session.app().panel.as_ref().map(|panel| panel.view.selected());
   // (drag to column) -> panel columns
   let cases = [(30, 31), (2, 8), (115, 109)];
   left(&mut session, Down(L), edge);
@@ -566,7 +567,7 @@ fn panel_edges_drag_and_reset() -> Result<()> {
     assert_eq!(session.app().left, want, "to {column}");
   }
   left(&mut session, Up(L), (115, 9));
-  let panel = session.app().panel.as_ref().map(|panel| panel.selected);
+  let panel = session.app().panel.as_ref().map(|panel| panel.view.selected());
   assert_eq!(panel, selected, "the border selects no row");
   // A double click restores the default width.
   let edge = (session.app().left - 1, 5);
@@ -703,7 +704,8 @@ fn status_items_act_on_click() -> Result<()> {
   let section = chrome_cell(&mut session, Chrome::Section)?;
   click(&mut session, section);
   let app = session.app();
-  let panel = app.panel.as_ref().map(|p| (p.focused, Some(p.selected)));
+  let panel =
+    app.panel.as_ref().map(|p| (p.view.focused(), Some(p.view.selected())));
   assert_eq!(panel, Some((true, app.current_section)));
   Ok(())
 }
@@ -780,7 +782,7 @@ fn status_items_beat_the_divider() -> Result<()> {
 /// The screen cell of an overlay item.
 fn item_cell(
   session: &mut Session,
-  list: vpdf::pointer::List,
+  list: vpdf_ui::pointer::List,
   index: usize,
 ) -> Result<(u16, u16)> {
   find_cell(session, Region::Overlay, Hit::Item(list, Some(index)))
@@ -789,7 +791,7 @@ fn item_cell(
 #[test]
 fn clues_and_completions_act_on_click() -> Result<()> {
   use crossterm::event::{KeyEvent, KeyModifiers};
-  use vpdf::pointer::List;
+  use vpdf_ui::pointer::List;
   let (_directory, mut session) = session(false)?;
   // Clues shown during a held pan.
   let page = cell(&mut session, Hit::Text)?;
@@ -797,7 +799,7 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   left(&mut session, MouseEventKind::Down(MouseButton::Middle), page);
   left(&mut session, MouseEventKind::Drag(MouseButton::Middle), pan);
   let ctrl_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
-  session.app().key(ctrl_w, &mut vpdf::prompt::History::default())?;
+  session.app().key(ctrl_w, &mut vpdf_ui::prompt::History::default())?;
   session.app().awaiting =
     std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1));
   assert!(session.app().clue_due());
@@ -850,12 +852,12 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   // A click picks a completion.
   keys(&mut session, ":tab")?;
   press(&mut session, KeyCode::Tab)?;
-  let items = session.app().prompt.as_ref().and_then(|p| p.menu.as_ref());
-  let second = items.map(|menu| menu.items[1].clone()).expect("a menu");
+  let items = session.app().prompt.as_ref().and_then(|p| p.menu());
+  let second = items.map(|menu| menu.items()[1].clone()).expect("a menu");
   status(&mut session)?;
   let at = item_cell(&mut session, List::Completions, 1)?;
   click(&mut session, at);
-  let text = session.app().prompt.as_ref().map(|p| p.text.clone());
+  let text = session.app().prompt.as_ref().map(|p| p.text().to_owned());
   assert!(text.is_some_and(|text| text.ends_with(&second)), "{second}");
   // Blank completion rows keep the prompt.
   let app = session.app();
@@ -868,7 +870,7 @@ fn clues_and_completions_act_on_click() -> Result<()> {
 /// U9: hover highlights clues and completions as menu rows.
 #[test]
 fn clues_and_completions_highlight_on_hover() -> Result<()> {
-  use vpdf::pointer::List;
+  use vpdf_ui::pointer::List;
   let badge = |label: &str| format!("\x1b[0;1;7;34m {label}");
   let pointed = |label: &str| format!(" \x1b[0;4;100m{label}");
   let (_directory, mut session) = session(false)?;
@@ -903,9 +905,9 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
   status(&mut session)?;
   let prompt = |session: &mut Session| {
     let prompt = session.app().prompt.as_ref().expect("a prompt");
-    let menu = prompt.menu.as_ref().expect("a menu");
-    let chosen = menu.selected.map(|index| menu.labels[index].clone());
-    (prompt.text.clone(), menu.labels[1].clone(), chosen)
+    let menu = prompt.menu().expect("a menu");
+    let chosen = menu.selected().map(|index| menu.labels()[index].clone());
+    (prompt.text().to_owned(), menu.labels()[1].clone(), chosen)
   };
   let (text, label, chosen) = prompt(&mut session);
   assert!(chosen.is_some(), "a chosen completion");
@@ -934,15 +936,17 @@ fn section_clicks_select_their_entry() -> Result<()> {
   status(&mut session)?;
   keys(&mut session, "go")?;
   if let Some(panel) = &mut session.app().panel {
-    (panel.selected, panel.focused) = (12, false);
+    panel.view.choose(12);
+    panel.view.focus(false);
   }
   status(&mut session)?;
-  let selected = session.app().panel.as_ref().map(|p| p.selected);
+  let selected = session.app().panel.as_ref().map(|p| p.view.selected());
   assert_eq!(selected, Some(12), "a stale selection");
   let section = chrome_cell(&mut session, vpdf::chrome::Chrome::Section)?;
   click(&mut session, section);
   let app = session.app();
-  let panel = app.panel.as_ref().map(|p| (p.focused, Some(p.selected)));
+  let panel =
+    app.panel.as_ref().map(|p| (p.view.focused(), Some(p.view.selected())));
   assert_eq!(panel, Some((true, app.current_section)));
   assert_ne!(app.current_section, Some(12));
   Ok(())
@@ -959,7 +963,7 @@ fn back(session: &mut Session) -> Result<()> {
     KeyCode::Char('o'),
     crossterm::event::KeyModifiers::CONTROL,
   );
-  session.app().key(key, &mut vpdf::prompt::History::default())
+  session.app().key(key, &mut vpdf_ui::prompt::History::default())
 }
 
 /// A PDF of `count` one-line pages.
@@ -1132,7 +1136,7 @@ fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
       .collect()
   };
   session.app().hover = Hit::Scrollbar;
-  let query = vpdf::find::Query::default();
+  let query = vpdf_search::query::Query::default();
   session.app().search.show(query.clone(), vec![hit(0)]);
   let first = track(drawn(&mut session)?);
   session.app().search.show(query, vec![hit(1)]);
@@ -1222,8 +1226,8 @@ fn match_count_opens_results() -> Result<()> {
     assert_eq!(session.app().hover, Hit::Chrome);
     click(&mut session, at);
     let panel = session.app().panel.as_ref().unwrap();
-    assert_eq!(panel.kind, vpdf::keys::PanelKind::Results);
-    assert!(panel.focused);
+    assert_eq!(panel.view.kind(), vpdf_ui::keys::PanelKind::Results);
+    assert!(panel.view.focused());
   }
   Ok(())
 }
@@ -1232,14 +1236,14 @@ fn match_count_opens_results() -> Result<()> {
 fn refocusing_links_refreshes_page() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let app = session.app();
-  app.open_panel(vpdf::keys::PanelKind::Links)?;
-  app.panel.as_mut().unwrap().selected = 1;
-  app.open_panel(vpdf::keys::PanelKind::Links)?;
-  assert_eq!(app.panel.as_ref().unwrap().selected, 1);
+  app.open_panel(vpdf_ui::keys::PanelKind::Links)?;
+  app.panel.as_mut().unwrap().view.choose(1);
+  app.open_panel(vpdf_ui::keys::PanelKind::Links)?;
+  assert_eq!(app.panel.as_ref().unwrap().view.selected(), 1);
   crate::common::keys(app, b"\ti")?;
   app.command("2")?;
-  app.open_panel(vpdf::keys::PanelKind::Links)?;
-  assert!(app.panel.as_ref().unwrap().rows.is_empty());
+  app.open_panel(vpdf_ui::keys::PanelKind::Links)?;
+  assert!(app.panel.as_ref().unwrap().view.rows().is_empty());
   Ok(())
 }
 
@@ -1263,8 +1267,8 @@ fn unfocused_matches_keep_identity() -> Result<()> {
   click(&mut session, at);
   assert_eq!(session.app().id, id);
   assert_eq!(
-    session.app().panel.as_ref().unwrap().kind,
-    vpdf::keys::PanelKind::Results
+    session.app().panel.as_ref().unwrap().view.kind(),
+    vpdf_ui::keys::PanelKind::Results
   );
   Ok(())
 }
@@ -1293,11 +1297,11 @@ fn gx_reuses_url_scheme_checks() -> Result<()> {
   assert_eq!(app.reader.cursor.page, PageId(0));
   assert!(!app.text_mode);
   app.show_panel(
-    vpdf::keys::PanelKind::Links,
-    vec![vpdf::panel::Row::new(
+    vpdf_ui::keys::PanelKind::Links,
+    vec![vpdf_ui::panel::Row::new(
       "unsafe".into(),
       String::new(),
-      vpdf::panel::Destination::Link(vpdf::document::Target::Uri(
+      vpdf_ui::panel::Destination::Link(vpdf::document::Target::Uri(
         "file:///etc/passwd".into(),
       )),
     )],

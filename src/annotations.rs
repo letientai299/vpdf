@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Annotation;
-use crate::panel::{Destination, Row, Style};
-use crate::pointer::Hit;
 use crate::text::{Bounds, PageId, Position, Text};
+use vpdf_ui::panel::{Destination, Row, Style};
+use vpdf_ui::pointer::Hit;
 
 /// Markup kinds whose marked text matters more than their contents.
 const MARKUP: &[&str] = &["Highlight", "Underline", "Squiggly", "StrikeOut"];

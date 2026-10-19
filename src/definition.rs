@@ -1,9 +1,10 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Target;
-use crate::find::{Phase, Query};
-use crate::keys::PanelKind;
 use crate::reference::{Lookup, Reference};
+use vpdf_search::query::Query;
+use vpdf_ui::find::Phase;
+use vpdf_ui::keys::PanelKind;
 
 impl App {
   pub(crate) fn cancel_definition(&mut self) {
@@ -66,7 +67,7 @@ impl App {
       [(first, _), ..] => {
         self.open_panel(PanelKind::Outline)?;
         if let Some(panel) = &mut self.panel {
-          panel.select(*first);
+          panel.view.select(*first);
         }
         self.reader.message =
           "Multiple heading candidates; choose an outline entry".into();

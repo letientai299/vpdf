@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::app::App;
-use crate::layout::Crop;
 use crate::text::{Bounds, PageId};
 use std::sync::{Arc, mpsc};
 use vpdf_pdf::jobs::crop::Job;
+use vpdf_ui::layout::Crop;
 
 pub use vpdf_pdf::crop::{Margins, margins};
 

@@ -10,7 +10,7 @@ use vpdf_reader::reader::{Reader, SelectionKind};
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn object_raw_keys_preserve_normal_and_copy_blocks() -> Result<()> {
-  use vpdf::layout::Screen;
+  use vpdf_ui::layout::Screen;
   let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
   for text_mode in [false, true] {
     let mut app = Solo::open(

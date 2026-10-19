@@ -1,20 +1,21 @@
 use super::common::{events, keys};
 use std::path::PathBuf;
 use vpdf::Result;
-use vpdf::app::{App, InputOwner};
+use vpdf::app::App;
 use vpdf::document::Target;
 use vpdf::hints::{Hint, Hints};
-use vpdf::keys::{Action, Input, Keys, PanelKind};
-use vpdf::layout::Screen;
-use vpdf::panel::{Destination, Row};
 use vpdf::pdf_text::PdfText;
-use vpdf::prompt::History;
 use vpdf::session::Session;
 use vpdf::solo::Solo;
-use vpdf::split::Direction;
 use vpdf::text::{PageId, Position};
-use vpdf::window::Window;
 use vpdf_terminal::decode::Event;
+use vpdf_ui::input::InputOwner;
+use vpdf_ui::keys::{Action, Input, Keys, PanelKind};
+use vpdf_ui::layout::Screen;
+use vpdf_ui::panel::{Destination, Row};
+use vpdf_ui::prompt::History;
+use vpdf_ui::split::Direction;
+use vpdf_ui::window::Window;
 
 pub(super) fn screen() -> Screen {
   Screen {
@@ -82,7 +83,7 @@ fn raw_focus_and_history_keys_differ() {
     assert_eq!(decoded.len(), 1, "{bytes:?}");
     let Event::Key(key) = decoded.front().unwrap() else { panic!("key") };
     assert_eq!(
-      keys.feed(*key, vpdf::keys::Grammar::Normal).unwrap().action,
+      keys.feed(*key, vpdf_ui::keys::Grammar::Normal).unwrap().action,
       expected,
       "{bytes:?}"
     );
@@ -99,7 +100,7 @@ fn local_focus_preserves_reading_and_recent_cards() -> Result<()> {
   let range = app.reader.selection.map(|range| (range.anchor, range.kind));
   let cursor = app.reader.cursor;
   app.open_panel(PanelKind::Help)?;
-  app.panel.as_mut().unwrap().search.query = "focus".into();
+  app.panel.as_mut().unwrap().view.finish_search("focus");
   keys(app, b"\t")?;
   assert_eq!(app.input_owner(), InputOwner::Content);
   keys(app, b"\x1b[Z")?;
@@ -109,7 +110,7 @@ fn local_focus_preserves_reading_and_recent_cards() -> Result<()> {
     range
   );
   assert_eq!(app.reader.cursor, cursor);
-  assert_eq!(app.panel.as_ref().unwrap().search.query, "focus");
+  assert_eq!(app.panel.as_ref().unwrap().view.query(), "focus");
   keys(app, b"\x1b[27u")?;
   assert_eq!(app.input_owner(), InputOwner::Panel);
   assert!(app.reader.selection.is_none());
@@ -123,17 +124,17 @@ fn local_focus_preserves_reading_and_recent_cards() -> Result<()> {
   session.settle()?;
   let app = session.app();
   assert!(app.covered());
-  let selected = app.panel.as_ref().unwrap().selected;
+  let selected = app.panel.as_ref().unwrap().view.selected();
   keys(app, b"\t")?;
   assert!(!app.covered() && app.layout.screen.columns > 0);
-  assert!(app.panel.as_ref().unwrap().shelf.is_some());
+  assert!(app.panel.as_ref().unwrap().view.is_recent_view());
   keys(app, b"\t")?;
   assert!(app.covered());
-  assert_eq!(app.panel.as_ref().unwrap().selected, selected);
+  assert_eq!(app.panel.as_ref().unwrap().view.selected(), selected);
   keys(app, b"\r")?;
   session.settle()?;
   assert!(!session.app().covered());
-  assert!(session.app().panel.as_ref().unwrap().shelf.is_some());
+  assert!(session.app().panel.as_ref().unwrap().view.is_recent_view());
   assert!(session.app().reader.selection.is_none());
   assert_eq!(session.tabs.len(), 1);
   Ok(())
@@ -153,14 +154,16 @@ fn panel_activation_retains_lists_and_failure_focus() -> Result<()> {
   assert_eq!(app.reader.cursor.page, destination.page);
   keys(&mut app, b"\r")?;
   assert!(!app.panel_focused());
-  assert_eq!(app.panel.as_ref().unwrap().rows.len(), 1);
+  assert_eq!(app.panel.as_ref().unwrap().view.rows().len(), 1);
   assert!(app.reader.selection.is_none());
   keys(&mut app, b"\t")?;
-  app.panel.as_mut().unwrap().rows = vec![row(Destination::None)];
+  app.panel.as_mut().unwrap().view.refill(vec![row(Destination::None)], "");
   keys(&mut app, b"\r")?;
   assert!(app.panel_focused());
-  app.panel.as_mut().unwrap().rows =
-    vec![row(Destination::Link(Target::Uri("file:///bad".into())))];
+  app.panel.as_mut().unwrap().view.refill(
+    vec![row(Destination::Link(Target::Uri("file:///bad".into())))],
+    "",
+  );
   assert!(keys(&mut app, b"\r").is_err());
   assert!(app.panel_focused());
   keys(&mut app, b"gq")?;
@@ -221,13 +224,13 @@ fn recent_pick_opens_in_covered_pane() -> Result<()> {
     session.open(&book, false, screen())?;
     send(&mut session, setup.as_bytes())?;
     let list = session.app().panel.as_mut().unwrap();
-    assert!(list.shelf.is_some(), "{setup:?}");
+    assert!(list.view.is_recent_view(), "{setup:?}");
     let picked = |row: &Row| match &row.destination {
       Destination::File(path) => *path == paper,
       _ => false,
     };
-    let index = list.rows.iter().position(picked).unwrap();
-    list.selected = index;
+    let index = list.view.rows().iter().position(picked).unwrap();
+    list.view.choose(index);
     let panes = session.tab().panes.len();
     send(&mut session, b"o")?;
     assert!(session.app().covered(), "{setup:?}: o is inert");
@@ -236,8 +239,8 @@ fn recent_pick_opens_in_covered_pane() -> Result<()> {
       session.draw_focused(&mut Vec::new())?;
       let app = session.app();
       let column = app.at.column + 2;
-      let row =
-        usize::from(app.at.row) + index - app.panel.as_ref().unwrap().top;
+      let row = usize::from(app.at.row) + index
+        - app.panel.as_ref().unwrap().view.top();
       send(&mut session, format!("\x1b[<0;{column};{}M", row + 2).as_bytes())?;
     } else {
       send(&mut session, b"\r")?;
@@ -469,11 +472,11 @@ fn overview_and_text_use_local_owner() -> Result<()> {
   keys(&mut app, b"\tj")?;
   assert_eq!(app.input_owner(), InputOwner::Panel);
   assert_eq!(app.overview.as_ref().unwrap().selected, selected);
-  assert_eq!(app.panel.as_ref().unwrap().selected, 1);
+  assert_eq!(app.panel.as_ref().unwrap().view.selected(), 1);
   keys(&mut app, b"\tj")?;
   assert_eq!(app.input_owner(), InputOwner::Overview);
   assert!(app.overview.as_ref().unwrap().selected > selected);
-  assert_eq!(app.panel.as_ref().unwrap().selected, 1);
+  assert_eq!(app.panel.as_ref().unwrap().view.selected(), 1);
   let mut status = Vec::new();
   app.status(&mut status, app.screen.rows - 1)?;
   assert!(String::from_utf8_lossy(&status).contains("PAGES"));
@@ -511,7 +514,7 @@ fn raw_history_is_separate_from_local_focus() -> Result<()> {
   let cursor = app.reader.cursor;
   keys(&mut app, b":te\t")?;
   assert_eq!(app.input_owner(), InputOwner::Prompt);
-  assert_eq!(app.prompt.as_ref().unwrap().text, "text");
+  assert_eq!(app.prompt.as_ref().unwrap().text(), "text");
   assert_eq!(app.reader.cursor, cursor);
   keys(&mut app, b"\x1b[27u")?;
   assert_eq!(app.input_owner(), InputOwner::Panel);
@@ -602,31 +605,35 @@ fn outline_row_survives_focus_and_draw() -> Result<()> {
   let app = session.app();
   crate::common::outline_loaded(app)?;
   keys(app, b"go60j")?;
-  app.panel.as_mut().unwrap().search.query = "chapter".into();
+  app.panel.as_mut().unwrap().view.finish_search("chapter");
   let panel = app.panel.as_ref().unwrap();
-  let state = (panel.selected, panel.top, panel.search.query.clone());
+  let state =
+    (panel.view.selected(), panel.view.top(), panel.view.query().to_owned());
   keys(app, b"\t")?;
   session.draw_focused(&mut Vec::new())?;
   let app = session.app();
   keys(app, b"\x1b[Z")?;
   let panel = app.panel.as_ref().unwrap();
-  assert_eq!((panel.selected, panel.top, panel.search.query.clone()), state);
-  assert!(panel.focused);
+  assert_eq!(
+    (panel.view.selected(), panel.view.top(), panel.view.query().to_owned()),
+    state
+  );
+  assert!(panel.view.focused());
   send(&mut session, b"\t")?;
   let id = session.app().id;
   let viewport = session.app().reader.scroll;
   send(&mut session, b"\x1b[<64;2;5M")?;
   let app = session.app();
   let panel = app.panel.as_ref().unwrap();
-  let top = panel.top;
+  let top = panel.view.top();
   assert!(top < state.1);
-  assert_eq!(panel.selected, state.0);
+  assert_eq!(panel.view.selected(), state.0);
   assert_eq!(app.input_owner(), InputOwner::Content);
   session.draw_focused(&mut Vec::new())?;
   session.draw_focused(&mut Vec::new())?;
   let app = session.app();
-  assert_eq!(app.panel.as_ref().unwrap().top, top);
-  assert_eq!(app.panel.as_ref().unwrap().selected, state.0);
+  assert_eq!(app.panel.as_ref().unwrap().view.top(), top);
+  assert_eq!(app.panel.as_ref().unwrap().view.selected(), state.0);
   assert_eq!(app.id, id);
   assert_eq!(app.reader.scroll, viewport);
   Ok(())
@@ -653,7 +660,7 @@ fn narrow_recent_press_restores_cover_geometry() -> Result<()> {
     assert!(app.covered() && app.panel_focused());
     assert_eq!(app.left, app.screen.columns);
     assert_eq!(app.layout.screen.columns, app.screen.columns);
-    assert!(app.panel.as_ref().unwrap().shelf.is_some());
+    assert!(app.panel.as_ref().unwrap().view.is_recent_view());
     let mut out = Vec::new();
     session.draw_focused(&mut out)?;
     assert!(String::from_utf8_lossy(&out).contains("Enter open"));
@@ -677,9 +684,9 @@ fn placement_reuses_durable_views() -> Result<()> {
   )?;
   let app = session.app();
   let panel = app.panel.as_mut().unwrap();
-  panel.selected = 52;
-  panel.top = 40;
-  panel.search.query = "committed".into();
+  panel.view.choose(52);
+  panel.view.navigate(Input::plain(Action::Align(1.0)), 15);
+  panel.view.finish_search("committed");
   let anchor = app.reader.selection.unwrap().anchor;
   let cursor = app.reader.cursor;
   let scroll = app.reader.scroll;
@@ -697,11 +704,11 @@ fn placement_reuses_durable_views() -> Result<()> {
     assert!((app.reader.scroll - scroll).abs() < 0.1);
     assert_eq!(app.input_owner(), InputOwner::Panel);
     let panel = app.panel.as_ref().unwrap();
-    assert_eq!((panel.selected, panel.top), (52, 40));
-    assert_eq!(panel.search.query, "committed");
+    assert_eq!((panel.view.selected(), panel.view.top()), (52, 40));
+    assert_eq!(panel.view.query(), "committed");
     assert_eq!(app.search.query().text, "attention");
     assert_eq!(app.search.generation(), generation);
-    assert!(matches!(app.search.phase(), vpdf::find::Phase::Running { .. }));
+    assert!(matches!(app.search.phase(), vpdf_ui::find::Phase::Running { .. }));
     session.open(&book, true, screen())?;
     assert_eq!(session.app().id, source);
   }
@@ -712,8 +719,8 @@ fn placement_reuses_durable_views() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn current_view_requests_keep_transients() -> Result<()> {
   use vpdf::app::Request;
-  use vpdf::split::Axis;
   use vpdf_reader::reader::Operator;
+  use vpdf_ui::split::Axis;
   let mut session = Session::new(None);
   let path = file("paper.pdf")?;
   session.open(&path, true, screen())?;
@@ -930,7 +937,8 @@ fn current_split_reuse_is_noop() -> Result<()> {
   let viewport = app.reader.scroll;
   let generation = app.search.generation();
   let panel = app.panel.as_ref().unwrap();
-  let rows = (panel.selected, panel.top, panel.search.query.clone());
+  let rows =
+    (panel.view.selected(), panel.view.top(), panel.view.query().to_owned());
   let tab = session.active;
   for command in ["e", "tabe", "split", "vsplit"] {
     send(&mut session, format!(":{command} {}\r", path.display()).as_bytes())?;
@@ -941,10 +949,13 @@ fn current_split_reuse_is_noop() -> Result<()> {
     assert_eq!(app.reader.scroll, viewport);
     assert_eq!(app.input_owner(), InputOwner::Panel);
     let panel = app.panel.as_ref().unwrap();
-    assert_eq!((panel.selected, panel.top, panel.search.query.clone()), rows);
+    assert_eq!(
+      (panel.view.selected(), panel.view.top(), panel.view.query().to_owned()),
+      rows
+    );
     assert_eq!(app.search.query().text, "chapter");
     assert_eq!(app.search.generation(), generation);
-    assert!(matches!(app.search.phase(), vpdf::find::Phase::Running { .. }));
+    assert!(matches!(app.search.phase(), vpdf_ui::find::Phase::Running { .. }));
     assert_eq!(session.tab().panes.len(), 2);
     assert_eq!(session.tabs.len(), 1);
   }

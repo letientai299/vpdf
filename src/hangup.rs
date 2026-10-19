@@ -6,7 +6,6 @@
 //! own, then writes the last recorded state, restores the terminal, and
 //! exits.
 use crate::Result;
-use crate::prompt::History;
 use crate::state::State;
 use signal_hook::consts::{SIGHUP, SIGTERM};
 use signal_hook::iterator::Signals;
@@ -15,6 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use vpdf_ui::prompt::History;
 
 /// State as last recorded by the event loop, for the hangup thread.
 pub type Latest = Arc<Mutex<Option<(State, History)>>>;
@@ -36,7 +36,7 @@ pub fn watch(
       && let Ok(mut latest) = latest.lock()
       && let Some((state, history)) = latest.as_mut()
     {
-      drop(state.save(&store, &history.commands, &history.searches));
+      drop(state.save(&store, history.commands(), history.searches()));
     }
     // The loop may block in a prompt that never sees the flag.
     vpdf_terminal::terminal::restore();

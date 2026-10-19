@@ -1,9 +1,10 @@
 //! Overlay items the pointer picks and runs.
 
 use crate::Result;
-use crate::app::{App, InputOwner, Request};
-use crate::pointer::{Hit, Items, List};
+use crate::app::{App, Request};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use vpdf_ui::input::InputOwner;
+use vpdf_ui::pointer::{Hit, Items, List};
 
 impl App {
   /// The item list that owns input.
@@ -15,7 +16,7 @@ impl App {
       InputOwner::Prompt => self
         .prompt
         .as_ref()
-        .and_then(|prompt| prompt.menu.as_ref())
+        .and_then(|prompt| prompt.menu())
         .map(|_| List::Completions),
       _ => self.clues.as_ref().map(|_| List::Clues),
     }

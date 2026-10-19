@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::app::App;
-use crate::keys::Action;
 use crate::text::{PageId, Position};
 use std::time::Instant;
 use vpdf_reader::reader::Mode;
+use vpdf_ui::keys::Action;
 
 pub struct Scroll {
   pub target: f32,

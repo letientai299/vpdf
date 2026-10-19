@@ -1,5 +1,5 @@
-use crate::document::Target;
 use crate::panel::{Destination, Panel, Row, Style};
+use vpdf_model::document::Target;
 
 /// Row search inside a panel, like `/` in a Vim buffer.
 #[derive(Default)]
@@ -12,7 +12,7 @@ pub struct RowSearch {
 
 /// Case-insensitive unless the query has uppercase (Vim's smartcase).
 fn matcher(query: &str) -> impl Fn(&str) -> bool {
-  let pattern = crate::search::compile(query, false).ok();
+  let pattern = vpdf_search::search::compile(query, false).ok();
   move |label| {
     pattern.as_ref().is_some_and(|pattern| !pattern.ranges(label).is_empty())
   }
@@ -30,7 +30,7 @@ pub fn ranges(text: &str, query: &str) -> Vec<(usize, usize)> {
   if query.is_empty() {
     return Vec::new();
   }
-  crate::search::compile(query, false)
+  vpdf_search::search::compile(query, false)
     .map_or_else(|_| Vec::new(), |pattern| pattern.ranges(text))
 }
 
@@ -110,7 +110,7 @@ impl Panel {
       .map(|(index, _)| index)
       .collect();
     let Some(index) =
-      crate::search::next(&hits, &from, backward, count, |&row| row)
+      vpdf_search::search::next(&hits, &from, backward, count, |&row| row)
     else {
       return false;
     };
@@ -265,8 +265,8 @@ mod tests {
   }
 
   use crate::Result;
-  use crate::search::{Index, compile};
   use crate::text::{Bounds, Glyph, Line, PageId, Text};
+  use vpdf_search::search::{Index, compile};
 
   #[test]
   fn panels_share_search_contract() -> Result<()> {

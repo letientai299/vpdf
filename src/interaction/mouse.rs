@@ -90,7 +90,7 @@ impl App {
     if matches!(mouse.kind, MouseEventKind::Down(_)) && self.panel_focused() {
       self.blur()?;
       if let Some(panel) = &mut self.panel {
-        panel.focused = false;
+        panel.view.focus(false);
       }
       self.relayout()?;
     }

@@ -1297,6 +1297,7 @@ dependencies = [
  "vpdf-reader",
  "vpdf-search",
  "vpdf-terminal",
+ "vpdf-ui",
 ]
 
 [[package]]
@@ -1366,6 +1367,22 @@ dependencies = [
  "unicode-width",
  "vpdf-model",
  "vpdf-protocol",
+]
+
+[[package]]
+name = "vpdf-ui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "serde",
+ "serde_json",
+ "sha2",
+ "unicode-width",
+ "vpdf-model",
+ "vpdf-reader",
+ "vpdf-search",
+ "vpdf-terminal",
 ]
 
 [[package]]

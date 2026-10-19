@@ -79,7 +79,10 @@ impl App {
       zoom: self.layout.zoom,
       text: self.text_top,
       panel: self.panel.as_ref().map(|panel| {
-        (panel.top, panel.shelf.as_ref().map_or(0, crate::recent::Shelf::top))
+        (
+          panel.view.top(),
+          panel.view.shelf().map_or(0, vpdf_ui::panel::recent::Shelf::top),
+        )
       }),
       overview: self.overview.as_ref().map(crate::overview::Overview::top),
       preview: self.preview_top(),

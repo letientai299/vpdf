@@ -68,8 +68,8 @@ launch options change. Avoid copying their inventories into Markdown.
 [sessions]: dev/sessions.md
 [development]: dev/dev.md
 [readme]: ../README.md
-[keys]: ../src/help.txt
-[commands]: ../src/cmdline.rs
+[keys]: ../crates/ui/src/help.txt
+[commands]: ../crates/ui/src/commands.rs
 [cli]: ../src/main.rs
 [terminal]: install.md#terminal-setup
 [helpers]: install.md#optional-helpers

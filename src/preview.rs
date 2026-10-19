@@ -1,19 +1,19 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::{Annotation, Target};
-use crate::keys::{Action, Input};
-use crate::layout::screen_step;
-use crate::panel::layout::wrap;
-use crate::pointer::Hit;
-use crate::split::Rect;
 use crate::text::{Bounds, PageId, Position};
-use crate::theme;
 use crate::tiles::{TileKey, raster_area};
 use mupdf::IRect;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_reader::motion::Motion;
 use vpdf_terminal::graphics::Graphics;
+use vpdf_ui::keys::{Action, Input};
+use vpdf_ui::layout::screen_step;
+use vpdf_ui::panel::wrap;
+use vpdf_ui::pointer::Hit;
+use vpdf_ui::split::Rect;
+use vpdf_ui::theme;
 
 const HEIGHT: f32 = 0.4;
 const ABOVE: f32 = 6.0;
@@ -565,7 +565,7 @@ impl App {
   pub(crate) fn on_anchor(
     &mut self,
     mouse: crossterm::event::MouseEvent,
-    pixel: Option<crate::pointer::Pixel>,
+    pixel: Option<vpdf_ui::pointer::Pixel>,
   ) -> bool {
     let Some((page, at, _)) = self.shown_anchor() else { return false };
     let (column, row) = self.pane_cell(mouse);

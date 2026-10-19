@@ -1,5 +1,5 @@
 //! The password line, read before any pane opens.
-use super::{History, Prompt, PromptEvent, PromptKind};
+use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
 
 pub fn password() -> crate::Result<String> {
   use std::io::{self, Write};
@@ -19,7 +19,7 @@ pub fn password() -> crate::Result<String> {
     out.flush()?;
     let Some(event) = vpdf_terminal::input::next(None)? else { continue };
     match password_event(&mut prompt, event) {
-      PromptEvent::Submit => return Ok(prompt.text),
+      PromptEvent::Submit => return Ok(prompt.into_text()),
       PromptEvent::Cancel => anyhow::bail!("Password cancelled"),
       _ => {}
     }

@@ -2,11 +2,11 @@ use super::common::keys;
 use super::common::{pages_pdf, search_loaded};
 use super::focus::screen;
 use vpdf::Result;
-use vpdf::find::Phase;
-use vpdf::keys::PanelKind;
 use vpdf::reference::Reference;
 use vpdf::solo::Solo;
 use vpdf::text::{PageId, Position};
+use vpdf_ui::find::Phase;
+use vpdf_ui::keys::PanelKind;
 
 fn open(pages: &[&[&str]], text: bool) -> Result<(tempfile::TempDir, Solo)> {
   let directory = tempfile::tempdir()?;
@@ -80,9 +80,9 @@ fn ambiguous_definitions_offer_candidates() -> Result<()> {
   search_loaded(&mut app)?;
   assert_eq!(app.reader.cursor.page, PageId(0));
   let panel = app.panel.as_ref().expect("Candidates");
-  assert_eq!(panel.kind, PanelKind::Results);
-  assert_eq!(panel.rows.len(), 2);
-  assert!(panel.focused);
+  assert_eq!(panel.view.kind(), PanelKind::Results);
+  assert_eq!(panel.view.rows().len(), 2);
+  assert!(panel.view.focused());
   keys(&mut app, b"\r")?;
   assert_eq!(app.reader.cursor.page, PageId(1));
   Ok(())
@@ -247,9 +247,9 @@ fn ambiguous_heading_definitions_keep_bookmarks() -> Result<()> {
   keys(&mut app, b"gd")?;
   assert_eq!(app.reader.cursor.page, PageId(0));
   let panel = app.panel.as_ref().expect("Bookmark candidates");
-  assert_eq!(panel.kind, PanelKind::Outline);
-  assert_eq!(panel.rows.len(), 2);
-  assert!(panel.focused);
+  assert_eq!(panel.view.kind(), PanelKind::Outline);
+  assert_eq!(panel.view.rows().len(), 2);
+  assert!(panel.view.focused());
   keys(&mut app, b"j\r")?;
   assert_eq!(app.reader.cursor.page, PageId(2));
   Ok(())

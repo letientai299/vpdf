@@ -9,9 +9,8 @@ fn hit(page: usize) -> Hit {
   Hit { first: at(page), last: at(page), excerpt: String::new() }
 }
 
-fn event(generation: u64, pages: &[usize], done: bool) -> SearchEvent {
-  let hits = pages.iter().map(|&page| hit(page)).collect();
-  SearchEvent { generation, hits, done, error: None }
+fn hits(pages: &[usize]) -> Vec<Hit> {
+  pages.iter().map(|&page| hit(page)).collect()
 }
 
 fn running(backward: bool, origin: usize) -> Search {
@@ -28,17 +27,17 @@ fn pages(search: &Search) -> Vec<usize> {
 #[test]
 fn stale_generations_are_ignored() {
   let mut search = running(false, 0);
-  assert_eq!(search.accept(event(6, &[1], true)), None);
+  assert_eq!(search.accept(6, hits(&[1]), Ok(true)), None);
   assert!(search.hits().is_empty());
   search.cancel();
-  assert_eq!(search.accept(event(7, &[1], true)), None);
+  assert_eq!(search.accept(7, hits(&[1]), Ok(true)), None);
 }
 
 #[test]
 fn page_events_merge_in_order() {
   let mut search = running(false, 0);
   for batch in [&[5, 6][..], &[1], &[3]] {
-    let update = search.accept(event(7, batch, false));
+    let update = search.accept(7, hits(batch), Ok(false));
     assert_eq!(update, Some(Update::Progress { done: false }));
   }
   assert_eq!(pages(&search), [1, 3, 5, 6]);
@@ -48,9 +47,10 @@ fn page_events_merge_in_order() {
 fn failure_completes_and_drops_the_yank() {
   let mut search = running(false, 0);
   search.yank_after(Location::default(), Operator { count: 1, register: '"' });
-  let mut failed = event(7, &[2], false);
-  failed.error = Some("stopped".into());
-  assert_eq!(search.accept(failed), Some(Update::Failed("stopped".into())));
+  assert_eq!(
+    search.accept(7, hits(&[2]), Err("stopped".into())),
+    Some(Update::Failed("stopped".into()))
+  );
   assert_eq!(pages(&search), [2]);
   assert!(matches!(search.phase(), Phase::Complete));
   assert!(search.take_yank().is_none());
@@ -68,7 +68,7 @@ fn preview_follows_direction_and_wraps_when_done() {
   ];
   for (backward, origin, done, want) in cases {
     let mut search = running(backward, origin);
-    search.accept(event(7, &[1, 3], done));
+    search.accept(7, hits(&[1, 3]), Ok(done));
     let got = search.preview(done).map(|position| position.page.0);
     assert_eq!(got, want, "backward={backward} origin={origin} done={done}");
   }
@@ -77,7 +77,7 @@ fn preview_follows_direction_and_wraps_when_done() {
 #[test]
 fn preview_stops_after_jumping() {
   let mut search = running(false, 0);
-  search.accept(event(7, &[1], false));
+  search.accept(7, hits(&[1]), Ok(false));
   search.stop_jumping();
   assert_eq!(search.preview(false), None);
   search.define(at(0));
@@ -91,7 +91,7 @@ fn yank_waits_for_completion() {
   let mut search = running(false, 0);
   let origin = Location { cursor: at(2), ..Location::default() };
   search.yank_after(origin, Operator { count: 2, register: 'a' });
-  search.accept(event(7, &[1, 3, 4], true));
+  search.accept(7, hits(&[1, 3, 4]), Ok(true));
   assert!(search.take_yank().is_none(), "still running");
   search.complete();
   let (_, operator, target) = search.take_yank().unwrap();
@@ -103,10 +103,10 @@ fn yank_waits_for_completion() {
 fn unreached_yank_ends() {
   let mut search = running(false, 0);
   search.yank_after(Location::default(), Operator { count: 1, register: 'a' });
-  search.accept(event(7, &[], true));
+  search.accept(7, hits(&[]), Ok(true));
   search.complete();
   assert!(search.take_yank().is_none(), "no hit to reach");
-  search.accept(event(7, &[1], true));
+  search.accept(7, hits(&[1]), Ok(true));
   assert!(search.take_yank().is_none(), "the yank ended");
 }
 

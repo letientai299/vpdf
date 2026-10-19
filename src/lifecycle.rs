@@ -1,10 +1,10 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Document;
-use crate::keys::PanelKind;
 use crate::pdf_text::PdfText;
 use crate::raster::Raster;
 use vpdf_reader::reader;
+use vpdf_ui::keys::PanelKind;
 
 impl App {
   /// Releases what a hidden pane rebuilds on demand: the search worker
@@ -50,7 +50,10 @@ impl App {
     let rerun = !previous.hidden() && !previous.query().text.is_empty();
     // An open outline panel waits on the new outline now.
     self.outline_load = crate::outline::Loading::Deferred;
-    if self.panel.as_ref().is_some_and(|panel| panel.kind == PanelKind::Outline)
+    if self
+      .panel
+      .as_ref()
+      .is_some_and(|panel| panel.view.kind() == PanelKind::Outline)
     {
       self.load_outline();
     }
@@ -82,7 +85,7 @@ impl App {
       self.search_origin = Some(origin);
     }
     if let Some(panel) = &self.panel {
-      let kind = panel.kind;
+      let kind = panel.view.kind();
       let rows = self.panel_rows(kind)?;
       // These rows come from the session or refill when work finishes.
       let refills = match kind {
@@ -93,7 +96,7 @@ impl App {
       };
       let note = self.panel_note(kind);
       if let Some(panel) = self.panel.as_mut().filter(|_| !rows.is_empty()) {
-        panel.refill(rows, note);
+        panel.view.refill(rows, note);
       } else if !refills {
         self.panel = None;
       }

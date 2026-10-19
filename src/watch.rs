@@ -106,7 +106,7 @@ impl App {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::layout::Screen;
+  use vpdf_ui::layout::Screen;
 
   #[test]
   fn failed_reload_retries() -> Result<()> {

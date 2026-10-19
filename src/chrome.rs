@@ -2,9 +2,9 @@
 
 use crate::Result;
 use crate::app::{App, Request};
-use crate::keys::{Action, Input, PanelKind};
-use crate::window::TabMove;
 use crossterm::event::MouseButton;
+use vpdf_ui::keys::{Action, Input, PanelKind};
+use vpdf_ui::window::TabMove;
 
 /// A clickable status item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,7 +59,7 @@ impl App {
     if let Some(panel) = &mut self.panel
       && let Some(index) = section
     {
-      panel.select(index);
+      panel.view.select(index);
     }
     Ok(())
   }
