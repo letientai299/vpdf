@@ -1,6 +1,8 @@
 use mupdf::pdf::{Encryption, PageLabelRule, PageLabelStyle, PdfWriteOptions};
 use std::path::PathBuf;
-use vpdf::{Result, document::Document, text::PageId};
+use vpdf::Result;
+use vpdf_model::text::PageId;
+use vpdf_pdf::document::Document;
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]

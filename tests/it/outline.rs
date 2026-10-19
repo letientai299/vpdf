@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::document::Handle;
 use vpdf::outline::Loading;
 use vpdf::session::Session;
 use vpdf::solo::Solo;
-use vpdf::text::PageId;
+use vpdf_model::text::PageId;
+use vpdf_pdf::document::Handle;
 use vpdf_ui::keys::{Action, Input, PanelKind};
 use vpdf_ui::layout::Screen;
 

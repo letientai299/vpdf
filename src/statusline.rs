@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::app::App;
-use crate::text::PageId;
 use std::io::Write;
+use vpdf_model::text::PageId;
 use vpdf_ui::chrome::{Bar, Document, Names, View};
 use vpdf_ui::pointer::Hit;
 
@@ -145,7 +145,7 @@ mod tests {
   #[test]
   #[ignore = "requires verified public PDF corpus"]
   fn sections_agree_with_the_reader() -> Result<()> {
-    use crate::document::Target;
+    use vpdf_model::document::Target;
     // (file, text mode, Cursor mode)
     let cases = ["paper.pdf", "book.pdf"].map(|file| {
       [(false, false), (false, true), (true, false)]

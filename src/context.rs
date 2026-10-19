@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::app::App;
 use crate::pdf_text::PdfText;
-use crate::text::{Bounds, PageId, Position};
 use crossterm::event::MouseEvent;
 use std::io::Write;
+use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::SelectionKind;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::context::{Command, ContextMenu, Item, PageContext, Transition};

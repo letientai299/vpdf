@@ -36,6 +36,7 @@ Maintainer documentation lives under `dev/`.
 | Read                           | For                                                         |
 | ------------------------------ | ----------------------------------------------------------- |
 | [Architecture][architecture]   | Project principles, ownership, and worker boundaries        |
+| [Packages][packages]           | Package contracts, dependency gates, and focused checks     |
 | [Rendering][rendering]         | Tiles, scheduling, terminal transport, and memory tradeoffs |
 | [Text and search][text]        | Glyph coordinates, normalized search, outlines, and OCR     |
 | [Sessions and state][sessions] | Panes, focus, persistence, and live reload                  |
@@ -65,6 +66,7 @@ Markdown.
 [reading]: reading.md
 [demo]: demos.md
 [architecture]: dev/arch.md
+[packages]: dev/packages.md
 [rendering]: dev/render.md
 [text]: dev/text.md
 [sessions]: dev/sessions.md

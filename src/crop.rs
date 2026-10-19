@@ -3,8 +3,6 @@ use crate::app::App;
 use std::sync::Arc;
 use vpdf_pdf::jobs::crop::{Request, Update};
 
-pub use vpdf_pdf::crop::{Margins, margins};
-
 impl App {
   pub(crate) fn start_crop(&mut self) {
     self.crop_scan.start(

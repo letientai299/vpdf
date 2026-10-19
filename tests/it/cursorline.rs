@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use vpdf::Result;
 use vpdf::solo::Solo;
-use vpdf::text::{Bounds, Glyph, Line, PageId, Position, Text};
+use vpdf_model::text::{Bounds, Glyph, Line, PageId, Position, Text};
 use vpdf_reader::reader::SelectionKind;
 use vpdf_ui::layout::{Crop, Screen};
 const BAND: &str = "\x1b[0;100m";
@@ -163,7 +163,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
   );
   app.reader.visual(SelectionKind::Character);
   app.reader.seed_reader(|reader| reader.cursor.glyph = 1);
-  let hit = vpdf::search::Hit {
+  let hit = vpdf_search::search::Hit {
     first: Position { glyph: 2, ..Position::default() },
     last: Position { glyph: 2, ..Position::default() },
     excerpt: "c".into(),
@@ -260,7 +260,7 @@ fn landing_jump_modes_and_fixed_destination() -> Result<()> {
       app.go_mark('a', true)?;
       assert_eq!(app.reader.landing().position().unwrap(), target);
       app.reader.clear_flash();
-      app.follow(&vpdf::document::Target::Page(PageId(1)))?;
+      app.follow(&vpdf_model::document::Target::Page(PageId(1)))?;
       assert_eq!(app.reader.landing().position().unwrap(), app.reader.cursor);
       assert_eq!(app.reader.cursor.page, PageId(1));
       app.reader.clear_flash();
@@ -328,7 +328,7 @@ fn landing_text_fills_row_below_glyph_styles() -> Result<()> {
   let position = Position { line: 5, glyph: 1, ..Position::default() };
   app.go_to(position, true)?;
   let position = app.reader.cursor;
-  let hit = vpdf::search::Hit {
+  let hit = vpdf_search::search::Hit {
     first: Position { glyph: 3, ..position },
     last: Position { glyph: 3, ..position },
     excerpt: String::new(),

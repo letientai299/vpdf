@@ -1,9 +1,3 @@
-pub use vpdf_model::cache;
-pub use vpdf_pdf::document;
-mod editor;
-pub use vpdf_model::text;
-pub use vpdf_search::search;
-
 pub type Result<T> = anyhow::Result<T>;
 pub mod animation;
 mod annotations;
@@ -18,7 +12,7 @@ mod context;
 pub mod crop;
 mod definition;
 pub mod dnd;
-pub use vpdf_pdf::figures;
+mod editor;
 mod find;
 #[cfg(test)]
 use vpdf_pdf::jobs::Wake;
@@ -49,7 +43,6 @@ mod perf;
 mod preview;
 pub mod raster;
 pub mod recent;
-pub use vpdf_search::reference;
 mod region;
 mod scrollbar;
 mod section;
@@ -61,7 +54,6 @@ mod text_canvas;
 pub mod tiles;
 pub mod trace;
 pub mod watch;
-use vpdf_pdf::wraps;
 
 #[cfg(test)]
 #[path = "../tests/support/reader.rs"]

@@ -1,8 +1,8 @@
 use crate::Result;
 use crate::app::{App, Request};
 use crate::state::Mark;
-use crate::text::{PageId, Position};
 use std::collections::BTreeMap;
+use vpdf_model::text::{PageId, Position};
 use vpdf_ui::panel::Row;
 
 impl App {

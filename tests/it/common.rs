@@ -170,7 +170,7 @@ pub fn crop_loaded(app: &mut App) -> Result<()> {
 pub fn hints(
   count: u16,
   cell: (u16, u16),
-  target: &vpdf::document::Target,
+  target: &vpdf_model::document::Target,
 ) -> vpdf_ui::hints::Hints {
   let found = (0..count)
     .map(|row| (((cell.0, cell.1 + row), cell.0), target.clone()))

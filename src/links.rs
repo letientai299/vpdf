@@ -1,10 +1,11 @@
 use crate::Result;
 use crate::app::App;
-use crate::document::{Document, Link, Target};
-use crate::text::{Bounds, PageId, Text};
 use crossterm::event::MouseEvent;
 use std::sync::Arc;
 use std::time::Instant;
+use vpdf_model::document::{Link, Target};
+use vpdf_model::text::{Bounds, PageId, Text};
+use vpdf_pdf::document::Document;
 use vpdf_ui::panel::Row;
 use vpdf_ui::panel::links::{cited, link_row};
 use vpdf_ui::pointer::{Hit, Hover};
@@ -43,7 +44,7 @@ impl App {
     };
     let Some(link) = links.get(index) else { return Vec::new() };
     let mut boxes: Vec<_> = link.boxes().map(|b| (page, b)).collect();
-    boxes.extend(crate::wraps::page_parts(&mut self.doc, page, link));
+    boxes.extend(vpdf_pdf::wraps::page_parts(&mut self.doc, page, link));
     boxes
   }
 

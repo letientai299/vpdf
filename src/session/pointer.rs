@@ -285,7 +285,7 @@ impl Session {
       Step::Reply(reply) => answer(out, &reply).map(|()| None),
       Step::Dropped(drop) => Ok(Some(drop)),
       Step::Failed(error) => {
-        answer(out, crate::dnd::CANCEL)?;
+        answer(out, vpdf_terminal::dnd::CANCEL)?;
         anyhow::bail!("Drop failed: {error}")
       }
     }

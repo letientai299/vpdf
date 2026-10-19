@@ -21,19 +21,22 @@ changes; they do not enumerate the feature set.
 
 ## Package boundaries
 
-The root application owns panes, raster dispatch, persistence, and UI. The
+The root application owns panes, raster dispatch, persistence, and effects. The
 [model crate][model] owns shared document values, text reflow, geometry, and
 bounded caches. [Search][search-crate] owns indexing and matching over model
 text. [PDF][pdf-crate] owns native access, document scans, and derived-content
 caches; it depends on model and search. The [reader crate][reader-crate] owns
 cursor, motion, selection, registers, and jump semantics over model text, using
 search for jump ordinals and hyphen joins. The application adapts native
-documents to the reader.
+documents to reader and UI data-access traits. The [UI crate][ui-crate] owns
+interface state, transitions, bindings, layout, theme, and drawing; it consumes
+model, reader, search, and terminal without native PDF dependencies.
 
 The [terminal crate][terminal-crate] owns capabilities, terminal lifecycle,
 graphics delivery, and spool files. It depends on model and the
 [protocol crate][protocol], which decodes terminal input bytes into events.
 Headless presenters accept explicit transport settings. The
+[package guide][packages] defines ownership and dependency enforcement. The
 [development guide][development] describes independent tests and benchmarks.
 
 ## Runtime ownership
@@ -98,7 +101,7 @@ background text scan slows the view's rasterization and the foreground's text
 extraction. Search and outline-inference scans therefore wait between pages
 while any pane builds or draws what is on screen. Prefetch does not hold them
 back. Decoding stored search indexes takes no MuPDF lock and does not wait;
-its threads follow the raster pool's size, half the cores.
+its concurrency budget comes from the shared [job configuration][jobs].
 
 Hidden panes release rebuildable text, display lists, search workers, and render
 coordinators. OCR text and view state remain. The shared graphics cache can keep
@@ -130,3 +133,5 @@ to release native resources. The policy and thresholds live in the
 [protocol]: ../../crates/vpdf-protocol/src/lib.rs
 [reader-crate]: ../../crates/vpdf-reader/src/lib.rs
 [terminal-crate]: ../../crates/terminal/src/lib.rs
+[ui-crate]: ../../crates/ui/src/lib.rs
+[packages]: packages.md

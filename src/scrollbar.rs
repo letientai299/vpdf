@@ -98,8 +98,8 @@ impl App {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::search::Hit as Found;
-  use crate::text::{PageId, Position};
+  use vpdf_model::text::{PageId, Position};
+  use vpdf_search::search::Hit as Found;
   use vpdf_ui::layout::Screen;
   use vpdf_ui::theme;
   #[test]

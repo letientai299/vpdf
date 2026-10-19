@@ -1,10 +1,10 @@
 use crate::Result;
-use crate::document::Document;
 use crate::raster::Raster;
-use crate::text::Position;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
+use vpdf_model::text::Position;
+use vpdf_pdf::document::Document;
 use vpdf_terminal::graphics::Usage;
 use vpdf_terminal::terminal;
 use vpdf_ui::keys::{Keys, PanelKind};
@@ -45,7 +45,7 @@ pub enum Request {
   /// A new split lands here; focus stays.
   SplitAt(Position),
   /// A new split follows a link there; focus stays.
-  SplitTo(crate::document::Target),
+  SplitTo(vpdf_model::document::Target),
   /// A global mark beside; focus stays.
   SplitMark(char),
   /// Keys a clicked clue names.
@@ -152,7 +152,7 @@ impl App {
       || self.path.display().to_string(),
       |name| name.to_string_lossy().into_owned(),
     );
-    crate::text::printable(&name).collect()
+    vpdf_model::text::printable(&name).collect()
   }
 
   pub fn with_screen(

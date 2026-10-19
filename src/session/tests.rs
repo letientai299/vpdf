@@ -4,8 +4,8 @@ use super::*;
 #[cfg(test)]
 use crate::SeedReader;
 
-use crate::text::Bounds;
 use crossterm::event::{KeyCode, KeyModifiers};
+use vpdf_model::text::Bounds;
 use vpdf_terminal::decode::{Button, Mouse, Spot};
 
 #[test]

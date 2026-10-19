@@ -1,10 +1,10 @@
 use crate::Result;
 use crate::app::{App, Request};
 use crate::cmdline;
-use crate::document::Target;
-use crate::text::{PageId, Position};
 use crossterm::event::KeyEvent;
 use std::process::{Command, Stdio};
+use vpdf_model::document::Target;
+use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Mode;
 use vpdf_ui::commands::{self, View};
 use vpdf_ui::input::InputOwner;
@@ -412,7 +412,7 @@ impl App {
     &mut self,
     page: PageId,
     index: usize,
-  ) -> Result<Option<crate::document::Link>> {
+  ) -> Result<Option<vpdf_model::document::Link>> {
     Ok(self.doc.links(page)?.get(index).cloned())
   }
 

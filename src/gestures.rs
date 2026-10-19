@@ -3,9 +3,9 @@
 use crate::Result;
 use crate::app::App;
 use crate::pdf_text::PdfText;
-use crate::text::{Bounds, PageId, Position};
 use crossterm::event::MouseEventKind;
 use std::time::Instant;
+use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_ui::input::gesture::Swept;
 use vpdf_ui::pointer::Route;
 

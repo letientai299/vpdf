@@ -31,10 +31,12 @@ run = "cargo run --locked -p vpdf --"
 
 [tasks.check]
 description = "Check every workspace target"
+depends = ["check:packages"]
 run = "cargo check --locked --workspace --all-targets"
 
 [tasks.lint]
 description = "Fix what tools can, then reject the remaining lint and format issues"
+depends = ["check:packages"]
 run = [
   "cargo clippy --locked --workspace --all-targets --fix --allow-dirty --allow-staged",
   "cargo fmt --all",
@@ -45,8 +47,16 @@ run = [
 ]
 
 [tasks.test]
-depends = ["test:demo"]
+depends = ["test:demo", "test:packages", "check:packages"]
 run = "cargo nextest run --locked --workspace --test-threads num-cpus --no-fail-fast"
+
+[tasks."check:packages"]
+description = "Check workspace dependencies and native isolation"
+run = "python3 -B scripts/check_packages.py"
+
+[tasks."test:packages"]
+description = "Test package boundary enforcement"
+run = "python3 -B -m unittest discover -s scripts -p test_packages.py"
 
 [tasks.hooks]
 run = "prek install"

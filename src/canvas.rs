@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::app::App;
-use crate::text::{Bounds, PageId, Position};
 use std::io::Write;
+use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::terminal;
 use vpdf_ui::layout::Screen;

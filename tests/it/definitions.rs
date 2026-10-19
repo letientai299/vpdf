@@ -3,9 +3,9 @@ use super::common::keys;
 use super::common::{pages_pdf, search_loaded};
 use super::focus::screen;
 use vpdf::Result;
-use vpdf::reference::Reference;
 use vpdf::solo::Solo;
-use vpdf::text::{PageId, Position};
+use vpdf_model::text::{PageId, Position};
+use vpdf_search::reference::Reference;
 use vpdf_ui::find::Phase;
 use vpdf_ui::keys::PanelKind;
 
@@ -144,10 +144,10 @@ fn section_and_equation_definitions() -> Result<()> {
 #[test]
 fn outline_definition_avoids_scan() -> Result<()> {
   let (_directory, mut app) = open(&[&["Section 3.2"], &["Methods"]], false)?;
-  app.doc.outline = vec![vpdf::document::Heading {
+  app.doc.outline = vec![vpdf_model::document::Heading {
     title: "3.2 Methods".into(),
     depth: 1,
-    target: vpdf::document::Target::Page(PageId(1)),
+    target: vpdf_model::document::Target::Page(PageId(1)),
   }];
   keys(&mut app, b"gd")?;
   assert_eq!(app.reader.cursor.page, PageId(1));
@@ -164,7 +164,7 @@ fn paper_caption_definition() -> Result<()> {
   for page in 0..app.doc.pages.len() {
     let page = PageId(page);
     let text = app.doc.text(page)?;
-    let index = vpdf::search::Index::new(page, &text);
+    let index = vpdf_search::search::Index::new(page, &text);
     candidates.extend(index.definitions(&reference, 100));
   }
   assert_eq!(candidates.len(), 1, "{candidates:?}");
@@ -192,10 +192,10 @@ fn definition_replay_excludes_source() -> Result<()> {
 fn definition_uses_explicit_heading_titles() -> Result<()> {
   for title in ["Section 3.2 Methods", "3.2"] {
     let (_directory, mut app) = open(&[&["Section 3.2"], &["Methods"]], false)?;
-    app.doc.outline = vec![vpdf::document::Heading {
+    app.doc.outline = vec![vpdf_model::document::Heading {
       title: title.into(),
       depth: 1,
-      target: vpdf::document::Target::Page(PageId(1)),
+      target: vpdf_model::document::Target::Page(PageId(1)),
     }];
     keys(&mut app, b"gd")?;
     assert_eq!(app.reader.cursor.page, PageId(1), "{title}");
@@ -210,10 +210,10 @@ fn ambiguous_heading_definitions_keep_bookmarks() -> Result<()> {
     open(&[&["Section 3.2"], &["First"], &["Second"]], false)?;
   app.doc.outline = [1, 2]
     .into_iter()
-    .map(|page| vpdf::document::Heading {
+    .map(|page| vpdf_model::document::Heading {
       title: "3.2 Methods".into(),
       depth: 1,
-      target: vpdf::document::Target::Page(PageId(page)),
+      target: vpdf_model::document::Target::Page(PageId(page)),
     })
     .collect();
   keys(&mut app, b"gd")?;
@@ -243,10 +243,10 @@ fn definition_focus_loss_cancels_jump() -> Result<()> {
 fn definition_overrides_pending_search_jump() -> Result<()> {
   let (_directory, mut app) =
     open(&[&["Section 3.2"], &["Methods"], &["needle"]], false)?;
-  app.doc.outline = vec![vpdf::document::Heading {
+  app.doc.outline = vec![vpdf_model::document::Heading {
     title: "3.2 Methods".into(),
     depth: 1,
-    target: vpdf::document::Target::Page(PageId(1)),
+    target: vpdf_model::document::Target::Page(PageId(1)),
   }];
   app.start_search("needle", false, false)?;
   keys(&mut app, b"gd")?;

@@ -1,6 +1,6 @@
 use crate::app::App;
-use crate::document::Target;
-use crate::text::Position;
+use vpdf_model::document::Target;
+use vpdf_model::text::Position;
 use vpdf_reader::reader::JumpDescription;
 use vpdf_ui::panel::Row;
 

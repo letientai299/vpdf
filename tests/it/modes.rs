@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::solo::Solo;
-use vpdf::text::{Bounds, PageId, Position};
+use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::SelectionKind;
 use vpdf_ui::keys::PanelKind;
 use vpdf_ui::layout::Screen;

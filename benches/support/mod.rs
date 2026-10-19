@@ -39,9 +39,25 @@ pub fn measure(name: &str, mut call: impl FnMut()) -> Result<()> {
   Ok(())
 }
 
-pub fn selected(name: &str) -> bool {
+fn selected(name: &str) -> bool {
   let filters: Vec<_> =
     std::env::args().skip(1).filter(|arg| !arg.starts_with("--")).collect();
   filters.is_empty()
     || filters.iter().any(|filter| name.contains(filter.as_str()))
+}
+
+pub type Case = fn() -> Result<()>;
+
+pub fn run(cases: &[(&str, Case)]) -> Result<()> {
+  let mut failed = 0;
+  for (name, case) in cases {
+    if selected(name)
+      && let Err(error) = case()
+    {
+      writeln!(io::stderr(), "{name}: {error:#}")?;
+      failed += 1;
+    }
+  }
+  anyhow::ensure!(failed == 0, "{failed} cases failed");
+  Ok(())
 }

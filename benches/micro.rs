@@ -1,20 +1,19 @@
 //! Single hot functions, timed in isolation, so a change is measured
 //! without the noise of whole-reader runs. Arguments filter cases by name.
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use mupdf::IRect;
 use std::hint::black_box;
 use std::io::{self, Write};
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use vpdf::Result;
-use vpdf::document::{Document, Handle};
-use vpdf::pdf_text::PdfText;
 use vpdf::solo::Solo;
-use vpdf::text::PageId;
-use vpdf_ui::layout::{Screen, page_matrix, transform};
+use vpdf_model::text::PageId;
+use vpdf_ui::layout::Screen;
 
 mod support;
-use support::measure;
+use support::{Case, measure};
+#[path = "support/corpus.rs"]
+mod corpus;
+use corpus::corpus;
 
 /// A 120x40 pane.
 const PANE: Screen = Screen {
@@ -267,101 +266,6 @@ fn viewport() -> Result<()> {
   Ok(())
 }
 
-/// A file `mise corpus` fetches; `mise bench:micro` sets `VPDF_CORPUS`.
-fn corpus(name: &str) -> Result<PathBuf> {
-  let root = std::env::var_os("VPDF_CORPUS").ok_or_else(|| {
-    anyhow::anyhow!("VPDF_CORPUS unset; run mise bench:micro")
-  })?;
-  let path = PathBuf::from(root).join(name);
-  anyhow::ensure!(path.is_file(), "{name} missing; run mise corpus");
-  Ok(path)
-}
-
-/// One whole draw of a scan 1913 pixels wide: the work a band of
-/// another scan in between repeats.
-fn scan_whole() -> Result<()> {
-  let mut doc = Document::open(&corpus("ocr.pdf")?, "")?;
-  let bounds = doc.pages[0].bounds;
-  let matrix = page_matrix(bounds, 900, 0);
-  let rect = transform(bounds, &matrix);
-  let area = IRect::new(0, 0, rect.x1.ceil() as i32, rect.y1.ceil() as i32);
-  let list = doc.display(PageId(0))?;
-  measure("tiles::draw whole scan", || {
-    drop(black_box(vpdf::tiles::draw(&list, &matrix, area)));
-  })
-}
-
-/// Every page record of the corpus book, read back from its pack.
-fn pack_read() -> Result<()> {
-  use vpdf_pdf::content_cache::{Pack, Records, alias, save};
-  let path = corpus("book.pdf")?;
-  let mut doc = Document::open(&path, "")?;
-  let pages = doc.pages.len();
-  let mut records = Records::new(pages);
-  for page in (0..pages).map(PageId) {
-    let text = doc.text(page)?;
-    records.add(page, &vpdf::search::Index::new(page, &text))?;
-  }
-  let root = tempfile::tempdir()?;
-  let alias = alias(&mut std::fs::File::open(&path)?)?;
-  save(root.path(), &alias, &records, None)?;
-  let pack = Pack::open(root.path(), &alias)
-    .ok_or_else(|| anyhow::anyhow!("pack missing"))?;
-  measure(&format!("Pack::index {pages} pages"), || {
-    for page in (0..pages).map(PageId) {
-      drop(black_box(pack.index(page)));
-    }
-  })?;
-  let all: Vec<PageId> = (0..pages).map(PageId).collect();
-  measure(&format!("Pack::indexes {pages} pages"), || {
-    drop(black_box(pack.indexes(
-      &all,
-      usize::MAX,
-      vpdf_pdf::jobs::Config::default().helpers,
-    )));
-  })
-}
-
-/// A page's first hover: text and links.
-fn cold_page() -> Result<()> {
-  for (name, page) in [("paper.pdf", 1), ("book.pdf", 99)] {
-    let mut doc = Document::open(&corpus(name)?, "")?;
-    measure(&format!("cold text {name}"), || {
-      doc.trim();
-      drop(black_box(doc.text(PageId(page)).expect("text")));
-    })?;
-    measure(&format!("cold text+links {name}"), || {
-      doc.trim();
-      drop(black_box(doc.links(PageId(page)).expect("links")));
-    })?;
-    // Seeding drops the page's links and keeps its text.
-    let text = doc.text(PageId(page))?;
-    measure(&format!("links, text read {name}"), || {
-      doc.seed(PageId(page), std::sync::Arc::clone(&text));
-      drop(black_box(doc.links(PageId(page)).expect("links")));
-    })?;
-  }
-  Ok(())
-}
-
-/// Interpreting a book page, as a visible page `zc` evicted does again.
-fn page_list() -> Result<()> {
-  let doc = Document::open(&corpus("book.pdf")?, "")?;
-  measure("display list book p100", || {
-    let page = doc.native.load_page(99);
-    drop(black_box(page.and_then(|page| page.to_display_list(true))));
-  })
-}
-
-/// Uncached margin detection across a book.
-fn crop_margins() -> Result<()> {
-  let mut doc = Document::open(&corpus("book.pdf")?, "")?;
-  vpdf::crop::margins(&mut doc)?;
-  measure("crop::margins book", || {
-    drop(black_box(vpdf::crop::margins(&mut doc)));
-  })
-}
-
 /// `zc` on, then off, at page 100 of a book.
 fn crop_toggle() -> Result<()> {
   let screen = Screen {
@@ -387,40 +291,6 @@ fn crop_toggle() -> Result<()> {
   measure("App::toggle_crop on, off", || {
     black_box(app.toggle_crop()).expect("crop toggle");
     black_box(app.toggle_crop()).expect("crop toggle");
-  })
-}
-
-/// Every page's bounds and the title.
-fn document_open() -> Result<()> {
-  let path = corpus("book.pdf")?;
-  measure("Document::open book", || {
-    drop(black_box(Document::open(&path, "")));
-  })
-}
-
-/// Opening plus a label lookup that matches nothing, which reads every
-/// page's label: the most a later command or outline panel pays once.
-fn label_scan() -> Result<()> {
-  let path = corpus("book.pdf")?;
-  measure("Document::open + label miss", || {
-    let doc = Document::open(&path, "").expect("corpus PDF");
-    black_box(doc.page_number(black_box("missing")));
-  })
-}
-
-/// The native document and page count, as workers open it.
-fn handle_open() -> Result<()> {
-  let path = corpus("book.pdf")?;
-  measure("Handle::open book", || {
-    drop(black_box(Handle::open(&path, "")));
-  })
-}
-
-/// One page's bounds, which the render coordinator reads per band.
-fn handle_bounds() -> Result<()> {
-  let doc = Handle::open(&corpus("book.pdf")?, "")?;
-  measure("Handle::bounds book p200", || {
-    drop(black_box(doc.bounds(PageId(199))));
   })
 }
 
@@ -459,7 +329,7 @@ fn preview_idle() -> Result<()> {
 }
 
 fn preview_scene(text: bool) -> Result<Solo> {
-  use vpdf::document::Target;
+  use vpdf_model::document::Target;
   let mut app = paper(text)?;
   let link = app
     .doc
@@ -577,85 +447,10 @@ fn transitions() -> Result<()> {
   measure("App::blur", || app.blur().expect("pane blur"))
 }
 
-/// `yy` joining a prose page whole, and three of its lines.
-fn reflow() -> Result<()> {
-  let mut doc = Document::open(&corpus("paper.pdf")?, "")?;
-  let lines = doc.text(PageId(1))?.lines.len();
-  for (name, count) in
-    [("yy paper p2 whole", lines), ("yy paper p2 3 lines", 3)]
-  {
-    measure(name, || {
-      let mut reader = vpdf_reader::reader::Reader::default();
-      reader.cursor.page = PageId(1);
-      reader.yank(1, '"', &mut PdfText(&mut doc)).expect("operator");
-      reader.yank(count, '"', &mut PdfText(&mut doc)).expect("paper lines");
-      black_box(reader.pending_yank);
-    })?;
-  }
-  Ok(())
-}
-
-fn lexical_objects() -> Result<()> {
-  let mut app = paper(false)?;
-  let text = app.doc.text(PageId(0))?;
-  let line = text.lines.iter().position(|line| line.glyphs.len() > 15).unwrap();
-  let cursor = vpdf::text::Position { page: PageId(0), line, glyph: 4 };
-  let mut reader = vpdf_reader::reader::Reader::default();
-  measure("Reader::object paper", || {
-    reader.cursor = cursor;
-    reader.object(false, &mut PdfText(&mut app.doc)).expect("paper word");
-    black_box(reader.selection);
-  })?;
-  let letters: Vec<_> = text.lines[line]
-    .glyphs
-    .iter()
-    .filter(|g| g.ch.is_alphabetic())
-    .take(8)
-    .map(|g| KeyEvent::new(KeyCode::Char(g.ch), KeyModifiers::NONE))
-    .collect();
-  let mut keys = vpdf_ui::keys::Keys::default();
-  measure("Keys::feed objects paper", || {
-    keys.clear();
-    for ch in "3iw".chars() {
-      black_box(keys.feed(
-        KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
-        vpdf_ui::keys::Grammar::Objects,
-      ));
-    }
-    for key in &letters {
-      black_box(keys.feed(*key, vpdf_ui::keys::Grammar::Objects));
-    }
-  })
-}
-
-fn figures() -> Result<()> {
-  let mut app = paper(false)?;
-  let page = PageId(2);
-  app.doc.figures(page)?;
-  measure("Document::figures warm", || {
-    black_box(app.doc.figures(black_box(page)).expect("cached figures"));
-  })?;
-  Ok(())
-}
-
-type Case = fn() -> Result<()>;
-
 const CASES: &[(&str, Case)] = &[
-  ("figures", figures),
-  ("lexical objects", lexical_objects),
-  ("reflow", reflow),
   ("hover", hover),
   ("wheel", wheel),
-  ("cold page", cold_page),
-  ("pack read", pack_read),
-  ("scan whole", scan_whole),
-  ("page list", page_list),
-  ("crop margins", crop_margins),
   ("crop toggle", crop_toggle),
-  ("document open", document_open),
-  ("label scan", label_scan),
-  ("handle open", handle_open),
-  ("handle bounds", handle_bounds),
   ("menu_rows", menu_rows),
   ("link hover", link_hover),
   ("drag", drag),
@@ -673,16 +468,5 @@ const CASES: &[(&str, Case)] = &[
 ];
 
 fn main() -> Result<()> {
-  let mut failed = 0;
-  for (name, case) in CASES {
-    if support::selected(name) {
-      // One failing case leaves the others' timings.
-      if let Err(error) = case() {
-        writeln!(io::stderr(), "{name}: {error:#}")?;
-        failed += 1;
-      }
-    }
-  }
-  anyhow::ensure!(failed == 0, "{failed} cases failed");
-  Ok(())
+  support::run(CASES)
 }

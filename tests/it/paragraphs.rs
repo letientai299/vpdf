@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 use vpdf::Result;
-use vpdf::document::Document;
 use vpdf::pdf_text::PdfText;
-use vpdf::text::{PageId, Position};
+use vpdf_model::text::{PageId, Position};
+use vpdf_pdf::document::Document;
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::Reader;
 
@@ -36,7 +36,7 @@ fn paper_blocks_supply_paragraph_boundaries() -> Result<()> {
   reader.motion(Motion::NextParagraph, 1, false, &mut PdfText(&mut doc))?;
   let expected = text.lines[first..next]
     .iter()
-    .map(vpdf::text::Line::text)
+    .map(vpdf_model::text::Line::text)
     .collect::<Vec<_>>()
     .join("\n");
   assert_eq!(reader.pending_yank.take().unwrap().text, expected);

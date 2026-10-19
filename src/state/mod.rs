@@ -1,10 +1,10 @@
 use crate::Result;
-use crate::text::Position;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use vpdf_model::geometry::Crop;
+use vpdf_model::text::Position;
 
 const RECENT: usize = 100;
 const HISTORY: usize = 200;
@@ -152,7 +152,7 @@ mod pane;
 #[cfg(test)]
 pub(crate) mod tests {
   use super::*;
-  use crate::text::PageId;
+  use vpdf_model::text::PageId;
 
   pub(crate) fn entry(path: &str, page: usize, used: u64) -> Entry {
     Entry {

@@ -8,10 +8,10 @@ use std::path::Path;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::app::Request;
-use vpdf::figures::Source;
 use vpdf::session::Session;
-use vpdf::text::{Bounds, PageId, Position};
 use vpdf::trace::Drawable;
+use vpdf_model::document::FigureSource as Source;
+use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::SelectionKind;
 use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
 use vpdf_ui::keys::Action;
@@ -1291,7 +1291,7 @@ fn menu_items_run_by_key_and_click() -> Result<()> {
   press(&mut session, KeyCode::Enter)?;
   let target = session.app().peek.as_ref().map(|peek| peek.target().clone());
   let page = match target {
-    Some(vpdf::document::Target::Point { page, .. }) => Some(page),
+    Some(vpdf_model::document::Target::Point { page, .. }) => Some(page),
     _ => None,
   };
   assert_eq!(page, Some(PageId(1)), "a preview of page 2");
@@ -1407,7 +1407,7 @@ fn inert_rows_keep_focus() -> Result<()> {
 /// U31: a row double click is Enter.
 #[test]
 fn row_double_clicks_focus() -> Result<()> {
-  use vpdf::document::{Heading, Target};
+  use vpdf_model::document::{Heading, Target};
   // (rows, page target, page, focused, jumps)
   for (rows, page_target, page, focused, jumps) in [
     (&[1][..], false, 1, true, 1),
@@ -2177,7 +2177,7 @@ fn hint_labels_follow_the_pointer() -> Result<()> {
 /// Typing drops the picked label.
 #[test]
 fn typing_drops_picked_labels() -> Result<()> {
-  use vpdf::document::Target;
+  use vpdf_model::document::Target;
   let (_directory, mut session) = session(false)?;
   let mut hints = common::hints(24, (10, 2), &Target::Page(PageId(1)));
   let hidden =

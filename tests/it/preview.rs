@@ -2,10 +2,10 @@ use super::common::keys;
 use super::focus::{screen, send};
 use std::path::PathBuf;
 use vpdf::Result;
-use vpdf::document::Target;
 use vpdf::session::Session;
 use vpdf::solo::Solo;
-use vpdf::text::PageId;
+use vpdf_model::document::Target;
+use vpdf_model::text::PageId;
 use vpdf_reader::reader::{Mode, SelectionKind};
 use vpdf_ui::input::InputOwner;
 
@@ -223,7 +223,7 @@ fn preview_reload_discards_target() -> Result<()> {
     assert_eq!(app.reader.selection.unwrap().anchor, range.anchor);
     assert_eq!(app.reader.mode(), Mode::Visual(range.kind));
     std::fs::copy(corpus.join("form.pdf"), &path)?;
-    let shorter = vpdf::document::Document::open(&path, "")?.pages.len();
+    let shorter = vpdf_pdf::document::Document::open(&path, "")?.pages.len();
     assert!(shorter <= target_page(app.peek.as_ref().unwrap().target()).0);
     app.command("reload")?;
     assert!(app.peek.is_none());
@@ -244,7 +244,7 @@ fn preview_invalid_keeps_reader() -> Result<()> {
     keys(&mut app, b"ivK")?;
     let cursor = app.reader.cursor;
     let range = app.reader.selection.unwrap();
-    app.doc = vpdf::document::Document::open(&corpus.join("form.pdf"), "")?;
+    app.doc = vpdf_pdf::document::Document::open(&corpus.join("form.pdf"), "")?;
     {
       let (app, _) = app.parts();
       app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));

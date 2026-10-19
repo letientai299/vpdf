@@ -1,7 +1,7 @@
 use crate::Result;
-use crate::document::Document;
-use crate::text::{PageId, Text};
 use std::sync::Arc;
+use vpdf_model::text::{PageId, Text};
+use vpdf_pdf::document::Document;
 use vpdf_reader::reader::TextSource;
 
 /// A native document as reader text.
@@ -20,7 +20,7 @@ impl vpdf_ui::source::Pages for PdfText<'_> {
   fn count(&self) -> usize {
     self.0.pages.len()
   }
-  fn bounds(&self, page: PageId) -> crate::text::Bounds {
+  fn bounds(&self, page: PageId) -> vpdf_model::text::Bounds {
     self.0.pages[page.0].bounds
   }
   fn label(&self, page: PageId) -> &str {

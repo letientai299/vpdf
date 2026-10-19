@@ -1,7 +1,9 @@
 use clap::Parser;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use vpdf::{Result, document::Document, inline, text::PageId};
+use vpdf::{Result, inline};
+use vpdf_model::text::PageId;
+use vpdf_pdf::document::Document;
 
 macro_rules! about {
   () => {
@@ -75,7 +77,7 @@ fn main() {
     };
     for line in lines {
       // MuPDF errors quote document bytes.
-      let line: String = vpdf::text::printable(line).collect();
+      let line: String = vpdf_model::text::printable(line).collect();
       eprintln!("vpdf: {line}");
     }
     std::process::exit(1);

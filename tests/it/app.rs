@@ -8,9 +8,9 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::document::Target;
 use vpdf::solo::Solo;
-use vpdf::text::{Bounds, PageId};
+use vpdf_model::document::Target;
+use vpdf_model::text::{Bounds, PageId};
 use vpdf_ui::keys::{Action, Input, PanelKind};
 use vpdf_ui::layout::Screen;
 use vpdf_ui::pointer::{Hit, Region, Route};
@@ -1240,7 +1240,7 @@ fn panel_clues_use_current_focus_and_scope() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn overlay_clues_follow_policy() -> Result<()> {
   use vpdf::pdf_text::PdfText;
-  use vpdf::text::Position;
+  use vpdf_model::text::Position;
   use vpdf_ui::context::ContextMenu;
   use vpdf_ui::input::InputOwner;
   use vpdf_ui::preview::Preview;

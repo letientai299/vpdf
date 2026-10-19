@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::session::Session;
-use vpdf::text::PageId;
+use vpdf_model::text::PageId;
 use vpdf_reader::motion::Motion;
 use vpdf_terminal::decode::{Event, Parser};
 use vpdf_ui::keys::{Action, Input};
@@ -320,7 +320,7 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
     ("", 480, scroll),
     ("text", 480, |app| {
       // The first line's row rises, then leaves.
-      let first = app.text().cell(vpdf::text::Position::default());
+      let first = app.text().cell(vpdf_model::text::Position::default());
       first.ok().flatten().map_or(1e3, |(_, row)| -f32::from(row))
     }),
     ("gp", 480, |app| {
@@ -446,7 +446,7 @@ fn settle(app: &mut App) {
 }
 
 /// Where the page is scrolled, in PDF or text presentation.
-fn page(app: &mut App) -> Result<(f32, vpdf::text::Position)> {
+fn page(app: &mut App) -> Result<(f32, vpdf_model::text::Position)> {
   let scroll = app.reader.animation().target().unwrap_or(app.reader.scroll);
   Ok((scroll, app.text().position(0, 0)?))
 }

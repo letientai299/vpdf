@@ -71,6 +71,11 @@ mise exec -- cargo nextest run --locked -p vpdf-model text::tests
 mise exec -- cargo nextest run --locked -p vpdf-search search::tests
 ```
 
+The [package guide][packages] describes ownership and permitted dependencies.
+`check`, `lint`, and `test` also run `check:packages`, which validates all
+dependency kinds and transitive native isolation. Run `test:packages` for the
+verifier's regression tests.
+
 PDF tests require MuPDF; ignored corpus tests also require the verified
 public PDFs from `mise run corpus`. Run them independently:
 
@@ -129,20 +134,27 @@ mise run bench:stages
 ```
 
 The [microbenchmarks][micro] accept case filters and `--package` selection.
-Model, terminal, and UI cases use prepared real-PDF raster, geometry, text,
-links, menu frames, capture regions, scrollbar headings, and page/text overlays.
+Model, search, reader, terminal, and UI cases use prepared real-PDF fixtures.
 Fixture hashes are checked and source identity is recorded outside the timed
-loops. Preparation requires MuPDF; model, terminal, UI, and protocol benchmark
-execution does not.
+loops. Preparation requires MuPDF; these packages and protocol execute their
+benchmarks without it. PDF benchmarks open native documents; application cases
+retain integrated frames, routing, and latency. Run `mise run corpus` before
+native cases to verify their inputs.
+
 Set `VPDF_BENCH_FIXTURES` to share a prepared fixture directory between
-checkouts.
+checkouts. Case filters apply within the selected package; omit `--package` to
+run matching cases across the workspace.
 
 ```sh
 mise run bench:fixtures
 mise run bench:micro -- --package vpdf-model
+mise run bench:micro -- --package vpdf-search index
+mise run bench:micro -- --package vpdf-reader
 mise run bench:micro -- --package vpdf-terminal
 mise run bench:micro -- --package vpdf-ui
 mise run bench:micro -- --package vpdf-protocol decode
+mise run corpus
+mise run bench:micro -- --package vpdf-pdf
 ```
 
 The [latency benchmark][latency] uses a live render worker to measure cold
@@ -272,6 +284,7 @@ updating the Homebrew tap. The rolling tag moves; use the snapshot identity when
 a result needs a reproducible release reference.
 
 [tasks]: ../../.config/mise.toml
+[packages]: packages.md
 [mise]: https://mise.jdx.dev/
 [pkgconf]: https://formulae.brew.sh/formula/pkgconf
 [build]: ../../scripts/build.sh

@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::app::App;
-use crate::document::Document;
 use crate::raster::Raster;
+use vpdf_pdf::document::Document;
 use vpdf_ui::keys::PanelKind;
 
 impl App {

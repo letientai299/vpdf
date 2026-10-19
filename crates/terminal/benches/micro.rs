@@ -130,8 +130,7 @@ fn residency() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-  type Case = fn() -> Result<()>;
-  let cases: &[(&str, Case)] = &[
+  support::run(&[
     ("clean", clean),
     ("clean marks", clean_marks),
     ("tile encode", tile_encode),
@@ -139,11 +138,5 @@ fn main() -> Result<()> {
     ("spool", spool),
     ("placement", placement),
     ("residency", residency),
-  ];
-  for (name, call) in cases {
-    if support::selected(name) {
-      call()?;
-    }
-  }
-  Ok(())
+  ])
 }

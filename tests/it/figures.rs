@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::solo::Solo;
-use vpdf::text::PageId;
+use vpdf_model::text::PageId;
 
 #[test]
 fn raw_figure_bindings() {

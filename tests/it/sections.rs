@@ -3,9 +3,9 @@ use super::common::keys;
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::document::Target;
 use vpdf::solo::Solo;
-use vpdf::text::{Bounds, Position};
+use vpdf_model::document::Target;
+use vpdf_model::text::{Bounds, Position};
 use vpdf_ui::layout::Screen;
 
 fn app(text_mode: bool) -> Result<Solo> {
@@ -30,7 +30,8 @@ fn app(text_mode: bool) -> Result<Solo> {
 fn text_rows(app: &mut App, pages: usize) -> Result<usize> {
   let mut rows = 0;
   for page in 0..pages {
-    rows += app.doc.text(vpdf::text::PageId(page))?.lines.len().max(1) + 1;
+    rows +=
+      app.doc.text(vpdf_model::text::PageId(page))?.lines.len().max(1) + 1;
   }
   Ok(rows)
 }
@@ -321,7 +322,7 @@ fn section_same_baseline_targets() -> Result<()> {
     for glyph in [0, 2, 4] {
       let bounds = row.glyphs[glyph].bounds;
       let x = f32::midpoint(bounds.x0, bounds.x1);
-      targets.push(vpdf::document::Heading {
+      targets.push(vpdf_model::document::Heading {
         title: row.glyphs[glyph].ch.to_string(),
         depth: 0,
         target: Target::Point { page: position.page, x, y },

@@ -5,7 +5,7 @@ use crate::mouse::{cell, cell_in, labels, mouse, press, session, status};
 use crossterm::event::{KeyCode, MouseButton, MouseEventKind};
 use vpdf::Result;
 use vpdf::session::Session;
-use vpdf::text::PageId;
+use vpdf_model::text::PageId;
 use vpdf_ui::pointer::{Hit, Region};
 
 /// A middle click, settled after each event.
@@ -152,7 +152,7 @@ fn middle_clicks_copy_web_rows() -> Result<()> {
     panel.is_some_and(|panel| {
       matches!(
         panel.view.rows()[index].destination,
-        vpdf_ui::panel::Destination::Link(vpdf::document::Target::Uri(_))
+        vpdf_ui::panel::Destination::Link(vpdf_model::document::Target::Uri(_))
       )
     })
   });
@@ -290,7 +290,7 @@ fn row_menus_copy_and_select() -> Result<()> {
 /// A refill keeps a row menu's row; a row that leaves closes the menu.
 #[test]
 fn panel_refills_keep_the_menu_row() -> Result<()> {
-  use vpdf::document::{Heading, Target};
+  use vpdf_model::document::{Heading, Target};
   let opening = || Heading {
     title: "Opening".into(),
     depth: 0,
@@ -335,7 +335,7 @@ fn recent_menus_open_rows() -> Result<()> {
   let app = session.app();
   let entry = vpdf::state::Entry {
     path: app.path.clone(),
-    cursor: vpdf::text::Position::default(),
+    cursor: vpdf_model::text::Position::default(),
     zoom: 1.0,
     rotation: 0,
     used: 0,
@@ -1145,8 +1145,9 @@ fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
   let edge = session.app().screen.columns - 1;
   // New searches redraw same-count ticks.
   let hit = |page| {
-    let at = vpdf::text::Position { page: PageId(page), line: 0, glyph: 0 };
-    vpdf::search::Hit { first: at, last: at, excerpt: String::new() }
+    let at =
+      vpdf_model::text::Position { page: PageId(page), line: 0, glyph: 0 };
+    vpdf_search::search::Hit { first: at, last: at, excerpt: String::new() }
   };
   // Last-column placements: rows and crops.
   let column = format!(";{}H\x1b_Ga=p", edge + 1);
@@ -1322,7 +1323,7 @@ fn gx_reuses_url_scheme_checks() -> Result<()> {
     vec![vpdf_ui::panel::Row::new(
       "unsafe".into(),
       String::new(),
-      vpdf_ui::panel::Destination::Link(vpdf::document::Target::Uri(
+      vpdf_ui::panel::Destination::Link(vpdf_model::document::Target::Uri(
         "file:///etc/passwd".into(),
       )),
     )],

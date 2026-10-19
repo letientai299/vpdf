@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::document::Target;
 use vpdf::solo::Solo;
-use vpdf::text::{Bounds, Glyph, Line, PageId, Text};
+use vpdf_model::document::Target;
+use vpdf_model::text::{Bounds, Glyph, Line, PageId, Text};
 use vpdf_ui::keys::PanelKind;
 use vpdf_ui::panel::Destination;
 use vpdf_ui::pointer::{Hit, Region};
@@ -203,7 +203,8 @@ fn real_preprint_addresses_are_links() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn paper_author_addresses_are_links() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut doc = vpdf::document::Document::open(&root.join("paper.pdf"), "")?;
+  let mut doc =
+    vpdf_pdf::document::Document::open(&root.join("paper.pdf"), "")?;
   let links = doc.links(PageId(0))?;
   let mut mail: Vec<_> = links
     .iter()

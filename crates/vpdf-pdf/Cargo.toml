@@ -26,3 +26,7 @@ mupdf = { workspace = true, features = ["sys-lib-zlib"] }
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[[bench]]
+name = "micro"
+harness = false

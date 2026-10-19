@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::solo::Solo;
-use vpdf::text::{PageId, Position};
+use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Mode;
 use vpdf_ui::input::InputOwner;
 use vpdf_ui::keys::{Action, Input, PanelKind};
@@ -16,7 +16,8 @@ use vpdf_ui::prompt::History;
 
 fn annotated() -> Result<(tempfile::NamedTempFile, String)> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut source = vpdf::document::Document::open(&root.join("paper.pdf"), "")?;
+  let mut source =
+    vpdf_pdf::document::Document::open(&root.join("paper.pdf"), "")?;
   let text = source.text(PageId(1))?;
   let line = &text.lines[2];
   let first = line.glyphs.first().unwrap().bounds;
@@ -305,9 +306,9 @@ fn noted_pdf(path: &std::path::Path) -> Result<()> {
 #[test]
 fn hover_details_notes_rows_and_pages() -> Result<()> {
   use crossterm::event::{MouseEvent, MouseEventKind};
-  use vpdf::document::{Heading, Target};
   use vpdf::session::Session;
   use vpdf::trace::Drawable;
+  use vpdf_model::document::{Heading, Target};
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("noted.pdf");
@@ -406,9 +407,9 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
 #[test]
 fn outline_hovers_drop_the_indent() -> Result<()> {
   use crossterm::event::{MouseEvent, MouseEventKind};
-  use vpdf::document::{Heading, Target};
   use vpdf::session::Session;
   use vpdf::trace::Drawable;
+  use vpdf_model::document::{Heading, Target};
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("noted.pdf");
@@ -688,7 +689,7 @@ fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
     assert_eq!(drawn.contains("DETAIL"), shown, "{at}");
   }
   // Trimming drops the annotation cache.
-  let mut doc = vpdf::document::Document::open(&path, "")?;
+  let mut doc = vpdf_pdf::document::Document::open(&path, "")?;
   let first = doc.annotations(PageId(0))?;
   assert!(std::sync::Arc::ptr_eq(&first, &doc.annotations(PageId(0))?));
   doc.trim();

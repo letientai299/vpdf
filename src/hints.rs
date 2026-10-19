@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::app::App;
-use crate::document::Target;
-use crate::text::{Bounds, PageId};
 use crossterm::event::KeyEvent;
 use std::io::Write;
+use vpdf_model::document::Target;
+use vpdf_model::text::{Bounds, PageId};
 use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::hints::{Hints, Transition};
 use vpdf_ui::paint::Frame;

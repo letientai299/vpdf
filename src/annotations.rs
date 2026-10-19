@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::app::App;
-use crate::document::Annotation;
-use crate::text::{Bounds, PageId, Position};
+use vpdf_model::document::Annotation;
+use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_ui::annotations::{icon, marked};
 use vpdf_ui::panel::Row;
 use vpdf_ui::pointer::Hit;

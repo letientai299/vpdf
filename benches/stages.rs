@@ -5,8 +5,10 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use vpdf::Result;
-use vpdf::document::{Document, TEXT_FLAGS, extract};
-use vpdf::tiles::{TILE_HEIGHT, TILE_WIDTH, draw, encode};
+use vpdf_model::tile::{TILE_HEIGHT, TILE_WIDTH};
+use vpdf_pdf::document::{Document, TEXT_FLAGS, extract};
+use vpdf_pdf::raster::draw;
+use vpdf_terminal::payload::encode;
 use vpdf_ui::layout::{Crop, page_matrix};
 
 #[derive(Default, Serialize)]

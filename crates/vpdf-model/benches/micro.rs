@@ -29,8 +29,18 @@ fn region() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-  if support::selected("region text") {
-    region()?;
-  }
-  Ok(())
+  support::run(&[("region text", region), ("geometry", geometry)])
+}
+
+fn geometry() -> Result<()> {
+  use vpdf_model::geometry::{page_matrix, transform};
+  let prepared = fixtures::text()?;
+  support::measure("page_matrix and transform", || {
+    for (_, bounds) in &prepared.metadata {
+      for angle in [0, 90, 180, 270] {
+        let matrix = page_matrix(black_box(*bounds), 2048, black_box(angle));
+        black_box(transform(*bounds, &matrix));
+      }
+    }
+  })
 }

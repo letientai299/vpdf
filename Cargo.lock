@@ -1338,6 +1338,9 @@ name = "vpdf-reader"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "serde",
+ "serde_json",
+ "sha2",
  "vpdf-model",
  "vpdf-search",
 ]
@@ -1348,6 +1351,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "fancy-regex",
+ "serde",
+ "serde_json",
+ "sha2",
  "unicode-casefold",
  "unicode-normalization",
  "vpdf-model",

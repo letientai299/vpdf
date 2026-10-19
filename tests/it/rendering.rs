@@ -2,11 +2,12 @@ use super::common::SeedReader;
 use mupdf::{Colorspace, Matrix};
 use std::path::PathBuf;
 use vpdf::Result;
-use vpdf::document::Document;
 use vpdf::solo::Solo;
-use vpdf::text::PageId;
-use vpdf::tiles::{TileKey, raster};
+use vpdf_model::text::PageId;
+use vpdf_model::tile::TileKey;
+use vpdf_pdf::document::Document;
 use vpdf_pdf::jobs::Wake;
+use vpdf_pdf::raster::raster;
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
@@ -114,7 +115,7 @@ fn check_crop_pixels(
   doc: &mut Document,
   page: PageId,
   crop: vpdf_ui::layout::Crop,
-  stamp: Option<vpdf::text::Bounds>,
+  stamp: Option<vpdf_model::text::Bounds>,
 ) -> Result<()> {
   use vpdf_ui::layout::{page_matrix, transform};
   let bounds = doc.pages[page.0].bounds;
@@ -194,7 +195,7 @@ fn crop_ignores_margin_stamps() -> Result<()> {
       "",
     )?;
     let mut doc = Document::open(&path, "")?;
-    let crop = vpdf::crop::margins(&mut doc)?[0];
+    let crop = vpdf_pdf::crop::margins(&mut doc)?[0];
     assert_eq!(doc.cache_bytes(), 0, "margin detection filled the text cache");
     assert_eq!(
       crop.0[0] > 170,
@@ -341,14 +342,14 @@ fn assert_tile(
   use base64::Engine;
   use std::io::Read;
   let pixels = match &tile.payload {
-    vpdf::tiles::Payload::Encoded(encoded) => {
+    vpdf_terminal::payload::Payload::Encoded(encoded) => {
       let packed =
         base64::engine::general_purpose::STANDARD.decode(encoded.as_bytes())?;
       let mut pixels = Vec::new();
       flate2::read::ZlibDecoder::new(&packed[..]).read_to_end(&mut pixels)?;
       pixels
     }
-    vpdf::tiles::Payload::Spooled { spool, slot } => {
+    vpdf_terminal::payload::Payload::Spooled { spool, slot } => {
       use std::os::unix::ffi::OsStringExt;
       use std::os::unix::fs::FileExt;
       let path =
@@ -583,9 +584,9 @@ fn book_body_stays_centered() -> Result<()> {
       let body = text
         .lines
         .iter()
-        .filter_map(vpdf::text::Line::span)
+        .filter_map(vpdf_model::text::Line::span)
         .filter(|line| line.width() > app.doc.pages[index].bounds.width() * 0.5)
-        .reduce(vpdf::text::Bounds::union)
+        .reduce(vpdf_model::text::Bounds::union)
         .expect("body text");
       let projected = app.layout.project(page, body, 0.0);
       let center = projected.centre().0;

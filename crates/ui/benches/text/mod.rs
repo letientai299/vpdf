@@ -1,23 +1,13 @@
 use super::fixtures::TextPages;
 use anyhow::{Context, Result};
 use std::hint::black_box;
-use std::sync::Arc;
 use vpdf_model::geometry::Screen;
-use vpdf_model::text::{Bounds, PageId, Position, Text};
-use vpdf_reader::reader::{Reader, TextSource};
+use vpdf_model::text::{Bounds, PageId, Position};
+use vpdf_reader::reader::Reader;
 use vpdf_terminal::terminal::At;
 use vpdf_ui::paint::Marks;
 use vpdf_ui::source::Pages;
 use vpdf_ui::text_view::{Frame, TextView};
-
-impl TextSource for &TextPages {
-  fn page_count(&self) -> usize {
-    self.text.len()
-  }
-  fn page_text(&mut self, page: PageId) -> Result<Arc<Text>> {
-    Ok(Arc::clone(&self.text[page.0]))
-  }
-}
 
 impl Pages for &TextPages {
   fn count(&self) -> usize {

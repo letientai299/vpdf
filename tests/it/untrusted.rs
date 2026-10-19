@@ -4,9 +4,10 @@ use std::fmt::Write as _;
 use std::path::Path;
 use vpdf::Result;
 use vpdf::app::Tabline;
-use vpdf::document::{Document, Target};
 use vpdf::solo::Solo;
-use vpdf::text::PageId;
+use vpdf_model::document::Target;
+use vpdf_model::text::PageId;
+use vpdf_pdf::document::Document;
 use vpdf_ui::keys::PanelKind;
 use vpdf_ui::layout::Screen;
 

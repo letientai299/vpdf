@@ -1,11 +1,9 @@
 use crate::Result;
 use crate::app::{App, Request, Tabline};
-use crate::dnd::{Dropped, Step, Target};
-use crate::document::PasswordRequired;
+use crate::dnd::Target;
 use crate::home::{Home, Outcome};
 use crate::pace::Pacer;
 use crate::state::{Mark, State};
-use crate::text::{PageId, Position};
 use crate::trace::Drawable;
 use crate::watch::Watcher;
 use crossterm::event::{
@@ -16,7 +14,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+use vpdf_model::text::{PageId, Position};
+use vpdf_pdf::document::PasswordRequired;
 use vpdf_terminal::decode::{Event, MouseKind, Reply, Size};
+use vpdf_terminal::dnd::{Dropped, Step};
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::terminal::{self, At, Shape, View};
 use vpdf_ui::chrome::Notice;
@@ -71,7 +72,7 @@ pub struct Session {
   rehover: Rehover,
   image_write: Option<ImageWrite>,
   /// The drag over the window, OSC 72.
-  drops: crate::dnd::Drops,
+  drops: vpdf_terminal::dnd::Drops,
   /// The boundary a press drags.
   resizing: Option<Edge>,
 }
@@ -220,7 +221,7 @@ impl Session {
       observed: None,
       rehover: Rehover::Settled,
       image_write: None,
-      drops: crate::dnd::Drops::default(),
+      drops: vpdf_terminal::dnd::Drops::default(),
       resizing: None,
     }
   }

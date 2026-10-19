@@ -1,8 +1,8 @@
 use crate::Result;
 use crate::app::App;
-use crate::document::{Annotation, Target};
-use crate::text::{Bounds, PageId, Position};
 use std::io::Write;
+use vpdf_model::document::{Annotation, Target};
+use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::keys::Input;
 use vpdf_ui::pointer::Hit;

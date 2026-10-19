@@ -24,8 +24,5 @@ fn decode() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-  if support::selected("decode") {
-    decode()?;
-  }
-  Ok(())
+  support::run(&[("decode", decode)])
 }

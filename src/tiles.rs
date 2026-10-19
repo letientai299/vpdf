@@ -1,9 +1,8 @@
 use crate::Result;
-use crate::document::Document;
-
-pub use vpdf_model::tile::{TILE_HEIGHT, TILE_WIDTH, TileKey, cover};
-
-pub use vpdf_terminal::payload::{Payload, Tile, encode};
+use vpdf_model::tile::TileKey;
+use vpdf_pdf::document::Document;
+use vpdf_pdf::raster::raster;
+use vpdf_terminal::payload::Tile;
 
 pub fn render(doc: &mut Document, key: TileKey) -> Result<Tile> {
   let started = std::time::Instant::now();
@@ -11,5 +10,3 @@ pub fn render(doc: &mut Document, key: TileKey) -> Result<Tile> {
     vpdf_terminal::payload::Encoder::live().encode(&raster(doc, key)?)?;
   Ok(Tile { key, payload, render_ms: started.elapsed().as_secs_f64() * 1000.0 })
 }
-
-pub use vpdf_pdf::raster::{Capture, capture, cut, draw, raster, raster_area};

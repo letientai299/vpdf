@@ -2,9 +2,9 @@ use super::common::keys;
 use super::focus::{screen, send};
 use super::modes::{app, settle};
 use vpdf::Result;
-use vpdf::document::Target;
 use vpdf::session::Session;
-use vpdf::text::{PageId, Position};
+use vpdf_model::document::Target;
+use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::{Mode, SelectionKind};
 use vpdf_ui::input::InputOwner;
 use vpdf_ui::keys::PanelKind;
@@ -238,8 +238,11 @@ fn cursor_rendering_keeps_visual_band_separate() -> Result<()> {
   for text in [false, true] {
     let mut app = app("paper.pdf", text)?;
     let hit = Position { glyph: 5, ..app.reading_position()? };
-    let hit =
-      vpdf::search::Hit { first: hit, last: hit, excerpt: String::new() };
+    let hit = vpdf_search::search::Hit {
+      first: hit,
+      last: hit,
+      excerpt: String::new(),
+    };
     app.search.show(vpdf_search::query::Query::default(), vec![hit]);
     keys(&mut app, b"i")?;
     let mut out = Vec::new();

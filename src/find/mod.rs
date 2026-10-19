@@ -1,8 +1,8 @@
 use crate::Result;
 use crate::app::App;
-use crate::search;
 use vpdf_pdf::jobs::search::SearchWorker;
 use vpdf_search::query::Query;
+use vpdf_search::search;
 use vpdf_ui::find::{Phase, Update};
 use vpdf_ui::keys::PanelKind;
 use vpdf_ui::panel::Panel;
@@ -34,7 +34,7 @@ impl App {
   fn start_query_from(
     &mut self,
     query: &Query,
-    origin: Option<crate::text::Position>,
+    origin: Option<vpdf_model::text::Position>,
   ) -> Result<()> {
     search::compile(&query.text, query.whole)?;
     let origin = match origin {

@@ -3,11 +3,11 @@ use super::common::{events, keys};
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::document::Target;
 use vpdf::pdf_text::PdfText;
 use vpdf::session::Session;
 use vpdf::solo::Solo;
-use vpdf::text::{PageId, Position};
+use vpdf_model::document::Target;
+use vpdf_model::text::{PageId, Position};
 use vpdf_terminal::decode::Event;
 use vpdf_ui::input::InputOwner;
 use vpdf_ui::keys::{Action, Input, Keys, PanelKind};
@@ -278,7 +278,7 @@ fn yy_joins_prose_and_keeps_code() -> Result<()> {
     ("book.pdf", ">>> a = 'banana'", true, "'banana'\n>>> b = 'banana'\n"),
   ];
   for (name, start, raw, want) in cases {
-    let mut doc = vpdf::document::Document::open(&file(name)?, "")?;
+    let mut doc = vpdf_pdf::document::Document::open(&file(name)?, "")?;
     let mut reader = Reader::default();
     reader.cursor = (0..doc.pages.len())
       .find_map(|page| {

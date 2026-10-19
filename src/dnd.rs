@@ -1,6 +1,6 @@
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
-pub use vpdf_terminal::dnd::{CANCEL, Dropped, Drops, Step};
+use vpdf_terminal::dnd::Dropped;
 
 /// Pastes of more lines name no files.
 const LINES: usize = 16;
@@ -137,6 +137,7 @@ fn words(line: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use vpdf_terminal::dnd::{Drops, Step};
   #[test]
   fn drops_give_prompts_text_and_else_a_pdf() -> std::io::Result<()> {
     let directory = tempfile::tempdir()?;

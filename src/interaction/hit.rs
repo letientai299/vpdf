@@ -39,7 +39,7 @@ impl App {
     column: u16,
     row: u16,
     pixel: Option<Pixel>,
-  ) -> Result<Option<crate::document::Target>> {
+  ) -> Result<Option<vpdf_model::document::Target>> {
     let hit = self.pressed_hit(column, row, pixel)?;
     self.link_of(hit)
   }
@@ -48,7 +48,7 @@ impl App {
   pub(crate) fn link_of(
     &mut self,
     hit: Hit,
-  ) -> Result<Option<crate::document::Target>> {
+  ) -> Result<Option<vpdf_model::document::Target>> {
     let Hit::Link(page, index) = hit else { return Ok(None) };
     Ok(self.link(page, index)?.map(|link| link.target))
   }

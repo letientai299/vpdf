@@ -14,3 +14,12 @@ fancy-regex.workspace = true
 unicode-casefold.workspace = true
 unicode-normalization.workspace = true
 vpdf-model.workspace = true
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[[bench]]
+name = "micro"
+harness = false

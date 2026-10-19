@@ -7,9 +7,9 @@ use crossterm::event::{
 };
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::document::{Heading, Target};
 use vpdf::solo::Solo;
-use vpdf::text::{PageId, Position};
+use vpdf_model::document::{Heading, Target};
+use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::SelectionKind;
 use vpdf_ui::layout::Screen;
 use vpdf_ui::pointer::{Hit, Region, Route};
@@ -392,7 +392,7 @@ fn rules_show_page_labels() -> Result<()> {
   use mupdf::pdf::{PageLabelRule, PageLabelStyle, PdfWriteOptions};
   let (dir, app) = app(&[])?;
   let path = dir.path().join("labeled.pdf");
-  let mut doc = vpdf::document::Document::open(&app.path, "")?;
+  let mut doc = vpdf_pdf::document::Document::open(&app.path, "")?;
   let rule = PageLabelRule::new(0, PageLabelStyle::LowerRoman);
   doc.native.set_page_label_rule(rule)?;
   let mut file = std::fs::File::create(&path)?;

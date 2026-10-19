@@ -3,9 +3,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::document::{Heading, Target};
 use vpdf::solo::Solo;
-use vpdf::text::{PageId, Position};
+use vpdf_model::document::{Heading, Target};
+use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Reader;
 use vpdf_ui::keys::PanelKind;
 use vpdf_ui::layout::Screen;
@@ -181,7 +181,7 @@ fn fallback_context() -> Result<()> {
 }
 
 fn heading(app: &mut App, line: usize, title: &str) -> Result<()> {
-  use vpdf::document::{Heading, Target};
+  use vpdf_model::document::{Heading, Target};
   let bounds = app.doc.text(PageId(0))?.lines[line].glyphs[0].bounds;
   let (x, y) = bounds.centre();
   app.doc.outline.push(Heading {
@@ -288,7 +288,7 @@ fn committed_searches() -> Result<()> {
 
 #[test]
 fn followed_links() -> Result<()> {
-  use vpdf::document::Target;
+  use vpdf_model::document::Target;
   let (_dir, mut app) = text_app(&["Opening", "Reference title", "End"])?;
   let bounds = app.doc.text(PageId(0))?.lines[1].glyphs[0].bounds;
   let (x, y) = bounds.centre();

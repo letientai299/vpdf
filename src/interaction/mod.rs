@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::app::App;
-use crate::text::{PageId, Position};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Location;
 use vpdf_ui::input::InputOwner;
 use vpdf_ui::keys::{Action, Input};

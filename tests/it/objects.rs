@@ -3,7 +3,7 @@ use super::common::keys;
 use vpdf::Result;
 use vpdf::pdf_text::PdfText;
 use vpdf::solo::Solo;
-use vpdf::text::{Line, PageId, Position};
+use vpdf_model::text::{Line, PageId, Position};
 use vpdf_reader::objects::Object;
 use vpdf_reader::reader::{Reader, SelectionKind};
 
@@ -86,7 +86,7 @@ fn object_raw_keys_preserve_normal_and_copy_blocks() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn object_ranges_cross_real_pages() -> Result<()> {
-  use vpdf::document::Document;
+  use vpdf_pdf::document::Document;
   let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let mut doc = Document::open(&root.join("paper.pdf"), "")?;
   let first = doc.text(PageId(0))?;

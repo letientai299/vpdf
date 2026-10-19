@@ -30,6 +30,8 @@ mod sections;
 #[path = "../../../benches/support/mod.rs"]
 mod support;
 mod text;
+#[path = "../../../benches/support/text_source.rs"]
+mod text_source;
 mod tiles;
 use support::measure;
 
@@ -223,9 +225,40 @@ fn hints() -> Result<()> {
   })
 }
 
+fn lexical_objects() -> Result<()> {
+  let prepared = fixtures::text()?;
+  let text = &prepared.text[0];
+  let line = text
+    .lines
+    .iter()
+    .position(|line| line.glyphs.len() > 15)
+    .ok_or_else(|| anyhow::anyhow!("Missing prose line"))?;
+  let letters: Vec<_> = text.lines[line]
+    .glyphs
+    .iter()
+    .filter(|g| g.ch.is_alphabetic())
+    .take(8)
+    .map(|g| KeyEvent::new(KeyCode::Char(g.ch), KeyModifiers::NONE))
+    .collect();
+  let mut keys = vpdf_ui::keys::Keys::default();
+  measure("Keys::feed objects paper", || {
+    keys.clear();
+    for ch in "3iw".chars() {
+      black_box(keys.feed(
+        KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
+        vpdf_ui::keys::Grammar::Objects,
+      ));
+    }
+    for key in &letters {
+      black_box(keys.feed(*key, vpdf_ui::keys::Grammar::Objects));
+    }
+  })
+}
+
 fn main() -> Result<()> {
-  for (name, case) in [
-    ("key prefixes", key_prefixes as fn() -> Result<()>),
+  support::run(&[
+    ("key prefixes", key_prefixes),
+    ("lexical objects", lexical_objects),
     ("projection", projection),
     ("page tiles", tiles::draw),
     ("preview raster", preview::compose),
@@ -258,10 +291,5 @@ fn main() -> Result<()> {
     ("route", route),
     ("routing panel", panel),
     ("routing status", chrome::draw),
-  ] {
-    if support::selected(name) {
-      case()?;
-    }
-  }
-  Ok(())
+  ])
 }

@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::app::App;
 use crate::pdf_text::PdfText;
-use crate::text::PageId;
 use crossterm::event::MouseEvent;
 use std::io::Write;
+use vpdf_model::text::PageId;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::keys::Input;
 use vpdf_ui::overview::{Frame, Grid, Navigation, Overview, Pointer};
@@ -48,7 +48,7 @@ impl App {
       Pointer::None => Ok(()),
       Pointer::Open => self.open_selected(),
       Pointer::Split(page) => {
-        self.open_split(&crate::document::Target::Page(page))
+        self.open_split(&vpdf_model::document::Target::Page(page))
       }
       Pointer::Context(hit) => {
         self.overview_context(mouse, hit);

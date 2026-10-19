@@ -2,9 +2,9 @@
 //! placeholders, so pagers and `fzf --preview` can show it like text.
 
 use crate::Result;
-use crate::document::Document;
-use crate::text::PageId;
 use std::io::Write;
+use vpdf_model::text::PageId;
+use vpdf_pdf::document::Document;
 
 /// Asks the executable to print a page preview, and names the output
 /// the reader chose, since its fzf owns the terminal and the preview
