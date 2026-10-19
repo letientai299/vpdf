@@ -1285,7 +1285,6 @@ dependencies = [
  "flate2",
  "mupdf",
  "notify",
- "rustix",
  "serde",
  "serde_json",
  "sha2",
@@ -1295,9 +1294,9 @@ dependencies = [
  "unicode-width",
  "vpdf-model",
  "vpdf-pdf",
- "vpdf-protocol",
  "vpdf-reader",
  "vpdf-search",
+ "vpdf-terminal",
 ]
 
 [[package]]
@@ -1312,15 +1311,21 @@ name = "vpdf-pdf"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "flate2",
  "font-kit",
  "mupdf",
+ "rustix",
+ "sha2",
+ "tempfile",
  "vpdf-model",
+ "vpdf-search",
 ]
 
 [[package]]
 name = "vpdf-protocol"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "crossterm",
 ]
 
@@ -1342,6 +1347,25 @@ dependencies = [
  "unicode-casefold",
  "unicode-normalization",
  "vpdf-model",
+]
+
+[[package]]
+name = "vpdf-terminal"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "crossterm",
+ "flate2",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "signal-hook",
+ "tempfile",
+ "unicode-width",
+ "vpdf-model",
+ "vpdf-protocol",
 ]
 
 [[package]]

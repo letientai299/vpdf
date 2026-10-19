@@ -1,25 +1,11 @@
 use crate::Result;
 use crate::document::TEXT_FLAGS;
-use crate::layout::clip;
 use crate::text::{Bounds, Text};
 use mupdf::text_page::TextBlockType;
 use mupdf::{DisplayList, TextPageFlags};
+use vpdf_model::geometry::clip;
 
-#[derive(Clone, Debug)]
-pub struct Figure {
-  pub bounds: Bounds,
-  pub caption: String,
-  pub source: Source,
-}
-
-/// What a figure was found from.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Source {
-  /// Image or vector blocks.
-  Graphic,
-  /// A caption line alone.
-  Caption,
-}
+pub use vpdf_model::document::{Figure, FigureSource as Source};
 
 pub(crate) fn detect(
   list: &DisplayList,

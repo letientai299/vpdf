@@ -1,11 +1,11 @@
 use crate::Result;
 use crate::document::Document;
-use crate::layout::{clip, page_matrix, transform};
 use crate::text::{Bounds, PageId};
 use anyhow::Context;
 use mupdf::{
   Colorspace, Device, DisplayList, IRect, ImageFormat, Matrix, Pixmap, Rect,
 };
+use vpdf_model::geometry::{Transform, clip, page_matrix, transform};
 use vpdf_model::tile::{TILE_HEIGHT, TILE_WIDTH, TileKey};
 
 const CAPTURE_PIXELS: u64 = 8_000_000;
@@ -39,7 +39,7 @@ pub fn raster_area(
 /// RGB pixels of `area` with `list` drawn through `matrix`.
 pub fn draw(
   list: &DisplayList,
-  matrix: &Matrix,
+  matrix: &Transform,
   area: IRect,
 ) -> Result<Pixmap> {
   let mut pixels =
@@ -48,7 +48,7 @@ pub fn draw(
   let device = Device::from_pixmap(&pixels)?;
   list.run(
     &device,
-    matrix,
+    &self::matrix(matrix),
     Rect::new(area.x0 as f32, area.y0 as f32, area.x1 as f32, area.y1 as f32),
   )?;
   drop(device);
@@ -73,7 +73,7 @@ pub fn cut(band: &Pixmap, key: &TileKey) -> Result<Vec<u8>> {
 
 pub struct Capture {
   pub png: Vec<u8>,
-  pub matrix: Matrix,
+  pub matrix: Transform,
   pub area: IRect,
 }
 
@@ -99,7 +99,7 @@ fn capture_area(
   page: Bounds,
   region: Bounds,
   rotation: u16,
-) -> Result<(Matrix, IRect)> {
+) -> Result<(Transform, IRect)> {
   let mut low = 1;
   let mut high = CAPTURE_SCALE;
   let mut best = None;
@@ -134,12 +134,47 @@ fn rounded(bounds: Bounds) -> Option<IRect> {
     .then(|| IRect::new(x0, y0, x1, y1))
 }
 
+/// Native conversion preserves the shared transform.
+pub fn matrix(transform: &Transform) -> Matrix {
+  let [xx, xy, yx, yy, tx, ty] = transform.coefficients();
+  Matrix::new(xx, xy, yx, yy, tx, ty)
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
 
   fn bounds(x0: f32, y0: f32, x1: f32, y1: f32) -> Bounds {
     Bounds { x0, y0, x1, y1 }
+  }
+
+  #[test]
+  fn transforms_match_native() {
+    for bounds in [
+      bounds(0.0, 0.0, 612.0, 792.0),
+      bounds(-11.25, 22.5, 123.75, 456.125),
+      bounds(53.25, -99.5, 1000.0, 3500.0),
+    ] {
+      for rotation in [0, 45, 90, 180, 270, 360, 450] {
+        for scale in [0, 10, 511, 1024, 2457, 16384] {
+          let shared = page_matrix(bounds, scale, rotation);
+          let mut native = Matrix::new_rotate(f32::from(rotation));
+          native.scale(scale as f32 / 1024.0, scale as f32 / 1024.0);
+          let points = [
+            (bounds.x0, bounds.y0),
+            (bounds.x1, bounds.y0),
+            (bounds.x0, bounds.y1),
+            (bounds.x1, bounds.y1),
+          ];
+          let rect =
+            Bounds::enclosing(&points.map(|(x, y)| native.transform_xy(x, y)));
+          native.e -= rect.x0;
+          native.f -= rect.y0;
+          assert_eq!(matrix(&shared), native);
+          assert_eq!(shared.invert().map(|m| matrix(&m)), native.invert());
+        }
+      }
+    }
   }
 
   #[test]

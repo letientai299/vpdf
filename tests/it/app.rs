@@ -268,7 +268,7 @@ fn changed_file_reloads_after_settling() -> Result<()> {
 fn hint_labels_keep_their_origin() -> Result<()> {
   use vpdf::hints::{Hint, Hints};
   let mut app = text_app()?;
-  app.at = vpdf::terminal::At { column: 17, row: 4 };
+  app.at = vpdf_terminal::terminal::At { column: 17, row: 4 };
   app.layout.screen.origin = (17, 4);
   app.left = 9;
   for text_mode in [true, false] {
@@ -1046,7 +1046,7 @@ fn frames_retest_a_resting_pointer() -> Result<()> {
 fn pixel_reports_hit_their_pixel() -> Result<()> {
   use vpdf::pointer::Pixel;
   use vpdf::session::Session;
-  use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
+  use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let mut session = Session::new(None);
   session.open(&root.join("paper.pdf"), true, screen())?;
@@ -1129,7 +1129,7 @@ fn pixel_reports_hit_their_pixel() -> Result<()> {
 #[test]
 fn pixel_drags_draw_on_new_glyphs() -> Result<()> {
   use vpdf::session::Session;
-  use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
+  use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("words.pdf");
   common::text_pdf(&path, &["Hello pointer world"])?;

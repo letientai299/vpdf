@@ -395,7 +395,7 @@ impl App {
       }
       "mouse" => {
         let on = match argument {
-          "" => !crate::terminal::mouse(),
+          "" => !vpdf_terminal::terminal::mouse(),
           "on" => true,
           "off" => false,
           _ => anyhow::bail!("Usage: :mouse [on|off]"),

@@ -1,6 +1,6 @@
 use crate::panel::{Destination, Row, Style};
-use crate::terminal;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use vpdf_terminal::terminal;
 
 pub(crate) struct Line {
   pub source: usize,

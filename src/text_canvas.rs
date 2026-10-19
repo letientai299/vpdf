@@ -442,7 +442,7 @@ impl App {
     let style =
       if self.selects(at) { theme::TEXT_SELECTION } else { theme::DIM };
     let label = self.doc.label(PageId(at.page.0 + 1));
-    let head = crate::terminal::clean(&format!("── {label} "), columns);
+    let head = vpdf_terminal::terminal::clean(&format!("── {label} "), columns);
     let fill = columns.saturating_sub(head.width());
     write!(out, "{style}{head}{}\x1b[0m", "─".repeat(fill))?;
     Ok(())

@@ -5,13 +5,13 @@ use crate::grid;
 use crate::layout::Screen;
 use crate::pointer::Hit;
 use crate::prompt::Prompt;
-use crate::terminal::{self, At};
 use crate::text::PageId;
 use crate::theme::{self, Color};
 use std::fmt::Write as _;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_reader::reader::{Mode, SelectionKind};
+use vpdf_terminal::terminal::{self, At};
 
 impl App {
   fn mode(&self) -> (&'static str, Color) {

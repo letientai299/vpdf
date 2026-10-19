@@ -133,7 +133,7 @@ impl Session {
   }
 
   pub(super) fn image_status(&mut self, body: &str) -> bool {
-    let Some(result) = crate::clipboard::image_status(body) else {
+    let Some(result) = vpdf_terminal::clipboard::image_status(body) else {
       return false;
     };
     let Some(write) = self.image_write.take() else { return false };
@@ -203,8 +203,8 @@ impl Session {
         );
         continue;
       }
-      match crate::caps::get().and_then(|caps| caps.clipboard) {
-        Some(crate::caps::Support::Answered) => {}
+      match vpdf_terminal::caps::get().and_then(|caps| caps.clipboard) {
+        Some(vpdf_terminal::caps::Support::Answered) => {}
         Some(_) => {
           self.image_message(&write, "Image clipboard unsupported".into());
           continue;
@@ -216,9 +216,12 @@ impl Session {
         }
       }
       self.image_write = Some(write);
-      let result =
-        crate::clipboard::image_remote(out, &transfer.png, terminal::tmux())
-          .and_then(|()| out.flush().map_err(Into::into));
+      let result = vpdf_terminal::clipboard::image_remote(
+        out,
+        &transfer.png,
+        terminal::tmux(),
+      )
+      .and_then(|()| out.flush().map_err(Into::into));
       if let Err(error) = result {
         let mut write = self.image_write.take().expect("reserved image write");
         write.state = ImageState::TimedOut;
@@ -256,7 +259,7 @@ impl Session {
 
   pub(super) fn lose_images(&mut self, out: &mut impl Write) -> Result<()> {
     self.perf.invalidate();
-    crate::graphics::release(out)?;
+    vpdf_terminal::graphics::release(out)?;
     self.graphics.lost();
     if let Some(home) = &mut self.home {
       home.images_lost();

@@ -8,7 +8,7 @@ impl Session {
   /// One terminal mouse report; whether it needs a frame.
   pub fn mouse_report(
     &mut self,
-    report: vpdf_protocol::decode::Mouse,
+    report: vpdf_terminal::decode::Mouse,
   ) -> Result<bool> {
     self.mouse_report_at(report, Instant::now())
   }
@@ -16,7 +16,7 @@ impl Session {
   /// One mouse report that arrived at `now`; whether it needs a frame.
   pub fn mouse_report_at(
     &mut self,
-    report: vpdf_protocol::decode::Mouse,
+    report: vpdf_terminal::decode::Mouse,
     now: Instant,
   ) -> Result<bool> {
     // Reports in flight after `:mouse off`.
@@ -260,8 +260,8 @@ impl Session {
     let Some(drop) = self.drop_step(body, typing, out)? else {
       return Ok(false);
     };
-    let done =
-      drop.target(typing).and_then(|target| self.dropped(&drop, target));
+    let done = crate::dnd::target(&drop, typing)
+      .and_then(|target| self.dropped(&drop, target));
     answer(out, &drop.finish(done.is_ok()))?;
     done.map(|()| true)
   }
@@ -329,7 +329,7 @@ impl Session {
         return Ok(Landing::Shown);
       }
     };
-    let opened = match drop.target(typing) {
+    let opened = match crate::dnd::target(&drop, typing) {
       Ok(Target::Text(text)) => {
         home.event(Event::Paste(text), &mut self.history).map(|_| false)
       }

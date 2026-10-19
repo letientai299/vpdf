@@ -16,8 +16,9 @@ impl Document {
       .load_page(page.0 as i32)?
       .links()?
       .map(|link| {
-        let target =
-          link.dest.map_or_else(|| Target::Uri(uri(&link.uri)), Target::from);
+        let target = link
+          .dest
+          .map_or_else(|| Target::Uri(uri(&link.uri)), super::types::target);
         Link::new(rect(link.bounds), target)
       })
       .collect();

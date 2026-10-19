@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::app::App;
-use crate::jobs::ocr::OcrJob;
 use std::sync::Arc;
+use vpdf_pdf::jobs::ocr::OcrJob;
 
 impl App {
   pub fn start_ocr(&mut self, language: &str) -> Result<()> {

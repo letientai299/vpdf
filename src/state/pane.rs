@@ -36,7 +36,7 @@ impl App {
     self.marks.clone_from(&entry.marks);
     self.layout.crop = entry.crop;
     self.layout.rotation = entry.rotation % 360 / 90 * 90;
-    self.layout.reflow(&self.doc.pages);
+    self.layout.reflow(self.doc.pages.iter().map(|page| page.bounds));
     let page = PageId(entry.cursor.page.0.min(self.doc.pages.len() - 1));
     let cursor = Position { page, ..entry.cursor };
     self.reader.cursor = self.doc.text(page)?.clamp(cursor);

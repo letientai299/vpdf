@@ -3,10 +3,10 @@
 //! pixels. `:text` presents extracted text on such a path; it is no
 //! fallback, so the same gate applies.
 use crate::Result;
-use crate::caps::{Caps, KeyLack, Lack, Profile};
 use crate::layout::Screen;
-use crate::terminal::{self, Terminal};
 use std::fmt;
+use vpdf_terminal::caps::{Caps, KeyLack, Lack, Profile};
+use vpdf_terminal::terminal::{self, Terminal};
 
 /// A requirement the terminal path misses.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -72,7 +72,7 @@ pub fn enter() -> Result<(Terminal, Screen)> {
     Ok(terminal) => (Some(terminal), None),
     Err(error) => (None, Some(error.downcast::<KeyLack>()?)),
   };
-  let caps = crate::caps::probe()?;
+  let caps = vpdf_terminal::caps::probe()?;
   let missing = missing(caps, keys, terminal::cell().is_some());
   match terminal {
     Some(terminal) if missing.is_empty() => Ok((terminal, terminal::size()?)),
@@ -83,7 +83,7 @@ pub fn enter() -> Result<(Terminal, Screen)> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::caps::{Graphics, Host, Support, Tmux};
+  use vpdf_terminal::caps::{Graphics, Host, Support, Tmux};
 
   fn caps(host: Host, version: &str, answered: bool) -> Caps {
     Caps {

@@ -5,17 +5,17 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf::content_cache::{alias, hex};
 use vpdf::document::{Document, extract};
 use vpdf::find::Query;
-use vpdf::jobs::Wake;
-use vpdf::jobs::search::SearchWorker;
 use vpdf::layout::Screen;
 use vpdf::pdf_text::PdfText;
 use vpdf::search::{self, Index};
 use vpdf::solo::Solo;
 use vpdf::text::PageId;
 use vpdf::tiles::{self, TileKey};
+use vpdf_pdf::content_cache::{alias, hex};
+use vpdf_pdf::jobs::Wake;
+use vpdf_pdf::jobs::search::SearchWorker;
 use vpdf_reader::motion::Motion;
 
 /// The query every search case measures.

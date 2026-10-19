@@ -395,7 +395,7 @@ pub(crate) fn destination(
   if !cited.is_empty() {
     return format!("→ p. {name} · {cited}");
   }
-  match crate::panel::section(outline, page, y) {
+  match vpdf_model::document::section(outline, page, y) {
     Some(entry) => format!("→ p. {name} · {}", outline[entry].title.trim()),
     None => format!("→ p. {name}"),
   }
@@ -440,7 +440,6 @@ mod tests {
   use crate::keys::{Action, Input, PanelKind};
   use crate::layout::Screen;
   use crate::panel::{Panel, Style};
-  use crate::terminal;
   use crate::text::{Bounds, Glyph, Line as TextLine, PageId};
   use crossterm::event::{
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -448,6 +447,7 @@ mod tests {
   use std::path::PathBuf;
   use unicode_width::UnicodeWidthStr;
   use vpdf_reader::motion::Motion;
+  use vpdf_terminal::terminal;
 
   fn row(label: &str, uri: &str) -> Row {
     Row::new(

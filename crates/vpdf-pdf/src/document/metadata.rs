@@ -90,7 +90,7 @@ fn flatten(items: &[mupdf::Outline], depth: usize, out: &mut Vec<Heading>) {
     }
     let target = item
       .dest
-      .map(Target::from)
+      .map(super::types::target)
       .or_else(|| item.uri.as_ref().map(|u| Target::Uri(uri(u))));
     if let Some(target) = target {
       out.push(Heading {

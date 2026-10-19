@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::prompt::History;
-use vpdf_protocol::decode::{Event, Parser};
+use vpdf_terminal::decode::{Event, Parser};
 
 /// The focused pane of `session` drawn alone.
 pub fn focused_frame(session: &mut vpdf::session::Session) -> Result<String> {

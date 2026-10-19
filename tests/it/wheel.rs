@@ -11,8 +11,8 @@ use vpdf::keys::{Action, Input};
 use vpdf::pointer::Pixel;
 use vpdf::session::Session;
 use vpdf::text::PageId;
-use vpdf_protocol::decode::{Event, Parser};
 use vpdf_reader::motion::Motion;
+use vpdf_terminal::decode::{Event, Parser};
 
 /// SGR wheel flags: 64 up, 65 down, 66 left, 67 right; 4 Shift, 16 Ctrl.
 const UP: u16 = 64;

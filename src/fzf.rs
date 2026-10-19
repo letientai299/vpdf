@@ -1,9 +1,9 @@
 use crate::Result;
-use crate::terminal;
 use anyhow::Context;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use vpdf_terminal::terminal;
 
 /// Version-control metadata and dependency trees, which never hold the
 /// user's documents. Hidden and VCS-ignored folders such as `.ai` stay in.

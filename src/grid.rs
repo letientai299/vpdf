@@ -3,10 +3,10 @@
 
 use crate::Result;
 use crate::layout::Screen;
-use crate::terminal::{self, At};
 use crate::theme::{self, Color};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_terminal::terminal::{self, At};
 
 /// Placement of labels in columns; the labels stay with the caller.
 pub struct Grid {

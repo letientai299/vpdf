@@ -1,15 +1,16 @@
 use crate::Result;
 use crate::app::App;
-use crate::graphics::Graphics;
 use crate::keys::{Action, Input};
 use crate::layout::{Crop, page_matrix, screen_step, transform};
 use crate::pointer::{Hit, Wheel};
 use crate::text::{Bounds, PageId};
+use crate::theme;
 use crate::tiles::{self, TileKey};
-use crate::{terminal, theme};
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use std::io::Write;
 use vpdf_reader::motion::Motion;
+use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::terminal;
 
 /// Thumbnails per row aim for this width in pixels.
 const TARGET: f32 = 220.0;
@@ -292,7 +293,7 @@ impl App {
     }
     self.complete = missing.is_empty();
     if wanted != self.requested {
-      self.worker.request(&missing, missing.len());
+      self.worker.service.request(&missing, missing.len());
       self.requested = wanted;
     }
     Ok(())

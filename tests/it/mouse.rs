@@ -15,8 +15,8 @@ use vpdf::session::Session;
 use vpdf::text::{Bounds, PageId, Position};
 use vpdf::trace::Drawable;
 use vpdf::window::TabMove;
-use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
 use vpdf_reader::reader::SelectionKind;
+use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
 
 /// Page 1 links: page 2, web, itself.
 fn link_pdf(path: &Path) -> Result<()> {
@@ -919,11 +919,11 @@ fn alt_clicks_extend_the_selection() -> Result<()> {
 /// An SGR report under mode 1016.
 fn report(bytes: &str) -> Mouse {
   let mut events = std::collections::VecDeque::new();
-  let mut parser = vpdf_protocol::decode::Parser::default();
+  let mut parser = vpdf_terminal::decode::Parser::default();
   parser.set_pixels(true);
   parser.feed(bytes.as_bytes(), &mut events);
   match events.pop_front() {
-    Some(vpdf_protocol::decode::Event::Mouse(mouse)) => mouse,
+    Some(vpdf_terminal::decode::Event::Mouse(mouse)) => mouse,
     other => panic!("a mouse report: {other:?}"),
   }
 }
@@ -1660,7 +1660,7 @@ fn resting_on_links_previews_them() -> Result<()> {
 #[test]
 fn popups_hide_links_beneath() -> Result<()> {
   use crossterm::event::KeyCode;
-  use vpdf::terminal::Shape;
+  use vpdf_terminal::terminal::Shape;
   // (text mode, popup) -> its hit's shape
   let cases = [
     (false, "menu", Shape::Pointer),

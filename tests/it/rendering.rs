@@ -2,10 +2,10 @@ use mupdf::{Colorspace, Matrix};
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::document::Document;
-use vpdf::jobs::Wake;
 use vpdf::solo::Solo;
 use vpdf::text::PageId;
 use vpdf::tiles::{TileKey, raster};
+use vpdf_pdf::jobs::Wake;
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
@@ -121,8 +121,11 @@ fn check_crop_pixels(
   let matrix = page_matrix(bounds, scale, 0);
   let cropped = transform(crop.apply(bounds), &matrix);
   let stamp = stamp.map(|stamp| transform(stamp, &matrix));
-  let pixmap =
-    doc.display(page)?.to_pixmap(&matrix, &Colorspace::device_gray(), false)?;
+  let pixmap = doc.display(page)?.to_pixmap(
+    &vpdf_pdf::raster::matrix(&matrix),
+    &Colorspace::device_gray(),
+    false,
+  )?;
   let stride = usize::try_from(pixmap.stride())?;
   for (y, row) in pixmap.samples().chunks(stride).enumerate() {
     for (x, value) in row[..pixmap.width() as usize].iter().enumerate() {
@@ -267,10 +270,8 @@ fn inline_page_fits_requested_cells() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn worker_tiles_equal_full_page_pixels() -> Result<()> {
-  use base64::Engine;
-  use std::io::Read;
-  use vpdf::jobs::render::RenderWorker;
   use vpdf::layout::page_matrix;
+  use vpdf::raster::Raster;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let text = [1024, 2048, 3277];
   for (file, scales) in [
@@ -285,8 +286,12 @@ fn worker_tiles_equal_full_page_pixels() -> Result<()> {
       let bounds = doc.pages[0].bounds;
       let matrix = page_matrix(bounds, scale, 0);
       let page = doc.native.load_page(0)?;
-      let full =
-        page.to_pixmap(&matrix, &Colorspace::device_rgb(), false, true)?;
+      let full = page.to_pixmap(
+        &vpdf_pdf::raster::matrix(&matrix),
+        &Colorspace::device_rgb(),
+        false,
+        true,
+      )?;
       let (w, h) = (full.width() as i32, full.height() as i32);
       let keys: Vec<_> = [0, 256, 512]
         .iter()
@@ -303,34 +308,70 @@ fn worker_tiles_equal_full_page_pixels() -> Result<()> {
           crop: vpdf::layout::Crop::default(),
         })
         .collect();
-      let worker = RenderWorker::new(&path, "", doc.lists(), &Wake::none());
-      worker.request(&keys, keys.len());
-      for _ in &keys {
-        let tile = worker
-          .results
-          .recv_timeout(std::time::Duration::from_secs(20))?
-          .map_err(anyhow::Error::msg)?;
-        let vpdf::tiles::Payload::Encoded(encoded) = &tile.payload else {
-          anyhow::bail!("Tests send tiles encoded");
-        };
-        let packed = base64::engine::general_purpose::STANDARD
-          .decode(encoded.as_bytes())?;
-        let mut pixels = Vec::new();
-        flate2::read::ZlibDecoder::new(&packed[..]).read_to_end(&mut pixels)?;
-        let key = tile.key;
-        let stride = full.stride() as usize;
-        let row = key.width as usize * 3;
-        for y in 0..key.height as usize {
-          let start = (key.y as usize + y) * stride + key.x as usize * 3;
-          assert!(
-            pixels[y * row..][..row] == full.samples()[start..][..row],
-            "{file} scale {scale} tile {},{} row {y}",
-            key.x,
-            key.y
-          );
+      let directory = tempfile::tempdir()?;
+      let spool = std::sync::Arc::new(vpdf_terminal::spool::Spool::create(
+        directory.path(),
+      )?);
+      for encoder in [
+        vpdf_terminal::payload::Encoder::default(),
+        vpdf_terminal::payload::Encoder::new(Some(spool)),
+      ] {
+        let worker =
+          Raster::new(&path, "", doc.lists(), &Wake::none(), encoder);
+        worker.service.request(&keys, keys.len());
+        for _ in &keys {
+          let tile = worker
+            .results
+            .recv_timeout(std::time::Duration::from_secs(20))?
+            .map_err(anyhow::Error::msg)?;
+          assert_tile(&tile, &full, file)?;
         }
       }
     }
+  }
+  Ok(())
+}
+
+fn assert_tile(
+  tile: &vpdf_terminal::payload::Tile,
+  full: &mupdf::Pixmap,
+  file: &str,
+) -> Result<()> {
+  use base64::Engine;
+  use std::io::Read;
+  let pixels = match &tile.payload {
+    vpdf::tiles::Payload::Encoded(encoded) => {
+      let packed =
+        base64::engine::general_purpose::STANDARD.decode(encoded.as_bytes())?;
+      let mut pixels = Vec::new();
+      flate2::read::ZlibDecoder::new(&packed[..]).read_to_end(&mut pixels)?;
+      pixels
+    }
+    vpdf::tiles::Payload::Spooled { spool, slot } => {
+      use std::os::unix::ffi::OsStringExt;
+      use std::os::unix::fs::FileExt;
+      let path =
+        base64::engine::general_purpose::STANDARD.decode(&spool.payload)?;
+      let path = PathBuf::from(std::ffi::OsString::from_vec(path));
+      let keys = vpdf_terminal::spool::Spool::keys(*slot);
+      let offset: u64 = keys.split("O=").nth(1).unwrap().parse()?;
+      let mut pixels = vec![0; slot.len];
+      std::fs::File::open(path)?.read_exact_at(&mut pixels, offset)?;
+      pixels
+    }
+  };
+  let key = tile.key;
+  let stride = full.stride() as usize;
+  let row = key.width as usize * 3;
+  for y in 0..key.height as usize {
+    let start = (key.y as usize + y) * stride + key.x as usize * 3;
+    assert!(
+      pixels[y * row..][..row] == full.samples()[start..][..row],
+      "{file} scale {} tile {},{} row {y}",
+      key.scale,
+      key.x,
+      key.y
+    );
   }
   Ok(())
 }
@@ -363,7 +404,7 @@ fn projected_mouse_tracks_glyphs() -> Result<()> {
       app.layout.crop = Crop([20, 20, 20, 20]);
       {
         let (app, _) = app.parts();
-        app.layout.reflow(&app.doc.pages);
+        app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));
       }
       app.ensure_cursor()?;
       let rect = app.layout.project(anchor.page, bounds, app.reader.scroll);

@@ -75,7 +75,7 @@ fn real_figures_and_capture() -> Result<()> {
     let decoded = mupdf::Image::from_bytes(&capture.png)?.to_pixmap()?;
     let list = doc.display(page)?;
     let full = list.to_pixmap(
-      &capture.matrix,
+      &vpdf_pdf::raster::matrix(&capture.matrix),
       &mupdf::Colorspace::device_rgb(),
       false,
     )?;

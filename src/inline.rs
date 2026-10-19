@@ -5,11 +5,11 @@ use crate::Result;
 use crate::diacritics::DIACRITICS;
 use crate::document::Document;
 use crate::layout::page_matrix;
-use crate::terminal::transmit;
 use crate::text::PageId;
 use crate::tiles::encode;
 use mupdf::Colorspace;
 use std::io::Write;
+use vpdf_terminal::terminal::transmit;
 
 /// Asks the executable to print a page preview, and names the output
 /// the reader chose, since its fzf owns the terminal and the preview
@@ -28,8 +28,9 @@ pub enum Graphics {
 impl Graphics {
   /// What the reader's probed terminal draws.
   pub fn probed() -> Self {
-    let terminal = crate::caps::get().and_then(crate::caps::Caps::terminal);
-    if terminal.is_some_and(crate::caps::placeholders) {
+    let terminal =
+      vpdf_terminal::caps::get().and_then(vpdf_terminal::caps::Caps::terminal);
+    if terminal.is_some_and(vpdf_terminal::caps::placeholders) {
       Self::Kitty
     } else {
       Self::Text
@@ -64,7 +65,7 @@ const CELL_ASPECT: f32 = 2.0;
 
 /// Cell height over width, from the source the reader sizes cells by.
 fn cell_aspect() -> f32 {
-  crate::terminal::cell()
+  vpdf_terminal::terminal::cell()
     .map_or(CELL_ASPECT, |cell| f32::from(cell.height) / f32::from(cell.width))
 }
 
@@ -91,11 +92,11 @@ pub fn print(
   }
   let scale = width * PIXELS / bounds.width();
   let pixmap = doc.display(page)?.to_pixmap(
-    &page_matrix(bounds, (scale * 1024.0) as u32, 0),
+    &vpdf_pdf::raster::matrix(&page_matrix(bounds, (scale * 1024.0) as u32, 0)),
     &Colorspace::device_rgb(),
     false,
   )?;
-  let tmux = crate::terminal::tmux();
+  let tmux = vpdf_terminal::terminal::tmux();
   let id = image_id(tmux);
   let (pixels_wide, pixels_high) = (pixmap.width(), pixmap.height());
   let encoded = encode(pixmap.samples())?;

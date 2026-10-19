@@ -30,7 +30,7 @@ pub fn watch(
   thread::spawn(move || {
     let Some(signal) = signals.forever().next() else { return };
     flag.store(true, Ordering::Relaxed);
-    crate::input::wake();
+    vpdf_terminal::input::wake();
     thread::sleep(Duration::from_secs(1));
     if let Some(store) = store
       && let Ok(mut latest) = latest.lock()
@@ -39,7 +39,7 @@ pub fn watch(
       drop(state.save(&store, &history.commands, &history.searches));
     }
     // The loop may block in a prompt that never sees the flag.
-    crate::terminal::restore();
+    vpdf_terminal::terminal::restore();
     std::process::exit(128 + signal);
   });
   Ok(())

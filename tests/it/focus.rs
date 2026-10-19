@@ -14,7 +14,7 @@ use vpdf::solo::Solo;
 use vpdf::split::Direction;
 use vpdf::text::{PageId, Position};
 use vpdf::window::Window;
-use vpdf_protocol::decode::Event;
+use vpdf_terminal::decode::Event;
 
 pub(super) fn screen() -> Screen {
   Screen {

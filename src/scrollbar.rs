@@ -3,7 +3,6 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Target;
-use crate::graphics::Graphics;
 use crate::pointer::{Hit, Route};
 use crate::text::Bounds;
 use crate::theme;
@@ -11,6 +10,7 @@ use crossterm::event::MouseEventKind;
 use std::io::Write;
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
+use vpdf_terminal::graphics::Graphics;
 
 /// The bar's time after a move.
 pub(crate) const SHOWN: Duration = Duration::from_secs(1);
@@ -247,7 +247,8 @@ impl App {
     let width = u16::try_from(label.width()).unwrap_or(u16::MAX);
     let columns = screen.columns.saturating_sub(1);
     let start = columns.saturating_sub(width);
-    let label = crate::terminal::clean(&label, usize::from(columns - start));
+    let label =
+      vpdf_terminal::terminal::clean(&label, usize::from(columns - start));
     let column = self.left + start;
     write!(
       out,

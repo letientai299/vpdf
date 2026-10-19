@@ -68,7 +68,7 @@ impl App {
     self.left = if covered { columns } else { beside };
     self.layout.screen = self.screen;
     self.layout.screen.columns = columns.saturating_sub(beside);
-    self.layout.reflow(&self.doc.pages);
+    self.layout.reflow(self.doc.pages.iter().map(|page| page.bounds));
     if self.text_mode {
       self.text_top = self.clamp_text(self.text_top)?;
     }

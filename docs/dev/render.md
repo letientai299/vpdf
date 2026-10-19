@@ -20,7 +20,8 @@ flowchart TD
     Cache -->|Missing| Request[Replace pending viewport request]
     Request --> Lists[Reuse or build display list]
     Lists --> Pool[Raster pool: draw and prepare tiles]
-    Pool --> Store[Store results in shared graphics cache]
+    Pool --> Encode[Application sink: encode or spool]
+    Encode --> Store[Store results in shared graphics cache]
     Store --> Upload
     Place --> Overlay[Place cursor, selection, and search overlays]
     Overlay --> Frame[Flush synchronized terminal frame]
@@ -30,6 +31,13 @@ The [render coordinator][worker] groups adjacent tiles into horizontal bands.
 Replaying a display list for a band amortizes interpretation and replay costs
 across its tiles. Prefetch advances one band at a time between urgent requests.
 New viewports discard irrelevant queued bands; already running work can finish.
+
+The application's [completion sink][delivery] encodes or spools pixels on the
+raster thread before queueing a terminal payload and waking the event loop.
+The PDF service does not depend on terminal types. Raw pixels retain the
+worker's existing band and whole-page lifetimes; they do not enter a new
+application result queue. Sink failure ends that delivery, while dropping the
+service cancels its queued requests.
 
 ## Image pages
 
@@ -110,15 +118,16 @@ Revisit this choice only with end-to-end measurements and PDF fidelity checks.
 A faster raster stage alone does not establish a faster terminal reader.
 
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
-[layout]: ../../crates/vpdf-pdf/src/layout.rs
+[layout]: ../../src/layout.rs
 [canvas]: ../../src/canvas.rs
-[worker]: ../../src/jobs/render.rs
+[worker]: ../../crates/vpdf-pdf/src/jobs/render.rs
 [prime]: ../../crates/vpdf-pdf/src/prime.rs
-[graphics]: ../../src/graphics/mod.rs
+[graphics]: ../../crates/terminal/src/graphics/mod.rs
 [pace]: ../../src/pace.rs
 [performance]: dev.md#performance-validation
-[spool]: ../../src/spool.rs
-[terminal]: ../../src/terminal/mod.rs
+[spool]: ../../crates/terminal/src/spool.rs
+[terminal]: ../../crates/terminal/src/terminal/mod.rs
 [document]: ../../crates/vpdf-pdf/src/document/mod.rs
-[search]: ../../src/jobs/search.rs
+[search]: ../../crates/vpdf-pdf/src/jobs/search.rs
 [reader]: ../../crates/vpdf-reader/src/reader.rs
+[delivery]: ../../src/raster.rs

@@ -1,15 +1,15 @@
 use crate::Result;
 use crate::app::App;
-use crate::graphics::Graphics;
 use crate::layout::Screen;
 use crate::marks::Span;
 use crate::panel::Pointing;
 use crate::pointer::{Hit, List};
-use crate::terminal;
 use crate::text::{Bounds, Line, PageId, Position};
 use crate::tiles::{self, TileKey};
 use std::io::Write;
 use vpdf_reader::reader::SelectionKind;
+use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::terminal;
 
 /// Parts of `rect` outside `hole`.
 fn around(rect: Bounds, hole: Bounds) -> impl Iterator<Item = Bounds> {
@@ -90,10 +90,10 @@ impl App {
     }
     let mut missing = Vec::new();
     for key in &tiles {
-      if !graphics.place(
+      let (x, y) = self.layout.origin(key.page, self.reader.scroll);
+      if !graphics.place_at(
         (self.id, *key),
-        &self.layout,
-        self.reader.scroll,
+        (x + key.x as f32, y + key.y as f32),
         screen,
         left,
         out,
@@ -115,7 +115,7 @@ impl App {
       }
       let nearby =
         if self.crop_job.is_none() { self.nearby_pages() } else { Vec::new() };
-      self.worker.prepare(&missing, urgent, &nearby);
+      self.worker.service.prepare(&missing, urgent, &nearby);
       self.requested = tiles;
     }
     self.marks(graphics, screen, out)?;
@@ -133,6 +133,7 @@ impl App {
       self.doc.pages.len(),
       self.layout.page_at(scroll),
       self.heading >= 0.0,
+      vpdf_pdf::jobs::Config::default().prefetch_pages,
     )
   }
 

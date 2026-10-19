@@ -21,16 +21,20 @@ changes; they do not enumerate the feature set.
 
 ## Package boundaries
 
-The root application owns panes, workers, persistence, and terminal UI. The
-private [model crate][model] owns shared text values and line reflow, geometry,
-and cache values. [Search][search-crate] and [PDF][pdf-crate] each depend on
-model; neither imports the application or each other. The
-[reader crate][reader-crate] owns cursor, motion, text-object, selection,
-register, and jump semantics over model text; it uses search for jump ordinals
-and hyphen joins, and the application adapts native documents to it. The
-[protocol crate][protocol] decodes terminal input bytes into events and depends
-only on crossterm. The [development guide][development] describes independent
-package tests.
+The root application owns panes, raster dispatch, persistence, and UI. The
+[model crate][model] owns shared document values, text reflow, geometry, and
+bounded caches. [Search][search-crate] owns indexing and matching over model
+text. [PDF][pdf-crate] owns native access, document scans, and derived-content
+caches; it depends on model and search. The [reader crate][reader-crate] owns
+cursor, motion, selection, registers, and jump semantics over model text, using
+search for jump ordinals and hyphen joins. The application adapts native
+documents to the reader.
+
+The [terminal crate][terminal-crate] owns capabilities, terminal lifecycle,
+graphics delivery, and spool files. It depends on model and the
+[protocol crate][protocol], which decodes terminal input bytes into events.
+Headless presenters accept explicit transport settings. The
+[development guide][development] describes independent tests and benchmarks.
 
 ## Runtime ownership
 
@@ -114,9 +118,9 @@ to release native resources. The policy and thresholds live in the
 [app]: ../../src/app.rs
 [sessions]: sessions.md
 [document]: ../../crates/vpdf-pdf/src/document/mod.rs
-[worker]: ../../src/jobs/render.rs
-[jobs]: ../../src/jobs/mod.rs
-[search-worker]: ../../src/jobs/search.rs
+[worker]: ../../crates/vpdf-pdf/src/jobs/render.rs
+[jobs]: ../../crates/vpdf-pdf/src/jobs/mod.rs
+[search-worker]: ../../crates/vpdf-pdf/src/jobs/search.rs
 [rendering]: render.md
 [text]: text.md
 [development]: dev.md
@@ -125,3 +129,4 @@ to release native resources. The policy and thresholds live in the
 [pdf-crate]: ../../crates/vpdf-pdf/src/lib.rs
 [protocol]: ../../crates/vpdf-protocol/src/lib.rs
 [reader-crate]: ../../crates/vpdf-reader/src/lib.rs
+[terminal-crate]: ../../crates/terminal/src/lib.rs

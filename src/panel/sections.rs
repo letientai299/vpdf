@@ -1,7 +1,8 @@
 use super::{
-  App, Destination, Entry, Heading, PageId, PanelKind, Path, PathBuf, Position,
-  Result, Row, Style, Target, terminal,
+  App, Destination, Entry, PageId, PanelKind, Path, PathBuf, Position, Result,
+  Row, Style, Target, terminal,
 };
+use vpdf_model::document::section;
 
 impl App {
   /// Follows section changes without interrupting panel browsing.
@@ -116,7 +117,7 @@ impl App {
         "Mouse: {}",
         if terminal::mouse() { "on" } else { "off (:mouse on)" }
       ),
-      crate::caps::get()
+      vpdf_terminal::caps::get()
         .map_or_else(|| "Terminal: not probed".into(), ToString::to_string),
     ]);
     lines.join("\n")
@@ -230,15 +231,4 @@ pub fn recent_rows(entries: &[Entry]) -> Vec<Row> {
       }
     })
     .collect()
-}
-
-/// Last outline entry starting at or before `page`.
-pub fn section(outline: &[Heading], page: PageId, y: f32) -> Option<usize> {
-  outline.iter().rposition(|heading| match heading.target {
-    Target::Page(start) => start <= page,
-    Target::Point { page: start, y: top, .. } => {
-      start < page || start == page && top <= y
-    }
-    Target::Uri(_) => false,
-  })
 }

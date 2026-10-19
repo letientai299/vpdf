@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Document;
-use crate::jobs::render::RenderWorker;
 use crate::keys::PanelKind;
 use crate::pdf_text::PdfText;
+use crate::raster::Raster;
 use vpdf_reader::reader;
 
 impl App {
@@ -15,11 +15,12 @@ impl App {
     self.crop_job = None;
     self.search_worker = None;
     self.doc.trim();
-    self.worker = RenderWorker::idle(
+    self.worker = Raster::idle(
       &self.path,
       &self.password,
       self.doc.lists(),
       &self.wake,
+      vpdf_terminal::payload::Encoder::live(),
     );
     self.requested.clear();
   }
@@ -31,14 +32,19 @@ impl App {
     self.doc = Document::open(&self.path, password)?;
     self.crop_job = None;
     self.layout.crops = std::sync::Arc::default();
-    self.layout.reflow(&self.doc.pages);
+    self.layout.reflow(self.doc.pages.iter().map(|page| page.bounds));
     self.stamp = stamp;
     password.clone_into(&mut self.password);
     if !self.layout.crop.is_none() {
       self.start_crop();
     }
-    self.worker =
-      RenderWorker::new(&self.path, password, self.doc.lists(), &self.wake);
+    self.worker = Raster::new(
+      &self.path,
+      password,
+      self.doc.lists(),
+      &self.wake,
+      vpdf_terminal::payload::Encoder::live(),
+    );
     self.search_worker = None;
     let previous = std::mem::take(&mut self.search);
     let rerun = !previous.hidden() && !previous.query().text.is_empty();
@@ -111,7 +117,7 @@ impl App {
     self.doc.margins.clone_from(&other.doc.margins);
     self.text_mode = other.text_mode;
     self.preview = other.preview;
-    self.layout.reflow(&self.doc.pages);
+    self.layout.reflow(self.doc.pages.iter().map(|page| page.bounds));
     let shown = other.navigation_position();
     self.reader.cursor = reader::clamp(shown, &mut PdfText(&mut self.doc))?;
     self.reader.cancel();

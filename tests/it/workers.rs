@@ -5,10 +5,10 @@ use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::document::{Document, Handle};
 use vpdf::find::Query;
-use vpdf::jobs::Wake;
-use vpdf::jobs::ocr::{OcrJob, parse_tsv};
-use vpdf::jobs::search::SearchWorker;
 use vpdf::text::{Bounds, PageId};
+use vpdf_pdf::jobs::Wake;
+use vpdf_pdf::jobs::ocr::{OcrJob, parse_tsv};
+use vpdf_pdf::jobs::search::SearchWorker;
 
 #[test]
 fn ocr_geometry_preserves_unicode() -> Result<()> {

@@ -144,12 +144,12 @@ mod tests {
   use crate::keys::{Action, Input, PanelKind};
   use crate::panel::{Panel, Style};
   use crate::search::Hit;
-  use crate::terminal;
   use crossterm::event::{
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
   };
   use unicode_width::UnicodeWidthStr;
   use vpdf_reader::motion::Motion;
+  use vpdf_terminal::terminal;
 
   #[test]
   fn search_counts_survive_clipping() {

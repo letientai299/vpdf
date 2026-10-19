@@ -53,3 +53,123 @@ impl Crop {
     self == Self::default()
   }
 }
+
+pub fn clip(bounds: Bounds, page: Bounds) -> Option<Bounds> {
+  if ![
+    bounds.x0, bounds.y0, bounds.x1, bounds.y1, page.x0, page.y0, page.x1,
+    page.y1,
+  ]
+  .into_iter()
+  .all(f32::is_finite)
+  {
+    return None;
+  }
+  let bounds = Bounds {
+    x0: bounds.x0.max(page.x0),
+    y0: bounds.y0.max(page.y0),
+    x1: bounds.x1.min(page.x1),
+    y1: bounds.y1.min(page.y1),
+  };
+  (bounds.x1 > bounds.x0 && bounds.y1 > bounds.y0).then_some(bounds)
+}
+
+/// Resolved crops shared with view layout.
+#[derive(Clone, Default)]
+pub struct Crops(std::collections::BTreeMap<crate::text::PageId, Crop>);
+
+impl Crops {
+  pub fn len(&self) -> usize {
+    self.0.len()
+  }
+  pub fn is_empty(&self) -> bool {
+    self.0.is_empty()
+  }
+  pub fn get(&self, page: crate::text::PageId) -> Crop {
+    self.0.get(&page).copied().unwrap_or_default()
+  }
+  pub fn contains(&self, page: crate::text::PageId) -> bool {
+    self.0.contains_key(&page)
+  }
+  pub fn insert(&mut self, page: crate::text::PageId, crop: Crop) {
+    self.0.insert(page, crop);
+  }
+}
+
+/// Page coordinates to raster pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Transform([f32; 6]);
+
+impl Default for Transform {
+  fn default() -> Self {
+    Self([1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+  }
+}
+
+impl Transform {
+  pub fn coefficients(self) -> [f32; 6] {
+    self.0
+  }
+
+  pub fn transform_xy(self, x: f32, y: f32) -> (f32, f32) {
+    let [xx, xy, yx, yy, tx, ty] = self.0;
+    (x * xx + y * yx + tx, x * xy + y * yy + ty)
+  }
+
+  pub fn invert(self) -> Option<Self> {
+    let [xx, xy, yx, yy, tx, ty] = self.0.map(f64::from);
+    let det = xx * yy - xy * yx;
+    if det.abs() <= f64::EPSILON {
+      return None;
+    }
+    let inv = 1.0 / det;
+    let (xx, xy, yx, yy) = (yy * inv, -xy * inv, -yx * inv, xx * inv);
+    let values = [xx, xy, yx, yy, -tx * xx - ty * yx, -tx * xy - ty * yy]
+      .map(|v| v as f32);
+    values.into_iter().all(f32::is_finite).then_some(Self(values))
+  }
+}
+
+pub fn page_matrix(bounds: Bounds, scale: u32, rotation: u16) -> Transform {
+  let scale = scale as f32 / 1024.0;
+  let (sin, cos) = match rotation % 360 {
+    0 => (0.0, 1.0),
+    90 => (1.0, 0.0),
+    180 => (0.0, -1.0),
+    270 => (-1.0, 0.0),
+    degrees => {
+      let radians = f32::from(degrees) * std::f32::consts::PI / 180.0;
+      (radians.sin(), radians.cos())
+    }
+  };
+  let mut matrix =
+    Transform([cos * scale, sin * scale, -sin * scale, cos * scale, 0.0, 0.0]);
+  let rect = transform(bounds, &matrix);
+  matrix.0[4] -= rect.x0;
+  matrix.0[5] -= rect.y0;
+  matrix
+}
+
+pub fn transform(bounds: Bounds, matrix: &Transform) -> Bounds {
+  let points = [
+    (bounds.x0, bounds.y0),
+    (bounds.x1, bounds.y0),
+    (bounds.x0, bounds.y1),
+    (bounds.x1, bounds.y1),
+  ];
+  Bounds::enclosing(&points.map(|(x, y)| matrix.transform_xy(x, y)))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  #[test]
+  fn rotations_preserve_origin_and_dimensions() {
+    let bounds = Bounds { x0: 10.0, y0: 20.0, x1: 110.0, y1: 220.0 };
+    for angle in [0, 90, 180, 270] {
+      let rect = transform(bounds, &page_matrix(bounds, 1024, angle));
+      assert!(rect.x0.abs() < 0.001 && rect.y0.abs() < 0.001);
+      let width = if angle % 180 == 0 { 100.0 } else { 200.0 };
+      assert!((rect.width() - width).abs() < 0.001);
+    }
+  }
+}

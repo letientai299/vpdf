@@ -16,11 +16,11 @@ pub fn view(paths: &[PathBuf], page: Option<usize>) -> Result<()> {
   )?;
   terminal::restore_on_panic();
   let (_terminal, screen) = crate::gate::enter()?;
-  session.observer = crate::tmux_observer::Observer::start();
+  session.observer = vpdf_terminal::tmux_observer::Observer::start();
   // Before input; a spool that fails to start leaves tiles encoded.
-  let _ = crate::spool::start(crate::graphics::session());
+  let _ = vpdf_terminal::spool::start(vpdf_terminal::graphics::session());
   // The image cache reads the probe and the spool for its budget.
-  session.graphics = crate::graphics::Graphics::default();
+  session.graphics = vpdf_terminal::graphics::Graphics::live();
   if paths.is_empty() {
     session.screen = Some(screen);
     session.home =
@@ -252,7 +252,7 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
     if session.state.perf && shown {
       wait = wait.min(session.perf.wait(now));
     }
-    let event = crate::input::next(Some(wait))?;
+    let event = vpdf_terminal::input::next(Some(wait))?;
     // Streams of pointer reports must not starve them.
     if event.is_none() || now.elapsed() >= wait {
       dirty |= chores.run(session, &mut out)?;
@@ -322,7 +322,9 @@ impl Chores {
 /// Sets the window title, except where the terminal ignores the title
 /// stack and would keep it after exit.
 pub(super) fn set_title(out: &mut impl Write, title: &str) -> Result<()> {
-  if crate::caps::get().is_none_or(crate::caps::Caps::title_stack) {
+  if vpdf_terminal::caps::get()
+    .is_none_or(vpdf_terminal::caps::Caps::title_stack)
+  {
     write!(out, "\x1b]2;{}\x07", terminal::clean(title, 200))?;
   }
   Ok(())
@@ -475,8 +477,10 @@ impl Session {
   }
 
   fn observe(&mut self, out: &mut impl Write) -> Result<bool> {
-    let Some(next) =
-      self.observer.as_ref().and_then(crate::tmux_observer::Observer::take)
+    let Some(next) = self
+      .observer
+      .as_ref()
+      .and_then(vpdf_terminal::tmux_observer::Observer::take)
     else {
       return Ok(false);
     };
@@ -485,7 +489,7 @@ impl Session {
 
   pub(super) fn observation(
     &mut self,
-    next: crate::tmux_observer::Snapshot,
+    next: vpdf_terminal::tmux_observer::Snapshot,
     out: &mut impl Write,
   ) -> Result<bool> {
     let initial = self.observed.is_none();
@@ -549,7 +553,7 @@ impl Session {
       self.perf_tick(out)?;
       let wait = (self.state.perf && self.sight != Sight::Hidden)
         .then(|| self.perf.wait(Instant::now()));
-      let Some(event) = crate::input::next(wait)? else {
+      let Some(event) = vpdf_terminal::input::next(wait)? else {
         if !self.quit
           && !self.hangup.load(Ordering::Relaxed)
           && wait.is_some()

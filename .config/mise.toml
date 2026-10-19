@@ -99,7 +99,7 @@ run = "cargo bench --locked -p vpdf --profile release --bench stages"
 
 [tasks."bench:micro"]
 description = "Time single hot functions; arguments filter cases"
-run = 'cargo bench --locked -p vpdf --profile release --bench micro -- {{arg(name="cases", var=true, default="")}}'
+run = 'sh scripts/bench-micro.sh {{arg(name="cases", var=true, default="")}}'
 
 [tasks."bench:startup"]
 description = "Time launch to complete first view in this terminal"
@@ -132,3 +132,16 @@ run = "cargo nextest run --locked -p vpdf-reader"
 [tasks."test:protocol"]
 description = "Test terminal input decoding without native code or UI"
 run = "cargo nextest run --locked -p vpdf-protocol"
+
+[tasks."test:terminal"]
+description = "Test terminal delivery without native PDF code"
+run = "cargo nextest run --locked -p vpdf-terminal"
+
+[tasks."bench:fixtures"]
+description = "Prepare verified native-free raster fixtures"
+depends = ["corpus"]
+run = 'cargo run --locked --release --example bench-fixtures -- "$VPDF_CORPUS/paper.pdf" "${VPDF_BENCH_FIXTURES:-target/bench-fixtures}"'
+
+[tasks."bench:terminal"]
+description = "Measure headless terminal delivery using prepared fixtures"
+run = 'cargo bench --locked --profile release -p vpdf-terminal --bench micro -- {{arg(name="cases", var=true, default="")}}'

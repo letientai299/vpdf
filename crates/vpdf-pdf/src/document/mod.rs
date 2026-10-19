@@ -312,7 +312,8 @@ pub use extraction::{TEXT_FLAGS, extract, extract_list};
 #[cfg(test)]
 use metadata::date;
 use metadata::{metadata, outline};
-pub use types::{Annotation, Heading, Link, PageInfo, Target};
+pub use types::PageInfo;
+pub use vpdf_model::document::{Annotation, Heading, Link, Target};
 
 #[cfg(test)]
 mod tests {

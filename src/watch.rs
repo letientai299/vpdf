@@ -35,7 +35,7 @@ impl Default for Watcher {
       move |event: notify::Result<notify::Event>| {
         for path in event.into_iter().flat_map(|event| event.paths) {
           let _ = send.send(path);
-          crate::input::wake();
+          vpdf_terminal::input::wake();
         }
       },
     )

@@ -5,6 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 publish = false
 
+build = "build.rs"
+
 [lints]
 workspace = true
 
@@ -12,7 +14,15 @@ workspace = true
 anyhow.workspace = true
 mupdf.workspace = true
 vpdf-model.workspace = true
+vpdf-search.workspace = true
+sha2.workspace = true
+flate2.workspace = true
+rustix.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 font-kit.workspace = true
+flate2 = { workspace = true, features = ["zlib"] }
 mupdf = { workspace = true, features = ["sys-lib-zlib"] }
+
+[dev-dependencies]
+tempfile.workspace = true

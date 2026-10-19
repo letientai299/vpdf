@@ -1,6 +1,6 @@
-use crate::jobs::search::SearchEvent;
 use crate::search::{self, Hit};
 use crate::text::Position;
+use vpdf_pdf::jobs::search::SearchEvent;
 use vpdf_reader::reader::{Location, Operator};
 use vpdf_search::query::Query;
 

@@ -4,7 +4,7 @@ use super::*;
 
 use crate::text::Bounds;
 use crossterm::event::{KeyCode, KeyModifiers};
-use vpdf_protocol::decode::{Button, Mouse, Spot};
+use vpdf_terminal::decode::{Button, Mouse, Spot};
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
@@ -150,7 +150,11 @@ fn frames_write_changed_shapes() -> Result<()> {
   let mut session = paper()?;
   let link = find(&mut session, |hit| matches!(hit, Hit::Link(..)))?;
   let blank = find(&mut session, |hit| hit == Hit::Nothing)?;
-  terminal::arm_shapes();
+  terminal::claim_pointer(
+    &mut Vec::new(),
+    vpdf_terminal::caps::Support::Answered,
+    false,
+  )?;
   let frame =
     |session: &mut Session, cell: Option<(u16, u16)>| -> Result<Vec<String>> {
       match cell {
@@ -216,7 +220,11 @@ fn held_gestures_write_shapes() -> Result<()> {
   let mut session = paper()?;
   let blank = find(&mut session, |hit| hit == Hit::Nothing)?;
   let near = (blank.0 + 3, blank.1);
-  terminal::arm_shapes();
+  terminal::claim_pointer(
+    &mut Vec::new(),
+    vpdf_terminal::caps::Support::Answered,
+    false,
+  )?;
   // (command first, event, cell) -> written
   let steps = [
     ("", Moved, blank, vec![]),
@@ -283,7 +291,7 @@ fn image_status_preserves_bar() -> Result<()> {
   assert_ne!(old.id, new.id);
   session.app().region_status(new.id, "New operation".into());
   let mut events = VecDeque::new();
-  vpdf_protocol::decode::Parser::default()
+  vpdf_terminal::decode::Parser::default()
     .feed(b"\x1b]5522;type=write:status=DONE\x1b\\", &mut events);
   let event = act(events.pop_front().unwrap()).unwrap();
   assert!(!event.typed());
@@ -438,7 +446,7 @@ fn client_changes_preserve_positions() -> Result<()> {
     .map(App::navigation_position)
     .collect();
   let snapshot = |pid| {
-    crate::tmux_observer::parse(&format!(
+    vpdf_terminal::tmux_observer::parse(&format!(
       "$0\t@0\tfocused\n{pid}:100:$0:@0:9:26:0;\n"
     ))
     .unwrap()
@@ -463,7 +471,7 @@ fn client_changes_preserve_positions() -> Result<()> {
 fn observations_recover_without_focus() -> Result<()> {
   let mut session = Session::new(None);
   let snapshot = |view, clients: &str| {
-    crate::tmux_observer::parse(&format!("$0\t@0\t{view}\n{clients}\n"))
+    vpdf_terminal::tmux_observer::parse(&format!("$0\t@0\t{view}\n{clients}\n"))
       .unwrap()
   };
   let client = "10:100:$0:@0:9:26:0;";
@@ -602,7 +610,11 @@ fn sweeps_show_a_crosshair() -> Result<()> {
     app.hovered(Region::Page, column, row, None).ok() == Some(Hit::Text)
   });
   let (column, row) = text.expect("a text cell");
-  terminal::arm_shapes();
+  terminal::claim_pointer(
+    &mut Vec::new(),
+    vpdf_terminal::caps::Support::Answered,
+    false,
+  )?;
   let (alt, plain) = (KeyModifiers::ALT, KeyModifiers::NONE);
   // (event, modifiers, column) -> shapes written
   let steps = [
@@ -628,7 +640,7 @@ fn sweeps_show_a_crosshair() -> Result<()> {
 #[test]
 fn mouse_command_toggles_capture() -> Result<()> {
   use crate::pointer::{Hit, Region};
-  use vpdf_protocol::decode::{Mouse, MouseKind, Spot};
+  use vpdf_terminal::decode::{Mouse, MouseKind, Spot};
   let directory = tempfile::tempdir()?;
   let screen = Screen {
     columns: 80,
@@ -1014,7 +1026,7 @@ fn local_keys_clear_capture() -> Result<()> {
   let mut session = Session::new(None);
   session.open(&root.join("book.pdf"), true, screen)?;
   let mut events = std::collections::VecDeque::new();
-  let mut parser = vpdf_protocol::decode::Parser::default();
+  let mut parser = vpdf_terminal::decode::Parser::default();
   for bytes in [
     &b":30\r\x1b[<0;30;10M\x1b[<32;35;12M"[..],
     &b"\t"[..],
@@ -1069,7 +1081,7 @@ fn keys_close_other_previews() -> Result<()> {
   assert!(session.hover_preview(Instant::now() + crate::links::REST));
   assert!(session.tab().panes[index].peek.is_some());
   let mut events = std::collections::VecDeque::new();
-  vpdf_protocol::decode::Parser::default().feed(b"j", &mut events);
+  vpdf_terminal::decode::Parser::default().feed(b"j", &mut events);
   for event in events {
     input(&mut session, act(event).expect("a key"), &mut Vec::new())?;
   }
@@ -1092,7 +1104,7 @@ fn deferred_panels_clear_capture() -> Result<()> {
     let mut session = Session::new(None);
     session.open(&root.join("book.pdf"), true, screen)?;
     let mut events = std::collections::VecDeque::new();
-    let mut parser = vpdf_protocol::decode::Parser::default();
+    let mut parser = vpdf_terminal::decode::Parser::default();
     for bytes in [
       b":30\r\x1b[<0;30;10M\x1b[<32;35;12M".as_slice(),
       command,

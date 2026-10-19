@@ -2,7 +2,6 @@ use crate::Result;
 use crate::app::{App, InputOwner, Request, Tabline};
 use crate::dnd::{Dropped, Step, Target};
 use crate::document::PasswordRequired;
-use crate::graphics::Graphics;
 use crate::home::{Home, Outcome};
 use crate::keys::PanelKind;
 use crate::layout::Screen;
@@ -11,7 +10,6 @@ use crate::pointer::{Hit, Hover, Pane, Pixel, Pointer, Region, Route};
 use crate::prompt::History;
 use crate::split::{Axis, Direction, Divider, Node, Place, Rect, neighbor};
 use crate::state::{Mark, State};
-use crate::terminal::{self, At, Shape, View};
 use crate::text::{PageId, Position};
 use crate::theme;
 use crate::trace::Drawable;
@@ -25,7 +23,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-use vpdf_protocol::decode::{Event, MouseKind, Reply, Size};
+use vpdf_terminal::decode::{Event, MouseKind, Reply, Size};
+use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::terminal::{self, At, Shape, View};
 
 /// Panes of one tab, laid out by a split tree.
 pub struct Tab {
@@ -66,8 +66,8 @@ pub struct Session {
   /// Set while a resize could not measure cells.
   unmeasured: Option<Unmeasured>,
   sight: Sight,
-  observer: Option<crate::tmux_observer::Observer>,
-  observed: Option<crate::tmux_observer::Snapshot>,
+  observer: Option<vpdf_terminal::tmux_observer::Observer>,
+  observed: Option<vpdf_terminal::tmux_observer::Snapshot>,
   rehover: Rehover,
   image_write: Option<ImageWrite>,
   /// The drag over the window, OSC 72.
@@ -180,7 +180,7 @@ enum Act {
   Paste(String),
   /// With the mode 2048 report, when the terminal sent one.
   Resize(Option<Size>),
-  Mouse(vpdf_protocol::decode::Mouse),
+  Mouse(vpdf_terminal::decode::Mouse),
   /// The pointer left the window; not typing.
   Leave,
   /// The terminal no longer holds this image; not typing.

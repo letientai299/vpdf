@@ -1,13 +1,12 @@
 use crate::Result;
 use crate::app::App;
-use crate::document::{Document, Target};
+use crate::document::Target;
 use crate::figures::Source;
-use crate::graphics::Graphics;
 use crate::keys::{Action, Input};
 use crate::pointer::Items;
 use crate::split::Rect;
 use crate::text::{Bounds, PageId, Text};
-use crate::{clipboard, terminal, theme, tiles};
+use crate::{clipboard, theme};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::ops::Range;
@@ -16,6 +15,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
 use unicode_width::UnicodeWidthStr;
 use vpdf_reader::reader::Yank;
+use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::terminal;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CaptureId(u64);
@@ -642,12 +643,14 @@ fn run(
   operation: Operation,
   cancel: &AtomicBool,
 ) -> Result<Outcome> {
-  let mut doc = Document::open(path, password)?;
-  let capture = tiles::capture(&mut doc, region.page, region.bounds, rotation)?;
-  anyhow::ensure!(
-    !cancel.load(Ordering::Relaxed),
-    "Region operation cancelled"
-  );
+  let capture = vpdf_pdf::jobs::capture::capture(
+    path,
+    password,
+    region.page,
+    region.bounds,
+    rotation,
+    cancel,
+  )?;
   match operation {
     Operation::Image if clipboard::remote() => Ok(Outcome::Remote(capture.png)),
     Operation::Image => {
@@ -658,18 +661,11 @@ fn run(
       let saved = save(path, region.page, &capture.png)?;
       Ok(Outcome::Message(format!("Saved {}", saved.display())))
     }
-    Operation::Ocr => {
-      let output = crate::jobs::ocr::tesseract(capture.png, "eng", cancel)?;
-      let text = crate::jobs::ocr::parse_tsv(&output, Bounds::default(), 1.0)?;
-      Ok(Outcome::Text(
-        text
-          .lines
-          .iter()
-          .map(crate::text::Line::text)
-          .collect::<Vec<_>>()
-          .join("\n"),
-      ))
-    }
+    Operation::Ocr => Ok(Outcome::Text(vpdf_pdf::jobs::capture::recognize(
+      capture.png,
+      "eng",
+      cancel,
+    )?)),
     Operation::Text => unreachable!(),
   }
 }

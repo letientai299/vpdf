@@ -1,7 +1,6 @@
 use crate::Result;
 use crate::app::{App, Request};
-use crate::document::{Annotation, Heading, Target};
-use crate::graphics::Graphics;
+use crate::document::{Annotation, Target};
 use crate::keys::{Action, Input, PanelKind};
 use crate::layout::{Screen, screen_step};
 use crate::panel::layout::Layout;
@@ -9,7 +8,6 @@ use crate::panel::search::RowSearch;
 use crate::pointer::{WHEEL_ROWS, Wheel};
 use crate::recent::Shelf;
 use crate::state::Entry;
-use crate::terminal;
 use crate::text::{PageId, Position};
 use crate::theme::{self, Color};
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
@@ -18,6 +16,8 @@ use std::path::{Path, PathBuf};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::JumpDescription;
+use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::terminal;
 
 #[derive(Clone, PartialEq)]
 pub enum Destination {
@@ -118,7 +118,7 @@ impl Pointing {
 }
 
 pub use rows::key_width;
-pub use sections::{document_lines, metadata_lines, recent_rows, section};
+pub use sections::{document_lines, metadata_lines, recent_rows};
 
 #[cfg(test)]
 mod focus_tests;

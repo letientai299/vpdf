@@ -1,6 +1,5 @@
 use crate::Result;
 use crate::layout::Screen;
-use crate::terminal::{self, At};
 use crate::theme;
 use std::collections::VecDeque;
 use std::io::Write;
@@ -8,6 +7,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+use vpdf_terminal::terminal::{self, At};
 
 pub const INTERVAL: Duration = Duration::from_millis(100);
 const SECOND: Duration = Duration::from_secs(1);

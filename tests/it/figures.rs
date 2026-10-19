@@ -7,7 +7,7 @@ use vpdf::text::PageId;
 fn raw_figure_bindings() {
   use std::collections::VecDeque;
   use vpdf::keys::{Action, Grammar, Keys};
-  use vpdf_protocol::decode::{Event, Parser};
+  use vpdf_terminal::decode::{Event, Parser};
   for (bytes, expected) in [
     (&b"]i"[..], Action::Figure(true)),
     (&b"[i"[..], Action::Figure(false)),

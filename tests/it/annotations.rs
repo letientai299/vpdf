@@ -447,7 +447,7 @@ fn click_at(
   (column, row): (u16, u16),
   now: std::time::Instant,
 ) -> Result<()> {
-  use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
+  use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
   for kind in [MouseKind::Press(Button::LEFT), MouseKind::Release(Button::LEFT)]
   {
     let at = Spot::Cell { column, row };
@@ -481,7 +481,7 @@ fn notes_open_by_mouse() -> Result<()> {
   use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
   use vpdf::pointer::{Hit, Region};
   use vpdf::session::Session;
-  use vpdf::terminal::Shape;
+  use vpdf_terminal::terminal::Shape;
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("noted.pdf");
   noted_pdf(&path)?;

@@ -29,10 +29,12 @@ fn inferred_outline_matches_authored_one() -> Result<()> {
     let handle = Handle::open(&root.join(name), "")?;
     let pages = (0..handle.pages)
       .map(|page| {
-        handle.text(PageId(page)).map(|t| vpdf::jobs::outline::summarize(&t))
+        handle
+          .text(PageId(page))
+          .map(|t| vpdf_pdf::jobs::outline::summarize(&t))
       })
       .collect::<Result<Vec<_>>>()?;
-    let inferred = vpdf::jobs::outline::infer(&pages);
+    let inferred = vpdf_pdf::jobs::outline::infer(&pages);
     let authored = handle.outline()?;
     let real: Vec<_> = authored.iter().map(|h| key(&h.title)).collect();
     let guessed: Vec<_> = inferred.iter().map(|h| key(&h.title)).collect();

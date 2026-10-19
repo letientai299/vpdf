@@ -64,6 +64,7 @@ mise run test:model
 mise run test:search
 mise run test:pdf
 mise run test:protocol
+mise run test:terminal
 mise run test:reader
 mise exec -- cargo nextest run --locked -p vpdf-model text::tests
 mise exec -- cargo nextest run --locked -p vpdf-search search::tests
@@ -80,7 +81,7 @@ Root modules retain the application compilation unit and support test filters:
 
 ```sh
 mise exec -- cargo nextest run --locked -p vpdf --lib session::tests
-mise exec -- cargo nextest run --locked -p vpdf-pdf layout::tests
+mise exec -- cargo nextest run --locked -p vpdf --lib layout::tests
 ```
 
 The lint task applies automatic fixes before checking for remaining issues;
@@ -124,6 +125,18 @@ and base-image reuse; the thresholds live with the assertions.
 mise run bench:budget
 mise run bench:latency
 mise run bench:stages
+```
+
+The [microbenchmarks][micro] accept case filters and `--package` selection.
+Terminal cases use prepared real-PDF raster data, with dimensions, source
+identity, and pixel hashes checked outside the timed loops. Preparation requires
+MuPDF; terminal and protocol benchmark execution does not. Set
+`VPDF_BENCH_FIXTURES` to share a prepared fixture directory between checkouts.
+
+```sh
+mise run bench:fixtures
+mise run bench:micro -- --package vpdf-terminal
+mise run bench:micro -- --package vpdf-protocol decode
 ```
 
 The [latency benchmark][latency] uses a live render worker to measure cold
@@ -262,6 +275,7 @@ a result needs a reproducible release reference.
 [rumdl]: ../../.config/rumdl.toml
 [corpus]: ../../scripts/corpus.sh
 [corpus-tests]: ../../tests/it/corpus.rs
+[micro]: ../../scripts/bench-micro.sh
 [reader-bench]: ../../benches/reader.rs
 [latency]: ../../benches/latency.rs
 [stages]: ../../benches/stages.rs

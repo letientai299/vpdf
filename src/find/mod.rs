@@ -1,11 +1,11 @@
 use crate::Result;
 use crate::app::App;
-use crate::jobs::search::SearchWorker;
 use crate::keys::PanelKind;
 use crate::panel::Panel;
 use crate::pdf_text::PdfText;
 use crate::prompt::{Prompt, PromptKind};
 use crate::search;
+use vpdf_pdf::jobs::search::SearchWorker;
 
 mod state;
 

@@ -1,12 +1,13 @@
 use crate::Result;
 use crate::document::{Document, Handle, Lists, TEXT_FLAGS};
-use crate::layout::{Crop, clip, page_matrix, transform};
 use crate::text::{Bounds, PageId};
 use mupdf::text_page::TextBlockType;
-use mupdf::{Colorspace, DisplayList, Matrix, TextPageFlags};
-use std::collections::BTreeMap;
+use mupdf::{Colorspace, DisplayList, TextPageFlags};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use vpdf_model::geometry::{
+  Crop, Crops, Transform, clip, page_matrix, transform,
+};
 
 /// Thumbnail width for margin detection, in pixels.
 const WIDTH: f32 = 320.0;
@@ -18,7 +19,7 @@ const PAD: u16 = 15;
 fn stamps(
   list: &DisplayList,
   bounds: Bounds,
-  matrix: &Matrix,
+  matrix: &Transform,
 ) -> Result<Vec<Bounds>> {
   let flags = TEXT_FLAGS
     | TextPageFlags::PRESERVE_IMAGES
@@ -75,7 +76,11 @@ fn ink(doc: &mut Document, page: PageId) -> Result<Option<[f32; 4]>> {
 fn ink_list(list: &DisplayList, bounds: Bounds) -> Result<Option<[f32; 4]>> {
   let scale = (WIDTH / bounds.width() * 1024.0) as u32;
   let matrix = page_matrix(bounds, scale, 0);
-  let pixmap = list.to_pixmap(&matrix, &Colorspace::device_gray(), false)?;
+  let pixmap = list.to_pixmap(
+    &crate::raster::matrix(&matrix),
+    &Colorspace::device_gray(),
+    false,
+  )?;
   let (width, height) = (pixmap.width() as usize, pixmap.height() as usize);
   let stride = usize::try_from(pixmap.stride())?;
   let samples = pixmap.samples();
@@ -173,11 +178,15 @@ fn detect(doc: &mut Document, stop: &AtomicBool) -> Result<Vec<Crop>> {
 /// Sparse results and fixed calibration.
 #[derive(Clone, Default)]
 pub struct Margins {
-  pages: BTreeMap<PageId, Crop>,
+  pages: Arc<Crops>,
   calibration: Vec<Option<[f32; 4]>>,
 }
 
 impl Margins {
+  pub fn resolved(&self) -> Arc<Crops> {
+    Arc::clone(&self.pages)
+  }
+
   pub fn len(&self) -> usize {
     self.pages.len()
   }
@@ -185,13 +194,13 @@ impl Margins {
     self.pages.is_empty()
   }
   pub fn get(&self, page: PageId) -> Crop {
-    self.pages.get(&page).copied().unwrap_or_default()
+    self.pages.get(page)
   }
 }
 
 impl Margins {
   pub fn contains(&self, page: PageId) -> bool {
-    self.pages.contains_key(&page)
+    self.pages.contains(page)
   }
 
   pub fn update(
@@ -219,7 +228,7 @@ impl Margins {
     }
     for (page, bounds) in pages.iter().zip(boxes) {
       let crop = calibrated(&[bounds], &self.calibration)[0];
-      self.pages.insert(*page, crop);
+      Arc::make_mut(&mut self.pages).insert(*page, crop);
     }
     Ok(())
   }

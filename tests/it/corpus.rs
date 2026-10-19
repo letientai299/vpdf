@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::path::PathBuf;
-use vpdf::content_cache::{alias, hex};
 use vpdf::{Result, document::Document, search, text::PageId};
+use vpdf_pdf::content_cache::{alias, hex};
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]

@@ -1,6 +1,5 @@
 use crate::Result;
 use crate::cmdline;
-use crate::graphics::Graphics;
 use crate::keys::{Action, Keys, PanelKind};
 use crate::layout::Screen;
 use crate::panel::{Destination, Panel, Row, recent_rows};
@@ -8,13 +7,14 @@ use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crate::recent::Shelf;
 use crate::state::Entry;
 use crate::statusline;
-use crate::terminal::{self, At};
 use crate::theme::{self, Color};
 use crossterm::event::{KeyEvent, KeyEventKind};
 use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
-use vpdf_protocol::decode::Event;
+use vpdf_terminal::decode::Event;
+use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::terminal::{self, At};
 
 /// What the start screen asks the session to do.
 #[derive(Debug, Eq, PartialEq)]
@@ -50,14 +50,14 @@ impl Home {
       ));
     }
     let mut panel = Panel::new(PanelKind::Recent, rows);
-    let wake = crate::input::loop_wake();
+    let wake = vpdf_pdf::jobs::Wake::new(vpdf_terminal::input::wake);
     panel.shelf = Some(Shelf::new(recent, "", &wake));
     Self {
       screen,
       at: At::default(),
       error: None,
       panel,
-      graphics: Graphics::default(),
+      graphics: Graphics::live(),
       prompt: None,
       keys: Keys::default(),
     }
@@ -294,7 +294,7 @@ mod tests {
   #[test]
   fn top_stats_offset_home_and_mouse() -> Result<()> {
     use crossterm::event::KeyModifiers;
-    use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
+    use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
     let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
     let entry = crate::state::tests::entry(file, 0, 0);
     let screen = Screen {
@@ -326,7 +326,7 @@ mod tests {
   #[test]
   fn clicks_wait_for_an_open_prompt() -> Result<()> {
     use crossterm::event::{KeyCode, KeyModifiers};
-    use vpdf_protocol::decode::{Button, Mouse, MouseKind, Spot};
+    use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
     let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
     let entry = crate::state::tests::entry(file, 0, 0);
     let screen = Screen {

@@ -107,7 +107,7 @@ fn cursorline_pdf_projects_and_clips() -> Result<()> {
       app.layout.crop = Crop([30, 30, 30, 30]);
       {
         let (app, _) = app.parts();
-        app.layout.reflow(&app.doc.pages);
+        app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));
       }
       let text = app.doc.text(PageId(0))?;
       let line =
@@ -282,7 +282,7 @@ fn landing_pdf_reuses_projected_clipped_band() -> Result<()> {
       app.layout.crop = Crop([30, 30, 30, 30]);
       {
         let (app, _) = app.parts();
-        app.layout.reflow(&app.doc.pages);
+        app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));
       }
       let text = app.doc.text(PageId(0))?;
       let line =

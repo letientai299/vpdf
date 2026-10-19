@@ -1,7 +1,7 @@
 use crate::Result;
-use crate::terminal;
 use std::path::PathBuf;
 use std::process::Command;
+use vpdf_terminal::terminal;
 
 /// Edits `text` in `$VISUAL` or `$EDITOR`, like zsh's
 /// `edit-command-line`; lines join with spaces.

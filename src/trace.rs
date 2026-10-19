@@ -1,10 +1,10 @@
 use crate::Result;
 use crate::app::App;
-use crate::graphics::Graphics;
 use serde::Serialize;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::time::Instant;
+use vpdf_terminal::graphics::Graphics;
 
 pub struct Trace {
   output: Option<BufWriter<File>>,

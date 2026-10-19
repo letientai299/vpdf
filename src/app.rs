@@ -1,10 +1,8 @@
 use crate::Result;
 use crate::document::Document;
-use crate::graphics::Usage;
-use crate::jobs::render::RenderWorker;
 use crate::keys::{Keys, PanelKind};
 use crate::layout::{Layout, Screen};
-use crate::terminal;
+use crate::raster::Raster;
 use crate::text::Position;
 use crate::tiles::TileKey;
 use crate::window::{TabMove, Window};
@@ -12,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 use vpdf_reader::reader::Reader;
+use vpdf_terminal::graphics::Usage;
+use vpdf_terminal::terminal;
 
 /// Work a tab hands to the session.
 #[derive(Debug, PartialEq)]
@@ -96,7 +96,7 @@ pub struct App {
   pub(crate) images_stale: bool,
   /// The shared images as this pane last drew them.
   pub(crate) image_usage: Usage,
-  pub worker: RenderWorker,
+  pub worker: Raster,
   pub keys: Keys,
   pub path: PathBuf,
   pub password: String,
@@ -125,9 +125,9 @@ pub struct App {
   /// The message the pointer last moved past.
   pub render_ms: f64,
   pub search: crate::find::Search,
-  pub search_worker: Option<crate::jobs::search::SearchWorker>,
+  pub search_worker: Option<vpdf_pdf::jobs::search::SearchWorker>,
   /// Wakes the event loop when a job finishes.
-  pub wake: crate::jobs::Wake,
+  pub wake: vpdf_pdf::jobs::Wake,
   /// Outline entry containing the cursor, refreshed each frame.
   pub current_section: Option<usize>,
   /// Lowercase marks of this document.
@@ -156,9 +156,9 @@ pub struct App {
   pub overview: Option<crate::overview::Overview>,
   pub panel: Option<crate::panel::Panel>,
   pub preview: Option<bool>,
-  pub ocr: Option<crate::jobs::ocr::OcrJob>,
+  pub ocr: Option<vpdf_pdf::jobs::ocr::OcrJob>,
   pub outline_load: crate::outline::Loading,
-  pub crop_job: Option<crate::jobs::crop::Job>,
+  pub crop_job: Option<vpdf_pdf::jobs::crop::Job>,
   pub animation: Option<crate::animation::Scroll>,
   /// The current wheel gesture over the page.
   pub(crate) wheel: Option<crate::interaction::WheelRun>,
@@ -193,9 +193,15 @@ impl App {
   ) -> Result<Self> {
     static NEXT: AtomicU32 = AtomicU32::new(1);
     let doc = Document::open(path, password)?;
-    let layout = Layout::new(&doc.pages, screen);
-    let wake = crate::input::loop_wake();
-    let worker = RenderWorker::new(path, password, doc.lists(), &wake);
+    let layout = Layout::new(doc.pages.iter().map(|page| page.bounds), screen);
+    let wake = vpdf_pdf::jobs::Wake::new(vpdf_terminal::input::wake);
+    let worker = Raster::new(
+      path,
+      password,
+      doc.lists(),
+      &wake,
+      vpdf_terminal::payload::Encoder::live(),
+    );
     Ok(Self {
       id: NEXT.fetch_add(1, Ordering::Relaxed),
       doc,

@@ -19,6 +19,7 @@ members = [
   "crates/vpdf-pdf",
   "crates/vpdf-protocol",
   "crates/vpdf-reader",
+  "crates/terminal",
 ]
 resolver = "3"
 
@@ -64,6 +65,7 @@ strip = true
 debug = false
 
 [workspace.dependencies]
+vpdf-terminal = { path = "crates/terminal" }
 vpdf-pdf = { path = "crates/vpdf-pdf" }
 vpdf-search = { path = "crates/vpdf-search" }
 vpdf-model = { path = "crates/vpdf-model" }
@@ -94,34 +96,29 @@ tempfile = "3"
 font-kit = "0.14"
 
 [dependencies]
+vpdf-terminal.workspace = true
 vpdf-pdf.workspace = true
 vpdf-search.workspace = true
 vpdf-model.workspace = true
-vpdf-protocol.workspace = true
 vpdf-reader.workspace = true
 anyhow = { workspace = true }
 base64 = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }
-flate2 = { workspace = true }
 mupdf = { workspace = true }
 notify = { workspace = true }
-rustix = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 signal-hook = { workspace = true }
 sysinfo = { workspace = true }
 unicode-width = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# Apple's zlib inflates content and font streams faster than the vendored
-# copy, which Linux keeps for its static build. Its symbols are unprefixed,
-# so flate2 shares Apple's zlib only here.
-flate2 = { workspace = true, features = ["zlib"] }
 mupdf = { workspace = true, features = ["sys-lib-zlib"] }
 
 [dev-dependencies]
+flate2.workspace = true
+sha2.workspace = true
 tempfile = { workspace = true }
 
 [[bench]]

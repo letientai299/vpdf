@@ -1,7 +1,6 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::{Annotation, Target};
-use crate::graphics::Graphics;
 use crate::keys::{Action, Input};
 use crate::layout::screen_step;
 use crate::panel::layout::wrap;
@@ -14,6 +13,7 @@ use mupdf::IRect;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_reader::motion::Motion;
+use vpdf_terminal::graphics::Graphics;
 
 const HEIGHT: f32 = 0.4;
 const ABOVE: f32 = 6.0;
@@ -143,7 +143,7 @@ impl App {
       target,
       page,
       source,
-      serial: crate::graphics::serial(),
+      serial: vpdf_terminal::graphics::serial(),
       view,
       origin: Origin::Key,
       placement: None,
@@ -199,7 +199,7 @@ impl App {
       target,
       page: position.page,
       source: position,
-      serial: crate::graphics::serial(),
+      serial: vpdf_terminal::graphics::serial(),
       origin: Origin::Key,
       placement: None,
       seen,
@@ -416,7 +416,7 @@ impl App {
         let view = self.preview_image(next)?;
         if let Some(preview) = &mut self.peek {
           preview.view = view;
-          preview.serial = crate::graphics::serial();
+          preview.serial = vpdf_terminal::graphics::serial();
         }
       }
     }
@@ -709,7 +709,7 @@ impl App {
       View::Text { top: first, lines, .. }
       | View::Note { top: first, lines, .. } => {
         for (index, line) in lines.iter().skip(*first).take(rows).enumerate() {
-          let text = crate::terminal::clean(line, columns);
+          let text = vpdf_terminal::terminal::clean(line, columns);
           let pad = columns.saturating_sub(text.width());
           write!(
             out,
@@ -739,9 +739,10 @@ impl App {
 fn border_label(label: &str, columns: usize, clipped: bool) -> String {
   let marker = if clipped { "↑" } else { "" };
   if columns < 4 {
-    return crate::terminal::clean(marker, columns);
+    return vpdf_terminal::terminal::clean(marker, columns);
   }
-  let label = crate::terminal::clean(label, columns - marker.width() - 3);
+  let label =
+    vpdf_terminal::terminal::clean(label, columns - marker.width() - 3);
   format!(" {label} {marker} ")
 }
 

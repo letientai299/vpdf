@@ -173,7 +173,7 @@ fn preview_border_stays_inside_resized_pane() -> Result<()> {
     app.go_to(cursor, true)?;
     keys(&mut app, b"K")?;
     let target = format!("{:?}", app.peek.as_ref().unwrap().target);
-    app.at = vpdf::terminal::At { column: 7, row: 3 };
+    app.at = vpdf_terminal::terminal::At { column: 7, row: 3 };
     app.screen.origin = (7, 3);
     for rotation in [0, 90, 180, 270] {
       app.screen.columns = 78;
@@ -249,7 +249,7 @@ fn preview_invalid_keeps_reader() -> Result<()> {
     app.doc = vpdf::document::Document::open(&corpus.join("form.pdf"), "")?;
     {
       let (app, _) = app.parts();
-      app.layout.reflow(&app.doc.pages);
+      app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));
     }
     assert_eq!(drawn(&mut app)?, "");
     assert!(app.peek.is_none());

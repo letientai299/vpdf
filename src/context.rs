@@ -3,7 +3,6 @@
 use crate::Result;
 use crate::app::App;
 use crate::document::Target;
-use crate::graphics::Graphics;
 use crate::keys::{self, Action, Input, PanelKind};
 use crate::panel::Destination;
 use crate::pdf_text::PdfText;
@@ -17,6 +16,7 @@ use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::SelectionKind;
+use vpdf_terminal::graphics::Graphics;
 
 /// An open context menu.
 pub struct ContextMenu {

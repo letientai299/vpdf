@@ -1,22 +1,22 @@
 use crate::Result;
 use crate::app::App;
-use crate::jobs::crop::Job;
 use crate::layout::Crop;
 use crate::text::{Bounds, PageId};
 use std::sync::{Arc, mpsc};
+use vpdf_pdf::jobs::crop::Job;
 
 pub use vpdf_pdf::crop::{Margins, margins};
 
 const SAMPLES: usize = 24;
-const BATCH: usize = crate::prefetch::PAGES;
 
 fn samples(count: usize, nearby: impl Iterator<Item = PageId>) -> Vec<PageId> {
-  let mut pages: Vec<_> = nearby.take(BATCH).collect();
+  let batch = vpdf_pdf::jobs::Config::default().prefetch_pages;
+  let mut pages: Vec<_> = nearby.take(batch).collect();
   if count <= SAMPLES {
     pages.extend((0..count).map(PageId));
   } else {
-    for pair in 0..(SAMPLES - BATCH) / 2 {
-      let first = pair * count.saturating_sub(2) / ((SAMPLES - BATCH) / 2 - 1);
+    for pair in 0..(SAMPLES - batch) / 2 {
+      let first = pair * count.saturating_sub(2) / ((SAMPLES - batch) / 2 - 1);
       pages.extend([PageId(first), PageId((first + 1).min(count - 1))]);
     }
   }
@@ -49,7 +49,10 @@ impl App {
     ));
   }
 
-  fn apply_crop(&mut self, crops: Arc<Margins>) -> Result<()> {
+  fn apply_crop(
+    &mut self,
+    crops: Arc<vpdf_model::geometry::Crops>,
+  ) -> Result<()> {
     let animation = self.animation.take().and_then(|animation| {
       let page = self.layout.page_at(animation.target);
       let point = self.layout.unproject(
@@ -133,7 +136,7 @@ impl App {
       }
     };
     self.doc.margins = Some(Arc::clone(&crops));
-    self.apply_crop(crops)?;
+    self.apply_crop(crops.resolved())?;
     Ok(true)
   }
 
@@ -152,7 +155,7 @@ impl App {
       self.relayout()?;
       self.reader.message = "Margins shown".into();
     } else if let Some(crops) = &self.doc.margins {
-      self.apply_crop(Arc::clone(crops))?;
+      self.apply_crop(crops.resolved())?;
     } else {
       self.start_crop();
     }

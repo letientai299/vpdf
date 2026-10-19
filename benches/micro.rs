@@ -13,59 +13,8 @@ use vpdf::pdf_text::PdfText;
 use vpdf::solo::Solo;
 use vpdf::text::PageId;
 
-const SAMPLES: usize = 31;
-
-/// Median, p10, and p90 nanoseconds per call.
-fn measure(name: &str, mut call: impl FnMut()) -> Result<()> {
-  // Batches of about a millisecond hide the clock's resolution.
-  let mut batch = 1_u32;
-  loop {
-    let started = Instant::now();
-    for _ in 0..batch {
-      call();
-    }
-    if started.elapsed() >= Duration::from_millis(1) {
-      break;
-    }
-    batch *= 2;
-  }
-  let mut samples: Vec<f64> = (0..SAMPLES)
-    .map(|_| {
-      let started = Instant::now();
-      for _ in 0..batch {
-        call();
-      }
-      started.elapsed().as_nanos() as f64 / f64::from(batch)
-    })
-    .collect();
-  samples.sort_by(f64::total_cmp);
-  let at = |share: usize| samples[(SAMPLES - 1) * share / 100];
-  writeln!(
-    io::stdout(),
-    "{name:<28} {:>12.1} ns  p10 {:.1}  p90 {:.1}",
-    at(50),
-    at(10),
-    at(90)
-  )?;
-  Ok(())
-}
-
-/// A status line row as `App::status` cleans it each frame.
-fn clean() -> Result<()> {
-  let status =
-    " NORMAL  1:paper.pdf  2:book.pdf  3.2 Results  12/40 [xii] 31% ";
-  measure("terminal::clean", || {
-    black_box(vpdf::terminal::clean(black_box(status), 80));
-  })
-}
-
-/// A hostile title: wide emoji, then zero-width marks.
-fn clean_marks() -> Result<()> {
-  let title = "❤\u{FE0F}".repeat(100) + &"\u{301}".repeat(50_000);
-  measure("terminal::clean marks", || {
-    black_box(vpdf::terminal::clean(black_box(&title), 160));
-  })
-}
+mod support;
+use support::measure;
 
 /// A 120x40 pane.
 const PANE: Screen = Screen {
@@ -420,24 +369,6 @@ fn drag() -> Result<()> {
   })
 }
 
-/// One terminal read: pointer motion, keys, and a graphics reply, as
-/// kitty sends them while the reader scrolls.
-fn decode() -> Result<()> {
-  use std::collections::VecDeque;
-  use vpdf_protocol::decode::Parser;
-  let mut read = Vec::new();
-  for column in 0..64 {
-    write!(read, "\x1b[<35;{};14M", column + 1)?;
-  }
-  read.extend_from_slice(b"jjk\x1b[105;5u\x1b_Gi=31;OK\x1b\\");
-  let mut parser = Parser::default();
-  let mut events = VecDeque::new();
-  measure("Parser::feed 69 events", || {
-    parser.feed(black_box(&read), &mut events);
-    events.clear();
-  })
-}
-
 /// A warm frame of the corpus paper, scrolled 4 px from the last one,
 /// with every visible tile resident; prints the frame's bytes too.
 fn frame() -> Result<()> {
@@ -542,21 +473,9 @@ fn scan_whole() -> Result<()> {
   })
 }
 
-/// One tile deflated, as terminals without the spool receive it.
-fn tile_encode() -> Result<()> {
-  let mut app = paper(false)?;
-  let key = vpdf::tiles::visible(&app.layout, app.reader.scroll)[0];
-  let pixels = vpdf::tiles::raster(&mut app.doc, key)?;
-  let encoded = vpdf::tiles::encode(&pixels)?.len();
-  writeln!(io::stdout(), "tiles::encode bytes {encoded}")?;
-  measure(&format!("tiles::encode {} KiB", pixels.len() / 1024), || {
-    drop(black_box(vpdf::tiles::encode(black_box(&pixels)).expect("encode")));
-  })
-}
-
 /// Every page record of the corpus book, read back from its pack.
 fn pack_read() -> Result<()> {
-  use vpdf::content_cache::{Pack, Records, alias, save};
+  use vpdf_pdf::content_cache::{Pack, Records, alias, save};
   let path = corpus("book.pdf")?;
   let mut doc = Document::open(&path, "")?;
   let pages = doc.pages.len();
@@ -577,7 +496,11 @@ fn pack_read() -> Result<()> {
   })?;
   let all: Vec<PageId> = (0..pages).map(PageId).collect();
   measure(&format!("Pack::indexes {pages} pages"), || {
-    drop(black_box(pack.indexes(&all, usize::MAX)));
+    drop(black_box(pack.indexes(
+      &all,
+      usize::MAX,
+      vpdf_pdf::jobs::Config::default().helpers,
+    )));
   })
 }
 
@@ -692,7 +615,7 @@ fn projection() -> Result<()> {
     app.layout.pan = 96.0;
     {
       let (app, _) = app.parts();
-      app.layout.reflow(&app.doc.pages);
+      app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));
     }
     measure(&format!("Layout::project zoom {zoom}"), || {
       black_box(app.layout.project(
@@ -864,7 +787,7 @@ fn routing_panel() -> Result<()> {
   measure("Panel::list", || {
     out.clear();
     panel
-      .list(&mut out, vpdf::terminal::At::default(), 50, 40)
+      .list(&mut out, vpdf_terminal::terminal::At::default(), 50, 40)
       .expect("panel rows");
     black_box(&out);
   })
@@ -1019,8 +942,6 @@ const CASES: &[(&str, Case)] = &[
   ("figures", figures),
   ("lexical objects", lexical_objects),
   ("reflow", reflow),
-  ("clean", clean),
-  ("clean marks", clean_marks),
   ("text_canvas", text_canvas),
   ("cursorline", cursorline),
   ("landing", landing),
@@ -1029,9 +950,7 @@ const CASES: &[(&str, Case)] = &[
   ("hover", hover),
   ("wheel", wheel),
   ("cold page", cold_page),
-  ("tile encode", tile_encode),
   ("pack read", pack_read),
-  ("decode", decode),
   ("key prefixes", key_prefixes),
   ("scan whole", scan_whole),
   ("page list", page_list),
@@ -1063,12 +982,9 @@ const CASES: &[(&str, Case)] = &[
 ];
 
 fn main() -> Result<()> {
-  // Cargo passes `--bench`; other arguments name cases.
-  let filters: Vec<String> =
-    std::env::args().skip(1).filter(|arg| !arg.starts_with("--")).collect();
   let mut failed = 0;
   for (name, case) in CASES {
-    if filters.is_empty() || filters.iter().any(|f| name.contains(f.as_str())) {
+    if support::selected(name) {
       // One failing case leaves the others' timings.
       if let Err(error) = case() {
         writeln!(io::stderr(), "{name}: {error:#}")?;

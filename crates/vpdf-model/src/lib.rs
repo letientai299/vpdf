@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod document;
 pub mod geometry;
 pub mod reflow;
 pub mod text;

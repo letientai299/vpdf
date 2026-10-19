@@ -3,7 +3,7 @@ use super::common::events;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf::keys::{Action, Grammar, Keys, normalize};
 use vpdf::prompt::{History, Prompt, PromptEvent, PromptKind};
-use vpdf_protocol::decode::Event;
+use vpdf_terminal::decode::Event;
 
 const NONE: KeyModifiers = KeyModifiers::NONE;
 const CTRL: KeyModifiers = KeyModifiers::CONTROL;

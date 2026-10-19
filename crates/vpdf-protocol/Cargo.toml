@@ -10,3 +10,10 @@ workspace = true
 
 [dependencies]
 crossterm.workspace = true
+
+[[bench]]
+name = "micro"
+harness = false
+
+[dev-dependencies]
+anyhow.workspace = true
