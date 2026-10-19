@@ -18,7 +18,7 @@ pub fn synced(register: char) -> bool {
 
 impl App {
   pub fn clipboard(&mut self, out: &mut impl Write) -> Result<()> {
-    let Some(yank) = self.reader.pending_yank.take() else { return Ok(()) };
+    let Some(yank) = self.reader.take_yank() else { return Ok(()) };
     if synced(yank.register) {
       copy(yank.text, out)?;
     }

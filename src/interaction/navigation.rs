@@ -1,147 +1,28 @@
-use super::{Action, App, Input, Motion, Result, screen_step};
-use crate::pdf_text::PdfText;
+use super::{Action, App, Input, Result, screen_step};
 
 impl App {
-  fn normal_input(&mut self, input: Input) -> Result<bool> {
-    let count = input.count;
-    match input.action {
-      Action::Cursor => {
-        if self.enter_text()? {
-          self.reader.enter_cursor();
-        }
-        return Ok(true);
-      }
-      Action::Motion(Motion::Left | Motion::Right) => {
-        let direction =
-          if input.action == Action::Motion(Motion::Left) { -1.0 } else { 1.0 };
-        self
-          .pan(direction * count as f32 * f32::from(self.screen.cell_width))?;
-        return Ok(true);
-      }
-      Action::Motion(Motion::Down | Motion::Up) => {
-        let direction =
-          if input.action == Action::Motion(Motion::Up) { -1.0 } else { 1.0 };
-        self.scroll(
-          direction * count as f32 * f32::from(self.screen.cell_height),
-        )?;
-        return Ok(true);
-      }
-      Action::Motion(
-        Motion::First | Motion::Last | Motion::NextPage | Motion::PreviousPage,
-      ) => {
-        self.reader.cursor = self.reading_position()?;
-      }
-      Action::Motion(_) | Action::Object(..) | Action::Swap => {
-        return Ok(true);
-      }
-      Action::Visual(_) | Action::Yank | Action::YankLine => {
-        if !self.enter_text()? {
-          return Ok(true);
-        }
-      }
-      _ => {}
-    }
-    Ok(false)
-  }
-
   pub fn navigate(&mut self, input: Input) -> Result<bool> {
-    let count = input.count;
-    let normal = self.reader.viewport_mode();
-    let copying = self.reader.operator.is_some();
-    if normal && self.normal_input(input)? {
-      return Ok(true);
-    }
-    let previous_page = self.reader.cursor.page;
     match input.action {
-      Action::Motion(motion) => {
-        let boundary = matches!(
-          motion,
-          Motion::First
-            | Motion::Last
-            | Motion::NextPage
-            | Motion::PreviousPage
-        );
-        let origin = if boundary && self.reader.operator.is_none() {
-          Some(self.location()?)
-        } else {
-          None
-        };
-        self.reader.motion(
-          motion,
-          count,
-          input.explicit,
-          &mut PdfText(&mut self.doc),
-        )?;
-        if let Some(origin) = origin {
-          self.reader.record(origin);
-        }
-        if normal {
-          self.target = Some(self.reader.cursor);
-        }
-      }
-      Action::Section(forward) => {
-        self.move_section(forward, count)?;
-        return Ok(true);
-      }
-      Action::Yank => {
-        self.reader.yank(count, input.register, &mut PdfText(&mut self.doc))?;
-      }
-      Action::YankLine => {
-        self.reader.yank_lines(
-          count,
-          input.register,
-          &mut PdfText(&mut self.doc),
-        )?;
-      }
-      Action::YankRaw => {
-        self.reader.yank_raw(count, &mut PdfText(&mut self.doc))?;
-      }
-      Action::Visual(kind) => self.reader.visual(kind),
-      Action::Object(kind, around) => {
-        self.reader.select_object(
-          kind,
-          around,
-          count,
-          &mut PdfText(&mut self.doc),
-        )?;
-      }
-      Action::Swap => self.reader.swap(),
-      Action::Reselect => {
-        self.reader.reselect();
-        if self.reader.selection.is_none() {
-          return Ok(true);
-        }
-      }
+      Action::Section(forward) => self.move_section(forward, input.count)?,
       Action::History(forward) => {
-        self.animation.cancel();
-        for _ in 0..count {
-          let current = self.location()?;
-          let Some(location) = self.reader.recall(forward, current) else {
+        self.reader.cancel_scroll();
+        for _ in 0..input.count {
+          let Some(location) = self.reading_view().recall(forward)? else {
             break;
           };
           self.close_overview();
-          self.restore_location(location)?;
-          self.target = Some(self.reader.cursor);
-          self.flash_landing();
+          self.reading_view().restore_history(location)?;
         }
-        return Ok(true);
       }
-      Action::Quit => self.quit = true,
-      _ => return Ok(false),
+      Action::Quit => {
+        self.quit = true;
+        self.ensure_cursor()?;
+      }
+      _ => {
+        let mut reading = self.reading_parts();
+        return reading.view.navigate(input, reading.search);
+      }
     }
-    if matches!(
-      input.action,
-      Action::Yank | Action::YankLine | Action::YankRaw | Action::Visual(_)
-    ) || (self.reader.selection.is_none()
-      && copying
-      && matches!(input.action, Action::Motion(_) | Action::Object(..)))
-    {
-      return Ok(true);
-    }
-    if self.reader.cursor.page != previous_page {
-      self.show_page_of(self.reader.cursor)?;
-    }
-    self.ensure_cursor()?;
     Ok(true)
   }
 

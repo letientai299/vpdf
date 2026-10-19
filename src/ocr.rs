@@ -15,7 +15,7 @@ impl App {
       language,
       &self.wake,
     ));
-    self.reader.message = "OCR running; :cancel stops".into();
+    self.reader.notice("OCR running; :cancel stops");
     Ok(())
   }
 
@@ -30,9 +30,8 @@ impl App {
           worker.seed(page, Arc::clone(&text));
         }
         self.doc.seed(page, text);
-        self.reader.message = "OCR ready".into();
-        self.reader.cursor =
-          self.doc.text(self.reader.cursor.page)?.clamp(self.reader.cursor);
+        self.reader.notice("OCR ready");
+        self.reading_view().reclamp_text()?;
       }
       Err(error) => self.error = Some(error),
     }

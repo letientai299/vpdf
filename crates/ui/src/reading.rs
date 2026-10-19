@@ -9,6 +9,16 @@ use std::time::Instant;
 use vpdf_model::geometry::Screen;
 use vpdf_reader::reader::{Mode, Reader, TextSource};
 
+mod jump;
+mod location;
+mod navigation;
+mod pane;
+mod reflow;
+pub use pane::{Pane, Tracking};
+mod section;
+mod transitions;
+pub use section::{Section, Sections};
+
 #[cfg(test)]
 mod tests;
 
@@ -28,24 +38,11 @@ pub struct View<'a, S> {
   reader: &'a mut Reader,
   target: &'a mut Option<Position>,
   animation: &'a mut Scroll,
+  landing: &'a mut crate::page::landing::Landing,
   layout: &'a mut Layout,
   text: &'a mut TextView,
   frame: Frame,
   source: S,
-}
-
-impl<'a, S> View<'a, S> {
-  pub fn new(
-    reader: &'a mut Reader,
-    target: &'a mut Option<Position>,
-    animation: &'a mut Scroll,
-    layout: &'a mut Layout,
-    text: &'a mut TextView,
-    frame: Frame,
-    source: S,
-  ) -> Self {
-    Self { reader, target, animation, layout, text, frame, source }
-  }
 }
 
 pub fn navigation(

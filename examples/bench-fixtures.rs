@@ -5,6 +5,8 @@ mod hash;
 mod menu;
 #[path = "support/overlays.rs"]
 mod overlays;
+#[path = "../tests/support/reader.rs"]
+mod reader_fixture;
 #[path = "support/region.rs"]
 mod region;
 #[path = "support/scrollbar.rs"]

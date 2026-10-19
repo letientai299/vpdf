@@ -1,6 +1,5 @@
 use crate::Result;
 use crate::app::App;
-use crate::pdf_text::PdfText;
 use crate::search;
 use vpdf_pdf::jobs::search::SearchWorker;
 use vpdf_search::query::Query;
@@ -54,7 +53,7 @@ impl App {
       }
     };
     self.search.begin(query.clone(), generation, origin);
-    self.reader.message = "Searching…".into();
+    self.reader.notice("Searching…");
     Ok(())
   }
 
@@ -94,10 +93,7 @@ impl App {
         // Typing previews matches without filling the jump list; each
         // judges the view the search started from, as Vim's incsearch.
         if let Some(origin) = self.search_origin {
-          self.restore_location(origin)?;
-          self.reader.cursor = target;
-          self.target = Some(target);
-          self.land()?;
+          self.reading_view().preview(origin, target)?;
         } else {
           self.go_to(target, true)?;
           self
@@ -106,11 +102,11 @@ impl App {
         }
         self.search.stop_jumping();
       }
-      self.reader.message = format!(
+      self.reader.notice(format!(
         "{} matches{}",
         self.search.hits().len(),
         if done { "" } else { " · searching" }
-      );
+      ));
       if done {
         if self.search.complete() {
           self.finish_definition()?;
@@ -169,7 +165,7 @@ impl App {
       }
       return Ok(());
     }
-    if let Some(operator) = self.reader.operator.take() {
+    if let Some(operator) = self.reader.take_operator() {
       let origin = self.search_origin.take().unwrap_or(self.location()?);
       self.search.forget_previous();
       let query = if query.is_empty() {
@@ -225,23 +221,8 @@ impl App {
   }
 
   fn finish_search_yank(&mut self) -> Result<()> {
-    let Some((origin, operator, target)) = self.search.take_yank() else {
-      return Ok(());
-    };
-    if target != origin.cursor {
-      let first = target.min(origin.cursor);
-      self.reader.cursor = target.max(origin.cursor);
-      if self.reader.step(-1, false, &mut PdfText(&mut self.doc))? {
-        self.reader.yank_range(
-          first,
-          self.reader.cursor,
-          false,
-          operator.register,
-          &mut PdfText(&mut self.doc),
-        )?;
-      }
-    }
-    self.restore_location(origin)
+    let mut reading = self.reading_parts();
+    reading.view.finish_search_yank(reading.search)
   }
 
   pub fn abort_search(&mut self) -> Result<()> {
@@ -302,7 +283,7 @@ impl App {
     let Some(index) =
       search::next(hits, &cursor, backward, count, |hit| hit.first)
     else {
-      self.reader.message = "No matches".into();
+      self.reader.notice("No matches");
       return Ok(());
     };
     let target = hits[index].first;
@@ -312,11 +293,11 @@ impl App {
       .reader
       .describe_jump(Some(self.search_description(self.reader.cursor)));
     self.search.set_hidden(false);
-    self.reader.message = if wrapped {
+    self.reader.notice(if wrapped {
       "Search wrapped".into()
     } else {
       format!("Match {} / {}", index + 1, self.search.hits().len())
-    };
+    });
     Ok(())
   }
 

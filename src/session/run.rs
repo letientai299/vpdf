@@ -3,7 +3,6 @@ use super::{
   KeyEventKind, MouseKind, Ordering, Outcome, Pacer, PageId, PathBuf, Reply,
   Result, Session, Shape, Sight, View, Write, io, sight, terminal,
 };
-use crate::pdf_text::PdfText;
 
 /// Opens paths or the start screen.
 pub fn view(paths: &[PathBuf], page: Option<usize>) -> Result<()> {
@@ -34,13 +33,8 @@ pub fn view(paths: &[PathBuf], page: Option<usize>) -> Result<()> {
   session.activate(0)?;
   let app = session.app();
   if let Some(page) = page {
-    app.reader.edge(
-      PageId(page.saturating_sub(1).min(app.doc.pages.len() - 1)),
-      false,
-      &mut PdfText(&mut app.doc),
-    )?;
-    app.show_page(app.reader.cursor.page)?;
-    app.ensure_cursor()?;
+    let page = PageId(page.saturating_sub(1).min(app.doc.pages.len() - 1));
+    app.reading_view().open_page(page)?;
   }
   run_saving(&mut session)
 }
@@ -239,7 +233,7 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
       }
     }
     let animating =
-      session.tab().panes.iter().any(|app| app.animation.active());
+      session.tab().panes.iter().any(|app| app.reader.animation().active());
     // A hidden reader draws nothing until tmux shows it again.
     let pending = (dirty || animating) && shown;
     let now = Instant::now();
@@ -357,7 +351,7 @@ pub(super) fn idle(
     wait = wait.min(due.saturating_duration_since(Instant::now()));
   }
   for app in &session.tab().panes {
-    if let Some(until) = app.landing.deadline() {
+    if let Some(until) = app.reader.landing().deadline() {
       wait = wait.min(until.saturating_duration_since(Instant::now()));
     }
     if let Some(until) = app.bar.deadline() {
@@ -408,7 +402,7 @@ impl Session {
     let now = Instant::now();
     let mut changed = self.image_timeout(now);
     for app in &mut self.tab().panes {
-      changed |= app.landing.expire(now);
+      changed |= app.reader.expire_flash(now);
       changed |= app.bar_expired(now);
     }
     changed |= self.autoscroll(now);
@@ -418,7 +412,7 @@ impl Session {
       return changed;
     }
     let Some(notice) = terminal::notice() else { return changed };
-    reader.message = notice;
+    reader.notice(notice);
     true
   }
 

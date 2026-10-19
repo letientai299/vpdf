@@ -161,11 +161,11 @@ impl App {
   /// itself is still in the section before.
   fn landed_section(&mut self) -> Option<usize> {
     let cursor = self.reader.cursor;
-    if !self.landing.matches(self.landed_view(cursor)) {
+    if !self.reading_view().matches_landing(cursor) {
       return None;
     }
     // Followed entries name themselves, even sharing a line.
-    if let Some(target) = self.landing.aimed()
+    if let Some(target) = self.reader.landing().aimed()
       && let Some(index) =
         self.doc.outline.iter().rposition(|heading| heading.target == *target)
     {

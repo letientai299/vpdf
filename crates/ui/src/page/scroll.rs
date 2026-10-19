@@ -2,12 +2,13 @@ use crate::keys::Action;
 use std::time::Instant;
 use vpdf_reader::reader::Reader;
 
+#[derive(Clone)]
 struct Flight {
   target: f32,
   updated: Instant,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Scroll {
   flight: Option<Flight>,
 }

@@ -34,7 +34,7 @@ impl App {
   /// What a wheel turn can move, to tell whether one moved anything.
   pub(crate) fn wheel_view(&self) -> WheelView {
     WheelView {
-      scroll: self.animation.target().unwrap_or(self.reader.scroll),
+      scroll: self.reader.animation().target().unwrap_or(self.reader.scroll),
       pan: self.layout.pan(),
       zoom: self.layout.zoom(),
       text: self.text_view.top(),

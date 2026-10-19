@@ -1,3 +1,4 @@
+use super::common::SeedReader;
 use super::common::keys;
 use std::path::PathBuf;
 use vpdf::Result;
@@ -63,9 +64,10 @@ fn section_boundaries_and_counts() -> Result<()> {
         app.reader.cancel();
         let start =
           Position { line: second.line + if body { 2 } else { 0 }, ..second };
-        app.target = Some(start);
-        app.reader.cursor = start;
-        app.reader.scroll = scroll + if body { 40.0 } else { 0.0 };
+        app.reader.point_to(start);
+        app.reader.seed_reader(|reader| reader.cursor = start);
+        let start_scroll = scroll + if body { 40.0 } else { 0.0 };
+        app.reader.seed_reader(|reader| reader.scroll = start_scroll);
         if text_mode {
           app.go_to(start, true)?;
           keys(&mut app, b"zt")?;
@@ -75,8 +77,8 @@ fn section_boundaries_and_counts() -> Result<()> {
           assert_eq!(app.reader.selection.unwrap().anchor, start);
         } else {
           // The viewport must win over stale targets.
-          app.reader.cursor = Position::default();
-          app.target = Some(second);
+          app.reader.seed_reader(|reader| reader.cursor = Position::default());
+          app.reader.point_to(second);
         }
         app.reader.clear_history();
         let original = (app.reader.scroll, app.navigation_position());
@@ -124,7 +126,9 @@ fn outline_follows_reading_section() -> Result<()> {
         app.go_to(Position { line: position.line + 2, ..position }, true)?;
         match (text_mode, app.reader.viewport_mode()) {
           (true, true) => keys(&mut app, b"zt")?,
-          (false, true) => app.reader.scroll = scroll + 1.0,
+          (false, true) => {
+            app.reader.seed_reader(|reader| reader.scroll = scroll + 1.0);
+          }
           _ => {}
         }
         app.draw(&mut Vec::new())?;
@@ -190,9 +194,9 @@ fn section_repeat_landing() -> Result<()> {
     app.layout.request_zoom(vpdf_ui::layout::Zoom::To(zoom));
     app.relayout()?;
     let (_, second) = heading(&mut app, 1)?;
-    app.reader.scroll = second + 40.0;
-    app.reader.cursor = Position::default();
-    app.target = None;
+    app.reader.seed_reader(|reader| reader.scroll = second + 40.0);
+    app.reader.seed_reader(|reader| reader.cursor = Position::default());
+    app.reader.clear_target();
     for (bytes, index) in [(b"[[", 1), (b"[[", 0), (b"]]", 1), (b"]]", 2)] {
       keys(&mut app, bytes)?;
       let (position, scroll) = heading(&mut app, index)?;
@@ -241,7 +245,10 @@ fn section_clipped_landings() -> Result<()> {
     let first = heading(&mut app, 0)?.0;
     app.go_to(first, true)?;
     if !text_mode {
-      app.reader.scroll = app.layout.clamp_scroll(f32::MAX);
+      {
+        let seed_value = app.layout.clamp_scroll(f32::MAX);
+        app.reader.seed_reader(|reader| reader.scroll = seed_value);
+      };
     }
     app.reader.clear_history();
     for (bytes, expected) in [
@@ -283,12 +290,15 @@ fn section_clipped_landings() -> Result<()> {
 fn section_scroll_invalidates_landing() -> Result<()> {
   let mut app = app(false)?;
   let (_, second) = heading(&mut app, 1)?;
-  app.reader.scroll = second + 40.0;
+  app.reader.seed_reader(|reader| reader.scroll = second + 40.0);
   keys(&mut app, b"[[")?;
   let (want, second) = heading(&mut app, 1)?;
-  assert_eq!(app.target, Some(want));
+  assert_eq!(app.reader.target(), Some(want));
   keys(&mut app, b"3j")?;
-  app.reader.scroll = app.animation.finish().unwrap();
+  {
+    let seed_value = app.reader.finish_scroll().unwrap();
+    app.reader.seed_reader(|reader| reader.scroll = seed_value);
+  };
   keys(&mut app, b"[[")?;
   assert_eq!(app.reader.cursor, want);
   assert_eq!(app.reader.scroll, second);
@@ -320,7 +330,7 @@ fn section_same_baseline_targets() -> Result<()> {
     app.doc.outline = targets;
     let first = heading(&mut app, 0)?.0;
     app.go_to(first, true)?;
-    app.reader.scroll = 0.0;
+    app.reader.seed_reader(|reader| reader.scroll = 0.0);
     if visual {
       keys(&mut app, b"v")?;
     }
@@ -343,7 +353,7 @@ fn section_pan_invalidates_landing() -> Result<()> {
   app.screen.rows = u16::MAX;
   app.layout.request_zoom(vpdf_ui::layout::Zoom::To(2.0));
   app.relayout()?;
-  app.target = None;
+  app.reader.clear_target();
   keys(&mut app, b"]]")?;
   let first = heading(&mut app, 0)?.0;
   assert_eq!(app.reader.cursor, first);

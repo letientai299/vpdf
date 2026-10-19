@@ -38,7 +38,7 @@ fn cursor_entry_positions_visual_ranges() -> Result<()> {
     keys(&mut app, ESC)?;
     assert_eq!(app.reader.mode(), Mode::Cursor);
     keys(&mut app, b"Vy")?;
-    assert!(app.reader.pending_yank.take().unwrap().text.ends_with('\n'));
+    assert!(app.reader.take_yank().unwrap().text.ends_with('\n'));
     assert_eq!(app.reader.mode(), Mode::Cursor);
     keys(&mut app, ESC)?;
     assert_eq!(app.reader.mode(), Mode::Normal);
@@ -61,15 +61,15 @@ fn cursor_objects_require_visual_or_copy() -> Result<()> {
     let positioned = app.reader.cursor;
     let view = app.reader.scroll;
     keys(&mut app, b"yiw")?;
-    let word = app.reader.pending_yank.take().unwrap().text;
+    let word = app.reader.take_yank().unwrap().text;
     assert!(!word.is_empty() && !word.contains(char::is_whitespace));
     assert_eq!(app.reader.mode(), Mode::Cursor);
     assert_eq!(app.reader.cursor, positioned);
     assert_eq!(app.reader.scroll, view);
     keys(&mut app, b"y2aw")?;
-    assert!(app.reader.pending_yank.take().unwrap().text.len() > word.len());
+    assert!(app.reader.take_yank().unwrap().text.len() > word.len());
     keys(&mut app, b"viwy")?;
-    assert_eq!(app.reader.pending_yank.take().unwrap().text, word);
+    assert_eq!(app.reader.take_yank().unwrap().text, word);
     assert_eq!(app.reader.mode(), Mode::Cursor);
     keys(&mut app, b"gv")?;
     assert!(app.reader.selection.is_some());
@@ -77,7 +77,7 @@ fn cursor_objects_require_visual_or_copy() -> Result<()> {
     keys(&mut app, ESC)?;
     keys(&mut app, b"yiw")?;
     assert_eq!(app.reader.mode(), Mode::Normal);
-    assert!(app.reader.pending_yank.take().is_some());
+    assert!(app.reader.take_yank().is_some());
   }
   Ok(())
 }
@@ -431,16 +431,13 @@ fn rejected_keys_cancel_yanks() -> Result<()> {
     let (_directory, mut session) = crate::mouse::session(false)?;
     let app = session.app();
     app.reader.store('a', "keep".into())?;
-    app.reader.pending_yank = None;
+    app.reader.take_yank();
     keys(app, b"\"ay")?;
     assert!(app.reader.operator.is_some());
     keys(app, rejected)?;
     assert!(app.reader.operator.is_none());
     keys(app, b"j")?;
-    assert_eq!(
-      app.reader.registers.get(&'a').map(|value| &**value),
-      Some("keep")
-    );
+    assert_eq!(app.reader.register('a').map(|value| &**value), Some("keep"));
     assert!(app.reader.pending_yank.is_none());
   }
   for valid in [b"\"a2y3w".as_slice(), b"\"ayiw", b"\"ayp"] {
@@ -448,7 +445,7 @@ fn rejected_keys_cancel_yanks() -> Result<()> {
     let app = session.app();
     keys(app, valid)?;
     assert!(app.reader.operator.is_none());
-    assert!(app.reader.registers.get(&'a').is_some());
+    assert!(app.reader.register('a').is_some());
   }
   Ok(())
 }
@@ -473,7 +470,7 @@ fn search_yank_finishes_at_original_range() -> Result<()> {
       crate::common::search_loaded(app)?;
       assert_eq!(app.reader.cursor, origin);
       assert!(app.reader.operator.is_none());
-      assert_eq!(&**app.reader.registers.get(&'a').unwrap(), expected);
+      assert_eq!(&**app.reader.register('a').unwrap(), expected);
     }
   }
   Ok(())
@@ -487,14 +484,14 @@ fn failed_search_yanks_preserve_register() -> Result<()> {
     let (_directory, mut session) = crate::mouse::session(false)?;
     let app = session.app();
     app.reader.store('a', "keep".into())?;
-    app.reader.pending_yank = None;
+    app.reader.take_yank();
     keys(app, b"i\"ay")?;
     let _ = keys(app, query);
     if !matches!(app.search.phase(), vpdf_ui::find::Phase::Idle) {
       crate::common::search_loaded(app)?;
     }
     assert!(app.reader.operator.is_none());
-    assert_eq!(&**app.reader.registers.get(&'a').unwrap(), "keep");
+    assert_eq!(&**app.reader.register('a').unwrap(), "keep");
     assert!(app.reader.pending_yank.is_none());
   }
   Ok(())
@@ -517,7 +514,7 @@ fn scroll_then_motion_uses_visible_cursor() -> Result<()> {
       let moved = app.reader.cursor;
       assert!(moved > origin, "text={text}, scroll={scroll:?}");
       // No animation tick between the scroll and the next motion.
-      let target = app.animation.target();
+      let target = app.reader.animation().target();
       let cell = app.text().cell(moved)?;
       keys(app, b"l")?;
       assert_eq!(app.reader.cursor.line, moved.line);
@@ -582,7 +579,7 @@ fn cursor_wheel_clamps_without_changing_mode() -> Result<()> {
       app.reader.cursor > origin,
       "text={text}, origin={origin:?}, cursor={:?}, target={:?}",
       app.reader.cursor,
-      app.animation.target()
+      app.reader.animation().target()
     );
     let moved = app.reader.cursor;
     keys(app, b"l")?;

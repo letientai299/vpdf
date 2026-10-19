@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::app::App;
-use crate::text::{Bounds, PageId};
+use crate::text::PageId;
 use std::sync::{Arc, mpsc};
 use vpdf_pdf::jobs::crop::Job;
 
@@ -33,7 +33,7 @@ impl App {
     let pages = samples(self.doc.pages.len(), self.nearby_pages().into_iter());
     self.crop_batch(pages);
     self.layout.request_crop();
-    self.reader.message = "Detecting margins".into();
+    self.reader.notice("Detecting margins");
   }
 
   fn crop_batch(&mut self, pages: Vec<PageId>) {
@@ -52,27 +52,13 @@ impl App {
     &mut self,
     crops: Arc<vpdf_model::geometry::Crops>,
   ) -> Result<()> {
-    let animation = self.animation.finish().and_then(|target| {
-      let page = self.layout.page_at(target);
-      let point = self.layout.unproject(
-        page,
-        (self.layout.screen().width() / 2.0, 0.0),
-        target,
-      )?;
-      Some((page, point))
-    });
+    let animation = self.reading_view().suspend_scroll();
     self.layout.resolve_crops(crops);
     self.relayout()?;
-    if let Some((page, (x, y))) = animation {
-      let bounds = Bounds { x0: x, y0: y, x1: x, y1: y };
-      let rect = self.layout.project(page, bounds, 0.0);
-      let shown = &self.layout.pages()[page.0];
-      let target = self
-        .layout
-        .clamp_scroll(rect.y0.clamp(shown.top, shown.top + shown.height));
-      self.animation.start(target, std::time::Instant::now());
+    if let Some(point) = animation {
+      self.reading_view().resume_scroll(point);
     }
-    self.reader.message = "Margins cropped".into();
+    self.reader.notice("Margins cropped");
     Ok(())
   }
 
@@ -150,7 +136,7 @@ impl App {
     if self.crop_job.take().is_some() || !self.layout.crop().is_none() {
       self.layout.show_margins();
       self.relayout()?;
-      self.reader.message = "Margins shown".into();
+      self.reader.notice("Margins shown");
     } else if let Some(crops) = &self.doc.margins {
       self.apply_crop(crops.resolved())?;
     } else {

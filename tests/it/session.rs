@@ -241,7 +241,7 @@ mod pointer {
     let other = pane(&mut session, right);
     assert_eq!(other.reader.cursor, cursor);
     assert!(other.reader.selection.is_none());
-    assert!(!other.animation.active());
+    assert!(!other.reader.animation().active());
 
     act(&mut session, Action::Cancel)?;
     act(&mut session, Action::Yank)?;
@@ -254,7 +254,7 @@ mod pointer {
     );
     mouse(&mut session, ScrollDown, 90, 10)?;
     assert_eq!(session.app().id, left, "the wheel leaves focus");
-    assert!(pane(&mut session, right).animation.active());
+    assert!(pane(&mut session, right).reader.animation().active());
     assert!(session.app().reader.operator.is_none(), "wheel drops `y`");
     assert_eq!(session.app().keys.awaiting(), None, "wheel drops `g`");
     act(&mut session, Action::Yank)?;
@@ -343,7 +343,7 @@ mod pointer {
       mouse(&mut session, kind, 40, 38)?;
       let app = session.app();
       assert_eq!(app.reader.cursor, cursor, "{kind:?} on clues");
-      assert!(!app.animation.active(), "{kind:?} on clues scrolls");
+      assert!(!app.reader.animation().active(), "{kind:?} on clues scrolls");
       assert_eq!(app.clues.shown().is_some(), kind == ScrollDown);
       if kind == ScrollDown {
         assert_eq!(app.keys.pending(), "g", "wheel keeps the prefix");

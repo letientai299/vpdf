@@ -231,7 +231,7 @@ impl App {
     Ok(
       vpdf_ui::figures::at(
         &mut PdfText(&mut self.doc),
-        vpdf_ui::figures::Point { page, x, y },
+        vpdf_ui::page::Point { page, x, y },
       )?
       .map(|figure| (page, figure.bounds)),
     )

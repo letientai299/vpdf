@@ -1,3 +1,4 @@
+use super::common::SeedReader;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use mupdf::pdf::PdfAnnotationType;
 use mupdf::{Point, Quad, Rect};
@@ -129,7 +130,7 @@ fn enter_positions_cursor_and_note() -> Result<()> {
       let expected = position(&app, 0);
       press(&mut app, KeyCode::Enter)?;
       assert_eq!(app.reader.cursor, expected);
-      assert_eq!(app.target, Some(expected));
+      assert_eq!(app.reader.target(), Some(expected));
       assert_eq!(app.reader.mode(), Mode::Cursor);
       assert_eq!(app.input_owner(), InputOwner::Peek);
       assert!(!app.panel_focused());
@@ -516,7 +517,7 @@ fn notes_open_by_mouse() -> Result<()> {
   let Hit::Note { index: sticky, .. } = app.hover else { panic!("an icon") };
   assert!(icon_notes(app).iter().all(|index| *index == sticky));
   // Clicks open the note, then close it.
-  let target = session.app().target;
+  let target = session.app().reader.target();
   let start = std::time::Instant::now();
   let later = |ms| start + std::time::Duration::from_millis(ms);
   click_at(&mut session, icon, later(0))?;
@@ -524,7 +525,7 @@ fn notes_open_by_mouse() -> Result<()> {
   assert!(frame.contains("margin note"));
   let app = session.app();
   assert_eq!(app.input_owner(), InputOwner::Peek);
-  assert_eq!(app.target, target, "the cursor stays");
+  assert_eq!(app.reader.target(), target, "the cursor stays");
   let area = app.preview_cells().expect("a drawn popup");
   let near = |row: u16| row.abs_diff(icon.1) <= 5;
   assert!(near(area.row) || near(area.row + area.rows), "{area:?} {icon:?}");
@@ -571,7 +572,7 @@ fn notes_open_by_mouse() -> Result<()> {
     let frame = crate::common::focused_frame(&mut session)?;
     assert_eq!(frame.contains(comment), shown, "{label}");
     let app = session.app();
-    let register = app.reader.registers.get(&'"').map(|text| &**text);
+    let register = app.reader.register('"').map(|text| &**text);
     if copied {
       assert_eq!(register, Some(comment), "{label}");
       assert_eq!(app.reader.message, "Copied comment");
@@ -640,7 +641,7 @@ fn note_icons_by_kind() -> Result<()> {
     click_at(&mut session, boxed, later(0))?;
     let app = session.app();
     assert!(app.peek.is_none(), "text={text_mode}: a box click");
-    let line = app.target.map(|target| target.line);
+    let line = app.reader.target().map(|target| target.line);
     assert_eq!(line, Some(1), "text={text_mode}: the box click targets");
     // A double click keeps the note open.
     click_at(&mut session, sticky, later(1000))?;
@@ -651,7 +652,7 @@ fn note_icons_by_kind() -> Result<()> {
       continue;
     }
     // Scrolling the icon away closes it (U17).
-    session.app().reader.scroll += 400.0;
+    session.app().reader.seed_reader(|reader| reader.scroll += 400.0);
     session.draw_frame(&mut Vec::new())?;
     assert!(session.app().peek.is_none(), "scrolled away");
   }
@@ -677,7 +678,7 @@ fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
       app.show_recent(&[])?;
     }
     app.error = error.map(str::to_owned);
-    app.reader.message = message.into();
+    app.reader.notice(message);
     let mut out = Vec::new();
     app.status_line(&mut out, 39, Some("DETAIL"))?;
     let drawn = String::from_utf8_lossy(&out);

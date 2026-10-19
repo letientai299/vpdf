@@ -63,3 +63,9 @@ pub mod tiles;
 pub mod trace;
 pub mod watch;
 use vpdf_pdf::wraps;
+
+#[cfg(test)]
+#[path = "../tests/support/reader.rs"]
+mod reader_fixture;
+#[cfg(test)]
+pub(crate) use reader_fixture::SeedReader;

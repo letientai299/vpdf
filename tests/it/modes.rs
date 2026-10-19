@@ -27,8 +27,8 @@ pub(super) fn app(file: &str, text: bool) -> Result<Solo> {
 
 pub(super) fn settle(app: &mut App) {
   for _ in 0..40 {
-    if let Some(target) = app.animation.target() {
-      app.animation.start(
+    if let Some(target) = app.reader.animation().target() {
+      app.reader.animate_to(
         target,
         Instant::now().checked_sub(Duration::from_millis(16)).unwrap(),
       );
@@ -37,7 +37,7 @@ pub(super) fn settle(app: &mut App) {
       return;
     }
   }
-  assert!(!app.animation.active());
+  assert!(!app.reader.animation().active());
 }
 
 #[test]
@@ -114,15 +114,15 @@ fn visible_entry_selection_and_temporary_copy() -> Result<()> {
     assert_eq!(app.reader.cursor, cursor);
     assert_eq!(app.reader.selection.unwrap().anchor, selection.anchor);
     keys(&mut app, b"y")?;
-    assert!(app.reader.pending_yank.take().is_some());
+    assert!(app.reader.take_yank().is_some());
     assert!(app.reader.selection.is_none());
     let view = app.reader.scroll;
     keys(&mut app, b"yw")?;
-    assert!(app.reader.pending_yank.take().is_some());
+    assert!(app.reader.take_yank().is_some());
     assert!(app.reader.operator.is_none());
     assert_eq!(app.reader.scroll, view);
     keys(&mut app, b"yy")?;
-    assert!(app.reader.pending_yank.take().unwrap().text.ends_with('\n'));
+    assert!(app.reader.take_yank().unwrap().text.ends_with('\n'));
     keys(&mut app, b"V")?;
     assert_eq!(app.reader.selection.unwrap().kind, SelectionKind::Line);
     app.draw(&mut Vec::new())?;
@@ -239,7 +239,7 @@ fn layout_keeps_view_anchor_and_visual_endpoints() -> Result<()> {
     let mut split = self::app("paper.pdf", text_mode)?;
     split.mirror(&app)?;
     assert!(split.reader.selection.is_none());
-    assert!(split.target.is_none());
+    assert!(split.reader.target().is_none());
     assert_eq!(split.reader.scroll, app.reader.scroll);
   }
   Ok(())
@@ -354,7 +354,7 @@ fn prompt_cancel_and_history_restore_viewport() -> Result<()> {
     app.draw(&mut Vec::new())?;
     let origin =
       (app.reader.scroll, app.layout.pan(), app.text().position(0, 0)?);
-    let target = app.target;
+    let target = app.reader.target();
     keys(&mut app, b"/attention")?;
     super::common::search_loaded(&mut app)?;
     keys(&mut app, b"\x1b[27u")?;
@@ -366,7 +366,7 @@ fn prompt_cancel_and_history_restore_viewport() -> Result<()> {
     if text_mode {
       assert_eq!(restored.2, origin.2);
     }
-    assert_eq!(app.target, target);
+    assert_eq!(app.reader.target(), target);
     let page = app.layout.page_at(app.reader.scroll);
     let point = app
       .layout
@@ -438,7 +438,7 @@ fn horizontal_keys_preserve_queued_scroll() -> Result<()> {
   ] {
     let mut app = app("paper.pdf", false)?;
     keys(&mut app, bytes)?;
-    assert_eq!(app.animation.target().unwrap(), expected);
+    assert_eq!(app.reader.animation().target().unwrap(), expected);
     settle(&mut app);
     assert_eq!(app.reader.scroll, expected);
     assert_eq!(app.layout.pan(), 0.0);
@@ -648,7 +648,7 @@ fn space_accumulates_queued_scroll() -> Result<()> {
         app.layout.screen().rows.saturating_sub(3) * app.screen.cell_height,
       );
     assert_eq!(app.reader.scroll, 0.0);
-    assert_eq!(app.animation.target().unwrap(), distance);
+    assert_eq!(app.reader.animation().target().unwrap(), distance);
     keys(&mut app, b"\x1b[32;2u")?;
     settle(&mut app);
     assert_eq!(app.reader.scroll, distance / 2.0);

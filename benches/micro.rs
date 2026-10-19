@@ -189,7 +189,7 @@ fn drag() -> Result<()> {
   let mut now = session.autoscroll_due().expect("a held edge drag");
   measure("Session::autoscroll step", || {
     now += Duration::from_millis(50);
-    session.app().reader.scroll = base;
+    session.app().reading_view().scrub_scroll(base);
     black_box(session.autoscroll(black_box(now)));
   })
 }
@@ -210,7 +210,9 @@ fn frame() -> Result<()> {
   let mut out = Vec::with_capacity(64 * 1024);
   let mut step = 0_u32;
   let mut draw = |out: &mut Vec<u8>| {
-    app.reader.scroll = base + f32::from(u8::from(step % 2 == 1)) * 4.0;
+    app
+      .reading_view()
+      .scrub_scroll(base + f32::from(u8::from(step % 2 == 1)) * 4.0);
     step += 1;
     out.clear();
     app.draw(out).expect("resident tiles");
@@ -256,20 +258,18 @@ fn viewport() -> Result<()> {
     let cursor = app.reader.cursor;
     let scroll = app.reader.scroll;
     measure(&format!("App::scroll text={text_mode}"), || {
-      app.reader.cursor = cursor;
-      app.reader.scroll = scroll;
-      app.animation.cancel();
+      app.reading_view().scrub_scroll(scroll);
       app.scroll(16.0).expect("scroll");
       app.scroll(-16.0).expect("scroll");
     })?;
     let mut narrow = false;
     measure(&format!("App::relayout text={text_mode}"), || {
-      app.reader.cursor = cursor;
-      app.reader.scroll = scroll;
+      app.reading_view().scrub_scroll(scroll);
       narrow = !narrow;
       app.screen.columns = if narrow { 100 } else { 120 };
       app.relayout().expect("layout");
     })?;
+    anyhow::ensure!(app.reader.cursor == cursor, "Viewport cursor drifted");
   }
   Ok(())
 }
@@ -436,8 +436,7 @@ fn routing_key() -> Result<()> {
   let mut history = vpdf_ui::prompt::History::default();
   let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
   measure("App::key reading", || {
-    app.reader.scroll = 0.0;
-    app.animation.cancel();
+    app.reading_view().scrub_scroll(0.0);
     app.key(black_box(key), &mut history).expect("reading key");
   })
 }
@@ -449,10 +448,13 @@ fn cursor_key() -> Result<()> {
     .key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE), &mut history)?;
   let cursor = app.reader.cursor;
   let key = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE);
-  measure("App::key Cursor glyph", || {
-    app.reader.cursor = cursor;
+  let back = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE);
+  measure("App::key Cursor glyph pair", || {
     app.key(black_box(key), &mut history).expect("glyph key");
-  })
+    app.key(black_box(back), &mut history).expect("return glyph key");
+  })?;
+  anyhow::ensure!(app.reader.cursor == cursor, "Cursor pair drifted");
+  Ok(())
 }
 
 fn preview_idle() -> Result<()> {
@@ -544,8 +546,7 @@ fn routing_pointer() -> Result<()> {
     modifiers: KeyModifiers::NONE,
   };
   measure("Session::mouse wheel", || {
-    session.app().reader.scroll = 0.0;
-    session.app().animation.cancel();
+    session.app().reading_view().scrub_scroll(0.0);
     session.mouse(black_box(mouse)).expect("reading wheel");
   })
 }
@@ -642,11 +643,11 @@ fn lexical_objects() -> Result<()> {
   let text = app.doc.text(PageId(0))?;
   let line = text.lines.iter().position(|line| line.glyphs.len() > 15).unwrap();
   let cursor = vpdf::text::Position { page: PageId(0), line, glyph: 4 };
+  let mut reader = vpdf_reader::reader::Reader::default();
   measure("Reader::object paper", || {
-    let (app, _) = app.parts();
-    app.reader.cursor = cursor;
-    app.reader.object(false, &mut PdfText(&mut app.doc)).expect("paper word");
-    black_box(app.reader.selection);
+    reader.cursor = cursor;
+    reader.object(false, &mut PdfText(&mut app.doc)).expect("paper word");
+    black_box(reader.selection);
   })?;
   let letters: Vec<_> = text.lines[line]
     .glyphs

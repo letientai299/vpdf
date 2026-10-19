@@ -1,3 +1,4 @@
+use super::common::SeedReader;
 use super::common::{events, keys};
 use std::path::PathBuf;
 use vpdf::Result;
@@ -259,7 +260,7 @@ fn yp_yanks_file_path() -> Result<()> {
     session.open(&path, true, screen())?;
     send(&mut session, b"\"ayp")?;
     let reader = &mut session.app().reader;
-    let yanked = reader.registers.get(&'a').map(ToString::to_string);
+    let yanked = reader.register('a').map(ToString::to_string);
     assert_eq!(yanked.as_deref(), path.to_str(), "{name}");
     assert!(reader.operator.is_none() && reader.viewport_mode(), "{name}");
   }
@@ -434,14 +435,14 @@ fn prompt_wheel_and_passive_motion_keep_owner() -> Result<()> {
     .tab()
     .panes
     .iter()
-    .map(|app| (app.reader.scroll, app.animation.active()))
+    .map(|app| (app.reader.scroll, app.reader.animation().active()))
     .collect();
   send(&mut session, b"\x1b[<65;90;10M")?;
   let after: Vec<_> = session
     .tab()
     .panes
     .iter()
-    .map(|app| (app.reader.scroll, app.animation.active()))
+    .map(|app| (app.reader.scroll, app.reader.animation().active()))
     .collect();
   assert_eq!(before, after);
   assert_eq!(session.app().input_owner(), InputOwner::Prompt);
@@ -715,7 +716,9 @@ fn current_view_requests_keep_transients() -> Result<()> {
   session.open(&path, true, screen())?;
   send(&mut session, b"vw:")?;
   hints(session.app());
-  session.app().reader.operator = Some(Operator { count: 1, register: '"' });
+  session.app().reader.seed_reader(|reader| {
+    reader.operator = Some(Operator { count: 1, register: '"' });
+  });
   let id = session.app().id;
   let cursor = session.app().reader.cursor;
   for request in [
@@ -969,8 +972,11 @@ fn panel_entry_drops_pending_operator() -> Result<()> {
       send(&mut session, b"go")?;
     }
     send(&mut session, b"\t")?;
-    session.app().reader.operator =
-      Some(vpdf_reader::reader::Operator { count: 1, register: '"' });
+    {
+      let seed_value =
+        Some(vpdf_reader::reader::Operator { count: 1, register: '"' });
+      session.app().reader.seed_reader(|reader| reader.operator = seed_value);
+    };
     send(&mut session, command.as_bytes())?;
     assert!(session.app().reader.operator.is_none());
   }

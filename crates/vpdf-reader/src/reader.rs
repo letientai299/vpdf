@@ -105,11 +105,13 @@ impl JumpDescription {
   }
 }
 
+#[derive(Clone)]
 struct Jump {
   location: Location,
   description: Option<JumpDescription>,
 }
 
+#[derive(Clone)]
 pub struct Reader {
   pub cursor: Position,
   pub scroll: f32,

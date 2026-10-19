@@ -5,15 +5,10 @@ use vpdf_ui::reading::ScrollInput;
 
 impl App {
   pub fn animate(&mut self) -> bool {
-    if !self.animation.active() {
+    if !self.reader.animation().active() {
       return false;
     }
-    let Some(scroll) = self.animation.step(self.reader.scroll, Instant::now())
-    else {
-      return false;
-    };
-    self.reader.scroll = scroll;
-    true
+    self.reader.animate(Instant::now())
   }
 
   pub fn scroll(&mut self, delta: f32) -> Result<()> {

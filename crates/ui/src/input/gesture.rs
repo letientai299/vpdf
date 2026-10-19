@@ -76,10 +76,8 @@ impl Sweep {
       return Ok(Swept::Region(self.page, bounds));
     }
     let (x, y) = self.from;
-    let figure = crate::figures::at(
-      source,
-      crate::figures::Point { page: self.page, x, y },
-    )?;
+    let figure =
+      crate::figures::at(source, crate::page::Point { page: self.page, x, y })?;
     if let Some(figure) = figure.filter(|f| f.source == FigureSource::Graphic) {
       return Ok(Swept::Region(self.page, figure.bounds));
     }

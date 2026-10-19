@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
+#[derive(Clone)]
 struct Entry<V> {
   value: V,
   weight: usize,
   touched: u64,
 }
 
+#[derive(Clone)]
 pub struct Cache<K, V> {
   entries: HashMap<K, Entry<V>>,
   budget: usize,

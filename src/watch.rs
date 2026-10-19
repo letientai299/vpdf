@@ -98,7 +98,7 @@ impl App {
     }
     self.settling = None;
     self.reload_with(&self.password.clone())?;
-    self.reader.message = "Reloaded after change".into();
+    self.reader.notice("Reloaded after change");
     Ok(true)
   }
 }

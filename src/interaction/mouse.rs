@@ -180,7 +180,7 @@ impl App {
         let hit = hit.and_then(Result::ok).unwrap_or_default();
         if let Hit::Note { page, index, text: false } = hit {
           // The cursor stays until a drag.
-          self.animation.cancel();
+          self.reader.cancel_scroll();
           let from = self.press_position(&route)?;
           self.link_press = LinkPress::Note(page, index, from);
           return Ok(());
@@ -189,7 +189,7 @@ impl App {
         self.link_press = link.map_or(LinkPress::Idle, LinkPress::Held);
       }
     }
-    self.animation.cancel();
+    self.reader.cancel_scroll();
     if matches!(mouse.kind, MouseEventKind::Drag(_)) {
       self.edge_follow(&route)?;
       return self.drag_to(&route);
@@ -201,7 +201,7 @@ impl App {
   /// Alt-left on the page.
   fn page_alt(&mut self, route: Route) -> Result<()> {
     self.link_press = LinkPress::Idle;
-    self.animation.cancel();
+    self.reader.cancel_scroll();
     match route.mouse.kind {
       MouseEventKind::Down(_) => self.alt_press(&route),
       MouseEventKind::Drag(_) => self.alt_drag(&route),

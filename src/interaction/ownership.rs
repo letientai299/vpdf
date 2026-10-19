@@ -24,7 +24,7 @@ impl App {
     self.peek = None;
     // The bar's key hint goes with it.
     if self.region.take().is_some() && self.reader.message == BAR_HINT {
-      self.reader.message.clear();
+      self.reader.notice("");
     }
   }
 
@@ -53,7 +53,7 @@ impl App {
   /// Drops the error and the message.
   pub(crate) fn clear_notes(&mut self) {
     self.error = None;
-    self.reader.message.clear();
+    self.reader.notice("");
   }
 
   /// Whether a press only dismisses something.

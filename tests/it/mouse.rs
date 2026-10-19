@@ -1,3 +1,4 @@
+use super::common::SeedReader;
 use crate::common;
 use crate::focus::{action, screen};
 
@@ -214,10 +215,10 @@ fn hovered_links_show_their_destination() -> Result<()> {
     }
     // Errors and messages outrank the label.
     mouse(&mut session, MouseEventKind::Moved, internal)?;
-    session.app().reader.message = "Yanked 4 characters".into();
+    session.app().reader.notice("Yanked 4 characters");
     let line = status(&mut session)?;
     assert!(line.contains("Yanked") && !line.contains("→"), "{line:?}");
-    session.app().reader.message.clear();
+    session.app().reader.notice("");
     session.app().error = Some("Broken".into());
     let line = status(&mut session)?;
     assert!(line.contains("Broken") && !line.contains("→"), "{line:?}");
@@ -255,7 +256,7 @@ fn messages_stay_over_hover_details() -> Result<()> {
       let app = session.app();
       app.error = error.map(str::to_owned);
       if let Some(message) = message {
-        app.reader.message = (*message).to_owned();
+        app.reader.notice((*message).to_owned());
       }
       let framed = mouse(&mut session, MouseEventKind::Moved, *to)?;
       assert_eq!(framed, *frame, "text={text_mode} step {step}");
@@ -266,7 +267,7 @@ fn messages_stay_over_hover_details() -> Result<()> {
     // A key clears both; the detail shows.
     let app = session.app();
     app.error = None;
-    app.reader.message.clear();
+    app.reader.notice("");
     let drawn = status(&mut session)?;
     assert!(drawn.contains(label), "text={text_mode}: {drawn:?}");
   }
@@ -350,11 +351,14 @@ fn wrapped_links_tint_whole() -> Result<()> {
     if !text_mode {
       // Only the second line in view.
       let line = session.app().doc.links(PageId(0))?[0].first();
-      session.app().reader.scroll = line.y1 * 968.0 / 300.0 + 1.0;
+      session
+        .app()
+        .reader
+        .seed_reader(|reader| reader.scroll = line.y1 * 968.0 / 300.0 + 1.0);
       session.app().start_hints(false)?;
       let hints = session.app().hints.take().map_or(0, |h| h.items().len());
       assert_eq!(hints, 2, "the continuation keeps its hint");
-      session.app().reader.scroll = 0.0;
+      session.app().reader.seed_reader(|reader| reader.scroll = 0.0);
     }
     // Tints drawn per segment.
     let mut each = std::collections::BTreeSet::new();
@@ -726,7 +730,7 @@ fn clicks_mark_their_target() -> Result<()> {
       frame.clear();
       session.draw_focused(&mut frame)?;
     }
-    session.app().landing.clear_flash();
+    session.app().reader.clear_flash();
     let mut plain = Vec::new();
     session.draw_focused(&mut plain)?;
     assert_eq!(frame != plain, marked, "{case}");
@@ -830,7 +834,7 @@ fn wheel_keeps_the_selection() -> Result<()> {
   let before = (selected(&mut session), session.app().reader.scroll);
   mouse(&mut session, MouseEventKind::ScrollDown, text)?;
   let started = std::time::Instant::now();
-  while session.app().animation.active() {
+  while session.app().reader.animation().active() {
     session.app().animate();
     anyhow::ensure!(started.elapsed().as_secs() < 2, "scroll animation");
     std::thread::sleep(std::time::Duration::from_millis(2));
@@ -847,7 +851,9 @@ fn alt_clicks_skip_unseen_cursors() -> Result<()> {
   let text = cell(&mut session, Hit::Text)?;
   action(session.app(), Action::Cursor)?;
   let start = session.app().reader.cursor;
-  session.app().reader.cursor = Position { page: PageId(1), line: 1, glyph: 0 };
+  session.app().reader.seed_reader(|reader| {
+    reader.cursor = Position { page: PageId(1), line: 1, glyph: 0 }
+  });
   alt_click(&mut session, text)?;
   let anchor = selected(&mut session).map(|(anchor, ..)| anchor);
   assert_eq!(anchor, Some(start));
@@ -908,7 +914,7 @@ fn alt_clicks_extend_the_selection() -> Result<()> {
     assert_eq!(selected(&mut session), want, "text={text_mode}");
     session.app().reader.cancel();
     action(session.app(), Action::Cursor)?;
-    session.app().reader.cursor = at(1, 0);
+    session.app().reader.seed_reader(|reader| reader.cursor = at(1, 0));
     alt_click(&mut session, gamma)?;
     let want = Some((at(1, 0), at(0, 12), SelectionKind::Character));
     assert_eq!(selected(&mut session), want, "text={text_mode}");
@@ -944,7 +950,7 @@ fn drags_past_edges_scroll_faster_with_distance() -> Result<()> {
     (64.0, -40, -1.0),
   ];
   for (start, y, want) in cases {
-    session.app().reader.scroll = start;
+    session.app().reader.seed_reader(|reader| reader.scroll = start);
     let press = format!("\x1b[<0;{x};{}M", text.1 * 16 + 8);
     session.mouse_report(report(&press))?;
     let before = session.app().reader.scroll;
@@ -955,7 +961,7 @@ fn drags_past_edges_scroll_faster_with_distance() -> Result<()> {
     session.mouse_report(report(&format!("\x1b[<0;{x};{y}m")))?;
   }
   // Cells: the status row scrolls one row.
-  session.app().reader.scroll = 0.0;
+  session.app().reader.seed_reader(|reader| reader.scroll = 0.0);
   mouse(&mut session, MouseEventKind::Down(MouseButton::Left), text)?;
   let status = (text.0, rows - 1);
   mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), status)?;
@@ -994,7 +1000,7 @@ fn held_edge_drags_keep_scrolling() -> Result<()> {
     (0.0, 1, bottom + 8, 1.0, End::Keys("gp")),
   ];
   for (start, clicks, to, rows, end) in cases {
-    session.app().reader.scroll = start * 16.0;
+    session.app().reader.seed_reader(|reader| reader.scroll = start * 16.0);
     let down = format!("\x1b[<0;{x};{y}M");
     let up = format!("\x1b[<0;{x};{y}m");
     for _ in 1..clicks {
@@ -1014,7 +1020,10 @@ fn held_edge_drags_keep_scrolling() -> Result<()> {
       !session.autoscroll(due.checked_sub(Duration::from_millis(1)).unwrap())
     );
     // Steps extend as reports there would.
-    session.app().reader.cursor = Position::default();
+    session
+      .app()
+      .reader
+      .seed_reader(|reader| reader.cursor = Position::default());
     assert!(session.autoscroll(due), "{end:?}");
     let stepped = start + 2.0 * rows;
     assert!((scroll(&mut session) - stepped).abs() < 0.01, "{end:?}");
@@ -1083,7 +1092,7 @@ fn held_edge_steps_keep_pace() -> Result<()> {
   ];
   for (before, late, rows, held) in cases {
     let start = if let Before::End = before { end } else { 0.0 };
-    session.app().reader.scroll = start * 16.0;
+    session.app().reader.seed_reader(|reader| reader.scroll = start * 16.0);
     session.mouse_report(report(&format!("\x1b[<0;{x};{y}M")))?;
     let drag = format!("\x1b[<32;{x};{}M", bottom + 8);
     session.mouse_report(report(&drag))?;
@@ -1245,8 +1254,7 @@ fn menu_items_run_by_key_and_click() -> Result<()> {
   right(&mut session, web)?;
   press(&mut session, KeyCode::Char('j'))?;
   press(&mut session, KeyCode::Enter)?;
-  let register =
-    session.app().reader.registers.get(&'"').map(ToString::to_string);
+  let register = session.app().reader.register('"').map(ToString::to_string);
   assert_eq!(register.as_deref(), Some("https://example.com/"));
   // Select line enters line Visual.
   right(&mut session, plain)?;
@@ -1437,7 +1445,7 @@ fn alt_drags_capture_regions() -> Result<()> {
   assert!(session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), to))?);
   assert!(status(&mut session)?.contains(hint), "the drag hints");
   // A note mid-sweep stays until a key; motion does not pass it.
-  session.app().reader.message = "Set tmux allow-passthrough all".into();
+  session.app().reader.notice("Set tmux allow-passthrough all");
   assert!(!status(&mut session)?.contains(hint), "a new note shows");
   // The same spot moves nothing, so no frame.
   assert!(!session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), to))?);
@@ -1446,7 +1454,7 @@ fn alt_drags_capture_regions() -> Result<()> {
     line.contains("allow-passthrough") && !line.contains(hint),
     "{line:?}"
   );
-  session.app().reader.message.clear();
+  session.app().reader.notice("");
   assert!(status(&mut session)?.contains(hint), "the hint returns");
   assert!(backdrops(&mut session)? > before, "the page dims");
   // Alt released mid-drag still captures.
@@ -1982,7 +1990,7 @@ fn wheel_scrolls_under_menus() -> Result<()> {
     assert!(mouse(&mut session, MouseEventKind::ScrollDown, at)?, "{at:?}");
     let app = session.app();
     assert!(app.context_menu.is_some(), "the menu stays");
-    let scroll = app.animation.target().unwrap_or(app.reader.scroll);
+    let scroll = app.reader.animation().target().unwrap_or(app.reader.scroll);
     assert!(scroll > last, "the page scrolls at {at:?}");
     last = scroll;
   }
@@ -2032,7 +2040,7 @@ fn hint_labels_follow_the_shown_part() -> Result<()> {
   let link = app.doc.links(PageId(0))?[0].first();
   let top = app.layout.project(PageId(0), link, 0.0);
   // 40 px above the top edge.
-  app.reader.scroll = top.y0 + 40.0;
+  app.reader.seed_reader(|reader| reader.scroll = top.y0 + 40.0);
   app.start_hints(false)?;
   let hints = app.hints.take().expect("hints");
   let shown = (top.y1 - top.y0 - 40.0) / 2.0;
@@ -2287,7 +2295,7 @@ fn scrolls_close_hover_previews() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
   hover_open(&mut session, internal)?;
-  session.app().reader.scroll += 300.0;
+  session.app().reader.seed_reader(|reader| reader.scroll += 300.0);
   session.draw_frame(&mut Vec::new())?;
   assert!(session.app().peek.is_none());
   Ok(())
@@ -2380,7 +2388,7 @@ fn key_previews_follow_clicks() -> Result<()> {
     for (button, inside, followed) in cases {
       let (_directory, mut session) = session(text_mode)?;
       let area = key_open(&mut session)?;
-      let target = session.app().target;
+      let target = session.app().reader.target();
       let screen = session.app().screen;
       let at = if inside {
         (area.column + 1, area.row + 1)
@@ -2395,7 +2403,7 @@ fn key_previews_follow_clicks() -> Result<()> {
       let page = PageId(usize::from(followed));
       assert_eq!(app.reader.cursor.page, page, "{case}");
       if !followed {
-        assert_eq!(app.target, target, "{case}: only dismissed");
+        assert_eq!(app.reader.target(), target, "{case}: only dismissed");
       }
     }
   }
@@ -2413,8 +2421,8 @@ fn previews_follow_links() -> Result<()> {
   for _ in 0..10 {
     mouse(&mut session, MouseEventKind::ScrollDown, away)?;
     let app = session.app();
-    if let Some(target) = app.animation.finish() {
-      app.reader.scroll = target;
+    if let Some(target) = app.reader.finish_scroll() {
+      app.reader.seed_reader(|reader| reader.scroll = target);
     }
     session.draw_frame(&mut Vec::new())?;
     match session.app().preview_cells() {
@@ -2426,10 +2434,10 @@ fn previews_follow_links() -> Result<()> {
   assert!(rows.windows(2).all(|pair| pair[1] < pair[0]), "moved: {rows:?}");
   assert!(rows.len() > 1, "shown while the link was: {rows:?}");
   // A scroll before its first frame still closes it.
-  session.app().reader.scroll = 0.0;
+  session.app().reader.seed_reader(|reader| reader.scroll = 0.0);
   key_open(&mut session)?;
   session.app().peek.as_mut().expect("a preview").placement = None;
-  session.app().reader.scroll += 300.0;
+  session.app().reader.seed_reader(|reader| reader.scroll += 300.0);
   session.draw_frame(&mut Vec::new())?;
   assert!(session.app().peek.is_none(), "closed before a frame");
   Ok(())

@@ -1,3 +1,4 @@
+use super::common::SeedReader;
 use crate::common;
 use crate::focus::screen;
 use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
@@ -141,7 +142,7 @@ fn ctrl_wheel_zooms_at_the_pointer() -> Result<()> {
   ];
   for (at, before, turn, scroll, grows) in cases {
     let mut session = session(&path)?;
-    session.app().reader.scroll = scroll;
+    session.app().reader.seed_reader(|reader| reader.scroll = scroll);
     for _ in 0..before {
       wheel(&mut session, UP | CTRL, at)?;
     }
@@ -160,7 +161,7 @@ fn ctrl_wheel_zooms_at_the_pointer() -> Result<()> {
         && (!overflows || (after.1 - point.1).abs() < 0.5),
       "{label}: {point:?} -> {after:?}"
     );
-    assert!(!app.animation.active());
+    assert!(!app.reader.animation().active());
   }
   Ok(())
 }
@@ -198,7 +199,7 @@ fn shift_and_sideways_wheel_pan_zoomed_pages() -> Result<()> {
     wheel(&mut session, flags, at)?;
     let app = session.app();
     assert!((app.layout.pan() - pan - change).abs() < 0.01, "{flags}");
-    let target = app.animation.target().unwrap_or(scroll);
+    let target = app.reader.animation().target().unwrap_or(scroll);
     assert_eq!((target - scroll).abs() > 1.0, scrolls, "{flags}");
     assert!((app.layout.zoom() - zoom).abs() < f32::EPSILON, "{flags}");
   }
@@ -310,7 +311,8 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
   let path = directory.path().join("pages.pdf");
   pages_pdf(&path, &[(18, 6); 40], None)?;
   let row = 39 * 16 + 8;
-  let scroll: Moved = |app| app.animation.target().unwrap_or(app.reader.scroll);
+  let scroll: Moved =
+    |app| app.reader.animation().target().unwrap_or(app.reader.scroll);
   let panel: Moved =
     |app| app.panel.as_ref().map_or(0, |p| p.view.top()) as f32;
   // (view, pointer x) -> what a turn moves
@@ -417,7 +419,8 @@ fn linked(path: &Path, text: bool) -> Result<Session> {
   );
   // Near the bottom, which leaves room to scroll the page.
   app.go_to_page(PageId(0))?;
-  (app.reader.cursor, app.target) = (position, Some(position));
+  app.reader.seed_reader(|reader| reader.cursor = position);
+  app.reader.point_to(position);
   app.ensure_cursor()?;
   app.preview_link()?;
   assert!(app.peek.is_some());
@@ -437,14 +440,14 @@ fn pixel((column, row): (u16, u16)) -> (u16, u16) {
 }
 
 fn settle(app: &mut App) {
-  if let Some(target) = app.animation.finish() {
-    app.reader.scroll = target;
+  if let Some(target) = app.reader.finish_scroll() {
+    app.reader.seed_reader(|reader| reader.scroll = target);
   }
 }
 
 /// Where the page is scrolled, in PDF or text presentation.
 fn page(app: &mut App) -> Result<(f32, vpdf::text::Position)> {
-  let scroll = app.animation.target().unwrap_or(app.reader.scroll);
+  let scroll = app.reader.animation().target().unwrap_or(app.reader.scroll);
   Ok((scroll, app.text().position(0, 0)?))
 }
 
@@ -539,7 +542,7 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
       let panel = app.panel.as_ref().map(|panel| panel.view.top());
       let overview =
         app.overview.as_ref().map(vpdf_ui::overview::Overview::top);
-      let scroll = app.animation.target().unwrap_or(app.reader.scroll);
+      let scroll = app.reader.animation().target().unwrap_or(app.reader.scroll);
       (scroll.to_bits(), panel, overview)
     };
     let before = state(&mut session);
@@ -584,7 +587,7 @@ fn clue_wheel_stays_in_overlay() -> Result<()> {
     let grid = clues.grid(app.screen);
     assert_eq!(clues.top(), grid.rows - grid.visible);
     assert_eq!(app.reader.scroll, scroll);
-    assert!(!app.animation.active());
+    assert!(!app.reader.animation().active());
     assert_eq!(app.id, id);
     for _ in 0..30 {
       crate::mouse::mouse(&mut session, MouseEventKind::ScrollUp, (5, row))?;

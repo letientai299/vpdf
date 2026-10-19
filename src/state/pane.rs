@@ -1,7 +1,6 @@
 use super::{Entry, State, now};
 use crate::Result;
 use crate::app::App;
-use crate::text::{PageId, Position};
 
 impl State {
   /// Records where `app` is; a covered pane records nothing. Returns
@@ -35,12 +34,7 @@ impl App {
     self.marks.clone_from(&entry.marks);
     self.layout.restore(entry.zoom, entry.rotation, entry.crop);
     self.layout.reflow(self.doc.pages.iter().map(|page| page.bounds));
-    let page = PageId(entry.cursor.page.0.min(self.doc.pages.len() - 1));
-    let cursor = Position { page, ..entry.cursor };
-    self.reader.cursor = self.doc.text(page)?.clamp(cursor);
-    self.show_page(page)?;
-    self.target = Some(self.reader.cursor);
-    self.ensure_cursor()?;
+    self.reading_view().restore_position(entry.cursor)?;
     if !entry.crop.is_none() && self.layout.crops().is_empty() {
       self.start_crop();
     }

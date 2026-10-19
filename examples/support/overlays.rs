@@ -1,3 +1,4 @@
+use super::reader_fixture::SeedReader;
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::path::Path;
@@ -21,7 +22,7 @@ fn capture(app: &mut Solo, name: &str, source: &str) -> Result<Value> {
   app.graphics = vpdf_terminal::graphics::Graphics::default();
   let screen = app.layout.screen();
   let hovered = app.hover_segments();
-  let landing = app.landing.position();
+  let landing = app.reader.landing().position();
   let left = app.left;
   let top = if app.text_mode {
     app.text().position(left, 0)?
@@ -65,7 +66,7 @@ pub fn prepare(source: &Path, book: &Path, screen: Screen) -> Result<Vec<u8>> {
   let mut cases = Vec::new();
   for text_mode in [false, true] {
     let mut app = Solo::open(source, "", text_mode, screen)?;
-    app.reader.cursor.line = 3;
+    app.reader.seed_reader(|reader| reader.cursor.line = 3);
     app.reader.visual(SelectionKind::Character);
     cases.push(capture(&mut app, "cursorline", "text")?);
     let mut app = Solo::open(source, "", text_mode, screen)?;

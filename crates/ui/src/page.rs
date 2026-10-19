@@ -1,4 +1,6 @@
 pub mod landing;
+mod point;
+pub use point::Point;
 pub mod scroll;
 mod view;
 use crate::Result;

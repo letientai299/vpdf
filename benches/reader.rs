@@ -133,16 +133,7 @@ fn document(path: &Path, page: usize) -> Result<Report> {
       origin: (0, 0),
     },
   )?;
-  app.reader.edge(PageId(page), false, &mut PdfText(&mut app.doc))?;
-  app.ensure_cursor()?;
-  let motion = measure(
-    || {
-      app.reader.motion(Motion::Right, 1, false, &mut PdfText(&mut app.doc))?;
-      app.reader.motion(Motion::Left, 1, false, &mut PdfText(&mut app.doc))?;
-      Ok(())
-    },
-    1000,
-  )?;
+  let motion = motions(&mut app, PageId(page))?;
   let mut app = Solo::new(app);
   let (frame, uploaded) = frames(&mut app)?;
   let text = Query { text: QUERY.into(), ..Query::default() };
@@ -169,6 +160,26 @@ fn document(path: &Path, page: usize) -> Result<Report> {
   })
 }
 
+fn motions(app: &mut App, page: PageId) -> Result<Timing> {
+  let mut reader = vpdf_reader::reader::Reader::default();
+  reader.edge(page, false, &mut PdfText(&mut app.doc))?;
+  app.reader =
+    vpdf_ui::reading::Pane::new(reader, app.reader.tracking().clone());
+  app.ensure_cursor()?;
+  let mut reader = (*app.reader).clone();
+  let timing = measure(
+    || {
+      reader.motion(Motion::Right, 1, false, &mut PdfText(&mut app.doc))?;
+      reader.motion(Motion::Left, 1, false, &mut PdfText(&mut app.doc))?;
+      Ok(())
+    },
+    1000,
+  )?;
+  app.reader =
+    vpdf_ui::reading::Pane::new(reader, app.reader.tracking().clone());
+  Ok(timing)
+}
+
 fn frames(app: &mut Solo) -> Result<(Timing, u64)> {
   let base = app.reader.scroll;
   let mut out = io::sink();
@@ -186,8 +197,8 @@ fn frames(app: &mut Solo) -> Result<(Timing, u64)> {
   let mut serialized = Vec::with_capacity(64 * 1024);
   let timing = measure(
     || {
-      app.reader.scroll =
-        app.layout.clamp_scroll(base + (frame % 40) as f32 * 4.0);
+      let scroll = app.layout.clamp_scroll(base + (frame % 40) as f32 * 4.0);
+      app.reading_view().scrub_scroll(scroll);
       serialized.clear();
       app.draw(&mut serialized)?;
       black_box(&serialized);
@@ -196,7 +207,7 @@ fn frames(app: &mut Solo) -> Result<(Timing, u64)> {
     },
     200,
   )?;
-  app.reader.scroll = base;
+  app.reading_view().scrub_scroll(base);
   Ok((timing, app.graphics.uploaded - uploaded))
 }
 

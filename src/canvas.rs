@@ -44,7 +44,7 @@ impl App {
     let view = vpdf_ui::layout::tiles::View {
       layout: &self.layout,
       scroll: self.reader.scroll,
-      target: self.animation.target(),
+      target: self.reader.animation().target(),
     };
     let frame = vpdf_ui::layout::tiles::Frame { pane: self.id, screen, left };
     let update = self.tiles.draw(view, frame, graphics, out)?;
@@ -67,7 +67,7 @@ impl App {
       vpdf_ui::layout::tiles::View {
         layout: &self.layout,
         scroll: self.reader.scroll,
-        target: self.animation.target(),
+        target: self.reader.animation().target(),
       },
       vpdf_pdf::jobs::Config::default().prefetch_pages,
     )
@@ -107,8 +107,8 @@ impl App {
     let paint = vpdf_ui::paint::Marks {
       reader: &self.reader,
       matches: if self.search.hidden() { &[] } else { self.search.hits() },
-      flash: self.landing.glyph(&self.reader),
-      landing: self.landing.line(),
+      flash: self.reader.landing().glyph(&self.reader),
+      landing: self.reader.landing().line(),
       cursorline: self.cursorline,
       dim: self.panel_focused(),
       hovered: &hovered,

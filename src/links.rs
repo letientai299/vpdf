@@ -587,7 +587,7 @@ mod tests {
     }
     app.panel_input(Input { register: 'a', ..Input::plain(Action::Yank) })?;
     assert_eq!(
-      app.reader.registers.get(&'a').map(|text| &**text),
+      app.reader.register('a').map(|text| &**text),
       Some("http://arxiv.org/abs/1610.02357\n")
     );
     Ok(())

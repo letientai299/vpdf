@@ -1,3 +1,4 @@
+use super::common::SeedReader;
 use crate::common;
 use crate::focus::{screen, send};
 use unicode_width::UnicodeWidthChar;
@@ -69,7 +70,7 @@ fn reader_workflows() -> Result<()> {
   app.raster_updates();
   assert_eq!(app.graphics.bytes(), 0);
   assert!(app.search.hits().is_empty());
-  app.reader.history(false);
+  app.reader.seed_reader(|reader| reader.history(false));
   assert!(app.reader.cursor.page.0 < app.doc.pages.len());
   Ok(())
 }
@@ -88,11 +89,11 @@ fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
   let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   app.scroll(100.0)?;
   app.scroll(100.0)?;
-  assert_eq!(app.animation.target().unwrap(), 200.0);
+  assert_eq!(app.reader.animation().target().unwrap(), 200.0);
   assert_eq!(app.reader.scroll, 0.0);
   for _ in 0..30 {
-    if let Some(target) = app.animation.target() {
-      app.animation.start(
+    if let Some(target) = app.reader.animation().target() {
+      app.reader.animate_to(
         target,
         Instant::now().checked_sub(Duration::from_millis(16)).unwrap(),
       );
@@ -101,19 +102,19 @@ fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
     app.animate();
     assert!(app.reader.scroll >= previous && app.reader.scroll <= 200.0);
   }
-  assert!(!app.animation.active());
+  assert!(!app.reader.animation().active());
   assert_eq!(app.reader.scroll, 200.0);
   for action in [Action::Cancel, Action::History(false), Action::Align(0.0)] {
     app.scroll(100.0)?;
     app.action(Input::plain(action))?;
-    assert!(!app.animation.active());
+    assert!(!app.reader.animation().active());
     let stopped = app.reader.scroll;
     assert!(!app.animate());
     assert_eq!(app.reader.scroll, stopped);
   }
   app.scroll(100.0)?;
   app.command("39")?;
-  assert!(!app.animation.active());
+  assert!(!app.reader.animation().active());
   assert_eq!(app.reader.cursor.page, PageId(38));
   Ok(())
 }
@@ -153,7 +154,7 @@ fn links_keep_coordinates_and_text_scrolls_lines() -> Result<()> {
   let cursor = app.reader.cursor;
   app.scroll(48.0)?;
   assert_eq!(app.reader.cursor, cursor);
-  assert!(!app.animation.active());
+  assert!(!app.reader.animation().active());
   let position = app.text().position(2, 1)?;
   assert!(position.page.0 >= cursor.page.0);
   assert!(position.page != cursor.page || position.line > cursor.line);
@@ -197,7 +198,7 @@ fn text_clicks_keep_the_view_and_select_words() -> Result<()> {
   app.mouse(press)?;
   app.draw(&mut Vec::new())?;
   assert_eq!(app.reader.cursor, target);
-  assert_eq!(app.target, Some(target));
+  assert_eq!(app.reader.target(), Some(target));
   assert!(app.reader.selection.is_none());
   let again = app.text().position(mouse.column, mouse.row)?;
   assert_eq!(again, target, "a click keeps the view");
@@ -215,7 +216,7 @@ fn text_clicks_keep_the_view_and_select_words() -> Result<()> {
 fn text_view_scrolls_without_moving_the_selection() -> Result<()> {
   let mut app = text_app()?;
   let lines = app.doc.text(PageId(0))?.lines.len();
-  app.reader.cursor.line = 30;
+  app.reader.seed_reader(|reader| reader.cursor.line = 30);
   app.reader.visual(vpdf_reader::reader::SelectionKind::Character);
   app.ensure_cursor()?;
   let input = Input::plain(Action::Quit);
@@ -363,9 +364,13 @@ fn preview_shows_citation_target() -> Result<()> {
       f32::midpoint(link.first().x0, link.first().x1),
       f32::midpoint(link.first().y0, link.first().y1),
     );
-    app.reader.cursor = app.doc.text(PageId(1))?.nearest(PageId(1), x, y);
+    {
+      let seed_value = app.doc.text(PageId(1))?.nearest(PageId(1), x, y);
+      app.reader.seed_reader(|reader| reader.cursor = seed_value);
+    };
     app.ensure_cursor()?;
-    app.target = Some(app.reader.cursor);
+    let cursor = app.reader.cursor;
+    app.reader.point_to(cursor);
     app.preview_link()?;
     assert!(app.peek.is_some());
     let mut out = Vec::new();
@@ -1034,7 +1039,7 @@ fn frames_retest_a_resting_pointer() -> Result<()> {
   };
   assert!(session.mouse(moved)?);
   // Half a screen puts another target there.
-  session.app().reader.scroll += 300.0;
+  session.app().reader.seed_reader(|reader| reader.scroll += 300.0);
   assert_ne!(session.app().hovered(Region::Page, cell.0, cell.1, None)?, hit);
   session.draw_frame(&mut Vec::new())?;
   assert!(!session.mouse(moved)?, "the frame retested the pointer");

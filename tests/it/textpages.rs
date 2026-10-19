@@ -1,4 +1,5 @@
 //! The extracted-text view draws on across page breaks.
+use super::common::SeedReader;
 
 use crate::common;
 use crossterm::event::{
@@ -142,9 +143,9 @@ fn marks_and_bands_cross_breaks() -> Result<()> {
   for (kind, after) in
     [(SelectionKind::Character, CURSORLINE), (SelectionKind::Line, SELECTION)]
   {
-    app.reader.cursor = on(0, 2, 0);
+    app.reader.seed_reader(|reader| reader.cursor = on(0, 2, 0));
     app.reader.visual(kind);
-    app.reader.cursor = on(1, 1, 2);
+    app.reader.seed_reader(|reader| reader.cursor = on(1, 1, 2));
     app.cursorline = true;
     let rows = drawn(&mut app)?;
     assert!(rows[4].starts_with(&format!("{SELECTION}──")), "{rows:?}");
@@ -281,7 +282,7 @@ fn jumps_move_least_to_show_targets() -> Result<()> {
     app.text().scroll(top)?;
     if let Some(at) = at {
       key(&mut app, 'i')?;
-      app.reader.cursor = at;
+      app.reader.seed_reader(|reader| reader.cursor = at);
     }
     act(&mut app, action)?;
     assert_eq!(app.reader.cursor, cursor, "{action:?} from {at:?}");
@@ -375,9 +376,9 @@ fn presses_on_rules_select_nothing() -> Result<()> {
   };
   app.mouse(press(MouseEventKind::Down(MouseButton::Left), 4))?;
   app.mouse(press(MouseEventKind::Up(MouseButton::Left), 4))?;
-  assert_eq!(app.target, None);
+  assert_eq!(app.reader.target(), None);
   app.mouse(press(MouseEventKind::Down(MouseButton::Left), 3))?;
-  assert_eq!(app.target, Some(on(0, 3, 2)));
+  assert_eq!(app.reader.target(), Some(on(0, 3, 2)));
   Ok(())
 }
 

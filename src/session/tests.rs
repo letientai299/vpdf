@@ -1,6 +1,8 @@
 use super::run::*;
 use super::windows::*;
 use super::*;
+#[cfg(test)]
+use crate::SeedReader;
 
 use crate::text::Bounds;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -198,7 +200,7 @@ fn frames_write_changed_shapes() -> Result<()> {
 fn scrollbars_wake_and_hide() -> Result<()> {
   let mut session = paper()?;
   session.draw_frame(&mut Vec::new())?;
-  session.app().reader.scroll += 64.0;
+  session.app().reader.seed_reader(|reader| reader.scroll += 64.0);
   session.draw_frame(&mut Vec::new())?;
   let now = Instant::now();
   let wait = idle(&mut session, now, now, false);
@@ -342,8 +344,9 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
   let now = Instant::now();
   for app in &mut session.tab().panes {
     app.flash_landing();
-    app.reader.message = "Occupied".into();
-    let remaining = app.landing.deadline().unwrap().duration_since(now);
+    app.reader.notice("Occupied");
+    let remaining =
+      app.reader.landing().deadline().unwrap().duration_since(now);
     assert!(remaining >= vpdf_ui::page::landing::Landing::DURATION);
     assert!(remaining < Duration::from_millis(650));
   }
@@ -351,7 +354,7 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
   assert!(wait <= vpdf_ui::page::landing::Landing::DURATION);
   assert!(!session.notify());
   for app in &mut session.tab().panes {
-    app.landing.show(
+    app.reader.flash(
       app.reader.cursor,
       vpdf_ui::page::landing::Span::Line,
       now.checked_sub(vpdf_ui::page::landing::Landing::DURATION).unwrap(),
@@ -360,7 +363,11 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
   assert_eq!(idle(&mut session, now, now, false), Duration::ZERO);
   assert!(session.notify());
   assert!(
-    session.tab().panes.iter().all(|app| app.landing.position().is_none())
+    session.tab().panes.iter().all(|app| app
+      .reader
+      .landing()
+      .position()
+      .is_none())
   );
   assert!(!session.notify());
   Ok(())
@@ -872,7 +879,7 @@ fn edge_drags_scroll_until_focus_loss() -> Result<()> {
   };
   for modifiers in [plain, alt] {
     let event = |kind, row| MouseEvent { kind, column, row, modifiers };
-    session.app().reader.scroll = 0.0;
+    session.app().reader.seed_reader(|reader| reader.scroll = 0.0);
     session.mouse(event(Down(Left), row))?;
     // The status row is past it.
     session.mouse(event(Drag(Left), 23))?;

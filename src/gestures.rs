@@ -6,9 +6,7 @@ use crate::pdf_text::PdfText;
 use crate::text::{Bounds, PageId, Position};
 use crossterm::event::MouseEventKind;
 use std::time::Instant;
-use vpdf_reader::reader::{Mode, SelectionKind};
 use vpdf_ui::input::gesture::Swept;
-use vpdf_ui::page::landing::Span;
 use vpdf_ui::pointer::Route;
 
 impl App {
@@ -91,7 +89,7 @@ impl App {
     let at = self.cell_point(column, row, route.pixel);
     match route.mouse.kind {
       MouseEventKind::Down(_) => {
-        self.animation.cancel();
+        self.reader.cancel_scroll();
         self.grab.begin(at);
       }
       MouseEventKind::Drag(_) => {
@@ -99,10 +97,7 @@ impl App {
           return self.grab_text(at);
         }
         let Some((pan, delta)) = self.grab.pixels(at) else { return Ok(()) };
-        self.animation.cancel();
-        let scroll = self.reader.scroll - delta;
-        self.reader.scroll = self.layout.clamp_scroll(scroll);
-        self.pan(pan)?;
+        self.reading_view().grab_page(delta, pan)?;
       }
       _ => {
         if !self.grab.release() {
@@ -153,38 +148,18 @@ impl App {
     pos: Position,
     clicks: u8,
   ) -> Result<()> {
-    self.target = Some(pos);
-    let flash = self.gesture.click(
-      &mut self.reader,
-      pos,
-      clicks,
-      &mut PdfText(&mut self.doc),
-    )?;
-    if flash {
-      self.landing.show(pos, Span::Glyph, Instant::now());
-    }
-    Ok(())
+    let mut reading = self.reading_parts();
+    reading.view.click_select(reading.gesture, pos, clicks)
   }
 
   pub(crate) fn drag_select(&mut self, pos: Position) -> Result<()> {
-    self.gesture.drag(&mut self.reader, pos, &mut PdfText(&mut self.doc))
+    let mut reading = self.reading_parts();
+    reading.view.drag_select(reading.gesture, pos)
   }
 
-  /// Alt-click: move the end, else start.
   pub(crate) fn extend_select(&mut self, pos: Position) -> Result<()> {
-    self.gesture.reset();
-    if self.reader.selection.is_none() {
-      // Visible Cursor glyphs anchor; else `v`'s.
-      let cursor = self.reader.mode() == Mode::Cursor
-        && self.visible_position(self.reader.cursor)?;
-      if !cursor && !self.enter_text()? {
-        return Ok(());
-      }
-      self.reader.visual(SelectionKind::Character);
-    }
-    self.reader.cursor = pos;
-    self.reader.desired = None;
-    Ok(())
+    let mut reading = self.reading_parts();
+    reading.view.extend_select(reading.gesture, pos)
   }
 
   /// Rows an edge drag scrolls.
@@ -211,7 +186,7 @@ impl App {
   pub(crate) fn autoscroll_step(&mut self, now: Instant) -> Result<bool> {
     let Some(held) = self.autoscroll.step(now) else { return Ok(false) };
     // A wheel's easing would hide the step.
-    self.animation.cancel();
+    self.reader.cancel_scroll();
     let before = self.wheel_view();
     self.edge_scroll(held.rows)?;
     if self.wheel_view() == before {
@@ -235,14 +210,6 @@ impl App {
 
   /// Scrolls `rows` at once, for drags.
   pub(crate) fn edge_scroll(&mut self, rows: isize) -> Result<()> {
-    if self.text_mode {
-      self.text().scroll(rows)?;
-      // The shown frame is stale.
-      self.text_view.invalidate();
-      return Ok(());
-    }
-    let delta = rows as f32 * f32::from(self.screen.cell_height);
-    self.reader.scroll = self.layout.clamp_scroll(self.reader.scroll + delta);
-    Ok(())
+    self.reading_view().edge_scroll(rows)
   }
 }

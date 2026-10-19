@@ -1,4 +1,5 @@
 //! Middle button, chrome, and dividers.
+use super::common::SeedReader;
 
 use crate::mouse::{cell, cell_in, labels, mouse, press, session, status};
 use crossterm::event::{KeyCode, MouseButton, MouseEventKind};
@@ -47,7 +48,7 @@ fn middle_clicks_split_links_and_copy_addresses() -> Result<()> {
     for (at, (count, page), register) in cases {
       middle(&mut session, at)?;
       let app = session.app();
-      let got = app.reader.registers.get(&'"').map(ToString::to_string);
+      let got = app.reader.register('"').map(ToString::to_string);
       assert_eq!(got.as_deref(), register, "text={text_mode} {at:?}");
       assert_eq!(panes(&mut session), (count, id, page), "text={text_mode}");
     }
@@ -63,7 +64,7 @@ fn middle_drags_pan_both_axes() -> Result<()> {
   let app = session.app();
   app.layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
   app.relayout()?;
-  app.reader.scroll = 64.0;
+  app.reader.seed_reader(|reader| reader.scroll = 64.0);
   let (scroll, pan) = (app.reader.scroll, app.layout.pan());
   let link = cell(&mut session, Hit::Link(PageId(0), 0))?;
   let (column, row) = (link.0 + 20, link.1 + 10);
@@ -158,7 +159,7 @@ fn middle_clicks_copy_web_rows() -> Result<()> {
   let at = cell(&mut session, Hit::Row(web.expect("a web row")))?;
   middle(&mut session, at)?;
   let app = session.app();
-  let got = app.reader.registers.get(&'"').map(ToString::to_string);
+  let got = app.reader.register('"').map(ToString::to_string);
   assert_eq!(got.as_deref(), Some("https://example.com/"));
   assert_eq!(session.tab().panes.len(), 1);
   Ok(())
@@ -280,7 +281,7 @@ fn row_menus_copy_and_select() -> Result<()> {
   mouse(&mut session, MouseEventKind::Up(MouseButton::Right), item)?;
   let app = session.app();
   assert!(app.context_menu.is_none(), "the release ran it");
-  let got = app.reader.registers.get(&'"').map(ToString::to_string);
+  let got = app.reader.register('"').map(ToString::to_string);
   assert_eq!(got.as_deref(), Some("https://example.com/"));
   assert_eq!(app.reader.message, "Copied link");
   Ok(())
@@ -360,7 +361,7 @@ fn recent_menus_open_rows() -> Result<()> {
   mouse(&mut session, MouseEventKind::ScrollDown, (area.column, area.row))?;
   let app = session.app();
   assert_eq!(app.reader.scroll.to_bits(), scroll.to_bits());
-  assert!(!app.animation.active() && app.context_menu.is_some());
+  assert!(!app.reader.animation().active() && app.context_menu.is_some());
   Ok(())
 }
 
@@ -709,7 +710,7 @@ fn status_items_act_on_click() -> Result<()> {
   session.app().command("2")?;
   status(&mut session)?;
   let section = chrome_cell(&mut session, Chrome::Section)?;
-  session.app().reader.message = "A note over the section".into();
+  session.app().reader.notice("A note over the section");
   status(&mut session)?;
   click(&mut session, section);
   assert!(session.app().panel.is_none(), "the click clears the note");
@@ -1028,7 +1029,7 @@ fn scrollbars_show_near_the_edge_and_after_scrolls() -> Result<()> {
     session.app().hover = Hit::Scrollbar;
     assert!(drawn(&mut session)?.contains(&track), "shown near the edge");
     session.app().hover = Hit::Nothing;
-    session.app().reader.scroll += 32.0;
+    session.app().reader.seed_reader(|reader| reader.scroll += 32.0);
     assert!(drawn(&mut session)?.contains(&track), "shown after a scroll");
     // Relayouts are no scrolls.
     session.app().bar_expired(
@@ -1038,7 +1039,7 @@ fn scrollbars_show_near_the_edge_and_after_scrolls() -> Result<()> {
     drawn(&mut session)?;
     assert_eq!(session.app().bar_until(), None, "panels show no bar");
     keys(&mut session, "q")?;
-    session.app().reader.scroll += 16.0;
+    session.app().reader.seed_reader(|reader| reader.scroll += 16.0);
     drawn(&mut session)?;
     let until = session.app().bar_until();
     let later =
@@ -1111,7 +1112,7 @@ fn long_documents_reach_both_ends() -> Result<()> {
   let cases =
     [((edge, rows), None, room), ((edge, 0), Some((edge, rows)), room)];
   for (press, drag, want) in cases {
-    session.app().reader.scroll = 0.0;
+    session.app().reader.seed_reader(|reader| reader.scroll = 0.0);
     left(&mut session, Down(L), press);
     if let Some(to) = drag {
       left(&mut session, Drag(L), to);
@@ -1122,7 +1123,10 @@ fn long_documents_reach_both_ends() -> Result<()> {
   // Cell presses touching a straddling thumb grip.
   let height = session.app().layout.screen().height();
   let top = 18.5 * cell;
-  session.app().reader.scroll = top / (height - cell) * room;
+  session
+    .app()
+    .reader
+    .seed_reader(|reader| reader.scroll = top / (height - cell) * room);
   let partial = 18;
   for row in [partial, partial + 1] {
     let before = session.app().reader.scroll;
@@ -1170,7 +1174,7 @@ fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
   assert_eq!(session.app().bar_until(), None, "panels show no bar");
   keys(&mut session, "q=")?;
   // Pinned thumbs' labels follow the pointer.
-  session.app().reader.scroll = 0.0;
+  session.app().reader.seed_reader(|reader| reader.scroll = 0.0);
   left(&mut session, Down(L), (edge, 3));
   assert!(left(&mut session, Drag(L), (edge, 0)), "the label moves");
   // Motionless presses end lost scrubs.
@@ -1341,7 +1345,7 @@ fn panel_yank_keeps_named_register() -> Result<()> {
   crate::common::keys(app, b"go\"ay")?;
   assert!(app.reader.pending_yank.is_none());
   crate::common::keys(app, b"y")?;
-  let yank = app.reader.pending_yank.take().unwrap();
+  let yank = app.reader.take_yank().unwrap();
   assert_eq!(yank.register, 'a');
   assert_eq!(yank.text, "Results\n");
   assert!(app.reader.operator.is_none());

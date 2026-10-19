@@ -87,7 +87,9 @@ impl Sim {
       if first.is_none() && frame.missing < total {
         first = Some(ms(started.elapsed()));
       }
-      if frame.missing == 0 && !self.app.animation.active() && !self.cropping()
+      if frame.missing == 0
+        && !self.app.reader.animation().active()
+        && !self.cropping()
       {
         let done = ms(started.elapsed());
         return Ok((first.unwrap_or(done), done));

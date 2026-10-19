@@ -1,14 +1,8 @@
 use crate::Result;
+use crate::page::Point;
 use crate::source::Figures;
 use vpdf_model::document::{Figure, FigureSource};
 use vpdf_model::text::{Bounds, PageId};
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Point {
-  pub page: PageId,
-  pub x: f32,
-  pub y: f32,
-}
 
 pub fn advance(
   source: &mut impl Figures,
@@ -30,10 +24,7 @@ pub fn advance(
     for offset in 0..figures.len() {
       let index = if forward { offset } else { figures.len() - offset - 1 };
       let bounds = figures[index].bounds;
-      let order = compare(
-        (page, bounds.y0, bounds.x0),
-        (current.page, current.y, current.x),
-      );
+      let order = Point { page, x: bounds.x0, y: bounds.y0 }.compare(current);
       if order
         != if forward {
           std::cmp::Ordering::Greater
@@ -78,10 +69,6 @@ pub fn nearest(
       })
       .map(|figure| figure.bounds),
   )
-}
-
-fn compare(a: (PageId, f32, f32), b: (PageId, f32, f32)) -> std::cmp::Ordering {
-  a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.total_cmp(&b.2))
 }
 
 fn distance(bounds: Bounds, x: f32, y: f32) -> f32 {

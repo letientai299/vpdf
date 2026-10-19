@@ -1,3 +1,4 @@
+use super::common::SeedReader;
 use mupdf::{Colorspace, Matrix};
 use std::path::PathBuf;
 use vpdf::Result;
@@ -521,14 +522,14 @@ fn crop_follows_rapid_space() -> Result<()> {
     app.action(Input::plain(Action::Screen(1)))?;
     app.crop_updates()?;
   }
-  let target = app.animation.target().unwrap_or(app.reader.scroll);
+  let target = app.reader.animation().target().unwrap_or(app.reader.scroll);
   let page = app.layout.page_at(target);
   assert!(page.0 > 40);
   crate::common::crop_loaded(&mut app)?;
-  let target = app.animation.target().expect("crop keeps scrolling");
+  let target = app.reader.animation().target().expect("crop keeps scrolling");
   assert_eq!(app.layout.page_at(target), page);
-  app.animation.cancel();
-  app.reader.scroll = target;
+  app.reader.cancel_scroll();
+  app.reader.seed_reader(|reader| reader.scroll = target);
   let started = Instant::now();
   loop {
     app.crop_updates()?;
@@ -572,7 +573,10 @@ fn book_body_stays_centered() -> Result<()> {
     let mut scales = Vec::new();
     for index in 182..185 {
       let page = PageId(index);
-      app.reader.scroll = app.layout.pages()[index].top;
+      {
+        let seed_value = app.layout.pages()[index].top;
+        app.reader.seed_reader(|reader| reader.scroll = seed_value);
+      };
       app.crop_updates()?;
       crate::common::crop_loaded(&mut app)?;
       let text = app.doc.text(page)?;

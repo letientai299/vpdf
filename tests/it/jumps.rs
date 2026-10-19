@@ -1,3 +1,4 @@
+use super::common::SeedReader;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
 use vpdf::Result;
@@ -172,7 +173,7 @@ fn fallback_context() -> Result<()> {
     );
   }
   let (_dir, mut app) = text_app(&[""])?;
-  app.reader.remember();
+  app.reader.seed_reader(Reader::remember);
   let rows = app.panel_rows(PanelKind::Jumps)?;
   assert_eq!(rows[0].label, "No text");
   assert_eq!(rows[0].detail, "p. 1 · L1 C1 · word —");
@@ -493,7 +494,7 @@ fn jumps_land_near_the_top() -> Result<()> {
       super::common::search_loaded(&mut app)?;
       app.reader.clear_history();
     }
-    app.reader.scroll = start;
+    app.reader.seed_reader(|reader| reader.scroll = start);
     let before = view(&mut app)?;
     jump(&mut app, kind, at)?;
     assert_eq!(app.reader.cursor, at, "{case}");
@@ -517,7 +518,7 @@ fn jumps_land_near_the_top() -> Result<()> {
     if matches!(kind, Jump::Preview(_)) {
       continue;
     }
-    let landing = app.landing.position();
+    let landing = app.reader.landing().position();
     assert_eq!(landing, Some(at), "{case}");
     if app.panel.is_some() {
       app.close_panel()?;
@@ -563,7 +564,10 @@ fn history_across_presentations_lands() -> Result<()> {
     app.text_mode = !text_first;
     app.relayout()?;
     // Away from the origin: page 2 in PDF; text keeps the last landing.
-    app.reader.scroll = app.layout.pages()[1].top;
+    {
+      let seed_value = app.layout.pages()[1].top;
+      app.reader.seed_reader(|reader| reader.scroll = seed_value);
+    };
     let back = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
     app.key(back, &mut History::default())?;
     assert_eq!(app.reader.cursor, on(0, 5, 0), "text first {text_first}");
@@ -704,10 +708,10 @@ fn counted_history_keeps_both_directions() -> Result<()> {
     (b"99\x1b[105;5u", 3),
     (b"99\x0f", 0),
   ] {
-    app.landing.clear_flash();
+    app.reader.clear_flash();
     crate::common::keys(&mut app, sequence)?;
     assert_eq!(app.reader.cursor.page, PageId(page));
-    assert_eq!(app.landing.position().unwrap(), app.reader.cursor);
+    assert_eq!(app.reader.landing().position().unwrap(), app.reader.cursor);
   }
   Ok(())
 }

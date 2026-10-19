@@ -5,11 +5,11 @@ use crate::text::Position;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
-use vpdf_reader::reader::Reader;
 use vpdf_terminal::graphics::Usage;
 use vpdf_terminal::terminal;
 use vpdf_ui::keys::{Keys, PanelKind};
 use vpdf_ui::layout::{Layout, Screen};
+use vpdf_ui::reading::Pane;
 use vpdf_ui::window::{TabMove, Window};
 
 /// Work a tab hands to the session.
@@ -71,9 +71,7 @@ pub struct Tabline {
 pub struct App {
   pub id: u32,
   pub doc: Document,
-  pub reader: Reader,
-  pub target: Option<Position>,
-  pub landing: vpdf_ui::page::landing::Landing,
+  pub reader: Pane,
   pub layout: Layout,
   /// Reloaded since the session last drew: its old images go first.
   pub(crate) images_stale: bool,
@@ -138,7 +136,6 @@ pub struct App {
   pub ocr: Option<vpdf_pdf::jobs::ocr::OcrJob>,
   pub outline_load: crate::outline::Loading,
   pub crop_job: Option<vpdf_pdf::jobs::crop::Job>,
-  pub animation: vpdf_ui::page::scroll::Scroll,
   /// The current wheel gesture over the page.
   pub(crate) wheel: vpdf_ui::input::wheel::Wheel,
   pub(crate) tiles: vpdf_ui::layout::tiles::Tiles,
@@ -182,9 +179,7 @@ impl App {
     Ok(Self {
       id: NEXT.fetch_add(1, Ordering::Relaxed),
       doc,
-      reader: Reader::default(),
-      target: None,
-      landing: vpdf_ui::page::landing::Landing::default(),
+      reader: Pane::default(),
       layout,
       images_stale: false,
       image_usage: Usage::default(),
@@ -231,7 +226,6 @@ impl App {
       ocr: None,
       outline_load: crate::outline::Loading::Deferred,
       crop_job: None,
-      animation: vpdf_ui::page::scroll::Scroll::default(),
       wheel: vpdf_ui::input::wheel::Wheel::default(),
       tiles: vpdf_ui::layout::tiles::Tiles::default(),
       blank: false,

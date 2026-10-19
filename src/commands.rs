@@ -20,7 +20,7 @@ impl App {
   pub fn action(&mut self, input: Input) -> Result<()> {
     self.cancel_definition();
     self.search.forget_yank();
-    self.animation.finish_before(input.action, &mut self.reader);
+    self.reader.prepare(input.action);
     if self.reader.operator.is_some()
       && !matches!(
         input.action,
@@ -77,9 +77,7 @@ impl App {
       Action::Panel(kind) => self.open_panel(kind)?,
       Action::ClosePanel => self.close_panel()?,
       Action::Search(backward) => {
-        if let Some(operator) = &mut self.reader.operator {
-          operator.count = operator.count.saturating_mul(input.count);
-        }
+        self.reader.multiply_operator(input.count);
         self.begin_search(backward)?;
       }
       Action::WordSearch => self.word_search()?,
@@ -173,7 +171,7 @@ impl App {
 
   pub(crate) fn cancel_input(&mut self) -> Result<()> {
     self.cancel_definition();
-    self.animation.cancel();
+    self.reader.cancel_scroll();
     let owner = self.input_owner();
     let pending =
       !self.keys.pending().is_empty() || self.reader.operator.is_some();
@@ -209,7 +207,7 @@ impl App {
       return Ok(());
     }
     if owner == InputOwner::Content && pending {
-      self.reader.message.clear();
+      self.reader.notice("");
     } else {
       if owner == InputOwner::Content && self.reader.mode() == Mode::Cursor {
         self.reader.normal();
@@ -347,7 +345,7 @@ impl App {
         self.cancel_outline();
         self.cancel_crop()?;
         self.region_job = None;
-        self.reader.message = "Jobs canceled".into();
+        self.reader.notice("Jobs canceled");
       }
       "nohlsearch" => self.search.set_hidden(true),
       "cursorline" => self.cursorline = !self.cursorline,
@@ -362,8 +360,9 @@ impl App {
           _ => anyhow::bail!("Usage: :mouse [on|off]"),
         };
         self.request = Some(Request::Mouse(on));
-        self.reader.message =
-          if on { "Mouse on" } else { "Mouse off; :mouse on restores" }.into();
+        let message =
+          if on { "Mouse on" } else { "Mouse off; :mouse on restores" };
+        self.reader.notice(message);
       }
       "text" => self.open_panel(PanelKind::Text)?,
       "info" => self.open_panel(PanelKind::Info)?,
@@ -382,9 +381,9 @@ impl App {
 
   fn yank_path(&mut self, register: char) -> Result<()> {
     let register =
-      self.reader.operator.take().map_or(register, |op| op.register);
+      self.reader.take_operator().map_or(register, |op| op.register);
     self.reader.store(register, self.path.display().to_string())?;
-    self.reader.message = "Yanked file path".into();
+    self.reader.notice("Yanked file path");
     Ok(())
   }
 
@@ -462,19 +461,6 @@ impl App {
     Ok(links.iter().position(|link| link.contains(x, y)))
   }
 
-  /// The glyph a page target lands on.
-  fn landing(
-    &mut self,
-    page: PageId,
-    point: Option<(f32, f32)>,
-  ) -> Result<Position> {
-    let page = PageId(page.0.min(self.doc.pages.len() - 1));
-    Ok(match point {
-      Some((x, y)) => self.doc.text(page)?.nearest(page, x, y),
-      None => Position { page, ..Position::default() },
-    })
-  }
-
   pub fn follow(&mut self, target: &Target) -> Result<()> {
     let uri = match target {
       Target::Page(page) => return self.go_landing(target, *page, None),
@@ -507,12 +493,12 @@ impl App {
     page: PageId,
     point: Option<(f32, f32)>,
   ) -> Result<()> {
-    let position = self.landing(page, point)?;
+    let position = self.reading_view().destination(page, point)?;
     let description = self.link_description(target, position);
     // Points land where they aim.
     if point.is_some() {
       self.land_at(position)?;
-      self.landing.aim(target.clone());
+      self.reader.aim(target.clone());
     } else {
       self.go_to_page(position.page)?;
     }
@@ -540,7 +526,7 @@ impl App {
     message: &str,
   ) -> Result<()> {
     self.reader.store('"', text)?;
-    self.reader.message = message.into();
+    self.reader.notice(message);
     Ok(())
   }
 }

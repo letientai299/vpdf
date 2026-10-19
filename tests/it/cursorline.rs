@@ -1,3 +1,4 @@
+use super::common::SeedReader;
 use super::common::keys;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -110,7 +111,9 @@ fn cursorline_pdf_projects_and_clips() -> Result<()> {
       let text = app.doc.text(PageId(0))?;
       let line =
         text.lines.iter().position(|line| line.glyphs.len() > 10).unwrap();
-      app.reader.cursor = Position { page: PageId(0), line, glyph: 5 };
+      app.reader.seed_reader(|reader| {
+        reader.cursor = Position { page: PageId(0), line, glyph: 5 }
+      });
       app.reader.visual(SelectionKind::Character);
       app.ensure_cursor()?;
       app.left = 10;
@@ -140,7 +143,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
   let mut app = app(true)?;
   app.screen.columns = 20;
   app.left = 4;
-  app.reader.cursor = Position::default();
+  app.reader.seed_reader(|reader| reader.cursor = Position::default());
   let rows = ["abcd", "", "other"];
   app.doc.seed(
     PageId(0),
@@ -159,7 +162,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
     }),
   );
   app.reader.visual(SelectionKind::Character);
-  app.reader.cursor.glyph = 1;
+  app.reader.seed_reader(|reader| reader.cursor.glyph = 1);
   let hit = vpdf::search::Hit {
     first: Position { glyph: 2, ..Position::default() },
     last: Position { glyph: 2, ..Position::default() },
@@ -188,7 +191,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
     assert!(frame.contains(style));
   }
   app.command("cursorline")?;
-  app.reader.cursor.line = 1;
+  app.reader.seed_reader(|reader| reader.cursor.line = 1);
   out = Vec::new();
   app.text_canvas(&mut out)?;
   let frame = String::from_utf8(out)?;
@@ -241,29 +244,29 @@ fn landing_jump_modes_and_fixed_destination() -> Result<()> {
       let target = Position { line: 5, ..Position::default() };
       app.go_to(target, true)?;
       let target = app.reader.cursor;
-      assert_eq!(app.landing.position().unwrap(), target);
+      assert_eq!(app.reader.landing().position().unwrap(), target);
       assert_eq!(app.reader.mode(), initial_mode);
-      let until = app.landing.deadline().unwrap();
+      let until = app.reader.landing().deadline().unwrap();
       keys(&mut app, b"j")?;
-      assert_eq!(app.landing.position().unwrap(), target);
-      assert_eq!(app.landing.deadline().unwrap(), until);
-      app.landing.clear_flash();
+      assert_eq!(app.reader.landing().position().unwrap(), target);
+      assert_eq!(app.reader.landing().deadline().unwrap(), until);
+      app.reader.clear_flash();
       keys(&mut app, b"j\x04")?;
       assert!(
-        app.landing.position().is_none(),
+        app.reader.landing().position().is_none(),
         "ordinary motions must not flash"
       );
       app.marks.insert('a', target);
       app.go_mark('a', true)?;
-      assert_eq!(app.landing.position().unwrap(), target);
-      app.landing.clear_flash();
+      assert_eq!(app.reader.landing().position().unwrap(), target);
+      app.reader.clear_flash();
       app.follow(&vpdf::document::Target::Page(PageId(1)))?;
-      assert_eq!(app.landing.position().unwrap(), app.reader.cursor);
+      assert_eq!(app.reader.landing().position().unwrap(), app.reader.cursor);
       assert_eq!(app.reader.cursor.page, PageId(1));
-      app.landing.clear_flash();
+      app.reader.clear_flash();
       super::common::outline_loaded(&mut app)?;
       keys(&mut app, b"]]")?;
-      assert_eq!(app.landing.position().unwrap(), app.reader.cursor);
+      assert_eq!(app.reader.landing().position().unwrap(), app.reader.cursor);
     }
   }
   Ok(())
@@ -291,7 +294,7 @@ fn landing_pdf_reuses_projected_clipped_band() -> Result<()> {
       let screen = Screen { rows: 14, ..app.layout.screen() };
       let band = marks(&mut app, screen)?;
       assert!(!band.is_empty(), "Normal has landing feedback");
-      app.landing.clear_flash();
+      app.reader.clear_flash();
       app.reader.visual(SelectionKind::Character);
       let visual = marks(&mut app, screen)?;
       let coords = |b: Bounds| (b.x0, b.y0, b.x1, b.y1);
@@ -345,7 +348,7 @@ fn landing_text_fills_row_below_glyph_styles() -> Result<()> {
   for style in [LANDING, CURSOR, SELECTION, SEARCH] {
     assert!(frame.contains(style), "missing {style:?}");
   }
-  app.landing.clear_flash();
+  app.reader.clear_flash();
   out = Vec::new();
   app.text_canvas(&mut out)?;
   let frame = String::from_utf8(out)?;
@@ -362,25 +365,25 @@ fn landing_search_acceptance_and_cancellation() -> Result<()> {
     app.begin_search(false)?;
     app.incremental("attention")?;
     super::common::search_loaded(&mut app)?;
-    assert!(app.landing.position().is_none(), "typing only previews");
+    assert!(app.reader.landing().position().is_none(), "typing only previews");
     app.abort_search()?;
-    assert!(app.landing.position().is_none(), "canceling never jumps");
+    assert!(app.reader.landing().position().is_none(), "canceling never jumps");
     app.begin_search(false)?;
     app.incremental("attention")?;
     super::common::search_loaded(&mut app)?;
     app.finish_search("attention", false)?;
-    assert_eq!(app.landing.position().unwrap(), app.reader.cursor);
-    app.landing.clear_flash();
+    assert_eq!(app.reader.landing().position().unwrap(), app.reader.cursor);
+    app.reader.clear_flash();
     app.next_result(false, 1)?;
-    assert_eq!(app.landing.position().unwrap(), app.reader.cursor);
-    app.landing.clear_flash();
+    assert_eq!(app.reader.landing().position().unwrap(), app.reader.cursor);
+    app.reader.clear_flash();
     app.start_search("model", false, false)?;
     super::common::search_loaded(&mut app)?;
-    assert_eq!(app.landing.position().unwrap(), app.reader.cursor);
-    app.landing.clear_flash();
+    assert_eq!(app.reader.landing().position().unwrap(), app.reader.cursor);
+    app.reader.clear_flash();
     app.start_search("qqqnothingzzznomatch", false, false)?;
     super::common::search_loaded(&mut app)?;
-    assert!(app.landing.position().is_none());
+    assert!(app.reader.landing().position().is_none());
   }
   Ok(())
 }
@@ -391,9 +394,9 @@ fn landing_reload_clears_feedback() -> Result<()> {
   for text_mode in [false, true] {
     let mut app = app(text_mode)?;
     app.go_to(Position { line: 5, ..Position::default() }, true)?;
-    assert!(app.landing.position().is_some());
+    assert!(app.reader.landing().position().is_some());
     app.reload_with("")?;
-    assert!(app.landing.position().is_none());
+    assert!(app.reader.landing().position().is_none());
   }
   Ok(())
 }
@@ -408,7 +411,7 @@ fn landing_search_early_commit_uses_current_query() -> Result<()> {
       app.incremental("attention")?;
       super::common::search_loaded(&mut app)?;
       let previous = app.reader.cursor;
-      assert!(app.landing.position().is_none());
+      assert!(app.reader.landing().position().is_none());
       app.incremental(query)?;
       assert!(matches!(
         app.search.phase(),
@@ -417,19 +420,19 @@ fn landing_search_early_commit_uses_current_query() -> Result<()> {
       app.finish_search(query, false)?;
       assert_eq!(app.reader.cursor, previous);
       assert!(
-        app.landing.position().is_none(),
+        app.reader.landing().position().is_none(),
         "previous query must not flash"
       );
       super::common::search_loaded(&mut app)?;
       assert_eq!(app.search.query().text, query);
       if query == "model" {
-        let target = app.landing.position().unwrap();
+        let target = app.reader.landing().position().unwrap();
         assert_eq!(target, app.reader.cursor);
         assert!(app.search.hits().iter().any(|hit| hit.first == target));
       } else {
         assert!(app.search.hits().is_empty());
         assert!(
-          app.landing.position().is_none(),
+          app.reader.landing().position().is_none(),
           "failed query must not flash"
         );
       }

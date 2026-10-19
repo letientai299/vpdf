@@ -17,8 +17,8 @@ impl App {
     let paint = Marks {
       reader: &self.reader,
       matches: if self.search.hidden() { &[] } else { self.search.hits() },
-      flash: self.landing.glyph(&self.reader),
-      landing: self.landing.line(),
+      flash: self.reader.landing().glyph(&self.reader),
+      landing: self.reader.landing().line(),
       cursorline: self.cursorline,
       dim: self.panel_focused(),
       hovered: &hovered,

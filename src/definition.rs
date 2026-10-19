@@ -18,7 +18,7 @@ impl App {
     self.search.stop_jumping();
     if let Some(target) = self.link_target(position)? {
       if matches!(target, Target::Uri(_)) {
-        self.reader.message = "External link: use gx".into();
+        self.reader.notice("External link: use gx");
         return Ok(());
       }
       return self.follow(&target);
@@ -28,7 +28,7 @@ impl App {
     let byte =
       line.glyphs.iter().take(position.glyph).map(|g| g.ch.len_utf8()).sum();
     let Some(reference) = Reference::at(&line.text(), byte) else {
-      self.reader.message = "No document reference at target".into();
+      self.reader.notice("No document reference at target");
       return Ok(());
     };
     if self.definition_heading(&reference)? {
@@ -41,7 +41,7 @@ impl App {
     };
     self.start_query(&query)?;
     self.search.define(position);
-    self.reader.message = "Finding reference…".into();
+    self.reader.notice("Finding reference…");
     Ok(())
   }
 
@@ -69,8 +69,9 @@ impl App {
         if let Some(panel) = &mut self.panel {
           panel.view.select(*first);
         }
-        self.reader.message =
-          "Multiple heading candidates; choose an outline entry".into();
+        self
+          .reader
+          .notice("Multiple heading candidates; choose an outline entry");
       }
     }
     Ok(true)
@@ -78,17 +79,16 @@ impl App {
 
   pub(crate) fn finish_definition(&mut self) -> Result<()> {
     match self.search.hits() {
-      [] => self.reader.message = "Reference not found".into(),
+      [] => self.reader.notice("Reference not found"),
       [hit] => {
         let position = hit.first;
         self.go_to(position, true)?;
         self.reader.describe_jump(Some(self.search_description(position)));
-        self.reader.message = "Reference found".into();
+        self.reader.notice("Reference found");
       }
       _ => {
         self.open_panel(PanelKind::Results)?;
-        self.reader.message =
-          "Multiple reference candidates; choose a result".into();
+        self.reader.notice("Multiple reference candidates; choose a result");
       }
     }
     Ok(())

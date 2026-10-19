@@ -4,7 +4,6 @@ use crate::links::LinkPress;
 use crate::preview::Origin;
 use crate::text::{PageId, Position};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::Location;
 use vpdf_ui::input::InputOwner;
 use vpdf_ui::keys::{Action, Input};

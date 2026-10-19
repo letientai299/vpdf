@@ -1,3 +1,4 @@
+use super::common::SeedReader;
 use super::common::keys;
 use super::common::{pages_pdf, search_loaded};
 use super::focus::screen;
@@ -13,7 +14,7 @@ fn open(pages: &[&[&str]], text: bool) -> Result<(tempfile::TempDir, Solo)> {
   let path = directory.path().join("references.pdf");
   pages_pdf(&path, pages)?;
   let mut app = Solo::open(&path, "", text, screen())?;
-  app.target = Some(Position::default());
+  app.reader.point_to(Position::default());
   Ok((directory, app))
 }
 
@@ -55,8 +56,8 @@ fn definition_jumps_and_returns() -> Result<()> {
         text,
       )?;
       let origin = Position { glyph: 4, ..Position::default() };
-      app.target = Some(origin);
-      app.reader.cursor = origin;
+      app.reader.point_to(origin);
+      app.reader.seed_reader(|reader| reader.cursor = origin);
       if cursor {
         keys(&mut app, b"i")?;
       }
@@ -97,7 +98,7 @@ fn missing_and_canceled_definitions_stay_put() -> Result<()> {
   assert_eq!(app.reader.message, "Reference not found");
   assert_eq!(app.reader.cursor.page, PageId(0));
   for cancel in [b"\x1b[27u".as_slice(), b"j"] {
-    app.target = Some(Position::default());
+    app.reader.point_to(Position::default());
     keys(&mut app, b"gd")?;
     keys(&mut app, cancel)?;
     assert!(matches!(app.search.phase(), Phase::Idle));
@@ -133,7 +134,7 @@ fn embedded_definition_keeps_history() -> Result<()> {
   ));
   super::common::write_pdf(&path, &objects, "")?;
   let mut app = Solo::open(&path, "", false, screen())?;
-  app.target = Some(Position::default());
+  app.reader.point_to(Position::default());
   keys(&mut app, b"gd")?;
   assert_eq!(app.reader.cursor.page, PageId(1));
   assert!(app.search_worker.is_none());
@@ -148,7 +149,7 @@ fn external_definition_does_not_open_browser() -> Result<()> {
   let path = directory.path().join("external.pdf");
   super::common::linked_pages_pdf(&path, &[&["Figure 4"]], &[(0, 0)])?;
   let mut app = Solo::open(&path, "", false, screen())?;
-  app.target = Some(Position::default());
+  app.reader.point_to(Position::default());
   keys(&mut app, b"gd")?;
   assert_eq!(app.reader.message, "External link: use gx");
   assert!(app.search_worker.is_none());

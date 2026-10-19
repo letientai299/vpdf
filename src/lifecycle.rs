@@ -64,12 +64,11 @@ impl App {
     self.reader.cancel();
     self.reader.clear_history();
     self.tiles.invalidate();
-    self.reader.cursor =
-      reader::clamp(self.reader.cursor, &mut PdfText(&mut self.doc))?;
+    self.reading_view().reclamp_cursor()?;
     self.text().reclamp()?;
     self.text_view.invalidate();
-    self.target = None;
-    self.landing.clear_flash();
+    self.reader.clear_target();
+    self.reader.clear_flash();
     self.point(None);
     self.link_press = crate::links::LinkPress::Idle;
     self.dismiss_overlay();
@@ -105,7 +104,7 @@ impl App {
       self.rerun(previous.query())?;
     }
     self.relayout()?;
-    self.reader.message = "Reloaded".into();
+    self.reader.notice("Reloaded");
     Ok(())
   }
 
@@ -118,11 +117,7 @@ impl App {
     self.preview = other.preview;
     self.layout.reflow(self.doc.pages.iter().map(|page| page.bounds));
     let shown = other.navigation_position();
-    self.reader.cursor = reader::clamp(shown, &mut PdfText(&mut self.doc))?;
-    self.reader.cancel();
-    self.target = None;
-    self.reader.scroll = other.reader.scroll;
-    self.text_view.copy_origin(&other.text_view);
+    self.reading_view().mirror(shown, other.reader.scroll, &other.text_view)?;
     if !self.layout.crop().is_none() && self.layout.crops().is_empty() {
       self.start_crop();
     }

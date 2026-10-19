@@ -28,7 +28,7 @@ impl App {
   }
 
   pub(crate) fn drop_scrub(&mut self) -> bool {
-    self.bar.release(&mut self.reader)
+    self.reader.release_bar(&mut self.bar)
   }
 
   pub(crate) fn scrub_row(&self) -> Option<u16> {
@@ -57,13 +57,12 @@ impl App {
       }
       Input::Press(press) => {
         let origin = self.location()?;
-        press.apply(&mut self.bar, origin, &mut self.reader)
+        self.reader.press_bar(&mut self.bar, press, origin)
       }
       Input::Scroll(scroll) => Some(scroll),
     };
     if let Some(scroll) = scroll {
-      self.animation.cancel();
-      self.reader.scroll = scroll;
+      self.reading_view().scrub_scroll(scroll);
     }
     Ok(())
   }

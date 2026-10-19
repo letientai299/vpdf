@@ -12,7 +12,8 @@ pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {
     .find(|figure| figure.caption.starts_with("Figure 1"))
     .context("Figure 1 missing")?;
   app.select_region(page, figure.bounds)?;
-  app.reader.scroll = app.layout.project(page, figure.bounds, 0.0).y0;
+  let scroll = app.layout.project(page, figure.bounds, 0.0).y0;
+  app.reading_view().scrub_scroll(scroll);
   let mut hashes = Vec::new();
   for _ in 0..2 {
     let mut output = Vec::new();

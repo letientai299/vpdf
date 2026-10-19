@@ -14,9 +14,11 @@ mod page;
 use fixtures::{bounds, read as fixture};
 #[path = "../../../benches/support/hash.rs"]
 mod hash;
+mod jumps;
 mod reading;
 mod region;
 mod scrollbar;
+mod sections;
 #[path = "../../../benches/support/mod.rs"]
 mod support;
 mod text;
@@ -165,6 +167,9 @@ fn main() -> Result<()> {
     ("page tiles", tiles::draw),
     ("page navigation", page::navigation),
     ("reading scroll", reading::scroll),
+    ("reading navigation", reading::navigation),
+    ("section candidates", sections::select),
+    ("reading jumps", jumps::land),
     ("gesture selection", gestures::selection),
     ("text_canvas", text::canvas),
     ("cursorline", || overlays::draw("cursorline")),

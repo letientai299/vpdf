@@ -1,4 +1,6 @@
 use crate::Result;
+#[cfg(test)]
+use crate::SeedReader;
 use crate::app::App;
 use crate::clipboard;
 use crate::document::Target;
@@ -11,8 +13,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
 use vpdf_reader::reader::Yank;
 use vpdf_terminal::graphics::Graphics;
-use vpdf_ui::figures::{self, Point};
+use vpdf_ui::figures;
 use vpdf_ui::keys::Input;
+use vpdf_ui::page::Point;
 use vpdf_ui::region::{
   BAR_HINT, CaptureId, Operation, Region, Snapshot, Transition,
 };
@@ -52,14 +55,11 @@ impl App {
     let chosen =
       figures::advance(&mut PdfText(&mut self.doc), current, forward, count)?;
     let Some((page, bounds)) = chosen else {
-      self.reader.message = "No more figures".into();
+      self.reader.notice("No more figures");
       return Ok(());
     };
     self.follow(&Target::Point { page, x: bounds.x0, y: bounds.y0 })?;
-    if !self.text_mode {
-      let rect = self.layout.project(page, bounds, 0.0);
-      self.reader.scroll = self.layout.clamp_scroll(rect.y0);
-    }
+    self.reading_view().align_region(page, bounds);
     self.region = Some(Region::selected(snapshot(page, bounds)));
     Ok(())
   }
@@ -134,8 +134,7 @@ impl App {
     let snapshot = self.figure_snapshot()?;
     let fit = self.layout.fit_region(snapshot.page, snapshot.bounds);
     self.relayout()?;
-    self.reader.scroll = fit.finish(&mut self.layout);
-    self.animation.cancel();
+    self.reading_view().finish_fit(fit);
     self.region = Some(Region::selected(snapshot));
     Ok(())
   }
@@ -151,10 +150,10 @@ impl App {
       .ok_or_else(|| anyhow::anyhow!("Empty capture region"))?;
     let snapshot = snapshot(page, bounds);
     self.peek = None;
-    self.animation.cancel();
+    self.reader.cancel_scroll();
     self.disarm();
     self.region = Some(Region::open(snapshot));
-    self.reader.message = BAR_HINT.into();
+    self.reader.notice(BAR_HINT);
     Ok(())
   }
 
@@ -244,7 +243,7 @@ impl App {
 
   fn region_text(&mut self, text: String) -> Result<()> {
     anyhow::ensure!(!text.trim().is_empty(), "No text in region");
-    self.reader.pending_yank = Some(Yank { text, register: '"' });
+    self.reader.deliver_yank(Yank { text, register: '"' });
     Ok(())
   }
 
@@ -252,7 +251,7 @@ impl App {
     if self.region.as_mut().is_some_and(|region| !region.update(id, &message)) {
       return;
     }
-    self.reader.message = message;
+    self.reader.notice(message);
   }
 
   pub fn draw_region(
@@ -415,7 +414,10 @@ mod tests {
     assert!(app.region.is_none());
     assert_eq!(app.region_job.as_ref().unwrap().id, original);
     app.focused = false;
-    app.reader.cursor.page = PageId(app.doc.pages.len() - 1);
+    {
+      let seed_value = PageId(app.doc.pages.len() - 1);
+      app.reader.seed_reader(|reader| reader.cursor.page = seed_value);
+    };
     let start = std::time::Instant::now();
     while app.region_job.is_some() {
       app.region_updates()?;

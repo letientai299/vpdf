@@ -177,3 +177,7 @@ pub fn hints(
     .collect();
   vpdf_ui::hints::Hints::new(found, false, 0, 80).expect("hint candidates")
 }
+
+#[path = "../support/reader.rs"]
+mod reader_fixture;
+pub use reader_fixture::SeedReader;

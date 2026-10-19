@@ -1,11 +1,10 @@
 use crate::Result;
 use crate::app::{App, Request};
-use crate::pdf_text::PdfText;
 use crate::state::Mark;
 use crate::text::{PageId, Position};
 use std::collections::BTreeMap;
 use std::time::Instant;
-use vpdf_ui::page::landing::{Landed, Span};
+use vpdf_ui::page::landing::Span;
 use vpdf_ui::panel::{Destination, Row};
 
 impl App {
@@ -17,7 +16,7 @@ impl App {
       let position = self.reading_position()?;
       self.marks.insert(name, position);
     }
-    self.reader.message = format!("Mark {name} set");
+    self.reader.notice(format!("Mark {name} set"));
     Ok(())
   }
 
@@ -42,55 +41,16 @@ impl App {
     self.land_at(target)
   }
 
-  /// Shows `page` from its top, as page targets do.
   pub fn go_to_page(&mut self, page: PageId) -> Result<()> {
-    self.jump_cursor(Position { page, ..Position::default() })?;
-    self.show_page(self.reader.cursor.page)?;
-    self.ensure_cursor()?;
-    self.flash_landing();
-    Ok(())
+    self.reading_view().go_to_page(page)
   }
 
-  /// Follows a link or row to `position`.
   pub fn land_at(&mut self, position: Position) -> Result<()> {
-    let position =
-      vpdf_reader::reader::clamp(position, &mut PdfText(&mut self.doc))?;
-    // A repeat, as a double click's, stays.
-    let here = self.landing.matches(self.landed_view(position))
-      && self.reader.cursor == position;
-    if !here {
-      self.jump_cursor(position)?;
-      self.land()?;
-      self.landing.record(self.landed_view(self.reader.cursor));
-    }
-    self.flash_landing();
-    Ok(())
-  }
-
-  /// `target` in the current view.
-  pub(crate) fn landed_view(&self, target: Position) -> Landed {
-    Landed::new(
-      target,
-      self.reader.scroll,
-      self.layout.pan(),
-      self.text_view.top(),
-    )
-  }
-
-  /// Moves the cursor as a recorded jump.
-  fn jump_cursor(&mut self, target: Position) -> Result<()> {
-    let origin = self.location()?;
-    self.reader.cursor =
-      vpdf_reader::reader::clamp(target, &mut PdfText(&mut self.doc))?;
-    self.reader.record(origin);
-    self.reader.describe_jump(None);
-    self.reader.desired = None;
-    self.target = Some(self.reader.cursor);
-    Ok(())
+    self.reading_view().land_at(position)
   }
 
   pub(crate) fn flash_landing(&mut self) {
-    self.landing.show(self.reader.cursor, Span::Line, Instant::now());
+    self.reader.flash(self.reader.cursor, Span::Line, Instant::now());
   }
 
   /// Text of the extracted line at `position`, for mark listings.

@@ -9,6 +9,7 @@ pub enum Span {
   Glyph,
 }
 
+#[derive(Clone)]
 struct Flash {
   position: Position,
   until: Instant,
@@ -34,7 +35,7 @@ impl Landed {
   }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Landing {
   flash: Option<Flash>,
   landed: Option<Landed>,

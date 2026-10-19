@@ -115,7 +115,7 @@ impl App {
   ) -> Result<()> {
     let (page, x, y) = match &target {
       Target::Uri(uri) => {
-        self.reader.message.clone_from(uri);
+        self.reader.notice(uri.clone());
         return Ok(());
       }
       Target::Page(page) => (*page, 0.0, 0.0),
