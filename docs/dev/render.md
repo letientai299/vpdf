@@ -6,10 +6,11 @@ make PDF rasterization GPU-backed.
 
 ## From viewport to frame
 
-[Layout][layout] maps document coordinates to pixels. [Tile requests][canvas]
-cover the visible view and a nearby margin before prefetching farther ahead.
-Scrolling requests both the current view and its animation target so that
-newly exposed areas can be ready before placement.
+[Layout][layout] maps document coordinates to pixels. UI [tile planning][tiles]
+covers the visible view and a nearby margin before prefetching farther ahead.
+It requests both the current view and its animation target so that newly
+exposed areas can be ready before placement. The application's [pane
+canvas][canvas] dispatches those requests and integrates completed tiles.
 
 ```mermaid
 flowchart TD
@@ -20,7 +21,7 @@ flowchart TD
     Cache -->|Missing| Request[Replace pending viewport request]
     Request --> Lists[Reuse or build display list]
     Lists --> Pool[Raster pool: draw and prepare tiles]
-    Pool --> Encode[Application sink: encode or spool]
+    Pool --> Encode[Application sink: terminal encoder or spool]
     Encode --> Store[Store results in shared graphics cache]
     Store --> Upload
     Place --> Overlay[Place cursor, selection, and search overlays]
@@ -32,12 +33,13 @@ Replaying a display list for a band amortizes interpretation and replay costs
 across its tiles. Prefetch advances one band at a time between urgent requests.
 New viewports discard irrelevant queued bands; already running work can finish.
 
-The application's [completion sink][delivery] encodes or spools pixels on the
-raster thread before queueing a terminal payload and waking the event loop.
-The PDF service does not depend on terminal types. Raw pixels retain the
-worker's existing band and whole-page lifetimes; they do not enter a new
-application result queue. Sink failure ends that delivery, while dropping the
-service cancels its queued requests.
+The application's [completion sink][delivery] calls the terminal
+[payload encoder][encoder] on the raster thread before queueing a terminal
+payload and waking the event loop. The PDF service does not depend on terminal
+types. Only prepared terminal payloads enter the application result channel;
+raw pixels stay on the workers. A sink returning false stops that delivery;
+encoding errors are delivered to the application. Dropping the service cancels
+its queued requests.
 
 ## Image pages
 
@@ -59,7 +61,8 @@ Cursor, selection, and match highlights use reusable solid-color images rather
 than rerasterizing the page. Returning from a child program invalidates terminal
 residency while retaining reusable payloads where available.
 
-The [frame pacer][pace] schedules from deadlines and skips unchanged frames.
+Frames use [synchronized output][sync-output] where supported. The
+[frame pacer][pace] schedules from deadlines and skips unchanged frames.
 Scroll inputs accumulate a target; direct navigation and cancellation interrupt
 animation. The requested cadence is an application scheduling goal. Terminal
 painting, output transport, and display refresh can limit the observed rate.
@@ -97,7 +100,7 @@ separate lifetimes. A terminal can also evict images independently.
 | ---------------------------------- | ------------------------------------------------------------------------- |
 | Extracted and OCR text             | Weighted caches in [Document][document]                                   |
 | Display lists                      | Page-count cache in [Document][document]; native byte size is unavailable |
-| Search indexes                     | Weighted cache in the [search worker][search]; disk packs on macOS        |
+| Search indexes                     | Weighted [worker cache][search] and [disk packs][content-cache]           |
 | Prepared tiles and resident images | Separate budgets in [Graphics][graphics], shared across tabs and panes    |
 | Raw pixel spool                    | Fixed-size ring in [Spool][spool]                                         |
 | Copied text and registers          | Bounds in [Reader][reader]                                                |
@@ -131,3 +134,7 @@ A faster raster stage alone does not establish a faster terminal reader.
 [search]: ../../crates/vpdf-pdf/src/jobs/search.rs
 [reader]: ../../crates/vpdf-reader/src/reader.rs
 [delivery]: ../../src/raster.rs
+[tiles]: ../../crates/ui/src/layout/tiles.rs
+[encoder]: ../../crates/terminal/src/payload.rs
+[content-cache]: ../../crates/vpdf-pdf/src/content_cache/mod.rs
+[sync-output]: https://github.com/contour-terminal/vt-extensions/blob/master/synchronized-output.md

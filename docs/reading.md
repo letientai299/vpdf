@@ -124,12 +124,12 @@ panel under it; the wheel scrolls whatever is under the pointer, or the pane
 above a status line, and leaves focus in place. The `Mouse` sections of `:help`
 list each gesture.
 
-In Kitty and Ghostty the reader takes pointer positions in pixels, so adjacent
-citations and small markers hit separately; under tmux positions are whole
-cells. Where the terminal supports pointer shapes, the pointer shows a hand
-over things a click acts on, a text cursor over text, resize arrows on
-dividers and the panel edge, a crosshair while capturing a region, and a grab
-while panning.
+In Kitty and Ghostty the reader takes
+[pointer positions in pixels][pixel-mouse], so adjacent citations and small
+markers hit separately; under tmux positions are whole cells. Where the terminal
+supports [pointer shapes][pointer-shapes], the pointer shows a hand over things
+a click acts on, a text cursor over text, resize arrows on dividers and the
+panel edge, a crosshair while capturing a region, and a grab while panning.
 
 A right click opens a menu at the pointer. On a page it offers actions for the
 link, note, selection, word, or figure there, then common views. On a panel row
@@ -206,13 +206,13 @@ HTTP, HTTPS, and `mailto:` links use the platform opener. Mail links lose their
 query parameters before opening; other URI schemes are rejected. Passwords use
 a hidden interactive prompt rather than command-line arguments.
 
-Text copying sends OSC 52 and can also invoke a local clipboard helper. SSH
-sessions skip the native helper because it would target the remote host's
+Text copying sends [OSC 52][osc52] and can also invoke a local clipboard helper.
+SSH sessions skip the native helper because it would target the remote host's
 clipboard. Terminal policy controls OSC 52 acceptance and size limits.
 
 Figure and region image copying uses a native clipboard helper locally. Over
-SSH it depends on the terminal's image-clipboard protocol and acknowledgment;
-text clipboard support alone does not imply image support. See
+SSH it depends on the terminal's [image-clipboard protocol][image-clipboard] and
+acknowledgment; text clipboard support alone does not imply image support. See
 [terminal setup][terminal] and executable help for available actions.
 
 [installation]: install.md
@@ -226,3 +226,7 @@ text clipboard support alone does not imply image support. See
 [kitty-mouse]: https://sw.kovidgoyal.net/kitty/conf/#mouse-actions
 [mouse]: #mouse
 [tmux-drag]: install.md#alt-drag-under-tmux
+[osc52]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Operating-System-Commands
+[image-clipboard]: https://sw.kovidgoyal.net/kitty/clipboard/
+[pixel-mouse]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Mouse-Tracking
+[pointer-shapes]: https://sw.kovidgoyal.net/kitty/pointer-shapes/

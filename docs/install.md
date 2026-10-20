@@ -38,8 +38,8 @@ to extracted text; it requires the same terminal capabilities.
 If using tmux, follow its [installation instructions][tmux-install] too.
 
 The file picker's fzf previews use the capabilities detected by the reader:
-images with Unicode placeholders where supported, otherwise text. Use
-`vpdf --help` for the installed launch interface.
+images with [Unicode placeholders][placeholders] where supported, otherwise
+text. Use `vpdf --help` for the installed launch interface.
 
 The reader, in either presentation, requires the [Kitty keyboard
 protocol][keyboard]'s disambiguation, so Tab and Ctrl-i stay distinct and Esc
@@ -132,9 +132,9 @@ executables on `PATH`:
   when neither is set.
 
 macOS supplies `pbcopy` for text copying, `osascript` for image copying, and
-`open` for links. Text copying also sends OSC 52, subject to terminal policy;
-SSH skips native clipboard helpers. See [external actions][integrations] for
-clipboard and link boundaries.
+`open` for links. Text copying also sends [OSC 52][osc52], subject to terminal
+policy; SSH skips native clipboard helpers. See [external actions][integrations]
+for clipboard and link boundaries.
 
 ## Licensing
 
@@ -182,3 +182,5 @@ dependencies used in a particular build.
 [rio-install]: https://rioterm.com/docs/install
 [iterm-install]: https://iterm2.com/downloads.html
 [wezterm-config]: https://wezterm.org/config/files.html
+[osc52]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Operating-System-Commands
+[placeholders]: https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders

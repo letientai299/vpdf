@@ -12,10 +12,12 @@ pane shows the same file. The split tree controls screen rectangles; the session
 routes input and owns the shared graphics cache that visible panes draw with.
 
 Keyboard input belongs to the focused pane. Within it, a focused panel handles
-row navigation and search before page motions. [Pointer routing][pointer] uses
-the pane under the pointer: clicks can change focus, while wheel scrolling can
-leave keyboard focus in place. These boundaries keep one view's navigation from
-moving another view accidentally. Use `:help` for pane and focus commands.
+row navigation and search before page motions. UI [input policy][input]
+resolves overlays and focused content. Session [pointer routing][pointer]
+chooses the pane under the pointer, then UI components resolve its surfaces and
+actions: clicks can change focus, while wheel scrolling can leave keyboard
+focus in place. These boundaries keep one view's navigation from moving another
+view accidentally. Use `:help` for pane and focus commands.
 
 Switching tabs trims rebuildable caches and workers in panes that become hidden.
 It preserves their view state and retained OCR text. Prepared or
@@ -64,7 +66,7 @@ flowchart TD
     Replace --> Restore[Clamp cursor; retain view; refresh panels and search]
 ```
 
-[Reload][commands] replaces document-derived resources and clamps the cursor to
+[Reload][reload] replaces document-derived resources and clamps the cursor to
 the new text. It retains view choices and marks, refreshes panels, and reruns a
 visible query. OCR text and jump history belong to the old document and are
 cleared. The operation preserves a useful reading position; it does not map a
@@ -78,11 +80,12 @@ user-visible clipboard, SSH, link, and password behavior.
 
 [session]: ../../src/session/mod.rs
 [split]: ../../crates/ui/src/split.rs
-[pointer]: ../../crates/ui/src/pointer.rs
+[pointer]: ../../src/session/pointer.rs
+[input]: ../../crates/ui/src/input.rs
 [state]: ../../src/state.rs
 [hangup]: ../../src/state.rs
 [watch]: ../../src/watch.rs
-[commands]: ../../src/commands.rs
+[reload]: ../../src/app.rs
 [clipboard]: ../../src/clipboard.rs
 [external]: ../reading.md#external-actions
 [saved-state]: ../reading.md#saved-state-and-reload

@@ -80,7 +80,7 @@ PDF tests require MuPDF; ignored corpus tests also require the verified
 public PDFs from `mise run corpus`. Run them independently:
 
 ```sh
-mise exec -- cargo nextest run --locked -p vpdf-pdf --run-ignored only
+mise exec -- cargo nextest run --locked -p vpdf-pdf --test corpus --run-ignored only
 ```
 
 Root modules retain the application compilation unit and support test filters:
@@ -112,13 +112,15 @@ Both tasks fetch the public corpus and verify hashes through the
 [corpus script][corpus]. OCR integration tests require Tesseract and its
 language data. Large stress documents have a separate fetch task and are opt-in
 inputs; standard tasks do not consume them automatically. Keep download URLs and
-hashes in the corpus script and [corpus assertions][corpus-tests].
+hashes in the corpus script. [Application corpus tests][corpus-tests] cover
+integrated behavior; [PDF corpus tests][pdf-corpus-tests] cover native
+extraction and rasterization.
 
 Terminal behavior needs its own interactive checks. Native rendering or state
 tests do not verify Kitty placement, tmux passthrough, clipboard policy, or
-behavior after a child program uses the screen. Hover previews also lack
-fixtures for render failures on later pages and for width centering; check
-those live.
+behavior after a child program uses the screen. [Preview composition
+checks][preview] cover centering and failures on later pages; live checks must
+still verify placement and terminal graphics.
 
 ## Performance validation
 
@@ -298,6 +300,7 @@ a result needs a reproducible release reference.
 [rumdl]: ../../.config/rumdl.toml
 [corpus]: ../../scripts/corpus.sh
 [corpus-tests]: ../../tests/it/corpus.rs
+[pdf-corpus-tests]: ../../crates/vpdf-pdf/tests/corpus.rs
 [micro]: ../../scripts/bench-micro.sh
 [reader-bench]: ../../benches/reader.rs
 [latency]: ../../benches/latency.rs
@@ -319,3 +322,4 @@ a result needs a reproducible release reference.
 [kitty-install]: https://sw.kovidgoyal.net/kitty/binary/
 [poppler]: https://poppler.freedesktop.org/
 [ocr-setup]: ../install.md#optional-helpers
+[preview]: ../../crates/ui/src/preview.rs

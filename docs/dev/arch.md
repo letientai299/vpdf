@@ -21,23 +21,15 @@ changes; they do not enumerate the feature set.
 
 ## Package boundaries
 
-The root application owns panes, raster dispatch, persistence, and effects. The
-[model crate][model] owns shared document values, text reflow, geometry, and
-bounded caches. [Search][search-crate] owns indexing and matching over model
-text. [PDF][pdf-crate] owns native access, document scans, and derived-content
-caches; it depends on model and search. The [reader crate][reader-crate] owns
-cursor, motion, selection, registers, and jump semantics over model text, using
-search for jump ordinals and hyphen joins. The application adapts native
-documents to reader and UI data-access traits. The [UI crate][ui-crate] owns
-interface state, transitions, bindings, layout, theme, and drawing; it consumes
-model, reader, search, and terminal without native PDF dependencies.
+The application connects document services, reading components, terminal
+services, persistence, and OS effects. Reader and UI behavior stays independent
+of native PDF access, so it can be tested with prepared document data. The
+application supplies native data through adapters and dispatches component
+requests to services.
 
-The [terminal crate][terminal-crate] owns capabilities, terminal lifecycle,
-graphics delivery, and spool files. It depends on model and the
-[protocol crate][protocol], which decodes terminal input bytes into events.
-Headless presenters accept explicit transport settings. The
-[package guide][packages] defines ownership and dependency enforcement. The
-[development guide][development] describes independent tests and benchmarks.
+The [package guide][packages] defines ownership and cross-package contracts;
+the [dependency policy][policy] is the source of truth for permitted edges.
+Use the [development guide][development] for focused tests and benchmarks.
 
 ## Runtime ownership
 
@@ -46,6 +38,11 @@ output. Each tab contains a split layout and panes; each [pane][app] owns an
 independent reader, document handle, view, and worker handles. Two panes showing
 the same file still have independent foreground documents and display-list
 caches.
+
+The application holds UI components beside native documents and jobs. Its
+[document adapter][adapter] supplies reader text and UI data-access traits;
+UI components apply reading transitions and draw through terminal services.
+The application dispatches their requests and assembles the session frame.
 
 ```mermaid
 flowchart TD
@@ -127,11 +124,6 @@ to release native resources. The policy and thresholds live in the
 [rendering]: render.md
 [text]: text.md
 [development]: dev.md
-[model]: ../../crates/vpdf-model/src/lib.rs
-[search-crate]: ../../crates/vpdf-search/src/lib.rs
-[pdf-crate]: ../../crates/vpdf-pdf/src/lib.rs
-[protocol]: ../../crates/vpdf-protocol/src/lib.rs
-[reader-crate]: ../../crates/vpdf-reader/src/lib.rs
-[terminal-crate]: ../../crates/terminal/src/lib.rs
-[ui-crate]: ../../crates/ui/src/lib.rs
 [packages]: packages.md
+[adapter]: ../../src/pdf_text.rs
+[policy]: ../../scripts/check_packages.py

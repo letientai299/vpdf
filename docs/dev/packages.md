@@ -10,20 +10,19 @@ The [dependency policy][policy] defines permitted internal edges. It applies to
 normal, development, build, optional, and platform-specific dependencies.
 External dependencies must preserve each owner's boundary.
 
-| Owner                      | Responsibility                               |
-| -------------------------- | -------------------------------------------- |
-| [Model][model]             | Shared values, geometry, text reconstruction |
-| [Search][search]           | Indexing, matching, index encoding           |
-| [Reader][reader]           | Motions, selections, registers, jump history |
-| [Protocol][protocol]       | Terminal input byte decoding                 |
-| [PDF][pdf]                 | Native access, document jobs, content caches |
-| [Terminal][terminal]       | Session, capabilities, graphics, spool files |
-| [UI][ui]                   | Bindings, components, layout, theme, drawing |
-| [Application][application] | Composition, persistence, CLI, OS effects    |
+| Owner                      | Responsibility                                |
+| -------------------------- | --------------------------------------------- |
+| [Model][model]             | Shared values, geometry, text reconstruction  |
+| [Search][search]           | Indexing, matching, index encoding            |
+| [Reader][reader]           | Motions, selections, registers, jump history  |
+| [Protocol][protocol]       | Terminal input byte decoding                  |
+| [PDF][pdf]                 | Native access, document jobs, content caches  |
+| [Terminal][terminal]       | Terminal lifecycle, input, graphics, spooling |
+| [UI][ui]                   | Bindings, components, layout, theme, drawing  |
+| [Application][application] | Composition, persistence, CLI, OS effects     |
 
-Model and protocol have no internal dependencies. Search consumes model;
-reader and PDF consume model and search. Terminal consumes model and protocol.
-UI consumes model, reader, search, and terminal. The application connects these
+Use the dependency policy for permitted edges and the [workspace
+manifest][workspace] for package names and paths. The application connects the
 owners, consuming normalized input through terminal. Import owners directly;
 do not add application forwarding exports.
 
@@ -35,21 +34,27 @@ Do not introduce a native fixture helper as a development dependency there.
 
 Keep shared geometry and document values in model. PDF converts geometry to
 native types; UI owns viewport layout, hit geometry, and prefetch decisions.
-UI components own private state and expose transitions. The application adapts
-native documents to reader and UI data-access traits, integrates job results,
-and performs filesystem, process, clipboard, and URL effects.
+UI components own private state and expose transitions. [Reading][reading]
+combines reader semantics with viewport navigation; [input policy][input]
+decides interaction precedence, cancellation, and pointer actions. The
+application holds these components beside native resources, adapts documents
+through [data-access traits][source], integrates job results, and performs
+filesystem, process, clipboard, and URL effects. Application frame assembly
+delegates layout and drawing to UI components.
 
 PDF owns native handles, cancellation, document-cache provenance, and
 [job resource configuration][jobs]. A render completion sink lets the
 application connect terminal encoding without a PDF-to-terminal dependency.
-Encoding stays on the worker before result delivery and waking. Preserve queue
-bounds and spool lifetime when changing that contract.
+Encoding stays on the worker before result delivery and waking. Preserve
+viewport request replacement, cancellation, delivery-before-wake ordering, and
+spool lifetime when changing that contract.
 
 Terminal owns negotiation and cleanup. Headless presenters take explicit
 transport settings and an output sink; they must not open a terminal or probe
-process-global capabilities. User reading state remains in the application,
-separate from disposable PDF content caches. See [runtime ownership][arch] for
-thread and lifecycle constraints.
+process-global capabilities. The application persists user reading state,
+separate from disposable PDF content caches; live reading behavior belongs to
+reader and UI. See [runtime ownership][arch] for thread and lifecycle
+constraints.
 
 ## Focused checks and benchmarks
 
@@ -94,3 +99,6 @@ corpus, OCR, and terminal checks when they change.
 [arch]: arch.md
 [development]: dev.md
 [metadata]: https://doc.rust-lang.org/cargo/commands/cargo-metadata.html
+[reading]: ../../crates/ui/src/reading.rs
+[input]: ../../crates/ui/src/input.rs
+[source]: ../../crates/ui/src/source.rs

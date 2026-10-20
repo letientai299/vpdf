@@ -26,7 +26,7 @@ hyphenation. A normalized index retains anchors to the extracted glyphs, so a
 match can highlight and navigate the original page.
 
 ```mermaid
-flowchart LR
+flowchart TD
     Text[Extracted glyphs or session OCR] --> Normalize[Normalize text and retain anchors]
     Normalize --> Index[Bounded page indexes]
     Query[Query] --> Pattern[Literal normalization or regex compilation]
@@ -45,22 +45,20 @@ The [search worker][worker] opens its own document and builds indexes lazily.
 It sends results incrementally, tags them with query generations, and checks for
 supersession between pages. Before reading a page from the PDF, it waits while
 on-screen work is in flight; see [scan priority][priority]. Limits cap matches
-and regex backtracking. Idling
-releases the native handle while keeping cached indexes, so later queries reopen
-the PDF only when missing text is needed.
+and regex backtracking. Idling releases the native handle while keeping cached
+indexes, so later queries reopen the PDF only when missing text is needed.
 
-On macOS, or wherever `VPDF_CACHE` points, the worker also keeps page indexes on
-disk, in a pack named by the SHA-256 of the PDF's bytes, so reopening an
-unchanged file skips extraction. Hashing runs beside the first scan, which reads
-the PDF until the pack is known. On APFS, whose file times are exact, a memo
-keyed by device, inode, size, and times remembers each file's hash: a reopen
-whose pack matches the reader's page count skips hashing, and the PDF opens only
-when a page misses, so open errors can arrive with that page. Scans decode
-stored pages in batches on a few threads. New indexes save once the worker
-idles, unless the file changed since it opened or the pack already holds those
-pages. [The content cache][cache] treats any missing, damaged, or stale pack as
-a miss and trims the least recently used packs and OCR output to its budget. OCR
-text overrides stored pages; PDFs opened with a password are never stored.
+The [content cache][cache] can persist search indexes to avoid repeated
+extraction. It identifies PDF content by hash and may reuse a file-identity
+record where filesystem timestamps support it. Missing, damaged, or stale data
+falls back to extraction; native open errors can arrive when an uncached page
+is first needed. OCR text overrides stored indexes. PDFs opened with a password
+are excluded from disk caching.
+
+Keep cache locations, filesystem checks, pack encoding, and eviction policy in
+the content-cache implementation. Keep scan scheduling and decode concurrency
+in the [search worker][worker] and [job configuration][jobs]. See [saved
+state][saved-state] for user-facing cache controls.
 
 [Panel search][panels] searches displayed rows with its own matching rules.
 Do not assume document normalization applies to panel labels.
@@ -111,3 +109,5 @@ its command interface.
 [ocr]: ../../crates/vpdf-pdf/src/jobs/ocr.rs
 [cache]: ../../crates/vpdf-pdf/src/content_cache/mod.rs
 [installation]: ../install.md#optional-helpers
+[jobs]: ../../crates/vpdf-pdf/src/jobs/mod.rs
+[saved-state]: ../reading.md#saved-state-and-reload
