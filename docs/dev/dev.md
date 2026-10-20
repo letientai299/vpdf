@@ -153,6 +153,14 @@ outside measurement windows. Report OS file-cache conditions separately from
 fresh document handles. Overview frames go to memory and do not measure terminal
 painting or SSH delivery.
 
+The public corpus includes Vietnamese and Chinese reports for search and disk
+cache checks; the corpus script owns their URLs and hashes. Select those PDFs
+through `VPDF_EXTRA` for manual benchmarks. `VPDF_QUERIES` supplies
+comma-separated queries, and `VPDF_WHOLE_WORD` selects whole-word matching.
+Matching timings follow an untimed lookup, so CJK dictionary boundaries are
+warm. Compare hit counts as well as time when normalization changes the result
+set.
+
 Set `VPDF_BENCH_FIXTURES` to share a prepared fixture directory between
 checkouts. Case filters apply within the selected package; omit `--package` to
 run matching cases across the workspace.

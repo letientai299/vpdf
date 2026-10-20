@@ -1,12 +1,14 @@
 //! Manual hot paths; arguments select cases.
 use std::hint::black_box;
 use std::path::PathBuf;
+use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::solo::Solo;
 use vpdf_model::geometry::{Screen, page_matrix, transform};
 use vpdf_model::text::PageId;
 use vpdf_pdf::document::{Document, Handle};
+use vpdf_pdf::jobs::{Wake, search::SearchWorker};
 use vpdf_reader::motion::Motion;
 use vpdf_search::search::{Index, compile};
 use vpdf_ui::keys::{Action, Input};
@@ -70,8 +72,11 @@ fn search() -> Result<()> {
       index.encode(&mut bytes);
     }
     println!("{name} index sha256 {}", hash::digest(&bytes));
-    for query in ["the", "qzxjvw", "The"] {
-      let pattern = compile(query, false)?;
+    let queries =
+      std::env::var("VPDF_QUERIES").unwrap_or_else(|_| "the,qzxjvw,The".into());
+    let whole = std::env::var_os("VPDF_WHOLE_WORD").is_some();
+    for query in queries.split(',') {
+      let pattern = compile(query, whole)?;
       let mut hits = Vec::new();
       for index in &indexes {
         for hit in index.matches(&pattern, 1000)? {
@@ -79,7 +84,8 @@ fn search() -> Result<()> {
         }
       }
       println!(
-        "{name} {query} hits sha256 {}",
+        "{name} {query} hits {} sha256 {}",
+        hits.len(),
         hash::digest(&serde_json::to_vec(&hits)?)
       );
       measure(&format!("matches {name} {query}"), || {
@@ -87,6 +93,52 @@ fn search() -> Result<()> {
           black_box(index.matches(black_box(&pattern), 1000).expect("query"));
         }
       })?;
+    }
+    println!(
+      "{name} retained index bytes {}",
+      indexes.iter().map(Index::weight).sum::<usize>()
+    );
+  }
+  Ok(())
+}
+
+fn scan() -> Result<()> {
+  for path in files()? {
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let pages = Handle::open(&path, "")?.pages;
+    let worker = SearchWorker::new(&path, "", pages, &Wake::none());
+    for (label, query) in [("cold", "qzxjvw"), ("warm", "vwjxzq")] {
+      let query = vpdf_search::query::Query {
+        text: query.into(),
+        ..vpdf_search::query::Query::default()
+      };
+      let started = Instant::now();
+      let generation = worker.lookup(&query, PageId(0))?;
+      loop {
+        anyhow::ensure!(
+          started.elapsed() < Duration::from_secs(60),
+          "Search scan timed out"
+        );
+        let event = match worker.wait(Duration::from_secs(1)) {
+          Ok(event) => event,
+          Err(RecvTimeoutError::Timeout) => continue,
+          Err(error) => return Err(error.into()),
+        };
+        anyhow::ensure!(
+          event.generation == generation,
+          "Search generation differs"
+        );
+        anyhow::ensure!(
+          event.error.is_none(),
+          "Search failed: {:?}",
+          event.error
+        );
+        anyhow::ensure!(event.hits.is_empty(), "No-hit query matched");
+        if event.done {
+          break;
+        }
+      }
+      println!("worker {name} {label} {} ns", started.elapsed().as_nanos());
     }
   }
   Ok(())
@@ -345,6 +397,7 @@ fn main() -> Result<()> {
   support::run(&[
     ("open", open),
     ("search", search),
+    ("scan", scan),
     ("geometry", geometry),
     ("navigation", navigation),
     ("overview", overview),
