@@ -6,14 +6,7 @@ case $(uname -s) in
     target=$(rustc --print host-tuple)
     cargo build --release --locked -p vpdf --target "$target"
     binary="$build_dir/$target/release/vpdf"
-    dependencies=$(otool -L "$binary")
-    printf '%s\n' "$dependencies" | tail -n +2 | \
-      while read -r dependency _; do
-        case "$dependency" in
-          /System/Library/*|/usr/lib/*) ;;
-          *) printf 'Non-system dependency: %s\n' "$dependency" >&2; exit 1 ;;
-        esac
-      done
+    sh scripts/check-macos.sh "$binary"
     ;;
   Linux)
     if [ "$(uname -m)" != x86_64 ]; then

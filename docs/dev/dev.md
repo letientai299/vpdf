@@ -48,6 +48,27 @@ and the [CI matrix][ci] define supported hosts.
 
 ## Native window
 
+Build the macOS app and disk image:
+
+```sh
+mise build:app
+mise install:app
+mise test:app
+```
+
+The [app packager][build-app] creates `target/dist/vpdf.app` and
+`target/dist/vpdf.dmg`, respecting `CARGO_TARGET_DIR`. It builds for the host
+architecture with the `app` Cargo profile and uses Python 3 and the macOS
+command line tools. The DMG uses LZFSE compression and includes an
+Applications shortcut. `install:app` builds the package and atomically replaces
+`~/Applications/vpdf.app` without launching it. `test:app` checks the mounted
+DMG and installation in a temporary home directory.
+
+The app uses an ad hoc signature for local use. Distribution with Gatekeeper
+approval requires Developer ID signing and notarization; see [Apple's
+distribution guide][apple-distribution]. Linux and Windows app packaging are
+not supported.
+
 Run the experimental native reader on macOS:
 
 ```sh
@@ -363,6 +384,8 @@ a result needs a reproducible release reference.
 [mise]: https://mise.jdx.dev/
 [pkgconf]: https://formulae.brew.sh/formula/pkgconf
 [build]: ../../scripts/build.sh
+[build-app]: ../../scripts/build-app.sh
+[apple-distribution]: https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution
 [install]: ../../scripts/install.sh
 [ci]: ../../.github/workflows/ci.yml
 [hooks]: ../../prek.toml

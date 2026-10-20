@@ -1,0 +1,62 @@
+#!/bin/sh
+set -eu
+if [ "$(uname -s)" != Darwin ]; then
+  printf 'App packaging requires macOS\n' >&2
+  exit 1
+fi
+build_dir="${CARGO_TARGET_DIR:-target}"
+target=$(rustc --print host-tuple)
+cargo build --profile app --locked -p vpdf-gui --target "$target"
+binary="$build_dir/$target/app/vpdf-gui"
+sh scripts/check-macos.sh "$binary"
+release_dir="$build_dir/dist"
+mkdir -p "$release_dir"
+staged=$(mktemp -d "$release_dir/.app.XXXXXX")
+trap 'rm -rf "$staged"' EXIT
+trap 'exit 1' HUP INT TERM
+app="$staged/image/vpdf.app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+install -m 755 "$binary" "$app/Contents/MacOS/vpdf-gui"
+cp LICENSE LICENSE-AGPL "$app/Contents/Resources/"
+version=$("$binary" --version | awk '{print $2}')
+minimum=$(sh scripts/macos-minimum.sh "$binary")
+test -n "$version"
+test -n "$minimum"
+cat > "$app/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>vpdf-gui</string>
+  <key>CFBundleIdentifier</key>
+  <string>io.github.letientai299.vpdf</string>
+  <key>CFBundleName</key>
+  <string>vpdf</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$version</string>
+  <key>CFBundleVersion</key>
+  <string>$version</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>$minimum</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.productivity</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>
+EOF
+plutil -lint "$app/Contents/Info.plist"
+codesign --force --sign - --timestamp=none "$app"
+codesign --verify --strict "$app"
+ln -s /Applications "$staged/image/Applications"
+hdiutil create -quiet -srcfolder "$staged/image" -volname vpdf \
+  -fs HFS+ -format UDRW "$staged/image.dmg"
+hdiutil convert -quiet "$staged/image.dmg" -format ULFO -o "$staged/vpdf.dmg"
+hdiutil verify -quiet "$staged/vpdf.dmg"
+python3 -B scripts/replace_app.py "$app" "$release_dir/vpdf.app"
+mv -f "$staged/vpdf.dmg" "$release_dir/vpdf.dmg"
+"$release_dir/vpdf.app/Contents/MacOS/vpdf-gui" --version >/dev/null
+printf 'App: %s/vpdf.app\nDMG: %s/vpdf.dmg\n' "$release_dir" "$release_dir"

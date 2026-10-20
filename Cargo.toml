@@ -66,6 +66,10 @@ lto = "thin"
 strip = true
 debug = false
 
+[profile.app]
+inherits = "release"
+codegen-units = 1
+
 [workspace.dependencies]
 vpdf-ui = { path = "crates/ui" }
 vpdf-terminal = { path = "crates/terminal" }

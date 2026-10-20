@@ -18,6 +18,20 @@ VPDF_CACHE = "off"
 description = "Build the optimized reader"
 run = "sh scripts/build.sh"
 
+[tasks."build:app"]
+description = "Build the macOS app and DMG"
+run = "sh scripts/build-app.sh"
+
+[tasks."install:app"]
+description = "Install the macOS app into ~/Applications"
+depends = ["build:app"]
+run = "sh scripts/install-app.sh"
+
+[tasks."test:app"]
+description = "Verify macOS packaging and installation"
+depends = ["build:app"]
+run = "python3 -B -m unittest discover -s scripts -p test_app.py"
+
 [tasks.release]
 description = "Package the release executable with UPX on Linux"
 depends = ["build"]
