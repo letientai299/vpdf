@@ -1,6 +1,7 @@
 use crate::Result;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use flate2::{Compression, write::ZlibEncoder};
+use std::cell::RefCell;
 use std::io::Write;
 use std::sync::Arc;
 pub use vpdf_model::tile::{TILE_HEIGHT, TILE_WIDTH, TileKey};
@@ -49,7 +50,52 @@ impl Encoder {
 }
 
 pub fn encode(bytes: &[u8]) -> Result<String> {
-  let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-  encoder.write_all(bytes)?;
-  Ok(STANDARD.encode(encoder.finish()?))
+  thread_local! {
+    static COMPRESSOR: RefCell<ZlibEncoder<Vec<u8>>> =
+      RefCell::new(ZlibEncoder::new(Vec::new(), Compression::fast()));
+  }
+  COMPRESSOR.with_borrow_mut(|encoder| {
+    encoder.write_all(bytes)?;
+    Ok(STANDARD.encode(encoder.reset(Vec::new())?))
+  })
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn reused_streams_match_fresh() -> Result<()> {
+    for size in [0, 3, 17, 1 << 18, 1, 1 << 15] {
+      let bytes: Vec<_> = (0..size).map(|i| (i * 173 % 251) as u8).collect();
+      let mut fresh = ZlibEncoder::new(Vec::new(), Compression::fast());
+      fresh.write_all(&bytes)?;
+      assert_eq!(encode(&bytes)?, STANDARD.encode(fresh.finish()?));
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn compressor_threads_stay_independent() {
+    let jobs: Vec<_> = (0..4)
+      .map(|byte| {
+        std::thread::spawn(move || {
+          let input = vec![byte; 8192];
+          for _ in 0..5 {
+            let encoded = STANDARD.decode(encode(&input).unwrap()).unwrap();
+            let mut decoded = Vec::new();
+            std::io::Read::read_to_end(
+              &mut flate2::read::ZlibDecoder::new(encoded.as_slice()),
+              &mut decoded,
+            )
+            .unwrap();
+            assert_eq!(decoded, input);
+          }
+        })
+      })
+      .collect();
+    for job in jobs {
+      job.join().unwrap();
+    }
+  }
 }

@@ -47,7 +47,9 @@ PDF owns native handles, cancellation, document-cache provenance, and
 application connect terminal encoding without a PDF-to-terminal dependency.
 Encoding stays on the worker before result delivery and waking. Preserve
 viewport request replacement, cancellation, delivery-before-wake ordering, and
-spool lifetime when changing that contract.
+spool lifetime when changing that contract. [Tile encoding][payload] reuses
+compression state per calling thread; each payload remains an independent
+stream and releases its output buffer normally.
 
 Terminal owns negotiation and cleanup. Headless presenters take explicit
 transport settings and an output sink; they must not open a terminal or probe
@@ -102,3 +104,5 @@ corpus, OCR, and terminal checks when they change.
 [reading]: ../../crates/ui/src/reading.rs
 [input]: ../../crates/ui/src/input.rs
 [source]: ../../crates/ui/src/source.rs
+
+[payload]: ../../crates/terminal/src/payload.rs
