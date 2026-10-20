@@ -36,7 +36,7 @@ impl Drawable for Session {
     if self.state.perf
       && let Some(screen) = self.screen
     {
-      self.perf.view.draw(out, screen, false)?;
+      self.perf.draw(out, screen)?;
     }
     write!(out, "{}", terminal::frame_end())?;
     // Drawing can scroll thumbnails or rewrap rows.
@@ -84,6 +84,7 @@ impl Session {
       write!(buffer, "{}", terminal::frame_start())?;
       if self.perf.view.draw(&mut buffer, screen, false)? {
         write!(buffer, "{}", terminal::frame_end())?;
+        self.perf.exclude(buffer.len());
         out.write_all(&buffer)?;
         out.flush()?;
       }

@@ -506,7 +506,7 @@ impl Session {
       if self.state.perf
         && let Some(screen) = self.screen
       {
-        self.perf.view.draw(out, screen, false)?;
+        self.perf.draw(out, screen)?;
         out.flush()?;
       }
     }

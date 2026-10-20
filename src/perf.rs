@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+use vpdf_ui::layout::Screen;
 use vpdf_ui::perf::{Overlay, Snapshot};
 
 pub const INTERVAL: Duration = Duration::from_millis(100);
@@ -17,9 +18,17 @@ struct Resources {
   rss: u64,
 }
 
+enum Signal {
+  /// Back to busy sampling after an idle stretch.
+  Wake,
+  /// Idle: sample once a second.
+  Rest,
+  Stop,
+}
+
 struct Sampler {
   latest: Arc<Mutex<Option<Resources>>>,
-  stop: mpsc::Sender<()>,
+  signal: mpsc::Sender<Signal>,
   thread: Option<JoinHandle<()>>,
 }
 
@@ -27,13 +36,15 @@ impl Sampler {
   fn new() -> Self {
     let latest = Arc::new(Mutex::new(None));
     let shared = Arc::clone(&latest);
-    let (stop, receiver) = mpsc::channel();
+    let (signal, receiver) = mpsc::channel();
     let thread = thread::spawn(move || {
       let mut system = System::new();
       let pid = Pid::from_u32(std::process::id());
       let kind =
         ProcessRefreshKind::nothing().with_cpu().with_memory().without_tasks();
-      let mut previous: Option<(Instant, u64)> = None;
+      // Short windows round a few ms of CPU to visible jitter.
+      let mut history: VecDeque<(Instant, u64)> = VecDeque::new();
+      let mut interval = INTERVAL;
       loop {
         system.refresh_processes_specifics(
           ProcessesToUpdate::Some(&[pid]),
@@ -43,27 +54,29 @@ impl Sampler {
         let at = Instant::now();
         let sample = system.process(pid).map(|process| {
           let total = process.accumulated_cpu_time();
-          let cpu = cpu_percent(previous, at, total);
-          previous = Some((at, total));
+          let cpu = windowed(&mut history, at, total);
           Resources { at, cpu, rss: process.memory() }
         });
         if let Ok(mut value) = shared.lock() {
           *value = sample;
         }
-        if receiver.recv_timeout(INTERVAL)
-          != Err(mpsc::RecvTimeoutError::Timeout)
-        {
-          break;
+        match receiver.recv_timeout(interval) {
+          Ok(Signal::Wake) => interval = INTERVAL,
+          Ok(Signal::Rest) => interval = SECOND,
+          Err(mpsc::RecvTimeoutError::Timeout) => {}
+          Ok(Signal::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+            break;
+          }
         }
       }
     });
-    Self { latest, stop, thread: Some(thread) }
+    Self { latest, signal, thread: Some(thread) }
   }
 }
 
 impl Drop for Sampler {
   fn drop(&mut self) {
-    let _ = self.stop.send(());
+    let _ = self.signal.send(Signal::Stop);
     if let Some(thread) = self.thread.take() {
       let _ = thread.join();
     }
@@ -76,6 +89,9 @@ pub(crate) struct Monitor {
   started: Instant,
   frames: VecDeque<Instant>,
   output: VecDeque<(Instant, usize)>,
+  /// Overlay bytes written since the last count; Out leaves them out.
+  own: usize,
+  idle: bool,
   pub(crate) view: Overlay,
 }
 
@@ -88,6 +104,8 @@ impl Default for Monitor {
       started: now,
       frames: VecDeque::new(),
       output: VecDeque::new(),
+      own: 0,
+      idle: false,
       view: Overlay::default(),
     }
   }
@@ -115,12 +133,14 @@ impl Monitor {
     while self.frames.len() > 1024 {
       self.frames.pop_front();
     }
+    self.wake(at);
   }
 
   pub fn bytes(&mut self, at: Instant, bytes: usize) {
     if self.sampler.is_none() {
       return;
     }
+    let bytes = bytes.saturating_sub(std::mem::take(&mut self.own));
     if bytes == 0 {
       return;
     }
@@ -128,22 +148,59 @@ impl Monitor {
     while self.output.len() > 2048 {
       self.output.pop_front();
     }
+    self.wake(at);
+  }
+
+  /// Paints the overlay into a frame, uncounted by Out.
+  pub fn draw(&mut self, out: &mut impl Write, screen: Screen) -> Result<bool> {
+    let mut buffer = Vec::new();
+    let drawn = self.view.draw(&mut buffer, screen, false)?;
+    self.exclude(buffer.len());
+    out.write_all(&buffer)?;
+    Ok(drawn)
+  }
+
+  pub fn exclude(&mut self, bytes: usize) {
+    if self.sampler.is_some() {
+      self.own += bytes;
+    }
+  }
+
+  fn wake(&mut self, at: Instant) {
+    if !self.idle {
+      return;
+    }
+    self.idle = false;
+    self.next = self.next.min(at + INTERVAL);
+    self.signal(Signal::Wake);
+  }
+
+  fn signal(&self, signal: Signal) {
+    if let Some(sampler) = &self.sampler {
+      let _ = sampler.signal.send(signal);
+    }
   }
 
   pub fn sample(&mut self, now: Instant) {
     if now < self.next {
       return;
     }
-    self.next = now + INTERVAL;
     self.frames.retain(|at| now.duration_since(*at) < SECOND);
     self.output.retain(|(at, _)| now.duration_since(*at) < SECOND);
+    // Frames and output wake an idle monitor themselves.
+    if !self.idle && self.frames.is_empty() && self.output.is_empty() {
+      self.idle = true;
+      self.signal(Signal::Rest);
+    }
+    self.next = now + if self.idle { SECOND } else { INTERVAL };
     let span = now.duration_since(self.started).as_secs_f64().min(1.0);
     let fps = self.frames.len();
     let resources = self
       .sampler
       .as_ref()
       .and_then(|s| s.latest.lock().ok().and_then(|value| *value))
-      .filter(|sample| now.saturating_duration_since(sample.at) < SECOND);
+      // Idle sampling runs once a second.
+      .filter(|sample| now.saturating_duration_since(sample.at) < SECOND * 2);
     let output: usize = self.output.iter().map(|(_, bytes)| bytes).sum();
     self.view.update(Snapshot {
       fps: fps as f64 / span.max(0.001),
@@ -188,6 +245,20 @@ impl<W: Write> Write for Output<W> {
   }
 }
 
+/// CPU over the last second of samples.
+fn windowed(
+  history: &mut VecDeque<(Instant, u64)>,
+  at: Instant,
+  total: u64,
+) -> Option<f64> {
+  history.push_back((at, total));
+  while history.len() > 2 && at.duration_since(history[1].0) >= SECOND {
+    history.pop_front();
+  }
+  let first = history.front().copied().filter(|(time, _)| *time < at);
+  cpu_percent(first, at, total)
+}
+
 fn cpu_percent(
   previous: Option<(Instant, u64)>,
   at: Instant,
@@ -201,7 +272,6 @@ fn cpu_percent(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use vpdf_ui::layout::Screen;
 
   fn screen(columns: u16, rows: u16) -> Screen {
     Screen { columns, rows, cell_width: 8, cell_height: 16, origin: (0, 0) }
@@ -228,6 +298,55 @@ mod tests {
     assert!(text.contains("FPS 0"));
     assert!(text.contains("Out 0.0K/s"));
     Ok(())
+  }
+
+  #[test]
+  fn out_leaves_out_overlay_repaints() -> Result<()> {
+    let mut monitor = Monitor::default();
+    monitor.running(true);
+    let start = monitor.started;
+    let mut frame = Vec::new();
+    assert!(monitor.draw(&mut frame, screen(80, 30))?);
+    monitor.exclude(16);
+    monitor.bytes(start, frame.len() + 16);
+    assert!(monitor.output.is_empty());
+    monitor.bytes(start, 100);
+    assert_eq!(monitor.output.iter().map(|(_, n)| n).sum::<usize>(), 100);
+    Ok(())
+  }
+
+  #[test]
+  fn idle_samples_once_a_second_until_a_frame() {
+    let mut monitor = Monitor::default();
+    monitor.running(true);
+    let start = monitor.started;
+    monitor.sample(start);
+    assert!(monitor.idle);
+    assert_eq!(monitor.wait(start), SECOND);
+    let at = start + INTERVAL;
+    monitor.frame(at);
+    assert!(!monitor.idle);
+    assert_eq!(monitor.wait(at), INTERVAL);
+    monitor.sample(at + INTERVAL);
+    assert_eq!(monitor.wait(at + INTERVAL), INTERVAL);
+  }
+
+  #[test]
+  fn cpu_spans_the_last_second() {
+    let start = Instant::now();
+    let mut history = VecDeque::new();
+    assert_eq!(windowed(&mut history, start, 0), None);
+    for tick in 1..=20 {
+      let at = start + INTERVAL * tick;
+      // 5 ms of CPU in the first second only.
+      let total = if tick <= 10 { u64::from(tick) / 2 } else { 5 };
+      let cpu = windowed(&mut history, at, total).unwrap();
+      if tick == 10 {
+        assert!((cpu - 0.5).abs() < 1e-9, "{cpu}");
+      }
+    }
+    assert_eq!(windowed(&mut history, start + INTERVAL * 21, 5), Some(0.0));
+    assert!(history.len() <= 12);
   }
 
   #[test]

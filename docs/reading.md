@@ -193,9 +193,10 @@ narrows; very short terminals retain space for reading and clip excess statistic
 rows. Executable help explains each label, unit, measurement window, and scope.
 
 Content FPS falls to zero when the view stops changing. The display measures
-application output, not monitor refresh or input-to-photon latency. Resource
-sampling and statistic updates add work, so compare enabled and disabled runs
-when measuring idle overhead. CPU readings cover vpdf, excluding the terminal
+application output, not monitor refresh or input-to-photon latency; Out
+excludes the display's own repaints. Sampling slows to once a second while
+nothing draws, but it still adds work, so compare enabled and disabled runs when
+measuring idle overhead. CPU readings cover vpdf, excluding the terminal
 and separate helper processes. Search and cold rendering can consume CPU while
 the interaction loop remains responsive.
 

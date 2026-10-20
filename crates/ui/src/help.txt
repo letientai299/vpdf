@@ -223,11 +223,11 @@ Scrollbar ticks: top-level headings, pages with matches
 
 # Performance
 :perf [on|off]: toggle global top stats; saved across restarts
-Stats refresh every 100 ms; M = MiB, K/s = KiB/s
+Stats refresh every 100 ms, 1 s when idle; M = MiB, K/s = KiB/s
 FPS: content frames flushed/s, rolling 1s; idle reaches zero
-CPU: process CPU delta; 100% = one core; excludes helpers
+CPU: process CPU, rolling 1s; 100% = one core; excludes helpers
 RSS: process resident memory; excludes terminal and helpers
-Out: session terminal output, including stats, rolling 1s
+Out: session terminal output, excluding stats, rolling 1s
 UI FPS does not measure monitor presentation
 Stats-only paints do not count as content frames
 Sampling adds work; CPU 0.0% is rounded, not zero execution
