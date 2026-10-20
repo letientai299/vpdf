@@ -1,4 +1,6 @@
 import json
+import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -61,7 +63,7 @@ class DemoTests(unittest.TestCase):
     def test_selected_publication(self):
         output = self.root / "assets"
         output.mkdir()
-        other = output / "search.webp"
+        other = output / "search.jpg"
         other.write_bytes(b"unchanged image")
         before = other.stat().st_mtime_ns
         previous = {"image": other.name, "capture": "old", "sha256": demo.digest(other)}
@@ -69,7 +71,7 @@ class DemoTests(unittest.TestCase):
             "captures": {"old": {"commit": "previous"}},
             "scenes": {"search": previous},
         }
-        image = self.root / "figure.webp"
+        image = self.root / "figure.jpg"
         image.write_bytes(b"new image")
         identity = {"commit": "current"}
         scene = {"image": image.name, "sha256": demo.digest(image)}
@@ -93,13 +95,13 @@ class DemoTests(unittest.TestCase):
             with self.subTest(existing=existing):
                 output = self.root / str(existing)
                 output.mkdir()
-                target = output / "figure.webp"
+                target = output / "figure.jpg"
                 if existing:
                     target.write_bytes(b"previous image")
                 report = output / "capture.json"
                 report.write_text('{"previous": true}\n')
                 manifest = {"captures": {}, "scenes": {}}
-                image = self.root / "candidate.webp"
+                image = self.root / "candidate.jpg"
                 image.write_bytes(b"candidate image")
                 scene = {"image": target.name}
                 with (
@@ -113,3 +115,94 @@ class DemoTests(unittest.TestCase):
                     self.assertEqual(target.read_bytes(), b"previous image")
                 self.assertEqual(manifest, {"captures": {}, "scenes": {}})
                 self.assertFalse(list(output.glob(".capture-*")))
+
+
+@unittest.skipUnless(shutil.which("magick"), "ImageMagick required")
+class OptimizerTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.source = self.root / "capture.png"
+        self.target = self.root / "capture.jpg"
+
+    def optimize(self):
+        return subprocess.run(
+            [
+                "sh", str(demo.ROOT / "scripts/demo-optimize.sh"),
+                str(self.source), str(self.target),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+    def test_jpeg_output(self):
+        subprocess.run(
+            [
+                "magick", "-size", "2560x1440", "gradient:red-blue",
+                "-set", "comment", "private capture metadata", str(self.source),
+            ],
+            check=True,
+        )
+        original = self.source.read_bytes()
+        result = self.optimize()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.source.read_bytes(), original)
+        self.assertTrue(self.target.read_bytes().startswith(b"\xff\xd8"))
+        decoded = subprocess.check_output(
+            [
+                "magick", str(self.target), "-format",
+                "%m %wx%h %[jpeg:sampling-factor] %[interlace] %Q %c", "info:",
+            ],
+            text=True,
+        )
+        self.assertEqual(decoded.strip(), "JPEG 2560x1440 1x1,1x1,1x1 JPEG 92")
+        self.assertEqual(self.target.stat().st_mode & 0o777, 0o644)
+        self.assertFalse(list(self.root.glob("capture.jpg.*")))
+
+    def test_invalid_capture(self):
+        self.target.write_bytes(b"previous image")
+        for size in ("1280x720", "1440x2560"):
+            with self.subTest(size=size):
+                subprocess.run(
+                    ["magick", "-size", size, "xc:white", str(self.source)],
+                    check=True,
+                )
+                result = self.optimize()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Capture must be 2560x1440", result.stderr)
+                self.assertEqual(self.target.read_bytes(), b"previous image")
+                self.assertFalse(list(self.root.glob("capture.jpg.*")))
+
+    def test_failed_encoding(self):
+        helper = self.root / "magick"
+        helper.write_text(
+            '#!/bin/sh\n'
+            'case "$1" in\n'
+            '  identify) printf 2560x1440 ;;\n'
+            '  -regard-warnings) printf "%s" "$DEMO_DECODED" ;;\n'
+            '  *)\n'
+            '    for argument do target=$argument; done\n'
+            '    printf partial > "${target#jpeg:}"\n'
+            '    exit "$DEMO_ENCODE_STATUS" ;;\n'
+            'esac\n'
+        )
+        helper.chmod(0o755)
+        cases = ((1, ""), (0, "PNG 2560x1440"), (0, "JPEG 1280x720"))
+        for existing in (False, True):
+            for status, decoded in cases:
+                with self.subTest(existing=existing, status=status, decoded=decoded):
+                    if existing:
+                        self.target.write_bytes(b"previous image")
+                    environment = {
+                        "PATH": str(self.root) + os.pathsep + os.environ["PATH"],
+                        "DEMO_ENCODE_STATUS": str(status),
+                        "DEMO_DECODED": decoded,
+                    }
+                    with patch.dict(os.environ, environment):
+                        result = self.optimize()
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(self.target.exists(), existing)
+                    if existing:
+                        self.assertEqual(self.target.read_bytes(), b"previous image")
+                    self.assertFalse(list(self.root.glob("capture.jpg.*")))

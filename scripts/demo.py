@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+ENCODING = "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
 SCENES = {
     "overview": (
         2,
@@ -255,7 +256,7 @@ def capture_identity(args, options, ocr, inputs):
         "dimensions": [2560, 1440],
         "capture": "Kitty screenshot API; graphics included; no resizing",
         "cache_conditions": "Fresh reader and private saved state per scene",
-        "encoding": "lossless WebP; decoded pixels verified against PNG",
+        "encoding": ENCODING,
         "ocr": ocr,
         "inputs": inputs,
     }
@@ -308,7 +309,7 @@ def publish_scene(output, manifest, identity, name, scene, image):
         shutil.copyfile(image, staged)
         report = directory / "capture.json"
         report.write_text(json.dumps(updated, indent=2) + "\n")
-        backup = directory / "previous.webp"
+        backup = directory / "previous.jpg"
         if target.exists():
             shutil.copyfile(target, backup)
         installed = False
@@ -453,11 +454,12 @@ class Gallery:
             time.sleep(0.4)
         screen = self.remote("get-text", "--match", f"id:{self.window}")
         (self.args.raw / f"{name}.txt").write_text(screen + "\n")
-        target = self.directory / f"{name}.webp"
+        target = self.directory / f"{name}.jpg"
         run("sh", str(ROOT / "scripts/demo-optimize.sh"), str(raw), str(target))
         print(f"Captured {name}: {target.stat().st_size} bytes", flush=True)
         scene = {
             "image": target.name,
+            "encoding": ENCODING,
             "sha256": digest(target),
             "bytes": target.stat().st_size,
             "start_page": page,

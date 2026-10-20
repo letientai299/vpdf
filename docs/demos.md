@@ -106,10 +106,12 @@ original scan. Recognition stays in memory; the source PDF stays unchanged.
 
 These examples use a release build on macOS in Kitty, captured directly at
 2560 × 1440 pixels. The terminal font uses 200% scaling: 26 points from a
-13-point base. Images use lossless WebP; optimization preserves decoded pixels.
+13-point base. Images use optimized JPEG with lossy compression.
 The [capture manifest][manifest] records the build, machine, terminal, font,
 document hashes, and scene inputs. The [development guide][capture] explains
-regeneration and storage.
+regeneration and storage. Scene encoding describes the current images; capture
+encoding records the original output. Reencoded scenes retain the source image
+name and hash.
 
 The screenshots demonstrate visible reading states. They do not measure frame
 rate, input latency, OCR accuracy, or clipboard delivery. Optional page OCR
@@ -128,18 +130,18 @@ before selecting text. The manifest records the OCR engine and language.
 [paper]: https://arxiv.org/abs/1706.03762
 [book]: https://greenteapress.com/wp/think-python-2e/
 [reading]: reading.md
-[overview]: assets/overview.webp
-[help]: assets/help.webp
-[search]: assets/search.webp
-[preview]: assets/preview.webp
-[figure]: assets/figure.webp
-[mouse-menu]: assets/mouse-menu.webp
-[mouse-hints]: assets/mouse-hints.webp
-[mouse-region]: assets/mouse-region.webp
-[pages]: assets/pages.webp
-[recent]: assets/recent.webp
-[jumps]: assets/jumps.webp
-[ocr]: assets/ocr.webp
+[overview]: assets/overview.jpg
+[help]: assets/help.jpg
+[search]: assets/search.jpg
+[preview]: assets/preview.jpg
+[figure]: assets/figure.jpg
+[mouse-menu]: assets/mouse-menu.jpg
+[mouse-hints]: assets/mouse-hints.jpg
+[mouse-region]: assets/mouse-region.jpg
+[pages]: assets/pages.jpg
+[recent]: assets/recent.jpg
+[jumps]: assets/jumps.jpg
+[ocr]: assets/ocr.jpg
 [scan]: https://web.mit.edu/sts.035/www/PDFs/edvac.pdf
 [manifest]: assets/capture.json
 [capture]: dev/dev.md#gallery-capture

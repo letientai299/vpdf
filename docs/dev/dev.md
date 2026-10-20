@@ -203,12 +203,14 @@ commit-identified evidence bundle rather than a moving development release.
 
 ## Gallery capture
 
+The [demo backlog][demo-backlog] lists workflows awaiting new captures.
+
 The [capture script][demo-script] drives the real reader inside an isolated
 [Kitty][kitty-capture] instance. It captures the terminal's rendered graphics,
 including PDF images, through Kitty's screenshot API. Install Kitty using its
 [upstream instructions][kitty-install]; both `kitty` and `kitten` must be on
 `PATH`, and `kitten @ screenshot --help` must succeed. Also install Python 3
-and [ImageMagick][imagemagick] with WebP support and the `magick` command.
+and [ImageMagick][imagemagick] with JPEG support and the `magick` command.
 Capture needs a desktop graphics session, without screen-recording permission.
 
 OCR scenes also need [Tesseract and English language data][ocr-setup] and
@@ -250,13 +252,15 @@ required pixel dimensions and exposes font controls through `--help`. It rejects
 other pixel dimensions instead of resizing the screenshot. User terminal
 configuration and saved reader state stay separate from the capture instance.
 
-The [optimizer][demo-optimize] encodes lossless WebP and checks decoded pixels
-against the original PNG. Tracked images and their generated capture manifest
-live in `docs/assets/`; raw PNGs, screen text, and terminal logs stay in
-gitignored `tmp/demo/`. The manifest identifies the executable hash, commit,
-build profile, machine, terminal, font settings, document hashes, and scene
-inputs. Inspect every image for complete rendering and readable content before
-publishing. See the [gallery][demo] for document attribution and capture scope.
+The [optimizer][demo-optimize] writes optimized JPEG and verifies that it
+decodes at the original dimensions. JPEG compression is lossy; full color
+resolution keeps colored text readable. Tracked images and their generated
+capture manifest live in `docs/assets/`; raw PNGs, screen text, and terminal
+logs stay in gitignored `tmp/demo/`. The manifest identifies the executable
+hash, commit, build profile, machine, terminal, font settings, document hashes,
+and scene inputs. Inspect every image for complete rendering and readable
+content before publishing. See the [gallery][demo] for document attribution and
+capture scope.
 
 Run `mise run test:demo` to check dependency selection, executable identity,
 and publication failure handling without opening Kitty.
@@ -305,6 +309,7 @@ a result needs a reproducible release reference.
 [demo-script]: ../../scripts/demo.py
 [demo-optimize]: ../../scripts/demo-optimize.sh
 [demo]: ../demos.md
+[demo-backlog]: demo-backlog.md
 [kitty-capture]: https://sw.kovidgoyal.net/kitty/remote-control/#kitten-screenshot
 [imagemagick]: https://imagemagick.org/script/download.php
 [git]: https://git-scm.com/install

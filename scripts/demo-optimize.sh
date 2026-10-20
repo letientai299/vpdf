@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 if [ "$#" -ne 2 ]; then
-  printf 'Usage: demo-optimize.sh input.png output.webp\n' >&2
+  printf 'Usage: demo-optimize.sh input.png output.jpg\n' >&2
   exit 2
 fi
 source_image=$1
@@ -13,8 +13,13 @@ if [ "$dimensions" != 2560x1440 ]; then
 fi
 staged=$(mktemp "${target_image}.XXXXXX")
 trap 'rm -f "$staged"' EXIT HUP INT TERM
-magick "$source_image" -strip -define webp:lossless=true \
-  -define webp:method=6 "webp:$staged"
-magick compare -metric AE "$source_image" "$staged" null: 2>/dev/null
+magick "$source_image" -colorspace sRGB -background white -alpha remove \
+  -alpha off -strip -depth 8 -sampling-factor 4:4:4 -quality 92 \
+  -interlace Plane -define jpeg:optimize-coding=true "jpeg:$staged"
+decoded=$(magick -regard-warnings "$staged" -format '%m %wx%h' info:)
+if [ "$decoded" != 'JPEG 2560x1440' ]; then
+  printf 'Invalid JPEG capture: %s\n' "$decoded" >&2
+  exit 1
+fi
 chmod 644 "$staged"
 mv "$staged" "$target_image"

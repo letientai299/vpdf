@@ -39,7 +39,7 @@ MuPDF and its Rust bindings remain subject to their AGPL obligations. See
 
 [mupdf]: https://mupdf.com/
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
-[overview]: docs/assets/overview.webp
+[overview]: docs/assets/overview.jpg
 [demo]: docs/demos.md
 [setup]: docs/install.md#terminal-setup
 [reading]: docs/reading.md

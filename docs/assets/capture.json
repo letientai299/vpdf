@@ -183,9 +183,9 @@
   },
   "scenes": {
     "overview": {
-      "image": "overview.webp",
-      "sha256": "167fbef4e2795844bfc806fbdc4b7901efca186abd4c2ea553eef80218167ead",
-      "bytes": 339002,
+      "image": "overview.jpg",
+      "sha256": "abdaf163c070dff899dba265bbc62e60137ba96c5afa18f9f7c6ec7e47e37557",
+      "bytes": 996225,
       "start_page": 2,
       "documents": [
         "paper",
@@ -327,12 +327,17 @@
           "\u256d"
         ]
       ],
-      "capture": "61cabc806f2baf09"
+      "capture": "61cabc806f2baf09",
+      "reencoded_from": {
+        "image": "overview.webp",
+        "sha256": "167fbef4e2795844bfc806fbdc4b7901efca186abd4c2ea553eef80218167ead"
+      },
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
     },
     "help": {
-      "image": "help.webp",
-      "sha256": "3aff344a0ce2b24039098495b866602f9fad0ebe13d251c5795546287a9d2b42",
-      "bytes": 382228,
+      "image": "help.jpg",
+      "sha256": "5bfda3096c612a3eadfa913270c262ee3bac5b6c66f7cc620b5ab1f07a278d46",
+      "bytes": 957831,
       "start_page": 2,
       "documents": [
         "paper"
@@ -391,12 +396,17 @@
           "table of contents"
         ]
       ],
-      "capture": "2208654b64ec0f1f"
+      "capture": "2208654b64ec0f1f",
+      "reencoded_from": {
+        "image": "help.webp",
+        "sha256": "3aff344a0ce2b24039098495b866602f9fad0ebe13d251c5795546287a9d2b42"
+      },
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
     },
     "search": {
-      "image": "search.webp",
-      "sha256": "590bb980202b823444a26fd174af397018d74e99fe2922da604d667c5f1535a8",
-      "bytes": 291452,
+      "image": "search.jpg",
+      "sha256": "507c61f083b1a972b9e6e5491a9d3834564fdf6a3fa4935920d0d794a1376018",
+      "bytes": 737833,
       "start_page": 2,
       "documents": [
         "paper"
@@ -419,12 +429,17 @@
           "RESULTS"
         ]
       ],
-      "capture": "2208654b64ec0f1f"
+      "capture": "2208654b64ec0f1f",
+      "reencoded_from": {
+        "image": "search.webp",
+        "sha256": "590bb980202b823444a26fd174af397018d74e99fe2922da604d667c5f1535a8"
+      },
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
     },
     "preview": {
-      "image": "preview.webp",
-      "sha256": "f6f7c8d999fab58042338047b1b1a83f5343d27ff3979431b2dae5a69e5c330f",
-      "bytes": 172290,
+      "image": "preview.jpg",
+      "sha256": "e74a2a69a8a2704420a3975ff73f87b34ad636dbdfd8a8f978034bf9d07e52c6",
+      "bytes": 710208,
       "start_page": 2,
       "documents": [
         "paper"
@@ -459,12 +474,17 @@
           "\u256d"
         ]
       ],
-      "capture": "2208654b64ec0f1f"
+      "capture": "2208654b64ec0f1f",
+      "reencoded_from": {
+        "image": "preview.webp",
+        "sha256": "f6f7c8d999fab58042338047b1b1a83f5343d27ff3979431b2dae5a69e5c330f"
+      },
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
     },
     "figure": {
-      "image": "figure.webp",
-      "sha256": "de4a4565c5d9978d2b1dbbb47c6b5c62a75cca7aa6e0171c113324d9de0aed17",
-      "bytes": 87146,
+      "image": "figure.jpg",
+      "sha256": "c1e25ab28cf54383d35922d67981f0f28b228b1e9c2be147bfe6cbfdf6ad5210",
+      "bytes": 262986,
       "start_page": 3,
       "documents": [
         "paper"
@@ -483,12 +503,17 @@
           "Copy text"
         ]
       ],
-      "capture": "2208654b64ec0f1f"
+      "capture": "2208654b64ec0f1f",
+      "reencoded_from": {
+        "image": "figure.webp",
+        "sha256": "de4a4565c5d9978d2b1dbbb47c6b5c62a75cca7aa6e0171c113324d9de0aed17"
+      },
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
     },
     "mouse-menu": {
-      "image": "mouse-menu.webp",
-      "sha256": "d56b8c8ae6b6362df5a47b00c1476ff742bf79d7851e170a23a303c29d570d35",
-      "bytes": 138302,
+      "image": "mouse-menu.jpg",
+      "sha256": "c444f9f88e849cc28191aa6e2cf1a329a726c79c2d4f853228bcc97f9a568b57",
+      "bytes": 606919,
       "start_page": 2,
       "documents": [
         "paper"
@@ -554,12 +579,17 @@
           "Search for selection"
         ]
       ],
-      "capture": "61cabc806f2baf09"
+      "capture": "61cabc806f2baf09",
+      "reencoded_from": {
+        "image": "mouse-menu.webp",
+        "sha256": "d56b8c8ae6b6362df5a47b00c1476ff742bf79d7851e170a23a303c29d570d35"
+      },
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
     },
     "mouse-hints": {
-      "image": "mouse-hints.webp",
-      "sha256": "d4c4935146dba9de38c5eabd66e06b4be005e1b3f85a18c57eb688afda13d5b4",
-      "bytes": 134084,
+      "image": "mouse-hints.jpg",
+      "sha256": "59f400ddf946c4b643342f70a20420aebd257c303980b0df2364c089214d8b60",
+      "bytes": 685701,
       "start_page": 2,
       "documents": [
         "paper"
@@ -578,12 +608,17 @@
           "a"
         ]
       ],
-      "capture": "7dbed3285fd3ec9c"
+      "capture": "7dbed3285fd3ec9c",
+      "reencoded_from": {
+        "image": "mouse-hints.webp",
+        "sha256": "d4c4935146dba9de38c5eabd66e06b4be005e1b3f85a18c57eb688afda13d5b4"
+      },
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
     },
     "mouse-region": {
-      "image": "mouse-region.webp",
-      "sha256": "f87b02c18404957eebcd99a2b172264aef9d613c0ae4087e7d500913e140975a",
-      "bytes": 85480,
+      "image": "mouse-region.jpg",
+      "sha256": "58faff1cbb1935af2c596274abf0ad52db5aa754f92a0b215723547e00e3de3b",
+      "bytes": 242238,
       "start_page": 3,
       "documents": [
         "paper"
@@ -614,12 +649,17 @@
           "Release captures; Esc cancels"
         ]
       ],
-      "capture": "7dbed3285fd3ec9c"
+      "capture": "7dbed3285fd3ec9c",
+      "reencoded_from": {
+        "image": "mouse-region.webp",
+        "sha256": "f87b02c18404957eebcd99a2b172264aef9d613c0ae4087e7d500913e140975a"
+      },
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
     },
     "pages": {
-      "image": "pages.webp",
-      "sha256": "e19f7d1f1208bc4b759b6432ba9c4712a7a6db52b79c0bc4ed9d956bc15e3c42",
-      "bytes": 246166,
+      "image": "pages.jpg",
+      "sha256": "dce68e51a4040c82b0670fb07853de6d2526601fc81ddb0d2376dd53c8fee954",
+      "bytes": 519702,
       "start_page": 64,
       "documents": [
         "book",
@@ -635,12 +675,17 @@
           "PAGES"
         ]
       ],
-      "capture": "2208654b64ec0f1f"
+      "capture": "2208654b64ec0f1f",
+      "reencoded_from": {
+        "image": "pages.webp",
+        "sha256": "e19f7d1f1208bc4b759b6432ba9c4712a7a6db52b79c0bc4ed9d956bc15e3c42"
+      },
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
     },
     "recent": {
-      "image": "recent.webp",
-      "sha256": "0a841d24f9cceb23f4eef218757c7eb899a59542e59e0b5eb26eaa22f1f162dd",
-      "bytes": 88572,
+      "image": "recent.jpg",
+      "sha256": "c705a9b88f0d179eebd59209c5acef29072ca4c688af4387fd00d1621d0d7da5",
+      "bytes": 252189,
       "start_page": 2,
       "documents": [
         "paper",
@@ -681,12 +726,17 @@
           "49"
         ]
       ],
-      "capture": "2208654b64ec0f1f"
+      "capture": "2208654b64ec0f1f",
+      "reencoded_from": {
+        "image": "recent.webp",
+        "sha256": "0a841d24f9cceb23f4eef218757c7eb899a59542e59e0b5eb26eaa22f1f162dd"
+      },
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
     },
     "jumps": {
-      "image": "jumps.webp",
-      "sha256": "32291b4d32c4d3fe437d949b6b8734f4bad3121b4d87dcbd9c61b027728d58ca",
-      "bytes": 238732,
+      "image": "jumps.jpg",
+      "sha256": "fb6bc52a1ce0d4c6de08c405c22ba950b82f2d449ce6c0ec3300908ae84d3272",
+      "bytes": 598663,
       "start_page": 2,
       "documents": [
         "paper"
@@ -729,12 +779,17 @@
           "Search ["
         ]
       ],
-      "capture": "2208654b64ec0f1f"
+      "capture": "2208654b64ec0f1f",
+      "reencoded_from": {
+        "image": "jumps.webp",
+        "sha256": "32291b4d32c4d3fe437d949b6b8734f4bad3121b4d87dcbd9c61b027728d58ca"
+      },
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
     },
     "ocr": {
-      "image": "ocr.webp",
-      "sha256": "041c167f9e36a4b0e4f03c8ec458a9635979fc216fac7f6cc3d1a55943b38d0c",
-      "bytes": 278882,
+      "image": "ocr.jpg",
+      "sha256": "875b8f7112c475e875f59eab75b57e6efd85fa2f3c5c074e5f15794146c2419b",
+      "bytes": 992883,
       "start_page": 7,
       "documents": [
         "scan"
@@ -777,7 +832,12 @@
           "VISUAL"
         ]
       ],
-      "capture": "2208654b64ec0f1f"
+      "capture": "2208654b64ec0f1f",
+      "reencoded_from": {
+        "image": "ocr.webp",
+        "sha256": "041c167f9e36a4b0e4f03c8ec458a9635979fc216fac7f6cc3d1a55943b38d0c"
+      },
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
     }
   }
 }
