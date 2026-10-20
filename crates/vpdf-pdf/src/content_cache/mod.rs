@@ -20,7 +20,10 @@ const OCR_MAGIC: &[u8; 8] = b"VPDFOCR1";
 /// glyphs.
 const RECORD: u64 = 16 * MIB as u64;
 
+mod outline;
 mod pack;
+
+pub(crate) use outline::OutlineCache;
 mod provenance;
 mod store;
 
@@ -82,9 +85,17 @@ pub fn root() -> Option<PathBuf> {
 
 /// SHA-256 of the bytes of `file`.
 pub fn alias(file: &mut File) -> Result<Alias> {
+  alias_with(file, || true)
+}
+
+pub(super) fn alias_with(
+  file: &mut impl Read,
+  mut ready: impl FnMut() -> bool,
+) -> Result<Alias> {
   let mut hasher = Sha256::new();
   let mut buffer = vec![0; MIB];
   loop {
+    anyhow::ensure!(ready(), "PDF hashing stopped");
     match file.read(&mut buffer)? {
       0 => return Ok(hasher.finalize().into()),
       read => hasher.update(&buffer[..read]),
@@ -204,6 +215,27 @@ mod tests {
         .collect(),
     };
     Index::new(PageId(page), &Text { lines: vec![line], truncated: false })
+  }
+
+  #[test]
+  fn hashing_stops_between_chunks() -> Result<()> {
+    let bytes = vec![7; 3 * MIB];
+    for allowed in 0..=1 {
+      let mut file = std::io::Cursor::new(&bytes);
+      let mut checks = 0;
+      assert!(
+        alias_with(&mut file, || {
+          checks += 1;
+          checks <= allowed
+        })
+        .is_err()
+      );
+      assert_eq!(file.position(), (allowed * MIB) as u64);
+    }
+    let mut file = std::io::Cursor::new(&bytes);
+    let expected: Alias = Sha256::digest(&bytes).into();
+    assert_eq!(alias_with(&mut file, || true)?, expected);
+    Ok(())
   }
 
   fn hits(index: &Index, query: &str) -> usize {

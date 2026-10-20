@@ -1474,6 +1474,7 @@ dependencies = [
  "font-kit",
  "mupdf",
  "rustix",
+ "serde_json",
  "sha2",
  "tempfile",
  "vpdf-model",

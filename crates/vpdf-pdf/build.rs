@@ -51,6 +51,8 @@ fn main() {
     "unicode-script",
   ]);
   println!("cargo::rustc-env=VPDF_INDEX_CRATES={index}");
+  let outline = code(&["crates/vpdf-pdf/src/jobs/outline.rs"]);
+  println!("cargo::rustc-env=VPDF_OUTLINE_CODE={outline:016x}");
   let code = code(&[
     "crates/vpdf-pdf/src/fonts.rs",
     "crates/vpdf-pdf/src/document/mod.rs",
