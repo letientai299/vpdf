@@ -26,6 +26,9 @@ use vpdf_model::tile::{TILE_WIDTH, TileKey, cover};
 
 /// Largest image page rendered whole, in pixels; about 24 MiB of RGB.
 const WHOLE: i64 = 8 << 20;
+/// Limit contention between native raster threads.
+const RASTERS: usize =
+  if cfg!(all(target_os = "linux", target_env = "musl")) { 2 } else { 4 };
 /// Pages drawn after which an idle coordinator reopens its document.
 const RELOAD: usize = 64;
 /// Idle time before that reopen.
@@ -491,7 +494,7 @@ struct Pool {
 fn pool() -> &'static Pool {
   static POOL: OnceLock<Pool> = OnceLock::new();
   POOL.get_or_init(|| {
-    for _ in 0..super::Config::default().helpers.get() {
+    for _ in 0..super::Config::default().helpers.get().min(RASTERS) {
       thread::spawn(|| serve(pool()));
     }
     Pool { tasks: Mutex::new(VecDeque::new()), ready: Condvar::new() }
