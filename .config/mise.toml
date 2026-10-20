@@ -1,8 +1,8 @@
 [tools]
-rust = { version = "nightly-2026-10-17", components = "clippy,rustfmt,rust-analyzer,rust-src" }
+rust = { version = "nightly-2026-10-20", components = "clippy,rustfmt,rust-analyzer,rust-src" }
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.148"
-prek = "0.5.5"
-rumdl = "0.2.79"
+prek = "0.5.6"
+rumdl = "0.3.0"
 taplo = "0.10.0"
 upx = { version = "5.2.1", os = ["linux"] }
 
