@@ -6,10 +6,11 @@
 //! page edges (running heads, folios) are ignored.
 
 use super::Wake;
+use crate::content_cache::{self, OutlineCache};
 use crate::document::{Handle, Heading, Target};
 use crate::text::{Line, PageId, Text};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
@@ -186,35 +187,74 @@ impl Drop for OutlineJob {
 /// Reads the authored outline on a separate document, or infers one when
 /// there is none.
 pub fn spawn(path: &Path, password: &str, wake: &Wake) -> OutlineJob {
+  spawn_at(path, password, wake, content_cache::root())
+}
+
+fn spawn_at(
+  path: &Path,
+  password: &str,
+  wake: &Wake,
+  root: Option<PathBuf>,
+) -> OutlineJob {
   let (send, result) = mpsc::channel();
   let send = wake.sender(send);
   let stop = Arc::new(AtomicBool::new(false));
   let stopped = Arc::clone(&stop);
   let (path, password) = (path.to_owned(), password.to_owned());
   std::thread::spawn(move || {
+    let cache = root.and_then(|root| {
+      OutlineCache::open(root, &path, &password, || {
+        crate::scheduling::yield_to_views(|| stopped.load(Ordering::Relaxed))
+      })
+    });
+    let found = cache.as_ref().and_then(OutlineCache::read);
+    if stopped.load(Ordering::Relaxed) {
+      return;
+    }
+    if let Some(found) = found {
+      let _ = send.send(found);
+      return;
+    }
     let Ok(doc) = Handle::open(&path, &password) else {
       let _ = send.send((Vec::new(), false));
       return;
     };
-    if let Ok(outline) = doc.outline()
-      && !outline.is_empty()
-    {
-      let _ = send.send((outline, false));
-      return;
+    let pages = (0..doc.pages.min(PAGES)).map(|page| {
+      crate::scheduling::yield_to_views(|| stopped.load(Ordering::Relaxed))
+        .then(|| doc.text(PageId(page)))
+    });
+    if let Some(outline) = load_outline(doc.outline(), pages, cache.as_ref()) {
+      let _ = send.send(outline);
     }
-    let mut pages = Vec::new();
-    for page in 0..doc.pages.min(PAGES) {
-      if !crate::scheduling::yield_to_views(|| stopped.load(Ordering::Relaxed))
-      {
-        return;
-      }
-      // An unreadable page adds no headings instead of failing them all.
-      let text = doc.text(PageId(page));
-      pages.push(text.map_or_else(|_| Vec::new(), |text| summarize(&text)));
-    }
-    let _ = send.send((infer(&pages), true));
   });
   OutlineJob { result, stop }
+}
+
+fn load_outline(
+  authored: crate::Result<Vec<Heading>>,
+  pages: impl IntoIterator<Item = Option<crate::Result<Text>>>,
+  cache: Option<&OutlineCache>,
+) -> Option<(Vec<Heading>, bool)> {
+  let mut complete = authored.is_ok();
+  if let Ok(outline) = authored
+    && !outline.is_empty()
+  {
+    if let Some(cache) = cache {
+      cache.save(&outline, false);
+    }
+    return Some((outline, false));
+  }
+  let mut summaries = Vec::new();
+  for text in pages {
+    let text = text?;
+    complete &= text.is_ok();
+    summaries.push(text.map_or_else(|_| Vec::new(), |text| summarize(&text)));
+  }
+  let outline = infer(&summaries);
+  if complete && let Some(cache) = cache {
+    cache.save(&outline, true);
+  }
+  Some((outline, true))
 }
 
 /// Numbered headings nest by their dots; unnumbered ones by size rank.
@@ -259,6 +299,85 @@ mod tests {
     let (_, inferred) = job.result.try_recv()?;
     assert!(inferred);
     assert_eq!(woken.try_iter().count(), 0);
+    Ok(())
+  }
+
+  #[test]
+  fn failed_extraction_retries() -> crate::Result<()> {
+    let source = tempfile::NamedTempFile::new()?;
+    crate::fixtures::pdf(source.path(), &["body"], "")?;
+    let doc = Handle::open(source.path(), "")?;
+    for authored_failure in [true, false] {
+      let root = tempfile::tempdir()?;
+      let cache =
+        OutlineCache::open(root.path().into(), source.path(), "", || true)
+          .unwrap();
+      let error = || anyhow::anyhow!("Extraction failed");
+      let authored =
+        if authored_failure { Err(error()) } else { Ok(Vec::new()) };
+      let text =
+        if authored_failure { doc.text(PageId(0)) } else { Err(error()) };
+      assert!(load_outline(authored, [Some(text)], Some(&cache)).is_some());
+      assert!(cache.read().is_none());
+      assert_eq!(std::fs::read_dir(root.path())?.count(), 0);
+      let retried =
+        load_outline(Ok(Vec::new()), [Some(doc.text(PageId(0)))], Some(&cache));
+      assert!(retried.is_some());
+      assert!(cache.read().is_some());
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn encrypted_job_stays_private() -> crate::Result<()> {
+    let source = tempfile::NamedTempFile::new()?;
+    crate::fixtures::pdf(source.path(), &["Secret title"], "")?;
+    let mut doc = Handle::open(source.path(), "")?;
+    let file = crate::encryption::encrypt(&mut doc.native)?;
+    let before = content_cache::alias(&mut std::fs::File::open(file.path())?)?;
+    let root = tempfile::tempdir()?;
+    let (wake, _) = crate::fixtures::wake();
+    let job =
+      spawn_at(file.path(), "test-reader", &wake, Some(root.path().to_owned()));
+    let (_, inferred) =
+      job.result.recv_timeout(std::time::Duration::from_secs(10))?;
+    assert!(inferred);
+    assert_eq!(std::fs::read_dir(root.path())?.count(), 0);
+    assert_eq!(
+      content_cache::alias(&mut std::fs::File::open(file.path())?)?,
+      before
+    );
+    Ok(())
+  }
+
+  #[test]
+  fn dropping_cancels_cache_lookup() -> crate::Result<()> {
+    let file = tempfile::NamedTempFile::new()?;
+    crate::fixtures::pdf(file.path(), &["body"], "")?;
+    let pdf = std::fs::read_to_string(file.path())?
+      .replace("/Type/Catalog", "/Type/Catalog/Outlines 6 0 R")
+      .replace(
+        "trailer",
+        "6 0 obj <</Type/Outlines/First 7 0 R/Last 7 0 R/Count 1>> endobj\n\
+         7 0 obj <</Title (Chapter)/Parent 6 0 R/Dest [4 0 R /Fit]>> endobj\n\
+         trailer",
+      );
+    std::fs::write(file.path(), pdf)?;
+    assert_eq!(Handle::open(file.path(), "")?.outline()?.len(), 1);
+    let root = tempfile::tempdir()?;
+    let drawing = crate::scheduling::Urgent::new();
+    let (wake, woken) = crate::fixtures::wake();
+    let mut job = spawn_at(file.path(), "", &wake, Some(root.path().into()));
+    let (_, empty) = mpsc::channel();
+    let result = std::mem::replace(&mut job.result, empty);
+    drop(job);
+    assert!(matches!(
+      result.recv_timeout(std::time::Duration::from_secs(10)),
+      Err(mpsc::RecvTimeoutError::Disconnected)
+    ));
+    assert_eq!(woken.try_iter().count(), 0);
+    assert_eq!(std::fs::read_dir(root.path())?.count(), 0);
+    drop(drawing);
     Ok(())
   }
 

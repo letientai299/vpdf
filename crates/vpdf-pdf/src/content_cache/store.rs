@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime};
 /// Writes so far, naming each writer's temporary pack.
 static WRITES: AtomicU64 = AtomicU64::new(0);
 
-/// Packs and OCR output kept before the least recently used go.
+/// Disk records share one eviction budget.
 pub(super) const BUDGET: u64 = 1 << 30;
 
 /// Free disk space below which nothing is written.
@@ -60,9 +60,7 @@ pub(super) fn publish(target: &Path, bytes: &[u8]) -> Result<()> {
   Ok(())
 }
 
-/// Deletes the least recently used packs and OCR output until the rest
-/// fit `budget`, memos of deleted packs or unused for a month, and
-/// temporary files a crashed writer left.
+/// Removes old records and abandoned writes.
 pub(super) fn trim(root: &Path, budget: u64) -> Result<()> {
   let mut packs = Vec::new();
   let mut memos = Vec::new();
@@ -72,7 +70,9 @@ pub(super) fn trim(root: &Path, budget: u64) -> Result<()> {
     let modified = meta.modified().unwrap_or(now);
     let path = entry.path();
     match path.extension().and_then(|extension| extension.to_str()) {
-      Some("pack" | "ocr") => packs.push((modified, meta.len(), path)),
+      Some("pack" | "ocr" | "outline") => {
+        packs.push((modified, meta.len(), path));
+      }
       Some("id") => memos.push((modified, path)),
       Some("tmp")
         if now.duration_since(modified).unwrap_or_default() > ABANDONED =>

@@ -173,11 +173,15 @@ State saves during activity and on exit; abrupt process or machine failure can
 lose recent changes. Simultaneous readers can race when saving.
 
 On macOS, search indexes persist in `~/Library/Caches/vpdf/content`, so a
-reopened PDF searches without rereading its pages. They and stored page OCR
-output hold the PDF's text, readable only by your account; PDFs opened with a
-password are never stored. Small records there remember each PDF's hash by its
-file identity. The system may purge that directory at any time. Set `VPDF_CACHE`
-to another directory, or to `off` to keep indexes and OCR output in memory only.
+reopened PDF searches without rereading its pages. Resolved outlines also
+persist there, avoiding repeated destination loading when reopening large books.
+These records and stored page OCR output hold the PDF's text, readable only by
+your account; PDFs opened with a password are never stored. Small records there
+remember each PDF's hash by its file identity. The system may purge that
+directory at any time. Set `VPDF_CACHE` to another directory, or to `off` to
+keep indexes, outlines, and OCR output in memory only. Linux requires an
+explicit cache directory. Missing, damaged, or stale outline records fall back
+to PDF extraction; the first open still resolves the authored destinations.
 
 The reader reloads a changed PDF and retains a useful position, view choices,
 and marks. Arbitrary document edits can change where the passage lands. Reload
