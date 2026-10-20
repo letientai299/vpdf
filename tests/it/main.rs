@@ -1,5 +1,6 @@
 mod annotations;
 mod app;
+mod bench_stats;
 mod chrome;
 mod cli;
 mod common;

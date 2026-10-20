@@ -22,11 +22,15 @@ use vpdf_ui::layout::Screen;
 /// The query every search case measures.
 const QUERY: &str = "the";
 
+#[path = "support/percentile.rs"]
+mod percentile;
+
 #[derive(Serialize)]
 struct Timing {
   samples: usize,
   p50_ms: f64,
-  p95_ms: f64,
+  p95_ms: Option<f64>,
+  p99_ms: Option<f64>,
   max_ms: f64,
 }
 
@@ -44,7 +48,8 @@ fn measure(
   Ok(Timing {
     samples: count,
     p50_ms: times[count / 2],
-    p95_ms: times[(count * 95 / 100).min(count - 1)],
+    p95_ms: percentile::tail(&times, 95),
+    p99_ms: percentile::tail(&times, 99),
     max_ms: times[count - 1],
   })
 }
@@ -206,7 +211,7 @@ fn frames(app: &mut Solo) -> Result<(Timing, u64)> {
       frame += 1;
       Ok(())
     },
-    200,
+    1001,
   )?;
   app.reading_view().scrub_scroll(base);
   Ok((timing, app.graphics.uploaded - uploaded))
@@ -260,10 +265,14 @@ fn main() -> Result<()> {
   if std::env::var_os("VPDF_PERF_CHECK").is_some() {
     for report in &reports {
       anyhow::ensure!(
-        report.frame.p95_ms < 8.33 && report.search_frame.p95_ms < 8.33,
+        report.frame.p95_ms.is_some_and(|time| time < 8.33)
+          && report.search_frame.p95_ms.is_some_and(|time| time < 8.33),
         "Warm frame exceeds 8.33 ms"
       );
-      anyhow::ensure!(report.motion.p95_ms < 1.0, "Warm motion exceeds 1 ms");
+      anyhow::ensure!(
+        report.motion.p95_ms.is_some_and(|time| time < 1.0),
+        "Warm motion exceeds 1 ms"
+      );
       anyhow::ensure!(
         report.warm_scroll_upload_bytes == 0,
         "Warm scroll uploaded base images"

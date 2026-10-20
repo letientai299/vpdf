@@ -15,11 +15,15 @@ const SETTLE: Duration = Duration::from_secs(10);
 /// A full scan of a 5,000-page manual stays well inside this.
 const SCAN: Duration = Duration::from_secs(120);
 
+#[path = "support/percentile.rs"]
+mod percentile;
+
 #[derive(Default, Serialize)]
 struct Timing {
   samples: usize,
   p50_ms: f64,
-  p95_ms: f64,
+  p95_ms: Option<f64>,
+  p99_ms: Option<f64>,
   max_ms: f64,
 }
 
@@ -32,7 +36,8 @@ fn timing(mut times: Vec<f64>) -> Timing {
   Timing {
     samples: count,
     p50_ms: times[count / 2],
-    p95_ms: times[(count * 95 / 100).min(count - 1)],
+    p95_ms: percentile::tail(&times, 95),
+    p99_ms: percentile::tail(&times, 99),
     max_ms: times[count - 1],
   }
 }

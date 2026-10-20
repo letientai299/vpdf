@@ -2,9 +2,13 @@ use anyhow::Result;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
-const SAMPLES: usize = 31;
+pub mod percentile;
 
-/// Median, p10, and p90 nanoseconds per call.
+const BATCHES: usize = 31;
+const SAMPLES: usize = 1001;
+const SAMPLE_LIMIT: Duration = Duration::from_secs(10);
+
+/// Individual latency and calibrated batch throughput.
 pub fn measure(name: &str, mut call: impl FnMut()) -> Result<()> {
   // Batches of about a millisecond hide the clock's resolution.
   let mut batch = 1_u32;
@@ -18,7 +22,7 @@ pub fn measure(name: &str, mut call: impl FnMut()) -> Result<()> {
     }
     batch *= 2;
   }
-  let mut samples: Vec<f64> = (0..SAMPLES)
+  let mut samples: Vec<f64> = (0..BATCHES)
     .map(|_| {
       let started = Instant::now();
       for _ in 0..batch {
@@ -28,14 +32,50 @@ pub fn measure(name: &str, mut call: impl FnMut()) -> Result<()> {
     })
     .collect();
   samples.sort_by(f64::total_cmp);
-  let at = |share: usize| samples[(SAMPLES - 1) * share / 100];
+  let throughput = samples[BATCHES / 2];
+  let samples = calls(&mut call);
+  report(name, &samples, Some((throughput, batch)))?;
+  Ok(())
+}
+
+fn calls(mut call: impl FnMut()) -> Vec<f64> {
+  let deadline = Instant::now() + SAMPLE_LIMIT;
+  let mut samples = Vec::with_capacity(SAMPLES);
+  for _ in 0..SAMPLES {
+    let started = Instant::now();
+    call();
+    samples.push(started.elapsed().as_nanos() as f64);
+    if Instant::now() >= deadline {
+      break;
+    }
+  }
+  samples.sort_by(f64::total_cmp);
+  samples
+}
+
+fn report(
+  name: &str,
+  samples: &[f64],
+  throughput: Option<(f64, u32)>,
+) -> Result<()> {
+  let display = |share| {
+    percentile::tail(samples, share)
+      .map_or_else(|| "n/a".to_owned(), |value| format!("{value:.1}"))
+  };
   writeln!(
     io::stdout(),
-    "{name:<28} {:>12.1} ns  p10 {:.1}  p90 {:.1}",
-    at(50),
-    at(10),
-    at(90)
+    "{name:<28} p50 {:.1} ns  p95 {} ns  p99 {} ns  n={}",
+    percentile::percentile(samples, 50).unwrap_or(0.0),
+    display(95),
+    display(99),
+    samples.len()
   )?;
+  if let Some((value, batch)) = throughput {
+    writeln!(
+      io::stdout(),
+      "  batch median {value:.1} ns/op ({BATCHES} x {batch} calls)"
+    )?;
+  }
   Ok(())
 }
 
@@ -49,6 +89,12 @@ fn selected(name: &str) -> bool {
 pub type Case = fn() -> Result<()>;
 
 pub fn run(cases: &[(&str, Case)]) -> Result<()> {
+  writeln!(
+    io::stdout(),
+    "Call latency includes timer cost; batches measure throughput."
+  )?;
+  let floor = calls(|| {});
+  report("timer floor", &floor, None)?;
   let mut failed = 0;
   for (name, case) in cases {
     if selected(name)

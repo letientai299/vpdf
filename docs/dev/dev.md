@@ -174,6 +174,12 @@ benchmarks without it. PDF benchmarks open native documents; application cases
 retain integrated frames, routing, and latency. Run `mise run corpus` before
 native cases to verify their inputs.
 
+Microbenchmarks report individual-call median, p95, p99, and sample count.
+They print timer overhead separately; short calls can approach that floor.
+Calibrated batch throughput stays separate from latency percentiles. Sampling
+uses the limits in the [shared helper][bench-support]. Sparse tails report
+`n/a`; JSON reports use `null`. Repeat matched runs before comparing tails.
+
 Use `mise run corpus:huge -- sdm postgres` before `mise run bench:manuals`.
 The [manual benchmark][manuals] separates document opening, retained memory,
 search indexing and matching, geometry, navigation, and paced overview frames.
@@ -378,3 +384,4 @@ a result needs a reproducible release reference.
 [ocr-setup]: ../install.md#optional-helpers
 [preview]: ../../crates/ui/src/preview.rs
 [manuals]: ../../benches/manuals.rs
+[bench-support]: ../../benches/support/mod.rs
