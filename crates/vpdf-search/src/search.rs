@@ -134,8 +134,14 @@ impl Index {
         if self.runs.last().is_some_and(|run| run.byte as usize == len) {
           self.runs.pop();
         }
-      } else if let Some(anchor) = self.last_anchor() {
-        self.push(' ', anchor);
+      } else {
+        let anchor = match form {
+          Form::Printed => (!self.text.is_empty()).then_some((0, 0)),
+          _ => self.last_anchor(),
+        };
+        if let Some(anchor) = anchor {
+          self.push_glyph(' ', anchor, form);
+        }
       }
       if self.text.len() >= limit {
         break;
@@ -145,7 +151,13 @@ impl Index {
 
   fn push_glyph(&mut self, ch: char, anchor: (u32, u32), form: Form) {
     match form {
-      Form::Printed => self.push(ch, anchor),
+      Form::Printed => {
+        self.push_char(ch);
+      }
+      Form::Exact if ch.is_ascii() => self.push(ch, anchor),
+      Form::Folded if ch.is_ascii() => {
+        self.push(ch.to_ascii_lowercase(), anchor);
+      }
       Form::Exact => {
         for ch in std::iter::once(ch).nfkd() {
           self.push(ch, anchor);
@@ -159,14 +171,21 @@ impl Index {
     }
   }
 
-  fn push(&mut self, ch: char, anchor: (u32, u32)) {
+  #[inline]
+  fn push_char(&mut self, ch: char) -> Option<u32> {
     let ch = if ch.is_whitespace() { ' ' } else { ch };
     if ch == ' ' && self.text.ends_with(' ') {
-      return;
+      return None;
     }
     let byte = self.text.len() as u32;
     self.text.push(ch);
-    let single = ch.len_utf8() == 1;
+    Some(byte)
+  }
+
+  #[inline]
+  fn push(&mut self, ch: char, anchor: (u32, u32)) {
+    let Some(byte) = self.push_char(ch) else { return };
+    let single = self.text.len() == byte as usize + 1;
     if let Some(run) = self.runs.last()
       && run.stepped
       && single
@@ -437,6 +456,58 @@ mod tests {
     let actual: Vec<_> =
       (0..flat.len()).map(|byte| index.anchor(byte)).collect();
     assert_eq!(actual, expected);
+  }
+
+  #[test]
+  fn ascii_matches_unicode_path() {
+    let chars = (0..=127).map(char::from).chain("Äßİﬁά日本語".chars());
+    for form in [Form::Printed, Form::Exact, Form::Folded] {
+      let empty = || Index {
+        page: PageId(0),
+        text: String::new(),
+        runs: Vec::new(),
+        lines: Vec::new(),
+      };
+      let (mut actual, mut expected) = (empty(), empty());
+      for (glyph, ch) in chars.clone().enumerate() {
+        let anchor = (0, glyph as u32);
+        actual.push_glyph(ch, anchor, form);
+        let normalized: String = match form {
+          Form::Printed => ch.to_string(),
+          Form::Exact => std::iter::once(ch).nfkd().collect(),
+          Form::Folded => std::iter::once(ch).nfkd().case_fold().collect(),
+        };
+        for ch in normalized.chars() {
+          expected.push(ch, anchor);
+        }
+      }
+      assert_eq!(actual.text, expected.text);
+      if matches!(form, Form::Printed) {
+        assert!(actual.runs.is_empty());
+        continue;
+      }
+      for byte in 0..expected.text.len() {
+        assert_eq!(actual.anchor(byte), expected.anchor(byte));
+      }
+    }
+  }
+
+  #[test]
+  fn excerpt_limits_preserve_joins() {
+    for ch in ['a', 'é', '日'] {
+      for count in [79, 80, 81, 319, 320, 321] {
+        let prefix: String = std::iter::repeat_n(ch, count).collect();
+        let line = format!("{prefix}-");
+        let text = sample(&[&line, "b"]);
+        let index = Index::new(PageId(0), &text);
+        let actual = index.excerpt(Position::default());
+        let expected: String = format!("{prefix}b ").chars().take(80).collect();
+        assert_eq!(actual, expected, "{ch} {count}");
+      }
+    }
+    let text = sample(&["  A\tB ", "", " C"]);
+    let index = Index::new(PageId(0), &text);
+    assert_eq!(index.excerpt(Position::default()), " A B C ");
   }
 
   #[test]

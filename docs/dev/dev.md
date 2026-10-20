@@ -143,6 +143,16 @@ benchmarks without it. PDF benchmarks open native documents; application cases
 retain integrated frames, routing, and latency. Run `mise run corpus` before
 native cases to verify their inputs.
 
+Use `mise run corpus:huge -- sdm postgres` before `mise run bench:manuals`.
+The [manual benchmark][manuals] separates document opening, retained memory,
+search indexing and matching, geometry, navigation, and paced overview frames.
+Pass a case name to select a phase, or set `VPDF_EXTRA` to a platform-separated
+list of verified PDF paths. Keep source hashes and index hashes with results.
+Compare built executables in alternating order after warmup; keep compilation
+outside measurement windows. Report OS file-cache conditions separately from
+fresh document handles. Overview frames go to memory and do not measure terminal
+painting or SSH delivery.
+
 Set `VPDF_BENCH_FIXTURES` to share a prepared fixture directory between
 checkouts. Case filters apply within the selected package; omit `--package` to
 run matching cases across the workspace.
@@ -323,3 +333,4 @@ a result needs a reproducible release reference.
 [poppler]: https://poppler.freedesktop.org/
 [ocr-setup]: ../install.md#optional-helpers
 [preview]: ../../crates/ui/src/preview.rs
+[manuals]: ../../benches/manuals.rs

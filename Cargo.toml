@@ -143,3 +143,7 @@ harness = false
 [patch.crates-io]
 mupdf = { git = "https://github.com/messense/mupdf-rs", rev = "ffaf28f5a96c478661e228dd04564afdcf2477c6" }
 mupdf-sys = { git = "https://github.com/messense/mupdf-rs", rev = "ffaf28f5a96c478661e228dd04564afdcf2477c6" }
+
+[[bench]]
+name = "manuals"
+harness = false

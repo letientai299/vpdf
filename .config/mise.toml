@@ -163,3 +163,7 @@ run = "cargo nextest run --locked -p vpdf-ui"
 [tasks."bench:ui"]
 description = "Measure interface components using prepared fixtures"
 run = 'cargo bench --locked --profile release -p vpdf-ui --bench micro -- {{arg(name="cases", var=true, default="")}}'
+
+[tasks."bench:manuals"]
+description = "Measure verified manuals; arguments filter cases"
+run = 'cargo bench --locked --profile release -p vpdf --bench manuals -- {{arg(name="cases", var=true, default="")}}'
