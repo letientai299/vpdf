@@ -21,22 +21,33 @@ pub struct Overlay {
   painted: Vec<String>,
   layout: Option<(u16, u16)>,
   changed: bool,
+  output: &'static str,
 }
 
 impl Default for Overlay {
   fn default() -> Self {
-    Self { cells: Vec::new(), painted: Vec::new(), layout: None, changed: true }
+    Self {
+      cells: Vec::new(),
+      painted: Vec::new(),
+      layout: None,
+      changed: true,
+      output: "Out",
+    }
   }
 }
 
 impl Overlay {
+  pub fn output(&mut self, label: &'static str) {
+    self.output = label;
+  }
+
   pub fn update(&mut self, sample: Snapshot) {
     self.changed = true;
     self.cells = vec![
       format!("FPS {:.0}", sample.fps),
       number("CPU", sample.cpu, "%"),
       number("RSS", sample.rss.map(|rss| rss as f64 / 1_048_576.0), "M"),
-      format!("Out {:.1}K/s", sample.bytes_per_second / 1024.0),
+      format!("{} {:.1}K/s", self.output, sample.bytes_per_second / 1024.0),
     ];
   }
 

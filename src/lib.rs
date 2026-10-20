@@ -38,6 +38,9 @@ pub mod watch;
 #[cfg(test)]
 use vpdf_pdf::jobs::Wake;
 #[cfg(test)]
+#[path = "../tests/support/encryption.rs"]
+mod encryption;
+#[cfg(test)]
 #[path = "../tests/support/native.rs"]
 mod fixtures;
 #[cfg(test)]

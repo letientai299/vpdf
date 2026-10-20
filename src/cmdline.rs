@@ -13,15 +13,16 @@ pub fn feed(
   key: KeyEvent,
   history: &History,
   view: View,
+  terminal: bool,
 ) -> Result<PromptEvent> {
   Ok(match prompt.feed(key, history) {
     PromptEvent::Editor => {
-      let edited = crate::programs::edit(prompt.text())?;
+      let edited = crate::programs::edit(prompt.text(), terminal)?;
       prompt.replace(&edited);
       PromptEvent::Edited
     }
     PromptEvent::Complete if prompt.kind() == PromptKind::Command => {
-      let (start, items) = candidates(prompt.before_cursor(), view);
+      let (start, items) = candidates(prompt.before_cursor(), view, terminal);
       prompt.complete(start, items);
       PromptEvent::Edited
     }
@@ -36,12 +37,25 @@ pub fn on_path(program: &str) -> bool {
   })
 }
 
-pub fn candidates(before: &str, view: View) -> (usize, Vec<String>) {
-  commands::candidates(before, view, on_path, |kind, argument| match kind {
-    Complete::Path => paths(argument),
-    Complete::Language => languages().to_vec(),
-    _ => Vec::new(),
-  })
+pub(crate) fn available(program: &str, terminal: bool) -> bool {
+  (!terminal && program == "fzf") || on_path(program)
+}
+
+pub fn candidates(
+  before: &str,
+  view: View,
+  terminal: bool,
+) -> (usize, Vec<String>) {
+  commands::candidates(
+    before,
+    view,
+    |program| available(program, terminal),
+    |kind, argument| match kind {
+      Complete::Path => paths(argument),
+      Complete::Language => languages().to_vec(),
+      _ => Vec::new(),
+    },
+  )
 }
 
 /// Expands a leading `~` to the home directory.
@@ -129,7 +143,8 @@ mod tests {
     assert_eq!(names(paths(&format!("{base}a"))), ["a.pdf", "archive/"]);
     assert_eq!(names(paths(&format!("{base}."))), [".hidden.pdf"]);
     for (command, start) in [("tabe", 5), ("tabnew", 7)] {
-      let items = candidates(&format!("{command} {base}b"), View::Document);
+      let items =
+        candidates(&format!("{command} {base}b"), View::Document, true);
       assert_eq!((items.0, names(items.1)), (start, vec!["b.PDF".to_owned()]));
     }
     Ok(())

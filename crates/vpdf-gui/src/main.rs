@@ -70,6 +70,23 @@ impl eframe::App for Window {
       self.screen = Some(screen);
       self.bridge.send(Input::Resize(screen));
     }
+    let mut content = false;
+    let mut received = false;
+    if let Some(frame) = self.bridge.take() {
+      content = frame.content;
+      received = true;
+      ctx.send_viewport_cmd(ViewportCommand::Title(frame.title.clone()));
+      if frame.quit {
+        ctx.send_viewport_cmd(ViewportCommand::Close);
+      }
+      if let Some(text) = &frame.clipboard {
+        ctx.copy_text(text.clone());
+      }
+      self.frame = Some(frame);
+    }
+    self.input.editing(
+      self.frame.as_ref().and_then(|frame| input::purpose(&frame.scene)),
+    );
     let drawn = self.frame.as_ref().map_or(screen, |frame| frame.screen);
     let step = self.frame.as_ref().map_or([0.0; 2], Frame::wheel_step);
     let events = ctx.input(|input| {
@@ -89,18 +106,9 @@ impl eframe::App for Window {
     for file in drops {
       self.bridge.send(Input::Open(file.path().to_path_buf()));
     }
-    if let Some(frame) = self.bridge.take() {
-      ctx.send_viewport_cmd(ViewportCommand::Title(frame.title.clone()));
-      if frame.quit {
-        ctx.send_viewport_cmd(ViewportCommand::Close);
-      }
-      if let Some(text) = &frame.clipboard {
-        ctx.copy_text(text.clone());
-      }
-      self.frame = Some(frame);
-    }
     if let Some(frame) = &self.frame {
       ctx.set_cursor_icon(input::cursor(frame.cursor));
+      let before = self.renderer.upload_bytes;
       let mut ime = self.renderer.paint(
         ui.painter(),
         frame,
@@ -108,13 +116,15 @@ impl eframe::App for Window {
         scale,
         self.input.preedit(),
       );
-      self.input.editable(ime.is_some());
       let interrupt = self.input.interrupt();
       if let Some(ime) = &mut ime {
         ime.should_interrupt_composition = interrupt;
       }
       ctx.output_mut(|output| output.ime = ime);
-      self.bridge.send(Input::Presented);
+      let bytes = self.renderer.upload_bytes.saturating_sub(before);
+      if received || bytes != 0 {
+        self.bridge.send(Input::Presented { content, bytes });
+      }
       if frame.complete
         && (!frame.images.is_empty()
           || frame

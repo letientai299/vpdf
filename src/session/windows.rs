@@ -148,7 +148,7 @@ impl Session {
     password: &str,
     screen: Screen,
   ) -> Result<App> {
-    let mut secret = password.to_owned();
+    let mut secret = self.secret.take().unwrap_or_else(|| password.to_owned());
     let mut app = loop {
       match App::with_frontend(
         path,

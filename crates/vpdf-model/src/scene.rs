@@ -232,6 +232,7 @@ pub enum Op<'a> {
   ShowCursor,
   /// Editable row bounds for native composition.
   InputArea {
+    masked: bool,
     column: usize,
     columns: usize,
   },

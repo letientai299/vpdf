@@ -90,21 +90,38 @@ impl Home {
     event: Event,
     history: &mut History,
   ) -> Result<Outcome> {
+    self.handle(event, history, true)
+  }
+
+  pub(crate) fn native_event(
+    &mut self,
+    event: Event,
+    history: &mut History,
+  ) -> Result<Outcome> {
+    self.handle(event, history, false)
+  }
+
+  fn handle(
+    &mut self,
+    event: Event,
+    history: &mut History,
+    terminal: bool,
+  ) -> Result<Outcome> {
     Ok(match self.view.event(event, history)? {
       Effect::Stay => Outcome::Stay,
       Effect::Open(path) => Outcome::Open(path),
       Effect::Quit => Outcome::Quit,
-      Effect::Command(line) => return command(&line),
+      Effect::Command(line) => return resolve(&line, terminal),
       Effect::Paste(text) => {
         crate::dnd::pdf(&text).map_or(Outcome::Stay, Outcome::Open)
       }
       Effect::Editor(text) => {
-        let edited = crate::programs::edit(&text)?;
+        let edited = crate::programs::edit(&text, terminal)?;
         self.view.replace_prompt(&edited);
         Outcome::Stay
       }
       Effect::Complete(before) => {
-        let (start, items) = cmdline::candidates(&before, View::Home);
+        let (start, items) = cmdline::candidates(&before, View::Home, terminal);
         self.view.complete_prompt(start, items);
         Outcome::Stay
       }
@@ -113,9 +130,18 @@ impl Home {
 }
 
 /// Commands that make sense before any document is open.
+#[cfg(test)]
 fn command(line: &str) -> Result<Outcome> {
-  let resolved =
-    commands::resolve(line, View::Home, cmdline::on_path, |_| false)?;
+  resolve(line, true)
+}
+
+fn resolve(line: &str, terminal: bool) -> Result<Outcome> {
+  let resolved = commands::resolve(
+    line,
+    View::Home,
+    |program| cmdline::available(program, terminal),
+    |_| false,
+  )?;
   let commands::Resolution::Command { spec, argument } = resolved else {
     return Ok(Outcome::Stay);
   };
@@ -168,6 +194,14 @@ mod tests {
     output.clear();
     home.draw(&mut output)?;
     assert!(!output.windows(4).any(|bytes| bytes == b"a=t,"));
+    Ok(())
+  }
+
+  #[test]
+  fn native_commands_offer_picker() -> Result<()> {
+    assert_eq!(resolve("fzf", false)?, Outcome::Pick);
+    let (_, items) = cmdline::candidates("fz", View::Home, false);
+    assert!(items.iter().any(|item| item.trim() == "fzf"));
     Ok(())
   }
 

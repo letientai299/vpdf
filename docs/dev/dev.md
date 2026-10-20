@@ -72,8 +72,18 @@ Alt chords retain the terminal's word-editing behavior.
 Region captures use the shared jobs and clipboard helpers. Completed text from
 background panes reaches the GUI clipboard when focus moves elsewhere.
 On macOS, UI text uses installed system fonts for missing CJK glyphs.
-The native app remains incomplete. Protected-document prompts still need
-integration; clipboard effects need live validation.
+Protected documents use the shared masked password prompt. Cancel keeps the
+previous view; retry resumes the original open, split, or mark command.
+Switching windows preserves committed passwords and cancels IME composition.
+On macOS, `:fzf` uses the system file chooser through the built-in `osascript`;
+it starts in the current directory and replaces the focused pane. File drops
+open tabs. External prompt editing requires the terminal reader.
+
+The native `:perf` overlay samples process CPU and RSS. FPS counts content
+frames received and painted by the window; Upload counts RGBA texture bytes
+submitted to egui. Overlay-only redraws do not count as content frames. These
+counters do not measure GPU completion or observed display latency.
+Clipboard effects and OS interaction still need live validation.
 The painter performance budget has not been measured. Use the terminal reader
 for complete feature support. Release and install tasks still target it.
 

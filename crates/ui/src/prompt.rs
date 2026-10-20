@@ -194,6 +194,7 @@ impl Prompt {
     crate::paint::move_to(scene, at, row, column);
     scene.extend([
       Op::InputArea {
+        masked: self.kind == PromptKind::Password,
         column: usize::from(at.column),
         columns: usize::from(screen.columns),
       },

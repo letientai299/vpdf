@@ -21,17 +21,18 @@ pub struct Adapter {
   wheel: egui::Vec2,
   wheel_modifiers: Option<Modifiers>,
   screen: Option<Screen>,
-  editable: bool,
+  editing: Option<egui::IMEPurpose>,
+  cancelled: bool,
   blurred: bool,
   preedit: Option<Preedit>,
   interrupt: bool,
 }
 
 impl Adapter {
-  pub fn editable(&mut self, editable: bool) {
-    self.editable = editable;
-    if !editable {
-      self.preedit = None;
+  pub fn editing(&mut self, purpose: Option<egui::IMEPurpose>) {
+    if self.editing != purpose {
+      self.cancel();
+      self.editing = purpose;
     }
   }
   pub fn preedit(&self) -> Option<&Preedit> {
@@ -41,7 +42,9 @@ impl Adapter {
     std::mem::take(&mut self.interrupt)
   }
   fn cancel(&mut self) {
-    self.interrupt |= self.preedit.take().is_some();
+    let active = self.preedit.take().is_some();
+    self.interrupt |= active;
+    self.cancelled |= active;
   }
   pub fn events(
     &mut self,
@@ -158,17 +161,23 @@ impl Adapter {
         }));
       }
       Event::Ime(egui::ImeEvent::Preedit { text, active_range_chars })
-        if self.editable && !self.blurred =>
+        if self.editing.is_some() && !self.blurred =>
       {
+        if !text.is_empty() {
+          self.cancelled = false;
+        }
         self.preedit = (!text.is_empty()).then(|| Preedit {
           text: text.clone(),
           active: active_range_chars.clone(),
         });
       }
       Event::Ime(egui::ImeEvent::Commit(text))
-        if self.editable && !self.blurred =>
+        if self.editing.is_some() && !self.blurred =>
       {
         self.preedit = None;
+        if std::mem::take(&mut self.cancelled) {
+          return Some(output);
+        }
         if !text.is_empty() {
           output.push(Input::Paste(text.clone()));
         }
@@ -176,7 +185,7 @@ impl Adapter {
       Event::Ime(egui::ImeEvent::DeleteSurrounding {
         before_chars,
         after_chars,
-      }) if self.editable && !self.blurred => {
+      }) if self.editing.is_some() && !self.blurred => {
         self.cancel();
         for (code, count) in
           [(KeyCode::Backspace, *before_chars), (KeyCode::Delete, *after_chars)]
@@ -297,6 +306,29 @@ fn physical(pos: egui::Pos2, scale: f32) -> (u16, u16) {
     (pos.x * scale).floor().max(0.0) as u16,
     (pos.y * scale).floor().max(0.0) as u16,
   )
+}
+
+pub fn purpose(
+  scene: &[vpdf_model::scene::Op<'_>],
+) -> Option<egui::IMEPurpose> {
+  use vpdf_model::scene::Op;
+  let mut purpose = None;
+  let mut visible = false;
+  for op in scene {
+    match op {
+      Op::InputArea { masked, .. } => {
+        purpose = Some(if *masked {
+          egui::IMEPurpose::Password
+        } else {
+          egui::IMEPurpose::Normal
+        });
+      }
+      Op::ShowCursor => visible = true,
+      Op::HideCursor => visible = false,
+      _ => {}
+    }
+  }
+  purpose.filter(|_| visible)
 }
 
 pub fn cursor(shape: Shape) -> egui::CursorIcon {
@@ -461,6 +493,41 @@ mod tests {
   }
 
   #[test]
+  fn purpose_changes_cancel_composition() {
+    use egui::IMEPurpose::{Normal, Password};
+    use vpdf_model::scene::Op;
+    let mut adapter = Adapter::default();
+    adapter.editing(Some(Password));
+    let run = |adapter: &mut Adapter, input: &[Event]| {
+      adapter.events(input, Modifiers::NONE, screen(), 1.0, [30.0, 60.0], None)
+    };
+    run(&mut adapter, &[preedit("secret")]);
+    let scene =
+      [Op::InputArea { column: 0, columns: 80, masked: false }, Op::ShowCursor];
+    adapter.editing(purpose(&scene));
+    assert!(adapter.preedit().is_none());
+    assert!(adapter.interrupt());
+    let late =
+      run(&mut adapter, &[Event::Ime(egui::ImeEvent::Commit("secret".into()))]);
+    assert_eq!(late.len(), 0);
+    run(&mut adapter, &[preedit("new")]);
+    adapter.editing(Some(Normal));
+    assert_eq!(adapter.preedit().unwrap().text, "new");
+    let output =
+      run(&mut adapter, &[Event::Ime(egui::ImeEvent::Commit("new".into()))]);
+    assert!(matches!(&output[..], [Input::Paste(text)] if text == "new"));
+    assert_eq!(purpose(&[Op::ShowCursor]), None);
+    assert_eq!(
+      purpose(&[
+        Op::InputArea { column: 0, columns: 80, masked: true },
+        Op::ShowCursor,
+        Op::HideCursor,
+      ]),
+      None
+    );
+  }
+
+  #[test]
   fn composition_commits_once_and_only_in_prompts() {
     let mut adapter = Adapter::default();
     let run = |adapter: &mut Adapter, input: &[Event]| {
@@ -473,7 +540,7 @@ mod tests {
       )
       .is_empty()
     );
-    adapter.editable(true);
+    adapter.editing(Some(egui::IMEPurpose::Normal));
     assert!(
       run(
         &mut adapter,
@@ -505,7 +572,7 @@ mod tests {
       preedit(""),
     ] {
       let mut adapter = Adapter::default();
-      adapter.editable(true);
+      adapter.editing(Some(egui::IMEPurpose::Normal));
       let output = adapter.events(
         &[preedit("draft"), cancel],
         Modifiers::NONE,
@@ -525,11 +592,12 @@ mod tests {
   #[test]
   fn blurred_composition_cannot_commit() {
     let mut adapter = Adapter::default();
-    adapter.editable(true);
+    adapter.editing(Some(egui::IMEPurpose::Normal));
     let output = adapter.events(
       &[
         preedit("draft"),
         Event::WindowFocused(false),
+        Event::WindowFocused(true),
         Event::Ime(egui::ImeEvent::Commit("draft".into())),
       ],
       Modifiers::NONE,
@@ -538,7 +606,7 @@ mod tests {
       [30.0, 60.0],
       None,
     );
-    assert!(matches!(&output[..], [Input::Focus(false)]));
+    assert!(matches!(&output[..], [Input::Focus(false), Input::Focus(true)]));
     assert!(adapter.preedit().is_none());
     assert!(adapter.interrupt());
     assert!(!adapter.interrupt());

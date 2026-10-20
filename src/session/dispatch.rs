@@ -4,6 +4,13 @@ use super::{
 };
 
 impl Session {
+  pub(super) fn pick(&mut self) -> Result<()> {
+    if self.picker.is_none() {
+      self.picker = Some(crate::programs::Picker::start()?);
+    }
+    Ok(())
+  }
+
   pub(super) fn toggle_perf(&mut self, on: Option<bool>) -> Result<()> {
     self.state.set_perf(on.unwrap_or(!self.state.perf));
     self.changed();
@@ -24,7 +31,22 @@ impl Session {
       return self.close_pane();
     }
     let screen = self.screen.unwrap_or(fallback);
-    match self.app().request.take() {
+    let request = self.app().request.take();
+    let retry = if matches!(self.frontend, crate::raster::Frontend::Native(_)) {
+      request.clone()
+    } else {
+      None
+    };
+    let result = self.dispatch(request, screen);
+    self.unlock_result(result, retry.map(super::unlock::Operation::Request))
+  }
+
+  fn dispatch(
+    &mut self,
+    request: Option<Request>,
+    screen: Screen,
+  ) -> Result<()> {
+    match request {
       Some(Request::Open { path, tab }) => self.open(&path, tab, screen),
       Some(Request::RecentTab) => self.recent_tab(screen),
       Some(Request::PanelOpen { path, position, focus }) => {
@@ -69,16 +91,32 @@ impl Session {
         self.split_beside(|app| app.follow(&target))
       }
       // Each key's request applies before the next.
-      Some(Request::Keys(keys)) => keys.into_iter().try_for_each(|key| {
-        self.type_key(key)?;
-        self.settle()
-      }),
+      Some(Request::Keys(keys)) => {
+        let mut keys = keys.into_iter();
+        while let Some(key) = keys.next() {
+          self.type_key(key)?;
+          self.settle()?;
+          if self.quit || self.tabs.is_empty() {
+            break;
+          }
+          if self.unlock.is_some() || self.picker.is_some() {
+            self.pending_keys.extend(keys);
+            break;
+          }
+        }
+        Ok(())
+      }
       Some(Request::SplitMark(name)) => {
         let mark = self.global_mark(name)?;
         if mark.path == self.app().path {
           return self.split_beside(|app| app.land_at(mark.cursor));
         }
         self.panel_open(&mark.path, Some(mark.cursor), false, screen)
+      }
+      Some(Request::Pick)
+        if matches!(self.frontend, crate::raster::Frontend::Native(_)) =>
+      {
+        self.pick()
       }
       Some(Request::Pick) => {
         match crate::programs::pick_pdf(&std::env::current_dir()?)? {

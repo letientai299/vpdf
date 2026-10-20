@@ -48,6 +48,11 @@ pub struct Session {
   pub quit: bool,
   pub state: State,
   frontend: crate::raster::Frontend,
+  unlock: Option<unlock::Unlock>,
+  native_opens: std::collections::VecDeque<PathBuf>,
+  pending_keys: std::collections::VecDeque<KeyEvent>,
+  secret: Option<String>,
+  picker: Option<crate::programs::Picker>,
   perf: crate::perf::Monitor,
   /// Start screen while no document is open.
   pub home: Option<Home>,
@@ -155,6 +160,11 @@ impl Session {
       graphics: Graphics::default(),
       state,
       frontend: crate::raster::Frontend::Terminal,
+      unlock: None,
+      native_opens: std::collections::VecDeque::new(),
+      pending_keys: std::collections::VecDeque::new(),
+      secret: None,
+      picker: None,
       perf: crate::perf::Monitor::default(),
       home: None,
       screen: None,
@@ -237,6 +247,7 @@ mod pointer;
 mod run;
 #[cfg(test)]
 mod tests;
+mod unlock;
 mod windows;
 
 pub use run::view;

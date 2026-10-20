@@ -118,7 +118,7 @@ impl App {
       PanelKind::Links => self.link_rows()?,
       PanelKind::Jumps => self.jump_rows(),
       PanelKind::Annotations => self.annotation_rows()?,
-      PanelKind::Help => help(crate::cmdline::on_path)
+      PanelKind::Help => help(|program| self.command_available(program))
         .iter()
         .map(|line| Row::parse(line))
         .collect(),

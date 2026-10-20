@@ -115,8 +115,9 @@ impl App {
     self.drop_hover_preview();
     if self.overlays.prompt().is_some() {
       let view = self.command_view();
+      let terminal = matches!(self.frontend, crate::raster::Frontend::Terminal);
       return self.edit_prompt(history, |prompt, history| {
-        cmdline::feed(prompt, key, history, view)
+        cmdline::feed(prompt, key, history, view, terminal)
       });
     }
     if vpdf_ui::keys::cancels(key) {
@@ -242,11 +243,18 @@ impl App {
     if self.covered() { View::Recent } else { View::Document }
   }
 
+  pub(crate) fn command_available(&self, program: &str) -> bool {
+    cmdline::available(
+      program,
+      matches!(self.frontend, crate::raster::Frontend::Terminal),
+    )
+  }
+
   pub fn command(&mut self, line: &str) -> Result<()> {
     let (spec, argument) = match commands::resolve(
       line,
       self.command_view(),
-      cmdline::on_path,
+      |program| self.command_available(program),
       |name| self.doc.page_number(name).is_some(),
     )? {
       commands::Resolution::Empty => return Ok(()),

@@ -1,4 +1,5 @@
 //! Session ownership for native windows.
+use super::unlock::Operation;
 use super::{Home, Screen, Session};
 use crate::Result;
 use crossterm::event::{KeyEvent, MouseEvent};
@@ -24,7 +25,7 @@ pub enum Input {
   Leave,
   Focus(bool),
   Open(PathBuf),
-  Presented,
+  Presented { content: bool, bytes: usize },
   Wake,
   Close,
 }
@@ -42,6 +43,7 @@ pub struct Frame {
   pub title: String,
   pub cursor: vpdf_model::style::Shape,
   pub complete: bool,
+  pub content: bool,
   pub quit: bool,
   pub clipboard: Option<String>,
 }
@@ -137,15 +139,30 @@ fn run(
   for path in paths {
     apply(&mut session, Input::Open(path), &mut screen);
   }
-  if session.tabs.is_empty() {
-    session.home.get_or_insert_with(|| {
-      Home::with_wake(&session.state.recent, screen, &session.frontend.wake())
-    });
-  }
+  ensure_home(&mut session, screen);
+  session.resize(screen)?;
   let mut cache = Cache::new(BUDGET);
   let mut chores = super::run::Chores::new(Instant::now());
   let mut dirty = true;
   loop {
+    dirty |= picker_update(&mut session, screen);
+    dirty |= resume_keys(&mut session);
+    if session.unlock.is_none()
+      && session.picker.is_none()
+      && session.pending_keys.is_empty()
+      && let Some(path) = session.native_opens.pop_front()
+    {
+      apply(&mut session, Input::Open(path), &mut screen);
+      dirty = true;
+    }
+    ensure_home(&mut session, screen);
+    session.perf.running(session.state.perf);
+    session.perf.view.output("Upload");
+    let now = Instant::now();
+    let sampled = session.state.perf && session.perf.wait(now).is_zero();
+    if sampled {
+      session.perf.sample(now);
+    }
     if let Some(home) = &mut session.home {
       dirty |= home.updates();
     }
@@ -160,10 +177,13 @@ fn run(
         dirty |= app.bar_expired(Instant::now());
       }
     }
-    if dirty {
+    if dirty || sampled {
       let frame = frame(&mut session, &mut cache, screen);
       match frame {
-        Ok(frame) => publish(latest, frame),
+        Ok(mut frame) => {
+          frame.content = dirty;
+          publish(latest, frame);
+        }
         Err(error) => {
           eprintln!("Native frame: {error}");
         }
@@ -177,14 +197,7 @@ fn run(
     if session.quit {
       break;
     }
-    let wait = if session.tabs.is_empty() {
-      Duration::from_secs(2)
-    } else {
-      let animated =
-        session.tab().panes.iter().any(|app| app.reader.animation().active());
-      let wait = chores.wait(&mut session);
-      if animated { wait.min(Duration::from_millis(8)) } else { wait }
-    };
+    let wait = wait_time(&mut session, &chores);
     let input = match receive.recv_timeout(wait) {
       Ok(input) => input,
       Err(mpsc::RecvTimeoutError::Timeout) => continue,
@@ -197,8 +210,13 @@ fn run(
       pending.store(false, Ordering::Release);
       continue;
     }
-    if matches!(input, Input::Presented) {
+    if let Input::Presented { content, bytes } = input {
+      let now = Instant::now();
+      if content {
+        session.perf.frame(now);
+      }
       session.drawn();
+      session.perf.bytes(now, bytes);
       continue;
     }
     chores.touch();
@@ -208,23 +226,125 @@ fn run(
   session.finish()
 }
 
+fn resume_keys(session: &mut Session) -> bool {
+  if session.unlock.is_some() || session.picker.is_some() {
+    return false;
+  }
+  if session.quit || session.tabs.is_empty() {
+    session.pending_keys.clear();
+    return false;
+  }
+  let keys = std::mem::take(&mut session.pending_keys);
+  if keys.is_empty() {
+    return false;
+  }
+  session.app().request = Some(super::Request::Keys(keys.into()));
+  let result = session.settle();
+  if result.is_err() || session.quit || session.tabs.is_empty() {
+    session.pending_keys.clear();
+  }
+  report(session, result);
+  true
+}
+
+fn picker_update(session: &mut Session, screen: Screen) -> bool {
+  use std::task::Poll;
+  let Some(picker) = &mut session.picker else { return false };
+  let result = picker.poll();
+  if matches!(result, Ok(Poll::Pending)) {
+    return false;
+  }
+  session.picker = None;
+  let result = result.and_then(|picked| {
+    let Poll::Ready(Some(path)) = picked else { return Ok(()) };
+    picked_path(session, path, screen)
+  });
+  if result.is_err() {
+    session.pending_keys.clear();
+  }
+  report(session, result);
+  true
+}
+
+fn picked_path(
+  session: &mut Session,
+  path: PathBuf,
+  screen: Screen,
+) -> Result<()> {
+  let operation = if session.tabs.is_empty() {
+    Operation::Open(path)
+  } else {
+    Operation::Request(super::Request::Open { path, tab: false })
+  };
+  session.resume(operation, screen)
+}
+
+fn wait_time(session: &mut Session, chores: &super::run::Chores) -> Duration {
+  if session.unlock.is_none()
+    && session.picker.is_none()
+    && (!session.native_opens.is_empty() || !session.pending_keys.is_empty())
+  {
+    return Duration::ZERO;
+  }
+  let mut wait = if session.tabs.is_empty() {
+    Duration::from_secs(2)
+  } else {
+    let animated =
+      session.tab().panes.iter().any(|app| app.reader.animation().active());
+    let wait = chores.wait(session);
+    if animated { wait.min(Duration::from_millis(8)) } else { wait }
+  };
+  if session.state.perf {
+    wait = wait.min(session.perf.wait(Instant::now()));
+  }
+  if session.picker.is_some() {
+    wait = wait.min(Duration::from_millis(50));
+  }
+  wait
+}
+
 fn publish(latest: &Mutex<Option<Frame>>, mut frame: Frame) {
   let Ok(mut output) = latest.lock() else { return };
   if frame.clipboard.is_none() {
     frame.clipboard =
       output.as_mut().and_then(|previous| previous.clipboard.take());
   }
+  frame.content |= output.as_ref().is_some_and(|previous| previous.content);
   *output = Some(frame);
 }
 
 fn apply(session: &mut Session, input: Input, screen: &mut Screen) {
+  if session.picker.is_some()
+    && matches!(
+      input,
+      Input::Key(_)
+        | Input::Paste(_)
+        | Input::Mouse { .. }
+        | Input::History { .. }
+    )
+  {
+    return;
+  }
+  match session.password_input(&input, *screen) {
+    Ok(true) => return,
+    Err(error) => {
+      report(session, Err(error));
+      return;
+    }
+    Ok(false) => {}
+  }
   let applied = match input {
     Input::Resize(size) => {
       *screen = size;
       session.resize(size)
     }
     Input::Open(path) => {
-      session.open(&path, true, *screen).map(|()| session.home = None)
+      if session.unlock.is_some() || session.picker.is_some() {
+        session.native_opens.push_back(path);
+        Ok(())
+      } else {
+        session.resume(Operation::Open(path), *screen)
+      }
     }
     Input::Key(key) if session.tabs.is_empty() => {
       home_event(session, vpdf_terminal::decode::Event::Key(key), *screen)
@@ -283,14 +403,24 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) {
     }
     _ => Ok(()),
   };
+  ensure_home(session, *screen);
+  report(session, applied);
+}
+
+fn ensure_home(session: &mut Session, screen: Screen) {
   if session.tabs.is_empty() && session.home.is_none() && !session.quit {
     session.home = Some(Home::with_wake(
       &session.state.recent,
-      *screen,
+      session.content(screen),
       &session.frontend.wake(),
     ));
+    let resized = session.resize(screen);
+    report(session, resized);
   }
-  if let Err(error) = applied {
+}
+
+fn report(session: &mut Session, result: Result<()>) {
+  if let Err(error) = result {
     if let Some(home) = &mut session.home {
       home.view.fail(error.to_string());
     } else if !session.tabs.is_empty() {
@@ -305,13 +435,14 @@ fn home_event(
   screen: Screen,
 ) -> Result<()> {
   let Some(home) = &mut session.home else { return Ok(()) };
-  match home.event(event, &mut session.history)? {
+  match home.native_event(event, &mut session.history)? {
     crate::home::Outcome::Open(path) => {
-      session.open(&path, true, screen)?;
-      session.home = None;
+      session.resume(Operation::Open(path), screen)?;
     }
     crate::home::Outcome::Quit => session.quit = true,
-    _ => {}
+    crate::home::Outcome::Pick => session.pick()?,
+    crate::home::Outcome::Perf(on) => session.toggle_perf(on)?,
+    crate::home::Outcome::Stay => {}
   }
   Ok(())
 }
@@ -423,12 +554,23 @@ fn frame(
     if let Some(notice) = &session.unmeasured {
       notice.scene(&mut recorder);
     }
-    if session.state.perf {
-      session.perf.view.scene(&mut recorder, screen, true);
-    }
     session.finish_frame();
     title
   };
+  if session.state.perf {
+    session.perf.view.scene(&mut recorder, screen, true);
+  }
+  if let Some(unlock) = &session.unlock {
+    if unlock.retry && screen.rows > 1 {
+      super::Notice::new(
+        screen.rows - 1,
+        screen.columns,
+        "Wrong password".into(),
+      )
+      .scene(&mut recorder);
+    }
+    unlock.prompt.scene(&mut recorder, screen, super::At::default(), None);
+  }
   if screen.rows == 0 {
     complete = false;
   }
@@ -465,6 +607,7 @@ fn frame(
     title,
     cursor,
     complete,
+    content: true,
     quit: session.quit,
     clipboard,
   })
@@ -489,6 +632,345 @@ mod tests {
       }
       wakes.recv_timeout(deadline.saturating_duration_since(Instant::now()))?;
     }
+  }
+
+  fn sized() -> Screen {
+    Screen {
+      columns: 100,
+      rows: 40,
+      cell_width: 10,
+      cell_height: 20,
+      origin: (0, 0),
+    }
+  }
+
+  fn key(code: KeyCode) -> Input {
+    Input::Key(KeyEvent::new(code, KeyModifiers::NONE))
+  }
+
+  fn protected(path: &std::path::Path) -> Result<tempfile::NamedTempFile> {
+    let mut source = vpdf_pdf::document::Document::open(path, "")?;
+    crate::encryption::encrypt(&mut source.native)
+  }
+
+  #[test]
+  fn passwords_resume_open_operations() -> Result<()> {
+    use super::super::{Axis, Mark, Position, Request, Window};
+    let root = tempfile::tempdir()?;
+    let source = root.path().join("source.pdf");
+    crate::fixtures::pdf(&source, &["first", "second"], "")?;
+    let encrypted = protected(&source)?;
+    let path = std::fs::canonicalize(encrypted.path())?;
+    for request in [
+      Request::Open { path: path.clone(), tab: false },
+      Request::Open { path: path.clone(), tab: true },
+      Request::Window {
+        command: Window::Split(Axis::Columns),
+        count: 1,
+        explicit: false,
+        file: Some(path.clone()),
+      },
+      Request::GoMark('A', true),
+      Request::PanelMark { name: 'A', focus: false },
+    ] {
+      let mut screen = sized();
+      let mut session = Session::new(None);
+      session.frontend = crate::raster::Frontend::Native(Wake::none());
+      session.open(&source, true, screen)?;
+      let original = session.app().id;
+      let position =
+        Position { page: vpdf_model::text::PageId(1), ..Position::default() };
+      session
+        .state
+        .marks
+        .insert('A', Mark { path: path.clone(), cursor: position });
+      session.app().request = Some(request.clone());
+      session.settle()?;
+      assert!(session.unlock.is_some(), "{request:?}");
+      assert_eq!(session.app().id, original);
+      apply(&mut session, Input::Paste("wrong".into()), &mut screen);
+      apply(&mut session, key(KeyCode::Enter), &mut screen);
+      assert!(session.unlock.as_ref().unwrap().retry);
+      assert_eq!(session.app().id, original);
+      let resized = Screen { columns: 120, rows: 45, ..screen };
+      apply(&mut session, Input::Resize(resized), &mut screen);
+      apply(&mut session, Input::Paste("test-reader".into()), &mut screen);
+      apply(&mut session, key(KeyCode::Enter), &mut screen);
+      assert!(session.unlock.is_none(), "{request:?}");
+      assert!(session.secret.is_none());
+      resumed(&mut session, &request, original, &path, position);
+      assert_eq!(session.history.commands(), &[] as &[String]);
+      assert_eq!(session.history.searches(), &[] as &[String]);
+    }
+    Ok(())
+  }
+
+  fn resumed(
+    session: &mut Session,
+    request: &super::super::Request,
+    original: u32,
+    path: &std::path::Path,
+    position: super::super::Position,
+  ) {
+    use super::super::Request;
+    let target = session.existing(path).unwrap();
+    match request {
+      Request::Open { tab: false, .. } => {
+        assert_eq!(session.tabs.len(), 1);
+        assert_ne!(session.app().id, original);
+      }
+      Request::Window { .. } => {
+        assert_eq!(session.tabs.len(), 1);
+        assert_eq!(session.tab().panes.len(), 2);
+        assert_eq!(session.app().path, path);
+      }
+      Request::PanelMark { .. } => {
+        assert_eq!(session.app().id, original);
+        assert_eq!(session.tab().panes.len(), 2);
+      }
+      _ => assert_eq!(session.tabs.len(), 2),
+    }
+    if matches!(request, Request::GoMark(..) | Request::PanelMark { .. }) {
+      assert_eq!(
+        session.tabs[target.0].panes[target.1].reader.cursor.page,
+        position.page
+      );
+    }
+  }
+
+  #[test]
+  fn password_prompt_lifecycle() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("source.pdf");
+    crate::fixtures::pdf(&path, &["first"], "")?;
+    let encrypted = protected(&path)?;
+    let mut screen = sized();
+    let mut session = Session::new(None);
+    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    apply(&mut session, Input::Open(encrypted.path().into()), &mut screen);
+    assert!(session.home.is_some());
+    apply(&mut session, Input::Paste("secret".into()), &mut screen);
+    let mut cache = Cache::new(BUDGET);
+    let drawn = frame(&mut session, &mut cache, screen)?;
+    assert!(
+      drawn
+        .scene
+        .iter()
+        .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
+    );
+    assert!(!drawn.scene.iter().any(|op| matches!(op,
+      Op::Text(text) if text.as_str().contains("secret"))));
+    apply(&mut session, Input::Focus(false), &mut screen);
+    assert_eq!(session.unlock.as_ref().unwrap().prompt.text(), "secret");
+    apply(&mut session, Input::Open(path.clone()), &mut screen);
+    assert_eq!(session.native_opens.front(), Some(&path));
+    assert!(session.tabs.is_empty());
+    apply(&mut session, key(KeyCode::Esc), &mut screen);
+    assert!(session.unlock.is_none());
+    assert!(session.tabs.is_empty());
+    let (send, wakes) = mpsc::channel();
+    let mut bridge =
+      Bridge::stored(vec![encrypted.path().into()], None, move || {
+        let _ = send.send(());
+      })?;
+    wait(&bridge, &wakes, |frame| {
+      frame
+        .scene
+        .iter()
+        .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
+    })?;
+    bridge.close()?;
+    Ok(())
+  }
+
+  #[test]
+  fn protected_keys_resume() -> Result<()> {
+    use super::super::Request;
+    let root = tempfile::tempdir()?;
+    let source = root.path().join("source.pdf");
+    crate::fixtures::pdf(&source, &["first", "second"], "")?;
+    let encrypted = protected(&source)?;
+    for cancel in [false, true] {
+      let mut screen = sized();
+      let mut session = Session::new(None);
+      session.frontend = crate::raster::Frontend::Native(Wake::none());
+      session.open(&source, true, screen)?;
+      let mut keys: Vec<_> = format!(":e {}", encrypted.path().display())
+        .chars()
+        .map(|ch| KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+        .collect();
+      keys.extend(
+        [
+          KeyCode::Enter,
+          KeyCode::Char('g'),
+          KeyCode::Char('g'),
+          KeyCode::Char('G'),
+        ]
+        .map(|code| KeyEvent::new(code, KeyModifiers::NONE)),
+      );
+      session.app().request = Some(Request::Keys(keys));
+      session.settle()?;
+      assert!(session.unlock.is_some());
+      assert_eq!(session.pending_keys.len(), 3);
+      if cancel {
+        apply(&mut session, key(KeyCode::Esc), &mut screen);
+        assert!(!resume_keys(&mut session));
+        assert_eq!(session.app().path, std::fs::canonicalize(&source)?);
+      } else {
+        apply(&mut session, Input::Paste("test-reader".into()), &mut screen);
+        apply(&mut session, key(KeyCode::Enter), &mut screen);
+        assert!(resume_keys(&mut session));
+        assert_eq!(
+          session.app().reader.cursor.page,
+          vpdf_model::text::PageId(1)
+        );
+      }
+      assert_eq!(session.pending_keys.len(), 0);
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn close_keys_stop() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("source.pdf");
+    crate::fixtures::pdf(&path, &["first"], "")?;
+    let mut session = Session::new(None);
+    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    session.open(&path, true, sized())?;
+    session.app().request = Some(super::super::Request::Keys(
+      [
+        KeyCode::Char(':'),
+        KeyCode::Char('q'),
+        KeyCode::Enter,
+        KeyCode::Char('j'),
+      ]
+      .map(|code| KeyEvent::new(code, KeyModifiers::NONE))
+      .into(),
+    ));
+    session.settle()?;
+    assert!(session.tabs.is_empty());
+    Ok(())
+  }
+
+  #[test]
+  fn reopened_home_reserves_perf() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("source.pdf");
+    crate::fixtures::pdf(&path, &["first"], "")?;
+    let mut screen = sized();
+    let mut session = Session::new(None);
+    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    session.state.set_perf(true);
+    apply(&mut session, Input::Open(path), &mut screen);
+    session.app().request = Some(super::super::Request::TabClose(None));
+    session.settle()?;
+    apply(&mut session, Input::Focus(true), &mut screen);
+    assert_eq!(
+      session.home.as_ref().unwrap().view.screen(),
+      session.content(screen)
+    );
+    assert!(session.home.as_ref().unwrap().view.screen().origin.1 > 0);
+    Ok(())
+  }
+
+  #[test]
+  fn native_help_offers_picker() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("source.pdf");
+    crate::fixtures::pdf(&path, &["first"], "")?;
+    let mut session = Session::new(None);
+    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    session.open(&path, true, sized())?;
+    let rows = session.app().panel_rows(super::super::PanelKind::Help)?;
+    assert!(rows.iter().any(|row| row.label.contains("fzf")));
+    Ok(())
+  }
+
+  #[test]
+  fn picker_open_destinations() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let first = root.path().join("first.pdf");
+    let second = root.path().join("second.pdf");
+    crate::fixtures::pdf(&first, &["first"], "")?;
+    crate::fixtures::pdf(&second, &["second"], "")?;
+    let mut screen = sized();
+    let mut session = Session::new(None);
+    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    picked_path(&mut session, first.clone(), screen)?;
+    assert_eq!(session.tabs.len(), 1);
+    picked_path(&mut session, second.clone(), screen)?;
+    assert_eq!(session.tabs.len(), 1);
+    assert_eq!(session.app().path, std::fs::canonicalize(&second)?);
+    apply(&mut session, Input::Open(first), &mut screen);
+    assert_eq!(session.tabs.len(), 2);
+    picked_path(&mut session, second, screen)?;
+    assert_eq!(session.tabs.len(), 2);
+    assert_eq!(session.active, 0);
+    Ok(())
+  }
+
+  #[test]
+  fn native_perf_accounting() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let store = root.path().join("state.json");
+    let mut state = crate::state::State::default();
+    state.set_perf(true);
+    state.save(&store, &[], &[])?;
+    let (send, wakes) = mpsc::channel();
+    let mut bridge = Bridge::stored(Vec::new(), Some(store), move || {
+      let _ = send.send(());
+    })?;
+    wait(&bridge, &wakes, |frame| frame.content)?;
+    let sampled = wait(&bridge, &wakes, |frame| {
+      !frame.content
+        && frame.scene.iter().any(|op| {
+          matches!(op,
+        Op::Text(text) if text.as_str().contains("RSS ")
+          && !text.as_str().contains("RSS —"))
+        })
+    })?;
+    assert!(sampled.scene.iter().any(|op| matches!(op,
+      Op::Text(text) if text.as_str().contains("FPS 0"))));
+    bridge.send(Input::Presented { content: true, bytes: 2048 });
+    wait(&bridge, &wakes, |frame| {
+      frame.scene.iter().any(|op| {
+        matches!(op,
+      Op::Text(text) if text.as_str().contains("Upload 2.0K/s"))
+      })
+    })?;
+    bridge.send(key(KeyCode::Char(':')));
+    bridge.send(Input::Paste("perf off".into()));
+    bridge.send(key(KeyCode::Enter));
+    wait(&bridge, &wakes, |frame| {
+      !frame.scene.iter().any(|op| {
+        matches!(op,
+      Op::Text(text) if text.as_str().contains("Upload "))
+      })
+    })?;
+    bridge.close()
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn encrypted_corpus_renders() -> Result<()> {
+    let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
+    let encrypted = protected(&path)?;
+    let (send, wakes) = mpsc::channel();
+    let mut bridge =
+      Bridge::stored(vec![encrypted.path().into()], None, move || {
+        let _ = send.send(());
+      })?;
+    wait(&bridge, &wakes, |frame| {
+      frame
+        .scene
+        .iter()
+        .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
+    })?;
+    bridge.send(Input::Paste("test-reader".into()));
+    bridge.send(key(KeyCode::Enter));
+    wait(&bridge, &wakes, |frame| frame.complete && !frame.images.is_empty())?;
+    bridge.close()
   }
 
   #[test]

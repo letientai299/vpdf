@@ -15,7 +15,7 @@ use vpdf_ui::reading::Pane;
 use vpdf_ui::window::{TabMove, Window};
 
 /// Work a tab hands to the session.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Request {
   Open {
     path: PathBuf,
@@ -52,7 +52,7 @@ pub enum Request {
   SplitMark(char),
   /// Keys a clicked clue names.
   Keys(Vec<crossterm::event::KeyEvent>),
-  /// Pick a file with `fzf` and open it in the focused pane.
+  /// Pick a PDF for the focused pane.
   Pick,
   /// Closes a tab, else the active one.
   TabClose(Option<usize>),
@@ -80,7 +80,7 @@ pub struct App {
   /// The shared images as this pane last drew them.
   pub(crate) image_usage: Usage,
   pub worker: Raster,
-  frontend: Frontend,
+  pub(crate) frontend: Frontend,
   pub keys: Keys,
   pub path: PathBuf,
   pub password: String,

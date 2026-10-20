@@ -31,7 +31,8 @@ pub fn scratch_file(stem: &str, extension: &str) -> Result<(PathBuf, File)> {
 
 /// Edits `text` in `$VISUAL` or `$EDITOR`, like zsh's
 /// `edit-command-line`; lines join with spaces.
-pub fn edit(text: &str) -> Result<String> {
+pub fn edit(text: &str, terminal: bool) -> Result<String> {
+  anyhow::ensure!(terminal, "External editing requires a terminal");
   let editor = ["VISUAL", "EDITOR"]
     .iter()
     .find_map(|name| std::env::var(name).ok().filter(|v| !v.trim().is_empty()))
@@ -71,6 +72,51 @@ pub fn pick_pdf(root: &Path) -> Result<Option<PathBuf>> {
   let result = run_fzf(root);
   terminal::resume()?;
   result
+}
+
+pub(crate) struct Picker {
+  child: std::process::Child,
+}
+
+impl Picker {
+  pub fn start() -> Result<Self> {
+    anyhow::ensure!(cfg!(target_os = "macos"), "Native picker requires macOS");
+    let script = concat!(
+      "on run argv\ntry\n",
+      "set root to (POSIX file (item 1 of argv)) as alias\n",
+      "POSIX path of (choose file of type {\"com.adobe.pdf\"} ",
+      "default location root)\n",
+      "on error number -128\nreturn \"\"\nend try\nend run"
+    );
+    let child = Command::new("/usr/bin/osascript")
+      .args(["-e", script])
+      .arg(std::env::current_dir()?)
+      .stdin(Stdio::null())
+      .stdout(Stdio::piped())
+      .stderr(Stdio::null())
+      .spawn()?;
+    Ok(Self { child })
+  }
+
+  pub fn poll(&mut self) -> Result<std::task::Poll<Option<PathBuf>>> {
+    use std::io::Read;
+    use std::task::Poll;
+    let Some(status) = self.child.try_wait()? else { return Ok(Poll::Pending) };
+    anyhow::ensure!(status.success(), "Native picker failed");
+    let mut path = String::new();
+    if let Some(mut out) = self.child.stdout.take() {
+      out.read_to_string(&mut path)?;
+    }
+    let path = path.strip_suffix('\n').unwrap_or(&path);
+    Ok(Poll::Ready((!path.is_empty()).then(|| PathBuf::from(path))))
+  }
+}
+
+impl Drop for Picker {
+  fn drop(&mut self) {
+    let _ = self.child.kill();
+    let _ = self.child.wait();
+  }
 }
 
 fn run_fzf(root: &Path) -> Result<Option<PathBuf>> {
@@ -136,6 +182,32 @@ fn walk(root: &Path, relative: &Path, out: &mut impl Write) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn picker_output_status() -> Result<()> {
+    use std::task::Poll;
+    for path in ["", "/tmp/a b\n.pdf"] {
+      let child = Command::new("/usr/bin/printf")
+        .args(["%s\n", path])
+        .stdout(Stdio::piped())
+        .spawn()?;
+      let mut picker = Picker { child };
+      picker.child.wait()?;
+      let expected = (!path.is_empty()).then(|| PathBuf::from(path));
+      assert_eq!(picker.poll()?, Poll::Ready(expected));
+    }
+    let child = Command::new("/usr/bin/false").spawn()?;
+    let mut picker = Picker { child };
+    picker.child.wait()?;
+    assert!(picker.poll().is_err());
+    Ok(())
+  }
+
+  #[test]
+  fn native_editor_requires_terminal() {
+    let error = edit("private prompt", false).unwrap_err();
+    assert_eq!(error.to_string(), "External editing requires a terminal");
+  }
 
   #[test]
   fn preview_scopes_its_variable_and_ends_options() {

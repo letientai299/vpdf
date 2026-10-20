@@ -32,11 +32,12 @@ struct Texture {
 pub struct Renderer {
   textures: Cache<ImageId, Texture>,
   pub uploaded: usize,
+  pub upload_bytes: usize,
 }
 
 impl Default for Renderer {
   fn default() -> Self {
-    Self { textures: Cache::new(BUDGET), uploaded: 0 }
+    Self { textures: Cache::new(BUDGET), uploaded: 0, upload_bytes: 0 }
   }
 }
 
@@ -135,6 +136,7 @@ impl Renderer {
       size[0] * size[1] * 4,
     );
     self.uploaded += 1;
+    self.upload_bytes += size[0] * size[1] * 4;
   }
 }
 
@@ -219,6 +221,7 @@ struct Grid {
   saved: (usize, usize, Style),
   style: Style,
   visible: bool,
+  masked: bool,
   input: std::ops::Range<usize>,
   previous: Option<usize>,
 }
@@ -235,6 +238,7 @@ impl Grid {
       saved: (0, 0, Style::default()),
       style: Style::default(),
       visible: false,
+      masked: false,
       input: 0..usize::from(screen.columns),
       previous: None,
     }
@@ -272,7 +276,8 @@ impl Grid {
       }
       Op::HideCursor => self.visible = false,
       Op::ShowCursor => self.visible = true,
-      Op::InputArea { column, columns } => {
+      Op::InputArea { column, columns, masked } => {
+        self.masked = *masked;
         self.input = *column..column.saturating_add(*columns).min(self.columns);
       }
       Op::UnderlineOff => self.style.underline = false,
@@ -320,6 +325,16 @@ impl Grid {
   }
   fn compose(&mut self, preedit: Option<&Preedit>) {
     let Some(preedit) = preedit.filter(|_| self.visible) else { return };
+    let masked;
+    let preedit = if self.masked {
+      masked = Preedit {
+        text: "*".repeat(preedit.text.chars().count()),
+        active: preedit.active.clone(),
+      };
+      &masked
+    } else {
+      preedit
+    };
     let start = self.cursor;
     if self.columns == 0
       || !self.input.contains(&start.0)
@@ -379,7 +394,11 @@ impl Grid {
     let pos =
       egui::pos2(self.cursor.0 as f32 * size.x, self.cursor.1 as f32 * size.y);
     Some(egui::output::IMEOutput {
-      purpose: egui::IMEPurpose::Normal,
+      purpose: if self.masked {
+        egui::IMEPurpose::Password
+      } else {
+        egui::IMEPurpose::Normal
+      },
       rect: Rect::from_min_size(
         egui::pos2(self.input.start as f32 * size.x, pos.y),
         egui::vec2(self.input.len() as f32 * size.x, size.y),
@@ -493,6 +512,7 @@ mod tests {
       },
     };
     let mut frame = Frame {
+      content: true,
       screen,
       scene: vec![Op::Tile(Box::new(TilePlacement::new(
         id,
@@ -522,6 +542,7 @@ mod tests {
       });
       output.textures_delta.clear();
       assert_eq!(renderer.uploaded, expected);
+      assert_eq!(renderer.upload_bytes, expected * 4);
     }
     frame.images.clear();
     frame.owners.clear();
@@ -547,6 +568,7 @@ mod tests {
     let id = PictureId::fresh();
     let pixels: Arc<Vec<u8>> = Arc::new(vec![255; 6]);
     let mut frame = Frame {
+      content: true,
       screen,
       scene: Vec::new(),
       images: Vec::new(),
@@ -577,6 +599,7 @@ mod tests {
       });
       output.textures_delta.clear();
       assert_eq!(renderer.uploaded, expected);
+      assert_eq!(renderer.upload_bytes, expected * pixels.len() / 3 * 4);
       let texture = renderer.textures.get(&ImageId::Picture(id)).unwrap();
       let last = output.shapes.last().unwrap();
       assert_eq!(last.shape.texture_id(), texture.handle.id());
@@ -590,6 +613,32 @@ mod tests {
     output.textures_delta.clear();
     assert_eq!(renderer.textures.used(), 0);
     assert_eq!(Arc::strong_count(&pixels), 1);
+  }
+
+  #[test]
+  fn password_preedit_stays_masked() {
+    let screen = Screen {
+      columns: 20,
+      rows: 2,
+      cell_width: 10,
+      cell_height: 20,
+      origin: (0, 0),
+    };
+    let mut grid = Grid::new(screen);
+    grid.op(&Op::InputArea { column: 0, columns: 20, masked: true });
+    grid.op(&Op::ShowCursor);
+    grid.compose(Some(&Preedit {
+      text: "章a\u{301}".into(),
+      active: Some(0..2),
+    }));
+    let text: String =
+      grid.cells.iter().map(|cell| cell.text.as_str()).collect();
+    assert_eq!(text, "***");
+    assert_eq!(grid.cursor, (2, 0));
+    assert_eq!(
+      grid.ime(screen, 1.0).unwrap().purpose,
+      egui::IMEPurpose::Password
+    );
   }
 
   #[test]
@@ -659,7 +708,7 @@ mod tests {
     grid.op(&Op::Move { column: 0, row: 1 });
     grid.op(&Op::Text(Text::new("left right")));
     grid.op(&Op::Move { column: 2, row: 1 });
-    grid.op(&Op::InputArea { column: 0, columns: 4 });
+    grid.op(&Op::InputArea { column: 0, columns: 4, masked: false });
     grid.op(&Op::ShowCursor);
     grid.compose(Some(&Preedit { text: "章章".into(), active: None }));
     assert_eq!(grid.cells[12].text, "章");
