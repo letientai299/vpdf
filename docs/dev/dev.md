@@ -124,84 +124,9 @@ still verify placement and terminal graphics.
 
 ## Performance validation
 
-Measure CPU work separately from terminal painting and end-to-end input latency.
-The [warm reader benchmark][reader-bench] covers extraction, navigation, search,
-and serialized frames. Its budget task enforces CPU frame and motion limits
-and base-image reuse; the thresholds live with the assertions.
-
-```sh
-mise run bench:budget
-mise run bench:latency
-mise run bench:stages
-```
-
-The [microbenchmarks][micro] accept case filters and `--package` selection.
-Model, search, reader, terminal, and UI cases use prepared real-PDF fixtures.
-Fixture hashes are checked and source identity is recorded outside the timed
-loops. Preparation requires MuPDF; these packages and protocol execute their
-benchmarks without it. PDF benchmarks open native documents; application cases
-retain integrated frames, routing, and latency. Run `mise run corpus` before
-native cases to verify their inputs.
-
-Set `VPDF_BENCH_FIXTURES` to share a prepared fixture directory between
-checkouts. Case filters apply within the selected package; omit `--package` to
-run matching cases across the workspace.
-
-```sh
-mise run bench:fixtures
-mise run bench:micro -- --package vpdf-model
-mise run bench:micro -- --package vpdf-search index
-mise run bench:micro -- --package vpdf-reader
-mise run bench:micro -- --package vpdf-terminal
-mise run bench:micro -- --package vpdf-ui
-mise run bench:micro -- --package vpdf-protocol decode
-mise run corpus
-mise run bench:micro -- --package vpdf-pdf
-```
-
-The [latency benchmark][latency] uses a live render worker to measure cold
-opens, page and history jumps, zooms, section and search navigation, jumps
-during a search scan, and paced scrolling, including tile readiness and blank
-frames. The [stage benchmark][stages] separates page loading, text extraction,
-display list construction, rasterization, and encoding.
-
-The [startup benchmark][startup] runs inside the terminal under test. It
-launches one or two executables on a relay of that terminal, alternating their
-order per pair, and reports first frame, first page tile, and complete initial
-view, with paired differences. Completion normally comes from emitted tile
-placements; `--trace` uses the reader's own completion marker. These timings end
-at terminal output, not observed display painting. Pass one executable for an
-A/A noise check. Results, hashes, and geometry go under `target/startup`;
-see the script's `--help` for options.
-
-```sh
-mise run bench:startup -- BASE CANDIDATE
-```
-
-The latency and stage benchmarks accept `VPDF_EXTRA` as a platform path-list of
-PDFs. The latency benchmark also accepts `VPDF_COLUMNS` to vary its simulated
-screen. The warm reader and latency benchmarks can save JSON with
-`VPDF_BENCH_OUTPUT`. Keep input provenance, hashes, screen geometry, and build
-identity with results used to justify a change.
-
-For an interactive trace:
-
-```sh
-VPDF_TRACE=/path/frames.jsonl vpdf document.pdf
-```
-
-[Tracing][trace] overwrites that file and records frame construction, flush
-time, consumed-input-to-flush time, and base-image transfer accounting. It
-records no document text, but includes page and scroll position. Timing starts
-when the loop consumes input and ends at output flush; terminal painting and
-physical input latency are outside that measurement.
-
-Publish measurements with repeated runs, sample counts, and percentile
-summaries. Label CPU frame construction, render readiness,
-input-consumption-to-flush, and observed display behavior separately. A speedup
-needs a comparable baseline under the same conditions. Keep benchmark JSON,
-input hashes, cache conditions, and build identity in an immutable,
-commit-identified evidence bundle rather than a moving development release.
+Use [Benchmarking][bench] for measurement boundaries, targeted harnesses,
+fixture preparation, and comparable runs. Keep setup controls and case details
+in the harness scripts and their executable help.
 
 ## Gallery capture
 
@@ -301,12 +226,6 @@ a result needs a reproducible release reference.
 [corpus]: ../../scripts/corpus.sh
 [corpus-tests]: ../../tests/it/corpus.rs
 [pdf-corpus-tests]: ../../crates/vpdf-pdf/tests/corpus.rs
-[micro]: ../../scripts/bench-micro.sh
-[reader-bench]: ../../benches/reader.rs
-[latency]: ../../benches/latency.rs
-[stages]: ../../benches/stages.rs
-[startup]: ../../scripts/startup.py
-[trace]: ../../src/trace.rs
 [package]: ../../scripts/release.sh
 [release]: ../../.github/workflows/release.yml
 [demo-script]: ../../scripts/demo.py
@@ -323,3 +242,4 @@ a result needs a reproducible release reference.
 [poppler]: https://poppler.freedesktop.org/
 [ocr-setup]: ../install.md#optional-helpers
 [preview]: ../../crates/ui/src/preview.rs
+[bench]: bench.md

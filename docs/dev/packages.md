@@ -56,21 +56,17 @@ separate from disposable PDF content caches; live reading behavior belongs to
 reader and UI. See [runtime ownership][arch] for thread and lifecycle
 constraints.
 
-## Focused checks and benchmarks
+## Focused checks
 
 Select the owning Cargo package from the [workspace manifest][workspace]:
 
 ```sh
 mise exec -- cargo nextest run --locked -p vpdf-ui
-mise run bench:micro -- --package vpdf-ui
 ```
 
 The same selectors work for each package, including `vpdf` for application
-integration tests and benchmarks. [Development][development] lists focused
-mise test tasks and real-PDF fixture preparation. Pure package benchmarks use
-prepared, hash-verified data; PDF benchmarks open documents directly. Keep data
-preparation outside measured loops. A component timing does not establish
-whole-reader performance; retain integrated latency and live-terminal checks.
+integration tests. [Development][development] lists focused mise test tasks.
+[Benchmarking][bench] covers measurement and fixture preparation.
 
 ```sh
 mise run check:packages
@@ -102,3 +98,4 @@ corpus, OCR, and terminal checks when they change.
 [reading]: ../../crates/ui/src/reading.rs
 [input]: ../../crates/ui/src/input.rs
 [source]: ../../crates/ui/src/source.rs
+[bench]: bench.md

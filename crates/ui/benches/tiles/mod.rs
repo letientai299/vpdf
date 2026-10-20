@@ -37,5 +37,9 @@ pub fn draw() -> Result<()> {
       draw,
     )?;
   }
+  let tiles = Tiles::default();
+  super::measure("Tiles::nearby ten pages", || {
+    black_box(tiles.nearby(black_box(view), 10));
+  })?;
   Ok(())
 }

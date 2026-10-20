@@ -55,8 +55,23 @@ fn pack_read() -> Result<()> {
 }
 
 fn cold_page() -> Result<()> {
-  for (name, page) in [("paper.pdf", 1), ("book.pdf", 99)] {
-    let mut doc = Document::open(&corpus(name)?, "")?;
+  let paths = std::env::var_os("VPDF_EXTRA").map_or_else(
+    || {
+      Ok(vec![(corpus("paper.pdf")?, Some(1)), (corpus("book.pdf")?, Some(99))])
+    },
+    |paths| {
+      Ok::<_, anyhow::Error>(
+        std::env::split_paths(&paths)
+          .map(|path| (path, None))
+          .collect::<Vec<_>>(),
+      )
+    },
+  )?;
+  for (path, preferred) in paths {
+    let mut doc = Document::open(&path, "")?;
+    let name = path.display();
+    let page = preferred.unwrap_or(doc.pages.len() / 3);
+    anyhow::ensure!(page < doc.pages.len(), "Benchmark page outside document");
     measure(&format!("cold text {name}"), || {
       doc.trim();
       drop(black_box(doc.text(PageId(page)).expect("text")));

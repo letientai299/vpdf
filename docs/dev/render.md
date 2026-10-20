@@ -127,7 +127,7 @@ A faster raster stage alone does not establish a faster terminal reader.
 [prime]: ../../crates/vpdf-pdf/src/prime.rs
 [graphics]: ../../crates/terminal/src/graphics/mod.rs
 [pace]: ../../src/pace.rs
-[performance]: dev.md#performance-validation
+[performance]: bench.md#method
 [spool]: ../../crates/terminal/src/spool.rs
 [terminal]: ../../crates/terminal/src/terminal/mod.rs
 [document]: ../../crates/vpdf-pdf/src/document/mod.rs

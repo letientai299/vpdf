@@ -47,7 +47,7 @@ run = [
 ]
 
 [tasks.test]
-depends = ["test:demo", "test:packages", "check:packages"]
+depends = ["test:demo", "test:packages", "test:bench", "check:packages"]
 run = "cargo nextest run --locked --workspace --test-threads num-cpus --no-fail-fast"
 
 [tasks."check:packages"]
@@ -163,3 +163,23 @@ run = "cargo nextest run --locked -p vpdf-ui"
 [tasks."bench:ui"]
 description = "Measure interface components using prepared fixtures"
 run = 'cargo bench --locked --profile release -p vpdf-ui --bench micro -- {{arg(name="cases", var=true, default="")}}'
+
+[tasks."bench:first-use"]
+description = "Measure isolated first-use interactions; --help lists filters"
+depends = ["corpus"]
+raw_args = true
+run = "cargo bench --locked -p vpdf --profile release --bench first_use --"
+
+[tasks."bench:prepare"]
+description = "Snapshot selected benchmark executables before timing"
+raw_args = true
+run = "python3 benches/prepare.py"
+
+[tasks."bench:compare"]
+description = "Compare immutable benchmark snapshots with paired runs"
+raw_args = true
+run = "python3 benches/compare.py"
+
+[tasks."test:bench"]
+description = "Test benchmark accounting and failure handling"
+run = "python3 -B -m unittest discover -s benches -p test_bench.py"

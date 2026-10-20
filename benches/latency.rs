@@ -301,6 +301,16 @@ fn motion(
   period: Duration,
   inputs: usize,
 ) -> Result<Motion> {
+  paced(sim, name, period, inputs, |sim, _| sim.act(action))
+}
+
+fn paced(
+  sim: &mut Sim,
+  name: &'static str,
+  period: Duration,
+  inputs: usize,
+  mut act: impl FnMut(&mut Sim, usize) -> Result<f64>,
+) -> Result<Motion> {
   let (mut input, mut build, mut bytes) = (vec![], vec![], vec![]);
   let (mut frames, mut incomplete, mut gap) = (0, 0, 0.0_f64);
   let mut blank_since: Option<Instant> = None;
@@ -310,7 +320,7 @@ fn motion(
   let (mut ready, mut complete) = (None, None);
   while sent < inputs {
     if started.elapsed() >= period * sent as u32 {
-      input.push(sim.act(action)?);
+      input.push(act(sim, sent)?);
       sent += 1;
     }
     let frame = sim.tick()?;
@@ -357,7 +367,7 @@ fn motions(sim: &mut Sim) -> Result<Vec<Motion>> {
   sim.app.command(&(start + 1).to_string())?;
   sim.settle(Instant::now())?;
   let hz = |rate: u64| Duration::from_micros(1_000_000 / rate);
-  Ok(vec![
+  let mut motions = vec![
     motion(sim, "rows3_60hz", Action::Rows(3), hz(60), 180)?,
     motion(sim, "rows1_120hz", Action::Rows(1), hz(120), 240)?,
     motion(sim, "half_10hz", Action::Scroll(0.5), hz(10), 30)?,
@@ -365,7 +375,17 @@ fn motions(sim: &mut Sim) -> Result<Vec<Motion>> {
     motion(sim, "page_4hz", Action::Scroll(1.0), hz(4), 12)?,
     // A held Page Down at key-repeat rate.
     motion(sim, "page_30hz", Action::Scroll(1.0), hz(30), 60)?,
-  ])
+  ];
+  sim.app.command(&(start + 1).to_string())?;
+  sim.settle(Instant::now())?;
+  motions.push(paced(sim, "direct_reverse_60hz", hz(60), 96, |sim, index| {
+    let started = Instant::now();
+    let step = if (index / 8) % 2 == 0 { 96.0 } else { -96.0 };
+    let scroll = sim.app.layout.clamp_scroll(sim.app.reader.scroll + step);
+    sim.app.reading_view().scrub_scroll(scroll);
+    Ok(ms(started.elapsed()))
+  })?);
+  Ok(motions)
 }
 
 fn document(path: &Path, screen: Screen) -> Result<Report> {
@@ -394,7 +414,7 @@ fn document(path: &Path, screen: Screen) -> Result<Report> {
     .collect::<Result<_>>()?;
   let motions = motions(&mut sim)?;
   Ok(Report {
-    document: path.file_name().unwrap_or_default().to_string_lossy().into(),
+    document: path.display().to_string(),
     pages: sim.app.doc.pages.len(),
     screen: (screen.columns, screen.rows),
     open_ms,
@@ -497,13 +517,15 @@ fn crop_document(path: &Path, screen: Screen) -> Result<CropReport> {
 }
 
 fn main() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let files: Vec<PathBuf> = match std::env::var_os("VPDF_EXTRA") {
     Some(extra) => std::env::split_paths(&extra).collect(),
-    None => ["book", "paper", "form", "ocr"]
-      .iter()
-      .map(|name| root.join(format!("{name}.pdf")))
-      .collect(),
+    None => {
+      let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+      ["book", "paper", "form", "ocr"]
+        .iter()
+        .map(|name| root.join(format!("{name}.pdf")))
+        .collect()
+    }
   };
   let columns = std::env::var("VPDF_COLUMNS")
     .ok()

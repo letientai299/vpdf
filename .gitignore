@@ -3,3 +3,4 @@
 /.ai/
 /agents.local.md
 .DS_Store
+__pycache__/

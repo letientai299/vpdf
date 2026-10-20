@@ -137,6 +137,10 @@ name = "stages"
 harness = false
 
 [[bench]]
+name = "first_use"
+harness = false
+
+[[bench]]
 name = "micro"
 harness = false
 

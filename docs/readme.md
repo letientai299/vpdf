@@ -15,7 +15,8 @@ with Vim motions and explains vpdf's modes and workflows.
 | [Demos][demo]                | Browse reading demonstrations                                 |
 
 Maintainers can use [Development][development] for building, validation,
-benchmarks, demo capture, and packaging.
+demo capture, and packaging. [Benchmarking][benchmarking] covers measurement
+methodology and targeted harnesses.
 
 ## Reference
 
@@ -83,3 +84,4 @@ Markdown.
 [external]: reading.md#external-actions
 [licensing]: install.md#licensing
 [performance]: reading.md#performance-display
+[benchmarking]: dev/bench.md

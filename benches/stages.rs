@@ -87,11 +87,13 @@ fn main() -> Result<()> {
     let pages = Document::open(&file, "")?.pages.len();
     let picks: Vec<usize> =
       (0..8).map(|i| (i * 7919 + pages / 3) % pages).collect();
-    for index in picks {
+    for (attempt, index) in picks.into_iter().enumerate() {
       let stages = page(&file, index, 1969.0)?;
-      let name = file.file_name().unwrap_or_default().to_string_lossy();
       report.push(serde_json::json!({
-        "document": name, "page": index + 1, "stages": stages,
+        "document": file,
+        "attempt": attempt,
+        "page": index + 1,
+        "stages": stages,
       }));
     }
   }
