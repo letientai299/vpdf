@@ -22,6 +22,10 @@ run = "sh scripts/build.sh"
 description = "Build the macOS app and DMG"
 run = "sh scripts/build-app.sh"
 
+[tasks."build:icon"]
+description = "Render the Vpdf app icon from SVG"
+run = "sh scripts/build-icon.sh"
+
 [tasks."install:app"]
 description = "Install the macOS app into ~/Applications"
 depends = ["build:app"]

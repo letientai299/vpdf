@@ -2,7 +2,7 @@ use std::process::Command;
 use vpdf::Result;
 
 const HEADLINE: &str = concat!(
-  "A Vim-inspired terminal PDF reader powered by MuPDF ",
+  "Vpdf: a Vim-inspired terminal PDF reader powered by MuPDF ",
   "and the Kitty graphics protocol."
 );
 const REPOSITORY: &str = "https://github.com/letientai299/vpdf";
@@ -15,6 +15,11 @@ fn help_and_version_name_the_project() -> Result<()> {
     assert!(output.status.success(), "{flag}");
     assert!(stdout.contains(HEADLINE), "{flag}: {stdout}");
     assert!(stdout.contains(REPOSITORY), "{flag}: {stdout}");
+    if flag == "--help" {
+      assert!(stdout.contains("Usage: vpdf"), "{stdout}");
+    } else {
+      assert!(stdout.starts_with("vpdf "), "{stdout}");
+    }
   }
   Ok(())
 }

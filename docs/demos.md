@@ -1,6 +1,6 @@
 # Demos
 
-These captures show vpdf reading [Attention Is All You Need][paper],
+These captures show Vpdf reading [Attention Is All You Need][paper],
 [Think Python, second edition][book], and a [page scan][scan] from First Draft
 of a Report on the EDVAC. Open an image at full resolution. Each capture shows
 the build recorded in its [manifest][manifest]; newer builds can differ. See the

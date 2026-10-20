@@ -1,6 +1,6 @@
 # Reader architecture
 
-vpdf separates reading state, PDF interpretation, and terminal presentation.
+Vpdf separates reading state, PDF interpretation, and terminal presentation.
 The foreground owns interaction and terminal output; workers prepare results
 that it can accept, replace, or discard.
 

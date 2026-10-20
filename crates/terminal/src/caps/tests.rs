@@ -700,13 +700,13 @@ fn info_names_what_vpdf_set() {
       Some(Passthrough::Off),
       vec![3, 8],
       Some(Passthrough::On),
-      "off at start, vpdf set on",
+      "off at start, Vpdf set on",
     ),
     (
       Some(Passthrough::On),
       vec![3, 8],
       Some(Passthrough::All),
-      "on at start, vpdf set all",
+      "on at start, Vpdf set all",
     ),
     (None, vec![3, 2], None, "on, no option before tmux 3.3"),
   ];

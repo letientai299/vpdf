@@ -39,7 +39,7 @@ The [text guide][text] explains copying fidelity and optional OCR for scans.
 Page OCR text stays in memory, can be evicted, and disappears when the document
 reloads or closes. Where search indexes persist (below), Tesseract's output is
 also stored, so running page OCR again on an unchanged page skips recognition.
-vpdf does not embed OCR text in the source PDF.
+Vpdf does not embed OCR text in the source PDF.
 
 ## Find a passage and return
 
@@ -205,7 +205,7 @@ Content FPS falls to zero when the view stops changing. The display measures
 application output, not monitor refresh or input-to-photon latency; Out
 excludes the display's own repaints. Sampling slows to once a second while
 nothing draws, but it still adds work, so compare enabled and disabled runs when
-measuring idle overhead. CPU readings cover vpdf, excluding the terminal
+measuring idle overhead. CPU readings cover Vpdf, excluding the terminal
 and separate helper processes. Search and cold rendering can consume CPU while
 the interaction loop remains responsive.
 

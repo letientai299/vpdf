@@ -147,7 +147,7 @@ impl Home {
         row: usize::from(self.at.row) + usize::from(self.screen.rows - 1),
       },
       Op::Style(Role::Badge(Color::Blue)),
-      Op::Text(Text::new(" VPDF ")),
+      Op::Text(Text::new(" Vpdf ")),
       Op::Style(style),
       Op::Text(Text::new(" ")),
       Op::Text(Text::new(text)),
@@ -370,6 +370,7 @@ mod tests {
       |_| {},
     )?;
     let out = String::from_utf8(out)?;
+    assert!(out.contains(" Vpdf "));
     let columns = out.split("\x1b[").filter_map(|code| {
       let (row, column) = code.split_once('H')?.0.split_once(';')?;
       row.parse::<u16>().ok()?;

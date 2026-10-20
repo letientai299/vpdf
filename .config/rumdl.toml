@@ -7,6 +7,10 @@ code-blocks = false
 tables = false
 reflow = true
 
+# Allow sized README icons.
+[MD033]
+allowed-elements = ["img"]
+
 [MD060]
 enabled = true
 style = "aligned"

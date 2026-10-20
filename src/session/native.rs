@@ -544,7 +544,7 @@ fn frame(
     if let Some(home) = &mut session.home {
       home.scene(&mut recorder)?;
     }
-    "vpdf".to_owned()
+    "Vpdf".to_owned()
   } else {
     session.prepare_frame();
     let area = session.area();

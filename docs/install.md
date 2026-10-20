@@ -128,7 +128,7 @@ executables on `PATH`:
 - Opening external links on Linux: install your distribution's `xdg-utils`
   package for `xdg-open` and configure a default browser or mail application.
 - Prompt editing: install a terminal editor such as [Vim][vim]. Set `VISUAL`
-  or `EDITOR` to its command; vpdf uses `VISUAL` first and falls back to `vi`
+  or `EDITOR` to its command; Vpdf uses `VISUAL` first and falls back to `vi`
   when neither is set.
 
 macOS supplies `pbcopy` for text copying, `osascript` for image copying, and
@@ -138,12 +138,12 @@ for clipboard and link boundaries.
 
 ## Licensing
 
-vpdf's original source code uses the [MIT license][license]. Dependencies
+Vpdf's original source code uses the [MIT license][license]. Dependencies
 retain their own licenses.
 
 MuPDF and its Rust bindings, `mupdf` and `mupdf-sys`, use AGPLv3 in the current
 dependency stack. Distributed executables that link them remain subject to AGPL
-obligations, including corresponding-source requirements. Licensing vpdf's code
+obligations, including corresponding-source requirements. Licensing Vpdf's code
 under MIT does not relicense these dependencies. The [AGPL text][agpl] is
 retained for them; see also [MuPDF licensing][mupdf-license].
 

@@ -14,10 +14,11 @@ mkdir -p "$release_dir"
 staged=$(mktemp -d "$release_dir/.app.XXXXXX")
 trap 'rm -rf "$staged"' EXIT
 trap 'exit 1' HUP INT TERM
-app="$staged/image/vpdf.app"
+app="$staged/image/Vpdf.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 install -m 755 "$binary" "$app/Contents/MacOS/vpdf-gui"
 cp LICENSE LICENSE-AGPL "$app/Contents/Resources/"
+cp docs/assets/vpdf.icns "$app/Contents/Resources/Vpdf.icns"
 version=$("$binary" --version | awk '{print $2}')
 minimum=$(sh scripts/macos-minimum.sh "$binary")
 test -n "$version"
@@ -32,7 +33,11 @@ cat > "$app/Contents/Info.plist" <<EOF
   <key>CFBundleIdentifier</key>
   <string>io.github.letientai299.vpdf</string>
   <key>CFBundleName</key>
-  <string>vpdf</string>
+  <string>Vpdf</string>
+  <key>CFBundleDisplayName</key>
+  <string>Vpdf</string>
+  <key>CFBundleIconFile</key>
+  <string>Vpdf.icns</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -52,11 +57,11 @@ plutil -lint "$app/Contents/Info.plist"
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --strict "$app"
 ln -s /Applications "$staged/image/Applications"
-hdiutil create -quiet -srcfolder "$staged/image" -volname vpdf \
+hdiutil create -quiet -srcfolder "$staged/image" -volname Vpdf \
   -fs HFS+ -format UDRW "$staged/image.dmg"
-hdiutil convert -quiet "$staged/image.dmg" -format ULFO -o "$staged/vpdf.dmg"
-hdiutil verify -quiet "$staged/vpdf.dmg"
-python3 -B scripts/replace_app.py "$app" "$release_dir/vpdf.app"
-mv -f "$staged/vpdf.dmg" "$release_dir/vpdf.dmg"
-"$release_dir/vpdf.app/Contents/MacOS/vpdf-gui" --version >/dev/null
-printf 'App: %s/vpdf.app\nDMG: %s/vpdf.dmg\n' "$release_dir" "$release_dir"
+hdiutil convert -quiet "$staged/image.dmg" -format ULFO -o "$staged/Vpdf.dmg"
+hdiutil verify -quiet "$staged/Vpdf.dmg"
+python3 -B scripts/replace_app.py "$app" "$release_dir/Vpdf.app"
+mv -f "$staged/Vpdf.dmg" "$release_dir/Vpdf.dmg"
+"$release_dir/Vpdf.app/Contents/MacOS/vpdf-gui" --version >/dev/null
+printf 'App: %s/Vpdf.app\nDMG: %s/Vpdf.dmg\n' "$release_dir" "$release_dir"

@@ -1,4 +1,6 @@
-# vpdf
+# Vpdf
+
+<img src="docs/assets/vpdf.svg" width="64" height="64" alt="" align="left" />
 
 A Vim-inspired terminal PDF reader powered by [MuPDF][mupdf] and the
 [Kitty graphics protocol][kitty].
@@ -33,7 +35,7 @@ setup, constraints, design, and development.
 
 ## License
 
-vpdf's original code is [MIT-licensed][license]. Executables that include
+Vpdf's original code is [MIT-licensed][license]. Executables that include
 MuPDF and its Rust bindings remain subject to their AGPL obligations. See
 [dependency licensing][notices].
 

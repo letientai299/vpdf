@@ -56,13 +56,17 @@ mise install:app
 mise test:app
 ```
 
-The [app packager][build-app] creates `target/dist/vpdf.app` and
-`target/dist/vpdf.dmg`, respecting `CARGO_TARGET_DIR`. It builds for the host
+The [app packager][build-app] creates `target/dist/Vpdf.app` and
+`target/dist/Vpdf.dmg`, respecting `CARGO_TARGET_DIR`. It builds for the host
 architecture with the `app` Cargo profile and uses Python 3 and the macOS
 command line tools. The DMG uses LZFSE compression and includes an
 Applications shortcut. `install:app` builds the package and atomically replaces
-`~/Applications/vpdf.app` without launching it. `test:app` checks the mounted
+`~/Applications/Vpdf.app` without launching it. `test:app` checks the mounted
 DMG and installation in a temporary home directory.
+
+The PNG and ICNS icons derive from the [source SVG][icon]. After editing it,
+run `mise build:icon` on macOS. It uses the native SVG renderer through `sips`
+and packages the sizes with `iconutil`; app builds use the checked-in icons.
 
 The app uses an ad hoc signature for local use. Distribution with Gatekeeper
 approval requires Developer ID signing and notarization; see [Apple's
@@ -393,6 +397,7 @@ a result needs a reproducible release reference.
 [pkgconf]: https://formulae.brew.sh/formula/pkgconf
 [build]: ../../scripts/build.sh
 [build-app]: ../../scripts/build-app.sh
+[icon]: ../assets/vpdf.svg
 [inject]: ../../crates/vpdf-gui/src/inject.rs
 [apple-distribution]: https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution
 [install]: ../../scripts/install.sh

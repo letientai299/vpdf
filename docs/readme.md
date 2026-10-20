@@ -6,7 +6,7 @@ commands. These describe the installed executable.
 ## Learn and use
 
 Tutorials and how-to guidance share pages. The reading guide assumes familiarity
-with Vim motions and explains vpdf's modes and workflows.
+with Vim motions and explains Vpdf's modes and workflows.
 
 | Read                         | For                                                           |
 | ---------------------------- | ------------------------------------------------------------- |

@@ -5,7 +5,7 @@ edition.workspace = true
 build = "scripts/build.rs"
 rust-version.workspace = true
 license = "MIT"
-description = "A Vim-inspired terminal PDF reader powered by MuPDF and the Kitty graphics protocol."
+description = "Vpdf: a Vim-inspired terminal PDF reader powered by MuPDF and the Kitty graphics protocol."
 repository = "https://github.com/letientai299/vpdf"
 
 [lints]

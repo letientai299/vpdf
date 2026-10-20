@@ -74,6 +74,11 @@ class AppTests(unittest.TestCase):
         with (app / "Contents/Info.plist").open("rb") as source:
             info = plistlib.load(source)
         self.assertEqual(info["CFBundlePackageType"], "APPL")
+        self.assertEqual(info["CFBundleName"], "Vpdf")
+        self.assertEqual(info["CFBundleDisplayName"], "Vpdf")
+        icon = app / "Contents/Resources" / info["CFBundleIconFile"]
+        self.assertEqual(icon.read_bytes(),
+                         (ROOT / "docs/assets/vpdf.icns").read_bytes())
         binary = app / "Contents/MacOS" / info["CFBundleExecutable"]
         version = subprocess.check_output([binary, "--version"], text=True)
         self.assertEqual(version.strip(),
@@ -85,27 +90,43 @@ class AppTests(unittest.TestCase):
                              (ROOT / name).read_bytes())
 
     def test_disk_image(self):
-        self.verify_app(DIST / "vpdf.app")
+        self.verify_app(DIST / "Vpdf.app")
         with tempfile.TemporaryDirectory(prefix="vpdf-dmg-") as temporary:
             mount = Path(temporary) / "volume"
             subprocess.run([
                 "hdiutil", "attach", "-quiet", "-readonly", "-nobrowse",
-                "-mountpoint", mount, DIST / "vpdf.dmg",
+                "-mountpoint", mount, DIST / "Vpdf.dmg",
             ], check=True, timeout=60)
             try:
                 self.assertEqual({p.name for p in mount.iterdir()
                                   if not p.name.startswith(".")},
-                                 {"vpdf.app", "Applications"})
+                                 {"Vpdf.app", "Applications"})
                 self.assertEqual(os.readlink(mount / "Applications"),
                                  "/Applications")
-                self.verify_app(mount / "vpdf.app")
+                self.verify_app(mount / "Vpdf.app")
                 self.assertEqual(
-                    (mount / "vpdf.app/Contents/MacOS/vpdf-gui").read_bytes(),
-                    (DIST / "vpdf.app/Contents/MacOS/vpdf-gui").read_bytes(),
+                    (mount / "Vpdf.app/Contents/MacOS/vpdf-gui").read_bytes(),
+                    (DIST / "Vpdf.app/Contents/MacOS/vpdf-gui").read_bytes(),
                 )
             finally:
                 subprocess.run(["hdiutil", "detach", "-quiet", "-force", mount],
                                check=True, timeout=60)
+
+    def test_icon_resolutions(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            icons = Path(temporary) / "Vpdf.iconset"
+            subprocess.run([
+                "iconutil", "-c", "iconset", "-o", icons,
+                DIST / "Vpdf.app/Contents/Resources/Vpdf.icns",
+            ], check=True, timeout=60)
+            for size in (16, 32, 128, 256, 512):
+                for scale, suffix in ((1, ""), (2, "@2x")):
+                    png = icons / f"icon_{size}x{size}{suffix}.png"
+                    header = png.read_bytes()[:24]
+                    self.assertEqual(header[:8], b"\x89PNG\r\n\x1a\n")
+                    self.assertEqual(int.from_bytes(header[16:20], "big"),
+                                     size * scale)
+                    self.assertEqual(header[16:20], header[20:24])
 
     def test_install_replaces(self):
         with tempfile.TemporaryDirectory(prefix="vpdf home ") as temporary:
@@ -118,11 +139,11 @@ class AppTests(unittest.TestCase):
                         env={**os.environ, "HOME": str(home)}, check=True,
                         timeout=60,
                     )
-                    app = applications / "vpdf.app"
+                    app = applications / "Vpdf.app"
                     self.verify_app(app)
                     self.assertFalse((app / "stale").exists())
                     self.assertEqual({p.name for p in applications.iterdir()},
-                                     {"vpdf.app"})
+                                     {"Vpdf.app"})
                     (app / "stale").write_text("old installation")
 
 

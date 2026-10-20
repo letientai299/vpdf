@@ -10,7 +10,7 @@ use vpdf_gui::{
 use vpdf_model::geometry::Screen;
 
 #[derive(Parser)]
-#[command(version, about = "Native vpdf reader")]
+#[command(version, about = "Native Vpdf reader")]
 struct Args {
   files: Vec<PathBuf>,
   #[arg(long, hide = true)]
@@ -186,19 +186,50 @@ fn background(builder: &mut eframe::EventLoopBuilder<eframe::UserEvent>) {
 #[cfg(not(target_os = "macos"))]
 fn background(_: &mut eframe::EventLoopBuilder<eframe::UserEvent>) {}
 
+fn icon() -> Result<egui::IconData, image::ImageError> {
+  eframe::icon_data::from_png_bytes(include_bytes!(
+    "../../../docs/assets/vpdf.png"
+  ))
+}
+
 fn main() -> eframe::Result {
   let args = Args::parse();
+  let icon =
+    icon().map_err(|error| eframe::Error::AppCreation(Box::new(error)))?;
   let options = eframe::NativeOptions {
     viewport: egui::ViewportBuilder::default()
-      .with_title("vpdf")
+      .with_title("Vpdf")
+      .with_icon(icon)
       .with_inner_size([1100.0, 800.0])
       .with_active(false),
     event_loop_builder: Some(Box::new(background)),
     ..Default::default()
   };
   eframe::run_native(
-    "vpdf",
+    "Vpdf",
     options,
     Box::new(move |cc| Ok(Box::new(Window::new(cc, args)?))),
   )
+}
+
+#[cfg(test)]
+mod tests {
+  #[test]
+  fn icon_preserves_gradient() -> Result<(), image::ImageError> {
+    let icon = super::icon()?;
+    assert_eq!((icon.width, icon.height), (256, 256));
+    let pixel = |x: usize, y: usize| {
+      let offset = (y * icon.width as usize + x) * 4;
+      &icon.rgba[offset..offset + 4]
+    };
+    let top = pixel(60, 60);
+    let bottom = pixel(60, 150);
+    for color in [top, bottom] {
+      assert!(color[0] > 180 && color[1] < 128 && color[2] < 128);
+      assert_eq!(color[3], 255);
+    }
+    assert!(top[1] > bottom[1]);
+    assert_eq!(pixel(0, 0)[3], 0);
+    Ok(())
+  }
 }

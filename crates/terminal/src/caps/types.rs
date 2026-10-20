@@ -264,7 +264,7 @@ impl Tmux {
       None => "unknown".into(),
     };
     match set {
-      Some(set) => format!("{start} at start, vpdf set {set}"),
+      Some(set) => format!("{start} at start, Vpdf set {set}"),
       None => start,
     }
   }
