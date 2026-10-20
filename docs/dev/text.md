@@ -22,8 +22,18 @@ structure.
 
 [Document search][search] favors matches across common PDF text irregularities:
 Unicode case and compatibility forms, repeated whitespace, and line-end
-hyphenation. A normalized index retains anchors to the extracted glyphs, so a
-match can highlight and navigate the original page.
+hyphenation. Literal search folds Vietnamese vowel accents and `đ`, so
+`tieng viet` finds `Tiếng Việt`. Accented literal queries use the same folding;
+uppercase smart case controls case sensitivity independently. Source ranges
+cover combining sequences, preserving printed accents in highlights and
+excerpts.
+
+CJK continuation lines within a text block can join without a synthetic space.
+Paragraph and geometry checks keep unrelated lines apart. Whole-word matching
+uses [ICU4X dictionary boundaries][icu] for Chinese and Japanese text; a
+compound's substrings need not be dictionary words. Boundaries are built on
+demand and released with their page index. ASCII English keeps its direct
+normalization and regex word-boundary paths.
 
 ```mermaid
 flowchart TD
@@ -36,10 +46,12 @@ flowchart TD
     Hits --> View[Foreground navigation and highlights]
 ```
 
-Regular expressions also run on normalized text. Case-sensitive expressions
-cannot recover capitals already folded by the index, and character classes see
-decomposed forms. The engine supports bounded backtracking; its syntax and cost
-model differ from Python's. Use `:help` for query entry and regex activation.
+Regular expressions use normalized text without Vietnamese accent removal.
+Case-sensitive queries rebuild a view preserving capitals, and character
+classes see decomposed forms. Explicit regex `\b` keeps regex semantics;
+the whole-word option additionally uses linguistic boundaries for CJK text.
+The engine supports bounded backtracking; its syntax and cost model differ
+from Python's. Use `:help` for query entry and regex activation.
 
 The [search worker][worker] opens its own document and builds indexes lazily.
 It sends results incrementally, tags them with query generations, and checks for
@@ -54,6 +66,10 @@ record where filesystem timestamps support it. Missing, damaged, or stale data
 falls back to extraction; native open errors can arrive when an uncached page
 is first needed. OCR text overrides stored indexes. PDFs opened with a password
 are excluded from disk caching.
+
+Records retain line joins and Unicode source coverage. Provenance changes
+invalidate indexes when normalization or the record layout changes; old packs
+fall back to extraction. Dictionary boundary arrays are transient.
 
 Keep cache locations, filesystem checks, pack encoding, and eviction policy in
 the content-cache implementation. Keep scan scheduling and decode concurrency
@@ -111,3 +127,5 @@ its command interface.
 [installation]: ../install.md#optional-helpers
 [jobs]: ../../crates/vpdf-pdf/src/jobs/mod.rs
 [saved-state]: ../reading.md#saved-state-and-reload
+
+[icu]: https://docs.rs/icu_segmenter/latest/icu_segmenter/struct.WordSegmenter.html

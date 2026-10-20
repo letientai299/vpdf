@@ -209,11 +209,6 @@ impl<S: TextSource + Pages> View<'_, S> {
     let Some(cursor) = self.explicit_target()? else { return Ok(None) };
     let text = self.source.page_text(cursor.page)?;
     let Some(line) = text.lines.get(cursor.line) else { return Ok(None) };
-    let at = cursor.glyph;
-    if line.glyphs.get(at).is_none_or(|g| crate::text::class(g.ch) != 1) {
-      return Ok(None);
-    }
-    let Some((first, last)) = line.run(at) else { return Ok(None) };
-    Ok(Some(line.glyphs[first..=last].iter().map(|g| g.ch).collect()))
+    Ok(search::word_at(line, cursor.glyph))
   }
 }

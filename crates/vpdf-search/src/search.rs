@@ -1,59 +1,89 @@
 use crate::Result;
 use crate::text::{PageId, Position, Text};
-use fancy_regex::{Regex, RegexBuilder};
-use unicode_casefold::UnicodeCaseFold;
+use fancy_regex::Regex;
+use std::sync::OnceLock;
 use unicode_normalization::UnicodeNormalization;
 
 mod codec;
+mod join;
+#[cfg(test)]
+mod multilingual;
+mod normalize;
+mod words;
+use join::Join;
 
 #[derive(Clone, Copy)]
 enum Form {
   Printed,
   Folded,
   Exact,
+  RegexFolded,
+  RegexExact,
+}
+
+impl Form {
+  fn folded(self) -> bool {
+    matches!(self, Self::Folded | Self::RegexFolded)
+  }
+
+  fn literal(self) -> bool {
+    matches!(self, Self::Folded | Self::Exact)
+  }
 }
 
 pub struct Pattern {
   regex: Regex,
   exact: bool,
+  raw: bool,
+  whole: bool,
+  source: String,
+  loose: OnceLock<Regex>,
 }
 
-fn normalized(text: &str, exact: bool) -> String {
-  if exact { text.nfkd().collect() } else { text.nfkd().case_fold().collect() }
+fn normalized(text: &str, form: Form) -> String {
+  let mut out = String::new();
+  normalize::scan(text.chars().map(|ch| (ch, (), ())), form, |ch, (), ()| {
+    out.push(ch);
+  });
+  out
 }
 
 impl Pattern {
+  fn form(&self) -> Form {
+    match (self.raw, self.exact) {
+      (false, false) => Form::Folded,
+      (false, true) => Form::Exact,
+      (true, false) => Form::RegexFolded,
+      (true, true) => Form::RegexExact,
+    }
+  }
+
   pub fn ranges(&self, text: &str) -> Vec<(usize, usize)> {
     let mut haystack = String::new();
     let mut offsets = Vec::new();
-    for (start, ch) in text.char_indices() {
-      let end = start + ch.len_utf8();
-      let mut buffer = [0; 4];
-      for ch in normalized(ch.encode_utf8(&mut buffer), self.exact).chars() {
-        let ch = if ch.is_whitespace() { ' ' } else { ch };
-        if ch == ' ' && haystack.ends_with(' ') {
-          continue;
-        }
-        haystack.push(ch);
-        offsets.extend(std::iter::repeat_n((start, end), ch.len_utf8()));
+    let input =
+      text.char_indices().map(|(at, ch)| (ch, at, at + ch.len_utf8()));
+    normalize::scan(input, self.form(), |ch, start, end| {
+      let ch = if ch.is_whitespace() { ' ' } else { ch };
+      if ch == ' ' && haystack.ends_with(' ') {
+        return;
       }
-    }
-    let mut ranges = Vec::new();
-    for found in self.regex.find_iter(&haystack) {
-      let Ok(found) = found else { break };
-      if found.start() == found.end() {
-        continue;
-      }
-      let range = (offsets[found.start()].0, offsets[found.end() - 1].1);
-      if let Some(last) = ranges.last_mut() {
-        let last: &mut (usize, usize) = last;
-        if range.0 < last.1 {
-          last.1 = last.1.max(range.1);
-          continue;
-        }
+      haystack.push(ch);
+      offsets.extend(std::iter::repeat_n((start, end), ch.len_utf8()));
+    });
+    let boundaries = self.whole.then(|| words::boundaries(&haystack)).flatten();
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    let _ = self.visit(&haystack, boundaries.as_deref(), |start, end| {
+      let range = (offsets[start].0, offsets[end - 1].1);
+      if let Some(last) = ranges.last_mut()
+        && range.0 < last.1
+      {
+        last.1 = last.1.max(range.1);
+        return true;
       }
       ranges.push(range);
-    }
+      true
+    });
     ranges
   }
 }
@@ -65,6 +95,7 @@ pub struct Hit {
   pub excerpt: String,
 }
 
+#[derive(Default)]
 pub struct Index {
   page: PageId,
   text: String,
@@ -75,6 +106,9 @@ pub struct Index {
   runs: Vec<Run>,
   /// Lines as printed, for excerpts.
   lines: Vec<Box<str>>,
+  joins: Vec<Join>,
+  covers: Vec<Cover>,
+  words: OnceLock<Option<Box<[u32]>>>,
 }
 
 /// Bytes of `text` from `byte` on, up to the next run, with their line
@@ -89,11 +123,23 @@ struct Run {
   stepped: bool,
 }
 
+#[derive(Clone, Copy)]
+struct Cover {
+  start: u32,
+  end: u32,
+  line: u32,
+  glyph: u32,
+}
+
 impl Run {
   fn anchor(self, byte: u32) -> (u32, u32) {
     let step = if self.stepped { byte - self.byte } else { 0 };
     (self.line, self.glyph + step)
   }
+}
+
+pub fn word_at(line: &crate::text::Line, glyph: usize) -> Option<String> {
+  words::word_at(line, glyph)
 }
 
 /// Whether a hyphen joins lines.
@@ -103,70 +149,108 @@ pub fn hyphenated(line: &str) -> bool {
 
 impl Index {
   pub fn new(page: PageId, text: &Text) -> Self {
-    let lines = text.lines.iter().map(|line| line.text().into()).collect();
-    let mut index = Self { page, text: String::new(), runs: Vec::new(), lines };
-    let rows = text.lines.iter().map(|row| row.glyphs.iter().map(|g| g.ch));
-    index.append(rows.enumerate(), 0, Form::Folded, usize::MAX);
+    let lines: Vec<Box<str>> =
+      text.lines.iter().map(|line| line.text().into()).collect();
+    let mut index = Self { page, ..Self::default() };
+    let joins = join::decisions(text);
+    let rows = text.lines.iter().enumerate().map(|(at, row)| {
+      (at, row.glyphs.iter().map(|g| g.ch), lines[at].is_ascii())
+    });
+    index.append(rows, 0, Form::Folded, usize::MAX, &joins);
+    index.lines = lines;
+    index.joins = joins;
     index.text.shrink_to_fit();
     index.runs.shrink_to_fit();
+    index.covers.shrink_to_fit();
     index
   }
 
   /// Joins `rows` as searched, from glyph `first`.
   fn append<'a>(
     &mut self,
-    rows: impl Iterator<Item = (usize, impl Iterator<Item = char> + 'a)>,
+    rows: impl Iterator<Item = (usize, impl Iterator<Item = char> + 'a, bool)>,
     first: usize,
     form: Form,
     limit: usize,
+    joins: &[Join],
   ) {
-    for (index, (line, row)) in rows.enumerate() {
+    for (index, (line, row, ascii)) in rows.enumerate() {
       let skip = if index == 0 { first } else { 0 };
-      for (glyph, ch) in row.enumerate().skip(skip) {
-        if self.text.len() >= limit {
-          return;
-        }
-        self.push_glyph(ch, (line as u32, glyph as u32), form);
-      }
-      if hyphenated(&self.text) {
-        self.text.pop();
-        let len = self.text.len();
-        if self.runs.last().is_some_and(|run| run.byte as usize == len) {
-          self.runs.pop();
-        }
-      } else {
-        let anchor = match form {
-          Form::Printed => (!self.text.is_empty()).then_some((0, 0)),
-          _ => self.last_anchor(),
-        };
-        if let Some(anchor) = anchor {
-          self.push_glyph(' ', anchor, form);
-        }
-      }
+      let row =
+        row.enumerate().skip(skip).take(limit.saturating_sub(self.text.len()));
+      self.append_row(row, line, form, ascii, limit);
+      self.join_line(joins.get(line).copied().unwrap_or(Join::Space), form);
       if self.text.len() >= limit {
         break;
       }
     }
   }
 
-  fn push_glyph(&mut self, ch: char, anchor: (u32, u32), form: Form) {
-    match form {
-      Form::Printed => {
+  #[inline]
+  fn append_row(
+    &mut self,
+    row: impl Iterator<Item = (usize, char)>,
+    line: usize,
+    form: Form,
+    ascii: bool,
+    limit: usize,
+  ) {
+    if matches!(form, Form::Printed) {
+      for (_, ch) in row {
+        if self.text.len() >= limit {
+          return;
+        }
         self.push_char(ch);
       }
-      Form::Exact if ch.is_ascii() => self.push(ch, anchor),
-      Form::Folded if ch.is_ascii() => {
-        self.push(ch.to_ascii_lowercase(), anchor);
+      return;
+    }
+    if ascii {
+      for (glyph, ch) in row {
+        let ch = if form.folded() { ch.to_ascii_lowercase() } else { ch };
+        self.push(ch, (line as u32, glyph as u32));
       }
-      Form::Exact => {
-        for ch in std::iter::once(ch).nfkd() {
-          self.push(ch, anchor);
-        }
+      return;
+    }
+    let input = row.map(|(glyph, ch)| {
+      let at = (line as u32, glyph as u32);
+      (ch, at, at)
+    });
+    normalize::scan(input, form, |ch, first, last| {
+      self.push_source(ch, first, last);
+    });
+  }
+
+  fn push_source(&mut self, ch: char, first: (u32, u32), last: (u32, u32)) {
+    let start = self.text.len() as u32;
+    self.push(ch, first);
+    let end = self.text.len() as u32;
+    if first == last || start == end {
+      return;
+    }
+    if let Some(cover) = self.covers.last_mut()
+      && cover.end == start
+      && (cover.line, cover.glyph) == last
+    {
+      cover.end = end;
+      return;
+    }
+    self.covers.push(Cover { start, end, line: last.0, glyph: last.1 });
+  }
+
+  fn join_line(&mut self, join: Join, form: Form) {
+    if join == Join::Hyphen && self.text.ends_with('-') {
+      self.text.pop();
+      let len = self.text.len();
+      if self.runs.last().is_some_and(|run| run.byte as usize == len) {
+        self.runs.pop();
       }
-      Form::Folded => {
-        for ch in std::iter::once(ch).nfkd().case_fold() {
-          self.push(ch, anchor);
-        }
+    } else if join == Join::Space {
+      if matches!(form, Form::Printed) && !self.text.is_empty() {
+        self.push_char(' ');
+      } else if !matches!(form, Form::Printed)
+        && let Some(anchor) = self.last_anchor()
+      {
+        self.push(' ', anchor);
       }
     }
   }
@@ -213,52 +297,67 @@ impl Index {
     Position { page: self.page, line: line as usize, glyph: glyph as usize }
   }
 
+  #[inline]
   pub fn matches(&self, pattern: &Pattern, limit: usize) -> Result<Vec<Hit>> {
     let mut hits = Vec::new();
     if limit == 0 {
       return Ok(hits);
     }
-    let mut exact = Self {
-      page: self.page,
-      text: String::new(),
-      runs: Vec::new(),
-      lines: Vec::new(),
-    };
-    let index = if pattern.exact {
-      let rows = self.lines.iter().map(|line| line.chars()).enumerate();
-      exact.append(rows, 0, Form::Exact, usize::MAX);
-      &exact
+    let exact = if pattern.exact || pattern.raw {
+      let mut exact = Self { page: self.page, ..Self::default() };
+      let rows = self
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(at, line)| (at, line.chars(), line.is_ascii()));
+      exact.append(rows, 0, pattern.form(), usize::MAX, &self.joins);
+      Some(exact)
     } else {
-      self
+      None
     };
-    for found in pattern.regex.find_iter(&index.text) {
-      let found = found?;
-      if found.start() == found.end() {
-        continue;
+    let index = exact.as_ref().unwrap_or(self);
+    let boundaries = if pattern.whole {
+      index.words.get_or_init(|| words::boundaries(&index.text)).as_deref()
+    } else {
+      None
+    };
+    pattern.visit(&index.text, boundaries, |start, end| {
+      let first = index.position(start);
+      let mut last = index.position(end - 1);
+      let cover =
+        index.covers.partition_point(|cover| cover.start < end as u32);
+      if cover > 0 {
+        let cover = index.covers[cover - 1];
+        if cover.end as usize > start {
+          last = last.max(Position {
+            page: self.page,
+            line: cover.line as usize,
+            glyph: cover.glyph as usize,
+          });
+        }
       }
-      hits.push(Hit {
-        first: index.position(found.start()),
-        last: index.position(found.end() - 1),
-        excerpt: self.excerpt(index.position(found.start())),
-      });
-      if hits.len() >= limit {
-        break;
-      }
-    }
+      hits.push(Hit { first, last, excerpt: self.excerpt(first) });
+      hits.len() < limit
+    })?;
     Ok(hits)
   }
 
   /// 80 printed characters from `from`.
   fn excerpt(&self, from: Position) -> String {
-    let mut printed = Self {
-      page: self.page,
-      text: String::new(),
-      runs: Vec::new(),
-      lines: Vec::new(),
-    };
-    let rows = self.lines.iter().map(|line| line.chars()).enumerate();
+    let mut printed = Self::default();
+    let rows = self
+      .lines
+      .iter()
+      .enumerate()
+      .map(|(at, line)| (at, line.chars(), line.is_ascii()));
     // Four bytes cover any character.
-    printed.append(rows.skip(from.line), from.glyph, Form::Printed, 80 * 4);
+    printed.append(
+      rows.skip(from.line),
+      from.glyph,
+      Form::Printed,
+      80 * 4,
+      &self.joins,
+    );
     printed.text.chars().take(80).collect()
   }
 
@@ -292,6 +391,13 @@ impl Index {
     let lines = self.lines.iter().map(|line| line.len()).sum::<usize>();
     self.text.capacity()
       + self.runs.capacity() * size_of::<Run>()
+      + self.covers.capacity() * size_of::<Cover>()
+      + self.joins.capacity() * size_of::<Join>()
+      + self
+        .words
+        .get()
+        .and_then(|words| words.as_ref())
+        .map_or(0, |words| words.len() * size_of::<u32>())
       + lines
       + self.lines.capacity() * size_of::<Box<str>>()
   }
@@ -328,26 +434,35 @@ pub fn next<T, K: Ord>(
 
 pub fn compile(query: &str, whole_word: bool) -> Result<Pattern> {
   let exact = query.chars().any(char::is_uppercase);
-  let pattern = if let Some(raw) = query.strip_prefix("\\v") {
-    raw.nfkd().collect::<String>()
+  let raw = query.starts_with("\\v");
+  let pattern = if raw {
+    query[2..].nfkd().collect::<String>()
   } else {
-    let normalized = normalized(query, exact);
+    let form = if exact { Form::Exact } else { Form::Folded };
+    let normalized = normalized(query, form);
     let words = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
     fancy_regex::escape(&words).to_string()
   };
-  let pattern =
-    if whole_word { format!(r"\b(?:{pattern})\b") } else { pattern };
   let flags = if exact { "" } else { "(?i)" };
-  let regex = RegexBuilder::new(&format!("{flags}{pattern}"))
-    .backtrack_limit(100_000)
-    .build()?;
-  Ok(Pattern { regex, exact })
+  let source = format!("{flags}(?:{pattern})");
+  let bounded =
+    if whole_word { format!(r"\b(?:{source})\b") } else { source.clone() };
+  let regex = words::regex(&bounded)?;
+  Ok(Pattern {
+    regex,
+    exact,
+    raw,
+    whole: whole_word,
+    source,
+    loose: OnceLock::new(),
+  })
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
   use crate::text::{Bounds, Glyph, Line};
+  use unicode_casefold::UnicodeCaseFold;
 
   pub(super) fn sample(lines: &[&str]) -> Text {
     Text {
@@ -426,7 +541,7 @@ mod tests {
   /// characters, joined hyphens, and collapsed spaces.
   #[test]
   fn runs_match_byte_anchors() {
-    let lines = ["Straße ﬁsh inter-", "national  café", "日本語 x\ty", "-"];
+    let lines = ["Straße ﬁsh inter-", "national  cafe", "日本語 x\ty", "-"];
     let text = sample(&lines);
     let index = Index::new(PageId(0), &text);
     let mut expected: Vec<(u32, u32)> = Vec::new();
@@ -460,35 +575,14 @@ mod tests {
 
   #[test]
   fn ascii_matches_unicode_path() {
-    let chars = (0..=127).map(char::from).chain("Äßİﬁά日本語".chars());
-    for form in [Form::Printed, Form::Exact, Form::Folded] {
-      let empty = || Index {
-        page: PageId(0),
-        text: String::new(),
-        runs: Vec::new(),
-        lines: Vec::new(),
+    for form in [Form::Exact, Form::Folded] {
+      let input = (0..=127).map(char::from);
+      let expected: String = if form.folded() {
+        input.clone().nfkd().case_fold().collect()
+      } else {
+        input.clone().nfkd().collect()
       };
-      let (mut actual, mut expected) = (empty(), empty());
-      for (glyph, ch) in chars.clone().enumerate() {
-        let anchor = (0, glyph as u32);
-        actual.push_glyph(ch, anchor, form);
-        let normalized: String = match form {
-          Form::Printed => ch.to_string(),
-          Form::Exact => std::iter::once(ch).nfkd().collect(),
-          Form::Folded => std::iter::once(ch).nfkd().case_fold().collect(),
-        };
-        for ch in normalized.chars() {
-          expected.push(ch, anchor);
-        }
-      }
-      assert_eq!(actual.text, expected.text);
-      if matches!(form, Form::Printed) {
-        assert!(actual.runs.is_empty());
-        continue;
-      }
-      for byte in 0..expected.text.len() {
-        assert_eq!(actual.anchor(byte), expected.anchor(byte));
-      }
+      assert_eq!(normalized(&input.collect::<String>(), form), expected);
     }
   }
 

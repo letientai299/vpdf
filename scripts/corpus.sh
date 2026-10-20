@@ -48,7 +48,11 @@ case $set_name in
       scan https://web.mit.edu/sts.035/www/PDFs/edvac.pdf \
       cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32 \
       review https://egusphere.copernicus.org/preprints/2025/egusphere-2025-2374/egusphere-2025-2374-RC1-supplement.pdf \
-      0bbddcd853aebe2e02cd786d43e30a568f2f7eb9c1a6393c6990a82dce1f76a3
+      0bbddcd853aebe2e02cd786d43e30a568f2f7eb9c1a6393c6990a82dce1f76a3 \
+      vietnamese https://documents1.worldbank.org/curated/en/099051625142537135/pdf/P178784-a1508fbd-9062-44cf-a256-f70aaed00704.pdf \
+      5ed2b5f73b6543283c8637e83e0d3ce7ef10b1050fcb0f190b945c8530be6195 \
+      chinese https://www.imf.org/-/media/files/publications/weo/2024/october/chinese/text.pdf \
+      387113cf0dc2bc501d5fb77e681666f203f34e35f452fa9bd1f5b00ffe5bbc8e
     ;;
   huge)
     # 5,364-page manual; 3,329-page manual; layered vector maps; JPEG 2000

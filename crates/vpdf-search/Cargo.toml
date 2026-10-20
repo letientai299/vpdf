@@ -11,8 +11,11 @@ workspace = true
 [dependencies]
 anyhow.workspace = true
 fancy-regex.workspace = true
+icu_segmenter.workspace = true
+smallvec.workspace = true
 unicode-casefold.workspace = true
 unicode-normalization.workspace = true
+unicode-script.workspace = true
 vpdf-model.workspace = true
 
 [dev-dependencies]

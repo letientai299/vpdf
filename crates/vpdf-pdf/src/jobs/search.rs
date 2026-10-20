@@ -287,6 +287,11 @@ impl SearchTask<'_> {
       } else {
         index.matches(&pattern, remaining.min(1000))?
       };
+      if query.whole
+        && let Some(index) = indexes.remove(&page)
+      {
+        keep(indexes, page, index);
+      }
       remaining -= hits.len();
       if !hits.is_empty() {
         self.send.send(SearchEvent {
@@ -556,6 +561,53 @@ mod tests {
   }
 
   #[test]
+  fn dictionary_growth_respects_cache_budget() -> Result<()> {
+    let files = tempfile::tempdir()?;
+    let path = files.path().join("one.pdf");
+    crate::fixtures::pdf(&path, &["page"], "")?;
+    let text = Arc::new(Text {
+      lines: vec![crate::text::Line {
+        paragraph: true,
+        glyphs: "中文排版需求"
+          .chars()
+          .map(|ch| crate::text::Glyph {
+            ch,
+            bounds: crate::text::Bounds::default(),
+          })
+          .collect(),
+      }],
+      truncated: false,
+    });
+    let index = Index::new(PageId(0), &text);
+    let budget = index.weight() + 1;
+    let mut indexes = Cache::new(budget);
+    keep(&mut indexes, PageId(0), index);
+    let mut source = Source::open(path, String::new(), None, 1)?;
+    source.seed(PageId(0), text);
+    let (send, events) = mpsc::sync_channel(32);
+    let send = Wake::none().sender(send);
+    let current = AtomicU64::new(1);
+    let task = SearchTask {
+      generation: 1,
+      origin: PageId(0),
+      backward: false,
+      current: &current,
+      send: &send,
+    };
+    let query = vpdf_search::query::Query {
+      text: "排版".into(),
+      whole: true,
+      ..vpdf_search::query::Query::default()
+    };
+    task.run(&mut source, &mut indexes, &query)?;
+    assert!(indexes.used() <= budget);
+    assert!(!indexes.contains(&PageId(0)));
+    assert_eq!(events.try_recv()?.hits.len(), 1);
+    assert_eq!(source.extracted, 0);
+    Ok(())
+  }
+
+  #[test]
   fn stopped_worker_fails_the_scan() {
     let (send, _) = mpsc::channel();
     let (events_send, events) = mpsc::sync_channel(1);
@@ -629,6 +681,56 @@ mod tests {
     scan(&mut source, "beta")?;
     source.save();
     assert_eq!(std::fs::read_dir(locked.path())?.count(), 0);
+    Ok(())
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn real_multilingual_disk_cache() -> Result<()> {
+    let corpus = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+    for (name, query, expected_hash) in [
+      (
+        "vietnamese.pdf",
+        "viet nam",
+        "5ed2b5f73b6543283c8637e83e0d3ce7ef10b1050fcb0f190b945c8530be6195",
+      ),
+      (
+        "chinese.pdf",
+        "经济",
+        "387113cf0dc2bc501d5fb77e681666f203f34e35f452fa9bd1f5b00ffe5bbc8e",
+      ),
+    ] {
+      let path = corpus.join(name);
+      let alias = content_cache::alias(&mut File::open(&path)?)?;
+      assert_eq!(content_cache::hex(&alias), expected_hash);
+      let root = tempfile::tempdir()?;
+      let mut cold = open(&path, root.path())?;
+      let pages = cold.pages;
+      let (missing, extracted) = scan(&mut cold, "qzxjvw")?;
+      assert!(missing.is_empty());
+      assert_eq!(extracted, pages);
+      cold.save();
+      let (expected, extracted) = scan(&mut cold, query)?;
+      assert_eq!(extracted, 0, "{name}");
+      assert!(!expected.is_empty(), "{name}");
+      cold.save();
+      let written = pack_inode(root.path())?;
+      drop(cold);
+      let mut warm = Source::open(
+        path.clone(),
+        String::new(),
+        Some(root.path().into()),
+        pages,
+      )?;
+      warm.settle(true);
+      let (actual, extracted) = scan(&mut warm, query)?;
+      assert_eq!(extracted, 0, "{name}");
+      assert_eq!(ends(&actual), ends(&expected), "{name}");
+      warm.save();
+      assert_eq!(pack_inode(root.path())?, written, "{name}");
+      assert_eq!(warm.doc.is_none(), content_cache::exact(&path));
+      assert_eq!(content_cache::alias(&mut File::open(&path)?)?, alias);
+    }
     Ok(())
   }
 

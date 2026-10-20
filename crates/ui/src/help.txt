@@ -79,6 +79,8 @@ Counts: repeat objects / enclosing bracket pairs
 {word_search}: search active glyph or visible target word
 \v: regex prefix in content and panels
 Search: literal; uppercase letters enable case sensitivity
+Literal search ignores Vietnamese accents; regex preserves them
+CJK whole-word search uses dictionary word boundaries
 
 # Figures
 {region}: open selected figure actions

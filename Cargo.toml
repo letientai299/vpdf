@@ -91,6 +91,11 @@ signal-hook = "0.3"
 sysinfo = { version = "0.39.6", default-features = false, features = [
   "system",
 ] }
+icu_segmenter = { version = "2.3", default-features = false, features = [
+  "compiled_data",
+] }
+unicode-script = "0.5"
+smallvec = "1"
 unicode-casefold = "0.2"
 unicode-normalization = "0.1"
 unicode-width = "0.2"

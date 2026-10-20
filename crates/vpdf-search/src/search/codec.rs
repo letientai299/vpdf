@@ -1,6 +1,6 @@
 //! A page index as bytes for the disk cache, without its page number,
 //! so a record can serve whichever page holds the same text.
-use super::{Index, Run};
+use super::{Cover, Index, Join, Run};
 use crate::Result;
 use crate::text::PageId;
 use anyhow::{Context, bail, ensure};
@@ -19,6 +19,19 @@ impl Index {
     put(out, self.lines.len());
     for line in &self.lines {
       put_bytes(out, line.as_bytes());
+    }
+    for join in &self.joins {
+      out.push(match join {
+        Join::Space => 0,
+        Join::Continue => 1,
+        Join::Hyphen => 2,
+      });
+    }
+    put(out, self.covers.len());
+    for cover in &self.covers {
+      for value in [cover.start, cover.end, cover.line, cover.glyph] {
+        out.extend_from_slice(&value.to_le_bytes());
+      }
     }
   }
 
@@ -39,19 +52,58 @@ impl Index {
       runs.push(Run { byte, line, glyph, stepped });
     }
     let count = reader.count(4)?;
-    let mut lines = Vec::with_capacity(count);
+    let mut lines: Vec<Box<str>> = Vec::with_capacity(count);
     for _ in 0..count {
       lines.push(std::str::from_utf8(reader.bytes()?)?.into());
     }
-    validate(&text, &runs, lines.len())?;
+    let glyphs: Vec<_> =
+      lines.iter().map(|line| line.chars().count()).collect();
+    let joins = (0..lines.len())
+      .map(|_| match reader.take(1)?[0] {
+        0 => Ok(Join::Space),
+        1 => Ok(Join::Continue),
+        2 => Ok(Join::Hyphen),
+        _ => bail!("Invalid search line join"),
+      })
+      .collect::<Result<Vec<_>>>()?;
+    let count = reader.count(16)?;
+    let mut covers: Vec<Cover> = Vec::with_capacity(count);
+    for _ in 0..count {
+      let cover = Cover {
+        start: reader.u32()?,
+        end: reader.u32()?,
+        line: reader.u32()?,
+        glyph: reader.u32()?,
+      };
+      ensure!(
+        cover.start < cover.end && cover.end as usize <= text.len(),
+        "Invalid search source coverage"
+      );
+      ensure!((cover.line as usize) < glyphs.len(), "Invalid coverage line");
+      ensure!(
+        covers.last().is_none_or(|last| last.end <= cover.start),
+        "Overlapping search source coverage"
+      );
+      ensure!(
+        text.is_char_boundary(cover.start as usize)
+          && text.is_char_boundary(cover.end as usize),
+        "Coverage splits UTF-8 character"
+      );
+      ensure!(
+        (cover.glyph as usize) < glyphs[cover.line as usize],
+        "Coverage past glyphs"
+      );
+      covers.push(cover);
+    }
+    validate(&text, &runs, &glyphs)?;
     ensure!(reader.0.is_empty(), "Trailing bytes in search record");
-    Ok(Self { page, text, runs, lines })
+    Ok(Self { page, text, runs, lines, joins, covers, ..Self::default() })
   }
 }
 
 /// Runs start at byte 0, rise strictly inside the text, name one of
 /// `lines`, and their stepped glyphs stay within `u32`.
-fn validate(text: &str, runs: &[Run], lines: usize) -> Result<()> {
+fn validate(text: &str, runs: &[Run], glyphs: &[usize]) -> Result<()> {
   let len = u32::try_from(text.len())?;
   ensure!(
     runs.first().map(|run| run.byte) == (len > 0).then_some(0),
@@ -60,10 +112,16 @@ fn validate(text: &str, runs: &[Run], lines: usize) -> Result<()> {
   for (at, run) in runs.iter().enumerate() {
     let end = runs.get(at + 1).map_or(len, |next| next.byte);
     ensure!(run.byte < end, "Search record runs out of order");
-    ensure!((run.line as usize) < lines, "Search record run past its lines");
-    if run.stepped {
-      run.glyph.checked_add(end - run.byte - 1).context("Run past u32")?;
-    }
+    ensure!(
+      (run.line as usize) < glyphs.len(),
+      "Search record run past its lines"
+    );
+    let last = if run.stepped {
+      run.glyph.checked_add(end - run.byte - 1).context("Run past u32")?
+    } else {
+      run.glyph
+    };
+    ensure!((last as usize) < glyphs[run.line as usize], "Run past glyphs");
   }
   Ok(())
 }

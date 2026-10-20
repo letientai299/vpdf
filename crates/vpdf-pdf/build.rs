@@ -44,8 +44,12 @@ fn code(paths: &[&str]) -> u64 {
 }
 
 fn main() {
-  let index =
-    locked(&["mupdf-sys", "unicode-casefold", "unicode-normalization"]);
+  let index = locked(&[
+    "mupdf-sys",
+    "unicode-casefold",
+    "unicode-normalization",
+    "unicode-script",
+  ]);
   println!("cargo::rustc-env=VPDF_INDEX_CRATES={index}");
   let code = code(&[
     "crates/vpdf-pdf/src/fonts.rs",
@@ -56,6 +60,9 @@ fn main() {
     "crates/vpdf-pdf/src/document/annotations.rs",
     "crates/vpdf-search/src/search.rs",
     "crates/vpdf-search/src/search/codec.rs",
+    "crates/vpdf-search/src/search/normalize.rs",
+    "crates/vpdf-search/src/search/join.rs",
+    "crates/vpdf-search/src/search/words.rs",
     "crates/vpdf-model/src/text.rs",
     "crates/vpdf-model/src/document.rs",
     "crates/vpdf-model/src/geometry.rs",
