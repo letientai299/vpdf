@@ -107,9 +107,6 @@ fn thumbnail(
   let matrix = page_matrix(bounds, scale, rotation);
   let area = IRect::new(0, 0, pixels_wide, pixels_high);
   let pixmap = crate::raster::draw(&list, &matrix, area)?;
-  Ok(Thumbnail {
-    width: pixels_wide,
-    height: pixels_high,
-    rgb: pixmap.samples().to_vec(),
-  })
+  Thumbnail::new(pixels_wide, pixels_high, pixmap.samples().to_vec())
+    .ok_or_else(|| anyhow::anyhow!("Invalid thumbnail pixels"))
 }

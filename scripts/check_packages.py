@@ -12,16 +12,21 @@ ALLOWED = {
     "vpdf-pdf": {"vpdf-model", "vpdf-search"},
     "vpdf-terminal": {"vpdf-model", "vpdf-protocol"},
     "vpdf-ui": {"vpdf-model", "vpdf-reader", "vpdf-search", "vpdf-terminal"},
+    "vpdf-gui": {"vpdf", "vpdf-model"},
     "vpdf": {
         "vpdf-model", "vpdf-reader", "vpdf-search", "vpdf-pdf",
         "vpdf-terminal", "vpdf-ui",
     },
 }
-NATIVE = {"vpdf", "vpdf-pdf"}
+NATIVE = {"vpdf", "vpdf-pdf", "vpdf-gui"}
 
 
 def native(name):
     return name == "mupdf" or name.startswith("mupdf-")
+
+
+def gui(name):
+    return name in {"eframe", "egui", "epaint", "emath", "ecolor", "winit"} or name.startswith(("egui-", "wgpu"))
 
 
 def reachable(graph, root):
@@ -69,6 +74,8 @@ def audit(metadata):
                 path = dep.get("path")
                 if path is None or Path(path).resolve() != directory.resolve():
                     errors.append(f"Non-workspace dependency: {edge}")
+            if name != "vpdf-gui" and gui(target):
+                errors.append(f"GUI dependency: {edge}")
             if name not in NATIVE and native(target):
                 errors.append(f"Native dependency: {edge}")
 
@@ -81,6 +88,8 @@ def audit(metadata):
                     errors.append(f"Forbidden transitive dependency: {edge}")
                 if target != owners[dependency]:
                     errors.append(f"Non-workspace transitive dependency: {edge}")
+            if name != "vpdf-gui" and gui(dependency):
+                errors.append(f"GUI transitive dependency: {edge}")
             if name not in NATIVE and native(dependency):
                 errors.append(f"Native transitive dependency: {edge}")
     return errors

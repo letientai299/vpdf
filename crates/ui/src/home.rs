@@ -10,7 +10,7 @@ use crossterm::event::{KeyEvent, KeyEventKind};
 use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
-use vpdf_model::scene::{Draw, Op, Text};
+use vpdf_model::scene::{Draw, Op, Surface, Text};
 use vpdf_model::style::Role;
 use vpdf_terminal::decode::Event;
 use vpdf_terminal::graphics::Graphics;
@@ -85,30 +85,38 @@ impl Home {
     now: u64,
     request: impl FnOnce(&mut Shelf),
   ) -> Result<()> {
-    let at = self.at;
-    {
-      let mut painter = vpdf_terminal::painter::Painter::new(out);
-      self.scene_clear(&mut painter);
-      painter.finish()?;
-    }
-    let drawn = self.panel.draw(
-      out,
-      at,
-      self.screen.columns,
-      self.screen,
-      Some(graphics),
-      now,
+    let mut painter =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    let result = self.scene(&mut painter, now, request);
+    painter.finish()?;
+    result
+  }
+
+  pub fn scene<'a, S: Surface<'a>>(
+    &mut self,
+    scene: &mut S,
+    now: u64,
+    request: impl FnOnce(&mut Shelf),
+  ) -> std::result::Result<(), S::Error> {
+    self.scene_clear(scene);
+    let drawn = self.panel.scene(
+      scene,
+      crate::panel::recent::Frame {
+        at: self.at,
+        width: self.screen.columns,
+        screen: self.screen,
+        now,
+      },
+      true,
     );
     if let Some(cards) = self.panel.shelf_mut() {
       request(cards);
     }
     drawn?;
     if let Some(prompt) = &self.prompt {
-      prompt.draw(out, self.screen, at, None)?;
+      prompt.scene(scene, self.screen, self.at, None);
     } else {
-      let mut painter = vpdf_terminal::painter::Painter::new(out);
-      self.scene_footer(&mut painter);
-      painter.finish()?;
+      self.scene_footer(scene);
     }
     Ok(())
   }

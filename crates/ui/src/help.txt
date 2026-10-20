@@ -176,7 +176,7 @@ Recent click: open in covered pane
 Middle click link: target in a split; copy a URL
 Middle click row, thumbnail, link preview: target in a split
 Middle drag: pan the PDF view or text both ways
-Drop a PDF on a pane: open there; reuse view; prompt takes it
+Drop a PDF: new tab; reuse open view
 
 # Mouse: menus
 Right click page: link, note, selection, text, figure items

@@ -268,6 +268,26 @@ pub fn printable(raw: &str) -> impl Iterator<Item = char> + '_ {
     .map(|ch| if ch.is_control() { ' ' } else { ch })
 }
 
+/// Printable text within cell columns.
+pub fn clean(text: &str, columns: usize) -> String {
+  use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+  let mut width = 0;
+  let mut clean: String = printable(text)
+    // Caps zero-width marks from hostile text.
+    .take(columns.saturating_mul(8))
+    .take_while(|ch| {
+      width += ch.width().unwrap_or(0);
+      width <= columns
+    })
+    .collect();
+  // Variation selectors can widen whole sequences.
+  while clean.width() > columns {
+    // Marks follow their base.
+    while clean.pop().is_some_and(|ch| ch.width() == Some(0)) {}
+  }
+  clean
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

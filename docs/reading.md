@@ -90,6 +90,11 @@ position, selection, search, and panel focus, so navigating one view leaves
 the other in place. Pointing and scrolling over a surface can move that
 surface without changing keyboard focus.
 
+Dropping a PDF opens it in a new tab in the native app and terminals with
+file-drop support, including while a prompt is open. A PDF already open
+focuses its existing view. Text drops and pastes still edit an open prompt.
+Keyboard commands such as `:e` and `:fzf` open files in the focused pane.
+
 A middle click on an internal link, a panel row, or a thumbnail shows that
 place in a split beside the pane, which keeps focus; on a web link it copies
 the address. Drag the separator between panes, the status line between stacked

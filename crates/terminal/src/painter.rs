@@ -1,7 +1,7 @@
 use crate::graphics::Graphics;
 use std::io::{self, Write};
-use vpdf_model::scene::{Draw, FillArea, Layer, Op, Text};
-use vpdf_model::{geometry::Screen, text::Bounds};
+use vpdf_model::scene::{Draw, FillArea, Layer, Op, Surface, Text};
+use vpdf_model::{geometry::Screen, text::Bounds, tile::TileId};
 
 pub fn paint(out: &mut impl Write, scene: &[Op<'_>]) -> io::Result<()> {
   let mut painter = Painter::new(out);
@@ -104,6 +104,47 @@ impl<'a, W: Write> Draw<'a> for Painter<'_, W> {
   }
 }
 
+impl<W: Write> Surface<'_> for Painter<'_, W> {
+  type Error = anyhow::Error;
+
+  fn has(&mut self, id: TileId) -> crate::Result<bool> {
+    if let Some(error) = self.error.take() {
+      return Err(error.into());
+    }
+    let graphics = self.graphics.as_deref_mut().ok_or_else(missing_graphics)?;
+    Ok(graphics.has(&(id.owner.get(), id.key)))
+  }
+
+  fn picture(
+    &mut self,
+    id: vpdf_model::image::PictureId,
+    image: &vpdf_model::image::Rgb,
+    origin: (f32, f32),
+    screen: Screen,
+    left: u16,
+  ) -> crate::Result<()> {
+    if let Some(error) = self.error.take() {
+      return Err(error.into());
+    }
+    let graphics = self.graphics.as_deref_mut().ok_or_else(missing_graphics)?;
+    picture(graphics, self.out, id, image, origin, screen, left)
+  }
+
+  fn tile(
+    &mut self,
+    id: TileId,
+    origin: (f32, f32),
+    screen: Screen,
+    left: u16,
+  ) -> crate::Result<bool> {
+    if let Some(error) = self.error.take() {
+      return Err(error.into());
+    }
+    let graphics = self.graphics.as_deref_mut().ok_or_else(missing_graphics)?;
+    graphics.place_at((id.owner.get(), id.key), origin, screen, left, self.out)
+  }
+}
+
 fn command(
   out: &mut impl Write,
   op: &Op<'_>,
@@ -122,7 +163,7 @@ fn command(
       out.write_all(character.value().encode_utf8(&mut bytes).as_bytes())?;
     }
     Op::Spaces(count) => spaces(out, *count)?,
-    Op::Erase(0) => {}
+    Op::Erase(0) | Op::InputArea { .. } => {}
     Op::Erase(count) => write!(out, "\x1b[{count}X")?,
     Op::SaveCursor => out.write_all(b"\x1b7")?,
     Op::RestoreCursor => out.write_all(b"\x1b8")?,
@@ -132,6 +173,29 @@ fn command(
     Op::ShowCursor => out.write_all(b"\x1b[?25h")?,
     Op::BlockCursor => out.write_all(b"\x1b[2 q")?,
     Op::UnderlineOff => out.write_all(b"\x1b[24m")?,
+    Op::Picture(placement) => {
+      let (screen, left) = placement.frame();
+      graphics_output(graphics, |graphics| {
+        picture(
+          graphics,
+          out,
+          placement.id(),
+          placement.image(),
+          placement.origin(),
+          screen,
+          left,
+        )
+      })?;
+    }
+    Op::Tile(placement) => {
+      paint_tile(
+        out,
+        graphics,
+        placement.id(),
+        placement.origin(),
+        placement.frame(),
+      )?;
+    }
     Op::Fill(fill) => match fill.area() {
       FillArea::Pixels(_) => paint_fill(
         out,
@@ -152,6 +216,43 @@ fn command(
     },
   }
   Ok(())
+}
+
+fn picture(
+  graphics: &mut Graphics,
+  out: &mut impl Write,
+  id: vpdf_model::image::PictureId,
+  image: &vpdf_model::image::Rgb,
+  (x, y): (f32, f32),
+  screen: Screen,
+  left: u16,
+) -> crate::Result<()> {
+  let rect = Bounds {
+    x0: x,
+    y0: y,
+    x1: x + image.width() as f32,
+    y1: y + image.height() as f32,
+  };
+  graphics.picture(
+    id.get(),
+    (image.width(), image.height(), image.pixels()),
+    rect,
+    screen,
+    left,
+    out,
+  )
+}
+
+fn paint_tile(
+  out: &mut impl Write,
+  graphics: Option<&mut Graphics>,
+  id: TileId,
+  origin: (f32, f32),
+  (screen, left): (Screen, u16),
+) -> io::Result<bool> {
+  graphics_output(graphics, |graphics| {
+    graphics.place_at((id.owner.get(), id.key), origin, screen, left, out)
+  })
 }
 
 fn paint_fill(
@@ -185,16 +286,20 @@ fn paint_stretch(
   })
 }
 
-fn graphics_output(
+fn graphics_output<T>(
   graphics: Option<&mut Graphics>,
-  paint: impl FnOnce(&mut Graphics) -> crate::Result<()>,
-) -> io::Result<()> {
-  let graphics = graphics.ok_or_else(|| {
-    io::Error::new(io::ErrorKind::Unsupported, "Graphics painter missing")
-  })?;
-  paint(graphics).map_err(|error| {
-    error.downcast::<io::Error>().unwrap_or_else(io::Error::other)
-  })
+  paint: impl FnOnce(&mut Graphics) -> crate::Result<T>,
+) -> io::Result<T> {
+  let graphics = graphics.ok_or_else(missing_graphics)?;
+  paint(graphics).map_err(output_error)
+}
+
+fn missing_graphics() -> io::Error {
+  io::Error::new(io::ErrorKind::Unsupported, "Graphics painter missing")
+}
+
+fn output_error(error: anyhow::Error) -> io::Error {
+  error.downcast::<io::Error>().unwrap_or_else(io::Error::other)
 }
 
 fn position(cell: usize) -> io::Result<usize> {
@@ -218,6 +323,165 @@ mod tests {
   use super::*;
   use vpdf_model::scene::Text;
   use vpdf_model::style::Role;
+
+  #[test]
+  fn pictures_keep_protocol_bytes() -> crate::Result<()> {
+    use crate::graphics::Presentation;
+    use crate::terminal::Transport;
+    use vpdf_model::image::{PictureId, Rgb};
+    use vpdf_model::scene::{Picture, Recorder};
+    let image = Rgb::new(24, 24, vec![255; 24 * 24 * 3]).unwrap();
+    let id = PictureId::fresh();
+    let screen = Screen {
+      columns: 5,
+      rows: 3,
+      cell_width: 4,
+      cell_height: 8,
+      origin: (2, 1),
+    };
+    for bits in 0..8 {
+      let profile = Presentation {
+        transport: Transport { tmux: bits & 1 != 0 },
+        crop_quirk: bits & 2 != 0,
+        cell_offsets: bits & 4 != 0,
+        ..Presentation::default()
+      };
+      let mut direct =
+        Graphics::new(profile, &crate::payload::Encoder::default());
+      let mut stream =
+        Graphics::new(profile, &crate::payload::Encoder::default());
+      let mut replay =
+        Graphics::new(profile, &crate::payload::Encoder::default());
+      for origin in [(-0.25, -1.25), (-0.25, -1.25), (2.0, 3.0)] {
+        let mut expected = Vec::new();
+        direct.begin(&mut expected)?;
+        direct.picture(
+          id.get(),
+          (24, 24, image.pixels()),
+          Bounds {
+            x0: origin.0,
+            y0: origin.1,
+            x1: origin.0 + 24.0,
+            y1: origin.1 + 24.0,
+          },
+          screen,
+          3,
+          &mut expected,
+        )?;
+        direct.end(&mut expected)?;
+        let mut actual = Vec::new();
+        stream.begin(&mut actual)?;
+        let mut painter = Painter::new(&mut actual).with_graphics(&mut stream);
+        painter.picture(id, &image, origin, screen, 3)?;
+        painter.finish()?;
+        stream.end(&mut actual)?;
+        assert_eq!(actual, expected);
+        let mut recorder = Recorder::new(|_| false);
+        recorder.picture(id, &image, origin, screen, 3).unwrap();
+        let scene = recorder.into_scene();
+        assert_eq!(
+          scene,
+          vec![Op::Picture(Box::new(Picture::new(
+            id, &image, origin, screen, 3
+          )))]
+        );
+        let mut actual = Vec::new();
+        replay.begin(&mut actual)?;
+        let mut painter = Painter::new(&mut actual).with_graphics(&mut replay);
+        painter.paint(&scene);
+        painter.finish()?;
+        replay.end(&mut actual)?;
+        assert_eq!(actual, expected);
+      }
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn tiles_keep_protocol_bytes() -> crate::Result<()> {
+    use crate::graphics::Presentation;
+    use crate::payload::{Encoder, Tile};
+    use crate::terminal::Transport;
+    use vpdf_model::scene::TilePlacement;
+    use vpdf_model::tile::{TileKey, TileOwner};
+    let screen = Screen {
+      columns: 5,
+      rows: 3,
+      cell_width: 4,
+      cell_height: 8,
+      origin: (2, 1),
+    };
+    let key = TileKey {
+      page: vpdf_model::text::PageId(0),
+      scale: 1024,
+      rotation: 0,
+      x: 0,
+      y: 0,
+      width: 24,
+      height: 24,
+      crop: vpdf_model::geometry::Crop::default(),
+    };
+    let payload = Encoder::default().encode(&[255; 24 * 24 * 3])?;
+    let id = TileId { owner: TileOwner::new(1), key };
+    let missing = TileId { owner: TileOwner::new(2), key };
+    let placement = TilePlacement::new(id, (-0.25, -1.25), screen, 3);
+    let absent = TilePlacement::new(missing, (1.0, 2.0), screen, 3);
+    let scene = [Op::Tile(Box::new(placement)), Op::Tile(Box::new(absent))];
+    for bits in 0..8 {
+      let profile = Presentation {
+        transport: Transport { tmux: bits & 1 != 0 },
+        crop_quirk: bits & 2 != 0,
+        cell_offsets: bits & 4 != 0,
+        report_missing: false,
+      };
+      let mut direct = Graphics::new(profile, &Encoder::default());
+      let mut streaming = Graphics::new(profile, &Encoder::default());
+      let mut replay = Graphics::new(profile, &Encoder::default());
+      for graphics in [&mut direct, &mut streaming, &mut replay] {
+        graphics
+          .keep(1, Tile { key, payload: payload.clone(), render_ms: 0.0 });
+      }
+      for _ in 0..2 {
+        let mut expected = Vec::new();
+        direct.begin(&mut expected)?;
+        assert!(direct.place_at(
+          (1, key),
+          placement.origin(),
+          screen,
+          3,
+          &mut expected
+        )?);
+        assert!(!direct.place_at(
+          (2, key),
+          absent.origin(),
+          screen,
+          3,
+          &mut expected
+        )?);
+        direct.end(&mut expected)?;
+        let mut actual = Vec::new();
+        streaming.begin(&mut actual)?;
+        let mut painter =
+          Painter::new(&mut actual).with_graphics(&mut streaming);
+        assert!(painter.has(id)?);
+        assert!(!painter.has(missing)?);
+        assert!(painter.tile(id, placement.origin(), screen, 3)?);
+        assert!(!painter.tile(missing, absent.origin(), screen, 3)?);
+        painter.finish()?;
+        streaming.end(&mut actual)?;
+        assert_eq!(actual, expected);
+        let mut recorded = Vec::new();
+        replay.begin(&mut recorded)?;
+        let mut painter =
+          Painter::new(&mut recorded).with_graphics(&mut replay);
+        painter.paint(&scene);
+        painter.finish()?;
+        replay.end(&mut recorded)?;
+        assert_eq!(recorded, expected);
+      }
+    }
+    Ok(())
+  }
 
   #[test]
   fn fills_keep_protocol_bytes() -> crate::Result<()> {
@@ -295,6 +559,31 @@ mod tests {
     );
     let error = paint(&mut Vec::new(), &scene).unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+  }
+
+  #[test]
+  fn surface_returns_pending_draw_error() {
+    let mut out = io::Cursor::new([0u8; 1]);
+    let mut painter = Painter::new(&mut out);
+    painter.push(Op::Spaces(2));
+    let id = TileId {
+      owner: vpdf_model::tile::TileOwner::new(1),
+      key: vpdf_model::tile::TileKey {
+        page: vpdf_model::text::PageId(0),
+        scale: 1024,
+        rotation: 0,
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        crop: vpdf_model::geometry::Crop::default(),
+      },
+    };
+    let error = painter.has(id).unwrap_err();
+    assert_eq!(
+      error.downcast_ref::<io::Error>().unwrap().kind(),
+      io::ErrorKind::WriteZero
+    );
   }
 
   #[test]

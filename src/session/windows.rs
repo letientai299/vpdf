@@ -150,8 +150,17 @@ impl Session {
   ) -> Result<App> {
     let mut secret = password.to_owned();
     let mut app = loop {
-      match App::with_screen(path, &secret, false, screen) {
-        Err(error) if error.is::<PasswordRequired>() => {
+      match App::with_frontend(
+        path,
+        &secret,
+        false,
+        screen,
+        self.frontend.clone(),
+      ) {
+        Err(error)
+          if error.is::<PasswordRequired>()
+            && matches!(self.frontend, crate::raster::Frontend::Terminal) =>
+        {
           secret = crate::password::password()?;
         }
         result => break result?,

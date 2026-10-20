@@ -140,3 +140,39 @@ fn failed_placement_retains_requests() -> Result<()> {
   assert_eq!(tiles.wanted(), &[previous]);
   Ok(())
 }
+
+#[test]
+fn recorded_tiles_use_owner_residency() {
+  use vpdf_model::scene::{Op, Recorder};
+  let layout = layout();
+  let view = View { layout: &layout, scroll: 0.0, target: None };
+  let wanted = visible(&layout, 0.0);
+  let ready = TileId { owner: TileOwner::new(0), key: wanted[0] };
+  for pane in [0, 1] {
+    let mut tiles = Tiles::default();
+    let mut recorder = Recorder::new(|id| id == ready);
+    let frame = Frame { pane, ..frame(&layout) };
+    let update = tiles.scene(view, frame, &mut recorder).unwrap();
+    assert!(!update.complete);
+    let request = update.request.unwrap();
+    let missing = wanted.len() - usize::from(pane == 0);
+    assert_eq!(request.urgent(), missing);
+    assert_eq!(tiles.wanted(), wanted);
+    assert!(!request.keys()[..missing].contains(&ready.key) || pane != 0);
+    let scene = recorder.into_scene();
+    assert_eq!(scene.len(), wanted.len());
+    for (op, key) in scene.iter().zip(&wanted) {
+      let Op::Tile(placement) = op else { panic!("Expected tile placement") };
+      assert_eq!(
+        placement.id(),
+        TileId { owner: TileOwner::new(pane), key: *key }
+      );
+      let (x, y) = layout.origin(key.page, 0.0);
+      assert_eq!(placement.origin(), (x + key.x as f32, y + key.y as f32));
+      assert_eq!(placement.frame(), (layout.screen(), 4));
+    }
+    let mut all_ready = Recorder::new(|_| true);
+    let update = tiles.scene(view, frame, &mut all_ready).unwrap();
+    assert!(update.complete && update.request.is_none());
+  }
+}

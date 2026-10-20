@@ -70,58 +70,76 @@ fn split(a: &Path) -> Result<(Session, usize, u16)> {
 }
 
 #[test]
-fn drops_open_under_the_pointer_and_reuse_views() -> Result<()> {
+fn drops_open_tabs() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let root = directory.path();
-  let (a, b, c) =
-    (pdf(root, "a.pdf")?, pdf(root, "b b.pdf")?, pdf(root, "c.pdf")?);
-  let (mut session, right, column) = split(&a)?;
-  let left = 1 - right;
+  let (a, b, c, d) = (
+    pdf(root, "a.pdf")?,
+    pdf(root, "b b.pdf")?,
+    pdf(root, "c.pdf")?,
+    pdf(root, "d.pdf")?,
+  );
+  let (mut session, _, column) = split(&a)?;
+  let owners: Vec<_> = session.tab().panes.iter().map(|app| app.id).collect();
   let (on_right, on_left) = ((column + 5, 5), (5, 5));
   let (replies, ended) = drop_on(&mut session, on_right, FILES, &uri(&b));
   ended?;
   assert!(replies.contains("\x1b]72;t=m:o=1;text/uri-list\x1b\\"));
   assert!(replies.contains("\x1b]72;t=r:x=2\x1b\\"));
   assert!(replies.ends_with("\x1b]72;t=r:o=1\x1b\\"));
-  let (paths, focus) = shown(&mut session);
-  assert_eq!(focus, right, "the pane under the drop");
-  assert_eq!((&paths[right], &paths[left]), (&b, &a));
-  // A view that shows the document takes focus; pending keys in the
-  // focused pane survive a drop onto its own document.
+  assert_eq!(session.tabs.len(), 2);
+  assert_eq!(session.active, 1);
+  assert_eq!(shown(&mut session), (vec![b.clone()], 0));
+  let original = &session.tabs[0];
+  assert_eq!(
+    original.panes.iter().map(|app| app.id).collect::<Vec<_>>(),
+    owners
+  );
+  assert!(original.panes.iter().all(|app| app.path == a));
+  // Reusing the current view preserves pending keys.
   send(&mut session, b"2")?;
   drop_on(&mut session, on_left, FILES, &uri(&b)).1?;
-  assert_eq!(shown(&mut session), (paths.clone(), right));
+  assert_eq!(session.tabs.len(), 2);
+  assert_eq!(session.active, 1);
   assert_eq!(session.app().keys.pending(), "2");
   drop_on(&mut session, on_right, FILES, &uri(&a)).1?;
-  assert_eq!(shown(&mut session), (paths, left));
-  // Off every pane, the focused pane opens it.
+  assert_eq!(session.tabs.len(), 2);
+  assert_eq!(session.active, 0);
+  // Divider drops also open tabs.
   drop_on(&mut session, (column - 1, 5), FILES, &uri(&c)).1?;
-  let (paths, focus) = shown(&mut session);
-  assert_eq!((focus, &paths[left], &paths[right]), (left, &c, &b));
+  assert_eq!(session.tabs.len(), 3);
+  assert_eq!(shown(&mut session), (vec![c], 0));
+  // Keyboard editing still replaces the focused pane.
+  send(&mut session, format!(":e {}\r", d.display()).as_bytes())?;
+  assert_eq!(session.tabs.len(), 3);
+  assert_eq!(shown(&mut session), (vec![d], 0));
   Ok(())
 }
 
 #[test]
-fn prompts_take_drops_and_failures_cancel() -> Result<()> {
+fn file_and_text_drops() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let root = directory.path();
   let (a, c) = (pdf(root, "a.pdf")?, pdf(root, "c.pdf")?);
   let (mut session, _, column) = split(&a)?;
   let on_right = (column + 5, 5);
-  let before = shown(&mut session);
-  // An open prompt takes a dropped path or dragged text.
-  send(&mut session, b":")?;
+  // Files open tabs despite prompts.
+  send(&mut session, b":e")?;
   drop_on(&mut session, on_right, FILES, &uri(&c)).1?;
-  assert_eq!(shown(&mut session), before);
+  assert_eq!(session.tabs.len(), 2);
+  assert_eq!(shown(&mut session), (vec![c], 0));
+  assert!(session.tabs[0].panes.iter().all(|app| app.path == a));
+  let before = shown(&mut session);
+  send(&mut session, b":")?;
   let typed = |session: &mut Session| {
     session.app().overlays.prompt().map(|prompt| prompt.text().to_owned())
   };
-  assert_eq!(typed(&mut session), Some(c.display().to_string()));
+  assert_eq!(typed(&mut session), Some(String::new()));
   let (replies, ended) =
     drop_on(&mut session, on_right, "text/plain;charset=utf-8", " page");
   ended?;
   assert!(replies.contains("t=m:o=1;text/plain;charset=utf-8"));
-  assert_eq!(typed(&mut session), Some(format!("{} page", c.display())));
+  assert_eq!(typed(&mut session), Some(" page".into()));
   session.app().cancel_prompt()?;
   // Text is refused without a prompt.
   let (replies, ended) = drop_on(&mut session, on_right, "text/plain", "x");

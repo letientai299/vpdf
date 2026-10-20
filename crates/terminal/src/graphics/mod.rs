@@ -16,7 +16,7 @@ use std::fmt;
 use std::hash::{BuildHasher, Hasher};
 use std::io::{Read, Write};
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use vpdf_model::geometry::Screen;
 
 const BLOCK: u32 = 1 << 16;
@@ -186,8 +186,7 @@ pub fn session() -> u32 {
 
 /// A fresh serial for `Graphics::picture`; every picture shares one id.
 pub fn serial() -> u64 {
-  static SERIAL: AtomicU64 = AtomicU64::new(1);
-  SERIAL.fetch_add(1, Ordering::Relaxed)
+  vpdf_model::image::PictureId::fresh().get()
 }
 
 /// Deletes this process's images and placements, one id at a time:

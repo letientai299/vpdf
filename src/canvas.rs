@@ -4,7 +4,7 @@ use crate::Result;
 use crate::app::App;
 use crate::pdf_text::PdfText;
 use std::io::Write;
-use vpdf_model::scene::{Draw, Layer};
+use vpdf_model::scene::{Draw, Layer, Op, Surface};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_terminal::graphics::Graphics;
@@ -46,6 +46,20 @@ impl App {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
+    let mut painter =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    let result = self.scene_canvas(&mut painter);
+    painter.finish()?;
+    result
+  }
+
+  pub(crate) fn scene_canvas<'a, S: Surface<'a>>(
+    &mut self,
+    scene: &mut S,
+  ) -> Result<()>
+  where
+    S::Error: Into<anyhow::Error>,
+  {
     self.request_crop();
     let (screen, left) = (self.uncovered(), self.left);
     let view = vpdf_ui::layout::tiles::View {
@@ -54,18 +68,16 @@ impl App {
       target: self.reader.animation().target(),
     };
     let frame = vpdf_ui::layout::tiles::Frame { pane: self.id, screen, left };
-    let update = self.tiles.draw(view, frame, graphics, out)?;
+    let update = self.tiles.scene(view, frame, scene).map_err(Into::into)?;
     self.complete = update.complete;
     if let Some(request) = update.request {
       let nearby =
         if self.crop_scan.active() { Vec::new() } else { self.nearby_pages() };
       self.worker.service.prepare(request.keys(), request.urgent(), &nearby);
     }
-    self.marks(graphics, screen, out)?;
+    self.scene_marks(scene, screen)?;
     // The side without focus recedes; a veil would dim a menu over it.
     if self.panel_focused() && self.context_rect().is_none() {
-      let mut scene =
-        vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
       scene.stretch(
         vpdf_ui::theme::PANE_VEIL,
         Layer::AboveText,
@@ -73,7 +85,6 @@ impl App {
         screen,
         left,
       );
-      scene.finish()?;
     }
     Ok(())
   }
@@ -108,6 +119,18 @@ impl App {
     screen: Screen,
     out: &mut impl Write,
   ) -> Result<()> {
+    let mut painter =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    let result = self.scene_marks(&mut painter, screen);
+    painter.finish()?;
+    result
+  }
+
+  fn scene_marks<'a>(
+    &mut self,
+    scene: &mut impl Draw<'a>,
+    screen: Screen,
+  ) -> Result<()> {
     let mut hovered = self.hover_segments();
     if hovered.is_empty()
       && let Some((page, areas)) = self.hover_icon()
@@ -122,7 +145,7 @@ impl App {
       left: self.left,
       menu: self.context_rect(),
     };
-    canvas.draw(&mut PdfText(&mut self.doc), &paint, graphics, out)
+    canvas.scene(&mut PdfText(&mut self.doc), &paint, scene)
   }
 
   /// Glyph rectangle in page-area pixels.
@@ -160,6 +183,22 @@ impl App {
   ) -> Result<()> {
     self.settle_images(graphics);
     self.image_usage = graphics.usage();
+    let snap_regions = graphics.crop_quirk();
+    let mut painter =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    let result = self.scene_pane(&mut painter, snap_regions);
+    painter.finish()?;
+    result
+  }
+
+  pub(crate) fn scene_pane<'a, S: Surface<'a>>(
+    &mut self,
+    scene: &mut S,
+    snap_regions: bool,
+  ) -> Result<()>
+  where
+    S::Error: Into<anyhow::Error>,
+  {
     // Views without tiles show whole at once; a covered one shows none.
     self.complete = !self.covered();
     // A shrunken terminal can leave no room below the status line.
@@ -170,7 +209,13 @@ impl App {
     let plain = self.plain();
     if !(plain && self.blank) {
       for row in 0..self.screen.rows {
-        terminal::clear(out, self.at, row, self.screen.columns)?;
+        scene.extend([
+          Op::Move {
+            column: usize::from(self.at.column),
+            row: usize::from(self.at.row) + usize::from(row),
+          },
+          Op::Erase(self.screen.columns),
+        ]);
       }
     }
     self.blank = plain;
@@ -185,38 +230,43 @@ impl App {
       && let Some(panel) = &mut self.panel
     {
       // Panes share one picture id; only the focused pane shows it.
-      let picture = (!self.text_mode && self.focused).then_some(&mut *graphics);
-      panel.draw(out, self.at, self.left, self.screen, picture)?;
-      self.draw_context(graphics, out)?;
-      return self.bottom(out);
+      let picture = !self.text_mode && self.focused;
+      panel
+        .scene(scene, self.at, self.left, self.screen, picture)
+        .map_err(Into::into)?;
+      self.scene_context(scene);
+      return self.scene_bottom(scene);
     }
     if self.overlays.overview().is_some() {
-      self.overview_canvas(graphics, out)?;
+      self.scene_overview(scene)?;
     } else if self.text_mode {
-      self.text_canvas(out)?;
+      self.scene_text(scene)?;
     } else {
-      self.canvas(graphics, out)?;
-      self.draw_bar(graphics, out)?;
+      self.scene_canvas(scene)?;
+      self.scene_bar(scene);
     }
-    self.draw_hints(graphics, out)?;
-    self.draw_preview(graphics, out)?;
-    self.draw_region(graphics, out)?;
+    self.scene_hints(scene);
+    self.scene_preview(scene)?;
+    self.scene_region(scene, snap_regions);
     self.track_outline();
     if let Some(panel) = &mut self.panel {
-      panel.draw(out, self.at, self.left, self.screen, None)?;
+      panel
+        .scene(scene, self.at, self.left, self.screen, false)
+        .map_err(Into::into)?;
     }
     // Over the panel too.
-    self.draw_context(graphics, out)?;
-    self.bottom(out)
+    self.scene_context(scene);
+    self.scene_bottom(scene)
   }
 
   /// Status line, or the prompt with its menu and cursor.
-  fn bottom(&mut self, out: &mut impl Write) -> Result<()> {
+  fn scene_bottom<'a>(&mut self, scene: &mut impl Draw<'a>) -> Result<()> {
     let row = self.screen.rows - 1;
     if let Some(prompt) = self.overlays.prompt() {
       let pointed = self.pointed_item(List::Completions);
       let (screen, at) = (self.screen, self.at);
-      return prompt.draw(out, screen, at, pointed);
+      prompt.scene(scene, screen, at, pointed);
+      return Ok(());
     }
     // After the panel, which finds clipped rows.
     // Hidden details cost nothing.
@@ -226,15 +276,21 @@ impl App {
       None
     };
     if let Some(clues) = self.overlays.clues().shown() {
-      clues.draw(
-        out,
+      clues.scene(
+        scene,
         (self.at, row - 1),
         self.screen,
         self.pointed_item(List::Clues),
-      )?;
+      );
     }
-    self.status_line(out, row, detail.as_deref())?;
-    out.write_all(terminal::HIDE_CURSOR.as_bytes())?;
+    self.chrome_view(&self.name()).scene(
+      scene,
+      self.at,
+      row,
+      self.focused,
+      detail.as_deref(),
+    )?;
+    scene.push(Op::HideCursor);
     Ok(())
   }
 }
@@ -250,10 +306,17 @@ impl App {
   }
 
   pub fn text_canvas(&mut self, out: &mut impl Write) -> Result<()> {
+    let mut painter = vpdf_terminal::painter::Painter::new(out);
+    let result = self.scene_text(&mut painter);
+    painter.finish()?;
+    result
+  }
+
+  fn scene_text<'a>(&mut self, scene: &mut impl Draw<'a>) -> Result<()> {
     let frame = self.text_frame();
     let hovered = self.hover_segments();
     let dim = self.panel_focused();
     let paint = self.reader.marks(&self.search, self.cursorline, dim, &hovered);
-    self.text_view.bind(PdfText(&mut self.doc), frame).draw(out, &paint)
+    self.text_view.bind(PdfText(&mut self.doc), frame).scene(scene, &paint)
   }
 }

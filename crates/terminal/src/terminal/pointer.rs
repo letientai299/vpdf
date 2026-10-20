@@ -3,32 +3,17 @@ use super::{Mutex, PoisonError, Result, Support, Write, passthrough, tmux};
 /// Pointer shape the reader last wrote.
 static SHAPE: Mutex<Shapes> = Mutex::new(Shapes { owner: None, shown: None });
 
-/// OSC 22 pointer shapes ([spec][spec]).
-///
-/// [spec]: https://sw.kovidgoyal.net/kitty/pointer-shapes/
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum Shape {
-  #[default]
-  Default,
-  Pointer,
-  Text,
-  Crosshair,
-  Grabbing,
-  ColResize,
-  RowResize,
-}
+pub use vpdf_model::style::Shape;
 
-impl Shape {
-  pub(super) fn name(self) -> &'static str {
-    match self {
-      Self::Default => "default",
-      Self::Pointer => "pointer",
-      Self::Text => "text",
-      Self::Crosshair => "crosshair",
-      Self::Grabbing => "grabbing",
-      Self::ColResize => "col-resize",
-      Self::RowResize => "row-resize",
-    }
+fn name(shape: Shape) -> &'static str {
+  match shape {
+    Shape::Default => "default",
+    Shape::Pointer => "pointer",
+    Shape::Text => "text",
+    Shape::Crosshair => "crosshair",
+    Shape::Grabbing => "grabbing",
+    Shape::ColResize => "col-resize",
+    Shape::RowResize => "row-resize",
   }
 }
 
@@ -81,7 +66,7 @@ impl Shapes {
     if self.owner.is_none() || self.shown == Some(shape) {
       return Ok(());
     }
-    osc22(out, shape.name(), tmux)?;
+    osc22(out, name(shape), tmux)?;
     self.shown = Some(shape);
     Ok(())
   }
@@ -97,7 +82,7 @@ impl Shapes {
     match self.owner.take() {
       Some(Owner::Stack) => osc22(out, "<", tmux),
       // Ghostty 1.3 ignores an empty reset.
-      Some(Owner::Named) => osc22(out, Shape::Text.name(), tmux),
+      Some(Owner::Named) => osc22(out, name(Shape::Text), tmux),
       None => Ok(()),
     }
   }

@@ -27,7 +27,7 @@ pub fn image(
   layout: &Layout,
   key: TileKey,
   source: &mut impl Raster,
-) -> Result<Vec<u8>> {
+) -> Result<vpdf_model::image::Rgb> {
   let stride = usize::try_from(key.width)? * 3;
   let mut rgb = vec![theme::PREVIEW_GAP; stride * usize::try_from(key.height)?];
   let first = layout.pages()[key.page.0].top as i32;
@@ -85,7 +85,8 @@ pub fn image(
       result?;
     }
   }
-  Ok(rgb)
+  vpdf_model::image::Rgb::new(key.width, key.height, rgb)
+    .ok_or_else(|| anyhow::anyhow!("Invalid preview pixels"))
 }
 
 #[cfg(test)]
@@ -147,7 +148,7 @@ mod tests {
     assert_eq!(source.requested.len(), 2);
     assert_eq!((source.requested[0].y, source.requested[0].height), (95, 5));
     assert_eq!((source.requested[1].y, source.requested[1].height), (0, 16));
-    for (y, row) in rgb.chunks(360).enumerate() {
+    for (y, row) in rgb.pixels().chunks(360).enumerate() {
       for (x, pixel) in row.chunks(3).enumerate() {
         let expected = if y < 5 && (10..110).contains(&x) {
           1
@@ -167,7 +168,9 @@ mod tests {
     let (layout, key) = strip();
     let mut source = Source { failed: Some(PageId(1)), ..Source::default() };
     let rgb = image(&layout, key, &mut source)?;
-    assert!(rgb[5 * 360..].iter().all(|&byte| byte == theme::PREVIEW_GAP));
+    assert!(
+      rgb.pixels()[5 * 360..].iter().all(|&byte| byte == theme::PREVIEW_GAP)
+    );
     source.failed = Some(PageId(0));
     assert!(image(&layout, key, &mut source).is_err());
     Ok(())

@@ -8,11 +8,12 @@ use crate::text::{Bounds, PageId};
 use crate::theme;
 use crossterm::event::{MouseButton, MouseEventKind};
 use std::io::Write;
+use unicode_width::UnicodeWidthStr;
+use vpdf_model::scene::{Draw, Layer, Op, Surface};
 use vpdf_model::style::Role;
-use vpdf_model::tile::{TileKey, cover};
+use vpdf_model::tile::{TileId, TileKey, TileOwner, cover};
 use vpdf_reader::motion::Motion;
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal;
 
 /// Thumbnails per row aim for this width in pixels.
@@ -275,6 +276,19 @@ impl Overview {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<Visible> {
+    let mut scene =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    let visible = self.scene(source, frame, &mut scene);
+    scene.finish()?;
+    visible
+  }
+
+  pub fn scene<'a, S: Surface<'a>>(
+    &mut self,
+    source: &impl Pages,
+    frame: Frame,
+    scene: &mut S,
+  ) -> std::result::Result<Visible, S::Error> {
     let grid = Grid::new(frame.screen, source.bounds(PageId(0)));
     let pages = source.count();
     let (screen, left) = (frame.clip, frame.left);
@@ -314,19 +328,19 @@ impl Overview {
       let bottom = (screen.height() - (y + dy).floor()).ceil() as i32;
       for key in cover(whole, 0..w, 0..bottom.clamp(0, h)) {
         let origin = (x + dx + key.x as f32, y + dy + key.y as f32);
-        let pane = (frame.pane, key);
-        if !graphics.place_at(pane, origin, screen, left, out)? {
+        let id = TileId { owner: TileOwner::new(frame.pane), key };
+        if !scene.tile(id, origin, screen, left)? {
           missing.push(key);
         }
         wanted.push(key);
       }
       frame.label(
-        out,
+        scene,
         || source.label(PageId(index)),
         index == selected,
         (x, y + grid.height),
         grid.width,
-      )?;
+      );
       let ring = Bounds {
         x0: x + dx - 3.0,
         y0: y + dy - 3.0,
@@ -340,7 +354,7 @@ impl Overview {
       };
       if let Some(tint) = tint {
         for piece in crate::paint::outside(ring, frame.mask) {
-          graphics.highlight(piece, tint, screen, left, out)?;
+          scene.fill(piece, tint, Layer::AboveText, screen, left);
         }
       }
     }
@@ -348,35 +362,29 @@ impl Overview {
   }
 }
 impl Frame {
-  fn label<'a>(
+  fn label<'a, 's>(
     &self,
-    out: &mut impl Write,
+    scene: &mut impl Draw<'s>,
     label: impl FnOnce() -> &'a str,
     selected: bool,
     (x, y): (f32, f32),
     width: f32,
-  ) -> Result<()> {
+  ) {
     let screen = self.screen;
     let row = (y / f32::from(screen.cell_height)).ceil() as usize;
     if row >= usize::from(self.clip.rows.saturating_sub(1)) {
-      return Ok(());
+      return;
     }
     let columns = (width / f32::from(screen.cell_width)) as usize;
     let label = terminal::clean(label(), columns);
     let column = (x / f32::from(screen.cell_width)) as usize
-      + (columns.saturating_sub(label.len())) / 2;
-    let style = if selected {
-      sgr(Role::Badge(theme::Color::Blue)).to_owned()
-    } else {
-      sgr(Role::Muted).to_owned()
-    };
-    write!(
-      out,
-      "{}{style}{label}{}",
-      self.at.goto(row, usize::from(self.left) + column),
-      sgr(Role::Reset)
-    )?;
-    Ok(())
+      + (columns.saturating_sub(label.width())) / 2;
+    let style =
+      if selected { Role::Badge(theme::Color::Blue) } else { Role::Muted };
+    crate::paint::move_to(scene, self.at, row, usize::from(self.left) + column);
+    scene.push(Op::Style(style));
+    scene.text(&label);
+    scene.push(Op::Style(Role::Reset));
   }
 }
 
@@ -401,7 +409,95 @@ mod tests {
   }
 
   #[test]
-  fn hidden_labels_keep_cursor() -> Result<()> {
+  fn recorded_overview_keeps_tiles_and_chrome() -> Result<()> {
+    use vpdf_model::scene::Recorder;
+    struct Source;
+    impl Pages for Source {
+      fn count(&self) -> usize {
+        3
+      }
+      fn bounds(&self, _: PageId) -> Bounds {
+        Bounds { x0: 0.0, y0: 0.0, x1: 600.0, y1: 800.0 }
+      }
+      fn label(&self, _: PageId) -> &'static str {
+        "page"
+      }
+    }
+    let screen = Screen {
+      columns: 100,
+      rows: 40,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (7, 3),
+    };
+    let frame = Frame {
+      pane: 1,
+      screen,
+      clip: screen,
+      at: terminal::At { column: 7, row: 3 },
+      left: 4,
+      hovered: Some(PageId(2)),
+      mask: None,
+    };
+    let mut overview = Overview::new(PageId(1));
+    let mut recorder = Recorder::new(|_| false);
+    let visible = overview.scene(&Source, frame, &mut recorder).unwrap();
+    assert_eq!(visible.wanted, visible.missing);
+    assert_ne!(visible.wanted, [] as [TileKey; 0]);
+    let scene = recorder.into_scene();
+    assert!(scene.iter().any(|op| matches!(op, Op::Tile(_))));
+    assert!(scene.iter().any(|op| matches!(op, Op::Text(_))));
+    assert!(scene.iter().any(|op| matches!(op, Op::Fill(_))));
+    let mut graphics = Graphics::default();
+    let mut replay = Graphics::default();
+    for _ in 0..2 {
+      let mut expected = Vec::new();
+      graphics.begin(&mut expected)?;
+      let direct =
+        overview.draw(&Source, frame, &mut graphics, &mut expected)?;
+      graphics.end(&mut expected)?;
+      assert_eq!(direct.wanted, visible.wanted);
+      assert_eq!(direct.missing, visible.missing);
+      let mut actual = Vec::new();
+      replay.begin(&mut actual)?;
+      let mut painter = vpdf_terminal::painter::Painter::new(&mut actual)
+        .with_graphics(&mut replay);
+      painter.paint(&scene);
+      painter.finish()?;
+      replay.end(&mut actual)?;
+      assert_eq!(actual, expected);
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn labels_center_by_cells() {
+    let screen = Screen {
+      columns: 100,
+      rows: 40,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let frame = Frame {
+      pane: 1,
+      screen,
+      clip: screen,
+      at: terminal::At::default(),
+      left: 0,
+      hovered: None,
+      mask: None,
+    };
+    for (label, column) in [("IV", 6), ("章", 6), ("e\u{301}", 6), ("界界", 5)]
+    {
+      let mut scene = vpdf_model::scene::Scene::new();
+      frame.label(&mut scene, || label, false, (16.0, 16.0), 80.0);
+      assert_eq!(scene[0], Op::Move { row: 1, column }, "{label}");
+    }
+  }
+
+  #[test]
+  fn hidden_labels_keep_cursor() {
     let screen = Screen {
       columns: 100,
       rows: 40,
@@ -425,8 +521,7 @@ mod tests {
       false,
       (16.0, screen.height()),
       220.0,
-    )?;
-    assert_eq!(out, [] as [u8; 0]);
-    Ok(())
+    );
+    assert_eq!(out, []);
   }
 }

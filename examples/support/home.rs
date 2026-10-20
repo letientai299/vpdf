@@ -49,6 +49,6 @@ pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {
     "screen": [screen.columns, screen.rows, screen.cell_width, screen.cell_height],
     "pages": facts.pages, "bytes": facts.bytes, "metadata": facts.metadata,
     "section": facts.section,
-    "thumb": {"width":thumb.width,"height":thumb.height,"rgb":thumb.rgb},
+    "thumb": {"width":thumb.width(),"height":thumb.height(),"rgb":thumb.pixels().as_ref()},
   })).map_err(Into::into)
 }

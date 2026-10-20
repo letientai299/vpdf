@@ -60,6 +60,15 @@ flowchart TD
     Session --> Output[Terminal output]
 ```
 
+The experimental native window owns a session on a separate thread. Native
+handles stay on that thread or their existing worker threads. The window sends
+input and receives the latest owned scene with shared RGB buffers. It retains
+textures on the GUI thread. Job wakes schedule scene publication and repainting;
+blocking session waits stay outside window callbacks. Both frontends use the
+same reading state, keys, document jobs, persistence, and pane composition.
+The terminal streams drawing operations while the window retains them. Native
+input and effect integration remains incomplete; see [development][development].
+
 Every pane of the active tab receives worker updates and draws. Keyboard input
 belongs to the focused pane; pointer routing can target another visible pane.
 The session owns the shared graphics cache and passes it to each pane that

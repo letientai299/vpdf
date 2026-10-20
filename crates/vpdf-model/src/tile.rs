@@ -17,6 +17,29 @@ pub struct TileKey {
   pub crop: Crop,
 }
 
+/// Tile owners require explicit conversion.
+///
+/// ```compile_fail
+/// let owner: vpdf_model::tile::TileOwner = 1;
+/// ```
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TileOwner(u32);
+
+impl TileOwner {
+  pub fn new(value: u32) -> Self {
+    Self(value)
+  }
+  pub fn get(self) -> u32 {
+    self.0
+  }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TileId {
+  pub owner: TileOwner,
+  pub key: TileKey,
+}
+
 /// Tiles of the page `whole` spans, over the `x` and `y` pixel ranges.
 pub fn cover(
   whole: TileKey,

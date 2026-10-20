@@ -10,10 +10,7 @@ impl Drawable for Session {
   /// Unfocused panes first, so the focused pane's prompt places the
   /// terminal cursor last.
   fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()> {
-    for app in &mut self.tab().panes {
-      app.drop_stray_preview();
-    }
-    self.rehover();
+    self.prepare_frame();
     // Without a spot the pointer is elsewhere.
     if self.pointer.spot().is_some() {
       terminal::point(out, self.shape())?;
@@ -41,14 +38,7 @@ impl Drawable for Session {
       self.perf.draw(out, screen)?;
     }
     write!(out, "{}", terminal::frame_end())?;
-    // Drawing can scroll thumbnails or rewrap rows.
-    let drawn = self.pointer.target().map(Hover::shown);
-    self.rehover();
-    let moved = self.pointer.target().map(Hover::shown) != drawn;
-    // One follow-up, so hover-drawn regions cannot loop.
-    let following = self.rehover == Rehover::Following;
-    self.rehover =
-      if moved && !following { Rehover::Due } else { Rehover::Settled };
+    self.finish_frame();
     Ok(())
   }
 
@@ -63,6 +53,24 @@ impl Drawable for Session {
 }
 
 impl Session {
+  pub(super) fn prepare_frame(&mut self) {
+    for app in &mut self.tab().panes {
+      app.drop_stray_preview();
+    }
+    self.rehover();
+  }
+
+  pub(super) fn finish_frame(&mut self) {
+    // Drawing can scroll thumbnails or rewrap rows.
+    let drawn = self.pointer.target().map(Hover::shown);
+    self.rehover();
+    let moved = self.pointer.target().map(Hover::shown) != drawn;
+    // One follow-up, so hover-drawn regions cannot loop.
+    let following = self.rehover == Rehover::Following;
+    self.rehover =
+      if moved && !following { Rehover::Due } else { Rehover::Settled };
+  }
+
   /// One frame of the focused pane alone, as tests drive it.
   #[doc(hidden)]
   pub fn draw_focused(&mut self, out: &mut impl Write) -> Result<()> {

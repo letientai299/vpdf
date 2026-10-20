@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod document;
 pub mod geometry;
+pub mod image;
 pub mod reflow;
 pub mod scene;
 pub mod style;

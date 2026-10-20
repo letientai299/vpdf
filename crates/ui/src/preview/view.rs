@@ -12,12 +12,12 @@ use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::{Annotation, Target};
+use vpdf_model::scene::{Layer, Op, Surface, Text as SceneText};
 use vpdf_model::style::Role;
 use vpdf_model::tile::TileKey;
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::TextSource;
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::style::sgr;
 
 const HEIGHT: f32 = 0.4;
 const ABOVE: f32 = 6.0;
@@ -78,7 +78,7 @@ pub struct Preview {
   target: Target,
   page: PageId,
   source: Position,
-  serial: u64,
+  serial: vpdf_model::image::PictureId,
   view: View,
   origin: Origin,
   /// Where the last frame drew it.
@@ -128,7 +128,7 @@ enum View {
   /// A strip from its page onward.
   Image {
     key: TileKey,
-    rgb: Vec<u8>,
+    rgb: vpdf_model::image::Rgb,
   },
   /// Lines from its page onward; page `starts`.
   Text {
@@ -178,7 +178,7 @@ impl Preview {
       target,
       page,
       source: position,
-      serial: vpdf_terminal::graphics::serial(),
+      serial: vpdf_model::image::PictureId::fresh(),
       view,
       origin: Origin::Key,
       placement: None,
@@ -205,7 +205,7 @@ impl Preview {
       target,
       page: position.page,
       source: position,
-      serial: vpdf_terminal::graphics::serial(),
+      serial: vpdf_model::image::PictureId::fresh(),
       origin: Origin::Key,
       placement: None,
       seen,
@@ -383,7 +383,7 @@ impl Preview {
         }
         let rgb = super::image(layout, next, source)?;
         self.view = View::Image { key: next, rgb };
-        self.serial = vpdf_terminal::graphics::serial();
+        self.serial = vpdf_model::image::PictureId::fresh();
       }
     }
     Ok(true)
@@ -474,6 +474,19 @@ impl Preview {
     input: Frame<'_>,
     source: &impl Pages,
   ) -> Result<()> {
+    let mut scene =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    let result = self.scene(&mut scene, input, source);
+    scene.finish()?;
+    result
+  }
+
+  pub fn scene<'a, S: Surface<'a>>(
+    &mut self,
+    scene: &mut S,
+    input: Frame<'_>,
+    source: &impl Pages,
+  ) -> std::result::Result<(), S::Error> {
     let frame = self.frame(&input, source.count());
     let screen = input.layout.screen();
     let cell = f32::from(screen.cell_height);
@@ -488,13 +501,13 @@ impl Preview {
       || !input.pane.text && matches!(self.view, View::Note { .. });
     if over_page {
       let rect = paint::cell_bounds(screen, input.pane.left, frame);
-      graphics.backdrop(
+      scene.fill(
         rect,
         theme::PREVIEW_FILL,
+        Layer::BelowText,
         screen,
         input.pane.left,
-        out,
-      )?;
+      );
     }
     let bridge = input
       .link
@@ -502,72 +515,55 @@ impl Preview {
       .map_or_default(|link| bridge(&input, frame, link));
     self.placement =
       Some(Placement { area: frame, bridge, view: input.identity });
-    let border =
-      if over_page { sgr(Role::PreviewBorder) } else { sgr(Role::Current) };
-    let text_style =
-      if over_page { sgr(Role::PreviewText) } else { sgr(Role::Reset) };
-    write!(
-      out,
-      "{}{}╭{label}{rule}╮{}",
-      input.pane.at.goto(top, column),
-      border,
-      sgr(Role::Reset)
-    )?;
+    let border = if over_page { Role::PreviewBorder } else { Role::Current };
+    let text_style = if over_page { Role::PreviewText } else { Role::Reset };
+    paint::move_to(scene, input.pane.at, top, column);
+    scene.push(Op::Style(border));
+    scene.text("╭");
+    scene.text(&label);
+    scene.text(&rule);
+    scene.text("╮");
+    scene.push(Op::Style(Role::Reset));
     match &self.view {
-      View::Image { key, rgb } => {
-        let pad = " ".repeat(columns);
+      View::Image { rgb, .. } => {
         for row in top + 1..=top + rows {
-          write!(
-            out,
-            "{}{border}│{pad}│{}",
-            input.pane.at.goto(row, column),
-            sgr(Role::Reset)
-          )?;
+          paint::move_to(scene, input.pane.at, row, column);
+          scene.push(Op::Style(border));
+          scene.text("│");
+          scene.push(Op::Spaces(columns));
+          scene.text("│");
+          scene.push(Op::Style(Role::Reset));
         }
         let x = (column + 1 - usize::from(input.pane.left)) as f32
           * f32::from(screen.cell_width);
         let y = (top + 1) as f32 * cell;
-        let rect = Bounds {
-          x0: x,
-          y0: y,
-          x1: x + key.width as f32,
-          y1: y + key.height as f32,
-        };
-        graphics.picture(
-          self.serial,
-          (key.width, key.height, rgb),
-          rect,
-          screen,
-          input.pane.left,
-          out,
-        )?;
+        scene.picture(self.serial, rgb, (x, y), screen, input.pane.left)?;
       }
       View::Text { top: first, lines, .. }
       | View::Note { top: first, lines, .. } => {
         for (index, line) in lines.iter().skip(*first).take(rows).enumerate() {
-          let text = vpdf_terminal::terminal::clean(line, columns);
-          let pad = columns.saturating_sub(text.width());
-          write!(
-            out,
-            "{}{}│{}{text}{}{}│",
-            input.pane.at.goto(top + index + 1, column),
-            border,
-            text_style,
-            " ".repeat(pad),
-            border
-          )?;
+          let text = SceneText::fit(line, columns);
+          let pad = columns.saturating_sub(text.as_str().width());
+          paint::move_to(scene, input.pane.at, top + index + 1, column);
+          scene.push(Op::Style(border));
+          scene.text("│");
+          scene.push(Op::Style(text_style));
+          scene.push(Op::Text(text));
+          scene.push(Op::Spaces(pad));
+          scene.push(Op::Style(border));
+          scene.text("│");
         }
       }
     }
     let marker = if clipped.1 { "↓" } else { "─" };
     let rule = "─".repeat(columns.saturating_sub(1));
-    write!(
-      out,
-      "{}{}╰{marker}{rule}╯{}",
-      input.pane.at.goto(top + rows + 1, column),
-      border,
-      sgr(Role::Reset)
-    )?;
+    paint::move_to(scene, input.pane.at, top + rows + 1, column);
+    scene.push(Op::Style(border));
+    scene.text("╰");
+    scene.text(marker);
+    scene.text(&rule);
+    scene.text("╯");
+    scene.push(Op::Style(Role::Reset));
     Ok(())
   }
 }

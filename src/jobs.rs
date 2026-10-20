@@ -9,6 +9,24 @@ use vpdf_pdf::jobs::outline::{OutlineJob, spawn};
 use vpdf_ui::keys::PanelKind;
 
 impl App {
+  pub(crate) fn job_updates(&mut self) -> bool {
+    let panel =
+      self.panel.as_mut().is_some_and(crate::panel::PanelSession::updates);
+    let updated = self.search_updates().and_then(|search| {
+      Ok(
+        search
+          | self.ocr_updates()?
+          | self.outline_updates()?
+          | self.crop_updates()?,
+      )
+    });
+    panel
+      | updated.unwrap_or_else(|error| {
+        self.error = Some(error.to_string());
+        true
+      })
+  }
+
   pub fn start_ocr(&mut self, language: &str) -> Result<()> {
     if let Some(job) = self.ocr.take() {
       job.cancel();

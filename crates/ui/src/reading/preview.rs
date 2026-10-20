@@ -104,6 +104,21 @@ impl<S: TextSource + Pages + Markup + Raster> View<'_, S> {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
+    let mut scene =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    let result = self.scene_preview(overlays, &mut scene);
+    scene.finish()?;
+    result
+  }
+
+  pub fn scene_preview<'a, D: vpdf_model::scene::Surface<'a>>(
+    &mut self,
+    overlays: &mut Overlays,
+    scene: &mut D,
+  ) -> Result<()>
+  where
+    D::Error: Into<anyhow::Error>,
+  {
     self.scroll_preview(overlays, 0.0)?;
     let Some(preview) = &mut overlays.preview else { return Ok(()) };
     let cursor = match preview.shown_anchor(self.frame.pane.text) {
@@ -114,17 +129,18 @@ impl<S: TextSource + Pages + Markup + Raster> View<'_, S> {
     };
     let link = self.hovered_box(preview);
     let identity = (self.reader.scroll.to_bits(), self.text.top());
-    preview.draw(
-      graphics,
-      out,
-      Frame {
-        layout: self.layout,
-        pane: self.frame.pane,
-        identity,
-        cursor,
-        link,
-      },
-      &self.source,
-    )
+    preview
+      .scene(
+        scene,
+        Frame {
+          layout: self.layout,
+          pane: self.frame.pane,
+          identity,
+          cursor,
+          link,
+        },
+        &self.source,
+      )
+      .map_err(Into::into)
   }
 }

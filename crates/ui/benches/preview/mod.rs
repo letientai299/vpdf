@@ -38,8 +38,8 @@ pub fn compose() -> Result<()> {
   anyhow::ensure!(key == manifest.key(), "Prepared raster dimensions changed");
   let mut prepared = Prepared { key, pixels };
   let output = vpdf_ui::preview::image(&layout, key, &mut prepared)?;
-  assert_eq!(output, prepared.pixels);
-  println!("preview output {}", super::hash::digest(&output));
+  assert_eq!(output.pixels().as_slice(), prepared.pixels);
+  println!("preview output {}", super::hash::digest(output.pixels()));
   super::measure("preview::image prepared strip", || {
     black_box(
       vpdf_ui::preview::image(&layout, key, &mut prepared)
@@ -160,6 +160,14 @@ pub fn draw() -> Result<()> {
       cursor: case.cursor.map(super::bounds),
       link: None,
     };
+    anyhow::ensure!(
+      preview.scroll(0.0, &layout, &mut source)?,
+      "Invalid prepared preview"
+    );
+    let mut recorder = vpdf_model::scene::Recorder::new(|_| false);
+    preview.scene(&mut recorder, frame(), &&pages).unwrap();
+    let scene = recorder.into_scene();
+    let mut replay = Graphics::default();
     let mut draw = |out: &mut Vec<u8>| -> Result<()> {
       out.clear();
       anyhow::ensure!(
@@ -173,6 +181,14 @@ pub fn draw() -> Result<()> {
     };
     for hash in case.output_sha256 {
       draw(&mut out)?;
+      let mut actual = Vec::new();
+      replay.begin(&mut actual)?;
+      let mut painter = vpdf_terminal::painter::Painter::new(&mut actual)
+        .with_graphics(&mut replay);
+      painter.paint(&scene);
+      painter.finish()?;
+      replay.end(&mut actual)?;
+      anyhow::ensure!(actual == out, "Retained preview differs");
       anyhow::ensure!(
         super::hash::digest(&out) == hash,
         "Preview output differs: text={}",

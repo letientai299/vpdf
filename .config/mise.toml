@@ -29,6 +29,12 @@ raw = true
 raw_args = true
 run = "cargo run --locked -p vpdf --"
 
+[tasks."try:gui"]
+description = "Build and run the native reader"
+raw = true
+raw_args = true
+run = "cargo run --locked -p vpdf-gui --"
+
 [tasks.check]
 description = "Check every workspace target"
 depends = ["check:packages"]

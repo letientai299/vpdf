@@ -83,6 +83,20 @@ impl App {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
+    let mut painter =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    let result = self.scene_overview(&mut painter);
+    painter.finish()?;
+    result
+  }
+
+  pub(crate) fn scene_overview<'a, S: vpdf_model::scene::Surface<'a>>(
+    &mut self,
+    scene: &mut S,
+  ) -> Result<()>
+  where
+    S::Error: Into<anyhow::Error>,
+  {
     let frame = Frame {
       pane: self.id,
       screen: self.layout.screen(),
@@ -96,7 +110,9 @@ impl App {
       mask: self.context_rect(),
     };
     let Some(overview) = self.overlays.overview_mut() else { return Ok(()) };
-    let tiles = overview.draw(&PdfText(&mut self.doc), frame, graphics, out)?;
+    let tiles = overview
+      .scene(&PdfText(&mut self.doc), frame, scene)
+      .map_err(Into::into)?;
     let update = self.tiles.update(tiles);
     self.complete = update.complete;
     if let Some(request) = update.request {

@@ -268,8 +268,8 @@ impl Session {
     let Some(drop) = self.drop_step(body, typing, out)? else {
       return Ok(false);
     };
-    let done = crate::dnd::target(&drop, typing)
-      .and_then(|target| self.dropped(&drop, target));
+    let done =
+      crate::dnd::target(&drop, typing).and_then(|target| self.dropped(target));
     answer(out, &drop.finish(done.is_ok()))?;
     done.map(|()| true)
   }
@@ -292,36 +292,20 @@ impl Session {
     }
   }
 
-  /// Types a drop into the open prompt, or opens its PDF: in the view
-  /// that shows it, or the pane under the drop.
-  pub(super) fn dropped(
-    &mut self,
-    drop: &Dropped,
-    target: Target,
-  ) -> Result<()> {
+  /// File drops open tabs; text edits prompts.
+  pub(super) fn dropped(&mut self, target: Target) -> Result<()> {
     let path = match target {
       Target::Text(text) => {
         let tab = &mut self.tabs[self.active];
         return tab.panes[tab.focus].paste(&text, &mut self.history);
       }
-      Target::Pdf(path) => std::fs::canonicalize(path)?,
+      Target::Pdf(path) => path,
     };
-    if let Some((tab, pane)) = self.existing(&path) {
-      return self.focus(tab, pane);
-    }
-    let (column, row) = drop.cell;
-    let under = |app: &App| app.pointer_pane().rect.contains(column, row);
-    // A load that fails says so in the pane the drop chose.
-    if let Some(index) = self.tab().panes.iter().position(under) {
-      self.focus(self.active, index)?;
-    }
     let screen = self.screen.unwrap_or(self.app().screen);
-    // While the drop lasts, so a file it only promises still exists.
-    self.open(&path, false, screen)
+    self.open(&path, true, screen)
   }
 
-  /// A drop on the start screen: a prompt takes its text, else its PDF
-  /// opens in a tab.
+  /// Start-screen files open tabs; text edits prompts.
   pub(super) fn home_drop(
     &mut self,
     home: &mut Home,

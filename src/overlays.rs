@@ -169,17 +169,27 @@ impl App {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
-    let Some(hints) = self.overlays.hints() else { return Ok(()) };
-    hints.draw(
-      graphics,
-      out,
+    let mut painter =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    self.scene_hints(&mut painter);
+    painter.finish()?;
+    Ok(())
+  }
+
+  pub(crate) fn scene_hints<'a>(
+    &self,
+    scene: &mut impl vpdf_model::scene::Draw<'a>,
+  ) {
+    let Some(hints) = self.overlays.hints() else { return };
+    hints.scene(
+      scene,
       Frame {
         at: self.at,
         screen: self.layout.screen(),
         left: self.left,
         text: self.text_mode,
       },
-    )
+    );
   }
 }
 

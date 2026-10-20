@@ -31,17 +31,37 @@ pub struct Home {
 
 impl Home {
   pub fn new(recent: &[Entry], screen: Screen) -> Self {
+    Self::with_wake(
+      recent,
+      screen,
+      &vpdf_pdf::jobs::Wake::new(vpdf_terminal::input::wake),
+    )
+  }
+
+  pub(crate) fn with_wake(
+    recent: &[Entry],
+    screen: Screen,
+    wake: &vpdf_pdf::jobs::Wake,
+  ) -> Self {
     let view = vpdf_ui::home::Home::new(
       crate::panel::recent_rows(recent),
       &crate::recent::entries(recent),
       screen,
     );
-    let wake = vpdf_pdf::jobs::Wake::new(vpdf_terminal::input::wake);
-    Self { view, loader: Loader::new("", &wake), graphics: Graphics::live() }
+    Self { view, loader: Loader::new("", wake), graphics: Graphics::live() }
   }
 
   pub(crate) fn updates(&mut self) -> bool {
     self.view.shelf_mut().is_some_and(|cards| self.loader.updates(cards))
+  }
+
+  pub(crate) fn scene<'a, S: vpdf_model::scene::Surface<'a>>(
+    &mut self,
+    scene: &mut S,
+  ) -> std::result::Result<(), S::Error> {
+    self
+      .view
+      .scene(scene, crate::state::now(), |cards| self.loader.request(cards))
   }
 
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {

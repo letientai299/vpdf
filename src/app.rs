@@ -1,7 +1,7 @@
 //! A pane: its document, jobs, and UI state; open, reload, and trim.
 
 use crate::Result;
-use crate::raster::Raster;
+use crate::raster::{Frontend, Raster};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
@@ -80,6 +80,7 @@ pub struct App {
   /// The shared images as this pane last drew them.
   pub(crate) image_usage: Usage,
   pub worker: Raster,
+  frontend: Frontend,
   pub keys: Keys,
   pub path: PathBuf,
   pub password: String,
@@ -155,17 +156,21 @@ impl App {
     text_mode: bool,
     screen: Screen,
   ) -> Result<Self> {
+    Self::with_frontend(path, password, text_mode, screen, Frontend::Terminal)
+  }
+
+  pub(crate) fn with_frontend(
+    path: &Path,
+    password: &str,
+    text_mode: bool,
+    screen: Screen,
+    frontend: Frontend,
+  ) -> Result<Self> {
     static NEXT: AtomicU32 = AtomicU32::new(1);
     let doc = Document::open(path, password)?;
     let layout = Layout::new(doc.pages.iter().map(|page| page.bounds), screen);
-    let wake = vpdf_pdf::jobs::Wake::new(vpdf_terminal::input::wake);
-    let worker = Raster::new(
-      path,
-      password,
-      doc.lists(),
-      &wake,
-      vpdf_terminal::payload::Encoder::live(),
-    );
+    let wake = frontend.wake();
+    let worker = frontend.raster(path, password, doc.lists(), &wake, false);
     Ok(Self {
       id: NEXT.fetch_add(1, Ordering::Relaxed),
       doc,
@@ -174,6 +179,7 @@ impl App {
       images_stale: false,
       image_usage: Usage::default(),
       worker,
+      frontend,
       keys: Keys::default(),
       path: path.to_owned(),
       password: password.to_owned(),
@@ -228,12 +234,12 @@ impl App {
     self.crop_scan.clear();
     self.search_worker = None;
     self.doc.trim();
-    self.worker = Raster::idle(
+    self.worker = self.frontend.raster(
       &self.path,
       &self.password,
       self.doc.lists(),
       &self.wake,
-      vpdf_terminal::payload::Encoder::live(),
+      true,
     );
     self.tiles.invalidate();
   }
@@ -251,12 +257,12 @@ impl App {
     if !self.layout.crop().is_none() {
       self.start_crop();
     }
-    self.worker = Raster::new(
+    self.worker = self.frontend.raster(
       &self.path,
       password,
       self.doc.lists(),
       &self.wake,
-      vpdf_terminal::payload::Encoder::live(),
+      false,
     );
     self.search_worker = None;
     let rerun = self.search.reset_document();

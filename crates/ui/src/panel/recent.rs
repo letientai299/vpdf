@@ -3,18 +3,17 @@
 
 use crate::Result;
 use vpdf_model::cache::Cache;
+use vpdf_model::scene::{Op, Surface};
 use vpdf_model::style::Role;
-use vpdf_terminal::style::sgr;
 const MIB: usize = 1 << 20;
 use crate::layout::Screen;
 use crate::panel::{self, Destination, Panel, Pointing, Row};
-use crate::text::Bounds;
 use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::{Facts, FactsRequest, Fit, LoadedFacts};
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::terminal::{self, At};
+use vpdf_terminal::terminal::At;
 
 /// Panels narrower than this show no card.
 const NARROW: u16 = 60;
@@ -40,7 +39,7 @@ pub struct Frame {
 
 struct Card {
   fit: Fit,
-  serial: u64,
+  serial: vpdf_model::image::PictureId,
   facts: std::result::Result<Facts, String>,
 }
 
@@ -157,14 +156,15 @@ impl Shelf {
 
   pub fn accept(&mut self, path: PathBuf, loaded: LoadedFacts) {
     let LoadedFacts { fit, facts } = loaded;
-    let card = Card { fit, facts, serial: vpdf_terminal::graphics::serial() };
+    let card =
+      Card { fit, facts, serial: vpdf_model::image::PictureId::fresh() };
     let answers =
       |(asked, fit): &(PathBuf, Fit)| *asked == path && *fit == card.fit;
     if self.asked.as_ref().is_some_and(answers) {
       self.asked = None;
     }
     let thumb = card.facts.as_ref().ok().and_then(|f| f.thumb.as_ref());
-    let weight = thumb.map_or(1, |thumb| thumb.rgb.len());
+    let weight = thumb.map_or(1, |thumb| thumb.pixels().len());
     self.cards.insert(path, card, weight);
   }
 
@@ -191,10 +191,27 @@ impl Shelf {
     frame: Frame,
     graphics: Option<&mut Graphics>,
   ) -> Result<()> {
+    let pictures = graphics.is_some();
+    let mut scene = vpdf_terminal::painter::Painter::new(out);
+    if let Some(graphics) = graphics {
+      scene = scene.with_graphics(graphics);
+    }
+    let result = self.scene(panel, &mut scene, frame, pictures);
+    scene.finish()?;
+    result
+  }
+
+  pub fn scene<'a, S: Surface<'a>>(
+    &mut self,
+    panel: &mut Panel,
+    scene: &mut S,
+    frame: Frame,
+    pictures: bool,
+  ) -> std::result::Result<(), S::Error> {
     let Frame { at, width, screen, now } = frame;
     let list = Self::list_columns(panel, width);
     let card = width - list;
-    panel.list(out, at, list, screen.rows)?;
+    panel.scene_list(scene, at, list, screen.rows);
     self.hide();
     let row = panel.rows.get(self.shown_row(panel));
     let Some(Destination::File(path)) = row.map(|row| &row.destination) else {
@@ -213,21 +230,23 @@ impl Shelf {
     }
     self.column = Some(list);
     let area = Area { at, column: list, columns: card, screen, now };
-    self.card(out, area, &entry, graphics)
+    self.card(scene, area, &entry, pictures)
   }
 
-  fn card(
+  fn card<'a, S: Surface<'a>>(
     &mut self,
-    out: &mut impl Write,
+    scene: &mut S,
     area: Area,
     entry: &Entry,
-    graphics: Option<&mut Graphics>,
-  ) -> Result<()> {
+    pictures: bool,
+  ) -> std::result::Result<(), S::Error> {
     let Area { at, column, columns, screen, now } = area;
     let rows = usize::from(screen.rows.saturating_sub(1));
     for row in 0..rows {
-      let border = at.goto(row, column + columns - 1);
-      write!(out, "{border}{}│{}", sgr(Role::Muted), sgr(Role::Reset))?;
+      crate::paint::move_to(scene, at, row, column + columns - 1);
+      scene.push(Op::Style(Role::Muted));
+      scene.text("│");
+      scene.push(Op::Style(Role::Reset));
     }
     // One column of margin on each side of the text.
     let inner = usize::from(columns).saturating_sub(3);
@@ -235,16 +254,11 @@ impl Shelf {
     if name.width() > inner {
       self.clipped.push((0, entry.path.display().to_string()));
     }
-    write!(
-      out,
-      "{}{}{}{}",
-      at.goto(0u16, column + 1),
-      sgr(Role::File),
-      terminal::clean(&name, inner),
-      sgr(Role::Reset)
-    )?;
-    let picture =
-      if graphics.is_some() { rows.saturating_sub(1) / 2 } else { 0 };
+    crate::paint::move_to(scene, at, 0u16, column + 1);
+    scene.push(Op::Style(Role::File));
+    scene.push(Op::Text(vpdf_model::scene::Text::fit(&name, inner)));
+    scene.push(Op::Style(Role::Reset));
+    let picture = if pictures { rows.saturating_sub(1) / 2 } else { 0 };
     let (cell_width, cell_height) =
       (u32::from(screen.cell_width), u32::from(screen.cell_height));
     let fit = (picture >= 4 && inner >= 4)
@@ -252,25 +266,16 @@ impl Shelf {
     self.ask(entry, fit);
     let card = self.cards.get(&entry.path).filter(|card| card.fit == fit);
     let thumb = card.and_then(|card| card.facts.as_ref().ok()?.thumb.as_ref());
-    if let (Some(thumb), Some(graphics), Some((width, _))) =
-      (thumb, graphics, fit)
-    {
+    if let (Some(thumb), true, Some((width, _))) = (thumb, pictures, fit) {
       let x = f32::from(column + 1) * cell_width as f32
-        + (width as f32 - thumb.width as f32) / 2.0;
+        + (width as f32 - thumb.width() as f32) / 2.0;
       let y = cell_height as f32;
-      let rect = Bounds {
-        x0: x,
-        y0: y,
-        x1: x + thumb.width as f32,
-        y1: y + thumb.height as f32,
-      };
-      let image = (thumb.width, thumb.height, thumb.rgb.as_slice());
-      graphics.picture(card.unwrap().serial, image, rect, screen, 0, out)?;
+      scene.picture(card.unwrap().serial, thumb, (x, y), screen, 0)?;
     }
     // Text follows the thumbnail's own height; a loading card holds the
     // whole box so its text does not jump twice.
     let shown = match (thumb, card) {
-      (Some(thumb), _) => Some((thumb.height as u32).div_ceil(cell_height)),
+      (Some(thumb), _) => Some((thumb.height() as u32).div_ceil(cell_height)),
       (None, None) => fit.map(|_| picture as u32),
       (None, Some(_)) => None,
     };
@@ -283,14 +288,15 @@ impl Shelf {
     self.top = self.top.min(self.last_top);
     let shown = lines.iter().zip(&texts).skip(self.top).take(room);
     for (row, (line, text)) in (top..).zip(shown) {
-      write!(out, "{}{}", at.goto(row, column + 1), sgr(Role::Reset))?;
-      let used = line.write(out, Some(Role::Reset), inner, keys, "")?;
+      crate::paint::move_to(scene, at, row, column + 1);
+      scene.push(Op::Style(Role::Reset));
+      let used = line.scene(scene, Some(Role::Reset), inner, keys, "");
       let full = line.scene(&mut (), None, usize::MAX, keys, "");
       if full > used {
-        self.clipped.push((u16::try_from(row)?, text.clone()));
+        self.clipped.push((row as u16, text.clone()));
       }
     }
-    write!(out, "{}", sgr(Role::Reset))?;
+    scene.push(Op::Style(Role::Reset));
     Ok(())
   }
 

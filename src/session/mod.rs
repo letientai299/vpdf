@@ -47,6 +47,7 @@ pub struct Session {
   pub graphics: Graphics,
   pub quit: bool,
   pub state: State,
+  frontend: crate::raster::Frontend,
   perf: crate::perf::Monitor,
   /// Start screen while no document is open.
   pub home: Option<Home>,
@@ -153,6 +154,7 @@ impl Session {
       quit: false,
       graphics: Graphics::default(),
       state,
+      frontend: crate::raster::Frontend::Terminal,
       perf: crate::perf::Monitor::default(),
       home: None,
       screen: None,
@@ -230,6 +232,7 @@ mod clipboard;
 mod dispatch;
 mod edges;
 mod frame;
+pub mod native;
 mod pointer;
 mod run;
 #[cfg(test)]

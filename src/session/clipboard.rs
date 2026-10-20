@@ -59,9 +59,10 @@ impl Session {
 
   pub(super) fn image_updates(&mut self, out: &mut impl Write) -> bool {
     let mut dirty = false;
+    let terminal = matches!(self.frontend, crate::raster::Frontend::Terminal);
     for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
       let result = app.region_updates().and_then(|changed| {
-        if changed {
+        if changed && terminal {
           app.clipboard(out)?;
         }
         Ok(changed)

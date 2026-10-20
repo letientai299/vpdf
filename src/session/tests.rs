@@ -785,7 +785,7 @@ fn edge_drags_scroll_until_focus_loss() -> Result<()> {
 }
 
 #[test]
-fn start_screen_drops_open_or_type() -> Result<()> {
+fn home_file_drops_open() -> Result<()> {
   use base64::Engine;
   let directory = tempfile::tempdir()?;
   let pdf = line_pdf(directory.path(), "")?;
@@ -816,14 +816,14 @@ fn start_screen_drops_open_or_type() -> Result<()> {
   };
   let ended =
     |out: &String, how: &str| out.ends_with(&format!("t=r:o={how}\x1b\\"));
-  // A prompt takes the path as text.
+  // File drops open even with a prompt.
   let mut session = Session::new(None);
   let mut home = Home::new(&[], screen);
   let colon = KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE);
   home.event(Event::Key(colon), &mut session.history)?;
   let (landed, out) = drop(&mut session, &mut home, &pdf)?;
-  assert!(matches!(landed, Landing::Shown) && ended(&out, "1"));
-  assert!(session.tabs.is_empty());
+  assert!(matches!(landed, Landing::Opened) && ended(&out, "1"));
+  assert_eq!(session.tabs.len(), 1);
   // Without a prompt the PDF opens; a list with none is cancelled.
   let mut home = Home::new(&[], screen);
   let (landed, out) = drop(&mut session, &mut home, &notes)?;

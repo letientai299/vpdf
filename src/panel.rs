@@ -45,6 +45,30 @@ impl PanelSession {
     }
   }
 
+  pub(crate) fn scene<'a, S: vpdf_model::scene::Surface<'a>>(
+    &mut self,
+    scene: &mut S,
+    at: At,
+    width: u16,
+    screen: Screen,
+    pictures: bool,
+  ) -> std::result::Result<(), S::Error> {
+    let drawn = self.view.scene(
+      scene,
+      vpdf_ui::panel::recent::Frame {
+        at,
+        width,
+        screen,
+        now: crate::state::now(),
+      },
+      pictures,
+    );
+    if let (Some(loader), Some(cards)) = (&self.loader, self.view.shelf_mut()) {
+      loader.request(cards);
+    }
+    drawn
+  }
+
   pub fn draw(
     &mut self,
     out: &mut impl Write,
@@ -53,12 +77,14 @@ impl PanelSession {
     screen: Screen,
     graphics: Option<&mut Graphics>,
   ) -> Result<()> {
-    let drawn =
-      self.view.draw(out, at, width, screen, graphics, crate::state::now());
-    if let (Some(loader), Some(cards)) = (&self.loader, self.view.shelf_mut()) {
-      loader.request(cards);
+    let pictures = graphics.is_some();
+    let mut painter = vpdf_terminal::painter::Painter::new(out);
+    if let Some(graphics) = graphics {
+      painter = painter.with_graphics(graphics);
     }
-    drawn
+    let result = self.scene(&mut painter, at, width, screen, pictures);
+    painter.finish()?;
+    result
   }
 }
 

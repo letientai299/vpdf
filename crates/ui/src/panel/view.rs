@@ -4,7 +4,7 @@ use super::{
   Row, RowSearch, Screen, Target, UnicodeWidthStr, WHEEL_ROWS, Wheel, Write,
   key_width, moved_row, screen_step, terminal,
 };
-use vpdf_model::scene::{Draw, Op};
+use vpdf_model::scene::{Draw, Op, Surface};
 use vpdf_model::style::Role;
 
 /// Reader geometry beside or behind a panel.
@@ -400,20 +400,38 @@ impl Panel {
     graphics: Option<&mut Graphics>,
     now: u64,
   ) -> Result<()> {
+    let pictures = graphics.is_some();
+    let mut scene = vpdf_terminal::painter::Painter::new(out);
+    if let Some(graphics) = graphics {
+      scene = scene.with_graphics(graphics);
+    }
+    let result = self.scene(
+      &mut scene,
+      crate::panel::recent::Frame { at, width, screen, now },
+      pictures,
+    );
+    scene.finish()?;
+    result
+  }
+
+  pub fn scene<'a, S: Surface<'a>>(
+    &mut self,
+    scene: &mut S,
+    frame: crate::panel::recent::Frame,
+    pictures: bool,
+  ) -> std::result::Result<(), S::Error> {
+    let crate::panel::recent::Frame { width, screen, at, .. } = frame;
     let Some(mut cards) = self.shelf.take() else {
-      return self.list(out, at, width, screen.rows);
+      self.scene_list(scene, at, width, screen.rows);
+      return Ok(());
     };
     if width < screen.columns || !self.focused {
       cards.hide();
       self.shelf = Some(cards);
-      return self.list(out, at, width, screen.rows);
+      self.scene_list(scene, at, width, screen.rows);
+      return Ok(());
     }
-    let drawn = cards.draw(
-      self,
-      out,
-      crate::panel::recent::Frame { at, width, screen, now },
-      graphics,
-    );
+    let drawn = cards.scene(self, scene, frame, pictures);
     self.shelf = Some(cards);
     drawn
   }

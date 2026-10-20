@@ -1,8 +1,6 @@
 use crate::Result;
 use crate::app::App;
-use std::io::Write;
 use std::time::Instant;
-use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::pointer::{Hit, Route};
 use vpdf_ui::scrollbar::{Input, Ticks, View};
 
@@ -68,11 +66,10 @@ impl App {
     Ok(())
   }
 
-  pub(crate) fn draw_bar(
+  pub(crate) fn scene_bar<'a>(
     &mut self,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<()> {
+    scene: &mut impl vpdf_model::scene::Draw<'a>,
+  ) {
     let now = Instant::now();
     let frame = self.frame(self.uncovered());
     let view = View {
@@ -83,11 +80,10 @@ impl App {
       hovered: self.hover.hit() == Hit::Scrollbar,
     };
     let ticks = Ticks { outline: &self.doc.outline, search: &self.search };
-    if let Some(label) = self.bar.draw(view, ticks, now, graphics, out)? {
+    if let Some(label) = self.bar.scene(view, ticks, now, scene) {
       let text = self.page_line(label.page());
-      label.draw(&text, graphics, out)?;
+      label.scene(&text, scene);
     }
-    Ok(())
   }
 }
 

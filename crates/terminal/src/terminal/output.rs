@@ -1,6 +1,4 @@
-use super::{
-  Caps, Host, Result, UnicodeWidthChar, UnicodeWidthStr, Write, tmux,
-};
+use super::{Caps, Host, Result, UnicodeWidthStr, Write, tmux};
 
 /// Hides the text cursor, which frames move.
 pub const HIDE_CURSOR: &str = "\x1b[?25l";
@@ -62,21 +60,7 @@ pub fn graphics(
 
 /// `text` made printable, cut to `columns` cells.
 pub fn clean(text: &str, columns: usize) -> String {
-  let mut width = 0;
-  let mut clean: String = crate::text::printable(text)
-    // Caps zero-width marks from hostile text.
-    .take(columns.saturating_mul(8))
-    .take_while(|ch| {
-      width += ch.width().unwrap_or(0);
-      width <= columns
-    })
-    .collect();
-  // Sequences such as an emoji with U+FE0F are wider than their chars.
-  while clean.width() > columns {
-    // Marks go with their base char.
-    while clean.pop().is_some_and(|ch| ch.width() == Some(0)) {}
-  }
-  clean
+  vpdf_model::text::clean(text, columns)
 }
 
 /// `text` within `columns`, ending in `…` when cut; whether it was.

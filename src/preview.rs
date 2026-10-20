@@ -135,6 +135,20 @@ impl App {
     reading.view.drop_stray_preview(reading.overlays);
   }
 
+  pub(crate) fn scene_preview<'a, S: vpdf_model::scene::Surface<'a>>(
+    &mut self,
+    scene: &mut S,
+  ) -> Result<()>
+  where
+    S::Error: Into<anyhow::Error>,
+  {
+    if self.overlays.preview().is_none() {
+      return Ok(());
+    }
+    let mut reading = self.reading_parts();
+    reading.view.scene_preview(reading.overlays, scene)
+  }
+
   pub fn draw_preview(
     &mut self,
     graphics: &mut Graphics,

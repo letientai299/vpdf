@@ -41,3 +41,15 @@ pub enum Role {
   PreviewText,
   Badge(Color),
 }
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Shape {
+  #[default]
+  Default,
+  Pointer,
+  Text,
+  Crosshair,
+  Grabbing,
+  ColResize,
+  RowResize,
+}

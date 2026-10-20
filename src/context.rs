@@ -247,7 +247,18 @@ impl App {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
-    let Some(menu) = self.overlays.menu() else { return Ok(()) };
-    menu.draw(graphics, out, self.frame(self.layout.screen()))
+    let mut painter =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    self.scene_context(&mut painter);
+    painter.finish()?;
+    Ok(())
+  }
+
+  pub(crate) fn scene_context<'a>(
+    &self,
+    scene: &mut impl vpdf_model::scene::Draw<'a>,
+  ) {
+    let Some(menu) = self.overlays.menu() else { return };
+    menu.scene(scene, self.frame(self.layout.screen()));
   }
 }

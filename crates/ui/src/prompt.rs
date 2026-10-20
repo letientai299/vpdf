@@ -192,7 +192,14 @@ impl Prompt {
     ]);
     let column = column.min(usize::from(screen.columns) - 1);
     crate::paint::move_to(scene, at, row, column);
-    scene.extend([Op::BlockCursor, Op::ShowCursor]);
+    scene.extend([
+      Op::InputArea {
+        column: usize::from(at.column),
+        columns: usize::from(screen.columns),
+      },
+      Op::BlockCursor,
+      Op::ShowCursor,
+    ]);
   }
 
   pub fn kind(&self) -> PromptKind {

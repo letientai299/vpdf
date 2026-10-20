@@ -103,6 +103,31 @@ pub enum Spot {
   Pixel { x: u16, y: u16 },
 }
 
+impl From<MouseEvent> for Mouse {
+  fn from(event: MouseEvent) -> Self {
+    let button = |button| match button {
+      MouseButton::Left => Button(1),
+      MouseButton::Middle => Button(2),
+      MouseButton::Right => Button(3),
+    };
+    let kind = match event.kind {
+      MouseEventKind::Down(pressed) => MouseKind::Press(button(pressed)),
+      MouseEventKind::Up(released) => MouseKind::Release(button(released)),
+      MouseEventKind::Drag(held) => MouseKind::Drag(button(held)),
+      MouseEventKind::Moved => MouseKind::Moved,
+      MouseEventKind::ScrollUp => MouseKind::Press(Button(4)),
+      MouseEventKind::ScrollDown => MouseKind::Press(Button(5)),
+      MouseEventKind::ScrollLeft => MouseKind::Press(Button(6)),
+      MouseEventKind::ScrollRight => MouseKind::Press(Button(7)),
+    };
+    Self {
+      kind,
+      at: Spot::Cell { column: event.column, row: event.row },
+      modifiers: event.modifiers,
+    }
+  }
+}
+
 impl Mouse {
   /// The crossterm event for buttons 1-7, on cells of `cell` pixels.
   pub fn cells(self, cell: (u16, u16)) -> Option<MouseEvent> {

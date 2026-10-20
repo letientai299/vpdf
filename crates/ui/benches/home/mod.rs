@@ -57,14 +57,17 @@ pub fn draw() -> Result<()> {
         bytes: data.bytes,
         metadata: data.metadata,
         section: data.section,
-        thumb: Some(Thumbnail {
-          width: data.thumb.width,
-          height: data.thumb.height,
-          rgb: data.thumb.rgb,
-        }),
+        thumb: Some(
+          Thumbnail::new(data.thumb.width, data.thumb.height, data.thumb.rgb)
+            .expect("Valid fixture thumbnail"),
+        ),
       }),
     },
   );
+  let mut recorder = vpdf_model::scene::Recorder::new(|_| false);
+  home.scene(&mut recorder, 0, |_| {}).unwrap();
+  let scene = recorder.into_scene();
+  let mut replay = Graphics::default();
   let mut graphics = Graphics::default();
   let mut output = Vec::new();
   let mut draw = |output: &mut Vec<u8>| -> Result<()> {
@@ -76,6 +79,14 @@ pub fn draw() -> Result<()> {
   };
   for first in [true, false] {
     draw(&mut output)?;
+    let mut actual = Vec::new();
+    replay.begin(&mut actual)?;
+    let mut painter = vpdf_terminal::painter::Painter::new(&mut actual)
+      .with_graphics(&mut replay);
+    painter.paint(&scene);
+    painter.finish()?;
+    replay.end(&mut actual)?;
+    anyhow::ensure!(actual == output, "Retained home differs");
     assert_eq!(output.windows(4).any(|bytes| bytes == b"a=t,"), first);
     println!("home output {}", super::hash::digest(&output));
   }

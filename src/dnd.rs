@@ -14,23 +14,17 @@ pub enum Target {
   Pdf(PathBuf),
 }
 
-/// Text while a prompt is open: the first file's path, or the dragged
-/// text; else the first PDF the files name.
+/// File drops open PDFs; text edits prompts.
 pub fn target(drop: &Dropped, typing: bool) -> crate::Result<Target> {
-  match (typing, drop.files()) {
-    (true, false) => Ok(Target::Text(drop.text().to_owned())),
-    (true, true) => {
-      let entry = entries(drop.text()).next();
-      let entry = entry.ok_or_else(|| anyhow::anyhow!("Empty drop"))?;
-      let path = candidates(entry).into_iter().next();
-      let text = path.map_or_else(|| entry.into(), |p| p.display().to_string());
-      Ok(Target::Text(text))
-    }
-    (false, true) => first_pdf(drop.text())
+  if drop.files() {
+    return first_pdf(drop.text())
       .map(Target::Pdf)
-      .ok_or_else(|| anyhow::anyhow!("No PDF in the drop")),
-    (false, false) => anyhow::bail!("No PDF in the drop"),
+      .ok_or_else(|| anyhow::anyhow!("No PDF in the drop"));
   }
+  if typing {
+    return Ok(Target::Text(drop.text().to_owned()));
+  }
+  anyhow::bail!("No PDF in the drop")
 }
 
 /// The first existing PDF a paste names; long pastes name none.
@@ -138,7 +132,7 @@ mod tests {
   use super::*;
   use vpdf_terminal::dnd::{Drops, Step};
   #[test]
-  fn drops_give_prompts_text_and_else_a_pdf() -> std::io::Result<()> {
+  fn drops_distinguish_payloads() -> std::io::Result<()> {
     let directory = tempfile::tempdir()?;
     let pdf = directory.path().join("a b.pdf");
     std::fs::write(&pdf, b"%PDF")?;
@@ -160,8 +154,8 @@ mod tests {
     let text = |text: &str| Some(Target::Text(text.into()));
     // (payload, data, a prompt open) -> target
     let cases = [
-      (true, uri.clone(), true, text(&shown)),
-      (true, remote.clone(), true, text(remote.trim())),
+      (true, uri.clone(), true, Some(Target::Pdf(pdf.clone()))),
+      (true, remote.clone(), true, None),
       (true, "# none\r\n".into(), true, None),
       (false, "two words".into(), true, text("two words")),
       (true, uri.clone(), false, Some(Target::Pdf(pdf.clone()))),

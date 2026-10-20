@@ -58,21 +58,7 @@ pub(super) fn updates(
   let tab = &mut session.tabs[session.active];
   for app in &mut tab.panes {
     dirty |= app.raster_updates(&mut session.graphics);
-    dirty |=
-      app.panel.as_mut().is_some_and(crate::panel::PanelSession::updates);
-    // A failed update shows in its pane instead of ending the session.
-    let updated = app.search_updates().and_then(|search| {
-      Ok(
-        search
-          | app.ocr_updates()?
-          | app.outline_updates()?
-          | app.crop_updates()?,
-      )
-    });
-    dirty |= updated.unwrap_or_else(|error| {
-      app.error = Some(error.to_string());
-      true
-    });
+    dirty |= app.job_updates();
   }
   Ok(dirty)
 }
@@ -275,6 +261,14 @@ impl Chores {
     Self { checked: now, written: now, touched: now, watched: now }
   }
 
+  pub(super) fn wait(&self, session: &mut Session) -> Duration {
+    idle(session, self.checked, self.watched, self.touched > self.checked)
+  }
+
+  pub(super) fn touch(&mut self) {
+    self.touched = Instant::now();
+  }
+
   /// Clues, file checks, tmux looks, and saved positions; whether a
   /// frame is due.
   pub(super) fn run(
@@ -288,7 +282,11 @@ impl Chores {
       self.watched = Instant::now();
     }
     dirty |= watch(session, force);
-    if force && session.observer.is_none() && session.sight != Sight::Focused {
+    if force
+      && matches!(session.frontend, crate::raster::Frontend::Terminal)
+      && session.observer.is_none()
+      && session.sight != Sight::Focused
+    {
       dirty |= session.look(Cause::Tick, out)?;
     }
     // Positions reach memory 250 ms after a change and disk after a

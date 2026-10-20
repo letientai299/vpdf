@@ -539,3 +539,23 @@ fn base_layout_key_serves_chords() {
     ("ц".as_bytes(), char('ц', NONE)),
   ]);
 }
+
+#[test]
+fn cell_mouse_events_round_trip() {
+  use MouseEventKind::{
+    Down, Drag, Moved, ScrollDown, ScrollLeft, ScrollRight, ScrollUp, Up,
+  };
+  let mut kinds = vec![Moved, ScrollUp, ScrollDown, ScrollLeft, ScrollRight];
+  for button in [MouseButton::Left, MouseButton::Middle, MouseButton::Right] {
+    kinds.extend([Down(button), Drag(button), Up(button)]);
+  }
+  for kind in kinds {
+    let event = MouseEvent {
+      kind,
+      column: 17,
+      row: 23,
+      modifiers: KeyModifiers::ALT | KeyModifiers::SHIFT,
+    };
+    assert_eq!(Mouse::from(event).cells((8, 16)), Some(event));
+  }
+}

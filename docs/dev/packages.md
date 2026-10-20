@@ -20,15 +20,18 @@ External dependencies must preserve each owner's boundary.
 | [Terminal][terminal]       | Terminal lifecycle, input, graphics, spooling |
 | [UI][ui]                   | Bindings, components, layout, theme, drawing  |
 | [Application][application] | Composition, persistence, CLI, OS effects     |
+| [GUI][gui]                 | Native window, event adaptation, textures     |
 
-Use the dependency policy for permitted edges and the [workspace
-manifest][workspace] for package names and paths. The application connects the
-owners, consuming normalized input through terminal. Import owners directly;
-do not add application forwarding exports.
+Use the dependency policy for permitted edges and the
+[workspace manifest][workspace] for package names and paths. The application
+connects the owners, consuming normalized input from the selected frontend.
+Import owners directly; do not add application forwarding exports.
 
-MuPDF belongs only to PDF and the application. UI and terminal tests and
-benchmarks must remain native-free, as must model, search, reader, and protocol.
-Do not introduce a native fixture helper as a development dependency there.
+MuPDF belongs to PDF and the application; the GUI reaches it through the
+application. GUI libraries belong only to the GUI package. UI and terminal tests
+and benchmarks must remain native-free, as must model, search, reader, and
+protocol. Do not introduce a native fixture helper as a development dependency
+there.
 
 ## Cross-package contracts
 
@@ -47,21 +50,39 @@ sink: a scene retains operations, while the [terminal painter][painter] encodes
 them directly without probing the terminal. Finish a streaming painter to report
 output errors. Retained scenes copy temporary text; streaming painters borrow it
 during emission. Keep transport commands out of scene text. Callers still use
-existing drawing entry points for components without scene output.
-Recording must update the same hit geometry as terminal drawing. Model derives
-character advances from the shared Unicode-width rules. Pixel fills carry
-clipped bounds, alpha, and explicit layers above or below text. Layer order must
-survive replay even when a backdrop follows its label in the operation stream.
-Attach terminal graphics to the painter for fills; terminal retains protocol
-encoding and image caching. Stretched fills retain their cell extent beside
-pixel fills, so a native painter can recover the intended rectangle without
-terminal image commands. Region recording accepts cell-snapped sweep outlines
-for terminal presenters that cache overlays by size.
+existing drawing entry points for components without scene output. Recording
+must update the same hit geometry as terminal drawing. Model owns pointer
+shapes; each presenter maps them to its native cursor. Model derives character
+advances from the shared Unicode-width rules. Pixel fills carry clipped bounds,
+alpha, and explicit layers above or below text. Layer order must survive replay
+even when a backdrop follows its label in the operation stream. Attach terminal
+graphics to the painter for fills; terminal retains protocol encoding and image
+caching. Stretched fills retain their cell extent beside pixel fills, so a
+native painter can recover the intended rectangle without terminal image
+commands. Region recording accepts cell-snapped sweep outlines for terminal
+presenters that cache overlays by size.
+
+A shared surface combines tile readiness and placement with drawing. The
+recorder keeps wanted placements even when pixels are missing; readiness drives
+render requests. Owner-qualified tile identities keep document resources apart.
+Presenters must retire those resources on reload and close. A failed surface
+returns an error before pending requests advance. The recorder is infallible.
+Callers must also finish terminal painters to report cached text/fill errors.
+
+Model also owns [validated RGB pictures][pictures] and their identities.
+Retained scenes share immutable pixel buffers; terminal streaming borrows them
+without copying pixels. Picture operations retain the preview/card layer above
+text and fills. Native tiles and pictures share one texture budget; pictures
+absent from the next scene release their textures. Buffer identity and
+dimensions control upload reuse.
 
 PDF owns native handles, cancellation, document-cache provenance, and
 [job resource configuration][jobs]. A render completion sink lets the
-application connect terminal encoding without a PDF-to-terminal dependency.
-Encoding stays on the worker before result delivery and waking. Preserve
+application connect terminal encoding or bounded RGB delivery without a
+PDF-to-frontend dependency.
+Terminal encoding stays on the worker before result delivery and waking.
+Native sessions receive bounded RGB results and own document handles on their
+session thread. The window thread owns texture uploads and retirement. Preserve
 viewport request replacement, cancellation, delivery-before-wake ordering, and
 spool lifetime when changing that contract. [Tile encoding][payload] reuses
 compression state per calling thread; each payload remains an independent
@@ -123,3 +144,5 @@ corpus, OCR, and terminal checks when they change.
 [payload]: ../../crates/terminal/src/payload.rs
 [scene]: ../../crates/vpdf-model/src/scene.rs
 [painter]: ../../crates/terminal/src/painter.rs
+[gui]: ../../crates/vpdf-gui/src/lib.rs
+[pictures]: ../../crates/vpdf-model/src/image.rs

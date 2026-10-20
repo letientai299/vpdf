@@ -128,15 +128,28 @@ impl List {
     screen: Screen,
     pointed: Option<usize>,
   ) -> Result<()> {
-    grid::draw(
-      out,
+    let mut painter = vpdf_terminal::painter::Painter::new(out);
+    self.scene(&mut painter, bottom, screen, pointed);
+    painter.finish()?;
+    Ok(())
+  }
+
+  pub fn scene<'a>(
+    &self,
+    scene: &mut impl vpdf_model::scene::Draw<'a>,
+    bottom: (At, u16),
+    screen: Screen,
+    pointed: Option<usize>,
+  ) {
+    grid::scene(
+      scene,
       bottom,
       &self.labels,
       &self.grid(screen),
       (pointed, None),
       self.keys,
       screen,
-    )
+    );
   }
 }
 

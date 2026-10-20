@@ -2,7 +2,8 @@ use super::{Layout, Screen, visible};
 use crate::Result;
 use crate::text::PageId;
 use std::io::Write;
-use vpdf_model::tile::TileKey;
+use vpdf_model::scene::Surface;
+use vpdf_model::tile::{TileId, TileKey, TileOwner};
 use vpdf_terminal::graphics::Graphics;
 
 pub struct Tiles {
@@ -79,6 +80,19 @@ impl Tiles {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<Update> {
+    let mut scene =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    let update = self.scene(view, frame, &mut scene);
+    scene.finish()?;
+    update
+  }
+
+  pub fn scene<'a, S: Surface<'a>>(
+    &mut self,
+    view: View<'_>,
+    frame: Frame,
+    scene: &mut S,
+  ) -> std::result::Result<Update, S::Error> {
     let mut wanted = visible(view.layout, view.scroll);
     if let Some(target) = view.target {
       self.heading = (target - view.scroll).signum();
@@ -91,50 +105,57 @@ impl Tiles {
     let mut missing = Vec::new();
     for key in &wanted {
       let (x, y) = view.layout.origin(key.page, view.scroll);
-      if !graphics.place_at(
-        (frame.pane, *key),
+      if !scene.tile(
+        TileId { owner: TileOwner::new(frame.pane), key: *key },
         (x + key.x as f32, y + key.y as f32),
         frame.screen,
         frame.left,
-        out,
       )? {
         missing.push(*key);
       }
     }
     let heading = self.heading;
-    Ok(self.update_with(Visible { wanted, missing }, |wanted, missing| {
+    self.update_with(Visible { wanted, missing }, |wanted, missing| {
       missing.sort_by_key(|key| {
         let page = &view.layout.pages()[key.page.0];
         ((page.top + key.y as f32 - view.scroll).abs() as u32, key.x)
       });
       let urgent = missing.len();
       for key in view.ahead(wanted, heading) {
-        if !graphics.has(&(frame.pane, key)) {
+        if !scene.has(TileId { owner: TileOwner::new(frame.pane), key })? {
           missing.push(key);
         }
       }
-      urgent
-    }))
+      Ok(urgent)
+    })
   }
 
   pub fn update(&mut self, frame: Visible) -> Update {
-    self.update_with(frame, |_, missing| missing.len())
+    match self.update_with::<std::convert::Infallible>(frame, |_, missing| {
+      Ok(missing.len())
+    }) {
+      Ok(update) => update,
+      Err(never) => match never {},
+    }
   }
 
-  fn update_with(
+  fn update_with<E>(
     &mut self,
     mut frame: Visible,
-    collect: impl FnOnce(&[TileKey], &mut Vec<TileKey>) -> usize,
-  ) -> Update {
+    collect: impl FnOnce(
+      &[TileKey],
+      &mut Vec<TileKey>,
+    ) -> std::result::Result<usize, E>,
+  ) -> std::result::Result<Update, E> {
     let complete = frame.missing.is_empty();
     let request = if frame.wanted == self.wanted {
       None
     } else {
-      let urgent = collect(&frame.wanted, &mut frame.missing);
+      let urgent = collect(&frame.wanted, &mut frame.missing)?;
       self.wanted = frame.wanted;
       Some(Request { keys: frame.missing, urgent })
     };
-    Update { complete, request }
+    Ok(Update { complete, request })
   }
 }
 

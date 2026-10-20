@@ -1,6 +1,8 @@
 use crate::geometry::{PixelRect, Screen};
+use crate::image::{PictureId, Rgb};
 use crate::style::Role;
 use crate::text::Bounds;
+use crate::tile::TileId;
 use std::borrow::Cow;
 use unicode_width::UnicodeWidthChar;
 
@@ -20,6 +22,10 @@ impl<'a> Text<'a> {
       return Self(crate::text::printable(&text).collect::<String>().into());
     }
     Self(text)
+  }
+
+  pub fn fit(text: &str, columns: usize) -> Self {
+    Self(crate::text::clean(text, columns).into())
   }
 
   pub fn as_str(&self) -> &str {
@@ -114,6 +120,76 @@ impl Fill {
   }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TilePlacement {
+  id: TileId,
+  origin: [u32; 2],
+  screen: Screen,
+  left: u16,
+}
+
+impl TilePlacement {
+  pub fn new(
+    id: TileId,
+    origin: (f32, f32),
+    screen: Screen,
+    left: u16,
+  ) -> Self {
+    Self { id, origin: [origin.0.to_bits(), origin.1.to_bits()], screen, left }
+  }
+  pub fn id(self) -> TileId {
+    self.id
+  }
+  /// Page-area pixels before clipping and rounding.
+  pub fn origin(self) -> (f32, f32) {
+    let [x, y] = self.origin.map(f32::from_bits);
+    (x, y)
+  }
+  pub fn frame(self) -> (Screen, u16) {
+    (self.screen, self.left)
+  }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Picture {
+  id: PictureId,
+  image: Rgb,
+  origin: [u32; 2],
+  screen: Screen,
+  left: u16,
+}
+
+impl Picture {
+  pub fn new(
+    id: PictureId,
+    image: &Rgb,
+    origin: (f32, f32),
+    screen: Screen,
+    left: u16,
+  ) -> Self {
+    Self {
+      id,
+      image: image.clone(),
+      origin: [origin.0.to_bits(), origin.1.to_bits()],
+      screen,
+      left,
+    }
+  }
+  pub fn id(&self) -> PictureId {
+    self.id
+  }
+  pub fn image(&self) -> &Rgb {
+    &self.image
+  }
+  pub fn origin(&self) -> (f32, f32) {
+    let [x, y] = self.origin.map(f32::from_bits);
+    (x, y)
+  }
+  pub fn frame(&self) -> (Screen, u16) {
+    (self.screen, self.left)
+  }
+}
+
 impl Character {
   pub fn new(value: char) -> Option<Self> {
     if value.is_control() {
@@ -154,9 +230,18 @@ pub enum Op<'a> {
   RestoreCursor,
   HideCursor,
   ShowCursor,
+  /// Editable row bounds for native composition.
+  InputArea {
+    column: usize,
+    columns: usize,
+  },
   BlockCursor,
   UnderlineOff,
   Fill(Box<Fill>),
+  /// Page tiles below fills and text.
+  Tile(Box<TilePlacement>),
+  /// Pictures above fills and text.
+  Picture(Box<Picture>),
 }
 
 pub type Scene<'a> = Vec<Op<'a>>;
@@ -198,6 +283,66 @@ pub trait Draw<'a> {
     for op in ops {
       self.push(op);
     }
+  }
+}
+
+pub trait Surface<'a>: Draw<'a> {
+  type Error;
+
+  fn has(&mut self, id: TileId) -> Result<bool, Self::Error>;
+
+  fn picture(
+    &mut self,
+    id: PictureId,
+    image: &Rgb,
+    origin: (f32, f32),
+    screen: Screen,
+    left: u16,
+  ) -> Result<(), Self::Error> {
+    self.push(Op::Picture(Box::new(Picture::new(
+      id, image, origin, screen, left,
+    ))));
+    Ok(())
+  }
+
+  fn tile(
+    &mut self,
+    id: TileId,
+    origin: (f32, f32),
+    screen: Screen,
+    left: u16,
+  ) -> Result<bool, Self::Error> {
+    let ready = self.has(id)?;
+    self.push(Op::Tile(Box::new(TilePlacement::new(id, origin, screen, left))));
+    Ok(ready)
+  }
+}
+
+pub struct Recorder<'a, R> {
+  scene: Scene<'a>,
+  ready: R,
+}
+
+impl<'a, R> Recorder<'a, R> {
+  pub fn new(ready: R) -> Self {
+    Self { scene: Scene::new(), ready }
+  }
+  pub fn into_scene(self) -> Scene<'a> {
+    self.scene
+  }
+}
+
+impl<'a, R> Draw<'a> for Recorder<'a, R> {
+  fn push(&mut self, op: Op<'a>) {
+    self.scene.push(op);
+  }
+}
+
+impl<'a, R: FnMut(TileId) -> bool> Surface<'a> for Recorder<'a, R> {
+  type Error = std::convert::Infallible;
+
+  fn has(&mut self, id: TileId) -> Result<bool, Self::Error> {
+    Ok((self.ready)(id))
   }
 }
 

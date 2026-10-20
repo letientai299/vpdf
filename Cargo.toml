@@ -21,6 +21,7 @@ members = [
   "crates/vpdf-reader",
   "crates/terminal",
   "crates/ui",
+  "crates/vpdf-gui",
 ]
 resolver = "3"
 

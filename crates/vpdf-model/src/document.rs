@@ -104,11 +104,7 @@ pub enum FigureSource {
   Caption,
 }
 
-pub struct Thumbnail {
-  pub width: i32,
-  pub height: i32,
-  pub rgb: Vec<u8>,
-}
+pub type Thumbnail = crate::image::Rgb;
 
 pub struct Facts {
   pub pages: usize,

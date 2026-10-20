@@ -202,6 +202,19 @@ impl App {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
+    let snap_to_cells = graphics.crop_quirk();
+    let mut painter =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    self.scene_region(&mut painter, snap_to_cells);
+    painter.finish()?;
+    Ok(())
+  }
+
+  pub(crate) fn scene_region<'a>(
+    &mut self,
+    scene: &mut impl vpdf_model::scene::Draw<'a>,
+    snap_to_cells: bool,
+  ) {
     let sweep = self
       .gesture
       .sweep()
@@ -211,7 +224,7 @@ impl App {
       scroll: self.reader.scroll,
       frame: self.frame(self.layout.screen()),
     }
-    .draw(self.overlays.region_mut(), sweep, graphics, out)
+    .scene(self.overlays.region_mut(), sweep, snap_to_cells, scene);
   }
 }
 

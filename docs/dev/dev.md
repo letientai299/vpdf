@@ -46,6 +46,37 @@ zlib, and reject non-system dynamic libraries. These checks cover the
 executable; optional helpers remain separate programs. [Build scripts][build]
 and the [CI matrix][ci] define supported hosts.
 
+## Native window
+
+Run the experimental native reader on macOS:
+
+```sh
+mise try:gui -- path/to/file.pdf
+```
+
+Like `mise try`, this builds a debug executable and forwards arguments. Omit the
+path for the start screen. The window uses the shared reader keys, tabs, splits,
+search, text view, and reading-state storage. PDF jobs run on a session thread;
+the window thread uploads RGB tiles and pictures and paints the fixed cell
+grid. Both frontends share pane composition, including previews, recent cards,
+menus, clues, region outlines, and scrollbar drawing.
+
+Native pointer events use the session's shared hit testing, link handling,
+selection, context menus, pane dragging, and hover-preview deadlines. Cursor
+shapes follow the same shared policy; focus loss and exit release held gestures.
+Wheel points, lines, and pages become shared mouse reports, retaining pointer
+position and modifiers for panel scrolling, previews, pan, and Ctrl-zoom.
+Prompts accept IME composition through the shared editor. Marked text stays
+uncommitted until confirmation; candidate windows follow the prompt caret.
+Alt chords retain the terminal's word-editing behavior.
+Region captures use the shared jobs and clipboard helpers. Completed text from
+background panes reaches the GUI clipboard when focus moves elsewhere.
+On macOS, UI text uses installed system fonts for missing CJK glyphs.
+The native app remains incomplete. Protected-document prompts still need
+integration; clipboard effects need live validation.
+The painter performance budget has not been measured. Use the terminal reader
+for complete feature support. Release and install tasks still target it.
+
 ## Validation
 
 ```sh

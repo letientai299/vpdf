@@ -59,6 +59,21 @@ class PackageTests(unittest.TestCase):
     def test_allowed_graph(self):
         self.assertEqual(check_packages.audit(self.metadata()), [])
 
+    def test_gui_isolation(self):
+        self.package("eframe")
+        self.package("wgpu-core")
+        self.package("helper")
+        self.edge("eframe", "wgpu-core")
+        self.edge("vpdf-gui", "eframe")
+        self.assertEqual(check_packages.audit(self.metadata()), [])
+        self.edge("vpdf", "helper")
+        self.edge("helper", "eframe")
+        self.assertIn("GUI transitive dependency: vpdf -> wgpu-core",
+                      check_packages.audit(self.metadata()))
+        self.edge("vpdf-ui", "eframe", optional=True, resolved=False)
+        self.assertIn("GUI dependency: vpdf-ui -> eframe (normal)",
+                      check_packages.audit(self.metadata()))
+
     def test_dependency_kinds(self):
         for kind, target, rename in itertools.product(
             (None, "dev", "build"), (None, "cfg(windows)"), (None, "document"),
