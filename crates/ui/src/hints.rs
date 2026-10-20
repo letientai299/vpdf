@@ -8,8 +8,10 @@ use crate::theme;
 use crossterm::event::{KeyCode, KeyEvent};
 use std::io::Write;
 use vpdf_model::document::{Link, Target};
+use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::style::sgr;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Transition {
@@ -228,9 +230,9 @@ impl Hints {
     for (index, hint) in self.shown() {
       let picked = self.selected == Some(index);
       let (typed, rest, fill) = if picked {
-        (theme::HINT_PICKED_TYPED, theme::HINT_PICKED, theme::BADGE_FILL)
+        (sgr(Role::HintPickedTyped), sgr(Role::HintPicked), theme::BADGE_FILL)
       } else {
-        (theme::HINT_TYPED, theme::HINT, theme::HINT_FILL)
+        (sgr(Role::HintTyped), sgr(Role::Hint), theme::HINT_FILL)
       };
       let cells = hint.cells();
       write!(

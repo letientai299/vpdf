@@ -3,6 +3,8 @@ use super::{
   terminal,
 };
 use crate::trace::Observation;
+use vpdf_model::style::Role;
+use vpdf_terminal::style::sgr;
 
 impl Drawable for Session {
   /// Unfocused panes first, so the focused pane's prompt places the
@@ -16,7 +18,7 @@ impl Drawable for Session {
     if self.pointer.spot().is_some() {
       terminal::point(out, self.shape())?;
     }
-    write!(out, "{}{}", terminal::frame_start(), vpdf_ui::theme::RESET)?;
+    write!(out, "{}{}", terminal::frame_start(), sgr(Role::Reset))?;
     self.graphics.begin(out)?;
     let area = self.area();
     let unmeasured = self.unmeasured.clone();

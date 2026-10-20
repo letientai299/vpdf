@@ -5,13 +5,15 @@ use crate::panel::Panel;
 use crate::panel::recent::{Entry, Shelf};
 use crate::panel::{Destination, Row};
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
-use crate::theme::{self, Color};
+use crate::theme::Color;
 use crossterm::event::{KeyEvent, KeyEventKind};
 use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::style::Role;
 use vpdf_terminal::decode::Event;
 use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal::{self, At};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -104,8 +106,8 @@ impl Home {
       prompt.draw(out, self.screen, at, None)?;
     } else {
       let (text, style) = match &self.error {
-        Some(error) => (error.as_str(), theme::ERROR),
-        None => ("Enter open  :e file  :q quit", theme::BAR),
+        Some(error) => (error.as_str(), sgr(Role::Error)),
+        None => ("Enter open  :e file  :q quit", sgr(Role::Bar)),
       };
       let columns = usize::from(self.screen.columns);
       let text = terminal::clean(text, columns.saturating_sub(8));
@@ -114,9 +116,9 @@ impl Home {
         out,
         "{}{} VPDF {style} {text}{}{}{}",
         at.goto(row, 0u16),
-        theme::badge(Color::Blue),
+        sgr(Role::Badge(Color::Blue)).to_owned(),
         " ".repeat(fill),
-        theme::RESET,
+        sgr(Role::Reset),
         terminal::HIDE_CURSOR
       )?;
     }
@@ -343,7 +345,7 @@ mod tests {
     assert_eq!(columns.max(), Some(screen.columns));
     for row in 0..screen.rows - 1 {
       let goto = At::default().goto(row, screen.columns - 1);
-      let border = format!("{goto}{}│", theme::MUTED);
+      let border = format!("{goto}{}│", sgr(Role::Muted));
       assert!(out.contains(&border), "border on row {row}");
     }
     Ok(())

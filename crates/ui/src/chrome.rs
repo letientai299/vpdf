@@ -5,12 +5,14 @@ use crate::keys::{Action, Keys, PanelKind};
 use crate::layout::{Layout, Screen};
 use crate::panel::Panel;
 use crate::text::PageId;
-use crate::theme::{self, Color};
+use crate::theme::Color;
 use crossterm::event::MouseButton;
 use std::fmt::Write as _;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::style::Role;
 use vpdf_reader::reader::{Mode, Reader, SelectionKind};
+use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal;
 
 /// Error anchored to the terminal's last row.
@@ -28,7 +30,7 @@ impl Notice {
 
   /// Preserve an open prompt's cursor.
   pub fn draw(&self, out: &mut impl Write) -> Result<()> {
-    write!(out, "\x1b7{}", theme::ERROR)?;
+    write!(out, "\x1b7{}", sgr(Role::Error))?;
     let row = self.rows.max(1) - 1;
     terminal::line(
       out,
@@ -37,7 +39,7 @@ impl Notice {
       &self.error,
       self.columns,
     )?;
-    write!(out, "{}\x1b8", theme::RESET)?;
+    write!(out, "{}\x1b8", sgr(Role::Reset))?;
     Ok(())
   }
 }
@@ -110,7 +112,8 @@ impl Names<'_> {
       let label = terminal::clean(&label, room.saturating_sub(1));
       let gap = if room > 0 { " " } else { "" };
       let width = label.width() + gap.width();
-      let text = format!("{}{label}{}{gap}", theme::STATUS_FILE, theme::BAR);
+      let text =
+        format!("{}{label}{}{gap}", sgr(Role::StatusFile), sgr(Role::Bar));
       Tabs { text, width, labels: Vec::new() }
     };
     if names.len() < 2 {
@@ -128,9 +131,12 @@ impl Names<'_> {
     }
     let mut text = String::new();
     for (index, label) in labels.iter().enumerate() {
-      let style =
-        if index == *active { theme::TAB_ACTIVE } else { theme::TAB_INACTIVE };
-      text.extend([style, label.as_str(), theme::BAR]);
+      let style = if index == *active {
+        sgr(Role::TabActive)
+      } else {
+        sgr(Role::TabInactive)
+      };
+      text.extend([style, label.as_str(), sgr(Role::Bar)]);
     }
     let labels = labels.iter().map(|label| label.width()).collect();
     Tabs { text: text + " ", width, labels }
@@ -221,7 +227,7 @@ impl Bar<'_> {
     let line = self.line(detail)?;
     write!(out, "{}", at.goto(row, 0u16))?;
     let Some(tabs) = &line.tabs else {
-      write!(out, "{}{}{}", theme::BAR, line.right, theme::RESET)?;
+      write!(out, "{}{}{}", sgr(Role::Bar), line.right, sgr(Role::Reset))?;
       // Plain frames skip clears; erase the rest.
       let rest =
         usize::from(self.screen.columns).saturating_sub(line.right.width());
@@ -230,20 +236,23 @@ impl Bar<'_> {
       }
       return Ok(());
     };
-    let badge =
-      if focused { theme::badge(line.color) } else { theme::BAR.into() };
+    let badge = if focused {
+      sgr(Role::Badge(line.color)).to_owned()
+    } else {
+      sgr(Role::Bar).into()
+    };
     write!(
       out,
       "{badge}{}{}{}{}{}{}{}{}{}",
       line.left,
-      theme::BAR,
+      sgr(Role::Bar),
       tabs.text,
       line.style,
       line.message,
-      theme::BAR,
+      sgr(Role::Bar),
       " ".repeat(line.fill),
       line.right,
-      theme::RESET
+      sgr(Role::Reset)
     )?;
     Ok(())
   }
@@ -288,7 +297,7 @@ impl Bar<'_> {
       color,
       tabs: None,
       message: String::new(),
-      style: theme::BAR,
+      style: sgr(Role::Bar),
       section: false,
       fill: 0,
       right,
@@ -305,14 +314,14 @@ impl Bar<'_> {
     let section = self.document.section;
     let detail = detail.filter(|_| self.shows_detail());
     let (message, style) = match (self.error, section) {
-      (Some(error), _) => (error, theme::ERROR),
-      (None, _) if let Some(detail) = detail => (detail, theme::BAR),
-      (None, _) if covered => ("Enter open  :e file  q close", theme::BAR),
+      (Some(error), _) => (error, sgr(Role::Error)),
+      (None, _) if let Some(detail) = detail => (detail, sgr(Role::Bar)),
+      (None, _) if covered => ("Enter open  :e file  q close", sgr(Role::Bar)),
       (None, Some(title)) if self.view.reader.message.is_empty() => {
         line.section = true;
-        (title, theme::STATUS_SECTION)
+        (title, sgr(Role::StatusSection))
       }
-      (None, _) => (self.view.reader.message.as_str(), theme::BAR),
+      (None, _) => (self.view.reader.message.as_str(), sgr(Role::Bar)),
     };
     let tabs = self.names.fit(room, detail.map_or(0, UnicodeWidthStr::width));
     let room = room.saturating_sub(tabs.width);
@@ -416,8 +425,8 @@ mod tests {
     unmeasured.draw(&mut out)?;
     let want = format!(
       "\x1b7{}\x1b[10;1HTerminal rep{}\x1b8",
-      theme::ERROR,
-      theme::RESET
+      sgr(Role::Error),
+      sgr(Role::Reset)
     );
     assert_eq!(String::from_utf8(out)?, want);
     Ok(())
@@ -432,7 +441,8 @@ mod tests {
   #[test]
   fn filenames_keep_style_and_number() {
     let mut tabs = Names { file: "paper.pdf", names: &[], active: 0 };
-    let single = format!("{} 1:paper.pdf {} ", theme::STATUS_FILE, theme::BAR);
+    let single =
+      format!("{} 1:paper.pdf {} ", sgr(Role::StatusFile), sgr(Role::Bar));
     assert_eq!(tabs.fit(80, 0).pair(), (single.clone(), 14));
     let names = ["paper.pdf".into()];
     tabs.names = &names;
@@ -442,28 +452,29 @@ mod tests {
     for active in 0..2 {
       tabs.active = active;
       let styles = if active == 0 {
-        [theme::TAB_ACTIVE, theme::TAB_INACTIVE]
+        [sgr(Role::TabActive), sgr(Role::TabInactive)]
       } else {
-        [theme::TAB_INACTIVE, theme::TAB_ACTIVE]
+        [sgr(Role::TabInactive), sgr(Role::TabActive)]
       };
       let expected = format!(
         "{} 1:book.pdf {}{} 2:paper.pdf {} ",
         styles[0],
-        theme::BAR,
+        sgr(Role::Bar),
         styles[1],
-        theme::BAR
+        sgr(Role::Bar)
       );
       assert_eq!(tabs.fit(80, 0).pair(), (expected, 26));
     }
-    let narrow = format!("{} 2:paper.pdf {} ", theme::STATUS_FILE, theme::BAR);
+    let narrow =
+      format!("{} 2:paper.pdf {} ", sgr(Role::StatusFile), sgr(Role::Bar));
     assert_eq!(tabs.fit(14, 0).pair(), (narrow, 14));
     tabs.file = "論文.pdf";
     for room in 0..30 {
       let (tabs, width) = tabs.fit(room, 0).pair();
       let plain = tabs
-        .replace(theme::STATUS_FILE, "")
-        .replace(theme::TAB_INACTIVE, "")
-        .replace(theme::BAR, "");
+        .replace(sgr(Role::StatusFile), "")
+        .replace(sgr(Role::TabInactive), "")
+        .replace(sgr(Role::Bar), "");
       assert_eq!(width, plain.width(), "{room}");
       assert!(width <= room, "{room}");
     }

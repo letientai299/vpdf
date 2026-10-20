@@ -10,8 +10,10 @@ use std::io::Write;
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::{Heading, Target};
+use vpdf_model::style::Role;
 use vpdf_reader::reader::{Location, Reader};
 use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::style::sgr;
 
 const TICK: f32 = 3.0;
 type Run = (f32, f32, [u8; 4]);
@@ -307,8 +309,8 @@ impl Label {
       out,
       "{}{}{label}{}",
       self.frame.at.goto(row, column),
-      theme::BAR,
-      theme::RESET
+      sgr(Role::Bar),
+      sgr(Role::Reset)
     )?;
     let (cell_width, cell_height) =
       (f32::from(screen.cell_width), f32::from(screen.cell_height));

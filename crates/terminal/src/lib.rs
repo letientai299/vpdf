@@ -8,6 +8,7 @@ pub mod inline;
 pub mod input;
 pub mod payload;
 pub mod spool;
+pub mod style;
 pub mod terminal;
 pub mod tmux_observer;
 use vpdf_model::{cache, text};

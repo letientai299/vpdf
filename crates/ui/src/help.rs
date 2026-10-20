@@ -1,5 +1,7 @@
 use crate::panel::layout::{Layout, Line, wrap};
 use crate::panel::{Destination, Row, Style, key_width};
+use vpdf_model::style::Role;
+use vpdf_terminal::style::sgr;
 
 impl Layout {
   pub fn help(rows: &[Row], columns: usize) -> Self {
@@ -83,7 +85,7 @@ pub(crate) fn key_styles(
   style: Style,
 ) -> Vec<(usize, usize, &'static str)> {
   if style == Style::ModeKey {
-    return vec![(0, key.find(' ').unwrap_or(key.len()), crate::theme::MODE)];
+    return vec![(0, key.find(' ').unwrap_or(key.len()), sgr(Role::Mode))];
   }
   if style != Style::CommandKey {
     return Vec::new();
@@ -97,7 +99,7 @@ pub(crate) fn key_styles(
         if let Some((from, open)) = start.take()
           && matches!((open, ch), ('<', '>') | ('[', ']'))
         {
-          spans.push((from, index + 1, crate::theme::ARGUMENT));
+          spans.push((from, index + 1, sgr(Role::Argument)));
         }
       }
       _ => {}
@@ -152,12 +154,12 @@ mod tests {
     let layout = Layout::help(&rows, 48);
     for (index, line) in layout.lines.iter().enumerate() {
       let mut out = Vec::new();
-      line.row.write(&mut out, crate::theme::RESET, 48, line.keys, "")?;
+      line.row.write(&mut out, sgr(Role::Reset), 48, line.keys, "")?;
       let out = String::from_utf8(out)?;
-      assert_eq!(out.contains(crate::theme::MODE), index < 2);
+      assert_eq!(out.contains(sgr(Role::Mode)), index < 2);
       if index == 1 {
-        assert!(out.contains(&format!("{}C/V", crate::theme::MODE)));
-        assert!(out.contains(&format!("{} h j", crate::theme::KEY)));
+        assert!(out.contains(&format!("{}C/V", sgr(Role::Mode))));
+        assert!(out.contains(&format!("{} h j", sgr(Role::Key))));
       }
     }
     Ok(())
@@ -175,17 +177,17 @@ mod tests {
     let layout = Layout::help(&rows, 48);
     for (index, line) in layout.lines.iter().enumerate() {
       let mut out = Vec::new();
-      line.row.write(&mut out, crate::theme::RESET, 48, line.keys, "")?;
+      line.row.write(&mut out, sgr(Role::Reset), 48, line.keys, "")?;
       let out = String::from_utf8(out)?;
-      assert_eq!(out.contains(crate::theme::ARGUMENT), index < 2);
+      assert_eq!(out.contains(sgr(Role::Argument)), index < 2);
     }
     assert_eq!(
       key_styles(":edit <file>", Style::CommandKey),
-      [(6, 12, crate::theme::ARGUMENT)]
+      [(6, 12, sgr(Role::Argument))]
     );
     assert_eq!(
       key_styles(":split [file]", Style::CommandKey),
-      [(7, 13, crate::theme::ARGUMENT)]
+      [(7, 13, sgr(Role::Argument))]
     );
     Ok(())
   }

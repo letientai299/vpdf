@@ -3,11 +3,12 @@
 
 use crate::Result;
 use vpdf_model::cache::Cache;
+use vpdf_model::style::Role;
+use vpdf_terminal::style::sgr;
 const MIB: usize = 1 << 20;
 use crate::layout::Screen;
 use crate::panel::{self, Destination, Panel, Pointing, Row};
 use crate::text::Bounds;
-use crate::theme;
 use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
@@ -226,7 +227,7 @@ impl Shelf {
     let rows = usize::from(screen.rows.saturating_sub(1));
     for row in 0..rows {
       let border = at.goto(row, column + columns - 1);
-      write!(out, "{border}{}│{}", theme::MUTED, theme::RESET)?;
+      write!(out, "{border}{}│{}", sgr(Role::Muted), sgr(Role::Reset))?;
     }
     // One column of margin on each side of the text.
     let inner = usize::from(columns).saturating_sub(3);
@@ -238,9 +239,9 @@ impl Shelf {
       out,
       "{}{}{}{}",
       at.goto(0u16, column + 1),
-      theme::FILE,
+      sgr(Role::File),
       terminal::clean(&name, inner),
-      theme::RESET
+      sgr(Role::Reset)
     )?;
     let picture =
       if graphics.is_some() { rows.saturating_sub(1) / 2 } else { 0 };
@@ -282,14 +283,14 @@ impl Shelf {
     self.top = self.top.min(self.last_top);
     let shown = lines.iter().zip(&texts).skip(self.top).take(room);
     for (row, (line, text)) in (top..).zip(shown) {
-      write!(out, "{}{}", at.goto(row, column + 1), theme::RESET)?;
-      let used = line.write(out, theme::RESET, inner, keys, "")?;
+      write!(out, "{}{}", at.goto(row, column + 1), sgr(Role::Reset))?;
+      let used = line.write(out, sgr(Role::Reset), inner, keys, "")?;
       let full = line.write(&mut std::io::sink(), "", usize::MAX, keys, "")?;
       if full > used {
         self.clipped.push((u16::try_from(row)?, text.clone()));
       }
     }
-    write!(out, "{}", theme::RESET)?;
+    write!(out, "{}", sgr(Role::Reset))?;
     Ok(())
   }
 

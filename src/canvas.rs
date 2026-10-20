@@ -4,8 +4,10 @@ use crate::Result;
 use crate::app::App;
 use crate::pdf_text::PdfText;
 use std::io::Write;
+use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal;
 use vpdf_ui::layout::Screen;
 use vpdf_ui::panel::Pointing;
@@ -131,7 +133,7 @@ impl App {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
-    write!(out, "{}{}", terminal::frame_start(), vpdf_ui::theme::RESET)?;
+    write!(out, "{}{}", terminal::frame_start(), sgr(Role::Reset))?;
     graphics.begin(out)?;
     self.draw_pane(graphics, out)?;
     graphics.end(out)?;

@@ -1,8 +1,10 @@
 use super::*;
+use vpdf_model::style::Role;
+use vpdf_terminal::style::sgr;
 
 #[test]
 fn hover_skips_indentation() -> Result<()> {
-  for style in [theme::HOVER, theme::HOVER_DIM] {
+  for style in [sgr(Role::Hover), sgr(Role::HoverDim)] {
     let row = Row::parse("  Chapter");
     let mut out = Vec::new();
     assert_eq!(row.write(&mut out, style, 40, 0, "")?, 9);
@@ -124,7 +126,7 @@ fn paths_keep_the_file_name() -> Result<()> {
     (5, "deep."),
   ] {
     let mut out = Vec::new();
-    let width = row.write(&mut out, theme::RESET, room, 0, "")?;
+    let width = row.write(&mut out, sgr(Role::Reset), room, 0, "")?;
     let out = String::from_utf8(out)?;
     let text: String = out
       .split('\x1b')
@@ -132,7 +134,7 @@ fn paths_keep_the_file_name() -> Result<()> {
       .collect();
     assert_eq!(text, want, "{room}");
     assert_eq!(width, want.width(), "{room}");
-    assert!(out.contains(&format!("{}deep", theme::FILE)), "{room}");
+    assert!(out.contains(&format!("{}deep", sgr(Role::File))), "{room}");
   }
   Ok(())
 }

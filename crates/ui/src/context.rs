@@ -11,10 +11,12 @@ use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::Target;
 use vpdf_model::geometry::Screen;
+use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::{Reader, SelectionKind};
 use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::style::sgr;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Transition {
@@ -276,14 +278,14 @@ impl<C> ContextMenu<C> {
     for (index, item) in self.items.iter().enumerate() {
       let row = top + u16::try_from(index).unwrap_or(0);
       let label = format!("{:<keys$}  {}", item.key, item.label);
-      write!(out, "{}{}", frame.at.goto(row, left), theme::BAR)?;
+      write!(out, "{}{}", frame.at.goto(row, left), sgr(Role::Bar))?;
       let shown = if index == selected {
         crate::grid::Shown::Chosen
       } else {
         crate::grid::Shown::Plain
       };
       crate::grid::cell(out, &label, width, keys, shown)?;
-      write!(out, "{}", theme::RESET)?;
+      write!(out, "{}", sgr(Role::Reset))?;
     }
     let Some(area) =
       self.pixel_area(frame.screen, frame.left).filter(|_| !frame.text)

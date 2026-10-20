@@ -8,8 +8,10 @@ use crate::theme;
 use std::io::Write;
 use std::ops::Range;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_reader::motion::Motion;
+use vpdf_terminal::style::sgr;
 use vpdf_terminal::{graphics::Graphics, terminal};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -294,9 +296,9 @@ impl Canvas<'_> {
       out,
       "{}{}{}{}",
       self.frame.at.goto(row, usize::from(self.frame.left)),
-      theme::SELECTED,
+      sgr(Role::Selected),
       text,
-      theme::RESET
+      sgr(Role::Reset)
     )?;
     Ok(())
   }

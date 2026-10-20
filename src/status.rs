@@ -144,10 +144,11 @@ impl App {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use vpdf_model::style::Role;
+  use vpdf_terminal::style::sgr;
   use vpdf_ui::layout::Screen;
 
   use std::path::PathBuf;
-  use vpdf_ui::theme;
   fn app() -> Result<App> {
     open("paper.pdf", true)
   }
@@ -181,8 +182,9 @@ mod tests {
     let mut out = Vec::new();
     app.status(&mut out, 23)?;
     let out = String::from_utf8(out)?;
-    assert!(out.contains(&format!("{} 1:paper.pdf ", theme::STATUS_FILE)));
-    let section = format!("{}{title}{}", theme::STATUS_SECTION, theme::BAR);
+    assert!(out.contains(&format!("{} 1:paper.pdf ", sgr(Role::StatusFile))));
+    let section =
+      format!("{}{title}{}", sgr(Role::StatusSection), sgr(Role::Bar));
     assert!(out.contains(&section));
     Ok(())
   }

@@ -3,9 +3,11 @@
 
 use crate::Result;
 use crate::layout::Screen;
-use crate::theme::{self, Color};
+use crate::theme::Color;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::style::Role;
+use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal::{self, At};
 
 /// Placement of labels in columns; the labels stay with the caller.
@@ -86,13 +88,13 @@ pub fn cell(
   let text = terminal::clean(label, width.saturating_sub(2));
   let pad = " ".repeat(width.saturating_sub(1 + text.width()));
   if shown == Shown::Chosen {
-    let badge = theme::badge(Color::Blue);
-    write!(out, "{badge} {text}{pad}{}", theme::BAR)?;
+    let badge = sgr(Role::Badge(Color::Blue)).to_owned();
+    write!(out, "{badge} {text}{pad}{}", sgr(Role::Bar))?;
   } else if shown == Shown::Pointed {
-    write!(out, " {}{text}{}{pad}", theme::BAR_HOVER, theme::BAR)?;
+    write!(out, " {}{text}{}{pad}", sgr(Role::BarHover), sgr(Role::Bar))?;
   } else if keys > 0 && text.len() >= keys && text.is_char_boundary(keys) {
     let (key, rest) = text.split_at(keys);
-    write!(out, " {}{key}{}{rest}{pad}", theme::KEY, theme::BAR)?;
+    write!(out, " {}{key}{}{rest}{pad}", sgr(Role::Key), sgr(Role::Bar))?;
   } else {
     write!(out, " {text}{pad}")?;
   }
@@ -114,7 +116,7 @@ pub fn draw(
   let top = usize::from(bottom) + 1 - grid.visible;
   for line in 0..grid.visible {
     let row = grid.first + line;
-    write!(out, "{}{}", at.goto(top + line, 0u16), theme::BAR)?;
+    write!(out, "{}{}", at.goto(top + line, 0u16), sgr(Role::Bar))?;
     let mut used = 0;
     for column in 0..grid.columns {
       let index = column * grid.rows + row;
@@ -130,7 +132,7 @@ pub fn draw(
       used += grid.width;
     }
     let fill = " ".repeat(columns.saturating_sub(used));
-    write!(out, "{fill}{}", theme::RESET)?;
+    write!(out, "{fill}{}", sgr(Role::Reset))?;
   }
   Ok(())
 }

@@ -12,10 +12,12 @@ use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::{Annotation, Target};
+use vpdf_model::style::Role;
 use vpdf_model::tile::TileKey;
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::TextSource;
 use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::style::sgr;
 
 const HEIGHT: f32 = 0.4;
 const ABOVE: f32 = 6.0;
@@ -500,14 +502,16 @@ impl Preview {
       .map_or_default(|link| bridge(&input, frame, link));
     self.placement =
       Some(Placement { area: frame, bridge, view: input.identity });
-    let border = if over_page { theme::PREVIEW_BORDER } else { theme::CURRENT };
-    let text_style = if over_page { theme::PREVIEW_TEXT } else { theme::RESET };
+    let border =
+      if over_page { sgr(Role::PreviewBorder) } else { sgr(Role::Current) };
+    let text_style =
+      if over_page { sgr(Role::PreviewText) } else { sgr(Role::Reset) };
     write!(
       out,
       "{}{}╭{label}{rule}╮{}",
       input.pane.at.goto(top, column),
       border,
-      theme::RESET
+      sgr(Role::Reset)
     )?;
     match &self.view {
       View::Image { key, rgb } => {
@@ -517,7 +521,7 @@ impl Preview {
             out,
             "{}{border}│{pad}│{}",
             input.pane.at.goto(row, column),
-            theme::RESET
+            sgr(Role::Reset)
           )?;
         }
         let x = (column + 1 - usize::from(input.pane.left)) as f32
@@ -562,7 +566,7 @@ impl Preview {
       "{}{}╰{marker}{rule}╯{}",
       input.pane.at.goto(top + rows + 1, column),
       border,
-      theme::RESET
+      sgr(Role::Reset)
     )?;
     Ok(())
   }

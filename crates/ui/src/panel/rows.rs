@@ -1,7 +1,9 @@
 use super::{
   Destination, Result, Row, Style, UnicodeWidthChar, UnicodeWidthStr, Write,
-  terminal, theme,
+  terminal,
 };
+use vpdf_model::style::Role;
+use vpdf_terminal::style::sgr;
 
 impl Row {
   pub fn new(label: String, detail: String, destination: Destination) -> Self {
@@ -46,8 +48,9 @@ impl Row {
     keys: usize,
     query: &str,
   ) -> Result<usize> {
-    let plain = [theme::RESET, theme::DIM, theme::HOVER, theme::HOVER_DIM]
-      .contains(&base);
+    let plain =
+      [sgr(Role::Reset), sgr(Role::Dim), sgr(Role::Hover), sgr(Role::HoverDim)]
+        .contains(&base);
     match (self.style, self.label.split_once(": ")) {
       (Style::Key | Style::ModeKey | Style::CommandKey, Some((key, text))) => {
         let key = terminal::clean(key, room);
@@ -55,7 +58,7 @@ impl Row {
           .min(room.saturating_sub(key.width()));
         let text =
           terminal::clean(text, room.saturating_sub(key.width() + pad));
-        let style = if plain { theme::KEY } else { "" };
+        let style = if plain { sgr(Role::Key) } else { "" };
         let mut written = 0;
         for (start, end, token) in crate::help::key_styles(&key, self.style) {
           marked(out, &key[written..start], query, &format!("{base}{style}"))?;
@@ -73,21 +76,21 @@ impl Row {
         // The name keeps its room; the parent loses its left end first.
         let name = terminal::clean(name, room);
         let parent = tail(parent, room.saturating_sub(name.width()));
-        let muted = if plain { theme::MUTED } else { "" };
+        let muted = if plain { sgr(Role::Muted) } else { "" };
         marked(out, &parent, query, &format!("{base}{muted}"))?;
-        marked(out, &name, query, &format!("{base}{}", theme::FILE))?;
+        marked(out, &name, query, &format!("{base}{}", sgr(Role::File)))?;
         write!(out, "{base}")?;
         Ok(parent.width() + name.width())
       }
       (Style::Muted, _) => {
         let text = terminal::clean(&self.label, room);
-        let muted = if plain { theme::MUTED } else { "" };
+        let muted = if plain { sgr(Role::Muted) } else { "" };
         marked(out, &text, query, &format!("{base}{muted}"))?;
         Ok(text.width())
       }
       (Style::Heading, _) => {
         let text = terminal::clean(&self.label, room);
-        marked(out, &text, query, &format!("{base}{}", theme::HEADING))?;
+        marked(out, &text, query, &format!("{base}{}", sgr(Role::Heading)))?;
         write!(out, "{base}")?;
         Ok(text.width())
       }
@@ -127,22 +130,23 @@ fn marked(
   style: &str,
 ) -> Result<()> {
   write!(out, "{style}")?;
-  let text =
-    if style.starts_with(theme::HOVER) || style.starts_with(theme::HOVER_DIM) {
-      let title = text.trim_start_matches(' ');
-      let indent = &text[..text.len() - title.len()];
-      write!(out, "\x1b[24m{indent}{style}")?;
-      title
-    } else {
-      text
-    };
+  let text = if style.starts_with(sgr(Role::Hover))
+    || style.starts_with(sgr(Role::HoverDim))
+  {
+    let title = text.trim_start_matches(' ');
+    let indent = &text[..text.len() - title.len()];
+    write!(out, "\x1b[24m{indent}{style}")?;
+    title
+  } else {
+    text
+  };
   let mut written = 0;
   for (start, end) in crate::panel::search::ranges(text, query) {
     write!(
       out,
       "{}{}{}{style}",
       &text[written..start],
-      theme::TEXT_MATCH,
+      sgr(Role::TextMatch),
       &text[start..end]
     )?;
     written = end;

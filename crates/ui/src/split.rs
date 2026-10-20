@@ -1,7 +1,9 @@
 //! Window splits within a tab, as a binary tree like Vim's layout.
 
-use crate::{Result, theme};
+use crate::Result;
 use std::io::Write;
+use vpdf_model::style::Role;
+use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal::At;
 
 /// `Rows` stacks panes (`Ctrl-w s`); `Columns` sets them side by side
@@ -91,7 +93,7 @@ impl Node {
       let at = At { column: rect.column, row: rect.row };
       for row in 0..rect.rows {
         let goto = at.goto(row, 0u16);
-        write!(out, "{goto}{}│{}", theme::MUTED, theme::RESET)?;
+        write!(out, "{goto}{}│{}", sgr(Role::Muted), sgr(Role::Reset))?;
       }
     }
     Ok(())
@@ -635,7 +637,9 @@ mod tests {
     let mut out = Vec::new();
     tree.draw_dividers(&mut out, area)?;
     let want = [7, 8, 9, 10]
-      .map(|row| format!("\x1b[{row};14H{}│{}", theme::MUTED, theme::RESET))
+      .map(|row| {
+        format!("\x1b[{row};14H{}│{}", sgr(Role::Muted), sgr(Role::Reset))
+      })
       .concat();
     assert_eq!(String::from_utf8(out)?, want);
     let mut out = Vec::new();

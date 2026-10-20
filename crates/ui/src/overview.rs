@@ -8,9 +8,11 @@ use crate::text::{Bounds, PageId};
 use crate::theme;
 use crossterm::event::{MouseButton, MouseEventKind};
 use std::io::Write;
+use vpdf_model::style::Role;
 use vpdf_model::tile::{TileKey, cover};
 use vpdf_reader::motion::Motion;
 use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal;
 
 /// Thumbnails per row aim for this width in pixels.
@@ -364,15 +366,15 @@ impl Frame {
     let column = (x / f32::from(screen.cell_width)) as usize
       + (columns.saturating_sub(label.len())) / 2;
     let style = if selected {
-      theme::badge(theme::Color::Blue)
+      sgr(Role::Badge(theme::Color::Blue)).to_owned()
     } else {
-      theme::MUTED.to_owned()
+      sgr(Role::Muted).to_owned()
     };
     write!(
       out,
       "{}{style}{label}{}",
       self.at.goto(row, usize::from(self.left) + column),
-      theme::RESET
+      sgr(Role::Reset)
     )?;
     Ok(())
   }

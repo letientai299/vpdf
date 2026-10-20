@@ -1,12 +1,13 @@
 use crate::Result;
 use crate::paint::Marks;
 use crate::text::{Bounds, Glyph, Line, PageId, Position, Text};
-use crate::theme;
 use std::io::Write;
 use std::sync::Arc;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use vpdf_model::geometry::Screen;
+use vpdf_model::style::Role;
 use vpdf_reader::reader::{SelectionKind, TextSource};
+use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal::At;
 
 /// Pending and drawn origins can differ.
@@ -439,7 +440,7 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
         }
       };
       let band = paint.line_style(at);
-      if band != theme::RESET {
+      if band != sgr(Role::Reset) {
         write!(
           out,
           "{}{}{}",
@@ -470,8 +471,11 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
           bounds.contains(x, y)
         });
         let style = paint.text_style(pos, linked);
-        let style =
-          if style == theme::RESET && paint.dim { theme::DIM } else { style };
+        let style = if style == sgr(Role::Reset) && paint.dim {
+          sgr(Role::Dim)
+        } else {
+          style
+        };
         if style != current {
           write!(out, "{style}")?;
           current = style;
@@ -492,7 +496,7 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
     paint: &Marks<'_>,
   ) -> Result<()> {
     let style =
-      if paint.selects(at) { theme::TEXT_SELECTION } else { theme::DIM };
+      if paint.selects(at) { sgr(Role::TextSelection) } else { sgr(Role::Dim) };
     let label = self.source.label(PageId(at.page.0 + 1));
     let head = vpdf_terminal::terminal::clean(&format!("── {label} "), columns);
     let fill = columns.saturating_sub(head.width());
@@ -624,16 +628,16 @@ impl Marks<'_> {
   fn text_style(&self, position: Position, linked: bool) -> &'static str {
     let flashed = self.flash == Some(position);
     if flashed || self.reader.uses_cursor() && position == self.reader.cursor {
-      return theme::TEXT_CURSOR;
+      return sgr(Role::TextCursor);
     }
     if self.selects(position) {
-      return theme::TEXT_SELECTION;
+      return sgr(Role::TextSelection);
     }
     if vpdf_search::search::contains(self.matches, position) {
-      return theme::TEXT_MATCH;
+      return sgr(Role::TextMatch);
     }
     if linked {
-      return theme::TEXT_LINK;
+      return sgr(Role::TextLink);
     }
     self.line_style(position)
   }
@@ -652,12 +656,12 @@ impl Marks<'_> {
     if self.landing.as_ref().is_some_and(|landing| {
       position.page == landing.page && position.line == landing.line
     }) {
-      return theme::TEXT_LANDING;
+      return sgr(Role::TextLanding);
     }
     if self.on_cursorline(position) {
-      return theme::TEXT_CURSORLINE;
+      return sgr(Role::TextCursorline);
     }
-    theme::RESET
+    sgr(Role::Reset)
   }
 
   fn on_cursorline(&self, position: Position) -> bool {

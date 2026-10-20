@@ -5,13 +5,15 @@
 //! Ctrl-arrows that stop at punctuation, history search on Ctrl-r, and
 //! `edit-command-line` on Ctrl-x Ctrl-e.
 
+use crate::Result;
 use crate::grid::{self, Grid};
 use crate::layout::Screen;
 use crate::line::{self, NARROW, SHELL};
-use crate::{Result, theme};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::style::Role;
+use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal::{self, At};
 
 const LIMIT: usize = 4096;
@@ -166,7 +168,7 @@ impl Prompt {
     )?;
     let ghost = terminal::clean(ghost, room);
     let pad = " ".repeat(room.saturating_sub(ghost.width()));
-    write!(out, "{}{ghost}{}{pad}", theme::MUTED, theme::RESET)?;
+    write!(out, "{}{ghost}{}{pad}", sgr(Role::Muted), sgr(Role::Reset))?;
     let column = column.min(usize::from(screen.columns) - 1);
     write!(out, "{}\x1b[2 q\x1b[?25h", at.goto(row, column))?;
     Ok(())

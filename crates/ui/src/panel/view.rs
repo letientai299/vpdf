@@ -2,8 +2,10 @@ use super::{
   Action, Color, Destination, Graphics, Input, Layout, MIN_WIDTH, Motion,
   MouseButton, MouseEvent, MouseEventKind, Panel, PanelKind, Pointing, Result,
   Row, RowSearch, Screen, Target, UnicodeWidthStr, WHEEL_ROWS, Wheel, Write,
-  key_width, moved_row, screen_step, terminal, theme,
+  key_width, moved_row, screen_step, terminal,
 };
+use vpdf_model::style::Role;
+use vpdf_terminal::style::sgr;
 
 /// Reader geometry beside or behind a panel.
 pub fn page_space(
@@ -433,7 +435,7 @@ impl Panel {
     let inner = usize::from(width.saturating_sub(1));
     for row in 1..height {
       let border = at.goto(row - 1, width - 1);
-      write!(out, "{border}{}│{}", theme::MUTED, theme::RESET)?;
+      write!(out, "{border}{}│{}", sgr(Role::Muted), sgr(Role::Reset))?;
     }
     let title = format!(" {} ", self.kind.title());
     let count = format!(" {} {}", self.rows.len(), self.note);
@@ -441,11 +443,11 @@ impl Panel {
       out,
       "{}{}{}{}{}{}",
       at.goto(0u16, 0u16),
-      theme::badge(Color::Cyan),
+      sgr(Role::Badge(Color::Cyan)).to_owned(),
       terminal::clean(&title, inner),
-      theme::MUTED,
+      sgr(Role::Muted),
       terminal::clean(&count, inner.saturating_sub(title.width())),
-      theme::RESET
+      sgr(Role::Reset)
     )?;
     self.reflow(inner);
     let keys = key_width(&self.rows, inner);
@@ -465,14 +467,14 @@ impl Panel {
       let hovered = self.pointing.row() == Some(source);
       let selected = source == self.selected;
       let plain = match (selected, self.focused) {
-        (true, true) => theme::SELECTED,
-        (true, false) => theme::CURRENT,
-        (false, true) => theme::RESET,
-        (false, false) => theme::DIM,
+        (true, true) => sgr(Role::Selected),
+        (true, false) => sgr(Role::Current),
+        (false, true) => sgr(Role::Reset),
+        (false, false) => sgr(Role::Dim),
       };
       let base = match (hovered && !selected, self.focused) {
-        (true, true) => theme::HOVER,
-        (true, false) => theme::HOVER_DIM,
+        (true, true) => sgr(Role::Hover),
+        (true, false) => sgr(Role::HoverDim),
         (false, _) => plain,
       };
       write!(out, "{}{base}", at.goto(row + 1, 0u16))?;
@@ -500,8 +502,8 @@ impl Panel {
         out,
         "{plain}{}{}{detail}{}",
         " ".repeat(inner.saturating_sub(used + detail.width())),
-        if plain == theme::RESET { theme::MUTED } else { "" },
-        theme::RESET
+        if plain == sgr(Role::Reset) { sgr(Role::Muted) } else { "" },
+        sgr(Role::Reset)
       )?;
     }
     Ok(())

@@ -1,7 +1,8 @@
 use crate::Result;
 use crate::layout::Screen;
-use crate::theme;
 use std::io::Write;
+use vpdf_model::style::Role;
+use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal::{self, At};
 
 const CELLS: usize = 4;
@@ -60,7 +61,7 @@ impl Overlay {
     if !force && lines == self.painted {
       return Ok(false);
     }
-    write!(out, "\x1b7{}", theme::BAR)?;
+    write!(out, "\x1b7{}", sgr(Role::Bar))?;
     let top = 0;
     for (row, line) in lines.iter().enumerate() {
       terminal::line(
@@ -71,7 +72,7 @@ impl Overlay {
         screen.columns,
       )?;
     }
-    write!(out, "{}\x1b8", theme::RESET)?;
+    write!(out, "{}\x1b8", sgr(Role::Reset))?;
     self.painted = lines;
     Ok(true)
   }

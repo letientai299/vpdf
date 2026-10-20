@@ -6,7 +6,7 @@ use crate::panel::layout::Layout;
 use crate::panel::search::RowSearch;
 use crate::pointer::{WHEEL_ROWS, Wheel};
 use crate::text::Position;
-use crate::theme::{self, Color};
+use crate::theme::Color;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use std::io::Write;
 use std::path::PathBuf;

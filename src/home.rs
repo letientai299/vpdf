@@ -4,8 +4,10 @@ use crate::recent::Loader;
 use crate::state::Entry;
 use std::io::Write;
 use std::path::PathBuf;
+use vpdf_model::style::Role;
 use vpdf_terminal::decode::Event;
 use vpdf_terminal::graphics::Graphics;
+use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal;
 use vpdf_ui::commands::{self, Id, View};
 use vpdf_ui::home::Effect;
@@ -43,7 +45,7 @@ impl Home {
   }
 
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
-    write!(out, "{}{}", terminal::frame_start(), vpdf_ui::theme::RESET)?;
+    write!(out, "{}{}", terminal::frame_start(), sgr(Role::Reset))?;
     self.updates();
     self.graphics.begin(out)?;
     self.view.draw(out, &mut self.graphics, crate::state::now(), |cards| {
