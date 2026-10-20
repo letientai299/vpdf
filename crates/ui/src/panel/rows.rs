@@ -2,8 +2,8 @@ use super::{
   Destination, Result, Row, Style, UnicodeWidthChar, UnicodeWidthStr, Write,
   terminal,
 };
+use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
-use vpdf_terminal::style::sgr;
 
 impl Row {
   pub fn new(label: String, detail: String, destination: Destination) -> Self {
@@ -43,14 +43,29 @@ impl Row {
   pub fn write(
     &self,
     out: &mut impl Write,
-    base: &str,
+    base: Option<Role>,
     room: usize,
     keys: usize,
     query: &str,
   ) -> Result<usize> {
-    let plain =
-      [sgr(Role::Reset), sgr(Role::Dim), sgr(Role::Hover), sgr(Role::HoverDim)]
-        .contains(&base);
+    let mut painter = vpdf_terminal::painter::Painter::new(out);
+    let width = self.scene(&mut painter, base, room, keys, query);
+    painter.finish()?;
+    Ok(width)
+  }
+
+  pub fn scene<'a>(
+    &self,
+    scene: &mut impl Draw<'a>,
+    base: Option<Role>,
+    room: usize,
+    keys: usize,
+    query: &str,
+  ) -> usize {
+    let plain = matches!(
+      base,
+      Some(Role::Reset | Role::Dim | Role::Hover | Role::HoverDim)
+    );
     match (self.style, self.label.split_once(": ")) {
       (Style::Key | Style::ModeKey | Style::CommandKey, Some((key, text))) => {
         let key = terminal::clean(key, room);
@@ -58,46 +73,45 @@ impl Row {
           .min(room.saturating_sub(key.width()));
         let text =
           terminal::clean(text, room.saturating_sub(key.width() + pad));
-        let style = if plain { sgr(Role::Key) } else { "" };
+        let style = plain.then_some(Role::Key);
         let mut written = 0;
         for (start, end, token) in crate::help::key_styles(&key, self.style) {
-          marked(out, &key[written..start], query, &format!("{base}{style}"))?;
-          marked(out, &key[start..end], query, &format!("{base}{token}"))?;
+          marked(scene, &key[written..start], query, base, style);
+          marked(scene, &key[start..end], query, base, Some(token));
           written = end;
         }
-        marked(out, &key[written..], query, &format!("{base}{style}"))?;
-        write!(out, "{base}{}", " ".repeat(pad))?;
-        marked(out, &text, query, base)?;
-        Ok(key.width() + pad + text.width())
+        marked(scene, &key[written..], query, base, style);
+        styles(scene, base, None);
+        scene.push(Op::Spaces(pad));
+        marked(scene, &text, query, base, None);
+        key.width() + pad + text.width()
       }
       (Style::Path, _) => {
         let split = self.label.rfind('/').map_or(0, |slash| slash + 1);
         let (parent, name) = self.label.split_at(split);
-        // The name keeps its room; the parent loses its left end first.
         let name = terminal::clean(name, room);
         let parent = tail(parent, room.saturating_sub(name.width()));
-        let muted = if plain { sgr(Role::Muted) } else { "" };
-        marked(out, &parent, query, &format!("{base}{muted}"))?;
-        marked(out, &name, query, &format!("{base}{}", sgr(Role::File)))?;
-        write!(out, "{base}")?;
-        Ok(parent.width() + name.width())
+        let muted = plain.then_some(Role::Muted);
+        marked(scene, &parent, query, base, muted);
+        marked(scene, &name, query, base, Some(Role::File));
+        styles(scene, base, None);
+        parent.width() + name.width()
       }
       (Style::Muted, _) => {
         let text = terminal::clean(&self.label, room);
-        let muted = if plain { sgr(Role::Muted) } else { "" };
-        marked(out, &text, query, &format!("{base}{muted}"))?;
-        Ok(text.width())
+        marked(scene, &text, query, base, plain.then_some(Role::Muted));
+        text.width()
       }
       (Style::Heading, _) => {
         let text = terminal::clean(&self.label, room);
-        marked(out, &text, query, &format!("{base}{}", sgr(Role::Heading)))?;
-        write!(out, "{base}")?;
-        Ok(text.width())
+        marked(scene, &text, query, base, Some(Role::Heading));
+        styles(scene, base, None);
+        text.width()
       }
       _ => {
         let text = terminal::clean(&self.label, room);
-        marked(out, &text, query, base)?;
-        Ok(text.width())
+        marked(scene, &text, query, base, None);
+        text.width()
       }
     }
   }
@@ -122,35 +136,41 @@ fn tail(text: &str, columns: usize) -> String {
   std::iter::once('…').chain(kept.into_iter().rev()).collect()
 }
 
-/// Writes `text` in `style` with query matches highlighted.
-fn marked(
-  out: &mut impl Write,
+fn styles<'a>(
+  scene: &mut impl Draw<'a>,
+  base: Option<Role>,
+  accent: Option<Role>,
+) {
+  for role in base.into_iter().chain(accent) {
+    scene.push(Op::Style(role));
+  }
+}
+
+fn marked<'a>(
+  scene: &mut impl Draw<'a>,
   text: &str,
   query: &str,
-  style: &str,
-) -> Result<()> {
-  write!(out, "{style}")?;
-  let text = if style.starts_with(sgr(Role::Hover))
-    || style.starts_with(sgr(Role::HoverDim))
-  {
+  base: Option<Role>,
+  accent: Option<Role>,
+) {
+  styles(scene, base, accent);
+  let text = if matches!(base, Some(Role::Hover | Role::HoverDim)) {
     let title = text.trim_start_matches(' ');
     let indent = &text[..text.len() - title.len()];
-    write!(out, "\x1b[24m{indent}{style}")?;
+    scene.push(Op::UnderlineOff);
+    scene.text(indent);
+    styles(scene, base, accent);
     title
   } else {
     text
   };
   let mut written = 0;
   for (start, end) in crate::panel::search::ranges(text, query) {
-    write!(
-      out,
-      "{}{}{}{style}",
-      &text[written..start],
-      sgr(Role::TextMatch),
-      &text[start..end]
-    )?;
+    scene.text(&text[written..start]);
+    scene.push(Op::Style(Role::TextMatch));
+    scene.text(&text[start..end]);
+    styles(scene, base, accent);
     written = end;
   }
-  write!(out, "{}", &text[written..])?;
-  Ok(())
+  scene.text(&text[written..]);
 }

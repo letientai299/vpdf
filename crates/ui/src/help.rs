@@ -1,7 +1,6 @@
 use crate::panel::layout::{Layout, Line, wrap};
 use crate::panel::{Destination, Row, Style, key_width};
 use vpdf_model::style::Role;
-use vpdf_terminal::style::sgr;
 
 impl Layout {
   pub fn help(rows: &[Row], columns: usize) -> Self {
@@ -80,12 +79,9 @@ impl Layout {
   }
 }
 
-pub(crate) fn key_styles(
-  key: &str,
-  style: Style,
-) -> Vec<(usize, usize, &'static str)> {
+pub(crate) fn key_styles(key: &str, style: Style) -> Vec<(usize, usize, Role)> {
   if style == Style::ModeKey {
-    return vec![(0, key.find(' ').unwrap_or(key.len()), sgr(Role::Mode))];
+    return vec![(0, key.find(' ').unwrap_or(key.len()), Role::Mode)];
   }
   if style != Style::CommandKey {
     return Vec::new();
@@ -99,7 +95,7 @@ pub(crate) fn key_styles(
         if let Some((from, open)) = start.take()
           && matches!((open, ch), ('<', '>') | ('[', ']'))
         {
-          spans.push((from, index + 1, sgr(Role::Argument)));
+          spans.push((from, index + 1, Role::Argument));
         }
       }
       _ => {}
@@ -112,6 +108,7 @@ pub(crate) fn key_styles(
 mod tests {
   use super::*;
   use unicode_width::UnicodeWidthStr;
+  use vpdf_terminal::style::sgr;
 
   #[test]
   fn sections_align_independently() {
@@ -154,7 +151,7 @@ mod tests {
     let layout = Layout::help(&rows, 48);
     for (index, line) in layout.lines.iter().enumerate() {
       let mut out = Vec::new();
-      line.row.write(&mut out, sgr(Role::Reset), 48, line.keys, "")?;
+      line.row.write(&mut out, Some(Role::Reset), 48, line.keys, "")?;
       let out = String::from_utf8(out)?;
       assert_eq!(out.contains(sgr(Role::Mode)), index < 2);
       if index == 1 {
@@ -177,17 +174,17 @@ mod tests {
     let layout = Layout::help(&rows, 48);
     for (index, line) in layout.lines.iter().enumerate() {
       let mut out = Vec::new();
-      line.row.write(&mut out, sgr(Role::Reset), 48, line.keys, "")?;
+      line.row.write(&mut out, Some(Role::Reset), 48, line.keys, "")?;
       let out = String::from_utf8(out)?;
       assert_eq!(out.contains(sgr(Role::Argument)), index < 2);
     }
     assert_eq!(
       key_styles(":edit <file>", Style::CommandKey),
-      [(6, 12, sgr(Role::Argument))]
+      [(6, 12, Role::Argument)]
     );
     assert_eq!(
       key_styles(":split [file]", Style::CommandKey),
-      [(7, 13, sgr(Role::Argument))]
+      [(7, 13, Role::Argument)]
     );
     Ok(())
   }

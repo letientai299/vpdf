@@ -53,6 +53,7 @@ pub fn canvas() -> Result<()> {
     state.bind(&prepared, Frame { screen, at: At::default(), left: 0 });
   let mut out = Vec::new();
   pane.draw(&mut out, &paint)?;
+  println!("text output {}", super::hash::digest(&out));
   super::measure("TextView::draw", || {
     out.clear();
     pane.draw(&mut out, &paint).expect("prepared page text");

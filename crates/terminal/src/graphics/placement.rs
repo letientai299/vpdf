@@ -216,13 +216,8 @@ impl Graphics {
 }
 
 pub(super) fn clip(rect: Bounds, screen: Screen) -> Option<Bounds> {
-  let clipped = Bounds {
-    x0: rect.x0.max(0.0).floor(),
-    y0: rect.y0.max(0.0).floor(),
-    x1: rect.x1.min(screen.width()).ceil(),
-    y1: rect.y1.min(screen.height()).ceil(),
-  };
-  (clipped.width() > 0.0 && clipped.height() > 0.0).then_some(clipped)
+  vpdf_model::geometry::PixelRect::clip(rect, screen)
+    .map(vpdf_model::geometry::PixelRect::bounds)
 }
 
 /// Whether `rect` lies within a tile of the screen.

@@ -11,12 +11,12 @@ use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::Target;
 use vpdf_model::geometry::Screen;
+use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::{Reader, SelectionKind};
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::style::sgr;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Transition {
@@ -271,38 +271,50 @@ impl<C> ContextMenu<C> {
     out: &mut impl Write,
     frame: Frame,
   ) -> Result<()> {
-    let (left, top) = self.at;
-    let keys = self.keys();
-    let width = usize::from(self.width);
-    let selected = self.selected;
-    for (index, item) in self.items.iter().enumerate() {
-      let row = top + u16::try_from(index).unwrap_or(0);
-      let label = format!("{:<keys$}  {}", item.key, item.label);
-      write!(out, "{}{}", frame.at.goto(row, left), sgr(Role::Bar))?;
-      let shown = if index == selected {
-        crate::grid::Shown::Chosen
-      } else {
-        crate::grid::Shown::Plain
-      };
-      crate::grid::cell(out, &label, width, keys, shown)?;
-      write!(out, "{}", sgr(Role::Reset))?;
-    }
+    let mut scene =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    self.scene(&mut scene, frame);
+    scene.finish()?;
+    Ok(())
+  }
+
+  fn scene_backdrop<'a>(&self, scene: &mut impl Draw<'a>, frame: Frame) {
     let Some(area) =
       self.pixel_area(frame.screen, frame.left).filter(|_| !frame.text)
     else {
-      return Ok(());
+      return;
     };
     let screen = frame.screen;
     let height = f32::from(screen.cell_height);
     let rows = ((area.y1 - area.y0) / height).round() as usize;
     for row in 0..rows {
       let color =
-        if row == selected { theme::BADGE_FILL } else { theme::BAR_FILL };
+        if row == self.selected { theme::BADGE_FILL } else { theme::BAR_FILL };
       let y0 = area.y0 + row as f32 * height;
       let rect = Bounds { y0, y1: y0 + height, ..area };
-      graphics.backdrop(rect, color, screen, frame.left, out)?;
+      scene.fill(rect, color, Layer::BelowText, screen, frame.left);
     }
-    Ok(())
+  }
+
+  pub fn scene<'a>(&self, scene: &mut impl Draw<'a>, frame: Frame) {
+    let (left, top) = self.at;
+    let keys = self.keys();
+    let width = usize::from(self.width);
+    let selected = self.selected;
+    for (index, item) in self.items.iter().enumerate() {
+      let row = usize::from(top) + index;
+      let label = format!("{:<keys$}  {}", item.key, item.label);
+      crate::paint::move_to(scene, frame.at, row, left);
+      scene.push(Op::Style(Role::Bar));
+      let shown = if index == selected {
+        crate::grid::Shown::Chosen
+      } else {
+        crate::grid::Shown::Plain
+      };
+      crate::grid::scene_cell(scene, &label, width, keys, shown);
+      scene.push(Op::Style(Role::Reset));
+    }
+    self.scene_backdrop(scene, frame);
   }
 }
 pub struct PageContext<'a> {

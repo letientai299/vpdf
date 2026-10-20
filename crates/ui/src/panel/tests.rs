@@ -3,13 +3,41 @@ use vpdf_model::style::Role;
 use vpdf_terminal::style::sgr;
 
 #[test]
+fn recorded_panels_outlive_their_source() -> Result<()> {
+  let panel = || {
+    Panel::new(
+      PanelKind::Help,
+      ["# 日本語", "j: down", "k: up"].map(Row::parse).into(),
+    )
+  };
+  let at = terminal::At { column: 7, row: 3 };
+  let scene = {
+    let mut source = panel();
+    let mut scene = vpdf_model::scene::Scene::new();
+    source.scene_list(&mut scene, at, 20, 6);
+    assert_eq!(source.row_at(0, 0), None);
+    assert_eq!(source.row_at(0, 1), Some(0));
+    assert_eq!(source.row_at(0, 2), Some(1));
+    assert_eq!(source.row_at(19, 2), None);
+    scene
+  };
+  let mut recorded = Vec::new();
+  vpdf_terminal::painter::paint(&mut recorded, &scene)?;
+  let mut streamed = Vec::new();
+  panel().list(&mut streamed, at, 20, 6)?;
+  assert_eq!(recorded, streamed);
+  assert!(String::from_utf8(recorded)?.contains("日本語"));
+  Ok(())
+}
+
+#[test]
 fn hover_skips_indentation() -> Result<()> {
-  for style in [sgr(Role::Hover), sgr(Role::HoverDim)] {
+  for style in [Role::Hover, Role::HoverDim] {
     let row = Row::parse("  Chapter");
     let mut out = Vec::new();
-    assert_eq!(row.write(&mut out, style, 40, 0, "")?, 9);
+    assert_eq!(row.write(&mut out, Some(style), 40, 0, "")?, 9);
     let text = String::from_utf8(out)?;
-    assert!(text.contains(&format!("\x1b[24m  {style}Chapter")));
+    assert!(text.contains(&format!("\x1b[24m  {}Chapter", sgr(style))));
   }
   Ok(())
 }
@@ -126,7 +154,7 @@ fn paths_keep_the_file_name() -> Result<()> {
     (5, "deep."),
   ] {
     let mut out = Vec::new();
-    let width = row.write(&mut out, sgr(Role::Reset), room, 0, "")?;
+    let width = row.write(&mut out, Some(Role::Reset), room, 0, "")?;
     let out = String::from_utf8(out)?;
     let text: String = out
       .split('\x1b')

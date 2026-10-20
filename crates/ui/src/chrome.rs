@@ -10,9 +10,9 @@ use crossterm::event::MouseButton;
 use std::fmt::Write as _;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_model::style::Role;
 use vpdf_reader::reader::{Mode, Reader, SelectionKind};
-use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal;
 
 /// Error anchored to the terminal's last row.
@@ -30,17 +30,22 @@ impl Notice {
 
   /// Preserve an open prompt's cursor.
   pub fn draw(&self, out: &mut impl Write) -> Result<()> {
-    write!(out, "\x1b7{}", sgr(Role::Error))?;
-    let row = self.rows.max(1) - 1;
-    terminal::line(
-      out,
+    let mut painter = vpdf_terminal::painter::Painter::new(out);
+    self.scene(&mut painter);
+    painter.finish()?;
+    Ok(())
+  }
+
+  pub fn scene<'a>(&self, scene: &mut impl Draw<'a>) {
+    scene.extend([Op::SaveCursor, Op::Style(Role::Error)]);
+    crate::paint::line(
+      scene,
       terminal::At::default(),
-      row,
+      self.rows.max(1) - 1,
       &self.error,
       self.columns,
-    )?;
-    write!(out, "{}\x1b8", sgr(Role::Reset))?;
-    Ok(())
+    );
+    scene.extend([Op::Style(Role::Reset), Op::RestoreCursor]);
   }
 }
 
@@ -110,11 +115,14 @@ impl Names<'_> {
     let file = || {
       let label = format!(" {}:{} ", active + 1, file);
       let label = terminal::clean(&label, room.saturating_sub(1));
-      let gap = if room > 0 { " " } else { "" };
-      let width = label.width() + gap.width();
-      let text =
-        format!("{}{label}{}{gap}", sgr(Role::StatusFile), sgr(Role::Bar));
-      Tabs { text, width, labels: Vec::new() }
+      let gap = room > 0;
+      let width = label.width() + usize::from(gap);
+      Tabs {
+        spans: vec![(Role::StatusFile, Text::new(label))],
+        gap,
+        width,
+        labels: Vec::new(),
+      }
     };
     if names.len() < 2 {
       return file();
@@ -122,24 +130,24 @@ impl Names<'_> {
     let labels: Vec<_> = names
       .iter()
       .enumerate()
-      .map(|(index, name)| format!(" {}:{name} ", index + 1))
+      .map(|(index, name)| Text::new(format!(" {}:{name} ", index + 1)))
       .collect();
-    let width = labels.iter().map(|label| label.width()).sum::<usize>() + 1;
-    // Names yield to the hover detail.
+    let width =
+      labels.iter().map(|label| label.as_str().width()).sum::<usize>() + 1;
     if width + detail > room {
       return file();
     }
-    let mut text = String::new();
-    for (index, label) in labels.iter().enumerate() {
-      let style = if index == *active {
-        sgr(Role::TabActive)
-      } else {
-        sgr(Role::TabInactive)
-      };
-      text.extend([style, label.as_str(), sgr(Role::Bar)]);
-    }
-    let labels = labels.iter().map(|label| label.width()).collect();
-    Tabs { text: text + " ", width, labels }
+    let widths = labels.iter().map(|label| label.as_str().width()).collect();
+    let spans = labels
+      .into_iter()
+      .enumerate()
+      .map(|(index, label)| {
+        let role =
+          if index == *active { Role::TabActive } else { Role::TabInactive };
+        (role, label)
+      })
+      .collect();
+    Tabs { spans, gap: true, width, labels: widths }
   }
 }
 
@@ -224,36 +232,43 @@ impl Bar<'_> {
     focused: bool,
     detail: Option<&str>,
   ) -> Result<()> {
+    let mut painter = vpdf_terminal::painter::Painter::new(out);
+    self.scene(&mut painter, at, row, focused, detail)?;
+    painter.finish()?;
+    Ok(())
+  }
+
+  pub fn scene<'a>(
+    &self,
+    scene: &mut impl Draw<'a>,
+    at: terminal::At,
+    row: u16,
+    focused: bool,
+    detail: Option<&str>,
+  ) -> Result<()> {
     let line = self.line(detail)?;
-    write!(out, "{}", at.goto(row, 0u16))?;
+    crate::paint::move_to(scene, at, row, 0u16);
     let Some(tabs) = &line.tabs else {
-      write!(out, "{}{}{}", sgr(Role::Bar), line.right, sgr(Role::Reset))?;
-      // Plain frames skip clears; erase the rest.
+      scene.push(Op::Style(Role::Bar));
+      scene.text(&line.right);
+      scene.push(Op::Style(Role::Reset));
       let rest =
         usize::from(self.screen.columns).saturating_sub(line.right.width());
       if rest > 0 {
-        write!(out, "\x1b[{rest}X")?;
+        scene.push(Op::Erase(rest as u16));
       }
       return Ok(());
     };
-    let badge = if focused {
-      sgr(Role::Badge(line.color)).to_owned()
-    } else {
-      sgr(Role::Bar).into()
-    };
-    write!(
-      out,
-      "{badge}{}{}{}{}{}{}{}{}{}",
-      line.left,
-      sgr(Role::Bar),
-      tabs.text,
-      line.style,
-      line.message,
-      sgr(Role::Bar),
-      " ".repeat(line.fill),
-      line.right,
-      sgr(Role::Reset)
-    )?;
+    let badge = if focused { Role::Badge(line.color) } else { Role::Bar };
+    scene.push(Op::Style(badge));
+    scene.text(&line.left);
+    scene.push(Op::Style(Role::Bar));
+    tabs.scene(scene);
+    scene.push(Op::Style(line.style));
+    scene.text(&line.message);
+    scene.extend([Op::Style(Role::Bar), Op::Spaces(line.fill)]);
+    scene.text(&line.right);
+    scene.push(Op::Style(Role::Reset));
     Ok(())
   }
 
@@ -297,7 +312,7 @@ impl Bar<'_> {
       color,
       tabs: None,
       message: String::new(),
-      style: sgr(Role::Bar),
+      style: Role::Bar,
       section: false,
       fill: 0,
       right,
@@ -314,14 +329,14 @@ impl Bar<'_> {
     let section = self.document.section;
     let detail = detail.filter(|_| self.shows_detail());
     let (message, style) = match (self.error, section) {
-      (Some(error), _) => (error, sgr(Role::Error)),
-      (None, _) if let Some(detail) = detail => (detail, sgr(Role::Bar)),
-      (None, _) if covered => ("Enter open  :e file  q close", sgr(Role::Bar)),
+      (Some(error), _) => (error, Role::Error),
+      (None, _) if let Some(detail) = detail => (detail, Role::Bar),
+      (None, _) if covered => ("Enter open  :e file  q close", Role::Bar),
       (None, Some(title)) if self.view.reader.message.is_empty() => {
         line.section = true;
-        (title, sgr(Role::StatusSection))
+        (title, Role::StatusSection)
       }
-      (None, _) => (self.view.reader.message.as_str(), sgr(Role::Bar)),
+      (None, _) => (self.view.reader.message.as_str(), Role::Bar),
     };
     let tabs = self.names.fit(room, detail.map_or(0, UnicodeWidthStr::width));
     let room = room.saturating_sub(tabs.width);
@@ -387,10 +402,24 @@ impl Bar<'_> {
 /// Listed tabs, or the active file's name.
 #[derive(Debug)]
 struct Tabs {
-  text: String,
+  spans: Vec<(Role, Text<'static>)>,
+  gap: bool,
   width: usize,
   /// Listed tabs' widths; empty for the file.
   labels: Vec<usize>,
+}
+
+impl Tabs {
+  fn scene<'a>(&self, scene: &mut impl Draw<'a>) {
+    for (role, text) in &self.spans {
+      scene.push(Op::Style(*role));
+      scene.text(text.as_str());
+      scene.push(Op::Style(Role::Bar));
+    }
+    if self.gap {
+      scene.text(" ");
+    }
+  }
 }
 
 /// Status line parts; spans in columns.
@@ -400,7 +429,7 @@ struct Line {
   /// None when only `right` fits.
   tabs: Option<Tabs>,
   message: String,
-  style: &'static str,
+  style: Role,
   /// The message is the section name.
   section: bool,
   /// Blanks between the message and `right`.
@@ -416,6 +445,7 @@ struct Line {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use vpdf_terminal::style::sgr;
 
   #[test]
   fn unmeasured_resize_shows_on_the_last_row() -> Result<()> {
@@ -434,8 +464,26 @@ mod tests {
 
   impl Tabs {
     fn pair(self) -> (String, usize) {
-      (self.text, self.width)
+      let mut out = Vec::new();
+      let mut painter = vpdf_terminal::painter::Painter::new(&mut out);
+      self.scene(&mut painter);
+      painter.finish().expect("buffer output");
+      (String::from_utf8(out).expect("UTF-8 tabs"), self.width)
     }
+  }
+
+  #[test]
+  fn tab_controls_are_not_drawing_commands() {
+    let names = ["safe.pdf".into(), "bad\n\x1b[31m.pdf".into()];
+    let tabs = Names { file: "safe.pdf", names: &names, active: 0 };
+    let (output, width) = tabs.fit(200, 0).pair();
+    assert!(!output.contains("\x1b[31m"));
+    let plain = output
+      .replace(sgr(Role::TabActive), "")
+      .replace(sgr(Role::TabInactive), "")
+      .replace(sgr(Role::Bar), "");
+    assert_eq!(plain, " 1:safe.pdf  2:bad [31m.pdf  ");
+    assert_eq!(width, plain.width());
   }
 
   #[test]

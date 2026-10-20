@@ -5,9 +5,9 @@ use std::io::Write;
 use std::sync::Arc;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use vpdf_model::geometry::Screen;
+use vpdf_model::scene::{Character, Draw, Op};
 use vpdf_model::style::Role;
 use vpdf_reader::reader::{SelectionKind, TextSource};
-use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal::At;
 
 /// Pending and drawn origins can differ.
@@ -426,28 +426,34 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
     out: &mut impl Write,
     paint: &Marks<'_>,
   ) -> Result<()> {
+    let mut painter = vpdf_terminal::painter::Painter::new(out);
+    self.scene(&mut painter, paint)?;
+    painter.finish()?;
+    Ok(())
+  }
+
+  pub fn scene<'a>(
+    &mut self,
+    scene: &mut impl Draw<'a>,
+    paint: &Marks<'_>,
+  ) -> Result<()> {
     let view = self.next_text_view()?;
     self.state.top = view.top;
     self.state.drawn = Some(view.top);
     let hovered = paint.hovered;
     for (row, shown) in view.rows().enumerate() {
-      write!(out, "{}", self.frame.at.goto(row, self.frame.left))?;
+      crate::paint::move_to(scene, self.frame.at, row, self.frame.left);
       let (at, line) = match shown {
         Row::Line(at, line) => (at, line),
         Row::Break(at) => {
-          self.page_break(out, at, view.columns, paint)?;
+          self.scene_break(scene, at, view.columns, paint);
           continue;
         }
       };
       let band = paint.line_style(at);
-      if band != sgr(Role::Reset) {
-        write!(
-          out,
-          "{}{}{}",
-          band,
-          " ".repeat(view.columns),
-          self.frame.at.goto(row, self.frame.left)
-        )?;
+      if band != Role::Reset {
+        scene.extend([Op::Style(band), Op::Spaces(view.columns)]);
+        crate::paint::move_to(scene, self.frame.at, row, self.frame.left);
       }
       // Test glyphs against this line's segments.
       let ends = line.glyphs.first().zip(line.glyphs.last());
@@ -458,11 +464,11 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
             .is_some_and(|level| level.y1 >= bounds.y0 && level.y0 <= bounds.y1)
       };
       let near: Vec<_> = hovered.iter().filter(beside).collect();
-      let mut current = "";
+      let mut current = None;
       let mut written = 0;
       for (glyph, column, ch) in view.shown(&line.glyphs) {
         if column > written {
-          write!(out, "{}", " ".repeat(column - written))?;
+          scene.push(Op::Spaces(column - written));
         }
         written = column + cells(ch);
         let pos = Position { glyph, ..at };
@@ -471,37 +477,37 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
           bounds.contains(x, y)
         });
         let style = paint.text_style(pos, linked);
-        let style = if style == sgr(Role::Reset) && paint.dim {
-          sgr(Role::Dim)
-        } else {
-          style
-        };
-        if style != current {
-          write!(out, "{style}")?;
-          current = style;
+        let style =
+          if style == Role::Reset && paint.dim { Role::Dim } else { style };
+        if Some(style) != current {
+          scene.push(Op::Style(style));
+          current = Some(style);
         }
-        write!(out, "{}", ch.ch)?;
+        if let Some(character) = Character::new(ch.ch) {
+          scene.push(Op::Character(character));
+        }
       }
-      write!(out, "\x1b[0m")?;
+      scene.push(Op::Style(Role::Reset));
     }
     Ok(())
   }
 
   /// A rule naming the next page, at break `at`.
-  fn page_break(
+  fn scene_break<'a>(
     &self,
-    out: &mut impl Write,
+    scene: &mut impl Draw<'a>,
     at: Position,
     columns: usize,
     paint: &Marks<'_>,
-  ) -> Result<()> {
-    let style =
-      if paint.selects(at) { sgr(Role::TextSelection) } else { sgr(Role::Dim) };
+  ) {
+    let style = if paint.selects(at) { Role::TextSelection } else { Role::Dim };
     let label = self.source.label(PageId(at.page.0 + 1));
     let head = vpdf_terminal::terminal::clean(&format!("── {label} "), columns);
     let fill = columns.saturating_sub(head.width());
-    write!(out, "{style}{head}{}\x1b[0m", "─".repeat(fill))?;
-    Ok(())
+    scene.push(Op::Style(style));
+    scene.text(&head);
+    scene.text(&"─".repeat(fill));
+    scene.push(Op::Style(Role::Reset));
   }
 
   /// Glyph `view` draws at a pane cell.
@@ -625,19 +631,19 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
   }
 }
 impl Marks<'_> {
-  fn text_style(&self, position: Position, linked: bool) -> &'static str {
+  fn text_style(&self, position: Position, linked: bool) -> Role {
     let flashed = self.flash == Some(position);
     if flashed || self.reader.uses_cursor() && position == self.reader.cursor {
-      return sgr(Role::TextCursor);
+      return Role::TextCursor;
     }
     if self.selects(position) {
-      return sgr(Role::TextSelection);
+      return Role::TextSelection;
     }
     if vpdf_search::search::contains(self.matches, position) {
-      return sgr(Role::TextMatch);
+      return Role::TextMatch;
     }
     if linked {
-      return sgr(Role::TextLink);
+      return Role::TextLink;
     }
     self.line_style(position)
   }
@@ -652,16 +658,16 @@ impl Marks<'_> {
     })
   }
 
-  fn line_style(&self, position: Position) -> &'static str {
+  fn line_style(&self, position: Position) -> Role {
     if self.landing.as_ref().is_some_and(|landing| {
       position.page == landing.page && position.line == landing.line
     }) {
-      return sgr(Role::TextLanding);
+      return Role::TextLanding;
     }
     if self.on_cursorline(position) {
-      return sgr(Role::TextCursorline);
+      return Role::TextCursorline;
     }
-    sgr(Role::Reset)
+    Role::Reset
   }
 
   fn on_cursorline(&self, position: Position) -> bool {

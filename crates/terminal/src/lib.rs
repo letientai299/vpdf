@@ -6,6 +6,7 @@ pub mod gate;
 pub mod graphics;
 pub mod inline;
 pub mod input;
+pub mod painter;
 pub mod payload;
 pub mod spool;
 pub mod style;

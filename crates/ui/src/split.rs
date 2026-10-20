@@ -2,9 +2,8 @@
 
 use crate::Result;
 use std::io::Write;
+use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_model::style::Role;
-use vpdf_terminal::style::sgr;
-use vpdf_terminal::terminal::At;
 
 /// `Rows` stacks panes (`Ctrl-w s`); `Columns` sets them side by side
 /// (`Ctrl-w v`).
@@ -85,18 +84,30 @@ impl Node {
   }
 
   pub fn draw_dividers(&self, out: &mut impl Write, area: Rect) -> Result<()> {
+    let mut scene = vpdf_terminal::painter::Painter::new(out);
+    self.scene_dividers(&mut scene, area);
+    scene.finish()?;
+    Ok(())
+  }
+
+  pub fn scene_dividers<'a>(&self, scene: &mut impl Draw<'a>, area: Rect) {
     let mut dividers = Vec::new();
     self.dividers(area, &mut dividers);
     let columns =
       dividers.iter().filter(|divider| divider.axis == Axis::Columns);
     for rect in columns.map(|divider| divider.rect) {
-      let at = At { column: rect.column, row: rect.row };
       for row in 0..rect.rows {
-        let goto = at.goto(row, 0u16);
-        write!(out, "{goto}{}│{}", sgr(Role::Muted), sgr(Role::Reset))?;
+        scene.extend([
+          Op::Move {
+            column: usize::from(rect.column),
+            row: usize::from(rect.row) + usize::from(row),
+          },
+          Op::Style(Role::Muted),
+          Op::Text(Text::new("│")),
+          Op::Style(Role::Reset),
+        ]);
       }
     }
-    Ok(())
   }
 
   pub fn replace(&mut self, from: u32, to: u32) {
@@ -568,6 +579,7 @@ pub fn neighbor(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use vpdf_terminal::style::sgr;
 
   const AREA: Rect = Rect { column: 0, row: 0, columns: 101, rows: 40 };
 

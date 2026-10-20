@@ -4,8 +4,8 @@ use super::{
   Row, RowSearch, Screen, Target, UnicodeWidthStr, WHEEL_ROWS, Wheel, Write,
   key_width, moved_row, screen_step, terminal,
 };
+use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
-use vpdf_terminal::style::sgr;
 
 /// Reader geometry beside or behind a panel.
 pub fn page_space(
@@ -426,29 +426,40 @@ impl Panel {
     width: u16,
     height: u16,
   ) -> Result<()> {
+    let mut painter = vpdf_terminal::painter::Painter::new(out);
+    self.scene_list(&mut painter, at, width, height);
+    painter.finish()?;
+    Ok(())
+  }
+
+  pub fn scene_list<'a>(
+    &mut self,
+    scene: &mut impl Draw<'a>,
+    at: terminal::At,
+    width: u16,
+    height: u16,
+  ) {
     self.columns = width;
     self.height = height;
     self.hover_title = None;
     if width < 2 {
-      return Ok(());
+      return;
     }
     let inner = usize::from(width.saturating_sub(1));
     for row in 1..height {
-      let border = at.goto(row - 1, width - 1);
-      write!(out, "{border}{}│{}", sgr(Role::Muted), sgr(Role::Reset))?;
+      crate::paint::move_to(scene, at, row - 1, width - 1);
+      scene.push(Op::Style(Role::Muted));
+      scene.text("│");
+      scene.push(Op::Style(Role::Reset));
     }
     let title = format!(" {} ", self.kind.title());
     let count = format!(" {} {}", self.rows.len(), self.note);
-    write!(
-      out,
-      "{}{}{}{}{}{}",
-      at.goto(0u16, 0u16),
-      sgr(Role::Badge(Color::Cyan)).to_owned(),
-      terminal::clean(&title, inner),
-      sgr(Role::Muted),
-      terminal::clean(&count, inner.saturating_sub(title.width())),
-      sgr(Role::Reset)
-    )?;
+    crate::paint::move_to(scene, at, 0u16, 0u16);
+    scene.push(Op::Style(Role::Badge(Color::Cyan)));
+    scene.text(&terminal::clean(&title, inner));
+    scene.push(Op::Style(Role::Muted));
+    scene.text(&terminal::clean(&count, inner.saturating_sub(title.width())));
+    scene.push(Op::Style(Role::Reset));
     self.reflow(inner);
     let keys = key_width(&self.rows, inner);
     let count = height.saturating_sub(2) as usize;
@@ -467,45 +478,44 @@ impl Panel {
       let hovered = self.pointing.row() == Some(source);
       let selected = source == self.selected;
       let plain = match (selected, self.focused) {
-        (true, true) => sgr(Role::Selected),
-        (true, false) => sgr(Role::Current),
-        (false, true) => sgr(Role::Reset),
-        (false, false) => sgr(Role::Dim),
+        (true, true) => Role::Selected,
+        (true, false) => Role::Current,
+        (false, true) => Role::Reset,
+        (false, false) => Role::Dim,
       };
       let base = match (hovered && !selected, self.focused) {
-        (true, true) => sgr(Role::Hover),
-        (true, false) => sgr(Role::HoverDim),
+        (true, true) => Role::Hover,
+        (true, false) => Role::HoverDim,
         (false, _) => plain,
       };
-      write!(out, "{}{base}", at.goto(row + 1, 0u16))?;
+      crate::paint::move_to(scene, at, row + 1, 0u16);
+      scene.push(Op::Style(base));
       let detail = terminal::clean(&item.detail, inner / 3);
       let room = if detail.is_empty() {
         inner
       } else {
         inner.saturating_sub(detail.width() + 1)
       };
-      let used = item.write(out, base, room, keys, &self.search.query)?;
+      let used = item.scene(scene, Some(base), room, keys, &self.search.query);
       if hovered {
-        let full = |item: &Row| {
-          item.write(&mut std::io::sink(), base, usize::MAX, keys, "")
-        };
         let clipped = match cut {
           Some(clipped) => clipped,
-          None => full(item)? > used,
+          None => item.scene(&mut (), Some(base), usize::MAX, keys, "") > used,
         };
         if clipped {
           // Outline rows indent by depth.
           self.hover_title = Some(self.rows[source].label.trim().to_owned());
         }
       }
-      write!(
-        out,
-        "{plain}{}{}{detail}{}",
-        " ".repeat(inner.saturating_sub(used + detail.width())),
-        if plain == sgr(Role::Reset) { sgr(Role::Muted) } else { "" },
-        sgr(Role::Reset)
-      )?;
+      scene.extend([
+        Op::Style(plain),
+        Op::Spaces(inner.saturating_sub(used + detail.width())),
+      ]);
+      if plain == Role::Reset {
+        scene.push(Op::Style(Role::Muted));
+      }
+      scene.text(&detail);
+      scene.push(Op::Style(Role::Reset));
     }
-    Ok(())
   }
 }

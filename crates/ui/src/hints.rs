@@ -8,10 +8,10 @@ use crate::theme;
 use crossterm::event::{KeyCode, KeyEvent};
 use std::io::Write;
 use vpdf_model::document::{Link, Target};
+use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::style::sgr;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Transition {
@@ -226,35 +226,41 @@ impl Hints {
     out: &mut impl Write,
     frame: Frame,
   ) -> Result<()> {
+    let mut scene =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    self.scene(&mut scene, frame);
+    scene.finish()?;
+    Ok(())
+  }
+
+  pub fn scene<'a>(&self, scene: &mut impl Draw<'a>, frame: Frame) {
     let mut backdrops = Vec::new();
     for (index, hint) in self.shown() {
       let picked = self.selected == Some(index);
       let (typed, rest, fill) = if picked {
-        (sgr(Role::HintPickedTyped), sgr(Role::HintPicked), theme::BADGE_FILL)
+        (Role::HintPickedTyped, Role::HintPicked, theme::BADGE_FILL)
       } else {
-        (sgr(Role::HintTyped), sgr(Role::Hint), theme::HINT_FILL)
+        (Role::HintTyped, Role::Hint, theme::HINT_FILL)
       };
       let cells = hint.cells();
-      write!(
-        out,
-        "{}{typed}{}{rest}{}\x1b[0m",
-        frame.at.goto(cells.row, cells.column),
-        self.typed,
-        &hint.label[self.typed.len()..],
-      )?;
+      crate::paint::move_to(scene, frame.at, cells.row, cells.column);
+      scene.push(Op::Style(typed));
+      scene.text(&self.typed);
+      scene.push(Op::Style(rest));
+      scene.text(&hint.label[self.typed.len()..]);
+      scene.push(Op::Style(Role::Reset));
       backdrops.push((
         crate::paint::cell_bounds(frame.screen, frame.left, cells),
         fill,
       ));
     }
     if frame.text {
-      return Ok(());
+      return;
     }
     let screen = frame.screen;
     for (rect, fill) in backdrops {
-      graphics.backdrop(rect, fill, screen, frame.left, out)?;
+      scene.fill(rect, fill, Layer::BelowText, screen, frame.left);
     }
-    Ok(())
   }
   /// Labels the typed letters still match.
   fn shown(&self) -> impl Iterator<Item = (usize, &Hint)> {
@@ -312,6 +318,53 @@ pub fn page_cell(
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn recorded_labels_keep_backdrops() -> Result<()> {
+    use vpdf_model::geometry::Screen;
+    use vpdf_model::scene::Scene;
+    use vpdf_terminal::terminal::At;
+    let mut hints =
+      Hints::new(vec![(((4, 2), 5), Target::Page(PageId(0)))], false, 0, 20)?;
+    let screen = Screen {
+      columns: 20,
+      rows: 10,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    for picked in [false, true] {
+      hints.selected = picked.then_some(0);
+      for text in [false, true] {
+        let frame = Frame { at: At::default(), screen, left: 0, text };
+        let mut scene = Scene::new();
+        hints.scene(&mut scene, frame);
+        let mut actual = Vec::new();
+        let mut graphics = Graphics::default();
+        let mut painter = vpdf_terminal::painter::Painter::new(&mut actual)
+          .with_graphics(&mut graphics);
+        painter.paint(&scene);
+        painter.finish()?;
+        let mut expected = if picked {
+          b"\x1b[3;4H\x1b[0;1;97;44m\x1b[0;97;44ma\x1b[0m".to_vec()
+        } else {
+          b"\x1b[3;4H\x1b[0;1;30;43m\x1b[0;30;43ma\x1b[0m".to_vec()
+        };
+        let fill = if picked { theme::BADGE_FILL } else { theme::HINT_FILL };
+        if !text {
+          Graphics::default().backdrop(
+            Bounds { x0: 24.0, y0: 32.0, x1: 32.0, y1: 48.0 },
+            fill,
+            screen,
+            0,
+            &mut expected,
+          )?;
+        }
+        assert_eq!(actual, expected);
+      }
+    }
+    Ok(())
+  }
 
   #[test]
   fn labels_take_free_cells() {

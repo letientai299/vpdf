@@ -42,6 +42,22 @@ through [data-access traits][source], integrates job results, and performs
 filesystem, process, clipboard, and URL effects. Application frame assembly
 delegates layout and drawing to UI components.
 
+Model owns [ordered drawing operations][scene]. Components emit into a drawing
+sink: a scene retains operations, while the [terminal painter][painter] encodes
+them directly without probing the terminal. Finish a streaming painter to report
+output errors. Retained scenes copy temporary text; streaming painters borrow it
+during emission. Keep transport commands out of scene text. Callers still use
+existing drawing entry points for components without scene output.
+Recording must update the same hit geometry as terminal drawing. Model derives
+character advances from the shared Unicode-width rules. Pixel fills carry
+clipped bounds, alpha, and explicit layers above or below text. Layer order must
+survive replay even when a backdrop follows its label in the operation stream.
+Attach terminal graphics to the painter for fills; terminal retains protocol
+encoding and image caching. Stretched fills retain their cell extent beside
+pixel fills, so a native painter can recover the intended rectangle without
+terminal image commands. Region recording accepts cell-snapped sweep outlines
+for terminal presenters that cache overlays by size.
+
 PDF owns native handles, cancellation, document-cache provenance, and
 [job resource configuration][jobs]. A render completion sink lets the
 application connect terminal encoding without a PDF-to-terminal dependency.
@@ -104,5 +120,6 @@ corpus, OCR, and terminal checks when they change.
 [reading]: ../../crates/ui/src/reading.rs
 [input]: ../../crates/ui/src/input.rs
 [source]: ../../crates/ui/src/source.rs
-
 [payload]: ../../crates/terminal/src/payload.rs
+[scene]: ../../crates/vpdf-model/src/scene.rs
+[painter]: ../../crates/terminal/src/painter.rs

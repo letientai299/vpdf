@@ -12,8 +12,8 @@ use crate::line::{self, NARROW, SHELL};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_model::style::Role;
-use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal::{self, At};
 
 const LIMIT: usize = 4096;
@@ -150,28 +150,49 @@ impl Prompt {
     at: At,
     pointed: Option<usize>,
   ) -> Result<()> {
+    let mut scene = vpdf_terminal::painter::Painter::new(out);
+    self.scene(&mut scene, screen, at, pointed);
+    scene.finish()?;
+    Ok(())
+  }
+
+  pub fn scene<'a>(
+    &self,
+    scene: &mut impl Draw<'a>,
+    screen: Screen,
+    at: At,
+    pointed: Option<usize>,
+  ) {
+    if screen.rows == 0 || screen.columns == 0 {
+      return;
+    }
     let row = screen.rows - 1;
-    if let Some(menu) = &self.menu {
+    if let Some(menu) = &self.menu
+      && row > 0
+    {
       let layout = menu.grid(screen);
       let bottom = (at, row - 1);
-      // Pointing never picks; the line keeps the chosen one.
       let shown = (menu.selected, pointed);
-      grid::draw(out, bottom, &menu.labels, &layout, shown, 0, screen)?;
+      grid::scene(scene, bottom, &menu.labels, &layout, shown, 0, screen);
     }
     let (text, ghost, column) = self.display();
     let room = usize::from(screen.columns).saturating_sub(text.width());
-    write!(
-      out,
-      "{}{}",
-      at.goto(row, 0u16),
-      terminal::clean(&text, usize::from(screen.columns))
-    )?;
+    crate::paint::move_to(scene, at, row, 0u16);
+    scene.push(Op::Text(Text::new(terminal::clean(
+      &text,
+      usize::from(screen.columns),
+    ))));
     let ghost = terminal::clean(ghost, room);
-    let pad = " ".repeat(room.saturating_sub(ghost.width()));
-    write!(out, "{}{ghost}{}{pad}", sgr(Role::Muted), sgr(Role::Reset))?;
+    let pad = room.saturating_sub(ghost.width());
+    scene.extend([
+      Op::Style(Role::Muted),
+      Op::Text(Text::new(ghost)),
+      Op::Style(Role::Reset),
+      Op::Spaces(pad),
+    ]);
     let column = column.min(usize::from(screen.columns) - 1);
-    write!(out, "{}\x1b[2 q\x1b[?25h", at.goto(row, column))?;
-    Ok(())
+    crate::paint::move_to(scene, at, row, column);
+    scene.extend([Op::BlockCursor, Op::ShowCursor]);
   }
 
   pub fn kind(&self) -> PromptKind {
@@ -666,6 +687,40 @@ fn common_prefix(items: &[String]) -> String {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn drawing_positions_the_wide_text_cursor() -> Result<()> {
+    let mut prompt = Prompt::new(PromptKind::Command);
+    prompt.replace("界a");
+    let screen = Screen {
+      columns: 10,
+      rows: 2,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let at = At { column: 7, row: 3 };
+    let mut out = Vec::new();
+    prompt.draw(&mut out, screen, at, None)?;
+    let want = concat!(
+      "\x1b[5;8H:界a\x1b[90m\x1b[0m      ",
+      "\x1b[5;12H\x1b[2 q\x1b[?25h"
+    );
+    assert_eq!(out, want.as_bytes());
+    let mut scene = vpdf_model::scene::Scene::new();
+    prompt.scene(&mut scene, screen, at, None);
+    out.clear();
+    vpdf_terminal::painter::paint(&mut out, &scene)?;
+    assert_eq!(out, want.as_bytes());
+    for screen in
+      [Screen { rows: 0, ..screen }, Screen { columns: 0, ..screen }]
+    {
+      out.clear();
+      prompt.draw(&mut out, screen, at, None)?;
+      assert_eq!(out, [] as [u8; 0]);
+    }
+    Ok(())
+  }
 
   fn press(
     prompt: &mut Prompt,

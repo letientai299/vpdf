@@ -218,6 +218,53 @@ fn aligning_puts_the_line_at_a_fraction() -> Result<()> {
 
 struct Pages(Vec<Arc<Text>>);
 
+#[test]
+fn recorded_advances_match_hits() -> Result<()> {
+  let pages = Pages(vec![text(&["界e\u{301}x"])]);
+  let reader = Reader::default();
+  let paint = Marks {
+    reader: &reader,
+    matches: &[],
+    flash: None,
+    landing: None,
+    cursorline: false,
+    dim: false,
+    hovered: &[],
+  };
+  let frame = Frame {
+    screen: Screen {
+      columns: 4,
+      rows: 2,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    },
+    at: At { column: 7, row: 3 },
+    left: 0,
+  };
+  let mut state = TextView::default();
+  let mut pane = state.bind(pages, frame);
+  let mut scene = vpdf_model::scene::Scene::new();
+  pane.scene(&mut scene, &paint)?;
+  let characters: Vec<_> = scene
+    .iter()
+    .filter_map(|op| match op {
+      Op::Character(character) => {
+        Some((character.value(), character.columns()))
+      }
+      _ => None,
+    })
+    .collect();
+  assert_eq!(characters, [('界', 2), ('e', 1), ('\u{301}', 0), ('x', 1)]);
+  assert_eq!(pane.shown(1, 0)?, Some(at(0, 0, 0)));
+  assert_eq!(pane.shown(2, 0)?, Some(at(0, 0, 1)));
+  assert_eq!(pane.shown(3, 0)?, Some(at(0, 0, 3)));
+  let mut out = Vec::new();
+  vpdf_terminal::painter::paint(&mut out, &scene)?;
+  assert_eq!(out, "\x1b[4;8H\x1b[0m界e\u{301}x\x1b[0m".as_bytes());
+  Ok(())
+}
+
 impl TextSource for Pages {
   fn page_count(&self) -> usize {
     self.0.len()

@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::layout::Screen;
 use std::io::Write;
+use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
-use vpdf_terminal::style::sgr;
-use vpdf_terminal::terminal::{self, At};
+use vpdf_terminal::terminal::At;
 
 const CELLS: usize = 4;
 const WIDTH: u16 = 16;
@@ -50,31 +50,42 @@ impl Overlay {
     screen: Screen,
     force: bool,
   ) -> Result<bool> {
+    let mut scene = vpdf_terminal::painter::Painter::new(out);
+    let changed = self.scene(&mut scene, screen, force);
+    scene.finish()?;
+    Ok(changed)
+  }
+
+  pub fn scene<'a>(
+    &mut self,
+    scene: &mut impl Draw<'a>,
+    screen: Screen,
+    force: bool,
+  ) -> bool {
     let layout = (screen.columns, screen.rows);
     if !force && !self.changed && self.layout == Some(layout) {
-      return Ok(false);
+      return false;
     }
     let force = force || self.layout != Some(layout);
     self.layout = Some(layout);
     self.changed = false;
     let lines = self.lines(screen);
     if !force && lines == self.painted {
-      return Ok(false);
+      return false;
     }
-    write!(out, "\x1b7{}", sgr(Role::Bar))?;
-    let top = 0;
+    scene.extend([Op::SaveCursor, Op::Style(Role::Bar)]);
     for (row, line) in lines.iter().enumerate() {
-      terminal::line(
-        out,
+      crate::paint::line(
+        scene,
         At::default(),
-        top + row as u16,
+        row as u16,
         line,
         screen.columns,
-      )?;
+      );
     }
-    write!(out, "{}\x1b8", sgr(Role::Reset))?;
+    scene.extend([Op::Style(Role::Reset), Op::RestoreCursor]);
     self.painted = lines;
-    Ok(true)
+    true
   }
 
   fn lines(&self, screen: Screen) -> Vec<String> {

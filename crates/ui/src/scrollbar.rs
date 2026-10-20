@@ -10,10 +10,10 @@ use std::io::Write;
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::{Heading, Target};
+use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_reader::reader::{Location, Reader};
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::style::sgr;
 
 const TICK: f32 = 3.0;
 type Run = (f32, f32, [u8; 4]);
@@ -183,10 +183,24 @@ impl Bar {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<Option<Label>> {
+    let mut scene =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    let label = self.scene(view, ticks, now, &mut scene);
+    scene.finish()?;
+    Ok(label)
+  }
+
+  pub fn scene<'a>(
+    &mut self,
+    view: View<'_>,
+    ticks: Ticks<'_>,
+    now: Instant,
+    scene: &mut impl Draw<'a>,
+  ) -> Option<Label> {
     self.observe(view.scroll, now);
     let moving = self.until.is_some_and(|until| now < until);
     if !view.available || !(view.hovered || moving || self.scrubbing()) {
-      return Ok(None);
+      return None;
     }
     let screen = view.frame.screen;
     let height = screen.height();
@@ -194,7 +208,7 @@ impl Bar {
     let rows = screen.rows.saturating_sub(1);
     let left = view.frame.left;
     let track = (column, 1, rows);
-    graphics.stretch(theme::TRACK, -1, track, screen, left, out)?;
+    scene.stretch(theme::TRACK, Layer::BelowText, track, screen, left);
     let x1 = screen.width();
     let x0 = x1 - f32::from(screen.cell_width);
     let rect = |y0: f32, y1: f32| Bounds { x0, y0, x1, y1 };
@@ -211,25 +225,25 @@ impl Bar {
     }
     let cached = self.runs.take();
     for &(y0, y1, color) in cached.iter().flat_map(|(_, runs)| runs) {
-      graphics.backdrop(rect(y0, y1), color, screen, left, out)?;
+      scene.fill(rect(y0, y1), color, Layer::BelowText, screen, left);
     }
     self.runs = cached;
     let (top, size, _) = view.thumb();
-    graphics.backdrop(
+    scene.fill(
       rect(top, top + size),
       theme::THUMB,
+      Layer::BelowText,
       screen,
       left,
-      out,
-    )?;
-    Ok(self.scrub.map(|scrub| {
+    );
+    self.scrub.map(|scrub| {
       let y = f32::from(scrub.row) * f32::from(screen.cell_height);
       Label {
         page: view.layout.page_at(view.scroll + y),
         row: scrub.row,
         frame: view.frame,
       }
-    }))
+    })
   }
 }
 
@@ -295,6 +309,14 @@ impl Label {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
+    let mut scene =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    self.scene(text, &mut scene);
+    scene.finish()?;
+    Ok(())
+  }
+
+  pub fn scene<'a>(self, text: &str, scene: &mut impl Draw<'a>) {
     let screen = self.frame.screen;
     let row = self.row;
     let y = f32::from(row) * f32::from(screen.cell_height);
@@ -305,13 +327,10 @@ impl Label {
     let label =
       vpdf_terminal::terminal::clean(&label, usize::from(columns - start));
     let column = self.frame.left + start;
-    write!(
-      out,
-      "{}{}{label}{}",
-      self.frame.at.goto(row, column),
-      sgr(Role::Bar),
-      sgr(Role::Reset)
-    )?;
+    crate::paint::move_to(scene, self.frame.at, row, column);
+    scene.push(Op::Style(Role::Bar));
+    scene.text(&label);
+    scene.push(Op::Style(Role::Reset));
     let (cell_width, cell_height) =
       (f32::from(screen.cell_width), f32::from(screen.cell_height));
     let x0 = f32::from(start) * cell_width;
@@ -321,7 +340,13 @@ impl Label {
       y0: y,
       y1: y + cell_height,
     };
-    graphics.backdrop(area, theme::BAR_FILL, screen, self.frame.left, out)
+    scene.fill(
+      area,
+      theme::BAR_FILL,
+      Layer::BelowText,
+      screen,
+      self.frame.left,
+    );
   }
 }
 

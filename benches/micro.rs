@@ -9,6 +9,8 @@ use vpdf::solo::Solo;
 use vpdf_model::text::PageId;
 use vpdf_ui::layout::Screen;
 
+#[path = "support/hash.rs"]
+mod hash;
 mod support;
 use support::{Case, measure};
 #[path = "support/corpus.rs"]
@@ -215,6 +217,7 @@ fn frame() -> Result<()> {
   draw(&mut out);
   draw(&mut out);
   writeln!(io::stdout(), "App::draw bytes {}", out.len())?;
+  println!("App::draw output {}", hash::digest(&out));
   measure("App::draw scroll", || {
     draw(&mut out);
     black_box(&out);
@@ -238,6 +241,7 @@ fn split_frame() -> Result<()> {
   session.mouse(rest(30))?;
   let mut out = Vec::with_capacity(64 * 1024);
   session.draw_frame(&mut out)?;
+  println!("Session::draw_frame output {}", hash::digest(&out));
   measure("Session::draw_frame split", || {
     out.clear();
     session.draw_frame(&mut out).expect("warm frame");

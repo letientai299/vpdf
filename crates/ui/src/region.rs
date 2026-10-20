@@ -8,10 +8,10 @@ use crate::theme;
 use std::io::Write;
 use std::ops::Range;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_reader::motion::Motion;
-use vpdf_terminal::style::sgr;
 use vpdf_terminal::{graphics::Graphics, terminal};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -239,10 +239,25 @@ impl Canvas<'_> {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
+    let snap_to_cells = graphics.crop_quirk();
+    let mut scene =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    self.scene(region, sweep, snap_to_cells, &mut scene);
+    scene.finish()?;
+    Ok(())
+  }
+
+  pub fn scene<'a>(
+    &self,
+    region: Option<&mut Region>,
+    sweep: Option<(PageId, Bounds)>,
+    snap_to_cells: bool,
+    scene: &mut impl Draw<'a>,
+  ) {
     if let Some((page, bounds)) = sweep {
       let mut rect = self.layout.project(page, bounds, self.scroll);
       // Quirk overlays cache by size.
-      if graphics.crop_quirk() {
+      if snap_to_cells {
         let (width, height) = (
           f32::from(self.layout.screen().cell_width),
           f32::from(self.layout.screen().cell_height),
@@ -254,15 +269,15 @@ impl Canvas<'_> {
           y1: (rect.y1 / height).ceil() * height,
         };
       }
-      self.outline(graphics, rect, out)?;
+      self.outline(scene, rect);
     }
-    let Some(region) = region else { return Ok(()) };
-    let Some(bar) = &region.bar else { return Ok(()) };
+    let Some(region) = region else { return };
+    let Some(bar) = &region.bar else { return };
     let snapshot = &region.snapshot;
     let (action, status) = (&bar.action, &bar.status);
     let (page, action, status) = (snapshot.page, *action, status.clone());
     let rect = self.layout.project(page, snapshot.bounds, self.scroll);
-    self.outline(graphics, rect, out)?;
+    self.outline(scene, rect);
     let screen = self.frame.screen;
     let (mut label, mut items) = bar_label(page, action);
     if label.chars().count() > usize::from(screen.columns) {
@@ -284,32 +299,22 @@ impl Canvas<'_> {
     if let Some(cells) = region.cells().filter(|_| !self.frame.text) {
       let backdrop =
         crate::paint::cell_bounds(self.frame.screen, self.frame.left, cells);
-      graphics.backdrop(
+      scene.fill(
         backdrop,
         theme::BADGE_FILL,
+        Layer::BelowText,
         screen,
         self.frame.left,
-        out,
-      )?;
+      );
     }
-    write!(
-      out,
-      "{}{}{}{}",
-      self.frame.at.goto(row, usize::from(self.frame.left)),
-      sgr(Role::Selected),
-      text,
-      sgr(Role::Reset)
-    )?;
-    Ok(())
+    crate::paint::move_to(scene, self.frame.at, row, self.frame.left);
+    scene.push(Op::Style(Role::Selected));
+    scene.text(&text);
+    scene.push(Op::Style(Role::Reset));
   }
 
   /// Dims around a rect; outlines it.
-  fn outline(
-    &self,
-    graphics: &mut Graphics,
-    rect: Bounds,
-    out: &mut impl Write,
-  ) -> Result<()> {
+  fn outline<'a>(&self, scene: &mut impl Draw<'a>, rect: Bounds) {
     let screen = self.frame.screen;
     if !self.frame.text {
       let w = screen.width();
@@ -324,25 +329,24 @@ impl Canvas<'_> {
         Bounds { x0: 0.0, y0, x1: x0, y1 },
         Bounds { x0: x1, y0, x1: w, y1 },
       ] {
-        graphics.backdrop(
+        scene.fill(
           bounds,
           theme::REGION_VEIL,
+          Layer::BelowText,
           screen,
           self.frame.left,
-          out,
-        )?;
+        );
       }
       for bounds in frame_edges(Bounds { x0, y0, x1, y1 }, (w, h)) {
-        graphics.highlight(
+        scene.fill(
           bounds,
           theme::REGION_EDGE,
+          Layer::AboveText,
           screen,
           self.frame.left,
-          out,
-        )?;
+        );
       }
     }
-    Ok(())
   }
 }
 
@@ -444,6 +448,64 @@ mod tests {
     }
     assert_eq!(selected.input(Action::Follow), Transition::Clear);
     assert_eq!(selected.action(), None);
+  }
+
+  #[test]
+  fn recorded_regions_keep_hits() -> Result<()> {
+    use vpdf_model::geometry::Screen;
+    use vpdf_model::scene::Scene;
+    use vpdf_terminal::graphics::Presentation;
+    use vpdf_terminal::payload::Encoder;
+    use vpdf_terminal::terminal::At;
+    let screen = Screen {
+      columns: 20,
+      rows: 10,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (2, 1),
+    };
+    let layout =
+      Layout::new([Bounds { x0: 0.0, y0: 0.0, x1: 160.0, y1: 160.0 }], screen);
+    let canvas = Canvas {
+      layout: &layout,
+      scroll: 0.0,
+      frame: Frame {
+        screen,
+        at: At { column: 5, row: 1 },
+        left: 3,
+        text: false,
+      },
+    };
+    let sweep =
+      Some((PageId(0), Bounds { x0: 12.5, y0: 24.5, x1: 63.2, y1: 81.7 }));
+    for crop_quirk in [false, true] {
+      let mut recorded = Region::open(snapshot(1));
+      let mut scene = Scene::new();
+      canvas.scene(Some(&mut recorded), sweep, crop_quirk, &mut scene);
+      let area = recorded.cells().unwrap();
+      assert_eq!(area.column, 3);
+      assert_eq!(recorded.items().at(area.column, area.row), Some(0));
+      let profile = Presentation { crop_quirk, ..Presentation::default() };
+      let mut graphics = Graphics::new(profile, &Encoder::default());
+      let mut replay = Graphics::new(profile, &Encoder::default());
+      let mut direct = Region::open(snapshot(1));
+      for _ in 0..2 {
+        let mut expected = Vec::new();
+        graphics.begin(&mut expected)?;
+        canvas.draw(Some(&mut direct), sweep, &mut graphics, &mut expected)?;
+        graphics.end(&mut expected)?;
+        assert_eq!(direct.cells(), Some(area));
+        let mut actual = Vec::new();
+        replay.begin(&mut actual)?;
+        let mut painter = vpdf_terminal::painter::Painter::new(&mut actual)
+          .with_graphics(&mut replay);
+        painter.paint(&scene);
+        painter.finish()?;
+        replay.end(&mut actual)?;
+        assert_eq!(actual, expected);
+      }
+    }
+    Ok(())
   }
 
   #[test]

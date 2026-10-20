@@ -1,8 +1,35 @@
 use crate::text::{Bounds, PageId, Position};
+use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::Screen;
+use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_reader::reader::Reader;
 use vpdf_search::search::Hit;
 use vpdf_terminal::terminal::At;
+
+pub fn move_to<'a>(
+  scene: &mut impl Draw<'a>,
+  at: At,
+  row: impl Into<usize>,
+  column: impl Into<usize>,
+) {
+  scene.push(Op::Move {
+    row: row.into().saturating_add(usize::from(at.row)),
+    column: column.into().saturating_add(usize::from(at.column)),
+  });
+}
+
+pub fn line<'a>(
+  scene: &mut impl Draw<'a>,
+  at: At,
+  row: u16,
+  text: &str,
+  columns: u16,
+) {
+  let text = vpdf_terminal::terminal::clean(text, usize::from(columns));
+  let pad = usize::from(columns).saturating_sub(text.width());
+  move_to(scene, at, row, 0u16);
+  scene.extend([Op::Text(Text::new(text)), Op::Spaces(pad)]);
+}
 
 pub struct Marks<'a> {
   pub reader: &'a Reader,
@@ -88,6 +115,27 @@ pub fn outside(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use vpdf_model::scene::Scene;
+
+  #[test]
+  fn overflowing_origins_return_errors() {
+    let mut scene = Scene::new();
+    move_to(&mut scene, At { column: 1, row: 1 }, usize::MAX, usize::MAX);
+    let mut out = Vec::new();
+    let error = vpdf_terminal::painter::paint(&mut out, &scene).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    assert_eq!(out, [] as [u8; 0]);
+  }
+
+  #[test]
+  fn scene_lines_keep_width_and_origin() -> crate::Result<()> {
+    let mut scene = Scene::new();
+    line(&mut scene, At { column: 3, row: 2 }, 2, "界e\u{301}\x07", 4);
+    let mut out = Vec::new();
+    vpdf_terminal::painter::paint(&mut out, &scene)?;
+    assert_eq!(out, "\x1b[5;4H界e\u{301} ".as_bytes());
+    Ok(())
+  }
 
   #[test]
   fn points_clamp_reported_pixels_to_the_cell() {

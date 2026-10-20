@@ -177,3 +177,50 @@ fn label_requests_follow_successful_bar_output() -> Result<()> {
   assert!(String::from_utf8_lossy(&out).contains(" p. 1 · First section "));
   Ok(())
 }
+
+#[test]
+fn recorded_scrub_keeps_track_and_label() -> Result<()> {
+  use vpdf_model::scene::{FillArea, Scene};
+  let layout = layout();
+  let view = view(&layout, 100.0);
+  let ticks = Ticks { outline: &[], search: &Search::default() };
+  let now = Instant::now();
+  let mut bar = Bar::default();
+  let Input::Press(press) = bar.input(
+    &view,
+    &route(MouseEventKind::Down(crossterm::event::MouseButton::Left), 5),
+  ) else {
+    panic!("Expected scrollbar press")
+  };
+  press.apply(&mut bar, Location::default(), &mut Reader::default());
+  let mut scene = Scene::new();
+  let label = bar.scene(view, ticks, now, &mut scene).unwrap();
+  let page = label.page();
+  label.scene("Section", &mut scene);
+  let Op::Fill(track) = &scene[0] else { panic!("Expected scrollbar track") };
+  assert_eq!(
+    track.area(),
+    FillArea::Cells { column: 119, columns: 1, rows: 39 }
+  );
+  assert_eq!(track.layer(), Layer::BelowText);
+  let mut graphics = Graphics::default();
+  let mut replay = Graphics::default();
+  for _ in 0..2 {
+    let mut expected = Vec::new();
+    graphics.begin(&mut expected)?;
+    let label =
+      bar.draw(view, ticks, now, &mut graphics, &mut expected)?.unwrap();
+    assert_eq!(label.page(), page);
+    label.draw("Section", &mut graphics, &mut expected)?;
+    graphics.end(&mut expected)?;
+    let mut actual = Vec::new();
+    replay.begin(&mut actual)?;
+    let mut painter = vpdf_terminal::painter::Painter::new(&mut actual)
+      .with_graphics(&mut replay);
+    painter.paint(&scene);
+    painter.finish()?;
+    replay.end(&mut actual)?;
+    assert_eq!(actual, expected);
+  }
+  Ok(())
+}

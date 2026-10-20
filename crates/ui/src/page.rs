@@ -12,6 +12,7 @@ use crate::theme;
 use std::io::Write;
 pub use view::Viewport;
 use vpdf_model::geometry::Screen;
+use vpdf_model::scene::{Draw, Layer};
 use vpdf_reader::motion::{covered_rows, range};
 use vpdf_reader::reader::{SelectionKind, TextSource};
 use vpdf_terminal::graphics::Graphics;
@@ -23,11 +24,10 @@ pub struct Canvas<'a> {
   pub menu: Option<Bounds>,
 }
 
-struct Painter<'a, S, W> {
+struct Painter<'a, S, D> {
   canvas: &'a Canvas<'a>,
   source: &'a mut S,
-  graphics: &'a mut Graphics,
-  out: &'a mut W,
+  scene: &'a mut D,
   scroll: f32,
 }
 
@@ -39,13 +39,21 @@ impl Canvas<'_> {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
-    let mut painter = Painter {
-      canvas: self,
-      source,
-      graphics,
-      out,
-      scroll: marks.reader.scroll,
-    };
+    let mut painter =
+      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+    let drawn = self.scene(source, marks, &mut painter);
+    painter.finish()?;
+    drawn
+  }
+
+  pub fn scene<'a>(
+    &self,
+    source: &mut (impl TextSource + Pages),
+    marks: &Marks<'_>,
+    scene: &mut impl Draw<'a>,
+  ) -> Result<()> {
+    let mut painter =
+      Painter { canvas: self, source, scene, scroll: marks.reader.scroll };
     if marks.cursorline && marks.reader.selection.is_some() {
       painter.line(marks.reader.cursor, theme::CURSORLINE)?;
     }
@@ -57,7 +65,7 @@ impl Canvas<'_> {
     }
     for &(page, bounds) in marks.hovered {
       let rect = self.layout.project(page, bounds, painter.scroll);
-      painter.tint(rect, theme::LINK)?;
+      painter.tint(rect, theme::LINK);
     }
     let visible = self.layout.visible(painter.scroll);
     let start =
@@ -83,28 +91,27 @@ impl Canvas<'_> {
   }
 }
 
-impl<S: TextSource + Pages, W: Write> Painter<'_, S, W> {
+impl<'a, S: TextSource + Pages, D: Draw<'a>> Painter<'_, S, D> {
   fn glyph(&mut self, position: Position) -> Result<()> {
     if let Some(glyph) = self.source.page_text(position.page)?.glyph(position) {
       let mut rect =
         self.canvas.layout.project(position.page, glyph.bounds, self.scroll);
       rect.x1 = rect.x1.max(rect.x0 + 2.0);
-      self.tint(rect, theme::CURSOR)?;
+      self.tint(rect, theme::CURSOR);
     }
     Ok(())
   }
 
-  fn tint(&mut self, rect: Bounds, color: [u8; 4]) -> Result<()> {
+  fn tint(&mut self, rect: Bounds, color: [u8; 4]) {
     for piece in outside(rect, self.canvas.menu) {
-      self.graphics.highlight(
+      self.scene.fill(
         piece,
         color,
+        Layer::AboveText,
         self.canvas.screen,
         self.canvas.left,
-        self.out,
-      )?;
+      );
     }
-    Ok(())
   }
 
   fn line(&mut self, position: Position, color: [u8; 4]) -> Result<()> {
@@ -127,13 +134,13 @@ impl<S: TextSource + Pages, W: Write> Painter<'_, S, W> {
     if band.height() > 0.0 {
       let rect = self.canvas.layout.project(position.page, band, self.scroll);
       for piece in outside(rect, self.canvas.menu) {
-        self.graphics.backdrop(
+        self.scene.fill(
           piece,
           color,
+          Layer::BelowText,
           self.canvas.screen,
           self.canvas.left,
-          self.out,
-        )?;
+        );
       }
     }
     Ok(())
@@ -155,7 +162,7 @@ impl<S: TextSource + Pages, W: Write> Painter<'_, S, W> {
       for bounds in covered_rows(&text, PageId(page), range, linewise) {
         let rect =
           self.canvas.layout.project(PageId(page), bounds, self.scroll);
-        self.tint(rect, color)?;
+        self.tint(rect, color);
       }
     }
     Ok(())

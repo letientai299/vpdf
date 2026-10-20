@@ -10,10 +10,10 @@ use crossterm::event::{KeyEvent, KeyEventKind};
 use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_model::style::Role;
 use vpdf_terminal::decode::Event;
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal::{self, At};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -86,8 +86,10 @@ impl Home {
     request: impl FnOnce(&mut Shelf),
   ) -> Result<()> {
     let at = self.at;
-    for row in 0..self.screen.rows {
-      terminal::clear(out, at, row, self.screen.columns)?;
+    {
+      let mut painter = vpdf_terminal::painter::Painter::new(out);
+      self.scene_clear(&mut painter);
+      painter.finish()?;
     }
     let drawn = self.panel.draw(
       out,
@@ -101,28 +103,50 @@ impl Home {
       request(cards);
     }
     drawn?;
-    let row = self.screen.rows - 1;
     if let Some(prompt) = &self.prompt {
       prompt.draw(out, self.screen, at, None)?;
     } else {
-      let (text, style) = match &self.error {
-        Some(error) => (error.as_str(), sgr(Role::Error)),
-        None => ("Enter open  :e file  :q quit", sgr(Role::Bar)),
-      };
-      let columns = usize::from(self.screen.columns);
-      let text = terminal::clean(text, columns.saturating_sub(8));
-      let fill = columns.saturating_sub(7 + text.width());
-      write!(
-        out,
-        "{}{} VPDF {style} {text}{}{}{}",
-        at.goto(row, 0u16),
-        sgr(Role::Badge(Color::Blue)).to_owned(),
-        " ".repeat(fill),
-        sgr(Role::Reset),
-        terminal::HIDE_CURSOR
-      )?;
+      let mut painter = vpdf_terminal::painter::Painter::new(out);
+      self.scene_footer(&mut painter);
+      painter.finish()?;
     }
     Ok(())
+  }
+
+  pub fn scene_clear<'a>(&self, scene: &mut impl Draw<'a>) {
+    for row in 0..self.screen.rows {
+      scene.extend([
+        Op::Move {
+          column: usize::from(self.at.column),
+          row: usize::from(self.at.row) + usize::from(row),
+        },
+        Op::Erase(self.screen.columns),
+      ]);
+    }
+  }
+
+  pub fn scene_footer<'a>(&self, scene: &mut impl Draw<'a>) {
+    let (text, style) = match &self.error {
+      Some(error) => (error.as_str(), Role::Error),
+      None => ("Enter open  :e file  :q quit", Role::Bar),
+    };
+    let columns = usize::from(self.screen.columns);
+    let text = terminal::clean(text, columns.saturating_sub(8));
+    let fill = columns.saturating_sub(7 + text.width());
+    scene.extend([
+      Op::Move {
+        column: usize::from(self.at.column),
+        row: usize::from(self.at.row) + usize::from(self.screen.rows - 1),
+      },
+      Op::Style(Role::Badge(Color::Blue)),
+      Op::Text(Text::new(" VPDF ")),
+      Op::Style(style),
+      Op::Text(Text::new(" ")),
+      Op::Text(Text::new(text)),
+      Op::Spaces(fill),
+      Op::Style(Role::Reset),
+      Op::HideCursor,
+    ]);
   }
 
   /// Whether a prompt takes typed and pasted text.
@@ -266,6 +290,7 @@ impl Home {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use vpdf_terminal::style::sgr;
 
   #[test]
   fn effects_resume_the_prompt() -> Result<()> {

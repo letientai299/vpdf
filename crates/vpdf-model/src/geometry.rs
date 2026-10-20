@@ -10,6 +10,38 @@ pub struct Screen {
   pub origin: (u16, u16),
 }
 
+/// Pixel bounds require clipping.
+///
+/// ```compile_fail
+/// let rect = vpdf_model::geometry::PixelRect { bits: [0; 4] };
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PixelRect {
+  bits: [u32; 4],
+}
+
+impl PixelRect {
+  pub fn clip(rect: Bounds, screen: Screen) -> Option<Self> {
+    let clipped = Bounds {
+      x0: rect.x0.max(0.0).floor(),
+      y0: rect.y0.max(0.0).floor(),
+      x1: rect.x1.min(screen.width()).ceil(),
+      y1: rect.y1.min(screen.height()).ceil(),
+    };
+    if clipped.width() <= 0.0 || clipped.height() <= 0.0 {
+      return None;
+    }
+    Some(Self {
+      bits: [clipped.x0, clipped.y0, clipped.x1, clipped.y1].map(f32::to_bits),
+    })
+  }
+
+  pub fn bounds(self) -> Bounds {
+    let [x0, y0, x1, y1] = self.bits.map(f32::from_bits);
+    Bounds { x0, y0, x1, y1 }
+  }
+}
+
 /// Rows advanced while retaining reading context.
 pub fn screen_step(rows: usize) -> usize {
   rows.saturating_sub(2).max(1)
@@ -162,6 +194,28 @@ pub fn transform(bounds: Bounds, matrix: &Transform) -> Bounds {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn pixel_clips_round_edges() {
+    let screen = Screen {
+      columns: 10,
+      rows: 5,
+      cell_width: 2,
+      cell_height: 4,
+      origin: (3, 2),
+    };
+    let rect = Bounds { x0: -2.5, y0: 1.25, x1: 15.25, y1: 30.3 };
+    let clipped = PixelRect::clip(rect, screen).unwrap().bounds();
+    assert_eq!(
+      (clipped.x0, clipped.y0, clipped.x1, clipped.y1),
+      (0.0, 1.0, 16.0, 16.0)
+    );
+    assert_eq!(PixelRect::clip(clipped, screen).unwrap().bounds(), clipped);
+    assert!(
+      PixelRect::clip(Bounds { x0: 20.0, x1: 30.0, ..rect }, screen).is_none()
+    );
+    assert!(PixelRect::clip(rect, Screen { rows: 1, ..screen }).is_none());
+  }
   #[test]
   fn rotations_preserve_origin_and_dimensions() {
     let bounds = Bounds { x0: 10.0, y0: 20.0, x1: 110.0, y1: 220.0 };

@@ -284,8 +284,8 @@ impl Shelf {
     let shown = lines.iter().zip(&texts).skip(self.top).take(room);
     for (row, (line, text)) in (top..).zip(shown) {
       write!(out, "{}{}", at.goto(row, column + 1), sgr(Role::Reset))?;
-      let used = line.write(out, sgr(Role::Reset), inner, keys, "")?;
-      let full = line.write(&mut std::io::sink(), "", usize::MAX, keys, "")?;
+      let used = line.write(out, Some(Role::Reset), inner, keys, "")?;
+      let full = line.scene(&mut (), None, usize::MAX, keys, "");
       if full > used {
         self.clipped.push((u16::try_from(row)?, text.clone()));
       }

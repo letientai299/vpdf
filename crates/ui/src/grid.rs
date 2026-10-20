@@ -6,8 +6,8 @@ use crate::layout::Screen;
 use crate::theme::Color;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_model::style::Role;
-use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal::{self, At};
 
 /// Placement of labels in columns; the labels stay with the caller.
@@ -85,20 +85,50 @@ pub fn cell(
   keys: usize,
   shown: Shown,
 ) -> Result<()> {
+  let mut scene = vpdf_terminal::painter::Painter::new(out);
+  scene_cell(&mut scene, label, width, keys, shown);
+  scene.finish()?;
+  Ok(())
+}
+
+pub fn scene_cell<'a>(
+  scene: &mut impl Draw<'a>,
+  label: &str,
+  width: usize,
+  keys: usize,
+  shown: Shown,
+) {
   let text = terminal::clean(label, width.saturating_sub(2));
-  let pad = " ".repeat(width.saturating_sub(1 + text.width()));
+  let pad = width.saturating_sub(1 + text.width());
   if shown == Shown::Chosen {
-    let badge = sgr(Role::Badge(Color::Blue)).to_owned();
-    write!(out, "{badge} {text}{pad}{}", sgr(Role::Bar))?;
-  } else if shown == Shown::Pointed {
-    write!(out, " {}{text}{}{pad}", sgr(Role::BarHover), sgr(Role::Bar))?;
+    scene.extend([
+      Op::Style(Role::Badge(Color::Blue)),
+      Op::Text(Text::new(" ")),
+      Op::Text(Text::new(text)),
+      Op::Spaces(pad),
+      Op::Style(Role::Bar),
+    ]);
+    return;
+  }
+  scene.push(Op::Text(Text::new(" ")));
+  if shown == Shown::Pointed {
+    scene.extend([
+      Op::Style(Role::BarHover),
+      Op::Text(Text::new(text)),
+      Op::Style(Role::Bar),
+    ]);
   } else if keys > 0 && text.len() >= keys && text.is_char_boundary(keys) {
     let (key, rest) = text.split_at(keys);
-    write!(out, " {}{key}{}{rest}{pad}", sgr(Role::Key), sgr(Role::Bar))?;
+    scene.extend([
+      Op::Style(Role::Key),
+      Op::Text(Text::new(key.to_owned())),
+      Op::Style(Role::Bar),
+      Op::Text(Text::new(rest.to_owned())),
+    ]);
   } else {
-    write!(out, " {text}{pad}")?;
+    scene.push(Op::Text(Text::new(text)));
   }
-  Ok(())
+  scene.push(Op::Spaces(pad));
 }
 
 /// Draws `labels` placed by `grid`, ending at row `bottom`; the first
@@ -112,11 +142,35 @@ pub fn draw(
   keys: usize,
   screen: Screen,
 ) -> Result<()> {
+  let mut scene = vpdf_terminal::painter::Painter::new(out);
+  self::scene(
+    &mut scene,
+    (at, bottom),
+    labels,
+    grid,
+    (chosen, pointed),
+    keys,
+    screen,
+  );
+  scene.finish()?;
+  Ok(())
+}
+
+pub fn scene<'a>(
+  scene: &mut impl Draw<'a>,
+  (at, bottom): (At, u16),
+  labels: &[String],
+  grid: &Grid,
+  (chosen, pointed): (Option<usize>, Option<usize>),
+  keys: usize,
+  screen: Screen,
+) {
   let columns = usize::from(screen.columns);
   let top = usize::from(bottom) + 1 - grid.visible;
   for line in 0..grid.visible {
     let row = grid.first + line;
-    write!(out, "{}{}", at.goto(top + line, 0u16), sgr(Role::Bar))?;
+    crate::paint::move_to(scene, at, top + line, 0u16);
+    scene.push(Op::Style(Role::Bar));
     let mut used = 0;
     for column in 0..grid.columns {
       let index = column * grid.rows + row;
@@ -128,11 +182,12 @@ pub fn draw(
       } else {
         Shown::Plain
       };
-      cell(out, label, grid.width, keys, shown)?;
+      scene_cell(scene, label, grid.width, keys, shown);
       used += grid.width;
     }
-    let fill = " ".repeat(columns.saturating_sub(used));
-    write!(out, "{fill}{}", sgr(Role::Reset))?;
+    scene.extend([
+      Op::Spaces(columns.saturating_sub(used)),
+      Op::Style(Role::Reset),
+    ]);
   }
-  Ok(())
 }

@@ -4,6 +4,7 @@ use crate::Result;
 use crate::app::App;
 use crate::pdf_text::PdfText;
 use std::io::Write;
+use vpdf_model::scene::{Draw, Layer};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_terminal::graphics::Graphics;
@@ -63,7 +64,16 @@ impl App {
     self.marks(graphics, screen, out)?;
     // The side without focus recedes; a veil would dim a menu over it.
     if self.panel_focused() && self.context_rect().is_none() {
-      graphics.veil(vpdf_ui::theme::PANE_VEIL, screen, left, out)?;
+      let mut scene =
+        vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
+      scene.stretch(
+        vpdf_ui::theme::PANE_VEIL,
+        Layer::AboveText,
+        (0, screen.columns, screen.rows.saturating_sub(1)),
+        screen,
+        left,
+      );
+      scene.finish()?;
     }
     Ok(())
   }
