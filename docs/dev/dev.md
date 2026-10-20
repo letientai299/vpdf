@@ -183,6 +183,10 @@ during a search scan, and paced scrolling, including tile readiness and blank
 frames. The [stage benchmark][stages] separates page loading, text extraction,
 display list construction, rasterization, and encoding.
 
+The [raster pool][render-worker] caps concurrency separately from cache
+decoding. Native drawing shares locks; extra raster threads can increase
+contention instead of throughput.
+
 The [startup benchmark][startup] runs inside the terminal under test. It
 launches one or two executables on a relay of that terminal, alternating their
 order per pair, and reports first frame, first page tile, and complete initial
@@ -323,6 +327,7 @@ a result needs a reproducible release reference.
 [reader-bench]: ../../benches/reader.rs
 [latency]: ../../benches/latency.rs
 [stages]: ../../benches/stages.rs
+[render-worker]: ../../crates/vpdf-pdf/src/jobs/render.rs
 [startup]: ../../scripts/startup.py
 [trace]: ../../src/trace.rs
 [package]: ../../scripts/release.sh
