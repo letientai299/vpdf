@@ -80,8 +80,9 @@ mise try:gui -- path/to/file.pdf
 ```
 
 Like `mise try`, this builds a debug executable and forwards arguments. Omit the
-path for the start screen. The window uses the shared reader keys, tabs, splits,
-search, text view, and reading-state storage. PDF jobs run on a session thread;
+path for the start screen. Normal launches activate the window. The window
+uses the shared reader keys, tabs, splits, search, text view, and reading-state
+storage. PDF jobs run on a session thread;
 the window thread uploads RGB tiles and pictures and paints the fixed cell
 grid. Both frontends share pane composition, including previews, recent cards,
 menus, clues, region outlines, and scrollbar drawing.
@@ -105,13 +106,14 @@ it starts in the current directory and replaces the focused pane. File drops
 open tabs. Closing the last tab exits, as in the terminal. External prompt
 editing requires the terminal reader.
 
-On macOS the window does not activate itself at launch, so `open -g` keeps it
-in the background. macOS delivers posted keys to a background app but drops
-posted clicks and wheel turns. For live checks without focus, the hidden
-`--events PATH` option reads pointer, wheel, modifier, focus, IME, paste, and
-file-drop lines from a file or FIFO; the [injection module][inject] documents
-the format. Injected events skip OS translation, so real pointer devices, OS
-drags, and IME candidate windows still need manual checks.
+On macOS, `--background` disables automatic activation; combine it with
+`open -g` when launching the app bundle. macOS delivers posted keys to a
+background app but drops posted clicks and wheel turns. For live checks without
+focus, the hidden `--events PATH` option reads pointer, wheel, modifier, focus,
+IME, paste, and file-drop lines from a file or FIFO; the
+[injection module][inject] documents the format. Injected events skip OS
+translation, so real pointer devices, OS drags, and IME candidate windows still
+need manual checks.
 
 The native `:perf` overlay samples process CPU and RSS. FPS counts content
 frames received and painted by the window; Upload counts RGBA texture bytes

@@ -13,6 +13,9 @@ use vpdf_model::geometry::Screen;
 #[command(version, about = "Native Vpdf reader")]
 struct Args {
   files: Vec<PathBuf>,
+  /// Open without activating the window.
+  #[arg(long)]
+  background: bool,
   #[arg(long, hide = true)]
   capture: Option<PathBuf>,
   #[arg(long, hide = true)]
@@ -192,19 +195,25 @@ fn icon() -> Result<egui::IconData, image::ImageError> {
   ))
 }
 
-fn main() -> eframe::Result {
-  let args = Args::parse();
-  let icon =
-    icon().map_err(|error| eframe::Error::AppCreation(Box::new(error)))?;
-  let options = eframe::NativeOptions {
+fn options(args: &Args) -> Result<eframe::NativeOptions, image::ImageError> {
+  let mut options = eframe::NativeOptions {
     viewport: egui::ViewportBuilder::default()
       .with_title("Vpdf")
-      .with_icon(icon)
+      .with_icon(icon()?)
       .with_inner_size([1100.0, 800.0])
-      .with_active(false),
-    event_loop_builder: Some(Box::new(background)),
+      .with_active(!args.background),
     ..Default::default()
   };
+  if args.background {
+    options.event_loop_builder = Some(Box::new(background));
+  }
+  Ok(options)
+}
+
+fn main() -> eframe::Result {
+  let args = Args::parse();
+  let options = options(&args)
+    .map_err(|error| eframe::Error::AppCreation(Box::new(error)))?;
   eframe::run_native(
     "Vpdf",
     options,
@@ -214,9 +223,27 @@ fn main() -> eframe::Result {
 
 #[cfg(test)]
 mod tests {
+  use super::*;
+
+  #[test]
+  fn background_is_explicit() {
+    for (flags, active) in [
+      (vec![], true),
+      (vec!["--background"], false),
+      (vec!["--events", "input.fifo"], true),
+      (vec!["--background", "--events", "input.fifo"], false),
+    ] {
+      let args =
+        Args::try_parse_from(std::iter::once("vpdf-gui").chain(flags)).unwrap();
+      let options = options(&args).unwrap();
+      assert_eq!(options.viewport.active, Some(active));
+      assert_eq!(options.event_loop_builder.is_some(), !active);
+    }
+  }
+
   #[test]
   fn icon_preserves_gradient() -> Result<(), image::ImageError> {
-    let icon = super::icon()?;
+    let icon = icon()?;
     assert_eq!((icon.width, icon.height), (256, 256));
     let pixel = |x: usize, y: usize| {
       let offset = (y * icon.width as usize + x) * 4;
