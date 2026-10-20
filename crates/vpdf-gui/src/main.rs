@@ -13,6 +13,9 @@ use vpdf_model::geometry::Screen;
 #[command(version, about = "Native Vpdf reader")]
 struct Args {
   files: Vec<PathBuf>,
+  /// Launch page overriding the saved position.
+  #[arg(long)]
+  page: Option<usize>,
   /// Open without activating the window.
   #[arg(long)]
   background: bool,
@@ -43,7 +46,8 @@ impl Window {
       .as_deref()
       .map(|path| inject::spawn(path, cc.egui_ctx.clone()));
     let ctx = cc.egui_ctx.clone();
-    let bridge = Bridge::start(args.files, move || ctx.request_repaint())?;
+    let bridge =
+      Bridge::start(args.files, args.page, move || ctx.request_repaint())?;
     Ok(Self {
       bridge,
       frame: None,

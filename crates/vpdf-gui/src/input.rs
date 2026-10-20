@@ -157,7 +157,12 @@ impl Adapter {
       {
         self.wheel = egui::Vec2::ZERO;
         output.extend(text.chars().filter(|ch| !ch.is_control()).map(|ch| {
-          Input::Key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+          let keys = if ch == ' ' && modifiers.shift {
+            KeyModifiers::SHIFT
+          } else {
+            KeyModifiers::NONE
+          };
+          Input::Key(KeyEvent::new(KeyCode::Char(ch), keys))
         }));
       }
       Event::Ime(egui::ImeEvent::Preedit { text, active_range_chars })
@@ -367,7 +372,11 @@ fn key_code(key: Key, modifiers: Modifiers) -> Option<KeyCode> {
     Key::F1 => KeyCode::F(1),
     Key::Space if modifiers.ctrl => KeyCode::Char(' '),
     _ if modifiers.ctrl || modifiers.mac_cmd || modifiers.alt => {
-      let name = key.name();
+      let name = match key {
+        Key::Minus if modifiers.shift => "_",
+        Key::Minus => "-",
+        _ => key.symbol_or_name(),
+      };
       if name.len() != 1 {
         return None;
       }
@@ -446,6 +455,25 @@ mod tests {
   }
 
   #[test]
+  fn shifted_space_keeps_scroll_direction() {
+    for (key_code, text, modifiers, expected) in [
+      (Key::Space, " ", Modifiers::NONE, KeyModifiers::NONE),
+      (Key::Space, " ", Modifiers::SHIFT, KeyModifiers::SHIFT),
+      (Key::J, "J", Modifiers::SHIFT, KeyModifiers::NONE),
+      (Key::Plus, "+", Modifiers::SHIFT, KeyModifiers::NONE),
+    ] {
+      let input = events(
+        &[key(key_code, modifiers), Event::Text(text.into())],
+        Modifiers::NONE,
+      );
+      assert_eq!(input.len(), 1, "{text:?}");
+      let Input::Key(event) = &input[0] else { panic!("Expected key") };
+      assert_eq!(event.code, KeyCode::Char(text.chars().next().unwrap()));
+      assert_eq!(event.modifiers, expected, "{text:?}");
+    }
+  }
+
+  #[test]
   fn control_chords_and_paste_stay_distinct() {
     let modifiers = Modifiers { ctrl: true, ..Modifiers::NONE };
     let input = events(
@@ -461,6 +489,23 @@ mod tests {
     assert_eq!(event.code, KeyCode::Char('w'));
     assert_eq!(event.modifiers, KeyModifiers::CONTROL);
     assert!(matches!(&input[1], Input::Paste(text) if text == "hello"));
+  }
+
+  #[test]
+  fn punctuation_chords_reach_prompt() {
+    for (key_code, shift, expected) in [
+      (Key::Minus, true, '_'),
+      (Key::Minus, false, '-'),
+      (Key::Slash, false, '/'),
+      (Key::OpenBracket, false, '['),
+    ] {
+      let modifiers = Modifiers { ctrl: true, shift, ..Modifiers::NONE };
+      let output = events(&[key(key_code, modifiers)], Modifiers::NONE);
+      assert_eq!(output.len(), 1, "{key_code:?}");
+      let Input::Key(event) = &output[0] else { panic!("Expected chord") };
+      assert_eq!(event.code, KeyCode::Char(expected));
+      assert_eq!(event.modifiers, key_modifiers(modifiers));
+    }
   }
 
   #[test]

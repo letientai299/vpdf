@@ -1,7 +1,7 @@
 use super::{
   Act, App, Arc, Cause, Duration, Event, Home, Instant, IsTerminal,
-  KeyEventKind, MouseKind, Ordering, Outcome, Pacer, PageId, PathBuf, Result,
-  Session, Shape, Sight, View, Write, io, sight, terminal,
+  KeyEventKind, MouseKind, Ordering, Outcome, Pacer, PathBuf, Result, Session,
+  Shape, Sight, View, Write, io, sight, terminal,
 };
 use vpdf_terminal::input::{Notice, notice};
 
@@ -31,12 +31,7 @@ pub fn view(paths: &[PathBuf], page: Option<usize>) -> Result<()> {
   for path in paths {
     session.open(path, true, screen)?;
   }
-  session.activate(0)?;
-  let app = session.app();
-  if let Some(page) = page {
-    let page = PageId(page.saturating_sub(1).min(app.doc.pages.len() - 1));
-    app.reading_view().open_page(page)?;
-  }
+  session.start_at(page)?;
   run_saving(&mut session)
 }
 

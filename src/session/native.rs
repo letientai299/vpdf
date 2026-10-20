@@ -64,17 +64,25 @@ pub struct Bridge {
   thread: Option<JoinHandle<Result<()>>>,
 }
 
+struct Launch {
+  paths: Vec<PathBuf>,
+  store: Option<PathBuf>,
+  page: Option<usize>,
+}
+
 impl Bridge {
   pub fn start(
     paths: Vec<PathBuf>,
+    page: Option<usize>,
     repaint: impl Fn() + Send + Sync + 'static,
   ) -> Result<Self> {
-    Self::stored(paths, crate::state::location(), repaint)
+    Self::stored(paths, crate::state::location(), page, repaint)
   }
 
   fn stored(
     paths: Vec<PathBuf>,
     store: Option<PathBuf>,
+    page: Option<usize>,
     repaint: impl Fn() + Send + Sync + 'static,
   ) -> Result<Self> {
     let (send, receive) = mpsc::channel();
@@ -90,7 +98,14 @@ impl Bridge {
     });
     let worker =
       thread::Builder::new().name("vpdf-session".into()).spawn(move || {
-        run(paths, store, &receive, &output, &repaint, &wake, &pending)
+        run(
+          Launch { paths, store, page },
+          &receive,
+          &output,
+          &repaint,
+          &wake,
+          &pending,
+        )
       })?;
     Ok(Self { send, latest, thread: Some(worker) })
   }
@@ -119,15 +134,15 @@ impl Drop for Bridge {
 }
 
 fn run(
-  paths: Vec<PathBuf>,
-  store: Option<PathBuf>,
+  launch: Launch,
   receive: &mpsc::Receiver<Input>,
   latest: &Mutex<Option<Frame>>,
   repaint: &impl Fn(),
   wake: &Wake,
   pending: &AtomicBool,
 ) -> Result<()> {
-  let mut session = Session::new(store);
+  let mut starting = !launch.paths.is_empty();
+  let mut session = Session::new(launch.store);
   session.frontend = crate::raster::Frontend::Native(wake.clone());
   let mut screen = Screen {
     columns: 100,
@@ -137,7 +152,7 @@ fn run(
     origin: (0, 0),
   };
   ensure_home(&mut session, screen);
-  for path in paths {
+  for path in launch.paths {
     apply(&mut session, Input::Open(path), &mut screen);
   }
   session.resize(screen)?;
@@ -155,6 +170,7 @@ fn run(
       apply(&mut session, Input::Open(path), &mut screen);
       dirty = true;
     }
+    finish_launch(&mut session, &mut starting, launch.page)?;
     quit_when_closed(&mut session);
     session.perf.running(session.state.perf);
     session.perf.view.output("Upload");
@@ -224,6 +240,22 @@ fn run(
     dirty = true;
   }
   session.finish()
+}
+
+fn finish_launch(
+  session: &mut Session,
+  starting: &mut bool,
+  page: Option<usize>,
+) -> Result<()> {
+  if !*starting || session.unlock.is_some() || !session.native_opens.is_empty()
+  {
+    return Ok(());
+  }
+  if !session.tabs.is_empty() {
+    session.start_at(page)?;
+  }
+  *starting = false;
+  Ok(())
 }
 
 fn resume_keys(session: &mut Session) -> bool {
@@ -782,7 +814,7 @@ mod tests {
     assert!(session.home.is_some() && !session.quit);
     let (send, wakes) = mpsc::channel();
     let mut bridge =
-      Bridge::stored(vec![encrypted.path().into()], None, move || {
+      Bridge::stored(vec![encrypted.path().into()], None, None, move || {
         let _ = send.send(());
       })?;
     wait(&bridge, &wakes, |frame| {
@@ -938,9 +970,10 @@ mod tests {
     state.set_perf(true);
     state.save(&store, &[], &[])?;
     let (send, wakes) = mpsc::channel();
-    let mut bridge = Bridge::stored(Vec::new(), Some(store), move || {
-      let _ = send.send(());
-    })?;
+    let mut bridge =
+      Bridge::stored(Vec::new(), Some(store), None, move || {
+        let _ = send.send(());
+      })?;
     wait(&bridge, &wakes, |frame| frame.content)?;
     let sampled = wait(&bridge, &wakes, |frame| {
       !frame.content
@@ -978,7 +1011,7 @@ mod tests {
     let encrypted = protected(&path)?;
     let (send, wakes) = mpsc::channel();
     let mut bridge =
-      Bridge::stored(vec![encrypted.path().into()], None, move || {
+      Bridge::stored(vec![encrypted.path().into()], None, None, move || {
         let _ = send.send(());
       })?;
     wait(&bridge, &wakes, |frame| {
@@ -994,16 +1027,98 @@ mod tests {
   }
 
   #[test]
+  fn launch_page_overrides_state() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let first = root.path().join("first.pdf");
+    let second = root.path().join("second.pdf");
+    crate::fixtures::pdf(&first, &["one", "two", "three"], "/Rotate 90")?;
+    crate::fixtures::pdf(&second, &["other"], "")?;
+    let store = root.path().join("state.json");
+    let canonical = std::fs::canonicalize(&first)?;
+    for (page, expected) in
+      [(None, 2), (Some(0), 0), (Some(1), 0), (Some(2), 1), (Some(99), 2)]
+    {
+      let mut saved = Session::new(Some(store.clone()));
+      saved.open(&first, true, sized())?;
+      saved.start_at(Some(3))?;
+      saved.finish()?;
+      drop(saved);
+      let (send, wakes) = mpsc::channel();
+      let mut bridge = Bridge::stored(
+        vec![first.clone(), second.clone()],
+        Some(store.clone()),
+        page,
+        move || {
+          let _ = send.send(());
+        },
+      )?;
+      let frame = wait(&bridge, &wakes, |frame| {
+        frame.complete && !frame.images.is_empty()
+      })?;
+      assert_eq!(frame.title, "first.pdf");
+      bridge.close()?;
+      let state = crate::state::State::load(&store);
+      assert_eq!(
+        state.entry(&canonical).expect("saved document").cursor.page.0,
+        expected,
+        "{page:?}"
+      );
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn launch_page_waits_for_password() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let first = root.path().join("first.pdf");
+    let second = root.path().join("second.pdf");
+    crate::fixtures::pdf(&first, &["one", "two", "three"], "/Rotate 90")?;
+    crate::fixtures::pdf(&second, &["other"], "")?;
+    let encrypted = protected(&first)?;
+    let store = root.path().join("state.json");
+    let (send, wakes) = mpsc::channel();
+    let mut bridge = Bridge::stored(
+      vec![encrypted.path().into(), second],
+      Some(store.clone()),
+      Some(3),
+      move || {
+        let _ = send.send(());
+      },
+    )?;
+    wait(&bridge, &wakes, |frame| {
+      frame
+        .scene
+        .iter()
+        .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
+    })?;
+    bridge.send(Input::Paste("test-reader".into()));
+    bridge.send(key(KeyCode::Enter));
+    wait(&bridge, &wakes, |frame| {
+      frame.complete
+        && frame.images.iter().any(|image| image.id.key.page.0 == 2)
+    })?;
+    bridge.close()?;
+    let state = crate::state::State::load(&store);
+    let path = std::fs::canonicalize(encrypted.path())?;
+    assert_eq!(state.entry(&path).expect("saved document").cursor.page.0, 2);
+    Ok(())
+  }
+
+  #[test]
   fn opens_renders_navigates_and_saves() -> Result<()> {
     let root = tempfile::tempdir()?;
     let path = root.path().join("native.pdf");
     crate::fixtures::pdf(&path, &["first", "second"], "")?;
     let store = root.path().join("state.json");
     let (send, wakes) = mpsc::channel();
-    let mut bridge =
-      Bridge::stored(vec![path.clone()], Some(store.clone()), move || {
+    let mut bridge = Bridge::stored(
+      vec![path.clone()],
+      Some(store.clone()),
+      None,
+      move || {
         let _ = send.send(());
-      })?;
+      },
+    )?;
     let first = wait(&bridge, &wakes, |frame| {
       frame.complete && !frame.images.is_empty()
     })?;
@@ -1030,7 +1145,7 @@ mod tests {
     assert!(state.entry(&std::fs::canonicalize(&path)?).is_some());
     bridge.close()?;
     let (send, wakes) = mpsc::channel();
-    let mut home = Bridge::stored(Vec::new(), Some(store), move || {
+    let mut home = Bridge::stored(Vec::new(), Some(store), None, move || {
       let _ = send.send(());
     })?;
     let card = wait(&home, &wakes, |frame| {
@@ -1571,7 +1686,7 @@ mod tests {
   #[test]
   fn home_reports_open_failure() -> Result<()> {
     let (send, wakes) = mpsc::channel();
-    let mut bridge = Bridge::stored(Vec::new(), None, move || {
+    let mut bridge = Bridge::stored(Vec::new(), None, None, move || {
       let _ = send.send(());
     })?;
     wait(&bridge, &wakes, |_| true)?;

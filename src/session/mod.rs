@@ -193,6 +193,16 @@ impl Session {
     self.state.save(store, history.commands(), history.searches())
   }
 
+  fn start_at(&mut self, page: Option<usize>) -> Result<()> {
+    self.activate(0)?;
+    if let Some(page) = page {
+      let app = self.app();
+      let page = PageId(page.saturating_sub(1).min(app.doc.pages.len() - 1));
+      app.reading_view().open_page(page)?;
+    }
+    Ok(())
+  }
+
   /// Records the focused pane and new history in memory, where the
   /// hangup thread finds them too.
   fn record(&mut self) {
