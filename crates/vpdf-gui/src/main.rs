@@ -1,9 +1,10 @@
 use clap::Parser;
 use eframe::egui::{self, FontId, ViewportCommand};
 use std::path::PathBuf;
+use std::sync::mpsc::Receiver;
 use vpdf::session::native::{Bridge, Frame, Input};
 use vpdf_gui::{
-  input,
+  inject, input,
   paint::{self, Renderer},
 };
 use vpdf_model::geometry::Screen;
@@ -14,6 +15,8 @@ struct Args {
   files: Vec<PathBuf>,
   #[arg(long, hide = true)]
   capture: Option<PathBuf>,
+  #[arg(long, hide = true)]
+  events: Option<PathBuf>,
 }
 
 struct Window {
@@ -23,6 +26,7 @@ struct Window {
   input: input::Adapter,
   screen: Option<Screen>,
   capture: Option<PathBuf>,
+  events: Option<Receiver<inject::Injected>>,
 }
 
 impl Window {
@@ -31,6 +35,10 @@ impl Window {
     args: Args,
   ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
     vpdf_gui::fonts::install(&cc.egui_ctx);
+    let events = args
+      .events
+      .as_deref()
+      .map(|path| inject::spawn(path, cc.egui_ctx.clone()));
     let ctx = cc.egui_ctx.clone();
     let bridge = Bridge::start(args.files, move || ctx.request_repaint())?;
     Ok(Self {
@@ -40,6 +48,7 @@ impl Window {
       input: input::Adapter::default(),
       screen: None,
       capture: args.capture,
+      events,
     })
   }
 }
@@ -137,6 +146,11 @@ impl eframe::App for Window {
       }
     }
   }
+  fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+    if let Some(events) = &self.events {
+      inject::apply(events, ctx, raw);
+    }
+  }
   fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] {
     paint::background().to_normalized_gamma_f32()
   }
@@ -162,6 +176,16 @@ fn capture(image: &egui::ColorImage, path: &std::path::Path) {
   }
 }
 
+// Winit activates on launch, ignoring `open -g`.
+#[cfg(target_os = "macos")]
+fn background(builder: &mut eframe::EventLoopBuilder<eframe::UserEvent>) {
+  use winit::platform::macos::EventLoopBuilderExtMacOS;
+  builder.with_activate_ignoring_other_apps(false);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn background(_: &mut eframe::EventLoopBuilder<eframe::UserEvent>) {}
+
 fn main() -> eframe::Result {
   let args = Args::parse();
   let options = eframe::NativeOptions {
@@ -169,6 +193,7 @@ fn main() -> eframe::Result {
       .with_title("vpdf")
       .with_inner_size([1100.0, 800.0])
       .with_active(false),
+    event_loop_builder: Some(Box::new(background)),
     ..Default::default()
   };
   eframe::run_native(

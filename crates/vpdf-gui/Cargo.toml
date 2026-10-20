@@ -26,3 +26,4 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 font-kit.workspace = true
+winit = { version = "0.30", default-features = false }

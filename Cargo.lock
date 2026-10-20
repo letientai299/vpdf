@@ -3479,6 +3479,7 @@ dependencies = [
  "unicode-width",
  "vpdf",
  "vpdf-model",
+ "winit",
 ]
 
 [[package]]

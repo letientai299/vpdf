@@ -136,10 +136,10 @@ fn run(
     cell_height: 20,
     origin: (0, 0),
   };
+  ensure_home(&mut session, screen);
   for path in paths {
     apply(&mut session, Input::Open(path), &mut screen);
   }
-  ensure_home(&mut session, screen);
   session.resize(screen)?;
   let mut cache = Cache::new(BUDGET);
   let mut chores = super::run::Chores::new(Instant::now());
@@ -155,7 +155,7 @@ fn run(
       apply(&mut session, Input::Open(path), &mut screen);
       dirty = true;
     }
-    ensure_home(&mut session, screen);
+    quit_when_closed(&mut session);
     session.perf.running(session.state.perf);
     session.perf.view.output("Upload");
     let now = Instant::now();
@@ -403,8 +403,18 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) {
     }
     _ => Ok(()),
   };
-  ensure_home(session, *screen);
+  quit_when_closed(session);
   report(session, applied);
+}
+
+// Like the terminal, closing the last tab exits.
+fn quit_when_closed(session: &mut Session) {
+  if session.tabs.is_empty()
+    && session.home.is_none()
+    && session.unlock.is_none()
+  {
+    session.quit = true;
+  }
 }
 
 fn ensure_home(session: &mut Session, screen: Screen) {
@@ -747,6 +757,7 @@ mod tests {
     let mut screen = sized();
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(Wake::none());
+    ensure_home(&mut session, screen);
     apply(&mut session, Input::Open(encrypted.path().into()), &mut screen);
     assert!(session.home.is_some());
     apply(&mut session, Input::Paste("secret".into()), &mut screen);
@@ -768,6 +779,7 @@ mod tests {
     apply(&mut session, key(KeyCode::Esc), &mut screen);
     assert!(session.unlock.is_none());
     assert!(session.tabs.is_empty());
+    assert!(session.home.is_some() && !session.quit);
     let (send, wakes) = mpsc::channel();
     let mut bridge =
       Bridge::stored(vec![encrypted.path().into()], None, move || {
@@ -854,7 +866,7 @@ mod tests {
   }
 
   #[test]
-  fn reopened_home_reserves_perf() -> Result<()> {
+  fn home_reserves_perf_and_last_close_quits() -> Result<()> {
     let root = tempfile::tempdir()?;
     let path = root.path().join("source.pdf");
     crate::fixtures::pdf(&path, &["first"], "")?;
@@ -862,15 +874,23 @@ mod tests {
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(Wake::none());
     session.state.set_perf(true);
-    apply(&mut session, Input::Open(path), &mut screen);
-    session.app().request = Some(super::super::Request::TabClose(None));
-    session.settle()?;
+    ensure_home(&mut session, screen);
     apply(&mut session, Input::Focus(true), &mut screen);
     assert_eq!(
       session.home.as_ref().unwrap().view.screen(),
       session.content(screen)
     );
     assert!(session.home.as_ref().unwrap().view.screen().origin.1 > 0);
+    apply(
+      &mut session,
+      Input::Open(PathBuf::from("/missing.pdf")),
+      &mut screen,
+    );
+    assert!(session.home.is_some() && !session.quit);
+    apply(&mut session, Input::Open(path), &mut screen);
+    assert!(session.home.is_none());
+    apply(&mut session, key(KeyCode::Char('q')), &mut screen);
+    assert!(session.tabs.is_empty() && session.quit);
     Ok(())
   }
 
@@ -1444,6 +1464,7 @@ mod tests {
     };
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(Wake::none());
+    ensure_home(&mut session, screen);
     apply(&mut session, Input::Resize(screen), &mut screen);
     let colon =
       || Input::Key(KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE));

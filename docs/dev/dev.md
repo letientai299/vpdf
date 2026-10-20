@@ -98,13 +98,21 @@ previous view; retry resumes the original open, split, or mark command.
 Switching windows preserves committed passwords and cancels IME composition.
 On macOS, `:fzf` uses the system file chooser through the built-in `osascript`;
 it starts in the current directory and replaces the focused pane. File drops
-open tabs. External prompt editing requires the terminal reader.
+open tabs. Closing the last tab exits, as in the terminal. External prompt
+editing requires the terminal reader.
+
+On macOS the window does not activate itself at launch, so `open -g` keeps it
+in the background. macOS delivers posted keys to a background app but drops
+posted clicks and wheel turns. For live checks without focus, the hidden
+`--events PATH` option reads pointer, wheel, modifier, focus, IME, paste, and
+file-drop lines from a file or FIFO; the [injection module][inject] documents
+the format. Injected events skip OS translation, so real pointer devices, OS
+drags, and IME candidate windows still need manual checks.
 
 The native `:perf` overlay samples process CPU and RSS. FPS counts content
 frames received and painted by the window; Upload counts RGBA texture bytes
 submitted to egui. Overlay-only redraws do not count as content frames. These
 counters do not measure GPU completion or observed display latency.
-Clipboard effects and OS interaction still need live validation.
 The painter performance budget has not been measured. Use the terminal reader
 for complete feature support. Release and install tasks still target it.
 
@@ -385,6 +393,7 @@ a result needs a reproducible release reference.
 [pkgconf]: https://formulae.brew.sh/formula/pkgconf
 [build]: ../../scripts/build.sh
 [build-app]: ../../scripts/build-app.sh
+[inject]: ../../crates/vpdf-gui/src/inject.rs
 [apple-distribution]: https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution
 [install]: ../../scripts/install.sh
 [ci]: ../../.github/workflows/ci.yml
