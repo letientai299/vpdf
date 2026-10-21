@@ -2,8 +2,6 @@ use super::InputOwner;
 use crate::clues::Clues;
 use crate::layout::Screen;
 use crate::pointer::{Items, List};
-#[cfg(test)]
-use crate::presentation::*;
 use crate::prompt::{Menu, Prompt};
 
 /// Bottom lists share the space above status.
@@ -110,7 +108,7 @@ mod tests {
   }
 
   #[test]
-  fn completion_hits_follow_drawing() -> crate::Result<()> {
+  fn completion_hits_follow_drawing() {
     let mut prompt = Prompt::new(PromptKind::Command);
     prompt
       .complete(0, (0..15).map(|index| format!("entry {index:02}")).collect());
@@ -121,17 +119,32 @@ mod tests {
     let cells = overlay.completions();
     let at = At { column: 5, row: 3 };
     let mut output = Vec::new();
-    prompt.draw(&mut output, screen(), at, None)?;
-    let output = String::from_utf8(output)?;
+    prompt.scene(&mut output, screen(), at, None);
     for row in 7..11u16 {
       let first = usize::from(row - 4);
       assert_eq!(cells.at(0, row), Some(first));
       assert_eq!(cells.at(10, row), Some(first + 8));
-      let start =
-        output.find(&vpdf_terminal::terminal::goto(at, row, 0u16)).unwrap();
-      let end =
-        output.find(&vpdf_terminal::terminal::goto(at, row + 1, 0u16)).unwrap();
-      let drawn = &output[start..end];
+      let start = output
+        .iter()
+        .position(|op| {
+          *op
+            == vpdf_model::scene::Op::Move {
+              row: usize::from(at.row + row),
+              column: usize::from(at.column),
+            }
+        })
+        .unwrap();
+      let end = output
+        .iter()
+        .position(|op| {
+          *op
+            == vpdf_model::scene::Op::Move {
+              row: usize::from(at.row + row + 1),
+              column: usize::from(at.column),
+            }
+        })
+        .unwrap();
+      let drawn = crate::testing::text(&output[start..end]);
       for index in [first, first + 8] {
         assert!(drawn.contains(&format!("entry {index:02}")), "{drawn:?}");
       }
@@ -139,7 +152,6 @@ mod tests {
     assert_eq!(cells.at(0, 6), None);
     assert_eq!(cells.at(0, 11), None);
     assert_eq!(cells.at(20, 7), None);
-    Ok(())
   }
 
   #[test]

@@ -10,8 +10,6 @@ use vpdf_model::input::{KeyCode, KeyEvent};
 use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId};
-#[cfg(test)]
-use vpdf_terminal::graphics::Graphics;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Transition {
@@ -326,28 +324,23 @@ mod tests {
         let frame = Frame { at: At::default(), screen, left: 0, text };
         let mut scene = Scene::new();
         hints.scene(&mut scene, frame);
-        let mut actual = Vec::new();
-        let mut graphics = Graphics::default();
-        let mut painter = vpdf_terminal::painter::Painter::new(&mut actual)
-          .with_graphics(&mut graphics);
-        painter.paint(&scene);
-        painter.finish()?;
-        let mut expected = if picked {
-          b"\x1b[3;4H\x1b[0;1;97;44m\x1b[0;97;44ma\x1b[0m".to_vec()
-        } else {
-          b"\x1b[3;4H\x1b[0;1;30;43m\x1b[0;30;43ma\x1b[0m".to_vec()
-        };
         let fill = if picked { theme::BADGE_FILL } else { theme::HINT_FILL };
+        assert_eq!(crate::testing::text(&scene), "a");
+        let fills: Vec<_> = scene
+          .iter()
+          .filter_map(|op| match op {
+            Op::Fill(fill) => Some(fill),
+            _ => None,
+          })
+          .collect();
+        assert_eq!(fills.len(), usize::from(!text));
         if !text {
-          Graphics::default().backdrop(
-            Bounds { x0: 24.0, y0: 32.0, x1: 32.0, y1: 48.0 },
-            fill,
-            screen,
-            0,
-            &mut expected,
-          )?;
+          assert_eq!(
+            fills[0].rect(),
+            Bounds { x0: 24.0, y0: 32.0, x1: 32.0, y1: 48.0 }
+          );
+          assert_eq!(fills[0].color(), fill);
         }
-        assert_eq!(actual, expected);
       }
     }
     Ok(())

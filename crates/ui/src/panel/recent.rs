@@ -3,8 +3,6 @@
 #[cfg(test)]
 use anyhow::Result;
 
-#[cfg(test)]
-use crate::presentation::*;
 use vpdf_model::cache::Cache;
 use vpdf_model::scene::{Op, Surface};
 use vpdf_model::style::Role;
@@ -15,8 +13,6 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::{Facts, FactsRequest, Fit, LoadedFacts};
 use vpdf_model::geometry::At;
-#[cfg(test)]
-use vpdf_terminal::graphics::Graphics;
 
 /// Panels narrower than this show no card.
 const NARROW: u16 = 60;
@@ -412,7 +408,7 @@ mod tests {
       })
       .collect();
     let mut panel = Panel::recent(rows, &entries);
-    let mut graphics = Graphics::default();
+
     let screen = Screen {
       columns: 100,
       rows: 40,
@@ -420,17 +416,14 @@ mod tests {
       cell_height: 16,
       origin: (0, 0),
     };
-    let mut draw = |panel: &mut Panel, screen: Screen| -> Result<String> {
-      let mut out = Vec::new();
-      panel.draw(
-        &mut out,
-        At::default(),
-        screen.columns,
-        screen,
-        Some(&mut graphics),
-        0,
+    let draw = |panel: &mut Panel, screen: Screen| -> Result<String> {
+      let mut recorder = crate::testing::empty();
+      panel.scene(
+        &mut recorder,
+        Frame { at: At::default(), width: screen.columns, screen, now: 0 },
+        true,
       )?;
-      Ok(String::from_utf8(out)?)
+      Ok(crate::testing::text(&recorder.into_scene()))
     };
     assert!(draw(&mut panel, screen)?.contains("Loading…"));
     let first = panel.shelf_mut().unwrap().take_request().unwrap();
@@ -510,14 +503,14 @@ mod tests {
         .collect(),
     );
     let draw = |shelf: &mut Shelf, panel: &mut Panel| -> Result<String> {
-      let mut out = Vec::new();
-      shelf.draw(
+      let mut recorder = crate::testing::empty();
+      shelf.scene(
         panel,
-        &mut out,
+        &mut recorder,
         Frame { at: At::default(), width: 60, screen, now: 0 },
-        None,
+        false,
       )?;
-      Ok(String::from_utf8(out)?)
+      Ok(crate::testing::text(&recorder.into_scene()))
     };
     // (pointing, list top, selected, shown)
     let (row, card, away) = (Pointing::Row, Pointing::Card, Pointing::Away);

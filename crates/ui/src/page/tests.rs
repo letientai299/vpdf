@@ -1,81 +1,10 @@
 use super::*;
-use crate::text::{Glyph, Text};
-use std::sync::Arc;
+#[path = "../../../../tests/support/page.rs"]
+mod fixture;
+use fixture::marks;
+pub(super) use fixture::{Source, layout};
 use vpdf_reader::reader::Reader;
 use vpdf_search::search::Hit;
-
-pub(super) struct Source {
-  pub(super) text: Arc<Text>,
-  pub(super) reads: Vec<PageId>,
-  pub(super) fail: bool,
-}
-
-impl Source {
-  pub(super) fn new() -> Self {
-    Self {
-      text: Arc::new(Text {
-        truncated: false,
-        lines: vec![Line {
-          paragraph: false,
-          glyphs: vec![Glyph {
-            ch: 'a',
-            bounds: Bounds { x0: 10.0, y0: 10.0, x1: 20.0, y1: 20.0 },
-          }],
-        }],
-      }),
-      reads: Vec::new(),
-      fail: false,
-    }
-  }
-}
-
-impl Pages for Source {
-  fn count(&self) -> usize {
-    3
-  }
-  fn bounds(&self, _: PageId) -> Bounds {
-    Bounds { x0: 0.0, y0: 0.0, x1: 100.0, y1: 1000.0 }
-  }
-  fn label(&self, _: PageId) -> &'static str {
-    ""
-  }
-}
-
-impl TextSource for Source {
-  fn page_count(&self) -> usize {
-    self.count()
-  }
-  fn page_text(&mut self, page: PageId) -> Result<Arc<Text>> {
-    self.reads.push(page);
-    anyhow::ensure!(!self.fail, "Text unavailable");
-    Ok(Arc::clone(&self.text))
-  }
-}
-
-pub(super) fn layout(source: &Source) -> Layout {
-  Layout::new(
-    (0..source.count()).map(|p| source.bounds(PageId(p))),
-    Screen {
-      columns: 10,
-      rows: 10,
-      cell_width: 10,
-      cell_height: 10,
-      origin: (0, 0),
-    },
-  )
-}
-
-fn marks(reader: &Reader) -> Marks<'_> {
-  Marks {
-    reader,
-    matches: &[],
-    flash: None,
-    landing: None,
-    cursorline: true,
-    dim: false,
-    hovered: &[],
-  }
-}
 
 #[test]
 fn text_requests_follow_visible_matches() -> Result<()> {
@@ -96,12 +25,7 @@ fn text_requests_follow_visible_matches() -> Result<()> {
   let marks = Marks { matches: &hits, ..marks(&reader) };
   let canvas =
     Canvas { layout: &layout, screen: layout.screen(), left: 0, menu: None };
-  canvas.draw(
-    &mut source,
-    &marks,
-    &mut Graphics::default(),
-    &mut Vec::new(),
-  )?;
+  canvas.scene(&mut source, &marks, &mut Vec::new())?;
   assert_eq!(source.reads, vec![PageId(1); 300]);
   Ok(())
 }
@@ -117,12 +41,7 @@ fn idle_and_hover_need_no_text() -> Result<()> {
     Canvas { layout: &layout, screen: layout.screen(), left: 0, menu: None };
   for hovered in [&[][..], &hovered[..]] {
     let marks = Marks { hovered, ..marks(&reader) };
-    canvas.draw(
-      &mut source,
-      &marks,
-      &mut Graphics::default(),
-      &mut Vec::new(),
-    )?;
+    canvas.scene(&mut source, &marks, &mut Vec::new())?;
   }
   assert_eq!(source.reads, [] as [PageId; 0]);
   Ok(())
@@ -138,12 +57,10 @@ fn text_errors_stop_drawing() {
   let canvas =
     Canvas { layout: &layout, screen: layout.screen(), left: 0, menu: None };
   let mut out = Vec::new();
-  let error = canvas
-    .draw(&mut source, &marks(&reader), &mut Graphics::default(), &mut out)
-    .unwrap_err();
+  let error = canvas.scene(&mut source, &marks(&reader), &mut out).unwrap_err();
   assert_eq!(error.to_string(), "Text unavailable");
   assert_eq!(source.reads, [PageId(0)]);
-  assert_eq!(out, [] as [u8; 0]);
+  assert_eq!(out, [] as [vpdf_model::scene::Op<'_>; 0]);
 }
 
 #[test]
@@ -182,15 +99,5 @@ fn recorded_overlays_keep_layers() -> Result<()> {
     assert!(rect.x1 <= layout.screen().width());
     assert!(rect.y1 <= layout.screen().height());
   }
-  let mut expected = Vec::new();
-  canvas.draw(&mut source, &marks, &mut Graphics::default(), &mut expected)?;
-  drop(source);
-  let mut actual = Vec::new();
-  let mut graphics = Graphics::default();
-  let mut painter = vpdf_terminal::painter::Painter::new(&mut actual)
-    .with_graphics(&mut graphics);
-  painter.paint(&scene);
-  painter.finish()?;
-  assert_eq!(actual, expected);
   Ok(())
 }

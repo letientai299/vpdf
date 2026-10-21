@@ -2,8 +2,6 @@ use crate::Result;
 use crate::layout::Layout;
 use crate::page::{Viewport, scroll::Scroll};
 use crate::paint;
-#[cfg(test)]
-use crate::presentation::*;
 use crate::source::Pages;
 use crate::text::Position;
 use crate::text_view::{self, TextView};

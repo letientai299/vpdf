@@ -3576,7 +3576,6 @@ dependencies = [
  "vpdf-model",
  "vpdf-reader",
  "vpdf-search",
- "vpdf-terminal",
 ]
 
 [[package]]

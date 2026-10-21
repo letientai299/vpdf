@@ -3,8 +3,6 @@ use crate::context::ContextMenu;
 use crate::hints::Hints;
 use crate::panel::Panel;
 use crate::pointer::{Hit, Items, List, Region};
-#[cfg(test)]
-use crate::presentation::*;
 use crate::preview::Preview;
 use crate::region::Region as Capture;
 use crate::text::PageId;
@@ -137,7 +135,7 @@ mod tests {
   }
 
   #[test]
-  fn panel_hits_require_destination() -> crate::Result<()> {
+  fn panel_hits_require_destination() {
     use crate::keys::PanelKind;
     use crate::panel::{Destination, Row};
     use vpdf_model::style::Shape;
@@ -153,7 +151,12 @@ mod tests {
         ),
       ],
     );
-    panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 40, 6)?;
+    panel.scene_list(
+      &mut Vec::new(),
+      vpdf_model::geometry::At::default(),
+      40,
+      6,
+    );
     let mut targets = targets(&clues);
     targets.panel = Some(&panel);
     for (row, hit, shape) in
@@ -164,7 +167,6 @@ mod tests {
       assert_eq!(actual, Some(hit));
       assert_eq!(hit.shape(), shape);
     }
-    Ok(())
   }
 
   #[test]
@@ -259,14 +261,12 @@ mod tests {
   }
 
   #[test]
-  fn action_bar_preserves_alt() -> crate::Result<()> {
+  fn action_bar_preserves_alt() {
     use crate::layout::Layout;
     use crate::paint::Frame;
     use crate::region::{Canvas, CaptureId, Snapshot};
     use crate::text::Bounds;
     use vpdf_model::geometry::At;
-    #[cfg(test)]
-    use vpdf_terminal::graphics::Graphics;
     let screen = Screen {
       columns: 80,
       rows: 24,
@@ -286,12 +286,7 @@ mod tests {
       page: PageId(0),
       bounds,
     });
-    canvas.draw(
-      Some(&mut capture),
-      None,
-      &mut Graphics::default(),
-      &mut Vec::new(),
-    )?;
+    canvas.scene(Some(&mut capture), None, false, &mut Vec::new());
     let clues = Clues::default();
     let mut targets = targets(&clues);
     targets.capture = Some(&capture);
@@ -311,7 +306,6 @@ mod tests {
       targets.pressed(MouseEvent { modifiers: KeyModifiers::ALT, ..mouse }),
       None
     );
-    Ok(())
   }
 
   #[test]

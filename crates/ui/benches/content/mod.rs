@@ -1,4 +1,3 @@
-use crate::presentation::PanelDraw;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::document::{Heading, Target};
@@ -243,11 +242,10 @@ pub fn help() -> Result<()> {
     let rows = help(|_| true).iter().map(|line| Row::parse(line)).collect();
     let mut panel = Panel::new(PanelKind::Help, rows);
     let mut out = Vec::new();
-    panel.list(&mut out, At::default(), width, 24)?;
-    println!("help {width}x24 output {}", super::hash::digest(&out));
-    super::measure(&format!("Panel::help draw {width}x24"), || {
+    panel.scene_list(&mut out, At::default(), width, 24);
+    super::measure(&format!("Panel::help scene {width}x24"), || {
       out.clear();
-      panel.list(&mut out, At::default(), width, 24).expect("help frame");
+      panel.scene_list(&mut out, At::default(), width, 24);
       black_box(&out);
     })?;
   }

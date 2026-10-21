@@ -34,7 +34,7 @@ pub mod theme;
 pub mod window;
 
 #[cfg(test)]
-extern crate self as vpdf_ui;
+pub(crate) mod testing;
+
 #[cfg(test)]
-#[path = "../../../tests/support/presentation.rs"]
-pub mod presentation;
+extern crate self as vpdf_ui;

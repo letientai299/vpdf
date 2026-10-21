@@ -2,8 +2,6 @@ use crate::keys::{Action, Input};
 use crate::layout::tiles::Visible;
 use crate::layout::{Crop, Screen, page_matrix, screen_step, transform};
 use crate::pointer::Wheel;
-#[cfg(test)]
-use crate::presentation::*;
 use crate::source::Pages;
 use crate::text::{Bounds, PageId};
 use crate::theme;
@@ -15,8 +13,6 @@ use vpdf_model::scene::{Draw, Layer, Op, Surface};
 use vpdf_model::style::Role;
 use vpdf_model::tile::{TileId, TileKey, TileOwner, cover};
 use vpdf_reader::motion::Motion;
-#[cfg(test)]
-use vpdf_terminal::graphics::Graphics;
 
 /// Thumbnails per row aim for this width in pixels.
 const TARGET: f32 = 220.0;
@@ -397,7 +393,7 @@ mod tests {
   }
 
   #[test]
-  fn recorded_overview_keeps_tiles_and_chrome() -> Result<()> {
+  fn recorded_overview_keeps_tiles_and_chrome() {
     use vpdf_model::scene::Recorder;
     struct Source;
     impl Pages for Source {
@@ -436,26 +432,6 @@ mod tests {
     assert!(scene.iter().any(|op| matches!(op, Op::Tile(_))));
     assert!(scene.iter().any(|op| matches!(op, Op::Text(_))));
     assert!(scene.iter().any(|op| matches!(op, Op::Fill(_))));
-    let mut graphics = Graphics::default();
-    let mut replay = Graphics::default();
-    for _ in 0..2 {
-      let mut expected = Vec::new();
-      graphics.begin(&mut expected)?;
-      let direct =
-        overview.draw(&Source, frame, &mut graphics, &mut expected)?;
-      graphics.end(&mut expected)?;
-      assert_eq!(direct.wanted, visible.wanted);
-      assert_eq!(direct.missing, visible.missing);
-      let mut actual = Vec::new();
-      replay.begin(&mut actual)?;
-      let mut painter = vpdf_terminal::painter::Painter::new(&mut actual)
-        .with_graphics(&mut replay);
-      painter.paint(&scene);
-      painter.finish()?;
-      replay.end(&mut actual)?;
-      assert_eq!(actual, expected);
-    }
-    Ok(())
   }
 
   #[test]

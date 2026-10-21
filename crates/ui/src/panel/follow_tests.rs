@@ -1,8 +1,6 @@
 use super::*;
 use crate::find::Search;
 use crate::reading::Pane;
-#[cfg(test)]
-use anyhow::Result;
 use vpdf_model::input::KeyModifiers;
 use vpdf_reader::reader::{Mode, SelectionKind};
 use vpdf_search::{query::Query, search::Hit};
@@ -160,7 +158,7 @@ fn presses_preserve_click_history() {
 }
 
 #[test]
-fn activation_follows_relayout() -> Result<()> {
+fn activation_follows_relayout() {
   let left = MouseEventKind::Down(MouseButton::Left);
   let mut view = panel(PanelKind::Outline, Destination::None);
   let _interrupted = view.press(mouse(left, 1));
@@ -173,13 +171,12 @@ fn activation_follows_relayout() -> Result<()> {
     ..mouse(MouseEventKind::Down(MouseButton::Middle), 1)
   };
   let press = view.press(middle);
-  view.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 12, 8)?;
+  view.scene_list(&mut Vec::new(), vpdf_model::geometry::At::default(), 12, 8);
   assert_eq!(press.activate(&mut view, 1), Activation::Stay);
   assert_eq!(
     activate(&mut view, mouse(MouseEventKind::Down(MouseButton::Middle), 1), 1),
     Activation::Split(0)
   );
-  Ok(())
 }
 
 #[test]

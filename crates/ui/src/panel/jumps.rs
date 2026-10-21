@@ -1,7 +1,5 @@
 use super::layout::Layout;
 use super::{JumpDescription, Row};
-#[cfg(test)]
-use crate::presentation::*;
 pub(super) fn label(description: &JumpDescription) -> String {
   match description {
     JumpDescription::Heading(title) => format!("Heading: {title}"),
@@ -104,7 +102,7 @@ mod tests {
   }
 
   #[test]
-  fn expanded_jumps_keep_context() -> crate::Result<()> {
+  fn expanded_jumps_keep_context() {
     let label = "A line containing café and 世界";
     let detail = "p. iv (#4) · L12 C8 · word “café”";
     let rows = || {
@@ -136,7 +134,12 @@ mod tests {
       );
     }
     let mut panel = Panel::new(PanelKind::Jumps, rows());
-    panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 32, 20)?;
+    panel.scene_list(
+      &mut Vec::new(),
+      vpdf_model::geometry::At::default(),
+      32,
+      20,
+    );
     let press = MouseEvent {
       kind: MouseEventKind::Down(MouseButton::Left),
       column: 4,
@@ -157,6 +160,5 @@ mod tests {
     panel.begin_search(false);
     panel.preview("café");
     assert_eq!(panel.selected, 0);
-    Ok(())
   }
 }

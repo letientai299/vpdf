@@ -41,7 +41,9 @@ caches.
 
 The application holds UI components beside native documents and jobs. Its
 [document adapter][adapter] supplies reader text and UI data-access traits;
-UI components apply reading transitions and draw through terminal services.
+UI components apply reading transitions and emit model scene operations.
+Application adapters stream those operations to terminal painters; native
+presentation retains them for the window thread.
 The application dispatches their requests and assembles the session frame.
 
 ```mermaid

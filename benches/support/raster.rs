@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use std::path::PathBuf;
 
 #[derive(serde::Deserialize)]
 pub struct Manifest {
@@ -32,13 +31,7 @@ impl Manifest {
 }
 
 pub fn fixture() -> Result<(Manifest, Vec<u8>)> {
-  let directory = std::env::var_os("VPDF_BENCH_FIXTURES").map_or_else(
-    || {
-      PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/bench-fixtures")
-    },
-    PathBuf::from,
-  );
+  let directory = super::directory::fixtures();
   let metadata = std::fs::read(directory.join("manifest.json"))
     .context("Run mise run bench:fixtures first")?;
   let manifest: Manifest = serde_json::from_slice(&metadata)?;

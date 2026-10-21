@@ -4,8 +4,6 @@ use crate::input::InputOwner;
 use crate::keys::{Action, Keys, PanelKind};
 use crate::layout::{Layout, Screen};
 use crate::panel::Panel;
-#[cfg(test)]
-use crate::presentation::*;
 use crate::text::PageId;
 use crate::theme::Color;
 use std::fmt::Write as _;
@@ -422,52 +420,38 @@ struct Line {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use vpdf_terminal::style::sgr;
-
-  #[test]
-  fn unmeasured_resize_shows_on_the_last_row() -> Result<()> {
-    let error = vpdf_terminal::terminal::NO_CELL.to_owned();
-    let unmeasured = Notice::new(10, 12, error);
-    let mut out = Vec::new();
-    unmeasured.draw(&mut out)?;
-    let want = format!(
-      "\x1b7{}\x1b[10;1HTerminal rep{}\x1b8",
-      sgr(Role::Error),
-      sgr(Role::Reset)
-    );
-    assert_eq!(String::from_utf8(out)?, want);
-    Ok(())
-  }
-
+  use crate::testing::{spans, text};
   impl Tabs {
-    fn pair(self) -> (String, usize) {
-      let mut out = Vec::new();
-      let mut painter = vpdf_terminal::painter::Painter::new(&mut out);
-      self.scene(&mut painter);
-      painter.finish().expect("buffer output");
-      (String::from_utf8(out).expect("UTF-8 tabs"), self.width)
+    fn pair(self) -> (Vec<(Role, String)>, usize) {
+      let mut scene = Vec::new();
+      self.scene(&mut scene);
+      (spans(&scene), self.width)
     }
   }
-
+  #[test]
+  fn unmeasured_resize_shows_on_the_last_row() {
+    let mut scene = Vec::new();
+    Notice::new(10, 12, "Terminal reports no cell size".into())
+      .scene(&mut scene);
+    assert_eq!(scene.first(), Some(&Op::SaveCursor));
+    assert!(scene.contains(&Op::Move { row: 9, column: 0 }));
+    assert_eq!(text(&scene), "Terminal rep");
+    assert_eq!(scene.last(), Some(&Op::RestoreCursor));
+  }
   #[test]
   fn tab_controls_are_not_drawing_commands() {
     let names = ["safe.pdf".into(), "bad\n\x1b[31m.pdf".into()];
     let tabs = Names { file: "safe.pdf", names: &names, active: 0 };
-    let (output, width) = tabs.fit(200, 0).pair();
-    assert!(!output.contains("\x1b[31m"));
-    let plain = output
-      .replace(sgr(Role::TabActive), "")
-      .replace(sgr(Role::TabInactive), "")
-      .replace(sgr(Role::Bar), "");
+    let (spans, width) = tabs.fit(200, 0).pair();
+    let plain: String = spans.iter().map(|(_, s)| s.as_str()).collect();
     assert_eq!(plain, " 1:safe.pdf  2:bad [31m.pdf  ");
     assert_eq!(width, plain.width());
   }
-
   #[test]
   fn filenames_keep_style_and_number() {
     let mut tabs = Names { file: "paper.pdf", names: &[], active: 0 };
     let single =
-      format!("{} 1:paper.pdf {} ", sgr(Role::StatusFile), sgr(Role::Bar));
+      vec![(Role::StatusFile, " 1:paper.pdf ".into()), (Role::Bar, " ".into())];
     assert_eq!(tabs.fit(80, 0).pair(), (single.clone(), 14));
     let names = ["paper.pdf".into()];
     tabs.names = &names;
@@ -477,31 +461,31 @@ mod tests {
     for active in 0..2 {
       tabs.active = active;
       let styles = if active == 0 {
-        [sgr(Role::TabActive), sgr(Role::TabInactive)]
+        [Role::TabActive, Role::TabInactive]
       } else {
-        [sgr(Role::TabInactive), sgr(Role::TabActive)]
+        [Role::TabInactive, Role::TabActive]
       };
-      let expected = format!(
-        "{} 1:book.pdf {}{} 2:paper.pdf {} ",
-        styles[0],
-        sgr(Role::Bar),
-        styles[1],
-        sgr(Role::Bar)
+      assert_eq!(
+        tabs.fit(80, 0).pair(),
+        (
+          vec![
+            (styles[0], " 1:book.pdf ".into()),
+            (styles[1], " 2:paper.pdf ".into()),
+            (Role::Bar, " ".into())
+          ],
+          26
+        )
       );
-      assert_eq!(tabs.fit(80, 0).pair(), (expected, 26));
     }
     let narrow =
-      format!("{} 2:paper.pdf {} ", sgr(Role::StatusFile), sgr(Role::Bar));
+      vec![(Role::StatusFile, " 2:paper.pdf ".into()), (Role::Bar, " ".into())];
     assert_eq!(tabs.fit(14, 0).pair(), (narrow, 14));
     tabs.file = "論文.pdf";
     for room in 0..30 {
-      let (tabs, width) = tabs.fit(room, 0).pair();
-      let plain = tabs
-        .replace(sgr(Role::StatusFile), "")
-        .replace(sgr(Role::TabInactive), "")
-        .replace(sgr(Role::Bar), "");
+      let (spans, width) = tabs.fit(room, 0).pair();
+      let plain: String = spans.iter().map(|(_, s)| s.as_str()).collect();
       assert_eq!(width, plain.width(), "{room}");
-      assert!(width <= room, "{room}");
+      assert!(width <= room);
     }
   }
 }

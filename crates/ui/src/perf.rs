@@ -1,8 +1,4 @@
-#[cfg(test)]
-use crate::Result;
 use crate::layout::Screen;
-#[cfg(test)]
-use crate::presentation::*;
 use vpdf_model::geometry::At;
 use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
@@ -161,7 +157,7 @@ mod tests {
   }
 
   #[test]
-  fn samples_invalidate_only_changed_output() -> Result<()> {
+  fn samples_invalidate_only_changed_output() {
     let mut overlay = Overlay::default();
     let sample = || Snapshot {
       fps: 120.0,
@@ -172,36 +168,34 @@ mod tests {
     let screen = screen(80, 30);
     overlay.update(sample());
     let mut out = Vec::new();
-    assert!(overlay.draw(&mut out, screen, false)?);
-    let text = String::from_utf8_lossy(&out);
+    assert!(overlay.scene(&mut out, screen, false));
+    let text = crate::testing::text(&out);
     for value in ["FPS 120", "CPU 234.5%", "RSS 1048.5M", "Out 1024.2K/s"] {
       assert!(text.contains(value), "{value}");
     }
     let first = out.clone();
     out.clear();
     overlay.update(sample());
-    assert!(!overlay.draw(&mut out, screen, false)?);
-    assert_eq!(out, [] as [u8; 0]);
+    assert!(!overlay.scene(&mut out, screen, false));
+    assert_eq!(out, [] as [Op<'_>; 0]);
     overlay.invalidate();
-    assert!(overlay.draw(&mut out, screen, false)?);
+    assert!(overlay.scene(&mut out, screen, false));
     assert_eq!(out, first);
     out.clear();
-    assert!(overlay.draw(&mut out, screen, true)?);
+    assert!(overlay.scene(&mut out, screen, true));
     assert_eq!(out, first);
-    Ok(())
   }
 
   #[test]
-  fn repaint_tracks_content_and_size() -> Result<()> {
+  fn repaint_tracks_content_and_size() {
     let mut overlay = Overlay::default();
     let mut out = Vec::new();
-    assert!(overlay.draw(&mut out, screen(80, 30), false)?);
-    assert!(String::from_utf8_lossy(&out).contains("\x1b[1;1H"));
+    assert!(overlay.scene(&mut out, screen(80, 30), false));
+    assert!(out.contains(&Op::Move { row: 0, column: 0 }));
     out.clear();
-    assert!(!overlay.draw(&mut out, screen(80, 30), false)?);
-    assert_eq!(out, [] as [u8; 0]);
-    assert!(overlay.draw(&mut out, screen(80, 31), false)?);
-    assert!(String::from_utf8(out)?.contains("\x1b8"));
-    Ok(())
+    assert!(!overlay.scene(&mut out, screen(80, 30), false));
+    assert_eq!(out, [] as [Op<'_>; 0]);
+    assert!(overlay.scene(&mut out, screen(80, 31), false));
+    assert_eq!(out.last(), Some(&Op::RestoreCursor));
   }
 }

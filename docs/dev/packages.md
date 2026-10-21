@@ -18,7 +18,7 @@ External dependencies must preserve each owner's boundary.
 | [Protocol][protocol]       | Terminal input byte decoding                  |
 | [PDF][pdf]                 | Native access, document jobs, content caches  |
 | [Terminal][terminal]       | Terminal lifecycle, input, graphics, spooling |
-| [UI][ui]                   | Bindings, components, layout, theme, drawing  |
+| [UI][ui]                   | Bindings, components, layout, theme, scenes   |
 | [Application][application] | Composition, persistence, CLI, OS effects     |
 | [GUI][gui]                 | Native window, event adaptation, textures     |
 
@@ -31,7 +31,10 @@ MuPDF belongs to PDF and the application; the GUI reaches it through the
 application. GUI libraries belong only to the GUI package. UI and terminal tests
 and benchmarks must remain native-free, as must model, search, reader, and
 protocol. Do not introduce a native fixture helper as a development dependency
-there.
+there. UI tests and benchmarks also exclude terminal and protocol transport.
+The application owns UI/terminal byte-equivalence and output-failure checks.
+Native GUI reaches terminal input dependencies only through the application;
+its own adapter and other neutral owners cannot depend on `crossterm`.
 
 ## Cross-package contracts
 
@@ -68,18 +71,19 @@ Model owns [ordered drawing operations][scene]. Components emit into a drawing
 sink: a scene retains operations, while the [terminal painter][painter] encodes
 them directly without probing the terminal. Finish a streaming painter to report
 output errors. Retained scenes copy temporary text; streaming painters borrow it
-during emission. Keep transport commands out of scene text. Callers still use
-existing drawing entry points for components without scene output. Recording
-must update the same hit geometry as terminal drawing. Model owns pointer
-shapes; each presenter maps them to its native cursor. Model derives character
-advances from the shared Unicode-width rules. Pixel fills carry clipped bounds,
-alpha, and explicit layers above or below text. Layer order must survive replay
-even when a backdrop follows its label in the operation stream. Attach terminal
-graphics to the painter for fills; terminal retains protocol encoding and image
-caching. Stretched fills retain their cell extent beside pixel fills, so a
-native painter can recover the intended rectangle without terminal image
-commands. Region recording accepts cell-snapped sweep outlines for terminal
-presenters that cache overlays by size.
+during emission. Keep transport commands out of scene text. UI exposes scene
+construction only. Application presentation adapters own painter construction,
+graphics attachment, and output errors. Recording must update the same hit
+geometry as streaming composition. Model owns pointer shapes; each presenter
+maps them to its native cursor. Model derives character advances from the shared
+Unicode-width rules. Pixel fills carry clipped bounds, alpha, and explicit
+layers above or below text. Layer order must survive replay even when a backdrop
+follows its label in the operation stream. Attach terminal graphics to the
+painter for fills; terminal retains protocol encoding and image caching.
+Stretched fills retain their cell extent beside pixel fills, so a native painter
+can recover the intended rectangle without terminal image commands. Region
+recording accepts cell-snapped sweep outlines for terminal presenters that cache
+overlays by size.
 
 A shared surface combines tile readiness and placement with drawing. The
 recorder keeps wanted placements even when pixels are missing; readiness drives
@@ -124,7 +128,11 @@ mise run bench:micro -- --package vpdf-ui
 ```
 
 The same selectors work for each package, including `vpdf` for application
-integration tests and benchmarks. [Development][development] lists focused
+integration tests and benchmarks. Combined UI/terminal workloads live in the
+application `presentation` benchmark; `bench:micro -- --package vpdf` includes
+them. Their workload names and output checks remain unchanged. UI scene
+benchmarks have distinct names and cannot be compared with delivery timings.
+[Development][development] lists focused
 mise test tasks and real-PDF fixture preparation. Pure package benchmarks use
 prepared, hash-verified data; PDF benchmarks open documents directly. Keep data
 preparation outside measured loops. A component timing does not establish
@@ -137,7 +145,8 @@ mise run test:packages
 
 The verifier reads [Cargo metadata][metadata] with all workspace features and
 without a platform filter. It checks declarations, package identities, and
-transitive dependencies. Missing members or incomplete resolution fail the
+transitive dependencies, including external terminal input reachability.
+Missing members or incomplete resolution fail the
 check. `check`, `lint`, and `test` include this gate; CI uses those same tasks.
 A dependency graph proves isolation of dependencies, not correct state
 ownership or runtime behavior. Review those contracts and run the relevant

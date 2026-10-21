@@ -1,15 +1,9 @@
-#[cfg(test)]
-use crate::Result;
 use crate::find::Search;
 use crate::layout::Layout;
 use crate::paint::Frame;
 use crate::pointer::Route;
-#[cfg(test)]
-use crate::presentation::*;
 use crate::text::{Bounds, PageId};
 use crate::theme;
-#[cfg(test)]
-use std::io::Write;
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::{Heading, Target};
@@ -17,8 +11,6 @@ use vpdf_model::input::MouseEventKind;
 use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_reader::reader::{Location, Reader};
-#[cfg(test)]
-use vpdf_terminal::graphics::Graphics;
 
 const TICK: f32 = 3.0;
 type Run = (f32, f32, [u8; 4]);

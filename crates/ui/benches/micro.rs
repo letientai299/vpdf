@@ -1,41 +1,34 @@
-#[path = "../../../tests/support/presentation.rs"]
-pub mod presentation;
-use crate::presentation::{HintsDraw, PanelDraw};
+#[path = "../../../benches/support/directory.rs"]
+mod directory;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::geometry::Screen;
 use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_model::text::PageId;
 use vpdf_ui::layout::{Layout, visible};
-mod chrome;
-mod clues;
 mod content;
-mod context;
 #[path = "../../../benches/support/fixtures.rs"]
 mod fixtures;
 mod gestures;
-mod home;
-mod overlays;
 mod page;
 mod preview;
 #[path = "../../../benches/support/raster.rs"]
 mod raster;
+mod scenes;
 use fixtures::{bounds, read as fixture};
 #[path = "../../../benches/support/hash.rs"]
 mod hash;
 mod jumps;
 mod links;
+#[path = "../../../benches/support/pages.rs"]
+mod pages;
 mod reading;
-mod region;
-mod scrollbar;
 mod search;
 mod sections;
 #[path = "../../../benches/support/mod.rs"]
 mod support;
-mod text;
 #[path = "../../../benches/support/text_source.rs"]
 mod text_source;
-mod tiles;
 use support::measure;
 
 #[derive(serde::Deserialize)]
@@ -168,67 +161,6 @@ fn overview() -> Result<()> {
   })
 }
 
-fn panel() -> Result<()> {
-  use vpdf_ui::{
-    keys::PanelKind,
-    panel::{Panel, Row, help},
-  };
-  let rows = help(|_| false).iter().map(|line| Row::parse(line)).collect();
-  let mut panel = Panel::new(PanelKind::Help, rows);
-  let mut out = Vec::new();
-  measure("Panel::list", || {
-    out.clear();
-    panel
-      .list(&mut out, vpdf_model::geometry::At::default(), 50, 40)
-      .expect("panel rows");
-    black_box(&out);
-  })
-}
-
-fn hints() -> Result<()> {
-  use vpdf_model::document::Target;
-  use vpdf_model::geometry::At;
-  use vpdf_terminal::graphics::Graphics;
-  use vpdf_ui::hints::{Hints, Spot};
-  use vpdf_ui::paint::Frame;
-  #[derive(serde::Deserialize)]
-  struct Prepared {
-    screen: [u16; 4],
-    found: Vec<(Spot, Target)>,
-  }
-  let prepared: Prepared = fixture("hints")?;
-  let [columns, rows, cell_width, cell_height] = prepared.screen;
-  let screen =
-    Screen { columns, rows, cell_width, cell_height, origin: (0, 0) };
-  let mut hints = Hints::new(prepared.found, false, 0, columns)?;
-  measure("Hints::accepts batch", || {
-    for key in [
-      KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE),
-      KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL),
-      KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-    ] {
-      black_box(hints.accepts(black_box(key)));
-    }
-  })?;
-  let first = hints.items()[0].label.chars().next().expect("hint label");
-  measure("Hints::key pair", || {
-    for code in [KeyCode::Char(first), KeyCode::Backspace] {
-      black_box(hints.key(black_box(KeyEvent::new(code, KeyModifiers::NONE))));
-    }
-  })?;
-  let mut graphics = Graphics::default();
-  let mut out = Vec::new();
-  let frame = || Frame { at: At::default(), screen, left: 0, text: false };
-  hints.draw(&mut graphics, &mut out, frame())?;
-  measure("Hints::draw", || {
-    out.clear();
-    graphics.begin(&mut out).expect("begin hint frame");
-    hints.draw(&mut graphics, &mut out, frame()).expect("prepared labels");
-    graphics.end(&mut out).expect("hint placements");
-    black_box(&out);
-  })
-}
-
 fn lexical_objects() -> Result<()> {
   let prepared = fixtures::text()?;
   let text = &prepared.text[0];
@@ -261,12 +193,11 @@ fn lexical_objects() -> Result<()> {
 
 fn main() -> Result<()> {
   support::run(&[
+    ("scene construction", scenes::compose),
     ("key prefixes", key_prefixes),
     ("lexical objects", lexical_objects),
     ("projection", projection),
-    ("page tiles", tiles::draw),
     ("preview raster", preview::compose),
-    ("preview draw", preview::draw),
     ("page navigation", page::navigation),
     ("reading scroll", reading::scroll),
     ("reading viewport", reading::viewport),
@@ -276,24 +207,12 @@ fn main() -> Result<()> {
     ("search navigation", search::navigate),
     ("definition resolve", content::definition),
     ("gesture selection", gestures::selection),
-    ("text_canvas", text::canvas),
-    ("cursorline", || overlays::draw("cursorline")),
-    ("landing", || overlays::draw("landing")),
-    ("link hover", || overlays::draw("link")),
     ("link state", links::transitions),
-    ("draw_hints", hints),
-    ("context draw", context::draw),
     ("panel content", content::rows),
     ("help reference", content::help),
     ("panel input", content::input),
     ("overview input", overview),
     ("outline tracking", content::tracking),
-    ("home draw", home::draw),
-    ("clues draw", clues::draw),
-    ("region draw", region::draw),
-    ("scrollbar draw", scrollbar::draw),
     ("route", route),
-    ("routing panel", panel),
-    ("routing status", chrome::draw),
   ])
 }

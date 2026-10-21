@@ -1192,7 +1192,7 @@ fn text_hits_follow_frames() -> Result<()> {
     dim: false,
     hovered: &[],
   };
-  fixture.view().text().draw(&mut Vec::new(), &marks)?;
+  fixture.view().text().scene(&mut Vec::new(), &marks)?;
   fixture.view().text().scroll(2)?;
   for (frame, index) in
     [(HitFrame::Drawn, 0), (HitFrame::Pending, 1), (HitFrame::Drawn, 0)]
@@ -1202,7 +1202,7 @@ fn text_hits_follow_frames() -> Result<()> {
       Hit::Link(PageId(0), index)
     );
   }
-  fixture.view().text().draw(&mut Vec::new(), &marks)?;
+  fixture.view().text().scene(&mut Vec::new(), &marks)?;
   assert_eq!(
     fixture.view().hit(HitFrame::Drawn, 0, 0, None)?,
     Hit::Link(PageId(0), 1)

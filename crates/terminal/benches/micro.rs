@@ -1,3 +1,5 @@
+#[path = "../../../benches/support/directory.rs"]
+mod directory;
 use anyhow::Result;
 #[path = "../../../benches/support/hash.rs"]
 mod hash;

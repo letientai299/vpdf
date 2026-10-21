@@ -1,7 +1,5 @@
 use super::layout::Layout;
 use super::{Destination, Row, Target};
-#[cfg(test)]
-use crate::presentation::*;
 use crate::text::{PageId, Position, Text};
 use vpdf_model::document::{Heading, Link};
 use vpdf_reader::reader::{JumpDescription, TextSource};
@@ -422,13 +420,18 @@ mod tests {
     }
   }
   #[test]
-  fn expanded_links_keep_targets() -> Result<()> {
+  fn expanded_links_keep_targets() {
     let uri = "https://example.com/long/path?query=needle";
     let mut panel = Panel::new(
       PanelKind::Links,
       vec![row("Project page", uri), row("Other", "https://example.org")],
     );
-    panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 24, 20)?;
+    panel.scene_list(
+      &mut Vec::new(),
+      vpdf_model::geometry::At::default(),
+      24,
+      20,
+    );
     let press = |line| MouseEvent {
       kind: MouseEventKind::Down(MouseButton::Left),
       column: 4,
@@ -437,37 +440,55 @@ mod tests {
     };
     assert_eq!(panel.pointer(press(2)), Some(0));
     panel.navigate(Input::plain(Action::Motion(Motion::Down)), 20);
-    panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 24, 20)?;
+    panel.scene_list(
+      &mut Vec::new(),
+      vpdf_model::geometry::At::default(),
+      24,
+      20,
+    );
     assert_eq!(panel.selected, 1);
     panel.begin_search(false);
     panel.preview("needle");
     assert_eq!(panel.selected, 0);
     assert_eq!(panel.count(), Some((1, 1)));
-    panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 12, 20)?;
+    panel.scene_list(
+      &mut Vec::new(),
+      vpdf_model::geometry::At::default(),
+      12,
+      20,
+    );
     assert_eq!(panel.pointer(press(3)), Some(0));
-    Ok(())
   }
   #[test]
-  fn wheel_scrolls_expanded_links() -> Result<()> {
+  fn wheel_scrolls_expanded_links() {
     let uri = format!("https://example.com/{}", "long-path/".repeat(20));
     let mut panel = Panel::new(
       PanelKind::Links,
       vec![row(&uri, &uri), row("Other", "https://example.org")],
     );
-    panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 20, 6)?;
+    panel.scene_list(
+      &mut Vec::new(),
+      vpdf_model::geometry::At::default(),
+      20,
+      6,
+    );
     panel.pointer(MouseEvent {
       kind: MouseEventKind::ScrollDown,
       column: 4,
       row: 2,
       modifiers: KeyModifiers::NONE,
     });
-    panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 20, 6)?;
+    panel.scene_list(
+      &mut Vec::new(),
+      vpdf_model::geometry::At::default(),
+      20,
+      6,
+    );
     assert_eq!((panel.selected, panel.top), (0, 3));
     panel.navigate(Input::plain(Action::Motion(Motion::Down)), 6);
     let mut out = Vec::new();
-    panel.list(&mut out, vpdf_model::geometry::At::default(), 20, 6)?;
+    panel.scene_list(&mut out, vpdf_model::geometry::At::default(), 20, 6);
     assert_eq!(panel.selected, 1);
-    assert!(String::from_utf8(out)?.contains("Other"));
-    Ok(())
+    assert!(crate::testing::text(&out).contains("Other"));
   }
 }

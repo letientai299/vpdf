@@ -10,4 +10,7 @@ if [ "${1:-}" = --package ]; then
 fi
 for package in $packages; do
   cargo bench --locked --profile release -p "$package" --bench micro -- "$@"
+  if [ "$package" = vpdf ]; then
+    cargo bench --locked --profile release -p vpdf --bench presentation -- "$@"
+  fi
 done

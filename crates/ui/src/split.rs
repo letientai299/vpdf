@@ -1,9 +1,5 @@
 //! Window splits within a tab, as a binary tree like Vim's layout.
 
-#[cfg(test)]
-use crate::Result;
-#[cfg(test)]
-use crate::presentation::*;
 use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_model::style::Role;
 
@@ -574,7 +570,6 @@ pub fn neighbor(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use vpdf_terminal::style::sgr;
 
   const AREA: Rect = Rect { column: 0, row: 0, columns: 101, rows: 40 };
 
@@ -636,23 +631,25 @@ mod tests {
   }
 
   #[test]
-  fn draws_only_column_dividers() -> Result<()> {
+  fn draws_only_column_dividers() {
     let mut tree = Node::leaf(1);
     tree.split(1, Axis::Rows, 2, Place::After);
     tree.split(2, Axis::Columns, 3, Place::After);
     let area = Rect { column: 3, row: 2, columns: 21, rows: 8 };
-    let mut out = Vec::new();
-    tree.draw_dividers(&mut out, area)?;
-    let want = [7, 8, 9, 10]
-      .map(|row| {
-        format!("\x1b[{row};14H{}│{}", sgr(Role::Muted), sgr(Role::Reset))
+    let mut scene = vpdf_model::scene::Scene::new();
+    tree.scene_dividers(&mut scene, area);
+    let moves: Vec<_> = scene
+      .iter()
+      .filter_map(|op| match op {
+        Op::Move { row, column } => Some((*row, *column)),
+        _ => None,
       })
-      .concat();
-    assert_eq!(String::from_utf8(out)?, want);
-    let mut out = Vec::new();
-    tree.draw_dividers(&mut out, Rect { rows: 0, ..area })?;
-    assert_eq!(out, [] as [u8; 0]);
-    Ok(())
+      .collect();
+    assert_eq!(moves, [(6, 13), (7, 13), (8, 13), (9, 13)]);
+    assert_eq!(crate::testing::text(&scene), "││││");
+    scene.clear();
+    tree.scene_dividers(&mut scene, Rect { rows: 0, ..area });
+    assert_eq!(scene, [] as [Op<'_>; 0]);
   }
 
   #[test]

@@ -1,7 +1,5 @@
 use crate::panel::layout::{Layout, Line, wrap};
 use crate::panel::{Destination, Row, Style, key_width};
-#[cfg(test)]
-use crate::presentation::*;
 use vpdf_model::style::Role;
 
 impl Layout {
@@ -110,7 +108,6 @@ pub(crate) fn key_styles(key: &str, style: Style) -> Vec<(usize, usize, Role)> {
 mod tests {
   use super::*;
   use unicode_width::UnicodeWidthStr;
-  use vpdf_terminal::style::sgr;
 
   #[test]
   fn sections_align_independently() {
@@ -146,26 +143,25 @@ mod tests {
   }
 
   #[test]
-  fn mode_labels_differ_from_keys() -> crate::Result<()> {
+  fn mode_labels_differ_from_keys() {
     let rows =
       ["C: Cursor mode", "C/V h j: glyphs", "v V: select", "<C-x>: Ctrl"]
         .map(Row::parse);
     let layout = Layout::help(&rows, 48);
     for (index, line) in layout.lines.iter().enumerate() {
       let mut out = Vec::new();
-      line.row.write(&mut out, Some(Role::Reset), 48, line.keys, "")?;
-      let out = String::from_utf8(out)?;
-      assert_eq!(out.contains(sgr(Role::Mode)), index < 2);
+      line.row.scene(&mut out, Some(Role::Reset), 48, line.keys, "");
+      let spans = crate::testing::spans(&out);
+      assert_eq!(spans.iter().any(|(role, _)| *role == Role::Mode), index < 2);
       if index == 1 {
-        assert!(out.contains(&format!("{}C/V", sgr(Role::Mode))));
-        assert!(out.contains(&format!("{} h j", sgr(Role::Key))));
+        assert!(spans.contains(&(Role::Mode, "C/V".into())));
+        assert!(spans.contains(&(Role::Key, " h j".into())));
       }
     }
-    Ok(())
   }
 
   #[test]
-  fn arguments_differ_from_key_notation() -> crate::Result<()> {
+  fn arguments_differ_from_key_notation() {
     let rows = [
       ":edit <file>: open",
       ":split [file]: split",
@@ -176,9 +172,12 @@ mod tests {
     let layout = Layout::help(&rows, 48);
     for (index, line) in layout.lines.iter().enumerate() {
       let mut out = Vec::new();
-      line.row.write(&mut out, Some(Role::Reset), 48, line.keys, "")?;
-      let out = String::from_utf8(out)?;
-      assert_eq!(out.contains(sgr(Role::Argument)), index < 2);
+      line.row.scene(&mut out, Some(Role::Reset), 48, line.keys, "");
+      let spans = crate::testing::spans(&out);
+      assert_eq!(
+        spans.iter().any(|(role, _)| *role == Role::Argument),
+        index < 2
+      );
     }
     assert_eq!(
       key_styles(":edit <file>", Style::CommandKey),
@@ -188,7 +187,6 @@ mod tests {
       key_styles(":split [file]", Style::CommandKey),
       [(7, 13, Role::Argument)]
     );
-    Ok(())
   }
 
   #[test]

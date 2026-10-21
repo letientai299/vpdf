@@ -1,7 +1,5 @@
 use crate::Result;
 use crate::paint::Marks;
-#[cfg(test)]
-use crate::presentation::*;
 use crate::text::{Bounds, Glyph, Line, PageId, Position, Text};
 use std::sync::Arc;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};

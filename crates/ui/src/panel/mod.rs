@@ -4,8 +4,6 @@ use crate::layout::{Screen, screen_step};
 use crate::panel::layout::Layout;
 use crate::panel::search::RowSearch;
 use crate::pointer::{WHEEL_ROWS, Wheel};
-#[cfg(test)]
-use crate::presentation::*;
 use crate::text::Position;
 use crate::theme::Color;
 use std::path::PathBuf;

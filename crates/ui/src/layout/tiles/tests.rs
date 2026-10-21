@@ -69,7 +69,7 @@ fn requests_share_invalidation() {
 }
 
 #[test]
-fn animation_orders_urgent_before_prefetch() -> Result<()> {
+fn animation_orders_urgent_before_prefetch() {
   let layout = layout();
   let mut tiles = Tiles::default();
   let view = View {
@@ -77,12 +77,8 @@ fn animation_orders_urgent_before_prefetch() -> Result<()> {
     scroll: layout.pages()[2].top,
     target: Some(layout.pages()[1].top),
   };
-  let update = tiles.draw(
-    view,
-    frame(&layout),
-    &mut Graphics::default(),
-    &mut Vec::new(),
-  )?;
+  let update =
+    tiles.scene(view, frame(&layout), &mut crate::testing::empty()).unwrap();
   assert!(!update.complete);
   let request = update.request.unwrap();
   assert_eq!(request.urgent(), tiles.wanted().len());
@@ -102,44 +98,32 @@ fn animation_orders_urgent_before_prefetch() -> Result<()> {
   tiles.invalidate();
   assert_eq!(tiles.nearby(view, 3), near);
   let stopped = View { scroll: layout.pages()[1].top, target: None, ..view };
-  tiles.draw(
-    stopped,
-    frame(&layout),
-    &mut Graphics::default(),
-    &mut Vec::new(),
-  )?;
+  tiles.scene(stopped, frame(&layout), &mut crate::testing::empty()).unwrap();
   assert_eq!(tiles.nearby(stopped, 3), near);
-  Ok(())
 }
 
 #[test]
-fn failed_placement_retains_requests() -> Result<()> {
-  use vpdf_terminal::payload::{Encoder, Tile};
+fn failed_placement_retains_requests() {
   struct Broken;
-  impl Write for Broken {
-    fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-      Err(std::io::Error::other("Output unavailable"))
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-      Ok(())
+  impl<'a> vpdf_model::scene::Draw<'a> for Broken {
+    fn push(&mut self, _: vpdf_model::scene::Op<'a>) {}
+  }
+  impl Surface<'_> for Broken {
+    type Error = &'static str;
+    fn has(&mut self, _: TileId) -> Result<bool, Self::Error> {
+      Err("Readiness unavailable")
     }
   }
   let layout = layout();
-  let key = visible(&layout, 0.0)[0];
   let previous = visible(&layout, layout.pages()[2].top)[0];
   let mut tiles = Tiles::default();
   tiles.update(Visible { wanted: vec![previous], missing: vec![previous] });
-  let mut graphics = Graphics::default();
-  let pixels = vec![255; (key.width * key.height * 3) as usize];
-  let tile =
-    Tile { key, payload: Encoder::default().encode(&pixels)?, render_ms: 0.0 };
-  graphics.upload(0, &tile, &mut std::io::sink())?;
   let view = View { layout: &layout, scroll: 0.0, target: None };
-  assert!(
-    tiles.draw(view, frame(&layout), &mut graphics, &mut Broken).is_err()
+  assert_eq!(
+    tiles.scene(view, frame(&layout), &mut Broken).err(),
+    Some("Readiness unavailable")
   );
   assert_eq!(tiles.wanted(), &[previous]);
-  Ok(())
 }
 
 #[test]

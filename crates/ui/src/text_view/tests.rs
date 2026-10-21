@@ -259,9 +259,7 @@ fn recorded_advances_match_hits() -> Result<()> {
   assert_eq!(pane.shown(1, 0)?, Some(at(0, 0, 0)));
   assert_eq!(pane.shown(2, 0)?, Some(at(0, 0, 1)));
   assert_eq!(pane.shown(3, 0)?, Some(at(0, 0, 3)));
-  let mut out = Vec::new();
-  vpdf_terminal::painter::paint(&mut out, &scene)?;
-  assert_eq!(out, "\x1b[4;8H\x1b[0m界e\u{301}x\x1b[0m".as_bytes());
+  assert_eq!(crate::testing::text(&scene), "界e\u{301}x");
   Ok(())
 }
 
@@ -312,13 +310,13 @@ fn hits_follow_pending_and_drawn_frames() -> Result<()> {
   };
   let mut state = TextView::default();
   let mut pane = state.bind(pages, frame);
-  pane.draw(&mut Vec::new(), &paint)?;
+  pane.scene(&mut Vec::new(), &paint)?;
   pane.scroll(1)?;
   assert_eq!(pane.hit(2, 0)?, Some(at(0, 1, 0)));
   assert_eq!(pane.shown(2, 0)?, Some(at(0, 0, 0)));
   assert_eq!(pane.position(2, 0)?, at(0, 0, 0));
   assert_eq!(pane.cell(at(0, 1, 0))?, Some((2, 0)));
-  pane.draw(&mut Vec::new(), &paint)?;
+  pane.scene(&mut Vec::new(), &paint)?;
   assert_eq!(pane.shown(2, 0)?, Some(at(0, 1, 0)));
   pane.scroll(1)?;
   pane.state.invalidate();

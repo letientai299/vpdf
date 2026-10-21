@@ -1,11 +1,9 @@
 use super::*;
 use crate::text::PageId;
-use anyhow::Result;
 use vpdf_model::style::Role;
-use vpdf_terminal::style::sgr;
 
 #[test]
-fn recorded_panels_outlive_their_source() -> Result<()> {
+fn recorded_panels_outlive_their_source() {
   let panel = || {
     Panel::new(
       PanelKind::Help,
@@ -23,17 +21,11 @@ fn recorded_panels_outlive_their_source() -> Result<()> {
     assert_eq!(source.row_at(19, 2), None);
     scene
   };
-  let mut recorded = Vec::new();
-  vpdf_terminal::painter::paint(&mut recorded, &scene)?;
-  let mut streamed = Vec::new();
-  panel().list(&mut streamed, at, 20, 6)?;
-  assert_eq!(recorded, streamed);
-  assert!(String::from_utf8(recorded)?.contains("日本語"));
-  Ok(())
+  assert!(crate::testing::text(&scene).contains("日本語"));
 }
 
 #[test]
-fn hover_requires_destination() -> Result<()> {
+fn hover_requires_destination() {
   for kind in [
     PanelKind::Info,
     PanelKind::Help,
@@ -61,38 +53,45 @@ fn hover_requires_destination() -> Result<()> {
           20,
           6,
         );
-        let mut out = Vec::new();
-        vpdf_terminal::painter::paint(&mut out, &scene)?;
-        let out = String::from_utf8(out)?;
+        let spans = crate::testing::spans(&scene);
         let hover = if focused { Role::Hover } else { Role::HoverDim };
-        assert_eq!(out.contains(sgr(hover)), follows, "{kind:?}");
+        assert_eq!(
+          spans.iter().any(|(role, _)| *role == hover),
+          follows,
+          "{kind:?}"
+        );
         if kind == PanelKind::Info {
           assert!(panel.hover_title().is_some());
         }
       }
     }
   }
-  Ok(())
 }
 
 #[test]
-fn hover_skips_indentation() -> Result<()> {
+fn hover_skips_indentation() {
   for style in [Role::Hover, Role::HoverDim] {
     let row = Row::parse("  Chapter");
     let mut out = Vec::new();
-    assert_eq!(row.write(&mut out, Some(style), 40, 0, "")?, 9);
-    let text = String::from_utf8(out)?;
-    assert!(text.contains(&format!("\x1b[24m  {}Chapter", sgr(style))));
+    assert_eq!(row.scene(&mut out, Some(style), 40, 0, ""), 9);
+    let spans = crate::testing::spans(&out);
+    let text = crate::testing::text(&out);
+    assert_eq!(text, "  Chapter");
+    assert!(spans.contains(&(style, "Chapter".into())));
   }
-  Ok(())
 }
 
 #[test]
-fn screen_scroll_keeps_panel_context() -> Result<()> {
+fn screen_scroll_keeps_panel_context() {
   for kind in [PanelKind::Help, PanelKind::Links] {
     let mut panel =
       Panel::new(kind, (0..40).map(|_| Row::parse("j: down")).collect());
-    panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 40, 10)?;
+    panel.scene_list(
+      &mut Vec::new(),
+      vpdf_model::geometry::At::default(),
+      40,
+      10,
+    );
     assert!(panel.navigate(Input::plain(Action::Screen(1)), 10));
     assert_eq!(panel.selected, 6);
     if kind == PanelKind::Help {
@@ -104,7 +103,6 @@ fn screen_scroll_keeps_panel_context() -> Result<()> {
     assert!(panel.navigate(counted, 10));
     assert_eq!(panel.selected, 12);
   }
-  Ok(())
 }
 
 #[test]
@@ -185,7 +183,7 @@ fn refills_keep_the_selected_row() {
 }
 
 #[test]
-fn paths_keep_the_file_name() -> Result<()> {
+fn paths_keep_the_file_name() {
   let row = Row {
     style: Style::Path,
     ..Row::new("~/books/ml/deep.pdf".into(), String::new(), Destination::None)
@@ -199,23 +197,30 @@ fn paths_keep_the_file_name() -> Result<()> {
     (5, "deep."),
   ] {
     let mut out = Vec::new();
-    let width = row.write(&mut out, Some(Role::Reset), room, 0, "")?;
-    let out = String::from_utf8(out)?;
-    let text: String = out
-      .split('\x1b')
-      .map(|s| s.split_once('m').map_or(s, |(_, t)| t))
-      .collect();
+    let width = row.scene(&mut out, Some(Role::Reset), room, 0, "");
+    let spans = crate::testing::spans(&out);
+    let out = crate::testing::text(&out);
+    let text = out;
     assert_eq!(text, want, "{room}");
     assert_eq!(width, want.width(), "{room}");
-    assert!(out.contains(&format!("{}deep", sgr(Role::File))), "{room}");
+    assert!(
+      spans
+        .iter()
+        .any(|(role, text)| *role == Role::File && text.starts_with("deep")),
+      "{room}"
+    );
   }
-  Ok(())
 }
 #[test]
-fn presses_beyond_the_list_miss_its_rows() -> Result<()> {
+fn presses_beyond_the_list_miss_its_rows() {
   let rows = ["a", "b", "c"].map(Row::parse).into();
   let mut panel = Panel::new(PanelKind::Recent, rows);
-  panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 20, 10)?;
+  panel.scene_list(
+    &mut Vec::new(),
+    vpdf_model::geometry::At::default(),
+    20,
+    10,
+  );
   let press = |column| MouseEvent {
     kind: MouseEventKind::Down(MouseButton::Left),
     column,
@@ -224,7 +229,6 @@ fn presses_beyond_the_list_miss_its_rows() -> Result<()> {
   };
   assert_eq!(panel.pointer(press(25)), None);
   assert_eq!(panel.pointer(press(5)), Some(1));
-  Ok(())
 }
 
 #[test]

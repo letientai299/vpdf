@@ -30,6 +30,7 @@ mod sections;
 mod session;
 mod textlinks;
 mod textpages;
+mod ui_transport;
 mod untrusted;
 mod wheel;
 mod workers;

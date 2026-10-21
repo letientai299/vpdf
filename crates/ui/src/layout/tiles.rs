@@ -1,13 +1,7 @@
 use super::{Layout, Screen, visible};
-#[cfg(test)]
-use crate::presentation::*;
 use crate::text::PageId;
-#[cfg(test)]
-use std::io::Write;
 use vpdf_model::scene::Surface;
 use vpdf_model::tile::{TileId, TileKey, TileOwner};
-#[cfg(test)]
-use vpdf_terminal::graphics::Graphics;
 
 pub struct Tiles {
   wanted: Vec<TileKey>,

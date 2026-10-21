@@ -260,23 +260,17 @@ fn icon_drawing_avoids_text() -> Result<()> {
     &fixture.layout,
   ));
   preview.preview.as_mut().unwrap().anchor(PageId(0), 0, snapshot().bounds);
-  let mut graphics = vpdf_terminal::graphics::Graphics::default();
-  let mut output = Vec::new();
-  fixture.view().draw_preview(&mut preview, &mut graphics, &mut output)?;
+  let mut graphics = crate::testing::empty();
+  fixture.view().scene_preview(&mut preview, &mut graphics)?;
   assert!(preview.preview.as_ref().unwrap().cells().is_some());
-  assert_ne!(output, [] as [u8; 0]);
+  assert_ne!(graphics.into_scene(), [] as [vpdf_model::scene::Op<'_>; 0]);
+  let mut graphics = crate::testing::empty();
   assert_eq!(fixture.source.reads, 0);
   assert_eq!(fixture.source.lookups, [] as [&str; 0]);
   fixture.frame.pane.text = true;
-  output.clear();
-  assert!(
-    fixture
-      .view()
-      .draw_preview(&mut preview, &mut graphics, &mut output)
-      .is_err()
-  );
+  assert!(fixture.view().scene_preview(&mut preview, &mut graphics).is_err());
   assert!(preview.preview.is_some());
-  assert_eq!(output, [] as [u8; 0]);
+  assert_eq!(graphics.into_scene(), [] as [vpdf_model::scene::Op<'_>; 0]);
   assert_eq!(fixture.source.reads, 1);
   Ok(())
 }

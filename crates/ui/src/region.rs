@@ -1,11 +1,7 @@
-#[cfg(test)]
-use crate::Result;
 use crate::keys::Action;
 use crate::layout::Layout;
 use crate::paint::Frame;
 use crate::pointer::Items;
-#[cfg(test)]
-use crate::presentation::*;
 use crate::split::Rect;
 use crate::theme;
 use std::ops::Range;
@@ -14,8 +10,6 @@ use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_reader::motion::Motion;
-#[cfg(test)]
-use vpdf_terminal::graphics::Graphics;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CaptureId(u64);
@@ -439,12 +433,10 @@ mod tests {
   }
 
   #[test]
-  fn recorded_regions_keep_hits() -> Result<()> {
+  fn recorded_regions_keep_hits() {
     use vpdf_model::geometry::At;
     use vpdf_model::geometry::Screen;
     use vpdf_model::scene::Scene;
-    use vpdf_terminal::graphics::Presentation;
-    use vpdf_terminal::payload::Encoder;
     let screen = Screen {
       columns: 20,
       rows: 10,
@@ -473,31 +465,11 @@ mod tests {
       let area = recorded.cells().unwrap();
       assert_eq!(area.column, 3);
       assert_eq!(recorded.items().at(area.column, area.row), Some(0));
-      let profile = Presentation { crop_quirk, ..Presentation::default() };
-      let mut graphics = Graphics::new(profile, &Encoder::default());
-      let mut replay = Graphics::new(profile, &Encoder::default());
-      let mut direct = Region::open(snapshot(1));
-      for _ in 0..2 {
-        let mut expected = Vec::new();
-        graphics.begin(&mut expected)?;
-        canvas.draw(Some(&mut direct), sweep, &mut graphics, &mut expected)?;
-        graphics.end(&mut expected)?;
-        assert_eq!(direct.cells(), Some(area));
-        let mut actual = Vec::new();
-        replay.begin(&mut actual)?;
-        let mut painter = vpdf_terminal::painter::Painter::new(&mut actual)
-          .with_graphics(&mut replay);
-        painter.paint(&scene);
-        painter.finish()?;
-        replay.end(&mut actual)?;
-        assert_eq!(actual, expected);
-      }
     }
-    Ok(())
   }
 
   #[test]
-  fn narrow_bar_tracks_cells() -> Result<()> {
+  fn narrow_bar_tracks_cells() {
     use vpdf_model::geometry::At;
     use vpdf_model::geometry::Screen;
     let screen = Screen {
@@ -519,20 +491,14 @@ mod tests {
     assert!(region.cells().is_none());
     assert_eq!(region.items().at(7, 1), None);
     let mut output = Vec::new();
-    canvas.draw(
-      Some(&mut region),
-      None,
-      &mut Graphics::default(),
-      &mut output,
-    )?;
+    canvas.scene(Some(&mut region), None, false, &mut output);
     let area = region.cells().unwrap();
     assert_eq!(area.column, 7);
     assert_eq!(area.columns, 13);
     assert_eq!(region.items().at(7, area.row), Some(2));
     assert_eq!(region.items().at(16, area.row), Some(2));
     assert_eq!(region.items().at(17, area.row), None);
-    assert!(String::from_utf8(output)?.contains("[Save PNG] p1"));
-    Ok(())
+    assert!(crate::testing::text(&output).contains("[Save PNG] p1"));
   }
 
   /// U26: frames sit outside when room allows.

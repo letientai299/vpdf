@@ -157,3 +157,7 @@ mupdf-sys = { git = "https://github.com/messense/mupdf-rs", rev = "ffaf28f5a96c4
 [[bench]]
 name = "manuals"
 harness = false
+
+[[bench]]
+name = "presentation"
+harness = false

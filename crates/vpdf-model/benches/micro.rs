@@ -1,3 +1,5 @@
+#[path = "../../../benches/support/directory.rs"]
+mod directory;
 use anyhow::{Context, Result};
 use std::hint::black_box;
 #[path = "../../../benches/support/fixtures.rs"]

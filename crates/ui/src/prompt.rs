@@ -5,13 +5,9 @@
 //! Ctrl-arrows that stop at punctuation, history search on Ctrl-r, and
 //! `edit-command-line` on Ctrl-x Ctrl-e.
 
-#[cfg(test)]
-use crate::Result;
 use crate::grid::{self, Grid};
 use crate::layout::Screen;
 use crate::line::{self, NARROW, SHELL};
-#[cfg(test)]
-use crate::presentation::*;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
 use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
@@ -686,7 +682,7 @@ mod tests {
   use super::*;
 
   #[test]
-  fn drawing_positions_the_wide_text_cursor() -> Result<()> {
+  fn drawing_positions_the_wide_text_cursor() {
     let mut prompt = Prompt::new(PromptKind::Command);
     prompt.replace("界a");
     let screen = Screen {
@@ -697,26 +693,18 @@ mod tests {
       origin: (0, 0),
     };
     let at = At { column: 7, row: 3 };
-    let mut out = Vec::new();
-    prompt.draw(&mut out, screen, at, None)?;
-    let want = concat!(
-      "\x1b[5;8H:界a\x1b[90m\x1b[0m      ",
-      "\x1b[5;12H\x1b[2 q\x1b[?25h"
-    );
-    assert_eq!(out, want.as_bytes());
     let mut scene = vpdf_model::scene::Scene::new();
     prompt.scene(&mut scene, screen, at, None);
-    out.clear();
-    vpdf_terminal::painter::paint(&mut out, &scene)?;
-    assert_eq!(out, want.as_bytes());
+    assert_eq!(crate::testing::text(&scene), ":界a      ");
+    assert!(scene.contains(&Op::Move { row: 4, column: 11 }));
+    assert!(scene.ends_with(&[Op::BlockCursor, Op::ShowCursor]));
     for screen in
       [Screen { rows: 0, ..screen }, Screen { columns: 0, ..screen }]
     {
-      out.clear();
-      prompt.draw(&mut out, screen, at, None)?;
-      assert_eq!(out, [] as [u8; 0]);
+      scene.clear();
+      prompt.scene(&mut scene, screen, at, None);
+      assert_eq!(scene, [] as [Op<'_>; 0]);
     }
-    Ok(())
   }
 
   fn press(

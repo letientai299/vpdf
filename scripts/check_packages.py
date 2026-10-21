@@ -11,7 +11,7 @@ ALLOWED = {
     "vpdf-reader": {"vpdf-model", "vpdf-search"},
     "vpdf-pdf": {"vpdf-model", "vpdf-search"},
     "vpdf-terminal": {"vpdf-model", "vpdf-protocol"},
-    "vpdf-ui": {"vpdf-model", "vpdf-reader", "vpdf-search", "vpdf-terminal"},
+    "vpdf-ui": {"vpdf-model", "vpdf-reader", "vpdf-search"},
     "vpdf-gui": {"vpdf", "vpdf-model"},
     "vpdf": {
         "vpdf-model", "vpdf-reader", "vpdf-search", "vpdf-pdf",
@@ -19,6 +19,7 @@ ALLOWED = {
     },
 }
 NATIVE = {"vpdf", "vpdf-pdf", "vpdf-gui"}
+TRANSPORT = {"vpdf", "vpdf-terminal", "vpdf-protocol"}
 
 
 def native(name):
@@ -29,14 +30,15 @@ def gui(name):
     return name in {"eframe", "egui", "epaint", "emath", "ecolor", "winit"} or name.startswith(("egui-", "wgpu"))
 
 
-def reachable(graph, root):
+def reachable(graph, root, stop=()):
     seen = set()
     pending = [root]
     while pending:
         node = pending.pop()
         if node not in seen:
             seen.add(node)
-            pending.extend(graph[node])
+            if node not in stop:
+                pending.extend(graph[node])
     return seen
 
 
@@ -74,11 +76,16 @@ def audit(metadata):
                 path = dep.get("path")
                 if path is None or Path(path).resolve() != directory.resolve():
                     errors.append(f"Non-workspace dependency: {edge}")
+            if name not in TRANSPORT and target == "crossterm":
+                errors.append(f"Transport dependency: {edge}")
             if name != "vpdf-gui" and gui(target):
                 errors.append(f"GUI dependency: {edge}")
             if name not in NATIVE and native(target):
                 errors.append(f"Native dependency: {edge}")
 
+        transport = reachable(
+            graph, member, stop={owners["vpdf"]} if name == "vpdf-gui" else (),
+        )
         permitted = reachable(ALLOWED, name)
         for target in sorted(reachable(graph, member)):
             dependency = packages[target]["name"]
@@ -88,6 +95,9 @@ def audit(metadata):
                     errors.append(f"Forbidden transitive dependency: {edge}")
                 if target != owners[dependency]:
                     errors.append(f"Non-workspace transitive dependency: {edge}")
+            if (name not in TRANSPORT and target in transport
+                    and dependency == "crossterm"):
+                errors.append(f"Transport transitive dependency: {edge}")
             if name != "vpdf-gui" and gui(dependency):
                 errors.append(f"GUI transitive dependency: {edge}")
             if name not in NATIVE and native(dependency):

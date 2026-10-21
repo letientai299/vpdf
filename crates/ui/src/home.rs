@@ -4,8 +4,6 @@ use crate::layout::Screen;
 use crate::panel::Panel;
 use crate::panel::recent::{Entry, Shelf};
 use crate::panel::{Destination, Row};
-#[cfg(test)]
-use crate::presentation::*;
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crate::theme::Color;
 use std::path::PathBuf;
@@ -15,8 +13,6 @@ use vpdf_model::input::Event;
 use vpdf_model::input::{KeyEvent, KeyEventKind};
 use vpdf_model::scene::{Draw, Op, Surface, Text};
 use vpdf_model::style::Role;
-#[cfg(test)]
-use vpdf_terminal::graphics::Graphics;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Effect {
@@ -286,7 +282,6 @@ impl Home {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use vpdf_terminal::style::sgr;
 
   #[test]
   fn effects_resume_the_prompt() -> Result<()> {
@@ -350,26 +345,23 @@ mod tests {
       cell_height: 16,
       origin: (0, 0),
     };
-    let mut out = Vec::new();
-    Home::new(Vec::new(), &[], screen).draw(
-      &mut out,
-      &mut Graphics::default(),
-      0,
-      |_| {},
-    )?;
-    let out = String::from_utf8(out)?;
-    assert!(out.contains(" Vpdf "));
-    let columns = out.split("\x1b[").filter_map(|code| {
-      let (row, column) = code.split_once('H')?.0.split_once(';')?;
-      row.parse::<u16>().ok()?;
-      column.parse::<u16>().ok()
+    let mut recorder = crate::testing::empty();
+    Home::new(Vec::new(), &[], screen).scene(&mut recorder, 0, |_| {})?;
+    let scene = recorder.into_scene();
+    assert!(crate::testing::text(&scene).contains(" Vpdf "));
+    let columns = scene.iter().filter_map(|op| match op {
+      Op::Move { column, .. } => Some(*column),
+      _ => None,
     });
-    assert_eq!(columns.max(), Some(screen.columns));
+    assert_eq!(columns.max(), Some(usize::from(screen.columns - 1)));
     for row in 0..screen.rows - 1 {
-      let goto =
-        vpdf_terminal::terminal::goto(At::default(), row, screen.columns - 1);
-      let border = format!("{goto}{}│", sgr(Role::Muted));
-      assert!(out.contains(&border), "border on row {row}");
+      assert!(scene.windows(3).any(|ops| ops[0]
+        == Op::Move {
+          column: usize::from(screen.columns - 1),
+          row: usize::from(row)
+        }
+        && ops[1] == Op::Style(Role::Muted)
+        && matches!(&ops[2], Op::Text(text) if text.as_str() == "│")));
     }
     Ok(())
   }
@@ -391,11 +383,11 @@ mod tests {
     };
     let mut home = Home::new(rows(), &[], screen);
     home.at.row = 4;
-    let mut out = Vec::new();
-    home.draw(&mut out, &mut Graphics::default(), 0, |_| {})?;
-    let text = String::from_utf8(out)?;
-    assert!(text.contains("\x1b[5;1H"));
-    assert!(!text.contains("\x1b[1;1H"));
+    let mut recorder = crate::testing::empty();
+    home.scene(&mut recorder, 0, |_| {})?;
+    let scene = recorder.into_scene();
+    assert!(scene.contains(&Op::Move { row: 4, column: 0 }));
+    assert!(!scene.contains(&Op::Move { row: 0, column: 0 }));
     for (row, expected) in [(1, Effect::Stay), (5, Effect::Open(file.into()))] {
       let click = Event::Mouse(Mouse {
         kind: MouseKind::Press(Button::LEFT),

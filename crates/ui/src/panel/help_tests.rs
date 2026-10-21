@@ -1,31 +1,33 @@
 use super::*;
-#[cfg(test)]
-use anyhow::Result;
 
 use vpdf_model::input::KeyModifiers;
 
 #[test]
-fn scrolling_can_enter_wrapped_rows() -> Result<()> {
+fn scrolling_can_enter_wrapped_rows() {
   let rows = ["# Move", "j: one two three four five six seven eight nine ten"]
     .map(Row::parse)
     .into();
   let mut panel = Panel::new(PanelKind::Help, rows);
-  panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 12, 4)?;
+  panel.scene_list(&mut Vec::new(), vpdf_model::geometry::At::default(), 12, 4);
   panel.selected = 1;
   for top in 1..=3 {
     panel.navigate(Input::plain(Action::Rows(1)), 4);
-    panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 12, 4)?;
+    panel.scene_list(
+      &mut Vec::new(),
+      vpdf_model::geometry::At::default(),
+      12,
+      4,
+    );
     assert_eq!((panel.top, panel.selected), (top, 1));
   }
-  Ok(())
 }
 
 #[test]
-fn wrapped_rows_keep_their_source() -> Result<()> {
+fn wrapped_rows_keep_their_source() {
   let rows =
     ["# Move", "j: one two three four five", "k: up"].map(Row::parse).into();
   let mut panel = Panel::new(PanelKind::Help, rows);
-  panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 15, 6)?;
+  panel.scene_list(&mut Vec::new(), vpdf_model::geometry::At::default(), 15, 6);
   let press = |row| MouseEvent {
     kind: MouseEventKind::Down(MouseButton::Left),
     column: 5,
@@ -43,10 +45,9 @@ fn wrapped_rows_keep_their_source() -> Result<()> {
   panel.selected = 2;
   panel.reveal();
   assert_eq!(panel.top, 1);
-  panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 40, 6)?;
+  panel.scene_list(&mut Vec::new(), vpdf_model::geometry::At::default(), 40, 6);
   assert_eq!(panel.selected, 2);
   assert_eq!(panel.top, 0);
   assert_eq!(panel.pointer(press(3)), Some(2));
   assert_eq!(panel.pointer(press(4)), None);
-  Ok(())
 }

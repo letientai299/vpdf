@@ -1,16 +1,9 @@
 use anyhow::{Context, Result};
-use std::path::PathBuf;
 use std::sync::Arc;
 use vpdf_model::text::{Bounds, Glyph, Line, Text};
 
 pub fn read<T: serde::de::DeserializeOwned>(name: &str) -> Result<T> {
-  let directory = std::env::var_os("VPDF_BENCH_FIXTURES").map_or_else(
-    || {
-      PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/bench-fixtures")
-    },
-    PathBuf::from,
-  );
+  let directory = super::directory::fixtures();
   let manifest: serde_json::Value = serde_json::from_slice(
     &std::fs::read(directory.join("manifest.json"))
       .context("Run mise run bench:fixtures first")?,

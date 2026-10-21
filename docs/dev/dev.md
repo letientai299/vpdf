@@ -213,6 +213,9 @@ mise run bench:stages
 
 The [microbenchmarks][micro] accept case filters and `--package` selection.
 Model, search, reader, terminal, and UI cases use prepared real-PDF fixtures.
+UI cases measure scene construction without terminal serialization. Combined
+UI/terminal workloads run under the application `presentation` benchmark,
+included by `bench:micro -- --package vpdf`; their workload names are unchanged.
 Fixture hashes are checked and source identity is recorded outside the timed
 loops. Preparation requires MuPDF; these packages and protocol execute their
 benchmarks without it. PDF benchmarks open native documents; application cases

@@ -1,3 +1,5 @@
+#[path = "../../../benches/support/directory.rs"]
+mod directory;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::text::{PageId, Position};

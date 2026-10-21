@@ -1,26 +1,12 @@
-use super::fixtures::TextPages;
 use crate::presentation::TextDraw;
 use anyhow::{Context, Result};
 use std::hint::black_box;
 use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
-use vpdf_model::text::{Bounds, PageId, Position};
+use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Reader;
 use vpdf_ui::paint::Marks;
-use vpdf_ui::source::Pages;
 use vpdf_ui::text_view::{Frame, TextView};
-
-impl Pages for &TextPages {
-  fn count(&self) -> usize {
-    self.text.len()
-  }
-  fn bounds(&self, page: PageId) -> Bounds {
-    self.metadata[page.0].1
-  }
-  fn label(&self, page: PageId) -> &str {
-    &self.metadata[page.0].0
-  }
-}
 
 pub fn canvas() -> Result<()> {
   let prepared = super::fixtures::text()?;

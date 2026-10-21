@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::presentation::*;
 pub mod landing;
 mod point;
 pub use point::Point;
@@ -16,8 +14,6 @@ use vpdf_model::geometry::Screen;
 use vpdf_model::scene::{Draw, Layer};
 use vpdf_reader::motion::{covered_rows, range};
 use vpdf_reader::reader::{SelectionKind, TextSource};
-#[cfg(test)]
-use vpdf_terminal::graphics::Graphics;
 
 pub struct Canvas<'a> {
   pub layout: &'a Layout,
