@@ -841,6 +841,30 @@ mod tests {
   }
 
   #[test]
+  fn underline_removal_preserves_style() {
+    use vpdf_model::style::Role;
+    let screen = Screen {
+      columns: 8,
+      rows: 2,
+      cell_width: 10,
+      cell_height: 20,
+      origin: (0, 0),
+    };
+    for role in [Role::Hover, Role::HoverDim, Role::TextLink, Role::BarHover] {
+      let mut grid = Grid::new(screen);
+      grid.op(&Op::Style(role));
+      let mut expected = grid.style;
+      assert!(expected.underline);
+      expected.underline = false;
+      grid.op(&Op::UnderlineOff);
+      grid.op(&Op::Text(Text::new("x")));
+      assert_eq!(grid.cells[0].style, expected);
+      grid.op(&Op::Style(Role::Reset));
+      assert_eq!(grid.style, Style::default());
+    }
+  }
+
+  #[test]
   fn combining_marks_keep_wide_base() {
     let screen = Screen {
       columns: 4,

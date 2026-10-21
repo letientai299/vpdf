@@ -635,6 +635,36 @@ mod tests {
   }
 
   #[test]
+  fn style_sequences_keep_bytes() -> io::Result<()> {
+    let cases: &[(&[Role], &str)] = &[
+      (&[Role::Bar, Role::Heading, Role::Key], "\x1b[0;100m\x1b[1;34m\x1b[33m"),
+      (
+        &[Role::Selected, Role::Muted, Role::Error],
+        "\x1b[0;1;100m\x1b[90m\x1b[1;31m",
+      ),
+      (
+        &[Role::TextSelection, Role::Mode, Role::Reset, Role::Argument],
+        "\x1b[0;7;35m\x1b[36m\x1b[0m\x1b[35m",
+      ),
+      (
+        &[Role::HoverDim, Role::File, Role::Dim, Role::Reset],
+        "\x1b[0;2;4m\x1b[1;34m\x1b[0;2m\x1b[0m",
+      ),
+    ];
+    for &(roles, expected) in cases {
+      let mut out = Vec::new();
+      let mut painter = Painter::new(&mut out);
+      for role in roles {
+        painter.extend([Op::Style(*role)]);
+      }
+      painter.extend([Op::UnderlineOff]);
+      painter.finish()?;
+      assert_eq!(out, format!("{expected}\x1b[24m").as_bytes());
+    }
+    Ok(())
+  }
+
+  #[test]
   fn blank_runs_cross_chunks() -> io::Result<()> {
     for count in [0, 1, 127, 128, 129, 3840] {
       let mut out = Vec::new();

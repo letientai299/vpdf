@@ -47,6 +47,11 @@ delegates layout and drawing to UI components. Terminal and native wrappers
 share active-tab composition; each wrapper keeps its frame lifecycle and
 delivery metadata.
 
+Model owns [semantic style][styles] resets, patches, colors, and text
+attributes.
+Terminal and GUI resolve their own palettes and encode styles for their
+painters.
+
 Model owns [ordered drawing operations][scene]. Components emit into a drawing
 sink: a scene retains operations, while the [terminal painter][painter] encodes
 them directly without probing the terminal. Finish a streaming painter to report
@@ -148,3 +153,5 @@ corpus, OCR, and terminal checks when they change.
 [painter]: ../../crates/terminal/src/painter.rs
 [gui]: ../../crates/vpdf-gui/src/lib.rs
 [pictures]: ../../crates/vpdf-model/src/image.rs
+
+[styles]: ../../crates/vpdf-model/src/style.rs

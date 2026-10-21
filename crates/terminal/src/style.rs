@@ -1,39 +1,157 @@
-use vpdf_model::style::{Color, Role};
+use vpdf_model::style::{
+  Attribute, Color, ColorChange, Role, StyleChange, Tone,
+};
 
 pub const fn sgr(role: Role) -> &'static str {
+  macro_rules! encoded {
+    ($role:expr) => {{
+      const ENCODED: Encoded = encode($role.style());
+      const TEXT: &str = ENCODED.text();
+      TEXT
+    }};
+  }
   match role {
-    Role::Reset => "\x1b[0m",
-    Role::Bar | Role::TextCursorline => "\x1b[0;100m",
-    Role::Selected => "\x1b[0;1;100m",
-    Role::StatusFile | Role::TabActive => "\x1b[0;1;30;104m",
-    Role::TabInactive => "\x1b[0;37;40m",
-    Role::Current => "\x1b[0;1;34m",
-    Role::Hover => "\x1b[0;4m",
-    Role::HoverDim => "\x1b[0;2;4m",
-    Role::BarHover => "\x1b[0;4;100m",
-    Role::Heading | Role::File => "\x1b[1;34m",
-    Role::Key => "\x1b[33m",
-    Role::Mode => "\x1b[36m",
-    Role::Argument => "\x1b[35m",
-    Role::Muted => "\x1b[90m",
-    Role::Dim => "\x1b[0;2m",
-    Role::StatusSection => "\x1b[0;3;100m",
-    Role::Error => "\x1b[1;31m",
-    Role::TextLanding => "\x1b[0;43m",
-    Role::TextCursor => "\x1b[0;7;34m",
-    Role::TextSelection => "\x1b[0;7;35m",
-    Role::TextMatch => "\x1b[0;7;33m",
-    Role::HintTyped => "\x1b[0;1;30;43m",
-    Role::Hint => "\x1b[0;30;43m",
-    Role::HintPickedTyped => "\x1b[0;1;97;44m",
-    Role::HintPicked => "\x1b[0;97;44m",
-    Role::TextLink => "\x1b[0;4;36m",
-    Role::PreviewBorder => "\x1b[0;38;2;60;120;230;48;2;255;255;255m",
-    Role::PreviewText => "\x1b[0;38;2;20;20;20;48;2;255;255;255m",
-    Role::Badge(Color::Blue) => "\x1b[0;1;7;34m",
-    Role::Badge(Color::Magenta) => "\x1b[0;1;7;35m",
-    Role::Badge(Color::Yellow) => "\x1b[0;1;7;33m",
-    Role::Badge(Color::Cyan) => "\x1b[0;1;7;36m",
+    Role::Reset => encoded!(Role::Reset),
+    Role::Bar => encoded!(Role::Bar),
+    Role::Selected => encoded!(Role::Selected),
+    Role::StatusFile => encoded!(Role::StatusFile),
+    Role::TabActive => encoded!(Role::TabActive),
+    Role::TabInactive => encoded!(Role::TabInactive),
+    Role::Current => encoded!(Role::Current),
+    Role::Hover => encoded!(Role::Hover),
+    Role::HoverDim => encoded!(Role::HoverDim),
+    Role::BarHover => encoded!(Role::BarHover),
+    Role::Heading => encoded!(Role::Heading),
+    Role::Key => encoded!(Role::Key),
+    Role::Mode => encoded!(Role::Mode),
+    Role::Argument => encoded!(Role::Argument),
+    Role::File => encoded!(Role::File),
+    Role::Muted => encoded!(Role::Muted),
+    Role::Dim => encoded!(Role::Dim),
+    Role::StatusSection => encoded!(Role::StatusSection),
+    Role::Error => encoded!(Role::Error),
+    Role::TextLanding => encoded!(Role::TextLanding),
+    Role::TextCursorline => encoded!(Role::TextCursorline),
+    Role::TextCursor => encoded!(Role::TextCursor),
+    Role::TextSelection => encoded!(Role::TextSelection),
+    Role::TextMatch => encoded!(Role::TextMatch),
+    Role::HintTyped => encoded!(Role::HintTyped),
+    Role::Hint => encoded!(Role::Hint),
+    Role::HintPickedTyped => encoded!(Role::HintPickedTyped),
+    Role::HintPicked => encoded!(Role::HintPicked),
+    Role::TextLink => encoded!(Role::TextLink),
+    Role::PreviewBorder => encoded!(Role::PreviewBorder),
+    Role::PreviewText => encoded!(Role::PreviewText),
+    Role::Badge(Color::Blue) => encoded!(Role::Badge(Color::Blue)),
+    Role::Badge(Color::Magenta) => encoded!(Role::Badge(Color::Magenta)),
+    Role::Badge(Color::Yellow) => encoded!(Role::Badge(Color::Yellow)),
+    Role::Badge(Color::Cyan) => encoded!(Role::Badge(Color::Cyan)),
+  }
+}
+
+struct Encoded {
+  bytes: [u8; 96],
+  len: usize,
+}
+
+impl Encoded {
+  const fn text(&self) -> &str {
+    match str::from_utf8(self.bytes.split_at(self.len).0) {
+      Ok(text) => text,
+      Err(_) => panic!("invalid style encoding"),
+    }
+  }
+
+  const fn push(&mut self, text: &str) {
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+      self.bytes[self.len] = bytes[index];
+      self.len += 1;
+      index += 1;
+    }
+  }
+
+  const fn parameter(&mut self, text: &str) {
+    if self.len > 2 {
+      self.push(";");
+    }
+    self.push(text);
+  }
+
+  const fn color(&mut self, change: ColorChange, background: bool) {
+    let value = match change {
+      ColorChange::Keep => return,
+      ColorChange::Default => {
+        if background {
+          "49"
+        } else {
+          "39"
+        }
+      }
+      ColorChange::Set(tone) => palette(tone, background),
+    };
+    self.parameter(value);
+  }
+}
+
+const fn encode(change: StyleChange) -> Encoded {
+  let mut out = Encoded { bytes: [0; 96], len: 0 };
+  out.push("\x1b[");
+  let patch = match change {
+    StyleChange::Reset(patch) => {
+      out.parameter("0");
+      patch
+    }
+    StyleChange::Patch(patch) => patch,
+  };
+  let mut index = 0;
+  while index < patch.attributes.len() {
+    out.parameter(match patch.attributes[index] {
+      Attribute::Bold => "1",
+      Attribute::Dim => "2",
+      Attribute::Italic => "3",
+      Attribute::Underline => "4",
+      Attribute::Inverse => "7",
+    });
+    index += 1;
+  }
+  out.color(patch.foreground, false);
+  out.color(patch.background, true);
+  if out.len == 2 {
+    out.len = 0;
+    return out;
+  }
+  out.push("m");
+  out
+}
+
+const fn palette(tone: Tone, background: bool) -> &'static str {
+  match (tone, background) {
+    (Tone::Black, false) => "30",
+    (Tone::Black, true) => "40",
+    (Tone::White, false) => "37",
+    (Tone::White, true) => "47",
+    (Tone::BrightWhite, false) => "97",
+    (Tone::BrightWhite, true) => "48;2;255;255;255",
+    (Tone::Blue, false) => "34",
+    (Tone::Blue, true) => "44",
+    (Tone::Magenta, false) => "35",
+    (Tone::Magenta, true) => "45",
+    (Tone::Yellow, false) => "33",
+    (Tone::Yellow, true) => "43",
+    (Tone::Cyan, false) => "36",
+    (Tone::Cyan, true) => "46",
+    (Tone::Bar, false) => "90",
+    (Tone::Bar, true) => "100",
+    (Tone::ActiveBar, false) => "94",
+    (Tone::ActiveBar, true) => "104",
+    (Tone::Error, false) => "31",
+    (Tone::Error, true) => "41",
+    (Tone::PreviewBorder, false) => "38;2;60;120;230",
+    (Tone::PreviewBorder, true) => "48;2;60;120;230",
+    (Tone::PreviewText, false) => "38;2;20;20;20",
+    (Tone::PreviewText, true) => "48;2;20;20;20",
   }
 }
 
@@ -41,6 +159,25 @@ pub const fn sgr(role: Role) -> &'static str {
 mod tests {
   use super::*;
   use sha2::{Digest, Sha256};
+
+  #[test]
+  fn default_colors_are_explicit() {
+    use vpdf_model::style::StylePatch;
+    let keep = StylePatch {
+      foreground: ColorChange::Keep,
+      background: ColorChange::Keep,
+      attributes: &[],
+    };
+    let defaults = StylePatch {
+      foreground: ColorChange::Default,
+      background: ColorChange::Default,
+      ..keep
+    };
+    assert_eq!(encode(StyleChange::Patch(keep)).text(), "");
+    assert_eq!(encode(StyleChange::Reset(keep)).text(), "\x1b[0m");
+    assert_eq!(encode(StyleChange::Patch(defaults)).text(), "\x1b[39;49m");
+    assert_eq!(encode(StyleChange::Reset(defaults)).text(), "\x1b[0;39;49m");
+  }
 
   #[test]
   fn palette_keeps_legacy_bytes() {
