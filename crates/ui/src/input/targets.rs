@@ -73,7 +73,11 @@ impl Targets<'_> {
       Region::Panel => {
         let Some(panel) = self.panel else { return Some(Hit::Nothing) };
         if let Some(index) = panel.row_at(column, row) {
-          Hit::Row(index)
+          if panel.rows()[index].follows() {
+            Hit::Row(index)
+          } else {
+            Hit::Label(index)
+          }
         } else if panel.shelf().is_some_and(|shelf| shelf.covers(column)) {
           Hit::Card(row)
         } else {
@@ -126,6 +130,42 @@ mod tests {
       bottom: Overlay::new(screen, None, clues),
       owner: InputOwner::Content,
     }
+  }
+
+  #[test]
+  fn panel_hits_require_destination() -> crate::Result<()> {
+    use crate::keys::PanelKind;
+    use crate::panel::{Destination, Row};
+    use vpdf_model::style::Shape;
+    let clues = Clues::default();
+    let mut panel = Panel::new(
+      PanelKind::Links,
+      vec![
+        Row::parse("No links"),
+        Row::new(
+          "Open file".into(),
+          String::new(),
+          Destination::File("book.pdf".into()),
+        ),
+      ],
+    );
+    panel.list(
+      &mut Vec::new(),
+      vpdf_terminal::terminal::At::default(),
+      40,
+      6,
+    )?;
+    let mut targets = targets(&clues);
+    targets.panel = Some(&panel);
+    for (row, hit, shape) in
+      [(1, Hit::Label(0), Shape::Default), (2, Hit::Row(1), Shape::Pointer)]
+    {
+      let actual =
+        targets.hit(Region::Panel, (1, row), || false, || None, || None);
+      assert_eq!(actual, Some(hit));
+      assert_eq!(hit.shape(), shape);
+    }
+    Ok(())
   }
 
   #[test]

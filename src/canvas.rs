@@ -16,16 +16,19 @@ use vpdf_ui::pointer::{Hit, List};
 use vpdf_ui::text_view::{Frame, Pane};
 
 impl App {
-  /// Keeps finished tiles; returns whether a wanted one arrived, since
-  /// prefetched tiles need no frame.
+  /// Keeps tiles; whether content or statistics changed.
   pub fn raster_updates(&mut self, graphics: &mut Graphics) -> bool {
     self.settle_images(graphics);
+    let info = self
+      .panel
+      .as_ref()
+      .is_some_and(|panel| panel.view.kind() == vpdf_ui::keys::PanelKind::Info);
     let (mut changed, mut failed) = (false, false);
     for result in self.worker.results.try_iter() {
       match result {
         Ok(tile) => {
           self.render_ms = tile.render_ms;
-          changed |= self.tiles.wants(&tile.key);
+          changed |= self.tiles.wants(&tile.key) || info;
           graphics.keep(self.id, tile);
         }
         Err(error) => {
@@ -221,7 +224,7 @@ impl App {
     self.blank = plain;
     if let Some(panel) = &mut self.panel {
       panel.view.point(match self.hover.hit() {
-        Hit::Row(index) => Pointing::Row(index),
+        Hit::Row(index) | Hit::Label(index) => Pointing::Row(index),
         Hit::Card(_) => Pointing::Card,
         _ => Pointing::Away,
       });
@@ -249,6 +252,7 @@ impl App {
     self.scene_preview(scene)?;
     self.scene_region(scene, snap_regions);
     self.track_outline();
+    self.refill_panel(vpdf_ui::keys::PanelKind::Info)?;
     if let Some(panel) = &mut self.panel {
       panel
         .scene(scene, self.at, self.left, self.screen, false)

@@ -1,4 +1,5 @@
 use super::*;
+use crate::text::PageId;
 use vpdf_model::style::Role;
 use vpdf_terminal::style::sgr;
 
@@ -27,6 +28,44 @@ fn recorded_panels_outlive_their_source() -> Result<()> {
   panel().list(&mut streamed, at, 20, 6)?;
   assert_eq!(recorded, streamed);
   assert!(String::from_utf8(recorded)?.contains("日本語"));
+  Ok(())
+}
+
+#[test]
+fn hover_requires_destination() -> Result<()> {
+  for kind in [
+    PanelKind::Info,
+    PanelKind::Help,
+    PanelKind::Outline,
+    PanelKind::Results,
+    PanelKind::Links,
+    PanelKind::Recent,
+    PanelKind::Marks,
+    PanelKind::Jumps,
+    PanelKind::Annotations,
+  ] {
+    for focused in [true, false] {
+      for follows in [true, false] {
+        let mut row = Row::parse("Search: a long label clipped by the panel");
+        if follows {
+          row.destination = Destination::Link(Target::Page(PageId(0)));
+        }
+        let mut panel = Panel::new(kind, vec![Row::parse("# Reader"), row]);
+        panel.focus(focused);
+        panel.point(Pointing::Row(1));
+        let mut scene = vpdf_model::scene::Scene::new();
+        panel.scene_list(&mut scene, terminal::At::default(), 20, 6);
+        let mut out = Vec::new();
+        vpdf_terminal::painter::paint(&mut out, &scene)?;
+        let out = String::from_utf8(out)?;
+        let hover = if focused { Role::Hover } else { Role::HoverDim };
+        assert_eq!(out.contains(sgr(hover)), follows, "{kind:?}");
+        if kind == PanelKind::Info {
+          assert!(panel.hover_title().is_some());
+        }
+      }
+    }
+  }
   Ok(())
 }
 

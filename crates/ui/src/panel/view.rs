@@ -501,7 +501,8 @@ impl Panel {
         (false, true) => Role::Reset,
         (false, false) => Role::Dim,
       };
-      let base = match (hovered && !selected, self.focused) {
+      let follows = self.rows[source].follows();
+      let base = match (hovered && !selected && follows, self.focused) {
         (true, true) => Role::Hover,
         (true, false) => Role::HoverDim,
         (false, _) => plain,

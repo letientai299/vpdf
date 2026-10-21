@@ -13,6 +13,7 @@ use vpdf_model::document::Target;
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_ui::keys::{Action, Input, PanelKind};
 use vpdf_ui::layout::Screen;
+use vpdf_ui::panel::Row;
 use vpdf_ui::pointer::{Hit, Region, Route};
 
 #[test]
@@ -173,6 +174,102 @@ fn text_app() -> Result<Solo> {
     origin: (0, 0),
   };
   Solo::open(&root.join("paper.pdf"), "", true, screen)
+}
+
+#[test]
+fn info_tracks_frames() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("info.pdf");
+  common::pages_pdf(&path, &[&["First page"], &["Second page"]])?;
+  let short = Screen { rows: 12, ..screen() };
+  let mut app = Solo::open(&path, "", true, short)?;
+  app.command("info")?;
+  app.draw(&mut Vec::new())?;
+  let panel = &mut app.panel.as_mut().unwrap().view;
+  let tile = panel
+    .rows()
+    .iter()
+    .position(|row| row.label.starts_with("Last tile: "))
+    .unwrap();
+  panel.select(tile);
+  panel.begin_search(false);
+  panel.preview("Last tile");
+  panel.finish_search("Last tile");
+  let top = panel.top();
+  for focused in [true, false] {
+    app.panel.as_mut().unwrap().view.focus(focused);
+    app.render_ms = if focused { 12.5 } else { 25.0 };
+    app.command("2")?;
+    app.screen.columns = 100;
+    app.relayout()?;
+    app.draw(&mut Vec::new())?;
+    let expected: Vec<_> =
+      app.info().lines().map(|line| Row::parse(line).label).collect();
+    let panel = &app.panel.as_ref().unwrap().view;
+    assert_eq!(
+      panel.rows().iter().map(|row| &row.label).collect::<Vec<_>>(),
+      expected.iter().collect::<Vec<_>>()
+    );
+    assert_eq!((panel.selected(), panel.top()), (tile, top));
+    assert_eq!(panel.focused(), focused);
+    assert_eq!(panel.query(), "Last tile");
+    assert_eq!(
+      panel.rows()[tile].label,
+      format!("Last tile: {:.3} ms", app.render_ms)
+    );
+  }
+  let row = tile - app.panel.as_ref().unwrap().view.top() + 1;
+  app.panel_mouse(
+    MouseEvent {
+      kind: MouseEventKind::Down(MouseButton::Right),
+      column: 1,
+      row: row as u16,
+      modifiers: KeyModifiers::NONE,
+    },
+    1,
+  )?;
+  assert!(
+    app.overlays.menu().is_some_and(vpdf_ui::context::ContextMenu::is_row)
+  );
+  app.render_ms = 50.0;
+  app.draw(&mut Vec::new())?;
+  assert!(app.overlays.menu().is_some());
+  Ok(())
+}
+
+#[test]
+fn info_tracks_prefetched_tiles() -> Result<()> {
+  use vpdf_model::tile::TileKey;
+  use vpdf_terminal::payload::{Encoder, Tile};
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("info.pdf");
+  common::text_pdf(&path, &["Background tile"])?;
+  let mut app = Solo::open(&path, "", true, screen())?;
+  let (send, receive) = std::sync::mpsc::channel();
+  app.worker.results = receive;
+  let key = TileKey {
+    page: PageId(0),
+    scale: 1.0f32.to_bits(),
+    rotation: 0,
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+    crop: vpdf_model::geometry::Crop::default(),
+  };
+  for info in [false, true] {
+    if info {
+      app.command("info")?;
+    }
+    send.send(Ok(Tile {
+      key,
+      payload: Encoder::default().encode(&[0, 0, 0])?,
+      render_ms: 12.5,
+    }))?;
+    assert_eq!(app.raster_updates(), info);
+  }
+  assert!(!app.raster_updates(), "idle info needs no frame");
+  Ok(())
 }
 
 #[test]
@@ -852,6 +949,7 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
         }
         Hit::Note { .. }
         | Hit::Row(_)
+        | Hit::Label(_)
         | Hit::Thumbnail(_)
         | Hit::Preview { .. }
         | Hit::Item(..)
@@ -911,9 +1009,9 @@ fn hover_hits_lines_rows_and_thumbnails() -> Result<()> {
     let hit = app.hovered(Region::Panel, 1, row, None)?;
     let pressed =
       app.panel.as_mut().expect("panel").view.pointer(press(1, row));
-    assert_eq!(hit, pressed.map_or(Hit::Nothing, Hit::Row), "row {row}");
+    assert_eq!(hit, pressed.map_or(Hit::Nothing, Hit::Label), "row {row}");
     if row < 2 {
-      assert_eq!(hit, [Hit::Nothing, Hit::Row(0)][usize::from(row)]);
+      assert_eq!(hit, [Hit::Nothing, Hit::Label(0)][usize::from(row)]);
     }
   }
   app.close_panel()?;

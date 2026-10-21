@@ -108,7 +108,7 @@ pub(super) fn cell_in(
   want: Hit,
 ) -> Result<(u16, u16)> {
   let region = match want {
-    Hit::Row(_) => Region::Panel,
+    Hit::Row(_) | Hit::Label(_) => Region::Panel,
     Hit::Thumbnail(_) => Region::Overview,
     _ => Region::Page,
   };

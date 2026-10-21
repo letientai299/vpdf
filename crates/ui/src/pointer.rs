@@ -143,6 +143,8 @@ pub enum Hit {
   },
   /// Index into the panel's rows.
   Row(usize),
+  /// A panel row without a destination.
+  Label(usize),
   /// An overview thumbnail.
   Thumbnail(PageId),
   /// The drawn preview; link previews follow clicks.
@@ -209,6 +211,7 @@ impl Hit {
       | Self::Preview { follows: false }
       | Self::Item(_, None)
       | Self::Card(_)
+      | Self::Label(_)
       | Self::Scrollbar => Shape::Default,
       Self::Text | Self::Note { text: true, .. } => Shape::Text,
       Self::Link(..)

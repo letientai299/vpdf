@@ -356,6 +356,7 @@ fn hits_pick_pointer_shapes() {
     (Hit::Note { page: PageId(0), index: 1, text: false }, Shape::Pointer),
     (Hit::Link(PageId(0), 2), Shape::Pointer),
     (Hit::Row(3), Shape::Pointer),
+    (Hit::Label(3), Shape::Default),
     (Hit::Thumbnail(PageId(4)), Shape::Pointer),
     (Hit::Preview { follows: true }, Shape::Pointer),
     (Hit::Preview { follows: false }, Shape::Default),

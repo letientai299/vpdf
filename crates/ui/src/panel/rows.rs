@@ -6,6 +6,10 @@ use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
 
 impl Row {
+  pub fn follows(&self) -> bool {
+    !matches!(self.destination, Destination::None)
+  }
+
   pub fn new(label: String, detail: String, destination: Destination) -> Self {
     Self { label, detail, style: Style::Plain, destination }
   }

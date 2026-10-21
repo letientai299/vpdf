@@ -238,6 +238,7 @@ impl App {
     let Some(panel) = &mut self.panel else { return Ok(()) };
     let kept = panel.view.refill(rows, note);
     if !kept
+      && kind != PanelKind::Info
       && self.overlays.menu().is_some_and(vpdf_ui::context::ContextMenu::is_row)
     {
       self.overlays.close_menu();

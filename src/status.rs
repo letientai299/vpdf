@@ -68,7 +68,9 @@ impl App {
       Hit::Note { page, index, .. } => {
         self.note_line(page, index).ok().flatten()
       }
-      Hit::Row(_) => self.panel.as_ref()?.view.hover_title().map(str::to_owned),
+      Hit::Row(_) | Hit::Label(_) => {
+        self.panel.as_ref()?.view.hover_title().map(str::to_owned)
+      }
       Hit::Card(row) => self.panel.as_ref()?.view.shelf()?.detail(row),
       Hit::Thumbnail(page) => Some(self.page_line(page)),
       Hit::Link(..) => self.hover_label(),
