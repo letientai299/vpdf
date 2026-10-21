@@ -1,9 +1,11 @@
 use super::{
-  App, Cause, Drawable, Hover, Instant, Rehover, Result, Session, Sight, Write,
-  terminal,
+  App, Cause, Drawable, Hover, Instant, Notice, Rect, Rehover, Result, Session,
+  Sight, Tab, Write, terminal,
 };
 use crate::trace::Observation;
+use vpdf_model::scene::Surface;
 use vpdf_model::style::Role;
+use vpdf_terminal::painter::Painter;
 use vpdf_terminal::style::sgr;
 
 impl Drawable for Session {
@@ -18,19 +20,18 @@ impl Drawable for Session {
     write!(out, "{}{}", terminal::frame_start(), sgr(Role::Reset))?;
     self.graphics.begin(out)?;
     let area = self.area();
-    let unmeasured = self.unmeasured.clone();
     let (tab, graphics) = (&mut self.tabs[self.active], &mut self.graphics);
-    for index in 0..tab.panes.len() {
-      if index != tab.focus {
-        tab.panes[index].draw_pane(graphics, out)?;
-      }
-    }
-    tab.tree.draw_dividers(out, area)?;
-    let focus = tab.focus;
-    tab.panes[focus].draw_pane(graphics, out)?;
-    if let Some(unmeasured) = unmeasured {
-      unmeasured.draw(out)?;
-    }
+    let snap_regions = graphics.crop_quirk();
+    let mut painter = Painter::new(out).with_graphics(graphics);
+    let result = Self::scene_tab(
+      tab,
+      area,
+      self.unmeasured.as_ref(),
+      &mut painter,
+      |app, painter| app.paint_pane(painter, snap_regions),
+    );
+    painter.finish()?;
+    result?;
     graphics.end(out)?;
     if self.state.perf
       && let Some(screen) = self.screen
@@ -53,6 +54,26 @@ impl Drawable for Session {
 }
 
 impl Session {
+  pub(super) fn scene_tab<'a, S: Surface<'a>>(
+    tab: &mut Tab,
+    area: Rect,
+    notice: Option<&Notice>,
+    scene: &mut S,
+    mut pane: impl FnMut(&mut App, &mut S) -> Result<()>,
+  ) -> Result<()> {
+    for index in 0..tab.panes.len() {
+      if index != tab.focus {
+        pane(&mut tab.panes[index], scene)?;
+      }
+    }
+    tab.tree.scene_dividers(scene, area);
+    pane(&mut tab.panes[tab.focus], scene)?;
+    if let Some(notice) = notice {
+      notice.scene(scene);
+    }
+    Ok(())
+  }
+
   pub(super) fn prepare_frame(&mut self) {
     for app in &mut self.tab().panes {
       app.drop_stray_preview();
@@ -158,6 +179,123 @@ impl Session {
     for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
       app.tiles.invalidate();
       app.blank = false;
+    }
+    Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::io;
+
+  fn split_session(path: &std::path::Path, text_mode: bool) -> Result<Session> {
+    let screen = vpdf_ui::layout::Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut session = Session::new(None);
+    session.open(path, true, screen)?;
+    session.app().command("vsplit")?;
+    session.settle()?;
+    session.focus(session.active, 0)?;
+    for app in &mut session.tabs[session.active].panes {
+      app.text_mode = text_mode;
+      app.images_stale = true;
+    }
+    session.unmeasured = Some(Notice::new(24, 80, "Resize pending".into()));
+    Ok(session)
+  }
+
+  fn legacy_tab(session: &mut Session, out: &mut impl Write) -> Result<()> {
+    let area = session.area();
+    let tab = &mut session.tabs[session.active];
+    for index in 0..tab.panes.len() {
+      if index != tab.focus {
+        tab.panes[index].draw_pane(&mut session.graphics, out)?;
+      }
+    }
+    tab.tree.draw_dividers(out, area)?;
+    tab.panes[tab.focus].draw_pane(&mut session.graphics, out)?;
+    session.unmeasured.as_ref().unwrap().draw(out)
+  }
+
+  #[test]
+  fn failed_output_stops_panes() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("frame.pdf");
+    crate::fixtures::pdf(&path, &["first", "second"], "")?;
+    for text_mode in [false, true] {
+      let mut reference = split_session(&path, text_mode)?;
+      let mut full = Vec::new();
+      legacy_tab(&mut reference, &mut full)?;
+      let divider = full
+        .windows("│".len())
+        .position(|bytes| bytes == "│".as_bytes())
+        .unwrap();
+      for limit in [
+        0,
+        1,
+        100,
+        divider,
+        divider + 1,
+        full.len() / 2,
+        full.len() - 1,
+        full.len(),
+      ] {
+        let mut streamed = split_session(&path, text_mode)?;
+        let mut legacy = split_session(&path, text_mode)?;
+        let mut expected_bytes = vec![0; limit];
+        let mut expected = io::Cursor::new(expected_bytes.as_mut_slice());
+        let old = legacy_tab(&mut legacy, &mut expected);
+        let mut actual_bytes = vec![0; limit];
+        let mut actual = io::Cursor::new(actual_bytes.as_mut_slice());
+        let area = streamed.area();
+        let tab = &mut streamed.tabs[streamed.active];
+        let snap_regions = streamed.graphics.crop_quirk();
+        let mut painter =
+          Painter::new(&mut actual).with_graphics(&mut streamed.graphics);
+        let new = Session::scene_tab(
+          tab,
+          area,
+          streamed.unmeasured.as_ref(),
+          &mut painter,
+          |app, painter| app.paint_pane(painter, snap_regions),
+        );
+        let new = painter.finish().map_err(anyhow::Error::from).and(new);
+        let kind = |result: Result<()>| {
+          result
+            .err()
+            .map(|error| error.downcast::<io::Error>().unwrap().kind())
+        };
+        let wanted = (limit < full.len()).then_some(io::ErrorKind::WriteZero);
+        assert_eq!(kind(new), wanted, "limit {limit}");
+        assert_eq!(kind(old), wanted, "limit {limit}");
+        assert_eq!(actual.into_inner(), expected.into_inner(), "limit {limit}");
+        if limit == 0 {
+          let tab = &streamed.tabs[streamed.active];
+          assert!(tab.panes.iter().all(|app| app.tiles.wanted().is_empty()));
+          assert!(tab.panes[tab.focus].images_stale);
+          assert!(!tab.panes[1].images_stale);
+        }
+        for (left, right) in streamed.tabs[streamed.active]
+          .panes
+          .iter()
+          .zip(&legacy.tabs[legacy.active].panes)
+        {
+          assert_eq!(left.blank, right.blank, "limit {limit}");
+          assert_eq!(left.complete, right.complete, "limit {limit}");
+          assert_eq!(left.images_stale, right.images_stale, "limit {limit}");
+          assert_eq!(
+            left.tiles.wanted(),
+            right.tiles.wanted(),
+            "limit {limit}"
+          );
+        }
+      }
     }
     Ok(())
   }

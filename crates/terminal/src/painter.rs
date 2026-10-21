@@ -27,6 +27,15 @@ impl<'out, W: Write> Painter<'out, W> {
     self
   }
 
+  pub fn graphics(&mut self) -> Option<&mut Graphics> {
+    self.graphics.as_deref_mut()
+  }
+
+  /// Reports errors before the next component draws.
+  pub fn checkpoint(&mut self) -> io::Result<()> {
+    self.error.take().map_or(Ok(()), Err)
+  }
+
   pub fn paint(&mut self, scene: &[Op<'_>]) {
     for op in scene {
       if self.error.is_some() {
@@ -36,8 +45,8 @@ impl<'out, W: Write> Painter<'out, W> {
     }
   }
 
-  pub fn finish(self) -> io::Result<()> {
-    self.error.map_or(Ok(()), Err)
+  pub fn finish(mut self) -> io::Result<()> {
+    self.checkpoint()
   }
 }
 

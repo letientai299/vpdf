@@ -618,22 +618,19 @@ fn frame(
   } else {
     session.prepare_frame();
     let area = session.area();
-    let tab = session.tab();
-    for index in 0..tab.panes.len() {
-      if index != tab.focus {
-        let app = &mut tab.panes[index];
-        app.scene_pane(&mut recorder, false)?;
+    let tab = &mut session.tabs[session.active];
+    Session::scene_tab(
+      tab,
+      area,
+      session.unmeasured.as_ref(),
+      &mut recorder,
+      |app, scene| {
+        app.scene_pane(scene, false)?;
         complete &= app.complete || app.covered();
-      }
-    }
-    tab.tree.scene_dividers(&mut recorder, area);
-    let app = &mut tab.panes[tab.focus];
-    app.scene_pane(&mut recorder, false)?;
-    complete &= app.complete || app.covered();
-    let title = app.title();
-    if let Some(notice) = &session.unmeasured {
-      notice.scene(&mut recorder);
-    }
+        Ok(())
+      },
+    )?;
+    let title = tab.panes[tab.focus].title();
     session.finish_frame();
     title
   };
@@ -1240,32 +1237,35 @@ mod tests {
       origin: (0, 0),
     };
     for view in ["page", "text", "panel", "overview", "preview", "clues"] {
-      let mut app = App::with_screen(&path, "", view == "text", screen)?;
-      match view {
-        "panel" => {
-          app.action(Input::plain(Action::Panel(PanelKind::Help)))?;
-          assert!(app.panel.is_some());
+      let setup = || -> Result<App> {
+        let mut app = App::with_screen(&path, "", view == "text", screen)?;
+        match view {
+          "panel" => {
+            app.action(Input::plain(Action::Panel(PanelKind::Help)))?;
+            assert!(app.panel.is_some());
+          }
+          "overview" => app.open_overview()?,
+          "preview" => {
+            app.show_preview(Target::Page(PageId(1)), Position::default())?;
+          }
+          "clues" => {
+            app.overlays.clues_mut().show(vec![("gg".into(), "top".into())]);
+          }
+          _ => {}
         }
-        "overview" => app.open_overview()?,
-        "preview" => {
-          app.show_preview(Target::Page(PageId(1)), Position::default())?;
-        }
-        "clues" => {
-          app.overlays.clues_mut().show(vec![("gg".into(), "top".into())]);
-        }
-        _ => {}
-      }
+        Ok(app)
+      };
+      let mut streamed = setup()?;
+      let mut retained_app = setup()?;
       let mut streaming = Graphics::default();
       let mut retained = Graphics::default();
       for _ in 0..2 {
         let mut expected = Vec::new();
-        app.blank = false;
         streaming.begin(&mut expected)?;
-        app.draw_pane(&mut streaming, &mut expected)?;
+        streamed.draw_pane(&mut streaming, &mut expected)?;
         streaming.end(&mut expected)?;
-        app.blank = false;
         let mut recorder = Recorder::new(|_| false);
-        app.scene_pane(&mut recorder, streaming.crop_quirk())?;
+        retained_app.scene_pane(&mut recorder, streaming.crop_quirk())?;
         let mut actual = Vec::new();
         retained.begin(&mut actual)?;
         let mut painter = vpdf_terminal::painter::Painter::new(&mut actual)
@@ -1275,6 +1275,257 @@ mod tests {
         retained.end(&mut actual)?;
         assert_eq!(actual, expected, "{view}");
       }
+    }
+    Ok(())
+  }
+
+  fn composition_case(
+    path: &std::path::Path,
+    view: &str,
+    focus: usize,
+  ) -> Result<Session> {
+    use vpdf_ui::keys::{Action, Input};
+    let mut session = Session::new(None);
+    session.open(path, true, sized())?;
+    session.app().command("tabnew")?;
+    session.settle()?;
+    for command in ["vsplit", "split"] {
+      session.app().command(command)?;
+      session.settle()?;
+    }
+    session.focus(session.active, focus)?;
+    for app in &mut session.tabs[session.active].panes {
+      app.close_panel()?;
+      match view {
+        "page" => {}
+        "covered" => {
+          app.show_recent(&[])?;
+          assert!(app.covered());
+        }
+        "overview" => app.open_overview()?,
+        _ => app.text_mode = true,
+      }
+    }
+    if view == "prompt" {
+      session.app().action(Input::plain(Action::Command))?;
+      session.app().overlays.prompt_mut().unwrap().paste("set ");
+    }
+    let screen = match view {
+      "tiny" => Screen { columns: 3, rows: 2, ..sized() },
+      "empty" => Screen { columns: 0, rows: 0, ..sized() },
+      _ => sized(),
+    };
+    session.resize(screen)?;
+    session.unmeasured = Some(super::super::Notice::new(
+      screen.rows,
+      screen.columns,
+      "Resize pending".into(),
+    ));
+    Ok(session)
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn retained_sessions_match_terminal_frames() -> Result<()> {
+    use crate::trace::Drawable;
+    use std::io::Write;
+    use vpdf_model::style::Role;
+    use vpdf_terminal::{
+      graphics::Graphics, painter::Painter, style::sgr, terminal,
+    };
+    let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
+    let cases =
+      ["page", "text", "covered", "overview", "prompt", "tiny", "empty"];
+    for (view, focus) in
+      cases.into_iter().flat_map(|view| (0..3).map(move |focus| (view, focus)))
+    {
+      let mut streamed = composition_case(&path, view, focus)?;
+      let mut recorded = composition_case(&path, view, focus)?;
+      let mut legacy = composition_case(&path, view, focus)?;
+      let mut graphics = Graphics::default();
+      let mut cache = Cache::new(BUDGET);
+      for _ in 0..2 {
+        let mut expected = Vec::new();
+        streamed.draw_frame(&mut expected)?;
+        let screen = recorded.screen.unwrap();
+        let retained = frame(&mut recorded, &mut cache, screen)?;
+        let mut actual = Vec::new();
+        write!(actual, "{}{}", terminal::frame_start(), sgr(Role::Reset))?;
+        graphics.begin(&mut actual)?;
+        let mut painter =
+          Painter::new(&mut actual).with_graphics(&mut graphics);
+        painter.paint(&retained.scene);
+        painter.finish()?;
+        graphics.end(&mut actual)?;
+        write!(actual, "{}", terminal::frame_end())?;
+        assert_eq!(actual, expected, "{view}, focus {focus}");
+        assert_eq!(
+          legacy_frame(&mut legacy)?,
+          expected,
+          "legacy {view}, focus {focus}"
+        );
+        for (left, right) in streamed.tabs[streamed.active]
+          .panes
+          .iter()
+          .zip(&recorded.tabs[recorded.active].panes)
+        {
+          assert_eq!(left.complete, right.complete, "{view}");
+          assert_eq!(left.tiles.wanted(), right.tiles.wanted(), "{view}");
+          assert_eq!(left.outline_pending(), right.outline_pending(), "{view}");
+        }
+        let tab = &recorded.tabs[recorded.active];
+        assert_eq!(
+          retained.complete,
+          screen.rows != 0
+            && tab.panes.iter().all(|app| app.complete || app.covered())
+        );
+        assert_eq!(retained.title, tab.panes[tab.focus].title());
+        if view == "prompt" {
+          let cursor = retained
+            .scene
+            .iter()
+            .rposition(|op| matches!(op, Op::ShowCursor))
+            .expect("prompt cursor");
+          assert!(matches!(
+            &retained.scene[cursor + 1..],
+            [Op::SaveCursor, ..]
+          ));
+          assert!(matches!(retained.scene.last(), Some(Op::RestoreCursor)));
+        }
+      }
+    }
+    Ok(())
+  }
+
+  fn legacy_frame(session: &mut Session) -> Result<Vec<u8>> {
+    use std::io::Write;
+    use vpdf_model::style::Role;
+    use vpdf_terminal::{style::sgr, terminal};
+    session.prepare_frame();
+    let mut out = Vec::new();
+    write!(out, "{}{}", terminal::frame_start(), sgr(Role::Reset))?;
+    session.graphics.begin(&mut out)?;
+    let area = session.area();
+    let tab = &mut session.tabs[session.active];
+    for index in 0..tab.panes.len() {
+      if index != tab.focus {
+        tab.panes[index].draw_pane(&mut session.graphics, &mut out)?;
+      }
+    }
+    tab.tree.draw_dividers(&mut out, area)?;
+    tab.panes[tab.focus].draw_pane(&mut session.graphics, &mut out)?;
+    if let Some(notice) = &session.unmeasured {
+      notice.draw(&mut out)?;
+    }
+    session.graphics.end(&mut out)?;
+    write!(out, "{}", terminal::frame_end())?;
+    session.finish_frame();
+    Ok(out)
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn session_frames_preserve_readiness_and_usage() -> Result<()> {
+    use crate::jobs::Loading;
+    use crate::trace::Drawable;
+    let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
+    let mut streamed = composition_case(&path, "page", 0)?;
+    let mut recorded = composition_case(&path, "page", 0)?;
+    let mut legacy = composition_case(&path, "page", 0)?;
+    let screen = recorded.screen.unwrap();
+    let mut cache = Cache::new(BUDGET);
+    streamed.draw_frame(&mut Vec::new())?;
+    legacy_frame(&mut legacy)?;
+    assert!(!frame(&mut recorded, &mut cache, screen)?.complete);
+    for session in [&mut streamed, &mut recorded, &mut legacy] {
+      session.drawn();
+      assert_waiting(session);
+    }
+    for session in [&mut streamed, &mut legacy] {
+      for app in &mut session.tabs[session.active].panes {
+        for key in vpdf_ui::layout::visible(&app.layout, app.reader.scroll) {
+          let tile = crate::raster::render(&mut app.doc, key)?;
+          session.graphics.keep(app.id, tile);
+        }
+      }
+    }
+    for app in &mut recorded.tabs[recorded.active].panes {
+      for key in vpdf_ui::layout::visible(&app.layout, app.reader.scroll) {
+        let pixels = vpdf_pdf::raster::raster(&mut app.doc, key)?;
+        let weight = pixels.len();
+        cache.insert(
+          TileId { owner: TileOwner::new(app.id), key },
+          Arc::new(pixels),
+          weight,
+        );
+      }
+    }
+    assert!(frame(&mut recorded, &mut cache, screen)?.complete);
+    assert_frame_usage(&mut streamed, &mut legacy)?;
+    assert_upload_order(&streamed);
+    let resident = streamed.graphics.usage();
+    let focused_bytes = resident.bytes - streamed.app().image_usage.bytes;
+    for session in [&mut streamed, &mut recorded, &mut legacy] {
+      session.drawn();
+      assert!(
+        session.tabs[session.active]
+          .panes
+          .iter()
+          .all(|app| !matches!(app.outline_load, Loading::Deferred))
+      );
+    }
+    assert!(streamed.app().image_usage.uploaded > 0);
+    streamed.app().images_stale = true;
+    legacy.app().images_stale = true;
+    assert_frame_usage(&mut streamed, &mut legacy)?;
+    let tab = &streamed.tabs[streamed.active];
+    assert_eq!(tab.panes[1].image_usage.bytes, resident.bytes);
+    assert_eq!(tab.panes[2].image_usage.bytes, resident.bytes);
+    assert_eq!(tab.panes[0].image_usage.bytes, resident.bytes - focused_bytes);
+    assert!(!tab.panes[0].images_stale);
+    assert_eq!(streamed.graphics.usage().bytes, resident.bytes - focused_bytes);
+    assert_eq!(streamed.graphics.usage().uploaded, resident.uploaded);
+    Ok(())
+  }
+
+  fn assert_waiting(session: &Session) {
+    for app in &session.tabs[session.active].panes {
+      assert!(!app.complete);
+      assert!(matches!(app.outline_load, crate::jobs::Loading::Deferred));
+    }
+  }
+
+  fn assert_upload_order(session: &Session) {
+    let tab = &session.tabs[session.active];
+    let samples = [
+      tab.panes[1].image_usage,
+      tab.panes[2].image_usage,
+      tab.panes[0].image_usage,
+      session.graphics.usage(),
+    ];
+    assert_eq!((samples[0].bytes, samples[0].uploaded), (0, 0));
+    for pair in samples.windows(2) {
+      assert!(pair[1].bytes > pair[0].bytes);
+      assert!(pair[1].uploaded > pair[0].uploaded);
+    }
+  }
+
+  fn assert_frame_usage(
+    streamed: &mut Session,
+    legacy: &mut Session,
+  ) -> Result<()> {
+    use crate::trace::Drawable;
+    let mut actual = Vec::new();
+    streamed.draw_frame(&mut actual)?;
+    assert_eq!(actual, legacy_frame(legacy)?);
+    for (left, right) in streamed.tabs[streamed.active]
+      .panes
+      .iter()
+      .zip(&legacy.tabs[legacy.active].panes)
+    {
+      assert_eq!(left.image_usage.bytes, right.image_usage.bytes);
+      assert_eq!(left.image_usage.uploaded, right.image_usage.uploaded);
+      assert_eq!(left.complete, right.complete);
     }
     Ok(())
   }

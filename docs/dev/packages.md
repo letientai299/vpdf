@@ -43,7 +43,9 @@ decides interaction precedence, cancellation, and pointer actions. The
 application holds these components beside native resources, adapts documents
 through [data-access traits][source], integrates job results, and performs
 filesystem, process, clipboard, and URL effects. Application frame assembly
-delegates layout and drawing to UI components.
+delegates layout and drawing to UI components. Terminal and native wrappers
+share active-tab composition; each wrapper keeps its frame lifecycle and
+delivery metadata.
 
 Model owns [ordered drawing operations][scene]. Components emit into a drawing
 sink: a scene retains operations, while the [terminal painter][painter] encodes

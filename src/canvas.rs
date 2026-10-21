@@ -184,13 +184,25 @@ impl App {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
-    self.settle_images(graphics);
-    self.image_usage = graphics.usage();
     let snap_regions = graphics.crop_quirk();
     let mut painter =
       vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    let result = self.scene_pane(&mut painter, snap_regions);
+    let result = self.paint_pane(&mut painter, snap_regions);
     painter.finish()?;
+    result
+  }
+
+  pub(crate) fn paint_pane(
+    &mut self,
+    painter: &mut vpdf_terminal::painter::Painter<'_, impl Write>,
+    snap_regions: bool,
+  ) -> Result<()> {
+    painter.checkpoint()?;
+    let graphics = painter.graphics().expect("attached graphics");
+    self.settle_images(graphics);
+    self.image_usage = graphics.usage();
+    let result = self.scene_pane(painter, snap_regions);
+    painter.checkpoint()?;
     result
   }
 

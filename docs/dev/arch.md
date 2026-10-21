@@ -65,7 +65,10 @@ handles stay on that thread or their existing worker threads. The window sends
 input and receives the latest owned scene with shared RGB buffers. It retains
 textures on the GUI thread. Job wakes schedule scene publication and repainting;
 blocking session waits stay outside window callbacks. Both frontends use the
-same reading state, keys, document jobs, persistence, and pane composition.
+same reading state, keys, document jobs, persistence, and session composition.
+Session composition orders panes, split dividers, and resize notices through
+the shared drawing surface. Frontend wrappers retain delivery and frame
+metadata.
 The terminal streams drawing operations while the window retains them. Native
 input and effect integration remains incomplete; see [development][development].
 
