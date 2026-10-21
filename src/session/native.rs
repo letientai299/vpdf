@@ -8,7 +8,7 @@ use crate::Result;
 use crate::ui_presentation::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -27,6 +27,7 @@ pub enum Input {
   Mark {
     name: String,
     trace: Arc<crate::trace::Log>,
+    ack: Option<mpsc::Sender<std::result::Result<(), String>>>,
   },
   Resize(Screen),
   Key(KeyEvent),
@@ -57,7 +58,44 @@ pub struct Image {
   pub pixels: Arc<Vec<u8>>,
 }
 
+#[derive(
+  Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, serde::Serialize,
+)]
+#[serde(transparent)]
+pub struct Ticket(u64);
+
+pub struct Metrics {
+  pub ticket: Ticket,
+  pub built: Instant,
+  pub build: Duration,
+  pub busy: bool,
+  pub animating: bool,
+  pub searching: bool,
+  pub sections: usize,
+  pub page: Option<vpdf_model::text::PageId>,
+  pub pages: usize,
+  pub hits: usize,
+}
+
+impl Default for Metrics {
+  fn default() -> Self {
+    Self {
+      ticket: Ticket::default(),
+      built: Instant::now(),
+      build: Duration::ZERO,
+      busy: false,
+      animating: false,
+      searching: false,
+      sections: 0,
+      page: None,
+      pages: 0,
+      hits: 0,
+    }
+  }
+}
+
 pub struct Frame {
+  pub metrics: Metrics,
   pub screen: Screen,
   pub scene: Scene<'static>,
   pub images: Vec<Image>,
@@ -83,7 +121,8 @@ impl Frame {
 }
 
 pub struct Bridge {
-  send: mpsc::Sender<Input>,
+  send: Mutex<mpsc::Sender<(Ticket, Input)>>,
+  next: AtomicU64,
   latest: Arc<Mutex<Option<Frame>>>,
   thread: Option<JoinHandle<Result<()>>>,
 }
@@ -103,7 +142,7 @@ impl Bridge {
     Self::stored(paths, crate::state::location(), page, repaint)
   }
 
-  fn stored(
+  pub fn stored(
     paths: Vec<PathBuf>,
     store: Option<PathBuf>,
     page: Option<usize>,
@@ -117,7 +156,7 @@ impl Bridge {
     let signaled = Arc::clone(&pending);
     let wake = Wake::new(move || {
       if !signaled.swap(true, Ordering::AcqRel) {
-        let _ = wake_send.send(Input::Wake);
+        let _ = wake_send.send((Ticket::default(), Input::Wake));
       }
     });
     let worker =
@@ -131,11 +170,20 @@ impl Bridge {
           &pending,
         )
       })?;
-    Ok(Self { send, latest, thread: Some(worker) })
+    Ok(Self {
+      send: Mutex::new(send),
+      next: AtomicU64::new(1),
+      latest,
+      thread: Some(worker),
+    })
   }
 
-  pub fn send(&self, input: Input) {
-    let _ = self.send.send(input);
+  pub fn send(&self, input: Input) -> Ticket {
+    let sender =
+      self.send.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let ticket = Ticket(self.next.fetch_add(1, Ordering::Relaxed));
+    let _ = sender.send((ticket, input));
+    ticket
   }
 
   pub fn take(&self) -> Option<Frame> {
@@ -159,7 +207,7 @@ impl Drop for Bridge {
 
 fn run(
   launch: Launch,
-  receive: &mpsc::Receiver<Input>,
+  receive: &mpsc::Receiver<(Ticket, Input)>,
   latest: &Mutex<Option<Frame>>,
   repaint: &impl Fn(),
   wake: &Wake,
@@ -185,6 +233,7 @@ fn run(
   let mut chores = Chores::new(Instant::now());
   let mut dirty = true;
   let mut animation_due = Instant::now();
+  let mut applied = Ticket::default();
   loop {
     dirty |= picker_update(&mut session, screen);
     dirty |= resume_keys(&mut session);
@@ -218,6 +267,7 @@ fn run(
       let frame = frame(&mut session, &mut cache, screen);
       match frame {
         Ok(mut frame) => {
+          frame.metrics.ticket = applied;
           frame.content = dirty;
           frame.reloaded = std::mem::take(&mut reloaded);
           publish(latest, frame);
@@ -242,7 +292,12 @@ fn run(
       Err(mpsc::RecvTimeoutError::Disconnected) => break,
     };
     // Queued input lands in one frame rather than one frame each.
-    let inputs = std::iter::once(input).chain(receive.try_iter().take(BATCH));
+    let inputs = std::iter::once(input)
+      .chain(receive.try_iter().take(BATCH))
+      .map(|(ticket, input)| {
+        applied = applied.max(ticket);
+        input
+      });
     match drain(&mut session, inputs, &mut chores, &mut screen, pending) {
       Some(applied) => dirty |= applied,
       None => break,
@@ -263,10 +318,16 @@ fn drain(
   for input in inputs {
     match input {
       #[cfg(feature = "bench-events")]
-      Input::Mark { name, trace } => {
-        if let Err(error) = trace.mark(Instant::now(), &name) {
+      Input::Mark { name, trace, ack } => {
+        let result =
+          trace.mark(Instant::now(), &name).map_err(|error| error.to_string());
+        if let Err(error) = &result {
           eprintln!("Trace mark failed: {error}");
         }
+        if let Some(ack) = ack {
+          let _ = ack.send(result);
+        }
+        applied = true;
       }
       Input::Close => return None,
       Input::Wake => pending.store(false, Ordering::Release),
@@ -624,6 +685,7 @@ fn frame(
   cache: &mut Cache<TileId, Arc<Vec<u8>>>,
   screen: Screen,
 ) -> Result<Frame> {
+  let started = Instant::now();
   let owners: Vec<_> = session
     .tabs
     .iter()
@@ -707,6 +769,7 @@ fn frame(
     session.shape()
   };
   Ok(Frame {
+    metrics: metrics(session, started),
     screen,
     scene,
     images,
@@ -719,6 +782,27 @@ fn frame(
     quit: session.quit,
     clipboard,
   })
+}
+
+fn metrics(session: &Session, started: Instant) -> Metrics {
+  let tab = session.tabs.get(session.active);
+  let apps = || tab.into_iter().flat_map(|tab| &tab.panes);
+  let animating = apps().any(|app| app.reader.animation().active());
+  let busy = apps().any(crate::app::App::busy);
+  let focused = tab.map(|tab| &tab.panes[tab.focus]);
+  let built = Instant::now();
+  Metrics {
+    ticket: Ticket::default(),
+    built,
+    build: built.saturating_duration_since(started),
+    busy,
+    animating,
+    searching: focused.is_some_and(|app| app.search.phase().running()),
+    sections: focused.map_or(0, |app| app.doc.outline.len()),
+    page: focused.map(|app| app.navigation_position().page),
+    pages: focused.map_or(0, |app| app.doc.pages.len()),
+    hits: focused.map_or(0, |app| app.search.hits().len()),
+  }
 }
 
 #[cfg(test)]
@@ -750,6 +834,63 @@ mod tests {
       cell_height: 20,
       origin: (0, 0),
     }
+  }
+
+  #[test]
+  fn frames_identify_applied_inputs() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let (sender, wakes) = mpsc::channel();
+    let mut bridge = Bridge::stored(
+      Vec::new(),
+      Some(root.path().join("state")),
+      None,
+      move || {
+        let _ = sender.send(());
+      },
+    )?;
+    let initial = wait(&bridge, &wakes, |frame| frame.complete)?;
+    let mut screen = sized();
+    screen.columns += 1;
+    let ticket = bridge.send(Input::Resize(screen));
+    let updated =
+      wait(&bridge, &wakes, |frame| frame.metrics.ticket >= ticket)?;
+    assert!(ticket > initial.metrics.ticket);
+    assert_eq!(updated.screen, screen);
+    assert!(updated.metrics.built >= initial.metrics.built);
+    bridge.close()
+  }
+
+  #[test]
+  #[cfg(feature = "bench-events")]
+  fn marks_acknowledge_session_writes() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("trace.jsonl");
+    let trace = Arc::new(crate::trace::Log::open(&path)?);
+    let (notify, wakes) = mpsc::channel();
+    let mut bridge = Bridge::stored(Vec::new(), None, None, move || {
+      let _ = notify.send(());
+    })?;
+    wait(&bridge, &wakes, |frame| frame.complete)?;
+    let (sender, receiver) = mpsc::channel();
+    let ticket = bridge.send(Input::Mark {
+      name: "phase".into(),
+      trace: Arc::clone(&trace),
+      ack: Some(sender),
+    });
+    assert_eq!(receiver.recv_timeout(Duration::from_secs(10))?, Ok(()));
+    let frame = wait(&bridge, &wakes, |frame| frame.metrics.ticket >= ticket)?;
+    assert!(!frame.metrics.busy);
+    bridge.close()?;
+    drop(trace);
+    let rows = std::fs::read_to_string(path)?;
+    let marks: Vec<serde_json::Value> = rows
+      .lines()
+      .map(serde_json::from_str)
+      .collect::<std::result::Result<_, _>>()?;
+    assert!(
+      marks.iter().any(|row| row["kind"] == "mark" && row["name"] == "phase")
+    );
+    Ok(())
   }
 
   #[test]
@@ -1077,6 +1218,7 @@ mod tests {
   #[test]
   fn publish_merges_untaken_frames() {
     let frame = |owner: u32, clipboard: Option<&str>| Frame {
+      metrics: Metrics::default(),
       screen: sized(),
       scene: Scene::new(),
       images: Vec::new(),

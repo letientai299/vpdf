@@ -142,6 +142,14 @@ pub struct App {
 }
 
 impl App {
+  pub(crate) fn busy(&self) -> bool {
+    self.reader.animation().active()
+      || self.search.phase().running()
+      || self.crop_scan.active()
+      || matches!(self.outline_load, crate::jobs::Loading::Running(_))
+      || self.ocr.is_some()
+  }
+
   pub fn name(&self) -> String {
     let name = self.path.file_name().map_or_else(
       || self.path.display().to_string(),

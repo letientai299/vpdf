@@ -621,6 +621,7 @@ mod tests {
       },
     };
     let mut frame = Frame {
+      metrics: vpdf::session::native::Metrics::default(),
       content: true,
       screen,
       scene: vec![Op::Tile(Box::new(TilePlacement::new(
@@ -688,6 +689,7 @@ mod tests {
     };
     let tile = |key| TileId { owner, key };
     let frame = |scene: Vec<TileId>, images: Vec<TileId>| Frame {
+      metrics: vpdf::session::native::Metrics::default(),
       content: true,
       screen,
       scene: scene
@@ -766,6 +768,7 @@ mod tests {
     let id = PictureId::fresh();
     let pixels: Arc<Vec<u8>> = Arc::new(vec![255; 6]);
     let mut frame = Frame {
+      metrics: vpdf::session::native::Metrics::default(),
       content: true,
       screen,
       scene: Vec::new(),

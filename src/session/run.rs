@@ -220,6 +220,13 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
         dirty |= session.look(Cause::Tick, &mut out)?;
       }
     }
+    #[cfg(feature = "bench-events")]
+    if let Some(event) = &event
+      && trace.benchmark(event)?
+    {
+      dirty = true;
+      continue;
+    }
     let Some(act) = event.and_then(act) else { continue };
     let (typed, arrived) = (act.typed(), Instant::now());
     // Motion and per-pixel drags often change nothing.

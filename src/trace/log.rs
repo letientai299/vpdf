@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 pub struct Log {
   _sampler: Sampler,
@@ -20,6 +20,11 @@ struct Row<'a, T> {
   elapsed_ms: f64,
   #[serde(flatten)]
   fields: T,
+}
+
+#[derive(Serialize)]
+struct Clock {
+  unix_ns: u128,
 }
 
 #[derive(Serialize)]
@@ -40,6 +45,9 @@ struct Mark<'a> {
 
 pub struct Paint {
   pub started: Instant,
+  pub built: Instant,
+  pub build: std::time::Duration,
+  pub busy: bool,
   pub fresh: bool,
   pub upload_bytes: usize,
   pub stand_ins: usize,
@@ -50,24 +58,39 @@ pub struct Paint {
 #[derive(Serialize)]
 struct NativeFrame {
   paint_ms: f64,
+  build_ms: f64,
+  built_ms: f64,
   fresh: bool,
   upload_bytes: usize,
   stand_ins: usize,
   missing: usize,
+  #[serde(flatten)]
+  readiness: Readiness,
+}
+
+#[derive(Serialize)]
+struct Readiness {
+  busy: bool,
   blank: bool,
   complete: bool,
 }
 
 impl NativeFrame {
-  fn of(paint: &Paint) -> Self {
+  fn of(paint: &Paint, started: Instant) -> Self {
     Self {
       paint_ms: paint.started.elapsed().as_secs_f64() * 1000.0,
+      build_ms: paint.build.as_secs_f64() * 1000.0,
+      built_ms: paint.built.saturating_duration_since(started).as_secs_f64()
+        * 1000.0,
       fresh: paint.fresh,
       upload_bytes: paint.upload_bytes,
       stand_ins: paint.stand_ins,
       missing: paint.missing,
-      blank: paint.missing != 0,
-      complete: paint.complete,
+      readiness: Readiness {
+        busy: paint.busy,
+        blank: paint.missing != 0,
+        complete: paint.complete,
+      },
     }
   }
 }
@@ -77,6 +100,15 @@ impl Log {
     let output = Arc::new(Mutex::new(BufWriter::new(File::create(path)?)));
     let shared = Arc::clone(&output);
     let started = Instant::now();
+    let clock = Clock {
+      unix_ns: SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos(),
+    };
+    write(
+      &mut *output
+        .lock()
+        .map_err(|_| std::io::Error::other("Trace writer lock poisoned"))?,
+      &Row::new("clock", started, started, clock),
+    )?;
     let sampler = Sampler::observe(move |sample| {
       let row = Row::new(
         "sample",
@@ -93,7 +125,7 @@ impl Log {
     Ok(Self { _sampler: sampler, output, started })
   }
 
-  pub(super) fn row(
+  pub fn row(
     &self,
     kind: &str,
     at: Instant,
@@ -115,7 +147,7 @@ impl Log {
   }
 
   pub fn paint(&self, paint: &Paint) -> Result<()> {
-    self.row("frame", paint.started, NativeFrame::of(paint))
+    self.row("frame", paint.started, NativeFrame::of(paint, self.started))
   }
 }
 
@@ -173,6 +205,9 @@ mod tests {
     let at = Instant::now();
     let paint = Paint {
       started: at,
+      built: at,
+      build: Duration::from_millis(2),
+      busy: true,
       fresh: true,
       upload_bytes: 128,
       stand_ins: 2,
@@ -180,14 +215,15 @@ mod tests {
       complete: false,
     };
     let mut bytes = Vec::new();
-    let mut frame = NativeFrame::of(&paint);
+    let mut frame = NativeFrame::of(&paint, at);
     frame.paint_ms = 1.0;
     write(&mut bytes, &Row::new("frame", at, at, &frame))?;
     let row: Value = serde_json::from_slice(&bytes)?;
     assert_eq!(
       row,
       json!({"kind":"frame", "t_ms":0.0, "elapsed_ms":0.0,
-      "paint_ms":1.0, "fresh":true, "upload_bytes":128,
+      "paint_ms":1.0, "build_ms":2.0, "built_ms":0.0, "busy":true,
+      "fresh":true, "upload_bytes":128,
       "stand_ins":2, "missing":1, "blank":true, "complete":false})
     );
     Ok(())

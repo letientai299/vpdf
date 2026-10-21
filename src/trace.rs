@@ -26,6 +26,7 @@ struct Frame {
   scroll: f32,
   /// Every visible tile of the focused pane was placed.
   complete: bool,
+  busy: bool,
 }
 
 /// What a frame showed of the focused pane.
@@ -36,6 +37,7 @@ pub struct Observation {
   pub scroll: f32,
   /// Every visible tile of the focused pane was placed.
   pub complete: bool,
+  pub busy: bool,
 }
 
 impl Observation {
@@ -45,6 +47,7 @@ impl Observation {
       page: app.navigation_position().page.0 + 1,
       scroll: app.reader.scroll,
       complete: app.complete,
+      busy: app.busy(),
     }
   }
 }
@@ -74,6 +77,26 @@ impl Trace {
     Ok(())
   }
 
+  #[cfg(feature = "bench-events")]
+  pub fn benchmark(
+    &self,
+    event: &vpdf_terminal::decode::Event,
+  ) -> Result<bool> {
+    use base64::Engine;
+    use vpdf_terminal::decode::{Event, Reply};
+    let Event::Reply(Reply::Osc { code: 777, body }) = event else {
+      return Ok(false);
+    };
+    let Some(encoded) = body.strip_prefix("vpdf-bench-mark=") else {
+      return Ok(false);
+    };
+    let Some(output) = &self.output else { return Ok(false) };
+    let bytes = base64::engine::general_purpose::STANDARD.decode(encoded)?;
+    let name = String::from_utf8(bytes)?;
+    output.mark(Instant::now(), &name)?;
+    Ok(true)
+  }
+
   pub fn draw(
     &mut self,
     target: &mut impl Drawable,
@@ -88,9 +111,9 @@ impl Trace {
     output.flush()?;
     let flushed = Instant::now();
     target.flushed(flushed);
-    let seen = target.observe();
     let input = self.input.take();
     let Some(trace) = &self.output else { return Ok(()) };
+    let seen = target.observe();
     let frame = Frame {
       build_ms: built.duration_since(started).as_secs_f64() * 1000.0,
       flush_ms: flushed.duration_since(built).as_secs_f64() * 1000.0,
@@ -101,8 +124,45 @@ impl Trace {
       page: seen.page,
       scroll: seen.scroll,
       complete: seen.complete,
+      busy: seen.busy,
     };
     self.uploaded = seen.uploaded;
     trace.row("frame", flushed, &frame)
+  }
+}
+
+#[cfg(all(test, feature = "bench-events"))]
+mod tests {
+  use super::*;
+  use vpdf_terminal::decode::{Event, Reply};
+
+  #[test]
+  fn benchmark_marks_use_reader_time() -> Result<()> {
+    let folder = tempfile::tempdir()?;
+    let path = folder.path().join("trace.jsonl");
+    let trace = Trace {
+      output: Some(Log::open(&path)?),
+      step: 0,
+      input: None,
+      uploaded: 0,
+    };
+    let mark =
+      |code, body: &str| Event::Reply(Reply::Osc { code, body: body.into() });
+    assert!(!trace.benchmark(&mark(777, "notification"))?);
+    assert!(!trace.benchmark(&mark(778, "vpdf-bench-mark=cGhhc2U="))?);
+    assert!(trace.benchmark(&mark(777, "vpdf-bench-mark=cGhhc2U="))?);
+    drop(trace);
+    let rows = std::fs::read_to_string(path)?;
+    let rows: Vec<serde_json::Value> = rows
+      .lines()
+      .map(serde_json::from_str)
+      .collect::<std::result::Result<_, _>>(
+    )?;
+    assert!(rows.iter().any(|row| {
+      row["kind"] == "mark"
+        && row["name"] == "phase"
+        && row["t_ms"].as_f64().is_some_and(|time| time >= 0.0)
+    }));
+    Ok(())
   }
 }

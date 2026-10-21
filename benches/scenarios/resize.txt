@@ -1,0 +1,15 @@
+# pdf sdm a4a62e6a7ba11a76c7753a195b825087306812aac39b930973f9168ee599f321
+# window 1969 2163
+# cell 11 21
+# crop off
+wait idle
+mark narrow
+resize 900 700
+wait complete
+mark wide
+resize 1400 900
+wait complete
+mark restore
+resize 1969 2163
+wait idle
+quit

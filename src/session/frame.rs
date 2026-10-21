@@ -51,7 +51,9 @@ impl Drawable for Session {
 
   fn observe(&self) -> Observation {
     let tab = &self.tabs[self.active];
-    Observation::of(&tab.panes[tab.focus], &self.graphics)
+    let mut seen = Observation::of(&tab.panes[tab.focus], &self.graphics);
+    seen.busy = tab.panes.iter().any(App::busy);
+    seen
   }
 }
 

@@ -228,6 +228,49 @@ mise run bench:latency
 mise run bench:stages
 ```
 
+The [scenario driver][scenario-driver] runs the real session without a
+window. Scenario headers pin PDF hashes, layout, and crop mode. Run
+`mise run bench:drive -- benches/scenarios/keys.txt`; results and traces stay
+in the host cache. The catalog defaults to `sdm.pdf`; `corpus:sdm` fetches and
+verifies it. Use `--huge DIRECTORY` for an additional large PDF with its own
+hash-pinned scenario. Headless delivery measures frame collection, excluding
+GPU painting and terminal output. The general latency cases use this bridge;
+crop measurements retain their component loop. Enqueue time measures input
+submission, rather than the former direct action CPU time.
+
+Summarize marks with `mise run bench:report -- TRACE --json REPORT`. CPU means
+use the sampler's rolling percentages. A `clock` row anchors reader timestamps
+to Unix time for launch timing. Sharp-after measures the first complete frame
+without stand-ins or active jobs after a mark. It does not measure observed
+display latency. Missing fidelity counters remain unknown.
+The [live launcher][live-driver] accepts paired feature-enabled binaries,
+alternates order, and keeps individual reports. Use
+`mise run bench:drive -- native --help` for arguments; use `kitty` for the
+terminal backend. Override the scenario window with
+`--window W H` when needed; reports retain the requested size. Choose a
+placement where the entire window fits visibly on one display; the default
+chooses a corner outside the foreground window. The launcher rejects focus
+changes, occlusion, a locked session, and active builds. Battery runs require
+`--allow-battery`; reports retain power state. `wait idle` requires completed
+rendering and finished session jobs. Native waits reject paints of frames built
+before the marker. Kitty acknowledges pty geometry before later wheel input.
+Each run copies its executable before launch and records that copy's hash;
+native reports also identify the signed executable. Kitty relays input and
+output through bounded nonblocking queues. Failed runs retain their error and
+cleanup records. Retain one real macOS resize check per release; FIFO geometry
+bypasses OS input paths.
+
+Use `benches/scenarios/keys-120.txt` and `keys-240.txt` to stress cadence;
+`keys-1000.txt` stresses input throughput. Reports separate requested input
+rates, reader input cadence, and frame cadence. The report's frame budget comes
+from its application FPS target. Input throughput does not establish rendering
+FPS. The persistent window monitor and pty relay keep subprocess creation and
+disk writes outside paced key delivery. Controller, monitor, and relay CPU/RSS
+accounting stays separate from app samples; include tracing overhead in matched
+checks. The Kitty backend relays raw keys and terminal replies through a child
+pty. Its `startup` scenario reports reader readiness separately from output
+delivery. It shares transport helpers with the existing startup task.
+
 The [microbenchmarks][micro] accept case filters and `--package` selection.
 Model, search, reader, terminal, and UI cases use prepared real-PDF fixtures.
 UI cases measure scene construction without terminal serialization. Combined
@@ -346,7 +389,9 @@ input that changes a frame, and excludes terminal painting and physical input
 latency. Terminal `input` rows currently count those changed typed inputs.
 
 Native `frame` timestamps start at CPU paint. Existing `paint_ms`, `fresh`,
-`upload_bytes`, `stand_ins`, and `missing` remain. `blank` means `missing > 0`;
+`upload_bytes`, `stand_ins`, and `missing` remain. `blank` means `missing > 0`.
+`build_ms` measures session construction, and `built_ms` uses the trace clock.
+`busy` covers animation and active search, crop, outline, and OCR jobs.
 `complete` comes from the session frame and measures render readiness. It does
 not imply that no scale stand-ins remain. Native `input` rows currently count
 adapted window events and file drops. Paint timing ends before GPU submission;
@@ -489,3 +534,6 @@ a result needs a reproducible release reference.
 [preview]: ../../crates/ui/src/preview.rs
 [manuals]: ../../benches/manuals.rs
 [bench-support]: ../../benches/support/mod.rs
+
+[scenario-driver]: ../../benches/drive.rs
+[live-driver]: ../../benches/live/drive.py

@@ -7,7 +7,7 @@ use vpdf_gui::inject;
 use vpdf_gui::{
   input,
   paint::{self, Renderer},
-  trace::{self, Trace},
+  trace::Trace,
 };
 use vpdf_model::geometry::Screen;
 
@@ -81,7 +81,7 @@ impl Window {
     if let Some(name) = self.mark.take()
       && let Some(trace) = self.trace.log()
     {
-      self.bridge.send(Input::Mark { name, trace });
+      self.bridge.send(Input::Mark { name, trace, ack: None });
     }
   }
 }
@@ -170,14 +170,7 @@ impl eframe::App for Window {
       if received || bytes != 0 {
         self.bridge.send(Input::Presented { content, bytes });
       }
-      self.trace.paint(&trace::Paint {
-        started,
-        fresh: received,
-        upload_bytes: bytes,
-        stand_ins: self.renderer.stand_ins,
-        missing: self.renderer.missing,
-        complete: frame.complete,
-      });
+      self.trace.paint(frame, &self.renderer, started, received, bytes);
       if shows_images(frame)
         && let Some(path) = self.capture.take()
       {

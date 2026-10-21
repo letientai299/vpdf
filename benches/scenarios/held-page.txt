@@ -1,0 +1,10 @@
+# pdf sdm a4a62e6a7ba11a76c7753a195b825087306812aac39b930973f9168ee599f321
+# window 1969 2163
+# cell 11 21
+# crop off
+wait idle
+mark held-page
+repeat 5s @60 key pagedown
+mark settle
+wait idle
+quit

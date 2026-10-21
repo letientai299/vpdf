@@ -1,0 +1,18 @@
+# pdf sdm a4a62e6a7ba11a76c7753a195b825087306812aac39b930973f9168ee599f321
+# window 1969 2163
+# cell 11 21
+# crop off
+wait idle
+mark cold-scan
+key / C-u r e g i s t e r enter
+wait idle
+mark cold-results
+repeat 2s @12 mix 7 n | n | n | N
+wait idle
+mark warm-scan
+key / C-u r e g i s t e r enter
+wait idle
+mark warm-results
+repeat 2s @12 mix 7 n | n | n | N
+wait idle
+quit

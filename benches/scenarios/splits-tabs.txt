@@ -1,0 +1,18 @@
+# pdf sdm a4a62e6a7ba11a76c7753a195b825087306812aac39b930973f9168ee599f321
+# pdf book 6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94
+# window 1969 2163
+# cell 11 21
+# crop off
+wait idle
+mark split
+key C-w v
+wait idle
+repeat 2s @240 key C-d
+key C-w w
+repeat 2s @240 key C-u
+mark tabs
+key g t
+wait idle
+key g T
+wait idle
+quit

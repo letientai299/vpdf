@@ -79,6 +79,7 @@ run = ["ruff check --fix .", "ruff format .", "ruff check ."]
 depends = [
   "test:demo",
   "test:startup",
+  "test:bench-report",
   "test:build-features",
   "test:packages",
   "check:packages",
@@ -149,8 +150,8 @@ run = "cargo bench --locked -p vpdf --profile release --bench reader"
 
 [tasks."bench:latency"]
 description = "Measure opens, jumps, zooms, searches, and paced scrolling"
-depends = ["corpus"]
-run = "cargo bench --locked -p vpdf --profile release --bench latency"
+depends = ["corpus:sdm"]
+run = "cargo bench --locked -p vpdf --profile release --features bench-events --bench latency"
 
 [tasks."bench:stages"]
 description = "Attribute cold page cost to load, text, list, raster, encode"
@@ -217,3 +218,31 @@ run = 'cargo bench --locked --profile release -p vpdf-ui --bench micro -- {{arg(
 [tasks."bench:manuals"]
 description = "Measure verified manuals; arguments filter cases"
 run = 'cargo bench --locked --profile release -p vpdf --bench manuals -- {{arg(name="cases", var=true, default="")}}'
+
+[tasks."bench:drive"]
+description = "Drive headless, native, or Kitty scenarios"
+raw_args = true
+run = 'python3 -B benches/dispatch.py {{arg(name="args", var=true, default="")}}'
+
+[tasks."bench:headless"]
+description = "Drive full-session headless scenarios"
+depends = ["corpus:sdm"]
+raw_args = true
+run = 'cargo bench --locked --profile release -p vpdf --features bench-events --bench drive -- {{arg(name="scenarios", var=true, default="")}}'
+
+[tasks."bench:live"]
+description = "Drive native and Kitty scenarios in background windows"
+raw_args = true
+run = 'python3 -B benches/live/drive.py {{arg(name="args", var=true, default="")}}'
+
+[tasks."bench:report"]
+description = "Summarize marked reader traces"
+raw_args = true
+run = 'python3 -B benches/live/report.py {{arg(name="args", var=true, default="")}}'
+
+[tasks."test:bench-report"]
+run = "python3 -B -m unittest discover -s benches/live -p 'test_*.py'"
+
+[tasks."corpus:sdm"]
+description = "Fetch and verify the SDM benchmark PDF"
+run = "sh scripts/corpus.sh huge sdm"

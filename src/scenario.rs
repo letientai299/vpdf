@@ -1,5 +1,8 @@
 //! Shared benchmark step language.
 
+mod catalog;
+pub use catalog::{Scenario, Source};
+
 use crate::Result;
 use std::time::Duration;
 use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
@@ -7,6 +10,7 @@ use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 #[derive(Debug, Eq, PartialEq)]
 pub enum Step {
   Keys(Vec<KeyEvent>),
+  Wheel(i16, i16),
   Resize(u32, u32),
   Place(i32, i32),
   Mark(String),
@@ -34,9 +38,20 @@ impl Step {
     let rest = rest.trim();
     let step = match verb {
       "key" => Self::Keys(keys(rest)?),
+      "wheel" => {
+        let (x, y) = pair::<i16>(rest)?;
+        anyhow::ensure!(
+          x.unsigned_abs() <= 64 && y.unsigned_abs() <= 64,
+          "Scenario wheel exceeds turn limit"
+        );
+        Self::Wheel(x, y)
+      }
       "resize" => {
         let (width, height) = pair(rest)?;
-        anyhow::ensure!(width > 0 && height > 0, "Invalid scenario size");
+        anyhow::ensure!(
+          width > 0 && height > 0 && width <= 8192 && height <= 8192,
+          "Invalid scenario size"
+        );
         Self::Resize(width, height)
       }
       "place" => {
@@ -96,8 +111,11 @@ fn duration(text: &str) -> Result<Duration> {
 }
 
 fn repeat(text: &str) -> Result<Step> {
-  let words: Vec<_> = text.splitn(3, char::is_whitespace).collect();
-  let [span, rate, rest] = words.as_slice() else {
+  let fields = text.split_once(char::is_whitespace).and_then(|(span, rest)| {
+    let (rate, rest) = rest.trim_start().split_once(char::is_whitespace)?;
+    Some((span, rate, rest.trim_start()))
+  });
+  let Some((span, rate, rest)) = fields else {
     anyhow::bail!("Scenario repeat needs duration, rate, step");
   };
   let duration = duration(span)?;
@@ -109,8 +127,8 @@ fn repeat(text: &str) -> Result<Step> {
   let step = Step::parse(rest)?
     .ok_or_else(|| anyhow::anyhow!("Missing scenario repeated step"))?;
   anyhow::ensure!(
-    matches!(step, Step::Keys(_) | Step::Mix { .. }),
-    "Repeat needs keys or mix"
+    matches!(step, Step::Keys(_) | Step::Wheel(_, _) | Step::Mix { .. }),
+    "Repeat needs keys, wheel, or mix"
   );
   anyhow::ensure!(!duration.is_zero(), "Scenario repeat duration is zero");
   Ok(Step::Repeat { duration, hz, step: Box::new(step) })
@@ -174,6 +192,20 @@ mod tests {
   use super::*;
 
   #[test]
+  fn repeat_accepts_whitespace() -> Result<()> {
+    for repeated in ["key g o", "wheel 0 -1", "mix 7 C-d | S-space"] {
+      let expected = Step::parse(&format!("repeat 2s @60 {repeated}"))?;
+      for prefix in ["repeat 2s   @60   ", "repeat\t2s\t\t@60\t \t"] {
+        assert_eq!(Step::parse(&format!("{prefix}{repeated}"))?, expected);
+      }
+    }
+    for line in ["repeat 2s   ", "repeat 2s\t\t@60\t \t"] {
+      assert!(Step::parse(line).is_err(), "{line}");
+    }
+    Ok(())
+  }
+
+  #[test]
   fn step_lines() -> Result<()> {
     let cases = [
       (
@@ -185,6 +217,7 @@ mod tests {
           KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE),
         ]),
       ),
+      ("wheel 0 -1", Step::Wheel(0, -1)),
       ("resize 1100 800", Step::Resize(1100, 800)),
       ("place -100 20", Step::Place(-100, 20)),
       ("mark phase one", Step::Mark("phase one".into())),
@@ -208,6 +241,8 @@ mod tests {
       "key",
       "key C-",
       "key B-x",
+      "wheel 65 0",
+      "wheel 0 -32768",
       "resize 0 1",
       "place 1 2 3",
       "mark",

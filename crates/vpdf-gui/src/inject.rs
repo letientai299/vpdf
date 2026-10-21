@@ -41,6 +41,7 @@ pub enum Injected {
 
 pub struct Injector {
   receiver: Receiver<Injected>,
+  pending: Option<Injected>,
   geometry: Option<(Geometry, Instant)>,
 }
 
@@ -51,7 +52,7 @@ enum Geometry {
 
 impl Injector {
   fn new(receiver: Receiver<Injected>) -> Self {
-    Self { receiver, geometry: None }
+    Self { receiver, pending: None, geometry: None }
   }
 
   fn ready(&mut self, ctx: &egui::Context, raw: &RawInput) -> bool {
@@ -73,7 +74,7 @@ impl Injector {
       eprintln!("Injected geometry timed out");
       ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     } else {
-      ctx.request_repaint_after(Duration::from_millis(10));
+      ctx.request_repaint_after(Duration::from_millis(1));
     }
     false
   }
@@ -86,7 +87,24 @@ impl Injector {
     if !self.ready(ctx, raw) {
       return None;
     }
-    let injected = self.receiver.try_recv().ok()?;
+    let injected =
+      self.pending.take().or_else(|| self.receiver.try_recv().ok())?;
+    if burst(&injected) {
+      apply_injected(injected, ctx, raw);
+      for _ in 1..256 {
+        match self.receiver.try_recv().ok() {
+          Some(event) if burst(&event) => {
+            apply_injected(event, ctx, raw);
+          }
+          other => {
+            self.pending = other;
+            break;
+          }
+        }
+      }
+      ctx.request_repaint();
+      return None;
+    }
     if let Injected::Step(step) = &injected {
       let geometry = match step {
         Step::Resize(width, height) => {
@@ -100,24 +118,36 @@ impl Injector {
       self.geometry = geometry
         .map(|geometry| (geometry, Instant::now() + Duration::from_secs(5)));
     }
-    let mark = match injected {
-      Injected::Event(event) => {
-        if let Event::PointerButton { modifiers, .. }
-        | Event::MouseWheel { modifiers, .. } = &event
-        {
-          raw.events.push(Event::ModifiersChanged(*modifiers));
-        }
-        raw.events.push(event);
-        None
-      }
-      Injected::Step(step) => apply_step(step, ctx, raw),
-      Injected::Drop(path) => {
-        raw.dropped_files.push(Arc::new(Dropped(path)));
-        None
-      }
-    };
+    let mark = apply_injected(injected, ctx, raw);
     ctx.request_repaint();
     mark
+  }
+}
+
+fn burst(event: &Injected) -> bool {
+  matches!(event, Injected::Step(Step::Keys(_) | Step::Wheel(_, _)))
+}
+
+fn apply_injected(
+  injected: Injected,
+  ctx: &egui::Context,
+  raw: &mut RawInput,
+) -> Option<String> {
+  match injected {
+    Injected::Event(event) => {
+      if let Event::PointerButton { modifiers, .. }
+      | Event::MouseWheel { modifiers, .. } = &event
+      {
+        raw.events.push(Event::ModifiersChanged(*modifiers));
+      }
+      raw.events.push(event);
+      None
+    }
+    Injected::Step(step) => apply_step(step, ctx, raw),
+    Injected::Drop(path) => {
+      raw.dropped_files.push(Arc::new(Dropped(path)));
+      None
+    }
   }
 }
 
@@ -184,6 +214,28 @@ fn apply_step(
         }
       }
       raw.events.push(Event::ModifiersChanged(Modifiers::NONE));
+    }
+    Step::Wheel(x, y) => {
+      let size = raw
+        .viewports
+        .get(&raw.viewport_id)
+        .and_then(|view| view.inner_rect)
+        .map(|rect| rect.size());
+      let Some(size) = size else {
+        eprintln!("Injected wheel needs window geometry");
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        return None;
+      };
+      raw
+        .events
+        .push(Event::PointerMoved(egui::pos2(size.x / 2.0, size.y / 2.0)));
+      raw.events.push(Event::MouseWheel {
+        delta: egui::vec2(f32::from(x), f32::from(y)),
+        unit: MouseWheelUnit::Line,
+        modifiers: Modifiers::NONE,
+        phase: TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+      });
     }
     Step::Resize(width, height) => ctx.send_viewport_cmd(
       egui::ViewportCommand::InnerSize(egui::vec2(width as f32, height as f32)),
@@ -269,7 +321,9 @@ fn key_events(key: KeyEvent) -> Option<Vec<Event>> {
 
 fn parse(line: &str) -> Option<Injected> {
   let (verb, rest) = line.split_once(' ').unwrap_or((line, ""));
-  if matches!(verb, "key" | "resize" | "place" | "mark" | "quit") {
+  if matches!(verb, "key" | "resize" | "place" | "mark" | "quit")
+    || (verb == "wheel" && rest.split_whitespace().count() == 2)
+  {
     let step = Step::parse(line).ok().flatten()?;
     if let Step::Keys(keys) = &step
       && keys.iter().any(|key| key_events(*key).is_none())
@@ -393,6 +447,81 @@ mod tests {
         .collect();
       assert_eq!(got, keys, "{spec}");
     }
+  }
+
+  #[test]
+  fn key_bursts_keep_barriers() {
+    let (sender, receiver) = channel();
+    let ctx = egui::Context::default();
+    let mut injector = Injector::new(receiver);
+    for _ in 0..300 {
+      sender.send(parse("key C-d").unwrap()).ok();
+    }
+    sender.send(parse("mark after burst").unwrap()).ok();
+    let mut raw = RawInput::default();
+    assert_eq!(injector.apply(&ctx, &mut raw), None);
+    let keys = |raw: &RawInput| {
+      raw
+        .events
+        .iter()
+        .filter(|event| matches!(event, Event::Key { pressed: true, .. }))
+        .count()
+    };
+    assert_eq!(keys(&raw), 256);
+    let mut raw = RawInput::default();
+    assert_eq!(injector.apply(&ctx, &mut raw), None);
+    assert_eq!(keys(&raw), 44);
+    assert_eq!(injector.apply(&ctx, &mut raw).as_deref(), Some("after burst"));
+  }
+
+  #[test]
+  fn pointer_modifiers_survive_queue() {
+    use crate::input::Adapter;
+    use vpdf::session::native::Input;
+    use vpdf_model::geometry::Screen;
+    use vpdf_model::input::{MouseButton, MouseEventKind};
+
+    let (sender, receiver) = channel();
+    let ctx = egui::Context::default();
+    let mut injector = Injector::new(receiver);
+    for line in ["down 1 1 left ctrl", "move 2 2", "up 2 2 left"] {
+      sender.send(parse(line).unwrap()).unwrap();
+    }
+    let screen = Screen {
+      columns: 100,
+      rows: 40,
+      cell_width: 10,
+      cell_height: 20,
+      origin: (0, 0),
+    };
+    let mut adapter = Adapter::default();
+    let mut modifiers = Modifiers::NONE;
+    let mut mouse = Vec::new();
+    for _ in 0..3 {
+      let mut raw = RawInput::default();
+      assert_eq!(injector.apply(&ctx, &mut raw), None);
+      for event in &raw.events {
+        if let Event::ModifiersChanged(current) = event {
+          modifiers = *current;
+        }
+      }
+      mouse.extend(
+        adapter
+          .events(&raw.events, modifiers, screen, 1.0, [10.0, 20.0], None)
+          .into_iter()
+          .filter_map(|input| {
+            if let Input::Mouse { event, .. } = input {
+              Some(event)
+            } else {
+              None
+            }
+          }),
+      );
+    }
+    assert_eq!(mouse.len(), 3);
+    assert_eq!(mouse[1].kind, MouseEventKind::Drag(MouseButton::Left));
+    assert_eq!(mouse[1].modifiers, KeyModifiers::CONTROL);
+    assert_eq!(mouse[2].modifiers, KeyModifiers::NONE);
   }
 
   #[test]

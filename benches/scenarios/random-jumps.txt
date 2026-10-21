@@ -1,0 +1,14 @@
+# pdf sdm a4a62e6a7ba11a76c7753a195b825087306812aac39b930973f9168ee599f321
+# window 1969 2163
+# cell 11 21
+# crop off
+wait idle
+wait idle
+mark random-pages
+repeat 4s @4 mix 19 1 2 0 G | 5 0 0 G | 8 0 G | 2 0 0 G
+wait idle
+mark sections
+repeat 3s @4 mix 23 ] ] | ] ] | [ [
+wait idle
+mark settled
+quit

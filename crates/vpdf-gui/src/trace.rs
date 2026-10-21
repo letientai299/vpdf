@@ -1,9 +1,10 @@
 //! Native paint rows in the shared trace.
 
+use crate::paint::Renderer;
 use std::sync::Arc;
 use std::time::Instant;
-use vpdf::trace::Log;
-pub use vpdf::trace::Paint;
+use vpdf::session::native::Frame;
+use vpdf::trace::{Log, Paint};
 
 pub struct Trace {
   output: Option<Arc<Log>>,
@@ -37,9 +38,26 @@ impl Trace {
     }
   }
 
-  pub fn paint(&mut self, paint: &Paint) {
+  pub fn paint(
+    &mut self,
+    frame: &Frame,
+    renderer: &Renderer,
+    started: Instant,
+    fresh: bool,
+    upload_bytes: usize,
+  ) {
     let Some(output) = &self.output else { return };
-    let result = output.paint(paint);
+    let result = output.paint(&Paint {
+      started,
+      built: frame.metrics.built,
+      build: frame.metrics.build,
+      busy: frame.metrics.busy,
+      fresh,
+      upload_bytes,
+      stand_ins: renderer.stand_ins,
+      missing: renderer.missing,
+      complete: frame.complete,
+    });
     self.written(result);
   }
 

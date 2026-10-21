@@ -144,6 +144,7 @@ harness = false
 [[bench]]
 name = "latency"
 harness = false
+required-features = ["bench-events"]
 
 [[bench]]
 name = "stages"
@@ -164,3 +165,8 @@ harness = false
 [[bench]]
 name = "presentation"
 harness = false
+
+[[bench]]
+name = "drive"
+harness = false
+required-features = ["bench-events"]
