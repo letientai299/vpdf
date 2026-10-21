@@ -93,6 +93,47 @@ fn crop_margins() -> Result<()> {
   })
 }
 
+fn crop_worker() -> Result<()> {
+  use std::sync::atomic::AtomicBool;
+  use vpdf_pdf::crop::Margins;
+  let path = std::env::var_os("VPDF_CROP_INPUT")
+    .map_or_else(|| corpus("book.pdf"), |path| Ok(path.into()))?;
+  let mut doc = Document::open(&path, "")?;
+  let handle = Handle::open(&path, "")?;
+  let lists = doc.lists();
+  let stop = AtomicBool::new(false);
+  let mut pages: Vec<_> =
+    (0..24).map(|index| PageId(index * (doc.pages.len() - 1) / 23)).collect();
+  pages.dedup();
+  let mut reference = Margins::default();
+  reference.update(&handle, &pages, &[], &lists, &stop)?;
+  let expected: Vec<_> =
+    pages.iter().map(|page| reference.get(*page)).collect();
+  measure("crop::batch interpreted lists", || {
+    let mut margins = Margins::default();
+    margins.update(&handle, &pages, &[], &lists, &stop).expect("crop batch");
+    assert!(
+      pages
+        .iter()
+        .zip(&expected)
+        .all(|(page, crop)| margins.get(*page) == *crop)
+    );
+    black_box(margins);
+  })?;
+  let page = PageId(doc.pages.len() / 2);
+  doc.display(page)?;
+  let mut expected = reference.clone();
+  expected.update(&handle, &[page], &[page], &lists, &stop)?;
+  measure("crop::page warm list", || {
+    let mut margins = reference.clone();
+    margins
+      .update(&handle, &[page], &[page], &lists, &stop)
+      .expect("crop page");
+    assert_eq!(margins.get(page), expected.get(page));
+    black_box(margins);
+  })
+}
+
 fn document_open() -> Result<()> {
   let path = corpus("book.pdf")?;
   measure("Document::open book", || {
@@ -182,6 +223,7 @@ fn main() -> Result<()> {
     ("cold page", cold_page),
     ("page list", page_list),
     ("crop margins", crop_margins),
+    ("crop worker", crop_worker),
     ("document open", document_open),
     ("label scan", label_scan),
     ("handle open", handle_open),

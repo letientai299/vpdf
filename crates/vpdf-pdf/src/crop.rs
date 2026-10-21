@@ -1,8 +1,7 @@
 use crate::Result;
-use crate::document::{Document, Handle, Lists, TEXT_FLAGS};
+use crate::document::{Document, Handle, Lists};
 use crate::text::{Bounds, PageId};
-use mupdf::text_page::TextBlockType;
-use mupdf::{Colorspace, DisplayList, TextPageFlags};
+use mupdf::{Colorspace, DisplayList};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use vpdf_model::geometry::{
@@ -16,64 +15,42 @@ const INK: u8 = 235;
 /// Margin kept around the detected content, in thousandths.
 const PAD: u16 = 15;
 
-fn stamps(
-  list: &DisplayList,
-  bounds: Bounds,
-  matrix: &Transform,
-) -> Result<Vec<Bounds>> {
-  let flags = TEXT_FLAGS
-    | TextPageFlags::PRESERVE_IMAGES
-    | TextPageFlags::COLLECT_VECTORS;
-  let raw = list.to_text_page(flags)?;
-  let mut content: Vec<Bounds> = raw
-    .blocks()
-    .filter(|block| {
-      matches!(block.r#type(), TextBlockType::Image | TextBlockType::Vector)
-    })
-    .map(|block| transform(crate::document::rect(block.bounds()), matrix))
-    .collect();
-  let mut candidates = Vec::new();
-  for block in raw.blocks() {
-    for line in block.lines() {
-      let text: String = line.chars().filter_map(|ch| ch.char()).collect();
-      let rect = crate::document::rect(line.bounds());
-      if text.trim_start().starts_with("arXiv:")
-        && rect.height() > 4.0 * rect.width()
-        && (rect.x1 < bounds.x0 + bounds.width() * 0.1
-          || rect.x0 > bounds.x1 - bounds.width() * 0.1)
-      {
-        candidates.push(rect);
-      } else {
-        content.push(transform(rect, matrix));
-      }
+mod decoration;
+
+#[derive(Clone, Default)]
+struct Ink {
+  raw: Option<[f32; 4]>,
+  clean: Option<[f32; 4]>,
+  bands: u8,
+}
+
+impl Ink {
+  fn bounds(&self, confirmed: u8) -> Option<[f32; 4]> {
+    if self.bands != 0 && self.bands & !confirmed == 0 {
+      self.clean
+    } else {
+      self.raw
     }
   }
-  Ok(
-    candidates
-      .into_iter()
-      .map(|stamp| {
-        let mut rect = transform(stamp, matrix);
-        // Include antialiased edges in the thumbnail.
-        rect.x0 = rect.x0.floor() - 1.0;
-        rect.y0 = rect.y0.floor() - 1.0;
-        rect.x1 = rect.x1.ceil() + 1.0;
-        rect.y1 = rect.y1.ceil() + 1.0;
-        rect
-      })
-      .filter(|stamp| {
-        !content.iter().any(|bounds| clip(*stamp, *bounds).is_some())
-      })
-      .collect(),
-  )
+}
+
+fn confirmed(samples: &[Ink]) -> u8 {
+  [1, 2].into_iter().fold(0, |bands, band| {
+    if samples.iter().filter(|ink| ink.bands & band != 0).count() >= 2 {
+      bands | band
+    } else {
+      bands
+    }
+  })
 }
 
 /// Ink box of one page as fractions of its width and height.
-fn ink(doc: &mut Document, page: PageId) -> Result<Option<[f32; 4]>> {
+fn ink(doc: &mut Document, page: PageId) -> Result<Ink> {
   let bounds = doc.pages[page.0].bounds;
   ink_list(doc.display(page)?.as_ref(), bounds)
 }
 
-fn ink_list(list: &DisplayList, bounds: Bounds) -> Result<Option<[f32; 4]>> {
+fn ink_list(list: &DisplayList, bounds: Bounds) -> Result<Ink> {
   let scale = (WIDTH / bounds.width() * 1024.0) as u32;
   let matrix = page_matrix(bounds, scale, 0);
   let pixmap = list.to_pixmap(
@@ -91,30 +68,115 @@ fn ink_list(list: &DisplayList, bounds: Bounds) -> Result<Option<[f32; 4]>> {
       .chain(&row[width - edge..width])
       .any(|value| *value < INK)
   });
-  let stamps =
-    if peripheral { stamps(list, bounds, &matrix)? } else { Vec::new() };
+  let mut masks = if peripheral {
+    decoration::read(list, bounds, &matrix)?
+  } else {
+    decoration::Masks::default()
+  };
   let origin = (pixmap.x() as f32, pixmap.y() as f32);
-  let (mut x0, mut y0, mut x1, mut y1) = (width, height, 0, 0);
+  let pixels = Bounds { x0: 0.0, y0: 0.0, x1: width as f32, y1: height as f32 };
+  // Keep mask coordinates relative to the pixmap.
+  let relative = |rect: Bounds| Bounds {
+    x0: rect.x0 - origin.0,
+    y0: rect.y0 - origin.1,
+    x1: rect.x1 - origin.0,
+    y1: rect.y1 - origin.1,
+  };
+  let absolute = |rect: Bounds| Bounds {
+    x0: rect.x0 + origin.0,
+    y0: rect.y0 + origin.1,
+    x1: rect.x1 + origin.0,
+    y1: rect.y1 + origin.1,
+  };
+  masks.decoration.iter_mut().for_each(|rect| *rect = relative(*rect));
+  let rectangular = masks.rectangular(samples, stride, pixels);
+  masks.decoration.iter_mut().for_each(|rect| *rect = absolute(*rect));
+  if !rectangular {
+    masks.bands = 0;
+    masks.decoration.clear();
+  }
+  let mut raw = None;
+  let mut clean = None;
   for y in 0..height {
-    for (x, value) in samples[y * stride..][..width].iter().enumerate() {
-      let (px, py) = (x as f32 + origin.0, y as f32 + origin.1);
-      if *value < INK && !stamps.iter().any(|stamp| stamp.contains(px, py)) {
-        (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x + 1), y1.max(y + 1));
+    let py = y as f32 + origin.1;
+    let row = &samples[y * stride..][..width];
+    let stamped = |x| {
+      masks.stamps.iter().any(|stamp| stamp.contains(x as f32 + origin.0, py))
+    };
+    let raw_row = extent(row, py, origin.0, |x| !stamped(x));
+    if let Some(rect) = raw_row {
+      include(&mut raw, rect);
+    }
+    if masks.bands == 0 {
+      continue;
+    }
+    let decorated =
+      masks.decoration.iter().any(|rect| py >= rect.y0 && py <= rect.y1);
+    let clean_row = if decorated {
+      extent(row, py, origin.0, |x| {
+        !stamped(x) && !masks.hidden(x as f32 + origin.0, py)
+      })
+    } else {
+      raw_row
+    };
+    if let Some(rect) = clean_row {
+      include(&mut clean, rect);
+    }
+  }
+  // White text still protects its authored bounds.
+  if masks.bands != 0 {
+    for rect in &masks.protected {
+      if let Some(rect) = clip(*rect, absolute(pixels)) {
+        include(&mut clean, rect);
       }
     }
   }
-  if x1 <= x0 || y1 <= y0 {
-    return Ok(None);
-  }
-  let (w, h) = (width as f32, height as f32);
-  Ok(Some([x0 as f32 / w, y0 as f32 / h, x1 as f32 / w, y1 as f32 / h]))
+  let fraction = |rect: Bounds| {
+    let rect = relative(rect);
+    [
+      rect.x0 / width as f32,
+      rect.y0 / height as f32,
+      rect.x1 / width as f32,
+      rect.y1 / height as f32,
+    ]
+  };
+  Ok(Ink {
+    raw: raw.map(fraction),
+    clean: clean.map(fraction),
+    bands: masks.bands,
+  })
+}
+
+fn extent(
+  row: &[u8],
+  y: f32,
+  origin: f32,
+  allowed: impl Fn(usize) -> bool,
+) -> Option<Bounds> {
+  let first =
+    row.iter().enumerate().position(|(x, value)| *value < INK && allowed(x))?;
+  let last = first
+    + row[first..]
+      .iter()
+      .enumerate()
+      .rposition(|(x, value)| *value < INK && allowed(x + first))?;
+  Some(Bounds {
+    x0: first as f32 + origin,
+    y0: y,
+    x1: last as f32 + origin + 1.0,
+    y1: y + 1.0,
+  })
+}
+
+fn include(bounds: &mut Option<Bounds>, rect: Bounds) {
+  *bounds = Some(bounds.map_or(rect, |bounds| bounds.union(rect)));
 }
 
 fn page_ink(
   handle: &Handle,
   page: PageId,
   lists: Option<&Lists>,
-) -> Result<Option<[f32; 4]>> {
+) -> Result<Ink> {
   let list = match lists {
     Some(lists) => handle.display(page, lists)?,
     None => {
@@ -132,6 +194,16 @@ fn calibrated(
   boxes: &[Option<[f32; 4]>],
   reference: &[Option<[f32; 4]>],
 ) -> Vec<Crop> {
+  let ordinary: Vec<_> = reference
+    .iter()
+    .copied()
+    .filter(|bounds| {
+      bounds.is_some_and(|b| {
+        b[0] > 0.01 && b[1] > 0.01 && b[2] < 0.99 && b[3] < 0.99
+      })
+    })
+    .collect();
+  let reference = if ordinary.is_empty() { reference } else { &ordinary };
   let mut widths: Vec<_> =
     reference.iter().flatten().map(|b| b[2] - b[0]).collect();
   if widths.is_empty() {
@@ -142,10 +214,8 @@ fn calibrated(
   }
   widths.sort_by(f32::total_cmp);
   let width = (widths[widths.len() / 2] + 2.0 / WIDTH).min(1.0);
-  let top =
-    reference.iter().chain(boxes).flatten().map(|b| b[1]).fold(1.0, f32::min);
-  let bottom =
-    reference.iter().chain(boxes).flatten().map(|b| b[3]).fold(0.0, f32::max);
+  let top = reference.iter().flatten().map(|b| b[1]).fold(1.0, f32::min);
+  let bottom = reference.iter().flatten().map(|b| b[3]).fold(0.0, f32::max);
   let trim = |fraction: f32| ((fraction * 1000.0) as u16).saturating_sub(PAD);
   boxes
     .iter()
@@ -154,6 +224,8 @@ fn calibrated(
         (f32::midpoint(b[0], b[2]), (b[2] - b[0]).max(width))
       });
       let left = (center - span / 2.0).clamp(0.0, (1.0 - span).max(0.0));
+      let (top, bottom) =
+        bounds.map_or((top, bottom), |b| (top.min(b[1]), bottom.max(b[3])));
       Crop([trim(left), trim(top), trim(1.0 - left - span), trim(1.0 - bottom)])
     })
     .collect()
@@ -172,7 +244,8 @@ fn detect(doc: &mut Document, stop: &AtomicBool) -> Result<Vec<Crop>> {
     );
     boxes.push(ink(doc, PageId(page))?);
   }
-  Ok(trims(&boxes))
+  let confirmed = confirmed(&boxes);
+  Ok(trims(&boxes.iter().map(|ink| ink.bounds(confirmed)).collect::<Vec<_>>()))
 }
 
 /// Sparse results and fixed calibration.
@@ -180,6 +253,7 @@ fn detect(doc: &mut Document, stop: &AtomicBool) -> Result<Vec<Crop>> {
 pub struct Margins {
   pages: Arc<Crops>,
   calibration: Vec<Option<[f32; 4]>>,
+  decoration: u8,
 }
 
 impl Margins {
@@ -224,10 +298,13 @@ impl Margins {
       )?);
     }
     if self.calibration.is_empty() {
-      self.calibration.clone_from(&boxes);
+      self.decoration = confirmed(&boxes);
+      self.calibration =
+        boxes.iter().map(|ink| ink.bounds(self.decoration)).collect();
     }
     for (page, bounds) in pages.iter().zip(boxes) {
-      let crop = calibrated(&[bounds], &self.calibration)[0];
+      let crop =
+        calibrated(&[bounds.bounds(self.decoration)], &self.calibration)[0];
       Arc::make_mut(&mut self.pages).insert(*page, crop);
     }
     Ok(())
@@ -235,32 +312,4 @@ impl Margins {
 }
 
 #[cfg(test)]
-mod tests {
-  use super::*;
-  #[test]
-  fn page_centers_keep_width() {
-    let boxes = [
-      Some([0.21, 0.2, 0.86, 0.9]),
-      Some([0.14, 0.1, 0.79, 0.9]),
-      Some([0.21, 0.3, 0.86, 0.9]),
-      Some([0.45, 0.4, 0.55, 0.6]),
-      Some([0.02, 0.1, 0.98, 0.9]),
-      None,
-    ];
-    let crops = trims(&boxes);
-    let page = Bounds { x0: 0.0, y0: 0.0, x1: 1.0, y1: 1.0 };
-    for (index, bounds) in boxes.iter().enumerate() {
-      let shown = crops[index].apply(page);
-      if let Some([left, top, right, bottom]) = bounds {
-        assert!(shown.contains(*left, *top) && shown.contains(*right, *bottom));
-        assert!(
-          (shown.centre().0 - f32::midpoint(*left, *right)).abs() < 0.002
-        );
-      }
-      if index != 4 {
-        assert!((shown.width() - (0.68 + 2.0 / WIDTH)).abs() < 0.003);
-      }
-    }
-    assert_eq!(trims(&[None, None]), vec![Crop::default(); 2]);
-  }
-}
+mod tests;

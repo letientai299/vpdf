@@ -219,6 +219,12 @@ benchmarks without it. PDF benchmarks open native documents; application cases
 retain integrated frames, routing, and latency. Run `mise run corpus` before
 native cases to verify their inputs.
 
+The PDF `crop worker` case measures a sampled batch with interpreted display
+lists and a subsequent page with a cached list. It opens the document and worker
+handle before timing. `VPDF_CROP_INPUT` selects another real PDF; otherwise it
+uses the corpus book. Verify the input hash before comparing runs. These cases
+measure crop detection with warm file access, not reader display latency.
+
 Microbenchmarks report individual-call median, p95, p99, and sample count.
 They print timer overhead separately; short calls can approach that floor.
 Calibrated batch throughput stays separate from latency percentiles. Sampling
