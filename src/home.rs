@@ -116,7 +116,7 @@ impl Home {
       Effect::Stay => Outcome::Stay,
       Effect::Open(path) => Outcome::Open(path),
       Effect::Quit => Outcome::Quit,
-      Effect::Command(line) => return resolve(&line, terminal),
+      Effect::Command(line) => return self.command(&line, terminal),
       Effect::Paste(text) => {
         crate::dnd::pdf(&text).map_or(Outcome::Stay, Outcome::Open)
       }
@@ -132,40 +132,103 @@ impl Home {
       }
     })
   }
-}
 
-/// Commands that make sense before any document is open.
-#[cfg(test)]
-fn command(line: &str) -> Result<Outcome> {
-  resolve(line, true)
-}
-
-fn resolve(line: &str, terminal: bool) -> Result<Outcome> {
-  let resolved = commands::resolve(
-    line,
-    View::Home,
-    |program| cmdline::available(program, terminal),
-    |_| false,
-  )?;
-  let commands::Resolution::Command { spec, argument } = resolved else {
-    return Ok(Outcome::Stay);
-  };
-  match spec.id {
-    Id::Edit | Id::TabEdit | Id::TabNew if !argument.is_empty() => {
-      Ok(Outcome::Open(cmdline::expand(argument)))
+  fn command(&mut self, line: &str, terminal: bool) -> Result<Outcome> {
+    let resolved = commands::resolve(
+      line,
+      View::Home,
+      |program| cmdline::available(program, terminal),
+      |_| false,
+    )?;
+    let commands::Resolution::Command { spec, argument } = resolved else {
+      return Ok(Outcome::Stay);
+    };
+    match spec.id {
+      Id::Edit | Id::TabEdit | Id::TabNew if !argument.is_empty() => {
+        Ok(Outcome::Open(cmdline::expand(argument)))
+      }
+      Id::Edit | Id::TabEdit => anyhow::bail!("File required"),
+      Id::Quit | Id::QuitAll | Id::TabClose => Ok(Outcome::Quit),
+      Id::Recent | Id::TabNew => Ok(Outcome::Stay),
+      Id::Fzf => Ok(Outcome::Pick),
+      Id::Version => {
+        self.view.show_info(
+          vpdf_ui::keys::PanelKind::Version,
+          &crate::version::text(terminal),
+        );
+        Ok(Outcome::Stay)
+      }
+      Id::Perf => crate::perf::switch(argument).map(Outcome::Perf),
+      _ => anyhow::bail!("Open a document before :{}", spec.name),
     }
-    Id::Edit | Id::TabEdit => anyhow::bail!("File required"),
-    Id::Quit | Id::QuitAll | Id::TabClose => Ok(Outcome::Quit),
-    Id::Recent | Id::TabNew => Ok(Outcome::Stay),
-    Id::Fzf => Ok(Outcome::Pick),
-    Id::Perf => crate::perf::switch(argument).map(Outcome::Perf),
-    _ => anyhow::bail!("Open a document before :{}", spec.name),
   }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  fn resolve(line: &str, terminal: bool) -> Result<Outcome> {
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    Home::new(&[], screen).command(line, terminal)
+  }
+
+  fn command(line: &str) -> Result<Outcome> {
+    resolve(line, true)
+  }
+
+  #[test]
+  fn version_on_start_screen() -> Result<()> {
+    use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
+    let screen = Screen {
+      columns: 160,
+      rows: 40,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    for terminal in [true, false] {
+      let mut home = Home::new(&[], screen);
+      home.graphics = Graphics::default();
+      let mut history = History::default();
+      for ch in ":version".chars().chain(['\r']) {
+        let code = if ch == '\r' { KeyCode::Enter } else { KeyCode::Char(ch) };
+        assert_eq!(
+          home.handle(
+            Event::Key(KeyEvent::new(code, KeyModifiers::NONE)),
+            &mut history,
+            terminal
+          )?,
+          Outcome::Stay
+        );
+      }
+      let mut out = Vec::new();
+      home.draw(&mut out)?;
+      let text = String::from_utf8(out)?;
+      assert!(text.contains("VERSION"));
+      assert!(
+        text.contains(crate::version::text(terminal).lines().last().unwrap())
+      );
+      if terminal {
+        assert!(text.contains(env!("CARGO_PKG_REPOSITORY")));
+      }
+      home.handle(
+        Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+        &mut history,
+        terminal,
+      )?;
+      let mut out = Vec::new();
+      home.draw(&mut out)?;
+      assert!(String::from_utf8(out)?.contains("No recent documents"));
+    }
+    Ok(())
+  }
 
   #[test]
   #[ignore = "requires verified public PDF corpus"]

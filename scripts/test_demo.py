@@ -31,7 +31,12 @@ class DemoTests(unittest.TestCase):
         reported = "a" * 40
         resolved = SimpleNamespace(returncode=0, stdout=reported + "\n")
         with (
-            patch.object(demo, "run", return_value="vpdf aaaaaaa (2026-10-18)"),
+            patch.object(
+                demo, "run", return_value=(
+                    "Reader description\nhttps://example.com\n"
+                    "vpdf aaaaaaa (2026-10-18)"
+                )
+            ),
             patch.object(subprocess, "run", return_value=resolved),
         ):
             identity = demo.binary_identity(self.binary, "debug")

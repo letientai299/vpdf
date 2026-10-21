@@ -177,7 +177,9 @@ impl Panel {
     let last = self.rows.len().saturating_sub(1);
     let count = input.count;
     let screen_rows = screen_step(page.saturating_sub(2));
-    if self.kind == PanelKind::Help && self.layout.is_some() {
+    if matches!(self.kind, PanelKind::Help | PanelKind::Version)
+      && self.layout.is_some()
+    {
       let scroll = match navigation {
         Navigation::Scroll(amount) => {
           Some((amount * page as f32 * count as f32) as isize)
@@ -349,11 +351,14 @@ impl Panel {
   }
 
   pub(super) fn reflow(&mut self, columns: usize) {
-    if matches!(self.kind, PanelKind::Help)
+    if matches!(self.kind, PanelKind::Help | PanelKind::Version)
       && self.layout.as_ref().is_some_and(|layout| layout.columns == columns)
       || !matches!(
         self.kind,
-        PanelKind::Help | PanelKind::Links | PanelKind::Jumps
+        PanelKind::Help
+          | PanelKind::Version
+          | PanelKind::Links
+          | PanelKind::Jumps
       )
     {
       return;
@@ -378,7 +383,8 @@ impl Panel {
 
   /// Panel columns: dragged, else by kind.
   pub fn width(kind: PanelKind, columns: u16, dragged: Option<u16>) -> u16 {
-    let wide = matches!(kind, PanelKind::Help | PanelKind::Info);
+    let wide =
+      matches!(kind, PanelKind::Help | PanelKind::Info | PanelKind::Version);
     let width = dragged.map_or_else(
       || {
         let width = if wide { columns / 2 } else { columns / 3 };
@@ -458,7 +464,7 @@ impl Panel {
         },
       );
       let hovered = self.pointing.row() == Some(source);
-      let selected = source == self.selected;
+      let selected = self.kind != PanelKind::Version && source == self.selected;
       let plain = match (selected, self.focused) {
         (true, true) => Role::Selected,
         (true, false) => Role::Current,

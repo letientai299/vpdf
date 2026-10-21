@@ -11,14 +11,8 @@ use vpdf_gui::{
 };
 use vpdf_model::geometry::Screen;
 
-const VERSION: &str = if cfg!(feature = "bench-events") {
-  concat!(env!("CARGO_PKG_VERSION"), " [bench-events]")
-} else {
-  env!("CARGO_PKG_VERSION")
-};
-
 #[derive(Parser)]
-#[command(version = VERSION, about = "Native Vpdf reader")]
+#[command(version = vpdf::version::BUILD, about = "Native Vpdf reader")]
 struct Args {
   files: Vec<PathBuf>,
   /// Launch page overriding the saved position.
@@ -269,7 +263,7 @@ fn options(args: &Args) -> Result<eframe::NativeOptions, image::ImageError> {
 }
 
 fn main() -> eframe::Result {
-  let args = Args::parse();
+  let args = vpdf::version::parse::<Args>(false);
   let options = options(&args)
     .map_err(|error| eframe::Error::AppCreation(Box::new(error)))?;
   eframe::run_native(

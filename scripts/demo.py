@@ -219,7 +219,10 @@ def input_hashes(corpus, selected):
 
 
 def binary_identity(binary, profile):
-    version = run(str(binary), "--version").splitlines()[0]
+    version = next(
+        line for line in run(str(binary), "--version").splitlines()
+        if line.startswith("vpdf ")
+    )
     match = re.fullmatch(r"vpdf ([0-9a-f]{7,40}) \(\d{4}-\d{2}-\d{2}\)", version)
     commit = None
     if match:

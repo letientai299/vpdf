@@ -263,3 +263,24 @@ fn covered_pages_keep_width() {
   let (left, page) = page_space(screen, Some(&recent), None);
   assert_eq!((left, page.columns), (33, 67));
 }
+
+#[test]
+fn version_has_no_current_line() {
+  for focused in [true, false] {
+    let mut panel = Panel::new(
+      PanelKind::Version,
+      ["Reader description", "vpdf build"].map(Row::parse).into(),
+    );
+    panel.focus(focused);
+    for selected in 0..2 {
+      panel.selected = selected;
+      let mut scene = vpdf_model::scene::Scene::new();
+      panel.scene_list(&mut scene, vpdf_model::geometry::At::default(), 40, 10);
+      assert!(
+        !crate::testing::spans(&scene)
+          .iter()
+          .any(|(role, _)| { matches!(role, Role::Selected | Role::Current) })
+      );
+    }
+  }
+}

@@ -18,7 +18,8 @@ fn help_and_version_name_the_project() -> Result<()> {
     if flag == "--help" {
       assert!(stdout.contains("Usage: vpdf"), "{stdout}");
     } else {
-      assert!(stdout.starts_with("vpdf "), "{stdout}");
+      assert!(stdout.starts_with(HEADLINE), "{stdout}");
+      assert!(stdout.lines().last().unwrap().starts_with("vpdf "), "{stdout}");
     }
   }
   Ok(())
@@ -33,5 +34,36 @@ fn preview_takes_one_pdf() -> Result<()> {
   let stderr = String::from_utf8_lossy(&output.stderr);
   assert!(!output.status.success(), "{stderr}");
   assert!(stderr.contains("Preview takes one PDF"), "{stderr}");
+  Ok(())
+}
+
+#[test]
+fn version_text_matches_cli() -> Result<()> {
+  for flag in ["--version", "-V"] {
+    let output = Command::new(env!("CARGO_BIN_EXE_vpdf")).arg(flag).output()?;
+    assert!(output.status.success());
+    assert_eq!(
+      String::from_utf8(output.stdout)?,
+      format!("{}\n", vpdf::version::text(true))
+    );
+  }
+  Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn version_handles_closed_output() -> Result<()> {
+  use std::os::fd::OwnedFd;
+  use std::os::unix::net::UnixStream;
+  use std::process::Stdio;
+
+  let (reader, writer) = UnixStream::pair()?;
+  drop(reader);
+  let output = Command::new(env!("CARGO_BIN_EXE_vpdf"))
+    .arg("--version")
+    .stdout(Stdio::from(OwnedFd::from(writer)))
+    .output()?;
+  assert!(output.status.success(), "{:?}", output.status);
+  assert!(output.stderr.is_empty(), "{:?}", output.stderr);
   Ok(())
 }

@@ -119,6 +119,13 @@ impl App {
         .iter()
         .map(|line| Row::parse(line))
         .collect(),
+      PanelKind::Version => crate::version::text(matches!(
+        self.frontend,
+        crate::raster::Frontend::Terminal
+      ))
+      .lines()
+      .map(Row::parse)
+      .collect(),
       PanelKind::Info => self.info().lines().map(Row::parse).collect(),
       PanelKind::Text | PanelKind::Recent | PanelKind::Marks => Vec::new(),
     })

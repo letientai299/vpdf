@@ -31,6 +31,7 @@ pub struct Home {
   at: At,
   error: Option<String>,
   panel: Panel,
+  info: Option<Panel>,
   prompt: Option<Prompt>,
   keys: Keys,
 }
@@ -50,6 +51,7 @@ impl Home {
       at: At::default(),
       error: None,
       panel,
+      info: None,
       prompt: None,
       keys: Keys::default(),
     }
@@ -72,6 +74,10 @@ impl Home {
     self.error = Some(error);
   }
 
+  pub fn show_info(&mut self, kind: crate::keys::PanelKind, text: &str) {
+    self.info = Some(Panel::new(kind, text.lines().map(Row::parse).collect()));
+  }
+
   pub fn shelf_mut(&mut self) -> Option<&mut Shelf> {
     self.panel.shelf_mut()
   }
@@ -83,7 +89,7 @@ impl Home {
     request: impl FnOnce(&mut Shelf),
   ) -> std::result::Result<(), S::Error> {
     self.scene_clear(scene);
-    let drawn = self.panel.scene(
+    let drawn = self.info.as_mut().unwrap_or(&mut self.panel).scene(
       scene,
       crate::panel::recent::Frame {
         at: self.at,
@@ -120,6 +126,7 @@ impl Home {
   pub fn scene_footer<'a>(&self, scene: &mut impl Draw<'a>) {
     let (text, style) = match &self.error {
       Some(error) => (error.as_str(), Role::Error),
+      None if self.info.is_some() => ("j/k scroll  Esc close", Role::Bar),
       None => ("Enter open  :e file  :q quit", Role::Bar),
     };
     let columns = usize::from(self.screen.columns);
@@ -176,6 +183,16 @@ impl Home {
     match event {
       Event::Key(key) if key.kind != KeyEventKind::Release => {
         self.error = None;
+        if let Some(info) = &mut self.info {
+          if let Some(input) = self.keys.feed(key, crate::keys::Grammar::Other)
+            && info.navigate(input, usize::from(self.screen.rows))
+          {
+            return Ok(Effect::Stay);
+          }
+          self.info = None;
+          self.keys = Keys::default();
+          return Ok(Effect::Stay);
+        }
         self.key(key, history)
       }
       Event::Paste(text) => {
@@ -197,6 +214,10 @@ impl Home {
         let Some(mouse) = mouse else {
           return Ok(Effect::Stay);
         };
+        if let Some(info) = &mut self.info {
+          info.pointer(mouse);
+          return Ok(Effect::Stay);
+        }
         Ok(match self.panel.pointer(mouse) {
           Some(_) => self.selected(),
           None => Effect::Stay,
@@ -282,6 +303,45 @@ impl Home {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn version_scrolls_on_small_screens() -> Result<()> {
+    use vpdf_model::input::{KeyCode, KeyModifiers};
+    let screen = Screen {
+      columns: 16,
+      rows: 6,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut home = Home::new(Vec::new(), &[], screen);
+    home.show_info(
+      crate::keys::PanelKind::Version,
+      concat!(
+        "A description that wraps across several rows in a narrow window\n",
+        "Repository address\nvpdf build"
+      ),
+    );
+    let mut before = crate::testing::empty();
+    home.scene(&mut before, 0, |_| {})?;
+    assert!(!crate::testing::text(&before.into_scene()).contains("vpdf build"));
+    let mut history = History::default();
+    home.event(
+      Event::Key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE)),
+      &mut history,
+    )?;
+    let mut after = crate::testing::empty();
+    home.scene(&mut after, 0, |_| {})?;
+    let text = crate::testing::text(&after.into_scene());
+    assert!(text.contains("VERSION"), "{text}");
+    assert!(text.contains("vpdf build"), "{text}");
+    home.event(
+      Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+      &mut history,
+    )?;
+    assert!(home.info.is_none());
+    Ok(())
+  }
 
   #[test]
   fn effects_resume_the_prompt() -> Result<()> {

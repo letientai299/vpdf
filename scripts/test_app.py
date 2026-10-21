@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -81,8 +82,17 @@ class AppTests(unittest.TestCase):
                          (ROOT / "docs/assets/vpdf.icns").read_bytes())
         binary = app / "Contents/MacOS" / info["CFBundleExecutable"]
         version = subprocess.check_output([binary, "--version"], text=True)
-        self.assertEqual(version.strip(),
-                         f"vpdf-gui {info['CFBundleShortVersionString']}")
+        lines = version.splitlines()
+        self.assertIn("https://github.com/letientai299/vpdf", lines)
+        self.assertTrue(lines[0].startswith("Vpdf:"))
+        self.assertTrue(lines[-1].startswith("vpdf-gui "))
+        metadata = json.loads(subprocess.check_output(
+            ["cargo", "metadata", "--locked", "--no-deps",
+             "--format-version", "1"], cwd=ROOT, text=True,
+        ))
+        package = next(p for p in metadata["packages"]
+                       if p["name"] == "vpdf-gui")
+        self.assertEqual(info["CFBundleShortVersionString"], package["version"])
         self.assertEqual(info["CFBundleVersion"],
                          info["CFBundleShortVersionString"])
         for name in ("LICENSE", "LICENSE-AGPL"):

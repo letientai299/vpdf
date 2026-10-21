@@ -34,6 +34,7 @@ pub mod solo;
 pub mod state;
 mod status;
 pub mod trace;
+pub mod version;
 mod view;
 pub mod watch;
 

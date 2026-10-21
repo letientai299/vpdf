@@ -5,22 +5,10 @@ use vpdf::{Result, inline};
 use vpdf_model::text::PageId;
 use vpdf_pdf::document::Document;
 
-macro_rules! about {
-  () => {
-    concat!(env!("CARGO_PKG_DESCRIPTION"), "\n", env!("CARGO_PKG_REPOSITORY"))
-  };
-}
-
-const VERSION: &str = if cfg!(feature = "bench-events") {
-  concat!(env!("VPDF_VERSION"), " [bench-events]\n", about!())
-} else {
-  concat!(env!("VPDF_VERSION"), "\n", about!())
-};
-
 #[derive(Parser)]
 #[command(
-  version = VERSION,
-  about = about!()
+  version = vpdf::version::BUILD,
+  about = vpdf::version::ABOUT
 )]
 struct Args {
   /// Documents to open as tabs.
@@ -67,7 +55,7 @@ fn run(args: &Args) -> Result<()> {
 }
 
 fn main() {
-  if let Err(error) = run(&Args::parse()) {
+  if let Err(error) = run(&vpdf::version::parse::<Args>(true)) {
     if error
       .downcast_ref::<io::Error>()
       .is_some_and(|e| e.kind() == io::ErrorKind::BrokenPipe)

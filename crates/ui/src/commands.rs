@@ -46,6 +46,7 @@ pub enum Id {
   Password,
   Ocr,
   Help,
+  Version,
   Quit,
   QuitAll,
 }
@@ -227,6 +228,8 @@ pub const COMMANDS: &[Spec] = &[
     .completes(Complete::Language),
   spec(Id::Help, "help", &["h"], "", "show the key reference")
     .in_view(View::Recent),
+  spec(Id::Version, "version", &[], "", "show build information")
+    .in_view(View::Home),
   spec(Id::Quit, "quit", &["q"], "", "close this pane, tab, then reader")
     .in_view(View::Home),
   spec(Id::QuitAll, "qall", &["qa", "quitall"], "", "close every tab")
@@ -406,6 +409,7 @@ mod tests {
     for (name, home, recent) in [
       ("edit", true, true),
       ("perf", true, true),
+      ("version", true, true),
       ("tabclose", true, true),
       ("split", false, true),
       ("toc", false, true),

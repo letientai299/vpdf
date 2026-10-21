@@ -343,6 +343,7 @@ impl App {
       Id::Ocr => {
         self.start_ocr(if argument.is_empty() { "eng" } else { argument })?;
       }
+      Id::Version => self.open_panel(PanelKind::Version)?,
       Id::Help => self.open_panel(PanelKind::Help)?,
       Id::Quit => self.quit = true,
       Id::TabClose => self.request = Some(Request::TabClose(None)),
@@ -562,6 +563,36 @@ mod tests {
         app.overlays.prompt().unwrap().text(),
         if covered { "recent" } else { "re" }
       );
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn version_opens_build_panel() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("source.pdf");
+    crate::fixtures::pdf(&path, &["first"], "")?;
+    let screen = vpdf_ui::layout::Screen {
+      columns: 120,
+      rows: 40,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    for frontend in [
+      crate::raster::Frontend::Terminal,
+      crate::raster::Frontend::Native(vpdf_pdf::jobs::Wake::none()),
+    ] {
+      let terminal = matches!(frontend, crate::raster::Frontend::Terminal);
+      let mut app = App::with_frontend(&path, "", false, screen, frontend)?;
+      app.command("version")?;
+      let panel = &app.panel.as_ref().expect("version panel").view;
+      assert_eq!(panel.kind(), PanelKind::Version);
+      assert_eq!(
+        panel.rows().iter().map(|row| row.label.as_str()).collect::<Vec<_>>(),
+        crate::version::text(terminal).lines().collect::<Vec<_>>()
+      );
+      assert!(!app.quit);
     }
     Ok(())
   }
