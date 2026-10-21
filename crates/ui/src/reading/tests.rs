@@ -203,6 +203,63 @@ fn input(action: crate::keys::Action) -> crate::keys::Input {
 }
 
 #[test]
+fn normal_horizontal_edges() -> Result<()> {
+  use crate::find::Search;
+  use crate::keys::{Grammar, Keys};
+
+  for text in [false, true] {
+    for wide in [false, true] {
+      let mut fixture = Fixture::new();
+      fixture.frame.pane.text = text;
+      if text {
+        let source = Arc::make_mut(&mut fixture.source.text);
+        let glyph = source.lines[0].glyphs[0].clone();
+        source.lines[0].glyphs = vec![glyph; if wide { 25 } else { 5 }];
+        fixture.view().scroll(0.0, ScrollInput::Wheel)?;
+      } else {
+        fixture.source.fail = 1;
+        if wide {
+          fixture.layout.request_zoom(crate::layout::Zoom::To(2.0));
+          fixture.layout.reflow([fixture.source.bounds(PageId(0))]);
+        }
+      }
+      fixture.reader.cursor.line = 3;
+      fixture.reader.scroll = 40.0;
+      fixture.target = Some(fixture.reader.cursor);
+      let origin = fixture.reader.cursor;
+      let top = fixture.text.top();
+      let mut keys = Keys::default();
+      for (key, right) in [("$", true), ("$", true), ("^", false), ("^", false)]
+      {
+        let event = crate::keys::parse(key).unwrap()[0];
+        let input = keys.feed(event, Grammar::Normal).unwrap();
+        assert!(fixture.view().navigate(input, &mut Search::default())?);
+        let expected = match (right && wide, text) {
+          (true, true) => 15.0,
+          (true, false) => fixture.layout.pan_limit(PageId(0)),
+          _ => 0.0,
+        };
+        let actual = if text {
+          fixture.text.top().glyph as f32
+        } else {
+          fixture.layout.pan()
+        };
+        assert_eq!(actual, expected, "{key}, text={text}, wide={wide}");
+        assert_eq!(fixture.reader.mode(), Mode::Normal);
+        assert_eq!(fixture.reader.cursor, origin);
+        assert_eq!(fixture.reader.scroll, 40.0);
+        assert_eq!(fixture.target, Some(origin));
+        assert_eq!(fixture.text.top().line, top.line);
+        if !text {
+          assert_eq!(fixture.source.reads, 0);
+        }
+      }
+    }
+  }
+  Ok(())
+}
+
+#[test]
 fn boundary_records_before_reveal_failure() {
   use crate::find::Search;
   use crate::keys::Action;

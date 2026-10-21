@@ -30,6 +30,15 @@ impl<S: TextSource + Pages> View<'_, S> {
         )?;
         return Ok(true);
       }
+      Action::Motion(Motion::FirstNonblank | Motion::LineEnd) => {
+        let delta = if input.action == Action::Motion(Motion::LineEnd) {
+          f32::MAX
+        } else {
+          -f32::MAX
+        };
+        self.pan(delta)?;
+        return Ok(true);
+      }
       Action::Motion(Motion::Down | Motion::Up) => {
         let direction =
           if input.action == Action::Motion(Motion::Up) { -1.0 } else { 1.0 };
