@@ -69,7 +69,7 @@ impl<'a> Overlay<'a> {
 mod tests {
   use super::*;
   use crate::prompt::PromptKind;
-  use vpdf_terminal::terminal::At;
+  use vpdf_model::geometry::At;
 
   fn screen() -> Screen {
     Screen {
@@ -125,8 +125,10 @@ mod tests {
       let first = usize::from(row - 4);
       assert_eq!(cells.at(0, row), Some(first));
       assert_eq!(cells.at(10, row), Some(first + 8));
-      let start = output.find(&at.goto(row, 0u16)).unwrap();
-      let end = output.find(&at.goto(row + 1, 0u16)).unwrap();
+      let start =
+        output.find(&vpdf_terminal::terminal::goto(at, row, 0u16)).unwrap();
+      let end =
+        output.find(&vpdf_terminal::terminal::goto(at, row + 1, 0u16)).unwrap();
       let drawn = &output[start..end];
       for index in [first, first + 8] {
         assert!(drawn.contains(&format!("entry {index:02}")), "{drawn:?}");

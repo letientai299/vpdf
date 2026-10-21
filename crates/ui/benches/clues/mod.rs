@@ -1,8 +1,8 @@
 use anyhow::Result;
 use std::hint::black_box;
+use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
 use vpdf_model::text::{PageId, Position};
-use vpdf_terminal::terminal::At;
 use vpdf_ui::clues::{self, Clues};
 
 pub fn draw() -> Result<()> {

@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::layout::Screen;
 use std::io::Write;
+use vpdf_model::geometry::At;
 use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
-use vpdf_terminal::terminal::At;
 
 const CELLS: usize = 4;
 const WIDTH: u16 = 16;

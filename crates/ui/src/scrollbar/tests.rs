@@ -38,7 +38,7 @@ fn view(layout: &Layout, scroll: f32) -> View<'_> {
       screen: layout.screen(),
       left: 0,
       text: false,
-      at: vpdf_terminal::terminal::At::default(),
+      at: vpdf_model::geometry::At::default(),
     },
   }
 }

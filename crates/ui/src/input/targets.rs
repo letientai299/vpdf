@@ -149,12 +149,7 @@ mod tests {
         ),
       ],
     );
-    panel.list(
-      &mut Vec::new(),
-      vpdf_terminal::terminal::At::default(),
-      40,
-      6,
-    )?;
+    panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 40, 6)?;
     let mut targets = targets(&clues);
     targets.panel = Some(&panel);
     for (row, hit, shape) in
@@ -265,7 +260,8 @@ mod tests {
     use crate::paint::Frame;
     use crate::region::{Canvas, CaptureId, Snapshot};
     use crate::text::Bounds;
-    use vpdf_terminal::{graphics::Graphics, terminal::At};
+    use vpdf_model::geometry::At;
+    use vpdf_terminal::graphics::Graphics;
     let screen = Screen {
       columns: 80,
       rows: 24,

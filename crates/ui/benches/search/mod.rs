@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::hint::black_box;
+use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
 use vpdf_model::text::PageId;
 use vpdf_reader::reader::Reader;
@@ -7,7 +8,6 @@ use vpdf_search::{
   query::Query,
   search::{Index, compile},
 };
-use vpdf_terminal::terminal::At;
 use vpdf_ui::find::Search;
 use vpdf_ui::layout::Layout;
 use vpdf_ui::paint;

@@ -641,10 +641,9 @@ fn layout_end(layout: &Layout) -> f32 {
 fn border_label(label: &str, columns: usize, clipped: bool) -> String {
   let marker = if clipped { "↑" } else { "" };
   if columns < 4 {
-    return vpdf_terminal::terminal::clean(marker, columns);
+    return vpdf_model::text::clean(marker, columns);
   }
-  let label =
-    vpdf_terminal::terminal::clean(label, columns - marker.width() - 3);
+  let label = vpdf_model::text::clean(label, columns - marker.width() - 3);
   format!(" {label} {marker} ")
 }
 

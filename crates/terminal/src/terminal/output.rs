@@ -1,4 +1,5 @@
 use super::{Caps, Host, Result, UnicodeWidthStr, Write, tmux};
+use vpdf_model::geometry::At;
 
 /// Hides the text cursor, which frames move.
 pub const HIDE_CURSOR: &str = "\x1b[?25l";
@@ -82,22 +83,13 @@ pub fn transmit(
   Transport::live().transmit(output, control, encoded)
 }
 
-/// A pane's top-left cell on the terminal; drawing positions add it.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct At {
-  pub column: u16,
-  pub row: u16,
-}
-
-impl At {
-  /// Cursor move to zero-based `row` and `column` inside the pane.
-  pub fn goto(self, row: impl Into<usize>, column: impl Into<usize>) -> String {
-    format!(
-      "\x1b[{};{}H",
-      row.into() + usize::from(self.row) + 1,
-      column.into() + usize::from(self.column) + 1
-    )
-  }
+/// Encodes a pane-relative cursor position.
+pub fn goto(at: At, row: impl Into<usize>, column: impl Into<usize>) -> String {
+  format!(
+    "\x1b[{};{}H",
+    row.into() + usize::from(at.row) + 1,
+    column.into() + usize::from(at.column) + 1
+  )
 }
 
 /// Writes `text` on a pane row, padded so only the pane's cells change.
@@ -110,7 +102,7 @@ pub fn line(
 ) -> Result<()> {
   let text = clean(text, usize::from(columns));
   let pad = usize::from(columns).saturating_sub(text.width());
-  write!(output, "{}{text}{}", at.goto(row, 0u16), " ".repeat(pad))?;
+  write!(output, "{}{text}{}", goto(at, row, 0u16), " ".repeat(pad))?;
   Ok(())
 }
 
@@ -122,7 +114,7 @@ pub fn clear(
   row: u16,
   columns: u16,
 ) -> Result<()> {
-  write!(output, "{}\x1b[{columns}X", at.goto(row, 0u16))?;
+  write!(output, "{}\x1b[{columns}X", goto(at, row, 0u16))?;
   Ok(())
 }
 

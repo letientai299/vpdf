@@ -1,10 +1,10 @@
 use crate::text::{Bounds, PageId, Position};
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
 use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_reader::reader::Reader;
 use vpdf_search::search::Hit;
-use vpdf_terminal::terminal::At;
 
 pub fn move_to<'a>(
   scene: &mut impl Draw<'a>,
@@ -25,7 +25,7 @@ pub fn line<'a>(
   text: &str,
   columns: u16,
 ) {
-  let text = vpdf_terminal::terminal::clean(text, usize::from(columns));
+  let text = vpdf_model::text::clean(text, usize::from(columns));
   let pad = usize::from(columns).saturating_sub(text.width());
   move_to(scene, at, row, 0u16);
   scene.extend([Op::Text(Text::new(text)), Op::Spaces(pad)]);

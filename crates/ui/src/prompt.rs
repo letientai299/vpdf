@@ -12,9 +12,9 @@ use crate::line::{self, NARROW, SHELL};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::geometry::At;
 use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_model::style::Role;
-use vpdf_terminal::terminal::{self, At};
 
 const LIMIT: usize = 4096;
 const HISTORY: usize = 200;
@@ -178,11 +178,11 @@ impl Prompt {
     let (text, ghost, column) = self.display();
     let room = usize::from(screen.columns).saturating_sub(text.width());
     crate::paint::move_to(scene, at, row, 0u16);
-    scene.push(Op::Text(Text::new(terminal::clean(
+    scene.push(Op::Text(Text::new(vpdf_model::text::clean(
       &text,
       usize::from(screen.columns),
     ))));
-    let ghost = terminal::clean(ghost, room);
+    let ghost = vpdf_model::text::clean(ghost, room);
     let pad = room.saturating_sub(ghost.width());
     scene.extend([
       Op::Style(Role::Muted),

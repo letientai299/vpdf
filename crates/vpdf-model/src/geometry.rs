@@ -1,6 +1,13 @@
 use crate::text::Bounds;
 use serde::{Deserialize, Serialize};
 
+/// Cell origin within a composed surface.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct At {
+  pub column: u16,
+  pub row: u16,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Screen {
   pub columns: u16,

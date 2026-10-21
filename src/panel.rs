@@ -8,9 +8,10 @@ use crossterm::event::{MouseEvent, MouseEventKind};
 use std::io::Write;
 use std::path::PathBuf;
 use vpdf_model::document::Target;
+use vpdf_model::geometry::At;
 use vpdf_terminal::{
   graphics::Graphics,
-  terminal::{self, At},
+  terminal::{self},
 };
 use vpdf_ui::keys::{Input, PanelKind};
 use vpdf_ui::layout::Screen;

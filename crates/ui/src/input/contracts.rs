@@ -12,9 +12,9 @@ use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
 use std::sync::Arc;
 use std::time::Instant;
 use vpdf_model::document::{Figure, FigureSource};
+use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
 use vpdf_reader::reader::{Reader, SelectionKind, TextSource};
-use vpdf_terminal::terminal::At;
 
 fn route(kind: MouseEventKind, region: Region) -> Route {
   Route {

@@ -1,10 +1,10 @@
 use anyhow::Result;
 use std::hint::black_box;
+use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::Reader;
-use vpdf_terminal::terminal::At;
 use vpdf_ui::find::Search;
 use vpdf_ui::keys::{Action, Input};
 use vpdf_ui::layout::Layout;

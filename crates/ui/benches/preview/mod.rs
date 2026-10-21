@@ -120,8 +120,9 @@ impl Raster for Source<'_> {
 }
 
 pub fn draw() -> Result<()> {
+  use vpdf_model::geometry::At;
   use vpdf_model::text::Position;
-  use vpdf_terminal::{graphics::Graphics, terminal::At};
+  use vpdf_terminal::graphics::Graphics;
   use vpdf_ui::preview::{Frame, Preview};
   let cases: Vec<Scene> = super::fixture("preview")?;
   let pages = super::fixtures::text()?;

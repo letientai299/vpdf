@@ -182,7 +182,7 @@ fn preview_border_stays_inside_resized_pane() -> Result<()> {
     app.go_to(cursor, true)?;
     keys(&mut app, b"K")?;
     let target = format!("{:?}", app.overlays.preview().unwrap().target());
-    app.at = vpdf_terminal::terminal::At { column: 7, row: 3 };
+    app.at = vpdf_model::geometry::At { column: 7, row: 3 };
     app.screen.origin = (7, 3);
     for rotation in [0, 90, 180, 270] {
       app.screen.columns = 78;

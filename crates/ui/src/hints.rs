@@ -321,9 +321,9 @@ mod tests {
 
   #[test]
   fn recorded_labels_keep_backdrops() -> Result<()> {
+    use vpdf_model::geometry::At;
     use vpdf_model::geometry::Screen;
     use vpdf_model::scene::Scene;
-    use vpdf_terminal::terminal::At;
     let mut hints =
       Hints::new(vec![(((4, 2), 5), Target::Page(PageId(0)))], false, 0, 20)?;
     let screen = Screen {

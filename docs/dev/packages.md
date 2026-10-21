@@ -37,6 +37,7 @@ there.
 
 Keep shared geometry and document values in model. PDF converts geometry to
 native types; UI owns viewport layout, hit geometry, and prefetch decisions.
+Cell origins (`At`) belong to model; terminal owns ANSI cursor encoding.
 UI components own private state and expose transitions. [Reading][reading]
 combines reader semantics with viewport navigation; [input policy][input]
 decides interaction precedence, cancellation, and pointer actions. The

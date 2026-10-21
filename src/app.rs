@@ -5,10 +5,10 @@ use crate::raster::{Frontend, Raster};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
+use vpdf_model::geometry::At;
 use vpdf_model::text::Position;
 use vpdf_pdf::document::Document;
 use vpdf_terminal::graphics::Usage;
-use vpdf_terminal::terminal;
 use vpdf_ui::keys::{Keys, PanelKind};
 use vpdf_ui::layout::{Layout, Screen};
 use vpdf_ui::reading::Pane;
@@ -97,7 +97,7 @@ pub struct App {
   /// Side panel columns a drag chose.
   pub panel_width: Option<u16>,
   /// Pane origin on the terminal.
-  pub at: terminal::At,
+  pub at: At,
   pub quit: bool,
   /// Whether this pane has the keyboard.
   pub focused: bool,
@@ -191,7 +191,7 @@ impl App {
       screen,
       left: 0,
       panel_width: None,
-      at: terminal::At::default(),
+      at: At::default(),
       quit: false,
       focused: true,
       request: None,

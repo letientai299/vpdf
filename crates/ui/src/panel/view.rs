@@ -2,7 +2,7 @@ use super::{
   Action, Color, Destination, Graphics, Input, Layout, MIN_WIDTH, Motion,
   MouseButton, MouseEvent, MouseEventKind, Panel, PanelKind, Pointing, Result,
   Row, RowSearch, Screen, Target, UnicodeWidthStr, WHEEL_ROWS, Wheel, Write,
-  key_width, moved_row, screen_step, terminal,
+  key_width, moved_row, screen_step,
 };
 use vpdf_model::scene::{Draw, Op, Surface};
 use vpdf_model::style::Role;
@@ -394,7 +394,7 @@ impl Panel {
   pub fn draw(
     &mut self,
     out: &mut impl Write,
-    at: terminal::At,
+    at: vpdf_model::geometry::At,
     width: u16,
     screen: Screen,
     graphics: Option<&mut Graphics>,
@@ -440,7 +440,7 @@ impl Panel {
   pub fn list(
     &mut self,
     out: &mut impl Write,
-    at: terminal::At,
+    at: vpdf_model::geometry::At,
     width: u16,
     height: u16,
   ) -> Result<()> {
@@ -453,7 +453,7 @@ impl Panel {
   pub fn scene_list<'a>(
     &mut self,
     scene: &mut impl Draw<'a>,
-    at: terminal::At,
+    at: vpdf_model::geometry::At,
     width: u16,
     height: u16,
   ) {
@@ -474,9 +474,12 @@ impl Panel {
     let count = format!(" {} {}", self.rows.len(), self.note);
     crate::paint::move_to(scene, at, 0u16, 0u16);
     scene.push(Op::Style(Role::Badge(Color::Cyan)));
-    scene.text(&terminal::clean(&title, inner));
+    scene.text(&vpdf_model::text::clean(&title, inner));
     scene.push(Op::Style(Role::Muted));
-    scene.text(&terminal::clean(&count, inner.saturating_sub(title.width())));
+    scene.text(&vpdf_model::text::clean(
+      &count,
+      inner.saturating_sub(title.width()),
+    ));
     scene.push(Op::Style(Role::Reset));
     self.reflow(inner);
     let keys = key_width(&self.rows, inner);
@@ -509,7 +512,7 @@ impl Panel {
       };
       crate::paint::move_to(scene, at, row + 1, 0u16);
       scene.push(Op::Style(base));
-      let detail = terminal::clean(&item.detail, inner / 3);
+      let detail = vpdf_model::text::clean(&item.detail, inner / 3);
       let room = if detail.is_empty() {
         inner
       } else {

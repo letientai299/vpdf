@@ -7,7 +7,7 @@ use crate::text::Position;
 use crossterm::event::KeyEvent;
 use std::io::Write;
 use std::time::{Duration, Instant};
-use vpdf_terminal::terminal::At;
+use vpdf_model::geometry::At;
 
 #[derive(Default)]
 pub struct Clues {

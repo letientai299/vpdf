@@ -324,8 +324,7 @@ impl Label {
     let width = u16::try_from(label.width()).unwrap_or(u16::MAX);
     let columns = screen.columns.saturating_sub(1);
     let start = columns.saturating_sub(width);
-    let label =
-      vpdf_terminal::terminal::clean(&label, usize::from(columns - start));
+    let label = vpdf_model::text::clean(&label, usize::from(columns - start));
     let column = self.frame.left + start;
     crate::paint::move_to(scene, self.frame.at, row, column);
     scene.push(Op::Style(Role::Bar));

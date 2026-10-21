@@ -171,7 +171,7 @@ fn activation_follows_relayout() -> Result<()> {
     ..mouse(MouseEventKind::Down(MouseButton::Middle), 1)
   };
   let press = view.press(middle);
-  view.list(&mut Vec::new(), terminal::At::default(), 12, 8)?;
+  view.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 12, 8)?;
   assert_eq!(press.activate(&mut view, 1), Activation::Stay);
   assert_eq!(
     activate(&mut view, mouse(MouseEventKind::Down(MouseButton::Middle), 1), 1),

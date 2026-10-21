@@ -371,7 +371,7 @@ fn changed_file_reloads_after_settling() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn hint_labels_keep_their_origin() -> Result<()> {
   let mut app = text_app()?;
-  app.at = vpdf_terminal::terminal::At { column: 17, row: 4 };
+  app.at = vpdf_model::geometry::At { column: 17, row: 4 };
   app.layout.relocate((17, 4));
   app.left = 9;
   for text_mode in [true, false] {

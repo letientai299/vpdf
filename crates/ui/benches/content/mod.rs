@@ -148,7 +148,7 @@ pub fn tracking() -> Result<()> {
         let frame = Frame {
           pane: vpdf_ui::paint::Frame {
             screen,
-            at: vpdf_terminal::terminal::At::default(),
+            at: vpdf_model::geometry::At::default(),
             left: 0,
             text,
           },
@@ -232,7 +232,7 @@ pub fn input() -> Result<()> {
 }
 
 pub fn help() -> Result<()> {
-  use vpdf_terminal::terminal::At;
+  use vpdf_model::geometry::At;
   use vpdf_ui::keys::PanelKind;
   use vpdf_ui::panel::{Panel, help};
   super::measure("panel::help reference", || {

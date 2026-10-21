@@ -56,7 +56,7 @@ impl Layout {
     detail: &str,
     selected: usize,
   ) {
-    let detail = terminal::clean(detail, self.columns / 3);
+    let detail = vpdf_model::text::clean(detail, self.columns / 3);
     let room = self
       .columns
       .saturating_sub(detail.width() + usize::from(!detail.is_empty()));

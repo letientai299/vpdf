@@ -47,7 +47,8 @@ mod tests {
   use anyhow::Context;
   use std::path::PathBuf;
   use std::time::{Duration, Instant};
-  use vpdf_terminal::{graphics::Graphics, terminal::At};
+  use vpdf_model::geometry::At;
+  use vpdf_terminal::graphics::Graphics;
   use vpdf_ui::{
     keys::PanelKind, layout::Screen, panel::Panel, panel::recent::Frame,
   };

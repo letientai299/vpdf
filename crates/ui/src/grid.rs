@@ -6,9 +6,9 @@ use crate::layout::Screen;
 use crate::theme::Color;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::geometry::At;
 use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_model::style::Role;
-use vpdf_terminal::terminal::{self, At};
 
 /// Placement of labels in columns; the labels stay with the caller.
 pub struct Grid {
@@ -98,7 +98,7 @@ pub fn scene_cell<'a>(
   keys: usize,
   shown: Shown,
 ) {
-  let text = terminal::clean(label, width.saturating_sub(2));
+  let text = vpdf_model::text::clean(label, width.saturating_sub(2));
   let pad = width.saturating_sub(1 + text.width());
   if shown == Shown::Chosen {
     scene.extend([

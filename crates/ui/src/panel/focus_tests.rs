@@ -9,7 +9,7 @@ fn wheel_moves_viewport_and_keys_reveal_rows() -> Result<()> {
     (0..80).map(|row| Row::parse(&format!("row {row}"))).collect(),
   );
   panel.focused = false;
-  panel.list(&mut Vec::new(), terminal::At::default(), 40, 12)?;
+  panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 40, 12)?;
   let wheel = MouseEvent {
     kind: MouseEventKind::ScrollDown,
     column: 2,
@@ -17,10 +17,10 @@ fn wheel_moves_viewport_and_keys_reveal_rows() -> Result<()> {
     modifiers: KeyModifiers::NONE,
   };
   panel.pointer(wheel);
-  panel.list(&mut Vec::new(), terminal::At::default(), 40, 12)?;
+  panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 40, 12)?;
   assert_eq!((panel.selected, panel.top, panel.focused), (0, 3, false));
   panel.selected = 2;
-  panel.list(&mut Vec::new(), terminal::At::default(), 40, 12)?;
+  panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 40, 12)?;
   assert_eq!(panel.top, 3, "tracking does not undo wheel scrolling");
   panel.navigate(Input::plain(Action::Motion(Motion::Down)), 12);
   assert_eq!((panel.selected, panel.top), (3, 3));

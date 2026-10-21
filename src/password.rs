@@ -11,7 +11,7 @@ pub fn password() -> crate::Result<String> {
     let (columns, rows) = crossterm::terminal::size()?;
     vpdf_terminal::terminal::line(
       &mut out,
-      vpdf_terminal::terminal::At::default(),
+      vpdf_model::geometry::At::default(),
       rows.max(1) - 1,
       &prompt.display().0,
       columns,

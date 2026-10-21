@@ -15,7 +15,6 @@ use vpdf_model::document::{Annotation, Target};
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::JumpDescription;
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::terminal;
 
 #[derive(Clone, PartialEq)]
 pub enum Destination {

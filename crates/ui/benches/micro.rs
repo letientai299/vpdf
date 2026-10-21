@@ -176,7 +176,7 @@ fn panel() -> Result<()> {
   measure("Panel::list", || {
     out.clear();
     panel
-      .list(&mut out, vpdf_terminal::terminal::At::default(), 50, 40)
+      .list(&mut out, vpdf_model::geometry::At::default(), 50, 40)
       .expect("panel rows");
     black_box(&out);
   })
@@ -184,7 +184,8 @@ fn panel() -> Result<()> {
 
 fn hints() -> Result<()> {
   use vpdf_model::document::Target;
-  use vpdf_terminal::{graphics::Graphics, terminal::At};
+  use vpdf_model::geometry::At;
+  use vpdf_terminal::graphics::Graphics;
   use vpdf_ui::hints::{Hints, Spot};
   use vpdf_ui::paint::Frame;
   #[derive(serde::Deserialize)]

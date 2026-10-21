@@ -11,7 +11,7 @@ fn recorded_panels_outlive_their_source() -> Result<()> {
       ["# 日本語", "j: down", "k: up"].map(Row::parse).into(),
     )
   };
-  let at = terminal::At { column: 7, row: 3 };
+  let at = vpdf_model::geometry::At { column: 7, row: 3 };
   let scene = {
     let mut source = panel();
     let mut scene = vpdf_model::scene::Scene::new();
@@ -54,7 +54,12 @@ fn hover_requires_destination() -> Result<()> {
         panel.focus(focused);
         panel.point(Pointing::Row(1));
         let mut scene = vpdf_model::scene::Scene::new();
-        panel.scene_list(&mut scene, terminal::At::default(), 20, 6);
+        panel.scene_list(
+          &mut scene,
+          vpdf_model::geometry::At::default(),
+          20,
+          6,
+        );
         let mut out = Vec::new();
         vpdf_terminal::painter::paint(&mut out, &scene)?;
         let out = String::from_utf8(out)?;
@@ -86,7 +91,7 @@ fn screen_scroll_keeps_panel_context() -> Result<()> {
   for kind in [PanelKind::Help, PanelKind::Links] {
     let mut panel =
       Panel::new(kind, (0..40).map(|_| Row::parse("j: down")).collect());
-    panel.list(&mut Vec::new(), terminal::At::default(), 40, 10)?;
+    panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 40, 10)?;
     assert!(panel.navigate(Input::plain(Action::Screen(1)), 10));
     assert_eq!(panel.selected, 6);
     if kind == PanelKind::Help {
@@ -209,7 +214,7 @@ fn paths_keep_the_file_name() -> Result<()> {
 fn presses_beyond_the_list_miss_its_rows() -> Result<()> {
   let rows = ["a", "b", "c"].map(Row::parse).into();
   let mut panel = Panel::new(PanelKind::Recent, rows);
-  panel.list(&mut Vec::new(), terminal::At::default(), 20, 10)?;
+  panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 20, 10)?;
   let press = |column| MouseEvent {
     kind: MouseEventKind::Down(MouseButton::Left),
     column,

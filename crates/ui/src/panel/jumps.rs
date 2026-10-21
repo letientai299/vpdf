@@ -46,7 +46,6 @@ mod tests {
   use vpdf_reader::motion::Motion;
   use vpdf_search::query::Query;
   use vpdf_search::search::Hit;
-  use vpdf_terminal::terminal;
 
   #[test]
   fn search_counts_survive_clipping() {
@@ -135,7 +134,7 @@ mod tests {
       );
     }
     let mut panel = Panel::new(PanelKind::Jumps, rows());
-    panel.list(&mut Vec::new(), terminal::At::default(), 32, 20)?;
+    panel.list(&mut Vec::new(), vpdf_model::geometry::At::default(), 32, 20)?;
     let press = MouseEvent {
       kind: MouseEventKind::Down(MouseButton::Left),
       column: 4,

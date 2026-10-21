@@ -1,6 +1,5 @@
 use super::{
   Destination, Result, Row, Style, UnicodeWidthChar, UnicodeWidthStr, Write,
-  terminal,
 };
 use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
@@ -72,11 +71,11 @@ impl Row {
     );
     match (self.style, self.label.split_once(": ")) {
       (Style::Key | Style::ModeKey | Style::CommandKey, Some((key, text))) => {
-        let key = terminal::clean(key, room);
+        let key = vpdf_model::text::clean(key, room);
         let pad = (keys.max(key.width()) + 2 - key.width())
           .min(room.saturating_sub(key.width()));
         let text =
-          terminal::clean(text, room.saturating_sub(key.width() + pad));
+          vpdf_model::text::clean(text, room.saturating_sub(key.width() + pad));
         let style = plain.then_some(Role::Key);
         let mut written = 0;
         for (start, end, token) in crate::help::key_styles(&key, self.style) {
@@ -93,7 +92,7 @@ impl Row {
       (Style::Path, _) => {
         let split = self.label.rfind('/').map_or(0, |slash| slash + 1);
         let (parent, name) = self.label.split_at(split);
-        let name = terminal::clean(name, room);
+        let name = vpdf_model::text::clean(name, room);
         let parent = tail(parent, room.saturating_sub(name.width()));
         let muted = plain.then_some(Role::Muted);
         marked(scene, &parent, query, base, muted);
@@ -102,18 +101,18 @@ impl Row {
         parent.width() + name.width()
       }
       (Style::Muted, _) => {
-        let text = terminal::clean(&self.label, room);
+        let text = vpdf_model::text::clean(&self.label, room);
         marked(scene, &text, query, base, plain.then_some(Role::Muted));
         text.width()
       }
       (Style::Heading, _) => {
-        let text = terminal::clean(&self.label, room);
+        let text = vpdf_model::text::clean(&self.label, room);
         marked(scene, &text, query, base, Some(Role::Heading));
         styles(scene, base, None);
         text.width()
       }
       _ => {
-        let text = terminal::clean(&self.label, room);
+        let text = vpdf_model::text::clean(&self.label, room);
         marked(scene, &text, query, base, None);
         text.width()
       }

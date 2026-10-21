@@ -1,10 +1,10 @@
 use anyhow::Result;
 use std::hint::black_box;
 use std::path::PathBuf;
+use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
 use vpdf_model::text::PageId;
 use vpdf_reader::reader::Reader;
-use vpdf_terminal::terminal::At;
 use vpdf_ui::chrome::{Bar, Document, Names, View};
 use vpdf_ui::find::Search;
 use vpdf_ui::input::InputOwner;

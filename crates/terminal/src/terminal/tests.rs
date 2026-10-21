@@ -347,3 +347,20 @@ fn clean_fits_string_width() {
   let clean = clean(&hostile, 160);
   assert!(clean.width() <= 160 && clean.chars().count() <= 8 * 160);
 }
+
+#[test]
+fn cursor_offsets_encode_ansi() {
+  use vpdf_model::geometry::At;
+  for (at, row, column, expected) in [
+    (At::default(), 0u16, 0u16, "\x1b[1;1H"),
+    (At { column: 7, row: 3 }, 4, 5, "\x1b[8;13H"),
+    (
+      At { column: u16::MAX, row: u16::MAX },
+      u16::MAX,
+      u16::MAX,
+      "\x1b[131071;131071H",
+    ),
+  ] {
+    assert_eq!(goto(at, row, column), expected);
+  }
+}

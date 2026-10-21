@@ -40,7 +40,7 @@ impl Notice {
     scene.extend([Op::SaveCursor, Op::Style(Role::Error)]);
     crate::paint::line(
       scene,
-      terminal::At::default(),
+      vpdf_model::geometry::At::default(),
       self.rows.max(1) - 1,
       &self.error,
       self.columns,
@@ -114,7 +114,7 @@ impl Names<'_> {
     // Narrow panes cut the name so the status line stays in the pane.
     let file = || {
       let label = format!(" {}:{} ", active + 1, file);
-      let label = terminal::clean(&label, room.saturating_sub(1));
+      let label = vpdf_model::text::clean(&label, room.saturating_sub(1));
       let gap = room > 0;
       let width = label.width() + usize::from(gap);
       Tabs {
@@ -227,7 +227,7 @@ impl Bar<'_> {
   pub fn draw(
     &self,
     out: &mut impl Write,
-    at: terminal::At,
+    at: vpdf_model::geometry::At,
     row: u16,
     focused: bool,
     detail: Option<&str>,
@@ -241,7 +241,7 @@ impl Bar<'_> {
   pub fn scene<'a>(
     &self,
     scene: &mut impl Draw<'a>,
-    at: terminal::At,
+    at: vpdf_model::geometry::At,
     row: u16,
     focused: bool,
     detail: Option<&str>,
@@ -323,7 +323,7 @@ impl Bar<'_> {
     let Some(room) =
       columns.checked_sub(line.left.width() + line.right.width() + 1)
     else {
-      line.right = terminal::clean(&line.right, columns);
+      line.right = vpdf_model::text::clean(&line.right, columns);
       return Ok(line);
     };
     let section = self.document.section;
@@ -343,7 +343,7 @@ impl Bar<'_> {
     // A cut detail says so; `K` shows notes whole.
     line.message = match detail {
       Some(_) => terminal::clipped(message, room).0,
-      None => terminal::clean(message, room),
+      None => vpdf_model::text::clean(message, room),
     };
     line.fill = room.saturating_sub(line.message.width()) + 1;
     line.style = style;

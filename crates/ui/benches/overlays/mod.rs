@@ -1,9 +1,10 @@
 use anyhow::Result;
 use std::hint::black_box;
+use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::{Reader, Selection, SelectionKind};
-use vpdf_terminal::{graphics::Graphics, terminal::At};
+use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::layout::Layout;
 use vpdf_ui::page::Canvas;
 use vpdf_ui::paint::Marks;

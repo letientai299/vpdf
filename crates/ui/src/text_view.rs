@@ -4,11 +4,11 @@ use crate::text::{Bounds, Glyph, Line, PageId, Position, Text};
 use std::io::Write;
 use std::sync::Arc;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
 use vpdf_model::scene::{Character, Draw, Op};
 use vpdf_model::style::Role;
 use vpdf_reader::reader::{SelectionKind, TextSource};
-use vpdf_terminal::terminal::At;
 
 /// Pending and drawn origins can differ.
 #[derive(Default)]
@@ -502,7 +502,7 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
   ) {
     let style = if paint.selects(at) { Role::TextSelection } else { Role::Dim };
     let label = self.source.label(PageId(at.page.0 + 1));
-    let head = vpdf_terminal::terminal::clean(&format!("── {label} "), columns);
+    let head = vpdf_model::text::clean(&format!("── {label} "), columns);
     let fill = columns.saturating_sub(head.width());
     scene.push(Op::Style(style));
     scene.text(&head);

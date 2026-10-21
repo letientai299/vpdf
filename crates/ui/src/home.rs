@@ -10,11 +10,11 @@ use crossterm::event::{KeyEvent, KeyEventKind};
 use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
+use vpdf_model::geometry::At;
 use vpdf_model::scene::{Draw, Op, Surface, Text};
 use vpdf_model::style::Role;
 use vpdf_terminal::decode::Event;
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::terminal::{self, At};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Effect {
@@ -139,7 +139,7 @@ impl Home {
       None => ("Enter open  :e file  :q quit", Role::Bar),
     };
     let columns = usize::from(self.screen.columns);
-    let text = terminal::clean(text, columns.saturating_sub(8));
+    let text = vpdf_model::text::clean(text, columns.saturating_sub(8));
     let fill = columns.saturating_sub(7 + text.width());
     scene.extend([
       Op::Move {
@@ -378,7 +378,8 @@ mod tests {
     });
     assert_eq!(columns.max(), Some(screen.columns));
     for row in 0..screen.rows - 1 {
-      let goto = At::default().goto(row, screen.columns - 1);
+      let goto =
+        vpdf_terminal::terminal::goto(At::default(), row, screen.columns - 1);
       let border = format!("{goto}{}│", sgr(Role::Muted));
       assert!(out.contains(&border), "border on row {row}");
     }

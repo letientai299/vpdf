@@ -1,8 +1,9 @@
 use anyhow::Result;
 use std::hint::black_box;
+use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
 use vpdf_model::text::PageId;
-use vpdf_terminal::{graphics::Graphics, terminal::At};
+use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::layout::Layout;
 use vpdf_ui::paint::Frame;
 use vpdf_ui::region::{Canvas, CaptureId, Region, Snapshot};

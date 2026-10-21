@@ -14,7 +14,6 @@ use vpdf_model::style::Role;
 use vpdf_model::tile::{TileId, TileKey, TileOwner, cover};
 use vpdf_reader::motion::Motion;
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::terminal;
 
 /// Thumbnails per row aim for this width in pixels.
 const TARGET: f32 = 220.0;
@@ -160,7 +159,7 @@ pub struct Frame {
   pub pane: u32,
   pub screen: Screen,
   pub clip: Screen,
-  pub at: terminal::At,
+  pub at: vpdf_model::geometry::At,
   pub left: u16,
   pub hovered: Option<PageId>,
   pub mask: Option<Bounds>,
@@ -376,7 +375,7 @@ impl Frame {
       return;
     }
     let columns = (width / f32::from(screen.cell_width)) as usize;
-    let label = terminal::clean(label(), columns);
+    let label = vpdf_model::text::clean(label(), columns);
     let column = (x / f32::from(screen.cell_width)) as usize
       + (columns.saturating_sub(label.width())) / 2;
     let style =
@@ -434,7 +433,7 @@ mod tests {
       pane: 1,
       screen,
       clip: screen,
-      at: terminal::At { column: 7, row: 3 },
+      at: vpdf_model::geometry::At { column: 7, row: 3 },
       left: 4,
       hovered: Some(PageId(2)),
       mask: None,
@@ -483,7 +482,7 @@ mod tests {
       pane: 1,
       screen,
       clip: screen,
-      at: terminal::At::default(),
+      at: vpdf_model::geometry::At::default(),
       left: 0,
       hovered: None,
       mask: None,
@@ -509,7 +508,7 @@ mod tests {
       pane: 1,
       screen,
       clip: screen,
-      at: terminal::At::default(),
+      at: vpdf_model::geometry::At::default(),
       left: 0,
       hovered: None,
       mask: None,

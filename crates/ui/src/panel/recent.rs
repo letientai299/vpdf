@@ -12,8 +12,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::{Facts, FactsRequest, Fit, LoadedFacts};
+use vpdf_model::geometry::At;
 use vpdf_terminal::graphics::Graphics;
-use vpdf_terminal::terminal::At;
 
 /// Panels narrower than this show no card.
 const NARROW: u16 = 60;

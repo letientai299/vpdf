@@ -1,8 +1,8 @@
 use super::*;
 use crate::text::{Bounds, Glyph, Line, PageId, Text};
 use std::sync::Arc;
+use vpdf_model::geometry::At;
 use vpdf_reader::reader::{Location, Operator, SelectionKind};
-use vpdf_terminal::terminal::At;
 
 struct Source {
   text: Arc<Text>,

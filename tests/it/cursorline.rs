@@ -176,7 +176,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
   assert_eq!(frame.matches(&fill).count(), 1);
   assert!(frame.starts_with(&format!(
     "{}{}",
-    app.at.goto(0_usize, app.left),
+    vpdf_terminal::terminal::goto(app.at, 0_usize, app.left),
     fill
   )));
   for style in [SELECTION, CURSOR, SEARCH] {
@@ -197,7 +197,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
   let frame = String::from_utf8(out)?;
   assert!(frame.contains(&format!(
     "{}{}",
-    app.at.goto(1_usize, app.left),
+    vpdf_terminal::terminal::goto(app.at, 1_usize, app.left),
     fill
   )));
   app.reader.end_selection();

@@ -12,7 +12,7 @@ use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_reader::motion::Motion;
-use vpdf_terminal::{graphics::Graphics, terminal};
+use vpdf_terminal::graphics::Graphics;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CaptureId(u64);
@@ -289,7 +289,7 @@ impl Canvas<'_> {
       label.push_str(" │ ");
       label.push_str(&status);
     }
-    let text = terminal::clean(&label, usize::from(screen.columns));
+    let text = vpdf_model::text::clean(&label, usize::from(screen.columns));
     let last = usize::from(screen.rows.saturating_sub(2));
     let row = bar_row(rect, f32::from(screen.cell_height), last);
     // Graphics fill the row; text stops.
@@ -452,11 +452,11 @@ mod tests {
 
   #[test]
   fn recorded_regions_keep_hits() -> Result<()> {
+    use vpdf_model::geometry::At;
     use vpdf_model::geometry::Screen;
     use vpdf_model::scene::Scene;
     use vpdf_terminal::graphics::Presentation;
     use vpdf_terminal::payload::Encoder;
-    use vpdf_terminal::terminal::At;
     let screen = Screen {
       columns: 20,
       rows: 10,
@@ -510,8 +510,8 @@ mod tests {
 
   #[test]
   fn narrow_bar_tracks_cells() -> Result<()> {
+    use vpdf_model::geometry::At;
     use vpdf_model::geometry::Screen;
-    use vpdf_terminal::terminal::At;
     let screen = Screen {
       columns: 20,
       rows: 10,

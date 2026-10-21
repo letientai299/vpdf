@@ -4,7 +4,7 @@ use crate::split::Rect;
 use crate::text::PageId;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::time::{Duration, Instant};
-use vpdf_terminal::terminal::Shape;
+use vpdf_model::style::Shape;
 
 /// Part of a pane under the pointer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
