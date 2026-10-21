@@ -76,6 +76,8 @@ pub struct Session {
   observer: Option<vpdf_terminal::tmux_observer::Observer>,
   observed: Option<vpdf_terminal::tmux_observer::Snapshot>,
   rehover: Rehover,
+  /// A wheel gesture deferred the page hover until it ends.
+  skimmed: bool,
   image_write: Option<clipboard::ImageWrite>,
   /// The drag over the window, OSC 72.
   drops: vpdf_terminal::dnd::Drops,
@@ -181,6 +183,7 @@ impl Session {
       observer: None,
       observed: None,
       rehover: Rehover::Settled,
+      skimmed: false,
       image_write: None,
       drops: vpdf_terminal::dnd::Drops::default(),
       resizing: None,

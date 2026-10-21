@@ -464,11 +464,32 @@ impl Session {
   /// Retests the last spot; the view changed.
   pub(super) fn rehover(&mut self) {
     if let Some((mouse, pixel)) = self.pointer.spot() {
-      let hover = self.hit(mouse, pixel);
+      let hover = self.deferred(mouse).or_else(|| self.hit(mouse, pixel));
       self.pointer.refresh(hover);
     }
     self.show_hover();
     self.leave_check();
+  }
+
+  /// An empty page hover while the wheel turns: pages move each frame,
+  /// and hit testing a new page loads its links and text.
+  fn deferred(&mut self, mouse: MouseEvent) -> Option<Hover> {
+    let turning =
+      self.pointer.turn_end().is_some_and(|end| Instant::now() < end);
+    if !turning {
+      // This rehover tests the page; no settle frame is due.
+      self.skimmed = false;
+      return None;
+    }
+    if self.edge_hover(mouse).is_some() {
+      return None;
+    }
+    let (_, Route { pane, region, .. }) = self.under(mouse)?;
+    if region != Region::Page {
+      return None;
+    }
+    self.skimmed = true;
+    Some(Hover { pane, region, hit: Hit::Nothing, beneath: None })
   }
 
   /// Gives each pane its hover.
@@ -550,6 +571,21 @@ impl Session {
     for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
       app.drop_held();
     }
+  }
+
+  /// Tests the page hover a wheel gesture deferred, once it ends;
+  /// whether a frame is due.
+  pub fn hover_settled(&mut self, now: Instant) -> bool {
+    let due = self.hover_settle_due().is_some_and(|due| now >= due);
+    if due {
+      self.skimmed = false;
+    }
+    due
+  }
+
+  /// When the deferred page hover is due.
+  pub fn hover_settle_due(&self) -> Option<Instant> {
+    self.skimmed.then(|| self.pointer.turn_end()).flatten()
   }
 
   /// Steps the held edge drag; whether drawn.

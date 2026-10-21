@@ -186,6 +186,7 @@ fn run(
       dirty |= session.hover_preview(Instant::now());
       dirty |= session.autoscroll(Instant::now());
       dirty |= completions(&mut session, &mut cache);
+      dirty |= session.hover_settled(Instant::now());
       dirty |= chores.run(&mut session, &mut std::io::sink())?;
       for app in &mut session.tab().panes {
         dirty |= app.animate();

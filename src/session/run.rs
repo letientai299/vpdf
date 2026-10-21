@@ -326,7 +326,9 @@ pub(super) fn idle(
   if let Some(due) = due.filter(|_| !held) {
     wait = wait.min(due.saturating_duration_since(Instant::now()));
   }
-  if let Some(due) = session.autoscroll_due() {
+  for due in
+    [session.autoscroll_due(), session.hover_settle_due()].into_iter().flatten()
+  {
     wait = wait.min(due.saturating_duration_since(Instant::now()));
   }
   for app in &session.tab().panes {
@@ -386,6 +388,7 @@ impl Session {
     }
     changed |= self.autoscroll(now);
     changed |= self.hover_preview(now);
+    changed |= self.hover_settled(now);
     let reader = &mut self.app().reader;
     if !reader.message.is_empty() {
       return changed;

@@ -985,6 +985,65 @@ fn keys_close_other_previews() -> Result<()> {
   Ok(())
 }
 
+/// Hover waits out a wheel gesture, then tests the page again.
+#[test]
+fn wheel_turns_defer_page_hover() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let link = "/Annots[<</Type/Annot/Subtype/Link/Rect[15 90 200 125]\
+                /Dest[0 0 R/XYZ 0 50 0]>>]";
+  let screen = Screen {
+    columns: 121,
+    rows: 40,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  let mut session = Session::new(None);
+  session.open(&line_pdf(directory.path(), link)?, true, screen)?;
+  let app = session.app();
+  let bounds = app.doc.links(PageId(0))?[0].first();
+  let rect = app.layout.project(PageId(0), bounds, app.reader.scroll);
+  let (x, y) = rect.centre();
+  let column = app.at.column + app.left + (x / 8.0) as u16;
+  let row = app.at.row + (y / 16.0) as u16;
+  let modifiers = KeyModifiers::NONE;
+  let link_hit = |session: &Session| {
+    matches!(
+      session.pointer.target().map(|hover| hover.hit),
+      Some(Hit::Link(..))
+    )
+  };
+  session.mouse(MouseEvent {
+    kind: MouseEventKind::Moved,
+    column,
+    row,
+    modifiers,
+  })?;
+  assert!(link_hit(&session));
+  // At the top, the turn moves nothing yet starts a gesture.
+  let kind = MouseEventKind::ScrollUp;
+  session.mouse(MouseEvent { kind, column, row, modifiers })?;
+  session.rehover();
+  assert!(!link_hit(&session));
+  let due = session.hover_settle_due().expect("a deferred hover");
+  assert!(!session.hover_settled(Instant::now()));
+  assert!(session.hover_settled(due));
+  assert_eq!(session.hover_settle_due(), None);
+  // The gesture has ended by now in real time too.
+  std::thread::sleep(due.saturating_duration_since(Instant::now()));
+  session.rehover();
+  assert!(link_hit(&session));
+  // Motion ends a gesture and tests the page at once.
+  session.mouse(MouseEvent { kind, column, row, modifiers })?;
+  session.rehover();
+  assert!(!link_hit(&session));
+  let kind = MouseEventKind::Moved;
+  session.mouse(MouseEvent { kind, column, row, modifiers })?;
+  assert!(link_hit(&session));
+  assert_eq!(session.hover_settle_due(), None);
+  Ok(())
+}
+
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn deferred_panels_clear_capture() -> Result<()> {

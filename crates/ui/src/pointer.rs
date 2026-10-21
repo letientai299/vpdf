@@ -565,6 +565,11 @@ impl Pointer {
     continues
   }
 
+  /// When the last wheel gesture ends, unless motion ended it.
+  pub fn turn_end(&self) -> Option<Instant> {
+    self.turn.map(|turn| turn.at + GESTURE)
+  }
+
   /// Bare motion; whether the target changed.
   pub fn hover(
     &mut self,
