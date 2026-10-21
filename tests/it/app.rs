@@ -3,13 +3,15 @@ use crate::common;
 use crate::focus::{screen, send};
 use unicode_width::UnicodeWidthChar;
 
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::solo::Solo;
 use vpdf_model::document::Target;
+use vpdf_model::input::{
+  KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_ui::keys::{Action, Input, PanelKind};
 use vpdf_ui::layout::Screen;
@@ -407,7 +409,7 @@ fn hint_labels_keep_their_origin() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn link_hints_follow_typed_labels() -> Result<()> {
-  use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+  use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = Screen {
     columns: 120,
@@ -446,7 +448,7 @@ fn link_hints_follow_typed_labels() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn preview_shows_citation_target() -> Result<()> {
-  use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+  use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let mut history = vpdf_ui::prompt::History::default();
   let screen = Screen {
@@ -701,7 +703,7 @@ fn settled(app: &mut Solo) -> Result<String> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
-  use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+  use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = Screen {
     columns: 120,
@@ -774,7 +776,7 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn clue_wait_ends_once_due() -> Result<()> {
-  use crossterm::event::{KeyCode, KeyEvent};
+  use vpdf_model::input::{KeyCode, KeyEvent};
   let mut app = text_app()?;
   let mut history = vpdf_ui::prompt::History::default();
   let mut press = |app: &mut App, code| {
@@ -1178,7 +1180,7 @@ fn frames_retest_a_resting_pointer() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn pixel_reports_hit_their_pixel() -> Result<()> {
   use vpdf::session::Session;
-  use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
+  use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
   use vpdf_ui::pointer::Pixel;
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let mut session = Session::new(None);
@@ -1262,7 +1264,7 @@ fn pixel_reports_hit_their_pixel() -> Result<()> {
 #[test]
 fn pixel_drags_draw_on_new_glyphs() -> Result<()> {
   use vpdf::session::Session;
-  use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
+  use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("words.pdf");
   common::text_pdf(&path, &["Hello pointer world"])?;

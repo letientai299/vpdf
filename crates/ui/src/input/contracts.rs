@@ -8,12 +8,12 @@ use crate::paint::Frame;
 use crate::pointer::{Region, Route};
 use crate::source::{Figures, Pages};
 use crate::text::{Bounds, PageId, Position, Text};
-use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
 use std::sync::Arc;
 use std::time::Instant;
 use vpdf_model::document::{Figure, FigureSource};
 use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
+use vpdf_model::input::{KeyModifiers, MouseEvent, MouseEventKind};
 use vpdf_reader::reader::{Reader, SelectionKind, TextSource};
 
 fn route(kind: MouseEventKind, region: Region) -> Route {

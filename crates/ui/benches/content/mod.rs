@@ -217,13 +217,13 @@ pub fn input() -> Result<()> {
   super::measure("Panel::refocus outline", || {
     black_box(panel.refocus());
   })?;
-  let mouse = crossterm::event::MouseEvent {
-    kind: crossterm::event::MouseEventKind::Down(
-      crossterm::event::MouseButton::Left,
+  let mouse = vpdf_model::input::MouseEvent {
+    kind: vpdf_model::input::MouseEventKind::Down(
+      vpdf_model::input::MouseButton::Left,
     ),
     column: 2,
     row: 1,
-    modifiers: crossterm::event::KeyModifiers::NONE,
+    modifiers: vpdf_model::input::KeyModifiers::NONE,
   };
   super::measure("Press::activate repeat", || {
     let press = panel.press(black_box(mouse));

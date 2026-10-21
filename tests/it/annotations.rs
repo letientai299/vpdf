@@ -1,11 +1,11 @@
 use super::common::SeedReader;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use mupdf::pdf::PdfAnnotationType;
 use mupdf::{Point, Quad, Rect};
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::solo::Solo;
+use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Mode;
 use vpdf_ui::input::InputOwner;
@@ -305,10 +305,10 @@ fn noted_pdf(path: &std::path::Path) -> Result<()> {
 
 #[test]
 fn hover_details_notes_rows_and_pages() -> Result<()> {
-  use crossterm::event::{MouseEvent, MouseEventKind};
   use vpdf::session::Session;
   use vpdf::trace::Drawable;
   use vpdf_model::document::{Heading, Target};
+  use vpdf_model::input::{MouseEvent, MouseEventKind};
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("noted.pdf");
@@ -406,10 +406,10 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
 /// U22: clipped outline rows show without their indent.
 #[test]
 fn outline_hovers_drop_the_indent() -> Result<()> {
-  use crossterm::event::{MouseEvent, MouseEventKind};
   use vpdf::session::Session;
   use vpdf::trace::Drawable;
   use vpdf_model::document::{Heading, Target};
+  use vpdf_model::input::{MouseEvent, MouseEventKind};
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("noted.pdf");
@@ -450,7 +450,7 @@ fn click_at(
   (column, row): (u16, u16),
   now: std::time::Instant,
 ) -> Result<()> {
-  use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
+  use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
   for kind in [MouseKind::Press(Button::LEFT), MouseKind::Release(Button::LEFT)]
   {
     let at = Spot::Cell { column, row };
@@ -481,8 +481,8 @@ fn icon_notes(app: &mut App) -> Vec<usize> {
 /// Notes open by mouse (U11).
 #[test]
 fn notes_open_by_mouse() -> Result<()> {
-  use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
   use vpdf::session::Session;
+  use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
   use vpdf_terminal::terminal::Shape;
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
@@ -705,8 +705,8 @@ fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
 /// Note rows' menus show and run `K`.
 #[test]
 fn note_row_menus_show_notes() -> Result<()> {
-  use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
   use vpdf::session::Session;
+  use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("noted.pdf");
   noted_pdf(&path)?;

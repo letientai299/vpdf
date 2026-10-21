@@ -259,68 +259,11 @@ fn pixel_mouse_source() {
     Vec::from(events),
     [Event::Mouse(press), Event::Leave, Event::Mouse(drag)]
   );
-  let cell = press.cells((8, 16)).map(|mouse| (mouse.column, mouse.row));
-  assert_eq!(cell, Some((52, 14)));
-  assert_eq!(press.pixel(), Some((419, 233)));
   // Without mode 1016 a negative coordinate is malformed.
   parser.set_pixels(false);
   let mut events = VecDeque::new();
   parser.feed(b"\x1b[<32;-4;9M", &mut events);
   assert!(events.is_empty());
-}
-
-#[test]
-fn crossterm_mouse_keeps_buttons_one_to_seven() {
-  let mouse = |kind, at| Mouse { kind, at, modifiers: NONE };
-  let cell = Spot::Cell { column: 3, row: 4 };
-  let cases = [
-    (
-      mouse(MouseKind::Press(Button(1)), cell),
-      Some(MouseEventKind::Down(MouseButton::Left)),
-    ),
-    (
-      mouse(MouseKind::Drag(Button(3)), cell),
-      Some(MouseEventKind::Drag(MouseButton::Right)),
-    ),
-    (
-      mouse(MouseKind::Press(Button(5)), cell),
-      Some(MouseEventKind::ScrollDown),
-    ),
-    (
-      mouse(MouseKind::Press(Button(6)), cell),
-      Some(MouseEventKind::ScrollLeft),
-    ),
-    (mouse(MouseKind::Moved, cell), Some(MouseEventKind::Moved)),
-    (mouse(MouseKind::Press(Button::BACK), cell), None),
-    (
-      mouse(MouseKind::Press(Button(1)), Spot::Pixel { x: 3, y: 4 }),
-      Some(MouseEventKind::Down(MouseButton::Left)),
-    ),
-  ];
-  for (mouse, want) in cases {
-    let kind = mouse.cells((8, 16)).map(|event| event.kind);
-    assert_eq!(kind, want, "{mouse:?}");
-  }
-}
-
-#[test]
-fn back_and_forward_presses_name_history() {
-  let mouse = |kind| Mouse {
-    kind,
-    at: Spot::Cell { column: 3, row: 4 },
-    modifiers: NONE,
-  };
-  let cases = [
-    (MouseKind::Press(Button::BACK), Some(false)),
-    (MouseKind::Press(Button::FORWARD), Some(true)),
-    (MouseKind::Release(Button::BACK), None),
-    (MouseKind::Drag(Button::FORWARD), None),
-    (MouseKind::Press(Button(10)), None),
-    (MouseKind::Press(Button::LEFT), None),
-  ];
-  for (kind, want) in cases {
-    assert_eq!(mouse(kind).history(), want, "{kind:?}");
-  }
 }
 
 #[test]
@@ -538,24 +481,4 @@ fn base_layout_key_serves_chords() {
     (b"\x1b[1094::119;3u", char('w', ALT)),
     ("ц".as_bytes(), char('ц', NONE)),
   ]);
-}
-
-#[test]
-fn cell_mouse_events_round_trip() {
-  use MouseEventKind::{
-    Down, Drag, Moved, ScrollDown, ScrollLeft, ScrollRight, ScrollUp, Up,
-  };
-  let mut kinds = vec![Moved, ScrollUp, ScrollDown, ScrollLeft, ScrollRight];
-  for button in [MouseButton::Left, MouseButton::Middle, MouseButton::Right] {
-    kinds.extend([Down(button), Drag(button), Up(button)]);
-  }
-  for kind in kinds {
-    let event = MouseEvent {
-      kind,
-      column: 17,
-      row: 23,
-      modifiers: KeyModifiers::ALT | KeyModifiers::SHIFT,
-    };
-    assert_eq!(Mouse::from(event).cells((8, 16)), Some(event));
-  }
 }

@@ -2,7 +2,7 @@
 
 use crate::Result;
 use crate::app::App;
-use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
 use vpdf_model::text::{PageId, Position};
 use vpdf_ui::input::InputOwner;
 use vpdf_ui::input::links::Step;

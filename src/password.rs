@@ -36,7 +36,7 @@ fn password_event(
   use vpdf_terminal::decode::Event;
   match event {
     Event::Key(key) if key.kind != KeyEventKind::Release => {
-      prompt.feed(key, &History::default())
+      prompt.feed(crate::input::key(key), &History::default())
     }
     Event::Paste(text) => prompt.paste(&text),
     Event::Resize(report) => {

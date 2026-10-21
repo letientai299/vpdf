@@ -3472,7 +3472,6 @@ name = "vpdf-gui"
 version = "0.1.0"
 dependencies = [
  "clap",
- "crossterm",
  "eframe",
  "font-kit",
  "image",
@@ -3570,7 +3569,6 @@ name = "vpdf-ui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crossterm",
  "serde",
  "serde_json",
  "sha2",

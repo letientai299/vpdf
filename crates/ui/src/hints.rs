@@ -5,9 +5,9 @@ use crate::paint::Frame;
 use crate::pointer::Items;
 use crate::split::Rect;
 use crate::theme;
-use crossterm::event::{KeyCode, KeyEvent};
 use std::io::Write;
 use vpdf_model::document::{Link, Target};
+use vpdf_model::input::{KeyCode, KeyEvent};
 use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId};
@@ -418,7 +418,7 @@ mod tests {
 
   #[test]
   fn input_returns_effects_and_keeps_selection_valid() -> Result<()> {
-    use crossterm::event::KeyModifiers;
+    use vpdf_model::input::KeyModifiers;
     let count = u16::try_from(ALPHABET.len()).expect("short alphabet");
     let found = (0..=count)
       .map(|row| (((10, row), 12), Target::Page(PageId(0))))
@@ -453,7 +453,7 @@ mod tests {
 
   #[test]
   fn hint_gate_preserves_state() -> Result<()> {
-    use crossterm::event::KeyModifiers;
+    use vpdf_model::input::KeyModifiers;
     for (selected, typed) in
       [(false, false), (false, true), (true, false), (true, true)]
     {

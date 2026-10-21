@@ -1,5 +1,5 @@
 use super::{KeyEvent, Result, Session};
-use vpdf_terminal::decode::Mouse;
+use vpdf_model::input::Mouse;
 
 pub(super) enum Interaction {
   Key(KeyEvent),

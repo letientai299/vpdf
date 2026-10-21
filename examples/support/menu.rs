@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::path::Path;
 use vpdf_model::geometry::Screen;
+use vpdf_model::input::{
+  KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use vpdf_terminal::graphics::Graphics;
 
 pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {

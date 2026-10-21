@@ -9,10 +9,10 @@ use crate::Result;
 use crate::grid::{self, Grid};
 use crate::layout::Screen;
 use crate::line::{self, NARROW, SHELL};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
+use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_model::style::Role;
 

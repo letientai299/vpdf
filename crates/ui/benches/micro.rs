@@ -1,7 +1,7 @@
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::hint::black_box;
 use vpdf_model::geometry::Screen;
+use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_model::text::PageId;
 use vpdf_ui::layout::{Layout, visible};
 mod chrome;
@@ -92,7 +92,7 @@ fn key_prefixes() -> Result<()> {
 
 /// A drag across a two-pane split.
 fn route() -> Result<()> {
-  use crossterm::event::{
+  use vpdf_model::input::{
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
   };
   use vpdf_ui::pointer::{Capture, Pane, Region};

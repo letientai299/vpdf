@@ -1,6 +1,6 @@
 use crate::split::{Axis, Direction as D};
 use crate::window::Window as W;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_reader::motion::Motion;
 use vpdf_reader::motion::Motion as M;
 use vpdf_reader::objects::Object as O;

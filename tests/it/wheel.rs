@@ -1,7 +1,6 @@
 use super::common::SeedReader;
 use crate::common;
 use crate::focus::screen;
-use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
 use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::path::Path;
@@ -9,6 +8,7 @@ use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::session::Session;
+use vpdf_model::input::{KeyModifiers, MouseEvent, MouseEventKind};
 use vpdf_model::text::PageId;
 use vpdf_reader::motion::Motion;
 use vpdf_terminal::decode::{Event, Parser};
@@ -40,7 +40,7 @@ fn wheel_at(
   let mut frame = false;
   for event in events {
     let Event::Mouse(mouse) = event else { panic!("mouse bytes") };
-    frame |= session.mouse_report_at(mouse, now)?;
+    frame |= session.mouse_report_at(crate::input::mouse(mouse), now)?;
   }
   Ok(frame)
 }
@@ -267,8 +267,8 @@ fn wheel_frames_only_when_something_moves() -> Result<()> {
   session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(1.0));
   session.app().relayout()?;
   let mut history = vpdf_ui::prompt::History::default();
-  let two = crossterm::event::KeyEvent::new(
-    crossterm::event::KeyCode::Char('2'),
+  let two = vpdf_model::input::KeyEvent::new(
+    vpdf_model::input::KeyCode::Char('2'),
     KeyModifiers::NONE,
   );
   session.app().key(two, &mut history)?;
@@ -393,7 +393,7 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
   wheel(&mut session, DOWN, (480, 300))?;
   assert_eq!(state(&mut session).1, 2);
   session.app().overview_mouse(MouseEvent {
-    kind: MouseEventKind::Down(crossterm::event::MouseButton::Left),
+    kind: MouseEventKind::Down(vpdf_model::input::MouseButton::Left),
     column: 3,
     row: 2,
     modifiers: KeyModifiers::NONE,
@@ -511,7 +511,7 @@ fn preview_takes_the_wheel_under_the_pointer() -> Result<()> {
 /// Turns over a menu move the surface beneath it, not the hidden page.
 #[test]
 fn menu_turns_move_what_is_beneath() -> Result<()> {
-  use crossterm::event::MouseButton::Right;
+  use vpdf_model::input::MouseButton::Right;
   use vpdf_ui::keys::PanelKind;
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("pages.pdf");

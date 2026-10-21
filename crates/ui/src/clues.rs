@@ -4,10 +4,10 @@ use crate::keys;
 use crate::layout::Screen;
 use crate::pointer::Items;
 use crate::text::Position;
-use crossterm::event::KeyEvent;
 use std::io::Write;
 use std::time::{Duration, Instant};
 use vpdf_model::geometry::At;
+use vpdf_model::input::KeyEvent;
 
 #[derive(Default)]
 pub struct Clues {

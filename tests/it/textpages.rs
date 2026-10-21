@@ -2,13 +2,13 @@
 use super::common::SeedReader;
 
 use crate::common;
-use crossterm::event::{
-  KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::solo::Solo;
 use vpdf_model::document::{Heading, Target};
+use vpdf_model::input::{
+  KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::SelectionKind;
 use vpdf_ui::layout::Screen;

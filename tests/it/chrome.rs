@@ -2,9 +2,9 @@
 use super::common::SeedReader;
 
 use crate::mouse::{cell, cell_in, labels, mouse, press, session, status};
-use crossterm::event::{KeyCode, MouseButton, MouseEventKind};
 use vpdf::Result;
 use vpdf::session::Session;
+use vpdf_model::input::{KeyCode, MouseButton, MouseEventKind};
 use vpdf_model::text::PageId;
 use vpdf_ui::pointer::{Hit, Region};
 
@@ -796,7 +796,7 @@ fn item_cell(
 
 #[test]
 fn clues_and_completions_act_on_click() -> Result<()> {
-  use crossterm::event::{KeyEvent, KeyModifiers};
+  use vpdf_model::input::{KeyEvent, KeyModifiers};
   use vpdf_ui::pointer::List;
   let (_directory, mut session) = session(false)?;
   // Clues shown during a held pan.
@@ -974,9 +974,9 @@ fn drawn(session: &mut Session) -> Result<String> {
 
 /// Ctrl-o, back in history.
 fn back(session: &mut Session) -> Result<()> {
-  let key = crossterm::event::KeyEvent::new(
+  let key = vpdf_model::input::KeyEvent::new(
     KeyCode::Char('o'),
-    crossterm::event::KeyModifiers::CONTROL,
+    vpdf_model::input::KeyModifiers::CONTROL,
   );
   session.app().key(key, &mut vpdf_ui::prompt::History::default())
 }

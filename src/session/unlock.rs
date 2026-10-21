@@ -67,7 +67,7 @@ impl Session {
     let Some(unlock) = &mut self.unlock else { return Ok(false) };
     let event = match input {
       Input::Key(key) => {
-        if key.kind == crossterm::event::KeyEventKind::Release {
+        if key.kind == vpdf_model::input::KeyEventKind::Release {
           return Ok(true);
         }
         unlock.prompt.feed(*key, &History::default())

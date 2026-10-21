@@ -219,7 +219,7 @@ fn presses_beyond_the_list_miss_its_rows() -> Result<()> {
     kind: MouseEventKind::Down(MouseButton::Left),
     column,
     row: 2,
-    modifiers: crossterm::event::KeyModifiers::NONE,
+    modifiers: vpdf_model::input::KeyModifiers::NONE,
   };
   assert_eq!(panel.pointer(press(25)), None);
   assert_eq!(panel.pointer(press(5)), Some(1));

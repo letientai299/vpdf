@@ -1,7 +1,7 @@
 use super::*;
 use crate::find::Search;
 use crate::reading::Pane;
-use crossterm::event::KeyModifiers;
+use vpdf_model::input::KeyModifiers;
 use vpdf_reader::reader::{Mode, SelectionKind};
 use vpdf_search::{query::Query, search::Hit};
 

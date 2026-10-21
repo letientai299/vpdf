@@ -6,14 +6,14 @@ use crate::panel::recent::{Entry, Shelf};
 use crate::panel::{Destination, Row};
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crate::theme::Color;
-use crossterm::event::{KeyEvent, KeyEventKind};
 use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
+use vpdf_model::input::Event;
+use vpdf_model::input::{KeyEvent, KeyEventKind};
 use vpdf_model::scene::{Draw, Op, Surface, Text};
 use vpdf_model::style::Role;
-use vpdf_terminal::decode::Event;
 use vpdf_terminal::graphics::Graphics;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -302,7 +302,7 @@ mod tests {
 
   #[test]
   fn effects_resume_the_prompt() -> Result<()> {
-    use crossterm::event::{KeyCode, KeyModifiers};
+    use vpdf_model::input::{KeyCode, KeyModifiers};
     let screen = Screen {
       columns: 80,
       rows: 24,
@@ -388,8 +388,8 @@ mod tests {
 
   #[test]
   fn top_stats_offset_home_and_mouse() -> Result<()> {
-    use crossterm::event::KeyModifiers;
-    use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
+    use vpdf_model::input::KeyModifiers;
+    use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
     let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
     let rows = || {
       vec![Row::new(file.into(), String::new(), Destination::File(file.into()))]
@@ -421,8 +421,8 @@ mod tests {
 
   #[test]
   fn clicks_wait_for_an_open_prompt() -> Result<()> {
-    use crossterm::event::{KeyCode, KeyModifiers};
-    use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
+    use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
+    use vpdf_model::input::{KeyCode, KeyModifiers};
     let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
     let rows = || {
       vec![Row::new(file.into(), String::new(), Destination::File(file.into()))]

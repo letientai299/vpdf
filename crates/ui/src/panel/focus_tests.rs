@@ -1,6 +1,6 @@
 use super::*;
 
-use crossterm::event::KeyModifiers;
+use vpdf_model::input::KeyModifiers;
 
 #[test]
 fn wheel_moves_viewport_and_keys_reveal_rows() -> Result<()> {

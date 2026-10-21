@@ -39,10 +39,10 @@ mod tests {
   use super::*;
   use crate::keys::{Action, Input, PanelKind};
   use crate::panel::{Destination, Panel, Position, Style};
-  use crossterm::event::{
+  use unicode_width::UnicodeWidthStr;
+  use vpdf_model::input::{
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
   };
-  use unicode_width::UnicodeWidthStr;
   use vpdf_reader::motion::Motion;
   use vpdf_search::query::Query;
   use vpdf_search::search::Hit;

@@ -10,6 +10,7 @@ mod find;
 mod gestures;
 pub mod home;
 pub mod inline;
+mod input;
 pub mod jobs;
 pub mod links;
 mod navigation;

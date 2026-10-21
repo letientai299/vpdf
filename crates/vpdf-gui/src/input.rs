@@ -1,10 +1,10 @@
-use crossterm::event::{
-  KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
-  MouseEventKind,
-};
 use eframe::egui::{self, Event, Key, Modifiers, PointerButton};
 use vpdf::session::native::Input;
 use vpdf_model::geometry::Screen;
+use vpdf_model::input::{
+  KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
+  MouseEventKind,
+};
 use vpdf_model::style::Shape;
 
 const WHEEL_TURNS: f32 = 64.0;
@@ -936,5 +936,82 @@ mod tests {
         )
         .is_empty()
     );
+  }
+}
+
+#[cfg(test)]
+mod integration {
+  use super::*;
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn native_inputs_change_state() -> vpdf::Result<()> {
+    let path =
+      std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
+    let screen = Screen {
+      columns: 100,
+      rows: 40,
+      cell_width: 10,
+      cell_height: 20,
+      origin: (0, 0),
+    };
+    let mut app = vpdf::app::App::with_screen(&path, "", true, screen)?;
+    let mut adapter = Adapter::default();
+    let mut history = vpdf::session::Session::new(None).history;
+    for (text, expected) in [("G", 14), ("gg", 0)] {
+      let output = adapter.events(
+        &[Event::Text(text.into())],
+        Modifiers::NONE,
+        screen,
+        1.0,
+        [30.0, 60.0],
+        None,
+      );
+      assert_eq!(output.len(), text.len());
+      for (input, ch) in output.into_iter().zip(text.chars()) {
+        let Input::Key(key) = input else { panic!("key") };
+        assert_eq!(key.code, KeyCode::Char(ch));
+        app.key(key, &mut history)?;
+      }
+      assert_eq!(
+        app.navigation_position().page,
+        vpdf_model::text::PageId(expected)
+      );
+    }
+    let alt = Modifiers { alt: true, ..Modifiers::NONE };
+    let editing = [
+      Event::Text(":".into()),
+      Event::Paste("alpha beta".into()),
+      Event::Key {
+        key: Key::B,
+        physical_key: Some(Key::B),
+        pressed: true,
+        repeat: false,
+        modifiers: alt,
+      },
+    ];
+    for input in
+      adapter.events(&editing, Modifiers::NONE, screen, 1.0, [30.0, 60.0], None)
+    {
+      match input {
+        Input::Key(key) => app.key(key, &mut history)?,
+        Input::Paste(text) => app.paste(&text, &mut history)?,
+        _ => panic!("editing"),
+      }
+    }
+    adapter.editing(Some(egui::IMEPurpose::Normal));
+    let output = adapter.events(
+      &[Event::Ime(egui::ImeEvent::Commit("日本語".into()))],
+      Modifiers::NONE,
+      screen,
+      1.0,
+      [30.0, 60.0],
+      None,
+    );
+    let [Input::Paste(text)] = output.as_slice() else { panic!("commit") };
+    assert_eq!(text, "日本語");
+    app.paste(text, &mut history)?;
+    assert_eq!(app.overlays.prompt().unwrap().text(), "alpha 日本語beta");
+    Ok(())
   }
 }

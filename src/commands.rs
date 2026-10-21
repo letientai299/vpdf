@@ -2,9 +2,9 @@ use crate::Result;
 use crate::app::{App, Request};
 use crate::cmdline;
 use crate::pdf_text::PdfText;
-use crossterm::event::KeyEvent;
 use std::process::{Command, Stdio};
 use vpdf_model::document::Target;
+use vpdf_model::input::KeyEvent;
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Mode;
 use vpdf_ui::commands::{self, Id, View};
@@ -529,7 +529,7 @@ mod tests {
   #[test]
   #[ignore = "requires verified public PDF corpus"]
   fn completion_tracks_document_visibility() -> Result<()> {
-    use crossterm::event::KeyModifiers;
+    use vpdf_model::input::KeyModifiers;
     use vpdf_ui::layout::Screen;
     let path =
       std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
@@ -555,7 +555,7 @@ mod tests {
       prompt.replace("re");
       app.overlays.open_prompt(prompt);
       app.key(
-        KeyEvent::new(crossterm::event::KeyCode::Tab, KeyModifiers::NONE),
+        KeyEvent::new(vpdf_model::input::KeyCode::Tab, KeyModifiers::NONE),
         &mut History::default(),
       )?;
       assert_eq!(

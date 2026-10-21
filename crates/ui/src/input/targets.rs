@@ -6,7 +6,9 @@ use crate::pointer::{Hit, Items, List, Region};
 use crate::preview::Preview;
 use crate::region::Region as Capture;
 use crate::text::PageId;
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use vpdf_model::input::{
+  KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 /// Borrowed components for pointer routing.
 pub struct Targets<'a> {

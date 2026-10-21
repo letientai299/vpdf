@@ -977,7 +977,7 @@ fn viewport_failure_cancels_yank() {
 }
 
 fn pointer_route(
-  kind: crossterm::event::MouseEventKind,
+  kind: vpdf_model::input::MouseEventKind,
   column: u16,
   row: u16,
 ) -> crate::pointer::Route {
@@ -987,11 +987,11 @@ fn pointer_route(
     focus: false,
     clicks: 1,
     pixel: None,
-    mouse: crossterm::event::MouseEvent {
+    mouse: vpdf_model::input::MouseEvent {
       kind,
       column,
       row,
-      modifiers: crossterm::event::KeyModifiers::NONE,
+      modifiers: vpdf_model::input::KeyModifiers::NONE,
     },
   }
 }
@@ -999,7 +999,7 @@ fn pointer_route(
 #[test]
 fn capture_avoids_text_and_clamps_corners() -> Result<()> {
   use crate::input::gesture::Gesture;
-  use crossterm::event::{
+  use vpdf_model::input::{
     MouseButton::Left,
     MouseEventKind::{Down, Drag},
   };
@@ -1022,7 +1022,7 @@ fn capture_avoids_text_and_clamps_corners() -> Result<()> {
 #[test]
 fn failed_extensions_reset_previous_sweeps() {
   use crate::input::gesture::Gesture;
-  use crossterm::event::{MouseButton::Left, MouseEventKind::Down};
+  use vpdf_model::input::{MouseButton::Left, MouseEventKind::Down};
   for text in [false, true] {
     let mut fixture = Fixture::new();
     fixture.frame.pane.text = text;
@@ -1042,7 +1042,7 @@ fn failed_extensions_reset_previous_sweeps() {
 #[test]
 fn middle_drags_suppress_link_activation() -> Result<()> {
   use crate::input::grab::Grab;
-  use crossterm::event::{
+  use vpdf_model::input::{
     MouseButton::Middle,
     MouseEventKind::{Down, Drag, Up},
   };

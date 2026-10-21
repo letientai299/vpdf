@@ -1,11 +1,11 @@
 //! Single hot functions, timed in isolation, so a change is measured
 //! without the noise of whole-reader runs. Arguments filter cases by name.
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::hint::black_box;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::solo::Solo;
+use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_model::text::PageId;
 use vpdf_ui::layout::Screen;
 
@@ -69,7 +69,7 @@ fn menu_rows() -> Result<()> {
 
 /// Motion along a citation-dense row.
 fn hover() -> Result<()> {
-  use crossterm::event::{MouseEvent, MouseEventKind};
+  use vpdf_model::input::{MouseEvent, MouseEventKind};
   use vpdf_ui::pointer::Region;
   let motion = |column| MouseEvent {
     kind: MouseEventKind::Moved,
@@ -101,7 +101,7 @@ fn hover() -> Result<()> {
 
 /// Wheel turns over the page: scroll, Ctrl zoom, and Shift pan.
 fn wheel() -> Result<()> {
-  use crossterm::event::{MouseEvent, MouseEventKind};
+  use vpdf_model::input::{MouseEvent, MouseEventKind};
   let turn =
     |kind, modifiers| MouseEvent { kind, column: 60, row: 20, modifiers };
   let mut session = vpdf::session::Session::new(None);
@@ -130,7 +130,7 @@ fn wheel() -> Result<()> {
 
 /// Row drags: plain, by word, edge.
 fn drag() -> Result<()> {
-  use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+  use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
   let event = |kind, column| MouseEvent {
     kind,
     column,
@@ -226,8 +226,8 @@ fn frame() -> Result<()> {
 
 /// Two panes, the pointer resting on one.
 fn split_frame() -> Result<()> {
-  use crossterm::event::{MouseEvent, MouseEventKind};
   use vpdf::trace::Drawable;
+  use vpdf_model::input::{MouseEvent, MouseEventKind};
   let mut session = vpdf::session::Session::new(None);
   session.open(&corpus("paper.pdf")?, true, PANE)?;
   session.app().command("vsplit")?;
@@ -380,7 +380,7 @@ fn preview_live() -> Result<()> {
 }
 
 fn routing_pointer() -> Result<()> {
-  use crossterm::event::{MouseEvent, MouseEventKind};
+  use vpdf_model::input::{MouseEvent, MouseEventKind};
   let app = paper(false)?;
   let mut session = vpdf::session::Session::new(None);
   session.open(&app.path, true, app.screen)?;
@@ -415,7 +415,7 @@ fn routing_outline() -> Result<()> {
 }
 
 fn routing_panel_press() -> Result<()> {
-  use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+  use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
   let mut app = paper(false)?;
   app.open_panel(vpdf_ui::keys::PanelKind::Help)?;
   let mouse = MouseEvent {
@@ -430,7 +430,7 @@ fn routing_panel_press() -> Result<()> {
 }
 
 fn transitions() -> Result<()> {
-  use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+  use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
   let app = paper(false)?;
   let mut session = vpdf::session::Session::new(None);
   session.open(&app.path, true, app.screen)?;

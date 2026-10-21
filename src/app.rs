@@ -51,7 +51,7 @@ pub enum Request {
   /// A global mark beside; focus stays.
   SplitMark(char),
   /// Keys a clicked clue names.
-  Keys(Vec<crossterm::event::KeyEvent>),
+  Keys(Vec<vpdf_model::input::KeyEvent>),
   /// Pick a PDF for the focused pane.
   Pick,
   /// Closes a tab, else the active one.

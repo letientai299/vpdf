@@ -15,7 +15,6 @@ vpdf-search.workspace = true
 vpdf-reader.workspace = true
 vpdf-terminal.workspace = true
 anyhow.workspace = true
-crossterm.workspace = true
 unicode-width.workspace = true
 
 [dev-dependencies]

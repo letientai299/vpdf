@@ -4,7 +4,7 @@ use crate::input::{gesture::Gesture, grab::Grab};
 use crate::pointer::Route;
 use crate::source::Pages;
 use crate::text::{Bounds, PageId, Position};
-use crossterm::event::MouseEventKind;
+use vpdf_model::input::MouseEventKind;
 use vpdf_reader::reader::TextSource;
 
 impl<S: TextSource + Pages> View<'_, S> {

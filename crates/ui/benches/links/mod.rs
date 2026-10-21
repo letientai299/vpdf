@@ -1,8 +1,8 @@
 use anyhow::Result;
-use crossterm::event::{MouseButton, MouseEventKind};
 use std::hint::black_box;
 use std::time::Instant;
 use vpdf_model::document::Target;
+use vpdf_model::input::{MouseButton, MouseEventKind};
 use vpdf_model::text::PageId;
 use vpdf_ui::hints::Spot;
 use vpdf_ui::input::links::{Hover, Press, Step};

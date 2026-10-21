@@ -1,8 +1,8 @@
 use crate::Result;
 use crate::app::App;
 use crate::pdf_text::PdfText;
-use crossterm::event::MouseEvent;
 use std::io::Write;
+use vpdf_model::input::MouseEvent;
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::SelectionKind;
 use vpdf_terminal::graphics::Graphics;

@@ -1,5 +1,5 @@
 use super::*;
-use crossterm::event::{KeyCode, KeyModifiers};
+use vpdf_model::input::{KeyCode, KeyModifiers};
 
 #[test]
 fn empty_items_end_deadlines() {

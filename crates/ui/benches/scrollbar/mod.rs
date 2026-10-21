@@ -1,10 +1,12 @@
 use anyhow::Result;
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::hint::black_box;
 use std::time::Instant;
 use vpdf_model::document::{Heading, Target};
 use vpdf_model::geometry::At;
 use vpdf_model::geometry::{Crop, Screen};
+use vpdf_model::input::{
+  KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use vpdf_model::text::Position;
 use vpdf_reader::reader::{Location, Reader};
 use vpdf_search::search::Hit;

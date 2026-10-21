@@ -1,9 +1,9 @@
 use super::interaction::Interaction;
 use super::maintenance::Chores;
 use super::{
-  Act, Arc, Cause, Duration, Event, Home, Instant, IsTerminal, KeyEventKind,
-  MouseKind, Ordering, Outcome, Pacer, PathBuf, Result, Session, Shape, Sight,
-  View, Write, io, sight, terminal,
+  Act, Arc, Cause, Duration, Event, Home, Instant, IsTerminal, Ordering,
+  Outcome, Pacer, PathBuf, Result, Session, Shape, Sight, View, Write, io,
+  sight, terminal,
 };
 use vpdf_terminal::input::{Notice, notice};
 
@@ -64,7 +64,11 @@ pub(super) fn updates(
 pub(super) fn passive(event: &Event) -> bool {
   match event {
     Event::Mouse(mouse) => {
-      matches!(mouse.kind, MouseKind::Moved | MouseKind::Drag(_))
+      matches!(
+        mouse.kind,
+        vpdf_terminal::decode::MouseKind::Moved
+          | vpdf_terminal::decode::MouseKind::Drag(_)
+      )
     }
     Event::Leave => true,
     _ => false,
@@ -73,12 +77,16 @@ pub(super) fn passive(event: &Event) -> bool {
 
 pub(super) fn act(event: Event) -> Option<Act> {
   match event {
-    Event::Key(key) if key.kind != KeyEventKind::Release => Some(Act::Key(key)),
+    Event::Key(key) if key.kind != crossterm::event::KeyEventKind::Release => {
+      Some(Act::Key(crate::input::key(key)))
+    }
     Event::Paste(text) => Some(Act::Paste(text)),
     Event::Resize(report) => Some(Act::Resize(report)),
-    Event::Mouse(mouse) => (mouse.action().is_some()
-      || mouse.history().is_some())
-    .then_some(Act::Mouse(mouse)),
+    Event::Mouse(mouse) => {
+      let mouse = crate::input::mouse(mouse);
+      (mouse.action().is_some() || mouse.history().is_some())
+        .then_some(Act::Mouse(mouse))
+    }
     Event::Leave => Some(Act::Leave),
     Event::Reply(reply) => notice(&reply).map(|notice| match notice {
       Notice::Missing(id) => Act::Missing(id),

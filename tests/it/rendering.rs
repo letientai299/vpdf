@@ -381,7 +381,7 @@ fn assert_tile(
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn projected_mouse_tracks_glyphs() -> Result<()> {
-  use crossterm::event::{
+  use vpdf_model::input::{
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
   };
 

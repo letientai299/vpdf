@@ -202,10 +202,10 @@ mod pointer {
   use super::*;
   use MouseButton::Left;
   use MouseEventKind::{Down, Drag, ScrollDown, Up};
-  use crossterm::event::{
+  use vpdf::app::App;
+  use vpdf_model::input::{
     KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
   };
-  use vpdf::app::App;
   use vpdf_ui::keys::PanelKind;
 
   fn mouse(

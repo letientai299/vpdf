@@ -1,8 +1,8 @@
 use super::*;
 use MouseButton::{Left, Right};
 use MouseEventKind::{Down, Drag, Moved, ScrollDown, Up};
-use crossterm::event::KeyModifiers;
 use std::time::Duration;
+use vpdf_model::input::KeyModifiers;
 
 const fn pane(id: u32, rect: Rect, panel: u16, overlay: u16) -> Pane {
   Pane {

@@ -1,10 +1,10 @@
 use super::common::SeedReader;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::solo::Solo;
 use vpdf_model::document::{Heading, Target};
+use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Reader;
 use vpdf_ui::keys::PanelKind;

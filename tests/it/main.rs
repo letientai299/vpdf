@@ -12,6 +12,9 @@ mod drop;
 mod encrypted;
 mod figures;
 mod focus;
+#[path = "../../src/input.rs"]
+mod input;
+mod input_adapter;
 mod jumps;
 mod keys;
 mod modes;

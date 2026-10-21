@@ -4,8 +4,8 @@ use crate::recent::Loader;
 use crate::state::Entry;
 use std::io::Write;
 use std::path::PathBuf;
+use vpdf_model::input::Event;
 use vpdf_model::style::Role;
-use vpdf_terminal::decode::Event;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal;
@@ -87,9 +87,12 @@ impl Home {
 
   pub fn event(
     &mut self,
-    event: Event,
+    event: vpdf_terminal::decode::Event,
     history: &mut History,
   ) -> Result<Outcome> {
+    let Some(event) = crate::input::event(event) else {
+      return Ok(Outcome::Stay);
+    };
     self.handle(event, history, true)
   }
 
@@ -219,6 +222,7 @@ mod tests {
   #[test]
   fn start_completion_uses_home_scope() -> Result<()> {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use vpdf_terminal::decode::Event;
     let screen = Screen {
       columns: 80,
       rows: 24,

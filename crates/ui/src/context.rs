@@ -6,11 +6,11 @@ use crate::pointer::Items;
 use crate::region::Operation;
 use crate::split::Rect;
 use crate::theme;
-use crossterm::event::{MouseEvent, MouseEventKind};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::Target;
 use vpdf_model::geometry::Screen;
+use vpdf_model::input::{MouseEvent, MouseEventKind};
 use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId, Position};
@@ -512,7 +512,7 @@ mod tests {
 
   #[test]
   fn drag_release_and_navigation() {
-    use crossterm::event::{KeyModifiers, MouseButton};
+    use vpdf_model::input::{KeyModifiers, MouseButton};
     let mut menu = menu((10, 5));
     let mouse = |column, row, kind| MouseEvent {
       column,

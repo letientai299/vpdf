@@ -5,9 +5,10 @@ use super::*;
 #[cfg(test)]
 use crate::SeedReader;
 
-use crossterm::event::{KeyCode, KeyModifiers};
+use vpdf_model::input::{Button, Mouse, Spot};
+use vpdf_model::input::{KeyCode, KeyModifiers};
 use vpdf_model::text::Bounds;
-use vpdf_terminal::decode::{Button, Mouse, Reply, Spot};
+use vpdf_terminal::decode::Reply;
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
@@ -199,7 +200,7 @@ fn scrollbars_wake_and_hide() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn held_gestures_write_shapes() -> Result<()> {
   use MouseEventKind::{Down, Drag, Moved, Up};
-  use crossterm::event::MouseButton::{Left, Middle};
+  use vpdf_model::input::MouseButton::{Left, Middle};
   let _shapes = SHAPES.lock();
   let mut session = paper()?;
   let blank = find(&mut session, |hit| hit == Hit::Nothing)?;
@@ -490,8 +491,8 @@ fn line_pdf(directory: &Path, annots: &str) -> Result<PathBuf> {
 
 #[test]
 fn sweeps_show_a_crosshair() -> Result<()> {
-  use crossterm::event::MouseButton::Left;
-  use crossterm::event::MouseEventKind::{Down, Drag, Moved, Up};
+  use vpdf_model::input::MouseButton::Left;
+  use vpdf_model::input::MouseEventKind::{Down, Drag, Moved, Up};
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let screen = Screen {
@@ -538,7 +539,7 @@ fn sweeps_show_a_crosshair() -> Result<()> {
 /// `:mouse off` drops hover and later reports; `:mouse` toggles.
 #[test]
 fn mouse_command_toggles_capture() -> Result<()> {
-  use vpdf_terminal::decode::{Mouse, MouseKind, Spot};
+  use vpdf_model::input::{Mouse, MouseKind, Spot};
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let screen = Screen {
@@ -592,8 +593,8 @@ fn mouse_command_toggles_capture() -> Result<()> {
 /// Menu backdrops cover only page cells.
 #[test]
 fn menu_backdrops_skip_the_panel() -> Result<()> {
-  use crossterm::event::MouseButton::Right;
-  use crossterm::event::MouseEventKind::{Down, Up};
+  use vpdf_model::input::MouseButton::Right;
+  use vpdf_model::input::MouseEventKind::{Down, Up};
   use vpdf_ui::keys::PanelKind;
   let directory = tempfile::tempdir()?;
   let screen = Screen {
@@ -658,8 +659,8 @@ fn highlights(out: &[u8], left: u16) -> Vec<Bounds> {
 /// The focused panel's page veil leaves menus over the page clear.
 #[test]
 fn veils_skip_menus() -> Result<()> {
-  use crossterm::event::MouseButton::Right;
-  use crossterm::event::MouseEventKind::{Down, Up};
+  use vpdf_model::input::MouseButton::Right;
+  use vpdf_model::input::MouseEventKind::{Down, Up};
   use vpdf_ui::keys::PanelKind;
   let directory = tempfile::tempdir()?;
   let screen = Screen {
@@ -698,8 +699,8 @@ fn veils_skip_menus() -> Result<()> {
 /// Thumbnail rings leave the menu over them clear.
 #[test]
 fn overview_rings_skip_the_menu() -> Result<()> {
-  use crossterm::event::MouseButton::Right;
-  use crossterm::event::MouseEventKind::{Down, Up};
+  use vpdf_model::input::MouseButton::Right;
+  use vpdf_model::input::MouseEventKind::{Down, Up};
   let directory = tempfile::tempdir()?;
   let screen = Screen {
     columns: 80,
@@ -736,8 +737,8 @@ fn overview_rings_skip_the_menu() -> Result<()> {
 /// Focus loss ends held drags.
 #[test]
 fn edge_drags_scroll_until_focus_loss() -> Result<()> {
-  use crossterm::event::MouseButton::Left;
-  use crossterm::event::MouseEventKind::{Down, Drag};
+  use vpdf_model::input::MouseButton::Left;
+  use vpdf_model::input::MouseEventKind::{Down, Drag};
   use vpdf_ui::input::edge::Edge;
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
@@ -825,7 +826,10 @@ fn home_file_drops_open() -> Result<()> {
   // File drops open even with a prompt.
   let mut session = Session::new(None);
   let mut home = Home::new(&[], screen);
-  let colon = KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE);
+  let colon = crossterm::event::KeyEvent::new(
+    crossterm::event::KeyCode::Char(':'),
+    crossterm::event::KeyModifiers::NONE,
+  );
   home.event(Event::Key(colon), &mut session.history)?;
   let (landed, out) = drop(&mut session, &mut home, &pdf)?;
   assert!(matches!(landed, Landing::Opened) && ended(&out, "1"));
@@ -851,6 +855,8 @@ fn home_file_drops_open() -> Result<()> {
 
 #[test]
 fn only_actionable_input_counts() {
+  use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+  use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
   let none = KeyModifiers::NONE;
   let press = KeyEvent::new(KeyCode::Char('j'), none);
   let release =
@@ -869,27 +875,33 @@ fn only_actionable_input_counts() {
     |at| Mouse { kind: MouseKind::Press(Button::LEFT), at, modifiers: none };
   let pixel = Spot::Pixel { x: 1, y: 2 };
   let cases = [
-    (Event::Key(press), Some(Act::Key(press))),
+    (
+      Event::Key(press),
+      Some(Act::Key(vpdf_model::input::KeyEvent::new(
+        vpdf_model::input::KeyCode::Char('j'),
+        vpdf_model::input::KeyModifiers::NONE,
+      ))),
+    ),
     (Event::Key(release), None),
     (Event::Paste("a".into()), Some(Act::Paste("a".into()))),
     (Event::Resize(None), Some(Act::Resize(None))),
     (Event::Resize(Some(size)), Some(Act::Resize(Some(size)))),
     (
       mouse(MouseKind::Press(Button::LEFT), cell),
-      Some(Act::Mouse(click(cell))),
+      Some(Act::Mouse(crate::input::mouse(click(cell)))),
     ),
     (
       mouse(MouseKind::Press(Button::BACK), cell),
-      Some(Act::Mouse(Mouse {
+      Some(Act::Mouse(crate::input::mouse(Mouse {
         kind: MouseKind::Press(Button::BACK),
         at: cell,
         modifiers: none,
-      })),
+      }))),
     ),
     (mouse(MouseKind::Release(Button::BACK), cell), None),
     (
       mouse(MouseKind::Press(Button::LEFT), pixel),
-      Some(Act::Mouse(click(pixel))),
+      Some(Act::Mouse(crate::input::mouse(click(pixel)))),
     ),
     (Event::Leave, Some(Act::Leave)),
     (Event::Focus(true), Some(Act::Focus(true))),
@@ -1084,5 +1096,41 @@ fn deferred_panels_clear_capture() -> Result<()> {
     assert!(session.app().panel_focused());
     assert!(session.app().reader.selection.is_some());
   }
+  Ok(())
+}
+
+#[test]
+fn decoded_commands_change_state() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let mut session = Session::new(None);
+  let screen = Screen {
+    columns: 80,
+    rows: 24,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  session.open(&line_pdf(directory.path(), "")?, true, screen)?;
+  let mut parser = vpdf_terminal::decode::Parser::default();
+  let mut events = std::collections::VecDeque::new();
+  parser.feed(b"\x1b[58;1:3u", &mut events);
+  assert!(act(events.pop_front().unwrap()).is_none());
+  assert!(session.app().overlays.prompt().is_none());
+  parser.feed(b"\x1b[58;1:2u", &mut events);
+  let action = act(events.pop_front().unwrap()).unwrap();
+  let Act::Key(key) = &action else { panic!("key") };
+  assert_eq!(key.code, KeyCode::Char(':'));
+  assert_eq!(key.kind, vpdf_model::input::KeyEventKind::Repeat);
+  input(&mut session, action, &mut Vec::new())?;
+  assert!(session.app().overlays.prompt().is_some());
+  parser.feed(b"\x1b[200~info\x1b[201~\r", &mut events);
+  for event in events {
+    input(&mut session, act(event).unwrap(), &mut Vec::new())?;
+  }
+  assert!(session.app().overlays.prompt().is_none());
+  assert_eq!(
+    session.app().panel.as_ref().unwrap().view.kind(),
+    PanelKind::Info
+  );
   Ok(())
 }

@@ -215,10 +215,10 @@ mod tests {
     keys::{Action, Input, PanelKind},
     panel::{Panel, Style},
   };
-  use crossterm::event::{
+  use unicode_width::UnicodeWidthStr;
+  use vpdf_model::input::{
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
   };
-  use unicode_width::UnicodeWidthStr;
   use vpdf_reader::motion::Motion;
   #[test]
   fn failed_context_keeps_anchor() {

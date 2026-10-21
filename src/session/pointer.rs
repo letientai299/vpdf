@@ -8,7 +8,7 @@ impl Session {
   /// One terminal mouse report; whether it needs a frame.
   pub fn mouse_report(
     &mut self,
-    report: vpdf_terminal::decode::Mouse,
+    report: vpdf_model::input::Mouse,
   ) -> Result<bool> {
     self.mouse_report_at(report, Instant::now())
   }
@@ -16,7 +16,7 @@ impl Session {
   /// One mouse report that arrived at `now`; whether it needs a frame.
   pub fn mouse_report_at(
     &mut self,
-    report: vpdf_terminal::decode::Mouse,
+    report: vpdf_model::input::Mouse,
     now: Instant,
   ) -> Result<bool> {
     // Reports in flight after `:mouse off`.
@@ -47,7 +47,7 @@ impl Session {
     row: u16,
     forward: bool,
   ) -> Result<bool> {
-    let modifiers = crossterm::event::KeyModifiers::NONE;
+    let modifiers = vpdf_model::input::KeyModifiers::NONE;
     let mouse =
       MouseEvent { kind: MouseEventKind::Moved, column, row, modifiers };
     // One button at a time.

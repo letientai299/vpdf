@@ -12,8 +12,7 @@
 //! [kbd]: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 //! [tmux]: https://github.com/tmux/tmux/blob/3.8/input-keys.c#L425-L473
 use crossterm::event::{
-  KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton,
-  MouseEvent, MouseEventKind,
+  KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers,
 };
 use std::collections::VecDeque;
 
@@ -91,6 +90,10 @@ pub enum MouseKind {
 pub struct Button(u8);
 
 impl Button {
+  pub fn number(self) -> u8 {
+    self.0
+  }
+
   pub const LEFT: Self = Self(1);
   pub const BACK: Self = Self(8);
   pub const FORWARD: Self = Self(9);
@@ -101,86 +104,6 @@ impl Button {
 pub enum Spot {
   Cell { column: u16, row: u16 },
   Pixel { x: u16, y: u16 },
-}
-
-impl From<MouseEvent> for Mouse {
-  fn from(event: MouseEvent) -> Self {
-    let button = |button| match button {
-      MouseButton::Left => Button(1),
-      MouseButton::Middle => Button(2),
-      MouseButton::Right => Button(3),
-    };
-    let kind = match event.kind {
-      MouseEventKind::Down(pressed) => MouseKind::Press(button(pressed)),
-      MouseEventKind::Up(released) => MouseKind::Release(button(released)),
-      MouseEventKind::Drag(held) => MouseKind::Drag(button(held)),
-      MouseEventKind::Moved => MouseKind::Moved,
-      MouseEventKind::ScrollUp => MouseKind::Press(Button(4)),
-      MouseEventKind::ScrollDown => MouseKind::Press(Button(5)),
-      MouseEventKind::ScrollLeft => MouseKind::Press(Button(6)),
-      MouseEventKind::ScrollRight => MouseKind::Press(Button(7)),
-    };
-    Self {
-      kind,
-      at: Spot::Cell { column: event.column, row: event.row },
-      modifiers: event.modifiers,
-    }
-  }
-}
-
-impl Mouse {
-  /// The crossterm event for buttons 1-7, on cells of `cell` pixels.
-  pub fn cells(self, cell: (u16, u16)) -> Option<MouseEvent> {
-    let (column, row) = self.cell(cell);
-    let kind = self.action()?;
-    Some(MouseEvent { kind, column, row, modifiers: self.modifiers })
-  }
-
-  /// The crossterm kind for buttons 1-7.
-  pub fn action(self) -> Option<MouseEventKind> {
-    let button = |button: Button| match button.0 {
-      1 => Some(MouseButton::Left),
-      2 => Some(MouseButton::Middle),
-      3 => Some(MouseButton::Right),
-      _ => None,
-    };
-    let kind = match self.kind {
-      MouseKind::Press(Button(4)) => MouseEventKind::ScrollUp,
-      MouseKind::Press(Button(5)) => MouseEventKind::ScrollDown,
-      MouseKind::Press(Button(6)) => MouseEventKind::ScrollLeft,
-      MouseKind::Press(Button(7)) => MouseEventKind::ScrollRight,
-      MouseKind::Press(pressed) => MouseEventKind::Down(button(pressed)?),
-      MouseKind::Release(released) => MouseEventKind::Up(button(released)?),
-      MouseKind::Drag(held) => MouseEventKind::Drag(button(held)?),
-      MouseKind::Moved => MouseEventKind::Moved,
-    };
-    Some(kind)
-  }
-
-  /// Cell under the pointer.
-  pub fn cell(self, cell: (u16, u16)) -> (u16, u16) {
-    match self.at {
-      Spot::Cell { column, row } => (column, row),
-      Spot::Pixel { x, y } => (x / cell.0.max(1), y / cell.1.max(1)),
-    }
-  }
-
-  /// A back or forward press: whether forward.
-  pub fn history(self) -> Option<bool> {
-    match self.kind {
-      MouseKind::Press(Button::BACK) => Some(false),
-      MouseKind::Press(Button::FORWARD) => Some(true),
-      _ => None,
-    }
-  }
-
-  /// Screen pixels, under mode 1016.
-  pub fn pixel(self) -> Option<(u16, u16)> {
-    match self.at {
-      Spot::Pixel { x, y } => Some((x, y)),
-      Spot::Cell { .. } => None,
-    }
-  }
 }
 
 /// Caps an unterminated sequence or a paste.

@@ -6,18 +6,17 @@ use crate::pace::Pacer;
 use crate::state::{Mark, State};
 use crate::trace::Drawable;
 use crate::watch::Watcher;
-use crossterm::event::{
-  KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
-};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use vpdf_model::geometry::At;
+use vpdf_model::input::MouseKind;
+use vpdf_model::input::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use vpdf_model::text::{PageId, Position};
 use vpdf_pdf::document::PasswordRequired;
-use vpdf_terminal::decode::{Event, MouseKind, Size};
+use vpdf_terminal::decode::{Event, Size};
 use vpdf_terminal::dnd::{Dropped, Step};
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::terminal::{self, Cause, Shape, Sight, View, sight};
@@ -118,7 +117,7 @@ enum Act {
   Paste(String),
   /// With the mode 2048 report, when the terminal sent one.
   Resize(Option<Size>),
-  Mouse(vpdf_terminal::decode::Mouse),
+  Mouse(vpdf_model::input::Mouse),
   /// The pointer left the window; not typing.
   Leave,
   /// The terminal no longer holds this image; not typing.

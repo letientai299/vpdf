@@ -1,7 +1,9 @@
 use super::{InputOwner, Targets, gesture::Gesture};
 use crate::pointer::{Region, Wheel};
 use crate::scrollbar::Bar;
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use vpdf_model::input::{
+  KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[must_use]

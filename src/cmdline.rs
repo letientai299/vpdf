@@ -1,8 +1,8 @@
 use crate::Result;
-use crossterm::event::KeyEvent;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
+use vpdf_model::input::KeyEvent;
 use vpdf_ui::commands::{self, Complete, View};
 use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
 

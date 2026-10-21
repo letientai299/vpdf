@@ -2,10 +2,10 @@
 
 use crate::Result;
 use crate::app::App;
-use crossterm::event::MouseEvent;
 use std::sync::Arc;
 use std::time::Instant;
 use vpdf_model::document::{Annotation, Link, Target};
+use vpdf_model::input::MouseEvent;
 use vpdf_model::text::{Bounds, PageId, Position, Text};
 use vpdf_pdf::document::Document;
 use vpdf_ui::annotations::{icon, marked};

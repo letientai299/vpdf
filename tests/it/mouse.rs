@@ -2,7 +2,6 @@ use super::common::SeedReader;
 use crate::common;
 use crate::focus::{action, screen};
 
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::fmt::Write as _;
 use std::path::Path;
 use vpdf::Result;
@@ -11,9 +10,12 @@ use vpdf::app::Request;
 use vpdf::session::Session;
 use vpdf::trace::Drawable;
 use vpdf_model::document::FigureSource as Source;
+use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
+use vpdf_model::input::{
+  KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::SelectionKind;
-use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
 use vpdf_ui::keys::Action;
 use vpdf_ui::pointer::{Hit, List, Region};
 use vpdf_ui::prompt::{Prompt, PromptKind};
@@ -881,7 +883,7 @@ fn alt_clicks_skip_unseen_cursors() -> Result<()> {
 /// Drags enter Visual; Esc returns.
 #[test]
 fn drags_return_to_their_entry_mode() -> Result<()> {
-  use crossterm::event::{KeyCode, KeyEvent};
+  use vpdf_model::input::{KeyCode, KeyEvent};
   use vpdf_reader::reader::Mode;
   let (_directory, mut session) = words(false)?;
   let alpha = glyph_cell(&mut session, 0, 0)?;
@@ -947,7 +949,9 @@ fn report(bytes: &str) -> Mouse {
   parser.set_pixels(true);
   parser.feed(bytes.as_bytes(), &mut events);
   match events.pop_front() {
-    Some(vpdf_terminal::decode::Event::Mouse(mouse)) => mouse,
+    Some(vpdf_terminal::decode::Event::Mouse(mouse)) => {
+      crate::input::mouse(mouse)
+    }
     other => panic!("a mouse report: {other:?}"),
   }
 }
@@ -1001,8 +1005,8 @@ enum End {
 /// U10: held edge drags scroll until ended.
 #[test]
 fn held_edge_drags_keep_scrolling() -> Result<()> {
-  use crossterm::event::KeyCode::{Char, Esc};
   use std::time::Duration;
+  use vpdf_model::input::KeyCode::{Char, Esc};
   let (_directory, mut session) = session(false)?;
   let text = cell(&mut session, Hit::Text)?;
   let (x, y) = (text.0 * 8 + 4, text.1 * 16 + 8);
@@ -1179,9 +1183,9 @@ pub(super) fn labels(session: &mut Session) -> Vec<&str> {
 
 pub(super) fn press(
   session: &mut Session,
-  code: crossterm::event::KeyCode,
+  code: vpdf_model::input::KeyCode,
 ) -> Result<()> {
-  let key = crossterm::event::KeyEvent::new(code, KeyModifiers::NONE);
+  let key = vpdf_model::input::KeyEvent::new(code, KeyModifiers::NONE);
   session.app().key(key, &mut vpdf_ui::prompt::History::default())
 }
 
@@ -1234,9 +1238,9 @@ fn right_clicks_open_menus_by_context() -> Result<()> {
     click(&mut session, (screen.columns - 1, screen.rows - 2))?;
     assert!(session.app().reader.selection.is_some(), "text={text_mode}");
     right(&mut session, plain)?;
-    press(&mut session, crossterm::event::KeyCode::Char('j'))?;
-    press(&mut session, crossterm::event::KeyCode::Char('j'))?;
-    press(&mut session, crossterm::event::KeyCode::Enter)?;
+    press(&mut session, vpdf_model::input::KeyCode::Char('j'))?;
+    press(&mut session, vpdf_model::input::KeyCode::Char('j'))?;
+    press(&mut session, vpdf_model::input::KeyCode::Enter)?;
     let app = session.app();
     assert!(app.overlays.menu().is_none() && app.reader.selection.is_none());
     assert_eq!(app.search.query().text, "Plain words here", "text={text_mode}");
@@ -1246,7 +1250,7 @@ fn right_clicks_open_menus_by_context() -> Result<()> {
 
 #[test]
 fn menu_items_run_by_key_and_click() -> Result<()> {
-  use crossterm::event::KeyCode;
+  use vpdf_model::input::KeyCode;
   let (_directory, mut session) = session(false)?;
   let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
   let web = cell(&mut session, Hit::Link(PageId(0), 1))?;
@@ -1360,7 +1364,7 @@ fn menus_fit_small_panes() -> Result<()> {
 /// Search joins hyphen breaks like its index.
 #[test]
 fn selection_search_finds_hyphenated_words() -> Result<()> {
-  use crossterm::event::KeyCode;
+  use vpdf_model::input::KeyCode;
   let lines = ["an exam-", "ple here"];
   let (_directory, mut session) =
     open(|path| common::text_pdf(path, &lines), false)?;
@@ -1386,7 +1390,7 @@ fn selection_search_finds_hyphenated_words() -> Result<()> {
 /// Tab closes the menu and moves focus.
 #[test]
 fn tab_passes_through_menus() -> Result<()> {
-  use crossterm::event::KeyCode;
+  use vpdf_model::input::KeyCode;
   let (_directory, mut session) = session(false)?;
   action(session.app(), Action::Panel(vpdf_ui::keys::PanelKind::Outline))?;
   press(&mut session, KeyCode::Tab)?;
@@ -1445,7 +1449,7 @@ fn row_double_clicks_focus() -> Result<()> {
 /// Alt-drags sweep; release opens the bar.
 #[test]
 fn alt_drags_capture_regions() -> Result<()> {
-  use crossterm::event::KeyCode;
+  use vpdf_model::input::KeyCode;
   let (_directory, mut session) = words(false)?;
   let from = glyph_cell(&mut session, 0, 2)?;
   let to = glyph_cell(&mut session, 1, 9)?;
@@ -1697,7 +1701,7 @@ fn resting_on_links_previews_them() -> Result<()> {
 /// Popups hide links; closing keeps them calm.
 #[test]
 fn popups_hide_links_beneath() -> Result<()> {
-  use crossterm::event::KeyCode;
+  use vpdf_model::input::KeyCode;
   use vpdf_terminal::terminal::Shape;
   // (text mode, popup) -> its hit's shape
   let cases = [
@@ -1787,7 +1791,7 @@ fn items(
 /// Menu rows follow pointer and keys.
 #[test]
 fn menu_rows_follow_the_pointer() -> Result<()> {
-  use crossterm::event::KeyCode;
+  use vpdf_model::input::KeyCode;
   for text_mode in [false, true] {
     let (_directory, mut session) = session(text_mode)?;
     let plain = cell(&mut session, Hit::Text)?;
@@ -1844,7 +1848,7 @@ fn bar_item(session: &mut Session, index: usize) -> Result<(u16, u16)> {
 /// Bar items follow the pointer; clicks run.
 #[test]
 fn bar_items_follow_the_pointer() -> Result<()> {
-  use crossterm::event::KeyCode;
+  use vpdf_model::input::KeyCode;
   use vpdf_ui::region::Operation;
   let (_directory, mut session) = words(false)?;
   let from = glyph_cell(&mut session, 0, 2)?;
@@ -2133,7 +2137,7 @@ fn hint_labels_keep_off_neighbours() -> Result<()> {
 /// Hint labels follow the pointer; clicks act.
 #[test]
 fn hint_labels_follow_the_pointer() -> Result<()> {
-  use crossterm::event::KeyCode;
+  use vpdf_model::input::KeyCode;
   for text_mode in [false, true] {
     let (_directory, mut session) = session(text_mode)?;
     // Label cells; `copy` starts `F`.
@@ -2196,7 +2200,7 @@ fn typing_drops_picked_labels() -> Result<()> {
     hints.items().iter().position(|hint| hint.label == "sa").expect("sa");
   hints.select(hidden);
   session.app().overlays.open_hints(hints);
-  press(&mut session, crossterm::event::KeyCode::Char('a'))?;
+  press(&mut session, vpdf_model::input::KeyCode::Char('a'))?;
   let hints = session.app().overlays.hints().expect("hints stay");
   assert_eq!((hints.typed(), hints.selected()), ("a", None));
   Ok(())
@@ -2216,7 +2220,7 @@ fn hover_previews_answer_input() -> Result<()> {
     action(app, Action::History(false))?;
     session.draw_frame(&mut Vec::new())?;
     hover_open(&mut session, internal)?;
-    press(&mut session, crossterm::event::KeyCode::Esc)?;
+    press(&mut session, vpdf_model::input::KeyCode::Esc)?;
     assert!(session.app().overlays.preview().is_none(), "text={text_mode}");
     assert!(session.app().hover_due().is_none(), "keys end the rest");
     let area = hover_open(&mut session, internal)?;
@@ -2291,7 +2295,7 @@ fn middle_clicks_split_previews() -> Result<()> {
 /// Clicks inside cancel pending keys (r15 #8).
 #[test]
 fn preview_clicks_cancel_keys() -> Result<()> {
-  use crossterm::event::KeyCode;
+  use vpdf_model::input::KeyCode;
   let (_directory, mut session) = session(false)?;
   let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
   press(&mut session, KeyCode::Char('g'))?;
@@ -2556,7 +2560,7 @@ fn focused_overlays_hold_rests() -> Result<()> {
 /// Owned overlays and presses hold previews back.
 #[test]
 fn rests_wait_for_free_input() -> Result<()> {
-  use crossterm::event::KeyCode;
+  use vpdf_model::input::KeyCode;
   let (_directory, mut session) = session(false)?;
   let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
   let plain = cell(&mut session, Hit::Text)?;
@@ -2591,8 +2595,8 @@ fn rests_wait_for_free_input() -> Result<()> {
 /// Closing a popup over a resting pointer starts no new rest.
 #[test]
 fn closed_popups_start_no_rest() -> Result<()> {
-  use crossterm::event::KeyCode;
   use vpdf::trace::Drawable;
+  use vpdf_model::input::KeyCode;
   let (_directory, mut session) = session(false)?;
   let link = cell(&mut session, Hit::Link(PageId(0), 0))?;
   mouse(&mut session, MouseEventKind::Moved, link)?;

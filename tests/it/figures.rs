@@ -20,7 +20,7 @@ fn raw_figure_bindings() {
     let mut actions = Vec::new();
     for event in events {
       let Event::Key(key) = event else { panic!("key bytes") };
-      if let Some(input) = keys.feed(key, Grammar::Normal) {
+      if let Some(input) = keys.feed(crate::input::key(key), Grammar::Normal) {
         actions.push(input.action);
       }
     }

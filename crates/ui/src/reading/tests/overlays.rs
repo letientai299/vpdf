@@ -283,7 +283,7 @@ fn icon_drawing_avoids_text() -> Result<()> {
 
 #[test]
 fn anchor_hits_skip_surroundings() {
-  use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+  use vpdf_model::input::{KeyModifiers, MouseEvent, MouseEventKind};
   let mut frame = Fixture::new().frame.pane;
   frame.at = At { column: 5, row: 7 };
   frame.left = 3;

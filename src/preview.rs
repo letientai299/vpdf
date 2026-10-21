@@ -114,7 +114,7 @@ impl App {
   /// Whether a press lands on the popup's icon.
   pub(crate) fn on_anchor(
     &mut self,
-    mouse: crossterm::event::MouseEvent,
+    mouse: vpdf_model::input::MouseEvent,
     pixel: Option<vpdf_ui::pointer::Pixel>,
   ) -> bool {
     let anchor = self

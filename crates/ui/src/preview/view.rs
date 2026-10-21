@@ -8,10 +8,12 @@ use crate::source::{Pages, Raster};
 use crate::split::Rect;
 use crate::text::{Bounds, PageId, Position};
 use crate::theme;
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::{Annotation, Target};
+use vpdf_model::input::{
+  KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use vpdf_model::scene::{Layer, Op, Surface, Text as SceneText};
 use vpdf_model::style::Role;
 use vpdf_model::tile::TileKey;

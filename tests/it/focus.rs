@@ -7,8 +7,8 @@ use vpdf::pdf_text::PdfText;
 use vpdf::session::Session;
 use vpdf::solo::Solo;
 use vpdf_model::document::Target;
+use vpdf_model::input::Event;
 use vpdf_model::text::{PageId, Position};
-use vpdf_terminal::decode::Event;
 use vpdf_ui::input::InputOwner;
 use vpdf_ui::keys::{Action, Input, Keys, PanelKind};
 use vpdf_ui::layout::Screen;
@@ -40,7 +40,7 @@ pub(super) fn send(session: &mut Session, bytes: &[u8]) -> Result<()> {
       Event::Mouse(mouse) => {
         session.mouse_report(mouse)?;
       }
-      _ => panic!("input bytes"),
+      Event::Paste(_) => panic!("input bytes"),
     }
     session.settle()?;
   }

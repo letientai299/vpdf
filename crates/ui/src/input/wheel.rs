@@ -1,6 +1,6 @@
 use crate::paint::Frame;
 use crate::pointer::{Region, Route, WHEEL_ROWS, Wheel as Direction};
-use crossterm::event::KeyModifiers;
+use vpdf_model::input::KeyModifiers;
 
 const ZOOM: f32 = 0.5;
 

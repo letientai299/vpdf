@@ -2,8 +2,8 @@
 
 use crate::Result;
 use crate::app::{App, Request};
-use crossterm::event::MouseButton;
 use std::io::Write;
+use vpdf_model::input::MouseButton;
 use vpdf_model::text::PageId;
 use vpdf_ui::chrome::{Bar, Document, Item, Names, Press, View};
 use vpdf_ui::keys::{Action, Input, PanelKind};

@@ -4,7 +4,6 @@ use super::maintenance::Chores;
 use super::unlock::Operation;
 use super::{Home, Screen, Session};
 use crate::Result;
-use crossterm::event::{KeyEvent, MouseEvent};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,6 +11,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use vpdf_model::cache::Cache;
+use vpdf_model::input::{KeyEvent, MouseEvent};
 use vpdf_model::scene::{Op, Recorder, Scene};
 use vpdf_model::tile::{TileId, TileOwner};
 use vpdf_pdf::jobs::Wake;
@@ -433,24 +433,20 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) {
       }
     }
     Input::Key(key) if session.tabs.is_empty() => {
-      home_event(session, vpdf_terminal::decode::Event::Key(key), *screen)
+      home_event(session, vpdf_model::input::Event::Key(key), *screen)
     }
     Input::Paste(text) if session.tabs.is_empty() => {
-      home_event(session, vpdf_terminal::decode::Event::Paste(text), *screen)
+      home_event(session, vpdf_model::input::Event::Paste(text), *screen)
     }
     Input::Key(key) => session.interact(Interaction::Key(key)).map(drop),
     Input::Paste(text) => session.interact(Interaction::Paste(text)).map(drop),
     Input::Mouse { event, pixels: (x, y), screen: drawn }
       if drawn == *screen =>
     {
-      let mut report = vpdf_terminal::decode::Mouse::from(event);
-      report.at = vpdf_terminal::decode::Spot::Pixel { x, y };
+      let mut report = vpdf_model::input::Mouse::from(event);
+      report.at = vpdf_model::input::Spot::Pixel { x, y };
       if session.tabs.is_empty() {
-        home_event(
-          session,
-          vpdf_terminal::decode::Event::Mouse(report),
-          *screen,
-        )
+        home_event(session, vpdf_model::input::Event::Mouse(report), *screen)
       } else {
         session.interact(Interaction::Mouse(report)).map(drop)
       }
@@ -458,12 +454,12 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) {
     Input::History { forward, pixels: (x, y), screen: drawn }
       if drawn == *screen && !session.tabs.is_empty() =>
     {
-      use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
+      use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
       let button = if forward { Button::FORWARD } else { Button::BACK };
       let report = Mouse {
         kind: MouseKind::Press(button),
         at: Spot::Pixel { x, y },
-        modifiers: crossterm::event::KeyModifiers::NONE,
+        modifiers: vpdf_model::input::KeyModifiers::NONE,
       };
       session.interact(Interaction::Mouse(report)).map(drop)
     }
@@ -519,7 +515,7 @@ fn report(session: &mut Session, result: Result<()>) {
 
 fn home_event(
   session: &mut Session,
-  event: vpdf_terminal::decode::Event,
+  event: vpdf_model::input::Event,
   screen: Screen,
 ) -> Result<()> {
   let Some(home) = &mut session.home else { return Ok(()) };
@@ -704,7 +700,7 @@ fn frame(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crossterm::event::{KeyCode, KeyModifiers};
+  use vpdf_model::input::{KeyCode, KeyModifiers};
 
   fn wait(
     bridge: &Bridge,
@@ -817,9 +813,9 @@ mod tests {
   #[ignore = "requires verified public PDF corpus"]
   fn normalized_adapter_inputs_match() -> Result<()> {
     use super::super::{Act, run};
-    use crossterm::event::MouseEventKind;
+    use vpdf_model::input::MouseEventKind;
+    use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
     use vpdf_model::text::PageId;
-    use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
     let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
     let mut screen = sized();
     let mut terminal = Session::new(None);
@@ -857,9 +853,9 @@ mod tests {
     }
     for kind in [
       MouseEventKind::Moved,
-      MouseEventKind::Down(crossterm::event::MouseButton::Left),
-      MouseEventKind::Drag(crossterm::event::MouseButton::Left),
-      MouseEventKind::Up(crossterm::event::MouseButton::Left),
+      MouseEventKind::Down(vpdf_model::input::MouseButton::Left),
+      MouseEventKind::Drag(vpdf_model::input::MouseButton::Left),
+      MouseEventKind::Up(vpdf_model::input::MouseButton::Left),
       MouseEventKind::ScrollDown,
       MouseEventKind::ScrollUp,
     ] {
@@ -904,7 +900,7 @@ mod tests {
 
   #[test]
   fn guarded_inputs_keep_requests() -> Result<()> {
-    use crossterm::event::MouseEventKind;
+    use vpdf_model::input::MouseEventKind;
     let root = tempfile::tempdir()?;
     let path = root.path().join("guard.pdf");
     crate::fixtures::pdf(&path, &["body"], "")?;
@@ -964,7 +960,7 @@ mod tests {
   #[test]
   fn mouse_settles_once() -> Result<()> {
     use super::super::{Act, Request, run};
-    use vpdf_terminal::decode::{Mouse, MouseKind, Spot};
+    use vpdf_model::input::{Mouse, MouseKind, Spot};
     let root = tempfile::tempdir()?;
     for native in [false, true] {
       let mut session = Session::new(None);
@@ -984,7 +980,7 @@ mod tests {
           &mut session,
           Input::Mouse {
             event: MouseEvent {
-              kind: crossterm::event::MouseEventKind::Moved,
+              kind: vpdf_model::input::MouseEventKind::Moved,
               column: 0,
               row: 0,
               modifiers: KeyModifiers::NONE,
@@ -1015,7 +1011,7 @@ mod tests {
   #[test]
   fn leave_preserves_frontend_policy() -> Result<()> {
     use super::super::{Act, Request, run};
-    use crossterm::event::{MouseButton, MouseEventKind};
+    use vpdf_model::input::{MouseButton, MouseEventKind};
     let root = tempfile::tempdir()?;
     let path = root.path().join("leave.pdf");
     crate::fixtures::pdf(&path, &["body"], "")?;
@@ -1893,8 +1889,8 @@ mod tests {
   #[test]
   #[ignore = "requires verified public PDF corpus"]
   fn pointer_follows_real_links_and_rejects_stale_geometry() -> Result<()> {
-    use crossterm::event::{MouseButton, MouseEventKind};
     use vpdf_model::document::Target;
+    use vpdf_model::input::{MouseButton, MouseEventKind};
     use vpdf_model::text::PageId;
     let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
     let mut screen = Screen {
@@ -1981,7 +1977,7 @@ mod tests {
 
   #[test]
   fn start_screen_click_opens_the_selected_file() -> Result<()> {
-    use crossterm::event::{MouseButton, MouseEventKind};
+    use vpdf_model::input::{MouseButton, MouseEventKind};
     let root = tempfile::tempdir()?;
     let path = root.path().join("recent.pdf");
     crate::fixtures::pdf(&path, &["recent"], "")?;
@@ -2024,7 +2020,7 @@ mod tests {
 
   #[test]
   fn wheel_routes_to_panels_and_pointer_zoom() -> Result<()> {
-    use crossterm::event::MouseEventKind;
+    use vpdf_model::input::MouseEventKind;
     use vpdf_ui::keys::PanelKind;
     let root = tempfile::tempdir()?;
     let path = root.path().join("wheel.pdf");
@@ -2080,7 +2076,7 @@ mod tests {
 
   #[test]
   fn focus_loss_releases_active_pointer_capture() -> Result<()> {
-    use crossterm::event::{MouseButton, MouseEventKind};
+    use vpdf_model::input::{MouseButton, MouseEventKind};
     let root = tempfile::tempdir()?;
     let path = root.path().join("pointer.pdf");
     crate::fixtures::pdf(&path, &["first", "second"], "")?;

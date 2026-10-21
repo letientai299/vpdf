@@ -1,7 +1,7 @@
 //! Decoded terminal bytes reach key actions and prompt text.
 use super::common::events;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use vpdf_terminal::decode::Event;
+use vpdf_model::input::Event;
+use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_ui::keys::{Action, Grammar, Keys, normalize};
 use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
 
@@ -47,7 +47,7 @@ fn associated_text_preserves_typing() {
     match event {
       Event::Key(key) => prompt.feed(key, &history),
       Event::Paste(text) => prompt.paste(&text),
-      _ => panic!("not text"),
+      Event::Mouse(_) => panic!("not text"),
     };
   }
   assert_eq!(prompt.text(), "é你好");
@@ -93,4 +93,24 @@ fn ctrl_shift_letters_keep_legacy_bindings() {
   let split =
     keys.feed(ctrl_shift_v, Grammar::Normal).map(|input| input.action);
   assert!(matches!(split, Some(Action::Window(_))), "{split:?}");
+}
+
+#[test]
+fn terminal_editing_preserves_keys() {
+  let enter = key(b"\r");
+  let ctrl_m = key(b"\x1b[109;5u");
+  assert_eq!((enter.code, enter.modifiers), (KeyCode::Enter, NONE));
+  assert_eq!((ctrl_m.code, ctrl_m.modifiers), (KeyCode::Char('m'), CTRL));
+  for submit in [enter, ctrl_m] {
+    let mut prompt = Prompt::new(PromptKind::Command);
+    prompt.paste("info");
+    assert_eq!(prompt.feed(submit, &History::default()), PromptEvent::Submit);
+  }
+  let mut prompt = Prompt::new(PromptKind::Command);
+  prompt.paste("alpha beta");
+  let alt_b = key(b"\x1bb");
+  assert_eq!((alt_b.code, alt_b.modifiers), (KeyCode::Char('b'), ALT));
+  prompt.feed(alt_b, &History::default());
+  prompt.paste("日本語");
+  assert_eq!(prompt.text(), "alpha 日本語beta");
 }

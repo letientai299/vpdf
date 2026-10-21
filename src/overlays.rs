@@ -2,10 +2,10 @@
 
 use crate::Result;
 use crate::app::{App, Request};
-use crossterm::event::{KeyEvent, MouseEvent};
 use std::io::Write;
 use std::time::{Duration, Instant};
 use vpdf_model::document::Target;
+use vpdf_model::input::{KeyEvent, MouseEvent};
 use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::hints::Transition;
 use vpdf_ui::input::{Dismiss, InputOwner, Targets};

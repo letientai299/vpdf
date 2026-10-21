@@ -1,9 +1,9 @@
 use super::InputOwner;
 use crate::pointer::Hit;
 use crate::text::{PageId, Position};
-use crossterm::event::MouseEventKind;
 use std::time::{Duration, Instant};
 use vpdf_model::document::Target;
+use vpdf_model::input::MouseEventKind;
 
 pub const REST: Duration = Duration::from_millis(400);
 
@@ -134,7 +134,7 @@ impl Press {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crossterm::event::MouseButton;
+  use vpdf_model::input::MouseButton;
 
   #[test]
   fn rest_survives_only_the_same_link() {

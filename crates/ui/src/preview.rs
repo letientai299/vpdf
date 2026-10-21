@@ -11,7 +11,7 @@ use vpdf_model::tile::TileKey;
 pub fn on_anchor(
   anchor: Option<(PageId, usize, crate::text::Bounds)>,
   frame: crate::paint::Frame,
-  mouse: crossterm::event::MouseEvent,
+  mouse: vpdf_model::input::MouseEvent,
   hit: impl FnOnce(u16, u16) -> crate::pointer::Hit,
 ) -> bool {
   let Some((page, index, _)) = anchor else { return false };

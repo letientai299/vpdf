@@ -4,11 +4,11 @@ use crate::Result;
 use crate::app::{App, Request};
 use crate::recent::Loader;
 use crate::state::Entry;
-use crossterm::event::{MouseEvent, MouseEventKind};
 use std::io::Write;
 use std::path::PathBuf;
 use vpdf_model::document::Target;
 use vpdf_model::geometry::At;
+use vpdf_model::input::{MouseEvent, MouseEventKind};
 use vpdf_terminal::{
   graphics::Graphics,
   terminal::{self},

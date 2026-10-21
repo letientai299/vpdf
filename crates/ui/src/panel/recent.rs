@@ -388,7 +388,7 @@ fn ago(milliseconds: u64) -> String {
 mod tests {
   use super::*;
   use crate::keys::PanelKind;
-  use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+  use vpdf_model::input::{KeyModifiers, MouseEvent, MouseEventKind};
   #[test]
   fn ago_names_the_largest_unit() {
     let minute = 60_000;

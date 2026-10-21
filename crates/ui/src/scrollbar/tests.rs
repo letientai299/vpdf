@@ -50,11 +50,11 @@ fn route(kind: MouseEventKind, row: u16) -> Route {
     focus: true,
     clicks: 1,
     pixel: None,
-    mouse: crossterm::event::MouseEvent {
+    mouse: vpdf_model::input::MouseEvent {
       kind,
       row,
       column: 119,
-      modifiers: crossterm::event::KeyModifiers::NONE,
+      modifiers: vpdf_model::input::KeyModifiers::NONE,
     },
   }
 }
@@ -81,7 +81,7 @@ fn reflow_keeps_user_motion_deadlines() {
 
 #[test]
 fn presses_record_only_at_their_boundary() {
-  use crossterm::event::{
+  use vpdf_model::input::{
     MouseButton::Left,
     MouseEventKind::{Down, Drag},
   };
@@ -129,7 +129,7 @@ fn presses_record_only_at_their_boundary() {
 
 #[test]
 fn label_requests_follow_successful_bar_output() -> Result<()> {
-  use crossterm::event::{MouseButton::Left, MouseEventKind::Down};
+  use vpdf_model::input::{MouseButton::Left, MouseEventKind::Down};
   struct Closed;
   impl Write for Closed {
     fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
@@ -188,7 +188,7 @@ fn recorded_scrub_keeps_track_and_label() -> Result<()> {
   let mut bar = Bar::default();
   let Input::Press(press) = bar.input(
     &view,
-    &route(MouseEventKind::Down(crossterm::event::MouseButton::Left), 5),
+    &route(MouseEventKind::Down(vpdf_model::input::MouseButton::Left), 5),
   ) else {
     panic!("Expected scrollbar press")
   };

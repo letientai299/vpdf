@@ -4,7 +4,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
-use vpdf_terminal::decode::{Event, Parser};
+use vpdf_model::input::Event;
+use vpdf_terminal::decode::Parser;
 use vpdf_ui::prompt::History;
 
 /// The focused pane of `session` drawn alone.
@@ -18,7 +19,7 @@ pub fn focused_frame(session: &mut vpdf::session::Session) -> Result<String> {
 pub fn events(bytes: &[u8]) -> VecDeque<Event> {
   let mut events = VecDeque::new();
   Parser::default().feed(bytes, &mut events);
-  events
+  events.into_iter().filter_map(crate::input::event).collect()
 }
 
 /// Feeds key `bytes` to `app`.

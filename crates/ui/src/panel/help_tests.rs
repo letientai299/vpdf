@@ -1,6 +1,6 @@
 use super::*;
 
-use crossterm::event::KeyModifiers;
+use vpdf_model::input::KeyModifiers;
 
 #[test]
 fn scrolling_can_enter_wrapped_rows() -> Result<()> {
