@@ -7,4 +7,7 @@ mark keys
 repeat 3s @28 mix 7 C-d | C-d | C-d | C-d | space | space | space | space | C-u | C-u | S-space | S-space
 mark settle
 wait idle
+expect moved keys
+expect settled true
+expect sharp true
 quit

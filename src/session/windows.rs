@@ -63,6 +63,7 @@ impl Session {
       let hidden = self.tabs.iter_mut().flat_map(|tab| &mut tab.panes);
       if let Some(app) = hidden.into_iter().find(|app| app.id == id) {
         app.trim();
+        self.graphics.forget(id);
       }
     }
     let names =

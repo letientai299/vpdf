@@ -39,6 +39,8 @@ pub enum Update {
 #[derive(Default)]
 pub struct Search {
   generation: u64,
+  job_generation: u64,
+  outcome: Option<&'static str>,
   phase: Phase,
   hits: Vec<Hit>,
   query: Query,
@@ -85,6 +87,14 @@ impl Search {
     description
   }
 
+  pub fn outcome(&self) -> &'static str {
+    self.outcome.unwrap_or("idle")
+  }
+
+  pub fn job_generation(&self) -> u64 {
+    self.job_generation
+  }
+
   pub fn generation(&self) -> u64 {
     self.generation
   }
@@ -112,6 +122,8 @@ impl Search {
   /// Starts showing scan `generation` of `query` from `origin`.
   pub fn begin(&mut self, query: Query, generation: u64, origin: Position) {
     self.generation = generation;
+    self.job_generation = generation;
+    self.outcome = Some("running");
     self.phase = Phase::Running { jump: true };
     self.hits.clear();
     self.query = query;
@@ -123,6 +135,7 @@ impl Search {
   /// caller stops any running scan.
   #[doc(hidden)]
   pub fn show(&mut self, query: Query, hits: Vec<Hit>) {
+    self.outcome = Some("success");
     self.generation += 1;
     self.phase = Phase::Complete;
     self.hits = hits;
@@ -135,6 +148,7 @@ impl Search {
     self.yank = None;
     self.generation += 1;
     self.phase = Phase::Idle;
+    self.outcome = Some("cancelled");
     self.hidden = true;
   }
 
@@ -228,10 +242,16 @@ impl Search {
       self.hits.splice(at..at, hits);
     }
     match completion {
-      Ok(done) => Some(Update::Progress { done }),
+      Ok(done) => {
+        if done {
+          self.outcome = Some("success");
+        }
+        Some(Update::Progress { done })
+      }
       Err(error) => {
         self.yank = None;
         self.phase = Phase::Complete;
+        self.outcome = Some("error");
         Some(Update::Failed(error))
       }
     }

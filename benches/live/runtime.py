@@ -29,10 +29,16 @@ def duration(text):
     return millis / 1000
 
 
+def check_error(row):
+    if row.get("error") is not None:
+        raise RuntimeError(f"Scenario job failed: {row['error']}")
+
+
 def ready(row, after, idle):
+    check_error(row)
     return (
         row.get("complete", False)
-        and row.get("built_ms", row["t_ms"]) >= after
+        and row.get("built_ms", -1) >= after
         and (not idle or row.get("busy", True) is False)
     )
 
@@ -64,6 +70,7 @@ class Runtime:
         self.trace_pending = b""
         self.trace_rows = []
         self.pacing = []
+        self.checkpoints = {}
         self.probe_process = None
         self.monitor_usage = {}
         self.driver_started = None
@@ -225,6 +232,17 @@ class Runtime:
             )
         )
 
+    def phase_frames(self, after):
+        frames = []
+        for row in self.rows():
+            if row.get("kind") != "frame":
+                continue
+            if row["t_ms"] >= after:
+                check_error(row)
+            if row.get("built_ms", -1) >= after:
+                frames.append(row)
+        return frames
+
     def step(self, line):
         words = line.split(maxsplit=1)
         verb, rest = words[0], words[1] if len(words) == 2 else ""
@@ -237,12 +255,44 @@ class Runtime:
                 )
                 self.wait(
                     lambda: any(
-                        ready(r, at, rest == "idle") for r in self.rows()
+                        ready(r, at, rest == "idle")
+                        for r in self.phase_frames(at)
                     )
                 )
             else:
                 until = time.monotonic() + duration(rest)
                 self.wait(lambda: time.monotonic() >= until)
+        elif verb == "expect":
+            from expectation import matches
+
+            token = f"__bench_wait_{time.monotonic_ns()}"
+            self.marker(token)
+            at = next(r["t_ms"] for r in self.rows() if r.get("name") == token)
+            field, checkpoint = rest.split(maxsplit=1)
+            baseline = None
+            if field in ("moved", "selected_changed"):
+                if checkpoint not in self.checkpoints:
+                    raise ValueError(
+                        f"Scenario checkpoint missing: {checkpoint}"
+                    )
+                baseline = self.checkpoints[checkpoint]
+            last_probe = time.monotonic()
+
+            def asserted():
+                nonlocal last_probe
+                if any(
+                    r.get("kind") == "frame"
+                    and r.get("built_ms", -1) >= at
+                    and matches(rest, r, baseline)
+                    for r in self.phase_frames(at)
+                ):
+                    return True
+                if time.monotonic() - last_probe >= 0.1:
+                    self.send("mark " + token)
+                    last_probe = time.monotonic()
+                return False
+
+            self.wait(asserted)
         elif verb == "repeat":
             span, rate, repeated = rest.split(maxsplit=2)
             hz = int(rate.removeprefix("@"))
@@ -291,6 +341,20 @@ class Runtime:
             )
         elif verb == "mark":
             self.marker(rest)
+            at = next(
+                r["t_ms"]
+                for r in reversed(self.rows())
+                if r.get("name") == rest
+            )
+
+            def checkpointed():
+                frames = self.phase_frames(at)
+                if frames:
+                    self.checkpoints[rest] = dict(frames[0])
+                    return True
+                return False
+
+            self.wait(checkpointed)
         elif verb == "mix":
             self.send("key " + next(mixed(rest)))
         elif verb == "quit":

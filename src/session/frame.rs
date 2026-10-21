@@ -53,6 +53,25 @@ impl Drawable for Session {
     let tab = &self.tabs[self.active];
     let mut seen = Observation::of(&tab.panes[tab.focus], &self.graphics);
     seen.busy = tab.panes.iter().any(App::busy);
+    seen.outcome["tab"] = (self.active + 1).into();
+    seen.outcome["pane_count"] = tab.panes.len().into();
+    seen.outcome["resources"] = serde_json::to_value(
+      self
+        .tabs
+        .iter()
+        .enumerate()
+        .flat_map(|(index, tab)| tab.panes.iter().map(move |app| (index, app)))
+        .map(|(index, app)| super::native::Resources {
+          owner: app.id,
+          visible: index == self.active,
+          text_bytes: app.doc.cache_bytes(),
+          tile_bytes: self.graphics.owner_bytes(app.id),
+          active_workers: app.active_workers(),
+          search_workers: usize::from(app.search_worker.is_some()),
+        })
+        .collect::<Vec<_>>(),
+    )
+    .expect("serializable resources");
     seen
   }
 }

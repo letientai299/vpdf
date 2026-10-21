@@ -12,4 +12,6 @@ wait complete
 mark restore
 resize 1969 2163
 wait idle
+expect settled true
+expect sharp true
 quit

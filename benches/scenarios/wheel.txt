@@ -7,4 +7,7 @@ mark wheel
 repeat 3s @240 wheel 0 -1
 mark settle
 wait idle
+expect moved wheel
+expect settled true
+expect sharp true
 quit

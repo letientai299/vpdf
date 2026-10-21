@@ -164,3 +164,18 @@ fn reload_keeps_only_prompt_location() {
   search.set_hidden(true);
   assert!(search.reset_document().is_none());
 }
+
+#[test]
+fn job_outcomes_are_distinct() {
+  let mut search = running(false, 0);
+  assert_eq!(search.outcome(), "running");
+  search.accept(7, Vec::new(), Ok(false));
+  assert_eq!(search.outcome(), "running");
+  search.accept(7, hits(&[1]), Ok(true));
+  assert_eq!(search.outcome(), "success");
+  search.cancel();
+  assert_eq!(search.outcome(), "cancelled");
+  search.begin(Query::default(), 9, at(0));
+  search.accept(9, Vec::new(), Err("failed".into()));
+  assert_eq!(search.outcome(), "error");
+}

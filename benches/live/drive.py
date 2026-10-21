@@ -16,6 +16,7 @@ from functools import partial
 from pathlib import Path
 
 from kitty import Kitty
+from provenance import checkout, embedded
 from report import analyze, markdown, paired
 from runtime import Runtime, command
 
@@ -236,7 +237,10 @@ def run_backend(args, binary, directory, probe, parse, power):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog="Scenario assertions: expect FIELD VALUE (headless help lists fields).",
+    )
     parser.add_argument("backend", choices=["native", "kitty"])
     parser.add_argument("scenario", type=Path)
     parser.add_argument(
@@ -316,12 +320,8 @@ def main():
                     display=display,
                     machine=command("uname", "-a"),
                     cache="off",
-                    source_checkout_revision=command(
-                        "git", "-C", str(ROOT), "rev-parse", "HEAD"
-                    ),
-                    source_checkout_dirty=bool(
-                        command("git", "-C", str(ROOT), "status", "--porcelain")
-                    ),
+                    **checkout(ROOT),
+                    build_source=embedded(native.binary_version),
                     binary_version=native.binary_version,
                     scenario=str(args.scenario.resolve()),
                     startup=native.startup(),

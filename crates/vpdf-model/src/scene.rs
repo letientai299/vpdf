@@ -145,6 +145,23 @@ impl TilePlacement {
     let [x, y] = self.origin.map(f32::from_bits);
     (x, y)
   }
+  pub fn visible(self) -> Option<Bounds> {
+    let (x, y) = self.origin();
+    crate::geometry::clip(
+      Bounds {
+        x0: x.floor(),
+        y0: y.floor(),
+        x1: x.floor() + self.id.key.width as f32,
+        y1: y.floor() + self.id.key.height as f32,
+      },
+      Bounds {
+        x0: 0.0,
+        y0: 0.0,
+        x1: self.screen.width(),
+        y1: self.screen.height(),
+      },
+    )
+  }
   pub fn frame(self) -> (Screen, u16) {
     (self.screen, self.left)
   }
@@ -362,6 +379,43 @@ impl<'a> Draw<'a> for Scene<'a> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn tile_visibility_clips_pane_edges() {
+    use crate::geometry::Crop;
+    use crate::text::PageId;
+    use crate::tile::{TileKey, TileOwner};
+    let screen = Screen {
+      columns: 4,
+      rows: 3,
+      cell_width: 10,
+      cell_height: 10,
+      origin: (7, 3),
+    };
+    let id = TileId {
+      owner: TileOwner::new(1),
+      key: TileKey {
+        page: PageId(0),
+        scale: 1024,
+        rotation: 0,
+        x: 0,
+        y: 0,
+        width: 16,
+        height: 16,
+        crop: Crop::default(),
+      },
+    };
+    for (origin, area) in [
+      ((40.0, 0.0), 0.0),
+      ((0.0, 20.0), 0.0),
+      ((-16.0, 0.0), 0.0),
+      ((-8.2, 15.8), 35.0),
+      ((0.0, 0.0), 256.0),
+    ] {
+      let visible = TilePlacement::new(id, origin, screen, 2).visible();
+      assert_eq!(visible.map_or(0.0, |r| r.width() * r.height()), area);
+    }
+  }
 
   #[test]
   fn stretched_fills_keep_geometry() {

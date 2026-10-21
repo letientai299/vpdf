@@ -7,4 +7,7 @@ mark held-page
 repeat 5s @60 key pagedown
 mark settle
 wait idle
+expect moved held-page
+expect settled true
+expect sharp true
 quit

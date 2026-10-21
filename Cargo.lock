@@ -3475,6 +3475,7 @@ dependencies = [
  "eframe",
  "font-kit",
  "image",
+ "serde_json",
  "unicode-width",
  "vpdf",
  "vpdf-model",

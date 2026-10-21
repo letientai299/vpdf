@@ -165,6 +165,21 @@ impl Graphics {
     Ok(id)
   }
 
+  pub fn owner_bytes(&self, owner: u32) -> usize {
+    self
+      .resident
+      .entries()
+      .filter(|(key, _)| key.0 == owner)
+      .map(|(key, _)| self.resident.weight(key).unwrap_or(0))
+      .sum::<usize>()
+      + self
+        .stored
+        .entries()
+        .filter(|(key, _)| key.0 == owner)
+        .map(|(key, _)| self.stored.weight(key).unwrap_or(0))
+        .sum::<usize>()
+  }
+
   pub fn usage(&self) -> Usage {
     Usage { bytes: self.bytes(), uploaded: self.uploaded }
   }

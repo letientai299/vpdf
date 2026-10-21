@@ -1,6 +1,6 @@
 use crate::stats::{Timing, timing};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
@@ -26,6 +26,8 @@ pub struct Driver {
   ticket: Ticket,
   submitted: Instant,
   screen: Screen,
+  observing: Option<Instant>,
+  checkpoints: HashMap<String, serde_json::Value>,
   frames: usize,
   incomplete: usize,
   inputs: usize,
@@ -69,6 +71,9 @@ pub struct Summary {
 struct FrameRow {
   fresh: bool,
   build_ms: f64,
+  built_ms: f64,
+  observation_ms: Option<f64>,
+  scroll: f32,
   delivery_ms: f64,
   #[serde(flatten)]
   readiness: Readiness,
@@ -78,6 +83,8 @@ struct FrameRow {
   pages: usize,
   hits: usize,
   ticket: Ticket,
+  #[serde(flatten)]
+  observation: serde_json::Value,
 }
 
 #[derive(Serialize)]
@@ -86,6 +93,9 @@ struct Readiness {
   busy: bool,
   blank: bool,
   missing: usize,
+  stand_ins: usize,
+  missing_pixels: f32,
+  stand_in_pixels: f32,
 }
 
 #[derive(Serialize)]
@@ -114,6 +124,7 @@ impl Driver {
         let _ = sender.try_send(());
       },
     )?;
+    bridge.send(Input::Observe(true));
     let ticket = bridge.send(Input::Resize(screen));
     Ok(Self {
       bridge,
@@ -125,6 +136,8 @@ impl Driver {
       ticket,
       submitted: started,
       screen,
+      observing: None,
+      checkpoints: HashMap::new(),
       frames: 0,
       incomplete: 0,
       inputs: 0,
@@ -139,11 +152,17 @@ impl Driver {
     let Some(frame) = self.bridge.take() else { return Ok(()) };
     let at = Instant::now();
     let ready: HashSet<_> = frame.images.iter().map(|image| image.id).collect();
-    let missing = frame
+    let missing_areas: Vec<_> = frame
       .scene
       .iter()
-      .filter(|op| matches!(op, Op::Tile(tile) if !ready.contains(&tile.id())))
-      .count();
+      .filter_map(|op| {
+        let Op::Tile(tile) = op else { return None };
+        (!ready.contains(&tile.id())).then(|| tile.visible()).flatten()
+      })
+      .collect();
+    let missing = missing_areas.len();
+    let missing_pixels =
+      missing_areas.iter().map(|r| r.width() * r.height()).sum();
     let build_ms = frame.metrics.build.as_secs_f64() * 1000.0;
     let delivery_ms =
       at.saturating_duration_since(frame.metrics.built).as_secs_f64() * 1000.0;
@@ -152,13 +171,22 @@ impl Driver {
       at,
       FrameRow {
         fresh: frame.content,
+        observation_ms: frame
+          .metrics
+          .observation_time
+          .map(|time| time.as_secs_f64() * 1000.0),
+        scroll: frame.metrics.scroll,
         build_ms,
+        built_ms: self.trace.elapsed_ms(frame.metrics.built),
         delivery_ms,
         readiness: Readiness {
           complete: frame.complete,
           busy: frame.metrics.busy,
           blank: missing != 0,
           missing,
+          stand_ins: 0,
+          missing_pixels,
+          stand_in_pixels: 0.0,
         },
         activity: Activity {
           animating: frame.metrics.animating,
@@ -168,6 +196,7 @@ impl Driver {
         pages: frame.metrics.pages,
         hits: frame.metrics.hits,
         ticket: frame.metrics.ticket,
+        observation: serde_json::to_value(&frame.metrics.observation)?,
       },
     )?;
     self.frames += 1;
@@ -234,14 +263,19 @@ impl Driver {
 
   pub fn mark(&mut self, name: &str) -> Result<()> {
     let (sender, receiver) = mpsc::channel();
-    self.bridge.send(Input::Mark {
+    self.ticket = self.bridge.send(Input::Mark {
       name: name.into(),
       trace: Arc::clone(&self.trace),
       ack: Some(sender),
     });
     receiver
       .recv_timeout(self.deadline.saturating_duration_since(Instant::now()))?
-      .map_err(anyhow::Error::msg)
+      .map_err(anyhow::Error::msg)?;
+    self.until(|_| true)?;
+    if let Some(frame) = &self.last {
+      self.checkpoints.insert(name.into(), observed(frame));
+    }
+    Ok(())
   }
 
   pub fn wait(&mut self, mode: &Wait) -> Result<f64> {
@@ -260,17 +294,55 @@ impl Driver {
   ) -> Result<f64> {
     loop {
       self.poll()?;
+      if let Some(error) =
+        self.last.as_ref().and_then(|f| f.metrics.observation.error.as_ref())
+      {
+        anyhow::bail!("Scenario job failed: {error}");
+      }
       if self.last.as_ref().is_some_and(|frame| {
         frame.metrics.ticket >= self.ticket && accept(frame)
       }) {
         return Ok(self.submitted.elapsed().as_secs_f64() * 1000.0);
       }
-      self.block(self.deadline)?;
+      if let Some(mut due) = self.observing {
+        if Instant::now() >= due {
+          self.bridge.send(Input::Snapshot);
+          due = Instant::now() + Duration::from_millis(100);
+          self.observing = Some(due);
+        }
+        self.block(due.min(self.deadline))?;
+      } else {
+        self.block(self.deadline)?;
+      }
     }
   }
 
   pub fn step(&mut self, step: &Step, id: usize) -> Result<ControlFlow<()>> {
     match step {
+      Step::Expect(expectation) => {
+        let baseline = if let Some(name) = expectation.checkpoint() {
+          Some(
+            self
+              .checkpoints
+              .get(name)
+              .ok_or_else(|| {
+                anyhow::anyhow!("Scenario checkpoint missing: {name}")
+              })?
+              .clone(),
+          )
+        } else {
+          None
+        };
+        self.observing = Some(Instant::now());
+        self
+          .until(|frame| {
+            expectation.matches_from(&observed(frame), baseline.as_ref())
+          })
+          .map_err(|error| {
+            anyhow::anyhow!("Expectation {expectation:?} failed: {error}")
+          })?;
+        self.observing = None;
+      }
       Step::Keys(keys) => self.keys(keys, id)?,
       Step::Wheel(x, y) => self.wheel(*x, *y, id)?,
       Step::Resize(width, height) => {
@@ -418,4 +490,28 @@ impl Driver {
     let summary = self.summary();
     Ok((summary, std::mem::take(&mut self.waits)))
   }
+}
+
+fn observed(frame: &Frame) -> serde_json::Value {
+  let mut row = serde_json::to_value(&frame.metrics.observation)
+    .expect("serializable observation");
+  row["scroll"] = frame.metrics.scroll.into();
+  row["page"] = frame.metrics.page.map(|p| p.0 + 1).into();
+  row["pages"] = frame.metrics.pages.into();
+  row["hits"] = frame.metrics.hits.into();
+  row["busy"] = frame.metrics.busy.into();
+  row["animating"] = frame.metrics.animating.into();
+  row["complete"] = frame.complete.into();
+  let ready: HashSet<_> = frame.images.iter().map(|image| image.id).collect();
+  row["missing"] = frame
+    .scene
+    .iter()
+    .filter(|op| {
+      matches!(op, Op::Tile(tile) if tile.visible().is_some()
+              && !ready.contains(&tile.id()))
+    })
+    .count()
+    .into();
+  row["stand_ins"] = 0.into();
+  row
 }

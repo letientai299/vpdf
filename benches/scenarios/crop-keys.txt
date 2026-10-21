@@ -6,4 +6,7 @@ wait idle
 mark cropped
 repeat 3s @28 mix 7 C-d | space | C-u | S-space
 wait idle
+expect moved cropped
+expect settled true
+expect sharp true
 quit

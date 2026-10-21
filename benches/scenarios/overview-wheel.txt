@@ -5,8 +5,11 @@
 wait idle
 key g p
 wait idle
+expect overview true
 mark wheel
 repeat 3s @240 wheel 0 -1
 mark settle
 wait idle
+expect settled true
+expect sharp true
 quit

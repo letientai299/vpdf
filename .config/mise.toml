@@ -246,3 +246,8 @@ run = "python3 -B -m unittest discover -s benches/live -p 'test_*.py'"
 [tasks."corpus:sdm"]
 description = "Fetch and verify the SDM benchmark PDF"
 run = "sh scripts/corpus.sh huge sdm"
+
+[tasks."bench:overhead"]
+description = "Compare tracing and relay cost with independent output"
+raw_args = true
+run = 'python3 -B benches/live/overhead.py {{arg(name="args", var=true, default="")}}'

@@ -3,6 +3,9 @@
 use std::path::Path;
 use std::process::Command;
 
+#[path = "../src/provenance.rs"]
+mod provenance;
+
 fn git(args: &[&str]) -> Option<String> {
   let output = Command::new("git").args(args).output().ok()?;
   let text = String::from_utf8(output.stdout).ok()?.trim().to_owned();
@@ -47,4 +50,29 @@ fn main() {
   let version =
     version().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned());
   println!("cargo::rustc-env=VPDF_VERSION={version}");
+  for path in [
+    "src",
+    "crates",
+    "scripts",
+    "benches",
+    ".config",
+    "Cargo.toml",
+    "Cargo.lock",
+  ] {
+    println!("cargo::rerun-if-changed={path}");
+  }
+  let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+  let source = git(&["rev-parse", "--show-toplevel"])
+    .filter(|top| std::fs::canonicalize(top).ok() == root.canonicalize().ok())
+    .and_then(|_| provenance::Source::read(root));
+  for (key, value) in [
+    ("REVISION", source.as_ref().map(|s| s.revision.as_str())),
+    ("PATCH", source.as_ref().map(|s| s.patch.as_str())),
+    ("DIRTY", source.as_ref().map(|s| if s.dirty { "true" } else { "false" })),
+  ] {
+    println!(
+      "cargo::rustc-env=VPDF_SOURCE_{key}={}",
+      value.unwrap_or("unknown")
+    );
+  }
 }

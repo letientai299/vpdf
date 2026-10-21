@@ -198,6 +198,31 @@ pub fn transform(bounds: Bounds, matrix: &Transform) -> Bounds {
   Bounds::enclosing(&points.map(|(x, y)| matrix.transform_xy(x, y)))
 }
 
+/// Union area without counting overlapping rectangles twice.
+pub fn union_area(rectangles: &[Bounds]) -> f32 {
+  let mut edges: Vec<_> =
+    rectangles.iter().flat_map(|r| [r.x0, r.x1]).collect();
+  edges.sort_by(f32::total_cmp);
+  edges.dedup();
+  let mut area = 0.0;
+  for edge in edges.windows(2) {
+    let mut spans: Vec<_> = rectangles
+      .iter()
+      .filter(|r| r.x0 < edge[1] && r.x1 > edge[0])
+      .map(|r| (r.y0, r.y1))
+      .collect();
+    spans.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut bottom = f32::NEG_INFINITY;
+    let mut height = 0.0;
+    for (top, end) in spans {
+      height += (end - top.max(bottom)).max(0.0);
+      bottom = bottom.max(end);
+    }
+    area += (edge[1] - edge[0]) * height;
+  }
+  area
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -232,5 +257,19 @@ mod tests {
       let width = if angle % 180 == 0 { 100.0 } else { 200.0 };
       assert!((rect.width() - width).abs() < 0.001);
     }
+  }
+}
+
+#[cfg(test)]
+mod coverage_tests {
+  use super::*;
+
+  #[test]
+  fn overlapping_rectangles_count_once() {
+    let a = Bounds { x0: 0.0, y0: 0.0, x1: 8.0, y1: 8.0 };
+    let b = Bounds { x0: 4.0, y0: 4.0, x1: 12.0, y1: 12.0 };
+    assert_eq!(union_area(&[]), 0.0);
+    assert_eq!(union_area(&[a, a]), 64.0);
+    assert_eq!(union_area(&[a, b]), 112.0);
   }
 }

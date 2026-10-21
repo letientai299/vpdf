@@ -14,6 +14,8 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 /// Idle time after which the worker releases its document.
+static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+
 const IDLE: Duration = Duration::from_secs(3);
 /// Idle time after which new indexes go to disk; typing a query rewrites
 /// none.
@@ -36,12 +38,17 @@ pub struct SearchEvent {
 }
 
 pub struct SearchWorker {
+  activity: super::Activity,
   send: mpsc::Sender<Request>,
   generation: Arc<AtomicU64>,
   events: mpsc::Receiver<SearchEvent>,
 }
 
 impl SearchWorker {
+  pub fn activity(&self) -> super::Activity {
+    self.activity.clone()
+  }
+
   /// A worker for `path`, which the reader opened with `pages` pages.
   pub fn new(path: &Path, password: &str, pages: usize, wake: &Wake) -> Self {
     let (send, receive) = mpsc::channel();
@@ -51,13 +58,16 @@ impl SearchWorker {
     let current = Arc::clone(&generation);
     let path = path.to_owned();
     let password = password.to_owned();
+    let activity = super::Activity::new(true);
+    let running = activity.clone();
     thread::spawn(move || {
+      let _guard = running.guard();
       match Source::open(path, password, content_cache::root(), pages) {
         Ok(source) => serve(source, &receive, &events_send, &current),
         Err(error) => fail(&receive, &events_send, &error),
       }
     });
-    Self { send, generation, events }
+    Self { activity, send, generation, events }
   }
 
   pub fn lookup(
@@ -65,7 +75,8 @@ impl SearchWorker {
     query: &vpdf_search::query::Query,
     origin: PageId,
   ) -> Result<u64> {
-    let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
+    let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
+    self.generation.store(generation, Ordering::Relaxed);
     self
       .send
       .send(Request::Query { generation, query: query.clone(), origin })
@@ -611,7 +622,12 @@ mod tests {
   fn stopped_worker_fails_the_scan() {
     let (send, _) = mpsc::channel();
     let (events_send, events) = mpsc::sync_channel(1);
-    let worker = SearchWorker { send, generation: Arc::default(), events };
+    let worker = SearchWorker {
+      send,
+      generation: Arc::default(),
+      events,
+      activity: super::super::Activity::new(false),
+    };
     let hits = Vec::new();
     let event = SearchEvent { generation: 3, hits, done: false, error: None };
     events_send.send(event).unwrap();

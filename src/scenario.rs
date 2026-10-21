@@ -1,7 +1,9 @@
 //! Shared benchmark step language.
 
 mod catalog;
+mod expect;
 pub use catalog::{Scenario, Source};
+pub use expect::Expectation;
 
 use crate::Result;
 use std::time::Duration;
@@ -17,6 +19,7 @@ pub enum Step {
   Wait(Wait),
   Repeat { duration: Duration, hz: u32, step: Box<Self> },
   Mix { seed: u64, keys: Vec<Vec<KeyEvent>> },
+  Expect(Expectation),
   Quit,
 }
 
@@ -64,6 +67,7 @@ impl Step {
         "idle" => Wait::Idle,
         _ => Wait::Time(duration(rest)?),
       }),
+      "expect" => Self::Expect(Expectation::parse(rest)?),
       "repeat" => repeat(rest)?,
       "mix" => {
         let (seed, rest) = rest

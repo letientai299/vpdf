@@ -53,9 +53,13 @@ impl Window {
       .events
       .as_deref()
       .map(|path| inject::spawn(path, cc.egui_ctx.clone()));
+    let trace = Trace::from_env();
     let ctx = cc.egui_ctx.clone();
     let bridge =
       Bridge::start(args.files, args.page, move || ctx.request_repaint())?;
+    if trace.enabled() {
+      bridge.send(Input::Observe(true));
+    }
     Ok(Self {
       bridge,
       frame: None,
@@ -67,7 +71,7 @@ impl Window {
       events,
       #[cfg(feature = "bench-events")]
       mark: None,
-      trace: Trace::from_env(),
+      trace,
     })
   }
 

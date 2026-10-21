@@ -91,6 +91,54 @@ impl Default for Config {
   }
 }
 
+/// Owner-scoped work surviving a service replacement.
+#[derive(Clone)]
+pub struct Activity(Arc<ActivityState>);
+
+struct ActivityState {
+  active: std::sync::atomic::AtomicBool,
+  wake: std::sync::Mutex<Option<Wake>>,
+}
+
+impl Activity {
+  pub fn new(active: bool) -> Self {
+    Self(Arc::new(ActivityState {
+      active: std::sync::atomic::AtomicBool::new(active),
+      wake: std::sync::Mutex::new(None),
+    }))
+  }
+  pub fn active(&self) -> bool {
+    self.0.active.load(std::sync::atomic::Ordering::Acquire)
+  }
+  pub fn observe(&self, wake: &Wake) {
+    if let Ok(mut slot) = self.0.wake.lock() {
+      *slot = Some(wake.clone());
+    }
+  }
+  pub fn same(&self, other: &Self) -> bool {
+    Arc::ptr_eq(&self.0, &other.0)
+  }
+  pub(super) fn start(&self) {
+    self.0.active.store(true, std::sync::atomic::Ordering::Release);
+  }
+  pub(super) fn guard(&self) -> ActivityGuard {
+    ActivityGuard(self.clone())
+  }
+}
+
+pub(super) struct ActivityGuard(Activity);
+
+impl Drop for ActivityGuard {
+  fn drop(&mut self) {
+    self.0.0.active.store(false, std::sync::atomic::Ordering::Release);
+    if let Ok(wake) = self.0.0.wake.lock()
+      && let Some(wake) = &*wake
+    {
+      wake.wake();
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

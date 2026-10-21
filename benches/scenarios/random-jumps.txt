@@ -7,8 +7,12 @@ wait idle
 mark random-pages
 repeat 4s @4 mix 19 1 2 0 G | 5 0 0 G | 8 0 G | 2 0 0 G
 wait idle
+expect moved random-pages
 mark sections
 repeat 3s @4 mix 23 ] ] | ] ] | [ [
 wait idle
+expect moved sections
 mark settled
+expect settled true
+expect sharp true
 quit

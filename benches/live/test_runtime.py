@@ -44,6 +44,71 @@ class WindowTests(unittest.TestCase):
         self.assertTrue(ready(dict(row, built_ms=25, busy=True), 20, False))
         self.assertFalse(ready(dict(t_ms=30, complete=True), 20, True))
 
+    def test_rejects_job_errors(self):
+        for step in ("wait idle", "wait complete", "expect sharp true"):
+            runtime = Runtime.__new__(Runtime)
+            rows = []
+
+            def marker(token):
+                rows.extend(
+                    [
+                        dict(kind="mark", name=token, t_ms=100),
+                        dict(
+                            kind="frame",
+                            t_ms=102,
+                            built_ms=101,
+                            complete=True,
+                            busy=False,
+                            missing=0,
+                            stand_ins=0,
+                            error="search failed",
+                        ),
+                    ]
+                )
+
+            runtime.marker = marker
+            runtime.rows = lambda: rows
+            runtime.wait = lambda predicate: predicate()
+            with (
+                self.subTest(step=step),
+                self.assertRaisesRegex(
+                    RuntimeError, "Scenario job failed: search failed"
+                ),
+            ):
+                runtime.step(step)
+
+    def test_checkpoint_tracks_motion(self):
+        runtime = Runtime.__new__(Runtime)
+        runtime.checkpoints = {}
+        rows = []
+        state = dict(
+            document="sdm.pdf",
+            pane=1,
+            document_generation=0,
+            page=1,
+            scroll=0.0,
+            error=None,
+        )
+
+        def marker(name):
+            at = len(rows) * 10 + 10
+            rows.extend(
+                [
+                    dict(kind="mark", name=name, t_ms=at),
+                    dict(state, kind="frame", t_ms=at + 2, built_ms=at + 1),
+                ]
+            )
+
+        runtime.marker = marker
+        runtime.rows = lambda: rows
+        runtime.wait = lambda predicate: self.assertTrue(predicate())
+        runtime.step("mark keys")
+        with self.assertRaises(AssertionError):
+            runtime.step("expect moved keys")
+        state["scroll"] = 10.0
+        runtime.step("expect moved\tkeys")
+        self.assertEqual(runtime.checkpoints["keys"]["scroll"], 0.0)
+
     def test_geometry_gate_ignores_stale_samples(self):
         runtime = Runtime.__new__(Runtime)
         runtime.focus = ("kitty", 10)

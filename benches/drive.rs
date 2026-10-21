@@ -11,12 +11,15 @@ use vpdf::trace::Log;
 
 #[path = "support/hash.rs"]
 mod hash;
+#[path = "../src/provenance.rs"]
+mod provenance;
 #[path = "drive/runner.rs"]
 mod runner;
 #[path = "support/timing.rs"]
 mod stats;
 
 #[derive(Parser)]
+#[command(after_help = vpdf::scenario::Expectation::HELP)]
 struct Args {
   /// Scenario files with verified PDF headers.
   #[arg(required = true)]
@@ -42,6 +45,8 @@ struct Args {
   huge: PathBuf,
   #[arg(long, hide = true)]
   bench: bool,
+  #[arg(long, hide = true)]
+  child_round: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -53,9 +58,15 @@ struct InputSource {
 #[derive(Serialize)]
 struct Report<'a> {
   schema: u8,
+  pid: u32,
   backend: &'static str,
   revision: &'static str,
-  source_dirty: bool,
+  source_dirty: Option<bool>,
+  runtime_revision: Option<String>,
+  runtime_patch: Option<String>,
+  build_revision: &'static str,
+  build_dirty: &'static str,
+  build_patch: &'static str,
   features: &'static str,
   binary_sha256: String,
   scenario: PathBuf,
@@ -132,10 +143,7 @@ fn run(path: &Path, args: &Args, root: &Path, round: u32) -> Result<()> {
   .trim()
   .to_owned();
   anyhow::ensure!(!machine.is_empty(), "Machine identity unavailable");
-  let source_dirty = std::process::Command::new("git")
-    .args(["status", "--porcelain"])
-    .output()
-    .map_or(true, |out| !out.stdout.is_empty());
+  let runtime = provenance::Source::read(&std::env::current_dir()?);
   let load_before = sysinfo::System::load_average().one;
   let cpu_threads = std::thread::available_parallelism()?.get();
   let trace = directory.join("trace.jsonl");
@@ -169,10 +177,16 @@ fn run(path: &Path, args: &Args, root: &Path, round: u32) -> Result<()> {
   }
   let (summary, waits) = driver.finish()?;
   let report = Report {
-    schema: 1,
+    schema: 2,
+    pid: std::process::id(),
     backend: "headless",
     revision: env!("VPDF_VERSION"),
-    source_dirty,
+    source_dirty: runtime.as_ref().map(|s| s.dirty),
+    runtime_revision: runtime.as_ref().map(|s| s.revision.clone()),
+    runtime_patch: runtime.map(|s| s.patch),
+    build_revision: env!("VPDF_SOURCE_REVISION"),
+    build_dirty: env!("VPDF_SOURCE_DIRTY"),
+    build_patch: env!("VPDF_SOURCE_PATCH"),
     features: "bench-events",
     binary_sha256,
     scenario: path.canonicalize()?,
@@ -208,9 +222,27 @@ fn main() -> Result<()> {
     "Headless benchmark requires VPDF_CACHE=off"
   );
   let root = output(&args)?;
+  if let Some(round) = args.child_round {
+    anyhow::ensure!(args.scenarios.len() == 1, "Child requires one scenario");
+    return run(&args.scenarios[0], &args, &root, round);
+  }
   for round in 1..=args.rounds {
     for scenario in &args.scenarios {
-      run(scenario, &args, &root, round)?;
+      let mut command = std::process::Command::new(std::env::current_exe()?);
+      command
+        .arg(scenario)
+        .arg("--output")
+        .arg(&root)
+        .arg("--child-round")
+        .arg(round.to_string())
+        .arg("--timeout")
+        .arg(args.timeout.to_string())
+        .arg("--huge")
+        .arg(&args.huge);
+      if let Some(corpus) = &args.corpus {
+        command.arg("--corpus").arg(corpus);
+      }
+      anyhow::ensure!(command.status()?.success(), "Scenario process failed");
     }
   }
   Ok(())

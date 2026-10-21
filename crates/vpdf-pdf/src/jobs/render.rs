@@ -86,9 +86,14 @@ struct Shared {
 
 pub struct RenderWorker {
   shared: Arc<Shared>,
+  activity: super::Activity,
 }
 
 impl RenderWorker {
+  pub fn activity(&self) -> super::Activity {
+    self.activity.clone()
+  }
+
   /// Opens its own handle of `path`, sharing display lists through
   /// `lists`.
   pub fn new(
@@ -122,10 +127,14 @@ impl RenderWorker {
     let send = sink;
     let path = path.to_owned();
     let password = password.to_owned();
+    let activity = super::Activity::new(!lazy);
+    let running = activity.clone();
     thread::spawn(move || {
+      let _guard = running.guard();
       if lazy && !requested(&work) {
         return;
       }
+      running.start();
       match Handle::open(&path, &password) {
         Ok(doc) => {
           Coordinator::new(doc, lists, (path, password), work, send).run();
@@ -135,7 +144,7 @@ impl RenderWorker {
         }
       }
     });
-    Self { shared }
+    Self { shared, activity }
   }
 
   /// Replaces queued work with `tiles`, most urgent first. Tiles after

@@ -6,13 +6,27 @@ wait idle
 mark cold-scan
 key / C-u r e g i s t e r enter
 wait idle
+expect query register
+expect hits_min 1
+expect selected_hit_min 1
+expect query_generation_min 1
+expect search_outcome success
 mark cold-results
 repeat 2s @12 mix 7 n | n | n | N
 wait idle
+expect selected_changed cold-results
 mark warm-scan
 key / C-u r e g i s t e r enter
 wait idle
+expect query register
+expect hits_min 1
+expect selected_hit_min 1
+expect search_outcome success
+expect query_generation_min 9
 mark warm-results
 repeat 2s @12 mix 7 n | n | n | N
 wait idle
+expect selected_changed warm-results
+expect settled true
+expect sharp true
 quit

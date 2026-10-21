@@ -7,12 +7,18 @@ wait idle
 mark split
 key C-w v
 wait idle
+expect pane_count 2
 repeat 2s @240 key C-d
 key C-w w
 repeat 2s @240 key C-u
 mark tabs
 key g t
 wait idle
+expect document book
 key g T
 wait idle
+expect document sdm
+expect pane_count 2
+expect settled true
+expect sharp true
 quit

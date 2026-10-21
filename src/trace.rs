@@ -18,6 +18,9 @@ pub struct Trace {
 #[derive(Serialize)]
 struct Frame {
   build_ms: f64,
+  built_ms: f64,
+  #[serde(flatten)]
+  outcome: serde_json::Value,
   flush_ms: f64,
   input_to_flush_ms: Option<f64>,
   bytes: usize,
@@ -27,27 +30,42 @@ struct Frame {
   /// Every visible tile of the focused pane was placed.
   complete: bool,
   busy: bool,
+  missing: usize,
+  blank: bool,
+  stand_ins: usize,
 }
 
 /// What a frame showed of the focused pane.
 pub struct Observation {
   /// Image bytes sent so far.
   pub uploaded: u64,
+  pub outcome: serde_json::Value,
   pub page: usize,
   pub scroll: f32,
   /// Every visible tile of the focused pane was placed.
   pub complete: bool,
   pub busy: bool,
+  pub missing: usize,
 }
 
 impl Observation {
   pub fn of(app: &App, graphics: &Graphics) -> Self {
     Self {
       uploaded: graphics.uploaded,
+      outcome: {
+        let mut row =
+          serde_json::to_value(crate::session::native::Observation::of(app))
+            .unwrap_or_default();
+        row["pages"] = app.doc.pages.len().into();
+        row["hits"] = app.search.hits().len().into();
+        row["animating"] = app.reader.animation().active().into();
+        row
+      },
       page: app.navigation_position().page.0 + 1,
       scroll: app.reader.scroll,
       complete: app.complete,
       busy: app.busy(),
+      missing: graphics.missing_tiles,
     }
   }
 }
@@ -116,6 +134,8 @@ impl Trace {
     let seen = target.observe();
     let frame = Frame {
       build_ms: built.duration_since(started).as_secs_f64() * 1000.0,
+      built_ms: trace.elapsed_ms(started),
+      outcome: seen.outcome,
       flush_ms: flushed.duration_since(built).as_secs_f64() * 1000.0,
       input_to_flush_ms: input
         .map(|time| flushed.duration_since(time).as_secs_f64() * 1000.0),
@@ -125,6 +145,10 @@ impl Trace {
       scroll: seen.scroll,
       complete: seen.complete,
       busy: seen.busy,
+      missing: seen.missing,
+      blank: seen.missing != 0,
+      // Terminal tiles have no scale fallback.
+      stand_ins: 0,
     };
     self.uploaded = seen.uploaded;
     trace.row("frame", flushed, &frame)

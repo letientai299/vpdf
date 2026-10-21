@@ -11,7 +11,10 @@ pub const BUILD: &str = if cfg!(feature = "bench-events") {
 
 pub fn text(terminal: bool) -> String {
   let name = if terminal { "vpdf" } else { "vpdf-gui" };
-  format!("{ABOUT}\n{name} {BUILD}")
+  let revision = env!("VPDF_SOURCE_REVISION");
+  let dirty = env!("VPDF_SOURCE_DIRTY");
+  let patch = env!("VPDF_SOURCE_PATCH");
+  format!("{ABOUT}\nbuild-source {revision} {dirty} {patch}\n{name} {BUILD}")
 }
 
 pub fn parse<T: clap::Parser>(terminal: bool) -> T {

@@ -33,8 +33,24 @@ class ReportTests(unittest.TestCase):
 
     def test_sharp_waits_for_finished_animation(self):
         rows = [
-            dict(kind="frame", t_ms=10, complete=True, busy=True),
-            dict(kind="frame", t_ms=20, complete=True, busy=False),
+            dict(
+                kind="frame",
+                t_ms=10,
+                built_ms=10,
+                complete=True,
+                busy=True,
+                missing=0,
+                stand_ins=0,
+            ),
+            dict(
+                kind="frame",
+                t_ms=20,
+                built_ms=20,
+                complete=True,
+                busy=False,
+                missing=0,
+                stand_ins=0,
+            ),
         ]
         self.assertEqual(summarize(rows, 0, 30)["sharp_after_ms"], 20)
 
@@ -42,6 +58,78 @@ class ReportTests(unittest.TestCase):
         phase = summarize([dict(kind="frame", t_ms=0, complete=False)], 0, 10)
         self.assertIsNone(phase["blank_ms"])
         self.assertIsNone(phase["stand_in_ms"])
+
+    def test_sharp_requires_evidence(self):
+        clean = dict(
+            kind="frame",
+            t_ms=20,
+            built_ms=20,
+            complete=True,
+            busy=False,
+            missing=0,
+            stand_ins=0,
+        )
+        for field in ("built_ms", "busy", "missing", "stand_ins"):
+            with self.subTest(field=field):
+                row = dict(clean)
+                del row[field]
+                phase = summarize([row], 10, 30)
+                self.assertIsNone(phase["sharp_after_ms"])
+                self.assertIsNotNone(phase["sharp_after_unknown"])
+        row = dict(clean, built_ms=9)
+        self.assertIsNone(summarize([row], 10, 30)["sharp_after_ms"])
+        self.assertEqual(summarize([clean], 10, 30)["sharp_after_ms"], 10)
+
+    def test_mixed_fidelity_stays_unknown(self):
+        for rows in (
+            [dict(t_ms=0, missing=0, stand_ins=0), dict(t_ms=10)],
+            [dict(t_ms=0), dict(t_ms=10, missing=0, stand_ins=0)],
+        ):
+            phase = summarize(rows, 0, 20)
+            self.assertIsNone(phase["blank_ms"])
+            self.assertIsNone(phase["stand_in_ms"])
+
+    def test_area_duration_requires_full_coverage(self):
+        rows = [
+            dict(t_ms=0, missing_pixels=10, stand_in_pixels=20),
+            dict(t_ms=10, missing_pixels=0, stand_in_pixels=0),
+        ]
+        phase = summarize(rows, 0, 20)
+        self.assertEqual(phase["missing_pixel_ms"], 100)
+        self.assertEqual(phase["stand_in_pixel_ms"], 200)
+        del rows[1]["missing_pixels"]
+        self.assertIsNone(summarize(rows, 0, 20)["missing_pixel_ms"])
+
+    def test_unsampled_rss_unknown(self):
+        phase = summarize([dict(kind="sample", t_ms=0, rss=100)], 10, 20)
+        self.assertEqual(phase["rss_before"], 100)
+        self.assertEqual(phase["rss_before_ms"], 0)
+        self.assertIsNone(phase["rss_after"])
+        self.assertIsNone(phase["rss_after_ms"])
+        self.assertIsNone(phase["rss_delta"])
+        phase = summarize(
+            [
+                dict(kind="sample", t_ms=0, rss=100),
+                dict(kind="sample", t_ms=15, rss=120),
+            ],
+            10,
+            20,
+        )
+        self.assertEqual(phase["rss_after_ms"], 15)
+        self.assertEqual(phase["rss_delta"], 20)
+        self.assertTrue(phase["rss_before_estimated"])
+        self.assertTrue(phase["rss_after_estimated"])
+        self.assertTrue(phase["rss_delta_estimated"])
+
+    def test_rss_distinct_endpoints(self):
+        for sample_time in (10, 15):
+            phase = summarize(
+                [dict(kind="sample", t_ms=sample_time, rss=120)], 10, 20
+            )
+            self.assertIsNone(phase["rss_delta"])
+        phase = summarize([dict(kind="sample", t_ms=15, rss=120)], 10, 20)
+        self.assertIsNone(phase["rss_before"])
+        self.assertEqual(phase["rss_after"], 120)
 
     def test_frame_costs_and_output_rates(self):
         rows = [
@@ -71,8 +159,9 @@ class ReportTests(unittest.TestCase):
                 )
             )
             phase = analyze(trace)["phases"][1]
-            self.assertEqual(phase["blank_ms"], 20)
-            self.assertEqual(phase["sharp_after_ms"], 20)
+            self.assertIsNone(phase["blank_ms"])
+            self.assertIsNone(phase["sharp_after_ms"])
+            self.assertEqual(phase["readiness_after_ms"], 20)
             self.assertEqual(phase["cpu_mean"], 4)
             self.assertEqual(phase["rss_peak"], 123)
 

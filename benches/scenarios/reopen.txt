@@ -7,10 +7,15 @@ wait idle
 mark reload
 key : r e l o a d enter
 wait idle
+expect document_generation 1
 mark reload-ready
 key G
 wait complete
 key : r e l o a d enter
 wait idle
+expect document_generation 2
+expect page 5364
 mark restored
+expect settled true
+expect sharp true
 quit

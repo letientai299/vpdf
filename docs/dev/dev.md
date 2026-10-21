@@ -234,7 +234,12 @@ window. Scenario headers pin PDF hashes, layout, and crop mode. Run
 in the host cache. The catalog defaults to `sdm.pdf`; `corpus:sdm` fetches and
 verifies it. Use `--huge DIRECTORY` for an additional large PDF with its own
 hash-pinned scenario. Headless delivery measures frame collection, excluding
-GPU painting and terminal output. The general latency cases use this bridge;
+GPU painting and terminal output. Each headless scenario replicate runs in a
+fresh process; its populate/hide/restore sequence shares that process.
+Reports separate embedded build provenance from the runtime checkout, whose
+status stays unknown when Git fails. Patch identity includes tracked changes
+and nonignored untracked files. Executable hashes identify copied builds.
+The general latency cases use this bridge;
 crop measurements retain their component loop. Enqueue time measures input
 submission, rather than the former direct action CPU time.
 
@@ -242,7 +247,21 @@ Summarize marks with `mise run bench:report -- TRACE --json REPORT`. CPU means
 use the sampler's rolling percentages. A `clock` row anchors reader timestamps
 to Unix time for launch timing. Sharp-after measures the first complete frame
 without stand-ins or active jobs after a mark. It does not measure observed
-display latency. Missing fidelity counters remain unknown.
+display latency. Missing fidelity, idle, or build-time evidence makes sharp
+timing unknown; readiness-only timing remains separate. Mixed-schema coverage
+durations also stay unknown. Pixel-area durations measure renderer coverage.
+Named marks capture post-command checkpoints. Motion and search-navigation
+assertions compare position or selection with the named checkpoint, retaining
+pane/document/query identity. Live and headless waits reject application errors.
+Native extended observations require an enabled trace or assertion consumer;
+ordinary frames omit their clones and cache scans. Build timing includes that
+work when enabled, with observation time reported separately.
+Scenario `expect` steps assert outcomes within the run deadline; headless help
+lists their fields. Idle alone does not prove search or navigation succeeded.
+Resource rows separate text and tile cache bytes from RSS and track owner
+search services and active document coordinators/search threads, including
+retiring ones. Shared raster-pool threads and allocator retention are outside
+those owner counts. Native texture caches release hidden owners during paint.
 The [live launcher][live-driver] accepts paired feature-enabled binaries,
 alternates order, and keeps individual reports. Use
 `mise run bench:drive -- native --help` for arguments; use `kitty` for the
@@ -259,6 +278,15 @@ native reports also identify the signed executable. Kitty relays input and
 output through bounded nonblocking queues. Failed runs retain their error and
 cleanup records. Retain one real macOS resize check per release; FIFO geometry
 bypasses OS input paths.
+
+Run `mise run bench:overhead -- --help` for the independent terminal-output
+tracing control. It requires macOS, Swift from the command line tools, a built
+reader, and the verified SDM corpus. It retains A/A controls, alternating
+tracing and relay pairs, process accounting, input lateness, and separate final
+tile fidelity captures. Captures verify tile pixels and geometry; they exclude
+text overlays, intermediate frames, native painting, and display latency.
+Run this task after builds finish. Its results do not establish tracing cost
+for other workloads.
 
 Use `benches/scenarios/keys-120.txt` and `keys-240.txt` to stress cadence;
 `keys-1000.txt` stresses input throughput. Reports separate requested input
@@ -387,6 +415,10 @@ Terminal `frame` timestamps end at output flush. Existing fields remain:
 `page`, `scroll`, and `complete`. Input-to-flush starts at the first consumed
 input that changes a frame, and excludes terminal painting and physical input
 latency. Terminal `input` rows currently count those changed typed inputs.
+`missing` counts unavailable tile placements intersecting visible panes;
+`blank` means `missing > 0`. These counters reset each frame and exclude
+offscreen target tiles. `stand_ins` is zero because terminal tiles have no
+scale fallback. They describe emitted content, excluding terminal painting.
 
 Native `frame` timestamps start at CPU paint. Existing `paint_ms`, `fresh`,
 `upload_bytes`, `stand_ins`, and `missing` remain. `blank` means `missing > 0`.

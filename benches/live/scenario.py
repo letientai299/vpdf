@@ -42,6 +42,10 @@ def validate_step(line):
     elif verb == "mark":
         if not rest:
             raise ValueError("Empty scenario mark")
+    elif verb == "expect":
+        from expectation import validate
+
+        validate(rest)
     elif verb == "wait":
         if rest not in ("idle", "complete"):
             duration(rest)

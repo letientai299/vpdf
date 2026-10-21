@@ -112,6 +112,8 @@ pub struct Graphics {
   /// tmux would hand to the active pane as keys.
   quiet: u8,
   pub uploaded: u64,
+  /// Visible tile placements unavailable this frame.
+  pub missing_tiles: usize,
 }
 
 impl Default for Graphics {
@@ -148,6 +150,7 @@ impl Graphics {
       cell_offsets: profile.cell_offsets,
       quiet: if profile.report_missing { 1 } else { 2 },
       uploaded: 0,
+      missing_tiles: 0,
     }
   }
 

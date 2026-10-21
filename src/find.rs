@@ -59,6 +59,7 @@ impl App {
     let generation = match worker.lookup(query, origin.page) {
       Ok(generation) => generation,
       Err(error) => {
+        self.track_jobs();
         self.search_worker = None;
         return Err(error);
       }
@@ -95,6 +96,7 @@ impl App {
         Update::Progress { done } => done,
         Update::Failed(error) => {
           // The next search starts a fresh worker.
+          self.track_jobs();
           self.search_worker = None;
           self.error = Some(error);
           continue;

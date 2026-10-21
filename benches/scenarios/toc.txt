@@ -6,8 +6,11 @@ wait idle
 mark outline
 key g o
 wait idle
+expect panel CONTENTS
 mark toc
 repeat 3s @14 mix 7 j o | j o | j o | k o
 mark settle
 wait idle
+expect settled true
+expect sharp true
 quit

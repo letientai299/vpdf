@@ -38,6 +38,8 @@ pub struct Renderer {
   pub stand_ins: usize,
   /// Tiles of the last paint drawn blank.
   pub missing: usize,
+  pub missing_pixels: f32,
+  pub stand_in_pixels: f32,
 }
 
 impl Default for Renderer {
@@ -48,6 +50,8 @@ impl Default for Renderer {
       upload_bytes: 0,
       stand_ins: 0,
       missing: 0,
+      missing_pixels: 0.0,
+      stand_in_pixels: 0.0,
     }
   }
 }
@@ -98,18 +102,25 @@ impl Renderer {
         && let Some(texture) = self.textures.get(&ImageId::Tile(id))
       {
         texture.paint(painter, placement.origin(), screen, left, scale);
-      } else {
+      } else if placement.visible().is_some() {
         pending.push(**placement);
       }
     }
     let kept =
       if pending.is_empty() { HashMap::default() } else { self.pages() };
-    let covered = pending
-      .iter()
-      .filter(|placement| stand_in(painter, &kept, **placement, scale))
-      .count();
-    self.stand_ins = covered;
-    self.missing = pending.len() - covered;
+    self.stand_ins = 0;
+    self.missing = 0;
+    self.stand_in_pixels = 0.0;
+    self.missing_pixels = 0.0;
+    for placement in pending {
+      let Some(visible) = placement.visible() else { continue };
+      let area = visible.width() * visible.height();
+      let covered = stand_in(painter, &kept, placement, scale).min(area);
+      self.stand_ins += usize::from(covered > 0.0);
+      self.missing += usize::from(covered < area);
+      self.stand_in_pixels += covered;
+      self.missing_pixels += area - covered;
+    }
     fills(painter, &frame.scene, Layer::BelowText, scale);
     let mut cells = Grid::new(screen);
     for op in &frame.scene {
@@ -221,9 +232,9 @@ fn stand_in(
   kept: &HashMap<(TileOwner, PageId), Vec<Kept>>,
   placement: TilePlacement,
   scale: f32,
-) -> bool {
+) -> f32 {
   let TileId { owner, key } = placement.id();
-  let Some(textures) = kept.get(&(owner, key.page)) else { return false };
+  let Some(textures) = kept.get(&(owner, key.page)) else { return 0.0 };
   let (screen, left) = placement.frame();
   let origin = placement.origin();
   let page = (origin.0 - key.x as f32, origin.1 - key.y as f32);
@@ -261,7 +272,19 @@ fn stand_in(
   for (kept, rect) in &reaching {
     image(painter, target, *rect, kept.texture);
   }
-  !reaching.is_empty()
+  let areas: Vec<_> = reaching
+    .iter()
+    .map(|(_, rect)| {
+      let rect = rect.intersect(target);
+      vpdf_model::text::Bounds {
+        x0: rect.min.x,
+        y0: rect.min.y,
+        x1: rect.max.x,
+        y1: rect.max.y,
+      }
+    })
+    .collect();
+  vpdf_model::geometry::union_area(&areas) * scale * scale
 }
 
 fn image(painter: &Painter, clip: Rect, rect: Rect, texture: egui::TextureId) {
@@ -724,15 +747,20 @@ mod tests {
         renderer.paint(ui.painter(), frame, screen, 1.0, None);
       });
       output.textures_delta.clear();
-      (output.shapes, (renderer.stand_ins, renderer.missing))
+      (
+        output.shapes,
+        (renderer.stand_ins, renderer.missing),
+        (renderer.stand_in_pixels, renderer.missing_pixels),
+      )
     };
     let old = tile(key(0, 1024, 0, 4));
     paint(&frame(vec![old], vec![old]));
     // Twice the scale: the old tile covers the new one's 8 pixels.
     let new = tile(key(0, 2048, 0, 8));
     let other = tile(key(1, 2048, 0, 8));
-    let (shapes, counts) = paint(&frame(vec![new, other], Vec::new()));
+    let (shapes, counts, areas) = paint(&frame(vec![new, other], Vec::new()));
     assert_eq!(counts, (1, 1));
+    assert_eq!(areas, (64.0, 64.0));
     let image = shapes
       .iter()
       .find_map(|shape| match &shape.shape {
@@ -746,6 +774,18 @@ mod tests {
     );
     assert_eq!(image.1.min, Pos2::new(10.0, 0.0));
     assert_eq!(image.1.max, Pos2::new(18.0, 8.0));
+    let overlapping = tile(key(0, 512, 0, 2));
+    paint(&frame(vec![overlapping], vec![overlapping]));
+    let partial = tile(key(0, 2048, 0, 16));
+    let (_, counts, areas) = paint(&frame(vec![partial], Vec::new()));
+    assert_eq!(counts, (1, 1));
+    assert_eq!(areas, (64.0, 192.0));
+    let offscreen = tile(key(0, 2048, 1000, 16));
+    let (_, counts, areas) = paint(&frame(vec![offscreen], Vec::new()));
+    assert_eq!(counts, (0, 0));
+    assert_eq!(areas, (0.0, 0.0));
+    let edge = tile(key(1, 2048, 385, 16));
+    assert_eq!(paint(&frame(vec![edge], Vec::new())).2, (0.0, 80.0));
     // A reloaded document's kept textures stand in for nothing.
     let mut reloaded = frame(vec![new, other], Vec::new());
     reloaded.reloaded.push(owner);

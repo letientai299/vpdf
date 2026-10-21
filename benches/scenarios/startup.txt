@@ -4,4 +4,6 @@
 # crop off
 mark ready
 wait complete
+expect settled true
+expect sharp true
 quit

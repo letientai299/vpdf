@@ -7,7 +7,12 @@ wait idle
 mark next-tab
 key g t
 wait idle
+expect document book
+expect hidden_released true
 mark previous-tab
 key g T
 wait idle
+expect document sdm
+expect settled true
+expect sharp true
 quit

@@ -88,6 +88,27 @@ const SCREEN: Screen = Screen {
   origin: (0, 0),
 };
 
+#[test]
+fn missing_counts_visible_tiles() -> Result<()> {
+  let mut graphics = Graphics::default();
+  let key = tile(&mut graphics, 0)?;
+  let mut output = Vec::new();
+  graphics.begin(&mut output)?;
+  assert!(graphics.place_at((0, key), (0.0, 0.0), SCREEN, 0, &mut output)?);
+  assert_eq!(graphics.missing_tiles, 0);
+  for (origin, expected) in
+    [((200.0, 0.0), 0), ((-64.0, 0.0), 0), ((-63.0, 0.0), 1), ((0.0, 0.0), 2)]
+  {
+    assert!(!graphics.place_at((1, key), origin, SCREEN, 0, &mut output)?);
+    assert_eq!(graphics.missing_tiles, expected);
+  }
+  graphics.end(&mut output)?;
+  assert_eq!(graphics.missing_tiles, 2);
+  graphics.begin(&mut output)?;
+  assert_eq!(graphics.missing_tiles, 0);
+  Ok(())
+}
+
 /// A resident 64x64 tile of page `page`.
 pub(super) fn tile(graphics: &mut Graphics, page: usize) -> Result<TileKey> {
   tile_sized(graphics, page, (64, 64))

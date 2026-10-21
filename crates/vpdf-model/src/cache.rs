@@ -72,6 +72,10 @@ impl<K: Eq + Hash + Clone, V> Cache<K, V> {
     self.entries.iter().map(|(key, entry)| (key, &entry.value))
   }
 
+  pub fn weight(&self, key: &K) -> Option<usize> {
+    self.entries.get(key).map(|entry| entry.weight)
+  }
+
   pub fn used(&self) -> usize {
     self.used
   }

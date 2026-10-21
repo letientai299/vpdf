@@ -11,15 +11,22 @@ wait idle
 mark hidden
 key g t
 wait idle
+expect document book
+expect hidden_released true
 wait 2s
 mark restored
 key g T
 wait idle
+expect document sdm
 repeat 3s @240 key C-u
 wait idle
 mark hidden-again
 key g t
 wait idle
+expect document book
+expect hidden_released true
 wait 2s
 mark done
+expect settled true
+expect sharp true
 quit

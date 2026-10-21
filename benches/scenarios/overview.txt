@@ -6,10 +6,13 @@ wait idle
 mark open-overview
 key g p
 wait idle
+expect overview true
 mark overview
 repeat 3s @28 mix 7 C-d | C-d | C-d | C-f | C-f | j | j | j | C-u | C-u | k
 mark settle
 wait idle
 key esc
 wait idle
+expect settled true
+expect sharp true
 quit

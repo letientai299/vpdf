@@ -9,4 +9,6 @@ mark perf
 key : p e r f enter
 wait 3s
 mark done
+expect settled true
+expect sharp true
 quit

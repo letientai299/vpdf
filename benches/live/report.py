@@ -50,32 +50,65 @@ def summarize(rows, start, end, include_end=False):
         None,
     )
     timeline = ([dict(previous, t_ms=start)] if previous else []) + frames
-    blank = (
-        0.0 if any("blank" in r or "missing" in r for r in timeline) else None
-    )
-    stand = 0.0 if any("stand_ins" in r for r in timeline) else None
+
+    def known_blank(row):
+        return isinstance(row.get("blank"), bool) or isinstance(
+            row.get("missing"), (int, float)
+        )
+
+    def is_blank(row):
+        return row.get("blank", row.get("missing", 0) > 0)
+
+    blank = 0.0
+    stand = 0.0
+    if not timeline or timeline[0]["t_ms"] > start:
+        blank = stand = None
     for index, frame in enumerate(timeline):
         stop = timeline[index + 1]["t_ms"] if index + 1 < len(timeline) else end
         duration = max(0, stop - frame["t_ms"])
-        if blank is not None:
-            blank += (
-                duration
-                if frame.get("blank", frame.get("missing", 0) > 0)
-                else 0
-            )
-        if stand is not None:
-            stand += duration if frame.get("stand_ins", 0) else 0
-    sharp = next(
-        (
-            r["t_ms"] - start
-            for r in frames
-            if r.get("complete")
-            and not r.get("busy", False)
-            and r.get("built_ms", r["t_ms"]) >= start
-            and not r.get("stand_ins", 0)
-            and not r.get("blank", r.get("missing", 0) > 0)
-        ),
+        if duration == 0:
+            continue
+        if not known_blank(frame):
+            blank = None
+        if not isinstance(frame.get("stand_ins"), (int, float)):
+            stand = None
+        if blank is not None and is_blank(frame):
+            blank += duration
+        if stand is not None and frame["stand_ins"]:
+            stand += duration
+    readiness = next(
+        (r["t_ms"] - start for r in frames if r.get("complete") is True),
         None,
+    )
+    sharp = None
+    reasons = set()
+    for row in frames:
+        if not known_blank(row) or not isinstance(
+            row.get("stand_ins"), (int, float)
+        ):
+            reasons.add("fidelity unavailable")
+            continue
+        if not isinstance(row.get("busy"), bool):
+            reasons.add("idle state unavailable")
+            continue
+        built = row.get("built_ms")
+        if not isinstance(built, (int, float)) or not math.isfinite(built):
+            reasons.add("build provenance unavailable")
+            continue
+        if built < start:
+            reasons.add("frame predates phase")
+            continue
+        if (
+            row.get("complete") is True
+            and not row["busy"]
+            and not (row["stand_ins"] or is_blank(row))
+        ):
+            sharp = row["t_ms"] - start
+            break
+    sharp_reason = (
+        None
+        if sharp is not None
+        else ("; ".join(sorted(reasons)) or "no sharp frame")
     )
     result = dict(
         inputs=len(inputs),
@@ -99,6 +132,8 @@ def summarize(rows, start, end, include_end=False):
         blank_ms=blank,
         stand_in_ms=stand,
         sharp_after_ms=sharp,
+        sharp_after_unknown=sharp_reason,
+        readiness_after_ms=readiness,
         cpu_mean=statistics.mean(cpu) if cpu else None,
         cpu_samples=len(cpu),
         cpu_sample_span_ms=(
@@ -108,6 +143,68 @@ def summarize(rows, start, end, include_end=False):
         ),
         rss_peak=max((r["rss"] for r in samples), default=None),
     )
+    prior_samples = [
+        r for r in rows if r.get("kind") == "sample" and r["t_ms"] <= start
+    ]
+    before = prior_samples[-1] if prior_samples else None
+    after = samples[-1] if samples and samples[-1]["t_ms"] > start else None
+    result["rss_before"] = before.get("rss") if before else None
+    result["rss_before_ms"] = before["t_ms"] if before else None
+    result["rss_after"] = after.get("rss") if after else None
+    result["rss_after_ms"] = after["t_ms"] if after else None
+    result["rss_before_estimated"] = before["t_ms"] < start if before else None
+    result["rss_after_estimated"] = after["t_ms"] < end if after else None
+    result["rss_delta"] = (
+        result["rss_after"] - result["rss_before"]
+        if result["rss_before"] is not None and result["rss_after"] is not None
+        else None
+    )
+    result["rss_delta_estimated"] = (
+        result["rss_before_estimated"] or result["rss_after_estimated"]
+        if result["rss_delta"] is not None
+        else None
+    )
+    result["resource_release"] = None
+    if timeline and "resources" in timeline[0] and "resources" in timeline[-1]:
+        before = {r["owner"]: r for r in timeline[0]["resources"]}
+        after = {r["owner"]: r for r in timeline[-1]["resources"]}
+        result["resource_release"] = [
+            dict(
+                owner=owner,
+                before=before[owner],
+                after=after[owner],
+                released={
+                    key: before[owner][key] - after[owner][key]
+                    for key in (
+                        "text_bytes",
+                        "tile_bytes",
+                        "search_workers",
+                        "active_workers",
+                    )
+                    if key in before[owner] and key in after[owner]
+                },
+            )
+            for owner in sorted(before.keys() & after.keys())
+        ]
+    for field, metric in (
+        ("missing_pixels", "missing_pixel_ms"),
+        ("stand_in_pixels", "stand_in_pixel_ms"),
+    ):
+        area_time = 0.0 if timeline and timeline[0]["t_ms"] <= start else None
+        for index, row in enumerate(timeline):
+            until = (
+                timeline[index + 1]["t_ms"]
+                if index + 1 < len(timeline)
+                else end
+            )
+            duration = max(0, until - row["t_ms"])
+            if duration == 0:
+                continue
+            if not isinstance(row.get(field), (int, float)):
+                area_time = None
+            if area_time is not None:
+                area_time += row[field] * duration
+        result[metric] = area_time
     for field in (
         "paint_ms",
         "build_ms",

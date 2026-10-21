@@ -6,8 +6,10 @@ wait idle
 mark jumps
 key G
 wait complete
+expect page 5364
 key g g
 wait complete
+expect page 1
 key +
 wait complete
 key =
@@ -15,4 +17,6 @@ wait complete
 mark history
 key C-o
 wait idle
+expect settled true
+expect sharp true
 quit

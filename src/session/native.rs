@@ -23,6 +23,9 @@ const BUDGET: usize = 64 << 20;
 const BATCH: usize = 64;
 
 pub enum Input {
+  Observe(bool),
+  #[cfg(feature = "bench-events")]
+  Snapshot,
   #[cfg(feature = "bench-events")]
   Mark {
     name: String,
@@ -75,6 +78,9 @@ pub struct Metrics {
   pub page: Option<vpdf_model::text::PageId>,
   pub pages: usize,
   pub hits: usize,
+  pub observation: Observation,
+  pub observation_time: Option<Duration>,
+  pub scroll: f32,
 }
 
 impl Default for Metrics {
@@ -90,8 +96,65 @@ impl Default for Metrics {
       page: None,
       pages: 0,
       hits: 0,
+      observation: Observation::default(),
+      observation_time: None,
+      scroll: 0.0,
     }
   }
+}
+
+#[derive(Default, serde::Serialize)]
+pub struct Observation {
+  pub document: Option<PathBuf>,
+  pub pane: Option<u32>,
+  pub tab: usize,
+  pub pane_count: usize,
+  pub overview: bool,
+  pub panel: &'static str,
+  pub document_generation: u64,
+  pub query: String,
+  pub query_generation: u64,
+  pub selected_hit: Option<usize>,
+  pub search_outcome: &'static str,
+  pub error: Option<String>,
+  pub resources: Vec<Resources>,
+}
+
+impl Observation {
+  pub(crate) fn of(app: &crate::app::App) -> Self {
+    let position = app.reader.cursor;
+    let hits = app.search.hits();
+    let selected_hit = hits
+      .partition_point(|hit| hit.first <= position)
+      .checked_sub(1)
+      .filter(|&index| position <= hits[index].last)
+      .map(|index| index + 1);
+    Self {
+      document: Some(app.path.clone()),
+      pane: Some(app.id),
+      tab: 1,
+      pane_count: 1,
+      overview: app.overlays.overview().is_some(),
+      panel: app.panel.as_ref().map_or("none", |p| p.view.kind().title()),
+      document_generation: app.document_generation,
+      query: app.search.query().text.clone(),
+      query_generation: app.search.job_generation(),
+      selected_hit,
+      search_outcome: app.search.outcome(),
+      error: app.error.clone(),
+      resources: Vec::new(),
+    }
+  }
+}
+
+#[derive(serde::Serialize)]
+pub struct Resources {
+  pub owner: u32,
+  pub visible: bool,
+  pub text_bytes: usize,
+  pub tile_bytes: usize,
+  pub active_workers: usize,
+  pub search_workers: usize,
 }
 
 pub struct Frame {
@@ -327,6 +390,12 @@ fn drain(
         if let Some(ack) = ack {
           let _ = ack.send(result);
         }
+        applied = true;
+      }
+      #[cfg(feature = "bench-events")]
+      Input::Snapshot => applied = true,
+      Input::Observe(enabled) => {
+        session.observing = enabled.then_some(());
         applied = true;
       }
       Input::Close => return None,
@@ -656,6 +725,7 @@ fn completions(
       }
     }
     if overflow {
+      app.track_jobs();
       app.worker = crate::raster::Raster::raw(
         &app.path,
         &app.password,
@@ -688,13 +758,15 @@ fn frame(
   let started = Instant::now();
   let owners: Vec<_> = session
     .tabs
-    .iter()
+    .get(session.active)
+    .into_iter()
     .flat_map(|tab| &tab.panes)
     .map(|app| TileOwner::new(app.id))
     .collect();
+  let visible: HashSet<_> = owners.iter().map(|owner| owner.get()).collect();
   let retired: Vec<_> = cache
     .entries()
-    .filter(|(id, _)| !owners.contains(&id.owner))
+    .filter(|(id, _)| !visible.contains(&id.owner.get()))
     .map(|(id, _)| *id)
     .collect();
   for id in retired {
@@ -769,7 +841,7 @@ fn frame(
     session.shape()
   };
   Ok(Frame {
-    metrics: metrics(session, started),
+    metrics: frame_metrics(session, started, cache, &visible),
     screen,
     scene,
     images,
@@ -782,6 +854,48 @@ fn frame(
     quit: session.quit,
     clipboard,
   })
+}
+
+fn frame_metrics(
+  session: &Session,
+  started: Instant,
+  cache: &Cache<TileId, Arc<Vec<u8>>>,
+  visible: &HashSet<u32>,
+) -> Metrics {
+  let mut metrics = metrics(session, started);
+  if session.observing.is_some() {
+    let observing = Instant::now();
+    metrics.observation = session
+      .tabs
+      .get(session.active)
+      .map_or_else(Observation::default, |tab| {
+        Observation::of(&tab.panes[tab.focus])
+      });
+    metrics.observation.tab = session.active + 1;
+    metrics.observation.pane_count =
+      session.tabs.get(session.active).map_or(0, |tab| tab.panes.len());
+    metrics.observation.resources = session
+      .tabs
+      .iter()
+      .flat_map(|tab| &tab.panes)
+      .map(|app| Resources {
+        owner: app.id,
+        visible: visible.contains(&app.id),
+        text_bytes: app.doc.cache_bytes(),
+        tile_bytes: cache
+          .entries()
+          .filter(|(id, _)| id.owner.get() == app.id)
+          .map(|(_, pixels)| pixels.len())
+          .sum(),
+        active_workers: app.active_workers(),
+        search_workers: usize::from(app.search_worker.is_some()),
+      })
+      .collect();
+    metrics.observation_time = Some(observing.elapsed());
+  }
+  metrics.built = Instant::now();
+  metrics.build = metrics.built.saturating_duration_since(started);
+  metrics
 }
 
 fn metrics(session: &Session, started: Instant) -> Metrics {
@@ -802,6 +916,9 @@ fn metrics(session: &Session, started: Instant) -> Metrics {
     page: focused.map(|app| app.navigation_position().page),
     pages: focused.map_or(0, |app| app.doc.pages.len()),
     hits: focused.map_or(0, |app| app.search.hits().len()),
+    observation: Observation::default(),
+    observation_time: None,
+    scroll: focused.map_or(0.0, |app| app.reader.scroll),
   }
 }
 
@@ -834,6 +951,31 @@ mod tests {
       cell_height: 20,
       origin: (0, 0),
     }
+  }
+
+  #[test]
+  fn observations_require_a_consumer() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("source.pdf");
+    crate::fixtures::pdf(&path, &["observed"], "")?;
+    let mut session = Session::new(None);
+    let mut screen = sized();
+    apply(&mut session, Input::Open(path.clone()), &mut screen);
+    let cache = Cache::new(BUDGET);
+    let visible = HashSet::new();
+    let started = Instant::now();
+    let disabled = frame_metrics(&session, started, &cache, &visible);
+    assert!(disabled.observation_time.is_none());
+    assert!(disabled.observation.document.is_none());
+    assert!(disabled.observation.resources.is_empty());
+    session.observing = Some(());
+    let enabled = frame_metrics(&session, started, &cache, &visible);
+    assert!(enabled.observation_time.is_some());
+    assert_eq!(enabled.observation.document, Some(path.canonicalize()?));
+    assert_eq!(enabled.observation.resources.len(), 1);
+    assert!(enabled.built >= disabled.built);
+    assert!(enabled.build >= enabled.observation_time.unwrap());
+    Ok(())
   }
 
   #[test]

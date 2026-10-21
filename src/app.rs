@@ -72,6 +72,8 @@ pub struct Tabline {
 #[expect(clippy::struct_excessive_bools, reason = "independent pane flags")]
 pub struct App {
   pub id: u32,
+  pub document_generation: u64,
+  retired_jobs: Vec<vpdf_pdf::jobs::Activity>,
   pub doc: Document,
   pub reader: Pane,
   pub layout: Layout,
@@ -181,6 +183,8 @@ impl App {
     let worker = frontend.raster(path, password, doc.lists(), &wake, false);
     Ok(Self {
       id: NEXT.fetch_add(1, Ordering::Relaxed),
+      document_generation: 0,
+      retired_jobs: Vec::new(),
       doc,
       reader: Pane::default(),
       layout,
@@ -234,12 +238,44 @@ impl App {
 }
 
 impl App {
+  pub(crate) fn track_jobs(&mut self) {
+    self.retired_jobs.retain(vpdf_pdf::jobs::Activity::active);
+    let mut activities = vec![self.worker.service.activity()];
+    if let Some(worker) = &self.search_worker {
+      activities.push(worker.activity());
+    }
+    for activity in activities {
+      activity.observe(&self.wake);
+      if activity.active()
+        && !self.retired_jobs.iter().any(|old| old.same(&activity))
+      {
+        self.retired_jobs.push(activity);
+      }
+    }
+  }
+
+  pub(crate) fn active_workers(&self) -> usize {
+    let current = self.worker.service.activity();
+    let search = self
+      .search_worker
+      .as_ref()
+      .map(vpdf_pdf::jobs::search::SearchWorker::activity);
+    let mut activities = self.retired_jobs.clone();
+    for activity in std::iter::once(current).chain(search) {
+      if !activities.iter().any(|old| old.same(&activity)) {
+        activities.push(activity);
+      }
+    }
+    activities.iter().filter(|a| a.active()).count()
+  }
+
   /// Releases what a hidden pane rebuilds on demand: the search worker
   /// with its indexes, cached text and display lists, and the render
   /// coordinator's document with every page it loaded. A running search
   /// resumes when the pane shows again.
   pub fn trim(&mut self) {
     self.crop_scan.clear();
+    self.track_jobs();
     self.search_worker = None;
     self.doc.trim();
     self.worker = self.frontend.raster(
@@ -257,6 +293,7 @@ impl App {
     // A write during the open shows up as a later change.
     let stamp = crate::watch::stamp(&self.path);
     self.doc = Document::open(&self.path, password)?;
+    self.document_generation += 1;
     self.crop_scan.clear();
     self.layout.clear_crops();
     self.layout.reflow(self.doc.pages.iter().map(|page| page.bounds));
@@ -265,6 +302,7 @@ impl App {
     if !self.layout.crop().is_none() {
       self.start_crop();
     }
+    self.track_jobs();
     self.worker = self.frontend.raster(
       &self.path,
       password,
@@ -272,6 +310,7 @@ impl App {
       &self.wake,
       false,
     );
+    self.track_jobs();
     self.search_worker = None;
     let rerun = self.search.reset_document();
     // An open outline panel waits on the new outline now.

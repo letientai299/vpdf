@@ -9,6 +9,7 @@ impl Graphics {
   /// ever; `WezTerm`, which loses placement ids on resize, keeps images
   /// in cells, which the full clear after a resize erases.
   pub fn begin(&mut self, out: &mut impl Write) -> Result<()> {
+    self.missing_tiles = 0;
     for id in std::mem::take(&mut self.stale) {
       self.transport.graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
       self.unplace(id);
@@ -96,6 +97,27 @@ impl Graphics {
   /// Places a tile with its top-left at `origin` pixels, uploading a
   /// kept one first; returns false when the tile still needs rendering.
   pub fn place_at(
+    &mut self,
+    key: Key,
+    (x, y): (f32, f32),
+    screen: Screen,
+    left: u16,
+    out: &mut impl Write,
+  ) -> Result<bool> {
+    let placed = self.place_tile(key, (x, y), screen, left, out)?;
+    if !placed {
+      let rect = Bounds {
+        x0: x.floor(),
+        y0: y.floor(),
+        x1: x.floor() + key.1.width as f32,
+        y1: y.floor() + key.1.height as f32,
+      };
+      self.missing_tiles += usize::from(clip(rect, screen).is_some());
+    }
+    Ok(placed)
+  }
+
+  fn place_tile(
     &mut self,
     key: Key,
     (x, y): (f32, f32),

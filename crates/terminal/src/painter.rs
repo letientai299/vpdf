@@ -468,6 +468,7 @@ mod tests {
           &mut expected
         )?);
         direct.end(&mut expected)?;
+        assert_eq!(direct.missing_tiles, 1);
         let mut actual = Vec::new();
         streaming.begin(&mut actual)?;
         let mut painter =
@@ -478,6 +479,7 @@ mod tests {
         assert!(!painter.tile(missing, absent.origin(), screen, 3)?);
         painter.finish()?;
         streaming.end(&mut actual)?;
+        assert_eq!(streaming.missing_tiles, 1);
         assert_eq!(actual, expected);
         let mut recorded = Vec::new();
         replay.begin(&mut recorded)?;
@@ -486,6 +488,7 @@ mod tests {
         painter.paint(&scene);
         painter.finish()?;
         replay.end(&mut recorded)?;
+        assert_eq!(replay.missing_tiles, 1);
         assert_eq!(recorded, expected);
       }
     }
