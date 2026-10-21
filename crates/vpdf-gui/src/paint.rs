@@ -4,15 +4,16 @@ use eframe::egui::{
   self, Color32, FontId, Painter, Pos2, Rect, TextureHandle, TextureOptions,
   Vec2,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use unicode_width::UnicodeWidthChar;
 use vpdf::session::native::Frame;
 use vpdf_model::cache::Cache;
 use vpdf_model::geometry::Screen;
 use vpdf_model::image::PictureId;
-use vpdf_model::scene::{Layer, Op};
-use vpdf_model::tile::TileId;
+use vpdf_model::scene::{Layer, Op, TilePlacement};
+use vpdf_model::text::PageId;
+use vpdf_model::tile::{TileId, TileKey, TileOwner};
 
 const BUDGET: usize = 64 << 20;
 pub const FONT_SIZE: f32 = 16.0;
@@ -33,11 +34,21 @@ pub struct Renderer {
   textures: Cache<ImageId, Texture>,
   pub uploaded: usize,
   pub upload_bytes: usize,
+  /// Tiles of the last paint drawn from another scale.
+  pub stand_ins: usize,
+  /// Tiles of the last paint drawn blank.
+  pub missing: usize,
 }
 
 impl Default for Renderer {
   fn default() -> Self {
-    Self { textures: Cache::new(BUDGET), uploaded: 0, upload_bytes: 0 }
+    Self {
+      textures: Cache::new(BUDGET),
+      uploaded: 0,
+      upload_bytes: 0,
+      stand_ins: 0,
+      missing: 0,
+    }
   }
 }
 
@@ -55,7 +66,10 @@ impl Renderer {
       .textures
       .entries()
       .filter(|(id, _)| match id {
-        ImageId::Tile(id) => !frame.owners.contains(&id.owner),
+        ImageId::Tile(id) => {
+          !frame.owners.contains(&id.owner)
+            || frame.reloaded.contains(&id.owner)
+        }
         ImageId::Picture(id) => !frame
           .scene
           .iter()
@@ -75,18 +89,27 @@ impl Renderer {
         [key.width as usize, key.height as usize],
       );
     }
+    let mut pending = Vec::new();
     for op in &frame.scene {
       let Op::Tile(placement) = op else { continue };
       let id = placement.id();
-      if !ready.contains(&id) {
-        continue;
-      }
-      let Some(texture) = self.textures.get(&ImageId::Tile(id)) else {
-        continue;
-      };
       let (screen, left) = placement.frame();
-      texture.paint(painter, placement.origin(), screen, left, scale);
+      if ready.contains(&id)
+        && let Some(texture) = self.textures.get(&ImageId::Tile(id))
+      {
+        texture.paint(painter, placement.origin(), screen, left, scale);
+      } else {
+        pending.push(**placement);
+      }
     }
+    let kept =
+      if pending.is_empty() { HashMap::default() } else { self.pages() };
+    let covered = pending
+      .iter()
+      .filter(|placement| stand_in(painter, &kept, **placement, scale))
+      .count();
+    self.stand_ins = covered;
+    self.missing = pending.len() - covered;
     fills(painter, &frame.scene, Layer::BelowText, scale);
     let mut cells = Grid::new(screen);
     for op in &frame.scene {
@@ -111,6 +134,19 @@ impl Renderer {
       texture.paint(painter, picture.origin(), screen, left, scale);
     }
     ime
+  }
+  /// Kept tile textures by owner and page.
+  fn pages(&self) -> HashMap<(TileOwner, PageId), Vec<Kept>> {
+    let mut pages: HashMap<_, Vec<_>> = HashMap::new();
+    for (id, texture) in self.textures.entries() {
+      let ImageId::Tile(id) = id else { continue };
+      pages.entry((id.owner, id.key.page)).or_default().push(Kept {
+        key: id.key,
+        texture: texture.handle.id(),
+        size: texture.size,
+      });
+    }
+    pages
   }
   fn upload(
     &mut self,
@@ -149,19 +185,92 @@ impl Texture {
     left: u16,
     scale: f32,
   ) {
-    let min = offset(screen, left, scale)
-      + Vec2::new(origin.0.floor(), origin.1.floor()) / scale;
-    let rect = Rect::from_min_size(
-      min,
-      Vec2::new(self.size[0] as f32, self.size[1] as f32) / scale,
-    );
-    painter.with_clip_rect(clip(screen, left, scale)).image(
-      self.handle.id(),
-      rect,
-      Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-      Color32::WHITE,
-    );
+    let size = Vec2::new(self.size[0] as f32, self.size[1] as f32);
+    let rect = placed(screen, left, scale, origin, size);
+    image(painter, clip(screen, left, scale), rect, self.handle.id());
   }
+}
+
+/// Screen points of an image `size` pixels wide with its top-left at
+/// `origin`, rounded down so neighbors meet without a seam.
+fn placed(
+  screen: Screen,
+  left: u16,
+  scale: f32,
+  origin: (f32, f32),
+  size: Vec2,
+) -> Rect {
+  Rect::from_min_size(
+    offset(screen, left, scale)
+      + Vec2::new(origin.0.floor(), origin.1.floor()) / scale,
+    size / scale,
+  )
+}
+
+/// A kept texture that can stand in for a tile at another scale.
+struct Kept {
+  key: TileKey,
+  texture: egui::TextureId,
+  size: [usize; 2],
+}
+
+/// Covers a tile still rendering with kept textures of its page at
+/// other scales, nearest last, as after a resize or zoom.
+fn stand_in(
+  painter: &Painter,
+  kept: &HashMap<(TileOwner, PageId), Vec<Kept>>,
+  placement: TilePlacement,
+  scale: f32,
+) -> bool {
+  let TileId { owner, key } = placement.id();
+  let Some(textures) = kept.get(&(owner, key.page)) else { return false };
+  let (screen, left) = placement.frame();
+  let origin = placement.origin();
+  let page = (origin.0 - key.x as f32, origin.1 - key.y as f32);
+  let corner = offset(screen, left, scale);
+  let size = Vec2::new(key.width as f32, key.height as f32);
+  let target = clip(screen, left, scale)
+    .intersect(placed(screen, left, scale, origin, size));
+  let rect = |kept: &Kept| {
+    let ratio = key.scale as f32 / kept.key.scale as f32;
+    Rect::from_min_size(
+      corner
+        + Vec2::new(
+          page.0 + kept.key.x as f32 * ratio,
+          page.1 + kept.key.y as f32 * ratio,
+        ) / scale,
+      Vec2::new(kept.size[0] as f32, kept.size[1] as f32) * ratio / scale,
+    )
+  };
+  let mut reaching: Vec<_> = textures
+    .iter()
+    .filter(|kept| {
+      kept.key.rotation == key.rotation
+        && kept.key.crop == key.crop
+        && kept.key.scale != key.scale
+    })
+    .map(|kept| (kept, rect(kept)))
+    .filter(|(_, rect)| rect.intersects(target))
+    .collect();
+  let distance =
+    |other: u32| (f64::from(other) / f64::from(key.scale)).ln().abs();
+  // Farther scales fill gaps the nearest one leaves.
+  reaching.sort_by(|(a, _), (b, _)| {
+    distance(b.key.scale).total_cmp(&distance(a.key.scale))
+  });
+  for (kept, rect) in &reaching {
+    image(painter, target, *rect, kept.texture);
+  }
+  !reaching.is_empty()
+}
+
+fn image(painter: &Painter, clip: Rect, rect: Rect, texture: egui::TextureId) {
+  painter.with_clip_rect(clip).image(
+    texture,
+    rect,
+    Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+    Color32::WHITE,
+  );
 }
 
 fn offset(screen: Screen, left: u16, scale: f32) -> Pos2 {
@@ -530,6 +639,7 @@ mod tests {
       complete: true,
       quit: false,
       clipboard: None,
+      reloaded: Vec::new(),
     };
     let ctx = egui::Context::default();
     let mut renderer = Renderer::default();
@@ -551,6 +661,94 @@ mod tests {
     });
     output.textures_delta.clear();
     assert_eq!(renderer.textures.used(), 0);
+  }
+
+  #[test]
+  fn other_scales_stand_in_for_pending_tiles() {
+    use vpdf_model::geometry::Crop;
+    use vpdf_model::text::PageId;
+    use vpdf_model::tile::{TileKey, TileOwner};
+    let screen = Screen {
+      columns: 40,
+      rows: 20,
+      cell_width: 10,
+      cell_height: 20,
+      origin: (0, 0),
+    };
+    let owner = TileOwner::new(1);
+    let key = |page, scale, x, size| TileKey {
+      page: PageId(page),
+      scale,
+      rotation: 0,
+      x,
+      y: 0,
+      width: size,
+      height: size,
+      crop: Crop::default(),
+    };
+    let tile = |key| TileId { owner, key };
+    let frame = |scene: Vec<TileId>, images: Vec<TileId>| Frame {
+      content: true,
+      screen,
+      scene: scene
+        .into_iter()
+        .map(|id| {
+          let origin = (10.0 + id.key.x as f32, 0.0);
+          Op::Tile(Box::new(TilePlacement::new(id, origin, screen, 0)))
+        })
+        .collect(),
+      images: images
+        .into_iter()
+        .map(|id| vpdf::session::native::Image {
+          id,
+          pixels: Arc::new(vec![
+            255;
+            (id.key.width * id.key.height * 3) as usize
+          ]),
+        })
+        .collect(),
+      owners: vec![owner],
+      title: String::new(),
+      cursor: vpdf_model::style::Shape::Default,
+      complete: false,
+      quit: false,
+      clipboard: None,
+      reloaded: Vec::new(),
+    };
+    let ctx = egui::Context::default();
+    let mut renderer = Renderer::default();
+    let mut paint = |frame: &Frame| {
+      let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        renderer.paint(ui.painter(), frame, screen, 1.0, None);
+      });
+      output.textures_delta.clear();
+      (output.shapes, (renderer.stand_ins, renderer.missing))
+    };
+    let old = tile(key(0, 1024, 0, 4));
+    paint(&frame(vec![old], vec![old]));
+    // Twice the scale: the old tile covers the new one's 8 pixels.
+    let new = tile(key(0, 2048, 0, 8));
+    let other = tile(key(1, 2048, 0, 8));
+    let (shapes, counts) = paint(&frame(vec![new, other], Vec::new()));
+    assert_eq!(counts, (1, 1));
+    let image = shapes
+      .iter()
+      .find_map(|shape| match &shape.shape {
+        egui::Shape::Mesh(mesh) => Some((mesh.calc_bounds(), shape.clip_rect)),
+        _ => None,
+      })
+      .expect("a stand-in image");
+    assert_eq!(
+      image.0,
+      Rect::from_min_size(Pos2::new(10.0, 0.0), Vec2::splat(8.0))
+    );
+    assert_eq!(image.1.min, Pos2::new(10.0, 0.0));
+    assert_eq!(image.1.max, Pos2::new(18.0, 8.0));
+    // A reloaded document's kept textures stand in for nothing.
+    let mut reloaded = frame(vec![new, other], Vec::new());
+    reloaded.reloaded.push(owner);
+    assert_eq!(paint(&reloaded).1, (0, 2));
+    assert_eq!(paint(&frame(vec![new], vec![new])).1, (0, 0));
   }
 
   #[test]
@@ -578,6 +776,7 @@ mod tests {
       complete: true,
       quit: false,
       clipboard: None,
+      reloaded: Vec::new(),
     };
     let ctx = egui::Context::default();
     let mut renderer = Renderer::default();

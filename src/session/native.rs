@@ -15,6 +15,8 @@ use vpdf_model::tile::{TileId, TileOwner};
 use vpdf_pdf::jobs::Wake;
 
 const BUDGET: usize = 64 << 20;
+/// Inputs one frame takes beyond the first, so a stream cannot hold it.
+const BATCH: usize = 64;
 
 pub enum Input {
   Resize(Screen),
@@ -40,6 +42,8 @@ pub struct Frame {
   pub scene: Scene<'static>,
   pub images: Vec<Image>,
   pub owners: Vec<TileOwner>,
+  /// Owners whose document reloaded; their kept images are stale.
+  pub reloaded: Vec<TileOwner>,
   pub title: String,
   pub cursor: vpdf_model::style::Shape,
   pub complete: bool,
@@ -157,6 +161,7 @@ fn run(
   }
   session.resize(screen)?;
   let mut cache = Cache::new(BUDGET);
+  let mut reloaded = Vec::new();
   let mut chores = super::run::Chores::new(Instant::now());
   let mut dirty = true;
   loop {
@@ -185,8 +190,8 @@ fn run(
     if !session.tabs.is_empty() {
       dirty |= session.hover_preview(Instant::now());
       dirty |= session.autoscroll(Instant::now());
-      dirty |= completions(&mut session, &mut cache);
       dirty |= session.hover_settled(Instant::now());
+      dirty |= completions(&mut session, &mut cache, &mut reloaded);
       dirty |= chores.run(&mut session, &mut std::io::sink())?;
       for app in &mut session.tab().panes {
         dirty |= app.animate();
@@ -199,6 +204,7 @@ fn run(
       match frame {
         Ok(mut frame) => {
           frame.content = dirty;
+          frame.reloaded = std::mem::take(&mut reloaded);
           publish(latest, frame);
         }
         Err(error) => {
@@ -220,27 +226,53 @@ fn run(
       Err(mpsc::RecvTimeoutError::Timeout) => continue,
       Err(mpsc::RecvTimeoutError::Disconnected) => break,
     };
-    if matches!(input, Input::Close) {
-      break;
+    // Queued input lands in one frame rather than one frame each.
+    let inputs = std::iter::once(input).chain(receive.try_iter().take(BATCH));
+    match drain(&mut session, inputs, &mut chores, &mut screen, pending) {
+      Some(applied) => dirty |= applied,
+      None => break,
     }
-    if matches!(input, Input::Wake) {
-      pending.store(false, Ordering::Release);
-      continue;
-    }
-    if let Input::Presented { content, bytes } = input {
-      let now = Instant::now();
-      if content {
-        session.perf.frame(now);
-      }
-      session.drawn();
-      session.perf.bytes(now, bytes);
-      continue;
-    }
-    chores.touch();
-    apply(&mut session, input, &mut screen);
-    dirty = true;
   }
   session.finish()
+}
+
+/// Applies queued input; whether any needs a frame, or None on close.
+fn drain(
+  session: &mut Session,
+  inputs: impl Iterator<Item = Input>,
+  chores: &mut super::run::Chores,
+  screen: &mut Screen,
+  pending: &AtomicBool,
+) -> Option<bool> {
+  let mut applied = false;
+  for input in inputs {
+    match input {
+      Input::Close => return None,
+      Input::Wake => pending.store(false, Ordering::Release),
+      Input::Presented { content, bytes } => {
+        let now = Instant::now();
+        if content {
+          session.perf.frame(now);
+        }
+        session.drawn();
+        session.perf.bytes(now, bytes);
+      }
+      input => {
+        chores.touch();
+        apply(session, input, screen);
+        applied = true;
+        // Queued keys and opens resume first, at the top of the loop.
+        if session.quit
+          || session.picker.is_some()
+          || !session.pending_keys.is_empty()
+          || !session.native_opens.is_empty()
+        {
+          break;
+        }
+      }
+    }
+  }
+  Some(applied)
 }
 
 fn finish_launch(
@@ -343,6 +375,9 @@ fn publish(latest: &Mutex<Option<Frame>>, mut frame: Frame) {
       output.as_mut().and_then(|previous| previous.clipboard.take());
   }
   frame.content |= output.as_ref().is_some_and(|previous| previous.content);
+  if let Some(previous) = output.as_mut() {
+    frame.reloaded.append(&mut previous.reloaded);
+  }
   *output = Some(frame);
 }
 
@@ -493,6 +528,7 @@ fn home_event(
 fn completions(
   session: &mut Session,
   cache: &mut Cache<TileId, Arc<Vec<u8>>>,
+  reloaded: &mut Vec<TileOwner>,
 ) -> bool {
   let mut dirty = session.image_updates(&mut std::io::sink());
   let mut evicted = Vec::new();
@@ -508,6 +544,7 @@ fn completions(
       for id in old {
         cache.remove(&id);
       }
+      reloaded.push(owner);
       app.tiles.invalidate();
       dirty = true;
     }
@@ -647,6 +684,7 @@ fn frame(
     scene,
     images,
     owners,
+    reloaded: Vec::new(),
     title,
     cursor,
     complete,
@@ -694,6 +732,34 @@ mod tests {
   fn protected(path: &std::path::Path) -> Result<tempfile::NamedTempFile> {
     let mut source = vpdf_pdf::document::Document::open(path, "")?;
     crate::encryption::encrypt(&mut source.native)
+  }
+
+  /// A frame the window never took hands its one-shot fields on.
+  #[test]
+  fn publish_merges_untaken_frames() {
+    let frame = |owner: u32, clipboard: Option<&str>| Frame {
+      screen: sized(),
+      scene: Scene::new(),
+      images: Vec::new(),
+      owners: Vec::new(),
+      reloaded: vec![TileOwner::new(owner)],
+      title: String::new(),
+      cursor: vpdf_model::style::Shape::Default,
+      complete: true,
+      content: false,
+      quit: false,
+      clipboard: clipboard.map(str::to_owned),
+    };
+    let latest = Mutex::new(None);
+    publish(&latest, frame(1, Some("copied")));
+    publish(&latest, frame(2, None));
+    let shown = latest.lock().unwrap().take().unwrap();
+    assert_eq!(shown.reloaded, [TileOwner::new(2), TileOwner::new(1)]);
+    assert_eq!(shown.clipboard.as_deref(), Some("copied"));
+    publish(&latest, frame(3, None));
+    let next = latest.lock().unwrap().take().unwrap();
+    assert_eq!(next.reloaded, [TileOwner::new(3)]);
+    assert_eq!(next.clipboard, None);
   }
 
   #[test]
@@ -1549,7 +1615,7 @@ mod tests {
     let deadline = Instant::now() + Duration::from_secs(10);
     while session.tabs[0].panes[0].region_job.is_some() {
       wakes.recv_timeout(deadline.saturating_duration_since(Instant::now()))?;
-      completions(&mut session, &mut cache);
+      completions(&mut session, &mut cache, &mut Vec::new());
     }
     assert!(session.tabs[0].panes[0].reader.message.starts_with("Saved "));
     assert!(
@@ -1668,7 +1734,7 @@ mod tests {
       overflow: Arc::new(AtomicBool::new(true)),
     });
     let mut cache = Cache::new(BUDGET);
-    assert!(completions(&mut session, &mut cache));
+    assert!(completions(&mut session, &mut cache, &mut Vec::new()));
     assert!(cache.contains(&id));
     assert!(send.try_send(Err("old receiver".into())).is_err());
     assert!(

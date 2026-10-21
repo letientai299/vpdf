@@ -300,6 +300,12 @@ records no document text, but includes page and scroll position. Timing starts
 when the loop consumes input and ends at output flush; terminal painting and
 physical input latency are outside that measurement.
 
+`vpdf-gui` accepts the same variable and writes one line per paint: CPU paint
+time before GPU submission, whether a new session frame arrived, texture upload
+bytes, and visible tiles drawn from another scale (`stand_ins`) or blank
+(`missing`). An unwritable path disables its trace with a warning rather than
+stopping the app.
+
 Publish measurements with repeated runs, sample counts, and percentile
 summaries. Label CPU frame construction, render readiness,
 input-consumption-to-flush, and observed display behavior separately. A speedup

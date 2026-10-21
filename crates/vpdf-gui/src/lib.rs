@@ -3,3 +3,4 @@ pub mod inject;
 pub mod input;
 pub mod paint;
 mod style;
+pub mod trace;

@@ -6,6 +6,7 @@ use vpdf::session::native::{Bridge, Frame, Input};
 use vpdf_gui::{
   inject, input,
   paint::{self, Renderer},
+  trace::{self, Trace},
 };
 use vpdf_model::geometry::Screen;
 
@@ -33,6 +34,7 @@ struct Window {
   screen: Option<Screen>,
   capture: Option<PathBuf>,
   events: Option<Receiver<inject::Injected>>,
+  trace: Trace,
 }
 
 impl Window {
@@ -56,12 +58,14 @@ impl Window {
       screen: None,
       capture: args.capture,
       events,
+      trace: Trace::from_env(),
     })
   }
 }
 
 impl eframe::App for Window {
   fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
+    let started = std::time::Instant::now();
     let ctx = ui.ctx().clone();
     let scale = ctx.pixels_per_point();
     let font = FontId::monospace(paint::FONT_SIZE);
@@ -141,16 +145,22 @@ impl eframe::App for Window {
       if received || bytes != 0 {
         self.bridge.send(Input::Presented { content, bytes });
       }
-      if frame.complete
-        && (!frame.images.is_empty()
-          || frame
-            .scene
-            .iter()
-            .any(|op| matches!(op, vpdf_model::scene::Op::Picture(_))))
+      self.trace.paint(&trace::Paint {
+        started,
+        fresh: received,
+        upload_bytes: bytes,
+        stand_ins: self.renderer.stand_ins,
+        missing: self.renderer.missing,
+      });
+      if shows_images(frame)
         && let Some(path) = self.capture.take()
       {
         ctx.request_screenshot(move |image| capture(&image, &path));
       }
+    }
+    // Repaints of this frame keep the textures reloaded once.
+    if let Some(frame) = &mut self.frame {
+      frame.reloaded.clear();
     }
   }
   fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
@@ -166,6 +176,16 @@ impl eframe::App for Window {
       eprintln!("Close failed: {error}");
     }
   }
+}
+
+/// A complete frame with pixels, worth a `--capture`.
+fn shows_images(frame: &Frame) -> bool {
+  frame.complete
+    && (!frame.images.is_empty()
+      || frame
+        .scene
+        .iter()
+        .any(|op| matches!(op, vpdf_model::scene::Op::Picture(_))))
 }
 
 fn capture(image: &egui::ColorImage, path: &std::path::Path) {
