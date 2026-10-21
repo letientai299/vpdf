@@ -68,7 +68,9 @@ blocking session waits stay outside window callbacks. Both frontends use the
 same reading state, keys, document jobs, persistence, and session composition.
 Session composition orders panes, split dividers, and resize notices through
 the shared drawing surface. Frontend wrappers retain delivery and frame
-metadata.
+metadata. Shared [maintenance][maintenance] owns session deadlines, saved-state
+checks, file reload checks, and transient UI expiry. The frontends keep their
+own event loops and animation pacing; unrelated wakes do not advance animation.
 The terminal streams drawing operations while the window retains them. Native
 input and effect integration remains incomplete; see [development][development].
 
@@ -139,3 +141,5 @@ to release native resources. The policy and thresholds live in the
 [packages]: packages.md
 [adapter]: ../../src/pdf_text.rs
 [policy]: ../../scripts/check_packages.py
+
+[maintenance]: ../../src/session/maintenance.rs

@@ -78,6 +78,10 @@ impl App {
   /// Reloads once the file differs from the loaded one and has held
   /// still for `SETTLE`; returns whether it reloaded.
   pub fn watch(&mut self) -> Result<bool> {
+    self.watch_at(Instant::now())
+  }
+
+  pub(crate) fn watch_at(&mut self, at: Instant) -> Result<bool> {
     // A covered document counts as closed; uncovering checks again.
     if self.covered() {
       self.settling = None;
@@ -89,10 +93,11 @@ impl App {
       return Ok(false);
     };
     match self.settling {
-      Some((seen, since)) if seen == now && since.elapsed() >= SETTLE => {}
+      Some((seen, since))
+        if seen == now && at.duration_since(since) >= SETTLE => {}
       Some((seen, _)) if seen == now => return Ok(false),
       _ => {
-        self.settling = Some((now, Instant::now()));
+        self.settling = Some((now, at));
         return Ok(false);
       }
     }

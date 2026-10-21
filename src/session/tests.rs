@@ -1,3 +1,4 @@
+use super::maintenance::idle;
 use super::run::*;
 use super::windows::*;
 use super::*;
@@ -183,7 +184,7 @@ fn scrollbars_wake_and_hide() -> Result<()> {
   session.app().reader.seed_reader(|reader| reader.scroll += 64.0);
   session.draw_frame(&mut Vec::new())?;
   let now = Instant::now();
-  let wait = idle(&mut session, now, now, false);
+  let wait = idle(&mut session, now, now, false, Instant::now());
   assert!(wait <= vpdf_ui::scrollbar::Bar::SHOWN, "{wait:?}");
   assert!(!session.notify(), "shown until the deadline");
   let past = now.checked_sub(vpdf_ui::scrollbar::Bar::SHOWN * 2).unwrap();
@@ -276,7 +277,7 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
     assert!(remaining >= vpdf_ui::page::landing::Landing::DURATION);
     assert!(remaining < Duration::from_millis(650));
   }
-  let wait = idle(&mut session, now, now, false);
+  let wait = idle(&mut session, now, now, false, Instant::now());
   assert!(wait <= vpdf_ui::page::landing::Landing::DURATION);
   assert!(!session.notify());
   for app in &mut session.tab().panes {
@@ -286,7 +287,10 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
       now.checked_sub(vpdf_ui::page::landing::Landing::DURATION).unwrap(),
     );
   }
-  assert_eq!(idle(&mut session, now, now, false), Duration::ZERO);
+  assert_eq!(
+    idle(&mut session, now, now, false, Instant::now()),
+    Duration::ZERO
+  );
   assert!(session.notify());
   assert!(
     session.tab().panes.iter().all(|app| app
@@ -753,7 +757,7 @@ fn edge_drags_scroll_until_focus_loss() -> Result<()> {
   });
   let (column, row) = text.expect("a text cell");
   let now = Instant::now();
-  assert!(idle(&mut session, now, now, false) > Edge::INTERVAL);
+  assert!(idle(&mut session, now, now, false, Instant::now()) > Edge::INTERVAL);
   let (alt, plain) = (KeyModifiers::ALT, KeyModifiers::NONE);
   let corner = |app: &App| {
     app.gesture.sweep().and_then(vpdf_ui::input::gesture::Sweep::corner)
@@ -765,15 +769,17 @@ fn edge_drags_scroll_until_focus_loss() -> Result<()> {
     // The status row is past it.
     session.mouse(event(Drag(Left), 23))?;
     let due = session.autoscroll_due().expect("a held edge drag");
-    assert!(idle(&mut session, now, now, false) <= Edge::INTERVAL);
+    assert!(
+      idle(&mut session, now, now, false, Instant::now()) <= Edge::INTERVAL
+    );
     let before = corner(session.app());
-    assert!(session.autoscroll(due), "{modifiers:?}");
+    assert!(session.maintain(due), "{modifiers:?}");
     // Sweeps follow the scroll too.
     let moved = corner(session.app()) != before;
     assert_eq!(moved, modifiers == alt, "{modifiers:?}");
     input(&mut session, Act::Focus(false), &mut Vec::new())?;
     let later = Instant::now() + Edge::INTERVAL;
-    assert!(!session.autoscroll(later), "{modifiers:?}");
+    assert!(!session.maintain(later), "{modifiers:?}");
     assert_eq!(session.autoscroll_due(), None);
     // Drags after it hold nothing.
     session.mouse(event(Drag(Left), 23))?;
@@ -1026,8 +1032,8 @@ fn wheel_turns_defer_page_hover() -> Result<()> {
   session.rehover();
   assert!(!link_hit(&session));
   let due = session.hover_settle_due().expect("a deferred hover");
-  assert!(!session.hover_settled(Instant::now()));
-  assert!(session.hover_settled(due));
+  assert!(!session.maintain(due.checked_sub(Duration::from_nanos(1)).unwrap()));
+  assert!(session.maintain(due));
   assert_eq!(session.hover_settle_due(), None);
   // The gesture has ended by now in real time too.
   std::thread::sleep(due.saturating_duration_since(Instant::now()));

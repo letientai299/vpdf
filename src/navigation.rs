@@ -187,10 +187,14 @@ impl App {
 
 impl App {
   pub fn animate(&mut self) -> bool {
+    self.animate_at(Instant::now())
+  }
+
+  pub(crate) fn animate_at(&mut self, now: Instant) -> bool {
     if !self.reader.animation().active() {
       return false;
     }
-    self.reader.animate(Instant::now())
+    self.reader.animate(now)
   }
 
   pub fn scroll(&mut self, delta: f32) -> Result<()> {

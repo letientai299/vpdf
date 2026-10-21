@@ -195,10 +195,14 @@ impl App {
 
 impl App {
   pub fn clue_due(&mut self) -> bool {
+    self.clue_due_at(Instant::now())
+  }
+
+  pub(crate) fn clue_due_at(&mut self, now: Instant) -> bool {
     if self.overlays.prompt().is_some() || !self.overlays.clues().pending() {
       return false;
     }
-    if !self.overlays.clues_mut().poll(Instant::now()) {
+    if !self.overlays.clues_mut().poll(now) {
       return false;
     }
     let registers = self
@@ -224,10 +228,14 @@ impl App {
   }
 
   pub fn clue_wait(&self) -> Option<Duration> {
+    self.clue_wait_at(Instant::now())
+  }
+
+  pub(crate) fn clue_wait_at(&self, now: Instant) -> Option<Duration> {
     if self.overlays.prompt().is_some() || !self.overlays.clues().pending() {
       return None;
     }
-    self.overlays.clues().wait(Instant::now())
+    self.overlays.clues().wait(now)
   }
 
   pub fn after_key(&mut self) {

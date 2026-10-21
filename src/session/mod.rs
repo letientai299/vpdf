@@ -256,6 +256,7 @@ mod dispatch;
 mod edges;
 mod frame;
 mod interaction;
+mod maintenance;
 pub mod native;
 mod pointer;
 mod run;

@@ -36,10 +36,10 @@ impl Session {
     true
   }
 
-  pub(super) fn image_wait(&self) -> Option<Duration> {
+  pub(super) fn image_wait(&self, now: Instant) -> Option<Duration> {
     match &self.image_write {
       Some(ImageWrite { state: ImageState::Waiting(until), .. }) => {
-        Some(until.saturating_duration_since(Instant::now()))
+        Some(until.saturating_duration_since(now))
       }
       _ => None,
     }
@@ -127,9 +127,35 @@ impl Session {
 
 #[cfg(test)]
 mod tests {
-  use super::super::run::{act, idle, input};
+  use super::super::run::{act, input, wait_time};
   use super::super::{PathBuf, Result, Screen};
   use super::*;
+
+  #[test]
+  fn image_deadline_caps_terminal_wait() {
+    let mut session = Session::new(None);
+    let now = Instant::now();
+    let idle = Duration::from_secs(2);
+    let transfer = Duration::from_millis(500);
+    assert_eq!(wait_time(&session, idle, now), idle);
+    session.image_write = Some(ImageWrite {
+      pane: 999,
+      capture: crate::region::next_capture(),
+      state: ImageState::Waiting(now + transfer),
+    });
+    assert_eq!(wait_time(&session, idle, now), transfer);
+    assert_eq!(
+      wait_time(&session, Duration::from_millis(8), now),
+      Duration::from_millis(8)
+    );
+    for elapsed in [transfer, idle] {
+      assert_eq!(wait_time(&session, idle, now + elapsed), Duration::ZERO);
+    }
+    assert!(session.image_timeout(now + transfer));
+    assert_eq!(wait_time(&session, idle, now + transfer), idle);
+    session.image_write = None;
+    assert_eq!(wait_time(&session, idle, now), idle);
+  }
 
   #[test]
   fn image_timeout_retains_transfer() {
@@ -173,13 +199,16 @@ mod tests {
     session.app().open_region()?;
     let old = session.app().overlays.region().unwrap().snapshot().clone();
     let pane = session.app().id;
+    let now = Instant::now();
     session.image_write = Some(ImageWrite {
       pane,
       capture: old.id,
-      state: ImageState::Waiting(Instant::now() + Duration::from_millis(500)),
+      state: ImageState::Waiting(now + Duration::from_millis(500)),
     });
-    let now = Instant::now();
-    assert!(idle(&mut session, now, now, false) <= Duration::from_millis(500));
+    assert_eq!(
+      wait_time(&session, Duration::from_secs(2), now),
+      Duration::from_millis(500)
+    );
     session.app().select_region(old.page, old.bounds)?;
     let new = session.app().overlays.region().unwrap().snapshot().clone();
     assert_ne!(old.id, new.id);

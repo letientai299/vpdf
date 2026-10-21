@@ -1,8 +1,9 @@
 use super::interaction::Interaction;
+use super::maintenance::Chores;
 use super::{
-  Act, App, Arc, Cause, Duration, Event, Home, Instant, IsTerminal,
-  KeyEventKind, MouseKind, Ordering, Outcome, Pacer, PathBuf, Result, Session,
-  Shape, Sight, View, Write, io, sight, terminal,
+  Act, Arc, Cause, Duration, Event, Home, Instant, IsTerminal, KeyEventKind,
+  MouseKind, Ordering, Outcome, Pacer, PathBuf, Result, Session, Shape, Sight,
+  View, Write, io, sight, terminal,
 };
 use vpdf_terminal::input::{Notice, notice};
 
@@ -57,26 +58,6 @@ pub(super) fn updates(
     dirty |= app.job_updates();
   }
   Ok(dirty)
-}
-
-/// Reloads the active tab's panes after their files change; their old
-/// images go at the next draw.
-pub(super) fn watch(session: &mut Session, force: bool) -> bool {
-  let touched = session.watcher.touched();
-  let tab = &mut session.tabs[session.active];
-  let mut dirty = false;
-  for index in 0..tab.panes.len() {
-    let app = &tab.panes[index];
-    if !(force || app.settling.is_some() || touched.contains(&app.path)) {
-      continue;
-    }
-    let app = &mut tab.panes[index];
-    dirty |= app.watch().unwrap_or_else(|error| {
-      app.error = Some(format!("Reload failed: {error}"));
-      true
-    });
-  }
-  dirty
 }
 
 /// Pointer input the start screen ignores: motion, drags, leaving.
@@ -163,12 +144,6 @@ pub(super) fn apply(
   })
 }
 
-/// Positions reach memory this often after a change.
-const CHECK: Duration = Duration::from_millis(250);
-
-/// Files are checked this often, in case the OS reports no change.
-const WATCH: Duration = Duration::from_secs(2);
-
 pub(super) fn run(session: &mut Session) -> Result<()> {
   let mut out = crate::perf::Output::new(io::BufWriter::new(io::stdout()));
   let mut trace = crate::trace::Trace::new()?;
@@ -199,9 +174,7 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
     let now = Instant::now();
     let shown = session.sight != Sight::Hidden;
     if pacer.ready(now) && shown {
-      for app in &mut session.tab().panes {
-        dirty |= app.animate();
-      }
+      dirty |= session.animate(now);
       if dirty {
         let current = session.app().title();
         if current != title {
@@ -215,31 +188,36 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
         drawn = now;
       }
     }
-    let animating =
-      session.tab().panes.iter().any(|app| app.reader.animation().active());
+    let animating = session.animating();
     // A hidden reader draws nothing until tmux shows it again.
     let pending = (dirty || animating) && shown;
     let now = Instant::now();
-    let changed = chores.touched.max(drawn) > chores.checked;
-    let mut wait = if pending {
+    let changed = chores.drawn_since(drawn);
+    let wait = if pending {
       pacer.wait(now)
     } else {
-      idle(session, chores.checked, chores.watched, changed)
+      chores.wait(session, now, changed)
     };
-    if session.state.perf && shown {
-      wait = wait.min(session.perf.wait(now));
-    }
+    let wait = wait_time(session, wait, now);
     let event = vpdf_terminal::input::next(Some(wait))?;
     // Streams of pointer reports must not starve them.
     if event.is_none() || now.elapsed() >= wait {
-      dirty |= chores.run(session, &mut out)?;
+      let now = Instant::now();
+      let watch_due = chores.watch_due(now);
+      dirty |= chores.run(session, now);
+      if watch_due
+        && session.observer.is_none()
+        && session.sight != Sight::Focused
+      {
+        dirty |= session.look(Cause::Tick, &mut out)?;
+      }
     }
     let Some(act) = event.and_then(act) else { continue };
     let (typed, arrived) = (act.typed(), Instant::now());
     // Motion and per-pixel drags often change nothing.
     if apply(session, act, &mut out) {
       if typed {
-        chores.touched = arrived;
+        chores.touch(arrived);
         trace.input(arrived);
       }
       dirty = true;
@@ -248,104 +226,16 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
   Ok(())
 }
 
-/// When the timed chores last ran, and the last typing.
-pub(super) struct Chores {
-  checked: Instant,
-  written: Instant,
-  touched: Instant,
-  watched: Instant,
-}
-
-impl Chores {
-  pub(super) fn new(now: Instant) -> Self {
-    Self { checked: now, written: now, touched: now, watched: now }
-  }
-
-  pub(super) fn wait(&self, session: &mut Session) -> Duration {
-    idle(session, self.checked, self.watched, self.touched > self.checked)
-  }
-
-  pub(super) fn touch(&mut self) {
-    self.touched = Instant::now();
-  }
-
-  /// Clues, file checks, tmux looks, and saved positions; whether a
-  /// frame is due.
-  pub(super) fn run(
-    &mut self,
-    session: &mut Session,
-    out: &mut impl Write,
-  ) -> Result<bool> {
-    let mut dirty = session.app().clue_due();
-    let force = self.watched.elapsed() >= WATCH;
-    if force {
-      self.watched = Instant::now();
-    }
-    dirty |= watch(session, force);
-    if force
-      && matches!(session.frontend, crate::raster::Frontend::Terminal)
-      && session.observer.is_none()
-      && session.sight != Sight::Focused
-    {
-      dirty |= session.look(Cause::Tick, out)?;
-    }
-    // Positions reach memory 250 ms after a change and disk after a
-    // 5 s pause or once a minute; exits and hangups write the rest.
-    if self.checked.elapsed() >= CHECK {
-      self.checked = Instant::now();
-      session.record();
-      let due = self.touched.elapsed() > Duration::from_secs(5)
-        || self.written.elapsed() > Duration::from_secs(60);
-      match if due { session.flush() } else { Ok(false) } {
-        Ok(true) => self.written = self.checked,
-        Ok(false) => {}
-        Err(error) => {
-          session.app().error = Some(format!("State not saved: {error}"));
-        }
-      }
-    }
-    Ok(dirty)
-  }
-}
-
-/// How long the idle loop may sleep: until the next file check, state
-/// check after a change, clue, or settled file change.
-pub(super) fn idle(
-  session: &mut Session,
-  checked: Instant,
-  watched: Instant,
-  changed: bool,
+pub(super) fn wait_time(
+  session: &Session,
+  mut wait: Duration,
+  now: Instant,
 ) -> Duration {
-  let mut wait = WATCH.saturating_sub(watched.elapsed());
-  if changed || session.unsaved {
-    wait = wait.min(CHECK.saturating_sub(checked.elapsed()));
-  }
-  if let Some(image) = session.image_wait() {
+  if let Some(image) = session.image_wait(now) {
     wait = wait.min(image);
   }
-  if let Some(clue) = session.app().clue_wait() {
-    wait = wait.min(clue);
-  }
-  let held = session.pointer.holding();
-  let due = session.resting().and_then(App::hover_due);
-  if let Some(due) = due.filter(|_| !held) {
-    wait = wait.min(due.saturating_duration_since(Instant::now()));
-  }
-  for due in
-    [session.autoscroll_due(), session.hover_settle_due()].into_iter().flatten()
-  {
-    wait = wait.min(due.saturating_duration_since(Instant::now()));
-  }
-  for app in &session.tab().panes {
-    if let Some(until) = app.reader.landing().deadline() {
-      wait = wait.min(until.saturating_duration_since(Instant::now()));
-    }
-    if let Some(until) = app.bar.deadline() {
-      wait = wait.min(until.saturating_duration_since(Instant::now()));
-    }
-  }
-  if session.tab().panes.iter().any(|app| app.settling.is_some()) {
-    wait = wait.min(crate::watch::SETTLE);
+  if session.state.perf && session.sight != Sight::Hidden {
+    wait = wait.min(session.perf.wait(now));
   }
   wait
 }
@@ -387,13 +277,7 @@ impl Session {
   pub(super) fn notify(&mut self) -> bool {
     let now = Instant::now();
     let mut changed = self.image_timeout(now);
-    for app in &mut self.tab().panes {
-      changed |= app.reader.expire_flash(now);
-      changed |= app.bar_expired(now);
-    }
-    changed |= self.autoscroll(now);
-    changed |= self.hover_preview(now);
-    changed |= self.hover_settled(now);
+    changed |= self.maintain(now);
     let reader = &mut self.app().reader;
     if !reader.message.is_empty() {
       return changed;

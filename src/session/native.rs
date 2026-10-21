@@ -1,5 +1,6 @@
 //! Session ownership for native windows.
 use super::interaction::Interaction;
+use super::maintenance::Chores;
 use super::unlock::Operation;
 use super::{Home, Screen, Session};
 use crate::Result;
@@ -163,8 +164,9 @@ fn run(
   session.resize(screen)?;
   let mut cache = Cache::new(BUDGET);
   let mut reloaded = Vec::new();
-  let mut chores = super::run::Chores::new(Instant::now());
+  let mut chores = Chores::new(Instant::now());
   let mut dirty = true;
+  let mut animation_due = Instant::now();
   loop {
     dirty |= picker_update(&mut session, screen);
     dirty |= resume_keys(&mut session);
@@ -189,16 +191,10 @@ fn run(
       dirty |= home.updates();
     }
     if !session.tabs.is_empty() {
-      dirty |= session.hover_preview(Instant::now());
-      dirty |= session.autoscroll(Instant::now());
-      dirty |= session.hover_settled(Instant::now());
+      dirty |= session.maintain(now);
       dirty |= completions(&mut session, &mut cache, &mut reloaded);
-      dirty |= chores.run(&mut session, &mut std::io::sink())?;
-      for app in &mut session.tab().panes {
-        dirty |= app.animate();
-        dirty |= app.reader.expire_flash(Instant::now());
-        dirty |= app.bar_expired(Instant::now());
-      }
+      dirty |= chores.run(&mut session, now);
+      dirty |= animate(&mut session, &mut animation_due, now);
     }
     if dirty || sampled {
       let frame = frame(&mut session, &mut cache, screen);
@@ -221,7 +217,7 @@ fn run(
     if session.quit {
       break;
     }
-    let wait = wait_time(&mut session, &chores);
+    let wait = wait_time(&mut session, &chores, animation_due, Instant::now());
     let input = match receive.recv_timeout(wait) {
       Ok(input) => input,
       Err(mpsc::RecvTimeoutError::Timeout) => continue,
@@ -241,7 +237,7 @@ fn run(
 fn drain(
   session: &mut Session,
   inputs: impl Iterator<Item = Input>,
-  chores: &mut super::run::Chores,
+  chores: &mut Chores,
   screen: &mut Screen,
   pending: &AtomicBool,
 ) -> Option<bool> {
@@ -259,7 +255,7 @@ fn drain(
         session.perf.bytes(now, bytes);
       }
       input => {
-        chores.touch();
+        chores.touch(Instant::now());
         apply(session, input, screen);
         applied = true;
         // Queued keys and opens resume first, at the top of the loop.
@@ -345,7 +341,26 @@ fn picked_path(
   session.resume(operation, screen)
 }
 
-fn wait_time(session: &mut Session, chores: &super::run::Chores) -> Duration {
+const ANIMATION: Duration = Duration::from_millis(8);
+
+fn animate(session: &mut Session, due: &mut Instant, now: Instant) -> bool {
+  if !session.animating() {
+    *due = now;
+    return false;
+  }
+  if now < *due {
+    return false;
+  }
+  *due = now + ANIMATION;
+  session.animate(now)
+}
+
+fn wait_time(
+  session: &mut Session,
+  chores: &Chores,
+  animation_due: Instant,
+  now: Instant,
+) -> Duration {
   if session.unlock.is_none()
     && session.picker.is_none()
     && (!session.native_opens.is_empty() || !session.pending_keys.is_empty())
@@ -355,13 +370,15 @@ fn wait_time(session: &mut Session, chores: &super::run::Chores) -> Duration {
   let mut wait = if session.tabs.is_empty() {
     Duration::from_secs(2)
   } else {
-    let animated =
-      session.tab().panes.iter().any(|app| app.reader.animation().active());
-    let wait = chores.wait(session);
-    if animated { wait.min(Duration::from_millis(8)) } else { wait }
+    let wait = chores.wait(session, now, false);
+    if session.animating() {
+      wait.min(animation_due.saturating_duration_since(now))
+    } else {
+      wait
+    }
   };
   if session.state.perf {
-    wait = wait.min(session.perf.wait(Instant::now()));
+    wait = wait.min(session.perf.wait(now));
   }
   if session.picker.is_some() {
     wait = wait.min(Duration::from_millis(50));
@@ -713,6 +730,62 @@ mod tests {
       cell_height: 20,
       origin: (0, 0),
     }
+  }
+
+  #[test]
+  fn unrelated_wakes_keep_animation_deadline() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("animation.pdf");
+    crate::fixtures::pdf(&path, &["first", "second"], "")?;
+    let mut session = Session::new(None);
+    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    session.open(&path, true, sized())?;
+    let start = Instant::now();
+    session.app().reader.animate_to(100.0, start);
+    let mut due = start + ANIMATION;
+    let mut chores = Chores::new(start);
+    let mut screen = sized();
+    let pending = AtomicBool::new(true);
+    for step in 1..8 {
+      assert_eq!(
+        drain(
+          &mut session,
+          std::iter::once(Input::Wake),
+          &mut chores,
+          &mut screen,
+          &pending
+        ),
+        Some(false)
+      );
+      assert!(!pending.load(Ordering::Acquire));
+      assert!(!animate(
+        &mut session,
+        &mut due,
+        start + Duration::from_millis(step)
+      ));
+      assert_eq!(session.app().reader.scroll, 0.0);
+      assert_eq!(due, start + ANIMATION);
+    }
+    assert!(animate(&mut session, &mut due, start + ANIMATION));
+    let scroll = session.app().reader.scroll;
+    assert!(scroll > 0.0);
+    assert!(!animate(&mut session, &mut due, start + ANIMATION));
+    assert_eq!(session.app().reader.scroll, scroll);
+    session.unsaved = false;
+    assert_eq!(
+      wait_time(&mut session, &chores, due, start + ANIMATION),
+      ANIMATION
+    );
+    for now in [due, due + ANIMATION] {
+      assert_eq!(wait_time(&mut session, &chores, due, now), Duration::ZERO);
+    }
+    session.app().reader.cancel_scroll();
+    assert!(!animate(&mut session, &mut due, start + ANIMATION));
+    assert_eq!(
+      wait_time(&mut session, &chores, due, start),
+      Duration::from_secs(2)
+    );
+    Ok(())
   }
 
   fn key(code: KeyCode) -> Input {
