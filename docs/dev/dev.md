@@ -300,17 +300,37 @@ For an interactive trace:
 VPDF_TRACE=/path/frames.jsonl vpdf document.pdf
 ```
 
-[Tracing][trace] overwrites that file and records frame construction, flush
-time, consumed-input-to-flush time, and base-image transfer accounting. It
-records no document text, but includes page and scroll position. Timing starts
-when the loop consumes input and ends at output flush; terminal painting and
-physical input latency are outside that measurement.
+[Tracing][trace] overwrites the selected file. Both frontends write JSONL rows
+selected by `kind`. Every row has `t_ms`, milliseconds since its writer opened,
+and the compatibility alias `elapsed_ms`. Consumers must filter
+`kind == "frame"` before computing frame counts or matching terminal output.
+Older frame-only traces lack `kind`.
 
-`vpdf-gui` accepts the same variable and writes one line per paint: CPU paint
-time before GPU submission, whether a new session frame arrived, texture upload
-bytes, and visible tiles drawn from another scale (`stand_ins`) or blank
-(`missing`). An unwritable path disables its trace with a warning rather than
-stopping the app.
+| Kind     | Fields and meaning                                                   |
+| -------- | -------------------------------------------------------------------- |
+| `frame`  | Frontend-specific frame fields below.                                |
+| `input`  | `step`: one-based frontend-local input counter.                      |
+| `mark`   | `name`: escaped phase label supplied to the writer.                  |
+| `sample` | `cpu`: process percent, or `null` before a CPU window; `rss`: bytes. |
+
+Resource rows use the existing process sampler and continue while the reader
+is idle. CPU counts all cores; values can exceed 100. Tracing starts a sampler
+without enabling the `:perf` overlay. Mark rows have writer support; scenario
+injection will supply their labels and scenario step identity.
+
+Terminal `frame` timestamps end at output flush. Existing fields remain:
+`build_ms`, `flush_ms`, `input_to_flush_ms`, `bytes`, `base_upload_bytes`,
+`page`, `scroll`, and `complete`. Input-to-flush starts at the first consumed
+input that changes a frame, and excludes terminal painting and physical input
+latency. Terminal `input` rows currently count those changed typed inputs.
+
+Native `frame` timestamps start at CPU paint. Existing `paint_ms`, `fresh`,
+`upload_bytes`, `stand_ins`, and `missing` remain. `blank` means `missing > 0`;
+`complete` comes from the session frame and measures render readiness. It does
+not imply that no scale stand-ins remain. Native `input` rows currently count
+adapted window events and file drops. Paint timing ends before GPU submission;
+it does not measure GPU completion or observed display latency. An unwritable
+path disables native tracing with a warning rather than stopping the app.
 
 Publish measurements with repeated runs, sample counts, and percentile
 summaries. Label CPU frame construction, render readiness,

@@ -226,7 +226,7 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
     if apply(session, act, &mut out) {
       if typed {
         chores.touch(arrived);
-        trace.input(arrived);
+        trace.input(arrived)?;
       }
       dirty = true;
     }

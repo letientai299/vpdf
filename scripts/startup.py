@@ -193,7 +193,8 @@ def traced(row, path):
     if row["failure"] or not path.exists() or not row.get("settled_tiles"):
         return
     lines = path.read_text().splitlines()
-    flags = [json.loads(line).get("complete") for line in lines]
+    rows = [json.loads(line) for line in lines]
+    flags = [row.get("complete") for row in rows if row.get("kind", "frame") == "frame"]
     if all(flag is None for flag in flags):
         return
     index = next((i for i, flag in enumerate(flags) if flag), None)

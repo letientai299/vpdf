@@ -14,10 +14,10 @@ pub const INTERVAL: Duration = Duration::from_millis(100);
 const SECOND: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy)]
-struct Resources {
-  at: Instant,
-  cpu: Option<f64>,
-  rss: u64,
+pub(crate) struct Resources {
+  pub at: Instant,
+  pub cpu: Option<f64>,
+  pub rss: u64,
 }
 
 enum Signal {
@@ -28,7 +28,7 @@ enum Signal {
   Stop,
 }
 
-struct Sampler {
+pub(crate) struct Sampler {
   latest: Arc<Mutex<Option<Resources>>>,
   signal: mpsc::Sender<Signal>,
   thread: Option<JoinHandle<()>>,
@@ -36,6 +36,10 @@ struct Sampler {
 
 impl Sampler {
   fn new() -> Self {
+    Self::observe(|_| {})
+  }
+
+  pub(crate) fn observe(observe: impl Fn(Resources) + Send + 'static) -> Self {
     let latest = Arc::new(Mutex::new(None));
     let shared = Arc::clone(&latest);
     let (signal, receiver) = mpsc::channel();
@@ -61,6 +65,9 @@ impl Sampler {
         });
         if let Ok(mut value) = shared.lock() {
           *value = sample;
+        }
+        if let Some(sample) = sample {
+          observe(sample);
         }
         match receiver.recv_timeout(interval) {
           Ok(Signal::Wake) => interval = INTERVAL,

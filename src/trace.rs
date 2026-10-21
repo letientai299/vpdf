@@ -1,21 +1,22 @@
 use crate::Result;
 use crate::app::App;
 use serde::Serialize;
-use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::Write;
+
+mod log;
+pub use log::{Log, Paint};
 use std::time::Instant;
 use vpdf_terminal::graphics::Graphics;
 
 pub struct Trace {
-  output: Option<BufWriter<File>>,
-  started: Instant,
+  output: Option<Log>,
+  step: u64,
   input: Option<Instant>,
   uploaded: u64,
 }
 
 #[derive(Serialize)]
 struct Frame {
-  elapsed_ms: f64,
   build_ms: f64,
   flush_ms: f64,
   input_to_flush_ms: Option<f64>,
@@ -58,14 +59,19 @@ pub trait Drawable {
 impl Trace {
   pub fn new() -> Result<Self> {
     let output = std::env::var_os("VPDF_TRACE")
-      .map(File::create)
-      .transpose()?
-      .map(BufWriter::new);
-    Ok(Self { output, started: Instant::now(), input: None, uploaded: 0 })
+      .filter(|path| !path.is_empty())
+      .map(|path| Log::open(path.as_ref()))
+      .transpose()?;
+    Ok(Self { output, step: 0, input: None, uploaded: 0 })
   }
 
-  pub fn input(&mut self, at: Instant) {
+  pub fn input(&mut self, at: Instant) -> Result<()> {
     self.input.get_or_insert(at);
+    self.step += 1;
+    if let Some(output) = &self.output {
+      output.input(at, self.step)?;
+    }
+    Ok(())
   }
 
   pub fn draw(
@@ -84,9 +90,8 @@ impl Trace {
     target.flushed(flushed);
     let seen = target.observe();
     let input = self.input.take();
-    let Some(trace) = &mut self.output else { return Ok(()) };
+    let Some(trace) = &self.output else { return Ok(()) };
     let frame = Frame {
-      elapsed_ms: flushed.duration_since(self.started).as_secs_f64() * 1000.0,
       build_ms: built.duration_since(started).as_secs_f64() * 1000.0,
       flush_ms: flushed.duration_since(built).as_secs_f64() * 1000.0,
       input_to_flush_ms: input
@@ -98,8 +103,6 @@ impl Trace {
       complete: seen.complete,
     };
     self.uploaded = seen.uploaded;
-    serde_json::to_writer(&mut *trace, &frame)?;
-    writeln!(trace)?;
-    Ok(())
+    trace.row("frame", flushed, &frame)
   }
 }

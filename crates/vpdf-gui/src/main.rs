@@ -120,10 +120,12 @@ impl eframe::App for Window {
       )
     });
     for event in events {
+      self.trace.input();
       self.bridge.send(event);
     }
     let drops = ctx.input(|input| input.raw.dropped_files.clone());
     for file in drops {
+      self.trace.input();
       self.bridge.send(Input::Open(file.path().to_path_buf()));
     }
     if let Some(frame) = &self.frame {
@@ -151,6 +153,7 @@ impl eframe::App for Window {
         upload_bytes: bytes,
         stand_ins: self.renderer.stand_ins,
         missing: self.renderer.missing,
+        complete: frame.complete,
       });
       if shows_images(frame)
         && let Some(path) = self.capture.take()
