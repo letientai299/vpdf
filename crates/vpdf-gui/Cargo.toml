@@ -8,6 +8,9 @@ license = "MIT"
 [lints]
 workspace = true
 
+[features]
+bench-events = ["vpdf/bench-events"]
+
 [dependencies]
 vpdf = { path = "../.." }
 vpdf-model.workspace = true

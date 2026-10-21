@@ -1,10 +1,11 @@
 #!/bin/sh
 set -eu
 build_dir="${CARGO_TARGET_DIR:-target}"
+. scripts/build-features.sh
 case $(uname -s) in
   Darwin)
     target=$(rustc --print host-tuple)
-    cargo build --release --locked -p vpdf --target "$target"
+    cargo build --release --locked -p vpdf --target "$target" "$@"
     binary="$build_dir/$target/release/vpdf"
     sh scripts/check-macos.sh "$binary"
     ;;
@@ -15,7 +16,7 @@ case $(uname -s) in
     fi
     target=x86_64-unknown-linux-musl
     rustup target add "$target"
-    sh scripts/static.sh cargo build --release --locked -p vpdf --target "$target"
+    sh scripts/static.sh cargo build --release --locked -p vpdf --target "$target" "$@"
     binary="$build_dir/$target/release/vpdf"
     headers=$(readelf -l "$binary")
     dynamic=$(readelf -d "$binary")

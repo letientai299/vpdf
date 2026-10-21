@@ -27,6 +27,7 @@ pub mod programs;
 pub mod raster;
 pub mod recent;
 mod region;
+pub mod scenario;
 mod scrollbar;
 pub mod session;
 pub mod solo;

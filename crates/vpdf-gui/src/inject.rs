@@ -2,6 +2,7 @@
 //!
 //! macOS drops posted pointer events for inactive apps, so a hidden
 //! `--events` path (usually a FIFO) feeds one event per line:
+//! `key SPEC...`, `resize W H`, `place X Y`, `mark NAME`, `quit`,
 //! `move X Y`, `down|up X Y [left|right|middle|back|forward] [MODS]`,
 //! `wheel DX DY [point|line|page] [MODS]`, `mods [MODS]`, `gone`,
 //! `focus 0|1`, `preedit TEXT`, `commit TEXT`, `paste TEXT`, `drop PATH`.
@@ -16,6 +17,9 @@ use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::time::{Duration, Instant};
+use vpdf::scenario::Step;
+use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug)]
 struct Dropped(PathBuf);
@@ -32,9 +36,92 @@ impl DroppedFile for Dropped {
 pub enum Injected {
   Event(Event),
   Drop(PathBuf),
+  Step(Step),
 }
 
-pub fn spawn(path: &Path, ctx: egui::Context) -> Receiver<Injected> {
+pub struct Injector {
+  receiver: Receiver<Injected>,
+  geometry: Option<(Geometry, Instant)>,
+}
+
+enum Geometry {
+  Size(egui::Vec2),
+  Position(egui::Pos2),
+}
+
+impl Injector {
+  fn new(receiver: Receiver<Injected>) -> Self {
+    Self { receiver, geometry: None }
+  }
+
+  fn ready(&mut self, ctx: &egui::Context, raw: &RawInput) -> bool {
+    let Some((expected, deadline)) = &self.geometry else { return true };
+    let viewport = raw.viewports.get(&raw.viewport_id);
+    let ready = match expected {
+      Geometry::Size(size) => viewport
+        .and_then(|view| view.inner_rect)
+        .is_some_and(|rect| (rect.size() - *size).length() < 1.0),
+      Geometry::Position(position) => viewport
+        .and_then(|view| view.outer_rect)
+        .is_some_and(|rect| (rect.min - *position).length() < 1.0),
+    };
+    if ready {
+      self.geometry = None;
+      return true;
+    }
+    if Instant::now() >= *deadline {
+      eprintln!("Injected geometry timed out");
+      ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    } else {
+      ctx.request_repaint_after(Duration::from_millis(10));
+    }
+    false
+  }
+
+  pub fn apply(
+    &mut self,
+    ctx: &egui::Context,
+    raw: &mut RawInput,
+  ) -> Option<String> {
+    if !self.ready(ctx, raw) {
+      return None;
+    }
+    let injected = self.receiver.try_recv().ok()?;
+    if let Injected::Step(step) = &injected {
+      let geometry = match step {
+        Step::Resize(width, height) => {
+          Some(Geometry::Size(egui::vec2(*width as f32, *height as f32)))
+        }
+        Step::Place(x, y) => {
+          Some(Geometry::Position(egui::pos2(*x as f32, *y as f32)))
+        }
+        _ => None,
+      };
+      self.geometry = geometry
+        .map(|geometry| (geometry, Instant::now() + Duration::from_secs(5)));
+    }
+    let mark = match injected {
+      Injected::Event(event) => {
+        if let Event::PointerButton { modifiers, .. }
+        | Event::MouseWheel { modifiers, .. } = &event
+        {
+          raw.events.push(Event::ModifiersChanged(*modifiers));
+        }
+        raw.events.push(event);
+        None
+      }
+      Injected::Step(step) => apply_step(step, ctx, raw),
+      Injected::Drop(path) => {
+        raw.dropped_files.push(Arc::new(Dropped(path)));
+        None
+      }
+    };
+    ctx.request_repaint();
+    mark
+  }
+}
+
+pub fn spawn(path: &Path, ctx: egui::Context) -> Injector {
   let (sender, receiver) = channel();
   let path = path.to_path_buf();
   let reader = move || {
@@ -60,7 +147,7 @@ pub fn spawn(path: &Path, ctx: egui::Context) -> Receiver<Injected> {
   {
     eprintln!("Input events unavailable: {error}");
   }
-  receiver
+  Injector::new(receiver)
 }
 
 fn forward(
@@ -69,6 +156,9 @@ fn forward(
   ctx: &egui::Context,
 ) -> bool {
   for line in lines {
+    if line.trim().is_empty() || line.trim_start().starts_with('#') {
+      continue;
+    }
     let Some(event) = parse(&line) else {
       eprintln!("Unknown input event: {line}");
       continue;
@@ -81,36 +171,113 @@ fn forward(
   true
 }
 
-/// Ends the frame after a press or turn, so later moves see its modifiers.
-pub fn apply(
-  receiver: &Receiver<Injected>,
+fn apply_step(
+  step: Step,
   ctx: &egui::Context,
   raw: &mut RawInput,
-) {
-  for injected in receiver.try_iter() {
-    match injected {
-      Injected::Event(event) => {
-        let modifiers = match &event {
-          Event::PointerButton { modifiers, .. }
-          | Event::MouseWheel { modifiers, .. } => Some(*modifiers),
-          _ => None,
-        };
-        if let Some(modifiers) = modifiers {
-          raw.events.push(Event::ModifiersChanged(modifiers));
-        }
-        raw.events.push(event);
-        if modifiers.is_some() {
-          ctx.request_repaint();
-          return;
+) -> Option<String> {
+  match step {
+    Step::Keys(keys) => {
+      for key in keys {
+        if let Some(events) = key_events(key) {
+          raw.events.extend(events);
         }
       }
-      Injected::Drop(path) => raw.dropped_files.push(Arc::new(Dropped(path))),
+      raw.events.push(Event::ModifiersChanged(Modifiers::NONE));
     }
+    Step::Resize(width, height) => ctx.send_viewport_cmd(
+      egui::ViewportCommand::InnerSize(egui::vec2(width as f32, height as f32)),
+    ),
+    Step::Place(x, y) => ctx.send_viewport_cmd(
+      egui::ViewportCommand::OuterPosition(egui::pos2(x as f32, y as f32)),
+    ),
+    Step::Mark(name) => return Some(name),
+    Step::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+    _ => eprintln!("Scenario step requires driver"),
   }
+  None
+}
+
+fn key_events(key: KeyEvent) -> Option<Vec<Event>> {
+  let modifiers = Modifiers {
+    ctrl: key.modifiers.contains(KeyModifiers::CONTROL),
+    alt: key.modifiers.contains(KeyModifiers::ALT),
+    shift: key.modifiers.contains(KeyModifiers::SHIFT),
+    mac_cmd: key.modifiers.contains(KeyModifiers::SUPER),
+    command: key.modifiers.contains(KeyModifiers::SUPER),
+  };
+  let mut events = vec![Event::ModifiersChanged(modifiers)];
+  if let KeyCode::Char(ch) = key.code
+    && !modifiers.ctrl
+    && !modifiers.alt
+    && !modifiers.mac_cmd
+  {
+    let ch = if modifiers.shift { ch.to_ascii_uppercase() } else { ch };
+    let key = egui::Key::from_name(&ch.to_string()).unwrap_or(egui::Key::Space);
+    events.push(Event::Key {
+      key,
+      physical_key: None,
+      pressed: true,
+      repeat: false,
+      modifiers,
+    });
+    events.push(Event::Text(ch.to_string()));
+    events.push(Event::Key {
+      key,
+      physical_key: None,
+      pressed: false,
+      repeat: false,
+      modifiers,
+    });
+    return Some(events);
+  }
+  let code = match key.code {
+    KeyCode::Char(' ') => egui::Key::Space,
+    KeyCode::Char('_') => egui::Key::Minus,
+    KeyCode::Char(ch) => egui::Key::from_name(&ch.to_string())?,
+    KeyCode::Enter => egui::Key::Enter,
+    KeyCode::Esc => egui::Key::Escape,
+    KeyCode::Tab | KeyCode::BackTab => egui::Key::Tab,
+    KeyCode::Backspace => egui::Key::Backspace,
+    KeyCode::Delete => egui::Key::Delete,
+    KeyCode::Up => egui::Key::ArrowUp,
+    KeyCode::Down => egui::Key::ArrowDown,
+    KeyCode::Left => egui::Key::ArrowLeft,
+    KeyCode::Right => egui::Key::ArrowRight,
+    KeyCode::Home => egui::Key::Home,
+    KeyCode::End => egui::Key::End,
+    KeyCode::PageUp => egui::Key::PageUp,
+    KeyCode::PageDown => egui::Key::PageDown,
+    _ => return None,
+  };
+  events.push(Event::Key {
+    key: code,
+    physical_key: None,
+    pressed: true,
+    repeat: false,
+    modifiers,
+  });
+  events.push(Event::Key {
+    key: code,
+    physical_key: None,
+    pressed: false,
+    repeat: false,
+    modifiers,
+  });
+  Some(events)
 }
 
 fn parse(line: &str) -> Option<Injected> {
   let (verb, rest) = line.split_once(' ').unwrap_or((line, ""));
+  if matches!(verb, "key" | "resize" | "place" | "mark" | "quit") {
+    let step = Step::parse(line).ok().flatten()?;
+    if let Step::Keys(keys) = &step
+      && keys.iter().any(|key| key_events(*key).is_none())
+    {
+      return None;
+    }
+    return Some(Injected::Step(step));
+  }
   let text = || rest.to_owned();
   let event = match verb {
     "drop" if !rest.is_empty() => return Some(Injected::Drop(rest.into())),
@@ -183,6 +350,93 @@ fn modifiers(word: &str) -> Option<Modifiers> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn keys_reach_adapter() {
+    use crate::input::Adapter;
+    use vpdf::session::native::Input;
+    use vpdf_model::geometry::Screen;
+    let screen = Screen {
+      columns: 100,
+      rows: 40,
+      cell_width: 10,
+      cell_height: 20,
+      origin: (0, 0),
+    };
+    for spec in [
+      "C-d", "S-space", "g o", "S-j", "enter", "pageup", "C-S-a", "A-x", "中",
+      "C-_", "S-tab",
+    ] {
+      let Step::Keys(keys) =
+        Step::parse(&format!("key {spec}")).unwrap().unwrap()
+      else {
+        panic!("Expected keys")
+      };
+      let mut adapter = Adapter::default();
+      let events: Vec<_> = keys
+        .iter()
+        .flat_map(|key| key_events(*key).expect("Supported key"))
+        .collect();
+      let applied = adapter.events(
+        &events,
+        Modifiers::NONE,
+        screen,
+        1.0,
+        [10.0, 20.0],
+        None,
+      );
+      let got: Vec<_> = applied
+        .into_iter()
+        .filter_map(
+          |input| if let Input::Key(key) = input { Some(key) } else { None },
+        )
+        .collect();
+      assert_eq!(got, keys, "{spec}");
+    }
+  }
+
+  #[test]
+  fn geometry_holds_later_marks() {
+    for command in ["resize 1000 700", "place 2200 100"] {
+      let (sender, receiver) = channel();
+      let mut injector = Injector::new(receiver);
+      let ctx = egui::Context::default();
+      sender.send(parse(command).unwrap()).ok();
+      sender.send(parse("mark after geometry").unwrap()).ok();
+      let mut raw = RawInput::default();
+      assert_eq!(injector.apply(&ctx, &mut raw), None);
+      assert_eq!(injector.apply(&ctx, &mut raw), None);
+      let viewport = raw.viewports.entry(raw.viewport_id).or_default();
+      viewport.inner_rect = Some(egui::Rect::from_min_size(
+        egui::pos2(2200.0, 100.0),
+        egui::vec2(1000.0, 700.0),
+      ));
+      viewport.outer_rect = viewport.inner_rect;
+      assert_eq!(
+        injector.apply(&ctx, &mut raw).as_deref(),
+        Some("after geometry")
+      );
+    }
+  }
+
+  #[test]
+  fn fifo_steps_preserve_order() {
+    for prior in ["key g o", "paste text", "drop /paper.pdf", "move 1 2"] {
+      let (sender, receiver) = channel();
+      let ctx = egui::Context::default();
+      let mut injector = Injector::new(receiver);
+      sender.send(parse(prior).unwrap()).ok();
+      sender.send(parse("mark after input").unwrap()).ok();
+      let mut raw = RawInput::default();
+      assert_eq!(injector.apply(&ctx, &mut raw), None, "{prior}");
+      let mut raw = RawInput::default();
+      assert_eq!(
+        injector.apply(&ctx, &mut raw).as_deref(),
+        Some("after input"),
+        "{prior}"
+      );
+    }
+  }
 
   #[test]
   fn lines_become_events() {

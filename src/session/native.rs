@@ -23,15 +23,31 @@ const BUDGET: usize = 64 << 20;
 const BATCH: usize = 64;
 
 pub enum Input {
+  #[cfg(feature = "bench-events")]
+  Mark {
+    name: String,
+    trace: Arc<crate::trace::Log>,
+  },
   Resize(Screen),
   Key(KeyEvent),
   Paste(String),
-  Mouse { event: MouseEvent, pixels: (u16, u16), screen: Screen },
-  History { forward: bool, pixels: (u16, u16), screen: Screen },
+  Mouse {
+    event: MouseEvent,
+    pixels: (u16, u16),
+    screen: Screen,
+  },
+  History {
+    forward: bool,
+    pixels: (u16, u16),
+    screen: Screen,
+  },
   Leave,
   Focus(bool),
   Open(PathBuf),
-  Presented { content: bool, bytes: usize },
+  Presented {
+    content: bool,
+    bytes: usize,
+  },
   Wake,
   Close,
 }
@@ -246,6 +262,12 @@ fn drain(
   let mut applied = false;
   for input in inputs {
     match input {
+      #[cfg(feature = "bench-events")]
+      Input::Mark { name, trace } => {
+        if let Err(error) = trace.mark(Instant::now(), &name) {
+          eprintln!("Trace mark failed: {error}");
+        }
+      }
       Input::Close => return None,
       Input::Wake => pending.store(false, Ordering::Release),
       Input::Presented { content, bytes } => {

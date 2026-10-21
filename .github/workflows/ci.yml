@@ -15,6 +15,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: '0'
+  VPDF_BENCH_EVENTS: '0'
 
 jobs:
   build:
@@ -55,6 +56,8 @@ jobs:
           git diff --exit-code
       - name: Test
         run: mise run test
+      - name: Test benchmark input feature
+        run: mise run test:events
       - name: Build and pack executable
         run: mise run release
       - name: Archive executable

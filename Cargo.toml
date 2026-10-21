@@ -107,6 +107,9 @@ unicode-width = "0.2"
 tempfile = "3"
 font-kit = "0.14"
 
+[features]
+bench-events = []
+
 [dependencies]
 vpdf-ui.workspace = true
 vpdf-terminal.workspace = true

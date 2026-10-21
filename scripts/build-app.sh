@@ -6,7 +6,8 @@ if [ "$(uname -s)" != Darwin ]; then
 fi
 build_dir="${CARGO_TARGET_DIR:-target}"
 target=$(rustc --print host-tuple)
-cargo build --profile app --locked -p vpdf-gui --target "$target"
+. scripts/build-features.sh
+cargo build --profile app --locked -p vpdf-gui --target "$target" "$@"
 binary="$build_dir/$target/app/vpdf-gui"
 sh scripts/check-macos.sh "$binary"
 release_dir="$build_dir/dist"

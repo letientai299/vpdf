@@ -1,17 +1,24 @@
 use clap::Parser;
 use eframe::egui::{self, FontId, ViewportCommand};
 use std::path::PathBuf;
-use std::sync::mpsc::Receiver;
 use vpdf::session::native::{Bridge, Frame, Input};
+#[cfg(feature = "bench-events")]
+use vpdf_gui::inject;
 use vpdf_gui::{
-  inject, input,
+  input,
   paint::{self, Renderer},
   trace::{self, Trace},
 };
 use vpdf_model::geometry::Screen;
 
+const VERSION: &str = if cfg!(feature = "bench-events") {
+  concat!(env!("CARGO_PKG_VERSION"), " [bench-events]")
+} else {
+  env!("CARGO_PKG_VERSION")
+};
+
 #[derive(Parser)]
-#[command(version, about = "Native Vpdf reader")]
+#[command(version = VERSION, about = "Native Vpdf reader")]
 struct Args {
   files: Vec<PathBuf>,
   /// Launch page overriding the saved position.
@@ -22,6 +29,7 @@ struct Args {
   background: bool,
   #[arg(long, hide = true)]
   capture: Option<PathBuf>,
+  #[cfg(feature = "bench-events")]
   #[arg(long, hide = true)]
   events: Option<PathBuf>,
 }
@@ -33,7 +41,10 @@ struct Window {
   input: input::Adapter,
   screen: Option<Screen>,
   capture: Option<PathBuf>,
-  events: Option<Receiver<inject::Injected>>,
+  #[cfg(feature = "bench-events")]
+  events: Option<inject::Injector>,
+  #[cfg(feature = "bench-events")]
+  mark: Option<String>,
   trace: Trace,
 }
 
@@ -43,6 +54,7 @@ impl Window {
     args: Args,
   ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
     vpdf_gui::fonts::install(&cc.egui_ctx);
+    #[cfg(feature = "bench-events")]
     let events = args
       .events
       .as_deref()
@@ -57,9 +69,26 @@ impl Window {
       input: input::Adapter::default(),
       screen: None,
       capture: args.capture,
+      #[cfg(feature = "bench-events")]
       events,
+      #[cfg(feature = "bench-events")]
+      mark: None,
       trace: Trace::from_env(),
     })
+  }
+
+  fn send_input(&mut self, input: Input) {
+    self.trace.input();
+    self.bridge.send(input);
+  }
+
+  #[cfg(feature = "bench-events")]
+  fn record_mark(&mut self) {
+    if let Some(name) = self.mark.take()
+      && let Some(trace) = self.trace.log()
+    {
+      self.bridge.send(Input::Mark { name, trace });
+    }
   }
 }
 
@@ -120,14 +149,14 @@ impl eframe::App for Window {
       )
     });
     for event in events {
-      self.trace.input();
-      self.bridge.send(event);
+      self.send_input(event);
     }
     let drops = ctx.input(|input| input.raw.dropped_files.clone());
     for file in drops {
-      self.trace.input();
-      self.bridge.send(Input::Open(file.path().to_path_buf()));
+      self.send_input(Input::Open(file.path().to_path_buf()));
     }
+    #[cfg(feature = "bench-events")]
+    self.record_mark();
     if let Some(frame) = &self.frame {
       ctx.set_cursor_icon(input::cursor(frame.cursor));
       let before = self.renderer.upload_bytes;
@@ -166,11 +195,13 @@ impl eframe::App for Window {
       frame.reloaded.clear();
     }
   }
+  #[cfg(feature = "bench-events")]
   fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
-    if let Some(events) = &self.events {
-      inject::apply(events, ctx, raw);
+    if let Some(events) = &mut self.events {
+      self.mark = events.apply(ctx, raw);
     }
   }
+
   fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] {
     paint::background().to_normalized_gamma_f32()
   }
@@ -257,7 +288,9 @@ mod tests {
     for (flags, active) in [
       (vec![], true),
       (vec!["--background"], false),
+      #[cfg(feature = "bench-events")]
       (vec!["--events", "input.fifo"], true),
+      #[cfg(feature = "bench-events")]
       (vec!["--background", "--events", "input.fifo"], false),
     ] {
       let args =
@@ -266,6 +299,14 @@ mod tests {
       assert_eq!(options.viewport.active, Some(active));
       assert_eq!(options.event_loop_builder.is_some(), !active);
     }
+  }
+
+  #[test]
+  #[cfg(not(feature = "bench-events"))]
+  fn production_rejects_events() {
+    assert!(
+      Args::try_parse_from(["vpdf-gui", "--events", "input.fifo"]).is_err()
+    );
   }
 
   #[test]

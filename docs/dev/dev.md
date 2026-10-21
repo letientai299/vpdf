@@ -109,11 +109,25 @@ editing requires the terminal reader.
 On macOS, `--background` disables automatic activation; combine it with
 `open -g` when launching the app bundle. macOS delivers posted keys to a
 background app but drops posted clicks and wheel turns. For live checks without
-focus, the hidden `--events PATH` option reads pointer, wheel, modifier, focus,
-IME, paste, and file-drop lines from a file or FIFO; the
-[injection module][inject] documents the format. Injected events skip OS
-translation, so real pointer devices, OS drags, and IME candidate windows still
-need manual checks.
+focus, the hidden `--events PATH` option reads keys, window geometry, marks,
+pointer, wheel, modifier, focus, IME, paste, and file-drop lines from a file or
+FIFO. Production builds reject the option and omit the reader and injection
+hooks. The non-default `bench-events` Cargo feature enables them:
+
+```sh
+VPDF_BENCH_EVENTS=1 mise run install
+VPDF_BENCH_EVENTS=1 mise run install:app
+```
+
+Both install tasks build production binaries when `VPDF_BENCH_EVENTS` is unset
+or `0`; CI explicitly uses `0`. Feature-enabled binaries report `[bench-events]`
+in `--version`; retain this marker in benchmark provenance.
+`mise run test:events` checks a separate feature-enabled build; CI runs it
+before packaging production binaries. Reinstall without
+the variable after live checks. The [injection module][inject] documents FIFO
+primitives. The [shared parser][scenario] also accepts driver-side waits,
+repeats, and seeded key mixes. Injected events skip OS translation, so real
+pointer devices, OS drags, and IME candidate windows still need manual checks.
 
 The native `:perf` overlay samples process CPU and RSS. FPS counts content
 frames received and painted by the window; Upload counts RGBA texture bytes
@@ -318,8 +332,9 @@ Older frame-only traces lack `kind`.
 
 Resource rows use the existing process sampler and continue while the reader
 is idle. CPU counts all cores; values can exceed 100. Tracing starts a sampler
-without enabling the `:perf` overlay. Mark rows have writer support; scenario
-injection will supply their labels and scenario step identity.
+without enabling the `:perf` overlay. Native FIFO marks reach the session
+thread before the writer records them. Scenario step identity remains separate
+from frontend input counters.
 
 Terminal `frame` timestamps end at output flush. Existing fields remain:
 `build_ms`, `flush_ms`, `input_to_flush_ms`, `bytes`, `base_upload_bytes`,
@@ -436,6 +451,7 @@ a result needs a reproducible release reference.
 [build-app]: ../../scripts/build-app.sh
 [icon]: ../assets/vpdf.svg
 [inject]: ../../crates/vpdf-gui/src/inject.rs
+[scenario]: ../../src/scenario.rs
 [apple-distribution]: https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution
 [install]: ../../scripts/install.sh
 [ci]: ../../.github/workflows/ci.yml

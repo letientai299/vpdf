@@ -1,11 +1,12 @@
 //! Native paint rows in the shared trace.
 
+use std::sync::Arc;
 use std::time::Instant;
 use vpdf::trace::Log;
 pub use vpdf::trace::Paint;
 
 pub struct Trace {
-  output: Option<Log>,
+  output: Option<Arc<Log>>,
   step: u64,
 }
 
@@ -14,13 +15,18 @@ impl Trace {
     let output = std::env::var_os("VPDF_TRACE")
       .filter(|path| !path.is_empty())
       .and_then(|path| match Log::open(path.as_ref()) {
-        Ok(log) => Some(log),
+        Ok(log) => Some(Arc::new(log)),
         Err(error) => {
           eprintln!("Trace unavailable: {error}");
           None
         }
       });
     Self { output, step: 0 }
+  }
+
+  #[cfg(feature = "bench-events")]
+  pub fn log(&self) -> Option<Arc<Log>> {
+    self.output.clone()
   }
 
   pub fn input(&mut self) {

@@ -11,9 +11,15 @@ macro_rules! about {
   };
 }
 
+const VERSION: &str = if cfg!(feature = "bench-events") {
+  concat!(env!("VPDF_VERSION"), " [bench-events]\n", about!())
+} else {
+  concat!(env!("VPDF_VERSION"), "\n", about!())
+};
+
 #[derive(Parser)]
 #[command(
-  version = concat!(env!("VPDF_VERSION"), "\n", about!()),
+  version = VERSION,
   about = about!()
 )]
 struct Args {
