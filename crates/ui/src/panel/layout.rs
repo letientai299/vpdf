@@ -1,6 +1,5 @@
 use crate::panel::{Destination, Row, Style};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
-use vpdf_terminal::terminal;
 
 pub(crate) struct Line {
   pub source: usize,
@@ -63,7 +62,7 @@ impl Layout {
     let (labels, cut) = if source == selected {
       (wrap(label, room), false)
     } else {
-      let (label, cut) = terminal::clipped(label, room);
+      let (label, cut) = vpdf_model::text::clipped(label, room);
       (vec![label], cut)
     };
     for (index, label) in labels.into_iter().enumerate() {
@@ -91,7 +90,7 @@ impl Layout {
     let lines = if source == selected {
       wrap(text, room)
     } else {
-      vec![terminal::clipped(text, room).0]
+      vec![vpdf_model::text::clipped(text, room).0]
     };
     for line in lines {
       self.lines.push(Line {

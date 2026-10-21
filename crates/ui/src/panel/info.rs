@@ -2,7 +2,6 @@ use crate::find::Search;
 use crate::layout::{Layout, Screen};
 use crate::text::Bounds;
 use std::path::Path;
-use vpdf_terminal::{caps::Caps, graphics::Usage};
 
 pub struct DocumentInfo<'a> {
   pub metadata: &'a [(String, String)],
@@ -21,12 +20,12 @@ pub struct Info<'a> {
   pub document: DocumentInfo<'a>,
   pub layout: &'a Layout,
   pub search: &'a Search,
-  pub images: Usage,
+  pub images: &'a [String],
   pub render_ms: f64,
   pub screen: Screen,
   pub text: bool,
   pub mouse: bool,
-  pub caps: Option<&'a Caps>,
+  pub frontend: &'a str,
 }
 
 impl Info<'_> {
@@ -64,8 +63,9 @@ impl Info<'_> {
         self.search.query().text
       ),
       format!("Text cache: {} KiB", doc.cache_bytes / 1024),
-      format!("Images: {} KiB resident", self.images.bytes / 1024),
-      format!("Transferred: {} KiB", self.images.uploaded / 1024),
+    ]);
+    lines.extend(self.images.iter().cloned());
+    lines.extend([
       format!("Last tile: {:.3} ms", self.render_ms),
       format!(
         "Cell: {}x{} px",
@@ -74,9 +74,7 @@ impl Info<'_> {
       format!("Screen: {}x{} cells", self.screen.columns, self.screen.rows),
       format!("Presentation: {}", if self.text { "text" } else { "images" }),
       format!("Mouse: {}", if self.mouse { "on" } else { "off (:mouse on)" }),
-      self
-        .caps
-        .map_or_else(|| "Terminal: not probed".into(), ToString::to_string),
+      self.frontend.into(),
     ]);
     lines.join("\n")
   }
@@ -106,4 +104,63 @@ pub fn help(installed: impl Fn(&str) -> bool) -> Vec<String> {
     format!(":{}{usage}{}: {}", spec.name, spec.usage, spec.help)
   });
   keys.chain([String::new(), "# Commands".into()]).chain(commands).collect()
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn frontend_facts_preserve_order() {
+    let screen = Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let bounds = Bounds { x0: 0.0, y0: 0.0, x1: 612.0, y1: 792.0 };
+    let layout = Layout::new([bounds], screen);
+    let search = Search::default();
+    let images =
+      ["Images: 7 KiB resident".into(), "Transferred: 11 KiB".into()];
+    for (images, frontend) in [
+      (images.as_slice(), "Terminal: not probed"),
+      (images.as_slice(), "Profile: Kitty\nGraphics query: OK"),
+      (&[][..], "Native: ready"),
+    ] {
+      let text = Info {
+        document: DocumentInfo {
+          metadata: &[],
+          path: Path::new("paper.pdf"),
+          bytes: 1024,
+          pages: 1,
+          label: "1",
+          bounds,
+          headings: 0,
+          inferred: false,
+          marks: 0,
+          cache_bytes: 2048,
+        },
+        layout: &layout,
+        search: &search,
+        images,
+        render_ms: 1.25,
+        screen,
+        text: false,
+        mouse: true,
+        frontend,
+      }
+      .text();
+      let expected = std::iter::once("Text cache: 2 KiB")
+        .chain(images.iter().map(String::as_str))
+        .chain(["Last tile: 1.250 ms"])
+        .collect::<Vec<_>>()
+        .join("\n");
+      assert!(text.contains(&expected), "{text}");
+      assert!(text.ends_with(frontend), "{text}");
+      assert_eq!(text.contains("Transferred:"), !images.is_empty());
+      assert_eq!(text.contains("Images:"), !images.is_empty());
+    }
+  }
 }

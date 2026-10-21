@@ -13,7 +13,6 @@ use unicode_width::UnicodeWidthStr;
 use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_model::style::Role;
 use vpdf_reader::reader::{Mode, Reader, SelectionKind};
-use vpdf_terminal::terminal;
 
 /// Error anchored to the terminal's last row.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -342,7 +341,7 @@ impl Bar<'_> {
     let room = room.saturating_sub(tabs.width);
     // A cut detail says so; `K` shows notes whole.
     line.message = match detail {
-      Some(_) => terminal::clipped(message, room).0,
+      Some(_) => vpdf_model::text::clipped(message, room).0,
       None => vpdf_model::text::clean(message, room),
     };
     line.fill = room.saturating_sub(line.message.width()) + 1;
@@ -449,7 +448,7 @@ mod tests {
 
   #[test]
   fn unmeasured_resize_shows_on_the_last_row() -> Result<()> {
-    let error = terminal::NO_CELL.to_owned();
+    let error = vpdf_terminal::terminal::NO_CELL.to_owned();
     let unmeasured = Notice::new(10, 12, error);
     let mut out = Vec::new();
     unmeasured.draw(&mut out)?;

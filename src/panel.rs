@@ -148,12 +148,16 @@ impl App {
       },
       layout: &self.layout,
       search: &self.search,
-      images: self.image_usage,
+      images: &[
+        format!("Images: {} KiB resident", self.image_usage.bytes / 1024),
+        format!("Transferred: {} KiB", self.image_usage.uploaded / 1024),
+      ],
       render_ms: self.render_ms,
       screen: self.screen,
       text: self.text_mode,
       mouse: terminal::mouse(),
-      caps: vpdf_terminal::caps::get(),
+      frontend: &vpdf_terminal::caps::get()
+        .map_or_else(|| "Terminal: not probed".into(), ToString::to_string),
     }
     .text()
   }

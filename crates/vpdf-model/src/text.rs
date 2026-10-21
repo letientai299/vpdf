@@ -288,9 +288,43 @@ pub fn clean(text: &str, columns: usize) -> String {
   clean
 }
 
+/// Printable text with ellipsis when truncated.
+pub fn clipped(text: &str, columns: usize) -> (String, bool) {
+  use unicode_width::UnicodeWidthStr;
+  let clean = clean(text, columns);
+  if clean.width() < text.width() && columns > 0 {
+    (format!("{}…", self::clean(text, columns - 1)), true)
+  } else {
+    (clean, false)
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn clipping_preserves_cell_limits() {
+    use unicode_width::UnicodeWidthStr;
+    for (text, columns, expected, cut) in [
+      ("", 4, "", false),
+      ("long", 0, "", false),
+      ("long", 1, "…", true),
+      ("fit", 3, "fit", false),
+      ("a\nb\x1b", 3, "a …", true),
+      ("世界", 3, "世…", true),
+      ("🦀x", 2, "…", true),
+      ("e\u{301}x", 1, "…", true),
+    ] {
+      assert_eq!(clipped(text, columns), (expected.into(), cut));
+      assert!(expected.width() <= columns);
+    }
+    let hostile = format!("a{}", "\u{301}".repeat(10_000));
+    let (text, cut) = clipped(&hostile, 1);
+    assert!(text.chars().count() <= 8);
+    assert_eq!(text.width(), 1);
+    assert!(!cut);
+  }
 
   #[test]
   fn text_centers_preserve_order() {
