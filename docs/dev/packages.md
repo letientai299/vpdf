@@ -47,6 +47,12 @@ delegates layout and drawing to UI components. Terminal and native wrappers
 share active-tab composition; each wrapper keeps its frame lifecycle and
 delivery metadata.
 
+Application [interaction dispatch][interaction] applies normalized keys, paste,
+and pointer reports and settles their requests. Frontend adapters retain modal
+guards, geometry validation, visibility, and delivery policy. Pointer leave
+skips settlement in native; the terminal adapter settles it. Both frontends
+reuse gesture cleanup while retaining their focus transitions.
+
 Model owns [semantic style][styles] resets, patches, colors, and text
 attributes.
 Terminal and GUI resolve their own palettes and encode styles for their
@@ -153,5 +159,5 @@ corpus, OCR, and terminal checks when they change.
 [painter]: ../../crates/terminal/src/painter.rs
 [gui]: ../../crates/vpdf-gui/src/lib.rs
 [pictures]: ../../crates/vpdf-model/src/image.rs
-
 [styles]: ../../crates/vpdf-model/src/style.rs
+[interaction]: ../../src/session/interaction.rs

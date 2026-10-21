@@ -1,4 +1,5 @@
 //! Session ownership for native windows.
+use super::interaction::Interaction;
 use super::unlock::Operation;
 use super::{Home, Screen, Session};
 use crate::Result;
@@ -420,14 +421,8 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) {
     Input::Paste(text) if session.tabs.is_empty() => {
       home_event(session, vpdf_terminal::decode::Event::Paste(text), *screen)
     }
-    Input::Key(key) => session.type_key(key).and_then(|()| session.settle()),
-    Input::Paste(text) => {
-      let active = session.active;
-      let tab = &mut session.tabs[active];
-      tab.panes[tab.focus]
-        .paste(&text, &mut session.history)
-        .and_then(|()| session.settle())
-    }
+    Input::Key(key) => session.interact(Interaction::Key(key)).map(drop),
+    Input::Paste(text) => session.interact(Interaction::Paste(text)).map(drop),
     Input::Mouse { event, pixels: (x, y), screen: drawn }
       if drawn == *screen =>
     {
@@ -440,7 +435,7 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) {
           *screen,
         )
       } else {
-        session.mouse_report(report).and_then(|_| session.settle())
+        session.interact(Interaction::Mouse(report)).map(drop)
       }
     }
     Input::History { forward, pixels: (x, y), screen: drawn }
@@ -453,12 +448,10 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) {
         at: Spot::Pixel { x, y },
         modifiers: crossterm::event::KeyModifiers::NONE,
       };
-      session.mouse_report(report).and_then(|_| session.settle())
+      session.interact(Interaction::Mouse(report)).map(drop)
     }
     Input::Leave => {
-      session.pointer_left();
-      session.drop_pointer();
-      Ok(())
+      session.interact(Interaction::Leave).map(|_| session.drop_pointer())
     }
     Input::Focus(focused) => {
       session.sight =
@@ -726,9 +719,265 @@ mod tests {
     Input::Key(KeyEvent::new(code, KeyModifiers::NONE))
   }
 
+  fn assert_sessions_match(left: &mut Session, right: &mut Session) {
+    assert_eq!(left.active, right.active);
+    assert_eq!(left.tab().focus, right.tab().focus);
+    assert_eq!(left.tab().panes.len(), right.tab().panes.len());
+    assert_eq!(left.pointer.holding(), right.pointer.holding());
+    assert_eq!(left.history.commands(), right.history.commands());
+    for (left, right) in left.tab().panes.iter().zip(&right.tab().panes) {
+      assert_eq!(left.reader.cursor, right.reader.cursor);
+      assert_eq!(left.reader.scroll, right.reader.scroll);
+      assert_eq!(left.reader.mode(), right.reader.mode());
+      assert_eq!(left.reader.selection, right.reader.selection);
+      assert_eq!(left.layout.zoom(), right.layout.zoom());
+      assert_eq!(left.error, right.error);
+      assert_eq!(
+        left.overlays.prompt().map(vpdf_ui::prompt::Prompt::text),
+        right.overlays.prompt().map(vpdf_ui::prompt::Prompt::text)
+      );
+      assert!(left.request.is_none() && right.request.is_none());
+    }
+  }
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn normalized_adapter_inputs_match() -> Result<()> {
+    use super::super::{Act, run};
+    use crossterm::event::MouseEventKind;
+    use vpdf_model::text::PageId;
+    use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
+    let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
+    let mut screen = sized();
+    let mut terminal = Session::new(None);
+    let mut native = Session::new(None);
+    native.frontend = crate::raster::Frontend::Native(Wake::none());
+    for session in [&mut terminal, &mut native] {
+      session.open(&path, true, screen)?;
+    }
+    let key_pair = |code, modifiers| {
+      let key = KeyEvent::new(code, modifiers);
+      (Act::Key(key), Input::Key(key))
+    };
+    let mut inputs = Vec::new();
+    let mut pages = Vec::new();
+    for (command, page) in [(":vsplit", 0), (":2", 1), (":1", 0)] {
+      inputs.extend(
+        command
+          .chars()
+          .map(|ch| key_pair(KeyCode::Char(ch), KeyModifiers::NONE)),
+      );
+      inputs.push(key_pair(KeyCode::Enter, KeyModifiers::NONE));
+      pages.push((inputs.len() - 1, PageId(page)));
+    }
+    for forward in [false, true] {
+      let button = if forward { Button::FORWARD } else { Button::BACK };
+      inputs.push((
+        Act::Mouse(Mouse {
+          kind: MouseKind::Press(button),
+          at: Spot::Pixel { x: 100, y: 160 },
+          modifiers: KeyModifiers::NONE,
+        }),
+        Input::History { forward, pixels: (100, 160), screen },
+      ));
+      pages.push((inputs.len() - 1, PageId(usize::from(!forward))));
+    }
+    for kind in [
+      MouseEventKind::Moved,
+      MouseEventKind::Down(crossterm::event::MouseButton::Left),
+      MouseEventKind::Drag(crossterm::event::MouseButton::Left),
+      MouseEventKind::Up(crossterm::event::MouseButton::Left),
+      MouseEventKind::ScrollDown,
+      MouseEventKind::ScrollUp,
+    ] {
+      let event =
+        MouseEvent { kind, column: 60, row: 8, modifiers: KeyModifiers::SHIFT };
+      let mut report = Mouse::from(event);
+      report.at = Spot::Pixel { x: 600, y: 160 };
+      inputs.push((
+        Act::Mouse(report),
+        Input::Mouse { event, pixels: (600, 160), screen },
+      ));
+    }
+    inputs.push((Act::Leave, Input::Leave));
+    inputs.push(key_pair(KeyCode::Char('/'), KeyModifiers::NONE));
+    inputs.push((
+      Act::Paste("章a\u{301}".into()),
+      Input::Paste("章a\u{301}".into()),
+    ));
+    let pasted = inputs.len() - 1;
+    inputs.push(key_pair(KeyCode::Char('_'), KeyModifiers::CONTROL));
+    let undone = inputs.len() - 1;
+    inputs.push(key_pair(KeyCode::Esc, KeyModifiers::NONE));
+    for (step, (term_input, native_input)) in inputs.into_iter().enumerate() {
+      run::apply(&mut terminal, term_input, &mut Vec::new());
+      apply(&mut native, native_input, &mut screen);
+      assert!(terminal.app().error.is_none(), "terminal step {step}");
+      assert!(native.app().error.is_none(), "native step {step}");
+      if let Some((_, page)) = pages.iter().find(|(at, _)| *at == step) {
+        assert_eq!(terminal.tab().panes.len(), 2, "step {step}");
+        assert_eq!(terminal.app().reader.cursor.page, *page, "step {step}");
+      }
+      if step == pasted || step == undone {
+        let expected = if step == pasted { "章a\u{301}" } else { "" };
+        assert_eq!(terminal.app().overlays.prompt().unwrap().text(), expected);
+      }
+      assert_sessions_match(&mut terminal, &mut native);
+    }
+    assert_eq!(terminal.tab().focus, 0);
+    assert!(terminal.app().overlays.prompt().is_none());
+    Ok(())
+  }
+
+  #[test]
+  fn guarded_inputs_keep_requests() -> Result<()> {
+    use crossterm::event::MouseEventKind;
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("guard.pdf");
+    crate::fixtures::pdf(&path, &["body"], "")?;
+    let mut screen = sized();
+    let mut session = Session::new(None);
+    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    session.open(&path, true, screen)?;
+    let stale = Screen { columns: screen.columns - 1, ..screen };
+    session.app().request = Some(super::super::Request::Perf(Some(true)));
+    for input in [
+      Input::Leave,
+      Input::Focus(false),
+      Input::Resize(screen),
+      Input::History { forward: false, pixels: (20, 20), screen: stale },
+      Input::Mouse {
+        event: MouseEvent {
+          kind: MouseEventKind::Moved,
+          column: 2,
+          row: 1,
+          modifiers: KeyModifiers::NONE,
+        },
+        pixels: (20, 20),
+        screen: stale,
+      },
+    ] {
+      apply(&mut session, input, &mut screen);
+      assert!(!session.state.perf);
+      assert!(session.app().request.is_some());
+    }
+    session.unlock_result(
+      Err(super::super::PasswordRequired.into()),
+      Some(Operation::Open(path)),
+    )?;
+    session
+      .pending_keys
+      .push_back(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE));
+    for input in [
+      Input::Paste("secret".into()),
+      key(KeyCode::Char('x')),
+      Input::History { forward: true, pixels: (20, 20), screen },
+    ] {
+      apply(&mut session, input, &mut screen);
+      assert!(!session.state.perf);
+      assert!(session.app().request.is_some());
+      assert_eq!(session.pending_keys.len(), 1);
+      assert!(!resume_keys(&mut session));
+    }
+    assert_eq!(session.unlock.as_ref().unwrap().prompt.text(), "secretx");
+    Ok(())
+  }
+
   fn protected(path: &std::path::Path) -> Result<tempfile::NamedTempFile> {
     let mut source = vpdf_pdf::document::Document::open(path, "")?;
     crate::encryption::encrypt(&mut source.native)
+  }
+
+  #[test]
+  fn mouse_settles_once() -> Result<()> {
+    use super::super::{Act, Request, run};
+    use vpdf_terminal::decode::{Mouse, MouseKind, Spot};
+    let root = tempfile::tempdir()?;
+    for native in [false, true] {
+      let mut session = Session::new(None);
+      let mut screen = sized();
+      if native {
+        session.frontend = crate::raster::Frontend::Native(Wake::none());
+      }
+      for name in ["first.pdf", "second.pdf"] {
+        let path = root.path().join(name);
+        crate::fixtures::pdf(&path, &["body"], "")?;
+        session.open(&path, true, screen)?;
+      }
+      session.tabs[0].panes[0].quit = true;
+      session.app().request = Some(Request::TabClose(None));
+      if native {
+        apply(
+          &mut session,
+          Input::Mouse {
+            event: MouseEvent {
+              kind: crossterm::event::MouseEventKind::Moved,
+              column: 0,
+              row: 0,
+              modifiers: KeyModifiers::NONE,
+            },
+            pixels: (0, 0),
+            screen,
+          },
+          &mut screen,
+        );
+      } else {
+        run::apply(
+          &mut session,
+          Act::Mouse(Mouse {
+            kind: MouseKind::Moved,
+            at: Spot::Pixel { x: 0, y: 0 },
+            modifiers: KeyModifiers::NONE,
+          }),
+          &mut Vec::new(),
+        );
+      }
+      assert_eq!(session.tabs.len(), 1);
+      assert!(session.app().quit);
+      assert!(session.app().error.is_none());
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn leave_preserves_frontend_policy() -> Result<()> {
+    use super::super::{Act, Request, run};
+    use crossterm::event::{MouseButton, MouseEventKind};
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("leave.pdf");
+    crate::fixtures::pdf(&path, &["body"], "")?;
+    for native in [false, true] {
+      let mut session = Session::new(None);
+      let mut screen = sized();
+      if native {
+        session.frontend = crate::raster::Frontend::Native(Wake::none());
+      }
+      session.open(&path, true, screen)?;
+      for kind in
+        [MouseEventKind::Moved, MouseEventKind::Down(MouseButton::Left)]
+      {
+        session.mouse(MouseEvent {
+          kind,
+          column: 10,
+          row: 8,
+          modifiers: KeyModifiers::NONE,
+        })?;
+      }
+      assert!(session.pointer.holding());
+      assert!(session.pointer.target().is_some());
+      session.app().request = Some(Request::SetMark('a'));
+      if native {
+        apply(&mut session, Input::Leave, &mut screen);
+      } else {
+        assert!(run::apply(&mut session, Act::Leave, &mut Vec::new()));
+      }
+      assert!(session.pointer.target().is_none());
+      assert_eq!(session.pointer.holding(), !native);
+      assert_eq!(session.app().request.is_some(), native);
+      assert_eq!(session.state.marks.contains_key(&'a'), !native);
+      assert!(session.app().error.is_none());
+    }
+    Ok(())
   }
 
   /// A frame the window never took hands its one-shot fields on.

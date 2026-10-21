@@ -1,3 +1,4 @@
+use super::interaction::Interaction;
 use super::{
   Act, App, Arc, Cause, Duration, Event, Home, Instant, IsTerminal,
   KeyEventKind, MouseKind, Ordering, Outcome, Pacer, PathBuf, Result, Session,
@@ -116,18 +117,23 @@ pub(super) fn input(
 ) -> Result<bool> {
   let shown = session.shown_by(&act, out)?;
   let done = match act {
-    Act::Key(key) => session.type_key(key),
-    Act::Paste(text) => {
-      let tab = &mut session.tabs[session.active];
-      tab.panes[tab.focus].paste(&text, &mut session.history)
-    }
+    Act::Key(key) => return session.interact(Interaction::Key(key)),
+    Act::Paste(text) => return session.interact(Interaction::Paste(text)),
     Act::Resize(report) => {
       let measured = terminal::resized(report, session.screen);
       session.refit(measured, crossterm::terminal::size)
     }
-    Act::Mouse(mouse) => return Ok(session.mouse_report(mouse)? || shown),
-    Act::Leave => return Ok(session.pointer_left()),
-    Act::Drop(body) => return session.drop_event(&body, out),
+    Act::Mouse(mouse) => {
+      return Ok(session.interact(Interaction::Mouse(mouse))? || shown);
+    }
+    Act::Leave => {
+      let changed = session.interact(Interaction::Leave)?;
+      return session.settle().map(|()| changed);
+    }
+    Act::Drop(body) => {
+      let changed = session.drop_event(&body, out)?;
+      return session.settle().map(|()| changed);
+    }
     Act::ImageStatus(body) => {
       session.image_status(&body);
       Ok(())
@@ -141,7 +147,7 @@ pub(super) fn input(
       .release_pointer(out)
       .and_then(|()| session.look(Cause::FocusOut, out).map(drop)),
   };
-  done.map(|()| true)
+  done.and_then(|()| session.settle()).map(|()| true)
 }
 
 /// Handles and settles one input; whether it needs a frame.
@@ -150,8 +156,7 @@ pub(super) fn apply(
   act: Act,
   out: &mut impl Write,
 ) -> bool {
-  let result = input(session, act, out)
-    .and_then(|changed| session.settle().map(|()| changed));
+  let result = input(session, act, out);
   result.unwrap_or_else(|error| {
     report(session, Err(error));
     true

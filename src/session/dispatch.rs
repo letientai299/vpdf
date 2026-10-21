@@ -94,8 +94,7 @@ impl Session {
       Some(Request::Keys(keys)) => {
         let mut keys = keys.into_iter();
         while let Some(key) = keys.next() {
-          self.type_key(key)?;
-          self.settle()?;
+          self.interact(super::interaction::Interaction::Key(key))?;
           if self.quit || self.tabs.is_empty() {
             break;
           }
