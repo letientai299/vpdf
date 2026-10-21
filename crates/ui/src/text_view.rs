@@ -1,7 +1,8 @@
 use crate::Result;
 use crate::paint::Marks;
+#[cfg(test)]
+use crate::presentation::*;
 use crate::text::{Bounds, Glyph, Line, PageId, Position, Text};
-use std::io::Write;
 use std::sync::Arc;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use vpdf_model::geometry::At;
@@ -419,17 +420,6 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
         shown.find(|(_, _, glyph)| !glyph.ch.is_whitespace())?;
       Some(Position { glyph, ..at })
     }))
-  }
-
-  pub fn draw(
-    &mut self,
-    out: &mut impl Write,
-    paint: &Marks<'_>,
-  ) -> Result<()> {
-    let mut painter = vpdf_terminal::painter::Painter::new(out);
-    self.scene(&mut painter, paint)?;
-    painter.finish()?;
-    Ok(())
   }
 
   pub fn scene<'a>(

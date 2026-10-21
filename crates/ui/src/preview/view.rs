@@ -8,7 +8,6 @@ use crate::source::{Pages, Raster};
 use crate::split::Rect;
 use crate::text::{Bounds, PageId, Position};
 use crate::theme;
-use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::{Annotation, Target};
 use vpdf_model::input::{
@@ -19,7 +18,6 @@ use vpdf_model::style::Role;
 use vpdf_model::tile::TileKey;
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::TextSource;
-use vpdf_terminal::graphics::Graphics;
 
 const HEIGHT: f32 = 0.4;
 const ABOVE: f32 = 6.0;
@@ -467,20 +465,6 @@ impl Preview {
       columns: cells(columns + 2),
       rows: cells(rows + 2),
     }
-  }
-
-  pub fn draw(
-    &mut self,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-    input: Frame<'_>,
-    source: &impl Pages,
-  ) -> Result<()> {
-    let mut scene =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    let result = self.scene(&mut scene, input, source);
-    scene.finish()?;
-    result
   }
 
   pub fn scene<'a, S: Surface<'a>>(

@@ -1,4 +1,3 @@
-use crate::Result;
 use crate::keys::{self, Action, PanelKind};
 use crate::paint::Frame;
 use crate::panel::{Destination, Panel};
@@ -6,7 +5,6 @@ use crate::pointer::Items;
 use crate::region::Operation;
 use crate::split::Rect;
 use crate::theme;
-use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::Target;
 use vpdf_model::geometry::Screen;
@@ -16,7 +14,6 @@ use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::{Reader, SelectionKind};
-use vpdf_terminal::graphics::Graphics;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Transition {
@@ -263,19 +260,6 @@ impl<C> ContextMenu<C> {
       left,
       Rect { column, columns, ..area },
     ))
-  }
-
-  pub fn draw(
-    &self,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-    frame: Frame,
-  ) -> Result<()> {
-    let mut scene =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    self.scene(&mut scene, frame);
-    scene.finish()?;
-    Ok(())
   }
 
   fn scene_backdrop<'a>(&self, scene: &mut impl Draw<'a>, frame: Frame) {

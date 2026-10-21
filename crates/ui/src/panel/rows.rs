@@ -1,6 +1,4 @@
-use super::{
-  Destination, Result, Row, Style, UnicodeWidthChar, UnicodeWidthStr, Write,
-};
+use super::{Destination, Row, Style, UnicodeWidthChar, UnicodeWidthStr};
 use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
 
@@ -42,21 +40,6 @@ pub fn key_width(rows: &[Row], inner: usize) -> usize {
 }
 
 impl Row {
-  /// Writes the label within `room` columns and returns its width.
-  pub fn write(
-    &self,
-    out: &mut impl Write,
-    base: Option<Role>,
-    room: usize,
-    keys: usize,
-    query: &str,
-  ) -> Result<usize> {
-    let mut painter = vpdf_terminal::painter::Painter::new(out);
-    let width = self.scene(&mut painter, base, room, keys, query);
-    painter.finish()?;
-    Ok(width)
-  }
-
   pub fn scene<'a>(
     &self,
     scene: &mut impl Draw<'a>,

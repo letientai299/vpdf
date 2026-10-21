@@ -49,11 +49,9 @@ impl App {
     graphics: &mut Graphics,
     out: &mut impl Write,
   ) -> Result<()> {
-    let mut painter =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    let result = self.scene_canvas(&mut painter);
-    painter.finish()?;
-    result
+    crate::presentation::draw(out, Some(graphics), |scene| {
+      self.scene_canvas(scene)
+    })?
   }
 
   pub(crate) fn scene_canvas<'a, S: Surface<'a>>(

@@ -1,6 +1,8 @@
 use super::*;
 use crate::find::Search;
 use crate::reading::Pane;
+#[cfg(test)]
+use anyhow::Result;
 use vpdf_model::input::KeyModifiers;
 use vpdf_reader::reader::{Mode, SelectionKind};
 use vpdf_search::{query::Query, search::Hit};

@@ -1,3 +1,6 @@
+#[path = "../../../tests/support/presentation.rs"]
+pub mod presentation;
+use crate::presentation::{HintsDraw, PanelDraw};
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::geometry::Screen;

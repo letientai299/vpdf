@@ -32,3 +32,9 @@ pub mod split;
 pub mod text_view;
 pub mod theme;
 pub mod window;
+
+#[cfg(test)]
+extern crate self as vpdf_ui;
+#[cfg(test)]
+#[path = "../../../tests/support/presentation.rs"]
+pub mod presentation;

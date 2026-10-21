@@ -404,7 +404,7 @@ impl Session {
       }
     }
     if let Some(unmeasured) = &self.unmeasured {
-      unmeasured.draw(out)?;
+      crate::presentation::draw(out, None, |scene| unmeasured.scene(scene))?;
       out.flush()?;
     }
     Ok(())

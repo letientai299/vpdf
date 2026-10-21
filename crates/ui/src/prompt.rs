@@ -5,11 +5,13 @@
 //! Ctrl-arrows that stop at punctuation, history search on Ctrl-r, and
 //! `edit-command-line` on Ctrl-x Ctrl-e.
 
+#[cfg(test)]
 use crate::Result;
 use crate::grid::{self, Grid};
 use crate::layout::Screen;
 use crate::line::{self, NARROW, SHELL};
-use std::io::Write;
+#[cfg(test)]
+use crate::presentation::*;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
 use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
@@ -143,19 +145,6 @@ pub enum PromptEvent {
 }
 
 impl Prompt {
-  pub fn draw(
-    &self,
-    out: &mut impl Write,
-    screen: Screen,
-    at: At,
-    pointed: Option<usize>,
-  ) -> Result<()> {
-    let mut scene = vpdf_terminal::painter::Painter::new(out);
-    self.scene(&mut scene, screen, at, pointed);
-    scene.finish()?;
-    Ok(())
-  }
-
   pub fn scene<'a>(
     &self,
     scene: &mut impl Draw<'a>,

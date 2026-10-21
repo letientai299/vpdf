@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(test)]
+use anyhow::Result;
 
 use vpdf_model::input::KeyModifiers;
 

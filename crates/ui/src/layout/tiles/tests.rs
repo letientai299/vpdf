@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::Result;
 #[test]
 fn bounded_neighborhood() {
   let limit = 10;

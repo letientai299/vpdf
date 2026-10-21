@@ -1,5 +1,7 @@
 use super::layout::Layout;
 use super::{JumpDescription, Row};
+#[cfg(test)]
+use crate::presentation::*;
 pub(super) fn label(description: &JumpDescription) -> String {
   match description {
     JumpDescription::Heading(title) => format!("Heading: {title}"),

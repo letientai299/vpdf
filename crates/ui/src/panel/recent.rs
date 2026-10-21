@@ -1,18 +1,21 @@
 //! Recent documents beside a card for the selected one: its first page
 //! and `:info` facts, read off the input thread.
+#[cfg(test)]
+use anyhow::Result;
 
-use crate::Result;
+#[cfg(test)]
+use crate::presentation::*;
 use vpdf_model::cache::Cache;
 use vpdf_model::scene::{Op, Surface};
 use vpdf_model::style::Role;
 const MIB: usize = 1 << 20;
 use crate::layout::Screen;
 use crate::panel::{self, Destination, Panel, Pointing, Row};
-use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::{Facts, FactsRequest, Fit, LoadedFacts};
 use vpdf_model::geometry::At;
+#[cfg(test)]
 use vpdf_terminal::graphics::Graphics;
 
 /// Panels narrower than this show no card.
@@ -40,7 +43,7 @@ pub struct Frame {
 struct Card {
   fit: Fit,
   serial: vpdf_model::image::PictureId,
-  facts: std::result::Result<Facts, String>,
+  facts: Result<Facts, String>,
 }
 
 /// Recent document cards and pending loads.
@@ -182,32 +185,13 @@ impl Shelf {
     if width < NARROW || !files { 0 } else { width / 5 * 2 }
   }
 
-  /// Draws `panel`'s list in `width` columns, the card on its right;
-  /// `graphics` places the thumbnail.
-  pub fn draw(
-    &mut self,
-    panel: &mut Panel,
-    out: &mut impl Write,
-    frame: Frame,
-    graphics: Option<&mut Graphics>,
-  ) -> Result<()> {
-    let pictures = graphics.is_some();
-    let mut scene = vpdf_terminal::painter::Painter::new(out);
-    if let Some(graphics) = graphics {
-      scene = scene.with_graphics(graphics);
-    }
-    let result = self.scene(panel, &mut scene, frame, pictures);
-    scene.finish()?;
-    result
-  }
-
   pub fn scene<'a, S: Surface<'a>>(
     &mut self,
     panel: &mut Panel,
     scene: &mut S,
     frame: Frame,
     pictures: bool,
-  ) -> std::result::Result<(), S::Error> {
+  ) -> Result<(), S::Error> {
     let Frame { at, width, screen, now } = frame;
     let list = Self::list_columns(panel, width);
     let card = width - list;
@@ -239,7 +223,7 @@ impl Shelf {
     area: Area,
     entry: &Entry,
     pictures: bool,
-  ) -> std::result::Result<(), S::Error> {
+  ) -> Result<(), S::Error> {
     let Area { at, column, columns, screen, now } = area;
     let rows = usize::from(screen.rows.saturating_sub(1));
     for row in 0..rows {

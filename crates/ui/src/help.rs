@@ -1,5 +1,7 @@
 use crate::panel::layout::{Layout, Line, wrap};
 use crate::panel::{Destination, Row, Style, key_width};
+#[cfg(test)]
+use crate::presentation::*;
 use vpdf_model::style::Role;
 
 impl Layout {

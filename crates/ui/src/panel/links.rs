@@ -1,5 +1,7 @@
 use super::layout::Layout;
 use super::{Destination, Row, Target};
+#[cfg(test)]
+use crate::presentation::*;
 use crate::text::{PageId, Position, Text};
 use vpdf_model::document::{Heading, Link};
 use vpdf_reader::reader::{JumpDescription, TextSource};

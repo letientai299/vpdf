@@ -1,3 +1,4 @@
+use crate::presentation::ContextDraw;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::geometry::At;

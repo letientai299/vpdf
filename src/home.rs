@@ -68,9 +68,11 @@ impl Home {
     write!(out, "{}{}", terminal::frame_start(), sgr(Role::Reset))?;
     self.updates();
     self.graphics.begin(out)?;
-    self.view.draw(out, &mut self.graphics, crate::state::now(), |cards| {
-      self.loader.request(cards);
-    })?;
+    crate::presentation::draw(out, Some(&mut self.graphics), |scene| {
+      self
+        .view
+        .scene(scene, crate::state::now(), |cards| self.loader.request(cards))
+    })??;
     self.graphics.end(out)?;
     write!(out, "{}", terminal::frame_end())?;
     out.flush()?;

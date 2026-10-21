@@ -1,7 +1,9 @@
 //! Window splits within a tab, as a binary tree like Vim's layout.
 
+#[cfg(test)]
 use crate::Result;
-use std::io::Write;
+#[cfg(test)]
+use crate::presentation::*;
 use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_model::style::Role;
 
@@ -81,13 +83,6 @@ fn span(axis: Axis, area: Rect) -> u16 {
 impl Node {
   pub fn leaf(id: u32) -> Self {
     Self { kind: Kind::Leaf(id) }
-  }
-
-  pub fn draw_dividers(&self, out: &mut impl Write, area: Rect) -> Result<()> {
-    let mut scene = vpdf_terminal::painter::Painter::new(out);
-    self.scene_dividers(&mut scene, area);
-    scene.finish()?;
-    Ok(())
   }
 
   pub fn scene_dividers<'a>(&self, scene: &mut impl Draw<'a>, area: Rect) {

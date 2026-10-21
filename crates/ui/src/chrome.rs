@@ -4,10 +4,11 @@ use crate::input::InputOwner;
 use crate::keys::{Action, Keys, PanelKind};
 use crate::layout::{Layout, Screen};
 use crate::panel::Panel;
+#[cfg(test)]
+use crate::presentation::*;
 use crate::text::PageId;
 use crate::theme::Color;
 use std::fmt::Write as _;
-use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::input::MouseButton;
 use vpdf_model::scene::{Draw, Op, Text};
@@ -25,14 +26,6 @@ pub struct Notice {
 impl Notice {
   pub fn new(rows: u16, columns: u16, error: String) -> Self {
     Self { rows, columns, error }
-  }
-
-  /// Preserve an open prompt's cursor.
-  pub fn draw(&self, out: &mut impl Write) -> Result<()> {
-    let mut painter = vpdf_terminal::painter::Painter::new(out);
-    self.scene(&mut painter);
-    painter.finish()?;
-    Ok(())
   }
 
   pub fn scene<'a>(&self, scene: &mut impl Draw<'a>) {
@@ -220,21 +213,6 @@ impl Bar<'_> {
       bottom / self.view.layout.total().max(1.0)
     };
     (fraction.clamp(0.0, 1.0) * 100.0).round() as u32
-  }
-
-  /// `status`, `detail` replacing the section.
-  pub fn draw(
-    &self,
-    out: &mut impl Write,
-    at: vpdf_model::geometry::At,
-    row: u16,
-    focused: bool,
-    detail: Option<&str>,
-  ) -> Result<()> {
-    let mut painter = vpdf_terminal::painter::Painter::new(out);
-    self.scene(&mut painter, at, row, focused, detail)?;
-    painter.finish()?;
-    Ok(())
   }
 
   pub fn scene<'a>(

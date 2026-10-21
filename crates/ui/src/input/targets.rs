@@ -3,6 +3,8 @@ use crate::context::ContextMenu;
 use crate::hints::Hints;
 use crate::panel::Panel;
 use crate::pointer::{Hit, Items, List, Region};
+#[cfg(test)]
+use crate::presentation::*;
 use crate::preview::Preview;
 use crate::region::Region as Capture;
 use crate::text::PageId;
@@ -263,6 +265,7 @@ mod tests {
     use crate::region::{Canvas, CaptureId, Snapshot};
     use crate::text::Bounds;
     use vpdf_model::geometry::At;
+    #[cfg(test)]
     use vpdf_terminal::graphics::Graphics;
     let screen = Screen {
       columns: 80,

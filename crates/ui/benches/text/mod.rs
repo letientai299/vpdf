@@ -1,4 +1,5 @@
 use super::fixtures::TextPages;
+use crate::presentation::TextDraw;
 use anyhow::{Context, Result};
 use std::hint::black_box;
 use vpdf_model::geometry::At;

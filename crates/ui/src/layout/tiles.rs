@@ -1,9 +1,12 @@
 use super::{Layout, Screen, visible};
-use crate::Result;
+#[cfg(test)]
+use crate::presentation::*;
 use crate::text::PageId;
+#[cfg(test)]
 use std::io::Write;
 use vpdf_model::scene::Surface;
 use vpdf_model::tile::{TileId, TileKey, TileOwner};
+#[cfg(test)]
 use vpdf_terminal::graphics::Graphics;
 
 pub struct Tiles {
@@ -73,26 +76,12 @@ impl Tiles {
     nearby(view.layout.pages().len(), anchor, self.heading >= 0.0, limit)
   }
 
-  pub fn draw(
-    &mut self,
-    view: View<'_>,
-    frame: Frame,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<Update> {
-    let mut scene =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    let update = self.scene(view, frame, &mut scene);
-    scene.finish()?;
-    update
-  }
-
   pub fn scene<'a, S: Surface<'a>>(
     &mut self,
     view: View<'_>,
     frame: Frame,
     scene: &mut S,
-  ) -> std::result::Result<Update, S::Error> {
+  ) -> Result<Update, S::Error> {
     let mut wanted = visible(view.layout, view.scroll);
     if let Some(target) = view.target {
       self.heading = (target - view.scroll).signum();
@@ -142,11 +131,8 @@ impl Tiles {
   fn update_with<E>(
     &mut self,
     mut frame: Visible,
-    collect: impl FnOnce(
-      &[TileKey],
-      &mut Vec<TileKey>,
-    ) -> std::result::Result<usize, E>,
-  ) -> std::result::Result<Update, E> {
+    collect: impl FnOnce(&[TileKey], &mut Vec<TileKey>) -> Result<usize, E>,
+  ) -> Result<Update, E> {
     let complete = frame.missing.is_empty();
     let request = if frame.wanted == self.wanted {
       None

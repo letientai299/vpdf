@@ -158,6 +158,8 @@ impl App {
       return Ok(());
     }
     let mut reading = self.reading_parts();
-    reading.view.draw_preview(reading.overlays, graphics, out)
+    crate::presentation::draw(out, Some(graphics), |scene| {
+      reading.view.scene_preview(reading.overlays, scene)
+    })?
   }
 }

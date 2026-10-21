@@ -4,10 +4,8 @@ use crate::overlays::Overlays;
 use crate::preview::{Frame, Preview};
 use crate::source::{Markup, Pages, Raster};
 use crate::text::{Bounds, PageId, Position};
-use std::io::Write;
 use vpdf_model::document::{Annotation, Target};
 use vpdf_reader::reader::TextSource;
-use vpdf_terminal::graphics::Graphics;
 
 impl<S: TextSource + Pages> View<'_, S> {
   pub fn preview_annotation(
@@ -98,19 +96,6 @@ impl<S: TextSource + Pages + Markup> View<'_, S> {
 }
 
 impl<S: TextSource + Pages + Markup + Raster> View<'_, S> {
-  pub fn draw_preview(
-    &mut self,
-    overlays: &mut Overlays,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    let mut scene =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    let result = self.scene_preview(overlays, &mut scene);
-    scene.finish()?;
-    result
-  }
-
   pub fn scene_preview<'a, D: vpdf_model::scene::Surface<'a>>(
     &mut self,
     overlays: &mut Overlays,

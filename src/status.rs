@@ -131,7 +131,15 @@ impl App {
     row: u16,
     detail: Option<&str>,
   ) -> Result<()> {
-    self.chrome_view(&self.name()).draw(out, self.at, row, self.focused, detail)
+    crate::presentation::try_draw(out, None, |scene| {
+      self.chrome_view(&self.name()).scene(
+        scene,
+        self.at,
+        row,
+        self.focused,
+        detail,
+      )
+    })
   }
 
   pub(crate) fn shows_detail(&self) -> bool {

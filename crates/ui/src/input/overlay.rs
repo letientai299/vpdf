@@ -2,6 +2,8 @@ use super::InputOwner;
 use crate::clues::Clues;
 use crate::layout::Screen;
 use crate::pointer::{Items, List};
+#[cfg(test)]
+use crate::presentation::*;
 use crate::prompt::{Menu, Prompt};
 
 /// Bottom lists share the space above status.

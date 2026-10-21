@@ -3,6 +3,8 @@ use super::{
   Sight, Tab, Write, terminal,
 };
 use crate::trace::Observation;
+#[cfg(test)]
+use crate::ui_presentation::*;
 use vpdf_model::scene::Surface;
 use vpdf_model::style::Role;
 use vpdf_terminal::painter::Painter;
@@ -113,7 +115,9 @@ impl Session {
     if let Some(screen) = self.screen {
       let mut buffer = Vec::new();
       write!(buffer, "{}", terminal::frame_start())?;
-      if self.perf.view.draw(&mut buffer, screen, false)? {
+      if crate::presentation::draw(&mut buffer, None, |scene| {
+        self.perf.view.scene(scene, screen, false)
+      })? {
         write!(buffer, "{}", terminal::frame_end())?;
         self.perf.exclude(buffer.len());
         out.write_all(&buffer)?;

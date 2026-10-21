@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::presentation::*;
 pub mod landing;
 mod point;
 pub use point::Point;
@@ -9,12 +11,12 @@ use crate::paint::{Marks, outside};
 use crate::source::Pages;
 use crate::text::{Bounds, Line, PageId, Position};
 use crate::theme;
-use std::io::Write;
 pub use view::Viewport;
 use vpdf_model::geometry::Screen;
 use vpdf_model::scene::{Draw, Layer};
 use vpdf_reader::motion::{covered_rows, range};
 use vpdf_reader::reader::{SelectionKind, TextSource};
+#[cfg(test)]
 use vpdf_terminal::graphics::Graphics;
 
 pub struct Canvas<'a> {
@@ -32,20 +34,6 @@ struct Painter<'a, S, D> {
 }
 
 impl Canvas<'_> {
-  pub fn draw(
-    &self,
-    source: &mut (impl TextSource + Pages),
-    marks: &Marks<'_>,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    let mut painter =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    let drawn = self.scene(source, marks, &mut painter);
-    painter.finish()?;
-    drawn
-  }
-
   pub fn scene<'a>(
     &self,
     source: &mut (impl TextSource + Pages),

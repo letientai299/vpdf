@@ -1,3 +1,4 @@
+use crate::presentation::PanelDraw;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::document::{Heading, Target};

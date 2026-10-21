@@ -1,10 +1,8 @@
 //! Items in columns filled top to bottom, like zsh's completion list,
 //! drawn in rows above the status line.
 
-use crate::Result;
 use crate::layout::Screen;
 use crate::theme::Color;
-use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
 use vpdf_model::scene::{Draw, Op, Text};
@@ -77,20 +75,6 @@ pub enum Shown {
   Chosen,
 }
 
-/// Paints a label; its keys lead.
-pub fn cell(
-  out: &mut impl Write,
-  label: &str,
-  width: usize,
-  keys: usize,
-  shown: Shown,
-) -> Result<()> {
-  let mut scene = vpdf_terminal::painter::Painter::new(out);
-  scene_cell(&mut scene, label, width, keys, shown);
-  scene.finish()?;
-  Ok(())
-}
-
 pub fn scene_cell<'a>(
   scene: &mut impl Draw<'a>,
   label: &str,
@@ -129,31 +113,6 @@ pub fn scene_cell<'a>(
     scene.push(Op::Text(Text::new(text)));
   }
   scene.push(Op::Spaces(pad));
-}
-
-/// Draws `labels` placed by `grid`, ending at row `bottom`; the first
-/// `keys` columns of each label are highlighted as keys.
-pub fn draw(
-  out: &mut impl Write,
-  (at, bottom): (At, u16),
-  labels: &[String],
-  grid: &Grid,
-  (chosen, pointed): (Option<usize>, Option<usize>),
-  keys: usize,
-  screen: Screen,
-) -> Result<()> {
-  let mut scene = vpdf_terminal::painter::Painter::new(out);
-  self::scene(
-    &mut scene,
-    (at, bottom),
-    labels,
-    grid,
-    (chosen, pointed),
-    keys,
-    screen,
-  );
-  scene.finish()?;
-  Ok(())
 }
 
 pub fn scene<'a>(

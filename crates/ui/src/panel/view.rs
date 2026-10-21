@@ -1,8 +1,8 @@
 use super::{
-  Action, Color, Destination, Graphics, Input, Layout, MIN_WIDTH, Motion,
-  MouseButton, MouseEvent, MouseEventKind, Panel, PanelKind, Pointing, Result,
-  Row, RowSearch, Screen, Target, UnicodeWidthStr, WHEEL_ROWS, Wheel, Write,
-  key_width, moved_row, screen_step,
+  Action, Color, Destination, Input, Layout, MIN_WIDTH, Motion, MouseButton,
+  MouseEvent, MouseEventKind, Panel, PanelKind, Pointing, Row, RowSearch,
+  Screen, Target, UnicodeWidthStr, WHEEL_ROWS, Wheel, key_width, moved_row,
+  screen_step,
 };
 use vpdf_model::scene::{Draw, Op, Surface};
 use vpdf_model::style::Role;
@@ -389,37 +389,12 @@ impl Panel {
     width.min(columns.saturating_sub(12))
   }
 
-  /// Draws `width` columns of `screen`, with the selected document's
-  /// card when the panel has a shelf; `graphics` places its thumbnail.
-  pub fn draw(
-    &mut self,
-    out: &mut impl Write,
-    at: vpdf_model::geometry::At,
-    width: u16,
-    screen: Screen,
-    graphics: Option<&mut Graphics>,
-    now: u64,
-  ) -> Result<()> {
-    let pictures = graphics.is_some();
-    let mut scene = vpdf_terminal::painter::Painter::new(out);
-    if let Some(graphics) = graphics {
-      scene = scene.with_graphics(graphics);
-    }
-    let result = self.scene(
-      &mut scene,
-      crate::panel::recent::Frame { at, width, screen, now },
-      pictures,
-    );
-    scene.finish()?;
-    result
-  }
-
   pub fn scene<'a, S: Surface<'a>>(
     &mut self,
     scene: &mut S,
     frame: crate::panel::recent::Frame,
     pictures: bool,
-  ) -> std::result::Result<(), S::Error> {
+  ) -> Result<(), S::Error> {
     let crate::panel::recent::Frame { width, screen, at, .. } = frame;
     let Some(mut cards) = self.shelf.take() else {
       self.scene_list(scene, at, width, screen.rows);
@@ -434,20 +409,6 @@ impl Panel {
     let drawn = cards.scene(self, scene, frame, pictures);
     self.shelf = Some(cards);
     drawn
-  }
-
-  /// Draws the rows in `width` columns; the last is the border.
-  pub fn list(
-    &mut self,
-    out: &mut impl Write,
-    at: vpdf_model::geometry::At,
-    width: u16,
-    height: u16,
-  ) -> Result<()> {
-    let mut painter = vpdf_terminal::painter::Painter::new(out);
-    self.scene_list(&mut painter, at, width, height);
-    painter.finish()?;
-    Ok(())
   }
 
   pub fn scene_list<'a>(

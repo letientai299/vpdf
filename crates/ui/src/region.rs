@@ -1,17 +1,20 @@
+#[cfg(test)]
 use crate::Result;
 use crate::keys::Action;
 use crate::layout::Layout;
 use crate::paint::Frame;
 use crate::pointer::Items;
+#[cfg(test)]
+use crate::presentation::*;
 use crate::split::Rect;
 use crate::theme;
-use std::io::Write;
 use std::ops::Range;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_reader::motion::Motion;
+#[cfg(test)]
 use vpdf_terminal::graphics::Graphics;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -232,21 +235,6 @@ pub struct Canvas<'a> {
 }
 
 impl Canvas<'_> {
-  pub fn draw(
-    &self,
-    region: Option<&mut Region>,
-    sweep: Option<(PageId, Bounds)>,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    let snap_to_cells = graphics.crop_quirk();
-    let mut scene =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    self.scene(region, sweep, snap_to_cells, &mut scene);
-    scene.finish()?;
-    Ok(())
-  }
-
   pub fn scene<'a>(
     &self,
     region: Option<&mut Region>,

@@ -49,3 +49,8 @@ mod fixtures;
 mod reader_fixture;
 #[cfg(test)]
 pub(crate) use reader_fixture::SeedReader;
+
+mod presentation;
+#[cfg(test)]
+#[path = "../tests/support/presentation.rs"]
+pub mod ui_presentation;

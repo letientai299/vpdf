@@ -1,18 +1,21 @@
-use crate::Result;
 use crate::keys::{Action, Input};
 use crate::layout::tiles::Visible;
 use crate::layout::{Crop, Screen, page_matrix, screen_step, transform};
 use crate::pointer::Wheel;
+#[cfg(test)]
+use crate::presentation::*;
 use crate::source::Pages;
 use crate::text::{Bounds, PageId};
 use crate::theme;
-use std::io::Write;
+#[cfg(test)]
+use anyhow::Result;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::input::{MouseButton, MouseEventKind};
 use vpdf_model::scene::{Draw, Layer, Op, Surface};
 use vpdf_model::style::Role;
 use vpdf_model::tile::{TileId, TileKey, TileOwner, cover};
 use vpdf_reader::motion::Motion;
+#[cfg(test)]
 use vpdf_terminal::graphics::Graphics;
 
 /// Thumbnails per row aim for this width in pixels.
@@ -268,26 +271,12 @@ impl Overview {
     (inside && index < pages).then_some(PageId(index))
   }
 
-  pub fn draw(
-    &mut self,
-    source: &impl Pages,
-    frame: Frame,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<Visible> {
-    let mut scene =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    let visible = self.scene(source, frame, &mut scene);
-    scene.finish()?;
-    visible
-  }
-
   pub fn scene<'a, S: Surface<'a>>(
     &mut self,
     source: &impl Pages,
     frame: Frame,
     scene: &mut S,
-  ) -> std::result::Result<Visible, S::Error> {
+  ) -> Result<Visible, S::Error> {
     let grid = Grid::new(frame.screen, source.bounds(PageId(0)));
     let pages = source.count();
     let (screen, left) = (frame.clip, frame.left);

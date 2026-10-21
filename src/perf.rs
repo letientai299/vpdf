@@ -1,4 +1,6 @@
 use crate::Result;
+#[cfg(test)]
+use crate::ui_presentation::*;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::{Arc, Mutex, mpsc};
@@ -154,7 +156,9 @@ impl Monitor {
   /// Paints the overlay into a frame, uncounted by Out.
   pub fn draw(&mut self, out: &mut impl Write, screen: Screen) -> Result<bool> {
     let mut buffer = Vec::new();
-    let drawn = self.view.draw(&mut buffer, screen, false)?;
+    let drawn = crate::presentation::draw(&mut buffer, None, |scene| {
+      self.view.scene(scene, screen, false)
+    })?;
     self.exclude(buffer.len());
     out.write_all(&buffer)?;
     Ok(drawn)

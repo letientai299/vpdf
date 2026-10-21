@@ -1,5 +1,6 @@
 use super::*;
 use crate::text::PageId;
+use anyhow::Result;
 use vpdf_model::style::Role;
 use vpdf_terminal::style::sgr;
 

@@ -79,13 +79,9 @@ impl PanelSession {
     graphics: Option<&mut Graphics>,
   ) -> Result<()> {
     let pictures = graphics.is_some();
-    let mut painter = vpdf_terminal::painter::Painter::new(out);
-    if let Some(graphics) = graphics {
-      painter = painter.with_graphics(graphics);
-    }
-    let result = self.scene(&mut painter, at, width, screen, pictures);
-    painter.finish()?;
-    result
+    crate::presentation::draw(out, graphics, |scene| {
+      self.scene(scene, at, width, screen, pictures)
+    })?
   }
 }
 

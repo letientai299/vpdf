@@ -1,3 +1,5 @@
+#[path = "../tests/support/presentation.rs"]
+pub mod presentation;
 use anyhow::{Context, Result};
 #[path = "../benches/support/hash.rs"]
 mod hash;

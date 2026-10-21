@@ -22,6 +22,8 @@ mod mouse;
 mod objects;
 mod outline;
 mod paragraphs;
+#[path = "../support/presentation.rs"]
+pub mod presentation;
 mod preview;
 mod rendering;
 mod sections;

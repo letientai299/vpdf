@@ -1,20 +1,19 @@
 use self::recent::Shelf;
-use crate::Result;
 use crate::keys::{Action, Input, PanelKind};
 use crate::layout::{Screen, screen_step};
 use crate::panel::layout::Layout;
 use crate::panel::search::RowSearch;
 use crate::pointer::{WHEEL_ROWS, Wheel};
+#[cfg(test)]
+use crate::presentation::*;
 use crate::text::Position;
 use crate::theme::Color;
-use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use vpdf_model::document::{Annotation, Target};
 use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::JumpDescription;
-use vpdf_terminal::graphics::Graphics;
 
 #[derive(Clone, PartialEq)]
 pub enum Destination {

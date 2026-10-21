@@ -1,6 +1,8 @@
+#[cfg(test)]
 use crate::Result;
 use crate::layout::Screen;
-use std::io::Write;
+#[cfg(test)]
+use crate::presentation::*;
 use vpdf_model::geometry::At;
 use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
@@ -53,18 +55,6 @@ impl Overlay {
 
   pub fn invalidate(&mut self) {
     self.layout = None;
-  }
-
-  pub fn draw(
-    &mut self,
-    out: &mut impl Write,
-    screen: Screen,
-    force: bool,
-  ) -> Result<bool> {
-    let mut scene = vpdf_terminal::painter::Painter::new(out);
-    let changed = self.scene(&mut scene, screen, force);
-    scene.finish()?;
-    Ok(changed)
   }
 
   pub fn scene<'a>(

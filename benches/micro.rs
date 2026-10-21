@@ -1,5 +1,7 @@
 //! Single hot functions, timed in isolation, so a change is measured
 //! without the noise of whole-reader runs. Arguments filter cases by name.
+#[path = "../tests/support/presentation.rs"]
+pub mod presentation;
 use std::hint::black_box;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};

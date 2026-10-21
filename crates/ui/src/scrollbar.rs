@@ -1,10 +1,14 @@
+#[cfg(test)]
 use crate::Result;
 use crate::find::Search;
 use crate::layout::Layout;
 use crate::paint::Frame;
 use crate::pointer::Route;
+#[cfg(test)]
+use crate::presentation::*;
 use crate::text::{Bounds, PageId};
 use crate::theme;
+#[cfg(test)]
 use std::io::Write;
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
@@ -13,6 +17,7 @@ use vpdf_model::input::MouseEventKind;
 use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_reader::reader::{Location, Reader};
+#[cfg(test)]
 use vpdf_terminal::graphics::Graphics;
 
 const TICK: f32 = 3.0;
@@ -175,21 +180,6 @@ impl Bar {
     Input::Scroll(view.scrolled(at, scrub.grip, travel))
   }
 
-  pub fn draw(
-    &mut self,
-    view: View<'_>,
-    ticks: Ticks<'_>,
-    now: Instant,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<Option<Label>> {
-    let mut scene =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    let label = self.scene(view, ticks, now, &mut scene);
-    scene.finish()?;
-    Ok(label)
-  }
-
   pub fn scene<'a>(
     &mut self,
     view: View<'_>,
@@ -301,19 +291,6 @@ impl Ticks<'_> {
 impl Label {
   pub fn page(&self) -> PageId {
     self.page
-  }
-
-  pub fn draw(
-    self,
-    text: &str,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    let mut scene =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    self.scene(text, &mut scene);
-    scene.finish()?;
-    Ok(())
   }
 
   pub fn scene<'a>(self, text: &str, scene: &mut impl Draw<'a>) {

@@ -5,12 +5,12 @@ use crate::paint::Frame;
 use crate::pointer::Items;
 use crate::split::Rect;
 use crate::theme;
-use std::io::Write;
 use vpdf_model::document::{Link, Target};
 use vpdf_model::input::{KeyCode, KeyEvent};
 use vpdf_model::scene::{Draw, Layer, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId};
+#[cfg(test)]
 use vpdf_terminal::graphics::Graphics;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -218,19 +218,6 @@ impl Hints {
       items.push(hint.cells(), index);
     }
     items
-  }
-
-  pub fn draw(
-    &self,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-    frame: Frame,
-  ) -> Result<()> {
-    let mut scene =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    self.scene(&mut scene, frame);
-    scene.finish()?;
-    Ok(())
   }
 
   pub fn scene<'a>(&self, scene: &mut impl Draw<'a>, frame: Frame) {

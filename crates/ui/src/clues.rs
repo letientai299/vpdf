@@ -1,10 +1,8 @@
-use crate::Result;
 use crate::grid::{self, Grid};
 use crate::keys;
 use crate::layout::Screen;
 use crate::pointer::Items;
 use crate::text::Position;
-use std::io::Write;
 use std::time::{Duration, Instant};
 use vpdf_model::geometry::At;
 use vpdf_model::input::KeyEvent;
@@ -119,19 +117,6 @@ impl List {
       }
     }
     items
-  }
-
-  pub fn draw(
-    &self,
-    out: &mut impl Write,
-    bottom: (At, u16),
-    screen: Screen,
-    pointed: Option<usize>,
-  ) -> Result<()> {
-    let mut painter = vpdf_terminal::painter::Painter::new(out);
-    self.scene(&mut painter, bottom, screen, pointed);
-    painter.finish()?;
-    Ok(())
   }
 
   pub fn scene<'a>(

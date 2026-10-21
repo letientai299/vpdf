@@ -4,9 +4,10 @@ use crate::layout::Screen;
 use crate::panel::Panel;
 use crate::panel::recent::{Entry, Shelf};
 use crate::panel::{Destination, Row};
+#[cfg(test)]
+use crate::presentation::*;
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
 use crate::theme::Color;
-use std::io::Write;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
@@ -14,6 +15,7 @@ use vpdf_model::input::Event;
 use vpdf_model::input::{KeyEvent, KeyEventKind};
 use vpdf_model::scene::{Draw, Op, Surface, Text};
 use vpdf_model::style::Role;
+#[cfg(test)]
 use vpdf_terminal::graphics::Graphics;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -76,20 +78,6 @@ impl Home {
 
   pub fn shelf_mut(&mut self) -> Option<&mut Shelf> {
     self.panel.shelf_mut()
-  }
-
-  pub fn draw(
-    &mut self,
-    out: &mut impl Write,
-    graphics: &mut Graphics,
-    now: u64,
-    request: impl FnOnce(&mut Shelf),
-  ) -> Result<()> {
-    let mut painter =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    let result = self.scene(&mut painter, now, request);
-    painter.finish()?;
-    result
   }
 
   pub fn scene<'a, S: Surface<'a>>(

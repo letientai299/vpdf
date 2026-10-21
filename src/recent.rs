@@ -1,4 +1,6 @@
 use crate::state;
+#[cfg(test)]
+use crate::ui_presentation::*;
 use vpdf_pdf::jobs::{Wake, recent::Worker};
 use vpdf_ui::panel::recent::{Entry, Shelf};
 

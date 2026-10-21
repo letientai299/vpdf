@@ -4,6 +4,8 @@ use super::maintenance::Chores;
 use super::unlock::Operation;
 use super::{Home, Screen, Session};
 use crate::Result;
+#[cfg(test)]
+use crate::ui_presentation::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
