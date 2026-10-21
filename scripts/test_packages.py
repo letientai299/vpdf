@@ -26,7 +26,8 @@ class PackageTests(unittest.TestCase):
     def package(self, name, identity=None):
         identity = identity or name
         self.packages[identity] = {
-            "id": identity, "name": name,
+            "id": identity,
+            "name": name,
             "manifest_path": f"/workspace/{identity}/Cargo.toml",
             "dependencies": [],
         }
@@ -36,18 +37,26 @@ class PackageTests(unittest.TestCase):
         declaration = {
             "name": self.packages[dependency]["name"],
             "path": f"/workspace/{dependency}",
-            "kind": None, "target": None, "rename": None, "optional": False,
+            "kind": None,
+            "target": None,
+            "rename": None,
+            "optional": False,
         }
         declaration.update(options)
         self.packages[owner]["dependencies"].append(declaration)
         if resolved:
-            self.nodes[owner]["deps"].append({
-                "pkg": dependency,
-                "name": declaration["rename"] or declaration["name"],
-                "dep_kinds": [{
-                    "kind": declaration["kind"], "target": declaration["target"],
-                }],
-            })
+            self.nodes[owner]["deps"].append(
+                {
+                    "pkg": dependency,
+                    "name": declaration["rename"] or declaration["name"],
+                    "dep_kinds": [
+                        {
+                            "kind": declaration["kind"],
+                            "target": declaration["target"],
+                        }
+                    ],
+                }
+            )
 
     def metadata(self):
         return {
@@ -68,23 +77,39 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(check_packages.audit(self.metadata()), [])
         self.edge("vpdf", "helper")
         self.edge("helper", "eframe")
-        self.assertIn("GUI transitive dependency: vpdf -> wgpu-core",
-                      check_packages.audit(self.metadata()))
+        self.assertIn(
+            "GUI transitive dependency: vpdf -> wgpu-core",
+            check_packages.audit(self.metadata()),
+        )
         self.edge("vpdf-ui", "eframe", optional=True, resolved=False)
-        self.assertIn("GUI dependency: vpdf-ui -> eframe (normal)",
-                      check_packages.audit(self.metadata()))
+        self.assertIn(
+            "GUI dependency: vpdf-ui -> eframe (normal)",
+            check_packages.audit(self.metadata()),
+        )
 
     def test_dependency_kinds(self):
         for kind, target, rename in itertools.product(
-            (None, "dev", "build"), (None, "cfg(windows)"), (None, "document"),
+            (None, "dev", "build"),
+            (None, "cfg(windows)"),
+            (None, "document"),
         ):
             with self.subTest(kind=kind, target=target, rename=rename):
                 self.setUp()
-                self.edge("vpdf-ui", "vpdf-pdf", kind=kind,
-                          target=target, rename=rename)
+                self.edge(
+                    "vpdf-ui",
+                    "vpdf-pdf",
+                    kind=kind,
+                    target=target,
+                    rename=rename,
+                )
                 errors = check_packages.audit(self.metadata())
-                self.assertTrue(any(error.startswith("Forbidden dependency:")
-                                    for error in errors), errors)
+                self.assertTrue(
+                    any(
+                        error.startswith("Forbidden dependency:")
+                        for error in errors
+                    ),
+                    errors,
+                )
 
     def test_optional_declaration(self):
         for target in ("vpdf-pdf", "mupdf-sys"):
@@ -92,8 +117,10 @@ class PackageTests(unittest.TestCase):
                 self.setUp()
                 self.edge("vpdf-ui", target, resolved=False, optional=True)
                 errors = check_packages.audit(self.metadata())
-                self.assertTrue(any(f"vpdf-ui -> {target}" in error
-                                    for error in errors), errors)
+                self.assertTrue(
+                    any(f"vpdf-ui -> {target}" in error for error in errors),
+                    errors,
+                )
 
     def test_transitive_native(self):
         self.package("helper")
@@ -101,8 +128,9 @@ class PackageTests(unittest.TestCase):
         self.edge("helper", "mupdf-sys", kind="build", target="cfg(windows)")
         errors = check_packages.audit(self.metadata())
         for owner in ("vpdf-terminal", "vpdf-ui"):
-            self.assertIn(f"Native transitive dependency: {owner} -> mupdf-sys",
-                          errors)
+            self.assertIn(
+                f"Native transitive dependency: {owner} -> mupdf-sys", errors
+            )
 
     def test_transitive_internal(self):
         self.package("helper")
@@ -129,8 +157,13 @@ class PackageTests(unittest.TestCase):
         self.package("vpdf-model", "shadow")
         self.edge("vpdf-ui", "shadow")
         errors = check_packages.audit(self.metadata())
-        self.assertTrue(any(error.startswith("Non-workspace dependency:")
-                            for error in errors), errors)
+        self.assertTrue(
+            any(
+                error.startswith("Non-workspace dependency:")
+                for error in errors
+            ),
+            errors,
+        )
         self.assertIn(
             "Non-workspace transitive dependency: vpdf-ui -> vpdf-model", errors
         )
@@ -138,8 +171,13 @@ class PackageTests(unittest.TestCase):
     def test_registry_internal(self):
         self.edge("vpdf-ui", "vpdf-model", resolved=False, path=None)
         errors = check_packages.audit(self.metadata())
-        self.assertTrue(any(error.startswith("Non-workspace dependency:")
-                            for error in errors), errors)
+        self.assertTrue(
+            any(
+                error.startswith("Non-workspace dependency:")
+                for error in errors
+            ),
+            errors,
+        )
 
     def test_incomplete_graph(self):
         for missing in ("workspace", "package", "node", "resolve"):
@@ -147,11 +185,13 @@ class PackageTests(unittest.TestCase):
                 metadata = copy.deepcopy(self.metadata())
                 if missing in ("workspace", "package"):
                     name = "vpdf-ui" if missing == "workspace" else "serde"
-                    metadata["packages"] = [p for p in metadata["packages"]
-                                            if p["id"] != name]
+                    metadata["packages"] = [
+                        p for p in metadata["packages"] if p["id"] != name
+                    ]
                 elif missing == "node":
                     metadata["resolve"]["nodes"] = [
-                        node for node in metadata["resolve"]["nodes"]
+                        node
+                        for node in metadata["resolve"]["nodes"]
                         if node["id"] != "serde"
                     ]
                 else:
@@ -166,17 +206,37 @@ class PackageTests(unittest.TestCase):
 
     def test_ui_transport_edges(self):
         for dependency, kind, target, rename, optional in itertools.product(
-            ("vpdf-terminal", "vpdf-protocol"), (None, "dev", "build"),
-            (None, "cfg(windows)"), (None, "transport"), (False, True),
+            ("vpdf-terminal", "vpdf-protocol"),
+            (None, "dev", "build"),
+            (None, "cfg(windows)"),
+            (None, "transport"),
+            (False, True),
         ):
-            with self.subTest(dependency=dependency, kind=kind, target=target,
-                              rename=rename, optional=optional):
+            with self.subTest(
+                dependency=dependency,
+                kind=kind,
+                target=target,
+                rename=rename,
+                optional=optional,
+            ):
                 self.setUp()
-                self.edge("vpdf-ui", dependency, kind=kind, target=target,
-                          rename=rename, optional=optional, resolved=not optional)
+                self.edge(
+                    "vpdf-ui",
+                    dependency,
+                    kind=kind,
+                    target=target,
+                    rename=rename,
+                    optional=optional,
+                    resolved=not optional,
+                )
                 errors = check_packages.audit(self.metadata())
-                self.assertTrue(any(error.startswith("Forbidden dependency:")
-                                    for error in errors), errors)
+                self.assertTrue(
+                    any(
+                        error.startswith("Forbidden dependency:")
+                        for error in errors
+                    ),
+                    errors,
+                )
 
     def test_ui_transitive_transport(self):
         for dependency in ("vpdf-terminal", "vpdf-protocol"):
@@ -184,8 +244,9 @@ class PackageTests(unittest.TestCase):
                 self.setUp()
                 self.package("helper")
                 self.edge("vpdf-ui", "helper", kind="dev", rename="fixture")
-                self.edge("helper", dependency, kind="build",
-                          target="cfg(windows)")
+                self.edge(
+                    "helper", dependency, kind="build", target="cfg(windows)"
+                )
                 self.assertIn(
                     f"Forbidden transitive dependency: vpdf-ui -> {dependency}",
                     check_packages.audit(self.metadata()),
@@ -194,18 +255,37 @@ class PackageTests(unittest.TestCase):
     def test_crossterm_declarations(self):
         for owner, kind, target, rename, optional in itertools.product(
             set(check_packages.ALLOWED) - check_packages.TRANSPORT,
-            (None, "dev", "build"), (None, "cfg(windows)"),
-            (None, "input"), (False, True),
+            (None, "dev", "build"),
+            (None, "cfg(windows)"),
+            (None, "input"),
+            (False, True),
         ):
-            with self.subTest(owner=owner, kind=kind, target=target,
-                              rename=rename, optional=optional):
+            with self.subTest(
+                owner=owner,
+                kind=kind,
+                target=target,
+                rename=rename,
+                optional=optional,
+            ):
                 self.setUp()
                 self.package("crossterm")
-                self.edge(owner, "crossterm", kind=kind, target=target,
-                          rename=rename, optional=optional, resolved=not optional)
+                self.edge(
+                    owner,
+                    "crossterm",
+                    kind=kind,
+                    target=target,
+                    rename=rename,
+                    optional=optional,
+                    resolved=not optional,
+                )
                 errors = check_packages.audit(self.metadata())
-                self.assertTrue(any(error.startswith("Transport dependency:")
-                                    for error in errors), errors)
+                self.assertTrue(
+                    any(
+                        error.startswith("Transport dependency:")
+                        for error in errors
+                    ),
+                    errors,
+                )
 
     def test_crossterm_transitive(self):
         for owner in set(check_packages.ALLOWED) - check_packages.TRANSPORT:
@@ -214,8 +294,9 @@ class PackageTests(unittest.TestCase):
                 self.package("helper")
                 self.package("crossterm")
                 self.edge(owner, "helper", kind="dev", rename="fixture")
-                self.edge("helper", "crossterm", kind="build",
-                          target="cfg(windows)")
+                self.edge(
+                    "helper", "crossterm", kind="build", target="cfg(windows)"
+                )
                 self.assertIn(
                     f"Transport transitive dependency: {owner} -> crossterm",
                     check_packages.audit(self.metadata()),

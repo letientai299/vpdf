@@ -2,6 +2,7 @@
 rust = { version = "nightly-2026-10-20", components = "clippy,rustfmt,rust-analyzer,rust-src" }
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.148"
 prek = "0.5.6"
+ruff = "0.17.1"
 rumdl = "0.3.0"
 taplo = "0.10.0"
 upx = { version = "5.2.1", os = ["linux"] }
@@ -60,7 +61,7 @@ run = "cargo check --locked --workspace --all-targets"
 
 [tasks.lint]
 description = "Fix what tools can, then reject the remaining lint and format issues"
-depends = ["check:packages"]
+depends = ["check:packages", "lint:python"]
 run = [
   "cargo clippy --locked --workspace --all-targets --fix --allow-dirty --allow-staged",
   "cargo fmt --all",
@@ -69,6 +70,10 @@ run = [
   "cargo clippy --locked --workspace --all-targets -- -D warnings",
   "sh scripts/width.sh",
 ]
+
+[tasks."lint:python"]
+description = "Fix Python lint, imports, and formatting"
+run = ["ruff check --fix .", "ruff format .", "ruff check ."]
 
 [tasks.test]
 depends = [

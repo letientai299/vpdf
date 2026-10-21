@@ -19,14 +19,25 @@ class BuildFeatureTests(unittest.TestCase):
                 if value is not None:
                     env["VPDF_BENCH_EVENTS"] = value
                 run = subprocess.run(
-                    ["sh", "-c", '. scripts/build-features.sh; printf "%s\\n" "$@"'],
-                    cwd=root, env=env, capture_output=True, text=True, check=True,
+                    [
+                        "sh",
+                        "-c",
+                        '. scripts/build-features.sh; printf "%s\\n" "$@"',
+                    ],
+                    cwd=root,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=True,
                 )
                 self.assertEqual(run.stdout.splitlines(), wanted)
         env["VPDF_BENCH_EVENTS"] = "true"
         run = subprocess.run(
             ["sh", "-c", ". scripts/build-features.sh"],
-            cwd=root, env=env, capture_output=True, text=True,
+            cwd=root,
+            env=env,
+            capture_output=True,
+            text=True,
         )
         self.assertNotEqual(run.returncode, 0)
         self.assertIn("VPDF_BENCH_EVENTS requires 0 or 1", run.stderr)

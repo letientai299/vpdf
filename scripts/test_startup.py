@@ -9,7 +9,10 @@ import startup
 class TraceTests(unittest.TestCase):
     def test_completion_ignores_other_rows(self):
         for tagged in (False, True):
-            with self.subTest(tagged=tagged), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(tagged=tagged),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 frames = [{"complete": False}, {"complete": True}]
                 if tagged:
                     for frame in frames:

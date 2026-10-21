@@ -48,7 +48,9 @@ INF = float("inf")
 
 
 def winsize():
-    rows, cols, xpix, ypix = struct.unpack("HHHH", fcntl.ioctl(0, termios.TIOCGWINSZ, bytes(8)))
+    rows, cols, xpix, ypix = struct.unpack(
+        "HHHH", fcntl.ioctl(0, termios.TIOCGWINSZ, bytes(8))
+    )
     return [rows, cols, xpix, ypix]
 
 
@@ -68,7 +70,9 @@ def placements(frame):
     """Base tiles and pictures placed by one frame."""
     base = pictures = 0
     for control in CONTROL.findall(frame):
-        keys = dict(kv.split(b"=", 1) for kv in control.split(b",") if b"=" in kv)
+        keys = dict(
+            kv.split(b"=", 1) for kv in control.split(b",") if b"=" in kv
+        )
         if keys.get(b"a") != b"p":
             continue
         base += keys.get(b"z") == b"-2"
@@ -108,7 +112,11 @@ def launch(binary, args, env, size, quiet, timeout):
             if now > timeout * 1000:
                 failure = "timeout"
                 break
-            if quit_ms is None and frames and now - frames[-1]["ms"] >= quiet * 1000:
+            if (
+                quit_ms is None
+                and frames
+                and now - frames[-1]["ms"] >= quiet * 1000
+            ):
                 os.write(master, b":q\r")
                 quit_ms = now
             ready, _, _ = select.select([master, 0], [], [], 0.005)
@@ -140,11 +148,16 @@ def launch(binary, args, env, size, quiet, timeout):
                 start = max(0, len(pending) - len(FRAME_END) + 1)
                 pending += data
                 while (index := pending.find(FRAME_END, start)) >= 0:
-                    frame, pending = pending[:index], pending[index + len(FRAME_END) :]
+                    frame, pending = (
+                        pending[:index],
+                        pending[index + len(FRAME_END) :],
+                    )
                     start = 0
                     if quit_ms is None:
                         base, pictures = placements(frame)
-                        frames.append({"ms": at, "base": base, "pictures": pictures})
+                        frames.append(
+                            {"ms": at, "base": base, "pictures": pictures}
+                        )
             if child.poll() is not None and not ready:
                 break
     finally:
@@ -194,12 +207,20 @@ def traced(row, path):
         return
     lines = path.read_text().splitlines()
     rows = [json.loads(line) for line in lines]
-    flags = [row.get("complete") for row in rows if row.get("kind", "frame") == "frame"]
+    flags = [
+        row.get("complete")
+        for row in rows
+        if row.get("kind", "frame") == "frame"
+    ]
     if all(flag is None for flag in flags):
         return
     index = next((i for i, flag in enumerate(flags) if flag), None)
     frames = row["frames"]
-    if index is None or index >= len(frames) or frames[index]["ms"] < row["complete_ms"]:
+    if (
+        index is None
+        or index >= len(frames)
+        or frames[index]["ms"] < row["complete_ms"]
+    ):
         row["failure"] = "complete-mismatch"
         return
     row["placed_ms"] = row["complete_ms"]
@@ -243,12 +264,18 @@ def summarize(rows, labels):
             failures = {}
             for row in runs:
                 if row["failure"]:
-                    failures[row["failure"]] = failures.get(row["failure"], 0) + 1
+                    failures[row["failure"]] = (
+                        failures.get(row["failure"], 0) + 1
+                    )
             entry[label] = {"launches": len(runs), "failures": failures}
             for m in METRICS:
                 values = [value(row, m) for row in runs]
                 applies = any(v not in (None, INF) for v in values)
-                entry[label][m] = stats([v for v in values if v is not None]) if applies else None
+                entry[label][m] = (
+                    stats([v for v in values if v is not None])
+                    if applies
+                    else None
+                )
         if len(set(labels)) == 2:
             pairs = {}
             for row in mine:
@@ -298,7 +325,9 @@ def table(report, labels):
                 lines.append(f"{case:10} {m:14} " + "  ".join(cells))
         for label in labels:
             if entry[label]["failures"]:
-                lines.append(f"{case:10} failures {label}: {entry[label]['failures']}")
+                lines.append(
+                    f"{case:10} failures {label}: {entry[label]['failures']}"
+                )
         excluded = entry.get("paired", {}).get("excluded", {})
         if any(excluded.values()):
             lines.append(f"{case:10} excluded pairs: {excluded}")
@@ -349,24 +378,39 @@ def revision():
             ["git", "-C", str(ROOT), *args], capture_output=True, text=True
         ).stdout.strip()
 
-    return {"commit": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--porcelain"))}
+    return {
+        "commit": git("rev-parse", "HEAD"),
+        "dirty": bool(git("status", "--porcelain")),
+    }
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("base", type=Path)
     parser.add_argument("candidate", type=Path, nargs="?")
-    parser.add_argument("--cases", help="comma-separated: home, recent, or a corpus PDF name")
+    parser.add_argument(
+        "--cases", help="comma-separated: home, recent, or a corpus PDF name"
+    )
     parser.add_argument("--pairs", type=int, default=20)
     parser.add_argument(
-        "--quiet", type=float, default=1.0, help="seconds without frames that end a launch"
+        "--quiet",
+        type=float,
+        default=1.0,
+        help="seconds without frames that end a launch",
     )
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument(
-        "--warmup", type=int, default=1, help="unrecorded launches per binary and case"
+        "--warmup",
+        type=int,
+        default=1,
+        help="unrecorded launches per binary and case",
     )
-    parser.add_argument("--recent", type=Path, help="state.json for the recent case")
-    parser.add_argument("--trace", action="store_true", help="set VPDF_TRACE per launch")
+    parser.add_argument(
+        "--recent", type=Path, help="state.json for the recent case"
+    )
+    parser.add_argument(
+        "--trace", action="store_true", help="set VPDF_TRACE per launch"
+    )
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
     if not os.isatty(0):
@@ -374,7 +418,9 @@ def main():
     binaries = [args.base.resolve(), (args.candidate or args.base).resolve()]
     labels = ["base", "candidate"] if args.candidate else ["a", "b"]
     default = "home,book,paper,form,ocr,postgres,sdm,cjk,topo-nyc"
-    cases = (args.cases or ("recent," if args.recent else "") + default).split(",")
+    cases = (args.cases or ("recent," if args.recent else "") + default).split(
+        ","
+    )
     inputs = {case: resolve(case, args.recent) for case in cases}
     target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
     out = args.out or target / "startup" / time.strftime("%Y%m%d-%H%M%S")
@@ -382,7 +428,11 @@ def main():
     # A newly written executable stalls before main on its first runs.
     for binary in binaries:
         for _ in range(3):
-            subprocess.run([str(binary), "--version"], stdout=subprocess.DEVNULL, check=True)
+            subprocess.run(
+                [str(binary), "--version"],
+                stdout=subprocess.DEVNULL,
+                check=True,
+            )
     meta = {
         "binaries": {
             label: {"path": str(b), "sha256": sha256(b)}
@@ -398,7 +448,9 @@ def main():
         "source": revision(),
         "host": platform.node(),
         "platform": platform.platform(),
-        "terminal": {k: os.environ.get(k) for k in ("TERM", "TERM_PROGRAM", "KITTY_PID")},
+        "terminal": {
+            k: os.environ.get(k) for k in ("TERM", "TERM_PROGRAM", "KITTY_PID")
+        },
         "settings": {
             "pairs": args.pairs,
             "quiet": args.quiet,
@@ -416,22 +468,40 @@ def main():
             for binary in binaries[: 1 if binaries[0] == binaries[1] else 2]:
                 for index in range(args.warmup):
                     folder = out / "warmup" / f"{case}-{binary.name}-{index}"
-                    env = environment(folder, args.recent if case == "recent" else None, False)
+                    env = environment(
+                        folder, args.recent if case == "recent" else None, False
+                    )
                     drain()
-                    launch(binary, inputs[case], env, winsize(), args.quiet, args.timeout)
+                    launch(
+                        binary,
+                        inputs[case],
+                        env,
+                        winsize(),
+                        args.quiet,
+                        args.timeout,
+                    )
         with (out / "runs.jsonl").open("w") as log:
             for pair in range(args.pairs):
                 for case in cases:
                     order = [0, 1] if pair % 2 == 0 else [1, 0]
                     for slot in order:
-                        folder = out / "runs" / f"{pair:03}-{case}-{labels[slot]}"
+                        folder = (
+                            out / "runs" / f"{pair:03}-{case}-{labels[slot]}"
+                        )
                         env = environment(
-                            folder, args.recent if case == "recent" else None, args.trace
+                            folder,
+                            args.recent if case == "recent" else None,
+                            args.trace,
                         )
                         drain()
                         size = winsize()
                         row = launch(
-                            binaries[slot], inputs[case], env, size, args.quiet, args.timeout
+                            binaries[slot],
+                            inputs[case],
+                            env,
+                            size,
+                            args.quiet,
+                            args.timeout,
                         )
                         shutil.rmtree(folder / "cache", ignore_errors=True)
                         row.update(

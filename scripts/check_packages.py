@@ -1,8 +1,7 @@
 import json
-from pathlib import Path
 import subprocess
 import sys
-
+from pathlib import Path
 
 ALLOWED = {
     "vpdf-model": set(),
@@ -14,8 +13,12 @@ ALLOWED = {
     "vpdf-ui": {"vpdf-model", "vpdf-reader", "vpdf-search"},
     "vpdf-gui": {"vpdf", "vpdf-model"},
     "vpdf": {
-        "vpdf-model", "vpdf-reader", "vpdf-search", "vpdf-pdf",
-        "vpdf-terminal", "vpdf-ui",
+        "vpdf-model",
+        "vpdf-reader",
+        "vpdf-search",
+        "vpdf-pdf",
+        "vpdf-terminal",
+        "vpdf-ui",
     },
 }
 NATIVE = {"vpdf", "vpdf-pdf", "vpdf-gui"}
@@ -27,7 +30,14 @@ def native(name):
 
 
 def gui(name):
-    return name in {"eframe", "egui", "epaint", "emath", "ecolor", "winit"} or name.startswith(("egui-", "wgpu"))
+    return name in {
+        "eframe",
+        "egui",
+        "epaint",
+        "emath",
+        "ecolor",
+        "winit",
+    } or name.startswith(("egui-", "wgpu"))
 
 
 def reachable(graph, root, stop=()):
@@ -72,7 +82,9 @@ def audit(metadata):
             if target in ALLOWED:
                 if target not in ALLOWED[name]:
                     errors.append(f"Forbidden dependency: {edge}")
-                directory = Path(packages[owners[target]]["manifest_path"]).parent
+                directory = Path(
+                    packages[owners[target]]["manifest_path"]
+                ).parent
                 path = dep.get("path")
                 if path is None or Path(path).resolve() != directory.resolve():
                     errors.append(f"Non-workspace dependency: {edge}")
@@ -84,7 +96,9 @@ def audit(metadata):
                 errors.append(f"Native dependency: {edge}")
 
         transport = reachable(
-            graph, member, stop={owners["vpdf"]} if name == "vpdf-gui" else (),
+            graph,
+            member,
+            stop={owners["vpdf"]} if name == "vpdf-gui" else (),
         )
         permitted = reachable(ALLOWED, name)
         for target in sorted(reachable(graph, member)):
@@ -94,9 +108,14 @@ def audit(metadata):
                 if dependency not in permitted:
                     errors.append(f"Forbidden transitive dependency: {edge}")
                 if target != owners[dependency]:
-                    errors.append(f"Non-workspace transitive dependency: {edge}")
-            if (name not in TRANSPORT and target in transport
-                    and dependency == "crossterm"):
+                    errors.append(
+                        f"Non-workspace transitive dependency: {edge}"
+                    )
+            if (
+                name not in TRANSPORT
+                and target in transport
+                and dependency == "crossterm"
+            ):
                 errors.append(f"Transport transitive dependency: {edge}")
             if name != "vpdf-gui" and gui(dependency):
                 errors.append(f"GUI transitive dependency: {edge}")
@@ -108,9 +127,17 @@ def audit(metadata):
 def main():
     root = Path(__file__).resolve().parent.parent
     result = subprocess.run(
-        ["cargo", "metadata", "--locked", "--all-features",
-         "--format-version", "1"],
-        cwd=root, stdout=subprocess.PIPE, text=True,
+        [
+            "cargo",
+            "metadata",
+            "--locked",
+            "--all-features",
+            "--format-version",
+            "1",
+        ],
+        cwd=root,
+        stdout=subprocess.PIPE,
+        text=True,
     )
     if result.returncode:
         return result.returncode

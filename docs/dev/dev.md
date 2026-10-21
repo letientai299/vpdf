@@ -185,6 +185,9 @@ inspect its diff before staging. [Prek hooks][hooks] run lint and ordinary tests
 before a commit. If lint changes tracked files, stage the intended fixes and
 retry.
 
+Python uses [Ruff][ruff] for lint fixes, import sorting, and formatting through
+the lint task and commit hook. Run `mise run lint:python` for Python alone.
+
 Markdown uses [Rumdl configuration][rumdl] for formatting and checks. Keep links
 relative within the repository, use Mermaid for diagrams, and put changing
 interface details in executable help.
@@ -456,6 +459,7 @@ a result needs a reproducible release reference.
 [install]: ../../scripts/install.sh
 [ci]: ../../.github/workflows/ci.yml
 [hooks]: ../../prek.toml
+[ruff]: https://docs.astral.sh/ruff/
 [rumdl]: ../../.config/rumdl.toml
 [corpus]: ../../scripts/corpus.sh
 [corpus-tests]: ../../tests/it/corpus.rs

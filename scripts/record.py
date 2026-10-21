@@ -3,7 +3,13 @@
 vpdf uses, sends its queries, and logs each read on its own line as a
 Python bytes literal. Run it inside the terminal under test.
 Usage: record.py OUT SECONDS [pixels]"""
-import os, select, sys, termios, time, tty
+
+import os
+import select
+import sys
+import termios
+import time
+import tty
 
 out, seconds = sys.argv[1], float(sys.argv[2])
 pixels = len(sys.argv) > 3
@@ -35,6 +41,9 @@ try:
                 log.write(repr(chunk) + "\n")
                 log.flush()
 finally:
-    os.write(fd, b"\x1b[<u\x1b[?2048l\x1b[?1004l\x1b[?2004l\x1b[?1016l"
-             b"\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?1049l")
+    os.write(
+        fd,
+        b"\x1b[<u\x1b[?2048l\x1b[?1004l\x1b[?2004l\x1b[?1016l"
+        b"\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?1049l",
+    )
     termios.tcsetattr(fd, termios.TCSANOW, saved)

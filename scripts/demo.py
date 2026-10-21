@@ -220,10 +220,13 @@ def input_hashes(corpus, selected):
 
 def binary_identity(binary, profile):
     version = next(
-        line for line in run(str(binary), "--version").splitlines()
+        line
+        for line in run(str(binary), "--version").splitlines()
         if line.startswith("vpdf ")
     )
-    match = re.fullmatch(r"vpdf ([0-9a-f]{7,40}) \(\d{4}-\d{2}-\d{2}\)", version)
+    match = re.fullmatch(
+        r"vpdf ([0-9a-f]{7,40}) \(\d{4}-\d{2}-\d{2}\)", version
+    )
     commit = None
     if match:
         commit = match[1]
@@ -266,9 +269,9 @@ def capture_identity(args, options, ocr, inputs):
 
 
 def capture_key(identity):
-    return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[
-        :16
-    ]
+    return hashlib.sha256(
+        json.dumps(identity, sort_keys=True).encode()
+    ).hexdigest()[:16]
 
 
 def load_manifest(path):
@@ -277,7 +280,9 @@ def load_manifest(path):
     manifest = json.loads(path.read_text())
     if "captures" in manifest:
         return manifest
-    previous = {key: value for key, value in manifest.items() if key != "scenes"}
+    previous = {
+        key: value for key, value in manifest.items() if key != "scenes"
+    }
     old_id = capture_key(previous)
     return {
         "captures": {old_id: previous},
@@ -302,11 +307,15 @@ def publish_scene(output, manifest, identity, name, scene, image):
     used = {record["capture"] for record in scenes.values()}
     captures = {**manifest["captures"], capture_id: identity}
     updated = {
-        "captures": {key: value for key, value in captures.items() if key in used},
+        "captures": {
+            key: value for key, value in captures.items() if key in used
+        },
         "scenes": scenes,
     }
     target = output / scene["image"]
-    with tempfile.TemporaryDirectory(prefix=".capture-", dir=output) as directory:
+    with tempfile.TemporaryDirectory(
+        prefix=".capture-", dir=output
+    ) as directory:
         directory = Path(directory)
         staged = directory / scene["image"]
         shutil.copyfile(image, staged)
@@ -388,7 +397,9 @@ class Gallery:
             match = re.search(r"(?<!\w)" + re.escape(label) + r"(?!\w)", line)
             if match:
                 self.pointer(
-                    "move", (match.start() + 0.5) * cell[0], (row + 0.5) * cell[1]
+                    "move",
+                    (match.start() + 0.5) * cell[0],
+                    (row + 0.5) * cell[1],
                 )
                 return
         raise RuntimeError(f"Pointer label missing: {label}")
@@ -449,7 +460,10 @@ class Gallery:
             if time.monotonic() > deadline:
                 raise RuntimeError(f"Screenshot never settled: {name}")
             self.remote(
-                "screenshot", "--match-tab", f"window_id:{self.window}", str(raw)
+                "screenshot",
+                "--match-tab",
+                f"window_id:{self.window}",
+                str(raw),
             )
             current = digest(raw)
             stable = stable + 1 if current == previous_hash else 0
@@ -520,7 +534,9 @@ class Gallery:
         for key, value in options.items():
             command.extend(["-o", f"{key}={value}"])
         command.extend(["/bin/sleep", "3600"])
-        self.process = subprocess.Popen(command, cwd=ROOT, stdout=log, stderr=log)
+        self.process = subprocess.Popen(
+            command, cwd=ROOT, stdout=log, stderr=log
+        )
         deadline = time.monotonic() + 30
         while not (self.directory / "kitty.sock").exists():
             if self.process.poll() is not None or time.monotonic() > deadline:
@@ -534,7 +550,9 @@ class Gallery:
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", type=Path, default=ROOT / "target/release/vpdf")
+    parser.add_argument(
+        "--binary", type=Path, default=ROOT / "target/release/vpdf"
+    )
     parser.add_argument("--build-profile", default="unknown")
     parser.add_argument("--corpus", type=Path, default=ROOT / "tmp/corpus")
     parser.add_argument("--output", type=Path, default=ROOT / "docs/assets")
@@ -563,9 +581,12 @@ def preflight(args, selected):
     if not args.binary.is_file():
         raise RuntimeError("Reader missing; run mise run build")
     if any(
-        not math.isfinite(value) or value <= 0 for value in (args.scale, args.base_font)
+        not math.isfinite(value) or value <= 0
+        for value in (args.scale, args.base_font)
     ):
-        raise RuntimeError("Font size and scale must be positive finite numbers")
+        raise RuntimeError(
+            "Font size and scale must be positive finite numbers"
+        )
     run(args.kitten, "@", "screenshot", "--help")
     if not any(
         kind == "text" and ":ocr " in value
@@ -595,7 +616,9 @@ def main():
         return
     selected = list(dict.fromkeys(args.scene or SCENES))
     if args.corpus == ROOT / "tmp/corpus":
-        documents = sorted({doc for name in selected for doc in scene_documents(name)})
+        documents = sorted(
+            {doc for name in selected for doc in scene_documents(name)}
+        )
         subprocess.run(
             ["sh", str(ROOT / "scripts/corpus.sh"), "corpus", *documents],
             check=True,
@@ -609,9 +632,13 @@ def main():
     manifest = load_manifest(path)
     if not args.scene:
         manifest["scenes"] = {
-            name: scene for name, scene in manifest["scenes"].items() if name in SCENES
+            name: scene
+            for name, scene in manifest["scenes"].items()
+            if name in SCENES
         }
-    with tempfile.TemporaryDirectory(prefix="vpdf-demo-", dir="/tmp") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix="vpdf-demo-", dir="/tmp"
+    ) as directory:
         gallery = Gallery(args, directory)
         with (args.raw / "kitty.log").open("w") as log:
             try:

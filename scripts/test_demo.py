@@ -32,10 +32,12 @@ class DemoTests(unittest.TestCase):
         resolved = SimpleNamespace(returncode=0, stdout=reported + "\n")
         with (
             patch.object(
-                demo, "run", return_value=(
+                demo,
+                "run",
+                return_value=(
                     "Reader description\nhttps://example.com\n"
                     "vpdf aaaaaaa (2026-10-18)"
-                )
+                ),
             ),
             patch.object(subprocess, "run", return_value=resolved),
         ):
@@ -71,7 +73,11 @@ class DemoTests(unittest.TestCase):
         other = output / "search.jpg"
         other.write_bytes(b"unchanged image")
         before = other.stat().st_mtime_ns
-        previous = {"image": other.name, "capture": "old", "sha256": demo.digest(other)}
+        previous = {
+            "image": other.name,
+            "capture": "old",
+            "sha256": demo.digest(other),
+        }
         manifest = {
             "captures": {"old": {"commit": "previous"}},
             "scenes": {"search": previous},
@@ -80,12 +86,16 @@ class DemoTests(unittest.TestCase):
         image.write_bytes(b"new image")
         identity = {"commit": "current"}
         scene = {"image": image.name, "sha256": demo.digest(image)}
-        updated = demo.publish_scene(output, manifest, identity, "figure", scene, image)
+        updated = demo.publish_scene(
+            output, manifest, identity, "figure", scene, image
+        )
         self.assertEqual(updated["scenes"]["search"], previous)
         self.assertEqual(other.read_bytes(), b"unchanged image")
         self.assertEqual(other.stat().st_mtime_ns, before)
         self.assertEqual((output / image.name).read_bytes(), image.read_bytes())
-        self.assertEqual(json.loads((output / "capture.json").read_text()), updated)
+        self.assertEqual(
+            json.loads((output / "capture.json").read_text()), updated
+        )
         self.assertNotIn("figure", manifest["scenes"])
 
     def test_manifest_failure(self):
@@ -113,7 +123,9 @@ class DemoTests(unittest.TestCase):
                     patch.object(Path, "replace", new=fail_report),
                     self.assertRaises(OSError),
                 ):
-                    demo.publish_scene(output, manifest, {}, "figure", scene, image)
+                    demo.publish_scene(
+                        output, manifest, {}, "figure", scene, image
+                    )
                 self.assertEqual(report.read_text(), '{"previous": true}\n')
                 self.assertEqual(target.exists(), existing)
                 if existing:
@@ -134,8 +146,10 @@ class OptimizerTests(unittest.TestCase):
     def optimize(self):
         return subprocess.run(
             [
-                "sh", str(demo.ROOT / "scripts/demo-optimize.sh"),
-                str(self.source), str(self.target),
+                "sh",
+                str(demo.ROOT / "scripts/demo-optimize.sh"),
+                str(self.source),
+                str(self.target),
             ],
             capture_output=True,
             text=True,
@@ -144,8 +158,14 @@ class OptimizerTests(unittest.TestCase):
     def test_jpeg_output(self):
         subprocess.run(
             [
-                "magick", "-size", "2560x1440", "gradient:red-blue",
-                "-set", "comment", "private capture metadata", str(self.source),
+                "magick",
+                "-size",
+                "2560x1440",
+                "gradient:red-blue",
+                "-set",
+                "comment",
+                "private capture metadata",
+                str(self.source),
             ],
             check=True,
         )
@@ -156,8 +176,11 @@ class OptimizerTests(unittest.TestCase):
         self.assertTrue(self.target.read_bytes().startswith(b"\xff\xd8"))
         decoded = subprocess.check_output(
             [
-                "magick", str(self.target), "-format",
-                "%m %wx%h %[jpeg:sampling-factor] %[interlace] %Q %c", "info:",
+                "magick",
+                str(self.target),
+                "-format",
+                "%m %wx%h %[jpeg:sampling-factor] %[interlace] %Q %c",
+                "info:",
             ],
             text=True,
         )
@@ -182,25 +205,29 @@ class OptimizerTests(unittest.TestCase):
     def test_failed_encoding(self):
         helper = self.root / "magick"
         helper.write_text(
-            '#!/bin/sh\n'
+            "#!/bin/sh\n"
             'case "$1" in\n'
-            '  identify) printf 2560x1440 ;;\n'
+            "  identify) printf 2560x1440 ;;\n"
             '  -regard-warnings) printf "%s" "$DEMO_DECODED" ;;\n'
-            '  *)\n'
-            '    for argument do target=$argument; done\n'
+            "  *)\n"
+            "    for argument do target=$argument; done\n"
             '    printf partial > "${target#jpeg:}"\n'
             '    exit "$DEMO_ENCODE_STATUS" ;;\n'
-            'esac\n'
+            "esac\n"
         )
         helper.chmod(0o755)
         cases = ((1, ""), (0, "PNG 2560x1440"), (0, "JPEG 1280x720"))
         for existing in (False, True):
             for status, decoded in cases:
-                with self.subTest(existing=existing, status=status, decoded=decoded):
+                with self.subTest(
+                    existing=existing, status=status, decoded=decoded
+                ):
                     if existing:
                         self.target.write_bytes(b"previous image")
                     environment = {
-                        "PATH": str(self.root) + os.pathsep + os.environ["PATH"],
+                        "PATH": str(self.root)
+                        + os.pathsep
+                        + os.environ["PATH"],
                         "DEMO_ENCODE_STATUS": str(status),
                         "DEMO_DECODED": decoded,
                     }
@@ -209,5 +236,7 @@ class OptimizerTests(unittest.TestCase):
                     self.assertNotEqual(result.returncode, 0)
                     self.assertEqual(self.target.exists(), existing)
                     if existing:
-                        self.assertEqual(self.target.read_bytes(), b"previous image")
+                        self.assertEqual(
+                            self.target.read_bytes(), b"previous image"
+                        )
                     self.assertFalse(list(self.root.glob("capture.jpg.*")))
