@@ -1,5 +1,4 @@
-use crate::provenance::Source;
-use std::process::Command;
+use crate::provenance::{Source, command};
 
 #[test]
 fn checkout_identity_is_local() -> crate::Result<()> {
@@ -19,23 +18,13 @@ fn checkout_identity_is_local() -> crate::Result<()> {
       "--allow-empty",
     ],
   ] {
-    assert!(
-      Command::new("git")
-        .args(args)
-        .current_dir(folder.path())
-        .status()?
-        .success()
-    );
+    assert!(command("git", folder.path()).args(args).status()?.success());
   }
   let clean = Source::read(folder.path()).unwrap();
   assert!(!clean.dirty);
   std::fs::write(folder.path().join("tracked"), "initial")?;
   assert!(
-    Command::new("git")
-      .args(["add", "tracked"])
-      .current_dir(folder.path())
-      .status()?
-      .success()
+    command("git", folder.path()).args(["add", "tracked"]).status()?.success()
   );
   std::fs::write(folder.path().join("tracked"), "changed")?;
   std::fs::write(folder.path().join("source"), "changed")?;

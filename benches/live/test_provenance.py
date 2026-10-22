@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -16,7 +17,15 @@ class ProvenanceTests(unittest.TestCase):
         )
 
     def test_failed_git_is_unknown(self):
-        with tempfile.TemporaryDirectory() as directory:
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith("GIT_")
+        }
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(os.environ, env, clear=True),
+        ):
             self.assertIsNone(checkout(directory)["runtime_checkout_dirty"])
         for effect in (FileNotFoundError(), None):
             with patch(

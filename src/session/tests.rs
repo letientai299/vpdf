@@ -933,6 +933,39 @@ fn keys_close_other_previews() -> Result<()> {
   Ok(())
 }
 
+#[test]
+fn static_pane_keeps_hover() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let mut session = Session::new(None);
+  let path = line_pdf(directory.path(), "")?;
+  let screen = Screen {
+    columns: 121,
+    rows: 40,
+    cell_width: 8,
+    cell_height: 16,
+    origin: (0, 0),
+  };
+  session.open(&path, true, screen)?;
+  let modifiers = KeyModifiers::NONE;
+  session.app().command("vsplit")?;
+  session.settle()?;
+  let pointed = session.tab().panes[0].id;
+  session.tab().panes[1].reader.animate_to(20.0, Instant::now());
+  let app = &session.tab().panes[0];
+  let mouse = MouseEvent {
+    kind: MouseEventKind::Moved,
+    column: app.at.column + app.left + 1,
+    row: app.at.row + 1,
+    modifiers,
+  };
+  session.mouse(mouse)?;
+  session.rehover();
+  assert_eq!(session.pointer.target().map(|hover| hover.pane), Some(pointed));
+  assert!(!session.skimmed);
+  session.tab().panes[1].reader.cancel_scroll();
+  Ok(())
+}
+
 /// Hover waits out a wheel gesture, then tests the page again.
 #[test]
 fn wheel_turns_defer_page_hover() -> Result<()> {
@@ -961,9 +994,23 @@ fn wheel_turns_defer_page_hover() -> Result<()> {
     modifiers,
   })?;
   assert!(link_hit(&session));
+  session.app().reader.animate_to(20.0, Instant::now());
+  session.rehover();
+  assert!(!session.mouse(MouseEvent {
+    kind: MouseEventKind::Moved,
+    column,
+    row,
+    modifiers,
+  })?);
+  assert!(!link_hit(&session));
+  assert_eq!(session.hover_settle_due(), None);
+  session.app().reader.cancel_scroll();
+  session.rehover();
+  assert!(link_hit(&session));
   // At the top, the turn moves nothing yet starts a gesture.
   let kind = MouseEventKind::ScrollUp;
   session.mouse(MouseEvent { kind, column, row, modifiers })?;
+  session.animate(Instant::now());
   session.rehover();
   assert!(!link_hit(&session));
   let due = session.hover_settle_due().expect("a deferred hover");
@@ -974,12 +1021,16 @@ fn wheel_turns_defer_page_hover() -> Result<()> {
   std::thread::sleep(due.saturating_duration_since(Instant::now()));
   session.rehover();
   assert!(link_hit(&session));
-  // Motion ends a gesture and tests the page at once.
   session.mouse(MouseEvent { kind, column, row, modifiers })?;
+  session.animate(Instant::now());
   session.rehover();
   assert!(!link_hit(&session));
+  let due = session.hover_settle_due();
   let kind = MouseEventKind::Moved;
-  session.mouse(MouseEvent { kind, column, row, modifiers })?;
+  assert!(!session.mouse(MouseEvent { kind, column, row, modifiers })?);
+  assert!(!link_hit(&session));
+  assert_eq!(session.hover_settle_due(), due);
+  session.mouse(MouseEvent { kind, column: column + 1, row, modifiers })?;
   assert!(link_hit(&session));
   assert_eq!(session.hover_settle_due(), None);
   Ok(())

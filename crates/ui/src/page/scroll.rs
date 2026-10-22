@@ -49,8 +49,11 @@ impl Scroll {
   pub fn step(&mut self, scroll: f32, now: Instant) -> Option<f32> {
     let flight = self.flight.as_mut()?;
     let elapsed = now.duration_since(flight.updated).as_secs_f32();
-    flight.updated = now;
     let next = ease(scroll, flight.target, elapsed);
+    if next.is_some_and(|next| next.to_bits() == scroll.to_bits()) {
+      return None;
+    }
+    flight.updated = now;
     let scroll = next.unwrap_or(flight.target);
     if next.is_none() {
       self.cancel();
@@ -59,12 +62,10 @@ impl Scroll {
   }
 }
 
-#[expect(clippy::float_cmp, reason = "detects a step that rounds back")]
 fn ease(scroll: f32, target: f32, elapsed: f32) -> Option<f32> {
   let distance = target - scroll;
   let next = scroll + distance * (1.0 - (-elapsed / 0.018).exp());
-  // Large-coordinate rounding must finish the animation.
-  (distance.abs() >= 0.5 && next != scroll).then_some(next)
+  (distance.abs() >= 0.5).then_some(next)
 }
 
 #[cfg(test)]
@@ -75,7 +76,25 @@ mod tests {
   fn easing_arrives_far_down_long_documents() {
     assert!(ease(0.0, 100.0, 0.008).is_some_and(|next| next > 30.0));
     assert_eq!(ease(99.8, 100.0, 0.008), None);
-    assert_eq!(ease(4_384_724.5, 4_384_725.0, 0.008), None);
+    assert_eq!(ease(4_384_724.5, 4_384_725.0, 0.008), Some(4_384_724.5));
+  }
+
+  #[test]
+  fn early_ticks_preserve_flight() {
+    use std::time::Duration;
+    let now = Instant::now();
+    let mut scroll = Scroll::default();
+    scroll.start(713_930.0, now);
+    assert_eq!(scroll.step(713_911.0, now), None);
+    assert!(scroll.active());
+    assert_eq!(scroll.step(713_911.0, now + Duration::from_micros(1)), None);
+    assert!(scroll.active());
+    let next = (2..=64)
+      .find_map(|micros| {
+        scroll.step(713_911.0, now + Duration::from_micros(micros))
+      })
+      .expect("Accumulated time advances scrolling");
+    assert!(next > 713_911.0 && next < 713_930.0);
   }
 
   #[test]
@@ -99,7 +118,10 @@ mod tests {
     assert_eq!(scroll.finish(), None);
     assert_eq!(scroll.step(next, now + frame * 3), None);
     scroll.start(4_384_725.0, now);
-    assert_eq!(scroll.step(4_384_724.5, now + frame), Some(4_384_725.0));
+    assert_eq!(scroll.step(4_384_724.5, now + frame), None);
+    assert!(scroll.active());
+    assert_eq!(scroll.step(4_384_724.5, now + frame * 2), Some(4_384_725.0));
+    assert_eq!(scroll.step(4_384_725.0, now + frame * 3), Some(4_384_725.0));
     assert!(!scroll.active());
   }
 

@@ -495,8 +495,6 @@ fn picked_path(
   session.resume(operation, screen)
 }
 
-const ANIMATION: Duration = Duration::from_millis(8);
-
 fn animate(session: &mut Session, due: &mut Instant, now: Instant) -> bool {
   if !session.animating() {
     *due = now;
@@ -505,7 +503,7 @@ fn animate(session: &mut Session, due: &mut Instant, now: Instant) -> bool {
   if now < *due {
     return false;
   }
-  *due = now + ANIMATION;
+  *due = crate::pace::next(*due, now);
   session.animate(now)
 }
 
@@ -926,6 +924,7 @@ fn metrics(session: &Session, started: Instant) -> Metrics {
 mod tests {
   use super::super::tests::cells;
   use super::*;
+  use crate::pace::FRAME as ANIMATION;
   use vpdf_model::input::{KeyCode, KeyModifiers};
 
   fn wait(
@@ -1066,7 +1065,7 @@ mod tests {
     let mut chores = Chores::new(start);
     let mut screen = sized();
     let pending = AtomicBool::new(true);
-    for step in 1..8 {
+    for step in 1..=ANIMATION.as_millis() as u64 {
       assert_eq!(
         drain(
           &mut session,
@@ -1095,6 +1094,13 @@ mod tests {
     for now in [due, due + ANIMATION] {
       assert_eq!(wait_time(&mut session, &chores, due, now), Duration::ZERO);
     }
+    let deadline = due;
+    assert!(animate(
+      &mut session,
+      &mut due,
+      deadline + Duration::from_millis(1)
+    ));
+    assert_eq!(due, deadline + ANIMATION);
     session.app().reader.cancel_scroll();
     assert!(!animate(&mut session, &mut due, start + ANIMATION));
     assert_eq!(

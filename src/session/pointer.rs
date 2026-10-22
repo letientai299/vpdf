@@ -74,6 +74,53 @@ impl Session {
     self.pointed(mouse, None, Instant::now())
   }
 
+  fn stationary_scroll(
+    &self,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    now: Instant,
+  ) -> bool {
+    !self.pointer.holding()
+      && self.resizing.is_none()
+      && (self.hover_animating()
+        || self.pointer.turn_end().is_some_and(|end| now < end))
+      && self.pointer.spot().is_some_and(|(last, at)| {
+        (last.column, last.row, last.modifiers, at)
+          == (mouse.column, mouse.row, mouse.modifiers, pixel)
+      })
+  }
+
+  fn pointer_moved(
+    &mut self,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    now: Instant,
+  ) -> bool {
+    if self.stationary_scroll(mouse, pixel, now) {
+      return false;
+    }
+    let before = self.pointer.target();
+    let hover = self.hit(mouse, pixel);
+    let seen = before.map(Hover::shown) != hover.map(Hover::shown);
+    let onto = |hover: Option<Hover>| hover.map(|h| (h.pane, h.hit));
+    let arrived = onto(before) != onto(hover);
+    let changed = self.pointer.hover(mouse, pixel, hover);
+    if arrived {
+      self.moved_onto();
+    }
+    if changed {
+      self.show_hover();
+    } else if let Some(app) = self.pointed_pane() {
+      app.rest_again();
+    }
+    let left = self.leave_check();
+    // Bare motion: a release got lost.
+    let app = self.app();
+    let dropped = app.drop_held();
+    let resized = self.resizing.take().is_some();
+    dropped || resized || seen || left
+  }
+
   fn pointed(
     &mut self,
     mouse: MouseEvent,
@@ -81,26 +128,7 @@ impl Session {
     now: Instant,
   ) -> Result<bool> {
     if mouse.kind == MouseEventKind::Moved {
-      let before = self.pointer.target();
-      let hover = self.hit(mouse, pixel);
-      let seen = before.map(Hover::shown) != hover.map(Hover::shown);
-      let onto = |hover: Option<Hover>| hover.map(|h| (h.pane, h.hit));
-      let arrived = onto(before) != onto(hover);
-      let changed = self.pointer.hover(mouse, pixel, hover);
-      if arrived {
-        self.moved_onto();
-      }
-      if changed {
-        self.show_hover();
-      } else if let Some(app) = self.pointed_pane() {
-        app.rest_again();
-      }
-      let left = self.leave_check();
-      // Bare motion: a release got lost.
-      let app = self.app();
-      let dropped = app.drop_held();
-      let resized = self.resizing.take().is_some();
-      return Ok(dropped || resized || seen || left);
+      return Ok(self.pointer_moved(mouse, pixel, now));
     }
     if let Some(changed) = self.edge_event(mouse, pixel, now)? {
       return Ok(changed);
@@ -471,21 +499,30 @@ impl Session {
     self.leave_check();
   }
 
-  /// An empty page hover while the wheel turns: pages move each frame,
-  /// and hit testing a new page loads its links and text.
+  fn hover_animating(&self) -> bool {
+    let pane = self.pointer.target().map(|hover| hover.pane);
+    self.tabs.get(self.active).is_some_and(|tab| {
+      tab
+        .panes
+        .iter()
+        .any(|app| Some(app.id) == pane && app.reader.animation().active())
+    })
+  }
+
+  /// Empty hover while scrolling defers page extraction.
   fn deferred(&mut self, mouse: MouseEvent) -> Option<Hover> {
-    let turning =
-      self.pointer.turn_end().is_some_and(|end| Instant::now() < end);
-    if !turning {
-      // This rehover tests the page; no settle frame is due.
-      self.skimmed = false;
-      return None;
-    }
+    self.skimmed = false;
     if self.edge_hover(mouse).is_some() {
       return None;
     }
-    let (_, Route { pane, region, .. }) = self.under(mouse)?;
+    let (index, Route { pane, region, .. }) = self.under(mouse)?;
     if region != Region::Page {
+      return None;
+    }
+    let turning =
+      self.tabs[self.active].panes[index].reader.animation().active()
+        || self.pointer.turn_end().is_some_and(|end| Instant::now() < end);
+    if !turning {
       return None;
     }
     self.skimmed = true;
@@ -573,8 +610,7 @@ impl Session {
     }
   }
 
-  /// Tests the page hover a wheel gesture deferred, once it ends;
-  /// whether a frame is due.
+  /// Retests deferred page hover after scrolling.
   pub fn hover_settled(&mut self, now: Instant) -> bool {
     let due = self.hover_settle_due().is_some_and(|due| now >= due);
     if due {
@@ -585,7 +621,9 @@ impl Session {
 
   /// When the deferred page hover is due.
   pub fn hover_settle_due(&self) -> Option<Instant> {
-    self.skimmed.then(|| self.pointer.turn_end()).flatten()
+    (self.skimmed && !self.hover_animating())
+      .then(|| self.pointer.turn_end())
+      .flatten()
   }
 
   /// Steps the held edge drag; whether drawn.

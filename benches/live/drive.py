@@ -327,7 +327,7 @@ def main():
                     startup=native.startup(),
                     pacing=native.pacing,
                     driver_overhead=native.overhead(),
-                    target_fps=120,
+                    target_fps=report["total"]["target_fps"],
                     window_requested=native.size,
                     place_requested=native.place,
                     allowed_background_readers=args.allow_reader,

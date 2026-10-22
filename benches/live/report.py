@@ -7,7 +7,7 @@ import math
 import statistics
 from pathlib import Path
 
-TARGET_FPS = 120
+LEGACY_FPS = 120
 
 
 def quantile(values, fraction):
@@ -20,6 +20,21 @@ def quantile(values, fraction):
 
 
 def summarize(rows, start, end, include_end=False):
+    fps = next(
+        (
+            row["target_fps"]
+            for row in rows
+            if row.get("kind") == "clock" and "target_fps" in row
+        ),
+        LEGACY_FPS,
+    )
+    if (
+        isinstance(fps, bool)
+        or not isinstance(fps, (int, float))
+        or not math.isfinite(fps)
+        or fps <= 0
+    ):
+        raise ValueError("Invalid trace target FPS")
     stop = math.nextafter(end, math.inf) if include_end else end
     frames = [
         r
@@ -115,9 +130,9 @@ def summarize(rows, start, end, include_end=False):
         input_hz=len(inputs) * 1000 / (end - start) if end > start else None,
         input_gap_p99_ms=quantile(input_gaps, 0.99),
         input_gap_max_ms=max(input_gaps, default=None),
-        target_fps=TARGET_FPS,
-        frame_budget_ms=1000 / TARGET_FPS,
-        over_budget_gaps=sum(gap > 1000 / TARGET_FPS for gap in gaps),
+        target_fps=fps,
+        frame_budget_ms=1000 / fps,
+        over_budget_gaps=sum(gap > 1000 / fps for gap in gaps),
         duration_ms=end - start,
         frames=len(frames),
         fresh=len(fresh),

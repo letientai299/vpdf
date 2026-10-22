@@ -25,6 +25,7 @@ struct Row<'a, T> {
 #[derive(Serialize)]
 struct Clock {
   unix_ns: u128,
+  target_fps: u32,
 }
 
 #[derive(Serialize)]
@@ -111,6 +112,7 @@ impl Log {
     let shared = Arc::clone(&output);
     let started = Instant::now();
     let clock = Clock {
+      target_fps: crate::pace::FPS,
       unix_ns: SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos(),
     };
     write(

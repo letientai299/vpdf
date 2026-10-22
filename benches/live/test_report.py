@@ -6,6 +6,19 @@ from report import analyze, paired, summarize
 
 
 class ReportTests(unittest.TestCase):
+    def test_frame_budget_uses_trace_target(self):
+        rows = [dict(kind="clock", t_ms=0, target_fps=180)]
+        rows += [dict(kind="frame", t_ms=t) for t in (1, 7, 14)]
+        phase = summarize(rows, 0, 20)
+        self.assertEqual(phase["target_fps"], 180)
+        self.assertAlmostEqual(phase["frame_budget_ms"], 1000 / 180)
+        self.assertEqual(phase["over_budget_gaps"], 2)
+        self.assertEqual(summarize(rows[1:], 0, 20)["over_budget_gaps"], 0)
+        for fps in (True, False, 0, -1, float("inf"), "180"):
+            rows[0]["target_fps"] = fps
+            with self.assertRaises(ValueError):
+                summarize(rows, 0, 20)
+
     def test_pairs_preserve_repeated_phase_names(self):
         def phase(value):
             return dict(

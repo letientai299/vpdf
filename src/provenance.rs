@@ -14,9 +14,8 @@ impl Source {
   }
 
   pub(crate) fn read_using(directory: &Path, executable: &str) -> Option<Self> {
-    let root = Command::new(executable)
+    let root = command(executable, directory)
       .args(["rev-parse", "--show-toplevel"])
-      .current_dir(directory)
       .output()
       .ok()?;
     if !root.status.success() {
@@ -26,11 +25,7 @@ impl Source {
       std::path::PathBuf::from(String::from_utf8(root.stdout).ok()?.trim_end());
     let directory = root.as_path();
     let git = |args: &[&str]| {
-      let out = Command::new(executable)
-        .args(args)
-        .current_dir(directory)
-        .output()
-        .ok()?;
+      let out = command(executable, directory).args(args).output().ok()?;
       out.status.success().then_some(out.stdout)
     };
     let revision =
@@ -46,9 +41,8 @@ impl Source {
       bytes.extend_from_slice(&(contents.len() as u64).to_le_bytes());
       bytes.extend_from_slice(&contents);
     }
-    let mut child = Command::new(executable)
+    let mut child = command(executable, directory)
       .args(["hash-object", "--stdin"])
-      .current_dir(directory)
       .stdin(Stdio::piped())
       .stdout(Stdio::piped())
       .stderr(Stdio::null())
@@ -62,4 +56,13 @@ impl Source {
     let patch = String::from_utf8(out.stdout).ok()?.trim().to_owned();
     Some(Self { revision, dirty: !status.is_empty(), patch })
   }
+}
+
+pub(crate) fn command(executable: &str, directory: &Path) -> Command {
+  let mut command = Command::new(executable);
+  command.current_dir(directory);
+  for name in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"] {
+    command.env_remove(name);
+  }
+  command
 }

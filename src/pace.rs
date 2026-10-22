@@ -6,8 +6,8 @@
 //! previous deadline rather than from when drawing finished.
 use std::time::{Duration, Instant};
 
-/// Frame interval: 120 Hz.
-pub const FRAME: Duration = Duration::from_micros(8333);
+pub const FPS: u32 = 180;
+pub const FRAME: Duration = Duration::from_nanos(1_000_000_000 / FPS as u64);
 /// A frame this close to its deadline draws now.
 const EARLY: Duration = Duration::from_micros(250);
 
@@ -28,14 +28,17 @@ impl Pacer {
   /// Schedules the next frame one interval after this one's deadline,
   /// or after now when the loop fell behind or was idle.
   pub fn drawn(&mut self, now: Instant) {
-    self.due =
-      if now < self.due + FRAME { self.due + FRAME } else { now + FRAME };
+    self.due = next(self.due, now);
   }
 
   /// How long to wait for input before checking the deadline again.
   pub fn wait(&self, now: Instant) -> Duration {
     self.due.saturating_duration_since(now) * 3 / 4
   }
+}
+
+pub fn next(due: Instant, now: Instant) -> Instant {
+  if now < due + FRAME { due + FRAME } else { now + FRAME }
 }
 
 #[cfg(test)]
