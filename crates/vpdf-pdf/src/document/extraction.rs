@@ -20,7 +20,11 @@ pub fn extract_list(list: &DisplayList) -> Result<Text> {
 fn read(raw: &mupdf::TextPage) -> Text {
   let mut text = Text::default();
   let mut count = 0;
-  for block in raw.blocks() {
+  let blocks: Vec<_> =
+    raw.blocks().filter(|block| block.lines().next().is_some()).collect();
+  let bounds: Vec<_> = blocks.iter().map(mupdf::TextBlock::bounds).collect();
+  for at in block_order(&bounds) {
+    let block = &blocks[at];
     let mut paragraph = true;
     for line in block.lines() {
       let mut row = Line::default();
@@ -58,4 +62,44 @@ fn read(raw: &mupdf::TextPage) -> Text {
     }
   }
   text
+}
+
+fn block_order(bounds: &[mupdf::Rect]) -> Vec<usize> {
+  let mut order: Vec<_> = (0..bounds.len()).collect();
+  order.sort_by(|&a, &b| bounds[a].y0.total_cmp(&bounds[b].y0));
+  let mut bands = vec![0; bounds.len()];
+  let mut band = 0;
+  let mut bottom = f32::NEG_INFINITY;
+  for &at in &order {
+    if bounds[at].y0 >= bottom {
+      band += 1;
+    }
+    bands[at] = band;
+    bottom = bottom.max(bounds[at].y1);
+  }
+  // Preserve flow within overlapping columns.
+  order.sort_by_key(|&at| (bands[at], at));
+  order
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn blocks_follow_vertical_bands() {
+    for (spans, expected) in [
+      (vec![(390.0, 600.0), (350.0, 365.0), (30.0, 42.0)], vec![2, 1, 0]),
+      (vec![(100.0, 500.0), (80.0, 480.0), (30.0, 42.0)], vec![2, 0, 1]),
+      (vec![(300.0, 500.0), (100.0, 310.0), (80.0, 110.0)], vec![0, 1, 2]),
+      (vec![(50.0, 60.0), (30.0, 50.0)], vec![1, 0]),
+      (vec![], vec![]),
+    ] {
+      let bounds: Vec<_> = spans
+        .into_iter()
+        .map(|(top, bottom)| mupdf::Rect::new(0.0, top, 100.0, bottom))
+        .collect();
+      assert_eq!(block_order(&bounds), expected);
+    }
+  }
 }

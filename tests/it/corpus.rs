@@ -7,6 +7,51 @@ use vpdf_pdf::document::Document;
 use vpdf_search::search;
 
 #[test]
+#[ignore = "requires PMPP PDF in VPDF_SEARCH_PMPP"]
+fn pmpp_search_visual_order() -> Result<()> {
+  use vpdf::solo::Solo;
+  use vpdf_model::text::Position;
+  use vpdf_search::query::Query;
+
+  let path = PathBuf::from(std::env::var("VPDF_SEARCH_PMPP")?);
+  assert_eq!(
+    hex(&alias(&mut File::open(&path)?)?),
+    "58678d336170e1b4e134b432c71d3c684f6be45f9dae33838f9576020b9af0f9"
+  );
+  let page = PageId(160);
+  let mut app = Solo::open(&path, "", false, super::common::cells(120, 50))?;
+  let text = app.doc.text(page)?;
+  let index = search::Index::new(page, &text);
+  let mut encoded = Vec::new();
+  index.encode(&mut encoded);
+  for index in [index, search::Index::decode(page, &encoded)?] {
+    let hits = index.matches(&search::compile("thread", false)?, 1000)?;
+    assert_eq!(hits.len(), 11);
+    assert!(hits[0].excerpt.starts_with("Thread coarsening"));
+    assert!(hits[1].excerpt.starts_with("Thread coarsening for tiled matrix"));
+    let positions: Vec<_> = hits.iter().map(|hit| hit.first).collect();
+    let tops: Vec<_> = positions
+      .iter()
+      .map(|&position| text.glyph(position).unwrap().bounds.y0)
+      .collect();
+    assert!(tops.windows(2).all(|pair| pair[0] <= pair[1]));
+    app.search.show(Query { text: "thread".into(), ..Query::default() }, hits);
+    app.go_to(Position { page, ..Position::default() }, true)?;
+    for expected in positions.iter().chain(positions.iter().take(1)) {
+      super::common::keys(&mut app, b"n")?;
+      assert_eq!(app.reader.cursor, *expected);
+      assert_eq!(app.reading_position()?, *expected);
+    }
+    for expected in positions.iter().rev() {
+      super::common::keys(&mut app, b"N")?;
+      assert_eq!(app.reader.cursor, *expected);
+      assert_eq!(app.reading_position()?, *expected);
+    }
+  }
+  Ok(())
+}
+
+#[test]
 #[ignore = "requires verified public PDF corpus"]
 fn public_documents() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
