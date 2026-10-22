@@ -106,3 +106,114 @@ fn real_figures_and_capture() -> Result<()> {
   assert!(!scan.figures(PageId(0))?.is_empty());
   Ok(())
 }
+
+#[test]
+#[ignore = "requires PMPP PDF in VPDF_FIGURE_PMPP"]
+fn pmpp_figure_regions() -> Result<()> {
+  let path = PathBuf::from(std::env::var("VPDF_FIGURE_PMPP")?);
+  let mut doc = Document::open(&path, "")?;
+  for (index, caption, height) in
+    [(160, "FIGURE 6.12", 250.0), (161, "FIGURE 6.13", 380.0)]
+  {
+    let figures = doc.figures(PageId(index))?;
+    assert_eq!(figures.len(), 1, "{figures:?}");
+    let figure = &figures[0];
+    assert_eq!(figure.caption, caption);
+    assert_eq!(figure.source, vpdf_model::document::FigureSource::Graphic);
+    assert!(figure.bounds.y0 > 75.0, "{figure:?}");
+    assert!(figure.bounds.y0 < 85.0, "{figure:?}");
+    assert!(figure.bounds.height() > height, "{figure:?}");
+    assert!(figure.bounds.y1 < 500.0, "{figure:?}");
+    let image = capture(&mut doc, PageId(index), figure.bounds, 0)?;
+    assert!(image.png.starts_with(b"\x89PNG\r\n\x1a\n"));
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires SDM PDF in VPDF_FIGURE_SDM"]
+fn sdm_figure_regions() -> Result<()> {
+  let path = PathBuf::from(std::env::var("VPDF_FIGURE_SDM")?);
+  let mut doc = Document::open(&path, "")?;
+  let page = PageId(1149);
+  let figures = doc.figures(page)?;
+  assert_eq!(figures.len(), 2, "{figures:?}");
+  for (figure, caption, top, bottom) in [
+    (&figures[0], "Figure 1-16.", 100.0, 360.0),
+    (&figures[1], "Figure 1-17.", 432.0, 568.0),
+  ] {
+    assert!(figure.caption.starts_with(caption), "{figure:?}");
+    assert_eq!(figure.source, vpdf_model::document::FigureSource::Graphic);
+    assert!(figure.bounds.y0 < top, "{figure:?}");
+    assert!(figure.bounds.y0 > top - 2.0, "{figure:?}");
+    assert!(figure.bounds.y1 > bottom, "{figure:?}");
+    assert!(figure.bounds.y1 < bottom + 2.0, "{figure:?}");
+    let image = capture(&mut doc, page, figure.bounds, 0)?;
+    assert!(image.png.starts_with(b"\x89PNG\r\n\x1a\n"));
+  }
+  assert!(figures[1].bounds.x0 < 158.0, "SRC labels clipped");
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires PMLA PDF in VPDF_FIGURE_PMLA"]
+fn pmla_figure_regions() -> Result<()> {
+  let path = PathBuf::from(std::env::var("VPDF_FIGURE_PMLA")?);
+  let mut doc = Document::open(&path, "")?;
+  for (number, captions) in [
+    (45, vec!["Figure 2.1:"]),
+    (47, vec!["Figure 2.2:"]),
+    (48, vec!["Figure 2.3:"]),
+    (50, vec!["Figure 2.4:", "Figure 2.5:"]),
+    (82, vec!["Figure 2.15:"]),
+    (90, vec!["Figure 2.19:", "Figure 2.20:"]),
+    (123, vec!["Figure 3.7:"]),
+  ] {
+    let figures = doc.figures(PageId(number - 1))?;
+    assert_eq!(figures.len(), captions.len(), "page {number}: {figures:?}");
+    for (figure, caption) in figures.iter().zip(captions) {
+      assert!(figure.caption.starts_with(caption), "{figure:?}");
+      assert_eq!(figure.source, vpdf_model::document::FigureSource::Graphic);
+      assert!(figure.bounds.y0 > 50.0, "Header included: {figure:?}");
+      assert!(figure.bounds.height() > 65.0, "Graphic missing: {figure:?}");
+      assert!(figure.bounds.width() > 400.0, "Panel missing: {figure:?}");
+    }
+    if number == 50 {
+      assert!(figures[0].bounds.y1 < 215.0, "Plots merged");
+      assert!(figures[1].bounds.y0 > 210.0, "Plots merged");
+    }
+  }
+  let figures = doc.figures(PageId(53))?;
+  assert!(figures.iter().all(|f| !f.caption.starts_with("Figure 2.6 shows")));
+  let figures = doc.figures(PageId(435))?;
+  assert_eq!(figures.len(), 2, "Wrapped references remained: {figures:?}");
+  assert!(figures[0].caption.starts_with("Figure 9.1:"));
+  assert!(figures[1].caption.starts_with("Figure 9.2:"));
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires PMLA PDF in VPDF_FIGURE_PMLA"]
+fn pmla_text_diagrams() -> Result<()> {
+  let path = PathBuf::from(std::env::var("VPDF_FIGURE_PMLA")?);
+  let mut doc = Document::open(&path, "")?;
+  for (number, caption, top, bottom) in [
+    (83, "Figure 2.16:", 60.0, 106.0),
+    (250, "Table 4.6:", 61.0, 168.0),
+    (250, "Figure 4.55:", 182.0, 370.0),
+    (425, "Figure 8.6:", 60.0, 245.0),
+    (440, "Figure 9.4:", 58.0, 200.0),
+    (448, "Figure 9.9:", 241.0, 417.0),
+  ] {
+    let figures = doc.figures(PageId(number - 1))?;
+    let figure = figures
+      .iter()
+      .find(|f| f.caption.starts_with(caption))
+      .unwrap_or_else(|| panic!("page {number}: {figures:?}"));
+    assert!(figure.bounds.y0 >= top - 5.0, "Header included: {figure:?}");
+    assert!(figure.bounds.y0 < top + 5.0, "Diagram clipped: {figure:?}");
+    assert!(figure.bounds.y1 < bottom, "Body included: {figure:?}");
+    assert!(figure.bounds.y1 > bottom - 35.0, "Diagram clipped: {figure:?}");
+  }
+  Ok(())
+}

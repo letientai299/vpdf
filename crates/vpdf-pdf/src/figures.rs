@@ -62,37 +62,52 @@ fn group(
       source: Source::Graphic,
     });
   }
-  for line in &text.lines {
-    let caption = line.text();
-    if !is_caption(&caption) {
+  figures.retain(|figure| {
+    let b = figure.bounds;
+    !(b.height() < page.height() * 0.03
+      && (b.y1 < page.y0 + page.height() * 0.07
+        || b.y0 > page.y1 - page.height() * 0.07))
+  });
+  let mut lines: Vec<_> = text
+    .lines
+    .iter()
+    .filter_map(|line| {
+      let bounds = line
+        .glyphs
+        .iter()
+        .filter_map(|g| clip(g.bounds, page))
+        .reduce(Bounds::union)?;
+      Some((bounds, line.text()))
+    })
+    .collect();
+  lines.sort_by(|a, b| a.0.y0.total_cmp(&b.0.y0));
+  for (bounds, caption) in &lines {
+    if !is_caption(caption)
+      || !text
+        .lines
+        .iter()
+        .any(|line| line.paragraph && line.text() == *caption)
+    {
       continue;
     }
-    let bounds = line.glyphs.iter().filter_map(|g| clip(g.bounds, page));
-    let Some(bounds) = bounds.reduce(Bounds::union) else { continue };
-    let nearest = figures
-      .iter()
-      .enumerate()
-      .filter(|(_, figure)| figure.caption.is_empty())
-      .filter_map(|(index, figure)| {
-        let b = figure.bounds;
-        if b.x0 >= bounds.x1 || b.x1 <= bounds.x0 {
-          return None;
-        }
-        let gap = (b.y0 - bounds.y1).max(bounds.y0 - b.y1).max(0.0);
-        (gap <= 48.0).then_some((index, gap))
-      })
-      .min_by(|a, b| a.1.total_cmp(&b.1));
-    if let Some((index, _)) = nearest {
-      figures[index].bounds = figures[index].bounds.union(bounds);
-      figures[index].caption = caption;
-    } else {
-      figures.push(Figure { bounds, caption, source: Source::Caption });
-    }
+    attach_caption(&mut figures, *bounds, caption, &lines, page);
   }
   figures.retain(|figure| {
     !figure.caption.is_empty()
       || (figure.bounds.width() >= 4.0 && figure.bounds.height() >= 4.0)
   });
+  for figure in &mut figures {
+    for (bounds, _) in &lines {
+      let gap = if bounds.y0 > figure.bounds.y1 {
+        3.0
+      } else {
+        (bounds.height() * 1.5).min(12.0)
+      };
+      if near(figure.bounds, *bounds, gap) {
+        figure.bounds = figure.bounds.union(*bounds);
+      }
+    }
+  }
   figures.sort_by(|a, b| {
     a.bounds
       .y0
@@ -102,14 +117,129 @@ fn group(
   figures
 }
 
+fn attach_caption(
+  figures: &mut Vec<Figure>,
+  bounds: Bounds,
+  caption: &str,
+  lines: &[(Bounds, String)],
+  page: Bounds,
+) {
+  let bounds = lines
+    .iter()
+    .filter(|(line, value)| {
+      line.y0 < bounds.y1
+        && line.y1 > bounds.y0
+        && (!is_caption(value) || value == caption)
+    })
+    .fold(bounds, |area, (line, _)| area.union(*line));
+  let preceding = lines
+    .iter()
+    .filter(|(line, value)| {
+      line.y0 > page.y0 + page.height() * 0.07
+        && line.y1 < bounds.y0
+        && !is_caption(value)
+        && connection(*line, bounds, lines).is_some()
+    })
+    .max_by(|a, b| a.0.y1.total_cmp(&b.0.y1));
+  let nearest = figures
+    .iter()
+    .enumerate()
+    .filter(|(_, figure)| figure.caption.is_empty())
+    .filter_map(|(index, figure)| {
+      connection(figure.bounds, bounds, lines).map(|gap| {
+        let above = figure.bounds.y0 < bounds.y0;
+        let rule = figure.bounds.width() < 4.0 || figure.bounds.height() < 4.0;
+        (index, !above, rule, gap)
+      })
+    })
+    .min_by(|a, b| a.1.cmp(&b.1).then(a.2.cmp(&b.2)).then(a.3.total_cmp(&b.3)));
+  let nearest =
+    nearest.filter(|(_, below, _, _)| !below || preceding.is_none());
+  if let Some((index, _, _, _)) = nearest {
+    let mut figure = figures.swap_remove(index);
+    let above = figure.bounds.y0 < bounds.y0;
+    figure.bounds = figure.bounds.union(bounds);
+    let mut index = 0;
+    while index < figures.len() {
+      let other = &figures[index];
+      if other.caption.is_empty()
+        && if above {
+          other.bounds.y0 < bounds.y0
+        } else {
+          other.bounds.y1 > bounds.y1
+        }
+        && connection(figure.bounds, other.bounds, lines).is_some()
+      {
+        figure.bounds = figure.bounds.union(figures.swap_remove(index).bounds);
+        index = 0;
+      } else {
+        index += 1;
+      }
+    }
+    caption.clone_into(&mut figure.caption);
+    figures.push(figure);
+  } else {
+    let mut area = preceding.map_or(bounds, |(line, _)| bounds.union(*line));
+    for (line, value) in lines.iter().rev() {
+      if line.y0 > page.y0 + page.height() * 0.07
+        && line.y1 < bounds.y0
+        && line.width() < bounds.width() * 0.5
+        && !is_caption(value)
+        && connection(area, *line, lines).is_some()
+      {
+        area = area.union(*line);
+      }
+    }
+    figures.push(Figure {
+      bounds: area,
+      caption: caption.to_owned(),
+      source: Source::Caption,
+    });
+  }
+}
+
+fn connection(a: Bounds, b: Bounds, lines: &[(Bounds, String)]) -> Option<f32> {
+  if a.x0 >= b.x1 || a.x1 <= b.x0 {
+    return None;
+  }
+  let (upper, lower) = if a.y0 < b.y0 { (a, b) } else { (b, a) };
+  let gap = (lower.y0 - upper.y1).max(0.0);
+  if gap > 96.0 {
+    return None;
+  }
+  let blocked = lines.iter().any(|(line, text)| {
+    line.y0 >= upper.y1
+      && line.y1 <= lower.y0
+      && line.x0 < a.x1.max(b.x1)
+      && line.x1 > a.x0.min(b.x0)
+      && (is_caption(text) || line.width() >= a.width().max(b.width()) * 0.5)
+  });
+  (!blocked).then_some(gap)
+}
+
 fn is_caption(text: &str) -> bool {
   let mut words = text.split_whitespace();
   let Some(prefix) = words.next() else { return false };
-  (prefix.eq_ignore_ascii_case("figure")
-    || prefix.eq_ignore_ascii_case("table"))
-    && words
-      .next()
-      .is_some_and(|word| word.starts_with(|c: char| c.is_ascii_digit()))
+  if !prefix.eq_ignore_ascii_case("figure")
+    && !prefix.eq_ignore_ascii_case("table")
+  {
+    return false;
+  }
+  let Some(number) = words.next() else { return false };
+  let standalone = words.next().is_none();
+  let numbered = |value: &str| {
+    value.starts_with(|c: char| c.is_ascii_digit())
+      && value.ends_with(|c: char| c.is_ascii_digit())
+      && value.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-')
+  };
+  let label = standalone
+    && number.ends_with(')')
+    && number.split_once('(').is_some_and(|(base, _)| numbered(base));
+  label
+    || numbered(number.trim_end_matches([':', '.']))
+      && (standalone
+        || prefix.eq_ignore_ascii_case("table")
+        || number.ends_with([':', '.']))
 }
 
 fn near(a: Bounds, b: Bounds, gap: f32) -> bool {
@@ -133,7 +263,7 @@ mod tests {
     let page = bounds(0.0, 0.0, 600.0, 800.0);
     for (height, expected) in [(1.0, 0), (3.985, 0), (4.0, 1)] {
       let figures = group(
-        [bounds(20.0, 20.0, 500.0, 20.0 + height)].into_iter(),
+        [bounds(20.0, 100.0, 500.0, 100.0 + height)].into_iter(),
         &Text::default(),
         page,
       );
@@ -142,6 +272,162 @@ mod tests {
     let connected =
       [bounds(20.0, 20.0, 500.0, 22.5), bounds(20.0, 20.0, 22.5, 100.0)];
     assert_eq!(group(connected.into_iter(), &Text::default(), page).len(), 1);
+  }
+
+  fn line(value: &str, area: Bounds) -> Line {
+    let count = value.chars().count();
+    let width = area.width() / count as f32;
+    Line {
+      paragraph: true,
+      glyphs: value
+        .chars()
+        .enumerate()
+        .map(|(index, ch)| Glyph {
+          quad: None,
+          ch,
+          bounds: bounds(
+            area.x0 + index as f32 * width,
+            area.y0,
+            if index + 1 == count {
+              area.x1
+            } else {
+              area.x0 + (index + 1) as f32 * width
+            },
+            area.y1,
+          ),
+        })
+        .collect(),
+    }
+  }
+
+  #[test]
+  fn captions_skip_rules() {
+    let page = bounds(0.0, 0.0, 540.0, 666.0);
+    let graphic = bounds(124.0, 80.0, 454.0, 467.0);
+    let caption = bounds(122.0, 476.0, 167.0, 482.0);
+    let text =
+      Text { lines: vec![line("FIGURE 6.13", caption)], truncated: false };
+    let figures = group(
+      [
+        graphic,
+        bounds(122.0, 486.0, 456.0, 486.4),
+        bounds(0.0, 17.0, 540.0, 26.0),
+        bounds(40.0, 630.0, 490.0, 644.0),
+      ]
+      .into_iter(),
+      &text,
+      page,
+    );
+    assert_eq!(figures.len(), 1, "{figures:?}");
+    assert_eq!(figures[0].bounds, graphic.union(caption));
+    assert_eq!(figures[0].caption, "FIGURE 6.13");
+    assert_eq!(figures[0].source, Source::Graphic);
+  }
+
+  #[test]
+  fn disconnected_rows_share_caption() {
+    let page = bounds(0.0, 0.0, 612.0, 792.0);
+    let top = bounds(178.0, 431.0, 475.0, 483.0);
+    let bottom = bounds(178.0, 499.0, 475.0, 513.0);
+    let text = Text {
+      lines: vec![
+        line("Figure 1-17. Operation", bounds(226.0, 557.0, 378.0, 569.0)),
+        line("SRC1", bounds(158.0, 435.0, 178.0, 443.0)),
+        line("DEST", bounds(158.0, 501.0, 178.0, 509.0)),
+      ],
+      truncated: false,
+    };
+    for primitives in [[top, bottom], [bottom, top]] {
+      let figures = group(primitives.into_iter(), &text, page);
+      assert_eq!(figures.len(), 1, "{figures:?}");
+      assert_eq!(figures[0].bounds, bounds(158.0, 431.0, 475.0, 569.0));
+    }
+  }
+
+  #[test]
+  fn intervening_text_separates_graphics() {
+    let page = bounds(0.0, 0.0, 600.0, 800.0);
+    let text = Text {
+      lines: vec![
+        line("Figure 1", bounds(100.0, 190.0, 180.0, 200.0)),
+        line("Body text", bounds(100.0, 235.0, 400.0, 245.0)),
+        line("Figure 2", bounds(100.0, 340.0, 180.0, 350.0)),
+      ],
+      truncated: false,
+    };
+    let figures = group(
+      [bounds(100.0, 100.0, 400.0, 180.0), bounds(100.0, 220.0, 400.0, 330.0)]
+        .into_iter(),
+      &text,
+      page,
+    );
+    assert_eq!(figures.len(), 2, "{figures:?}");
+    assert_eq!(figures[0].bounds.y1, 200.0);
+    assert_eq!(figures[1].bounds.y0, 220.0);
+  }
+
+  #[test]
+  fn wrapped_references_are_ignored() {
+    let page = bounds(0.0, 0.0, 600.0, 800.0);
+    let mut reference = line(
+      "Figure 9.1. We discuss this later.",
+      bounds(100.0, 120.0, 500.0, 130.0),
+    );
+    reference.paragraph = false;
+    let text = Text { lines: vec![reference], truncated: false };
+    assert!(group(std::iter::empty(), &text, page).is_empty());
+  }
+
+  #[test]
+  fn text_diagrams_precede_equations() {
+    let page = bounds(0.0, 0.0, 600.0, 800.0);
+    let text = Text {
+      lines: vec![
+        line("Chapter header", bounds(100.0, 25.0, 300.0, 35.0)),
+        line("alpha", bounds(120.0, 70.0, 150.0, 80.0)),
+        line("beta", bounds(250.0, 120.0, 280.0, 130.0)),
+        line("gamma", bounds(400.0, 170.0, 430.0, 180.0)),
+        line("Figure 9.4: Messages", bounds(100.0, 200.0, 500.0, 210.0)),
+        line("Body text after the diagram", bounds(100.0, 230.0, 500.0, 240.0)),
+      ],
+      truncated: false,
+    };
+    let figures =
+      group([bounds(200.0, 250.0, 400.0, 290.0)].into_iter(), &text, page);
+    let figure = figures.iter().find(|f| !f.caption.is_empty()).unwrap();
+    assert_eq!(figure.bounds, bounds(100.0, 70.0, 500.0, 210.0));
+    assert_eq!(figure.source, Source::Caption);
+  }
+
+  #[test]
+  fn caption_spans_join_panels() {
+    let page = bounds(0.0, 0.0, 600.0, 800.0);
+    let text = Text {
+      lines: vec![
+        line(
+          "Figure 2.4: (a) Distribution.",
+          bounds(80.0, 205.0, 260.0, 215.0),
+        ),
+        line(
+          "(b) Distribution on a log scale.",
+          bounds(260.0, 205.0, 500.0, 215.0),
+        ),
+        line("(a) plot label", bounds(120.0, 175.0, 240.0, 185.0)),
+        line("Figure 2.5: Another plot.", bounds(80.0, 350.0, 500.0, 360.0)),
+      ],
+      truncated: false,
+    };
+    let primitives = [
+      bounds(100.0, 80.0, 280.0, 150.0),
+      bounds(300.0, 80.0, 480.0, 150.0),
+      bounds(180.0, 230.0, 400.0, 330.0),
+    ];
+    let figures = group(primitives.into_iter(), &text, page);
+    assert_eq!(figures.len(), 2, "{figures:?}");
+    assert_eq!(figures[0].bounds, bounds(80.0, 80.0, 500.0, 215.0));
+    assert!(figures[0].caption.starts_with("Figure 2.4:"));
+    assert_eq!(figures[1].bounds, bounds(80.0, 230.0, 500.0, 360.0));
+    assert!(figures[1].caption.starts_with("Figure 2.5:"));
   }
 
   #[test]
@@ -198,8 +484,14 @@ mod tests {
     for (s, want) in [
       ("Figure 12(a)", true),
       ("table 2", true),
+      ("Table 1 alone here", true),
       ("Figurehead 2", false),
       ("Figure text", false),
+      ("Figure 2.6 shows some plots", false),
+      ("Figure 2.10(a) gives an example", false),
+      ("Figure 4.3b. This is called a network", false),
+      ("Table 3.1).", false),
+      ("Figure 2.4: A plot", true),
     ] {
       assert_eq!(is_caption(s), want, "{s}");
     }
