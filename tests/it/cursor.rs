@@ -251,6 +251,7 @@ fn cursor_focus_reuses_durable_mode() -> Result<()> {
 fn cursor_rendering_keeps_visual_band_separate() -> Result<()> {
   for text in [false, true] {
     let mut app = app("paper.pdf", text)?;
+    app.command("cursorline off")?;
     let hit = Position { glyph: 5, ..app.reading_position()? };
     let hit = vpdf_search::search::Hit {
       first: hit,
