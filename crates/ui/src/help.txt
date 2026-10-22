@@ -12,6 +12,22 @@ P: focused panel
 :cmd <arg>: required argument
 :cmd [arg]: optional argument
 
+# Modes
+NORMAL: viewport navigation
+CURSOR: glyph navigation
+VISUAL / V-LINE: character / line selection
+YANK: pending copy operator; motion or object completes it
+REGION: rectangle editing; <CR> opens actions; <Esc> cancels
+ACTIONS: capture actions; R returns to rectangle editing
+PROMPT: command, search, or password entry
+HINT: link label selection
+MENU: context actions
+PEEK: keyboard link preview
+PAGES: page overview
+Panel title: keys act on the focused list
+Temporary interactions preserve the underlying reading mode
+Text / page: presentation choice, same reading modes
+
 # Move
 {left} {down} {up} {right} / arrows: pan / scroll in N
 N {first_nonblank} {line_end}: pan to left / right edge
@@ -84,10 +100,17 @@ Search: literal; uppercase letters enable case sensitivity
 Literal search ignores Vietnamese accents; regex preserves them
 CJK whole-word search uses dictionary word boundaries
 
-# Figures
+# Figures and regions
+{region_start}: start rectangle at cursor in C, view center otherwise
+Rectangle capture requires page view
+[count]{left} {down} {up} {right} / arrows: move rectangle corner
+[count]H J K L: move whole region, including in actions
+Rectangle: {swap} swaps corners; <CR> opens actions; <Esc> cancels
+Rectangle stays within its page; move through anchor to reverse
+Thicker borders mark the active corner; {swap} swaps it
 {region}: open selected figure actions
 {left} {down} {up} {right}: choose image, text, PNG, or OCR
-{follow}: run action; <Esc> closes bar
+{follow}: run action; {region_start} edits rectangle; <Esc> closes bar
 Save PNG: beside document with numbered filename
 OCR: needs Tesseract; copies region text
 Close bar: keep mode, selection, committed jobs
@@ -169,7 +192,7 @@ Drag after double / triple click: extend by word / line
 Hold drag past top / bottom edge: scroll; faster farther with pixels
 <M-click> off a figure: extend selection or start V
 <M-click> on a figure: pick it and open actions
-<M-drag>: capture a region; release opens actions
+<M-drag>: REGION from press; release opens actions
 tmux may consume <M-drag>; configure conditional forwarding
 Actions hover / click: choose / run
 Hint hover / click: pick a label / act on it

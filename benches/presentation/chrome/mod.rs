@@ -45,6 +45,7 @@ pub fn draw() -> Result<()> {
       keys: &keys,
       panel: Some(&panel),
       owner: InputOwner::Panel,
+      capture: None,
       text: false,
       overview: false,
     },

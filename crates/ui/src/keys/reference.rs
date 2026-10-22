@@ -67,6 +67,7 @@ pub(crate) fn text() -> String {
     result_previous = key(Action::Result(true)),
     word_search = key(Action::WordSearch),
     region = key(Action::Region),
+    region_start = key(Action::RegionStart),
     follow = key(Action::Follow),
     outline = key(Action::Panel(PanelKind::Outline)),
     figures = key(Action::Panel(PanelKind::Figures)),

@@ -501,3 +501,26 @@ fn copy_hints_follow_yank_prefix() {
     );
   }
 }
+
+#[test]
+fn shifted_region_keys_preserve_counts() {
+  for (ch, dx, dy) in [('H', -1, 0), ('J', 0, 1), ('K', 0, -1), ('L', 1, 0)] {
+    for event in [
+      key(ch),
+      KeyEvent::new(
+        KeyCode::Char(ch.to_ascii_lowercase()),
+        KeyModifiers::SHIFT,
+      ),
+    ] {
+      let mut keys = Keys::default();
+      assert!(keys.feed_region(key('3')).is_none());
+      let input = keys.feed_region(event).unwrap();
+      assert_eq!(input.action, Action::RegionShift(dx, dy));
+      assert_eq!(input.count, 3);
+    }
+  }
+  let mut keys = Keys::default();
+  assert_eq!(keys.feed(key('K'), Grammar::Other).unwrap().action, Action::Peek);
+  assert!(keys.feed_region(key('g')).is_none());
+  assert!(keys.feed_region(key('K')).is_none());
+}

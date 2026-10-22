@@ -66,7 +66,7 @@ impl Overlays {
     InputOwner::resolve(|owner| match owner {
       InputOwner::Prompt => self.prompt.is_some(),
       InputOwner::Hints => self.hints.is_some(),
-      InputOwner::Region => self.region.as_ref().is_some_and(Region::is_bar),
+      InputOwner::Region => self.region.as_ref().is_some_and(Region::active),
       InputOwner::Context => self.menu.is_some(),
       InputOwner::Peek => {
         self.preview.as_ref().is_some_and(|peek| peek.origin() == Origin::Key)
@@ -81,7 +81,7 @@ impl Overlays {
   pub fn cancel(&self, owner: InputOwner, pending: bool) -> Cancel {
     owner.cancel(pending, |owner| match owner {
       InputOwner::Peek => self.preview.is_some(),
-      InputOwner::Region => self.region.as_ref().is_some_and(Region::is_bar),
+      InputOwner::Region => self.region.as_ref().is_some_and(Region::active),
       InputOwner::Overview => self.overview.is_some(),
       _ => false,
     })

@@ -11,7 +11,7 @@ use vpdf_ui::hints::Transition;
 use vpdf_ui::input::{Dismiss, InputOwner, Targets};
 use vpdf_ui::paint::Frame;
 use vpdf_ui::pointer::{Hit, List};
-use vpdf_ui::region::BAR_HINT;
+use vpdf_ui::region::{BAR_HINT, DRAW_HINT};
 
 impl App {
   pub(crate) fn pointer_targets(&self) -> Targets<'_> {
@@ -81,7 +81,9 @@ impl App {
   pub(crate) fn dismiss_overlay(&mut self) {
     self.end_gestures();
     // The bar's key hint goes with it.
-    if self.overlays.dismiss() && self.reader.message == BAR_HINT {
+    if self.overlays.dismiss()
+      && matches!(self.reader.message.as_str(), BAR_HINT | DRAW_HINT)
+    {
       self.reader.notice("");
     }
   }

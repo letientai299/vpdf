@@ -33,6 +33,14 @@ positions tied to document content. Leaving Visual returns to the mode that
 started the selection. Escape dismisses a pending interaction before leaving
 a reading mode.
 
+Temporary interactions take input while preserving the reading mode beneath
+them. Region capture and its action bar are one such interaction. Commands,
+search entry, link hints, keyboard previews, menus, the page overview, and
+focused panels also change what keys do. The status line identifies the active
+interaction; `:help` explains its labels, including line selection and pending
+yank operations. Rendered pages and extracted text share the reading modes.
+Hover previews and held pan or resize gestures do not add keyboard modes.
+
 Text selection follows the PDF's extracted glyphs and reading order. Complex
 columns or missing text can make that order differ from the visual page.
 The [text guide][text] explains copying fidelity and optional OCR for scans.
@@ -111,13 +119,20 @@ scrolls on through the document, with a rule naming each next page, and
 uses the same reading modes for navigating and selecting text, with the
 fidelity limits described in the [text guide][text].
 
-Select a detected figure or sweep a region to capture part of a page. Its
-action bar offers image copying, text copying, PNG export, and optional OCR.
-Point at an action to choose it, then click to run it. During a region sweep,
-the status line explains how to finish or cancel the capture.
-Region OCR copies recognized text; page OCR supplies temporary selectable
-text for reading. Both leave the source PDF unchanged. Clipboard support and
-OCR dependencies follow the [installation guide][helpers].
+Select a detected figure or sweep a region to capture part of a page. Its action
+bar offers image copying, text copying, PNG export, and optional OCR. Use the
+keyboard to start a rectangle at the glyph cursor in Cursor mode, or at the view
+center otherwise. Resize a corner or move the whole rectangle, then confirm to
+open the same actions; see `:help` for bindings. REGION edits the rectangle;
+ACTIONS chooses an operation. Return to editing to resize it again. The
+rectangle stays within its page. Swap corners to move the anchor, or move
+through it to capture in the opposite direction. Thicker borders mark the
+active corner; swapping corners moves the emphasis. Point at an action to choose
+it, then click to run it. The status line shows REGION from the start of capture
+and explains how to finish or cancel. Closing capture restores the underlying
+reading mode. Region OCR copies recognized text; page OCR supplies temporary
+selectable text for reading. Both leave the source PDF unchanged. Clipboard
+support and OCR dependencies follow the [installation guide][helpers].
 
 ## Mouse
 

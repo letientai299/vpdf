@@ -4,6 +4,7 @@ use crate::input::InputOwner;
 use crate::keys::{Action, Keys, PanelKind};
 use crate::layout::{Layout, Screen};
 use crate::panel::Panel;
+use crate::region::Region;
 use crate::text::PageId;
 use crate::theme::Color;
 use std::fmt::Write as _;
@@ -79,6 +80,7 @@ pub struct View<'a> {
   pub keys: &'a Keys,
   pub panel: Option<&'a Panel>,
   pub owner: InputOwner,
+  pub capture: Option<&'a Region>,
   pub text: bool,
   pub overview: bool,
 }
@@ -164,7 +166,14 @@ impl Bar<'_> {
       InputOwner::Hints => return ("HINT", Color::Yellow),
       InputOwner::Context => return ("MENU", Color::Yellow),
       InputOwner::Peek => return ("PEEK", Color::Yellow),
-      InputOwner::Region => return ("REGION", Color::Yellow),
+      InputOwner::Region => {
+        let label = if self.view.capture.is_some_and(Region::is_bar) {
+          "ACTIONS"
+        } else {
+          "REGION"
+        };
+        return (label, Color::Yellow);
+      }
       InputOwner::Panel => {
         if let Some(panel) = self.view.panel {
           return (panel.kind().title(), Color::Cyan);

@@ -1,3 +1,4 @@
+use crate::input::gesture::Sweep;
 use crate::keys::Action;
 use crate::layout::Layout;
 use crate::paint::Frame;
@@ -29,10 +30,17 @@ pub struct Snapshot {
 
 pub struct Region {
   snapshot: Snapshot,
-  bar: Option<Bar>,
+  state: State,
+}
+
+enum State {
+  Selected,
+  Drawing(Sweep),
+  Actions(Bar),
 }
 
 struct Bar {
+  sweep: Sweep,
   action: Operation,
   status: String,
   cells: Option<BarCells>,
@@ -45,7 +53,11 @@ struct BarCells {
 
 type Spans = Vec<(Range<usize>, usize)>;
 
-pub const BAR_HINT: &str = "h/l choose; Enter runs; Esc closes";
+pub const DRAW_HINT: &str =
+  "hjkl resize; HJKL move; o swaps; Enter captures; Esc cancels";
+
+pub const BAR_HINT: &str =
+  "h/l choose; HJKL move; R edits; Enter runs; Esc closes";
 
 const ACTIONS: [(&str, Operation); 4] = [
   ("Copy image", Operation::Image),
@@ -71,6 +83,10 @@ impl Operation {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Transition {
   Stay,
+  Move(i8, i8),
+  Shift(i8, i8),
+  Confirm,
+  Edit,
   Run(Operation),
   Close,
   Clear,
@@ -93,7 +109,9 @@ fn route(action: Action) -> Route {
     Action::Motion(Motion::Left | Motion::Up) => Route::Select(false),
     Action::Motion(Motion::Right | Motion::Down) => Route::Select(true),
     Action::Follow => Route::Run,
-    Action::Quit | Action::Cancel | Action::Region => Route::Close,
+    Action::Quit | Action::Cancel | Action::Region | Action::RegionStart => {
+      Route::Close
+    }
     Action::Command => Route::Command,
     _ if crate::input::transfers_overlay(action) => Route::Transfer,
     _ => Route::Ignore,
@@ -102,18 +120,59 @@ fn route(action: Action) -> Route {
 
 impl Region {
   pub fn selected(snapshot: Snapshot) -> Self {
-    Self { snapshot, bar: None }
+    Self { snapshot, state: State::Selected }
   }
 
   pub fn open(snapshot: Snapshot) -> Self {
+    let mut region = Self::selected(snapshot);
+    region.state = State::Actions(Bar::new(region.sweep()));
+    region
+  }
+
+  pub fn drawing(id: CaptureId, page: PageId, from: (f32, f32)) -> Self {
+    let (x, y) = from;
     Self {
-      snapshot,
-      bar: Some(Bar {
-        action: Operation::Image,
-        status: String::new(),
-        cells: None,
-      }),
+      snapshot: Snapshot {
+        id,
+        page,
+        bounds: Bounds { x0: x, y0: y, x1: x, y1: y },
+      },
+      state: State::Drawing(Sweep::new(page, from)),
     }
+  }
+
+  pub fn draft(&self) -> Option<Sweep> {
+    match self.state {
+      State::Drawing(sweep) => Some(sweep),
+      _ => None,
+    }
+  }
+
+  pub fn move_to(&mut self, point: (f32, f32), shown: Bounds) {
+    if let State::Drawing(sweep) = &mut self.state {
+      sweep.move_to(point, shown);
+      if let Some(bounds) = sweep.bounds() {
+        self.snapshot.bounds = bounds;
+      }
+    }
+  }
+
+  fn bar(&self) -> Option<&Bar> {
+    match &self.state {
+      State::Actions(bar) => Some(bar),
+      _ => None,
+    }
+  }
+
+  fn bar_mut(&mut self) -> Option<&mut Bar> {
+    match &mut self.state {
+      State::Actions(bar) => Some(bar),
+      _ => None,
+    }
+  }
+
+  pub fn active(&self) -> bool {
+    !matches!(self.state, State::Selected)
   }
 
   pub fn snapshot(&self) -> &Snapshot {
@@ -121,43 +180,121 @@ impl Region {
   }
 
   pub fn is_bar(&self) -> bool {
-    self.bar.is_some()
+    self.bar().is_some()
   }
 
   pub fn action(&self) -> Option<Operation> {
-    self.bar.as_ref().map(|bar| bar.action)
+    self.bar().map(|bar| bar.action)
   }
 
   pub fn status(&self) -> Option<&str> {
-    self.bar.as_ref().map(|bar| bar.status.as_str())
+    self.bar().map(|bar| bar.status.as_str())
   }
 
   pub fn request(&mut self, id: CaptureId) -> Snapshot {
-    if self.bar.is_some() {
+    if self.bar().is_some() {
       self.snapshot.id = id;
     }
     Snapshot { id, ..self.snapshot.clone() }
   }
 
   pub fn update(&mut self, id: CaptureId, message: &str) -> bool {
-    if let Some(bar) = &mut self.bar {
-      if self.snapshot.id != id {
-        return false;
-      }
+    if self.active() && self.snapshot.id != id {
+      return false;
+    }
+    if let Some(bar) = self.bar_mut() {
       message.clone_into(&mut bar.status);
     }
     true
   }
 
+  fn sweep(&self) -> Sweep {
+    if let Some(bar) = self.bar() {
+      return bar.sweep;
+    }
+    self.draft().unwrap_or_else(|| {
+      let bounds = self.snapshot.bounds;
+      let mut sweep = Sweep::new(self.snapshot.page, (bounds.x0, bounds.y0));
+      sweep.move_to((bounds.x1, bounds.y1), bounds);
+      sweep
+    })
+  }
+
+  pub fn confirm(&mut self, id: CaptureId, shown: Bounds) -> bool {
+    let mut sweep = self.sweep();
+    sweep.clip(shown);
+    let Some(bounds) = sweep.bounds() else { return false };
+    self.snapshot = Snapshot { id, page: sweep.page(), bounds };
+    self.state = State::Actions(Bar::new(sweep));
+    true
+  }
+
+  pub fn edit(&mut self, id: CaptureId) {
+    self.state = State::Drawing(self.sweep());
+    self.snapshot.id = id;
+  }
+
+  pub fn shift(&mut self, delta: (f32, f32), shown: Bounds, id: CaptureId) {
+    let mut sweep = self.sweep();
+    sweep.shift(delta, shown);
+    if let State::Drawing(draft) = &mut self.state {
+      *draft = sweep;
+    }
+    if let Some(bounds) = sweep.bounds()
+      && bounds != self.snapshot.bounds
+    {
+      self.snapshot.bounds = bounds;
+      self.snapshot.id = id;
+      if let Some(bar) = self.bar_mut() {
+        bar.sweep = sweep;
+        bar.status.clear();
+        bar.cells = None;
+      }
+    }
+  }
+
   pub fn allows(&self, action: Action) -> bool {
-    self.bar.is_none() || !matches!(route(action), Route::Ignore)
+    !self.active()
+      || matches!(action, Action::RegionShift(..))
+      || (self.draft().is_some() && action == Action::Swap)
+      || !matches!(route(action), Route::Ignore)
   }
 
   pub fn input(&mut self, action: Action) -> Transition {
-    let Some(bar) = &mut self.bar else {
+    if self.is_bar() && action == Action::RegionStart {
+      return Transition::Edit;
+    }
+    if self.active()
+      && let Action::RegionShift(dx, dy) = action
+    {
+      return Transition::Shift(dx, dy);
+    }
+    if let State::Drawing(sweep) = &mut self.state {
+      return match action {
+        Action::Swap => {
+          sweep.swap();
+          Transition::Stay
+        }
+        Action::Motion(Motion::Left) => Transition::Move(-1, 0),
+        Action::Motion(Motion::Right) => Transition::Move(1, 0),
+        Action::Motion(Motion::Up) => Transition::Move(0, -1),
+        Action::Motion(Motion::Down) => Transition::Move(0, 1),
+        Action::Follow => Transition::Confirm,
+        _ => match route(action) {
+          Route::Close => Transition::Close,
+          Route::Command => Transition::Command,
+          Route::Transfer => Transition::Transfer,
+          _ => Transition::Stay,
+        },
+      };
+    }
+    let Some(bar) = self.bar_mut() else {
       return if matches!(
         action,
-        Action::Figure(_) | Action::FigureFit | Action::Region
+        Action::Figure(_)
+          | Action::FigureFit
+          | Action::Region
+          | Action::RegionStart
       ) {
         Transition::Unhandled
       } else {
@@ -182,19 +319,18 @@ impl Region {
   }
 
   pub fn cells(&self) -> Option<Rect> {
-    self.bar.as_ref()?.cells.as_ref().map(|cells| cells.area)
+    self.bar()?.cells.as_ref().map(|cells| cells.area)
   }
 
   pub fn items(&self) -> Items {
     self
-      .bar
-      .as_ref()
+      .bar()
       .and_then(|bar| bar.cells.as_ref())
       .map_or_default(|cells| cells.items.clone())
   }
 
   pub fn select(&mut self, index: usize) {
-    if let Some(bar) = &mut self.bar
+    if let Some(bar) = self.bar_mut()
       && let Some(operation) = Operation::at(index)
     {
       bar.action = operation;
@@ -216,9 +352,15 @@ impl Region {
       items.push(cells(span), index);
     }
     let area = cells(0..width);
-    if let Some(bar) = &mut self.bar {
+    if let Some(bar) = self.bar_mut() {
       bar.cells = Some(BarCells { area, items });
     }
+  }
+}
+
+impl Bar {
+  fn new(sweep: Sweep) -> Self {
+    Self { sweep, action: Operation::Image, status: String::new(), cells: None }
   }
 }
 
@@ -236,8 +378,31 @@ impl Canvas<'_> {
     snap_to_cells: bool,
     scene: &mut impl Draw<'a>,
   ) {
+    let active = if sweep.is_none() {
+      region.as_ref().and_then(|region| region.draft()).map(|draft| {
+        let (x, y) = draft.endpoint();
+        self
+          .layout
+          .project(
+            draft.page(),
+            Bounds { x0: x, y0: y, x1: x, y1: y },
+            self.scroll,
+          )
+          .centre()
+      })
+    } else {
+      None
+    };
+    let sweep = sweep.or_else(|| {
+      let draft = region.as_ref()?.draft()?;
+      Some((draft.page(), draft.bounds()?))
+    });
     if let Some((page, bounds)) = sweep {
       let mut rect = self.layout.project(page, bounds, self.scroll);
+      let active = active.map(|(x, y)| {
+        let (cx, cy) = rect.centre();
+        (x >= cx, y >= cy)
+      });
       // Quirk overlays cache by size.
       if snap_to_cells {
         let (width, height) = (
@@ -251,15 +416,15 @@ impl Canvas<'_> {
           y1: (rect.y1 / height).ceil() * height,
         };
       }
-      self.outline(scene, rect);
+      self.outline(scene, rect, active);
     }
     let Some(region) = region else { return };
-    let Some(bar) = &region.bar else { return };
+    let Some(bar) = region.bar() else { return };
     let snapshot = &region.snapshot;
     let (action, status) = (&bar.action, &bar.status);
     let (page, action, status) = (snapshot.page, *action, status.clone());
     let rect = self.layout.project(page, snapshot.bounds, self.scroll);
-    self.outline(scene, rect);
+    self.outline(scene, rect, None);
     let screen = self.frame.screen;
     let (mut label, mut items) = bar_label(page, action);
     if label.chars().count() > usize::from(screen.columns) {
@@ -306,7 +471,12 @@ impl Canvas<'_> {
   }
 
   /// Dims around a rect; outlines it.
-  fn outline<'a>(&self, scene: &mut impl Draw<'a>, rect: Bounds) {
+  fn outline<'a>(
+    &self,
+    scene: &mut impl Draw<'a>,
+    rect: Bounds,
+    active: Option<(bool, bool)>,
+  ) {
     let screen = self.frame.screen;
     if !self.frame.text {
       let w = screen.width();
@@ -329,7 +499,7 @@ impl Canvas<'_> {
           self.frame.left,
         );
       }
-      for bounds in frame_edges(Bounds { x0, y0, x1, y1 }, (w, h)) {
+      for bounds in frame_edges(Bounds { x0, y0, x1, y1 }, (w, h), active) {
         scene.fill(
           bounds,
           theme::REGION_EDGE,
@@ -359,16 +529,22 @@ fn bar_label(page: PageId, action: Operation) -> (String, Spans) {
   (label, items)
 }
 
-/// A 2 px frame within `(w, h)`.
-fn frame_edges(rect: Bounds, (w, h): (f32, f32)) -> [Bounds; 4] {
+/// Active corner edges use thicker bands.
+fn frame_edges(
+  rect: Bounds,
+  (w, h): (f32, f32),
+  active: Option<(bool, bool)>,
+) -> [Bounds; 4] {
   // Overlays round out to whole pixels.
   let (x0, y0) = (rect.x0.floor(), rect.y0.floor());
   let (x1, y1) = (rect.x1.ceil(), rect.y1.ceil());
   // U26: outside where room allows.
-  let top = band(y0, -1.0, y0 >= 2.0);
-  let bottom = band(y1, 1.0, y1 + 2.0 <= h);
-  let left = band(x0, -1.0, x0 >= 2.0);
-  let right = band(x1, 1.0, x1 + 2.0 <= w);
+  let width = |selected| if selected { 4.0 } else { 2.0 };
+  let top = band(y0, -1.0, width(active.is_some_and(|(_, bottom)| !bottom)), h);
+  let bottom =
+    band(y1, 1.0, width(active.is_some_and(|(_, bottom)| bottom)), h);
+  let left = band(x0, -1.0, width(active.is_some_and(|(right, _)| !right)), w);
+  let right = band(x1, 1.0, width(active.is_some_and(|(right, _)| right)), w);
   [
     Bounds { x0: left.0, x1: right.1, y0: top.0, y1: top.1 },
     Bounds { x0: left.0, x1: right.1, y0: bottom.0, y1: bottom.1 },
@@ -377,9 +553,14 @@ fn frame_edges(rect: Bounds, (w, h): (f32, f32)) -> [Bounds; 4] {
   ]
 }
 
-/// A 2 px band, outward if room.
-fn band(edge: f32, dir: f32, fits: bool) -> (f32, f32) {
-  let far = if fits { edge + 2.0 * dir } else { edge - 2.0 * dir };
+/// Bands extend outward where they fit.
+fn band(edge: f32, dir: f32, width: f32, limit: f32) -> (f32, f32) {
+  let outside = edge + width * dir;
+  let far = if (0.0..=limit).contains(&outside) {
+    outside
+  } else {
+    (edge - width * dir).clamp(0.0, limit)
+  };
   (edge.min(far), edge.max(far))
 }
 
@@ -401,6 +582,203 @@ mod fixture;
 mod tests {
   use super::fixture::snapshot;
   use super::*;
+
+  #[test]
+  fn confirmed_sweeps_keep_direction() {
+    let shown = Bounds { x0: 0.0, y0: 0.0, x1: 200.0, y1: 200.0 };
+    let mut region =
+      Region::drawing(CaptureId::new(1), PageId(0), (10.0, 20.0));
+    region.move_to((60.0, 80.0), shown);
+    region.input(Action::Swap);
+    let mut expected = region.draft().unwrap();
+    assert!(region.confirm(CaptureId::new(2), shown));
+    region.shift((7.0, 9.0), shown, CaptureId::new(3));
+    expected.shift((7.0, 9.0), shown);
+    region.edit(CaptureId::new(4));
+    assert_eq!(region.draft(), Some(expected));
+  }
+
+  #[test]
+  fn confirmation_clips_page_bounds() {
+    let shown = Bounds { x0: 0.0, y0: 0.0, x1: 100.0, y1: 100.0 };
+    let mut region =
+      Region::drawing(CaptureId::new(1), PageId(0), (-10.0, -10.0));
+    region.move_to(
+      (110.0, 110.0),
+      Bounds { x0: -10.0, y0: -10.0, x1: 110.0, y1: 110.0 },
+    );
+    assert!(region.confirm(CaptureId::new(2), shown));
+    assert_eq!(region.snapshot().bounds, shown);
+    region.edit(CaptureId::new(3));
+    assert_eq!(region.draft().unwrap().endpoint(), (100.0, 100.0));
+    region.move_to((0.0, 0.0), shown);
+    assert!(!region.confirm(CaptureId::new(4), shown));
+    assert!(region.draft().is_some());
+  }
+
+  #[test]
+  fn drafts_reverse_and_clamp() {
+    let mut region =
+      Region::drawing(CaptureId::new(1), PageId(0), (50.0, 50.0));
+    let shown = Bounds { x0: 10.0, y0: 10.0, x1: 90.0, y1: 90.0 };
+    assert!(region.active());
+    assert!(!region.is_bar());
+    assert!(region.draft().unwrap().bounds().is_none());
+    region.move_to((-100.0, 200.0), shown);
+    assert_eq!(region.draft().unwrap().endpoint(), (10.0, 90.0));
+    assert_eq!(
+      region.snapshot().bounds,
+      Bounds { x0: 10.0, y0: 50.0, x1: 50.0, y1: 90.0 }
+    );
+    region.move_to((80.0, 20.0), shown);
+    assert_eq!(
+      region.snapshot().bounds,
+      Bounds { x0: 50.0, y0: 20.0, x1: 80.0, y1: 50.0 }
+    );
+    assert_eq!(
+      region.input(Action::Motion(Motion::Left)),
+      Transition::Move(-1, 0)
+    );
+    assert_eq!(region.input(Action::Follow), Transition::Confirm);
+    assert_eq!(region.input(Action::Cancel), Transition::Close);
+    assert_eq!(region.input(Action::Swap), Transition::Stay);
+    assert_eq!(region.draft().unwrap().endpoint(), (50.0, 50.0));
+    region.move_to((80.0, 50.0), shown);
+    assert!(region.draft().unwrap().bounds().is_none());
+  }
+
+  #[test]
+  fn shifting_preserves_size_and_identity() {
+    let shown = Bounds { x0: 0.0, y0: 0.0, x1: 100.0, y1: 100.0 };
+    let mut draft = Region::drawing(CaptureId::new(1), PageId(0), (10.0, 20.0));
+    draft.move_to((60.0, 80.0), shown);
+    for mut region in [draft, Region::open(snapshot(1))] {
+      let original = region.snapshot().bounds;
+      region.shift((1000.0, 1000.0), shown, CaptureId::new(2));
+      let moved = region.snapshot().bounds;
+      assert_eq!(
+        (moved.width(), moved.height()),
+        (original.width(), original.height())
+      );
+      assert_eq!((moved.x1, moved.y1), (shown.x1, shown.y1));
+      assert_eq!(region.snapshot().id, CaptureId::new(2));
+      if region.is_bar() {
+        assert!(!region.update(CaptureId::new(1), "Stale capture"));
+      }
+      region.shift((-1000.0, -1000.0), shown, CaptureId::new(3));
+      let moved = region.snapshot().bounds;
+      assert_eq!(
+        (moved.width(), moved.height()),
+        (original.width(), original.height())
+      );
+      assert_eq!((moved.x0, moved.y0), (shown.x0, shown.y0));
+      assert_eq!(
+        region.input(Action::RegionShift(1, 0)),
+        Transition::Shift(1, 0)
+      );
+    }
+  }
+
+  #[test]
+  fn drafts_emphasize_active_corners() {
+    let widths = |ops: &[Op<'_>]| {
+      ops
+        .iter()
+        .filter_map(|op| match op {
+          Op::Fill(fill) if fill.color() == theme::REGION_EDGE => {
+            Some(fill.rect().width().min(fill.rect().height()))
+          }
+          _ => None,
+        })
+        .collect::<Vec<_>>()
+    };
+    let veil = |ops: &[Op<'_>]| {
+      ops
+        .iter()
+        .filter_map(|op| match op {
+          Op::Fill(fill) if fill.color() == theme::REGION_VEIL => Some(**fill),
+          _ => None,
+        })
+        .collect::<Vec<_>>()
+    };
+    for rotation in 0..4 {
+      let mut layout = fixture::layout();
+      for _ in 0..rotation {
+        layout.rotate();
+      }
+      layout.reflow([Bounds { x0: 0.0, y0: 0.0, x1: 160.0, y1: 160.0 }]);
+      let canvas = fixture::canvas(&layout);
+      let (page, bounds) = fixture::sweep();
+      let mut region =
+        Region::drawing(CaptureId::new(1), page, (bounds.x0, bounds.y0));
+      region.move_to((bounds.x1, bounds.y1), bounds);
+      for snap in [false, true] {
+        let mut before = Vec::new();
+        canvas.scene(Some(&mut region), None, snap, &mut before);
+        region.input(Action::Swap);
+        let mut after = Vec::new();
+        canvas.scene(Some(&mut region), None, snap, &mut after);
+        assert_eq!(veil(&before), veil(&after));
+        let before = widths(&before);
+        let after = widths(&after);
+        assert_eq!(before.len(), 4);
+        assert_eq!(after.len(), 4);
+        for (a, b) in before.into_iter().zip(after) {
+          assert_eq!(a + b, 6.0);
+          assert_ne!(a, b);
+        }
+      }
+    }
+  }
+
+  #[test]
+  fn snapping_keeps_active_direction() {
+    let layout = fixture::layout();
+    let canvas = fixture::canvas(&layout);
+    let bounds = Bounds { x0: 9.0, y0: 17.0, x1: 10.0, y1: 18.0 };
+    let mut region =
+      Region::drawing(CaptureId::new(1), PageId(0), (bounds.x0, bounds.y0));
+    region.move_to((bounds.x1, bounds.y1), bounds);
+    let mut output = Vec::new();
+    canvas.scene(Some(&mut region), None, true, &mut output);
+    let edges = output
+      .iter()
+      .filter_map(|op| match op {
+        Op::Fill(fill) if fill.color() == theme::REGION_EDGE => {
+          Some(fill.rect())
+        }
+        _ => None,
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(edges.len(), 4);
+    assert_eq!(
+      [
+        edges[0].height(),
+        edges[1].height(),
+        edges[2].width(),
+        edges[3].width()
+      ],
+      [2.0, 4.0, 2.0, 4.0]
+    );
+  }
+
+  #[test]
+  fn active_borders_stay_within_screen() {
+    let rect = Bounds { x0: 0.0, y0: 0.0, x1: 100.0, y1: 50.0 };
+    for (point, expected) in [
+      ((false, false), [4.0, 2.0, 4.0, 2.0]),
+      ((true, false), [4.0, 2.0, 2.0, 4.0]),
+      ((false, true), [2.0, 4.0, 4.0, 2.0]),
+      ((true, true), [2.0, 4.0, 2.0, 4.0]),
+    ] {
+      let edges = frame_edges(rect, (100.0, 50.0), Some(point));
+      for (edge, width) in edges.into_iter().zip(expected) {
+        assert_eq!(edge.width().min(edge.height()), width);
+        assert!(edge.x0 >= 0.0 && edge.y0 >= 0.0);
+        assert!(edge.x1 <= 100.0 && edge.y1 <= 50.0);
+      }
+    }
+  }
 
   #[test]
   fn requests_reject_stale_status() {
@@ -538,7 +916,8 @@ mod tests {
       (rect(0.0, 0.0, 100.0, 50.0), [true; 4]),
       (rect(1.0, 20.0, 99.5, 50.0), [false, true, true, true]),
     ] {
-      for (edge, inside) in frame_edges(capture, (w, h)).into_iter().zip(inside)
+      for (edge, inside) in
+        frame_edges(capture, (w, h), None).into_iter().zip(inside)
       {
         let covers = edge.x0.max(capture.x0) < edge.x1.min(capture.x1)
           && edge.y0.max(capture.y0) < edge.y1.min(capture.y1);

@@ -98,7 +98,12 @@ impl App {
         search: &self.search,
         keys: &self.keys,
         panel: self.panel.as_ref().map(|panel| &panel.view),
-        owner: self.input_owner(),
+        owner: if self.sweeping() {
+          vpdf_ui::input::InputOwner::Region
+        } else {
+          self.input_owner()
+        },
+        capture: if self.sweeping() { None } else { self.overlays.region() },
         text: self.text_mode,
         overview: self.overlays.overview().is_some(),
       },

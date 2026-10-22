@@ -36,7 +36,7 @@ impl<S: TextSource + Pages> View<'_, S> {
   pub fn check_region(&mut self, overlays: &mut Overlays) {
     let region = &mut overlays.region;
     let Some(selected) =
-      region.as_ref().filter(|region| !region.is_bar()).map(Region::snapshot)
+      region.as_ref().filter(|region| !region.active()).map(Region::snapshot)
     else {
       return;
     };

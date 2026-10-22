@@ -13,6 +13,7 @@ fn raw_figure_bindings() {
     (&b"[i"[..], Action::Figure(false)),
     (&b"zF"[..], Action::FigureFit),
     (&b"gF"[..], Action::Region),
+    (&b"R"[..], Action::RegionStart),
     (&b"gf"[..], Action::Panel(PanelKind::Figures)),
   ] {
     let mut events = VecDeque::new();

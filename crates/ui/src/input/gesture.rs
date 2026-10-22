@@ -53,6 +53,48 @@ pub enum Swept {
 }
 
 impl Sweep {
+  pub fn new(page: PageId, from: (f32, f32)) -> Self {
+    Self { page, from, to: None }
+  }
+
+  pub fn endpoint(self) -> (f32, f32) {
+    self.to.unwrap_or(self.from)
+  }
+
+  pub fn swap(&mut self) {
+    let endpoint = self.endpoint();
+    self.to = Some(self.from);
+    self.from = endpoint;
+  }
+
+  pub fn shift(&mut self, (dx, dy): (f32, f32), shown: Bounds) {
+    let end = self.endpoint();
+    let dx = dx.clamp(
+      (shown.x0 - self.from.0.min(end.0)).min(0.0),
+      (shown.x1 - self.from.0.max(end.0)).max(0.0),
+    );
+    let dy = dy.clamp(
+      (shown.y0 - self.from.1.min(end.1)).min(0.0),
+      (shown.y1 - self.from.1.max(end.1)).max(0.0),
+    );
+    self.from = (self.from.0 + dx, self.from.1 + dy);
+    self.to = self.to.map(|(x, y)| (x + dx, y + dy));
+  }
+
+  pub fn clip(&mut self, shown: Bounds) {
+    self.from = (
+      self.from.0.clamp(shown.x0, shown.x1),
+      self.from.1.clamp(shown.y0, shown.y1),
+    );
+    if let Some(to) = self.to {
+      self.move_to(to, shown);
+    }
+  }
+
+  pub fn move_to(&mut self, (x, y): (f32, f32), shown: Bounds) {
+    self.to = Some((x.clamp(shown.x0, shown.x1), y.clamp(shown.y0, shown.y1)));
+  }
+
   /// A rectangle with nonzero area.
   pub fn bounds(self) -> Option<Bounds> {
     let ((x0, y0), (x1, y1)) = (self.from, self.to?);
@@ -105,12 +147,11 @@ impl Gesture {
     self.state == State::Dropped
   }
   pub fn begin_sweep(&mut self, page: PageId, from: (f32, f32)) {
-    self.state = State::Sweep(Sweep { page, from, to: None });
+    self.state = State::Sweep(Sweep::new(page, from));
   }
   pub fn sweep_to(&mut self, (x, y): (f32, f32), shown: Bounds) {
-    let to = (x.clamp(shown.x0, shown.x1), y.clamp(shown.y0, shown.y1));
     if let State::Sweep(sweep) = &mut self.state {
-      sweep.to = Some(to);
+      sweep.move_to((x, y), shown);
     }
   }
   pub fn finish_sweep(&mut self) -> Option<Sweep> {

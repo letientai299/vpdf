@@ -48,6 +48,8 @@ pub enum Action {
   Figure(bool),
   FigureFit,
   Region,
+  RegionStart,
+  RegionShift(i8, i8),
   Yank,
   YankLine,
   /// `yp`: the document's full path.
@@ -130,6 +132,29 @@ pub struct Keys {
 impl Keys {
   pub fn clear(&mut self) {
     *self = Self::default();
+  }
+
+  pub fn feed_region(&mut self, key: KeyEvent) -> Option<Input> {
+    if self.prefix.is_empty()
+      && !self.choosing_register
+      && plain(key)
+      && let KeyCode::Char(mut ch) = key.code
+    {
+      if key.modifiers.contains(KeyModifiers::SHIFT) {
+        ch.make_ascii_uppercase();
+      }
+      let delta = match ch {
+        'H' => Some((-1, 0)),
+        'J' => Some((0, 1)),
+        'K' => Some((0, -1)),
+        'L' => Some((1, 0)),
+        _ => None,
+      };
+      if let Some((dx, dy)) = delta {
+        return Some(self.finish(Action::RegionShift(dx, dy)));
+      }
+    }
+    self.feed(key, Grammar::Other)
   }
 
   pub fn feed(&mut self, key: KeyEvent, grammar: Grammar) -> Option<Input> {
@@ -468,6 +493,7 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("[i", Action::Figure(false), "previous figure"),
   ("zF", Action::FigureFit, "fit figure"),
   ("gF", Action::Region, "figure actions"),
+  ("R", Action::RegionStart, "capture rectangle"),
   ("f", Action::Hints(false), "link hints"),
   ("yf", Action::Hints(true), "link hints, copy URLs"),
   ("gt", Action::Tab(true), "next tab, or [count] tab"),

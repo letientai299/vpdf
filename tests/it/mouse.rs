@@ -1904,7 +1904,7 @@ fn bar_items_follow_the_pointer() -> Result<()> {
   // Clicking off clears the bar hint.
   click(&mut session, (screen.columns - 1, 0))?;
   capture(&mut session)?;
-  let hint = "h/l choose; Enter runs; Esc closes";
+  let hint = vpdf_ui::region::BAR_HINT;
   assert_eq!(session.app().reader.message, hint);
   click(&mut session, (screen.columns - 1, 0))?;
   let app = session.app();
@@ -2635,6 +2635,296 @@ fn mouse_off_ends_hover() -> Result<()> {
     let app = session.app();
     assert!(app.overlays.preview().is_none(), "rested={rested}: closed");
     assert_eq!(app.hover.hit(), Hit::Nothing, "rested={rested}");
+  }
+  Ok(())
+}
+
+#[test]
+fn keyboard_rectangles_preserve_reading() -> Result<()> {
+  use vpdf_model::input::KeyCode;
+  for mode in [0, 1, 2] {
+    for rotation in 0..4 {
+      keyboard_rectangle(mode, rotation)?;
+    }
+  }
+  let (_directory, mut session) = words(true)?;
+  assert!(press(&mut session, KeyCode::Char('R')).is_err());
+  assert!(session.app().overlays.region().is_none());
+  Ok(())
+}
+
+fn keyboard_rectangle(mode: u8, rotation: u8) -> Result<()> {
+  use vpdf_model::input::KeyCode;
+  use vpdf_ui::input::InputOwner;
+  let (_directory, mut session) = words(false)?;
+  for _ in 0..rotation {
+    session.app().action(vpdf_ui::keys::Input::plain(Action::Rotate))?;
+  }
+  if mode > 0 {
+    press(&mut session, KeyCode::Char('i'))?;
+  }
+  if mode > 1 {
+    press(&mut session, KeyCode::Char('v'))?;
+  }
+  let app = session.app();
+  let initial = (
+    app.reader.mode(),
+    app.reader.cursor,
+    app.reader.scroll,
+    app.reader.selection.map(|s| (s.anchor, s.kind)),
+  );
+  press(&mut session, KeyCode::Char('R'))?;
+  assert_eq!(session.app().input_owner(), InputOwner::Region);
+  assert!(status(&mut session)?.contains("REGION"));
+  let draft = session.app().overlays.region().unwrap().draft().unwrap();
+  let (x, y) = draft.endpoint();
+  let point = Bounds { x0: x, y0: y, x1: x, y1: y };
+  let app = session.app();
+  let before = app.layout.project(draft.page(), point, app.reader.scroll);
+  for key in ['3', 'l', '2', 'j'] {
+    press(&mut session, KeyCode::Char(key))?;
+  }
+  let app = session.app();
+  let draft = app.overlays.region().unwrap().draft().unwrap();
+  let (x, y) = draft.endpoint();
+  let point = Bounds { x0: x, y0: y, x1: x, y1: y };
+  let after = app.layout.project(draft.page(), point, app.reader.scroll);
+  let expected = app
+    .layout
+    .unproject(
+      draft.page(),
+      (
+        before.x0 + 3.0 * f32::from(app.screen.cell_width),
+        before.y0 + 2.0 * f32::from(app.screen.cell_height),
+      ),
+      app.reader.scroll,
+    )
+    .unwrap();
+  let shown = app
+    .layout
+    .crop_for(draft.page())
+    .apply(app.doc.pages[draft.page().0].bounds);
+  let expected = (
+    expected.0.clamp(shown.x0, shown.x1),
+    expected.1.clamp(shown.y0, shown.y1),
+  );
+  assert!((x - expected.0).abs() < 0.01 && (y - expected.1).abs() < 0.01);
+  assert!(after.x0 >= before.x0 - 0.01 && after.y0 >= before.y0 - 0.01);
+  let captured = draft.bounds().expect("rectangle");
+  press(&mut session, KeyCode::Char('o'))?;
+  press(&mut session, KeyCode::Left)?;
+  press(&mut session, KeyCode::Up)?;
+  let draft = session.app().overlays.region().unwrap().draft().unwrap();
+  let resized = draft.bounds().expect("rectangle after swapping");
+  assert_ne!(resized, captured);
+  let captured = resized;
+  press(&mut session, KeyCode::Enter)?;
+  let region = session.app().overlays.region().unwrap();
+  assert!(region.is_bar());
+  assert_eq!(region.snapshot().bounds, captured);
+  press(&mut session, KeyCode::Esc)?;
+  assert!(session.app().overlays.region().is_none());
+  assert!(!status(&mut session)?.contains("REGION"));
+  press(&mut session, KeyCode::Char('R'))?;
+  press(&mut session, KeyCode::Esc)?;
+  let app = session.app();
+  assert!(app.overlays.region().is_none());
+  assert_eq!(app.reader.message, "");
+  assert_eq!(
+    (
+      app.reader.mode(),
+      app.reader.cursor,
+      app.reader.scroll,
+      app.reader.selection.map(|s| (s.anchor, s.kind))
+    ),
+    initial
+  );
+  Ok(())
+}
+
+#[test]
+fn capture_labels_start_on_press() -> Result<()> {
+  use vpdf_model::input::KeyCode;
+  let (_directory, mut session) = words(false)?;
+  press(&mut session, KeyCode::Char('i'))?;
+  press(&mut session, KeyCode::Char('v'))?;
+  let mode = session.app().reader.mode();
+  let from = glyph_cell(&mut session, 0, 2)?;
+  let to = glyph_cell(&mut session, 1, 9)?;
+  session.mouse(alt(MouseEventKind::Down(MouseButton::Left), from))?;
+  assert!(status(&mut session)?.contains("REGION"));
+  session.mouse(alt(MouseEventKind::Drag(MouseButton::Left), to))?;
+  assert!(status(&mut session)?.contains("REGION"));
+  press(&mut session, KeyCode::Esc)?;
+  assert!(!status(&mut session)?.contains("REGION"));
+  assert_eq!(session.app().reader.mode(), mode);
+  mouse(&mut session, MouseEventKind::Up(MouseButton::Left), to)?;
+  assert!(session.app().overlays.region().is_none());
+  Ok(())
+}
+
+#[test]
+fn rectangles_start_at_cursor() -> Result<()> {
+  use vpdf_model::input::KeyCode;
+  for rotation in 0..4 {
+    let (_directory, mut session) = words(false)?;
+    for _ in 0..rotation {
+      session.app().action(vpdf_ui::keys::Input::plain(Action::Rotate))?;
+    }
+    press(&mut session, KeyCode::Char('i'))?;
+    press(&mut session, KeyCode::Char('w'))?;
+    let cursor = session.app().reader.cursor;
+    let bounds =
+      session.app().doc.text(cursor.page)?.glyph(cursor).unwrap().bounds;
+    press(&mut session, KeyCode::Char('R'))?;
+    let mut draft = session.app().overlays.region().unwrap().draft().unwrap();
+    draft.swap();
+    assert_eq!(draft.page(), cursor.page);
+    assert_eq!(draft.endpoint(), (bounds.x0, bounds.y0));
+  }
+  Ok(())
+}
+
+#[test]
+fn shifted_keys_move_rectangles() -> Result<()> {
+  use vpdf_model::input::KeyCode;
+  for rotation in 0..4 {
+    let (_directory, mut session) = words(false)?;
+    for _ in 0..rotation {
+      session.app().action(vpdf_ui::keys::Input::plain(Action::Rotate))?;
+    }
+    press(&mut session, KeyCode::Char('R'))?;
+    for bar in [false, true] {
+      if bar {
+        press(&mut session, KeyCode::Enter)?;
+      }
+      for (ch, dx, dy) in
+        [('H', -1.0, 0.0), ('J', 0.0, 1.0), ('K', 0.0, -1.0), ('L', 1.0, 0.0)]
+      {
+        let app = session.app();
+        let snap = app.overlays.region().unwrap().snapshot();
+        let before =
+          app.layout.project(snap.page, snap.bounds, app.reader.scroll);
+        press(&mut session, KeyCode::Char('2'))?;
+        press(&mut session, KeyCode::Char(ch))?;
+        let app = session.app();
+        let region = app.overlays.region().unwrap();
+        let snap = region.snapshot();
+        let after =
+          app.layout.project(snap.page, snap.bounds, app.reader.scroll);
+        assert!((after.width() - before.width()).abs() < 0.01);
+        assert!((after.height() - before.height()).abs() < 0.01);
+        assert!(
+          (after.x0 - before.x0 - 2.0 * dx * f32::from(app.screen.cell_width))
+            .abs()
+            < 0.01
+        );
+        assert!(
+          (after.y0 - before.y0 - 2.0 * dy * f32::from(app.screen.cell_height))
+            .abs()
+            < 0.01
+        );
+        assert_eq!(region.is_bar(), bar);
+      }
+    }
+  }
+  Ok(())
+}
+
+#[test]
+fn actions_and_editing_have_separate_keys() -> Result<()> {
+  use vpdf_model::input::KeyCode;
+  use vpdf_ui::region::Operation;
+  let (_directory, mut session) = words(false)?;
+  press(&mut session, KeyCode::Char('R'))?;
+  press(&mut session, KeyCode::Char('l'))?;
+  let bounds = session.app().overlays.region().unwrap().snapshot().bounds;
+  press(&mut session, KeyCode::Enter)?;
+  assert!(status(&mut session)?.contains("ACTIONS"));
+  press(&mut session, KeyCode::Char('l'))?;
+  let region = session.app().overlays.region().unwrap();
+  assert_eq!(region.action(), Some(Operation::Text));
+  assert_eq!(region.snapshot().bounds, bounds);
+  let id = region.snapshot().id;
+  press(&mut session, KeyCode::Char('R'))?;
+  assert!(status(&mut session)?.contains("REGION"));
+  let region = session.app().overlays.region_mut().unwrap();
+  assert_eq!(region.snapshot().bounds, bounds);
+  assert!(!region.update(id, "Stale operation"));
+  press(&mut session, KeyCode::Char('l'))?;
+  let region = session.app().overlays.region().unwrap();
+  assert_eq!(region.action(), None);
+  assert_ne!(region.snapshot().bounds, bounds);
+  press(&mut session, KeyCode::Enter)?;
+  assert!(status(&mut session)?.contains("ACTIONS"));
+  Ok(())
+}
+
+#[test]
+fn action_roundtrips_preserve_active_corner() -> Result<()> {
+  use vpdf_model::input::KeyCode;
+  let (_directory, mut session) = words(false)?;
+  for ch in ['R', 'l', 'j', 'o'] {
+    press(&mut session, KeyCode::Char(ch))?;
+  }
+  let before = session.app().overlays.region().unwrap().draft();
+  press(&mut session, KeyCode::Enter)?;
+  press(&mut session, KeyCode::Char('R'))?;
+  assert_eq!(session.app().overlays.region().unwrap().draft(), before);
+  Ok(())
+}
+
+#[test]
+fn cursor_capture_reveals_offscreen_anchor() -> Result<()> {
+  use vpdf_model::input::KeyCode;
+  let (_directory, mut session) = words(false)?;
+  press(&mut session, KeyCode::Char('i'))?;
+  session.app().action(vpdf_ui::keys::Input::plain(Action::Zoom(12)))?;
+  let app = session.app();
+  let cursor = app.reader.cursor;
+  let scroll = app.layout.clamp_scroll(app.layout.total());
+  app.reader.seed_reader(|reader| reader.scroll = scroll);
+  app.layout.pan_to(app.layout.pan_limit(cursor.page));
+  assert!(!app.reading_view().visible(cursor)?);
+  press(&mut session, KeyCode::Char('R'))?;
+  let app = session.app();
+  assert!(app.reading_view().visible(cursor)?);
+  let draft = app.overlays.region().unwrap().draft().unwrap();
+  let rect = app.layout.project(
+    draft.page(),
+    draft.bounds().unwrap(),
+    app.reader.scroll,
+  );
+  assert!(rect.x1 > 0.0 && rect.y1 > 0.0);
+  assert!(
+    rect.x0 < app.layout.screen().width()
+      && rect.y0 < app.layout.screen().height()
+  );
+  assert_eq!(app.reader.cursor, cursor);
+  Ok(())
+}
+
+#[test]
+fn zoomed_capture_starts_with_area() -> Result<()> {
+  use vpdf_model::input::KeyCode;
+  for rotation in 0..4 {
+    let (_directory, mut session) = words(false)?;
+    for _ in 0..rotation {
+      session.app().action(vpdf_ui::keys::Input::plain(Action::Rotate))?;
+    }
+    session.app().action(vpdf_ui::keys::Input::plain(Action::Zoom(12)))?;
+    press(&mut session, KeyCode::Char('R'))?;
+    assert!(
+      session
+        .app()
+        .overlays
+        .region()
+        .unwrap()
+        .draft()
+        .unwrap()
+        .bounds()
+        .is_some()
+    );
   }
   Ok(())
 }

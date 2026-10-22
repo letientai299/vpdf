@@ -17,7 +17,7 @@ use vpdf_ui::figures;
 use vpdf_ui::keys::Input;
 use vpdf_ui::page::Point;
 use vpdf_ui::region::{
-  BAR_HINT, CaptureId, Operation, Region, Snapshot, Transition,
+  BAR_HINT, CaptureId, DRAW_HINT, Operation, Region, Snapshot, Transition,
 };
 
 pub(crate) fn next_capture() -> CaptureId {
@@ -88,6 +88,107 @@ impl App {
     Ok(())
   }
 
+  pub fn start_region(&mut self) -> Result<()> {
+    anyhow::ensure!(!self.text_mode, "Region capture requires page view");
+    let (page, from) =
+      if self.reader.mode() == vpdf_reader::reader::Mode::Cursor {
+        let cursor = self.reader.cursor;
+        let mut view = self.reading_view();
+        if !view.visible(cursor)? {
+          view.reveal()?;
+        }
+        let point = view.figure_point(None)?;
+        (point.page, (point.x, point.y))
+      } else {
+        self.region_center()?
+      };
+    let step = self
+      .region_step(page, 1, 1, 1)
+      .ok_or_else(|| anyhow::anyhow!("Capture layout unavailable"))?;
+    let count = (2.0 / step.0.abs().min(step.1.abs())).ceil() as usize;
+    self.dismiss_overlay();
+    self.reader.cancel_scroll();
+    self.disarm();
+    self.overlays.open_region(Region::drawing(next_capture(), page, from));
+    for (dx, dy) in [(1, 1), (-1, 1), (1, -1), (-1, -1)] {
+      self.move_corner(dx, dy, count.max(1));
+      if self
+        .overlays
+        .region()
+        .and_then(Region::draft)
+        .and_then(vpdf_ui::input::gesture::Sweep::bounds)
+        .is_some()
+      {
+        self.reader.notice(DRAW_HINT);
+        return Ok(());
+      }
+    }
+    self.overlays.close_region();
+    anyhow::bail!("Page too small for capture")
+  }
+
+  fn region_center(&self) -> Result<(PageId, (f32, f32))> {
+    let screen = self.layout.screen();
+    let at = (screen.width() / 2.0, screen.height() / 2.0);
+    let (page, _, _) = self
+      .layout
+      .point_at(at, self.reader.scroll)
+      .ok_or_else(|| anyhow::anyhow!("No page for capture"))?;
+    let shown = self.layout.crop_for(page).apply(self.doc.pages[page.0].bounds);
+    let visible = vpdf_ui::layout::clip(
+      self.layout.project(page, shown, self.reader.scroll),
+      Bounds { x0: 0.0, y0: 0.0, x1: screen.width(), y1: screen.height() },
+    )
+    .ok_or_else(|| anyhow::anyhow!("No visible page for capture"))?;
+    let from = self
+      .layout
+      .unproject(page, visible.centre(), self.reader.scroll)
+      .ok_or_else(|| anyhow::anyhow!("No page for capture"))?;
+    Ok((page, from))
+  }
+
+  fn move_corner(&mut self, dx: i8, dy: i8, count: usize) {
+    let Some(sweep) = self.overlays.region().and_then(Region::draft) else {
+      return;
+    };
+    let page = sweep.page();
+    let (x, y) = sweep.endpoint();
+    let Some((dx, dy)) = self.region_step(page, dx, dy, count) else { return };
+    let point = (x + dx, y + dy);
+    let shown = self.layout.crop_for(page).apply(self.doc.pages[page.0].bounds);
+    if let Some(region) = self.overlays.region_mut() {
+      region.move_to(point, shown);
+    }
+  }
+
+  fn region_step(
+    &self,
+    page: PageId,
+    dx: i8,
+    dy: i8,
+    count: usize,
+  ) -> Option<(f32, f32)> {
+    let screen = self.layout.screen();
+    let count = count.min(u16::MAX as usize) as f32;
+    let to = (
+      f32::from(dx) * f32::from(screen.cell_width) * count,
+      f32::from(dy) * f32::from(screen.cell_height) * count,
+    );
+    let from = self.layout.unproject(page, (0.0, 0.0), self.reader.scroll)?;
+    let to = self.layout.unproject(page, to, self.reader.scroll)?;
+    Some((to.0 - from.0, to.1 - from.1))
+  }
+
+  fn shift_region(&mut self, dx: i8, dy: i8, count: usize) {
+    let Some(region) = self.overlays.region() else { return };
+    let page = region.snapshot().page;
+    let shown = self.layout.crop_for(page).apply(self.doc.pages[page.0].bounds);
+    let Some(delta) = self.region_step(page, dx, dy, count) else { return };
+    if let Some(region) = self.overlays.region_mut() {
+      region.shift(delta, shown, next_capture());
+    }
+  }
+
   pub fn open_region(&mut self) -> Result<()> {
     let selected = self.figure_snapshot()?;
     self.select_region(selected.page, selected.bounds)
@@ -110,6 +211,24 @@ impl App {
     let Some(region) = self.overlays.region_mut() else { return Ok(false) };
     match region.input(input.action) {
       Transition::Stay => {}
+      Transition::Edit => {
+        anyhow::ensure!(!self.text_mode, "Region capture requires page view");
+        region.edit(next_capture());
+        self.reader.notice(DRAW_HINT);
+      }
+      Transition::Move(dx, dy) => self.move_corner(dx, dy, input.count),
+      Transition::Shift(dx, dy) => self.shift_region(dx, dy, input.count),
+      Transition::Confirm => {
+        let page = region.snapshot().page;
+        self.doc.validate(page)?;
+        anyhow::ensure!(
+          region.confirm(next_capture(), self.doc.pages[page.0].bounds),
+          "Empty capture region"
+        );
+        self.reader.cancel_scroll();
+        self.disarm();
+        self.reader.notice(BAR_HINT);
+      }
       Transition::Run(operation) => self.region_operation(operation)?,
       Transition::Close => {
         self.dismiss_overlay();

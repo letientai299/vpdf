@@ -90,6 +90,7 @@ impl App {
       Action::Figure(forward) => self.move_figure(forward, input.count)?,
       Action::FigureFit => self.fit_figure()?,
       Action::Region => self.open_region()?,
+      Action::RegionStart => self.start_region()?,
       Action::GoMark(name, exact) => self.go_mark(name, exact)?,
       Action::Tab(forward) => {
         self.request = Some(Request::Tab(match (forward, input.explicit) {
@@ -111,8 +112,12 @@ impl App {
     self.search.forget_yank();
     let key = vpdf_ui::keys::normalize(key);
     // Keys end pointer gestures.
-    self.end_gestures();
+    let swept = self.end_gestures();
     self.drop_hover_preview();
+    if swept && vpdf_ui::keys::cancels(key) {
+      self.disarm();
+      return Ok(());
+    }
     if self.overlays.prompt().is_some() {
       let view = self.command_view();
       let terminal = matches!(self.frontend, crate::raster::Frontend::Terminal);
@@ -134,7 +139,11 @@ impl App {
       owner,
       InputOwner::Context | InputOwner::Peek | InputOwner::Region
     ) {
-      let input = self.keys.feed(key, Grammar::Other);
+      let input = if owner == InputOwner::Region {
+        self.keys.feed_region(key)
+      } else {
+        self.keys.feed(key, Grammar::Other)
+      };
       if self.keys.awaiting() == Some("C-w") {
         self.dismiss_overlay();
       }
