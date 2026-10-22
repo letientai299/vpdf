@@ -46,6 +46,7 @@ pub struct Observation {
   pub complete: bool,
   pub busy: bool,
   pub missing: usize,
+  pub stand_ins: usize,
 }
 
 impl Observation {
@@ -58,6 +59,7 @@ impl Observation {
       complete: app.complete,
       busy: app.busy(),
       missing: graphics.missing_tiles,
+      stand_ins: graphics.stand_ins,
     }
   }
 }
@@ -139,7 +141,7 @@ impl Trace {
       busy: seen.busy,
       missing: seen.missing,
       blank: seen.missing != 0,
-      stand_ins: 0,
+      stand_ins: seen.stand_ins,
     };
     self.uploaded = seen.uploaded;
     trace.row("frame", flushed, &frame)

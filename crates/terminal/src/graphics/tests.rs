@@ -661,3 +661,113 @@ fn closed_spool_requests_raster() -> Result<()> {
   assert!(encoder.encode(&[255; 3]).is_err());
   Ok(())
 }
+
+#[test]
+fn resizing_keeps_tiles_until_replacements() -> Result<()> {
+  let mut graphics = Graphics::default();
+  let old = tile_sized(&mut graphics, 0, (64, 64))?;
+  let screen =
+    Screen { origin: (12, 3), ..crate::screen::pixels(8, 9, 10, 10) };
+  let mut out = Vec::new();
+  graphics.begin(&mut out)?;
+  assert!(graphics.place_at((0, old), (0.0, 0.0), screen, 2, &mut out)?);
+  graphics.end(&mut out)?;
+  let wanted = TileKey { scale: 2, width: 128, height: 128, ..old };
+  let old_id = graphics.ids[&(0, old)];
+  for origin in [(0.0, 0.0), (-32.0, -32.0)] {
+    out.clear();
+    graphics.begin(&mut out)?;
+    assert!(!graphics.place_at((0, wanted), origin, screen, 2, &mut out)?);
+    graphics.end(&mut out)?;
+    assert_eq!((graphics.missing_tiles, graphics.stand_ins), (0, 1));
+    assert!(!graphics.has(&(0, wanted)));
+    let placements: Vec<_> = commands(&out)
+      .into_iter()
+      .filter(|command| command.get("a").is_some_and(|a| a == "p"))
+      .collect();
+    assert_eq!(placements.len(), 1);
+    assert_eq!(placements[0]["i"], old_id.to_string());
+    assert!(placements[0]["z"].parse::<i32>()? < -2);
+    assert_eq!(placements[0]["c"], "8");
+    assert_eq!(placements[0]["r"], "8");
+  }
+  graphics.upload(
+    0,
+    &Tile {
+      key: wanted,
+      payload: Payload::Encoded(encode(&vec![255; 128 * 128 * 3])?.into()),
+      render_ms: 0.0,
+    },
+    &mut out,
+  )?;
+  out.clear();
+  graphics.begin(&mut out)?;
+  assert!(graphics.place_at((0, wanted), (0.0, 0.0), screen, 2, &mut out)?);
+  graphics.end(&mut out)?;
+  assert_eq!((graphics.missing_tiles, graphics.stand_ins), (0, 0));
+  assert!(deletes(&out).iter().any(|(_, id, _)| *id == old_id));
+  Ok(())
+}
+
+#[test]
+fn fallback_requires_matching_document_geometry() -> Result<()> {
+  let mut graphics = Graphics::default();
+  let old = tile(&mut graphics, 0)?;
+  let wanted = TileKey { scale: 2, width: 128, height: 128, ..old };
+  let crop = vpdf_model::geometry::Crop([10, 0, 0, 0]);
+  for key in [
+    (1, wanted),
+    (0, TileKey { page: PageId(1), ..wanted }),
+    (0, TileKey { rotation: 90, ..wanted }),
+    (0, TileKey { crop, ..wanted }),
+  ] {
+    let mut out = Vec::new();
+    graphics.begin(&mut out)?;
+    assert!(!graphics.place_at(key, (0.0, 0.0), SCREEN, 0, &mut out)?);
+    graphics.end(&mut out)?;
+    assert_eq!((graphics.missing_tiles, graphics.stand_ins), (1, 0));
+    let count = commands(&out).len();
+    assert_eq!(count, 0);
+  }
+  Ok(())
+}
+
+#[test]
+fn prefetched_tiles_cover_pending_scales() -> Result<()> {
+  let mut graphics = Graphics::default();
+  let old =
+    TileKey { scale: 1024, width: 64, height: 64, ..TileKey::default() };
+  graphics.keep(
+    0,
+    Tile {
+      key: old,
+      payload: Payload::Encoded(encode(&vec![255; 64 * 64 * 3])?.into()),
+      render_ms: 0.0,
+    },
+  );
+  assert!(!graphics.contains(&(0, old)));
+  let pending = TileKey { scale: 1040, width: 65, height: 65, ..old };
+  let screen = Screen { origin: (2, 3), ..crate::screen::pixels(7, 8, 10, 10) };
+  let mut out = Vec::new();
+  graphics.begin(&mut out)?;
+  for y in [0, 32] {
+    let key = TileKey { y, height: 32, ..pending };
+    assert!(!graphics.place_at(
+      (0, key),
+      (0.0, y as f32),
+      screen,
+      4,
+      &mut out,
+    )?);
+  }
+  graphics.end(&mut out)?;
+  assert_eq!((graphics.missing_tiles, graphics.stand_ins), (0, 2));
+  assert!(graphics.contains(&(0, old)));
+  assert_eq!(graphics.shown.len(), 1);
+  let uploads = commands(&out)
+    .iter()
+    .filter(|c| c.get("a").is_some_and(|a| a == "t"))
+    .count();
+  assert_eq!(uploads, 1);
+  Ok(())
+}

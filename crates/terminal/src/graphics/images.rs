@@ -20,6 +20,17 @@ impl Graphics {
     self.resident.get(key).is_some() || self.stored.get(key).is_some()
   }
 
+  pub(super) fn kept(&mut self, key: Key) -> Option<Payload> {
+    let payload = self.stored.get(&key)?.clone();
+    if let Payload::Spooled { ref spool, slot } = payload
+      && !spool.holds(slot)
+    {
+      self.stored.remove(&key);
+      return None;
+    }
+    Some(payload)
+  }
+
   /// Deletes a pane's tiles at the next frame.
   pub fn forget(&mut self, pane: u32) {
     let keys: Vec<_> =

@@ -114,6 +114,7 @@ pub struct Graphics {
   pub uploaded: u64,
   /// Visible tile placements unavailable this frame.
   pub missing_tiles: usize,
+  pub stand_ins: usize,
 }
 
 impl Default for Graphics {
@@ -151,6 +152,7 @@ impl Graphics {
       quiet: if profile.report_missing { 1 } else { 2 },
       uploaded: 0,
       missing_tiles: 0,
+      stand_ins: 0,
     }
   }
 
@@ -225,6 +227,7 @@ fn release_images(
 use placement::clip;
 use protocol::{delete, transmit};
 
+mod fallback;
 mod images;
 mod overlays;
 mod placement;

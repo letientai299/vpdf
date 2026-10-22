@@ -1,5 +1,5 @@
 use super::{
-  Bounds, Graphics, Key, PREVIEW, Pair, Payload, Result, Screen, TILE_HEIGHT,
+  Bounds, Graphics, Key, PREVIEW, Pair, Result, Screen, TILE_HEIGHT,
   TILE_WIDTH, Write, encode, fmt, transmit,
 };
 
@@ -10,6 +10,7 @@ impl Graphics {
   /// in cells, which the full clear after a resize erases.
   pub fn begin(&mut self, out: &mut impl Write) -> Result<()> {
     self.missing_tiles = 0;
+    self.stand_ins = 0;
     for id in std::mem::take(&mut self.stale) {
       self.delete_image(out, id)?;
       self.free.push(id);
@@ -102,8 +103,8 @@ impl Graphics {
   ) -> Result<bool> {
     let placed = self.place_tile(key, (x, y), screen, left, out)?;
     if !placed {
-      let rect = Bounds::placed((x, y), size(key));
-      self.missing_tiles += usize::from(clip(rect, screen).is_some());
+      let covered = self.stand_in(key, (x, y), screen, left, out)?;
+      self.missing_tiles += usize::from(!covered);
     }
     Ok(placed)
   }
@@ -121,14 +122,7 @@ impl Graphics {
     let id = match self.resident.get(&key) {
       Some(&id) => id,
       None => {
-        let kept = self.stored.get(&key).cloned();
-        let Some(payload) = kept else { return Ok(false) };
-        if let Payload::Spooled { ref spool, slot } = payload
-          && !spool.holds(slot)
-        {
-          self.stored.remove(&key);
-          return Ok(false);
-        }
+        let Some(payload) = self.kept(key) else { return Ok(false) };
         // Kept tiles upload as they come within a tile of the screen,
         // spreading a scroll's uploads over its frames.
         if !near(rect, screen) {
