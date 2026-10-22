@@ -441,20 +441,71 @@ fn projected_mouse_tracks_glyphs() -> Result<()> {
   Ok(())
 }
 
-#[test]
-fn crop_cancel_and_cache() -> Result<()> {
-  use vpdf_ui::layout::Screen;
+fn crop_app() -> Result<(tempfile::TempDir, Solo)> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("crop.pdf");
   crate::common::text_pdf(&path, &["Body text for crop testing"])?;
-  let screen = Screen {
+  let screen = vpdf_ui::layout::Screen {
     columns: 80,
     rows: 40,
     cell_width: 8,
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut app = Solo::open(&path, "", false, screen)?;
+  let app = Solo::open(&path, "", false, screen)?;
+  Ok((directory, app))
+}
+
+#[test]
+fn crop_commands_set_and_toggle() -> Result<()> {
+  let (_directory, mut app) = crop_app()?;
+  for (command, enabled) in [
+    ("crop off", false),
+    ("crop off", false),
+    ("crop on", true),
+    ("crop on", true),
+    ("crop", false),
+    ("crop", true),
+  ] {
+    app.command(command)?;
+    assert_eq!(!app.layout.crop().is_none(), enabled);
+    assert_eq!(app.crop_scan.active(), enabled);
+  }
+  let error = app.command("crop invalid").unwrap_err();
+  assert_eq!(error.to_string(), "Usage: :crop [on|off]");
+  assert!(app.crop_scan.active());
+  assert!(!app.layout.crop().is_none());
+  app.command("crop off")?;
+  assert!(!app.crop_scan.active());
+  assert!(app.layout.crop().is_none());
+  assert!(!app.crop_updates()?);
+  app.command("crop")?;
+  assert!(app.crop_scan.active());
+  crate::common::crop_loaded(&mut app)?;
+  let crop = app.layout.crop_for(PageId(0));
+  assert!(!crop.is_none());
+  app.command("crop on")?;
+  app.command("crop on")?;
+  assert_eq!(app.layout.crop_for(PageId(0)), crop);
+  assert!(!app.crop_scan.active());
+  app.command("crop")?;
+  assert!(app.layout.crop().is_none());
+  app.command("crop on")?;
+  assert_eq!(app.layout.crop_for(PageId(0)), crop);
+  assert!(!app.crop_scan.active());
+  app.command("crop off")?;
+  app.command("crop off")?;
+  assert!(app.layout.crop().is_none());
+  assert!(!app.crop_scan.active());
+  assert!(!app.crop_updates()?);
+  Ok(())
+}
+
+#[test]
+fn crop_cancel_and_cache() -> Result<()> {
+  let (_directory, mut app) = crop_app()?;
+  let path = app.path.clone();
+  let screen = app.screen;
   let mut saved = vpdf::state::State::default();
   saved.remember(app.saved_entry().unwrap());
   app.toggle_crop()?;

@@ -200,7 +200,8 @@ pub const COMMANDS: &[Spec] = &[
     "toggle the Cursor/Visual line band (default on)",
   )
   .completes(Complete::Switch),
-  spec(Id::Crop, "crop", &[], "", "toggle cropped page margins"),
+  spec(Id::Crop, "crop", &[], "[on|off]", "toggle cropped page margins")
+    .completes(Complete::Switch),
   spec(
     Id::Mouse,
     "mouse",
@@ -385,7 +386,7 @@ mod tests {
 
   #[test]
   fn switches_toggle_and_set() -> crate::Result<()> {
-    for name in ["cursorline", "mouse"] {
+    for name in ["cursorline", "mouse", "crop"] {
       let spec = lookup(name, |_| true).unwrap();
       for current in [false, true] {
         for (argument, expected) in
@@ -424,6 +425,8 @@ mod tests {
       (11, vec!["on".into(), "off".into()])
     );
     assert_eq!(candidates("cu of"), (3, vec!["off".into()]));
+    assert_eq!(candidates("crop ").1, ["on", "off"]);
+    assert_eq!(candidates("crop of"), (5, vec!["off".into()]));
     assert_eq!(candidates("PAS").1, ["password"]);
     assert_eq!(candidates("mouse ").1, ["on", "off"]);
     assert_eq!(candidates("mouse of"), (6, vec!["off".into()]));

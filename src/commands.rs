@@ -316,7 +316,9 @@ impl App {
       Id::QuitAll => self.request = Some(Request::QuitAll),
       Id::Toc => self.open_panel(PanelKind::Outline)?,
       Id::Overview => self.open_overview()?,
-      Id::Crop => self.toggle_crop()?,
+      Id::Crop => {
+        self.set_crop(spec.switch(argument, self.crop_enabled())?)?;
+      }
       Id::Recent => self.open_panel(PanelKind::Recent)?,
       Id::Marks => self.open_panel(PanelKind::Marks)?,
       Id::Jumps => self.open_panel(PanelKind::Jumps)?,

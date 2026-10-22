@@ -271,9 +271,21 @@ impl App {
     Ok(())
   }
 
+  pub(crate) fn crop_enabled(&self) -> bool {
+    self.crop_scan.active() || !self.layout.crop().is_none()
+  }
+
+  pub(crate) fn set_crop(&mut self, enabled: bool) -> Result<()> {
+    if enabled != self.crop_enabled() {
+      self.toggle_crop()?;
+    }
+    Ok(())
+  }
+
   /// `zc`: trims white margins, or restores them.
   pub fn toggle_crop(&mut self) -> Result<()> {
-    if self.crop_scan.clear() || !self.layout.crop().is_none() {
+    if self.crop_enabled() {
+      self.crop_scan.clear();
       self.layout.show_margins();
       self.relayout()?;
       self.reader.notice("Margins shown");
