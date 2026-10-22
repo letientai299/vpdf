@@ -181,9 +181,31 @@ mise exec -- cargo nextest run --locked -p vpdf-ui --lib layout::tests
 ```
 
 The lint task applies automatic fixes before checking for remaining issues;
-inspect its diff before staging. [Prek hooks][hooks] run lint and ordinary tests
-before a commit. If lint changes tracked files, stage the intended fixes and
-retry.
+inspect its diff before staging. `lint:check` checks without applying fixes.
+
+`mise run hooks` installs both Git hooks. The [hook dispatcher][hook-script]
+formats staged Rust, Python, Markdown, and TOML files, then runs tests for
+changed crates and their reverse dependents. Known Python changes run their
+own test groups. Prose changes skip tests; shared fixtures, build inputs, and
+unknown impact select full tests. [Nextest filtersets][nextest-filters] preserve
+downstream unit and integration coverage.
+
+Formatting fixes require restaging. Partially staged files are checked from
+the index without changing their working copies. Formatting and tests use a
+stable snapshot outside the checkout; build artifacts stay outside that
+snapshot. `mise run hook:commit` repeats this staged check.
+Compilation and shared-code changes can lengthen a commit.
+
+Before a push, every distinct pushed commit tip receives full tests and
+read-only lint in its own snapshot, including tips outside the current branch.
+Branch deletions need no tests. Snapshot caches serialize validation within a
+worktree and reuse unchanged files and Cargo artifacts across runs.
+
+Install with `mise run hooks` rather than `prek install`:
+[prek's shim][prek-run] hides unstaged edits before dispatch, preventing
+check-only handling of partially staged files. The [prek configuration][hooks]
+retains manual stage entries; use `mise run hook:commit` for the staged-file
+preservation behavior.
 
 Python uses [Ruff][ruff] for lint fixes, import sorting, and formatting through
 the lint task and commit hook. Run `mise run lint:python` for Python alone.
@@ -569,3 +591,6 @@ a result needs a reproducible release reference.
 
 [scenario-driver]: ../../benches/drive.rs
 [live-driver]: ../../benches/live/drive.py
+[hook-script]: ../../scripts/hooks.py
+[nextest-filters]: https://nexte.st/docs/filtersets/reference/
+[prek-run]: https://prek.j178.dev/running-hooks/
