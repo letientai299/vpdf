@@ -6,6 +6,7 @@
 {taller|shorter|narrower|wider}: taller / shorter / narrower / wider
 {resize pane left|resize pane right|resize pane up|resize pane down}: enter RESIZE; move divider left / right / up / down
 RESIZE: repeat h/j/k/l; <Esc> exits
+Focused sidebar: h/l shrinks/grows; counts set the step
 {tallest|widest|equal sizes}: tallest / widest / equal
 {move pane to far left|move pane to bottom|move pane to top|move pane to far right}: move to far left / bottom / top / right
 {swap with sibling pane|move pane to a new tab}: swap with sibling / move to new tab

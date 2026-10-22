@@ -219,6 +219,51 @@ fn resize_reverses_direction() -> Result<()> {
 }
 
 #[test]
+fn ctrl_r_resizes_sidebar() -> Result<()> {
+  use vpdf_ui::keys::PanelKind;
+  use vpdf_ui::split::Axis;
+
+  let (_root, path) =
+    common::temp_pdf(|path| common::text_pdf(path, &["Sidebar resizing"]))?;
+  let mut session = crate::harness::session(&path, common::cells(121, 40))?;
+  act(&mut session, Action::Window(Window::Split(Axis::Columns)))?;
+  act(&mut session, Action::Panel(PanelKind::Help))?;
+  let screen = session.app().screen;
+  let width = session.app().left;
+  let cursor = session.app().reader.cursor;
+  for (bytes, expected) in [
+    (b"3\x12l".as_slice(), width + 3),
+    (b"l", width + 4),
+    (b"2h", width + 2),
+    (b"jk", width + 2),
+    (b"99999l", screen.columns - 12),
+    (b"h", screen.columns - 13),
+    (b"99999h", 8),
+    (b"l", 9),
+  ] {
+    common::keys(session.app(), bytes)?;
+    session.settle()?;
+    let app = session.app();
+    assert_eq!(app.left, expected, "{bytes:?}");
+    assert_eq!(app.panel_width, Some(expected));
+    assert_eq!(app.layout.screen().columns, screen.columns - expected);
+    assert_eq!(app.screen, screen);
+    assert_eq!(app.reader.cursor, cursor);
+    assert!(app.keys.resizing());
+    assert!(app.panel_focused());
+  }
+  common::keys(session.app(), b"\x1b[27u")?;
+  assert!(!session.app().keys.resizing());
+  assert!(session.app().panel_focused());
+  act(&mut session, Action::LocalFocus)?;
+  common::keys(session.app(), b"\x12l")?;
+  session.settle()?;
+  assert_eq!(session.app().screen.columns, screen.columns + 1);
+  assert_eq!(session.app().left, 9);
+  Ok(())
+}
+
+#[test]
 #[ignore = "requires verified public PDF corpus"]
 fn ctrl_w_splits_moves_and_closes_panes() -> Result<()> {
   use vpdf_ui::split::{Axis, Direction};

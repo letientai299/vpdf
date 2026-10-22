@@ -9,11 +9,13 @@ use vpdf_model::document::Target;
 use vpdf_model::geometry::At;
 use vpdf_model::input::{MouseEvent, MouseEventKind};
 use vpdf_terminal::terminal;
-use vpdf_ui::keys::{Input, PanelKind};
+use vpdf_ui::keys::{Action, Input, PanelKind};
 use vpdf_ui::layout::Screen;
 use vpdf_ui::panel::{
   Activation, Destination, Focus, Follow, Panel, Row, help,
 };
+use vpdf_ui::split::Direction;
+use vpdf_ui::window::Window;
 
 pub struct PanelSession {
   pub view: Panel,
@@ -322,6 +324,19 @@ impl App {
   }
 
   pub fn panel_input(&mut self, input: Input) -> Result<bool> {
+    if let Action::Window(Window::Extend(direction)) = input.action
+      && self.panel_focused()
+      && !self.covered()
+    {
+      let cells = u16::try_from(input.count).unwrap_or(u16::MAX);
+      let width = match direction {
+        Direction::Left => self.left.saturating_sub(cells),
+        Direction::Right => self.left.saturating_add(cells),
+        Direction::Up | Direction::Down => return Ok(true),
+      };
+      self.resize_panel(width)?;
+      return Ok(true);
+    }
     let Some(panel) = &mut self.panel else { return Ok(false) };
     match panel.view.input(input, usize::from(self.screen.rows)) {
       vpdf_ui::panel::Event::Unhandled => return Ok(false),

@@ -133,14 +133,9 @@ impl Session {
       Edge::Panel(id) => {
         let Some(index) = self.tab().index(id) else { return Ok(false) };
         let app = &mut self.tab().panes[index];
-        let left = app.left;
-        app.panel_width = Some(mouse.column.saturating_sub(app.at.column) + 1);
-        app.relayout()?;
-        // Remembers the width shown, not asked.
-        app.panel_width = Some(app.left);
-        if app.left == left {
-          return Ok(false);
-        }
+        return app.resize_panel(
+          mouse.column.saturating_sub(app.at.column).saturating_add(1),
+        );
       }
     }
     Ok(true)

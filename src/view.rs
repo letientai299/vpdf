@@ -87,6 +87,14 @@ impl App {
     reading.view.resize(screen, reading.bar)
   }
 
+  pub(crate) fn resize_panel(&mut self, width: u16) -> Result<bool> {
+    let before = self.left;
+    self.panel_width = Some(width);
+    self.relayout()?;
+    self.panel_width = Some(self.left);
+    Ok(self.left != before)
+  }
+
   pub fn navigation_position(&self) -> Position {
     vpdf_ui::reading::navigation(
       &self.reader,
