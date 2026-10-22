@@ -1,9 +1,10 @@
 //! Prepared sidebar rows, owned by background workers.
 use crate::{Result, app::App};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use vpdf_model::text::PageId;
 use vpdf_pdf::content_cache::{self, Kind};
+use vpdf_pdf::jobs::OneShot;
 use vpdf_ui::keys::PanelKind;
 use vpdf_ui::panel::Row;
 
@@ -50,16 +51,7 @@ enum Load {
   Ready(Vec<Row>),
 }
 
-struct Job {
-  result: mpsc::Receiver<std::result::Result<Vec<Row>, String>>,
-  stop: Arc<AtomicBool>,
-}
-
-impl Drop for Job {
-  fn drop(&mut self) {
-    self.stop.store(true, Ordering::Relaxed);
-  }
-}
+type Job = OneShot<std::result::Result<Vec<Row>, String>>;
 
 #[derive(Default)]
 pub(crate) struct Sidebar {
@@ -97,10 +89,6 @@ impl App {
     if !matches!(self.sidebar_load(request), Load::Deferred | Load::Idle) {
       return;
     }
-    let (send, result) = mpsc::channel();
-    let send = self.wake.sender(send);
-    let stop = Arc::new(AtomicBool::new(false));
-    let stopped = Arc::clone(&stop);
     let (path, password, pages, seeds) = (
       self.path.clone(),
       self.password.clone(),
@@ -108,15 +96,13 @@ impl App {
       self.doc.seeds(),
     );
     let root = content_cache::root();
-    std::thread::spawn(move || {
+    let job = OneShot::spawn(&self.wake, move |stopped| {
       let found =
-        worker::scan(&path, &password, pages, request, seeds, &stopped, root)
+        worker::scan(&path, &password, pages, request, seeds, stopped, root)
           .map_err(|error| error.to_string());
-      if !stopped.load(Ordering::Relaxed) {
-        let _ = send.send(found);
-      }
+      (!stopped.load(Ordering::Relaxed)).then_some(found)
     });
-    *self.sidebar_load(request) = Load::Running(Job { result, stop });
+    *self.sidebar_load(request) = Load::Running(job);
   }
   pub(crate) fn sidebar_rows(&mut self, kind: PanelKind) -> Vec<Row> {
     let Some(request) = self.sidebar_request(kind) else {

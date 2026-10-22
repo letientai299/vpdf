@@ -1,10 +1,9 @@
-use super::Wake;
+use super::{OneShot, Wake};
 use crate::Result;
 use crate::crop::Margins;
 use crate::document::{Document, Handle};
 use crate::text::PageId;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
 const SAMPLES: usize = 24;
@@ -66,7 +65,7 @@ impl Scan {
     let cached = request.doc.margins.as_deref();
     if let Some(job) = &self.job {
       if !job.needed(&nearby, cached) {
-        job.cancel();
+        job.work.cancel();
       }
       return false;
     }
@@ -85,12 +84,12 @@ impl Scan {
   /// A finished scan; its margins also stay with `doc`.
   pub fn poll(&mut self, doc: &mut Document) -> Option<Update> {
     let job = self.job.as_ref()?;
-    let result = match job.result.try_recv() {
+    let result = match job.work.result.try_recv() {
       Ok(result) => result,
       Err(mpsc::TryRecvError::Empty) => return None,
       Err(mpsc::TryRecvError::Disconnected) => Err("Cropping stopped".into()),
     };
-    let canceled = job.canceled();
+    let canceled = job.work.canceled();
     self.clear();
     if canceled {
       return Some(Update::Canceled);
@@ -104,8 +103,7 @@ impl Scan {
 
 /// Margin detection on a separate document; dropping it stops the scan.
 struct Job {
-  result: mpsc::Receiver<std::result::Result<Arc<Margins>, String>>,
-  stop: Arc<AtomicBool>,
+  work: OneShot<std::result::Result<Arc<Margins>, String>>,
   pages: Vec<PageId>,
 }
 
@@ -119,23 +117,19 @@ impl Job {
     let Request { path, password, doc, wake } = request;
     let cached = doc.margins.clone();
     let lists = doc.lists();
-    let (send, result) = mpsc::channel();
-    let send = wake.sender(send);
-    let stop = Arc::new(AtomicBool::new(false));
-    let canceled = Arc::clone(&stop);
     let (path, password) = (path.to_owned(), password.to_owned());
     let wanted = pages.clone();
-    std::thread::spawn(move || {
+    let work = OneShot::spawn(wake, move |canceled| {
       let found = (|| -> Result<Arc<Margins>> {
         let handle = Handle::open(&path, &password)?;
         let mut margins = cached.as_deref().cloned().unwrap_or_default();
-        margins.update(&handle, &pages, &nearby, &lists, &canceled)?;
+        margins.update(&handle, &pages, &nearby, &lists, canceled)?;
         Ok(Arc::new(margins))
       })()
       .map_err(|error| error.to_string());
-      let _ = send.send(found);
+      Some(found)
     });
-    Self { result, stop, pages: wanted }
+    Self { work, pages: wanted }
   }
 }
 
@@ -147,25 +141,12 @@ impl Job {
     });
     target_ready && nearby.iter().any(|page| self.pages.contains(page))
   }
-
-  fn cancel(&self) {
-    self.stop.store(true, Ordering::Relaxed);
-  }
-
-  fn canceled(&self) -> bool {
-    self.stop.load(Ordering::Relaxed)
-  }
-}
-
-impl Drop for Job {
-  fn drop(&mut self) {
-    self.cancel();
-  }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::sync::atomic::{AtomicBool, Ordering};
 
   type Sender = mpsc::Sender<std::result::Result<Arc<Margins>, String>>;
 
@@ -179,8 +160,7 @@ mod tests {
     let (send, result) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let job = Job {
-      result,
-      stop: Arc::clone(&stop),
+      work: OneShot { result, stop: Arc::clone(&stop) },
       pages: vec![PageId(2), PageId(3)],
     };
     (Scan { job: Some(job) }, send, stop)

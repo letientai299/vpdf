@@ -1,4 +1,5 @@
 //! Background jobs and how their results reach the event loop.
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
 pub mod capture;
@@ -70,6 +71,46 @@ impl<S> WakingSender<S> {
   }
 }
 
+/// A cancellable worker with optional delivery.
+pub struct OneShot<T> {
+  pub result: mpsc::Receiver<T>,
+  stop: Arc<AtomicBool>,
+}
+
+impl<T: Send + 'static> OneShot<T> {
+  pub fn spawn(
+    wake: &Wake,
+    work: impl FnOnce(&AtomicBool) -> Option<T> + Send + 'static,
+  ) -> Self {
+    let (send, receive) = mpsc::channel();
+    let send = wake.sender(send);
+    let stop = Arc::new(AtomicBool::new(false));
+    let stopped = Arc::clone(&stop);
+    std::thread::spawn(move || {
+      if let Some(result) = work(&stopped) {
+        let _ = send.send(result);
+      }
+    });
+    Self { result: receive, stop }
+  }
+}
+
+impl<T> OneShot<T> {
+  pub fn cancel(&self) {
+    self.stop.store(true, Ordering::Relaxed);
+  }
+
+  pub fn canceled(&self) -> bool {
+    self.stop.load(Ordering::Relaxed)
+  }
+}
+
+impl<T> Drop for OneShot<T> {
+  fn drop(&mut self) {
+    self.cancel();
+  }
+}
+
 /// Shared CPU helper limits.
 #[derive(Clone, Copy)]
 pub struct Config {
@@ -97,19 +138,19 @@ impl Default for Config {
 pub struct Activity(Arc<ActivityState>);
 
 struct ActivityState {
-  active: std::sync::atomic::AtomicBool,
+  active: AtomicBool,
   wake: std::sync::Mutex<Option<Wake>>,
 }
 
 impl Activity {
   pub fn new(active: bool) -> Self {
     Self(Arc::new(ActivityState {
-      active: std::sync::atomic::AtomicBool::new(active),
+      active: AtomicBool::new(active),
       wake: std::sync::Mutex::new(None),
     }))
   }
   pub fn active(&self) -> bool {
-    self.0.active.load(std::sync::atomic::Ordering::Acquire)
+    self.0.active.load(Ordering::Acquire)
   }
   pub fn observe(&self, wake: &Wake) {
     if let Ok(mut slot) = self.0.wake.lock() {
@@ -120,7 +161,7 @@ impl Activity {
     Arc::ptr_eq(&self.0, &other.0)
   }
   pub(super) fn start(&self) {
-    self.0.active.store(true, std::sync::atomic::Ordering::Release);
+    self.0.active.store(true, Ordering::Release);
   }
   pub(super) fn guard(&self) -> ActivityGuard {
     ActivityGuard(self.clone())
@@ -131,7 +172,7 @@ pub(super) struct ActivityGuard(Activity);
 
 impl Drop for ActivityGuard {
   fn drop(&mut self) {
-    self.0.0.active.store(false, std::sync::atomic::Ordering::Release);
+    self.0.0.active.store(false, Ordering::Release);
     if let Ok(wake) = self.0.0.wake.lock()
       && let Some(wake) = &*wake
     {
@@ -143,7 +184,48 @@ impl Drop for ActivityGuard {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use std::sync::atomic::{AtomicUsize, Ordering};
+  use std::sync::atomic::AtomicUsize;
+  use std::time::Duration;
+
+  #[test]
+  fn one_shot_lifecycle() {
+    for deliver in [false, true] {
+      let (wake, woken) = crate::fixtures::wake();
+      let job = OneShot::spawn(&wake, move |_| deliver.then_some(42));
+      if deliver {
+        woken.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(job.result.try_recv().unwrap(), 42);
+      } else {
+        assert!(matches!(
+          job.result.recv_timeout(Duration::from_secs(5)),
+          Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+        assert!(woken.try_recv().is_err());
+      }
+    }
+  }
+
+  #[test]
+  fn cancel_drop_detaches() {
+    for cancel_first in [false, true] {
+      let (release, blocked) = mpsc::channel();
+      let (wake, woken) = crate::fixtures::wake();
+      let job = OneShot::spawn(&wake, move |stop| {
+        blocked.recv().unwrap();
+        assert!(stop.load(Ordering::Relaxed));
+        Some(())
+      });
+      if cancel_first {
+        job.cancel();
+        assert!(job.canceled());
+      }
+      let stop = Arc::clone(&job.stop);
+      drop(job);
+      assert!(stop.load(Ordering::Relaxed));
+      release.send(()).unwrap();
+      woken.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
+  }
 
   #[test]
   fn sends_queue_before_waking() {

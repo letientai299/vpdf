@@ -1,5 +1,7 @@
 use super::*;
 use crate::SeedReader;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 use vpdf_model::document::Target;
 use vpdf_model::text::{PageId, Text};
@@ -44,10 +46,16 @@ fn opening_is_cancelable() -> Result<()> {
   app.open_panel(PanelKind::Links)?;
   assert!(app.sidebar_loading(PanelKind::Links));
   assert!(app.panel.as_ref().unwrap().view.rows().is_empty());
-  let Load::Running(job) = &app.sidebar.links else { panic!("running") };
-  let stopped = Arc::clone(&job.stop);
+  let (send, stopped) = mpsc::channel();
+  app.sidebar.links = Load::Running(OneShot::spawn(&app.wake, move |stop| {
+    while !stop.load(Ordering::Relaxed) {
+      std::thread::yield_now();
+    }
+    send.send(stop.load(Ordering::Relaxed)).unwrap();
+    None
+  }));
   app.cancel_sidebars();
-  assert!(stopped.load(Ordering::Relaxed));
+  assert!(stopped.recv_timeout(Duration::from_secs(5))?);
   app.prepare_sidebars();
   assert!(!app.sidebar_pending(PanelKind::Links));
   assert!(!app.sidebar_pending(PanelKind::Annotations));

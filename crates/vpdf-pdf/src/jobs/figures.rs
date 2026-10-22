@@ -1,20 +1,17 @@
-use super::Wake;
+use super::{OneShot, Wake};
 use crate::content_cache::{self, FigureCache};
 use crate::document::{Handle, extract_list};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Mutex};
 use vpdf_model::cache::Cache;
 use vpdf_model::document::Figure;
 use vpdf_model::text::{PageId, Text};
 
 pub type Entries = Vec<(PageId, Figure)>;
 
-pub struct Job {
-  pub result: mpsc::Receiver<Result<Entries, String>>,
-  stop: Arc<AtomicBool>,
-}
+pub type Job = OneShot<Result<Entries, String>>;
 
 impl Job {
   pub fn start(
@@ -35,24 +32,12 @@ impl Job {
     wake: &Wake,
     root: Option<PathBuf>,
   ) -> Self {
-    let (send, result) = mpsc::channel();
-    let send = wake.sender(send);
-    let stop = Arc::new(AtomicBool::new(false));
-    let stopped = Arc::clone(&stop);
     let (path, password) = (path.to_owned(), password.to_owned());
-    std::thread::spawn(move || {
-      let found = scan(&path, &password, pages, seeds, &stopped, root);
-      if !stopped.load(Ordering::Relaxed) {
-        let _ = send.send(found.map_err(|error| error.to_string()));
-      }
-    });
-    Self { result, stop }
-  }
-}
-
-impl Drop for Job {
-  fn drop(&mut self) {
-    self.stop.store(true, Ordering::Relaxed);
+    Self::spawn(wake, move |stopped| {
+      let found = scan(&path, &password, pages, seeds, stopped, root);
+      (!stopped.load(Ordering::Relaxed))
+        .then(|| found.map_err(|error| error.to_string()))
+    })
   }
 }
 

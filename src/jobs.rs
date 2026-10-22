@@ -68,7 +68,7 @@ impl App {
   pub fn ocr_updates(&mut self) -> Result<bool> {
     self.defer_ocr();
     let Some(job) = &self.ocr else { return Ok(false) };
-    let result = match job.result.try_recv() {
+    let result = match job.work.result.try_recv() {
       Ok(result) => result,
       Err(mpsc::TryRecvError::Empty) => return Ok(false),
       Err(mpsc::TryRecvError::Disconnected) => Err("OCR worker stopped".into()),

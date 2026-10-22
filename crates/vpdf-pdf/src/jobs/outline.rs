@@ -5,14 +5,13 @@
 //! numbering (`3.2 Title`) at a paragraph start. Repeated lines at the
 //! page edges (running heads, folios) are ignored.
 
-use super::Wake;
+use super::{OneShot, Wake};
 use crate::content_cache::{self, OutlineCache};
 use crate::document::{Handle, Heading, Target};
 use crate::text::{Line, PageId, Text};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::atomic::Ordering;
 
 /// Larger than body text by this factor counts as a heading size.
 const LARGER: f32 = 1.15;
@@ -173,16 +172,7 @@ const PAGES: usize = 3000;
 
 /// Outline loading off the input thread; dropping it ends the scan, as a
 /// reload does before starting another. The flag marks an inferred one.
-pub struct OutlineJob {
-  pub result: mpsc::Receiver<(Vec<Heading>, bool)>,
-  stop: Arc<AtomicBool>,
-}
-
-impl Drop for OutlineJob {
-  fn drop(&mut self) {
-    self.stop.store(true, Ordering::Relaxed);
-  }
-}
+pub type OutlineJob = OneShot<(Vec<Heading>, bool)>;
 
 /// Reads the authored outline on a separate document, or infers one when
 /// there is none.
@@ -196,12 +186,8 @@ fn spawn_at(
   wake: &Wake,
   root: Option<PathBuf>,
 ) -> OutlineJob {
-  let (send, result) = mpsc::channel();
-  let send = wake.sender(send);
-  let stop = Arc::new(AtomicBool::new(false));
-  let stopped = Arc::clone(&stop);
   let (path, password) = (path.to_owned(), password.to_owned());
-  std::thread::spawn(move || {
+  OneShot::spawn(wake, move |stopped| {
     let cache = root.and_then(|root| {
       OutlineCache::open(root, &path, &password, || {
         crate::scheduling::yield_to_views(|| stopped.load(Ordering::Relaxed))
@@ -209,25 +195,20 @@ fn spawn_at(
     });
     let found = cache.as_ref().and_then(OutlineCache::read);
     if stopped.load(Ordering::Relaxed) {
-      return;
+      return None;
     }
     if let Some(found) = found {
-      let _ = send.send(found);
-      return;
+      return Some(found);
     }
     let Ok(doc) = Handle::open(&path, &password) else {
-      let _ = send.send((Vec::new(), false));
-      return;
+      return Some((Vec::new(), false));
     };
     let pages = (0..doc.pages.min(PAGES)).map(|page| {
       crate::scheduling::yield_to_views(|| stopped.load(Ordering::Relaxed))
         .then(|| doc.text(PageId(page)))
     });
-    if let Some(outline) = load_outline(doc.outline(), pages, cache.as_ref()) {
-      let _ = send.send(outline);
-    }
-  });
-  OutlineJob { result, stop }
+    load_outline(doc.outline(), pages, cache.as_ref())
+  })
 }
 
 fn load_outline(
@@ -288,6 +269,7 @@ fn depths(candidates: Vec<Candidate>, body: f32) -> Vec<Heading> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::sync::{Arc, mpsc};
 
   #[test]
   fn results_wake_the_loop() -> crate::Result<()> {

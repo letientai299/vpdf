@@ -1249,12 +1249,22 @@ fn real_ocr_and_cancel() -> Result<()> {
   session.start_at(Some(10))?;
   let app = session.app();
   app.command("ocr")?;
-  let result =
-    app.ocr.take().unwrap().result.recv_timeout(Duration::from_secs(30))?;
+  let result = app
+    .ocr
+    .take()
+    .unwrap()
+    .work
+    .result
+    .recv_timeout(Duration::from_secs(30))?;
   assert!(result.unwrap_err().contains("vpdf_missing_language"));
   app.command("ocr eng")?;
-  let result =
-    app.ocr.take().unwrap().result.recv_timeout(Duration::from_secs(30))?;
+  let result = app
+    .ocr
+    .take()
+    .unwrap()
+    .work
+    .result
+    .recv_timeout(Duration::from_secs(30))?;
   assert!(result.unwrap().unwrap().plain().contains("computing devices"));
   let bounds = app.doc.pages[9].bounds;
   app.select_region(PageId(9), bounds)?;

@@ -1,10 +1,10 @@
-use super::Wake;
+use super::{OneShot, Wake};
 use crate::Result;
 use crate::document::Document;
 use crate::raster::Capture;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::mpsc;
 use vpdf_model::text::{Bounds, PageId};
 
 /// A page region to rasterize.
@@ -18,8 +18,7 @@ pub struct Request {
 
 /// A region capture on its own document; dropping it cancels.
 pub struct Job<T> {
-  cancel: Arc<AtomicBool>,
-  result: mpsc::Receiver<std::result::Result<T, String>>,
+  work: OneShot<std::result::Result<T, String>>,
 }
 
 impl<T: Send + 'static> Job<T> {
@@ -30,35 +29,25 @@ impl<T: Send + 'static> Job<T> {
     wake: &Wake,
     finish: impl FnOnce(Capture, &AtomicBool) -> Result<T> + Send + 'static,
   ) -> Self {
-    let cancel = Arc::new(AtomicBool::new(false));
-    let stop = Arc::clone(&cancel);
-    let (send, result) = mpsc::channel();
-    let send = wake.sender(send);
-    std::thread::spawn(move || {
+    let work = OneShot::spawn(wake, move |stop| {
       let Request { path, password, page, bounds, rotation } = request;
-      let result = capture(&path, &password, page, bounds, rotation, &stop)
-        .and_then(|capture| finish(capture, &stop))
+      let result = capture(&path, &password, page, bounds, rotation, stop)
+        .and_then(|capture| finish(capture, stop))
         .map_err(|error| error.to_string());
-      let _ = send.send(result);
+      Some(result)
     });
-    Self { cancel, result }
+    Self { work }
   }
 
   /// The finished result, if any.
   pub fn poll(&self) -> Option<std::result::Result<T, String>> {
-    match self.result.try_recv() {
+    match self.work.result.try_recv() {
       Ok(result) => Some(result),
       Err(mpsc::TryRecvError::Empty) => None,
       Err(mpsc::TryRecvError::Disconnected) => {
         Some(Err("Region worker disconnected".into()))
       }
     }
-  }
-}
-
-impl<T> Drop for Job<T> {
-  fn drop(&mut self) {
-    self.cancel.store(true, Ordering::Relaxed);
   }
 }
 
@@ -100,6 +89,7 @@ pub fn recognize(
 mod tests {
   use super::*;
   use anyhow::Context;
+  use std::sync::Arc;
   use std::time::Duration;
 
   fn request(path: PathBuf) -> Request {
@@ -144,7 +134,7 @@ mod tests {
     assert_eq!(result.err().unwrap().to_string(), "Region operation cancelled");
     let (_send, result) = mpsc::channel::<std::result::Result<(), String>>();
     let cancel = Arc::new(AtomicBool::new(false));
-    drop(Job { cancel: Arc::clone(&cancel), result });
+    drop(Job { work: OneShot { result, stop: Arc::clone(&cancel) } });
     assert!(cancel.load(Ordering::Relaxed));
     Ok(())
   }

@@ -130,6 +130,7 @@ fn real_ocr_and_cancel() -> Result<()> {
   let (wake, woken) = counted();
   let job = OcrJob::start(&root.join("ocr.pdf"), "", PageId(0), "eng", &wake);
   let text = job
+    .work
     .result
     .recv_timeout(Duration::from_secs(60))?
     .map_err(anyhow::Error::msg)?
@@ -139,10 +140,13 @@ fn real_ocr_and_cancel() -> Result<()> {
   let cancelled =
     OcrJob::start(&root.join("ocr.pdf"), "", PageId(0), "eng", &wake);
   cancelled.cancel();
-  assert!(cancelled.result.recv_timeout(Duration::from_secs(10))?.is_err());
+  assert!(
+    cancelled.work.result.recv_timeout(Duration::from_secs(10))?.is_err()
+  );
   assert!(woke(&woken, 2), "cancellation wakes too");
   let scan = OcrJob::start(&root.join("scan.pdf"), "", PageId(9), "eng", &wake);
   let text = scan
+    .work
     .result
     .recv_timeout(Duration::from_secs(60))?
     .map_err(anyhow::Error::msg)?

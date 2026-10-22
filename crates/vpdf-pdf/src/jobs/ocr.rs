@@ -1,5 +1,5 @@
 mod skew;
-use super::Wake;
+use super::{OneShot, Wake};
 use crate::Result;
 use crate::content_cache::{self, Alias, Version};
 use crate::document::{GLYPH_LIMIT, Handle, MIB};
@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock, mpsc};
+use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 use vpdf_model::geometry::page_matrix;
@@ -30,8 +30,7 @@ enum Request {
 pub struct OcrJob {
   request: Request,
   pub page: PageId,
-  cancel: Arc<AtomicBool>,
-  pub result: mpsc::Receiver<std::result::Result<Option<Arc<Text>>, String>>,
+  pub work: OneShot<std::result::Result<Option<Arc<Text>>, String>>,
 }
 
 impl OcrJob {
@@ -67,37 +66,27 @@ impl OcrJob {
     wake: &Wake,
     request: Request,
   ) -> Self {
-    let cancel = Arc::new(AtomicBool::new(false));
-    let stop = Arc::clone(&cancel);
-    let (send, result) = mpsc::channel();
-    let send = wake.sender(send);
     let path = path.to_owned();
     let password = password.to_owned();
     let language = language.to_owned();
-    thread::spawn(move || {
+    let work = OneShot::spawn(wake, move |stop| {
       let result = match request {
         Request::Explicit => {
-          recognize(&path, &password, page, &language, &stop).map(Some)
+          recognize(&path, &password, page, &language, stop).map(Some)
         }
         Request::Automatic => {
-          automatic(&path, &password, page, &language, &stop)
+          automatic(&path, &password, page, &language, stop)
         }
       };
       let result =
         result.map(|text| text.map(Arc::new)).map_err(|e| e.to_string());
-      let _ = send.send(result);
+      Some(result)
     });
-    Self { request, page, cancel, result }
+    Self { request, page, work }
   }
 
   pub fn cancel(&self) {
-    self.cancel.store(true, Ordering::Relaxed);
-  }
-}
-
-impl Drop for OcrJob {
-  fn drop(&mut self) {
-    self.cancel();
+    self.work.cancel();
   }
 }
 
@@ -426,6 +415,7 @@ mod tests {
   use super::*;
   use std::cell::Cell;
   use std::os::unix::fs::MetadataExt;
+  use std::sync::mpsc;
 
   #[test]
   #[ignore = "requires corpus and Tesseract"]
@@ -508,11 +498,11 @@ mod tests {
       &Wake::none(),
     );
     assert!(matches!(
-      job.result.recv_timeout(Duration::from_millis(30)),
+      job.work.result.recv_timeout(Duration::from_millis(30)),
       Err(mpsc::RecvTimeoutError::Timeout)
     ));
     job.cancel();
-    let result = job.result.recv_timeout(Duration::from_secs(5))?;
+    let result = job.work.result.recv_timeout(Duration::from_secs(5))?;
     assert!(result.unwrap_err().contains("OCR cancelled"));
     drop(urgent);
     Ok(())
