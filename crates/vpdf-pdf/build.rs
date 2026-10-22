@@ -63,7 +63,10 @@ fn main() {
     "crates/vpdf-model/src/image.rs",
   ]);
   println!("cargo::rustc-env=VPDF_RECENT_CODE={recent:016x}");
-  let outline = code(&["crates/vpdf-pdf/src/jobs/outline.rs"]);
+  let outline = code(&[
+    "crates/vpdf-pdf/src/jobs/outline.rs",
+    "crates/vpdf-pdf/src/content_cache/outline.rs",
+  ]);
   println!("cargo::rustc-env=VPDF_OUTLINE_CODE={outline:016x}");
   let code = code(&[
     "crates/vpdf-pdf/src/fonts.rs",
