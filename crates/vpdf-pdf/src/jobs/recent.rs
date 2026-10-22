@@ -1,5 +1,6 @@
 use super::{Wake, WakingSender};
 use crate::Result;
+use crate::content_cache::{self, Kind, Snapshot};
 use crate::document::Handle;
 use mupdf::IRect;
 use std::path::PathBuf;
@@ -56,6 +57,71 @@ fn work(
 }
 
 fn read(ask: &FactsRequest, password: &str) -> Result<Facts> {
+  read_at(ask, password, content_cache::root())
+}
+
+fn read_at(
+  ask: &FactsRequest,
+  password: &str,
+  root: Option<PathBuf>,
+) -> Result<Facts> {
+  let key = format!(
+    "{}:{}",
+    env!("VPDF_RECENT_CODE"),
+    serde_json::to_string(&(ask.cursor, ask.rotation, ask.fit))?
+  );
+  let cache = root.and_then(|root| {
+    Snapshot::open(root, &ask.path, password, Kind::Recent, &key, || true)
+  });
+  if let Some(facts) = cache.as_ref().and_then(recall) {
+    return Ok(facts);
+  }
+  let facts = extract(ask, password)?;
+  if let Some(cache) = cache {
+    let size =
+      facts.thumb.as_ref().map(|thumb| (thumb.width(), thumb.height()));
+    let header = serde_json::to_vec(&(
+      facts.pages,
+      facts.bytes,
+      &facts.metadata,
+      &facts.section,
+      size,
+    ))?;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(header.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&header);
+    if let Some(thumb) = &facts.thumb {
+      bytes.extend_from_slice(thumb.pixels());
+    }
+    let _ = cache.write(&bytes);
+  }
+  Ok(facts)
+}
+
+type Header =
+  (usize, u64, Vec<(String, String)>, Option<String>, Option<(i32, i32)>);
+
+fn recall(cache: &Snapshot) -> Option<Facts> {
+  let bytes = cache.read()?;
+  let length = u32::from_le_bytes(*bytes.first_chunk::<4>()?) as usize;
+  let header = bytes.get(4..4usize.checked_add(length)?)?;
+  let (pages, size, metadata, section, dimensions): Header =
+    serde_json::from_slice(header).ok()?;
+  if pages == 0 {
+    return None;
+  }
+  let pixels = bytes.get(4 + length..)?;
+  let thumb = match dimensions {
+    Some((width, height)) => {
+      Some(Thumbnail::new(width, height, pixels.to_vec())?)
+    }
+    None if pixels.is_empty() => None,
+    None => return None,
+  };
+  Some(Facts { pages, bytes: size, metadata, section, thumb })
+}
+
+fn extract(ask: &FactsRequest, password: &str) -> Result<Facts> {
   let handle = Handle::open(&ask.path, password)?;
   let thumb =
     ask.fit.map(|fit| thumbnail(&handle, fit, ask.rotation)).transpose()?;
@@ -109,4 +175,104 @@ fn thumbnail(
   let pixmap = crate::raster::draw(&list, &matrix, area)?;
   Thumbnail::new(pixels_wide, pixels_high, pixmap.samples().to_vec())
     .ok_or_else(|| anyhow::anyhow!("Invalid thumbnail pixels"))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::text::Position;
+
+  fn request(path: PathBuf) -> FactsRequest {
+    FactsRequest {
+      path,
+      cursor: Position::default(),
+      rotation: 0,
+      fit: Some((120, 160)),
+    }
+  }
+
+  #[test]
+  fn previews_roundtrip_and_invalidate() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let source = root.path().join("source.pdf");
+    crate::fixtures::pdf(&source, &["first page", "second page"], "")?;
+    let mut ask = request(source.clone());
+    let baseline = read_at(&ask, "", None)?;
+    let cold = read_at(&ask, "", Some(root.path().into()))?;
+    let warm = read_at(&ask, "", Some(root.path().into()))?;
+    assert_eq!(baseline.pages, cold.pages);
+    assert_eq!(cold.metadata, warm.metadata);
+    assert_eq!(baseline.thumb, cold.thumb);
+    assert_eq!(cold.thumb, warm.thumb);
+    ask.rotation = 90;
+    let rotated = read_at(&ask, "", Some(root.path().into()))?;
+    assert_ne!(rotated.thumb, warm.thumb);
+    ask.fit = None;
+    assert!(read_at(&ask, "", Some(root.path().into()))?.thumb.is_none());
+    let files: Vec<_> = std::fs::read_dir(root.path())?
+      .flatten()
+      .map(|e| e.path())
+      .filter(|p| p.extension().is_some_and(|e| e == "recent"))
+      .collect();
+    assert_eq!(files.len(), 3);
+    for path in files {
+      std::fs::write(path, b"damaged")?;
+    }
+    ask.fit = Some((120, 160));
+    assert_eq!(
+      read_at(&ask, "", Some(root.path().into()))?.thumb,
+      rotated.thumb
+    );
+    let replacement = root.path().join("replacement.pdf");
+    crate::fixtures::pdf(&replacement, &["replacement"], "")?;
+    std::fs::rename(replacement, source)?;
+    assert_eq!(read_at(&ask, "", Some(root.path().into()))?.pages, 1);
+    Ok(())
+  }
+
+  #[test]
+  fn preview_hit_skips_native() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let source = root.path().join("source.pdf");
+    std::fs::write(&source, b"not a native PDF")?;
+    let ask = request(source);
+    let key = format!(
+      "{}:{}",
+      env!("VPDF_RECENT_CODE"),
+      serde_json::to_string(&(ask.cursor, ask.rotation, ask.fit))?
+    );
+    let cache = Snapshot::open(
+      root.path().into(),
+      &ask.path,
+      "",
+      Kind::Recent,
+      &key,
+      || true,
+    )
+    .unwrap();
+    let header = serde_json::to_vec(&(
+      1usize,
+      16u64,
+      Vec::<(String, String)>::new(),
+      Some("section"),
+      Some((1i32, 1i32)),
+    ))?;
+    let mut bytes = (header.len() as u32).to_le_bytes().to_vec();
+    bytes.extend_from_slice(&header);
+    bytes.extend_from_slice(&[1, 2, 3]);
+    cache.write(&bytes)?;
+    let facts = read_at(&ask, "", Some(root.path().into()))?;
+    assert_eq!(facts.thumb.unwrap().pixels().as_slice(), &[1, 2, 3]);
+    for variant in [
+      FactsRequest {
+        cursor: Position { page: PageId(1), ..Position::default() },
+        ..request(ask.path.clone())
+      },
+      FactsRequest { fit: None, ..request(ask.path.clone()) },
+    ] {
+      assert!(read_at(&variant, "", Some(root.path().into())).is_err());
+    }
+    assert!(read_at(&ask, "secret", Some(root.path().into())).is_err());
+    Ok(())
+  }
 }

@@ -30,6 +30,7 @@ mod region;
 pub mod scenario;
 mod scrollbar;
 pub mod session;
+mod sidebar;
 pub mod solo;
 pub mod state;
 mod status;

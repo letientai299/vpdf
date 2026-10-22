@@ -347,6 +347,7 @@ fn wrapped_links_tint_whole() -> Result<()> {
       session.app().overlays.close_hints().map_or(0, |h| h.items().len());
     assert_eq!(hints, 2, "text={text_mode}");
     session.app().open_panel(vpdf_ui::keys::PanelKind::Links)?;
+    common::sidebar_loaded(session.app(), vpdf_ui::keys::PanelKind::Links)?;
     let rows = &session.app().panel.as_ref().expect("gl").view.rows();
     let labels: Vec<_> = rows.iter().map(|row| row.label.as_str()).collect();
     assert_eq!(labels, [ADDRESS, ADDRESS], "text={text_mode}");

@@ -59,6 +59,22 @@ pub fn outline_loaded(app: &mut App) -> Result<()> {
   Ok(())
 }
 
+pub fn sidebar_loaded(
+  app: &mut App,
+  kind: vpdf_ui::keys::PanelKind,
+) -> Result<()> {
+  let start = Instant::now();
+  while app.sidebar_pending(kind) {
+    app.sidebar_updates()?;
+    anyhow::ensure!(
+      start.elapsed() < Duration::from_secs(10),
+      "Sidebar timeout"
+    );
+    std::thread::sleep(Duration::from_millis(1));
+  }
+  Ok(())
+}
+
 pub fn search_loaded(app: &mut App) -> Result<()> {
   let started = Instant::now();
   while !matches!(app.search.phase(), vpdf_ui::find::Phase::Complete) {

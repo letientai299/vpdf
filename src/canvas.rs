@@ -39,7 +39,7 @@ impl App {
     }
     // A tile that never comes must not hold back deferred work.
     if failed {
-      self.resume_outline();
+      self.prepare_sidebars();
     }
     changed || failed
   }

@@ -127,9 +127,8 @@ impl App {
           .collect(),
         _ => Vec::new(),
       },
-      PanelKind::Links => self.link_rows()?,
+      PanelKind::Links | PanelKind::Annotations => self.sidebar_rows(kind),
       PanelKind::Jumps => self.jump_rows(),
-      PanelKind::Annotations => self.annotation_rows()?,
       PanelKind::Help => help(|program| self.command_available(program))
         .iter()
         .map(|line| Row::parse(line))
@@ -215,6 +214,7 @@ impl App {
       }
       return self.relayout();
     }
+    self.want_sidebar(kind);
     if kind == PanelKind::Outline {
       self.want_outline();
     }
@@ -222,7 +222,10 @@ impl App {
       self.want_figures();
     }
     if self.panel.as_ref().is_some_and(|panel| panel.view.kind() == kind) {
-      if matches!(kind, PanelKind::Links | PanelKind::Figures) {
+      if matches!(
+        kind,
+        PanelKind::Links | PanelKind::Figures | PanelKind::Annotations
+      ) {
         self.refill_panel(kind)?;
       }
       if !self.panel_focused() {
@@ -273,8 +276,9 @@ impl App {
   }
 
   pub(crate) fn panel_note(&self, kind: PanelKind) -> &'static str {
-    if kind == PanelKind::Figures
-      && matches!(self.figures, crate::jobs::Figures::Running(_))
+    if self.sidebar_loading(kind)
+      || kind == PanelKind::Figures
+        && matches!(self.figures, crate::jobs::Figures::Running(_))
     {
       "loading"
     } else if kind == PanelKind::Outline && self.doc.inferred {

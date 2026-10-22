@@ -5,7 +5,6 @@ use super::{App, Duration, Instant, Session};
 const CHECK: Duration = Duration::from_millis(250);
 /// Fallback file-watch interval.
 const WATCH: Duration = Duration::from_secs(2);
-const FIGURES: Duration = Duration::from_millis(500);
 
 /// Reloads changed files in the active tab.
 fn watch(session: &mut Session, force: bool, now: Instant) -> bool {
@@ -52,11 +51,7 @@ impl Chores {
       changed || self.touched > self.checked,
       now,
     );
-    if session.figures_due() {
-      wait.min(FIGURES.saturating_sub(now.duration_since(self.touched)))
-    } else {
-      wait
-    }
+    if session.sidebars_due() { Duration::ZERO } else { wait }
   }
 
   pub(super) fn watch_due(&self, now: Instant) -> bool {
@@ -87,22 +82,17 @@ impl Chores {
       .filter(|(index, _)| *index != active)
       .flat_map(|(_, tab)| &mut tab.panes)
     {
-      if let Err(error) = app.figure_updates() {
+      if let Err(error) = app
+        .outline_updates()
+        .and_then(|_| app.figure_updates())
+        .and_then(|_| app.sidebar_updates())
+      {
         app.error = Some(error.to_string());
       }
     }
-    if now.duration_since(self.touched) >= FIGURES && session.figures_due() {
-      let count = session.tabs.len();
-      for offset in 0..count {
-        let index = (session.active + offset) % count;
-        if let Some(app) = session.tabs[index]
-          .panes
-          .iter_mut()
-          .find(|app| matches!(app.figures, crate::jobs::Figures::Deferred))
-        {
-          app.want_figures();
-          break;
-        }
+    if session.sidebars_due() {
+      for app in session.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+        app.prepare_sidebars();
       }
     }
     // Exits and hangups save remaining changes.
@@ -163,23 +153,14 @@ pub(super) fn idle(
 }
 
 impl Session {
-  fn figures_due(&self) -> bool {
+  fn sidebars_due(&self) -> bool {
     self.sight != super::Sight::Hidden
       && !self.pointer.holding()
       && self.tabs[self.active]
         .panes
         .iter()
-        .all(|app| app.complete && !app.images_stale && !app.busy())
-      && !self
-        .tabs
-        .iter()
-        .flat_map(|tab| &tab.panes)
-        .any(|app| matches!(app.figures, crate::jobs::Figures::Running(_)))
-      && self
-        .tabs
-        .iter()
-        .flat_map(|tab| &tab.panes)
-        .any(|app| matches!(app.figures, crate::jobs::Figures::Deferred))
+        .all(|app| app.complete && !app.images_stale)
+      && self.tabs.iter().flat_map(|tab| &tab.panes).any(App::sidebars_deferred)
   }
 
   pub(super) fn maintain(&mut self, now: Instant) -> bool {
@@ -240,32 +221,36 @@ mod tests {
   }
 
   #[test]
-  fn idle_figures_respect_cancel() -> Result<()> {
+  fn first_view_respects_cancel() -> Result<()> {
     let root = tempfile::tempdir()?;
     let mut session = opened(root.path())?;
     let start = Instant::now();
     let mut chores = Chores::new(start);
-    session.app().outline_load = crate::jobs::Loading::Loaded;
-    chores.run(&mut session, start + FIGURES);
+    chores.run(&mut session, start);
     assert!(matches!(session.app().figures, crate::jobs::Figures::Deferred));
     session.app().complete = true;
-    assert_eq!(chores.wait(&mut session, start, false), FIGURES);
-    let touched = start + Duration::from_millis(400);
-    chores.touch(touched);
-    chores.run(&mut session, start + FIGURES);
-    assert!(matches!(session.app().figures, crate::jobs::Figures::Deferred));
-    chores.run(&mut session, touched + FIGURES);
+    session.app().start_deferred();
+    assert!(session.app().outline_pending());
     assert!(matches!(session.app().figures, crate::jobs::Figures::Running(_)));
-    session.app().cancel_figures();
-    chores.run(&mut session, touched + FIGURES * 2);
+    assert!(
+      session.app().sidebar_loading(vpdf_ui::keys::PanelKind::Annotations)
+    );
+    assert!(session.app().sidebar_loading(vpdf_ui::keys::PanelKind::Links));
+    session.app().command("cancel")?;
+    session.app().start_deferred();
+    chores.run(&mut session, start);
     assert!(matches!(session.app().figures, crate::jobs::Figures::Idle));
+    assert!(
+      !session.app().sidebar_pending(vpdf_ui::keys::PanelKind::Annotations)
+    );
+    assert!(!session.app().sidebar_pending(vpdf_ui::keys::PanelKind::Links));
     session.app().want_figures();
     assert!(matches!(session.app().figures, crate::jobs::Figures::Running(_)));
     Ok(())
   }
 
   #[test]
-  fn idle_figures_cover_tabs() -> Result<()> {
+  fn idle_sidebars_run_concurrently() -> Result<()> {
     let root = tempfile::tempdir()?;
     let mut session = opened(root.path())?;
     let other = root.path().join("other.pdf");
@@ -275,41 +260,37 @@ mod tests {
     for tab in &mut session.tabs {
       for app in &mut tab.panes {
         app.complete = true;
-        app.outline_load = crate::jobs::Loading::Loaded;
       }
     }
+    session.tabs[0].panes[0].complete = false;
+    session.app().load_outline();
     let start = Instant::now();
     let mut chores = Chores::new(start);
-    chores.run(&mut session, start + FIGURES);
+    chores.run(&mut session, start);
     assert!(matches!(
       session.tabs[session.active].panes[0].figures,
       crate::jobs::Figures::Running(_)
     ));
-    assert!(matches!(
-      session.tabs[0].panes[0].figures,
-      crate::jobs::Figures::Deferred
-    ));
-    chores.run(&mut session, start + FIGURES);
-    assert!(matches!(
-      session.tabs[0].panes[0].figures,
-      crate::jobs::Figures::Deferred
-    ));
+    for tab in &session.tabs {
+      assert!(tab.panes[0].outline_pending());
+      assert!(matches!(tab.panes[0].figures, crate::jobs::Figures::Running(_)));
+      assert!(
+        tab.panes[0].sidebar_loading(vpdf_ui::keys::PanelKind::Annotations)
+      );
+      assert!(tab.panes[0].sidebar_loading(vpdf_ui::keys::PanelKind::Links));
+    }
     let deadline = Instant::now() + Duration::from_secs(5);
     while !session.app().figure_updates()? {
       assert!(Instant::now() < deadline);
       std::thread::sleep(Duration::from_millis(1));
     }
-    chores.run(&mut session, start + FIGURES);
-    assert!(matches!(
-      session.tabs[0].panes[0].figures,
-      crate::jobs::Figures::Running(_)
-    ));
+    chores.run(&mut session, start);
     while matches!(
       session.tabs[0].panes[0].figures,
       crate::jobs::Figures::Running(_)
     ) {
       assert!(Instant::now() < deadline);
-      chores.run(&mut session, start + FIGURES);
+      chores.run(&mut session, start);
       std::thread::sleep(Duration::from_millis(1));
     }
     assert!(matches!(

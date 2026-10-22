@@ -44,6 +44,7 @@ pub enum Style {
   Path,
 }
 
+#[derive(Clone)]
 pub struct Row {
   pub label: String,
   pub detail: String,

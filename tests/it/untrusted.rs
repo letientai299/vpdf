@@ -110,6 +110,7 @@ fn document_strings_reach_the_screen_clean() -> Result<()> {
   ] {
     if let Some(kind) = panel {
       app.open_panel(kind)?;
+      common::sidebar_loaded(&mut app, kind)?;
       let rows = &app.panel.as_ref().unwrap().view.rows();
       let shown = rows.iter().any(|row| row.label.contains("]2;pwn"));
       assert!(shown, "{kind:?} lists the text");

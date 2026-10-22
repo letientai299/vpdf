@@ -197,18 +197,22 @@ State saves during activity and on exit; abrupt process or machine failure can
 lose recent changes. Simultaneous readers can race when saving.
 
 On macOS, search indexes persist in `~/Library/Caches/vpdf/content`, so a
-reopened PDF searches without rereading its pages. Resolved outlines and figure
-lists also persist there, avoiding repeated extraction when reopening books.
-Figure labels include adjacent caption descriptions. The reader prepares the
-list during idle time after the visible pages finish rendering; `gf` also starts
-it on demand. `:cancel` stops preparation until explicitly requested. These
-records and stored page OCR output hold the PDF's text, readable only by your
-account; PDFs opened with a password are never stored. Small records there
+reopened PDF searches without rereading its pages. Resolved outlines, figure
+lists, annotations, current-page link descriptions, and Recent preview cards
+also persist there. Figure labels include adjacent caption descriptions.
+Contents, figures, annotations, and current-page links prepare concurrently
+after the first complete view, across open tabs. Opening a panel also starts its
+load on demand. Recent cards load in the background when shown. Preview records
+include the saved position, thumbnail size, and rotation. `:cancel` stops
+document preparation until explicitly requested.
+
+These records and stored page OCR output hold the PDF's text, readable only by
+your account; PDFs opened with a password are never stored. Small records there
 remember each PDF's hash by its file identity. The system may purge that
 directory at any time. Set `VPDF_CACHE` to another directory, or to `off` to
-keep indexes, outlines, figure lists, and OCR output in memory only. Linux
-requires an explicit cache directory. Missing, damaged, or stale records fall
-back to PDF extraction; the first open still resolves the authored destinations.
+keep extracted content in memory only. Linux requires an explicit cache
+directory. Missing, damaged, or stale records fall back to PDF extraction; the
+first open still resolves the authored destinations.
 
 The reader reloads a changed PDF and retains a useful position, view choices,
 and marks. Arbitrary document edits can change where the passage lands. Reload

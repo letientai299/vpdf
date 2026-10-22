@@ -72,7 +72,7 @@ pub enum Target {
 }
 
 /// A reader-visible annotation: markup, note, or shape.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Annotation {
   pub kind: String,
   /// Marked areas; markup has one per quad.

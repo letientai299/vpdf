@@ -128,6 +128,7 @@ fn printed_links_reach_every_consumer() -> Result<()> {
   assert_eq!(hits, [Hit::Link(PageId(0), 0), Hit::Link(PageId(0), 1)]);
   // `gl` lists them.
   app.open_panel(PanelKind::Links)?;
+  common::sidebar_loaded(&mut app, PanelKind::Links)?;
   let rows = &app.panel.as_ref().expect("link panel").view.rows();
   let labels: Vec<_> = rows.iter().map(|row| row.label.as_str()).collect();
   assert_eq!(labels, ["https://a.org/x", "doi:10.1000/abc"]);
@@ -210,6 +211,7 @@ fn real_preprint_addresses_are_links() -> Result<()> {
   }
   app.command("17")?;
   app.open_panel(PanelKind::Links)?;
+  common::sidebar_loaded(&mut app, PanelKind::Links)?;
   let rows = &app.panel.as_ref().expect("link panel").view.rows();
   assert!(rows.iter().any(|row| row.label == cases[0].1), "gl lists the DOI");
   Ok(())

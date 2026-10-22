@@ -23,7 +23,9 @@ const RECORD: u64 = 16 * MIB as u64;
 mod figures;
 mod outline;
 mod record;
+mod snapshot;
 pub(crate) use figures::FigureCache;
+pub use snapshot::{Kind, Snapshot};
 mod pack;
 
 pub(crate) use outline::OutlineCache;

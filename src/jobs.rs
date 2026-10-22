@@ -15,6 +15,20 @@ pub(crate) struct AutoOcr {
 }
 
 impl App {
+  pub(crate) fn cancel_jobs(&mut self) -> Result<()> {
+    self.cancel_search();
+    self.cancel_ocr();
+    self.cancel_outline();
+    self.cancel_figures();
+    self.cancel_sidebars();
+    self.refill_panel(PanelKind::Annotations)?;
+    self.refill_panel(PanelKind::Links)?;
+    self.refill_panel(PanelKind::Figures)?;
+    self.cancel_crop()?;
+    self.region_job = None;
+    Ok(())
+  }
+
   pub(crate) fn job_updates(&mut self) -> bool {
     let panel =
       self.panel.as_mut().is_some_and(crate::panel::PanelSession::updates);
@@ -24,6 +38,7 @@ impl App {
           | self.ocr_updates()?
           | self.outline_updates()?
           | self.figure_updates()?
+          | self.sidebar_updates()?
           | self.crop_updates()?,
       )
     });
@@ -68,6 +83,7 @@ impl App {
         }
         self.doc.seed(page, text);
         self.refresh_figures()?;
+        self.refresh_sidebars()?;
         if self.doc.has_ocr(page) {
           self.auto_ocr.seen.remove(&page);
         }
@@ -113,7 +129,7 @@ impl App {
   pub fn start_deferred(&mut self) {
     self.defer_ocr();
     if self.complete {
-      self.resume_outline();
+      self.prepare_sidebars();
       self.start_auto_ocr();
     }
   }

@@ -132,6 +132,7 @@ pub struct App {
   pub(crate) auto_ocr: crate::jobs::AutoOcr,
   pub outline_load: crate::jobs::Loading,
   pub figures: crate::jobs::Figures,
+  pub(crate) sidebar: crate::sidebar::Sidebar,
   pub crop_scan: vpdf_pdf::jobs::crop::Scan,
   /// The current wheel gesture over the page.
   pub(crate) wheel: vpdf_ui::input::wheel::Wheel,
@@ -152,6 +153,8 @@ impl App {
       || self.crop_scan.active()
       || matches!(self.outline_load, crate::jobs::Loading::Running(_))
       || matches!(self.figures, crate::jobs::Figures::Running(_))
+      || self.sidebar_loading(PanelKind::Annotations)
+      || self.sidebar_loading(PanelKind::Links)
       || self.ocr.is_some()
   }
 
@@ -231,6 +234,7 @@ impl App {
       auto_ocr: crate::jobs::AutoOcr::default(),
       outline_load: crate::jobs::Loading::Deferred,
       figures: crate::jobs::Figures::Deferred,
+      sidebar: crate::sidebar::Sidebar::default(),
       crop_scan: vpdf_pdf::jobs::crop::Scan::default(),
       wheel: vpdf_ui::input::wheel::Wheel::default(),
       tiles: vpdf_ui::layout::tiles::Tiles::default(),
@@ -321,6 +325,7 @@ impl App {
     // An open outline panel waits on the new outline now.
     self.outline_load = crate::jobs::Loading::Deferred;
     self.refresh_figures()?;
+    self.refresh_sidebars()?;
     if self
       .panel
       .as_ref()
@@ -351,6 +356,7 @@ impl App {
         PanelKind::Recent | PanelKind::Marks => true,
         PanelKind::Results => rerun.is_some(),
         PanelKind::Outline => self.outline_pending(),
+        PanelKind::Annotations | PanelKind::Links => self.sidebar_loading(kind),
         PanelKind::Figures => {
           matches!(self.figures, crate::jobs::Figures::Running(_))
         }

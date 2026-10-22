@@ -6,6 +6,7 @@ mod fonts;
 mod prime;
 pub mod raster;
 mod scheduling;
+pub use scheduling::yield_to_views;
 pub mod wraps;
 
 use vpdf_model::{cache, text};

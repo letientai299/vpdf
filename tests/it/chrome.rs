@@ -20,7 +20,11 @@ fn keys(session: &mut Session, keys: &str) -> Result<()> {
   for ch in keys.chars() {
     press(session, KeyCode::Char(ch))?;
   }
-  session.settle()
+  session.settle()?;
+  if let Some(kind) = session.app().panel.as_ref().map(|p| p.view.kind()) {
+    crate::common::sidebar_loaded(session.app(), kind)?;
+  }
+  Ok(())
 }
 
 /// Panes, focused id, other pane's page.
@@ -1256,12 +1260,15 @@ fn refocusing_links_refreshes_page() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let app = session.app();
   app.open_panel(vpdf_ui::keys::PanelKind::Links)?;
+  crate::common::sidebar_loaded(app, vpdf_ui::keys::PanelKind::Links)?;
   app.panel.as_mut().unwrap().view.choose(1);
   app.open_panel(vpdf_ui::keys::PanelKind::Links)?;
+  crate::common::sidebar_loaded(app, vpdf_ui::keys::PanelKind::Links)?;
   assert_eq!(app.panel.as_ref().unwrap().view.selected(), 1);
   crate::common::keys(app, b"\ti")?;
   app.command("2")?;
   app.open_panel(vpdf_ui::keys::PanelKind::Links)?;
+  crate::common::sidebar_loaded(app, vpdf_ui::keys::PanelKind::Links)?;
   assert!(app.panel.as_ref().unwrap().view.rows().is_empty());
   Ok(())
 }

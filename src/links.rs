@@ -9,8 +9,7 @@ use vpdf_model::input::MouseEvent;
 use vpdf_model::text::{Bounds, PageId, Position, Text};
 use vpdf_pdf::document::Document;
 use vpdf_ui::annotations::{icon, marked};
-use vpdf_ui::panel::Row;
-use vpdf_ui::panel::links::{cited, link_row};
+use vpdf_ui::panel::links::cited;
 use vpdf_ui::pointer::{Hit, Hover};
 use vpdf_ui::preview::{Press, Preview};
 
@@ -170,23 +169,6 @@ impl App {
     self.preview_cells().is_some_and(|at| at.contains(column, row))
   }
 
-  pub(crate) fn link_rows(&mut self) -> Result<Vec<Row>> {
-    let page = self.navigation_position().page;
-    let links = self.doc.links(page)?;
-    if links.is_empty() {
-      return Ok(Vec::new());
-    }
-    // Unreadable text must not hide destinations.
-    let text = self.doc.text(page).ok();
-    let mut rows = Vec::with_capacity(links.len());
-    for link in links.iter().cloned() {
-      let (anchor, context) = self.link_context(page, &link, text.as_deref());
-      rows
-        .push(link_row(link, anchor, context, |page| self.doc.get_label(page)));
-    }
-    Ok(rows)
-  }
-
   fn link_context(
     &mut self,
     page: PageId,
@@ -218,26 +200,6 @@ pub(crate) fn destination(
 
 impl App {
   /// Every annotation in page order, with marked text or contents.
-  pub fn annotation_rows(&mut self) -> Result<Vec<Row>> {
-    let mut rows = Vec::new();
-    for page in (0..self.doc.pages.len()).map(PageId) {
-      let annotations = self.doc.annotations(page)?;
-      if annotations.is_empty() {
-        continue;
-      }
-      let text = self.doc.text(page)?;
-      for annotation in annotations.iter().cloned() {
-        rows.push(vpdf_ui::annotations::row(
-          &text,
-          page,
-          annotation,
-          self.doc.label(page),
-        ));
-      }
-    }
-    Ok(rows)
-  }
-
   pub(crate) fn annotation_at(
     &mut self,
     position: Position,
@@ -289,6 +251,17 @@ mod tests {
   use vpdf_ui::layout::Screen;
   use vpdf_ui::panel::Destination;
 
+  fn loaded(app: &mut App) -> Result<()> {
+    app.want_sidebar(PanelKind::Links);
+    let start = Instant::now();
+    while app.sidebar_pending(PanelKind::Links) {
+      app.sidebar_updates()?;
+      assert!(start.elapsed() < std::time::Duration::from_secs(10));
+      std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    Ok(())
+  }
+
   #[test]
   #[ignore = "requires verified public PDF corpus"]
   fn real_links_resolve_text() -> Result<()> {
@@ -302,6 +275,7 @@ mod tests {
     };
     let mut app = App::with_screen(&root.join("paper.pdf"), "", true, screen)?;
     app.go_to_page(PageId(1))?;
+    loaded(&mut app)?;
     let rows = app.panel_rows(PanelKind::Links)?;
     assert!(rows[0].label.starts_with("[13] Sepp Hochreiter"));
     assert!(rows[0].label.contains("Long short-term memory"));
@@ -313,12 +287,14 @@ mod tests {
       app.follow(target)?;
     }
     app.go_to_page(PageId(3))?;
+    loaded(&mut app)?;
     let rows = app.panel_rows(PanelKind::Links)?;
     assert!(rows[3].label.starts_with("4 To illustrate"));
     assert_eq!(rows[3].detail, "p. 4");
 
     app.go_to_page(PageId(10))?;
     app.open_panel(PanelKind::Links)?;
+    loaded(&mut app)?;
     let row = &app.panel.as_ref().unwrap().view.rows()[0];
     assert_eq!(row.label, "arXiv:1610.02357");
     // U21: hovers quote what references cite, as the panel does.

@@ -325,13 +325,7 @@ impl App {
       Id::Annotations => self.open_panel(PanelKind::Annotations)?,
       Id::Fzf => self.request = Some(Request::Pick),
       Id::Cancel => {
-        self.cancel_search();
-        self.cancel_ocr();
-        self.cancel_outline();
-        self.cancel_figures();
-        self.refill_panel(PanelKind::Figures)?;
-        self.cancel_crop()?;
-        self.region_job = None;
+        self.cancel_jobs()?;
         self.reader.notice("Jobs canceled");
       }
       Id::NoHlSearch => self.search.set_hidden(true),

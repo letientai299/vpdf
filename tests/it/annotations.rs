@@ -93,6 +93,7 @@ fn panel_lists_marked_text_and_notes() -> Result<()> {
   let (file, words) = annotated()?;
   let mut app = Solo::open(file.path(), "", false, screen())?;
   app.open_panel(PanelKind::Annotations)?;
+  crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
   let rows = &app.panel.as_ref().unwrap().view.rows();
   let labels: Vec<_> =
     rows.iter().take(2).map(|row| row.label.as_str()).collect();
@@ -118,6 +119,7 @@ fn enter_positions_cursor_and_note() -> Result<()> {
         press(&mut app, KeyCode::Char('v'))?;
       }
       app.open_panel(PanelKind::Annotations)?;
+      crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
       let expected = position(&app, 0);
       press(&mut app, KeyCode::Enter)?;
       assert_eq!(app.reader.cursor, expected);
@@ -150,6 +152,7 @@ fn k_previews_selected_note() -> Result<()> {
   for text in [false, true] {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
+    crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
     assert_eq!(position(&app, 1), position(&app, 2));
     let original = app.reader.cursor;
     app.panel.as_mut().unwrap().view.choose(2);
@@ -181,6 +184,7 @@ fn k_preserves_visual_range() -> Result<()> {
   for text in [false, true] {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
+    crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
     app.panel.as_mut().unwrap().view.choose(1);
     press(&mut app, KeyCode::Enter)?;
     press(&mut app, KeyCode::Esc)?;
@@ -205,6 +209,7 @@ fn notes_scroll_and_resize() -> Result<()> {
   for text in [false, true] {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
+    crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
     app.panel.as_mut().unwrap().view.choose(3);
     press(&mut app, KeyCode::Enter)?;
     let cursor = app.reader.cursor;
@@ -241,6 +246,7 @@ fn empty_notes_and_panel_focus() -> Result<()> {
   for text in [false, true] {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
+    crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
     app.panel.as_mut().unwrap().view.choose(4);
     let expected = position(&app, 4);
     press(&mut app, KeyCode::Enter)?;
@@ -361,6 +367,7 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   }
   // Clipped rows show whole; selection stays.
   session.app().open_panel(PanelKind::Annotations)?;
+  crate::common::sidebar_loaded(session.app(), PanelKind::Annotations)?;
   let focused = session.app().panel_focused();
   let (_, drawn) = hover(&mut session, (1, 2))?;
   let app = session.app();
@@ -376,6 +383,7 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   session.app().close_panel()?;
   // A panel opened under a resting pointer.
   session.app().open_panel(PanelKind::Annotations)?;
+  crate::common::sidebar_loaded(session.app(), PanelKind::Annotations)?;
   session.draw_frame(&mut Vec::new())?;
   if session.redraw_due() {
     session.draw_frame(&mut Vec::new())?;
@@ -699,6 +707,7 @@ fn note_row_menus_show_notes() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let mut session = noted_session(directory.path())?;
   session.app().open_panel(PanelKind::Annotations)?;
+  crate::common::sidebar_loaded(session.app(), PanelKind::Annotations)?;
   session.draw_focused(&mut Vec::new())?;
   for kind in [
     MouseEventKind::Down(MouseButton::Right),

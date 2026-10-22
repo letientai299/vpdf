@@ -202,9 +202,18 @@ fn quad_bounds(quad: &mupdf::Quad) -> Bounds {
 }
 impl Document {
   pub fn open(path: &Path, password: &str) -> Result<Self> {
+    Self::open_with(path, password, || true)
+  }
+
+  pub fn open_with(
+    path: &Path,
+    password: &str,
+    mut ready: impl FnMut() -> bool,
+  ) -> Result<Self> {
     let Handle { native, pages: count } = Handle::open(path, password)?;
     let mut pages = Vec::with_capacity(count);
     for index in 0..count {
+      ensure!(ready(), "Document load stopped");
       let bounds = bounds(&native, index as i32)?;
       pages.push(PageInfo { bounds, label: OnceCell::new() });
     }
