@@ -660,7 +660,7 @@ impl Marks<'_> {
 
   fn on_cursorline(&self, position: Position) -> bool {
     self.cursorline
-      && self.reader.selection.is_some()
+      && self.reader.uses_cursor()
       && position.page == self.reader.cursor.page
       && position.line == self.reader.cursor.line
   }

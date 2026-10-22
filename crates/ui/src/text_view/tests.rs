@@ -324,3 +324,48 @@ fn hits_follow_pending_and_drawn_frames() -> Result<()> {
   assert_eq!(pane.shown(2, 0)?, Some(at(0, 2, 0)));
   Ok(())
 }
+
+#[test]
+fn cursorline_follows_reader_mode() -> Result<()> {
+  for mode in [0, 1, 2] {
+    let mut reader = Reader::default();
+    match mode {
+      1 => reader.enter_cursor(),
+      2 => reader.visual(SelectionKind::Character),
+      _ => {}
+    }
+    for enabled in [false, true] {
+      let paint = Marks {
+        reader: &reader,
+        matches: &[],
+        flash: None,
+        landing: None,
+        cursorline: enabled,
+        dim: false,
+        hovered: &[],
+      };
+      let pages = Pages(vec![text(&["abc", "other"])]);
+      let frame = Frame {
+        screen: Screen {
+          columns: 10,
+          rows: 2,
+          cell_width: 8,
+          cell_height: 16,
+          origin: (0, 0),
+        },
+        at: At::default(),
+        left: 0,
+      };
+      let mut state = TextView::default();
+      let mut scene = Vec::new();
+      state.bind(pages, frame).scene(&mut scene, &paint)?;
+      let bands = scene
+        .iter()
+        .filter(|op| matches!(op, Op::Style(Role::TextCursorline)))
+        .count();
+      assert_eq!(bands > 0, enabled && mode != 0);
+      assert!(!paint.on_cursorline(at(0, 1, 0)));
+    }
+  }
+  Ok(())
+}

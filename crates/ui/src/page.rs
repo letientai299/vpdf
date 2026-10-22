@@ -39,7 +39,7 @@ impl Canvas<'_> {
   ) -> Result<()> {
     let mut painter =
       Painter { canvas: self, source, scene, scroll: marks.reader.scroll };
-    if marks.cursorline && marks.reader.selection.is_some() {
+    if marks.cursorline && marks.reader.uses_cursor() {
       painter.line(marks.reader.cursor, theme::CURSORLINE)?;
     }
     if let Some(position) = marks.landing {

@@ -333,17 +333,14 @@ impl App {
         self.reader.notice("Jobs canceled");
       }
       Id::NoHlSearch => self.search.set_hidden(true),
-      Id::CursorLine => self.cursorline = !self.cursorline,
+      Id::CursorLine => {
+        self.cursorline = spec.switch(argument, self.cursorline)?;
+      }
       Id::Perf => {
         self.request = Some(Request::Perf(crate::perf::switch(argument)?));
       }
       Id::Mouse => {
-        let on = match argument {
-          "" => !vpdf_terminal::terminal::mouse(),
-          "on" => true,
-          "off" => false,
-          _ => anyhow::bail!("Usage: :mouse [on|off]"),
-        };
+        let on = spec.switch(argument, vpdf_terminal::terminal::mouse())?;
         self.request = Some(Request::Mouse(on));
         let message =
           if on { "Mouse on" } else { "Mouse off; :mouse on restores" };

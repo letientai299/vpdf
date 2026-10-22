@@ -83,6 +83,15 @@ const fn spec(
 }
 
 impl Spec {
+  pub fn switch(&self, argument: &str, current: bool) -> crate::Result<bool> {
+    match argument {
+      "" => Ok(!current),
+      "on" => Ok(true),
+      "off" => Ok(false),
+      _ => anyhow::bail!("Usage: :{} {}", self.name, self.usage),
+    }
+  }
+
   const fn in_view(self, view: View) -> Self {
     Self { view, ..self }
   }
@@ -187,9 +196,10 @@ pub const COMMANDS: &[Spec] = &[
     Id::CursorLine,
     "cursorline",
     &[],
-    "",
-    "toggle the Visual line band (default on)",
-  ),
+    "[on|off]",
+    "toggle the Cursor/Visual line band (default on)",
+  )
+  .completes(Complete::Switch),
   spec(Id::Crop, "crop", &[], "", "toggle cropped page margins"),
   spec(
     Id::Mouse,
@@ -374,6 +384,27 @@ mod tests {
   }
 
   #[test]
+  fn switches_toggle_and_set() -> crate::Result<()> {
+    for name in ["cursorline", "mouse"] {
+      let spec = lookup(name, |_| true).unwrap();
+      for current in [false, true] {
+        for (argument, expected) in
+          [("", !current), ("on", true), ("off", false)]
+        {
+          assert_eq!(spec.switch(argument, current)?, expected);
+        }
+        for argument in ["invalid", "on off"] {
+          assert_eq!(
+            spec.switch(argument, current).unwrap_err().to_string(),
+            format!("Usage: :{name} [on|off]")
+          );
+        }
+      }
+    }
+    Ok(())
+  }
+
+  #[test]
   fn each_command_has_one_spec() {
     for spec in COMMANDS {
       let same = COMMANDS.iter().filter(|other| other.id == spec.id).count();
@@ -388,6 +419,11 @@ mod tests {
     assert_eq!(candidates("  pa"), (2, vec!["password".into()]));
     assert_eq!(candidates("info 1").1, Vec::<String>::new());
     assert_eq!(candidates("cu"), (0, vec!["cursorline".into()]));
+    assert_eq!(
+      candidates("cursorline "),
+      (11, vec!["on".into(), "off".into()])
+    );
+    assert_eq!(candidates("cu of"), (3, vec!["off".into()]));
     assert_eq!(candidates("PAS").1, ["password"]);
     assert_eq!(candidates("mouse ").1, ["on", "off"]);
     assert_eq!(candidates("mouse of"), (6, vec!["off".into()]));

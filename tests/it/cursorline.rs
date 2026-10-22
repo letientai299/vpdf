@@ -83,6 +83,47 @@ fn transformed(zoom: f32, rotation: u16) -> Result<(Solo, usize)> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
+fn cursorline_switches_in_cursor_mode() -> Result<()> {
+  for text in [false, true] {
+    let mut app = app(text)?;
+    keys(&mut app, b"i")?;
+    let cursor = app.reader.cursor;
+    for (command, expected) in [
+      ("cursorline off", false),
+      ("cursorline off", false),
+      ("cursorline on", true),
+      ("cursorline on", true),
+      ("cursorline", false),
+      ("cursorline", true),
+    ] {
+      app.command(command)?;
+      assert_eq!(app.cursorline, expected, "{command}");
+      assert_eq!(app.reader.mode(), vpdf_reader::reader::Mode::Cursor);
+      assert_eq!(app.reader.cursor, cursor);
+      assert!(app.reader.selection.is_none());
+      if text {
+        let mut out = Vec::new();
+        app.text_canvas(&mut out)?;
+        assert_eq!(String::from_utf8(out)?.contains(BAND), expected);
+      } else {
+        let screen = app.layout.screen();
+        assert_eq!(
+          marks(&mut app, screen)?.len(),
+          if expected { 2 } else { 1 }
+        );
+      }
+    }
+    for argument in ["invalid", "on off"] {
+      let error = app.command(&format!("cursorline {argument}")).unwrap_err();
+      assert_eq!(error.to_string(), "Usage: :cursorline [on|off]");
+      assert!(app.cursorline);
+    }
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
 fn cursorline_toggle_preserves_visual_and_copy() -> Result<()> {
   for text in [false, true] {
     let mut app = app(text)?;

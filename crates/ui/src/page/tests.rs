@@ -202,3 +202,30 @@ fn ocr_line_shapes() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn cursorline_follows_reader_mode() -> Result<()> {
+  use vpdf_model::scene::Op;
+  let mut source = Source::new();
+  let layout = layout(&source);
+  let canvas =
+    Canvas { layout: &layout, screen: layout.screen(), left: 0, menu: None };
+  for mode in [0, 1, 2] {
+    let mut reader = Reader::default();
+    match mode {
+      1 => reader.enter_cursor(),
+      2 => reader.visual(SelectionKind::Character),
+      _ => {}
+    }
+    for enabled in [false, true] {
+      let paint = Marks { cursorline: enabled, ..marks(&reader) };
+      let mut scene = Vec::new();
+      canvas.scene(&mut source, &paint, &mut scene)?;
+      let bands = scene.iter().filter(|op| {
+        matches!(op, Op::Fill(fill) if fill.color() == theme::CURSORLINE)
+      }).count();
+      assert_eq!(bands, usize::from(enabled && mode != 0));
+    }
+  }
+  Ok(())
+}
