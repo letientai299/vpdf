@@ -7,4 +7,5 @@ pub mod reflow;
 pub mod scene;
 pub mod style;
 pub mod text;
+pub mod theme;
 pub mod tile;

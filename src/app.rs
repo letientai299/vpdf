@@ -58,6 +58,8 @@ pub enum Request {
   /// Closes a tab, else the active one.
   TabClose(Option<usize>),
   QuitAll,
+  ConfigReload,
+  Theme(vpdf_model::theme::Theme),
   /// `:mouse`: takes the pointer, or leaves it to the terminal.
   Mouse(bool),
   Perf(Option<bool>),
@@ -94,6 +96,7 @@ pub struct App {
   pub text_mode: bool,
   pub cursorline: bool,
   pub(crate) settings: crate::config::Settings,
+  pub(crate) region_notice: Option<String>,
   /// Pending and drawn text frames.
   pub(crate) text_view: vpdf_ui::text_view::TextView,
   pub screen: Screen,
@@ -222,6 +225,7 @@ impl App {
       text_mode,
       cursorline: settings.cursorline(),
       settings: settings.clone(),
+      region_notice: None,
       text_view: vpdf_ui::text_view::TextView::default(),
       screen,
       left: 0,

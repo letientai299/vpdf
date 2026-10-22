@@ -218,6 +218,7 @@ mod tests {
       vec![Item {
         label: "Follow".into(),
         key: "Enter".into(),
+        shortcut: None,
         command: Command::Follow(vpdf_model::document::Target::Page(PageId(0))),
       }],
       (4, 5),

@@ -2,6 +2,8 @@
 pub enum Complete {
   Nothing,
   Language,
+  Config,
+  Theme,
   Path,
   /// `on` or `off`.
   Switch,
@@ -43,6 +45,12 @@ impl Spec {
       View::Home => self.view == View::Home,
     }
   }
+}
+
+pub fn theme(argument: &str) -> crate::Result<vpdf_model::theme::Theme> {
+  vpdf_model::theme::Theme::parse(argument).ok_or_else(|| {
+    anyhow::anyhow!("Usage: :theme <name>; choose a built-in theme")
+  })
 }
 
 /// Command name and trimmed argument of `line`.
@@ -93,6 +101,9 @@ macro_rules! commands {
 
 // id, name, aliases, usage, completion, view, help
 commands! {
+  Config "config" [] "reload" Config Home
+    "reload configuration";
+  Theme "theme" ["colorscheme"] "<name>" Theme Home "switch UI theme";
   Edit "edit" ["e"] "<file>" Path Home "open a PDF in this tab";
   TabEdit "tabedit" ["tabe", "open"] "<file>" Path Home
     "open a PDF in a new tab";
@@ -228,6 +239,14 @@ pub fn candidates(
       prefixed(supply(Complete::Language, argument), argument)
     }
     Some(Complete::Path) => supply(Complete::Path, argument),
+    Some(Complete::Theme) => prefixed(
+      vpdf_model::theme::Theme::ALL
+        .iter()
+        .map(|theme| theme.name().to_owned())
+        .collect(),
+      argument,
+    ),
+    Some(Complete::Config) => prefixed(vec!["reload".into()], argument),
     Some(Complete::Switch) => {
       prefixed(vec!["on".into(), "off".into()], argument)
     }
@@ -254,6 +273,45 @@ pub fn prefixed(items: Vec<String>, typed: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  #[test]
+  fn themes_validate_and_complete() -> crate::Result<()> {
+    use vpdf_model::theme::Theme;
+    for name in ["theme", "colorscheme"] {
+      let spec = lookup(name, |_| true).unwrap();
+      assert_eq!(spec.id, Id::Theme);
+      for view in [View::Home, View::Recent, View::Document] {
+        assert!(spec.available(view));
+        let (_, items) = candidates(
+          &format!("{name} "),
+          view,
+          |_| true,
+          |_, _| unreachable!(),
+        );
+        assert_eq!(
+          items,
+          Theme::ALL
+            .iter()
+            .map(|theme| theme.name().to_owned())
+            .collect::<Vec<_>>()
+        );
+        let (_, items) = candidates(
+          &format!("{name} github-"),
+          view,
+          |_| true,
+          |_, _| unreachable!(),
+        );
+        assert_eq!(items, ["github-light", "github-dark"]);
+      }
+    }
+    for &selected in Theme::ALL {
+      assert_eq!(theme(selected.name())?, selected);
+    }
+    for argument in ["", "unknown", "nord extra"] {
+      assert!(theme(argument).is_err());
+    }
+    Ok(())
+  }
+
   #[test]
   fn resolves_names_aliases_and_prefixes() {
     let cases = [

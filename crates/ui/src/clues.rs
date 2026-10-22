@@ -23,8 +23,15 @@ enum State {
 pub struct List {
   items: Vec<(String, String)>,
   labels: Vec<String>,
+  events: Vec<Option<Vec<KeyEvent>>>,
   keys: usize,
   top: usize,
+}
+
+pub struct Clue {
+  label: String,
+  about: String,
+  sequence: Option<crate::bindings::Sequence>,
 }
 
 impl Clues {
@@ -52,6 +59,27 @@ impl Clues {
   }
 
   pub fn show(&mut self, items: Vec<(String, String)>) -> bool {
+    let events = items.iter().map(|(key, _)| clue_keys(key)).collect();
+    self.show_with(items, events)
+  }
+
+  pub fn show_items(&mut self, items: Vec<Clue>) -> bool {
+    let events = items
+      .iter()
+      .map(|item| {
+        item.sequence.as_ref().map(|sequence| sequence.keys().to_vec())
+      })
+      .collect();
+    let items =
+      items.into_iter().map(|item| (item.label, item.about)).collect();
+    self.show_with(items, events)
+  }
+
+  fn show_with(
+    &mut self,
+    items: Vec<(String, String)>,
+    events: Vec<Option<Vec<KeyEvent>>>,
+  ) -> bool {
     self.state = State::Hidden;
     if items.is_empty() {
       return false;
@@ -61,7 +89,7 @@ impl Clues {
       .iter()
       .map(|(key, about)| format!("{key:<keys$}  {about}"))
       .collect();
-    self.state = State::Shown(List { items, labels, keys, top: 0 });
+    self.state = State::Shown(List { items, labels, events, keys, top: 0 });
     true
   }
 
@@ -98,7 +126,7 @@ impl List {
   }
 
   pub fn keys(&self, index: usize) -> Option<Vec<KeyEvent>> {
-    clue_keys(&self.items[index].0)
+    self.events.get(index).cloned().flatten()
   }
 
   pub fn grid(&self, screen: Screen) -> Grid {
@@ -141,22 +169,30 @@ pub fn items<'a>(
   registers: impl Iterator<Item = (char, &'a str)>,
   marks: impl Iterator<Item = (char, Position)>,
 ) -> Vec<(String, String)> {
-  let Some(prefix) = keys.awaiting() else { return Vec::new() };
+  let Some(_) = keys.awaiting() else { return Vec::new() };
   let owned = |(key, about): (&str, &str)| (key.to_owned(), about.to_owned());
-  match prefix {
-    "\"" => register_clues(registers),
-    "m" if allows(keys::Action::Mark('a')) => [
-      ("a-z", "mark here in this document"),
-      ("A-Z", "mark here across documents"),
-    ]
-    .map(owned)
-    .to_vec(),
-    "'" | "`" if allows(keys::Action::GoMark('a', prefix == "`")) => {
+  match keys.choosing() {
+    Some(crate::bindings::Control::Register) => register_clues(registers),
+    Some(crate::bindings::Control::SetMark)
+      if allows(keys::Action::Mark('a')) =>
+    {
+      [
+        ("a-z", "mark here in this document"),
+        ("A-Z", "mark here across documents"),
+      ]
+      .map(owned)
+      .to_vec()
+    }
+    Some(crate::bindings::Control::GoMark { exact })
+      if allows(keys::Action::GoMark('a', exact)) =>
+    {
       let mut items: Vec<_> = marks
         .map(|(name, at)| (name.to_string(), format!("page {}", at.page.0 + 1)))
         .collect();
       items.push(("A-Z".into(), "mark in any document".into()));
-      items.push((prefix.into(), "back to the last jump".into()));
+      if let Some(key) = keys.key_for(keys::Action::History(false)) {
+        items.push((key, "back to the last jump".into()));
+      }
       items
     }
     _ => keys
@@ -165,6 +201,37 @@ pub fn items<'a>(
       .map(|(key, about)| (key.replace(' ', "Space"), about.to_owned()))
       .collect(),
   }
+}
+
+pub fn effective_items<'a>(
+  keys: &keys::Keys,
+  grammar: keys::Grammar,
+  allows: impl Fn(keys::Action) -> bool,
+  registers: impl Iterator<Item = (char, &'a str)>,
+  marks: impl Iterator<Item = (char, Position)>,
+) -> Vec<Clue> {
+  if keys.choosing().is_some() {
+    return items(keys, grammar, allows, registers, marks)
+      .into_iter()
+      .map(|(label, about)| {
+        let sequence = if ["a-z", "A-Z", "+ *"].contains(&label.as_str()) {
+          None
+        } else {
+          crate::bindings::Sequence::parse(&label).ok()
+        };
+        Clue { label, about, sequence }
+      })
+      .collect();
+  }
+  keys
+    .effective_clues(allows)
+    .into_iter()
+    .map(|(sequence, about)| Clue {
+      label: sequence.to_string(),
+      about,
+      sequence: Some(sequence),
+    })
+    .collect()
 }
 
 fn register_clues<'a>(
@@ -193,6 +260,12 @@ fn clue_keys(label: &str) -> Option<Vec<KeyEvent>> {
     && label.as_bytes()[0] != b'C';
   if range || label.contains(' ') {
     return None;
+  }
+  if label.contains('<') {
+    return crate::bindings::Sequence::parse(label)
+      .ok()
+      .map(|sequence| sequence.keys().to_vec())
+      .or_else(|| keys::parse(label));
   }
   keys::parse(label)
 }

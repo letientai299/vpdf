@@ -1,6 +1,7 @@
 pub type Result<T> = anyhow::Result<T>;
 use vpdf_model::text;
 pub mod annotations;
+pub mod bindings;
 pub mod chrome;
 pub mod clues;
 pub mod commands;

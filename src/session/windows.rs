@@ -162,7 +162,7 @@ impl Session {
           if error.is::<PasswordRequired>()
             && matches!(self.frontend, crate::raster::Frontend::Terminal) =>
         {
-          secret = crate::password::password()?;
+          secret = crate::password::password(&self.settings)?;
         }
         result => break result?,
       }

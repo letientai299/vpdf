@@ -143,7 +143,8 @@ for clipboard and link boundaries.
 ## Licensing
 
 Vpdf's original source code uses the [MIT license][license]. Dependencies
-retain their own licenses.
+retain their own licenses. [Theme notices][theme-notices] retain palette
+attribution and licenses.
 
 MuPDF and its Rust bindings, `mupdf` and `mupdf-sys`, use AGPLv3 in the current
 dependency stack. Distributed executables that link them remain subject to AGPL
@@ -188,3 +189,5 @@ dependencies used in a particular build.
 [wezterm-config]: https://wezterm.org/config/files.html
 [osc52]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Operating-System-Commands
 [placeholders]: https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders
+
+[theme-notices]: licenses/themes.txt

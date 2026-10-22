@@ -800,6 +800,8 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   let clues =
     session.app().overlays.clues().shown().map(|c| c.items().to_vec());
   let split = clues.and_then(|items| items.iter().position(|(k, _)| k == "v"));
+  let app = session.app();
+  app.overlays.clues_mut().scroll(isize::MAX, app.screen);
   let at = item_cell(&mut session, List::Clues, split.expect("a v clue"))?;
   // The held pan keeps clues off.
   left(&mut session, MouseEventKind::Down(MouseButton::Left), at);

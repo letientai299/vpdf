@@ -11,9 +11,7 @@ use vpdf_model::input::{MouseEvent, MouseEventKind};
 use vpdf_terminal::terminal;
 use vpdf_ui::keys::{Action, Input, PanelKind};
 use vpdf_ui::layout::Screen;
-use vpdf_ui::panel::{
-  Activation, Destination, Focus, Follow, Panel, Row, help,
-};
+use vpdf_ui::panel::{Activation, Destination, Focus, Follow, Panel, Row};
 use vpdf_ui::split::Direction;
 use vpdf_ui::window::Window;
 
@@ -113,10 +111,12 @@ impl App {
       },
       PanelKind::Links | PanelKind::Annotations => self.sidebar_rows(kind),
       PanelKind::Jumps => self.jump_rows(),
-      PanelKind::Help => help(|program| self.command_available(program))
-        .iter()
-        .map(|line| Row::parse(line))
-        .collect(),
+      PanelKind::Help => {
+        vpdf_ui::panel::help(|program| self.command_available(program))
+          .iter()
+          .map(|line| Row::parse(line))
+          .collect()
+      }
       PanelKind::Version => crate::version::text(matches!(
         self.frontend,
         crate::raster::Frontend::Terminal

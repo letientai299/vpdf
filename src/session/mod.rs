@@ -42,7 +42,9 @@ pub struct Tab {
 #[derive(Default)]
 pub struct Session {
   settings: crate::config::Settings,
+  config_source: crate::config::Source,
   startup_warning: Option<String>,
+  config_warning: Option<String>,
   pub tabs: Vec<Tab>,
   pub active: usize,
   pub history: History,
@@ -169,6 +171,8 @@ impl Session {
     let state = store.as_deref().map_or_default(State::load);
     Self {
       settings: config.settings,
+      config_source: config.source,
+      config_warning: config.warning.clone(),
       startup_warning: config.warning,
       history: History::new(state.commands.clone(), state.searches.clone()),
       state,

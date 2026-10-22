@@ -65,6 +65,9 @@ impl Session {
   ) -> Result<bool> {
     use vpdf_ui::prompt::{History, PromptEvent};
     let Some(unlock) = &mut self.unlock else { return Ok(false) };
+    unlock.prompt.set_bindings(
+      self.settings.bindings().map(vpdf_ui::bindings::Context::Password),
+    );
     let event = match input {
       Input::Key(key) => {
         if key.kind == vpdf_model::input::KeyEventKind::Release {

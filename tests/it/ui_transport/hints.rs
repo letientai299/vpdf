@@ -32,7 +32,7 @@ fn recorded_labels_keep_backdrops() -> Result<()> {
       if !text {
         Graphics::default().backdrop(
           Bounds { x0: 24.0, y0: 32.0, x1: 32.0, y1: 48.0 },
-          fill,
+          fill.resolve(vpdf_model::theme::Theme::Default),
           screen,
           0,
           &mut expected,

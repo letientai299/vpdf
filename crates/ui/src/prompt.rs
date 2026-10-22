@@ -5,9 +5,13 @@
 //! Ctrl-arrows that stop at punctuation, history search on Ctrl-r, and
 //! `edit-command-line` on Ctrl-x Ctrl-e.
 
+use crate::bindings::{
+  Bindings, Context, Map, Match, Pending, PromptAction, Target,
+};
 use crate::grid::{self, Grid};
 use crate::layout::Screen;
 use crate::line::{self, NARROW, SHELL};
+use std::sync::Arc;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
 use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
@@ -125,8 +129,9 @@ pub struct Prompt {
   recall: Option<Recall>,
   kill: String,
   undo: Vec<(String, usize)>,
-  /// Ctrl-x was pressed and waits for its second key.
-  prefix: bool,
+  bindings: Arc<Map<Target>>,
+  command: Option<String>,
+  pending: Pending,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -138,6 +143,7 @@ pub enum PromptEvent {
   Editor,
   Submit,
   Cancel,
+  Command,
 }
 
 impl Prompt {
@@ -211,7 +217,9 @@ impl Prompt {
       recall: None,
       kill: String::new(),
       undo: Vec::new(),
-      prefix: false,
+      bindings: Bindings::default().map(Context::prompt(kind)),
+      command: None,
+      pending: Pending::default(),
     }
   }
 
@@ -278,156 +286,127 @@ impl Prompt {
     }
   }
 
+  pub fn reset_input(&mut self) {
+    self.pending.clear();
+  }
+
   pub fn feed(&mut self, key: KeyEvent, history: &History) -> PromptEvent {
     let event = self.dispatch(key, history);
     self.suggest(history);
     event
   }
 
+  pub fn set_bindings(&mut self, bindings: Arc<Map<Target>>) {
+    if !Arc::ptr_eq(&self.bindings, &bindings) {
+      self.bindings = bindings;
+      self.reset_input();
+    }
+  }
+
   fn dispatch(&mut self, key: KeyEvent, history: &History) -> PromptEvent {
-    let unbound =
-      KeyModifiers::SUPER | KeyModifiers::HYPER | KeyModifiers::META;
-    if matches!(key.code, KeyCode::Char(_)) && key.modifiers.intersects(unbound)
-    {
-      self.prefix = false;
-      return PromptEvent::Pending;
+    match self.pending.feed_cancellable(&self.bindings, key, Target::cancels) {
+      Match::Target(Target::Prompt(action)) => self.action(action, history),
+      Match::Target(Target::Command(command)) => {
+        self.command = Some(command);
+        PromptEvent::Command
+      }
+      Match::Unbound => {
+        if let KeyCode::Char(ch) = key.code
+          && crate::keys::plain(key)
+        {
+          self.menu = None;
+          self.recall = None;
+          self.snapshot();
+          let ch = if key.modifiers.contains(KeyModifiers::SHIFT) {
+            ch.to_ascii_uppercase()
+          } else {
+            ch
+          };
+          self.insert(ch.encode_utf8(&mut [0; 4]));
+          return PromptEvent::Edited;
+        }
+        PromptEvent::Pending
+      }
+      Match::Target(_) | Match::Pending | Match::Consumed => {
+        PromptEvent::Pending
+      }
     }
-    let key = crate::keys::normalize(key);
-    let control = key.modifiers.contains(KeyModifiers::CONTROL);
-    let alt = key.modifiers.contains(KeyModifiers::ALT);
-    if std::mem::take(&mut self.prefix) {
-      return match key.code {
-        KeyCode::Char('e') => PromptEvent::Editor,
-        KeyCode::Char('u') if control => self.restore(),
-        _ => PromptEvent::Pending,
-      };
+  }
+
+  pub fn take_command(&mut self) -> Option<String> {
+    self.command.take()
+  }
+
+  pub fn action(
+    &mut self,
+    action: PromptAction,
+    history: &History,
+  ) -> PromptEvent {
+    use PromptAction as A;
+    if let A::Complete { forward } = action {
+      return self.cycle(forward);
     }
-    // Only bare Tab completes; Kitty's keyboard protocol keeps Ctrl-i a
-    // separate key.
-    let tab = (key.code, key.modifiers) == (KeyCode::Tab, KeyModifiers::NONE);
-    match key.code {
-      _ if tab && self.kind != PromptKind::Password => return self.cycle(true),
-      KeyCode::BackTab => return self.cycle(false),
-      _ => self.menu = None,
-    }
-    let browsing = matches!(
-      (control, key.code),
-      (true, KeyCode::Char('p' | 'n' | 'r' | 's'))
-        | (_, KeyCode::Up | KeyCode::Down)
-    );
-    if !browsing {
+    self.menu = None;
+    if !matches!(action, A::History { .. }) {
       self.recall = None;
     }
     let before = self.text.clone();
-    let event = match (control, alt, key.code) {
-      (true, _, KeyCode::Char('c' | 'g')) | (_, _, KeyCode::Esc) => {
-        return PromptEvent::Cancel;
+    match action {
+      A::Cancel => return PromptEvent::Cancel,
+      A::Submit => return PromptEvent::Submit,
+      A::Editor if self.kind != PromptKind::Password => {
+        return PromptEvent::Editor;
       }
-      (true, _, KeyCode::Char('j')) | (_, _, KeyCode::Enter) => {
-        return PromptEvent::Submit;
-      }
-      // The external editor would write a password to disk.
-      (true, _, KeyCode::Char('x')) if self.kind != PromptKind::Password => {
-        self.prefix = true;
-        return PromptEvent::Pending;
-      }
-      (true, _, KeyCode::Char('_' | '7' | '/')) => return self.restore(),
-      (true, _, KeyCode::Char('d')) if self.cursor == self.text.len() => {
-        return self.cycle(true);
-      }
-      (true, _, KeyCode::Char(ch)) => self.control(ch, history),
-      (true, _, KeyCode::Left) => self.word_motion(false),
-      (true, _, KeyCode::Right) => self.word_motion(true),
-      (_, true, code) => self.meta(code),
-      (_, _, code) => self.plain(code, history),
-    };
-    if event != PromptEvent::Pending {
-      return event;
-    }
-    if self.text == before { PromptEvent::Pending } else { PromptEvent::Edited }
-  }
-
-  fn control(&mut self, ch: char, history: &History) -> PromptEvent {
-    match ch {
-      'a' => self.cursor = 0,
-      'e' | 'f' if self.accept() => {}
-      'e' => self.cursor = self.text.len(),
-      'b' => self.step(-1),
-      'f' => self.step(1),
-      ' ' => {
+      A::Editor => {}
+      A::Start => self.cursor = 0,
+      A::End | A::Move { forward: true } if self.accept() => {}
+      A::End => self.cursor = self.text.len(),
+      A::Move { forward } => self.step(if forward { 1 } else { -1 }),
+      A::Accept => {
         self.accept();
       }
-      'h' => self.edit(Self::delete_back),
-      'd' => self.edit(|p| p.remove(p.cursor..p.next_char())),
-      'k' => self.edit(|p| p.remove(p.cursor..p.text.len())),
-      'u' => self.edit(|p| p.remove(0..p.cursor)),
-      'w' => self.edit(|p| {
-        p.remove(line::word_start(&p.text, p.cursor, NARROW)..p.cursor);
+      A::Word { forward, shell } => {
+        let chars = if shell { SHELL } else { NARROW };
+        if forward {
+          self.forward_word(chars);
+        } else {
+          self.cursor = line::word_start(&self.text, self.cursor, chars);
+        }
+      }
+      A::Delete { backward: true } => self.edit(Self::delete_back),
+      A::Delete { backward: false } | A::DeleteOrComplete => {
+        if action == A::DeleteOrComplete && self.cursor == self.text.len() {
+          return self.cycle(true);
+        }
+        self.edit(|p| p.remove(p.cursor..p.next_char()));
+      }
+      A::Kill { to_start } => self.edit(|p| {
+        if to_start {
+          p.remove(0..p.cursor);
+        } else {
+          p.remove(p.cursor..p.text.len());
+        }
       }),
-      'y' => {
+      A::DeleteWord { forward, shell } => self.edit(|p| {
+        let chars = if shell { SHELL } else { NARROW };
+        if forward {
+          p.remove(p.cursor..line::word_end(&p.text, p.cursor, chars));
+        } else {
+          p.remove(line::word_start(&p.text, p.cursor, chars)..p.cursor);
+        }
+      }),
+      A::Yank => {
         let kill = self.kill.clone();
         self.edit(|p| p.insert(&kill));
       }
-      't' => self.edit(Self::transpose),
-      'p' => self.recall(history, -1, false),
-      'n' => self.recall(history, 1, false),
-      'r' => self.recall(history, -1, true),
-      's' => self.recall(history, 1, true),
-      _ => {}
-    }
-    PromptEvent::Pending
-  }
-
-  /// Alt bindings use zsh's default `WORDCHARS`.
-  fn meta(&mut self, code: KeyCode) -> PromptEvent {
-    match code {
-      KeyCode::Char('b') | KeyCode::Left => {
-        self.cursor = line::word_start(&self.text, self.cursor, SHELL);
+      A::Transpose => self.edit(Self::transpose),
+      A::History { forward, search } => {
+        self.recall(history, if forward { 1 } else { -1 }, search);
       }
-      KeyCode::Char('f') | KeyCode::Right => self.forward_word(SHELL),
-      KeyCode::Char('d') => {
-        self.edit(|p| {
-          p.remove(p.cursor..line::word_end(&p.text, p.cursor, SHELL));
-        });
-      }
-      KeyCode::Backspace => {
-        self.edit(|p| {
-          p.remove(line::word_start(&p.text, p.cursor, SHELL)..p.cursor);
-        });
-      }
-      _ => {}
+      A::Undo => return self.restore(),
+      A::Complete { .. } => unreachable!(),
     }
-    PromptEvent::Pending
-  }
-
-  fn plain(&mut self, code: KeyCode, history: &History) -> PromptEvent {
-    match code {
-      KeyCode::Backspace => self.edit(Self::delete_back),
-      KeyCode::Delete => self.edit(|p| p.remove(p.cursor..p.next_char())),
-      KeyCode::Up => self.recall(history, -1, false),
-      KeyCode::Down => self.recall(history, 1, false),
-      KeyCode::Left => self.step(-1),
-      KeyCode::Right | KeyCode::End if self.accept() => {}
-      KeyCode::Right => self.step(1),
-      KeyCode::Home => self.cursor = 0,
-      KeyCode::End => self.cursor = self.text.len(),
-      KeyCode::Char(ch) => {
-        self.snapshot();
-        self.insert(ch.encode_utf8(&mut [0; 4]));
-      }
-      _ => {}
-    }
-    PromptEvent::Pending
-  }
-
-  /// Ctrl-arrows move by narrow words, as in the zsh config.
-  fn word_motion(&mut self, forward: bool) -> PromptEvent {
-    if forward {
-      self.forward_word(NARROW);
-    } else {
-      self.cursor = line::word_start(&self.text, self.cursor, NARROW);
-    }
-    PromptEvent::Pending
+    if self.text == before { PromptEvent::Pending } else { PromptEvent::Edited }
   }
 
   /// At the end of the line, also takes the suggestion's next word.
@@ -857,6 +836,18 @@ mod tests {
     assert_eq!(prompt.feed(super_e, &history), PromptEvent::Pending);
     let e = KeyEvent::new(KeyCode::Char('e'), NONE);
     assert_eq!(prompt.feed(e, &history), PromptEvent::Edited, "prefix ends");
+  }
+
+  #[test]
+  fn reset_preserves_text_and_caret() {
+    let history = History::default();
+    let mut prompt = typed("page", &history);
+    press(&mut prompt, &history, &[(KeyCode::Left, NONE)]);
+    prompt.feed(KeyEvent::new(KeyCode::Char('x'), CTRL), &history);
+    prompt.reset_input();
+    assert_eq!(prompt.text(), "page");
+    prompt.feed(KeyEvent::new(KeyCode::Char('!'), NONE), &history);
+    assert_eq!(prompt.text(), "pag!e");
   }
 
   #[test]

@@ -14,6 +14,7 @@ use vpdf_model::geometry::Screen;
 use vpdf_model::image::PictureId;
 use vpdf_model::scene::{Layer, Op, Stage, TilePlacement};
 use vpdf_model::text::PageId;
+use vpdf_model::theme::Theme;
 use vpdf_model::tile::{TileId, TileKey, TileOwner};
 
 const BUDGET: usize = 64 << 20;
@@ -59,6 +60,12 @@ impl Renderer {
     scale: f32,
     preedit: Option<&Preedit>,
   ) -> Option<egui::output::IMEOutput> {
+    let theme = scene_theme(&frame.scene);
+    painter.rect_filled(
+      painter.clip_rect(),
+      0.0,
+      crate::style::rgb(theme.palette().background),
+    );
     let ready: HashSet<_> = frame.images.iter().map(|image| image.id).collect();
     let retired: Vec<_> = self
       .textures
@@ -296,7 +303,11 @@ fn clip(stage: Stage, scale: f32) -> Rect {
 }
 
 fn fills(painter: &Painter, scene: &[Op<'_>], layer: Layer, scale: f32) {
+  let mut theme = Theme::Default;
   for op in scene {
+    if let Op::Theme(selected) = op {
+      theme = *selected;
+    }
     let fill = match op {
       Op::Fill(fill) => **fill,
       Op::Polygon(polygon) => polygon.fill(),
@@ -308,7 +319,7 @@ fn fills(painter: &Painter, scene: &[Op<'_>], layer: Layer, scale: f32) {
     let stage = fill.stage();
     let origin = offset(stage, scale);
     let point = |(x, y): (f32, f32)| origin + Vec2::new(x, y) / scale;
-    let color = fill.color();
+    let color = fill.color().resolve(theme);
     let color =
       Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);
     let painter = painter.with_clip_rect(clip(stage, scale));
@@ -350,6 +361,7 @@ struct Grid {
   cursor: (usize, usize),
   saved: (usize, usize, Style),
   style: Style,
+  theme: Theme,
   visible: bool,
   masked: bool,
   input: std::ops::Range<usize>,
@@ -367,6 +379,7 @@ impl Grid {
       cursor: (0, 0),
       saved: (0, 0, Style::default()),
       style: Style::default(),
+      theme: Theme::Default,
       visible: false,
       masked: false,
       input: 0..usize::from(screen.columns),
@@ -379,7 +392,11 @@ impl Grid {
         self.cursor = (*column, *row);
         self.previous = None;
       }
-      Op::Style(role) => self.style.apply(*role),
+      Op::Theme(theme) => {
+        self.theme = *theme;
+        self.style = Style::new(*theme);
+      }
+      Op::Style(role) => self.style.apply(*role, self.theme),
       Op::Text(text) => {
         for ch in text.as_str().chars() {
           self.character(ch, ch.width().unwrap_or(0) as u8);
@@ -489,7 +506,7 @@ impl Grid {
     }
     self.cells[first..first + width].fill(Cell::default());
     let style = self.style;
-    self.style = Style { underline: true, ..Style::default() };
+    self.style = Style { underline: true, ..Style::new(self.theme) };
     self.previous = None;
     let caret = preedit.active.as_ref().map_or(usize::MAX, |range| range.end);
     let mut cursor = None;
@@ -596,13 +613,22 @@ impl Grid {
     if self.visible && self.cursor.0 < self.columns {
       let pos =
         Pos2::new(self.cursor.0 as f32 * size.x, self.cursor.1 as f32 * size.y);
-      painter.rect_filled(
-        Rect::from_min_size(pos, size),
-        0.0,
-        Color32::from_rgba_unmultiplied(216, 222, 233, 100),
-      );
+      painter.rect_filled(Rect::from_min_size(pos, size), 0.0, {
+        let [r, g, b] = self.theme.palette().foreground;
+        Color32::from_rgba_unmultiplied(r, g, b, 100)
+      });
     }
   }
+}
+
+pub fn scene_theme(scene: &[Op<'_>]) -> Theme {
+  scene
+    .iter()
+    .find_map(|op| match op {
+      Op::Theme(theme) => Some(*theme),
+      _ => None,
+    })
+    .unwrap_or_default()
 }
 
 pub fn background() -> Color32 {
@@ -628,6 +654,69 @@ mod tests {
       quit: false,
       clipboard: None,
       reloaded: Vec::new(),
+    }
+  }
+
+  #[test]
+  fn themed_clear_preserves_tiles() {
+    use vpdf_model::style::Role;
+    let screen = Screen {
+      columns: 4,
+      rows: 2,
+      cell_width: 10,
+      cell_height: 20,
+      origin: (0, 0),
+    };
+    let owner = TileOwner::new(1);
+    let id = TileId {
+      owner,
+      key: TileKey { scale: 1024, width: 20, height: 20, ..TileKey::default() },
+    };
+    let ctx = egui::Context::default();
+    let mut renderer = Renderer::default();
+    for &theme in Theme::ALL {
+      let frame = Frame {
+        scene: vec![
+          Op::Theme(theme),
+          Op::Style(Role::Reset),
+          Op::Move { column: 0, row: 0 },
+          Op::Erase(4),
+          Op::Move { column: 0, row: 1 },
+          Op::Erase(4),
+          Op::Tile(Box::new(TilePlacement::new(
+            id,
+            (0.0, 0.0),
+            Stage { screen, left: 0 },
+          ))),
+          Op::Style(Role::Bar),
+          Op::Text(Text::new(":")),
+          Op::Spaces(3),
+        ],
+        images: vec![vpdf::session::native::Image {
+          id,
+          pixels: Arc::new(vec![255; 20 * 20 * 3]),
+        }],
+        owners: vec![owner],
+        ..blank(screen)
+      };
+      let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        renderer.paint(ui.painter(), &frame, screen, 1.0, None);
+      });
+      output.textures_delta.clear();
+      let texture = renderer.textures.get(&ImageId::Tile(id)).unwrap();
+      let tile = output
+        .shapes
+        .iter()
+        .position(|shape| shape.shape.texture_id() == texture.handle.id())
+        .unwrap();
+      let covers = |point| {
+        output.shapes[tile + 1..].iter().any(|shape| {
+          matches!(&shape.shape, egui::Shape::Rect(rect)
+          if rect.fill.a() > 0 && rect.rect.contains(point))
+        })
+      };
+      assert!(!covers(Pos2::new(5.0, 5.0)), "{theme:?}: tile covered");
+      assert!(covers(Pos2::new(5.0, 25.0)), "{theme:?}: bar transparent");
     }
   }
 

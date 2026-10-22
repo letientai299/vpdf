@@ -27,6 +27,10 @@ enum Route {
 }
 
 impl Panel {
+  pub fn navigate_available(&self, action: Action) -> bool {
+    super::view::Navigation::of(action).is_some()
+  }
+
   pub fn input(&mut self, input: Input, page: usize) -> Event {
     if !self.focused() {
       return Event::Unhandled;
@@ -68,7 +72,11 @@ impl Panel {
 
   /// Menu shortcut for a panel effect.
   pub fn shortcut(&self, action: Action) -> Option<&'static str> {
-    let action = match self.route(action) {
+    keys::key_for(self.shortcut_action(action)?)
+  }
+
+  pub fn shortcut_action(&self, action: Action) -> Option<Action> {
+    Some(match self.route(action) {
       Route::Close => Action::Quit,
       Route::Copy => Action::YankLine,
       Route::Preview => Action::Peek,
@@ -76,8 +84,7 @@ impl Panel {
       Route::Follow => Action::Follow,
       Route::Keep => Action::Swap,
       Route::Navigate | Route::Unhandled | Route::Ignore => return None,
-    };
-    keys::key_for(action)
+    })
   }
 
   /// Includes actions delegated to the application.

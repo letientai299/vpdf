@@ -1,5 +1,6 @@
 use eframe::egui::Color32;
 use vpdf_model::style::{Attribute, ColorChange, Role, StyleChange, Tone};
+use vpdf_model::theme::Theme;
 
 pub const BACKGROUND: Color32 = Color32::from_rgb(24, 27, 36);
 pub const FOREGROUND: Color32 = Color32::from_rgb(216, 222, 233);
@@ -30,24 +31,35 @@ impl Default for Style {
   }
 }
 
+pub fn rgb(color: [u8; 3]) -> Color32 {
+  Color32::from_rgb(color[0], color[1], color[2])
+}
+
 impl Style {
-  pub fn apply(&mut self, role: Role) {
-    let patch = match role.style() {
+  pub fn new(theme: Theme) -> Self {
+    let palette = theme.palette();
+    Self { foreground: rgb(palette.foreground), ..Self::default() }
+  }
+
+  pub fn apply(&mut self, role: Role, theme: Theme) {
+    let patch = match theme.style(role) {
       StyleChange::Reset(patch) => {
-        *self = Self::default();
+        *self = Self::new(theme);
         patch
       }
       StyleChange::Patch(patch) => patch,
     };
     match patch.foreground {
       ColorChange::Keep => {}
-      ColorChange::Default => self.foreground = FOREGROUND,
-      ColorChange::Set(tone) => self.foreground = resolve(tone),
+      ColorChange::Default => self.foreground = rgb(theme.palette().foreground),
+      ColorChange::Set(tone) => self.foreground = resolve(tone, false, theme),
     }
     match patch.background {
       ColorChange::Keep => {}
-      ColorChange::Default => self.background = None,
-      ColorChange::Set(tone) => self.background = Some(resolve(tone)),
+      ColorChange::Default => self.background = Self::new(theme).background,
+      ColorChange::Set(tone) => {
+        self.background = Some(resolve(tone, true, theme));
+      }
     }
     for attribute in patch.attributes {
       match attribute {
@@ -57,7 +69,8 @@ impl Style {
         Attribute::Underline => self.underline = true,
         Attribute::Inverse => {
           let foreground = self.foreground;
-          self.foreground = self.background.unwrap_or(BACKGROUND);
+          self.foreground =
+            self.background.unwrap_or_else(|| rgb(theme.palette().background));
           self.background = Some(foreground);
         }
       }
@@ -65,7 +78,10 @@ impl Style {
   }
 }
 
-const fn resolve(tone: Tone) -> Color32 {
+fn resolve(tone: Tone, background: bool, theme: Theme) -> Color32 {
+  if theme != Theme::Default {
+    return rgb(theme.color(tone, background));
+  }
   match tone {
     Tone::Black => Color32::from_rgb(32, 36, 47),
     Tone::White => Color32::from_rgb(229, 233, 240),
@@ -129,6 +145,30 @@ mod tests {
   ];
 
   #[test]
+  fn named_roles_resolve_palette() {
+    for &theme in Theme::ALL.iter().filter(|&&theme| theme != Theme::Default) {
+      let p = theme.palette();
+      let mut style = Style::new(theme);
+      for (role, foreground, background) in [
+        (Role::Reset, p.foreground, None),
+        (Role::Bar, p.foreground, Some(p.surface)),
+        (Role::Current, p.blue, None),
+        (Role::StatusFile, p.background, Some(p.cyan)),
+        (Role::TextSelection, p.background, Some(p.magenta)),
+        (Role::PreviewText, p.foreground, Some(p.background)),
+      ] {
+        style.apply(role, theme);
+        assert_eq!(style.foreground, rgb(foreground), "{theme:?}: {role:?}");
+        assert_eq!(
+          style.background,
+          background.map(rgb),
+          "{theme:?}: {role:?}"
+        );
+      }
+    }
+  }
+
+  #[test]
   fn roles_keep_resolved_styles() {
     let color = |rgba: u32| {
       let [r, g, b, a] = rgba.to_be_bytes();
@@ -144,7 +184,7 @@ mod tests {
       };
       for &(previous, ..) in &CASES {
         let mut actual = Style::default();
-        actual.apply(previous);
+        actual.apply(previous, Theme::Default);
         let mut composed = expected;
         if matches!(
           role,
@@ -161,7 +201,7 @@ mod tests {
           composed.underline = actual.underline;
           composed.italic = actual.italic;
         }
-        actual.apply(role);
+        actual.apply(role, Theme::Default);
         assert_eq!(actual, composed, "{previous:?} then {role:?}");
       }
     }

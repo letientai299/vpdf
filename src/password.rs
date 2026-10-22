@@ -1,14 +1,22 @@
 //! The password line, read before any pane opens.
 use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
 
-pub fn password() -> crate::Result<String> {
+pub fn password(settings: &crate::config::Settings) -> crate::Result<String> {
   use std::io::{self, Write};
   let mut prompt = Prompt::new(PromptKind::Password);
+  prompt.set_bindings(
+    settings.bindings().map(vpdf_ui::bindings::Context::Password),
+  );
   let mut out = io::stdout();
   loop {
     // Rows and columns only: a terminal that lost its pixel metrics
     // still takes a password.
     let (columns, rows) = crossterm::terminal::size()?;
+    vpdf_terminal::style::write(
+      &mut out,
+      vpdf_model::style::Role::Reset,
+      settings.theme(),
+    )?;
     vpdf_terminal::terminal::line(
       &mut out,
       vpdf_model::geometry::At::default(),

@@ -1,12 +1,16 @@
 use crate::Result;
-use crate::keys;
+use crate::bindings::{
+  Bindings, Context, HintAction, Match, Pending, Sequence, Target as Binding,
+};
 use crate::layout::Layout;
 use crate::paint::Frame;
 use crate::pointer::Items;
 use crate::split::Rect;
 use crate::theme;
 use vpdf_model::document::{Link, Target};
-use vpdf_model::input::{KeyCode, KeyEvent};
+#[cfg(test)]
+use vpdf_model::input::KeyCode;
+use vpdf_model::input::KeyEvent;
 use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId};
@@ -20,12 +24,9 @@ pub enum Transition {
   Miss(String),
 }
 
-enum Route {
-  Run(usize),
-  Cancel,
-  Type(char),
-  Erase,
-  Close,
+pub enum Input {
+  Transition(Transition),
+  Command(String),
   Pass,
 }
 
@@ -49,6 +50,7 @@ pub struct Hints {
   copy: bool,
   /// The pointer's label; Enter runs it.
   selected: Option<usize>,
+  pending: Pending,
 }
 
 /// `count` labels of equal length, so no label prefixes another.
@@ -134,7 +136,7 @@ impl Hints {
       })
       .collect();
     let typed = String::new();
-    Ok(Self { items, typed, copy, selected: None })
+    Ok(Self { items, typed, copy, selected: None, pending: Pending::default() })
   }
 
   pub fn items(&self) -> &[Hint] {
@@ -156,46 +158,66 @@ impl Hints {
     self.items.into_iter().nth(index).map(|hint| (hint.target, self.copy))
   }
 
-  fn route(&self, key: KeyEvent) -> Route {
-    let key = keys::normalize(key);
-    if key.code == KeyCode::Enter
-      && let Some(index) = self.selected
-    {
-      return Route::Run(index);
-    }
-    if key.code == KeyCode::Esc {
-      return Route::Cancel;
-    }
-    match (keys::plain(key), key.code) {
-      (true, KeyCode::Char(ch)) if ch.is_ascii_alphabetic() => {
-        Route::Type(ch.to_ascii_lowercase())
-      }
-      (true, KeyCode::Backspace) if !self.typed.is_empty() => Route::Erase,
-      (_, KeyCode::Backspace) => Route::Close,
-      _ => Route::Pass,
-    }
+  pub fn reset_input(&mut self) {
+    self.pending.clear();
   }
 
-  /// Keys retained after global cancellation handling.
   pub fn accepts(&self, key: KeyEvent) -> bool {
-    !matches!(self.route(key), Route::Cancel | Route::Pass)
+    let Ok(sequence) = Sequence::from_keys(&[key]) else { return false };
+    match Bindings::default().map(Context::Hints).get(&sequence) {
+      Some(Binding::Hint(HintAction::Cancel)) | None => false,
+      Some(Binding::Hint(HintAction::Follow)) => self.selected.is_some(),
+      _ => true,
+    }
   }
 
   pub fn key(&mut self, key: KeyEvent) -> Transition {
-    let route = self.route(key);
-    // Typing may hide the picked label.
-    if !matches!(route, Route::Run(_) | Route::Cancel) {
+    match self.feed(key, &Bindings::default()) {
+      Input::Transition(transition) => transition,
+      Input::Command(_) | Input::Pass => Transition::Close,
+    }
+  }
+
+  pub fn feed(&mut self, key: KeyEvent, bindings: &Bindings) -> Input {
+    let map = bindings.map(Context::Hints);
+    match self.pending.feed_cancellable(&map, key, Binding::cancels) {
+      Match::Target(Binding::Hint(HintAction::Follow))
+        if self.selected.is_none() =>
+      {
+        Input::Pass
+      }
+      Match::Target(Binding::Hint(action)) => {
+        Input::Transition(self.action(action))
+      }
+      Match::Target(Binding::Command(command)) => Input::Command(command),
+      Match::Pending | Match::Consumed => Input::Transition(Transition::Stay),
+      Match::Unbound
+        if Sequence::from_keys(&[key])
+          .is_ok_and(|sequence| map.is_unbound(&sequence)) =>
+      {
+        Input::Transition(Transition::Stay)
+      }
+      Match::Target(_) | Match::Unbound => Input::Pass,
+    }
+  }
+
+  pub fn action(&mut self, action: HintAction) -> Transition {
+    if !matches!(action, HintAction::Follow | HintAction::Cancel) {
       self.selected = None;
     }
-    match route {
-      Route::Run(index) => return Transition::Run(index),
-      Route::Cancel => return Transition::Cancel,
-      Route::Type(ch) => self.typed.push(ch),
-      Route::Erase => {
+    match action {
+      HintAction::Follow => {
+        return self.selected.map_or(Transition::Close, Transition::Run);
+      }
+      HintAction::Cancel => return Transition::Cancel,
+      HintAction::Type { character } => {
+        self.typed.push(character.to_ascii_lowercase());
+      }
+      HintAction::Erase if !self.typed.is_empty() => {
         self.typed.pop();
         return Transition::Stay;
       }
-      Route::Close | Route::Pass => return Transition::Close,
+      HintAction::Erase | HintAction::Close => return Transition::Close,
     }
     let shown: Vec<_> = self.shown().map(|(index, _)| index).take(2).collect();
     match shown[..] {
@@ -453,6 +475,45 @@ mod tests {
         Transition::Close
       );
     }
+    Ok(())
+  }
+}
+
+#[cfg(test)]
+mod binding_tests {
+  use super::*;
+  use crate::bindings::{Change, Edit};
+
+  #[test]
+  fn unbinding_consumes_hint_keys() -> Result<()> {
+    let mut bindings = Bindings::default();
+    let old = bindings.map(Context::Hints);
+    let edits = [
+      Edit { sequence: Sequence::parse("a")?, change: Change::Unbind },
+      Edit {
+        sequence: Sequence::parse("<D-a>")?,
+        change: Change::Bind(Binding::Hint(HintAction::Type {
+          character: 'a',
+        })),
+      },
+    ];
+    let (map, diagnostics) = old.apply(&old, &edits);
+    assert_eq!(diagnostics, Vec::<crate::bindings::Diagnostic>::new());
+    bindings.set(Context::Hints, map);
+    let found =
+      (0..25).map(|row| (((10, row), 12), Target::Page(PageId(0)))).collect();
+    let mut hints = Hints::new(found, false, 0, 80)?;
+    let key = |ch, modifiers| KeyEvent::new(KeyCode::Char(ch), modifiers);
+    assert!(matches!(
+      hints.feed(key('a', vpdf_model::input::KeyModifiers::NONE), &bindings),
+      Input::Transition(Transition::Stay)
+    ));
+    assert_eq!(hints.typed(), "");
+    assert!(matches!(
+      hints.feed(key('a', vpdf_model::input::KeyModifiers::SUPER), &bindings),
+      Input::Transition(Transition::Stay)
+    ));
+    assert_eq!(hints.typed(), "a");
     Ok(())
   }
 }

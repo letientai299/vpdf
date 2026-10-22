@@ -17,6 +17,8 @@ use vpdf_ui::prompt::History;
 #[derive(Debug, Eq, PartialEq)]
 pub enum Outcome {
   Stay,
+  ConfigReload,
+  Theme(vpdf_model::theme::Theme),
   Perf(Option<bool>),
   Open(PathBuf),
   Pick,
@@ -27,6 +29,7 @@ pub struct Home {
   pub view: vpdf_ui::home::Home,
   loader: Loader,
   graphics: Graphics,
+  theme: vpdf_model::theme::Theme,
 }
 
 impl Home {
@@ -40,7 +43,17 @@ impl Home {
       &crate::recent::entries(recent),
       screen,
     );
-    Self { view, loader: Loader::new("", wake), graphics: Graphics::live() }
+    Self {
+      view,
+      loader: Loader::new("", wake),
+      graphics: Graphics::live(),
+      theme: vpdf_model::theme::Theme::Default,
+    }
+  }
+
+  pub(crate) fn configure(&mut self, settings: &crate::config::Settings) {
+    self.theme = settings.theme();
+    self.view.set_bindings(settings.bindings().clone());
   }
 
   pub(crate) fn updates(&mut self) -> bool {
@@ -51,6 +64,12 @@ impl Home {
     &mut self,
     scene: &mut S,
   ) -> std::result::Result<(), S::Error> {
+    if self.theme != vpdf_model::theme::Theme::Default {
+      vpdf_model::scene::Draw::push(
+        scene,
+        vpdf_model::scene::Op::Theme(self.theme),
+      );
+    }
     self
       .view
       .scene(scene, crate::state::now(), |cards| self.loader.request(cards))
@@ -61,6 +80,12 @@ impl Home {
     self.updates();
     self.graphics.begin(out)?;
     crate::presentation::draw(out, Some(&mut self.graphics), |scene| {
+      if self.theme != vpdf_model::theme::Theme::Default {
+        vpdf_model::scene::Draw::push(
+          scene,
+          vpdf_model::scene::Op::Theme(self.theme),
+        );
+      }
       self
         .view
         .scene(scene, crate::state::now(), |cards| self.loader.request(cards))
@@ -150,6 +175,11 @@ impl Home {
         );
         Ok(Outcome::Stay)
       }
+      Id::Config => {
+        crate::config::reload_command(argument)?;
+        Ok(Outcome::ConfigReload)
+      }
+      Id::Theme => commands::theme(argument).map(Outcome::Theme),
       Id::Perf => crate::perf::switch(argument).map(Outcome::Perf),
       _ => anyhow::bail!("Open a document before :{}", spec.name),
     }
@@ -168,6 +198,41 @@ mod tests {
 
   fn command(line: &str) -> Result<Outcome> {
     resolve(line, true)
+  }
+
+  #[test]
+  fn theme_commands_work_at_home() -> Result<()> {
+    use vpdf_model::theme::Theme;
+    for terminal in [true, false] {
+      for name in ["theme", "colorscheme"] {
+        assert_eq!(
+          resolve(&format!("{name} nord"), terminal)?,
+          Outcome::Theme(Theme::Nord)
+        );
+        for argument in ["", "unknown", "nord extra"] {
+          assert!(resolve(&format!("{name} {argument}"), terminal).is_err());
+        }
+      }
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn reload_command_works_at_home() -> Result<()> {
+    assert_eq!(command("config reload")?, Outcome::ConfigReload);
+    for argument in ["", "help", "bindings", "bindings normal", "licenses"] {
+      assert!(command(&format!("config {argument}")).is_err());
+    }
+    assert_eq!(
+      cmdline::candidates("config ", View::Home, true),
+      (7, vec!["reload".to_owned()]),
+    );
+    assert!(command("config reload extra").is_err());
+    assert_eq!(
+      cmdline::candidates("config r", View::Home, true),
+      (7, vec!["reload".to_owned()]),
+    );
+    Ok(())
   }
 
   #[test]

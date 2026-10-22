@@ -100,7 +100,7 @@ impl<'a, S: TextSource + Pages, D: Draw<'a>> Painter<'_, S, D> {
     &mut self,
     page: PageId,
     quad: Quad,
-    color: [u8; 4],
+    color: theme::Paint,
     layer: Layer,
   ) {
     let layout = self.canvas.layout;
@@ -119,13 +119,13 @@ impl<'a, S: TextSource + Pages, D: Draw<'a>> Painter<'_, S, D> {
     }
   }
 
-  fn tint(&mut self, rect: Bounds, color: [u8; 4]) {
+  fn tint(&mut self, rect: Bounds, color: theme::Paint) {
     for piece in outside(rect, self.canvas.menu) {
       self.scene.fill(piece, color, Layer::AboveText, self.canvas.stage());
     }
   }
 
-  fn line(&mut self, position: Position, color: [u8; 4]) -> Result<()> {
+  fn line(&mut self, position: Position, color: theme::Paint) -> Result<()> {
     let text = self.source.page_text(position.page)?;
     let Some(quad) = text
       .lines
@@ -147,7 +147,7 @@ impl<'a, S: TextSource + Pages, D: Draw<'a>> Painter<'_, S, D> {
     &mut self,
     (first, last): (Position, Position),
     linewise: bool,
-    color: [u8; 4],
+    color: theme::Paint,
   ) -> Result<()> {
     let range = range(first, last);
     let (first, last) = range;

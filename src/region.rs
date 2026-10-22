@@ -15,9 +15,7 @@ use vpdf_reader::reader::Yank;
 use vpdf_ui::figures;
 use vpdf_ui::keys::Input;
 use vpdf_ui::page::Point;
-use vpdf_ui::region::{
-  BAR_HINT, CaptureId, DRAW_HINT, Operation, Region, Snapshot, Transition,
-};
+use vpdf_ui::region::{CaptureId, Operation, Region, Snapshot, Transition};
 
 pub(crate) fn next_capture() -> CaptureId {
   static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -41,6 +39,12 @@ pub struct Job {
 }
 
 impl App {
+  pub(crate) fn show_region_hint(&mut self, drawing: bool) {
+    let hint = self.settings.bindings().region_hint(drawing);
+    self.reader.notice(&hint);
+    self.region_notice = Some(hint);
+  }
+
   pub fn move_figure(&mut self, forward: bool, count: usize) -> Result<()> {
     self.check_region();
     let current = self.figure_point()?;
@@ -118,7 +122,7 @@ impl App {
         .and_then(vpdf_ui::input::gesture::Sweep::bounds)
         .is_some()
       {
-        self.reader.notice(DRAW_HINT);
+        self.show_region_hint(true);
         return Ok(());
       }
     }
@@ -202,7 +206,7 @@ impl App {
     self.reader.cancel_scroll();
     self.disarm();
     self.overlays.open_region(Region::open(snapshot));
-    self.reader.notice(BAR_HINT);
+    self.show_region_hint(false);
     Ok(())
   }
 
@@ -213,7 +217,7 @@ impl App {
       Transition::Edit => {
         anyhow::ensure!(!self.text_mode, "Region capture requires page view");
         region.edit(next_capture());
-        self.reader.notice(DRAW_HINT);
+        self.show_region_hint(true);
       }
       Transition::Move(dx, dy) => self.move_corner(dx, dy, input.count),
       Transition::Shift(dx, dy) => self.shift_region(dx, dy, input.count),
@@ -226,7 +230,7 @@ impl App {
         );
         self.reader.cancel_scroll();
         self.disarm();
-        self.reader.notice(BAR_HINT);
+        self.show_region_hint(false);
       }
       Transition::Run(operation) => self.region_operation(operation)?,
       Transition::Close => {

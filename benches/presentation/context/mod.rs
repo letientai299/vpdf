@@ -27,7 +27,12 @@ pub fn draw() -> Result<()> {
   let items = prepared
     .entries
     .into_iter()
-    .map(|(label, key)| Item { label: label.into(), key, command: () })
+    .map(|(label, key)| Item {
+      label: label.into(),
+      key,
+      command: (),
+      shortcut: None,
+    })
     .collect();
   let mut menu = ContextMenu::new(
     items,

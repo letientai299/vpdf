@@ -7,9 +7,10 @@ use vpdf_model::document::Target;
 use vpdf_model::input::KeyEvent;
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Mode;
+use vpdf_ui::bindings::Context;
 use vpdf_ui::commands::{self, Id, View};
 use vpdf_ui::input::{Cancel, InputOwner, Reset};
-use vpdf_ui::keys::{Action, Grammar, Input, PanelKind};
+use vpdf_ui::keys::{Action, Dispatch, Input, PanelKind};
 use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
 use vpdf_ui::split::Axis;
 use vpdf_ui::window::{TabMove, Window};
@@ -114,63 +115,70 @@ impl App {
 
   pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
     self.search.forget_yank();
-    let key = vpdf_ui::keys::normalize(key);
     // Keys end pointer gestures.
     let swept = self.end_gestures();
     self.drop_hover_preview();
-    if swept && vpdf_ui::keys::cancels(key) {
-      self.disarm();
-      return Ok(());
-    }
-    if self.overlays.prompt().is_some() {
+    if let Some(prompt) = self.overlays.prompt_mut() {
+      prompt.set_bindings(
+        self.settings.bindings().map(Context::prompt(prompt.kind())),
+      );
       let view = self.command_view();
       let terminal = matches!(self.frontend, crate::raster::Frontend::Terminal);
       return self.edit_prompt(history, |prompt, history| {
         cmdline::feed(prompt, key, history, view, terminal)
       });
     }
-    if vpdf_ui::keys::cancels(key) {
-      return self.cancel_input();
-    }
-    if let Some(hints) = self.overlays.hints() {
-      if hints.accepts(key) {
-        return self.hint_key(key);
-      }
-      self.overlays.close_hints();
+    if self.overlays.hints().is_some() && self.hint_key(key)? {
+      return Ok(());
     }
     let owner = self.input_owner();
+    let context = Context::resolve(
+      owner,
+      self.reader.mode(),
+      self.reader.operator.is_some(),
+    );
+    let dispatch = self.keys.feed_with(key, context, self.settings.bindings());
     if matches!(
       owner,
       InputOwner::Context | InputOwner::Peek | InputOwner::Region
-    ) {
-      let input = if owner == InputOwner::Region {
-        self.keys.feed_region(key)
-      } else {
-        self.keys.feed(key, Grammar::Other)
-      };
-      if matches!(self.keys.awaiting(), Some("C-w" | "C-r")) {
-        self.dismiss_overlay();
-      }
-      let Some(input) = input else { return Ok(()) };
-      return match owner {
-        InputOwner::Context => self.context_input(input),
-        InputOwner::Peek => self.preview_input(input),
-        _ => self.action(input),
-      };
+    ) && (self.keys.resizing()
+      || matches!(self.keys.awaiting(), Some("C-w")))
+    {
+      self.dismiss_overlay();
     }
-    let grammar =
-      owner.grammar(self.reader.mode(), self.reader.operator.is_some());
-    if let Some(mut input) = self.keys.feed(key, grammar) {
-      if let Action::Panel(kind) = input.action
-        && self.panel_focused()
-        && self.panel.as_ref().is_some_and(|panel| panel.view.kind() == kind)
-      {
-        input.action = Action::ClosePanel;
+    let Some(dispatch) = dispatch else {
+      if self.keys.pending().is_empty() {
+        self.reader.disarm();
       }
-      self.action(input)?;
-    } else if self.keys.pending().is_empty() {
-      self.reader.disarm();
+      return Ok(());
+    };
+    let mut input = match dispatch {
+      Dispatch::Command(command) => {
+        self.disarm();
+        return self.command(&command);
+      }
+      Dispatch::Input(input) => input,
+    };
+    if swept && input.action == Action::Cancel {
+      self.disarm();
+      return Ok(());
     }
+    if input.action == Action::Cancel {
+      return self.cancel_input();
+    }
+    if owner == InputOwner::Context {
+      return self.context_input(input);
+    }
+    if owner == InputOwner::Peek {
+      return self.preview_input(input);
+    }
+    if let Action::Panel(kind) = input.action
+      && self.panel_focused()
+      && self.panel.as_ref().is_some_and(|panel| panel.view.kind() == kind)
+    {
+      input.action = Action::ClosePanel;
+    }
+    self.action(input)?;
     Ok(())
   }
 
@@ -182,8 +190,9 @@ impl App {
     self.cancel_definition();
     self.reader.cancel_scroll();
     let owner = self.input_owner();
-    let pending =
-      !self.keys.pending().is_empty() || self.reader.operator.is_some();
+    let pending = self.keys.cancelled_pending()
+      || !self.keys.pending().is_empty()
+      || self.reader.operator.is_some();
     let cancel = self.overlays.cancel(owner, pending);
     match cancel {
       Cancel::Disarm => {}
@@ -238,6 +247,11 @@ impl App {
       | PromptEvent::Editor
       | PromptEvent::Complete => {}
       PromptEvent::Cancel => self.cancel_input()?,
+      PromptEvent::Command => {
+        if let Some(command) = prompt.take_command() {
+          self.command(&command)?;
+        }
+      }
       PromptEvent::Submit => {
         let Some(prompt) = self.overlays.close_prompt() else { return Ok(()) };
         history.push(prompt.kind(), prompt.text());
@@ -271,6 +285,11 @@ impl App {
       program,
       matches!(self.frontend, crate::raster::Frontend::Terminal),
     )
+  }
+
+  fn theme_command(&mut self, argument: &str) -> Result<()> {
+    self.request = Some(Request::Theme(commands::theme(argument)?));
+    Ok(())
   }
 
   pub fn command(&mut self, line: &str) -> Result<()> {
@@ -352,6 +371,11 @@ impl App {
       }
       Id::Text => self.open_panel(PanelKind::Text)?,
       Id::Info => self.open_panel(PanelKind::Info)?,
+      Id::Config => {
+        crate::config::reload_command(argument)?;
+        self.request = Some(Request::ConfigReload);
+      }
+      Id::Theme => self.theme_command(argument)?,
       Id::Reload => self.reload_with(&self.password.clone())?,
       Id::Print => self.print(argument)?,
       Id::Password => {

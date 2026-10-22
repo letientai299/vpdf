@@ -121,174 +121,8 @@ pub enum Grammar {
   Other,
 }
 
-#[derive(Clone, Default)]
-pub struct Keys {
-  prefix: String,
-  count: usize,
-  register: Option<char>,
-  choosing_register: bool,
-}
-
-impl Keys {
-  pub fn clear(&mut self) {
-    *self = Self::default();
-  }
-
-  pub fn feed_region(&mut self, key: KeyEvent) -> Option<Input> {
-    if self.prefix.is_empty()
-      && !self.choosing_register
-      && plain(key)
-      && let KeyCode::Char(mut ch) = key.code
-    {
-      if key.modifiers.contains(KeyModifiers::SHIFT) {
-        ch.make_ascii_uppercase();
-      }
-      let delta = match ch {
-        'H' => Some((-1, 0)),
-        'J' => Some((0, 1)),
-        'K' => Some((0, -1)),
-        'L' => Some((1, 0)),
-        _ => None,
-      };
-      if let Some((dx, dy)) = delta {
-        return Some(self.finish(Action::RegionShift(dx, dy)));
-      }
-    }
-    self.feed(key, Grammar::Other)
-  }
-
-  pub fn feed(&mut self, key: KeyEvent, grammar: Grammar) -> Option<Input> {
-    let key = normalize(key);
-    if cancels(key) {
-      self.clear();
-      return Some(self.finish(Action::Cancel));
-    }
-    if std::mem::take(&mut self.choosing_register) {
-      match key.code {
-        KeyCode::Char(name) if plain(key) => self.register = Some(name),
-        _ => self.clear(),
-      }
-      return None;
-    }
-    let Some(token) = token(key) else {
-      if !self.resizing() {
-        self.clear();
-      }
-      return None;
-    };
-    if self.prefix == "y" {
-      self.prefix.clear();
-      match token.as_str() {
-        "y" if grammar == Grammar::Panel => {
-          return Some(self.finish(Action::YankLine));
-        }
-        "f" => return Some(self.finish(Action::Hints(true))),
-        "p" => return Some(self.finish(Action::YankPath)),
-        "Y" => return Some(self.finish(Action::YankRaw)),
-        _ => {}
-      }
-    }
-    if token == "\"" && self.prefix.is_empty() {
-      self.choosing_register = true;
-      return None;
-    }
-    if matches!(self.prefix.as_str(), "m" | "'" | "`") {
-      let action = mark(&self.prefix, &token);
-      return match action {
-        Some(action) => Some(self.finish(action)),
-        None => {
-          self.clear();
-          None
-        }
-      };
-    }
-    if token.len() == 1
-      && let Ok(digit) = token.parse::<usize>()
-      && (digit != 0 || self.count != 0)
-    {
-      self.count =
-        self.count.saturating_mul(10).saturating_add(digit).min(10_000);
-      return None;
-    }
-    if self.prefix.is_empty()
-      && matches!(token.as_str(), "i" | "a")
-      && grammar != Grammar::Objects
-    {
-      if token == "i" && grammar == Grammar::Normal {
-        return Some(self.finish(Action::Cursor));
-      }
-      self.clear();
-      return None;
-    }
-    if self.resizing() {
-      let action = binding(&format!("C-r{token}"))?;
-      let input = self.finish(action);
-      self.prefix.push_str("C-r");
-      return Some(input);
-    }
-    self.prefix.push_str(&token);
-    if let Some(action) = binding(&self.prefix) {
-      if action == Action::Yank && grammar == Grammar::Panel {
-        return None;
-      }
-      let register = self.register;
-      let input = self.finish(action);
-      // `y` also accepts copy continuations.
-      if action == Action::Yank
-        && matches!(grammar, Grammar::Normal | Grammar::Cursor)
-      {
-        self.prefix.push('y');
-        self.register = register;
-      }
-      return Some(input);
-    }
-    if !matches!(
-      self.prefix.as_str(),
-      "g" | "z" | "i" | "a" | "m" | "'" | "`" | "C-w" | "C-r" | "[" | "]"
-    ) {
-      self.clear();
-    }
-    None
-  }
-
-  pub fn resizing(&self) -> bool {
-    self.prefix == "C-r"
-  }
-
-  /// The prefix waiting for its next key, or `"` choosing a register.
-  pub fn awaiting(&self) -> Option<&str> {
-    if self.choosing_register {
-      return Some("\"");
-    }
-    (!self.prefix.is_empty()).then_some(self.prefix.as_str())
-  }
-
-  /// Typed count, register, and prefix, like Vim's showcmd.
-  pub fn pending(&self) -> String {
-    let mut text = String::new();
-    if let Some(register) = self.register {
-      text.push('"');
-      text.push(register);
-    } else if self.choosing_register {
-      text.push('"');
-    }
-    if self.count > 0 {
-      text += &self.count.to_string();
-    }
-    text + &self.prefix
-  }
-
-  fn finish(&mut self, action: Action) -> Input {
-    let input = Input {
-      action,
-      count: self.count.max(1),
-      explicit: self.count > 0,
-      register: self.register.unwrap_or('"'),
-    };
-    self.clear();
-    input
-  }
-}
+mod dispatch;
+pub use dispatch::{Dispatch, Keys};
 
 /// Maps protocol chords to their legacy keys. Ctrl-i stays apart from
 /// Tab, which Kitty's keyboard protocol tells apart.
@@ -387,25 +221,8 @@ fn token(key: KeyEvent) -> Option<String> {
   })
 }
 
-/// `m`, `'`, and `` ` `` take a mark name; `''` returns like Ctrl-o.
-fn mark(prefix: &str, token: &str) -> Option<Action> {
-  let mut chars = token.chars();
-  let name = chars.next().filter(|_| chars.next().is_none())?;
-  match (prefix, name) {
-    ("'" | "`", '\'' | '`') => Some(Action::History(false)),
-    ("m", name) if name.is_ascii_alphabetic() => Some(Action::Mark(name)),
-    ("'", name) if name.is_ascii_alphabetic() => {
-      Some(Action::GoMark(name, false))
-    }
-    ("`", name) if name.is_ascii_alphabetic() => {
-      Some(Action::GoMark(name, true))
-    }
-    _ => None,
-  }
-}
-
 /// Keys, action, and description, also shown as prefix-key clues.
-const BINDINGS: &[(&str, Action, &str)] = &[
+pub(crate) const BINDINGS: &[(&str, Action, &str)] = &[
   ("h", Action::Motion(M::Left), "left"),
   ("l", Action::Motion(M::Right), "right"),
   ("j", Action::Motion(M::Down), "down"),
@@ -598,6 +415,7 @@ pub fn notation(name: &str) -> String {
       Some("<S-Space>".into())
     }
     KeyCode::Char(' ') => Some("<Space>".into()),
+    KeyCode::Char('<') => Some("<lt>".into()),
     KeyCode::Char(ch) => Some(ch.to_string()),
     KeyCode::Enter => Some("<CR>".into()),
     KeyCode::Tab => Some("<Tab>".into()),
@@ -605,33 +423,6 @@ pub fn notation(name: &str) -> String {
     _ => None,
   });
   shown.collect::<Option<String>>().unwrap_or_else(|| name.to_owned())
-}
-
-impl Keys {
-  pub fn clues(
-    &self,
-    grammar: Grammar,
-    allows: impl Fn(Action) -> bool,
-  ) -> Vec<(String, &'static str)> {
-    let Some(prefix) = self.awaiting() else { return Vec::new() };
-    let mut clues: Vec<_> = BINDINGS
-      .iter()
-      .filter_map(|(sequence, _, about)| {
-        let suffix = sequence.strip_prefix(prefix).filter(|s| !s.is_empty())?;
-        let mut pending = self.clone();
-        let mut action = None;
-        for key in parse(suffix)? {
-          if action.is_some() {
-            return None;
-          }
-          action = pending.feed(key, grammar).map(|input| input.action);
-        }
-        allows(action?).then(|| (suffix.to_owned(), *about))
-      })
-      .collect();
-    clues.sort_by(|a, b| a.0.cmp(&b.0));
-    clues
-  }
 }
 
 #[cfg(test)]

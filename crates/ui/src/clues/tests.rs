@@ -94,12 +94,14 @@ fn focused_panels_filter_ignored_continuations() {
     };
     let shown = |panel: &Panel, prefix| {
       let mut keys = Keys::default();
+      let grammar =
+        if panel.focused() { Grammar::Panel } else { Grammar::Cursor };
       for key in keys::parse(prefix).unwrap() {
-        keys.feed(key, Grammar::Panel);
+        keys.feed(key, grammar);
       }
       super::items(
         &keys,
-        Grammar::Panel,
+        grammar,
         |action| panel.allows(action),
         std::iter::empty(),
         std::iter::empty(),

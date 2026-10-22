@@ -104,6 +104,11 @@ enum Route {
   Ignore,
 }
 
+pub fn accepts(action: Action) -> bool {
+  matches!(action, Action::RegionShift(..) | Action::Swap | Action::RegionStart)
+    || !matches!(route(action), Route::Ignore)
+}
+
 fn route(action: Action) -> Route {
   match action {
     Action::Motion(Motion::Left | Motion::Up) => Route::Select(false),

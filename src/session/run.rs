@@ -415,6 +415,7 @@ impl Session {
       if let Some(warning) = self.startup_warning.take() {
         home.view.fail(warning);
       }
+      home.configure(&self.settings);
       home.draw(out)?;
       self.perf.frame(Instant::now());
       if self.state.perf
@@ -495,6 +496,7 @@ impl Session {
       }
       return Ok(());
     }
+    home.configure(&self.settings);
     let outcome = home.event(event, &mut self.history);
     match outcome {
       Ok(Outcome::Open(path)) => {
@@ -521,6 +523,16 @@ impl Session {
       Ok(Outcome::Perf(on)) => {
         self.home = Some(home);
         return self.toggle_perf(on);
+      }
+      Ok(Outcome::ConfigReload) => {
+        self.home = Some(home);
+        self.reload_config();
+        return Ok(());
+      }
+      Ok(Outcome::Theme(theme)) => {
+        self.home = Some(home);
+        self.set_theme(theme);
+        return Ok(());
       }
       Ok(Outcome::Stay) => {}
       Err(error) => home.view.fail(error.to_string()),

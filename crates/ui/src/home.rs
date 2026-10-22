@@ -1,5 +1,6 @@
 use crate::Result;
-use crate::keys::{Action, Keys};
+use crate::bindings::{Bindings, Context};
+use crate::keys::{Action, Dispatch, Keys};
 use crate::layout::Screen;
 use crate::panel::Panel;
 use crate::panel::recent::{Entry, Shelf};
@@ -34,6 +35,7 @@ pub struct Home {
   info: Option<Panel>,
   prompt: Option<Prompt>,
   keys: Keys,
+  bindings: Bindings,
 }
 
 impl Home {
@@ -54,7 +56,26 @@ impl Home {
       info: None,
       prompt: None,
       keys: Keys::default(),
+      bindings: Bindings::default(),
     }
+  }
+
+  pub fn set_bindings(&mut self, bindings: Bindings) {
+    self.bindings = bindings;
+    if let Some(prompt) = &mut self.prompt {
+      prompt.set_bindings(self.bindings.map(Context::prompt(prompt.kind())));
+    }
+  }
+
+  pub fn reset_input(&mut self) {
+    self.keys.clear();
+    if let Some(prompt) = &mut self.prompt {
+      prompt.reset_input();
+    }
+  }
+
+  pub fn clear_error(&mut self) {
+    self.error = None;
   }
 
   pub fn screen(&self) -> Screen {
@@ -116,10 +137,63 @@ impl Home {
   }
 
   pub fn scene_footer<'a>(&self, scene: &mut impl Draw<'a>) {
+    let footer = if self.bindings == Bindings::default() {
+      if self.info.is_some() {
+        "j/k scroll  Esc close".into()
+      } else {
+        "Enter open  :e file  :q quit".into()
+      }
+    } else {
+      let hints = if self.info.is_some() {
+        vec![
+          self.bindings.hint(
+            Context::Home,
+            &crate::bindings::Target::Reader(Action::Motion(
+              vpdf_reader::motion::Motion::Down,
+            )),
+            "down",
+          ),
+          self.bindings.hint(
+            Context::Home,
+            &crate::bindings::Target::Reader(Action::Motion(
+              vpdf_reader::motion::Motion::Up,
+            )),
+            "up",
+          ),
+          self.bindings.hint(
+            Context::Home,
+            &crate::bindings::Target::Reader(Action::Cancel),
+            "close",
+          ),
+        ]
+      } else {
+        vec![
+          self.bindings.hint(
+            Context::Home,
+            &crate::bindings::Target::Reader(Action::Follow),
+            "open",
+          ),
+          self.bindings.hint(
+            Context::Home,
+            &crate::bindings::Target::Reader(Action::Command),
+            "command",
+          ),
+          self.bindings.hint(
+            Context::Home,
+            &crate::bindings::Target::Reader(Action::Quit),
+            "quit",
+          ),
+        ]
+      };
+      hints
+        .into_iter()
+        .filter(|hint| !hint.is_empty())
+        .collect::<Vec<_>>()
+        .join("  ")
+    };
     let (text, style) = match &self.error {
       Some(error) => (error.as_str(), Role::Error),
-      None if self.info.is_some() => ("j/k scroll  Esc close", Role::Bar),
-      None => ("Enter open  :e file  :q quit", Role::Bar),
+      None => (footer.as_str(), Role::Bar),
     };
     let columns = usize::from(self.screen.columns);
     let text = vpdf_model::text::clean(text, columns.saturating_sub(8));
@@ -176,10 +250,26 @@ impl Home {
       Event::Key(key) if key.kind != KeyEventKind::Release => {
         self.error = None;
         if let Some(info) = &mut self.info {
-          if let Some(input) = self.keys.feed(key, crate::keys::Grammar::Other)
-            && info.navigate(input, usize::from(self.screen.rows))
-          {
-            return Ok(Effect::Stay);
+          match self.keys.feed_with(key, Context::Home, &self.bindings) {
+            Some(Dispatch::Command(command)) => {
+              return Ok(Effect::Command(command));
+            }
+            Some(Dispatch::Input(input))
+              if info.navigate(input, usize::from(self.screen.rows)) =>
+            {
+              return Ok(Effect::Stay);
+            }
+            None if self.keys.awaiting().is_some() => return Ok(Effect::Stay),
+            None
+              if crate::bindings::Sequence::from_keys(&[key]).is_ok_and(
+                |sequence| {
+                  self.bindings.map(Context::Home).is_unbound(&sequence)
+                },
+              ) =>
+            {
+              return Ok(Effect::Stay);
+            }
+            _ => {}
           }
           self.info = None;
           self.keys = Keys::default();
@@ -221,8 +311,14 @@ impl Home {
 
   fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<Effect> {
     let Some(prompt) = &mut self.prompt else {
-      let Some(input) = self.keys.feed(key, crate::keys::Grammar::Other) else {
+      let Some(dispatch) =
+        self.keys.feed_with(key, Context::Home, &self.bindings)
+      else {
         return Ok(Effect::Stay);
+      };
+      let input = match dispatch {
+        Dispatch::Command(command) => return Ok(Effect::Command(command)),
+        Dispatch::Input(input) => input,
       };
       if self.panel.navigate(input, usize::from(self.screen.rows)) {
         return Ok(Effect::Stay);
@@ -242,6 +338,7 @@ impl Home {
         _ => Effect::Stay,
       });
     };
+    prompt.set_bindings(self.bindings.map(Context::prompt(prompt.kind())));
     let event = prompt.feed(key, history);
     self.prompt_event(event, history)
   }
@@ -265,6 +362,9 @@ impl Home {
       PromptEvent::Cancel => {
         self.prompt = None;
         self.panel.abort_search();
+      }
+      PromptEvent::Command => {
+        return Ok(prompt.take_command().map_or(Effect::Stay, Effect::Command));
       }
       PromptEvent::Submit => {
         let text = prompt.text().to_owned();

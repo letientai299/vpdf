@@ -696,6 +696,7 @@ fn home_event(
   screen: Screen,
 ) -> Result<()> {
   let Some(home) = &mut session.home else { return Ok(()) };
+  home.configure(&session.settings);
   match home.native_event(event, &mut session.history)? {
     crate::home::Outcome::Open(path) => {
       session.resume(Operation::Open(path), screen)?;
@@ -703,6 +704,8 @@ fn home_event(
     crate::home::Outcome::Quit => session.quit = true,
     crate::home::Outcome::Pick => session.pick()?,
     crate::home::Outcome::Perf(on) => session.toggle_perf(on)?,
+    crate::home::Outcome::ConfigReload => session.reload_config(),
+    crate::home::Outcome::Theme(theme) => session.set_theme(theme),
     crate::home::Outcome::Stay => {}
   }
   Ok(())
@@ -773,6 +776,19 @@ fn completions(
   dirty
 }
 
+fn prepare_scene(
+  session: &mut Session,
+  scene: &mut impl vpdf_model::scene::Draw<'static>,
+) {
+  if session.settings.theme() != vpdf_model::theme::Theme::Default {
+    scene.push(Op::Theme(session.settings.theme()));
+  }
+  session.present_startup();
+  if let Some(home) = &mut session.home {
+    home.configure(&session.settings);
+  }
+}
+
 fn frame(
   session: &mut Session,
   cache: &mut Cache<TileId, Arc<Vec<u8>>>,
@@ -797,7 +813,7 @@ fn frame(
   }
   let mut recorder = Recorder::new(|id| cache.get(&id).is_some());
   let mut complete = true;
-  session.present_startup();
+  prepare_scene(session, &mut recorder);
   let title = if session.tabs.is_empty() {
     if let Some(home) = &mut session.home {
       home.scene(&mut recorder)?;

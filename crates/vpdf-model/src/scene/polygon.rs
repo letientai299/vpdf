@@ -18,7 +18,7 @@ impl Polygon {
   pub fn new(
     quad: Quad,
     viewport: Bounds,
-    color: [u8; 4],
+    color: impl Into<crate::theme::Paint>,
     layer: Layer,
     stage: Stage,
   ) -> Option<Self> {

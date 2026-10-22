@@ -4,6 +4,71 @@ use super::{
 };
 
 impl Session {
+  pub(super) fn reload_config(&mut self) {
+    let loaded = self.config_source.reload(&self.settings);
+    let previous_warning = self.config_warning.take();
+    self.config_warning = loaded.warning.clone();
+    self.settings = loaded.settings;
+    for tab in &mut self.tabs {
+      for app in &mut tab.panes {
+        if previous_warning.as_ref() == Some(&app.reader.message) {
+          app.reader.notice("");
+        }
+        app.settings = self.settings.clone();
+        app.disarm();
+        if let Some(menu) = app.overlays.menu_mut() {
+          menu.refresh_bindings(self.settings.bindings());
+        }
+        if app.region_notice.as_ref() == Some(&app.reader.message) {
+          let drawing = app
+            .overlays
+            .region()
+            .is_some_and(|region| region.draft().is_some());
+          app.show_region_hint(drawing);
+        }
+        if let Some(hints) = app.overlays.hints_mut() {
+          hints.reset_input();
+        }
+        if let Some(prompt) = app.overlays.prompt_mut() {
+          prompt.set_bindings(
+            self
+              .settings
+              .bindings()
+              .map(vpdf_ui::bindings::Context::prompt(prompt.kind())),
+          );
+          prompt.reset_input();
+        }
+      }
+    }
+    if let Some(unlock) = &mut self.unlock {
+      unlock.prompt.set_bindings(
+        self.settings.bindings().map(vpdf_ui::bindings::Context::Password),
+      );
+      unlock.prompt.reset_input();
+    }
+    self.startup_warning = loaded.warning;
+    if let Some(home) = &mut self.home {
+      home.configure(&self.settings);
+      home.view.reset_input();
+      if home.view.error() == previous_warning.as_deref() {
+        home.view.clear_error();
+      }
+    }
+    self.present_startup();
+  }
+
+  pub(super) fn set_theme(&mut self, theme: vpdf_model::theme::Theme) {
+    self.settings.set_theme(theme);
+    for tab in &mut self.tabs {
+      for app in &mut tab.panes {
+        app.settings.set_theme(theme);
+      }
+    }
+    if let Some(home) = &mut self.home {
+      home.configure(&self.settings);
+    }
+  }
+
   pub(super) fn pick(&mut self) -> Result<()> {
     if self.picker.is_none() {
       self.picker = Some(crate::programs::Picker::start()?);
@@ -39,6 +104,21 @@ impl Session {
     };
     let result = self.dispatch(request, screen);
     self.unlock_result(result, retry.map(super::unlock::Operation::Request))
+  }
+
+  fn replay_keys(&mut self, keys: Vec<KeyEvent>) -> Result<()> {
+    let mut keys = keys.into_iter();
+    while let Some(key) = keys.next() {
+      self.interact(super::interaction::Interaction::Key(key))?;
+      if self.quit || self.tabs.is_empty() {
+        break;
+      }
+      if self.blocked() {
+        self.pending_keys.extend(keys);
+        break;
+      }
+    }
+    Ok(())
   }
 
   fn dispatch(
@@ -91,21 +171,7 @@ impl Session {
       Some(Request::SplitTo(target)) => {
         self.split_beside(|app| app.follow(&target))
       }
-      // Each key's request applies before the next.
-      Some(Request::Keys(keys)) => {
-        let mut keys = keys.into_iter();
-        while let Some(key) = keys.next() {
-          self.interact(super::interaction::Interaction::Key(key))?;
-          if self.quit || self.tabs.is_empty() {
-            break;
-          }
-          if self.blocked() {
-            self.pending_keys.extend(keys);
-            break;
-          }
-        }
-        Ok(())
-      }
+      Some(Request::Keys(keys)) => self.replay_keys(keys),
       Some(Request::SplitMark(name)) => {
         let mark = self.global_mark(name)?;
         if mark.path == self.app().path {
@@ -129,6 +195,14 @@ impl Session {
       }
       Some(Request::QuitAll) => {
         self.quit = true;
+        Ok(())
+      }
+      Some(Request::ConfigReload) => {
+        self.reload_config();
+        Ok(())
+      }
+      Some(Request::Theme(theme)) => {
+        self.set_theme(theme);
         Ok(())
       }
       Some(Request::Perf(on)) => self.toggle_perf(on),

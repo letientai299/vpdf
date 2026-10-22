@@ -1,6 +1,7 @@
 use crate::graphics::Graphics;
 use std::io::{self, Write};
 use vpdf_model::scene::{Draw, FillArea, Layer, Op, Stage, Surface, Text};
+use vpdf_model::theme::{Paint, Theme};
 use vpdf_model::{text::Bounds, tile::TileId};
 
 pub fn paint(out: &mut impl Write, scene: &[Op<'_>]) -> io::Result<()> {
@@ -13,12 +14,13 @@ pub fn paint(out: &mut impl Write, scene: &[Op<'_>]) -> io::Result<()> {
 pub struct Painter<'out, W> {
   out: &'out mut W,
   error: Option<io::Error>,
+  theme: Theme,
   graphics: Option<&'out mut Graphics>,
 }
 
 impl<'out, W: Write> Painter<'out, W> {
   pub fn new(out: &'out mut W) -> Self {
-    Self { out, error: None, graphics: None }
+    Self { out, error: None, graphics: None, theme: Theme::Default }
   }
 
   #[must_use]
@@ -38,7 +40,7 @@ impl<'out, W: Write> Painter<'out, W> {
 
   pub fn paint(&mut self, scene: &[Op<'_>]) {
     for op in scene {
-      self.output(|out, graphics| command(out, op, graphics));
+      self.output(|out, graphics, theme| command(out, op, graphics, theme));
     }
   }
 
@@ -46,12 +48,13 @@ impl<'out, W: Write> Painter<'out, W> {
     self.checkpoint()
   }
 
-  fn output(
-    &mut self,
-    paint: impl FnOnce(&mut W, Option<&mut Graphics>) -> io::Result<()>,
-  ) {
+  fn output<F>(&mut self, paint: F)
+  where
+    F: FnOnce(&mut W, Option<&mut Graphics>, &mut Theme) -> io::Result<()>,
+  {
     if self.error.is_none() {
-      self.error = paint(self.out, self.graphics.as_deref_mut()).err();
+      self.error =
+        paint(self.out, self.graphics.as_deref_mut(), &mut self.theme).err();
     }
   }
 
@@ -66,30 +69,38 @@ impl<'out, W: Write> Painter<'out, W> {
 
 impl<'a, W: Write> Draw<'a> for Painter<'_, W> {
   fn push(&mut self, op: Op<'a>) {
-    self.output(|out, graphics| command(out, &op, graphics));
+    self.output(|out, graphics, theme| command(out, &op, graphics, theme));
   }
 
   fn text(&mut self, text: &str) {
-    self.output(|out, graphics| {
-      command(out, &Op::Text(Text::new(text)), graphics)
+    self.output(|out, graphics, theme| {
+      command(out, &Op::Text(Text::new(text)), graphics, theme)
     });
   }
 
-  fn fill(&mut self, rect: Bounds, color: [u8; 4], layer: Layer, stage: Stage) {
-    self.output(|out, graphics| {
-      paint_fill(out, graphics, rect, color, layer, stage)
+  fn fill(
+    &mut self,
+    rect: Bounds,
+    color: impl Into<Paint>,
+    layer: Layer,
+    stage: Stage,
+  ) {
+    let color = color.into();
+    self.output(|out, graphics, theme| {
+      paint_fill(out, graphics, rect, color.resolve(*theme), layer, stage)
     });
   }
 
   fn stretch(
     &mut self,
-    color: [u8; 4],
+    color: impl Into<Paint>,
     layer: Layer,
     cells: (u16, u16, u16),
     stage: Stage,
   ) {
-    self.output(|out, graphics| {
-      paint_stretch(out, graphics, color, layer, cells, stage)
+    let color = color.into();
+    self.output(|out, graphics, theme| {
+      paint_stretch(out, graphics, color.resolve(*theme), layer, cells, stage)
     });
   }
 }
@@ -128,14 +139,19 @@ fn command(
   out: &mut impl Write,
   op: &Op<'_>,
   mut graphics: Option<&mut Graphics>,
+  theme: &mut Theme,
 ) -> io::Result<()> {
   match op {
+    Op::Theme(selected) => {
+      *theme = *selected;
+      crate::style::write(out, vpdf_model::style::Role::Reset, *theme)?;
+    }
     Op::Move { column, row } => {
       let row = position(*row)?;
       let column = position(*column)?;
       write!(out, "\x1b[{row};{column}H")?;
     }
-    Op::Style(role) => out.write_all(crate::style::sgr(*role).as_bytes())?,
+    Op::Style(role) => crate::style::write(out, *role, *theme)?,
     Op::Text(text) => out.write_all(text.as_str().as_bytes())?,
     Op::Character(character) => {
       let mut bytes = [0; 4];
@@ -179,7 +195,7 @@ fn command(
           out,
           graphics.as_deref_mut(),
           rect,
-          fill.color(),
+          fill.color().resolve(*theme),
           fill.layer(),
           fill.stage(),
         )?;
@@ -190,14 +206,14 @@ fn command(
         out,
         graphics,
         fill.rect(),
-        fill.color(),
+        fill.color().resolve(*theme),
         fill.layer(),
         fill.stage(),
       )?,
       FillArea::Cells { column, columns, rows } => paint_stretch(
         out,
         graphics,
-        fill.color(),
+        fill.color().resolve(*theme),
         fill.layer(),
         (column, columns, rows),
         fill.stage(),

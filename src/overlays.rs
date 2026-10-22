@@ -9,7 +9,6 @@ use vpdf_ui::hints::Transition;
 use vpdf_ui::input::{Dismiss, InputOwner, Targets};
 use vpdf_ui::paint::Frame;
 use vpdf_ui::pointer::{Hit, List};
-use vpdf_ui::region::{BAR_HINT, DRAW_HINT};
 
 impl App {
   pub(crate) fn pointer_targets(&self) -> Targets<'_> {
@@ -80,10 +79,11 @@ impl App {
     self.end_gestures();
     // The bar's key hint goes with it.
     if self.overlays.dismiss()
-      && matches!(self.reader.message.as_str(), BAR_HINT | DRAW_HINT)
+      && self.region_notice.as_ref() == Some(&self.reader.message)
     {
       self.reader.notice("");
     }
+    self.region_notice = None;
   }
 
   /// Ends pending keys and notes.
@@ -133,17 +133,25 @@ impl App {
     Ok(())
   }
 
-  pub fn hint_key(&mut self, key: KeyEvent) -> Result<()> {
-    let Some(hints) = self.overlays.hints_mut() else { return Ok(()) };
-    match hints.key(key) {
+  pub fn hint_key(&mut self, key: KeyEvent) -> Result<bool> {
+    let Some(hints) = self.overlays.hints_mut() else { return Ok(false) };
+    let transition = match hints.feed(key, self.settings.bindings()) {
+      vpdf_ui::hints::Input::Transition(transition) => transition,
+      vpdf_ui::hints::Input::Pass => {
+        self.overlays.close_hints();
+        return Ok(false);
+      }
+      vpdf_ui::hints::Input::Command(command) => {
+        self.overlays.close_hints();
+        self.disarm();
+        self.command(&command)?;
+        return Ok(true);
+      }
+    };
+    match transition {
       Transition::Stay => Ok(()),
       Transition::Run(index) => self.run_hint(index),
-      Transition::Cancel => {
-        self.overlays.close_hints();
-        self.reader.cancel();
-        self.disarm();
-        Ok(())
-      }
+      Transition::Cancel => self.cancel_input(),
       Transition::Close => {
         self.overlays.close_hints();
         Ok(())
@@ -152,7 +160,8 @@ impl App {
         self.overlays.close_hints();
         anyhow::bail!("No link labeled {typed}")
       }
-    }
+    }?;
+    Ok(true)
   }
 
   pub(crate) fn run_hint(&mut self, index: usize) -> Result<()> {
@@ -195,7 +204,7 @@ impl App {
     let owner = self.input_owner();
     let grammar =
       owner.grammar(self.reader.mode(), self.reader.operator.is_some());
-    let items = vpdf_ui::clues::items(
+    let items = vpdf_ui::clues::effective_items(
       &self.keys,
       grammar,
       |action| {
@@ -205,7 +214,7 @@ impl App {
       registers,
       marks,
     );
-    self.overlays.clues_mut().show(items)
+    self.overlays.clues_mut().show_items(items)
   }
 
   pub fn clue_wait(&self, now: Instant) -> Option<Duration> {

@@ -13,8 +13,10 @@ fn example_matches_defaults() {
   assert_eq!(
     Settings::example().unwrap(),
     concat!(
+      "[appearance]\ntheme = \"default\"\n\n",
       "[reading]\ncursorline = true\nzoom = 1.0\n",
-      "inactive_brightness = 0.8\n\n[ocr]\nlanguage = \"eng\"\n"
+      "inactive_brightness = 0.8\n\n",
+      "[ocr]\nlanguage = \"eng\"\n\n[keybindings]\n"
     )
   );
 }
@@ -212,6 +214,10 @@ fn selection_flags_conflict() {
   assert!(
     Cli::try_parse_from(["vpdf", "--config", "a", "--no-config"]).is_err()
   );
+  for flag in ["--config-help", "--config-licenses"] {
+    let error = Cli::try_parse_from(["vpdf", flag]).err().unwrap();
+    assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
+  }
   let options =
     Cli::try_parse_from(["vpdf", "--config", "relative.toml"]).unwrap().options;
   assert_eq!(options.config, Some(PathBuf::from("relative.toml")));
@@ -284,4 +290,284 @@ fn explicit_relative_file() -> crate::Result<()> {
     2.0
   );
   Ok(())
+}
+
+#[test]
+fn reload_retains_invalid_and_resets_omitted() -> crate::Result<()> {
+  let root = tempfile::tempdir()?;
+  let path = root.path().join("config.toml");
+  std::fs::write(
+    &path,
+    concat!(
+      "[reading]\nzoom = 2\ncursorline = false\n",
+      "inactive_brightness = 0.3\n[ocr]\nlanguage = 'vie'",
+    ),
+  )?;
+  let loaded = load(&path, true);
+  std::fs::write(
+    &path,
+    concat!(
+      "[reading]\nzoom = 'bad'\ninactive_brightness = 0.5\n",
+      "[ocr]\nlanguage = 7\nunknown = true",
+    ),
+  )?;
+  let reloaded = loaded.source.reload(&loaded.settings);
+  assert_eq!(reloaded.settings.zoom(), 2.0);
+  assert!(reloaded.settings.cursorline());
+  assert_eq!(reloaded.settings.inactive_brightness(), 0.5);
+  assert_eq!(reloaded.settings.language(), "vie");
+  let warning = reloaded.warning.unwrap();
+  for key in ["reading.zoom", "ocr.language", "ocr.unknown"] {
+    assert!(warning.contains(key), "{warning}");
+  }
+  std::fs::write(&path, "reading = false")?;
+  let reloaded = loaded.source.reload(&loaded.settings);
+  assert_eq!(reloaded.settings.reading, loaded.settings.reading);
+  assert_eq!(reloaded.settings.ocr, Ocr::default());
+  std::fs::write(&path, "")?;
+  assert_eq!(
+    loaded.source.reload(&loaded.settings).settings,
+    Settings::default()
+  );
+  Ok(())
+}
+
+#[test]
+fn reload_source_failures_preserve_settings() -> crate::Result<()> {
+  let root = tempfile::tempdir()?;
+  let path = root.path().join("config.toml");
+  std::fs::write(&path, "[reading]\nzoom = 2")?;
+  let loaded = load(&path, true);
+  for text in ["[broken", "reading = { zoom = "] {
+    std::fs::write(&path, text)?;
+    let reloaded = loaded.source.reload(&loaded.settings);
+    assert_eq!(reloaded.settings, loaded.settings);
+    assert!(reloaded.warning.unwrap().contains("config.toml"));
+  }
+  std::fs::write(&path, [0xff])?;
+  assert_eq!(loaded.source.reload(&loaded.settings).settings, loaded.settings);
+  std::fs::remove_file(&path)?;
+  let missing = loaded.source.reload(&loaded.settings);
+  assert_eq!(missing.settings, loaded.settings);
+  assert!(missing.warning.is_some());
+  let optional = Source::file(&path, false).reload(&loaded.settings);
+  assert_eq!(optional.settings, Settings::default());
+  assert!(optional.warning.is_none());
+  assert_eq!(optional.source, Source::file(&path, false));
+  std::fs::write(&path, "[reading]\nzoom = 3")?;
+  assert_eq!(optional.source.reload(&optional.settings).settings.zoom(), 3.0);
+  let disabled = Options { no_config: true, ..Default::default() }.load();
+  assert_eq!(disabled.source, Source::Disabled);
+  assert_eq!(
+    disabled.source.reload(&loaded.settings).settings,
+    Settings::default()
+  );
+  Ok(())
+}
+
+#[test]
+fn binding_targets_validate_by_context() {
+  use vpdf_ui::bindings::{Context, PromptAction, Sequence, Target};
+  let loaded = decoded(concat!(
+    "[keybindings.normal]\n",
+    "'<C-n>' = { action = 'tab.next' }\n",
+    "'<A-n>' = { action = 'motion', motion = 'next-page' }\n",
+    "'q' = { unbind = true }\n",
+    "'x' = { action = 'prompt.start' }\n",
+    "[keybindings.prompt]\n",
+    "'<D-a>' = { action = 'prompt.start' }\n",
+    "'<C-a>' = { unbind = true }\n",
+    "[keybindings.password]\n",
+    "'<D-e>' = { action = 'prompt.editor' }\n",
+  ));
+  let bindings = loaded.settings.bindings();
+  assert_eq!(
+    bindings.map(Context::Normal).get(&Sequence::parse("<C-n>").unwrap()),
+    Some(&Target::Reader(vpdf_ui::keys::Action::Tab(true))),
+  );
+  assert!(
+    bindings.map(Context::Normal).get(&Sequence::parse("q").unwrap()).is_none()
+  );
+  for context in
+    [Context::Prompt, Context::Command, Context::Search, Context::Password]
+  {
+    assert_eq!(
+      bindings.map(context).get(&Sequence::parse("<D-a>").unwrap()),
+      Some(&Target::Prompt(PromptAction::Start))
+    );
+    assert!(
+      bindings.map(context).get(&Sequence::parse("<C-a>").unwrap()).is_none()
+    );
+  }
+  let warning = loaded.warning.unwrap();
+  assert!(warning.contains("keybindings.normal.x"), "{warning}");
+  assert!(warning.contains("keybindings.password.<D-e>"), "{warning}");
+}
+
+#[test]
+fn binding_prefixes_require_explicit_unbinding() {
+  use std::fmt::Write as _;
+  use vpdf_ui::bindings::{Context, Sequence, Target};
+  use vpdf_ui::keys::Action;
+  let loaded = decoded(concat!(
+    "[keybindings.normal]\n",
+    "'g' = { action = 'quit' }\n",
+    "'q' = { action = 'tab.next' }\n",
+  ));
+  let map = loaded.settings.bindings().map(Context::Normal);
+  assert!(map.get(&Sequence::parse("g").unwrap()).is_none());
+  assert_eq!(
+    map.get(&Sequence::parse("q").unwrap()),
+    Some(&Target::Reader(Action::Tab(true)))
+  );
+  assert!(loaded.warning.unwrap().contains("Prefix conflict with g"));
+  let prefix = Sequence::parse("<C-x>").unwrap();
+  let mut text =
+    "[keybindings.prompt]\n'<C-x>' = { action = 'prompt.cancel' }\n".to_owned();
+  for (sequence, _) in
+    vpdf_ui::bindings::Bindings::default().map(Context::Prompt).entries()
+  {
+    if sequence.keys().starts_with(prefix.keys()) {
+      writeln!(text, "'{sequence}' = {{ unbind = true }}").unwrap();
+    }
+  }
+  let loaded = decoded(&text);
+  assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
+  for context in [Context::Command, Context::Search, Context::Password] {
+    assert!(
+      loaded
+        .settings
+        .bindings()
+        .map(context)
+        .get(&Sequence::parse("<C-x>").unwrap())
+        .unwrap()
+        .cancels()
+    );
+  }
+}
+
+#[test]
+fn prompt_bindings_reload_individually() {
+  use vpdf_ui::bindings::{Context, PromptAction, Sequence, Target};
+  let first = decoded(concat!(
+    "[keybindings.prompt]\n",
+    "'<C-a>' = { action = 'prompt.end' }\n",
+    "'<D-a>' = { action = 'prompt.start' }\n",
+  ));
+  let next = parse_with(
+    Path::new("config.toml"),
+    concat!(
+      "[keybindings.prompt]\n",
+      "'<C-a>' = { action = 'missing' }\n",
+      "'<D-b>' = { action = 'prompt.start' }\n",
+    ),
+    &first.settings,
+  );
+  for context in
+    [Context::Prompt, Context::Command, Context::Search, Context::Password]
+  {
+    let map = next.settings.bindings().map(context);
+    assert_eq!(
+      map.get(&Sequence::parse("<C-a>").unwrap()),
+      Some(&Target::Prompt(PromptAction::End))
+    );
+    assert!(map.get(&Sequence::parse("<D-a>").unwrap()).is_none());
+    assert_eq!(
+      map.get(&Sequence::parse("<D-b>").unwrap()),
+      Some(&Target::Prompt(PromptAction::Start))
+    );
+  }
+  assert!(next.warning.unwrap().contains("Unknown action missing"));
+}
+
+#[test]
+fn remapped_grammar_preserves_counts_and_registers() {
+  use vpdf_reader::motion::Motion;
+  use vpdf_reader::objects::Object;
+  use vpdf_ui::bindings::{Context, Sequence};
+  use vpdf_ui::keys::{Action, Dispatch, Keys};
+  let loaded = decoded(concat!(
+    "[keybindings.cursor]\n",
+    "'r' = { action = 'register.choose' }\n",
+    "'c' = { action = 'count.digit', digit = 3 }\n",
+    "'x' = { action = 'motion', motion = 'right' }\n",
+    "[keybindings.operator]\n",
+    "'o' = { action = 'object.begin', around = true }\n",
+    "[keybindings.object]\n",
+    "'x' = { action = 'object.select', object = 'word' }\n",
+    "[keybindings.normal]\n",
+    "'M' = { action = 'mark.choose' }\n",
+    "'Z' = { action = 'mark.jump', exact = true }\n",
+    "[keybindings.mark-jump]\n",
+    "'<D-b>' = { action = 'history.previous' }\n",
+  ));
+  assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
+  let bindings = loaded.settings.bindings();
+  let mut keys = Keys::default();
+  let mut feed = |text, context| {
+    let mut result = None;
+    for &key in Sequence::parse(text).unwrap().keys() {
+      result = keys.feed_with(key, context, bindings);
+    }
+    result.map(|result| match result {
+      Dispatch::Input(input) => input,
+      Dispatch::Command(_) => panic!("Unexpected command"),
+    })
+  };
+  let input = feed("racx", Context::Cursor).unwrap();
+  assert_eq!(input.action, Action::Motion(Motion::Right));
+  assert_eq!(input.count, 3);
+  assert_eq!(input.register, 'a');
+  let input = feed("rby", Context::Cursor).unwrap();
+  assert_eq!(input.action, Action::Yank);
+  assert_eq!(input.register, 'b');
+  let input = feed("2ox", Context::Operator).unwrap();
+  assert_eq!(input.action, Action::Object(Object::Word, true));
+  assert_eq!(input.count, 2);
+  assert_eq!(input.register, 'b');
+  assert_eq!(feed("Ma", Context::Normal).unwrap().action, Action::Mark('a'));
+  assert_eq!(
+    feed("Zb", Context::Normal).unwrap().action,
+    Action::GoMark('b', true)
+  );
+  assert_eq!(
+    feed("Z<D-b>", Context::Normal).unwrap().action,
+    Action::History(false)
+  );
+}
+
+#[test]
+fn themes_reload_independently() {
+  use vpdf_model::theme::Theme;
+  let mut previous = Settings::default();
+  for &theme in Theme::ALL {
+    let loaded = parse_with(
+      Path::new("settings.toml"),
+      &format!("[appearance]\ntheme = '{}'", theme.name()),
+      &previous,
+    );
+    assert!(loaded.warning.is_none());
+    assert_eq!(loaded.settings.theme(), theme);
+    assert_eq!(
+      decoded(&toml::to_string_pretty(&loaded.settings).unwrap()).settings,
+      loaded.settings
+    );
+    previous = loaded.settings;
+  }
+  for value in ["'unknown'", "42", "[]"] {
+    let loaded = parse_with(
+      Path::new("settings.toml"),
+      &format!("[appearance]\ntheme = {value}\n[reading]\nzoom = 3"),
+      &previous,
+    );
+    assert_eq!(loaded.settings.theme(), Theme::Nord);
+    assert_eq!(loaded.settings.zoom(), 3.0);
+    assert!(loaded.warning.unwrap().contains("appearance.theme"));
+  }
+  let invalid =
+    parse_with(Path::new("settings.toml"), "appearance = false", &previous);
+  assert_eq!(invalid.settings.theme(), Theme::Nord);
+  let omitted =
+    parse_with(Path::new("settings.toml"), "[appearance]", &previous);
+  assert_eq!(omitted.settings.theme(), Theme::Default);
 }

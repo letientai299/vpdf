@@ -114,7 +114,15 @@ fn page_bindings_preserve_counts() {
         if let Some(count) = count {
           assert!(keys.feed(key(count), grammar).is_none());
         }
-        let input = keys.feed(parse(name).unwrap()[0], grammar).unwrap();
+        let input = keys.feed(parse(name).unwrap()[0], grammar);
+        if grammar == Grammar::Panel
+          && !crate::bindings::Target::Reader(action)
+            .allowed(crate::bindings::Context::Panel)
+        {
+          assert!(input.is_none());
+          continue;
+        }
+        let input = input.unwrap();
         assert_eq!(input.action, action);
         assert_eq!(input.count, if count.is_some() { 3 } else { 1 });
         assert_eq!(input.explicit, count.is_some());
@@ -494,10 +502,19 @@ fn clues_preserve_pending_counts_and_registers() {
         }
       }
       let before = keys.pending();
-      let clues = keys.clues(grammar, |_| true);
-      for (suffix, _) in clues {
+      let mut clues = crate::clues::Clues::default();
+      clues.show(
+        keys
+          .clues(grammar, |_| true)
+          .into_iter()
+          .map(|(key, about)| (key, about.to_owned()))
+          .collect(),
+      );
+      let Some(clues) = clues.shown() else { continue };
+      for (index, (suffix, _)) in clues.items().iter().enumerate() {
         let mut replay = keys.clone();
-        let inputs: Vec<_> = parse(&suffix)
+        let inputs: Vec<_> = clues
+          .keys(index)
           .unwrap()
           .into_iter()
           .filter_map(|key| replay.feed(key, grammar))
@@ -570,4 +587,50 @@ fn shifted_region_keys_preserve_counts() {
   assert_eq!(keys.feed(key('K'), Grammar::Other).unwrap().action, Action::Peek);
   assert!(keys.feed_region(key('g')).is_none());
   assert!(keys.feed_region(key('K')).is_none());
+}
+
+#[test]
+fn binding_actions_have_metadata() {
+  for (_, action, _) in BINDINGS {
+    let (spec, argument) = crate::bindings::actions::describe(*action).unwrap();
+    assert_eq!(spec.resolve(argument).unwrap(), *action);
+  }
+}
+
+#[test]
+fn window_arrows_preserve_counts() {
+  for (code, direction) in [
+    (KeyCode::Left, D::Left),
+    (KeyCode::Down, D::Down),
+    (KeyCode::Up, D::Up),
+    (KeyCode::Right, D::Right),
+  ] {
+    let arrow = KeyEvent::new(code, KeyModifiers::NONE);
+    for (prefix, action) in
+      [('w', W::Focus(direction)), ('r', W::Extend(direction))]
+    {
+      let mut keys = Keys::default();
+      assert!(keys.feed(key('3'), Grammar::Normal).is_none());
+      assert!(
+        keys
+          .feed(
+            KeyEvent::new(KeyCode::Char(prefix), KeyModifiers::CONTROL),
+            Grammar::Normal,
+          )
+          .is_none()
+      );
+      let input = keys.feed(arrow, Grammar::Normal).unwrap();
+      assert_eq!(input.action, Action::Window(action));
+      assert_eq!(input.count, 3);
+      assert!(input.explicit);
+      if prefix == 'r' {
+        assert!(keys.resizing());
+        let repeated = keys.feed(arrow, Grammar::Normal).unwrap();
+        assert_eq!(repeated.action, Action::Window(action));
+        assert_eq!(repeated.count, 1);
+      } else {
+        assert_eq!(keys.pending(), "");
+      }
+    }
+  }
 }

@@ -4,7 +4,7 @@ use super::*;
 use fixture::{layout, route, view};
 #[test]
 fn touching_ticks_of_one_color_merge() {
-  let (a, b) = ([1; 4], [2; 4]);
+  let (a, b) = (theme::Paint::Rgba([1; 4]), theme::Paint::Rgba([2; 4]));
   // (ticks) -> runs
   let cases = [
     (vec![(0.0, a), (3.0, a)], vec![(0.0, 5.0, a)]),

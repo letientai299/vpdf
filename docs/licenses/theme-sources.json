@@ -1,0 +1,74 @@
+{
+  "tokyonight": {
+    "repo": "folke/tokyonight.nvim",
+    "revision": "cdc07ac78467a233fd62c493de29a17e0cf2b2b6",
+    "files": [
+      {
+        "source": "https://raw.githubusercontent.com/folke/tokyonight.nvim/cdc07ac78467a233fd62c493de29a17e0cf2b2b6/lua/tokyonight/colors/night.lua",
+        "sha256": "a8d87bf7aeb44617de4168d26fd9c1167bf3e7278acb0e155855caf6267b9c2d"
+      },
+      {
+        "source": "https://raw.githubusercontent.com/folke/tokyonight.nvim/cdc07ac78467a233fd62c493de29a17e0cf2b2b6/lua/tokyonight/colors/storm.lua",
+        "sha256": "a96775b3b2bae3da751322806f7daaf2f8c9242cf4b52493732c62dc45c8894c"
+      },
+      {
+        "source": "https://raw.githubusercontent.com/folke/tokyonight.nvim/cdc07ac78467a233fd62c493de29a17e0cf2b2b6/LICENSE",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+      }
+    ]
+  },
+  "nord": {
+    "repo": "nordtheme/nord",
+    "revision": "1cef71605416a222e57225b544540ce0fcec18d4",
+    "files": [
+      {
+        "source": "https://raw.githubusercontent.com/nordtheme/nord/1cef71605416a222e57225b544540ce0fcec18d4/src/nord.styl",
+        "sha256": "0c952931613d29f1c2878a2341e32c35edbc7112842a0d065d963a5bf0fcfe86"
+      },
+      {
+        "source": "https://raw.githubusercontent.com/nordtheme/nord/1cef71605416a222e57225b544540ce0fcec18d4/license",
+        "sha256": "25ac8188d670bd2ad2ce2f4f55ab88573010ee9f7a4502543cb1eea1e2274f8a"
+      }
+    ]
+  },
+  "github": {
+    "repo": "primer/primitives",
+    "revision": "ec3eee6ac930cf942e97a86a722aac2c3fb4f3a9",
+    "files": [
+      {
+        "source": "https://raw.githubusercontent.com/primer/primitives/ec3eee6ac930cf942e97a86a722aac2c3fb4f3a9/src/tokens/base/color/light/light.json5",
+        "sha256": "74e2228eb684264cb1549eaefc37ad927bb092b7bb0f9b6108f2d7a4965d19d0"
+      },
+      {
+        "source": "https://raw.githubusercontent.com/primer/primitives/ec3eee6ac930cf942e97a86a722aac2c3fb4f3a9/src/tokens/base/color/dark/dark.json5",
+        "sha256": "6db5488ccc578249ea095b927e17adbaa807315b668756a8d1afef33497eb03b"
+      },
+      {
+        "source": "https://raw.githubusercontent.com/primer/primitives/ec3eee6ac930cf942e97a86a722aac2c3fb4f3a9/src/tokens/functional/color/fgColor.json5",
+        "sha256": "3d0d91c2ea0f0f1d3df515cba507b8064e00a7ee31af441c67d2f58dc48fb649"
+      },
+      {
+        "source": "https://raw.githubusercontent.com/primer/primitives/ec3eee6ac930cf942e97a86a722aac2c3fb4f3a9/src/tokens/functional/color/bgColor.json5",
+        "sha256": "7fceec2672f18ccd87da24a391da9eb99fd3ea5b4519a528fb1277f812115f13"
+      },
+      {
+        "source": "https://raw.githubusercontent.com/primer/primitives/ec3eee6ac930cf942e97a86a722aac2c3fb4f3a9/LICENSE",
+        "sha256": "e63582a78dddebe610b6cb59f0e7f5f761c1bb6a1c9551443beddc64fe525c3a"
+      }
+    ]
+  },
+  "dracula": {
+    "repo": "dracula/dracula-theme",
+    "revision": "e22ebcc048b8aff586f9bc94db30ff5347070b42",
+    "files": [
+      {
+        "source": "https://raw.githubusercontent.com/dracula/dracula-theme/e22ebcc048b8aff586f9bc94db30ff5347070b42/README.md",
+        "sha256": "3f798014d8e25a4c15f6ad26bc767d99bfc367ec3f9883bd4b5ce0fe562647d0"
+      },
+      {
+        "source": "https://raw.githubusercontent.com/dracula/dracula-theme/e22ebcc048b8aff586f9bc94db30ff5347070b42/LICENSE",
+        "sha256": "38b806a7e799cca4e9821e6f8d65cf0d8bfaaddbe454b41f12e5baad52d310f1"
+      }
+    ]
+  }
+}

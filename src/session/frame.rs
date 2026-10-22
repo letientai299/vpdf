@@ -24,6 +24,12 @@ impl Drawable for Session {
     let (tab, graphics) = (&mut self.tabs[self.active], &mut self.graphics);
     let snap_regions = graphics.crop_quirk();
     let mut painter = Painter::new(out).with_graphics(graphics);
+    if self.settings.theme() != vpdf_model::theme::Theme::Default {
+      vpdf_model::scene::Draw::push(
+        &mut painter,
+        vpdf_model::scene::Op::Theme(self.settings.theme()),
+      );
+    }
     let result = Self::scene_tab(
       tab,
       area,
@@ -257,7 +263,12 @@ mod tests {
         let veils: Vec<_> = scene
           .iter()
           .filter_map(|op| match op {
-            Op::Fill(fill) if fill.color() == [0, 0, 0, 51] => Some(fill),
+            Op::Fill(fill)
+              if fill.color().resolve(vpdf_model::theme::Theme::Default)
+                == [0, 0, 0, 51] =>
+            {
+              Some(fill)
+            }
             _ => None,
           })
           .collect();
@@ -305,7 +316,9 @@ mod tests {
       app.scene_pane(&mut recorder, false)?;
       let scene = recorder.into_scene();
       let veil = scene.iter().last().and_then(|op| match op {
-        Op::Fill(fill) => Some(fill.color()),
+        Op::Fill(fill) => {
+          Some(fill.color().resolve(vpdf_model::theme::Theme::Default))
+        }
         _ => None,
       });
       assert_eq!(veil, (alpha > 0).then_some([0, 0, 0, alpha]));

@@ -61,6 +61,9 @@ impl App {
   where
     S::Error: Into<anyhow::Error>,
   {
+    if self.settings.theme() != vpdf_model::theme::Theme::Default {
+      scene.push(Op::Theme(self.settings.theme()));
+    }
     self.request_crop();
     let (screen, left) = (self.uncovered(), self.left);
     let view = vpdf_ui::layout::tiles::View {
@@ -119,6 +122,9 @@ impl App {
     scene: &mut impl Draw<'a>,
     screen: Screen,
   ) -> Result<()> {
+    if self.settings.theme() != vpdf_model::theme::Theme::Default {
+      scene.push(Op::Theme(self.settings.theme()));
+    }
     let mut hovered = self.hover_segments();
     if hovered.is_empty()
       && let Some((page, areas)) = self.hover_icon()
@@ -199,6 +205,9 @@ impl App {
   where
     S::Error: Into<anyhow::Error>,
   {
+    if self.settings.theme() != vpdf_model::theme::Theme::Default {
+      scene.push(Op::Theme(self.settings.theme()));
+    }
     self.scene_content(scene, snap_regions)?;
     let alpha =
       ((1.0 - self.settings.inactive_brightness()) * 255.0).round() as u8;

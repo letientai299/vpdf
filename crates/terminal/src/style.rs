@@ -1,6 +1,8 @@
+use std::io::{self, Write};
 use vpdf_model::style::{
   Attribute, Color, ColorChange, Role, StyleChange, Tone,
 };
+use vpdf_model::theme::Theme;
 
 pub const fn sgr(role: Role) -> &'static str {
   macro_rules! encoded {
@@ -46,6 +48,49 @@ pub const fn sgr(role: Role) -> &'static str {
     Role::Badge(Color::Magenta) => encoded!(Role::Badge(Color::Magenta)),
     Role::Badge(Color::Yellow) => encoded!(Role::Badge(Color::Yellow)),
     Role::Badge(Color::Cyan) => encoded!(Role::Badge(Color::Cyan)),
+  }
+}
+
+pub fn write(out: &mut impl Write, role: Role, theme: Theme) -> io::Result<()> {
+  if theme == Theme::Default {
+    return out.write_all(sgr(role).as_bytes());
+  }
+  out.write_all(b"\x1b[")?;
+  let patch = match theme.style(role) {
+    StyleChange::Reset(patch) => {
+      out.write_all(b"0;")?;
+      patch
+    }
+    StyleChange::Patch(patch) => patch,
+  };
+  for &attribute in patch.attributes {
+    write!(out, "{};", attribute_code(attribute))?;
+  }
+  let palette = theme.palette();
+  let mut separator = "";
+  for (change, background) in
+    [(patch.foreground, false), (patch.background, true)]
+  {
+    let rgb = match change {
+      ColorChange::Keep => continue,
+      ColorChange::Default if background => palette.background,
+      ColorChange::Default => palette.foreground,
+      ColorChange::Set(tone) => theme.color(tone, background),
+    };
+    let code = if background { 48 } else { 38 };
+    write!(out, "{separator}{code};2;{};{};{}", rgb[0], rgb[1], rgb[2])?;
+    separator = ";";
+  }
+  out.write_all(b"m")
+}
+
+const fn attribute_code(attribute: Attribute) -> &'static str {
+  match attribute {
+    Attribute::Bold => "1",
+    Attribute::Dim => "2",
+    Attribute::Italic => "3",
+    Attribute::Underline => "4",
+    Attribute::Inverse => "7",
   }
 }
 
@@ -107,13 +152,7 @@ const fn encode(change: StyleChange) -> Encoded {
   };
   let mut index = 0;
   while index < patch.attributes.len() {
-    out.parameter(match patch.attributes[index] {
-      Attribute::Bold => "1",
-      Attribute::Dim => "2",
-      Attribute::Italic => "3",
-      Attribute::Underline => "4",
-      Attribute::Inverse => "7",
-    });
+    out.parameter(attribute_code(patch.attributes[index]));
     index += 1;
   }
   out.color(patch.foreground, false);
@@ -159,6 +198,38 @@ const fn palette(tone: Tone, background: bool) -> &'static str {
 mod tests {
   use super::*;
   use sha2::{Digest, Sha256};
+
+  #[test]
+  fn named_colors_are_explicit() -> io::Result<()> {
+    for &theme in Theme::ALL {
+      let mut out = Vec::new();
+      write(&mut out, Role::Reset, theme)?;
+      if theme == Theme::Default {
+        assert_eq!(out, b"\x1b[0m");
+        continue;
+      }
+      let p = theme.palette();
+      assert_eq!(
+        String::from_utf8(out).unwrap(),
+        format!(
+          "\x1b[0;38;2;{};{};{};48;2;{};{};{}m",
+          p.foreground[0],
+          p.foreground[1],
+          p.foreground[2],
+          p.background[0],
+          p.background[1],
+          p.background[2]
+        )
+      );
+      let mut out = Vec::new();
+      write(&mut out, Role::Heading, theme)?;
+      assert_eq!(
+        String::from_utf8(out).unwrap(),
+        format!("\x1b[1;38;2;{};{};{}m", p.blue[0], p.blue[1], p.blue[2])
+      );
+    }
+    Ok(())
+  }
 
   #[test]
   fn default_colors_are_explicit() {

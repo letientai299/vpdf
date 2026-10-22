@@ -106,7 +106,7 @@ pub fn backdrop<'a>(
   scene: &mut impl Draw<'a>,
   frame: Frame,
   cells: crate::split::Rect,
-  color: [u8; 4],
+  color: impl Into<crate::theme::Paint>,
 ) {
   if frame.text {
     return;

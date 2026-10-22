@@ -1,8 +1,8 @@
 # Configuration
 
 Vpdf reads one optional TOML file at launch for both frontends. It never
-creates or rewrites that file. Changes apply on the next launch; reloading a
-PDF keeps the current settings.
+creates or rewrites that file. Use `:config reload` to apply edits throughout
+the running process. Reloading a PDF keeps the current settings.
 
 ## Create a configuration
 
@@ -50,6 +50,71 @@ data][helpers]; Vpdf checks availability when recognition runs.
 Document positions, marks, histories, and the performance toggle remain in
 [saved reading state][state]. They are separate from this configuration.
 
+## Keyboard bindings
+
+Built-in mappings remain active until individually replaced or unbound:
+
+```toml
+[keybindings.normal]
+"<C-n>" = { action = "tab.next" }
+"<Space>r" = { command = "config reload" }
+"q" = { unbind = true }
+
+[keybindings.prompt]
+"<C-a>" = { action = "prompt.start" }
+```
+
+Bindings target actions or existing commands directly. They never expand other
+bindings. Contexts separate navigation from prompt typing. The common `prompt`
+context supplies command, search, and password defaults; those contexts can
+override it. Password prompts exclude the external editor.
+
+Exact bindings cannot prefix longer bindings within a context. Explicitly
+unbind conflicting descendants before replacing a prefix family. Shared
+prefixes wait without a timeout. Invalid continuations are consumed and clear
+the pending sequence. Cancellation controls can also be rebound or unbound.
+Terminals can use only the keyboard events they deliver.
+
+## UI themes
+
+Set `appearance.theme` to a built-in theme:
+
+```toml
+[appearance]
+theme = "nord"
+```
+
+Use `:theme <name>` or `:colorscheme <name>` to switch themes in the running
+process. Tab completion lists built-in names. The selection applies to all
+tabs and splits, including documents opened later. It does not change the
+configuration file or saved state. `:config reload` restores the configured
+theme.
+
+The default theme preserves the current appearance and terminal palette
+inheritance. Named themes use explicit RGB colors in both frontends. UI colors
+include text, bars, panels, menus, scrollbars, and page overlays. PDF pixels and
+document fonts stay unchanged. Theme changes preserve cached PDF tiles.
+[Theme notices][theme-notices] retain palette attribution and licenses.
+[Palette provenance][palettes] records the imported source revisions.
+
+## Reload configuration
+
+`:config reload` rereads the original selected source. Each running process
+reloads independently; `--no-config` keeps built-ins. Changing environment
+variables does not select another file.
+
+Bindings and themes apply to every open tab and split.
+Inactive brightness applies to existing splits. OCR language applies to
+subsequent requests; running OCR continues. Initial zoom and cursorline apply
+to newly opened documents. Reload preserves current page, live zoom, selection,
+reading position, history, and prompt text. It clears incomplete key sequences,
+counts, registers, operators, and prompt editing prefixes.
+
+Omitted values restore built-ins. Invalid values keep their previous working
+values while valid entries apply. Unreadable files, malformed TOML, and missing
+explicit files preserve all live settings and warn. A missing discovered file
+acts as empty configuration.
+
 ## Errors
 
 A missing discovered file silently uses built-ins. Other read failures,
@@ -66,3 +131,6 @@ locations. Dismiss them using the normal status-message controls.
 [xdg]: https://specifications.freedesktop.org/basedir/latest/
 [helpers]: install.md#optional-helpers
 [state]: reading.md#saved-state-and-reload
+
+[palettes]: licenses/theme-sources.json
+[theme-notices]: licenses/themes.txt

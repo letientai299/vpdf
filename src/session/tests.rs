@@ -1243,3 +1243,249 @@ fn real_ocr_and_cancel() -> Result<()> {
   assert!(app.reader.message.contains("vpdf_missing_language"));
   Ok(())
 }
+
+#[test]
+fn config_reload_reaches_inactive_panes() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("one.pdf");
+  let second = directory.path().join("two.pdf");
+  crate::fixtures::pdf(&path, &["one", "two"], "")?;
+  crate::fixtures::pdf(&second, &["second"], "")?;
+  let mut session = Session::configured(None, settings_file(directory.path()));
+  let screen = cells(120, 40);
+  session.open(&path, true, screen)?;
+  session.split(Axis::Columns, None, Place::After)?;
+  session.open(&second, true, screen)?;
+  for tab in &mut session.tabs {
+    for app in &mut tab.panes {
+      app.layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
+      app.cursorline = true;
+      app.keys.feed(
+        KeyEvent::new(KeyCode::Char('3'), KeyModifiers::NONE),
+        vpdf_ui::keys::Grammar::Normal,
+      );
+      app.overlays.open_prompt(vpdf_ui::prompt::Prompt::new(
+        vpdf_ui::prompt::PromptKind::Command,
+      ));
+      app.overlays.prompt_mut().unwrap().replace("unsubmitted text");
+    }
+  }
+  let positions: Vec<_> = session
+    .tabs
+    .iter()
+    .flat_map(|tab| tab.panes.iter().map(|app| app.reader.cursor))
+    .collect();
+  std::fs::write(
+    directory.path().join("config.toml"),
+    concat!(
+      "[appearance]\ntheme = 'dracula'\n",
+      "[reading]\nzoom = 4\ncursorline = false\n",
+      "inactive_brightness = 0.4\n[ocr]\nlanguage = 'vie'",
+    ),
+  )?;
+  session.reload_config();
+  let mut positions = positions.into_iter();
+  for tab in &session.tabs {
+    for app in &tab.panes {
+      assert_eq!(app.settings.theme(), vpdf_model::theme::Theme::Dracula);
+      assert_eq!(app.settings.zoom(), 4.0);
+      assert_eq!(app.settings.inactive_brightness(), 0.4);
+      assert_eq!(app.settings.language(), "vie");
+      assert_eq!(app.layout.zoom(), 3.0);
+      assert!(app.cursorline);
+      assert_eq!(app.reader.cursor, positions.next().unwrap());
+      assert_eq!(app.keys.pending(), "");
+      assert_eq!(app.overlays.prompt().unwrap().text(), "unsubmitted text");
+    }
+  }
+  let third = directory.path().join("three.pdf");
+  crate::fixtures::pdf(&third, &["third"], "")?;
+  session.open(&third, true, screen)?;
+  assert_eq!(session.app().layout.zoom(), 4.0);
+  assert!(!session.app().cursorline);
+  for argument in
+    ["", "help", "bindings", "bindings normal", "licenses", "reload extra"]
+  {
+    assert!(session.app().command(&format!("config {argument}")).is_err());
+    assert_eq!(session.app().request, None);
+  }
+  session.app().command("config reload")?;
+  assert_eq!(session.app().request, Some(Request::ConfigReload));
+  session.settle()?;
+  Ok(())
+}
+
+#[test]
+fn reload_replaces_config_diagnostics() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("one.pdf");
+  crate::fixtures::pdf(&path, &["one"], "")?;
+  let mut session = Session::configured(None, settings_file(directory.path()));
+  session.open(&path, true, cells(120, 40))?;
+  session.present_startup();
+  assert!(session.app().reader.message.contains("Config"));
+  std::fs::write(directory.path().join("config.toml"), "")?;
+  session.reload_config();
+  assert_eq!(session.app().reader.message, "");
+  session.app().reader.notice("Other message");
+  session.reload_config();
+  assert_eq!(session.app().reader.message, "Other message");
+  Ok(())
+}
+
+#[test]
+fn prompt_remaps_and_reload_preserve_editing() -> Result<()> {
+  use super::interaction::Interaction;
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("one.pdf");
+  let config = directory.path().join("config.toml");
+  crate::fixtures::pdf(&path, &["one"], "")?;
+  std::fs::write(
+    &config,
+    concat!(
+      "[keybindings.command]\n",
+      "'<C-a>' = { unbind = true }\n",
+      "'<D-a>' = { action = 'prompt.start' }\n",
+      "'<D-r>' = { command = 'config reload' }\n",
+      "'<Esc>' = { unbind = true }\n",
+      "'<D-q>' = { action = 'prompt.cancel' }\n",
+    ),
+  )?;
+  let loaded = crate::config::Options {
+    config: Some(config.clone()),
+    ..Default::default()
+  }
+  .load();
+  assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
+  let mut session = Session::configured(None, loaded);
+  session.open(&path, true, cells(120, 40))?;
+  let key = |code, modifiers| Interaction::Key(KeyEvent::new(code, modifiers));
+  session.interact(key(KeyCode::Char(':'), KeyModifiers::NONE))?;
+  for ch in "abc".chars() {
+    session.interact(key(KeyCode::Char(ch), KeyModifiers::NONE))?;
+  }
+  session.interact(key(KeyCode::Esc, KeyModifiers::NONE))?;
+  session.interact(key(KeyCode::Char('a'), KeyModifiers::CONTROL))?;
+  session.interact(key(KeyCode::Char('!'), KeyModifiers::NONE))?;
+  assert_eq!(session.app().overlays.prompt().unwrap().text(), "abc!");
+  session.interact(key(KeyCode::Char('a'), KeyModifiers::SUPER))?;
+  session.interact(key(KeyCode::Char('x'), KeyModifiers::NONE))?;
+  assert_eq!(session.app().overlays.prompt().unwrap().text(), "xabc!");
+  std::fs::write(&config, "[reading]\ninactive_brightness = 0.3")?;
+  session.interact(key(KeyCode::Char('r'), KeyModifiers::SUPER))?;
+  assert_eq!(session.app().settings.inactive_brightness(), 0.3);
+  assert_eq!(session.app().overlays.prompt().unwrap().text(), "xabc!");
+  session.interact(key(KeyCode::Char('a'), KeyModifiers::CONTROL))?;
+  session.interact(key(KeyCode::Char('y'), KeyModifiers::NONE))?;
+  assert_eq!(session.app().overlays.prompt().unwrap().text(), "yxabc!");
+  session.interact(key(KeyCode::Esc, KeyModifiers::NONE))?;
+  assert!(session.app().overlays.prompt().is_none());
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn theme_reload_preserves_real_raster() -> Result<()> {
+  use sha2::{Digest, Sha256};
+  use vpdf_model::theme::Theme;
+  let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
+  assert_eq!(
+    vpdf_pdf::content_cache::hex(&Sha256::digest(std::fs::read(&path)?)),
+    "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+  );
+  let directory = tempfile::tempdir()?;
+  let config = directory.path().join("config.toml");
+  std::fs::write(&config, "")?;
+  let mut session = Session::configured(
+    None,
+    crate::config::Options {
+      config: Some(config.clone()),
+      ..Default::default()
+    }
+    .load(),
+  );
+  session.open(&path, true, cells(100, 32))?;
+  let raster = |session: &mut Session| {
+    vpdf_pdf::raster::visit_page(
+      &mut session.app().doc,
+      PageId(0),
+      512,
+      |_, _, bytes| Ok(Sha256::digest(bytes).to_vec()),
+    )
+  };
+  let original = raster(&mut session)?;
+  session.draw_frame(&mut Vec::new())?;
+  let keys = session.app().tiles.wanted().to_vec();
+  let zoom = session.app().layout.zoom();
+  let position = session.app().reader.cursor;
+  for &theme in Theme::ALL {
+    std::fs::write(
+      &config,
+      format!("[appearance]\ntheme = '{}'", theme.name()),
+    )?;
+    session.reload_config();
+    assert_eq!(session.app().layout.zoom(), zoom);
+    assert_eq!(session.app().reader.cursor, position);
+    assert_eq!(session.app().tiles.wanted(), keys);
+    assert_eq!(raster(&mut session)?, original, "{theme:?}");
+    let mut scene = vpdf_model::scene::Recorder::new(|_| true);
+    session.app().scene_pane(&mut scene, false)?;
+    let scene = scene.into_scene();
+    let has_theme = scene.iter().any(|op| {
+      matches!(op, vpdf_model::scene::Op::Theme(selected) if *selected == theme)
+    });
+    assert_eq!(has_theme, theme != Theme::Default);
+  }
+  Ok(())
+}
+
+#[test]
+fn theme_commands_update_session() -> Result<()> {
+  use vpdf_model::theme::Theme;
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("one.pdf");
+  let second = directory.path().join("two.pdf");
+  crate::fixtures::pdf(&path, &["one", "two"], "")?;
+  crate::fixtures::pdf(&second, &["second"], "")?;
+  let mut session = Session::configured(None, settings_file(directory.path()));
+  let config = directory.path().join("config.toml");
+  let original = std::fs::read(&config)?;
+  let screen = cells(120, 40);
+  session.open(&path, true, screen)?;
+  session.split(Axis::Columns, None, Place::After)?;
+  session.open(&second, true, screen)?;
+  let position = session.app().reader.cursor;
+  let zoom = session.app().layout.zoom();
+  let tiles = session.app().tiles.wanted().to_vec();
+  for name in ["theme", "colorscheme"] {
+    for &theme in Theme::ALL {
+      session.app().command(&format!("{name} {}", theme.name()))?;
+      session.settle()?;
+      assert_eq!(session.settings.theme(), theme);
+      for tab in &session.tabs {
+        for app in &tab.panes {
+          assert_eq!(app.settings.theme(), theme);
+        }
+      }
+      assert_eq!(session.app().reader.cursor, position);
+      assert_eq!(session.app().layout.zoom(), zoom);
+      assert_eq!(session.app().tiles.wanted(), tiles);
+    }
+    session.app().command(&format!("{name} nord"))?;
+    session.settle()?;
+    for argument in ["", "unknown", "nord extra"] {
+      assert!(session.app().command(&format!("{name} {argument}")).is_err());
+      assert_eq!(session.app().request, None);
+      assert_eq!(session.settings.theme(), Theme::Nord);
+    }
+  }
+  session.split(Axis::Columns, None, Place::After)?;
+  assert_eq!(session.app().settings.theme(), Theme::Nord);
+  session.open(&path, true, screen)?;
+  assert_eq!(session.app().settings.theme(), Theme::Nord);
+  assert_eq!(std::fs::read(&config)?, original);
+  session.reload_config();
+  assert_eq!(session.settings.theme(), Theme::Default);
+  assert_eq!(std::fs::read(&config)?, original);
+  Ok(())
+}

@@ -1,3 +1,4 @@
+use crate::bindings::{Bindings, Context, Control, Target as Binding};
 use crate::keys::{self, Action, PanelKind};
 use crate::paint::Frame;
 use crate::panel::{Destination, Panel};
@@ -46,6 +47,10 @@ fn route(action: Action) -> Route {
   }
 }
 
+pub fn accepts(action: Action) -> bool {
+  !matches!(route(action), Route::Ignore)
+}
+
 /// An open context menu.
 pub struct ContextMenu<C = Command> {
   items: Vec<Item<C>>,
@@ -60,6 +65,9 @@ pub struct ContextMenu<C = Command> {
   armed: bool,
   /// Its items act on the panel's selected row.
   row: bool,
+  source: Context,
+  columns: (u16, u16),
+  bottom: u16,
 }
 
 /// A menu row.
@@ -68,6 +76,13 @@ pub struct Item<C = Command> {
   /// Its key in help notation; empty when none.
   pub key: String,
   pub command: C,
+  pub shortcut: Option<Shortcut>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Shortcut {
+  Action(Action),
+  SelectWord,
 }
 
 #[derive(Clone, Debug)]
@@ -99,7 +114,12 @@ pub enum Command {
 /// An item showing `action`'s key.
 fn bound(label: &'static str, action: Action, command: Command) -> Item {
   let key = keys::key_for(action).map_or_default(keys::notation);
-  Item { label: label.into(), key, command }
+  Item {
+    label: label.into(),
+    key,
+    command,
+    shortcut: Some(Shortcut::Action(action)),
+  }
 }
 
 fn panel_bound(
@@ -109,11 +129,16 @@ fn panel_bound(
   command: Command,
 ) -> Item {
   let key = panel.shortcut(action).map_or_default(keys::notation);
-  Item { label: label.into(), key, command }
+  Item {
+    label: label.into(),
+    key,
+    command,
+    shortcut: panel.shortcut_action(action).map(Shortcut::Action),
+  }
 }
 
 fn item(label: &'static str, key: &str, command: Command) -> Item {
-  Item { label: label.into(), key: key.into(), command }
+  Item { label: label.into(), key: key.into(), command, shortcut: None }
 }
 
 /// Copies a web address, as a middle click does.
@@ -152,10 +177,64 @@ impl<C> ContextMenu<C> {
     bottom: u16,
     row: bool,
   ) -> Self {
-    let mut menu =
-      Self { items, selected: 0, at, width: 0, press: at, armed: false, row };
+    let mut menu = Self {
+      items,
+      selected: 0,
+      at,
+      width: 0,
+      press: at,
+      armed: false,
+      row,
+      source: Context::Normal,
+      columns,
+      bottom,
+    };
     menu.fit(columns, bottom);
     menu
+  }
+
+  pub fn rebind(&mut self, bindings: &Bindings, source: Context) {
+    self.source = source;
+    self.refresh_bindings(bindings);
+  }
+
+  pub fn refresh_bindings(&mut self, bindings: &Bindings) {
+    for item in &mut self.items {
+      item.key = match item.shortcut {
+        Some(Shortcut::Action(action)) => {
+          bindings.shortcut(self.source, &Binding::Reader(action))
+        }
+        Some(Shortcut::SelectWord) => {
+          let visual = if self.source == Context::Visual {
+            String::new()
+          } else {
+            bindings.shortcut(
+              self.source,
+              &Binding::Reader(Action::Visual(SelectionKind::Character)),
+            )
+          };
+          let inner = bindings.shortcut(
+            Context::Visual,
+            &Binding::Control(Control::Object { around: false }),
+          );
+          let word = bindings.shortcut(
+            Context::Object,
+            &Binding::TextObject(vpdf_reader::objects::Object::Word),
+          );
+          if inner.is_empty()
+            || word.is_empty()
+            || (visual.is_empty() && self.source != Context::Visual)
+          {
+            String::new()
+          } else {
+            visual + &inner + &word
+          }
+        }
+        None => continue,
+      };
+    }
+    self.at = self.press;
+    self.fit(self.columns, self.bottom);
   }
 
   pub fn entries(&self) -> &[Item<C>] {
@@ -223,7 +302,7 @@ impl<C> ContextMenu<C> {
   }
 
   pub fn allows(&self, action: Action) -> bool {
-    !matches!(route(action), Route::Ignore)
+    accepts(action)
   }
 
   pub fn input(&mut self, action: Action) -> Transition {
@@ -338,7 +417,9 @@ pub fn page_items(context: PageContext<'_>) -> Vec<Item> {
     }
     items.push(item("Search for selection", "", Command::SearchSelection));
   } else if let Some(glyph) = glyph {
-    items.push(item("Select word", "viw", Command::SelectWord(glyph)));
+    let mut select = item("Select word", "viw", Command::SelectWord(glyph));
+    select.shortcut = Some(Shortcut::SelectWord);
+    items.push(select);
     let lines = Action::Visual(SelectionKind::Line);
     items.push(bound("Select line", lines, Command::SelectLine(glyph)));
     let search = Command::SearchWord(glyph);

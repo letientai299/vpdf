@@ -13,7 +13,7 @@ use vpdf_model::style::Role;
 use vpdf_reader::reader::{Location, Reader};
 
 const TICK: f32 = 3.0;
-type Run = (f32, f32, [u8; 4]);
+type Run = (f32, f32, theme::Paint);
 type TickKey = (usize, u64, usize, bool, u32, u32);
 
 #[derive(Debug, Default)]
@@ -243,7 +243,11 @@ impl Press {
 
 impl Ticks<'_> {
   /// Ticks for headings and matched pages.
-  pub fn positions(&self, layout: &Layout, height: f32) -> Vec<(f32, [u8; 4])> {
+  pub fn positions(
+    &self,
+    layout: &Layout,
+    height: f32,
+  ) -> Vec<(f32, theme::Paint)> {
     let total = layout.total();
     let at = |y: f32| ((y / total * height) / TICK).floor() * TICK;
     let mut ticks = Vec::new();
@@ -307,7 +311,7 @@ impl Label {
 }
 
 /// Merges touching same-color ticks.
-fn runs(ticks: Vec<(f32, [u8; 4])>) -> Vec<Run> {
+fn runs(ticks: Vec<(f32, theme::Paint)>) -> Vec<Run> {
   let mut runs: Vec<Run> = Vec::new();
   for (y, color) in ticks {
     match runs.last_mut() {

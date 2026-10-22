@@ -2,6 +2,7 @@ use crate::geometry::{PixelRect, Screen};
 use crate::image::{PictureId, Rgb};
 use crate::style::Role;
 use crate::text::{Bounds, Quad};
+use crate::theme::{Paint, Theme};
 mod polygon;
 use crate::tile::TileId;
 pub use polygon::Polygon;
@@ -72,7 +73,7 @@ impl Origin {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Fill {
   area: FillArea,
-  color: [u8; 4],
+  color: Paint,
   layer: Layer,
   stage: Stage,
 }
@@ -86,22 +87,27 @@ pub enum FillArea {
 impl Fill {
   pub fn new(
     rect: Bounds,
-    color: [u8; 4],
+    color: impl Into<Paint>,
     layer: Layer,
     stage: Stage,
   ) -> Option<Self> {
     let rect = PixelRect::clip(rect, stage.screen)?;
-    Some(Self { area: FillArea::Pixels(rect), color, layer, stage })
+    Some(Self {
+      area: FillArea::Pixels(rect),
+      color: color.into(),
+      layer,
+      stage,
+    })
   }
 
   pub fn stretched(
-    color: [u8; 4],
+    color: impl Into<Paint>,
     layer: Layer,
     (column, columns, rows): (u16, u16, u16),
     stage: Stage,
   ) -> Self {
     let area = FillArea::Cells { column, columns, rows };
-    Self { area, color, layer, stage }
+    Self { area, color: color.into(), layer, stage }
   }
 
   pub fn area(self) -> FillArea {
@@ -124,7 +130,7 @@ impl Fill {
     }
   }
 
-  pub fn color(self) -> [u8; 4] {
+  pub fn color(self) -> Paint {
     self.color
   }
 
@@ -225,6 +231,7 @@ pub enum Op<'a> {
     column: usize,
     row: usize,
   },
+  Theme(Theme),
   Style(Role),
   Text(Text<'a>),
   Character(Character),
@@ -261,7 +268,13 @@ pub trait Draw<'a> {
     self.push(Op::Text(Text::new(text.to_owned())));
   }
 
-  fn fill(&mut self, rect: Bounds, color: [u8; 4], layer: Layer, stage: Stage) {
+  fn fill(
+    &mut self,
+    rect: Bounds,
+    color: impl Into<Paint>,
+    layer: Layer,
+    stage: Stage,
+  ) {
     if let Some(fill) = Fill::new(rect, color, layer, stage) {
       self.push(Op::Fill(Box::new(fill)));
     }
@@ -271,10 +284,11 @@ pub trait Draw<'a> {
     &mut self,
     quad: Quad,
     clip: Bounds,
-    color: [u8; 4],
+    color: impl Into<Paint>,
     layer: Layer,
     stage: Stage,
   ) {
+    let color = color.into();
     if quad.is_rect() {
       if let Some(rect) = crate::geometry::clip(quad.bounds(), clip) {
         self.fill(rect, color, layer, stage);
@@ -287,7 +301,7 @@ pub trait Draw<'a> {
 
   fn stretch(
     &mut self,
-    color: [u8; 4],
+    color: impl Into<Paint>,
     layer: Layer,
     cells: (u16, u16, u16),
     stage: Stage,
@@ -415,7 +429,7 @@ mod tests {
       Fill::stretched([23, 45, 67, 89], Layer::BelowText, (4, 1, 2), stage);
     assert_eq!(fill.area(), FillArea::Cells { column: 4, columns: 1, rows: 2 });
     assert_eq!(fill.rect(), Bounds { x0: 16.0, y0: 0.0, x1: 20.0, y1: 16.0 });
-    assert_eq!(fill.color(), [23, 45, 67, 89]);
+    assert_eq!(fill.color().resolve(Theme::Default), [23, 45, 67, 89]);
     assert_eq!(fill.layer(), Layer::BelowText);
     assert_eq!(fill.stage(), stage);
   }
