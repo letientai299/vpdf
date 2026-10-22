@@ -68,27 +68,9 @@ fn local(rest: &str) -> Option<PathBuf> {
 
 /// Percent-decoded bytes, which need not be UTF-8.
 fn decoded(text: &str) -> PathBuf {
-  let bytes = text.as_bytes();
-  let mut out = Vec::with_capacity(bytes.len());
-  let mut index = 0;
-  while index < bytes.len() {
-    let pair = bytes.get(index + 1..index + 3);
-    let hex = pair
-      .filter(|pair| pair.iter().all(u8::is_ascii_hexdigit))
-      .and_then(|pair| std::str::from_utf8(pair).ok())
-      .and_then(|pair| u8::from_str_radix(pair, 16).ok());
-    match (bytes[index], hex) {
-      (b'%', Some(byte)) => {
-        out.push(byte);
-        index += 3;
-      }
-      (byte, _) => {
-        out.push(byte);
-        index += 1;
-      }
-    }
-  }
-  PathBuf::from(std::ffi::OsString::from_vec(out))
+  let mut bytes = Vec::with_capacity(text.len());
+  bytes.extend(percent_encoding::percent_decode(text.as_bytes()));
+  PathBuf::from(std::ffi::OsString::from_vec(bytes))
 }
 
 /// Shell words: blanks split, backslashes escape, quotes group.
@@ -179,6 +161,8 @@ mod tests {
     let cases = [
       ("/a%20b.pdf", bytes(b"/a b.pdf")),
       ("/caf%E9.pdf", bytes(b"/caf\xe9.pdf")),
+      ("/caf%e9.pdf", bytes(b"/caf\xe9.pdf")),
+      ("/a+b%2b.pdf", bytes(b"/a+b+.pdf")),
       ("/%+5%zz%4", bytes(b"/%+5%zz%4")),
     ];
     for (text, want) in cases {

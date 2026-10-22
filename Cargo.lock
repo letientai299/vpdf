@@ -3482,6 +3482,7 @@ dependencies = [
  "flate2",
  "mupdf",
  "notify",
+ "percent-encoding",
  "serde",
  "serde_json",
  "sha2",
