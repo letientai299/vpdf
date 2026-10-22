@@ -269,6 +269,9 @@ mod tests {
     assert!(pack.index(PageId(1)).is_none());
     assert_eq!(pack.pages(), 3);
     assert!(Pack::open(root.path(), &[8; 32]).is_none());
+    let bytes = std::fs::read(path(root.path(), &alias))?;
+    save(root.path(), &alias, &records(3, &[]), Some(&pack))?;
+    assert_eq!(std::fs::read(path(root.path(), &alias))?, bytes);
     save(root.path(), &alias, &records(3, &[(2, "gamma")]), Some(&pack))?;
     let pack = Pack::open(root.path(), &alias).context("merged")?;
     assert_eq!(hits(&pack.index(PageId(0)).context("kept")?, "alpha"), 1);

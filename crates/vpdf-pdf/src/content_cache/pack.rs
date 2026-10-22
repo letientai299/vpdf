@@ -84,14 +84,10 @@ impl Pack {
       .as_chunks::<ENTRY>()
       .0
       .iter()
-      .map(|entry| {
-        let low = u64::from(u32_at(entry, 0));
-        let high = u64::from(u32_at(entry, 4));
-        Entry {
-          offset: high << 32 | low,
-          size: u32_at(entry, 8),
-          len: u32_at(entry, 12),
-        }
+      .map(|entry| Entry {
+        offset: u64::from_le_bytes(*entry.first_chunk().unwrap()),
+        size: u32_at(entry, 8),
+        len: u32_at(entry, 12),
       })
       .collect();
     let fits = |entry: &Entry| {
@@ -266,8 +262,7 @@ pub fn save(
   for record in &kept {
     let (size, len) = record.as_ref().map_or((0, 0), |r| (r.raw.len(), r.len));
     let start = if size == 0 { 0 } else { offset };
-    bytes.extend_from_slice(&(start as u32).to_le_bytes());
-    bytes.extend_from_slice(&((start >> 32) as u32).to_le_bytes());
+    bytes.extend_from_slice(&start.to_le_bytes());
     put(&mut bytes, size);
     bytes.extend_from_slice(&len.to_le_bytes());
     offset += size as u64;
