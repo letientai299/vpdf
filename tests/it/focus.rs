@@ -1,54 +1,27 @@
 use super::common::SeedReader;
-use super::common::{events, keys};
-use std::path::PathBuf;
+use super::common::keys;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::pdf_text::PdfText;
 use vpdf::session::Session;
-use vpdf::solo::Solo;
 use vpdf_model::document::Target;
 use vpdf_model::input::Event;
 use vpdf_model::text::{PageId, Position};
 use vpdf_ui::input::InputOwner;
 use vpdf_ui::keys::{Action, Input, Keys, PanelKind};
-use vpdf_ui::layout::Screen;
 use vpdf_ui::panel::{Destination, Row};
-use vpdf_ui::prompt::History;
 use vpdf_ui::split::Direction;
 use vpdf_ui::window::Window;
 
-pub(super) fn screen() -> Screen {
-  Screen {
-    columns: 121,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  }
-}
-
-fn file(name: &str) -> Result<PathBuf> {
-  Ok(PathBuf::from(std::env::var("VPDF_CORPUS")?).join(name))
-}
+pub(super) use crate::harness::{action, screen};
+use crate::harness::{corpus as file, dispatch, raw as events, session};
 
 pub(super) fn send(session: &mut Session, bytes: &[u8]) -> Result<()> {
   for event in events(bytes) {
-    match event {
-      Event::Key(event) => {
-        session.app().key(event, &mut History::default())?;
-      }
-      Event::Mouse(mouse) => {
-        session.mouse_report(mouse)?;
-      }
-      Event::Paste(_) => panic!("input bytes"),
-    }
+    dispatch(session, &event)?;
     session.settle()?;
   }
   Ok(())
-}
-
-pub(super) fn action(app: &mut App, action: Action) -> Result<()> {
-  app.action(Input::plain(action))
 }
 
 fn hints(app: &mut App) {
@@ -87,8 +60,7 @@ fn raw_focus_and_history_keys_differ() {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn local_focus_preserves_reading_and_recent_cards() -> Result<()> {
-  let mut session = Session::new(None);
-  session.open(&file("paper.pdf")?, true, screen())?;
+  let mut session = session(&file("paper.pdf")?, screen())?;
   let app = session.app();
   keys(app, b"vjl")?;
   let range = app.reader.selection.map(|range| (range.anchor, range.kind));
@@ -137,7 +109,7 @@ fn local_focus_preserves_reading_and_recent_cards() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn panel_activation_retains_lists_and_failure_focus() -> Result<()> {
-  let mut app = Solo::open(&file("book.pdf")?, "", false, screen())?;
+  let mut app = crate::harness::solo("book.pdf", false, screen())?;
   let destination = Position { page: PageId(20), ..Position::default() };
   app.show_panel(
     PanelKind::Results,
@@ -169,8 +141,7 @@ fn panel_activation_retains_lists_and_failure_focus() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn cross_document_panel_placement_and_reuse() -> Result<()> {
   for (activation, focus) in [(&b"\r"[..], true), (&b"o"[..], false)] {
-    let mut session = Session::new(None);
-    session.open(&file("paper.pdf")?, true, screen())?;
+    let mut session = session(&file("paper.pdf")?, screen())?;
     let source = session.app().id;
     session.app().show_panel(
       PanelKind::Recent,
@@ -213,8 +184,7 @@ fn recent_pick_opens_in_covered_pane() -> Result<()> {
   let reuse = format!(":vsplit {}\r\x17pgr", paper.display());
   let setups = ["gr", "\x17sgr", "\x17n", ":tabnew\r", &reuse];
   for (setup, click) in setups.iter().flat_map(|s| [(*s, false), (*s, true)]) {
-    let mut session = Session::new(None);
-    session.open(&paper, true, screen())?;
+    let mut session = session(&paper, screen())?;
     session.open(&book, false, screen())?;
     send(&mut session, setup.as_bytes())?;
     let list = session.app().panel.as_mut().unwrap();
@@ -260,8 +230,7 @@ fn yp_yanks_file_path() -> Result<()> {
   // Scanned pages have no text for `y` to start from.
   for name in ["paper.pdf", "ocr.pdf"] {
     let path = std::fs::canonicalize(file(name)?)?;
-    let mut session = Session::new(None);
-    session.open(&path, true, screen())?;
+    let mut session = session(&path, screen())?;
     send(&mut session, b"\"ayp")?;
     let reader = &mut session.app().reader;
     let yanked = reader.register('a').map(ToString::to_string);
@@ -311,8 +280,7 @@ fn yy_joins_prose_and_keeps_code() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn failed_activation_preserves_view() -> Result<()> {
-  let mut session = Session::new(None);
-  session.open(&file("paper.pdf")?, true, screen())?;
+  let mut session = session(&file("paper.pdf")?, screen())?;
   send(&mut session, b"vw")?;
   let id = session.app().id;
   let cursor = session.app().reader.cursor;
@@ -336,8 +304,7 @@ fn failed_activation_preserves_view() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn transient_prefix_dispatch_and_noop_focus() -> Result<()> {
-  let mut session = Session::new(None);
-  session.open(&file("book.pdf")?, true, screen())?;
+  let mut session = session(&file("book.pdf")?, screen())?;
   send(&mut session, b"\x17v")?;
   let source = session.app().id;
   let left = session.app().reader.cursor;
@@ -387,8 +354,7 @@ fn transient_prefix_dispatch_and_noop_focus() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn outside_click_consumes_capture_across_panes() -> Result<()> {
-  let mut session = Session::new(None);
-  session.open(&file("book.pdf")?, true, screen())?;
+  let mut session = session(&file("book.pdf")?, screen())?;
   send(&mut session, b"\x17v")?;
   let source = session.app().id;
   let tab = session.active;
@@ -432,8 +398,7 @@ fn outside_click_consumes_capture_across_panes() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn prompt_wheel_and_passive_motion_keep_owner() -> Result<()> {
-  let mut session = Session::new(None);
-  session.open(&file("book.pdf")?, true, screen())?;
+  let mut session = session(&file("book.pdf")?, screen())?;
   send(&mut session, b"\x17v")?;
   let source = session.app().id;
   hints(session.app());
@@ -464,7 +429,7 @@ fn prompt_wheel_and_passive_motion_keep_owner() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn overview_and_text_use_local_owner() -> Result<()> {
-  let mut app = Solo::open(&file("book.pdf")?, "", false, screen())?;
+  let mut app = crate::harness::solo("book.pdf", false, screen())?;
   crate::common::outline_loaded(&mut app)?;
   keys(&mut app, b"gogp")?;
   assert_eq!(app.input_owner(), InputOwner::Overview);
@@ -501,7 +466,7 @@ fn overview_and_text_use_local_owner() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn raw_history_is_separate_from_local_focus() -> Result<()> {
-  let mut app = Solo::open(&file("book.pdf")?, "", false, screen())?;
+  let mut app = crate::harness::solo("book.pdf", false, screen())?;
   app.command("20")?;
   app.command("30")?;
   keys(&mut app, b"\x1b[111;5u")?;
@@ -555,8 +520,7 @@ fn peek_prompt_retains_destination_and_owner() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn clicked_file_and_global_mark_keep_source_panel() -> Result<()> {
-  let mut session = Session::new(None);
-  session.open(&file("paper.pdf")?, true, screen())?;
+  let mut session = session(&file("paper.pdf")?, screen())?;
   let source = session.app().id;
   session.app().show_panel(
     PanelKind::Recent,
@@ -587,8 +551,7 @@ fn clicked_file_and_global_mark_keep_source_panel() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn outline_row_survives_focus_and_draw() -> Result<()> {
-  let mut session = Session::new(None);
-  session.open(&file("book.pdf")?, true, screen())?;
+  let mut session = session(&file("book.pdf")?, screen())?;
   let app = session.app();
   crate::common::outline_loaded(app)?;
   keys(app, b"go60j")?;
@@ -629,8 +592,7 @@ fn outline_row_survives_focus_and_draw() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn narrow_recent_press_restores_cover_geometry() -> Result<()> {
-  let mut session = Session::new(None);
-  session.open(&file("paper.pdf")?, true, screen())?;
+  let mut session = session(&file("paper.pdf")?, screen())?;
   let source = session.app().id;
   session.app().command("recent")?;
   session.settle()?;
@@ -658,10 +620,9 @@ fn narrow_recent_press_restores_cover_geometry() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn placement_reuses_durable_views() -> Result<()> {
-  let mut session = Session::new(None);
   let paper = file("paper.pdf")?;
   let book = file("book.pdf")?;
-  session.open(&paper, true, screen())?;
+  let mut session = session(&paper, screen())?;
   send(&mut session, b":2\rvw")?;
   let target = session.app().id;
   session.app().start_search("attention", false, false)?;
@@ -708,9 +669,8 @@ fn current_view_requests_keep_transients() -> Result<()> {
   use vpdf::app::Request;
   use vpdf_reader::reader::Operator;
   use vpdf_ui::split::Axis;
-  let mut session = Session::new(None);
   let path = file("paper.pdf")?;
-  session.open(&path, true, screen())?;
+  let mut session = session(&path, screen())?;
   send(&mut session, b"vw:")?;
   hints(session.app());
   session.app().reader.seed_reader(|reader| {
@@ -781,8 +741,7 @@ fn current_view_requests_keep_transients() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn new_views_blur_source_and_start_normal() -> Result<()> {
   for command in ["e", "tabe", "split", "vsplit"] {
-    let mut session = Session::new(None);
-    session.open(&file("book.pdf")?, true, screen())?;
+    let mut session = session(&file("book.pdf")?, screen())?;
     send(&mut session, b":30\rvwgo")?;
     let source = session.app().id;
     let anchor = session.app().reader.selection.unwrap().anchor;
@@ -823,8 +782,7 @@ fn new_views_blur_source_and_start_normal() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn detach_returns_to_live_peer() -> Result<()> {
-  let mut session = Session::new(None);
-  session.open(&file("book.pdf")?, true, screen())?;
+  let mut session = session(&file("book.pdf")?, screen())?;
   let right = session.app().id;
   send(&mut session, b"\x17v")?;
   let left = session.app().id;
@@ -858,8 +816,7 @@ fn detach_returns_to_live_peer() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn transitions_drop_capture_and_owned_input() -> Result<()> {
-  let mut session = Session::new(None);
-  session.open(&file("book.pdf")?, true, screen())?;
+  let mut session = session(&file("book.pdf")?, screen())?;
   send(&mut session, b":30\r\x17v")?;
   let left = session.app().id;
   send(&mut session, b"\x1b[<0;10;5M\x1b[<32;15;6M")?;
@@ -904,8 +861,7 @@ fn transitions_drop_capture_and_owned_input() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn close_uses_spatial_peer_after_history() -> Result<()> {
-  let mut session = Session::new(None);
-  session.open(&file("book.pdf")?, true, screen())?;
+  let mut session = session(&file("book.pdf")?, screen())?;
   let bottom = session.app().id;
   send(&mut session, b"\x17v\x17l\x17s")?;
   let middle = session.app().id;
@@ -919,9 +875,8 @@ fn close_uses_spatial_peer_after_history() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn current_split_reuse_is_noop() -> Result<()> {
-  let mut session = Session::new(None);
   let path = file("book.pdf")?;
-  session.open(&path, true, screen())?;
+  let mut session = session(&path, screen())?;
   send(&mut session, b":30\r\x17vvwgo")?;
   let current = session.app().id;
   session.app().start_search("chapter", false, false)?;
@@ -960,8 +915,7 @@ fn current_split_reuse_is_noop() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn panel_entry_drops_pending_operator() -> Result<()> {
   for command in ["go", ":recent\r", ":marks\r"] {
-    let mut session = Session::new(None);
-    session.open(&file("book.pdf")?, true, screen())?;
+    let mut session = session(&file("book.pdf")?, screen())?;
     send(&mut session, b"y")?;
     assert!(session.app().reader.operator.is_some());
     send(&mut session, command.as_bytes())?;
@@ -989,8 +943,7 @@ fn panel_entry_drops_pending_operator() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn raw_unopened_placement_routes() -> Result<()> {
   for (command, tabs, panes) in [("e", 1, 1), ("tabe", 2, 1), ("split", 1, 2)] {
-    let mut session = Session::new(None);
-    session.open(&file("book.pdf")?, true, screen())?;
+    let mut session = session(&file("book.pdf")?, screen())?;
     let source = session.app().id;
     let path = file("paper.pdf")?;
     send(&mut session, format!(":{command} {}\r", path.display()).as_bytes())?;

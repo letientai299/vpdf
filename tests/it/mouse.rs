@@ -1,6 +1,7 @@
 use super::common::SeedReader;
 use crate::common;
-use crate::focus::{action, screen};
+use crate::harness::{action, corpus, pane, screen};
+pub(super) use crate::harness::{cell_in, mouse, press};
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -85,8 +86,7 @@ pub(super) fn open(
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("test.pdf");
   write(&path)?;
-  let mut session = Session::new(None);
-  session.open(&path, true, screen())?;
+  let mut session = crate::harness::session(&path, screen())?;
   let app = session.app();
   common::outline_loaded(app)?;
   if text_mode {
@@ -103,42 +103,10 @@ pub(super) fn session(text_mode: bool) -> Result<(tempfile::TempDir, Session)> {
   open(link_pdf, text_mode)
 }
 
-/// Screen cell of pane `index` hitting `want`.
-pub(super) fn cell_in(
-  session: &mut Session,
-  index: usize,
-  want: Hit,
-) -> Result<(u16, u16)> {
-  let region = match want {
-    Hit::Row(_) | Hit::Label(_) => Region::Panel,
-    Hit::Thumbnail(_) => Region::Overview,
-    _ => Region::Page,
-  };
-  let app = &mut session.tab().panes[index];
-  let (columns, rows) = (app.screen.columns, app.screen.rows - 1);
-  for row in 0..rows {
-    for column in 0..columns {
-      if app.hovered(region, column, row, None)? == want {
-        return Ok((app.at.column + column, app.at.row + row));
-      }
-    }
-  }
-  anyhow::bail!("no cell hits {want:?}")
-}
-
 /// Focused pane cell hitting `want`.
 pub(super) fn cell(session: &mut Session, want: Hit) -> Result<(u16, u16)> {
   let index = session.tab().focus;
   cell_in(session, index, want)
-}
-
-pub(super) fn mouse(
-  session: &mut Session,
-  kind: MouseEventKind,
-  (column, row): (u16, u16),
-) -> Result<bool> {
-  let modifiers = KeyModifiers::NONE;
-  session.mouse(MouseEvent { kind, column, row, modifiers })
 }
 
 /// A press and release of `button`.
@@ -186,12 +154,7 @@ fn centre_cell(app: &App, page: PageId, bounds: Bounds) -> (u16, u16) {
 }
 
 /// A frame, whose status line shows the hover detail.
-pub(super) fn status(session: &mut Session) -> Result<String> {
-  use vpdf::trace::Drawable;
-  let mut out = Vec::new();
-  session.draw_frame(&mut out)?;
-  Ok(String::from_utf8_lossy(&out).into_owned())
-}
+pub(super) use crate::harness::draw as status;
 
 #[test]
 fn hovered_links_show_their_destination() -> Result<()> {
@@ -1182,14 +1145,6 @@ pub(super) fn labels(session: &mut Session) -> Vec<&str> {
   })
 }
 
-pub(super) fn press(
-  session: &mut Session,
-  code: vpdf_model::input::KeyCode,
-) -> Result<()> {
-  let key = vpdf_model::input::KeyEvent::new(code, KeyModifiers::NONE);
-  session.app().key(key, &mut vpdf_ui::prompt::History::default())
-}
-
 const ANYWHERE: [&str; 6] =
   ["Back", "Forward", "Fit width", "Fit page", "Outline", "Overview"];
 
@@ -1323,9 +1278,7 @@ fn menu_items_run_by_key_and_click() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn figures_offer_copy_and_save() -> Result<()> {
-  let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut session = Session::new(None);
-  session.open(&root.join("paper.pdf"), true, screen())?;
+  let mut session = crate::harness::session(&corpus("paper.pdf")?, screen())?;
   let app = session.app();
   app.move_figure(true, 1)?;
   let snapshot = app.overlays.region().expect("a figure").snapshot().clone();
@@ -1576,9 +1529,7 @@ fn alt_clicks_pick_graphics() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn alt_clicks_pick_figures() -> Result<()> {
-  let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut session = Session::new(None);
-  session.open(&root.join("paper.pdf"), true, screen())?;
+  let mut session = crate::harness::session(&corpus("paper.pdf")?, screen())?;
   let app = session.app();
   app.move_figure(true, 1)?;
   let figure =
@@ -1938,12 +1889,7 @@ fn rests_follow_the_link_beneath() -> Result<()> {
   ];
   for (step, (hover, calm, due)) in steps.into_iter().enumerate() {
     if calm {
-      session.mouse(MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        column: 0,
-        row: 0,
-        modifiers: KeyModifiers::NONE,
-      })?;
+      mouse(&mut session, MouseEventKind::Down(MouseButton::Left), (0, 0))?;
     }
     let app = session.app();
     app.point(hover);
@@ -2081,7 +2027,6 @@ fn hint_labels_follow_the_shown_part() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn hint_labels_keep_off_neighbours() -> Result<()> {
-  let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
   // (text view, page, columns)
   let cases = [
     (false, 2, 121),
@@ -2091,9 +2036,8 @@ fn hint_labels_keep_off_neighbours() -> Result<()> {
     (false, 2, 60),
   ];
   for (text_mode, page, columns) in cases {
-    let mut session = Session::new(None);
     let screen = vpdf_ui::layout::Screen { columns, ..screen() };
-    session.open(&root.join("paper.pdf"), true, screen)?;
+    let mut session = crate::harness::session(&corpus("paper.pdf")?, screen)?;
     let app = session.app();
     app.text_mode = text_mode;
     app.command(&page.to_string())?;
@@ -2506,7 +2450,7 @@ fn unfocused_panes_preview_too() -> Result<()> {
   for (button, inside, moves, followed) in cases {
     let (_directory, mut session, index, link) = split()?;
     let focused = session.app().id;
-    let other = session.tab().panes[index].id;
+    let other = pane(&mut session, index).id;
     let area = hover_open(&mut session, link)?;
     assert_eq!(session.app().id, focused, "rests keep focus");
     let showing =
@@ -2579,17 +2523,17 @@ fn rests_wait_for_free_input() -> Result<()> {
   // Unfocused panes rest by the same rules (r15 #1).
   let (_directory, mut session, index, link) = split()?;
   mouse(&mut session, MouseEventKind::Moved, link)?;
-  let first = session.tab().panes[index].hover_due().expect("a rest");
+  let first = pane(&mut session, index).hover_due().expect("a rest");
   std::thread::sleep(std::time::Duration::from_millis(5));
   mouse(&mut session, MouseEventKind::Moved, link)?;
-  let again = session.tab().panes[index].hover_due().expect("a rest");
+  let again = pane(&mut session, index).hover_due().expect("a rest");
   assert!(again > first, "motion restarts it");
   let plain = cell(&mut session, Hit::Text)?;
   right(&mut session, plain)?;
   mouse(&mut session, MouseEventKind::Moved, link)?;
   mouse(&mut session, MouseEventKind::Down(MouseButton::Left), link)?;
   assert!(session.app().overlays.menu().is_none(), "the press dismissed");
-  assert!(session.tab().panes[index].hover_due().is_none(), "a press");
+  assert!(pane(&mut session, index).hover_due().is_none(), "a press");
   Ok(())
 }
 

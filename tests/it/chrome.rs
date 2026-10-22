@@ -1,7 +1,10 @@
 //! Middle button, chrome, and dividers.
 use super::common::SeedReader;
 
-use crate::mouse::{cell, cell_in, labels, mouse, press, session, status};
+use crate::harness::{
+  cell_in, corpus, draw as status, mouse, pane, press, screen,
+};
+use crate::mouse::{cell, labels, session};
 use vpdf::Result;
 use vpdf::session::Session;
 use vpdf_model::input::{KeyCode, MouseButton, MouseEventKind};
@@ -406,7 +409,7 @@ fn middle_presses_respect_overlays_and_focus() -> Result<()> {
   session.app().command("vsplit")?;
   session.settle()?;
   let index = (session.tab().focus + 1) % 2;
-  let id = session.tab().panes[index].id;
+  let id = pane(&mut session, index).id;
   let link = cell_in(&mut session, index, Hit::Link(PageId(0), 0))?;
   middle(&mut session, link)?;
   assert_eq!(session.tab().panes.len(), 3);
@@ -463,7 +466,7 @@ fn mark_rows_of_other_documents_split_beside() -> Result<()> {
   keys(&mut session, "mA")?;
   let other = directory.path().join("other.pdf");
   crate::common::text_pdf(&other, &["Other words"])?;
-  session.open(&other, false, crate::focus::screen())?;
+  session.open(&other, false, screen())?;
   let id = session.app().id;
   session.app().request =
     Some(vpdf::app::Request::Panel(vpdf_ui::keys::PanelKind::Marks));
@@ -659,7 +662,7 @@ fn status_items_act_on_click() -> Result<()> {
   for name in ["b.pdf", "c.pdf"] {
     let other = directory.path().join(name);
     crate::common::text_pdf(&other, &["Other words"])?;
-    session.open(&other, true, crate::focus::screen())?;
+    session.open(&other, true, screen())?;
   }
   status(&mut session)?;
   // Item to item motion draws nothing.
@@ -734,7 +737,7 @@ fn tab_names_yield_to_hover_details() -> Result<()> {
   for name in ["b.pdf", "c.pdf"] {
     let other = directory.path().join(name);
     crate::common::text_pdf(&other, &["Other words"])?;
-    session.open(&other, true, crate::focus::screen())?;
+    session.open(&other, true, screen())?;
   }
   session.activate(0)?;
   status(&mut session)?;
@@ -762,9 +765,9 @@ fn unfocused_status_items_activate() -> Result<()> {
   // That item in the same-sized pane.
   let pages = chrome_cell(&mut session, vpdf_ui::chrome::Item::Pages)?;
   let index = (session.tab().focus + 1) % 2;
-  let (here, there) = (session.app().at, session.tab().panes[index].at);
+  let (here, there) = (session.app().at, pane(&mut session, index).at);
   let at = (pages.0 - here.column + there.column, pages.1);
-  let id = session.tab().panes[index].id;
+  let id = pane(&mut session, index).id;
   click(&mut session, at);
   assert_eq!(session.app().id, id);
   assert!(session.app().overlays.overview().is_some());
@@ -947,9 +950,7 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn section_clicks_select_their_entry() -> Result<()> {
-  let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut session = Session::new(None);
-  session.open(&root.join("paper.pdf"), true, crate::focus::screen())?;
+  let mut session = crate::harness::session(&corpus("paper.pdf")?, screen())?;
   crate::common::outline_loaded(session.app())?;
   session.app().command("4")?;
   status(&mut session)?;
@@ -1201,9 +1202,7 @@ fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn outline_jumps_show_the_scrollbar() -> Result<()> {
-  let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut session = Session::new(None);
-  session.open(&root.join("paper.pdf"), true, crate::focus::screen())?;
+  let mut session = crate::harness::session(&corpus("paper.pdf")?, screen())?;
   crate::common::outline_loaded(session.app())?;
   drawn(&mut session)?;
   keys(&mut session, "gojjjj")?;
@@ -1279,7 +1278,7 @@ fn unfocused_matches_keep_identity() -> Result<()> {
   session.app().command("vsplit")?;
   session.settle()?;
   let index = (session.tab().focus + 1) % 2;
-  let app = &mut session.tab().panes[index];
+  let app = pane(&mut session, index);
   app.start_search("results", false, false)?;
   crate::common::search_loaded(app)?;
   let row = app.screen.rows - 1;

@@ -14,6 +14,8 @@ mod figures;
 #[path = "../support/fixtures.rs"]
 mod fixtures;
 mod focus;
+#[path = "../support/app.rs"]
+mod harness;
 #[path = "../../src/input.rs"]
 mod input;
 mod input_adapter;
