@@ -165,7 +165,7 @@ fn seeded_text_finds_links_again() -> Result<()> {
       bounds: Bounds { x0, y0: 20.0, x1: x0 + 7.0, y1: 32.0 },
     }
   });
-  let line = Line { paragraph: true, glyphs: glyphs.collect() };
+  let line = Line { ocr: None, paragraph: true, glyphs: glyphs.collect() };
   let text = Text { lines: vec![line], truncated: false };
   app.doc.seed(PageId(0), Arc::new(text));
   let want = [("https://x.org".to_owned(), "https://x.org".to_owned())];

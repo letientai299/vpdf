@@ -211,6 +211,7 @@ mod tests {
 
   fn index(page: usize, words: &str) -> Index {
     let line = Line {
+      ocr: None,
       paragraph: true,
       glyphs: words
         .chars()

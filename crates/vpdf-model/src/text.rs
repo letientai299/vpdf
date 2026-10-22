@@ -108,6 +108,13 @@ impl Glyph {
 }
 
 impl Quad {
+  pub fn is_rect(self) -> bool {
+    (0..4).all(|i| {
+      let (a, b) = (self.0[i], self.0[(i + 1) % 4]);
+      (a.0 - b.0).abs() < 0.001 || (a.1 - b.1).abs() < 0.001
+    })
+  }
+
   pub fn bounds(self) -> Bounds {
     Bounds::enclosing(&self.0)
   }
@@ -204,9 +211,37 @@ impl Quad {
 pub struct Line {
   pub paragraph: bool,
   pub glyphs: Vec<Glyph>,
+  /// Cached OCR span; glyph boxes remain unchanged.
+  pub ocr: Option<Quad>,
 }
 
 impl Line {
+  pub fn quad(&self, range: std::ops::Range<usize>) -> Option<Quad> {
+    let glyphs = self.glyphs.get(range)?;
+    let (first, last) = (glyphs.first()?, glyphs.last()?);
+    let Some(quad) = self.ocr else {
+      if glyphs.len() == 1 {
+        return Some(first.quad());
+      }
+      return Quad::span(glyphs.iter().map(Glyph::quad));
+    };
+    let [upper_left, upper_right, lower_right, lower_left] = quad.0;
+    let width = upper_right.0 - upper_left.0;
+    if width <= f32::EPSILON {
+      return Some(quad);
+    }
+    let edge = |x: f32, start: (f32, f32), end: (f32, f32)| {
+      let along = ((x - upper_left.0) / width).clamp(0.0, 1.0);
+      (x, start.1 + along * (end.1 - start.1))
+    };
+    Some(Quad([
+      edge(first.bounds.x0, upper_left, upper_right),
+      edge(last.bounds.x1, upper_left, upper_right),
+      edge(last.bounds.x1, lower_left, lower_right),
+      edge(first.bounds.x0, lower_left, lower_right),
+    ]))
+  }
+
   /// Box around every glyph; None when empty.
   pub fn span(&self) -> Option<Bounds> {
     self.glyphs.iter().map(|glyph| glyph.bounds).reduce(Bounds::union)
@@ -305,7 +340,12 @@ impl Text {
   }
 
   pub fn weight(&self) -> usize {
-    self.lines.iter().map(|l| l.glyphs.capacity() * size_of::<Glyph>()).sum()
+    self.lines.capacity() * size_of::<Line>()
+      + self
+        .lines
+        .iter()
+        .map(|l| l.glyphs.capacity() * size_of::<Glyph>())
+        .sum::<usize>()
   }
 
   pub fn glyph(&self, pos: Position) -> Option<&Glyph> {
@@ -443,6 +483,7 @@ mod tests {
         .into_iter()
         .enumerate()
         .map(|(line, value)| Line {
+          ocr: None,
           paragraph: true,
           glyphs: value
             .chars()
@@ -482,6 +523,7 @@ mod tests {
         .into_iter()
         .enumerate()
         .map(|(line, text)| Line {
+          ocr: None,
           paragraph: false,
           glyphs: text
             .chars()
@@ -522,6 +564,7 @@ mod tests {
   fn text_bridges_line_gaps_within_a_block() {
     // Lines 10 tall, 10 apart; third starts a block.
     let line = |paragraph, top: f32, x1| Line {
+      ocr: None,
       paragraph,
       glyphs: vec![
         Glyph {
@@ -620,5 +663,65 @@ mod quad_tests {
         assert!(start.0 <= 0.0 && end.0 >= 100.0, "{band:?}");
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod ocr_tests {
+  use super::*;
+
+  #[test]
+  fn native_marks_keep_direction() {
+    let quad = Quad([(10.0, 10.0), (10.0, 10.0), (0.0, 10.0), (0.0, 10.0)]);
+    let line = Line {
+      glyphs: vec![Glyph {
+        ch: '\u{301}',
+        bounds: quad.bounds(),
+        quad: Some(quad),
+      }],
+      ..Line::default()
+    };
+    let cursor = line.quad(0..1).unwrap();
+    assert_eq!(cursor, quad);
+    assert_eq!(cursor.widen(2.0), quad.widen(2.0));
+  }
+
+  #[test]
+  fn cached_selection_geometry() {
+    let bounds = Bounds { x0: 10.0, y0: 20.0, x1: 50.0, y1: 30.0 };
+    let q = Quad([(10.0, 20.0), (50.0, 16.0), (50.0, 26.0), (10.0, 30.0)]);
+    let line = Line {
+      ocr: Some(q),
+      glyphs: (0..4)
+        .map(|i| Glyph {
+          ch: 'x',
+          quad: None,
+          bounds: Bounds {
+            x0: 10.0 + i as f32 * 10.0,
+            x1: 20.0 + i as f32 * 10.0,
+            ..bounds
+          },
+        })
+        .collect(),
+      ..Line::default()
+    };
+    assert_eq!(line.quad(0..4), Some(q));
+    assert_eq!(
+      line.quad(1..3),
+      Some(Quad([(20.0, 19.0), (40.0, 17.0), (40.0, 27.0), (20.0, 29.0)]))
+    );
+    assert_eq!(
+      line.quad(2..3),
+      Some(Quad([(30.0, 18.0), (40.0, 17.0), (40.0, 27.0), (30.0, 28.0)]))
+    );
+    assert_eq!(line.span(), Some(bounds));
+    assert_eq!(line.quad(2..2), None);
+    assert_eq!(line.quad(4..5), None);
+    let text = Text { lines: vec![line], truncated: false };
+    assert_eq!(
+      text.weight(),
+      text.lines.capacity() * size_of::<Line>()
+        + text.lines[0].glyphs.capacity() * size_of::<Glyph>()
+    );
   }
 }

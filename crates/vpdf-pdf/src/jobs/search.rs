@@ -578,6 +578,7 @@ mod tests {
     crate::fixtures::pdf(&path, &["page"], "")?;
     let text = Arc::new(Text {
       lines: vec![crate::text::Line {
+        ocr: None,
         paragraph: true,
         glyphs: "中文排版需求"
           .chars()

@@ -70,7 +70,7 @@ Counts multiply scroll distances; half-screen counts are not remembered
 {visual} {visual_line}: enter character / line V
 C {visual}/{visual_line}: select from positioned glyph
 N {visual}/{visual_line}: visible target, else first visible text
-No text: selection unavailable; run :ocr explicitly
+Scanned page: OCR starts after display; :ocr [lang] retries
 {swap}: swap selection ends
 {reselect}: reselect
 <Esc> / yank: return to V entry mode

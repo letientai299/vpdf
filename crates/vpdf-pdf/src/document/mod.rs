@@ -288,6 +288,10 @@ impl Document {
     }
   }
 
+  pub fn has_ocr(&self, page: PageId) -> bool {
+    self.ocr.contains(&page)
+  }
+
   pub fn seed(&mut self, page: PageId, text: Arc<Text>) {
     self.figures.remove(&page);
     self.links.remove(&page);

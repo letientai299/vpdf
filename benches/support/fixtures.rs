@@ -64,6 +64,7 @@ pub fn text_named(name: &str) -> Result<TextPages> {
         .lines
         .into_iter()
         .map(|TextLine(paragraph, glyphs)| Line {
+          ocr: None,
           paragraph,
           glyphs: glyphs
             .into_iter()

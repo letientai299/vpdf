@@ -469,6 +469,7 @@ mod tests {
       lines: lines
         .iter()
         .map(|s| Line {
+          ocr: None,
           paragraph: true,
           glyphs: s
             .chars()

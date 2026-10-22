@@ -1,3 +1,4 @@
+mod skew;
 use super::Wake;
 use crate::Result;
 use crate::content_cache::{self, Alias, Version};
@@ -20,10 +21,17 @@ const OUTPUT: [&str; 3] = ["stdin", "stdout", "tsv"];
 /// The header every TSV output starts with.
 const TSV: &str = "level\tpage_num\t";
 
+#[derive(Clone, Copy)]
+enum Request {
+  Explicit,
+  Automatic,
+}
+
 pub struct OcrJob {
+  request: Request,
   pub page: PageId,
   cancel: Arc<AtomicBool>,
-  pub result: mpsc::Receiver<std::result::Result<Arc<Text>, String>>,
+  pub result: mpsc::Receiver<std::result::Result<Option<Arc<Text>>, String>>,
 }
 
 impl OcrJob {
@@ -34,6 +42,30 @@ impl OcrJob {
     language: &str,
     wake: &Wake,
   ) -> Self {
+    Self::spawn(path, password, page, language, wake, Request::Explicit)
+  }
+
+  pub fn automatic(
+    path: &Path,
+    password: &str,
+    page: PageId,
+    wake: &Wake,
+  ) -> Self {
+    Self::spawn(path, password, page, "eng", wake, Request::Automatic)
+  }
+
+  pub fn is_automatic(&self) -> bool {
+    matches!(self.request, Request::Automatic)
+  }
+
+  fn spawn(
+    path: &Path,
+    password: &str,
+    page: PageId,
+    language: &str,
+    wake: &Wake,
+    request: Request,
+  ) -> Self {
     let cancel = Arc::new(AtomicBool::new(false));
     let stop = Arc::clone(&cancel);
     let (send, result) = mpsc::channel();
@@ -42,11 +74,17 @@ impl OcrJob {
     let password = password.to_owned();
     let language = language.to_owned();
     thread::spawn(move || {
-      let result = recognize(&path, &password, page, &language, &stop);
-      let result = result.map(Arc::new).map_err(|e| e.to_string());
+      let result = match request {
+        Request::Explicit => {
+          recognize(&path, &password, page, &language, &stop).map(Some)
+        }
+        Request::Automatic => automatic(&path, &password, page, &stop),
+      };
+      let result =
+        result.map(|text| text.map(Arc::new)).map_err(|e| e.to_string());
       let _ = send.send(result);
     });
-    Self { page, cancel, result }
+    Self { request, page, cancel, result }
   }
 
   pub fn cancel(&self) {
@@ -74,6 +112,66 @@ fn recognize(
     "Invalid OCR language"
   );
   let doc = Handle::open(path, password)?;
+  recognize_page(&doc, password, page, language, cancel)
+}
+
+fn ready(cancel: &AtomicBool) -> Result<()> {
+  anyhow::ensure!(
+    crate::scheduling::yield_to_views(|| cancel.load(Ordering::Relaxed)),
+    "OCR cancelled"
+  );
+  Ok(())
+}
+
+fn automatic(
+  path: &Path,
+  password: &str,
+  page: PageId,
+  cancel: &AtomicBool,
+) -> Result<Option<Text>> {
+  static SLOT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+  let _slot = loop {
+    ready(cancel)?;
+    match SLOT.try_lock() {
+      Ok(slot) => break slot,
+      Err(std::sync::TryLockError::Poisoned(_)) => {
+        anyhow::bail!("OCR worker stopped")
+      }
+      Err(std::sync::TryLockError::WouldBlock) => {}
+    }
+    thread::sleep(Duration::from_millis(20));
+  };
+  ready(cancel)?;
+  let doc = Handle::open(path, password)?;
+  ready(cancel)?;
+  if !doc.text(page)?.lines.is_empty() {
+    return Ok(None);
+  }
+  ready(cancel)?;
+  let bounds = doc.bounds(page)?;
+  let raw = doc.native.load_page(page.0 as i32)?.to_text_page(
+    crate::document::TEXT_FLAGS | mupdf::TextPageFlags::PRESERVE_IMAGES,
+  )?;
+  let scanned = raw.blocks().any(|block| {
+    let b = crate::document::rect(block.bounds());
+    matches!(block.r#type(), mupdf::text_page::TextBlockType::Image)
+      && b.width() * b.height() >= bounds.width() * bounds.height() * 0.25
+  });
+  if !scanned || engine("eng").is_none() {
+    return Ok(None);
+  }
+  ready(cancel)?;
+  recognize_page(&doc, password, page, "eng", cancel).map(Some)
+}
+
+fn recognize_page(
+  doc: &Handle,
+  password: &str,
+  page: PageId,
+  language: &str,
+  cancel: &AtomicBool,
+) -> Result<Text> {
+  ready(cancel)?;
   let bounds = doc.bounds(page)?;
   let scale =
     2.5_f32.min((16_000_000.0 / (bounds.width() * bounds.height())).sqrt());
@@ -96,6 +194,7 @@ fn recognize(
     };
     Some(raster_key(&engine(language)?, language, rows, pixels.samples()))
   });
+  ready(cancel)?;
   let output = cached(root.as_deref(), key.as_ref(), || {
     let mut png = Vec::new();
     pixels.write_to(&mut png, ImageFormat::PNG)?;
@@ -200,6 +299,7 @@ pub(crate) fn tesseract(
   cancel: &AtomicBool,
 ) -> Result<String> {
   let mut child = Command::new("tesseract")
+    .env("OMP_THREAD_LIMIT", "1")
     .args(["-l", language])
     .args(OUTPUT)
     .stdin(Stdio::piped())
@@ -249,10 +349,11 @@ fn bounded_read(mut input: impl Read, limit: usize) -> Result<String> {
 pub fn parse_tsv(tsv: &str, bounds: Bounds, scale: f32) -> Result<Text> {
   anyhow::ensure!(scale.is_finite() && scale > 0.0, "Invalid OCR scale");
   let mut text = Text::default();
+  let mut words = Vec::new();
   let mut previous = String::new();
   let mut previous_paragraph = String::new();
   let mut count = 0;
-  for record in tsv.lines().skip(1) {
+  'records: for record in tsv.lines().skip(1) {
     let fields: Vec<_> = record.splitn(12, '\t').collect();
     if fields.len() != 12 || fields[0] != "5" || fields[11].trim().is_empty() {
       continue;
@@ -261,9 +362,11 @@ pub fn parse_tsv(tsv: &str, bounds: Bounds, scale: f32) -> Result<Text> {
     if id != previous {
       let paragraph = fields[1..4].join(":");
       text.lines.push(Line {
+        ocr: None,
         paragraph: paragraph != previous_paragraph,
         ..Line::default()
       });
+      words.push(Vec::new());
       previous_paragraph = paragraph;
       previous = id;
     }
@@ -271,6 +374,16 @@ pub fn parse_tsv(tsv: &str, bounds: Bounds, scale: f32) -> Result<Text> {
     let y = fields[7].parse::<f32>()? / scale + bounds.y0;
     let width = fields[8].parse::<f32>()? / scale;
     let height = fields[9].parse::<f32>()? / scale;
+    anyhow::ensure!(
+      [x, y, width, height, x + width, y + height]
+        .into_iter()
+        .all(f32::is_finite)
+        && width >= 0.0
+        && height >= 0.0,
+      "Invalid OCR geometry"
+    );
+    let Some(row_words) = words.last_mut() else { continue };
+    row_words.push(Bounds { x0: x, y0: y, x1: x + width, y1: y + height });
     let chars: Vec<_> =
       fields[11].chars().filter(|c| !c.is_control()).collect();
     let Some(line) = text.lines.last_mut() else { continue };
@@ -284,7 +397,7 @@ pub fn parse_tsv(tsv: &str, bounds: Bounds, scale: f32) -> Result<Text> {
     for (index, ch) in chars.iter().enumerate() {
       if count >= GLYPH_LIMIT {
         text.truncated = true;
-        return Ok(text);
+        break 'records;
       }
       let step = width / chars.len() as f32;
       line.glyphs.push(Glyph {
@@ -300,6 +413,7 @@ pub fn parse_tsv(tsv: &str, bounds: Bounds, scale: f32) -> Result<Text> {
       count += 1;
     }
   }
+  skew::apply(&mut text, &words, bounds);
   Ok(text)
 }
 
@@ -307,6 +421,7 @@ pub fn parse_tsv(tsv: &str, bounds: Bounds, scale: f32) -> Result<Text> {
 mod tests {
   use super::*;
   use std::cell::Cell;
+  use std::os::unix::fs::MetadataExt;
 
   #[test]
   #[ignore = "requires corpus and Tesseract"]
@@ -334,6 +449,10 @@ mod tests {
       std::fs::read_dir(&root)?.collect::<std::io::Result<Vec<_>>>()?;
     assert_eq!(files.len(), 1, "unencrypted OCR writes its cache");
     assert_eq!(files[0].path().extension().unwrap(), "ocr");
+    assert!(
+      automatic(&path, "", PageId(0), &cancel)?.is_none(),
+      "embedded OCR is left alone"
+    );
     std::fs::remove_file(files[0].path())?;
 
     let mut doc = Handle::open(&path, "")?;
@@ -346,7 +465,57 @@ mod tests {
     assert_eq!(std::fs::read_dir(&root)?.count(), 0);
     assert_eq!(hash(&path)?, original);
     assert_eq!(hash(file.path())?, before);
+    let scan = path.with_file_name("scan.pdf");
+    let first = automatic(&scan, "", PageId(9), &cancel)?
+      .expect("scan recognized")
+      .plain();
+    assert!(first.contains("computing devices"));
+    let files =
+      std::fs::read_dir(&root)?.collect::<std::io::Result<Vec<_>>>()?;
+    assert_eq!(files.len(), 1);
+    let stored = std::fs::read(files[0].path())?;
+    let inode = std::fs::metadata(files[0].path())?.ino();
+    assert_eq!(
+      automatic(&scan, "", PageId(9), &cancel)?.unwrap().plain(),
+      first
+    );
+    assert_eq!(
+      std::fs::read(files[0].path())?,
+      stored,
+      "warm automatic OCR keeps its disk record"
+    );
+    assert_eq!(std::fs::metadata(files[0].path())?.ino(), inode);
+
     Ok(())
+  }
+
+  #[test]
+  fn automatic_yields_before_opening() -> Result<()> {
+    let urgent = crate::scheduling::Urgent::new();
+    let job = OcrJob::automatic(
+      Path::new("/nonexistent/scan.pdf"),
+      "",
+      PageId(0),
+      &Wake::none(),
+    );
+    assert!(matches!(
+      job.result.recv_timeout(Duration::from_millis(30)),
+      Err(mpsc::RecvTimeoutError::Timeout)
+    ));
+    job.cancel();
+    let result = job.result.recv_timeout(Duration::from_secs(5))?;
+    assert!(result.unwrap_err().contains("OCR cancelled"));
+    drop(urgent);
+    Ok(())
+  }
+
+  #[test]
+  fn geometry_rejects_nonfinite_records() {
+    for value in ["NaN", "inf", "-1"] {
+      let tsv =
+        format!("header\n5\t1\t1\t1\t1\t1\t0\t0\t{value}\t10\t99\tword\n");
+      assert!(parse_tsv(&tsv, Bounds::default(), 1.0).is_err());
+    }
   }
 
   /// Stored output answers the same key without running the engine;

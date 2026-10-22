@@ -1,6 +1,5 @@
 pub mod landing;
 mod point;
-mod raster;
 pub use point::Point;
 pub mod scroll;
 mod view;
@@ -13,7 +12,7 @@ use crate::theme;
 pub use view::Viewport;
 use vpdf_model::geometry::Screen;
 use vpdf_model::scene::{Draw, Layer};
-use vpdf_model::text::{Glyph, Quad};
+use vpdf_model::text::Quad;
 use vpdf_reader::motion::{covered_quads, range};
 use vpdf_reader::reader::{SelectionKind, TextSource};
 
@@ -79,10 +78,13 @@ impl Canvas<'_> {
 
 impl<'a, S: TextSource + Pages, D: Draw<'a>> Painter<'_, S, D> {
   fn glyph(&mut self, position: Position) -> Result<()> {
-    if let Some(glyph) = self.source.page_text(position.page)?.glyph(position) {
+    let text = self.source.page_text(position.page)?;
+    if let Some(quad) = text.lines.get(position.line).and_then(|line| {
+      line.quad(position.glyph..position.glyph.saturating_add(1))
+    }) {
       let scale =
         self.canvas.layout.pages()[position.page.0].scale as f32 / 1024.0;
-      let quad = glyph.quad().widen(2.0 / scale);
+      let quad = quad.widen(2.0 / scale);
       self.polygon(position.page, quad, theme::CURSOR, Layer::AboveText);
     }
     Ok(())
@@ -111,16 +113,15 @@ impl<'a, S: TextSource + Pages, D: Draw<'a>> Painter<'_, S, D> {
       y1: self.canvas.screen.height(),
     };
     let Some(clip) = vpdf_model::geometry::clip(crop, screen) else { return };
-    for rect in raster::strips(quad, clip) {
-      for piece in outside(rect, self.canvas.menu) {
-        self.scene.fill(
-          piece,
-          color,
-          layer,
-          self.canvas.screen,
-          self.canvas.left,
-        );
-      }
+    for piece in outside(clip, self.canvas.menu) {
+      self.scene.quad(
+        quad,
+        piece,
+        color,
+        layer,
+        self.canvas.screen,
+        self.canvas.left,
+      );
     }
   }
 
@@ -141,7 +142,7 @@ impl<'a, S: TextSource + Pages, D: Draw<'a>> Painter<'_, S, D> {
     let Some(quad) = text
       .lines
       .get(position.line)
-      .and_then(|line| Quad::span(line.glyphs.iter().map(Glyph::quad)))
+      .and_then(|line| line.quad(0..line.glyphs.len()))
     else {
       return Ok(());
     };

@@ -14,6 +14,7 @@ fn pages() -> Pages {
         lines: lines
           .iter()
           .map(|line| Line {
+            ocr: None,
             paragraph: true,
             glyphs: line
               .chars()

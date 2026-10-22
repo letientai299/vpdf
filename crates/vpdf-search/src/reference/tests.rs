@@ -5,6 +5,7 @@ use crate::text::{Bounds, Glyph, PageId};
 fn glyph_offsets_preserve_unicode() {
   let value = "é 🧬 See Figure 4.";
   let line = Line {
+    ocr: None,
     paragraph: false,
     glyphs: value
       .chars()

@@ -1,8 +1,10 @@
 use crate::geometry::{PixelRect, Screen};
 use crate::image::{PictureId, Rgb};
 use crate::style::Role;
-use crate::text::Bounds;
+use crate::text::{Bounds, Quad};
+mod polygon;
 use crate::tile::TileId;
+pub use polygon::Polygon;
 use std::borrow::Cow;
 use unicode_width::UnicodeWidthChar;
 
@@ -256,6 +258,7 @@ pub enum Op<'a> {
   BlockCursor,
   UnderlineOff,
   Fill(Box<Fill>),
+  Polygon(Box<Polygon>),
   /// Page tiles below fills and text.
   Tile(Box<TilePlacement>),
   /// Pictures above fills and text.
@@ -281,6 +284,26 @@ pub trait Draw<'a> {
   ) {
     if let Some(fill) = Fill::new(rect, color, layer, screen, left) {
       self.push(Op::Fill(Box::new(fill)));
+    }
+  }
+
+  fn quad(
+    &mut self,
+    quad: Quad,
+    clip: Bounds,
+    color: [u8; 4],
+    layer: Layer,
+    screen: Screen,
+    left: u16,
+  ) {
+    if quad.is_rect() {
+      if let Some(rect) = crate::geometry::clip(quad.bounds(), clip) {
+        self.fill(rect, color, layer, screen, left);
+      }
+    } else if let Some(polygon) =
+      Polygon::new(quad, clip, color, layer, screen, left)
+    {
+      self.push(Op::Polygon(Box::new(polygon)));
     }
   }
 

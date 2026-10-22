@@ -4,6 +4,7 @@ use vpdf_reader::reader::Reader;
 
 fn text(rows: &[&str]) -> Arc<Text> {
   let lines = rows.iter().map(|row| Line {
+    ocr: None,
     paragraph: false,
     glyphs: row
       .chars()

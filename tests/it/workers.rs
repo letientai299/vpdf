@@ -126,12 +126,14 @@ fn handles_read_document_bounds() -> Result<()> {
 #[ignore = "requires corpus and Tesseract"]
 fn real_ocr_and_cancel() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  automatic_scan(&root.join("scan.pdf"))?;
   let (wake, woken) = counted();
   let job = OcrJob::start(&root.join("ocr.pdf"), "", PageId(0), "eng", &wake);
   let text = job
     .result
     .recv_timeout(Duration::from_secs(60))?
-    .map_err(anyhow::Error::msg)?;
+    .map_err(anyhow::Error::msg)?
+    .expect("explicit OCR returns text");
   assert!(text.plain().to_lowercase().contains("cheese"));
   assert!(woke(&woken, 1));
   let cancelled =
@@ -139,5 +141,114 @@ fn real_ocr_and_cancel() -> Result<()> {
   cancelled.cancel();
   assert!(cancelled.result.recv_timeout(Duration::from_secs(10))?.is_err());
   assert!(woke(&woken, 2), "cancellation wakes too");
+  let scan = OcrJob::start(&root.join("scan.pdf"), "", PageId(9), "eng", &wake);
+  let text = scan
+    .result
+    .recv_timeout(Duration::from_secs(60))?
+    .map_err(anyhow::Error::msg)?
+    .expect("explicit OCR returns text");
+  assert!(text.plain().contains("computing devices"));
+  let mut slopes: Vec<_> = text
+    .lines
+    .iter()
+    .filter_map(|line| line.ocr)
+    .filter_map(|q| {
+      let width = q.0[1].0 - q.0[0].0;
+      (width > 100.0).then(|| (q.0[1].1 - q.0[0].1) / width)
+    })
+    .collect();
+  slopes.sort_by(f32::total_cmp);
+  assert!(slopes.len() > 20);
+  assert!((-0.016..-0.009).contains(&slopes[slopes.len() / 2]));
+  assert!(
+    text.lines.iter().flat_map(|line| &line.glyphs).all(|g| g.quad.is_none())
+  );
+  Ok(())
+}
+
+#[test]
+fn auto_ocr_defers_and_skips_native_pages() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let path = root.path().join("native.pdf");
+  crate::common::text_pdf(&path, &["native text"])?;
+  let mut app =
+    vpdf::solo::Solo::open(&path, "", true, crate::common::cells(80, 24))?;
+  assert!(app.ocr.is_none(), "open starts no OCR");
+  app.start_deferred();
+  assert!(app.ocr.is_none(), "unpresented view starts no OCR");
+  app.draw(&mut Vec::new())?;
+  assert!(app.complete);
+  assert!(app.ocr.is_none(), "frame construction starts no OCR");
+  app.start_deferred();
+  assert!(app.ocr.as_ref().unwrap().is_automatic());
+  let started = Instant::now();
+  while app.ocr.is_some() {
+    app.ocr_updates()?;
+    assert!(started.elapsed() < Duration::from_secs(10));
+    std::thread::sleep(Duration::from_millis(1));
+  }
+  assert!(!app.doc.has_ocr(PageId(0)), "native text is not replaced");
+  app.start_deferred();
+  assert!(app.ocr.is_none(), "native detection happens once");
+  assert!(app.doc.text(PageId(0))?.plain().contains("native text"));
+  Ok(())
+}
+
+#[test]
+fn auto_ocr_cancellation_keeps_frames_independent() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let path = root.path().join("native.pdf");
+  crate::common::text_pdf(&path, &["native text"])?;
+  let mut app =
+    vpdf::solo::Solo::open(&path, "", true, crate::common::cells(80, 24))?;
+  app.draw(&mut Vec::new())?;
+  app.start_deferred();
+  assert!(app.ocr.is_some(), "automatic worker queued");
+  app.draw(&mut Vec::new())?;
+  assert!(app.complete, "OCR never holds frame readiness");
+  app.complete = false;
+  app.start_deferred();
+  assert!(app.ocr.is_none(), "new rendering cancels automatic work");
+  app.complete = true;
+  app.start_deferred();
+  assert!(app.ocr.is_some(), "presented page can retry");
+  app.command("cancel")?;
+  app.start_deferred();
+  assert!(app.ocr.is_none(), "cancel persists across frames");
+  Ok(())
+}
+
+fn automatic_scan(path: &std::path::Path) -> Result<()> {
+  for _ in 0..2 {
+    let mut app =
+      vpdf::solo::Solo::open(path, "", false, crate::common::cells(80, 24))?;
+    assert!(app.ocr.is_none());
+    app.command("10")?;
+    let started = Instant::now();
+    loop {
+      app.raster_updates();
+      app.draw(&mut Vec::new())?;
+      assert!(app.ocr.is_none(), "rendering never schedules OCR");
+      if app.complete {
+        break;
+      }
+      assert!(started.elapsed() < Duration::from_secs(20));
+      std::thread::sleep(Duration::from_millis(2));
+    }
+    app.start_deferred();
+    assert!(app.ocr.as_ref().unwrap().is_automatic());
+    while app.ocr.is_some() {
+      app.ocr_updates()?;
+      assert!(started.elapsed() < Duration::from_secs(60));
+      std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(app.doc.text(PageId(9))?.plain().contains("computing devices"));
+    assert!(app.doc.has_ocr(PageId(9)));
+    app.start_deferred();
+    assert!(app.ocr.is_none(), "resident OCR is not repeated");
+    app.start_search("computing devices", false, false)?;
+    crate::common::search_loaded(&mut app)?;
+    assert!(!app.search.hits().is_empty(), "automatic text seeds search");
+  }
   Ok(())
 }

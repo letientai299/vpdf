@@ -157,7 +157,7 @@ impl<W: Write> Surface<'_> for Painter<'_, W> {
 fn command(
   out: &mut impl Write,
   op: &Op<'_>,
-  graphics: Option<&mut Graphics>,
+  mut graphics: Option<&mut Graphics>,
 ) -> io::Result<()> {
   match op {
     Op::Move { column, row } => {
@@ -204,6 +204,19 @@ fn command(
         placement.origin(),
         placement.frame(),
       )?;
+    }
+    Op::Polygon(polygon) => {
+      let fill = polygon.fill();
+      for rect in polygon.strips() {
+        paint_fill(
+          out,
+          graphics.as_deref_mut(),
+          rect,
+          fill.color(),
+          fill.layer(),
+          fill.frame(),
+        )?;
+      }
     }
     Op::Fill(fill) => match fill.area() {
       FillArea::Pixels(_) => paint_fill(
@@ -540,6 +553,101 @@ mod tests {
         direct.veil(color, screen, 3, &mut expected)?;
         direct.end(&mut expected)?;
         assert_eq!(replay_frame(&mut replay, &scene)?, expected);
+      }
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn polygon_strip_bytes() -> crate::Result<()> {
+    use crate::graphics::Presentation;
+    use crate::payload::Encoder;
+    use crate::terminal::Transport;
+    use vpdf_model::text::Quad;
+    let screen = Screen {
+      columns: 12,
+      rows: 6,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (3, 2),
+    };
+    let quad = Quad([(5.0, 20.0), (85.0, 10.0), (85.0, 25.0), (5.0, 35.0)]);
+    let viewport = Bounds { x0: 10.0, y0: 12.0, x1: 80.0, y1: 30.0 };
+    for bits in 0..8 {
+      let profile = Presentation {
+        transport: Transport { tmux: bits & 1 != 0 },
+        crop_quirk: bits & 2 != 0,
+        cell_offsets: bits & 4 != 0,
+        report_missing: false,
+      };
+      let mut strips = Graphics::new(profile, &Encoder::default());
+      let mut polygons = Graphics::new(profile, &Encoder::default());
+      let mut streaming = Graphics::new(profile, &Encoder::default());
+      let mut scene = Vec::new();
+      scene.quad(
+        quad,
+        viewport,
+        [20, 80, 160, 90],
+        Layer::AboveText,
+        screen,
+        1,
+      );
+      scene.quad(
+        quad,
+        viewport,
+        [20, 80, 160, 90],
+        Layer::BelowText,
+        screen,
+        1,
+      );
+      let mut flat = Vec::new();
+      for op in &scene {
+        let Op::Polygon(polygon) = op else { panic!("Expected polygon") };
+        let fill = polygon.fill();
+        for rect in polygon.strips() {
+          flat.fill(rect, fill.color(), fill.layer(), screen, 1);
+        }
+      }
+      assert_eq!(scene.len(), 2);
+      for _ in 0..2 {
+        let mut expected = Vec::new();
+        strips.begin(&mut expected)?;
+        let mut painter =
+          Painter::new(&mut expected).with_graphics(&mut strips);
+        painter.paint(&flat);
+        painter.finish()?;
+        strips.end(&mut expected)?;
+        let mut actual = Vec::new();
+        polygons.begin(&mut actual)?;
+        let mut painter =
+          Painter::new(&mut actual).with_graphics(&mut polygons);
+        painter.paint(&scene);
+        painter.finish()?;
+        polygons.end(&mut actual)?;
+        assert_eq!(actual, expected);
+        let mut actual = Vec::new();
+        streaming.begin(&mut actual)?;
+        let mut painter =
+          Painter::new(&mut actual).with_graphics(&mut streaming);
+        painter.quad(
+          quad,
+          viewport,
+          [20, 80, 160, 90],
+          Layer::AboveText,
+          screen,
+          1,
+        );
+        painter.quad(
+          quad,
+          viewport,
+          [20, 80, 160, 90],
+          Layer::BelowText,
+          screen,
+          1,
+        );
+        painter.finish()?;
+        streaming.end(&mut actual)?;
+        assert_eq!(actual, expected);
       }
     }
     Ok(())

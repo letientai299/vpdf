@@ -43,10 +43,14 @@ Hover previews and held pan or resize gestures do not add keyboard modes.
 
 Text selection follows the PDF's extracted glyphs and reading order. Complex
 columns or missing text can make that order differ from the visual page.
-The [text guide][text] explains copying fidelity and optional OCR for scans.
+The [text guide][text] explains copying fidelity and OCR for scans. After a
+page is displayed, Vpdf checks it in the background and recognizes image pages
+without existing text when Tesseract's English data is installed. Opening and
+rendering never wait for this check. `:ocr [lang]` requests another language or
+retries a page; `:cancel` stops automatic OCR until the document reloads.
 Page OCR text stays in memory, can be evicted, and disappears when the document
 reloads or closes. Where search indexes persist (below), Tesseract's output is
-also stored, so running page OCR again on an unchanged page skips recognition.
+also stored, so revisiting an unchanged scan skips recognition.
 Vpdf does not embed OCR text in the source PDF.
 
 ## Find a passage and return

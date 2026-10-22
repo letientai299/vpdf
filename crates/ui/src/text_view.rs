@@ -49,7 +49,7 @@ impl TextView {
 }
 
 /// A line that stands in for an empty page.
-static BLANK: Line = Line { paragraph: false, glyphs: Vec::new() };
+static BLANK: Line = Line { ocr: None, paragraph: false, glyphs: Vec::new() };
 
 /// Rows `page` takes: its lines, or one blank row when it has none,
 /// then a break before the next page.

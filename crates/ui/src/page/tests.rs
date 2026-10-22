@@ -117,28 +117,88 @@ fn skewed_overlays_follow_projection() -> Result<()> {
       Canvas { layout: &layout, screen: layout.screen(), left: 0, menu: None };
     let mut scene = Vec::new();
     canvas.scene(&mut source, &marks(&reader), &mut scene)?;
-    let fills: Vec<_> = scene
+    let polygons: Vec<_> = scene
       .iter()
-      .filter_map(|op| if let Op::Fill(fill) = op { Some(fill) } else { None })
+      .filter_map(|op| {
+        if let Op::Polygon(polygon) = op { Some(polygon) } else { None }
+      })
       .collect();
+    assert_eq!(polygons.len(), 3);
     for (color, layer) in [
       (theme::CURSORLINE, Layer::BelowText),
       (theme::SELECTION, Layer::AboveText),
       (theme::CURSOR, Layer::AboveText),
     ] {
       let colored: Vec<_> =
-        fills.iter().filter(|f| f.color() == color).collect();
-      assert!(colored.len() > 1, "{rotation}: {color:?}");
-      assert!(colored.iter().all(|f| f.layer() == layer));
+        polygons.iter().filter(|p| p.fill().color() == color).collect();
+      assert_eq!(colored.len(), 1, "{rotation}: {color:?}");
+      assert_eq!(colored[0].fill().layer(), layer);
+      assert!(colored[0].strips().len() > 1);
     }
-    let selection: Vec<_> =
-      fills.iter().filter(|f| f.color() == theme::SELECTION).collect();
-    let cursor: Vec<_> =
-      fills.iter().filter(|f| f.color() == theme::CURSOR).collect();
-    assert_eq!(
-      selection.iter().map(|f| f.rect()).collect::<Vec<_>>(),
-      cursor.iter().map(|f| f.rect()).collect::<Vec<_>>()
-    );
+    assert_eq!(polygons[1].quad(), polygons[2].quad());
+  }
+  Ok(())
+}
+
+#[test]
+fn ocr_line_shapes() -> Result<()> {
+  use vpdf_model::scene::Op;
+  use vpdf_model::text::{Glyph, Line};
+  let mut source = Source::new();
+  let text = std::sync::Arc::make_mut(&mut source.text);
+  text.lines = (0..10)
+    .map(|row| {
+      let y = 10.0 + row as f32 * 10.0;
+      Line {
+        ocr: Some(Quad([
+          (10.0, y),
+          (90.0, y - 2.0),
+          (90.0, y + 3.0),
+          (10.0, y + 5.0),
+        ])),
+        glyphs: (0..16)
+          .map(|i| Glyph {
+            ch: 'x',
+            quad: None,
+            bounds: Bounds {
+              x0: 10.0 + i as f32 * 5.0,
+              y0: y,
+              x1: 15.0 + i as f32 * 5.0,
+              y1: y + 5.0,
+            },
+          })
+          .collect(),
+        ..Line::default()
+      }
+    })
+    .collect();
+  let layout = Layout::new(
+    (0..3).map(|p| source.bounds(PageId(p))),
+    Screen {
+      columns: 100,
+      rows: 100,
+      cell_width: 1,
+      cell_height: 2,
+      origin: (0, 0),
+    },
+  );
+  let mut reader = Reader::default();
+  reader.visual(SelectionKind::Line);
+  reader.cursor.line = 9;
+  let canvas =
+    Canvas { layout: &layout, screen: layout.screen(), left: 0, menu: None };
+  let mut scene = Vec::new();
+  canvas.scene(&mut source, &marks(&reader), &mut scene)?;
+  assert_eq!(scene.len(), 12);
+  assert!(scene.iter().all(|op| matches!(op, Op::Polygon(_))));
+  let menu = Bounds { x0: 30.0, y0: 0.0, x1: 60.0, y1: 150.0 };
+  let canvas = Canvas { menu: Some(menu), ..canvas };
+  let mut scene = Vec::new();
+  canvas.scene(&mut source, &marks(&reader), &mut scene)?;
+  assert_ne!(scene, [] as [Op<'_>; 0]);
+  for op in scene {
+    let Op::Polygon(p) = op else { panic!("Expected polygon") };
+    assert!(crate::layout::clip(p.clip(), menu).is_none());
   }
   Ok(())
 }

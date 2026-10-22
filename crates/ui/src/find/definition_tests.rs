@@ -35,7 +35,7 @@ fn source(value: &str) -> Source {
     .collect();
   Source {
     text: Some(Arc::new(Text {
-      lines: vec![Line { paragraph: false, glyphs }],
+      lines: vec![Line { ocr: None, paragraph: false, glyphs }],
       truncated: false,
     })),
     headings: Vec::new(),

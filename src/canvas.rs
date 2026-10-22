@@ -71,6 +71,7 @@ impl App {
     let frame = vpdf_ui::layout::tiles::Frame { pane: self.id, screen, left };
     let update = self.tiles.scene(view, frame, scene).map_err(Into::into)?;
     self.complete = update.complete;
+    self.defer_ocr();
     if let Some(request) = update.request {
       let nearby =
         if self.crop_scan.active() { Vec::new() } else { self.nearby_pages() };

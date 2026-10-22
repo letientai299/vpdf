@@ -16,6 +16,7 @@ fn pages(pages: &[&[(&str, bool)]]) -> Pages {
         lines: lines
           .iter()
           .map(|(text, paragraph)| Line {
+            ocr: None,
             paragraph: *paragraph,
             glyphs: text
               .chars()

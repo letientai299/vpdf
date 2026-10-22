@@ -237,6 +237,7 @@ mod tests {
     let bounds = Bounds { x0: 0.0, y0: 0.0, x1: 10.0, y1: 10.0 };
     let text = Text {
       lines: vec![TextLine {
+        ocr: None,
         paragraph: false,
         glyphs: vec![Glyph { quad: None, ch: '1', bounds }],
       }],
@@ -313,6 +314,7 @@ mod tests {
       .into_iter()
       .enumerate()
       .map(|(index, value)| TextLine {
+        ocr: None,
         paragraph: index != 2,
         glyphs: value
           .chars()

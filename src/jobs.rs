@@ -8,6 +8,12 @@ use vpdf_pdf::jobs::ocr::OcrJob;
 use vpdf_pdf::jobs::outline::{OutlineJob, spawn};
 use vpdf_ui::keys::PanelKind;
 
+#[derive(Default)]
+pub(crate) struct AutoOcr {
+  seen: std::collections::HashSet<vpdf_model::text::PageId>,
+  stopped: bool,
+}
+
 impl App {
   pub(crate) fn job_updates(&mut self) -> bool {
     let panel =
@@ -32,6 +38,7 @@ impl App {
     if let Some(job) = self.ocr.take() {
       job.cancel();
     }
+    self.auto_ocr.seen.insert(self.navigation_position().page);
     self.ocr = Some(OcrJob::start(
       &self.path,
       &self.password,
@@ -44,21 +51,33 @@ impl App {
   }
 
   pub fn ocr_updates(&mut self) -> Result<bool> {
+    self.defer_ocr();
     let Some(job) = &self.ocr else { return Ok(false) };
-    let Ok(result) = job.result.try_recv() else { return Ok(false) };
+    let result = match job.result.try_recv() {
+      Ok(result) => result,
+      Err(mpsc::TryRecvError::Empty) => return Ok(false),
+      Err(mpsc::TryRecvError::Disconnected) => Err("OCR worker stopped".into()),
+    };
     let page = job.page;
+    let automatic = job.is_automatic();
     self.ocr = None;
     match result {
-      Ok(text) => {
+      Ok(Some(text)) => {
         if let Some(worker) = &self.search_worker {
           worker.seed(page, Arc::clone(&text));
         }
         self.doc.seed(page, text);
         self.refresh_figures()?;
-        self.reader.notice("OCR ready");
+        if self.doc.has_ocr(page) {
+          self.auto_ocr.seen.remove(&page);
+        }
+        if !automatic {
+          self.reader.notice("OCR ready");
+        }
         self.reading_view().reclamp_text()?;
       }
-      Err(error) => self.error = Some(error),
+      Err(error) if !automatic => self.error = Some(error),
+      Ok(None) | Err(_) => {}
     }
     Ok(true)
   }
@@ -92,8 +111,49 @@ impl App {
   /// Starts a deferred load once the pane's whole view reached the
   /// terminal.
   pub fn start_deferred(&mut self) {
+    self.defer_ocr();
     if self.complete {
       self.resume_outline();
+      self.start_auto_ocr();
+    }
+  }
+
+  fn start_auto_ocr(&mut self) {
+    if self.auto_ocr.stopped
+      || self.ocr.is_some()
+      || self.covered()
+      || self.overlays.overview().is_some()
+      || self.reader.animation().active()
+    {
+      return;
+    }
+    let page = self.navigation_position().page;
+    if !self.doc.has_ocr(page) && self.auto_ocr.seen.insert(page) {
+      self.ocr =
+        Some(OcrJob::automatic(&self.path, &self.password, page, &self.wake));
+    }
+  }
+
+  pub(crate) fn defer_ocr(&mut self) {
+    let page = self.navigation_position().page;
+    if self.ocr.as_ref().is_some_and(|job| {
+      job.is_automatic()
+        && (!self.complete
+          || self.covered()
+          || self.overlays.overview().is_some()
+          || self.reader.animation().active()
+          || job.page != page)
+    }) {
+      let job = self.ocr.take().unwrap();
+      job.cancel();
+      self.auto_ocr.seen.remove(&job.page);
+    }
+  }
+
+  pub(crate) fn cancel_ocr(&mut self) {
+    self.auto_ocr.stopped = true;
+    if let Some(job) = self.ocr.take() {
+      job.cancel();
     }
   }
 
@@ -337,8 +397,10 @@ mod tests {
         },
       })
       .collect();
-    let text =
-      Text { lines: vec![Line { paragraph: true, glyphs }], truncated: false };
+    let text = Text {
+      lines: vec![Line { ocr: None, paragraph: true, glyphs }],
+      truncated: false,
+    };
     app.doc.seed(PageId(0), Arc::new(text));
     app.refresh_figures()?;
     assert!(matches!(app.figures, Figures::Running(_)));

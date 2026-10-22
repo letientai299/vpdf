@@ -19,6 +19,7 @@ impl Source {
       text: Arc::new(Text {
         truncated: false,
         lines: vec![Line {
+          ocr: None,
           paragraph: false,
           glyphs: vec![Glyph {
             quad: None,

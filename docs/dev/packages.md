@@ -83,7 +83,9 @@ painter for fills; terminal retains protocol encoding and image caching.
 Stretched fills retain their cell extent beside pixel fills, so a native painter
 can recover the intended rectangle without terminal image commands. Region
 recording accepts cell-snapped sweep outlines for terminal presenters that cache
-overlays by size.
+overlays by size. Oriented selections retain one clipped quad per line.
+Native painting fills the polygon; terminal painting rasterizes horizontal
+strips. OCR text caches line geometry and derives cursor spans on demand.
 
 A shared surface combines tile readiness and placement with drawing. The
 recorder keeps wanted placements even when pixels are missing; readiness drives

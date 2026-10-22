@@ -353,6 +353,7 @@ mod tests {
     let count = value.chars().count();
     let width = area.width() / count as f32;
     Line {
+      ocr: None,
       paragraph: true,
       glyphs: value
         .chars()
@@ -602,6 +603,7 @@ mod tests {
         .into_iter()
         .enumerate()
         .map(|(i, s)| Line {
+          ocr: None,
           paragraph: true,
           glyphs: s
             .chars()

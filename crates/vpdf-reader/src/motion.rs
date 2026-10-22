@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::reader::{Reader, TextSource};
-use vpdf_model::text::{Bounds, Glyph, PageId, Position, Quad, Text, class};
+use vpdf_model::text::{Bounds, Line, PageId, Position, Quad, Text, class};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Motion {
@@ -283,8 +283,8 @@ pub fn covered_rows(
   range: (Position, Position),
   linewise: bool,
 ) -> impl Iterator<Item = Bounds> + '_ {
-  covered_glyphs(text, page, range, linewise).filter_map(|glyphs| {
-    glyphs.iter().map(|glyph| glyph.bounds).reduce(Bounds::union)
+  covered_lines(text, page, range, linewise).filter_map(|(line, range)| {
+    line.glyphs[range].iter().map(|glyph| glyph.bounds).reduce(Bounds::union)
   })
 }
 
@@ -295,16 +295,16 @@ pub fn covered_quads(
   range: (Position, Position),
   linewise: bool,
 ) -> impl Iterator<Item = Quad> + '_ {
-  covered_glyphs(text, page, range, linewise)
-    .filter_map(|glyphs| Quad::span(glyphs.iter().map(Glyph::quad)))
+  covered_lines(text, page, range, linewise)
+    .filter_map(|(line, range)| line.quad(range))
 }
 
-fn covered_glyphs(
+fn covered_lines(
   text: &Text,
   page: PageId,
   range: (Position, Position),
   linewise: bool,
-) -> impl Iterator<Item = &[Glyph]> {
+) -> impl Iterator<Item = (&Line, std::ops::Range<usize>)> {
   let (first, last) = range;
   let skip = if page == first.page { first.line } else { 0 };
   let rows = text.lines.iter().enumerate().skip(skip);
@@ -324,7 +324,7 @@ fn covered_glyphs(
     } else {
       row.glyphs.len()
     };
-    row.glyphs.get(start..end)
+    (start < end).then_some((row, start..end))
   })
 }
 
@@ -360,6 +360,7 @@ mod tests {
     ];
     let text = Text {
       lines: vec![Line {
+        ocr: None,
         paragraph: true,
         glyphs: quads
           .map(|quad| Glyph {

@@ -324,9 +324,7 @@ impl App {
       Id::Fzf => self.request = Some(Request::Pick),
       Id::Cancel => {
         self.cancel_search();
-        if let Some(job) = self.ocr.take() {
-          job.cancel();
-        }
+        self.cancel_ocr();
         self.cancel_outline();
         self.cancel_figures();
         self.refill_panel(PanelKind::Figures)?;

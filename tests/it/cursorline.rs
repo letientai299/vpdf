@@ -155,6 +155,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
       lines: rows
         .iter()
         .map(|row| Line {
+          ocr: None,
           paragraph: false,
           glyphs: row
             .chars()

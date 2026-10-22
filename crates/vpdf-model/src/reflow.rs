@@ -298,6 +298,7 @@ mod tests {
   fn continuations_sit_below_full_rows() {
     // Glyphs are 5 pt wide and 10 pt tall; rows 12 pt apart.
     let at = |x: f32, y: f32, text: &str| Line {
+      ocr: None,
       paragraph: true,
       glyphs: text
         .chars()
@@ -350,6 +351,7 @@ mod tests {
   fn short_lines_break_deliberately() {
     // Each glyph is 5 pt wide; lines start at x = 0.
     let line = |paragraph, text: &str| Line {
+      ocr: None,
       paragraph,
       glyphs: text
         .chars()

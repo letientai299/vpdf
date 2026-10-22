@@ -95,10 +95,19 @@ including after `:cancel`.
 
 ## Session OCR
 
-[OCR][ocr] supplements pages with no usable text. A worker opens its own
-document, rasterizes a bounded page image, and pipes it to a Tesseract
-subprocess. The child has cancellation, runtime, and output limits. OCR
-rasterization still includes native calls that cannot be interrupted
+[OCR][ocr] starts automatically for the current displayed image page without
+native text. The shared presentation acknowledgement schedules the check only
+after every visible tile is ready. Detection, cache reads, rasterization, and
+recognition run on a worker; opening and frame construction never wait for them.
+Automatic jobs share one process-wide slot, yield before native phases while
+views render, and stop when their pane needs tiles or moves to another page.
+Tesseract uses one CPU thread. Blank pages and existing text skip recognition.
+Missing helpers and automatic failures stay silent; `:ocr [lang]` retries
+explicitly and reports errors. `:cancel` disables automatic OCR until reload.
+
+A worker opens its own document, rasterizes a bounded page image, and pipes it
+to a Tesseract subprocess. The child has cancellation, runtime, and output
+limits. OCR rasterization still includes native calls that cannot be interrupted
 immediately.
 
 Recognized word boxes yield approximate character positions, rather than
@@ -108,7 +117,9 @@ in memory, can be evicted, and disappear when the document reloads or closes.
 The reader never embeds them into the PDF. Where the content cache is on and no
 password opened the PDF, Tesseract's output is also kept on disk, named by a
 hash of the raster rows, the language, and the Tesseract version and models, so
-running page OCR again on the same page skips recognition.
+revisiting the same scan skips recognition. Cache lookup still renders and
+hashes the OCR raster on the worker. Native calls already running cannot yield
+until they return.
 
 See [installation][installation] for the optional OCR dependency and `:help` for
 its command interface.

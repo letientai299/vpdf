@@ -129,6 +129,7 @@ pub struct App {
   pub panel: Option<crate::panel::PanelSession>,
   pub preview: Option<bool>,
   pub ocr: Option<vpdf_pdf::jobs::ocr::OcrJob>,
+  pub(crate) auto_ocr: crate::jobs::AutoOcr,
   pub outline_load: crate::jobs::Loading,
   pub figures: crate::jobs::Figures,
   pub crop_scan: vpdf_pdf::jobs::crop::Scan,
@@ -227,6 +228,7 @@ impl App {
       panel: None,
       preview: None,
       ocr: None,
+      auto_ocr: crate::jobs::AutoOcr::default(),
       outline_load: crate::jobs::Loading::Deferred,
       figures: crate::jobs::Figures::Deferred,
       crop_scan: vpdf_pdf::jobs::crop::Scan::default(),
@@ -330,6 +332,7 @@ impl App {
     if let Some(ocr) = self.ocr.take() {
       ocr.cancel();
     }
+    self.auto_ocr = crate::jobs::AutoOcr::default();
     self.reader.reload();
     self.tiles.invalidate();
     self.reading_view().reclamp_cursor()?;

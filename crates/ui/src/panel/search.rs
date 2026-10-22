@@ -275,6 +275,7 @@ mod tests {
       PageId(0),
       &Text {
         lines: vec![Line {
+          ocr: None,
           paragraph: true,
           glyphs: label
             .chars()

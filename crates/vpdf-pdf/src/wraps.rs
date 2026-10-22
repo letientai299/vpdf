@@ -139,7 +139,7 @@ mod tests {
       let bounds = Bounds { x0, y0: y, x1: x0 + 10.0, y1: y + 12.0 };
       Glyph { quad: None, ch, bounds }
     });
-    Line { paragraph: false, glyphs: glyphs.collect() }
+    Line { ocr: None, paragraph: false, glyphs: glyphs.collect() }
   }
 
   /// Parts (text, x, y), then joined tops.

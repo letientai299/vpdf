@@ -53,6 +53,7 @@ impl Fixture {
   fn new() -> Self {
     let lines = (0..30)
       .map(|row| Line {
+        ocr: None,
         paragraph: false,
         glyphs: vec![Glyph {
           quad: None,

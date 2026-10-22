@@ -314,28 +314,43 @@ fn clip(screen: Screen, left: u16, scale: f32) -> Rect {
 
 fn fills(painter: &Painter, scene: &[Op<'_>], layer: Layer, scale: f32) {
   for op in scene {
-    let Op::Fill(fill) = op else { continue };
+    let fill = match op {
+      Op::Fill(fill) => **fill,
+      Op::Polygon(polygon) => polygon.fill(),
+      _ => continue,
+    };
     if fill.layer() != layer {
       continue;
     }
     let (screen, left) = fill.frame();
-    let bounds = fill.rect();
-    let min =
-      offset(screen, left, scale) + Vec2::new(bounds.x0, bounds.y0) / scale;
-    let rect = Rect::from_min_size(
-      min,
-      Vec2::new(bounds.width(), bounds.height()) / scale,
-    );
-    painter.with_clip_rect(clip(screen, left, scale)).rect_filled(
-      rect,
-      0.0,
-      Color32::from_rgba_unmultiplied(
-        fill.color()[0],
-        fill.color()[1],
-        fill.color()[2],
-        fill.color()[3],
-      ),
-    );
+    let origin = offset(screen, left, scale);
+    let point = |(x, y): (f32, f32)| origin + Vec2::new(x, y) / scale;
+    let color = fill.color();
+    let color =
+      Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);
+    let painter = painter.with_clip_rect(clip(screen, left, scale));
+    if let Op::Polygon(polygon) = op {
+      let bounds = polygon.clip();
+      let clip = Rect::from_min_max(
+        point((bounds.x0, bounds.y0)),
+        point((bounds.x1, bounds.y1)),
+      );
+      painter.with_clip_rect(clip).add(egui::Shape::convex_polygon(
+        polygon.quad().0.map(point).to_vec(),
+        color,
+        egui::Stroke::NONE,
+      ));
+    } else {
+      let bounds = fill.rect();
+      painter.rect_filled(
+        Rect::from_min_max(
+          point((bounds.x0, bounds.y0)),
+          point((bounds.x1, bounds.y1)),
+        ),
+        0.0,
+        color,
+      );
+    }
   }
 }
 
@@ -981,5 +996,49 @@ mod tests {
     assert_eq!(grid.cells[15].text, "r");
     assert_eq!(grid.cursor, (3, 1));
     assert_eq!(grid.ime(screen, 1.0).unwrap().rect.width(), 40.0);
+  }
+}
+
+#[cfg(test)]
+mod polygon_tests {
+  use super::*;
+  use vpdf_model::scene::Draw;
+  use vpdf_model::text::{Bounds, Quad};
+
+  #[test]
+  fn native_polygons_clip() {
+    let screen = Screen {
+      columns: 10,
+      rows: 8,
+      cell_width: 10,
+      cell_height: 10,
+      origin: (2, 3),
+    };
+    let bounds = Bounds { x0: 10.25, y0: 8.5, x1: 80.75, y1: 60.5 };
+    let quad = Quad([(0.0, 30.0), (90.0, 10.0), (90.0, 30.0), (0.0, 50.0)]);
+    let mut scene = Vec::new();
+    scene.quad(quad, bounds, [20, 80, 160, 90], Layer::AboveText, screen, 1);
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+      fills(ui.painter(), &scene, Layer::BelowText, 2.0);
+      fills(ui.painter(), &scene, Layer::AboveText, 2.0);
+    });
+    output.textures_delta.clear();
+    let polygons: Vec<_> = output
+      .shapes
+      .iter()
+      .filter(|shape| matches!(shape.shape, egui::Shape::Path(_)))
+      .collect();
+    assert_eq!(polygons.len(), 1);
+    let shape = polygons[0];
+    let egui::Shape::Path(path) = &shape.shape else { unreachable!() };
+    assert_eq!(path.points.len(), 4);
+    let origin = offset(screen, 1, 2.0);
+    assert_eq!(path.points[0], origin + Vec2::new(0.0, 30.0) / 2.0);
+    let expected = Rect::from_min_max(
+      origin + Vec2::new(bounds.x0, bounds.y0) / 2.0,
+      origin + Vec2::new(bounds.x1, bounds.y1) / 2.0,
+    );
+    assert_eq!(shape.clip_rect, expected);
   }
 }
