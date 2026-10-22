@@ -26,7 +26,8 @@ C/V {previous_paragraph} {next_paragraph}: previous / next paragraph
 :<n|label>: jump to a page number or label
 [count]{previous_section} {next_section}: previous / next heading; record jump
 {next_figure} {previous_figure}: next / previous figure; counts repeat
-{previous_page}: previous page
+[count]{next_page}: next page
+[count]{previous_page}: previous page
 {history_back}{history_forward} '': jump back / forward
 {overview} {history_back}{history_forward}: jump; close overview
 Jumps: flash landing line for 600 ms

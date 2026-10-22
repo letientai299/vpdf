@@ -390,6 +390,8 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("G", Action::Motion(M::Last), "last page, or [count] page"),
   (" ", Action::Screen(1), "screen down with overlap"),
   ("S-Space", Action::Screen(-1), "screen up with overlap"),
+  ("C-n", Action::Motion(M::NextPage), "next page"),
+  ("C-p", Action::Motion(M::PreviousPage), "previous page"),
   ("BS", Action::Motion(M::PreviousPage), "previous page"),
   ("y", Action::Yank, "yank"),
   ("yy", Action::YankLine, "yank line"),

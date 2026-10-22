@@ -94,20 +94,26 @@ fn key(ch: char) -> KeyEvent {
 }
 
 #[test]
-fn half_screen_aliases_preserve_counts() {
+fn page_bindings_preserve_counts() {
   for grammar in
     [Grammar::Normal, Grammar::Cursor, Grammar::Objects, Grammar::Panel]
   {
-    for (name, distance) in
-      [("d", 0.5), ("C-d", 0.5), ("u", -0.5), ("C-u", -0.5)]
-    {
+    for (name, action) in [
+      ("d", Action::Scroll(0.5)),
+      ("C-d", Action::Scroll(0.5)),
+      ("u", Action::Scroll(-0.5)),
+      ("C-u", Action::Scroll(-0.5)),
+      ("C-n", Action::Motion(Motion::NextPage)),
+      ("C-p", Action::Motion(Motion::PreviousPage)),
+      ("BS", Action::Motion(Motion::PreviousPage)),
+    ] {
       for count in [None, Some('3')] {
         let mut keys = Keys::default();
         if let Some(count) = count {
           assert!(keys.feed(key(count), grammar).is_none());
         }
         let input = keys.feed(parse(name).unwrap()[0], grammar).unwrap();
-        assert_eq!(input.action, Action::Scroll(distance));
+        assert_eq!(input.action, action);
         assert_eq!(input.count, if count.is_some() { 3 } else { 1 });
         assert_eq!(input.explicit, count.is_some());
         assert_eq!(keys.pending(), "");

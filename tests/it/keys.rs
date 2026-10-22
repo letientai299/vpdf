@@ -21,6 +21,38 @@ fn action(key: KeyEvent) -> Option<Action> {
 }
 
 #[test]
+fn page_keys_preserve_prompt_history() {
+  use vpdf_reader::motion::Motion;
+
+  for (next, previous) in [
+    (b"\x0e".as_slice(), b"\x10".as_slice()),
+    (b"\x1b[110;5u".as_slice(), b"\x1b[112;5u".as_slice()),
+  ] {
+    assert_eq!(action(key(next)), Some(Action::Motion(Motion::NextPage)));
+    assert_eq!(
+      action(key(previous)),
+      Some(Action::Motion(Motion::PreviousPage))
+    );
+    for kind in [PromptKind::Command, PromptKind::Search(false)] {
+      let mut history = History::default();
+      history.push(kind, "older");
+      history.push(kind, "newer");
+      let mut prompt = Prompt::new(kind);
+      prompt.paste("draft");
+      for (bytes, expected) in [
+        (previous, "newer"),
+        (previous, "older"),
+        (next, "newer"),
+        (next, "draft"),
+      ] {
+        prompt.feed(key(bytes), &history);
+        assert_eq!(prompt.text(), expected);
+      }
+    }
+  }
+}
+
+#[test]
 fn shift_space_scrolls_up() {
   let cases: &[(&[u8], i32)] = &[
     (b" ", 1),
