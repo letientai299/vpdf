@@ -10,7 +10,7 @@ use vpdf_ui::{page::Canvas, paint::Marks};
 #[test]
 fn recorded_overlays_keep_layers() -> Result<()> {
   let (mut source, layout, reader, scene) = fixture::overlays()?;
-  let hovered = [(PageId(0), source.text.lines[0].glyphs[0].bounds)];
+  let hovered = [(PageId(0), source.page.text.lines[0].glyphs[0].bounds)];
   let marks = Marks { hovered: &hovered, ..marks(&reader) };
   let canvas =
     Canvas { layout: &layout, screen: layout.screen(), left: 2, menu: None };

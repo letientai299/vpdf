@@ -112,17 +112,11 @@ impl Targets<'_> {
 mod tests {
   use super::*;
   use crate::clues::Clues;
-  use crate::layout::Screen;
+
   use std::cell::Cell;
 
   fn targets(clues: &Clues) -> Targets<'_> {
-    let screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(80, 24);
     Targets {
       panel: None,
       hints: None,
@@ -267,13 +261,7 @@ mod tests {
     use crate::region::{Canvas, CaptureId, Snapshot};
     use crate::text::Bounds;
     use vpdf_model::geometry::At;
-    let screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(80, 24);
     let bounds = Bounds { x0: 0.0, y0: 0.0, x1: 200.0, y1: 200.0 };
     let layout = Layout::new([bounds], screen);
     let canvas = Canvas {

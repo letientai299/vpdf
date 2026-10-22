@@ -1,14 +1,16 @@
+use crate::fixtures;
+use crate::fixtures::screen;
 use anyhow::Result;
 use std::sync::Arc;
 use vpdf_model::geometry::Screen;
-use vpdf_model::text::{Bounds, Glyph, Line, PageId, Text};
+use vpdf_model::text::{Bounds, PageId, Text};
 use vpdf_reader::reader::{Reader, TextSource};
 use vpdf_ui::layout::Layout;
 use vpdf_ui::paint::Marks;
 use vpdf_ui::source::Pages;
 
 pub(crate) struct Source {
-  pub(crate) text: Arc<Text>,
+  pub(crate) page: fixtures::Source,
   pub(crate) reads: Vec<PageId>,
   pub(crate) fail: bool,
 }
@@ -16,18 +18,15 @@ pub(crate) struct Source {
 impl Source {
   pub(crate) fn new() -> Self {
     Self {
-      text: Arc::new(Text {
-        truncated: false,
-        lines: vec![Line {
-          ocr: None,
-          paragraph: false,
-          glyphs: vec![Glyph {
-            quad: None,
-            ch: 'a',
-            bounds: Bounds { x0: 10.0, y0: 10.0, x1: 20.0, y1: 20.0 },
-          }],
-        }],
-      }),
+      page: fixtures::Source {
+        text: fixtures::lines([fixtures::line([fixtures::glyph(
+          'a',
+          Bounds { x0: 10.0, y0: 10.0, x1: 20.0, y1: 20.0 },
+        )])]),
+        count: 3,
+        bounds: Bounds { x0: 0.0, y0: 0.0, x1: 100.0, y1: 1000.0 },
+        label: "",
+      },
       reads: Vec::new(),
       fail: false,
     }
@@ -36,13 +35,13 @@ impl Source {
 
 impl Pages for Source {
   fn count(&self) -> usize {
-    3
+    self.page.count()
   }
   fn bounds(&self, _: PageId) -> Bounds {
-    Bounds { x0: 0.0, y0: 0.0, x1: 100.0, y1: 1000.0 }
+    self.page.bounds(PageId(0))
   }
   fn label(&self, _: PageId) -> &'static str {
-    ""
+    self.page.label
   }
 }
 
@@ -53,20 +52,14 @@ impl TextSource for Source {
   fn page_text(&mut self, page: PageId) -> Result<Arc<Text>> {
     self.reads.push(page);
     anyhow::ensure!(!self.fail, "Text unavailable");
-    Ok(Arc::clone(&self.text))
+    Ok(Arc::clone(&self.page.text))
   }
 }
 
 pub(crate) fn layout(source: &Source) -> Layout {
   Layout::new(
     (0..source.count()).map(|p| source.bounds(PageId(p))),
-    Screen {
-      columns: 10,
-      rows: 10,
-      cell_width: 10,
-      cell_height: 10,
-      origin: (0, 0),
-    },
+    Screen { cell_width: 10, cell_height: 10, ..screen::cells(10, 10) },
   )
 }
 
@@ -89,7 +82,7 @@ pub(crate) fn overlays()
   let layout = layout(&source);
   let mut reader = Reader::default();
   reader.visual(SelectionKind::Character);
-  let hovered = [(PageId(0), source.text.lines[0].glyphs[0].bounds)];
+  let hovered = [(PageId(0), source.page.text.lines[0].glyphs[0].bounds)];
   let marks = Marks { hovered: &hovered, ..marks(&reader) };
   let canvas = vpdf_ui::page::Canvas {
     layout: &layout,

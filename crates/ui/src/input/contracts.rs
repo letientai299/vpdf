@@ -12,7 +12,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use vpdf_model::document::{Figure, FigureSource};
 use vpdf_model::geometry::At;
-use vpdf_model::geometry::Screen;
 use vpdf_model::input::{KeyModifiers, MouseEvent, MouseEventKind};
 use vpdf_reader::reader::{Reader, SelectionKind, TextSource};
 
@@ -37,13 +36,7 @@ fn frame() -> Frame {
     at: At::default(),
     left: 0,
     text: false,
-    screen: Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
+    screen: crate::testing::screen::cells(80, 24),
   }
 }
 

@@ -1,3 +1,4 @@
+use crate::fixtures::screen;
 use vpdf_model::geometry::{At, Screen};
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_ui::layout::Layout;
@@ -13,13 +14,7 @@ pub fn snapshot(id: u64) -> Snapshot {
 }
 
 pub fn layout() -> Layout {
-  let screen = Screen {
-    columns: 20,
-    rows: 10,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (2, 1),
-  };
+  let screen = Screen { origin: (2, 1), ..screen::cells(20, 10) };
   Layout::new([Bounds { x0: 0.0, y0: 0.0, x1: 160.0, y1: 160.0 }], screen)
 }
 

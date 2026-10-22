@@ -92,7 +92,7 @@ pub fn image(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::layout::{Crop, Screen};
+  use crate::layout::Crop;
   use crate::text::Bounds;
 
   #[derive(Default)]
@@ -119,13 +119,7 @@ mod tests {
   fn strip() -> (Layout, TileKey) {
     let layout = Layout::new(
       [100.0, 1.0].map(|size| Bounds { x0: 0.0, y0: 0.0, x1: size, y1: size }),
-      Screen {
-        columns: 10,
-        rows: 10,
-        cell_width: 10,
-        cell_height: 10,
-        origin: (0, 0),
-      },
+      crate::testing::screen::pixels(10, 10, 10, 10),
     );
     let key = TileKey {
       page: PageId(0),

@@ -1,3 +1,4 @@
+use crate::fixtures::screen;
 use vpdf_model::input::MouseEventKind;
 use vpdf_model::text::Bounds;
 use vpdf_ui::layout::Layout;
@@ -7,16 +8,7 @@ use vpdf_ui::scrollbar::View;
 
 pub fn layout() -> Layout {
   let bounds = Bounds { x0: 0.0, y0: 0.0, x1: 960.0, y1: 1000.0 };
-  Layout::new(
-    [bounds; 3],
-    vpdf_model::geometry::Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
-  )
+  Layout::new([bounds; 3], screen::cells(120, 40))
 }
 
 pub fn view(layout: &Layout, scroll: f32) -> View<'_> {

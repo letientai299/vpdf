@@ -412,13 +412,7 @@ mod tests {
   use super::*;
 
   fn screen() -> Screen {
-    Screen {
-      columns: 100,
-      rows: 30,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    }
+    crate::testing::screen::cells(100, 30)
   }
 
   const PAPER: Bounds = Bounds { x0: 0.0, y0: 0.0, x1: 400.0, y1: 600.0 };
@@ -505,13 +499,8 @@ mod tests {
   #[test]
   fn projection_roundtrips() {
     let pages = [Bounds { x0: 10.0, y0: 20.0, x1: 210.0, y1: 320.0 }];
-    let screen = Screen {
-      columns: 100,
-      rows: 30,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (15, 3),
-    };
+    let screen =
+      Screen { origin: (15, 3), ..crate::testing::screen::cells(100, 30) };
     let mut layout = Layout::new(pages, screen);
     let cases = [0, 90, 180, 270].into_iter().flat_map(|rotation| {
       [0.5, 1.0, 2.0].into_iter().flat_map(move |zoom| {

@@ -150,11 +150,8 @@ mod tests {
     let frame = Frame {
       at: At { column: 7, row: 3 },
       screen: Screen {
-        columns: 120,
-        rows: 40,
-        cell_width: 8,
-        cell_height: 16,
         origin: (42, 5),
+        ..crate::testing::screen::cells(120, 40)
       },
       left: 20,
       text: false,

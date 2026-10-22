@@ -299,13 +299,7 @@ mod tests {
   #[test]
   fn version_scrolls_on_small_screens() -> Result<()> {
     use vpdf_model::input::{KeyCode, KeyModifiers};
-    let screen = Screen {
-      columns: 16,
-      rows: 6,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(16, 6);
     let mut home = Home::new(Vec::new(), &[], screen);
     home.show_info(
       crate::keys::PanelKind::Version,
@@ -338,13 +332,7 @@ mod tests {
   #[test]
   fn effects_resume_the_prompt() -> Result<()> {
     use vpdf_model::input::{KeyCode, KeyModifiers};
-    let screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(80, 24);
     let rows = ["paper.pdf", "book.pdf"]
       .map(|path| {
         Row::new(path.into(), String::new(), Destination::File(path.into()))
@@ -390,13 +378,7 @@ mod tests {
 
   #[test]
   fn panel_ends_at_the_last_column() -> Result<()> {
-    let screen = Screen {
-      columns: 40,
-      rows: 10,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(40, 10);
     let mut recorder = crate::testing::empty();
     Home::new(Vec::new(), &[], screen).scene(&mut recorder, 0, |_| {})?;
     let scene = recorder.into_scene();
@@ -426,13 +408,8 @@ mod tests {
     let rows = || {
       vec![Row::new(file.into(), String::new(), Destination::File(file.into()))]
     };
-    let screen = Screen {
-      columns: 80,
-      rows: 20,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 4),
-    };
+    let screen =
+      Screen { origin: (0, 4), ..crate::testing::screen::cells(80, 20) };
     let mut home = Home::new(rows(), &[], screen);
     home.at.row = 4;
     let mut recorder = crate::testing::empty();
@@ -459,13 +436,7 @@ mod tests {
     let rows = || {
       vec![Row::new(file.into(), String::new(), Destination::File(file.into()))]
     };
-    let screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(80, 24);
     let click = Event::Mouse(Mouse {
       kind: MouseKind::Press(Button::LEFT),
       at: Spot::Cell { column: 5, row: 1 },

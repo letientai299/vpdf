@@ -112,13 +112,7 @@ mod tests {
 
   #[test]
   fn frontend_facts_preserve_order() {
-    let screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(80, 24);
     let bounds = Bounds { x0: 0.0, y0: 0.0, x1: 612.0, y1: 792.0 };
     let layout = Layout::new([bounds], screen);
     let search = Search::default();

@@ -72,13 +72,7 @@ mod tests {
   use vpdf_model::geometry::At;
 
   fn screen() -> Screen {
-    Screen {
-      columns: 20,
-      rows: 12,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    }
+    crate::testing::screen::cells(20, 12)
   }
 
   #[test]

@@ -1,7 +1,8 @@
 use super::*;
 use crate::Result;
 use crate::source::Outline;
-use crate::text::{Bounds, Glyph, Line, PageId, Text};
+use crate::testing::text_fixture as text;
+use crate::text::{PageId, Text};
 use std::sync::Arc;
 use vpdf_model::document::{Heading, Target};
 use vpdf_reader::reader::TextSource;
@@ -29,18 +30,7 @@ impl Outline for Source {
 }
 
 fn source(value: &str) -> Source {
-  let glyphs = value
-    .chars()
-    .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
-    .collect();
-  Source {
-    text: Some(Arc::new(Text {
-      lines: vec![Line { ocr: None, paragraph: false, glyphs }],
-      truncated: false,
-    })),
-    headings: Vec::new(),
-    reads: 0,
-  }
+  Source { text: Some(text(&[value])), headings: Vec::new(), reads: 0 }
 }
 
 #[test]

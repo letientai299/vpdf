@@ -32,7 +32,7 @@ fn nearest_prefers_whole_visible_glyphs() -> Result<()> {
     ch,
     bounds: Bounds { x0, y0, x1, y1 },
   };
-  Arc::make_mut(&mut source.text).lines[0].glyphs = vec![
+  Arc::make_mut(&mut source.page.text).lines[0].glyphs = vec![
     glyph(' ', 10.0, 40.0, 20.0, 50.0),
     glyph('a', 10.0, 30.0, 20.0, 40.0),
     glyph('b', 10.0, 45.0, 20.0, 55.0),
@@ -60,7 +60,7 @@ fn nearest_prefers_whole_visible_glyphs() -> Result<()> {
 #[test]
 fn landing_keeps_context_after_reveal() -> Result<()> {
   let mut source = Source::new();
-  Arc::make_mut(&mut source.text).lines[0].glyphs[0].bounds =
+  Arc::make_mut(&mut source.page.text).lines[0].glyphs[0].bounds =
     Bounds { x0: 10.0, y0: 200.0, x1: 20.0, y1: 210.0 };
   let mut layout = layout(&source);
   let screen = layout.screen();

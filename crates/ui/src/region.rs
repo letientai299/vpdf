@@ -873,14 +873,8 @@ mod tests {
   #[test]
   fn narrow_bar_tracks_cells() {
     use vpdf_model::geometry::At;
-    use vpdf_model::geometry::Screen;
-    let screen = Screen {
-      columns: 20,
-      rows: 10,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+
+    let screen = crate::testing::screen::cells(20, 10);
     let layout =
       Layout::new([Bounds { x0: 0.0, y0: 0.0, x1: 160.0, y1: 160.0 }], screen);
     let canvas = Canvas {

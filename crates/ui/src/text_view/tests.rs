@@ -1,18 +1,8 @@
 use super::*;
-use crate::text::{Bounds, Line};
+use crate::testing::fixtures::Source;
+use crate::testing::text_fixture as text;
+use crate::text::Bounds;
 use vpdf_reader::reader::Reader;
-
-fn text(rows: &[&str]) -> Arc<Text> {
-  let lines = rows.iter().map(|row| Line {
-    ocr: None,
-    paragraph: false,
-    glyphs: row
-      .chars()
-      .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
-      .collect(),
-  });
-  Arc::new(Text { lines: lines.collect(), truncated: false })
-}
 
 fn at(page: usize, line: usize, glyph: usize) -> Position {
   Position { page: PageId(page), line, glyph }
@@ -217,11 +207,13 @@ fn aligning_puts_the_line_at_a_fraction() -> Result<()> {
   Ok(())
 }
 
-struct Pages(Vec<Arc<Text>>);
+fn pages(text: Arc<Text>) -> Source {
+  Source { text, count: 1, bounds: Bounds::default(), label: "ii" }
+}
 
 #[test]
 fn recorded_advances_match_hits() -> Result<()> {
-  let pages = Pages(vec![text(&["界e\u{301}x"])]);
+  let pages = pages(text(&["界e\u{301}x"]));
   let reader = Reader::default();
   let paint = Marks {
     reader: &reader,
@@ -233,13 +225,7 @@ fn recorded_advances_match_hits() -> Result<()> {
     hovered: &[],
   };
   let frame = Frame {
-    screen: Screen {
-      columns: 4,
-      rows: 2,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
+    screen: crate::testing::screen::cells(4, 2),
     at: At { column: 7, row: 3 },
     left: 0,
   };
@@ -264,30 +250,9 @@ fn recorded_advances_match_hits() -> Result<()> {
   Ok(())
 }
 
-impl TextSource for Pages {
-  fn page_count(&self) -> usize {
-    self.0.len()
-  }
-  fn page_text(&mut self, page: PageId) -> Result<Arc<Text>> {
-    self.0.page_text(page)
-  }
-}
-
-impl crate::source::Pages for Pages {
-  fn count(&self) -> usize {
-    self.0.len()
-  }
-  fn bounds(&self, _: PageId) -> Bounds {
-    Bounds::default()
-  }
-  fn label(&self, _: PageId) -> &'static str {
-    "ii"
-  }
-}
-
 #[test]
 fn hits_follow_pending_and_drawn_frames() -> Result<()> {
-  let pages = Pages(vec![text(&["a", "b", "c", "d"])]);
+  let pages = pages(text(&["a", "b", "c", "d"]));
   let reader = Reader::default();
   let paint = Marks {
     reader: &reader,
@@ -299,13 +264,7 @@ fn hits_follow_pending_and_drawn_frames() -> Result<()> {
     hovered: &[],
   };
   let frame = Frame {
-    screen: Screen {
-      columns: 6,
-      rows: 3,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
+    screen: crate::testing::screen::cells(6, 3),
     at: At::default(),
     left: 2,
   };
@@ -344,15 +303,9 @@ fn cursorline_follows_reader_mode() -> Result<()> {
         dim: false,
         hovered: &[],
       };
-      let pages = Pages(vec![text(&["abc", "other"])]);
+      let pages = pages(text(&["abc", "other"]));
       let frame = Frame {
-        screen: Screen {
-          columns: 10,
-          rows: 2,
-          cell_width: 8,
-          cell_height: 16,
-          origin: (0, 0),
-        },
+        screen: crate::testing::screen::cells(10, 2),
         at: At::default(),
         left: 0,
       };

@@ -642,7 +642,8 @@ fn page_lines(text: &crate::text::Text) -> Vec<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::layout::Screen;
+
+  use crate::testing::text_fixture as text;
   use crate::text::Text;
   use std::sync::Arc;
 
@@ -658,7 +659,7 @@ mod tests {
     fn page_text(&mut self, page: PageId) -> Result<Arc<Text>> {
       self.requested.push(page);
       anyhow::ensure!(page != PageId(2), "Unreadable test page");
-      Ok(Arc::new(Text { lines: Vec::new(), truncated: false }))
+      Ok(text(&[]))
     }
   }
 
@@ -674,13 +675,7 @@ mod tests {
 
   #[test]
   fn missing_pages_keep_loading_bounded() -> Result<()> {
-    let screen = Screen {
-      columns: 80,
-      rows: 30,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(80, 30);
     let bounds = Bounds { x0: 0.0, y0: 0.0, x1: 600.0, y1: 800.0 };
     let layout = Layout::new([bounds; 10], screen);
     let mut source = Source { count: 10, requested: Vec::new() };

@@ -413,13 +413,7 @@ mod tests {
   }
 
   fn label_frame() -> Frame {
-    let screen = Screen {
-      columns: 100,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(100, 40);
     Frame {
       pane: 1,
       screen,

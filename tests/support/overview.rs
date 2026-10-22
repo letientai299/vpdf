@@ -1,3 +1,4 @@
+use crate::fixtures::screen;
 use vpdf_model::geometry::Screen;
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_ui::overview::Frame;
@@ -17,13 +18,7 @@ impl Pages for Source {
 }
 
 pub fn frame() -> Frame {
-  let screen = Screen {
-    columns: 100,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (7, 3),
-  };
+  let screen = Screen { origin: (7, 3), ..screen::cells(100, 40) };
   Frame {
     pane: 1,
     screen,

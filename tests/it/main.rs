@@ -11,6 +11,8 @@ mod definitions;
 mod drop;
 mod encrypted;
 mod figures;
+#[path = "../support/fixtures.rs"]
+mod fixtures;
 mod focus;
 #[path = "../../src/input.rs"]
 mod input;

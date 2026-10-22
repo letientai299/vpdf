@@ -409,13 +409,7 @@ mod tests {
       .collect();
     let mut panel = Panel::recent(rows, &entries);
 
-    let screen = Screen {
-      columns: 100,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(100, 40);
     let draw = |panel: &mut Panel, screen: Screen| -> Result<String> {
       let mut recorder = crate::testing::empty();
       panel.scene(
@@ -481,13 +475,7 @@ mod tests {
         marks: 0,
       })
       .collect();
-    let screen = Screen {
-      columns: 60,
-      rows: 6,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(60, 6);
     let mut shelf = Shelf::new(&entries);
     let mut panel = Panel::new(
       PanelKind::Recent,

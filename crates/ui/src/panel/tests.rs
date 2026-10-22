@@ -230,13 +230,8 @@ fn presses_beyond_the_list_miss_its_rows() {
 
 #[test]
 fn covered_pages_keep_width() {
-  let screen = Screen {
-    columns: 100,
-    rows: 24,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (3, 5),
-  };
+  let screen =
+    Screen { origin: (3, 5), ..crate::testing::screen::cells(100, 24) };
   let outline = Panel::new(PanelKind::Outline, Vec::new());
   let help = Panel::new(PanelKind::Help, Vec::new());
   let recent = Panel::recent(Vec::new(), &[]);

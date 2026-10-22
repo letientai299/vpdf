@@ -1,7 +1,7 @@
 use super::{InputOwner, transfers_overlay};
 use crate::context::{ContextMenu, Transition as Menu};
 use crate::keys::{Action, Grammar, Input, Keys, PanelKind, parse};
-use crate::layout::{Layout, Screen};
+use crate::layout::Layout;
 use crate::overview::{Grid, Navigation, Overview};
 use crate::preview::{Event, Preview};
 use crate::region::{CaptureId, Region, Snapshot, Transition as Capture};
@@ -12,13 +12,7 @@ use vpdf_reader::motion::Motion;
 fn layout() -> Layout {
   Layout::new(
     [Bounds { x0: 0.0, y0: 0.0, x1: 600.0, y1: 800.0 }],
-    Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
+    crate::testing::screen::cells(80, 24),
   )
 }
 

@@ -685,13 +685,7 @@ mod tests {
   fn drawing_positions_the_wide_text_cursor() {
     let mut prompt = Prompt::new(PromptKind::Command);
     prompt.replace("界a");
-    let screen = Screen {
-      columns: 10,
-      rows: 2,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(10, 2);
     let at = At { column: 7, row: 3 };
     let mut scene = vpdf_model::scene::Scene::new();
     prompt.scene(&mut scene, screen, at, None);

@@ -36,7 +36,7 @@ fn idle_and_hover_need_no_text() -> Result<()> {
   source.fail = true;
   let layout = layout(&source);
   let reader = Reader::default();
-  let hovered = [(PageId(0), source.text.lines[0].glyphs[0].bounds)];
+  let hovered = [(PageId(0), source.page.text.lines[0].glyphs[0].bounds)];
   let canvas =
     Canvas { layout: &layout, screen: layout.screen(), left: 0, menu: None };
   for hovered in [&[][..], &hovered[..]] {
@@ -99,7 +99,7 @@ fn skewed_overlays_follow_projection() -> Result<()> {
   let mut source = Source::new();
   let quad = Quad([(10.0, 30.0), (30.0, 20.0), (33.0, 30.0), (13.0, 40.0)]);
   let glyph =
-    &mut std::sync::Arc::make_mut(&mut source.text).lines[0].glyphs[0];
+    &mut std::sync::Arc::make_mut(&mut source.page.text).lines[0].glyphs[0];
   glyph.quad = Some(quad);
   glyph.bounds = quad.bounds();
   for rotation in [0, 90, 180, 270] {
@@ -145,7 +145,7 @@ fn ocr_line_shapes() -> Result<()> {
   use vpdf_model::scene::Op;
   use vpdf_model::text::{Glyph, Line};
   let mut source = Source::new();
-  let text = std::sync::Arc::make_mut(&mut source.text);
+  let text = std::sync::Arc::make_mut(&mut source.page.text);
   text.lines = (0..10)
     .map(|row| {
       let y = 10.0 + row as f32 * 10.0;
@@ -174,13 +174,7 @@ fn ocr_line_shapes() -> Result<()> {
     .collect();
   let layout = Layout::new(
     (0..3).map(|p| source.bounds(PageId(p))),
-    Screen {
-      columns: 100,
-      rows: 100,
-      cell_width: 1,
-      cell_height: 2,
-      origin: (0, 0),
-    },
+    crate::testing::screen::pixels(100, 100, 1, 2),
   );
   let mut reader = Reader::default();
   reader.visual(SelectionKind::Line);

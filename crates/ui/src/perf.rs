@@ -125,9 +125,7 @@ fn number(label: &str, value: Option<f64>, unit: &str) -> String {
 mod tests {
   use super::*;
 
-  fn screen(columns: u16, rows: u16) -> Screen {
-    Screen { columns, rows, cell_width: 8, cell_height: 16, origin: (0, 0) }
-  }
+  use crate::testing::screen::cells as screen;
 
   #[test]
   fn wraps_and_preserves_content() {

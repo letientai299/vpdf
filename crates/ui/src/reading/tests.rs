@@ -1,5 +1,6 @@
 use super::*;
-use crate::text::{Bounds, Glyph, Line, PageId, Text};
+use crate::testing::fixtures::{glyph, line, lines};
+use crate::text::{Bounds, PageId, Text};
 use std::sync::Arc;
 use vpdf_model::geometry::At;
 use vpdf_reader::reader::{Location, Operator, SelectionKind};
@@ -51,24 +52,19 @@ struct Fixture {
 
 impl Fixture {
   fn new() -> Self {
-    let lines = (0..30)
-      .map(|row| Line {
-        ocr: None,
-        paragraph: false,
-        glyphs: vec![Glyph {
-          quad: None,
-          ch: 'a',
-          bounds: Bounds {
-            x0: 10.0,
-            x1: 20.0,
-            y0: 10.0 + row as f32 * 20.0,
-            y1: 20.0 + row as f32 * 20.0,
-          },
-        }],
-      })
-      .collect();
+    let text = lines((0..30).map(|row| {
+      line([glyph(
+        'a',
+        Bounds {
+          x0: 10.0,
+          x1: 20.0,
+          y0: 10.0 + row as f32 * 20.0,
+          y1: 20.0 + row as f32 * 20.0,
+        },
+      )])
+    }));
     let source = Source {
-      text: Arc::new(Text { lines, truncated: false }),
+      text,
       reads: 0,
       fail: 0,
       headings: Vec::new(),
@@ -77,13 +73,7 @@ impl Fixture {
       lookups: Vec::new(),
       fail_lookup: 0,
     };
-    let screen = Screen {
-      columns: 10,
-      rows: 10,
-      cell_width: 10,
-      cell_height: 10,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::pixels(10, 10, 10, 10);
     let frame = Frame {
       pane: paint::Frame { screen, at: At::default(), left: 0, text: false },
       visible: screen,

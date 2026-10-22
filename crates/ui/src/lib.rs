@@ -38,3 +38,7 @@ pub(crate) mod testing;
 
 #[cfg(test)]
 extern crate self as vpdf_ui;
+
+#[cfg(test)]
+#[path = "../../../tests/support/fixtures.rs"]
+pub(crate) mod fixtures;

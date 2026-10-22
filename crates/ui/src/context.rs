@@ -529,13 +529,7 @@ mod tests {
     menu.select(99);
     assert_eq!(menu.selected(), 2);
     assert!(menu.is_row());
-    let screen = Screen {
-      columns: 30,
-      rows: 4,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::testing::screen::cells(30, 4);
     let pixels = menu.pixel_area(screen, 20).expect("page overlap");
     assert_eq!(pixels, Bounds { x0: 0.0, y0: 0.0, x1: 80.0, y1: 48.0 });
     assert!(menu.pixel_area(screen, 30).is_none());
