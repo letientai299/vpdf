@@ -2,31 +2,19 @@
 
 use crate::Result;
 use anyhow::Context;
-use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use tempfile::NamedTempFile;
 use vpdf_terminal::terminal;
 
-/// Creates `vpdf-{stem}-{pid}-{n}.{extension}`.
-pub fn scratch_file(stem: &str, extension: &str) -> Result<(PathBuf, File)> {
-  static NEXT: AtomicU64 = AtomicU64::new(0);
-  let directory = std::env::temp_dir();
-  for _ in 0..100 {
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let name = format!("vpdf-{stem}-{}-{n}.{extension}", std::process::id());
-    let path = directory.join(name);
-    let created =
-      OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path);
-    match created {
-      Ok(file) => return Ok((path, file)),
-      Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-      Err(error) => return Err(error.into()),
-    }
-  }
-  anyhow::bail!("No free scratch file in {}", directory.display())
+pub fn scratch_file(stem: &str, extension: &str) -> Result<NamedTempFile> {
+  Ok(
+    tempfile::Builder::new()
+      .prefix(&format!("vpdf-{stem}-"))
+      .suffix(&format!(".{extension}"))
+      .tempfile()?,
+  )
 }
 
 /// Edits `text` in `$VISUAL` or `$EDITOR`, like zsh's
@@ -39,21 +27,27 @@ pub fn edit(text: &str, terminal: bool) -> Result<String> {
     .unwrap_or_else(|| "vi".into());
   let mut words = editor.split_whitespace();
   let program = words.next().unwrap_or("vi").to_owned();
-  let (path, mut file) = scratch_file("line", "txt")?;
-  let written = writeln!(file, "{text}");
-  drop(file);
-  if let Err(error) = written {
-    let _ = std::fs::remove_file(&path);
-    return Err(error.into());
-  }
-  terminal::suspend()?;
-  let status = Command::new(&program).args(words).arg(&path).status();
-  terminal::resume()?;
-  let edited = std::fs::read_to_string(&path);
-  let _ = std::fs::remove_file(&path);
-  anyhow::ensure!(status?.success(), "{program} exited with an error");
+  let mut command = Command::new(&program);
+  command.args(words);
+  edit_file(text, scratch_file("line", "txt")?, |path| {
+    terminal::suspend()?;
+    let status = command.arg(path).status();
+    terminal::resume()?;
+    anyhow::ensure!(status?.success(), "{program} exited with an error");
+    Ok(())
+  })
+}
+
+fn edit_file(
+  text: &str,
+  mut file: NamedTempFile,
+  run: impl FnOnce(&Path) -> Result<()>,
+) -> Result<String> {
+  writeln!(file, "{text}")?;
+  let path = file.into_temp_path();
+  run(&path)?;
   Ok(
-    edited?
+    std::fs::read_to_string(&path)?
       .lines()
       .map(str::trim)
       .filter(|l| !l.is_empty())
@@ -207,6 +201,38 @@ mod tests {
   fn native_editor_requires_terminal() {
     let error = edit("private prompt", false).unwrap_err();
     assert_eq!(error.to_string(), "External editing requires a terminal");
+  }
+
+  #[test]
+  fn editor_replacement_cleanup() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    for fails in [false, true] {
+      let file = scratch_file("line", "txt")?;
+      let path = file.path().to_owned();
+      assert_eq!(path.extension().unwrap(), "txt");
+      assert_eq!(path.metadata()?.permissions().mode() & 0o777, 0o600);
+      let result = edit_file("original", file, |path| {
+        assert_eq!(std::fs::read_to_string(path)?, "original\n");
+        let mut replacement = NamedTempFile::new_in(path.parent().unwrap())?;
+        replacement.write_all(b"  edited\n\n  second line \n")?;
+        replacement.persist(path)?;
+        anyhow::ensure!(!fails, "Editor failed");
+        Ok(())
+      });
+      if fails {
+        assert!(result.is_err());
+      } else {
+        assert_eq!(result?, "edited second line");
+      }
+      assert!(!path.exists());
+    }
+    let file = scratch_file("line", "txt")?;
+    let path = file.path().to_owned();
+    let read_only = std::fs::File::open(&path)?;
+    let file = NamedTempFile::from_parts(read_only, file.into_temp_path());
+    assert!(edit_file("original", file, |_| panic!("write failed")).is_err());
+    assert!(!path.exists());
+    Ok(())
   }
 
   #[test]

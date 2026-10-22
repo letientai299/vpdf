@@ -19,14 +19,12 @@ sha2.workspace = true
 serde_json.workspace = true
 flate2.workspace = true
 rustix.workspace = true
+tempfile.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 font-kit.workspace = true
 flate2 = { workspace = true, features = ["zlib"] }
 mupdf = { workspace = true, features = ["sys-lib-zlib"] }
-
-[dev-dependencies]
-tempfile.workspace = true
 
 [[bench]]
 name = "micro"

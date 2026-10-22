@@ -130,6 +130,7 @@ serde_json = { workspace = true }
 signal-hook = { workspace = true }
 sysinfo = { workspace = true }
 unicode-width = { workspace = true }
+tempfile = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 mupdf = { workspace = true, features = ["sys-lib-zlib"] }
@@ -137,7 +138,6 @@ mupdf = { workspace = true, features = ["sys-lib-zlib"] }
 [dev-dependencies]
 flate2.workspace = true
 sha2.workspace = true
-tempfile = { workspace = true }
 
 [[bench]]
 name = "reader"

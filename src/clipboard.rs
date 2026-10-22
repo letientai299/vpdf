@@ -3,7 +3,6 @@ use crate::app::App;
 use anyhow::{Context, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::io::Write;
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use vpdf_terminal::clipboard::osc52;
@@ -58,12 +57,13 @@ enum ImageTool {
 fn image_command(
   tool: ImageTool,
   png: &[u8],
-) -> Result<(Command, Option<TempPng>)> {
+) -> Result<(Command, Option<tempfile::NamedTempFile>)> {
   let mut command;
   let mut file = None;
   match tool {
     ImageTool::Mac => {
-      let temp = TempPng::new(png)?;
+      let mut temp = crate::programs::scratch_file("clipboard", "png")?;
+      temp.write_all(png)?;
       command = Command::new("osascript");
       command.args([
         "-e",
@@ -76,7 +76,7 @@ fn image_command(
           "end run",
         ),
       ]);
-      command.arg(&temp.0);
+      command.arg(temp.path());
       file = Some(temp);
     }
     ImageTool::Wayland => {
@@ -89,23 +89,6 @@ fn image_command(
     }
   }
   Ok((command, file))
-}
-
-struct TempPng(PathBuf);
-
-impl TempPng {
-  fn new(png: &[u8]) -> Result<Self> {
-    let (path, mut file) = crate::programs::scratch_file("clipboard", "png")?;
-    let temp = Self(path);
-    file.write_all(png)?;
-    Ok(temp)
-  }
-}
-
-impl Drop for TempPng {
-  fn drop(&mut self) {
-    let _ = std::fs::remove_file(&self.0);
-  }
 }
 
 fn run_image(
@@ -216,7 +199,8 @@ fi
           assert_eq!(command.get_program(), "osascript");
           assert_eq!(args[0], "-e");
           assert!(args[1].to_string_lossy().contains("«class PNGf»"));
-          let path = &file.as_ref().unwrap().0;
+          let path = file.as_ref().unwrap().path();
+          assert_eq!(path.extension().unwrap(), "png");
           assert_eq!(
             std::fs::metadata(path)?.permissions().mode() & 0o777,
             0o600
@@ -244,26 +228,31 @@ fi
         Duration::from_secs(2),
       )?;
       assert_eq!(std::fs::read(capture)?, png);
-      let path = file.as_ref().map(|file| file.0.clone());
+      let path = file.as_ref().map(|file| file.path().to_owned());
       drop(file);
       assert!(path.is_none_or(|path| !path.exists()));
     }
-    let mut failed = Command::new("/bin/sh");
-    failed.args(["-c", "exit 7"]);
-    assert!(run_image(failed, None, Duration::from_secs(1)).is_err());
-    let mut stalled = Command::new("/bin/sleep");
-    stalled.arg("5");
-    let error =
-      run_image(stalled, None, Duration::from_millis(20)).unwrap_err();
-    assert_eq!(error.to_string(), "Image clipboard timed out");
-    assert!(
-      run_image(
-        Command::new(temp.path().join("missing")),
-        None,
-        Duration::from_secs(1)
-      )
-      .is_err()
-    );
+    Ok(())
+  }
+
+  #[test]
+  fn image_errors_cleanup() -> Result<()> {
+    let png = b"\x89PNG\r\n\x1a\n\0\xfftest";
+    for program in ["/usr/bin/false", "/bin/sleep", "/missing-clipboard"] {
+      let (_, file) = image_command(ImageTool::Mac, png)?;
+      let path = file.as_ref().unwrap().path().to_owned();
+      let mut command = Command::new(program);
+      if program == "/bin/sleep" {
+        command.arg("5");
+      }
+      let error =
+        run_image(command, None, Duration::from_millis(20)).unwrap_err();
+      if program == "/bin/sleep" {
+        assert_eq!(error.to_string(), "Image clipboard timed out");
+      }
+      drop(file);
+      assert!(!path.exists());
+    }
     Ok(())
   }
 }

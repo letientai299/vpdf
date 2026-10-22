@@ -2,13 +2,9 @@ use super::path;
 use crate::Result;
 use std::fs::File;
 use std::io::Write;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::DirBuilderExt;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
-
-/// Writes so far, naming each writer's temporary pack.
-static WRITES: AtomicU64 = AtomicU64::new(0);
 
 /// Disk records share one eviction budget.
 pub(super) const BUDGET: u64 = 1 << 30;
@@ -43,20 +39,11 @@ pub(super) fn create(root: &Path) -> Result<()> {
 /// Writes `bytes` to `target` whole: writers race by renaming whole
 /// files, so readers never see a partial one.
 pub(super) fn publish(target: &Path, bytes: &[u8]) -> Result<()> {
-  let write = WRITES.fetch_add(1, Ordering::Relaxed);
-  let temp =
-    target.with_extension(format!("{}-{write}.tmp", std::process::id()));
-  let written = File::options()
-    .write(true)
-    .create_new(true)
-    .mode(0o600)
-    .open(&temp)
-    .and_then(|mut file| file.write_all(bytes))
-    .and_then(|()| std::fs::rename(&temp, target));
-  if let Err(error) = written {
-    drop(std::fs::remove_file(&temp));
-    return Err(error.into());
-  }
+  let mut temp = tempfile::Builder::new()
+    .suffix(".tmp")
+    .tempfile_in(target.parent().unwrap_or(Path::new(".")))?;
+  temp.write_all(bytes)?;
+  temp.persist(target).map_err(|error| error.error)?;
   Ok(())
 }
 
@@ -104,4 +91,34 @@ pub(super) fn trim(root: &Path, budget: u64) -> Result<()> {
     }
   }
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::io::Read;
+  use std::os::unix::fs::PermissionsExt;
+
+  #[test]
+  fn replacement_cleanup() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let cache = root.path().join("cache");
+    create(&cache)?;
+    assert_eq!(cache.metadata()?.permissions().mode() & 0o777, 0o700);
+    let target = cache.join("record.pack");
+    publish(&target, b"old")?;
+    let mut retained = File::open(&target)?;
+    publish(&target, b"new record")?;
+    assert_eq!(std::fs::read(&target)?, b"new record");
+    let mut bytes = Vec::new();
+    retained.read_to_end(&mut bytes)?;
+    assert_eq!(bytes, b"old");
+    assert_eq!(target.metadata()?.permissions().mode() & 0o777, 0o600);
+    std::fs::remove_file(&target)?;
+    std::fs::create_dir(&target)?;
+    assert!(publish(&target, b"failed").is_err());
+    assert!(target.is_dir());
+    assert_eq!(std::fs::read_dir(&cache)?.count(), 1);
+    Ok(())
+  }
 }

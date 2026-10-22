@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use signal_hook::consts::{SIGHUP, SIGTERM};
 use signal_hook::iterator::Signals;
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -132,7 +133,8 @@ impl State {
     self.searches = merge(disk.searches, searches);
     let directory = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(directory)?;
-    let staged = path.with_extension(format!("{}.tmp", std::process::id()));
+    let mut staged =
+      tempfile::Builder::new().suffix(".tmp").tempfile_in(directory)?;
     // Saving an older reader must not undo a newer preference. Keep its
     // live layout unchanged; only the persisted snapshot adopts the toggle.
     let mut saved = self.clone();
@@ -140,8 +142,8 @@ impl State {
       saved.perf = disk.perf;
       saved.perf_updated = disk.perf_updated;
     }
-    std::fs::write(&staged, serde_json::to_vec(&saved)?)?;
-    std::fs::rename(&staged, path)?;
+    staged.write_all(&serde_json::to_vec(&saved)?)?;
+    staged.persist(path).map_err(|error| error.error)?;
     Ok(())
   }
 }
@@ -314,6 +316,29 @@ pub(crate) mod tests {
     );
     assert_eq!(saved.commands, ["page 3", "ocr", "help"]);
     assert_eq!(saved.searches, ["attention"]);
+    Ok(())
+  }
+
+  #[test]
+  fn saving_cleanup() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("state.json");
+    let mut state = State::default();
+    state.save(&path, &["first".into()], &[])?;
+    let old = std::fs::read(&path)?;
+    let mut old_file = std::fs::File::open(&path)?;
+    state.save(&path, &["second".into()], &[])?;
+    let mut retained = Vec::new();
+    std::io::Read::read_to_end(&mut old_file, &mut retained)?;
+    assert_eq!(retained, old);
+    assert_eq!(State::load(&path).commands, ["first", "second"]);
+    assert_eq!(path.metadata()?.permissions().mode() & 0o777, 0o600);
+    std::fs::remove_file(&path)?;
+    std::fs::create_dir(&path)?;
+    assert!(state.save(&path, &[], &[]).is_err());
+    assert!(path.is_dir());
+    assert_eq!(std::fs::read_dir(root.path())?.count(), 1);
     Ok(())
   }
 
