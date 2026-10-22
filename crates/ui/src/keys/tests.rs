@@ -473,7 +473,7 @@ fn yank_clues_follow_the_live_operator_grammar() {
     .into_iter()
     .map(|(key, _)| key)
     .collect();
-  assert_eq!(labels, ["Y", "p"]);
+  assert_eq!(labels, ["Y", "f", "p"]);
   assert_eq!(keys.awaiting(), Some("y"));
   assert_eq!(
     keys.feed(key('y'), Grammar::Objects).unwrap().action,
@@ -482,4 +482,22 @@ fn yank_clues_follow_the_live_operator_grammar() {
   let mut keys = Keys::default();
   keys.feed(key('i'), Grammar::Cursor);
   assert_eq!(keys.clues(Grammar::Cursor, |_| true), [] as [(String, &str); 0]);
+}
+
+#[test]
+fn copy_hints_follow_yank_prefix() {
+  for grammar in [Grammar::Normal, Grammar::Cursor, Grammar::Panel] {
+    let mut keys = Keys::default();
+    keys.feed(key('y'), grammar);
+    let continuation =
+      if grammar == Grammar::Panel { Grammar::Panel } else { Grammar::Objects };
+    let input = keys.feed(key('f'), continuation).unwrap();
+    assert_eq!(input.action, Action::Hints(true));
+    assert_eq!(keys.pending(), "");
+    assert!(keys.feed(key('F'), grammar).is_none());
+    assert_eq!(
+      keys.feed(key('f'), grammar).unwrap().action,
+      Action::Hints(false)
+    );
+  }
 }

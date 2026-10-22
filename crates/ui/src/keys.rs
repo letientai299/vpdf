@@ -155,6 +155,7 @@ impl Keys {
         "y" if grammar == Grammar::Panel => {
           return Some(self.finish(Action::YankLine));
         }
+        "f" => return Some(self.finish(Action::Hints(true))),
         "p" => return Some(self.finish(Action::YankPath)),
         "Y" => return Some(self.finish(Action::YankRaw)),
         _ => {}
@@ -199,7 +200,7 @@ impl Keys {
       }
       let register = self.register;
       let input = self.finish(action);
-      // `y` starts its operator now and still takes `p` or `Y`.
+      // `y` also accepts copy continuations.
       if action == Action::Yank
         && matches!(grammar, Grammar::Normal | Grammar::Cursor)
       {
@@ -468,7 +469,7 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("zF", Action::FigureFit, "fit figure"),
   ("gF", Action::Region, "figure actions"),
   ("f", Action::Hints(false), "link hints"),
-  ("F", Action::Hints(true), "link hints, copy URLs"),
+  ("yf", Action::Hints(true), "link hints, copy URLs"),
   ("gt", Action::Tab(true), "next tab, or [count] tab"),
   ("gT", Action::Tab(false), "previous tab"),
   ("Enter", Action::Follow, "follow link"),

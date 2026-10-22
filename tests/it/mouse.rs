@@ -2140,7 +2140,7 @@ fn hint_labels_follow_the_pointer() -> Result<()> {
   use vpdf_model::input::KeyCode;
   for text_mode in [false, true] {
     let (_directory, mut session) = session(text_mode)?;
-    // Label cells; `copy` starts `F`.
+    // Label cells; `copy` starts `yf`.
     let start = |session: &mut Session, copy| -> Result<Found> {
       session.app().start_hints(copy)?;
       status(session)?;
@@ -2173,7 +2173,7 @@ fn hint_labels_follow_the_pointer() -> Result<()> {
     assert!(app.overlays.hints().is_none(), "text={text_mode}");
     assert_eq!(app.reader.cursor.page, PageId(1), "text={text_mode}");
     action(app, Action::History(false))?;
-    // `F` clicks copy addresses.
+    // `yf` clicks copy addresses.
     let labels = start(&mut session, true)?;
     click(&mut session, at(&labels, 1))?;
     let app = session.app();

@@ -45,7 +45,7 @@ pub struct Hint {
 pub struct Hints {
   items: Vec<Hint>,
   typed: String,
-  /// `F`: copy URIs instead of opening them.
+  /// `yf` copies URIs instead of opening.
   copy: bool,
   /// The pointer's label; Enter runs it.
   selected: Option<usize>,

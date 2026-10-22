@@ -174,7 +174,7 @@ pub enum List {
   Menu,
   /// A capture's action bar.
   Actions,
-  /// `f`/`F` link labels.
+  /// `f`/`yf` link labels.
   Hints,
   /// Key clues that name keys.
   Clues,

@@ -133,11 +133,23 @@ fn printed_links_reach_every_consumer() -> Result<()> {
   assert_eq!(labels, ["https://a.org/x", "doi:10.1000/abc"]);
   assert!(matches!(&rows[1].destination, Destination::Link(t) if is_doi(t)));
   app.close_panel()?;
-  // `F` labels them.
-  app.start_hints(true)?;
+  // `yf` labels them.
+  let mut history = vpdf_ui::prompt::History::default();
+  for key in vpdf_ui::keys::parse("yf").unwrap() {
+    app.key(key, &mut history)?;
+  }
+  assert!(app.reader.operator.is_none());
   let labels = app.overlays.hints().expect("hints").items();
   assert_eq!(labels.len(), 2);
-  assert!(labels.iter().any(|hint| is_doi(&hint.target)));
+  let label =
+    labels.iter().find(|hint| is_doi(&hint.target)).unwrap().label.clone();
+  for key in vpdf_ui::keys::parse(&label).unwrap() {
+    app.key(key, &mut history)?;
+  }
+  assert!(app.overlays.hints().is_none());
+  assert_eq!(app.reader.message, "Copied link");
+  let copied = app.reader.take_yank().expect("copied URL");
+  assert_eq!(copied.text, doi);
   Ok(())
 }
 
