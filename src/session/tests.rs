@@ -938,13 +938,7 @@ fn static_pane_keeps_hover() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let mut session = Session::new(None);
   let path = line_pdf(directory.path(), "")?;
-  let screen = Screen {
-    columns: 121,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = cells(121, 40);
   session.open(&path, true, screen)?;
   let modifiers = KeyModifiers::NONE;
   session.app().command("vsplit")?;

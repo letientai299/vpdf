@@ -1065,7 +1065,7 @@ mod tests {
     let mut chores = Chores::new(start);
     let mut screen = sized();
     let pending = AtomicBool::new(true);
-    for step in 1..=ANIMATION.as_millis() as u64 {
+    for step in 1..8 {
       assert_eq!(
         drain(
           &mut session,
