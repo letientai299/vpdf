@@ -112,15 +112,7 @@ impl Home {
   }
 
   pub fn scene_clear<'a>(&self, scene: &mut impl Draw<'a>) {
-    for row in 0..self.screen.rows {
-      scene.extend([
-        Op::Move {
-          column: usize::from(self.at.column),
-          row: usize::from(self.at.row) + usize::from(row),
-        },
-        Op::Erase(self.screen.columns),
-      ]);
-    }
+    crate::paint::clear(scene, self.at, self.screen);
   }
 
   pub fn scene_footer<'a>(&self, scene: &mut impl Draw<'a>) {

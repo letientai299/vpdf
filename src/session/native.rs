@@ -943,6 +943,10 @@ mod tests {
     }
   }
 
+  fn cells(columns: u16, rows: u16) -> Screen {
+    Screen { columns, rows, cell_width: 8, cell_height: 16, origin: (0, 0) }
+  }
+
   fn sized() -> Screen {
     Screen {
       columns: 100,
@@ -1061,11 +1065,7 @@ mod tests {
         Some(false)
       );
       assert!(!pending.load(Ordering::Acquire));
-      assert!(!animate(
-        &mut session,
-        &mut due,
-        start + Duration::from_millis(step)
-      ));
+      assert!(!animate(&mut session, &mut due, start + ANIMATION * step / 8));
       assert_eq!(session.app().reader.scroll, 0.0);
       assert_eq!(due, start + ANIMATION);
     }
@@ -1855,13 +1855,7 @@ mod tests {
     use vpdf_terminal::graphics::Graphics;
     use vpdf_ui::keys::{Action, Input, PanelKind};
     let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
-    let screen = Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = cells(120, 40);
     for view in ["page", "text", "panel", "overview", "preview", "clues"] {
       let setup = || -> Result<App> {
         let mut app = App::with_screen(&path, "", view == "text", screen)?;
@@ -2162,13 +2156,7 @@ mod tests {
     use vpdf_model::document::Target;
     use vpdf_model::text::{PageId, Position};
     let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
-    let screen = Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = cells(120, 40);
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(Wake::none());
     session.open(&path, true, screen)?;
@@ -2201,13 +2189,7 @@ mod tests {
     use vpdf_model::input::{MouseButton, MouseEventKind};
     use vpdf_model::text::PageId;
     let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
-    let mut screen = Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let mut screen = cells(120, 40);
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(Wake::none());
     session.open(&path, true, screen)?;
@@ -2289,13 +2271,7 @@ mod tests {
     let root = tempfile::tempdir()?;
     let path = root.path().join("recent.pdf");
     crate::fixtures::pdf(&path, &["recent"], "")?;
-    let mut screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let mut screen = cells(80, 24);
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(Wake::none());
     session.state.recent =
@@ -2333,13 +2309,7 @@ mod tests {
     let root = tempfile::tempdir()?;
     let path = root.path().join("wheel.pdf");
     crate::fixtures::pdf(&path, &["first", "second"], "")?;
-    let mut screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let mut screen = cells(80, 24);
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(Wake::none());
     session.open(&path, true, screen)?;
@@ -2388,13 +2358,7 @@ mod tests {
     let root = tempfile::tempdir()?;
     let path = root.path().join("pointer.pdf");
     crate::fixtures::pdf(&path, &["first", "second"], "")?;
-    let mut screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let mut screen = cells(80, 24);
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(Wake::none());
     session.open(&path, true, screen)?;
@@ -2422,13 +2386,7 @@ mod tests {
   fn clipboard_frames_drain_panes() -> Result<()> {
     use vpdf_reader::reader::Yank;
     let root = tempfile::tempdir()?;
-    let screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = cells(80, 24);
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(Wake::none());
     for name in ["first.pdf", "second.pdf"] {
@@ -2467,13 +2425,7 @@ mod tests {
     for path in [&first, &second] {
       std::fs::copy(&source, path)?;
     }
-    let screen = Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = cells(120, 40);
     let (wake, wakes) = crate::fixtures::wake();
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(wake);
@@ -2514,13 +2466,7 @@ mod tests {
     for path in [&first, &second] {
       crate::fixtures::pdf(path, &["body"], "")?;
     }
-    let mut screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let mut screen = cells(80, 24);
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(Wake::none());
     ensure_home(&mut session, screen);
@@ -2555,13 +2501,7 @@ mod tests {
     let root = tempfile::tempdir()?;
     let path = root.path().join("input.pdf");
     crate::fixtures::pdf(&path, &["body"], "")?;
-    let mut screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let mut screen = cells(80, 24);
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(Wake::none());
     session.open(&path, true, screen)?;

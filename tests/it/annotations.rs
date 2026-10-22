@@ -1,4 +1,5 @@
 use super::common::SeedReader;
+use super::common::preview_frame as drawn;
 use mupdf::pdf::PdfAnnotationType;
 use mupdf::{Point, Quad, Rect};
 use std::path::PathBuf;
@@ -77,17 +78,6 @@ fn screen() -> Screen {
 
 fn press(app: &mut App, code: KeyCode) -> Result<()> {
   app.key(KeyEvent::new(code, KeyModifiers::NONE), &mut History::default())
-}
-
-fn drawn(app: &mut Solo) -> Result<String> {
-  let mut out = Vec::new();
-  app.graphics.begin(&mut out)?;
-  {
-    let (app, graphics) = app.parts();
-    app.draw_preview(graphics, &mut out)?;
-  }
-  app.graphics.end(&mut out)?;
-  Ok(String::from_utf8_lossy(&out).into_owned())
 }
 
 fn position(app: &App, index: usize) -> Position {

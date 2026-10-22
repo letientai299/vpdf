@@ -105,7 +105,10 @@ pub(super) fn find(
   wanted: fn(Hit) -> bool,
 ) -> Result<(u16, u16)> {
   let page = Region::Page;
-  for (row, column) in (0..39).flat_map(|row| (0..120).map(move |c| (row, c))) {
+  let screen = session.app().screen;
+  for (row, column) in (0..screen.rows.saturating_sub(1))
+    .flat_map(|row| (0..screen.columns).map(move |column| (row, column)))
+  {
     if wanted(session.app().hovered(page, column, row, None)?) {
       return Ok((column, row));
     }
@@ -489,27 +492,35 @@ fn line_pdf(directory: &Path, annots: &str) -> Result<PathBuf> {
   Ok(pdf)
 }
 
-#[test]
-fn sweeps_show_a_crosshair() -> Result<()> {
-  use vpdf_model::input::MouseButton::Left;
-  use vpdf_model::input::MouseEventKind::{Down, Drag, Moved, Up};
-  use vpdf_ui::pointer::{Hit, Region};
-  let directory = tempfile::tempdir()?;
-  let screen = Screen {
+fn line_session(
+  directory: &Path,
+  annots: &str,
+  screen: Screen,
+) -> Result<Session> {
+  let mut session = Session::new(None);
+  session.open(&line_pdf(directory, annots)?, true, screen)?;
+  Ok(session)
+}
+
+fn pointer_screen() -> Screen {
+  Screen {
     columns: 80,
     rows: 24,
     cell_width: 8,
     cell_height: 16,
     origin: (0, 0),
-  };
-  let mut session = Session::new(None);
-  session.open(&line_pdf(directory.path(), "")?, true, screen)?;
-  let app = session.app();
-  let mut cells = (0..23).flat_map(|row| (0..80).map(move |c| (c, row)));
-  let text = cells.find(|&(column, row)| {
-    app.hovered(Region::Page, column, row, None).ok() == Some(Hit::Text)
-  });
-  let (column, row) = text.expect("a text cell");
+  }
+}
+
+#[test]
+fn sweeps_show_a_crosshair() -> Result<()> {
+  use vpdf_model::input::MouseButton::Left;
+  use vpdf_model::input::MouseEventKind::{Down, Drag, Moved, Up};
+  use vpdf_ui::pointer::Hit;
+  let directory = tempfile::tempdir()?;
+  let screen = pointer_screen();
+  let mut session = line_session(directory.path(), "", screen)?;
+  let (column, row) = find(&mut session, |hit| hit == Hit::Text)?;
   terminal::claim_pointer(
     &mut Vec::new(),
     vpdf_terminal::caps::Support::Answered,
@@ -540,24 +551,12 @@ fn sweeps_show_a_crosshair() -> Result<()> {
 #[test]
 fn mouse_command_toggles_capture() -> Result<()> {
   use vpdf_model::input::{Mouse, MouseKind, Spot};
-  use vpdf_ui::pointer::{Hit, Region};
+  use vpdf_ui::pointer::Hit;
   let directory = tempfile::tempdir()?;
-  let screen = Screen {
-    columns: 80,
-    rows: 24,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
-  let mut session = Session::new(None);
-  session.open(&line_pdf(directory.path(), "")?, true, screen)?;
+  let screen = pointer_screen();
+  let mut session = line_session(directory.path(), "", screen)?;
   session.screen = Some(screen);
-  let app = session.app();
-  let mut cells = (0..23).flat_map(|row| (0..80).map(move |c| (c, row)));
-  let text = cells.find(|&(column, row)| {
-    app.hovered(Region::Page, column, row, None).ok() == Some(Hit::Text)
-  });
-  let (column, row) = text.expect("a text cell");
+  let (column, row) = find(&mut session, |hit| hit == Hit::Text)?;
   let at = Spot::Cell { column, row };
   let moved =
     Mouse { kind: MouseKind::Moved, at, modifiers: KeyModifiers::NONE };
@@ -597,15 +596,8 @@ fn menu_backdrops_skip_the_panel() -> Result<()> {
   use vpdf_model::input::MouseEventKind::{Down, Up};
   use vpdf_ui::keys::PanelKind;
   let directory = tempfile::tempdir()?;
-  let screen = Screen {
-    columns: 80,
-    rows: 24,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
-  let mut session = Session::new(None);
-  session.open(&line_pdf(directory.path(), "")?, true, screen)?;
+  let screen = pointer_screen();
+  let mut session = line_session(directory.path(), "", screen)?;
   session.app().open_panel(PanelKind::Help)?;
   let left = session.app().left;
   // (pressed column) -> backdrop's page-area x range
@@ -663,15 +655,8 @@ fn veils_skip_menus() -> Result<()> {
   use vpdf_model::input::MouseEventKind::{Down, Up};
   use vpdf_ui::keys::PanelKind;
   let directory = tempfile::tempdir()?;
-  let screen = Screen {
-    columns: 80,
-    rows: 24,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
-  let mut session = Session::new(None);
-  session.open(&line_pdf(directory.path(), "")?, true, screen)?;
+  let screen = pointer_screen();
+  let mut session = line_session(directory.path(), "", screen)?;
   session.app().open_panel(PanelKind::Help)?;
   let left = session.app().left;
   // A stretched pixel: `c=` columns wide.
@@ -702,15 +687,8 @@ fn overview_rings_skip_the_menu() -> Result<()> {
   use vpdf_model::input::MouseButton::Right;
   use vpdf_model::input::MouseEventKind::{Down, Up};
   let directory = tempfile::tempdir()?;
-  let screen = Screen {
-    columns: 80,
-    rows: 24,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
-  let mut session = Session::new(None);
-  session.open(&line_pdf(directory.path(), "")?, true, screen)?;
+  let screen = pointer_screen();
+  let mut session = line_session(directory.path(), "", screen)?;
   session.app().open_overview()?;
   session.draw_focused(&mut Vec::new())?;
   let app = session.app();
@@ -740,23 +718,11 @@ fn edge_drags_scroll_until_focus_loss() -> Result<()> {
   use vpdf_model::input::MouseButton::Left;
   use vpdf_model::input::MouseEventKind::{Down, Drag};
   use vpdf_ui::input::edge::Edge;
-  use vpdf_ui::pointer::{Hit, Region};
+  use vpdf_ui::pointer::Hit;
   let directory = tempfile::tempdir()?;
-  let screen = Screen {
-    columns: 80,
-    rows: 24,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
-  let mut session = Session::new(None);
-  session.open(&line_pdf(directory.path(), "")?, true, screen)?;
-  let app = session.app();
-  let mut cells = (0..23).flat_map(|row| (0..80).map(move |c| (c, row)));
-  let text = cells.find(|&(column, row)| {
-    app.hovered(Region::Page, column, row, None).ok() == Some(Hit::Text)
-  });
-  let (column, row) = text.expect("a text cell");
+  let screen = pointer_screen();
+  let mut session = line_session(directory.path(), "", screen)?;
+  let (column, row) = find(&mut session, |hit| hit == Hit::Text)?;
   let now = Instant::now();
   assert!(idle(&mut session, now, now, false, Instant::now()) > Edge::INTERVAL);
   let (alt, plain) = (KeyModifiers::ALT, KeyModifiers::NONE);
@@ -798,13 +764,7 @@ fn home_file_drops_open() -> Result<()> {
   let pdf = line_pdf(directory.path(), "")?;
   let notes = directory.path().join("notes.txt");
   std::fs::write(&notes, "text")?;
-  let screen = Screen {
-    columns: 80,
-    rows: 24,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = pointer_screen();
   let list = |path: &Path| {
     let uri = format!("file://{}\r\n", path.display());
     base64::engine::general_purpose::STANDARD.encode(uri)
@@ -976,8 +936,7 @@ fn keys_close_other_previews() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut session = Session::new(None);
-  session.open(&line_pdf(directory.path(), link)?, true, screen)?;
+  let mut session = line_session(directory.path(), link, screen)?;
   session.app().command("vsplit")?;
   session.settle()?;
   let tab = session.tab();
@@ -1016,8 +975,7 @@ fn wheel_turns_defer_page_hover() -> Result<()> {
     cell_height: 16,
     origin: (0, 0),
   };
-  let mut session = Session::new(None);
-  session.open(&line_pdf(directory.path(), link)?, true, screen)?;
+  let mut session = line_session(directory.path(), link, screen)?;
   let app = session.app();
   let bounds = app.doc.links(PageId(0))?[0].first();
   let rect = app.layout.project(PageId(0), bounds, app.reader.scroll);
@@ -1103,13 +1061,7 @@ fn deferred_panels_clear_capture() -> Result<()> {
 fn decoded_commands_change_state() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let mut session = Session::new(None);
-  let screen = Screen {
-    columns: 80,
-    rows: 24,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = pointer_screen();
   session.open(&line_pdf(directory.path(), "")?, true, screen)?;
   let mut parser = vpdf_terminal::decode::Parser::default();
   let mut events = std::collections::VecDeque::new();

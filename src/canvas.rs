@@ -221,15 +221,7 @@ impl App {
     // Rows above the status line stay blank between plain frames.
     let plain = self.plain();
     if !(plain && self.blank) {
-      for row in 0..self.screen.rows {
-        scene.extend([
-          Op::Move {
-            column: usize::from(self.at.column),
-            row: usize::from(self.at.row) + usize::from(row),
-          },
-          Op::Erase(self.screen.columns),
-        ]);
-      }
+      vpdf_ui::paint::clear(scene, self.at, self.screen);
     }
     self.blank = plain;
     if let Some(panel) = &mut self.panel {

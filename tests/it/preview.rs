@@ -9,7 +9,7 @@ use vpdf_model::text::PageId;
 use vpdf_reader::reader::{Mode, SelectionKind};
 use vpdf_ui::input::InputOwner;
 
-fn open(text: bool) -> Result<Solo> {
+pub(super) fn open(text: bool) -> Result<Solo> {
   let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
   let mut app = Solo::open(&path, "", text, screen())?;
   let link = app
@@ -42,14 +42,7 @@ fn drawn(app: &mut Solo) -> Result<String> {
     app.draw_preview(graphics, &mut std::io::sink())?;
   }
   app.graphics.end(&mut std::io::sink())?;
-  let mut out = Vec::new();
-  app.graphics.begin(&mut out)?;
-  {
-    let (app, graphics) = app.parts();
-    app.draw_preview(graphics, &mut out)?;
-  }
-  app.graphics.end(&mut out)?;
-  Ok(String::from_utf8_lossy(&out).into_owned())
+  super::common::preview_frame(app)
 }
 
 #[test]

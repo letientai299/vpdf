@@ -524,20 +524,7 @@ fn raw_history_is_separate_from_local_focus() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn peek_prompt_retains_destination_and_owner() -> Result<()> {
-  let mut app = Solo::open(&file("paper.pdf")?, "", true, screen())?;
-  let link = app
-    .doc
-    .links(PageId(1))?
-    .iter()
-    .find(|link| !matches!(link.target, Target::Uri(_)))
-    .cloned()
-    .unwrap();
-  let position = app.doc.text(PageId(1))?.nearest(
-    PageId(1),
-    f32::midpoint(link.first().x0, link.first().x1),
-    f32::midpoint(link.first().y0, link.first().y1),
-  );
-  app.go_to(position, true)?;
+  let mut app = super::preview::open(true)?;
   app.preview_link()?;
   let target = format!("{:?}", app.overlays.preview().unwrap().target());
   keys(&mut app, b":")?;

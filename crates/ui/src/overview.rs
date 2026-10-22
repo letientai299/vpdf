@@ -373,7 +373,12 @@ impl Frame {
 }
 
 #[cfg(test)]
+#[path = "../../../tests/support/overview.rs"]
+mod fixture;
+
+#[cfg(test)]
 mod tests {
+  use super::fixture::Source;
   use super::*;
   #[test]
   fn visible_rows_include_partial() {
@@ -395,34 +400,7 @@ mod tests {
   #[test]
   fn recorded_overview_keeps_tiles_and_chrome() {
     use vpdf_model::scene::Recorder;
-    struct Source;
-    impl Pages for Source {
-      fn count(&self) -> usize {
-        3
-      }
-      fn bounds(&self, _: PageId) -> Bounds {
-        Bounds { x0: 0.0, y0: 0.0, x1: 600.0, y1: 800.0 }
-      }
-      fn label(&self, _: PageId) -> &'static str {
-        "page"
-      }
-    }
-    let screen = Screen {
-      columns: 100,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (7, 3),
-    };
-    let frame = Frame {
-      pane: 1,
-      screen,
-      clip: screen,
-      at: vpdf_model::geometry::At { column: 7, row: 3 },
-      left: 4,
-      hovered: Some(PageId(2)),
-      mask: None,
-    };
+    let frame = fixture::frame();
     let mut overview = Overview::new(PageId(1));
     let mut recorder = Recorder::new(|_| false);
     let visible = overview.scene(&Source, frame, &mut recorder).unwrap();
@@ -434,8 +412,7 @@ mod tests {
     assert!(scene.iter().any(|op| matches!(op, Op::Fill(_))));
   }
 
-  #[test]
-  fn labels_center_by_cells() {
+  fn label_frame() -> Frame {
     let screen = Screen {
       columns: 100,
       rows: 40,
@@ -443,7 +420,7 @@ mod tests {
       cell_height: 16,
       origin: (0, 0),
     };
-    let frame = Frame {
+    Frame {
       pane: 1,
       screen,
       clip: screen,
@@ -451,7 +428,12 @@ mod tests {
       left: 0,
       hovered: None,
       mask: None,
-    };
+    }
+  }
+
+  #[test]
+  fn labels_center_by_cells() {
+    let frame = label_frame();
     for (label, column) in [("IV", 6), ("章", 6), ("e\u{301}", 6), ("界界", 5)]
     {
       let mut scene = vpdf_model::scene::Scene::new();
@@ -462,28 +444,13 @@ mod tests {
 
   #[test]
   fn hidden_labels_keep_cursor() {
-    let screen = Screen {
-      columns: 100,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
-    let frame = Frame {
-      pane: 1,
-      screen,
-      clip: screen,
-      at: vpdf_model::geometry::At::default(),
-      left: 0,
-      hovered: None,
-      mask: None,
-    };
+    let frame = label_frame();
     let mut out = Vec::new();
     frame.label(
       &mut out,
       || panic!("Hidden label read"),
       false,
-      (16.0, screen.height()),
+      (16.0, frame.screen.height()),
       220.0,
     );
     assert_eq!(out, []);

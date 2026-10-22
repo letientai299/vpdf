@@ -15,6 +15,17 @@ pub fn focused_frame(session: &mut vpdf::session::Session) -> Result<String> {
   Ok(String::from_utf8_lossy(&out).into_owned())
 }
 
+pub fn preview_frame(app: &mut vpdf::solo::Solo) -> Result<String> {
+  let mut out = Vec::new();
+  app.graphics.begin(&mut out)?;
+  {
+    let (app, graphics) = app.parts();
+    app.draw_preview(graphics, &mut out)?;
+  }
+  app.graphics.end(&mut out)?;
+  Ok(String::from_utf8_lossy(&out).into_owned())
+}
+
 /// Events decoded from `bytes`, without waiting for a quiet pause.
 pub fn events(bytes: &[u8]) -> VecDeque<Event> {
   let mut events = VecDeque::new();

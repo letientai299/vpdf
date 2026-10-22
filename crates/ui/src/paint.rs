@@ -18,6 +18,13 @@ pub fn move_to<'a>(
   });
 }
 
+pub fn clear<'a>(scene: &mut impl Draw<'a>, at: At, screen: Screen) {
+  for row in 0..screen.rows {
+    move_to(scene, at, row, 0u16);
+    scene.push(Op::Erase(screen.columns));
+  }
+}
+
 pub fn line<'a>(
   scene: &mut impl Draw<'a>,
   at: At,
