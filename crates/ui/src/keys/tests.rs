@@ -94,6 +94,29 @@ fn key(ch: char) -> KeyEvent {
 }
 
 #[test]
+fn half_screen_aliases_preserve_counts() {
+  for grammar in
+    [Grammar::Normal, Grammar::Cursor, Grammar::Objects, Grammar::Panel]
+  {
+    for (name, distance) in
+      [("d", 0.5), ("C-d", 0.5), ("u", -0.5), ("C-u", -0.5)]
+    {
+      for count in [None, Some('3')] {
+        let mut keys = Keys::default();
+        if let Some(count) = count {
+          assert!(keys.feed(key(count), grammar).is_none());
+        }
+        let input = keys.feed(parse(name).unwrap()[0], grammar).unwrap();
+        assert_eq!(input.action, Action::Scroll(distance));
+        assert_eq!(input.count, if count.is_some() { 3 } else { 1 });
+        assert_eq!(input.explicit, count.is_some());
+        assert_eq!(keys.pending(), "");
+      }
+    }
+  }
+}
+
+#[test]
 fn count_register_and_prefix() {
   let mut keys = Keys::default();
   for ch in "\"a12g".chars() {
@@ -366,7 +389,7 @@ fn escape_resets_pending_count() {
   keys.feed(key('9'), Grammar::Objects);
   keys.feed(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), Grammar::Objects);
   assert_eq!(keys.feed(key('j'), Grammar::Objects).unwrap().count, 1);
-  assert!(keys.feed(key('d'), Grammar::Objects).is_none());
+  assert!(keys.feed(key('D'), Grammar::Objects).is_none());
   assert_eq!(
     keys.feed(key(' '), Grammar::Objects).unwrap().action,
     Action::Screen(1)

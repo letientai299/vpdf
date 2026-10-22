@@ -36,7 +36,7 @@ ma mA: mark here / across documents
 
 # Scroll and zoom
 {screen_down}{screen_up}: screen down / up, two rows overlap
-{half_down}{half_up}: half-screen scroll
+{half_down} / {half_up}: half-screen down / up
 {page_down}{page_up}: full-screen scroll
 {row_down}{row_up}: row scroll
 Page scroll keys move the Cursor or Visual endpoint
