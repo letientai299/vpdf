@@ -1090,3 +1090,56 @@ fn decoded_commands_change_state() -> Result<()> {
   );
   Ok(())
 }
+
+#[test]
+fn sidebar_keys_toggle_focus() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = line_pdf(directory.path(), "")?;
+  let mut session = Session::new(None);
+  session.open(&path, true, cells(120, 40))?;
+  for (shortcut, kind, command) in [
+    ("go", PanelKind::Outline, "toc"),
+    ("gs", PanelKind::Results, ""),
+    ("gl", PanelKind::Links, ""),
+    ("gr", PanelKind::Recent, "recent"),
+    ("ga", PanelKind::Annotations, "annotations"),
+    ("g?", PanelKind::Help, "help"),
+  ] {
+    for (keys, focused) in [
+      (shortcut, Some(true)),
+      ("Tab", Some(false)),
+      (shortcut, Some(true)),
+      (shortcut, None),
+      (shortcut, Some(true)),
+    ] {
+      for key in vpdf_ui::keys::parse(keys).expect("valid sidebar keys") {
+        session.type_key(key)?;
+        session.settle()?;
+      }
+      assert_eq!(
+        session.app().panel.is_some(),
+        focused.is_some(),
+        "{shortcut}"
+      );
+      if let Some(focused) = focused {
+        let panel = &session.app().panel.as_ref().unwrap().view;
+        assert_eq!(panel.kind(), kind, "{shortcut}");
+        assert_eq!(panel.focused(), focused, "{shortcut}");
+      }
+    }
+    assert!(session.app().panel_focused(), "{shortcut}");
+    session.app().action(vpdf_ui::keys::Input::plain(
+      vpdf_ui::keys::Action::Panel(kind),
+    ))?;
+    session.settle()?;
+    assert_eq!(session.app().panel.as_ref().unwrap().view.kind(), kind);
+    assert!(session.app().panel_focused());
+    if !command.is_empty() {
+      session.app().command(command)?;
+      session.settle()?;
+      assert_eq!(session.app().panel.as_ref().unwrap().view.kind(), kind);
+      assert!(session.app().panel_focused());
+    }
+  }
+  Ok(())
+}

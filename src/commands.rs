@@ -147,7 +147,13 @@ impl App {
     }
     let grammar =
       owner.grammar(self.reader.mode(), self.reader.operator.is_some());
-    if let Some(input) = self.keys.feed(key, grammar) {
+    if let Some(mut input) = self.keys.feed(key, grammar) {
+      if let Action::Panel(kind) = input.action
+        && self.panel_focused()
+        && self.panel.as_ref().is_some_and(|panel| panel.view.kind() == kind)
+      {
+        input.action = Action::ClosePanel;
+      }
       self.action(input)?;
     } else if self.keys.pending().is_empty() {
       self.reader.disarm();
