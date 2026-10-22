@@ -228,7 +228,7 @@ impl App {
       preview: None,
       ocr: None,
       outline_load: crate::jobs::Loading::Deferred,
-      figures: crate::jobs::Figures::Idle,
+      figures: crate::jobs::Figures::Deferred,
       crop_scan: vpdf_pdf::jobs::crop::Scan::default(),
       wheel: vpdf_ui::input::wheel::Wheel::default(),
       tiles: vpdf_ui::layout::tiles::Tiles::default(),

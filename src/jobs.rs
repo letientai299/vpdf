@@ -228,7 +228,10 @@ impl App {
 
 #[derive(Default)]
 pub enum Figures {
+  /// Waits for rendering and idle input.
   #[default]
+  Deferred,
+  /// Only explicit requests resume this state.
   Idle,
   Running(vpdf_pdf::jobs::figures::Job),
   Ready(vpdf_pdf::jobs::figures::Entries),
@@ -236,7 +239,7 @@ pub enum Figures {
 
 impl App {
   pub fn want_figures(&mut self) {
-    if matches!(self.figures, Figures::Idle) {
+    if matches!(self.figures, Figures::Deferred | Figures::Idle) {
       self.figures = Figures::Running(vpdf_pdf::jobs::figures::Job::start(
         &self.path,
         &self.password,
@@ -248,7 +251,7 @@ impl App {
   }
 
   pub(crate) fn refresh_figures(&mut self) -> Result<()> {
-    self.figures = Figures::Idle;
+    self.figures = Figures::Deferred;
     if self.panel.as_ref().is_some_and(|p| p.view.kind() == PanelKind::Figures)
     {
       self.want_figures();
@@ -258,7 +261,7 @@ impl App {
   }
 
   pub fn cancel_figures(&mut self) {
-    if matches!(self.figures, Figures::Running(_)) {
+    if matches!(self.figures, Figures::Deferred | Figures::Running(_)) {
       self.figures = Figures::Idle;
     }
   }
@@ -275,7 +278,15 @@ impl App {
     self.figures = Figures::Idle;
     match found {
       Ok(entries) => self.figures = Figures::Ready(entries),
-      Err(error) => self.error = Some(error),
+      Err(error) => {
+        if self
+          .panel
+          .as_ref()
+          .is_some_and(|p| p.view.kind() == PanelKind::Figures)
+        {
+          self.error = Some(error);
+        }
+      }
     }
     self.refill_panel(PanelKind::Figures)?;
     Ok(true)
@@ -339,7 +350,7 @@ mod tests {
     app.panel = None;
     app.doc.seed(PageId(0), Arc::new(Text::default()));
     app.refresh_figures()?;
-    assert!(matches!(app.figures, Figures::Idle));
+    assert!(matches!(app.figures, Figures::Deferred));
     app.open_panel(PanelKind::Figures)?;
     ready.recv_timeout(Duration::from_secs(5))?;
     assert!(app.figure_updates()?);

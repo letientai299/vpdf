@@ -124,27 +124,9 @@ fn attach_caption(
   lines: &[(Bounds, String)],
   page: Bounds,
 ) {
-  let bounds = if caption.split_whitespace().count() == 2 {
-    lines
-      .iter()
-      .find(|(line, value)| {
-        line.y0 >= bounds.y1
-          && line.y0 - bounds.y1 <= bounds.height() * 2.0
-          && (line.x0 - bounds.x0).abs() <= 3.0
-          && !is_caption(value)
-      })
-      .map_or(bounds, |(line, _)| bounds.union(*line))
-  } else {
-    bounds
+  let Some((bounds, title)) = caption_title(bounds, caption, lines) else {
+    return;
   };
-  let bounds = lines
-    .iter()
-    .filter(|(line, value)| {
-      line.y0 < bounds.y1
-        && line.y1 > bounds.y0
-        && (!is_caption(value) || value == caption)
-    })
-    .fold(bounds, |area, (line, _)| area.union(*line));
   let preceding = lines
     .iter()
     .filter(|(line, value)| {
@@ -189,7 +171,7 @@ fn attach_caption(
         index += 1;
       }
     }
-    caption.clone_into(&mut figure.caption);
+    figure.caption = title;
     figures.push(figure);
   } else {
     let mut area = preceding.map_or(bounds, |(line, _)| bounds.union(*line));
@@ -205,10 +187,92 @@ fn attach_caption(
     }
     figures.push(Figure {
       bounds: area,
-      caption: caption.to_owned(),
+      caption: title,
       source: Source::Caption,
     });
   }
+}
+
+fn caption_row(
+  bounds: Bounds,
+  caption: &str,
+  lines: &[(Bounds, String)],
+) -> (Bounds, String) {
+  let mut row: Vec<_> = lines
+    .iter()
+    .filter(|(line, value)| {
+      line.y0 < bounds.y1
+        && line.y1 > bounds.y0
+        && (line.y0 - bounds.y0).abs() < bounds.height() * 0.5
+        && (value == caption || line.x0 > bounds.x0 + 3.0)
+        && (!is_caption(value) || value == caption)
+    })
+    .collect();
+  row.sort_by(|a, b| a.0.x0.total_cmp(&b.0.x0));
+  let area = row.iter().fold(bounds, |area, (line, _)| area.union(*line));
+  let title =
+    row.iter().map(|(_, text)| text.as_str()).collect::<Vec<_>>().join(" ");
+  (area, title)
+}
+
+fn caption_title(
+  bounds: Bounds,
+  caption: &str,
+  lines: &[(Bounds, String)],
+) -> Option<(Bounds, String)> {
+  let (mut area, mut title) = caption_row(bounds, caption, lines);
+  let contents = title.chars().filter(|&ch| ch == '.').count() >= 12
+    && title.split_whitespace().last().is_some_and(|word| {
+      let word = word.trim_matches('.');
+      word.chars().any(|ch| ch.is_ascii_digit())
+        && word.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+    });
+  if contents {
+    return None;
+  }
+  if title.split_whitespace().count() > 2
+    && title.trim_end().ends_with(['.', '!', '?'])
+  {
+    return Some((area, title));
+  }
+  let mut description = title.split_whitespace().count() > 2;
+  let mut gap = if description { 1.0 } else { 2.0 };
+  let mut height = bounds.height();
+  for (line, value) in lines.iter().filter(|(line, _)| line.y0 >= bounds.y1) {
+    if line.y0 < area.y1 {
+      continue;
+    }
+    if line.y0 - area.y1 > bounds.height() * gap {
+      break;
+    }
+    if (line.x0 - bounds.x0).abs() > 3.0 {
+      continue;
+    }
+    let (row, value) = caption_row(*line, value, lines);
+    if (row.x0 - bounds.x0).abs() > 3.0 {
+      continue;
+    }
+    if value.split_whitespace().next().is_some_and(caption_prefix)
+      || description
+        && (row.height() < height * 0.7 || row.height() > height * 1.4)
+    {
+      break;
+    }
+    title.push(' ');
+    title.push_str(&value);
+    area = area.union(row);
+    height = row.height();
+    description = true;
+    gap = 1.0;
+    if value.trim_end().ends_with(['.', '!', '?']) {
+      break;
+    }
+  }
+  Some((area, title))
+}
+
+fn caption_prefix(word: &str) -> bool {
+  word.eq_ignore_ascii_case("figure") || word.eq_ignore_ascii_case("table")
 }
 
 fn connection(a: Bounds, b: Bounds, lines: &[(Bounds, String)]) -> Option<f32> {
@@ -233,9 +297,7 @@ fn connection(a: Bounds, b: Bounds, lines: &[(Bounds, String)]) -> Option<f32> {
 fn is_caption(text: &str) -> bool {
   let mut words = text.split_whitespace();
   let Some(prefix) = words.next() else { return false };
-  if !prefix.eq_ignore_ascii_case("figure")
-    && !prefix.eq_ignore_ascii_case("table")
-  {
+  if !caption_prefix(prefix) {
     return false;
   }
   let Some(number) = words.next() else { return false };
@@ -331,9 +393,75 @@ mod tests {
       page,
     );
     assert_eq!(figures.len(), 1, "{figures:?}");
-    assert_eq!(figures[0].caption, "FIGURE 2.3");
+    assert_eq!(figures[0].caption, "FIGURE 2.3 Execution of a CUDA program.");
     assert_eq!(figures[0].bounds, graphic.union(description));
     assert_eq!(figures[0].source, Source::Graphic);
+  }
+
+  #[test]
+  fn wrapped_descriptions_exclude_body() {
+    let page = bounds(0.0, 0.0, 600.0, 800.0);
+    let text = Text {
+      lines: vec![
+        line("FIGURE 4.1", bounds(80.0, 200.0, 130.0, 207.0)),
+        line("Architecture of a", bounds(80.0, 215.0, 190.0, 222.0)),
+        line("CUDA-capable GPU.", bounds(80.0, 228.0, 190.0, 235.0)),
+        line("Body paragraph.", bounds(80.0, 241.0, 500.0, 252.0)),
+      ],
+      truncated: false,
+    };
+    let figures =
+      group([bounds(150.0, 80.0, 400.0, 190.0)].into_iter(), &text, page);
+    assert_eq!(figures.len(), 1, "{figures:?}");
+    assert_eq!(
+      figures[0].caption,
+      "FIGURE 4.1 Architecture of a CUDA-capable GPU."
+    );
+    assert!(figures[0].bounds.y1 < 241.0, "{figures:?}");
+  }
+
+  #[test]
+  fn split_caption_spans_join() {
+    let page = bounds(0.0, 0.0, 600.0, 800.0);
+    let text = Text {
+      lines: vec![
+        line("Figure 4.17:", bounds(80.0, 200.0, 130.0, 210.0)),
+        line(
+          "Samples from an Ising model with",
+          bounds(135.0, 200.0, 420.0, 210.0),
+        ),
+        line("varying J > 0.", bounds(80.0, 215.0, 210.0, 225.0)),
+      ],
+      truncated: false,
+    };
+    let figures =
+      group([bounds(100.0, 80.0, 400.0, 190.0)].into_iter(), &text, page);
+    assert_eq!(figures.len(), 1, "{figures:?}");
+    assert_eq!(
+      figures[0].caption,
+      "Figure 4.17: Samples from an Ising model with varying J > 0."
+    );
+  }
+
+  #[test]
+  fn contents_rows_are_ignored() {
+    let page = bounds(0.0, 0.0, 600.0, 800.0);
+    let text = Text {
+      lines: vec![
+        line("Figure 21-1.", bounds(40.0, 80.0, 100.0, 90.0)),
+        line(
+          "Processor brand . . . . . . . . . . . . . . 21-5",
+          bounds(105.0, 80.0, 500.0, 90.0),
+        ),
+        line(
+          "Exception handling . . . . . . . . . . . . . . D-4",
+          bounds(105.0, 89.0, 500.0, 99.0),
+        ),
+        line("Figure E-1.", bounds(40.0, 100.0, 100.0, 110.0)),
+      ],
+      truncated: false,
+    };
+    assert!(group(std::iter::empty(), &text, page).is_empty());
   }
 
   #[test]

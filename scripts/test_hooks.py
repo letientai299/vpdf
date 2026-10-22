@@ -244,6 +244,14 @@ class SnapshotTests(unittest.TestCase):
         with self.snapshot() as (source, _):
             self.assertFalse((source / "README.md").is_symlink())
 
+    def test_cache_disabled(self):
+        with (
+            patch.dict(os.environ, VPDF_CACHE=str(self.root / "user-cache")),
+            self.snapshot() as (_, env),
+        ):
+            self.assertEqual(env["VPDF_CACHE"], "off")
+            self.assertFalse((self.root / "user-cache").exists())
+
     def test_git_environment_removed(self):
         index = self.root / "custom-index"
         shutil.copyfile(self.root / ".git/index", index)

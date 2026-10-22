@@ -70,7 +70,7 @@ pub(super) fn trim(root: &Path, budget: u64) -> Result<()> {
     let modified = meta.modified().unwrap_or(now);
     let path = entry.path();
     match path.extension().and_then(|extension| extension.to_str()) {
-      Some("pack" | "ocr" | "outline") => {
+      Some("pack" | "ocr" | "outline" | "figures") => {
         packs.push((modified, meta.len(), path));
       }
       Some("id") => memos.push((modified, path)),

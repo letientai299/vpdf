@@ -12,8 +12,6 @@ upx = { version = "5.2.1", os = ["linux"] }
 CARGO_BUILD_TARGET = "{{ arch(x64='x86_64', arm64='aarch64') }}-{{ os(macos='apple-darwin', linux='unknown-linux-gnu') }}"
 # Corpus tests and benches; `corpus:huge` fills tmp/huge for ad hoc runs.
 VPDF_CORPUS = "{{config_root}}/tmp/corpus"
-# Tests and benches start cold and leave the user's search cache alone.
-VPDF_CACHE = "off"
 
 [tasks.build]
 description = "Build the optimized reader"
@@ -33,6 +31,7 @@ depends = ["build:app"]
 run = "sh scripts/install-app.sh"
 
 [tasks."test:app"]
+env.VPDF_CACHE = "off"
 description = "Verify macOS packaging and installation"
 depends = ["build:app"]
 run = "python3 -B -m unittest discover -s scripts -p test_app.py"
@@ -80,6 +79,7 @@ description = "Check lint without changing files"
 run = "python3 -B scripts/hooks.py lint"
 
 [tasks.test]
+env.VPDF_CACHE = "off"
 depends = [
   "test:demo",
   "test:startup",
@@ -92,6 +92,7 @@ depends = [
 run = "cargo nextest run --locked --workspace --test-threads num-cpus --no-fail-fast"
 
 [tasks."test:events"]
+env.VPDF_CACHE = "off"
 description = "Check feature-gated benchmark input"
 run = [
   "cargo clippy --locked --workspace --all-targets --features vpdf-gui/bench-events -- -D warnings",
@@ -103,6 +104,7 @@ description = "Check workspace dependencies and native isolation"
 run = "python3 -B scripts/check_packages.py"
 
 [tasks."test:packages"]
+env.VPDF_CACHE = "off"
 description = "Test package boundary enforcement"
 run = "python3 -B -m unittest discover -s scripts -p test_packages.py"
 
@@ -111,14 +113,17 @@ description = "Install staged and pushed snapshot validation"
 run = "python3 -B scripts/hooks.py install"
 
 [tasks."hook:commit"]
+env.VPDF_CACHE = "off"
 description = "Format staged files and test affected code"
 run = "python3 -B scripts/hooks.py pre-commit"
 
 [tasks."hook:check"]
+env.VPDF_CACHE = "off"
 description = "Run full read-only validation"
 run = "python3 -B scripts/hooks.py check"
 
 [tasks."test:hooks"]
+env.VPDF_CACHE = "off"
 description = "Test hook snapshots and affected-code routing"
 run = "python3 -B -m unittest discover -s scripts -p test_hooks.py"
 
@@ -138,14 +143,17 @@ raw_args = true
 run = 'python3 scripts/demo.py --binary "${CARGO_TARGET_DIR:-target}/release/vpdf" --build-profile release'
 
 [tasks."test:demo"]
+env.VPDF_CACHE = "off"
 description = "Check screenshot provenance and publication failures"
 run = "python3 -B -m unittest discover -s scripts -p test_demo.py"
 
 [tasks."test:startup"]
+env.VPDF_CACHE = "off"
 description = "Check startup trace compatibility"
 run = "python3 -B -m unittest discover -s scripts -p test_startup.py"
 
 [tasks."test:build-features"]
+env.VPDF_CACHE = "off"
 description = "Check injection build opt-in"
 run = "python3 -B -m unittest discover -s scripts -p test_build_features.py"
 
@@ -154,111 +162,135 @@ description = "Fetch large stress PDFs into tmp/huge for ad hoc runs"
 run = "sh scripts/corpus.sh huge"
 
 [tasks."test:corpus"]
+env.VPDF_CACHE = "off"
 depends = ["corpus"]
 run = "cargo nextest run --locked --workspace --run-ignored only -E 'not (test(real_ocr_and_cancel) | test(real_ocr_cache_policy))'"
 
 [tasks."test:ocr"]
+env.VPDF_CACHE = "off"
 depends = ["corpus"]
 run = "cargo nextest run --locked --workspace --run-ignored only -E 'test(real_ocr_and_cancel) | test(real_ocr_cache_policy)'"
 
 [tasks.bench]
+env.VPDF_CACHE = "off"
 description = "Measure real-PDF warm frames and search"
 depends = ["corpus"]
 run = "cargo bench --locked -p vpdf --profile release --bench reader"
 
 [tasks."bench:latency"]
+env.VPDF_CACHE = "off"
 description = "Measure opens, jumps, zooms, searches, and paced scrolling"
 depends = ["corpus:sdm"]
 run = "cargo bench --locked -p vpdf --profile release --features bench-events --bench latency"
 
 [tasks."bench:stages"]
+env.VPDF_CACHE = "off"
 description = "Attribute cold page cost to load, text, list, raster, encode"
 depends = ["corpus"]
 run = "cargo bench --locked -p vpdf --profile release --bench stages"
 
 [tasks."bench:micro"]
+env.VPDF_CACHE = "off"
 description = "Time single hot functions; arguments filter cases"
 run = 'sh scripts/bench-micro.sh {{arg(name="cases", var=true, default="")}}'
 
 [tasks."bench:startup"]
+env.VPDF_CACHE = "off"
 description = "Time launch to complete first view in this terminal"
 depends = ["corpus"]
 raw = true
 run = "python3 scripts/startup.py"
 
 [tasks."bench:budget"]
+env.VPDF_CACHE = "off"
 description = "Enforce warm CPU frame and motion budgets"
 depends = ["corpus"]
 env.VPDF_PERF_CHECK = "1"
 run = "cargo bench --locked -p vpdf --profile release --bench reader"
 
 [tasks."test:model"]
+env.VPDF_CACHE = "off"
 description = "Test shared values without native code"
 run = "cargo nextest run --locked -p vpdf-model"
 
 [tasks."test:search"]
+env.VPDF_CACHE = "off"
 description = "Test search without native code or UI"
 run = "cargo nextest run --locked -p vpdf-search"
 
 [tasks."test:pdf"]
+env.VPDF_CACHE = "off"
 description = "Test native PDF helpers without the reader"
 run = "cargo nextest run --locked -p vpdf-pdf"
 
 [tasks."test:reader"]
+env.VPDF_CACHE = "off"
 description = "Test reading motions and selections without native code or UI"
 run = "cargo nextest run --locked -p vpdf-reader"
 
 [tasks."test:protocol"]
+env.VPDF_CACHE = "off"
 description = "Test terminal input decoding without native code or UI"
 run = "cargo nextest run --locked -p vpdf-protocol"
 
 [tasks."test:terminal"]
+env.VPDF_CACHE = "off"
 description = "Test terminal delivery without native PDF code"
 run = "cargo nextest run --locked -p vpdf-terminal"
 
 [tasks."bench:fixtures"]
+env.VPDF_CACHE = "off"
 description = "Prepare verified native-free render fixtures"
 depends = ["corpus"]
 run = 'cargo run --locked --release --example bench-fixtures -- "$VPDF_CORPUS/paper.pdf" "${VPDF_BENCH_FIXTURES:-target/bench-fixtures}"'
 
 [tasks."bench:terminal"]
+env.VPDF_CACHE = "off"
 description = "Measure headless terminal delivery using prepared fixtures"
 run = 'cargo bench --locked --profile release -p vpdf-terminal --bench micro -- {{arg(name="cases", var=true, default="")}}'
 
 [tasks."test:ui"]
+env.VPDF_CACHE = "off"
 description = "Test interface components without native PDF code"
 run = "cargo nextest run --locked -p vpdf-ui"
 
 [tasks."bench:ui"]
+env.VPDF_CACHE = "off"
 description = "Measure interface components using prepared fixtures"
 run = 'cargo bench --locked --profile release -p vpdf-ui --bench micro -- {{arg(name="cases", var=true, default="")}}'
 
 [tasks."bench:manuals"]
+env.VPDF_CACHE = "off"
 description = "Measure verified manuals; arguments filter cases"
 run = 'cargo bench --locked --profile release -p vpdf --bench manuals -- {{arg(name="cases", var=true, default="")}}'
 
 [tasks."bench:drive"]
+env.VPDF_CACHE = "off"
 description = "Drive headless, native, or Kitty scenarios"
 raw_args = true
 run = 'python3 -B benches/dispatch.py {{arg(name="args", var=true, default="")}}'
 
 [tasks."bench:headless"]
+env.VPDF_CACHE = "off"
 description = "Drive full-session headless scenarios"
 depends = ["corpus:sdm"]
 raw_args = true
 run = 'cargo bench --locked --profile release -p vpdf --features bench-events --bench drive -- {{arg(name="scenarios", var=true, default="")}}'
 
 [tasks."bench:live"]
+env.VPDF_CACHE = "off"
 description = "Drive native and Kitty scenarios in background windows"
 raw_args = true
 run = 'python3 -B benches/live/drive.py {{arg(name="args", var=true, default="")}}'
 
 [tasks."bench:report"]
+env.VPDF_CACHE = "off"
 description = "Summarize marked reader traces"
 raw_args = true
 run = 'python3 -B benches/live/report.py {{arg(name="args", var=true, default="")}}'
 
 [tasks."test:bench-report"]
+env.VPDF_CACHE = "off"
 run = "python3 -B -m unittest discover -s benches/live -p 'test_*.py'"
 
 [tasks."corpus:sdm"]
@@ -266,6 +298,7 @@ description = "Fetch and verify the SDM benchmark PDF"
 run = "sh scripts/corpus.sh huge sdm"
 
 [tasks."bench:overhead"]
+env.VPDF_CACHE = "off"
 description = "Compare tracing and relay cost with independent output"
 raw_args = true
 run = 'python3 -B benches/live/overhead.py {{arg(name="args", var=true, default="")}}'

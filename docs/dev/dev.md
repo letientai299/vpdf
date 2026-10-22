@@ -183,6 +183,10 @@ mise exec -- cargo nextest run --locked -p vpdf-ui --lib layout::tests
 The lint task applies automatic fixes before checking for remaining issues;
 inspect its diff before staging. `lint:check` checks without applying fixes.
 
+Validation tasks and Git hooks disable disk caching. Ordinary reader launches
+follow `VPDF_CACHE`. Set `VPDF_CACHE=off` for direct `cargo` tests to keep test
+data out of the user cache.
+
 `mise run hooks` installs both Git hooks. The [hook dispatcher][hook-script]
 formats staged Rust, Python, Markdown, and TOML files, then runs tests for
 changed crates and their reverse dependents. Known Python changes run their

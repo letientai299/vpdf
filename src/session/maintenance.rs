@@ -5,6 +5,7 @@ use super::{App, Duration, Instant, Session};
 const CHECK: Duration = Duration::from_millis(250);
 /// Fallback file-watch interval.
 const WATCH: Duration = Duration::from_secs(2);
+const FIGURES: Duration = Duration::from_millis(500);
 
 /// Reloads changed files in the active tab.
 fn watch(session: &mut Session, force: bool, now: Instant) -> bool {
@@ -44,13 +45,18 @@ impl Chores {
     now: Instant,
     changed: bool,
   ) -> Duration {
-    idle(
+    let wait = idle(
       session,
       self.checked,
       self.watched,
       changed || self.touched > self.checked,
       now,
-    )
+    );
+    if session.figures_due() {
+      wait.min(FIGURES.saturating_sub(now.duration_since(self.touched)))
+    } else {
+      wait
+    }
   }
 
   pub(super) fn watch_due(&self, now: Instant) -> bool {
@@ -73,6 +79,32 @@ impl Chores {
       self.watched = now;
     }
     dirty |= watch(session, force, now);
+    let active = session.active;
+    for app in session
+      .tabs
+      .iter_mut()
+      .enumerate()
+      .filter(|(index, _)| *index != active)
+      .flat_map(|(_, tab)| &mut tab.panes)
+    {
+      if let Err(error) = app.figure_updates() {
+        app.error = Some(error.to_string());
+      }
+    }
+    if now.duration_since(self.touched) >= FIGURES && session.figures_due() {
+      let count = session.tabs.len();
+      for offset in 0..count {
+        let index = (session.active + offset) % count;
+        if let Some(app) = session.tabs[index]
+          .panes
+          .iter_mut()
+          .find(|app| matches!(app.figures, crate::jobs::Figures::Deferred))
+        {
+          app.want_figures();
+          break;
+        }
+      }
+    }
     // Exits and hangups save remaining changes.
     if now.duration_since(self.checked) >= CHECK {
       self.checked = now;
@@ -131,6 +163,25 @@ pub(super) fn idle(
 }
 
 impl Session {
+  fn figures_due(&self) -> bool {
+    self.sight != super::Sight::Hidden
+      && !self.pointer.holding()
+      && self.tabs[self.active]
+        .panes
+        .iter()
+        .all(|app| app.complete && !app.images_stale && !app.busy())
+      && !self
+        .tabs
+        .iter()
+        .flat_map(|tab| &tab.panes)
+        .any(|app| matches!(app.figures, crate::jobs::Figures::Running(_)))
+      && self
+        .tabs
+        .iter()
+        .flat_map(|tab| &tab.panes)
+        .any(|app| matches!(app.figures, crate::jobs::Figures::Deferred))
+  }
+
   pub(super) fn maintain(&mut self, now: Instant) -> bool {
     let mut dirty = false;
     for app in &mut self.tab().panes {
@@ -186,6 +237,86 @@ mod tests {
     session.record();
     session.flush()?;
     Ok(session)
+  }
+
+  #[test]
+  fn idle_figures_respect_cancel() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let mut session = opened(root.path())?;
+    let start = Instant::now();
+    let mut chores = Chores::new(start);
+    session.app().outline_load = crate::jobs::Loading::Loaded;
+    chores.run(&mut session, start + FIGURES);
+    assert!(matches!(session.app().figures, crate::jobs::Figures::Deferred));
+    session.app().complete = true;
+    assert_eq!(chores.wait(&mut session, start, false), FIGURES);
+    let touched = start + Duration::from_millis(400);
+    chores.touch(touched);
+    chores.run(&mut session, start + FIGURES);
+    assert!(matches!(session.app().figures, crate::jobs::Figures::Deferred));
+    chores.run(&mut session, touched + FIGURES);
+    assert!(matches!(session.app().figures, crate::jobs::Figures::Running(_)));
+    session.app().cancel_figures();
+    chores.run(&mut session, touched + FIGURES * 2);
+    assert!(matches!(session.app().figures, crate::jobs::Figures::Idle));
+    session.app().want_figures();
+    assert!(matches!(session.app().figures, crate::jobs::Figures::Running(_)));
+    Ok(())
+  }
+
+  #[test]
+  fn idle_figures_cover_tabs() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let mut session = opened(root.path())?;
+    let other = root.path().join("other.pdf");
+    crate::fixtures::pdf(&other, &["other"], "")?;
+    let screen = session.app().screen;
+    session.open(&other, true, screen)?;
+    for tab in &mut session.tabs {
+      for app in &mut tab.panes {
+        app.complete = true;
+        app.outline_load = crate::jobs::Loading::Loaded;
+      }
+    }
+    let start = Instant::now();
+    let mut chores = Chores::new(start);
+    chores.run(&mut session, start + FIGURES);
+    assert!(matches!(
+      session.tabs[session.active].panes[0].figures,
+      crate::jobs::Figures::Running(_)
+    ));
+    assert!(matches!(
+      session.tabs[0].panes[0].figures,
+      crate::jobs::Figures::Deferred
+    ));
+    chores.run(&mut session, start + FIGURES);
+    assert!(matches!(
+      session.tabs[0].panes[0].figures,
+      crate::jobs::Figures::Deferred
+    ));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !session.app().figure_updates()? {
+      assert!(Instant::now() < deadline);
+      std::thread::sleep(Duration::from_millis(1));
+    }
+    chores.run(&mut session, start + FIGURES);
+    assert!(matches!(
+      session.tabs[0].panes[0].figures,
+      crate::jobs::Figures::Running(_)
+    ));
+    while matches!(
+      session.tabs[0].panes[0].figures,
+      crate::jobs::Figures::Running(_)
+    ) {
+      assert!(Instant::now() < deadline);
+      chores.run(&mut session, start + FIGURES);
+      std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(matches!(
+      session.tabs[0].panes[0].figures,
+      crate::jobs::Figures::Ready(_)
+    ));
+    Ok(())
   }
 
   #[test]

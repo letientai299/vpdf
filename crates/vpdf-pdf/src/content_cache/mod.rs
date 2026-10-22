@@ -20,7 +20,10 @@ const OCR_MAGIC: &[u8; 8] = b"VPDFOCR1";
 /// glyphs.
 const RECORD: u64 = 16 * MIB as u64;
 
+mod figures;
 mod outline;
+mod record;
+pub(crate) use figures::FigureCache;
 mod pack;
 
 pub(crate) use outline::OutlineCache;

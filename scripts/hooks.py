@@ -103,6 +103,7 @@ def snapshot(root, tree):
         env["CARGO_TARGET_DIR"] = str((root / target).resolve())
         env["MISE_TRUSTED_CONFIG_PATHS"] = str(source)
         env["PYTHONDONTWRITEBYTECODE"] = "1"
+        env["VPDF_CACHE"] = "off"
         yield source, env
 
 

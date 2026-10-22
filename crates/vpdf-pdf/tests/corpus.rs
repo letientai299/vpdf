@@ -148,15 +148,19 @@ fn pmpp_figure_index() -> Result<()> {
     .map_err(anyhow::Error::msg)?;
   assert!(!entries.is_empty());
   assert!(entries.iter().all(|(_, f)| !f.caption.is_empty()));
-  assert_eq!(entries[0].1.caption, "FIGURE 1.1");
+  assert!(entries[0].1.caption.starts_with("FIGURE 1.1 CPUs and GPUs"));
+  assert!(entries[0].1.caption.ends_with("throughput-oriented."));
+  assert!(entries.iter().any(|(_, figure)| figure.caption
+    == "FIGURE 4.1 Architecture of a CUDA-capable GPU."));
   for (index, caption, height) in [
     (49, "FIGURE 2.3", 130.0),
     (54, "FIGURE 2.6", 100.0),
     (55, "FIGURE 2.7", 85.0),
+    (382, "FIGURE 16.8", 140.0),
   ] {
     let figures = doc.figures(PageId(index))?;
     assert_eq!(figures.len(), 1, "{figures:?}");
-    assert_eq!(figures[0].caption, caption);
+    assert!(figures[0].caption.starts_with(caption));
     assert!(figures[0].bounds.height() > height, "{figures:?}");
   }
   Ok(())
@@ -173,7 +177,7 @@ fn pmpp_figure_regions() -> Result<()> {
     let figures = doc.figures(PageId(index))?;
     assert_eq!(figures.len(), 1, "{figures:?}");
     let figure = &figures[0];
-    assert_eq!(figure.caption, caption);
+    assert!(figure.caption.starts_with(caption));
     assert_eq!(figure.source, vpdf_model::document::FigureSource::Graphic);
     assert!(figure.bounds.y0 > 75.0, "{figure:?}");
     assert!(figure.bounds.y0 < 85.0, "{figure:?}");
@@ -190,6 +194,7 @@ fn pmpp_figure_regions() -> Result<()> {
 fn sdm_figure_regions() -> Result<()> {
   let path = PathBuf::from(std::env::var("VPDF_FIGURE_SDM")?);
   let mut doc = Document::open(&path, "")?;
+  assert!(doc.figures(PageId(22))?.iter().all(|f| f.caption.is_empty()));
   let page = PageId(1149);
   let figures = doc.figures(page)?;
   assert_eq!(figures.len(), 2, "{figures:?}");
@@ -244,6 +249,16 @@ fn pmla_figure_regions() -> Result<()> {
   assert_eq!(figures.len(), 2, "Wrapped references remained: {figures:?}");
   assert!(figures[0].caption.starts_with("Figure 9.1:"));
   assert!(figures[1].caption.starts_with("Figure 9.2:"));
+  let figures = doc.figures(PageId(201))?;
+  let figure =
+    figures.iter().find(|f| f.caption.starts_with("Figure 4.17:")).unwrap();
+  assert!(
+    figure
+      .caption
+      .starts_with("Figure 4.17: Samples from an associative Ising model"),
+    "{figure:?}"
+  );
+  assert!(figure.caption.contains("gibbs_demo_ising.ipynb"), "{figure:?}");
   Ok(())
 }
 
