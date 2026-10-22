@@ -1,5 +1,4 @@
-mod draw;
-pub(crate) use draw::{draw, try_draw};
+include!("presentation/draw.rs");
 
 #[cfg(test)]
 mod tests {
