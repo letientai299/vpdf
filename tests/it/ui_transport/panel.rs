@@ -16,7 +16,7 @@ fn recorded_panels_outlive_their_source() -> Result<()> {
   let mut recorded = Vec::new();
   vpdf_terminal::painter::paint(&mut recorded, &scene)?;
   let mut streamed = Vec::new();
-  panel().list(&mut streamed, at, 20, 6)?;
+  draw(&mut streamed, None, |scene| panel().scene_list(scene, at, 20, 6))?;
   assert_eq!(recorded, streamed);
   assert!(String::from_utf8(recorded)?.contains("日本語"));
   Ok(())

@@ -1,4 +1,4 @@
-use crate::presentation::ContextDraw;
+use crate::presentation;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::geometry::At;
@@ -64,7 +64,9 @@ pub fn draw() -> Result<()> {
   let mut graphics = Graphics::default();
   let mut out = Vec::new();
   graphics.begin(&mut out)?;
-  menu.draw(&mut graphics, &mut out, frame)?;
+  presentation::draw(&mut out, Some(&mut graphics), |scene| {
+    menu.scene(scene, frame);
+  })?;
   graphics.end(&mut out)?;
   anyhow::ensure!(
     super::hash::digest(&out) == prepared.output_sha256,
@@ -73,7 +75,10 @@ pub fn draw() -> Result<()> {
   super::measure("ContextMenu::draw", || {
     out.clear();
     graphics.begin(&mut out).expect("begin menu frame");
-    menu.draw(&mut graphics, &mut out, frame).expect("prepared menu rows");
+    presentation::draw(&mut out, Some(&mut graphics), |scene| {
+      menu.scene(scene, frame);
+    })
+    .expect("prepared menu rows");
     graphics.end(&mut out).expect("menu placements");
     black_box(&out);
   })

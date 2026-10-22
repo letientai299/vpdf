@@ -25,7 +25,10 @@ fn recorded_regions_keep_hits() -> Result<()> {
     for _ in 0..2 {
       let mut expected = Vec::new();
       graphics.begin(&mut expected)?;
-      canvas.draw(Some(&mut direct), sweep, &mut graphics, &mut expected)?;
+      let snap_to_cells = graphics.crop_quirk();
+      draw(&mut expected, Some(&mut graphics), |scene| {
+        canvas.scene(Some(&mut direct), sweep, snap_to_cells, scene);
+      })?;
       graphics.end(&mut expected)?;
       assert_eq!(direct.cells(), Some(area));
       assert_eq!(replay_frame(&mut replay, &scene)?, expected);

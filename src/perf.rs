@@ -1,6 +1,4 @@
 use crate::Result;
-#[cfg(test)]
-use crate::ui_presentation::*;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::{Arc, Mutex, mpsc};
@@ -298,13 +296,17 @@ mod tests {
     monitor.output.push_back((start + SECOND, 1024));
     monitor.sample(start + SECOND);
     let mut out = Vec::new();
-    monitor.view.draw(&mut out, screen(80, 30), false)?;
+    crate::presentation::draw(&mut out, None, |scene| {
+      monitor.view.scene(scene, screen(80, 30), false)
+    })?;
     let text = String::from_utf8(out)?;
     assert!(text.contains("FPS 120"));
     assert!(text.contains("Out 1.0K/s"));
     monitor.sample(start + SECOND * 2);
     let mut out = Vec::new();
-    monitor.view.draw(&mut out, screen(80, 30), false)?;
+    crate::presentation::draw(&mut out, None, |scene| {
+      monitor.view.scene(scene, screen(80, 30), false)
+    })?;
     let text = String::from_utf8(out)?;
     assert!(text.contains("FPS 0"));
     assert!(text.contains("Out 0.0K/s"));
@@ -374,7 +376,9 @@ mod tests {
   fn repaint_does_not_count_frames() -> Result<()> {
     let mut monitor = Monitor::default();
     let mut out = Vec::new();
-    assert!(monitor.view.draw(&mut out, screen(80, 30), false)?);
+    assert!(crate::presentation::draw(&mut out, None, |scene| monitor
+      .view
+      .scene(scene, screen(80, 30), false))?);
     assert!(monitor.frames.is_empty());
     Ok(())
   }

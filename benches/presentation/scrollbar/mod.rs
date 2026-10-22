@@ -1,4 +1,4 @@
-use crate::presentation::{LabelDraw, ScrollbarDraw};
+use crate::presentation;
 use anyhow::Result;
 use std::hint::black_box;
 use std::time::Instant;
@@ -85,10 +85,14 @@ pub fn draw() -> Result<()> {
     out.clear();
     graphics.begin(out)?;
     if let Some(label) =
-      bar.draw(view(), ticks(), Instant::now(), &mut graphics, out)?
+      presentation::draw(out, Some(&mut graphics), |scene| {
+        bar.scene(view(), ticks(), Instant::now(), scene)
+      })?
     {
       let text = &prepared.labels[label.page().0];
-      label.draw(text, &mut graphics, out)?;
+      presentation::draw(out, Some(&mut graphics), |scene| {
+        label.scene(text, scene);
+      })?;
     }
     graphics.end(out)?;
     Ok(())

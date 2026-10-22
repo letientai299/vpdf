@@ -11,7 +11,7 @@ fn draws_only_column_dividers() -> Result<()> {
   tree.split(2, Axis::Columns, 3, Place::After);
   let area = Rect { column: 3, row: 2, columns: 21, rows: 8 };
   let mut out = Vec::new();
-  tree.draw_dividers(&mut out, area)?;
+  draw(&mut out, None, |scene| tree.scene_dividers(scene, area))?;
   let want = [7, 8, 9, 10]
     .map(|row| {
       format!("\x1b[{row};14H{}│{}", sgr(Role::Muted), sgr(Role::Reset))
@@ -19,7 +19,9 @@ fn draws_only_column_dividers() -> Result<()> {
     .concat();
   assert_eq!(String::from_utf8(out)?, want);
   let mut out = Vec::new();
-  tree.draw_dividers(&mut out, Rect { rows: 0, ..area })?;
+  draw(&mut out, None, |scene| {
+    tree.scene_dividers(scene, Rect { rows: 0, ..area });
+  })?;
   assert_eq!(out, [] as [u8; 0]);
   Ok(())
 }

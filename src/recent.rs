@@ -1,6 +1,4 @@
 use crate::state;
-#[cfg(test)]
-use crate::ui_presentation::*;
 use vpdf_pdf::jobs::{Wake, recent::Worker};
 use vpdf_ui::panel::recent::{Entry, Shelf};
 
@@ -73,12 +71,18 @@ mod tests {
       cell_height: 16,
       origin: (0, 0),
     };
-    cards.draw(
-      &mut panel,
+    crate::presentation::draw(
       &mut Vec::new(),
-      Frame { at: At::default(), width: 100, screen, now: 0 },
       Some(&mut Graphics::default()),
-    )?;
+      |scene| {
+        cards.scene(
+          &mut panel,
+          scene,
+          Frame { at: At::default(), width: 100, screen, now: 0 },
+          true,
+        )
+      },
+    )??;
     loader.request(&mut cards);
     woken.recv_timeout(Duration::from_secs(10))?;
     let (path, card) =
@@ -111,13 +115,14 @@ mod tests {
     let mut graphics = Graphics::default();
     let mut draw = |cards: &mut Shelf| -> Result<String> {
       let mut out = Vec::new();
-      let graphics = Some(&mut graphics);
-      cards.draw(
-        &mut panel,
-        &mut out,
-        Frame { at: At::default(), width: 100, screen, now: 0 },
-        graphics,
-      )?;
+      crate::presentation::draw(&mut out, Some(&mut graphics), |scene| {
+        cards.scene(
+          &mut panel,
+          scene,
+          Frame { at: At::default(), width: 100, screen, now: 0 },
+          true,
+        )
+      })??;
       loader.request(cards);
       Ok(String::from_utf8(out)?)
     };

@@ -9,7 +9,7 @@ fn unmeasured_resize_shows_on_the_last_row() -> Result<()> {
   let error = vpdf_terminal::terminal::NO_CELL.to_owned();
   let unmeasured = Notice::new(10, 12, error);
   let mut out = Vec::new();
-  unmeasured.draw(&mut out)?;
+  draw(&mut out, None, |scene| unmeasured.scene(scene))?;
   let want = format!(
     "\x1b7{}\x1b[10;1HTerminal rep{}\x1b8",
     sgr(Role::Error),

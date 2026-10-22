@@ -4,7 +4,6 @@ mod directory;
 mod layouts;
 #[path = "../tests/support/presentation.rs"]
 pub mod presentation;
-use crate::presentation::{HintsDraw, PanelDraw};
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::geometry::Screen;
@@ -57,9 +56,10 @@ fn panel() -> Result<()> {
   let mut out = Vec::new();
   measure("Panel::list", || {
     out.clear();
-    panel
-      .list(&mut out, vpdf_model::geometry::At::default(), 50, 40)
-      .expect("panel rows");
+    presentation::draw(&mut out, None, |scene| {
+      panel.scene_list(scene, vpdf_model::geometry::At::default(), 50, 40);
+    })
+    .expect("panel rows");
     black_box(&out);
   })
 }
@@ -98,11 +98,16 @@ fn hints() -> Result<()> {
   let mut graphics = Graphics::default();
   let mut out = Vec::new();
   let frame = || Frame { at: At::default(), screen, left: 0, text: false };
-  hints.draw(&mut graphics, &mut out, frame())?;
+  presentation::draw(&mut out, Some(&mut graphics), |scene| {
+    hints.scene(scene, frame());
+  })?;
   measure("Hints::draw", || {
     out.clear();
     graphics.begin(&mut out).expect("begin hint frame");
-    hints.draw(&mut graphics, &mut out, frame()).expect("prepared labels");
+    presentation::draw(&mut out, Some(&mut graphics), |scene| {
+      hints.scene(scene, frame());
+    })
+    .expect("prepared labels");
     graphics.end(&mut out).expect("hint placements");
     black_box(&out);
   })
@@ -122,11 +127,16 @@ fn help() -> Result<()> {
       .collect();
     let mut panel = Panel::new(PanelKind::Help, rows);
     let mut out = Vec::new();
-    panel.list(&mut out, At::default(), width, 24)?;
+    presentation::draw(&mut out, None, |scene| {
+      panel.scene_list(scene, At::default(), width, 24);
+    })?;
     println!("help {width}x24 output {}", hash::digest(&out));
     measure(&format!("Panel::help draw {width}x24"), || {
       out.clear();
-      panel.list(&mut out, At::default(), width, 24).expect("help frame");
+      presentation::draw(&mut out, None, |scene| {
+        panel.scene_list(scene, At::default(), width, 24);
+      })
+      .expect("help frame");
       black_box(&out);
     })?;
   }

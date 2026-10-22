@@ -1,4 +1,4 @@
-use crate::presentation::RegionDraw;
+use crate::presentation;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::geometry::At;
@@ -56,7 +56,10 @@ pub fn draw() -> Result<()> {
   let mut draw = |out: &mut Vec<u8>| -> Result<()> {
     out.clear();
     graphics.begin(out)?;
-    canvas.draw(Some(&mut region), None, &mut graphics, out)?;
+    let snap_to_cells = graphics.crop_quirk();
+    presentation::draw(out, Some(&mut graphics), |scene| {
+      canvas.scene(Some(&mut region), None, snap_to_cells, scene);
+    })?;
     graphics.end(out)?;
     Ok(())
   };

@@ -1,4 +1,4 @@
-use crate::presentation::PreviewDraw;
+use crate::presentation;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::geometry::Screen;
@@ -134,7 +134,9 @@ pub fn draw() -> Result<()> {
         "Invalid prepared preview"
       );
       graphics.begin(out)?;
-      preview.draw(&mut graphics, out, frame(), &&pages)?;
+      presentation::draw(out, Some(&mut graphics), |scene| {
+        preview.scene(scene, frame(), &&pages)
+      })??;
       graphics.end(out)?;
       Ok(())
     };

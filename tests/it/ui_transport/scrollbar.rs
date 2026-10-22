@@ -36,28 +36,23 @@ fn label_requests_follow_successful_bar_output() -> Result<()> {
   press.apply(&mut bar, Location::default(), &mut reader);
   let now = Instant::now();
   assert!(
-    bar
-      .draw(
-        view(&layout, 0.0),
-        ticks(),
-        now,
-        &mut Graphics::default(),
-        &mut Closed
-      )
-      .is_err()
-  );
-  let label = bar
-    .draw(
+    draw(&mut Closed, Some(&mut Graphics::default()), |scene| bar.scene(
       view(&layout, 0.0),
       ticks(),
       now,
-      &mut Graphics::default(),
-      &mut Vec::new(),
-    )?
-    .unwrap();
+      scene
+    ))
+    .is_err()
+  );
+  let label = draw(&mut Vec::new(), Some(&mut Graphics::default()), |scene| {
+    bar.scene(view(&layout, 0.0), ticks(), now, scene)
+  })?
+  .unwrap();
   assert_eq!(label.page(), PageId(0));
   let mut out = Vec::new();
-  label.draw("p. 1 · First section", &mut Graphics::default(), &mut out)?;
+  draw(&mut out, Some(&mut Graphics::default()), |scene| {
+    label.scene("p. 1 · First section", scene);
+  })?;
   assert!(String::from_utf8_lossy(&out).contains(" p. 1 · First section "));
   Ok(())
 }
@@ -74,10 +69,14 @@ fn recorded_scrub_keeps_track_and_label() -> Result<()> {
   for _ in 0..2 {
     let mut expected = Vec::new();
     graphics.begin(&mut expected)?;
-    let label =
-      bar.draw(view, ticks, now, &mut graphics, &mut expected)?.unwrap();
+    let label = draw(&mut expected, Some(&mut graphics), |scene| {
+      bar.scene(view, ticks, now, scene)
+    })?
+    .unwrap();
     assert_eq!(label.page(), page);
-    label.draw("Section", &mut graphics, &mut expected)?;
+    draw(&mut expected, Some(&mut graphics), |scene| {
+      label.scene("Section", scene);
+    })?;
     graphics.end(&mut expected)?;
     assert_eq!(replay_frame(&mut replay, &scene)?, expected);
   }

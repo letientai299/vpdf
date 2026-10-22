@@ -55,9 +55,6 @@ mod reader_fixture;
 pub(crate) use reader_fixture::SeedReader;
 
 mod presentation;
-#[cfg(test)]
-#[path = "../tests/support/presentation.rs"]
-pub mod ui_presentation;
 
 #[cfg(test)]
 mod provenance;

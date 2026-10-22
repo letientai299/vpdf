@@ -1,4 +1,4 @@
-use crate::presentation::ListDraw;
+use crate::presentation;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::geometry::At;
@@ -46,7 +46,9 @@ pub fn draw() -> Result<()> {
       let list = clues.shown().expect("prepared clues");
       let mut out = Vec::new();
       let bottom = (At { column: 3, row: 2 }, rows - 2);
-      list.draw(&mut out, bottom, screen, None)?;
+      presentation::draw(&mut out, None, |scene| {
+        list.scene(scene, bottom, screen, None);
+      })?;
       println!(
         "clues {prefix:?} {columns}x{rows} output {}",
         super::hash::digest(&out)
@@ -61,7 +63,10 @@ pub fn draw() -> Result<()> {
         &format!("Clues::draw {prefix:?} {columns}x{rows}"),
         || {
           out.clear();
-          list.draw(&mut out, bottom, screen, None).expect("prepared clues");
+          presentation::draw(&mut out, None, |scene| {
+            list.scene(scene, bottom, screen, None);
+          })
+          .expect("prepared clues");
           black_box(&out);
         },
       )?;

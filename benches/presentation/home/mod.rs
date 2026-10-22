@@ -1,4 +1,4 @@
-use crate::presentation::HomeDraw;
+use crate::presentation;
 use anyhow::Result;
 use std::hint::black_box;
 use std::path::PathBuf;
@@ -74,7 +74,9 @@ pub fn draw() -> Result<()> {
   let mut draw = |output: &mut Vec<u8>| -> Result<()> {
     output.clear();
     graphics.begin(output)?;
-    home.draw(output, &mut graphics, 0, |_| {})?;
+    presentation::draw(output, Some(&mut graphics), |scene| {
+      home.scene(scene, 0, |_| {})
+    })??;
     graphics.end(output)?;
     Ok(())
   };

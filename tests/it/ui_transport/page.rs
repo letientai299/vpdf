@@ -15,7 +15,9 @@ fn recorded_overlays_keep_layers() -> Result<()> {
   let canvas =
     Canvas { layout: &layout, screen: layout.screen(), left: 2, menu: None };
   let mut expected = Vec::new();
-  canvas.draw(&mut source, &marks, &mut Graphics::default(), &mut expected)?;
+  draw(&mut expected, Some(&mut Graphics::default()), |scene| {
+    canvas.scene(&mut source, &marks, scene)
+  })??;
   drop(source);
   let mut actual = Vec::new();
   let mut graphics = Graphics::default();

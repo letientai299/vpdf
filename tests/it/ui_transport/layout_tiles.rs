@@ -42,7 +42,13 @@ fn failed_placement_retains_requests() -> Result<()> {
   graphics.upload(0, &tile, &mut std::io::sink())?;
   let view = View { layout: &layout, scroll: 0.0, target: None };
   assert!(
-    tiles.draw(view, frame(&layout), &mut graphics, &mut Broken).is_err()
+    draw(&mut Broken, Some(&mut graphics), |scene| tiles.scene(
+      view,
+      frame(&layout),
+      scene
+    ))
+    .and_then(std::convert::identity)
+    .is_err()
   );
   assert_eq!(tiles.wanted(), previous_wanted);
   Ok(())

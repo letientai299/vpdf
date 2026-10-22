@@ -1,4 +1,4 @@
-use crate::presentation::HomeDraw;
+use crate::presentation::draw;
 use anyhow::{Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -25,12 +25,11 @@ pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {
   let entries = vpdf::recent::entries(&[saved]);
   let mut view = vpdf_ui::home::Home::new(rows, &entries, screen);
   let mut pending = None;
-  view.draw(
+  draw(
     &mut Vec::new(),
-    &mut vpdf_terminal::graphics::Graphics::default(),
-    0,
-    |cards| pending = cards.take_request(),
-  )?;
+    Some(&mut vpdf_terminal::graphics::Graphics::default()),
+    |scene| view.scene(scene, 0, |cards| pending = cards.take_request()),
+  )??;
   let request = pending.context("Missing home thumbnail request")?;
   let fit = request.fit;
   let worker = Worker::new("", &Wake::none());
@@ -47,9 +46,16 @@ pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {
   let thumb = facts.thumb.context("Missing home thumbnail")?;
   serde_json::to_vec(&serde_json::json!({
     "path": path, "label": label, "detail": detail, "fit": fit,
-    "screen": [screen.columns, screen.rows, screen.cell_width, screen.cell_height],
+    "screen": [
+      screen.columns, screen.rows, screen.cell_width, screen.cell_height,
+    ],
     "pages": facts.pages, "bytes": facts.bytes, "metadata": facts.metadata,
     "section": facts.section,
-    "thumb": {"width":thumb.width(),"height":thumb.height(),"rgb":thumb.pixels().as_ref()},
-  })).map_err(Into::into)
+    "thumb": {
+      "width": thumb.width(),
+      "height": thumb.height(),
+      "rgb": thumb.pixels().as_ref(),
+    },
+  }))
+  .map_err(Into::into)
 }

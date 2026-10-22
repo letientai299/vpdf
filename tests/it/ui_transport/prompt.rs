@@ -16,7 +16,7 @@ fn drawing_positions_the_wide_text_cursor() -> Result<()> {
   };
   let at = At { column: 7, row: 3 };
   let mut out = Vec::new();
-  prompt.draw(&mut out, screen, at, None)?;
+  draw(&mut out, None, |scene| prompt.scene(scene, screen, at, None))?;
   let want = concat!(
     "\x1b[5;8H:界a\x1b[90m\x1b[0m      ",
     "\x1b[5;12H\x1b[2 q\x1b[?25h"
@@ -30,7 +30,7 @@ fn drawing_positions_the_wide_text_cursor() -> Result<()> {
   for screen in [Screen { rows: 0, ..screen }, Screen { columns: 0, ..screen }]
   {
     out.clear();
-    prompt.draw(&mut out, screen, at, None)?;
+    draw(&mut out, None, |scene| prompt.scene(scene, screen, at, None))?;
     assert_eq!(out, [] as [u8; 0]);
   }
   Ok(())

@@ -1,4 +1,4 @@
-use crate::presentation::TextDraw;
+use crate::presentation;
 use anyhow::{Context, Result};
 use std::hint::black_box;
 use vpdf_model::geometry::At;
@@ -39,11 +39,12 @@ pub fn canvas() -> Result<()> {
   let mut pane =
     state.bind(&prepared, Frame { screen, at: At::default(), left: 0 });
   let mut out = Vec::new();
-  pane.draw(&mut out, &paint)?;
+  presentation::try_draw(&mut out, None, |scene| pane.scene(scene, &paint))?;
   println!("text output {}", super::hash::digest(&out));
   super::measure("TextView::draw", || {
     out.clear();
-    pane.draw(&mut out, &paint).expect("prepared page text");
+    presentation::try_draw(&mut out, None, |scene| pane.scene(scene, &paint))
+      .expect("prepared page text");
     black_box(&out);
   })
 }

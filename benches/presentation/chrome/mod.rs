@@ -1,4 +1,4 @@
-use crate::presentation::ChromeDraw;
+use crate::presentation;
 use anyhow::Result;
 use std::hint::black_box;
 use std::path::PathBuf;
@@ -60,13 +60,16 @@ pub fn draw() -> Result<()> {
     error: None,
   };
   let mut out = Vec::new();
-  bar.draw(&mut out, At::default(), screen.rows - 1, true, None)?;
+  presentation::try_draw(&mut out, None, |scene| {
+    bar.scene(scene, At::default(), screen.rows - 1, true, None)
+  })?;
   println!("status output {}", super::hash::digest(&out));
   super::measure("Bar::draw owner", || {
     out.clear();
-    bar
-      .draw(&mut out, At::default(), screen.rows - 1, true, None)
-      .expect("owner badge");
+    presentation::try_draw(&mut out, None, |scene| {
+      bar.scene(scene, At::default(), screen.rows - 1, true, None)
+    })
+    .expect("owner badge");
     black_box(&out);
   })
 }

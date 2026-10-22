@@ -27,7 +27,9 @@ fn recorded_overview_keeps_tiles_and_chrome() -> Result<()> {
   for _ in 0..2 {
     let mut expected = Vec::new();
     graphics.begin(&mut expected)?;
-    let direct = overview.draw(&Source, frame, &mut graphics, &mut expected)?;
+    let direct = draw(&mut expected, Some(&mut graphics), |scene| {
+      overview.scene(&Source, frame, scene)
+    })??;
     graphics.end(&mut expected)?;
     assert_eq!(requests(direct), expected_requests);
     assert_eq!(replay_frame(&mut replay, &scene)?, expected);

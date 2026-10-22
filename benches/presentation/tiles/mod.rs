@@ -1,4 +1,4 @@
-use crate::presentation::TilesDraw;
+use crate::presentation;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_terminal::graphics::Graphics;
@@ -20,9 +20,11 @@ pub fn draw() -> Result<()> {
       if invalidate {
         tiles.invalidate();
       }
-      let update = tiles
-        .draw(view, Frame { pane: 0, screen, left: 0 }, &mut graphics, &mut out)
-        .expect("prepared geometry");
+      let update = presentation::draw(&mut out, Some(&mut graphics), |scene| {
+        tiles.scene(view, Frame { pane: 0, screen, left: 0 }, scene)
+      })
+      .and_then(std::convert::identity)
+      .expect("prepared geometry");
       black_box(update);
     };
     draw();

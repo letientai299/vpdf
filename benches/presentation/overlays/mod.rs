@@ -1,4 +1,4 @@
-use crate::presentation::{PageDraw, TextDraw};
+use crate::presentation;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::geometry::At;
@@ -83,10 +83,12 @@ fn run(case: Prepared) -> Result<()> {
   let mut draw = |out: &mut Vec<u8>| -> Result<()> {
     out.clear();
     if case.text_mode {
-      pane.draw(out, &marks)?;
+      presentation::try_draw(out, None, |scene| pane.scene(scene, &marks))?;
     } else {
       graphics.begin(out)?;
-      canvas.draw(&mut &prepared, &marks, &mut graphics, out)?;
+      presentation::draw(out, Some(&mut graphics), |scene| {
+        canvas.scene(&mut &prepared, &marks, scene)
+      })??;
       graphics.end(out)?;
     }
     Ok(())

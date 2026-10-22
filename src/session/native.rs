@@ -4,8 +4,6 @@ use super::maintenance::Chores;
 use super::unlock::Operation;
 use super::{Home, Screen, Session};
 use crate::Result;
-#[cfg(test)]
-use crate::ui_presentation::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -2233,10 +2231,12 @@ mod tests {
         tab.panes[index].draw_pane(&mut session.graphics, &mut out)?;
       }
     }
-    tab.tree.draw_dividers(&mut out, area)?;
+    crate::presentation::draw(&mut out, None, |scene| {
+      tab.tree.scene_dividers(scene, area);
+    })?;
     tab.panes[tab.focus].draw_pane(&mut session.graphics, &mut out)?;
     if let Some(notice) = &session.unmeasured {
-      notice.draw(&mut out)?;
+      crate::presentation::draw(&mut out, None, |scene| notice.scene(scene))?;
     }
     session.graphics.end(&mut out)?;
     write!(out, "{}", terminal::frame_end())?;

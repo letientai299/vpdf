@@ -3,8 +3,6 @@ use super::{
   Sight, Tab, Write, terminal,
 };
 use crate::trace::Observation;
-#[cfg(test)]
-use crate::ui_presentation::*;
 use vpdf_model::scene::Surface;
 use vpdf_model::style::Role;
 use vpdf_terminal::painter::Painter;
@@ -244,9 +242,13 @@ mod tests {
         tab.panes[index].draw_pane(&mut session.graphics, out)?;
       }
     }
-    tab.tree.draw_dividers(out, area)?;
+    crate::presentation::draw(out, None, |scene| {
+      tab.tree.scene_dividers(scene, area);
+    })?;
     tab.panes[tab.focus].draw_pane(&mut session.graphics, out)?;
-    session.unmeasured.as_ref().unwrap().draw(out)
+    crate::presentation::draw(out, None, |scene| {
+      session.unmeasured.as_ref().unwrap().scene(scene);
+    })
   }
 
   #[test]

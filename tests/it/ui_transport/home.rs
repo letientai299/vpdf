@@ -1,4 +1,4 @@
-use crate::presentation::HomeDraw;
+use crate::presentation::draw;
 use anyhow::Result;
 use vpdf_model::geometry::{At, Screen};
 use vpdf_model::style::Role;
@@ -14,12 +14,9 @@ fn panel_ends_at_the_last_column() -> Result<()> {
     origin: (0, 0),
   };
   let mut out = Vec::new();
-  Home::new(Vec::new(), &[], screen).draw(
-    &mut out,
-    &mut Graphics::default(),
-    0,
-    |_| {},
-  )?;
+  draw(&mut out, Some(&mut Graphics::default()), |scene| {
+    Home::new(Vec::new(), &[], screen).scene(scene, 0, |_| {})
+  })??;
   let out = String::from_utf8(out)?;
   assert!(out.contains(" Vpdf "));
   let columns = out.split("\x1b[").filter_map(|code| {
