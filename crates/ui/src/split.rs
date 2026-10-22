@@ -331,10 +331,48 @@ impl Node {
     if *axis != along {
       return;
     }
-    let current = (f32::from(span(along, area)) * *ratio).round();
+    self.grow(in_first, cells, area);
+  }
+
+  /// Moves the nearest boundary facing `direction`.
+  pub fn extend(
+    &mut self,
+    target: u32,
+    direction: Direction,
+    cells: i32,
+    area: Rect,
+  ) -> bool {
+    let Kind::Split { axis, ratio, first, second } = &mut self.kind else {
+      return false;
+    };
+    let in_first = first.contains(target);
+    if !in_first && !second.contains(target) {
+      return false;
+    }
+    let (a, b) = Self::halves(*axis, *ratio, area);
+    let (child, child_area) = if in_first { (first, a) } else { (second, b) };
+    if child.extend(target, direction, cells, child_area) {
+      return true;
+    }
+    let (along, toward_first) = match direction {
+      Direction::Left => (Axis::Columns, true),
+      Direction::Right => (Axis::Columns, false),
+      Direction::Up => (Axis::Rows, true),
+      Direction::Down => (Axis::Rows, false),
+    };
+    if *axis != along || in_first == toward_first {
+      return false;
+    }
+    self.grow(in_first, cells, area);
+    true
+  }
+
+  fn grow(&mut self, in_first: bool, cells: i32, area: Rect) {
+    let Kind::Split { axis, ratio, .. } = self.kind else { return };
+    let current = (f32::from(span(axis, area)) * ratio).round();
     let delta = if in_first { cells as f32 } else { -(cells as f32) };
     self.set_first(current + delta, area);
-    self.refit(along, area);
+    self.refit(axis, area);
   }
 
   /// Sizes the first half within both minimums.
@@ -748,6 +786,94 @@ mod tests {
     assert!(Node::fits(Axis::Rows, Rect { rows: 8, ..AREA }));
     assert!(!Node::fits(Axis::Columns, Rect { columns: 20, ..AREA }));
     assert!(Node::fits(Axis::Columns, Rect { columns: 21, ..AREA }));
+  }
+
+  #[test]
+  fn extend_moves_facing_divider() {
+    use Direction::{Down, Left, Right, Up};
+    for (axis, direction, target, grows) in [
+      (Axis::Columns, Left, 1, false),
+      (Axis::Columns, Right, 1, true),
+      (Axis::Columns, Left, 2, true),
+      (Axis::Columns, Right, 2, false),
+      (Axis::Rows, Up, 1, false),
+      (Axis::Rows, Down, 1, true),
+      (Axis::Rows, Up, 2, true),
+      (Axis::Rows, Down, 2, false),
+      (Axis::Rows, Left, 1, false),
+      (Axis::Columns, Down, 2, false),
+    ] {
+      let mut tree = Node::leaf(1);
+      tree.split(1, axis, 2, Place::After);
+      let before = rects(&tree);
+      let mut dividers = Vec::new();
+      tree.dividers(AREA, &mut dividers);
+      let old = dividers[0].rect;
+      assert_eq!(tree.extend(target, direction, 3, AREA), grows);
+      let after = rects(&tree);
+      let index = usize::try_from(target - 1).unwrap();
+      let size = |r: Rect| if axis == Axis::Rows { r.rows } else { r.columns };
+      assert_eq!(
+        size(after[index].1),
+        size(before[index].1) + if grows { 3 } else { 0 }
+      );
+      dividers.clear();
+      tree.dividers(AREA, &mut dividers);
+      let mut want = old;
+      if grows {
+        match direction {
+          Left => want.column -= 3,
+          Right => want.column += 3,
+          Up => want.row -= 3,
+          Down => want.row += 3,
+        }
+      }
+      assert_eq!(dividers[0].rect, want);
+    }
+  }
+
+  #[test]
+  fn extend_selects_nested_boundary() {
+    for (axis, backward, forward) in [
+      (Axis::Columns, Direction::Left, Direction::Right),
+      (Axis::Rows, Direction::Up, Direction::Down),
+    ] {
+      let mut tree = Node::leaf(1);
+      tree.split(1, axis, 2, Place::After);
+      tree.split(2, axis, 3, Place::After);
+      let before = rects(&tree);
+      assert!(tree.extend(2, backward, 2, AREA));
+      let after = rects(&tree);
+      assert_ne!(before[0].1, after[0].1);
+      let edge = after[0].1;
+      assert!(tree.extend(2, forward, 2, AREA));
+      assert_eq!(rects(&tree)[0].1, edge);
+      assert!(tree.extend(2, forward, i32::from(u16::MAX), AREA));
+      let limited = rects(&tree);
+      let minimum = if axis == Axis::Rows { MIN_ROWS } else { MIN_COLUMNS };
+      assert_eq!(
+        if axis == Axis::Rows {
+          limited[2].1.rows
+        } else {
+          limited[2].1.columns
+        },
+        minimum
+      );
+      assert!(tree.extend(2, forward, 1, AREA));
+      assert_eq!(rects(&tree), limited);
+      assert!(!tree.extend(99, forward, 1, AREA));
+    }
+    let mut tree = Node::leaf(1);
+    tree.split(1, Axis::Columns, 2, Place::After);
+    tree.split(2, Axis::Rows, 3, Place::After);
+    let before = rects(&tree);
+    assert!(tree.extend(3, Direction::Left, 3, AREA));
+    let after = rects(&tree);
+    assert_eq!(after[2].1.columns, before[2].1.columns + 3);
+    assert_eq!(after[2].1.row, before[2].1.row);
+    assert_eq!(after[2].1.rows, before[2].1.rows);
+    assert!(tree.extend(3, Direction::Up, 3, AREA));
+    assert_eq!(rects(&tree)[0].1, after[0].1);
   }
 
   #[test]

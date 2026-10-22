@@ -171,7 +171,9 @@ impl Keys {
       return None;
     }
     let Some(token) = token(key) else {
-      self.clear();
+      if !self.resizing() {
+        self.clear();
+      }
       return None;
     };
     if self.prefix == "y" {
@@ -218,6 +220,12 @@ impl Keys {
       self.clear();
       return None;
     }
+    if self.resizing() {
+      let action = binding(&format!("C-r{token}"))?;
+      let input = self.finish(action);
+      self.prefix.push_str("C-r");
+      return Some(input);
+    }
     self.prefix.push_str(&token);
     if let Some(action) = binding(&self.prefix) {
       if action == Action::Yank && grammar == Grammar::Panel {
@@ -236,11 +244,15 @@ impl Keys {
     }
     if !matches!(
       self.prefix.as_str(),
-      "g" | "z" | "i" | "a" | "m" | "'" | "`" | "C-w" | "[" | "]"
+      "g" | "z" | "i" | "a" | "m" | "'" | "`" | "C-w" | "C-r" | "[" | "]"
     ) {
       self.clear();
     }
     None
+  }
+
+  pub fn resizing(&self) -> bool {
+    self.prefix == "C-r"
   }
 
   /// The prefix waiting for its next key, or `"` choosing a register.
@@ -546,6 +558,10 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("C-w-", Action::Window(W::Resize(Axis::Rows, -1)), "shorter"),
   ("C-w>", Action::Window(W::Resize(Axis::Columns, 1)), "wider"),
   ("C-w<", Action::Window(W::Resize(Axis::Columns, -1)), "narrower"),
+  ("C-rh", Action::Window(W::Extend(D::Left)), "extend pane left"),
+  ("C-rl", Action::Window(W::Extend(D::Right)), "extend pane right"),
+  ("C-rk", Action::Window(W::Extend(D::Up)), "extend pane up"),
+  ("C-rj", Action::Window(W::Extend(D::Down)), "extend pane down"),
   ("C-w_", Action::Window(W::Maximize(Axis::Rows)), "tallest"),
   ("C-w|", Action::Window(W::Maximize(Axis::Columns)), "widest"),
   ("C-wH", Action::Window(W::Move(D::Left)), "move pane to far left"),

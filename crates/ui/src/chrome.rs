@@ -161,6 +161,9 @@ impl Bar<'_> {
   }
 
   fn mode(&self) -> (&'static str, Color) {
+    if self.view.keys.resizing() {
+      return ("RESIZE", Color::Yellow);
+    }
     match self.view.owner {
       InputOwner::Prompt => return ("PROMPT", Color::Yellow),
       InputOwner::Hints => return ("HINT", Color::Yellow),

@@ -120,6 +120,12 @@ fn windows() -> String {
       Action::Window(W::Resize(Axis::Columns, -1)),
       Action::Window(W::Resize(Axis::Columns, 1))
     ]),
+    pane_extend = group(&[
+      Action::Window(W::Extend(D::Left)),
+      Action::Window(W::Extend(D::Right)),
+      Action::Window(W::Extend(D::Up)),
+      Action::Window(W::Extend(D::Down))
+    ]),
     pane_maximize = group(&[
       Action::Window(W::Maximize(Axis::Rows)),
       Action::Window(W::Maximize(Axis::Columns)),

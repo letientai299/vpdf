@@ -62,10 +62,11 @@ fn notation_matches_help() {
 /// Clue names type their bindings back.
 #[test]
 fn names_parse_back_to_their_tokens() {
-  let shown = ["g", "z", "C-w", "[", "]"].into_iter().flat_map(|prefix| {
-    let labels = clues(prefix).into_iter().map(|(label, _)| label);
-    labels.map(|label| label.replace(' ', "Space")).collect::<Vec<_>>()
-  });
+  let shown =
+    ["g", "z", "C-w", "C-r", "[", "]"].into_iter().flat_map(|prefix| {
+      let labels = clues(prefix).into_iter().map(|(label, _)| label);
+      labels.map(|label| label.replace(' ', "Space")).collect::<Vec<_>>()
+    });
   let bindings = BINDINGS.iter().map(|(sequence, ..)| sequence.to_string());
   for label in shown.chain(bindings) {
     let keys = parse(&label).unwrap_or_default();
@@ -186,6 +187,57 @@ fn marks_take_a_name() {
   assert_eq!(feed("`a"), Some(Action::GoMark('a', true)));
   assert_eq!(feed("''"), Some(Action::History(false)));
   assert_eq!(feed("m1j"), Some(Action::Motion(Motion::Down)));
+}
+
+#[test]
+fn ctrl_r_extends_panes() {
+  for grammar in [
+    Grammar::Normal,
+    Grammar::Cursor,
+    Grammar::Objects,
+    Grammar::Panel,
+    Grammar::Other,
+  ] {
+    let mut keys = Keys::default();
+    for event in parse("3C-r").unwrap() {
+      assert!(keys.feed(event, grammar).is_none());
+    }
+    assert!(keys.resizing());
+    let input = keys.feed(key('h'), grammar).unwrap();
+    assert_eq!(input.action, Action::Window(W::Extend(D::Left)));
+    assert_eq!(input.count, 3);
+    assert!(input.explicit);
+    for (ch, direction) in
+      [('h', D::Left), ('l', D::Right), ('k', D::Up), ('j', D::Down)]
+    {
+      let input = keys.feed(key(ch), grammar).unwrap();
+      assert_eq!(input.action, Action::Window(W::Extend(direction)));
+      assert_eq!(input.count, 1);
+      assert!(!input.explicit);
+      assert!(keys.resizing());
+    }
+  }
+}
+
+#[test]
+fn resize_exits_on_escape() {
+  let grammar = Grammar::Normal;
+  let mut keys = Keys::default();
+  keys.feed(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL), grammar);
+  for event in parse("xq:C-w").unwrap() {
+    assert!(keys.feed(event, grammar).is_none());
+    assert!(keys.resizing());
+  }
+  assert!(keys.feed(key('2'), grammar).is_none());
+  let input = keys.feed(key('l'), grammar).unwrap();
+  assert_eq!(input.count, 2);
+  assert!(keys.resizing());
+  let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+  assert_eq!(keys.feed(escape, grammar).unwrap().action, Action::Cancel);
+  assert!(!keys.resizing());
+  let input = keys.feed(key('j'), grammar).unwrap();
+  assert_eq!(input.action, Action::Motion(M::Down));
+  assert_eq!(input.count, 1);
 }
 
 #[test]
@@ -437,7 +489,7 @@ fn clues_preserve_pending_counts_and_registers() {
     Grammar::Panel,
     Grammar::Other,
   ] {
-    for prefix in ["g", "z", "i", "a", "y", "C-w", "[", "]"] {
+    for prefix in ["g", "z", "i", "a", "y", "C-w", "C-r", "[", "]"] {
       let mut keys = Keys::default();
       let mut remaining = 2;
       for key in parse(&format!("\"a2{prefix}")).unwrap() {

@@ -4,6 +4,8 @@
 {pane_cycle}: next / previous / last pane
 {pane_closing}: close pane / close others
 {pane_size}: taller / shorter / narrower / wider
+{pane_extend}: enter RESIZE; extend left / right / up / down
+RESIZE: repeat h/j/k/l; <Esc> exits
 {pane_maximize}: tallest / widest / equal
 {pane_move}: move to far left / bottom / top / right
 {pane_exchange_tab}: swap with sibling / move to new tab

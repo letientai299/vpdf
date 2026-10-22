@@ -22,7 +22,11 @@ impl App {
     self.cancel_definition();
     self.search.forget_yank();
     if self.reader.prepare(input.action) {
-      self.disarm();
+      if self.keys.resizing() {
+        self.reader.disarm();
+      } else {
+        self.disarm();
+      }
     }
     if self.region_input(input)? {
       return Ok(());
@@ -144,7 +148,7 @@ impl App {
       } else {
         self.keys.feed(key, Grammar::Other)
       };
-      if self.keys.awaiting() == Some("C-w") {
+      if matches!(self.keys.awaiting(), Some("C-w" | "C-r")) {
         self.dismiss_overlay();
       }
       let Some(input) = input else { return Ok(()) };
@@ -171,6 +175,10 @@ impl App {
   }
 
   pub(crate) fn cancel_input(&mut self) -> Result<()> {
+    if self.keys.resizing() {
+      self.keys.clear();
+      return Ok(());
+    }
     self.cancel_definition();
     self.reader.cancel_scroll();
     let owner = self.input_owner();

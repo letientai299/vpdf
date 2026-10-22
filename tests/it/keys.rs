@@ -21,6 +21,28 @@ fn action(key: KeyEvent) -> Option<Action> {
 }
 
 #[test]
+fn ctrl_r_reaches_pane_extension() {
+  use vpdf_ui::split::Direction;
+  use vpdf_ui::window::Window;
+
+  for prefix in [b"\x12".as_slice(), b"\x1b[114;5u".as_slice()] {
+    for (ch, direction) in [
+      (b'h', Direction::Left),
+      (b'l', Direction::Right),
+      (b'k', Direction::Up),
+      (b'j', Direction::Down),
+    ] {
+      let mut keys = Keys::default();
+      assert!(keys.feed(key(b"4"), Grammar::Normal).is_none());
+      assert!(keys.feed(key(prefix), Grammar::Normal).is_none());
+      let input = keys.feed(key(&[ch]), Grammar::Normal).unwrap();
+      assert_eq!(input.action, Action::Window(Window::Extend(direction)));
+      assert_eq!(input.count, 4);
+    }
+  }
+}
+
+#[test]
 fn page_keys_preserve_prompt_history() {
   use vpdf_reader::motion::Motion;
 

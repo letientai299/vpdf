@@ -1,6 +1,6 @@
 //! Window and tab commands that keys request and the session runs.
 
-/// `Ctrl-w` commands on the panes of a tab.
+/// Commands on the panes of a tab.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Window {
   Split(crate::split::Axis),
@@ -12,6 +12,7 @@ pub enum Window {
   Only,
   Equalize,
   Resize(crate::split::Axis, i32),
+  Extend(crate::split::Direction),
   Maximize(crate::split::Axis),
   Exchange,
   /// Rotates panes in the focused row or column; `true` moves forward.

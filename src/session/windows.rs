@@ -327,6 +327,10 @@ impl Session {
         tab.tree.resize(id, axis, cells, area);
         None
       }
+      Window::Extend(direction) => {
+        tab.tree.extend(id, direction, i32::try_from(count).unwrap_or(1), area);
+        None
+      }
       Window::Maximize(axis) => {
         tab.tree.resize(id, axis, i32::from(u16::MAX), area);
         None
