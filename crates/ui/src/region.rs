@@ -274,10 +274,20 @@ impl Canvas<'_> {
     let text = vpdf_model::text::clean(&label, usize::from(screen.columns));
     let last = usize::from(screen.rows.saturating_sub(2));
     let row = bar_row(rect, f32::from(screen.cell_height), last);
+    let offset = usize::from(screen.columns).saturating_sub(text.width()) / 2;
+    let column = usize::from(self.frame.left) + offset;
     // Graphics fill the row; text stops.
     let width =
       if self.frame.text { text.width() } else { usize::from(screen.columns) };
-    region.place_bar(row, width, items, self.frame.left);
+    let left = if self.frame.text {
+      u16::try_from(column).unwrap_or(u16::MAX)
+    } else {
+      for (span, _) in &mut items {
+        *span = span.start + offset..span.end + offset;
+      }
+      self.frame.left
+    };
+    region.place_bar(row, width, items, left);
     if let Some(cells) = region.cells().filter(|_| !self.frame.text) {
       let backdrop =
         crate::paint::cell_bounds(self.frame.screen, self.frame.left, cells);
@@ -289,7 +299,7 @@ impl Canvas<'_> {
         self.frame.left,
       );
     }
-    crate::paint::move_to(scene, self.frame.at, row, self.frame.left);
+    crate::paint::move_to(scene, self.frame.at, row, column);
     scene.push(Op::Style(Role::Selected));
     scene.text(&text);
     scene.push(Op::Style(Role::Reset));
@@ -442,7 +452,43 @@ mod tests {
       canvas.scene(Some(&mut recorded), sweep, crop_quirk, &mut scene);
       let area = recorded.cells().unwrap();
       assert_eq!(area.column, 3);
-      assert_eq!(recorded.items().at(area.column, area.row), Some(0));
+      assert_eq!(recorded.items().at(area.column + 2, area.row), Some(0));
+    }
+  }
+
+  #[test]
+  fn bars_center_text_and_hits() {
+    for (columns, status) in
+      [(1, ""), (20, ""), (80, ""), (81, ""), (80, "Copied"), (80, "已复制")]
+    {
+      for text in [false, true] {
+        let layout = fixture::layout();
+        let mut canvas = fixture::canvas(&layout);
+        canvas.frame.screen.columns = columns;
+        canvas.frame.text = text;
+        let mut region = Region::open(snapshot(1));
+        region.update(CaptureId::new(1), status);
+        let mut output = Vec::new();
+        canvas.scene(Some(&mut region), None, false, &mut output);
+        let label = crate::testing::text(&output);
+        let offset = (usize::from(columns) - label.width()) / 2;
+        let column = usize::from(canvas.frame.left) + offset;
+        let area = region.cells().unwrap();
+        assert!(output.iter().any(|op| matches!(op,
+          Op::Move { row, column: at }
+            if *row == usize::from(area.row + canvas.frame.at.row)
+              && *at == column + usize::from(canvas.frame.at.column)
+        )));
+        let start = if columns < 50 { 0 } else { 3 };
+        let hit = u16::try_from(column + start).unwrap();
+        assert_eq!(region.items().at(hit, area.row), Some(0));
+        assert_eq!(region.items().at(hit - 1, area.row), None);
+        assert_eq!(area.column, if text { column as u16 } else { 3 });
+        assert_eq!(
+          area.columns as usize,
+          if text { label.width() } else { columns as usize }
+        );
+      }
     }
   }
 
@@ -471,11 +517,12 @@ mod tests {
     let mut output = Vec::new();
     canvas.scene(Some(&mut region), None, false, &mut output);
     let area = region.cells().unwrap();
-    assert_eq!(area.column, 7);
+    assert_eq!(area.column, 10);
     assert_eq!(area.columns, 13);
-    assert_eq!(region.items().at(7, area.row), Some(2));
-    assert_eq!(region.items().at(16, area.row), Some(2));
-    assert_eq!(region.items().at(17, area.row), None);
+    assert_eq!(region.items().at(9, area.row), None);
+    assert_eq!(region.items().at(10, area.row), Some(2));
+    assert_eq!(region.items().at(19, area.row), Some(2));
+    assert_eq!(region.items().at(20, area.row), None);
     assert!(crate::testing::text(&output).contains("[Save PNG] p1"));
   }
 
