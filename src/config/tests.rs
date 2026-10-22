@@ -12,8 +12,38 @@ fn example_matches_defaults() {
   assert!(loaded.warning.is_none());
   assert_eq!(
     Settings::example().unwrap(),
-    "[reading]\ncursorline = true\nzoom = 1.0\n\n[ocr]\nlanguage = \"eng\"\n"
+    concat!(
+      "[reading]\ncursorline = true\nzoom = 1.0\n",
+      "inactive_brightness = 0.8\n\n[ocr]\nlanguage = \"eng\"\n"
+    )
   );
+}
+
+#[test]
+fn inactive_brightness_validates_range() {
+  assert_eq!(Settings::default().inactive_brightness(), 0.8);
+  for (value, expected, valid) in [
+    ("0", 0.0, true),
+    ("0.9", 0.9, true),
+    ("1", 1.0, true),
+    ("-0.1", 0.8, false),
+    ("1.1", 0.8, false),
+    ("nan", 0.8, false),
+    ("inf", 0.8, false),
+    ("-inf", 0.8, false),
+    ("true", 0.8, false),
+    ("'0.9'", 0.8, false),
+  ] {
+    let loaded = decoded(&format!(
+      "[reading]\ncursorline = false\ninactive_brightness = {value}"
+    ));
+    assert_eq!(loaded.settings.inactive_brightness(), expected, "{value}");
+    assert!(!loaded.settings.cursorline());
+    assert_eq!(loaded.warning.is_none(), valid, "{value}");
+    if let Some(warning) = loaded.warning {
+      assert!(warning.contains("reading.inactive_brightness"));
+    }
+  }
 }
 
 #[test]

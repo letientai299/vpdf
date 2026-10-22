@@ -213,6 +213,33 @@ impl App {
   where
     S::Error: Into<anyhow::Error>,
   {
+    self.scene_content(scene, snap_regions)?;
+    let alpha =
+      ((1.0 - self.settings.inactive_brightness()) * 255.0).round() as u8;
+    if !self.focused
+      && alpha > 0
+      && self.screen.rows >= 2
+      && self.screen.columns > 0
+    {
+      scene.stretch(
+        [0, 0, 0, alpha],
+        Layer::AboveText,
+        (0, self.screen.columns, self.screen.rows - 1),
+        self.screen,
+        self.left,
+      );
+    }
+    Ok(())
+  }
+
+  fn scene_content<'a, S: Surface<'a>>(
+    &mut self,
+    scene: &mut S,
+    snap_regions: bool,
+  ) -> Result<()>
+  where
+    S::Error: Into<anyhow::Error>,
+  {
     // Views without tiles show whole at once; a covered one shows none.
     self.complete = !self.covered();
     // A shrunken terminal can leave no room below the status line.

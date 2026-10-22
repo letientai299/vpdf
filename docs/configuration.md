@@ -39,6 +39,9 @@ position. Cursor highlight starts from `reading.cursorline`; `:cursorline`
 changes it in the current pane. Reloading a PDF preserves live pane values.
 A same-document split copies the source view.
 
+`reading.inactive_brightness` sets inactive split content brightness between
+`0` (black) and `1` (full brightness). Status lines stay unchanged.
+
 `ocr.language` supplies the default for page and region recognition.
 An explicit `:ocr <lang>` overrides it for that request. Language combinations
 use Tesseract's `+` separator. Install the required [OCR helper and language
@@ -56,7 +59,7 @@ selected file also warns. Configuration errors never stop startup.
 
 With valid TOML syntax, Vpdf keeps each valid recognized setting and warns
 about invalid values and unknown keys. An invalid section type discards only
-that section. Invalid zoom or language values use their built-in defaults.
+that section. Invalid setting values use their built-in defaults.
 Warnings name the file and affected settings; syntax errors include parser
 locations. Dismiss them using the normal status-message controls.
 

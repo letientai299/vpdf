@@ -250,6 +250,82 @@ mod tests {
   }
 
   #[test]
+  fn inactive_panes_dim_with_focus() -> Result<()> {
+    use vpdf_model::scene::{FillArea, Layer, Op, Recorder};
+
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("panes.pdf");
+    crate::fixtures::pdf(&path, &["first", "second"], "")?;
+    for text_mode in [false, true] {
+      let mut session = split_session(&path, text_mode)?;
+      for focus in [0, 1] {
+        session.focus(session.active, focus)?;
+        let area = session.area();
+        let tab = &mut session.tabs[session.active];
+        let mut recorder = Recorder::new(|_| false);
+        Session::scene_tab(tab, area, None, &mut recorder, |app, scene| {
+          app.scene_pane(scene, false)
+        })?;
+        let scene = recorder.into_scene();
+        let veils: Vec<_> = scene
+          .iter()
+          .filter_map(|op| match op {
+            Op::Fill(fill) if fill.color() == [0, 0, 0, 51] => Some(fill),
+            _ => None,
+          })
+          .collect();
+        assert_eq!(veils.len(), 1);
+        let inactive = &tab.panes[1 - focus];
+        assert_eq!(veils[0].layer(), Layer::AboveText);
+        assert_eq!(veils[0].frame(), (inactive.screen, inactive.left));
+        assert_eq!(
+          veils[0].area(),
+          FillArea::Cells {
+            column: 0,
+            columns: inactive.screen.columns,
+            rows: inactive.screen.rows - 1,
+          }
+        );
+      }
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn configured_pane_brightness() -> Result<()> {
+    use vpdf_model::scene::{Op, Recorder};
+
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("panes.pdf");
+    let config = root.path().join("config.toml");
+    crate::fixtures::pdf(&path, &["first", "second"], "")?;
+    let mut session = split_session(&path, false)?;
+    for (brightness, alpha) in [(0.0, 255), (0.8, 51), (0.9, 25), (1.0, 0)] {
+      std::fs::write(
+        &config,
+        format!("[reading]\ninactive_brightness = {brightness}"),
+      )?;
+      let loaded = crate::config::Options {
+        config: Some(config.clone()),
+        ..Default::default()
+      }
+      .load();
+      assert!(loaded.warning.is_none());
+      let app = &mut session.tabs[session.active].panes[1];
+      app.settings = loaded.settings;
+      let mut recorder = Recorder::new(|_| false);
+      app.scene_pane(&mut recorder, false)?;
+      let scene = recorder.into_scene();
+      let veil = scene.iter().last().and_then(|op| match op {
+        Op::Fill(fill) => Some(fill.color()),
+        _ => None,
+      });
+      assert_eq!(veil, (alpha > 0).then_some([0, 0, 0, alpha]));
+    }
+    Ok(())
+  }
+
+  #[test]
   fn failed_output_stops_panes() -> Result<()> {
     let root = tempfile::tempdir()?;
     let path = root.path().join("frame.pdf");

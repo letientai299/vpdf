@@ -47,11 +47,32 @@ pub struct Settings {
 struct Reading {
   cursorline: bool,
   zoom: Zoom,
+  inactive_brightness: Brightness,
 }
 
 impl Default for Reading {
   fn default() -> Self {
-    Self { cursorline: true, zoom: Zoom(vpdf_ui::layout::DEFAULT_ZOOM) }
+    Self {
+      cursorline: true,
+      zoom: Zoom(vpdf_ui::layout::DEFAULT_ZOOM),
+      inactive_brightness: Brightness(0.8),
+    }
+  }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(transparent)]
+struct Brightness(f64);
+
+impl TryFrom<f64> for Brightness {
+  type Error = &'static str;
+
+  fn try_from(value: f64) -> Result<Self, Self::Error> {
+    if value.is_finite() && (0.0..=1.0).contains(&value) {
+      Ok(Self(value))
+    } else {
+      Err("brightness outside supported range")
+    }
   }
 }
 
@@ -111,6 +132,10 @@ impl Settings {
 
   pub fn language(&self) -> &str {
     &self.ocr.language.0
+  }
+
+  pub fn inactive_brightness(&self) -> f64 {
+    self.reading.inactive_brightness.0
   }
 
   pub fn example() -> crate::Result<String> {
@@ -188,6 +213,12 @@ fn parse(path: &Path, text: &str) -> Loaded {
             .map_err(|_| "expected number")
             .and_then(Zoom::try_from)
             .map(|value| settings.reading.zoom = value),
+          "reading.inactive_brightness" => value
+            .clone()
+            .try_into::<f64>()
+            .map_err(|_| "expected number")
+            .and_then(Brightness::try_from)
+            .map(|value| settings.reading.inactive_brightness = value),
           "ocr.language" => value
             .as_str()
             .ok_or("expected string")
