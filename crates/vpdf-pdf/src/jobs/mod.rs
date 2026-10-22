@@ -3,6 +3,7 @@ use std::sync::{Arc, mpsc};
 
 pub mod capture;
 pub mod crop;
+pub mod figures;
 pub mod ocr;
 pub mod outline;
 pub mod recent;

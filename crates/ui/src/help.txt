@@ -95,6 +95,7 @@ Close bar: keep mode, selection, committed jobs
 # Panels
 Panel shortcut: close same focused panel; otherwise open / focus
 {outline}: table of contents
+{figures}: figures across the document
 {results}: search results
 {hints} {copy_hints}: link hints / copy URLs
 {links}: links on this page

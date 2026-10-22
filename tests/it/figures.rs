@@ -7,12 +7,13 @@ use vpdf_model::text::PageId;
 fn raw_figure_bindings() {
   use std::collections::VecDeque;
   use vpdf_terminal::decode::{Event, Parser};
-  use vpdf_ui::keys::{Action, Grammar, Keys};
+  use vpdf_ui::keys::{Action, Grammar, Keys, PanelKind};
   for (bytes, expected) in [
     (&b"]i"[..], Action::Figure(true)),
     (&b"[i"[..], Action::Figure(false)),
     (&b"zF"[..], Action::FigureFit),
     (&b"gF"[..], Action::Region),
+    (&b"gf"[..], Action::Panel(PanelKind::Figures)),
   ] {
     let mut events = VecDeque::new();
     Parser::default().feed(bytes, &mut events);
@@ -160,6 +161,92 @@ fn raw_region_pointer_transfer() -> Result<()> {
   assert_eq!(session.app().reader.cursor, cursor);
   assert!(session.app().overlays.region().is_none());
   Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn real_figure_sidebar() -> Result<()> {
+  use super::common::keys;
+  use vpdf_ui::keys::PanelKind;
+
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut app =
+    Solo::open(&root.join("paper.pdf"), "", false, super::focus::screen())?;
+  keys(&mut app, b"gf")?;
+  assert_eq!(app.panel.as_ref().unwrap().view.kind(), PanelKind::Figures);
+  assert_eq!(app.panel.as_ref().unwrap().view.note(), "loading");
+  figures_loaded(&mut app)?;
+  let expected = figure_rows(&mut app)?;
+  let index = expected.iter().position(|(page, _)| page.0 > 0).unwrap();
+  let page = expected[index].0;
+  app.panel.as_mut().unwrap().view.select(index);
+  keys(&mut app, b"o")?;
+  assert!(app.panel_focused());
+  assert_eq!(app.navigation_position().page, page);
+  keys(&mut app, b"\r")?;
+  assert!(!app.panel_focused());
+  keys(&mut app, b"gqgf")?;
+  assert_eq!(app.panel.as_ref().unwrap().view.rows().len(), expected.len());
+  assert_eq!(app.panel.as_ref().unwrap().view.note(), "");
+  app.reload_with("")?;
+  assert!(matches!(app.figures, vpdf::jobs::Figures::Running(_)));
+  assert!(app.panel.as_ref().unwrap().view.rows().is_empty());
+  keys(&mut app, b":cancel\r")?;
+  assert!(matches!(app.figures, vpdf::jobs::Figures::Idle));
+  assert_eq!(app.panel.as_ref().unwrap().view.note(), "");
+  keys(&mut app, b"gf")?;
+  assert!(app.panel.is_none());
+  keys(&mut app, b"gf")?;
+  figures_loaded(&mut app)?;
+  assert_eq!(app.panel.as_ref().unwrap().view.rows().len(), expected.len());
+  Ok(())
+}
+
+fn figures_loaded(app: &mut vpdf::app::App) -> Result<()> {
+  use std::time::{Duration, Instant};
+  let deadline = Instant::now() + Duration::from_secs(20);
+  while matches!(app.figures, vpdf::jobs::Figures::Running(_)) {
+    app.figure_updates()?;
+    anyhow::ensure!(Instant::now() < deadline, "Figure scan timed out");
+    std::thread::sleep(Duration::from_millis(5));
+  }
+  anyhow::ensure!(app.error.is_none(), "{:?}", app.error);
+  Ok(())
+}
+
+fn figure_rows(
+  app: &mut vpdf::app::App,
+) -> Result<vpdf_pdf::jobs::figures::Entries> {
+  use vpdf_model::document::Target;
+  use vpdf_ui::panel::Destination;
+  let mut expected = Vec::new();
+  for page in 0..app.doc.pages.len() {
+    for figure in app.doc.figures(PageId(page))?.iter() {
+      expected.push((PageId(page), figure.clone()));
+    }
+  }
+  let panel = &app.panel.as_ref().unwrap().view;
+  assert!(!panel.rows().is_empty());
+  assert_eq!(panel.rows().len(), expected.len());
+  assert_eq!(panel.note(), "");
+  for (row, (page, figure)) in panel.rows().iter().zip(&expected) {
+    assert!(
+      row.destination
+        == Destination::Link(Target::Point {
+          page: *page,
+          x: figure.bounds.x0,
+          y: figure.bounds.y0,
+        })
+    );
+    assert_eq!(row.detail, app.doc.label(*page));
+    if !figure.caption.trim().is_empty() {
+      assert_eq!(
+        row.label,
+        figure.caption.split_whitespace().collect::<Vec<_>>().join(" ")
+      );
+    }
+  }
+  Ok(expected)
 }
 
 #[test]

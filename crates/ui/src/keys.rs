@@ -9,6 +9,7 @@ use vpdf_reader::reader::SelectionKind;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PanelKind {
   Outline,
+  Figures,
   Results,
   Links,
   Text,
@@ -25,6 +26,7 @@ impl PanelKind {
   pub fn title(self) -> &'static str {
     match self {
       Self::Outline => "CONTENTS",
+      Self::Figures => "FIGURES",
       Self::Results => "RESULTS",
       Self::Links => "LINKS",
       Self::Text => "TEXT",
@@ -451,6 +453,7 @@ const BINDINGS: &[(&str, Action, &str)] = &[
   ("N", Action::Result(true), "previous match"),
   ("go", Action::Panel(PanelKind::Outline), "table of contents"),
   ("gs", Action::Panel(PanelKind::Results), "search results"),
+  ("gf", Action::Panel(PanelKind::Figures), "figures"),
   ("gl", Action::Panel(PanelKind::Links), "links on this page"),
   ("gr", Action::Panel(PanelKind::Recent), "recent documents"),
   ("ga", Action::Panel(PanelKind::Annotations), "annotations"),

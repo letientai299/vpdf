@@ -130,6 +130,7 @@ pub struct App {
   pub preview: Option<bool>,
   pub ocr: Option<vpdf_pdf::jobs::ocr::OcrJob>,
   pub outline_load: crate::jobs::Loading,
+  pub figures: crate::jobs::Figures,
   pub crop_scan: vpdf_pdf::jobs::crop::Scan,
   /// The current wheel gesture over the page.
   pub(crate) wheel: vpdf_ui::input::wheel::Wheel,
@@ -149,6 +150,7 @@ impl App {
       || self.search.phase().running()
       || self.crop_scan.active()
       || matches!(self.outline_load, crate::jobs::Loading::Running(_))
+      || matches!(self.figures, crate::jobs::Figures::Running(_))
       || self.ocr.is_some()
   }
 
@@ -226,6 +228,7 @@ impl App {
       preview: None,
       ocr: None,
       outline_load: crate::jobs::Loading::Deferred,
+      figures: crate::jobs::Figures::Idle,
       crop_scan: vpdf_pdf::jobs::crop::Scan::default(),
       wheel: vpdf_ui::input::wheel::Wheel::default(),
       tiles: vpdf_ui::layout::tiles::Tiles::default(),
@@ -315,6 +318,7 @@ impl App {
     let rerun = self.search.reset_document();
     // An open outline panel waits on the new outline now.
     self.outline_load = crate::jobs::Loading::Deferred;
+    self.refresh_figures()?;
     if self
       .panel
       .as_ref()
@@ -344,6 +348,9 @@ impl App {
         PanelKind::Recent | PanelKind::Marks => true,
         PanelKind::Results => rerun.is_some(),
         PanelKind::Outline => self.outline_pending(),
+        PanelKind::Figures => {
+          matches!(self.figures, crate::jobs::Figures::Running(_))
+        }
         _ => false,
       };
       let note = self.panel_note(kind);

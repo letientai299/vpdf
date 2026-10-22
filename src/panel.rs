@@ -112,6 +112,21 @@ impl App {
         .iter()
         .map(|hit| Row::result(hit, self.doc.label(hit.first.page).to_owned()))
         .collect(),
+      PanelKind::Figures => match &self.figures {
+        crate::jobs::Figures::Ready(entries) => entries
+          .iter()
+          .enumerate()
+          .map(|(index, (page, figure))| {
+            Row::figure(
+              figure,
+              *page,
+              index + 1,
+              self.doc.label(*page).to_owned(),
+            )
+          })
+          .collect(),
+        _ => Vec::new(),
+      },
       PanelKind::Links => self.link_rows()?,
       PanelKind::Jumps => self.jump_rows(),
       PanelKind::Annotations => self.annotation_rows()?,
@@ -203,8 +218,11 @@ impl App {
     if kind == PanelKind::Outline {
       self.want_outline();
     }
+    if kind == PanelKind::Figures {
+      self.want_figures();
+    }
     if self.panel.as_ref().is_some_and(|panel| panel.view.kind() == kind) {
-      if kind == PanelKind::Links {
+      if matches!(kind, PanelKind::Links | PanelKind::Figures) {
         self.refill_panel(kind)?;
       }
       if !self.panel_focused() {
@@ -255,7 +273,11 @@ impl App {
   }
 
   pub(crate) fn panel_note(&self, kind: PanelKind) -> &'static str {
-    if kind == PanelKind::Outline && self.doc.inferred {
+    if kind == PanelKind::Figures
+      && matches!(self.figures, crate::jobs::Figures::Running(_))
+    {
+      "loading"
+    } else if kind == PanelKind::Outline && self.doc.inferred {
       "inferred"
     } else {
       ""

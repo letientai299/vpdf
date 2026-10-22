@@ -1,7 +1,7 @@
 use super::{Destination, Row, Style};
 use crate::text::{Line, PageId, Position, Text};
 use std::path::Path;
-use vpdf_model::document::Heading;
+use vpdf_model::document::{Figure, Heading, Target};
 use vpdf_reader::reader::JumpDescription;
 use vpdf_search::search::Hit;
 
@@ -62,6 +62,25 @@ impl Row {
     }
   }
 
+  pub fn figure(
+    figure: &Figure,
+    page: PageId,
+    index: usize,
+    label: String,
+  ) -> Self {
+    let caption =
+      figure.caption.split_whitespace().collect::<Vec<_>>().join(" ");
+    Self::new(
+      if caption.is_empty() { format!("Figure {index}") } else { caption },
+      label,
+      Destination::Link(Target::Point {
+        page,
+        x: figure.bounds.x0,
+        y: figure.bounds.y0,
+      }),
+    )
+  }
+
   pub fn result(hit: &Hit, label: String) -> Self {
     Self::new(hit.excerpt.clone(), label, Destination::Position(hit.first))
   }
@@ -102,6 +121,33 @@ impl Row {
         format!("p{}", page.0 + 1),
         Destination::File(path.to_path_buf()),
       )
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use vpdf_model::document::FigureSource;
+  use vpdf_model::text::Bounds;
+
+  #[test]
+  fn figure_rows_have_point_targets() {
+    for (caption, label) in
+      [(" \n ", "Figure 3"), ("Fig. 2:   A chart", "Fig. 2: A chart")]
+    {
+      let figure = Figure {
+        bounds: Bounds { x0: 10.0, y0: 20.0, x1: 110.0, y1: 80.0 },
+        caption: caption.into(),
+        source: FigureSource::Graphic,
+      };
+      let row = Row::figure(&figure, PageId(7), 3, "viii".into());
+      assert_eq!(row.label, label);
+      assert_eq!(row.detail, "viii");
+      assert!(matches!(
+        row.destination,
+        Destination::Link(Target::Point { page: PageId(7), x: 10.0, y: 20.0 })
+      ));
     }
   }
 }

@@ -69,6 +69,7 @@ pub(crate) fn text() -> String {
     region = key(Action::Region),
     follow = key(Action::Follow),
     outline = key(Action::Panel(PanelKind::Outline)),
+    figures = key(Action::Panel(PanelKind::Figures)),
     results = key(Action::Panel(PanelKind::Results)),
     hints = key(Action::Hints(false)),
     copy_hints = key(Action::Hints(true)),

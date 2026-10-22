@@ -319,6 +319,8 @@ impl App {
           job.cancel();
         }
         self.cancel_outline();
+        self.cancel_figures();
+        self.refill_panel(PanelKind::Figures)?;
         self.cancel_crop()?;
         self.region_job = None;
         self.reader.notice("Jobs canceled");

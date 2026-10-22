@@ -1,4 +1,4 @@
-//! Background document jobs a pane polls: OCR, outline, margin crops.
+//! Background document jobs and their results.
 
 use crate::Result;
 use crate::app::App;
@@ -17,6 +17,7 @@ impl App {
         search
           | self.ocr_updates()?
           | self.outline_updates()?
+          | self.figure_updates()?
           | self.crop_updates()?,
       )
     });
@@ -53,6 +54,7 @@ impl App {
           worker.seed(page, Arc::clone(&text));
         }
         self.doc.seed(page, text);
+        self.refresh_figures()?;
         self.reader.notice("OCR ready");
         self.reading_view().reclamp_text()?;
       }
@@ -220,6 +222,143 @@ impl App {
     } else {
       self.start_crop();
     }
+    Ok(())
+  }
+}
+
+#[derive(Default)]
+pub enum Figures {
+  #[default]
+  Idle,
+  Running(vpdf_pdf::jobs::figures::Job),
+  Ready(vpdf_pdf::jobs::figures::Entries),
+}
+
+impl App {
+  pub fn want_figures(&mut self) {
+    if matches!(self.figures, Figures::Idle) {
+      self.figures = Figures::Running(vpdf_pdf::jobs::figures::Job::start(
+        &self.path,
+        &self.password,
+        self.doc.pages.len(),
+        self.doc.seeds(),
+        &self.wake,
+      ));
+    }
+  }
+
+  pub(crate) fn refresh_figures(&mut self) -> Result<()> {
+    self.figures = Figures::Idle;
+    if self.panel.as_ref().is_some_and(|p| p.view.kind() == PanelKind::Figures)
+    {
+      self.want_figures();
+      self.refill_panel(PanelKind::Figures)?;
+    }
+    Ok(())
+  }
+
+  pub fn cancel_figures(&mut self) {
+    if matches!(self.figures, Figures::Running(_)) {
+      self.figures = Figures::Idle;
+    }
+  }
+
+  pub fn figure_updates(&mut self) -> Result<bool> {
+    let Figures::Running(job) = &self.figures else { return Ok(false) };
+    let found = match job.result.try_recv() {
+      Ok(found) => found,
+      Err(mpsc::TryRecvError::Empty) => return Ok(false),
+      Err(mpsc::TryRecvError::Disconnected) => {
+        Err("Figure worker stopped".into())
+      }
+    };
+    self.figures = Figures::Idle;
+    match found {
+      Ok(entries) => self.figures = Figures::Ready(entries),
+      Err(error) => self.error = Some(error),
+    }
+    self.refill_panel(PanelKind::Figures)?;
+    Ok(true)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::time::Duration;
+  use vpdf_model::text::{Bounds, Glyph, Line, PageId, Text};
+
+  fn figures_app() -> Result<(tempfile::TempDir, App, mpsc::Receiver<()>)> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("figures.pdf");
+    crate::fixtures::pdf(&path, &["body"], "")?;
+    let screen = vpdf_ui::layout::Screen {
+      columns: 80,
+      rows: 24,
+      cell_width: 8,
+      cell_height: 16,
+      origin: (0, 0),
+    };
+    let mut app = App::with_screen(&path, "", true, screen)?;
+    let (wake, ready) = crate::fixtures::wake();
+    app.wake = wake;
+    Ok((directory, app, ready))
+  }
+
+  #[test]
+  fn figure_refresh_uses_ocr() -> Result<()> {
+    let (_directory, mut app, ready) = figures_app()?;
+    app.open_panel(PanelKind::Figures)?;
+    ready.recv_timeout(Duration::from_secs(5))?;
+    assert!(app.figure_updates()?);
+    assert!(app.panel.as_ref().unwrap().view.rows().is_empty());
+    let glyphs = "Figure 1: OCR"
+      .chars()
+      .enumerate()
+      .map(|(index, ch)| Glyph {
+        ch,
+        quad: None,
+        bounds: Bounds {
+          x0: 20.0 + index as f32 * 7.0,
+          x1: 27.0 + index as f32 * 7.0,
+          y0: 70.0,
+          y1: 82.0,
+        },
+      })
+      .collect();
+    let text =
+      Text { lines: vec![Line { paragraph: true, glyphs }], truncated: false };
+    app.doc.seed(PageId(0), Arc::new(text));
+    app.refresh_figures()?;
+    assert!(matches!(app.figures, Figures::Running(_)));
+    ready.recv_timeout(Duration::from_secs(5))?;
+    assert!(app.figure_updates()?);
+    let rows = app.panel.as_ref().unwrap().view.rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].label, "Figure 1: OCR");
+    app.panel = None;
+    app.doc.seed(PageId(0), Arc::new(Text::default()));
+    app.refresh_figures()?;
+    assert!(matches!(app.figures, Figures::Idle));
+    app.open_panel(PanelKind::Figures)?;
+    ready.recv_timeout(Duration::from_secs(5))?;
+    assert!(app.figure_updates()?);
+    assert!(app.panel.as_ref().unwrap().view.rows().is_empty());
+    Ok(())
+  }
+
+  #[test]
+  fn changed_pdf_rejects_figures() -> Result<()> {
+    let (directory, mut app, ready) = figures_app()?;
+    let replacement = directory.path().join("replacement.pdf");
+    crate::fixtures::pdf(&replacement, &["body", "Figure 2: new page"], "")?;
+    std::fs::rename(replacement, &app.path)?;
+    app.open_panel(PanelKind::Figures)?;
+    ready.recv_timeout(Duration::from_secs(5))?;
+    assert!(app.figure_updates()?);
+    assert!(matches!(app.figures, Figures::Idle));
+    assert_eq!(app.error.as_deref(), Some("PDF changed; reopen figures"));
+    assert!(app.panel.as_ref().unwrap().view.rows().is_empty());
     Ok(())
   }
 }
