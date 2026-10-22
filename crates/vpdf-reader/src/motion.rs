@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::reader::{Reader, TextSource};
-use vpdf_model::text::{Bounds, PageId, Position, Text, class};
+use vpdf_model::text::{Bounds, Glyph, PageId, Position, Quad, Text, class};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Motion {
@@ -283,18 +283,48 @@ pub fn covered_rows(
   range: (Position, Position),
   linewise: bool,
 ) -> impl Iterator<Item = Bounds> + '_ {
+  covered_glyphs(text, page, range, linewise).filter_map(|glyphs| {
+    glyphs.iter().map(|glyph| glyph.bounds).reduce(Bounds::union)
+  })
+}
+
+/// Oriented spans covered on `page`.
+pub fn covered_quads(
+  text: &Text,
+  page: PageId,
+  range: (Position, Position),
+  linewise: bool,
+) -> impl Iterator<Item = Quad> + '_ {
+  covered_glyphs(text, page, range, linewise)
+    .filter_map(|glyphs| Quad::span(glyphs.iter().map(Glyph::quad)))
+}
+
+fn covered_glyphs(
+  text: &Text,
+  page: PageId,
+  range: (Position, Position),
+  linewise: bool,
+) -> impl Iterator<Item = &[Glyph]> {
   let (first, last) = range;
   let skip = if page == first.page { first.line } else { 0 };
   let rows = text.lines.iter().enumerate().skip(skip);
   let rows =
     rows.take_while(move |(line, _)| page != last.page || *line <= last.line);
   rows.filter_map(move |(line, row)| {
-    let glyphs = row.glyphs.iter().enumerate();
-    let covered = glyphs.filter(move |(glyph, _)| {
-      let at = Position { page, line, glyph: *glyph };
-      covers(range, linewise, at)
-    });
-    covered.map(|(_, ch)| ch.bounds).reduce(Bounds::union)
+    if page < first.page || page > last.page {
+      return None;
+    }
+    let start = if !linewise && (page, line) == (first.page, first.line) {
+      first.glyph.min(row.glyphs.len())
+    } else {
+      0
+    };
+    let end = if !linewise && (page, line) == (last.page, last.line) {
+      last.glyph.saturating_add(1).min(row.glyphs.len())
+    } else {
+      row.glyphs.len()
+    };
+    row.glyphs.get(start..end)
   })
 }
 
@@ -314,5 +344,42 @@ pub fn covers(
     (first.page, first.line) <= line && line <= (last.page, last.line)
   } else {
     first <= pos && pos <= last
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use vpdf_model::text::{Glyph, Line, Quad};
+
+  #[test]
+  fn selection_bounds_keep_glyph_union() {
+    let quads = [
+      Quad([(0.0, 0.0), (10.0, 10.0), (5.0, 15.0), (-5.0, 5.0)]),
+      Quad([(10.0, 10.0), (20.0, 20.0), (10.0, 30.0), (0.0, 20.0)]),
+    ];
+    let text = Text {
+      lines: vec![Line {
+        paragraph: true,
+        glyphs: quads
+          .map(|quad| Glyph {
+            ch: 'a',
+            bounds: quad.bounds(),
+            quad: Some(quad),
+          })
+          .into(),
+      }],
+      truncated: false,
+    };
+    let start = Position::default();
+    let end = Position { glyph: 1, ..start };
+    assert_eq!(
+      covered_rows(&text, PageId(0), (start, end), false).collect::<Vec<_>>(),
+      [quads[0].bounds().union(quads[1].bounds())]
+    );
+    assert_eq!(
+      covered_rows(&text, PageId(0), (end, end), false).collect::<Vec<_>>(),
+      [quads[1].bounds()]
+    );
   }
 }

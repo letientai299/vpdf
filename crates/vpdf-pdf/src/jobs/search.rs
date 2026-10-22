@@ -582,6 +582,7 @@ mod tests {
         glyphs: "中文排版需求"
           .chars()
           .map(|ch| crate::text::Glyph {
+            quad: None,
             ch,
             bounds: crate::text::Bounds::default(),
           })

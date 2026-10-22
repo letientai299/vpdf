@@ -137,7 +137,7 @@ mod tests {
     let glyphs = word.chars().enumerate().map(|(index, ch)| {
       let x0 = x + 10.0 * index as f32;
       let bounds = Bounds { x0, y0: y, x1: x0 + 10.0, y1: y + 12.0 };
-      Glyph { ch, bounds }
+      Glyph { quad: None, ch, bounds }
     });
     Line { paragraph: false, glyphs: glyphs.collect() }
   }

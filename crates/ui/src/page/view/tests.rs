@@ -27,8 +27,11 @@ fn visibility_preserves_lazy_text_access() -> Result<()> {
 #[test]
 fn nearest_prefers_whole_visible_glyphs() -> Result<()> {
   let mut source = Source::new();
-  let glyph =
-    |ch, x0, y0, x1, y1| Glyph { ch, bounds: Bounds { x0, y0, x1, y1 } };
+  let glyph = |ch, x0, y0, x1, y1| Glyph {
+    quad: None,
+    ch,
+    bounds: Bounds { x0, y0, x1, y1 },
+  };
   Arc::make_mut(&mut source.text).lines[0].glyphs = vec![
     glyph(' ', 10.0, 40.0, 20.0, 50.0),
     glyph('a', 10.0, 30.0, 20.0, 40.0),

@@ -19,7 +19,7 @@ fn pages(pages: &[&[(&str, bool)]]) -> Pages {
             paragraph: *paragraph,
             glyphs: text
               .chars()
-              .map(|ch| Glyph { ch, bounds: Bounds::default() })
+              .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
               .collect(),
           })
           .collect(),

@@ -88,6 +88,116 @@ impl Bounds {
 pub struct Glyph {
   pub ch: char,
   pub bounds: Bounds,
+  pub quad: Option<Quad>,
+}
+
+/// Corners: upper-left, upper-right, lower-right, lower-left.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Quad(pub [(f32, f32); 4]);
+
+impl From<Bounds> for Quad {
+  fn from(b: Bounds) -> Self {
+    Self([(b.x0, b.y0), (b.x1, b.y0), (b.x1, b.y1), (b.x0, b.y1)])
+  }
+}
+
+impl Glyph {
+  pub fn quad(&self) -> Quad {
+    self.quad.unwrap_or_else(|| self.bounds.into())
+  }
+}
+
+impl Quad {
+  pub fn bounds(self) -> Bounds {
+    Bounds::enclosing(&self.0)
+  }
+
+  #[must_use]
+  pub fn widen(self, minimum: f32) -> Self {
+    let [start, end, lower_end, lower_start] = self.0;
+    let mut direction = (end.0 - start.0, end.1 - start.1);
+    let width = direction.0.hypot(direction.1);
+    if width >= minimum {
+      return self;
+    }
+    if width > f32::EPSILON {
+      direction = (direction.0 / width, direction.1 / width);
+    } else {
+      direction = (lower_start.1 - start.1, start.0 - lower_start.0);
+      let height = direction.0.hypot(direction.1);
+      if height <= f32::EPSILON {
+        return self;
+      }
+      direction = (direction.0 / height, direction.1 / height);
+    }
+    let extend = |p: (f32, f32)| {
+      (
+        p.0 + direction.0 * (minimum - width),
+        p.1 + direction.1 * (minimum - width),
+      )
+    };
+    Self([start, extend(end), extend(lower_end), lower_start])
+  }
+
+  #[must_use]
+  pub fn band(self, page: Bounds) -> Self {
+    let [start, end, lower_end, lower_start] = self.0;
+    let u = (end.0 - start.0, end.1 - start.1);
+    let length = u.0 * u.0 + u.1 * u.1;
+    if length <= f32::EPSILON {
+      return self;
+    }
+    let mut extent = Bounds::enclosing(&Self::from(page).0.map(|p| {
+      (((p.0 - start.0) * u.0 + (p.1 - start.1) * u.1) / length, 0.0)
+    }));
+    let shear = ((lower_start.0 - start.0) * u.0
+      + (lower_start.1 - start.1) * u.1)
+      / length;
+    extent.x0 -= shear.max(0.0);
+    extent.x1 -= shear.min(0.0);
+    let shift = |p: (f32, f32), t: f32| (p.0 + t * u.0, p.1 + t * u.1);
+    Self([
+      shift(start, extent.x0),
+      shift(end, extent.x1 - 1.0),
+      shift(lower_end, extent.x1 - 1.0),
+      shift(lower_start, extent.x0),
+    ])
+  }
+
+  pub fn span(quads: impl IntoIterator<Item = Self>) -> Option<Self> {
+    let mut quads = quads.into_iter();
+    let mut leading = Vec::new();
+    let (origin, u, v, det) = loop {
+      let Some(first) = quads.next() else {
+        return leading
+          .into_iter()
+          .map(Self::bounds)
+          .reduce(Bounds::union)
+          .map(Self::from);
+      };
+      let [origin, right, _, bottom] = first.0;
+      let u = (right.0 - origin.0, right.1 - origin.1);
+      let v = (bottom.0 - origin.0, bottom.1 - origin.1);
+      let det = u.0 * v.1 - u.1 * v.0;
+      if det.abs() > f32::EPSILON {
+        break (origin, u, v, det);
+      }
+      leading.push(first);
+    };
+    let local = |(x, y): (f32, f32)| {
+      let (x, y) = (x - origin.0, y - origin.1);
+      ((x * v.1 - y * v.0) / det, (y * u.0 - x * u.1) / det)
+    };
+    let bounds = leading
+      .into_iter()
+      .chain(quads)
+      .fold(Bounds { x0: 0.0, y0: 0.0, x1: 1.0, y1: 1.0 }, |b, q| {
+        b.union(Bounds::enclosing(&q.0.map(local)))
+      });
+    Some(Self(Self::from(bounds).0.map(|(x, y)| {
+      (origin.0 + x * u.0 + y * v.0, origin.1 + x * u.1 + y * v.1)
+    })))
+  }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -338,6 +448,7 @@ mod tests {
             .chars()
             .enumerate()
             .map(|(index, ch)| Glyph {
+              quad: None,
               ch,
               bounds: Bounds {
                 x0: index as f32 * 10.0,
@@ -376,6 +487,7 @@ mod tests {
             .chars()
             .enumerate()
             .map(|(glyph, ch)| Glyph {
+              quad: None,
               ch,
               bounds: Bounds {
                 x0: glyph as f32 * 10.0,
@@ -413,10 +525,12 @@ mod tests {
       paragraph,
       glyphs: vec![
         Glyph {
+          quad: None,
           ch: 'a',
           bounds: Bounds { x0: 0.0, y0: top, x1: 10.0, y1: top + 10.0 },
         },
         Glyph {
+          quad: None,
           ch: 'b',
           bounds: Bounds { x0: 20.0, y0: top, x1, y1: top + 10.0 },
         },
@@ -448,6 +562,63 @@ mod tests {
     ];
     for ((x, y), want) in cases {
       assert_eq!(text.covers(x, y), want, "{x},{y}");
+    }
+  }
+}
+
+#[cfg(test)]
+mod quad_tests {
+  use super::*;
+
+  #[test]
+  fn cursors_keep_oriented_width() {
+    let quad = Quad([(10.0, 10.0), (10.0, 11.0), (0.0, 11.0), (0.0, 10.0)]);
+    assert_eq!(
+      quad.widen(2.0),
+      Quad([(10.0, 10.0), (10.0, 12.0), (0.0, 12.0), (0.0, 10.0)])
+    );
+    let zero = Quad([(10.0, 10.0), (10.0, 10.0), (0.0, 10.0), (0.0, 10.0)]);
+    assert_eq!(
+      zero.widen(2.0),
+      Quad([(10.0, 10.0), (10.0, 12.0), (0.0, 12.0), (0.0, 10.0)])
+    );
+  }
+
+  #[test]
+  fn spans_preserve_skew_and_reverse_order() {
+    let first = Quad([(10.0, 10.0), (20.0, 5.0), (22.0, 15.0), (12.0, 20.0)]);
+    let last = Quad(first.0.map(|(x, y)| (x + 20.0, y - 10.0)));
+    let expected = Quad([first.0[0], last.0[1], last.0[2], first.0[3]]);
+    assert_eq!(Quad::span([first, last]), Some(expected));
+    assert_eq!(Quad::span([last, first]), Some(expected));
+    assert_eq!(Quad::span([]), None);
+    let band = first.band(Bounds { x0: 0.0, y0: 0.0, x1: 100.0, y1: 100.0 });
+    let [a, b, c, d] = band.0;
+    assert!(((b.1 - a.1) / (b.0 - a.0) + 0.5).abs() < 0.001);
+    assert!((d.0 - a.0 - 2.0).abs() < 0.001);
+    assert!((c.1 - b.1 - 10.0).abs() < 0.001);
+  }
+  #[test]
+  fn leading_marks_preserve_rotation() {
+    let mark = Quad([(10.0, 10.0), (10.0, 10.0), (0.0, 20.0), (0.0, 20.0)]);
+    let glyph = Quad([(10.0, 10.0), (20.0, 20.0), (10.0, 30.0), (0.0, 20.0)]);
+    assert_eq!(Quad::span([mark, glyph]), Some(glyph));
+  }
+
+  #[test]
+  fn sheared_bands_reach_edges() {
+    let page = Bounds { x0: 0.0, y0: 0.0, x1: 100.0, y1: 100.0 };
+    for shear in [-100.0, 100.0] {
+      let quad = Quad([
+        (20.0, 20.0),
+        (30.0, 20.0),
+        (30.0 + shear, 30.0),
+        (20.0 + shear, 30.0),
+      ]);
+      let band = quad.band(page);
+      for (start, end) in [(band.0[0], band.0[1]), (band.0[3], band.0[2])] {
+        assert!(start.0 <= 0.0 && end.0 >= 100.0, "{band:?}");
+      }
     }
   }
 }

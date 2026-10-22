@@ -21,6 +21,7 @@ impl Source {
         lines: vec![Line {
           paragraph: false,
           glyphs: vec![Glyph {
+            quad: None,
             ch: 'a',
             bounds: Bounds { x0: 10.0, y0: 10.0, x1: 20.0, y1: 20.0 },
           }],

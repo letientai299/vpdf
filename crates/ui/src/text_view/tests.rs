@@ -7,7 +7,7 @@ fn text(rows: &[&str]) -> Arc<Text> {
     paragraph: false,
     glyphs: row
       .chars()
-      .map(|ch| Glyph { ch, bounds: Bounds::default() })
+      .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
       .collect(),
   });
   Arc::new(Text { lines: lines.collect(), truncated: false })

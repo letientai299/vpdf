@@ -158,7 +158,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
           paragraph: false,
           glyphs: row
             .chars()
-            .map(|ch| Glyph { ch, bounds: Bounds::default() })
+            .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
             .collect(),
         })
         .collect(),

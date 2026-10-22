@@ -276,6 +276,7 @@ pub fn parse_tsv(tsv: &str, bounds: Bounds, scale: f32) -> Result<Text> {
     let Some(line) = text.lines.last_mut() else { continue };
     if let Some(last) = line.glyphs.last() {
       line.glyphs.push(Glyph {
+        quad: None,
         ch: ' ',
         bounds: Bounds { x0: last.bounds.x1, y0: y, x1: x, y1: y + height },
       });
@@ -287,6 +288,7 @@ pub fn parse_tsv(tsv: &str, bounds: Bounds, scale: f32) -> Result<Text> {
       }
       let step = width / chars.len() as f32;
       line.glyphs.push(Glyph {
+        quad: None,
         ch: *ch,
         bounds: Bounds {
           x0: x + step * index as f32,

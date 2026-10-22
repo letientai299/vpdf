@@ -33,7 +33,18 @@ fn read(raw: &mupdf::TextPage) -> Text {
           text.truncated = true;
           break;
         }
-        row.glyphs.push(Glyph { ch, bounds: quad_bounds(&glyph.quad()) });
+        let q = glyph.quad();
+        let quad = vpdf_model::text::Quad([
+          (q.ul.x, q.ul.y),
+          (q.ur.x, q.ur.y),
+          (q.lr.x, q.lr.y),
+          (q.ll.x, q.ll.y),
+        ]);
+        row.glyphs.push(Glyph {
+          quad: Some(quad),
+          ch,
+          bounds: quad_bounds(&q),
+        });
         count += 1;
       }
       if row.glyphs.iter().any(|g| !g.ch.is_whitespace()) {

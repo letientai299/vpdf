@@ -157,6 +157,7 @@ mod tests {
             .chars()
             .enumerate()
             .map(|(j, ch)| Glyph {
+              quad: None,
               ch,
               bounds: bounds(
                 20.0 + j as f32 * 5.0,

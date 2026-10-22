@@ -211,7 +211,7 @@ mod tests {
       paragraph: true,
       glyphs: words
         .chars()
-        .map(|ch| Glyph { ch, bounds: Bounds::default() })
+        .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
         .collect(),
     };
     Index::new(PageId(page), &Text { lines: vec![line], truncated: false })

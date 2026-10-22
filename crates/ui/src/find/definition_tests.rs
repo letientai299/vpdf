@@ -29,8 +29,10 @@ impl Outline for Source {
 }
 
 fn source(value: &str) -> Source {
-  let glyphs =
-    value.chars().map(|ch| Glyph { ch, bounds: Bounds::default() }).collect();
+  let glyphs = value
+    .chars()
+    .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
+    .collect();
   Source {
     text: Some(Arc::new(Text {
       lines: vec![Line { paragraph: false, glyphs }],

@@ -304,7 +304,11 @@ mod tests {
         .zip(0..)
         .map(|(ch, index)| {
           let x0 = x + index as f32 * 5.0;
-          Glyph { ch, bounds: Bounds { x0, y0: y, x1: x0 + 5.0, y1: y + 10.0 } }
+          Glyph {
+            quad: None,
+            ch,
+            bounds: Bounds { x0, y0: y, x1: x0 + 5.0, y1: y + 10.0 },
+          }
         })
         .collect(),
     };
@@ -352,7 +356,11 @@ mod tests {
         .zip(0..)
         .map(|(ch, at)| {
           let x0 = at as f32 * 5.0;
-          Glyph { ch, bounds: Bounds { x0, y0: 0.0, x1: x0 + 5.0, y1: 1.0 } }
+          Glyph {
+            quad: None,
+            ch,
+            bounds: Bounds { x0, y0: 0.0, x1: x0 + 5.0, y1: 1.0 },
+          }
         })
         .collect(),
     };

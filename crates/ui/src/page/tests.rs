@@ -92,3 +92,53 @@ fn recorded_overlays_keep_layers() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn skewed_overlays_follow_projection() -> Result<()> {
+  use vpdf_model::scene::{Layer, Op};
+  let mut source = Source::new();
+  let quad = Quad([(10.0, 30.0), (30.0, 20.0), (33.0, 30.0), (13.0, 40.0)]);
+  let glyph =
+    &mut std::sync::Arc::make_mut(&mut source.text).lines[0].glyphs[0];
+  glyph.quad = Some(quad);
+  glyph.bounds = quad.bounds();
+  for rotation in [0, 90, 180, 270] {
+    let mut layout = Layout::new(
+      (0..3).map(|page| source.bounds(PageId(page))),
+      Screen { columns: 100, rows: 100, ..layout(&source).screen() },
+    );
+    layout.restore(1.0, rotation, crate::layout::Crop::default());
+    layout.reflow((0..3).map(|page| source.bounds(PageId(page))));
+    let mut reader = Reader::default();
+    reader.visual(SelectionKind::Line);
+    let rect = layout.project(PageId(0), quad.bounds(), 0.0);
+    reader.scroll = (rect.y0 - 10.0).max(0.0);
+    let canvas =
+      Canvas { layout: &layout, screen: layout.screen(), left: 0, menu: None };
+    let mut scene = Vec::new();
+    canvas.scene(&mut source, &marks(&reader), &mut scene)?;
+    let fills: Vec<_> = scene
+      .iter()
+      .filter_map(|op| if let Op::Fill(fill) = op { Some(fill) } else { None })
+      .collect();
+    for (color, layer) in [
+      (theme::CURSORLINE, Layer::BelowText),
+      (theme::SELECTION, Layer::AboveText),
+      (theme::CURSOR, Layer::AboveText),
+    ] {
+      let colored: Vec<_> =
+        fills.iter().filter(|f| f.color() == color).collect();
+      assert!(colored.len() > 1, "{rotation}: {color:?}");
+      assert!(colored.iter().all(|f| f.layer() == layer));
+    }
+    let selection: Vec<_> =
+      fills.iter().filter(|f| f.color() == theme::SELECTION).collect();
+    let cursor: Vec<_> =
+      fills.iter().filter(|f| f.color() == theme::CURSOR).collect();
+    assert_eq!(
+      selection.iter().map(|f| f.rect()).collect::<Vec<_>>(),
+      cursor.iter().map(|f| f.rect()).collect::<Vec<_>>()
+    );
+  }
+  Ok(())
+}

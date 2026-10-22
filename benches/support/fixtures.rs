@@ -67,7 +67,7 @@ pub fn text_named(name: &str) -> Result<TextPages> {
           paragraph,
           glyphs: glyphs
             .into_iter()
-            .map(|(ch, area)| Glyph { ch, bounds: bounds(area) })
+            .map(|(ch, area)| Glyph { quad: None, ch, bounds: bounds(area) })
             .collect(),
         })
         .collect(),

@@ -55,6 +55,7 @@ impl Fixture {
       .map(|row| Line {
         paragraph: false,
         glyphs: vec![Glyph {
+          quad: None,
           ch: 'a',
           bounds: Bounds {
             x0: 10.0,

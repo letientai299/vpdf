@@ -238,7 +238,7 @@ mod tests {
     let text = Text {
       lines: vec![TextLine {
         paragraph: false,
-        glyphs: vec![Glyph { ch: '1', bounds }],
+        glyphs: vec![Glyph { quad: None, ch: '1', bounds }],
       }],
       truncated: false,
     };
@@ -318,6 +318,7 @@ mod tests {
           .chars()
           .enumerate()
           .map(|(glyph, ch)| Glyph {
+            quad: None,
             ch,
             bounds: Bounds {
               x0: glyph as f32 * 10.0,

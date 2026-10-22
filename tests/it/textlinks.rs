@@ -147,7 +147,11 @@ fn seeded_text_finds_links_again() -> Result<()> {
   assert_eq!(links(&mut app)?, Vec::<(String, String)>::new());
   let glyphs = "see https://x.org".chars().zip(0..).map(|(ch, index)| {
     let x0 = 20.0 + index as f32 * 7.0;
-    Glyph { ch, bounds: Bounds { x0, y0: 20.0, x1: x0 + 7.0, y1: 32.0 } }
+    Glyph {
+      quad: None,
+      ch,
+      bounds: Bounds { x0, y0: 20.0, x1: x0 + 7.0, y1: 32.0 },
+    }
   });
   let line = Line { paragraph: true, glyphs: glyphs.collect() };
   let text = Text { lines: vec![line], truncated: false };

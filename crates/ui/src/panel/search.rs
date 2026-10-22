@@ -278,7 +278,7 @@ mod tests {
           paragraph: true,
           glyphs: label
             .chars()
-            .map(|ch| Glyph { ch, bounds: Bounds::default() })
+            .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
             .collect(),
         }],
         ..Text::default()

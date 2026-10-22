@@ -17,7 +17,7 @@ fn pages() -> Pages {
             paragraph: true,
             glyphs: line
               .chars()
-              .map(|ch| Glyph { ch, bounds: Bounds::default() })
+              .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
               .collect(),
           })
           .collect(),

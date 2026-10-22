@@ -8,7 +8,7 @@ fn glyph_offsets_preserve_unicode() {
     paragraph: false,
     glyphs: value
       .chars()
-      .map(|ch| Glyph { ch, bounds: Bounds::default() })
+      .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
       .collect(),
   };
   let start = value.chars().position(|ch| ch == 'F').unwrap();
