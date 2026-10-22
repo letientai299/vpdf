@@ -1,20 +1,18 @@
 //! Decodes terminal input bytes into keys, mouse reports, pastes, focus
 //! changes, resizes, and query replies.
 //!
-//! crossterm 0.29 rejects SGR buttons above 3 and drops every reply, so
-//! vpdf parses the stream itself. Keys stay crossterm `KeyEvent`s and
-//! decode as crossterm does, except that Kitty's alternate keys and the
-//! distinct Ctrl-i of Kitty and of tmux's extended keys survive.
+//! Keys and pointer reports use model input values. Kitty's alternate
+//! keys and distinct Ctrl-i survive decoding.
 //! Sources: [xterm control sequences][xterm], [Kitty keyboard][kbd],
 //! [tmux extended keys][tmux].
 //!
 //! [xterm]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
 //! [kbd]: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 //! [tmux]: https://github.com/tmux/tmux/blob/3.8/input-keys.c#L425-L473
-use crossterm::event::{
+use std::collections::VecDeque;
+use vpdf_model::input::{
   KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers,
 };
-use std::collections::VecDeque;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Event {
@@ -69,42 +67,7 @@ pub enum ModeState {
   AlwaysReset,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Mouse {
-  pub kind: MouseKind,
-  pub at: Spot,
-  pub modifiers: KeyModifiers,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MouseKind {
-  Press(Button),
-  Release(Button),
-  Drag(Button),
-  Moved,
-}
-
-/// Mouse button 1-11: left, middle, right, wheel up, down, left, right,
-/// back, forward, and two more.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Button(u8);
-
-impl Button {
-  pub fn number(self) -> u8 {
-    self.0
-  }
-
-  pub const LEFT: Self = Self(1);
-  pub const BACK: Self = Self(8);
-  pub const FORWARD: Self = Self(9);
-}
-
-/// Zero-based cell, or pixels as reported under mode 1016.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Spot {
-  Cell { column: u16, row: u16 },
-  Pixel { x: u16, y: u16 },
-}
+pub use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
 
 /// Caps an unterminated sequence or a paste.
 const LIMIT: usize = 8 << 20;
@@ -457,7 +420,7 @@ fn kind(code: u32) -> KeyEventKind {
 fn modified(code: KeyCode, params: &[u8]) -> Event {
   let (modifiers, state) = modifiers(number(params, 1, 0).unwrap_or(1));
   let kind = kind(number(params, 1, 1).unwrap_or(1));
-  Event::Key(KeyEvent::new_with_kind_and_state(code, modifiers, kind, state))
+  Event::Key(KeyEvent { code, modifiers, kind, state })
 }
 
 fn tilde(params: &[u8]) -> Option<Event> {
@@ -522,7 +485,7 @@ fn kitty(params: &[u8]) -> Option<Event> {
     && code != KeyCode::Char(shifted)
   {
     code = KeyCode::Char(shifted);
-    modifiers -= KeyModifiers::SHIFT;
+    modifiers = modifiers - KeyModifiers::SHIFT;
   }
   if modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
     && matches!(code, KeyCode::Char(ch) if !ch.is_ascii())
@@ -549,9 +512,7 @@ fn kitty(params: &[u8]) -> Option<Event> {
     }
     code = KeyCode::Char(ch);
   }
-  Some(Event::Key(KeyEvent::new_with_kind_and_state(
-    code, modifiers, kind, state,
-  )))
+  Some(Event::Key(KeyEvent { code, modifiers, kind, state }))
 }
 
 fn keypad(code: u32) -> Option<KeyCode> {
@@ -612,9 +573,9 @@ fn mouse(params: &[u8], release: bool, pixels: bool) -> Option<Event> {
   };
   let low = (flags & 3) as u8;
   let button = match flags & 0xc0 {
-    0 if low < 3 => Some(Button(low + 1)),
-    64 => Some(Button(low + 4)),
-    128 => Some(Button(low + 8)),
+    0 if low < 3 => Some(Button::new(low + 1)),
+    64 => Some(Button::new(low + 4)),
+    128 => Some(Button::new(low + 8)),
     _ => None,
   };
   let motion = flags & 32 != 0;

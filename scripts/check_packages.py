@@ -5,7 +5,7 @@ from pathlib import Path
 
 ALLOWED = {
     "vpdf-model": set(),
-    "vpdf-protocol": set(),
+    "vpdf-protocol": {"vpdf-model"},
     "vpdf-search": {"vpdf-model"},
     "vpdf-reader": {"vpdf-model", "vpdf-search"},
     "vpdf-pdf": {"vpdf-model", "vpdf-search"},
@@ -22,7 +22,7 @@ ALLOWED = {
     },
 }
 NATIVE = {"vpdf", "vpdf-pdf", "vpdf-gui"}
-TRANSPORT = {"vpdf", "vpdf-terminal", "vpdf-protocol"}
+TRANSPORT = {"vpdf", "vpdf-terminal"}
 
 
 def native(name):

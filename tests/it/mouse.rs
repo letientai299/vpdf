@@ -913,9 +913,7 @@ fn report(bytes: &str) -> Mouse {
   parser.set_pixels(true);
   parser.feed(bytes.as_bytes(), &mut events);
   match events.pop_front() {
-    Some(vpdf_terminal::decode::Event::Mouse(mouse)) => {
-      crate::input::mouse(mouse)
-    }
+    Some(vpdf_terminal::decode::Event::Mouse(mouse)) => mouse,
     other => panic!("a mouse report: {other:?}"),
   }
 }

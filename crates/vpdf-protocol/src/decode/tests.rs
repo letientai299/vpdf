@@ -52,12 +52,12 @@ fn check(cases: &[(&[u8], Event)]) {
 #[test]
 fn kitty_keys_recorded() {
   let keypad = |code| {
-    Event::Key(KeyEvent::new_with_kind_and_state(
+    Event::Key(KeyEvent {
       code,
-      NONE,
-      KeyEventKind::Press,
-      KeyEventState::KEYPAD,
-    ))
+      modifiers: NONE,
+      kind: KeyEventKind::Press,
+      state: KeyEventState::KEYPAD,
+    })
   };
   check(&[
     (b"\t", key(KeyCode::Tab, NONE)),
@@ -187,7 +187,7 @@ fn split_sequences_wait() {
   assert_eq!(decode(&[b"\xc3", b"\xa9"]), [char('é', NONE)]);
   assert_eq!(
     decode(&[b"\x1b[<0;20", b";10M"]),
-    [cell(MouseKind::Press(Button(1)), 19, 9)]
+    [cell(MouseKind::Press(Button::new(1)), 19, 9)]
   );
   assert_eq!(
     decode(&[b"\x1bP>|kit", b"ty(0.49.1)\x1b", b"\\"]),
@@ -197,9 +197,9 @@ fn split_sequences_wait() {
 
 #[test]
 fn kitty_mouse_recorded() {
-  let left = Button(1);
-  let middle = Button(2);
-  let right = Button(3);
+  let left = Button::new(1);
+  let middle = Button::new(2);
+  let right = Button::new(3);
   check(&[
     (b"\x1b[<35;57;14M", cell(MouseKind::Moved, 56, 13)),
     (b"\x1b[<0;20;10M", cell(MouseKind::Press(left), 19, 9)),
@@ -224,7 +224,7 @@ fn kitty_mouse_recorded() {
 #[test]
 fn mouse_buttons_source() {
   let shifted = Event::Mouse(Mouse {
-    kind: MouseKind::Press(Button(4)),
+    kind: MouseKind::Press(Button::new(4)),
     at: Spot::Cell { column: 4, row: 2 },
     modifiers: SHIFT | CTRL,
   });
@@ -232,13 +232,42 @@ fn mouse_buttons_source() {
     (b"\x1b[<128;5;3M", cell(MouseKind::Press(Button::BACK), 4, 2)),
     (b"\x1b[<128;5;3m", cell(MouseKind::Release(Button::BACK), 4, 2)),
     (b"\x1b[<129;5;3M", cell(MouseKind::Press(Button::FORWARD), 4, 2)),
-    (b"\x1b[<131;5;3M", cell(MouseKind::Press(Button(11)), 4, 2)),
-    (b"\x1b[<64;5;3M", cell(MouseKind::Press(Button(4)), 4, 2)),
-    (b"\x1b[<65;5;3M", cell(MouseKind::Press(Button(5)), 4, 2)),
-    (b"\x1b[<67;5;3M", cell(MouseKind::Press(Button(7)), 4, 2)),
+    (b"\x1b[<131;5;3M", cell(MouseKind::Press(Button::new(11)), 4, 2)),
+    (b"\x1b[<64;5;3M", cell(MouseKind::Press(Button::new(4)), 4, 2)),
+    (b"\x1b[<65;5;3M", cell(MouseKind::Press(Button::new(5)), 4, 2)),
+    (b"\x1b[<67;5;3M", cell(MouseKind::Press(Button::new(7)), 4, 2)),
     (b"\x1b[<84;5;3M", shifted),
     (b"\x1b[O", Event::Focus(false)),
   ]);
+}
+
+#[test]
+fn pointer_values_preserve_buttons() {
+  for (offset, numbers) in [(0, 1..=3), (64, 4..=7), (128, 8..=11)] {
+    for (low, number) in numbers.enumerate() {
+      let button = Button::new(number);
+      for (motion, last, kind) in [
+        (0, 'M', MouseKind::Press(button)),
+        (32, 'M', MouseKind::Drag(button)),
+        (0, 'm', MouseKind::Release(button)),
+      ] {
+        let bytes =
+          format!("\x1b[<{};419;233{last}", offset + low + motion + 28);
+        for (pixels, at) in [
+          (false, Spot::Cell { column: 418, row: 232 }),
+          (true, Spot::Pixel { x: 419, y: 233 }),
+        ] {
+          let mut parser = Parser { pixels, ..Parser::default() };
+          let mut events = VecDeque::new();
+          parser.feed(bytes.as_bytes(), &mut events);
+          assert_eq!(
+            Vec::from(events),
+            [Event::Mouse(Mouse { kind, at, modifiers: SHIFT | ALT | CTRL })]
+          );
+        }
+      }
+    }
+  }
 }
 
 /// Mode 1016 reports pixels; kitty sends leave only then, as 256 | 32.
@@ -249,12 +278,15 @@ fn pixel_mouse_source() {
   parser.feed(b"\x1b[<0;419;233M\x1b[<288;12;7M\x1b[<32;-4;9M", &mut events);
   let at = |x, y| Spot::Pixel { x, y };
   let press = Mouse {
-    kind: MouseKind::Press(Button(1)),
+    kind: MouseKind::Press(Button::new(1)),
     at: at(419, 233),
     modifiers: NONE,
   };
-  let drag =
-    Mouse { kind: MouseKind::Drag(Button(1)), at: at(0, 9), modifiers: NONE };
+  let drag = Mouse {
+    kind: MouseKind::Drag(Button::new(1)),
+    at: at(0, 9),
+    modifiers: NONE,
+  };
   assert_eq!(
     Vec::from(events),
     [Event::Mouse(press), Event::Leave, Event::Mouse(drag)]

@@ -1,4 +1,4 @@
-use crate::input::{event, key};
+use crate::input::event;
 use crossterm::event as raw;
 use vpdf_model::input as core;
 use vpdf_terminal::decode as wire;
@@ -7,19 +7,24 @@ use vpdf_terminal::decode as wire;
 fn keys_preserve_state() {
   for bits in 0..64 {
     for state in 0..8 {
-      for (kind, want) in [
-        (raw::KeyEventKind::Press, core::KeyEventKind::Press),
-        (raw::KeyEventKind::Repeat, core::KeyEventKind::Repeat),
-        (raw::KeyEventKind::Release, core::KeyEventKind::Release),
+      for (report, kind, want) in [
+        (1, raw::KeyEventKind::Press, core::KeyEventKind::Press),
+        (2, raw::KeyEventKind::Repeat, core::KeyEventKind::Repeat),
+        (3, raw::KeyEventKind::Release, core::KeyEventKind::Release),
       ] {
+        let (wire, code) =
+          if state & 1 == 0 { (233, 'é') } else { (57404, '5') };
         let source = raw::KeyEvent::new_with_kind_and_state(
-          raw::KeyCode::Char('é'),
+          raw::KeyCode::Char(code),
           raw::KeyModifiers::from_bits_retain(bits),
           kind,
           raw::KeyEventState::from_bits_retain(state),
         );
-        let key = key(source);
-        assert_eq!(key.code, core::KeyCode::Char('é'));
+        let mask = ((bits & 2) << 1) | ((bits & 4) >> 1) | (bits & !6);
+        let mask = u16::from(mask) | (u16::from(state & 6) << 5);
+        let bytes = format!("\x1b[{wire};{}:{report}u", mask + 1);
+        let key = decode_key(bytes.as_bytes());
+        assert_eq!(key.code, core::KeyCode::Char(code));
         assert_eq!(key.kind, want);
         for (raw, neutral) in [
           (raw::KeyModifiers::SHIFT, core::KeyModifiers::SHIFT),
@@ -48,6 +53,21 @@ fn keys_preserve_state() {
 
 #[test]
 fn key_identity_preserves_case() {
+  let decode = |ch: char, flags: raw::KeyModifiers| {
+    let mask = u16::from(flags.bits() & 1) | (u16::from(flags.bits() & 2) << 1);
+    let key =
+      decode_key(format!("\x1b[{};{}u", u32::from(ch), mask + 1).as_bytes());
+    assert_eq!(key.code, core::KeyCode::Char(ch));
+    assert_eq!(
+      key.modifiers.contains(core::KeyModifiers::SHIFT),
+      flags.contains(raw::KeyModifiers::SHIFT)
+    );
+    assert_eq!(
+      key.modifiers.contains(core::KeyModifiers::CONTROL),
+      flags.contains(raw::KeyModifiers::CONTROL)
+    );
+    key
+  };
   let codes = ['a', 'A', 'é', 'É', ' '];
   for left in codes {
     for right in codes {
@@ -61,9 +81,12 @@ fn key_identity_preserves_case() {
           raw::KeyModifiers::SHIFT,
           raw::KeyModifiers::CONTROL,
         ] {
-          let left = raw::KeyEvent::new(raw::KeyCode::Char(left), a);
-          let right = raw::KeyEvent::new(raw::KeyCode::Char(right), b);
-          assert_eq!(key(left) == key(right), left == right);
+          let raw_left = raw::KeyEvent::new(raw::KeyCode::Char(left), a);
+          let raw_right = raw::KeyEvent::new(raw::KeyCode::Char(right), b);
+          assert_eq!(
+            decode(left, a) == decode(right, b),
+            raw_left == raw_right
+          );
         }
       }
     }
@@ -98,4 +121,10 @@ fn pointer_coordinates_and_history() {
   }
   assert!(event(wire::Event::Resize(None)).is_none());
   assert!(event(wire::Event::Focus(false)).is_none());
+}
+
+fn decode_key(bytes: &[u8]) -> core::KeyEvent {
+  let events = Vec::from(super::common::events(bytes));
+  let [core::Event::Key(key)] = events.as_slice() else { panic!("key report") };
+  *key
 }

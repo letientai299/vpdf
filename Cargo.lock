@@ -3546,7 +3546,7 @@ name = "vpdf-protocol"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crossterm",
+ "vpdf-model",
 ]
 
 [[package]]

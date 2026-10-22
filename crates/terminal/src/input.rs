@@ -344,8 +344,8 @@ fn drain(mut socket: &UnixStream) {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
   use std::os::fd::OwnedFd;
+  use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 
   #[test]
   fn notices_name_reader_replies() {
@@ -392,7 +392,7 @@ mod tests {
   }
 
   fn key(code: KeyCode) -> Event {
-    Event::Key(KeyEvent::from(code))
+    Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
   }
 
   /// Keys typed during a probe stay input, in order, around replies.

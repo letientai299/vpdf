@@ -286,7 +286,7 @@ mod tests {
 
   #[test]
   fn start_completion_uses_home_scope() -> Result<()> {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
     use vpdf_terminal::decode::Event;
     let screen = Screen {
       columns: 80,

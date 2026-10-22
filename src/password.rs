@@ -32,11 +32,11 @@ fn password_event(
   prompt: &mut Prompt,
   event: vpdf_terminal::decode::Event,
 ) -> PromptEvent {
-  use crossterm::event::KeyEventKind;
+  use vpdf_model::input::KeyEventKind;
   use vpdf_terminal::decode::Event;
   match event {
     Event::Key(key) if key.kind != KeyEventKind::Release => {
-      prompt.feed(crate::input::key(key), &History::default())
+      prompt.feed(key, &History::default())
     }
     Event::Paste(text) => prompt.paste(&text),
     Event::Resize(report) => {
@@ -50,7 +50,7 @@ fn password_event(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+  use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 
   #[test]
   fn password_prompt_defers_resizes() {

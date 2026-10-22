@@ -85,16 +85,14 @@ pub(super) fn passive(event: &Event) -> bool {
 
 pub(super) fn act(event: Event) -> Option<Act> {
   match event {
-    Event::Key(key) if key.kind != crossterm::event::KeyEventKind::Release => {
-      Some(Act::Key(crate::input::key(key)))
+    Event::Key(key) if key.kind != vpdf_model::input::KeyEventKind::Release => {
+      Some(Act::Key(key))
     }
     Event::Paste(text) => Some(Act::Paste(text)),
     Event::Resize(report) => Some(Act::Resize(report)),
-    Event::Mouse(mouse) => {
-      let mouse = crate::input::mouse(mouse);
-      (mouse.action().is_some() || mouse.history().is_some())
-        .then_some(Act::Mouse(mouse))
-    }
+    Event::Mouse(mouse) => (mouse.action().is_some()
+      || mouse.history().is_some())
+    .then_some(Act::Mouse(mouse)),
     Event::Leave => Some(Act::Leave),
     Event::Reply(reply) => notice(&reply).map(|notice| match notice {
       Notice::Missing(id) => Act::Missing(id),

@@ -56,11 +56,12 @@ delivery metadata.
 Application [interaction dispatch][interaction] applies normalized keys, paste,
 and pointer reports and settles their requests. [Model input][input-values]
 keeps key state and cell/pixel pointer coordinates independent of transport.
-The [application adapter][input-adapter] translates decoded terminal input;
-GUI constructs model values directly. Frontend adapters retain modal
-guards, geometry validation, visibility, and delivery policy. Pointer leave
-skips settlement in native; the terminal adapter settles it. Both frontends
-reuse gesture cleanup while retaining their focus transitions.
+Protocol decodes model values directly; the [application filter][input-adapter]
+selects keys, pointers, and paste events. GUI constructs model values directly.
+Frontend adapters retain modal guards, geometry validation, visibility, and
+delivery policy. Pointer leave skips settlement in native; the terminal adapter
+settles it. Both frontends reuse gesture cleanup while retaining their focus
+transitions.
 
 Model owns [semantic style][styles] resets, patches, colors, and text
 attributes.

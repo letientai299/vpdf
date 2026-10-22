@@ -769,10 +769,7 @@ fn home_file_drops_open() -> Result<()> {
   // File drops open even with a prompt.
   let mut session = Session::new(None);
   let mut home = Home::new(&[], screen);
-  let colon = crossterm::event::KeyEvent::new(
-    crossterm::event::KeyCode::Char(':'),
-    crossterm::event::KeyModifiers::NONE,
-  );
+  let colon = KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE);
   home.event(Event::Key(colon), &mut session.history)?;
   let (landed, out) = drop(&mut session, &mut home, &pdf)?;
   assert!(matches!(landed, Landing::Opened) && ended(&out, "1"));
@@ -798,7 +795,7 @@ fn home_file_drops_open() -> Result<()> {
 
 #[test]
 fn only_actionable_input_counts() {
-  use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+  use vpdf_model::input::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
   use vpdf_terminal::decode::{Button, Mouse, MouseKind, Spot};
   let none = KeyModifiers::NONE;
   let press = KeyEvent::new(KeyCode::Char('j'), none);
@@ -820,10 +817,7 @@ fn only_actionable_input_counts() {
   let cases = [
     (
       Event::Key(press),
-      Some(Act::Key(vpdf_model::input::KeyEvent::new(
-        vpdf_model::input::KeyCode::Char('j'),
-        vpdf_model::input::KeyModifiers::NONE,
-      ))),
+      Some(Act::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE))),
     ),
     (Event::Key(release), None),
     (Event::Paste("a".into()), Some(Act::Paste("a".into()))),
@@ -831,20 +825,20 @@ fn only_actionable_input_counts() {
     (Event::Resize(Some(size)), Some(Act::Resize(Some(size)))),
     (
       mouse(MouseKind::Press(Button::LEFT), cell),
-      Some(Act::Mouse(crate::input::mouse(click(cell)))),
+      Some(Act::Mouse(click(cell))),
     ),
     (
       mouse(MouseKind::Press(Button::BACK), cell),
-      Some(Act::Mouse(crate::input::mouse(Mouse {
+      Some(Act::Mouse(Mouse {
         kind: MouseKind::Press(Button::BACK),
         at: cell,
         modifiers: none,
-      }))),
+      })),
     ),
     (mouse(MouseKind::Release(Button::BACK), cell), None),
     (
       mouse(MouseKind::Press(Button::LEFT), pixel),
-      Some(Act::Mouse(crate::input::mouse(click(pixel)))),
+      Some(Act::Mouse(click(pixel))),
     ),
     (Event::Leave, Some(Act::Leave)),
     (Event::Focus(true), Some(Act::Focus(true))),

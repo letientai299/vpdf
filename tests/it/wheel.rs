@@ -40,7 +40,7 @@ fn wheel_at(
   let mut frame = false;
   for event in events {
     let Event::Mouse(mouse) = event else { panic!("mouse bytes") };
-    frame |= session.mouse_report_at(crate::input::mouse(mouse), now)?;
+    frame |= session.mouse_report_at(mouse, now)?;
   }
   Ok(frame)
 }
