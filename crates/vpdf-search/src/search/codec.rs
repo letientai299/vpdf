@@ -139,17 +139,15 @@ struct Reader<'a>(&'a [u8]);
 
 impl<'a> Reader<'a> {
   fn take(&mut self, len: usize) -> Result<&'a [u8]> {
-    let (head, rest) =
-      self.0.split_at_checked(len).context("Truncated search record")?;
+    ensure!(len <= self.0.len(), "Truncated search record");
+    let (head, rest) = self.0.split_at(len);
     self.0 = rest;
     Ok(head)
   }
 
   fn u32(&mut self) -> Result<u32> {
-    let (bytes, rest) =
-      self.0.split_first_chunk().context("Truncated search record")?;
-    self.0 = rest;
-    Ok(u32::from_le_bytes(*bytes))
+    let bytes = self.take(4)?;
+    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
   }
 
   /// A count of items at least `size` bytes each, bounded by what is
