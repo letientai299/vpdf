@@ -425,7 +425,14 @@ class SnapshotTests(unittest.TestCase):
 
     def test_native_partial_preserved(self):
         self.write("scripts/hooks.py", Path(hooks.__file__).read_text())
-        self.stage("scripts/hooks.py")
+        self.write(
+            ".config/mise.toml",
+            (
+                Path(hooks.__file__).resolve().parent.parent
+                / ".config/mise.toml"
+            ).read_text(),
+        )
+        self.stage("scripts/hooks.py", ".config/mise.toml")
         self.commit()
         hooks.install_hooks(self.root)
         self.write("README.md", "# Reader\n\nStaged.\n")
