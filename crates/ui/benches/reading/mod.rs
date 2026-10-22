@@ -48,17 +48,18 @@ fn run(operation: Operation) -> Result<()> {
   Ok(())
 }
 
-fn case(
-  prepared: &super::fixtures::TextPages,
-  screen: Screen,
-  text: bool,
-  cursor: bool,
-  operation: Operation,
-) -> Result<()> {
+pub fn layout(prepared: &super::fixtures::TextPages, screen: Screen) -> Layout {
   let bounds = || prepared.metadata.iter().map(|(_, bounds)| *bounds);
   let mut layout = Layout::new(bounds(), screen);
   layout.request_zoom(vpdf_ui::layout::Zoom::To(2.0));
   layout.reflow(bounds());
+  layout
+}
+
+pub fn pane(
+  prepared: &super::fixtures::TextPages,
+  cursor: bool,
+) -> Result<Pane> {
   let mut reader = Reader::default();
   reader.cursor = Position { page: PageId(0), line: 10, glyph: 4 };
   anyhow::ensure!(
@@ -68,7 +69,18 @@ fn case(
   if cursor {
     reader.enter_cursor();
   }
-  let mut pane = Pane::new(reader, Tracking::default());
+  Ok(Pane::new(reader, Tracking::default()))
+}
+
+fn case(
+  prepared: &super::fixtures::TextPages,
+  screen: Screen,
+  text: bool,
+  cursor: bool,
+  operation: Operation,
+) -> Result<()> {
+  let mut layout = layout(prepared, screen);
+  let mut pane = pane(prepared, cursor)?;
   let mut text_view = TextView::default();
   let frame = Frame {
     pane: paint::Frame { screen, at: At::default(), left: 0, text },

@@ -1,5 +1,7 @@
 #[path = "support/directory.rs"]
 mod directory;
+#[path = "support/layout.rs"]
+mod layouts;
 #[path = "../tests/support/presentation.rs"]
 pub mod presentation;
 use crate::presentation::{HintsDraw, PanelDraw};

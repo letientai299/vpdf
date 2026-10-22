@@ -79,3 +79,23 @@ pub(crate) fn marks(reader: &Reader) -> Marks<'_> {
     hovered: &[],
   }
 }
+
+pub(crate) fn overlays()
+-> Result<(Source, Layout, Reader, vpdf_model::scene::Scene<'static>)> {
+  use vpdf_reader::reader::SelectionKind;
+  let mut source = Source::new();
+  let layout = layout(&source);
+  let mut reader = Reader::default();
+  reader.visual(SelectionKind::Character);
+  let hovered = [(PageId(0), source.text.lines[0].glyphs[0].bounds)];
+  let marks = Marks { hovered: &hovered, ..marks(&reader) };
+  let canvas = vpdf_ui::page::Canvas {
+    layout: &layout,
+    screen: layout.screen(),
+    left: 2,
+    menu: None,
+  };
+  let mut scene = vpdf_model::scene::Scene::new();
+  canvas.scene(&mut source, &marks, &mut scene)?;
+  Ok((source, layout, reader, scene))
+}

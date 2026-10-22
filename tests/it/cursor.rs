@@ -12,6 +12,16 @@ use vpdf_ui::panel::{Destination, Row};
 
 const ESC: &[u8] = b"\x1b[27u";
 
+fn short_session(text: bool) -> Result<(tempfile::TempDir, Session)> {
+  let (directory, mut session) = crate::mouse::session(text)?;
+  session.resize(vpdf_ui::layout::Screen {
+    rows: if text { 4 } else { 8 },
+    columns: 60,
+    ..screen()
+  })?;
+  Ok((directory, session))
+}
+
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn cursor_entry_positions_visual_ranges() -> Result<()> {
@@ -508,12 +518,7 @@ fn failed_search_yanks_preserve_register() -> Result<()> {
 fn scroll_then_motion_uses_visible_cursor() -> Result<()> {
   for text in [false, true] {
     for scroll in [b"\x04".as_slice(), b"\x06", b"8\x05"] {
-      let (_directory, mut session) = crate::mouse::session(text)?;
-      session.resize(vpdf_ui::layout::Screen {
-        rows: if text { 4 } else { 8 },
-        columns: 60,
-        ..screen()
-      })?;
+      let (_directory, mut session) = short_session(text)?;
       let app = session.app();
       keys(app, b"i")?;
       let origin = app.reader.cursor;
@@ -545,12 +550,7 @@ fn scroll_then_motion_uses_visible_cursor() -> Result<()> {
 #[test]
 fn visual_keyboard_scroll_moves_only_endpoint() -> Result<()> {
   for text in [false, true] {
-    let (_directory, mut session) = crate::mouse::session(text)?;
-    session.resize(vpdf_ui::layout::Screen {
-      rows: if text { 4 } else { 8 },
-      columns: 60,
-      ..screen()
-    })?;
+    let (_directory, mut session) = short_session(text)?;
     let app = session.app();
     keys(app, b"iv")?;
     let anchor = app.reader.selection;
@@ -572,12 +572,7 @@ fn visual_keyboard_scroll_moves_only_endpoint() -> Result<()> {
 #[test]
 fn cursor_wheel_clamps_without_changing_mode() -> Result<()> {
   for text in [false, true] {
-    let (_directory, mut session) = crate::mouse::session(text)?;
-    session.resize(vpdf_ui::layout::Screen {
-      rows: if text { 4 } else { 8 },
-      columns: 60,
-      ..screen()
-    })?;
+    let (_directory, mut session) = short_session(text)?;
     let app = session.app();
     keys(app, b"i")?;
     let origin = app.reader.cursor;

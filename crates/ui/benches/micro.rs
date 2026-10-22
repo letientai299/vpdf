@@ -1,5 +1,7 @@
 #[path = "../../../benches/support/directory.rs"]
 mod directory;
+#[path = "../../../benches/support/layout.rs"]
+mod layouts;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::geometry::Screen;

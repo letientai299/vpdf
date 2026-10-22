@@ -1,3 +1,6 @@
+#[path = "../support/screen.rs"]
+mod screen;
+pub use screen::cells;
 use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::path::Path;

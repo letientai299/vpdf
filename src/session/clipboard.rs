@@ -128,7 +128,7 @@ impl Session {
 #[cfg(test)]
 mod tests {
   use super::super::run::{act, input, wait_time};
-  use super::super::{PathBuf, Result, Screen};
+  use super::super::{PathBuf, Result};
   use super::*;
 
   #[test]
@@ -186,13 +186,7 @@ mod tests {
     use crate::region::Transfer;
     use std::collections::VecDeque;
     let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-    let screen = Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = super::super::tests::cells(120, 40);
     let mut session = Session::new(None);
     session.open(&root.join("paper.pdf"), true, screen)?;
     session.app().move_figure(true, 1)?;

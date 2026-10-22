@@ -1,15 +1,12 @@
+#[path = "../../../../tests/support/panel.rs"]
+mod fixture;
 use super::*;
 use crate::text::PageId;
+use fixture::panel;
 use vpdf_model::style::Role;
 
 #[test]
 fn recorded_panels_outlive_their_source() {
-  let panel = || {
-    Panel::new(
-      PanelKind::Help,
-      ["# 日本語", "j: down", "k: up"].map(Row::parse).into(),
-    )
-  };
   let at = vpdf_model::geometry::At { column: 7, row: 3 };
   let scene = {
     let mut source = panel();

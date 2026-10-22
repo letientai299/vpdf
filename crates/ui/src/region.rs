@@ -384,15 +384,13 @@ fn bar_row(rect: Bounds, cell: f32, last: usize) -> usize {
   }
 }
 #[cfg(test)]
+#[path = "../../../tests/support/region.rs"]
+mod fixture;
+
+#[cfg(test)]
 mod tests {
+  use super::fixture::snapshot;
   use super::*;
-  fn snapshot(id: u64) -> Snapshot {
-    Snapshot {
-      id: CaptureId::new(id),
-      page: PageId(0),
-      bounds: Bounds { x0: 10.0, y0: 20.0, x1: 60.0, y1: 80.0 },
-    }
-  }
 
   #[test]
   fn requests_reject_stale_status() {
@@ -434,30 +432,10 @@ mod tests {
 
   #[test]
   fn recorded_regions_keep_hits() {
-    use vpdf_model::geometry::At;
-    use vpdf_model::geometry::Screen;
     use vpdf_model::scene::Scene;
-    let screen = Screen {
-      columns: 20,
-      rows: 10,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (2, 1),
-    };
-    let layout =
-      Layout::new([Bounds { x0: 0.0, y0: 0.0, x1: 160.0, y1: 160.0 }], screen);
-    let canvas = Canvas {
-      layout: &layout,
-      scroll: 0.0,
-      frame: Frame {
-        screen,
-        at: At { column: 5, row: 1 },
-        left: 3,
-        text: false,
-      },
-    };
-    let sweep =
-      Some((PageId(0), Bounds { x0: 12.5, y0: 24.5, x1: 63.2, y1: 81.7 }));
+    let layout = fixture::layout();
+    let canvas = fixture::canvas(&layout);
+    let sweep = Some(fixture::sweep());
     for crop_quirk in [false, true] {
       let mut recorded = Region::open(snapshot(1));
       let mut scene = Scene::new();

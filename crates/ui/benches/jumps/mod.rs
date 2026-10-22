@@ -4,7 +4,6 @@ use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Reader;
-use vpdf_ui::layout::{Layout, Zoom};
 use vpdf_ui::paint;
 use vpdf_ui::reading::{Frame, Pane, Tracking};
 use vpdf_ui::text_view::TextView;
@@ -31,10 +30,7 @@ fn case(
     cell_height: 16,
     origin: (0, 0),
   };
-  let bounds = || prepared.metadata.iter().map(|(_, bounds)| *bounds);
-  let mut layout = Layout::new(bounds(), screen);
-  layout.request_zoom(Zoom::To(2.0));
-  layout.reflow(bounds());
+  let mut layout = super::reading::layout(prepared, screen);
   let positions = if pages {
     [Position::default(), Position { page: PageId(1), ..Position::default() }]
   } else {

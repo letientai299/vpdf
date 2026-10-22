@@ -22,13 +22,7 @@ use vpdf_ui::pointer::{Hit, Region, Route};
 #[ignore = "requires verified public PDF corpus"]
 fn reader_workflows() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 50);
   let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   app.command("39")?;
   assert_eq!(app.reader.cursor.page, PageId(38));
@@ -82,13 +76,7 @@ fn reader_workflows() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 50);
   let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   app.scroll(100.0)?;
   app.scroll(100.0)?;
@@ -126,13 +114,7 @@ fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn links_keep_coordinates_and_text_scrolls_lines() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 50);
   let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   let target = (0..app.doc.pages.len())
     .find_map(|page| {
@@ -347,13 +329,7 @@ fn changed_file_reloads_after_settling() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("live.pdf");
   std::fs::copy(root.join("paper.pdf"), &path)?;
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 50);
   let mut app = Solo::open(&path, "", false, screen)?;
   let pages = app.doc.pages.len();
   app.command("3")?;
@@ -411,13 +387,7 @@ fn hint_labels_keep_their_origin() -> Result<()> {
 fn link_hints_follow_typed_labels() -> Result<()> {
   use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 50);
   let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
   app.command("2")?;
   let page = app.reader.cursor.page;
@@ -451,13 +421,7 @@ fn preview_shows_citation_target() -> Result<()> {
   use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let mut history = vpdf_ui::prompt::History::default();
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 50);
   for text_mode in [false, true] {
     let mut app = Solo::open(&root.join("paper.pdf"), "", text_mode, screen)?;
     let links = app.doc.links(PageId(1))?;
@@ -584,13 +548,7 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn unfocused_side_is_dimmed() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 40);
   let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
   common::outline_loaded(&mut app)?;
   app.open_panel(PanelKind::Outline)?;
@@ -610,13 +568,7 @@ fn unfocused_side_is_dimmed() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn leaving_text_preview_keeps_the_panel() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 40);
   let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   let quit = Input::plain(Action::Quit);
   app.action(Input { action: Action::Panel(PanelKind::Outline), ..quit })?;
@@ -632,13 +584,7 @@ fn leaving_text_preview_keeps_the_panel() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn escape_restores_the_previous_search() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 40);
   let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
   app.start_search("python", false, false)?;
   common::search_loaded(&mut app)?;
@@ -705,13 +651,7 @@ fn settled(app: &mut Solo) -> Result<String> {
 fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
   use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 40);
   let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
   let mut history = vpdf_ui::prompt::History::default();
   let mut key = |app: &mut App, code| {

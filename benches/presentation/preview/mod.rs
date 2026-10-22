@@ -52,13 +52,13 @@ struct Source<'a> {
 
 impl vpdf_reader::reader::TextSource for Source<'_> {
   fn page_count(&self) -> usize {
-    self.pages.text.len()
+    vpdf_reader::reader::TextSource::page_count(&self.pages)
   }
   fn page_text(
     &mut self,
     page: vpdf_model::text::PageId,
   ) -> Result<std::sync::Arc<vpdf_model::text::Text>> {
-    Ok(std::sync::Arc::clone(&self.pages.text[page.0]))
+    vpdf_reader::reader::TextSource::page_text(&mut self.pages, page)
   }
 }
 

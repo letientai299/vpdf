@@ -17,3 +17,6 @@ pub use vpdf_protocol::decode;
 pub type Result<T> = anyhow::Result<T>;
 
 const MIB: usize = 1 << 20;
+
+#[cfg(test)]
+extern crate self as vpdf_terminal;

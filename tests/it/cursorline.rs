@@ -66,6 +66,21 @@ fn marks(app: &mut Solo, screen: Screen) -> Result<Vec<Bounds>> {
   Ok(rects)
 }
 
+fn transformed(zoom: f32, rotation: u16) -> Result<(Solo, usize)> {
+  let mut app = app(false)?;
+  app.screen.columns = 40;
+  app.screen.rows = 15;
+  app.relayout()?;
+  app.layout.restore(zoom, rotation, Crop([30, 30, 30, 30]));
+  {
+    let (app, _) = app.parts();
+    app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));
+  }
+  let text = app.doc.text(PageId(0))?;
+  let line = text.lines.iter().position(|line| line.glyphs.len() > 10).unwrap();
+  Ok((app, line))
+}
+
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn cursorline_toggle_preserves_visual_and_copy() -> Result<()> {
@@ -99,18 +114,7 @@ fn cursorline_toggle_preserves_visual_and_copy() -> Result<()> {
 fn cursorline_pdf_projects_and_clips() -> Result<()> {
   for rotation in [0, 90, 180, 270] {
     for zoom in [0.5, 2.0] {
-      let mut app = app(false)?;
-      app.screen.columns = 40;
-      app.screen.rows = 15;
-      app.relayout()?;
-      app.layout.restore(zoom, rotation, Crop([30, 30, 30, 30]));
-      {
-        let (app, _) = app.parts();
-        app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));
-      }
-      let text = app.doc.text(PageId(0))?;
-      let line =
-        text.lines.iter().position(|line| line.glyphs.len() > 10).unwrap();
+      let (mut app, line) = transformed(zoom, rotation)?;
       app.reader.seed_reader(|reader| {
         reader.cursor = Position { page: PageId(0), line, glyph: 5 }
       });
@@ -277,18 +281,7 @@ fn landing_jump_modes_and_fixed_destination() -> Result<()> {
 fn landing_pdf_reuses_projected_clipped_band() -> Result<()> {
   for rotation in [0, 90, 180, 270] {
     for zoom in [0.5, 2.0] {
-      let mut app = app(false)?;
-      app.screen.columns = 40;
-      app.screen.rows = 15;
-      app.relayout()?;
-      app.layout.restore(zoom, rotation, Crop([30, 30, 30, 30]));
-      {
-        let (app, _) = app.parts();
-        app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));
-      }
-      let text = app.doc.text(PageId(0))?;
-      let line =
-        text.lines.iter().position(|line| line.glyphs.len() > 10).unwrap();
+      let (mut app, line) = transformed(zoom, rotation)?;
       app.go_to(Position { page: PageId(0), line, glyph: 5 }, true)?;
       app.left = 10;
       let screen = Screen { rows: 14, ..app.layout.screen() };

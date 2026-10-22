@@ -328,7 +328,12 @@ fn spaces(out: &mut impl Write, mut count: usize) -> io::Result<()> {
 }
 
 #[cfg(test)]
+#[path = "../../../tests/support/replay.rs"]
+mod replay;
+
+#[cfg(test)]
 mod tests {
+  use super::replay::replay_frame;
   use super::*;
   use vpdf_model::scene::Text;
   use vpdf_model::style::Role;
@@ -394,13 +399,7 @@ mod tests {
             id, &image, origin, screen, 3
           )))]
         );
-        let mut actual = Vec::new();
-        replay.begin(&mut actual)?;
-        let mut painter = Painter::new(&mut actual).with_graphics(&mut replay);
-        painter.paint(&scene);
-        painter.finish()?;
-        replay.end(&mut actual)?;
-        assert_eq!(actual, expected);
+        assert_eq!(replay_frame(&mut replay, &scene)?, expected);
       }
     }
     Ok(())
@@ -540,13 +539,7 @@ mod tests {
         direct.stretch(color, -1, (4, 1, 2), screen, 3, &mut expected)?;
         direct.veil(color, screen, 3, &mut expected)?;
         direct.end(&mut expected)?;
-        let mut actual = Vec::new();
-        replay.begin(&mut actual)?;
-        let mut painter = Painter::new(&mut actual).with_graphics(&mut replay);
-        painter.paint(&scene);
-        painter.finish()?;
-        replay.end(&mut actual)?;
-        assert_eq!(actual, expected);
+        assert_eq!(replay_frame(&mut replay, &scene)?, expected);
       }
     }
     Ok(())

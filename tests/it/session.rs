@@ -19,13 +19,7 @@ fn act(session: &mut Session, action: Action) -> Result<()> {
 /// focused new pane, 61-120 the first; row 39 is the status row.
 fn split() -> Result<(Session, u32, u32)> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 121,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(121, 40);
   let mut session = Session::new(None);
   session.open(&root.join("book.pdf"), true, screen)?;
   session.app().command("30")?;
@@ -42,13 +36,7 @@ fn split() -> Result<(Session, u32, u32)> {
 #[ignore = "requires verified public PDF corpus"]
 fn tabs_share_graphics_and_close_in_order() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 50);
   let mut session = Session::new(None);
   for name in ["book.pdf", "paper.pdf", "form.pdf"] {
     session.open(&root.join(name), true, screen)?;
@@ -91,13 +79,7 @@ fn reopening_restores_position_and_recent_order() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let directory = tempfile::tempdir()?;
   let store = directory.path().join("state.json");
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 50);
   let mut session = Session::new(Some(store.clone()));
   session.open(&root.join("paper.pdf"), true, screen)?;
   session.open(&root.join("book.pdf"), true, screen)?;
@@ -128,13 +110,7 @@ fn marks_persist_and_cross_documents() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let directory = tempfile::tempdir()?;
   let store = directory.path().join("state.json");
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 50);
   let mut session = Session::new(Some(store.clone()));
   session.open(&root.join("book.pdf"), true, screen)?;
   session.app().command("30")?;
@@ -435,13 +411,7 @@ mod pointer {
   #[ignore = "requires verified public PDF corpus"]
   fn scrolls_in_text_mode_drop_a_pending_yank() -> Result<()> {
     let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-    let screen = Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = common::cells(120, 40);
     let mut session = Session::new(None);
     session.open(&root.join("book.pdf"), true, screen)?;
     session.app().text_mode = true;
@@ -461,13 +431,7 @@ mod pointer {
 #[ignore = "requires verified public PDF corpus"]
 fn resize_lays_out_panes_and_start_screen() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(120, 50);
   let small = Screen { columns: 100, rows: 30, ..screen };
   let mut session = Session::new(None);
   session.open(&root.join("paper.pdf"), true, screen)?;
@@ -647,13 +611,7 @@ fn closed_panes_drop_their_images() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("split.pdf");
   common::text_pdf(&path, &["Images per pane"])?;
-  let screen = Screen {
-    columns: 121,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(121, 40);
   let mut session = Session::new(None);
   session.open(&path, true, screen)?;
   let kept = session.app().id;

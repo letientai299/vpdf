@@ -30,14 +30,7 @@ fn recorded_overview_keeps_tiles_and_chrome() -> Result<()> {
     let direct = overview.draw(&Source, frame, &mut graphics, &mut expected)?;
     graphics.end(&mut expected)?;
     assert_eq!(requests(direct), expected_requests);
-    let mut actual = Vec::new();
-    replay.begin(&mut actual)?;
-    let mut painter = vpdf_terminal::painter::Painter::new(&mut actual)
-      .with_graphics(&mut replay);
-    painter.paint(&scene);
-    painter.finish()?;
-    replay.end(&mut actual)?;
-    assert_eq!(actual, expected);
+    assert_eq!(replay_frame(&mut replay, &scene)?, expected);
   }
   Ok(())
 }

@@ -3,11 +3,8 @@ use std::hint::black_box;
 use vpdf_model::document::Target;
 use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
-use vpdf_model::text::{PageId, Position};
-use vpdf_reader::reader::Reader;
-use vpdf_ui::layout::{Layout, Zoom};
 use vpdf_ui::paint;
-use vpdf_ui::reading::{Frame, Pane, Sections, Tracking};
+use vpdf_ui::reading::{Frame, Sections};
 use vpdf_ui::text_view::TextView;
 
 #[derive(serde::Deserialize)]
@@ -42,20 +39,8 @@ fn case(
     cell_height: 16,
     origin: (0, 0),
   };
-  let bounds = || prepared.metadata.iter().map(|(_, bounds)| *bounds);
-  let mut layout = Layout::new(bounds(), screen);
-  layout.request_zoom(Zoom::To(2.0));
-  layout.reflow(bounds());
-  let mut reader = Reader::default();
-  reader.cursor = Position { page: PageId(0), line: 10, glyph: 4 };
-  anyhow::ensure!(
-    prepared.text[0].glyph(reader.cursor).is_some(),
-    "Missing benchmark cursor"
-  );
-  if cursor {
-    reader.enter_cursor();
-  }
-  let mut pane = Pane::new(reader, Tracking::default());
+  let mut layout = super::reading::layout(prepared, screen);
+  let mut pane = super::reading::pane(prepared, cursor)?;
   let mut text_view = TextView::default();
   let frame = Frame {
     pane: paint::Frame { screen, at: At::default(), left: 0, text },

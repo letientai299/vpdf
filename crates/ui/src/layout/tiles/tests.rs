@@ -1,5 +1,8 @@
+#[path = "../../../../../tests/support/tiles.rs"]
+mod fixture;
 use super::*;
 use anyhow::Result;
+use fixture::{frame, layout};
 #[test]
 fn bounded_neighborhood() {
   let limit = 10;
@@ -25,24 +28,6 @@ fn bounded_neighborhood() {
     &nearby(100, PageId(50), false, limit)[..3],
     &[PageId(50), PageId(49), PageId(51)]
   );
-}
-
-fn layout() -> Layout {
-  let page = crate::text::Bounds { x0: 0.0, y0: 0.0, x1: 600.0, y1: 1000.0 };
-  Layout::new(
-    [page; 5],
-    Screen {
-      columns: 100,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (7, 3),
-    },
-  )
-}
-
-fn frame(layout: &Layout) -> Frame {
-  Frame { pane: 0, screen: layout.screen(), left: 4 }
 }
 
 #[test]

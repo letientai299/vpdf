@@ -1,4 +1,7 @@
+#[path = "../../../../tests/support/scrollbar.rs"]
+mod fixture;
 use super::*;
+use fixture::{layout, route, view};
 #[test]
 fn touching_ticks_of_one_color_merge() {
   let (a, b) = ([1; 4], [2; 4]);
@@ -11,51 +14,6 @@ fn touching_ticks_of_one_color_merge() {
   ];
   for (ticks, want) in cases {
     assert_eq!(runs(ticks.clone()), want, "{ticks:?}");
-  }
-}
-
-fn layout() -> Layout {
-  let bounds = Bounds { x0: 0.0, y0: 0.0, x1: 960.0, y1: 1000.0 };
-  Layout::new(
-    [bounds; 3],
-    crate::layout::Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
-  )
-}
-
-fn view(layout: &Layout, scroll: f32) -> View<'_> {
-  View {
-    layout,
-    scroll,
-    available: true,
-    hovered: true,
-    frame: Frame {
-      screen: layout.screen(),
-      left: 0,
-      text: false,
-      at: vpdf_model::geometry::At::default(),
-    },
-  }
-}
-
-fn route(kind: MouseEventKind, row: u16) -> Route {
-  Route {
-    pane: 1,
-    region: crate::pointer::Region::Page,
-    focus: true,
-    clicks: 1,
-    pixel: None,
-    mouse: vpdf_model::input::MouseEvent {
-      kind,
-      row,
-      column: 119,
-      modifiers: vpdf_model::input::KeyModifiers::NONE,
-    },
   }
 }
 
@@ -129,23 +87,9 @@ fn presses_record_only_at_their_boundary() {
 
 #[test]
 fn recorded_scrub_keeps_track_and_label() {
-  use vpdf_model::scene::{FillArea, Scene};
+  use vpdf_model::scene::FillArea;
   let layout = layout();
-  let view = view(&layout, 100.0);
-  let ticks = Ticks { outline: &[], search: &Search::default() };
-  let now = Instant::now();
-  let mut bar = Bar::default();
-  let Input::Press(press) = bar.input(
-    &view,
-    &route(MouseEventKind::Down(vpdf_model::input::MouseButton::Left), 5),
-  ) else {
-    panic!("Expected scrollbar press")
-  };
-  press.apply(&mut bar, Location::default(), &mut Reader::default());
-  let mut scene = Scene::new();
-  let label = bar.scene(view, ticks, now, &mut scene).unwrap();
-  let page = label.page();
-  label.scene("Section", &mut scene);
+  let (_, page, scene) = fixture::scrub(&layout, Instant::now());
   let Op::Fill(track) = &scene[0] else { panic!("Expected scrollbar track") };
   assert_eq!(
     track.area(),

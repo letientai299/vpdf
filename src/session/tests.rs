@@ -1,9 +1,12 @@
+#[path = "../../tests/support/screen.rs"]
+mod screen;
 use super::maintenance::idle;
 use super::run::*;
 use super::windows::*;
 use super::*;
 #[cfg(test)]
 use crate::SeedReader;
+pub(super) use screen::cells;
 
 use vpdf_model::input::{Button, Mouse, Spot};
 use vpdf_model::input::{KeyCode, KeyModifiers};
@@ -86,13 +89,7 @@ static SHAPES: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// The paper at page 2, 120x40.
 fn paper() -> Result<Session> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = cells(120, 40);
   let mut session = Session::new(None);
   session.open(&root.join("paper.pdf"), true, screen)?;
   session.app().command("2")?;
@@ -252,13 +249,7 @@ fn held_gestures_write_shapes() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn landing_deadlines_expire_across_panes() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = cells(120, 40);
   let mut session = Session::new(None);
   session.open(&root.join("paper.pdf"), true, screen)?;
   session.app().request = Some(Request::Window {
@@ -502,23 +493,13 @@ fn line_session(
   Ok(session)
 }
 
-fn pointer_screen() -> Screen {
-  Screen {
-    columns: 80,
-    rows: 24,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  }
-}
-
 #[test]
 fn sweeps_show_a_crosshair() -> Result<()> {
   use vpdf_model::input::MouseButton::Left;
   use vpdf_model::input::MouseEventKind::{Down, Drag, Moved, Up};
   use vpdf_ui::pointer::Hit;
   let directory = tempfile::tempdir()?;
-  let screen = pointer_screen();
+  let screen = cells(80, 24);
   let mut session = line_session(directory.path(), "", screen)?;
   let (column, row) = find(&mut session, |hit| hit == Hit::Text)?;
   terminal::claim_pointer(
@@ -553,7 +534,7 @@ fn mouse_command_toggles_capture() -> Result<()> {
   use vpdf_model::input::{Mouse, MouseKind, Spot};
   use vpdf_ui::pointer::Hit;
   let directory = tempfile::tempdir()?;
-  let screen = pointer_screen();
+  let screen = cells(80, 24);
   let mut session = line_session(directory.path(), "", screen)?;
   session.screen = Some(screen);
   let (column, row) = find(&mut session, |hit| hit == Hit::Text)?;
@@ -589,16 +570,20 @@ fn mouse_command_toggles_capture() -> Result<()> {
   Ok(())
 }
 
+fn help_session(directory: &Path) -> Result<Session> {
+  let mut session = line_session(directory, "", cells(80, 24))?;
+  session.app().open_panel(PanelKind::Help)?;
+  Ok(session)
+}
+
 /// Menu backdrops cover only page cells.
 #[test]
 fn menu_backdrops_skip_the_panel() -> Result<()> {
   use vpdf_model::input::MouseButton::Right;
   use vpdf_model::input::MouseEventKind::{Down, Up};
-  use vpdf_ui::keys::PanelKind;
+
   let directory = tempfile::tempdir()?;
-  let screen = pointer_screen();
-  let mut session = line_session(directory.path(), "", screen)?;
-  session.app().open_panel(PanelKind::Help)?;
+  let mut session = help_session(directory.path())?;
   let left = session.app().left;
   // (pressed column) -> backdrop's page-area x range
   let cases = [(1, None), (left - 3, Some(0.0))];
@@ -653,11 +638,9 @@ fn highlights(out: &[u8], left: u16) -> Vec<Bounds> {
 fn veils_skip_menus() -> Result<()> {
   use vpdf_model::input::MouseButton::Right;
   use vpdf_model::input::MouseEventKind::{Down, Up};
-  use vpdf_ui::keys::PanelKind;
+
   let directory = tempfile::tempdir()?;
-  let screen = pointer_screen();
-  let mut session = line_session(directory.path(), "", screen)?;
-  session.app().open_panel(PanelKind::Help)?;
+  let mut session = help_session(directory.path())?;
   let left = session.app().left;
   // A stretched pixel: `c=` columns wide.
   let veiled = |out: &[u8]| {
@@ -687,7 +670,7 @@ fn overview_rings_skip_the_menu() -> Result<()> {
   use vpdf_model::input::MouseButton::Right;
   use vpdf_model::input::MouseEventKind::{Down, Up};
   let directory = tempfile::tempdir()?;
-  let screen = pointer_screen();
+  let screen = cells(80, 24);
   let mut session = line_session(directory.path(), "", screen)?;
   session.app().open_overview()?;
   session.draw_focused(&mut Vec::new())?;
@@ -720,7 +703,7 @@ fn edge_drags_scroll_until_focus_loss() -> Result<()> {
   use vpdf_ui::input::edge::Edge;
   use vpdf_ui::pointer::Hit;
   let directory = tempfile::tempdir()?;
-  let screen = pointer_screen();
+  let screen = cells(80, 24);
   let mut session = line_session(directory.path(), "", screen)?;
   let (column, row) = find(&mut session, |hit| hit == Hit::Text)?;
   let now = Instant::now();
@@ -764,7 +747,7 @@ fn home_file_drops_open() -> Result<()> {
   let pdf = line_pdf(directory.path(), "")?;
   let notes = directory.path().join("notes.txt");
   std::fs::write(&notes, "text")?;
-  let screen = pointer_screen();
+  let screen = cells(80, 24);
   let list = |path: &Path| {
     let uri = format!("file://{}\r\n", path.display());
     base64::engine::general_purpose::STANDARD.encode(uri)
@@ -888,13 +871,7 @@ fn only_actionable_input_counts() {
 #[ignore = "requires verified public PDF corpus"]
 fn local_keys_clear_capture() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 121,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = cells(121, 40);
   let mut session = Session::new(None);
   session.open(&root.join("book.pdf"), true, screen)?;
   let mut events = std::collections::VecDeque::new();
@@ -929,13 +906,7 @@ fn keys_close_other_previews() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let link = "/Annots[<</Type/Annot/Subtype/Link/Rect[15 90 200 125]\
                 /Dest[3 0 R/XYZ 0 50 0]>>]";
-  let screen = Screen {
-    columns: 121,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = cells(121, 40);
   let mut session = line_session(directory.path(), link, screen)?;
   session.app().command("vsplit")?;
   session.settle()?;
@@ -968,13 +939,7 @@ fn wheel_turns_defer_page_hover() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let link = "/Annots[<</Type/Annot/Subtype/Link/Rect[15 90 200 125]\
                 /Dest[0 0 R/XYZ 0 50 0]>>]";
-  let screen = Screen {
-    columns: 121,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = cells(121, 40);
   let mut session = line_session(directory.path(), link, screen)?;
   let app = session.app();
   let bounds = app.doc.links(PageId(0))?[0].first();
@@ -1024,13 +989,7 @@ fn wheel_turns_defer_page_hover() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn deferred_panels_clear_capture() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 121,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = cells(121, 40);
   for command in [b":recent\r".as_slice(), b":marks\r".as_slice()] {
     let mut session = Session::new(None);
     session.open(&root.join("book.pdf"), true, screen)?;
@@ -1061,7 +1020,7 @@ fn deferred_panels_clear_capture() -> Result<()> {
 fn decoded_commands_change_state() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let mut session = Session::new(None);
-  let screen = pointer_screen();
+  let screen = cells(80, 24);
   session.open(&line_pdf(directory.path(), "")?, true, screen)?;
   let mut parser = vpdf_terminal::decode::Parser::default();
   let mut events = std::collections::VecDeque::new();

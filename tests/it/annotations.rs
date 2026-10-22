@@ -293,6 +293,16 @@ fn noted_pdf(path: &std::path::Path) -> Result<()> {
   crate::common::write_pdf(path, &objects, "")
 }
 
+fn noted_session(
+  directory: &std::path::Path,
+) -> Result<vpdf::session::Session> {
+  let path = directory.join("noted.pdf");
+  noted_pdf(&path)?;
+  let mut session = vpdf::session::Session::new(None);
+  session.open(&path, true, screen())?;
+  Ok(session)
+}
+
 #[test]
 fn hover_details_notes_rows_and_pages() -> Result<()> {
   use vpdf::session::Session;
@@ -301,10 +311,7 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   use vpdf_model::input::{MouseEvent, MouseEventKind};
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
-  let path = directory.path().join("noted.pdf");
-  noted_pdf(&path)?;
-  let mut session = Session::new(None);
-  session.open(&path, true, screen())?;
+  let mut session = noted_session(directory.path())?;
   let cells: Vec<_> = grid().collect();
   let find = |session: &mut Session, region, wanted: &dyn Fn(Hit) -> bool| {
     let app = session.app();
@@ -396,16 +403,12 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
 /// U22: clipped outline rows show without their indent.
 #[test]
 fn outline_hovers_drop_the_indent() -> Result<()> {
-  use vpdf::session::Session;
   use vpdf::trace::Drawable;
   use vpdf_model::document::{Heading, Target};
   use vpdf_model::input::{MouseEvent, MouseEventKind};
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
-  let path = directory.path().join("noted.pdf");
-  noted_pdf(&path)?;
-  let mut session = Session::new(None);
-  session.open(&path, true, screen())?;
+  let mut session = noted_session(directory.path())?;
   let title = "Applications of attention in our model, ".repeat(2);
   let title = title.trim_end();
   let app = session.app();
@@ -476,10 +479,7 @@ fn notes_open_by_mouse() -> Result<()> {
   use vpdf_terminal::terminal::Shape;
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
-  let path = directory.path().join("noted.pdf");
-  noted_pdf(&path)?;
-  let mut session = Session::new(None);
-  session.open(&path, true, screen())?;
+  let mut session = noted_session(directory.path())?;
   let mut find = |wanted: &dyn Fn(Hit) -> bool| {
     let app = session.app();
     let cell = grid().find(|&(column, row)| {
@@ -695,13 +695,9 @@ fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
 /// Note rows' menus show and run `K`.
 #[test]
 fn note_row_menus_show_notes() -> Result<()> {
-  use vpdf::session::Session;
   use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
   let directory = tempfile::tempdir()?;
-  let path = directory.path().join("noted.pdf");
-  noted_pdf(&path)?;
-  let mut session = Session::new(None);
-  session.open(&path, true, screen())?;
+  let mut session = noted_session(directory.path())?;
   session.app().open_panel(PanelKind::Annotations)?;
   session.draw_focused(&mut Vec::new())?;
   for kind in [

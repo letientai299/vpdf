@@ -924,6 +924,7 @@ fn metrics(session: &Session, started: Instant) -> Metrics {
 
 #[cfg(test)]
 mod tests {
+  use super::super::tests::cells;
   use super::*;
   use vpdf_model::input::{KeyCode, KeyModifiers};
 
@@ -943,8 +944,20 @@ mod tests {
     }
   }
 
-  fn cells(columns: u16, rows: u16) -> Screen {
-    Screen { columns, rows, cell_width: 8, cell_height: 16, origin: (0, 0) }
+  fn locked_bridge(
+    path: &std::path::Path,
+  ) -> Result<(Bridge, mpsc::Receiver<()>)> {
+    let (send, wakes) = mpsc::channel();
+    let bridge = Bridge::stored(vec![path.into()], None, None, move || {
+      let _ = send.send(());
+    })?;
+    wait(&bridge, &wakes, |frame| {
+      frame
+        .scene
+        .iter()
+        .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
+    })?;
+    Ok((bridge, wakes))
   }
 
   fn sized() -> Screen {
@@ -1502,17 +1515,7 @@ mod tests {
     assert!(session.unlock.is_none());
     assert!(session.tabs.is_empty());
     assert!(session.home.is_some() && !session.quit);
-    let (send, wakes) = mpsc::channel();
-    let mut bridge =
-      Bridge::stored(vec![encrypted.path().into()], None, None, move || {
-        let _ = send.send(());
-      })?;
-    wait(&bridge, &wakes, |frame| {
-      frame
-        .scene
-        .iter()
-        .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
-    })?;
+    let (mut bridge, _wakes) = locked_bridge(encrypted.path())?;
     bridge.close()?;
     Ok(())
   }
@@ -1699,17 +1702,7 @@ mod tests {
   fn encrypted_corpus_renders() -> Result<()> {
     let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
     let encrypted = protected(&path)?;
-    let (send, wakes) = mpsc::channel();
-    let mut bridge =
-      Bridge::stored(vec![encrypted.path().into()], None, None, move || {
-        let _ = send.send(());
-      })?;
-    wait(&bridge, &wakes, |frame| {
-      frame
-        .scene
-        .iter()
-        .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
-    })?;
+    let (mut bridge, wakes) = locked_bridge(encrypted.path())?;
     bridge.send(Input::Paste("test-reader".into()));
     bridge.send(key(KeyCode::Enter));
     wait(&bridge, &wakes, |frame| frame.complete && !frame.images.is_empty())?;
