@@ -410,8 +410,7 @@ fn drain(
       }
       input => {
         chores.touch(Instant::now());
-        apply(session, input, screen);
-        applied = true;
+        applied |= apply(session, input, screen);
         // Queued keys and opens resume first, at the top of the loop.
         if session.quit
           || session.picker.is_some()
@@ -551,7 +550,7 @@ fn publish(latest: &Mutex<Option<Frame>>, mut frame: Frame) {
   *output = Some(frame);
 }
 
-fn apply(session: &mut Session, input: Input, screen: &mut Screen) {
+fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
   if session.picker.is_some()
     && matches!(
       input,
@@ -561,46 +560,59 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) {
         | Input::History { .. }
     )
   {
-    return;
+    return false;
   }
   match session.password_input(&input, *screen) {
-    Ok(true) => return,
+    Ok(true) => {
+      return !matches!(input, Input::Mouse { .. } | Input::History { .. });
+    }
     Err(error) => {
       report(session, Err(error));
-      return;
+      return true;
     }
     Ok(false) => {}
   }
   let applied = match input {
     Input::Resize(size) => {
       *screen = size;
-      session.resize(size)
+      session.resize(size).map(|()| true)
     }
     Input::Open(path) => {
       if session.unlock.is_some() || session.picker.is_some() {
         session.native_opens.push_back(path);
-        Ok(())
+        Ok(true)
       } else {
-        session.resume(Operation::Open(path), *screen)
+        session.resume(Operation::Open(path), *screen).map(|()| true)
       }
     }
     Input::Key(key) if session.tabs.is_empty() => {
       home_event(session, vpdf_model::input::Event::Key(key), *screen)
+        .map(|()| true)
     }
     Input::Paste(text) if session.tabs.is_empty() => {
       home_event(session, vpdf_model::input::Event::Paste(text), *screen)
+        .map(|()| true)
     }
-    Input::Key(key) => session.interact(Interaction::Key(key)).map(drop),
-    Input::Paste(text) => session.interact(Interaction::Paste(text)).map(drop),
+    Input::Key(key) => session.interact(Interaction::Key(key)),
+    Input::Paste(text) => session.interact(Interaction::Paste(text)),
     Input::Mouse { event, pixels: (x, y), screen: drawn }
       if drawn == *screen =>
     {
       let mut report = vpdf_model::input::Mouse::from(event);
       report.at = vpdf_model::input::Spot::Pixel { x, y };
       if session.tabs.is_empty() {
-        home_event(session, vpdf_model::input::Event::Mouse(report), *screen)
+        if matches!(
+          event.kind,
+          vpdf_model::input::MouseEventKind::Moved
+            | vpdf_model::input::MouseEventKind::Drag(_)
+        ) {
+          Ok(false)
+        } else {
+          home_event(session, vpdf_model::input::Event::Mouse(report), *screen)
+            .map(|()| true)
+        }
       } else {
-        session.interact(Interaction::Mouse(report)).map(drop)
+        session.interact(Interaction::Mouse(report))
       }
     }
     Input::History { forward, pixels: (x, y), screen: drawn }
@@ -613,11 +625,11 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) {
         at: Spot::Pixel { x, y },
         modifiers: vpdf_model::input::KeyModifiers::NONE,
       };
-      session.interact(Interaction::Mouse(report)).map(drop)
+      session.interact(Interaction::Mouse(report))
     }
-    Input::Leave => {
-      session.interact(Interaction::Leave).map(|_| session.drop_pointer())
-    }
+    Input::Leave => session.interact(Interaction::Leave).inspect(|_changed| {
+      session.drop_pointer();
+    }),
     Input::Focus(focused) => {
       session.sight =
         if focused { super::Sight::Focused } else { super::Sight::Unfocused };
@@ -625,12 +637,15 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) {
         session.pointer_left();
         session.drop_pointer();
       }
-      Ok(())
+      Ok(true)
     }
-    _ => Ok(()),
+    _ => Ok(false),
   };
   quit_when_closed(session);
-  report(session, applied);
+  applied.unwrap_or_else(|error| {
+    report(session, Err(error));
+    true
+  })
 }
 
 // Like the terminal, closing the last tab exits.
@@ -1049,6 +1064,75 @@ mod tests {
       marks.iter().any(|row| row["kind"] == "mark" && row["name"] == "phase")
     );
     Ok(())
+  }
+
+  #[test]
+  fn unchanged_motion_skips_frames() -> Result<()> {
+    use vpdf_model::input::MouseEventKind;
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("motion.pdf");
+    crate::fixtures::pdf(&path, &["body"], "")?;
+    let mut screen = sized();
+    let mut session = Session::new(None);
+    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    session.open(&path, true, screen)?;
+    let mut cache = Cache::new(BUDGET);
+    frame(&mut session, &mut cache, screen)?;
+    let mut chores = Chores::new(Instant::now());
+    let pending = AtomicBool::new(false);
+    let drawn = screen;
+    let mouse = |kind, pixels: (u16, u16)| Input::Mouse {
+      event: MouseEvent {
+        kind,
+        column: pixels.0 / drawn.cell_width,
+        row: pixels.1 / drawn.cell_height,
+        modifiers: KeyModifiers::NONE,
+      },
+      pixels,
+      screen: drawn,
+    };
+    let mut inputs = vec![(mouse(MouseEventKind::Moved, (500, 300)), true)];
+    inputs.extend(
+      (501..521).map(|x| (mouse(MouseEventKind::Moved, (x, 300)), false)),
+    );
+    inputs.push((Input::Leave, true));
+    inputs.push((Input::Leave, false));
+    inputs.push((mouse(MouseEventKind::Moved, (500, 300)), true));
+    for (input, changed) in inputs {
+      assert_eq!(
+        drain(
+          &mut session,
+          std::iter::once(input),
+          &mut chores,
+          &mut screen,
+          &pending,
+        ),
+        Some(changed)
+      );
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn home_motion_skips_frames() {
+    use vpdf_model::input::{MouseButton, MouseEventKind};
+    let mut session = Session::new(None);
+    let mut screen = sized();
+    ensure_home(&mut session, screen);
+    for kind in [MouseEventKind::Moved, MouseEventKind::Drag(MouseButton::Left)]
+    {
+      let input = Input::Mouse {
+        event: MouseEvent {
+          kind,
+          column: 5,
+          row: 5,
+          modifiers: KeyModifiers::NONE,
+        },
+        pixels: (50, 100),
+        screen,
+      };
+      assert!(!apply(&mut session, input, &mut screen));
+    }
   }
 
   #[test]
@@ -2224,8 +2308,17 @@ mod tests {
     let mut cache = Cache::new(BUDGET);
     frame(&mut session, &mut cache, screen)?;
     let drawn = screen;
-    apply(&mut session, mouse(MouseEventKind::Moved, drawn), &mut screen);
+    assert!(apply(
+      &mut session,
+      mouse(MouseEventKind::Moved, drawn),
+      &mut screen
+    ));
     assert_eq!(session.shape(), vpdf_model::style::Shape::Pointer);
+    assert!(!apply(
+      &mut session,
+      mouse(MouseEventKind::Moved, drawn),
+      &mut screen
+    ));
     let old_page = session.app().reader.cursor.page;
     let stale = Screen { columns: 119, ..screen };
     apply(
