@@ -298,6 +298,7 @@ fn run(
   let mut animation_due = Instant::now();
   let mut applied = Ticket::default();
   loop {
+    dirty |= session.print_update();
     dirty |= picker_update(&mut session, screen);
     dirty |= resume_keys(&mut session);
     if session.unlock.is_none()
@@ -534,7 +535,7 @@ fn wait_time(
   if session.picker.is_some() {
     wait = wait.min(Duration::from_millis(50));
   }
-  wait
+  session.print_wait(wait)
 }
 
 fn publish(latest: &Mutex<Option<Frame>>, mut frame: Frame) {

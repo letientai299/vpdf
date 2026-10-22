@@ -345,6 +345,7 @@ impl App {
       Id::Text => self.open_panel(PanelKind::Text)?,
       Id::Info => self.open_panel(PanelKind::Info)?,
       Id::Reload => self.reload_with(&self.password.clone())?,
+      Id::Print => self.print(argument)?,
       Id::Password => {
         self.overlays.open_prompt(Prompt::new(PromptKind::Password));
       }
@@ -356,6 +357,12 @@ impl App {
       Id::Quit => self.quit = true,
       Id::TabClose => self.request = Some(Request::TabClose(None)),
     }
+    Ok(())
+  }
+
+  fn print(&mut self, argument: &str) -> Result<()> {
+    anyhow::ensure!(argument.is_empty(), "Usage: :print");
+    self.request = Some(Request::Print);
     Ok(())
   }
 

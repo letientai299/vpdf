@@ -54,6 +54,7 @@ pub enum Request {
   Keys(Vec<vpdf_model::input::KeyEvent>),
   /// Pick a PDF for the focused pane.
   Pick,
+  Print,
   /// Closes a tab, else the active one.
   TabClose(Option<usize>),
   QuitAll,

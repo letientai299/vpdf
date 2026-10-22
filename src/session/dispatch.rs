@@ -48,6 +48,7 @@ impl Session {
   ) -> Result<()> {
     match request {
       Some(Request::Open { path, tab }) => self.open(&path, tab, screen),
+      Some(Request::Print) => self.print(),
       Some(Request::RecentTab) => self.recent_tab(screen),
       Some(Request::PanelOpen { path, position, focus }) => {
         self.panel_open(&path, position, focus, screen)

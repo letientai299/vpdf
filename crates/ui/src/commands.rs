@@ -43,6 +43,7 @@ pub enum Id {
   Text,
   Info,
   Reload,
+  Print,
   Password,
   Ocr,
   Help,
@@ -234,6 +235,8 @@ pub const COMMANDS: &[Spec] = &[
   spec(Id::Info, "info", &[], "", "document, reader, and terminal info")
     .in_view(View::Recent),
   spec(Id::Reload, "reload", &[], "", "reread the file from disk"),
+  #[cfg(target_os = "macos")]
+  spec(Id::Print, "print", &[], "", "open the system print dialog"),
   spec(Id::Password, "password", &[], "", "unlock and reopen the document"),
   spec(Id::Ocr, "ocr", &[], "[lang]", "recognize the page with Tesseract")
     .completes(Complete::Language),
@@ -431,6 +434,21 @@ mod tests {
     assert_eq!(candidates("mouse ").1, ["on", "off"]);
     assert_eq!(candidates("mouse of"), (6, vec!["off".into()]));
   }
+  #[test]
+  fn printing_is_macos_only() {
+    let found = commands(|_| true).find(|spec| spec.id == Id::Print);
+    assert_eq!(found.is_some(), cfg!(target_os = "macos"));
+    for view in [View::Home, View::Recent, View::Document] {
+      let items = candidates("print", view, |_| true, |_, _| Vec::new()).1;
+      let available = cfg!(target_os = "macos") && view == View::Document;
+      assert_eq!(items == ["print"], available);
+      assert_eq!(
+        resolve("print", view, |_| true, |_| false).is_ok(),
+        available
+      );
+    }
+  }
+
   #[test]
   fn prerequisites_are_explicit() {
     assert!(lookup("fzf", |_| false).is_none());

@@ -54,6 +54,7 @@ pub struct Session {
   pending_keys: std::collections::VecDeque<KeyEvent>,
   secret: Option<String>,
   picker: Option<crate::programs::Picker>,
+  printing: Option<printing::Job>,
   perf: crate::perf::Monitor,
   /// Start screen while no document is open.
   pub home: Option<Home>,
@@ -169,6 +170,7 @@ impl Session {
       pending_keys: std::collections::VecDeque::new(),
       secret: None,
       picker: None,
+      printing: None,
       perf: crate::perf::Monitor::default(),
       home: None,
       screen: None,
@@ -242,6 +244,7 @@ impl Session {
 
   /// Records every pane, the focused one last, and saves before exit.
   fn finish(&mut self) -> Result<()> {
+    self.printing = None;
     let focused = self.tabs.get(self.active).map(|tab| tab.panes[tab.focus].id);
     let panes = self.tabs.iter().flat_map(|tab| &tab.panes);
     let (last, others): (Vec<_>, Vec<_>) =
@@ -261,6 +264,7 @@ mod interaction;
 mod maintenance;
 pub mod native;
 mod pointer;
+mod printing;
 mod run;
 #[cfg(test)]
 mod tests;

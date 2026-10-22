@@ -131,6 +131,10 @@ executables on `PATH`:
   or `EDITOR` to its command; Vpdf uses `VISUAL` first and falls back to `vi`
   when neither is set.
 
+macOS printing uses the system's `osascript`, PDFKit, and AppKit; no extra
+installation is needed. It requires a logged-in graphical session on the
+machine running Vpdf. Printing over SSH uses that machine's session.
+
 macOS supplies `pbcopy` for text copying, `osascript` for image copying, and
 `open` for links. Text copying also sends [OSC 52][osc52], subject to terminal
 policy; SSH skips native clipboard helpers. See [external actions][integrations]

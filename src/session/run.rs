@@ -162,6 +162,7 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
   let mut drawn = Instant::now();
   let mut title = String::new();
   while session.running() {
+    dirty |= session.print_update();
     if terminal::resize_deferred() {
       let measured = terminal::remeasure().map(Some);
       let resized = session.refit(measured, crossterm::terminal::size);
@@ -246,6 +247,7 @@ pub(super) fn wait_time(
   mut wait: Duration,
   now: Instant,
 ) -> Duration {
+  wait = session.print_wait(wait);
   if let Some(image) = session.image_wait(now) {
     wait = wait.min(image);
   }

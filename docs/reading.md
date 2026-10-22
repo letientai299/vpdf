@@ -237,6 +237,12 @@ the interaction loop remains responsive.
 
 ## External actions
 
+On macOS, `:print` opens the system print dialog for the focused PDF in either
+frontend. Choose pages, copies, and printer settings there. Printing uses the
+source PDF; reader crop, zoom, selections, and OCR overlays do not change it.
+Cancel closes the dialog without an error. Encrypted PDFs are unsupported.
+The reader remains responsive while the dialog is open.
+
 Opening a document does not automatically launch its links. Explicitly followed
 HTTP, HTTPS, and `mailto:` links use the platform opener. Mail links lose their
 query parameters before opening; other URI schemes are rejected. Passwords use
