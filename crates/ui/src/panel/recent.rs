@@ -4,7 +4,7 @@
 use anyhow::Result;
 
 use vpdf_model::cache::Cache;
-use vpdf_model::scene::{Op, Surface};
+use vpdf_model::scene::{Op, Stage, Surface};
 use vpdf_model::style::Role;
 const MIB: usize = 1 << 20;
 use crate::layout::Screen;
@@ -250,7 +250,8 @@ impl Shelf {
       let x = f32::from(column + 1) * cell_width as f32
         + (width as f32 - thumb.width() as f32) / 2.0;
       let y = cell_height as f32;
-      scene.picture(card.unwrap().serial, thumb, (x, y), screen, 0)?;
+      let stage = Stage { screen, left: 0 };
+      scene.picture(card.unwrap().serial, thumb, (x, y), stage)?;
     }
     // Text follows the thumbnail's own height; a loading card holds the
     // whole box so its text does not jump twice.
@@ -368,7 +369,7 @@ fn ago(milliseconds: u64) -> String {
 mod tests {
   use super::*;
   use crate::keys::PanelKind;
-  use vpdf_model::input::{KeyModifiers, MouseEvent, MouseEventKind};
+  use vpdf_model::input::{MouseEvent, MouseEventKind};
   #[test]
   fn ago_names_the_largest_unit() {
     let minute = 60_000;
@@ -535,12 +536,7 @@ mod tests {
     assert!(!draw(&mut shelf, &mut panel)?.contains("Loading"));
     // The wheel over the card scrolls it.
     panel.shelf = Some(shelf);
-    panel.pointer(MouseEvent {
-      kind: MouseEventKind::ScrollDown,
-      column,
-      row: 3,
-      modifiers: KeyModifiers::NONE,
-    });
+    panel.pointer(MouseEvent::new(MouseEventKind::ScrollDown, column, 3));
     let mut shelf = panel.shelf.take().expect("shelf");
     assert_eq!(panel.top, 0);
     assert!(draw(&mut shelf, &mut panel)?.contains("Loading"));

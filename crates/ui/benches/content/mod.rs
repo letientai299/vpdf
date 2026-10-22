@@ -111,11 +111,10 @@ impl vpdf_ui::source::Outline for Outlined<'_> {
 }
 
 pub fn tracking() -> Result<()> {
-  use vpdf_model::geometry::Screen;
   use vpdf_ui::keys::PanelKind;
   use vpdf_ui::layout::Layout;
   use vpdf_ui::panel::Panel;
-  use vpdf_ui::reading::{Frame, Outline, Pane};
+  use vpdf_ui::reading::{Outline, Pane};
   use vpdf_ui::text_view::TextView;
 
   let prepared: Prepared = super::fixture("scrollbar")?;
@@ -128,13 +127,7 @@ pub fn tracking() -> Result<()> {
       _ => None,
     })
     .ok_or_else(|| anyhow::anyhow!("Missing outline point"))?;
-  let screen = Screen {
-    columns: 120,
-    rows: 24,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::screen::cells(120, 24);
   for text in [false, true] {
     for cursor in [false, true] {
       for landed in [false, true] {
@@ -145,15 +138,7 @@ pub fn tracking() -> Result<()> {
         let mut layout =
           Layout::new(pages.metadata.iter().map(|(_, bounds)| *bounds), screen);
         let mut text_view = TextView::default();
-        let frame = Frame {
-          pane: vpdf_ui::paint::Frame {
-            screen,
-            at: vpdf_model::geometry::At::default(),
-            left: 0,
-            text,
-          },
-          visible: screen,
-        };
+        let frame = super::reading::frame(screen, text);
         let source = || Outlined { pages: &pages, headings: &headings };
         if landed {
           let (page, x, y) = target;
@@ -217,14 +202,13 @@ pub fn input() -> Result<()> {
   super::measure("Panel::refocus outline", || {
     black_box(panel.refocus());
   })?;
-  let mouse = vpdf_model::input::MouseEvent {
-    kind: vpdf_model::input::MouseEventKind::Down(
+  let mouse = vpdf_model::input::MouseEvent::new(
+    vpdf_model::input::MouseEventKind::Down(
       vpdf_model::input::MouseButton::Left,
     ),
-    column: 2,
-    row: 1,
-    modifiers: vpdf_model::input::KeyModifiers::NONE,
-  };
+    2,
+    1,
+  );
   super::measure("Press::activate repeat", || {
     let press = panel.press(black_box(mouse));
     black_box(press.activate(&mut panel, 2));

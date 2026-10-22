@@ -6,7 +6,6 @@ use vpdf_model::document::{Facts, LoadedFacts, Thumbnail};
 use vpdf_model::text::Position;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::home::Home;
-use vpdf_ui::layout::Screen;
 use vpdf_ui::panel::{Destination, Row, Style, recent::Entry};
 
 #[derive(serde::Deserialize)]
@@ -47,7 +46,7 @@ pub fn draw() -> Result<()> {
   let mut home = Home::new(
     vec![row],
     &[entry],
-    Screen { columns, rows, cell_width, cell_height, origin: (0, 0) },
+    crate::screen::pixels(columns, rows, cell_width, cell_height),
   );
   home.shelf_mut().expect("recent shelf").accept(
     data.path,

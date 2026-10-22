@@ -1,6 +1,6 @@
 use vpdf_model::geometry::Screen;
 
-pub fn pixels(
+pub const fn pixels(
   columns: u16,
   rows: u16,
   cell_width: u16,
@@ -9,6 +9,6 @@ pub fn pixels(
   Screen { columns, rows, cell_width, cell_height, origin: (0, 0) }
 }
 
-pub fn cells(columns: u16, rows: u16) -> Screen {
+pub const fn cells(columns: u16, rows: u16) -> Screen {
   pixels(columns, rows, 8, 16)
 }

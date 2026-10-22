@@ -4,10 +4,8 @@ use std::hint::black_box;
 use std::time::Instant;
 use vpdf_model::document::{Heading, Target};
 use vpdf_model::geometry::At;
-use vpdf_model::geometry::{Crop, Screen};
-use vpdf_model::input::{
-  KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-};
+use vpdf_model::geometry::Crop;
+use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
 use vpdf_model::text::Position;
 use vpdf_reader::reader::{Location, Reader};
 use vpdf_search::search::Hit;
@@ -28,13 +26,7 @@ struct Prepared {
 pub fn draw() -> Result<()> {
   let prepared: Prepared = super::fixture("scrollbar")?;
   let geometry: super::Geometry = super::fixture("geometry")?;
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::screen::cells(120, 40);
   let pages: Vec<_> = geometry.pages.into_iter().map(super::bounds).collect();
   let mut layout = Layout::new(pages.iter().copied(), screen);
   layout.restore(2.0, 0, Crop::default());
@@ -68,12 +60,7 @@ pub fn draw() -> Result<()> {
     focus: true,
     clicks: 1,
     pixel: None,
-    mouse: MouseEvent {
-      kind: MouseEventKind::Down(MouseButton::Left),
-      column: 119,
-      row: 0,
-      modifiers: KeyModifiers::NONE,
-    },
+    mouse: MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 119, 0),
   };
   let Input::Press(press) = bar.input(&view(), &route) else {
     anyhow::bail!("Missing scrollbar press");

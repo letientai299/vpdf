@@ -557,16 +557,9 @@ mod tests {
   #[ignore = "requires verified public PDF corpus"]
   fn completion_tracks_document_visibility() -> Result<()> {
     use vpdf_model::input::KeyModifiers;
-    use vpdf_ui::layout::Screen;
     let path =
       std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
-    let screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(80, 24);
     for covered in [false, true] {
       let mut app = App::with_screen(&path, "", false, screen)?;
       if covered {
@@ -598,19 +591,15 @@ mod tests {
     let root = tempfile::tempdir()?;
     let path = root.path().join("source.pdf");
     crate::fixtures::pdf(&path, &["first"], "")?;
-    let screen = vpdf_ui::layout::Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(120, 40);
     for frontend in [
       crate::raster::Frontend::Terminal,
       crate::raster::Frontend::Native(vpdf_pdf::jobs::Wake::none()),
     ] {
       let terminal = matches!(frontend, crate::raster::Frontend::Terminal);
-      let mut app = App::with_frontend(&path, "", false, screen, frontend)?;
+      let settings = crate::config::Settings::default();
+      let mut app =
+        App::configured(&path, "", false, screen, frontend, &settings)?;
       app.command("version")?;
       let panel = &app.panel.as_ref().expect("version panel").view;
       assert_eq!(panel.kind(), PanelKind::Version);

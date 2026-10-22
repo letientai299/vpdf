@@ -3,7 +3,7 @@ use crate::stats::{Timing, timing};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::scenario::{Step, Wait};
 use vpdf::trace::Log;
@@ -113,7 +113,8 @@ fn pages(count: usize, total: usize, mut seed: u64) -> Vec<usize> {
 }
 
 fn jumps(driver: &mut Driver, count: usize, seed: u64) -> Result<Jumps> {
-  let total = driver.last.as_ref().map_or(0, |frame| frame.metrics.pages);
+  let total =
+    driver.last.as_ref().map_or(0, |frame| frame.metrics.observation.pages);
   let actions = pages(count, total, seed)
     .into_iter()
     .map(|page| {
@@ -176,7 +177,7 @@ fn find(driver: &mut Driver, query: &'static str) -> Result<Find> {
   let (mut hit, mut view) = (None, None);
   let done_ms = driver.until(|frame| {
     let now = started.elapsed().as_secs_f64() * 1000.0;
-    if frame.metrics.hits > 0 {
+    if frame.metrics.observation.hits > 0 {
       hit.get_or_insert(now);
       if frame.complete {
         view.get_or_insert(now);
@@ -184,7 +185,8 @@ fn find(driver: &mut Driver, query: &'static str) -> Result<Find> {
     }
     !frame.metrics.searching && frame.complete
   })?;
-  let hits = driver.last.as_ref().map_or(0, |frame| frame.metrics.hits);
+  let hits =
+    driver.last.as_ref().map_or(0, |frame| frame.metrics.observation.hits);
   let next =
     settled(driver, &vec!["n".into(); if hits == 0 { 0 } else { 10 }])?;
   Ok(Find {
@@ -229,7 +231,8 @@ fn motion(
 }
 
 fn motions(driver: &mut Driver) -> Result<Vec<Motion>> {
-  let start = driver.last.as_ref().map_or(0, |frame| frame.metrics.pages / 3);
+  let start =
+    driver.last.as_ref().map_or(0, |frame| frame.metrics.observation.pages / 3);
   page(driver, start + 1)?;
   driver.wait(&Wait::Idle)?;
   [
@@ -256,7 +259,8 @@ fn document(path: &Path, screen: Screen, trace: PathBuf) -> Result<Report> {
     Duration::from_secs(300),
   )?;
   let open_complete_ms = driver.wait(&Wait::Idle)?;
-  let pages = driver.last.as_ref().map_or(0, |frame| frame.metrics.pages);
+  let pages =
+    driver.last.as_ref().map_or(0, |frame| frame.metrics.observation.pages);
   anyhow::ensure!(pages > 0, "Latency document did not open");
   driver.mark("jumps")?;
   let random = jumps(&mut driver, 20, 0x9e37_79b9)?;
@@ -315,15 +319,7 @@ fn document(path: &Path, screen: Screen, trace: PathBuf) -> Result<Report> {
 }
 
 pub fn run(files: &[PathBuf], screen: Screen) -> Result<String> {
-  let home =
-    std::env::var_os("HOME").ok_or_else(|| anyhow::anyhow!("HOME is unset"))?;
-  let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
-  let cache =
-    if cfg!(target_os = "macos") { "Library/Caches" } else { ".cache" };
-  let root = PathBuf::from(home)
-    .join(cache)
-    .join("vpdf-bench")
-    .join(format!("latency-{stamp}-{}", std::process::id()));
+  let root = crate::runner::results("latency")?;
   std::fs::create_dir_all(&root)?;
   let reports = files
     .iter()

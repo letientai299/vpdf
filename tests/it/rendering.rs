@@ -1,4 +1,5 @@
 use super::common::SeedReader;
+use crate::harness::{corpus, solo};
 use mupdf::{Colorspace, Matrix};
 use std::path::PathBuf;
 use vpdf::Result;
@@ -12,9 +13,8 @@ use vpdf_pdf::raster::raster;
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn tiles_equal_full_page_pixels() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   for file in ["paper.pdf", "book.pdf", "form.pdf", "ocr.pdf"] {
-    let mut doc = Document::open(&root.join(file), "")?;
+    let mut doc = Document::open(&corpus(file)?, "")?;
     let page = doc.native.load_page(0)?;
     let full = page.to_pixmap(
       &Matrix::IDENTITY,
@@ -23,14 +23,12 @@ fn tiles_equal_full_page_pixels() -> Result<()> {
       true,
     )?;
     let key = TileKey {
-      page: PageId(0),
       scale: 1024,
-      rotation: 0,
       x: 32,
       y: 64,
       width: 256,
       height: 128,
-      crop: vpdf_ui::layout::Crop::default(),
+      ..TileKey::default()
     };
     let tile = raster(&mut doc, key)?;
     for row in 0..key.height as usize {
@@ -50,22 +48,10 @@ fn tiles_equal_full_page_pixels() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn crop_preserves_body_ink() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   for file in
     ["paper.pdf", "book.pdf", "form.pdf", "ocr.pdf", "scan.pdf", "review.pdf"]
   {
-    let mut app = Solo::open(
-      &root.join(file),
-      "",
-      false,
-      vpdf_ui::layout::Screen {
-        columns: 80,
-        rows: 50,
-        cell_width: 8,
-        cell_height: 16,
-        origin: (0, 0),
-      },
-    )?;
+    let mut app = solo(file, false, crate::common::cells(80, 50))?;
     app.toggle_crop()?;
     crate::common::crop_loaded(&mut app)?;
     let crop = app.layout.crop_for(PageId(0));
@@ -216,16 +202,8 @@ fn crop_ignores_margin_stamps() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn crop_samples_once() -> Result<()> {
   use vpdf::app::App;
-  use vpdf_ui::layout::Screen;
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 60,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
-  let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
+  let screen = crate::common::cells(60, 50);
+  let mut app = solo("book.pdf", false, screen)?;
   app.command("100")?;
   let lists = app.doc.lists();
   // Display lists a frame interprets, as the render worker shares them.
@@ -254,8 +232,7 @@ fn crop_samples_once() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn inline_page_fits_requested_cells() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut doc = Document::open(&root.join("paper.pdf"), "")?;
+  let mut doc = Document::open(&corpus("paper.pdf")?, "")?;
   let mut out = Vec::new();
   vpdf::inline::print(&mut doc, PageId(0), (40, 12), &mut out)?;
   let text = String::from_utf8(out)?;
@@ -274,7 +251,6 @@ fn inline_page_fits_requested_cells() -> Result<()> {
 fn worker_tiles_equal_full_page_pixels() -> Result<()> {
   use vpdf::raster::Raster;
   use vpdf_ui::layout::page_matrix;
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let text = [1024, 2048, 3277];
   for (file, scales) in [
     ("paper.pdf", text),
@@ -282,7 +258,7 @@ fn worker_tiles_equal_full_page_pixels() -> Result<()> {
     ("form.pdf", text),
     ("ocr.pdf", [900, 1024, 1300]),
   ] {
-    let path = root.join(file);
+    let path = corpus(file)?;
     let doc = Document::open(&path, "")?;
     for scale in scales {
       let bounds = doc.pages[0].bounds;
@@ -300,14 +276,12 @@ fn worker_tiles_equal_full_page_pixels() -> Result<()> {
         .flat_map(|&y| [0, 512].map(|x| (x, y)))
         .filter(|&(x, y)| x < w && y < h)
         .map(|(x, y)| TileKey {
-          page: PageId(0),
           scale,
-          rotation: 0,
           x,
           y,
           width: 512.min(w - x),
           height: 256.min(h - y),
-          crop: vpdf_ui::layout::Crop::default(),
+          ..TileKey::default()
         })
         .collect();
       let directory = tempfile::tempdir()?;
@@ -319,7 +293,7 @@ fn worker_tiles_equal_full_page_pixels() -> Result<()> {
         vpdf_terminal::payload::Encoder::new(Some(spool)),
       ] {
         let worker =
-          Raster::new(&path, "", doc.lists(), &Wake::none(), encoder);
+          Raster::start(&path, "", doc.lists(), &Wake::none(), encoder, false);
         worker.service.request(&keys, keys.len());
         for _ in &keys {
           let tile = worker
@@ -381,23 +355,12 @@ fn assert_tile(
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn projected_mouse_tracks_glyphs() -> Result<()> {
-  use vpdf_model::input::{
-    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-  };
-
+  use vpdf_model::input::{MouseButton, MouseEventKind};
   use vpdf_ui::layout::{Crop, Screen};
-  use vpdf_ui::pointer::{Region, Route};
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (12, 3),
-  };
+  let screen = Screen { origin: (12, 3), ..crate::common::cells(120, 50) };
   for rotation in [0, 90, 180, 270] {
     for zoom in [0.5, 2.0] {
-      let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
+      let mut app = solo("paper.pdf", false, screen)?;
       let anchor = app.reader.cursor;
       let bounds = app.doc.text(anchor.page)?.glyph(anchor).unwrap().bounds;
       app.layout.restore(zoom, rotation, Crop([20, 20, 20, 20]));
@@ -420,21 +383,9 @@ fn projected_mouse_tracks_glyphs() -> Result<()> {
         )
         .unwrap();
       let expected = app.doc.text(anchor.page)?.nearest(anchor.page, x, y);
-      let mouse = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        column,
-        row,
-        modifiers: KeyModifiers::NONE,
-      };
+      let down = MouseEventKind::Down(MouseButton::Left);
       let pane = app.id;
-      app.mouse(Route {
-        pane,
-        region: Region::Page,
-        focus: true,
-        mouse,
-        clicks: 1,
-        pixel: None,
-      })?;
+      app.mouse(crate::harness::page_route(pane, down, (column, row)))?;
       assert_eq!(app.reader.cursor, expected, "{rotation} {zoom}");
     }
   }
@@ -442,18 +393,11 @@ fn projected_mouse_tracks_glyphs() -> Result<()> {
 }
 
 fn crop_app() -> Result<(tempfile::TempDir, Solo)> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("crop.pdf");
-  crate::common::text_pdf(&path, &["Body text for crop testing"])?;
-  let screen = vpdf_ui::layout::Screen {
-    columns: 80,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
-  let app = Solo::open(&path, "", false, screen)?;
-  Ok((directory, app))
+  crate::common::temp_solo(
+    |path| crate::common::text_pdf(path, &["Body text for crop testing"]),
+    false,
+    crate::common::cells(80, 40),
+  )
 }
 
 #[test]
@@ -547,23 +491,16 @@ fn crop_cancel_and_cache() -> Result<()> {
 
 #[test]
 fn crop_follows_rapid_space() -> Result<()> {
-  use std::time::{Duration, Instant};
-
   use vpdf_ui::keys::{Action, Input};
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("nearby.pdf");
-  crate::common::pages_pdf(&path, &[&["Body text for nearby crops"][..]; 100])?;
-  let mut app = Solo::open(
-    &path,
-    "",
-    false,
-    vpdf_ui::layout::Screen {
-      columns: 80,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
+  let (_directory, mut app) = crate::common::temp_solo(
+    |path| {
+      crate::common::pages_pdf(
+        path,
+        &[&["Body text for nearby crops"][..]; 100],
+      )
     },
+    false,
+    crate::common::cells(80, 40),
   )?;
   app.toggle_crop()?;
   crate::common::crop_loaded(&mut app)?;
@@ -582,18 +519,7 @@ fn crop_follows_rapid_space() -> Result<()> {
   assert_eq!(app.layout.page_at(target), page);
   app.reader.cancel_scroll();
   app.reader.seed_reader(|reader| reader.scroll = target);
-  let started = Instant::now();
-  loop {
-    app.crop_updates()?;
-    if !app.crop_scan.active() {
-      break;
-    }
-    anyhow::ensure!(
-      started.elapsed() < Duration::from_secs(10),
-      "Crop timeout"
-    );
-    std::thread::sleep(Duration::from_millis(5));
-  }
+  crate::common::crop_loaded(&mut app)?;
   let anchor = app.layout.page_at(app.reader.scroll);
   for index in anchor.0.saturating_sub(4)..(anchor.0 + 5).min(100) {
     assert!(!app.layout.crop_for(PageId(index)).is_none(), "page {index}");
@@ -605,19 +531,11 @@ fn crop_follows_rapid_space() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn book_body_stays_centered() -> Result<()> {
-  use vpdf_ui::layout::Screen;
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut paths = vec![root.join("book.pdf")];
+  let mut paths = vec![corpus("book.pdf")?];
   if let Some(extra) = std::env::var_os("VPDF_EXTRA") {
     paths.extend(std::env::split_paths(&extra));
   }
-  let screen = Screen {
-    columns: 80,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::common::cells(80, 50);
   for path in paths {
     let mut app = Solo::open(&path, "", false, screen)?;
     app.toggle_crop()?;

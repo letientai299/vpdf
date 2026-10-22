@@ -1,8 +1,7 @@
 use super::common::keys;
 use super::focus::{screen, send};
-use std::path::PathBuf;
+use crate::harness::{corpus, solo, temp_copy};
 use vpdf::Result;
-use vpdf::session::Session;
 use vpdf::solo::Solo;
 use vpdf_model::document::Target;
 use vpdf_model::text::PageId;
@@ -10,8 +9,7 @@ use vpdf_reader::reader::{Mode, SelectionKind};
 use vpdf_ui::input::InputOwner;
 
 pub(super) fn open(text: bool) -> Result<Solo> {
-  let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
-  let mut app = Solo::open(&path, "", text, screen())?;
+  let mut app = solo("paper.pdf", text, screen())?;
   let link = app
     .doc
     .links(PageId(1))?
@@ -39,7 +37,9 @@ fn drawn(app: &mut Solo) -> Result<String> {
   app.graphics.begin(&mut std::io::sink())?;
   {
     let (app, graphics) = app.parts();
-    app.draw_preview(graphics, &mut std::io::sink())?;
+    vpdf::presentation::try_draw(&mut std::io::sink(), Some(graphics), |s| {
+      app.scene_preview(s)
+    })?;
   }
   app.graphics.end(&mut std::io::sink())?;
   super::common::preview_frame(app)
@@ -145,8 +145,7 @@ fn preview_prefix_prompt_and_escape_keep_range() -> Result<()> {
 fn preview_pane_chord_dispatches_once() -> Result<()> {
   let app = open(false)?;
   let cursor = app.reader.cursor;
-  let mut session = Session::new(None);
-  session.open(&app.path, true, screen())?;
+  let mut session = crate::harness::session(&app.path, screen())?;
   session.app().go_to(cursor, true)?;
   send(&mut session, b"K3g")?;
   assert_eq!(session.app().input_owner(), InputOwner::Peek);
@@ -210,12 +209,9 @@ fn preview_border_stays_inside_resized_pane() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn preview_reload_discards_target() -> Result<()> {
-  let corpus = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("reload.pdf");
   for text in [false, true] {
     let mut app = open(text)?;
-    std::fs::copy(corpus.join("paper.pdf"), &path)?;
+    let (_directory, path) = temp_copy("paper.pdf")?;
     app.path.clone_from(&path);
     keys(&mut app, b"ivK")?;
     let target = format!("{:?}", app.overlays.preview().unwrap().target());
@@ -230,7 +226,7 @@ fn preview_reload_discards_target() -> Result<()> {
     assert_eq!(app.reader.cursor, cursor);
     assert_eq!(app.reader.selection.unwrap().anchor, range.anchor);
     assert_eq!(app.reader.mode(), Mode::Visual(range.kind));
-    std::fs::copy(corpus.join("form.pdf"), &path)?;
+    std::fs::copy(corpus("form.pdf")?, &path)?;
     let shorter = vpdf_pdf::document::Document::open(&path, "")?.pages.len();
     assert!(shorter <= target_page(app.overlays.preview().unwrap().target()).0);
     app.command("reload")?;
@@ -246,13 +242,12 @@ fn preview_reload_discards_target() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn preview_invalid_keeps_reader() -> Result<()> {
-  let corpus = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   for text in [false, true] {
     let mut app = open(text)?;
     keys(&mut app, b"ivK")?;
     let cursor = app.reader.cursor;
     let range = app.reader.selection.unwrap();
-    app.doc = vpdf_pdf::document::Document::open(&corpus.join("form.pdf"), "")?;
+    app.doc = vpdf_pdf::document::Document::open(&corpus("form.pdf")?, "")?;
     {
       let (app, _) = app.parts();
       app.layout.reflow(app.doc.pages.iter().map(|page| page.bounds));

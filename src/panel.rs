@@ -4,15 +4,11 @@ use crate::Result;
 use crate::app::{App, Request};
 use crate::recent::Loader;
 use crate::state::Entry;
-use std::io::Write;
 use std::path::PathBuf;
 use vpdf_model::document::Target;
 use vpdf_model::geometry::At;
 use vpdf_model::input::{MouseEvent, MouseEventKind};
-use vpdf_terminal::{
-  graphics::Graphics,
-  terminal::{self},
-};
+use vpdf_terminal::terminal;
 use vpdf_ui::keys::{Input, PanelKind};
 use vpdf_ui::layout::Screen;
 use vpdf_ui::panel::{
@@ -68,20 +64,6 @@ impl PanelSession {
       loader.request(cards);
     }
     drawn
-  }
-
-  pub fn draw(
-    &mut self,
-    out: &mut impl Write,
-    at: At,
-    width: u16,
-    screen: Screen,
-    graphics: Option<&mut Graphics>,
-  ) -> Result<()> {
-    let pictures = graphics.is_some();
-    crate::presentation::draw(out, graphics, |scene| {
-      self.scene(scene, at, width, screen, pictures)
-    })?
   }
 }
 

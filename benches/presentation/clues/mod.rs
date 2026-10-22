@@ -2,7 +2,6 @@ use crate::presentation;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::geometry::At;
-use vpdf_model::geometry::Screen;
 use vpdf_model::text::{PageId, Position};
 use vpdf_ui::clues::{self, Clues};
 
@@ -21,8 +20,7 @@ pub fn draw() -> Result<()> {
     })
     .collect();
   for (columns, rows) in [(80, 24), (30, 10)] {
-    let screen =
-      Screen { columns, rows, cell_width: 8, cell_height: 16, origin: (0, 0) };
+    let screen = crate::screen::cells(columns, rows);
     for prefix in ["g", "y", "\"", "'"] {
       let registers =
         entries.iter().map(|(name, text, _)| (*name, text.as_str()));

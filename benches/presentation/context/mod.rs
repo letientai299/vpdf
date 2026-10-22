@@ -51,11 +51,8 @@ pub fn draw() -> Result<()> {
   let [columns, rows, cell_width, cell_height] = prepared.screen;
   let frame = Frame {
     screen: Screen {
-      columns,
-      rows,
-      cell_width,
-      cell_height,
       origin: prepared.origin,
+      ..crate::screen::pixels(columns, rows, cell_width, cell_height)
     },
     at: At { column: prepared.at.0, row: prepared.at.1 },
     left: prepared.columns.0,

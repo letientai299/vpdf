@@ -4,10 +4,10 @@ use super::common::SeedReader;
 use crate::harness::{
   cell_in, corpus, draw as status, mouse, pane, press, screen,
 };
-use crate::mouse::{cell, labels, session};
+use crate::mouse::{cell, choose, labels, session};
 use vpdf::Result;
 use vpdf::session::Session;
-use vpdf_model::input::{KeyCode, MouseButton, MouseEventKind};
+use vpdf_model::input::{MouseButton, MouseEventKind};
 use vpdf_model::text::PageId;
 use vpdf_ui::pointer::{Hit, Region};
 
@@ -20,9 +20,7 @@ fn middle(session: &mut Session, at: (u16, u16)) -> Result<()> {
 }
 
 fn keys(session: &mut Session, keys: &str) -> Result<()> {
-  for ch in keys.chars() {
-    press(session, KeyCode::Char(ch))?;
-  }
+  press(session, keys.as_bytes())?;
   session.settle()?;
   if let Some(kind) = session.app().panel.as_ref().map(|p| p.view.kind()) {
     crate::common::sidebar_loaded(session.app(), kind)?;
@@ -106,11 +104,7 @@ fn menus_open_links_in_splits() -> Result<()> {
   let id = session.app().id;
   let internal = cell(&mut session, Hit::Link(PageId(0), 0))?;
   crate::mouse::right(&mut session, internal)?;
-  let at = labels(&mut session).iter().position(|l| *l == "Open in split");
-  for _ in 0..at.expect("Open in split") {
-    press(&mut session, KeyCode::Char('j'))?;
-  }
-  press(&mut session, KeyCode::Enter)?;
+  choose(&mut session, "Open in split")?;
   session.settle()?;
   assert_eq!(panes(&mut session), (2, id, Some(PageId(1))));
   Ok(())
@@ -317,11 +311,7 @@ fn panel_refills_keep_the_menu_row() -> Result<()> {
       continue;
     }
     assert_eq!(selected, Some(1), "the row moved down");
-    let at = labels(&mut session).iter().position(|l| *l == "Open in split");
-    for _ in 0..at.expect("Open in split") {
-      press(&mut session, KeyCode::Char('j'))?;
-    }
-    press(&mut session, KeyCode::Enter)?;
+    choose(&mut session, "Open in split")?;
     session.settle()?;
     assert_eq!(panes(&mut session), (2, id, Some(PageId(1))));
   }
@@ -625,14 +615,8 @@ fn find_cell(
   want: Hit,
 ) -> Result<(u16, u16)> {
   let app = session.app();
-  for row in 0..app.screen.rows {
-    for column in 0..app.screen.columns {
-      if app.hovered(region, column, row, None)? == want {
-        return Ok((app.at.column + column, app.at.row + row));
-      }
-    }
-  }
-  anyhow::bail!("no cell shows {want:?}")
+  let rows = 0..app.screen.rows;
+  crate::harness::cell_where(app, region, rows, |hit| hit == want)
 }
 
 /// The focused pane's screen cell showing `item`.
@@ -803,7 +787,6 @@ fn item_cell(
 
 #[test]
 fn clues_and_completions_act_on_click() -> Result<()> {
-  use vpdf_model::input::{KeyEvent, KeyModifiers};
   use vpdf_ui::pointer::List;
   let (_directory, mut session) = session(false)?;
   // Clues shown during a held pan.
@@ -811,12 +794,9 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   let pan = (page.0 + 2, page.1);
   left(&mut session, MouseEventKind::Down(MouseButton::Middle), page);
   left(&mut session, MouseEventKind::Drag(MouseButton::Middle), pan);
-  let ctrl_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
-  session.app().key(ctrl_w, &mut vpdf_ui::prompt::History::default())?;
-  session.app().overlays.clues_mut().restart(
-    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
-  );
-  assert!(session.app().clue_due());
+  press(&mut session, b"\x17")?;
+  crate::common::age_clues(session.app());
+  assert!(session.app().clue_due(std::time::Instant::now()));
   let clues =
     session.app().overlays.clues().shown().map(|c| c.items().to_vec());
   let split = clues.and_then(|items| items.iter().position(|(k, _)| k == "v"));
@@ -836,10 +816,8 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   // A failing clue still closes.
   let (_text, mut failing) = crate::mouse::session(true)?;
   keys(&mut failing, "g")?;
-  failing.app().overlays.clues_mut().restart(
-    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
-  );
-  assert!(failing.app().clue_due());
+  crate::common::age_clues(failing.app());
+  assert!(failing.app().clue_due(std::time::Instant::now()));
   let clues =
     failing.app().overlays.clues().shown().map(|c| c.items().to_vec());
   let pages = clues.and_then(|items| items.iter().position(|(k, _)| k == "p"));
@@ -852,10 +830,8 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   assert_eq!(app.keys.pending(), "");
   // Ranges name no key.
   keys(&mut session, "m")?;
-  session.app().overlays.clues_mut().restart(
-    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
-  );
-  assert!(session.app().clue_due());
+  crate::common::age_clues(session.app());
+  assert!(session.app().clue_due(std::time::Instant::now()));
   status(&mut session)?;
   let app = session.app();
   let rows = app.screen.rows;
@@ -872,7 +848,7 @@ fn clues_and_completions_act_on_click() -> Result<()> {
   assert!(session.app().overlays.clues().shown().is_none());
   // A click picks a completion.
   keys(&mut session, ":tab")?;
-  press(&mut session, KeyCode::Tab)?;
+  press(&mut session, b"\t")?;
   let items = session.app().overlays.prompt().and_then(|p| p.menu());
   let second = items.map(|menu| menu.items()[1].clone()).expect("a menu");
   status(&mut session)?;
@@ -897,10 +873,8 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let page = cell(&mut session, Hit::Text)?;
   keys(&mut session, "g")?;
-  session.app().overlays.clues_mut().restart(
-    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)),
-  );
-  assert!(session.app().clue_due());
+  crate::common::age_clues(session.app());
+  assert!(session.app().clue_due(std::time::Instant::now()));
   status(&mut session)?;
   let app = session.app();
   let clues = app.overlays.clues().shown().expect("clues");
@@ -919,11 +893,10 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
   assert!(mouse(&mut session, MouseEventKind::Moved, page)?, "a frame");
   assert!(!drawn(&mut session)?.contains(&badge(&label)));
   // Hover marks a completion; the chosen one and the line stay.
-  press(&mut session, KeyCode::Esc)?;
+  press(&mut session, b"\x1b")?;
   keys(&mut session, ":tab")?;
   // Lists, then chooses the first.
-  press(&mut session, KeyCode::Tab)?;
-  press(&mut session, KeyCode::Tab)?;
+  press(&mut session, b"\t\t")?;
   status(&mut session)?;
   let prompt = |session: &mut Session| {
     let prompt = session.app().overlays.prompt().expect("a prompt");
@@ -975,41 +948,6 @@ fn section_clicks_select_their_entry() -> Result<()> {
 /// The draw of the focused pane alone.
 fn drawn(session: &mut Session) -> Result<String> {
   crate::common::focused_frame(session)
-}
-
-/// Ctrl-o, back in history.
-fn back(session: &mut Session) -> Result<()> {
-  let key = vpdf_model::input::KeyEvent::new(
-    KeyCode::Char('o'),
-    vpdf_model::input::KeyModifiers::CONTROL,
-  );
-  session.app().key(key, &mut vpdf_ui::prompt::History::default())
-}
-
-/// A PDF of `count` one-line pages.
-fn pages_pdf(path: &std::path::Path, count: usize) -> Result<()> {
-  let mut objects = vec![
-    "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
-    String::new(),
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
-  ];
-  let mut kids = Vec::new();
-  for page in 0..count {
-    let content = format!("BT /F1 18 Tf 20 170 Td (Page {page}) Tj ET");
-    kids.push(format!("{} 0 R", objects.len() + 1));
-    objects.push(format!(
-      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] \
-       /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
-      objects.len() + 2
-    ));
-    objects.push(format!(
-      "<< /Length {} >>\nstream\n{content}\nendstream",
-      content.len()
-    ));
-  }
-  objects[1] =
-    format!("<< /Type /Pages /Kids [{}] /Count {count} >>", kids.join(" "));
-  crate::common::write_pdf(path, &objects, "")
 }
 
 #[test]
@@ -1077,7 +1015,7 @@ fn track_presses_jump_and_drags_scrub() -> Result<()> {
   assert!((grabbed.app().reader.scroll - moved).abs() < 0.5);
   // Moved thumbs record a jump on release.
   left(&mut grabbed, Up(L), (edge, 4));
-  back(&mut grabbed)?;
+  press(&mut grabbed, b"\x0f")?;
   assert_eq!(grabbed.app().reader.scroll, 0.0);
   // A lost release ends the scrub.
   left(&mut grabbed, Down(L), (edge, 2));
@@ -1093,7 +1031,7 @@ fn track_presses_jump_and_drags_scrub() -> Result<()> {
   assert!(!drawn(&mut session)?.contains(" p. "));
   assert_eq!(session.app().reader.selection, None, "no text selects");
   // Ctrl-o returns from the jump.
-  back(&mut session)?;
+  press(&mut session, b"\x0f")?;
   assert_eq!(session.app().reader.scroll, 0.0);
   Ok(())
 }
@@ -1102,8 +1040,10 @@ fn track_presses_jump_and_drags_scrub() -> Result<()> {
 fn long_documents_reach_both_ends() -> Result<()> {
   use MouseEventKind::{Down, Drag, Up};
   const L: MouseButton = MouseButton::Left;
-  let (_directory, mut session) =
-    crate::mouse::open(|path| pages_pdf(path, 60), false)?;
+  let (_directory, mut session) = crate::mouse::open(
+    |path| crate::common::pages_pdf(path, &[&["Page"][..]; 60]),
+    false,
+  )?;
   let app = session.app();
   let (edge, rows) = (app.screen.columns - 1, app.screen.rows - 2);
   let room = app.layout.total() - app.layout.screen().height();
@@ -1200,24 +1140,6 @@ fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
 }
 
 #[test]
-#[ignore = "requires verified public PDF corpus"]
-fn outline_jumps_show_the_scrollbar() -> Result<()> {
-  let mut session = crate::harness::session(&corpus("paper.pdf")?, screen())?;
-  crate::common::outline_loaded(session.app())?;
-  drawn(&mut session)?;
-  keys(&mut session, "gojjjj")?;
-  drawn(&mut session)?;
-  session
-    .app()
-    .bar_expired(std::time::Instant::now() + std::time::Duration::from_secs(9));
-  press(&mut session, KeyCode::Enter)?;
-  session.settle()?;
-  drawn(&mut session)?;
-  assert!(session.app().bar_until().is_some(), "followed rows show the bar");
-  Ok(())
-}
-
-#[test]
 fn outline_follows_show_the_scrollbar() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let app = session.app();
@@ -1228,7 +1150,7 @@ fn outline_follows_show_the_scrollbar() -> Result<()> {
   let start = session.app().reader.scroll;
   let later = std::time::Instant::now() + std::time::Duration::from_secs(9);
   session.app().bar_expired(later);
-  press(&mut session, KeyCode::Enter)?;
+  press(&mut session, b"\r")?;
   session.settle()?;
   drawn(&mut session)?;
   let app = session.app();

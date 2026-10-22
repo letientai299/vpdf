@@ -7,36 +7,19 @@ use super::*;
 
 #[test]
 fn cell_size_never_guesses() {
+  use crate::caps::testing::{bare, tmux_info};
   use crate::caps::{Graphics, Tmux};
   let cell = |width, height| Some(Cell { width, height });
   let caps = |host, asked| Caps {
-    host,
-    version: None,
-    keyboard: None,
-    sync: Support::Missing,
-    pixels: Support::Missing,
-    resize: Support::Missing,
-    pointer: Support::Missing,
-    drop: Support::Missing,
-    clipboard: None,
     cell: asked,
     attributes: Some(vec![62]),
+    ..bare(host)
   };
   let direct = caps(Host::Direct(Graphics::Ok), cell(9, 19));
   let unasked = caps(Host::Direct(Graphics::Ok), None);
   // The probe's client cell is stale; tmux is asked again.
-  let tmux = caps(
-    Host::Tmux(Some(Tmux {
-      version: vec![3, 8],
-      client: None,
-      cell: cell(5, 11),
-      passthrough: None,
-      extended_keys: true,
-      focus_events: true,
-      origin: (0, 0),
-    })),
-    None,
-  );
+  let stale = Tmux { cell: cell(5, 11), passthrough: None, ..tmux_info(None) };
+  let tmux = caps(Host::Tmux(Some(stale)), None);
   let failed = caps(Host::Tmux(None), None);
   let fake = Some(TMUX_FAKE);
   // (window, told, caps, TMUX set, client now, want)
@@ -98,26 +81,19 @@ fn screen_preserves_window_metrics() -> Result<()> {
 
 fn tmux_caps(version: Vec<u32>, client: &str, focus_events: bool) -> Caps {
   use crate::caps::Tmux;
-  Caps {
-    host: Host::Tmux(Some(Tmux {
-      version,
-      client: Some(client.into()),
-      cell: None,
-      passthrough: None,
-      extended_keys: true,
-      focus_events,
-      origin: (0, 0),
-    })),
-    version: Some("tmux 3.8".into()),
-    keyboard: None,
-    sync: Support::Answered,
-    pixels: Support::Missing,
-    resize: Support::Missing,
-    pointer: Support::Missing,
-    drop: Support::Missing,
-    clipboard: None,
+  use crate::caps::testing::{bare, tmux_info};
+  let tmux = Tmux {
+    version,
     cell: None,
+    passthrough: None,
+    focus_events,
+    ..tmux_info(Some(client))
+  };
+  Caps {
+    version: Some("tmux 3.8".into()),
+    sync: Support::Answered,
     attributes: Some(vec![1, 2, 4]),
+    ..bare(Host::Tmux(Some(tmux)))
   }
 }
 
@@ -184,17 +160,13 @@ fn mouse_capture_undoes_itself() -> Result<()> {
   ];
   for (version, pixels, pointer, pixel, push, pop) in cases {
     let caps = Caps {
-      host: Host::Direct(Graphics::Ok),
       version: Some(version.into()),
       keyboard: Some(0),
       sync: Support::Answered,
       pixels,
       resize: Support::Answered,
       pointer,
-      drop: Support::Missing,
-      clipboard: None,
-      cell: None,
-      attributes: None,
+      ..crate::caps::testing::bare(Host::Direct(Graphics::Ok))
     };
     let (mut on, mut off, mut again) = (Vec::new(), Vec::new(), Vec::new());
     grab_mouse(&mut on, &caps)?;

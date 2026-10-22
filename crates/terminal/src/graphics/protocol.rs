@@ -1,5 +1,13 @@
 use super::{Cow, Engine, Read, Result, STANDARD, Write, ZlibDecoder};
 
+pub(super) fn delete(
+  transport: super::Transport,
+  out: &mut impl Write,
+  id: u32,
+) -> Result<()> {
+  transport.graphics(out, &format!("a=d,d=I,i={id},q=2"), "")
+}
+
 pub(super) fn transmit(
   transport: super::Transport,
   out: &mut impl Write,

@@ -2,47 +2,53 @@ use std::path::PathBuf;
 use vpdf_pdf::{Result, document::Document};
 
 /// Text read from a page's display list, which the reader shares with
-/// its tiles, equals text read by interpreting the page.
+/// its tiles, equals text read by interpreting the page; page bounds
+/// read from page dictionaries equal those of loaded pages.
 #[test]
 #[ignore = "requires verified public PDF corpus"]
-fn display_list_text_matches_page_text() -> Result<()> {
-  use vpdf_pdf::document::{extract, extract_list};
+fn shared_page_reads_match_loaded_pages() -> Result<()> {
+  use vpdf_pdf::document::{extract, extract_list, rect};
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   for name in ["book.pdf", "paper.pdf", "form.pdf", "ocr.pdf"] {
     let doc = Document::open(&root.join(name), "")?;
-    for index in 0..doc.pages.len() as i32 {
-      let page = doc.native.load_page(index)?;
+    for (index, read) in doc.pages.iter().enumerate() {
+      let page = doc.native.load_page(index as i32)?;
       let list = page.to_display_list(true)?;
+      let label = format!("{name} page {}", index + 1);
       assert_eq!(
         format!("{:?}", extract(&page)?),
         format!("{:?}", extract_list(&list)?),
-        "{name} page {}",
-        index + 1
+        "{label}"
+      );
+      let loaded: Bounds = rect(page.bounds()?);
+      assert_eq!(
+        (read.bounds.x0, read.bounds.y0, read.bounds.x1, read.bounds.y1),
+        (loaded.x0, loaded.y0, loaded.x1, loaded.y1),
+        "{label}"
       );
     }
   }
   Ok(())
 }
 
-/// Page bounds read from page dictionaries equal those of loaded pages.
-#[test]
-#[ignore = "requires verified public PDF corpus"]
-fn dictionary_bounds_match_loaded_pages() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  for name in ["book.pdf", "paper.pdf", "form.pdf", "ocr.pdf"] {
-    let doc = Document::open(&root.join(name), "")?;
-    for (index, page) in doc.pages.iter().enumerate() {
-      let loaded: Bounds =
-        vpdf_pdf::document::rect(doc.native.load_page(index as i32)?.bounds()?);
-      assert_eq!(
-        (page.bounds.x0, page.bounds.y0, page.bounds.x1, page.bounds.y1),
-        (loaded.x0, loaded.y0, loaded.x1, loaded.y1),
-        "{name} page {}",
-        index + 1
-      );
-    }
-  }
-  Ok(())
+/// Figures the index job finds in `path` within `seconds`.
+fn figure_index(
+  path: &std::path::Path,
+  doc: &Document,
+  seconds: u64,
+) -> Result<vpdf_pdf::jobs::figures::Entries> {
+  let job = vpdf_pdf::jobs::figures::Job::start(
+    path,
+    "",
+    doc.pages.len(),
+    Vec::new(),
+    &vpdf_pdf::jobs::Wake::none(),
+  );
+  let entries = job
+    .result
+    .recv_timeout(std::time::Duration::from_secs(seconds))?
+    .map_err(anyhow::Error::msg)?;
+  Ok(entries)
 }
 
 use std::sync::Arc;
@@ -112,18 +118,8 @@ fn real_figures_and_capture() -> Result<()> {
 fn real_figure_index() -> Result<()> {
   let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   for (name, captioned) in [("paper.pdf", true), ("ocr.pdf", false)] {
-    let doc = Document::open(&root.join(name), "")?;
-    let job = vpdf_pdf::jobs::figures::Job::start(
-      &root.join(name),
-      "",
-      doc.pages.len(),
-      Vec::new(),
-      &vpdf_pdf::jobs::Wake::none(),
-    );
-    let entries = job
-      .result
-      .recv_timeout(std::time::Duration::from_secs(20))?
-      .map_err(anyhow::Error::msg)?;
+    let path = root.join(name);
+    let entries = figure_index(&path, &Document::open(&path, "")?, 20)?;
     assert!(!entries.is_empty(), "{name}");
     assert!(entries.iter().all(|(_, f)| f.caption.is_empty() != captioned));
   }
@@ -135,17 +131,7 @@ fn real_figure_index() -> Result<()> {
 fn pmpp_figure_index() -> Result<()> {
   let path = PathBuf::from(std::env::var("VPDF_FIGURE_PMPP")?);
   let mut doc = Document::open(&path, "")?;
-  let job = vpdf_pdf::jobs::figures::Job::start(
-    &path,
-    "",
-    doc.pages.len(),
-    Vec::new(),
-    &vpdf_pdf::jobs::Wake::none(),
-  );
-  let entries = job
-    .result
-    .recv_timeout(std::time::Duration::from_secs(30))?
-    .map_err(anyhow::Error::msg)?;
+  let entries = figure_index(&path, &doc, 30)?;
   assert!(!entries.is_empty());
   assert!(entries.iter().all(|(_, f)| !f.caption.is_empty()));
   assert!(entries[0].1.caption.starts_with("FIGURE 1.1 CPUs and GPUs"));
@@ -156,32 +142,21 @@ fn pmpp_figure_index() -> Result<()> {
     (49, "FIGURE 2.3", 130.0),
     (54, "FIGURE 2.6", 100.0),
     (55, "FIGURE 2.7", 85.0),
+    (160, "FIGURE 6.12", 250.0),
+    (161, "FIGURE 6.13", 380.0),
     (382, "FIGURE 16.8", 140.0),
   ] {
     let figures = doc.figures(PageId(index))?;
     assert_eq!(figures.len(), 1, "{figures:?}");
-    assert!(figures[0].caption.starts_with(caption));
-    assert!(figures[0].bounds.height() > height, "{figures:?}");
-  }
-  Ok(())
-}
-
-#[test]
-#[ignore = "requires PMPP PDF in VPDF_FIGURE_PMPP"]
-fn pmpp_figure_regions() -> Result<()> {
-  let path = PathBuf::from(std::env::var("VPDF_FIGURE_PMPP")?);
-  let mut doc = Document::open(&path, "")?;
-  for (index, caption, height) in
-    [(160, "FIGURE 6.12", 250.0), (161, "FIGURE 6.13", 380.0)]
-  {
-    let figures = doc.figures(PageId(index))?;
-    assert_eq!(figures.len(), 1, "{figures:?}");
     let figure = &figures[0];
     assert!(figure.caption.starts_with(caption));
+    assert!(figure.bounds.height() > height, "{figure:?}");
+    if !(160..=161).contains(&index) {
+      continue;
+    }
     assert_eq!(figure.source, vpdf_model::document::FigureSource::Graphic);
     assert!(figure.bounds.y0 > 75.0, "{figure:?}");
     assert!(figure.bounds.y0 < 85.0, "{figure:?}");
-    assert!(figure.bounds.height() > height, "{figure:?}");
     assert!(figure.bounds.y1 < 500.0, "{figure:?}");
     let image = capture(&mut doc, PageId(index), figure.bounds, 0)?;
     assert!(image.png.starts_with(b"\x89PNG\r\n\x1a\n"));

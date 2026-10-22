@@ -126,11 +126,7 @@ impl App {
     }
   }
 
-  pub fn status(&self, out: &mut impl Write, row: u16) -> Result<()> {
-    self.status_line(out, row, None)
-  }
-
-  pub fn status_line(
+  pub fn status(
     &self,
     out: &mut impl Write,
     row: u16,
@@ -161,7 +157,6 @@ mod tests {
   use super::*;
   use vpdf_model::style::Role;
   use vpdf_terminal::style::sgr;
-  use vpdf_ui::layout::Screen;
 
   use std::path::PathBuf;
   fn app() -> Result<App> {
@@ -174,13 +169,7 @@ mod tests {
       &root.join(name),
       "",
       text_mode,
-      Screen {
-        columns: 120,
-        rows: 24,
-        cell_width: 8,
-        cell_height: 16,
-        origin: (0, 0),
-      },
+      crate::screen::cells(120, 24),
     )
   }
 
@@ -195,7 +184,7 @@ mod tests {
     assert_eq!(app.outline.current(), Some(0));
     let title = app.doc.outline[0].title.trim();
     let mut out = Vec::new();
-    app.status(&mut out, 23)?;
+    app.status(&mut out, 23, None)?;
     let out = String::from_utf8(out)?;
     assert!(out.contains(&format!("{} 1:paper.pdf ", sgr(Role::StatusFile))));
     let section =

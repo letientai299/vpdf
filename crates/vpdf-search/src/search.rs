@@ -461,24 +461,12 @@ pub fn compile(query: &str, whole_word: bool) -> Result<Pattern> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::text::{Bounds, Glyph, Line};
+  use crate::text::Line;
+  use crate::text_fixture::{plain, text};
   use unicode_casefold::UnicodeCaseFold;
 
   pub(super) fn sample(lines: &[&str]) -> Text {
-    Text {
-      lines: lines
-        .iter()
-        .map(|s| Line {
-          ocr: None,
-          paragraph: true,
-          glyphs: s
-            .chars()
-            .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
-            .collect(),
-        })
-        .collect(),
-      truncated: false,
-    }
+    text(lines.iter().map(|value| Line { paragraph: true, ..plain(value) }))
   }
 
   #[test]

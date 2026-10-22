@@ -1,7 +1,5 @@
 use super::*;
 
-use vpdf_model::input::KeyModifiers;
-
 #[test]
 fn wheel_moves_viewport_and_keys_reveal_rows() {
   let mut panel = Panel::new(
@@ -15,12 +13,7 @@ fn wheel_moves_viewport_and_keys_reveal_rows() {
     40,
     12,
   );
-  let wheel = MouseEvent {
-    kind: MouseEventKind::ScrollDown,
-    column: 2,
-    row: 4,
-    modifiers: KeyModifiers::NONE,
-  };
+  let wheel = MouseEvent::new(MouseEventKind::ScrollDown, 2, 4);
   panel.pointer(wheel);
   panel.scene_list(
     &mut Vec::new(),

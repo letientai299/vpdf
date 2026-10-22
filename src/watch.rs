@@ -111,20 +111,13 @@ impl App {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use vpdf_ui::layout::Screen;
 
   #[test]
   fn failed_reload_retries() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("live.pdf");
     crate::fixtures::pdf(&path, &["Original"], "")?;
-    let screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(80, 24);
     let mut app = App::with_screen(&path, "", false, screen)?;
     let loaded = app.stamp;
     std::fs::write(&path, "incomplete PDF")?;

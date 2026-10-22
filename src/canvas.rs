@@ -4,7 +4,7 @@ use crate::Result;
 use crate::app::App;
 use crate::pdf_text::PdfText;
 use std::io::Write;
-use vpdf_model::scene::{Draw, Layer, Op, Surface};
+use vpdf_model::scene::{Draw, Layer, Op, Stage, Surface};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_terminal::graphics::Graphics;
@@ -84,8 +84,7 @@ impl App {
         vpdf_ui::theme::PANE_VEIL,
         Layer::AboveText,
         (0, screen.columns, screen.rows.saturating_sub(1)),
-        screen,
-        left,
+        Stage { screen, left },
       );
     }
     Ok(())
@@ -115,20 +114,7 @@ impl App {
   }
 
   /// Selection overlays clipped to `screen`.
-  pub fn marks(
-    &mut self,
-    graphics: &mut Graphics,
-    screen: Screen,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    let mut painter =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    let result = self.scene_marks(&mut painter, screen);
-    painter.finish()?;
-    result
-  }
-
-  fn scene_marks<'a>(
+  pub fn scene_marks<'a>(
     &mut self,
     scene: &mut impl Draw<'a>,
     screen: Screen,
@@ -225,8 +211,7 @@ impl App {
         [0, 0, 0, alpha],
         Layer::AboveText,
         (0, self.screen.columns, self.screen.rows - 1),
-        self.screen,
-        self.left,
+        Stage { screen: self.screen, left: self.left },
       );
     }
     Ok(())
@@ -339,14 +324,7 @@ impl App {
     self.text_view.bind(PdfText(&mut self.doc), frame)
   }
 
-  pub fn text_canvas(&mut self, out: &mut impl Write) -> Result<()> {
-    let mut painter = vpdf_terminal::painter::Painter::new(out);
-    let result = self.scene_text(&mut painter);
-    painter.finish()?;
-    result
-  }
-
-  fn scene_text<'a>(&mut self, scene: &mut impl Draw<'a>) -> Result<()> {
+  pub fn scene_text<'a>(&mut self, scene: &mut impl Draw<'a>) -> Result<()> {
     let frame = self.text_frame();
     let hovered = self.hover_segments();
     let dim = self.panel_focused();

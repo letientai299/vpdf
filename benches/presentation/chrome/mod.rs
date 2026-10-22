@@ -23,8 +23,7 @@ pub fn draw() -> Result<()> {
   let prepared: Prepared = super::fixture("home")?;
   let pages = super::fixtures::text()?;
   let [columns, rows, cell_width, cell_height] = prepared.screen;
-  let screen =
-    Screen { columns, rows, cell_width, cell_height, origin: (0, 0) };
+  let screen = crate::screen::pixels(columns, rows, cell_width, cell_height);
   let width = Panel::width(PanelKind::Help, columns, None);
   let layout = Layout::new(
     pages.metadata.iter().map(|(_, bounds)| *bounds),

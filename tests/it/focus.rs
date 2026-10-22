@@ -314,17 +314,7 @@ fn transient_prefix_dispatch_and_noop_focus() -> Result<()> {
   assert_eq!(session.app().keys.awaiting(), Some("C-w"));
   send(&mut session, b"l")?;
   assert_ne!(session.app().id, source);
-  assert_eq!(
-    session
-      .tab()
-      .panes
-      .iter()
-      .find(|pane| pane.id == source)
-      .unwrap()
-      .reader
-      .cursor,
-    left
-  );
+  assert_eq!(crate::harness::pane_id(&mut session, source).reader.cursor, left);
   send(&mut session, b"\x17p")?;
   assert_eq!(session.app().id, source);
   send(&mut session, b"\x17W")?;
@@ -443,7 +433,7 @@ fn overview_and_text_use_local_owner() -> Result<()> {
   assert!(app.overlays.overview().unwrap().selected() > selected);
   assert_eq!(app.panel.as_ref().unwrap().view.selected(), 1);
   let mut status = Vec::new();
-  app.status(&mut status, app.screen.rows - 1)?;
+  app.status(&mut status, app.screen.rows - 1, None)?;
   assert!(String::from_utf8_lossy(&status).contains("PAGES"));
   keys(&mut app, b"\x1b[27u")?;
   keys(&mut app, b"vjl")?;
@@ -620,6 +610,7 @@ fn narrow_recent_press_restores_cover_geometry() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn placement_reuses_durable_views() -> Result<()> {
+  use vpdf_reader::reader::{Mode, SelectionKind};
   let paper = file("paper.pdf")?;
   let book = file("book.pdf")?;
   let mut session = session(&paper, screen())?;
@@ -648,6 +639,7 @@ fn placement_reuses_durable_views() -> Result<()> {
     assert!(session.tabs.iter().all(|tab| tab.panes.len() == 1));
     let app = session.app();
     assert_eq!(app.reader.selection.unwrap().anchor, anchor);
+    assert_eq!(app.reader.mode(), Mode::Visual(SelectionKind::Character));
     assert_eq!(app.reader.cursor, cursor);
     assert!((app.reader.scroll - scroll).abs() < 0.1);
     assert_eq!(app.input_owner(), InputOwner::Panel);
@@ -828,19 +820,14 @@ fn transitions_drop_capture_and_owned_input() -> Result<()> {
   send(&mut session, b"\x17l")?;
   let right = session.app().id;
   send(&mut session, b"\x1b[<32;95;10M\x1b[<0;95;10m")?;
-  let old = session.tab().panes.iter().find(|app| app.id == left).unwrap();
+  let old = crate::harness::pane_id(&mut session, left);
   assert_eq!(old.reader.cursor, cursor, "old capture no longer routes");
   assert!(old.reader.selection.is_some());
   send(&mut session, b"y")?;
   assert!(session.app().reader.operator.is_some());
   session.app().command(&format!("tabe {}", file("form.pdf")?.display()))?;
   session.settle()?;
-  let old = session
-    .tabs
-    .iter()
-    .flat_map(|tab| &tab.panes)
-    .find(|app| app.id == right)
-    .unwrap();
+  let old = crate::harness::pane_id(&mut session, right);
   assert!(old.reader.operator.is_none());
   send(&mut session, b"gT\x1b[<0;10;5M\x1b[<32;15;6M")?;
   assert_eq!(session.app().id, left);
@@ -848,12 +835,7 @@ fn transitions_drop_capture_and_owned_input() -> Result<()> {
   send(&mut session, b"\x1b[<0;15;6m:30")?;
   session.app().command(&format!("tabe {}", file("ocr.pdf")?.display()))?;
   session.settle()?;
-  let old = session
-    .tabs
-    .iter()
-    .flat_map(|tab| &tab.panes)
-    .find(|app| app.id == left)
-    .unwrap();
+  let old = crate::harness::pane_id(&mut session, left);
   assert!(old.overlays.prompt().is_none(), "new tab closes source prompt");
   Ok(())
 }

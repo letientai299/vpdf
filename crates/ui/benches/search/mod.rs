@@ -1,7 +1,5 @@
 use anyhow::Result;
 use std::hint::black_box;
-use vpdf_model::geometry::At;
-use vpdf_model::geometry::Screen;
 use vpdf_model::text::PageId;
 use vpdf_reader::reader::Reader;
 use vpdf_search::{
@@ -10,8 +8,7 @@ use vpdf_search::{
 };
 use vpdf_ui::find::Search;
 use vpdf_ui::layout::Layout;
-use vpdf_ui::paint;
-use vpdf_ui::reading::{Frame, Pane, Tracking};
+use vpdf_ui::reading::{Pane, Tracking};
 use vpdf_ui::text_view::TextView;
 
 pub fn navigate() -> Result<()> {
@@ -24,13 +21,7 @@ pub fn navigate() -> Result<()> {
   }
   anyhow::ensure!(hits.len() >= 2, "Missing search targets");
   let start = hits[0].first;
-  let screen = Screen {
-    columns: 100,
-    rows: 30,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::screen::cells(100, 30);
   for text in [false, true] {
     let mut layout =
       Layout::new(prepared.metadata.iter().map(|(_, b)| *b), screen);
@@ -38,10 +29,7 @@ pub fn navigate() -> Result<()> {
     reader.enter_cursor();
     let mut pane = Pane::new(reader, Tracking::default());
     let mut text_view = TextView::default();
-    let frame = Frame {
-      pane: paint::Frame { screen, at: At::default(), left: 0, text },
-      visible: screen,
-    };
+    let frame = super::reading::frame(screen, text);
     let mut search = Search::default();
     search.show(query.clone(), hits.clone());
     let mut view = pane.bind(&mut layout, &mut text_view, frame, &prepared);

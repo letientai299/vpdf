@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::io::Write;
 
 mod log;
-pub use log::{Log, Paint};
+pub use log::{Coverage, Log, Paint};
 use std::time::Instant;
 use vpdf_terminal::graphics::Graphics;
 
@@ -20,7 +20,7 @@ struct Frame {
   build_ms: f64,
   built_ms: f64,
   #[serde(flatten)]
-  outcome: serde_json::Value,
+  outcome: crate::session::native::Observation,
   flush_ms: f64,
   input_to_flush_ms: Option<f64>,
   bytes: usize,
@@ -39,7 +39,7 @@ struct Frame {
 pub struct Observation {
   /// Image bytes sent so far.
   pub uploaded: u64,
-  pub outcome: serde_json::Value,
+  pub outcome: crate::session::native::Observation,
   pub page: usize,
   pub scroll: f32,
   /// Every visible tile of the focused pane was placed.
@@ -52,15 +52,7 @@ impl Observation {
   pub fn of(app: &App, graphics: &Graphics) -> Self {
     Self {
       uploaded: graphics.uploaded,
-      outcome: {
-        let mut row =
-          serde_json::to_value(crate::session::native::Observation::of(app))
-            .unwrap_or_default();
-        row["pages"] = app.doc.pages.len().into();
-        row["hits"] = app.search.hits().len().into();
-        row["animating"] = app.reader.animation().active().into();
-        row
-      },
+      outcome: crate::session::native::Observation::of(app),
       page: app.navigation_position().page.0 + 1,
       scroll: app.reader.scroll,
       complete: app.complete,
@@ -147,7 +139,6 @@ impl Trace {
       busy: seen.busy,
       missing: seen.missing,
       blank: seen.missing != 0,
-      // Terminal tiles have no scale fallback.
       stand_ins: 0,
     };
     self.uploaded = seen.uploaded;
@@ -187,6 +178,88 @@ mod tests {
         && row["name"] == "phase"
         && row["t_ms"].as_f64().is_some_and(|time| time >= 0.0)
     }));
+    Ok(())
+  }
+}
+
+#[cfg(test)]
+mod keys {
+  use super::*;
+
+  fn keys(value: &serde_json::Value) -> Vec<&str> {
+    value.as_object().expect("object").keys().map(String::as_str).collect()
+  }
+
+  #[test]
+  fn frame_keys_stay_stable() -> Result<()> {
+    let folder = tempfile::tempdir()?;
+    let path = folder.path().join("doc.pdf");
+    crate::fixtures::pdf(&path, &["first"], "")?;
+    let mut session = crate::session::Session::new(None);
+    session.open(&path, false, crate::screen::cells(80, 24))?;
+    let seen = session.observe();
+    let frame = Frame {
+      build_ms: 0.0,
+      built_ms: 0.0,
+      outcome: seen.outcome,
+      flush_ms: 0.0,
+      input_to_flush_ms: None,
+      bytes: 0,
+      base_upload_bytes: 0,
+      page: seen.page,
+      scroll: seen.scroll,
+      complete: seen.complete,
+      busy: seen.busy,
+      missing: seen.missing,
+      blank: false,
+      stand_ins: 0,
+    };
+    let row = serde_json::to_value(&frame)?;
+    assert_eq!(
+      keys(&row),
+      [
+        "animating",
+        "base_upload_bytes",
+        "blank",
+        "build_ms",
+        "built_ms",
+        "busy",
+        "bytes",
+        "complete",
+        "document",
+        "document_generation",
+        "error",
+        "flush_ms",
+        "hits",
+        "input_to_flush_ms",
+        "missing",
+        "overview",
+        "page",
+        "pages",
+        "pane",
+        "pane_count",
+        "panel",
+        "query",
+        "query_generation",
+        "resources",
+        "scroll",
+        "search_outcome",
+        "selected_hit",
+        "stand_ins",
+        "tab",
+      ]
+    );
+    assert_eq!(
+      keys(&row["resources"][0]),
+      [
+        "active_workers",
+        "owner",
+        "search_workers",
+        "text_bytes",
+        "tile_bytes",
+        "visible",
+      ]
+    );
     Ok(())
   }
 }

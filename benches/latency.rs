@@ -1,7 +1,6 @@
 //! Full-session readiness; crop retains component measurements.
 use std::path::PathBuf;
 use vpdf::Result;
-use vpdf_model::geometry::Screen;
 
 #[path = "latency/crop.rs"]
 mod crop;
@@ -11,6 +10,8 @@ mod hash;
 mod latency;
 #[path = "drive/runner.rs"]
 mod runner;
+#[path = "../tests/support/screen.rs"]
+mod screen;
 #[path = "support/timing.rs"]
 mod stats;
 
@@ -24,13 +25,7 @@ fn main() -> Result<()> {
     .ok()
     .and_then(|value| value.parse().ok())
     .unwrap_or(179);
-  let screen = Screen {
-    columns,
-    rows: 103,
-    cell_width: 11,
-    cell_height: 21,
-    origin: (0, 0),
-  };
+  let screen = screen::pixels(columns, 103, 11, 21);
   let output = if std::env::var_os("VPDF_CROP_BENCH").is_some() {
     crop::run(&files)?
   } else {

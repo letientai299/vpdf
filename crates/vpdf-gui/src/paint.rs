@@ -8,10 +8,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use unicode_width::UnicodeWidthChar;
 use vpdf::session::native::Frame;
+use vpdf::trace::Coverage;
 use vpdf_model::cache::Cache;
 use vpdf_model::geometry::Screen;
 use vpdf_model::image::PictureId;
-use vpdf_model::scene::{Layer, Op, TilePlacement};
+use vpdf_model::scene::{Layer, Op, Stage, TilePlacement};
 use vpdf_model::text::PageId;
 use vpdf_model::tile::{TileId, TileKey, TileOwner};
 
@@ -34,12 +35,8 @@ pub struct Renderer {
   textures: Cache<ImageId, Texture>,
   pub uploaded: usize,
   pub upload_bytes: usize,
-  /// Tiles of the last paint drawn from another scale.
-  pub stand_ins: usize,
-  /// Tiles of the last paint drawn blank.
-  pub missing: usize,
-  pub missing_pixels: f32,
-  pub stand_in_pixels: f32,
+  /// Tiles of the last paint.
+  pub coverage: Coverage,
 }
 
 impl Default for Renderer {
@@ -48,10 +45,7 @@ impl Default for Renderer {
       textures: Cache::new(BUDGET),
       uploaded: 0,
       upload_bytes: 0,
-      stand_ins: 0,
-      missing: 0,
-      missing_pixels: 0.0,
-      stand_in_pixels: 0.0,
+      coverage: Coverage::default(),
     }
   }
 }
@@ -97,29 +91,26 @@ impl Renderer {
     for op in &frame.scene {
       let Op::Tile(placement) = op else { continue };
       let id = placement.id();
-      let (screen, left) = placement.frame();
       if ready.contains(&id)
         && let Some(texture) = self.textures.get(&ImageId::Tile(id))
       {
-        texture.paint(painter, placement.origin(), screen, left, scale);
+        texture.paint(painter, placement.origin(), placement.stage(), scale);
       } else if placement.visible().is_some() {
         pending.push(**placement);
       }
     }
     let kept =
       if pending.is_empty() { HashMap::default() } else { self.pages() };
-    self.stand_ins = 0;
-    self.missing = 0;
-    self.stand_in_pixels = 0.0;
-    self.missing_pixels = 0.0;
+    let coverage = &mut self.coverage;
+    *coverage = Coverage::default();
     for placement in pending {
       let Some(visible) = placement.visible() else { continue };
       let area = visible.width() * visible.height();
       let covered = stand_in(painter, &kept, placement, scale).min(area);
-      self.stand_ins += usize::from(covered > 0.0);
-      self.missing += usize::from(covered < area);
-      self.stand_in_pixels += covered;
-      self.missing_pixels += area - covered;
+      coverage.stand_ins += usize::from(covered > 0.0);
+      coverage.missing += usize::from(covered < area);
+      coverage.stand_in_pixels += covered;
+      coverage.missing_pixels += area - covered;
     }
     fills(painter, &frame.scene, Layer::BelowText, scale);
     let mut cells = Grid::new(screen);
@@ -141,8 +132,7 @@ impl Renderer {
         [image.width() as usize, image.height() as usize],
       );
       let Some(texture) = self.textures.get(&id) else { continue };
-      let (screen, left) = picture.frame();
-      texture.paint(painter, picture.origin(), screen, left, scale);
+      texture.paint(painter, picture.origin(), picture.stage(), scale);
     }
     ime
   }
@@ -192,27 +182,20 @@ impl Texture {
     &self,
     painter: &Painter,
     origin: (f32, f32),
-    screen: Screen,
-    left: u16,
+    stage: Stage,
     scale: f32,
   ) {
     let size = Vec2::new(self.size[0] as f32, self.size[1] as f32);
-    let rect = placed(screen, left, scale, origin, size);
-    image(painter, clip(screen, left, scale), rect, self.handle.id());
+    let rect = placed(stage, scale, origin, size);
+    image(painter, clip(stage, scale), rect, self.handle.id());
   }
 }
 
 /// Screen points of an image `size` pixels wide with its top-left at
 /// `origin`, rounded down so neighbors meet without a seam.
-fn placed(
-  screen: Screen,
-  left: u16,
-  scale: f32,
-  origin: (f32, f32),
-  size: Vec2,
-) -> Rect {
+fn placed(stage: Stage, scale: f32, origin: (f32, f32), size: Vec2) -> Rect {
   Rect::from_min_size(
-    offset(screen, left, scale)
+    offset(stage, scale)
       + Vec2::new(origin.0.floor(), origin.1.floor()) / scale,
     size / scale,
   )
@@ -235,13 +218,12 @@ fn stand_in(
 ) -> f32 {
   let TileId { owner, key } = placement.id();
   let Some(textures) = kept.get(&(owner, key.page)) else { return 0.0 };
-  let (screen, left) = placement.frame();
+  let stage = placement.stage();
   let origin = placement.origin();
   let page = (origin.0 - key.x as f32, origin.1 - key.y as f32);
-  let corner = offset(screen, left, scale);
+  let corner = offset(stage, scale);
   let size = Vec2::new(key.width as f32, key.height as f32);
-  let target = clip(screen, left, scale)
-    .intersect(placed(screen, left, scale, origin, size));
+  let target = clip(stage, scale).intersect(placed(stage, scale, origin, size));
   let rect = |kept: &Kept| {
     let ratio = key.scale as f32 / kept.key.scale as f32;
     Rect::from_min_size(
@@ -296,7 +278,7 @@ fn image(painter: &Painter, clip: Rect, rect: Rect, texture: egui::TextureId) {
   );
 }
 
-fn offset(screen: Screen, left: u16, scale: f32) -> Pos2 {
+fn offset(Stage { screen, left }: Stage, scale: f32) -> Pos2 {
   Pos2::new(
     (f32::from(screen.origin.0) + f32::from(left))
       * f32::from(screen.cell_width)
@@ -305,9 +287,10 @@ fn offset(screen: Screen, left: u16, scale: f32) -> Pos2 {
   )
 }
 
-fn clip(screen: Screen, left: u16, scale: f32) -> Rect {
+fn clip(stage: Stage, scale: f32) -> Rect {
+  let screen = stage.screen;
   Rect::from_min_size(
-    offset(screen, left, scale),
+    offset(stage, scale),
     Vec2::new(screen.width(), screen.height()) / scale,
   )
 }
@@ -322,13 +305,13 @@ fn fills(painter: &Painter, scene: &[Op<'_>], layer: Layer, scale: f32) {
     if fill.layer() != layer {
       continue;
     }
-    let (screen, left) = fill.frame();
-    let origin = offset(screen, left, scale);
+    let stage = fill.stage();
+    let origin = offset(stage, scale);
     let point = |(x, y): (f32, f32)| origin + Vec2::new(x, y) / scale;
     let color = fill.color();
     let color =
       Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);
-    let painter = painter.with_clip_rect(clip(screen, left, scale));
+    let painter = painter.with_clip_rect(clip(stage, scale));
     if let Op::Polygon(polygon) = op {
       let bounds = polygon.clip();
       let clip = Rect::from_min_max(
@@ -631,54 +614,45 @@ mod tests {
   use super::*;
   use vpdf_model::scene::Text;
 
-  #[test]
-  fn textures_reuse_replace_and_retire() {
-    use vpdf_model::geometry::Crop;
-    use vpdf_model::scene::TilePlacement;
-    use vpdf_model::text::PageId;
-    use vpdf_model::tile::{TileKey, TileOwner};
-    let screen = Screen {
-      columns: 4,
-      rows: 2,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (0, 0),
-    };
-    let owner = TileOwner::new(1);
-    let id = TileId {
-      owner,
-      key: TileKey {
-        page: PageId(0),
-        scale: 1024,
-        rotation: 0,
-        x: 0,
-        y: 0,
-        width: 1,
-        height: 1,
-        crop: Crop::default(),
-      },
-    };
-    let mut frame = Frame {
+  fn blank(screen: Screen) -> Frame {
+    Frame {
       metrics: vpdf::session::native::Metrics::default(),
       content: true,
       screen,
-      scene: vec![Op::Tile(Box::new(TilePlacement::new(
-        id,
-        (-0.25, 0.0),
-        screen,
-        0,
-      )))],
-      images: vec![vpdf::session::native::Image {
-        id,
-        pixels: Arc::new(vec![255, 255, 255]),
-      }],
-      owners: vec![owner],
+      scene: Vec::new(),
+      images: Vec::new(),
+      owners: Vec::new(),
       title: String::new(),
       cursor: vpdf_model::style::Shape::Default,
       complete: true,
       quit: false,
       clipboard: None,
       reloaded: Vec::new(),
+    }
+  }
+
+  #[test]
+  fn textures_reuse_replace_and_retire() {
+    use vpdf_model::scene::TilePlacement;
+    use vpdf_model::tile::{TileKey, TileOwner};
+    let screen = crate::screen::pixels(4, 2, 10, 20);
+    let owner = TileOwner::new(1);
+    let id = TileId {
+      owner,
+      key: TileKey { scale: 1024, width: 1, height: 1, ..TileKey::default() },
+    };
+    let mut frame = Frame {
+      scene: vec![Op::Tile(Box::new(TilePlacement::new(
+        id,
+        (-0.25, 0.0),
+        Stage { screen, left: 0 },
+      )))],
+      images: vec![vpdf::session::native::Image {
+        id,
+        pixels: Arc::new(vec![255, 255, 255]),
+      }],
+      owners: vec![owner],
+      ..blank(screen)
     };
     let ctx = egui::Context::default();
     let mut renderer = Renderer::default();
@@ -704,37 +678,26 @@ mod tests {
 
   #[test]
   fn other_scales_stand_in_for_pending_tiles() {
-    use vpdf_model::geometry::Crop;
     use vpdf_model::text::PageId;
     use vpdf_model::tile::{TileKey, TileOwner};
-    let screen = Screen {
-      columns: 40,
-      rows: 20,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::pixels(40, 20, 10, 20);
     let owner = TileOwner::new(1);
     let key = |page, scale, x, size| TileKey {
       page: PageId(page),
       scale,
-      rotation: 0,
       x,
-      y: 0,
       width: size,
       height: size,
-      crop: Crop::default(),
+      ..TileKey::default()
     };
     let tile = |key| TileId { owner, key };
     let frame = |scene: Vec<TileId>, images: Vec<TileId>| Frame {
-      metrics: vpdf::session::native::Metrics::default(),
-      content: true,
-      screen,
       scene: scene
         .into_iter()
         .map(|id| {
           let origin = (10.0 + id.key.x as f32, 0.0);
-          Op::Tile(Box::new(TilePlacement::new(id, origin, screen, 0)))
+          let stage = Stage { screen, left: 0 };
+          Op::Tile(Box::new(TilePlacement::new(id, origin, stage)))
         })
         .collect(),
       images: images
@@ -748,12 +711,8 @@ mod tests {
         })
         .collect(),
       owners: vec![owner],
-      title: String::new(),
-      cursor: vpdf_model::style::Shape::Default,
       complete: false,
-      quit: false,
-      clipboard: None,
-      reloaded: Vec::new(),
+      ..blank(screen)
     };
     let ctx = egui::Context::default();
     let mut renderer = Renderer::default();
@@ -762,10 +721,11 @@ mod tests {
         renderer.paint(ui.painter(), frame, screen, 1.0, None);
       });
       output.textures_delta.clear();
+      let coverage = renderer.coverage;
       (
         output.shapes,
-        (renderer.stand_ins, renderer.missing),
-        (renderer.stand_in_pixels, renderer.missing_pixels),
+        (coverage.stand_ins, coverage.missing),
+        (coverage.stand_in_pixels, coverage.missing_pixels),
       )
     };
     let old = tile(key(0, 1024, 0, 4));
@@ -813,29 +773,12 @@ mod tests {
     use vpdf_model::image::Rgb;
     use vpdf_model::scene::{Draw, Recorder, Surface};
     use vpdf_model::text::Bounds;
-    let screen = Screen {
-      columns: 4,
-      rows: 2,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (2, 1),
-    };
+    let screen =
+      Screen { origin: (2, 1), ..crate::screen::pixels(4, 2, 10, 20) };
     let id = PictureId::fresh();
     let pixels: Arc<Vec<u8>> = Arc::new(vec![255; 6]);
-    let mut frame = Frame {
-      metrics: vpdf::session::native::Metrics::default(),
-      content: true,
-      screen,
-      scene: Vec::new(),
-      images: Vec::new(),
-      owners: Vec::new(),
-      title: String::new(),
-      cursor: vpdf_model::style::Shape::Default,
-      complete: true,
-      quit: false,
-      clipboard: None,
-      reloaded: Vec::new(),
-    };
+    let mut frame = blank(screen);
+    let stage = Stage { screen, left: 1 };
     let ctx = egui::Context::default();
     let mut renderer = Renderer::default();
     for (width, height, expected) in [(2, 1, 1), (2, 1, 1), (1, 2, 2)] {
@@ -845,11 +788,10 @@ mod tests {
         Bounds { x0: 0.0, y0: 0.0, x1: 5.0, y1: 5.0 },
         [0, 0, 255, 255],
         Layer::AboveText,
-        screen,
-        1,
+        stage,
       );
       recorder.text("x");
-      recorder.picture(id, &image, (-0.25, 0.0), screen, 1).unwrap();
+      recorder.picture(id, &image, (-0.25, 0.0), stage).unwrap();
       frame.scene = recorder.into_scene();
       let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         renderer.paint(ui.painter(), &frame, screen, 2.0, None);
@@ -874,13 +816,7 @@ mod tests {
 
   #[test]
   fn password_preedit_stays_masked() {
-    let screen = Screen {
-      columns: 20,
-      rows: 2,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::pixels(20, 2, 10, 20);
     let mut grid = Grid::new(screen);
     grid.op(&Op::InputArea { column: 0, columns: 20, masked: true });
     grid.op(&Op::ShowCursor);
@@ -901,13 +837,7 @@ mod tests {
   #[test]
   fn underline_removal_preserves_style() {
     use vpdf_model::style::Role;
-    let screen = Screen {
-      columns: 8,
-      rows: 2,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::pixels(8, 2, 10, 20);
     for role in [Role::Hover, Role::HoverDim, Role::TextLink, Role::BarHover] {
       let mut grid = Grid::new(screen);
       grid.op(&Op::Style(role));
@@ -924,13 +854,7 @@ mod tests {
 
   #[test]
   fn combining_marks_keep_wide_base() {
-    let screen = Screen {
-      columns: 4,
-      rows: 2,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::pixels(4, 2, 10, 20);
     let mut grid = Grid::new(screen);
     grid.op(&Op::Text(Text::new("章\u{301}a\u{301}")));
     assert_eq!(grid.cells[0].text, "章\u{301}");
@@ -943,13 +867,7 @@ mod tests {
 
   #[test]
   fn composition_places_scaled_caret_and_shifts_suffix() {
-    let screen = Screen {
-      columns: 8,
-      rows: 2,
-      cell_width: 20,
-      cell_height: 40,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::pixels(8, 2, 20, 40);
     let mut grid = Grid::new(screen);
     grid.op(&Op::Move { column: 1, row: 1 });
     grid.op(&Op::Text(Text::new("suffix")));
@@ -978,13 +896,7 @@ mod tests {
 
   #[test]
   fn composition_stays_inside_split_prompt() {
-    let screen = Screen {
-      columns: 10,
-      rows: 2,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::pixels(10, 2, 10, 20);
     let mut grid = Grid::new(screen);
     grid.op(&Op::Move { column: 0, row: 1 });
     grid.op(&Op::Text(Text::new("left right")));
@@ -1007,17 +919,13 @@ mod polygon_tests {
 
   #[test]
   fn native_polygons_clip() {
-    let screen = Screen {
-      columns: 10,
-      rows: 8,
-      cell_width: 10,
-      cell_height: 10,
-      origin: (2, 3),
-    };
+    let screen =
+      Screen { origin: (2, 3), ..crate::screen::pixels(10, 8, 10, 10) };
     let bounds = Bounds { x0: 10.25, y0: 8.5, x1: 80.75, y1: 60.5 };
     let quad = Quad([(0.0, 30.0), (90.0, 10.0), (90.0, 30.0), (0.0, 50.0)]);
+    let stage = Stage { screen, left: 1 };
     let mut scene = Vec::new();
-    scene.quad(quad, bounds, [20, 80, 160, 90], Layer::AboveText, screen, 1);
+    scene.quad(quad, bounds, [20, 80, 160, 90], Layer::AboveText, stage);
     let ctx = egui::Context::default();
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
       fills(ui.painter(), &scene, Layer::BelowText, 2.0);
@@ -1033,7 +941,7 @@ mod polygon_tests {
     let shape = polygons[0];
     let egui::Shape::Path(path) = &shape.shape else { unreachable!() };
     assert_eq!(path.points.len(), 4);
-    let origin = offset(screen, 1, 2.0);
+    let origin = offset(stage, 2.0);
     assert_eq!(path.points[0], origin + Vec2::new(0.0, 30.0) / 2.0);
     let expected = Rect::from_min_max(
       origin + Vec2::new(bounds.x0, bounds.y0) / 2.0,

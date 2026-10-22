@@ -92,19 +92,12 @@ mod tests {
   use super::*;
   use vpdf_model::text::{PageId, Position};
   use vpdf_search::search::Hit as Found;
-  use vpdf_ui::layout::Screen;
   use vpdf_ui::theme;
   #[test]
   #[ignore = "requires verified public PDF corpus"]
   fn ticks_mark_headings_and_pages_with_matches() -> Result<()> {
     let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
-    let screen = Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(120, 40);
     let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
     app.doc.load_outline()?;
     let height = app.layout.screen().height();

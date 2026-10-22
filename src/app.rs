@@ -174,23 +174,14 @@ impl App {
     text_mode: bool,
     screen: Screen,
   ) -> Result<Self> {
-    Self::with_frontend(path, password, text_mode, screen, Frontend::Terminal)
-  }
-
-  pub(crate) fn with_frontend(
-    path: &Path,
-    password: &str,
-    text_mode: bool,
-    screen: Screen,
-    frontend: Frontend,
-  ) -> Result<Self> {
+    let settings = crate::config::Settings::default();
     Self::configured(
       path,
       password,
       text_mode,
       screen,
-      frontend,
-      &crate::config::Settings::default(),
+      Frontend::Terminal,
+      &settings,
     )
   }
 

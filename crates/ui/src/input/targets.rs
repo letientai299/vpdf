@@ -227,12 +227,7 @@ mod tests {
     );
     let mut targets = targets(&clues);
     targets.context = Some(&menu);
-    let mouse = MouseEvent {
-      kind: MouseEventKind::Down(MouseButton::Left),
-      column: 4,
-      row: 5,
-      modifiers: KeyModifiers::NONE,
-    };
+    let mouse = MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 4, 5);
     let hit = Hit::Item(List::Menu, Some(0));
     assert_eq!(targets.hovered(hit), None);
     assert_eq!(targets.pressed(mouse), None);
@@ -283,12 +278,11 @@ mod tests {
     let column = (area.column..area.column + area.columns)
       .find(|&column| capture.items().at(column, area.row).is_some())
       .unwrap();
-    let mouse = MouseEvent {
-      kind: MouseEventKind::Down(MouseButton::Left),
+    let mouse = MouseEvent::new(
+      MouseEventKind::Down(MouseButton::Left),
       column,
-      row: area.row,
-      modifiers: KeyModifiers::NONE,
-    };
+      area.row,
+    );
     assert!(matches!(targets.pressed(mouse), Some((List::Actions, _))));
     assert_eq!(
       targets.pressed(MouseEvent { modifiers: KeyModifiers::ALT, ..mouse }),

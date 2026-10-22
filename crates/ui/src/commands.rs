@@ -14,44 +14,6 @@ pub enum View {
   Document,
 }
 
-/// What a command does, one per `COMMANDS` entry.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Id {
-  Edit,
-  TabEdit,
-  TabNew,
-  Split,
-  VSplit,
-  Close,
-  Only,
-  TabNext,
-  TabPrevious,
-  TabClose,
-  Recent,
-  Fzf,
-  Marks,
-  Jumps,
-  Annotations,
-  Toc,
-  Overview,
-  CursorLine,
-  Crop,
-  Mouse,
-  Perf,
-  Cancel,
-  NoHlSearch,
-  Text,
-  Info,
-  Reload,
-  Print,
-  Password,
-  Ocr,
-  Help,
-  Version,
-  Quit,
-  QuitAll,
-}
-
 pub struct Spec {
   pub id: Id,
   pub name: &'static str,
@@ -64,25 +26,6 @@ pub struct Spec {
   view: View,
 }
 
-const fn spec(
-  id: Id,
-  name: &'static str,
-  aliases: &'static [&'static str],
-  usage: &'static str,
-  help: &'static str,
-) -> Spec {
-  Spec {
-    id,
-    name,
-    aliases,
-    usage,
-    help,
-    complete: Complete::Nothing,
-    requires: None,
-    view: View::Document,
-  }
-}
-
 impl Spec {
   pub fn switch(&self, argument: &str, current: bool) -> crate::Result<bool> {
     match argument {
@@ -93,24 +36,12 @@ impl Spec {
     }
   }
 
-  const fn in_view(self, view: View) -> Self {
-    Self { view, ..self }
-  }
-
   fn available(&self, view: View) -> bool {
     match view {
       View::Document => true,
       View::Recent => self.view != View::Document,
       View::Home => self.view == View::Home,
     }
-  }
-
-  const fn completes(self, complete: Complete) -> Self {
-    Self { complete, ..self }
-  }
-
-  const fn requires(self, program: &'static str) -> Self {
-    Self { requires: Some(program), ..self }
   }
 }
 
@@ -129,126 +60,82 @@ pub fn commands(
   COMMANDS.iter().filter(move |spec| spec.requires.is_none_or(&installed))
 }
 
-pub const COMMANDS: &[Spec] = &[
-  spec(Id::Edit, "edit", &["e"], "<file>", "open a PDF in this tab")
-    .completes(Complete::Path)
-    .in_view(View::Home),
-  spec(
-    Id::TabEdit,
-    "tabedit",
-    &["tabe", "open"],
-    "<file>",
-    "open a PDF in a new tab",
-  )
-  .completes(Complete::Path)
-  .in_view(View::Home),
-  spec(
-    Id::TabNew,
-    "tabnew",
-    &[],
-    "[file]",
-    "open a PDF or recent list in a new tab",
-  )
-  .completes(Complete::Path)
-  .in_view(View::Home),
-  spec(Id::Split, "split", &["sp"], "[file]", "split this pane above")
-    .completes(Complete::Path)
-    .in_view(View::Recent),
-  spec(Id::VSplit, "vsplit", &["vs"], "[file]", "split this pane to the left")
-    .completes(Complete::Path)
-    .in_view(View::Recent),
-  spec(Id::Close, "close", &["clo"], "", "close this pane")
-    .in_view(View::Recent),
-  spec(Id::Only, "only", &["on"], "", "close every other pane")
-    .in_view(View::Recent),
-  spec(Id::TabNext, "tabnext", &["tabn"], "[n]", "go to the next or nth tab")
-    .in_view(View::Recent),
-  spec(
-    Id::TabPrevious,
-    "tabprevious",
-    &["tabp", "tabN"],
-    "",
-    "go to the previous tab",
-  )
-  .in_view(View::Recent),
-  spec(Id::TabClose, "tabclose", &["tabc"], "", "close this tab")
-    .in_view(View::Home),
-  spec(Id::Recent, "recent", &["oldfiles"], "", "list recently opened PDFs")
-    .in_view(View::Home),
-  spec(Id::Fzf, "fzf", &[], "", "pick a PDF below this directory")
-    .requires("fzf")
-    .in_view(View::Home),
-  spec(Id::Marks, "marks", &[], "", "list marks").in_view(View::Recent),
-  spec(Id::Jumps, "jumps", &[], "", "list jump destinations")
-    .in_view(View::Recent),
-  spec(
-    Id::Annotations,
-    "annotations",
-    &["annots"],
-    "",
-    "list highlights and notes",
-  )
-  .in_view(View::Recent),
-  spec(Id::Toc, "toc", &["outline"], "", "open the table of contents")
-    .in_view(View::Recent),
-  spec(Id::Overview, "overview", &["pages"], "", "show page thumbnails")
-    .in_view(View::Recent),
-  spec(
-    Id::CursorLine,
-    "cursorline",
-    &[],
-    "[on|off]",
-    "toggle the Cursor/Visual line band (default on)",
-  )
-  .completes(Complete::Switch),
-  spec(Id::Crop, "crop", &[], "[on|off]", "toggle cropped page margins")
-    .completes(Complete::Switch),
-  spec(
-    Id::Mouse,
-    "mouse",
-    &[],
-    "[on|off]",
-    "toggle mouse capture; off: terminal selects",
-  )
-  .completes(Complete::Switch)
-  .in_view(View::Recent),
-  spec(
-    Id::Perf,
-    "perf",
-    &[],
-    "[on|off]",
-    "toggle persistent performance stats",
-  )
-  .completes(Complete::Switch)
-  .in_view(View::Home),
-  spec(
-    Id::Cancel,
-    "cancel",
-    &[],
-    "",
-    "stop pane search, OCR, outline, region jobs",
-  )
-  .in_view(View::Recent),
-  spec(Id::NoHlSearch, "nohlsearch", &["noh"], "", "hide search highlights"),
-  spec(Id::Text, "text", &[], "", "preview extracted page text")
-    .in_view(View::Recent),
-  spec(Id::Info, "info", &[], "", "document, reader, and terminal info")
-    .in_view(View::Recent),
-  spec(Id::Reload, "reload", &[], "", "reread the file from disk"),
+/// Generates `Id` and one `COMMANDS` entry per command.
+macro_rules! commands {
+  ($(
+    $(#[$attr:meta])*
+    $id:ident $name:literal [$($alias:literal),*] $usage:literal
+      $complete:ident $view:ident $help:literal $(requires $program:literal)?;
+  )*) => {
+    /// What a command does, one per `COMMANDS` entry.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum Id {
+      $($id,)*
+    }
+
+    pub const COMMANDS: &[Spec] = &[$(
+      $(#[$attr])*
+      Spec {
+        id: Id::$id,
+        name: $name,
+        aliases: &[$($alias),*],
+        usage: $usage,
+        help: $help,
+        complete: Complete::$complete,
+        requires: commands!(@some $($program)?),
+        view: View::$view,
+      },
+    )*];
+  };
+  (@some) => { None };
+  (@some $value:literal) => { Some($value) };
+}
+
+// id, name, aliases, usage, completion, view, help
+commands! {
+  Edit "edit" ["e"] "<file>" Path Home "open a PDF in this tab";
+  TabEdit "tabedit" ["tabe", "open"] "<file>" Path Home
+    "open a PDF in a new tab";
+  TabNew "tabnew" [] "[file]" Path Home
+    "open a PDF or recent list in a new tab";
+  Split "split" ["sp"] "[file]" Path Recent "split this pane above";
+  VSplit "vsplit" ["vs"] "[file]" Path Recent "split this pane to the left";
+  Close "close" ["clo"] "" Nothing Recent "close this pane";
+  Only "only" ["on"] "" Nothing Recent "close every other pane";
+  TabNext "tabnext" ["tabn"] "[n]" Nothing Recent "go to the next or nth tab";
+  TabPrevious "tabprevious" ["tabp", "tabN"] "" Nothing Recent
+    "go to the previous tab";
+  TabClose "tabclose" ["tabc"] "" Nothing Home "close this tab";
+  Recent "recent" ["oldfiles"] "" Nothing Home "list recently opened PDFs";
+  Fzf "fzf" [] "" Nothing Home "pick a PDF below this directory"
+    requires "fzf";
+  Marks "marks" [] "" Nothing Recent "list marks";
+  Jumps "jumps" [] "" Nothing Recent "list jump destinations";
+  Annotations "annotations" ["annots"] "" Nothing Recent
+    "list highlights and notes";
+  Toc "toc" ["outline"] "" Nothing Recent "open the table of contents";
+  Overview "overview" ["pages"] "" Nothing Recent "show page thumbnails";
+  CursorLine "cursorline" [] "[on|off]" Switch Document
+    "toggle the Cursor/Visual line band (default on)";
+  Crop "crop" [] "[on|off]" Switch Document "toggle cropped page margins";
+  Mouse "mouse" [] "[on|off]" Switch Recent
+    "toggle mouse capture; off: terminal selects";
+  Perf "perf" [] "[on|off]" Switch Home "toggle persistent performance stats";
+  Cancel "cancel" [] "" Nothing Recent
+    "stop pane search, OCR, outline, region jobs";
+  NoHlSearch "nohlsearch" ["noh"] "" Nothing Document "hide search highlights";
+  Text "text" [] "" Nothing Recent "preview extracted page text";
+  Info "info" [] "" Nothing Recent "document, reader, and terminal info";
+  Reload "reload" [] "" Nothing Document "reread the file from disk";
   #[cfg(target_os = "macos")]
-  spec(Id::Print, "print", &[], "", "open the system print dialog"),
-  spec(Id::Password, "password", &[], "", "unlock and reopen the document"),
-  spec(Id::Ocr, "ocr", &[], "[lang]", "recognize the page with Tesseract")
-    .completes(Complete::Language),
-  spec(Id::Help, "help", &["h"], "", "show the key reference")
-    .in_view(View::Recent),
-  spec(Id::Version, "version", &[], "", "show build information")
-    .in_view(View::Home),
-  spec(Id::Quit, "quit", &["q"], "", "close this pane, tab, then reader")
-    .in_view(View::Home),
-  spec(Id::QuitAll, "qall", &["qa", "quitall"], "", "close every tab")
-    .in_view(View::Home),
-];
+  Print "print" [] "" Nothing Document "open the system print dialog";
+  Password "password" [] "" Nothing Document "unlock and reopen the document";
+  Ocr "ocr" [] "[lang]" Language Document "recognize the page with Tesseract";
+  Help "help" ["h"] "" Nothing Recent "show the key reference";
+  Version "version" [] "" Nothing Home "show build information";
+  Quit "quit" ["q"] "" Nothing Home "close this pane, tab, then reader";
+  QuitAll "qall" ["qa", "quitall"] "" Nothing Home "close every tab";
+}
 
 /// Command named `name` or aliased to it.
 fn exact(
@@ -406,14 +293,6 @@ mod tests {
       }
     }
     Ok(())
-  }
-
-  #[test]
-  fn each_command_has_one_spec() {
-    for spec in COMMANDS {
-      let same = COMMANDS.iter().filter(|other| other.id == spec.id).count();
-      assert_eq!(same, 1, "{}", spec.name);
-    }
   }
 
   #[test]

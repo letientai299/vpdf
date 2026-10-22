@@ -1,5 +1,8 @@
+#[path = "../../../tests/support/text.rs"]
+mod text_fixture;
 use std::sync::Arc;
-use vpdf_model::text::{Bounds, Glyph, Line, PageId, Position, Text};
+use text_fixture::{plain, text};
+use vpdf_model::text::{Line, PageId, Position, Text};
 use vpdf_reader::Result;
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::{Reader, SelectionKind};
@@ -10,20 +13,9 @@ fn pages() -> Pages {
   [vec!["one two", "café Straße"], vec![], vec!["last page"]]
     .into_iter()
     .map(|lines| {
-      Arc::new(Text {
-        lines: lines
-          .iter()
-          .map(|line| Line {
-            ocr: None,
-            paragraph: true,
-            glyphs: line
-              .chars()
-              .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
-              .collect(),
-          })
-          .collect(),
-        truncated: false,
-      })
+      Arc::new(text(
+        lines.iter().map(|value| Line { paragraph: true, ..plain(value) }),
+      ))
     })
     .collect()
 }

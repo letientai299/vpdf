@@ -25,8 +25,10 @@ pub fn draw() -> Result<()> {
   let prepared: Prepared = super::fixture("region")?;
   let geometry: super::Geometry = super::fixture("geometry")?;
   let [columns, rows, cell_width, cell_height] = prepared.screen;
-  let screen =
-    Screen { columns, rows, cell_width, cell_height, origin: prepared.origin };
+  let screen = Screen {
+    origin: prepared.origin,
+    ..crate::screen::pixels(columns, rows, cell_width, cell_height)
+  };
   let layout =
     Layout::new(geometry.pages.into_iter().map(super::bounds), screen);
   let mut region = Region::open(Snapshot {

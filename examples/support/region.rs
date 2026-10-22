@@ -20,7 +20,10 @@ pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {
     app.graphics.begin(&mut output)?;
     {
       let (app, graphics) = app.parts();
-      app.draw_region(graphics, &mut output)?;
+      let snap = graphics.crop_quirk();
+      vpdf::presentation::draw(&mut output, Some(graphics), |s| {
+        app.scene_region(s, snap);
+      })?;
     }
     app.graphics.end(&mut output)?;
     hashes.push(super::hash::digest(&output));
@@ -33,11 +36,13 @@ pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {
     "text_sha256": super::hash::digest(text.as_bytes()),
     "page": page.0,
     "bounds": [bounds.x0, bounds.y0, bounds.x1, bounds.y1],
-    "screen": [screen.columns, screen.rows, screen.cell_width, screen.cell_height],
+    "screen":
+      [screen.columns, screen.rows, screen.cell_width, screen.cell_height],
     "origin": screen.origin,
     "at": [app.at.column, app.at.row],
     "left": app.left,
     "scroll": app.reader.scroll,
     "output_sha256": hashes,
-  })).map_err(Into::into)
+  }))
+  .map_err(Into::into)
 }

@@ -33,12 +33,7 @@ pub fn route(kind: MouseEventKind, row: u16) -> Route {
     focus: true,
     clicks: 1,
     pixel: None,
-    mouse: vpdf_model::input::MouseEvent {
-      kind,
-      row,
-      column: 119,
-      modifiers: vpdf_model::input::KeyModifiers::NONE,
-    },
+    mouse: vpdf_model::input::MouseEvent::new(kind, 119, row),
   }
 }
 

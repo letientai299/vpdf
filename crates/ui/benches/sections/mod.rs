@@ -1,10 +1,7 @@
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::document::Target;
-use vpdf_model::geometry::At;
-use vpdf_model::geometry::Screen;
-use vpdf_ui::paint;
-use vpdf_ui::reading::{Frame, Sections};
+use vpdf_ui::reading::Sections;
 use vpdf_ui::text_view::TextView;
 
 #[derive(serde::Deserialize)]
@@ -32,20 +29,11 @@ fn case(
   text: bool,
   cursor: bool,
 ) -> Result<()> {
-  let screen = Screen {
-    columns: 100,
-    rows: 30,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::screen::cells(100, 30);
   let mut layout = super::reading::layout(prepared, screen);
   let mut pane = super::reading::pane(prepared, cursor)?;
   let mut text_view = TextView::default();
-  let frame = Frame {
-    pane: paint::Frame { screen, at: At::default(), left: 0, text },
-    visible: screen,
-  };
+  let frame = super::reading::frame(screen, text);
   let mut view = pane.bind(&mut layout, &mut text_view, frame, prepared);
   let sections = || Sections::new(targets.iter(), prepared.metadata.len());
   let expected = view.section(sections(), true, 1)?;

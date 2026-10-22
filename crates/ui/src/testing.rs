@@ -38,9 +38,9 @@ pub fn empty() -> vpdf_model::scene::Recorder<
 pub(crate) use crate::fixtures;
 pub(crate) use crate::fixtures::screen;
 
+#[path = "../../../tests/support/page.rs"]
+pub(crate) mod page;
+
 pub fn text_fixture(rows: &[&str]) -> std::sync::Arc<vpdf_model::text::Text> {
-  use fixtures::{glyph, line, lines};
-  lines(rows.iter().map(|row| {
-    line(row.chars().map(|ch| glyph(ch, vpdf_model::text::Bounds::default())))
-  }))
+  fixtures::lines(rows.iter().map(|row| fixtures::plain(row)))
 }

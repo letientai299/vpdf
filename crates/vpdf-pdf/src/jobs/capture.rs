@@ -1,10 +1,9 @@
-use super::{OneShot, Wake};
+use super::{OneShot, Outcome, Wake};
 use crate::Result;
 use crate::document::Document;
 use crate::raster::Capture;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
 use vpdf_model::text::{Bounds, PageId};
 
 /// A page region to rasterize.
@@ -18,7 +17,7 @@ pub struct Request {
 
 /// A region capture on its own document; dropping it cancels.
 pub struct Job<T> {
-  work: OneShot<std::result::Result<T, String>>,
+  work: OneShot<Outcome<T>>,
 }
 
 impl<T: Send + 'static> Job<T> {
@@ -29,25 +28,17 @@ impl<T: Send + 'static> Job<T> {
     wake: &Wake,
     finish: impl FnOnce(Capture, &AtomicBool) -> Result<T> + Send + 'static,
   ) -> Self {
-    let work = OneShot::spawn(wake, move |stop| {
+    let work = OneShot::try_spawn(wake, move |stop| {
       let Request { path, password, page, bounds, rotation } = request;
-      let result = capture(&path, &password, page, bounds, rotation, stop)
-        .and_then(|capture| finish(capture, stop))
-        .map_err(|error| error.to_string());
-      Some(result)
+      let result = capture(&path, &password, page, bounds, rotation, stop);
+      Some(result.and_then(|capture| finish(capture, stop)))
     });
     Self { work }
   }
 
   /// The finished result, if any.
-  pub fn poll(&self) -> Option<std::result::Result<T, String>> {
-    match self.work.result.try_recv() {
-      Ok(result) => Some(result),
-      Err(mpsc::TryRecvError::Empty) => None,
-      Err(mpsc::TryRecvError::Disconnected) => {
-        Some(Err("Region worker disconnected".into()))
-      }
-    }
+  pub fn poll(&self) -> Option<Outcome<T>> {
+    self.work.poll("Region worker disconnected")
   }
 }
 
@@ -89,7 +80,7 @@ pub fn recognize(
 mod tests {
   use super::*;
   use anyhow::Context;
-  use std::sync::Arc;
+  use std::sync::{Arc, mpsc};
   use std::time::Duration;
 
   fn request(path: PathBuf) -> Request {

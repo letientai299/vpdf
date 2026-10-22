@@ -1,10 +1,10 @@
 use super::common::SeedReader;
 use super::common::keys;
-use std::path::PathBuf;
-use std::sync::Arc;
+use crate::harness::solo;
 use vpdf::Result;
+use vpdf::presentation::try_draw;
 use vpdf::solo::Solo;
-use vpdf_model::text::{Bounds, Glyph, Line, PageId, Position, Text};
+use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::SelectionKind;
 use vpdf_ui::layout::{Crop, Screen};
 const BAND: &str = "\x1b[0;100m";
@@ -14,18 +14,10 @@ const LANDING: &str = "\x1b[0;43m";
 const SEARCH: &str = "\x1b[0;7;33m";
 
 fn app(text: bool) -> Result<Solo> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  Solo::open(
-    &root.join("paper.pdf"),
-    "",
+  solo(
+    "paper.pdf",
     text,
-    Screen {
-      columns: 100,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (7, 3),
-    },
+    Screen { origin: (7, 3), ..crate::common::cells(100, 24) },
   )
 }
 
@@ -34,36 +26,14 @@ fn marks(app: &mut Solo, screen: Screen) -> Result<Vec<Bounds>> {
   app.graphics.begin(&mut out)?;
   {
     let (app, graphics) = app.parts();
-    app.marks(graphics, screen, &mut out)?;
+    try_draw(&mut out, Some(graphics), |s| app.scene_marks(s, screen))?;
   }
   app.graphics.end(&mut out)?;
   let frame = String::from_utf8(out)?;
-  let mut rects = Vec::new();
-  for part in frame.split("\x1b7\x1b[").skip(1) {
-    let (row, rest) = part.split_once(';').unwrap();
-    let (column, rest) = rest.split_once('H').unwrap();
-    let control =
-      rest.split_once("\x1b_G").unwrap().1.split(';').next().unwrap();
-    let field = |name: &str| {
-      control
-        .split(',')
-        .find_map(|pair| pair.strip_prefix(name)?.parse::<u16>().ok())
-    };
-    if !control.contains("z=1,") && !control.contains("z=-1,") {
-      continue;
-    }
-    let x0 = f32::from(column.parse::<u16>()? - 1 - screen.origin.0) * 8.0
-      + f32::from(field("X=").unwrap_or(0));
-    let y0 = f32::from(row.parse::<u16>()? - 1 - screen.origin.1) * 16.0
-      + f32::from(field("Y=").unwrap_or(0));
-    rects.push(Bounds {
-      x0,
-      y0,
-      x1: x0 + f32::from(field("w=").unwrap()),
-      y1: y0 + f32::from(field("h=").unwrap()),
-    });
-  }
-  Ok(rects)
+  let commands = crate::kitty::commands(&frame);
+  let marks =
+    commands.iter().filter(|c| matches!(c.get("z"), Some("1" | "-1")));
+  Ok(marks.map(|c| c.bounds(screen.origin).expect("mark bounds")).collect())
 }
 
 fn transformed(zoom: f32, rotation: u16) -> Result<(Solo, usize)> {
@@ -103,7 +73,7 @@ fn cursorline_switches_in_cursor_mode() -> Result<()> {
       assert!(app.reader.selection.is_none());
       if text {
         let mut out = Vec::new();
-        app.text_canvas(&mut out)?;
+        try_draw(&mut out, None, |s| app.scene_text(s))?;
         assert_eq!(String::from_utf8(out)?.contains(BAND), expected);
       } else {
         let screen = app.layout.screen();
@@ -190,23 +160,8 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
   app.left = 4;
   app.reader.seed_reader(|reader| reader.cursor = Position::default());
   let rows = ["abcd", "", "other"];
-  app.doc.seed(
-    PageId(0),
-    Arc::new(Text {
-      lines: rows
-        .iter()
-        .map(|row| Line {
-          ocr: None,
-          paragraph: false,
-          glyphs: row
-            .chars()
-            .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
-            .collect(),
-        })
-        .collect(),
-      truncated: false,
-    }),
-  );
+  let lines = crate::fixtures::lines(rows.map(crate::fixtures::plain));
+  app.doc.seed(PageId(0), lines);
   app.reader.visual(SelectionKind::Character);
   app.reader.seed_reader(|reader| reader.cursor.glyph = 1);
   let hit = vpdf_search::search::Hit {
@@ -216,7 +171,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
   };
   app.search.show(vpdf_search::query::Query::default(), vec![hit]);
   let mut out = Vec::new();
-  app.text_canvas(&mut out)?;
+  try_draw(&mut out, None, |s| app.scene_text(s))?;
   let frame = String::from_utf8(out)?;
   let fill = format!("{}{}", BAND, " ".repeat(16));
   assert_eq!(frame.matches(&fill).count(), 1);
@@ -230,7 +185,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
   }
   app.command("cursorline")?;
   let mut out = Vec::new();
-  app.text_canvas(&mut out)?;
+  try_draw(&mut out, None, |s| app.scene_text(s))?;
   let frame = String::from_utf8(out)?;
   assert!(!frame.contains(BAND));
   for style in [SELECTION, CURSOR, SEARCH] {
@@ -239,7 +194,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
   app.command("cursorline")?;
   app.reader.seed_reader(|reader| reader.cursor.line = 1);
   out = Vec::new();
-  app.text_canvas(&mut out)?;
+  try_draw(&mut out, None, |s| app.scene_text(s))?;
   let frame = String::from_utf8(out)?;
   assert!(frame.contains(&format!(
     "{}{}",
@@ -248,7 +203,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
   )));
   app.reader.end_selection();
   let mut out = Vec::new();
-  app.text_canvas(&mut out)?;
+  try_draw(&mut out, None, |s| app.scene_text(s))?;
   let frame = String::from_utf8(out)?;
   assert!(!frame.contains(BAND));
   assert!(!frame.contains(CURSOR));
@@ -270,7 +225,7 @@ fn cursorline_stays_below_existing_selection() -> Result<()> {
   app.graphics.begin(&mut out)?;
   {
     let (app, graphics) = app.parts();
-    app.marks(graphics, screen, &mut out)?;
+    try_draw(&mut out, Some(graphics), |s| app.scene_marks(s, screen))?;
   }
   app.graphics.end(&mut out)?;
   let frame = String::from_utf8(out)?;
@@ -344,7 +299,7 @@ fn landing_pdf_reuses_projected_clipped_band() -> Result<()> {
       app.graphics.begin(&mut out)?;
       {
         let (app, graphics) = app.parts();
-        app.marks(graphics, screen, &mut out)?;
+        try_draw(&mut out, Some(graphics), |s| app.scene_marks(s, screen))?;
       }
       app.graphics.end(&mut out)?;
       let frame = String::from_utf8(out)?;
@@ -370,7 +325,7 @@ fn landing_text_fills_row_below_glyph_styles() -> Result<()> {
   };
   app.search.show(vpdf_search::query::Query::default(), vec![hit]);
   let mut out = Vec::new();
-  app.text_canvas(&mut out)?;
+  try_draw(&mut out, None, |s| app.scene_text(s))?;
   let frame = String::from_utf8(out)?;
   let fill = format!("{}{}", LANDING, " ".repeat(96));
   assert_eq!(frame.matches(&fill).count(), 1);
@@ -378,14 +333,14 @@ fn landing_text_fills_row_below_glyph_styles() -> Result<()> {
   assert!(frame.contains(SEARCH));
   keys(&mut app, b"ivl")?;
   out = Vec::new();
-  app.text_canvas(&mut out)?;
+  try_draw(&mut out, None, |s| app.scene_text(s))?;
   let frame = String::from_utf8(out)?;
   for style in [LANDING, CURSOR, SELECTION, SEARCH] {
     assert!(frame.contains(style), "missing {style:?}");
   }
   app.reader.clear_flash();
   out = Vec::new();
-  app.text_canvas(&mut out)?;
+  try_draw(&mut out, None, |s| app.scene_text(s))?;
   let frame = String::from_utf8(out)?;
   assert!(!frame.contains(LANDING));
   assert!(frame.contains(BAND));

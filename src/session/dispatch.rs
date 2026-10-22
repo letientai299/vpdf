@@ -99,7 +99,7 @@ impl Session {
           if self.quit || self.tabs.is_empty() {
             break;
           }
-          if self.unlock.is_some() || self.picker.is_some() {
+          if self.blocked() {
             self.pending_keys.extend(keys);
             break;
           }

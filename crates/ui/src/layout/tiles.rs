@@ -1,6 +1,6 @@
 use super::{Layout, Screen, visible};
 use crate::text::PageId;
-use vpdf_model::scene::Surface;
+use vpdf_model::scene::{Stage, Surface};
 use vpdf_model::tile::{TileId, TileKey, TileOwner};
 
 pub struct Tiles {
@@ -91,8 +91,7 @@ impl Tiles {
       if !scene.tile(
         TileId { owner: TileOwner::new(frame.pane), key: *key },
         (x + key.x as f32, y + key.y as f32),
-        frame.screen,
-        frame.left,
+        Stage { screen: frame.screen, left: frame.left },
       )? {
         missing.push(*key);
       }

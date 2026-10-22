@@ -64,6 +64,19 @@ impl Bounds {
     }
   }
 
+  /// `size` at `origin` rounded down to whole pixels.
+  pub fn placed((x, y): (f32, f32), (width, height): (f32, f32)) -> Self {
+    let (x0, y0) = (x.floor(), y.floor());
+    Self { x0, y0, x1: x0 + width, y1: y0 + height }
+  }
+
+  /// `size` at `offset` from the top-left corner.
+  #[must_use]
+  pub fn part(self, (dx, dy): (f32, f32), (width, height): (f32, f32)) -> Self {
+    let (x, y) = (self.x0, self.y0);
+    Self { x0: x + dx, y0: y + dy, x1: x + (dx + width), y1: y + (dy + height) }
+  }
+
   /// Smallest box holding both.
   #[must_use]
   pub fn union(self, other: Self) -> Self {

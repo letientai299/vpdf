@@ -9,7 +9,7 @@ use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::Target;
 use vpdf_model::geometry::Screen;
 use vpdf_model::input::{MouseEvent, MouseEventKind};
-use vpdf_model::scene::{Draw, Layer, Op};
+use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::motion::Motion;
@@ -200,13 +200,12 @@ impl<C> ContextMenu<C> {
 
   /// Each row's cells.
   pub fn items(&self) -> Items {
-    let mut items = Items::default();
-    let area = self.area();
-    for (index, row) in (area.row..area.row + area.rows).enumerate() {
-      items.push(Rect { row, rows: 1, ..area }, index);
-    }
-    items
+    rows(self.area()).enumerate().map(|(index, row)| (row, index)).collect()
   }
+}
+
+fn rows(area: Rect) -> impl Iterator<Item = Rect> {
+  (area.row..area.row + area.rows).map(move |row| Rect { row, rows: 1, ..area })
 }
 
 impl<C> ContextMenu<C> {
@@ -251,32 +250,28 @@ impl<C> ContextMenu<C> {
     matches!(mouse.kind, MouseEventKind::Up(_))
   }
   pub fn pixel_area(&self, screen: Screen, left: u16) -> Option<Bounds> {
+    let cells = self.visible(left)?;
+    Some(crate::paint::cell_bounds(screen, left, cells))
+  }
+
+  /// The area's cells right of `left`.
+  fn visible(&self, left: u16) -> Option<Rect> {
     let area = self.area();
     let column = area.column.max(left);
     let columns = (area.column + area.columns).checked_sub(column);
     let columns = columns.filter(|columns| *columns > 0)?;
-    Some(crate::paint::cell_bounds(
-      screen,
-      left,
-      Rect { column, columns, ..area },
-    ))
+    Some(Rect { column, columns, ..area })
   }
 
   fn scene_backdrop<'a>(&self, scene: &mut impl Draw<'a>, frame: Frame) {
-    let Some(area) =
-      self.pixel_area(frame.screen, frame.left).filter(|_| !frame.text)
-    else {
-      return;
-    };
-    let screen = frame.screen;
-    let height = f32::from(screen.cell_height);
-    let rows = ((area.y1 - area.y0) / height).round() as usize;
-    for row in 0..rows {
-      let color =
-        if row == self.selected { theme::BADGE_FILL } else { theme::BAR_FILL };
-      let y0 = area.y0 + row as f32 * height;
-      let rect = Bounds { y0, y1: y0 + height, ..area };
-      scene.fill(rect, color, Layer::BelowText, screen, frame.left);
+    let Some(area) = self.visible(frame.left) else { return };
+    for (index, row) in rows(area).enumerate() {
+      let color = if index == self.selected {
+        theme::BADGE_FILL
+      } else {
+        theme::BAR_FILL
+      };
+      crate::paint::backdrop(scene, frame, row, color);
     }
   }
 
@@ -496,14 +491,9 @@ mod tests {
 
   #[test]
   fn drag_release_and_navigation() {
-    use vpdf_model::input::{KeyModifiers, MouseButton};
+    use vpdf_model::input::MouseButton;
     let mut menu = menu((10, 5));
-    let mouse = |column, row, kind| MouseEvent {
-      column,
-      row,
-      kind,
-      modifiers: KeyModifiers::NONE,
-    };
+    let mouse = |column, row, kind| MouseEvent::new(kind, column, row);
     assert!(!menu.drag(mouse(11, 6, MouseEventKind::Up(MouseButton::Right))));
     assert_eq!(menu.selected(), 0);
     assert!(!menu.drag(mouse(12, 6, MouseEventKind::Drag(MouseButton::Right))));

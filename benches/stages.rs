@@ -2,7 +2,7 @@
 //! encoding, so changes to the render path can be attributed.
 use mupdf::IRect;
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
 use vpdf::Result;
 use vpdf_model::tile::{TILE_HEIGHT, TILE_WIDTH};
@@ -10,6 +10,8 @@ use vpdf_pdf::document::{Document, TEXT_FLAGS, extract};
 use vpdf_pdf::raster::draw;
 use vpdf_terminal::payload::encode;
 use vpdf_ui::layout::{Crop, page_matrix};
+#[path = "support/files.rs"]
+mod corpus;
 
 #[derive(Default, Serialize)]
 struct Stages {
@@ -72,22 +74,11 @@ fn page(path: &Path, index: usize, width: f32) -> Result<Stages> {
 }
 
 fn main() -> Result<()> {
-  let files = std::env::var_os("VPDF_EXTRA").map_or_else(
-    || {
-      let root =
-        PathBuf::from(std::env::var("VPDF_CORPUS").unwrap_or_default());
-      ["book", "paper", "form", "ocr"]
-        .map(|name| root.join(format!("{name}.pdf")))
-        .to_vec()
-    },
-    |extra| std::env::split_paths(&extra).collect(),
-  );
+  let files = corpus::files(&["book.pdf", "paper.pdf", "form.pdf", "ocr.pdf"])?;
   let mut report = Vec::new();
   for file in files {
     let pages = Document::open(&file, "")?.pages.len();
-    let picks: Vec<usize> =
-      (0..8).map(|i| (i * 7919 + pages / 3) % pages).collect();
-    for index in picks {
+    for index in corpus::spread(pages) {
       let stages = page(&file, index, 1969.0)?;
       let name = file.file_name().unwrap_or_default().to_string_lossy();
       report.push(serde_json::json!({

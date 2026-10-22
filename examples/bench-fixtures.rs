@@ -1,5 +1,3 @@
-#[path = "../tests/support/presentation.rs"]
-pub mod presentation;
 use anyhow::{Context, Result};
 #[path = "../benches/support/hash.rs"]
 mod hash;
@@ -15,12 +13,13 @@ mod preview;
 mod reader_fixture;
 #[path = "support/region.rs"]
 mod region;
+#[path = "../tests/support/screen.rs"]
+mod screen;
 #[path = "support/scrollbar.rs"]
 mod scrollbar;
 #[path = "support/text.rs"]
 mod text;
 use std::path::PathBuf;
-use vpdf_model::geometry::Screen;
 use vpdf_pdf::document::Document;
 use vpdf_ui::layout::Layout;
 
@@ -30,20 +29,16 @@ fn main() -> Result<()> {
   let destination =
     PathBuf::from(args.next().context("Missing fixture directory")?);
   let mut doc = Document::open(&source, "")?;
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = screen::cells(120, 40);
   let layout = Layout::new(doc.pages.iter().map(|page| page.bounds), screen);
   let key = vpdf_ui::layout::visible(&layout, 0.0)[0];
   let pixels = vpdf_pdf::raster::raster(&mut doc, key)?;
   let coordinates = text::coordinates;
+  let pages: Vec<_> = doc.pages.iter().map(|p| coordinates(p.bounds)).collect();
+  let glyph = doc.text(vpdf_model::text::PageId(0))?.lines[0].glyphs[0].bounds;
   let geometry = serde_json::to_vec(&serde_json::json!({
-    "pages": doc.pages.iter().map(|p| coordinates(p.bounds)).collect::<Vec<_>>(),
-    "glyph": coordinates(doc.text(vpdf_model::text::PageId(0))?.lines[0].glyphs[0].bounds),
+    "pages": pages,
+    "glyph": coordinates(glyph),
   }))?;
   let text = text::prepare(&mut doc)?;
   anyhow::ensure!(doc.pages.len() >= 2, "Citation fixture needs two pages");
@@ -60,7 +55,8 @@ fn main() -> Result<()> {
   }
   anyhow::ensure!(!found.is_empty(), "No visible citation links");
   let hints = serde_json::to_vec(&serde_json::json!({
-    "screen": [screen.columns, screen.rows, screen.cell_width, screen.cell_height],
+    "screen":
+      [screen.columns, screen.rows, screen.cell_width, screen.cell_height],
     "found": found,
     "page": page,
     "scroll": scroll,

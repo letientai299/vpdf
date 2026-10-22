@@ -8,6 +8,7 @@
 //! `focus 0|1`, `preedit TEXT`, `commit TEXT`, `paste TEXT`, `drop PATH`.
 //! Coordinates are window points; MODS joins ctrl, alt, shift, cmd with `+`.
 
+use crate::input::{KEYS, egui_modifiers};
 use eframe::egui::{
   self, DroppedFile, Event, ImeEvent, Modifiers, MouseWheelUnit, PointerButton,
   RawInput, TouchPhase,
@@ -19,7 +20,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 use vpdf::scenario::Step;
-use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
+use vpdf_model::input::{KeyCode, KeyEvent};
 
 #[derive(Debug)]
 struct Dropped(PathBuf);
@@ -251,71 +252,30 @@ fn apply_step(
 }
 
 fn key_events(key: KeyEvent) -> Option<Vec<Event>> {
-  let modifiers = Modifiers {
-    ctrl: key.modifiers.contains(KeyModifiers::CONTROL),
-    alt: key.modifiers.contains(KeyModifiers::ALT),
-    shift: key.modifiers.contains(KeyModifiers::SHIFT),
-    mac_cmd: key.modifiers.contains(KeyModifiers::SUPER),
-    command: key.modifiers.contains(KeyModifiers::SUPER),
+  let modifiers = egui_modifiers(key.modifiers);
+  let typed = !modifiers.ctrl && !modifiers.alt && !modifiers.mac_cmd;
+  let (code, text) = match key.code {
+    KeyCode::Char(ch) if typed => {
+      let ch = if modifiers.shift { ch.to_ascii_uppercase() } else { ch };
+      let code = egui::Key::from_name(&ch.to_string());
+      (code.unwrap_or(egui::Key::Space), Some(Event::Text(ch.to_string())))
+    }
+    KeyCode::Char(' ') => (egui::Key::Space, None),
+    KeyCode::Char('_') => (egui::Key::Minus, None),
+    KeyCode::Char(ch) => (egui::Key::from_name(&ch.to_string())?, None),
+    KeyCode::BackTab => (egui::Key::Tab, None),
+    code => (KEYS.iter().find(|(_, named)| *named == code)?.0, None),
   };
-  let mut events = vec![Event::ModifiersChanged(modifiers)];
-  if let KeyCode::Char(ch) = key.code
-    && !modifiers.ctrl
-    && !modifiers.alt
-    && !modifiers.mac_cmd
-  {
-    let ch = if modifiers.shift { ch.to_ascii_uppercase() } else { ch };
-    let key = egui::Key::from_name(&ch.to_string()).unwrap_or(egui::Key::Space);
-    events.push(Event::Key {
-      key,
-      physical_key: None,
-      pressed: true,
-      repeat: false,
-      modifiers,
-    });
-    events.push(Event::Text(ch.to_string()));
-    events.push(Event::Key {
-      key,
-      physical_key: None,
-      pressed: false,
-      repeat: false,
-      modifiers,
-    });
-    return Some(events);
-  }
-  let code = match key.code {
-    KeyCode::Char(' ') => egui::Key::Space,
-    KeyCode::Char('_') => egui::Key::Minus,
-    KeyCode::Char(ch) => egui::Key::from_name(&ch.to_string())?,
-    KeyCode::Enter => egui::Key::Enter,
-    KeyCode::Esc => egui::Key::Escape,
-    KeyCode::Tab | KeyCode::BackTab => egui::Key::Tab,
-    KeyCode::Backspace => egui::Key::Backspace,
-    KeyCode::Delete => egui::Key::Delete,
-    KeyCode::Up => egui::Key::ArrowUp,
-    KeyCode::Down => egui::Key::ArrowDown,
-    KeyCode::Left => egui::Key::ArrowLeft,
-    KeyCode::Right => egui::Key::ArrowRight,
-    KeyCode::Home => egui::Key::Home,
-    KeyCode::End => egui::Key::End,
-    KeyCode::PageUp => egui::Key::PageUp,
-    KeyCode::PageDown => egui::Key::PageDown,
-    _ => return None,
-  };
-  events.push(Event::Key {
+  let press = |pressed| Event::Key {
     key: code,
     physical_key: None,
-    pressed: true,
+    pressed,
     repeat: false,
     modifiers,
-  });
-  events.push(Event::Key {
-    key: code,
-    physical_key: None,
-    pressed: false,
-    repeat: false,
-    modifiers,
-  });
+  };
+  let mut events = vec![Event::ModifiersChanged(modifiers), press(true)];
+  events.extend(text);
+  events.push(press(false));
   Some(events)
 }
 
@@ -404,19 +364,13 @@ fn modifiers(word: &str) -> Option<Modifiers> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use vpdf_model::input::KeyModifiers;
 
   #[test]
   fn keys_reach_adapter() {
     use crate::input::Adapter;
     use vpdf::session::native::Input;
-    use vpdf_model::geometry::Screen;
-    let screen = Screen {
-      columns: 100,
-      rows: 40,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::pixels(100, 40, 10, 20);
     for spec in [
       "C-d", "S-space", "g o", "S-j", "enter", "pageup", "C-S-a", "A-x", "中",
       "C-_", "S-tab",
@@ -478,7 +432,6 @@ mod tests {
   fn pointer_modifiers_survive_queue() {
     use crate::input::Adapter;
     use vpdf::session::native::Input;
-    use vpdf_model::geometry::Screen;
     use vpdf_model::input::{MouseButton, MouseEventKind};
 
     let (sender, receiver) = channel();
@@ -487,13 +440,7 @@ mod tests {
     for line in ["down 1 1 left ctrl", "move 2 2", "up 2 2 left"] {
       sender.send(parse(line).unwrap()).unwrap();
     }
-    let screen = Screen {
-      columns: 100,
-      rows: 40,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::pixels(100, 40, 10, 20);
     let mut adapter = Adapter::default();
     let mut modifiers = Modifiers::NONE;
     let mut mouse = Vec::new();

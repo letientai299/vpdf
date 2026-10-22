@@ -44,6 +44,15 @@ struct Mark<'a> {
   name: &'a str,
 }
 
+/// Visible tiles drawn from another scale or blank.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
+pub struct Coverage {
+  pub stand_ins: usize,
+  pub missing: usize,
+  pub missing_pixels: f32,
+  pub stand_in_pixels: f32,
+}
+
 pub struct Paint {
   pub outcome: serde_json::Value,
   pub started: Instant,
@@ -52,10 +61,7 @@ pub struct Paint {
   pub busy: bool,
   pub fresh: bool,
   pub upload_bytes: usize,
-  pub stand_ins: usize,
-  pub missing: usize,
-  pub missing_pixels: f32,
-  pub stand_in_pixels: f32,
+  pub coverage: Coverage,
   pub complete: bool,
 }
 
@@ -68,10 +74,8 @@ struct NativeFrame {
   built_ms: f64,
   fresh: bool,
   upload_bytes: usize,
-  stand_ins: usize,
-  missing: usize,
-  missing_pixels: f32,
-  stand_in_pixels: f32,
+  #[serde(flatten)]
+  coverage: Coverage,
   #[serde(flatten)]
   readiness: Readiness,
 }
@@ -93,13 +97,10 @@ impl NativeFrame {
         * 1000.0,
       fresh: paint.fresh,
       upload_bytes: paint.upload_bytes,
-      stand_ins: paint.stand_ins,
-      missing: paint.missing,
-      missing_pixels: paint.missing_pixels,
-      stand_in_pixels: paint.stand_in_pixels,
+      coverage: paint.coverage,
       readiness: Readiness {
         busy: paint.busy,
-        blank: paint.missing != 0,
+        blank: paint.coverage.missing != 0,
         complete: paint.complete,
       },
     }
@@ -227,10 +228,12 @@ mod tests {
       busy: true,
       fresh: true,
       upload_bytes: 128,
-      stand_ins: 2,
-      missing: 1,
-      missing_pixels: 12.0,
-      stand_in_pixels: 8.0,
+      coverage: Coverage {
+        stand_ins: 2,
+        missing: 1,
+        missing_pixels: 12.0,
+        stand_in_pixels: 8.0,
+      },
       complete: false,
     };
     let mut bytes = Vec::new();

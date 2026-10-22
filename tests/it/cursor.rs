@@ -36,7 +36,10 @@ fn cursor_entry_positions_visual_ranges() -> Result<()> {
     assert_eq!(app.reader.cursor, entry);
     assert_eq!(app.reader.scroll, view);
     app.after_key();
-    assert!(app.keys.awaiting().is_none() && app.clue_wait().is_none());
+    assert!(
+      app.keys.awaiting().is_none()
+        && app.clue_wait(std::time::Instant::now()).is_none()
+    );
     keys(&mut app, b"ia2l")?;
     assert_eq!(app.reader.cursor.glyph, entry.glyph + 2);
     keys(&mut app, b"2hjkl")?;
@@ -219,8 +222,7 @@ fn cursor_hint_labels_keep_owner() -> Result<()> {
 fn cursor_focus_reuses_durable_mode() -> Result<()> {
   let paper = app("paper.pdf", false)?.app.path;
   let book = app("book.pdf", false)?.app.path;
-  let mut session = Session::new(None);
-  session.open(&paper, true, screen())?;
+  let mut session = crate::harness::session(&paper, screen())?;
   send(&mut session, b"i2lgo\ti\t")?;
   assert!(session.app().panel_focused());
   assert_eq!(session.app().reader.mode(), Mode::Cursor);
@@ -238,6 +240,9 @@ fn cursor_focus_reuses_durable_mode() -> Result<()> {
     session.open(&book, true, screen())?;
   }
   session.open(&paper, true, screen())?;
+  assert_eq!(session.app().id, pane);
+  assert_eq!(session.app().reader.mode(), Mode::Cursor);
+  assert_eq!(session.app().reader.cursor, cursor);
   send(&mut session, b":vsplit\r")?;
   assert_eq!(session.app().reader.mode(), Mode::Normal);
   send(&mut session, b"\x17p")?;
@@ -261,11 +266,11 @@ fn cursor_rendering_keeps_visual_band_separate() -> Result<()> {
     app.search.show(vpdf_search::query::Query::default(), vec![hit]);
     keys(&mut app, b"i")?;
     let mut out = Vec::new();
-    app.status(&mut out, app.screen.rows - 1)?;
+    app.status(&mut out, app.screen.rows - 1, None)?;
     assert!(String::from_utf8_lossy(&out).contains(" CURSOR "));
     out.clear();
     if text {
-      app.text_canvas(&mut out)?;
+      vpdf::presentation::try_draw(&mut out, None, |s| app.scene_text(s))?;
       let frame = String::from_utf8_lossy(&out);
       assert!(frame.contains("\x1b[0;7;34m"));
       assert!(!frame.contains("\x1b[0;100m"));
@@ -274,7 +279,10 @@ fn cursor_rendering_keeps_visual_band_separate() -> Result<()> {
       app.graphics.begin(&mut out)?;
       {
         let (app, graphics) = app.parts();
-        app.marks(graphics, app.layout.screen(), &mut out)?;
+        let screen = app.layout.screen();
+        vpdf::presentation::try_draw(&mut out, Some(graphics), |s| {
+          app.scene_marks(s, screen)
+        })?;
       }
       app.graphics.end(&mut out)?;
       let frame = String::from_utf8_lossy(&out);
@@ -329,8 +337,7 @@ fn cursor_panel_enter_returns_normal() -> Result<()> {
   for cross_document in [false, true] {
     let paper = app("paper.pdf", false)?.app.path;
     let book = app("book.pdf", false)?.app.path;
-    let mut session = Session::new(None);
-    session.open(&paper, true, screen())?;
+    let mut session = crate::harness::session(&paper, screen())?;
     send(&mut session, b"i2l")?;
     let pane = session.app().id;
     let cursor = session.app().reader.cursor;
@@ -348,12 +355,7 @@ fn cursor_panel_enter_returns_normal() -> Result<()> {
     send(&mut session, b"o")?;
     assert_eq!(session.app().id, source);
     assert_eq!(session.app().input_owner(), InputOwner::Panel);
-    let target = session
-      .tabs
-      .iter()
-      .flat_map(|tab| &tab.panes)
-      .find(|app| app.id == pane)
-      .unwrap();
+    let target = crate::harness::pane_id(&mut session, pane);
     assert_eq!(target.reader.mode(), Mode::Cursor);
     assert_eq!(target.reader.cursor, cursor);
     send(&mut session, b"\r")?;

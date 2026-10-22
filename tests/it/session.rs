@@ -1,6 +1,6 @@
 use crate::common;
+use crate::harness::corpus;
 
-use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::Request;
 use vpdf::session::Session;
@@ -18,10 +18,8 @@ fn act(session: &mut Session, action: Action) -> Result<()> {
 /// Page 30 of book.pdf split with `Ctrl-w v`: columns 0-59 hold the
 /// focused new pane, 61-120 the first; row 39 is the status row.
 fn split() -> Result<(Session, u32, u32)> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = common::cells(121, 40);
-  let mut session = Session::new(None);
-  session.open(&root.join("book.pdf"), true, screen)?;
+  let mut session = crate::harness::session(&corpus("book.pdf")?, screen)?;
   session.app().command("30")?;
   let right = session.app().id;
   act(
@@ -35,14 +33,13 @@ fn split() -> Result<(Session, u32, u32)> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn tabs_share_graphics_and_close_in_order() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = common::cells(120, 50);
   let mut session = Session::new(None);
   for name in ["book.pdf", "paper.pdf", "form.pdf"] {
-    session.open(&root.join(name), true, screen)?;
+    session.open(&corpus(name)?, true, screen)?;
   }
   assert_eq!((session.tabs.len(), session.active), (3, 2));
-  session.open(&root.join("book.pdf"), true, screen)?;
+  session.open(&corpus("book.pdf")?, true, screen)?;
   assert_eq!((session.tabs.len(), session.active), (3, 0));
   let names = &session.app().tabline.names;
   assert_eq!(names, &["book.pdf", "paper.pdf", "form.pdf"]);
@@ -59,7 +56,7 @@ fn tabs_share_graphics_and_close_in_order() -> Result<()> {
   }
   let id = session.app().id;
   session.app().request =
-    Some(Request::Open { path: root.join("ocr.pdf"), tab: false });
+    Some(Request::Open { path: corpus("ocr.pdf")?, tab: false });
   session.settle()?;
   assert_eq!(session.app().name(), "ocr.pdf");
   assert_ne!(session.app().id, id);
@@ -76,13 +73,12 @@ fn tabs_share_graphics_and_close_in_order() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn reopening_restores_position_and_recent_order() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let directory = tempfile::tempdir()?;
   let store = directory.path().join("state.json");
   let screen = common::cells(120, 50);
   let mut session = Session::new(Some(store.clone()));
-  session.open(&root.join("paper.pdf"), true, screen)?;
-  session.open(&root.join("book.pdf"), true, screen)?;
+  session.open(&corpus("paper.pdf")?, true, screen)?;
+  session.open(&corpus("book.pdf")?, true, screen)?;
   session.app().command("39")?;
   session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(1.5));
   session.app().command("q")?;
@@ -98,7 +94,7 @@ fn reopening_restores_position_and_recent_order() -> Result<()> {
     .map(|entry| entry.path.file_name().unwrap().to_owned())
     .collect();
   assert_eq!(names, ["paper.pdf", "book.pdf"], "closed last, listed first");
-  session.open(&root.join("book.pdf"), true, screen)?;
+  session.open(&corpus("book.pdf")?, true, screen)?;
   assert_eq!(session.app().reader.cursor.page.0, 38);
   assert!((session.app().layout.zoom() - 1.5).abs() < f32::EPSILON);
   Ok(())
@@ -107,17 +103,16 @@ fn reopening_restores_position_and_recent_order() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn marks_persist_and_cross_documents() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let directory = tempfile::tempdir()?;
   let store = directory.path().join("state.json");
   let screen = common::cells(120, 50);
   let mut session = Session::new(Some(store.clone()));
-  session.open(&root.join("book.pdf"), true, screen)?;
+  session.open(&corpus("book.pdf")?, true, screen)?;
   session.app().command("30")?;
   act(&mut session, Action::Mark('a'))?;
   session.app().command("40")?;
   act(&mut session, Action::Mark('B'))?;
-  session.open(&root.join("paper.pdf"), true, screen)?;
+  session.open(&corpus("paper.pdf")?, true, screen)?;
   act(&mut session, Action::GoMark('B', true))?;
   assert_eq!(session.app().name(), "book.pdf");
   assert_eq!(session.app().reader.cursor.page.0, 39);
@@ -128,7 +123,7 @@ fn marks_persist_and_cross_documents() -> Result<()> {
     session.settle()?;
   }
   let mut session = Session::new(Some(store));
-  session.open(&root.join("book.pdf"), true, screen)?;
+  session.open(&corpus("book.pdf")?, true, screen)?;
   act(&mut session, Action::GoMark('a', false))?;
   assert_eq!(session.app().reader.cursor.page.0, 29);
   assert!(act(&mut session, Action::GoMark('z', false)).is_err());
@@ -144,10 +139,11 @@ fn ctrl_r_resizes_pane() -> Result<()> {
     (b"5\x12l".as_slice(), left, 0, 0, 65, 40),
     (b"l", left, 0, 0, 66, 40),
     (b"l", left, 0, 0, 67, 40),
-    (b"hq:", left, 0, 0, 67, 40),
-    (b"\x1b[27u\x17l", right, 68, 0, 53, 40),
-    (b"3\x12h", right, 65, 0, 56, 40),
-    (b"h", right, 64, 0, 57, 40),
+    (b"hq:", left, 0, 0, 66, 40),
+    (b"\x1b[27u\x17l", right, 67, 0, 54, 40),
+    (b"3\x12h", right, 64, 0, 57, 40),
+    (b"h", right, 63, 0, 58, 40),
+    (b"l", right, 64, 0, 57, 40),
   ] {
     common::keys(session.app(), bytes)?;
     session.settle()?;
@@ -162,10 +158,11 @@ fn ctrl_r_resizes_pane() -> Result<()> {
   for (bytes, id, row, rows) in [
     (b"4\x12j".as_slice(), top, 0, 24),
     (b"j", top, 0, 25),
-    (b"k", top, 0, 25),
-    (b"\x1b[27u\x17j", right, 25, 15),
-    (b"2\x12k", right, 23, 17),
-    (b"k", right, 22, 18),
+    (b"k", top, 0, 24),
+    (b"\x1b[27u\x17j", right, 24, 16),
+    (b"2\x12k", right, 22, 18),
+    (b"k", right, 21, 19),
+    (b"j", right, 22, 18),
   ] {
     common::keys(session.app(), bytes)?;
     session.settle()?;
@@ -177,7 +174,7 @@ fn ctrl_r_resizes_pane() -> Result<()> {
   let mode = session.app().reader.mode();
   let cursor = session.app().reader.cursor;
   let mut status = Vec::new();
-  session.app().status(&mut status, 0)?;
+  session.app().status(&mut status, 0, None)?;
   assert!(String::from_utf8(status)?.contains("RESIZE"));
   common::keys(session.app(), b"\x1b[27u")?;
   assert!(!session.app().keys.resizing());
@@ -187,10 +184,44 @@ fn ctrl_r_resizes_pane() -> Result<()> {
 }
 
 #[test]
+fn resize_reverses_direction() -> Result<()> {
+  use vpdf_ui::split::{Axis, Direction};
+
+  let (_root, path) =
+    common::temp_pdf(|path| common::text_pdf(path, &["Resize direction"]))?;
+  for (axis, peer, forward, backward) in [
+    (Axis::Columns, Direction::Right, b'l', b'h'),
+    (Axis::Rows, Direction::Down, b'j', b'k'),
+  ] {
+    let mut session = crate::harness::session(&path, common::cells(121, 40))?;
+    act(&mut session, Action::Window(Window::Split(axis)))?;
+    for side in 0..2 {
+      let before = session.app().screen;
+      let at = session.app().at;
+      common::keys(session.app(), &[0x12])?;
+      for (first, second) in [(forward, backward), (backward, forward)] {
+        common::keys(session.app(), &[b'3', first])?;
+        session.settle()?;
+        assert_ne!(session.app().screen, before);
+        common::keys(session.app(), &[b'3', second])?;
+        session.settle()?;
+        assert_eq!(session.app().screen, before);
+        assert_eq!(session.app().at, at);
+        assert!(session.app().keys.resizing());
+      }
+      common::keys(session.app(), b"\x1b[27u")?;
+      if side == 0 {
+        act(&mut session, Action::Window(Window::Focus(peer)))?;
+      }
+    }
+  }
+  Ok(())
+}
+
+#[test]
 #[ignore = "requires verified public PDF corpus"]
 fn ctrl_w_splits_moves_and_closes_panes() -> Result<()> {
   use vpdf_ui::split::{Axis, Direction};
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let (mut session, left, _) = split()?;
   assert_eq!(session.tab().panes.len(), 2);
   assert_eq!(session.app().reader.cursor.page.0, 29, "split keeps the view");
@@ -199,7 +230,7 @@ fn ctrl_w_splits_moves_and_closes_panes() -> Result<()> {
     command: Window::Split(Axis::Rows),
     count: 1,
     explicit: false,
-    file: Some(root.join("paper.pdf")),
+    file: Some(corpus("paper.pdf")?),
   });
   session.settle()?;
   assert_eq!(session.app().name(), "paper.pdf");
@@ -227,30 +258,18 @@ fn ctrl_w_splits_moves_and_closes_panes() -> Result<()> {
 
 mod pointer {
   use super::*;
+  use crate::harness::{drag, mouse, pane_id, press};
   use MouseButton::Left;
   use MouseEventKind::{Down, Drag, ScrollDown, Up};
-  use vpdf::app::App;
   use vpdf_model::input::{
-    KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
   };
   use vpdf_ui::keys::PanelKind;
 
-  fn mouse(
-    session: &mut Session,
-    kind: MouseEventKind,
-    column: u16,
-    row: u16,
-  ) -> Result<()> {
-    let modifiers = KeyModifiers::NONE;
-    session.mouse(MouseEvent { kind, column, row, modifiers }).map(drop)
-  }
-
-  fn key(code: KeyCode) -> KeyEvent {
-    KeyEvent::new(code, KeyModifiers::NONE)
-  }
-
-  fn pane(session: &mut Session, id: u32) -> &mut App {
-    session.tab().panes.iter_mut().find(|app| app.id == id).unwrap()
+  /// Leaves a `g` prefix pending.
+  fn pend_g(session: &mut Session) -> Option<Input> {
+    let g = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
+    session.app().keys.feed(g, vpdf_ui::keys::Grammar::Other)
   }
 
   #[test]
@@ -258,46 +277,37 @@ mod pointer {
   fn drag_across_the_separator_stays_with_the_press() -> Result<()> {
     let (mut session, left, right) = split()?;
     assert_eq!(session.app().id, left);
-    let cursor = pane(&mut session, right).reader.cursor;
-    mouse(&mut session, Down(Left), 30, 10)?;
-    mouse(&mut session, Drag(Left), 100, 10)?;
-    mouse(&mut session, Drag(Left), 100, 39)?;
-    mouse(&mut session, Up(Left), 100, 39)?;
+    let cursor = pane_id(&mut session, right).reader.cursor;
+    mouse(&mut session, Down(Left), (30, 10))?;
+    mouse(&mut session, Drag(Left), (100, 10))?;
+    mouse(&mut session, Drag(Left), (100, 39))?;
+    mouse(&mut session, Up(Left), (100, 39))?;
     assert_eq!(session.app().id, left, "drag and release keep focus");
     assert!(session.app().reader.selection.is_some());
-    let other = pane(&mut session, right);
+    let other = pane_id(&mut session, right);
     assert_eq!(other.reader.cursor, cursor);
     assert!(other.reader.selection.is_none());
     assert!(!other.reader.animation().active());
 
     act(&mut session, Action::Cancel)?;
     act(&mut session, Action::Yank)?;
-    assert!(
-      session
-        .app()
-        .keys
-        .feed(key(KeyCode::Char('g')), vpdf_ui::keys::Grammar::Other)
-        .is_none()
-    );
-    mouse(&mut session, ScrollDown, 90, 10)?;
+    assert!(pend_g(&mut session).is_none());
+    mouse(&mut session, ScrollDown, (90, 10))?;
     assert_eq!(session.app().id, left, "the wheel leaves focus");
-    assert!(pane(&mut session, right).reader.animation().active());
+    assert!(pane_id(&mut session, right).reader.animation().active());
     assert!(session.app().reader.operator.is_none(), "wheel drops `y`");
     assert_eq!(session.app().keys.awaiting(), None, "wheel drops `g`");
     act(&mut session, Action::Yank)?;
-    mouse(&mut session, Down(Left), 30, 10)?;
+    mouse(&mut session, Down(Left), (30, 10))?;
     assert!(session.app().reader.operator.is_none(), "press drops `y`");
 
     act(&mut session, Action::Search(false))?;
-    session
-      .app()
-      .keys
-      .feed(key(KeyCode::Char('g')), vpdf_ui::keys::Grammar::Other);
-    mouse(&mut session, Down(Left), 90, 10)?;
+    pend_g(&mut session);
+    mouse(&mut session, Down(Left), (90, 10))?;
     assert_eq!(session.app().id, left, "prompt consumes the press");
-    mouse(&mut session, Down(Left), 90, 10)?;
+    mouse(&mut session, Down(Left), (90, 10))?;
     assert_eq!(session.app().id, right, "a press focuses");
-    let old = pane(&mut session, left);
+    let old = pane_id(&mut session, left);
     assert!(old.overlays.prompt().is_none() && old.overlays.hints().is_none());
     assert!(old.keys.awaiting().is_none());
     assert!(old.search.prompt_origin().is_none(), "the search was aborted");
@@ -305,7 +315,7 @@ mod pointer {
     act(&mut session, Action::Yank)?;
     act(&mut session, Action::Window(Window::Next))?;
     assert_eq!(session.app().id, left);
-    let old = pane(&mut session, right);
+    let old = pane_id(&mut session, right);
     assert!(old.reader.operator.is_none(), "`Ctrl-w` drops `y`");
     Ok(())
   }
@@ -320,8 +330,8 @@ mod pointer {
     assert!(session.app().panel_focused(), "Escape preserves panel focus");
     let width = session.app().left;
     assert!(width > 0);
-    mouse(&mut session, Down(Left), width + 5, 10)?;
-    mouse(&mut session, Up(Left), width + 5, 10)?;
+    mouse(&mut session, Down(Left), (width + 5, 10))?;
+    mouse(&mut session, Up(Left), (width + 5, 10))?;
     Ok((session, width))
   }
 
@@ -332,20 +342,16 @@ mod pointer {
     let panel = |session: &mut Session| {
       session.app().panel.as_ref().unwrap().view.focused()
     };
-    mouse(&mut session, ScrollDown, 2, 5)?;
+    mouse(&mut session, ScrollDown, (2, 5))?;
     assert!(!panel(&mut session), "the wheel leaves the panel unfocused");
-    mouse(&mut session, Down(Left), 2, 3)?;
-    mouse(&mut session, Drag(Left), 40, 10)?;
-    mouse(&mut session, Up(Left), 40, 10)?;
+    drag(&mut session, (2, 3), (40, 10))?;
     assert!(panel(&mut session), "a press focuses the panel");
     assert!(session.app().reader.selection.is_none(), "no drag from panel");
-    mouse(&mut session, Down(Left), width + 5, 10)?;
-    mouse(&mut session, Up(Left), width + 5, 10)?;
+    mouse(&mut session, Down(Left), (width + 5, 10))?;
+    mouse(&mut session, Up(Left), (width + 5, 10))?;
     assert!(!panel(&mut session), "a page press unfocuses the panel");
     let cursor = session.app().reader.cursor;
-    mouse(&mut session, Down(Left), 40, 39)?;
-    mouse(&mut session, Drag(Left), 40, 10)?;
-    mouse(&mut session, Up(Left), 40, 10)?;
+    drag(&mut session, (40, 39), (40, 10))?;
     assert_eq!(session.app().reader.cursor, cursor, "status row is inert");
     assert!(session.app().reader.selection.is_none());
     Ok(())
@@ -356,19 +362,11 @@ mod pointer {
   fn clue_and_menu_rows_hide_the_page() -> Result<()> {
     let (mut session, _) = outline()?;
     let cursor = session.app().reader.cursor;
-    let second = std::time::Duration::from_secs(1);
     for kind in [Down(Left), ScrollDown] {
-      session
-        .app()
-        .keys
-        .feed(key(KeyCode::Char('g')), vpdf_ui::keys::Grammar::Other);
-      session
-        .app()
-        .overlays
-        .clues_mut()
-        .restart(std::time::Instant::now().checked_sub(second));
-      assert!(session.app().clue_due());
-      mouse(&mut session, kind, 40, 38)?;
+      pend_g(&mut session);
+      common::age_clues(session.app());
+      assert!(session.app().clue_due(std::time::Instant::now()));
+      mouse(&mut session, kind, (40, 38))?;
       let app = session.app();
       assert_eq!(app.reader.cursor, cursor, "{kind:?} on clues");
       assert!(!app.reader.animation().active(), "{kind:?} on clues scrolls");
@@ -377,17 +375,16 @@ mod pointer {
         assert_eq!(app.keys.pending(), "g", "wheel keeps the prefix");
       }
     }
-    let mut history = vpdf_ui::prompt::History::default();
-    menu(&mut session, &mut history)?;
-    mouse(&mut session, Down(Left), 40, 38)?;
+    menu(&mut session)?;
+    mouse(&mut session, Down(Left), (40, 38))?;
     assert_eq!(session.app().reader.cursor, cursor, "menu rows are inert");
     assert!(session.app().overlays.prompt().is_some());
-    session.app().key(key(KeyCode::Esc), &mut history)?;
+    press(&mut session, b"\x1b")?;
     assert_eq!(session.app().menu_rows(), 0, "Esc closes the menu");
-    menu(&mut session, &mut history)?;
+    menu(&mut session)?;
     let left = session.app().id;
-    mouse(&mut session, Down(Left), 90, 10)?;
-    let old = pane(&mut session, left);
+    mouse(&mut session, Down(Left), (90, 10))?;
+    let old = pane_id(&mut session, left);
     assert!(
       old.overlays.prompt().is_none() && old.menu_rows() == 0,
       "blur closes it"
@@ -396,14 +393,9 @@ mod pointer {
   }
 
   /// Opens `:` with its completion menu.
-  fn menu(
-    session: &mut Session,
-    history: &mut vpdf_ui::prompt::History,
-  ) -> Result<()> {
+  fn menu(session: &mut Session) -> Result<()> {
     act(session, Action::Command)?;
-    for code in [KeyCode::Char('t'), KeyCode::Tab] {
-      session.app().key(key(code), history)?;
-    }
+    press(session, b"t\t")?;
     assert!(session.app().menu_rows() > 0);
     Ok(())
   }
@@ -413,35 +405,35 @@ mod pointer {
   fn overview_takes_only_thumbnail_presses() -> Result<()> {
     let (mut session, width) = outline()?;
     act(&mut session, Action::Overview)?;
-    mouse(&mut session, Down(Left), 40, 39)?;
+    mouse(&mut session, Down(Left), (40, 39))?;
     assert!(
       session.app().overlays.overview().is_some(),
       "status row keeps overview"
     );
     let partial = session.app().thumbnail_at(40, 38).expect("partial row");
-    mouse(&mut session, Down(Left), 40, 38)?;
+    mouse(&mut session, Down(Left), (40, 38))?;
     assert!(
       session.app().overlays.overview().is_none(),
       "partial thumbnail opens"
     );
     assert_eq!(session.app().reader.cursor.page, partial);
     act(&mut session, Action::Overview)?;
-    mouse(&mut session, Down(Left), width + 5, 2)?;
+    mouse(&mut session, Down(Left), (width + 5, 2))?;
     assert!(
       session.app().overlays.overview().is_none(),
       "a thumbnail opens its page"
     );
-    mouse(&mut session, Drag(Left), 40, 10)?;
-    mouse(&mut session, Up(Left), 40, 10)?;
+    mouse(&mut session, Drag(Left), (40, 10))?;
+    mouse(&mut session, Up(Left), (40, 10))?;
     assert!(session.app().reader.selection.is_none(), "no drag from overview");
 
-    mouse(&mut session, Down(Left), width + 5, 10)?;
+    mouse(&mut session, Down(Left), (width + 5, 10))?;
     act(&mut session, Action::Overview)?;
-    mouse(&mut session, Drag(Left), 40, 20)?;
-    mouse(&mut session, Up(Left), 40, 20)?;
+    mouse(&mut session, Drag(Left), (40, 20))?;
+    mouse(&mut session, Up(Left), (40, 20))?;
     assert!(session.app().reader.selection.is_none(), "no drag under `gp`");
     let cursor = session.app().reader.cursor;
-    mouse(&mut session, Down(Left), 2, 3)?;
+    mouse(&mut session, Down(Left), (2, 3))?;
     assert!(
       session.app().overlays.overview().is_none(),
       "a row shows its page"
@@ -450,7 +442,7 @@ mod pointer {
     // The overview takes every key but `:`, so help opens first.
     act(&mut session, Action::Panel(PanelKind::Help))?;
     act(&mut session, Action::Overview)?;
-    mouse(&mut session, Down(Left), 2, 3)?;
+    mouse(&mut session, Down(Left), (2, 3))?;
     assert!(
       session.app().overlays.overview().is_some(),
       "help rows keep overview"
@@ -461,14 +453,12 @@ mod pointer {
   #[test]
   #[ignore = "requires verified public PDF corpus"]
   fn scrolls_in_text_mode_drop_a_pending_yank() -> Result<()> {
-    let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
     let screen = common::cells(120, 40);
-    let mut session = Session::new(None);
-    session.open(&root.join("book.pdf"), true, screen)?;
+    let mut session = crate::harness::session(&corpus("book.pdf")?, screen)?;
     session.app().text_mode = true;
     session.app().command("30")?;
     act(&mut session, Action::Yank)?;
-    mouse(&mut session, ScrollDown, 30, 10)?;
+    mouse(&mut session, ScrollDown, (30, 10))?;
     act(&mut session, Action::Yank)?;
     act(&mut session, Action::Rows(1))?;
     let reader = &session.app().reader;
@@ -481,11 +471,9 @@ mod pointer {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn resize_lays_out_panes_and_start_screen() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = common::cells(120, 50);
   let small = Screen { columns: 100, rows: 30, ..screen };
-  let mut session = Session::new(None);
-  session.open(&root.join("paper.pdf"), true, screen)?;
+  let mut session = crate::harness::session(&corpus("paper.pdf")?, screen)?;
   session.resize(small)?;
   let app = session.app();
   assert_eq!((app.screen.columns, app.screen.rows), (100, 30));
@@ -495,7 +483,8 @@ fn resize_lays_out_panes_and_start_screen() -> Result<()> {
   );
   session.app().command("q")?;
   session.settle()?;
-  session.home = Some(vpdf::home::Home::new(&[], screen));
+  session.home =
+    Some(vpdf::home::Home::new(&[], screen, &vpdf_pdf::jobs::Wake::none()));
   session.resize(small)?;
   let home = session.home.as_ref().unwrap();
   assert_eq!((home.view.screen().columns, home.view.screen().rows), (100, 30));
@@ -516,6 +505,19 @@ fn resident_tiles(session: &mut Session) -> Result<()> {
   Ok(())
 }
 
+/// Sorted image and placement ids of `action` commands.
+fn pairs(frame: &[u8], action: &str) -> Vec<(String, String)> {
+  let text = String::from_utf8_lossy(frame);
+  let commands = crate::kitty::commands(&text);
+  let chosen = commands.iter().filter(|c| c.get("a") == Some(action));
+  let ids = |c: &crate::kitty::Command| {
+    Some((c.get("i")?.to_owned(), c.get("p")?.to_owned()))
+  };
+  let mut pairs: Vec<_> = chosen.filter_map(ids).collect();
+  pairs.sort();
+  pairs
+}
+
 /// Split panes share one `Graphics`: a frame starts and ends it once,
 /// so the next frame keeps every pane's placements and deletes none.
 #[test]
@@ -526,25 +528,12 @@ fn split_frames_keep_every_pane_placed() -> Result<()> {
   resident_tiles(&mut session)?;
   let mut frame = Vec::new();
   session.draw_frame(&mut frame)?;
-  let placed = |frame: &[u8]| {
-    let text = String::from_utf8_lossy(frame);
-    let mut pairs: Vec<String> = text
-      .split("_Ga=p,")
-      .skip(1)
-      .filter_map(|command| {
-        let mut keys = command.split(',');
-        Some(format!("{},{}", keys.next()?, keys.next()?))
-      })
-      .collect();
-    pairs.sort();
-    pairs
-  };
-  let first = placed(&frame);
+  let first = pairs(&frame, "p");
   // Every pane has resident tiles.
   assert!(first.len() >= 2, "{first:?}");
   frame.clear();
   session.draw_frame(&mut frame)?;
-  assert_eq!(placed(&frame), first);
+  assert_eq!(pairs(&frame, "p"), first);
   let text = String::from_utf8_lossy(&frame);
   assert!(!text.contains("a=d,"), "{text}");
   Ok(())
@@ -561,30 +550,14 @@ fn hiding_deletes_every_placement() -> Result<()> {
   resident_tiles(&mut session)?;
   let mut frame = Vec::new();
   session.draw_frame(&mut frame)?;
-  let pairs = |frame: &[u8], command: &str| {
-    let text = String::from_utf8_lossy(frame);
-    let mut pairs: Vec<(String, String)> = text
-      .split(command)
-      .skip(1)
-      .filter_map(|keys| {
-        let value = |name: &str| {
-          let pair = keys.split([',', ';']).find(|pair| pair.starts_with(name));
-          Some(pair?[name.len()..].to_owned())
-        };
-        Some((value("i=")?, value("p=")?))
-      })
-      .collect();
-    pairs.sort();
-    pairs
-  };
-  let placed = pairs(&frame, "_Ga=p,");
+  let placed = pairs(&frame, "p");
   assert!(placed.len() >= 2, "{placed:?}");
   let mut hidden = Vec::new();
   session.hide(&mut hidden)?;
-  assert_eq!(pairs(&hidden, "_Ga=d,d=i,"), placed);
+  assert_eq!(pairs(&hidden, "d"), placed);
   frame.clear();
   session.draw_frame(&mut frame)?;
-  assert_eq!(pairs(&frame, "_Ga=p,"), placed);
+  assert_eq!(pairs(&frame, "p"), placed);
   Ok(())
 }
 
@@ -598,13 +571,7 @@ fn resize_erases_rows_before_placing() -> Result<()> {
   resident_tiles(&mut session)?;
   let mut frame = Vec::new();
   session.draw_frame(&mut frame)?;
-  let screen = Screen {
-    columns: 101,
-    rows: 30,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(101, 30);
   session.resize(screen)?;
   resident_tiles(&mut session)?;
   frame.clear();
@@ -645,8 +612,7 @@ fn focus_keeps_images_and_reload_drops_its_own() -> Result<()> {
   session.app().reload_with("")?;
   session.draw_frame(&mut Vec::new())?;
   let visible = |session: &mut Session, id| {
-    let tab = session.tab();
-    let app = tab.panes.iter().find(|app| app.id == id).unwrap();
+    let app = crate::harness::pane_id(session, id);
     vpdf_ui::layout::visible(&app.layout, app.reader.scroll)
   };
   let kept = visible(&mut session, left);
@@ -659,12 +625,10 @@ fn focus_keeps_images_and_reload_drops_its_own() -> Result<()> {
 /// Closing a pane deletes its images and keeps its sibling's.
 #[test]
 fn closed_panes_drop_their_images() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("split.pdf");
-  common::text_pdf(&path, &["Images per pane"])?;
+  let (_directory, path) =
+    common::temp_pdf(|path| common::text_pdf(path, &["Images per pane"]))?;
   let screen = common::cells(121, 40);
-  let mut session = Session::new(None);
-  session.open(&path, true, screen)?;
+  let mut session = crate::harness::session(&path, screen)?;
   let kept = session.app().id;
   act(
     &mut session,
@@ -673,7 +637,7 @@ fn closed_panes_drop_their_images() -> Result<()> {
   let closed = session.app().id;
   resident_tiles(&mut session)?;
   let owned = |session: &mut Session, id| {
-    let app = session.tab().panes.iter().find(|app| app.id == id).unwrap();
+    let app = crate::harness::pane_id(session, id);
     vpdf_ui::layout::visible(&app.layout, app.reader.scroll)
   };
   let keys = owned(&mut session, kept);

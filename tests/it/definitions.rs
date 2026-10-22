@@ -10,10 +10,8 @@ use vpdf_ui::find::Phase;
 use vpdf_ui::keys::PanelKind;
 
 fn open(pages: &[&[&str]], text: bool) -> Result<(tempfile::TempDir, Solo)> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("references.pdf");
-  pages_pdf(&path, pages)?;
-  let mut app = Solo::open(&path, "", text, screen())?;
+  let (directory, mut app) =
+    crate::common::temp_solo(|path| pages_pdf(path, pages), text, screen())?;
   app.reader.point_to(Position::default());
   Ok((directory, app))
 }
@@ -116,10 +114,11 @@ fn embedded_definition_keeps_history() -> Result<()> {
 
 #[test]
 fn external_definition_does_not_open_browser() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("external.pdf");
-  super::common::linked_pages_pdf(&path, &[&["Figure 4"]], &[(0, 0)])?;
-  let mut app = Solo::open(&path, "", false, screen())?;
+  let (_directory, mut app) = crate::common::temp_solo(
+    |path| super::common::linked_pages_pdf(path, &[&["Figure 4"]], &[(0, 0)]),
+    false,
+    screen(),
+  )?;
   app.reader.point_to(Position::default());
   keys(&mut app, b"gd")?;
   assert_eq!(app.reader.message, "External link: use gx");
@@ -138,20 +137,6 @@ fn section_and_equation_definitions() -> Result<()> {
     assert_eq!(app.reader.cursor.page, PageId(1));
     assert_eq!(app.search.hits().len(), 1);
   }
-  Ok(())
-}
-
-#[test]
-fn outline_definition_avoids_scan() -> Result<()> {
-  let (_directory, mut app) = open(&[&["Section 3.2"], &["Methods"]], false)?;
-  app.doc.outline = vec![vpdf_model::document::Heading {
-    title: "3.2 Methods".into(),
-    depth: 1,
-    target: vpdf_model::document::Target::Page(PageId(1)),
-  }];
-  keys(&mut app, b"gd")?;
-  assert_eq!(app.reader.cursor.page, PageId(1));
-  assert!(app.search_worker.is_none());
   Ok(())
 }
 
@@ -190,7 +175,8 @@ fn definition_replay_excludes_source() -> Result<()> {
 
 #[test]
 fn definition_uses_explicit_heading_titles() -> Result<()> {
-  for title in ["Section 3.2 Methods", "3.2"] {
+  // Outline matches jump without a scan.
+  for title in ["3.2 Methods", "Section 3.2 Methods", "3.2"] {
     let (_directory, mut app) = open(&[&["Section 3.2"], &["Methods"]], false)?;
     app.doc.outline = vec![vpdf_model::document::Heading {
       title: title.into(),

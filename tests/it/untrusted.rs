@@ -9,7 +9,6 @@ use vpdf_model::document::Target;
 use vpdf_model::text::PageId;
 use vpdf_pdf::document::Document;
 use vpdf_ui::keys::PanelKind;
-use vpdf_ui::layout::Screen;
 
 /// OSC, DCS, C1 OSC, and C1 CSI.
 const EVIL: &str = "\x1b]2;pwn\x07\x1bP0;1|\x1b\\\u{9d}\u{9b}\n";
@@ -87,13 +86,7 @@ fn document_strings_reach_the_screen_clean() -> Result<()> {
   }
   assert_eq!(uri, "https://example.com/]2;pwnP0;1|\\");
 
-  let screen = Screen {
-    columns: 160,
-    rows: 30,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = common::cells(160, 30);
   // Graphics add tmux DCS wrappers.
   let text_mode = true;
   let mut app = Solo::open(&path, "", text_mode, screen)?;
@@ -134,9 +127,9 @@ fn document_strings_reach_the_screen_clean() -> Result<()> {
 /// `MuPDF` quotes `/Filter` names in errors.
 #[test]
 fn errors_reach_stderr_clean() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("locked.pdf");
-  write_pdf(&path, "/Encrypt << /Filter /Evil#1B#5D2;pwn#07 >>")?;
+  let (_directory, path) = common::temp_pdf(|path| {
+    write_pdf(path, "/Encrypt << /Filter /Evil#1B#5D2;pwn#07 >>")
+  })?;
   let output = std::process::Command::new(env!("CARGO_BIN_EXE_vpdf"))
     .env(vpdf::inline::VAR, "text")
     .arg(&path)
@@ -150,16 +143,8 @@ fn errors_reach_stderr_clean() -> Result<()> {
 /// Tests never probe the terminal.
 #[test]
 fn info_says_the_terminal_was_not_probed() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("plain.pdf");
-  write_pdf(&path, "")?;
-  let screen = Screen {
-    columns: 80,
-    rows: 24,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let (_directory, path) = common::temp_pdf(|path| write_pdf(path, ""))?;
+  let screen = common::cells(80, 24);
   let app = Solo::open(&path, "", true, screen)?;
   let info = app.info();
   let reader = info.split_once("# Reader\n").map_or("", |(_, rest)| rest);

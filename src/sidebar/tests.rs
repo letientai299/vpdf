@@ -2,28 +2,18 @@ use super::*;
 use crate::SeedReader;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use vpdf_model::document::Target;
 use vpdf_model::text::{PageId, Text};
-use vpdf_pdf::content_cache::Snapshot;
+use vpdf_pdf::content_cache::Record;
 use vpdf_ui::panel::{Destination, Row};
 
 fn app() -> Result<(tempfile::TempDir, App)> {
   let root = tempfile::tempdir()?;
   let path = root.path().join("source.pdf");
   crate::fixtures::pdf(&path, &["https://example.org", "second page"], "")?;
-  let app = App::with_screen(
-    &path,
-    "",
-    false,
-    vpdf_ui::layout::Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
-  )?;
+  let app = App::with_screen(&path, "", false, crate::screen::cells(120, 40))?;
   Ok((root, app))
 }
 
@@ -100,7 +90,7 @@ fn cached_rows_skip_native() -> Result<()> {
   let source = root.path().join("source.pdf");
   std::fs::write(&source, b"not a native PDF")?;
   let request = Request::Links(PageId(0));
-  let cache = Snapshot::open(
+  let cache = Record::open(
     root.path().into(),
     &source,
     "",

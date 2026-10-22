@@ -1,5 +1,5 @@
-use super::{Fill, Layer};
-use crate::geometry::{Screen, clip};
+use super::{Fill, Layer, Stage};
+use crate::geometry::clip;
 use crate::text::{Bounds, Quad};
 
 /// Finite quad with clipped painting metadata.
@@ -20,8 +20,7 @@ impl Polygon {
     viewport: Bounds,
     color: [u8; 4],
     layer: Layer,
-    screen: Screen,
-    left: u16,
+    stage: Stage,
   ) -> Option<Self> {
     if !quad.0.iter().all(|&(x, y)| x.is_finite() && y.is_finite()) {
       return None;
@@ -37,14 +36,11 @@ impl Polygon {
     {
       return None;
     }
-    let viewport = clip(
-      viewport,
-      Bounds { x0: 0.0, y0: 0.0, x1: screen.width(), y1: screen.height() },
-    )?;
+    let viewport = clip(viewport, stage.screen.bounds())?;
     let bounds = clip(quad.bounds(), viewport)?;
     Some(Self {
       corners: quad.0.map(|(x, y)| (x.to_bits(), y.to_bits())),
-      fill: Fill::new(bounds, color, layer, screen, left)?,
+      fill: Fill::new(bounds, color, layer, stage)?,
       clip: [viewport.x0, viewport.y0, viewport.x1, viewport.y1]
         .map(f32::to_bits),
     })
@@ -150,7 +146,7 @@ mod validation_tests {
 
   #[test]
   fn polygons_validate_and_clip() {
-    let screen = Screen {
+    let screen = crate::geometry::Screen {
       columns: 10,
       rows: 8,
       cell_width: 10,
@@ -159,8 +155,9 @@ mod validation_tests {
     };
     let quad = Quad([(0.0, 20.0), (90.0, 10.0), (90.0, 40.0), (0.0, 50.0)]);
     let viewport = Bounds { x0: 10.25, y0: 5.25, x1: 80.75, y1: 60.5 };
+    let stage = Stage { screen, left: 2 };
     let polygon =
-      Polygon::new(quad, viewport, [1, 2, 3, 4], Layer::AboveText, screen, 2)
+      Polygon::new(quad, viewport, [1, 2, 3, 4], Layer::AboveText, stage)
         .unwrap();
     assert_eq!(polygon.clip(), viewport);
     assert_eq!(polygon.quad(), quad);
@@ -174,7 +171,7 @@ mod validation_tests {
       Quad([quad.0[0], quad.0[2], quad.0[1], quad.0[3]]),
     ] {
       assert!(
-        Polygon::new(q, viewport, [1, 2, 3, 4], Layer::AboveText, screen, 2)
+        Polygon::new(q, viewport, [1, 2, 3, 4], Layer::AboveText, stage)
           .is_none()
       );
     }

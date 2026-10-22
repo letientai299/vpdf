@@ -1,6 +1,6 @@
 use super::{Wake, WakingSender};
 use crate::Result;
-use crate::content_cache::{self, Kind, Snapshot};
+use crate::content_cache::{self, Kind, Record};
 use crate::document::Handle;
 use mupdf::IRect;
 use std::path::PathBuf;
@@ -71,7 +71,7 @@ fn read_at(
     serde_json::to_string(&(ask.cursor, ask.rotation, ask.fit))?
   );
   let cache = root.and_then(|root| {
-    Snapshot::open(root, &ask.path, password, Kind::Recent, &key, || true)
+    Record::open(root, &ask.path, password, Kind::Recent, &key, || true)
   });
   if let Some(facts) = cache.as_ref().and_then(recall) {
     return Ok(facts);
@@ -101,7 +101,7 @@ fn read_at(
 type Header =
   (usize, u64, Vec<(String, String)>, Option<String>, Option<(i32, i32)>);
 
-fn recall(cache: &Snapshot) -> Option<Facts> {
+fn recall(cache: &Record) -> Option<Facts> {
   let bytes = cache.read()?;
   let length = u32::from_le_bytes(*bytes.first_chunk::<4>()?) as usize;
   let header = bytes.get(4..4usize.checked_add(length)?)?;
@@ -241,7 +241,7 @@ mod tests {
       env!("VPDF_RECENT_CODE"),
       serde_json::to_string(&(ask.cursor, ask.rotation, ask.fit))?
     );
-    let cache = Snapshot::open(
+    let cache = Record::open(
       root.path().into(),
       &ask.path,
       "",

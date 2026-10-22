@@ -347,10 +347,8 @@ impl Region {
       let (start, end) = (column(span.start), column(span.end));
       Rect { column: start, row, columns: end - start, rows: 1 }
     };
-    let mut items = Items::default();
-    for (span, index) in spans {
-      items.push(cells(span), index);
-    }
+    let items =
+      spans.into_iter().map(|(span, index)| (cells(span), index)).collect();
     let area = cells(0..width);
     if let Some(bar) = self.bar_mut() {
       bar.cells = Some(BarCells { area, items });
@@ -453,16 +451,8 @@ impl Canvas<'_> {
       self.frame.left
     };
     region.place_bar(row, width, items, left);
-    if let Some(cells) = region.cells().filter(|_| !self.frame.text) {
-      let backdrop =
-        crate::paint::cell_bounds(self.frame.screen, self.frame.left, cells);
-      scene.fill(
-        backdrop,
-        theme::BADGE_FILL,
-        Layer::BelowText,
-        screen,
-        self.frame.left,
-      );
+    if let Some(cells) = region.cells() {
+      crate::paint::backdrop(scene, self.frame, cells, theme::BADGE_FILL);
     }
     crate::paint::move_to(scene, self.frame.at, row, column);
     scene.push(Op::Style(Role::Selected));
@@ -477,36 +467,22 @@ impl Canvas<'_> {
     rect: Bounds,
     active: Option<(bool, bool)>,
   ) {
-    let screen = self.frame.screen;
+    let stage = self.frame.stage();
     if !self.frame.text {
+      let screen = stage.screen;
       let w = screen.width();
       let h = screen.height();
       let x0 = rect.x0.clamp(0.0, w);
       let x1 = rect.x1.clamp(x0, w);
       let y0 = rect.y0.clamp(0.0, h);
       let y1 = rect.y1.clamp(y0, h);
-      for bounds in [
-        Bounds { x0: 0.0, y0: 0.0, x1: w, y1: y0 },
-        Bounds { x0: 0.0, y0: y1, x1: w, y1: h },
-        Bounds { x0: 0.0, y0, x1: x0, y1 },
-        Bounds { x0: x1, y0, x1: w, y1 },
-      ] {
-        scene.fill(
-          bounds,
-          theme::REGION_VEIL,
-          Layer::BelowText,
-          screen,
-          self.frame.left,
-        );
+      let whole = Bounds { x0: 0.0, y0: 0.0, x1: w, y1: h };
+      let hole = Bounds { x0, y0, x1, y1 };
+      for bounds in crate::paint::outside(whole, Some(hole)) {
+        scene.fill(bounds, theme::REGION_VEIL, Layer::BelowText, stage);
       }
-      for bounds in frame_edges(Bounds { x0, y0, x1, y1 }, (w, h), active) {
-        scene.fill(
-          bounds,
-          theme::REGION_EDGE,
-          Layer::AboveText,
-          screen,
-          self.frame.left,
-        );
+      for bounds in frame_edges(hole, (w, h), active) {
+        scene.fill(bounds, theme::REGION_EDGE, Layer::AboveText, stage);
       }
     }
   }

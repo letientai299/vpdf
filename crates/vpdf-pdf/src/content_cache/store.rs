@@ -1,4 +1,4 @@
-use super::path;
+use super::{Kind, path};
 use crate::Result;
 use std::fs::File;
 use std::io::Write;
@@ -57,17 +57,16 @@ pub(super) fn trim(root: &Path, budget: u64) -> Result<()> {
     let modified = meta.modified().unwrap_or(now);
     let path = entry.path();
     match path.extension().and_then(|extension| extension.to_str()) {
-      Some(
-        "pack" | "ocr" | "outline" | "figures" | "annotations" | "links"
-        | "recent",
-      ) => {
-        packs.push((modified, meta.len(), path));
-      }
       Some("id") => memos.push((modified, path)),
       Some("tmp")
         if now.duration_since(modified).unwrap_or_default() > ABANDONED =>
       {
         drop(std::fs::remove_file(path));
+      }
+      Some(ext)
+        if ext == "pack" || Kind::ALL.iter().any(|kind| kind.ext() == ext) =>
+      {
+        packs.push((modified, meta.len(), path));
       }
       _ => {}
     }

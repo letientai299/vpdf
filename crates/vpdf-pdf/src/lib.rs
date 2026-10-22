@@ -6,7 +6,7 @@ mod fonts;
 mod prime;
 pub mod raster;
 mod scheduling;
-pub use scheduling::yield_to_views;
+pub use scheduling::ready;
 pub mod wraps;
 
 use vpdf_model::{cache, text};
@@ -23,3 +23,6 @@ mod encryption;
 #[cfg(test)]
 #[path = "../../../tests/support/native.rs"]
 mod fixtures;
+#[cfg(test)]
+#[path = "../../../tests/support/text.rs"]
+mod text_fixture;

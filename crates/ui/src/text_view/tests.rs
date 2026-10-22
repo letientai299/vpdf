@@ -1,5 +1,6 @@
 use super::*;
 use crate::testing::fixtures::Source;
+use crate::testing::page::marks;
 use crate::testing::text_fixture as text;
 use crate::text::Bounds;
 use vpdf_reader::reader::Reader;
@@ -215,15 +216,7 @@ fn pages(text: Arc<Text>) -> Source {
 fn recorded_advances_match_hits() -> Result<()> {
   let pages = pages(text(&["界e\u{301}x"]));
   let reader = Reader::default();
-  let paint = Marks {
-    reader: &reader,
-    matches: &[],
-    flash: None,
-    landing: None,
-    cursorline: false,
-    dim: false,
-    hovered: &[],
-  };
+  let paint = Marks { cursorline: false, ..marks(&reader) };
   let frame = Frame {
     screen: crate::testing::screen::cells(4, 2),
     at: At { column: 7, row: 3 },
@@ -254,15 +247,7 @@ fn recorded_advances_match_hits() -> Result<()> {
 fn hits_follow_pending_and_drawn_frames() -> Result<()> {
   let pages = pages(text(&["a", "b", "c", "d"]));
   let reader = Reader::default();
-  let paint = Marks {
-    reader: &reader,
-    matches: &[],
-    flash: None,
-    landing: None,
-    cursorline: false,
-    dim: false,
-    hovered: &[],
-  };
+  let paint = Marks { cursorline: false, ..marks(&reader) };
   let frame = Frame {
     screen: crate::testing::screen::cells(6, 3),
     at: At::default(),
@@ -294,15 +279,7 @@ fn cursorline_follows_reader_mode() -> Result<()> {
       _ => {}
     }
     for enabled in [false, true] {
-      let paint = Marks {
-        reader: &reader,
-        matches: &[],
-        flash: None,
-        landing: None,
-        cursorline: enabled,
-        dim: false,
-        hovered: &[],
-      };
+      let paint = Marks { cursorline: enabled, ..marks(&reader) };
       let pages = pages(text(&["abc", "other"]));
       let frame = Frame {
         screen: crate::testing::screen::cells(10, 2),

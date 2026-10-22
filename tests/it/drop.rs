@@ -54,8 +54,7 @@ const FILES: &str = "text/uri-list";
 /// A session split in two panes on `a`: the right pane's index and its
 /// first column.
 fn split(a: &Path) -> Result<(Session, usize, u16)> {
-  let mut session = Session::new(None);
-  session.open(a, true, screen())?;
+  let mut session = crate::harness::session(a, screen())?;
   send(&mut session, b"\x17v")?;
   assert_eq!(session.tab().panes.len(), 2);
   // Whichever pane got focus.
@@ -167,14 +166,13 @@ fn pasted_pdf_paths_open_in_normal_mode() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let root = directory.path();
   let (a, b) = (pdf(root, "a.pdf")?, pdf(root, "b b.pdf")?);
-  let mut session = Session::new(None);
-  session.open(&a, true, screen())?;
+  let mut session = crate::harness::session(&a, screen())?;
   let mut history = History::default();
   let pasted = b.display().to_string();
   // (keys first, pasted text) -> document shown
   let cases = [
     (b"v".as_slice(), pasted.clone(), a.clone()),
-    (b"\x1b[27u", "not a path".to_owned(), a.clone()),
+    (b"\x1b[27u", "not a path".to_owned(), a),
     (b"", pasted.replace(' ', "\\ "), b.clone()),
   ];
   for (keys, text, want) in cases {
@@ -184,7 +182,7 @@ fn pasted_pdf_paths_open_in_normal_mode() -> Result<()> {
     assert_eq!(session.app().path, want, "{text}");
   }
   // The start screen opens one too.
-  let mut home = Home::new(&[], screen());
+  let mut home = Home::new(&[], screen(), &vpdf_pdf::jobs::Wake::none());
   let opened = home.event(Event::Paste(pasted), &mut history)?;
   assert_eq!(opened, Outcome::Open(b));
   Ok(())

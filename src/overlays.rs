@@ -2,11 +2,9 @@
 
 use crate::Result;
 use crate::app::{App, Request};
-use std::io::Write;
 use std::time::{Duration, Instant};
 use vpdf_model::document::Target;
 use vpdf_model::input::{KeyEvent, MouseEvent};
-use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::hints::Transition;
 use vpdf_ui::input::{Dismiss, InputOwner, Targets};
 use vpdf_ui::paint::Frame;
@@ -166,22 +164,7 @@ impl App {
     }
   }
 
-  pub fn draw_hints(
-    &mut self,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    let mut painter =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    self.scene_hints(&mut painter);
-    painter.finish()?;
-    Ok(())
-  }
-
-  pub(crate) fn scene_hints<'a>(
-    &self,
-    scene: &mut impl vpdf_model::scene::Draw<'a>,
-  ) {
+  pub fn scene_hints<'a>(&self, scene: &mut impl vpdf_model::scene::Draw<'a>) {
     let Some(hints) = self.overlays.hints() else { return };
     hints.scene(
       scene,
@@ -196,11 +179,7 @@ impl App {
 }
 
 impl App {
-  pub fn clue_due(&mut self) -> bool {
-    self.clue_due_at(Instant::now())
-  }
-
-  pub(crate) fn clue_due_at(&mut self, now: Instant) -> bool {
+  pub fn clue_due(&mut self, now: Instant) -> bool {
     if self.overlays.prompt().is_some() || !self.overlays.clues().pending() {
       return false;
     }
@@ -229,11 +208,7 @@ impl App {
     self.overlays.clues_mut().show(items)
   }
 
-  pub fn clue_wait(&self) -> Option<Duration> {
-    self.clue_wait_at(Instant::now())
-  }
-
-  pub(crate) fn clue_wait_at(&self, now: Instant) -> Option<Duration> {
+  pub fn clue_wait(&self, now: Instant) -> Option<Duration> {
     if self.overlays.prompt().is_some() || !self.overlays.clues().pending() {
       return None;
     }
@@ -249,9 +224,5 @@ impl App {
 
   pub(crate) fn scroll_clues(&mut self, rows: isize) {
     self.overlays.clues_mut().scroll(rows, self.screen);
-  }
-
-  pub fn clue_rows(&self) -> u16 {
-    self.overlays.clues().rows(self.screen)
   }
 }

@@ -52,25 +52,18 @@ impl Drawable for Session {
     let tab = &self.tabs[self.active];
     let mut seen = Observation::of(&tab.panes[tab.focus], &self.graphics);
     seen.busy = tab.panes.iter().any(App::busy);
-    seen.outcome["tab"] = (self.active + 1).into();
-    seen.outcome["pane_count"] = tab.panes.len().into();
-    seen.outcome["resources"] = serde_json::to_value(
-      self
-        .tabs
-        .iter()
-        .enumerate()
-        .flat_map(|(index, tab)| tab.panes.iter().map(move |app| (index, app)))
-        .map(|(index, app)| super::native::Resources {
-          owner: app.id,
-          visible: index == self.active,
-          text_bytes: app.doc.cache_bytes(),
-          tile_bytes: self.graphics.owner_bytes(app.id),
-          active_workers: app.active_workers(),
-          search_workers: usize::from(app.search_worker.is_some()),
-        })
-        .collect::<Vec<_>>(),
-    )
-    .expect("serializable resources");
+    seen.outcome.tab = self.active + 1;
+    seen.outcome.pane_count = tab.panes.len();
+    seen.outcome.resources = self
+      .tabs
+      .iter()
+      .enumerate()
+      .flat_map(|(index, tab)| tab.panes.iter().map(move |app| (index, app)))
+      .map(|(index, app)| {
+        let tiles = self.graphics.owner_bytes(app.id);
+        super::native::Resources::of(app, index == self.active, tiles)
+      })
+      .collect();
     seen
   }
 }
@@ -132,17 +125,15 @@ impl Session {
       return Ok(());
     }
     self.perf.sample(now);
-    if let Some(screen) = self.screen {
-      let mut buffer = Vec::new();
-      write!(buffer, "{}", terminal::frame_start())?;
-      if crate::presentation::draw(&mut buffer, None, |scene| {
-        self.perf.view.scene(scene, screen, false)
-      })? {
-        write!(buffer, "{}", terminal::frame_end())?;
-        self.perf.exclude(buffer.len());
-        out.write_all(&buffer)?;
-        out.flush()?;
-      }
+    let Some(screen) = self.screen else { return Ok(()) };
+    let mut overlay = Vec::new();
+    if self.perf.draw(&mut overlay, screen)? {
+      let (start, end) = (terminal::frame_start(), terminal::frame_end());
+      self.perf.exclude(start.len() + end.len());
+      write!(out, "{start}")?;
+      out.write_all(&overlay)?;
+      write!(out, "{end}")?;
+      out.flush()?;
     }
     Ok(())
   }
@@ -173,7 +164,7 @@ impl Session {
       return;
     }
     // Tiles no longer kept render again.
-    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+    for app in self.panes_mut() {
       app.tiles.invalidate();
     }
   }
@@ -200,7 +191,7 @@ impl Session {
       home.images_lost();
     }
     self.drop_pointer();
-    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+    for app in self.panes_mut() {
       app.tiles.invalidate();
       app.blank = false;
     }
@@ -214,13 +205,7 @@ mod tests {
   use std::io;
 
   fn split_session(path: &std::path::Path, text_mode: bool) -> Result<Session> {
-    let screen = vpdf_ui::layout::Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(80, 24);
     let mut session = Session::new(None);
     session.open(path, true, screen)?;
     session.app().command("vsplit")?;
@@ -253,7 +238,7 @@ mod tests {
 
   #[test]
   fn inactive_panes_dim_with_focus() -> Result<()> {
-    use vpdf_model::scene::{FillArea, Layer, Op, Recorder};
+    use vpdf_model::scene::{FillArea, Layer, Op, Recorder, Stage};
 
     let root = tempfile::tempdir()?;
     let path = root.path().join("panes.pdf");
@@ -279,7 +264,8 @@ mod tests {
         assert_eq!(veils.len(), 1);
         let inactive = &tab.panes[1 - focus];
         assert_eq!(veils[0].layer(), Layer::AboveText);
-        assert_eq!(veils[0].frame(), (inactive.screen, inactive.left));
+        let stage = Stage { screen: inactive.screen, left: inactive.left };
+        assert_eq!(veils[0].stage(), stage);
         assert_eq!(
           veils[0].area(),
           FillArea::Cells {

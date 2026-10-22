@@ -66,6 +66,9 @@ impl Screen {
   pub fn height(self) -> f32 {
     f32::from(self.rows.saturating_sub(1)) * f32::from(self.cell_height)
   }
+  pub fn bounds(self) -> Bounds {
+    Bounds { x0: 0.0, y0: 0.0, x1: self.width(), y1: self.height() }
+  }
 }
 
 /// Margins trimmed from every page, in thousandths of its width and

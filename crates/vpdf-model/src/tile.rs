@@ -5,7 +5,7 @@ use std::ops::Range;
 pub const TILE_WIDTH: i32 = 512;
 pub const TILE_HEIGHT: i32 = 256;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct TileKey {
   pub page: PageId,
   pub scale: u32,

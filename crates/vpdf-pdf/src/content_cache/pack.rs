@@ -185,7 +185,7 @@ fn decode(page: PageId, record: &Record) -> Option<Index> {
 }
 
 /// `raw` inflated, when it holds exactly `len` bytes.
-pub(super) fn inflate(raw: &[u8], len: usize) -> Option<Vec<u8>> {
+fn inflate(raw: &[u8], len: usize) -> Option<Vec<u8>> {
   // One spare byte lets a longer stream show itself.
   let mut bytes = Vec::with_capacity(len + 1);
   let status = Decompress::new(true)
@@ -274,6 +274,6 @@ pub fn save(
   trim(root, BUDGET)
 }
 
-pub(super) fn put(bytes: &mut Vec<u8>, value: usize) {
+fn put(bytes: &mut Vec<u8>, value: usize) {
   bytes.extend_from_slice(&(value as u32).to_le_bytes());
 }

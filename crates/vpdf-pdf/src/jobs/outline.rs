@@ -6,7 +6,7 @@
 //! page edges (running heads, folios) are ignored.
 
 use super::{OneShot, Wake};
-use crate::content_cache::{self, OutlineCache};
+use crate::content_cache::{self, Kind, Record};
 use crate::document::{Handle, Heading, Target};
 use crate::text::{Line, PageId, Text};
 use std::collections::HashMap;
@@ -189,11 +189,12 @@ fn spawn_at(
   let (path, password) = (path.to_owned(), password.to_owned());
   OneShot::spawn(wake, move |stopped| {
     let cache = root.and_then(|root| {
-      OutlineCache::open(root, &path, &password, || {
-        crate::scheduling::yield_to_views(|| stopped.load(Ordering::Relaxed))
+      let code = env!("VPDF_OUTLINE_CODE");
+      Record::open(root, &path, &password, Kind::Outline, code, || {
+        crate::scheduling::ready(stopped)
       })
     });
-    let found = cache.as_ref().and_then(OutlineCache::read);
+    let found = cache.as_ref().and_then(cached);
     if stopped.load(Ordering::Relaxed) {
       return None;
     }
@@ -204,24 +205,30 @@ fn spawn_at(
       return Some((Vec::new(), false));
     };
     let pages = (0..doc.pages.min(PAGES)).map(|page| {
-      crate::scheduling::yield_to_views(|| stopped.load(Ordering::Relaxed))
-        .then(|| doc.text(PageId(page)))
+      crate::scheduling::ready(stopped).then(|| doc.text(PageId(page)))
     });
     load_outline(doc.outline(), pages, cache.as_ref())
   })
 }
 
+/// A stored outline and whether it was inferred.
+fn cached(cache: &Record) -> Option<(Vec<Heading>, bool)> {
+  let (outline, inferred): (Vec<Heading>, bool) = cache.load()?;
+  let valid = outline.len() <= 10_000 && outline.iter().all(|h| h.depth <= 64);
+  valid.then_some((outline, inferred))
+}
+
 fn load_outline(
   authored: crate::Result<Vec<Heading>>,
   pages: impl IntoIterator<Item = Option<crate::Result<Text>>>,
-  cache: Option<&OutlineCache>,
+  cache: Option<&Record>,
 ) -> Option<(Vec<Heading>, bool)> {
   let mut complete = authored.is_ok();
   if let Ok(outline) = authored
     && !outline.is_empty()
   {
     if let Some(cache) = cache {
-      cache.save(&outline, false);
+      cache.store(&(&outline, false));
     }
     return Some((outline, false));
   }
@@ -233,7 +240,7 @@ fn load_outline(
   }
   let outline = infer(&summaries);
   if complete && let Some(cache) = cache {
-    cache.save(&outline, true);
+    cache.store(&(&outline, true));
   }
   Some((outline, true))
 }
@@ -271,6 +278,47 @@ mod tests {
   use super::*;
   use std::sync::{Arc, mpsc};
 
+  fn record(root: &Path, source: &Path) -> Record {
+    let code = env!("VPDF_OUTLINE_CODE");
+    Record::open(root.into(), source, "", Kind::Outline, code, || true).unwrap()
+  }
+
+  #[test]
+  fn stored_outlines_round_trip() -> crate::Result<()> {
+    let root = tempfile::tempdir()?;
+    let source = root.path().join("source.pdf");
+    std::fs::write(&source, b"PDF bytes")?;
+    let cache = record(root.path(), &source);
+    let headings: Vec<_> = [
+      Target::Point { page: PageId(7), x: 2.125, y: -3.5 },
+      Target::Page(PageId(3)),
+      Target::Uri("chapter.pdf".into()),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(depth, target)| Heading {
+      title: format!("Chapter 章 {depth}"),
+      depth,
+      target,
+    })
+    .collect();
+    cache.store(&(&headings, false));
+    let (found, inferred) = cached(&cache).unwrap();
+    assert!(!inferred);
+    assert_eq!(found.len(), headings.len());
+    for (actual, expected) in found.iter().zip(&headings) {
+      assert_eq!(actual.title, expected.title);
+      assert_eq!(actual.target, expected.target);
+      assert_eq!(actual.depth, expected.depth);
+    }
+    cache.store(&(Vec::<Heading>::new(), true));
+    assert_eq!(cached(&cache).map(|(_, inferred)| inferred), Some(true));
+    let deep = Heading { depth: 65, ..headings[0].clone() };
+    cache.store(&(vec![deep], true));
+    assert!(cached(&cache).is_none());
+    Ok(())
+  }
+
   #[test]
   fn results_wake_the_loop() -> crate::Result<()> {
     let file = tempfile::NamedTempFile::new()?;
@@ -291,21 +339,19 @@ mod tests {
     let doc = Handle::open(source.path(), "")?;
     for authored_failure in [true, false] {
       let root = tempfile::tempdir()?;
-      let cache =
-        OutlineCache::open(root.path().into(), source.path(), "", || true)
-          .unwrap();
+      let cache = record(root.path(), source.path());
       let error = || anyhow::anyhow!("Extraction failed");
       let authored =
         if authored_failure { Err(error()) } else { Ok(Vec::new()) };
       let text =
         if authored_failure { doc.text(PageId(0)) } else { Err(error()) };
       assert!(load_outline(authored, [Some(text)], Some(&cache)).is_some());
-      assert!(cache.read().is_none());
+      assert!(cached(&cache).is_none());
       assert_eq!(std::fs::read_dir(root.path())?.count(), 0);
       let retried =
         load_outline(Ok(Vec::new()), [Some(doc.text(PageId(0)))], Some(&cache));
       assert!(retried.is_some());
-      assert!(cache.read().is_some());
+      assert!(cached(&cache).is_some());
     }
     Ok(())
   }

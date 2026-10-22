@@ -92,7 +92,6 @@ pub fn image(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::layout::Crop;
   use crate::text::Bounds;
 
   #[derive(Default)]
@@ -122,14 +121,11 @@ mod tests {
       crate::testing::screen::pixels(10, 10, 10, 10),
     );
     let key = TileKey {
-      page: PageId(0),
       scale: 1024,
-      rotation: 0,
-      x: 0,
       y: 95,
       width: 120,
       height: 36,
-      crop: Crop::default(),
+      ..TileKey::default()
     };
     (layout, key)
   }

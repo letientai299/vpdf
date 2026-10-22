@@ -3,7 +3,6 @@ mod fixture;
 use crate::presentation::*;
 use anyhow::Result;
 use fixture::{layout, route, view};
-use std::io::Write;
 use std::time::Instant;
 use vpdf_model::text::PageId;
 use vpdf_reader::reader::{Location, Reader};
@@ -14,15 +13,6 @@ use vpdf_ui::scrollbar::*;
 #[test]
 fn label_requests_follow_successful_bar_output() -> Result<()> {
   use vpdf_model::input::{MouseButton::Left, MouseEventKind::Down};
-  struct Closed;
-  impl Write for Closed {
-    fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-      Err(std::io::Error::other("Closed output"))
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-      Ok(())
-    }
-  }
   let layout = layout();
   let mut bar = Bar::default();
   let mut reader = Reader::default();
@@ -36,12 +26,8 @@ fn label_requests_follow_successful_bar_output() -> Result<()> {
   press.apply(&mut bar, Location::default(), &mut reader);
   let now = Instant::now();
   assert!(
-    draw(&mut Closed, Some(&mut Graphics::default()), |scene| bar.scene(
-      view(&layout, 0.0),
-      ticks(),
-      now,
-      scene
-    ))
+    draw(&mut super::Closed, Some(&mut Graphics::default()), |scene| bar
+      .scene(view(&layout, 0.0), ticks(), now, scene))
     .is_err()
   );
   let label = draw(&mut Vec::new(), Some(&mut Graphics::default()), |scene| {

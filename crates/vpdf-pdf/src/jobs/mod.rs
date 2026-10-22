@@ -95,6 +95,32 @@ impl<T: Send + 'static> OneShot<T> {
   }
 }
 
+/// A job result; errors are display text.
+pub type Outcome<T> = Result<T, String>;
+
+impl<T: Send + 'static> OneShot<Outcome<T>> {
+  /// `spawn` for fallible work.
+  pub fn try_spawn(
+    wake: &Wake,
+    work: impl FnOnce(&AtomicBool) -> Option<crate::Result<T>> + Send + 'static,
+  ) -> Self {
+    Self::spawn(wake, move |stop| {
+      work(stop).map(|result| result.map_err(|error| error.to_string()))
+    })
+  }
+}
+
+impl<T> OneShot<Outcome<T>> {
+  /// The finished result; a lost worker reports `stopped`.
+  pub fn poll(&self, stopped: &str) -> Option<Outcome<T>> {
+    match self.result.try_recv() {
+      Ok(result) => Some(result),
+      Err(mpsc::TryRecvError::Empty) => None,
+      Err(mpsc::TryRecvError::Disconnected) => Some(Err(stopped.into())),
+    }
+  }
+}
+
 impl<T> OneShot<T> {
   pub fn cancel(&self) {
     self.stop.store(true, Ordering::Relaxed);

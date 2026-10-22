@@ -24,6 +24,8 @@ pub(crate) use probe::{TMUX_FORMAT, tmux};
 use probe::{PASSTHROUGH, flags, is, join};
 
 #[cfg(test)]
+pub(crate) mod testing;
+#[cfg(test)]
 mod tests;
 
 mod keyboard;

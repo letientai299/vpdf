@@ -1,32 +1,22 @@
 use super::{Duration, Result, Session};
-use std::io::Read;
-use std::process::{Child, Command, Stdio};
+use crate::programs::Dialog;
 use std::task::Poll;
 
 pub(super) struct Job {
   pane: u32,
-  child: Child,
+  dialog: Dialog,
 }
 
 impl Job {
   fn start(pane: u32, path: &std::path::Path) -> Result<Self> {
-    let child = Command::new("/usr/bin/osascript")
-      .args(["-l", "JavaScript", "-e", include_str!("print.js"), "--"])
-      .arg(path)
-      .stdin(Stdio::null())
-      .stdout(Stdio::piped())
-      .stderr(Stdio::null())
-      .spawn()?;
-    Ok(Self { pane, child })
+    let args = ["-l", "JavaScript", "-e", include_str!("print.js"), "--"];
+    Ok(Self { pane, dialog: Dialog::osascript(&args, path)? })
   }
 
   fn poll(&mut self) -> Result<Poll<()>> {
-    let Some(status) = self.child.try_wait()? else { return Ok(Poll::Pending) };
-    anyhow::ensure!(status.success(), "Print dialog failed");
-    let mut output = String::new();
-    if let Some(stdout) = self.child.stdout.take() {
-      stdout.take(256).read_to_string(&mut output)?;
-    }
+    let Poll::Ready(output) = self.dialog.poll("Print dialog failed")? else {
+      return Ok(Poll::Pending);
+    };
     match output.trim() {
       "submitted" | "cancelled" => Ok(Poll::Ready(())),
       "encrypted" => anyhow::bail!("Encrypted PDF printing unavailable"),
@@ -35,13 +25,6 @@ impl Job {
       "open-failed" => anyhow::bail!("Cannot open PDF for printing"),
       _ => anyhow::bail!("Print dialog failed"),
     }
-  }
-}
-
-impl Drop for Job {
-  fn drop(&mut self) {
-    let _ = self.child.kill();
-    let _ = self.child.wait();
   }
 }
 
@@ -67,11 +50,7 @@ impl Session {
     let pane = job.pane;
     self.printing = None;
     if let Err(error) = result
-      && let Some(app) = self
-        .tabs
-        .iter_mut()
-        .flat_map(|tab| &mut tab.panes)
-        .find(|app| app.id == pane)
+      && let Some(app) = self.pane_mut(pane)
     {
       app.error = Some(error.to_string());
     }
@@ -91,6 +70,7 @@ impl Session {
 mod tests {
   use super::*;
   use std::path::Path;
+  use std::process::{Command, Stdio};
   use std::time::Instant;
 
   fn complete(job: &mut Job) -> Result<()> {
@@ -107,18 +87,15 @@ mod tests {
   }
 
   fn response(pane: u32, output: &str) -> Result<Job> {
-    let child = Command::new("/usr/bin/printf")
-      .args(["%s", output])
-      .stdout(Stdio::piped())
-      .spawn()?;
-    Ok(Job { pane, child })
+    let dialog = Dialog::exited("/usr/bin/printf", &["%s", output])?;
+    Ok(Job { pane, dialog })
   }
 
   fn opened(root: &Path) -> Result<Session> {
     let path = root.join("print.pdf");
     crate::fixtures::pdf(&path, &["first", "second"], "")?;
     let mut session = Session::new(None);
-    session.open(&path, true, super::super::tests::cells(120, 40))?;
+    session.open(&path, true, crate::screen::cells(120, 40))?;
     Ok(session)
   }
 
@@ -142,9 +119,9 @@ mod tests {
         "{output:?}"
       );
     }
-    let child = Command::new("/usr/bin/false").spawn()?;
+    let dialog = Dialog::exited("/usr/bin/false", &[])?;
     assert_eq!(
-      complete(&mut Job { pane: 0, child }).unwrap_err().to_string(),
+      complete(&mut Job { pane: 0, dialog }).unwrap_err().to_string(),
       "Print dialog failed"
     );
     Ok(())
@@ -158,9 +135,7 @@ mod tests {
     session.app().command("vsplit")?;
     session.settle()?;
     assert_ne!(session.app().id, pane);
-    let mut job = response(pane, "failed")?;
-    job.child.wait()?;
-    session.printing = Some(job);
+    session.printing = Some(response(pane, "failed")?);
     assert_eq!(
       session.print_wait(Duration::from_secs(2)),
       Duration::from_millis(50)
@@ -176,9 +151,7 @@ mod tests {
     );
     assert!(!session.print_update());
     // Closed panes cannot receive stale results.
-    let mut job = response(pane, "failed")?;
-    job.child.wait()?;
-    session.printing = Some(job);
+    session.printing = Some(response(pane, "failed")?);
     session.activate(0)?;
     session.tab().focus = 0;
     session.close_pane()?;
@@ -191,9 +164,9 @@ mod tests {
   fn shutdown_reaps_pending_job() -> Result<()> {
     let root = tempfile::tempdir()?;
     let mut session = opened(root.path())?;
-    let child = Command::new("/bin/sleep").arg("30").spawn()?;
-    let pid = child.id();
-    session.printing = Some(Job { pane: session.app().id, child });
+    let dialog = Dialog::spawn(Command::new("/bin/sleep").arg("30"))?;
+    let pid = dialog.child.id();
+    session.printing = Some(Job { pane: session.app().id, dialog });
     assert!(!session.print_update());
     session.finish()?;
     assert!(session.printing.is_none());
@@ -223,9 +196,7 @@ mod tests {
       session.app().request.take(),
       Some(super::super::Request::Print)
     );
-    let mut job = response(session.app().id, "cancelled")?;
-    job.child.wait()?;
-    session.printing = Some(job);
+    session.printing = Some(response(session.app().id, "cancelled")?);
     assert_eq!(
       session.print().unwrap_err().to_string(),
       "Print dialog already open"

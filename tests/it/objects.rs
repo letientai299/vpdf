@@ -1,8 +1,8 @@
 //! Text objects over native page text.
 use super::common::keys;
+use crate::harness::{corpus, solo};
 use vpdf::Result;
 use vpdf::pdf_text::PdfText;
-use vpdf::solo::Solo;
 use vpdf_model::text::{Line, PageId, Position};
 use vpdf_reader::objects::Object;
 use vpdf_reader::reader::{Reader, SelectionKind};
@@ -10,21 +10,8 @@ use vpdf_reader::reader::{Reader, SelectionKind};
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn object_raw_keys_preserve_normal_and_copy_blocks() -> Result<()> {
-  use vpdf_ui::layout::Screen;
-  let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
   for text_mode in [false, true] {
-    let mut app = Solo::open(
-      &root.join("paper.pdf"),
-      "",
-      text_mode,
-      Screen {
-        columns: 100,
-        rows: 30,
-        cell_width: 8,
-        cell_height: 16,
-        origin: (0, 0),
-      },
-    )?;
+    let mut app = solo("paper.pdf", text_mode, crate::common::cells(100, 30))?;
     app.doc.trim();
     let cursor = app.reader.cursor;
     keys(&mut app, b"WBEgE()aWapab[]")?;
@@ -87,8 +74,7 @@ fn object_raw_keys_preserve_normal_and_copy_blocks() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn object_ranges_cross_real_pages() -> Result<()> {
   use vpdf_pdf::document::Document;
-  let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut doc = Document::open(&root.join("paper.pdf"), "")?;
+  let mut doc = Document::open(&corpus("paper.pdf")?, "")?;
   let first = doc.text(PageId(0))?;
   let line = first.lines.len() - 1;
   let glyph = first.lines[line]

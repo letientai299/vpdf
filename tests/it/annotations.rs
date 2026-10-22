@@ -1,24 +1,23 @@
 use super::common::SeedReader;
+use super::common::keys;
 use super::common::preview_frame as drawn;
+use crate::harness::corpus;
+use crate::harness::{cell_where, drag, mouse};
 use mupdf::pdf::PdfAnnotationType;
 use mupdf::{Point, Quad, Rect};
-use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::solo::Solo;
-use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Mode;
 use vpdf_ui::input::InputOwner;
 use vpdf_ui::keys::{Action, Input, PanelKind};
 use vpdf_ui::layout::Screen;
 use vpdf_ui::panel::Destination;
-use vpdf_ui::prompt::History;
 
 fn annotated() -> Result<(tempfile::NamedTempFile, String)> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let mut source =
-    vpdf_pdf::document::Document::open(&root.join("paper.pdf"), "")?;
+    vpdf_pdf::document::Document::open(&corpus("paper.pdf")?, "")?;
   let text = source.text(PageId(1))?;
   let line = &text.lines[2];
   let first = line.glyphs.first().unwrap().bounds;
@@ -67,17 +66,7 @@ fn annotated() -> Result<(tempfile::NamedTempFile, String)> {
 }
 
 fn screen() -> Screen {
-  Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  }
-}
-
-fn press(app: &mut App, code: KeyCode) -> Result<()> {
-  app.key(KeyEvent::new(code, KeyModifiers::NONE), &mut History::default())
+  crate::common::cells(120, 40)
 }
 
 fn position(app: &App, index: usize) -> Position {
@@ -113,15 +102,15 @@ fn enter_positions_cursor_and_note() -> Result<()> {
     for entry in [0, 1, 2] {
       let mut app = Solo::open(file.path(), "", text, screen())?;
       if entry > 0 {
-        press(&mut app, KeyCode::Char('i'))?;
+        keys(&mut app, b"i")?;
       }
       if entry > 1 {
-        press(&mut app, KeyCode::Char('v'))?;
+        keys(&mut app, b"v")?;
       }
       app.open_panel(PanelKind::Annotations)?;
       crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
       let expected = position(&app, 0);
-      press(&mut app, KeyCode::Enter)?;
+      keys(&mut app, b"\r")?;
       assert_eq!(app.reader.cursor, expected);
       assert_eq!(app.reader.target(), Some(expected));
       assert_eq!(app.reader.mode(), Mode::Cursor);
@@ -129,13 +118,13 @@ fn enter_positions_cursor_and_note() -> Result<()> {
       assert!(!app.panel_focused());
       assert_eq!(app.panel.as_ref().unwrap().view.rows().len(), 5);
       assert!(drawn(&mut app)?.contains("check this"));
-      press(&mut app, KeyCode::Esc)?;
+      keys(&mut app, b"\x1b")?;
       assert!(app.overlays.preview().is_none());
       assert_eq!(app.reader.mode(), Mode::Cursor);
-      press(&mut app, KeyCode::Char('K'))?;
+      keys(&mut app, b"K")?;
       assert!(drawn(&mut app)?.contains("check this"));
       let jumps = app.reader.jumps().count();
-      press(&mut app, KeyCode::Enter)?;
+      keys(&mut app, b"\r")?;
       assert!(app.overlays.preview().is_none());
       assert_eq!(app.reader.cursor, expected);
       assert_eq!(app.reader.mode(), Mode::Cursor);
@@ -156,7 +145,7 @@ fn k_previews_selected_note() -> Result<()> {
     assert_eq!(position(&app, 1), position(&app, 2));
     let original = app.reader.cursor;
     app.panel.as_mut().unwrap().view.choose(2);
-    press(&mut app, KeyCode::Char('K'))?;
+    keys(&mut app, b"K")?;
     // An off-screen source keeps it (U17).
     let shown = app.layout.visible(app.reader.scroll);
     assert!(!shown.contains(&position(&app, 2).page.0), "off screen");
@@ -166,10 +155,10 @@ fn k_previews_selected_note() -> Result<()> {
     assert!(!out.contains("margin note"));
     assert_eq!(app.reader.cursor, original);
     assert!(app.panel_focused());
-    press(&mut app, KeyCode::Esc)?;
+    keys(&mut app, b"\x1b")?;
     assert_eq!(app.input_owner(), InputOwner::Panel);
     let expected = position(&app, 2);
-    press(&mut app, KeyCode::Enter)?;
+    keys(&mut app, b"\r")?;
     assert_eq!(app.reader.cursor, expected);
     assert!(drawn(&mut app)?.contains("another note"));
     assert_eq!(app.reader.mode(), Mode::Cursor);
@@ -186,17 +175,16 @@ fn k_preserves_visual_range() -> Result<()> {
     app.open_panel(PanelKind::Annotations)?;
     crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
     app.panel.as_mut().unwrap().view.choose(1);
-    press(&mut app, KeyCode::Enter)?;
-    press(&mut app, KeyCode::Esc)?;
+    keys(&mut app, b"\r\x1b")?;
     let cursor = app.reader.cursor;
-    press(&mut app, KeyCode::Char('v'))?;
+    keys(&mut app, b"v")?;
     let selection = app.reader.selection.unwrap();
-    press(&mut app, KeyCode::Char('K'))?;
+    keys(&mut app, b"K")?;
     assert!(drawn(&mut app)?.contains("margin note"));
     assert_eq!(app.reader.cursor, cursor);
     assert_eq!(app.reader.selection.unwrap().anchor, selection.anchor);
     assert_eq!(app.reader.mode(), Mode::Visual(selection.kind));
-    press(&mut app, KeyCode::Esc)?;
+    keys(&mut app, b"\x1b")?;
     assert_eq!(app.reader.mode(), Mode::Visual(selection.kind));
   }
   Ok(())
@@ -211,7 +199,7 @@ fn notes_scroll_and_resize() -> Result<()> {
     app.open_panel(PanelKind::Annotations)?;
     crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
     app.panel.as_mut().unwrap().view.choose(3);
-    press(&mut app, KeyCode::Enter)?;
+    keys(&mut app, b"\r")?;
     let cursor = app.reader.cursor;
     let first = drawn(&mut app)?;
     assert!(first.contains("BEGIN"));
@@ -249,11 +237,11 @@ fn empty_notes_and_panel_focus() -> Result<()> {
     crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
     app.panel.as_mut().unwrap().view.choose(4);
     let expected = position(&app, 4);
-    press(&mut app, KeyCode::Enter)?;
+    keys(&mut app, b"\r")?;
     assert_eq!(app.reader.cursor, expected);
     assert_eq!(app.reader.mode(), Mode::Cursor);
     assert!(app.overlays.preview().is_none());
-    press(&mut app, KeyCode::Tab)?;
+    keys(&mut app, b"\t")?;
     app.panel.as_mut().unwrap().view.choose(1);
     app.action(Input::plain(Action::Swap))?;
     assert!(app.panel_focused());
@@ -304,9 +292,7 @@ fn noted_session(
 ) -> Result<vpdf::session::Session> {
   let path = directory.join("noted.pdf");
   noted_pdf(&path)?;
-  let mut session = vpdf::session::Session::new(None);
-  session.open(&path, true, screen())?;
-  Ok(session)
+  crate::harness::session(&path, screen())
 }
 
 #[test]
@@ -314,33 +300,23 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   use vpdf::session::Session;
   use vpdf::trace::Drawable;
   use vpdf_model::document::{Heading, Target};
-  use vpdf_model::input::{MouseEvent, MouseEventKind};
+  use vpdf_model::input::MouseEventKind;
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let mut session = noted_session(directory.path())?;
-  let cells: Vec<_> = grid().collect();
-  let find = |session: &mut Session, region, wanted: &dyn Fn(Hit) -> bool| {
-    let app = session.app();
-    let cell = cells.iter().copied().find(|&(column, row)| {
-      app.hovered(region, column, row, None).is_ok_and(wanted)
-    });
-    cell.expect("a cell with that hit")
-  };
-  let on_page = |session: &mut Session, wanted: &dyn Fn(Hit) -> bool| {
-    find(session, Region::Page, wanted)
+  let on_page = |session: &mut Session, wanted: fn(Hit) -> bool| {
+    cell_where(session.app(), Region::Page, 0..39, wanted)
   };
   let note =
-    on_page(&mut session, &|hit| matches!(hit, Hit::Note { text: true, .. }));
+    on_page(&mut session, |hit| matches!(hit, Hit::Note { text: true, .. }))?;
   let margin =
-    on_page(&mut session, &|hit| matches!(hit, Hit::Note { text: false, .. }));
-  let link = on_page(&mut session, &|hit| matches!(hit, Hit::Link(..)));
-  let blank = on_page(&mut session, &|hit| hit == Hit::Nothing);
+    on_page(&mut session, |hit| matches!(hit, Hit::Note { text: false, .. }))?;
+  let link = on_page(&mut session, |hit| matches!(hit, Hit::Link(..)))?;
+  let blank = on_page(&mut session, |hit| hit == Hit::Nothing)?;
   // (cell) -> frame, status text
   let hover =
     |session: &mut Session, (column, row)| -> Result<(bool, String)> {
-      let kind = MouseEventKind::Moved;
-      let modifiers = KeyModifiers::NONE;
-      let frame = session.mouse(MouseEvent { kind, column, row, modifiers })?;
+      let frame = mouse(session, MouseEventKind::Moved, (column, row))?;
       let mut out = Vec::new();
       session.draw_frame(&mut out)?;
       Ok((frame, String::from_utf8_lossy(&out).into_owned()))
@@ -399,9 +375,9 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
     target: Target::Page(PageId(0)),
   });
   app.open_overview()?;
-  let thumbnail = find(&mut session, Region::Overview, &|hit| {
+  let thumbnail = cell_where(session.app(), Region::Overview, 0..39, |hit| {
     matches!(hit, Hit::Thumbnail(_))
-  });
+  })?;
   let (_, drawn) = hover(&mut session, thumbnail)?;
   assert_eq!(session.app().hover.hit(), Hit::Thumbnail(PageId(0)));
   assert!(drawn.contains("p. 1 · Opening"));
@@ -413,7 +389,7 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
 fn outline_hovers_drop_the_indent() -> Result<()> {
   use vpdf::trace::Drawable;
   use vpdf_model::document::{Heading, Target};
-  use vpdf_model::input::{MouseEvent, MouseEventKind};
+  use vpdf_model::input::MouseEventKind;
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let mut session = noted_session(directory.path())?;
@@ -433,9 +409,7 @@ fn outline_hovers_drop_the_indent() -> Result<()> {
       (hit == Some(Hit::Row(1))).then_some((column, 2))
     })
     .expect("the indented row");
-  let kind = MouseEventKind::Moved;
-  let modifiers = KeyModifiers::NONE;
-  session.mouse(MouseEvent { kind, column, row, modifiers })?;
+  mouse(&mut session, MouseEventKind::Moved, (column, row))?;
   let mut out = Vec::new();
   session.draw_frame(&mut out)?;
   let drawn = String::from_utf8_lossy(&out);
@@ -451,7 +425,7 @@ fn click_at(
   (column, row): (u16, u16),
   now: std::time::Instant,
 ) -> Result<()> {
-  use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
+  use vpdf_model::input::{Button, KeyModifiers, Mouse, MouseKind, Spot};
   for kind in [MouseKind::Press(Button::LEFT), MouseKind::Release(Button::LEFT)]
   {
     let at = Spot::Cell { column, row };
@@ -482,30 +456,16 @@ fn icon_notes(app: &mut App) -> Vec<usize> {
 /// Notes open by mouse (U11).
 #[test]
 fn notes_open_by_mouse() -> Result<()> {
-  use vpdf::session::Session;
-  use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
+  use vpdf_model::input::{MouseButton, MouseEventKind};
   use vpdf_terminal::terminal::Shape;
   use vpdf_ui::pointer::{Hit, Region};
   let directory = tempfile::tempdir()?;
   let mut session = noted_session(directory.path())?;
-  let mut find = |wanted: &dyn Fn(Hit) -> bool| {
-    let app = session.app();
-    let cell = grid().find(|&(column, row)| {
-      app.hovered(Region::Page, column, row, None).is_ok_and(wanted)
-    });
-    cell.expect("a cell with that hit")
+  let mut find = |wanted: fn(Hit) -> bool| {
+    cell_where(session.app(), Region::Page, 0..39, wanted)
   };
-  let icon = find(&|hit| matches!(hit, Hit::Note { text: false, .. }));
-  let marked = find(&|hit| matches!(hit, Hit::Note { text: true, .. }));
-  let mouse = |session: &mut Session, kind, (column, row)| {
-    let modifiers = KeyModifiers::NONE;
-    session.mouse(MouseEvent { kind, column, row, modifiers })
-  };
-  let click = |session: &mut Session, button, at| -> Result<()> {
-    mouse(session, MouseEventKind::Down(button), at)?;
-    mouse(session, MouseEventKind::Up(button), at)?;
-    Ok(())
-  };
+  let icon = find(|hit| matches!(hit, Hit::Note { text: false, .. }))?;
+  let marked = find(|hit| matches!(hit, Hit::Note { text: true, .. }))?;
   // Icons tint and take the pointer shape.
   mouse(&mut session, MouseEventKind::Moved, icon)?;
   let app = session.app();
@@ -534,23 +494,17 @@ fn notes_open_by_mouse() -> Result<()> {
   click_at(&mut session, icon, later(1000))?;
   assert!(session.app().overlays.preview().is_none());
   // The menu's Show note sits by the icon too.
-  click(&mut session, MouseButton::Right, icon)?;
-  let app = session.app();
-  let menu = app.overlays.menu().expect("a menu");
-  let show = menu.entries().iter().position(|item| item.label == "Show note");
-  app.overlays.menu_mut().unwrap().select(show.expect("Show note"));
-  press(app, KeyCode::Enter)?;
+  crate::mouse::tap(&mut session, MouseButton::Right, icon)?;
+  crate::mouse::choose(&mut session, "Show note")?;
   crate::common::focused_frame(&mut session)?;
   let app = session.app();
   let area = app.preview_cells().expect("a drawn popup");
   assert!(near(area.row) || near(area.row + area.rows), "{area:?} {icon:?}");
   app.overlays.close_preview();
   // Highlight clicks and icon drags select.
-  click(&mut session, MouseButton::Left, marked)?;
+  crate::mouse::tap(&mut session, MouseButton::Left, marked)?;
   assert!(session.app().overlays.preview().is_none(), "a highlight click");
-  mouse(&mut session, MouseEventKind::Down(MouseButton::Left), icon)?;
-  mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), marked)?;
-  mouse(&mut session, MouseEventKind::Up(MouseButton::Left), marked)?;
+  drag(&mut session, icon, marked)?;
   let app = session.app();
   assert!(
     app.overlays.preview().is_none() && app.reader.selection.is_some(),
@@ -560,18 +514,18 @@ fn notes_open_by_mouse() -> Result<()> {
   // (menu item) -> note shown, register
   let cases = [("Show note", true, false), ("Copy comment", false, true)];
   for (label, shown, copied) in cases {
-    click(&mut session, MouseButton::Right, marked)?;
+    crate::mouse::tap(&mut session, MouseButton::Right, marked)?;
     let app = session.app();
     let menu = app.overlays.menu().expect("a menu");
     let index = menu.entries().iter().position(|item| item.label == label);
-    let keys: Vec<_> =
+    let shortcuts: Vec<_> =
       menu.entries().iter().map(|item| item.key.as_str()).collect();
     assert_eq!(
-      index.map(|index| keys[index]),
+      index.map(|index| shortcuts[index]),
       Some(if shown { "K" } else { "" })
     );
     app.overlays.menu_mut().unwrap().select(index.expect(label));
-    press(app, KeyCode::Enter)?;
+    keys(app, b"\r")?;
     let comment = "check this note please";
     let frame = crate::common::focused_frame(&mut session)?;
     assert_eq!(frame.contains(comment), shown, "{label}");
@@ -612,15 +566,11 @@ fn shapes_pdf(path: &std::path::Path) -> Result<()> {
 /// Icons by kind; double clicks; scrolling closes (U11).
 #[test]
 fn note_icons_by_kind() -> Result<()> {
-  use vpdf::session::Session;
   use vpdf::trace::Drawable;
   use vpdf_ui::pointer::{Hit, Region};
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("shapes.pdf");
-  shapes_pdf(&path)?;
+  let (_directory, path) = crate::common::temp_pdf(shapes_pdf)?;
   for text_mode in [false, true] {
-    let mut session = Session::new(None);
-    session.open(&path, true, screen())?;
+    let mut session = crate::harness::session(&path, screen())?;
     if text_mode {
       session.app().command("text")?;
     }
@@ -665,9 +615,7 @@ fn note_icons_by_kind() -> Result<()> {
 
 #[test]
 fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("noted.pdf");
-  noted_pdf(&path)?;
+  let (_directory, path) = crate::common::temp_pdf(noted_pdf)?;
   // (error, message, covered) -> detail shown
   let cases = [
     (None, "", false, true),
@@ -684,7 +632,7 @@ fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
     app.error = error.map(str::to_owned);
     app.reader.notice(message);
     let mut out = Vec::new();
-    app.status_line(&mut out, 39, Some("DETAIL"))?;
+    app.status(&mut out, 39, Some("DETAIL"))?;
     let drawn = String::from_utf8_lossy(&out);
     let at = format!("{error:?} {message:?} covered={covered}");
     assert_eq!(drawn.contains("DETAIL"), shown, "{at}");
@@ -703,19 +651,12 @@ fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
 /// Note rows' menus show and run `K`.
 #[test]
 fn note_row_menus_show_notes() -> Result<()> {
-  use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
   let directory = tempfile::tempdir()?;
   let mut session = noted_session(directory.path())?;
   session.app().open_panel(PanelKind::Annotations)?;
   crate::common::sidebar_loaded(session.app(), PanelKind::Annotations)?;
   session.draw_focused(&mut Vec::new())?;
-  for kind in [
-    MouseEventKind::Down(MouseButton::Right),
-    MouseEventKind::Up(MouseButton::Right),
-  ] {
-    let modifiers = KeyModifiers::NONE;
-    session.mouse(MouseEvent { kind, column: 1, row: 2, modifiers })?;
-  }
+  crate::mouse::right(&mut session, (1, 2))?;
   let app = session.app();
   let menu = app.overlays.menu_mut().expect("a menu");
   let index = menu.entries().iter().position(|item| item.label == "Show note");
@@ -723,7 +664,7 @@ fn note_row_menus_show_notes() -> Result<()> {
   assert_eq!(menu.entries()[index].key, "K");
   menu.select(index);
   assert!(app.overlays.preview().is_none());
-  press(app, KeyCode::Enter)?;
+  keys(app, b"\r")?;
   assert!(app.overlays.menu().is_none() && app.overlays.preview().is_some());
   Ok(())
 }

@@ -33,13 +33,7 @@ pub fn viewport() -> Result<()> {
 
 fn run(operation: Operation) -> Result<()> {
   let prepared = super::fixtures::text()?;
-  let screen = Screen {
-    columns: 100,
-    rows: 30,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::screen::cells(100, 30);
   for text in [false, true] {
     for cursor in [false, true] {
       case(&prepared, screen, text, cursor, operation)?;
@@ -54,6 +48,14 @@ pub fn layout(prepared: &super::fixtures::TextPages, screen: Screen) -> Layout {
   layout.request_zoom(vpdf_ui::layout::Zoom::To(2.0));
   layout.reflow(bounds());
   layout
+}
+
+/// A whole-screen pane frame.
+pub fn frame(screen: Screen, text: bool) -> Frame {
+  Frame {
+    pane: paint::Frame { screen, at: At::default(), left: 0, text },
+    visible: screen,
+  }
 }
 
 pub fn pane(
@@ -82,10 +84,7 @@ fn case(
   let mut layout = layout(prepared, screen);
   let mut pane = pane(prepared, cursor)?;
   let mut text_view = TextView::default();
-  let frame = Frame {
-    pane: paint::Frame { screen, at: At::default(), left: 0, text },
-    visible: screen,
-  };
+  let frame = frame(screen, text);
   let mut search = Search::default();
   let label = match operation {
     Operation::Scroll => "scroll",

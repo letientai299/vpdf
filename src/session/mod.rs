@@ -39,6 +39,7 @@ pub struct Tab {
 
 /// Open documents as tabs of split panes, which draw with one shared
 /// Kitty image cache.
+#[derive(Default)]
 pub struct Session {
   settings: crate::config::Settings,
   startup_warning: Option<String>,
@@ -105,8 +106,9 @@ impl Edge {
 }
 
 /// Whether a frame moved the hover under a resting pointer.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum Rehover {
+  #[default]
   Settled,
   /// The next frame shows the new hover.
   Due,
@@ -168,41 +170,28 @@ impl Session {
     Self {
       settings: config.settings,
       startup_warning: config.warning,
-      tabs: Vec::new(),
-      active: 0,
       history: History::new(state.commands.clone(), state.searches.clone()),
-      quit: false,
-      graphics: Graphics::default(),
       state,
-      frontend: crate::raster::Frontend::Terminal,
-      observing: None,
-      unlock: None,
-      native_opens: std::collections::VecDeque::new(),
-      pending_keys: std::collections::VecDeque::new(),
-      secret: None,
-      picker: None,
-      printing: None,
-      perf: crate::perf::Monitor::default(),
-      home: None,
-      screen: None,
-      watcher: Watcher::default(),
       store,
-      hangup: Arc::new(AtomicBool::new(false)),
-      latest: crate::state::Latest::default(),
-      unsaved: false,
-      recorded: 0,
-      shown: Vec::new(),
-      pointer: Pointer::default(),
-      unmeasured: None,
-      sight: Sight::Focused,
-      observer: None,
-      observed: None,
-      rehover: Rehover::Settled,
-      skimmed: false,
-      image_write: None,
-      drops: vpdf_terminal::dnd::Drops::default(),
-      resizing: None,
+      ..Self::default()
     }
+  }
+
+  /// Password prompt or file picker holds input.
+  fn blocked(&self) -> bool {
+    self.unlock.is_some() || self.picker.is_some()
+  }
+
+  fn panes(&self) -> impl Iterator<Item = &App> {
+    self.tabs.iter().flat_map(|tab| &tab.panes)
+  }
+
+  fn panes_mut(&mut self) -> impl Iterator<Item = &mut App> {
+    self.tabs.iter_mut().flat_map(|tab| &mut tab.panes)
+  }
+
+  fn pane_mut(&mut self, id: u32) -> Option<&mut App> {
+    self.panes_mut().find(|app| app.id == id)
   }
 
   fn present_startup(&mut self) {
@@ -300,4 +289,4 @@ mod tests;
 mod unlock;
 mod windows;
 
-pub use run::{view, view_configured};
+pub use run::view;

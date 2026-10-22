@@ -15,6 +15,8 @@ use vpdf_terminal::graphics::{Graphics, Presentation};
 use vpdf_terminal::payload::{Encoder, Tile};
 use vpdf_terminal::spool::Spool;
 
+#[path = "../../../tests/support/screen.rs"]
+mod screen;
 #[path = "../../../benches/support/mod.rs"]
 mod support;
 use support::measure;
@@ -95,13 +97,7 @@ fn resident() -> Result<(Graphics, TileKey, Screen)> {
   let key = manifest.key();
   let tile = Tile { key, payload: encoder.encode(&pixels)?, render_ms: 0.0 };
   graphics.upload(0, &tile, &mut Vec::new())?;
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = screen::cells(120, 40);
   Ok((graphics, key, screen))
 }
 

@@ -1,18 +1,12 @@
 use crate::presentation::draw;
 use anyhow::Result;
-use vpdf_model::geometry::{At, Screen};
+use vpdf_model::geometry::At;
 use vpdf_model::style::Role;
 use vpdf_terminal::{graphics::Graphics, style::sgr};
 use vpdf_ui::home::Home;
 #[test]
 fn panel_ends_at_the_last_column() -> Result<()> {
-  let screen = Screen {
-    columns: 40,
-    rows: 10,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::common::cells(40, 10);
   let mut out = Vec::new();
   draw(&mut out, Some(&mut Graphics::default()), |scene| {
     Home::new(Vec::new(), &[], screen).scene(scene, 0, |_| {})

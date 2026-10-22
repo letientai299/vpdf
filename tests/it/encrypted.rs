@@ -1,5 +1,5 @@
+use crate::harness::corpus;
 use mupdf::pdf::{PageLabelRule, PageLabelStyle, PdfWriteOptions};
-use std::path::PathBuf;
 use vpdf::Result;
 use vpdf_model::text::PageId;
 use vpdf_pdf::document::Document;
@@ -10,8 +10,7 @@ mod encryption;
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn password_and_page_labels() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut source = Document::open(&root.join("paper.pdf"), "")?;
+  let mut source = Document::open(&corpus("paper.pdf")?, "")?;
   let expected = source.text(PageId(0))?.plain();
   source
     .native
@@ -30,8 +29,7 @@ fn password_and_page_labels() -> Result<()> {
 fn relabeled(
   rules: &[(usize, PageLabelStyle, &str)],
 ) -> Result<tempfile::NamedTempFile> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut source = Document::open(&root.join("paper.pdf"), "")?;
+  let mut source = Document::open(&corpus("paper.pdf")?, "")?;
   for &(index, style, prefix) in rules {
     let mut rule = PageLabelRule::new(index, style);
     rule.prefix = prefix.into();
@@ -88,13 +86,7 @@ fn page_labels_resolve_on_demand() -> Result<()> {
   ] {
     assert_eq!(doc.page_number(query), page.map(PageId), "{query}");
   }
-  let screen = vpdf_ui::layout::Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::common::cells(120, 50);
   let mut app = vpdf::solo::Solo::open(file.path(), "", false, screen)?;
   app.draw(&mut Vec::new())?;
   assert!(resolved(&app.doc) <= 2, "first frame reads visible labels");

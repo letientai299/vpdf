@@ -13,12 +13,7 @@ enum ImageState {
 
 impl Session {
   fn image_message(&mut self, write: &ImageWrite, message: String) {
-    if let Some(app) = self
-      .tabs
-      .iter_mut()
-      .flat_map(|tab| &mut tab.panes)
-      .find(|app| app.id == write.pane)
-    {
+    if let Some(app) = self.pane_mut(write.pane) {
       app.region_status(write.capture, message);
     }
   }
@@ -60,7 +55,7 @@ impl Session {
   pub(super) fn image_updates(&mut self, out: &mut impl Write) -> bool {
     let mut dirty = false;
     let terminal = matches!(self.frontend, crate::raster::Frontend::Terminal);
-    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+    for app in self.panes_mut() {
       let result = app.region_updates().and_then(|changed| {
         if changed && terminal {
           app.clipboard(out)?;
@@ -76,9 +71,7 @@ impl Session {
       }
     }
     let transfers: Vec<_> = self
-      .tabs
-      .iter_mut()
-      .flat_map(|tab| &mut tab.panes)
+      .panes_mut()
       .filter_map(|app| app.region_send.take().map(|send| (app.id, send)))
       .collect();
     for (pane, transfer) in transfers {
@@ -186,7 +179,7 @@ mod tests {
     use crate::region::Transfer;
     use std::collections::VecDeque;
     let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-    let screen = super::super::tests::cells(120, 40);
+    let screen = crate::screen::cells(120, 40);
     let mut session = Session::new(None);
     session.open(&root.join("paper.pdf"), true, screen)?;
     session.app().move_figure(true, 1)?;

@@ -67,7 +67,9 @@ pub fn prepare(path: &Path, screen: Screen) -> Result<Vec<u8>> {
     for _ in 0..2 {
       let mut out = Vec::new();
       graphics.begin(&mut out)?;
-      app.draw_preview(&mut graphics, &mut out)?;
+      vpdf::presentation::try_draw(&mut out, Some(&mut graphics), |s| {
+        app.scene_preview(s)
+      })?;
       graphics.end(&mut out)?;
       output_sha256.push(super::hash::digest(&out));
     }
@@ -87,7 +89,8 @@ pub fn prepare(path: &Path, screen: Screen) -> Result<Vec<u8>> {
     cases.push(json!({
       "text":text, "target":target, "source":position,
       "cursor":cursor.map(super::text::coordinates),
-      "screen":[screen.columns,screen.rows,screen.cell_width,screen.cell_height],
+      "screen":
+        [screen.columns, screen.rows, screen.cell_width, screen.cell_height],
       "scroll":app.reader.scroll, "rasters":capture.rasters,
       "output_sha256":output_sha256,
     }));

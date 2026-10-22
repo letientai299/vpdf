@@ -97,27 +97,7 @@ impl Raster {
     }
   }
 
-  pub fn new(
-    path: &Path,
-    password: &str,
-    lists: Arc<Lists>,
-    wake: &Wake,
-    encoder: Encoder,
-  ) -> Self {
-    Self::start(path, password, lists, wake, encoder, false)
-  }
-
-  pub fn idle(
-    path: &Path,
-    password: &str,
-    lists: Arc<Lists>,
-    wake: &Wake,
-    encoder: Encoder,
-  ) -> Self {
-    Self::start(path, password, lists, wake, encoder, true)
-  }
-
-  fn start(
+  pub fn start(
     path: &Path,
     password: &str,
     lists: Arc<Lists>,
@@ -164,8 +144,6 @@ pub fn render(doc: &mut Document, key: TileKey) -> anyhow::Result<Tile> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use vpdf_model::geometry::Crop;
-  use vpdf_model::text::PageId;
   use vpdf_terminal::spool::Spool;
 
   #[test]
@@ -205,17 +183,10 @@ mod tests {
     let encoder = Encoder::new(Some(Arc::clone(&spool)));
     spool.close();
     let (wake, woken) = crate::fixtures::wake();
-    let raster = Raster::new(file.path(), "", doc.lists(), &wake, encoder);
-    let key = TileKey {
-      page: PageId(0),
-      scale: 1024,
-      rotation: 0,
-      x: 0,
-      y: 0,
-      width: 1,
-      height: 1,
-      crop: Crop::default(),
-    };
+    let raster =
+      Raster::start(file.path(), "", doc.lists(), &wake, encoder, false);
+    let key =
+      TileKey { scale: 1024, width: 1, height: 1, ..TileKey::default() };
     raster.service.request(&[key], 1);
     woken.recv_timeout(std::time::Duration::from_secs(10))?;
     let result = raster.results.try_recv()?;

@@ -4,7 +4,7 @@ use clap::Parser;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use vpdf::Result;
 use vpdf::scenario::Scenario;
 use vpdf::trace::Log;
@@ -89,17 +89,7 @@ fn output(args: &Args) -> Result<PathBuf> {
   if let Some(path) = &args.output {
     return Ok(path.clone());
   }
-  let home =
-    std::env::var_os("HOME").ok_or_else(|| anyhow::anyhow!("HOME is unset"))?;
-  let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
-  let cache =
-    if cfg!(target_os = "macos") { "Library/Caches" } else { ".cache" };
-  Ok(
-    PathBuf::from(home)
-      .join(cache)
-      .join("vpdf-bench")
-      .join(format!("headless-{stamp}-{}", std::process::id())),
-  )
+  runner::results("headless")
 }
 
 fn sources(scenario: &Scenario, args: &Args) -> Result<Vec<InputSource>> {
@@ -158,7 +148,10 @@ fn run(path: &Path, args: &Args, root: &Path, round: u32) -> Result<()> {
   )?;
   driver.wait(&vpdf::scenario::Wait::Complete)?;
   anyhow::ensure!(
-    driver.last.as_ref().is_some_and(|frame| frame.metrics.pages > 0),
+    driver
+      .last
+      .as_ref()
+      .is_some_and(|frame| frame.metrics.observation.pages > 0),
     "Scenario documents did not open"
   );
   if scenario.crop() {

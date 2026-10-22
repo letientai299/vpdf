@@ -334,8 +334,27 @@ impl Node {
     self.grow(in_first, cells, area);
   }
 
-  /// Moves the nearest boundary facing `direction`.
+  /// Moves a boundary, preferring the facing edge.
   pub fn extend(
+    &mut self,
+    target: u32,
+    direction: Direction,
+    cells: i32,
+    area: Rect,
+  ) -> bool {
+    if self.extend_edge(target, direction, cells, area) {
+      return true;
+    }
+    let opposite = match direction {
+      Direction::Left => Direction::Right,
+      Direction::Right => Direction::Left,
+      Direction::Up => Direction::Down,
+      Direction::Down => Direction::Up,
+    };
+    self.extend_edge(target, opposite, cells.saturating_neg(), area)
+  }
+
+  fn extend_edge(
     &mut self,
     target: u32,
     direction: Direction,
@@ -351,7 +370,7 @@ impl Node {
     }
     let (a, b) = Self::halves(*axis, *ratio, area);
     let (child, child_area) = if in_first { (first, a) } else { (second, b) };
-    if child.extend(target, direction, cells, child_area) {
+    if child.extend_edge(target, direction, cells, child_area) {
       return true;
     }
     let (along, toward_first) = match direction {
@@ -791,17 +810,17 @@ mod tests {
   #[test]
   fn extend_moves_facing_divider() {
     use Direction::{Down, Left, Right, Up};
-    for (axis, direction, target, grows) in [
-      (Axis::Columns, Left, 1, false),
-      (Axis::Columns, Right, 1, true),
-      (Axis::Columns, Left, 2, true),
-      (Axis::Columns, Right, 2, false),
-      (Axis::Rows, Up, 1, false),
-      (Axis::Rows, Down, 1, true),
-      (Axis::Rows, Up, 2, true),
-      (Axis::Rows, Down, 2, false),
-      (Axis::Rows, Left, 1, false),
-      (Axis::Columns, Down, 2, false),
+    for (axis, direction, target, delta) in [
+      (Axis::Columns, Left, 1, -3),
+      (Axis::Columns, Right, 1, 3),
+      (Axis::Columns, Left, 2, 3),
+      (Axis::Columns, Right, 2, -3),
+      (Axis::Rows, Up, 1, -3),
+      (Axis::Rows, Down, 1, 3),
+      (Axis::Rows, Up, 2, 3),
+      (Axis::Rows, Down, 2, -3),
+      (Axis::Rows, Left, 1, 0),
+      (Axis::Columns, Down, 2, 0),
     ] {
       let mut tree = Node::leaf(1);
       tree.split(1, axis, 2, Place::After);
@@ -809,18 +828,18 @@ mod tests {
       let mut dividers = Vec::new();
       tree.dividers(AREA, &mut dividers);
       let old = dividers[0].rect;
-      assert_eq!(tree.extend(target, direction, 3, AREA), grows);
+      assert_eq!(tree.extend(target, direction, 3, AREA), delta != 0);
       let after = rects(&tree);
       let index = usize::try_from(target - 1).unwrap();
       let size = |r: Rect| if axis == Axis::Rows { r.rows } else { r.columns };
       assert_eq!(
         size(after[index].1),
-        size(before[index].1) + if grows { 3 } else { 0 }
+        size(before[index].1).saturating_add_signed(delta)
       );
       dividers.clear();
       tree.dividers(AREA, &mut dividers);
       let mut want = old;
-      if grows {
+      if delta != 0 {
         match direction {
           Left => want.column -= 3,
           Right => want.column += 3,

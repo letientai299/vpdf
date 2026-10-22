@@ -2,11 +2,10 @@
 mod directory;
 #[path = "support/layout.rs"]
 mod layouts;
-#[path = "../tests/support/presentation.rs"]
+#[path = "../src/presentation/draw.rs"]
 pub mod presentation;
 use anyhow::Result;
 use std::hint::black_box;
-use vpdf_model::geometry::Screen;
 use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 #[path = "presentation/chrome/mod.rs"]
 mod chrome;
@@ -29,6 +28,8 @@ mod hash;
 mod pages;
 #[path = "presentation/region/mod.rs"]
 mod region;
+#[path = "../tests/support/screen.rs"]
+mod screen;
 #[path = "presentation/scrollbar/mod.rs"]
 mod scrollbar;
 #[path = "support/mod.rs"]
@@ -77,8 +78,7 @@ fn hints() -> Result<()> {
   }
   let prepared: Prepared = fixture("hints")?;
   let [columns, rows, cell_width, cell_height] = prepared.screen;
-  let screen =
-    Screen { columns, rows, cell_width, cell_height, origin: (0, 0) };
+  let screen = screen::pixels(columns, rows, cell_width, cell_height);
   let mut hints = Hints::new(prepared.found, false, 0, columns)?;
   measure("Hints::accepts batch", || {
     for key in [
@@ -117,9 +117,6 @@ fn help() -> Result<()> {
   use vpdf_model::geometry::At;
   use vpdf_ui::keys::PanelKind;
   use vpdf_ui::panel::{Panel, help};
-  measure("panel::help reference", || {
-    black_box(help(|_| true));
-  })?;
   for width in [30, 64] {
     let rows = help(|_| true)
       .iter()

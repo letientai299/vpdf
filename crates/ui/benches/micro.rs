@@ -4,10 +4,9 @@ mod directory;
 mod layouts;
 use anyhow::Result;
 use std::hint::black_box;
-use vpdf_model::geometry::Screen;
 use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_model::text::PageId;
-use vpdf_ui::layout::{Layout, visible};
+use vpdf_ui::layout::visible;
 mod content;
 #[path = "../../../benches/support/fixtures.rs"]
 mod fixtures;
@@ -25,6 +24,8 @@ mod links;
 #[path = "../../../benches/support/pages.rs"]
 mod pages;
 mod reading;
+#[path = "../../../tests/support/screen.rs"]
+mod screen;
 mod search;
 mod sections;
 #[path = "../../../benches/support/mod.rs"]
@@ -43,16 +44,7 @@ fn projection() -> Result<()> {
   let geometry: Geometry = fixture("geometry")?;
   let pages: Vec<_> = geometry.pages.into_iter().map(bounds).collect();
   let glyph = bounds(geometry.glyph);
-  let mut layout = Layout::new(
-    pages.iter().copied(),
-    Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
-  );
+  let mut layout = layouts::tiles(pages.iter().copied());
   for zoom in [0.5, 2.0] {
     layout.request_zoom(vpdf_ui::layout::Zoom::To(zoom));
     layout.pan_to(96.0);
@@ -90,9 +82,7 @@ fn key_prefixes() -> Result<()> {
 
 /// A drag across a two-pane split.
 fn route() -> Result<()> {
-  use vpdf_model::input::{
-    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-  };
+  use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
   use vpdf_ui::pointer::{Capture, Pane, Region};
   use vpdf_ui::split::Rect;
   let pane = |id, column, panel| Pane {
@@ -108,12 +98,7 @@ fn route() -> Result<()> {
   let panes = [pane(1, 0, 20), pane(2, 61, 0)];
   let capture =
     Some(Capture { pane: 1, button: MouseButton::Left, region: Region::Page });
-  let drag = MouseEvent {
-    kind: MouseEventKind::Drag(MouseButton::Left),
-    column: 90,
-    row: 39,
-    modifiers: KeyModifiers::NONE,
-  };
+  let drag = MouseEvent::new(MouseEventKind::Drag(MouseButton::Left), 90, 39);
   measure("pointer::route", || {
     black_box(vpdf_ui::pointer::route(
       black_box(&panes),
@@ -131,16 +116,7 @@ fn overview() -> Result<()> {
   let geometry: Geometry = fixture("geometry")?;
   let pages = geometry.pages.len();
   anyhow::ensure!(pages > 2, "Missing overview pages");
-  let grid = Grid::new(
-    Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
-    bounds(geometry.pages[0]),
-  );
+  let grid = Grid::new(screen::cells(120, 40), bounds(geometry.pages[0]));
   let mut overview = Overview::new(PageId(0));
   measure("Overview::navigate pair", || {
     for motion in [Motion::Right, Motion::Left] {

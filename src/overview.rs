@@ -1,10 +1,8 @@
 use crate::Result;
 use crate::app::App;
 use crate::pdf_text::PdfText;
-use std::io::Write;
 use vpdf_model::input::MouseEvent;
 use vpdf_model::text::PageId;
-use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::keys::Input;
 use vpdf_ui::overview::{Frame, Grid, Navigation, Overview, Pointer};
 use vpdf_ui::pointer::Hit;
@@ -78,18 +76,6 @@ impl App {
     self.tiles.invalidate();
   }
 
-  pub fn overview_canvas(
-    &mut self,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    let mut painter =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    let result = self.scene_overview(&mut painter);
-    painter.finish()?;
-    result
-  }
-
   pub(crate) fn scene_overview<'a, S: vpdf_model::scene::Surface<'a>>(
     &mut self,
     scene: &mut S,
@@ -128,18 +114,11 @@ mod tests {
   use std::time::{Duration, Instant};
   use vpdf_reader::motion::Motion;
   use vpdf_ui::keys::Action;
-  use vpdf_ui::layout::Screen;
   #[test]
   #[ignore = "requires verified public PDF corpus"]
   fn partial_thumbnails_reuse_tiles() -> Result<()> {
     let root = std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?);
-    let screen = Screen {
-      columns: 156,
-      rows: 76,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(156, 76);
     let mut app =
       crate::solo::Solo::open(&root.join("book.pdf"), "", false, screen)?;
     app.open_overview()?;

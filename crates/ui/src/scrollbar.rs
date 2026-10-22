@@ -188,9 +188,9 @@ impl Bar {
     let height = screen.height();
     let column = screen.columns.saturating_sub(1);
     let rows = screen.rows.saturating_sub(1);
-    let left = view.frame.left;
+    let stage = view.frame.stage();
     let track = (column, 1, rows);
-    scene.stretch(theme::TRACK, Layer::BelowText, track, screen, left);
+    scene.stretch(theme::TRACK, Layer::BelowText, track, stage);
     let x1 = screen.width();
     let x0 = x1 - f32::from(screen.cell_width);
     let rect = |y0: f32, y1: f32| Bounds { x0, y0, x1, y1 };
@@ -207,17 +207,11 @@ impl Bar {
     }
     let cached = self.runs.take();
     for &(y0, y1, color) in cached.iter().flat_map(|(_, runs)| runs) {
-      scene.fill(rect(y0, y1), color, Layer::BelowText, screen, left);
+      scene.fill(rect(y0, y1), color, Layer::BelowText, stage);
     }
     self.runs = cached;
     let (top, size, _) = view.thumb();
-    scene.fill(
-      rect(top, top + size),
-      theme::THUMB,
-      Layer::BelowText,
-      screen,
-      left,
-    );
+    scene.fill(rect(top, top + size), theme::THUMB, Layer::BelowText, stage);
     self.scrub.map(|scrub| {
       let y = f32::from(scrub.row) * f32::from(screen.cell_height);
       Label {
@@ -308,13 +302,7 @@ impl Label {
       y0: y,
       y1: y + cell_height,
     };
-    scene.fill(
-      area,
-      theme::BAR_FILL,
-      Layer::BelowText,
-      screen,
-      self.frame.left,
-    );
+    scene.fill(area, theme::BAR_FILL, Layer::BelowText, self.frame.stage());
   }
 }
 

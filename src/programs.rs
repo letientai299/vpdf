@@ -5,6 +5,7 @@ use anyhow::Context;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::task::Poll;
 use tempfile::NamedTempFile;
 use vpdf_terminal::terminal;
 
@@ -68,9 +69,56 @@ pub fn pick_pdf(root: &Path) -> Result<Option<PathBuf>> {
   result
 }
 
-pub(crate) struct Picker {
-  child: std::process::Child,
+/// A macOS dialog process; dropping it closes the dialog.
+pub(crate) struct Dialog {
+  pub(crate) child: std::process::Child,
 }
+
+impl Dialog {
+  /// Runs `osascript` with `args`, then `path`.
+  pub(crate) fn osascript(args: &[&str], path: &Path) -> Result<Self> {
+    Self::spawn(Command::new("/usr/bin/osascript").args(args).arg(path))
+  }
+
+  pub(crate) fn spawn(command: &mut Command) -> Result<Self> {
+    let child = command
+      .stdin(Stdio::null())
+      .stdout(Stdio::piped())
+      .stderr(Stdio::null())
+      .spawn()?;
+    Ok(Self { child })
+  }
+
+  /// Its output once it exits; `failed` when it fails.
+  pub(crate) fn poll(&mut self, failed: &str) -> Result<Poll<String>> {
+    use std::io::Read;
+    let Some(status) = self.child.try_wait()? else { return Ok(Poll::Pending) };
+    anyhow::ensure!(status.success(), "{failed}");
+    let mut output = String::new();
+    if let Some(stdout) = self.child.stdout.take() {
+      // Paths fit; runaway output stops here.
+      stdout.take(1 << 16).read_to_string(&mut output)?;
+    }
+    Ok(Poll::Ready(output))
+  }
+
+  /// A finished dialog that ran `program` with `args`.
+  #[cfg(test)]
+  pub(crate) fn exited(program: &str, args: &[&str]) -> Result<Self> {
+    let mut dialog = Self::spawn(Command::new(program).args(args))?;
+    dialog.child.wait()?;
+    Ok(dialog)
+  }
+}
+
+impl Drop for Dialog {
+  fn drop(&mut self) {
+    let _ = self.child.kill();
+    let _ = self.child.wait();
+  }
+}
+
+pub(crate) struct Picker(Dialog);
 
 impl Picker {
   pub fn start() -> Result<Self> {
@@ -82,34 +130,14 @@ impl Picker {
       "default location root)\n",
       "on error number -128\nreturn \"\"\nend try\nend run"
     );
-    let child = Command::new("/usr/bin/osascript")
-      .args(["-e", script])
-      .arg(std::env::current_dir()?)
-      .stdin(Stdio::null())
-      .stdout(Stdio::piped())
-      .stderr(Stdio::null())
-      .spawn()?;
-    Ok(Self { child })
+    Dialog::osascript(&["-e", script], &std::env::current_dir()?).map(Self)
   }
 
-  pub fn poll(&mut self) -> Result<std::task::Poll<Option<PathBuf>>> {
-    use std::io::Read;
-    use std::task::Poll;
-    let Some(status) = self.child.try_wait()? else { return Ok(Poll::Pending) };
-    anyhow::ensure!(status.success(), "Native picker failed");
-    let mut path = String::new();
-    if let Some(mut out) = self.child.stdout.take() {
-      out.read_to_string(&mut path)?;
-    }
-    let path = path.strip_suffix('\n').unwrap_or(&path);
-    Ok(Poll::Ready((!path.is_empty()).then(|| PathBuf::from(path))))
-  }
-}
-
-impl Drop for Picker {
-  fn drop(&mut self) {
-    let _ = self.child.kill();
-    let _ = self.child.wait();
+  pub fn poll(&mut self) -> Result<Poll<Option<PathBuf>>> {
+    Ok(self.0.poll("Native picker failed")?.map(|path| {
+      let path = path.strip_suffix('\n').unwrap_or(&path);
+      (!path.is_empty()).then(|| PathBuf::from(path))
+    }))
   }
 }
 
@@ -179,20 +207,13 @@ mod tests {
 
   #[test]
   fn picker_output_status() -> Result<()> {
-    use std::task::Poll;
     for path in ["", "/tmp/a b\n.pdf"] {
-      let child = Command::new("/usr/bin/printf")
-        .args(["%s\n", path])
-        .stdout(Stdio::piped())
-        .spawn()?;
-      let mut picker = Picker { child };
-      picker.child.wait()?;
+      let mut picker =
+        Picker(Dialog::exited("/usr/bin/printf", &["%s\n", path])?);
       let expected = (!path.is_empty()).then(|| PathBuf::from(path));
       assert_eq!(picker.poll()?, Poll::Ready(expected));
     }
-    let child = Command::new("/usr/bin/false").spawn()?;
-    let mut picker = Picker { child };
-    picker.child.wait()?;
+    let mut picker = Picker(Dialog::exited("/usr/bin/false", &[])?);
     assert!(picker.poll().is_err());
     Ok(())
   }

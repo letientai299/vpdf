@@ -2,15 +2,12 @@ use super::{Request, Result};
 use crate::pdf_text::PdfText;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::{
-  Arc,
-  atomic::{AtomicBool, Ordering},
-};
+use std::sync::{Arc, atomic::AtomicBool};
 use vpdf_model::{
   document::{Annotation, Target},
   text::{PageId, Position, Text},
 };
-use vpdf_pdf::{content_cache::Snapshot, document::Document};
+use vpdf_pdf::{content_cache::Record, document::Document};
 use vpdf_ui::panel::{Destination, Row, Style};
 
 #[derive(Deserialize, Serialize)]
@@ -70,13 +67,8 @@ impl Entry {
   }
 }
 
-fn recall(
-  cache: &Snapshot,
-  request: Request,
-  pages: usize,
-) -> Option<Vec<Row>> {
-  let (count, entries): (usize, Vec<Entry>) =
-    serde_json::from_slice(&cache.read()?).ok()?;
+fn recall(cache: &Record, request: Request, pages: usize) -> Option<Vec<Row>> {
+  let (count, entries): (usize, Vec<Entry>) = cache.load()?;
   if count != pages || entries.len() > 100_000 {
     return None;
   }
@@ -92,9 +84,9 @@ pub(super) fn scan(
   stop: &AtomicBool,
   root: Option<PathBuf>,
 ) -> Result<Vec<Row>> {
-  let ready = || vpdf_pdf::yield_to_views(|| stop.load(Ordering::Relaxed));
+  let ready = || vpdf_pdf::ready(stop);
   let cache = root.filter(|_| seeds.is_empty()).and_then(|root| {
-    Snapshot::open(root, path, password, request.kind(), &request.code(), ready)
+    Record::open(root, path, password, request.kind(), &request.code(), ready)
   });
   if let Some(rows) =
     cache.as_ref().and_then(|cache| recall(cache, request, pages))
@@ -115,7 +107,7 @@ pub(super) fn scan(
   if let Some(cache) = cache {
     let entries: Option<Vec<_>> = rows.iter().map(Entry::from_row).collect();
     if let Some(entries) = entries {
-      let _ = cache.write(&serde_json::to_vec(&(pages, entries))?);
+      cache.store(&(pages, entries));
     }
   }
   Ok(rows)

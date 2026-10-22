@@ -53,6 +53,19 @@ impl Navigation {
       _ => return None,
     })
   }
+
+  /// Rows a scroll moves; `page` rows per screen.
+  fn rows(self, count: usize, page: usize) -> isize {
+    let screen = screen_step(page.saturating_sub(2));
+    match self {
+      Self::Scroll(amount) => (amount * page as f32 * count as f32) as isize,
+      Self::Screen(direction) => {
+        direction as isize * screen as isize * count as isize
+      }
+      Self::Rows(rows) => rows as isize * count as isize,
+      _ => 0,
+    }
+  }
 }
 
 impl Panel {
@@ -176,41 +189,21 @@ impl Panel {
     let Some(navigation) = Navigation::of(input.action) else { return false };
     let last = self.rows.len().saturating_sub(1);
     let count = input.count;
-    let screen_rows = screen_step(page.saturating_sub(2));
-    if matches!(self.kind, PanelKind::Help | PanelKind::Version)
-      && self.layout.is_some()
-    {
-      let scroll = match navigation {
-        Navigation::Scroll(amount) => {
-          Some((amount * page as f32 * count as f32) as isize)
-        }
-        Navigation::Screen(direction) => {
-          Some(direction as isize * screen_rows as isize * count as isize)
-        }
-        Navigation::Rows(rows) => Some(rows as isize * count as isize),
-        _ => None,
-      };
-      if let Some(rows) = scroll {
-        self.scroll_lines(rows, page);
-        return true;
-      }
-    }
     self.selected = match navigation {
       Navigation::Vertical(true) => self.selected.saturating_add(count),
       Navigation::Vertical(false) => self.selected.saturating_sub(count),
       Navigation::Edge(_) if input.explicit => count.saturating_sub(1),
       Navigation::Edge(false) => 0,
       Navigation::Edge(true) => last,
-      Navigation::Scroll(amount) => {
-        let rows = (amount * page as f32 * count as f32) as isize;
+      Navigation::Scroll(_) | Navigation::Screen(_) | Navigation::Rows(_) => {
+        let rows = navigation.rows(count, page);
+        if matches!(self.kind, PanelKind::Help | PanelKind::Version)
+          && self.layout.is_some()
+        {
+          self.scroll_lines(rows, page);
+          return true;
+        }
         self.selected.saturating_add_signed(rows)
-      }
-      Navigation::Screen(direction) => {
-        let rows = direction as isize * screen_rows as isize * count as isize;
-        self.selected.saturating_add_signed(rows)
-      }
-      Navigation::Rows(rows) => {
-        self.selected.saturating_add_signed(rows as isize * count as isize)
       }
       Navigation::Heading(forward) => {
         self.heading(forward, count);

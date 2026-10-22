@@ -186,11 +186,13 @@ pub enum List {
 #[derive(Clone, Debug, Default)]
 pub struct Items(Vec<(Rect, usize)>);
 
-impl Items {
-  pub fn push(&mut self, cells: Rect, index: usize) {
-    self.0.push((cells, index));
+impl FromIterator<(Rect, usize)> for Items {
+  fn from_iter<I: IntoIterator<Item = (Rect, usize)>>(items: I) -> Self {
+    Self(items.into_iter().collect())
   }
+}
 
+impl Items {
   /// The topmost item at a pane cell.
   pub fn at(&self, column: u16, row: u16) -> Option<usize> {
     // Later items draw on top.

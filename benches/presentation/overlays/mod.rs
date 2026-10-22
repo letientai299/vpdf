@@ -42,8 +42,10 @@ pub fn draw(filter: &str) -> Result<()> {
 fn run(case: Prepared) -> Result<()> {
   let prepared = super::fixtures::text_named(&case.source)?;
   let [columns, rows, cell_width, cell_height] = case.screen;
-  let screen =
-    Screen { columns, rows, cell_width, cell_height, origin: case.origin };
+  let screen = Screen {
+    origin: case.origin,
+    ..crate::screen::pixels(columns, rows, cell_width, cell_height)
+  };
   let layout = Layout::new(prepared.metadata.iter().map(|p| p.1), screen);
   let mut reader = Reader::default();
   reader.scroll = case.scroll;

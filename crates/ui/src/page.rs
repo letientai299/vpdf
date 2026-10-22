@@ -11,7 +11,7 @@ use crate::text::{Bounds, PageId, Position};
 use crate::theme;
 pub use view::Viewport;
 use vpdf_model::geometry::Screen;
-use vpdf_model::scene::{Draw, Layer};
+use vpdf_model::scene::{Draw, Layer, Stage};
 use vpdf_model::text::Quad;
 use vpdf_reader::motion::{covered_quads, range};
 use vpdf_reader::reader::{SelectionKind, TextSource};
@@ -21,6 +21,12 @@ pub struct Canvas<'a> {
   pub screen: Screen,
   pub left: u16,
   pub menu: Option<Bounds>,
+}
+
+impl Canvas<'_> {
+  fn stage(&self) -> Stage {
+    Stage { screen: self.screen, left: self.left }
+  }
 }
 
 struct Painter<'a, S, D> {
@@ -106,34 +112,16 @@ impl<'a, S: TextSource + Pages, D: Draw<'a>> Painter<'_, S, D> {
     }));
     let crop = layout.crop_for(page).apply(self.source.bounds(page));
     let crop = layout.project(page, crop, self.scroll);
-    let screen = Bounds {
-      x0: 0.0,
-      y0: 0.0,
-      x1: self.canvas.screen.width(),
-      y1: self.canvas.screen.height(),
-    };
+    let screen = self.canvas.screen.bounds();
     let Some(clip) = vpdf_model::geometry::clip(crop, screen) else { return };
     for piece in outside(clip, self.canvas.menu) {
-      self.scene.quad(
-        quad,
-        piece,
-        color,
-        layer,
-        self.canvas.screen,
-        self.canvas.left,
-      );
+      self.scene.quad(quad, piece, color, layer, self.canvas.stage());
     }
   }
 
   fn tint(&mut self, rect: Bounds, color: [u8; 4]) {
     for piece in outside(rect, self.canvas.menu) {
-      self.scene.fill(
-        piece,
-        color,
-        Layer::AboveText,
-        self.canvas.screen,
-        self.canvas.left,
-      );
+      self.scene.fill(piece, color, Layer::AboveText, self.canvas.stage());
     }
   }
 

@@ -1,6 +1,4 @@
-#[path = "../../src/presentation/draw.rs"]
-mod composition;
-pub use composition::{draw, try_draw};
+pub use vpdf::presentation::{draw, try_draw};
 
 #[path = "replay.rs"]
 mod replay;

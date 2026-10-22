@@ -49,12 +49,18 @@ mod encryption;
 #[path = "../tests/support/native.rs"]
 mod fixtures;
 #[cfg(test)]
+#[path = "../tests/support/kitty.rs"]
+mod kitty;
+#[cfg(test)]
 #[path = "../tests/support/reader.rs"]
 mod reader_fixture;
 #[cfg(test)]
+#[path = "../tests/support/screen.rs"]
+mod screen;
+#[cfg(test)]
 pub(crate) use reader_fixture::SeedReader;
 
-mod presentation;
+pub mod presentation;
 
 #[cfg(test)]
 mod provenance;

@@ -22,17 +22,9 @@ use vpdf_ui::layout::Screen;
 /// The query every search case measures.
 const QUERY: &str = "the";
 
-#[path = "support/percentile.rs"]
-mod percentile;
-
-#[derive(Serialize)]
-struct Timing {
-  samples: usize,
-  p50_ms: f64,
-  p95_ms: Option<f64>,
-  p99_ms: Option<f64>,
-  max_ms: f64,
-}
+#[path = "support/timing.rs"]
+mod stats;
+use stats::{Timing, timing};
 
 fn measure(
   mut run: impl FnMut() -> Result<()>,
@@ -44,14 +36,7 @@ fn measure(
     run()?;
     times.push(started.elapsed().as_secs_f64() * 1000.0);
   }
-  times.sort_by(f64::total_cmp);
-  Ok(Timing {
-    samples: count,
-    p50_ms: times[count / 2],
-    p95_ms: percentile::tail(&times, 95),
-    p99_ms: percentile::tail(&times, 99),
-    max_ms: times[count - 1],
-  })
+  Ok(timing(times))
 }
 
 #[derive(Serialize)]
@@ -95,12 +80,11 @@ fn document(path: &Path, page: usize) -> Result<Report> {
   let key = TileKey {
     page: PageId(page),
     scale: 2048,
-    rotation: 0,
     x: 128,
     y: 256,
     width: 512,
     height: 256,
-    crop: vpdf_ui::layout::Crop::default(),
+    ..TileKey::default()
   };
   raster::render(&mut doc, key)?;
   let tile = measure(

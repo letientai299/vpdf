@@ -110,13 +110,9 @@ impl List {
   }
 
   pub fn cells(&self, screen: Screen, top: u16) -> Items {
-    let mut items = Items::default();
-    for (cells, index) in self.grid(screen).cells(self.labels.len(), top) {
-      if self.keys(index).is_some() {
-        items.push(cells, index);
-      }
-    }
-    items
+    let grid = self.grid(screen);
+    let cells = grid.cells(self.labels.len(), top);
+    cells.filter(|(_, index)| self.keys(*index).is_some()).collect()
   }
 
   pub fn scene<'a>(

@@ -2,7 +2,7 @@ use crate::text::{Bounds, PageId, Position};
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
 use vpdf_model::geometry::Screen;
-use vpdf_model::scene::{Draw, Op, Text};
+use vpdf_model::scene::{Draw, Layer, Op, Stage, Text};
 use vpdf_reader::reader::Reader;
 use vpdf_search::search::Hit;
 
@@ -57,6 +57,10 @@ pub struct Frame {
 }
 
 impl Frame {
+  pub fn stage(self) -> Stage {
+    Stage { screen: self.screen, left: self.left }
+  }
+
   /// Page pixels at reported or centered cells.
   pub fn point(
     self,
@@ -95,6 +99,20 @@ pub fn cell_bounds(
   let y0 = f32::from(cells.row) * height;
   let x1 = x0 + f32::from(cells.columns) * width;
   Bounds { x0, y0, x1, y1: y0 + f32::from(cells.rows) * height }
+}
+
+/// Fills cells below text with graphics.
+pub fn backdrop<'a>(
+  scene: &mut impl Draw<'a>,
+  frame: Frame,
+  cells: crate::split::Rect,
+  color: [u8; 4],
+) {
+  if frame.text {
+    return;
+  }
+  let rect = cell_bounds(frame.screen, frame.left, cells);
+  scene.fill(rect, color, Layer::BelowText, frame.stage());
 }
 
 /// Parts of `rect` outside `hole`.

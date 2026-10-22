@@ -68,7 +68,7 @@ impl Chores {
 
   /// Checks files, clues, and saved positions.
   pub(super) fn run(&mut self, session: &mut Session, now: Instant) -> bool {
-    let mut dirty = session.app().clue_due_at(now);
+    let mut dirty = session.app().clue_due(now);
     let force = self.watch_due(now);
     if force {
       self.watched = now;
@@ -91,7 +91,7 @@ impl Chores {
       }
     }
     if session.sidebars_due() {
-      for app in session.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+      for app in session.panes_mut() {
         app.prepare_sidebars();
       }
     }
@@ -125,7 +125,7 @@ pub(super) fn idle(
   if changed || session.unsaved {
     wait = wait.min(CHECK.saturating_sub(now.duration_since(checked)));
   }
-  if let Some(clue) = session.app().clue_wait_at(now) {
+  if let Some(clue) = session.app().clue_wait(now) {
     wait = wait.min(clue);
   }
   let held = session.pointer.holding();
@@ -160,7 +160,7 @@ impl Session {
         .panes
         .iter()
         .all(|app| app.complete && !app.images_stale)
-      && self.tabs.iter().flat_map(|tab| &tab.panes).any(App::sidebars_deferred)
+      && self.panes().any(App::sidebars_deferred)
   }
 
   pub(super) fn maintain(&mut self, now: Instant) -> bool {
@@ -195,7 +195,7 @@ impl Session {
 mod tests {
   use super::*;
   use crate::Result;
-  use crate::session::{Screen, Sight};
+  use crate::session::Sight;
   use vpdf_model::text::Position;
   use vpdf_ui::page::landing::{Landing, Span};
   use vpdf_ui::scrollbar::Bar;
@@ -204,17 +204,7 @@ mod tests {
     let path = root.join("timers.pdf");
     crate::fixtures::pdf(&path, &["first", "second"], "")?;
     let mut session = Session::new(Some(root.join("state.json")));
-    session.open(
-      &path,
-      true,
-      Screen {
-        columns: 80,
-        rows: 24,
-        cell_width: 8,
-        cell_height: 16,
-        origin: (0, 0),
-      },
-    )?;
+    session.open(&path, true, crate::screen::cells(80, 24))?;
     session.record();
     session.flush()?;
     Ok(session)
@@ -335,7 +325,7 @@ mod tests {
       chores.wait(&mut session, start + Bar::SHOWN, false),
       WATCH.checked_sub(Bar::SHOWN).unwrap()
     );
-    assert!(session.tab().panes.iter().all(|app| app.bar_until().is_none()
+    assert!(session.tab().panes.iter().all(|app| app.bar.deadline().is_none()
       && app.reader.landing().deadline().is_none()));
     Ok(())
   }

@@ -1,16 +1,13 @@
-use super::common::SeedReader;
-use std::path::PathBuf;
+use super::common::{SeedReader, keys};
+use crate::harness::solo;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::solo::Solo;
 use vpdf_model::document::{Heading, Target};
-use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Reader;
 use vpdf_ui::keys::PanelKind;
-use vpdf_ui::layout::Screen;
 use vpdf_ui::panel::Destination;
-use vpdf_ui::prompt::History;
 
 #[test]
 fn jumps_include_both_history_directions() {
@@ -36,35 +33,17 @@ fn jumps_include_both_history_directions() {
   assert_eq!(reader.jumps().count(), 0);
 }
 
-fn command(app: &mut App, history: &mut History, text: &str) -> Result<()> {
-  for code in std::iter::once(KeyCode::Char(':'))
-    .chain(text.chars().map(KeyCode::Char))
-    .chain(std::iter::once(KeyCode::Enter))
-  {
-    app.key(KeyEvent::new(code, KeyModifiers::NONE), history)?;
-  }
-  Ok(())
-}
-
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
-  let mut app = Solo::open(&root.join("book.pdf"), "", false, screen)?;
-  let mut history = History::default();
-  command(&mut app, &mut history, "jumps")?;
+  let screen = crate::common::cells(120, 50);
+  let mut app = solo("book.pdf", false, screen)?;
+  keys(&mut app, b":jumps\r")?;
   let panel = app.panel.as_ref().unwrap();
   assert_eq!(panel.view.kind(), PanelKind::Jumps);
   assert!(panel.view.rows().is_empty());
   let origin = app.reader.cursor;
-  app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
+  keys(&mut app, b"\r")?;
   assert_eq!(app.reader.cursor, origin);
   app.close_panel()?;
 
@@ -75,9 +54,8 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
   }
   for (forward, expected) in [(false, [0, 2]), (false, [1, 2]), (true, [0, 2])]
   {
-    let code = KeyCode::Char(if forward { 'i' } else { 'o' });
-    app.key(KeyEvent::new(code, KeyModifiers::CONTROL), &mut history)?;
-    command(&mut app, &mut history, "jumps")?;
+    keys(&mut app, if forward { b"\x1b[105;5u" } else { b"\x0f" })?;
+    keys(&mut app, b":jumps\r")?;
     {
       let (app, _) = app.parts();
       let rows = &app.panel.as_ref().unwrap().view.rows();
@@ -102,37 +80,24 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
     }
     app.close_panel()?;
   }
-  command(&mut app, &mut history, "jumps")?;
+  keys(&mut app, b":jumps\r")?;
   let origin = app.reader.cursor;
   app.panel.as_mut().unwrap().view.choose(1);
   // History changes must preserve recorded destinations.
   app.reader.clear_history();
-  app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
+  keys(&mut app, b"\r")?;
   assert_eq!(app.reader.cursor, positions[2]);
   assert!(app.panel.is_some() && !app.panel_focused());
-  app.key(
-    KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
-    &mut history,
-  )?;
+  keys(&mut app, b"\x0f")?;
   assert_eq!(app.reader.cursor, origin);
   Ok(())
 }
 
 fn text_app(lines: &[&str]) -> Result<(tempfile::TempDir, Solo)> {
-  let dir = tempfile::tempdir()?;
-  let path = dir.path().join("jumps.pdf");
-  super::common::text_pdf(&path, lines)?;
-  let mut app = Solo::open(
-    &path,
-    "",
+  let (dir, mut app) = crate::common::temp_solo(
+    |path| super::common::text_pdf(path, lines),
     true,
-    Screen {
-      columns: 120,
-      rows: 50,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
+    crate::common::cells(120, 50),
   )?;
   super::common::outline_loaded(&mut app)?;
   app.doc.outline.clear();
@@ -141,17 +106,6 @@ fn text_app(lines: &[&str]) -> Result<(tempfile::TempDir, Solo)> {
 
 fn at(line: usize, glyph: usize) -> Position {
   Position { page: PageId(0), line, glyph }
-}
-
-fn history_key(app: &mut App, forward: bool) -> Result<()> {
-  app.key(
-    KeyEvent::new(
-      KeyCode::Char(if forward { 'i' } else { 'o' }),
-      KeyModifiers::CONTROL,
-    ),
-    &mut History::default(),
-  )?;
-  Ok(())
 }
 
 #[test]
@@ -180,18 +134,6 @@ fn fallback_context() -> Result<()> {
   Ok(())
 }
 
-fn heading(app: &mut App, line: usize, title: &str) -> Result<()> {
-  use vpdf_model::document::{Heading, Target};
-  let bounds = app.doc.text(PageId(0))?.lines[line].glyphs[0].bounds;
-  let (x, y) = bounds.centre();
-  app.doc.outline.push(Heading {
-    title: title.into(),
-    depth: 0,
-    target: Target::Point { page: PageId(0), x, y },
-  });
-  Ok(())
-}
-
 #[test]
 fn semantic_history() -> Result<()> {
   let (_dir, mut app) = text_app(&[
@@ -201,18 +143,12 @@ fn semantic_history() -> Result<()> {
     "needle target",
     "End",
   ])?;
-  heading(&mut app, 1, "First section")?;
-  heading(&mut app, 2, "Second section")?;
-  let mut history = History::default();
+  heading_on(&mut app, at(1, 0), "First section")?;
+  heading_on(&mut app, at(2, 0), "Second section")?;
   app.open_panel(PanelKind::Outline)?;
-  app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
+  keys(&mut app, b"\r")?;
   app.close_panel()?;
-  for _ in 0..2 {
-    app.key(
-      KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE),
-      &mut history,
-    )?;
-  }
+  keys(&mut app, b"]]")?;
   app.start_search("needle", false, false)?;
   super::common::search_loaded(&mut app)?;
   app.go_to(at(4, 0), true)?;
@@ -236,13 +172,12 @@ fn semantic_history() -> Result<()> {
   let other =
     vpdf_search::query::Query { text: "other".into(), ..Default::default() };
   app.search.show(other, Vec::new());
-  history_key(&mut app, false)?;
-  history_key(&mut app, true)?;
+  keys(&mut app, b"\x0f\x1b[105;5u")?;
   assert_eq!(labels(&mut app)?, expected);
   app.open_panel(PanelKind::Jumps)?;
   app.panel.as_mut().unwrap().view.choose(3);
   app.reader.clear_history();
-  app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
+  keys(&mut app, b"\r")?;
   assert_eq!(app.reader.cursor, at(3, 0));
   app.close_panel()?;
   app.go_to(at(4, 0), true)?;
@@ -270,10 +205,7 @@ fn committed_searches() -> Result<()> {
   assert_eq!(labels, ["Search [1/2] /needle/", "Search [2/2] /needle/"]);
   app.open_panel(PanelKind::Results)?;
   app.panel.as_mut().unwrap().view.choose(1);
-  app.key(
-    KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-    &mut History::default(),
-  )?;
+  keys(&mut app, b"\r")?;
   app.close_panel()?;
   app.go_to(at(0, 0), true)?;
   let rows = app.panel_rows(PanelKind::Jumps)?;
@@ -304,14 +236,11 @@ fn followed_links() -> Result<()> {
 #[test]
 fn outline_preserves_selected_title() -> Result<()> {
   let (_dir, mut app) = text_app(&["Opening", "Shared destination", "End"])?;
-  heading(&mut app, 1, "Chapter")?;
-  heading(&mut app, 1, "Section")?;
+  heading_on(&mut app, at(1, 0), "Chapter")?;
+  heading_on(&mut app, at(1, 0), "Section")?;
   app.open_panel(PanelKind::Outline)?;
   app.panel.as_mut().unwrap().view.choose(1);
-  app.key(
-    KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-    &mut History::default(),
-  )?;
+  keys(&mut app, b"\r")?;
   app.close_panel()?;
   app.go_to(at(2, 0), true)?;
   let rows = app.panel_rows(PanelKind::Jumps)?;
@@ -330,13 +259,12 @@ const PAGE: [&str; 7] = [
 ];
 
 fn landing_app(text_mode: bool) -> Result<(tempfile::TempDir, Solo)> {
-  let dir = tempfile::tempdir()?;
-  let path = dir.path().join("landing.pdf");
-  super::common::pages_pdf(&path, &[&PAGE, &PAGE])?;
   let (columns, rows) = if text_mode { (10, 5) } else { (40, 6) };
-  let screen =
-    Screen { columns, rows, cell_width: 8, cell_height: 16, origin: (0, 0) };
-  let mut app = Solo::open(&path, "", text_mode, screen)?;
+  let (dir, mut app) = crate::common::temp_solo(
+    |path| super::common::pages_pdf(path, &[&PAGE, &PAGE]),
+    text_mode,
+    crate::common::cells(columns, rows),
+  )?;
   super::common::outline_loaded(&mut app)?;
   app.doc.outline.clear();
   Ok((dir, app))
@@ -419,19 +347,13 @@ fn jump(app: &mut App, kind: Jump, at: Position) -> Result<()> {
       let index = app.search.hits().iter().position(|hit| hit.first == at);
       app.open_panel(PanelKind::Results)?;
       app.panel.as_mut().unwrap().view.choose(index.expect("hit at target"));
-      app.key(
-        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-        &mut History::default(),
-      )?;
+      keys(app, b"\r")?;
       Ok(())
     }
     Jump::Outline => {
       heading_on(app, at, "Heading")?;
       app.open_panel(PanelKind::Outline)?;
-      app.key(
-        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-        &mut History::default(),
-      )?;
+      keys(app, b"\r")?;
       // Closing would reflow the landed view.
       Ok(())
     }
@@ -524,12 +446,7 @@ fn jumps_land_near_the_top() -> Result<()> {
       app.close_panel()?;
     }
     // `''` restores the view.
-    for _ in 0..2 {
-      app.key(
-        KeyEvent::new(KeyCode::Char('\''), KeyModifiers::NONE),
-        &mut History::default(),
-      )?;
-    }
+    keys(&mut app, b"''")?;
     assert_eq!(view(&mut app)?, before, "{case}");
   }
   Ok(())
@@ -568,8 +485,7 @@ fn history_across_presentations_lands() -> Result<()> {
       let seed_value = app.layout.pages()[1].top;
       app.reader.seed_reader(|reader| reader.scroll = seed_value);
     };
-    let back = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
-    app.key(back, &mut History::default())?;
+    keys(&mut app, b"\x0f")?;
     assert_eq!(app.reader.cursor, on(0, 5, 0), "text first {text_first}");
     let (top, _) = cursor_rows(&mut app)?;
     assert!((top - 1.0).abs() < 0.01, "text first {text_first}: {top}");
@@ -583,19 +499,12 @@ fn splits_land_near_the_top() -> Result<()> {
   for text_mode in [false, true] {
     for point in [false, true] {
       let case = format!("text {text_mode} point {point}");
-      let dir = tempfile::tempdir()?;
-      let path = dir.path().join("landing.pdf");
-      super::common::pages_pdf(&path, &[&PAGE, &PAGE])?;
+      let (_dir, path) = crate::common::temp_pdf(|path| {
+        super::common::pages_pdf(path, &[&PAGE, &PAGE])
+      })?;
       let rows = if text_mode { 5 } else { 6 };
-      let screen = Screen {
-        columns: 80,
-        rows,
-        cell_width: 8,
-        cell_height: 16,
-        origin: (0, 0),
-      };
-      let mut session = vpdf::session::Session::new(None);
-      session.open(&path, true, screen)?;
+      let screen = crate::common::cells(80, rows);
+      let mut session = crate::harness::session(&path, screen)?;
       let app = session.app();
       super::common::outline_loaded(app)?;
       if text_mode {
@@ -653,28 +562,18 @@ fn sections_continue_after_landing() -> Result<()> {
     app.relayout()?;
     let target = heading_on(&mut app, first, "First")?;
     heading_on(&mut app, on(1, 2, 0), "Second")?;
-    let mut history = History::default();
     if matches!(then, Then::ClosePanel) {
       app.open_panel(PanelKind::Outline)?;
-      app
-        .key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
+      keys(&mut app, b"\r")?;
       app.close_panel()?;
     } else {
       app.follow(&target)?;
     }
     if matches!(then, Then::Zoom) {
-      app.key(
-        KeyEvent::new(KeyCode::Char('+'), KeyModifiers::NONE),
-        &mut history,
-      )?;
+      keys(&mut app, b"+")?;
     }
     assert_eq!(app.reader.cursor, first, "{case}");
-    for _ in 0..2 {
-      app.key(
-        KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE),
-        &mut history,
-      )?;
-    }
+    keys(&mut app, b"]]")?;
     assert_eq!(app.reader.cursor, on(1, 2, 0), "{case}");
   }
   Ok(())
@@ -692,13 +591,16 @@ fn rowless_text_landing() -> Result<()> {
 
 #[test]
 fn counted_history_keeps_both_directions() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("history.pdf");
-  crate::common::pages_pdf(
-    &path,
-    &[&["one"], &["two"], &["three"], &["four"]],
+  let (_directory, mut app) = crate::common::temp_solo(
+    |path| {
+      crate::common::pages_pdf(
+        path,
+        &[&["one"], &["two"], &["three"], &["four"]],
+      )
+    },
+    false,
+    crate::focus::screen(),
   )?;
-  let mut app = Solo::open(&path, "", false, crate::focus::screen())?;
   for page in ["2", "3", "4"] {
     app.command(page)?;
   }
@@ -709,7 +611,7 @@ fn counted_history_keeps_both_directions() -> Result<()> {
     (b"99\x0f", 0),
   ] {
     app.reader.clear_flash();
-    crate::common::keys(&mut app, sequence)?;
+    keys(&mut app, sequence)?;
     assert_eq!(app.reader.cursor.page, PageId(page));
     assert_eq!(app.reader.landing().position().unwrap(), app.reader.cursor);
   }
@@ -718,21 +620,18 @@ fn counted_history_keeps_both_directions() -> Result<()> {
 
 #[test]
 fn history_clears_column_goal() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("columns.pdf");
-  let lines = &[
-    "abcdefghijklmnopqrstuvwxyz",
-    "abcdefghijklmnopqrstuvwxyz",
-    "abcdefghijklmnopqrstuvwxyz",
-  ];
-  crate::common::pages_pdf(&path, &[lines, lines])?;
-  let mut app = Solo::open(&path, "", true, crate::focus::screen())?;
-  crate::common::keys(&mut app, b"i20lj:2\r0j\x0fj")?;
+  let lines = &["abcdefghijklmnopqrstuvwxyz"; 3];
+  let (_directory, mut app) = crate::common::temp_solo(
+    |path| crate::common::pages_pdf(path, &[lines, lines]),
+    true,
+    crate::focus::screen(),
+  )?;
+  keys(&mut app, b"i20lj:2\r0j\x0fj")?;
   assert_eq!(
     app.reader.cursor,
     Position { page: PageId(0), line: 2, glyph: 20 }
   );
-  crate::common::keys(&mut app, b"\x1b[105;5uj")?;
+  keys(&mut app, b"\x1b[105;5uj")?;
   assert_eq!(
     app.reader.cursor,
     Position { page: PageId(1), line: 2, glyph: 0 }

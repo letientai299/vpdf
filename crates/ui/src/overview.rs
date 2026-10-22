@@ -9,7 +9,7 @@ use crate::theme;
 use anyhow::Result;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::input::{MouseButton, MouseEventKind};
-use vpdf_model::scene::{Draw, Layer, Op, Surface};
+use vpdf_model::scene::{Draw, Layer, Op, Stage, Surface};
 use vpdf_model::style::Role;
 use vpdf_model::tile::{TileId, TileKey, TileOwner, cover};
 use vpdf_reader::motion::Motion;
@@ -275,7 +275,8 @@ impl Overview {
   ) -> Result<Visible, S::Error> {
     let grid = Grid::new(frame.screen, source.bounds(PageId(0)));
     let pages = source.count();
-    let (screen, left) = (frame.clip, frame.left);
+    let stage = Stage { screen: frame.clip, left: frame.left };
+    let screen = frame.clip;
     let hovered = frame.hovered.map(|page| page.0);
     self.top = self.shown_top(&grid, pages);
     self.shape = (grid.columns, grid.rows);
@@ -313,7 +314,7 @@ impl Overview {
       for key in cover(whole, 0..w, 0..bottom.clamp(0, h)) {
         let origin = (x + dx + key.x as f32, y + dy + key.y as f32);
         let id = TileId { owner: TileOwner::new(frame.pane), key };
-        if !scene.tile(id, origin, screen, left)? {
+        if !scene.tile(id, origin, stage)? {
           missing.push(key);
         }
         wanted.push(key);
@@ -338,7 +339,7 @@ impl Overview {
       };
       if let Some(tint) = tint {
         for piece in crate::paint::outside(ring, frame.mask) {
-          scene.fill(piece, tint, Layer::AboveText, screen, left);
+          scene.fill(piece, tint, Layer::AboveText, stage);
         }
       }
     }

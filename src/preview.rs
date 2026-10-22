@@ -1,9 +1,7 @@
 use crate::Result;
 use crate::app::App;
-use std::io::Write;
 use vpdf_model::document::{Annotation, Target};
 use vpdf_model::text::{Bounds, PageId, Position};
-use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::keys::Input;
 use vpdf_ui::preview::{Event, Preview};
 use vpdf_ui::split::Rect;
@@ -135,7 +133,7 @@ impl App {
     reading.view.drop_stray_preview(reading.overlays);
   }
 
-  pub(crate) fn scene_preview<'a, S: vpdf_model::scene::Surface<'a>>(
+  pub fn scene_preview<'a, S: vpdf_model::scene::Surface<'a>>(
     &mut self,
     scene: &mut S,
   ) -> Result<()>
@@ -147,19 +145,5 @@ impl App {
     }
     let mut reading = self.reading_parts();
     reading.view.scene_preview(reading.overlays, scene)
-  }
-
-  pub fn draw_preview(
-    &mut self,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    if self.overlays.preview().is_none() {
-      return Ok(());
-    }
-    let mut reading = self.reading_parts();
-    crate::presentation::draw(out, Some(graphics), |scene| {
-      reading.view.scene_preview(reading.overlays, scene)
-    })?
   }
 }

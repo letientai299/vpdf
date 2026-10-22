@@ -161,10 +161,8 @@ impl Session {
     {
       return Ok(drawn);
     }
-    let tab = &self.tabs[self.active];
     // Snapshot before disarm hides clue rows.
-    let panes: Vec<_> = tab.panes.iter().map(App::pointer_pane).collect();
-    let focused = tab.panes[tab.focus].id;
+    let (panes, focused) = self.tabs[self.active].pointer_panes();
     let route = self.pointer.route(&panes, focused, mouse, pixel, now);
     let gesture = wheel && self.pointer.turn(mouse, pixel, now);
     let interrupts = vpdf_ui::pointer::interrupts(mouse.kind)
@@ -247,9 +245,7 @@ impl Session {
     if self.app().preview_press(mouse)? {
       if mouse.kind == MouseEventKind::Down(MouseButton::Middle) {
         // Its run drops a double click's repeat.
-        let tab = self.tab();
-        let panes: Vec<_> = tab.panes.iter().map(App::pointer_pane).collect();
-        let focused = tab.panes[tab.focus].id;
+        let (panes, focused) = self.tab().pointer_panes();
         self.pointer.route(&panes, focused, mouse, pixel, now);
       } else {
         self.pointer.release();
@@ -413,10 +409,8 @@ impl Session {
 
   /// Pane index and route under `mouse`.
   pub(super) fn under(&mut self, mouse: MouseEvent) -> Option<(usize, Route)> {
-    let tab = self.tabs.get(self.active)?;
-    let panes: Vec<_> = tab.panes.iter().map(App::pointer_pane).collect();
-    let route =
-      vpdf_ui::pointer::route(&panes, tab.panes[tab.focus].id, None, mouse)?;
+    let (panes, focused) = self.tabs.get(self.active)?.pointer_panes();
+    let route = vpdf_ui::pointer::route(&panes, focused, None, mouse)?;
     Some((self.tab().index(route.pane)?, route))
   }
 
@@ -605,7 +599,7 @@ impl Session {
     self.resizing = None;
     // Its release may never come.
     self.pointer.release();
-    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+    for app in self.panes_mut() {
       app.drop_held();
     }
   }
@@ -630,7 +624,7 @@ impl Session {
   pub fn autoscroll(&mut self, now: Instant) -> bool {
     let held = self.pointer.held_pane();
     let mut changed = false;
-    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+    for app in self.panes_mut() {
       // Lost releases stop it too.
       if held != Some(app.id) {
         app.autoscroll.cancel();

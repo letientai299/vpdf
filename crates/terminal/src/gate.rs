@@ -83,21 +83,15 @@ pub fn enter() -> Result<(Terminal, Screen)> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::caps::{Graphics, Host, Support, Tmux};
+  use crate::caps::testing::{bare, tmux_info};
+  use crate::caps::{Graphics, Host, Tmux};
 
   fn caps(host: Host, version: &str, answered: bool) -> Caps {
     Caps {
-      host,
       version: Some(version.into()),
       keyboard: Some(0),
-      sync: Support::Missing,
-      pixels: Support::Missing,
-      resize: Support::Missing,
-      pointer: Support::Missing,
-      drop: Support::Missing,
-      clipboard: None,
-      cell: None,
       attributes: answered.then(|| vec![62]),
+      ..bare(host)
     }
   }
 
@@ -115,13 +109,9 @@ mod tests {
     let silent = caps(Host::Direct(Graphics::Silent), "kitty(0.49.1)", false);
     let screen = caps(Host::Screen, "kitty(0.49.1)", false);
     let tmux = Tmux {
-      version: vec![3, 8],
-      client: Some("kitty(0.49.1)".into()),
       cell: None,
       passthrough: None,
-      extended_keys: true,
-      focus_events: true,
-      origin: (0, 0),
+      ..tmux_info(Some("kitty(0.49.1)"))
     };
     let off = Tmux { extended_keys: false, ..tmux.clone() };
     let tmux = caps(Host::Tmux(Some(tmux)), "tmux 3.8", true);

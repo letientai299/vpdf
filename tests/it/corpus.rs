@@ -1,3 +1,4 @@
+use crate::harness::corpus;
 use std::fs::File;
 use std::path::PathBuf;
 use vpdf::Result;
@@ -54,7 +55,6 @@ fn pmpp_search_visual_order() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn public_documents() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let cases = [
     (
       "book.pdf",
@@ -88,7 +88,7 @@ fn public_documents() -> Result<()> {
     ),
   ];
   for (name, page, glyphs, expected) in cases {
-    let path = root.join(name);
+    let path = corpus(name)?;
     assert_eq!(hex(&alias(&mut File::open(&path)?)?), expected);
     let mut doc = Document::open(&path, "")?;
     let text = doc.text(PageId(page))?;

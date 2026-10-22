@@ -40,9 +40,7 @@ mod tests {
   use crate::keys::{Action, Input, PanelKind};
   use crate::panel::{Destination, Panel, Position, Style};
   use unicode_width::UnicodeWidthStr;
-  use vpdf_model::input::{
-    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-  };
+  use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
   use vpdf_reader::motion::Motion;
   use vpdf_search::query::Query;
   use vpdf_search::search::Hit;
@@ -140,12 +138,7 @@ mod tests {
       32,
       20,
     );
-    let press = MouseEvent {
-      kind: MouseEventKind::Down(MouseButton::Left),
-      column: 4,
-      row: 3,
-      modifiers: KeyModifiers::NONE,
-    };
+    let press = MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 4, 3);
     assert_eq!(panel.pointer(press), Some(0));
     panel.navigate(
       Input {

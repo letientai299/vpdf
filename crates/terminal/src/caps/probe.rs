@@ -420,32 +420,24 @@ impl Caps {
       _ => self.version.as_deref(),
     }
   }
-}
 
-impl Caps {
   /// Whether negative layers paint per cell.
   pub fn cell_offsets(&self) -> bool {
     is(self.terminal(), &["wezterm"])
   }
-}
 
-impl Caps {
   /// Whether Ctrl-i reaches vpdf as Tab: tmux asks its client for
   /// modifyOtherKeys, which Kitty ignores by design.
   pub fn merges_ctrl_i(&self) -> bool {
     matches!(self.host, Host::Tmux(_)) && is(self.terminal(), &["kitty"])
   }
-}
 
-impl Caps {
   /// Whether 1016 reports TIOCGWINSZ pixels; iTerm2 sends points.
   pub fn pixel_mouse(&self) -> bool {
     self.pixels == Support::Answered
       && is(self.version.as_deref(), &["kitty", "ghostty"])
   }
-}
 
-impl Caps {
   /// Whether what answered keeps a title stack (`CSI 22/23 t`), so a
   /// title vpdf sets goes at exit; Ghostty, `WezTerm`, and Konsole ignore
   /// the stack. Under tmux the title is the pane's, which reaches the
@@ -453,9 +445,7 @@ impl Caps {
   pub fn title_stack(&self) -> bool {
     !is(self.version.as_deref(), &["ghostty", "wezterm", "konsole"])
   }
-}
 
-impl Caps {
   pub fn profile(&self) -> Profile {
     let named = self.terminal().map_or(Named::Unknown, named);
     let lack = match (&self.host, named) {

@@ -282,9 +282,7 @@ fn cpu_percent(
 mod tests {
   use super::*;
 
-  fn screen(columns: u16, rows: u16) -> Screen {
-    Screen { columns, rows, cell_width: 8, cell_height: 16, origin: (0, 0) }
-  }
+  use crate::screen::cells as screen;
 
   #[test]
   fn idle_expires_frames_and_output() -> Result<()> {

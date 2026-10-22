@@ -2,7 +2,7 @@ use super::common::SeedReader;
 use crate::common;
 use crate::focus::send;
 pub(super) use crate::harness::draw as drawn;
-use crate::harness::{corpus, screen, session, solo};
+use crate::harness::{corpus, page_route, screen, session, solo, temp_copy};
 use unicode_width::UnicodeWidthChar;
 
 use std::time::{Duration, Instant};
@@ -153,9 +153,9 @@ fn text_app() -> Result<Solo> {
 
 #[test]
 fn info_tracks_frames() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("info.pdf");
-  common::pages_pdf(&path, &[&["First page"], &["Second page"]])?;
+  let (_directory, path) = common::temp_pdf(|path| {
+    common::pages_pdf(path, &[&["First page"], &["Second page"]])
+  })?;
   let short = Screen { rows: 12, ..screen() };
   let mut app = Solo::open(&path, "", true, short)?;
   app.command("info")?;
@@ -195,12 +195,7 @@ fn info_tracks_frames() -> Result<()> {
   }
   let row = tile - app.panel.as_ref().unwrap().view.top() + 1;
   app.panel_mouse(
-    MouseEvent {
-      kind: MouseEventKind::Down(MouseButton::Right),
-      column: 1,
-      row: row as u16,
-      modifiers: KeyModifiers::NONE,
-    },
+    MouseEvent::new(MouseEventKind::Down(MouseButton::Right), 1, row as u16),
     1,
   )?;
   assert!(
@@ -216,21 +211,18 @@ fn info_tracks_frames() -> Result<()> {
 fn info_tracks_prefetched_tiles() -> Result<()> {
   use vpdf_model::tile::TileKey;
   use vpdf_terminal::payload::{Encoder, Tile};
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("info.pdf");
-  common::text_pdf(&path, &["Background tile"])?;
-  let mut app = Solo::open(&path, "", true, screen())?;
+  let (_directory, mut app) = common::temp_solo(
+    |path| common::text_pdf(path, &["Background tile"]),
+    true,
+    screen(),
+  )?;
   let (send, receive) = std::sync::mpsc::channel();
   app.worker.results = receive;
   let key = TileKey {
-    page: PageId(0),
     scale: 1.0f32.to_bits(),
-    rotation: 0,
-    x: 0,
-    y: 0,
     width: 1,
     height: 1,
-    crop: vpdf_model::geometry::Crop::default(),
+    ..TileKey::default()
   };
   for info in [false, true] {
     if info {
@@ -251,20 +243,9 @@ fn info_tracks_prefetched_tiles() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn text_clicks_keep_the_view_and_select_words() -> Result<()> {
   let mut app = text_app()?;
-  let mouse = MouseEvent {
-    kind: MouseEventKind::Down(MouseButton::Left),
-    column: 4,
-    row: 17,
-    modifiers: KeyModifiers::NONE,
-  };
-  let press = Route {
-    pane: app.id,
-    region: Region::Page,
-    focus: true,
-    mouse,
-    clicks: 1,
-    pixel: None,
-  };
+  let down = MouseEventKind::Down(MouseButton::Left);
+  let press = page_route(app.id, down, (4, 17));
+  let mouse = press.mouse;
   app.draw(&mut Vec::new())?;
   let target = app.text().position(mouse.column, mouse.row)?;
   app.mouse(press)?;
@@ -316,9 +297,7 @@ fn text_view_scrolls_without_moving_the_selection() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn changed_file_reloads_after_settling() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("live.pdf");
-  std::fs::copy(corpus("paper.pdf")?, &path)?;
+  let (_directory, path) = temp_copy("paper.pdf")?;
   let screen = common::cells(120, 50);
   let mut app = Solo::open(&path, "", false, screen)?;
   let pages = app.doc.pages.len();
@@ -356,7 +335,9 @@ fn hint_labels_keep_their_origin() -> Result<()> {
       let mut out = Vec::new();
       {
         let (app, graphics) = app.parts();
-        app.draw_hints(graphics, &mut out)?;
+        vpdf::presentation::draw(&mut out, Some(graphics), |s| {
+          app.scene_hints(s);
+        })?;
       }
       let drawn = String::from_utf8_lossy(&out);
       let rest = &"aa"[typed.len()..];
@@ -407,8 +388,6 @@ fn link_hints_follow_typed_labels() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn preview_shows_citation_target() -> Result<()> {
-  use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
-  let mut history = vpdf_ui::prompt::History::default();
   let screen = common::cells(120, 50);
   for text_mode in [false, true] {
     let mut app = solo("paper.pdf", text_mode, screen)?;
@@ -436,18 +415,11 @@ fn preview_shows_citation_target() -> Result<()> {
     assert_eq!(app.reader.cursor.page, PageId(1), "preview does not move");
     // A focused panel shows that closing keys cancel nothing else.
     app.open_panel(PanelKind::Outline)?;
-    let plain = |code| KeyEvent::new(code, KeyModifiers::NONE);
-    let control = |ch| KeyEvent::new(KeyCode::Char(ch), KeyModifiers::CONTROL);
-    for key in [
-      plain(KeyCode::Char('q')),
-      plain(KeyCode::Char('K')),
-      plain(KeyCode::Esc),
-      control('c'),
-      control('['),
-    ] {
+    // q, K, Esc, Ctrl-c, Ctrl-[
+    for key in [b"q".as_slice(), b"K", b"\x1b", b"\x03", b"\x1b[91;5u"] {
       app.preview_link()?;
       assert!(app.overlays.preview().is_some());
-      app.key(key, &mut history)?;
+      common::keys(&mut app, key)?;
       assert!(
         app.overlays.preview().is_none() && !app.quit,
         "{key:?} only closes it"
@@ -459,10 +431,11 @@ fn preview_shows_citation_target() -> Result<()> {
       Target::Page(page) | Target::Point { page, .. } => *page,
       Target::Uri(_) => unreachable!("a document link"),
     };
-    for key in [plain(KeyCode::Enter), control('m')] {
+    // Enter, Ctrl-m
+    for key in [b"\r".as_slice(), b"\x1b[109;5u"] {
       app.go_to(on_link, true)?;
       app.preview_link()?;
-      app.key(key, &mut history)?;
+      common::keys(&mut app, key)?;
       assert!(app.overlays.preview().is_none(), "{key:?} closes it");
       assert_eq!(app.reader.cursor.page, target, "{key:?} follows it");
     }
@@ -481,13 +454,11 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
   assert!(app.overlays.overview().is_some());
   let mut out = Vec::new();
   app.draw(&mut out)?;
-  let started = Instant::now();
-  while app.graphics.bytes() == 0 {
-    assert!(started.elapsed() < Duration::from_secs(10), "thumbnails render");
+  common::wait_until(10, "Thumbnails", || {
     app.raster_updates();
     app.draw(&mut out)?;
-    std::thread::sleep(Duration::from_millis(5));
-  }
+    Ok(app.graphics.bytes() > 0)
+  })?;
   let view = (app.reader.scroll, app.reader.cursor);
   for action in [
     Action::Hints(false),
@@ -583,21 +554,14 @@ fn escape_restores_the_previous_search() -> Result<()> {
 /// Lowest pixel row any graphics placement in `frame` reaches, with or
 /// without tmux passthrough; a stretched placement spans `r` rows.
 fn placed_bottom(frame: &str, cell_height: u32) -> u32 {
-  let reach = |part: &str| {
-    let (row, rest) = part.split_once(';')?;
-    let control = rest.split_once("\x1b_G")?.1.split_once(';')?.0;
-    let field = |name: &str| {
-      control
-        .split(',')
-        .find_map(|pair| pair.strip_prefix(name)?.parse::<u32>().ok())
-    };
-    let top =
-      (row.parse::<u32>().ok()? - 1) * cell_height + field("Y=").unwrap_or(0);
-    let height = field("r=").map(|rows| rows * cell_height).or(field("h="))?;
-    Some(top + height)
+  let reach = |command: crate::kitty::Command| {
+    let field = |name| command.number::<u32>(name);
+    let top = (u32::from(command.at?.0) - 1) * cell_height;
+    let height = field("r").map(|rows| rows * cell_height).or(field("h"))?;
+    Some(top + field("Y").unwrap_or(0) + height)
   };
-  let frame = frame.replace("\x1b\x1b", "\x1b");
-  frame.split("\x1b7\x1b[").skip(1).filter_map(reach).max().unwrap_or(0)
+  let commands = crate::kitty::commands(frame).into_iter();
+  commands.filter_map(reach).max().unwrap_or(0)
 }
 
 /// Opens a view of the pane, such as the overview.
@@ -621,15 +585,8 @@ fn settled(app: &mut Solo) -> Result<String> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
-  use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
   let screen = common::cells(120, 40);
   let mut app = solo("paper.pdf", false, screen)?;
-  let mut history = vpdf_ui::prompt::History::default();
-  let mut key = |app: &mut App, code| {
-    let result = app.key(KeyEvent::new(code, KeyModifiers::NONE), &mut history);
-    app.after_key();
-    result
-  };
   app.command("2")?;
   // The cursor line sits on the bottom row, under either overlay.
   let bottom = Action::Align(1.0);
@@ -643,22 +600,15 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
     ("focused outline", |app| app.open_panel(PanelKind::Outline)),
   ];
   // `Esc` after clues closes the overview, so they come last.
-  let menu: &[KeyCode] = &[KeyCode::Char(':'), KeyCode::Tab];
-  let clues: &[KeyCode] = &[KeyCode::Char('g')];
   for (view, open) in views {
-    for keys in [menu, clues] {
+    for keys in [":\t", "g"] {
       open(&mut app)?;
       let scroll = app.reader.scroll;
       let full = placed_bottom(&settled(&mut app)?, 16);
-      for &code in keys {
-        key(&mut app, code)?;
-      }
+      common::typed(&mut app, keys.as_bytes())?;
       // Clues show once a prefix idles.
-      app
-        .overlays
-        .clues_mut()
-        .restart(Instant::now().checked_sub(Duration::from_secs(1)));
-      app.clue_due();
+      common::age_clues(&mut app);
+      app.clue_due(Instant::now());
       let rows = app.menu_rows();
       let uncovered = u32::from(screen.rows - 1 - rows) * 16;
       let reached = placed_bottom(&drawn(&mut app)?, 16);
@@ -670,7 +620,7 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
       assert!(full > uncovered, "the page reaches the overlay: {at}");
       assert!(reached > 0, "graphics still show: {at}");
       assert!(reached <= uncovered, "graphics stop above it: {at}");
-      key(&mut app, KeyCode::Esc)?;
+      common::typed(&mut app, b"\x1b")?;
       assert!(
         app.overlays.clues().shown().is_none()
           && app.overlays.prompt().is_none(),
@@ -687,34 +637,21 @@ fn clues_and_menu_cover_the_page_without_scrolling() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn clue_wait_ends_once_due() -> Result<()> {
-  use vpdf_model::input::{KeyCode, KeyEvent};
   let mut app = text_app()?;
-  let mut history = vpdf_ui::prompt::History::default();
-  let mut press = |app: &mut App, code| {
-    let result = app.key(KeyEvent::new(code, KeyModifiers::NONE), &mut history);
-    app.after_key();
-    result
-  };
-  assert_eq!(app.clue_wait(), None);
+  assert_eq!(app.clue_wait(Instant::now()), None);
   // A wait with nothing to show ends too.
-  app
-    .overlays
-    .clues_mut()
-    .restart(Instant::now().checked_sub(Duration::from_secs(1)));
-  assert!(!app.clue_due());
-  assert_eq!(app.clue_wait(), None);
-  for prefix in ['"', 'm', 'g'] {
-    press(&mut app, KeyCode::Char(prefix))?;
-    let wait = app.clue_wait();
+  common::age_clues(&mut app);
+  assert!(!app.clue_due(Instant::now()));
+  assert_eq!(app.clue_wait(Instant::now()), None);
+  for prefix in ["\"", "m", "g"] {
+    common::typed(&mut app, prefix.as_bytes())?;
+    let wait = app.clue_wait(Instant::now());
     assert!(wait.is_some_and(|wait| wait <= Duration::from_secs(1)));
-    app
-      .overlays
-      .clues_mut()
-      .restart(Instant::now().checked_sub(Duration::from_secs(1)));
-    assert_eq!(app.clue_wait(), Some(Duration::ZERO), "{prefix}");
-    assert!(app.clue_due(), "{prefix}");
-    assert_eq!(app.clue_wait(), None, "{prefix}");
-    press(&mut app, KeyCode::Esc)?;
+    common::age_clues(&mut app);
+    assert_eq!(app.clue_wait(Instant::now()), Some(Duration::ZERO), "{prefix}");
+    assert!(app.clue_due(Instant::now()), "{prefix}");
+    assert_eq!(app.clue_wait(Instant::now()), None, "{prefix}");
+    common::typed(&mut app, b"\x1b")?;
   }
   Ok(())
 }
@@ -875,13 +812,14 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
 
 #[test]
 fn hover_hits_lines_rows_and_thumbnails() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("lines.pdf");
   let lines = ["Hover over these lines", "one block of text", "steady shape"];
-  // 27 pt keeps one block, with gaps.
-  common::spaced_pdf(&path, &lines, 27)?;
   let short = Screen { rows: 170, cell_height: 4, ..screen() };
-  let mut app = Solo::open(&path, "", false, short)?;
+  // 27 pt keeps one block, with gaps.
+  let (_directory, mut app) = common::temp_solo(
+    |path| common::spaced_pdf(path, &lines, 27),
+    false,
+    short,
+  )?;
   app.draw(&mut Vec::new())?;
   // Text runs unbroken down a column.
   let column = (0..app.screen.columns)
@@ -908,11 +846,8 @@ fn hover_hits_lines_rows_and_thumbnails() -> Result<()> {
   // Panel rows hit what a press selects.
   app.open_panel(PanelKind::Help)?;
   app.draw(&mut Vec::new())?;
-  let press = |column, row| MouseEvent {
-    kind: MouseEventKind::Down(MouseButton::Left),
-    column,
-    row,
-    modifiers: KeyModifiers::NONE,
+  let press = |column, row| {
+    MouseEvent::new(MouseEventKind::Down(MouseButton::Left), column, row)
   };
   for row in 0..app.screen.rows - 1 {
     let hit = app.hovered(Region::Panel, 1, row, None)?;
@@ -944,12 +879,7 @@ fn frames_follow_scrolled_thumbnails() -> Result<()> {
   use vpdf::trace::Drawable;
   let mut session = session(&corpus("book.pdf")?, screen())?;
   session.app().command("39")?;
-  let moved = MouseEvent {
-    kind: MouseEventKind::Moved,
-    column: 20,
-    row: 5,
-    modifiers: KeyModifiers::NONE,
-  };
+  let moved = MouseEvent::new(MouseEventKind::Moved, 20, 5);
   session.mouse(moved)?;
   session.app().open_overview()?;
   // The hit predicts the scroll; no second frame.
@@ -981,12 +911,8 @@ fn motion_redraws_only_for_new_targets() -> Result<()> {
     unreachable!()
   };
   app.start_hints(false)?;
-  let moved = |(column, row)| MouseEvent {
-    kind: MouseEventKind::Moved,
-    column,
-    row,
-    modifiers: KeyModifiers::NONE,
-  };
+  let moved =
+    |(column, row)| MouseEvent::new(MouseEventKind::Moved, column, row);
   // cell -> redraw
   let cases = [
     ((column, row), true),
@@ -1059,12 +985,7 @@ fn frames_retest_a_resting_pointer() -> Result<()> {
   let targets = hover_targets(session.app())?;
   let link = targets.iter().find(|(_, hit)| matches!(hit, Hit::Link(..)));
   let (cell, hit) = *link.expect("a visible link");
-  let moved = MouseEvent {
-    kind: MouseEventKind::Moved,
-    column: cell.0,
-    row: cell.1,
-    modifiers: KeyModifiers::NONE,
-  };
+  let moved = MouseEvent::new(MouseEventKind::Moved, cell.0, cell.1);
   assert!(session.mouse(moved)?);
   // Half a screen puts another target there.
   session.app().reader.seed_reader(|reader| reader.scroll += 300.0);
@@ -1159,23 +1080,14 @@ fn pixel_reports_hit_their_pixel() -> Result<()> {
 #[test]
 fn pixel_drags_draw_on_new_glyphs() -> Result<()> {
   use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("words.pdf");
-  common::text_pdf(&path, &["Hello pointer world"])?;
+  let (_directory, path) =
+    common::temp_pdf(|path| common::text_pdf(path, &["Hello pointer world"]))?;
   let mut session = session(&path, screen())?;
   let app = session.app();
-  let (columns, rows) = (app.screen.columns, app.screen.rows - 1);
-  let mut text = None;
-  for (column, row) in
-    (0..rows).flat_map(|row| (0..columns).map(move |c| (c, row)))
-  {
-    if text.is_none()
-      && app.hovered(Region::Page, column, row, None)? == Hit::Text
-    {
-      text = Some((column, row));
-    }
-  }
-  let (column, row) = text.expect("text on the page");
+  let rows = 0..app.screen.rows - 1;
+  let text = |hit| hit == Hit::Text;
+  let (column, row) =
+    crate::harness::cell_where(app, Region::Page, rows, text)?;
   let report = |kind, x| Mouse {
     kind,
     at: Spot::Pixel { x, y: row * 16 + 8 },
@@ -1203,9 +1115,8 @@ fn pixel_drags_draw_on_new_glyphs() -> Result<()> {
 /// A covered pane counts as closed, so it adds no recent entry.
 #[test]
 fn covered_panes_record_no_visit() -> Result<()> {
-  let root = tempfile::tempdir()?;
-  let path = root.path().join("visit.pdf");
-  common::text_pdf(&path, &["Visited text"])?;
+  let (_root, path) =
+    common::temp_pdf(|path| common::text_pdf(path, &["Visited text"]))?;
   let screen = common::cells(80, 24);
   let mut app = Solo::open(&path, "", false, screen)?;
   let mut state = vpdf::state::State::default();
@@ -1222,37 +1133,27 @@ fn covered_panes_record_no_visit() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn panel_clues_use_current_focus_and_scope() -> Result<()> {
   let mut app = text_app()?;
-  let mut history = vpdf_ui::prompt::History::default();
-  let show = |app: &mut App,
-              history: &mut vpdf_ui::prompt::History,
-              prefix|
-   -> Result<Vec<String>> {
-    for key in vpdf_ui::keys::parse(prefix).unwrap() {
-      app.key(key, history)?;
-      app.after_key();
-    }
-    app
-      .overlays
-      .clues_mut()
-      .restart(Instant::now().checked_sub(Duration::from_secs(1)));
-    app.clue_due();
+  let show = |app: &mut App, prefix: &str| -> Result<Vec<String>> {
+    common::typed(app, prefix.as_bytes())?;
+    common::age_clues(app);
+    app.clue_due(Instant::now());
     Ok(app.overlays.clues().shown().map_or_else(Vec::new, |list| {
       list.items().iter().map(|(key, _)| key.clone()).collect()
     }))
   };
   app.show_recent(&[])?;
-  assert_eq!(show(&mut app, &mut history, "y")?, ["p", "y"]);
+  assert_eq!(show(&mut app, "y")?, ["p", "y"]);
   app.action(Input::plain(Action::Cancel))?;
-  assert_eq!(show(&mut app, &mut history, "m")?, [] as [String; 0]);
-  assert_eq!(app.clue_wait(), None);
+  assert_eq!(show(&mut app, "m")?, [] as [String; 0]);
+  assert_eq!(app.clue_wait(Instant::now()), None);
   app.action(Input::plain(Action::Cancel))?;
   app.close_panel()?;
   app.open_panel(PanelKind::Outline)?;
-  let focused = show(&mut app, &mut history, "g")?;
+  let focused = show(&mut app, "g")?;
   assert!(focused.contains(&"g".into()) && !focused.contains(&"d".into()));
   app.action(Input::plain(Action::Cancel))?;
   app.action(Input::plain(Action::LocalFocus))?;
-  assert!(show(&mut app, &mut history, "g")?.contains(&"d".into()));
+  assert!(show(&mut app, "g")?.contains(&"d".into()));
   Ok(())
 }
 
@@ -1266,7 +1167,6 @@ fn overlay_clues_follow_policy() -> Result<()> {
   use vpdf_ui::preview::Preview;
   use vpdf_ui::region::{CaptureId, Region, Snapshot};
   let mut app = App::with_screen(&corpus("paper.pdf")?, "", false, screen())?;
-  let mut history = vpdf_ui::prompt::History::default();
   for owner in [
     InputOwner::Context,
     InputOwner::Peek,
@@ -1300,15 +1200,10 @@ fn overlay_clues_follow_policy() -> Result<()> {
     }
     for prefix in ["g", "z"] {
       app.keys.clear();
-      for key in vpdf_ui::keys::parse(prefix).unwrap() {
-        app.key(key, &mut history)?;
-      }
-      app
-        .overlays
-        .clues_mut()
-        .restart(Instant::now().checked_sub(Duration::from_secs(1)));
-      assert_eq!(app.clue_due(), prefix == "g");
-      assert_eq!(app.clue_wait(), None);
+      common::keys(&mut app, prefix.as_bytes())?;
+      common::age_clues(&mut app);
+      assert_eq!(app.clue_due(Instant::now()), prefix == "g");
+      assert_eq!(app.clue_wait(Instant::now()), None);
       if let Some(list) = app.overlays.clues().shown() {
         let has = |key| list.items().iter().any(|(shown, _)| shown == key);
         assert!(has("q") && has("?"));

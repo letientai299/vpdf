@@ -1,7 +1,7 @@
-use std::path::PathBuf;
+use crate::harness::corpus;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use vpdf::Result;
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_pdf::document::{Document, Handle};
@@ -30,8 +30,7 @@ fn ocr_geometry_preserves_unicode() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn superseded_search_completes_latest_query() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let path = root.join("book.pdf");
+  let path = corpus("book.pdf")?;
   let pages = Handle::open(&path, "")?.pages;
   let (wake, woken) = counted();
   let worker = SearchWorker::new(&path, "", pages, &wake);
@@ -58,21 +57,15 @@ fn superseded_search_completes_latest_query() -> Result<()> {
 
 /// Waits for `count` wakes; each follows its send.
 fn woke(woken: &AtomicUsize, count: usize) -> bool {
-  let started = Instant::now();
-  while woken.load(Ordering::Relaxed) < count {
-    if started.elapsed() > Duration::from_secs(5) {
-      return false;
-    }
-    std::thread::sleep(Duration::from_millis(1));
-  }
-  true
+  let all = || Ok(woken.load(Ordering::Relaxed) >= count);
+  crate::common::wait_until(5, "Wakes", all).is_ok()
 }
 
 #[test]
 fn search_results_wake_the_loop() -> Result<()> {
-  let root = tempfile::tempdir()?;
-  let path = root.path().join("words.pdf");
-  crate::common::text_pdf(&path, &["needle in a haystack"])?;
+  let (_root, path) = crate::common::temp_pdf(|path| {
+    crate::common::text_pdf(path, &["needle in a haystack"])
+  })?;
   let (wake, woken) = counted();
   let worker = SearchWorker::new(&path, "", 1, &wake);
   let query = Query { text: "needle".into(), ..Query::default() };
@@ -107,10 +100,9 @@ fn counted() -> (Wake, Arc<AtomicUsize>) {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn handles_read_document_bounds() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   for file in ["paper.pdf", "book.pdf", "form.pdf", "ocr.pdf"] {
-    let doc = Document::open(&root.join(file), "")?;
-    let handle = Handle::open(&root.join(file), "")?;
+    let doc = Document::open(&corpus(file)?, "")?;
+    let handle = Handle::open(&corpus(file)?, "")?;
     assert_eq!(handle.pages, doc.pages.len(), "{file}");
     let corners = |b: Bounds| [b.x0, b.y0, b.x1, b.y1];
     for (index, page) in doc.pages.iter().enumerate() {
@@ -125,10 +117,9 @@ fn handles_read_document_bounds() -> Result<()> {
 #[test]
 #[ignore = "requires corpus and Tesseract"]
 fn real_ocr_and_cancel() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  automatic_scan(&root.join("scan.pdf"))?;
+  automatic_scan(&corpus("scan.pdf")?)?;
   let (wake, woken) = counted();
-  let job = OcrJob::start(&root.join("ocr.pdf"), "", PageId(0), "eng", &wake);
+  let job = OcrJob::start(&corpus("ocr.pdf")?, "", PageId(0), "eng", &wake);
   let text = job
     .work
     .result
@@ -138,13 +129,13 @@ fn real_ocr_and_cancel() -> Result<()> {
   assert!(text.plain().to_lowercase().contains("cheese"));
   assert!(woke(&woken, 1));
   let cancelled =
-    OcrJob::start(&root.join("ocr.pdf"), "", PageId(0), "eng", &wake);
+    OcrJob::start(&corpus("ocr.pdf")?, "", PageId(0), "eng", &wake);
   cancelled.cancel();
   assert!(
     cancelled.work.result.recv_timeout(Duration::from_secs(10))?.is_err()
   );
   assert!(woke(&woken, 2), "cancellation wakes too");
-  let scan = OcrJob::start(&root.join("scan.pdf"), "", PageId(9), "eng", &wake);
+  let scan = OcrJob::start(&corpus("scan.pdf")?, "", PageId(9), "eng", &wake);
   let text = scan
     .work
     .result
@@ -172,11 +163,11 @@ fn real_ocr_and_cancel() -> Result<()> {
 
 #[test]
 fn auto_ocr_defers_and_skips_native_pages() -> Result<()> {
-  let root = tempfile::tempdir()?;
-  let path = root.path().join("native.pdf");
-  crate::common::text_pdf(&path, &["native text"])?;
-  let mut app =
-    vpdf::solo::Solo::open(&path, "", true, crate::common::cells(80, 24))?;
+  let (_root, mut app) = crate::common::temp_solo(
+    |path| crate::common::text_pdf(path, &["native text"]),
+    true,
+    crate::common::cells(80, 24),
+  )?;
   assert!(app.ocr.is_none(), "open starts no OCR");
   app.start_deferred();
   assert!(app.ocr.is_none(), "unpresented view starts no OCR");
@@ -185,12 +176,10 @@ fn auto_ocr_defers_and_skips_native_pages() -> Result<()> {
   assert!(app.ocr.is_none(), "frame construction starts no OCR");
   app.start_deferred();
   assert!(app.ocr.as_ref().unwrap().is_automatic());
-  let started = Instant::now();
-  while app.ocr.is_some() {
+  crate::common::wait_until(10, "OCR", || {
     app.ocr_updates()?;
-    assert!(started.elapsed() < Duration::from_secs(10));
-    std::thread::sleep(Duration::from_millis(1));
-  }
+    Ok(app.ocr.is_none())
+  })?;
   assert!(!app.doc.has_ocr(PageId(0)), "native text is not replaced");
   app.start_deferred();
   assert!(app.ocr.is_none(), "native detection happens once");
@@ -200,11 +189,11 @@ fn auto_ocr_defers_and_skips_native_pages() -> Result<()> {
 
 #[test]
 fn auto_ocr_cancellation_keeps_frames_independent() -> Result<()> {
-  let root = tempfile::tempdir()?;
-  let path = root.path().join("native.pdf");
-  crate::common::text_pdf(&path, &["native text"])?;
-  let mut app =
-    vpdf::solo::Solo::open(&path, "", true, crate::common::cells(80, 24))?;
+  let (_root, mut app) = crate::common::temp_solo(
+    |path| crate::common::text_pdf(path, &["native text"]),
+    true,
+    crate::common::cells(80, 24),
+  )?;
   app.draw(&mut Vec::new())?;
   app.start_deferred();
   assert!(app.ocr.is_some(), "automatic worker queued");
@@ -228,24 +217,18 @@ fn automatic_scan(path: &std::path::Path) -> Result<()> {
       vpdf::solo::Solo::open(path, "", false, crate::common::cells(80, 24))?;
     assert!(app.ocr.is_none());
     app.command("10")?;
-    let started = Instant::now();
-    loop {
+    crate::common::wait_until(20, "Render", || {
       app.raster_updates();
       app.draw(&mut Vec::new())?;
       assert!(app.ocr.is_none(), "rendering never schedules OCR");
-      if app.complete {
-        break;
-      }
-      assert!(started.elapsed() < Duration::from_secs(20));
-      std::thread::sleep(Duration::from_millis(2));
-    }
+      Ok(app.complete)
+    })?;
     app.start_deferred();
     assert!(app.ocr.as_ref().unwrap().is_automatic());
-    while app.ocr.is_some() {
+    crate::common::wait_until(60, "OCR", || {
       app.ocr_updates()?;
-      assert!(started.elapsed() < Duration::from_secs(60));
-      std::thread::sleep(Duration::from_millis(2));
-    }
+      Ok(app.ocr.is_none())
+    })?;
     assert!(app.doc.text(PageId(9))?.plain().contains("computing devices"));
     assert!(app.doc.has_ocr(PageId(9)));
     app.start_deferred();

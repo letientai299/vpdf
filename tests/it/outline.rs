@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use crate::common;
+use crate::harness::{corpus, solo, temp_copy};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::jobs::Loading;
@@ -21,12 +22,11 @@ fn key(title: &str) -> String {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn inferred_outline_matches_authored_one() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   for (name, recall_floor, precision_floor) in
     [("paper.pdf", 0.95, 0.75), ("book.pdf", 0.95, 0.7)]
   {
     // The text the inference worker reads.
-    let handle = Handle::open(&root.join(name), "")?;
+    let handle = Handle::open(&corpus(name)?, "")?;
     let pages = (0..handle.pages)
       .map(|page| {
         handle
@@ -74,22 +74,14 @@ fn inferred_outline_matches_authored_one() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn documents_without_outline_infer_one_in_background() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut app = Solo::open(&root.join("form.pdf"), "", false, SCREEN)?;
+  let mut app = solo("form.pdf", false, SCREEN)?;
   assert!(matches!(app.outline_load, Loading::Deferred));
   app.want_outline();
-  let started = std::time::Instant::now();
-  while !app.outline_updates()? {
-    assert!(started.elapsed().as_secs() < 10);
-    std::thread::sleep(std::time::Duration::from_millis(5));
-  }
+  common::wait_until(10, "Outline", || app.outline_updates())?;
   assert!(app.doc.inferred);
-  let mut book = Solo::open(&root.join("book.pdf"), "", false, SCREEN)?;
+  let mut book = solo("book.pdf", false, SCREEN)?;
   book.want_outline();
-  while !book.outline_updates()? {
-    assert!(started.elapsed().as_secs() < 10);
-    std::thread::sleep(std::time::Duration::from_millis(5));
-  }
+  common::wait_until(10, "Outline", || book.outline_updates())?;
   assert!(!book.doc.inferred && !book.doc.outline.is_empty(), "authored");
   Ok(())
 }
@@ -97,18 +89,10 @@ fn documents_without_outline_infer_one_in_background() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn inferred_outline_keeps_panel_focus_and_selection() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("live.pdf");
-  std::fs::copy(root.join("form.pdf"), &path)?;
+  let (_directory, path) = temp_copy("form.pdf")?;
   let mut app = Solo::open(&path, "", false, SCREEN)?;
   let finish = |app: &mut App| -> Result<()> {
-    let started = std::time::Instant::now();
-    while !app.outline_updates()? {
-      assert!(started.elapsed().as_secs() < 10);
-      std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    Ok(())
+    common::wait_until(10, "Outline", || app.outline_updates())
   };
   // Opened while inferring: rows arrive, and the page keeps the keyboard.
   app.open_panel(PanelKind::Outline)?;
@@ -136,7 +120,7 @@ fn inferred_outline_keeps_panel_focus_and_selection() -> Result<()> {
     assert_eq!(panel.view.note(), "inferred");
   }
   // A rebuild that ships bookmarks drops the note once they load.
-  std::fs::copy(root.join("book.pdf"), &path)?;
+  std::fs::copy(corpus("book.pdf")?, &path)?;
   app.command("reload")?;
   finish(&mut app)?;
   let panel = app.panel.as_ref().unwrap();
@@ -144,13 +128,7 @@ fn inferred_outline_keeps_panel_focus_and_selection() -> Result<()> {
   Ok(())
 }
 
-const SCREEN: Screen = Screen {
-  columns: 120,
-  rows: 50,
-  cell_width: 8,
-  cell_height: 16,
-  origin: (0, 0),
-};
+const SCREEN: Screen = common::cells(120, 50);
 
 fn deferred(app: &App) -> bool {
   matches!(app.outline_load, Loading::Deferred)
@@ -166,10 +144,8 @@ fn running(app: &App) -> bool {
 #[ignore = "requires verified public PDF corpus"]
 fn outline_waits_for_the_whole_first_view() -> Result<()> {
   use vpdf::trace::Drawable;
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut session = Session::new(None);
-  session.open(&root.join("paper.pdf"), true, SCREEN)?;
-  session.open(&root.join("book.pdf"), true, SCREEN)?;
+  let mut session = crate::harness::session(&corpus("paper.pdf")?, SCREEN)?;
+  session.open(&corpus("book.pdf")?, true, SCREEN)?;
   let frame = |session: &mut Session| -> Result<()> {
     session.draw_frame(&mut Vec::new())?;
     session.drawn();
@@ -180,20 +156,18 @@ fn outline_waits_for_the_whole_first_view() -> Result<()> {
   assert!(!session.app().complete && deferred(session.app()));
   // The view moves before its tiles arrive; the new view governs.
   session.app().command("30")?;
-  let started = std::time::Instant::now();
-  while !session.app().complete {
-    assert!(started.elapsed().as_secs() < 20, "tiles render");
+  common::wait_until(20, "Tiles", || {
     assert!(deferred(session.app()));
     let tab = &mut session.tabs[session.active];
     tab.panes[tab.focus].raster_updates(&mut session.graphics);
     frame(&mut session)?;
-    std::thread::sleep(std::time::Duration::from_millis(2));
-  }
+    Ok(session.app().complete)
+  })?;
   assert_eq!(session.app().reader.cursor.page.0, 29);
   assert!(running(session.app()));
   assert!(deferred(&session.tabs[0].panes[0]), "hidden tab waits");
   // Overview thumbnails count like tiles; a covered pane never completes.
-  let mut app = Solo::open(&root.join("paper.pdf"), "", false, SCREEN)?;
+  let mut app = solo("paper.pdf", false, SCREEN)?;
   app.open_overview()?;
   app.draw(&mut Vec::new())?;
   assert!(!app.complete, "no thumbnail yet");
@@ -202,7 +176,7 @@ fn outline_waits_for_the_whole_first_view() -> Result<()> {
   app.draw(&mut Vec::new())?;
   assert!(app.covered() && !app.complete);
   // Text views have no tiles to wait for.
-  let mut text = Solo::open(&root.join("paper.pdf"), "", true, SCREEN)?;
+  let mut text = solo("paper.pdf", true, SCREEN)?;
   text.draw(&mut Vec::new())?;
   text.start_deferred();
   assert!(running(&text));
@@ -214,8 +188,7 @@ fn outline_waits_for_the_whole_first_view() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn outline_requests_and_cancels_override_deferral() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let path = root.join("paper.pdf");
+  let path = corpus("paper.pdf")?;
   let mut app = Solo::open(&path, "", false, SCREEN)?;
   app.command("cancel")?;
   assert!(matches!(app.outline_load, Loading::Canceled));
@@ -245,7 +218,7 @@ fn outline_requests_and_cancels_override_deferral() -> Result<()> {
   };
   section.action(input)?;
   assert!(running(&section));
-  super::common::outline_loaded(&mut section)?;
+  common::outline_loaded(&mut section)?;
   assert!(matches!(section.outline_load, Loading::Loaded));
   assert!(!section.doc.outline.is_empty());
   Ok(())

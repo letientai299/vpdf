@@ -348,28 +348,31 @@ pub fn cursor(shape: Shape) -> egui::CursorIcon {
   }
 }
 
+pub(crate) const KEYS: [(Key, KeyCode); 14] = [
+  (Key::ArrowDown, KeyCode::Down),
+  (Key::ArrowUp, KeyCode::Up),
+  (Key::ArrowLeft, KeyCode::Left),
+  (Key::ArrowRight, KeyCode::Right),
+  (Key::Escape, KeyCode::Esc),
+  (Key::Enter, KeyCode::Enter),
+  (Key::Tab, KeyCode::Tab),
+  (Key::Backspace, KeyCode::Backspace),
+  (Key::Delete, KeyCode::Delete),
+  (Key::Home, KeyCode::Home),
+  (Key::End, KeyCode::End),
+  (Key::PageUp, KeyCode::PageUp),
+  (Key::PageDown, KeyCode::PageDown),
+  (Key::F1, KeyCode::F(1)),
+];
+
 fn key_code(key: Key, modifiers: Modifiers) -> Option<KeyCode> {
+  if key == Key::Tab && modifiers.shift {
+    return Some(KeyCode::BackTab);
+  }
+  if let Some(&(_, code)) = KEYS.iter().find(|(named, _)| *named == key) {
+    return Some(code);
+  }
   Some(match key {
-    Key::ArrowDown => KeyCode::Down,
-    Key::ArrowUp => KeyCode::Up,
-    Key::ArrowLeft => KeyCode::Left,
-    Key::ArrowRight => KeyCode::Right,
-    Key::Escape => KeyCode::Esc,
-    Key::Enter => KeyCode::Enter,
-    Key::Tab => {
-      if modifiers.shift {
-        KeyCode::BackTab
-      } else {
-        KeyCode::Tab
-      }
-    }
-    Key::Backspace => KeyCode::Backspace,
-    Key::Delete => KeyCode::Delete,
-    Key::Home => KeyCode::Home,
-    Key::End => KeyCode::End,
-    Key::PageUp => KeyCode::PageUp,
-    Key::PageDown => KeyCode::PageDown,
-    Key::F1 => KeyCode::F(1),
     Key::Space if modifiers.ctrl => KeyCode::Char(' '),
     _ if modifiers.ctrl || modifiers.mac_cmd || modifiers.alt => {
       let name = match key {
@@ -407,29 +410,44 @@ fn key_modifiers(modifiers: Modifiers) -> KeyModifiers {
   keys
 }
 
+#[cfg(feature = "bench-events")]
+pub(crate) fn egui_modifiers(keys: KeyModifiers) -> Modifiers {
+  let command = keys.contains(KeyModifiers::SUPER);
+  Modifiers {
+    ctrl: keys.contains(KeyModifiers::CONTROL),
+    alt: keys.contains(KeyModifiers::ALT),
+    shift: keys.contains(KeyModifiers::SHIFT),
+    mac_cmd: command,
+    command,
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
 
+  const STEP: [f32; 2] = [30.0, 60.0];
+
   fn events(events: &[Event], modifiers: Modifiers) -> Vec<Input> {
-    Adapter::default().events(
-      events,
-      modifiers,
-      screen(),
-      1.0,
-      [30.0, 60.0],
-      None,
-    )
+    Adapter::default().events(events, modifiers, screen(), 1.0, STEP, None)
+  }
+
+  /// `events` without held modifiers on the default screen.
+  pub(super) fn feed(
+    adapter: &mut Adapter,
+    events: &[Event],
+    scale: f32,
+    pointer: Option<egui::Pos2>,
+  ) -> Vec<Input> {
+    adapter.events(events, Modifiers::NONE, screen(), scale, STEP, pointer)
+  }
+
+  fn button(pos: egui::Pos2, button: PointerButton, pressed: bool) -> Event {
+    Event::PointerButton { pos, button, pressed, modifiers: Modifiers::NONE }
   }
 
   fn screen() -> Screen {
-    Screen {
-      columns: 80,
-      rows: 40,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (0, 0),
-    }
+    crate::screen::pixels(80, 40, 10, 20)
   }
 
   fn key(key: Key, modifiers: Modifiers) -> Event {
@@ -536,30 +554,25 @@ mod tests {
       active_range_chars: Some(0..1),
     })
   }
-
   #[test]
   fn purpose_changes_cancel_composition() {
     use egui::IMEPurpose::{Normal, Password};
     use vpdf_model::scene::Op;
     let mut adapter = Adapter::default();
     adapter.editing(Some(Password));
-    let run = |adapter: &mut Adapter, input: &[Event]| {
-      adapter.events(input, Modifiers::NONE, screen(), 1.0, [30.0, 60.0], None)
-    };
-    run(&mut adapter, &[preedit("secret")]);
+    feed(&mut adapter, &[preedit("secret")], 1.0, None);
     let scene =
       [Op::InputArea { column: 0, columns: 80, masked: false }, Op::ShowCursor];
     adapter.editing(purpose(&scene));
     assert!(adapter.preedit().is_none());
     assert!(adapter.interrupt());
-    let late =
-      run(&mut adapter, &[Event::Ime(egui::ImeEvent::Commit("secret".into()))]);
-    assert_eq!(late.len(), 0);
-    run(&mut adapter, &[preedit("new")]);
+    let commit = Event::Ime(egui::ImeEvent::Commit("secret".into()));
+    assert_eq!(feed(&mut adapter, &[commit], 1.0, None).len(), 0);
+    feed(&mut adapter, &[preedit("new")], 1.0, None);
     adapter.editing(Some(Normal));
     assert_eq!(adapter.preedit().unwrap().text, "new");
-    let output =
-      run(&mut adapter, &[Event::Ime(egui::ImeEvent::Commit("new".into()))]);
+    let commit = Event::Ime(egui::ImeEvent::Commit("new".into()));
+    let output = feed(&mut adapter, &[commit], 1.0, None);
     assert!(matches!(&output[..], [Input::Paste(text)] if text == "new"));
     assert_eq!(purpose(&[Op::ShowCursor]), None);
     assert_eq!(
@@ -575,33 +588,15 @@ mod tests {
   #[test]
   fn composition_commits_once_and_only_in_prompts() {
     let mut adapter = Adapter::default();
-    let run = |adapter: &mut Adapter, input: &[Event]| {
-      adapter.events(input, Modifiers::NONE, screen(), 1.0, [30.0, 60.0], None)
-    };
-    assert!(
-      run(
-        &mut adapter,
-        &[preedit("章"), Event::Ime(egui::ImeEvent::Commit("章".into()))]
-      )
-      .is_empty()
-    );
+    let commit = Event::Ime(egui::ImeEvent::Commit("章".into()));
+    assert!(feed(&mut adapter, &[preedit("章"), commit], 1.0, None).is_empty());
     adapter.editing(Some(egui::IMEPurpose::Normal));
-    assert!(
-      run(
-        &mut adapter,
-        &[
-          preedit("章"),
-          key(Key::Enter, Modifiers::NONE),
-          Event::Text("章".into())
-        ]
-      )
-      .is_empty()
-    );
+    let enter = key(Key::Enter, Modifiers::NONE);
+    let typed = [preedit("章"), enter, Event::Text("章".into())];
+    assert!(feed(&mut adapter, &typed, 1.0, None).is_empty());
     assert_eq!(adapter.preedit().unwrap().text, "章");
-    let output = run(
-      &mut adapter,
-      &[Event::Ime(egui::ImeEvent::Commit("章a\u{301}".into()))],
-    );
+    let commit = Event::Ime(egui::ImeEvent::Commit("章a\u{301}".into()));
+    let output = feed(&mut adapter, &[commit], 1.0, None);
     assert!(
       matches!(&output[..], [Input::Paste(text)] if text == "章a\u{301}")
     );
@@ -618,14 +613,7 @@ mod tests {
     ] {
       let mut adapter = Adapter::default();
       adapter.editing(Some(egui::IMEPurpose::Normal));
-      let output = adapter.events(
-        &[preedit("draft"), cancel],
-        Modifiers::NONE,
-        screen(),
-        1.0,
-        [30.0, 60.0],
-        None,
-      );
+      let output = feed(&mut adapter, &[preedit("draft"), cancel], 1.0, None);
       assert!(adapter.preedit().is_none());
       assert!(
         !output
@@ -638,19 +626,13 @@ mod tests {
   fn blurred_composition_cannot_commit() {
     let mut adapter = Adapter::default();
     adapter.editing(Some(egui::IMEPurpose::Normal));
-    let output = adapter.events(
-      &[
-        preedit("draft"),
-        Event::WindowFocused(false),
-        Event::WindowFocused(true),
-        Event::Ime(egui::ImeEvent::Commit("draft".into())),
-      ],
-      Modifiers::NONE,
-      screen(),
-      1.0,
-      [30.0, 60.0],
-      None,
-    );
+    let events = [
+      preedit("draft"),
+      Event::WindowFocused(false),
+      Event::WindowFocused(true),
+      Event::Ime(egui::ImeEvent::Commit("draft".into())),
+    ];
+    let output = feed(&mut adapter, &events, 1.0, None);
     assert!(matches!(&output[..], [Input::Focus(false), Input::Focus(true)]));
     assert!(adapter.preedit().is_none());
     assert!(adapter.interrupt());
@@ -666,39 +648,21 @@ mod tests {
       pressed: true,
       modifiers: Modifiers { alt: true, ..Modifiers::NONE },
     };
-    let first = adapter.events(
-      &[pressed],
-      Modifiers::NONE,
-      screen(),
-      2.0,
-      [30.0, 60.0],
-      None,
-    );
+    let first = feed(&mut adapter, &[pressed], 2.0, None);
     let Input::Mouse { event, pixels, .. } = first[0] else {
       panic!("Expected press")
     };
     assert_eq!(pixels, (27, 50));
     assert_eq!((event.column, event.row), (2, 2));
     assert_eq!(event.modifiers, KeyModifiers::ALT);
-    let next = adapter.events(
-      &[Event::PointerMoved(point)],
-      Modifiers::SHIFT,
-      screen(),
-      2.0,
-      [30.0, 60.0],
-      None,
-    );
+    let moved = [Event::PointerMoved(point)];
+    let next =
+      adapter.events(&moved, Modifiers::SHIFT, screen(), 2.0, STEP, None);
     let Input::Mouse { event, .. } = next[0] else { panic!("Expected drag") };
     assert_eq!(event.kind, MouseEventKind::Drag(MouseButton::Left));
     assert_eq!(event.modifiers, KeyModifiers::SHIFT);
-    let next = adapter.events(
-      &[Event::WindowFocused(false), Event::PointerMoved(point)],
-      Modifiers::NONE,
-      screen(),
-      2.0,
-      [30.0, 60.0],
-      None,
-    );
+    let blurred = [Event::WindowFocused(false), Event::PointerMoved(point)];
+    let next = feed(&mut adapter, &blurred, 2.0, None);
     assert!(matches!(next[0], Input::Focus(false)));
     let Input::Mouse { event, .. } = next[1] else { panic!("Expected motion") };
     assert_eq!(event.kind, MouseEventKind::Moved);
@@ -708,28 +672,15 @@ mod tests {
   fn releases_and_exit_end_only_held_buttons() {
     let mut adapter = Adapter::default();
     let point = egui::pos2(30.0, 60.0);
-    let button = |button, pressed| Event::PointerButton {
-      pos: point,
-      button,
-      pressed,
-      modifiers: Modifiers::NONE,
-    };
     let events = [
-      button(PointerButton::Primary, true),
-      button(PointerButton::Middle, true),
-      button(PointerButton::Primary, false),
+      button(point, PointerButton::Primary, true),
+      button(point, PointerButton::Middle, true),
+      button(point, PointerButton::Primary, false),
       Event::PointerMoved(point),
       Event::PointerGone,
       Event::PointerMoved(point),
     ];
-    let output = adapter.events(
-      &events,
-      Modifiers::NONE,
-      screen(),
-      1.0,
-      [30.0, 60.0],
-      None,
-    );
+    let output = feed(&mut adapter, &events, 1.0, None);
     let Input::Mouse { event, .. } = output[3] else {
       panic!("Expected middle drag")
     };
@@ -744,26 +695,14 @@ mod tests {
   fn extra_buttons_route_history_without_holding() {
     let mut adapter = Adapter::default();
     let point = egui::pos2(10.5, 20.5);
-    let button = |button, pressed| Event::PointerButton {
-      pos: point,
-      button,
-      pressed,
-      modifiers: Modifiers::NONE,
-    };
-    let output = adapter.events(
-      &[
-        button(PointerButton::Extra1, true),
-        button(PointerButton::Extra1, false),
-        button(PointerButton::Extra2, true),
-        button(PointerButton::Extra2, false),
-        Event::PointerMoved(point),
-      ],
-      Modifiers::NONE,
-      screen(),
-      2.0,
-      [30.0, 60.0],
-      None,
-    );
+    let events = [
+      button(point, PointerButton::Extra1, true),
+      button(point, PointerButton::Extra1, false),
+      button(point, PointerButton::Extra2, true),
+      button(point, PointerButton::Extra2, false),
+      Event::PointerMoved(point),
+    ];
+    let output = feed(&mut adapter, &events, 2.0, None);
     assert!(matches!(
       output[0],
       Input::History { forward: false, pixels: (21, 41), .. }
@@ -797,40 +736,18 @@ mod tests {
       egui::MouseWheelUnit::Point,
       Modifiers::NONE,
     );
-    assert!(
-      adapter
-        .events(
-          std::slice::from_ref(&event),
-          Modifiers::NONE,
-          screen(),
-          2.0,
-          [30.0, 60.0],
-          pos
-        )
-        .is_empty()
-    );
-    let output = adapter.events(
-      &[event],
-      Modifiers::NONE,
-      screen(),
-      2.0,
-      [30.0, 60.0],
-      pos,
-    );
+    let half = std::slice::from_ref(&event);
+    assert!(feed(&mut adapter, half, 2.0, pos).is_empty());
+    let output = feed(&mut adapter, &[event], 2.0, pos);
     let Input::Mouse { event, pixels, .. } = output[0] else {
       panic!("Expected wheel")
     };
     assert_eq!(event.kind, MouseEventKind::ScrollDown);
     assert_eq!(pixels, (27, 51));
     let modifiers = Modifiers { ctrl: true, ..Modifiers::NONE };
-    let output = adapter.events(
-      &[wheel(egui::vec2(-1.0, 1.0), egui::MouseWheelUnit::Line, modifiers)],
-      Modifiers::NONE,
-      screen(),
-      2.0,
-      [30.0, 60.0],
-      pos,
-    );
+    let line =
+      wheel(egui::vec2(-1.0, 1.0), egui::MouseWheelUnit::Line, modifiers);
+    let output = feed(&mut adapter, &[line], 2.0, pos);
     let kinds: Vec<_> = output
       .iter()
       .map(|input| {
@@ -853,94 +770,45 @@ mod tests {
       egui::MouseWheelUnit::Line,
       Modifiers::NONE,
     );
-    assert!(
-      adapter
-        .events(
-          std::slice::from_ref(&partial),
-          Modifiers::NONE,
-          screen(),
-          1.0,
-          [30.0, 60.0],
-          pos
-        )
-        .is_empty()
-    );
+    let partial = std::slice::from_ref(&partial);
+    assert!(feed(&mut adapter, partial, 1.0, pos).is_empty());
     let resized = Screen { cell_height: 40, ..screen() };
-    assert!(
-      adapter
-        .events(
-          std::slice::from_ref(&partial),
-          Modifiers::NONE,
-          resized,
-          1.0,
-          [30.0, 120.0],
-          pos
-        )
-        .is_empty()
-    );
+    let mut resized_feed = |events: &[Event]| {
+      adapter.events(events, Modifiers::NONE, resized, 1.0, [30.0, 120.0], pos)
+    };
+    assert!(resized_feed(partial).is_empty());
     let mut end =
       wheel(egui::Vec2::ZERO, egui::MouseWheelUnit::Line, Modifiers::NONE);
     let Event::MouseWheel { phase, .. } = &mut end else { unreachable!() };
     *phase = egui::TouchPhase::End;
-    adapter.events(&[end], Modifiers::NONE, resized, 1.0, [30.0, 120.0], pos);
-    assert!(
-      adapter
-        .events(&[partial], Modifiers::NONE, resized, 1.0, [30.0, 120.0], pos)
-        .is_empty()
-    );
+    resized_feed(&[end]);
+    assert!(resized_feed(partial).is_empty());
   }
 
   #[test]
   fn page_units_and_large_bursts_stay_bounded() {
     let mut adapter = Adapter::default();
     let pos = Some(egui::pos2(10.0, 20.0));
-    let output = adapter.events(
-      &[wheel(
-        egui::vec2(0.0, -1.0),
-        egui::MouseWheelUnit::Page,
-        Modifiers::NONE,
-      )],
-      Modifiers::NONE,
-      screen(),
-      1.0,
-      [30.0, 60.0],
-      pos,
-    );
+    let line =
+      |delta| wheel(delta, egui::MouseWheelUnit::Line, Modifiers::NONE);
+    let page =
+      wheel(egui::vec2(0.0, -1.0), egui::MouseWheelUnit::Page, Modifiers::NONE);
+    let output = feed(&mut adapter, &[page], 1.0, pos);
     assert_eq!(output.len(), (screen().height() / 60.0).trunc() as usize);
-    let output = adapter.events(
-      &[wheel(
-        egui::vec2(f32::MAX, f32::NAN),
-        egui::MouseWheelUnit::Line,
-        Modifiers::NONE,
-      )],
-      Modifiers::NONE,
-      screen(),
-      1.0,
-      [30.0, 60.0],
-      pos,
-    );
+    let burst = line(egui::vec2(f32::MAX, f32::NAN));
+    let output = feed(&mut adapter, &[burst], 1.0, pos);
     assert!(!output.is_empty() && output.len() < 1000);
+    let lines = [line(egui::vec2(0.0, -10.0))];
+    let none = Modifiers::NONE;
     assert!(
-      adapter
-        .events(
-          &[wheel(
-            egui::vec2(0.0, -10.0),
-            egui::MouseWheelUnit::Line,
-            Modifiers::NONE
-          )],
-          Modifiers::NONE,
-          screen(),
-          1.0,
-          [0.0; 2],
-          pos
-        )
-        .is_empty()
+      adapter.events(&lines, none, screen(), 1.0, [0.0; 2], pos).is_empty()
     );
   }
 }
 
 #[cfg(test)]
 mod integration {
+  use super::tests::feed;
   use super::*;
 
   #[test]
@@ -948,25 +816,12 @@ mod integration {
   fn native_inputs_change_state() -> vpdf::Result<()> {
     let path =
       std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
-    let screen = Screen {
-      columns: 100,
-      rows: 40,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::pixels(100, 40, 10, 20);
     let mut app = vpdf::app::App::with_screen(&path, "", true, screen)?;
     let mut adapter = Adapter::default();
     let mut history = vpdf::session::Session::new(None).history;
     for (text, expected) in [("G", 14), ("gg", 0)] {
-      let output = adapter.events(
-        &[Event::Text(text.into())],
-        Modifiers::NONE,
-        screen,
-        1.0,
-        [30.0, 60.0],
-        None,
-      );
+      let output = feed(&mut adapter, &[Event::Text(text.into())], 1.0, None);
       assert_eq!(output.len(), text.len());
       for (input, ch) in output.into_iter().zip(text.chars()) {
         let Input::Key(key) = input else { panic!("key") };
@@ -990,9 +845,7 @@ mod integration {
         modifiers: alt,
       },
     ];
-    for input in
-      adapter.events(&editing, Modifiers::NONE, screen, 1.0, [30.0, 60.0], None)
-    {
+    for input in feed(&mut adapter, &editing, 1.0, None) {
       match input {
         Input::Key(key) => app.key(key, &mut history)?,
         Input::Paste(text) => app.paste(&text, &mut history)?,
@@ -1000,14 +853,8 @@ mod integration {
       }
     }
     adapter.editing(Some(egui::IMEPurpose::Normal));
-    let output = adapter.events(
-      &[Event::Ime(egui::ImeEvent::Commit("日本語".into()))],
-      Modifiers::NONE,
-      screen,
-      1.0,
-      [30.0, 60.0],
-      None,
-    );
+    let commit = Event::Ime(egui::ImeEvent::Commit("日本語".into()));
+    let output = feed(&mut adapter, &[commit], 1.0, None);
     let [Input::Paste(text)] = output.as_slice() else { panic!("commit") };
     assert_eq!(text, "日本語");
     app.paste(text, &mut history)?;

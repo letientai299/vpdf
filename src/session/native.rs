@@ -74,8 +74,6 @@ pub struct Metrics {
   pub searching: bool,
   pub sections: usize,
   pub page: Option<vpdf_model::text::PageId>,
-  pub pages: usize,
-  pub hits: usize,
   pub observation: Observation,
   pub observation_time: Option<Duration>,
   pub scroll: f32,
@@ -92,8 +90,6 @@ impl Default for Metrics {
       searching: false,
       sections: 0,
       page: None,
-      pages: 0,
-      hits: 0,
       observation: Observation::default(),
       observation_time: None,
       scroll: 0.0,
@@ -116,6 +112,9 @@ pub struct Observation {
   pub search_outcome: &'static str,
   pub error: Option<String>,
   pub resources: Vec<Resources>,
+  pub pages: usize,
+  pub hits: usize,
+  pub animating: bool,
 }
 
 impl Observation {
@@ -141,6 +140,9 @@ impl Observation {
       search_outcome: app.search.outcome(),
       error: app.error.clone(),
       resources: Vec::new(),
+      pages: app.doc.pages.len(),
+      hits: hits.len(),
+      animating: app.reader.animation().active(),
     }
   }
 }
@@ -153,6 +155,23 @@ pub struct Resources {
   pub tile_bytes: usize,
   pub active_workers: usize,
   pub search_workers: usize,
+}
+
+impl Resources {
+  pub(crate) fn of(
+    app: &crate::app::App,
+    visible: bool,
+    tile_bytes: usize,
+  ) -> Self {
+    Self {
+      owner: app.id,
+      visible,
+      text_bytes: app.doc.cache_bytes(),
+      tile_bytes,
+      active_workers: app.active_workers(),
+      search_workers: usize::from(app.search_worker.is_some()),
+    }
+  }
 }
 
 pub struct Frame {
@@ -196,29 +215,6 @@ struct Launch {
 }
 
 impl Bridge {
-  pub fn start(
-    paths: Vec<PathBuf>,
-    page: Option<usize>,
-    repaint: impl Fn() + Send + Sync + 'static,
-  ) -> Result<Self> {
-    Self::stored(paths, crate::state::location(), page, repaint)
-  }
-
-  pub fn stored(
-    paths: Vec<PathBuf>,
-    store: Option<PathBuf>,
-    page: Option<usize>,
-    repaint: impl Fn() + Send + Sync + 'static,
-  ) -> Result<Self> {
-    Self::configured(
-      paths,
-      store,
-      page,
-      crate::config::Loaded::default(),
-      repaint,
-    )
-  }
-
   pub fn configured(
     paths: Vec<PathBuf>,
     store: Option<PathBuf>,
@@ -316,8 +312,7 @@ fn run(
     dirty |= session.print_update();
     dirty |= picker_update(&mut session, screen);
     dirty |= resume_keys(&mut session);
-    if session.unlock.is_none()
-      && session.picker.is_none()
+    if !session.blocked()
       && session.pending_keys.is_empty()
       && let Some(path) = session.native_opens.pop_front()
     {
@@ -458,7 +453,7 @@ fn finish_launch(
 }
 
 fn resume_keys(session: &mut Session) -> bool {
-  if session.unlock.is_some() || session.picker.is_some() {
+  if session.blocked() {
     return false;
   }
   if session.quit || session.tabs.is_empty() {
@@ -528,8 +523,7 @@ fn wait_time(
   animation_due: Instant,
   now: Instant,
 ) -> Duration {
-  if session.unlock.is_none()
-    && session.picker.is_none()
+  if !session.blocked()
     && (!session.native_opens.is_empty() || !session.pending_keys.is_empty())
   {
     return Duration::ZERO;
@@ -594,7 +588,7 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
       session.resize(size).map(|()| true)
     }
     Input::Open(path) => {
-      if session.unlock.is_some() || session.picker.is_some() {
+      if session.blocked() {
         session.native_opens.push_back(path);
         Ok(true)
       } else {
@@ -676,7 +670,7 @@ fn quit_when_closed(session: &mut Session) {
 
 fn ensure_home(session: &mut Session, screen: Screen) {
   if session.tabs.is_empty() && session.home.is_none() && !session.quit {
-    session.home = Some(Home::with_wake(
+    session.home = Some(Home::new(
       &session.state.recent,
       session.content(screen),
       &session.frontend.wake(),
@@ -767,7 +761,7 @@ fn completions(
     }
     dirty |= app.job_updates();
   }
-  for app in session.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+  for app in session.panes_mut() {
     if evicted
       .iter()
       .any(|id| id.owner.get() == app.id && app.tiles.wants(&id.key))
@@ -859,9 +853,7 @@ fn frame(
     })
     .collect();
   let clipboard = session
-    .tabs
-    .iter_mut()
-    .flat_map(|tab| &mut tab.panes)
+    .panes_mut()
     .filter_map(|app| app.reader.take_yank())
     .filter(|yank| crate::clipboard::synced(yank.register))
     .fold(None, |_, yank| Some(yank.text));
@@ -901,24 +893,16 @@ fn frame_metrics(
       .map_or_else(Observation::default, |tab| {
         Observation::of(&tab.panes[tab.focus])
       });
+    metrics.observation.animating = metrics.animating;
     metrics.observation.tab = session.active + 1;
     metrics.observation.pane_count =
       session.tabs.get(session.active).map_or(0, |tab| tab.panes.len());
     metrics.observation.resources = session
-      .tabs
-      .iter()
-      .flat_map(|tab| &tab.panes)
-      .map(|app| Resources {
-        owner: app.id,
-        visible: visible.contains(&app.id),
-        text_bytes: app.doc.cache_bytes(),
-        tile_bytes: cache
-          .entries()
-          .filter(|(id, _)| id.owner.get() == app.id)
-          .map(|(_, pixels)| pixels.len())
-          .sum(),
-        active_workers: app.active_workers(),
-        search_workers: usize::from(app.search_worker.is_some()),
+      .panes()
+      .map(|app| {
+        let tiles = cache.entries().filter(|(id, _)| id.owner.get() == app.id);
+        let bytes = tiles.map(|(_, pixels)| pixels.len()).sum();
+        Resources::of(app, visible.contains(&app.id), bytes)
       })
       .collect();
     metrics.observation_time = Some(observing.elapsed());
@@ -944,8 +928,6 @@ fn metrics(session: &Session, started: Instant) -> Metrics {
     searching: focused.is_some_and(|app| app.search.phase().running()),
     sections: focused.map_or(0, |app| app.doc.outline.len()),
     page: focused.map(|app| app.navigation_position().page),
-    pages: focused.map_or(0, |app| app.doc.pages.len()),
-    hits: focused.map_or(0, |app| app.search.hits().len()),
     observation: Observation::default(),
     observation_time: None,
     scroll: focused.map_or(0.0, |app| app.reader.scroll),
@@ -954,10 +936,10 @@ fn metrics(session: &Session, started: Instant) -> Metrics {
 
 #[cfg(test)]
 mod tests {
-  use super::super::tests::cells;
   use super::*;
   use crate::pace::FRAME as ANIMATION;
-  use vpdf_model::input::{KeyCode, KeyModifiers};
+  use crate::screen::cells;
+  use vpdf_model::input::{KeyCode, KeyModifiers, MouseEventKind};
 
   fn wait(
     bridge: &Bridge,
@@ -975,37 +957,68 @@ mod tests {
     }
   }
 
-  fn locked_bridge(
-    path: &std::path::Path,
+  fn launch(
+    paths: Vec<PathBuf>,
+    store: Option<PathBuf>,
+    page: Option<usize>,
   ) -> Result<(Bridge, mpsc::Receiver<()>)> {
-    let (send, wakes) = mpsc::channel();
-    let bridge = Bridge::stored(vec![path.into()], None, None, move || {
-      let _ = send.send(());
-    })?;
-    wait(&bridge, &wakes, |frame| {
-      frame
-        .scene
-        .iter()
-        .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
-    })?;
-    Ok((bridge, wakes))
+    let (wake, wakes) = crate::fixtures::wake();
+    let config = crate::config::Loaded::default();
+    Ok((
+      Bridge::configured(paths, store, page, config, move || wake.wake())?,
+      wakes,
+    ))
+  }
+
+  fn masked(frame: &Frame) -> bool {
+    frame
+      .scene
+      .iter()
+      .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
+  }
+
+  fn shows(scene: &Scene, needle: &str) -> bool {
+    scene
+      .iter()
+      .any(|op| matches!(op, Op::Text(text) if text.as_str().contains(needle)))
   }
 
   fn sized() -> Screen {
-    Screen {
-      columns: 100,
-      rows: 40,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (0, 0),
-    }
+    crate::screen::pixels(100, 40, 10, 20)
+  }
+
+  fn native() -> Session {
+    let mut session = Session::new(None);
+    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    session
+  }
+
+  fn temp_pdf(pages: &[&str]) -> Result<(tempfile::TempDir, PathBuf)> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("source.pdf");
+    crate::fixtures::pdf(&path, pages, "")?;
+    Ok((root, path))
+  }
+
+  fn opened(
+    pages: &[&str],
+    screen: Screen,
+  ) -> Result<(tempfile::TempDir, PathBuf, Session)> {
+    let (root, path) = temp_pdf(pages)?;
+    let mut session = native();
+    session.open(&path, true, screen)?;
+    Ok((root, path, session))
+  }
+
+  fn mouse(kind: MouseEventKind, pixels: (u16, u16), screen: Screen) -> Input {
+    let (column, row) =
+      (pixels.0 / screen.cell_width, pixels.1 / screen.cell_height);
+    Input::Mouse { event: MouseEvent::new(kind, column, row), pixels, screen }
   }
 
   #[test]
   fn configured_native_startup() -> Result<()> {
-    let directory = tempfile::tempdir()?;
-    let source = directory.path().join("source.pdf");
-    crate::fixtures::pdf(&source, &["one", "two"], "")?;
+    let (directory, source) = temp_pdf(&["one", "two"])?;
     for document in [false, true] {
       let mut session = Session::configured(
         None,
@@ -1021,9 +1034,7 @@ mod tests {
       }
       let warning = session.startup_warning.clone().unwrap();
       let rendered = frame(&mut session, &mut Cache::new(BUDGET), screen)?;
-      assert!(rendered.scene.iter().any(
-        |op| matches!(op, Op::Text(text) if text.as_str().contains("Config"))
-      ));
+      assert!(shows(&rendered.scene, "Config"));
       if document {
         assert_eq!(session.app().reader.message, warning);
         assert!(!session.app().cursorline);
@@ -1040,34 +1051,23 @@ mod tests {
 
   #[test]
   fn configured_encrypted_retry() -> Result<()> {
-    let directory = tempfile::tempdir()?;
-    let source = directory.path().join("source.pdf");
-    crate::fixtures::pdf(&source, &["one", "two"], "")?;
+    let (directory, source) = temp_pdf(&["one", "two"])?;
     let encrypted = protected(&source)?;
-    let (send, wakes) = mpsc::channel();
+    let (wake, wakes) = crate::fixtures::wake();
     let mut bridge = Bridge::configured(
       vec![encrypted.path().into()],
       None,
       Some(2),
       super::super::tests::settings_file(directory.path()),
-      move || {
-        let _ = send.send(());
-      },
+      move || wake.wake(),
     )?;
-    wait(&bridge, &wakes, |frame| {
-      frame
-        .scene
-        .iter()
-        .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
-    })?;
+    wait(&bridge, &wakes, masked)?;
     bridge.send(Input::Paste("test-reader".into()));
     bridge.send(key(KeyCode::Enter));
     let rendered = wait(&bridge, &wakes, |frame| {
       frame.complete
         && frame.metrics.page == Some(vpdf_model::text::PageId(1))
-        && frame.scene.iter().any(
-          |op| matches!(op, Op::Text(text) if text.as_str().contains("Config")),
-        )
+        && shows(&frame.scene, "Config")
     })?;
     assert_eq!(rendered.metrics.page, Some(vpdf_model::text::PageId(1)));
     bridge.close()
@@ -1075,9 +1075,7 @@ mod tests {
 
   #[test]
   fn startup_warning_cancel() -> Result<()> {
-    let directory = tempfile::tempdir()?;
-    let source = directory.path().join("source.pdf");
-    crate::fixtures::pdf(&source, &["one"], "")?;
+    let (directory, source) = temp_pdf(&["one"])?;
     let encrypted = protected(&source)?;
     let mut session = Session::configured(
       None,
@@ -1092,19 +1090,14 @@ mod tests {
     frame(&mut session, &mut cache, screen)?;
     assert!(session.startup_warning.is_some());
     apply(&mut session, key(KeyCode::Esc), &mut screen);
-    let rendered = frame(&mut session, &mut cache, screen)?;
-    assert!(rendered.scene.iter().any(|op| {
-      matches!(op, Op::Text(text) if text.as_str().contains("Config"))
-    }));
+    assert!(shows(&frame(&mut session, &mut cache, screen)?.scene, "Config"));
     assert!(session.startup_warning.is_none());
     Ok(())
   }
 
   #[test]
   fn observations_require_a_consumer() -> Result<()> {
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("source.pdf");
-    crate::fixtures::pdf(&path, &["observed"], "")?;
+    let (_root, path) = temp_pdf(&["observed"])?;
     let mut session = Session::new(None);
     let mut screen = sized();
     apply(&mut session, Input::Open(path.clone()), &mut screen);
@@ -1122,21 +1115,20 @@ mod tests {
     assert_eq!(enabled.observation.resources.len(), 1);
     assert!(enabled.built >= disabled.built);
     assert!(enabled.build >= enabled.observation_time.unwrap());
+    session.app().command("vsplit")?;
+    session.settle()?;
+    let tab = &mut session.tabs[session.active];
+    tab.panes[1 - tab.focus].reader.animate_to(100.0, started);
+    let split = frame_metrics(&session, started, &cache, &visible);
+    assert!(split.animating && split.observation.animating);
     Ok(())
   }
 
   #[test]
   fn frames_identify_applied_inputs() -> Result<()> {
     let root = tempfile::tempdir()?;
-    let (sender, wakes) = mpsc::channel();
-    let mut bridge = Bridge::stored(
-      Vec::new(),
-      Some(root.path().join("state")),
-      None,
-      move || {
-        let _ = sender.send(());
-      },
-    )?;
+    let (mut bridge, wakes) =
+      launch(Vec::new(), Some(root.path().join("state")), None)?;
     let initial = wait(&bridge, &wakes, |frame| frame.complete)?;
     let mut screen = sized();
     screen.columns += 1;
@@ -1155,10 +1147,7 @@ mod tests {
     let root = tempfile::tempdir()?;
     let path = root.path().join("trace.jsonl");
     let trace = Arc::new(crate::trace::Log::open(&path)?);
-    let (notify, wakes) = mpsc::channel();
-    let mut bridge = Bridge::stored(Vec::new(), None, None, move || {
-      let _ = notify.send(());
-    })?;
+    let (mut bridge, wakes) = launch(Vec::new(), None, None)?;
     wait(&bridge, &wakes, |frame| frame.complete)?;
     let (sender, receiver) = mpsc::channel();
     let ticket = bridge.send(Input::Mark {
@@ -1184,36 +1173,19 @@ mod tests {
 
   #[test]
   fn unchanged_motion_skips_frames() -> Result<()> {
-    use vpdf_model::input::MouseEventKind;
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("motion.pdf");
-    crate::fixtures::pdf(&path, &["body"], "")?;
     let mut screen = sized();
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
-    session.open(&path, true, screen)?;
+    let (_root, _, mut session) = opened(&["body"], screen)?;
     let mut cache = Cache::new(BUDGET);
     frame(&mut session, &mut cache, screen)?;
     let mut chores = Chores::new(Instant::now());
     let pending = AtomicBool::new(false);
     let drawn = screen;
-    let mouse = |kind, pixels: (u16, u16)| Input::Mouse {
-      event: MouseEvent {
-        kind,
-        column: pixels.0 / drawn.cell_width,
-        row: pixels.1 / drawn.cell_height,
-        modifiers: KeyModifiers::NONE,
-      },
-      pixels,
-      screen: drawn,
-    };
-    let mut inputs = vec![(mouse(MouseEventKind::Moved, (500, 300)), true)];
-    inputs.extend(
-      (501..521).map(|x| (mouse(MouseEventKind::Moved, (x, 300)), false)),
-    );
+    let moved = |x| mouse(MouseEventKind::Moved, (x, 300), drawn);
+    let mut inputs = vec![(moved(500), true)];
+    inputs.extend((501..521).map(|x| (moved(x), false)));
     inputs.push((Input::Leave, true));
     inputs.push((Input::Leave, false));
-    inputs.push((mouse(MouseEventKind::Moved, (500, 300)), true));
+    inputs.push((moved(500), true));
     for (input, changed) in inputs {
       assert_eq!(
         drain(
@@ -1231,34 +1203,23 @@ mod tests {
 
   #[test]
   fn home_motion_skips_frames() {
-    use vpdf_model::input::{MouseButton, MouseEventKind};
+    use vpdf_model::input::MouseButton;
     let mut session = Session::new(None);
     let mut screen = sized();
     ensure_home(&mut session, screen);
     for kind in [MouseEventKind::Moved, MouseEventKind::Drag(MouseButton::Left)]
     {
-      let input = Input::Mouse {
-        event: MouseEvent {
-          kind,
-          column: 5,
-          row: 5,
-          modifiers: KeyModifiers::NONE,
-        },
-        pixels: (50, 100),
-        screen,
-      };
-      assert!(!apply(&mut session, input, &mut screen));
+      assert!(!apply(
+        &mut session,
+        mouse(kind, (50, 100), screen),
+        &mut screen
+      ));
     }
   }
 
   #[test]
   fn unrelated_wakes_keep_animation_deadline() -> Result<()> {
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("animation.pdf");
-    crate::fixtures::pdf(&path, &["first", "second"], "")?;
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
-    session.open(&path, true, sized())?;
+    let (_root, _, mut session) = opened(&["first", "second"], sized())?;
     let start = Instant::now();
     session.app().reader.animate_to(100.0, start);
     let mut due = start + ANIMATION;
@@ -1339,14 +1300,12 @@ mod tests {
   #[ignore = "requires verified public PDF corpus"]
   fn normalized_adapter_inputs_match() -> Result<()> {
     use super::super::{Act, run};
-    use vpdf_model::input::MouseEventKind;
     use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
     use vpdf_model::text::PageId;
     let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
     let mut screen = sized();
     let mut terminal = Session::new(None);
-    let mut native = Session::new(None);
-    native.frontend = crate::raster::Frontend::Native(Wake::none());
+    let mut native = native();
     for session in [&mut terminal, &mut native] {
       session.open(&path, true, screen)?;
     }
@@ -1426,14 +1385,8 @@ mod tests {
 
   #[test]
   fn guarded_inputs_keep_requests() -> Result<()> {
-    use vpdf_model::input::MouseEventKind;
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("guard.pdf");
-    crate::fixtures::pdf(&path, &["body"], "")?;
     let mut screen = sized();
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
-    session.open(&path, true, screen)?;
+    let (_root, path, mut session) = opened(&["body"], screen)?;
     let stale = Screen { columns: screen.columns - 1, ..screen };
     session.app().request = Some(super::super::Request::Perf(Some(true)));
     for input in [
@@ -1441,16 +1394,7 @@ mod tests {
       Input::Focus(false),
       Input::Resize(screen),
       Input::History { forward: false, pixels: (20, 20), screen: stale },
-      Input::Mouse {
-        event: MouseEvent {
-          kind: MouseEventKind::Moved,
-          column: 2,
-          row: 1,
-          modifiers: KeyModifiers::NONE,
-        },
-        pixels: (20, 20),
-        screen: stale,
-      },
+      mouse(MouseEventKind::Moved, (20, 20), stale),
     ] {
       apply(&mut session, input, &mut screen);
       assert!(!session.state.perf);
@@ -1489,11 +1433,9 @@ mod tests {
     use vpdf_model::input::{Mouse, MouseKind, Spot};
     let root = tempfile::tempdir()?;
     for native in [false, true] {
-      let mut session = Session::new(None);
+      let mut session =
+        if native { self::native() } else { Session::new(None) };
       let mut screen = sized();
-      if native {
-        session.frontend = crate::raster::Frontend::Native(Wake::none());
-      }
       for name in ["first.pdf", "second.pdf"] {
         let path = root.path().join(name);
         crate::fixtures::pdf(&path, &["body"], "")?;
@@ -1504,16 +1446,7 @@ mod tests {
       if native {
         apply(
           &mut session,
-          Input::Mouse {
-            event: MouseEvent {
-              kind: vpdf_model::input::MouseEventKind::Moved,
-              column: 0,
-              row: 0,
-              modifiers: KeyModifiers::NONE,
-            },
-            pixels: (0, 0),
-            screen,
-          },
+          mouse(MouseEventKind::Moved, (0, 0), screen),
           &mut screen,
         );
       } else {
@@ -1537,26 +1470,17 @@ mod tests {
   #[test]
   fn leave_preserves_frontend_policy() -> Result<()> {
     use super::super::{Act, Request, run};
-    use vpdf_model::input::{MouseButton, MouseEventKind};
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("leave.pdf");
-    crate::fixtures::pdf(&path, &["body"], "")?;
+    use vpdf_model::input::MouseButton;
+    let (_root, path) = temp_pdf(&["body"])?;
     for native in [false, true] {
-      let mut session = Session::new(None);
+      let mut session =
+        if native { self::native() } else { Session::new(None) };
       let mut screen = sized();
-      if native {
-        session.frontend = crate::raster::Frontend::Native(Wake::none());
-      }
       session.open(&path, true, screen)?;
       for kind in
         [MouseEventKind::Moved, MouseEventKind::Down(MouseButton::Left)]
       {
-        session.mouse(MouseEvent {
-          kind,
-          column: 10,
-          row: 8,
-          modifiers: KeyModifiers::NONE,
-        })?;
+        session.mouse(MouseEvent::new(kind, 10, 8))?;
       }
       assert!(session.pointer.holding());
       assert!(session.pointer.target().is_some());
@@ -1607,9 +1531,7 @@ mod tests {
   #[test]
   fn passwords_resume_open_operations() -> Result<()> {
     use super::super::{Axis, Mark, Position, Request, Window};
-    let root = tempfile::tempdir()?;
-    let source = root.path().join("source.pdf");
-    crate::fixtures::pdf(&source, &["first", "second"], "")?;
+    let (_root, source) = temp_pdf(&["first", "second"])?;
     let encrypted = protected(&source)?;
     let path = std::fs::canonicalize(encrypted.path())?;
     for request in [
@@ -1625,8 +1547,7 @@ mod tests {
       Request::PanelMark { name: 'A', focus: false },
     ] {
       let mut screen = sized();
-      let mut session = Session::new(None);
-      session.frontend = crate::raster::Frontend::Native(Wake::none());
+      let mut session = native();
       session.open(&source, true, screen)?;
       let original = session.app().id;
       let position =
@@ -1691,27 +1612,18 @@ mod tests {
 
   #[test]
   fn password_prompt_lifecycle() -> Result<()> {
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("source.pdf");
-    crate::fixtures::pdf(&path, &["first"], "")?;
+    let (_root, path) = temp_pdf(&["first"])?;
     let encrypted = protected(&path)?;
     let mut screen = sized();
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    let mut session = native();
     ensure_home(&mut session, screen);
     apply(&mut session, Input::Open(encrypted.path().into()), &mut screen);
     assert!(session.home.is_some());
     apply(&mut session, Input::Paste("secret".into()), &mut screen);
     let mut cache = Cache::new(BUDGET);
     let drawn = frame(&mut session, &mut cache, screen)?;
-    assert!(
-      drawn
-        .scene
-        .iter()
-        .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
-    );
-    assert!(!drawn.scene.iter().any(|op| matches!(op,
-      Op::Text(text) if text.as_str().contains("secret"))));
+    assert!(masked(&drawn));
+    assert!(!shows(&drawn.scene, "secret"));
     apply(&mut session, Input::Focus(false), &mut screen);
     assert_eq!(session.unlock.as_ref().unwrap().prompt.text(), "secret");
     apply(&mut session, Input::Open(path.clone()), &mut screen);
@@ -1721,22 +1633,20 @@ mod tests {
     assert!(session.unlock.is_none());
     assert!(session.tabs.is_empty());
     assert!(session.home.is_some() && !session.quit);
-    let (mut bridge, _wakes) = locked_bridge(encrypted.path())?;
-    bridge.close()?;
-    Ok(())
+    let (mut bridge, wakes) =
+      launch(vec![encrypted.path().into()], None, None)?;
+    wait(&bridge, &wakes, masked)?;
+    bridge.close()
   }
 
   #[test]
   fn protected_keys_resume() -> Result<()> {
     use super::super::Request;
-    let root = tempfile::tempdir()?;
-    let source = root.path().join("source.pdf");
-    crate::fixtures::pdf(&source, &["first", "second"], "")?;
+    let (_root, source) = temp_pdf(&["first", "second"])?;
     let encrypted = protected(&source)?;
     for cancel in [false, true] {
       let mut screen = sized();
-      let mut session = Session::new(None);
-      session.frontend = crate::raster::Frontend::Native(Wake::none());
+      let mut session = native();
       session.open(&source, true, screen)?;
       let mut keys: Vec<_> = format!(":e {}", encrypted.path().display())
         .chars()
@@ -1775,12 +1685,7 @@ mod tests {
 
   #[test]
   fn close_keys_stop() -> Result<()> {
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("source.pdf");
-    crate::fixtures::pdf(&path, &["first"], "")?;
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
-    session.open(&path, true, sized())?;
+    let (_root, _, mut session) = opened(&["first"], sized())?;
     session.app().request = Some(super::super::Request::Keys(
       [
         KeyCode::Char(':'),
@@ -1798,12 +1703,9 @@ mod tests {
 
   #[test]
   fn home_reserves_perf_and_last_close_quits() -> Result<()> {
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("source.pdf");
-    crate::fixtures::pdf(&path, &["first"], "")?;
+    let (_root, path) = temp_pdf(&["first"])?;
     let mut screen = sized();
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    let mut session = native();
     session.state.set_perf(true);
     ensure_home(&mut session, screen);
     apply(&mut session, Input::Focus(true), &mut screen);
@@ -1827,12 +1729,7 @@ mod tests {
 
   #[test]
   fn native_help_offers_picker() -> Result<()> {
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("source.pdf");
-    crate::fixtures::pdf(&path, &["first"], "")?;
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
-    session.open(&path, true, sized())?;
+    let (_root, _, mut session) = opened(&["first"], sized())?;
     let rows = session.app().panel_rows(super::super::PanelKind::Help)?;
     assert!(rows.iter().any(|row| row.label.contains("fzf")));
     Ok(())
@@ -1846,8 +1743,7 @@ mod tests {
     crate::fixtures::pdf(&first, &["first"], "")?;
     crate::fixtures::pdf(&second, &["second"], "")?;
     let mut screen = sized();
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    let mut session = native();
     picked_path(&mut session, first.clone(), screen)?;
     assert_eq!(session.tabs.len(), 1);
     picked_path(&mut session, second.clone(), screen)?;
@@ -1868,11 +1764,7 @@ mod tests {
     let mut state = crate::state::State::default();
     state.set_perf(true);
     state.save(&store, &[], &[])?;
-    let (send, wakes) = mpsc::channel();
-    let mut bridge =
-      Bridge::stored(Vec::new(), Some(store), None, move || {
-        let _ = send.send(());
-      })?;
+    let (mut bridge, wakes) = launch(Vec::new(), Some(store), None)?;
     wait(&bridge, &wakes, |frame| frame.content)?;
     let sampled = wait(&bridge, &wakes, |frame| {
       !frame.content
@@ -1882,24 +1774,13 @@ mod tests {
           && !text.as_str().contains("RSS —"))
         })
     })?;
-    assert!(sampled.scene.iter().any(|op| matches!(op,
-      Op::Text(text) if text.as_str().contains("FPS 0"))));
+    assert!(shows(&sampled.scene, "FPS 0"));
     bridge.send(Input::Presented { content: true, bytes: 2048 });
-    wait(&bridge, &wakes, |frame| {
-      frame.scene.iter().any(|op| {
-        matches!(op,
-      Op::Text(text) if text.as_str().contains("Upload 2.0K/s"))
-      })
-    })?;
+    wait(&bridge, &wakes, |frame| shows(&frame.scene, "Upload 2.0K/s"))?;
     bridge.send(key(KeyCode::Char(':')));
     bridge.send(Input::Paste("perf off".into()));
     bridge.send(key(KeyCode::Enter));
-    wait(&bridge, &wakes, |frame| {
-      !frame.scene.iter().any(|op| {
-        matches!(op,
-      Op::Text(text) if text.as_str().contains("Upload "))
-      })
-    })?;
+    wait(&bridge, &wakes, |frame| !shows(&frame.scene, "Upload "))?;
     bridge.close()
   }
 
@@ -1908,7 +1789,9 @@ mod tests {
   fn encrypted_corpus_renders() -> Result<()> {
     let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
     let encrypted = protected(&path)?;
-    let (mut bridge, wakes) = locked_bridge(encrypted.path())?;
+    let (mut bridge, wakes) =
+      launch(vec![encrypted.path().into()], None, None)?;
+    wait(&bridge, &wakes, masked)?;
     bridge.send(Input::Paste("test-reader".into()));
     bridge.send(key(KeyCode::Enter));
     wait(&bridge, &wakes, |frame| frame.complete && !frame.images.is_empty())?;
@@ -1932,15 +1815,8 @@ mod tests {
       saved.start_at(Some(3))?;
       saved.finish()?;
       drop(saved);
-      let (send, wakes) = mpsc::channel();
-      let mut bridge = Bridge::stored(
-        vec![first.clone(), second.clone()],
-        Some(store.clone()),
-        page,
-        move || {
-          let _ = send.send(());
-        },
-      )?;
+      let (mut bridge, wakes) =
+        launch(vec![first.clone(), second.clone()], Some(store.clone()), page)?;
       let frame = wait(&bridge, &wakes, |frame| {
         frame.complete && !frame.images.is_empty()
       })?;
@@ -1965,21 +1841,12 @@ mod tests {
     crate::fixtures::pdf(&second, &["other"], "")?;
     let encrypted = protected(&first)?;
     let store = root.path().join("state.json");
-    let (send, wakes) = mpsc::channel();
-    let mut bridge = Bridge::stored(
+    let (mut bridge, wakes) = launch(
       vec![encrypted.path().into(), second],
       Some(store.clone()),
       Some(3),
-      move || {
-        let _ = send.send(());
-      },
     )?;
-    wait(&bridge, &wakes, |frame| {
-      frame
-        .scene
-        .iter()
-        .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
-    })?;
+    wait(&bridge, &wakes, masked)?;
     bridge.send(Input::Paste("test-reader".into()));
     bridge.send(key(KeyCode::Enter));
     wait(&bridge, &wakes, |frame| {
@@ -1999,30 +1866,16 @@ mod tests {
     let path = root.path().join("native.pdf");
     crate::fixtures::pdf(&path, &["first", "second"], "")?;
     let store = root.path().join("state.json");
-    let (send, wakes) = mpsc::channel();
-    let mut bridge = Bridge::stored(
-      vec![path.clone()],
-      Some(store.clone()),
-      None,
-      move || {
-        let _ = send.send(());
-      },
-    )?;
+    let (mut bridge, wakes) =
+      launch(vec![path.clone()], Some(store.clone()), None)?;
     let first = wait(&bridge, &wakes, |frame| {
       frame.complete && !frame.images.is_empty()
     })?;
     assert!(first.images.iter().all(|image| image.pixels.len()
       == image.id.key.width as usize * image.id.key.height as usize * 3));
-    let screen = Screen {
-      columns: 60,
-      rows: 20,
-      cell_width: 12,
-      cell_height: 24,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::pixels(60, 20, 12, 24);
     bridge.send(Input::Resize(screen));
-    bridge
-      .send(Input::Key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE)));
+    bridge.send(key(KeyCode::Char('G')));
     let last = wait(&bridge, &wakes, |frame| {
       frame.screen == screen
         && frame.complete
@@ -2033,10 +1886,7 @@ mod tests {
     let state = crate::state::State::load(&store);
     assert!(state.entry(&std::fs::canonicalize(&path)?).is_some());
     bridge.close()?;
-    let (send, wakes) = mpsc::channel();
-    let mut home = Bridge::stored(Vec::new(), Some(store), None, move || {
-      let _ = send.send(());
-    })?;
+    let (mut home, wakes) = launch(Vec::new(), Some(store), None)?;
     let card = wait(&home, &wakes, |frame| {
       frame.scene.iter().any(|op| matches!(op, Op::Picture(_)))
     })?;
@@ -2358,8 +2208,7 @@ mod tests {
     use vpdf_model::text::{PageId, Position};
     let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
     let screen = cells(120, 40);
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    let mut session = native();
     session.open(&path, true, screen)?;
     session.app().show_preview(Target::Page(PageId(1)), Position::default())?;
     let mut cache = Cache::new(BUDGET);
@@ -2387,12 +2236,11 @@ mod tests {
   #[ignore = "requires verified public PDF corpus"]
   fn pointer_follows_real_links_and_rejects_stale_geometry() -> Result<()> {
     use vpdf_model::document::Target;
-    use vpdf_model::input::{MouseButton, MouseEventKind};
+    use vpdf_model::input::MouseButton;
     use vpdf_model::text::PageId;
     let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
     let mut screen = cells(120, 40);
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    let mut session = native();
     session.open(&path, true, screen)?;
     let app = session.app();
     let link = app
@@ -2413,35 +2261,25 @@ mod tests {
       f32::midpoint(bounds.x0, bounds.x1) as u16,
       f32::midpoint(bounds.y0, bounds.y1) as u16,
     );
-    let mouse = |kind, drawn: Screen| Input::Mouse {
-      event: MouseEvent {
-        kind,
-        column: pixels.0 / drawn.cell_width,
-        row: pixels.1 / drawn.cell_height,
-        modifiers: KeyModifiers::NONE,
-      },
-      pixels,
-      screen: drawn,
-    };
     let mut cache = Cache::new(BUDGET);
     frame(&mut session, &mut cache, screen)?;
     let drawn = screen;
     assert!(apply(
       &mut session,
-      mouse(MouseEventKind::Moved, drawn),
+      mouse(MouseEventKind::Moved, pixels, drawn),
       &mut screen
     ));
     assert_eq!(session.shape(), vpdf_model::style::Shape::Pointer);
     assert!(!apply(
       &mut session,
-      mouse(MouseEventKind::Moved, drawn),
+      mouse(MouseEventKind::Moved, pixels, drawn),
       &mut screen
     ));
     let old_page = session.app().reader.cursor.page;
     let stale = Screen { columns: 119, ..screen };
     apply(
       &mut session,
-      mouse(MouseEventKind::Down(MouseButton::Left), stale),
+      mouse(MouseEventKind::Down(MouseButton::Left), pixels, stale),
       &mut screen,
     );
     assert!(!session.pointer.holding());
@@ -2450,7 +2288,7 @@ mod tests {
       MouseEventKind::Down(MouseButton::Left),
       MouseEventKind::Up(MouseButton::Left),
     ] {
-      apply(&mut session, mouse(kind, drawn), &mut screen);
+      apply(&mut session, mouse(kind, pixels, drawn), &mut screen);
     }
     let target = match link.target {
       Target::Page(page) | Target::Point { page, .. } => page,
@@ -2477,34 +2315,21 @@ mod tests {
 
   #[test]
   fn start_screen_click_opens_the_selected_file() -> Result<()> {
-    use vpdf_model::input::{MouseButton, MouseEventKind};
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("recent.pdf");
-    crate::fixtures::pdf(&path, &["recent"], "")?;
+    use vpdf_model::input::MouseButton;
+    let (_root, path) = temp_pdf(&["recent"])?;
     let mut screen = cells(80, 24);
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    let mut session = native();
     session.state.recent =
       vec![crate::state::tests::entry(&path.to_string_lossy(), 0, 0)];
     session.home =
-      Some(Home::with_wake(&session.state.recent, screen, &Wake::none()));
+      Some(Home::new(&session.state.recent, screen, &Wake::none()));
     session.resize(screen)?;
     frame(&mut session, &mut Cache::new(BUDGET), screen)?;
     for kind in [
       MouseEventKind::Down(MouseButton::Left),
       MouseEventKind::Up(MouseButton::Left),
     ] {
-      let input = Input::Mouse {
-        event: MouseEvent {
-          kind,
-          column: 4,
-          row: 1,
-          modifiers: KeyModifiers::NONE,
-        },
-        pixels: (32, 20),
-        screen,
-      };
-      apply(&mut session, input, &mut screen);
+      apply(&mut session, mouse(kind, (32, 20), screen), &mut screen);
     }
     assert_eq!(session.tabs.len(), 1);
     assert_eq!(session.app().path, std::fs::canonicalize(path)?);
@@ -2514,75 +2339,38 @@ mod tests {
 
   #[test]
   fn wheel_routes_to_panels_and_pointer_zoom() -> Result<()> {
-    use vpdf_model::input::MouseEventKind;
     use vpdf_ui::keys::PanelKind;
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("wheel.pdf");
-    crate::fixtures::pdf(&path, &["first", "second"], "")?;
     let mut screen = cells(80, 24);
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
-    session.open(&path, true, screen)?;
+    let (_root, _, mut session) = opened(&["first", "second"], screen)?;
     session.app().open_panel(PanelKind::Help)?;
     let mut cache = Cache::new(BUDGET);
     frame(&mut session, &mut cache, screen)?;
     let scroll = session.app().reader.scroll;
-    let mut input =
-      |session: &mut Session, kind, pixels: (u16, u16), modifiers| {
-        let event = Input::Mouse {
-          event: MouseEvent {
-            kind,
-            column: pixels.0 / screen.cell_width,
-            row: pixels.1 / screen.cell_height,
-            modifiers,
-          },
-          pixels,
-          screen,
-        };
-        apply(session, event, &mut screen);
-      };
-    input(
-      &mut session,
-      MouseEventKind::ScrollDown,
-      (8, 80),
-      KeyModifiers::NONE,
-    );
+    let down = mouse(MouseEventKind::ScrollDown, (8, 80), screen);
+    apply(&mut session, down, &mut screen);
     assert!(session.app().panel.as_ref().unwrap().view.top() > 0);
     assert_eq!(session.app().reader.scroll, scroll);
     session.app().close_panel()?;
     let zoom = session.app().layout.zoom();
-    input(&mut session, MouseEventKind::Moved, (320, 100), KeyModifiers::NONE);
-    input(
-      &mut session,
-      MouseEventKind::ScrollUp,
-      (320, 100),
-      KeyModifiers::CONTROL,
-    );
+    let moved = mouse(MouseEventKind::Moved, (320, 100), screen);
+    apply(&mut session, moved, &mut screen);
+    let mut up = mouse(MouseEventKind::ScrollUp, (320, 100), screen);
+    if let Input::Mouse { event, .. } = &mut up {
+      event.modifiers = KeyModifiers::CONTROL;
+    }
+    apply(&mut session, up, &mut screen);
     assert!(session.app().layout.zoom() > zoom);
     Ok(())
   }
 
   #[test]
   fn focus_loss_releases_active_pointer_capture() -> Result<()> {
-    use vpdf_model::input::{MouseButton, MouseEventKind};
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("pointer.pdf");
-    crate::fixtures::pdf(&path, &["first", "second"], "")?;
+    use vpdf_model::input::MouseButton;
     let mut screen = cells(80, 24);
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
-    session.open(&path, true, screen)?;
-    let input = Input::Mouse {
-      event: MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        column: 10,
-        row: 8,
-        modifiers: KeyModifiers::NONE,
-      },
-      pixels: (80, 128),
-      screen,
-    };
-    apply(&mut session, input, &mut screen);
+    let (_root, _, mut session) = opened(&["first", "second"], screen)?;
+    let down =
+      mouse(MouseEventKind::Down(MouseButton::Left), (80, 128), screen);
+    apply(&mut session, down, &mut screen);
     assert!(session.pointer.holding());
     apply(&mut session, Input::Focus(false), &mut screen);
     assert!(!session.pointer.holding());
@@ -2597,8 +2385,7 @@ mod tests {
     use vpdf_reader::reader::Yank;
     let root = tempfile::tempdir()?;
     let screen = cells(80, 24);
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    let mut session = native();
     for name in ["first.pdf", "second.pdf"] {
       let path = root.path().join(name);
       crate::fixtures::pdf(&path, &["body"], "")?;
@@ -2677,20 +2464,17 @@ mod tests {
       crate::fixtures::pdf(path, &["body"], "")?;
     }
     let mut screen = cells(80, 24);
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    let mut session = native();
     ensure_home(&mut session, screen);
     apply(&mut session, Input::Resize(screen), &mut screen);
-    let colon =
-      || Input::Key(KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE));
-    apply(&mut session, colon(), &mut screen);
+    apply(&mut session, key(KeyCode::Char(':')), &mut screen);
     assert!(session.home.as_ref().unwrap().view.typing());
     apply(&mut session, Input::Open(first.clone()), &mut screen);
     assert!(session.home.is_none());
     session.app().command("vsplit")?;
     session.settle()?;
     let owners: Vec<_> = session.tab().panes.iter().map(|app| app.id).collect();
-    apply(&mut session, colon(), &mut screen);
+    apply(&mut session, key(KeyCode::Char(':')), &mut screen);
     assert!(session.app().overlays.prompt().is_some());
     apply(&mut session, Input::Open(second.clone()), &mut screen);
     assert_eq!(session.tabs.len(), 2);
@@ -2708,18 +2492,9 @@ mod tests {
 
   #[test]
   fn committed_text_uses_shared_prompt_and_undo() -> Result<()> {
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("input.pdf");
-    crate::fixtures::pdf(&path, &["body"], "")?;
     let mut screen = cells(80, 24);
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::none());
-    session.open(&path, true, screen)?;
-    apply(
-      &mut session,
-      Input::Key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)),
-      &mut screen,
-    );
+    let (_root, _, mut session) = opened(&["body"], screen)?;
+    apply(&mut session, key(KeyCode::Char('/')), &mut screen);
     apply(&mut session, Input::Paste("章a\u{301}".into()), &mut screen);
     assert_eq!(session.app().overlays.prompt().unwrap().text(), "章a\u{301}");
     apply(
@@ -2734,19 +2509,8 @@ mod tests {
   #[test]
   fn overflow_restarts_delivery_and_keeps_received_pixels() -> Result<()> {
     use vpdf_pdf::jobs::render::Rendered;
-    let root = tempfile::tempdir()?;
-    let path = root.path().join("overflow.pdf");
-    crate::fixtures::pdf(&path, &["body"], "")?;
-    let mut session = Session::new(None);
-    session.frontend = crate::raster::Frontend::Native(Wake::new(|| {}));
-    let screen = Screen {
-      columns: 60,
-      rows: 20,
-      cell_width: 10,
-      cell_height: 20,
-      origin: (0, 0),
-    };
-    session.open(&path, true, screen)?;
+    let screen = crate::screen::pixels(60, 20, 10, 20);
+    let (_root, _, mut session) = opened(&["body"], screen)?;
     let app = session.app();
     let key = vpdf_ui::layout::visible(&app.layout, app.reader.scroll)[0];
     let id = TileId { owner: TileOwner::new(app.id), key };
@@ -2779,10 +2543,7 @@ mod tests {
 
   #[test]
   fn home_reports_open_failure() -> Result<()> {
-    let (send, wakes) = mpsc::channel();
-    let mut bridge = Bridge::stored(Vec::new(), None, None, move || {
-      let _ = send.send(());
-    })?;
+    let (mut bridge, wakes) = launch(Vec::new(), None, None)?;
     wait(&bridge, &wakes, |_| true)?;
     bridge.send(Input::Open(PathBuf::from("/missing/native.pdf")));
     let frame = wait(&bridge, &wakes, |frame| {

@@ -8,13 +8,29 @@ use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::scenario::{Step, Wait};
 use vpdf::session::native::{Bridge, Frame, Input, Ticket};
-use vpdf::trace::Log;
+use vpdf::trace::{Coverage, Log};
 use vpdf_model::geometry::Screen;
-use vpdf_model::input::{KeyModifiers, MouseEvent, MouseEventKind};
+use vpdf_model::input::{MouseEvent, MouseEventKind};
 use vpdf_model::scene::Op;
 
 mod watchdog;
 use watchdog::Watchdog;
+
+/// A fresh `kind` results directory in the host cache.
+pub fn results(kind: &str) -> Result<PathBuf> {
+  use std::time::{SystemTime, UNIX_EPOCH};
+  let home =
+    std::env::var_os("HOME").ok_or_else(|| anyhow::anyhow!("HOME is unset"))?;
+  let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
+  let cache =
+    if cfg!(target_os = "macos") { "Library/Caches" } else { ".cache" };
+  Ok(
+    PathBuf::from(home)
+      .join(cache)
+      .join("vpdf-bench")
+      .join(format!("{kind}-{stamp}-{}", std::process::id())),
+  )
+}
 
 pub struct Driver {
   pub bridge: Bridge,
@@ -77,11 +93,8 @@ struct FrameRow {
   delivery_ms: f64,
   #[serde(flatten)]
   readiness: Readiness,
-  #[serde(flatten)]
-  activity: Activity,
+  searching: bool,
   page: Option<usize>,
-  pages: usize,
-  hits: usize,
   ticket: Ticket,
   #[serde(flatten)]
   observation: serde_json::Value,
@@ -92,16 +105,8 @@ struct Readiness {
   complete: bool,
   busy: bool,
   blank: bool,
-  missing: usize,
-  stand_ins: usize,
-  missing_pixels: f32,
-  stand_in_pixels: f32,
-}
-
-#[derive(Serialize)]
-struct Activity {
-  animating: bool,
-  searching: bool,
+  #[serde(flatten)]
+  coverage: Coverage,
 }
 
 impl Driver {
@@ -116,10 +121,11 @@ impl Driver {
     let watchdog = Watchdog::new(deadline);
     let store = tempfile::tempdir()?;
     let (sender, wakes) = mpsc::sync_channel(1);
-    let bridge = Bridge::stored(
+    let bridge = Bridge::configured(
       paths,
       Some(store.path().join("state")),
       None,
+      vpdf::config::Loaded::default(),
       move || {
         let _ = sender.try_send(());
       },
@@ -183,18 +189,10 @@ impl Driver {
           complete: frame.complete,
           busy: frame.metrics.busy,
           blank: missing != 0,
-          missing,
-          stand_ins: 0,
-          missing_pixels,
-          stand_in_pixels: 0.0,
+          coverage: Coverage { missing, missing_pixels, ..Coverage::default() },
         },
-        activity: Activity {
-          animating: frame.metrics.animating,
-          searching: frame.metrics.searching,
-        },
+        searching: frame.metrics.searching,
         page: frame.metrics.page.map(|page| page.0 + 1),
-        pages: frame.metrics.pages,
-        hits: frame.metrics.hits,
         ticket: frame.metrics.ticket,
         observation: serde_json::to_value(&frame.metrics.observation)?,
       },
@@ -405,12 +403,11 @@ impl Driver {
       for _ in 0..delta.unsigned_abs() {
         self.submit(
           Input::Mouse {
-            event: MouseEvent {
-              kind: if delta > 0 { positive } else { negative },
+            event: MouseEvent::new(
+              if delta > 0 { positive } else { negative },
               column,
               row,
-              modifiers: KeyModifiers::NONE,
-            },
+            ),
             pixels: (column * screen.cell_width, row * screen.cell_height),
             screen,
           },
@@ -497,10 +494,7 @@ fn observed(frame: &Frame) -> serde_json::Value {
     .expect("serializable observation");
   row["scroll"] = frame.metrics.scroll.into();
   row["page"] = frame.metrics.page.map(|p| p.0 + 1).into();
-  row["pages"] = frame.metrics.pages.into();
-  row["hits"] = frame.metrics.hits.into();
   row["busy"] = frame.metrics.busy.into();
-  row["animating"] = frame.metrics.animating.into();
   row["complete"] = frame.complete.into();
   let ready: HashSet<_> = frame.images.iter().map(|image| image.id).collect();
   row["missing"] = frame

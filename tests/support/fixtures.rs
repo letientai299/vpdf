@@ -1,21 +1,16 @@
 #[path = "screen.rs"]
 pub mod screen;
+#[path = "text.rs"]
+mod text_fixture;
 use anyhow::Result;
 use std::sync::Arc;
-use vpdf_model::text::{Bounds, Glyph, Line, PageId, Text};
+pub use text_fixture::{glyph, line, plain};
+use vpdf_model::text::{Bounds, Line, PageId, Text};
 use vpdf_reader::reader::TextSource;
 use vpdf_ui::source::Pages;
 
-pub fn glyph(ch: char, bounds: Bounds) -> Glyph {
-  Glyph { quad: None, ch, bounds }
-}
-
-pub fn line(glyphs: impl IntoIterator<Item = Glyph>) -> Line {
-  Line { ocr: None, paragraph: false, glyphs: glyphs.into_iter().collect() }
-}
-
 pub fn lines(lines: impl IntoIterator<Item = Line>) -> Arc<Text> {
-  Arc::new(Text { lines: lines.into_iter().collect(), truncated: false })
+  Arc::new(text_fixture::text(lines))
 }
 
 pub struct Source {

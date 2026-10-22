@@ -217,13 +217,13 @@ fn release_images(
   for id in
     (base..overlays).chain([base + PREVIEW]).chain(base + OVERLAYS..tiles)
   {
-    transport.graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
+    delete(transport, out, id)?;
   }
   Ok(())
 }
 
 use placement::clip;
-use protocol::transmit;
+use protocol::{delete, transmit};
 
 mod images;
 mod overlays;

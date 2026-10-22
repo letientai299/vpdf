@@ -37,6 +37,12 @@ pub struct SearchEvent {
   pub error: Option<String>,
 }
 
+impl SearchEvent {
+  fn finished(generation: u64, error: Option<String>) -> Self {
+    Self { generation, hits: Vec::new(), done: true, error }
+  }
+}
+
 pub struct SearchWorker {
   activity: super::Activity,
   send: mpsc::Sender<Request>,
@@ -109,12 +115,8 @@ impl SearchWorker {
         Ok(event) => events.push(event),
         Err(mpsc::TryRecvError::Empty) => return events,
         Err(mpsc::TryRecvError::Disconnected) => {
-          events.push(SearchEvent {
-            generation,
-            hits: Vec::new(),
-            done: true,
-            error: Some("Search worker stopped".into()),
-          });
+          let error = Some("Search worker stopped".into());
+          events.push(SearchEvent::finished(generation, error));
           return events;
         }
       }
@@ -147,13 +149,8 @@ fn serve(
           send,
         };
         let result = task.run(&mut source, &mut indexes, &query);
-        let done = SearchEvent {
-          generation,
-          hits: Vec::new(),
-          done: true,
-          error: result.err().map(|e| e.to_string()),
-        };
-        if send.send(done).is_err() {
+        let error = result.err().map(|e| e.to_string());
+        if send.send(SearchEvent::finished(generation, error)).is_err() {
           break;
         }
       }
@@ -196,12 +193,7 @@ fn fail(
 ) {
   for request in receive {
     let Request::Query { generation, .. } = request else { continue };
-    let event = SearchEvent {
-      generation,
-      hits: Vec::new(),
-      done: true,
-      error: Some(error.to_string()),
-    };
+    let event = SearchEvent::finished(generation, Some(error.to_string()));
     if send.send(event).is_err() {
       return;
     }
@@ -547,8 +539,20 @@ mod tests {
   use crate::text::Position;
   use std::os::unix::fs::MetadataExt;
 
-  /// First hits of a forward scan for `query`, and pages extracted.
-  fn scan(source: &mut Source, query: &str) -> Result<(Vec<Hit>, usize)> {
+  /// First hits of a forward scan for `text`, and pages extracted.
+  fn scan(source: &mut Source, text: &str) -> Result<(Vec<Hit>, usize)> {
+    let query = vpdf_search::query::Query {
+      text: text.to_owned(),
+      ..vpdf_search::query::Query::default()
+    };
+    search(source, &mut Cache::new(64 * MIB), &query)
+  }
+
+  fn search(
+    source: &mut Source,
+    indexes: &mut Cache<PageId, Index>,
+    query: &vpdf_search::query::Query,
+  ) -> Result<(Vec<Hit>, usize)> {
     let before = source.extracted;
     let (send, events) = mpsc::sync_channel(4096);
     let send = Wake::none().sender(send);
@@ -560,12 +564,7 @@ mod tests {
       current: &current,
       send: &send,
     };
-    let mut indexes = Cache::new(64 * MIB);
-    let query = vpdf_search::query::Query {
-      text: query.to_owned(),
-      ..vpdf_search::query::Query::default()
-    };
-    task.run(source, &mut indexes, &query)?;
+    task.run(source, indexes, query)?;
     drop(send);
     let hits = events.into_iter().flat_map(|event| event.hits).collect();
     Ok((hits, source.extracted - before))
@@ -576,47 +575,25 @@ mod tests {
     let files = tempfile::tempdir()?;
     let path = files.path().join("one.pdf");
     crate::fixtures::pdf(&path, &["page"], "")?;
-    let text = Arc::new(Text {
-      lines: vec![crate::text::Line {
-        ocr: None,
-        paragraph: true,
-        glyphs: "中文排版需求"
-          .chars()
-          .map(|ch| crate::text::Glyph {
-            quad: None,
-            ch,
-            bounds: crate::text::Bounds::default(),
-          })
-          .collect(),
-      }],
-      truncated: false,
-    });
+    let line = crate::text_fixture::plain("中文排版需求");
+    let line = crate::text::Line { paragraph: true, ..line };
+    let text = Arc::new(crate::text_fixture::text([line]));
     let index = Index::new(PageId(0), &text);
     let budget = index.weight() + 1;
     let mut indexes = Cache::new(budget);
     keep(&mut indexes, PageId(0), index);
     let mut source = Source::open(path, String::new(), None, 1)?;
     source.seed(PageId(0), text);
-    let (send, events) = mpsc::sync_channel(32);
-    let send = Wake::none().sender(send);
-    let current = AtomicU64::new(1);
-    let task = SearchTask {
-      generation: 1,
-      origin: PageId(0),
-      backward: false,
-      current: &current,
-      send: &send,
-    };
     let query = vpdf_search::query::Query {
       text: "排版".into(),
       whole: true,
       ..vpdf_search::query::Query::default()
     };
-    task.run(&mut source, &mut indexes, &query)?;
+    let (hits, extracted) = search(&mut source, &mut indexes, &query)?;
     assert!(indexes.used() <= budget);
     assert!(!indexes.contains(&PageId(0)));
-    assert_eq!(events.try_recv()?.hits.len(), 1);
-    assert_eq!(source.extracted, 0);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(extracted, 0);
     Ok(())
   }
 

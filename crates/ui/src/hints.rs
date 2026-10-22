@@ -7,7 +7,7 @@ use crate::split::Rect;
 use crate::theme;
 use vpdf_model::document::{Link, Target};
 use vpdf_model::input::{KeyCode, KeyEvent};
-use vpdf_model::scene::{Draw, Layer, Op};
+use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{Bounds, PageId};
 
@@ -211,11 +211,7 @@ impl Hints {
   }
 
   pub fn hit_items(&self) -> Items {
-    let mut items = Items::default();
-    for (index, hint) in self.shown() {
-      items.push(hint.cells(), index);
-    }
-    items
+    self.shown().map(|(index, hint)| (hint.cells(), index)).collect()
   }
 
   pub fn scene<'a>(&self, scene: &mut impl Draw<'a>, frame: Frame) {
@@ -234,17 +230,10 @@ impl Hints {
       scene.push(Op::Style(rest));
       scene.text(&hint.label[self.typed.len()..]);
       scene.push(Op::Style(Role::Reset));
-      backdrops.push((
-        crate::paint::cell_bounds(frame.screen, frame.left, cells),
-        fill,
-      ));
+      backdrops.push((cells, fill));
     }
-    if frame.text {
-      return;
-    }
-    let screen = frame.screen;
-    for (rect, fill) in backdrops {
-      scene.fill(rect, fill, Layer::BelowText, screen, frame.left);
+    for (cells, fill) in backdrops {
+      crate::paint::backdrop(scene, frame, cells, fill);
     }
   }
   /// Labels the typed letters still match.

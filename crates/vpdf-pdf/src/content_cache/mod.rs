@@ -15,26 +15,19 @@ use std::io::Read;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-const OCR_MAGIC: &[u8; 8] = b"VPDFOCR1";
 /// Largest decoded page record; a page holds at most `GLYPH_LIMIT`
 /// glyphs.
 const RECORD: u64 = 16 * MIB as u64;
 
-mod figures;
-mod outline;
-mod record;
-mod snapshot;
-pub(crate) use figures::FigureCache;
-pub use snapshot::{Kind, Snapshot};
 mod pack;
-
-pub(crate) use outline::OutlineCache;
 mod provenance;
+mod record;
+pub use record::{Kind, Record};
 mod store;
 
+use pack::deflate;
 pub use pack::{Pack, Records, save};
-use pack::{deflate, inflate, put};
-use store::{BUDGET, create, publish, room, touch, trim};
+use store::{create, publish, touch};
 
 pub type Alias = [u8; 32];
 
@@ -108,6 +101,16 @@ pub(super) fn alias_with(
   }
 }
 
+/// SHA-256 over length-prefixed `parts`, open for more input.
+pub(crate) fn digest<'a>(parts: impl IntoIterator<Item = &'a [u8]>) -> Sha256 {
+  let mut hasher = Sha256::new();
+  for part in parts {
+    hasher.update((part.len() as u64).to_le_bytes());
+    hasher.update(part);
+  }
+  hasher
+}
+
 /// Lowercase hex of `bytes`.
 pub fn hex(bytes: &[u8]) -> String {
   bytes.iter().fold(String::new(), |mut out, byte| {
@@ -164,63 +167,39 @@ pub fn remember(root: &Path, version: Version, alias: &Alias) -> Result<()> {
 
 /// OCR output `key` names; none when absent or damaged.
 pub fn recall_ocr(root: &Path, key: &Alias) -> Option<String> {
-  let path = ocr_path(root, key);
-  let header = (OCR_MAGIC.len() + 4) as u64;
-  if std::fs::metadata(&path).ok()?.len() > RECORD + header {
-    return None;
-  }
-  let bytes = std::fs::read(&path).ok()?;
-  let rest = bytes.strip_prefix(OCR_MAGIC)?;
-  let (len, raw) = rest.split_first_chunk::<4>()?;
-  let len = u32::from_le_bytes(*len) as usize;
-  if u64::try_from(len).ok()? > RECORD {
-    return None;
-  }
-  let text = String::from_utf8(inflate(raw, len)?).ok()?;
-  touch(&path);
-  Some(text)
+  let raw = Record::keyed(root.into(), Kind::Ocr, key).read()?;
+  let mut text = String::new();
+  let decoder = flate2::read::ZlibDecoder::new(raw.as_slice());
+  decoder.take(RECORD + 1).read_to_string(&mut text).ok()?;
+  (text.len() as u64 <= RECORD).then_some(text)
 }
 
 /// Stores OCR output under `key`, then trims the cache to its budget.
 pub fn remember_ocr(root: &Path, key: &Alias, text: &str) -> Result<()> {
   // Longer output would never read back.
-  if text.len() as u64 > RECORD || !room(root)? {
+  if text.len() as u64 > RECORD {
     return Ok(());
   }
-  let mut bytes = OCR_MAGIC.to_vec();
-  put(&mut bytes, text.len());
-  bytes.extend_from_slice(&deflate(text.as_bytes())?);
-  publish(&ocr_path(root, key), &bytes)?;
-  trim(root, BUDGET)
-}
-
-fn ocr_path(root: &Path, key: &Alias) -> PathBuf {
-  root.join(format!("{}.ocr", hex(key)))
+  Record::keyed(root.into(), Kind::Ocr, key).write(&deflate(text.as_bytes())?)
 }
 
 #[cfg(test)]
 mod tests {
   use super::pack::{ENTRY, MAGIC, u32_at};
   use super::provenance::provenance;
-  use super::store::{ABANDONED, FORGOTTEN};
+  use super::store::{ABANDONED, BUDGET, FORGOTTEN, trim};
   use super::*;
   use crate::search::Index;
   use crate::search::compile;
+  use crate::text::Line;
   use crate::text::PageId;
-  use crate::text::{Bounds, Glyph, Line, Text};
+  use crate::text_fixture::{plain, text};
   use anyhow::Context;
   use std::time::{Duration, SystemTime};
 
   fn index(page: usize, words: &str) -> Index {
-    let line = Line {
-      ocr: None,
-      paragraph: true,
-      glyphs: words
-        .chars()
-        .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
-        .collect(),
-    };
-    Index::new(PageId(page), &Text { lines: vec![line], truncated: false })
+    let line = Line { paragraph: true, ..plain(words) };
+    Index::new(PageId(page), &text([line]))
   }
 
   #[test]
@@ -435,13 +414,14 @@ mod tests {
     remember_ocr(root.path(), &key, tsv)?;
     assert_eq!(recall_ocr(root.path(), &key).as_deref(), Some(tsv));
     assert_eq!(recall_ocr(root.path(), &[7; 32]), None);
-    let file = ocr_path(root.path(), &key);
-    let bytes = std::fs::read(&file)?;
+    let record = Record::keyed(root.path().into(), Kind::Ocr, &key);
+    let file = record.path();
+    let bytes = std::fs::read(file)?;
     for len in 0..bytes.len() {
-      std::fs::write(&file, &bytes[..len])?;
+      std::fs::write(file, &bytes[..len])?;
       assert_eq!(recall_ocr(root.path(), &key), None, "{len}");
     }
-    std::fs::write(&file, &bytes)?;
+    std::fs::write(file, &bytes)?;
     trim(root.path(), 0)?;
     assert!(!file.exists());
     Ok(())

@@ -1,16 +1,15 @@
-#[path = "../../tests/support/screen.rs"]
-mod screen;
 use super::maintenance::idle;
 use super::run::*;
 use super::windows::*;
 use super::*;
 #[cfg(test)]
 use crate::SeedReader;
-pub(super) use screen::cells;
+use crate::screen::cells;
 
 use vpdf_model::input::{Button, Mouse, Spot};
 use vpdf_model::input::{KeyCode, KeyModifiers};
 use vpdf_model::text::Bounds;
+use vpdf_pdf::jobs::Wake;
 use vpdf_terminal::decode::Reply;
 
 #[test]
@@ -69,7 +68,7 @@ fn perf_start_screen_reserves_once() -> Result<()> {
   let mut session = paper()?;
   let screen = session.screen.expect("screen");
   session.tabs.clear();
-  session.home = Some(Home::new(&[], screen));
+  session.home = Some(Home::new(&[], screen, &Wake::none()));
   session.toggle_perf(Some(true))?;
   let content = screen.rows - vpdf_ui::perf::rows(screen);
   assert_eq!(session.home.as_ref().expect("home").view.screen().rows, content);
@@ -192,7 +191,7 @@ fn scrollbars_wake_and_hide() -> Result<()> {
   let app = session.app();
   app.bar.observe(app.reader.scroll + 1.0, past);
   assert!(session.notify(), "the deadline draws a frame");
-  assert_eq!(session.app().bar_until(), None);
+  assert_eq!(session.app().bar.deadline(), None);
   Ok(())
 }
 
@@ -300,16 +299,10 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
 
 #[test]
 fn refit_keeps_the_layout_without_metrics() {
-  let screen = Screen {
-    columns: 80,
-    rows: 24,
-    origin: (0, 0),
-    cell_width: 8,
-    cell_height: 16,
-  };
+  let screen = cells(80, 24);
   let lost = Notice::new(20, 70, terminal::NO_CELL.into());
   let mut session = Session::new(None);
-  session.home = Some(Home::new(&[], screen));
+  session.home = Some(Home::new(&[], screen, &Wake::none()));
   let failed = || Err(anyhow::anyhow!(terminal::NO_CELL));
   let grid = || Ok((70, 20));
   // (measured, want unmeasured, want start screen rows)
@@ -333,12 +326,7 @@ fn client_changes_preserve_positions() -> Result<()> {
   session.app().command("vsplit")?;
   session.settle()?;
   session.app().command("3")?;
-  let before: Vec<_> = session
-    .tabs
-    .iter()
-    .flat_map(|tab| &tab.panes)
-    .map(App::navigation_position)
-    .collect();
+  let before: Vec<_> = session.panes().map(App::navigation_position).collect();
   let snapshot = |pid| {
     vpdf_terminal::tmux_observer::parse(&format!(
       "$0\t@0\tfocused\n{pid}:100:$0:@0:9:26:0;\n"
@@ -349,12 +337,7 @@ fn client_changes_preserve_positions() -> Result<()> {
   let pane = session.app().id;
   session.resizing = Some(Edge::Panel(pane));
   assert!(session.observation(snapshot(11), &mut Vec::new())?);
-  let after: Vec<_> = session
-    .tabs
-    .iter()
-    .flat_map(|tab| &tab.panes)
-    .map(App::navigation_position)
-    .collect();
+  let after: Vec<_> = session.panes().map(App::navigation_position).collect();
   assert_eq!(after, before);
   assert_eq!(session.resizing, None);
   assert!(!session.observation(snapshot(11), &mut Vec::new())?);
@@ -610,27 +593,9 @@ fn menu_backdrops_skip_the_panel() -> Result<()> {
 /// Page-area pixels each `z=1` placement in `out` covers.
 fn highlights(out: &[u8], left: u16) -> Vec<Bounds> {
   let text = String::from_utf8_lossy(out);
-  let parts = text.split("\x1b7\x1b[").skip(1);
-  let placed = parts.filter_map(|part| {
-    let (at, rest) = part.split_once('H')?;
-    let (row, column) = at.split_once(';')?;
-    let control = rest.strip_prefix("\x1b_G")?.split(';').next()?;
-    let value = |key: &str| {
-      let mut pairs = control.split(',').filter_map(|p| p.split_once('='));
-      pairs.find(|(name, _)| *name == key).map(|(_, value)| value)
-    };
-    let number = |key| value(key).and_then(|v| v.parse::<f32>().ok());
-    if value("z") != Some("1") {
-      return None;
-    }
-    let column = column.parse::<f32>().ok()? - 1.0 - f32::from(left);
-    let row = row.parse::<f32>().ok()? - 1.0;
-    let x0 = column * 8.0 + number("X")?;
-    let y0 = row * 16.0 + number("Y")?;
-    let (x1, y1) = (x0 + number("w")?, y0 + number("h")?);
-    Some(Bounds { x0, y0, x1, y1 })
-  });
-  placed.collect()
+  let commands = crate::kitty::commands(&text);
+  let placed = commands.iter().filter(|c| c.get("z") == Some("1"));
+  placed.filter_map(|command| command.bounds((left, 0))).collect()
 }
 
 /// The focused panel's page veil leaves menus over the page clear.
@@ -768,14 +733,14 @@ fn home_file_drops_open() -> Result<()> {
     |out: &String, how: &str| out.ends_with(&format!("t=r:o={how}\x1b\\"));
   // File drops open even with a prompt.
   let mut session = Session::new(None);
-  let mut home = Home::new(&[], screen);
+  let mut home = Home::new(&[], screen, &Wake::none());
   let colon = KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE);
   home.event(Event::Key(colon), &mut session.history)?;
   let (landed, out) = drop(&mut session, &mut home, &pdf)?;
   assert!(matches!(landed, Landing::Opened) && ended(&out, "1"));
   assert_eq!(session.tabs.len(), 1);
   // Without a prompt the PDF opens; a list with none is cancelled.
-  let mut home = Home::new(&[], screen);
+  let mut home = Home::new(&[], screen, &Wake::none());
   let (landed, out) = drop(&mut session, &mut home, &notes)?;
   assert!(matches!(landed, Landing::Shown) && ended(&out, "0"));
   assert_eq!(home.view.error(), Some("No PDF in the drop"));
@@ -783,7 +748,7 @@ fn home_file_drops_open() -> Result<()> {
   assert!(matches!(landed, Landing::Opened) && ended(&out, "1"));
   assert_eq!(session.tabs.len(), 1);
   // The terminal's error shows and ends the drop.
-  let mut home = Home::new(&[], screen);
+  let mut home = Home::new(&[], screen, &Wake::none());
   let mut out = Vec::new();
   session.home_drop(&mut home, "t=M:x=1:y=1:o=1;text/uri-list", &mut out)?;
   let landed = session.home_drop(&mut home, "t=R:x=1;EIO", &mut out)?;
@@ -1216,7 +1181,7 @@ fn terminal_startup_warning() -> Result<()> {
   let warning = config.warning.clone().unwrap();
   let mut session = Session::configured(None, config);
   session.screen = Some(screen);
-  let mut home = Home::new(&[], screen);
+  let mut home = Home::new(&[], screen, &Wake::none());
   let mut out = Vec::new();
   session.draw_home(&mut home, &mut out)?;
   assert_eq!(home.view.error(), Some(warning.as_str()));

@@ -1,16 +1,16 @@
 pub use crate::common::events as raw;
+use anyhow::Context as _;
 use std::path::{Path, PathBuf};
+use tempfile::TempDir;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::session::Session;
 use vpdf::solo::Solo;
 use vpdf::trace::Drawable;
-use vpdf_model::input::{
-  Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind,
-};
+use vpdf_model::input::{Event, MouseButton, MouseEvent, MouseEventKind};
 use vpdf_ui::keys::{Action, Input};
 use vpdf_ui::layout::Screen;
-use vpdf_ui::pointer::{Hit, Region};
+use vpdf_ui::pointer::{Hit, Region, Route};
 use vpdf_ui::prompt::History;
 
 pub fn screen() -> Screen {
@@ -19,6 +19,14 @@ pub fn screen() -> Screen {
 
 pub fn corpus(name: &str) -> Result<PathBuf> {
   Ok(PathBuf::from(std::env::var("VPDF_CORPUS")?).join(name))
+}
+
+/// A temporary copy of corpus file `name`.
+pub fn temp_copy(name: &str) -> Result<(TempDir, PathBuf)> {
+  crate::common::temp_pdf(|path| {
+    std::fs::copy(corpus(name)?, path)?;
+    Ok(())
+  })
 }
 
 pub fn session(path: &Path, screen: Screen) -> Result<Session> {
@@ -43,8 +51,9 @@ pub fn dispatch(session: &mut Session, event: &Event) -> Result<()> {
   }
 }
 
-pub fn press(session: &mut Session, code: KeyCode) -> Result<()> {
-  dispatch(session, &Event::Key(KeyEvent::new(code, KeyModifiers::NONE)))
+/// Dispatches the events decoded from `bytes`.
+pub fn press(session: &mut Session, bytes: &[u8]) -> Result<()> {
+  raw(bytes).iter().try_for_each(|event| dispatch(session, event))
 }
 
 pub fn mouse(
@@ -52,7 +61,36 @@ pub fn mouse(
   kind: MouseEventKind,
   (column, row): (u16, u16),
 ) -> Result<bool> {
-  session.mouse(MouseEvent { kind, column, row, modifiers: KeyModifiers::NONE })
+  session.mouse(MouseEvent::new(kind, column, row))
+}
+
+/// A left-button drag from `from` to `to`.
+pub fn drag(
+  session: &mut Session,
+  from: (u16, u16),
+  to: (u16, u16),
+) -> Result<()> {
+  mouse(session, MouseEventKind::Down(MouseButton::Left), from)?;
+  mouse(session, MouseEventKind::Drag(MouseButton::Left), to)?;
+  mouse(session, MouseEventKind::Up(MouseButton::Left), to)?;
+  Ok(())
+}
+
+/// A one-click `kind` on pane `pane`'s page at a cell.
+pub fn page_route(
+  pane: u32,
+  kind: MouseEventKind,
+  (column, row): (u16, u16),
+) -> Route {
+  let mouse = MouseEvent::new(kind, column, row);
+  Route {
+    pane,
+    region: Region::Page,
+    focus: true,
+    mouse,
+    clicks: 1,
+    pixel: None,
+  }
 }
 
 pub fn draw(app: &mut impl Drawable) -> Result<String> {
@@ -63,6 +101,12 @@ pub fn draw(app: &mut impl Drawable) -> Result<String> {
 
 pub fn pane(session: &mut Session, index: usize) -> &mut App {
   &mut session.tab().panes[index]
+}
+
+/// The pane with `id`, in any tab.
+pub fn pane_id(session: &mut Session, id: u32) -> &mut App {
+  let mut panes = session.tabs.iter_mut().flat_map(|tab| &mut tab.panes);
+  panes.find(|app| app.id == id).expect("a pane with the id")
 }
 
 pub fn cell_in(
@@ -76,13 +120,24 @@ pub fn cell_in(
     _ => Region::Page,
   };
   let app = pane(session, index);
-  let (columns, rows) = (app.screen.columns, app.screen.rows - 1);
-  for row in 0..rows {
-    for column in 0..columns {
-      if app.hovered(region, column, row, None)? == want {
+  let rows = 0..app.screen.rows - 1;
+  let found = cell_where(app, region, rows, |hit| hit == want);
+  found.with_context(|| format!("no cell hits {want:?}"))
+}
+
+/// The first `region` cell over `rows` that passes `want`.
+pub fn cell_where(
+  app: &mut App,
+  region: Region,
+  rows: std::ops::Range<u16>,
+  want: impl Fn(Hit) -> bool,
+) -> Result<(u16, u16)> {
+  for row in rows {
+    for column in 0..app.screen.columns {
+      if want(app.hovered(region, column, row, None)?) {
         return Ok((app.at.column + column, app.at.row + row));
       }
     }
   }
-  anyhow::bail!("no cell hits {want:?}")
+  anyhow::bail!("no {region:?} cell matches")
 }

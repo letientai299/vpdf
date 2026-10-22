@@ -7,13 +7,7 @@ use vpdf_ui::prompt::{Prompt, PromptKind};
 fn drawing_positions_the_wide_text_cursor() -> Result<()> {
   let mut prompt = Prompt::new(PromptKind::Command);
   prompt.replace("界a");
-  let screen = Screen {
-    columns: 10,
-    rows: 2,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::common::cells(10, 2);
   let at = At { column: 7, row: 3 };
   let mut out = Vec::new();
   draw(&mut out, None, |scene| prompt.scene(scene, screen, at, None))?;

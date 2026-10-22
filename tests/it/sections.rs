@@ -1,27 +1,14 @@
 use super::common::SeedReader;
 use super::common::keys;
-use std::path::PathBuf;
+use crate::harness::solo;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::solo::Solo;
 use vpdf_model::document::Target;
 use vpdf_model::text::{Bounds, Position};
-use vpdf_ui::layout::Screen;
 
 fn app(text_mode: bool) -> Result<Solo> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut app = Solo::open(
-    &root.join("paper.pdf"),
-    "",
-    text_mode,
-    Screen {
-      columns: 100,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
-  )?;
+  let mut app = solo("paper.pdf", text_mode, crate::common::cells(100, 24))?;
   super::common::outline_loaded(&mut app)?;
   Ok(app)
 }

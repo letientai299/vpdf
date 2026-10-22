@@ -24,6 +24,13 @@ pub struct MouseEvent {
   pub row: u16,
   pub modifiers: KeyModifiers,
 }
+
+impl MouseEvent {
+  pub const fn new(kind: MouseEventKind, column: u16, row: u16) -> Self {
+    Self { kind, column, row, modifiers: KeyModifiers::NONE }
+  }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Mouse {
   pub kind: MouseKind,

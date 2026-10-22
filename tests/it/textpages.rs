@@ -2,17 +2,15 @@
 use super::common::SeedReader;
 
 use crate::common;
+use crate::harness::page_route;
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::solo::Solo;
 use vpdf_model::document::{Heading, Target};
-use vpdf_model::input::{
-  KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-};
+use vpdf_model::input::{MouseButton, MouseEventKind};
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::SelectionKind;
-use vpdf_ui::layout::Screen;
-use vpdf_ui::pointer::{Hit, Region, Route};
+use vpdf_ui::pointer::{Hit, Region};
 
 const PAGES: [[&str; 4]; 3] = [
   ["P0 L0 alpha", "P0 L1 beta", "P0 L2 gamma", "P0 L3 delta"],
@@ -39,18 +37,11 @@ fn app_of(
   pages: &[&[&str]],
   links: &[(usize, usize)],
 ) -> Result<(tempfile::TempDir, Solo)> {
-  let dir = tempfile::tempdir()?;
-  let path = dir.path().join("pages.pdf");
-  common::linked_pages_pdf(&path, pages, links)?;
-  let screen = Screen {
-    columns: 40,
-    rows: 9,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
-  let app = Solo::open(&path, "", true, screen)?;
-  Ok((dir, app))
+  common::temp_solo(
+    |path| common::linked_pages_pdf(path, pages, links),
+    true,
+    common::cells(40, 9),
+  )
 }
 
 fn on(page: usize, line: usize, glyph: usize) -> Position {
@@ -60,7 +51,7 @@ fn on(page: usize, line: usize, glyph: usize) -> Position {
 /// The text view's rows as drawn, styles kept.
 fn drawn(app: &mut App) -> Result<Vec<String>> {
   let mut out = Vec::new();
-  app.text_canvas(&mut out)?;
+  vpdf::presentation::try_draw(&mut out, None, |s| app.scene_text(s))?;
   let out = String::from_utf8(out)?;
   let mut rows = vec![String::new(); usize::from(app.screen.rows - 1)];
   let mut current = 0;
@@ -210,14 +201,7 @@ fn the_top_row_names_page_and_section() -> Result<()> {
 fn middle_drags_move_text_by_whole_rows() -> Result<()> {
   let (_dir, mut app) = app(&[])?;
   let pane = app.id;
-  let press = |kind, row| Route {
-    pane,
-    region: Region::Page,
-    focus: true,
-    mouse: MouseEvent { kind, column: 5, row, modifiers: KeyModifiers::NONE },
-    clicks: 1,
-    pixel: None,
-  };
+  let press = |kind, row| page_route(pane, kind, (5, row));
   app.mouse(press(MouseEventKind::Down(MouseButton::Middle), 6))?;
   // (drag to row) -> row of the second page's first line
   for (row, shown) in [(6, 5), (4, 3), (1, 0), (2, 1), (6, 5), (8, 5)] {
@@ -230,17 +214,12 @@ fn middle_drags_move_text_by_whole_rows() -> Result<()> {
   Ok(())
 }
 
-fn key(app: &mut App, ch: char) -> Result<()> {
-  let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
-  app.key(key, &mut vpdf_ui::prompt::History::default())
-}
-
 /// What a case does to the view.
 #[derive(Clone, Copy, Debug)]
 enum Act {
   Go(Position),
   Land(Position),
-  Key(char),
+  Keys(&'static [u8]),
   /// Searches "gamma", then presses `n` this often.
   Search(usize),
   End,
@@ -250,11 +229,11 @@ fn act(app: &mut App, action: Act) -> Result<()> {
   match action {
     Act::Go(to) => app.go_to(to, false),
     Act::Land(to) => app.land_at(to),
-    Act::Key(ch) => key(app, ch),
+    Act::Keys(bytes) => common::keys(app, bytes),
     Act::Search(next) => {
       app.start_search("gamma", false, false)?;
       common::search_loaded(app)?;
-      (0..next).try_for_each(|_| key(app, 'n'))
+      common::keys(app, &b"n".repeat(next))
     }
     Act::End => app.text().scroll(100),
   }
@@ -271,11 +250,11 @@ fn jumps_move_least_to_show_targets() -> Result<()> {
   let cases = [
     (&full, 0, None, Act::Go(on(1, 0, 0)), on(1, 0, 0), 5),
     (&full, 0, None, Act::Go(on(2, 0, 0)), on(2, 0, 0), 1),
-    (&full, 0, Some(on(0, 3, 0)), Act::Key('j'), on(1, 0, 0), 5),
-    (&full, 0, Some(on(1, 0, 0)), Act::Key('k'), on(0, 3, 0), 3),
-    (&full, 2, Some(on(1, 3, 0)), Act::Key('j'), on(2, 0, 0), 0),
-    (&holes, 0, Some(on(0, 3, 0)), Act::Key('j'), on(1, 0, 0), 5),
-    (&holes, 0, Some(on(2, 0, 0)), Act::Key('k'), on(1, 0, 0), 5),
+    (&full, 0, Some(on(0, 3, 0)), Act::Keys(b"j"), on(1, 0, 0), 5),
+    (&full, 0, Some(on(1, 0, 0)), Act::Keys(b"k"), on(0, 3, 0), 3),
+    (&full, 2, Some(on(1, 3, 0)), Act::Keys(b"j"), on(2, 0, 0), 0),
+    (&holes, 0, Some(on(0, 3, 0)), Act::Keys(b"j"), on(1, 0, 0), 5),
+    (&holes, 0, Some(on(2, 0, 0)), Act::Keys(b"k"), on(1, 0, 0), 5),
     (&full, 0, None, Act::Search(0), on(0, 2, 6), 2),
     // The last row is the margin, as on pages.
     (&full, 0, None, Act::Search(1), on(1, 2, 6), 1),
@@ -285,7 +264,7 @@ fn jumps_move_least_to_show_targets() -> Result<()> {
     let (_dir, mut app) = app_of(pages, &[])?;
     app.text().scroll(top)?;
     if let Some(at) = at {
-      key(&mut app, 'i')?;
+      common::keys(&mut app, b"i")?;
       app.reader.seed_reader(|reader| reader.cursor = at);
     }
     act(&mut app, action)?;
@@ -327,14 +306,7 @@ fn panning_spans_pages() -> Result<()> {
   app.screen.columns = 12;
   app.relayout()?;
   let pane = app.id;
-  let press = |kind, column| Route {
-    pane,
-    region: Region::Page,
-    focus: true,
-    mouse: MouseEvent { kind, column, row: 2, modifiers: KeyModifiers::NONE },
-    clicks: 1,
-    pixel: None,
-  };
+  let press = |kind, column| page_route(pane, kind, (column, 2));
   app.mouse(press(MouseEventKind::Down(MouseButton::Middle), 10))?;
   app.mouse(press(MouseEventKind::Drag(MouseButton::Middle), 7))?;
   assert_eq!(app.text().cell(on(1, 0, 3))?, Some((0, 5)), "drag");
@@ -370,14 +342,7 @@ fn presses_on_rules_select_nothing() -> Result<()> {
   let (_dir, mut app) = app(&[])?;
   drawn(&mut app)?;
   let pane = app.id;
-  let press = |kind, row| Route {
-    pane,
-    region: Region::Page,
-    focus: true,
-    mouse: MouseEvent { kind, column: 2, row, modifiers: KeyModifiers::NONE },
-    clicks: 1,
-    pixel: None,
-  };
+  let press = |kind, row| page_route(pane, kind, (2, row));
   app.mouse(press(MouseEventKind::Down(MouseButton::Left), 4))?;
   app.mouse(press(MouseEventKind::Up(MouseButton::Left), 4))?;
   assert_eq!(app.reader.target(), None);

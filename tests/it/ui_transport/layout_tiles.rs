@@ -3,7 +3,6 @@ mod fixture;
 use crate::presentation::*;
 use anyhow::Result;
 use fixture::{frame, layout};
-use std::io::Write;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::layout::tiles::*;
 use vpdf_ui::layout::visible;
@@ -11,15 +10,6 @@ use vpdf_ui::layout::visible;
 #[test]
 fn failed_placement_retains_requests() -> Result<()> {
   use vpdf_terminal::payload::{Encoder, Tile};
-  struct Broken;
-  impl Write for Broken {
-    fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-      Err(std::io::Error::other("Output unavailable"))
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-      Ok(())
-    }
-  }
   let layout = layout();
   let key = visible(&layout, 0.0)[0];
   let previous = visible(&layout, layout.pages()[2].top)[0];
@@ -42,7 +32,7 @@ fn failed_placement_retains_requests() -> Result<()> {
   graphics.upload(0, &tile, &mut std::io::sink())?;
   let view = View { layout: &layout, scroll: 0.0, target: None };
   assert!(
-    draw(&mut Broken, Some(&mut graphics), |scene| tiles.scene(
+    draw(&mut super::Closed, Some(&mut graphics), |scene| tiles.scene(
       view,
       frame(&layout),
       scene

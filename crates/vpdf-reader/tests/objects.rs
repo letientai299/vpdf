@@ -1,5 +1,8 @@
+#[path = "../../../tests/support/text.rs"]
+mod text_fixture;
 use std::sync::Arc;
-use vpdf_model::text::{Bounds, Glyph, Line, PageId, Position, Text};
+use text_fixture::{plain, text};
+use vpdf_model::text::{Line, PageId, Position, Text};
 use vpdf_reader::Result;
 use vpdf_reader::motion::Motion;
 use vpdf_reader::objects::Object;
@@ -11,20 +14,11 @@ fn pages(pages: &[&[(&str, bool)]]) -> Pages {
   pages
     .iter()
     .map(|lines| {
-      Arc::new(Text {
-        truncated: false,
-        lines: lines
+      Arc::new(text(
+        lines
           .iter()
-          .map(|(text, paragraph)| Line {
-            ocr: None,
-            paragraph: *paragraph,
-            glyphs: text
-              .chars()
-              .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
-              .collect(),
-          })
-          .collect(),
-      })
+          .map(|&(value, paragraph)| Line { paragraph, ..plain(value) }),
+      ))
     })
     .collect()
 }
@@ -225,34 +219,6 @@ fn object_sentences_skip_scientific_abbreviations() -> Result<()> {
 }
 
 #[test]
-fn object_paragraphs_follow_blocks() -> Result<()> {
-  let mut source = pages(&[
-    &[("first", true), ("wrapped", false), ("second", true)],
-    &[],
-    &[("continued", false), ("third", true)],
-  ]);
-  let cursor = Position { line: 1, glyph: 3, ..Position::default() };
-  assert_eq!(
-    copy(&mut source, cursor, Object::Paragraph, false, 1)?,
-    "first\nwrapped"
-  );
-  assert_eq!(
-    copy(&mut source, cursor, Object::Paragraph, true, 1)?,
-    "first\nwrapped\n"
-  );
-  assert_eq!(
-    copy(&mut source, cursor, Object::Paragraph, false, 2)?,
-    "first\nwrapped\nsecond\ncontinued"
-  );
-  let cursor = Position { page: PageId(2), glyph: 2, ..Position::default() };
-  assert_eq!(
-    copy(&mut source, cursor, Object::Paragraph, false, 1)?,
-    "second\ncontinued"
-  );
-  Ok(())
-}
-
-#[test]
 fn object_failures_preserve_visual_range() -> Result<()> {
   let mut source = pages(&[&[("unpaired (text", true)]]);
   let mut reader = Reader::default();
@@ -305,72 +271,105 @@ fn object_word_motions_cross_lines_and_blank_pages() -> Result<()> {
   Ok(())
 }
 
+/// Pages, then copies: cursor (page, line, glyph), object, around,
+/// count, and the copied text.
+type Copies<'a> =
+  (&'a str, Pages, &'a [((usize, usize, usize), Object, bool, usize, &'a str)]);
+
 #[test]
-fn object_quotes_keep_stream_context() -> Result<()> {
-  let mut source = pages(&[&[(r#""hello ", then "world""#, true)]]);
-  for glyph in [0, 3, 7] {
-    assert_eq!(
-      copy(
-        &mut source,
-        Position { glyph, ..Position::default() },
-        Object::DoubleQuote,
-        false,
-        1
-      )?,
-      "hello "
-    );
+fn object_copies() -> Result<()> {
+  use Object::{DoubleQuote as Double, Paragraph, Sentence, SingleQuote};
+  let wrapped = r#""wrapped"#;
+  let cases: [Copies; 8] = [
+    (
+      "paragraphs follow blocks",
+      pages(&[
+        &[("first", true), ("wrapped", false), ("second", true)],
+        &[],
+        &[("continued", false), ("third", true)],
+      ]),
+      &[
+        ((0, 1, 3), Paragraph, false, 1, "first\nwrapped"),
+        ((0, 1, 3), Paragraph, true, 1, "first\nwrapped\n"),
+        ((0, 1, 3), Paragraph, false, 2, "first\nwrapped\nsecond\ncontinued"),
+        ((2, 0, 2), Paragraph, false, 1, "second\ncontinued"),
+      ],
+    ),
+    (
+      "quotes keep stream context",
+      pages(&[&[(r#""hello ", then "world""#, true)]]),
+      &[
+        ((0, 0, 0), Double, false, 1, "hello "),
+        ((0, 0, 3), Double, false, 1, "hello "),
+        ((0, 0, 7), Double, false, 1, "hello "),
+        ((0, 0, 15), Double, false, 1, "world"),
+        ((0, 0, 18), Double, false, 1, "world"),
+        ((0, 0, 20), Double, false, 1, "world"),
+      ],
+    ),
+    (
+      "quotes wrap across pages",
+      pages(&[&[(wrapped, true)], &[], &[(r#"text ", then "next""#, true)]]),
+      &[
+        ((2, 0, 5), Double, false, 1, "wrapped\ntext "),
+        ((2, 0, 5), Double, false, 2, "wrapped\ntext \", then \"next"),
+      ],
+    ),
+    (
+      "quotes close at page start",
+      pages(&[&[(wrapped, true)], &[], &[(r#"" then "next""#, true)]]),
+      &[((2, 0, 0), Double, false, 1, "wrapped")],
+    ),
+    (
+      "sentences end at the final glyph",
+      pages(&[&[("First. X", true)]]),
+      &[
+        ((0, 0, 0), Sentence, false, 2, "First. X"),
+        ((0, 0, 0), Sentence, false, 3, "First. X"),
+        ((0, 0, 0), Sentence, false, 100, "First. X"),
+      ],
+    ),
+    (
+      "sentences skip indentation",
+      pages(&[&[("Methods", true), ("  Results follow.", true)]]),
+      &[((0, 1, 5), Sentence, false, 1, "Results follow.")],
+    ),
+    (
+      "wrapped quote before dash",
+      pages(&[&[(wrapped, true), ("text\"—then \"next\"", true)]]),
+      &[
+        ((0, 1, 1), Double, false, 1, "wrapped\ntext"),
+        ((0, 1, 1), Double, true, 1, "\"wrapped\ntext\""),
+        ((0, 1, 4), Double, false, 1, "wrapped\ntext"),
+        ((0, 1, 4), Double, true, 1, "\"wrapped\ntext\""),
+      ],
+    ),
+    (
+      "single quotes after possessive",
+      pages(&[&[("The dogs' owners said 'hello'.", true)]]),
+      &[
+        ((0, 0, 22), SingleQuote, false, 1, "hello"),
+        ((0, 0, 22), SingleQuote, true, 1, "'hello'"),
+        ((0, 0, 25), SingleQuote, false, 1, "hello"),
+        ((0, 0, 25), SingleQuote, true, 1, "'hello'"),
+        ((0, 0, 28), SingleQuote, false, 1, "hello"),
+        ((0, 0, 28), SingleQuote, true, 1, "'hello'"),
+      ],
+    ),
+  ];
+  for (label, mut source, copies) in cases {
+    for &((page, line, glyph), kind, around, count, want) in copies {
+      let cursor = Position { page: PageId(page), line, glyph };
+      let copied = copy(&mut source, cursor, kind, around, count)?;
+      assert_eq!(copied, want, "{label} {kind:?} {cursor:?}");
+    }
   }
-  for glyph in [15, 18, 20] {
-    assert_eq!(
-      copy(
-        &mut source,
-        Position { glyph, ..Position::default() },
-        Object::DoubleQuote,
-        false,
-        1
-      )?,
-      "world"
-    );
-  }
-  let mut source = pages(&[
-    &[(r#""wrapped"#, true)],
-    &[],
-    &[(r#"text ", then "next""#, true)],
-  ]);
-  let cursor = Position { page: PageId(2), glyph: 5, ..Position::default() };
-  assert_eq!(
-    copy(&mut source, cursor, Object::DoubleQuote, false, 1)?,
-    "wrapped\ntext "
-  );
-  assert_eq!(
-    copy(&mut source, cursor, Object::DoubleQuote, false, 2)?,
-    "wrapped\ntext \", then \"next"
-  );
-  let mut source =
-    pages(&[&[(r#""wrapped"#, true)], &[], &[(r#"" then "next""#, true)]]);
-  let cursor = Position { page: PageId(2), ..Position::default() };
-  assert_eq!(
-    copy(&mut source, cursor, Object::DoubleQuote, false, 1)?,
-    "wrapped"
-  );
   Ok(())
 }
 
 #[test]
-fn object_sentence_final_glyph_and_indentation() -> Result<()> {
-  for count in [2, 3, 100] {
-    let mut source = pages(&[&[("First. X", true)]]);
-    assert_eq!(
-      copy(&mut source, Position::default(), Object::Sentence, false, count)?,
-      "First. X"
-    );
-  }
+fn object_sentence_motions_skip_indentation() -> Result<()> {
   let mut source = pages(&[&[("Methods", true), ("  Results follow.", true)]]);
-  let cursor = Position { line: 1, glyph: 5, ..Position::default() };
-  assert_eq!(
-    copy(&mut source, cursor, Object::Sentence, false, 1)?,
-    "Results follow."
-  );
   let mut reader = Reader::default();
   reader.motion(Motion::NextSentence, 1, false, &mut source)?;
   assert_eq!(
@@ -379,43 +378,6 @@ fn object_sentence_final_glyph_and_indentation() -> Result<()> {
   );
   reader.motion(Motion::PreviousSentence, 1, false, &mut source)?;
   assert_eq!(reader.cursor, Position::default());
-  Ok(())
-}
-
-#[test]
-fn object_wrapped_quote_before_dash() -> Result<()> {
-  let mut source =
-    pages(&[&[(r#""wrapped"#, true), ("text\"—then \"next\"", true)]]);
-  for glyph in [1, 4] {
-    let cursor = Position { line: 1, glyph, ..Position::default() };
-    assert_eq!(
-      copy(&mut source, cursor, Object::DoubleQuote, false, 1)?,
-      "wrapped\ntext"
-    );
-    assert_eq!(
-      copy(&mut source, cursor, Object::DoubleQuote, true, 1)?,
-      "\"wrapped\ntext\""
-    );
-  }
-  Ok(())
-}
-
-#[test]
-fn object_single_quotes_after_possessive() -> Result<()> {
-  let text = "The dogs' owners said 'hello'.";
-  let mut source = pages(&[&[(text, true)]]);
-  let opening = text.find("'hello'").unwrap();
-  for glyph in [opening, opening + 3, opening + 6] {
-    let cursor = Position { glyph, ..Position::default() };
-    assert_eq!(
-      copy(&mut source, cursor, Object::SingleQuote, false, 1)?,
-      "hello"
-    );
-    assert_eq!(
-      copy(&mut source, cursor, Object::SingleQuote, true, 1)?,
-      "'hello'"
-    );
-  }
   Ok(())
 }
 

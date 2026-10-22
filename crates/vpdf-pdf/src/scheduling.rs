@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -33,6 +33,11 @@ pub fn yield_to_views(stop: impl Fn() -> bool) -> bool {
     thread::sleep(Duration::from_millis(1));
   }
   !stop()
+}
+
+/// `yield_to_views` for a job's stop flag.
+pub fn ready(stop: &AtomicBool) -> bool {
+  yield_to_views(|| stop.load(Ordering::Relaxed))
 }
 
 impl Default for Urgent {

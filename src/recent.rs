@@ -49,9 +49,7 @@ mod tests {
   use std::time::{Duration, Instant};
   use vpdf_model::geometry::At;
   use vpdf_terminal::graphics::Graphics;
-  use vpdf_ui::{
-    keys::PanelKind, layout::Screen, panel::Panel, panel::recent::Frame,
-  };
+  use vpdf_ui::{keys::PanelKind, panel::Panel, panel::recent::Frame};
 
   #[test]
   fn cards_wake_the_loop() -> Result<()> {
@@ -64,13 +62,7 @@ mod tests {
     let mut cards = Shelf::new(&entries(saved));
     let mut panel =
       Panel::new(PanelKind::Recent, crate::panel::recent_rows(saved));
-    let screen = Screen {
-      columns: 100,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(100, 40);
     crate::presentation::draw(
       &mut Vec::new(),
       Some(&mut Graphics::default()),
@@ -101,13 +93,7 @@ mod tests {
     let file = root.join("paper.pdf");
     let entry = state::tests::entry(&file.to_string_lossy(), 1, 0);
     let entries = std::slice::from_ref(&entry);
-    let screen = Screen {
-      columns: 100,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(100, 40);
     let mut cards = Shelf::new(&super::entries(entries));
     let loader = Loader::new("", &Wake::none());
     let mut panel =

@@ -26,7 +26,7 @@ const PANES: [Pane; 3] = [
 ];
 
 fn event(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
-  MouseEvent { kind, column, row, modifiers: KeyModifiers::NONE }
+  MouseEvent::new(kind, column, row)
 }
 
 fn held(pane: u32, region: Region) -> Capture {
@@ -336,9 +336,8 @@ fn hover_reports_target_changes() {
 #[test]
 fn items_pick_the_topmost() {
   let cells = |column, columns| Rect { column, row: 4, columns, rows: 1 };
-  let mut items = Items::default();
-  items.push(cells(10, 3), 0);
-  items.push(cells(12, 3), 1);
+  let items: Items =
+    [(cells(10, 3), 0), (cells(12, 3), 1)].into_iter().collect();
   // column -> item
   let cases = [(9, None), (10, Some(0)), (12, Some(1)), (14, Some(1))];
   for (column, want) in cases {

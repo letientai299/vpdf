@@ -1,7 +1,7 @@
 //! Prepared sidebar rows, owned by background workers.
+use crate::jobs::Load;
 use crate::{Result, app::App};
 use std::sync::atomic::Ordering;
-use std::sync::mpsc;
 use vpdf_model::text::PageId;
 use vpdf_pdf::content_cache::{self, Kind};
 use vpdf_pdf::jobs::OneShot;
@@ -43,20 +43,9 @@ impl Request {
 }
 
 #[derive(Default)]
-enum Load {
-  #[default]
-  Deferred,
-  Idle,
-  Running(Job),
-  Ready(Vec<Row>),
-}
-
-type Job = OneShot<std::result::Result<Vec<Row>, String>>;
-
-#[derive(Default)]
 pub(crate) struct Sidebar {
-  annotations: Load,
-  links: Load,
+  annotations: Load<Vec<Row>>,
+  links: Load<Vec<Row>>,
   page: Option<PageId>,
 }
 
@@ -68,7 +57,7 @@ impl App {
       _ => None,
     }
   }
-  fn sidebar_load(&mut self, request: Request) -> &mut Load {
+  fn sidebar_load(&mut self, request: Request) -> &mut Load<Vec<Row>> {
     match request {
       Request::Annotations => &mut self.sidebar.annotations,
       Request::Links(page) => {
@@ -86,7 +75,7 @@ impl App {
     let Some(request) = self.sidebar_request(kind) else {
       return;
     };
-    if !matches!(self.sidebar_load(request), Load::Deferred | Load::Idle) {
+    if !self.sidebar_load(request).startable() {
       return;
     }
     let (path, password, pages, seeds) = (
@@ -96,10 +85,9 @@ impl App {
       self.doc.seeds(),
     );
     let root = content_cache::root();
-    let job = OneShot::spawn(&self.wake, move |stopped| {
+    let job = OneShot::try_spawn(&self.wake, move |stopped| {
       let found =
-        worker::scan(&path, &password, pages, request, seeds, stopped, root)
-          .map_err(|error| error.to_string());
+        worker::scan(&path, &password, pages, request, seeds, stopped, root);
       (!stopped.load(Ordering::Relaxed)).then_some(found)
     });
     *self.sidebar_load(request) = Load::Running(job);
@@ -115,13 +103,11 @@ impl App {
   }
   pub fn sidebar_pending(&self, kind: PanelKind) -> bool {
     match kind {
-      PanelKind::Annotations => {
-        matches!(self.sidebar.annotations, Load::Deferred | Load::Running(_))
-      }
+      PanelKind::Annotations => self.sidebar.annotations.pending(),
       PanelKind::Links => {
         self.sidebar.page != Some(self.navigation_position().page)
           && !matches!(self.sidebar.links, Load::Idle)
-          || matches!(self.sidebar.links, Load::Deferred | Load::Running(_))
+          || self.sidebar.links.pending()
       }
       _ => false,
     }
@@ -156,11 +142,8 @@ impl App {
       || matches!(self.sidebar.links, Load::Deferred)
   }
   pub(crate) fn cancel_sidebars(&mut self) {
-    for load in [&mut self.sidebar.annotations, &mut self.sidebar.links] {
-      if matches!(load, Load::Deferred | Load::Running(_)) {
-        *load = Load::Idle;
-      }
-    }
+    self.sidebar.annotations.cancel();
+    self.sidebar.links.cancel();
   }
   pub(crate) fn refresh_sidebars(&mut self) -> Result<()> {
     self.sidebar = Sidebar::default();
@@ -184,25 +167,16 @@ impl App {
         self.refill_panel(kind)?;
         changed = true;
       }
-      let Load::Running(job) = self.sidebar_load(request) else {
+      let Some(found) =
+        self.sidebar_load(request).poll("Sidebar worker stopped")
+      else {
         continue;
       };
-      let found = match job.result.try_recv() {
-        Ok(found) => found,
-        Err(mpsc::TryRecvError::Empty) => continue,
-        Err(mpsc::TryRecvError::Disconnected) => {
-          Err("Sidebar worker stopped".into())
-        }
-      };
-      *self.sidebar_load(request) = match found {
-        Ok(rows) => Load::Ready(rows),
-        Err(error) => {
-          if visible {
-            self.error = Some(error);
-          }
-          Load::Idle
-        }
-      };
+      if let Err(error) = found
+        && visible
+      {
+        self.error = Some(error);
+      }
       self.refill_panel(kind)?;
       changed |= visible;
     }

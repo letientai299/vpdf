@@ -11,6 +11,8 @@ use vpdf_ui::layout::Screen;
 
 #[path = "support/hash.rs"]
 mod hash;
+#[path = "../tests/support/screen.rs"]
+mod screen;
 mod support;
 use support::{Case, measure};
 #[path = "support/corpus.rs"]
@@ -18,13 +20,7 @@ mod corpus;
 use corpus::corpus;
 
 /// A 120x40 pane.
-const PANE: Screen = Screen {
-  columns: 120,
-  rows: 40,
-  cell_width: 8,
-  cell_height: 16,
-  origin: (0, 0),
-};
+const PANE: Screen = screen::cells(120, 40);
 
 /// The corpus paper on a 120x40 pane.
 fn paper(text_mode: bool) -> Result<Solo> {
@@ -60,7 +56,7 @@ fn menu_rows() -> Result<()> {
     .overlays
     .clues_mut()
     .restart(Instant::now().checked_sub(Duration::from_secs(1)));
-  let _ = app.clue_due();
+  let _ = app.clue_due(Instant::now());
   assert!(app.overlays.clues().shown().is_some());
   measure("App::menu_rows clues", || {
     black_box(app.menu_rows());
@@ -71,12 +67,7 @@ fn menu_rows() -> Result<()> {
 fn hover() -> Result<()> {
   use vpdf_model::input::{MouseEvent, MouseEventKind};
   use vpdf_ui::pointer::Region;
-  let motion = |column| MouseEvent {
-    kind: MouseEventKind::Moved,
-    column,
-    row: 20,
-    modifiers: KeyModifiers::NONE,
-  };
+  let motion = |column| MouseEvent::new(MouseEventKind::Moved, column, 20);
   let mut session = vpdf::session::Session::new(None);
   session.open(&corpus("paper.pdf")?, true, PANE)?;
   session.app().command("2")?;
@@ -131,12 +122,7 @@ fn wheel() -> Result<()> {
 /// Row drags: plain, by word, edge.
 fn drag() -> Result<()> {
   use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
-  let event = |kind, column| MouseEvent {
-    kind,
-    column,
-    row: 20,
-    modifiers: KeyModifiers::NONE,
-  };
+  let event = |kind, column| MouseEvent::new(kind, column, 20);
   for clicks in [1, 2] {
     let mut session = vpdf::session::Session::new(None);
     session.open(&corpus("paper.pdf")?, true, PANE)?;
@@ -232,12 +218,7 @@ fn split_frame() -> Result<()> {
   session.open(&corpus("paper.pdf")?, true, PANE)?;
   session.app().command("vsplit")?;
   session.settle()?;
-  let rest = |column| MouseEvent {
-    kind: MouseEventKind::Moved,
-    column,
-    row: 20,
-    modifiers: KeyModifiers::NONE,
-  };
+  let rest = |column| MouseEvent::new(MouseEventKind::Moved, column, 20);
   session.mouse(rest(30))?;
   let mut out = Vec::with_capacity(64 * 1024);
   session.draw_frame(&mut out)?;
@@ -275,13 +256,7 @@ fn viewport() -> Result<()> {
 
 /// `zc` on, then off, at page 100 of a book.
 fn crop_toggle() -> Result<()> {
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = screen::cells(120, 50);
   let mut app = Solo::open(&corpus("book.pdf")?, "", false, screen)?;
   app.command("100")?;
   app.toggle_crop()?;
@@ -329,9 +304,12 @@ fn cursor_key() -> Result<()> {
 
 fn preview_idle() -> Result<()> {
   let mut app = paper(false)?;
-  measure("App::draw_preview absent", || {
+  measure("App::scene_preview absent", || {
     let Solo { app, graphics } = black_box(&mut app);
-    app.draw_preview(graphics, &mut io::sink()).expect("no preview");
+    vpdf::presentation::try_draw(&mut io::sink(), Some(graphics), |s| {
+      app.scene_preview(s)
+    })
+    .expect("no preview");
   })
 }
 
@@ -384,12 +362,7 @@ fn routing_pointer() -> Result<()> {
   let app = paper(false)?;
   let mut session = vpdf::session::Session::new(None);
   session.open(&app.path, true, app.screen)?;
-  let mouse = MouseEvent {
-    kind: MouseEventKind::ScrollDown,
-    column: 80,
-    row: 12,
-    modifiers: KeyModifiers::NONE,
-  };
+  let mouse = MouseEvent::new(MouseEventKind::ScrollDown, 80, 12);
   measure("Session::mouse wheel", || {
     session.app().reading_view().scrub_scroll(0.0);
     session.mouse(black_box(mouse)).expect("reading wheel");
@@ -418,12 +391,7 @@ fn routing_panel_press() -> Result<()> {
   use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
   let mut app = paper(false)?;
   app.open_panel(vpdf_ui::keys::PanelKind::Help)?;
-  let mouse = MouseEvent {
-    kind: MouseEventKind::Down(MouseButton::Left),
-    column: 2,
-    row: 2,
-    modifiers: KeyModifiers::NONE,
-  };
+  let mouse = MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 2, 2);
   measure("App::panel_mouse press", || {
     app.panel_mouse(black_box(mouse), 1).expect("help row press");
   })
@@ -438,12 +406,8 @@ fn transitions() -> Result<()> {
   session.settle()?;
   measure("Session::mouse pane press", || {
     let column = if session.app().at.column == 0 { 90 } else { 10 };
-    let mouse = MouseEvent {
-      kind: MouseEventKind::Down(MouseButton::Left),
-      column,
-      row: 39,
-      modifiers: KeyModifiers::NONE,
-    };
+    let mouse =
+      MouseEvent::new(MouseEventKind::Down(MouseButton::Left), column, 39);
     session.mouse(black_box(mouse)).expect("pane press");
   })?;
   session.open(&corpus("book.pdf")?, true, app.screen)?;

@@ -1,11 +1,9 @@
 use crate::Result;
 use crate::app::App;
 use crate::pdf_text::PdfText;
-use std::io::Write;
 use vpdf_model::input::MouseEvent;
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::SelectionKind;
-use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::context::{Command, ContextMenu, Item, PageContext, Transition};
 use vpdf_ui::keys::{Action, Input};
 use vpdf_ui::pointer::{Hit, Route};
@@ -242,19 +240,7 @@ impl App {
     self.overlays.menu()?.pixel_area(self.layout.screen(), self.left)
   }
 
-  pub fn draw_context(
-    &mut self,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    let mut painter =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    self.scene_context(&mut painter);
-    painter.finish()?;
-    Ok(())
-  }
-
-  pub(crate) fn scene_context<'a>(
+  pub fn scene_context<'a>(
     &self,
     scene: &mut impl vpdf_model::scene::Draw<'a>,
   ) {

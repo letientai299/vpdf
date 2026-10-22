@@ -272,13 +272,7 @@ fn crop_document(path: &Path, screen: Screen) -> Result<CropReport> {
 }
 
 pub fn run(files: &[PathBuf]) -> Result<String> {
-  let screen = Screen {
-    columns: 120,
-    rows: 50,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::screen::cells(120, 50);
   let reports = files
     .iter()
     .map(|file| crop_document(file, screen))

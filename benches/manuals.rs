@@ -14,26 +14,19 @@ use vpdf_search::search::{Index, compile};
 use vpdf_ui::keys::{Action, Input};
 use vpdf_ui::layout::Layout;
 
+#[path = "support/files.rs"]
+mod corpus;
 #[path = "support/hash.rs"]
 mod hash;
+#[path = "../tests/support/screen.rs"]
+mod screen;
 mod support;
 use support::measure;
 
-const SCREEN: Screen = Screen {
-  columns: 120,
-  rows: 50,
-  cell_width: 8,
-  cell_height: 16,
-  origin: (0, 0),
-};
+const SCREEN: Screen = screen::cells(120, 50);
 
 fn files() -> Result<Vec<PathBuf>> {
-  let extra = std::env::var_os("VPDF_EXTRA");
-  if let Some(extra) = extra {
-    return Ok(std::env::split_paths(&extra).collect());
-  }
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("../huge");
-  Ok(["sdm.pdf", "postgres.pdf"].map(|name| root.join(name)).to_vec())
+  corpus::files(&["../huge/sdm.pdf", "../huge/postgres.pdf"])
 }
 
 fn open() -> Result<()> {
@@ -54,8 +47,8 @@ fn search() -> Result<()> {
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     let mut doc = Document::open(&path, "")?;
     let pages = doc.pages.len();
-    let text = (0..8)
-      .map(|i| doc.text(PageId((i * 7919 + pages / 3) % pages)))
+    let text = corpus::spread(pages)
+      .map(|page| doc.text(PageId(page)))
       .collect::<Result<Vec<_>>>()?;
     measure(&format!("Index::new {name} 8 pages"), || {
       for (page, text) in text.iter().enumerate() {
@@ -169,8 +162,8 @@ fn navigation() -> Result<()> {
     let mut doc = Document::open(&path, "")?;
     let mut picked = None;
     let pages = doc.pages.len();
-    for i in 0..8.min(pages) {
-      let text = doc.text(PageId((i * 7919 + pages / 3) % pages))?;
+    for page in corpus::spread(pages).take(pages) {
+      let text = doc.text(PageId(page))?;
       if let Some(line) = text
         .lines
         .windows(2)
@@ -338,8 +331,7 @@ fn fidelity() -> Result<()> {
       }
     }
     println!("{} bounds {}", path.display(), hash::digest(&bytes));
-    for i in 0..8 {
-      let page = PageId((i * 7919 + pages / 3) % pages);
+    for page in corpus::spread(pages).map(PageId) {
       vpdf_pdf::raster::visit_page(&mut doc, page, 256, |w, h, pixels| {
         println!(
           "{} page {} {w}x{h} pixels {}",

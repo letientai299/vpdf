@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use crate::harness::corpus;
 use vpdf::Result;
 use vpdf::pdf_text::PdfText;
 use vpdf_model::text::{PageId, Position};
@@ -9,8 +9,7 @@ use vpdf_reader::reader::Reader;
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn paper_blocks_supply_paragraph_boundaries() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut doc = Document::open(&root.join("paper.pdf"), "")?;
+  let mut doc = Document::open(&corpus("paper.pdf")?, "")?;
   let text = doc.text(PageId(0))?;
   let starts: Vec<_> = text
     .lines

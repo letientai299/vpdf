@@ -60,8 +60,7 @@ impl Session {
       if showing.contains(&id) {
         continue;
       }
-      let hidden = self.tabs.iter_mut().flat_map(|tab| &mut tab.panes);
-      if let Some(app) = hidden.into_iter().find(|app| app.id == id) {
+      if let Some(app) = self.pane_mut(id) {
         app.trim();
         self.graphics.forget(id);
       }
@@ -430,7 +429,7 @@ impl Session {
     if self.tabs.is_empty() {
       return Ok(());
     }
-    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+    for app in self.panes_mut() {
       app.at = At { column: u16::MAX, row: u16::MAX };
     }
     self.arrange()
@@ -463,6 +462,12 @@ impl Session {
 impl Tab {
   pub(super) fn new(app: App) -> Self {
     Self { tree: Node::leaf(app.id), panes: vec![app], focus: 0, last: None }
+  }
+
+  /// Each pane's pointer geometry and focused id.
+  pub(super) fn pointer_panes(&self) -> (Vec<vpdf_ui::pointer::Pane>, u32) {
+    let panes = self.panes.iter().map(App::pointer_pane).collect();
+    (panes, self.panes[self.focus].id)
   }
 
   pub(super) fn index(&self, id: u32) -> Option<usize> {

@@ -47,14 +47,8 @@ impl<'a> Overlay<'a> {
   }
 
   pub fn completions(&self) -> Items {
-    let mut items = Items::default();
-    let Some(menu) = self.menu else { return items };
-    for (cells, index) in
-      menu.grid(self.screen).cells(menu.items().len(), self.top())
-    {
-      items.push(cells, index);
-    }
-    items
+    let Some(menu) = self.menu else { return Items::default() };
+    menu.grid(self.screen).cells(menu.items().len(), self.top()).collect()
   }
 
   pub fn clues(&self) -> Items {

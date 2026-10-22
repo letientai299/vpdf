@@ -1,7 +1,8 @@
 use super::Tracking;
 use super::{
   BLOCK, Cache, Graphics, HashMap, Key, LOST, OVERLAYS, Ordering, PREVIEW,
-  Payload, Result, STORED, Spool, TILE_END, Tile, Usage, Write, transmit,
+  Payload, Result, STORED, Spool, TILE_END, Tile, Usage, Write, delete,
+  transmit,
 };
 
 impl Graphics {
@@ -82,6 +83,17 @@ impl Graphics {
     true
   }
 
+  /// Deletes image `id` and its placements.
+  pub(super) fn delete_image(
+    &mut self,
+    out: &mut impl Write,
+    id: u32,
+  ) -> Result<()> {
+    delete(self.transport, out, id)?;
+    self.unplace(id);
+    Ok(())
+  }
+
   /// Forgets placements of `id`, whose image is gone.
   pub(super) fn unplace(&mut self, id: u32) {
     self.shown.retain(|pair| pair.0 != id);
@@ -155,8 +167,7 @@ impl Graphics {
       .max(self.budget.div_ceil((BLOCK - OVERLAYS) as usize));
     for key in self.resident.insert(key, id, weight) {
       if let Some(id) = self.ids.remove(&key) {
-        self.transport.graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
-        self.unplace(id);
+        self.delete_image(out, id)?;
         self.free.push(id);
       }
     }

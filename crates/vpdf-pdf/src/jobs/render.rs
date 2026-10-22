@@ -672,16 +672,8 @@ mod tests {
     let (wake, woken) = crate::fixtures::wake();
     let (sink, results) = completion(&wake);
     let worker = RenderWorker::new(file.path(), "", doc.lists(), sink);
-    let key = TileKey {
-      page: PageId(0),
-      scale: 1024,
-      rotation: 0,
-      x: 0,
-      y: 0,
-      width: 64,
-      height: 64,
-      crop: Crop::default(),
-    };
+    let key =
+      TileKey { scale: 1024, width: 64, height: 64, ..TileKey::default() };
     worker.request(&[key], 1);
     woken.recv_timeout(Duration::from_secs(10))?;
     let tile = results.try_recv()?.map_err(anyhow::Error::msg)?;
@@ -693,16 +685,8 @@ mod tests {
 
   #[test]
   fn closed_sink_stops_cutting() {
-    let key = TileKey {
-      page: PageId(0),
-      scale: 1024,
-      rotation: 0,
-      x: 0,
-      y: 0,
-      width: 1,
-      height: 1,
-      crop: Crop::default(),
-    };
+    let key =
+      TileKey { scale: 1024, width: 1, height: 1, ..TileKey::default() };
     let cut = AtomicUsize::new(0);
     let pixels = (0..2).map(|_| {
       cut.fetch_add(1, Ordering::Relaxed);
@@ -749,8 +733,7 @@ mod tests {
     let drawing = Urgent::new();
     let stop = std::sync::atomic::AtomicBool::new(false);
     thread::scope(|scope| {
-      let waiting =
-        scope.spawn(|| yield_to_views(|| stop.load(Ordering::Relaxed)));
+      let waiting = scope.spawn(|| crate::scheduling::ready(&stop));
       thread::sleep(Duration::from_millis(20));
       assert!(!waiting.is_finished(), "returned while a view draws");
       stop.store(true, Ordering::Relaxed);
@@ -771,12 +754,10 @@ mod tests {
     let key = |page, y| TileKey {
       page: PageId(page),
       scale: 1024,
-      rotation: 0,
-      x: 0,
       y,
       width: TILE_WIDTH,
       height: 256,
-      crop: Crop::default(),
+      ..TileKey::default()
     };
     let tiles = [key(0, 512), key(1, 0), key(0, 256), key(1, 256)];
     for urgent in [4, 2] {

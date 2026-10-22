@@ -1,8 +1,7 @@
 use anyhow::Result;
 use std::hint::black_box;
-use vpdf_model::geometry::Screen;
 use vpdf_model::tile::TileKey;
-use vpdf_ui::layout::{Layout, visible};
+use vpdf_ui::layout::visible;
 use vpdf_ui::source::Raster;
 
 struct Prepared {
@@ -23,16 +22,8 @@ impl Raster for Prepared {
 
 pub fn compose() -> Result<()> {
   let geometry: super::Geometry = super::fixture("geometry")?;
-  let layout = Layout::new(
-    geometry.pages.into_iter().map(super::bounds),
-    Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
-  );
+  let layout =
+    super::layouts::tiles(geometry.pages.into_iter().map(super::bounds));
   let (manifest, pixels) = super::raster::fixture()?;
   let key = visible(&layout, 0.0)[0];
   anyhow::ensure!(key == manifest.key(), "Prepared raster dimensions changed");

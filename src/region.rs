@@ -12,7 +12,6 @@ use vpdf_model::document::Target;
 use vpdf_model::text::{Bounds, PageId};
 use vpdf_pdf::jobs::capture;
 use vpdf_reader::reader::Yank;
-use vpdf_terminal::graphics::Graphics;
 use vpdf_ui::figures;
 use vpdf_ui::keys::Input;
 use vpdf_ui::page::Point;
@@ -137,7 +136,7 @@ impl App {
     let shown = self.layout.crop_for(page).apply(self.doc.pages[page.0].bounds);
     let visible = vpdf_ui::layout::clip(
       self.layout.project(page, shown, self.reader.scroll),
-      Bounds { x0: 0.0, y0: 0.0, x1: screen.width(), y1: screen.height() },
+      screen.bounds(),
     )
     .ok_or_else(|| anyhow::anyhow!("No visible page for capture"))?;
     let from = self
@@ -317,20 +316,7 @@ impl App {
     self.reader.notice(message);
   }
 
-  pub fn draw_region(
-    &mut self,
-    graphics: &mut Graphics,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    let snap_to_cells = graphics.crop_quirk();
-    let mut painter =
-      vpdf_terminal::painter::Painter::new(out).with_graphics(graphics);
-    self.scene_region(&mut painter, snap_to_cells);
-    painter.finish()?;
-    Ok(())
-  }
-
-  pub(crate) fn scene_region<'a>(
+  pub fn scene_region<'a>(
     &mut self,
     scene: &mut impl vpdf_model::scene::Draw<'a>,
     snap_to_cells: bool,
@@ -407,13 +393,7 @@ mod tests {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("region.pdf");
     crate::fixtures::pdf(&path, &["body"], "")?;
-    let screen = vpdf_ui::layout::Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(80, 24);
     let mut app = App::with_screen(&path, "", true, screen)?;
     let (wake, woken) = crate::fixtures::wake();
     app.wake = wake;
@@ -438,13 +418,7 @@ mod tests {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("paper.pdf");
     std::fs::copy(root.join("paper.pdf"), &path)?;
-    let screen = vpdf_ui::layout::Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(120, 40);
     let mut app = App::with_screen(&path, "", false, screen)?;
     app.move_figure(true, 1)?;
     app.open_region()?;

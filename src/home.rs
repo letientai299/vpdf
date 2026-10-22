@@ -30,15 +30,7 @@ pub struct Home {
 }
 
 impl Home {
-  pub fn new(recent: &[Entry], screen: Screen) -> Self {
-    Self::with_wake(
-      recent,
-      screen,
-      &vpdf_pdf::jobs::Wake::new(vpdf_terminal::input::wake),
-    )
-  }
-
-  pub(crate) fn with_wake(
+  pub fn new(
     recent: &[Entry],
     screen: Screen,
     wake: &vpdf_pdf::jobs::Wake,
@@ -167,16 +159,11 @@ impl Home {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use vpdf_pdf::jobs::Wake;
 
   fn resolve(line: &str, terminal: bool) -> Result<Outcome> {
-    let screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
-    Home::new(&[], screen).command(line, terminal)
+    let screen = crate::screen::cells(80, 24);
+    Home::new(&[], screen, &Wake::none()).command(line, terminal)
   }
 
   fn command(line: &str) -> Result<Outcome> {
@@ -186,15 +173,9 @@ mod tests {
   #[test]
   fn version_on_start_screen() -> Result<()> {
     use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
-    let screen = Screen {
-      columns: 160,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(160, 40);
     for terminal in [true, false] {
-      let mut home = Home::new(&[], screen);
+      let mut home = Home::new(&[], screen, &Wake::none());
       home.graphics = Graphics::default();
       let mut history = History::default();
       for ch in ":version".chars().chain(['\r']) {
@@ -236,14 +217,8 @@ mod tests {
     use std::time::{Duration, Instant};
     let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
     let entry = crate::state::tests::entry(&path.to_string_lossy(), 0, 0);
-    let screen = Screen {
-      columns: 120,
-      rows: 40,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
-    let mut home = Home::new(&[entry], screen);
+    let screen = crate::screen::cells(120, 40);
+    let mut home = Home::new(&[entry], screen, &Wake::none());
     home.graphics = Graphics::default();
     let mut output = Vec::new();
     home.draw(&mut output)?;
@@ -288,14 +263,8 @@ mod tests {
   fn start_completion_uses_home_scope() -> Result<()> {
     use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
     use vpdf_terminal::decode::Event;
-    let screen = Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
-    let mut home = Home::new(&[], screen);
+    let screen = crate::screen::cells(80, 24);
+    let mut home = Home::new(&[], screen, &Wake::none());
     let mut history = History::default();
     let key = |code| Event::Key(KeyEvent::new(code, KeyModifiers::NONE));
     home.event(key(KeyCode::Char(':')), &mut history)?;

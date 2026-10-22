@@ -248,7 +248,6 @@ mod tests {
   use super::*;
   use std::path::PathBuf;
   use vpdf_ui::keys::{Action, Input, PanelKind};
-  use vpdf_ui::layout::Screen;
   use vpdf_ui::panel::Destination;
 
   fn loaded(app: &mut App) -> Result<()> {
@@ -266,13 +265,7 @@ mod tests {
   #[ignore = "requires verified public PDF corpus"]
   fn real_links_resolve_text() -> Result<()> {
     let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-    let screen = Screen {
-      columns: 120,
-      rows: 50,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(120, 50);
     let mut app = App::with_screen(&root.join("paper.pdf"), "", true, screen)?;
     app.go_to_page(PageId(1))?;
     loaded(&mut app)?;

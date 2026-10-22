@@ -1,17 +1,10 @@
 use super::*;
-use crate::text::{Bounds, Glyph, PageId};
+use crate::text::PageId;
 
 #[test]
 fn glyph_offsets_preserve_unicode() {
   let value = "é 🧬 See Figure 4.";
-  let line = Line {
-    ocr: None,
-    paragraph: false,
-    glyphs: value
-      .chars()
-      .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
-      .collect(),
-  };
+  let line = crate::text_fixture::plain(value);
   let start = value.chars().position(|ch| ch == 'F').unwrap();
   let reference = Reference::at("Figure 4", 0).unwrap();
   for glyph in 0..=line.glyphs.len() + 1 {

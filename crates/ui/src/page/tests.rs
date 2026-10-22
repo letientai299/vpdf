@@ -1,6 +1,5 @@
 use super::*;
-#[path = "../../../../tests/support/page.rs"]
-mod fixture;
+use crate::testing::page as fixture;
 use fixture::marks;
 pub(super) use fixture::{Source, layout};
 use vpdf_reader::reader::Reader;
@@ -65,7 +64,7 @@ fn text_errors_stop_drawing() {
 
 #[test]
 fn recorded_overlays_keep_layers() -> Result<()> {
-  use vpdf_model::scene::{Layer, Op};
+  use vpdf_model::scene::{Layer, Op, Stage};
   let (_, layout, _, scene) = fixture::overlays()?;
   let fills: Vec<_> = scene
     .iter()
@@ -84,7 +83,8 @@ fn recorded_overlays_keep_layers() -> Result<()> {
   assert_eq!(fills[2].color(), theme::SELECTION);
   assert_eq!(fills[3].color(), theme::CURSOR);
   for fill in &fills {
-    assert_eq!(fill.frame(), (layout.screen(), 2));
+    let stage = Stage { screen: layout.screen(), left: 2 };
+    assert_eq!(fill.stage(), stage);
     let rect = fill.rect();
     assert!(rect.x0 >= 0.0 && rect.y0 >= 0.0);
     assert!(rect.x1 <= layout.screen().width());

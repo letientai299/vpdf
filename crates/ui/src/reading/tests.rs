@@ -90,6 +90,17 @@ impl Fixture {
     }
   }
 
+  /// A fixture whose `at`th text read fails.
+  fn failing(at: usize) -> Self {
+    let mut fixture = Self::new();
+    fixture.source.fail = at;
+    fixture
+  }
+
+  fn bind<'a>(&'a mut self, pane: &'a mut Pane) -> View<'a, &'a mut Source> {
+    pane.bind(&mut self.layout, &mut self.text, self.frame, &mut self.source)
+  }
+
   fn view(&mut self) -> View<'_, &mut Source> {
     View {
       reader: &mut self.reader,
@@ -107,13 +118,12 @@ impl Fixture {
 #[test]
 fn scroll_failures_preserve_effect_order() {
   for (fail, scroll, target) in [(1, 200.0, None), (2, 240.0, Some(240.0))] {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::failing(fail);
     fixture.reader.enter_cursor();
     fixture.reader.scroll = 50.0;
     fixture.reader.desired = Some(9);
     fixture.reader.operator = Some(Operator { count: 1, register: '"' });
     fixture.reader.message = "pending".into();
-    fixture.source.fail = fail;
     fixture.animation.start(200.0, Instant::now());
     assert!(fixture.view().scroll(40.0, ScrollInput::Wheel).is_err());
     assert_eq!(fixture.source.reads, fail);
@@ -174,9 +184,8 @@ fn text_uses_full_pane_height() -> Result<()> {
 fn reveal_cancels_before_source_failure() {
   for text in [false, true] {
     for operation in ["reveal", "land", "align"] {
-      let mut fixture = Fixture::new();
+      let mut fixture = Fixture::failing(1);
       fixture.frame.pane.text = text;
-      fixture.source.fail = 1;
       fixture.animation.start(200.0, Instant::now());
       let result = match operation {
         "reveal" => fixture.view().reveal(),
@@ -258,11 +267,10 @@ fn boundary_records_before_reveal_failure() {
   use vpdf_reader::motion::Motion;
 
   for fail in [1, 2] {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::failing(fail);
     fixture.reader.enter_cursor();
     fixture.reader.desired = Some(9);
     fixture.animation.start(200.0, Instant::now());
-    fixture.source.fail = fail;
     let mut search = Search::default();
     let result =
       fixture.view().navigate(input(Action::Motion(Motion::Last)), &mut search);
@@ -283,10 +291,9 @@ fn selection_actions_skip_reveal() -> Result<()> {
   use crate::keys::Action;
 
   for action in [Action::Visual(SelectionKind::Line), Action::Reselect] {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::failing(1);
     fixture.reader.enter_cursor();
     fixture.animation.start(200.0, Instant::now());
-    fixture.source.fail = 1;
     assert!(fixture.view().navigate(input(action), &mut Search::default())?);
     assert_eq!(fixture.source.reads, 0);
     assert!(fixture.animation.active());
@@ -302,9 +309,8 @@ fn normal_scroll_forgets_search_yank_before_failure() {
   use vpdf_search::search::Hit;
 
   for motion in [Motion::Down, Motion::Right] {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::failing(1);
     fixture.frame.pane.text = true;
-    fixture.source.fail = 1;
     fixture.reader.message = "pending".into();
     fixture.animation.start(200.0, Instant::now());
     let mut search = Search::default();
@@ -331,9 +337,8 @@ fn normal_scroll_forgets_search_yank_before_failure() {
 #[test]
 fn location_failure_cancels_before_clamping() {
   for text in [false, true] {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::failing(1);
     fixture.frame.pane.text = text;
-    fixture.source.fail = 1;
     fixture.reader.desired = Some(9);
     fixture.animation.start(200.0, Instant::now());
     let position = Position { line: 5, ..Position::default() };
@@ -392,9 +397,8 @@ fn section_reads_all_candidates_before_selection() -> Result<()> {
 #[test]
 fn section_landing_requires_visibility_and_no_animation() -> Result<()> {
   for animating in [false, true] {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::failing(1);
     fixture.target = Some(Position::default());
-    fixture.source.fail = 1;
     if animating {
       fixture.animation.start(200.0, Instant::now());
     }
@@ -444,10 +448,9 @@ fn jump_failures_preserve_completed_transitions() {
   use crate::page::landing::Span;
 
   for fail in [1, 2, 3] {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::failing(fail);
     fixture.reader.enter_cursor();
     fixture.reader.desired = Some(9);
-    fixture.source.fail = fail;
     fixture.animation.start(200.0, Instant::now());
     let old = Position { line: 1, ..Position::default() };
     fixture.landing.show(old, Span::Line, Instant::now());
@@ -471,10 +474,9 @@ fn jump_failures_preserve_completed_transitions() {
 #[test]
 fn page_jump_reads_text_before_cancelling_animation() {
   for text in [false, true] {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::failing(2);
     fixture.frame.pane.text = text;
     fixture.reader.enter_cursor();
-    fixture.source.fail = 2;
     fixture.animation.start(200.0, Instant::now());
     assert!(fixture.view().go_to_page(PageId(0)).is_err());
     assert_eq!(fixture.reader.jumps().count(), 1);
@@ -505,8 +507,7 @@ fn repeated_landing_only_clamps_and_flashes() -> Result<()> {
 
 #[test]
 fn page_destination_avoids_text_loading() -> Result<()> {
-  let mut fixture = Fixture::new();
-  fixture.source.fail = 1;
+  let mut fixture = Fixture::failing(1);
   assert_eq!(
     fixture.view().destination(PageId(999), None)?,
     Position::default()
@@ -525,8 +526,7 @@ fn failed_search_yank_is_consumed_without_restoring() -> Result<()> {
   use crate::find::Search;
   use vpdf_search::{query::Query, search::Hit};
 
-  let mut fixture = Fixture::new();
-  fixture.source.fail = 1;
+  let mut fixture = Fixture::failing(1);
   fixture.animation.start(200.0, Instant::now());
   let target = Position { line: 8, ..Position::default() };
   let mut search = Search::default();
@@ -560,12 +560,7 @@ fn owned_reader_binds_navigation() -> Result<()> {
   fixture.reader.enter_cursor();
   let mut pane =
     Pane::new(std::mem::take(&mut fixture.reader), Tracking::default());
-  let mut view = pane.bind(
-    &mut fixture.layout,
-    &mut fixture.text,
-    fixture.frame,
-    &mut fixture.source,
-  );
+  let mut view = fixture.bind(&mut pane);
   assert!(
     view
       .navigate(input(Action::Motion(Motion::Down)), &mut Search::default())?
@@ -631,14 +626,7 @@ fn reload_forgets_document_state() -> Result<()> {
   reader.remember();
   reader.visual(SelectionKind::Line);
   let mut pane = Pane::new(reader, Tracking::default());
-  pane
-    .bind(
-      &mut fixture.layout,
-      &mut fixture.text,
-      fixture.frame,
-      &mut fixture.source,
-    )
-    .land_at(position)?;
+  fixture.bind(&mut pane).land_at(position)?;
   pane.flash(position, Span::Glyph, now);
   pane.reload();
   assert_eq!(pane.mode(), Mode::Normal);
@@ -656,14 +644,7 @@ fn tracking_copies_preserve_independent_feedback() -> Result<()> {
   let position = Position { line: 5, ..Position::default() };
   let mut fixture = Fixture::new();
   let mut pane = Pane::default();
-  pane
-    .bind(
-      &mut fixture.layout,
-      &mut fixture.text,
-      fixture.frame,
-      &mut fixture.source,
-    )
-    .land_at(position)?;
+  fixture.bind(&mut pane).land_at(position)?;
   pane.aim(Target::Page(PageId(0)));
   pane.animate_to(200.0, now);
   pane.flash(position, Span::Glyph, now);
@@ -716,14 +697,13 @@ fn resize_preserves_landing_after_completed_reflow() -> Result<()> {
 #[test]
 fn search_submission_preserves_failure_order() {
   for cursor in [false, true] {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::failing(1);
     if cursor {
       fixture.reader.enter_cursor();
     }
     let mut search = crate::find::Search::default();
     search.begin_prompt(Location::default());
     fixture.reader.operator = Some(Operator { count: 1, register: 'a' });
-    fixture.source.fail = 1;
     assert!(fixture.view().prepare_search(&mut search, "a", false).is_err());
     assert_eq!(fixture.source.reads, 1);
     assert!(fixture.reader.operator.is_none());
@@ -735,11 +715,10 @@ fn search_submission_preserves_failure_order() {
 
 #[test]
 fn search_abort_retains_failed_origin() {
-  let mut fixture = Fixture::new();
+  let mut fixture = Fixture::failing(1);
   let mut search = crate::find::Search::default();
   search.begin_prompt(Location::default());
   search.cancel();
-  fixture.source.fail = 1;
   assert!(fixture.view().abort_search(&mut search, true).is_err());
   assert!(search.prompt_origin().is_some());
   assert!(search.take_previous().is_some());
@@ -806,10 +785,9 @@ fn named_section_prefers_aim_then_last_same_line() {
 #[test]
 fn named_section_preserves_source_failure_fallback() {
   for text in [false, true] {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::failing(1);
     fixture.source.headings = named_headings();
     fixture.frame.pane.text = text;
-    fixture.source.fail = 1;
     assert_eq!(
       fixture.view().current_section(),
       if text { Some(2) } else { None }
@@ -945,12 +923,11 @@ fn viewport_failure_cancels_yank() {
   use crate::find::Search;
   use crate::keys::Action;
   use vpdf_search::{query::Query, search::Hit};
-  let mut fixture = Fixture::new();
+  let mut fixture = Fixture::failing(1);
   fixture.reader.enter_cursor();
   fixture.reader.scroll = 50.0;
   fixture.reader.operator = Some(Operator { count: 1, register: 'a' });
   fixture.animation.start(200.0, Instant::now());
-  fixture.source.fail = 1;
   let mut search = Search::default();
   let found = Position { line: 1, ..Position::default() };
   search.show(
@@ -979,12 +956,7 @@ fn pointer_route(
     focus: false,
     clicks: 1,
     pixel: None,
-    mouse: vpdf_model::input::MouseEvent {
-      kind,
-      column,
-      row,
-      modifiers: vpdf_model::input::KeyModifiers::NONE,
-    },
+    mouse: vpdf_model::input::MouseEvent::new(kind, column, row),
   }
 }
 
@@ -995,8 +967,7 @@ fn capture_avoids_text_and_clamps_corners() -> Result<()> {
     MouseButton::Left,
     MouseEventKind::{Down, Drag},
   };
-  let mut fixture = Fixture::new();
-  fixture.source.fail = 1;
+  let mut fixture = Fixture::failing(1);
   let mut gesture = Gesture::default();
   fixture.view().alt_press(&mut gesture, &pointer_route(Down(Left), 1, 1))?;
   assert!(gesture.sweep().is_some());
@@ -1016,9 +987,8 @@ fn failed_extensions_reset_previous_sweeps() {
   use crate::input::gesture::Gesture;
   use vpdf_model::input::{MouseButton::Left, MouseEventKind::Down};
   for text in [false, true] {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::failing(1);
     fixture.frame.pane.text = text;
-    fixture.source.fail = 1;
     let mut gesture = Gesture::default();
     gesture.begin_sweep(PageId(0), (10.0, 10.0));
     let press = pointer_route(Down(Left), u16::MAX, 1);
@@ -1107,9 +1077,8 @@ fn page_hits_preserve_precedence() -> Result<()> {
     (false, 1, None),
     (false, 2, None),
   ] {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::failing(1);
     let bounds = fixture.source.text.lines[0].glyphs[0].bounds;
-    fixture.source.fail = 1;
     fixture.source.fail_lookup = fail;
     if link {
       fixture.source.links.push(Link::new(bounds, Target::Page(PageId(0))));
@@ -1151,8 +1120,7 @@ fn unmarked_hits_read_text() -> Result<()> {
     assert_eq!(fixture.source.lookups, ["links", "notes"]);
     assert_eq!(fixture.source.reads, 1);
   }
-  let mut fixture = Fixture::new();
-  fixture.source.fail = 1;
+  let mut fixture = Fixture::failing(1);
   assert!(fixture.view().hit(HitFrame::Pending, 1, 1, None).is_err());
   assert_eq!(fixture.source.lookups, ["links", "notes"]);
   assert_eq!(fixture.source.reads, 1);
@@ -1175,15 +1143,8 @@ fn text_hits_follow_frames() -> Result<()> {
     })
     .collect();
   let reader = Reader::default();
-  let marks = paint::Marks {
-    reader: &reader,
-    matches: &[],
-    flash: None,
-    landing: None,
-    cursorline: false,
-    dim: false,
-    hovered: &[],
-  };
+  let marks =
+    paint::Marks { cursorline: false, ..crate::testing::page::marks(&reader) };
   fixture.view().text().scene(&mut Vec::new(), &marks)?;
   fixture.view().text().scroll(2)?;
   for (frame, index) in

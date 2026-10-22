@@ -1,20 +1,13 @@
 use anyhow::Result;
 use std::hint::black_box;
-use vpdf_model::geometry::{Crop, Screen};
-use vpdf_ui::layout::Layout;
+use vpdf_model::geometry::Crop;
 use vpdf_ui::page::Viewport;
 
 pub fn navigation() -> Result<()> {
   let prepared = super::fixtures::text()?;
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::screen::cells(120, 40);
   let bounds = || prepared.metadata.iter().map(|(_, bounds)| *bounds);
-  let mut layout = Layout::new(bounds(), screen);
+  let mut layout = super::layouts::tiles(bounds());
   for rotation in [0, 90] {
     layout.restore(2.0, rotation, Crop::default());
     layout.reflow(bounds());

@@ -2,7 +2,6 @@ use crate::presentation;
 use anyhow::{Context, Result};
 use std::hint::black_box;
 use vpdf_model::geometry::At;
-use vpdf_model::geometry::Screen;
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Reader;
 use vpdf_ui::paint::Marks;
@@ -10,13 +9,7 @@ use vpdf_ui::text_view::{Frame, TextView};
 
 pub fn canvas() -> Result<()> {
   let prepared = super::fixtures::text()?;
-  let screen = Screen {
-    columns: 120,
-    rows: 40,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::screen::cells(120, 40);
   let (rows, columns) = (usize::from(screen.rows), usize::from(screen.columns));
   let line = prepared.text[0]
     .lines

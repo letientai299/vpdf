@@ -1,11 +1,11 @@
 mod skew;
-use super::{OneShot, Wake};
+use super::{OneShot, Outcome, Wake};
 use crate::Result;
 use crate::content_cache::{self, Alias, Version};
 use crate::document::{GLYPH_LIMIT, Handle, MIB};
 use crate::text::{Bounds, Glyph, Line, PageId, Text};
 use mupdf::{Colorspace, ImageFormat};
-use sha2::{Digest, Sha256};
+use sha2::Digest;
 use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -30,7 +30,7 @@ enum Request {
 pub struct OcrJob {
   request: Request,
   pub page: PageId,
-  pub work: OneShot<std::result::Result<Option<Arc<Text>>, String>>,
+  pub work: OneShot<Outcome<Option<Arc<Text>>>>,
 }
 
 impl OcrJob {
@@ -69,7 +69,7 @@ impl OcrJob {
     let path = path.to_owned();
     let password = password.to_owned();
     let language = language.to_owned();
-    let work = OneShot::spawn(wake, move |stop| {
+    let work = OneShot::try_spawn(wake, move |stop| {
       let result = match request {
         Request::Explicit => {
           recognize(&path, &password, page, &language, stop).map(Some)
@@ -78,9 +78,7 @@ impl OcrJob {
           automatic(&path, &password, page, &language, stop)
         }
       };
-      let result =
-        result.map(|text| text.map(Arc::new)).map_err(|e| e.to_string());
-      Some(result)
+      Some(result.map(|text| text.map(Arc::new)))
     });
     Self { request, page, work }
   }
@@ -107,11 +105,8 @@ fn recognize(
   recognize_page(&doc, password, page, language, cancel)
 }
 
-fn ready(cancel: &AtomicBool) -> Result<()> {
-  anyhow::ensure!(
-    crate::scheduling::yield_to_views(|| cancel.load(Ordering::Relaxed)),
-    "OCR cancelled"
-  );
+fn ensure_live(cancel: &AtomicBool) -> Result<()> {
+  anyhow::ensure!(crate::scheduling::ready(cancel), "OCR cancelled");
   Ok(())
 }
 
@@ -124,7 +119,7 @@ fn automatic(
 ) -> Result<Option<Text>> {
   static SLOT: std::sync::Mutex<()> = std::sync::Mutex::new(());
   let _slot = loop {
-    ready(cancel)?;
+    ensure_live(cancel)?;
     match SLOT.try_lock() {
       Ok(slot) => break slot,
       Err(std::sync::TryLockError::Poisoned(_)) => {
@@ -134,13 +129,13 @@ fn automatic(
     }
     thread::sleep(Duration::from_millis(20));
   };
-  ready(cancel)?;
+  ensure_live(cancel)?;
   let doc = Handle::open(path, password)?;
-  ready(cancel)?;
+  ensure_live(cancel)?;
   if !doc.text(page)?.lines.is_empty() {
     return Ok(None);
   }
-  ready(cancel)?;
+  ensure_live(cancel)?;
   let bounds = doc.bounds(page)?;
   let raw = doc.native.load_page(page.0 as i32)?.to_text_page(
     crate::document::TEXT_FLAGS | mupdf::TextPageFlags::PRESERVE_IMAGES,
@@ -153,7 +148,7 @@ fn automatic(
   if !scanned || engine(language).is_none() {
     return Ok(None);
   }
-  ready(cancel)?;
+  ensure_live(cancel)?;
   recognize_page(&doc, password, page, language, cancel).map(Some)
 }
 
@@ -164,7 +159,7 @@ fn recognize_page(
   language: &str,
   cancel: &AtomicBool,
 ) -> Result<Text> {
-  ready(cancel)?;
+  ensure_live(cancel)?;
   let bounds = doc.bounds(page)?;
   let scale =
     2.5_f32.min((16_000_000.0 / (bounds.width() * bounds.height())).sqrt());
@@ -187,7 +182,7 @@ fn recognize_page(
     };
     Some(raster_key(&engine(language)?, language, rows, pixels.samples()))
   });
-  ready(cancel)?;
+  ensure_live(cancel)?;
   let output = cached(root.as_deref(), key.as_ref(), || {
     let mut png = Vec::new();
     pixels.write_to(&mut png, ImageFormat::PNG)?;
@@ -236,14 +231,13 @@ fn raster_key(
   rows: Rows,
   samples: &[u8],
 ) -> Alias {
-  let mut hasher = Sha256::new();
   let output = OUTPUT.join(" ");
-  for part in
-    [b"ocr 1", engine.as_bytes(), language.as_bytes(), output.as_bytes()]
-  {
-    hasher.update((part.len() as u64).to_le_bytes());
-    hasher.update(part);
-  }
+  let mut hasher = content_cache::digest([
+    b"ocr 1",
+    engine.as_bytes(),
+    language.as_bytes(),
+    output.as_bytes(),
+  ]);
   for field in [rows.width, rows.height, u32::from(rows.n)] {
     hasher.update(field.to_le_bytes());
   }

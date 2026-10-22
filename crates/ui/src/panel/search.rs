@@ -265,7 +265,7 @@ mod tests {
   }
 
   use crate::Result;
-  use crate::text::{Bounds, Glyph, Line, PageId, Text};
+  use crate::text::{Line, PageId, Text};
   use vpdf_search::search::{Index, compile};
 
   #[test]
@@ -274,14 +274,7 @@ mod tests {
     let index = Index::new(
       PageId(0),
       &Text {
-        lines: vec![Line {
-          ocr: None,
-          paragraph: true,
-          glyphs: label
-            .chars()
-            .map(|ch| Glyph { quad: None, ch, bounds: Bounds::default() })
-            .collect(),
-        }],
+        lines: vec![Line { paragraph: true, ..crate::fixtures::plain(label) }],
         ..Text::default()
       },
     );

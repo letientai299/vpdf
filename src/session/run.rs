@@ -8,11 +8,7 @@ use super::{
 use vpdf_terminal::input::{Notice, notice};
 
 /// Opens paths or the start screen.
-pub fn view(paths: &[PathBuf], page: Option<usize>) -> Result<()> {
-  view_configured(paths, page, crate::config::Loaded::default())
-}
-
-pub fn view_configured(
+pub fn view(
   paths: &[PathBuf],
   page: Option<usize>,
   config: crate::config::Loaded,
@@ -33,8 +29,11 @@ pub fn view_configured(
   session.graphics = vpdf_terminal::graphics::Graphics::live();
   if paths.is_empty() {
     session.screen = Some(screen);
-    session.home =
-      Some(Home::new(&session.state.recent, session.content(screen)));
+    session.home = Some(Home::new(
+      &session.state.recent,
+      session.content(screen),
+      &session.frontend.wake(),
+    ));
     session.resize(screen)?;
     return run_saving(&mut session);
   }

@@ -3,7 +3,7 @@ use crate::document::{Document, Handle, Lists};
 use crate::text::{Bounds, PageId};
 use mupdf::{Colorspace, DisplayList};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use vpdf_model::geometry::{
   Crop, Crops, Transform, clip, page_matrix, transform,
 };
@@ -238,10 +238,7 @@ pub fn margins(doc: &mut Document) -> Result<Vec<Crop>> {
 fn detect(doc: &mut Document, stop: &AtomicBool) -> Result<Vec<Crop>> {
   let mut boxes = Vec::with_capacity(doc.pages.len());
   for page in 0..doc.pages.len() {
-    anyhow::ensure!(
-      crate::scheduling::yield_to_views(|| stop.load(Ordering::Relaxed)),
-      "Cropping canceled"
-    );
+    anyhow::ensure!(crate::scheduling::ready(stop), "Cropping canceled");
     boxes.push(ink(doc, PageId(page))?);
   }
   let confirmed = confirmed(&boxes);
@@ -287,10 +284,7 @@ impl Margins {
   ) -> Result<()> {
     let mut boxes = Vec::new();
     for page in pages {
-      anyhow::ensure!(
-        crate::scheduling::yield_to_views(|| stop.load(Ordering::Relaxed)),
-        "Cropping canceled"
-      );
+      anyhow::ensure!(crate::scheduling::ready(stop), "Cropping canceled");
       boxes.push(page_ink(
         handle,
         *page,

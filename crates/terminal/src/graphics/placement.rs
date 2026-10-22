@@ -11,13 +11,11 @@ impl Graphics {
   pub fn begin(&mut self, out: &mut impl Write) -> Result<()> {
     self.missing_tiles = 0;
     for id in std::mem::take(&mut self.stale) {
-      self.transport.graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
-      self.unplace(id);
+      self.delete_image(out, id)?;
       self.free.push(id);
     }
     for id in std::mem::take(&mut self.retired) {
-      self.transport.graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
-      self.unplace(id);
+      self.delete_image(out, id)?;
       self.spare.push(id);
     }
     self.placed = 0;
@@ -39,8 +37,7 @@ impl Graphics {
     if self.preview != 0 && !self.pictured {
       // Frees the pixels once a frame skips the preview.
       let id = self.base + PREVIEW;
-      self.transport.graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
-      self.unplace(id);
+      self.delete_image(out, id)?;
       self.preview = 0;
     }
     // Sorting beats hashing the few placements of a frame.
@@ -82,9 +79,8 @@ impl Graphics {
       self.preview = serial;
     }
     // Whole pixels, so the crop matches the image unless the screen cuts it.
-    let (x, y) = (rect.x0.floor(), rect.y0.floor());
     let rect =
-      Bounds { x0: x, y0: y, x1: x + width as f32, y1: y + height as f32 };
+      Bounds::placed((rect.x0, rect.y0), (width as f32, height as f32));
     let Some(clip) = clip(rect, screen) else { return Ok(()) };
     if self.quirk && cut(rect, clip) {
       return self.place_cells(out, id, rect, clip, 2, (left, screen));
@@ -106,12 +102,7 @@ impl Graphics {
   ) -> Result<bool> {
     let placed = self.place_tile(key, (x, y), screen, left, out)?;
     if !placed {
-      let rect = Bounds {
-        x0: x.floor(),
-        y0: y.floor(),
-        x1: x.floor() + key.1.width as f32,
-        y1: y.floor() + key.1.height as f32,
-      };
+      let rect = Bounds::placed((x, y), size(key));
       self.missing_tiles += usize::from(clip(rect, screen).is_some());
     }
     Ok(placed)
@@ -120,19 +111,13 @@ impl Graphics {
   fn place_tile(
     &mut self,
     key: Key,
-    (x, y): (f32, f32),
+    origin: (f32, f32),
     screen: Screen,
     left: u16,
     out: &mut impl Write,
   ) -> Result<bool> {
     // Whole pixels, so neighboring tiles meet without a seam.
-    let (x, y) = (x.floor(), y.floor());
-    let rect = Bounds {
-      x0: x,
-      y0: y,
-      x1: x + key.1.width as f32,
-      y1: y + key.1.height as f32,
-    };
+    let rect = Bounds::placed(origin, size(key));
     let id = match self.resident.get(&key) {
       Some(&id) => id,
       None => {
@@ -159,8 +144,8 @@ impl Graphics {
     }
     let control = format_args!(
       "z=-2,x={},y={},w={},h={}",
-      (clip.x0 - x) as u32,
-      (clip.y0 - y) as u32,
+      (clip.x0 - rect.x0) as u32,
+      (clip.y0 - rect.y0) as u32,
       clip.width() as u32,
       clip.height() as u32,
     );
@@ -197,12 +182,7 @@ impl Graphics {
     for (top, h) in span(clip.height(), rect.height(), height) {
       for &(start, w) in &columns {
         p += 1;
-        let part = Bounds {
-          x0: clip.x0 + start as f32,
-          y0: clip.y0 + top as f32,
-          x1: clip.x0 + (start + w) as f32,
-          y1: clip.y0 + (top + h) as f32,
-        };
+        let part = clip.part((start as f32, top as f32), (w as f32, h as f32));
         let control = format_args!(
           "z={z},x={},y={},w={w},h={h},c={},r={}",
           (part.x0 - rect.x0) as u32,
@@ -240,6 +220,10 @@ impl Graphics {
 pub(super) fn clip(rect: Bounds, screen: Screen) -> Option<Bounds> {
   vpdf_model::geometry::PixelRect::clip(rect, screen)
     .map(vpdf_model::geometry::PixelRect::bounds)
+}
+
+fn size(key: Key) -> (f32, f32) {
+  (key.1.width as f32, key.1.height as f32)
 }
 
 /// Whether `rect` lies within a tile of the screen.

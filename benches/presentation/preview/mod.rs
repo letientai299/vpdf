@@ -1,7 +1,6 @@
 use crate::presentation;
 use anyhow::Result;
 use std::hint::black_box;
-use vpdf_model::geometry::Screen;
 use vpdf_model::tile::TileKey;
 use vpdf_ui::layout::Layout;
 use vpdf_ui::source::Raster;
@@ -86,8 +85,7 @@ pub fn draw() -> Result<()> {
   let pages = super::fixtures::text()?;
   for case in cases {
     let [columns, rows, cell_width, cell_height] = case.screen;
-    let screen =
-      Screen { columns, rows, cell_width, cell_height, origin: (0, 0) };
+    let screen = crate::screen::pixels(columns, rows, cell_width, cell_height);
     let layout = Layout::new(pages.metadata.iter().map(|p| p.1), screen);
     let mut source = Source { pages: &pages, rasters: case.rasters };
     let mut preview = Preview::open(

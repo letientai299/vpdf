@@ -115,9 +115,8 @@ impl Graphics {
       .map(|(solid, id)| (*solid, *id))
       .collect();
     for (solid, id) in unused {
-      self.transport.graphics(out, &format!("a=d,d=I,i={id},q=2"), "")?;
+      self.delete_image(out, id)?;
       self.solids.remove(&solid);
-      self.shown.retain(|pair| pair.0 != id);
       self.spare.push(id);
     }
     Ok(())
@@ -155,12 +154,8 @@ impl Graphics {
     };
     for (top, h) in segments(height, rect.y0 as i32, ch, SWATCH.1) {
       for (left_px, w) in segments(width, rect.x0 as i32, cw, SWATCH.0) {
-        let part = Bounds {
-          x0: rect.x0 + left_px as f32,
-          y0: rect.y0 + top as f32,
-          x1: rect.x0 + (left_px + w) as f32,
-          y1: rect.y0 + (top + h) as f32,
-        };
+        let offset = (left_px as f32, top as f32);
+        let part = rect.part(offset, (w as f32, h as f32));
         self.placed += 1;
         let control = format_args!("z={z},x=0,y=0,w={w},h={h}");
         self.put(out, (id, self.placed), control, part, left, screen)?;

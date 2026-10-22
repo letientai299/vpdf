@@ -277,28 +277,18 @@ fn icon_drawing_avoids_text() -> Result<()> {
 
 #[test]
 fn anchor_hits_skip_surroundings() {
-  use vpdf_model::input::{KeyModifiers, MouseEvent, MouseEventKind};
+  use vpdf_model::input::{MouseEvent, MouseEventKind};
   let mut frame = Fixture::new().frame.pane;
   frame.at = At { column: 5, row: 7 };
   frame.left = 3;
   let anchor = Some((PageId(0), 2, snapshot().bounds));
   for (column, row) in [(7, 8), (8, 16)] {
-    let mouse = MouseEvent {
-      kind: MouseEventKind::Moved,
-      column,
-      row,
-      modifiers: KeyModifiers::NONE,
-    };
+    let mouse = MouseEvent::new(MouseEventKind::Moved, column, row);
     assert!(!crate::preview::on_anchor(anchor, frame, mouse, |_, _| panic!(
       "Non-page hit lookup"
     )));
   }
-  let mouse = MouseEvent {
-    kind: MouseEventKind::Moved,
-    column: 8,
-    row: 8,
-    modifiers: KeyModifiers::NONE,
-  };
+  let mouse = MouseEvent::new(MouseEventKind::Moved, 8, 8);
   assert!(crate::preview::on_anchor(anchor, frame, mouse, |column, row| {
     assert_eq!((column, row), (3, 1));
     crate::pointer::Hit::Note { page: PageId(0), index: 2, text: false }

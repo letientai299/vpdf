@@ -216,9 +216,7 @@ mod tests {
     panel::{Panel, Style},
   };
   use unicode_width::UnicodeWidthStr;
-  use vpdf_model::input::{
-    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-  };
+  use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
   use vpdf_reader::motion::Motion;
   #[test]
   fn failed_context_keeps_anchor() {
@@ -435,12 +433,8 @@ mod tests {
       24,
       20,
     );
-    let press = |line| MouseEvent {
-      kind: MouseEventKind::Down(MouseButton::Left),
-      column: 4,
-      row: line,
-      modifiers: KeyModifiers::NONE,
-    };
+    let press =
+      |line| MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 4, line);
     assert_eq!(panel.pointer(press(2)), Some(0));
     panel.navigate(Input::plain(Action::Motion(Motion::Down)), 20);
     panel.scene_list(
@@ -475,12 +469,7 @@ mod tests {
       20,
       6,
     );
-    panel.pointer(MouseEvent {
-      kind: MouseEventKind::ScrollDown,
-      column: 4,
-      row: 2,
-      modifiers: KeyModifiers::NONE,
-    });
+    panel.pointer(MouseEvent::new(MouseEventKind::ScrollDown, 4, 2));
     panel.scene_list(
       &mut Vec::new(),
       vpdf_model::geometry::At::default(),

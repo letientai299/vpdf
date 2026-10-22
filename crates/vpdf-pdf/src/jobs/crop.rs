@@ -1,10 +1,10 @@
-use super::{OneShot, Wake};
+use super::{OneShot, Outcome, Wake};
 use crate::Result;
 use crate::crop::Margins;
 use crate::document::{Document, Handle};
 use crate::text::PageId;
 use std::path::Path;
-use std::sync::{Arc, mpsc};
+use std::sync::Arc;
 
 const SAMPLES: usize = 24;
 
@@ -38,7 +38,7 @@ pub struct Request<'a> {
 
 pub enum Update {
   Canceled,
-  Ready(std::result::Result<Arc<Margins>, String>),
+  Ready(Outcome<Arc<Margins>>),
 }
 
 #[derive(Default)]
@@ -84,11 +84,7 @@ impl Scan {
   /// A finished scan; its margins also stay with `doc`.
   pub fn poll(&mut self, doc: &mut Document) -> Option<Update> {
     let job = self.job.as_ref()?;
-    let result = match job.work.result.try_recv() {
-      Ok(result) => result,
-      Err(mpsc::TryRecvError::Empty) => return None,
-      Err(mpsc::TryRecvError::Disconnected) => Err("Cropping stopped".into()),
-    };
+    let result = job.work.poll("Cropping stopped")?;
     let canceled = job.work.canceled();
     self.clear();
     if canceled {
@@ -103,7 +99,7 @@ impl Scan {
 
 /// Margin detection on a separate document; dropping it stops the scan.
 struct Job {
-  work: OneShot<std::result::Result<Arc<Margins>, String>>,
+  work: OneShot<Outcome<Arc<Margins>>>,
   pages: Vec<PageId>,
 }
 
@@ -119,15 +115,13 @@ impl Job {
     let lists = doc.lists();
     let (path, password) = (path.to_owned(), password.to_owned());
     let wanted = pages.clone();
-    let work = OneShot::spawn(wake, move |canceled| {
-      let found = (|| -> Result<Arc<Margins>> {
+    let work = OneShot::try_spawn(wake, move |canceled| {
+      Some((|| -> Result<Arc<Margins>> {
         let handle = Handle::open(&path, &password)?;
         let mut margins = cached.as_deref().cloned().unwrap_or_default();
         margins.update(&handle, &pages, &nearby, &lists, canceled)?;
         Ok(Arc::new(margins))
-      })()
-      .map_err(|error| error.to_string());
-      Some(found)
+      })())
     });
     Self { work, pages: wanted }
   }
@@ -147,8 +141,9 @@ impl Job {
 mod tests {
   use super::*;
   use std::sync::atomic::{AtomicBool, Ordering};
+  use std::sync::mpsc;
 
-  type Sender = mpsc::Sender<std::result::Result<Arc<Margins>, String>>;
+  type Sender = mpsc::Sender<Outcome<Arc<Margins>>>;
 
   fn document() -> Result<(Document, tempfile::NamedTempFile)> {
     let file = tempfile::NamedTempFile::new()?;

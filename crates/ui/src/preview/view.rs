@@ -13,7 +13,7 @@ use vpdf_model::document::{Annotation, Target};
 use vpdf_model::input::{
   KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use vpdf_model::scene::{Layer, Op, Surface, Text as SceneText};
+use vpdf_model::scene::{Op, Stage, Surface, Text as SceneText};
 use vpdf_model::style::Role;
 use vpdf_model::tile::TileKey;
 use vpdf_reader::motion::Motion;
@@ -486,14 +486,9 @@ impl Preview {
     let over_page = matches!(self.view, View::Image { .. })
       || !input.pane.text && matches!(self.view, View::Note { .. });
     if over_page {
-      let rect = paint::cell_bounds(screen, input.pane.left, frame);
-      scene.fill(
-        rect,
-        theme::PREVIEW_FILL,
-        Layer::BelowText,
-        screen,
-        input.pane.left,
-      );
+      // Image peeks cover text panes too.
+      let pane = paint::Frame { text: false, screen, ..input.pane };
+      paint::backdrop(scene, pane, frame, theme::PREVIEW_FILL);
     }
     let bridge = input
       .link
@@ -523,7 +518,8 @@ impl Preview {
         let x = (column + 1 - usize::from(input.pane.left)) as f32
           * f32::from(screen.cell_width);
         let y = (top + 1) as f32 * cell;
-        scene.picture(self.serial, rgb, (x, y), screen, input.pane.left)?;
+        let stage = Stage { screen, left: input.pane.left };
+        scene.picture(self.serial, rgb, (x, y), stage)?;
       }
       View::Text { top: first, lines, .. }
       | View::Note { top: first, lines, .. } => {

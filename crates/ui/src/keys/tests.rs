@@ -19,15 +19,16 @@ fn obsolete_pan_keys_are_unbound() {
 
 #[test]
 fn panel_yank_is_one_action() {
-  let mut keys = Keys::default();
-  let inputs: Vec<_> = "\"ayy"
-    .chars()
-    .filter_map(|ch| keys.feed(key(ch), Grammar::Panel))
-    .collect();
-  assert_eq!(inputs.len(), 1);
-  assert_eq!(inputs[0].action, Action::YankLine);
-  assert_eq!(inputs[0].register, 'a');
-  assert_eq!(keys.pending(), "");
+  for (typed, register) in [("yy", '"'), ("\"ayy", 'a')] {
+    let mut keys = Keys::default();
+    let mut inputs: Vec<_> =
+      typed.chars().map(|ch| keys.feed(key(ch), Grammar::Panel)).collect();
+    let input = inputs.pop().flatten().expect(typed);
+    assert!(inputs.iter().all(Option::is_none), "{typed}");
+    assert_eq!(input.action, Action::YankLine);
+    assert_eq!(input.register, register);
+    assert_eq!(keys.pending(), "");
+  }
 }
 
 #[test]
@@ -463,12 +464,6 @@ fn escape_resets_pending_count() {
 fn yank_clue_names_the_panel_continuation() {
   assert!(clues("y").iter().any(|(key, _)| key == "y"));
   assert_eq!(key_for(Action::YankLine), Some("yy"));
-  let mut keys = Keys::default();
-  assert!(keys.feed(key('y'), Grammar::Panel).is_none());
-  assert_eq!(
-    keys.feed(key('y'), Grammar::Panel).unwrap().action,
-    Action::YankLine
-  );
 }
 
 fn clues(prefix: &str) -> Vec<(String, &'static str)> {

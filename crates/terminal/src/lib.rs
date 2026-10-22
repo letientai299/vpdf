@@ -20,3 +20,9 @@ const MIB: usize = 1 << 20;
 
 #[cfg(test)]
 extern crate self as vpdf_terminal;
+#[cfg(test)]
+#[path = "../../../tests/support/kitty.rs"]
+pub mod kitty;
+#[cfg(test)]
+#[path = "../../../tests/support/screen.rs"]
+mod screen;

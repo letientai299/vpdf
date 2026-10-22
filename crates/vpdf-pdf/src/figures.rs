@@ -46,16 +46,10 @@ fn group(
   page: Bounds,
 ) -> Vec<Figure> {
   let mut figures: Vec<Figure> = Vec::new();
-  for mut bounds in primitives {
-    let mut index = 0;
-    while index < figures.len() {
-      if near(bounds, figures[index].bounds, 3.0) {
-        bounds = bounds.union(figures.swap_remove(index).bounds);
-        index = 0;
-      } else {
-        index += 1;
-      }
-    }
+  for bounds in primitives {
+    let bounds = absorb(&mut figures, bounds, |bounds, figure| {
+      near(bounds, figure.bounds, 3.0)
+    });
     figures.push(Figure {
       bounds,
       caption: String::new(),
@@ -153,24 +147,16 @@ fn attach_caption(
   if let Some((index, _, _, _)) = nearest {
     let mut figure = figures.swap_remove(index);
     let above = figure.bounds.y0 < bounds.y0;
-    figure.bounds = figure.bounds.union(bounds);
-    let mut index = 0;
-    while index < figures.len() {
-      let other = &figures[index];
-      if other.caption.is_empty()
-        && if above {
-          other.bounds.y0 < bounds.y0
-        } else {
-          other.bounds.y1 > bounds.y1
-        }
-        && connection(figure.bounds, other.bounds, lines).is_some()
-      {
-        figure.bounds = figure.bounds.union(figures.swap_remove(index).bounds);
-        index = 0;
-      } else {
-        index += 1;
-      }
-    }
+    figure.bounds =
+      absorb(figures, figure.bounds.union(bounds), |grown, other| {
+        other.caption.is_empty()
+          && if above {
+            other.bounds.y0 < bounds.y0
+          } else {
+            other.bounds.y1 > bounds.y1
+          }
+          && connection(grown, other.bounds, lines).is_some()
+      });
     figure.caption = title;
     figures.push(figure);
   } else {
@@ -191,6 +177,24 @@ fn attach_caption(
       source: Source::Caption,
     });
   }
+}
+
+/// `bounds` grown by each figure `joins` takes, until none joins.
+fn absorb(
+  figures: &mut Vec<Figure>,
+  mut bounds: Bounds,
+  joins: impl Fn(Bounds, &Figure) -> bool,
+) -> Bounds {
+  let mut index = 0;
+  while index < figures.len() {
+    if joins(bounds, &figures[index]) {
+      bounds = bounds.union(figures.swap_remove(index).bounds);
+      index = 0;
+    } else {
+      index += 1;
+    }
+  }
+  bounds
 }
 
 fn caption_row(
@@ -376,23 +380,28 @@ mod tests {
     }
   }
 
+  /// Figures on `page` from paragraph `rows` and `primitives`.
+  fn grouped(
+    page: Bounds,
+    rows: &[(&str, Bounds)],
+    primitives: &[Bounds],
+  ) -> Vec<Figure> {
+    let lines = rows.iter().map(|&(value, area)| line(value, area)).collect();
+    let text = Text { lines, truncated: false };
+    group(primitives.iter().copied(), &text, page)
+  }
+
   #[test]
   fn caption_description_joins_graphic() {
     let page = bounds(0.0, 0.0, 540.0, 666.0);
     let graphic = bounds(130.0, 414.0, 371.0, 521.0);
     let description = bounds(83.0, 544.0, 197.0, 551.0);
-    let text = Text {
-      lines: vec![
-        line("FIGURE 2.3", bounds(83.0, 530.0, 124.0, 537.0)),
-        line("Execution of a CUDA program.", description),
-      ],
-      truncated: false,
-    };
-    let figures = group(
-      [graphic, bounds(83.0, 540.0, 418.0, 540.4)].into_iter(),
-      &text,
-      page,
-    );
+    let rows = [
+      ("FIGURE 2.3", bounds(83.0, 530.0, 124.0, 537.0)),
+      ("Execution of a CUDA program.", description),
+    ];
+    let figures =
+      grouped(page, &rows, &[graphic, bounds(83.0, 540.0, 418.0, 540.4)]);
     assert_eq!(figures.len(), 1, "{figures:?}");
     assert_eq!(figures[0].caption, "FIGURE 2.3 Execution of a CUDA program.");
     assert_eq!(figures[0].bounds, graphic.union(description));
@@ -402,17 +411,13 @@ mod tests {
   #[test]
   fn wrapped_descriptions_exclude_body() {
     let page = bounds(0.0, 0.0, 600.0, 800.0);
-    let text = Text {
-      lines: vec![
-        line("FIGURE 4.1", bounds(80.0, 200.0, 130.0, 207.0)),
-        line("Architecture of a", bounds(80.0, 215.0, 190.0, 222.0)),
-        line("CUDA-capable GPU.", bounds(80.0, 228.0, 190.0, 235.0)),
-        line("Body paragraph.", bounds(80.0, 241.0, 500.0, 252.0)),
-      ],
-      truncated: false,
-    };
-    let figures =
-      group([bounds(150.0, 80.0, 400.0, 190.0)].into_iter(), &text, page);
+    let rows = [
+      ("FIGURE 4.1", bounds(80.0, 200.0, 130.0, 207.0)),
+      ("Architecture of a", bounds(80.0, 215.0, 190.0, 222.0)),
+      ("CUDA-capable GPU.", bounds(80.0, 228.0, 190.0, 235.0)),
+      ("Body paragraph.", bounds(80.0, 241.0, 500.0, 252.0)),
+    ];
+    let figures = grouped(page, &rows, &[bounds(150.0, 80.0, 400.0, 190.0)]);
     assert_eq!(figures.len(), 1, "{figures:?}");
     assert_eq!(
       figures[0].caption,
@@ -424,19 +429,12 @@ mod tests {
   #[test]
   fn split_caption_spans_join() {
     let page = bounds(0.0, 0.0, 600.0, 800.0);
-    let text = Text {
-      lines: vec![
-        line("Figure 4.17:", bounds(80.0, 200.0, 130.0, 210.0)),
-        line(
-          "Samples from an Ising model with",
-          bounds(135.0, 200.0, 420.0, 210.0),
-        ),
-        line("varying J > 0.", bounds(80.0, 215.0, 210.0, 225.0)),
-      ],
-      truncated: false,
-    };
-    let figures =
-      group([bounds(100.0, 80.0, 400.0, 190.0)].into_iter(), &text, page);
+    let rows = [
+      ("Figure 4.17:", bounds(80.0, 200.0, 130.0, 210.0)),
+      ("Samples from an Ising model with", bounds(135.0, 200.0, 420.0, 210.0)),
+      ("varying J > 0.", bounds(80.0, 215.0, 210.0, 225.0)),
+    ];
+    let figures = grouped(page, &rows, &[bounds(100.0, 80.0, 400.0, 190.0)]);
     assert_eq!(figures.len(), 1, "{figures:?}");
     assert_eq!(
       figures[0].caption,
@@ -447,22 +445,19 @@ mod tests {
   #[test]
   fn contents_rows_are_ignored() {
     let page = bounds(0.0, 0.0, 600.0, 800.0);
-    let text = Text {
-      lines: vec![
-        line("Figure 21-1.", bounds(40.0, 80.0, 100.0, 90.0)),
-        line(
-          "Processor brand . . . . . . . . . . . . . . 21-5",
-          bounds(105.0, 80.0, 500.0, 90.0),
-        ),
-        line(
-          "Exception handling . . . . . . . . . . . . . . D-4",
-          bounds(105.0, 89.0, 500.0, 99.0),
-        ),
-        line("Figure E-1.", bounds(40.0, 100.0, 100.0, 110.0)),
-      ],
-      truncated: false,
-    };
-    assert!(group(std::iter::empty(), &text, page).is_empty());
+    let rows = [
+      ("Figure 21-1.", bounds(40.0, 80.0, 100.0, 90.0)),
+      (
+        "Processor brand . . . . . . . . . . . . . . 21-5",
+        bounds(105.0, 80.0, 500.0, 90.0),
+      ),
+      (
+        "Exception handling . . . . . . . . . . . . . . D-4",
+        bounds(105.0, 89.0, 500.0, 99.0),
+      ),
+      ("Figure E-1.", bounds(40.0, 100.0, 100.0, 110.0)),
+    ];
+    assert!(grouped(page, &rows, &[]).is_empty());
   }
 
   #[test]
@@ -470,18 +465,16 @@ mod tests {
     let page = bounds(0.0, 0.0, 540.0, 666.0);
     let graphic = bounds(124.0, 80.0, 454.0, 467.0);
     let caption = bounds(122.0, 476.0, 167.0, 482.0);
-    let text =
-      Text { lines: vec![line("FIGURE 6.13", caption)], truncated: false };
-    let figures = group(
-      [
+    let rows = [("FIGURE 6.13", caption)];
+    let figures = grouped(
+      page,
+      &rows,
+      &[
         graphic,
         bounds(122.0, 486.0, 456.0, 486.4),
         bounds(0.0, 17.0, 540.0, 26.0),
         bounds(40.0, 630.0, 490.0, 644.0),
-      ]
-      .into_iter(),
-      &text,
-      page,
+      ],
     );
     assert_eq!(figures.len(), 1, "{figures:?}");
     assert_eq!(figures[0].bounds, graphic.union(caption));
@@ -494,16 +487,13 @@ mod tests {
     let page = bounds(0.0, 0.0, 612.0, 792.0);
     let top = bounds(178.0, 431.0, 475.0, 483.0);
     let bottom = bounds(178.0, 499.0, 475.0, 513.0);
-    let text = Text {
-      lines: vec![
-        line("Figure 1-17. Operation", bounds(226.0, 557.0, 378.0, 569.0)),
-        line("SRC1", bounds(158.0, 435.0, 178.0, 443.0)),
-        line("DEST", bounds(158.0, 501.0, 178.0, 509.0)),
-      ],
-      truncated: false,
-    };
+    let rows = [
+      ("Figure 1-17. Operation", bounds(226.0, 557.0, 378.0, 569.0)),
+      ("SRC1", bounds(158.0, 435.0, 178.0, 443.0)),
+      ("DEST", bounds(158.0, 501.0, 178.0, 509.0)),
+    ];
     for primitives in [[top, bottom], [bottom, top]] {
-      let figures = group(primitives.into_iter(), &text, page);
+      let figures = grouped(page, &rows, &primitives);
       assert_eq!(figures.len(), 1, "{figures:?}");
       assert_eq!(figures[0].bounds, bounds(158.0, 431.0, 475.0, 569.0));
     }
@@ -512,19 +502,15 @@ mod tests {
   #[test]
   fn intervening_text_separates_graphics() {
     let page = bounds(0.0, 0.0, 600.0, 800.0);
-    let text = Text {
-      lines: vec![
-        line("Figure 1", bounds(100.0, 190.0, 180.0, 200.0)),
-        line("Body text", bounds(100.0, 235.0, 400.0, 245.0)),
-        line("Figure 2", bounds(100.0, 340.0, 180.0, 350.0)),
-      ],
-      truncated: false,
-    };
-    let figures = group(
-      [bounds(100.0, 100.0, 400.0, 180.0), bounds(100.0, 220.0, 400.0, 330.0)]
-        .into_iter(),
-      &text,
+    let rows = [
+      ("Figure 1", bounds(100.0, 190.0, 180.0, 200.0)),
+      ("Body text", bounds(100.0, 235.0, 400.0, 245.0)),
+      ("Figure 2", bounds(100.0, 340.0, 180.0, 350.0)),
+    ];
+    let figures = grouped(
       page,
+      &rows,
+      &[bounds(100.0, 100.0, 400.0, 180.0), bounds(100.0, 220.0, 400.0, 330.0)],
     );
     assert_eq!(figures.len(), 2, "{figures:?}");
     assert_eq!(figures[0].bounds.y1, 200.0);
@@ -546,19 +532,15 @@ mod tests {
   #[test]
   fn text_diagrams_precede_equations() {
     let page = bounds(0.0, 0.0, 600.0, 800.0);
-    let text = Text {
-      lines: vec![
-        line("Chapter header", bounds(100.0, 25.0, 300.0, 35.0)),
-        line("alpha", bounds(120.0, 70.0, 150.0, 80.0)),
-        line("beta", bounds(250.0, 120.0, 280.0, 130.0)),
-        line("gamma", bounds(400.0, 170.0, 430.0, 180.0)),
-        line("Figure 9.4: Messages", bounds(100.0, 200.0, 500.0, 210.0)),
-        line("Body text after the diagram", bounds(100.0, 230.0, 500.0, 240.0)),
-      ],
-      truncated: false,
-    };
-    let figures =
-      group([bounds(200.0, 250.0, 400.0, 290.0)].into_iter(), &text, page);
+    let rows = [
+      ("Chapter header", bounds(100.0, 25.0, 300.0, 35.0)),
+      ("alpha", bounds(120.0, 70.0, 150.0, 80.0)),
+      ("beta", bounds(250.0, 120.0, 280.0, 130.0)),
+      ("gamma", bounds(400.0, 170.0, 430.0, 180.0)),
+      ("Figure 9.4: Messages", bounds(100.0, 200.0, 500.0, 210.0)),
+      ("Body text after the diagram", bounds(100.0, 230.0, 500.0, 240.0)),
+    ];
+    let figures = grouped(page, &rows, &[bounds(200.0, 250.0, 400.0, 290.0)]);
     let figure = figures.iter().find(|f| !f.caption.is_empty()).unwrap();
     assert_eq!(figure.bounds, bounds(100.0, 70.0, 500.0, 210.0));
     assert_eq!(figure.source, Source::Caption);
@@ -567,27 +549,18 @@ mod tests {
   #[test]
   fn caption_spans_join_panels() {
     let page = bounds(0.0, 0.0, 600.0, 800.0);
-    let text = Text {
-      lines: vec![
-        line(
-          "Figure 2.4: (a) Distribution.",
-          bounds(80.0, 205.0, 260.0, 215.0),
-        ),
-        line(
-          "(b) Distribution on a log scale.",
-          bounds(260.0, 205.0, 500.0, 215.0),
-        ),
-        line("(a) plot label", bounds(120.0, 175.0, 240.0, 185.0)),
-        line("Figure 2.5: Another plot.", bounds(80.0, 350.0, 500.0, 360.0)),
-      ],
-      truncated: false,
-    };
+    let rows = [
+      ("Figure 2.4: (a) Distribution.", bounds(80.0, 205.0, 260.0, 215.0)),
+      ("(b) Distribution on a log scale.", bounds(260.0, 205.0, 500.0, 215.0)),
+      ("(a) plot label", bounds(120.0, 175.0, 240.0, 185.0)),
+      ("Figure 2.5: Another plot.", bounds(80.0, 350.0, 500.0, 360.0)),
+    ];
     let primitives = [
       bounds(100.0, 80.0, 280.0, 150.0),
       bounds(300.0, 80.0, 480.0, 150.0),
       bounds(180.0, 230.0, 400.0, 330.0),
     ];
-    let figures = group(primitives.into_iter(), &text, page);
+    let figures = grouped(page, &rows, &primitives);
     assert_eq!(figures.len(), 2, "{figures:?}");
     assert_eq!(figures[0].bounds, bounds(80.0, 80.0, 500.0, 215.0));
     assert!(figures[0].caption.starts_with("Figure 2.4:"));
@@ -599,28 +572,10 @@ mod tests {
   fn primitives_attach_captions() {
     let page = bounds(0.0, 0.0, 600.0, 800.0);
     let text = Text {
-      lines: ["Figure 1: chart", "Table 2. caption"]
-        .into_iter()
-        .enumerate()
-        .map(|(i, s)| Line {
-          ocr: None,
-          paragraph: true,
-          glyphs: s
-            .chars()
-            .enumerate()
-            .map(|(j, ch)| Glyph {
-              quad: None,
-              ch,
-              bounds: bounds(
-                20.0 + j as f32 * 5.0,
-                150.0 + i as f32 * 300.0,
-                25.0 + j as f32 * 5.0,
-                160.0 + i as f32 * 300.0,
-              ),
-            })
-            .collect(),
-        })
-        .collect(),
+      lines: vec![
+        line("Figure 1: chart", bounds(20.0, 150.0, 95.0, 160.0)),
+        line("Table 2. caption", bounds(20.0, 450.0, 100.0, 460.0)),
+      ],
       truncated: false,
     };
     let primitives = [

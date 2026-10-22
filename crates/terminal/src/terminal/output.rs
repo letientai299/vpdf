@@ -2,7 +2,7 @@ use super::{Caps, Host, Result, UnicodeWidthStr, Write, tmux};
 use vpdf_model::geometry::At;
 
 /// Hides the text cursor, which frames move.
-pub const HIDE_CURSOR: &str = "\x1b[?25l";
+pub(crate) const HIDE_CURSOR: &str = "\x1b[?25l";
 
 /// Sets the window title, except where the terminal ignores the title
 /// stack and would keep it after exit.
@@ -31,7 +31,7 @@ pub(super) fn synced(caps: Option<&Caps>) -> bool {
   })
 }
 
-pub fn passthrough(
+pub(crate) fn passthrough(
   output: &mut impl Write,
   bytes: &[u8],
   tmux: bool,
@@ -51,7 +51,7 @@ pub fn passthrough(
   Ok(())
 }
 
-pub fn graphics(
+pub(crate) fn graphics(
   output: &mut impl Write,
   control: &str,
   data: &str,
@@ -62,15 +62,6 @@ pub fn graphics(
 /// `text` made printable, cut to `columns` cells.
 pub fn clean(text: &str, columns: usize) -> String {
   vpdf_model::text::clean(text, columns)
-}
-
-/// Sends an encoded image in 4096-byte chunks; `control` leads the first.
-pub fn transmit(
-  output: &mut impl Write,
-  control: &str,
-  encoded: &str,
-) -> Result<()> {
-  Transport::live().transmit(output, control, encoded)
 }
 
 /// Encodes a pane-relative cursor position.
@@ -94,27 +85,6 @@ pub fn line(
   let pad = usize::from(columns).saturating_sub(text.width());
   write!(output, "{}{text}{}", goto(at, row, 0u16), " ".repeat(pad))?;
   Ok(())
-}
-
-/// Blanks a pane row by erasing its cells, which costs a few bytes
-/// where spaces cost one per column.
-pub fn clear(
-  output: &mut impl Write,
-  at: At,
-  row: u16,
-  columns: u16,
-) -> Result<()> {
-  write!(output, "{}\x1b[{columns}X", goto(at, row, 0u16))?;
-  Ok(())
-}
-
-pub fn placement(
-  output: &mut impl Write,
-  control: &str,
-  column: u32,
-  row: u32,
-) -> Result<()> {
-  Transport::live().placement(output, control, column, row)
 }
 
 /// Wire framing, independent of live negotiation.
@@ -141,6 +111,7 @@ impl Transport {
     Ok(())
   }
 
+  /// Sends an encoded image in 4096-byte chunks; `control` leads the first.
   pub fn transmit(
     self,
     output: &mut impl Write,

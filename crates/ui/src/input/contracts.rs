@@ -22,12 +22,7 @@ fn route(kind: MouseEventKind, region: Region) -> Route {
     focus: false,
     clicks: 1,
     pixel: None,
-    mouse: MouseEvent {
-      kind,
-      column: 10,
-      row: 4,
-      modifiers: KeyModifiers::NONE,
-    },
+    mouse: MouseEvent::new(kind, 10, 4),
   }
 }
 

@@ -6,6 +6,7 @@
 
 use super::keyboard::*;
 use super::probe::*;
+use super::testing::{bare, tmux_info};
 use super::types::*;
 use super::*;
 
@@ -32,47 +33,45 @@ fn version(name: &str) -> Vec<u8> {
   format!("\x1bP>|{name}\x1b\\").into_bytes()
 }
 
-fn tmux_info(client: Option<&str>) -> Tmux {
-  Tmux {
-    version: vec![3, 8],
-    client: client.map(str::to_owned),
-    cell: Some(Cell { width: 7, height: 13 }),
-    passthrough: Some(Passthrough::On),
-    extended_keys: true,
-    focus_events: true,
-    origin: (0, 0),
-  }
-}
-
 fn tmux_with(client: Option<&str>) -> Route {
   Route::Tmux(Some(tmux_info(client)))
 }
 
-#[test]
-fn kitty_recorded() {
-  let bytes = [
+/// Caps whose `version` answered sync and DA1.
+fn answered(host: Host, version: &str, attributes: &[u32]) -> Caps {
+  Caps {
+    version: Some(version.into()),
+    sync: Support::Answered,
+    attributes: Some(attributes.to_vec()),
+    ..bare(host)
+  }
+}
+
+fn kitty() -> Vec<u8> {
+  [
     &version("kitty(0.49.1)"),
     OK,
     b"\x1b[?2026;2$y\x1b[?1016;2$y\x1b[?2048;2$y\x1b[?0u",
     b"\x1b]22;1\x1b\\\x1b]72;t=q\x1b\\\x1b[?62;52;c",
     b"\x1b[6;13;7t\x1b[?62;52;c",
   ]
-  .concat();
-  let caps = caps(Route::Direct, &replies(&bytes));
+  .concat()
+}
+
+#[test]
+fn kitty_recorded() {
+  let caps = caps(Route::Direct, &replies(&kitty()));
+  let direct = Host::Direct(Graphics::Ok);
   assert_eq!(
     caps,
     Caps {
-      host: Host::Direct(Graphics::Ok),
-      version: Some("kitty(0.49.1)".into()),
       keyboard: Some(0),
-      sync: Support::Answered,
       pixels: Support::Answered,
       resize: Support::Answered,
       pointer: Support::Answered,
       drop: Support::Answered,
-      clipboard: None,
       cell: Some(Cell { width: 7, height: 13 }),
-      attributes: Some(vec![62, 52]),
+      ..answered(direct, "kitty(0.49.1)", &[62, 52])
     }
   );
   assert_eq!(caps.profile(), Profile::Graphics);
@@ -88,20 +87,14 @@ fn wezterm_recorded() {
   ]
   .concat();
   let caps = caps(Route::Direct, &replies(&bytes));
+  let direct = Host::Direct(Graphics::Ok);
+  let version = "WezTerm 20240203-110809-5046fc22";
   assert_eq!(
     caps,
     Caps {
-      host: Host::Direct(Graphics::Ok),
-      version: Some("WezTerm 20240203-110809-5046fc22".into()),
       keyboard: Some(0),
-      sync: Support::Answered,
       pixels: Support::Answered,
-      resize: Support::Missing,
-      pointer: Support::Missing,
-      drop: Support::Missing,
-      clipboard: None,
-      cell: None,
-      attributes: Some(vec![65, 4, 6, 18, 22]),
+      ..answered(direct, version, &[65, 4, 6, 18, 22])
     }
   );
   assert_eq!(caps.profile(), Profile::Graphics);
@@ -116,22 +109,8 @@ fn tmux_recorded() {
   ]
   .concat();
   let caps = caps(tmux_with(Some("kitty(0.49.1)")), &replies(&bytes));
-  assert_eq!(
-    caps,
-    Caps {
-      host: Host::Tmux(Some(tmux_info(Some("kitty(0.49.1)")))),
-      version: Some("tmux 3.8".into()),
-      keyboard: None,
-      sync: Support::Answered,
-      pixels: Support::Missing,
-      resize: Support::Missing,
-      pointer: Support::Missing,
-      drop: Support::Missing,
-      clipboard: None,
-      cell: None,
-      attributes: Some(vec![1, 2, 4]),
-    }
-  );
+  let host = Host::Tmux(Some(tmux_info(Some("kitty(0.49.1)"))));
+  assert_eq!(caps, answered(host, "tmux 3.8", &[1, 2, 4]));
   assert_eq!(caps.terminal(), Some("kitty(0.49.1)"));
   assert_eq!(caps.profile(), Profile::Graphics);
 }
@@ -344,32 +323,22 @@ fn named_da1(name: &str) -> Vec<u8> {
 /// window offsets, status position and lines.
 #[test]
 fn tmux_reports_parse() {
-  let kitty = Some("kitty(0.49.1)".to_owned());
+  let kitty = || tmux_info(Some("kitty(0.49.1)"));
   let cases = [
     (
       "3.8\tkitty(0.49.1)\t7\t13\ton\ton\t1\t0\t0\t\t\tbottom\ton\n",
-      Some(Tmux {
-        version: vec![3, 8],
-        client: kitty.clone(),
-        cell: Some(Cell { width: 7, height: 13 }),
-        passthrough: Some(Passthrough::On),
-        extended_keys: true,
-        focus_events: true,
-        origin: (0, 0),
-      }),
+      Some(kitty()),
     ),
     // tmux 3.8 with an empty config, in the right pane below a 9-row
     // one, the status line on top.
     (
       "3.8\tkitty(0.49.1)\t7\t13\toff\toff\t0\t41\t9\t\t\ttop\ton\n",
       Some(Tmux {
-        version: vec![3, 8],
-        client: kitty.clone(),
-        cell: Some(Cell { width: 7, height: 13 }),
         passthrough: Some(Passthrough::Off),
         extended_keys: false,
         focus_events: false,
         origin: (41, 10),
+        ..kitty()
       }),
     ),
     // A window larger than its client, panned right 20 and down 6, and
@@ -377,13 +346,9 @@ fn tmux_reports_parse() {
     (
       "3.8\tkitty(0.49.1)\t7\t13\tall\talways\t1\t41\t9\t20\t6\ttop\t2",
       Some(Tmux {
-        version: vec![3, 8],
-        client: kitty.clone(),
-        cell: Some(Cell { width: 7, height: 13 }),
         passthrough: Some(Passthrough::All),
-        extended_keys: true,
-        focus_events: true,
         origin: (21, 5),
+        ..kitty()
       }),
     ),
     // No client attached, and tmux before 3.3 without the option.
@@ -391,36 +356,28 @@ fn tmux_reports_parse() {
       "3.2a\t\t\t\t\toff\t0\t0\t0\t\t\tbottom\toff\n",
       Some(Tmux {
         version: vec![3, 2],
-        client: None,
         cell: None,
         passthrough: None,
         extended_keys: false,
         focus_events: false,
-        origin: (0, 0),
+        ..tmux_info(None)
       }),
     ),
     (
       "next-3.9\tWezTerm 20240203\t0\t0\tall\ton\t1\t5\t3\t9\t9\ttop\toff",
       Some(Tmux {
         version: vec![3, 9],
-        client: Some("WezTerm 20240203".into()),
         cell: None,
         passthrough: Some(Passthrough::All),
-        extended_keys: true,
-        focus_events: true,
-        origin: (0, 0),
+        ..tmux_info(Some("WezTerm 20240203"))
       }),
     ),
     (
       "openbsd-7.8\tkitty(0.49.1)\t7\t13\toff\ton\t1\t0\t0\t\t\tbottom\ton",
       Some(Tmux {
         version: vec![],
-        client: kitty,
-        cell: Some(Cell { width: 7, height: 13 }),
         passthrough: Some(Passthrough::Off),
-        extended_keys: true,
-        focus_events: true,
-        origin: (0, 0),
+        ..kitty()
       }),
     ),
     ("\t\t\t\t\t\t\t\t\t\t\t\t\n", None),
@@ -525,15 +482,8 @@ fn shows(name: &str, caps: &Caps, present: &[&str], absent: &[&str]) {
 
 #[test]
 fn info_without_tmux() {
-  let kitty = [
-    &version("kitty(0.49.1)"),
-    OK,
-    b"\x1b[?2026;2$y\x1b[?1016;2$y\x1b[?2048;2$y\x1b[?0u",
-    b"\x1b]22;1\x1b\\\x1b]72;t=q\x1b\\\x1b[6;13;7t\x1b[?62;52;c",
-  ]
-  .concat();
   assert_eq!(
-    caps(Route::Direct, &replies(&kitty)).to_string(),
+    caps(Route::Direct, &replies(&kitty())).to_string(),
     "Profile: Kitty graphics\n\
      XTVERSION: kitty(0.49.1)\n\
      Graphics query: OK\n\

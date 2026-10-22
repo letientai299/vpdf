@@ -1,8 +1,8 @@
-use crate::presentation::draw;
 use anyhow::{Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
+use vpdf::presentation::draw;
 use vpdf_model::geometry::Crop;
 use vpdf_model::text::Position;
 use vpdf_pdf::jobs::{Wake, recent::Worker};

@@ -47,13 +47,34 @@ pub enum Layer {
   AboveText,
 }
 
+/// Pane pixels and their first terminal column.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Stage {
+  pub screen: Screen,
+  pub left: u16,
+}
+
+/// Pixel coordinates kept as bits for `Eq`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Origin([u32; 2]);
+
+impl Origin {
+  fn new((x, y): (f32, f32)) -> Self {
+    Self([x.to_bits(), y.to_bits()])
+  }
+
+  fn get(self) -> (f32, f32) {
+    let [x, y] = self.0.map(f32::from_bits);
+    (x, y)
+  }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Fill {
   area: FillArea,
   color: [u8; 4],
   layer: Layer,
-  screen: Screen,
-  left: u16,
+  stage: Stage,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -67,27 +88,20 @@ impl Fill {
     rect: Bounds,
     color: [u8; 4],
     layer: Layer,
-    screen: Screen,
-    left: u16,
+    stage: Stage,
   ) -> Option<Self> {
-    let rect = PixelRect::clip(rect, screen)?;
-    Some(Self { area: FillArea::Pixels(rect), color, layer, screen, left })
+    let rect = PixelRect::clip(rect, stage.screen)?;
+    Some(Self { area: FillArea::Pixels(rect), color, layer, stage })
   }
 
   pub fn stretched(
     color: [u8; 4],
     layer: Layer,
     (column, columns, rows): (u16, u16, u16),
-    screen: Screen,
-    left: u16,
+    stage: Stage,
   ) -> Self {
-    Self {
-      area: FillArea::Cells { column, columns, rows },
-      color,
-      layer,
-      screen,
-      left,
-    }
+    let area = FillArea::Cells { column, columns, rows };
+    Self { area, color, layer, stage }
   }
 
   pub fn area(self) -> FillArea {
@@ -98,12 +112,13 @@ impl Fill {
     match self.area {
       FillArea::Pixels(rect) => rect.bounds(),
       FillArea::Cells { column, columns, rows } => {
-        let x0 = f32::from(column) * f32::from(self.screen.cell_width);
+        let screen = self.stage.screen;
+        let x0 = f32::from(column) * f32::from(screen.cell_width);
         Bounds {
           x0,
           y0: 0.0,
-          x1: x0 + f32::from(columns) * f32::from(self.screen.cell_width),
-          y1: f32::from(rows) * f32::from(self.screen.cell_height),
+          x1: x0 + f32::from(columns) * f32::from(screen.cell_width),
+          y1: f32::from(rows) * f32::from(screen.cell_height),
         }
       }
     }
@@ -117,55 +132,36 @@ impl Fill {
     self.layer
   }
 
-  pub fn frame(self) -> (Screen, u16) {
-    (self.screen, self.left)
+  pub fn stage(self) -> Stage {
+    self.stage
   }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TilePlacement {
   id: TileId,
-  origin: [u32; 2],
-  screen: Screen,
-  left: u16,
+  origin: Origin,
+  stage: Stage,
 }
 
 impl TilePlacement {
-  pub fn new(
-    id: TileId,
-    origin: (f32, f32),
-    screen: Screen,
-    left: u16,
-  ) -> Self {
-    Self { id, origin: [origin.0.to_bits(), origin.1.to_bits()], screen, left }
+  pub fn new(id: TileId, origin: (f32, f32), stage: Stage) -> Self {
+    Self { id, origin: Origin::new(origin), stage }
   }
   pub fn id(self) -> TileId {
     self.id
   }
   /// Page-area pixels before clipping and rounding.
   pub fn origin(self) -> (f32, f32) {
-    let [x, y] = self.origin.map(f32::from_bits);
-    (x, y)
+    self.origin.get()
   }
   pub fn visible(self) -> Option<Bounds> {
-    let (x, y) = self.origin();
-    crate::geometry::clip(
-      Bounds {
-        x0: x.floor(),
-        y0: y.floor(),
-        x1: x.floor() + self.id.key.width as f32,
-        y1: y.floor() + self.id.key.height as f32,
-      },
-      Bounds {
-        x0: 0.0,
-        y0: 0.0,
-        x1: self.screen.width(),
-        y1: self.screen.height(),
-      },
-    )
+    let size = (self.id.key.width as f32, self.id.key.height as f32);
+    let rect = Bounds::placed(self.origin(), size);
+    crate::geometry::clip(rect, self.stage.screen.bounds())
   }
-  pub fn frame(self) -> (Screen, u16) {
-    (self.screen, self.left)
+  pub fn stage(self) -> Stage {
+    self.stage
   }
 }
 
@@ -173,9 +169,8 @@ impl TilePlacement {
 pub struct Picture {
   id: PictureId,
   image: Rgb,
-  origin: [u32; 2],
-  screen: Screen,
-  left: u16,
+  origin: Origin,
+  stage: Stage,
 }
 
 impl Picture {
@@ -183,16 +178,9 @@ impl Picture {
     id: PictureId,
     image: &Rgb,
     origin: (f32, f32),
-    screen: Screen,
-    left: u16,
+    stage: Stage,
   ) -> Self {
-    Self {
-      id,
-      image: image.clone(),
-      origin: [origin.0.to_bits(), origin.1.to_bits()],
-      screen,
-      left,
-    }
+    Self { id, image: image.clone(), origin: Origin::new(origin), stage }
   }
   pub fn id(&self) -> PictureId {
     self.id
@@ -201,11 +189,10 @@ impl Picture {
     &self.image
   }
   pub fn origin(&self) -> (f32, f32) {
-    let [x, y] = self.origin.map(f32::from_bits);
-    (x, y)
+    self.origin.get()
   }
-  pub fn frame(&self) -> (Screen, u16) {
-    (self.screen, self.left)
+  pub fn stage(&self) -> Stage {
+    self.stage
   }
 }
 
@@ -274,15 +261,8 @@ pub trait Draw<'a> {
     self.push(Op::Text(Text::new(text.to_owned())));
   }
 
-  fn fill(
-    &mut self,
-    rect: Bounds,
-    color: [u8; 4],
-    layer: Layer,
-    screen: Screen,
-    left: u16,
-  ) {
-    if let Some(fill) = Fill::new(rect, color, layer, screen, left) {
+  fn fill(&mut self, rect: Bounds, color: [u8; 4], layer: Layer, stage: Stage) {
+    if let Some(fill) = Fill::new(rect, color, layer, stage) {
       self.push(Op::Fill(Box::new(fill)));
     }
   }
@@ -293,15 +273,13 @@ pub trait Draw<'a> {
     clip: Bounds,
     color: [u8; 4],
     layer: Layer,
-    screen: Screen,
-    left: u16,
+    stage: Stage,
   ) {
     if quad.is_rect() {
       if let Some(rect) = crate::geometry::clip(quad.bounds(), clip) {
-        self.fill(rect, color, layer, screen, left);
+        self.fill(rect, color, layer, stage);
       }
-    } else if let Some(polygon) =
-      Polygon::new(quad, clip, color, layer, screen, left)
+    } else if let Some(polygon) = Polygon::new(quad, clip, color, layer, stage)
     {
       self.push(Op::Polygon(Box::new(polygon)));
     }
@@ -312,12 +290,9 @@ pub trait Draw<'a> {
     color: [u8; 4],
     layer: Layer,
     cells: (u16, u16, u16),
-    screen: Screen,
-    left: u16,
+    stage: Stage,
   ) {
-    self.push(Op::Fill(Box::new(Fill::stretched(
-      color, layer, cells, screen, left,
-    ))));
+    self.push(Op::Fill(Box::new(Fill::stretched(color, layer, cells, stage))));
   }
 
   fn extend(&mut self, ops: impl IntoIterator<Item = Op<'a>>) {
@@ -337,12 +312,9 @@ pub trait Surface<'a>: Draw<'a> {
     id: PictureId,
     image: &Rgb,
     origin: (f32, f32),
-    screen: Screen,
-    left: u16,
+    stage: Stage,
   ) -> Result<(), Self::Error> {
-    self.push(Op::Picture(Box::new(Picture::new(
-      id, image, origin, screen, left,
-    ))));
+    self.push(Op::Picture(Box::new(Picture::new(id, image, origin, stage))));
     Ok(())
   }
 
@@ -350,11 +322,10 @@ pub trait Surface<'a>: Draw<'a> {
     &mut self,
     id: TileId,
     origin: (f32, f32),
-    screen: Screen,
-    left: u16,
+    stage: Stage,
   ) -> Result<bool, Self::Error> {
     let ready = self.has(id)?;
-    self.push(Op::Tile(Box::new(TilePlacement::new(id, origin, screen, left))));
+    self.push(Op::Tile(Box::new(TilePlacement::new(id, origin, stage))));
     Ok(ready)
   }
 }
@@ -405,8 +376,6 @@ mod tests {
 
   #[test]
   fn tile_visibility_clips_pane_edges() {
-    use crate::geometry::Crop;
-    use crate::text::PageId;
     use crate::tile::{TileKey, TileOwner};
     let screen = Screen {
       columns: 4,
@@ -417,16 +386,7 @@ mod tests {
     };
     let id = TileId {
       owner: TileOwner::new(1),
-      key: TileKey {
-        page: PageId(0),
-        scale: 1024,
-        rotation: 0,
-        x: 0,
-        y: 0,
-        width: 16,
-        height: 16,
-        crop: Crop::default(),
-      },
+      key: TileKey { scale: 1024, width: 16, height: 16, ..TileKey::default() },
     };
     for (origin, area) in [
       ((40.0, 0.0), 0.0),
@@ -435,7 +395,8 @@ mod tests {
       ((-8.2, 15.8), 35.0),
       ((0.0, 0.0), 256.0),
     ] {
-      let visible = TilePlacement::new(id, origin, screen, 2).visible();
+      let stage = Stage { screen, left: 2 };
+      let visible = TilePlacement::new(id, origin, stage).visible();
       assert_eq!(visible.map_or(0.0, |r| r.width() * r.height()), area);
     }
   }
@@ -449,13 +410,14 @@ mod tests {
       cell_height: 8,
       origin: (2, 1),
     };
+    let stage = Stage { screen, left: 3 };
     let fill =
-      Fill::stretched([23, 45, 67, 89], Layer::BelowText, (4, 1, 2), screen, 3);
+      Fill::stretched([23, 45, 67, 89], Layer::BelowText, (4, 1, 2), stage);
     assert_eq!(fill.area(), FillArea::Cells { column: 4, columns: 1, rows: 2 });
     assert_eq!(fill.rect(), Bounds { x0: 16.0, y0: 0.0, x1: 20.0, y1: 16.0 });
     assert_eq!(fill.color(), [23, 45, 67, 89]);
     assert_eq!(fill.layer(), Layer::BelowText);
-    assert_eq!(fill.frame(), (screen, 3));
+    assert_eq!(fill.stage(), stage);
   }
 
   #[test]

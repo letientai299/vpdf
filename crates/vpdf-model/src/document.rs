@@ -81,14 +81,14 @@ pub struct Annotation {
   pub author: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct Heading {
   pub title: String,
   pub depth: usize,
   pub target: Target,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct Figure {
   pub bounds: Bounds,
   pub caption: String,
@@ -96,7 +96,9 @@ pub struct Figure {
 }
 
 /// What a figure was found from.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+  Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize,
+)]
 pub enum FigureSource {
   /// Image or vector blocks.
   Graphic,

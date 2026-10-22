@@ -176,20 +176,17 @@ fn figures() -> Result<()> {
 fn worker() -> Result<()> {
   use std::sync::mpsc;
   use std::time::Duration;
-  use vpdf_model::geometry::Crop;
   use vpdf_model::tile::TileKey;
   use vpdf_pdf::jobs::render::{RenderWorker, Sink};
   let path = corpus("paper.pdf")?;
   let mut doc = Document::open(&path, "")?;
   let keys = [0, 128].map(|x| TileKey {
-    page: PageId(0),
     scale: 1024,
-    rotation: 0,
     x,
     y: 128,
     width: 128,
     height: 128,
-    crop: Crop::default(),
+    ..TileKey::default()
   });
   let expected = keys
     .iter()

@@ -6,6 +6,7 @@ use std::sync::{Arc, mpsc};
 use vpdf_pdf::jobs::crop::{Request, Update};
 use vpdf_pdf::jobs::ocr::OcrJob;
 use vpdf_pdf::jobs::outline::{OutlineJob, spawn};
+use vpdf_pdf::jobs::{OneShot, Outcome};
 use vpdf_ui::keys::PanelKind;
 
 #[derive(Default)]
@@ -68,10 +69,8 @@ impl App {
   pub fn ocr_updates(&mut self) -> Result<bool> {
     self.defer_ocr();
     let Some(job) = &self.ocr else { return Ok(false) };
-    let result = match job.work.result.try_recv() {
-      Ok(result) => result,
-      Err(mpsc::TryRecvError::Empty) => return Ok(false),
-      Err(mpsc::TryRecvError::Disconnected) => Err("OCR worker stopped".into()),
+    let Some(result) = job.work.poll("OCR worker stopped") else {
+      return Ok(false);
     };
     let page = job.page;
     let automatic = job.is_automatic();
@@ -319,20 +318,48 @@ impl App {
   }
 }
 
+/// Panel data loaded by a background job.
 #[derive(Default)]
-pub enum Figures {
+pub enum Load<T> {
   /// Waits for rendering and idle input.
   #[default]
   Deferred,
   /// Only explicit requests resume this state.
   Idle,
-  Running(vpdf_pdf::jobs::figures::Job),
-  Ready(vpdf_pdf::jobs::figures::Entries),
+  Running(OneShot<Outcome<T>>),
+  Ready(T),
 }
+
+impl<T> Load<T> {
+  /// Whether a request may start a job.
+  pub(crate) fn startable(&self) -> bool {
+    matches!(self, Self::Deferred | Self::Idle)
+  }
+
+  pub(crate) fn pending(&self) -> bool {
+    matches!(self, Self::Deferred | Self::Running(_))
+  }
+
+  pub(crate) fn cancel(&mut self) {
+    if self.pending() {
+      *self = Self::Idle;
+    }
+  }
+
+  /// Takes a finished result; failures leave the load idle.
+  pub(crate) fn poll(&mut self, stopped: &str) -> Option<Outcome<()>> {
+    let Self::Running(job) = self else { return None };
+    let found = job.poll(stopped)?;
+    *self = Self::Idle;
+    Some(found.map(|data| *self = Self::Ready(data)))
+  }
+}
+
+pub type Figures = Load<vpdf_pdf::jobs::figures::Entries>;
 
 impl App {
   pub fn want_figures(&mut self) {
-    if matches!(self.figures, Figures::Deferred | Figures::Idle) {
+    if self.figures.startable() {
       self.figures = Figures::Running(vpdf_pdf::jobs::figures::Job::start(
         &self.path,
         &self.password,
@@ -354,32 +381,20 @@ impl App {
   }
 
   pub fn cancel_figures(&mut self) {
-    if matches!(self.figures, Figures::Deferred | Figures::Running(_)) {
-      self.figures = Figures::Idle;
-    }
+    self.figures.cancel();
   }
 
   pub fn figure_updates(&mut self) -> Result<bool> {
-    let Figures::Running(job) = &self.figures else { return Ok(false) };
-    let found = match job.result.try_recv() {
-      Ok(found) => found,
-      Err(mpsc::TryRecvError::Empty) => return Ok(false),
-      Err(mpsc::TryRecvError::Disconnected) => {
-        Err("Figure worker stopped".into())
-      }
+    let Some(found) = self.figures.poll("Figure worker stopped") else {
+      return Ok(false);
     };
-    self.figures = Figures::Idle;
-    match found {
-      Ok(entries) => self.figures = Figures::Ready(entries),
-      Err(error) => {
-        if self
-          .panel
-          .as_ref()
-          .is_some_and(|p| p.view.kind() == PanelKind::Figures)
-        {
-          self.error = Some(error);
-        }
-      }
+    if let Err(error) = found
+      && self
+        .panel
+        .as_ref()
+        .is_some_and(|p| p.view.kind() == PanelKind::Figures)
+    {
+      self.error = Some(error);
     }
     self.refill_panel(PanelKind::Figures)?;
     Ok(true)
@@ -396,13 +411,7 @@ mod tests {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("figures.pdf");
     crate::fixtures::pdf(&path, &["body"], "")?;
-    let screen = vpdf_ui::layout::Screen {
-      columns: 80,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    };
+    let screen = crate::screen::cells(80, 24);
     let mut app = App::with_screen(&path, "", true, screen)?;
     let (wake, ready) = crate::fixtures::wake();
     app.wake = wake;

@@ -61,9 +61,6 @@ impl Trace {
       frame.metrics.observation_time.unwrap_or_default().as_secs_f64() * 1000.0;
     outcome["observation_ms"] = observation_ms.into();
     outcome["page"] = frame.metrics.page.map(|p| p.0 + 1).into();
-    outcome["pages"] = frame.metrics.pages.into();
-    outcome["hits"] = frame.metrics.hits.into();
-    outcome["animating"] = frame.metrics.animating.into();
     let result = output.paint(&Paint {
       outcome,
       started,
@@ -72,10 +69,7 @@ impl Trace {
       busy: frame.metrics.busy,
       fresh,
       upload_bytes,
-      stand_ins: renderer.stand_ins,
-      missing: renderer.missing,
-      missing_pixels: renderer.missing_pixels,
-      stand_in_pixels: renderer.stand_in_pixels,
+      coverage: renderer.coverage,
       complete: frame.complete,
     });
     self.written(result);

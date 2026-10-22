@@ -2,6 +2,7 @@ use super::reader_fixture::SeedReader;
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::path::Path;
+use vpdf::presentation::try_draw;
 use vpdf::solo::Solo;
 use vpdf_model::geometry::Screen;
 use vpdf_model::text::{PageId, Position};
@@ -33,11 +34,11 @@ fn capture(app: &mut Solo, name: &str, source: &str) -> Result<Value> {
   for _ in 0..2 {
     let mut out = Vec::new();
     if app.text_mode {
-      app.text_canvas(&mut out)?;
+      try_draw(&mut out, None, |s| app.scene_text(s))?;
     } else {
       app.graphics.begin(&mut out)?;
       let (app, graphics) = app.parts();
-      app.marks(graphics, screen, &mut out)?;
+      try_draw(&mut out, Some(graphics), |s| app.scene_marks(s, screen))?;
       graphics.end(&mut out)?;
     }
     hashes.push(super::hash::digest(&out));
@@ -46,18 +47,22 @@ fn capture(app: &mut Solo, name: &str, source: &str) -> Result<Value> {
     "name": name,
     "source": source,
     "text_mode": app.text_mode,
-    "screen": [screen.columns, screen.rows, screen.cell_width, screen.cell_height],
+    "screen":
+      [screen.columns, screen.rows, screen.cell_width, screen.cell_height],
     "origin": screen.origin,
     "at": [app.at.column, app.at.row],
     "left": app.left,
     "scroll": app.reader.scroll,
     "cursor": app.reader.cursor,
-    "selection": app.reader.selection.map(|s| (s.anchor, s.kind == SelectionKind::Line)),
+    "selection": app.reader.selection
+      .map(|s| (s.anchor, s.kind == SelectionKind::Line)),
     "cursor_mode": app.reader.uses_cursor(),
     "top": top,
     "landing": landing,
     "cursorline": app.cursorline,
-    "hovered": hovered.into_iter().map(|(p, b)| (p, super::text::coordinates(b))).collect::<Vec<_>>(),
+    "hovered": hovered.into_iter()
+      .map(|(p, b)| (p, super::text::coordinates(b)))
+      .collect::<Vec<_>>(),
     "output_sha256": hashes,
   }))
 }

@@ -113,7 +113,7 @@ fn failed_placement_retains_requests() {
 
 #[test]
 fn recorded_tiles_use_owner_residency() {
-  use vpdf_model::scene::{Op, Recorder};
+  use vpdf_model::scene::{Op, Recorder, Stage};
   let layout = layout();
   let view = View { layout: &layout, scroll: 0.0, target: None };
   let wanted = visible(&layout, 0.0);
@@ -139,7 +139,8 @@ fn recorded_tiles_use_owner_residency() {
       );
       let (x, y) = layout.origin(key.page, 0.0);
       assert_eq!(placement.origin(), (x + key.x as f32, y + key.y as f32));
-      assert_eq!(placement.frame(), (layout.screen(), 4));
+      let stage = Stage { screen: layout.screen(), left: 4 };
+      assert_eq!(placement.stage(), stage);
     }
     let mut all_ready = Recorder::new(|_| true);
     let update = tiles.scene(view, frame, &mut all_ready).unwrap();

@@ -39,9 +39,10 @@ pub use tmux::{
 pub(crate) use tmux::{VIEW, view};
 
 pub use output::{
-  HIDE_CURSOR, Transport, clean, clear, frame_end, frame_start, goto, graphics,
-  line, passthrough, placement, set_title, transmit,
+  Transport, clean, frame_end, frame_start, goto, line, set_title,
 };
+
+pub(crate) use output::{HIDE_CURSOR, graphics, passthrough};
 
 mod lifecycle;
 mod metrics;

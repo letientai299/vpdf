@@ -56,7 +56,7 @@ fn run(args: &Args) -> Result<()> {
     };
     return preview(file, graphics);
   }
-  vpdf::session::view_configured(&args.files, args.page, args.config.load())
+  vpdf::session::view(&args.files, args.page, args.config.load())
 }
 
 fn main() {

@@ -3534,6 +3534,7 @@ dependencies = [
  "font-kit",
  "mupdf",
  "rustix 1.1.5",
+ "serde",
  "serde_json",
  "sha2",
  "tempfile",

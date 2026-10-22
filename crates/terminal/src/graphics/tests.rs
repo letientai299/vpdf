@@ -6,18 +6,9 @@ use crate::text::PageId;
 
 fn commands(output: &[u8]) -> Vec<HashMap<String, String>> {
   let text = String::from_utf8_lossy(output);
-  text
-    .split("_G")
-    .skip(1)
-    .map(|command| {
-      let control = command.split(';').next().unwrap_or_default();
-      control
-        .split(',')
-        .filter_map(|pair| pair.split_once('='))
-        .map(|(key, value)| (key.to_owned(), value.to_owned()))
-        .collect()
-    })
-    .collect()
+  let owned = |(key, value): (&str, &str)| (key.to_owned(), value.to_owned());
+  let commands = crate::kitty::commands(&text);
+  commands.iter().map(|command| command.pairs().map(owned).collect()).collect()
 }
 
 #[test]
@@ -29,33 +20,9 @@ fn commands_stay_in_session_block() -> Result<()> {
   let block = graphics.base..=graphics.base + (BLOCK - 1);
   let mut output = Vec::new();
   for page in 0..4 {
-    let key = TileKey {
-      page: PageId(page),
-      scale: 1,
-      rotation: 0,
-      x: 0,
-      y: 0,
-      width: 1,
-      height: 1,
-      crop: vpdf_model::geometry::Crop::default(),
-    };
-    graphics.upload(
-      0,
-      &Tile {
-        key,
-        payload: Payload::Encoded(encode(&[255; 3])?.into()),
-        render_ms: 0.0,
-      },
-      &mut output,
-    )?;
+    upload(&mut graphics, 0, tile_key(page, (1, 1)), &mut output)?;
   }
-  let screen = Screen {
-    columns: 10,
-    rows: 10,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::screen::cells(10, 10);
   let rect = Bounds { x0: 0.0, y0: 0.0, x1: 4.0, y1: 4.0 };
   graphics.highlight(rect, [0; 4], screen, 0, &mut output)?;
   graphics.begin(&mut output)?;
@@ -80,13 +47,7 @@ fn commands_stay_in_session_block() -> Result<()> {
   Ok(())
 }
 
-const SCREEN: Screen = Screen {
-  columns: 20,
-  rows: 10,
-  cell_width: 8,
-  cell_height: 16,
-  origin: (0, 0),
-};
+const SCREEN: Screen = crate::screen::cells(20, 10);
 
 #[test]
 fn missing_counts_visible_tiles() -> Result<()> {
@@ -117,26 +78,27 @@ pub(super) fn tile(graphics: &mut Graphics, page: usize) -> Result<TileKey> {
 fn tile_sized(
   graphics: &mut Graphics,
   page: usize,
-  (width, height): (i32, i32),
+  size: (i32, i32),
 ) -> Result<TileKey> {
-  let key = TileKey {
-    page: PageId(page),
-    scale: 1,
-    rotation: 0,
-    x: 0,
-    y: 0,
-    width,
-    height,
-    crop: vpdf_model::geometry::Crop::default(),
-  };
-  let pixels = vec![255; (width * height * 3) as usize];
-  let payload = Payload::Encoded(encode(&pixels)?.into());
-  graphics.upload(
-    0,
-    &Tile { key, payload, render_ms: 0.0 },
-    &mut Vec::new(),
-  )?;
+  let key = tile_key(page, size);
+  upload(graphics, 0, key, &mut Vec::new())?;
   Ok(key)
+}
+
+fn tile_key(page: usize, (width, height): (i32, i32)) -> TileKey {
+  TileKey { page: PageId(page), scale: 1, width, height, ..TileKey::default() }
+}
+
+/// Uploads a white `key` tile for `pane`.
+fn upload(
+  graphics: &mut Graphics,
+  pane: u32,
+  key: TileKey,
+  out: &mut Vec<u8>,
+) -> Result<()> {
+  let pixels = vec![255; (key.width * key.height * 3) as usize];
+  let payload = Payload::Encoded(encode(&pixels)?.into());
+  graphics.upload(pane, &Tile { key, payload, render_ms: 0.0 }, out)
 }
 
 pub(super) fn has(
@@ -443,13 +405,7 @@ fn pieces_cover_with_whole_cells() {
 #[test]
 fn crop_quirk_edge_tiles_leave_no_gap() -> Result<()> {
   let mut graphics = Graphics { quirk: true, ..Graphics::default() };
-  let screen = Screen {
-    columns: 80,
-    rows: 20,
-    cell_width: 14,
-    cell_height: 30,
-    origin: (0, 0),
-  };
+  let screen = crate::screen::pixels(80, 20, 14, 30);
   let full = tile_sized(&mut graphics, 0, (512, 256))?;
   // Page-end tiles shorter than a cell.
   let low = tile_sized(&mut graphics, 1, (512, 20))?;
@@ -646,25 +602,7 @@ fn forgetting_a_document_frees_only_its_tiles() -> Result<()> {
   let mut graphics = Graphics::default();
   let mut output = Vec::new();
   for pane in [1, 2] {
-    let key = TileKey {
-      page: PageId(0),
-      scale: 1,
-      rotation: 0,
-      x: 0,
-      y: 0,
-      width: 1,
-      height: 1,
-      crop: vpdf_model::geometry::Crop::default(),
-    };
-    graphics.upload(
-      pane,
-      &Tile {
-        key,
-        payload: Payload::Encoded(encode(&[255; 3])?.into()),
-        render_ms: 0.0,
-      },
-      &mut output,
-    )?;
+    upload(&mut graphics, pane, tile_key(0, (1, 1)), &mut output)?;
   }
   graphics.forget(1);
   output.clear();
@@ -712,16 +650,7 @@ fn closed_spool_requests_raster() -> Result<()> {
   let encoder = Encoder::new(Some(Arc::clone(&spool)));
   let mut graphics = Graphics::new(Presentation::default(), &encoder);
   assert_eq!(graphics.budget, SPOOLED);
-  let key = TileKey {
-    page: PageId(0),
-    scale: 1024,
-    rotation: 0,
-    x: 0,
-    y: 0,
-    width: 1,
-    height: 1,
-    crop: vpdf_model::geometry::Crop::default(),
-  };
+  let key = TileKey { scale: 1024, width: 1, height: 1, ..TileKey::default() };
   graphics
     .keep(0, Tile { key, payload: encoder.encode(&[255; 3])?, render_ms: 0.0 });
   spool.close();

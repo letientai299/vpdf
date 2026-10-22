@@ -54,7 +54,7 @@ fn main() {
   let figures = code(&[
     "crates/vpdf-pdf/src/figures.rs",
     "crates/vpdf-pdf/src/jobs/figures.rs",
-    "crates/vpdf-pdf/src/content_cache/figures.rs",
+    "crates/vpdf-pdf/src/content_cache/record.rs",
   ]);
   println!("cargo::rustc-env=VPDF_FIGURE_CODE={figures:016x}");
   let recent = code(&[
@@ -65,7 +65,7 @@ fn main() {
   println!("cargo::rustc-env=VPDF_RECENT_CODE={recent:016x}");
   let outline = code(&[
     "crates/vpdf-pdf/src/jobs/outline.rs",
-    "crates/vpdf-pdf/src/content_cache/outline.rs",
+    "crates/vpdf-pdf/src/content_cache/record.rs",
   ]);
   println!("cargo::rustc-env=VPDF_OUTLINE_CODE={outline:016x}");
   let code = code(&[

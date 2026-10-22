@@ -1,7 +1,5 @@
 use super::*;
 
-use vpdf_model::input::KeyModifiers;
-
 #[test]
 fn scrolling_can_enter_wrapped_rows() {
   let rows = ["# Move", "j: one two three four five six seven eight nine ten"]
@@ -28,12 +26,8 @@ fn wrapped_rows_keep_their_source() {
     ["# Move", "j: one two three four five", "k: up"].map(Row::parse).into();
   let mut panel = Panel::new(PanelKind::Help, rows);
   panel.scene_list(&mut Vec::new(), vpdf_model::geometry::At::default(), 15, 6);
-  let press = |row| MouseEvent {
-    kind: MouseEventKind::Down(MouseButton::Left),
-    column: 5,
-    row,
-    modifiers: KeyModifiers::NONE,
-  };
+  let press =
+    |row| MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 5, row);
   assert_eq!(panel.pointer(press(3)), Some(1));
   assert_eq!(panel.pointer(press(4)), Some(1));
   panel.begin_search(false);

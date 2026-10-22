@@ -21,6 +21,8 @@ mod input;
 mod input_adapter;
 mod jumps;
 mod keys;
+#[path = "../support/kitty.rs"]
+mod kitty;
 mod modes;
 mod mouse;
 mod objects;

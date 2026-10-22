@@ -1,11 +1,8 @@
 use anyhow::Result;
 use std::hint::black_box;
-use vpdf_model::geometry::At;
-use vpdf_model::geometry::Screen;
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Reader;
-use vpdf_ui::paint;
-use vpdf_ui::reading::{Frame, Pane, Tracking};
+use vpdf_ui::reading::{Pane, Tracking};
 use vpdf_ui::text_view::TextView;
 
 pub fn land() -> Result<()> {
@@ -23,13 +20,7 @@ fn case(
   text: bool,
   pages: bool,
 ) -> Result<()> {
-  let screen = Screen {
-    columns: 100,
-    rows: 30,
-    cell_width: 8,
-    cell_height: 16,
-    origin: (0, 0),
-  };
+  let screen = crate::screen::cells(100, 30);
   let mut layout = super::reading::layout(prepared, screen);
   let positions = if pages {
     [Position::default(), Position { page: PageId(1), ..Position::default() }]
@@ -45,10 +36,7 @@ fn case(
   let reader = Reader::default();
   let mut pane = Pane::new(reader, Tracking::default());
   let mut text_view = TextView::default();
-  let frame = Frame {
-    pane: paint::Frame { screen, at: At::default(), left: 0, text },
-    visible: screen,
-  };
+  let frame = super::reading::frame(screen, text);
   super::measure(&format!("Reading::jump text={text} pages={pages}"), || {
     for position in positions {
       let mut view = pane.bind(&mut layout, &mut text_view, frame, prepared);

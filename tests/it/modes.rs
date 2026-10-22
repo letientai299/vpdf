@@ -1,5 +1,5 @@
 use super::common::keys;
-use std::path::PathBuf;
+use crate::harness::{corpus, solo, temp_copy};
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
@@ -7,22 +7,9 @@ use vpdf::solo::Solo;
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::SelectionKind;
 use vpdf_ui::keys::PanelKind;
-use vpdf_ui::layout::Screen;
 
 pub(super) fn app(file: &str, text: bool) -> Result<Solo> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  Solo::open(
-    &root.join(file),
-    "",
-    text,
-    Screen {
-      columns: 100,
-      rows: 24,
-      cell_width: 8,
-      cell_height: 16,
-      origin: (0, 0),
-    },
-  )
+  solo(file, text, crate::common::cells(100, 24))
 }
 
 pub(super) fn settle(app: &mut App) {
@@ -78,10 +65,12 @@ fn normal_keys_move_view_without_text_extraction() -> Result<()> {
   let screen = app.layout.screen();
   {
     let (app, graphics) = app.parts();
-    app.marks(graphics, screen, &mut Vec::new())?;
+    vpdf::presentation::try_draw(&mut Vec::new(), Some(graphics), |s| {
+      app.scene_marks(s, screen)
+    })?;
   }
   app.track_outline();
-  app.status(&mut Vec::new(), app.screen.rows - 1)?;
+  app.status(&mut Vec::new(), app.screen.rows - 1, None)?;
   assert_eq!(app.doc.cache_bytes(), 0);
   Ok(())
 }
@@ -504,17 +493,14 @@ fn text_offsets_clamp_after_rows_pages_and_resize() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn reload_clamps_text_view_and_invalidates_hit_testing() -> Result<()> {
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("reload.pdf");
-  std::fs::copy(root.join("book.pdf"), &path)?;
+  let (_directory, path) = temp_copy("book.pdf")?;
   let mut app = Solo::open(&path, "", true, app("paper.pdf", true)?.screen)?;
   app.command("100")?;
   keys(&mut app, b"100j10l")?;
   app.draw(&mut Vec::new())?;
   assert!(app.text().position(0, 0)?.page.0 > 99);
   app.begin_search(false)?;
-  std::fs::copy(root.join("ocr.pdf"), &path)?;
+  std::fs::copy(corpus("ocr.pdf")?, &path)?;
   app.command("reload")?;
   assert_eq!(app.text().position(0, 0)?.page, PageId(0));
   app.cancel_prompt()?;

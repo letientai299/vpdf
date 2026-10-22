@@ -1,3 +1,4 @@
+use crate::harness::{corpus, solo};
 use std::path::PathBuf;
 use vpdf::Result;
 use vpdf::solo::Solo;
@@ -35,9 +36,8 @@ fn raw_figure_bindings() {
 fn real_figure_navigation_fit() -> Result<()> {
   use vpdf_ui::keys::{Action, Input};
   use vpdf_ui::region::Region;
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
   let screen = super::focus::screen();
-  let mut app = Solo::open(&root.join("paper.pdf"), "", false, screen)?;
+  let mut app = solo("paper.pdf", false, screen)?;
   app.action(Input::plain(Action::Cursor))?;
   app.move_figure(true, 1)?;
   let first = app.overlays.region().unwrap().snapshot().clone();
@@ -134,12 +134,9 @@ fn raw_region_preserves_state() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn raw_region_pointer_transfer() -> Result<()> {
   use super::focus::{screen, send};
-  use vpdf::session::Session;
   use vpdf_reader::reader::Mode;
   use vpdf_ui::input::InputOwner;
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut session = Session::new(None);
-  session.open(&root.join("paper.pdf"), true, screen())?;
+  let mut session = crate::harness::session(&corpus("paper.pdf")?, screen())?;
   send(&mut session, b"i]ivgF")?;
   let mode = session.app().reader.mode();
   let cursor = session.app().reader.cursor;
@@ -169,10 +166,7 @@ fn raw_region_pointer_transfer() -> Result<()> {
 fn real_figure_sidebar() -> Result<()> {
   use super::common::keys;
   use vpdf_ui::keys::PanelKind;
-
-  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
-  let mut app =
-    Solo::open(&root.join("paper.pdf"), "", false, super::focus::screen())?;
+  let mut app = solo("paper.pdf", false, super::focus::screen())?;
   keys(&mut app, b"gf")?;
   assert_eq!(app.panel.as_ref().unwrap().view.kind(), PanelKind::Figures);
   assert_eq!(app.panel.as_ref().unwrap().view.note(), "loading");
@@ -204,13 +198,10 @@ fn real_figure_sidebar() -> Result<()> {
 }
 
 fn figures_loaded(app: &mut vpdf::app::App) -> Result<()> {
-  use std::time::{Duration, Instant};
-  let deadline = Instant::now() + Duration::from_secs(20);
-  while matches!(app.figures, vpdf::jobs::Figures::Running(_)) {
+  crate::common::wait_until(20, "Figure scan", || {
     app.figure_updates()?;
-    anyhow::ensure!(Instant::now() < deadline, "Figure scan timed out");
-    std::thread::sleep(Duration::from_millis(5));
-  }
+    Ok(!matches!(app.figures, vpdf::jobs::Figures::Running(_)))
+  })?;
   anyhow::ensure!(app.error.is_none(), "{:?}", app.error);
   Ok(())
 }

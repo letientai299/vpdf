@@ -1,7 +1,6 @@
 use super::*;
 use crate::find::Search;
 use crate::reading::Pane;
-use vpdf_model::input::KeyModifiers;
 use vpdf_reader::reader::{Mode, SelectionKind};
 use vpdf_search::{query::Query, search::Hit};
 
@@ -115,7 +114,7 @@ fn refocus_reuses_destinations() {
 }
 
 fn mouse(kind: MouseEventKind, row: u16) -> MouseEvent {
-  MouseEvent { kind, column: 2, row, modifiers: KeyModifiers::NONE }
+  MouseEvent::new(kind, 2, row)
 }
 
 fn activate(panel: &mut Panel, mouse: MouseEvent, clicks: u8) -> Activation {

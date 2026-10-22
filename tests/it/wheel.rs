@@ -1,17 +1,15 @@
 use super::common::SeedReader;
 use crate::common;
 use crate::focus::screen;
-use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::path::Path;
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::session::Session;
-use vpdf_model::input::{KeyModifiers, MouseEvent, MouseEventKind};
+use vpdf_model::input::{MouseEvent, MouseEventKind};
 use vpdf_model::text::PageId;
 use vpdf_reader::motion::Motion;
-use vpdf_terminal::decode::{Event, Parser};
 use vpdf_ui::keys::{Action, Input};
 use vpdf_ui::pointer::Pixel;
 
@@ -33,16 +31,8 @@ fn wheel_at(
   (x, y): (u16, u16),
   now: Instant,
 ) -> Result<bool> {
-  let mut parser = Parser::default();
-  parser.set_pixels(true);
-  let mut events = VecDeque::new();
-  parser.feed(format!("\x1b[<{flags};{x};{y}M").as_bytes(), &mut events);
-  let mut frame = false;
-  for event in events {
-    let Event::Mouse(mouse) = event else { panic!("mouse bytes") };
-    frame |= session.mouse_report_at(mouse, now)?;
-  }
-  Ok(frame)
+  let report = crate::mouse::report(&format!("\x1b[<{flags};{x};{y}M"));
+  session.mouse_report_at(report, now)
 }
 
 /// A turn that starts a gesture: the pointer moves there first.
@@ -107,12 +97,6 @@ fn pages_pdf(
   common::write_pdf(path, &objects, "")
 }
 
-fn session(path: &Path) -> Result<Session> {
-  let mut session = Session::new(None);
-  session.open(path, true, screen())?;
-  Ok(session)
-}
-
 /// The page point under a screen pixel of the only pane.
 fn under(app: &App, (x, y): (u16, u16)) -> (usize, f32, f32) {
   let pixel = Some(Pixel { x, y, cell: (8, 16) });
@@ -122,9 +106,9 @@ fn under(app: &App, (x, y): (u16, u16)) -> (usize, f32, f32) {
 
 #[test]
 fn ctrl_wheel_zooms_at_the_pointer() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("pages.pdf");
-  pages_pdf(&path, &[(18, 6), (18, 6), (18, 6)], None)?;
+  let (_directory, path) = common::temp_pdf(|path| {
+    pages_pdf(path, &[(18, 6), (18, 6), (18, 6)], None)
+  })?;
   // (pointer pixel, turns before, the turn, scroll first) -> zoom grows;
   // horizontal anchoring holds only while the page overflows.
   let cases = [
@@ -141,7 +125,7 @@ fn ctrl_wheel_zooms_at_the_pointer() -> Result<()> {
     ((480, 300), 0, DOWN, 300.0, false),
   ];
   for (at, before, turn, scroll, grows) in cases {
-    let mut session = session(&path)?;
+    let mut session = crate::harness::session(&path, screen())?;
     session.app().reader.seed_reader(|reader| reader.scroll = scroll);
     for _ in 0..before {
       wheel(&mut session, UP | CTRL, at)?;
@@ -168,9 +152,9 @@ fn ctrl_wheel_zooms_at_the_pointer() -> Result<()> {
 
 #[test]
 fn shift_and_sideways_wheel_pan_zoomed_pages() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("lines.pdf");
-  common::text_pdf(&path, &["Pan a zoomed page sideways"])?;
+  let (_directory, path) = common::temp_pdf(|path| {
+    common::text_pdf(path, &["Pan a zoomed page sideways"])
+  })?;
   let at = (480, 300);
   let notch = f32::from(vpdf_ui::pointer::WHEEL_ROWS) * 8.0;
   // (flags) -> pan change, scrolls
@@ -186,7 +170,7 @@ fn shift_and_sideways_wheel_pan_zoomed_pages() -> Result<()> {
     (CTRL | SHIFT | DOWN, 0.0, false),
   ];
   for (flags, change, scrolls) in cases {
-    let mut session = session(&path)?;
+    let mut session = crate::harness::session(&path, screen())?;
     let moved = wheel(&mut session, flags, at)?;
     assert_eq!(session.app().layout.pan(), 0.0, "fit width cannot pan");
     assert_eq!(moved, scrolls, "{flags}: frames only when moved");
@@ -208,10 +192,10 @@ fn shift_and_sideways_wheel_pan_zoomed_pages() -> Result<()> {
 
 #[test]
 fn sideways_drift_in_a_gesture_is_ignored() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("lines.pdf");
-  common::text_pdf(&path, &["Rails for a zoomed page"])?;
-  let mut session = session(&path)?;
+  let (_directory, path) = common::temp_pdf(|path| {
+    common::text_pdf(path, &["Rails for a zoomed page"])
+  })?;
+  let mut session = crate::harness::session(&path, screen())?;
   session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
   session.app().relayout()?;
   session.app().layout.pan_to(400.0);
@@ -228,9 +212,9 @@ fn sideways_drift_in_a_gesture_is_ignored() -> Result<()> {
 
 #[test]
 fn text_wheel_pans_columns_and_ignores_ctrl() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("lines.pdf");
-  common::text_pdf(&path, &["A line far wider than the narrow view"])?;
+  let (_directory, path) = common::temp_pdf(|path| {
+    common::text_pdf(path, &["A line far wider than the narrow view"])
+  })?;
   let mut session = Session::new(None);
   let narrow = vpdf_ui::layout::Screen { columns: 16, ..screen() };
   session.open(&path, true, narrow)?;
@@ -252,10 +236,9 @@ fn text_wheel_pans_columns_and_ignores_ctrl() -> Result<()> {
 
 #[test]
 fn wheel_frames_only_when_something_moves() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("lines.pdf");
-  common::text_pdf(&path, &["Frames"])?;
-  let mut session = session(&path)?;
+  let (_directory, path) =
+    common::temp_pdf(|path| common::text_pdf(path, &["Frames"]))?;
+  let mut session = crate::harness::session(&path, screen())?;
   let at = (480, 300);
   assert!(wheel(&mut session, DOWN, at)?);
   assert!(!wheel(&mut session, RIGHT, at)?, "fit width cannot pan");
@@ -266,12 +249,7 @@ fn wheel_frames_only_when_something_moves() -> Result<()> {
   // A pending count clears, which the status line shows.
   session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(1.0));
   session.app().relayout()?;
-  let mut history = vpdf_ui::prompt::History::default();
-  let two = vpdf_model::input::KeyEvent::new(
-    vpdf_model::input::KeyCode::Char('2'),
-    KeyModifiers::NONE,
-  );
-  session.app().key(two, &mut history)?;
+  crate::harness::press(&mut session, b"2")?;
   assert!(wheel(&mut session, RIGHT, at)?);
   assert!(!wheel(&mut session, RIGHT, at)?);
   Ok(())
@@ -279,11 +257,11 @@ fn wheel_frames_only_when_something_moves() -> Result<()> {
 
 #[test]
 fn panel_preview_and_text_turns_frame_until_an_end() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("linked.pdf");
-  pages_pdf(&path, &[(18, 3), (10, 60), (18, 3)], Some(0))?;
+  let (_directory, path) = common::temp_pdf(|path| {
+    pages_pdf(path, &[(18, 3), (10, 60), (18, 3)], Some(0))
+  })?;
   // A panel list: the help rows scroll down, not above the first.
-  let mut panel = session(&path)?;
+  let mut panel = crate::harness::session(&path, screen())?;
   panel.app().open_panel(vpdf_ui::keys::PanelKind::Help)?;
   panel.draw_focused(&mut Vec::new())?;
   assert!(!wheel(&mut panel, UP, pixel((2, 5)))?);
@@ -295,7 +273,7 @@ fn panel_preview_and_text_turns_frame_until_an_end() -> Result<()> {
   assert!(!wheel(&mut preview, UP, inside)?);
   assert!(wheel(&mut preview, DOWN, inside)?);
   // Text scrolls rows; short lines do not pan.
-  let mut text = session(&path)?;
+  let mut text = crate::harness::session(&path, screen())?;
   text.app().command("text")?;
   assert!(!wheel(&mut text, UP, (480, 300))?);
   assert!(!wheel(&mut text, RIGHT, (480, 300))?);
@@ -307,9 +285,8 @@ fn panel_preview_and_text_turns_frame_until_an_end() -> Result<()> {
 #[test]
 fn status_row_wheel_scrolls_the_pane() -> Result<()> {
   type Moved = fn(&mut App) -> f32;
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("pages.pdf");
-  pages_pdf(&path, &[(18, 6); 40], None)?;
+  let (_directory, path) =
+    common::temp_pdf(|path| pages_pdf(path, &[(18, 6); 40], None))?;
   let row = 39 * 16 + 8;
   let scroll: Moved =
     |app| app.reader.animation().target().unwrap_or(app.reader.scroll);
@@ -331,7 +308,7 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
     ("P", 480, scroll),
   ];
   for (view, x, moved) in cases {
-    let mut session = session(&path)?;
+    let mut session = crate::harness::session(&path, screen())?;
     let app = session.app();
     match view {
       "text" => app.command("text")?,
@@ -350,10 +327,9 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
 
 #[test]
 fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("pages.pdf");
-  pages_pdf(&path, &[(18, 6); 40], None)?;
-  let mut session = session(&path)?;
+  let (_directory, path) =
+    common::temp_pdf(|path| pages_pdf(path, &[(18, 6); 40], None))?;
+  let mut session = crate::harness::session(&path, screen())?;
   let app = session.app();
   app.open_overview()?;
   session.draw_focused(&mut Vec::new())?;
@@ -392,12 +368,11 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
   // A click opens the page under it after the wheel scrolled.
   wheel(&mut session, DOWN, (480, 300))?;
   assert_eq!(state(&mut session).1, 2);
-  session.app().overview_mouse(MouseEvent {
-    kind: MouseEventKind::Down(vpdf_model::input::MouseButton::Left),
-    column: 3,
-    row: 2,
-    modifiers: KeyModifiers::NONE,
-  })?;
+  session.app().overview_mouse(MouseEvent::new(
+    MouseEventKind::Down(vpdf_model::input::MouseButton::Left),
+    3,
+    2,
+  ))?;
   assert!(session.app().overlays.overview().is_none());
   assert_eq!(session.app().reader.cursor.page, PageId(2 * columns));
   Ok(())
@@ -406,7 +381,7 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
 /// A session on page 1 of `path`, which links to page 2, with that
 /// link's `K` preview open.
 fn linked(path: &Path, text: bool) -> Result<Session> {
-  let mut session = session(path)?;
+  let mut session = crate::harness::session(path, screen())?;
   let app = session.app();
   if text {
     app.command("text")?;
@@ -453,10 +428,10 @@ fn page(app: &mut App) -> Result<(f32, vpdf_model::text::Position)> {
 
 #[test]
 fn preview_takes_the_wheel_under_the_pointer() -> Result<()> {
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("linked.pdf");
   // The link stays shown while scrolling (U17).
-  pages_pdf(&path, &[(10, 60), (10, 60), (18, 3)], Some(30))?;
+  let (_directory, path) = common::temp_pdf(|path| {
+    pages_pdf(path, &[(10, 60), (10, 60), (18, 3)], Some(30))
+  })?;
   let start = Instant::now();
   let at = |ms| start + Duration::from_millis(ms);
   for text in [false, true] {
@@ -511,11 +486,9 @@ fn preview_takes_the_wheel_under_the_pointer() -> Result<()> {
 /// Turns over a menu move the surface beneath it, not the hidden page.
 #[test]
 fn menu_turns_move_what_is_beneath() -> Result<()> {
-  use vpdf_model::input::MouseButton::Right;
   use vpdf_ui::keys::PanelKind;
-  let directory = tempfile::tempdir()?;
-  let path = directory.path().join("pages.pdf");
-  pages_pdf(&path, &[(18, 6); 40], None)?;
+  let (_directory, path) =
+    common::temp_pdf(|path| pages_pdf(path, &[(18, 6); 40], None))?;
   // (surface) -> moved (page scroll, panel top, overview top)
   let cases = [
     ("page", (true, false, false)),
@@ -523,7 +496,7 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
     ("overview", (false, false, true)),
   ];
   for (surface, want) in cases {
-    let mut session = session(&path)?;
+    let mut session = crate::harness::session(&path, screen())?;
     let app = session.app();
     match surface {
       "panel" => app.open_panel(PanelKind::Help)?,
@@ -533,10 +506,7 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
     session.draw_focused(&mut Vec::new())?;
     let app = session.app();
     let at = if surface == "panel" { (4, 6) } else { (app.left + 20, 6) };
-    for kind in [MouseEventKind::Down(Right), MouseEventKind::Up(Right)] {
-      let modifiers = KeyModifiers::NONE;
-      session.mouse(MouseEvent { kind, column: at.0, row: at.1, modifiers })?;
-    }
+    crate::mouse::right(&mut session, at)?;
     let state = |session: &mut Session| {
       let app = session.app();
       let panel = app.panel.as_ref().map(|panel| panel.view.top());
@@ -550,12 +520,27 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
       session.app().overlays.menu().map(vpdf_ui::context::ContextMenu::area);
     let area = menu.unwrap_or_else(|| panic!("{surface}: a menu"));
     let pixel = (area.column * 8 + 4, area.row * 16 + 8);
-    wheel(&mut session, DOWN, pixel)?;
+    let framed = wheel(&mut session, DOWN, pixel)?;
     session.draw_focused(&mut Vec::new())?;
     let after = state(&mut session);
     let moved = (before.0 != after.0, before.1 != after.1, before.2 != after.2);
     assert_eq!(moved, want, "{surface}");
     assert!(session.app().overlays.menu().is_some(), "{surface}: menu stays");
+    if surface == "page" {
+      let scroll = |bits| f32::from_bits(bits);
+      assert!(framed && scroll(after.0) > scroll(before.0), "page scrolls");
+      // Cell reports beside and over it scroll the page too.
+      let mut last = after.0;
+      let beside = (area.column.saturating_sub(2), area.row);
+      for spot in [beside, (area.column, area.row)] {
+        let down = MouseEventKind::ScrollDown;
+        assert!(crate::harness::mouse(&mut session, down, spot)?, "{spot:?}");
+        assert!(session.app().overlays.menu().is_some(), "{spot:?}: menu");
+        let now = state(&mut session).0;
+        assert!(scroll(now) > scroll(last), "{spot:?}");
+        last = now;
+      }
+    }
   }
   Ok(())
 }
@@ -566,10 +551,8 @@ fn clue_wheel_stays_in_overlay() -> Result<()> {
     let (_directory, mut session) = crate::mouse::session(false)?;
     let app = session.app();
     common::keys(app, b"g")?;
-    app.overlays.clues_mut().restart(Some(
-      Instant::now().checked_sub(Duration::from_secs(1)).unwrap(),
-    ));
-    assert!(app.clue_due());
+    common::age_clues(app);
+    assert!(app.clue_due(Instant::now()));
     app.overlays.clues_mut().show(
       (0..count).map(|i| (i.to_string(), "description".into())).collect(),
     );
