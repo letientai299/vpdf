@@ -350,7 +350,10 @@ impl App {
         self.overlays.open_prompt(Prompt::new(PromptKind::Password));
       }
       Id::Ocr => {
-        self.start_ocr(if argument.is_empty() { "eng" } else { argument })?;
+        let language =
+          if argument.is_empty() { self.settings.language() } else { argument }
+            .to_owned();
+        self.start_ocr(&language)?;
       }
       Id::Version => self.open_panel(PanelKind::Version)?,
       Id::Help => self.open_panel(PanelKind::Help)?,

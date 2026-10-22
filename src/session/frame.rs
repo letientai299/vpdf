@@ -14,6 +14,7 @@ impl Drawable for Session {
   /// Unfocused panes first, so the focused pane's prompt places the
   /// terminal cursor last.
   fn draw_frame(&mut self, out: &mut Vec<u8>) -> Result<()> {
+    self.present_startup();
     self.prepare_frame();
     // Without a spot the pointer is elsewhere.
     if self.pointer.spot().is_some() {

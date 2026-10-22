@@ -93,6 +93,7 @@ pub struct App {
   pub(crate) settling: Option<(crate::watch::Stamp, Instant)>,
   pub text_mode: bool,
   pub cursorline: bool,
+  pub(crate) settings: crate::config::Settings,
   /// Pending and drawn text frames.
   pub(crate) text_view: vpdf_ui::text_view::TextView,
   pub screen: Screen,
@@ -183,9 +184,32 @@ impl App {
     screen: Screen,
     frontend: Frontend,
   ) -> Result<Self> {
+    Self::configured(
+      path,
+      password,
+      text_mode,
+      screen,
+      frontend,
+      &crate::config::Settings::default(),
+    )
+  }
+
+  pub(crate) fn configured(
+    path: &Path,
+    password: &str,
+    text_mode: bool,
+    screen: Screen,
+    frontend: Frontend,
+    settings: &crate::config::Settings,
+  ) -> Result<Self> {
     static NEXT: AtomicU32 = AtomicU32::new(1);
     let doc = Document::open(path, password)?;
-    let layout = Layout::new(doc.pages.iter().map(|page| page.bounds), screen);
+    let mut layout =
+      Layout::new(doc.pages.iter().map(|page| page.bounds), screen);
+    if settings.zoom().to_bits() != layout.zoom().to_bits() {
+      layout.request_zoom(vpdf_ui::layout::Zoom::To(settings.zoom()));
+      layout.reflow(doc.pages.iter().map(|page| page.bounds));
+    }
     let wake = frontend.wake();
     let worker = frontend.raster(path, password, doc.lists(), &wake, false);
     Ok(Self {
@@ -205,7 +229,8 @@ impl App {
       stamp: crate::watch::stamp(path),
       settling: None,
       text_mode,
-      cursorline: true,
+      cursorline: settings.cursorline(),
+      settings: settings.clone(),
       text_view: vpdf_ui::text_view::TextView::default(),
       screen,
       left: 0,

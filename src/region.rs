@@ -272,8 +272,9 @@ impl App {
       rotation: self.layout.rotation(),
     };
     let (path, page, id) = (self.path.clone(), selected.page, selected.id);
+    let language = self.settings.language().to_owned();
     let work = capture::Job::start(request, &self.wake, move |shot, cancel| {
-      finish(&path, page, shot.png, operation, cancel)
+      finish(&path, page, shot.png, operation, &language, cancel)
     });
     self.region_job = Some(Job { id, work });
     self.region_status(id, "Region operation running".into());
@@ -357,6 +358,7 @@ fn finish(
   page: PageId,
   png: Vec<u8>,
   operation: Operation,
+  language: &str,
   cancel: &AtomicBool,
 ) -> Result<Outcome> {
   match operation {
@@ -370,7 +372,7 @@ fn finish(
       Ok(Outcome::Message(format!("Saved {}", saved.display())))
     }
     Operation::Ocr => {
-      Ok(Outcome::Text(capture::recognize(png, "eng", cancel)?))
+      Ok(Outcome::Text(capture::recognize(png, language, cancel)?))
     }
     Operation::Text => unreachable!(),
   }

@@ -14,6 +14,8 @@ use vpdf_model::geometry::Screen;
 #[derive(Parser)]
 #[command(version = vpdf::version::BUILD, about = "Native Vpdf reader")]
 struct Args {
+  #[command(flatten)]
+  config: vpdf::config::Options,
   files: Vec<PathBuf>,
   /// Launch page overriding the saved position.
   #[arg(long)]
@@ -46,6 +48,7 @@ impl Window {
   fn new(
     cc: &eframe::CreationContext<'_>,
     args: Args,
+    config: vpdf::config::Loaded,
   ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
     vpdf_gui::fonts::install(&cc.egui_ctx);
     #[cfg(feature = "bench-events")]
@@ -55,8 +58,13 @@ impl Window {
       .map(|path| inject::spawn(path, cc.egui_ctx.clone()));
     let trace = Trace::from_env();
     let ctx = cc.egui_ctx.clone();
-    let bridge =
-      Bridge::start(args.files, args.page, move || ctx.request_repaint())?;
+    let bridge = Bridge::configured(
+      args.files,
+      vpdf::state::location(),
+      args.page,
+      config,
+      move || ctx.request_repaint(),
+    )?;
     if trace.enabled() {
       bridge.send(Input::Observe(true));
     }
@@ -261,12 +269,17 @@ fn options(args: &Args) -> Result<eframe::NativeOptions, image::ImageError> {
 
 fn main() -> eframe::Result {
   let args = vpdf::version::parse::<Args>(false);
+  if args.config.config_example {
+    return vpdf::config::print_example()
+      .map_err(|error| eframe::Error::AppCreation(error.into()));
+  }
+  let config = args.config.load();
   let options = options(&args)
     .map_err(|error| eframe::Error::AppCreation(Box::new(error)))?;
   eframe::run_native(
     "Vpdf",
     options,
-    Box::new(move |cc| Ok(Box::new(Window::new(cc, args)?))),
+    Box::new(move |cc| Ok(Box::new(Window::new(cc, args, config)?))),
   )
 }
 

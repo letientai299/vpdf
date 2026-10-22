@@ -4,6 +4,7 @@ mod canvas;
 mod clipboard;
 pub mod cmdline;
 mod commands;
+pub mod config;
 mod context;
 pub mod dnd;
 mod find;

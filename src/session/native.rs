@@ -191,6 +191,7 @@ pub struct Bridge {
 }
 
 struct Launch {
+  config: crate::config::Loaded,
   paths: Vec<PathBuf>,
   store: Option<PathBuf>,
   page: Option<usize>,
@@ -211,6 +212,22 @@ impl Bridge {
     page: Option<usize>,
     repaint: impl Fn() + Send + Sync + 'static,
   ) -> Result<Self> {
+    Self::configured(
+      paths,
+      store,
+      page,
+      crate::config::Loaded::default(),
+      repaint,
+    )
+  }
+
+  pub fn configured(
+    paths: Vec<PathBuf>,
+    store: Option<PathBuf>,
+    page: Option<usize>,
+    config: crate::config::Loaded,
+    repaint: impl Fn() + Send + Sync + 'static,
+  ) -> Result<Self> {
     let (send, receive) = mpsc::channel();
     let latest = Arc::new(Mutex::new(None));
     let output = Arc::clone(&latest);
@@ -225,7 +242,7 @@ impl Bridge {
     let worker =
       thread::Builder::new().name("vpdf-session".into()).spawn(move || {
         run(
-          Launch { paths, store, page },
+          Launch { config, paths, store, page },
           &receive,
           &output,
           &repaint,
@@ -277,7 +294,7 @@ fn run(
   pending: &AtomicBool,
 ) -> Result<()> {
   let mut starting = !launch.paths.is_empty();
-  let mut session = Session::new(launch.store);
+  let mut session = Session::configured(launch.store, launch.config);
   session.frontend = crate::raster::Frontend::Native(wake.clone());
   let mut screen = Screen {
     columns: 100,
@@ -788,6 +805,7 @@ fn frame(
   }
   let mut recorder = Recorder::new(|id| cache.get(&id).is_some());
   let mut complete = true;
+  session.present_startup();
   let title = if session.tabs.is_empty() {
     if let Some(home) = &mut session.home {
       home.scene(&mut recorder)?;
@@ -983,6 +1001,105 @@ mod tests {
       cell_height: 20,
       origin: (0, 0),
     }
+  }
+
+  #[test]
+  fn configured_native_startup() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let source = directory.path().join("source.pdf");
+    crate::fixtures::pdf(&source, &["one", "two"], "")?;
+    for document in [false, true] {
+      let mut session = Session::configured(
+        None,
+        super::super::tests::settings_file(directory.path()),
+      );
+      session.frontend = crate::raster::Frontend::Native(Wake::none());
+      let screen = sized();
+      session.screen = Some(screen);
+      ensure_home(&mut session, screen);
+      if document {
+        session.open(&source, true, screen)?;
+        session.app().reader.notice("Ordinary startup");
+      }
+      let warning = session.startup_warning.clone().unwrap();
+      let rendered = frame(&mut session, &mut Cache::new(BUDGET), screen)?;
+      assert!(rendered.scene.iter().any(
+        |op| matches!(op, Op::Text(text) if text.as_str().contains("Config"))
+      ));
+      if document {
+        assert_eq!(session.app().reader.message, warning);
+        assert!(!session.app().cursorline);
+        assert_eq!(session.app().layout.zoom(), 2.0);
+      } else {
+        assert_eq!(
+          session.home.as_ref().unwrap().view.error(),
+          Some(warning.as_str())
+        );
+      }
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn configured_encrypted_retry() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let source = directory.path().join("source.pdf");
+    crate::fixtures::pdf(&source, &["one", "two"], "")?;
+    let encrypted = protected(&source)?;
+    let (send, wakes) = mpsc::channel();
+    let mut bridge = Bridge::configured(
+      vec![encrypted.path().into()],
+      None,
+      Some(2),
+      super::super::tests::settings_file(directory.path()),
+      move || {
+        let _ = send.send(());
+      },
+    )?;
+    wait(&bridge, &wakes, |frame| {
+      frame
+        .scene
+        .iter()
+        .any(|op| matches!(op, Op::InputArea { masked: true, .. }))
+    })?;
+    bridge.send(Input::Paste("test-reader".into()));
+    bridge.send(key(KeyCode::Enter));
+    let rendered = wait(&bridge, &wakes, |frame| {
+      frame.complete
+        && frame.metrics.page == Some(vpdf_model::text::PageId(1))
+        && frame.scene.iter().any(
+          |op| matches!(op, Op::Text(text) if text.as_str().contains("Config")),
+        )
+    })?;
+    assert_eq!(rendered.metrics.page, Some(vpdf_model::text::PageId(1)));
+    bridge.close()
+  }
+
+  #[test]
+  fn startup_warning_cancel() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let source = directory.path().join("source.pdf");
+    crate::fixtures::pdf(&source, &["one"], "")?;
+    let encrypted = protected(&source)?;
+    let mut session = Session::configured(
+      None,
+      super::super::tests::settings_file(directory.path()),
+    );
+    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    let mut screen = sized();
+    session.screen = Some(screen);
+    ensure_home(&mut session, screen);
+    apply(&mut session, Input::Open(encrypted.path().into()), &mut screen);
+    let mut cache = Cache::new(BUDGET);
+    frame(&mut session, &mut cache, screen)?;
+    assert!(session.startup_warning.is_some());
+    apply(&mut session, key(KeyCode::Esc), &mut screen);
+    let rendered = frame(&mut session, &mut cache, screen)?;
+    assert!(rendered.scene.iter().any(|op| {
+      matches!(op, Op::Text(text) if text.as_str().contains("Config"))
+    }));
+    assert!(session.startup_warning.is_none());
+    Ok(())
   }
 
   #[test]

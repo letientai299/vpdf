@@ -11,6 +11,8 @@ use vpdf_pdf::document::Document;
   about = vpdf::version::ABOUT
 )]
 struct Args {
+  #[command(flatten)]
+  config: vpdf::config::Options,
   /// Documents to open as tabs.
   #[arg(value_name = "PDF")]
   files: Vec<PathBuf>,
@@ -45,13 +47,16 @@ fn preview(file: &Path, graphics: inline::Graphics) -> Result<()> {
 }
 
 fn run(args: &Args) -> Result<()> {
+  if args.config.config_example {
+    return vpdf::config::print_example();
+  }
   if let Some(graphics) = inline::Graphics::exported() {
     let [file] = &args.files[..] else {
       anyhow::bail!("Preview takes one PDF");
     };
     return preview(file, graphics);
   }
-  vpdf::session::view(&args.files, args.page)
+  vpdf::session::view_configured(&args.files, args.page, args.config.load())
 }
 
 fn main() {

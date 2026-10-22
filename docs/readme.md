@@ -24,6 +24,7 @@ guide sections cover requirements and behavior:
 
 - [Terminal setup][terminal] and [optional helpers][helpers].
 - [Mouse][mouse], including terminal notes and known limits.
+- [Configuration][configuration].
 - [Saved state and reload][saved-state].
 - [Performance display][performance].
 - [External actions][external], including clipboard and SSH constraints.
@@ -83,3 +84,4 @@ Markdown.
 [external]: reading.md#external-actions
 [licensing]: install.md#licensing
 [performance]: reading.md#performance-display
+[configuration]: configuration.md

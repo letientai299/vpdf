@@ -1143,3 +1143,134 @@ fn sidebar_keys_toggle_focus() -> Result<()> {
   }
   Ok(())
 }
+
+pub(super) fn settings_file(directory: &Path) -> crate::config::Loaded {
+  let path = directory.join("config.toml");
+  std::fs::write(
+    &path,
+    concat!(
+      "[reading]\ncursorline = false\nzoom = 2.0\n",
+      "[ocr]\nlanguage = 'eng+vie'\nunknown = true",
+    ),
+  )
+  .unwrap();
+  crate::config::Options { config: Some(path), ..Default::default() }.load()
+}
+
+#[test]
+fn configured_views_and_reload() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("one.pdf");
+  let second = directory.path().join("two.pdf");
+  crate::fixtures::pdf(&path, &["one", "two"], "")?;
+  crate::fixtures::pdf(&second, &["second"], "")?;
+  let mut session = Session::configured(None, settings_file(directory.path()));
+  let screen = cells(120, 40);
+  session.open(&path, true, screen)?;
+  assert!(!session.app().cursorline);
+  assert_eq!(session.app().layout.zoom(), 2.0);
+  let width = session.app().layout.pages()[0].width;
+  let default = App::with_screen(&path, "", false, session.app().screen)?;
+  assert!((width - default.layout.pages()[0].width * 2.0).abs() <= 1.0);
+  assert_eq!(session.app().settings.language(), "eng+vie");
+  session.app().command("cursorline")?;
+  session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
+  std::fs::write(directory.path().join("config.toml"), "[reading]\nzoom = 4")?;
+  session.app().reload_with("")?;
+  assert_eq!(session.app().settings.language(), "eng+vie");
+  assert!(session.app().cursorline);
+  assert_eq!(session.app().layout.zoom(), 3.0);
+  session.split(Axis::Columns, None, Place::After)?;
+  assert_eq!(session.app().layout.zoom(), 3.0);
+  session.open(&second, true, screen)?;
+  assert!(!session.app().cursorline);
+  assert_eq!(session.app().layout.zoom(), 2.0);
+  session.open(&path, false, screen)?;
+  assert_eq!(session.app().layout.zoom(), 3.0);
+  Ok(())
+}
+
+#[test]
+fn saved_view_launch_precedence() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("source.pdf");
+  let store = directory.path().join("state.json");
+  crate::fixtures::pdf(&path, &["one", "two", "three"], "")?;
+  let screen = cells(120, 40);
+  let mut original = Session::new(Some(store.clone()));
+  original.open(&path, true, screen)?;
+  original.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
+  original.start_at(Some(3))?;
+  original.record();
+  original.save()?;
+  let mut session =
+    Session::configured(Some(store), settings_file(directory.path()));
+  session.open(&path, true, screen)?;
+  assert_eq!(session.app().layout.zoom(), 3.0);
+  assert_eq!(session.app().reader.cursor.page, PageId(2));
+  session.start_at(Some(2))?;
+  assert_eq!(session.app().reader.cursor.page, PageId(1));
+  assert!(!session.app().cursorline);
+  Ok(())
+}
+
+#[test]
+fn terminal_startup_warning() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let screen = cells(120, 40);
+  let config = settings_file(directory.path());
+  let warning = config.warning.clone().unwrap();
+  let mut session = Session::configured(None, config);
+  session.screen = Some(screen);
+  let mut home = Home::new(&[], screen);
+  let mut out = Vec::new();
+  session.draw_home(&mut home, &mut out)?;
+  assert_eq!(home.view.error(), Some(warning.as_str()));
+  assert!(String::from_utf8_lossy(&out).contains("Config"));
+  let path = directory.path().join("source.pdf");
+  crate::fixtures::pdf(&path, &["one"], "")?;
+  let mut session = Session::configured(None, settings_file(directory.path()));
+  session.open(&path, true, screen)?;
+  session.app().reader.notice("Normal startup");
+  session.draw_frame(&mut Vec::new())?;
+  assert_eq!(session.app().reader.message, warning);
+  session.app().reader.cancel();
+  session.draw_frame(&mut Vec::new())?;
+  assert_eq!(session.app().reader.message, "");
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus and Tesseract"]
+fn real_ocr_and_cancel() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let config = directory.path().join("config.toml");
+  std::fs::write(&config, "[ocr]\nlanguage = 'vpdf_missing_language'")?;
+  let loaded =
+    crate::config::Options { config: Some(config), ..Default::default() }
+      .load();
+  let source = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("scan.pdf");
+  let mut session = Session::configured(None, loaded);
+  session.open(&source, true, cells(120, 40))?;
+  session.start_at(Some(10))?;
+  let app = session.app();
+  app.command("ocr")?;
+  let result =
+    app.ocr.take().unwrap().result.recv_timeout(Duration::from_secs(30))?;
+  assert!(result.unwrap_err().contains("vpdf_missing_language"));
+  app.command("ocr eng")?;
+  let result =
+    app.ocr.take().unwrap().result.recv_timeout(Duration::from_secs(30))?;
+  assert!(result.unwrap().unwrap().plain().contains("computing devices"));
+  let bounds = app.doc.pages[9].bounds;
+  app.select_region(PageId(9), bounds)?;
+  app.region_operation(vpdf_ui::region::Operation::Ocr)?;
+  let deadline = Instant::now() + Duration::from_secs(30);
+  while app.region_job.is_some() {
+    app.region_updates()?;
+    anyhow::ensure!(Instant::now() < deadline, "Region OCR timeout");
+    std::thread::sleep(Duration::from_millis(10));
+  }
+  assert!(app.reader.message.contains("vpdf_missing_language"));
+  Ok(())
+}

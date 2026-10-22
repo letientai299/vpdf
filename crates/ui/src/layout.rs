@@ -5,6 +5,10 @@ pub use vpdf_model::geometry::{
 };
 use vpdf_model::tile::{TILE_HEIGHT, TILE_WIDTH, TileKey, cover};
 
+pub const MIN_ZOOM: f64 = 0.1;
+pub const MAX_ZOOM: f64 = 8.0;
+pub const DEFAULT_ZOOM: f32 = 1.0;
+
 #[derive(Clone, Debug)]
 pub struct PageLayout {
   pub top: f32,
@@ -68,7 +72,7 @@ impl Layout {
       pages: Vec::new(),
       total: 0.0,
       screen,
-      zoom: 1.0,
+      zoom: DEFAULT_ZOOM,
       rotation: 0,
       pan: 0.0,
       crop: Crop::default(),
@@ -115,9 +119,10 @@ impl Layout {
     match zoom {
       Zoom::To(value) => self.zoom = value,
       Zoom::Steps(steps) => {
-        self.zoom = (self.zoom * 1.15_f32.powf(steps)).clamp(0.1, 8.0);
+        self.zoom = (self.zoom * 1.15_f32.powf(steps))
+          .clamp(MIN_ZOOM as f32, MAX_ZOOM as f32);
       }
-      Zoom::Width => self.zoom = 1.0,
+      Zoom::Width => self.zoom = DEFAULT_ZOOM,
       Zoom::Page(page) => {
         let page = &self.pages[page.0];
         self.zoom *= (self.screen.height() / page.height)
@@ -133,7 +138,7 @@ impl Layout {
 
   /// Restores saved options before reflow.
   pub fn restore(&mut self, zoom: f32, rotation: u16, crop: Crop) {
-    self.zoom = zoom.clamp(0.1, 8.0);
+    self.zoom = zoom.clamp(MIN_ZOOM as f32, MAX_ZOOM as f32);
     self.rotation = rotation % 360 / 90 * 90;
     self.crop = crop;
   }
@@ -255,7 +260,7 @@ impl Layout {
     let margin = f32::from(screen.cell_height);
     self.zoom *= ((screen.width() - margin).max(1.0) / rect.width())
       .min((screen.height() - margin * 2.0).max(1.0) / rect.height());
-    self.zoom = self.zoom.clamp(0.1, 8.0);
+    self.zoom = self.zoom.clamp(MIN_ZOOM as f32, MAX_ZOOM as f32);
     Fit { page, bounds, screen }
   }
 

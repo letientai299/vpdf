@@ -9,8 +9,16 @@ use vpdf_terminal::input::{Notice, notice};
 
 /// Opens paths or the start screen.
 pub fn view(paths: &[PathBuf], page: Option<usize>) -> Result<()> {
+  view_configured(paths, page, crate::config::Loaded::default())
+}
+
+pub fn view_configured(
+  paths: &[PathBuf],
+  page: Option<usize>,
+  config: crate::config::Loaded,
+) -> Result<()> {
   anyhow::ensure!(io::stdout().is_terminal(), "TUI requires a terminal");
-  let mut session = Session::new(crate::state::location());
+  let mut session = Session::configured(crate::state::location(), config);
   crate::state::watch_hangup(
     session.store.clone(),
     Arc::clone(&session.hangup),
@@ -396,13 +404,20 @@ impl Session {
     Ok(dirty || resized || lost)
   }
 
-  fn draw_home(&mut self, home: &mut Home, out: &mut impl Write) -> Result<()> {
+  pub(super) fn draw_home(
+    &mut self,
+    home: &mut Home,
+    out: &mut impl Write,
+  ) -> Result<()> {
     // Its thumbnail would cover what tmux shows instead.
     if self.sight != Sight::Hidden {
       // Start-screen motion is passive.
       self.pointer.leave();
       terminal::point(out, Shape::Default)?;
       self.perf.running(self.state.perf);
+      if let Some(warning) = self.startup_warning.take() {
+        home.view.fail(warning);
+      }
       home.draw(out)?;
       self.perf.frame(Instant::now());
       if self.state.perf

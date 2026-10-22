@@ -1,9 +1,11 @@
 import json
 import os
 import plistlib
+import socket
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -87,6 +89,41 @@ class AppTests(unittest.TestCase):
                     ).strip()
                     self.assertEqual(minimum, expected)
 
+    def verify_config_output(self, binary):
+        with tempfile.TemporaryDirectory(prefix="vpdf-config-") as temporary:
+            config = Path(temporary) / "broken.toml"
+            config.write_text("[broken")
+            for flag in ("--help", "--version", "--config-example"):
+                result = subprocess.run(
+                    [binary, "--config", config, flag],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=True,
+                )
+                self.assertEqual(result.stderr, "")
+                if flag == "--config-example":
+                    self.assertEqual(
+                        tomllib.loads(result.stdout),
+                        {
+                            "reading": {"cursorline": True, "zoom": 1.0},
+                            "ocr": {"language": "eng"},
+                        },
+                    )
+
+        for flag in ("--version", "--config-example"):
+            reader, writer = socket.socketpair()
+            reader.close()
+            with writer:
+                result = subprocess.run(
+                    [binary, flag],
+                    stdout=writer,
+                    stderr=subprocess.PIPE,
+                    timeout=30,
+                    check=True,
+                )
+            self.assertEqual(result.stderr, b"")
+
     def verify_app(self, app):
         subprocess.run(["codesign", "--verify", "--strict", app], check=True)
         with (app / "Contents/Info.plist").open("rb") as source:
@@ -99,6 +136,7 @@ class AppTests(unittest.TestCase):
             icon.read_bytes(), (ROOT / "docs/assets/vpdf.icns").read_bytes()
         )
         binary = app / "Contents/MacOS" / info["CFBundleExecutable"]
+        self.verify_config_output(binary)
         version = subprocess.check_output([binary, "--version"], text=True)
         lines = version.splitlines()
         self.assertIn("https://github.com/letientai299/vpdf", lines)

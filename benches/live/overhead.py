@@ -63,7 +63,7 @@ def one(output, name, binary, traced, relay, hz, capture=False):
         env.pop(key, None)
     if traced:
         env["VPDF_TRACE"] = str(folder / "trace.jsonl")
-    command = [str(binary), str(ROOT / "tmp/huge/sdm.pdf")]
+    command = [str(binary), "--no-config", str(ROOT / "tmp/huge/sdm.pdf")]
     monitor = control = None
     process = None
     try:

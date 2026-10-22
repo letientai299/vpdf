@@ -151,12 +151,13 @@ impl Session {
   ) -> Result<App> {
     let mut secret = self.secret.take().unwrap_or_else(|| password.to_owned());
     let mut app = loop {
-      match App::with_frontend(
+      match App::configured(
         path,
         &secret,
         false,
         screen,
         self.frontend.clone(),
+        &self.settings,
       ) {
         Err(error)
           if error.is::<PasswordRequired>()

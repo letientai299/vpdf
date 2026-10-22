@@ -49,9 +49,10 @@ impl OcrJob {
     path: &Path,
     password: &str,
     page: PageId,
+    language: &str,
     wake: &Wake,
   ) -> Self {
-    Self::spawn(path, password, page, "eng", wake, Request::Automatic)
+    Self::spawn(path, password, page, language, wake, Request::Automatic)
   }
 
   pub fn is_automatic(&self) -> bool {
@@ -78,7 +79,9 @@ impl OcrJob {
         Request::Explicit => {
           recognize(&path, &password, page, &language, &stop).map(Some)
         }
-        Request::Automatic => automatic(&path, &password, page, &stop),
+        Request::Automatic => {
+          automatic(&path, &password, page, &language, &stop)
+        }
       };
       let result =
         result.map(|text| text.map(Arc::new)).map_err(|e| e.to_string());
@@ -127,6 +130,7 @@ fn automatic(
   path: &Path,
   password: &str,
   page: PageId,
+  language: &str,
   cancel: &AtomicBool,
 ) -> Result<Option<Text>> {
   static SLOT: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -157,11 +161,11 @@ fn automatic(
     matches!(block.r#type(), mupdf::text_page::TextBlockType::Image)
       && b.width() * b.height() >= bounds.width() * bounds.height() * 0.25
   });
-  if !scanned || engine("eng").is_none() {
+  if !scanned || engine(language).is_none() {
     return Ok(None);
   }
   ready(cancel)?;
-  recognize_page(&doc, password, page, "eng", cancel).map(Some)
+  recognize_page(&doc, password, page, language, cancel).map(Some)
 }
 
 fn recognize_page(
@@ -450,7 +454,7 @@ mod tests {
     assert_eq!(files.len(), 1, "unencrypted OCR writes its cache");
     assert_eq!(files[0].path().extension().unwrap(), "ocr");
     assert!(
-      automatic(&path, "", PageId(0), &cancel)?.is_none(),
+      automatic(&path, "", PageId(0), "eng", &cancel)?.is_none(),
       "embedded OCR is left alone"
     );
     std::fs::remove_file(files[0].path())?;
@@ -466,17 +470,21 @@ mod tests {
     assert_eq!(hash(&path)?, original);
     assert_eq!(hash(file.path())?, before);
     let scan = path.with_file_name("scan.pdf");
-    let first = automatic(&scan, "", PageId(9), &cancel)?
+    let first = automatic(&scan, "", PageId(9), "eng", &cancel)?
       .expect("scan recognized")
       .plain();
     assert!(first.contains("computing devices"));
+    assert!(
+      automatic(&scan, "", PageId(9), "vpdf_missing_language", &cancel)?
+        .is_none()
+    );
     let files =
       std::fs::read_dir(&root)?.collect::<std::io::Result<Vec<_>>>()?;
     assert_eq!(files.len(), 1);
     let stored = std::fs::read(files[0].path())?;
     let inode = std::fs::metadata(files[0].path())?.ino();
     assert_eq!(
-      automatic(&scan, "", PageId(9), &cancel)?.unwrap().plain(),
+      automatic(&scan, "", PageId(9), "eng", &cancel)?.unwrap().plain(),
       first
     );
     assert_eq!(
@@ -496,6 +504,7 @@ mod tests {
       Path::new("/nonexistent/scan.pdf"),
       "",
       PageId(0),
+      "eng",
       &Wake::none(),
     );
     assert!(matches!(

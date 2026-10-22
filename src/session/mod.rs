@@ -40,6 +40,8 @@ pub struct Tab {
 /// Open documents as tabs of split panes, which draw with one shared
 /// Kitty image cache.
 pub struct Session {
+  settings: crate::config::Settings,
+  startup_warning: Option<String>,
   pub tabs: Vec<Tab>,
   pub active: usize,
   pub history: History,
@@ -155,8 +157,17 @@ use run::{Landing, answer};
 impl Session {
   /// `store` holds recent documents and history between runs.
   pub fn new(store: Option<PathBuf>) -> Self {
+    Self::configured(store, crate::config::Loaded::default())
+  }
+
+  pub fn configured(
+    store: Option<PathBuf>,
+    config: crate::config::Loaded,
+  ) -> Self {
     let state = store.as_deref().map_or_default(State::load);
     Self {
+      settings: config.settings,
+      startup_warning: config.warning,
       tabs: Vec::new(),
       active: 0,
       history: History::new(state.commands.clone(), state.searches.clone()),
@@ -191,6 +202,24 @@ impl Session {
       image_write: None,
       drops: vpdf_terminal::dnd::Drops::default(),
       resizing: None,
+    }
+  }
+
+  fn present_startup(&mut self) {
+    if self.unlock.is_some() {
+      return;
+    }
+    let Some(warning) = self.startup_warning.take() else { return };
+    if self.tabs.is_empty() {
+      if let Some(home) = &mut self.home {
+        home.view.fail(warning);
+      } else {
+        self.startup_warning = Some(warning);
+      }
+    } else {
+      let app = self.app();
+      app.error = None;
+      app.reader.notice(warning);
     }
   }
 
@@ -271,4 +300,4 @@ mod tests;
 mod unlock;
 mod windows;
 
-pub use run::view;
+pub use run::{view, view_configured};

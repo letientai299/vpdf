@@ -76,6 +76,7 @@ class Native(Runtime):
                 str(self.directory / "stderr"),
                 "--args",
                 "--background",
+                "--no-config",
                 "--events",
                 str(self.fifo),
                 *map(str, self.files),

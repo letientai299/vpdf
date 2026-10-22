@@ -145,8 +145,13 @@ impl App {
     }
     let page = self.navigation_position().page;
     if !self.doc.has_ocr(page) && self.auto_ocr.seen.insert(page) {
-      self.ocr =
-        Some(OcrJob::automatic(&self.path, &self.password, page, &self.wake));
+      self.ocr = Some(OcrJob::automatic(
+        &self.path,
+        &self.password,
+        page,
+        self.settings.language(),
+        &self.wake,
+      ));
     }
   }
 

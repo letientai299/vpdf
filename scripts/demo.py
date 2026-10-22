@@ -418,6 +418,7 @@ class Gallery:
             "--env",
             f"VPDF_TRACE={self.args.raw / (name + '.jsonl')}",
             str(self.args.binary),
+            "--no-config",
             "--page",
             str(page),
             *(str(self.args.corpus / f"{doc}.pdf") for doc in documents),
