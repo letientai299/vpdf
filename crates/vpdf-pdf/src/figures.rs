@@ -124,6 +124,19 @@ fn attach_caption(
   lines: &[(Bounds, String)],
   page: Bounds,
 ) {
+  let bounds = if caption.split_whitespace().count() == 2 {
+    lines
+      .iter()
+      .find(|(line, value)| {
+        line.y0 >= bounds.y1
+          && line.y0 - bounds.y1 <= bounds.height() * 2.0
+          && (line.x0 - bounds.x0).abs() <= 3.0
+          && !is_caption(value)
+      })
+      .map_or(bounds, |(line, _)| bounds.union(*line))
+  } else {
+    bounds
+  };
   let bounds = lines
     .iter()
     .filter(|(line, value)| {
@@ -298,6 +311,29 @@ mod tests {
         })
         .collect(),
     }
+  }
+
+  #[test]
+  fn caption_description_joins_graphic() {
+    let page = bounds(0.0, 0.0, 540.0, 666.0);
+    let graphic = bounds(130.0, 414.0, 371.0, 521.0);
+    let description = bounds(83.0, 544.0, 197.0, 551.0);
+    let text = Text {
+      lines: vec![
+        line("FIGURE 2.3", bounds(83.0, 530.0, 124.0, 537.0)),
+        line("Execution of a CUDA program.", description),
+      ],
+      truncated: false,
+    };
+    let figures = group(
+      [graphic, bounds(83.0, 540.0, 418.0, 540.4)].into_iter(),
+      &text,
+      page,
+    );
+    assert_eq!(figures.len(), 1, "{figures:?}");
+    assert_eq!(figures[0].caption, "FIGURE 2.3");
+    assert_eq!(figures[0].bounds, graphic.union(description));
+    assert_eq!(figures[0].source, Source::Graphic);
   }
 
   #[test]

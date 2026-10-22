@@ -69,6 +69,9 @@ fn scan(
     let figures = crate::figures::detect(&list, &text, handle.bounds(page)?)?;
     entries.extend(figures.into_iter().map(|figure| (page, figure)));
   }
+  if entries.iter().any(|(_, figure)| !figure.caption.is_empty()) {
+    entries.retain(|(_, figure)| !figure.caption.is_empty());
+  }
   Ok(entries)
 }
 

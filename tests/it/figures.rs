@@ -226,6 +226,9 @@ fn figure_rows(
       expected.push((PageId(page), figure.clone()));
     }
   }
+  if expected.iter().any(|(_, figure)| !figure.caption.is_empty()) {
+    expected.retain(|(_, figure)| !figure.caption.is_empty());
+  }
   let panel = &app.panel.as_ref().unwrap().view;
   assert!(!panel.rows().is_empty());
   assert_eq!(panel.rows().len(), expected.len());

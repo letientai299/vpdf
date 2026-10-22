@@ -108,6 +108,61 @@ fn real_figures_and_capture() -> Result<()> {
 }
 
 #[test]
+#[ignore = "requires verified public PDF corpus"]
+fn real_figure_index() -> Result<()> {
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  for (name, captioned) in [("paper.pdf", true), ("ocr.pdf", false)] {
+    let doc = Document::open(&root.join(name), "")?;
+    let job = vpdf_pdf::jobs::figures::Job::start(
+      &root.join(name),
+      "",
+      doc.pages.len(),
+      Vec::new(),
+      &vpdf_pdf::jobs::Wake::none(),
+    );
+    let entries = job
+      .result
+      .recv_timeout(std::time::Duration::from_secs(20))?
+      .map_err(anyhow::Error::msg)?;
+    assert!(!entries.is_empty(), "{name}");
+    assert!(entries.iter().all(|(_, f)| f.caption.is_empty() != captioned));
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires PMPP PDF in VPDF_FIGURE_PMPP"]
+fn pmpp_figure_index() -> Result<()> {
+  let path = PathBuf::from(std::env::var("VPDF_FIGURE_PMPP")?);
+  let mut doc = Document::open(&path, "")?;
+  let job = vpdf_pdf::jobs::figures::Job::start(
+    &path,
+    "",
+    doc.pages.len(),
+    Vec::new(),
+    &vpdf_pdf::jobs::Wake::none(),
+  );
+  let entries = job
+    .result
+    .recv_timeout(std::time::Duration::from_secs(30))?
+    .map_err(anyhow::Error::msg)?;
+  assert!(!entries.is_empty());
+  assert!(entries.iter().all(|(_, f)| !f.caption.is_empty()));
+  assert_eq!(entries[0].1.caption, "FIGURE 1.1");
+  for (index, caption, height) in [
+    (49, "FIGURE 2.3", 130.0),
+    (54, "FIGURE 2.6", 100.0),
+    (55, "FIGURE 2.7", 85.0),
+  ] {
+    let figures = doc.figures(PageId(index))?;
+    assert_eq!(figures.len(), 1, "{figures:?}");
+    assert_eq!(figures[0].caption, caption);
+    assert!(figures[0].bounds.height() > height, "{figures:?}");
+  }
+  Ok(())
+}
+
+#[test]
 #[ignore = "requires PMPP PDF in VPDF_FIGURE_PMPP"]
 fn pmpp_figure_regions() -> Result<()> {
   let path = PathBuf::from(std::env::var("VPDF_FIGURE_PMPP")?);
