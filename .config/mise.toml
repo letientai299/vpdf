@@ -9,6 +9,7 @@ typst = "0.15.1"
 upx = { version = "5.2.1", os = ["linux"] }
 
 [env]
+_.path = ["{{config_root}}/scripts/tools"]
 # Lets check and build share MuPDF.
 CARGO_BUILD_TARGET = "{{ arch(x64='x86_64', arm64='aarch64') }}-{{ os(macos='apple-darwin', linux='unknown-linux-gnu') }}"
 # Corpus tests and benches; `corpus:huge` fills tmp/huge for ad hoc runs.
@@ -107,6 +108,7 @@ depends = [
   "test:startup",
   "test:bench-report",
   "test:build-features",
+  "test:build-cache",
   "test:packages",
   "test:hooks",
   "help:build",
@@ -181,6 +183,10 @@ run = "python3 -B -m unittest discover -s scripts -p test_startup.py"
 env.VPDF_CACHE = "off"
 description = "Check injection build opt-in"
 run = "python3 -B -m unittest discover -s scripts -p test_build_features.py"
+
+[tasks."test:build-cache"]
+description = "Check build cache limits and locking"
+run = "python3 -B -m unittest discover -s scripts -p test_build_cache.py"
 
 [tasks."corpus:huge"]
 description = "Fetch large stress PDFs into tmp/huge for ad hoc runs"

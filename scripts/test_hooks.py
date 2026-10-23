@@ -56,6 +56,7 @@ class RoutingTests(unittest.TestCase):
             "scripts/test_startup.py": "test:startup",
             "scripts/demo-optimize.sh": "test:demo",
             "scripts/test_packages.py": "test:packages",
+            "scripts/test_build_cache.py": "test:build-cache",
             "benches/live/runtime.py": "test:bench-report",
         }
         for name, expected in cases.items():
@@ -269,6 +270,12 @@ class SnapshotTests(unittest.TestCase):
             self.assertEqual(env["VPDF_CACHE"], "off")
             self.assertFalse((self.root / "user-cache").exists())
 
+    def test_shared_build_identity(self):
+        with self.snapshot() as (_, env):
+            self.assertEqual(
+                env["VPDF_BUILD_CACHE_ID"], hooks.cache_key(self.root)
+            )
+
     def test_git_environment_removed(self):
         index = self.root / "custom-index"
         shutil.copyfile(self.root / ".git/index", index)
@@ -443,13 +450,30 @@ class SnapshotTests(unittest.TestCase):
     def test_native_partial_preserved(self):
         self.write("scripts/hooks.py", Path(hooks.__file__).read_text())
         self.write(
+            "scripts/build_cache.py",
+            Path(hooks.__file__).with_name("build_cache.py").read_text(),
+        )
+        shim = self.write(
+            "scripts/tools/cargo",
+            Path(hooks.__file__)
+            .with_name("tools")
+            .joinpath("cargo")
+            .read_text(),
+        )
+        shim.chmod(0o755)
+        self.write(
             ".config/mise.toml",
             (
                 Path(hooks.__file__).resolve().parent.parent
                 / ".config/mise.toml"
             ).read_text(),
         )
-        self.stage("scripts/hooks.py", ".config/mise.toml")
+        self.stage(
+            "scripts/hooks.py",
+            "scripts/build_cache.py",
+            "scripts/tools/cargo",
+            ".config/mise.toml",
+        )
         self.commit()
         hooks.install_hooks(self.root)
         self.write("README.md", "# Reader\n\nStaged.\n")

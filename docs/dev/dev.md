@@ -48,6 +48,27 @@ zlib, and reject non-system dynamic libraries. These checks cover the
 executable; optional helpers remain separate programs. [Build scripts][build]
 and the [CI matrix][ci] define supported hosts.
 
+## Build cache
+
+The Mise environment routes Cargo through the [cache manager][build-cache].
+Worktrees and hook snapshots keep isolated intermediate artifacts under one
+repository cache in the user cache directory. Final executables and help assets
+stay in their own target directory. Managed Cargo commands evict the least
+recently used idle caches when their combined size exceeds the budget. Active
+caches stay protected until their commands exit, so running commands can
+temporarily exceed the budget. The cache manager owns the default; set
+`VPDF_BUILD_CACHE_GIB` to change it.
+
+Development builds retain line tables and disable incremental compilation to
+limit disk usage. Override Cargo's profile settings when full debug information
+is needed. An explicit `CARGO_BUILD_BUILD_DIR` or `--build-dir` uses an
+unmanaged directory. CI keeps its existing Cargo cache layout. Cargo outside the
+Mise environment also keeps its normal behavior; use `mise exec -- cargo ...`
+for managed builds.
+
+Existing build directories remain until cleaned. Cache eviction preserves
+worktree outputs, benchmark captures, and downloaded PDFs.
+
 ## Native window
 
 Build the macOS app and disk image:
@@ -557,6 +578,7 @@ a result needs a reproducible release reference.
 [mise]: https://mise.jdx.dev/
 [pkgconf]: https://formulae.brew.sh/formula/pkgconf
 [build]: ../../scripts/build.sh
+[build-cache]: ../../scripts/build_cache.py
 [build-app]: ../../scripts/build-app.sh
 [icon]: ../assets/vpdf.svg
 [inject]: ../../crates/vpdf-gui/src/inject.rs

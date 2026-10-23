@@ -60,6 +60,10 @@ excessive_nesting = "deny"
 todo = "deny"
 unimplemented = "deny"
 
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
 # Fat LTO tripled rebuilds for 1-3% speed.
 [profile.release]
 lto = "thin"

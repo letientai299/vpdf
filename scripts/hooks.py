@@ -13,6 +13,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from build_cache import cache_key
+
 
 def execute(command, root, env=None):
     subprocess.run(command, cwd=root, env=env, check=True)
@@ -101,6 +103,7 @@ def snapshot(root, tree):
             env.pop(name, None)
         target = Path(env.get("CARGO_TARGET_DIR", root / "target" / "hooks"))
         env["CARGO_TARGET_DIR"] = str((root / target).resolve())
+        env["VPDF_BUILD_CACHE_ID"] = cache_key(root)
         env["MISE_TRUSTED_CONFIG_PATHS"] = str(source)
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         env["VPDF_CACHE"] = "off"
@@ -193,6 +196,7 @@ PYTHON_TASKS = {
     "demo": "test:demo",
     "packages": "test:packages",
     "help_assets": "test:help-assets",
+    "build_cache": "test:build-cache",
 }
 PACKAGING = {
     "scripts/build-app.sh",
@@ -211,6 +215,8 @@ GLOBAL_FILES = {
     ".config/rumdl.toml",
     "scripts/hooks.py",
     "scripts/test_hooks.py",
+    "scripts/build_cache.py",
+    "scripts/tools/cargo",
     "scripts/check_packages.py",
 }
 
@@ -327,6 +333,7 @@ def affected_tests(source, paths, env):
                 "test:packages",
                 "test:bench-report",
                 "test:build-features",
+                "test:build-cache",
             }
         )
     for task in sorted(tasks):
