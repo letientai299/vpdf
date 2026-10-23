@@ -5,6 +5,7 @@ prek = "0.5.6"
 ruff = "0.17.1"
 rumdl = "0.3.0"
 taplo = "0.10.0"
+typst = "0.15.1"
 upx = { version = "5.2.1", os = ["linux"] }
 
 [env]
@@ -42,12 +43,14 @@ depends = ["build"]
 run = "sh scripts/release.sh"
 
 [tasks.try]
+depends = ["help:build"]
 description = "Build and run the debug reader"
 raw = true
 raw_args = true
 run = "cargo run --locked -p vpdf --"
 
 [tasks."try:gui"]
+depends = ["help:build"]
 description = "Build and run the native reader"
 raw = true
 raw_args = true
@@ -55,17 +58,36 @@ run = "cargo run --locked -p vpdf-gui --"
 
 [tasks.check]
 description = "Check every workspace target"
-depends = ["check:packages"]
+depends = ["check:packages", "help:build"]
 run = "cargo check --locked --workspace --all-targets"
+
+[tasks."help:build"]
+description = "Generate the embedded help PDF and topic manifest"
+run = "python3 -B scripts/help_assets.py"
+
+[tasks."help:check"]
+description = "Reject missing, stale, or corrupt help assets"
+run = "python3 -B scripts/help_assets.py --check"
+
+[tasks."test:help"]
+description = "Check help generation and embedded PDF destinations"
+depends = ["help:build"]
+run = [
+  "python3 -B -m unittest discover -s scripts -p test_help_assets.py",
+  "python3 -B scripts/help_assets.py --check --verify-pdf",
+  "cargo nextest run --locked -p vpdf -p vpdf-pdf -E 'test(manual::)'",
+]
 
 [tasks.lint]
 description = "Fix what tools can, then reject the remaining lint and format issues"
 depends = ["check:packages", "lint:python"]
 run = [
+  "python3 -B scripts/help_assets.py",
   "cargo clippy --locked --workspace --all-targets --fix --allow-dirty --allow-staged",
   "cargo fmt --all",
   "taplo fmt",
   "rumdl check --fix .",
+  "python3 -B scripts/help_assets.py",
   "cargo clippy --locked --workspace --all-targets -- -D warnings",
   "sh scripts/width.sh",
 ]
@@ -87,11 +109,14 @@ depends = [
   "test:build-features",
   "test:packages",
   "test:hooks",
+  "help:build",
+  "test:help-assets",
   "check:packages",
 ]
 run = "cargo nextest run --locked --workspace --test-threads num-cpus --no-fail-fast"
 
 [tasks."test:events"]
+depends = ["help:build"]
 env.VPDF_CACHE = "off"
 description = "Check feature-gated benchmark input"
 run = [
@@ -163,33 +188,34 @@ run = "sh scripts/corpus.sh huge"
 
 [tasks."test:corpus"]
 env.VPDF_CACHE = "off"
-depends = ["corpus"]
+depends = ["corpus", "help:build"]
 run = "cargo nextest run --locked --workspace --run-ignored only -E 'not (test(real_ocr_and_cancel) | test(real_ocr_cache_policy))'"
 
 [tasks."test:ocr"]
 env.VPDF_CACHE = "off"
-depends = ["corpus"]
+depends = ["corpus", "help:build"]
 run = "cargo nextest run --locked --workspace --run-ignored only -E 'test(real_ocr_and_cancel) | test(real_ocr_cache_policy)'"
 
 [tasks.bench]
 env.VPDF_CACHE = "off"
 description = "Measure real-PDF warm frames and search"
-depends = ["corpus"]
+depends = ["corpus", "help:build"]
 run = "cargo bench --locked -p vpdf --profile release --bench reader"
 
 [tasks."bench:latency"]
 env.VPDF_CACHE = "off"
 description = "Measure opens, jumps, zooms, searches, and paced scrolling"
-depends = ["corpus:sdm"]
+depends = ["corpus:sdm", "help:build"]
 run = "cargo bench --locked -p vpdf --profile release --features bench-events --bench latency"
 
 [tasks."bench:stages"]
 env.VPDF_CACHE = "off"
 description = "Attribute cold page cost to load, text, list, raster, encode"
-depends = ["corpus"]
+depends = ["corpus", "help:build"]
 run = "cargo bench --locked -p vpdf --profile release --bench stages"
 
 [tasks."bench:micro"]
+depends = ["help:build"]
 env.VPDF_CACHE = "off"
 description = "Time single hot functions; arguments filter cases"
 run = 'sh scripts/bench-micro.sh {{arg(name="cases", var=true, default="")}}'
@@ -204,7 +230,7 @@ run = "python3 scripts/startup.py"
 [tasks."bench:budget"]
 env.VPDF_CACHE = "off"
 description = "Enforce warm CPU frame and motion budgets"
-depends = ["corpus"]
+depends = ["corpus", "help:build"]
 env.VPDF_PERF_CHECK = "1"
 run = "cargo bench --locked -p vpdf --profile release --bench reader"
 
@@ -241,7 +267,7 @@ run = "cargo nextest run --locked -p vpdf-terminal"
 [tasks."bench:fixtures"]
 env.VPDF_CACHE = "off"
 description = "Prepare verified native-free render fixtures"
-depends = ["corpus"]
+depends = ["corpus", "help:build"]
 run = 'cargo run --locked --release --example bench-fixtures -- "$VPDF_CORPUS/paper.pdf" "${VPDF_BENCH_FIXTURES:-target/bench-fixtures}"'
 
 [tasks."bench:terminal"]
@@ -260,6 +286,7 @@ description = "Measure interface components using prepared fixtures"
 run = 'cargo bench --locked --profile release -p vpdf-ui --bench micro -- {{arg(name="cases", var=true, default="")}}'
 
 [tasks."bench:manuals"]
+depends = ["help:build"]
 env.VPDF_CACHE = "off"
 description = "Measure verified manuals; arguments filter cases"
 run = 'cargo bench --locked --profile release -p vpdf --bench manuals -- {{arg(name="cases", var=true, default="")}}'
@@ -273,7 +300,7 @@ run = 'python3 -B benches/dispatch.py {{arg(name="args", var=true, default="")}}
 [tasks."bench:headless"]
 env.VPDF_CACHE = "off"
 description = "Drive full-session headless scenarios"
-depends = ["corpus:sdm"]
+depends = ["corpus:sdm", "help:build"]
 raw_args = true
 run = 'cargo bench --locked --profile release -p vpdf --features bench-events --bench drive -- {{arg(name="scenarios", var=true, default="")}}'
 
@@ -302,3 +329,7 @@ env.VPDF_CACHE = "off"
 description = "Compare tracing and relay cost with independent output"
 raw_args = true
 run = 'python3 -B benches/live/overhead.py {{arg(name="args", var=true, default="")}}'
+
+[tasks."test:help-assets"]
+description = "Test help invalidation and atomic publication"
+run = "python3 -B -m unittest discover -s scripts -p test_help_assets.py"

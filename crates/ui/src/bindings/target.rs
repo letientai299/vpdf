@@ -141,7 +141,7 @@ fn reader_allowed(action: Action, context: Context) -> bool {
   use Context as C;
   match action {
     Action::History(_) if context == C::MarkJump => true,
-    Action::Cancel => !matches!(
+    Action::Help | Action::Cancel => !matches!(
       context,
       C::Prompt | C::Command | C::Search | C::Password | C::Hints
     ),

@@ -172,7 +172,8 @@ fn recognize_page(
     true,
   )?;
   // Decrypted text stays off disk.
-  let root = content_cache::root().filter(|_| password.is_empty());
+  let root =
+    content_cache::root().filter(|_| doc.cacheable && password.is_empty());
   let key = root.as_ref().and_then(|_| {
     let rows = Rows {
       width: pixels.width(),

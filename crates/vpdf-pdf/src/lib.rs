@@ -15,6 +15,7 @@ pub type Result<T> = anyhow::Result<T>;
 
 pub mod content_cache;
 pub mod jobs;
+pub mod manual;
 #[cfg(test)]
 use jobs::Wake;
 #[cfg(test)]

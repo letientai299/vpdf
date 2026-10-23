@@ -227,7 +227,7 @@ fn ctrl_r_resizes_sidebar() -> Result<()> {
     common::temp_pdf(|path| common::text_pdf(path, &["Sidebar resizing"]))?;
   let mut session = crate::harness::session(&path, common::cells(121, 40))?;
   act(&mut session, Action::Window(Window::Split(Axis::Columns)))?;
-  act(&mut session, Action::Panel(PanelKind::Help))?;
+  act(&mut session, Action::Panel(PanelKind::Version))?;
   let screen = session.app().screen;
   let width = session.app().left;
   let cursor = session.app().reader.cursor;
@@ -484,13 +484,13 @@ mod pointer {
       "a row shows its page"
     );
     assert_ne!(session.app().reader.cursor, cursor);
-    // The overview takes every key but `:`, so help opens first.
-    act(&mut session, Action::Panel(PanelKind::Help))?;
+    // Open the panel before the overview.
+    act(&mut session, Action::Panel(PanelKind::Version))?;
     act(&mut session, Action::Overview)?;
     mouse(&mut session, Down(Left), (2, 3))?;
     assert!(
       session.app().overlays.overview().is_some(),
-      "help rows keep overview"
+      "Panel rows keep overview"
     );
     Ok(())
   }

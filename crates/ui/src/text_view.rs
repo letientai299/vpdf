@@ -9,11 +9,14 @@ use vpdf_model::scene::{Character, Draw, Op};
 use vpdf_model::style::Role;
 use vpdf_reader::reader::{SelectionKind, TextSource};
 
+mod wrap;
+
 /// Pending and drawn origins can differ.
 #[derive(Default)]
 pub struct TextView {
   top: Position,
   drawn: Option<Position>,
+  wrapped: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -30,6 +33,11 @@ pub struct Pane<'a, S> {
 }
 
 impl TextView {
+  pub fn set_wrap(&mut self, wrapped: bool) {
+    self.wrapped = wrapped;
+    self.invalidate();
+  }
+
   pub fn top(&self) -> Position {
     self.top
   }
@@ -128,7 +136,7 @@ fn clamp(
   if top.glyph == 0 {
     return Ok(top);
   }
-  Ok(View::new(pages, size, top)?.clamped().top)
+  Ok(View::new(pages, size, top, false)?.clamped().top)
 }
 
 /// A text view row.
@@ -152,6 +160,7 @@ struct View {
   more: Vec<Arc<Text>>,
   /// Pages in the document.
   count: usize,
+  wrapped: bool,
 }
 
 impl View {
@@ -160,6 +169,7 @@ impl View {
     pages: &mut impl TextSource,
     (height, columns): (usize, usize),
     top: Position,
+    wrapped: bool,
   ) -> Result<Self> {
     let count = pages.page_count();
     let first = pages.page_text(top.page)?;
@@ -173,7 +183,7 @@ impl View {
       more.push(text);
       page.0 += 1;
     }
-    Ok(Self { height, columns, top, first, more, count })
+    Ok(Self { height, columns, top, first, more, count, wrapped })
   }
 
   /// Read pages from `top`'s.
@@ -186,12 +196,23 @@ impl View {
   /// Rows from the top, through the read pages.
   fn all_rows(&self) -> impl Iterator<Item = Row<'_>> {
     let (top, count) = (self.top, self.count);
+    let (wrapped, columns) = (self.wrapped, self.columns);
     self.texts().flat_map(move |(page, text)| {
       let start = if page == top.page { top.line } else { 0 };
       let blank = text.lines.is_empty().then_some(&BLANK);
       let lines = text.lines.iter().chain(blank).enumerate().skip(start);
-      let lines = lines.map(move |(line, row)| {
-        Row::Line(Position { page, line, glyph: 0 }, row)
+      let lines = lines.flat_map(move |(line, row)| {
+        let starts =
+          if wrapped { wrap::starts(&row.glyphs, columns) } else { vec![0] };
+        starts
+          .into_iter()
+          .filter(move |&glyph| {
+            !wrapped
+              || page != top.page
+              || line != top.line
+              || glyph >= top.glyph
+          })
+          .map(move |glyph| Row::Line(Position { page, line, glyph }, row))
       });
       let line = lines_in(text);
       let gap = (page.0 + 1 < count && start <= line)
@@ -206,12 +227,18 @@ impl View {
   }
 
   /// Row showing `position`'s line, and the line.
-  fn row_of(&self, position: Position) -> Option<(usize, &Line)> {
+  fn row_of(&self, position: Position) -> Option<(usize, Position, &Line)> {
     self.rows().enumerate().find_map(|(row, shown)| match shown {
       Row::Line(at, line)
-        if at.page == position.page && at.line == position.line =>
+        if at.page == position.page
+          && at.line == position.line
+          && (!self.wrapped
+            || line.glyphs.is_empty()
+            || self
+              .shown(at, &line.glyphs)
+              .any(|(index, ..)| index == position.glyph)) =>
       {
-        Some((row, line))
+        Some((row, at, line))
       }
       _ => None,
     })
@@ -228,13 +255,26 @@ impl View {
   /// Glyphs a row draws, with start columns.
   fn shown<'a>(
     &self,
+    at: Position,
     glyphs: &'a [Glyph],
   ) -> impl Iterator<Item = (usize, usize, &'a Glyph)> {
-    let offset = self.top.glyph;
-    fitting(glyphs.iter().enumerate(), offset.saturating_add(self.columns))
-      .filter_map(move |(index, column, glyph)| {
-        column.checked_sub(offset).map(|column| (index, column, glyph))
-      })
+    let start = if self.wrapped { at.glyph } else { 0 };
+    let offset = if self.wrapped { 0 } else { self.top.glyph };
+    let end = if self.wrapped {
+      wrap::starts(glyphs, self.columns)
+        .into_iter()
+        .find(|&next| next > start)
+        .unwrap_or(glyphs.len())
+    } else {
+      glyphs.len()
+    };
+    fitting(
+      glyphs.iter().enumerate().take(end).skip(start),
+      offset.saturating_add(self.columns),
+    )
+    .filter_map(move |(index, column, glyph)| {
+      column.checked_sub(offset).map(|column| (index, column, glyph))
+    })
   }
 
   /// Drawn position at a cell, else nearest.
@@ -243,7 +283,7 @@ impl View {
     let rows = row.min(self.height) + 1;
     match self.all_rows().take(rows).last() {
       Some(Row::Line(at, line)) => {
-        let shown = self.shown(&line.glyphs);
+        let shown = self.shown(at, &line.glyphs);
         let hit = shown.take_while(|&(_, start, _)| start <= column).last();
         let glyph = hit.map_or(self.top.glyph, |(index, ..)| index);
         let glyph = glyph.min(line.glyphs.len().saturating_sub(1));
@@ -262,16 +302,17 @@ impl View {
   /// Position drawn at a cell, if any.
   fn hit(&self, column: usize, row: usize) -> Option<Position> {
     let Row::Line(at, line) = self.rows().nth(row)? else { return None };
-    let (glyph, ..) = self.shown(&line.glyphs).find(|&(_, start, glyph)| {
-      (start..start + cells(glyph)).contains(&column)
-    })?;
+    let (glyph, ..) =
+      self.shown(at, &line.glyphs).find(|&(_, start, glyph)| {
+        (start..start + cells(glyph)).contains(&column)
+      })?;
     Some(Position { glyph, ..at })
   }
 
   /// Cell of `position`, when drawn.
   fn cell(&self, position: Position) -> Option<(usize, usize)> {
-    let (row, line) = self.row_of(position)?;
-    let mut shown = self.shown(&line.glyphs);
+    let (row, at, line) = self.row_of(position)?;
+    let mut shown = self.shown(at, &line.glyphs);
     let (_, column, _) = shown.find(|&(index, ..)| index == position.glyph)?;
     // A zero-width mark joins the last cell.
     Some((column.min(self.columns.saturating_sub(1)), row))
@@ -279,6 +320,9 @@ impl View {
 
   /// Column offset no wider than the drawn lines need.
   fn clamped(mut self) -> Self {
+    if self.wrapped {
+      return self;
+    }
     let overflow = |row| match row {
       Row::Line(_, line) => {
         let width = line.glyphs.iter().map(cells).sum::<usize>();
@@ -303,6 +347,16 @@ impl View {
     cursor: Position,
     pages: &mut impl TextSource,
   ) -> Result<Position> {
+    if self.wrapped {
+      let top = if self.row_of(cursor).is_some() {
+        self.top
+      } else {
+        let shift =
+          if cursor < self.top { 0 } else { 1 - self.height as isize };
+        wrap::step(pages, cursor, shift, self.columns)?.0
+      };
+      return wrap::clamp(pages, top, (self.height, self.columns));
+    }
     let top = self.top;
     if self.height == 0 || self.columns == 0 {
       let other = Position { page: cursor.page, ..Position::default() };
@@ -332,6 +386,11 @@ impl View {
     fraction: f32,
     pages: &mut impl TextSource,
   ) -> Result<Position> {
+    if self.wrapped {
+      let above = (fraction * self.height.saturating_sub(1) as f32).round();
+      let top = wrap::step(pages, at, -(above as isize), self.columns)?.0;
+      return wrap::clamp(pages, top, (self.height, self.columns));
+    }
     let above = (fraction * self.height.saturating_sub(1) as f32).round();
     let at = Position { glyph: self.top.glyph, ..at };
     let top = step(pages, at, -(above as isize))?.0;
@@ -342,7 +401,7 @@ impl View {
   fn inside(&self, cursor: Position) -> bool {
     self
       .row_of(cursor)
-      .is_some_and(|(row, _)| row > 0 && row + 2 <= self.height)
+      .is_some_and(|(row, ..)| row > 0 && row + 2 <= self.height)
   }
 }
 
@@ -366,7 +425,11 @@ fn fitting<'a>(
 impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
   pub fn clamp(&mut self, top: Position) -> Result<Position> {
     let size = self.text_size();
-    clamp(&mut self.source, top, size)
+    if self.state.wrapped {
+      wrap::clamp(&mut self.source, top, size)
+    } else {
+      clamp(&mut self.source, top, size)
+    }
   }
 
   /// Clamp the restored origin.
@@ -390,7 +453,7 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
   /// The text view from `top`, unmoved.
   fn text_view_from(&mut self, top: Position) -> Result<View> {
     let size = self.text_size();
-    View::new(&mut self.source, size, top)
+    View::new(&mut self.source, size, top, self.state.wrapped)
   }
 
   /// The next frame's view.
@@ -400,7 +463,12 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
 
   /// `at` moved `rows` text view rows.
   fn text_step(&mut self, at: Position, rows: isize) -> Result<Position> {
-    Ok(step(&mut self.source, at, rows)?.0)
+    if self.state.wrapped {
+      let columns = self.text_size().1;
+      Ok(wrap::step(&mut self.source, at, rows, columns)?.0)
+    } else {
+      Ok(step(&mut self.source, at, rows)?.0)
+    }
   }
 
   /// Pages the next frame shows.
@@ -413,7 +481,7 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
     let view = self.next_text_view()?;
     Ok(view.rows().find_map(|row| {
       let Row::Line(at, line) = row else { return None };
-      let mut shown = view.shown(&line.glyphs);
+      let mut shown = view.shown(at, &line.glyphs);
       let (glyph, ..) =
         shown.find(|(_, _, glyph)| !glyph.ch.is_whitespace())?;
       Some(Position { glyph, ..at })
@@ -454,7 +522,7 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
       let near: Vec<_> = hovered.iter().filter(beside).collect();
       let mut current = None;
       let mut written = 0;
-      for (glyph, column, ch) in view.shown(&line.glyphs) {
+      for (glyph, column, ch) in view.shown(at, &line.glyphs) {
         if column > written {
           scene.push(Op::Spaces(column - written));
         }
@@ -527,7 +595,7 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
   /// Next frame's row of `position`'s line.
   pub fn row(&mut self, position: Position) -> Result<Option<usize>> {
     let view = self.next_text_view()?;
-    Ok(view.row_of(position).map(|(row, _)| row))
+    Ok(view.row_of(position).map(|(row, ..)| row))
   }
 
   /// Glyph at a shown cell.
@@ -560,6 +628,10 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
   }
 
   pub fn origin(&mut self, position: Position) -> Result<()> {
+    if self.state.wrapped {
+      self.state.top = self.clamp(position)?;
+      return Ok(());
+    }
     let text = self.source.page_text(position.page)?;
     let column = text.lines.get(position.line).map_or(0, |line| {
       line.glyphs.iter().take(position.glyph).map(cells).sum()
@@ -589,7 +661,7 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
     let mut distance = (f32::INFINITY, f32::INFINITY);
     for (row, item) in view.rows().enumerate() {
       let Row::Line(at, line) = item else { continue };
-      for (glyph, column, item) in view.shown(&line.glyphs) {
+      for (glyph, column, item) in view.shown(at, &line.glyphs) {
         if item.ch.is_whitespace() {
           continue;
         }
@@ -613,6 +685,9 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
   }
 
   pub fn pan(&mut self, columns: isize) -> Result<()> {
+    if self.state.wrapped {
+      return Ok(());
+    }
     self.state.top.glyph = self.state.top.glyph.saturating_add_signed(columns);
     self.state.top = self.clamp(self.state.top)?;
     Ok(())

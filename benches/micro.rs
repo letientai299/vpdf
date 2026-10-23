@@ -390,10 +390,10 @@ fn routing_outline() -> Result<()> {
 fn routing_panel_press() -> Result<()> {
   use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
   let mut app = paper(false)?;
-  app.open_panel(vpdf_ui::keys::PanelKind::Help)?;
+  app.open_panel(vpdf_ui::keys::PanelKind::Version)?;
   let mouse = MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 2, 2);
   measure("App::panel_mouse press", || {
-    app.panel_mouse(black_box(mouse), 1).expect("help row press");
+    app.panel_mouse(black_box(mouse), 1).expect("panel row press");
   })
 }
 

@@ -48,12 +48,9 @@ struct Geometry {
 }
 
 fn panel() -> Result<()> {
-  use vpdf_ui::{
-    keys::PanelKind,
-    panel::{Panel, Row, help},
-  };
-  let rows = help(|_| false).iter().map(|line| Row::parse(line)).collect();
-  let mut panel = Panel::new(PanelKind::Help, rows);
+  use vpdf_ui::{keys::PanelKind, panel::Panel};
+  let rows = super_panel_rows();
+  let mut panel = Panel::new(PanelKind::Version, rows);
   let mut out = Vec::new();
   measure("Panel::list", || {
     out.clear();
@@ -113,33 +110,6 @@ fn hints() -> Result<()> {
   })
 }
 
-fn help() -> Result<()> {
-  use vpdf_model::geometry::At;
-  use vpdf_ui::keys::PanelKind;
-  use vpdf_ui::panel::{Panel, help};
-  for width in [30, 64] {
-    let rows = help(|_| true)
-      .iter()
-      .map(|line| vpdf_ui::panel::Row::parse(line))
-      .collect();
-    let mut panel = Panel::new(PanelKind::Help, rows);
-    let mut out = Vec::new();
-    presentation::draw(&mut out, None, |scene| {
-      panel.scene_list(scene, At::default(), width, 24);
-    })?;
-    println!("help {width}x24 output {}", hash::digest(&out));
-    measure(&format!("Panel::help draw {width}x24"), || {
-      out.clear();
-      presentation::draw(&mut out, None, |scene| {
-        panel.scene_list(scene, At::default(), width, 24);
-      })
-      .expect("help frame");
-      black_box(&out);
-    })?;
-  }
-  Ok(())
-}
-
 fn main() -> Result<()> {
   support::run(&[
     ("page tiles", tiles::draw),
@@ -156,6 +126,11 @@ fn main() -> Result<()> {
     ("scrollbar draw", scrollbar::draw),
     ("routing panel", panel),
     ("routing status", chrome::draw),
-    ("help reference", help),
   ])
+}
+
+fn super_panel_rows() -> Vec<vpdf_ui::panel::Row> {
+  ["# Build", "Version: development", "License: MIT"]
+    .map(vpdf_ui::panel::Row::parse)
+    .into()
 }

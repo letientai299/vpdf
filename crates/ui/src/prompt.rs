@@ -88,6 +88,7 @@ pub struct Menu {
   start: usize,
   end: usize,
   original: String,
+  guidance: bool,
 }
 
 impl Menu {
@@ -107,7 +108,18 @@ impl Menu {
 
   /// Layout above the status row.
   pub fn grid(&self, screen: Screen) -> Grid {
-    self.layout(usize::from(screen.columns), grid::limit(screen))
+    self.layout(
+      usize::from(screen.columns),
+      grid::limit(screen)
+        .min(usize::from(
+          screen.rows.saturating_sub(1 + self.footer_rows(screen)),
+        ))
+        .max(1),
+    )
+  }
+
+  pub fn footer_rows(&self, screen: Screen) -> u16 {
+    u16::from(self.guidance && screen.rows >= 3)
   }
 }
 
@@ -120,6 +132,7 @@ struct Recall {
 }
 
 pub struct Prompt {
+  invocation: Option<crate::topics::Invocation>,
   kind: PromptKind,
   text: String,
   menu: Option<Menu>,
@@ -162,9 +175,18 @@ impl Prompt {
       && row > 0
     {
       let layout = menu.grid(screen);
-      let bottom = (at, row - 1);
+      let footer = menu.footer_rows(screen);
+      let bottom = (at, row - 1 - footer);
       let shown = (menu.selected, pointed);
       grid::scene(scene, bottom, &menu.labels, &layout, shown, 0, screen);
+      if footer > 0 {
+        crate::paint::move_to(scene, at, row - 1, 0u16);
+        scene.push(Op::Style(Role::Bar));
+        let text = self.completion_hint(menu.selected.is_some());
+        let text = vpdf_model::text::clean(&text, usize::from(screen.columns));
+        let pad = usize::from(screen.columns).saturating_sub(text.width());
+        scene.extend([Op::Text(Text::new(text)), Op::Spaces(pad)]);
+      }
     }
     let (text, ghost, column) = self.display();
     let room = usize::from(screen.columns).saturating_sub(text.width());
@@ -209,6 +231,7 @@ impl Prompt {
 
   pub fn new(kind: PromptKind) -> Self {
     Self {
+      invocation: None,
       kind,
       text: String::new(),
       menu: None,
@@ -221,6 +244,23 @@ impl Prompt {
       command: None,
       pending: Pending::default(),
     }
+  }
+
+  #[must_use]
+  pub fn with_invocation(
+    mut self,
+    invocation: crate::topics::Invocation,
+  ) -> Self {
+    self.set_invocation(invocation);
+    self
+  }
+
+  pub fn set_invocation(&mut self, invocation: crate::topics::Invocation) {
+    self.invocation = Some(invocation);
+  }
+
+  pub fn invocation(&self) -> Option<&crate::topics::Invocation> {
+    self.invocation.as_ref()
   }
 
   pub fn before_cursor(&self) -> &str {
@@ -592,6 +632,37 @@ impl Prompt {
     }
   }
 
+  fn completion_hint(&self, selected: bool) -> String {
+    let mut hints =
+      vec![if selected { "Selected" } else { "Unselected" }.into()];
+    for (action, label) in [
+      (PromptAction::Complete { forward: true }, "select"),
+      (PromptAction::Submit, if selected { "open" } else { "submit query" }),
+      (PromptAction::Cancel, "cancel"),
+    ] {
+      let key = self.bindings.shortcut(&Target::Prompt(action));
+      if !key.is_empty() {
+        hints.push(format!("{key} {label}"));
+      }
+    }
+    hints.join("  ")
+  }
+
+  pub fn describe(&mut self, label: impl Fn(&str) -> String) {
+    if let Some(menu) = &mut self.menu {
+      menu.labels = menu.items.iter().map(|item| label(item)).collect();
+      menu.guidance = true;
+    }
+  }
+
+  pub fn choices(&mut self, start: usize, items: Vec<String>) {
+    let original = self.text.clone();
+    let cursor = self.cursor;
+    self.complete(start, items);
+    self.text = original;
+    self.cursor = cursor;
+  }
+
   /// Offers `items` for the text from byte `start` to the cursor.
   pub fn complete(&mut self, start: usize, items: Vec<String>) {
     if items.is_empty() || start > self.cursor {
@@ -615,6 +686,7 @@ impl Prompt {
       start,
       end: self.cursor,
       original: self.text.clone(),
+      guidance: false,
     });
     if single {
       if let Some(menu) = &mut self.menu {

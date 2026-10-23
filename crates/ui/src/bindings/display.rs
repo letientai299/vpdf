@@ -1,12 +1,72 @@
 use super::{
-  Bindings, Change, Context, Control, PromptAction, Sequence, Target, actions,
+  Bindings, Change, Context, Control, Map, PromptAction, Sequence, Target,
+  actions,
 };
 use crate::keys::{self, Action};
 use serde::{Serialize, Serializer};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use std::fmt::Write;
 
 impl Target {
+  pub fn topic(&self) -> String {
+    if let Self::Reader(Action::Scroll(amount)) = self {
+      match *amount {
+        0.5 => return "half_down".into(),
+        -0.5 => return "half_up".into(),
+        1.0 => return "page_down".into(),
+        -1.0 => return "page_up".into(),
+        _ => {}
+      }
+    }
+    if let Self::Command(command) = self {
+      return format!("command.execute.{}", topic_value(&json!(command)));
+    }
+    let value = self.value();
+    let mut id =
+      value["action"].as_str().unwrap_or("action.unknown").to_owned();
+    if let Some(fields) = value.as_object() {
+      for (key, value) in fields {
+        if key == "action" {
+          continue;
+        }
+        id.push('.');
+        id.push_str(key);
+        id.push('_');
+        id.push_str(&topic_value(value));
+      }
+    }
+    id
+  }
+
+  pub fn about(&self) -> String {
+    if let Self::Command(command) = self {
+      return format!("Command: {command}");
+    }
+    if let Self::Reader(action) = self
+      && let Some((_, _, about)) =
+        keys::BINDINGS.iter().find(|(_, bound, _)| bound == action)
+    {
+      return (*about).into();
+    }
+    let value = self.value();
+    let action = value["action"].as_str().unwrap_or("action");
+    let mut title = action.replace(['.', '_'], " ");
+    if let Some(fields) = value.as_object() {
+      for (key, value) in fields {
+        if key != "action" {
+          let _ = write!(
+            title,
+            "; {}: {}",
+            key.replace('_', " "),
+            value.as_str().map_or_else(|| value.to_string(), str::to_owned)
+          );
+        }
+      }
+    }
+    title
+  }
+
   pub fn value(&self) -> Value {
     match self {
       Self::Command(command) => json!({"command": command}),
@@ -26,6 +86,20 @@ impl Target {
   pub fn label(&self) -> String {
     self.value().to_string()
   }
+}
+
+fn topic_value(value: &Value) -> String {
+  let value = value.as_str().map_or_else(|| value.to_string(), str::to_owned);
+  value
+    .bytes()
+    .map(|byte| {
+      if byte.is_ascii_alphanumeric() || byte == b'-' {
+        char::from(byte).to_string()
+      } else {
+        format!("_{byte:02x}")
+      }
+    })
+    .collect()
 }
 
 fn named<T: PartialEq>(
@@ -93,32 +167,29 @@ impl Serialize for Bindings {
   }
 }
 
-impl Bindings {
-  pub fn shortcut(&self, context: Context, target: &Target) -> String {
-    let map = self.map(context);
+impl Map<Target> {
+  fn preferred(&self, target: &Target) -> Option<String> {
     if target.cancels()
       && let Ok(escape) = Sequence::parse("<Esc>")
-      && map.get(&escape) == Some(target)
+      && self.get(&escape) == Some(target)
     {
-      return escape.to_string();
+      return Some(escape.to_string());
     }
     if let Target::Reader(action) = target
       && let Some(key) = keys::key_for(*action)
       && let Ok(sequence) = Sequence::parse(&keys::notation(key))
-      && map.get(&sequence) == Some(target)
+      && self.get(&sequence) == Some(target)
     {
-      return sequence.to_string();
+      return Some(sequence.to_string());
     }
-    if *target == Target::Reader(Action::YankLine) && context == Context::Panel
-    {
-      let first = self.shortcut(context, &Target::Control(Control::Yank));
-      let second =
-        self.shortcut(Context::Operator, &Target::Reader(Action::Yank));
-      if !first.is_empty() && !second.is_empty() {
-        return first + &second;
-      }
+    None
+  }
+
+  pub(crate) fn shortcut(&self, target: &Target) -> String {
+    if let Some(key) = self.preferred(target) {
+      return key;
     }
-    if let Some((sequence, _)) = map
+    if let Some((sequence, _)) = self
       .entries()
       .filter(|(_, value)| *value == target)
       .min_by_key(|(sequence, _)| {
@@ -132,6 +203,25 @@ impl Bindings {
       return sequence.to_string();
     }
     String::new()
+  }
+}
+
+impl Bindings {
+  pub fn shortcut(&self, context: Context, target: &Target) -> String {
+    let map = self.map(context);
+    if let Some(key) = map.preferred(target) {
+      return key;
+    }
+    if *target == Target::Reader(Action::YankLine) && context == Context::Panel
+    {
+      let first = self.shortcut(context, &Target::Control(Control::Yank));
+      let second =
+        self.shortcut(Context::Operator, &Target::Reader(Action::Yank));
+      if !first.is_empty() && !second.is_empty() {
+        return first + &second;
+      }
+    }
+    map.shortcut(target)
   }
 
   pub fn hint(&self, context: Context, target: &Target, about: &str) -> String {

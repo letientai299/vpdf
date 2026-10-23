@@ -844,7 +844,7 @@ fn hover_hits_lines_rows_and_thumbnails() -> Result<()> {
   assert!(hits[first..=last].iter().any(|hit| !hit.1), "a bridged gap");
   assert!(hits.iter().all(|hit| hit.0 == Hit::Text || !hit.1), "{hits:?}");
   // Panel rows hit what a press selects.
-  app.open_panel(PanelKind::Help)?;
+  app.open_panel(PanelKind::Version)?;
   app.draw(&mut Vec::new())?;
   let press = |column, row| {
     MouseEvent::new(MouseEventKind::Down(MouseButton::Left), column, row)
@@ -1006,7 +1006,7 @@ fn pixel_reports_hit_their_pixel() -> Result<()> {
   for panel in [false, true] {
     let app = session.app();
     if panel {
-      app.open_panel(PanelKind::Help)?;
+      app.open_panel(PanelKind::Version)?;
     }
     let (left, scroll) = (app.left, app.reader.scroll);
     let (column, row) = (left + 40, 12);

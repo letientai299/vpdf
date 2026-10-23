@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::path::Path;
 use toml::Value;
 use vpdf_ui::bindings::actions::{self, Argument, Kind};
 use vpdf_ui::bindings::window::WindowArg;
@@ -12,6 +13,7 @@ use vpdf_ui::commands::{self, Id, Resolution, View};
 pub(super) fn parse(
   value: &Value,
   previous: &Bindings,
+  path: &Path,
   warnings: &mut Vec<String>,
 ) -> Bindings {
   let Some(table) = value.as_table() else {
@@ -50,15 +52,29 @@ pub(super) fn parse(
       })
       .collect::<Vec<_>>();
     if context.parent().is_none() {
-      let (map, diagnostics) =
-        defaults.map(context).apply(&previous.map(context), &changes);
+      let (map, diagnostics) = defaults.map(context).apply_sourced(
+        &previous.map(context),
+        &changes,
+        |_| vpdf_ui::reference::Source::File(path.to_owned()),
+      );
       report(context, diagnostics, warnings);
       bindings.set(context, map);
     }
     edits.insert(context, changes);
   }
-  let common =
+  let mut common =
     bindings.map(Context::Prompt).changes_from(&defaults.map(Context::Prompt));
+  for (sequence, target) in bindings.map(Context::Prompt).entries() {
+    if bindings.map(Context::Prompt).source(sequence)
+      != vpdf_ui::reference::Source::Default
+      && !common.iter().any(|edit| edit.sequence == *sequence)
+    {
+      common.push(Edit {
+        sequence: sequence.clone(),
+        change: Change::Bind(target.clone()),
+      });
+    }
+  }
   for context in [Context::Command, Context::Search, Context::Password] {
     if table.contains_key(context.name()) && !edits.contains_key(&context) {
       continue;
@@ -71,8 +87,20 @@ pub(super) fn parse(
         .retain(|edit| !own.iter().any(|own| own.sequence == edit.sequence));
       inherited.extend(own.iter().cloned());
     }
-    let (map, diagnostics) =
-      defaults.map(context).apply(&previous.map(context), &inherited);
+    let (map, diagnostics) = defaults.map(context).apply_sourced(
+      &previous.map(context),
+      &inherited,
+      |sequence| {
+        if edits
+          .get(&context)
+          .is_some_and(|own| own.iter().any(|edit| edit.sequence == *sequence))
+        {
+          vpdf_ui::reference::Source::File(path.to_owned())
+        } else {
+          bindings.map(Context::Prompt).source(sequence)
+        }
+      },
+    );
     report(context, diagnostics, warnings);
     bindings.set(context, map);
   }

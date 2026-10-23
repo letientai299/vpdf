@@ -6,6 +6,8 @@ use std::process::Command;
 #[path = "../src/provenance.rs"]
 mod provenance;
 
+mod help_build;
+
 fn git(args: &[&str]) -> Option<String> {
   let output = Command::new("git").args(args).output().ok()?;
   let text = String::from_utf8(output.stdout).ok()?.trim().to_owned();
@@ -47,6 +49,7 @@ fn version() -> Option<String> {
 }
 
 fn main() {
+  help_build::prepare();
   let version =
     version().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned());
   println!("cargo::rustc-env=VPDF_VERSION={version}");

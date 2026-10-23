@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn wheel_moves_viewport_and_keys_reveal_rows() {
   let mut panel = Panel::new(
-    PanelKind::Help,
+    PanelKind::Version,
     (0..80).map(|row| Row::parse(&format!("row {row}"))).collect(),
   );
   panel.focused = false;

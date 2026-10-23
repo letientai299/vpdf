@@ -108,7 +108,7 @@ fn refocus_reuses_destinations() {
     Some(Follow::File("paper.pdf".into()))
   );
   assert_eq!(file.refocus(), Some(Follow::Focus(Focus::Content)));
-  let empty = panel(PanelKind::Help, Destination::None);
+  let empty = panel(PanelKind::Version, Destination::None);
   assert_eq!(empty.refocus(), None);
   assert_eq!(empty.follow(&Search::default()), None);
 }

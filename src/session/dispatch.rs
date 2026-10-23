@@ -55,6 +55,7 @@ impl Session {
       }
     }
     self.present_startup();
+    self.refresh_help();
   }
 
   pub(super) fn set_theme(&mut self, theme: vpdf_model::theme::Theme) {
@@ -67,6 +68,7 @@ impl Session {
     if let Some(home) = &mut self.home {
       home.configure(&self.settings);
     }
+    self.refresh_help();
   }
 
   pub(super) fn pick(&mut self) -> Result<()> {
@@ -127,6 +129,12 @@ impl Session {
     screen: Screen,
   ) -> Result<()> {
     match request {
+      Some(Request::HelpBeside { topic, invocation }) => {
+        self.request_help_at(&topic, invocation, screen, true)
+      }
+      Some(Request::Help { topic, invocation }) => {
+        self.request_help(&topic, invocation, screen)
+      }
       Some(Request::Open { path, tab }) => self.open(&path, tab, screen),
       Some(Request::Print) => self.print(),
       Some(Request::RecentTab) => self.recent_tab(screen),
@@ -154,6 +162,10 @@ impl Session {
       }
       Some(Request::SetMark(name)) => {
         let app = self.app();
+        anyhow::ensure!(
+          app.manual.is_none(),
+          "Global marks unavailable for help"
+        );
         let mark =
           Mark { path: app.path.clone(), cursor: app.reading_position()? };
         self.state.marks.insert(name, mark);

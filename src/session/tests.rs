@@ -553,9 +553,9 @@ fn mouse_command_toggles_capture() -> Result<()> {
   Ok(())
 }
 
-fn help_session(directory: &Path) -> Result<Session> {
+fn panel_session(directory: &Path) -> Result<Session> {
   let mut session = line_session(directory, "", cells(80, 24))?;
-  session.app().open_panel(PanelKind::Help)?;
+  session.app().open_panel(PanelKind::Version)?;
   Ok(session)
 }
 
@@ -566,7 +566,7 @@ fn menu_backdrops_skip_the_panel() -> Result<()> {
   use vpdf_model::input::MouseEventKind::{Down, Up};
 
   let directory = tempfile::tempdir()?;
-  let mut session = help_session(directory.path())?;
+  let mut session = panel_session(directory.path())?;
   let left = session.app().left;
   // (pressed column) -> backdrop's page-area x range
   let cases = [(1, None), (left - 3, Some(0.0))];
@@ -605,7 +605,7 @@ fn veils_skip_menus() -> Result<()> {
   use vpdf_model::input::MouseEventKind::{Down, Up};
 
   let directory = tempfile::tempdir()?;
-  let mut session = help_session(directory.path())?;
+  let mut session = panel_session(directory.path())?;
   let left = session.app().left;
   // A stretched pixel: `c=` columns wide.
   let veiled = |out: &[u8]| {
@@ -841,7 +841,7 @@ fn local_keys_clear_capture() -> Result<()> {
     &b"\x1b[<32;100;32M\x1b[<0;100;32m"[..],
   ] {
     if bytes == b"\t" {
-      session.app().open_panel(PanelKind::Help)?;
+      session.app().open_panel(PanelKind::Version)?;
     }
     let cursor = session.app().reader.cursor;
     parser.feed(bytes, &mut events);
@@ -1062,7 +1062,6 @@ fn sidebar_keys_toggle_focus() -> Result<()> {
     ("gl", PanelKind::Links, ""),
     ("gr", PanelKind::Recent, "recent"),
     ("ga", PanelKind::Annotations, "annotations"),
-    ("g?", PanelKind::Help, "help"),
   ] {
     for (keys, focused) in [
       (shortcut, Some(true)),

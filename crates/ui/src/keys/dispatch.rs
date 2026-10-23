@@ -41,6 +41,84 @@ pub enum Dispatch {
 }
 
 impl Keys {
+  pub(crate) fn references(
+    context: Context,
+    bindings: &Bindings,
+  ) -> Vec<crate::bindings::Binding> {
+    let mut rows = Vec::new();
+    Self::default().reference_walk(context, bindings, &[], &[], &mut rows);
+    rows
+  }
+
+  fn reference_walk(
+    &self,
+    context: Context,
+    bindings: &Bindings,
+    prefix: &[KeyEvent],
+    sources: &[crate::reference::Source],
+    rows: &mut Vec<crate::bindings::Binding>,
+  ) {
+    let map = self.map.clone().unwrap_or_else(|| bindings.map(context));
+    let mut entries: Vec<_> = map
+      .entries()
+      .map(|(key, target)| (key.clone(), Some(target.clone())))
+      .collect();
+    if matches!(self.capture, Capture::SetMark | Capture::GoMark(_)) {
+      entries.extend(('a'..='z').chain('A'..='Z').filter_map(|ch| {
+        let key = Sequence::parse(&ch.to_string()).ok()?;
+        map.get(&key).is_none().then_some((key, None))
+      }));
+    }
+    for (sequence, target) in entries {
+      if !prefix.is_empty() && target.as_ref().is_some_and(Target::cancels) {
+        continue;
+      }
+      let mut state = self.clone();
+      let mut dispatch = None;
+      for &key in sequence.keys() {
+        dispatch = state.feed_with(key, context, bindings);
+      }
+      let mut keys = prefix.to_vec();
+      keys.extend_from_slice(sequence.keys());
+      let mut origins = sources.to_vec();
+      let source = map.source(&sequence);
+      if !origins.contains(&source) {
+        origins.push(source);
+      }
+      let resolved = match dispatch {
+        Some(Dispatch::Input(input)) => Some(Target::Reader(input.action)),
+        Some(Dispatch::Command(command)) => Some(Target::Command(command)),
+        None => target.filter(|target| {
+          matches!(
+            target,
+            Target::Prompt(_) | Target::Hint(_) | Target::Control(_)
+          )
+        }),
+      };
+      if let Some(target) = resolved {
+        rows.push(crate::bindings::Binding {
+          context,
+          sequence: Sequence::from_keys(&keys).expect("resolved binding"),
+          purpose: target.about(),
+          target,
+          sources: origins.clone(),
+        });
+      }
+      if matches!(
+        state.capture,
+        Capture::SetMark
+          | Capture::GoMark(_)
+          | Capture::Object(_)
+          | Capture::Operator { .. }
+          | Capture::Resize
+      ) && std::mem::discriminant(&self.capture)
+        != std::mem::discriminant(&state.capture)
+      {
+        state.reference_walk(context, bindings, &keys, &origins, rows);
+      }
+    }
+  }
+
   pub fn clear(&mut self) {
     *self = Self::default();
   }

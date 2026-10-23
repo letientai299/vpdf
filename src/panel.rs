@@ -111,12 +111,6 @@ impl App {
       },
       PanelKind::Links | PanelKind::Annotations => self.sidebar_rows(kind),
       PanelKind::Jumps => self.jump_rows(),
-      PanelKind::Help => {
-        vpdf_ui::panel::help(|program| self.command_available(program))
-          .iter()
-          .map(|line| Row::parse(line))
-          .collect()
-      }
       PanelKind::Version => crate::version::text(matches!(
         self.frontend,
         crate::raster::Frontend::Terminal
@@ -137,7 +131,7 @@ impl App {
     vpdf_ui::panel::Info {
       document: vpdf_ui::panel::DocumentInfo {
         metadata: &metadata,
-        path: &self.path,
+        path: self.document_identity(),
         bytes,
         pages: self.doc.pages.len(),
         label: self.doc.label(page),

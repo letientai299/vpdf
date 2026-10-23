@@ -191,7 +191,7 @@ specs! {
   "panel.results" => Kind::Fixed(Action::Panel(PanelKind::Results)),
   "panel.links" => Kind::Fixed(Action::Panel(PanelKind::Links)),
   "panel.text" => Kind::Fixed(Action::Panel(PanelKind::Text)),
-  "panel.help" => Kind::Fixed(Action::Panel(PanelKind::Help)),
+  "panel.help" => Kind::Fixed(Action::Help),
   "panel.version" => Kind::Fixed(Action::Panel(PanelKind::Version)),
   "panel.info" => Kind::Fixed(Action::Panel(PanelKind::Info)),
   "panel.recent" => Kind::Fixed(Action::Panel(PanelKind::Recent)),

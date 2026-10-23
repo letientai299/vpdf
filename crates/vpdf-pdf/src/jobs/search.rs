@@ -384,7 +384,7 @@ impl Source {
     pages: usize,
   ) -> Result<Self> {
     let file = Version::of(&std::fs::metadata(&path)?);
-    let root = root.filter(|_| password.is_empty());
+    let root = root.filter(|_| content_cache::cacheable(&path, &password));
     let exact = content_cache::exact(&path);
     let found = root.as_ref().filter(|_| exact).and_then(|root| {
       let alias = content_cache::recall(root, file)?;
@@ -676,6 +676,27 @@ mod tests {
     scan(&mut source, "beta")?;
     source.save();
     assert_eq!(std::fs::read_dir(locked.path())?.count(), 0);
+    Ok(())
+  }
+
+  #[test]
+  fn private_files_stay_memory_only() -> Result<()> {
+    let file = tempfile::NamedTempFile::new()?;
+    crate::fixtures::pdf(file.path(), &["private settings"], "")?;
+    let private = content_cache::Private::new(file.path())?;
+    let root = tempfile::tempdir()?;
+    for _ in 0..2 {
+      let mut source = open(file.path(), root.path())?;
+      let (hits, extracted) = scan(&mut source, "settings")?;
+      assert_eq!((hits.len(), extracted), (1, 1));
+      source.save();
+    }
+    assert_eq!(std::fs::read_dir(root.path())?.count(), 0);
+    drop(private);
+    let mut source = open(file.path(), root.path())?;
+    scan(&mut source, "settings")?;
+    source.save();
+    assert!(std::fs::read_dir(root.path())?.count() > 0);
     Ok(())
   }
 

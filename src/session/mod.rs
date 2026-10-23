@@ -41,6 +41,7 @@ pub struct Tab {
 /// Kitty image cache.
 #[derive(Default)]
 pub struct Session {
+  help: help::Help,
   settings: crate::config::Settings,
   config_source: crate::config::Source,
   startup_warning: Option<String>,
@@ -282,6 +283,7 @@ mod clipboard;
 mod dispatch;
 mod edges;
 mod frame;
+mod help;
 mod interaction;
 mod maintenance;
 pub mod native;

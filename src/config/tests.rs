@@ -571,3 +571,145 @@ fn themes_reload_independently() {
     parse_with(Path::new("settings.toml"), "[appearance]", &previous);
   assert_eq!(omitted.settings.theme(), Theme::Default);
 }
+
+#[test]
+fn references_keep_values_sources_and_warnings() {
+  use vpdf_ui::reference::Source as Origin;
+  let first_path = Path::new("first.toml");
+  let second_path = Path::new("second.toml");
+  let first = parse(first_path, "[reading]\nzoom = 2\ncursorline = true");
+  let next = parse_with(
+    second_path,
+    "[reading]\nzoom = 'bad'\ncursorline = false\nextra = 7",
+    &first.settings,
+  );
+  let reference = next.settings.reference();
+  let setting = |name| {
+    reference.settings.iter().find(|setting| setting.name == name).unwrap()
+  };
+  let zoom = setting("reading.zoom");
+  assert_eq!(zoom.default, serde_json::json!(1.0));
+  assert_eq!(zoom.effective, serde_json::json!(2.0));
+  assert_eq!(zoom.source, Origin::File(first_path.into()));
+  assert_eq!(
+    setting("reading.cursorline").source,
+    Origin::File(second_path.into())
+  );
+  assert_eq!(setting("ocr.language").source, Origin::Default);
+  assert!(reference.generation > first.settings.reference().generation);
+  assert_eq!(reference.warnings.len(), 2);
+  let invalid = parse_with(second_path, "reading = false", &first.settings);
+  assert_eq!(
+    invalid.settings.reference().settings,
+    first.settings.reference().settings
+  );
+  let reset = parse_with(second_path, "", &first.settings);
+  assert!(
+    reset
+      .settings
+      .reference()
+      .settings
+      .iter()
+      .all(|setting| setting.source == Origin::Default)
+  );
+  let mut settings = next.settings;
+  settings.set_theme(vpdf_model::theme::Theme::Nord);
+  assert_eq!(
+    settings
+      .reference()
+      .settings
+      .iter()
+      .find(|setting| setting.name == "appearance.theme")
+      .unwrap()
+      .source,
+    Origin::Command
+  );
+}
+
+#[test]
+fn binding_sources_survive_inheritance_and_rejection() {
+  use vpdf_ui::bindings::{Context, Sequence};
+  use vpdf_ui::reference::Source as Origin;
+  let first_path = Path::new("first.toml");
+  let next_path = Path::new("next.toml");
+  let first = parse(
+    first_path,
+    concat!(
+      "[keybindings.prompt]\n'<C-a>' = { action = 'prompt.start' }\n",
+      "[keybindings.normal]\n'h' = { action = 'tab.next' }\n",
+      "'xy' = { action = 'tab.next' }\n'q' = { unbind = true }",
+    ),
+  );
+  let next = parse_with(
+    next_path,
+    concat!(
+      "[keybindings.normal]\n'h' = { action = 'unknown' }\n",
+      "'q' = { action = 'unknown' }\n'g' = { action = 'quit' }\n",
+      "[keybindings.prompt]\n'<C-a>' = { action = 'unknown' }\n",
+      "[keybindings.command]\n'<C-a>' = { action = 'prompt.end' }\n",
+    ),
+    &first.settings,
+  );
+  for context in [Context::Prompt, Context::Search, Context::Password] {
+    assert_eq!(
+      next
+        .settings
+        .bindings()
+        .map(context)
+        .source(&Sequence::parse("<C-a>").unwrap()),
+      Origin::File(first_path.into())
+    );
+  }
+  assert_eq!(
+    next
+      .settings
+      .bindings()
+      .map(Context::Command)
+      .source(&Sequence::parse("<C-a>").unwrap()),
+    Origin::File(next_path.into())
+  );
+  let map = next.settings.bindings().map(Context::Normal);
+  for key in ["h", "q"] {
+    assert_eq!(
+      map.source(&Sequence::parse(key).unwrap()),
+      Origin::File(first_path.into())
+    );
+  }
+  assert_eq!(map.source(&Sequence::parse("g").unwrap()), Origin::Default);
+  let reference =
+    next.settings.help_reference(vpdf_ui::topics::Invocation::home());
+  assert_eq!(
+    reference.bindings,
+    vpdf_ui::bindings::Bindings::default().snapshot()
+  );
+  assert_ne!(reference.configuration.warnings, [] as [String; 0]);
+}
+
+#[test]
+fn reference_uses_applied_configuration() -> crate::Result<()> {
+  let root = tempfile::tempdir()?;
+  let path = root.path().join("config.toml");
+  std::fs::write(&path, "[reading]\nzoom = 2")?;
+  let loaded = load(&path, true);
+  std::fs::write(&path, "[reading]\nzoom = 3")?;
+  let snapshot =
+    loaded.settings.help_reference(vpdf_ui::topics::Invocation::home());
+  assert_eq!(
+    snapshot
+      .configuration
+      .settings
+      .iter()
+      .find(|setting| setting.name == "reading.zoom")
+      .unwrap()
+      .effective,
+    serde_json::json!(2.0)
+  );
+  std::fs::write(&path, "[broken")?;
+  let invalid = loaded.source.reload(&loaded.settings);
+  assert_eq!(invalid.settings.zoom(), 2.0);
+  assert!(
+    invalid.settings.reference().generation > snapshot.configuration.generation
+  );
+  assert_ne!(invalid.settings.reference().warnings, [] as [String; 0]);
+  Ok(())
+}

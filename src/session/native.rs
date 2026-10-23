@@ -127,7 +127,7 @@ impl Observation {
       .filter(|&index| position <= hits[index].last)
       .map(|index| index + 1);
     Self {
-      document: Some(app.path.clone()),
+      document: Some(app.document_identity().to_owned()),
       pane: Some(app.id),
       tab: 1,
       pane_count: 1,
@@ -309,6 +309,7 @@ fn run(
   let mut animation_due = Instant::now();
   let mut applied = Ticket::default();
   loop {
+    dirty |= session.help_updates(&mut std::io::sink());
     dirty |= session.print_update();
     dirty |= picker_update(&mut session, screen);
     dirty |= resume_keys(&mut session);
@@ -700,6 +701,13 @@ fn home_event(
   match home.native_event(event, &mut session.history)? {
     crate::home::Outcome::Open(path) => {
       session.resume(Operation::Open(path), screen)?;
+    }
+    crate::home::Outcome::Help(topic) => {
+      session.request_help(
+        &topic,
+        vpdf_ui::topics::Invocation::Home,
+        screen,
+      )?;
     }
     crate::home::Outcome::Quit => session.quit = true,
     crate::home::Outcome::Pick => session.pick()?,
@@ -1744,10 +1752,51 @@ mod tests {
   }
 
   #[test]
-  fn native_help_offers_picker() -> Result<()> {
-    let (_root, _, mut session) = opened(&["first"], sized())?;
-    let rows = session.app().panel_rows(super::super::PanelKind::Help)?;
-    assert!(rows.iter().any(|row| row.label.contains("fzf")));
+  fn help_refresh_invalidates_native_tiles() -> Result<()> {
+    let screen = sized();
+    let mut session = native();
+    session.request_help(
+      "config",
+      vpdf_ui::topics::Invocation::Home,
+      screen,
+    )?;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while session.tabs.is_empty() {
+      session.help_updates(&mut std::io::sink());
+      assert!(Instant::now() < deadline, "Help generation timed out");
+      thread::sleep(Duration::from_millis(2));
+    }
+    session.split(
+      super::super::Axis::Columns,
+      None,
+      super::super::Place::Before,
+    )?;
+    let owners: Vec<_> =
+      session.tab().panes.iter().map(|app| TileOwner::new(app.id)).collect();
+    let mut cache = Cache::new(BUDGET);
+    for &owner in &owners {
+      cache.insert(
+        TileId { owner, key: vpdf_model::tile::TileKey::default() },
+        Arc::new(vec![255, 0, 0]),
+        3,
+      );
+    }
+    session.set_theme(vpdf_model::theme::Theme::Nord);
+    while session.app().document_generation == 0 {
+      session.help_updates(&mut std::io::sink());
+      assert!(Instant::now() < deadline, "Help refresh timed out");
+      thread::sleep(Duration::from_millis(2));
+    }
+    let mut reloaded = Vec::new();
+    assert!(completions(&mut session, &mut cache, &mut reloaded));
+    for owner in owners {
+      assert!(reloaded.contains(&owner));
+      assert!(
+        cache
+          .get(&TileId { owner, key: vpdf_model::tile::TileKey::default() })
+          .is_none()
+      );
+    }
     Ok(())
   }
 
@@ -1926,7 +1975,7 @@ mod tests {
         let mut app = App::with_screen(&path, "", view == "text", screen)?;
         match view {
           "panel" => {
-            app.action(Input::plain(Action::Panel(PanelKind::Help)))?;
+            app.action(Input::plain(Action::Panel(PanelKind::Version)))?;
             assert!(app.panel.is_some());
           }
           "overview" => app.open_overview()?,
@@ -2358,7 +2407,12 @@ mod tests {
     use vpdf_ui::keys::PanelKind;
     let mut screen = cells(80, 24);
     let (_root, _, mut session) = opened(&["first", "second"], screen)?;
-    session.app().open_panel(PanelKind::Help)?;
+    session.app().show_panel(
+      PanelKind::Version,
+      (0..80)
+        .map(|row| vpdf_ui::panel::Row::parse(&format!("row {row}")))
+        .collect(),
+    )?;
     let mut cache = Cache::new(BUDGET);
     frame(&mut session, &mut cache, screen)?;
     let scroll = session.app().reader.scroll;

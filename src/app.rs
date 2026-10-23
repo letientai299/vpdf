@@ -17,6 +17,14 @@ use vpdf_ui::window::{TabMove, Window};
 /// Work a tab hands to the session.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Request {
+  HelpBeside {
+    topic: String,
+    invocation: vpdf_ui::topics::Invocation,
+  },
+  Help {
+    topic: String,
+    invocation: vpdf_ui::topics::Invocation,
+  },
   Open {
     path: PathBuf,
     tab: bool,
@@ -149,6 +157,7 @@ pub struct App {
   /// The last frame showed the whole view: every visible tile placed.
   pub complete: bool,
   pub(crate) bar: vpdf_ui::scrollbar::Bar,
+  pub(crate) manual: Option<std::sync::Arc<vpdf_pdf::manual::Document>>,
 }
 
 impl App {
@@ -164,6 +173,9 @@ impl App {
   }
 
   pub fn name(&self) -> String {
+    if self.manual.is_some() {
+      return "Help".into();
+    }
     let name = self.path.file_name().map_or_else(
       || self.path.display().to_string(),
       |name| name.to_string_lossy().into_owned(),
@@ -196,6 +208,40 @@ impl App {
     frontend: Frontend,
     settings: &crate::config::Settings,
   ) -> Result<Self> {
+    Self::load_document(
+      path, password, text_mode, screen, frontend, settings, None,
+    )
+  }
+
+  pub(crate) fn help_document(
+    document: std::sync::Arc<vpdf_pdf::manual::Document>,
+    screen: Screen,
+    frontend: Frontend,
+    settings: &crate::config::Settings,
+  ) -> Result<Self> {
+    let path = document.path().to_owned();
+    let mut app = Self::load_document(
+      &path,
+      "",
+      false,
+      screen,
+      frontend,
+      settings,
+      Some(document),
+    )?;
+    app.text_view.set_wrap(true);
+    Ok(app)
+  }
+
+  fn load_document(
+    path: &Path,
+    password: &str,
+    text_mode: bool,
+    screen: Screen,
+    frontend: Frontend,
+    settings: &crate::config::Settings,
+    manual: Option<std::sync::Arc<vpdf_pdf::manual::Document>>,
+  ) -> Result<Self> {
     static NEXT: AtomicU32 = AtomicU32::new(1);
     let doc = Document::open(path, password)?;
     let mut layout =
@@ -205,6 +251,14 @@ impl App {
       layout.reflow(doc.pages.iter().map(|page| page.bounds));
     }
     let wake = frontend.wake();
+    let wake = if let Some(owner) = manual.clone() {
+      vpdf_pdf::jobs::Wake::new(move || {
+        let _owner = &owner;
+        wake.wake();
+      })
+    } else {
+      wake
+    };
     let worker = frontend.raster(path, password, doc.lists(), &wake, false);
     Ok(Self {
       id: NEXT.fetch_add(1, Ordering::Relaxed),
@@ -263,6 +317,7 @@ impl App {
       hover: vpdf_ui::input::links::Hover::default(),
       complete: false,
       bar: vpdf_ui::scrollbar::Bar::default(),
+      manual,
     })
   }
 }
@@ -320,6 +375,10 @@ impl App {
 
   /// Reopens the document, keeping the view where it still applies.
   pub fn reload_with(&mut self, password: &str) -> Result<()> {
+    anyhow::ensure!(
+      self.manual.is_none(),
+      "Help reloads with applied configuration"
+    );
     // A write during the open shows up as a later change.
     let stamp = crate::watch::stamp(&self.path);
     self.doc = Document::open(&self.path, password)?;

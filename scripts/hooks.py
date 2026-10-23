@@ -192,6 +192,7 @@ PYTHON_TASKS = {
     "startup": "test:startup",
     "demo": "test:demo",
     "packages": "test:packages",
+    "help_assets": "test:help-assets",
 }
 PACKAGING = {
     "scripts/build-app.sh",
@@ -238,7 +239,12 @@ def select_tests(paths, packages):
     owners, tasks, reasons = set(), set(), []
     folders = sorted(packages, key=len, reverse=True)
     for name in paths:
-        if name in PACKAGING:
+        if name.startswith(("docs/users/", "scripts/help/")) or name in {
+            "scripts/help_assets.py",
+            "scripts/help_build.rs",
+        }:
+            tasks.add("test:help")
+        elif name in PACKAGING:
             tasks.add("test:app")
             reasons.append(name)
         elif (
@@ -329,6 +335,7 @@ def affected_tests(source, paths, env):
     if owners and not reasons:
         print("Tests: affected " + ", ".join(sorted(owners)), flush=True)
         expression = " | ".join(f"rdeps(={name})" for name in sorted(owners))
+        execute(["mise", "run", "help:build"], source, env)
         execute(
             [
                 "cargo",
@@ -365,6 +372,7 @@ def pre_commit(root):
 
 def check_lint(root, env):
     commands = [
+        ["python3", "-B", "scripts/help_assets.py"],
         ["python3", "-B", "scripts/check_packages.py"],
         ["cargo", "fmt", "--all", "--check"],
         ["taplo", "fmt", "--check"],

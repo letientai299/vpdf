@@ -25,7 +25,7 @@ fn recorded_panels_outlive_their_source() {
 fn hover_requires_destination() {
   for kind in [
     PanelKind::Info,
-    PanelKind::Help,
+    PanelKind::Version,
     PanelKind::Outline,
     PanelKind::Results,
     PanelKind::Links,
@@ -80,7 +80,7 @@ fn hover_skips_indentation() {
 
 #[test]
 fn screen_scroll_keeps_panel_context() {
-  for kind in [PanelKind::Help, PanelKind::Links] {
+  for kind in [PanelKind::Version, PanelKind::Links] {
     let mut panel =
       Panel::new(kind, (0..40).map(|_| Row::parse("j: down")).collect());
     panel.scene_list(
@@ -91,7 +91,7 @@ fn screen_scroll_keeps_panel_context() {
     );
     assert!(panel.navigate(Input::plain(Action::Screen(1)), 10));
     assert_eq!(panel.selected, 6);
-    if kind == PanelKind::Help {
+    if kind == PanelKind::Version {
       assert_eq!(panel.top, 6);
     }
     assert!(panel.navigate(Input::plain(Action::Screen(-1)), 10));
@@ -230,7 +230,7 @@ fn covered_pages_keep_width() {
   let screen =
     Screen { origin: (3, 5), ..crate::testing::screen::cells(100, 24) };
   let outline = Panel::new(PanelKind::Outline, Vec::new());
-  let help = Panel::new(PanelKind::Help, Vec::new());
+  let help = Panel::new(PanelKind::Version, Vec::new());
   let recent = Panel::recent(Vec::new(), &[]);
   for (panel, dragged, left, columns) in [
     (None, None, 0, 100),

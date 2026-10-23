@@ -20,7 +20,9 @@ use std::path::{Path, PathBuf};
 const RECORD: u64 = 16 * MIB as u64;
 
 mod pack;
+mod privacy;
 mod provenance;
+pub(crate) use privacy::{Private, cacheable};
 mod record;
 pub use record::{Kind, Record};
 mod store;

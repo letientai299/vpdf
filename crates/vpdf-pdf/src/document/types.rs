@@ -8,7 +8,7 @@ pub struct PageInfo {
   pub label: OnceCell<String>,
 }
 
-pub(super) fn target(dest: mupdf::link::LinkDestination) -> Target {
+pub(crate) fn target(dest: mupdf::link::LinkDestination) -> Target {
   use mupdf::DestinationKind as D;
   let page = PageId(dest.loc.page_number as usize);
   let (x, y) = match dest.kind {

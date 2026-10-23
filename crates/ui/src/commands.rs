@@ -2,6 +2,7 @@
 pub enum Complete {
   Nothing,
   Language,
+  Help,
   Config,
   Theme,
   Path,
@@ -38,12 +39,16 @@ impl Spec {
     }
   }
 
-  fn available(&self, view: View) -> bool {
+  pub fn available(&self, view: View) -> bool {
     match view {
       View::Document => true,
       View::Recent => self.view != View::Document,
       View::Home => self.view == View::Home,
     }
+  }
+
+  pub fn topic(&self) -> String {
+    format!("ex.{}", self.name.replace('!', "-beside"))
   }
 }
 
@@ -142,7 +147,8 @@ commands! {
   Print "print" [] "" Nothing Document "open the system print dialog";
   Password "password" [] "" Nothing Document "unlock and reopen the document";
   Ocr "ocr" [] "[lang]" Language Document "recognize the page with Tesseract";
-  Help "help" ["h"] "" Nothing Recent "show the key reference";
+  Help "help" ["h"] "[topic]" Help Home "open the built-in manual";
+  HelpBeside "help!" ["h!"] "[topic]" Help Home "open help beside this pane";
   Version "version" [] "" Nothing Home "show build information";
   Quit "quit" ["q"] "" Nothing Home "close this pane, tab, then reader";
   QuitAll "qall" ["qa", "quitall"] "" Nothing Home "close every tab";
@@ -239,6 +245,7 @@ pub fn candidates(
       prefixed(supply(Complete::Language, argument), argument)
     }
     Some(Complete::Path) => supply(Complete::Path, argument),
+    Some(Complete::Help) => supply(Complete::Help, argument),
     Some(Complete::Theme) => prefixed(
       vpdf_model::theme::Theme::ALL
         .iter()
@@ -407,7 +414,7 @@ mod tests {
       ("tabclose", true, true),
       ("split", false, true),
       ("toc", false, true),
-      ("help", false, true),
+      ("help", true, true),
       ("mouse", false, true),
       ("ocr", false, false),
       ("reload", false, false),

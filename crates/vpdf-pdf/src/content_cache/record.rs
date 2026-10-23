@@ -60,7 +60,7 @@ impl Record {
     code: &str,
     ready: impl FnMut() -> bool,
   ) -> Option<Self> {
-    if !password.is_empty() {
+    if !super::cacheable(source, password) {
       return None;
     }
     let mut file = File::open(source).ok()?;

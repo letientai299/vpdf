@@ -1,0 +1,23 @@
+{
+  "chapters": [
+    "readme.md",
+    "intro.md",
+    "sample.md",
+    "keys.md",
+    "nav.md",
+    "zoom.md",
+    "search.md",
+    "links.md",
+    "yank.md",
+    "regions.md",
+    "ocr.md",
+    "marks.md",
+    "panes.md",
+    "config.md",
+    "reading.md",
+    "status.md",
+    "install.md",
+    "troubleshooting.md",
+    "commands.md"
+  ]
+}

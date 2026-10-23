@@ -187,7 +187,6 @@ fn main() -> Result<()> {
     ("gesture selection", gestures::selection),
     ("link state", links::transitions),
     ("panel content", content::rows),
-    ("help reference", content::help),
     ("panel input", content::input),
     ("overview input", overview),
     ("outline tracking", content::tracking),

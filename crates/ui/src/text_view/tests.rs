@@ -14,7 +14,7 @@ fn view(
   (height, columns): (usize, usize),
   top: Position,
 ) -> View {
-  View::new(pages, (height, columns), top).expect("view")
+  View::new(pages, (height, columns), top, false).expect("view")
 }
 
 /// The origin a `(height, columns)` view at `top` keeps for `cursor`.
@@ -297,5 +297,44 @@ fn cursorline_follows_reader_mode() -> Result<()> {
       assert!(!paint.on_cursorline(at(0, 1, 0)));
     }
   }
+  Ok(())
+}
+
+#[test]
+fn wrapped_rows_preserve_positions() -> Result<()> {
+  let mut pages =
+    vec![text(&["abc def ghij", "日本語の本", "end"]), text(&["next"])];
+  let view = View::new(&mut pages, (10, 5), at(0, 0, 0), true)?;
+  for (column, row, expected) in [
+    (0, 0, at(0, 0, 0)),
+    (0, 1, at(0, 0, 4)),
+    (0, 2, at(0, 0, 8)),
+    (1, 2, at(0, 0, 9)),
+    (0, 3, at(0, 1, 0)),
+    (0, 4, at(0, 1, 2)),
+    (0, 5, at(0, 1, 4)),
+  ] {
+    assert_eq!(view.hit(column, row), Some(expected));
+    assert_eq!(view.cell(expected), Some((column, row)));
+  }
+  let mut drawn = Vec::new();
+  for row in view.rows() {
+    if let Row::Line(at, line) = row {
+      Extend::extend(
+        &mut drawn,
+        view
+          .shown(at, &line.glyphs)
+          .map(|(glyph, _, _)| Position { glyph, ..at }),
+      );
+    }
+  }
+  let mut unique = drawn.clone();
+  unique.sort();
+  unique.dedup();
+  assert_eq!(drawn.len(), unique.len());
+  assert_eq!(wrap::step(&mut pages, at(0, 0, 0), 2, 5)?.0, at(0, 0, 8));
+  assert_eq!(wrap::step(&mut pages, at(0, 0, 8), -1, 5)?.0, at(0, 0, 4));
+  let top = view.keep_visible(at(0, 0, 9), &mut pages)?;
+  assert_eq!(top, at(0, 0, 0));
   Ok(())
 }

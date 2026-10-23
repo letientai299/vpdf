@@ -1,4 +1,5 @@
 mod bindings;
+mod reference;
 use clap::Args;
 use serde::Serialize;
 use std::ffi::OsStr;
@@ -45,13 +46,25 @@ impl Options {
   }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct Settings {
   appearance: Appearance,
   reading: Reading,
   ocr: Ocr,
   #[serde(rename = "keybindings")]
   bindings: vpdf_ui::bindings::Bindings,
+  #[serde(skip)]
+  reference: reference::Resolved,
+}
+
+// Provenance does not change setting values.
+impl PartialEq for Settings {
+  fn eq(&self, other: &Self) -> bool {
+    self.appearance == other.appearance
+      && self.reading == other.reading
+      && self.ocr == other.ocr
+      && self.bindings == other.bindings
+  }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -144,6 +157,11 @@ impl Settings {
 
   pub(crate) fn set_theme(&mut self, theme: vpdf_model::theme::Theme) {
     self.appearance.theme = theme;
+    self.reference.generation += 1;
+    self
+      .reference
+      .sources
+      .insert("appearance.theme".into(), vpdf_ui::reference::Source::Command);
   }
 
   pub fn bindings(&self) -> &vpdf_ui::bindings::Bindings {
@@ -272,16 +290,22 @@ impl Source {
 
   pub fn reload(&self, previous: &Settings) -> Loaded {
     let Self::File { path, explicit } = self else {
-      return Loaded::default();
+      let mut loaded = Loaded::default();
+      loaded.settings.bindings.remember(&previous.bindings);
+      loaded.settings.reference.generation = previous.reference.generation + 1;
+      return loaded;
     };
     let mut loaded = match std::fs::read_to_string(path) {
       Ok(text) => parse_with(path, &text, previous),
       Err(error) if !explicit && error.kind() == io::ErrorKind::NotFound => {
-        Loaded::default()
+        let mut loaded = Loaded::default();
+        loaded.settings.bindings.remember(&previous.bindings);
+        loaded
       }
       Err(error) => finish(path, previous.clone(), &[error.to_string()]),
     };
     loaded.source = self.clone();
+    loaded.settings.reference.generation = previous.reference.generation + 1;
     loaded
   }
 }
@@ -304,12 +328,13 @@ fn parse_with(path: &Path, text: &str, previous: &Settings) -> Loaded {
     }
   };
   let mut settings = Settings::default();
+  settings.reference.generation = previous.reference.generation;
   let mut warnings = Vec::new();
   if let Some(root) = value.as_table() {
     for (section, value) in root {
       if section == "keybindings" {
         settings.bindings =
-          bindings::parse(value, &previous.bindings, &mut warnings);
+          bindings::parse(value, &previous.bindings, path, &mut warnings);
         continue;
       }
       if !matches!(section.as_str(), "appearance" | "reading" | "ocr") {
@@ -324,6 +349,14 @@ fn parse_with(path: &Path, text: &str, previous: &Settings) -> Loaded {
           "ocr" => settings.ocr = previous.ocr.clone(),
           _ => {}
         }
+        settings.reference.sources.extend(
+          previous
+            .reference
+            .sources
+            .iter()
+            .filter(|(name, _)| name.starts_with(&format!("{section}.")))
+            .map(|(name, source)| (name.clone(), source.clone())),
+        );
         continue;
       };
       for (key, value) in table {
@@ -331,10 +364,19 @@ fn parse_with(path: &Path, text: &str, previous: &Settings) -> Loaded {
         let result = settings.apply(&name, value, previous);
         if let Err(error) = result {
           warnings.push(format!("{name}: {error}"));
+          let source =
+            previous.reference.sources.get(&name).cloned().unwrap_or_default();
+          settings.reference.sources.insert(name, source);
+        } else {
+          settings
+            .reference
+            .sources
+            .insert(name, vpdf_ui::reference::Source::File(path.to_owned()));
         }
       }
     }
   }
+  settings.bindings.remember(&previous.bindings);
   finish(path, settings, &warnings)
 }
 
@@ -347,7 +389,12 @@ fn replace_setting<T: Clone>(
   candidate.map(|_| ())
 }
 
-fn finish(path: &Path, settings: Settings, warnings: &[String]) -> Loaded {
+fn finish(path: &Path, mut settings: Settings, warnings: &[String]) -> Loaded {
+  settings.reference.generation += 1;
+  settings.reference.warnings = warnings
+    .iter()
+    .map(|warning| vpdf_model::text::printable(warning).collect())
+    .collect();
   let warning = (!warnings.is_empty()).then(|| {
     let message = format!("Config {}: {}", path.display(), warnings.join("; "));
     vpdf_model::text::printable(&message).collect()

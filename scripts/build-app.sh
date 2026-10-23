@@ -5,6 +5,7 @@ if [ "$(uname -s)" != Darwin ]; then
   exit 1
 fi
 build_dir="${CARGO_TARGET_DIR:-target}"
+help_assets=$(python3 -B scripts/help_assets.py)
 target=$(rustc --print host-tuple)
 . scripts/build-features.sh
 cargo build --profile app --locked -p vpdf-gui --target "$target" "$@"
@@ -19,6 +20,7 @@ app="$staged/image/Vpdf.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 install -m 755 "$binary" "$app/Contents/MacOS/vpdf-gui"
 cp LICENSE LICENSE-AGPL "$app/Contents/Resources/"
+cp "$help_assets/font-notices.txt" "$app/Contents/Resources/"
 cp docs/assets/vpdf.icns "$app/Contents/Resources/Vpdf.icns"
 version=$(cargo metadata --locked --no-deps --format-version 1 |
   python3 -c '

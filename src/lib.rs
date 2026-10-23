@@ -14,6 +14,7 @@ pub mod inline;
 mod input;
 pub mod jobs;
 pub mod links;
+pub mod manual;
 mod navigation;
 mod overlays;
 mod overview;

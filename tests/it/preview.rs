@@ -169,7 +169,7 @@ fn preview_border_stays_inside_resized_pane() -> Result<()> {
   for text in [false, true] {
     let mut app = open(text)?;
     let cursor = app.reader.cursor;
-    app.open_panel(PanelKind::Help)?;
+    app.open_panel(PanelKind::Version)?;
     app.panel.as_mut().unwrap().view.focus(false);
     app.go_to(cursor, true)?;
     keys(&mut app, b"K")?;

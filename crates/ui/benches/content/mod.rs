@@ -215,27 +215,6 @@ pub fn input() -> Result<()> {
   })
 }
 
-pub fn help() -> Result<()> {
-  use vpdf_model::geometry::At;
-  use vpdf_ui::keys::PanelKind;
-  use vpdf_ui::panel::{Panel, help};
-  super::measure("panel::help reference", || {
-    black_box(help(|_| true));
-  })?;
-  for width in [30, 64] {
-    let rows = help(|_| true).iter().map(|line| Row::parse(line)).collect();
-    let mut panel = Panel::new(PanelKind::Help, rows);
-    let mut out = Vec::new();
-    panel.scene_list(&mut out, At::default(), width, 24);
-    super::measure(&format!("Panel::help scene {width}x24"), || {
-      out.clear();
-      panel.scene_list(&mut out, At::default(), width, 24);
-      black_box(&out);
-    })?;
-  }
-  Ok(())
-}
-
 pub fn definition() -> Result<()> {
   use vpdf_model::text::PageId;
   use vpdf_search::reference::Reference;

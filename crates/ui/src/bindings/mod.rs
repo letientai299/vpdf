@@ -11,13 +11,28 @@ mod context;
 pub use context::Context;
 mod sequence;
 pub use sequence::Sequence;
+mod snapshot;
+use crate::reference::Source;
+pub use snapshot::{Binding, Snapshot, Unbound};
+use std::collections::BTreeMap;
 use vpdf_model::input::{KeyEvent, KeyEventKind};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Map<T> {
   entries: Vec<(Sequence, T)>,
   disabled: Vec<Sequence>,
+  sources: BTreeMap<String, Source>,
+  known: Vec<Sequence>,
 }
+
+// Provenance does not change dispatch.
+impl<T: PartialEq> PartialEq for Map<T> {
+  fn eq(&self, other: &Self) -> bool {
+    self.entries == other.entries && self.disabled == other.disabled
+  }
+}
+
+impl<T: Eq> Eq for Map<T> {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Change<T> {
@@ -41,7 +56,12 @@ pub struct Diagnostic {
 impl<T> Map<T> {
   pub fn new(mut entries: Vec<(Sequence, T)>) -> crate::Result<Self> {
     entries.sort_by_key(|(sequence, _)| sequence.to_string());
-    let map = Self { entries, disabled: Vec::new() };
+    let map = Self {
+      entries,
+      disabled: Vec::new(),
+      sources: BTreeMap::new(),
+      known: Vec::new(),
+    };
     anyhow::ensure!(map.conflicts().is_empty(), "Ambiguous binding map");
     Ok(map)
   }
@@ -66,6 +86,31 @@ impl<T> Map<T> {
     self.disabled.iter()
   }
 
+  pub fn source(&self, sequence: &Sequence) -> Source {
+    self.sources.get(&sequence.to_string()).cloned().unwrap_or_default()
+  }
+
+  pub fn known(&self) -> impl Iterator<Item = &Sequence> {
+    self
+      .known
+      .iter()
+      .chain(self.disabled.iter())
+      .chain(self.entries.iter().map(|(sequence, _)| sequence))
+  }
+
+  pub fn remember(&mut self, previous: &Self) {
+    self.recognize(previous.known().cloned());
+  }
+
+  pub(crate) fn recognize(
+    &mut self,
+    sequences: impl IntoIterator<Item = Sequence>,
+  ) {
+    self.known.extend(sequences);
+    self.known.sort_by_key(ToString::to_string);
+    self.known.dedup();
+  }
+
   fn conflicts(&self) -> Vec<(Sequence, Sequence)> {
     let mut conflicts = Vec::new();
     for (index, (left, _)) in self.entries.iter().enumerate() {
@@ -85,6 +130,7 @@ impl<T: Clone> Map<T> {
   fn replace(&mut self, sequence: &Sequence, target: Option<&T>) {
     self.entries.retain(|(key, _)| key != sequence);
     self.disabled.retain(|key| key != sequence);
+    self.sources.remove(&sequence.to_string());
     if let Some(target) = target {
       self.entries.push((sequence.clone(), target.clone()));
     }
@@ -92,6 +138,7 @@ impl<T: Clone> Map<T> {
 
   fn restore(&mut self, sequence: &Sequence, previous: &Self) {
     self.replace(sequence, previous.get(sequence));
+    self.sources.insert(sequence.to_string(), previous.source(sequence));
     if previous.is_unbound(sequence) {
       self.disabled.push(sequence.clone());
     }
@@ -102,10 +149,22 @@ impl<T: Clone> Map<T> {
     previous: &Self,
     edits: &[Edit<T>],
   ) -> (Self, Vec<Diagnostic>) {
-    if edits.is_empty() {
-      return (self.clone(), Vec::new());
-    }
+    self.apply_sourced(previous, edits, |_| Source::Default)
+  }
+
+  pub fn apply_sourced(
+    &self,
+    previous: &Self,
+    edits: &[Edit<T>],
+    source: impl Fn(&Sequence) -> Source,
+  ) -> (Self, Vec<Diagnostic>) {
     let mut candidate = self.clone();
+    if edits.is_empty() {
+      candidate.remember(previous);
+      return (candidate, Vec::new());
+    }
+    candidate.known.extend(previous.known().cloned());
+    candidate.known.extend(edits.iter().map(|edit| edit.sequence.clone()));
     let mut diagnostics = Vec::new();
     let mut ordered: Vec<_> = edits.iter().collect();
     ordered.sort_by_key(|edit| edit.sequence.to_string());
@@ -133,6 +192,12 @@ impl<T: Clone> Map<T> {
         }
       };
       candidate.replace(&edit.sequence, target);
+      let origin = if duplicate || matches!(&edit.change, Change::Invalid(_)) {
+        previous.source(&edit.sequence)
+      } else {
+        source(&edit.sequence)
+      };
+      candidate.sources.insert(edit.sequence.to_string(), origin);
       let disabled = if duplicate || matches!(&edit.change, Change::Invalid(_))
       {
         previous.is_unbound(&edit.sequence)
@@ -165,6 +230,8 @@ impl<T: Clone> Map<T> {
     candidate.disabled.sort_by_key(ToString::to_string);
     candidate.disabled.dedup();
     candidate.entries.sort_by_key(|(sequence, _)| sequence.to_string());
+    candidate.known.sort_by_key(ToString::to_string);
+    candidate.known.dedup();
     diagnostics.sort_by(|left, right| {
       (&left.sequence, &left.reason).cmp(&(&right.sequence, &right.reason))
     });
@@ -331,6 +398,17 @@ mod tests {
     let (reset, warnings) = defaults.apply(&next, &[]);
     assert_eq!(warnings, Vec::<Diagnostic>::new());
     assert_eq!(reset, defaults);
+  }
+
+  #[test]
+  fn empty_edits_keep_history() {
+    let defaults = map(&[("q", 1)]);
+    let previous = map(&[("q", 1), ("xy", 2)]);
+    let (next, warnings) = defaults
+      .apply_sourced(&previous, &[], |_| panic!("Empty edits have no source"));
+    assert_eq!(next, defaults);
+    assert_eq!(warnings, Vec::<Diagnostic>::new());
+    assert!(next.known().any(|key| *key == sequence("xy")));
   }
 
   #[test]

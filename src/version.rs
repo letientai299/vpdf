@@ -14,7 +14,11 @@ pub fn text(terminal: bool) -> String {
   let revision = env!("VPDF_SOURCE_REVISION");
   let dirty = env!("VPDF_SOURCE_DIRTY");
   let patch = env!("VPDF_SOURCE_PATCH");
-  format!("{ABOUT}\nbuild-source {revision} {dirty} {patch}\n{name} {BUILD}")
+  let help = crate::manual::identity();
+  format!(
+    "{ABOUT}\nbuild-source {revision} {dirty} {patch}\n\
+     help-assets {help}\n{name} {BUILD}"
+  )
 }
 
 pub fn parse<T: clap::Parser>(terminal: bool) -> T {

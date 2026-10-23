@@ -112,7 +112,7 @@ impl Pointing {
   }
 }
 
-pub use info::{DocumentInfo, Info, document_lines, help, metadata_lines};
+pub use info::{DocumentInfo, Info, document_lines, metadata_lines};
 pub use rows::key_width;
 mod info;
 
@@ -121,7 +121,7 @@ mod focus_tests;
 #[cfg(test)]
 mod follow_tests;
 #[cfg(test)]
-mod help_tests;
+mod wrap_tests;
 
 mod content;
 mod follow;

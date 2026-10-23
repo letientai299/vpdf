@@ -801,7 +801,7 @@ fn outline_waits_for_focus_and_ignores_other_panels() {
   use crate::keys::PanelKind;
   use crate::panel::{Panel, Row};
 
-  for kind in [PanelKind::Outline, PanelKind::Help] {
+  for kind in [PanelKind::Outline, PanelKind::Version] {
     let mut fixture = Fixture::new();
     fixture.source.headings = named_headings();
     fixture.reader.enter_cursor();

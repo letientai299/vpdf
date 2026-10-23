@@ -1,6 +1,6 @@
 use super::{InputOwner, transfers_overlay};
 use crate::context::{ContextMenu, Transition as Menu};
-use crate::keys::{Action, Grammar, Input, Keys, PanelKind, parse};
+use crate::keys::{Action, Grammar, Input, Keys, parse};
 use crate::layout::Layout;
 use crate::overview::{Grid, Navigation, Overview};
 use crate::preview::{Event, Preview};
@@ -34,7 +34,7 @@ fn transfer_preserves_input() {
     Action::Tab(true),
     Action::LocalFocus,
     Action::History(false),
-    Action::Panel(PanelKind::Help),
+    Action::Help,
     Action::ClosePanel,
   ] {
     assert!(transfers_overlay(action));
@@ -150,7 +150,7 @@ fn overview_ignores_unhandled_actions() {
   assert_eq!(overview.selected(), 3);
   for action in [
     Action::Command,
-    Action::Panel(PanelKind::Help),
+    Action::Help,
     Action::ClosePanel,
     Action::LocalFocus,
     Action::YankPath,

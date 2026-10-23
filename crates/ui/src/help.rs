@@ -190,9 +190,9 @@ mod tests {
   }
 
   #[test]
-  fn help_fits_narrow_panes() {
-    let rows: Vec<_> =
-      crate::panel::help(|_| true).iter().map(|s| Row::parse(s)).collect();
+  fn wrapped_rows_fit() {
+    let rows =
+      ["# Build", "Version: development", "License: MIT"].map(Row::parse);
     for columns in [4, 10, 24, 40, 63] {
       let layout = Layout::help(&rows, columns);
       for line in &layout.lines {

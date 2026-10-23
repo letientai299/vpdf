@@ -115,7 +115,7 @@ fn cursor_escape_cancels_only_active_layer() -> Result<()> {
   assert_eq!(app.overlays.prompt().unwrap().text(), "i");
   keys(&mut app, ESC)?;
   assert_eq!(app.reader.mode(), Mode::Cursor);
-  app.open_panel(PanelKind::Help)?;
+  app.open_panel(PanelKind::Version)?;
   keys(&mut app, b"ia")?;
   assert_eq!(app.input_owner(), InputOwner::Panel);
   keys(&mut app, ESC)?;

@@ -167,6 +167,7 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
   let mut drawn = Instant::now();
   let mut title = String::new();
   while session.running() {
+    dirty |= session.help_updates(&mut out);
     dirty |= session.print_update();
     if terminal::resize_deferred() {
       let measured = terminal::remeasure().map(Some);
@@ -415,6 +416,7 @@ impl Session {
       if let Some(warning) = self.startup_warning.take() {
         home.view.fail(warning);
       }
+      self.graphics.clear(out)?;
       home.configure(&self.settings);
       home.draw(out)?;
       self.perf.frame(Instant::now());
@@ -430,6 +432,25 @@ impl Session {
       out.flush()?;
     }
     Ok(())
+  }
+
+  fn home_help(&mut self, home: &mut Home, topic: &str) {
+    if let Err(error) = self.request_help(
+      topic,
+      vpdf_ui::topics::Invocation::Home,
+      home.view.screen(),
+    ) {
+      home.view.fail(error.to_string());
+    }
+  }
+
+  fn home_sight(&mut self, event: &Event) {
+    if matches!(event, Event::Key(_)) {
+      self.sight = Sight::Focused;
+    }
+    if matches!(event, Event::Mouse(_)) && self.sight == Sight::Hidden {
+      self.sight = Sight::Unfocused;
+    }
   }
 
   /// Draws the start screen and handles one input.
@@ -480,13 +501,7 @@ impl Session {
         self.look(Cause::FocusOut, out).map(drop)
       };
     }
-    // Only a shown pane gets keys, and the pointer.
-    if matches!(event, Event::Key(_)) {
-      self.sight = Sight::Focused;
-    }
-    if matches!(event, Event::Mouse(_)) && self.sight == Sight::Hidden {
-      self.sight = Sight::Unfocused;
-    }
+    self.home_sight(&event);
     if let Event::Resize(report) = event {
       let measured = terminal::resized(report, self.screen);
       self.home = Some(home);
@@ -503,6 +518,9 @@ impl Session {
         if self.leave_home(&mut home, &path) {
           return home.release(out);
         }
+      }
+      Ok(Outcome::Help(topic)) => {
+        self.home_help(&mut home, &topic);
       }
       Ok(Outcome::Quit) => return Ok(()),
       Ok(Outcome::Pick) => {

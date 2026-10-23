@@ -89,7 +89,30 @@ impl Panel {
 
   /// Includes actions delegated to the application.
   pub fn allows(&self, action: Action) -> bool {
-    !self.focused() || !matches!(self.route(action), Route::Ignore)
+    !self.focused()
+      || matches!(action, Action::Cancel | Action::LocalFocus)
+      || !matches!(self.route(action), Route::Ignore)
+  }
+
+  pub fn purpose(&self, action: Action) -> Option<&'static str> {
+    match action {
+      Action::Motion(vpdf_reader::motion::Motion::Down) => {
+        return Some("select next row; keep panel focus");
+      }
+      Action::Motion(vpdf_reader::motion::Motion::Up) => {
+        return Some("select previous row; keep panel focus");
+      }
+      _ => {}
+    }
+    Some(match self.route(action) {
+      Route::Close => "close panel",
+      Route::Copy => "copy panel row",
+      Route::Preview => "preview annotation",
+      Route::OpenUri => "open row URL",
+      Route::Follow => "follow panel row",
+      Route::Keep => "follow without focusing content",
+      Route::Navigate | Route::Unhandled | Route::Ignore => return None,
+    })
   }
 
   fn route(&self, action: Action) -> Route {
@@ -111,7 +134,8 @@ impl Panel {
       Action::OpenUrl => Route::OpenUri,
       Action::Follow => Route::Follow,
       Action::Swap if !self.is_recent_view() => Route::Keep,
-      Action::YankPath
+      Action::Help
+      | Action::YankPath
       | Action::Command
       | Action::Search(_)
       | Action::Window(_)

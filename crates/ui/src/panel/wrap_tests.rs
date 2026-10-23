@@ -5,7 +5,7 @@ fn scrolling_can_enter_wrapped_rows() {
   let rows = ["# Move", "j: one two three four five six seven eight nine ten"]
     .map(Row::parse)
     .into();
-  let mut panel = Panel::new(PanelKind::Help, rows);
+  let mut panel = Panel::new(PanelKind::Version, rows);
   panel.scene_list(&mut Vec::new(), vpdf_model::geometry::At::default(), 12, 4);
   panel.selected = 1;
   for top in 1..=3 {
@@ -24,7 +24,7 @@ fn scrolling_can_enter_wrapped_rows() {
 fn wrapped_rows_keep_their_source() {
   let rows =
     ["# Move", "j: one two three four five", "k: up"].map(Row::parse).into();
-  let mut panel = Panel::new(PanelKind::Help, rows);
+  let mut panel = Panel::new(PanelKind::Version, rows);
   panel.scene_list(&mut Vec::new(), vpdf_model::geometry::At::default(), 15, 6);
   let press =
     |row| MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 5, row);

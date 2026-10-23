@@ -55,6 +55,7 @@ impl std::error::Error for PasswordRequired {}
 pub struct Handle {
   pub native: PdfDocument,
   pub pages: usize,
+  pub(crate) cacheable: bool,
 }
 
 impl Handle {
@@ -66,7 +67,8 @@ impl Handle {
     }
     let pages = usize::try_from(native.page_count()?)?;
     ensure!(pages > 0, "PDF contains no pages");
-    Ok(Self { native, pages })
+    let cacheable = crate::content_cache::cacheable(path, password);
+    Ok(Self { native, pages, cacheable })
   }
 
   fn validate(&self, page: PageId) -> Result<()> {
@@ -210,7 +212,7 @@ impl Document {
     password: &str,
     mut ready: impl FnMut() -> bool,
   ) -> Result<Self> {
-    let Handle { native, pages: count } = Handle::open(path, password)?;
+    let Handle { native, pages: count, .. } = Handle::open(path, password)?;
     let mut pages = Vec::with_capacity(count);
     for index in 0..count {
       ensure!(ready(), "Document load stopped");
@@ -336,6 +338,7 @@ pub use extraction::{TEXT_FLAGS, extract, extract_list};
 use metadata::date;
 use metadata::{metadata, outline};
 pub use types::PageInfo;
+pub(crate) use types::target as link_target;
 pub use vpdf_model::document::{Annotation, Heading, Link, Target};
 
 #[cfg(test)]

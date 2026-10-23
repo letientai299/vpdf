@@ -26,12 +26,14 @@ pub mod pointer;
 pub mod preview;
 pub mod prompt;
 pub mod reading;
+pub mod reference;
 pub mod region;
 pub mod scrollbar;
 pub mod source;
 pub mod split;
 pub mod text_view;
 pub mod theme;
+pub mod topics;
 pub mod window;
 
 #[cfg(test)]

@@ -14,6 +14,7 @@ pub fn feed(
   history: &History,
   view: View,
   terminal: bool,
+  topics: impl FnOnce(&str) -> Result<Vec<vpdf_ui::topics::Candidate>>,
 ) -> Result<PromptEvent> {
   Ok(match prompt.feed(key, history) {
     PromptEvent::Editor => {
@@ -22,12 +23,50 @@ pub fn feed(
       PromptEvent::Edited
     }
     PromptEvent::Complete if prompt.kind() == PromptKind::Command => {
-      let (start, items) = candidates(prompt.before_cursor(), view, terminal);
+      let candidates =
+        topics(help_query(prompt.before_cursor()).unwrap_or(""))?;
+      let names: Vec<_> =
+        candidates.iter().map(|item| item.name.clone()).collect();
+      let (start, items) =
+        complete(prompt.before_cursor(), view, terminal, &names);
+      let help = help_query(prompt.before_cursor()).is_some();
       prompt.complete(start, items);
+      if help {
+        prompt.describe(|name| describe(name, &candidates));
+      }
       PromptEvent::Edited
     }
     event => event,
   })
+}
+
+pub(crate) fn help_query(before: &str) -> Option<&str> {
+  let commands::Resolution::Command { spec, argument } =
+    commands::resolve(before, View::Document, |_| true, |_| false).ok()?
+  else {
+    return None;
+  };
+  matches!(spec.id, commands::Id::Help | commands::Id::HelpBeside)
+    .then_some(argument)
+}
+
+pub(crate) fn describe(
+  name: &str,
+  candidates: &[vpdf_ui::topics::Candidate],
+) -> String {
+  candidates.iter().find(|candidate| candidate.name == name).map_or_else(
+    || name.into(),
+    |candidate| {
+      let group = match (&candidate.destination, &candidate.action) {
+        (vpdf_ui::topics::Destination::Authored(_), _) => "Guide",
+        (vpdf_ui::topics::Destination::Configuration, _) => "Settings",
+        (vpdf_ui::topics::Destination::Command(_), _) => "Command",
+        (_, Some(_)) => "Key",
+        _ => "Action",
+      };
+      format!("{name}  [{group}] {}", candidate.description)
+    },
+  )
 }
 
 /// Whether `program` is an executable file on `PATH`.
@@ -46,6 +85,15 @@ pub fn candidates(
   view: View,
   terminal: bool,
 ) -> (usize, Vec<String>) {
+  complete(before, view, terminal, &[])
+}
+
+pub(crate) fn complete(
+  before: &str,
+  view: View,
+  terminal: bool,
+  topics: &[String],
+) -> (usize, Vec<String>) {
   commands::candidates(
     before,
     view,
@@ -53,6 +101,11 @@ pub fn candidates(
     |kind, argument| match kind {
       Complete::Path => paths(argument),
       Complete::Language => languages().to_vec(),
+      Complete::Help => topics
+        .iter()
+        .filter(|name| name.starts_with(argument))
+        .cloned()
+        .collect(),
       _ => Vec::new(),
     },
   )

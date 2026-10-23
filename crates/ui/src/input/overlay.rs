@@ -33,7 +33,10 @@ impl<'a> Overlay<'a> {
   pub fn rows(&self) -> u16 {
     self.menu.map_or_else(
       || self.clues.rows(self.screen),
-      |menu| u16::try_from(menu.grid(self.screen).visible).unwrap_or(0),
+      |menu| {
+        u16::try_from(menu.grid(self.screen).visible).unwrap_or(0)
+          + menu.footer_rows(self.screen)
+      },
     )
   }
 
@@ -140,6 +143,38 @@ mod tests {
     assert_eq!(cells.at(0, 6), None);
     assert_eq!(cells.at(0, 11), None);
     assert_eq!(cells.at(20, 7), None);
+  }
+
+  #[test]
+  fn guidance_matches_hit_testing() {
+    for rows in [2, 3, 12] {
+      let screen = Screen { rows, columns: 80, ..screen() };
+      let mut prompt = Prompt::new(PromptKind::Command);
+      prompt.replace("help se");
+      prompt.complete(5, vec!["search".into(), "selection".into()]);
+      prompt.describe(str::to_owned);
+      let clues = Clues::default();
+      let overlay = Overlay::new(screen, Some(&prompt), &clues);
+      let menu = prompt.menu().unwrap();
+      assert_eq!(
+        overlay.rows(),
+        menu.grid(screen).visible as u16 + menu.footer_rows(screen)
+      );
+      assert_eq!(overlay.completions().at(0, overlay.top()), Some(0));
+      let mut output = Vec::new();
+      prompt.scene(&mut output, screen, At::default(), None);
+      let text = crate::testing::text(&output);
+      if rows >= 3 {
+        assert!(text.contains("Unselected"), "{text}");
+        assert!(text.contains("submit query"), "{text}");
+        assert!(text.contains("<Esc> cancel"), "{text}");
+        assert_eq!(overlay.completions().at(0, rows - 2), None);
+        prompt.pick(0);
+        output.clear();
+        prompt.scene(&mut output, screen, At::default(), None);
+        assert!(crate::testing::text(&output).contains("open"));
+      }
+    }
   }
 
   #[test]

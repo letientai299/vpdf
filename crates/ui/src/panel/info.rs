@@ -96,16 +96,6 @@ pub fn document_lines(place: String, bytes: u64, pages: usize) -> Vec<String> {
   ]
 }
 
-pub fn help(installed: impl Fn(&str) -> bool) -> Vec<String> {
-  let reference = crate::keys::reference();
-  let keys = reference.lines().map(str::to_owned);
-  let commands = crate::commands::commands(installed).map(|spec| {
-    let usage = if spec.usage.is_empty() { "" } else { " " };
-    format!(":{}{usage}{}: {}", spec.name, spec.usage, spec.help)
-  });
-  keys.chain([String::new(), "# Commands".into()]).chain(commands).collect()
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;

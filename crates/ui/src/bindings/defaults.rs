@@ -36,6 +36,20 @@ impl Bindings {
   pub fn set(&mut self, context: Context, map: Map<Target>) {
     self.maps.insert(context, Arc::new(map));
   }
+
+  pub fn remember(&mut self, previous: &Self) {
+    let customized = *previous != Self::default();
+    for (&context, map) in &mut self.maps {
+      Arc::make_mut(map).remember(&previous.map(context));
+      if customized {
+        Arc::make_mut(map).recognize(
+          keys::Keys::references(context, previous)
+            .into_iter()
+            .map(|row| row.sequence),
+        );
+      }
+    }
+  }
 }
 
 fn default_map(context: Context) -> Map<Target> {
@@ -215,9 +229,10 @@ fn reader_defaults(context: Context, entries: &mut Vec<(Sequence, Target)>) {
     ("<PageDown>", Action::Scroll(1.0)),
     ("<Home>", Action::Motion(Motion::First)),
     ("<End>", Action::Motion(Motion::Last)),
-    ("<F1>", Action::Panel(keys::PanelKind::Help)),
+    ("<F1>", Action::Help),
     ("<S-Tab>", Action::LocalFocus),
     ("<C-m>", Action::Follow),
+    ("<C-]>", Action::Follow),
   ] {
     add(entries, key, Target::Reader(action));
   }

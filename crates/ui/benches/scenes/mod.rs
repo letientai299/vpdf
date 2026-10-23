@@ -4,7 +4,7 @@ use vpdf_model::geometry::At;
 use vpdf_model::scene::{Recorder, Scene};
 use vpdf_ui::keys::PanelKind;
 use vpdf_ui::layout::tiles::{Frame, Tiles, View};
-use vpdf_ui::panel::{Panel, Row, help};
+use vpdf_ui::panel::{Panel, Row};
 
 pub fn compose() -> Result<()> {
   let geometry: super::Geometry = super::fixture("geometry")?;
@@ -31,8 +31,9 @@ pub fn compose() -> Result<()> {
       },
     )?;
   }
-  let rows = help(|_| false).iter().map(|line| Row::parse(line)).collect();
-  let mut panel = Panel::new(PanelKind::Help, rows);
+  let rows =
+    ["# Build", "Version: development", "License: MIT"].map(Row::parse).into();
+  let mut panel = Panel::new(PanelKind::Version, rows);
   let mut scene = Scene::new();
   super::measure("Panel::scene_list", || {
     scene.clear();

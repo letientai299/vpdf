@@ -70,6 +70,20 @@ class RoutingTests(unittest.TestCase):
             (set(), set(), []),
         )
 
+    def test_manual_checks_pdf(self):
+        for name in [
+            "docs/users/navigation.md",
+            "docs/users/readme.md",
+            "scripts/help/manual.typ",
+            "scripts/help_assets.py",
+            "scripts/help_build.rs",
+        ]:
+            with self.subTest(name=name):
+                self.assertEqual(
+                    hooks.select_tests([name], {}),
+                    (set(), {"test:help"}, []),
+                )
+
     def test_downstream_filter(self):
         with (
             patch.object(hooks, "package_folders", return_value=self.packages),
@@ -81,6 +95,9 @@ class RoutingTests(unittest.TestCase):
                 {},
             )
         command = run.call_args.args[0]
+        self.assertEqual(
+            run.call_args_list[0].args[0], ["mise", "run", "help:build"]
+        )
         self.assertEqual(
             command[command.index("-E") + 1], "rdeps(=vpdf) | rdeps(=vpdf-ui)"
         )

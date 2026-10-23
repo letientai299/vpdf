@@ -83,7 +83,7 @@ impl App {
 
   pub(crate) fn watch_at(&mut self, at: Instant) -> Result<bool> {
     // A covered document counts as closed; uncovering checks again.
-    if self.covered() {
+    if self.covered() || self.manual.is_some() {
       self.settling = None;
       return Ok(false);
     }

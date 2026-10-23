@@ -252,6 +252,10 @@ impl App {
 
   pub fn region_operation(&mut self, operation: Operation) -> Result<()> {
     anyhow::ensure!(
+      self.manual.is_none() || !matches!(operation, Operation::Save),
+      "Saving help captures unavailable"
+    );
+    anyhow::ensure!(
       self.region_job.is_none() && self.region_send.is_none(),
       "Region operation running"
     );

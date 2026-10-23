@@ -21,6 +21,7 @@ pub enum Outcome {
   Theme(vpdf_model::theme::Theme),
   Perf(Option<bool>),
   Open(PathBuf),
+  Help(String),
   Pick,
   Quit,
 }
@@ -30,6 +31,7 @@ pub struct Home {
   loader: Loader,
   graphics: Graphics,
   theme: vpdf_model::theme::Theme,
+  settings: crate::config::Settings,
 }
 
 impl Home {
@@ -48,10 +50,12 @@ impl Home {
       loader: Loader::new("", wake),
       graphics: Graphics::live(),
       theme: vpdf_model::theme::Theme::Default,
+      settings: crate::config::Settings::default(),
     }
   }
 
   pub(crate) fn configure(&mut self, settings: &crate::config::Settings) {
+    self.settings = settings.clone();
     self.theme = settings.theme();
     self.view.set_bindings(settings.bindings().clone());
   }
@@ -143,8 +147,19 @@ impl Home {
         Outcome::Stay
       }
       Effect::Complete(before) => {
-        let (start, items) = cmdline::candidates(&before, View::Home, terminal);
+        let topics = crate::manual::completions(
+          &self.settings,
+          &vpdf_ui::topics::Invocation::Home,
+          cmdline::help_query(&before).unwrap_or(""),
+        )?;
+        let names: Vec<_> =
+          topics.iter().map(|item| item.name.clone()).collect();
+        let (start, items) =
+          cmdline::complete(&before, View::Home, terminal, &names);
         self.view.complete_prompt(start, items);
+        if cmdline::help_query(&before).is_some() {
+          self.view.describe_prompt(|name| cmdline::describe(name, &topics));
+        }
         Outcome::Stay
       }
     })
@@ -175,6 +190,7 @@ impl Home {
         );
         Ok(Outcome::Stay)
       }
+      Id::Help | Id::HelpBeside => Ok(Outcome::Help(argument.into())),
       Id::Config => {
         crate::config::reload_command(argument)?;
         Ok(Outcome::ConfigReload)
@@ -236,14 +252,16 @@ mod tests {
   }
 
   #[test]
-  fn version_on_start_screen() -> Result<()> {
+  fn reference_on_start_screen() -> Result<()> {
     use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
     let screen = crate::screen::cells(160, 40);
-    for terminal in [true, false] {
+    for (command, heading, terminal) in
+      [("version", "VERSION", true), ("version", "VERSION", false)]
+    {
       let mut home = Home::new(&[], screen, &Wake::none());
       home.graphics = Graphics::default();
       let mut history = History::default();
-      for ch in ":version".chars().chain(['\r']) {
+      for ch in format!(":{command}").chars().chain(['\r']) {
         let code = if ch == '\r' { KeyCode::Enter } else { KeyCode::Char(ch) };
         assert_eq!(
           home.handle(
@@ -257,11 +275,13 @@ mod tests {
       let mut out = Vec::new();
       home.draw(&mut out)?;
       let text = String::from_utf8(out)?;
-      assert!(text.contains("VERSION"));
-      assert!(
-        text.contains(crate::version::text(terminal).lines().last().unwrap())
-      );
-      if terminal {
+      assert!(text.contains(heading));
+      if command == "version" {
+        assert!(
+          text.contains(crate::version::text(terminal).lines().last().unwrap())
+        );
+      }
+      if command == "version" && terminal {
         assert!(text.contains(env!("CARGO_PKG_REPOSITORY")));
       }
       home.handle(
@@ -314,6 +334,50 @@ mod tests {
   }
 
   #[test]
+  fn help_commands_and_shortcuts() -> Result<()> {
+    use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
+    for terminal in [true, false] {
+      assert_eq!(
+        resolve("help config", terminal)?,
+        Outcome::Help("config".into())
+      );
+      assert_eq!(resolve("h", terminal)?, Outcome::Help(String::new()));
+      for sequence in ["g?", "<F1>"] {
+        let mut home =
+          Home::new(&[], crate::screen::cells(120, 40), &Wake::none());
+        let mut history = History::default();
+        let mut outcome = Outcome::Stay;
+        for &key in vpdf_ui::bindings::Sequence::parse(sequence)?.keys() {
+          outcome = home.handle(Event::Key(key), &mut history, terminal)?;
+        }
+        assert_eq!(outcome, Outcome::Help(String::new()));
+        home.handle(
+          Event::Key(KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE)),
+          &mut history,
+          terminal,
+        )?;
+        home.handle(
+          Event::Paste("help conf".into()),
+          &mut history,
+          terminal,
+        )?;
+        home.handle(
+          Event::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+          &mut history,
+          terminal,
+        )?;
+        let outcome = home.handle(
+          Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+          &mut history,
+          terminal,
+        )?;
+        assert_eq!(outcome, Outcome::Help("config".into()));
+      }
+    }
+    Ok(())
+  }
+
+  #[test]
   fn start_commands_open_or_quit() -> Result<()> {
     assert_eq!(command("e a.pdf")?, Outcome::Open("a.pdf".into()));
     assert_eq!(command("tabnew  b.pdf ")?, Outcome::Open("b.pdf".into()));
@@ -321,6 +385,12 @@ mod tests {
     assert_eq!(command("")?, Outcome::Stay);
     assert!(command("e").is_err());
     assert!(command("toc").is_err());
+    assert!(
+      cmdline::candidates("hel", View::Home, true)
+        .1
+        .iter()
+        .any(|item| item.trim() == "help")
+    );
     Ok(())
   }
 

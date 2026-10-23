@@ -69,6 +69,7 @@ pub(crate) fn transfers_overlay(action: Action) -> bool {
       | Action::Tab(_)
       | Action::LocalFocus
       | Action::History(_)
+      | Action::Help
       | Action::Panel(_)
       | Action::ClosePanel
   )

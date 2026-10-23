@@ -158,7 +158,7 @@ mod tests {
 
   fn panel(labels: &[&str]) -> Panel {
     let rows = labels.iter().map(|label| Row::parse(label)).collect();
-    Panel::new(PanelKind::Help, rows)
+    Panel::new(PanelKind::Version, rows)
   }
 
   #[test]

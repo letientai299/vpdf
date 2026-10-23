@@ -13,7 +13,6 @@ pub enum PanelKind {
   Results,
   Links,
   Text,
-  Help,
   Version,
   Info,
   Recent,
@@ -30,7 +29,6 @@ impl PanelKind {
       Self::Results => "RESULTS",
       Self::Links => "LINKS",
       Self::Text => "TEXT",
-      Self::Help => "HELP",
       Self::Version => "VERSION",
       Self::Info => "INFO",
       Self::Recent => "RECENT",
@@ -43,6 +41,7 @@ impl PanelKind {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
+  Help,
   Motion(Motion),
   Section(bool),
   Figure(bool),
@@ -314,7 +313,7 @@ pub(crate) const BINDINGS: &[(&str, Action, &str)] = &[
   ("ga", Action::Panel(PanelKind::Annotations), "annotations"),
   ("gd", Action::Definition, "go to definition"),
   ("gx", Action::OpenUrl, "open URL"),
-  ("g?", Action::Panel(PanelKind::Help), "key reference"),
+  ("g?", Action::Help, "key reference"),
   ("gq", Action::ClosePanel, "close panel"),
   ("K", Action::Peek, "preview link or annotation note"),
   ("gp", Action::Overview, "page thumbnails"),
@@ -427,6 +426,3 @@ pub fn notation(name: &str) -> String {
 
 #[cfg(test)]
 mod tests;
-
-mod reference;
-pub(crate) use reference::text as reference;

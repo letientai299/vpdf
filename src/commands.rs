@@ -19,7 +19,36 @@ use vpdf_ui::window::{TabMove, Window};
 pub(crate) const COPIED_LINK: &str = "Copied link";
 
 impl App {
+  pub(crate) fn help_invocation(&self) -> vpdf_ui::topics::Invocation {
+    vpdf_ui::topics::Invocation::Pane {
+      context: Context::resolve(
+        self.input_owner(),
+        self.reader.mode(),
+        self.reader.operator.is_some(),
+      ),
+      pane: vpdf_ui::topics::PaneContext {
+        id: self.id,
+        document: self.document_identity().display().to_string(),
+        document_generation: self.document_generation,
+        position: self.navigation_position(),
+        zoom: self.layout.zoom(),
+        cursorline: self.cursorline,
+        text_mode: self.text_mode,
+        panel: self
+          .panel
+          .as_ref()
+          .filter(|panel| panel.view.focused())
+          .map(|panel| panel.view.kind()),
+      },
+    }
+  }
+
   pub fn action(&mut self, input: Input) -> Result<()> {
+    let invocation = self.help_invocation();
+    if input.action == Action::Help {
+      self.request = Some(Request::Help { topic: String::new(), invocation });
+      return Ok(());
+    }
     self.cancel_definition();
     self.search.forget_yank();
     if self.reader.prepare(input.action) {
@@ -78,7 +107,9 @@ impl App {
       Action::Definition => self.definition()?,
       Action::OpenUrl => self.open_cursor_url()?,
       Action::Command => {
-        self.overlays.open_prompt(Prompt::new(PromptKind::Command));
+        self.overlays.open_prompt(
+          Prompt::new(PromptKind::Command).with_invocation(invocation),
+        );
       }
       Action::Mark(name) => self.set_mark(name)?,
       Action::Hints(copy) => self.start_hints(copy)?,
@@ -124,8 +155,17 @@ impl App {
       );
       let view = self.command_view();
       let terminal = matches!(self.frontend, crate::raster::Frontend::Terminal);
+      let invocation = self
+        .overlays
+        .prompt()
+        .and_then(Prompt::invocation)
+        .cloned()
+        .unwrap_or_else(|| self.help_invocation());
+      let settings = self.settings.clone();
       return self.edit_prompt(history, |prompt, history| {
-        cmdline::feed(prompt, key, history, view, terminal)
+        cmdline::feed(prompt, key, history, view, terminal, |query| {
+          crate::manual::completions(&settings, &invocation, query)
+        })
       });
     }
     if self.overlays.hints().is_some() && self.hint_key(key)? {
@@ -154,8 +194,9 @@ impl App {
     };
     let mut input = match dispatch {
       Dispatch::Command(command) => {
+        let invocation = self.help_invocation();
         self.disarm();
-        return self.command(&command);
+        return self.command_from(&command, Some(invocation));
       }
       Dispatch::Input(input) => input,
     };
@@ -166,20 +207,29 @@ impl App {
     if input.action == Action::Cancel {
       return self.cancel_input();
     }
-    if owner == InputOwner::Context {
-      return self.context_input(input);
-    }
-    if owner == InputOwner::Peek {
-      return self.preview_input(input);
-    }
-    if let Action::Panel(kind) = input.action
+    let invocation =
+      (input.action == Action::Command).then(|| self.help_invocation());
+    if !matches!(owner, InputOwner::Context | InputOwner::Peek)
+      && let Action::Panel(kind) = input.action
       && self.panel_focused()
       && self.panel.as_ref().is_some_and(|panel| panel.view.kind() == kind)
     {
       input.action = Action::ClosePanel;
     }
-    self.action(input)?;
-    Ok(())
+    if input.action == Action::Help {
+      return self.action(input);
+    }
+    let result = match owner {
+      InputOwner::Context => self.context_input(input),
+      InputOwner::Peek => self.preview_input(input),
+      _ => self.action(input),
+    };
+    if let (Some(invocation), Some(prompt)) =
+      (invocation, self.overlays.prompt_mut())
+    {
+      prompt.set_invocation(invocation);
+    }
+    result
   }
 
   pub(crate) fn cancel_input(&mut self) -> Result<()> {
@@ -259,7 +309,9 @@ impl App {
           PromptKind::Search(backward) => {
             self.finish_search(prompt.text(), backward)?;
           }
-          PromptKind::Command => self.command(prompt.text())?,
+          PromptKind::Command => {
+            self.command_from(prompt.text(), prompt.invocation().cloned())?;
+          }
           PromptKind::Password => self.reload_with(prompt.text())?,
         }
       }
@@ -293,6 +345,16 @@ impl App {
   }
 
   pub fn command(&mut self, line: &str) -> Result<()> {
+    let invocation =
+      self.overlays.prompt().and_then(Prompt::invocation).cloned();
+    self.command_from(line, invocation)
+  }
+
+  fn command_from(
+    &mut self,
+    line: &str,
+    invocation: Option<vpdf_ui::topics::Invocation>,
+  ) -> Result<()> {
     let (spec, argument) = match commands::resolve(
       line,
       self.command_view(),
@@ -371,10 +433,7 @@ impl App {
       }
       Id::Text => self.open_panel(PanelKind::Text)?,
       Id::Info => self.open_panel(PanelKind::Info)?,
-      Id::Config => {
-        crate::config::reload_command(argument)?;
-        self.request = Some(Request::ConfigReload);
-      }
+      Id::Config => self.reload_config(argument)?,
       Id::Theme => self.theme_command(argument)?,
       Id::Reload => self.reload_with(&self.password.clone())?,
       Id::Print => self.print(argument)?,
@@ -388,10 +447,32 @@ impl App {
         self.start_ocr(&language)?;
       }
       Id::Version => self.open_panel(PanelKind::Version)?,
-      Id::Help => self.open_panel(PanelKind::Help)?,
+      Id::Help | Id::HelpBeside => {
+        self.request_help(argument, invocation, spec.id == Id::HelpBeside);
+      }
       Id::Quit => self.quit = true,
       Id::TabClose => self.request = Some(Request::TabClose(None)),
     }
+    Ok(())
+  }
+
+  fn request_help(
+    &mut self,
+    topic: &str,
+    invocation: Option<vpdf_ui::topics::Invocation>,
+    beside: bool,
+  ) {
+    let invocation = invocation.unwrap_or_else(|| self.help_invocation());
+    self.request = Some(if beside {
+      Request::HelpBeside { topic: topic.into(), invocation }
+    } else {
+      Request::Help { topic: topic.into(), invocation }
+    });
+  }
+
+  fn reload_config(&mut self, argument: &str) -> Result<()> {
+    crate::config::reload_command(argument)?;
+    self.request = Some(Request::ConfigReload);
     Ok(())
   }
 
@@ -404,7 +485,9 @@ impl App {
   fn yank_path(&mut self, register: char) -> Result<()> {
     let register =
       self.reader.take_operator().map_or(register, |op| op.register);
-    self.reader.store(register, self.path.display().to_string())?;
+    self
+      .reader
+      .store(register, self.document_identity().display().to_string())?;
     self.reader.notice("Yanked file path");
     Ok(())
   }
@@ -632,6 +715,117 @@ mod tests {
         crate::version::text(terminal).lines().collect::<Vec<_>>()
       );
       assert!(!app.quit);
+    }
+    Ok(())
+  }
+}
+
+#[cfg(test)]
+mod help_context_tests {
+  use super::*;
+  use vpdf_ui::bindings::Context;
+
+  #[test]
+  fn command_keeps_invoking_pane() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("source.pdf");
+    crate::fixtures::pdf(&path, &["first"], "")?;
+    for frontend in [
+      crate::raster::Frontend::Terminal,
+      crate::raster::Frontend::Native(vpdf_pdf::jobs::Wake::none()),
+    ] {
+      let mut app = App::configured(
+        &path,
+        "",
+        false,
+        crate::screen::cells(120, 40),
+        frontend,
+        &crate::config::Settings::default(),
+      )?;
+      app.cursorline = false;
+      app.layout.request_zoom(vpdf_ui::layout::Zoom::To(2.0));
+      app.action(Input::plain(Action::Cursor))?;
+      app.action(Input::plain(Action::Command))?;
+      let invocation =
+        app.overlays.prompt().unwrap().invocation().unwrap().clone();
+      assert_eq!(invocation.context(), Context::Cursor);
+      let pane = invocation.pane().unwrap();
+      assert_eq!(pane.id, app.id);
+      assert_eq!(pane.zoom, 2.0);
+      assert!(!pane.cursorline);
+      assert_eq!(app.input_owner(), InputOwner::Prompt);
+      app.cancel_prompt()?;
+      app.action(Input::plain(Action::Yank))?;
+      assert!(app.reader.operator.is_some());
+      app.action(Input::plain(Action::Command))?;
+      assert_eq!(
+        app.overlays.prompt().unwrap().invocation().unwrap().context(),
+        Context::Operator
+      );
+      assert!(app.reader.operator.is_none());
+      app.cancel_prompt()?;
+      app.open_panel(PanelKind::Outline)?;
+      app.action(Input::plain(Action::Command))?;
+      assert_eq!(
+        app.overlays.prompt().unwrap().invocation().unwrap().context(),
+        Context::Panel
+      );
+      let invocation = app.overlays.prompt().unwrap().invocation().unwrap();
+      assert_eq!(invocation.pane().unwrap().panel, Some(PanelKind::Outline));
+      let reference = app.settings.help_reference(invocation.clone());
+      let registry = vpdf_ui::topics::Registry::new(
+        vpdf_ui::topics::authored(),
+        reference.bindings,
+      )?;
+      let outline = registry
+        .action(&vpdf_ui::topics::TopicId::parse("panel.outline")?)
+        .unwrap();
+      assert!(
+        outline.effective.iter().any(|row| row.context == Context::Panel
+          && row.sequence.to_string() == "go"
+          && row.purpose == "close panel")
+      );
+      app.cancel_prompt()?;
+      for &key in vpdf_ui::bindings::Sequence::parse("go")?.keys() {
+        app.key(key, &mut History::default())?;
+      }
+      assert!(app.panel.is_none());
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn command_captures_menu_before_dismissal() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("source.pdf");
+    crate::fixtures::pdf(&path, &["first"], "")?;
+    for frontend in [
+      crate::raster::Frontend::Terminal,
+      crate::raster::Frontend::Native(vpdf_pdf::jobs::Wake::none()),
+    ] {
+      let mut app = App::configured(
+        &path,
+        "",
+        false,
+        crate::screen::cells(120, 40),
+        frontend,
+        &crate::config::Settings::default(),
+      )?;
+      app.action(Input::plain(Action::Cursor))?;
+      app.overlays.open_menu(vpdf_ui::context::ContextMenu::new(
+        Vec::new(),
+        (0, 0),
+        (0, 120),
+        39,
+        false,
+      ));
+      let key = vpdf_ui::bindings::Sequence::parse(":")?.keys()[0];
+      app.key(key, &mut History::default())?;
+      assert!(app.overlays.menu().is_none());
+      assert_eq!(
+        app.overlays.prompt().unwrap().invocation().unwrap().context(),
+        Context::Menu
+      );
     }
     Ok(())
   }

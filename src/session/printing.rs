@@ -33,6 +33,7 @@ impl Session {
     anyhow::ensure!(cfg!(target_os = "macos"), "Printing requires macOS");
     anyhow::ensure!(self.printing.is_none(), "Print dialog already open");
     let app = self.app();
+    anyhow::ensure!(app.manual.is_none(), "Help printing unavailable");
     let stamp = crate::watch::stamp(&app.path);
     anyhow::ensure!(stamp.is_some(), "Cannot open PDF for printing");
     anyhow::ensure!(stamp == app.stamp, "PDF changed; reload before printing");

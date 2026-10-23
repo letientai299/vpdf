@@ -141,7 +141,7 @@ impl Home {
       if self.info.is_some() {
         "j/k scroll  Esc close".into()
       } else {
-        "Enter open  :e file  :q quit".into()
+        "Enter open  :help  :e file  :q quit".into()
       }
     } else {
       let hints = if self.info.is_some() {
@@ -177,6 +177,11 @@ impl Home {
             Context::Home,
             &crate::bindings::Target::Reader(Action::Command),
             "command",
+          ),
+          self.bindings.hint(
+            Context::Home,
+            &crate::bindings::Target::Reader(Action::Help),
+            "help",
           ),
           self.bindings.hint(
             Context::Home,
@@ -231,6 +236,16 @@ impl Home {
       prompt.complete(start, items);
       self.preview_prompt();
     }
+  }
+
+  pub fn describe_prompt(&mut self, label: impl Fn(&str) -> String) {
+    if let Some(prompt) = &mut self.prompt {
+      prompt.describe(label);
+    }
+  }
+
+  pub fn open_prompt(&mut self, prompt: Prompt) {
+    self.prompt = Some(prompt);
   }
 
   fn preview_prompt(&mut self) {
@@ -326,7 +341,10 @@ impl Home {
       return Ok(match input.action {
         Action::Follow | Action::Swap => self.selected(),
         Action::Command => {
-          self.prompt = Some(Prompt::new(PromptKind::Command));
+          self.prompt = Some(
+            Prompt::new(PromptKind::Command)
+              .with_invocation(crate::topics::Invocation::home()),
+          );
           Effect::Stay
         }
         Action::Search(backward) => {
@@ -334,6 +352,7 @@ impl Home {
           self.prompt = Some(Prompt::new(PromptKind::Search(backward)));
           Effect::Stay
         }
+        Action::Help => Effect::Command("help".into()),
         Action::Quit => Effect::Quit,
         _ => Effect::Stay,
       });
@@ -442,6 +461,10 @@ mod tests {
     let mut history = History::default();
     let key = |code| Event::Key(KeyEvent::new(code, KeyModifiers::NONE));
     home.event(key(KeyCode::Char(':')), &mut history)?;
+    assert_eq!(
+      home.prompt.as_ref().unwrap().invocation(),
+      Some(&crate::topics::Invocation::home())
+    );
     home.event(Event::Paste("e ".into()), &mut history)?;
     assert_eq!(
       home.event(key(KeyCode::Tab), &mut history)?,

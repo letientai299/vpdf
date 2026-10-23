@@ -11,7 +11,7 @@ use vpdf_ui::find::Search;
 use vpdf_ui::input::InputOwner;
 use vpdf_ui::keys::{Keys, PanelKind};
 use vpdf_ui::layout::Layout;
-use vpdf_ui::panel::{Panel, Row, help};
+use vpdf_ui::panel::Panel;
 
 #[derive(serde::Deserialize)]
 struct Prepared {
@@ -24,7 +24,7 @@ pub fn draw() -> Result<()> {
   let pages = super::fixtures::text()?;
   let [columns, rows, cell_width, cell_height] = prepared.screen;
   let screen = crate::screen::pixels(columns, rows, cell_width, cell_height);
-  let width = Panel::width(PanelKind::Help, columns, None);
+  let width = Panel::width(PanelKind::Version, columns, None);
   let layout = Layout::new(
     pages.metadata.iter().map(|(_, bounds)| *bounds),
     Screen { columns: columns - width, ..screen },
@@ -32,8 +32,8 @@ pub fn draw() -> Result<()> {
   let reader = Reader::default();
   let search = Search::default();
   let keys = Keys::default();
-  let rows = help(|_| false).iter().map(|line| Row::parse(line)).collect();
-  let panel = Panel::new(PanelKind::Help, rows);
+  let rows = super::super_panel_rows();
+  let panel = Panel::new(PanelKind::Version, rows);
   let file =
     prepared.path.file_name().expect("fixture filename").to_string_lossy();
   let bar = Bar {

@@ -129,6 +129,7 @@ fn route(action: Action) -> Route {
     Action::Follow | Action::Swap => Route::Open,
     Action::Quit | Action::Cancel | Action::Overview => Route::Close,
     Action::History(_)
+    | Action::Help
     | Action::Command
     | Action::Window(_)
     | Action::Tab(_)

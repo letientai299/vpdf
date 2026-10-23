@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 build_dir="${CARGO_TARGET_DIR:-target}"
+python3 -B scripts/help_assets.py
 . scripts/build-features.sh
 case $(uname -s) in
   Darwin)

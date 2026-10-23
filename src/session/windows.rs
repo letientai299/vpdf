@@ -180,7 +180,9 @@ impl Session {
   /// watching its file.
   fn retire(&mut self, app: &App) {
     self.graphics.forget(app.id);
-    self.watcher.remove(&app.path);
+    if app.manual.is_none() {
+      self.watcher.remove(&app.path);
+    }
     self.state.remember_pane(app);
   }
 
@@ -206,10 +208,15 @@ impl Session {
       self.leave()?;
     }
     let tab = self.tabs.remove(index);
+    let help = tab.panes.iter().any(|app| app.manual.is_some())
+      && !self.panes().any(|app| app.manual.is_some());
     for app in &tab.panes {
       self.retire(app);
     }
     if self.tabs.is_empty() {
+      if help {
+        self.return_from_help()?;
+      }
       return self.save();
     }
     if index < self.active {
@@ -217,6 +224,9 @@ impl Session {
     }
     self.active = self.active.min(self.tabs.len() - 1);
     self.refocus();
+    if help {
+      self.return_from_help()?;
+    }
     self.arrange()
   }
 
@@ -230,6 +240,9 @@ impl Session {
     let app = self.tab().detach(area);
     self.retire(&app);
     self.refocus();
+    if app.manual.is_some() && !self.panes().any(|app| app.manual.is_some()) {
+      self.return_from_help()?;
+    }
     self.arrange()
   }
 
@@ -240,22 +253,36 @@ impl Session {
     file: Option<&Path>,
     place: Place,
   ) -> Result<()> {
-    // The same document reuses the password that unlocked it.
-    let (path, password) = match file {
-      Some(file) => (std::fs::canonicalize(file)?, String::new()),
-      None => (self.app().path.clone(), self.app().password.clone()),
-    };
-    if file.is_some()
-      && let Some((tab, pane)) = self.existing(&path)
+    let path = file.map(std::fs::canonicalize).transpose()?;
+    if let Some(path) = &path
+      && let Some((tab, pane)) = self.existing(path)
     {
       return self.focus(tab, pane);
     }
     let screen = self.app().screen;
-    anyhow::ensure!(Node::fits(axis, full(screen)), "Not enough room");
-    let mut app = self.load(&path, &password, screen)?;
-    if file.is_none() {
-      app.mirror(self.app())?;
-    }
+    self.check_split(axis)?;
+    let app = match path {
+      Some(path) => self.load(&path, "", screen)?,
+      None => self.copy_pane(screen)?,
+    };
+    self.insert_pane(app, axis, place)
+  }
+
+  pub(super) fn check_split(&mut self, axis: Axis) -> Result<()> {
+    anyhow::ensure!(
+      Node::fits(axis, full(self.app().screen)),
+      "Not enough room"
+    );
+    Ok(())
+  }
+
+  pub(super) fn insert_pane(
+    &mut self,
+    app: App,
+    axis: Axis,
+    place: Place,
+  ) -> Result<()> {
+    self.check_split(axis)?;
     let tab = self.tab();
     let target = tab.panes[tab.focus].id;
     tab.tree.split(target, axis, app.id, place);
@@ -394,7 +421,7 @@ impl Session {
   }
 
   /// Puts `app` in a tab after the active one and focuses it.
-  fn insert_tab(&mut self, app: App) -> Result<()> {
+  pub(super) fn insert_tab(&mut self, app: App) -> Result<()> {
     let index = if self.tabs.is_empty() { 0 } else { self.active + 1 };
     self.tabs.insert(index, Tab::new(app));
     self.active = index;
@@ -402,13 +429,22 @@ impl Session {
     self.arrange()
   }
 
+  fn copy_pane(&mut self, screen: Screen) -> Result<App> {
+    let mut app = if let Some(owner) = self.app().manual.clone() {
+      App::help_document(owner, screen, self.frontend.clone(), &self.settings)?
+    } else {
+      let path = self.app().path.clone();
+      let password = self.app().password.clone();
+      self.load(&path, &password, screen)?
+    };
+    app.mirror(self.app())?;
+    Ok(app)
+  }
+
   /// Copies the focused view into a new tab covered by recent documents.
   pub(super) fn recent_tab(&mut self, screen: Screen) -> Result<()> {
     self.record();
-    let path = self.app().path.clone();
-    let password = self.app().password.clone();
-    let mut app = self.load(&path, &password, screen)?;
-    app.mirror(self.app())?;
+    let app = self.copy_pane(screen)?;
     self.leave()?;
     self.insert_tab(app)?;
     let recent = self.state.recent.clone();

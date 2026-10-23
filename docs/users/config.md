@@ -1,0 +1,353 @@
+# Configuring the reader
+
+<!-- help-topic:configuration -->
+
+Vpdf reads one optional TOML file at launch for both frontends. It never creates
+or rewrites that file. Use `:config reload` to apply edits throughout the
+running process. Reloading a PDF keeps the current settings.
+
+Use `:help config` to inspect built-in setting defaults. Help describes the
+built-in keys, even when your configuration changes them.
+
+## Create a configuration
+
+Run `vpdf --config-example` to print the supported keys and built-in defaults.
+The native executable supports the same output. Both commands exit without
+reading configuration or opening a frontend.
+
+Save and edit that output at `$XDG_CONFIG_HOME/vpdf/config.toml`, or
+`$HOME/.config/vpdf/config.toml` when `XDG_CONFIG_HOME` is unset, empty, or
+relative. Vpdf uses the same location on macOS and Linux, following the [XDG
+base directory rules][xdg]. Without an absolute base directory it uses
+built-ins. It does not search document directories or parent directories.
+
+For example, to disable the initial cursor highlight and select two OCR
+languages:
+
+```toml
+[reading]
+cursorline = false
+
+[ocr]
+language = "eng+vie"
+```
+
+Omitted settings keep their built-in values. `vpdf --config path/to/config.toml`
+selects one file explicitly; a relative path resolves from the invocation
+directory. `vpdf --no-config book.pdf` uses built-ins. `--config` and
+`--no-config` cannot be combined. The native executable accepts the same
+options.
+
+Keep TOML table names and quoted key sequences as shown. Each value belongs to
+the most recent table heading. Start with this minimal file, run
+`:config reload`, and inspect `:help config` before adding more mappings.
+
+## Reading behavior
+
+To open unfamiliar documents at a larger scale without a cursor highlight:
+
+```toml
+[reading]
+zoom = 1.25
+cursorline = false
+```
+
+`reading.zoom` sets width-relative zoom for documents without a saved view.
+Saved document zoom takes precedence. The launch page overrides the saved
+position. Cursor highlight starts from `reading.cursorline`; `:cursorline`
+changes it in the current pane. Reloading a PDF preserves live pane values. A
+same-document split copies the source view.
+
+To make the focused pane easier to distinguish when comparing documents:
+
+```toml
+[reading]
+inactive_brightness = 0.6
+```
+
+`reading.inactive_brightness` sets inactive split content brightness between `0`
+(black) and `1` (full brightness). Status lines stay unchanged.
+
+Document positions, marks, histories, and the performance toggle remain in
+[saved reading state][state]. They are separate from this configuration.
+
+## OCR languages
+
+To recognize documents containing English and Vietnamese:
+
+```toml
+[ocr]
+language = "eng+vie"
+```
+
+`ocr.language` supplies the default for page and region recognition. An explicit
+`:ocr <lang>` overrides it for that request. Language combinations use
+Tesseract's `+` separator. Install the required [OCR helper and language
+data][helpers]; Vpdf checks availability when recognition runs. Choosing a
+language here does not download its data or start OCR automatically. For a
+single French page, use `:ocr fra` without changing the file. Language names
+must be nonempty, including each part of a `+` combination, and contain no
+control characters.
+
+## Single keys and key sequences
+
+Built-in mappings remain active until individually replaced or unbound. For
+example, add tab navigation, make `q` close the current pane, and require a
+sequence to quit:
+
+```toml
+[keybindings.normal]
+"<C-n>" = { action = "tab.next" }
+"<C-p>" = { action = "tab.previous" }
+"q" = { command = "close" }
+"<Space>q" = { action = "quit" }
+"<Space>r" = { command = "config reload" }
+```
+
+`<Space>q` means press Space, release it, then press `q`. It is not a chord.
+These bindings apply in Normal mode; Cursor and Visual keep their own mappings.
+Binding another key to an action leaves the original key active. To move an
+operation to a new key, also unbind the old sequence:
+
+```toml
+[keybindings.normal]
+"gt" = { unbind = true }
+"<C-n>" = { action = "tab.next" }
+```
+
+Each entry contains exactly one target: `action`, `command`, or `unbind = true`.
+Actions take typed fields where required. Commands use existing Ex command
+names and arguments without the leading colon. They execute directly; bindings
+never expand other bindings or replay a string of keystrokes. For example,
+`{ command = "theme nord" }` selects a theme, while `{ action = "tab.next" }`
+selects the next tab.
+
+`vpdf --config-example` prints current setting names and built-in values. It
+leaves `[keybindings]` empty. Use the built-in key and action references in
+`:help` to find operations. Generated topic IDs can differ from configuration
+action names: a motion needs `action = "motion"` and a separate `motion` field.
+
+## Key notation and terminal caveats
+
+Quote every key sequence in TOML. Literal characters are case-sensitive:
+`"j"` and `"J"` differ, and `"gg"` means two consecutive lowercase keys.
+Angle brackets name special keys or modified keys:
+
+- `<C-n>` holds Control; `<A-n>` or `<M-n>` holds Alt.
+- `<S-Tab>` holds Shift; `<D-n>` or `<Super-n>` holds Super, or Command on
+  macOS.
+- `<H-n>` and `<Meta-n>` name Hyper and Meta modifiers.
+- `<CR>` or `<Enter>`, `<Esc>`, `<Tab>`, and `<Space>` name individual keys.
+- `<BS>` or `<Backspace>`, `<Del>` or `<Delete>`, and `<Insert>` edit text.
+- `<Left>`, `<Right>`, `<Up>`, `<Down>`, `<Home>`, `<End>`, `<PageUp>`, and
+  `<PageDown>` name navigation keys. Function keys use forms such as `<F2>`.
+- `<lt>` represents a literal `<`. Combine modifiers as in `<C-A-Left>`.
+
+`<S-a>` and `A` name the same key. `<C-i>` and `<Tab>` are separate bindings
+inside Vpdf, but a terminal may send the same event for both. The terminal or
+window manager can intercept shortcuts before Vpdf receives them. Choose keys
+that your frontend delivers, and inspect the relevant context with `:help`,
+for example `:help normal:<C-n>`.
+
+## Preserve prefix families such as g
+
+Replace a complete sequence when possible. To move first-page navigation to a
+new sequence while retaining other `g` operations:
+
+```toml
+[keybindings.normal]
+"gg" = { unbind = true }
+"<Space>g" = { action = "motion", motion = "first" }
+```
+
+Assigning `"g" = { action = "tab.next" }` conflicts with built-in sequences such
+as `gg`, `go`, `gt`, and `g?`. Vpdf rejects the conflicting assignment and
+warns; it does not remove the longer mappings for you. Unbinding `g` alone does
+not remove the `g` family either. There is no wildcard unbind.
+
+To assign an action to `g` alone, add an explicit `{ unbind = true }` entry for
+every longer sequence starting with `g`, including custom sequences. The manual
+shows preferred shortcuts, so it is not a complete conflict inventory. Reload
+and use the rejected-binding warnings to locate remaining conflicts. Keep the
+unbind entries alongside the new `g` binding. Repeat this for each context you
+change; Normal, Cursor, and Visual are independent.
+
+The reverse conflict also matters: adding `qq` requires unbinding the existing
+exact `q` binding first. Families such as `z`, `Ctrl-w`, and prompt
+`Ctrl-x` follow the same rule. Rebinding one alias leaves other aliases active.
+
+A shared prefix waits without a timeout. An invalid continuation consumes that
+key and clears the pending sequence; repeat the intended operation from its
+start. Keep a working cancellation key when changing prefixes. Escape and its
+aliases can themselves be rebound or unbound.
+
+## Choose binding contexts
+
+Use `[keybindings.<context>]` for the surface receiving input. A Normal binding
+does not automatically apply to other modes or focused panels:
+
+- `normal`, `cursor`, and `visual` cover document reading and selection.
+- `operator` covers a pending operator such as yank; `object` chooses a text
+  object after inner or around.
+- `resize` covers window resize input; `register`, `mark-set`, and `mark-jump`
+  cover pending register and mark choices.
+- `panel`, `hints`, `region`, `menu`, `preview`, and `overview` cover those
+  interactions. `home` covers the start screen.
+- `prompt` supplies shared prompt edits. `command`, `search`, and `password`
+  inherit them and can override individual sequences.
+
+Not every action works in every context. Vpdf rejects unavailable actions,
+such as a prompt edit in Normal mode. Temporary interactions take precedence
+over the underlying reading mode. See [Keys and input modes][keys].
+
+## Motions, selection, and window actions
+
+For page navigation in Cursor mode and a word motion in Visual mode:
+
+```toml
+[keybindings.cursor]
+"<C-j>" = { action = "motion", motion = "next-page" }
+"<C-k>" = { action = "motion", motion = "previous-page" }
+
+[keybindings.visual]
+"<A-w>" = { action = "motion", motion = "word" }
+```
+
+Parameterized actions require their fields. For example, add half-view
+scrolling and a split shortcut:
+
+```toml
+[keybindings.normal]
+"<Space>j" = { action = "scroll", amount = 0.5 }
+"<Space>k" = { action = "scroll", amount = -0.5 }
+"<Space>v" = { action = "window", operation = "split", axis = "columns" }
+"<Space>h" = { action = "window", operation = "focus", direction = "left" }
+```
+
+Other argument forms include `amount` for `screen`, `rows`, `align`, and `zoom`;
+`name` for `mark.set`; `name` and `exact` for `mark.go`; and `dx` and `dy` for
+`region.shift`. Window actions use `operation` with fields such as `axis`,
+`direction`, or `amount`. Unsupported fields and wrong value types are rejected.
+
+To choose a text object during an operator, or bind an object directly in
+Visual mode:
+
+```toml
+[keybindings.operator]
+"<A-i>" = { action = "object.begin", around = false }
+
+[keybindings.object]
+"<A-w>" = { action = "object.select", object = "word" }
+
+[keybindings.visual]
+"<A-p>" = { action = "object", object = "paragraph", around = false }
+```
+
+Use grammar actions to preserve pending counts, registers, and operators.
+`register.choose` waits for a register name; `mark.choose` waits for a mark;
+`mark.jump` also takes `exact`. `yank.begin` starts a pending yank, and
+`count.digit` takes a numeric `digit`. Binding a direct `mark.set` or `mark.go`
+with `name = "a"` instead targets that specific mark.
+
+## Prompt editing
+
+To add Home and End equivalents to all prompts, then change one only for
+search:
+
+```toml
+[keybindings.prompt]
+"<D-a>" = { action = "prompt.start" }
+"<D-e>" = { action = "prompt.end" }
+
+[keybindings.search]
+"<D-a>" = { action = "prompt.kill", to_start = true }
+```
+
+Command and password prompts retain the shared `<D-a>` action. Prompt actions
+also cover movement, word movement, deletion, kill/yank, transpose, history,
+completion, undo, submission, cancellation, and the external editor. For
+example, history takes `forward` and `search` booleans; completion takes
+`forward`; word movement takes `forward` and `shell`.
+
+Password prompts exclude `prompt.editor`, including when inherited from
+`prompt`. Commands cannot be bound in `prompt` or `password`; use prompt actions
+for editing. A binding in `command` or `search` can invoke an Ex command, so
+check its context before assigning a typing key.
+
+Merge recipes into one table per context. TOML rejects repeated table headings
+and duplicate keys; do not concatenate these examples unchanged. After each
+change, use `:config reload`, check the status message for warnings, and test
+the key on the surface you customized.
+
+## UI themes
+
+Set `appearance.theme` to a built-in theme:
+
+```toml
+[appearance]
+theme = "nord"
+```
+
+Use `:theme <name>` or `:colorscheme <name>` to switch themes in the running
+process. Tab completion lists built-in names. The selection applies to all tabs
+and splits, including documents opened later. It does not change the
+configuration file or saved state. `:config reload` restores the configured
+theme.
+
+The default theme preserves the current appearance and terminal palette
+inheritance. Named themes use explicit RGB colors in both frontends. UI colors
+include text, bars, panels, menus, scrollbars, and page overlays. PDF pixels and
+document fonts stay unchanged. Theme changes preserve cached PDF tiles. [Theme
+notices][theme-notices] retain palette attribution and licenses. [Palette
+provenance][palettes] records the imported source revisions.
+
+## Reload configuration
+
+`:config reload` rereads the original selected source. Each running process
+reloads independently; `--no-config` keeps built-ins. Changing environment
+variables does not select another file.
+
+Bindings and themes apply to every open tab and split. Inactive brightness
+applies to existing splits. OCR language applies to subsequent requests; running
+OCR continues. Initial zoom and cursorline apply to newly opened documents.
+Reload preserves current page, live zoom, selection, reading position, history,
+and prompt text. It clears incomplete key sequences, counts, registers,
+operators, and prompt editing prefixes.
+
+Omitted values restore built-ins. Invalid values keep their previous working
+values while valid entries apply. Unreadable files, malformed TOML, and missing
+explicit files preserve all live settings and warn. A missing discovered file
+acts as empty configuration.
+
+## Built-in defaults
+
+The [setting defaults][defaults] (`:help config`) list built-in configuration
+values. Use `:theme` followed by Tab to list valid built-in themes, or
+`vpdf --config-example` for current setting names and defaults.
+
+Your TOML file, saved reading state, and runtime commands can change the active
+values. Test those changes in the reader; the manual always describes defaults.
+
+## Errors
+
+A missing discovered file silently uses built-ins. Other read failures, invalid
+UTF-8, or TOML syntax errors use all built-ins and show a startup warning in the
+status bar, including on the start screen. A missing explicitly selected file
+also warns. Configuration errors never stop startup.
+
+With valid TOML syntax, Vpdf keeps each valid recognized setting and warns about
+invalid values and unknown keys. At startup, an invalid section or value keeps
+its built-in default; on reload it keeps the previous working value. Warnings
+name the file and affected settings; syntax errors include parser locations.
+Dismiss them using the normal status-message controls.
+
+[xdg]: https://specifications.freedesktop.org/basedir/latest/
+[keys]: keys.md
+[helpers]: install.md#optional-helpers
+[state]: reading.md#saved-state-and-reload
+[palettes]: https://github.com/letientai299/vpdf/blob/main/docs/licenses/theme-sources.json
+[theme-notices]: https://github.com/letientai299/vpdf/blob/main/docs/licenses/themes.txt
+
+<!-- help:defaults=config -->
+
+[defaults]: #built-in-defaults

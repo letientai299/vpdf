@@ -13,6 +13,15 @@ use vpdf_reader::motion::Motion;
 use vpdf_ui::keys::{Action, Input};
 use vpdf_ui::pointer::Pixel;
 
+fn scrolling_panel(app: &mut App) -> Result<()> {
+  app.show_panel(
+    vpdf_ui::keys::PanelKind::Version,
+    (0..80)
+      .map(|row| vpdf_ui::panel::Row::parse(&format!("row {row}")))
+      .collect(),
+  )
+}
+
 /// SGR wheel flags: 64 up, 65 down, 66 left, 67 right; 4 Shift, 16 Ctrl.
 const UP: u16 = 64;
 const DOWN: u16 = 65;
@@ -260,9 +269,9 @@ fn panel_preview_and_text_turns_frame_until_an_end() -> Result<()> {
   let (_directory, path) = common::temp_pdf(|path| {
     pages_pdf(path, &[(18, 3), (10, 60), (18, 3)], Some(0))
   })?;
-  // A panel list: the help rows scroll down, not above the first.
+  // Panel rows scroll within their bounds.
   let mut panel = crate::harness::session(&path, screen())?;
-  panel.app().open_panel(vpdf_ui::keys::PanelKind::Help)?;
+  scrolling_panel(panel.app())?;
   panel.draw_focused(&mut Vec::new())?;
   assert!(!wheel(&mut panel, UP, pixel((2, 5)))?);
   assert!(wheel(&mut panel, DOWN, pixel((2, 5)))?);
@@ -313,7 +322,7 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
     match view {
       "text" => app.command("text")?,
       "gp" => app.open_overview()?,
-      "P" => app.open_panel(vpdf_ui::keys::PanelKind::Help)?,
+      "P" => scrolling_panel(app)?,
       _ => {}
     }
     session.draw_focused(&mut Vec::new())?;
@@ -486,7 +495,6 @@ fn preview_takes_the_wheel_under_the_pointer() -> Result<()> {
 /// Turns over a menu move the surface beneath it, not the hidden page.
 #[test]
 fn menu_turns_move_what_is_beneath() -> Result<()> {
-  use vpdf_ui::keys::PanelKind;
   let (_directory, path) =
     common::temp_pdf(|path| pages_pdf(path, &[(18, 6); 40], None))?;
   // (surface) -> moved (page scroll, panel top, overview top)
@@ -499,7 +507,7 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
     let mut session = crate::harness::session(&path, screen())?;
     let app = session.app();
     match surface {
-      "panel" => app.open_panel(PanelKind::Help)?,
+      "panel" => scrolling_panel(app)?,
       "overview" => app.open_overview()?,
       _ => {}
     }

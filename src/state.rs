@@ -170,7 +170,7 @@ impl App {
   /// Where this pane is, to save; a covered document counts as closed,
   /// since its pane may be a stale copy.
   pub fn saved_entry(&self) -> Option<Entry> {
-    if self.covered() {
+    if self.covered() || self.manual.is_some() {
       return None;
     }
     Some(Entry {

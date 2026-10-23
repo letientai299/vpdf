@@ -90,6 +90,10 @@ class AppTests(unittest.TestCase):
                     self.assertEqual(minimum, expected)
 
     def verify_config_output(self, binary):
+        example = subprocess.check_output(
+            [binary, "--config-example"], text=True, timeout=30
+        )
+        self.assertIn("reading", tomllib.loads(example))
         with tempfile.TemporaryDirectory(prefix="vpdf-config-") as temporary:
             config = Path(temporary) / "broken.toml"
             config.write_text("[broken")
@@ -103,13 +107,7 @@ class AppTests(unittest.TestCase):
                 )
                 self.assertEqual(result.stderr, "")
                 if flag == "--config-example":
-                    self.assertEqual(
-                        tomllib.loads(result.stdout),
-                        {
-                            "reading": {"cursorline": True, "zoom": 1.0},
-                            "ocr": {"language": "eng"},
-                        },
-                    )
+                    self.assertEqual(result.stdout, example)
 
         for flag in ("--version", "--config-example"):
             reader, writer = socket.socketpair()
@@ -142,6 +140,10 @@ class AppTests(unittest.TestCase):
         self.assertIn("https://github.com/letientai299/vpdf", lines)
         self.assertTrue(lines[0].startswith("Vpdf:"))
         self.assertTrue(lines[-1].startswith("vpdf-gui "))
+        self.assertRegex(version, r"(?m)^help-assets [0-9a-f]{64}$")
+        notices = (app / "Contents/Resources/font-notices.txt").read_text()
+        for path in (ROOT / "scripts/help/notices").glob("*.txt"):
+            self.assertIn(path.read_text(), notices)
         metadata = json.loads(
             subprocess.check_output(
                 [

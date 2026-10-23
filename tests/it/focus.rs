@@ -65,7 +65,7 @@ fn local_focus_preserves_reading_and_recent_cards() -> Result<()> {
   keys(app, b"vjl")?;
   let range = app.reader.selection.map(|range| (range.anchor, range.kind));
   let cursor = app.reader.cursor;
-  app.open_panel(PanelKind::Help)?;
+  app.open_panel(PanelKind::Version)?;
   app.panel.as_mut().unwrap().view.finish_search("focus");
   keys(app, b"\t")?;
   assert_eq!(app.input_owner(), InputOwner::Content);
@@ -80,7 +80,7 @@ fn local_focus_preserves_reading_and_recent_cards() -> Result<()> {
   keys(app, b"\x1b[27u")?;
   assert_eq!(app.input_owner(), InputOwner::Panel);
   assert!(app.reader.selection.is_none());
-  app.open_panel(PanelKind::Help)?;
+  app.open_panel(PanelKind::Version)?;
   assert!(app.panel_focused(), "reopening keeps the panel");
   keys(app, b"q")?;
   assert!(app.panel.is_none() && !app.quit);
@@ -500,7 +500,7 @@ fn peek_prompt_retains_destination_and_owner() -> Result<()> {
     Some(vpdf::app::Request::Window { command: Window::Next, .. })
   ));
   app.request = None;
-  app.open_panel(PanelKind::Help)?;
+  app.open_panel(PanelKind::Version)?;
   hints(&mut app);
   keys(&mut app, b"\t")?;
   assert_eq!(app.input_owner(), InputOwner::Content);

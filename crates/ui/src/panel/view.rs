@@ -197,9 +197,7 @@ impl Panel {
       Navigation::Edge(true) => last,
       Navigation::Scroll(_) | Navigation::Screen(_) | Navigation::Rows(_) => {
         let rows = navigation.rows(count, page);
-        if matches!(self.kind, PanelKind::Help | PanelKind::Version)
-          && self.layout.is_some()
-        {
+        if matches!(self.kind, PanelKind::Version) && self.layout.is_some() {
           self.scroll_lines(rows, page);
           return true;
         }
@@ -344,14 +342,11 @@ impl Panel {
   }
 
   pub(super) fn reflow(&mut self, columns: usize) {
-    if matches!(self.kind, PanelKind::Help | PanelKind::Version)
+    if matches!(self.kind, PanelKind::Version)
       && self.layout.as_ref().is_some_and(|layout| layout.columns == columns)
       || !matches!(
         self.kind,
-        PanelKind::Help
-          | PanelKind::Version
-          | PanelKind::Links
-          | PanelKind::Jumps
+        PanelKind::Version | PanelKind::Links | PanelKind::Jumps
       )
     {
       return;
@@ -376,8 +371,7 @@ impl Panel {
 
   /// Panel columns: dragged, else by kind.
   pub fn width(kind: PanelKind, columns: u16, dragged: Option<u16>) -> u16 {
-    let wide =
-      matches!(kind, PanelKind::Help | PanelKind::Info | PanelKind::Version);
+    let wide = matches!(kind, PanelKind::Info | PanelKind::Version);
     let width = dragged.map_or_else(
       || {
         let width = if wide { columns / 2 } else { columns / 3 };
