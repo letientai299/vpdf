@@ -10,12 +10,13 @@ fn raw_figure_bindings() {
   use vpdf_terminal::decode::{Event, Parser};
   use vpdf_ui::keys::{Action, Grammar, Keys, PanelKind};
   for (bytes, expected) in [
-    (&b"]i"[..], Action::Figure(true)),
-    (&b"[i"[..], Action::Figure(false)),
+    (&b"]f"[..], Action::Figure(true)),
+    (&b"[f"[..], Action::Figure(false)),
     (&b"zF"[..], Action::FigureFit),
     (&b"gF"[..], Action::Region),
     (&b"R"[..], Action::RegionStart),
     (&b"gf"[..], Action::Panel(PanelKind::Figures)),
+    (&b"f"[..], Action::Hints(false)),
   ] {
     let mut events = VecDeque::new();
     Parser::default().feed(bytes, &mut events);
@@ -90,7 +91,7 @@ fn raw_region_preserves_state() -> Result<()> {
   use vpdf_ui::region::Operation;
   use vpdf_ui::region::Region;
   let mut app = app("paper.pdf", false)?;
-  keys(&mut app, b"i]ivgF")?;
+  keys(&mut app, b"i]fvgF")?;
   let mode = app.reader.mode();
   assert!(matches!(mode, Mode::Visual(_)));
   let cursor = app.reader.cursor;
@@ -137,7 +138,7 @@ fn raw_region_pointer_transfer() -> Result<()> {
   use vpdf_reader::reader::Mode;
   use vpdf_ui::input::InputOwner;
   let mut session = crate::harness::session(&corpus("paper.pdf")?, screen())?;
-  send(&mut session, b"i]ivgF")?;
+  send(&mut session, b"i]fvgF")?;
   let mode = session.app().reader.mode();
   let cursor = session.app().reader.cursor;
   let scroll = session.app().reader.scroll;

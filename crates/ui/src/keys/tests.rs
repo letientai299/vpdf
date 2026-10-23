@@ -167,7 +167,7 @@ fn section_prefix_counts() {
     let labels: Vec<_> =
       clues(&prefix.to_string()).into_iter().map(|(key, _)| key).collect();
     assert!(labels.contains(&prefix.to_string()));
-    assert!(labels.contains(&"i".into()));
+    assert!(labels.contains(&"f".into()));
     assert_eq!(labels.len(), 2);
     let input = keys.feed(key(prefix), Grammar::Objects).unwrap();
     assert_eq!(input.action, Action::Section(forward));

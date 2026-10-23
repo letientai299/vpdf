@@ -9,7 +9,7 @@ cannot save regions.
 
 ## Detected figures
 
-`]i` selects the next figure and `[i` the previous one. `zF` fits the selected
+`]f` selects the next figure and `[f` the previous one. `zF` fits the selected
 figure in the view. `gf` opens FIGURES; choose a row and follow it with Enter.
 `gF` opens actions for the selected figure. A PDF with no detected figures can
 still use manual capture. Figure detection is a navigation aid, not a guarantee

@@ -104,7 +104,10 @@ class CacheTests(unittest.TestCase):
             folder.mkdir(parents=True)
             (folder / "artifact").write_bytes(b"x" * 8192)
             os.utime(folder, (index, index))
-        build_cache.prune(self.build, 20000)
+        limit = build_cache.cache_bytes(self.build) - build_cache.cache_bytes(
+            self.build / "old"
+        )
+        build_cache.prune(self.build, limit)
         self.assertFalse((self.build / "old").exists())
         self.assertTrue((self.build / "warm/artifact").exists())
         self.assertTrue((self.build / "active/artifact").exists())

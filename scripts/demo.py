@@ -93,7 +93,7 @@ SCENES = {
         3,
         ["paper"],
         [
-            ("text", "]i[izFgF"),
+            ("text", "]f[fzFgF"),
             ("wait", "Save PNG"),
             ("hover", "Copy text"),
         ],
@@ -126,7 +126,7 @@ SCENES = {
         3,
         ["paper"],
         [
-            ("text", "]i[izF"),
+            ("text", "]f[fzF"),
             ("mouse", ("alt-down", 900, 150)),
             ("mouse", ("alt-drag", 1650, 1250)),
             ("wait", "Release captures; Esc cancels"),
