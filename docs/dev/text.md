@@ -6,9 +6,9 @@ while zoom, crop, rotation, and scrolling change the view.
 
 ## Positions and fidelity
 
-The [text model][text] identifies a position by page, line, and glyph.
-[Reader operations][reader] use those positions; [layout][layout] projects glyph
-bounds onto the screen. Selection copying preserves extracted Unicode and line
+The [text model][text] identifies a position by page, line, and glyph. [Reader
+operations][reader] use those positions; [layout][layout] projects glyph bounds
+onto the screen. Selection copying preserves extracted Unicode and line
 boundaries; line-yank operations can join wrapped lines and rejoin hyphenated
 words. See `:help` for the joined and unjoined forms. Neither reconstructs the
 PDF's original authoring format or reading order.
@@ -47,14 +47,14 @@ flowchart TD
 ```
 
 Regular expressions use normalized text without Vietnamese accent removal.
-Case-sensitive queries rebuild a view preserving capitals, and character
-classes see decomposed forms. Explicit regex `\b` keeps regex semantics;
-the whole-word option additionally uses linguistic boundaries for CJK text.
-The engine supports bounded backtracking; its syntax and cost model differ
-from Python's. Use `:help` for query entry and regex activation.
+Case-sensitive queries rebuild a view preserving capitals, and character classes
+see decomposed forms. Explicit regex `\b` keeps regex semantics; the whole-word
+option additionally uses linguistic boundaries for CJK text. The engine supports
+bounded backtracking; its syntax and cost model differ from Python's. Use
+`:help` for query entry and regex activation.
 
-The [search worker][worker] opens its own document and builds indexes lazily.
-It sends results incrementally, tags them with query generations, and checks for
+The [search worker][worker] opens its own document and builds indexes lazily. It
+sends results incrementally, tags them with query generations, and checks for
 supersession between pages. Before reading a page from the PDF, it waits while
 on-screen work is in flight; see [scan priority][priority]. Limits cap matches
 and regex backtracking. Idling releases the native handle while keeping cached
@@ -63,21 +63,21 @@ indexes, so later queries reopen the PDF only when missing text is needed.
 The [content cache][cache] can persist search indexes to avoid repeated
 extraction. It identifies PDF content by hash and may reuse a file-identity
 record where filesystem timestamps support it. Missing, damaged, or stale data
-falls back to extraction; native open errors can arrive when an uncached page
-is first needed. OCR text overrides stored indexes. PDFs opened with a password
-are excluded from disk caching.
+falls back to extraction; native open errors can arrive when an uncached page is
+first needed. OCR text overrides stored indexes. PDFs opened with a password are
+excluded from disk caching.
 
 Records retain line joins and Unicode source coverage. Provenance changes
 invalidate indexes when normalization or the record layout changes; old packs
 fall back to extraction. Dictionary boundary arrays are transient.
 
 Keep cache locations, filesystem checks, pack encoding, and eviction policy in
-the content-cache implementation. Keep scan scheduling and decode concurrency
-in the [search worker][worker] and [job configuration][jobs]. See [saved
+the content-cache implementation. Keep scan scheduling and decode concurrency in
+the [search worker][worker] and [job configuration][jobs]. See [saved
 state][saved-state] for user-facing cache controls.
 
-[Panel search][panels] searches displayed rows with its own matching rules.
-Do not assume document normalization applies to panel labels.
+[Panel search][panels] searches displayed rows with its own matching rules. Do
+not assume document normalization applies to panel labels.
 
 ## Outlines
 
@@ -135,8 +135,8 @@ its command interface.
 [outline]: ../../crates/vpdf-pdf/src/jobs/outline.rs
 [ocr]: ../../crates/vpdf-pdf/src/jobs/ocr.rs
 [cache]: ../../crates/vpdf-pdf/src/content_cache/mod.rs
-[installation]: ../install.md#optional-helpers
+[installation]: ../users/install.md#optional-helpers
 [jobs]: ../../crates/vpdf-pdf/src/jobs/mod.rs
-[saved-state]: ../reading.md#saved-state-and-reload
-
-[icu]: https://docs.rs/icu_segmenter/latest/icu_segmenter/struct.WordSegmenter.html
+[saved-state]: ../users/reading.md#saved-state-and-reload
+[icu]:
+  <https://docs.rs/icu_segmenter/latest/icu_segmenter/struct.WordSegmenter.html>

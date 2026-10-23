@@ -6,6 +6,8 @@ their owning source files.
 
 ## Build from source
 
+The [embedded help build][help-build] prepares the manual before compilation.
+
 Install [mise][mise] and the native build dependencies: a C/C++ compiler, Make,
 and libclang. Development tasks also use [Git][git], `curl` for corpus
 downloads, and [Python 3][python] for script tests, benchmarks, and demo
@@ -550,6 +552,7 @@ updating the Homebrew tap. The rolling tag moves; use the snapshot identity when
 a result needs a reproducible release reference.
 
 [tasks]: ../../.config/mise.toml
+[help-build]: help.md
 [packages]: packages.md
 [mise]: https://mise.jdx.dev/
 [pkgconf]: https://formulae.brew.sh/formula/pkgconf
@@ -588,7 +591,7 @@ a result needs a reproducible release reference.
 [llvm]: https://formulae.brew.sh/formula/llvm
 [kitty-install]: https://sw.kovidgoyal.net/kitty/binary/
 [poppler]: https://poppler.freedesktop.org/
-[ocr-setup]: ../install.md#optional-helpers
+[ocr-setup]: ../users/install.md#optional-helpers
 [preview]: ../../crates/ui/src/preview.rs
 [manuals]: ../../benches/manuals.rs
 [bench-support]: ../../benches/support/mod.rs

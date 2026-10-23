@@ -3,24 +3,21 @@
 Use `vpdf --help` for the CLI, and `:help` inside the reader for keys and
 commands. These describe the installed executable.
 
-## Learn and use
+The [user manual][manual] is the starting point on GitHub and the first page of
+bare `:help`. Read its chapters in order, from the first reading exercise to
+setup and command reference. Every chapter under `users/` is included in the
+built-in manual, followed by generated action, configuration, and command
+entries. The [chapter order][book] defines the sequence.
 
-Tutorials and how-to guidance share pages. The reading guide assumes familiarity
-with Vim motions and explains Vpdf's modes and workflows.
-
-| Read                         | For                                                           |
-| ---------------------------- | ------------------------------------------------------------- |
-| [Installation][installation] | Install the reader, set up the terminal, and add helpers      |
-| [Reading][reading]           | Navigate, select, compare documents, and copy text or figures |
-| [Demos][demo]                | Browse reading demonstrations                                 |
+See [Demos][demo] for demonstrations on real documents.
 
 Maintainers can use [Development][development] for building, validation,
 benchmarks, demo capture, and packaging.
 
 ## Reference
 
-Use executable help for the complete CLI, keys, and reader commands. These
-guide sections cover requirements and behavior:
+Use executable help for the complete CLI, keys, and reader commands. These guide
+sections cover requirements and behavior:
 
 - [Terminal setup][terminal] and [optional helpers][helpers].
 - [Mouse][mouse], including terminal notes and known limits.
@@ -53,18 +50,15 @@ implementation files for current limits, task definitions, and protocol details.
 Keep all image and future video demonstrations in [Demos][demo], with media in
 `assets/`. Reuse individual images in other pages when useful.
 
-Keep changing measurements in versioned evidence. Historical demonstrations
-must identify their build and capture conditions; they do not describe every
-current build. Keep interface inventories in executable help.
+Keep changing measurements in versioned evidence. Historical demonstrations must
+identify their build and capture conditions; they do not describe every current
+build. Keep interface inventories in executable help.
 
-Keep bindings in the [key table][keys], reader commands in the
-[command table][commands], and launch options in the [CLI][cli]. The
-[embedded reference][key-help] derives binding labels from those keys; update
-its prose when grammar or context changes. Avoid copying inventories into
-Markdown.
+Keep bindings in the [key table][keys], reader commands in the [command
+table][commands], and launch options in the [CLI][cli]. The [runtime
+reference][key-help] uses resolved bindings and configuration. Keep [manual
+sources][manual] under `users/`. Avoid copying inventories into Markdown.
 
-[installation]: install.md
-[reading]: reading.md
 [demo]: demos.md
 [architecture]: dev/arch.md
 [packages]: dev/packages.md
@@ -74,14 +68,16 @@ Markdown.
 [development]: dev/dev.md
 [readme]: ../README.md
 [keys]: ../crates/ui/src/keys.rs
-[key-help]: ../crates/ui/src/keys/reference.rs
+[key-help]: ../src/manual/reference.rs
+[manual]: users/readme.md
 [commands]: ../crates/ui/src/commands.rs
 [cli]: ../src/main.rs
-[terminal]: install.md#terminal-setup
-[helpers]: install.md#optional-helpers
-[mouse]: reading.md#mouse
-[saved-state]: reading.md#saved-state-and-reload
-[external]: reading.md#external-actions
-[licensing]: install.md#licensing
-[performance]: reading.md#performance-display
-[configuration]: configuration.md
+[terminal]: users/install.md#terminal-setup
+[helpers]: users/install.md#optional-helpers
+[mouse]: users/install.md#mouse-and-focus
+[saved-state]: users/reading.md#saved-state-and-reload
+[external]: users/reading.md#external-actions
+[licensing]: users/install.md#licensing
+[performance]: users/status.md#performance-display
+[configuration]: users/config.md
+[book]: ../scripts/help/book.json

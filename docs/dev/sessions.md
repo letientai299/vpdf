@@ -12,12 +12,12 @@ pane shows the same file. The split tree controls screen rectangles; the session
 routes input and owns the shared graphics cache that visible panes draw with.
 
 Keyboard input belongs to the focused pane. Within it, a focused panel handles
-row navigation and search before page motions. UI [input policy][input]
-resolves overlays and focused content. Session [pointer routing][pointer]
-chooses the pane under the pointer, then UI components resolve its surfaces and
-actions: clicks can change focus, while wheel scrolling can leave keyboard
-focus in place. These boundaries keep one view's navigation from moving another
-view accidentally. Use `:help` for pane and focus commands.
+row navigation and search before page motions. UI [input policy][input] resolves
+overlays and focused content. Session [pointer routing][pointer] chooses the
+pane under the pointer, then UI components resolve its surfaces and actions:
+clicks can change focus, while wheel scrolling can leave keyboard focus in
+place. These boundaries keep one view's navigation from moving another view
+accidentally. Use `:help` for pane and focus commands.
 
 Switching tabs trims rebuildable caches and workers in panes that become hidden.
 It preserves their view state and retained OCR text. Prepared or
@@ -87,5 +87,5 @@ user-visible clipboard, SSH, link, and password behavior.
 [watch]: ../../src/watch.rs
 [reload]: ../../src/app.rs
 [clipboard]: ../../src/clipboard.rs
-[external]: ../reading.md#external-actions
-[saved-state]: ../reading.md#saved-state-and-reload
+[external]: ../users/reading.md#external-actions
+[saved-state]: ../users/reading.md#saved-state-and-reload
