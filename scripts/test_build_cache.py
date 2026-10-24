@@ -32,6 +32,7 @@ class CacheTests(unittest.TestCase):
         }
         self.env.update(
             XDG_CACHE_HOME=str(self.root / "cache"),
+            CARGO_HOME=str(self.root / "cargo-home"),
             VPDF_BUILD_CACHE_ID="0123456789abcdef",
         )
         self.build = build_cache.cache_root(self.env) / "build"

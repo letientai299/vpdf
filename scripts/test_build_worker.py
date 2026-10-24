@@ -30,6 +30,7 @@ class WorkerTests(unittest.TestCase):
         }
         self.env.update(
             XDG_CACHE_HOME=str(self.root / "cache"),
+            CARGO_HOME=str(self.root / "cargo-home"),
             GIT_CONFIG_GLOBAL=os.devnull,
             GIT_CONFIG_NOSYSTEM="1",
         )
@@ -156,15 +157,32 @@ class WorkerTests(unittest.TestCase):
         self.assertTrue(any(not record["fresh"] for record in second))
 
     def compile(self, source, env):
-        result = subprocess.run(
-            ["cargo", "build", "--offline", "--message-format=json"],
-            cwd=source,
-            env=build_cache.cargo_env(env),
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        try:
+            result = subprocess.run(
+                ["cargo", "build", "--offline", "--message-format=json"],
+                cwd=source,
+                env=build_cache.cargo_env(env),
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (
+            subprocess.TimeoutExpired,
+            subprocess.CalledProcessError,
+        ) as error:
+
+            def text(value):
+                return (
+                    value.decode(errors="replace")
+                    if isinstance(value, bytes)
+                    else value or ""
+                )
+
+            self.fail(
+                f"Fixture Cargo build failed\n{error}\n"
+                f"stdout:\n{text(error.stdout)}\nstderr:\n{text(error.stderr)}"
+            )
         return [
             record
             for line in result.stdout.splitlines()
@@ -200,6 +218,45 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(
             [p.name for p in (cache / "build").iterdir()], ["worker"]
         )
+
+    def test_cargo_cache_lock(self):
+        shared = self.root / "shared-cargo-home"
+        shared.mkdir()
+        with (shared / ".package-cache").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            with self.snapshot() as (source, env):
+                inherited = {"CARGO_HOME": str(shared), **env}
+                records = self.compile(source, inherited)
+        self.assertTrue(any(not record["fresh"] for record in records))
+
+    def test_compile_diagnostics(self):
+        for error in [
+            subprocess.TimeoutExpired(
+                "cargo",
+                60,
+                output=b"fixture stdout",
+                stderr=b"cache locked",
+            ),
+            subprocess.CalledProcessError(
+                1,
+                "cargo",
+                output="fixture stdout",
+                stderr="compiler failed",
+            ),
+        ]:
+            with (
+                self.subTest(error=type(error).__name__),
+                patch.object(subprocess, "run", side_effect=error),
+                self.assertRaises(AssertionError) as failure,
+            ):
+                self.compile(self.repo, self.env)
+            self.assertIn("fixture stdout", str(failure.exception))
+            detail = (
+                error.stderr.decode()
+                if isinstance(error.stderr, bytes)
+                else error.stderr
+            )
+            self.assertIn(detail, str(failure.exception))
 
     def test_nested_tasks(self):
         with self.snapshot() as (source, env):
