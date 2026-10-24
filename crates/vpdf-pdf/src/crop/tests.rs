@@ -32,7 +32,7 @@ fn fixture(content: &str) -> Result<Ink> {
      /BaseFont /Helvetica >> >> >>",
   )?;
   let stream = native.add_stream(
-    &mupdf::Buffer::from_bytes(content.as_bytes())?,
+    &mupdf::Buffer::from_copied_bytes(content.as_bytes())?,
     None,
     false,
   )?;

@@ -417,9 +417,10 @@ fn custom_commands_are_not_documented() -> crate::Result<()> {
 #[test]
 fn font_notices_include_license() -> crate::Result<()> {
   let ready = request(&mut Runtime::default(), &snapshot(), "config")?;
-  for native in
-    [PdfDocument::from_bytes(PDF)?, PdfDocument::open(ready.document.path())?]
-  {
+  for native in [
+    PdfDocument::from_copied_bytes(PDF)?,
+    PdfDocument::open(ready.document.path())?,
+  ] {
     let outlines = native.outlines()?;
     let notices = outlines.last().unwrap();
     assert_eq!(notices.title, "Font notices");
@@ -493,7 +494,7 @@ fn theme_colors_and_monospace() -> crate::Result<()> {
     assert!(
       appendix.dest.unwrap().loc.page_number > page(&ready.target) as u32
     );
-    let authored_pages = PdfDocument::from_bytes(PDF)?.page_count()?;
+    let authored_pages = PdfDocument::from_copied_bytes(PDF)?.page_count()?;
     assert!(
       native.page_count()? - authored_pages < 350,
       "Reference grouping exceeded budget: {} pages",

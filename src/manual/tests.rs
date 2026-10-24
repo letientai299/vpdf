@@ -5,7 +5,7 @@ mod runtime;
 
 #[test]
 fn embedded_topics_resolve() -> crate::Result<()> {
-  let native = PdfDocument::from_bytes(PDF)?;
+  let native = PdfDocument::from_copied_bytes(PDF)?;
   let topics: serde_json::Value = serde_json::from_str(TOPICS)?;
   let mut text = String::new();
   let mut dynamic = std::collections::BTreeSet::new();
@@ -53,7 +53,7 @@ fn embedded_topics_resolve() -> crate::Result<()> {
 
 #[test]
 fn embedded_links_have_distinct_hints() -> crate::Result<()> {
-  let native = PdfDocument::from_bytes(PDF)?;
+  let native = PdfDocument::from_copied_bytes(PDF)?;
   for index in 0..native.page_count()? {
     let links: Vec<_> = native.load_page(index)?.links()?.collect();
     for (position, link) in links.iter().enumerate() {

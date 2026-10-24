@@ -142,7 +142,7 @@ fn compose(
   use mupdf::pdf::PdfDocument;
 
   ensure!(ready(), "Help generation canceled");
-  let mut native = PdfDocument::from_bytes(base)?;
+  let mut native = PdfDocument::from_copied_bytes(base)?;
   style::authored(&native, palette)?;
   sample_note(&native)?;
   let mut outlines = native.outlines()?;

@@ -52,7 +52,9 @@ impl Writer {
       super::style::rgb(self.palette.background)
     );
     let stream = self.native.add_stream(
-      &Buffer::from_bytes(format!("{background}{}", self.content).as_bytes())?,
+      &Buffer::from_copied_bytes(
+        format!("{background}{}", self.content).as_bytes(),
+      )?,
       None,
       false,
     )?;

@@ -165,8 +165,8 @@ name = "micro"
 harness = false
 
 [patch.crates-io]
-mupdf = { git = "https://github.com/messense/mupdf-rs", rev = "ffaf28f5a96c478661e228dd04564afdcf2477c6" }
-mupdf-sys = { git = "https://github.com/messense/mupdf-rs", rev = "ffaf28f5a96c478661e228dd04564afdcf2477c6" }
+mupdf = { git = "https://github.com/messense/mupdf-rs", rev = "7aa360d38be068cfca21ab7d840e0676dc6db52c" }
+mupdf-sys = { git = "https://github.com/messense/mupdf-rs", rev = "7aa360d38be068cfca21ab7d840e0676dc6db52c" }
 
 [[bench]]
 name = "manuals"
