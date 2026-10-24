@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 DEFAULT_GIB = 20
+WORKER_PROTOCOL = 2
 SHIMS = Path(__file__).resolve().parent / "tools"
 
 
@@ -126,20 +127,36 @@ def cargo_env(env):
     return env
 
 
-def invoke(command, env, pass_fds=(), cwd=None):
-    if env and env.get("VPDF_BUILD_WORKER_FD"):
-        descriptor = int(env["VPDF_BUILD_WORKER_FD"])
-        lease = Path(env["VPDF_BUILD_WORKER"]).parents[2] / "leases/worker"
-        try:
+def worker_descriptors(env):
+    if not env or not env.get("VPDF_BUILD_WORKER_FD"):
+        return ()
+    try:
+        source = Path(env["VPDF_BUILD_WORKER"])
+        leases = source.parents[2] / "leases"
+        expected = [(source.parent.name, int(env["VPDF_BUILD_WORKER_FD"]))]
+        for item in filter(
+            None, env.get("VPDF_BUILD_RESOURCE_FDS", "").split(",")
+        ):
+            slot, descriptor = item.split(":")
+            if slot not in {"0", "1", "gate"}:
+                return ()
+            name = "worker" if slot == "gate" else f"budget-{slot}"
+            expected.append((name, int(descriptor)))
+        for name, descriptor in expected:
             inherited = os.fstat(descriptor)
-            expected = lease.stat()
-            if (inherited.st_dev, inherited.st_ino) == (
-                expected.st_dev,
-                expected.st_ino,
+            actual = (leases / name).stat()
+            if (inherited.st_dev, inherited.st_ino) != (
+                actual.st_dev,
+                actual.st_ino,
             ):
-                pass_fds = (*pass_fds, descriptor)
-        except OSError:
-            pass
+                return ()
+        return tuple(descriptor for _, descriptor in expected)
+    except (KeyError, IndexError, OSError, ValueError):
+        return ()
+
+
+def invoke(command, env, pass_fds=(), cwd=None):
+    pass_fds = tuple(set(pass_fds) | set(worker_descriptors(env)))
     with subprocess.Popen(
         command, env=env, pass_fds=pass_fds, cwd=cwd, start_new_session=True
     ) as child:

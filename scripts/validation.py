@@ -32,6 +32,9 @@ TRANSIENT = {
     "MISE_CONFIG_ROOT",
     "MISE_TRUSTED_CONFIG_PATHS",
     "VPDF_BUILD_WORKER_FD",
+    "VPDF_BUILD_RESOURCE_FDS",
+    "VPDF_BUILD_REQUEST_ID",
+    "VPDF_BUILD_ORIGIN",
     "VPDF_VALIDATE_FORCE",
 }
 TOOLS = (
@@ -60,50 +63,64 @@ def digest_file(path):
         return digest.hexdigest()
 
 
-def fingerprint(root, env):
-    if (
-        env.get("CI") == "true"
-        or not env.get("VPDF_BUILD_WORKER")
-        or env.get("VPDF_BUILD_MODE") == "isolated"
-        or env.get("VPDF_CACHE") != "off"
-        or env.get("NEXTEST_RETRIES", "0") != "0"
-        or env.get("NEXTEST_CONFIG_FILE")
-        or env.get("NEXTEST_USER_CONFIG_FILE")
-        or any(
-            key.startswith("VPDF_")
-            and key
-            not in {
-                "VPDF_BUILD_WORKER",
-                "VPDF_BUILD_WORKER_FD",
-                "VPDF_BUILD_CACHE_ID",
-                "VPDF_BUILD_CACHE_GIB",
-                "VPDF_BUILD_MODE",
-                "VPDF_CACHE",
-                "VPDF_CORPUS",
-                "VPDF_VALIDATE_FORCE",
-            }
-            for key in env
-        )
-        or any(
-            key.startswith(("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS"))
-            or key
-            in {
-                "RUSTC_WRAPPER",
-                "RUSTC_WORKSPACE_WRAPPER",
-                "CC",
-                "CXX",
-                "CFLAGS",
-                "CXXFLAGS",
-                "LDFLAGS",
-                "TESSDATA_PREFIX",
-                "LIBCLANG_PATH",
-                "CARGO_BUILD_RUSTC",
-                "CARGO_BUILD_RUSTDOC",
-            }
-            for key in env
-        )
-    ):
+def fingerprint(root, env, details=None):
+    details = {} if details is None else details
+
+    def unavailable(reason):
+        details["disabled"] = reason
         return None
+
+    for condition, reason in [
+        (env.get("CI") == "true", "ci"),
+        (not env.get("VPDF_BUILD_WORKER"), "outside-worker"),
+        (env.get("VPDF_BUILD_MODE") == "isolated", "isolated"),
+        (env.get("VPDF_CACHE") != "off", "cache-policy"),
+        (env.get("NEXTEST_RETRIES", "0") != "0", "test-retries"),
+        (
+            bool(
+                env.get("NEXTEST_CONFIG_FILE")
+                or env.get("NEXTEST_USER_CONFIG_FILE")
+            ),
+            "nextest-config",
+        ),
+    ]:
+        if condition:
+            return unavailable(reason)
+    supported = {
+        "VPDF_BUILD_WORKER",
+        "VPDF_BUILD_WORKER_FD",
+        "VPDF_BUILD_CACHE_ID",
+        "VPDF_BUILD_CACHE_GIB",
+        "VPDF_BUILD_MODE",
+        "VPDF_CACHE",
+        "VPDF_CORPUS",
+        "VPDF_VALIDATE_FORCE",
+        "VPDF_BUILD_WORKERS",
+        "VPDF_BUILD_RESOURCE_FDS",
+        "VPDF_BUILD_REQUEST_ID",
+        "VPDF_BUILD_ORIGIN",
+    }
+    if any(key.startswith("VPDF_") and key not in supported for key in env):
+        return unavailable("custom-vpdf-input")
+    if any(
+        key.startswith(("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS"))
+        or key
+        in {
+            "RUSTC_WRAPPER",
+            "RUSTC_WORKSPACE_WRAPPER",
+            "CC",
+            "CXX",
+            "CFLAGS",
+            "CXXFLAGS",
+            "LDFLAGS",
+            "TESSDATA_PREFIX",
+            "LIBCLANG_PATH",
+            "CARGO_BUILD_RUSTC",
+            "CARGO_BUILD_RUSTDOC",
+        }
+        for key in env
+    ):
+        return unavailable("custom-compiler-input")
     try:
         home = root / env.get("HOME", Path.home())
         cargo_home = root / env.get("CARGO_HOME", home / ".cargo")
@@ -112,29 +129,37 @@ def fingerprint(root, env):
             for directory in [cargo_home, root / ".cargo"]
             for name in ["config", "config.toml"]
         ):
-            return None
-        if (root / ".config/nextest.toml").exists():
-            return None
+            return unavailable("cargo-config")
         config = root / env.get("XDG_CONFIG_HOME", home / ".config")
-        if (config / "nextest/config.toml").exists():
-            return None
+        if (root / ".config/nextest.toml").exists() or (
+            config / "nextest/config.toml"
+        ).exists():
+            return unavailable("nextest-config")
         files = working_files(root, env)
         if any(mode == b"120000" for mode, _ in files.values()):
-            return None
+            return unavailable("source-symlink")
         digest = hashlib.sha256()
+        components = {}
 
-        def add(value):
+        def add(value, component):
             data = json.dumps(value, sort_keys=True).encode()
-            digest.update(len(data).to_bytes(8, "big"))
+            data = len(data).to_bytes(8, "big") + data
             digest.update(data)
+            components.setdefault(component, hashlib.sha256()).update(data)
 
-        add([1, platform.platform(), platform.machine()])
+        add([1, platform.platform(), platform.machine()], "platform")
         for name, (mode, content) in sorted(files.items()):
-            add([name, mode.decode(), hashlib.sha256(content).hexdigest()])
-        for args in [
-            ["rev-parse", "HEAD"],
-            ["show-ref", "--tags"],
-            ["config", "--null", "--list", "--show-origin", "--includes"],
+            add(
+                [name, mode.decode(), hashlib.sha256(content).hexdigest()],
+                "source",
+            )
+        for args, component in [
+            (["rev-parse", "HEAD"], "revision"),
+            (["show-ref", "--tags"], "tags"),
+            (
+                ["config", "--null", "--list", "--show-origin", "--includes"],
+                "git-config",
+            ),
         ]:
             result = subprocess.run(
                 ["git", *args], cwd=root, env=env, capture_output=True
@@ -142,8 +167,8 @@ def fingerprint(root, env):
             if result.returncode not in (
                 {0, 1} if args[0] == "show-ref" else {0}
             ):
-                return None
-            add(result.stdout.hex())
+                return unavailable("git-input-unavailable")
+            add(result.stdout.hex(), component)
         environment = dict(env)
         environment["PATH"] = os.pathsep.join(
             dict.fromkeys(
@@ -157,12 +182,13 @@ def fingerprint(root, env):
                 key: value
                 for key, value in environment.items()
                 if key not in TRANSIENT and not key.startswith("__MISE_")
-            }
+            },
+            "environment",
         )
         for name in TOOLS:
             tool = shutil.which(name, path=environment.get("PATH"))
             if not tool:
-                return None
+                return unavailable("tool-unavailable")
             result = subprocess.run(
                 [tool, "--version"],
                 cwd=root,
@@ -171,23 +197,68 @@ def fingerprint(root, env):
                 timeout=10,
             )
             if result.returncode:
-                return None
+                return unavailable("tool-failed")
             executable = Path(tool).resolve()
             info = executable.stat()
-            add([str(executable), info.st_size, info.st_mtime_ns])
-            add((result.stdout + result.stderr).hex())
+            add([str(executable), info.st_size, info.st_mtime_ns], "tools")
+            add((result.stdout + result.stderr).hex(), "tools")
         corpus = root / env.get("VPDF_CORPUS", "tmp/corpus")
         if corpus.is_symlink():
-            return None
-        add(str(corpus.resolve()))
+            return unavailable("corpus-symlink")
+        add(str(corpus.resolve()), "corpus")
         for path in sorted(corpus.rglob("*")):
             if path.is_symlink():
-                return None
+                return unavailable("corpus-symlink")
             if path.is_file():
-                add([str(path.relative_to(corpus)), digest_file(path)])
+                add(
+                    [str(path.relative_to(corpus)), digest_file(path)], "corpus"
+                )
+        details["components"] = {
+            key: value.hexdigest() for key, value in components.items()
+        }
         return digest.hexdigest()
     except (OSError, ValueError, subprocess.SubprocessError):
-        return None
+        return unavailable("input-unavailable")
+
+
+def diagnose(root, env, scope, identity, details, reused):
+    status = "hit" if reused else "miss"
+    if identity is None:
+        status = "disabled"
+    elif env.get("VPDF_VALIDATE_FORCE") == "1":
+        status = "forced"
+    changed = []
+    try:
+        origin = env.get("VPDF_BUILD_ORIGIN", str(root))
+        name = hashlib.sha256(f"{origin}:{scope}".encode()).hexdigest()
+        path = cache_root(env, root) / "diagnostics" / f"{name}.json"
+        previous = {}
+        if path.exists():
+            previous = json.loads(path.read_text())
+        current = details.get("components", {})
+        if isinstance(previous, dict) and previous and current:
+            changed = sorted(
+                key
+                for key in previous.keys() | current.keys()
+                if previous.get(key) != current.get(key)
+            )
+        if current:
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            replace_file(
+                path, json.dumps(current, sort_keys=True).encode(), 0o600
+            )
+    except (OSError, ValueError):
+        pass
+    request = env.get("VPDF_BUILD_REQUEST_ID", "local")
+    reason = details.get(
+        "disabled", "identity" if changed else "no-matching-receipt"
+    )
+    print(
+        f"Validation receipt: request={request} scope={scope} status={status} "
+        f"reason={reason if not reused else 'matching-receipt'} "
+        f"changed={','.join(changed) or 'none'}",
+        flush=True,
+    )
 
 
 def receipt_path(root, env, identity, scope):
@@ -228,11 +299,14 @@ def invalidate_tests(root, env, identity):
 
 def run_check(root, env, scope, action, covered_by=None):
     started = time.monotonic()
-    identity = fingerprint(root, env)
+    details = {}
+    identity = fingerprint(root, env, details)
     candidates = [scope, *([covered_by] if covered_by else [])]
-    if env.get("VPDF_VALIDATE_FORCE") != "1" and any(
+    reused = env.get("VPDF_VALIDATE_FORCE") != "1" and any(
         completed(root, env, identity, candidate) for candidate in candidates
-    ):
+    )
+    diagnose(root, env, scope, identity, details, reused)
+    if reused:
         print(f"Validation reused: {scope}", flush=True)
         return
     if identity is not None:

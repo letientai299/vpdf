@@ -508,8 +508,8 @@ class WorkerTests(unittest.TestCase):
                 Path(env["CARGO_TARGET_DIR"]).is_relative_to(source.parent)
             )
 
-    def test_concurrent_requests(self):
-        script = (
+    def snapshot_script(self):
+        return (
             "import sys; from pathlib import Path; "
             f"sys.path.insert(0, {str(Path(build_worker.__file__).parent)!r}); "
             "from build_worker import worker_snapshot, working_files; "
@@ -517,6 +517,9 @@ class WorkerTests(unittest.TestCase):
             "context = worker_snapshot(root, lambda: working_files(root)); "
             "context.__enter__(); context.__exit__(None, None, None)"
         )
+
+    def test_concurrent_requests(self):
+        script = self.snapshot_script()
         with self.snapshot() as (source, _):
             with self.assertRaises(subprocess.TimeoutExpired):
                 subprocess.run(
@@ -532,6 +535,142 @@ class WorkerTests(unittest.TestCase):
             check=True,
             timeout=10,
         )
+
+    def test_pool_affinity_and_isolation(self):
+        with patch.dict(os.environ, VPDF_BUILD_WORKERS="2"):
+            with self.snapshot() as (first, first_env):
+                self.assertEqual(first.parent.name, "worker")
+                self.assertEqual(first_env["CARGO_BUILD_JOBS"], "2")
+                self.assertEqual(first_env["NEXTEST_TEST_THREADS"], "2")
+                (self.other / "src/value.rs").write_text("other snapshot")
+                with self.snapshot(self.other) as (second, second_env):
+                    self.assertEqual(second.parent.name, "worker-2")
+                    self.assertNotEqual(first, second)
+                    self.assertEqual(
+                        (second / "src/value.rs").read_text(), "other snapshot"
+                    )
+                    self.assertIn(
+                        '"first"', (first / "src/value.rs").read_text()
+                    )
+                    self.assertEqual(
+                        (second / "tmp").resolve(), self.other / "tmp"
+                    )
+                    self.assertNotEqual(
+                        first_env["CARGO_TARGET_DIR"],
+                        second_env["CARGO_TARGET_DIR"],
+                    )
+                    build_cache.prune(
+                        first.parent.parent, 1, first.parents[2] / "leases"
+                    )
+                    self.assertTrue(first.exists())
+                    self.assertTrue(second.exists())
+                    script = self.snapshot_script()
+                    with self.assertRaises(subprocess.TimeoutExpired):
+                        subprocess.run(
+                            [sys.executable, "-c", script, str(self.repo)],
+                            env=dict(os.environ),
+                            timeout=0.5,
+                            check=True,
+                            capture_output=True,
+                        )
+            with self.snapshot(self.other) as (again, _):
+                self.assertEqual(again, second)
+
+    def test_mixed_modes_reserve_budget(self):
+        cache = build_cache.cache_root(self.env, self.repo)
+        (cache / "leases").mkdir(parents=True)
+        with patch.dict(os.environ, VPDF_BUILD_WORKERS="2"):
+            with build_cache.locked(cache / "leases/budget-0"):
+                context = self.snapshot(self.other)
+                second, _ = context.__enter__()
+            try:
+                self.assertEqual(second.parent.name, "worker-2")
+                with self.assertRaises(BlockingIOError):
+                    with build_worker.worker_lease(cache, self.repo, 2):
+                        with build_cache.locked(
+                            cache / "leases/budget-0",
+                            fcntl.LOCK_EX | fcntl.LOCK_NB,
+                        ):
+                            pass
+                script = self.snapshot_script()
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    subprocess.run(
+                        [sys.executable, "-c", script, str(self.repo)],
+                        env=self.env,
+                        timeout=0.5,
+                        check=True,
+                        capture_output=True,
+                    )
+            finally:
+                context.__exit__(None, None, None)
+        with self.snapshot() as (source, env):
+            self.assertEqual(source.parent.name, "worker")
+            self.assertEqual(len(env["VPDF_BUILD_RESOURCE_FDS"].split(",")), 2)
+
+    def test_legacy_admission(self):
+        cache = build_cache.cache_root(self.env, self.repo)
+        (cache / "leases").mkdir(parents=True)
+        with build_cache.locked(cache / "leases/worker"):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        self.snapshot_script(),
+                        str(self.repo),
+                    ],
+                    env=self.env | {"VPDF_BUILD_WORKERS": "2"},
+                    timeout=0.5,
+                    check=True,
+                    capture_output=True,
+                )
+
+    def test_pool_children_keep_leases(self):
+        with patch.dict(os.environ, VPDF_BUILD_WORKERS="2"):
+            with self.snapshot():
+                with self.snapshot(self.other) as (source, env):
+                    output = self.root / "descriptors"
+                    script = (
+                        "import os,sys; from pathlib import Path; "
+                        f"sys.path.insert(0, {str(Path(build_worker.__file__).parent)!r}); "
+                        "from build_cache import worker_descriptors; "
+                        f"Path({str(output)!r}).write_text(str(len(worker_descriptors(os.environ))))"
+                    )
+                    self.assertEqual(
+                        build_cache.invoke(
+                            [sys.executable, "-c", script], env=env
+                        ),
+                        0,
+                    )
+                    self.assertEqual(output.read_text(), "3")
+                    broken = env | {"VPDF_BUILD_RESOURCE_FDS": "1:999999"}
+                    self.assertEqual(build_cache.worker_descriptors(broken), ())
+
+    def test_invalid_pool_limits(self):
+        for changes in [
+            {"VPDF_BUILD_WORKERS": "0"},
+            {"VPDF_BUILD_WORKERS": "3"},
+            {"VPDF_BUILD_WORKERS": "invalid"},
+            {"VPDF_BUILD_WORKERS": "2", "CARGO_BUILD_JOBS": "8"},
+            {"VPDF_BUILD_WORKERS": "2", "CARGO_BUILD_JOBS": "1"},
+            {"VPDF_BUILD_WORKERS": "2", "NEXTEST_TEST_THREADS": "default"},
+        ]:
+            with self.subTest(changes=changes), patch.dict(os.environ, changes):
+                with self.assertRaises(ValueError), self.snapshot():
+                    pass
+
+    def test_legacy_snapshot_rejected(self):
+        self.write("scripts/build_cache.py", "# older validation scripts\n")
+        with patch.dict(os.environ, VPDF_BUILD_WORKERS="2"):
+            with (
+                self.assertRaisesRegex(
+                    ValueError, "updated validation scripts"
+                ),
+                self.snapshot(),
+            ):
+                pass
+        with self.snapshot():
+            pass
 
     def test_legacy_cleanup(self):
         cache = build_cache.cache_root(self.env, self.repo)
@@ -588,7 +727,19 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(json.loads(state.read_text()), [0, 2])
 
     def test_inherited_lease(self):
+        self.assert_inherited(1, "worker")
+        self.assert_inherited(2, "worker-2")
+
+    def assert_inherited(self, count, name):
+        cache = build_cache.cache_root(self.env, self.repo)
+        (cache / "leases").mkdir(parents=True, exist_ok=True)
+        if count == 2:
+            with patch.dict(os.environ, VPDF_BUILD_WORKERS="2"):
+                with build_cache.locked(cache / "leases/budget-0"):
+                    with self.snapshot():
+                        pass
         ready = self.root / "ready"
+        ready.unlink(missing_ok=True)
         child = (
             "import os, time; from pathlib import Path; "
             f"Path({str(ready)!r}).write_text(str(os.getpid())); "
@@ -603,7 +754,10 @@ class WorkerTests(unittest.TestCase):
             "source, env = context.__enter__(); "
             f"invoke([sys.executable, '-c', {child!r}], env=env)"
         )
-        wrapper = subprocess.Popen([sys.executable, "-c", script], env=self.env)
+        wrapper = subprocess.Popen(
+            [sys.executable, "-c", script],
+            env=self.env | {"VPDF_BUILD_WORKERS": str(count)},
+        )
         pid = None
         try:
             deadline = time.monotonic() + 10
@@ -614,12 +768,24 @@ class WorkerTests(unittest.TestCase):
             pid = int(ready.read_text())
             wrapper.kill()
             wrapper.wait(timeout=10)
-            cache = build_cache.cache_root(self.env, self.repo)
             with self.assertRaises(BlockingIOError):
                 with build_cache.locked(
-                    cache / "leases/worker", fcntl.LOCK_EX | fcntl.LOCK_NB
+                    cache / "leases" / name, fcntl.LOCK_EX | fcntl.LOCK_NB
                 ):
                     pass
+            if count == 2:
+                with self.assertRaises(BlockingIOError):
+                    with build_cache.locked(
+                        cache / "leases/worker", fcntl.LOCK_EX | fcntl.LOCK_NB
+                    ):
+                        pass
+            for slot in range(2) if count == 1 else [1]:
+                with self.assertRaises(BlockingIOError):
+                    with build_cache.locked(
+                        cache / f"leases/budget-{slot}",
+                        fcntl.LOCK_EX | fcntl.LOCK_NB,
+                    ):
+                        pass
         finally:
             if wrapper.poll() is None:
                 wrapper.kill()

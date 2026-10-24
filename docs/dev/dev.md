@@ -74,12 +74,35 @@ refer to the shared snapshot; its sources reflect the most recent request.
 Changed inputs and different profiles, features, or toolchains can still require
 recompilation. Editing remains parallel; shared validation waits for the worker.
 
+The default remains one worker. Experiment with a bounded pool using
+`VPDF_BUILD_WORKERS=2 mise run validate`. Each worker owns its source snapshot,
+Git metadata, build state, and outputs. Requests prefer their worktree's
+previous worker and use another idle worker when available. Successful receipts
+remain in the repository cache. Worker-specific paths can still prevent receipt
+reuse across workers.
+
+The pool splits the configured compiler and test concurrency totals between
+workers; it validates those totals before queuing. Single-worker requests
+reserve both resource slots. Pool requests also hold shared admission leases,
+so older launchers using the original exclusive worker lease serialize with
+the pool. Pool snapshots must contain updated validation scripts so child
+processes retain every lease; use the default mode for older snapshots.
+Direct Cargo and benchmark commands
+also do not participate in this budget. All worker caches share the disk budget,
+and active worker leases prevent pruning.
+
 Run `mise run validate` for final code validation. It captures the working
 inputs before waiting, then runs read-only lint, the full test suite, and a
 debug terminal build under one worker lease. The debug executable copies back
 to the caller. Queue, synchronization, lint, test, build, and worker durations
 appear in command output. These timings include command and cache overhead;
 they are not reader performance measurements.
+Request IDs identify the selected worker and validation scope. Synchronization
+also reports pruning, file synchronization, and Git setup separately. Receipt
+diagnostics report hits, misses, forced checks, disabled-reuse reasons, and
+changed fingerprint categories. They store category hashes outside the worker
+snapshot and never print environment values. A category change explains a key
+change; it does not establish that the changed input can safely be ignored.
 
 Successful lint and test checks write local receipts outside the worker's
 mutable directory. Validation and hooks reuse them only for matching source

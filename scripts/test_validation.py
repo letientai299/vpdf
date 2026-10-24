@@ -1,3 +1,6 @@
+import contextlib
+import io
+import json
 import os
 import subprocess
 import tempfile
@@ -203,6 +206,9 @@ class FingerprintTests(unittest.TestCase):
             self.identity(),
             self.identity(
                 VPDF_BUILD_WORKER_FD="19",
+                VPDF_BUILD_RESOURCE_FDS="0:20,1:21",
+                VPDF_BUILD_REQUEST_ID="another-request",
+                VPDF_BUILD_ORIGIN="caller-metadata",
                 MISE_TASK_NAME="commit",
                 MISE_TASK_TIMINGS="/different/request",
                 MISE_TASK_COLOR="0",
@@ -270,6 +276,43 @@ class FingerprintTests(unittest.TestCase):
         config.parent.mkdir()
         config.write_text("[profile.default]\nretries = 1\n")
         self.assertIsNone(self.identity())
+
+    def test_diagnostics_hide_values(self):
+        env = self.env | {
+            "EXAMPLE_API_KEY": "private-token",
+            "XDG_CACHE_HOME": str(self.root / "cache"),
+        }
+        first = {}
+        identity = validation.fingerprint(self.root, env, first)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            validation.diagnose(self.root, env, "test", identity, first, False)
+            env["EXAMPLE_API_KEY"] = "other-private-token"
+            second = {}
+            identity = validation.fingerprint(self.root, env, second)
+            validation.diagnose(self.root, env, "test", identity, second, False)
+        self.assertIn("changed=environment", output.getvalue())
+        self.assertNotIn("private-token", output.getvalue())
+        directory = validation.cache_root(env, self.root) / "diagnostics"
+        for path in directory.glob("*.json"):
+            self.assertNotIn("private-token", path.read_text())
+            self.assertEqual(
+                set(json.loads(path.read_text())), set(first["components"])
+            )
+        self.assertNotIn(identity, output.getvalue())
+
+    def test_disabled_diagnostics(self):
+        for changes, expected in [
+            ({"CI": "true"}, "ci"),
+            ({"VPDF_CACHE": "custom"}, "cache-policy"),
+            ({"RUSTFLAGS": "private-value"}, "custom-compiler-input"),
+            ({"VPDF_EXTERNAL": "private-value"}, "custom-vpdf-input"),
+        ]:
+            details = {}
+            self.assertIsNone(
+                validation.fingerprint(self.root, self.env | changes, details)
+            )
+            self.assertEqual(details["disabled"], expected)
 
     def test_tool_failure_disables(self):
         with patch.object(validation, "TOOLS", ("missing-vpdf-tool",)):

@@ -10,10 +10,12 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 
 from build_cache import (
     DEFAULT_GIB,
+    WORKER_PROTOCOL,
     cache_key,
     cache_root,
     cargo_env,
@@ -166,19 +168,90 @@ def snapshot_git(root, source, revision, descriptor):
 
 
 @contextlib.contextmanager
-def worker_snapshot(root, files, env=None, revision=None):
+def worker_lease(cache, root, count):
+    leases = cache / "leases"
+    affinity = (
+        cache / "affinity" / hashlib.sha256(os.fsencode(root)).hexdigest()
+    )
+    names = ["worker", "worker-2"][:count]
+    if count == 2 and affinity.exists():
+        preferred = affinity.read_text()
+        if preferred in names:
+            names.remove(preferred)
+            names.insert(0, preferred)
+    while True:
+        for name in names:
+            with contextlib.ExitStack() as stack:
+                mode = fcntl.LOCK_EX | (fcntl.LOCK_NB if count == 2 else 0)
+                try:
+                    gate = None
+                    if count == 2:
+                        gate = stack.enter_context(
+                            locked(
+                                leases / "worker", fcntl.LOCK_SH | fcntl.LOCK_NB
+                            )
+                        )
+                    lease = (
+                        gate
+                        if name == "worker" and gate
+                        else stack.enter_context(locked(leases / name, mode))
+                    )
+                    slots = (
+                        range(2)
+                        if count == 1
+                        else [0 if name == "worker" else 1]
+                    )
+                    resources = [
+                        (
+                            slot,
+                            stack.enter_context(
+                                locked(leases / f"budget-{slot}", mode)
+                            ),
+                        )
+                        for slot in slots
+                    ]
+                    if gate and name != "worker":
+                        resources.append(("gate", gate))
+                except BlockingIOError:
+                    continue
+                affinity.parent.mkdir(exist_ok=True)
+                replace_file(affinity, name.encode(), 0o600)
+                yield name, lease, resources
+                return
+        time.sleep(0.05)
+
+
+@contextlib.contextmanager
+def worker_snapshot(root, files, env=None, revision=None, scope="snapshot"):
     env = cargo_env(os.environ if env is None else env)
     env["VPDF_BUILD_CACHE_ID"] = cache_key(root)
     cache = cache_root(env, root)
     build = cache / "build"
-    worker = build / "worker"
-    source = worker / "source"
+    count = int(env.get("VPDF_BUILD_WORKERS", "1"))
+    if count not in {1, 2}:
+        raise ValueError("Worker count must be one or two")
+    if count == 2:
+        for name in ["CARGO_BUILD_JOBS", "NEXTEST_TEST_THREADS"]:
+            total = int(env.get(name, "4"))
+            if not 2 <= total <= 4:
+                raise ValueError("Pool budget must be between two and four")
+            env[name] = str(total // count)
     limit = float(env.get("VPDF_BUILD_CACHE_GIB", DEFAULT_GIB)) * 1024**3
     if not 0 < limit < float("inf"):
         raise ValueError("Build cache budget must be positive")
     leases = cache / "leases"
     leases.mkdir(mode=0o700, parents=True, exist_ok=True)
+    request = uuid.uuid4().hex[:12]
+    print(f"Worker request: {request} scope={scope}", flush=True)
+    capture = time.monotonic()
     captured = files()
+    cache_script = captured.get("scripts/build_cache.py")
+    if count == 2 and cache_script is not None:
+        marker = f"WORKER_PROTOCOL = {WORKER_PROTOCOL}".encode()
+        if marker not in cache_script[1].splitlines():
+            raise ValueError(
+                "Pool snapshot requires updated validation scripts"
+            )
     if revision is None:
         head = subprocess.run(
             ["git", "rev-parse", "--verify", "HEAD"],
@@ -188,22 +261,37 @@ def worker_snapshot(root, files, env=None, revision=None):
         )
         revision = head.stdout.strip() if head.returncode == 0 else ""
     queued = time.monotonic()
+    print(f"Worker capture: {queued - capture:.3f}s", flush=True)
     try:
-        with locked(leases / "worker") as lease:
+        with worker_lease(cache, root, count) as (name, lease, resources):
+            worker = build / name
+            source = worker / "source"
             acquired = time.monotonic()
+            print(f"Worker selected: {request} worker={name}", flush=True)
             print(f"Worker queue: {acquired - queued:.3f}s", flush=True)
             with locked(cache / "lock"):
                 prune(build, limit, leases)
+            pruned = time.monotonic()
+            print(f"Worker prune: {pruned - acquired:.3f}s", flush=True)
             worker.mkdir(parents=True, exist_ok=True)
             os.utime(worker, None)
             sync_files(source, captured)
+            synced = time.monotonic()
+            print(f"Worker files: {synced - pruned:.3f}s", flush=True)
             snapshot_git(root, source, revision, lease.fileno())
+            metadata = time.monotonic()
+            print(f"Worker git: {metadata - synced:.3f}s", flush=True)
             env.update(
                 CARGO_BUILD_BUILD_DIR=str(worker / "intermediates"),
                 CARGO_TARGET_DIR=str(worker / "target"),
                 VPDF_BUILD_CACHE_ID=cache.name,
                 VPDF_BUILD_WORKER=str(source),
                 VPDF_BUILD_WORKER_FD=str(lease.fileno()),
+                VPDF_BUILD_RESOURCE_FDS=",".join(
+                    f"{slot}:{stream.fileno()}" for slot, stream in resources
+                ),
+                VPDF_BUILD_REQUEST_ID=request,
+                VPDF_BUILD_ORIGIN=hashlib.sha256(os.fsencode(root)).hexdigest(),
                 MISE_TRUSTED_CONFIG_PATHS=str(source),
                 PYTHONDONTWRITEBYTECODE="1",
             )
@@ -363,7 +451,10 @@ def run(args):
                 target = root / target
             copy_outputs(task, root, target, os.environ)
         return status
-    with worker_snapshot(root, lambda: working_files(root)) as (source, env):
+    with worker_snapshot(root, lambda: working_files(root), scope=task) as (
+        source,
+        env,
+    ):
         status = invoke(command, env=env, cwd=source)
         if status == 0 and outputs:
             copy_outputs(task, root, Path(env["CARGO_TARGET_DIR"]), env)
