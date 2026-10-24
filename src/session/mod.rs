@@ -71,6 +71,7 @@ pub struct Session {
   /// Set by SIGHUP or SIGTERM, so the session ends and saves.
   hangup: Arc<AtomicBool>,
   latest: crate::state::Latest,
+  cleanup: crate::state::Cleaner,
   /// Recorded positions not yet written.
   unsaved: bool,
   /// History revision last handed to the hangup thread.
@@ -223,6 +224,21 @@ impl Session {
     self.state.save(store, history.commands(), history.searches())
   }
 
+  fn clean_state(&mut self) -> bool {
+    if self.store.is_none()
+      || !self.cleanup.poll(&mut self.state, &self.frontend.wake())
+    {
+      return false;
+    }
+    self.changed();
+    if self.tabs.is_empty()
+      && let Err(error) = self.flush()
+    {
+      self.startup_warning = Some(format!("State not saved: {error}"));
+    }
+    true
+  }
+
   fn start_at(&mut self, page: Option<usize>) -> Result<()> {
     self.activate(0)?;
     if let Some(page) = page {
@@ -267,6 +283,7 @@ impl Session {
 
   /// Records every pane, the focused one last, and saves before exit.
   fn finish(&mut self) -> Result<()> {
+    self.clean_state();
     self.printing = None;
     let focused = self.tabs.get(self.active).map(|tab| tab.panes[tab.focus].id);
     let panes = self.tabs.iter().flat_map(|tab| &tab.panes);

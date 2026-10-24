@@ -19,6 +19,9 @@ use vpdf_ui::prompt::History;
 const RECENT: usize = 100;
 const HISTORY: usize = 200;
 
+mod cleanup;
+pub(crate) use cleanup::Cleaner;
+
 /// Where a document was left, for reopening.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Entry {
@@ -44,6 +47,8 @@ pub struct Mark {
 /// Recent documents and prompt history kept across runs.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct State {
+  #[serde(skip)]
+  stale: Arc<cleanup::Stale>,
   #[serde(default)]
   pub perf: bool,
   #[serde(default)]
@@ -114,7 +119,10 @@ impl State {
     commands: &[String],
     searches: &[String],
   ) -> Result<()> {
-    let disk = Self::load(path);
+    let mut disk = Self::load(path);
+    disk.stale.clone_from(&self.stale);
+    disk.prune();
+    self.prune();
     let mut recent = std::mem::take(&mut self.recent);
     for entry in disk.recent {
       match recent.iter_mut().find(|own| own.path == entry.path) {

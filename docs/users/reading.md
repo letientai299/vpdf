@@ -36,6 +36,10 @@ State saves during activity and on exit; abrupt process or machine failure can
 lose recent changes. Simultaneous readers can race when saving. Close readers
 before editing or backing up their state file.
 
+On launch, a background scan removes saved positions and marks for paths the
+filesystem reports as missing. Other access errors preserve saved entries.
+Disconnected storage that reports missing paths can lose its saved state.
+
 The reader reloads a changed PDF while retaining a useful position, view
 choices, and marks. `:reload` requests this explicitly. Reload clears temporary
 OCR and jump history. Hidden panes check for changes when shown again. Large

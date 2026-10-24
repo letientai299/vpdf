@@ -309,6 +309,7 @@ fn run(
   let mut animation_due = Instant::now();
   let mut applied = Ticket::default();
   loop {
+    dirty |= session.clean_state();
     dirty |= session.help_updates(&mut std::io::sink());
     dirty |= session.print_update();
     dirty |= picker_update(&mut session, screen);

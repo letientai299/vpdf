@@ -13,6 +13,64 @@ use vpdf_pdf::jobs::Wake;
 use vpdf_terminal::decode::Reply;
 
 #[test]
+fn cleanup_failure_survives_detached_home() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let store = root.path().join("state.json");
+  let mut state = State::default();
+  state.recent.push(crate::state::tests::entry(
+    root.path().join("missing.pdf").to_str().unwrap(),
+    0,
+    1,
+  ));
+  state.save(&store, &[], &[])?;
+  let mut session = Session::new(Some(store.clone()));
+  std::fs::remove_file(&store)?;
+  std::fs::create_dir(&store)?;
+  let (wake, woken) = crate::fixtures::wake();
+  session.frontend = crate::raster::Frontend::Native(wake);
+  let changed = session.clean_state();
+  woken.recv_timeout(Duration::from_secs(5))?;
+  assert!(session.clean_state() || changed);
+  assert!(session.unsaved);
+  assert!(
+    session
+      .startup_warning
+      .as_deref()
+      .is_some_and(|warning| { warning.starts_with("State not saved:") })
+  );
+  session.home = Some(Home::new(&[], cells(100, 40), &Wake::none()));
+  session.present_startup();
+  assert!(session.home.as_ref().unwrap().view.error().is_some());
+  Ok(())
+}
+
+#[test]
+fn cleanup_persists_without_open_documents() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let store = root.path().join("state.json");
+  let missing = root.path().join("missing.pdf");
+  let mut state = State::default();
+  state.recent.push(crate::state::tests::entry(
+    missing.to_str().unwrap(),
+    0,
+    1,
+  ));
+  state.save(&store, &[], &[])?;
+  let mut session = Session::new(Some(store.clone()));
+  let (wake, woken) = crate::fixtures::wake();
+  session.frontend = crate::raster::Frontend::Native(wake);
+  session.clean_state();
+  woken.recv_timeout(Duration::from_secs(5))?;
+  session.clean_state();
+  assert_eq!(session.state.recent, []);
+  assert_eq!(State::load(&store).recent, []);
+  assert!(!session.unsaved);
+  let latest = session.latest.lock().unwrap();
+  assert_eq!(latest.as_ref().unwrap().0.recent, []);
+  Ok(())
+}
+
+#[test]
 #[ignore = "requires verified public PDF corpus"]
 fn perf_is_global_and_persistent() -> Result<()> {
   let root = tempfile::tempdir()?;

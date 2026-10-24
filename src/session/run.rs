@@ -167,6 +167,7 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
   let mut drawn = Instant::now();
   let mut title = String::new();
   while session.running() {
+    dirty |= session.clean_state();
     dirty |= session.help_updates(&mut out);
     dirty |= session.print_update();
     if terminal::resize_deferred() {
@@ -469,6 +470,7 @@ impl Session {
       let Some(event) = vpdf_terminal::input::next(wait)? else {
         if !self.quit
           && !self.hangup.load(Ordering::Relaxed)
+          && !self.clean_state()
           && wait.is_some()
           && !home.updates()
         {
