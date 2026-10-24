@@ -400,6 +400,20 @@ impl Keys {
     input
   }
 
+  fn operator_clue(&self, target: &Target) -> bool {
+    let Capture::Operator { panel } = self.capture else { return true };
+    match target {
+      Target::Reader(
+        Action::Hints(true) | Action::YankPath | Action::YankRaw,
+      )
+      | Target::Control(Control::Object { .. })
+      | Target::TextObject(_)
+      | Target::Command(_) => true,
+      Target::Reader(Action::Yank) => panel,
+      _ => false,
+    }
+  }
+
   pub fn effective_clues(
     &self,
     allows: impl Fn(Action) -> bool,
@@ -435,16 +449,7 @@ impl Keys {
         if action.is_some_and(|action| !allows(action)) {
           return None;
         }
-        if let Capture::Operator { panel } = self.capture
-          && matches!(target, Target::Reader(_))
-          && !matches!(
-            target,
-            Target::Reader(
-              Action::Hints(true) | Action::YankPath | Action::YankRaw
-            )
-          )
-          && !(panel && *target == Target::Reader(Action::Yank))
-        {
+        if !self.operator_clue(target) {
           return None;
         }
         let about = match target {
@@ -506,15 +511,7 @@ impl Keys {
         if target.cancels() {
           return None;
         }
-        if let Capture::Operator { panel } = self.capture
-          && !matches!(
-            target,
-            Target::Reader(
-              Action::Hints(true) | Action::YankPath | Action::YankRaw
-            )
-          )
-          && !(panel && *target == Target::Reader(Action::Yank))
-        {
+        if !self.operator_clue(target) {
           return None;
         }
         let action = match target {

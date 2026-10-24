@@ -529,6 +529,87 @@ fn clues_preserve_pending_counts_and_registers() {
 }
 
 #[test]
+fn effective_yank_clues() {
+  for (grammar, expected) in [
+    (Grammar::Panel, vec!["p", "y"]),
+    (Grammar::Normal, vec!["Y", "a", "f", "i", "p"]),
+    (Grammar::Cursor, vec!["Y", "a", "f", "i", "p"]),
+  ] {
+    let mut keys = Keys::default();
+    keys.feed(key('y'), grammar);
+    let labels: Vec<_> = keys
+      .effective_clues(|action| {
+        grammar != Grammar::Panel
+          || matches!(action, Action::Yank | Action::YankPath)
+      })
+      .into_iter()
+      .map(|(sequence, _)| sequence.to_string())
+      .collect();
+    assert_eq!(labels, expected);
+    assert_eq!(keys.awaiting(), Some("y"));
+  }
+}
+
+#[test]
+fn clues_preserve_yank_state() {
+  let mut keys = Keys::default();
+  for event in parse("\"a2y").unwrap() {
+    assert!(keys.feed(event, Grammar::Panel).is_none());
+  }
+  let before = keys.pending();
+  let clues = keys.effective_clues(|action| {
+    matches!(action, Action::Yank | Action::YankPath)
+  });
+  assert_eq!(clues.len(), 2);
+  for (sequence, _) in clues {
+    let mut replay = keys.clone();
+    let inputs: Vec<_> = sequence
+      .keys()
+      .iter()
+      .filter_map(|&event| replay.feed(event, Grammar::Panel))
+      .collect();
+    assert_eq!(inputs.len(), 1);
+    assert!(matches!(inputs[0].action, Action::YankLine | Action::YankPath));
+    assert_eq!(inputs[0].count, 2);
+    assert_eq!(inputs[0].register, 'a');
+  }
+  assert_eq!(keys.pending(), before);
+}
+
+#[test]
+fn clues_follow_operator_remaps() {
+  use crate::bindings::{Bindings, Context, Control, Map, Sequence, Target};
+
+  let mut bindings = Bindings::default();
+  let map = Map::new(
+    [
+      ("a", Target::Control(Control::Object { around: true })),
+      ("i", Target::Control(Control::Object { around: false })),
+      ("f", Target::Control(Control::Resize)),
+      ("q", Target::Command("recent".into())),
+      ("x", Target::Reader(Action::YankPath)),
+    ]
+    .into_iter()
+    .map(|(sequence, target)| (Sequence::parse(sequence).unwrap(), target))
+    .collect(),
+  )
+  .unwrap();
+  bindings.set(Context::Operator, map);
+  let mut keys = Keys::default();
+  keys.feed_with(key('y'), Context::Cursor, &bindings);
+  let labels: Vec<_> = keys
+    .effective_clues(|_| true)
+    .into_iter()
+    .map(|(sequence, _)| sequence.to_string())
+    .collect();
+  assert_eq!(labels, ["a", "i", "q", "x"]);
+  assert!(matches!(
+    keys.feed_with(key('q'), Context::Cursor, &bindings),
+    Some(Dispatch::Command(command)) if command == "recent"
+  ));
+}
+
+#[test]
 fn yank_clues_follow_the_live_operator_grammar() {
   let mut keys = Keys::default();
   keys.feed(key('y'), Grammar::Normal);
