@@ -138,10 +138,17 @@ inputs stay in the caller's `tmp/` directory and are linked into the snapshot
 instead of copied. Shared tests can fetch their existing corpus inputs there.
 
 `CARGO_BUILD_JOBS` and `NEXTEST_TEST_THREADS` override the worker's concurrency
-limits. The worker also applies the compiler limit to MuPDF's Make invocation,
-which otherwise selects all available CPUs. Defaults live in the worker.
-Development builds retain line tables and disable incremental compilation to
-limit disk use.
+limits. For a single worker, an opt-in test limit can be set per invocation:
+
+```sh
+VPDF_BUILD_WORKERS=1 NEXTEST_TEST_THREADS=8 mise run test
+```
+
+Choose the limit for available CPU and memory; this does not change the default
+or relax the worker pool's total budget checks. The worker also applies the
+compiler limit to MuPDF's Make invocation, which otherwise selects all available
+CPUs. Defaults live in the worker. Development builds retain line tables and
+disable incremental compilation to limit disk use.
 
 The [cache manager][build-cache] bounds intermediate storage under one
 repository cache in the user cache directory. The worker's source, intermediate
@@ -242,7 +249,9 @@ Both install tasks build production binaries when `VPDF_BENCH_EVENTS` is unset
 or `0`; CI explicitly uses `0`. Feature-enabled binaries report `[bench-events]`
 in `--version`; retain this marker in benchmark provenance.
 `mise run test:events` checks a separate feature-enabled build; CI runs it
-before packaging production binaries. Reinstall without
+before packaging production binaries. It lints the workspace and tests the
+reader and GUI packages that enable the feature. The default workspace pass
+covers the remaining packages. Reinstall without
 the variable after live checks. The [injection module][inject] documents FIFO
 primitives. The [shared parser][scenario] also accepts driver-side waits,
 repeats, and seeded key mixes. Injected events skip OS translation, so real
@@ -263,6 +272,9 @@ mise run check
 mise run lint
 mise run test
 ```
+
+The default test task includes Rust documentation examples. Run
+`mise run test:docs` to check those examples separately.
 
 Checks cover every workspace member. Support crates own their unit tests;
 package selection avoids compiling the application and its native dependencies
@@ -349,10 +361,10 @@ mise run test:ocr
 Both tasks fetch the public corpus and verify hashes through the
 [corpus script][corpus]. OCR integration tests require Tesseract and its
 language data. Large stress documents have a separate fetch task and are opt-in
-inputs; standard tasks do not consume them automatically. Keep download URLs and
-hashes in the corpus script. [Application corpus tests][corpus-tests] cover
-integrated behavior; [PDF corpus tests][pdf-corpus-tests] cover native
-extraction and rasterization.
+inputs; standard tasks do not consume them automatically.
+Keep download URLs and hashes in the corpus script.
+[Application corpus tests][corpus-tests] cover integrated behavior;
+[PDF corpus tests][pdf-corpus-tests] cover native extraction and rasterization.
 
 Terminal behavior needs its own interactive checks. Native rendering or state
 tests do not verify Kitty placement, tmux passthrough, clipboard policy, or

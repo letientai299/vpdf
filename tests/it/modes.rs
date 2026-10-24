@@ -529,7 +529,6 @@ fn recent_cover_preserves_view_and_explicit_job_control() -> Result<()> {
     app.start_ocr("eng")?;
     let generation = app.search.generation();
     app.show_recent(&[])?;
-    keys(&mut app, b"\x1b[27u")?;
     assert!(app.covered() && app.panel_focused());
     assert_eq!(app.layout.screen().columns, columns);
     assert_eq!((app.reader.scroll, app.layout.pan()), view);
@@ -539,7 +538,8 @@ fn recent_cover_preserves_view_and_explicit_job_control() -> Result<()> {
     assert!(app.covered() && app.panel_focused());
     assert!(app.ocr.is_none());
     assert!(matches!(app.search.phase(), vpdf_ui::find::Phase::Idle));
-    app.close_panel()?;
+    keys(&mut app, b"\x1b[27u")?;
+    assert!(!app.covered() && app.panel.is_none());
     app.draw(&mut Vec::new())?;
     assert_eq!((app.reader.scroll, app.layout.pan()), view);
     if text_mode {

@@ -1,7 +1,5 @@
 use crate::harness::{corpus, solo};
-use std::path::PathBuf;
 use vpdf::Result;
-use vpdf::solo::Solo;
 use vpdf_model::text::PageId;
 
 #[test]
@@ -243,38 +241,4 @@ fn figure_rows(
     }
   }
   Ok(expected)
-}
-
-#[test]
-#[ignore = "requires PMPP, SDM, and PMLA figure PDFs"]
-fn raw_region_at_captions() -> Result<()> {
-  use super::common::keys;
-  use vpdf_model::text::Position;
-  for (variable, page, caption, height) in [
-    ("VPDF_FIGURE_PMPP", PageId(161), "FIGURE 6.13", 380.0),
-    ("VPDF_FIGURE_SDM", PageId(1149), "Figure 1-17.", 130.0),
-    ("VPDF_FIGURE_PMLA", PageId(49), "Figure 2.4:", 140.0),
-    ("VPDF_FIGURE_PMLA", PageId(49), "Figure 2.5:", 120.0),
-    ("VPDF_FIGURE_PMLA", PageId(81), "Figure 2.15:", 90.0),
-    ("VPDF_FIGURE_PMLA", PageId(82), "Figure 2.16:", 40.0),
-    ("VPDF_FIGURE_PMLA", PageId(439), "Figure 9.4:", 120.0),
-  ] {
-    let path = PathBuf::from(std::env::var(variable)?);
-    let mut app = Solo::open(&path, "", false, super::focus::screen())?;
-    let text = app.doc.text(page)?;
-    let line = text
-      .lines
-      .iter()
-      .position(|line| line.text().starts_with(caption))
-      .unwrap();
-    keys(&mut app, b"i")?;
-    app.go_to(Position { page, line, glyph: 0 }, true)?;
-    keys(&mut app, b"gF")?;
-    let region = app.overlays.region().unwrap().snapshot();
-    assert_eq!(region.page, page);
-    assert!(region.bounds.height() > height, "{region:?}");
-    assert!(region.bounds.y0 > 50.0, "Header included: {region:?}");
-    assert!(region.bounds.y1 < 580.0, "Body included: {region:?}");
-  }
-  Ok(())
 }

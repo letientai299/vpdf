@@ -458,10 +458,10 @@ impl Registry {
         continue;
       }
       let name = row.sequence.to_string();
-      if name != prefix && self.dispatch_alias(row) {
+      if !name.starts_with(prefix) {
         continue;
       }
-      if !name.starts_with(prefix) {
+      if name != prefix && self.dispatch_alias(row) {
         continue;
       }
       if self.names.get(&name).is_some_and(|id| id.as_str() == name) {

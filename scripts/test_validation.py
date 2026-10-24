@@ -185,7 +185,7 @@ class FingerprintTests(unittest.TestCase):
             {"CI": "true"},
             {"NEXTEST_RETRIES": "1"},
             {"NEXTEST_CONFIG_FILE": "/custom.toml"},
-            {"VPDF_SEARCH_PMPP": "/external.pdf"},
+            {"VPDF_CROP_INPUT": "/external.pdf"},
             {"VPDF_CACHE": "/external/cache"},
             {"VPDF_BUILD_MODE": "isolated"},
             {"VPDF_BUILD_WORKER": ""},

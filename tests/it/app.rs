@@ -657,30 +657,45 @@ fn clue_wait_ends_once_due() -> Result<()> {
 }
 
 #[test]
-#[ignore = "requires verified public PDF corpus"]
 fn recent_view_covers_the_pane() -> Result<()> {
-  let mut app = text_app()?;
+  let (_directory, mut app) = common::temp_solo(
+    |path| common::text_pdf(path, &["first page text"]),
+    true,
+    common::cells(120, 20),
+  )?;
+  app.doc.pages[0].label = "iv".to_owned().into();
   app.show_recent(&[])?;
   assert_eq!(app.left, app.screen.columns);
   let input = Input::plain;
-  // Esc keeps the view; reader keys reach no hidden page.
   let scroll = app.reader.scroll;
-  for action in
-    [Action::Cancel, Action::Rows(5), Action::Panel(PanelKind::Recent)]
-  {
+  for action in [Action::Rows(5), Action::Panel(PanelKind::Recent)] {
     app.action(input(action))?;
     assert!(app.panel_focused(), "{action:?}");
     assert!(app.covered(), "{action:?}");
   }
   assert_eq!(app.reader.scroll, scroll);
-  // Commands that need the document wait for one, as on the start screen.
-  for command in ["5", "iv"] {
+  for command in ["1", "iv"] {
     assert!(app.command(command).is_err(), "{command}");
     assert!(app.covered() && app.overlays.overview().is_none(), "{command}");
   }
   app.draw(&mut Vec::new())?;
   app.action(input(Action::Quit))?;
   assert!(!app.quit && app.panel.is_none());
+  let path = app.path.clone();
+  app.show_panel(
+    PanelKind::Recent,
+    vec![Row::new(
+      "fixture.pdf".into(),
+      String::new(),
+      vpdf_ui::panel::Destination::File(path),
+    )],
+  )?;
+  app.action(input(Action::RecentToggle))?;
+  app.action(input(Action::Cancel))?;
+  assert!(app.covered() && app.panel_focused());
+  app.action(input(Action::Cancel))?;
+  assert!(!app.covered() && app.panel.is_none());
+  assert_eq!(app.reader.scroll, scroll);
   app.show_recent(&[])?;
   app.command("text")?;
   assert!(app.text_mode && !app.covered() && !app.panel_focused());

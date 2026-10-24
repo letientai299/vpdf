@@ -8,6 +8,9 @@ taplo = "0.10.0"
 typst = "0.15.1"
 upx = { version = "5.2.1", os = ["linux"] }
 
+[vars]
+ocr_tests = "test(real_ocr_and_cancel) | test(real_ocr_cache_policy)"
+
 [env]
 _.path = ["{{config_root}}/scripts/tools"]
 # Lets check and build share MuPDF.
@@ -186,11 +189,22 @@ depends = [
   "test:validation",
   "test:packages",
   "test:hooks",
+  "test:docs",
   "help:build",
   "test:help-assets",
   "check:packages",
 ]
 run = "cargo nextest run --locked --workspace --test-threads \"${NEXTEST_TEST_THREADS:-4}\" --no-fail-fast"
+
+[tasks."test:docs"]
+description = "Check Rust documentation examples"
+run = "python3 -B scripts/build_worker.py test:docs"
+
+[tasks."_test:docs"]
+hide = true
+env.VPDF_CACHE = "off"
+depends = ["help:build"]
+run = "cargo test --locked --workspace --doc"
 
 [tasks."test:events"]
 description = "Check feature-gated benchmark input"
@@ -202,7 +216,7 @@ depends = ["help:build"]
 env.VPDF_CACHE = "off"
 run = [
   "cargo clippy --locked --workspace --all-targets --features vpdf-gui/bench-events -- -D warnings",
-  "cargo nextest run --locked --workspace --features vpdf-gui/bench-events --no-fail-fast",
+  "cargo nextest run --locked -p vpdf -p vpdf-gui --features vpdf-gui/bench-events --no-fail-fast",
 ]
 
 [tasks."check:packages"]
@@ -290,7 +304,7 @@ run = "python3 -B scripts/build_worker.py test:corpus"
 hide = true
 env.VPDF_CACHE = "off"
 depends = ["corpus", "help:build"]
-run = "cargo nextest run --locked --workspace --run-ignored only -E 'not (test(real_ocr_and_cancel) | test(real_ocr_cache_policy))'"
+run = "cargo nextest run --locked --workspace --run-ignored only --no-fail-fast -E 'not ({{vars.ocr_tests}})'"
 
 [tasks."test:ocr"]
 run = "python3 -B scripts/build_worker.py test:ocr"
@@ -299,7 +313,7 @@ run = "python3 -B scripts/build_worker.py test:ocr"
 hide = true
 env.VPDF_CACHE = "off"
 depends = ["corpus", "help:build"]
-run = "cargo nextest run --locked --workspace --run-ignored only -E 'test(real_ocr_and_cancel) | test(real_ocr_cache_policy)'"
+run = "cargo nextest run --locked --workspace --run-ignored only -E '{{vars.ocr_tests}}'"
 
 [tasks.bench]
 env.VPDF_CACHE = "off"

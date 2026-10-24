@@ -139,48 +139,45 @@ fn panel_activation_retains_lists_and_failure_focus() -> Result<()> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
-fn cross_document_panel_placement_and_reuse() -> Result<()> {
-  for (activation, focus) in [(&b"\r"[..], true), (&b"o"[..], false)] {
-    let mut session = session(&file("paper.pdf")?, screen())?;
-    let source = session.app().id;
-    session.app().show_panel(
-      PanelKind::Recent,
-      vec![row(Destination::File(file("book.pdf")?))],
-    )?;
-    send(&mut session, activation)?;
-    assert_eq!(session.tabs.len(), if focus { 2 } else { 1 });
-    assert_eq!(session.tab().panes.len(), if focus { 1 } else { 2 });
-    assert_eq!(session.app().id == source, !focus);
-    if focus {
-      assert_eq!(session.app().input_owner(), InputOwner::Content);
-      send(&mut session, b"vwgo")?;
-      assert!(session.app().reader.selection.is_some());
-      session.activate(0)?;
-    }
-    assert!(session.app().panel_focused());
-    send(&mut session, b"o")?;
-    assert_eq!(session.app().id, source);
-    assert_eq!(
-      session.tabs.iter().map(|tab| tab.panes.len()).sum::<usize>(),
-      2
-    );
-    send(&mut session, b"\r")?;
-    assert_ne!(session.app().id, source);
-    assert_eq!(session.app().input_owner(), InputOwner::Content);
-    assert!(session.app().reader.selection.is_none());
-    assert_eq!(
-      session.tabs.iter().map(|tab| tab.panes.len()).sum::<usize>(),
-      2
-    );
-  }
+fn recent_split_reuses_target() -> Result<()> {
+  let mut session = session(&file("paper.pdf")?, screen())?;
+  let source = session.app().id;
+  session.app().show_panel(
+    PanelKind::Recent,
+    vec![row(Destination::File(file("book.pdf")?))],
+  )?;
+  let middle = b"\x1b[<1;2;2M\x1b[<1;2;2m";
+  session.draw_focused(&mut Vec::new())?;
+  send(&mut session, middle)?;
+  assert_eq!(session.tabs.len(), 1);
+  assert_eq!(session.tab().panes.len(), 2);
+  assert_eq!(session.app().id, source);
+  assert!(session.app().panel_focused());
+  send(&mut session, b"\x17wvw")?;
+  assert!(session.app().reader.selection.is_some());
+  send(&mut session, b"\x17p")?;
+  assert_eq!(session.app().id, source);
+  session.draw_focused(&mut Vec::new())?;
+  send(&mut session, middle)?;
+  assert_eq!(session.app().id, source);
+  assert!(session.app().panel_focused());
+  assert_eq!(session.tab().panes.len(), 2);
+  let target = session.tab().panes.iter().find(|app| app.id != source).unwrap();
+  assert!(target.reader.selection.is_some());
+  send(&mut session, b"\r")?;
+  assert_ne!(session.app().id, source);
+  assert_eq!(session.app().input_owner(), InputOwner::Content);
+  assert!(session.app().reader.selection.is_none());
+  assert_eq!(session.tabs.len(), 1);
+  assert_eq!(session.tab().panes.len(), 2);
   Ok(())
 }
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn recent_pick_opens_in_covered_pane() -> Result<()> {
-  let paper = file("paper.pdf")?;
-  let book = file("book.pdf")?;
+  let paper = file("paper.pdf")?.canonicalize()?;
+  let book = file("book.pdf")?.canonicalize()?;
   let reuse = format!(":vsplit {}\r\x17pgr", paper.display());
   let setups = ["gr", "\x17sgr", "\x17n", ":tabnew\r", &reuse];
   for (setup, click) in setups.iter().flat_map(|s| [(*s, false), (*s, true)]) {
@@ -509,7 +506,7 @@ fn peek_prompt_retains_destination_and_owner() -> Result<()> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
-fn clicked_file_and_global_mark_keep_source_panel() -> Result<()> {
+fn middle_click_preserves_marks() -> Result<()> {
   let mut session = session(&file("paper.pdf")?, screen())?;
   let source = session.app().id;
   session.app().show_panel(
@@ -517,7 +514,7 @@ fn clicked_file_and_global_mark_keep_source_panel() -> Result<()> {
     vec![row(Destination::File(file("book.pdf")?))],
   )?;
   session.draw_focused(&mut Vec::new())?;
-  send(&mut session, b"\x1b[<0;2;2M\x1b[<0;2;2m")?;
+  send(&mut session, b"\x1b[<1;2;2M\x1b[<1;2;2m")?;
   assert_eq!(session.app().id, source);
   assert!(session.app().panel_focused());
   assert_eq!(session.tab().panes.len(), 2);
@@ -927,7 +924,7 @@ fn raw_unopened_placement_routes() -> Result<()> {
   for (command, tabs, panes) in [("e", 1, 1), ("tabe", 2, 1), ("split", 1, 2)] {
     let mut session = session(&file("book.pdf")?, screen())?;
     let source = session.app().id;
-    let path = file("paper.pdf")?;
+    let path = file("paper.pdf")?.canonicalize()?;
     send(&mut session, format!(":{command} {}\r", path.display()).as_bytes())?;
     assert_ne!(session.app().id, source, "{command}");
     assert_eq!(session.active, tabs - 1);

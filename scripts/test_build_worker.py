@@ -31,6 +31,7 @@ class WorkerTests(unittest.TestCase):
         self.env.update(
             XDG_CACHE_HOME=str(self.root / "cache"),
             CARGO_HOME=str(self.root / "cargo-home"),
+            NEXTEST_TEST_THREADS="4",
             GIT_CONFIG_GLOBAL=os.devnull,
             GIT_CONFIG_NOSYSTEM="1",
         )
