@@ -287,6 +287,12 @@ impl App {
       &self.password,
       &self.wake,
     );
+    panel.view.set_picker(match self.frontend {
+      crate::raster::Frontend::Terminal => {
+        vpdf_ui::home::Picker::Terminal { fzf: crate::cmdline::on_path("fzf") }
+      }
+      crate::raster::Frontend::Native(_) => vpdf_ui::home::Picker::Native,
+    });
     panel.view.resize(self.screen.rows);
     self.panel = Some(panel);
     self.relayout()
@@ -323,6 +329,18 @@ impl App {
     Ok(())
   }
 
+  pub(crate) fn confirming_recent(&self) -> bool {
+    self.panel.as_ref().is_some_and(|panel| panel.view.confirming())
+  }
+
+  pub(crate) fn confirm_recent(&mut self, key: vpdf_model::input::KeyEvent) {
+    if let Some(panel) = &mut self.panel
+      && let vpdf_ui::panel::Event::Forget(paths) = panel.view.confirm_key(key)
+    {
+      self.request = Some(Request::ForgetRecent(paths));
+    }
+  }
+
   pub fn panel_input(&mut self, input: Input) -> Result<bool> {
     if let Action::Window(Window::Extend(direction)) = input.action
       && self.panel_focused()
@@ -340,6 +358,9 @@ impl App {
     let Some(panel) = &mut self.panel else { return Ok(false) };
     match panel.view.input(input, usize::from(self.screen.rows)) {
       vpdf_ui::panel::Event::Unhandled => return Ok(false),
+      vpdf_ui::panel::Event::Forget(paths) => {
+        self.request = Some(Request::ForgetRecent(paths));
+      }
       vpdf_ui::panel::Event::Stay => {}
       vpdf_ui::panel::Event::Close => self.close_panel()?,
       vpdf_ui::panel::Event::Copy { text, register } => {

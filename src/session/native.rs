@@ -591,6 +591,7 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
       *screen = size;
       session.resize(size).map(|()| true)
     }
+    Input::Open(_) if session.confirming_recent() => Ok(false),
     Input::Open(path) => {
       if session.blocked() {
         session.native_opens.push_back(path);
@@ -702,22 +703,20 @@ fn home_event(
 ) -> Result<()> {
   let Some(home) = &mut session.home else { return Ok(()) };
   home.configure(&session.settings);
+  let invocation = home.view.invocation();
   match home.native_event(event, &mut session.history)? {
     crate::home::Outcome::Open(path) => {
       session.resume(Operation::Open(path), screen)?;
     }
     crate::home::Outcome::Help(topic) => {
-      session.request_help(
-        &topic,
-        vpdf_ui::topics::Invocation::Home,
-        screen,
-      )?;
+      session.request_help(&topic, invocation, screen)?;
     }
     crate::home::Outcome::Quit => session.quit = true,
     crate::home::Outcome::Pick { tab } => session.pick(tab)?,
     crate::home::Outcome::Perf(on) => session.toggle_perf(on)?,
     crate::home::Outcome::ConfigReload => session.reload_config(),
     crate::home::Outcome::Theme(theme) => session.set_theme(theme),
+    crate::home::Outcome::Forget(paths) => session.forget_recent(&paths)?,
     crate::home::Outcome::Stay => {}
   }
   Ok(())
@@ -2737,5 +2736,36 @@ mod tests {
     })?;
     assert_eq!(frame.owners, [] as [TileOwner; 0]);
     bridge.close()
+  }
+
+  #[test]
+  fn home_removal_returns_to_welcome() -> Result<()> {
+    let (root, pdf) = temp_pdf(&["body"])?;
+    let mut session = native();
+    session.store = Some(root.path().join("state.json"));
+    session.state.opened(crate::state::tests::entry(
+      &pdf.to_string_lossy(),
+      0,
+      0,
+    ));
+    let mut screen = cells(120, 40);
+    session.home =
+      Some(Home::new(&session.state.recent, screen, &Wake::none(), false));
+    assert!(apply(&mut session, key(KeyCode::Char(' ')), &mut screen));
+    assert!(apply(&mut session, key(KeyCode::Char('x')), &mut screen));
+    assert!(!apply(&mut session, Input::Open(pdf.clone()), &mut screen));
+    assert!(session.tabs.is_empty());
+    assert!(apply(&mut session, Input::Paste(":q".into()), &mut screen));
+    assert!(apply(&mut session, key(KeyCode::Enter), &mut screen));
+    assert_eq!(session.state.recent, []);
+    assert_eq!(session.history.commands(), [] as [String; 0]);
+    assert!(pdf.exists());
+    let home = session.home.as_mut().unwrap();
+    let mut scene = Recorder::new(|_| false);
+    home.scene(&mut scene)?;
+    let scene = scene.into_scene();
+    assert!(shows(&scene, "A PDF reader with Vim keys."));
+    assert!(!shows(&scene, "Remove "));
+    Ok(())
   }
 }

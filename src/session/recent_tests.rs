@@ -191,3 +191,115 @@ fn forgotten_panes_stay_forgotten_on_close() -> Result<()> {
   assert_eq!(State::load(session.store.as_deref().unwrap()).recent, []);
   Ok(())
 }
+
+fn recent_key(
+  session: &mut Session,
+  code: vpdf_model::input::KeyCode,
+) -> Result<()> {
+  use super::interaction::Interaction;
+  session.interact(Interaction::Key(KeyEvent::new(
+    code,
+    vpdf_model::input::KeyModifiers::NONE,
+  )))?;
+  Ok(())
+}
+
+#[test]
+fn recent_removal_uses_session_in_both_frontends() -> Result<()> {
+  use vpdf_model::input::KeyCode;
+  for native in [false, true] {
+    for new_tab in [false, true] {
+      let (_root, mut session, pdf) = reader()?;
+      if native {
+        session.frontend = crate::raster::Frontend::Native(Wake::none());
+        session.app().frontend = session.frontend.clone();
+      }
+      if new_tab {
+        session.recent_tab(cells(120, 40))?;
+      } else {
+        let entries = session.state.recent.clone();
+        session.app().show_recent(&entries)?;
+      }
+      recent_key(&mut session, KeyCode::Char(' '))?;
+      recent_key(&mut session, KeyCode::Char('x'))?;
+      let before = session.app().reader.cursor;
+      session.interact(interaction::Interaction::Paste(":q".into()))?;
+      recent_key(&mut session, KeyCode::Char('j'))?;
+      assert_eq!(session.app().reader.cursor, before);
+      assert!(session.app().panel.as_ref().unwrap().view.confirming());
+      assert!(session.app().overlays.prompt().is_none());
+      let writes = session.state.writes;
+      recent_key(&mut session, KeyCode::Enter)?;
+      assert_eq!(session.state.writes, writes + 1);
+      assert_eq!(session.state.recent, []);
+      assert!(pdf.exists());
+      assert_eq!(session.history.commands(), [] as [String; 0]);
+      let panel = &mut session.app().panel.as_mut().unwrap().view;
+      assert!(panel.rows().is_empty());
+      let mut scene = vpdf_model::scene::Recorder::new(|_| false);
+      panel.scene(
+        &mut scene,
+        vpdf_ui::panel::recent::Frame {
+          at: At::default(),
+          width: 120,
+          screen: cells(120, 40),
+          now: 0,
+        },
+        false,
+      )?;
+      let text = scene
+        .into_scene()
+        .iter()
+        .filter_map(|op| match op {
+          vpdf_model::scene::Op::Text(text) => Some(text.as_str()),
+          _ => None,
+        })
+        .collect::<String>();
+      assert!(text.contains("A PDF reader with Vim keys."));
+      if native {
+        assert!(text.contains(":open"));
+      }
+    }
+  }
+  Ok(())
+}
+
+#[test]
+fn escape_clears_before_closing_recent() -> Result<()> {
+  use vpdf_model::input::KeyCode;
+  let (_root, mut session, _pdf) = reader()?;
+  let entries = session.state.recent.clone();
+  session.app().show_recent(&entries)?;
+  recent_key(&mut session, KeyCode::Char(' '))?;
+  recent_key(&mut session, KeyCode::Esc)?;
+  assert!(session.app().panel.is_some());
+  recent_key(&mut session, KeyCode::Esc)?;
+  assert!(session.app().panel.is_none());
+  Ok(())
+}
+
+#[test]
+fn recent_batch_saves_once() -> Result<()> {
+  use vpdf_model::input::KeyCode;
+  let (root, mut session, first) = reader()?;
+  let second = root.path().join("second.pdf");
+  crate::fixtures::pdf(&second, &["second"], "")?;
+  session.open(&second, true, cells(120, 40))?;
+  let entries = session.state.recent.clone();
+  session.app().show_recent(&entries)?;
+  for code in [
+    KeyCode::Char(' '),
+    KeyCode::Char('j'),
+    KeyCode::Char(' '),
+    KeyCode::Char('x'),
+  ] {
+    recent_key(&mut session, code)?;
+  }
+  let writes = session.state.writes;
+  recent_key(&mut session, KeyCode::Enter)?;
+  assert_eq!(session.state.writes, writes + 1);
+  assert_eq!(session.state.recent, []);
+  assert!(first.exists() && second.exists());
+  assert_eq!(State::load(session.store.as_deref().unwrap()).recent, []);
+  Ok(())
+}

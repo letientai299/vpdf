@@ -19,13 +19,24 @@ use vpdf_ui::window::{TabMove, Window};
 pub(crate) const COPIED_LINK: &str = "Copied link";
 
 impl App {
+  pub(crate) fn binding_context(&self) -> Context {
+    let context = Context::resolve(
+      self.input_owner(),
+      self.reader.mode(),
+      self.reader.operator.is_some(),
+    );
+    if context == Context::Panel
+      && self.panel.as_ref().is_some_and(|panel| panel.view.is_recent_view())
+    {
+      Context::Recent
+    } else {
+      context
+    }
+  }
+
   pub(crate) fn help_invocation(&self) -> vpdf_ui::topics::Invocation {
     vpdf_ui::topics::Invocation::Pane {
-      context: Context::resolve(
-        self.input_owner(),
-        self.reader.mode(),
-        self.reader.operator.is_some(),
-      ),
+      context: self.binding_context(),
       pane: vpdf_ui::topics::PaneContext {
         id: self.id,
         document: self.document_identity().display().to_string(),
@@ -145,6 +156,10 @@ impl App {
   }
 
   pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
+    if self.confirming_recent() {
+      self.confirm_recent(key);
+      return Ok(());
+    }
     self.search.forget_yank();
     // Keys end pointer gestures.
     let swept = self.end_gestures();
@@ -172,11 +187,7 @@ impl App {
       return Ok(());
     }
     let owner = self.input_owner();
-    let context = Context::resolve(
-      owner,
-      self.reader.mode(),
-      self.reader.operator.is_some(),
-    );
+    let context = self.binding_context();
     let dispatch = self.keys.feed_with(key, context, self.settings.bindings());
     if matches!(
       owner,
@@ -233,9 +244,22 @@ impl App {
   }
 
   pub(crate) fn cancel_input(&mut self) -> Result<()> {
+    if self.input_owner() == InputOwner::Panel
+      && self.panel.as_mut().is_some_and(|panel| panel.view.clear_checked())
+    {
+      self.keys.clear();
+      return Ok(());
+    }
     if self.keys.resizing() {
       self.keys.clear();
       return Ok(());
+    }
+    if self.input_owner() == InputOwner::Panel
+      && !self.keys.cancelled_pending()
+      && self.keys.pending().is_empty()
+      && self.panel.as_ref().is_some_and(|panel| panel.view.is_recent_view())
+    {
+      return self.close_panel();
     }
     self.cancel_definition();
     self.reader.cancel_scroll();

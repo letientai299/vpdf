@@ -68,6 +68,8 @@ pub enum Action {
   Result(bool),
   Panel(PanelKind),
   ClosePanel,
+  RecentToggle,
+  RecentRemove,
   LocalFocus,
   Follow,
   OpenUrl,
@@ -393,9 +395,18 @@ pub(crate) const BINDINGS: &[(&str, Action, &str)] = &[
   ("C-wT", Action::Window(W::ToTab), "move pane to a new tab"),
 ];
 
+pub const RECENT_BINDINGS: &[(&str, Action, &str)] = &[
+  (" ", Action::RecentToggle, "toggle recent checkbox"),
+  ("x", Action::RecentRemove, "remove recent files"),
+];
+
 /// The first key bound to `action`.
 pub fn key_for(action: Action) -> Option<&'static str> {
-  BINDINGS.iter().find(|(_, bound, _)| *bound == action).map(|(keys, ..)| *keys)
+  BINDINGS
+    .iter()
+    .chain(RECENT_BINDINGS)
+    .find(|(_, bound, _)| *bound == action)
+    .map(|(keys, ..)| *keys)
 }
 
 pub fn binding(key: &str) -> Option<Action> {

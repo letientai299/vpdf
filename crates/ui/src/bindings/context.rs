@@ -14,6 +14,8 @@ pub enum Context {
   MarkSet,
   MarkJump,
   Panel,
+  Recent,
+  HomeRecent,
   Hints,
   Region,
   Menu,
@@ -38,6 +40,8 @@ impl Context {
     Self::MarkSet,
     Self::MarkJump,
     Self::Panel,
+    Self::Recent,
+    Self::HomeRecent,
     Self::Hints,
     Self::Region,
     Self::Menu,
@@ -62,6 +66,8 @@ impl Context {
       Self::MarkSet => "mark-set",
       Self::MarkJump => "mark-jump",
       Self::Panel => "panel",
+      Self::Recent => "recent",
+      Self::HomeRecent => "home-recent",
       Self::Hints => "hints",
       Self::Region => "region",
       Self::Menu => "menu",
@@ -108,6 +114,8 @@ impl Context {
   pub const fn parent(self) -> Option<Self> {
     match self {
       Self::Command | Self::Search | Self::Password => Some(Self::Prompt),
+      Self::Recent => Some(Self::Panel),
+      Self::HomeRecent => Some(Self::Home),
       _ => None,
     }
   }

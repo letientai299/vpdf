@@ -138,6 +138,7 @@ impl Session {
       Some(Request::Open { path, tab }) => self.open(&path, tab, screen),
       Some(Request::Print) => self.print(),
       Some(Request::RecentTab) => self.recent_tab(screen),
+      Some(Request::ForgetRecent(paths)) => self.forget_recent(&paths),
       Some(Request::PanelOpen { path, position, focus }) => {
         self.panel_open(&path, position, focus, screen)
       }

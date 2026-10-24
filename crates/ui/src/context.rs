@@ -485,6 +485,15 @@ pub fn panel_items(
       items.push(panel_bound(panel, "Copy row", Action::YankLine, copy));
     }
   }
+  if panel.is_recent_view() && matches!(destination, Some(Destination::File(_)))
+  {
+    for (label, action) in [
+      ("Toggle checkbox", Action::RecentToggle),
+      ("Remove from recent", Action::RecentRemove),
+    ] {
+      items.push(panel_bound(panel, label, action, Command::Key(action)));
+    }
+  }
   let close = Command::Key(Action::ClosePanel);
   items.push(panel_bound(panel, "Close panel", Action::ClosePanel, close));
   items

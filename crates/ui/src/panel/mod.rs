@@ -72,6 +72,8 @@ pub struct Panel {
   follow_pending: bool,
   /// Cards for recent documents; a reader pane shows them over its page.
   shelf: Option<Shelf>,
+  recent: selection::Selection,
+  picker: crate::home::Picker,
   /// What the pointer rests on.
   pointing: Pointing,
   /// The hovered row's label when drawn clipped.
@@ -132,6 +134,9 @@ mod content;
 mod follow;
 pub use follow::{Activation, Focus, Follow, Press};
 mod input;
+mod selection;
+#[cfg(test)]
+mod selection_tests;
 pub use input::Event;
 pub(crate) mod layout;
 mod rows;

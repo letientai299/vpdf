@@ -62,34 +62,34 @@ pub(super) fn parse(
     }
     edits.insert(context, changes);
   }
-  let mut common =
-    bindings.map(Context::Prompt).changes_from(&defaults.map(Context::Prompt));
-  for (sequence, target) in bindings.map(Context::Prompt).entries() {
-    if bindings.map(Context::Prompt).source(sequence)
-      != vpdf_ui::reference::Source::Default
-      && !common.iter().any(|edit| edit.sequence == *sequence)
-    {
-      common.push(Edit {
-        sequence: sequence.clone(),
-        change: Change::Bind(target.clone()),
-      });
-    }
-  }
-  for context in [Context::Command, Context::Search, Context::Password] {
+  for &context in Context::ALL {
+    let Some(parent) = context.parent() else { continue };
     if table.contains_key(context.name()) && !edits.contains_key(&context) {
       continue;
     }
-    let mut inherited: Vec<_> = common.iter().filter(|edit| {
+    let inherited = bindings.map(parent);
+    let mut changes = inherited.changes_from(&defaults.map(parent));
+    for (sequence, target) in inherited.entries() {
+      if inherited.source(sequence) != vpdf_ui::reference::Source::Default
+        && !changes.iter().any(|edit| edit.sequence == *sequence)
+      {
+        changes.push(Edit {
+          sequence: sequence.clone(),
+          change: Change::Bind(target.clone()),
+        });
+      }
+    }
+    changes.retain(|edit| {
       !matches!(&edit.change, Change::Bind(target) if !target.allowed(context))
-    }).cloned().collect();
+    });
     if let Some(own) = edits.get(&context) {
-      inherited
+      changes
         .retain(|edit| !own.iter().any(|own| own.sequence == edit.sequence));
-      inherited.extend(own.iter().cloned());
+      changes.extend(own.iter().cloned());
     }
     let (map, diagnostics) = defaults.map(context).apply_sourced(
       &previous.map(context),
-      &inherited,
+      &changes,
       |sequence| {
         if edits
           .get(&context)
@@ -97,7 +97,7 @@ pub(super) fn parse(
         {
           vpdf_ui::reference::Source::File(path.to_owned())
         } else {
-          bindings.map(Context::Prompt).source(sequence)
+          inherited.source(sequence)
         }
       },
     );
@@ -145,7 +145,11 @@ fn target(value: &Value, context: Context) -> crate::Result<Option<Target>> {
       .ok_or_else(|| anyhow::anyhow!("Expected command string"))?;
     let resolved = commands::resolve(
       command,
-      if context == Context::Home { View::Home } else { View::Document },
+      if matches!(context, Context::Home | Context::HomeRecent) {
+        View::Home
+      } else {
+        View::Document
+      },
       |_| true,
       |_| false,
     )?;

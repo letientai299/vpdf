@@ -437,11 +437,9 @@ impl Session {
   }
 
   fn home_help(&mut self, home: &mut Home, topic: &str) {
-    if let Err(error) = self.request_help(
-      topic,
-      vpdf_ui::topics::Invocation::Home,
-      home.view.screen(),
-    ) {
+    if let Err(error) =
+      self.request_help(topic, home.view.invocation(), home.view.screen())
+    {
       home.view.fail(error.to_string());
     }
   }
@@ -516,6 +514,15 @@ impl Session {
     }
     home.configure(&self.settings);
     let outcome = home.event(event, &mut self.history);
+    self.home_outcome(home, outcome, out)
+  }
+
+  fn home_outcome(
+    &mut self,
+    mut home: Home,
+    outcome: Result<Outcome>,
+    out: &mut crate::perf::Output<impl Write>,
+  ) -> Result<()> {
     match outcome {
       Ok(Outcome::Open(path)) => {
         if self.leave_home(&mut home, &path) {
@@ -553,6 +560,14 @@ impl Session {
       Ok(Outcome::Theme(theme)) => {
         self.home = Some(home);
         self.set_theme(theme);
+        return Ok(());
+      }
+      Ok(Outcome::Forget(paths)) => {
+        self.home = Some(home);
+        let result = self.forget_recent(&paths);
+        if let (Err(error), Some(home)) = (result, &mut self.home) {
+          home.view.fail(error.to_string());
+        }
         return Ok(());
       }
       Ok(Outcome::Stay) => {}

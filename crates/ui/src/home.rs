@@ -1,4 +1,6 @@
-mod welcome;
+#[cfg(test)]
+mod recent_tests;
+pub(crate) mod welcome;
 
 pub use welcome::Picker;
 
@@ -23,6 +25,7 @@ use vpdf_model::style::Role;
 pub enum Effect {
   Stay,
   Open(PathBuf),
+  Forget(Vec<PathBuf>),
   Quit,
   Command(String),
   Paste(String),
@@ -86,6 +89,15 @@ impl Home {
     self.error = None;
   }
 
+  pub fn invocation(&self) -> crate::topics::Invocation {
+    let context = if self.info.is_none() && !self.panel.rows().is_empty() {
+      Context::HomeRecent
+    } else {
+      Context::Home
+    };
+    crate::topics::Invocation::home().in_context(context)
+  }
+
   pub fn screen(&self) -> Screen {
     self.screen
   }
@@ -104,6 +116,7 @@ impl Home {
   }
 
   pub fn show_info(&mut self, kind: crate::keys::PanelKind, text: &str) {
+    self.panel.leave_recent();
     self.info = Some(Panel::new(kind, text.lines().map(Row::parse).collect()));
   }
 
@@ -123,6 +136,12 @@ impl Home {
     self.scene_clear(scene);
     if self.info.is_none() && self.panel.rows().is_empty() {
       welcome::scene(scene, self.screen, self.at, self.picker);
+      self.panel.scene_confirmation(
+        scene,
+        self.at,
+        self.screen.columns,
+        self.screen.rows,
+      );
     } else {
       let drawn = self.info.as_mut().unwrap_or(&mut self.panel).scene(
         scene,
@@ -141,7 +160,7 @@ impl Home {
     }
     if let Some(prompt) = &self.prompt {
       prompt.scene(scene, self.screen, self.at, None);
-    } else {
+    } else if self.screen.rows > 1 || !self.confirming() {
       self.scene_footer(scene);
     }
     Ok(())
@@ -151,32 +170,36 @@ impl Home {
     crate::paint::clear(scene, self.at, self.screen);
   }
 
-  pub fn scene_footer<'a>(&self, scene: &mut impl Draw<'a>) {
-    let footer = if self.bindings == Bindings::default() {
+  fn footer(&self) -> String {
+    let context =
+      if self.info.is_some() { Context::Home } else { Context::HomeRecent };
+    if self.bindings == Bindings::default() {
       if self.info.is_some() {
         "j/k scroll  Esc close".into()
-      } else {
+      } else if self.panel.rows().is_empty() {
         "Enter open  :help  :e file  :q quit".into()
+      } else {
+        "Enter open  Space select  x remove  :help  :q".into()
       }
     } else {
-      let hints = if self.info.is_some() {
+      let mut hints = if self.info.is_some() {
         vec![
           self.bindings.hint(
-            Context::Home,
+            context,
             &crate::bindings::Target::Reader(Action::Motion(
               vpdf_reader::motion::Motion::Down,
             )),
             "down",
           ),
           self.bindings.hint(
-            Context::Home,
+            context,
             &crate::bindings::Target::Reader(Action::Motion(
               vpdf_reader::motion::Motion::Up,
             )),
             "up",
           ),
           self.bindings.hint(
-            Context::Home,
+            context,
             &crate::bindings::Target::Reader(Action::Cancel),
             "close",
           ),
@@ -184,33 +207,48 @@ impl Home {
       } else {
         vec![
           self.bindings.hint(
-            Context::Home,
+            context,
             &crate::bindings::Target::Reader(Action::Follow),
             "open",
           ),
           self.bindings.hint(
-            Context::Home,
+            context,
             &crate::bindings::Target::Reader(Action::Command),
             "command",
           ),
           self.bindings.hint(
-            Context::Home,
+            context,
             &crate::bindings::Target::Reader(Action::Help),
             "help",
           ),
           self.bindings.hint(
-            Context::Home,
+            context,
             &crate::bindings::Target::Reader(Action::Quit),
             "quit",
           ),
         ]
       };
+      if self.info.is_none() && !self.panel.rows().is_empty() {
+        for (action, label) in
+          [(Action::RecentToggle, "select"), (Action::RecentRemove, "remove")]
+        {
+          hints.push(self.bindings.hint(
+            context,
+            &crate::bindings::Target::Reader(action),
+            label,
+          ));
+        }
+      }
       hints
         .into_iter()
         .filter(|hint| !hint.is_empty())
         .collect::<Vec<_>>()
         .join("  ")
-    };
+    }
+  }
+
+  pub fn scene_footer<'a>(&self, scene: &mut impl Draw<'a>) {
+    let footer = self.footer();
     let (text, style) = match &self.error {
       Some(error) => (error.as_str(), Role::Error),
       None => (footer.as_str(), Role::Bar),
@@ -245,6 +283,10 @@ impl Home {
       Op::Style(Role::Reset),
       Op::HideCursor,
     ]);
+  }
+
+  pub fn confirming(&self) -> bool {
+    self.panel.confirming()
   }
 
   /// Whether a prompt takes typed and pasted text.
@@ -289,6 +331,15 @@ impl Home {
     event: Event,
     history: &mut History,
   ) -> Result<Effect> {
+    if self.panel.confirming() {
+      return Ok(match event {
+        Event::Key(key) => match self.panel.confirm_key(key) {
+          crate::panel::Event::Forget(paths) => Effect::Forget(paths),
+          _ => Effect::Stay,
+        },
+        _ => Effect::Stay,
+      });
+    }
     match event {
       Event::Key(key) if key.kind != KeyEventKind::Release => {
         self.error = None;
@@ -356,7 +407,7 @@ impl Home {
   fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<Effect> {
     let Some(prompt) = &mut self.prompt else {
       let Some(dispatch) =
-        self.keys.feed_with(key, Context::Home, &self.bindings)
+        self.keys.feed_with(key, Context::HomeRecent, &self.bindings)
       else {
         return Ok(Effect::Stay);
       };
@@ -364,6 +415,13 @@ impl Home {
         Dispatch::Command(command) => return Ok(Effect::Command(command)),
         Dispatch::Input(input) => input,
       };
+      if matches!(
+        input.action,
+        Action::RecentToggle | Action::RecentRemove | Action::Cancel
+      ) {
+        self.panel.input(input, usize::from(self.screen.rows));
+        return Ok(Effect::Stay);
+      }
       if self.panel.navigate(input, usize::from(self.screen.rows)) {
         return Ok(Effect::Stay);
       }
@@ -371,8 +429,7 @@ impl Home {
         Action::Follow | Action::Swap => self.selected(),
         Action::Command => {
           self.prompt = Some(
-            Prompt::new(PromptKind::Command)
-              .with_invocation(crate::topics::Invocation::home()),
+            Prompt::new(PromptKind::Command).with_invocation(self.invocation()),
           );
           Effect::Stay
         }
@@ -493,7 +550,7 @@ mod tests {
     home.event(key(KeyCode::Char(':')), &mut history)?;
     assert_eq!(
       home.prompt.as_ref().unwrap().invocation(),
-      Some(&crate::topics::Invocation::home())
+      Some(&crate::topics::Invocation::Context(Context::HomeRecent))
     );
     home.event(Event::Paste("e ".into()), &mut history)?;
     assert_eq!(

@@ -71,6 +71,11 @@ impl Target {
 
   pub fn allowed(&self, context: Context) -> bool {
     use Context as C;
+    let context = match context {
+      C::Recent => C::Panel,
+      C::HomeRecent => C::Home,
+      other => other,
+    };
     match self {
       Self::Prompt(PromptAction::Editor) => {
         matches!(context, C::Prompt | C::Command | C::Search)
@@ -140,6 +145,10 @@ impl Target {
 fn reader_allowed(action: Action, context: Context) -> bool {
   use Context as C;
   match action {
+    Action::RecentToggle | Action::RecentRemove => {
+      matches!(context, C::Recent | C::HomeRecent | C::Panel | C::Home)
+    }
+
     Action::History(_) if context == C::MarkJump => true,
     Action::Help | Action::Cancel => !matches!(
       context,

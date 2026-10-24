@@ -41,6 +41,7 @@ pub enum Request {
   Tab(TabMove),
   /// A new tab listing recent documents over this one.
   RecentTab,
+  ForgetRecent(Vec<PathBuf>),
   /// A panel whose rows the session builds.
   Panel(PanelKind),
   SetMark(char),

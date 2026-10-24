@@ -151,6 +151,8 @@ pub const OBJECTS: &[(&str, Object)] = &[
 }
 
 specs! {
+  "recent.toggle" => Kind::Fixed(Action::RecentToggle),
+  "recent.remove" => Kind::Fixed(Action::RecentRemove),
   "motion" => Kind::Motion,
   "object" => Kind::Object,
   "scroll" => Kind::Scroll,

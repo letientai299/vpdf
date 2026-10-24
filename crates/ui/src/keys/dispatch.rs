@@ -274,9 +274,9 @@ impl Keys {
           Control::GoMark { exact } => Capture::GoMark(exact),
           Control::Object { around } => Capture::Object(around),
           Control::Resize => Capture::Resize,
-          Control::Yank => {
-            Capture::Operator { panel: context == Context::Panel }
-          }
+          Control::Yank => Capture::Operator {
+            panel: matches!(context, Context::Panel | Context::Recent),
+          },
           Control::Digit { .. } => unreachable!(),
         };
         self.map = Some(bindings.map(match self.capture {

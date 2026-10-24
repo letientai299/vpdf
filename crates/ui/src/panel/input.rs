@@ -6,6 +6,7 @@ use crate::keys;
 #[derive(Debug, PartialEq)]
 pub enum Event {
   Unhandled,
+  Forget(Vec<std::path::PathBuf>),
   Stay,
   Close,
   Copy { text: String, register: char },
@@ -15,6 +16,9 @@ pub enum Event {
 }
 
 enum Route {
+  Toggle,
+  Remove,
+  Clear,
   Navigate,
   Unhandled,
   Ignore,
@@ -32,10 +36,25 @@ impl Panel {
   }
 
   pub fn input(&mut self, input: Input, page: usize) -> Event {
+    if self.confirming() {
+      return Event::Stay;
+    }
     if !self.focused() {
       return Event::Unhandled;
     }
     match self.route(input.action) {
+      Route::Toggle => {
+        self.toggle_checked();
+        Event::Stay
+      }
+      Route::Remove => {
+        self.request_removal();
+        Event::Stay
+      }
+      Route::Clear => {
+        self.clear_checked();
+        Event::Stay
+      }
       Route::Unhandled => Event::Unhandled,
       Route::Navigate => {
         self.navigate(input, page);
@@ -77,6 +96,9 @@ impl Panel {
 
   pub fn shortcut_action(&self, action: Action) -> Option<Action> {
     Some(match self.route(action) {
+      Route::Toggle => Action::RecentToggle,
+      Route::Remove => Action::RecentRemove,
+      Route::Clear => Action::Cancel,
       Route::Close => Action::Quit,
       Route::Copy => Action::YankLine,
       Route::Preview => Action::Peek,
@@ -105,6 +127,9 @@ impl Panel {
       _ => {}
     }
     Some(match self.route(action) {
+      Route::Toggle => "toggle recent checkbox",
+      Route::Remove => "remove recent files",
+      Route::Clear => "clear recent selections",
       Route::Close => "close panel",
       Route::Copy => "copy panel row",
       Route::Preview => "preview annotation",
@@ -120,6 +145,13 @@ impl Panel {
       return Route::Navigate;
     }
     match action {
+      Action::RecentToggle if self.is_recent_view() => Route::Toggle,
+      Action::RecentRemove if self.is_recent_view() => Route::Remove,
+      Action::Cancel
+        if self.is_recent_view() && !self.recent.checked.is_empty() =>
+      {
+        Route::Clear
+      }
       Action::Quit | Action::ClosePanel => Route::Close,
       Action::Yank | Action::YankLine => Route::Copy,
       // Keep text actions within the panel.

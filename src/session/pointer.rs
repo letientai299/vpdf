@@ -292,6 +292,10 @@ impl Session {
     let Some(drop) = self.drop_step(body, typing, out)? else {
       return Ok(false);
     };
+    if !self.tabs.is_empty() && self.app().confirming_recent() {
+      answer(out, &drop.finish(false))?;
+      return Ok(false);
+    }
     let done =
       crate::dnd::target(&drop, typing).and_then(|target| self.dropped(target));
     answer(out, &drop.finish(done.is_ok()))?;
@@ -345,6 +349,10 @@ impl Session {
         return Ok(Landing::Shown);
       }
     };
+    if home.view.confirming() {
+      answer(out, &drop.finish(false))?;
+      return Ok(Landing::Shown);
+    }
     let opened = match crate::dnd::target(&drop, typing) {
       Ok(Target::Text(text)) => {
         home.event(Event::Paste(text), &mut self.history).map(|_| false)

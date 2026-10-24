@@ -713,3 +713,40 @@ fn reference_uses_applied_configuration() -> crate::Result<()> {
   assert_ne!(invalid.settings.reference().warnings, [] as [String; 0]);
   Ok(())
 }
+
+#[test]
+fn recent_bindings_inherit_remaps() {
+  use vpdf_ui::bindings::{Context, Sequence, Target};
+  use vpdf_ui::keys::Action;
+  let source = "\
+[keybindings.panel]\n\
+'<Space>' = { action = 'screen', amount = -1 }\n\
+x = { unbind = true }\n\
+[keybindings.home]\n\
+x = { command = 'help' }\n\
+[keybindings.recent]\n\
+s = { action = 'recent.toggle' }\n\
+r = { action = 'recent.remove' }\n";
+  let loaded = decoded(source);
+  assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
+  let bindings = loaded.settings.bindings();
+  let space = Sequence::parse("<Space>").unwrap();
+  let x = Sequence::parse("x").unwrap();
+  assert_eq!(
+    bindings.map(Context::Recent).get(&space),
+    Some(&Target::Reader(Action::Screen(-1)))
+  );
+  assert!(bindings.map(Context::Recent).is_unbound(&x));
+  assert_eq!(
+    bindings.map(Context::HomeRecent).get(&x),
+    Some(&Target::Command("help".into()))
+  );
+  assert_eq!(
+    bindings.map(Context::Recent).get(&Sequence::parse("s").unwrap()),
+    Some(&Target::Reader(Action::RecentToggle))
+  );
+  assert_eq!(
+    bindings.map(Context::Recent).get(&Sequence::parse("r").unwrap()),
+    Some(&Target::Reader(Action::RecentRemove))
+  );
+}

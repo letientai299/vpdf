@@ -43,7 +43,9 @@ impl Snapshot {
     };
     for rows in [&mut self.defaults, &mut self.effective] {
       rows.retain_mut(|row| {
-        if row.context != Context::Panel {
+        if row.context != Context::Panel
+          && !(kind == PanelKind::Recent && row.context == Context::Recent)
+        {
           return true;
         }
         let Target::Reader(action) = row.target else {

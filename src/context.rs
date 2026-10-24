@@ -86,11 +86,7 @@ impl App {
     self.disarm();
     let bottom = self.menu_top();
     let mut menu = ContextMenu::new(items, at, columns, bottom, row);
-    let context = vpdf_ui::bindings::Context::resolve(
-      self.input_owner(),
-      self.reader.mode(),
-      self.reader.operator.is_some(),
-    );
+    let context = self.binding_context();
     menu.rebind(self.settings.bindings(), context);
     self.overlays.open_menu(menu);
   }

@@ -54,6 +54,16 @@ impl Bindings {
 
 fn default_map(context: Context) -> Map<Target> {
   use Context as C;
+  if matches!(context, C::Recent | C::HomeRecent) {
+    let mut map = default_map(context.parent().expect("recent parent"));
+    for &(key, action, _) in keys::RECENT_BINDINGS {
+      map.replace(
+        &Sequence::parse(&keys::notation(key)).expect("recent key"),
+        Some(&Target::Reader(action)),
+      );
+    }
+    return map;
+  }
   if matches!(context, C::Prompt | C::Command | C::Search | C::Password) {
     return Map::new(
       PromptAction::defaults(context == C::Password)

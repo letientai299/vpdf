@@ -88,6 +88,8 @@ impl Panel {
       layout: None,
       follow_pending: false,
       shelf: None,
+      recent: super::selection::Selection::default(),
+      picker: crate::home::Picker::Terminal { fzf: false },
       pointing: Pointing::Away,
       hover_title: None,
       clicked: None,
@@ -107,6 +109,10 @@ impl Panel {
     entries: &[super::recent::Entry],
   ) {
     if self.shelf.as_mut().is_some_and(|shelf| shelf.refresh(entries)) {
+      self
+        .recent
+        .checked
+        .retain(|path| entries.iter().any(|entry| entry.path == *path));
       self.refill(rows, "");
     }
   }
@@ -143,6 +149,9 @@ impl Panel {
   }
 
   pub fn focus(&mut self, focused: bool) {
+    if !focused {
+      self.leave_recent();
+    }
     self.focused = focused;
   }
   pub fn set_note(&mut self, note: &'static str) {
@@ -280,7 +289,7 @@ impl Panel {
 
   /// Recent rows open with Enter alone.
   pub fn is_recent_view(&self) -> bool {
-    self.shelf.is_some()
+    self.kind == PanelKind::Recent
   }
 
   /// What `yy` copies from the selected row: a link's address, else
@@ -402,18 +411,26 @@ impl Panel {
     pictures: bool,
   ) -> Result<(), S::Error> {
     let crate::panel::recent::Frame { width, screen, at, .. } = frame;
+    if self.is_recent_view() && self.rows.is_empty() {
+      crate::home::welcome::scene(scene, screen, at, self.picker);
+      self.scene_confirmation(scene, at, width, screen.rows);
+      return Ok(());
+    }
     let Some(mut cards) = self.shelf.take() else {
       self.scene_list(scene, at, width, screen.rows);
+      self.scene_confirmation(scene, at, width, screen.rows);
       return Ok(());
     };
     if width < screen.columns || !self.focused {
       cards.hide();
       self.shelf = Some(cards);
       self.scene_list(scene, at, width, screen.rows);
+      self.scene_confirmation(scene, at, width, screen.rows);
       return Ok(());
     }
     let drawn = cards.scene(self, scene, frame, pictures);
     self.shelf = Some(cards);
+    self.scene_confirmation(scene, at, width, screen.rows);
     drawn
   }
 
@@ -438,7 +455,12 @@ impl Panel {
       scene.push(Op::Style(Role::Reset));
     }
     let title = format!(" {} ", self.kind.title());
-    let count = format!(" {} {}", self.rows.len(), self.note);
+    let selection = if self.is_recent_view() {
+      self.selection_count()
+    } else {
+      String::new()
+    };
+    let count = format!(" {} {}{selection}", self.rows.len(), self.note);
     crate::paint::move_to(scene, at, 0u16, 0u16);
     scene.push(Op::Style(Role::Badge(Color::Cyan)));
     scene.text(&vpdf_model::text::clean(&title, inner));
@@ -479,11 +501,23 @@ impl Panel {
       };
       crate::paint::move_to(scene, at, row + 1, 0u16);
       scene.push(Op::Style(base));
-      let detail = vpdf_model::text::clean(&item.detail, inner / 3);
-      let room = if detail.is_empty() {
-        inner
+      let checkbox = if self.is_recent_view()
+        && matches!(item.destination, Destination::File(_))
+      {
+        let checked = matches!(&item.destination, Destination::File(path)
+          if self.recent.checked.contains(path));
+        if checked { "[x] " } else { "[ ] " }
       } else {
-        inner.saturating_sub(detail.width() + 1)
+        ""
+      };
+      let gutter = checkbox.len().min(inner);
+      scene.text(&checkbox[..gutter]);
+      let available = inner.saturating_sub(gutter);
+      let detail = vpdf_model::text::clean(&item.detail, available / 3);
+      let room = if detail.is_empty() {
+        available
+      } else {
+        available.saturating_sub(detail.width() + 1)
       };
       let used = item.scene(scene, Some(base), room, keys, &self.search.query);
       if hovered {
@@ -498,7 +532,7 @@ impl Panel {
       }
       scene.extend([
         Op::Style(plain),
-        Op::Spaces(inner.saturating_sub(used + detail.width())),
+        Op::Spaces(available.saturating_sub(used + detail.width())),
       ]);
       if plain == Role::Reset {
         scene.push(Op::Style(Role::Muted));

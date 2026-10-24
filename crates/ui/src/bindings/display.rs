@@ -44,8 +44,10 @@ impl Target {
       return format!("Command: {command}");
     }
     if let Self::Reader(action) = self
-      && let Some((_, _, about)) =
-        keys::BINDINGS.iter().find(|(_, bound, _)| bound == action)
+      && let Some((_, _, about)) = keys::BINDINGS
+        .iter()
+        .chain(keys::RECENT_BINDINGS)
+        .find(|(_, bound, _)| bound == action)
     {
       return (*about).into();
     }
@@ -212,7 +214,8 @@ impl Bindings {
     if let Some(key) = map.preferred(target) {
       return key;
     }
-    if *target == Target::Reader(Action::YankLine) && context == Context::Panel
+    if *target == Target::Reader(Action::YankLine)
+      && matches!(context, Context::Panel | Context::Recent)
     {
       let first = self.shortcut(context, &Target::Control(Control::Yank));
       let second =

@@ -10,7 +10,7 @@ pub enum Picker {
   Native,
 }
 
-pub(super) fn scene<'a>(
+pub(crate) fn scene<'a>(
   scene: &mut impl Draw<'a>,
   screen: Screen,
   at: At,

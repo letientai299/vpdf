@@ -339,7 +339,14 @@ fn recent_menus_open_rows() -> Result<()> {
   // leave the card 48.
   let row = cell(&mut session, Hit::Row(0))?;
   crate::mouse::right(&mut session, (121 - 48 - 3, row.1))?;
-  let want = ["Open", "Open in split", "Copy row", "Close panel"];
+  let want = [
+    "Open",
+    "Open in split",
+    "Copy row",
+    "Toggle checkbox",
+    "Remove from recent",
+    "Close panel",
+  ];
   assert_eq!(labels(&mut session), want);
   status(&mut session)?;
   let app = session.app();

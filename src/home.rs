@@ -21,6 +21,7 @@ pub enum Outcome {
   Theme(vpdf_model::theme::Theme),
   Perf(Option<bool>),
   Open(PathBuf),
+  Forget(Vec<PathBuf>),
   Help(String),
   Pick { tab: bool },
   Quit,
@@ -142,6 +143,7 @@ impl Home {
     Ok(match self.view.event(event, history)? {
       Effect::Stay => Outcome::Stay,
       Effect::Open(path) => Outcome::Open(path),
+      Effect::Forget(paths) => Outcome::Forget(paths),
       Effect::Quit => Outcome::Quit,
       Effect::Command(line) => return self.command(&line, terminal),
       Effect::Paste(text) => {
@@ -155,7 +157,7 @@ impl Home {
       Effect::Complete(before) => {
         let topics = crate::manual::completions(
           &self.settings,
-          &vpdf_ui::topics::Invocation::Home,
+          &self.view.invocation(),
           cmdline::help_query(&before).unwrap_or(""),
         )?;
         let names: Vec<_> =

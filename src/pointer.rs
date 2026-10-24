@@ -157,6 +157,9 @@ impl App {
 
   /// Closes key-driven state as focus leaves.
   pub fn blur(&mut self) -> Result<()> {
+    if let Some(panel) = &mut self.panel {
+      panel.view.leave_recent();
+    }
     self.cancel_definition();
     // Focus loss closes this pane's overlays.
     self.dismiss_overlay();
