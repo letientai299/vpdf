@@ -126,12 +126,30 @@ def cargo_env(env):
     return env
 
 
-def invoke(command, env, pass_fds=()):
-    with subprocess.Popen(command, env=env, pass_fds=pass_fds) as child:
+def invoke(command, env, pass_fds=(), cwd=None):
+    if env and env.get("VPDF_BUILD_WORKER_FD"):
+        descriptor = int(env["VPDF_BUILD_WORKER_FD"])
+        lease = Path(env["VPDF_BUILD_WORKER"]).parents[2] / "leases/worker"
+        try:
+            inherited = os.fstat(descriptor)
+            expected = lease.stat()
+            if (inherited.st_dev, inherited.st_ino) == (
+                expected.st_dev,
+                expected.st_ino,
+            ):
+                pass_fds = (*pass_fds, descriptor)
+        except OSError:
+            pass
+    with subprocess.Popen(
+        command, env=env, pass_fds=pass_fds, cwd=cwd, start_new_session=True
+    ) as child:
         previous = {}
 
         def forward(signum, _frame):
-            child.send_signal(signum)
+            try:
+                os.killpg(child.pid, signum)
+            except ProcessLookupError:
+                pass
 
         try:
             for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):

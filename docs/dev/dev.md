@@ -50,24 +50,67 @@ and the [CI matrix][ci] define supported hosts.
 
 ## Build cache
 
-The Mise environment routes Cargo through the [cache manager][build-cache].
-Worktrees and hook snapshots keep isolated intermediate artifacts under one
-repository cache in the user cache directory. Final executables and help assets
-stay in their own target directory. Managed Cargo commands evict the least
-recently used idle caches when their combined size exceeds the budget. Active
-caches stay protected until their commands exit, so running commands can
-temporarily exceed the budget. The cache manager owns the default; set
-`VPDF_BUILD_CACHE_GIB` to change it.
+Build and validation tasks share compilation by default. Worktrees keep
+independent source edits; the [shared worker][build-worker] serializes
+compilation and tests in one repository snapshot. It compares file contents,
+includes nonignored untracked inputs, and preserves unchanged source timestamps.
+Hooks use the same snapshot and artifacts, but validate index contents or pushed
+commits.
+Private Git metadata preserves commit, tag, and patch identity while reusing the
+repository's objects. Snapshot builds do not change the caller's index or refs.
 
+```sh
+mise run build:debug
+mise run check
+mise run test
+mise run lint:check
+mise run build
+```
+
+Successful reader builds copy their executable into the calling worktree's
+`target/debug/vpdf` or `target/release/vpdf`, respecting `CARGO_TARGET_DIR`. GUI
+bundles, release packages, and generated help assets also copy back when their
+build tasks finish.
+Copies finish before the worker accepts another request. Compiler diagnostics
+refer to the shared snapshot; its sources reflect the most recent request.
+Changed inputs and different profiles, features, or toolchains can still require
+recompilation. Editing remains parallel; shared validation waits for the worker.
+
+Run `mise run lint` in the worktree when fixes are needed. Formatters edit the
+worktree; Rust lint checks run through the shared worker. Clippy findings
+require manual fixes. Interactive tasks build through the worker, then launch
+the copied executable from the caller. Installation also uses caller outputs.
+Direct Cargo and benchmark tasks retain their existing local behavior. Corpus
+inputs stay in the caller's `tmp/` directory and are linked into the snapshot
+instead of copied. Shared tests can fetch their existing corpus inputs there.
+
+`CARGO_BUILD_JOBS` and `NEXTEST_TEST_THREADS` override the worker's concurrency
+limits. The worker also applies the compiler limit to MuPDF's Make invocation,
+which otherwise selects all available CPUs. Defaults live in the worker.
 Development builds retain line tables and disable incremental compilation to
-limit disk usage. Override Cargo's profile settings when full debug information
-is needed. An explicit `CARGO_BUILD_BUILD_DIR` or `--build-dir` uses an
-unmanaged directory. CI keeps its existing Cargo cache layout. Cargo outside the
-Mise environment also keeps its normal behavior; use `mise exec -- cargo ...`
-for managed builds.
+limit disk use.
 
-Existing build directories remain until cleaned. Cache eviction preserves
-worktree outputs, benchmark captures, and downloaded PDFs.
+The [cache manager][build-cache] bounds intermediate storage under one
+repository cache in the user cache directory. The worker's source, intermediate
+artifacts, and final outputs share that budget with direct Cargo's isolated
+caches. Active commands protect their caches until exit and can temporarily
+exceed the budget. Set `VPDF_BUILD_CACHE_GIB` to override the budget. Worktree
+removal preserves the warm worker cache for reuse.
+
+Run `mise run cache:prune` to remove idle legacy isolated build caches and
+legacy hook sources belonging to currently registered worktrees. It preserves
+the shared worker, active legacy builds, caller outputs, and unrelated
+repositories. Legacy hook sources from already removed worktrees cannot be
+identified safely and are left in the operating system's temporary directory.
+Existing unmanaged build directories remain until cleaned separately.
+
+Set `VPDF_BUILD_MODE=isolated` to run a task in its calling worktree without
+the shared worker. An explicit `CARGO_BUILD_BUILD_DIR` also opts out and stays
+caller-owned. CI retains its existing Cargo cache layout. Cargo outside Mise
+also keeps its normal behavior; use `mise exec -- cargo ...` for managed direct
+builds.
+Explicit manifest, build-directory, target, profile, or artifact-selection flags
+also run in the caller so their paths and output selection keep their meaning.
 
 ## Native window
 
@@ -225,8 +268,8 @@ Compilation and shared-code changes can lengthen a commit.
 
 Before a push, every distinct pushed commit tip receives full tests and
 read-only lint in its own snapshot, including tips outside the current branch.
-Branch deletions need no tests. Snapshot caches serialize validation within a
-worktree and reuse unchanged files and Cargo artifacts across runs.
+Branch deletions need no tests. The shared worker serializes validation across
+worktrees and reuses unchanged files and Cargo artifacts across runs.
 
 Install with `mise run hooks` rather than `prek install`:
 [prek's shim][prek-run] hides unstaged edits before dispatch, preventing
@@ -579,6 +622,7 @@ a result needs a reproducible release reference.
 [pkgconf]: https://formulae.brew.sh/formula/pkgconf
 [build]: ../../scripts/build.sh
 [build-cache]: ../../scripts/build_cache.py
+[build-worker]: ../../scripts/build_worker.py
 [build-app]: ../../scripts/build-app.sh
 [icon]: ../assets/vpdf.svg
 [inject]: ../../crates/vpdf-gui/src/inject.rs
@@ -617,7 +661,6 @@ a result needs a reproducible release reference.
 [preview]: ../../crates/ui/src/preview.rs
 [manuals]: ../../benches/manuals.rs
 [bench-support]: ../../benches/support/mod.rs
-
 [scenario-driver]: ../../benches/drive.rs
 [live-driver]: ../../benches/live/drive.py
 [hook-script]: ../../scripts/hooks.py

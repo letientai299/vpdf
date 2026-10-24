@@ -1,23 +1,21 @@
 import argparse
 import contextlib
-import fcntl
-import hashlib
 import io
 import json
 import os
 import shlex
-import shutil
-import stat
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
-from build_cache import cache_key
+from build_cache import invoke
+from build_worker import replace_file, worker_snapshot
 
 
 def execute(command, root, env=None):
-    subprocess.run(command, cwd=root, env=env, check=True)
+    status = invoke(command, cwd=root, env=env)
+    if status:
+        raise subprocess.CalledProcessError(status, command)
 
 
 def git(root, *args):
@@ -58,56 +56,18 @@ def tree_files(root, tree):
     return files
 
 
-def sync_files(source, files):
-    source.mkdir(parents=True, exist_ok=True)
-    for directory, dirs, names in os.walk(source, topdown=False):
-        for name in names + dirs:
-            path = Path(directory) / name
-            relative = path.relative_to(source).as_posix()
-            if path.is_symlink() or path.is_file():
-                if relative not in files or path.is_symlink():
-                    path.unlink()
-            elif not any(path.iterdir()):
-                path.rmdir()
-    for name, (mode, content) in files.items():
-        path = source / name
-        if path.is_dir():
-            shutil.rmtree(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if mode == b"120000":
-            target = (path.parent / os.fsdecode(content)).resolve()
-            if not target.is_relative_to(source):
-                raise RuntimeError("Snapshot symlink escapes source")
-            path.unlink(missing_ok=True)
-            path.symlink_to(os.fsdecode(content))
-        else:
-            if not path.exists() or path.read_bytes() != content:
-                path.write_bytes(content)
-            path.chmod(0o755 if mode == b"100755" else 0o644)
-
-
 @contextlib.contextmanager
 def snapshot(root, tree):
-    identity = git(root, "rev-parse", "--absolute-git-dir").strip()
-    key = hashlib.sha256(identity).hexdigest()[:16]
-    cache = (
-        Path(tempfile.gettempdir()) / f"vpdf-hooks-{os.getuid()}" / key
-    ).resolve()
-    cache.mkdir(mode=0o700, parents=True, exist_ok=True)
-    with (cache / "lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        source = cache / "source"
-        sync_files(source, tree_files(root, tree))
-        env = dict(os.environ)
-        for name in git(root, "rev-parse", "--local-env-vars").decode().split():
-            env.pop(name, None)
-        target = Path(env.get("CARGO_TARGET_DIR", root / "target" / "hooks"))
-        env["CARGO_TARGET_DIR"] = str((root / target).resolve())
-        env["VPDF_BUILD_CACHE_ID"] = cache_key(root)
-        env["MISE_TRUSTED_CONFIG_PATHS"] = str(source)
-        env["PYTHONDONTWRITEBYTECODE"] = "1"
-        env["VPDF_CACHE"] = "off"
-        yield source, env
+    env = dict(os.environ)
+    for name in git(root, "rev-parse", "--local-env-vars").decode().split():
+        env.pop(name, None)
+    env["VPDF_CACHE"] = "off"
+    kind = git(root, "cat-file", "-t", tree).strip()
+    revision = tree if kind == b"commit" else None
+    with worker_snapshot(
+        root, lambda: tree_files(root, tree), env, revision
+    ) as state:
+        yield state
 
 
 def format_commands(paths):
@@ -133,19 +93,6 @@ def format_commands(paths):
         elif suffix == ".md":
             commands.append(["rumdl", "check", "--fix", *names])
     return commands
-
-
-def replace_file(path, content):
-    mode = stat.S_IMODE(path.stat().st_mode)
-    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as output:
-        temporary = Path(output.name)
-        try:
-            output.write(content)
-            output.flush()
-            temporary.chmod(mode)
-            os.replace(temporary, path)
-        finally:
-            temporary.unlink(missing_ok=True)
 
 
 def format_staged(root, source, paths, env):
@@ -197,6 +144,7 @@ PYTHON_TASKS = {
     "packages": "test:packages",
     "help_assets": "test:help-assets",
     "build_cache": "test:build-cache",
+    "build_worker": "test:build-worker",
 }
 PACKAGING = {
     "scripts/build-app.sh",
@@ -216,7 +164,9 @@ GLOBAL_FILES = {
     "scripts/hooks.py",
     "scripts/test_hooks.py",
     "scripts/build_cache.py",
+    "scripts/build_worker.py",
     "scripts/tools/cargo",
+    "scripts/tools/native/make",
     "scripts/check_packages.py",
 }
 
@@ -334,6 +284,7 @@ def affected_tests(source, paths, env):
                 "test:bench-report",
                 "test:build-features",
                 "test:build-cache",
+                "test:build-worker",
             }
         )
     for task in sorted(tasks):
@@ -351,7 +302,7 @@ def affected_tests(source, paths, env):
                 "--locked",
                 "--workspace",
                 "--test-threads",
-                "num-cpus",
+                env.get("NEXTEST_TEST_THREADS", "4"),
                 "--no-fail-fast",
                 "--no-tests=fail",
                 "-E",

@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import build_cache
 import hooks
 
 
@@ -125,6 +126,18 @@ class RoutingTests(unittest.TestCase):
             [["mise", "run", "test"], ["mise", "run", "test:app"]],
         )
 
+    def test_full_skips_worker(self):
+        with patch.object(hooks, "execute") as run:
+            hooks.affected_tests(
+                Path("/snapshot"),
+                ["scripts/build_worker.py", "scripts/test_build_worker.py"],
+                {},
+            )
+        self.assertEqual(
+            [call.args[0] for call in run.call_args_list],
+            [["mise", "run", "test"]],
+        )
+
     def test_metadata_keeps_packaging(self):
         with (
             patch.object(hooks, "package_folders", side_effect=ValueError),
@@ -178,7 +191,11 @@ class SnapshotTests(unittest.TestCase):
             for key, value in os.environ.items()
             if not key.startswith("GIT_")
         }
-        env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+        env.update(
+            GIT_CONFIG_GLOBAL=os.devnull,
+            GIT_CONFIG_NOSYSTEM="1",
+            XDG_CACHE_HOME=str(self.root / "cache"),
+        )
         self.environment = patch.dict(os.environ, env, clear=True)
         self.environment.start()
         self.addCleanup(self.environment.stop)
@@ -273,17 +290,19 @@ class SnapshotTests(unittest.TestCase):
     def test_shared_build_identity(self):
         with self.snapshot() as (_, env):
             self.assertEqual(
-                env["VPDF_BUILD_CACHE_ID"], hooks.cache_key(self.root)
+                env["VPDF_BUILD_CACHE_ID"], build_cache.cache_key(self.root)
             )
 
     def test_git_environment_removed(self):
         index = self.root / "custom-index"
         shutil.copyfile(self.root / ".git/index", index)
+        original = index.read_bytes()
         with (
             patch.dict(os.environ, GIT_INDEX_FILE=str(index)),
             self.snapshot() as (_, env),
         ):
             self.assertNotIn("GIT_INDEX_FILE", env)
+        self.assertEqual(index.read_bytes(), original)
 
     def test_external_symlink_rejected(self):
         (self.root / "README.md").unlink()
@@ -450,6 +469,10 @@ class SnapshotTests(unittest.TestCase):
     def test_native_partial_preserved(self):
         self.write("scripts/hooks.py", Path(hooks.__file__).read_text())
         self.write(
+            "scripts/build_worker.py",
+            Path(hooks.__file__).with_name("build_worker.py").read_text(),
+        )
+        self.write(
             "scripts/build_cache.py",
             Path(hooks.__file__).with_name("build_cache.py").read_text(),
         )
@@ -471,6 +494,7 @@ class SnapshotTests(unittest.TestCase):
         self.stage(
             "scripts/hooks.py",
             "scripts/build_cache.py",
+            "scripts/build_worker.py",
             "scripts/tools/cargo",
             ".config/mise.toml",
         )
