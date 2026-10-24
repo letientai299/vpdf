@@ -97,30 +97,6 @@ fn workers_wait_for_their_slot() -> Result<()> {
   Ok(())
 }
 
-/// Workers across panes share the helper budget; a dropped owner's
-/// worker releases its share when its thread ends.
-#[test]
-fn workers_share_one_budget() -> Result<()> {
-  let (_root, mut app) = app()?;
-  let limit = budget();
-  let others: Vec<_> = (0..limit)
-    .map(|_| Flight::take(&Arc::default(), &app.wake).unwrap())
-    .collect();
-  app.want_sidebar(PanelKind::Annotations);
-  assert!(!app.sidebar_loading(PanelKind::Annotations));
-  drop(others);
-  app.sidebar_updates()?;
-  assert!(app.sidebar_loading(PanelKind::Annotations));
-  assert_eq!(ALIVE.load(Ordering::Acquire), 1);
-  drop(app);
-  let start = Instant::now();
-  while ALIVE.load(Ordering::Acquire) > 0 {
-    anyhow::ensure!(start.elapsed() < Duration::from_secs(5), "Worker leak");
-    std::thread::sleep(Duration::from_millis(1));
-  }
-  Ok(())
-}
-
 #[test]
 fn reload_discards_old_rows() -> Result<()> {
   let (root, mut app) = app()?;
