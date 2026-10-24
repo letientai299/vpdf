@@ -15,6 +15,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_OPT_LEVEL: '1'
   VPDF_BENCH_EVENTS: '0'
 
 jobs:
@@ -47,7 +48,10 @@ jobs:
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           key: ${{ matrix.platform }}
-          cache-workspace-crates: true
+          cache-workspace-crates: false
+      - name: Discard restored help assets
+        # Rust cache prunes non-Rust help files.
+        run: rm -rf target/help
       - name: Lint
         if: runner.os == 'Linux'
         # Lint applies fixes; any change means the commit lacked them.
