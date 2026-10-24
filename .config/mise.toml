@@ -80,6 +80,15 @@ description = "Verify macOS packaging and installation"
 depends = ["build:app"]
 run = "python3 -B -m unittest discover -s scripts -p test_app.py"
 
+[tasks."test:app:open"]
+description = "Check Finder document events in a background app"
+depends = ["build:app"]
+env.VPDF_TEST_OPEN = "1"
+run = [
+  "sh scripts/corpus.sh corpus paper",
+  "python3 -B -m unittest discover -s scripts -p test_app.py -k DocumentTests",
+]
+
 [tasks.release]
 description = "Package the release executable with UPX on Linux"
 run = "python3 -B scripts/build_worker.py release"

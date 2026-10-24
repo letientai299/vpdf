@@ -31,6 +31,8 @@ struct Args {
 }
 
 struct Window {
+  #[cfg(target_os = "macos")]
+  documents: fmv_macos_events::Inbox,
   bridge: Bridge,
   frame: Option<Frame>,
   renderer: Renderer,
@@ -49,7 +51,13 @@ impl Window {
     cc: &eframe::CreationContext<'_>,
     args: Args,
     config: vpdf::config::Loaded,
+    #[cfg(target_os = "macos")] documents: fmv_macos_events::Inbox,
   ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    #[cfg(target_os = "macos")]
+    {
+      let ctx = cc.egui_ctx.clone();
+      documents.set_wake(move || ctx.request_repaint());
+    }
     vpdf_gui::fonts::install(&cc.egui_ctx);
     #[cfg(feature = "bench-events")]
     let events = args
@@ -69,6 +77,8 @@ impl Window {
       bridge.send(Input::Observe(true));
     }
     Ok(Self {
+      #[cfg(target_os = "macos")]
+      documents,
       bridge,
       frame: None,
       renderer: Renderer::default(),
@@ -86,6 +96,22 @@ impl Window {
   fn send_input(&mut self, input: Input) {
     self.trace.input();
     self.bridge.send(input);
+  }
+
+  #[cfg(target_os = "macos")]
+  fn receive_documents(&mut self, ctx: &egui::Context) {
+    for event in self.documents.drain() {
+      match event {
+        fmv_macos_events::Event::Open(paths) => {
+          for path in paths {
+            self.send_input(Input::Open(path));
+          }
+        }
+        fmv_macos_events::Event::Quit => {
+          ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
+      }
+    }
   }
 
   #[cfg(feature = "bench-events")]
@@ -125,6 +151,8 @@ impl eframe::App for Window {
       self.screen = Some(screen);
       self.bridge.send(Input::Resize(screen));
     }
+    #[cfg(target_os = "macos")]
+    self.receive_documents(&ctx);
     let mut content = false;
     let mut received = false;
     if let Some(frame) = self.bridge.take() {
@@ -276,10 +304,20 @@ fn main() -> eframe::Result {
   let config = args.config.load();
   let options = options(&args)
     .map_err(|error| eframe::Error::AppCreation(Box::new(error)))?;
+  #[cfg(target_os = "macos")]
+  let (_registration, documents) = fmv_macos_events::Registration::install();
   eframe::run_native(
     "Vpdf",
     options,
-    Box::new(move |cc| Ok(Box::new(Window::new(cc, args, config)?))),
+    Box::new(move |cc| {
+      Ok(Box::new(Window::new(
+        cc,
+        args,
+        config,
+        #[cfg(target_os = "macos")]
+        documents,
+      )?))
+    }),
   )
 }
 

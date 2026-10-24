@@ -190,6 +190,12 @@ Applications shortcut. `install:app` builds the package and atomically replaces
 `~/Applications/Vpdf.app` without launching it. `test:app` checks the mounted
 DMG and installation in a temporary home directory.
 
+In an interactive macOS session, run `mise run test:app:open` to check Finder
+document events at launch and while running, multiple files, Unicode paths,
+and normal quit. It uses a temporary app and state in a background window.
+The macOS-only [document event adapter][document-events] preserves Winit's
+application delegate and keeps native interoperation outside the reader.
+
 The PNG and ICNS icons derive from the [source SVG][icon]. After editing it,
 run `mise build:icon` on macOS. It uses the native SVG renderer through `sips`
 and packages the sizes with `iconutil`; app builds use the checked-in icons.
@@ -690,6 +696,7 @@ a result needs a reproducible release reference.
 [validation]: ../../scripts/validation.py
 [build-worker]: ../../scripts/build_worker.py
 [build-app]: ../../scripts/build-app.sh
+[document-events]: https://docs.rs/fmv-macos-events/latest/fmv_macos_events/
 [icon]: ../assets/vpdf.svg
 [inject]: ../../crates/vpdf-gui/src/inject.rs
 [scenario]: ../../src/scenario.rs

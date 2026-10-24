@@ -13,4 +13,6 @@ ditto "${CARGO_TARGET_DIR:-target}/dist/Vpdf.app" "$staged/Vpdf.app"
 codesign --verify --strict "$staged/Vpdf.app"
 "$staged/Vpdf.app/Contents/MacOS/vpdf-gui" --version >/dev/null
 python3 -B scripts/replace_app.py "$staged/Vpdf.app" "$install_dir/Vpdf.app"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -f "$install_dir/Vpdf.app"
 printf 'Installed %s/Vpdf.app\n' "$install_dir"

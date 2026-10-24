@@ -1,10 +1,14 @@
 import json
 import os
 import plistlib
+import re
+import shutil
+import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import unittest
 from pathlib import Path
@@ -129,6 +133,13 @@ class AppTests(unittest.TestCase):
         self.assertEqual(info["CFBundlePackageType"], "APPL")
         self.assertEqual(info["CFBundleName"], "Vpdf")
         self.assertEqual(info["CFBundleDisplayName"], "Vpdf")
+        self.assertTrue(
+            any(
+                "com.adobe.pdf" in document.get("LSItemContentTypes", [])
+                and document.get("CFBundleTypeRole") == "Viewer"
+                for document in info.get("CFBundleDocumentTypes", [])
+            )
+        )
         icon = app / "Contents/Resources" / info["CFBundleIconFile"]
         self.assertEqual(
             icon.read_bytes(), (ROOT / "docs/assets/vpdf.icns").read_bytes()
@@ -258,6 +269,137 @@ class AppTests(unittest.TestCase):
                         {p.name for p in applications.iterdir()}, {"Vpdf.app"}
                     )
                     (app / "stale").write_text("old installation")
+
+
+@unittest.skipUnless(
+    sys.platform == "darwin" and os.environ.get("VPDF_TEST_OPEN") == "1",
+    "Requires an interactive macOS session; run mise run test:app:open",
+)
+class DocumentTests(unittest.TestCase):
+    def wait(self, condition):
+        until = time.monotonic() + 30
+        while time.monotonic() < until:
+            if result := condition():
+                return result
+            time.sleep(0.05)
+        self.fail("Document event timed out")
+
+    def test_document_events(self):
+        register = (
+            "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+            "LaunchServices.framework/Support/lsregister"
+        )
+        with tempfile.TemporaryDirectory(prefix="vpdf-open-") as temporary:
+            root = Path(temporary).resolve()
+            app = root / "Vpdf.app"
+            shutil.copytree(DIST / "Vpdf.app", app)
+            plist = app / "Contents/Info.plist"
+            info = plistlib.loads(plist.read_bytes())
+            bundle = "io.github.letientai299.vpdf.test." + root.name
+            info["CFBundleIdentifier"] = bundle
+            plist.write_bytes(plistlib.dumps(info))
+            subprocess.run(
+                ["codesign", "--force", "--sign", "-", "--timestamp=none", app],
+                check=True,
+                timeout=30,
+            )
+            trace = root / "trace.jsonl"
+            files = [
+                root / name
+                for name in (
+                    "report.pdf",
+                    "báo cáo #1.pdf",
+                    "third.pdf",
+                    "fourth.pdf",
+                )
+            ]
+            for path in files:
+                shutil.copyfile(ROOT / "tmp/corpus/paper.pdf", path)
+            binary = app / "Contents/MacOS" / info["CFBundleExecutable"]
+
+            def pids():
+                result = subprocess.run(
+                    ["pgrep", "-f", re.escape(str(binary))],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                return [int(pid) for pid in result.stdout.split()]
+
+            def opened(path, tab):
+                if not trace.exists():
+                    return False
+                for line in trace.read_text().splitlines():
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    self.assertFalse(row.get("error"), row)
+                    if (
+                        row.get("document") == str(path)
+                        and row.get("tab") == tab
+                        and row.get("complete")
+                        and not row.get("busy")
+                        and not row.get("blank")
+                    ):
+                        return True
+                return False
+
+            try:
+                subprocess.run(
+                    [
+                        "open",
+                        "-g",
+                        "-n",
+                        "-a",
+                        app,
+                        files[0],
+                        "--env",
+                        f"VPDF_TRACE={trace}",
+                        "--env",
+                        "VPDF_CACHE=off",
+                        "--env",
+                        f"XDG_STATE_HOME={root / 'state'}",
+                        "--stdout",
+                        root / "stdout",
+                        "--stderr",
+                        root / "stderr",
+                        "--args",
+                        "--background",
+                        "--no-config",
+                    ],
+                    check=True,
+                    timeout=30,
+                )
+                self.wait(lambda: opened(files[0], 1))
+                owners = pids()
+                self.assertEqual(len(owners), 1)
+                for paths, tab in [(files[1:2], 2), (files[2:], 4)]:
+                    subprocess.run(
+                        ["open", "-g", "-a", app, *paths],
+                        check=True,
+                        timeout=30,
+                    )
+                    self.wait(lambda: opened(paths[-1], tab))
+                    self.assertEqual(pids(), owners)
+                subprocess.run(
+                    [
+                        "osascript",
+                        "-e",
+                        f'tell application id "{bundle}" to quit',
+                    ],
+                    check=True,
+                    timeout=30,
+                )
+                self.wait(lambda: not pids())
+            finally:
+                for pid in pids():
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                self.wait(lambda: not pids())
+                subprocess.run([register, "-u", app], check=True, timeout=30)
 
 
 if __name__ == "__main__":
