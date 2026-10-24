@@ -21,7 +21,8 @@ To compare different files, use `:vsplit notes.pdf` or `:split notes.pdf`.
 A filename already open anywhere focuses its existing pane instead of creating
 a duplicate. To duplicate an already open document, first focus it and split
 without a filename. `:edit other.pdf` replaces the focused pane's document;
-`:tabedit other.pdf` opens a new tab.
+`:tabedit other.pdf` opens a new tab. Without a path, `:edit` chooses a file
+for the focused pane; `:tabedit` and `:open` choose one for a new tab.
 
 ## Tabs and help
 

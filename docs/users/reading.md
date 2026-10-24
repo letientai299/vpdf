@@ -4,15 +4,21 @@
 
 Open a file with `vpdf book.pdf` from the shell. Multiple filenames open tabs;
 `--page 23` overrides the saved position with physical page 23. `vpdf --help`
-shows the installed launch options. Without a filename, use `:recent` for
-previously opened files or `:edit book.pdf` to enter a path.
+shows the installed launch options. Without saved files, the start screen shows
+opening and help hints. Use `:recent` for saved files or `:edit book.pdf` to
+enter a path.
 
 ## Opening and discovery
 
-`:edit book.pdf` opens in the focused pane; `:tabedit book.pdf` opens in a new
-tab. `:tabnew` creates a recent-files tab. A file already open focuses its
-existing pane. `:fzf` finds PDFs below the current directory when fzf is on
-`PATH`; use its upstream setup in [Optional helpers][helpers].
+`:edit book.pdf` opens in the focused pane; `:open book.pdf` and
+`:tabedit book.pdf` open in a new tab. Omit the path to choose a file: the
+terminal uses fzf and the macOS app uses its system file chooser. Canceling
+keeps the current view. `:tabnew` creates a recent-files tab. A file already
+open focuses its existing pane.
+
+In the terminal, `:fzf` finds PDFs below the current directory when fzf is on
+`PATH`; use its upstream setup in [Optional helpers][helpers]. Without fzf,
+enter a path with `:edit book.pdf` and Tab completion.
 
 Dropped PDF files open new tabs in the native app and terminals with file-drop
 support, even while a prompt is open. Already open files focus their existing
@@ -22,6 +28,19 @@ the hovered row without changing the selected entry.
 `:password` opens hidden password entry and reopens the focused PDF. Passwords
 are not command-line arguments. Inspect `:info` after an open failure and check
 the path, permissions, and password. Built-in help has no file to unlock.
+
+## Removing recent files
+
+In Recent, press Space to check or uncheck a file without moving the cursor.
+Press `x` to remove checked files, or the cursor row when none are checked.
+Enter or `y` confirms; `n`, Escape, or `Ctrl-c` cancels. Files hidden by a
+filter remain checked and count toward removal. Escape outside confirmation
+clears checks before closing the panel. Leaving Recent clears its checks.
+
+Removal forgets saved positions and local marks. It preserves source PDFs,
+open reading panes, and global marks. Saving an already open pane does not
+restore its forgotten entry; explicitly reopening the file starts a new entry.
+Removing the final file returns Recent to the opening and help hints.
 
 ## Saved state and reload
 
@@ -33,8 +52,9 @@ panels, or running jobs. An explicit launch page overrides the saved position.
 State lives at `$XDG_STATE_HOME/vpdf/state.json`, falling back to
 `~/.local/state/vpdf/state.json`. Missing or unreadable state starts empty.
 State saves during activity and on exit; abrupt process or machine failure can
-lose recent changes. Simultaneous readers can race when saving. Close readers
-before editing or backing up their state file.
+lose recent changes. Concurrent readers merge saved entries; removal prevents
+older panes from restoring forgotten state. A later explicit open can add the
+file again. Close readers before editing or backing up their state file.
 
 On launch, a background scan removes saved positions and marks for paths the
 filesystem reports as missing. Other access errors preserve saved entries.

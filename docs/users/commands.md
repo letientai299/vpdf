@@ -49,8 +49,11 @@ reload from disk, export a region, or hold persistent global marks.
 ## Common requests
 
 Use `:edit book.pdf` to replace the focused document, or `:tabedit notes.pdf`
-to keep it open. `:recent` browses saved file entries; `:fzf` discovers PDFs
-below the current directory when its helper is installed.
+to keep it open. Bare `:edit` chooses a file for the focused pane; bare `:open`
+or `:tabedit` chooses one for a new tab. The terminal picker requires fzf; the
+macOS app uses its system chooser. `:recent` browses saved file entries; Space
+checks files and `x` requests removal. See [Files and saved state][state].
+`:fzf` discovers PDFs below the current directory when its helper is installed.
 
 Use `:cursorline off` to hide the cursor band, `:crop on` to crop margins,
 `:text` to inspect extracted text, and `:theme nord` to change the UI palette.
@@ -73,3 +76,4 @@ installed reader for the current interface.
 [install]: install.md
 [navigation]: nav.md
 [home]: readme.md
+[state]: reading.md

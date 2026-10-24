@@ -14,8 +14,8 @@ dimensions. Its error names missing capabilities. Fix the terminal or tmux
 settings in [Terminal setup][terminal], then relaunch. `:text` still requires
 those capabilities. The macOS native app can read without a compatible terminal.
 
-For a missing file or permission error, check the filename and read access.
-Use `:edit` with Tab path completion. For an encrypted PDF, use `:password`
+For a missing file or permission error, check the filename and read access. Use
+`:edit book.pdf` with Tab path completion. For an encrypted PDF, use `:password`
 and the hidden prompt. A bad password or damaged PDF cannot be repaired by
 changing zoom or switching to extracted text.
 
@@ -77,8 +77,9 @@ zoom and cursorline affect newly opened documents. Saved and live pane values
 can differ from configured defaults; inspect both in `:help config`.
 
 A later launch restores eligible reading state, not a full workspace of tabs
-and panels. An explicit launch page overrides the saved position. With multiple
-readers saving concurrently, the last writer can replace recent changes.
+and panels. An explicit launch page overrides the saved position. Removing a
+Recent entry forgets its saved position and local marks, including in open
+panes. Explicitly reopen the file to save a new entry.
 See [Files and saved state][state].
 
 [terminal]: install.md#terminal-setup
