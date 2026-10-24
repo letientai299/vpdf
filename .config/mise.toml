@@ -15,6 +15,15 @@ CARGO_BUILD_TARGET = "{{ arch(x64='x86_64', arm64='aarch64') }}-{{ os(macos='app
 # Corpus tests and benches; `corpus:huge` fills tmp/huge for ad hoc runs.
 VPDF_CORPUS = "{{config_root}}/tmp/corpus"
 
+[tasks.validate]
+description = "Validate one snapshot and build the debug reader"
+env.VPDF_CACHE = "off"
+run = "python3 -B scripts/build_worker.py validate"
+
+[tasks._validate]
+hide = true
+run = "python3 -B scripts/hooks.py validate"
+
 [tasks."cache:prune"]
 description = "Remove idle legacy build and hook snapshots"
 run = "python3 -B scripts/build_worker.py --clean-old"
@@ -174,6 +183,7 @@ depends = [
   "test:build-features",
   "test:build-cache",
   "test:build-worker",
+  "test:validation",
   "test:packages",
   "test:hooks",
   "help:build",
@@ -260,6 +270,10 @@ run = "python3 -B -m unittest discover -s scripts -p test_build_features.py"
 [tasks."test:build-cache"]
 description = "Check build cache limits and locking"
 run = "python3 -B -m unittest discover -s scripts -p test_build_cache.py"
+
+[tasks."test:validation"]
+description = "Check validation result reuse"
+run = "python3 -B -m unittest discover -s scripts -p test_validation.py"
 
 [tasks."test:build-worker"]
 description = "Check shared snapshot reuse and isolation"

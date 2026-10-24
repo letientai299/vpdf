@@ -60,10 +60,8 @@ Private Git metadata preserves commit, tag, and patch identity while reusing the
 repository's objects. Snapshot builds do not change the caller's index or refs.
 
 ```sh
-mise run build:debug
+mise run validate
 mise run check
-mise run test
-mise run lint:check
 mise run build
 ```
 
@@ -75,6 +73,38 @@ Copies finish before the worker accepts another request. Compiler diagnostics
 refer to the shared snapshot; its sources reflect the most recent request.
 Changed inputs and different profiles, features, or toolchains can still require
 recompilation. Editing remains parallel; shared validation waits for the worker.
+
+Run `mise run validate` for final code validation. It captures the working
+inputs before waiting, then runs read-only lint, the full test suite, and a
+debug terminal build under one worker lease. The debug executable copies back
+to the caller. Queue, synchronization, lint, test, build, and worker durations
+appear in command output. These timings include command and cache overhead;
+they are not reader performance measurements.
+
+Successful lint and test checks write local receipts outside the worker's
+mutable directory. Validation and hooks reuse them only for matching source
+contents and modes, Git revision, tags and configuration, environment, tools,
+and corpus contents. A full test receipt can cover the affected Rust test
+subset; an affected subset cannot cover the full suite. Packaging and special
+test tasks still run separately. Changed provenance invalidates receipts even
+when source contents match. Receipts are local evidence, not CI results.
+
+Set `VPDF_VALIDATE_FORCE=1` to rerun checks. CI, isolated execution, source or
+corpus symlinks, unavailable tools, and custom compiler wrappers or flags
+disable receipt reuse. Selected external compiler and OCR configuration also
+disables reuse. Custom Cargo or nextest configuration and enabled test retries
+also disable reuse; the [receipt manager][validation] owns those exclusions.
+Relative input paths resolve against the checked source; home defaults use its
+environment. Fresh full-suite checks and forced test checks invalidate previous
+test receipts for matching inputs, including subsets. Lint receipts remain
+independent. Input changes during a check prevent a success receipt from being
+saved. Failed or interrupted checks never write a success receipt. Debug builds
+always consult Cargo, so missing or replaced binaries cannot be restored from a
+test receipt.
+
+Commit hooks format a private staged snapshot before requesting the worker.
+Formatting fixes require restaging and preserve unstaged edits. Prose-only
+commits that do not affect generated help skip the Rust worker entirely.
 
 Run `mise run lint` in the worktree when fixes are needed. Formatters edit the
 worktree; Rust lint checks run through the shared worker. Clippy findings
@@ -622,6 +652,7 @@ a result needs a reproducible release reference.
 [pkgconf]: https://formulae.brew.sh/formula/pkgconf
 [build]: ../../scripts/build.sh
 [build-cache]: ../../scripts/build_cache.py
+[validation]: ../../scripts/validation.py
 [build-worker]: ../../scripts/build_worker.py
 [build-app]: ../../scripts/build-app.sh
 [icon]: ../assets/vpdf.svg

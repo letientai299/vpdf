@@ -390,6 +390,21 @@ class SnapshotTests(unittest.TestCase):
             self.assertEqual(hooks.pre_commit(self.root), 0)
         snapshot.assert_not_called()
 
+    def test_prose_avoids_worker(self):
+        self.write("README.md", "# Staged\n")
+        self.stage("README.md")
+        with patch.object(hooks, "snapshot") as snapshot:
+            self.assertEqual(hooks.pre_commit(self.root), 0)
+        snapshot.assert_not_called()
+
+    def test_formatting_avoids_worker(self):
+        self.write("example.py", "value=1\n")
+        self.stage("example.py")
+        with patch.object(hooks, "snapshot") as snapshot:
+            self.assertEqual(hooks.pre_commit(self.root), 1)
+        snapshot.assert_not_called()
+        self.assertEqual((self.root / "example.py").read_text(), "value = 1\n")
+
     def test_staged_test_content(self):
         self.write("src/main.rs", "fn main() {}\n")
         self.stage("src/main.rs")
@@ -473,6 +488,10 @@ class SnapshotTests(unittest.TestCase):
             Path(hooks.__file__).with_name("build_worker.py").read_text(),
         )
         self.write(
+            "scripts/validation.py",
+            Path(hooks.__file__).with_name("validation.py").read_text(),
+        )
+        self.write(
             "scripts/build_cache.py",
             Path(hooks.__file__).with_name("build_cache.py").read_text(),
         )
@@ -495,6 +514,7 @@ class SnapshotTests(unittest.TestCase):
             "scripts/hooks.py",
             "scripts/build_cache.py",
             "scripts/build_worker.py",
+            "scripts/validation.py",
             "scripts/tools/cargo",
             ".config/mise.toml",
         )

@@ -6,10 +6,13 @@ import os
 import shlex
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 from build_cache import invoke
-from build_worker import replace_file, worker_snapshot
+from build_worker import replace_file, sync_files, worker_snapshot
+from validation import run_check
 
 
 def execute(command, root, env=None):
@@ -165,9 +168,23 @@ GLOBAL_FILES = {
     "scripts/test_hooks.py",
     "scripts/build_cache.py",
     "scripts/build_worker.py",
+    "scripts/validation.py",
+    "scripts/test_validation.py",
     "scripts/tools/cargo",
     "scripts/tools/native/make",
     "scripts/check_packages.py",
+}
+
+
+FULL_TEST_TASKS = {
+    "test:startup",
+    "test:demo",
+    "test:packages",
+    "test:bench-report",
+    "test:build-features",
+    "test:build-cache",
+    "test:build-worker",
+    "test:validation",
 }
 
 
@@ -275,41 +292,48 @@ def affected_tests(source, paths, env):
         print("Tests: full; changed shared or unknown inputs", flush=True)
         for name in sorted(reasons):
             print(f"  {name}", flush=True)
-        execute(["mise", "run", "test"], source, env)
-        tasks.difference_update(
-            {
-                "test:startup",
-                "test:demo",
-                "test:packages",
-                "test:bench-report",
-                "test:build-features",
-                "test:build-cache",
-                "test:build-worker",
-            }
+        run_check(
+            source,
+            env,
+            "test",
+            lambda: execute(["mise", "run", "test"], source, env),
         )
+        tasks.difference_update(FULL_TEST_TASKS)
     for task in sorted(tasks):
         print(f"Tests: {task}", flush=True)
-        execute(["mise", "run", task], source, env)
+        if task in FULL_TEST_TASKS:
+            run_check(
+                source,
+                env,
+                task,
+                lambda task=task: execute(["mise", "run", task], source, env),
+                covered_by="test",
+            )
+        else:
+            execute(["mise", "run", task], source, env)
     if owners and not reasons:
         print("Tests: affected " + ", ".join(sorted(owners)), flush=True)
         expression = " | ".join(f"rdeps(={name})" for name in sorted(owners))
         execute(["mise", "run", "help:build"], source, env)
-        execute(
-            [
-                "cargo",
-                "nextest",
-                "run",
-                "--locked",
-                "--workspace",
-                "--test-threads",
-                env.get("NEXTEST_TEST_THREADS", "4"),
-                "--no-fail-fast",
-                "--no-tests=fail",
-                "-E",
-                expression,
-            ],
+        command = [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--workspace",
+            "--test-threads",
+            env.get("NEXTEST_TEST_THREADS", "4"),
+            "--no-fail-fast",
+            "--no-tests=fail",
+            "-E",
+            expression,
+        ]
+        run_check(
             source,
             env,
+            "affected:" + expression,
+            lambda: execute(command, source, env),
+            covered_by="test",
         )
     if not owners and not tasks and not reasons:
         print("Tests: no affected code", flush=True)
@@ -321,9 +345,20 @@ def pre_commit(root):
         print("No staged changes", flush=True)
         return 0
     tree = git(root, "write-tree").decode().strip()
-    with snapshot(root, tree) as (source, env):
+    files = tree_files(root, tree)
+    env = dict(os.environ)
+    with tempfile.TemporaryDirectory(prefix="vpdf-staged-") as directory:
+        source = Path(directory).resolve()
+        sync_files(source, files)
         if not format_staged(root, source, paths, env):
             return 1
+        if all(
+            prose_path(name) and not name.startswith("docs/users/")
+            for name in paths
+        ):
+            print("Tests: no affected code", flush=True)
+            return 0
+    with snapshot(root, tree) as (source, env):
         affected_tests(source, paths, env)
     return 0
 
@@ -354,8 +389,13 @@ def check_lint(root, env):
 
 
 def full_checks(root, env):
-    check_lint(root, env)
-    execute(["mise", "run", "test"], root, env)
+    run_check(root, env, "lint", lambda: check_lint(root, env))
+    run_check(
+        root,
+        env,
+        "test",
+        lambda: execute(["mise", "run", "test"], root, env),
+    )
 
 
 def pre_push(root, stream):
@@ -425,7 +465,15 @@ def main():
         description="Validate staged and pushed snapshots"
     )
     parser.add_argument(
-        "stage", choices=["install", "pre-commit", "pre-push", "check", "lint"]
+        "stage",
+        choices=[
+            "install",
+            "pre-commit",
+            "pre-push",
+            "check",
+            "lint",
+            "validate",
+        ],
     )
     parser.add_argument("args", nargs="*")
     args = parser.parse_args()
@@ -440,6 +488,14 @@ def main():
         return pre_push(root, sys.stdin)
     elif args.stage == "lint":
         check_lint(root, os.environ.copy())
+    elif args.stage == "validate":
+        env = os.environ.copy()
+        full_checks(root, env)
+        started = time.monotonic()
+        execute(["mise", "run", "build:debug"], root, env)
+        print(
+            f"Validation build: {time.monotonic() - started:.3f}s", flush=True
+        )
     else:
         full_checks(root, os.environ.copy())
     return 0

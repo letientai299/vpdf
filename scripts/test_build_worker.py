@@ -88,6 +88,29 @@ class WorkerTests(unittest.TestCase):
                 first["CARGO_TARGET_DIR"], second["CARGO_TARGET_DIR"]
             )
 
+    def test_queued_snapshot_frozen(self):
+        original = self.git("rev-parse", "HEAD").strip()
+        locked = build_worker.locked
+
+        @contextlib.contextmanager
+        def change_while_waiting(path, *args):
+            if path.name == "worker":
+                self.write("src/value.rs", 'pub const VALUE: &str = "later";\n')
+                self.git("commit", "--allow-empty", "-qm", "test: later")
+            with locked(path, *args) as lease:
+                yield lease
+
+        with patch.object(build_worker, "locked", change_while_waiting):
+            with self.snapshot() as (source, _):
+                self.assertIn('"first"', (source / "src/value.rs").read_text())
+                self.assertEqual(
+                    subprocess.check_output(
+                        ["git", "rev-parse", "HEAD"], cwd=source
+                    ).strip(),
+                    original,
+                )
+        self.assertIn('"later"', (self.repo / "src/value.rs").read_text())
+
     def test_working_inputs(self):
         self.write("src/untracked.rs", "pub fn new() {}\n")
         self.write("target/ignored", "ignored")
@@ -330,6 +353,7 @@ class WorkerTests(unittest.TestCase):
                     | extra
                     | {
                         "WORKER_TASK_LOG": str(output),
+                        "MISE_AUTO_INSTALL": "false",
                         "MISE_TRUSTED_CONFIG_PATHS": str(self.repo),
                     },
                     check=True,
