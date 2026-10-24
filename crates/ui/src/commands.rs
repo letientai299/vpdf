@@ -109,9 +109,11 @@ commands! {
   Config "config" [] "reload" Config Home
     "reload configuration";
   Theme "theme" ["colorscheme"] "<name>" Theme Home "switch UI theme";
-  Edit "edit" ["e"] "<file>" Path Home "open a PDF in this tab";
-  TabEdit "tabedit" ["tabe", "open"] "<file>" Path Home
-    "open a PDF in a new tab";
+  Edit "edit" ["e"] "[file]" Path Home "pick or open a PDF in this pane";
+  Open "open" [] "[file]" Path Home
+    "pick or open a PDF in a new tab";
+  TabEdit "tabedit" ["tabe"] "[file]" Path Home
+    "pick or open a PDF in a new tab";
   TabNew "tabnew" [] "[file]" Path Home
     "open a PDF or recent list in a new tab";
   Split "split" ["sp"] "[file]" Path Recent "split this pane above";
@@ -390,6 +392,37 @@ mod tests {
         resolve("print", view, |_| true, |_| false).is_ok(),
         available
       );
+    }
+  }
+
+  #[test]
+  fn opening_metadata_agrees() {
+    for name in ["e", "edit", "ed", "open", "op", "tabe", "tabedit"] {
+      let spec = lookup(name, |_| false).unwrap();
+      assert_eq!(
+        spec.id,
+        match name.chars().next() {
+          Some('e') => Id::Edit,
+          Some('o') => Id::Open,
+          _ => Id::TabEdit,
+        }
+      );
+      assert_eq!(spec.usage, "[file]");
+      assert_eq!(spec.complete, Complete::Path);
+      for view in [View::Home, View::Recent, View::Document] {
+        assert!(spec.available(view));
+        let (_, items) = candidates(
+          &format!("{name} "),
+          view,
+          |_| false,
+          |kind, argument| {
+            assert_eq!(kind, Complete::Path);
+            assert_eq!(argument, "");
+            vec!["notes.pdf".into()]
+          },
+        );
+        assert_eq!(items, ["notes.pdf"]);
+      }
     }
   }
 

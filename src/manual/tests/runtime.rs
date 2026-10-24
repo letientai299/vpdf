@@ -578,8 +578,8 @@ fn commands_have_own_section() -> crate::Result<()> {
 fn references_lead_with_syntax() -> crate::Result<()> {
   let ready = request(&mut Runtime::default(), &snapshot(), "ex.edit")?;
   let command = text(&ready.document, "ex.edit")?;
-  assert!(command.trim_start().starts_with(":e[dit] <file>"), "{command}");
-  assert!(command.contains("Open a PDF in this tab."));
+  assert!(command.trim_start().starts_with(":e[dit] [file]"), "{command}");
+  assert!(command.contains("Pick or open a PDF in this pane."));
   for label in ["== :edit ==", "Syntax:", "Arguments:", "Aliases:", "Read:"] {
     assert!(!command.contains(label), "{command}");
   }

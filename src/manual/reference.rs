@@ -271,6 +271,7 @@ fn command_chapter(
     Id::Config => ":config reload",
     Id::Theme => ":theme nord",
     Id::Edit => ":edit book.pdf",
+    Id::Open => ":open",
     Id::TabEdit => ":tabedit notes.pdf",
     Id::TabNew => ":tabnew",
     Id::Split => ":split",
@@ -289,6 +290,14 @@ fn command_chapter(
       concat!(
         "Requires Tesseract and installed language data. ",
         "Uses configured language when omitted."
+      )
+      .into(),
+    ),
+    Id::Edit | Id::Open | Id::TabEdit => lines.push(
+      concat!(
+        "No file: choose a PDF with the frontend's picker. ",
+        "Terminal picking requires fzf on PATH. ",
+        "Cancel keeps the current view."
       )
       .into(),
     ),
@@ -387,7 +396,7 @@ mod tests {
       }
     }
     for (name, expected) in [
-      ("edit", ":e[dit] <file>"),
+      ("edit", ":e[dit] [file]"),
       ("quit", ":q[uit]"),
       ("help!", ":help!  :h! [topic]"),
       ("split", ":s[plit] [file]"),

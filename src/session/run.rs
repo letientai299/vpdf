@@ -525,7 +525,7 @@ impl Session {
         self.home_help(&mut home, &topic);
       }
       Ok(Outcome::Quit) => return Ok(()),
-      Ok(Outcome::Pick) => {
+      Ok(Outcome::Pick { .. }) => {
         home.release(out)?;
         let picked = std::env::current_dir()
           .map_err(anyhow::Error::from)

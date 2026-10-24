@@ -22,7 +22,7 @@ pub enum Outcome {
   Perf(Option<bool>),
   Open(PathBuf),
   Help(String),
-  Pick,
+  Pick { tab: bool },
   Quit,
 }
 
@@ -176,13 +176,17 @@ impl Home {
       return Ok(Outcome::Stay);
     };
     match spec.id {
-      Id::Edit | Id::TabEdit | Id::TabNew if !argument.is_empty() => {
+      Id::Edit | Id::Open | Id::TabEdit | Id::TabNew
+        if !argument.is_empty() =>
+      {
         Ok(Outcome::Open(cmdline::expand(argument)))
       }
-      Id::Edit | Id::TabEdit => anyhow::bail!("File required"),
+      Id::Edit | Id::Open | Id::TabEdit => {
+        Ok(Outcome::Pick { tab: spec.id != Id::Edit })
+      }
       Id::Quit | Id::QuitAll | Id::TabClose => Ok(Outcome::Quit),
       Id::Recent | Id::TabNew => Ok(Outcome::Stay),
-      Id::Fzf => Ok(Outcome::Pick),
+      Id::Fzf => Ok(Outcome::Pick { tab: false }),
       Id::Version => {
         self.view.show_info(
           vpdf_ui::keys::PanelKind::Version,
@@ -326,8 +330,35 @@ mod tests {
   }
 
   #[test]
+  fn opening_commands_route() -> Result<()> {
+    for terminal in [true, false] {
+      for (name, tab) in [
+        ("edit", false),
+        ("e", false),
+        ("ed", false),
+        ("open", true),
+        ("op", true),
+        ("tabedit", true),
+        ("tabe", true),
+      ] {
+        assert_eq!(resolve(name, terminal)?, Outcome::Pick { tab });
+        assert_eq!(
+          resolve(&format!("{name} notes.pdf"), terminal)?,
+          Outcome::Open(PathBuf::from("notes.pdf"))
+        );
+      }
+      assert_eq!(resolve("tabnew", terminal)?, Outcome::Stay);
+      assert_eq!(
+        resolve("tabnew notes.pdf", terminal)?,
+        Outcome::Open(PathBuf::from("notes.pdf"))
+      );
+    }
+    Ok(())
+  }
+
+  #[test]
   fn native_commands_offer_picker() -> Result<()> {
-    assert_eq!(resolve("fzf", false)?, Outcome::Pick);
+    assert_eq!(resolve("fzf", false)?, Outcome::Pick { tab: false });
     let (_, items) = cmdline::candidates("fz", View::Home, false);
     assert!(items.iter().any(|item| item.trim() == "fzf"));
     Ok(())
@@ -383,7 +414,7 @@ mod tests {
     assert_eq!(command("tabnew  b.pdf ")?, Outcome::Open("b.pdf".into()));
     assert_eq!(command("q")?, Outcome::Quit);
     assert_eq!(command("")?, Outcome::Stay);
-    assert!(command("e").is_err());
+    assert_eq!(command("e")?, Outcome::Pick { tab: false });
     assert!(command("toc").is_err());
     assert!(
       cmdline::candidates("hel", View::Home, true)

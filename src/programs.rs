@@ -63,6 +63,10 @@ const SKIP: &[&str] = &[".git", ".hg", ".svn", ".jj", "node_modules"];
 
 /// Runs `fzf` over PDFs below `root`; `None` when cancelled.
 pub fn pick_pdf(root: &Path) -> Result<Option<PathBuf>> {
+  anyhow::ensure!(
+    crate::cmdline::on_path("fzf"),
+    "Install fzf and add it to PATH"
+  );
   terminal::suspend()?;
   let result = run_fzf(root);
   terminal::resume()?;
@@ -118,10 +122,13 @@ impl Drop for Dialog {
   }
 }
 
-pub(crate) struct Picker(Dialog);
+pub(crate) struct Picker {
+  dialog: Dialog,
+  pub(crate) tab: bool,
+}
 
 impl Picker {
-  pub fn start() -> Result<Self> {
+  pub fn start(tab: bool) -> Result<Self> {
     anyhow::ensure!(cfg!(target_os = "macos"), "Native picker requires macOS");
     let script = concat!(
       "on run argv\ntry\n",
@@ -130,11 +137,21 @@ impl Picker {
       "default location root)\n",
       "on error number -128\nreturn \"\"\nend try\nend run"
     );
-    Dialog::osascript(&["-e", script], &std::env::current_dir()?).map(Self)
+    let dialog = Dialog::osascript(&["-e", script], &std::env::current_dir()?)?;
+    Ok(Self { dialog, tab })
+  }
+
+  #[cfg(test)]
+  pub(crate) fn exited(tab: bool, path: Option<&str>) -> Result<Self> {
+    let dialog = match path {
+      Some(path) => Dialog::exited("/usr/bin/printf", &["%s\n", path])?,
+      None => Dialog::exited("/usr/bin/false", &[])?,
+    };
+    Ok(Self { dialog, tab })
   }
 
   pub fn poll(&mut self) -> Result<Poll<Option<PathBuf>>> {
-    Ok(self.0.poll("Native picker failed")?.map(|path| {
+    Ok(self.dialog.poll("Native picker failed")?.map(|path| {
       let path = path.strip_suffix('\n').unwrap_or(&path);
       (!path.is_empty()).then(|| PathBuf::from(path))
     }))
@@ -151,7 +168,7 @@ fn run_fzf(root: &Path) -> Result<Option<PathBuf>> {
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
     .spawn()
-    .context("Cannot run fzf")?;
+    .context("Cannot run fzf; install fzf on PATH")?;
   let input = child.stdin.take();
   let start = root.to_owned();
   std::thread::spawn(move || {
@@ -162,6 +179,11 @@ fn run_fzf(root: &Path) -> Result<Option<PathBuf>> {
     }
   });
   let output = child.wait_with_output()?;
+  anyhow::ensure!(
+    output.status.success() || matches!(output.status.code(), Some(1 | 130)),
+    "fzf failed: {}",
+    output.status
+  );
   let choice = String::from_utf8_lossy(&output.stdout);
   let choice = choice.trim_end_matches(['\n', '\r']);
   Ok((output.status.success() && !choice.is_empty()).then(|| root.join(choice)))
@@ -208,12 +230,15 @@ mod tests {
   #[test]
   fn picker_output_status() -> Result<()> {
     for path in ["", "/tmp/a b\n.pdf"] {
-      let mut picker =
-        Picker(Dialog::exited("/usr/bin/printf", &["%s\n", path])?);
+      let mut picker = Picker {
+        dialog: Dialog::exited("/usr/bin/printf", &["%s\n", path])?,
+        tab: false,
+      };
       let expected = (!path.is_empty()).then(|| PathBuf::from(path));
       assert_eq!(picker.poll()?, Poll::Ready(expected));
     }
-    let mut picker = Picker(Dialog::exited("/usr/bin/false", &[])?);
+    let mut picker =
+      Picker { dialog: Dialog::exited("/usr/bin/false", &[])?, tab: false };
     assert!(picker.poll().is_err());
     Ok(())
   }

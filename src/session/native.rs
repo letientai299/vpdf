@@ -478,6 +478,7 @@ fn resume_keys(session: &mut Session) -> bool {
 fn picker_update(session: &mut Session, screen: Screen) -> bool {
   use std::task::Poll;
   let Some(picker) = &mut session.picker else { return false };
+  let tab = picker.tab;
   let result = picker.poll();
   if matches!(result, Ok(Poll::Pending)) {
     return false;
@@ -485,7 +486,7 @@ fn picker_update(session: &mut Session, screen: Screen) -> bool {
   session.picker = None;
   let result = result.and_then(|picked| {
     let Poll::Ready(Some(path)) = picked else { return Ok(()) };
-    picked_path(session, path, screen)
+    picked_path(session, path, tab, screen)
   });
   if result.is_err() {
     session.pending_keys.clear();
@@ -497,12 +498,13 @@ fn picker_update(session: &mut Session, screen: Screen) -> bool {
 fn picked_path(
   session: &mut Session,
   path: PathBuf,
+  tab: bool,
   screen: Screen,
 ) -> Result<()> {
   let operation = if session.tabs.is_empty() {
     Operation::Open(path)
   } else {
-    Operation::Request(super::Request::Open { path, tab: false })
+    Operation::Request(super::Request::Open { path, tab })
   };
   session.resume(operation, screen)
 }
@@ -711,7 +713,7 @@ fn home_event(
       )?;
     }
     crate::home::Outcome::Quit => session.quit = true,
-    crate::home::Outcome::Pick => session.pick()?,
+    crate::home::Outcome::Pick { tab } => session.pick(tab)?,
     crate::home::Outcome::Perf(on) => session.toggle_perf(on)?,
     crate::home::Outcome::ConfigReload => session.reload_config(),
     crate::home::Outcome::Theme(theme) => session.set_theme(theme),
@@ -1835,18 +1837,100 @@ mod tests {
     let second = root.path().join("second.pdf");
     crate::fixtures::pdf(&first, &["first"], "")?;
     crate::fixtures::pdf(&second, &["second"], "")?;
-    let mut screen = sized();
-    let mut session = native();
-    picked_path(&mut session, first.clone(), screen)?;
-    assert_eq!(session.tabs.len(), 1);
-    picked_path(&mut session, second.clone(), screen)?;
-    assert_eq!(session.tabs.len(), 1);
-    assert_eq!(session.app().path, std::fs::canonicalize(&second)?);
-    apply(&mut session, Input::Open(first), &mut screen);
-    assert_eq!(session.tabs.len(), 2);
-    picked_path(&mut session, second, screen)?;
-    assert_eq!(session.tabs.len(), 2);
-    assert_eq!(session.active, 0);
+    for tab in [false, true] {
+      let screen = sized();
+      let mut session = native();
+      picked_path(&mut session, first.clone(), tab, screen)?;
+      assert_eq!(session.tabs.len(), 1);
+      let original = session.app().id;
+      session.picker = Some(crate::programs::Picker::exited(
+        tab,
+        Some(second.to_str().unwrap()),
+      )?);
+      assert!(picker_update(&mut session, screen));
+      assert!(session.picker.is_none());
+      assert_eq!(session.tabs.len(), if tab { 2 } else { 1 });
+      assert_eq!(session.app().path, std::fs::canonicalize(&second)?);
+      if tab {
+        assert_eq!(session.tabs[0].panes[0].id, original);
+      }
+      picked_path(&mut session, second.clone(), tab, screen)?;
+      assert_eq!(session.tabs.len(), if tab { 2 } else { 1 });
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn picker_cancel_and_failure() -> Result<()> {
+    let (_root, source) = temp_pdf(&["first"])?;
+    for (tab, empty) in
+      [(false, false), (false, true), (true, false), (true, true)]
+    {
+      for result in [Some(""), None] {
+        let screen = sized();
+        let mut session = native();
+        if empty {
+          session.home = Some(Home::new(&[], screen, &Wake::none()));
+        } else {
+          session.open(&source, true, screen)?;
+          session.app().show_recent(&[])?;
+        }
+        let original = session.tabs.first().map(|t| t.panes[0].id);
+        session.picker = Some(crate::programs::Picker::exited(tab, result)?);
+        assert!(picker_update(&mut session, screen));
+        assert!(session.picker.is_none());
+        assert!(session.unlock.is_none());
+        assert_eq!(session.tabs.first().map(|t| t.panes[0].id), original);
+        if empty {
+          assert_eq!(
+            session.home.as_ref().unwrap().view.error().is_some(),
+            result.is_none()
+          );
+        } else {
+          assert!(session.app().covered());
+        }
+      }
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn picker_password_retries() -> Result<()> {
+    let (_root, source) = temp_pdf(&["first"])?;
+    let encrypted = protected(&source)?;
+    let path = std::fs::canonicalize(encrypted.path())?;
+    for (tab, empty) in
+      [(false, false), (false, true), (true, false), (true, true)]
+    {
+      for cancel in [false, true] {
+        let mut screen = sized();
+        let mut session = native();
+        if !empty {
+          session.open(&source, true, screen)?;
+        }
+        let original = session.tabs.first().map(|t| t.panes[0].id);
+        session.picker = Some(crate::programs::Picker::exited(
+          tab,
+          Some(path.to_str().unwrap()),
+        )?);
+        assert!(picker_update(&mut session, screen));
+        assert!(session.unlock.is_some());
+        apply(&mut session, Input::Paste("wrong".into()), &mut screen);
+        apply(&mut session, key(KeyCode::Enter), &mut screen);
+        assert!(session.unlock.as_ref().unwrap().retry);
+        assert_eq!(session.tabs.first().map(|t| t.panes[0].id), original);
+        if cancel {
+          apply(&mut session, key(KeyCode::Esc), &mut screen);
+          assert_eq!(session.tabs.first().map(|t| t.panes[0].id), original);
+        } else {
+          apply(&mut session, Input::Paste("test-reader".into()), &mut screen);
+          apply(&mut session, key(KeyCode::Enter), &mut screen);
+          assert_eq!(session.tabs.len(), if !empty && tab { 2 } else { 1 });
+          assert_eq!(session.app().path, path);
+        }
+        assert!(session.unlock.is_none());
+      }
+    }
     Ok(())
   }
 

@@ -387,13 +387,8 @@ impl App {
           file: None,
         });
       }
-      Id::TabNew if argument.is_empty() => {
-        self.request = Some(Request::RecentTab);
-      }
-      Id::Edit | Id::TabEdit | Id::TabNew => {
-        anyhow::ensure!(!argument.is_empty(), "File required");
-        let path = cmdline::expand(argument);
-        self.request = Some(Request::Open { path, tab: spec.id != Id::Edit });
+      Id::Edit | Id::Open | Id::TabEdit | Id::TabNew => {
+        self.request_open(spec.id, argument);
       }
       Id::TabNext => {
         let step = argument.parse().map_or(TabMove::Next(1), TabMove::Go);
@@ -412,7 +407,9 @@ impl App {
       Id::Marks => self.open_panel(PanelKind::Marks)?,
       Id::Jumps => self.open_panel(PanelKind::Jumps)?,
       Id::Annotations => self.open_panel(PanelKind::Annotations)?,
-      Id::Fzf => self.request = Some(Request::Pick),
+      Id::Fzf => {
+        self.request = Some(Request::Pick { tab: false });
+      }
       Id::Cancel => {
         self.cancel_jobs()?;
         self.reader.notice("Jobs canceled");
@@ -454,6 +451,19 @@ impl App {
       Id::TabClose => self.request = Some(Request::TabClose(None)),
     }
     Ok(())
+  }
+
+  fn request_open(&mut self, command: Id, argument: &str) {
+    self.request = Some(if !argument.is_empty() {
+      Request::Open {
+        path: cmdline::expand(argument),
+        tab: command != Id::Edit,
+      }
+    } else if command == Id::TabNew {
+      Request::RecentTab
+    } else {
+      Request::Pick { tab: command != Id::Edit }
+    });
   }
 
   fn request_help(
@@ -643,6 +653,56 @@ fn openable(uri: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn opening_commands_route() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("source.pdf");
+    crate::fixtures::pdf(&path, &["first"], "")?;
+    for frontend in [
+      crate::raster::Frontend::Terminal,
+      crate::raster::Frontend::Native(vpdf_pdf::jobs::Wake::none()),
+    ] {
+      let mut app = App::configured(
+        &path,
+        "",
+        false,
+        crate::screen::cells(80, 24),
+        frontend,
+        &crate::config::Settings::default(),
+      )?;
+      for covered in [false, true] {
+        if covered {
+          app.show_recent(&[])?;
+        }
+        for (name, tab) in [
+          ("edit", false),
+          ("e", false),
+          ("ed", false),
+          ("open", true),
+          ("op", true),
+          ("tabedit", true),
+          ("tabe", true),
+        ] {
+          app.command(name)?;
+          assert_eq!(app.request.take(), Some(Request::Pick { tab }));
+          app.command(&format!("{name} notes.pdf"))?;
+          assert_eq!(
+            app.request.take(),
+            Some(Request::Open { path: "notes.pdf".into(), tab })
+          );
+        }
+        app.command("tabnew")?;
+        assert_eq!(app.request.take(), Some(Request::RecentTab));
+        app.command("tabnew notes.pdf")?;
+        assert_eq!(
+          app.request.take(),
+          Some(Request::Open { path: "notes.pdf".into(), tab: true })
+        );
+      }
+    }
+    Ok(())
+  }
 
   #[test]
   fn only_web_and_mail_open() {

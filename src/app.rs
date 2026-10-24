@@ -60,8 +60,10 @@ pub enum Request {
   SplitMark(char),
   /// Keys a clicked clue names.
   Keys(Vec<vpdf_model::input::KeyEvent>),
-  /// Pick a PDF for the focused pane.
-  Pick,
+  /// Pick a PDF for this destination.
+  Pick {
+    tab: bool,
+  },
   Print,
   /// Closes a tab, else the active one.
   TabClose(Option<usize>),
