@@ -47,6 +47,7 @@ pub fn draw() -> Result<()> {
     vec![row],
     &[entry],
     crate::screen::pixels(columns, rows, cell_width, cell_height),
+    vpdf_ui::home::Picker::Terminal { fzf: true },
   );
   home.shelf_mut().expect("recent shelf").accept(
     data.path,

@@ -528,8 +528,12 @@ fn resize_lays_out_panes_and_start_screen() -> Result<()> {
   );
   session.app().command("q")?;
   session.settle()?;
-  session.home =
-    Some(vpdf::home::Home::new(&[], screen, &vpdf_pdf::jobs::Wake::none()));
+  session.home = Some(vpdf::home::Home::new(
+    &[],
+    screen,
+    &vpdf_pdf::jobs::Wake::none(),
+    true,
+  ));
   session.resize(small)?;
   let home = session.home.as_ref().unwrap();
   assert_eq!((home.view.screen().columns, home.view.screen().rows), (100, 30));

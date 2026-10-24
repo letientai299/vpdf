@@ -38,7 +38,7 @@ fn cleanup_failure_survives_detached_home() -> Result<()> {
       .as_deref()
       .is_some_and(|warning| { warning.starts_with("State not saved:") })
   );
-  session.home = Some(Home::new(&[], cells(100, 40), &Wake::none()));
+  session.home = Some(Home::new(&[], cells(100, 40), &Wake::none(), true));
   session.present_startup();
   assert!(session.home.as_ref().unwrap().view.error().is_some());
   Ok(())
@@ -126,7 +126,7 @@ fn perf_start_screen_reserves_once() -> Result<()> {
   let mut session = paper()?;
   let screen = session.screen.expect("screen");
   session.tabs.clear();
-  session.home = Some(Home::new(&[], screen, &Wake::none()));
+  session.home = Some(Home::new(&[], screen, &Wake::none(), true));
   session.toggle_perf(Some(true))?;
   let content = screen.rows - vpdf_ui::perf::rows(screen);
   assert_eq!(session.home.as_ref().expect("home").view.screen().rows, content);
@@ -360,7 +360,7 @@ fn refit_keeps_the_layout_without_metrics() {
   let screen = cells(80, 24);
   let lost = Notice::new(20, 70, terminal::NO_CELL.into());
   let mut session = Session::new(None);
-  session.home = Some(Home::new(&[], screen, &Wake::none()));
+  session.home = Some(Home::new(&[], screen, &Wake::none(), true));
   let failed = || Err(anyhow::anyhow!(terminal::NO_CELL));
   let grid = || Ok((70, 20));
   // (measured, want unmeasured, want start screen rows)
@@ -791,14 +791,14 @@ fn home_file_drops_open() -> Result<()> {
     |out: &String, how: &str| out.ends_with(&format!("t=r:o={how}\x1b\\"));
   // File drops open even with a prompt.
   let mut session = Session::new(None);
-  let mut home = Home::new(&[], screen, &Wake::none());
+  let mut home = Home::new(&[], screen, &Wake::none(), true);
   let colon = KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE);
   home.event(Event::Key(colon), &mut session.history)?;
   let (landed, out) = drop(&mut session, &mut home, &pdf)?;
   assert!(matches!(landed, Landing::Opened) && ended(&out, "1"));
   assert_eq!(session.tabs.len(), 1);
   // Without a prompt the PDF opens; a list with none is cancelled.
-  let mut home = Home::new(&[], screen, &Wake::none());
+  let mut home = Home::new(&[], screen, &Wake::none(), true);
   let (landed, out) = drop(&mut session, &mut home, &notes)?;
   assert!(matches!(landed, Landing::Shown) && ended(&out, "0"));
   assert_eq!(home.view.error(), Some("No PDF in the drop"));
@@ -806,7 +806,7 @@ fn home_file_drops_open() -> Result<()> {
   assert!(matches!(landed, Landing::Opened) && ended(&out, "1"));
   assert_eq!(session.tabs.len(), 1);
   // The terminal's error shows and ends the drop.
-  let mut home = Home::new(&[], screen, &Wake::none());
+  let mut home = Home::new(&[], screen, &Wake::none(), true);
   let mut out = Vec::new();
   session.home_drop(&mut home, "t=M:x=1:y=1:o=1;text/uri-list", &mut out)?;
   let landed = session.home_drop(&mut home, "t=R:x=1;EIO", &mut out)?;
@@ -1238,7 +1238,7 @@ fn terminal_startup_warning() -> Result<()> {
   let warning = config.warning.clone().unwrap();
   let mut session = Session::configured(None, config);
   session.screen = Some(screen);
-  let mut home = Home::new(&[], screen, &Wake::none());
+  let mut home = Home::new(&[], screen, &Wake::none(), true);
   let mut out = Vec::new();
   session.draw_home(&mut home, &mut out)?;
   assert_eq!(home.view.error(), Some(warning.as_str()));

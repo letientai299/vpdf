@@ -39,11 +39,17 @@ impl Home {
     recent: &[Entry],
     screen: Screen,
     wake: &vpdf_pdf::jobs::Wake,
+    terminal: bool,
   ) -> Self {
     let view = vpdf_ui::home::Home::new(
       crate::panel::recent_rows(recent),
       &crate::recent::entries(recent),
       screen,
+      if terminal {
+        vpdf_ui::home::Picker::Terminal { fzf: cmdline::on_path("fzf") }
+      } else {
+        vpdf_ui::home::Picker::Native
+      },
     );
     Self {
       view,
@@ -213,11 +219,44 @@ mod tests {
 
   fn resolve(line: &str, terminal: bool) -> Result<Outcome> {
     let screen = crate::screen::cells(80, 24);
-    Home::new(&[], screen, &Wake::none()).command(line, terminal)
+    Home::new(&[], screen, &Wake::none(), terminal).command(line, terminal)
   }
 
   fn command(line: &str) -> Result<Outcome> {
     resolve(line, true)
+  }
+
+  #[test]
+  fn missing_history_shows_welcome() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("missing.pdf");
+    let entry = crate::state::tests::entry(&path.to_string_lossy(), 0, 0);
+    for terminal in [true, false] {
+      let mut home = Home::new(
+        std::slice::from_ref(&entry),
+        crate::screen::cells(80, 24),
+        &Wake::none(),
+        terminal,
+      );
+      let mut scene = vpdf_model::scene::Recorder::new(|_| false);
+      home.scene(&mut scene)?;
+      let text = scene
+        .into_scene()
+        .iter()
+        .filter_map(|op| match op {
+          vpdf_model::scene::Op::Text(text) => Some(text.as_str()),
+          _ => None,
+        })
+        .collect::<String>();
+      assert!(text.contains("A PDF reader with Vim keys."), "{text}");
+      assert!(!text.contains("missing.pdf"), "{text}");
+      assert!(!text.contains('│'), "{text}");
+      if !terminal {
+        assert!(text.contains(":open — Open a PDF"), "{text}");
+        assert!(!text.contains(":fzf"), "{text}");
+      }
+    }
+    Ok(())
   }
 
   #[test]
@@ -262,7 +301,7 @@ mod tests {
     for (command, heading, terminal) in
       [("version", "VERSION", true), ("version", "VERSION", false)]
     {
-      let mut home = Home::new(&[], screen, &Wake::none());
+      let mut home = Home::new(&[], screen, &Wake::none(), terminal);
       home.graphics = Graphics::default();
       let mut history = History::default();
       for ch in format!(":{command}").chars().chain(['\r']) {
@@ -295,7 +334,7 @@ mod tests {
       )?;
       let mut out = Vec::new();
       home.draw(&mut out)?;
-      assert!(String::from_utf8(out)?.contains("No recent documents"));
+      assert!(String::from_utf8(out)?.contains("A PDF reader with Vim keys."));
     }
     Ok(())
   }
@@ -307,7 +346,7 @@ mod tests {
     let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
     let entry = crate::state::tests::entry(&path.to_string_lossy(), 0, 0);
     let screen = crate::screen::cells(120, 40);
-    let mut home = Home::new(&[entry], screen, &Wake::none());
+    let mut home = Home::new(&[entry], screen, &Wake::none(), true);
     home.graphics = Graphics::default();
     let mut output = Vec::new();
     home.draw(&mut output)?;
@@ -374,8 +413,12 @@ mod tests {
       );
       assert_eq!(resolve("h", terminal)?, Outcome::Help(String::new()));
       for sequence in ["g?", "<F1>"] {
-        let mut home =
-          Home::new(&[], crate::screen::cells(120, 40), &Wake::none());
+        let mut home = Home::new(
+          &[],
+          crate::screen::cells(120, 40),
+          &Wake::none(),
+          terminal,
+        );
         let mut history = History::default();
         let mut outcome = Outcome::Stay;
         for &key in vpdf_ui::bindings::Sequence::parse(sequence)?.keys() {
@@ -430,7 +473,7 @@ mod tests {
     use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
     use vpdf_terminal::decode::Event;
     let screen = crate::screen::cells(80, 24);
-    let mut home = Home::new(&[], screen, &Wake::none());
+    let mut home = Home::new(&[], screen, &Wake::none(), true);
     let mut history = History::default();
     let key = |code| Event::Key(KeyEvent::new(code, KeyModifiers::NONE));
     home.event(key(KeyCode::Char(':')), &mut history)?;

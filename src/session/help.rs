@@ -405,6 +405,7 @@ impl Session {
           &self.state.recent,
           self.content(screen),
           &self.frontend.wake(),
+          matches!(self.frontend, crate::raster::Frontend::Terminal),
         );
         home.configure(&self.settings);
         self.home = Some(home);

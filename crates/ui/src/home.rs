@@ -1,3 +1,7 @@
+mod welcome;
+
+pub use welcome::Picker;
+
 use crate::Result;
 use crate::bindings::{Bindings, Context};
 use crate::keys::{Action, Dispatch, Keys};
@@ -36,21 +40,16 @@ pub struct Home {
   prompt: Option<Prompt>,
   keys: Keys,
   bindings: Bindings,
-}
-
-fn empty_recent(rows: &mut Vec<Row>) {
-  if rows.is_empty() {
-    rows.push(Row::new(
-      "No recent documents; type :e <file>".into(),
-      String::new(),
-      Destination::None,
-    ));
-  }
+  picker: Picker,
 }
 
 impl Home {
-  pub fn new(mut rows: Vec<Row>, recent: &[Entry], screen: Screen) -> Self {
-    empty_recent(&mut rows);
+  pub fn new(
+    rows: Vec<Row>,
+    recent: &[Entry],
+    screen: Screen,
+    picker: Picker,
+  ) -> Self {
     let panel = Panel::recent(rows, recent);
     Self {
       screen,
@@ -61,11 +60,11 @@ impl Home {
       prompt: None,
       keys: Keys::default(),
       bindings: Bindings::default(),
+      picker,
     }
   }
 
-  pub fn refresh_recent(&mut self, mut rows: Vec<Row>, entries: &[Entry]) {
-    empty_recent(&mut rows);
+  pub fn refresh_recent(&mut self, rows: Vec<Row>, entries: &[Entry]) {
     self.panel.refresh_recent(rows, entries);
   }
 
@@ -118,21 +117,28 @@ impl Home {
     now: u64,
     request: impl FnOnce(&mut Shelf),
   ) -> std::result::Result<(), S::Error> {
-    self.scene_clear(scene);
-    let drawn = self.info.as_mut().unwrap_or(&mut self.panel).scene(
-      scene,
-      crate::panel::recent::Frame {
-        at: self.at,
-        width: self.screen.columns,
-        screen: self.screen,
-        now,
-      },
-      true,
-    );
-    if let Some(cards) = self.panel.shelf_mut() {
-      request(cards);
+    if self.screen.columns == 0 || self.screen.rows == 0 {
+      return Ok(());
     }
-    drawn?;
+    self.scene_clear(scene);
+    if self.info.is_none() && self.panel.rows().is_empty() {
+      welcome::scene(scene, self.screen, self.at, self.picker);
+    } else {
+      let drawn = self.info.as_mut().unwrap_or(&mut self.panel).scene(
+        scene,
+        crate::panel::recent::Frame {
+          at: self.at,
+          width: self.screen.columns,
+          screen: self.screen,
+          now,
+        },
+        true,
+      );
+      if let Some(cards) = self.panel.shelf_mut() {
+        request(cards);
+      }
+      drawn?;
+    }
     if let Some(prompt) = &self.prompt {
       prompt.scene(scene, self.screen, self.at, None);
     } else {
@@ -210,12 +216,25 @@ impl Home {
       None => (footer.as_str(), Role::Bar),
     };
     let columns = usize::from(self.screen.columns);
+    if columns < 8 {
+      scene.push(Op::Style(style));
+      crate::paint::line(
+        scene,
+        self.at,
+        self.screen.rows.saturating_sub(1),
+        text,
+        self.screen.columns,
+      );
+      scene.extend([Op::Style(Role::Reset), Op::HideCursor]);
+      return;
+    }
     let text = vpdf_model::text::clean(text, columns.saturating_sub(8));
     let fill = columns.saturating_sub(7 + text.width());
     scene.extend([
       Op::Move {
         column: usize::from(self.at.column),
-        row: usize::from(self.at.row) + usize::from(self.screen.rows - 1),
+        row: usize::from(self.at.row)
+          + usize::from(self.screen.rows.saturating_sub(1)),
       },
       Op::Style(Role::Badge(Color::Blue)),
       Op::Text(Text::new(" Vpdf ")),
@@ -311,7 +330,8 @@ impl Home {
       }
       // An open prompt owns the input.
       Event::Mouse(mouse) if self.prompt.is_none() => {
-        let (rows, cell) = (self.screen.rows - 1, self.screen.cell());
+        let (rows, cell) =
+          (self.screen.rows.saturating_sub(1), self.screen.cell());
         let mouse = mouse.cells(cell).and_then(|mut mouse| {
           mouse.row = mouse.row.checked_sub(self.at.row)?;
           mouse.column = mouse.column.checked_sub(self.at.column)?;
@@ -428,7 +448,8 @@ mod tests {
   fn version_scrolls_on_small_screens() -> Result<()> {
     use vpdf_model::input::{KeyCode, KeyModifiers};
     let screen = crate::testing::screen::cells(16, 6);
-    let mut home = Home::new(Vec::new(), &[], screen);
+    let mut home =
+      Home::new(Vec::new(), &[], screen, Picker::Terminal { fzf: true });
     home.show_info(
       crate::keys::PanelKind::Version,
       concat!(
@@ -466,7 +487,7 @@ mod tests {
         Row::new(path.into(), String::new(), Destination::File(path.into()))
       })
       .into();
-    let mut home = Home::new(rows, &[], screen);
+    let mut home = Home::new(rows, &[], screen, Picker::Terminal { fzf: true });
     let mut history = History::default();
     let key = |code| Event::Key(KeyEvent::new(code, KeyModifiers::NONE));
     home.event(key(KeyCode::Char(':')), &mut history)?;
@@ -512,7 +533,17 @@ mod tests {
   fn panel_ends_at_the_last_column() -> Result<()> {
     let screen = crate::testing::screen::cells(40, 10);
     let mut recorder = crate::testing::empty();
-    Home::new(Vec::new(), &[], screen).scene(&mut recorder, 0, |_| {})?;
+    Home::new(
+      vec![Row::new(
+        "paper.pdf".into(),
+        String::new(),
+        Destination::File("paper.pdf".into()),
+      )],
+      &[],
+      screen,
+      Picker::Terminal { fzf: true },
+    )
+    .scene(&mut recorder, 0, |_| {})?;
     let scene = recorder.into_scene();
     assert!(crate::testing::text(&scene).contains(" Vpdf "));
     let columns = scene.iter().filter_map(|op| match op {
@@ -542,7 +573,8 @@ mod tests {
     };
     let screen =
       Screen { origin: (0, 4), ..crate::testing::screen::cells(80, 20) };
-    let mut home = Home::new(rows(), &[], screen);
+    let mut home =
+      Home::new(rows(), &[], screen, Picker::Terminal { fzf: true });
     home.at.row = 4;
     let mut recorder = crate::testing::empty();
     home.scene(&mut recorder, 0, |_| {})?;
@@ -579,7 +611,8 @@ mod tests {
       ("/", Effect::Stay),
       ("", Effect::Open(file.into())),
     ] {
-      let mut home = Home::new(rows(), &[], screen);
+      let mut home =
+        Home::new(rows(), &[], screen, Picker::Terminal { fzf: true });
       let mut history = History::default();
       for ch in typed.chars() {
         let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
@@ -590,3 +623,7 @@ mod tests {
     Ok(())
   }
 }
+
+#[cfg(test)]
+#[path = "home/tests.rs"]
+mod welcome_tests;

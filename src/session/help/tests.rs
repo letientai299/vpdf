@@ -565,7 +565,8 @@ fn help_open_releases_home_preview() -> Result<()> {
   crate::fixtures::pdf(&path, &["first"], "")?;
   let entry = crate::state::tests::entry(&path.to_string_lossy(), 0, 0);
   let screen = cells(120, 40);
-  let mut home = Home::new(&[entry], screen, &vpdf_pdf::jobs::Wake::none());
+  let mut home =
+    Home::new(&[entry], screen, &vpdf_pdf::jobs::Wake::none(), true);
   let mut drawn = Vec::new();
   home.draw(&mut drawn)?;
   let deadline = Instant::now() + Duration::from_secs(10);
@@ -626,7 +627,10 @@ fn help_close_clears_images() -> Result<()> {
   session.draw_home(&mut home, &mut returned)?;
   let output = String::from_utf8_lossy(&returned);
   assert_eq!(output.matches("a=d,d=I,").count(), 2);
-  assert!(output.find("a=d,d=I,").unwrap() < output.find("RECENT").unwrap());
+  assert!(
+    output.find("a=d,d=I,").unwrap()
+      < output.find("A PDF reader with Vim keys.").unwrap()
+  );
   returned.clear();
   session.draw_home(&mut home, &mut returned)?;
   assert!(!String::from_utf8_lossy(&returned).contains("a=d,d=I,"));

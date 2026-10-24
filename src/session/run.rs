@@ -33,6 +33,7 @@ pub fn view(
       &session.state.recent,
       session.content(screen),
       &session.frontend.wake(),
+      true,
     ));
     session.resize(screen)?;
     return run_saving(&mut session);

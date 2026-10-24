@@ -264,8 +264,14 @@ fn command_chapter(
     ),
   }];
   if let Some(program) = spec.requires {
-    lines
-      .push(format!("Requires {program} on PATH; hidden when missing.").into());
+    let requirement = if spec.id == Id::Fzf {
+      "Terminal: requires fzf on PATH; hidden when missing. \
+       Native: uses the system file picker without fzf."
+        .into()
+    } else {
+      format!("Requires {program} on PATH; hidden when missing.")
+    };
+    lines.push(requirement.into());
   }
   let example = match spec.id {
     Id::Config => ":config reload",
@@ -297,6 +303,7 @@ fn command_chapter(
       concat!(
         "No file: choose a PDF with the frontend's picker. ",
         "Terminal picking requires fzf on PATH. ",
+        "The native app uses the system file picker. ",
         "Cancel keeps the current view."
       )
       .into(),

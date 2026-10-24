@@ -678,6 +678,7 @@ fn ensure_home(session: &mut Session, screen: Screen) {
       &session.state.recent,
       session.content(screen),
       &session.frontend.wake(),
+      false,
     ));
     let resized = session.resize(screen);
     report(session, resized);
@@ -1870,7 +1871,7 @@ mod tests {
         let screen = sized();
         let mut session = native();
         if empty {
-          session.home = Some(Home::new(&[], screen, &Wake::none()));
+          session.home = Some(Home::new(&[], screen, &Wake::none(), false));
         } else {
           session.open(&source, true, screen)?;
           session.app().show_recent(&[])?;
@@ -2499,7 +2500,7 @@ mod tests {
     session.state.recent =
       vec![crate::state::tests::entry(&path.to_string_lossy(), 0, 0)];
     session.home =
-      Some(Home::new(&session.state.recent, screen, &Wake::none()));
+      Some(Home::new(&session.state.recent, screen, &Wake::none(), false));
     session.resize(screen)?;
     frame(&mut session, &mut Cache::new(BUDGET), screen)?;
     for kind in [

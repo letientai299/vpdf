@@ -23,7 +23,12 @@ pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {
   let row = rows.first().context("Missing recent row")?;
   let (label, detail) = (row.label.clone(), row.detail.clone());
   let entries = vpdf::recent::entries(&[saved]);
-  let mut view = vpdf_ui::home::Home::new(rows, &entries, screen);
+  let mut view = vpdf_ui::home::Home::new(
+    rows,
+    &entries,
+    screen,
+    vpdf_ui::home::Picker::Terminal { fzf: true },
+  );
   let mut pending = None;
   draw(
     &mut Vec::new(),

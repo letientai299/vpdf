@@ -141,7 +141,7 @@ fn global_mark_reopens_forgotten_path() -> Result<()> {
 fn removal_refreshes_home_and_all_recent_panels() -> Result<()> {
   let (_root, mut session, pdf) = reader()?;
   let recent = session.state.recent.clone();
-  session.home = Some(Home::new(&recent, cells(120, 40), &Wake::none()));
+  session.home = Some(Home::new(&recent, cells(120, 40), &Wake::none(), true));
   session.split(Axis::Columns, None, Place::After)?;
   for app in session.panes_mut() {
     app.show_recent(&recent)?;
@@ -156,7 +156,7 @@ fn removal_refreshes_home_and_all_recent_panels() -> Result<()> {
   assert!(scene.into_scene().iter().any(|op| {
     match op {
       vpdf_model::scene::Op::Text(text) => {
-        text.as_str().contains("No recent documents")
+        text.as_str().contains("A PDF reader with Vim keys.")
       }
       _ => false,
     }

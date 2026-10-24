@@ -4,6 +4,28 @@ use mupdf::{TextPageFlags, pdf::PdfDocument};
 mod runtime;
 
 #[test]
+fn picker_help_describes_frontends() -> crate::Result<()> {
+  use vpdf_pdf::manual::Line;
+  use vpdf_ui::commands::{COMMANDS, Id};
+  let chapters = reference::chapters()?;
+  for id in [Id::Fzf, Id::Edit, Id::Open, Id::TabEdit] {
+    let topic = COMMANDS.iter().find(|spec| spec.id == id).unwrap().topic();
+    let chapter = chapters.iter().find(|chapter| chapter.id == topic).unwrap();
+    let text = chapter
+      .lines
+      .iter()
+      .filter_map(|line| match line {
+        Line::Text(text) => Some(text.as_str()),
+        Line::Binding { .. } => None,
+      })
+      .collect::<String>();
+    assert!(text.contains("system file picker"), "{topic}: {text}");
+    assert!(text.contains("fzf on PATH"), "{topic}: {text}");
+  }
+  Ok(())
+}
+
+#[test]
 fn embedded_topics_resolve() -> crate::Result<()> {
   let native = PdfDocument::from_copied_bytes(PDF)?;
   let topics: serde_json::Value = serde_json::from_str(TOPICS)?;

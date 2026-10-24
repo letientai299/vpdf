@@ -9,7 +9,17 @@ fn panel_ends_at_the_last_column() -> Result<()> {
   let screen = crate::common::cells(40, 10);
   let mut out = Vec::new();
   draw(&mut out, Some(&mut Graphics::default()), |scene| {
-    Home::new(Vec::new(), &[], screen).scene(scene, 0, |_| {})
+    Home::new(
+      vec![vpdf_ui::panel::Row::new(
+        "paper.pdf".into(),
+        String::new(),
+        vpdf_ui::panel::Destination::File("paper.pdf".into()),
+      )],
+      &[],
+      screen,
+      vpdf_ui::home::Picker::Terminal { fzf: true },
+    )
+    .scene(scene, 0, |_| {})
   })??;
   let out = String::from_utf8(out)?;
   assert!(out.contains(" Vpdf "));
