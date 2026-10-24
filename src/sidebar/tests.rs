@@ -159,6 +159,9 @@ fn cached_rows_skip_native() -> Result<()> {
     "content":{"Link":{"Uri":"https://example.org"}}
   }]]"#,
   )?;
+  let version = content_cache::Version::read(&source).unwrap();
+  let memo = content_cache::recall(root.path(), version);
+  assert_eq!(memo.is_some(), content_cache::exact(&source));
   let rows = worker::scan(
     &source,
     "",
@@ -197,6 +200,7 @@ fn cached_rows_skip_native() -> Result<()> {
     )
     .is_err()
   );
+  let empty = tempfile::tempdir()?;
   assert!(
     worker::scan(
       &source,
@@ -205,7 +209,7 @@ fn cached_rows_skip_native() -> Result<()> {
       request,
       Vec::new(),
       &AtomicBool::new(true),
-      Some(root.path().into())
+      Some(empty.path().into())
     )
     .is_err()
   );

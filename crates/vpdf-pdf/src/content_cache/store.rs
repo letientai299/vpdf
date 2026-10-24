@@ -1,5 +1,6 @@
-use super::{Kind, path};
+use super::{Kind, MEMO};
 use crate::Result;
+use std::cmp::Reverse;
 use std::fs::File;
 use std::io::Write;
 use std::os::unix::fs::DirBuilderExt;
@@ -17,6 +18,9 @@ pub(super) const ABANDONED: Duration = Duration::from_secs(3600);
 
 /// Age after which an unused memo goes.
 pub(super) const FORGOTTEN: Duration = Duration::from_hours(30 * 24);
+
+/// Most memos kept, most recently used first.
+pub(super) const MEMOS: usize = 4096;
 
 /// Makes `root` and tells whether it has room to write.
 pub(super) fn room(root: &Path) -> Result<bool> {
@@ -57,7 +61,7 @@ pub(super) fn trim(root: &Path, budget: u64) -> Result<()> {
     let modified = meta.modified().unwrap_or(now);
     let path = entry.path();
     match path.extension().and_then(|extension| extension.to_str()) {
-      Some("id") => memos.push((modified, path)),
+      Some("id") => memos.push((modified, meta.len(), path)),
       Some("tmp")
         if now.duration_since(modified).unwrap_or_default() > ABANDONED =>
       {
@@ -81,11 +85,11 @@ pub(super) fn trim(root: &Path, budget: u64) -> Result<()> {
       total -= len;
     }
   }
-  for (modified, memo) in memos {
-    let bytes = std::fs::read(&memo).unwrap_or_default();
-    let alias = bytes.last_chunk::<32>();
+  // Records name their PDF only by a digest, so memos outlive packs.
+  memos.sort_by_key(|(modified, ..)| Reverse(*modified));
+  for (kept, (modified, len, memo)) in memos.into_iter().enumerate() {
     let unused = now.duration_since(modified).unwrap_or_default() > FORGOTTEN;
-    if unused || alias.is_none_or(|alias| !path(root, alias).exists()) {
+    if unused || len != MEMO || kept >= MEMOS {
       drop(std::fs::remove_file(memo));
     }
   }

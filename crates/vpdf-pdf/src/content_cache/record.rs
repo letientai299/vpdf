@@ -1,5 +1,5 @@
 use super::store::{BUDGET, publish, room, touch, trim};
-use super::{Alias, Version, alias_with, digest, hex};
+use super::{Alias, Version, digest, exact, fingerprint, hex};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
@@ -63,12 +63,7 @@ impl Record {
     if !super::cacheable(source, password) {
       return None;
     }
-    let mut file = File::open(source).ok()?;
-    let version = Version::of(&file.metadata().ok()?);
-    let content = alias_with(&mut file, ready).ok()?;
-    if Version::read(source)? != version {
-      return None;
-    }
+    let (content, version) = fingerprint(&root, source, exact(source), ready)?;
     let key: Alias = digest([
       format!("{} 1", kind.ext()).as_bytes(),
       content.as_slice(),
@@ -145,6 +140,7 @@ impl Record {
 
 #[cfg(test)]
 mod tests {
+  use super::super::{Private, memo, recall, remember};
   use super::*;
   use anyhow::Context;
 
@@ -195,6 +191,45 @@ mod tests {
     assert!(changed.read().is_some());
     trim(root.path(), 0)?;
     assert!(!changed.path().exists());
+    Ok(())
+  }
+
+  /// Where versions are exact, reopens reuse the memo a hash left, even
+  /// in a root without packs; private and password files leave none.
+  #[test]
+  fn reopens_skip_hashing() -> crate::Result<()> {
+    let root = tempfile::tempdir()?;
+    let source = root.path().join("source.pdf");
+    std::fs::write(&source, b"PDF bytes")?;
+    let open = |password: &str| {
+      Record::open(
+        root.path().into(),
+        &source,
+        password,
+        Kind::Links,
+        "code",
+        || true,
+      )
+    };
+    let version = Version::read(&source).context("version")?;
+    let exact = exact(&source);
+    assert!(open("secret").is_none());
+    let private = Private::new(&source)?;
+    assert!(open("").is_none());
+    assert_eq!(recall(root.path(), version), None);
+    drop(private);
+    let record = open("").context("record")?;
+    record.store(&"rows");
+    trim(root.path(), BUDGET)?;
+    let alias = recall(root.path(), version);
+    assert_eq!(alias.is_some(), exact);
+    // A planted alias shows which opens skip hashing.
+    remember(root.path(), version, &[3; 32])?;
+    let reopened = open("").context("reopened")?;
+    assert_eq!(reopened.path() != record.path(), exact);
+    std::fs::remove_file(memo(root.path(), version))?;
+    assert_eq!(open("").context("evicted")?.path(), record.path());
+    assert_eq!(recall(root.path(), version), alias);
     Ok(())
   }
 }

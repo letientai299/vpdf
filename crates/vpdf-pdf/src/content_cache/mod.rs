@@ -144,9 +144,42 @@ pub fn exact(path: &Path) -> bool {
   }
 }
 
+/// Bytes in a memo: its version, then the alias.
+const MEMO: u64 = 7 * 8 + 32;
+
 /// One memo per file, so a new version replaces the old one's.
 fn memo(root: &Path, version: Version) -> PathBuf {
   root.join(format!("{:x}-{:x}.id", version.0[0], version.0[1]))
+}
+
+/// `source`'s alias and the version it describes. Where versions are
+/// `exact`, a memo stands in for hashing and a fresh hash leaves one.
+/// None when hashing stops or the file changes meanwhile.
+pub(super) fn fingerprint(
+  root: &Path,
+  source: &Path,
+  exact: bool,
+  ready: impl FnMut() -> bool,
+) -> Option<(Alias, Version)> {
+  if exact
+    && let Some(version) = Version::read(source)
+    && let Some(alias) = recall(root, version)
+  {
+    return Some((alias, version));
+  }
+  let mut file = File::open(source).ok()?;
+  let version = Version::of(&file.metadata().ok()?);
+  let alias = alias_with(&mut file, ready).ok()?;
+  if Version::of(&file.metadata().ok()?) != version
+    || Version::read(source)? != version
+  {
+    return None;
+  }
+  if exact {
+    // A memo that fails to write only costs the next open a hash.
+    drop(remember(root, version, &alias));
+  }
+  Some((alias, version))
 }
 
 /// The alias remembered for the file version `version` names.
@@ -189,7 +222,7 @@ pub fn remember_ocr(root: &Path, key: &Alias, text: &str) -> Result<()> {
 mod tests {
   use super::pack::{ENTRY, MAGIC, u32_at};
   use super::provenance::provenance;
-  use super::store::{ABANDONED, BUDGET, FORGOTTEN, trim};
+  use super::store::{ABANDONED, BUDGET, FORGOTTEN, MEMOS, trim};
   use super::*;
   use crate::search::Index;
   use crate::search::compile;
@@ -373,8 +406,54 @@ mod tests {
     Ok(())
   }
 
-  /// Memos answer only their exact file version, and trimming drops
-  /// those unused for long or whose pack is gone.
+  /// Exact versions recall a memo instead of hashing; others hash.
+  /// Fresh hashes leave memos only where versions are exact, and never
+  /// when hashing stops or the file changes meanwhile.
+  #[test]
+  fn fingerprints_reuse_memos() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let file = root.path().join("doc.pdf");
+    std::fs::write(&file, vec![1; 2 * MIB])?;
+    let real: Alias = Sha256::digest(std::fs::read(&file)?).into();
+    let print = |exact, ready: &mut dyn FnMut() -> bool| {
+      fingerprint(root.path(), &file, exact, ready).map(|(alias, _)| alias)
+    };
+    let version = Version::read(&file).context("version")?;
+    assert_eq!(print(false, &mut || true), Some(real));
+    assert_eq!(recall(root.path(), version), None, "untrusted");
+    assert_eq!(print(true, &mut || false), None, "stopped");
+    assert_eq!(recall(root.path(), version), None, "stopped");
+    assert_eq!(print(true, &mut || true), Some(real));
+    assert_eq!(recall(root.path(), version), Some(real));
+    // A planted alias shows which opens skip hashing.
+    let planted = [3; 32];
+    remember(root.path(), version, &planted)?;
+    assert_eq!(print(true, &mut || true), Some(planted));
+    assert_eq!(print(false, &mut || true), Some(real), "untrusted");
+    let changed = || std::fs::write(&file, vec![2; 2 * MIB]);
+    let mut writes = 0;
+    let found = print(false, &mut || {
+      writes += 1;
+      writes > 1 || changed().is_ok()
+    });
+    assert_eq!(found, None, "changed while hashing");
+    let edited = Version::read(&file).context("edited")?;
+    assert_ne!(edited, version, "same size");
+    assert_eq!(recall(root.path(), edited), None);
+    let other: Alias = Sha256::digest(std::fs::read(&file)?).into();
+    assert_eq!(print(true, &mut || true), Some(other));
+    let replacement = root.path().join("replacement.pdf");
+    std::fs::write(&replacement, vec![1; 2 * MIB])?;
+    std::fs::rename(&replacement, &file)?;
+    assert_eq!(print(true, &mut || true), Some(real), "replaced");
+    std::fs::remove_file(&file)?;
+    assert_eq!(print(true, &mut || true), None, "removed");
+    Ok(())
+  }
+
+  /// Memos answer only their exact file version and outlive packs.
+  /// Trimming drops damaged memos, those unused for long, and the least
+  /// recent beyond the count limit.
   #[test]
   fn memos_recall_their_version() -> Result<()> {
     let root = tempfile::tempdir()?;
@@ -402,7 +481,30 @@ mod tests {
     remember(root.path(), version, &alias)?;
     std::fs::remove_file(path(root.path(), &alias))?;
     trim(root.path(), BUDGET)?;
-    assert_eq!(recall(root.path(), version), None, "pack gone");
+    assert_eq!(recall(root.path(), version), Some(alias), "pack gone");
+    let bytes = std::fs::read(&memo)?;
+    for len in [0, bytes.len() - 1, bytes.len() + 1] {
+      let mut damaged = bytes.clone();
+      damaged.resize(len, 0);
+      std::fs::write(&memo, &damaged)?;
+      assert_eq!(recall(root.path(), version), None, "{len}");
+      trim(root.path(), BUDGET)?;
+      assert!(!memo.exists(), "{len}");
+    }
+    remember(root.path(), version, &alias)?;
+    let old = SystemTime::now() - Duration::from_secs(60);
+    File::options().write(true).open(&memo)?.set_modified(old)?;
+    for other in 0..MEMOS {
+      std::fs::write(root.path().join(format!("0-{other:x}.id")), &bytes)?;
+    }
+    trim(root.path(), BUDGET)?;
+    assert!(!memo.exists(), "least recent");
+    let memos = std::fs::read_dir(root.path())?.flatten();
+    let id = Some(std::ffi::OsStr::new("id"));
+    assert_eq!(
+      memos.filter(|entry| entry.path().extension() == id).count(),
+      MEMOS
+    );
     Ok(())
   }
 

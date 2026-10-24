@@ -347,7 +347,7 @@ mod tests {
         if authored_failure { doc.text(PageId(0)) } else { Err(error()) };
       assert!(load_outline(authored, [Some(text)], Some(&cache)).is_some());
       assert!(cached(&cache).is_none());
-      assert_eq!(std::fs::read_dir(root.path())?.count(), 0);
+      assert!(!cache.path().exists());
       let retried =
         load_outline(Ok(Vec::new()), [Some(doc.text(PageId(0)))], Some(&cache));
       assert!(retried.is_some());
