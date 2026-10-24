@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from build_cache import (
@@ -70,10 +71,11 @@ def sync_files(source, files):
                 path.chmod(permissions)
 
 
-def working_files(root):
+def working_files(root, env=None):
     names = subprocess.check_output(
         ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         cwd=root,
+        env=env,
     )
     files = {}
     for name in names.split(b"\0"):
@@ -176,13 +178,25 @@ def worker_snapshot(root, files, env=None, revision=None):
         raise ValueError("Build cache budget must be positive")
     leases = cache / "leases"
     leases.mkdir(mode=0o700, parents=True, exist_ok=True)
+    captured = files()
+    if revision is None:
+        head = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            check=False,
+        )
+        revision = head.stdout.strip() if head.returncode == 0 else ""
+    queued = time.monotonic()
     try:
         with locked(leases / "worker") as lease:
+            acquired = time.monotonic()
+            print(f"Worker queue: {acquired - queued:.3f}s", flush=True)
             with locked(cache / "lock"):
                 prune(build, limit, leases)
             worker.mkdir(parents=True, exist_ok=True)
             os.utime(worker, None)
-            sync_files(source, files())
+            sync_files(source, captured)
             snapshot_git(root, source, revision, lease.fileno())
             env.update(
                 CARGO_BUILD_BUILD_DIR=str(worker / "intermediates"),
@@ -196,14 +210,21 @@ def worker_snapshot(root, files, env=None, revision=None):
             env["PATH"] = (
                 str(source / "scripts/tools/native") + os.pathsep + env["PATH"]
             )
+            if env.get("VPDF_CORPUS") == str(root / "tmp/corpus"):
+                env["VPDF_CORPUS"] = str(source / "tmp/corpus")
             env.setdefault("CARGO_BUILD_JOBS", "4")
             env.setdefault("NEXTEST_TEST_THREADS", "4")
             # Reuse corpus inputs without copying PDFs.
             (root / "tmp").mkdir(exist_ok=True)
             (source / "tmp").symlink_to(root / "tmp", target_is_directory=True)
+            ready = time.monotonic()
+            print(f"Worker sync: {ready - acquired:.3f}s", flush=True)
             try:
                 yield source, env
             finally:
+                print(
+                    f"Worker task: {time.monotonic() - ready:.3f}s", flush=True
+                )
                 os.utime(worker, None)
     finally:
         with locked(cache / "lock"):
@@ -221,6 +242,8 @@ def copy_outputs(task, root, target, env):
     output = Path(os.environ.get("CARGO_TARGET_DIR", root / "target"))
     if not output.is_absolute():
         output = root / output
+    if task == "validate":
+        task = "build:debug"
     if task == "help:build" or (
         task in {"build", "build:debug", "build:gui", "build:app", "release"}
         and env.get("VPDF_BUILD_WORKER")
@@ -278,6 +301,7 @@ def run(args):
     task = args[0]
     if task not in {
         "build",
+        "validate",
         "release",
         "build:debug",
         "build:app",
