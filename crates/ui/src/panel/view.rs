@@ -101,6 +101,16 @@ impl Panel {
     }
   }
 
+  pub fn refresh_recent(
+    &mut self,
+    rows: Vec<Row>,
+    entries: &[super::recent::Entry],
+  ) {
+    if self.shelf.as_mut().is_some_and(|shelf| shelf.refresh(entries)) {
+      self.refill(rows, "");
+    }
+  }
+
   pub fn kind(&self) -> PanelKind {
     self.kind
   }
@@ -178,6 +188,9 @@ impl Panel {
     }
     self.search.follow(|origin| find(origin).unwrap_or(origin).min(last));
     self.clicked = self.clicked.and_then(find);
+    if let Pointing::Row(index) = self.pointing {
+      self.pointing = find(index).map_or(Pointing::Away, Pointing::Row);
+    }
     self.layout = None;
     self.rows = rows;
     self.note = note;

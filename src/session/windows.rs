@@ -122,14 +122,19 @@ impl Session {
   pub fn open(&mut self, path: &Path, tab: bool, screen: Screen) -> Result<()> {
     self.screen = Some(screen);
     let path = std::fs::canonicalize(path)?;
+    self.state.refresh_history(self.store.as_deref());
     let found = self.existing(&path);
     if let Some((tab, pane)) = found {
-      return self.focus(tab, pane);
+      self.focus(tab, pane)?;
+      self.remember_open(tab, pane);
+      return Ok(());
     }
     let app = self.load(&path, "", screen)?;
     self.leave()?;
     if tab || self.tabs.is_empty() {
-      return self.insert_tab(app);
+      self.insert_tab(app)?;
+      self.remember_open(self.active, self.tabs[self.active].focus);
+      return Ok(());
     }
     let tab = self.tab();
     let focus = tab.focus;
@@ -138,7 +143,9 @@ impl Session {
     tab.tree.replace(old.id, id);
     self.retire(&old);
     self.refocus();
-    self.arrange()
+    self.arrange()?;
+    self.remember_open(self.active, self.tabs[self.active].focus);
+    Ok(())
   }
 
   /// Loads `path` and restores its saved view.
@@ -171,8 +178,7 @@ impl Session {
     if let Some(entry) = self.state.entry(path) {
       app.restore(entry)?;
     }
-    self.state.remember_pane(&app);
-    self.changed();
+    app.opened = self.state.open_revision(path);
     Ok(app)
   }
 
@@ -257,7 +263,14 @@ impl Session {
     if let Some(path) = &path
       && let Some((tab, pane)) = self.existing(path)
     {
-      return self.focus(tab, pane);
+      self.state.refresh_history(self.store.as_deref());
+      self.focus(tab, pane)?;
+      self.remember_open(tab, pane);
+      return Ok(());
+    }
+    let explicit = path.is_some();
+    if explicit {
+      self.state.refresh_history(self.store.as_deref());
     }
     let screen = self.app().screen;
     self.check_split(axis)?;
@@ -265,7 +278,11 @@ impl Session {
       Some(path) => self.load(&path, "", screen)?,
       None => self.copy_pane(screen)?,
     };
-    self.insert_pane(app, axis, place)
+    self.insert_pane(app, axis, place)?;
+    if explicit {
+      self.remember_open(self.active, self.tabs[self.active].focus);
+    }
+    Ok(())
   }
 
   pub(super) fn check_split(&mut self, axis: Axis) -> Result<()> {
@@ -438,6 +455,7 @@ impl Session {
       self.load(&path, &password, screen)?
     };
     app.mirror(self.app())?;
+    app.opened = self.app().opened;
     Ok(app)
   }
 

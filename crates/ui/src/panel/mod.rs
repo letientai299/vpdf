@@ -85,6 +85,11 @@ pub struct Panel {
 fn moved_row(old: &[Row], index: usize, new: &[Row]) -> Option<usize> {
   let row = old.get(index)?;
   let same = |other: &Row| {
+    if let (Destination::File(path), Destination::File(other)) =
+      (&row.destination, &other.destination)
+    {
+      return path == other;
+    }
     other.label == row.label
       && other.detail == row.detail
       && other.destination == row.destination

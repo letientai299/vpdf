@@ -38,15 +38,19 @@ pub struct Home {
   bindings: Bindings,
 }
 
+fn empty_recent(rows: &mut Vec<Row>) {
+  if rows.is_empty() {
+    rows.push(Row::new(
+      "No recent documents; type :e <file>".into(),
+      String::new(),
+      Destination::None,
+    ));
+  }
+}
+
 impl Home {
   pub fn new(mut rows: Vec<Row>, recent: &[Entry], screen: Screen) -> Self {
-    if rows.is_empty() {
-      rows.push(Row::new(
-        "No recent documents; type :e <file>".into(),
-        String::new(),
-        Destination::None,
-      ));
-    }
+    empty_recent(&mut rows);
     let panel = Panel::recent(rows, recent);
     Self {
       screen,
@@ -58,6 +62,11 @@ impl Home {
       keys: Keys::default(),
       bindings: Bindings::default(),
     }
+  }
+
+  pub fn refresh_recent(&mut self, mut rows: Vec<Row>, entries: &[Entry]) {
+    empty_recent(&mut rows);
+    self.panel.refresh_recent(rows, entries);
   }
 
   pub fn set_bindings(&mut self, bindings: Bindings) {

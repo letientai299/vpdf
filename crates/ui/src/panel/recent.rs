@@ -19,7 +19,7 @@ const NARROW: u16 = 60;
 /// Thumbnail pixels kept across selections.
 const BUDGET: usize = 16 * MIB;
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Entry {
   pub path: PathBuf,
   pub cursor: vpdf_model::text::Position,
@@ -82,6 +82,32 @@ impl Shelf {
       pointing: None,
       keyed: true,
     }
+  }
+
+  pub(crate) fn refresh(&mut self, entries: &[Entry]) -> bool {
+    if self.entries == entries {
+      return false;
+    }
+    for old in &self.entries {
+      if !entries.iter().any(|entry| entry.path == old.path) {
+        self.cards.remove(&old.path);
+      }
+    }
+    let contains =
+      |path: &PathBuf| entries.iter().any(|entry| &entry.path == path);
+    if self.asked.as_ref().is_some_and(|(path, _)| !contains(path)) {
+      self.asked = None;
+    }
+    if self.pending.as_ref().is_some_and(|request| !contains(&request.path)) {
+      self.pending = None;
+    }
+    if self.shown.as_ref().is_some_and(|path| !contains(path)) {
+      self.shown = None;
+      self.top = 0;
+      self.hide();
+    }
+    self.entries = entries.to_vec();
+    true
   }
 
   /// Forgets the card while not drawn.
@@ -154,6 +180,9 @@ impl Shelf {
   }
 
   pub fn accept(&mut self, path: PathBuf, loaded: LoadedFacts) {
+    if !self.entries.iter().any(|entry| entry.path == path) {
+      return;
+    }
     let LoadedFacts { fit, facts } = loaded;
     let card =
       Card { fit, facts, serial: vpdf_model::image::PictureId::fresh() };
@@ -370,6 +399,58 @@ mod tests {
   use super::*;
   use crate::keys::PanelKind;
   use vpdf_model::input::{MouseEvent, MouseEventKind};
+  #[test]
+  fn refresh_preserves_paths_and_releases_cards() {
+    let mut entries: Vec<_> = (0..30)
+      .map(|index| Entry {
+        path: format!("{index}.pdf").into(),
+        cursor: vpdf_model::text::Position::default(),
+        rotation: 0,
+        used: 0,
+        marks: 0,
+      })
+      .collect();
+    let rows = |entries: &[Entry]| {
+      entries
+        .iter()
+        .map(|entry| {
+          Row::new(
+            entry.path.display().to_string(),
+            entry.used.to_string(),
+            Destination::File(entry.path.clone()),
+          )
+        })
+        .collect()
+    };
+    let mut panel = Panel::recent(rows(&entries), &entries);
+    panel.selected = 22;
+    panel.top = 18;
+    panel.pointing = Pointing::Row(24);
+    let removed = entries.remove(0);
+    let shelf = panel.shelf_mut().unwrap();
+    shelf.ask(&removed, None);
+    shelf.accept(
+      removed.path.clone(),
+      LoadedFacts { fit: None, facts: Err("missing".into()) },
+    );
+    shelf.shown = Some(removed.path.clone());
+    assert_eq!(shelf.cards.used(), 1);
+    entries[21].used = 2;
+    panel.refresh_recent(rows(&entries), &entries);
+    assert_eq!(panel.selected(), 21);
+    assert_eq!(panel.top(), 17);
+    assert_eq!(panel.pointing, Pointing::Row(23));
+    let shelf = panel.shelf_mut().unwrap();
+    assert_eq!(shelf.cards.used(), 0);
+    assert!(shelf.pending.is_none());
+    assert!(shelf.shown.is_none());
+    shelf.accept(
+      removed.path,
+      LoadedFacts { fit: None, facts: Err("late".into()) },
+    );
+    assert_eq!(shelf.cards.used(), 0);
+  }
+
   #[test]
   fn ago_names_the_largest_unit() {
     let minute = 60_000;

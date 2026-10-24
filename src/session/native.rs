@@ -1636,6 +1636,33 @@ mod tests {
   }
 
   #[test]
+  fn cancelled_open_keeps_forgotten_history() -> Result<()> {
+    let (_root, source) = temp_pdf(&["first"])?;
+    let encrypted = protected(&source)?;
+    let path = std::fs::canonicalize(encrypted.path())?;
+    let store = source.with_extension("json");
+    let mut screen = sized();
+    let mut session = native();
+    session.store = Some(store.clone());
+    session.state.opened(crate::state::tests::entry(
+      path.to_str().unwrap(),
+      0,
+      1,
+    ));
+    session.forget_recent(std::slice::from_ref(&path))?;
+    apply(&mut session, Input::Open(path), &mut screen);
+    assert!(session.unlock.is_some());
+    apply(&mut session, Input::Paste("wrong".into()), &mut screen);
+    apply(&mut session, key(KeyCode::Enter), &mut screen);
+    assert!(session.unlock.as_ref().unwrap().retry);
+    apply(&mut session, key(KeyCode::Esc), &mut screen);
+    assert!(session.unlock.is_none());
+    session.finish()?;
+    assert_eq!(crate::state::State::load(&store).recent, []);
+    Ok(())
+  }
+
+  #[test]
   fn password_prompt_lifecycle() -> Result<()> {
     let (_root, path) = temp_pdf(&["first"])?;
     let encrypted = protected(&path)?;

@@ -160,10 +160,16 @@ impl App {
 
 /// Recent documents that still exist, newest first.
 pub fn recent_rows(entries: &[Entry]) -> Vec<Row> {
+  history_rows(entries.iter().filter(|entry| entry.path.exists()))
+}
+
+pub(crate) fn saved_rows(entries: &[Entry]) -> Vec<Row> {
+  history_rows(entries.iter())
+}
+
+fn history_rows<'a>(entries: impl Iterator<Item = &'a Entry>) -> Vec<Row> {
   let home = std::env::var_os("HOME").map(PathBuf::from);
   entries
-    .iter()
-    .filter(|entry| entry.path.exists())
     .map(|entry| Row::recent(&entry.path, entry.cursor.page, home.as_deref()))
     .collect()
 }

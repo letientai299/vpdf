@@ -8,6 +8,7 @@ use vpdf_pdf::jobs::{OneShot, Wake};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Stale {
+  history: super::history::Ledger,
   recent: BTreeMap<PathBuf, Entry>,
   marks: BTreeMap<char, Mark>,
 }
@@ -30,6 +31,7 @@ impl Stale {
       }
     }
     Some(Self {
+      history: state.history.clone(),
       recent: state
         .recent
         .iter()
@@ -90,10 +92,13 @@ impl Cleaner {
 impl State {
   pub(super) fn prune(&mut self) -> bool {
     let before = (self.recent.len(), self.marks.len());
-    self
-      .recent
-      .retain(|entry| self.stale.recent.get(&entry.path) != Some(entry));
-    self.marks.retain(|name, mark| self.stale.marks.get(name) != Some(mark));
+    let current = |path: &Path| !self.history.agrees(&self.stale.history, path);
+    self.recent.retain(|entry| {
+      current(&entry.path) || self.stale.recent.get(&entry.path) != Some(entry)
+    });
+    self.marks.retain(|name, mark| {
+      current(&mark.path) || self.stale.marks.get(name) != Some(mark)
+    });
     before != (self.recent.len(), self.marks.len())
   }
 }
@@ -108,6 +113,34 @@ mod tests {
 
   fn scanned(state: &State) -> Stale {
     Stale::scan(state, &AtomicBool::new(false)).unwrap()
+  }
+
+  #[test]
+  fn cleanup_preserves_explicit_removal_and_new_open() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let store = root.path().join("state.json");
+    let path = root.path().join("missing.pdf");
+    let mut state = State::default();
+    state.opened(entry(path.to_str().unwrap(), 0, 1));
+    state
+      .marks
+      .insert('A', Mark { path: path.clone(), cursor: Position::default() });
+    state.save(&store, &[], &[])?;
+    state.stale = Arc::new(scanned(&state));
+    let mut newer = State::load(&store);
+    newer.forget(std::slice::from_ref(&path));
+    newer.save(&store, &[], &[])?;
+    state.save(&store, &[], &[])?;
+    // Cleanup's snapshot predates the explicit removal.
+    assert!(State::load(&store).marks.contains_key(&'A'));
+    newer.refresh_history(Some(&store));
+    newer.opened(entry(path.to_str().unwrap(), 0, 1));
+    newer.save(&store, &[], &[])?;
+    state.save(&store, &[], &[])?;
+    let loaded = State::load(&store);
+    assert_eq!(loaded.recent.len(), 1);
+    assert!(loaded.marks.contains_key(&'A'));
+    Ok(())
   }
 
   #[test]

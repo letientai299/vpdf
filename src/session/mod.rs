@@ -219,9 +219,59 @@ impl Session {
   }
 
   pub fn save(&mut self) -> Result<()> {
-    let Some(store) = &self.store else { return Ok(()) };
-    let history = &self.history;
-    self.state.save(store, history.commands(), history.searches())
+    if let Some(store) = &self.store {
+      let history = &self.history;
+      self.state.save(store, history.commands(), history.searches())?;
+    }
+    self.refresh_recent();
+    Ok(())
+  }
+
+  fn remember_open(&mut self, tab: usize, pane: usize) {
+    self.state.refresh_history(self.store.as_deref());
+    let app = &mut self.tabs[tab].panes[pane];
+    if app.manual.is_some() {
+      return;
+    }
+    if self.state.entry(&app.path).is_none()
+      || app.opened != self.state.open_revision(&app.path)
+    {
+      app.marks.clear();
+    }
+    app.opened = self.state.opened(app.reading_entry());
+    self.changed();
+  }
+
+  pub fn forget_recent(&mut self, paths: &[PathBuf]) -> Result<()> {
+    self.state.refresh_history(self.store.as_deref());
+    if !self.state.forget(paths) {
+      return Ok(());
+    }
+    for app in self.panes_mut() {
+      if paths.contains(&app.path) {
+        app.marks.clear();
+      }
+    }
+    self.refresh_recent();
+    self.changed();
+    self
+      .flush()
+      .map(|_| ())
+      .map_err(|error| anyhow::anyhow!("Recent removal not saved: {error}"))
+  }
+
+  fn refresh_recent(&mut self) {
+    let entries = &self.state.recent;
+    let rows = crate::panel::saved_rows(entries);
+    let cards = crate::recent::entries(entries);
+    if let Some(home) = &mut self.home {
+      home.view.refresh_recent(rows.clone(), &cards);
+    }
+    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+      if let Some(panel) = &mut app.panel {
+        panel.view.refresh_recent(rows.clone(), &cards);
+      }
+    }
   }
 
   fn clean_state(&mut self) -> bool {
@@ -230,6 +280,7 @@ impl Session {
     {
       return false;
     }
+    self.refresh_recent();
     self.changed();
     if self.tabs.is_empty()
       && let Err(error) = self.flush()
@@ -306,6 +357,8 @@ mod maintenance;
 pub mod native;
 mod pointer;
 mod printing;
+#[cfg(test)]
+mod recent_tests;
 mod run;
 #[cfg(test)]
 mod tests;

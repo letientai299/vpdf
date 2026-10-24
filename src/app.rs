@@ -129,6 +129,7 @@ pub struct App {
   pub outline: vpdf_ui::reading::Outline,
   /// Lowercase marks of this document.
   pub marks: std::collections::BTreeMap<char, Position>,
+  pub(crate) opened: crate::state::Visit,
   pub overlays: vpdf_ui::overlays::Overlays,
   pub(crate) link_press: vpdf_ui::input::links::Press,
   /// What the held left button does.
@@ -296,6 +297,7 @@ impl App {
       wake,
       outline: vpdf_ui::reading::Outline::default(),
       marks: std::collections::BTreeMap::new(),
+      opened: crate::state::Visit::default(),
       overlays: vpdf_ui::overlays::Overlays::default(),
       link_press: vpdf_ui::input::links::Press::default(),
       gesture: vpdf_ui::input::gesture::Gesture::default(),

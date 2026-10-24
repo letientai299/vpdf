@@ -184,13 +184,7 @@ impl Session {
         self.split_beside(|app| app.follow(&target))
       }
       Some(Request::Keys(keys)) => self.replay_keys(keys),
-      Some(Request::SplitMark(name)) => {
-        let mark = self.global_mark(name)?;
-        if mark.path == self.app().path {
-          return self.split_beside(|app| app.land_at(mark.cursor));
-        }
-        self.panel_open(&mark.path, Some(mark.cursor), false, screen)
-      }
+      Some(Request::SplitMark(name)) => self.split_mark(name, screen),
       Some(Request::Pick)
         if matches!(self.frontend, crate::raster::Frontend::Native(_)) =>
       {
@@ -229,6 +223,17 @@ impl Session {
     }
   }
 
+  fn split_mark(&mut self, name: char, screen: Screen) -> Result<()> {
+    let mark = self.global_mark(name)?;
+    if mark.path == self.app().path {
+      self.state.refresh_history(self.store.as_deref());
+      self.split_beside(|app| app.land_at(mark.cursor))?;
+      self.remember_open(self.active, self.tabs[self.active].focus);
+      return Ok(());
+    }
+    self.panel_open(&mark.path, Some(mark.cursor), false, screen)
+  }
+
   fn global_mark(&self, name: char) -> Result<Mark> {
     let mark = self.state.marks.get(&name).cloned();
     mark.ok_or_else(|| anyhow::anyhow!("Mark not set: {name}"))
@@ -242,6 +247,7 @@ impl Session {
     screen: Screen,
   ) -> Result<()> {
     let path = std::fs::canonicalize(path)?;
+    self.state.refresh_history(self.store.as_deref());
     let source = (self.active, self.tab().focus);
     // The recent view picks a document for the pane it covers.
     let here = focus && self.app().covered();
@@ -278,11 +284,15 @@ impl Session {
         panel.view.focus(false);
       }
       app.relayout()?;
-      self.focus(target.0, target.1)
+      self.focus(target.0, target.1)?;
     } else {
       // A second middle press must still find its run.
-      self.keeping_pointer(|session| session.focus(source.0, source.1))
+      self.keeping_pointer(|session| session.focus(source.0, source.1))?;
     }
+    if found.is_some() {
+      self.remember_open(target.0, target.1);
+    }
+    Ok(())
   }
 
   /// Types `key` into the focused pane.

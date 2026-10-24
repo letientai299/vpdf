@@ -20,7 +20,11 @@ const RECENT: usize = 100;
 const HISTORY: usize = 200;
 
 mod cleanup;
+mod history;
+#[cfg(test)]
+mod history_tests;
 pub(crate) use cleanup::Cleaner;
+pub(crate) use history::{Revision, Visit};
 
 /// Where a document was left, for reopening.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -49,6 +53,14 @@ pub struct Mark {
 pub struct State {
   #[serde(skip)]
   stale: Arc<cleanup::Stale>,
+  #[serde(default)]
+  history: history::Ledger,
+  #[serde(skip)]
+  /// Persisted history revision last observed.
+  baseline: Revision,
+  #[cfg(test)]
+  #[serde(skip)]
+  pub(crate) writes: usize,
   #[serde(default)]
   pub perf: bool,
   #[serde(default)]
@@ -83,10 +95,12 @@ pub fn now() -> u64 {
 impl State {
   /// Missing or unreadable state starts empty.
   pub fn load(path: &Path) -> Self {
-    std::fs::read(path)
+    let mut state: Self = std::fs::read(path)
       .ok()
       .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-      .unwrap_or_default()
+      .unwrap_or_default();
+    state.baseline = state.history.clock;
+    state
   }
 
   pub fn set_perf(&mut self, on: bool) {
@@ -100,6 +114,9 @@ impl State {
 
   /// Records `entry` as the latest visit; returns whether anything moved.
   pub fn remember(&mut self, entry: Entry) -> bool {
+    if !self.history.allows_record(&entry.path) {
+      return false;
+    }
     let index = self.recent.iter().position(|old| old.path == entry.path);
     let previous = index.map(|index| self.recent.remove(index));
     let moved = previous.as_ref().is_none_or(|old| {
@@ -119,39 +136,44 @@ impl State {
     commands: &[String],
     searches: &[String],
   ) -> Result<()> {
+    let directory = path.parent().unwrap_or(Path::new("."));
+    std::fs::create_dir_all(directory)?;
+    let lock = std::fs::File::options()
+      .create(true)
+      .truncate(false)
+      .read(true)
+      .write(true)
+      .open(path.with_extension("lock"))?;
+    lock.lock()?;
     let mut disk = Self::load(path);
     disk.stale.clone_from(&self.stale);
     disk.prune();
-    self.prune();
-    let mut recent = std::mem::take(&mut self.recent);
-    for entry in disk.recent {
-      match recent.iter_mut().find(|own| own.path == entry.path) {
-        Some(own) if own.used >= entry.used => {}
-        Some(own) => *own = entry,
-        None => recent.push(entry),
-      }
-    }
-    recent.sort_by_key(|entry| std::cmp::Reverse(entry.used));
-    recent.truncate(RECENT);
-    self.recent = recent;
-    let mut marks = disk.marks;
-    marks.append(&mut self.marks);
-    self.marks = marks;
-    self.commands = merge(disk.commands, commands);
-    self.searches = merge(disk.searches, searches);
-    let directory = path.parent().unwrap_or(Path::new("."));
-    std::fs::create_dir_all(directory)?;
-    let mut staged =
-      tempfile::Builder::new().suffix(".tmp").tempfile_in(directory)?;
-    // Saving an older reader must not undo a newer preference. Keep its
-    // live layout unchanged; only the persisted snapshot adopts the toggle.
     let mut saved = self.clone();
+    saved.prune();
+    saved.merge_history(&disk);
+    saved.history.compact();
+    let mut marks = disk.marks;
+    marks.append(&mut saved.marks);
+    saved.marks = marks;
+    saved.commands = merge(disk.commands, commands);
+    saved.searches = merge(disk.searches, searches);
     if disk.perf_updated > self.perf_updated {
       saved.perf = disk.perf;
       saved.perf_updated = disk.perf_updated;
     }
+    let mut staged =
+      tempfile::Builder::new().suffix(".tmp").tempfile_in(directory)?;
     staged.write_all(&serde_json::to_vec(&saved)?)?;
     staged.persist(path).map_err(|error| error.error)?;
+    saved.baseline = saved.history.clock;
+    // Keep the live preference until explicitly toggled.
+    saved.perf = self.perf;
+    saved.perf_updated = self.perf_updated;
+    #[cfg(test)]
+    {
+      saved.writes += 1;
+    }
+    *self = saved;
     Ok(())
   }
 }
@@ -170,6 +192,9 @@ impl State {
   /// Records where `app` is; a covered pane records nothing. Returns
   /// whether anything moved.
   pub fn remember_pane(&mut self, app: &App) -> bool {
+    if self.history.opened(&app.path) != app.opened {
+      return false;
+    }
     app.saved_entry().is_some_and(|entry| self.remember(entry))
   }
 }
@@ -181,7 +206,11 @@ impl App {
     if self.covered() || self.manual.is_some() {
       return None;
     }
-    Some(Entry {
+    Some(self.reading_entry())
+  }
+
+  pub(crate) fn reading_entry(&self) -> Entry {
+    Entry {
       path: self.path.clone(),
       cursor: self.navigation_position(),
       zoom: self.layout.zoom(),
@@ -189,7 +218,7 @@ impl App {
       used: now(),
       marks: self.marks.clone(),
       crop: self.layout.crop(),
-    })
+    }
   }
 
   /// Returns to a saved position and view.
@@ -346,7 +375,7 @@ pub(crate) mod tests {
     std::fs::create_dir(&path)?;
     assert!(state.save(&path, &[], &[]).is_err());
     assert!(path.is_dir());
-    assert_eq!(std::fs::read_dir(root.path())?.count(), 1);
+    assert_eq!(std::fs::read_dir(root.path())?.count(), 2);
     Ok(())
   }
 
