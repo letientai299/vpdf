@@ -67,6 +67,60 @@ fn opening_is_cancelable() -> Result<()> {
   Ok(())
 }
 
+/// A worker holds its load's slot until its thread ends, across
+/// reloads; requests meanwhile start once, for the page then current.
+/// Canceling drops a waiting request.
+#[test]
+fn workers_wait_for_their_slot() -> Result<()> {
+  let (_root, mut app) = app()?;
+  let held = Flight::take(&app.sidebar.slots[1].alive, &app.wake).unwrap();
+  app.want_sidebar(PanelKind::Links);
+  app.refresh_sidebars()?;
+  app.want_sidebar(PanelKind::Links);
+  app.reader.seed_reader(vpdf_reader::reader::Reader::enter_cursor);
+  app.go_to_page(PageId(1))?;
+  app.want_sidebar(PanelKind::Links);
+  app.sidebar_updates()?;
+  assert!(!app.sidebar_loading(PanelKind::Links));
+  drop(held);
+  app.sidebar_updates()?;
+  assert!(app.sidebar_loading(PanelKind::Links));
+  loaded(&mut app, PanelKind::Links)?;
+  assert!(app.sidebar_rows(PanelKind::Links).is_empty(), "page 1");
+  app.go_to_page(PageId(0))?;
+  let held = Flight::take(&app.sidebar.slots[1].alive, &app.wake).unwrap();
+  app.want_sidebar(PanelKind::Links);
+  app.cancel_sidebars();
+  drop(held);
+  app.sidebar_updates()?;
+  assert!(!app.sidebar_loading(PanelKind::Links));
+  Ok(())
+}
+
+/// Workers across panes share the helper budget; a dropped owner's
+/// worker releases its share when its thread ends.
+#[test]
+fn workers_share_one_budget() -> Result<()> {
+  let (_root, mut app) = app()?;
+  let limit = budget();
+  let others: Vec<_> = (0..limit)
+    .map(|_| Flight::take(&Arc::default(), &app.wake).unwrap())
+    .collect();
+  app.want_sidebar(PanelKind::Annotations);
+  assert!(!app.sidebar_loading(PanelKind::Annotations));
+  drop(others);
+  app.sidebar_updates()?;
+  assert!(app.sidebar_loading(PanelKind::Annotations));
+  assert_eq!(ALIVE.load(Ordering::Acquire), 1);
+  drop(app);
+  let start = Instant::now();
+  while ALIVE.load(Ordering::Acquire) > 0 {
+    anyhow::ensure!(start.elapsed() < Duration::from_secs(5), "Worker leak");
+    std::thread::sleep(Duration::from_millis(1));
+  }
+  Ok(())
+}
+
 #[test]
 fn reload_discards_old_rows() -> Result<()> {
   let (root, mut app) = app()?;

@@ -1,10 +1,11 @@
 //! Prepared sidebar rows, owned by background workers.
 use crate::jobs::Load;
 use crate::{Result, app::App};
-use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use vpdf_model::text::PageId;
 use vpdf_pdf::content_cache::{self, Kind};
-use vpdf_pdf::jobs::OneShot;
+use vpdf_pdf::jobs::{Config, OneShot, Wake};
 use vpdf_ui::keys::PanelKind;
 use vpdf_ui::panel::Row;
 
@@ -40,6 +41,64 @@ impl Request {
       Self::Links(_) => Kind::Links,
     }
   }
+  fn slot(self) -> usize {
+    match self {
+      Self::Annotations => 0,
+      Self::Links(_) => 1,
+    }
+  }
+}
+
+/// Loads per pane, each with one worker slot.
+const SLOTS: usize = 2;
+
+/// Sidebar workers alive across panes, canceled or not.
+static ALIVE: AtomicUsize = AtomicUsize::new(0);
+
+/// Most workers alive at once; one pane's loads never wait on each
+/// other.
+pub(crate) fn budget() -> usize {
+  Config::default().helpers.get().max(SLOTS)
+}
+
+/// A worker's claim on its load and the shared budget, released when
+/// its thread ends: native page-tree walks ignore stop flags, so a
+/// canceled worker still contends for `MuPDF`'s locks.
+struct Flight {
+  alive: Arc<AtomicBool>,
+  wake: Wake,
+}
+
+impl Flight {
+  fn take(alive: &Arc<AtomicBool>, wake: &Wake) -> Option<Self> {
+    if alive.load(Ordering::Acquire) {
+      return None;
+    }
+    let limit = budget();
+    ALIVE
+      .try_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+        (count < limit).then_some(count + 1)
+      })
+      .ok()?;
+    alive.store(true, Ordering::Release);
+    Some(Self { alive: Arc::clone(alive), wake: wake.clone() })
+  }
+}
+
+impl Drop for Flight {
+  fn drop(&mut self) {
+    self.alive.store(false, Ordering::Release);
+    ALIVE.fetch_sub(1, Ordering::AcqRel);
+    self.wake.wake();
+  }
+}
+
+/// One load's worker; a request made while it runs waits, and starts
+/// for the then-current page once it ends.
+#[derive(Default)]
+struct Slot {
+  alive: Arc<AtomicBool>,
+  queued: bool,
 }
 
 #[derive(Default)]
@@ -47,6 +106,7 @@ pub(crate) struct Sidebar {
   annotations: Load<Vec<Row>>,
   links: Load<Vec<Row>>,
   page: Option<PageId>,
+  slots: [Slot; SLOTS],
 }
 
 impl App {
@@ -75,9 +135,16 @@ impl App {
     let Some(request) = self.sidebar_request(kind) else {
       return;
     };
-    if !self.sidebar_load(request).startable() {
+    let startable = self.sidebar_load(request).startable();
+    let slot = &mut self.sidebar.slots[request.slot()];
+    slot.queued = false;
+    if !startable {
       return;
     }
+    let Some(flight) = Flight::take(&slot.alive, &self.wake) else {
+      slot.queued = true;
+      return;
+    };
     let (path, password, pages, seeds) = (
       self.path.clone(),
       self.password.clone(),
@@ -86,6 +153,7 @@ impl App {
     );
     let root = content_cache::root();
     let job = OneShot::try_spawn(&self.wake, move |stopped| {
+      let _flight = flight;
       let found =
         worker::scan(&path, &password, pages, request, seeds, stopped, root);
       (!stopped.load(Ordering::Relaxed)).then_some(found)
@@ -144,9 +212,17 @@ impl App {
   pub(crate) fn cancel_sidebars(&mut self) {
     self.sidebar.annotations.cancel();
     self.sidebar.links.cancel();
+    for slot in &mut self.sidebar.slots {
+      slot.queued = false;
+    }
   }
   pub(crate) fn refresh_sidebars(&mut self) -> Result<()> {
-    self.sidebar = Sidebar::default();
+    let slots = self
+      .sidebar
+      .slots
+      .each_ref()
+      .map(|slot| Slot { alive: Arc::clone(&slot.alive), queued: false });
+    self.sidebar = Sidebar { slots, ..Sidebar::default() };
     if let Some(kind) = self.panel.as_ref().map(|p| p.view.kind()) {
       self.want_sidebar(kind);
       if matches!(kind, PanelKind::Links | PanelKind::Annotations) {
@@ -162,10 +238,13 @@ impl App {
         continue;
       };
       let visible = self.panel.as_ref().is_some_and(|p| p.view.kind() == kind);
-      if visible && matches!(self.sidebar_load(request), Load::Deferred) {
+      let deferred = matches!(self.sidebar_load(request), Load::Deferred);
+      if self.sidebar.slots[request.slot()].queued || visible && deferred {
         self.want_sidebar(kind);
-        self.refill_panel(kind)?;
-        changed = true;
+        if visible && matches!(self.sidebar_load(request), Load::Running(_)) {
+          self.refill_panel(kind)?;
+          changed = true;
+        }
       }
       let Some(found) =
         self.sidebar_load(request).poll("Sidebar worker stopped")

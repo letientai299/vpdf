@@ -261,14 +261,19 @@ mod tests {
       session.tabs[session.active].panes[0].figures,
       crate::jobs::Figures::Running(_)
     ));
+    let mut loading = 0;
     for tab in &session.tabs {
       assert!(tab.panes[0].outline_pending());
       assert!(matches!(tab.panes[0].figures, crate::jobs::Figures::Running(_)));
-      assert!(
-        tab.panes[0].sidebar_loading(vpdf_ui::keys::PanelKind::Annotations)
-      );
-      assert!(tab.panes[0].sidebar_loading(vpdf_ui::keys::PanelKind::Links));
+      for kind in
+        [vpdf_ui::keys::PanelKind::Annotations, vpdf_ui::keys::PanelKind::Links]
+      {
+        assert!(tab.panes[0].sidebar_pending(kind));
+        loading += usize::from(tab.panes[0].sidebar_loading(kind));
+      }
     }
+    // Sidebar workers share one budget across panes.
+    assert_eq!(loading, crate::sidebar::budget().min(4));
     let deadline = Instant::now() + Duration::from_secs(5);
     while !session.app().figure_updates()? {
       assert!(Instant::now() < deadline);
