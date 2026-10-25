@@ -391,6 +391,24 @@ class WorkerTests(unittest.TestCase):
         )
         self.assertEqual((destination / "Vpdf.dmg").read_text(), "image")
 
+    def test_install_outputs(self):
+        target = self.root / "worker/target"
+        (target / "release").mkdir(parents=True)
+        (target / "release/vpdf").write_text("cli")
+        bundle = target / "dist/Vpdf.app/Contents/MacOS"
+        bundle.mkdir(parents=True)
+        (bundle / "vpdf-gui").write_text("app")
+        stale = self.write("target/dist/Vpdf.dmg", "stale")
+        build_worker.copy_outputs("build:install", self.repo, target, {})
+        self.assertEqual((self.repo / "target/release/vpdf").read_text(), "cli")
+        self.assertEqual(
+            (
+                self.repo / "target/dist/Vpdf.app/Contents/MacOS/vpdf-gui"
+            ).read_text(),
+            "app",
+        )
+        self.assertFalse(stale.exists())
+
     def test_isolated_binary(self):
         binary = self.write("target/triple/debug/vpdf", "debug")
         with (

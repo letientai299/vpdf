@@ -79,12 +79,26 @@ EOF
 plutil -lint "$app/Contents/Info.plist"
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --strict "$app"
-ln -s /Applications "$staged/image/Applications"
-hdiutil create -quiet -srcfolder "$staged/image" -volname Vpdf \
-  -fs HFS+ -format UDRW "$staged/image.dmg"
-hdiutil convert -quiet "$staged/image.dmg" -format ULFO -o "$staged/Vpdf.dmg"
-hdiutil verify -quiet "$staged/Vpdf.dmg"
-python3 -B scripts/replace_app.py "$app" "$release_dir/Vpdf.app"
-mv -f "$staged/Vpdf.dmg" "$release_dir/Vpdf.dmg"
+case ${VPDF_APP_DMG:-1} in
+  0)
+    # Installation skips the disk image.
+    python3 -B scripts/replace_app.py "$app" "$release_dir/Vpdf.app"
+    rm -f "$release_dir/Vpdf.dmg"
+    ;;
+  1)
+    ln -s /Applications "$staged/image/Applications"
+    hdiutil create -quiet -srcfolder "$staged/image" -volname Vpdf \
+      -fs HFS+ -format UDRW "$staged/image.dmg"
+    hdiutil convert -quiet "$staged/image.dmg" -format ULFO \
+      -o "$staged/Vpdf.dmg"
+    hdiutil verify -quiet "$staged/Vpdf.dmg"
+    python3 -B scripts/replace_app.py "$app" "$release_dir/Vpdf.app"
+    mv -f "$staged/Vpdf.dmg" "$release_dir/Vpdf.dmg"
+    ;;
+  *) printf 'VPDF_APP_DMG requires 0 or 1\n' >&2; exit 1 ;;
+esac
 "$release_dir/Vpdf.app/Contents/MacOS/vpdf-gui" --version >/dev/null
-printf 'App: %s/Vpdf.app\nDMG: %s/Vpdf.dmg\n' "$release_dir" "$release_dir"
+printf 'App: %s/Vpdf.app\n' "$release_dir"
+if [ -f "$release_dir/Vpdf.dmg" ]; then
+  printf 'DMG: %s/Vpdf.dmg\n' "$release_dir"
+fi

@@ -28,15 +28,15 @@ From a checkout:
 ```sh
 mise trust
 mise install
-mise run build
 mise run install
 ```
 
 The [build script][build] stages the optimized executable at
 `target/release/vpdf`, or under `CARGO_TARGET_DIR` when set. The
 [install script][install] atomically replaces `~/.local/bin/vpdf`; put that
-directory on `PATH`. The install task depends on the build task, so it can also
-be run directly after setup.
+directory on `PATH`. `install:cli` builds and installs only the terminal
+reader. `install` also installs the macOS app on macOS; it builds both in one
+shared-worker request and skips the disk image.
 
 On macOS, build, install, and release run `--version` at the final executable
 path. This pays first-launch security checks during the task before interactive
@@ -185,8 +185,8 @@ mise test:app
 The [app packager][build-app] creates `target/dist/Vpdf.app` and
 `target/dist/Vpdf.dmg`, respecting `CARGO_TARGET_DIR`. It builds for the host
 architecture with the `app` Cargo profile and uses Python 3 and the macOS
-command line tools. The DMG uses LZFSE compression and includes an
-Applications shortcut. `install:app` builds the package and atomically replaces
+command line tools. The DMG uses LZFSE compression and includes an Applications
+shortcut. `install:app` builds the app without the DMG and atomically replaces
 `~/Applications/Vpdf.app` without launching it. `test:app` checks the mounted
 DMG and installation in a temporary home directory.
 
@@ -248,10 +248,9 @@ hooks. The non-default `bench-events` Cargo feature enables them:
 
 ```sh
 VPDF_BENCH_EVENTS=1 mise run install
-VPDF_BENCH_EVENTS=1 mise run install:app
 ```
 
-Both install tasks build production binaries when `VPDF_BENCH_EVENTS` is unset
+Install tasks build production binaries when `VPDF_BENCH_EVENTS` is unset
 or `0`; CI explicitly uses `0`. Feature-enabled binaries report `[bench-events]`
 in `--version`; retain this marker in benchmark provenance.
 `mise run test:events` checks a separate feature-enabled build; CI runs it

@@ -71,8 +71,16 @@ run = "sh scripts/build-icon.sh"
 
 [tasks."install:app"]
 description = "Install the macOS app into ~/Applications"
-depends = ["build:app"]
-run = "sh scripts/install-app.sh"
+env.VPDF_APP_DMG = "0"
+run = [
+  "python3 -B scripts/build_worker.py build:app",
+  "sh scripts/install-app.sh",
+]
+
+[tasks."install:cli"]
+description = "Install the optimized terminal reader"
+depends = ["build"]
+run = "sh scripts/install.sh"
 
 [tasks."test:app"]
 env.VPDF_CACHE = "off"
@@ -261,9 +269,20 @@ description = "Test hook snapshots and affected-code routing"
 run = "python3 -B -m unittest discover -s scripts -p test_hooks.py"
 
 [tasks.install]
-description = "Install the optimized executable"
-depends = ["build"]
-run = "sh scripts/install.sh"
+description = "Install the terminal reader and, on macOS, the app"
+run = """
+python3 -B scripts/build_worker.py build:install
+sh scripts/install.sh
+if [ "$(uname -s)" = Darwin ]; then sh scripts/install-app.sh; fi
+"""
+
+[tasks."_build:install"]
+hide = true
+env.VPDF_APP_DMG = "0"
+run = """
+sh scripts/build.sh
+if [ "$(uname -s)" = Darwin ]; then sh scripts/build-app.sh; fi
+"""
 
 [tasks.corpus]
 description = "Fetch and verify the public test PDFs into tmp/corpus"

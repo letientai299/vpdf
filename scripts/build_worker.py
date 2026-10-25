@@ -333,36 +333,53 @@ def copy_outputs(task, root, target, env):
     if task == "validate":
         task = "build:debug"
     if task == "help:build" or (
-        task in {"build", "build:debug", "build:gui", "build:app", "release"}
+        task
+        in {
+            "build",
+            "build:debug",
+            "build:gui",
+            "build:app",
+            "build:install",
+            "release",
+        }
         and env.get("VPDF_BUILD_WORKER")
     ):
         copy_help(output, target, env)
-    if task == "build":
+    if task in {"build", "build:install"}:
         binary = Path("release/vpdf")
         copy_binary(target / binary, output / binary)
-    elif task in {"build:debug", "build:gui"}:
+    if task in {"build:debug", "build:gui"}:
         name = "vpdf-gui" if task == "build:gui" else "vpdf"
         triple = env.get("CARGO_BUILD_TARGET")
         binary = Path(triple or "") / "debug" / name
         copy_binary(target / binary, output / binary)
         if triple:
             copy_binary(target / binary, output / "debug" / name)
-    elif task == "build:app":
-        from replace_app import replace
-
-        destination = output / "dist"
-        destination.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=destination) as temporary:
-            app = Path(temporary) / "Vpdf.app"
-            shutil.copytree(target / "dist/Vpdf.app", app, symlinks=True)
-            replace(app, destination / "Vpdf.app")
-        copy_binary(target / "dist/Vpdf.dmg", destination / "Vpdf.dmg")
-        print(f"App: {destination / 'Vpdf.app'}")
-        print(f"DMG: {destination / 'Vpdf.dmg'}")
+    elif task == "build:app" or (
+        task == "build:install" and (target / "dist/Vpdf.app").exists()
+    ):
+        copy_app(output / "dist", target / "dist")
     elif task == "release":
         for binary in [Path("release/vpdf"), Path("dist/vpdf")]:
             copy_binary(target / binary, output / binary)
         print(f"Release executable: {output / 'dist/vpdf'}")
+
+
+def copy_app(destination, source):
+    from replace_app import replace
+
+    destination.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=destination) as temporary:
+        app = Path(temporary) / "Vpdf.app"
+        shutil.copytree(source / "Vpdf.app", app, symlinks=True)
+        replace(app, destination / "Vpdf.app")
+    print(f"App: {destination / 'Vpdf.app'}")
+    image = destination / "Vpdf.dmg"
+    if not (source / "Vpdf.dmg").exists():
+        image.unlink(missing_ok=True)
+        return
+    copy_binary(source / "Vpdf.dmg", image)
+    print(f"DMG: {image}")
 
 
 def copy_help(output, target, env):
@@ -394,6 +411,7 @@ def run(args):
         "build:debug",
         "build:app",
         "build:gui",
+        "build:install",
         "help:build",
         "help:check",
         "hook:check",
