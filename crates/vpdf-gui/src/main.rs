@@ -81,7 +81,10 @@ impl Window {
       documents,
       bridge,
       frame: None,
-      renderer: Renderer::default(),
+      renderer: cc
+        .wgpu_render_state
+        .clone()
+        .map_or_else(Renderer::default, Renderer::with_gpu),
       input: input::Adapter::default(),
       screen: None,
       capture: args.capture,

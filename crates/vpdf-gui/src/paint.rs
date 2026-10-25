@@ -5,7 +5,7 @@ use eframe::egui::{
   Vec2,
 };
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use unicode_width::UnicodeWidthChar;
 use vpdf::session::native::Frame;
 use vpdf::trace::Coverage;
@@ -27,13 +27,28 @@ enum ImageId {
 }
 
 struct Texture {
-  pixels: Arc<Vec<u8>>,
-  handle: TextureHandle,
+  pixels: Weak<Vec<u8>>,
+  handle: Handle,
   size: [usize; 2],
+}
+
+enum Handle {
+  Managed(TextureHandle),
+  Native(crate::upload::Handle),
+}
+
+impl Handle {
+  fn id(&self) -> egui::TextureId {
+    match self {
+      Self::Managed(handle) => handle.id(),
+      Self::Native(handle) => handle.id(),
+    }
+  }
 }
 
 pub struct Renderer {
   textures: Cache<ImageId, Texture>,
+  uploads: Option<crate::upload::Uploads>,
   pub uploaded: usize,
   pub upload_bytes: usize,
   /// Tiles of the last paint.
@@ -44,6 +59,7 @@ impl Default for Renderer {
   fn default() -> Self {
     Self {
       textures: Cache::new(BUDGET),
+      uploads: None,
       uploaded: 0,
       upload_bytes: 0,
       coverage: Coverage::default(),
@@ -52,6 +68,15 @@ impl Default for Renderer {
 }
 
 impl Renderer {
+  pub fn staging_capacity(&self) -> usize {
+    self.uploads.as_ref().map_or(0, crate::upload::Uploads::capacity)
+  }
+  pub fn with_gpu(state: eframe::egui_wgpu::RenderState) -> Self {
+    Self {
+      uploads: Some(crate::upload::Uploads::new(state)),
+      ..Self::default()
+    }
+  }
   pub fn paint(
     &mut self,
     painter: &Painter,
@@ -60,6 +85,9 @@ impl Renderer {
     scale: f32,
     preedit: Option<&Preedit>,
   ) -> Option<egui::output::IMEOutput> {
+    if let Some(uploads) = &mut self.uploads {
+      uploads.begin();
+    }
     let theme = scene_theme(&frame.scene);
     painter.rect_filled(
       painter.clip_rect(),
@@ -141,6 +169,9 @@ impl Renderer {
       let Some(texture) = self.textures.get(&id) else { continue };
       texture.paint(painter, picture.origin(), picture.stage(), scale);
     }
+    if let Some(uploads) = &mut self.uploads {
+      uploads.finish();
+    }
     ime
   }
   /// Kept tile textures by owner and page.
@@ -164,19 +195,34 @@ impl Renderer {
     size: [usize; 2],
   ) {
     if self.textures.get(&id).is_some_and(|texture| {
-      texture.size == size && Arc::ptr_eq(&texture.pixels, pixels)
+      texture.size == size
+        && std::ptr::eq(texture.pixels.as_ptr(), Arc::as_ptr(pixels))
     }) {
       return;
     }
-    let image = egui::ColorImage::from_rgb(size, pixels);
-    let handle = painter.ctx().load_texture(
-      format!("image {id:?}"),
-      image,
-      TextureOptions::LINEAR,
-    );
+    let handle = if let (ImageId::Tile(_), Some(uploads)) =
+      (id, &mut self.uploads)
+      && crate::upload::fits(size)
+    {
+      let Some(handle) = uploads.upload(pixels, size) else {
+        self.textures.remove(&id);
+        painter
+          .ctx()
+          .request_repaint_after(std::time::Duration::from_millis(1));
+        return;
+      };
+      Handle::Native(handle)
+    } else {
+      let image = egui::ColorImage::from_rgb(size, pixels);
+      Handle::Managed(painter.ctx().load_texture(
+        format!("image {id:?}"),
+        image,
+        TextureOptions::LINEAR,
+      ))
+    };
     self.textures.insert(
       id,
-      Texture { pixels: Arc::clone(pixels), handle, size },
+      Texture { pixels: Arc::downgrade(pixels), handle, size },
       size[0] * size[1] * 4,
     );
     self.uploaded += 1;
@@ -756,7 +802,10 @@ mod tests {
       assert_eq!(renderer.uploaded, expected);
       assert_eq!(renderer.upload_bytes, expected * 4);
     }
+    let released = Arc::downgrade(&frame.images[0].pixels);
     frame.images.clear();
+    assert!(released.upgrade().is_none());
+    assert_eq!(renderer.textures.used(), 4);
     frame.owners.clear();
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
       renderer.paint(ui.painter(), &frame, screen, 1.0, None);

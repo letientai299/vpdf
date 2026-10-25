@@ -8,3 +8,4 @@ pub mod paint;
 pub mod screen;
 mod style;
 pub mod trace;
+mod upload;

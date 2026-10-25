@@ -489,3 +489,8 @@ run = 'python3 -B benches/live/overhead.py {{arg(name="args", var=true, default=
 [tasks."test:help-assets"]
 description = "Test help invalidation and atomic publication"
 run = "python3 -B -m unittest discover -s scripts -p test_help_assets.py"
+
+[tasks."bench:pixels"]
+depends = ["help:build"]
+description = "Measure verified native tile uploads"
+run = 'cargo bench --locked --profile release -p vpdf-gui --bench pixels {{arg(name="args", var=true, default="")}}'
