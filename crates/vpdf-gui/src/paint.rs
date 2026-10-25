@@ -53,6 +53,7 @@ pub struct Renderer {
   pub upload_bytes: usize,
   /// Tiles of the last paint.
   pub coverage: Coverage,
+  grid: Grid,
 }
 
 impl Default for Renderer {
@@ -63,6 +64,7 @@ impl Default for Renderer {
       uploaded: 0,
       upload_bytes: 0,
       coverage: Coverage::default(),
+      grid: Grid::default(),
     }
   }
 }
@@ -148,7 +150,8 @@ impl Renderer {
       coverage.missing_pixels += area - covered;
     }
     fills(painter, &frame.scene, Layer::BelowText, scale);
-    let mut cells = Grid::new(screen);
+    let cells = &mut self.grid;
+    cells.reset(screen);
     for op in &frame.scene {
       cells.op(op);
     }
@@ -401,8 +404,20 @@ struct Cell {
   style: Style,
 }
 
+impl Cell {
+  /// Blanks the cell, keeping its text allocation.
+  fn clear(&mut self) {
+    self.text.clear();
+    self.columns = 0;
+    self.style = Style::default();
+  }
+}
+
+#[derive(Default)]
 struct Grid {
   cells: Vec<Cell>,
+  /// Rows with cells written since the last reset.
+  dirty: Vec<bool>,
   columns: usize,
   cursor: (usize, usize),
   saved: (usize, usize, Style),
@@ -415,24 +430,44 @@ struct Grid {
 }
 
 impl Grid {
+  #[cfg(test)]
   fn new(screen: Screen) -> Self {
-    Self {
-      cells: vec![
-        Cell::default();
-        usize::from(screen.columns) * usize::from(screen.rows)
-      ],
-      columns: usize::from(screen.columns),
-      cursor: (0, 0),
-      saved: (0, 0, Style::default()),
-      style: Style::default(),
-      theme: Theme::Default,
-      visible: false,
-      masked: false,
-      input: 0..usize::from(screen.columns),
-      previous: None,
+    let mut grid = Self::default();
+    grid.reset(screen);
+    grid
+  }
+  /// Blanks the grid for `screen`, keeping its storage.
+  fn reset(&mut self, screen: Screen) {
+    let columns = usize::from(screen.columns);
+    let mut cells = std::mem::take(&mut self.cells);
+    let mut dirty = std::mem::take(&mut self.dirty);
+    if columns == self.columns {
+      let rows = cells.chunks_mut(columns.max(1)).zip(&dirty);
+      for (row, _) in rows.filter(|(_, dirty)| **dirty) {
+        row.iter_mut().for_each(Cell::clear);
+      }
+    } else {
+      cells.iter_mut().for_each(Cell::clear);
+    }
+    cells.resize_with(columns * usize::from(screen.rows), Cell::default);
+    dirty.clear();
+    dirty.resize(usize::from(screen.rows), false);
+    *self =
+      Self { cells, dirty, columns, input: 0..columns, ..Self::default() };
+  }
+  /// Marks the cursor row for the next reset and paint.
+  fn touch(&mut self) {
+    if let Some(dirty) = self.dirty.get_mut(self.cursor.1) {
+      *dirty = true;
     }
   }
   fn op(&mut self, op: &Op<'_>) {
+    if matches!(
+      op,
+      Op::Text(_) | Op::Character(_) | Op::Spaces(_) | Op::Erase(_)
+    ) {
+      self.touch();
+    }
     match op {
       Op::Move { column, row } => {
         self.cursor = (*column, *row);
@@ -500,7 +535,7 @@ impl Grid {
     if self.cursor.0 > 0
       && self.cells.get(index - 1).is_some_and(|cell| cell.columns == 2)
     {
-      self.cells[index - 1] = Cell::default();
+      self.cells[index - 1].clear();
     }
     self.previous = Some(index);
     if let Some(cell) = self.cells.get_mut(index) {
@@ -511,7 +546,7 @@ impl Grid {
     }
     for next in 1..usize::from(columns) {
       if let Some(cell) = self.cells.get_mut(index + next) {
-        *cell = Cell::default();
+        cell.clear();
       }
     }
     self.cursor.0 += usize::from(columns);
@@ -544,13 +579,12 @@ impl Grid {
     let width = width.min(self.input.end - start.0);
     let first = start.1 * self.columns + start.0;
     let end = start.1 * self.columns + self.input.end;
-    for index in (first + width..end).rev() {
-      self.cells[index] = self.cells[index - width].clone();
-    }
+    self.touch();
+    self.cells[first..end].rotate_right(width);
     if self.cells[end - 1].columns == 2 {
-      self.cells[end - 1] = Cell::default();
+      self.cells[end - 1].clear();
     }
-    self.cells[first..first + width].fill(Cell::default());
+    self.cells[first..first + width].iter_mut().for_each(Cell::clear);
     let style = self.style;
     self.style = Style { underline: true, ..Style::new(self.theme) };
     self.previous = None;
@@ -600,15 +634,23 @@ impl Grid {
       should_interrupt_composition: false,
     })
   }
+  /// Cells of dirty rows at their positions for cells of `size`.
+  fn written(&self, size: Vec2) -> impl Iterator<Item = (Pos2, &Cell)> {
+    let rows = self.cells.chunks(self.columns.max(1)).enumerate();
+    rows.zip(&self.dirty).filter(|(_, dirty)| **dirty).flat_map(
+      move |((row, cells), _)| {
+        let y = row as f32 * size.y;
+        cells.iter().enumerate().map(move |(column, cell)| {
+          (Pos2::new(column as f32 * size.x, y), cell)
+        })
+      },
+    )
+  }
   fn paint(&self, painter: &Painter, screen: Screen, scale: f32) {
     let size =
       Vec2::new(f32::from(screen.cell_width), f32::from(screen.cell_height))
         / scale;
-    for (index, cell) in self.cells.iter().enumerate() {
-      let pos = Pos2::new(
-        (index % self.columns) as f32 * size.x,
-        (index / self.columns) as f32 * size.y,
-      );
+    for (pos, cell) in self.written(size) {
       if let Some(color) = cell.style.background {
         painter.rect_filled(
           Rect::from_min_size(
@@ -620,14 +662,10 @@ impl Grid {
         );
       }
     }
-    for (index, cell) in self.cells.iter().enumerate() {
+    for (pos, cell) in self.written(size) {
       if cell.text.is_empty() || cell.text == " " {
         continue;
       }
-      let pos = Pos2::new(
-        (index % self.columns) as f32 * size.x,
-        (index / self.columns) as f32 * size.y,
-      );
       let font = FontId::monospace(FONT_SIZE);
       let galley = painter.layout_job(egui::text::LayoutJob::single_section(
         cell.text.clone(),
@@ -987,6 +1025,37 @@ mod tests {
       assert_eq!(grid.cells[0].style, expected);
       grid.op(&Op::Style(Role::Reset));
       assert_eq!(grid.style, Style::default());
+    }
+  }
+
+  #[test]
+  fn reset_blanks_reused_cells() {
+    let blank = |grid: &Grid| {
+      grid.cells.iter().all(|cell| cell.text.is_empty() && cell.columns == 0)
+        && !grid.dirty.contains(&true)
+    };
+    let mut grid = Grid::new(crate::screen::pixels(4, 3, 10, 20));
+    for screen in [(4, 3), (4, 2), (4, 3), (3, 3), (5, 1)] {
+      grid.op(&Op::Move { column: 1, row: 1 });
+      grid.op(&Op::Style(vpdf_model::style::Role::Bar));
+      grid.op(&Op::Text(Text::new("章x")));
+      grid.op(&Op::Move { column: 0, row: 0 });
+      grid.op(&Op::Text(Text::new("a")));
+      grid.op(&Op::Text(Text::new("\u{301}")));
+      grid.op(&Op::Erase(2));
+      grid.op(&Op::Move { column: 0, row: 9 });
+      grid.op(&Op::Spaces(2));
+      grid.op(&Op::Move { column: 0, row: grid.dirty.len() - 1 });
+      grid.op(&Op::ShowCursor);
+      grid.compose(Some(&Preedit { text: "章".into(), active: None }));
+      let rows = grid.cells.chunks(grid.columns).zip(&grid.dirty);
+      for (row, dirty) in rows {
+        assert!(*dirty || row.iter().all(|cell| cell.text.is_empty()));
+      }
+      grid.reset(crate::screen::pixels(screen.0, screen.1, 10, 20));
+      assert!(blank(&grid), "{screen:?}");
+      assert_eq!(grid.cells.len(), usize::from(screen.0 * screen.1));
+      assert_eq!(grid.input, 0..usize::from(screen.0));
     }
   }
 

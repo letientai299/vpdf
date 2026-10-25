@@ -33,4 +33,9 @@ font-kit.workspace = true
 winit = { version = "0.30", default-features = false }
 
 [dev-dependencies]
+anyhow.workspace = true
 pollster = "1"
+
+[[bench]]
+name = "micro"
+harness = false

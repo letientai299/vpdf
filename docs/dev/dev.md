@@ -498,6 +498,7 @@ mise run bench:micro -- --package vpdf-search index
 mise run bench:micro -- --package vpdf-reader
 mise run bench:micro -- --package vpdf-terminal
 mise run bench:micro -- --package vpdf-ui
+mise run bench:micro -- --package vpdf-gui
 mise run bench:micro -- --package vpdf-protocol decode
 mise run corpus
 mise run bench:micro -- --package vpdf-pdf
