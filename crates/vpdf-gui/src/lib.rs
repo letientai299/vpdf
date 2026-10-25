@@ -1,3 +1,5 @@
+#[cfg(target_os = "macos")]
+mod collection;
 pub mod fonts;
 #[cfg(feature = "bench-events")]
 pub mod inject;
