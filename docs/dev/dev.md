@@ -286,15 +286,9 @@ package selection avoids compiling the application and its native dependencies
 when the selected crate does not need them:
 
 ```sh
-mise run test:model
-mise run test:search
-mise run test:pdf
-mise run test:protocol
-mise run test:terminal
-mise run test:ui
-mise run test:reader
-mise exec -- cargo nextest run --locked -p vpdf-model text::tests
-mise exec -- cargo nextest run --locked -p vpdf-search search::tests
+mise run test:crate -- vpdf-ui
+mise run test:crate -- vpdf-model text::tests
+mise run test:crate -- vpdf-search search::tests
 ```
 
 The [package guide][packages] describes ownership and permitted dependencies.
@@ -306,14 +300,14 @@ PDF tests require MuPDF; ignored corpus tests also require the verified
 public PDFs from `mise run corpus`. Run them independently:
 
 ```sh
-mise exec -- cargo nextest run --locked -p vpdf-pdf --test corpus --run-ignored only
+mise run test:crate -- vpdf-pdf --test corpus --run-ignored only
 ```
 
 Root modules retain the application compilation unit and support test filters:
 
 ```sh
-mise exec -- cargo nextest run --locked -p vpdf --lib session::tests
-mise exec -- cargo nextest run --locked -p vpdf-ui --lib layout::tests
+mise run test:crate -- vpdf --lib session::tests
+mise run test:crate -- vpdf-ui --lib layout::tests
 ```
 
 The lint task applies automatic fixes before checking for remaining issues;
@@ -381,29 +375,29 @@ still verify placement and terminal graphics.
 
 Measure CPU work separately from terminal painting and end-to-end input latency.
 The [warm reader benchmark][reader-bench] covers extraction, navigation, search,
-and serialized frames. Its budget task enforces CPU frame and motion limits
-and base-image reuse; the thresholds live with the assertions.
+and serialized frames. `VPDF_PERF_CHECK=1` enforces CPU frame and motion
+limits and base-image reuse; the thresholds live with the assertions.
 
 ```sh
-mise run bench:budget
+VPDF_PERF_CHECK=1 mise run bench
 mise run bench:latency
 mise run bench:stages
 ```
 
-The [scenario driver][scenario-driver] runs the real session without a
-window. Scenario headers pin PDF hashes, layout, and crop mode. Run
-`mise run bench:drive -- benches/scenarios/keys.txt`; results and traces stay
-in the host cache. The catalog defaults to `sdm.pdf`; `corpus:sdm` fetches and
-verifies it. Use `--huge DIRECTORY` for an additional large PDF with its own
-hash-pinned scenario. Headless delivery measures frame collection, excluding
-GPU painting and terminal output. Each headless scenario replicate runs in a
-fresh process; its populate/hide/restore sequence shares that process.
+The [scenario driver][scenario-driver] runs the real session without a window.
+Scenario headers pin PDF hashes, layout, and crop mode. Run
+`mise run bench:drive -- benches/scenarios/keys.txt`; results and traces stay in
+the host cache. The catalog defaults to `sdm.pdf`; `mise run corpus:huge -- sdm`
+fetches and verifies it. Use `--huge DIRECTORY` for an additional large PDF with
+its own hash-pinned scenario. Headless delivery measures frame collection,
+excluding GPU painting and terminal output. Each headless scenario replicate
+runs in a fresh process; its populate/hide/restore sequence shares that process.
 Reports separate embedded build provenance from the runtime checkout, whose
-status stays unknown when Git fails. Patch identity includes tracked changes
-and nonignored untracked files. Executable hashes identify copied builds.
-The general latency cases use this bridge;
-crop measurements retain their component loop. Enqueue time measures input
-submission, rather than the former direct action CPU time.
+status stays unknown when Git fails. Patch identity includes tracked changes and
+nonignored untracked files. Executable hashes identify copied builds. The
+general latency cases use this bridge; crop measurements retain their component
+loop. Enqueue time measures input submission, rather than the former direct
+action CPU time.
 
 Summarize marks with `mise run bench:report -- TRACE --json REPORT`. CPU means
 use the sampler's rolling percentages. A `clock` row anchors reader timestamps
@@ -440,15 +434,6 @@ native reports also identify the signed executable. Kitty relays input and
 output through bounded nonblocking queues. Failed runs retain their error and
 cleanup records. Retain one real macOS resize check per release; FIFO geometry
 bypasses OS input paths.
-
-Run `mise run bench:overhead -- --help` for the independent terminal-output
-tracing control. It requires macOS, Swift from the command line tools, a built
-reader, and the verified SDM corpus. It retains A/A controls, alternating
-tracing and relay pairs, process accounting, input lateness, and separate final
-tile fidelity captures. Captures verify tile pixels and geometry; they exclude
-text overlays, intermediate frames, native painting, and display latency.
-Run this task after builds finish. Its results do not establish tracing cost
-for other workloads.
 
 Use `benches/scenarios/keys-120.txt` and `keys-240.txt` to stress cadence;
 `keys-1000.txt` stresses input throughput. Reports separate requested input
@@ -660,8 +645,8 @@ and scene inputs. Inspect every image for complete rendering and readable
 content before publishing. See the [gallery][demo] for document attribution and
 capture scope.
 
-Run `mise run test:demo` to check dependency selection, executable identity,
-and publication failure handling without opening Kitty.
+The `test` task checks dependency selection, executable identity, and
+publication failure handling without opening Kitty.
 
 Keep all published image and future video demos in the [demo catalog][demo],
 with their media under `docs/assets/`. Individual images may also be reused in

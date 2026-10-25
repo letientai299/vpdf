@@ -126,7 +126,7 @@ constraints.
 Select the owning Cargo package from the [workspace manifest][workspace]:
 
 ```sh
-mise exec -- cargo nextest run --locked -p vpdf-ui
+mise run test:crate -- vpdf-ui
 mise run bench:micro -- --package vpdf-ui
 ```
 

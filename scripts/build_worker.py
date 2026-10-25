@@ -404,6 +404,8 @@ def run(args):
     if not args:
         raise ValueError("Shared build task missing")
     task = args[0]
+    if task == "test:crate" and len(args) < 2:
+        raise ValueError("test:crate requires a package")
     if task not in {
         "build",
         "validate",

@@ -3497,16 +3497,13 @@ dependencies = [
 name = "vpdf-gui"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "clap",
  "eframe",
  "fmv-macos-events",
  "font-kit",
  "image",
  "pollster",
- "serde",
  "serde_json",
- "sha2",
  "unicode-width",
  "vpdf",
  "vpdf-model",

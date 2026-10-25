@@ -33,11 +33,4 @@ font-kit.workspace = true
 winit = { version = "0.30", default-features = false }
 
 [dev-dependencies]
-anyhow.workspace = true
-serde.workspace = true
 pollster = "1"
-sha2.workspace = true
-
-[[bench]]
-name = "pixels"
-harness = false

@@ -170,6 +170,7 @@ run = [
 ]
 
 [tasks."lint:rust"]
+hide = true
 description = "Check Rust lint without changing source"
 run = "python3 -B scripts/build_worker.py lint:rust"
 
@@ -191,6 +192,7 @@ hide = true
 run = "python3 -B scripts/hooks.py lint"
 
 [tasks."test"]
+description = "Run all standard tests"
 run = "python3 -B scripts/build_worker.py test"
 
 [tasks."_test"]
@@ -255,6 +257,7 @@ description = "Format staged files and test affected code"
 run = "python3 -B scripts/hooks.py pre-commit"
 
 [tasks."hook:check"]
+hide = true
 description = "Run full read-only validation"
 run = "python3 -B scripts/build_worker.py hook:check"
 
@@ -264,6 +267,7 @@ env.VPDF_CACHE = "off"
 run = "python3 -B scripts/hooks.py check"
 
 [tasks."test:hooks"]
+hide = true
 env.VPDF_CACHE = "off"
 description = "Test hook snapshots and affected-code routing"
 run = "python3 -B -m unittest discover -s scripts -p test_hooks.py"
@@ -295,29 +299,35 @@ raw_args = true
 run = 'python3 scripts/demo.py --binary "${CARGO_TARGET_DIR:-target}/release/vpdf" --build-profile release'
 
 [tasks."test:demo"]
+hide = true
 env.VPDF_CACHE = "off"
 description = "Check screenshot provenance and publication failures"
 run = "python3 -B -m unittest discover -s scripts -p test_demo.py"
 
 [tasks."test:startup"]
+hide = true
 env.VPDF_CACHE = "off"
 description = "Check startup trace compatibility"
 run = "python3 -B -m unittest discover -s scripts -p test_startup.py"
 
 [tasks."test:build-features"]
+hide = true
 env.VPDF_CACHE = "off"
 description = "Check injection build opt-in"
 run = "python3 -B -m unittest discover -s scripts -p test_build_features.py"
 
 [tasks."test:build-cache"]
+hide = true
 description = "Check build cache limits and locking"
 run = "python3 -B -m unittest discover -s scripts -p test_build_cache.py"
 
 [tasks."test:validation"]
+hide = true
 description = "Check validation result reuse"
 run = "python3 -B -m unittest discover -s scripts -p test_validation.py"
 
 [tasks."test:build-worker"]
+hide = true
 description = "Check shared snapshot reuse and isolation"
 run = "python3 -B -m unittest discover -s scripts -p test_build_worker.py"
 
@@ -326,6 +336,7 @@ description = "Fetch large stress PDFs into tmp/huge for ad hoc runs"
 run = "sh scripts/corpus.sh huge"
 
 [tasks."test:corpus"]
+description = "Test real PDFs from tmp/corpus, except OCR"
 run = "python3 -B scripts/build_worker.py test:corpus"
 
 [tasks."_test:corpus"]
@@ -335,6 +346,7 @@ depends = ["corpus", "help:build"]
 run = "cargo nextest run --locked --workspace --run-ignored only --no-fail-fast -E 'not ({{vars.ocr_tests}})'"
 
 [tasks."test:ocr"]
+description = "Test OCR on real PDFs"
 run = "python3 -B scripts/build_worker.py test:ocr"
 
 [tasks."_test:ocr"]
@@ -352,7 +364,7 @@ run = "cargo bench --locked -p vpdf --profile release --bench reader"
 [tasks."bench:latency"]
 env.VPDF_CACHE = "off"
 description = "Measure opens, jumps, zooms, searches, and paced scrolling"
-depends = ["corpus:sdm", "help:build"]
+depends = ["corpus:huge sdm", "help:build"]
 run = "cargo bench --locked -p vpdf --profile release --features bench-events --bench latency"
 
 [tasks."bench:stages"]
@@ -365,7 +377,7 @@ run = "cargo bench --locked -p vpdf --profile release --bench stages"
 depends = ["help:build"]
 env.VPDF_CACHE = "off"
 description = "Time single hot functions; arguments filter cases"
-run = 'sh scripts/bench-micro.sh {{arg(name="cases", var=true, default="")}}'
+run = 'sh scripts/bench-micro.sh'
 
 [tasks."bench:startup"]
 env.VPDF_CACHE = "off"
@@ -374,66 +386,14 @@ depends = ["corpus"]
 raw = true
 run = "python3 scripts/startup.py"
 
-[tasks."bench:budget"]
-env.VPDF_CACHE = "off"
-description = "Enforce warm CPU frame and motion budgets"
-depends = ["corpus", "help:build"]
-env.VPDF_PERF_CHECK = "1"
-run = "cargo bench --locked -p vpdf --profile release --bench reader"
+[tasks."test:crate"]
+description = "Test one workspace package; pass its name and filters"
+run = "python3 -B scripts/build_worker.py test:crate"
 
-[tasks."test:model"]
-description = "Test shared values without native code"
-run = "python3 -B scripts/build_worker.py test:model"
-
-[tasks."_test:model"]
+[tasks."_test:crate"]
 hide = true
 env.VPDF_CACHE = "off"
-run = "cargo nextest run --locked -p vpdf-model"
-
-[tasks."test:search"]
-description = "Test search without native code or UI"
-run = "python3 -B scripts/build_worker.py test:search"
-
-[tasks."_test:search"]
-hide = true
-env.VPDF_CACHE = "off"
-run = "cargo nextest run --locked -p vpdf-search"
-
-[tasks."test:pdf"]
-description = "Test native PDF helpers without the reader"
-run = "python3 -B scripts/build_worker.py test:pdf"
-
-[tasks."_test:pdf"]
-hide = true
-env.VPDF_CACHE = "off"
-run = "cargo nextest run --locked -p vpdf-pdf"
-
-[tasks."test:reader"]
-description = "Test reading motions and selections without native code or UI"
-run = "python3 -B scripts/build_worker.py test:reader"
-
-[tasks."_test:reader"]
-hide = true
-env.VPDF_CACHE = "off"
-run = "cargo nextest run --locked -p vpdf-reader"
-
-[tasks."test:protocol"]
-description = "Test terminal input decoding without native code or UI"
-run = "python3 -B scripts/build_worker.py test:protocol"
-
-[tasks."_test:protocol"]
-hide = true
-env.VPDF_CACHE = "off"
-run = "cargo nextest run --locked -p vpdf-protocol"
-
-[tasks."test:terminal"]
-description = "Test terminal delivery without native PDF code"
-run = "python3 -B scripts/build_worker.py test:terminal"
-
-[tasks."_test:terminal"]
-hide = true
-env.VPDF_CACHE = "off"
-run = "cargo nextest run --locked -p vpdf-terminal"
+run = "cargo nextest run --locked -p"
 
 [tasks."bench:fixtures"]
 env.VPDF_CACHE = "off"
@@ -441,75 +401,45 @@ description = "Prepare verified native-free render fixtures"
 depends = ["corpus", "help:build"]
 run = 'cargo run --locked --release --example bench-fixtures -- "$VPDF_CORPUS/paper.pdf" "${VPDF_BENCH_FIXTURES:-target/bench-fixtures}"'
 
-[tasks."bench:terminal"]
-env.VPDF_CACHE = "off"
-description = "Measure headless terminal delivery using prepared fixtures"
-run = 'cargo bench --locked --profile release -p vpdf-terminal --bench micro -- {{arg(name="cases", var=true, default="")}}'
-
-[tasks."test:ui"]
-description = "Test interface components without native PDF code"
-run = "python3 -B scripts/build_worker.py test:ui"
-
-[tasks."_test:ui"]
-hide = true
-env.VPDF_CACHE = "off"
-run = "cargo nextest run --locked -p vpdf-ui"
-
-[tasks."bench:ui"]
-env.VPDF_CACHE = "off"
-description = "Measure interface components using prepared fixtures"
-run = 'cargo bench --locked --profile release -p vpdf-ui --bench micro -- {{arg(name="cases", var=true, default="")}}'
-
 [tasks."bench:manuals"]
 depends = ["help:build"]
 env.VPDF_CACHE = "off"
 description = "Measure verified manuals; arguments filter cases"
-run = 'cargo bench --locked --profile release -p vpdf --bench manuals -- {{arg(name="cases", var=true, default="")}}'
+run = 'cargo bench --locked --profile release -p vpdf --bench manuals --'
 
 [tasks."bench:drive"]
 env.VPDF_CACHE = "off"
 description = "Drive headless, native, or Kitty scenarios"
 raw_args = true
-run = 'python3 -B benches/dispatch.py {{arg(name="args", var=true, default="")}}'
+run = 'python3 -B benches/dispatch.py'
 
 [tasks."bench:headless"]
+hide = true
 env.VPDF_CACHE = "off"
 description = "Drive full-session headless scenarios"
-depends = ["corpus:sdm", "help:build"]
+depends = ["corpus:huge sdm", "help:build"]
 raw_args = true
-run = 'cargo bench --locked --profile release -p vpdf --features bench-events --bench drive -- {{arg(name="scenarios", var=true, default="")}}'
+run = 'cargo bench --locked --profile release -p vpdf --features bench-events --bench drive --'
 
 [tasks."bench:live"]
+hide = true
 env.VPDF_CACHE = "off"
 description = "Drive native and Kitty scenarios in background windows"
 raw_args = true
-run = 'python3 -B benches/live/drive.py {{arg(name="args", var=true, default="")}}'
+run = 'python3 -B benches/live/drive.py'
 
 [tasks."bench:report"]
 env.VPDF_CACHE = "off"
 description = "Summarize marked reader traces"
 raw_args = true
-run = 'python3 -B benches/live/report.py {{arg(name="args", var=true, default="")}}'
+run = 'python3 -B benches/live/report.py'
 
 [tasks."test:bench-report"]
+hide = true
 env.VPDF_CACHE = "off"
 run = "python3 -B -m unittest discover -s benches/live -p 'test_*.py'"
 
-[tasks."corpus:sdm"]
-description = "Fetch and verify the SDM benchmark PDF"
-run = "sh scripts/corpus.sh huge sdm"
-
-[tasks."bench:overhead"]
-env.VPDF_CACHE = "off"
-description = "Compare tracing and relay cost with independent output"
-raw_args = true
-run = 'python3 -B benches/live/overhead.py {{arg(name="args", var=true, default="")}}'
-
 [tasks."test:help-assets"]
+hide = true
 description = "Test help invalidation and atomic publication"
 run = "python3 -B -m unittest discover -s scripts -p test_help_assets.py"
-
-[tasks."bench:pixels"]
-depends = ["help:build"]
-description = "Measure verified native tile uploads"
-run = 'cargo bench --locked --profile release -p vpdf-gui --bench pixels {{arg(name="args", var=true, default="")}}'

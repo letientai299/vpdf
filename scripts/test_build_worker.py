@@ -74,6 +74,10 @@ class WorkerTests(unittest.TestCase):
         ) as state:
             yield state
 
+    def test_crate_requires_package(self):
+        with self.assertRaisesRegex(ValueError, "requires a package"):
+            build_worker.run(["test:crate"])
+
     def test_worktree_reuse(self):
         with self.snapshot() as (source, first):
             timestamp = (source / "src/main.rs").stat().st_mtime_ns
