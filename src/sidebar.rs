@@ -43,14 +43,16 @@ impl Request {
   }
   fn slot(self) -> usize {
     match self {
-      Self::Annotations => 0,
-      Self::Links(_) => 1,
+      Self::Annotations => ANNOTATIONS,
+      Self::Links(_) => LINKS,
     }
   }
 }
 
 /// Loads per pane, each with one worker slot.
 const SLOTS: usize = 2;
+const ANNOTATIONS: usize = 0;
+const LINKS: usize = 1;
 
 /// Sidebar workers alive across panes, canceled or not.
 static ALIVE: AtomicUsize = AtomicUsize::new(0);
@@ -91,6 +93,13 @@ impl Drop for Flight {
     ALIVE.fetch_sub(1, Ordering::AcqRel);
     self.wake.wake();
   }
+}
+
+/// Holds the links slot as a running worker would.
+#[cfg(test)]
+pub(crate) fn hold_links(app: &App) -> impl Sized + use<> {
+  Flight::take(&app.sidebar.slots[LINKS].alive, &app.wake)
+    .expect("links slot free")
 }
 
 /// One load's worker; a request made while it runs waits, and starts
@@ -145,17 +154,14 @@ impl App {
       slot.queued = true;
       return;
     };
-    let (path, password, pages, seeds) = (
-      self.path.clone(),
-      self.password.clone(),
-      self.doc.pages.len(),
-      self.doc.seeds(),
-    );
+    let (path, password, seeds) =
+      (self.path.clone(), self.password.clone(), self.doc.seeds());
+    let bounds = self.doc.pages.iter().map(|page| page.bounds).collect();
     let root = content_cache::root();
     let job = OneShot::try_spawn(&self.wake, move |stopped| {
       let _flight = flight;
       let found =
-        worker::scan(&path, &password, pages, request, seeds, stopped, root);
+        worker::scan(&path, &password, bounds, request, seeds, stopped, root);
       (!stopped.load(Ordering::Relaxed)).then_some(found)
     });
     *self.sidebar_load(request) = Load::Running(job);
@@ -170,13 +176,18 @@ impl App {
     }
   }
   pub fn sidebar_pending(&self, kind: PanelKind) -> bool {
-    match kind {
-      PanelKind::Annotations => self.sidebar.annotations.pending(),
-      PanelKind::Links => {
-        self.sidebar.page != Some(self.navigation_position().page)
-          && !matches!(self.sidebar.links, Load::Idle)
-          || self.sidebar.links.pending()
+    self.sidebar_queued(kind)
+      || match kind {
+        PanelKind::Annotations => self.sidebar.annotations.pending(),
+        PanelKind::Links => self.links_stale() || self.sidebar.links.pending(),
+        _ => false,
       }
+  }
+  /// The load waits for its slot's worker to end.
+  pub(crate) fn sidebar_queued(&self, kind: PanelKind) -> bool {
+    match kind {
+      PanelKind::Annotations => self.sidebar.slots[ANNOTATIONS].queued,
+      PanelKind::Links => self.sidebar.slots[LINKS].queued,
       _ => false,
     }
   }
@@ -201,13 +212,21 @@ impl App {
       }
     }
   }
+  /// Loads a pass could start; one waiting on its slot starts when the
+  /// slot's worker ends and wakes the loop.
   pub(crate) fn sidebars_deferred(&self) -> bool {
+    let free = |kind| !self.sidebar_queued(kind);
     matches!(self.outline_load, crate::jobs::Loading::Deferred)
       || matches!(self.figures, crate::jobs::Figures::Deferred)
-      || matches!(self.sidebar.annotations, Load::Deferred)
-      || self.sidebar.page != Some(self.navigation_position().page)
-        && !matches!(self.sidebar.links, Load::Idle)
-      || matches!(self.sidebar.links, Load::Deferred)
+      || free(PanelKind::Annotations)
+        && matches!(self.sidebar.annotations, Load::Deferred)
+      || free(PanelKind::Links)
+        && (self.links_stale() || matches!(self.sidebar.links, Load::Deferred))
+  }
+  /// Links loaded or loading for a page other than the current one.
+  fn links_stale(&self) -> bool {
+    self.sidebar.page != Some(self.navigation_position().page)
+      && !matches!(self.sidebar.links, Load::Idle)
   }
   pub(crate) fn cancel_sidebars(&mut self) {
     self.sidebar.annotations.cancel();

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, atomic::AtomicBool};
 use vpdf_model::{
   document::{Annotation, Target},
-  text::{PageId, Position, Text},
+  text::{Bounds, PageId, Position, Text},
 };
 use vpdf_pdf::{content_cache::Record, document::Document};
 use vpdf_ui::panel::{Destination, Row, Style};
@@ -78,12 +78,13 @@ fn recall(cache: &Record, request: Request, pages: usize) -> Option<Vec<Row>> {
 pub(super) fn scan(
   path: &Path,
   password: &str,
-  pages: usize,
+  bounds: Vec<Bounds>,
   request: Request,
   seeds: Vec<(PageId, Arc<Text>)>,
   stop: &AtomicBool,
   root: Option<PathBuf>,
 ) -> Result<Vec<Row>> {
+  let pages = bounds.len();
   let ready = || vpdf_pdf::ready(stop);
   let cache = root.filter(|_| seeds.is_empty()).and_then(|root| {
     Record::open(root, path, password, request.kind(), &request.code(), ready)
@@ -94,8 +95,9 @@ pub(super) fn scan(
     return Ok(rows);
   }
   anyhow::ensure!(ready(), "Sidebar load stopped");
-  let mut doc = Document::open_with(path, password, ready)?;
-  anyhow::ensure!(doc.pages.len() == pages, "PDF changed; reopen sidebar");
+  let mut doc = Document::open_known(path, password, bounds)?;
+  // Open ignores `stop`; recheck before extraction.
+  anyhow::ensure!(ready(), "Sidebar load stopped");
   for (page, text) in seeds {
     doc.seed(page, text);
   }

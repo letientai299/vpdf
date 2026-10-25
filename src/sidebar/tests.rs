@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use vpdf_model::document::Target;
-use vpdf_model::text::{PageId, Text};
+use vpdf_model::text::{Bounds, PageId, Text};
 use vpdf_pdf::content_cache::Record;
 use vpdf_ui::panel::{Destination, Row};
 
@@ -82,6 +82,9 @@ fn workers_wait_for_their_slot() -> Result<()> {
   app.want_sidebar(PanelKind::Links);
   app.sidebar_updates()?;
   assert!(!app.sidebar_loading(PanelKind::Links));
+  assert!(app.sidebar_pending(PanelKind::Links), "queued loads are pending");
+  app.prepare_sidebars();
+  assert!(!app.sidebars_deferred(), "queued loads let the loop sleep");
   drop(held);
   app.sidebar_updates()?;
   assert!(app.sidebar_loading(PanelKind::Links));
@@ -141,7 +144,7 @@ fn cached_rows_skip_native() -> Result<()> {
   let rows = worker::scan(
     &source,
     "",
-    1,
+    vec![Bounds::default()],
     request,
     Vec::new(),
     &AtomicBool::new(false),
@@ -156,7 +159,7 @@ fn cached_rows_skip_native() -> Result<()> {
     worker::scan(
       &source,
       "",
-      1,
+      vec![Bounds::default()],
       request,
       vec![(PageId(0), Arc::new(Text::default()))],
       &AtomicBool::new(false),
@@ -168,7 +171,7 @@ fn cached_rows_skip_native() -> Result<()> {
     worker::scan(
       &source,
       "",
-      2,
+      vec![Bounds::default(); 2],
       request,
       Vec::new(),
       &AtomicBool::new(false),
@@ -181,7 +184,7 @@ fn cached_rows_skip_native() -> Result<()> {
     worker::scan(
       &source,
       "",
-      1,
+      vec![Bounds::default()],
       request,
       Vec::new(),
       &AtomicBool::new(true),
@@ -199,7 +202,7 @@ fn real_sidebar_cache_parity() -> Result<()> {
   let root = tempfile::tempdir()?;
   let path = corpus.join("paper.pdf");
   let source = vpdf_pdf::document::Document::open(&path, "")?;
-  let pages = source.pages.len();
+  let bounds: Vec<_> = source.pages.iter().map(|page| page.bounds).collect();
   let mut page = source.native.load_pdf_page(0)?;
   let mut note = page.create_annotation(mupdf::pdf::PdfAnnotationType::Text)?;
   note.set_rect(mupdf::Rect::new(10., 10., 30., 30.))?;
@@ -212,7 +215,7 @@ fn real_sidebar_cache_parity() -> Result<()> {
       worker::scan(
         &annotated,
         "",
-        pages,
+        bounds.clone(),
         request,
         Vec::new(),
         &AtomicBool::new(false),
@@ -236,15 +239,17 @@ fn real_sidebar_cache_parity() -> Result<()> {
 }
 
 #[test]
-fn interrupted_open_releases_handle() -> Result<()> {
+fn page_count_change_fails_scan() -> Result<()> {
   let (_root, app) = app()?;
-  let mut pages = 0;
-  let opened = vpdf_pdf::document::Document::open_with(&app.path, "", || {
-    pages += 1;
-    pages < 2
-  });
-  assert!(opened.is_err());
-  assert_eq!(pages, 2);
-  assert_eq!(vpdf_pdf::document::Document::open(&app.path, "")?.pages.len(), 2);
+  let scan = worker::scan(
+    &app.path,
+    "",
+    vec![Bounds::default(); 3],
+    Request::Links(PageId(0)),
+    Vec::new(),
+    &AtomicBool::new(false),
+    None,
+  );
+  assert!(scan.is_err_and(|e| e.to_string().contains("page count changed")));
   Ok(())
 }

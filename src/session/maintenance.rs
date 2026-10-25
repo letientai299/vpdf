@@ -210,6 +210,21 @@ mod tests {
     Ok(session)
   }
 
+  /// A load waiting on its busy slot lets the loop sleep.
+  #[test]
+  fn queued_sidebar_waits() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let mut session = opened(root.path())?;
+    let start = Instant::now();
+    let mut chores = Chores::new(start);
+    session.app().complete = true;
+    let _held = crate::sidebar::hold_links(session.app());
+    chores.run(&mut session, start);
+    assert!(session.app().sidebar_queued(vpdf_ui::keys::PanelKind::Links));
+    assert!(chores.wait(&mut session, start, false) > Duration::ZERO);
+    Ok(())
+  }
+
   #[test]
   fn first_view_respects_cancel() -> Result<()> {
     let root = tempfile::tempdir()?;

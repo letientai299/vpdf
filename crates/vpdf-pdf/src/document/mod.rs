@@ -204,26 +204,36 @@ fn quad_bounds(quad: &mupdf::Quad) -> Bounds {
 }
 impl Document {
   pub fn open(path: &Path, password: &str) -> Result<Self> {
-    Self::open_with(path, password, || true)
+    let handle = Handle::open(path, password)?;
+    let bounds = (0..handle.pages)
+      .map(|index| bounds(&handle.native, index as i32))
+      .collect::<Result<_>>()?;
+    Ok(Self::from_handle(handle, bounds))
   }
 
-  pub fn open_with(
+  /// Opens `path` with page bounds another handle of it read, skipping
+  /// the page walk. Checks only the page count, not the bounds.
+  pub fn open_known(
     path: &Path,
     password: &str,
-    mut ready: impl FnMut() -> bool,
+    bounds: Vec<Bounds>,
   ) -> Result<Self> {
-    let Handle { native, pages: count, .. } = Handle::open(path, password)?;
-    let mut pages = Vec::with_capacity(count);
-    for index in 0..count {
-      ensure!(ready(), "Document load stopped");
-      let bounds = bounds(&native, index as i32)?;
-      pages.push(PageInfo { bounds, label: OnceCell::new() });
-    }
+    let handle = Handle::open(path, password)?;
+    ensure!(handle.pages == bounds.len(), "PDF page count changed");
+    Ok(Self::from_handle(handle, bounds))
+  }
+
+  fn from_handle(handle: Handle, bounds: Vec<Bounds>) -> Self {
+    let Handle { native, .. } = handle;
+    let pages = bounds
+      .into_iter()
+      .map(|bounds| PageInfo { bounds, label: OnceCell::new() })
+      .collect();
     let title =
       native.metadata(mupdf::MetadataName::Title).map_or_default(|title| {
         printable(&title).collect::<String>().trim().to_owned()
       });
-    Ok(Self {
+    Self {
       native,
       pages,
       outline: Vec::new(),
@@ -236,7 +246,7 @@ impl Document {
       figures: Cache::new(4 * MIB),
       links: Cache::new(MIB),
       annotations: Cache::new(MIB),
-    })
+    }
   }
 
   pub fn text(&mut self, page: PageId) -> Result<Arc<Text>> {
