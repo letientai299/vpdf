@@ -104,14 +104,14 @@ fn inferred_outline_keeps_panel_focus_and_selection() -> Result<()> {
       && panel.view.note() == "inferred"
       && !panel.view.focused()
   );
-  // A reload infers again under the user's focus and selection.
+  // Reload invalidates indices and preserves focus.
   for focused in [true, false] {
     let panel = app.panel.as_mut().unwrap();
     panel.view.focus(focused);
     panel.view.choose(panel.view.rows().len() - 1);
-    let selected = panel.view.selected();
     app.command("reload")?;
     finish(&mut app)?;
+    let selected = if focused { 0 } else { app.outline.current().unwrap_or(0) };
     let panel = app.panel.as_ref().unwrap();
     assert_eq!(
       (panel.view.focused(), panel.view.selected()),

@@ -48,6 +48,43 @@ pub fn wrap(mut text: &str, columns: usize) -> Vec<String> {
 }
 
 impl Layout {
+  pub(crate) fn plain(rows: &[Row], columns: usize) -> Self {
+    let mut layout = Self { columns, lines: Vec::new(), starts: Vec::new() };
+    let keys = super::key_width(rows, columns);
+    for (source, row) in rows.iter().enumerate() {
+      layout.starts.push(layout.lines.len());
+      let detail = vpdf_model::text::clean(&row.detail, columns / 3);
+      let room = columns
+        .saturating_sub(detail.width() + usize::from(!detail.is_empty()));
+      layout.lines.push(Line {
+        source,
+        row: row.clone(),
+        keys,
+        clipped: row.label.width() > room,
+      });
+    }
+    layout.starts.push(layout.lines.len());
+    layout
+  }
+
+  pub(crate) fn project(
+    mut self,
+    projection: &super::tree::Projection,
+  ) -> Self {
+    if projection.sources().len() == projection.source_count() {
+      return self;
+    }
+    self.lines.retain(|line| projection.position(line.source).is_some());
+    self.starts.fill(0);
+    for line in &self.lines {
+      self.starts[line.source + 1] += 1;
+    }
+    for source in 1..self.starts.len() {
+      self.starts[source] += self.starts[source - 1];
+    }
+    self
+  }
+
   pub(crate) fn label(
     &mut self,
     source: usize,

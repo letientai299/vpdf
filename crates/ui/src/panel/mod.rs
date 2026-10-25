@@ -58,6 +58,7 @@ const MIN_WIDTH: u16 = 8;
 pub struct Panel {
   kind: PanelKind,
   rows: Vec<Row>,
+  projection: tree::Projection,
   selected: usize,
   focused: bool,
   /// First visible row; moves only to keep the selection shown.
@@ -128,10 +129,13 @@ mod focus_tests;
 #[cfg(test)]
 mod follow_tests;
 #[cfg(test)]
+mod projection_tests;
+#[cfg(test)]
 mod wrap_tests;
 
 mod content;
 mod follow;
+pub mod tree;
 pub use follow::{Activation, Focus, Follow, Press};
 mod input;
 mod selection;

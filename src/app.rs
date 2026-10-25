@@ -268,6 +268,7 @@ impl App {
       id: NEXT.fetch_add(1, Ordering::Relaxed),
       document_generation: 0,
       retired_jobs: Vec::new(),
+      outline: vpdf_ui::reading::Outline::new(&doc.outline),
       doc,
       reader: Pane::default(),
       layout,
@@ -298,7 +299,6 @@ impl App {
       search: vpdf_ui::find::Search::default(),
       search_worker: None,
       wake,
-      outline: vpdf_ui::reading::Outline::default(),
       marks: std::collections::BTreeMap::new(),
       opened: crate::state::Visit::default(),
       overlays: vpdf_ui::overlays::Overlays::default(),
@@ -387,6 +387,7 @@ impl App {
     // A write during the open shows up as a later change.
     let stamp = crate::watch::stamp(&self.path);
     self.doc = Document::open(&self.path, password)?;
+    self.outline.replace(&self.doc.outline);
     self.document_generation += 1;
     self.crop_scan.clear();
     self.layout.clear_crops();
@@ -448,7 +449,11 @@ impl App {
         _ => false,
       };
       let note = self.panel_note(kind);
-      if let Some(panel) = self.panel.as_mut().filter(|_| !rows.is_empty()) {
+      if kind == PanelKind::Outline {
+        self.refill_panel(kind)?;
+      } else if let Some(panel) =
+        self.panel.as_mut().filter(|_| !rows.is_empty())
+      {
         panel.view.refill(rows, note);
       } else if !refills {
         self.panel = None;

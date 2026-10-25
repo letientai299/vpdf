@@ -282,9 +282,9 @@ fn row_menus_copy_and_select() -> Result<()> {
   Ok(())
 }
 
-/// A refill keeps a row menu's row; a row that leaves closes the menu.
+/// Outline generations invalidate row menus and selection.
 #[test]
-fn panel_refills_keep_the_menu_row() -> Result<()> {
+fn outline_refills_invalidate_targets() -> Result<()> {
   use vpdf_model::document::{Heading, Target};
   let opening = || Heading {
     title: "Opening".into(),
@@ -305,15 +305,9 @@ fn panel_refills_keep_the_menu_row() -> Result<()> {
       app.doc.outline = vec![opening()];
     }
     app.refill_panel(vpdf_ui::keys::PanelKind::Outline)?;
-    let selected = app.panel.as_ref().map(|panel| panel.view.selected());
-    if !shifted {
-      assert!(app.overlays.menu().is_none(), "its row left");
-      continue;
-    }
-    assert_eq!(selected, Some(1), "the row moved down");
-    choose(&mut session, "Open in split")?;
-    session.settle()?;
-    assert_eq!(panes(&mut session), (2, id, Some(PageId(1))));
+    assert!(app.overlays.menu().is_none(), "the generation changed");
+    assert_eq!(app.panel.as_ref().unwrap().view.selected(), 0);
+    assert_eq!(panes(&mut session), (1, id, None));
   }
   Ok(())
 }

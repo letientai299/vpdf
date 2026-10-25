@@ -137,7 +137,10 @@ impl Panel {
 
   /// `{` and `}`: previous or next heading row.
   pub fn heading(&mut self, forward: bool, count: usize) {
-    let headings = |i: &usize| self.rows[*i].style == Style::Heading;
+    let headings = |i: &usize| {
+      self.projection.position(*i).is_some()
+        && self.rows[*i].style == Style::Heading
+    };
     for _ in 0..count {
       let next = if forward {
         (self.selected + 1..self.rows.len()).find(headings)

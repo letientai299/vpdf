@@ -615,7 +615,7 @@ fn placement_reuses_durable_views() -> Result<()> {
   let target = session.app().id;
   session.app().start_search("attention", false, false)?;
   session.app().show_panel(
-    PanelKind::Outline,
+    PanelKind::Results,
     (0..80).map(|_| row(Destination::None)).collect(),
   )?;
   let app = session.app();

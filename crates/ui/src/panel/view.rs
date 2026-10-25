@@ -77,6 +77,7 @@ impl Panel {
   pub fn new(kind: PanelKind, rows: Vec<Row>) -> Self {
     Self {
       kind,
+      projection: super::tree::Projection::all(rows.len()),
       rows,
       selected: 0,
       focused: true,
@@ -169,6 +170,37 @@ impl Panel {
     self.selected = index.min(self.rows.len().saturating_sub(1));
   }
 
+  /// # Panics
+  /// Mismatched source counts.
+  pub fn project(&mut self, projection: super::tree::Projection) {
+    assert_eq!(projection.source_count(), self.rows.len());
+    let source = self.line_source(self.top);
+    self.projection = projection;
+    self.selected = self.visible_source(self.visible_position());
+    self.clicked = self.clicked.filter(|&source| self.is_visible(source));
+    if let Pointing::Row(source) = self.pointing
+      && !self.is_visible(source)
+    {
+      self.pointing = Pointing::Away;
+    }
+    self.hover_title = None;
+    self.layout = None;
+    self.top = self.line_start(source);
+  }
+
+  fn replace_outline(&mut self, rows: Vec<Row>, note: &'static str) {
+    let projection = super::tree::Projection::all(rows.len());
+    self.rows = rows;
+    self.selected = 0;
+    self.top = 0;
+    self.search = RowSearch::default();
+    self.clicked = None;
+    self.pointing = Pointing::Away;
+    self.follow_pending = false;
+    self.note = note;
+    self.project(projection);
+  }
+
   /// Follows sections after panel browsing ends.
   pub fn track(&mut self, section: Option<usize>, changed: bool) {
     self.follow_pending |= changed;
@@ -184,6 +216,10 @@ impl Panel {
   /// Replaces the rows and note, keeping focus and the selected row,
   /// else the selection in range; whether that row stayed.
   pub fn refill(&mut self, rows: Vec<Row>, note: &'static str) -> bool {
+    if self.kind == PanelKind::Outline {
+      self.replace_outline(rows, note);
+      return false;
+    }
     let last = rows.len().saturating_sub(1);
     let find = |index: usize| moved_row(&self.rows, index, &rows);
     let before = self.selected;
@@ -201,6 +237,7 @@ impl Panel {
       self.pointing = find(index).map_or(Pointing::Away, Pointing::Row);
     }
     self.layout = None;
+    self.projection = super::tree::Projection::all(rows.len());
     self.rows = rows;
     self.note = note;
     kept.is_some()
@@ -209,21 +246,28 @@ impl Panel {
   /// Applies list motions; `page` rows per full-screen scroll.
   pub fn navigate(&mut self, input: Input, page: usize) -> bool {
     let Some(navigation) = Navigation::of(input.action) else { return false };
-    let last = self.rows.len().saturating_sub(1);
+    let last = self.projection.sources().len().saturating_sub(1);
+    let position = self.visible_position();
     let count = input.count;
     self.selected = match navigation {
-      Navigation::Vertical(true) => self.selected.saturating_add(count),
-      Navigation::Vertical(false) => self.selected.saturating_sub(count),
-      Navigation::Edge(_) if input.explicit => count.saturating_sub(1),
-      Navigation::Edge(false) => 0,
-      Navigation::Edge(true) => last,
+      Navigation::Vertical(true) => {
+        self.visible_source(position.saturating_add(count).min(last))
+      }
+      Navigation::Vertical(false) => {
+        self.visible_source(position.saturating_sub(count))
+      }
+      Navigation::Edge(_) if input.explicit => {
+        self.visible_source(count.saturating_sub(1).min(last))
+      }
+      Navigation::Edge(false) => self.visible_source(0),
+      Navigation::Edge(true) => self.visible_source(last),
       Navigation::Scroll(_) | Navigation::Screen(_) | Navigation::Rows(_) => {
         let rows = navigation.rows(count, page);
         if matches!(self.kind, PanelKind::Version) && self.layout.is_some() {
           self.scroll_lines(rows, page);
           return true;
         }
-        self.selected.saturating_add_signed(rows)
+        self.visible_source(position.saturating_add_signed(rows).min(last))
       }
       Navigation::Heading(forward) => {
         self.heading(forward, count);
@@ -240,8 +284,7 @@ impl Panel {
         self.repeat(reverse, count);
         self.selected
       }
-    }
-    .min(last);
+    };
     self.height = u16::try_from(page).unwrap_or(u16::MAX);
     self.reveal();
     true
@@ -348,28 +391,54 @@ impl Panel {
   }
 
   fn line_count(&self) -> usize {
-    self.layout.as_ref().map_or(self.rows.len(), |help| help.lines.len())
+    self
+      .layout
+      .as_ref()
+      .map_or(self.projection.sources().len(), |help| help.lines.len())
   }
 
   fn line_source(&self, line: usize) -> usize {
-    self.layout.as_ref().map_or(line, |help| {
-      help.lines.get(line).map_or(self.rows.len(), |line| line.source)
-    })
+    self.layout.as_ref().map_or_else(
+      || self.projection.source(line).unwrap_or(self.rows.len()),
+      |help| help.lines.get(line).map_or(self.rows.len(), |line| line.source),
+    )
   }
 
   pub(super) fn line_start(&self, row: usize) -> usize {
-    self.layout.as_ref().map_or(row, |help| {
-      help.starts.get(row).copied().unwrap_or(help.lines.len())
+    self.layout.as_ref().map_or_else(
+      || self.projection.sources().partition_point(|&source| source < row),
+      |help| help.starts.get(row).copied().unwrap_or(help.lines.len()),
+    )
+  }
+
+  pub(super) fn is_visible(&self, source: usize) -> bool {
+    self.projection.position(source).is_some()
+  }
+
+  fn visible_position(&self) -> usize {
+    self.projection.position(self.selected).unwrap_or_else(|| {
+      self
+        .projection
+        .sources()
+        .partition_point(|&row| row < self.selected)
+        .saturating_sub(1)
     })
   }
 
+  fn visible_source(&self, position: usize) -> usize {
+    self.projection.source(position).unwrap_or(0)
+  }
+
   pub(super) fn reflow(&mut self, columns: usize) {
-    if matches!(self.kind, PanelKind::Version)
+    if matches!(self.kind, PanelKind::Version | PanelKind::Outline)
       && self.layout.as_ref().is_some_and(|layout| layout.columns == columns)
       || !matches!(
         self.kind,
-        PanelKind::Version | PanelKind::Links | PanelKind::Jumps
-      )
+        PanelKind::Version
+          | PanelKind::Links
+          | PanelKind::Jumps
+          | PanelKind::Outline
+      ) && self.projection.sources().len() == self.rows.len()
     {
       return;
     }
@@ -378,11 +447,15 @@ impl Panel {
     let selected = self.line_start(self.selected);
     let visible = usize::from(self.height.saturating_sub(2));
     let shown = (self.top..self.top + visible).contains(&selected);
-    self.layout = Some(match self.kind {
-      PanelKind::Links => Layout::links(&self.rows, columns, self.selected),
-      PanelKind::Jumps => Layout::jumps(&self.rows, columns, self.selected),
-      _ => Layout::help(&self.rows, columns),
-    });
+    self.layout = Some(
+      match self.kind {
+        PanelKind::Links => Layout::links(&self.rows, columns, self.selected),
+        PanelKind::Jumps => Layout::jumps(&self.rows, columns, self.selected),
+        PanelKind::Version => Layout::help(&self.rows, columns),
+        _ => Layout::plain(&self.rows, columns),
+      }
+      .project(&self.projection),
+    );
     let start = self.line_start(source);
     let length = self.line_start(source + 1).saturating_sub(start);
     self.top = start + offset.min(length.saturating_sub(1));

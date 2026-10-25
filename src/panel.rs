@@ -234,15 +234,19 @@ impl App {
     panel.view.set_note(self.panel_note(kind));
     panel.view.resize(self.screen.rows);
     if kind == PanelKind::Outline {
+      self.outline.sync(&self.doc.outline);
+      panel.view.project(self.outline.tree().project(|_| false));
       panel.view.select(self.reading_view().current_section().unwrap_or(0));
     }
     self.panel = Some(panel);
     self.relayout()
   }
 
-  /// Refills an open `kind` panel in place, keeping focus and the
-  /// selected row; a menu for a row that left closes.
+  /// Outline refills invalidate source identities.
   pub fn refill_panel(&mut self, kind: PanelKind) -> Result<()> {
+    if kind == PanelKind::Outline {
+      self.outline.replace(&self.doc.outline);
+    }
     if self.panel.as_ref().is_none_or(|panel| panel.view.kind() != kind) {
       return Ok(());
     }
@@ -250,6 +254,9 @@ impl App {
     let note = self.panel_note(kind);
     let Some(panel) = &mut self.panel else { return Ok(()) };
     let kept = panel.view.refill(rows, note);
+    if kind == PanelKind::Outline {
+      panel.view.project(self.outline.tree().project(|_| false));
+    }
     if !kept
       && kind != PanelKind::Info
       && self.overlays.menu().is_some_and(vpdf_ui::context::ContextMenu::is_row)

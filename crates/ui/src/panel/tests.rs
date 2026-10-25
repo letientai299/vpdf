@@ -172,7 +172,7 @@ fn refills_keep_the_selected_row() {
     (&["a"], (0, 0, false)),
   ];
   for (labels, want) in cases {
-    let mut panel = Panel::new(PanelKind::Outline, rows(&["a", "b", "c", "d"]));
+    let mut panel = Panel::new(PanelKind::Results, rows(&["a", "b", "c", "d"]));
     (panel.selected, panel.top) = (2, 1);
     let kept = panel.refill(rows(labels), "");
     assert_eq!((panel.selected, panel.top, kept), want, "{labels:?}");
