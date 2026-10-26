@@ -5,7 +5,6 @@ use crate::panel::layout::Layout;
 use crate::panel::search::RowSearch;
 use crate::pointer::{WHEEL_ROWS, Wheel};
 use crate::text::Position;
-use crate::theme::Color;
 use std::path::PathBuf;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use vpdf_model::document::{Annotation, Target};
@@ -136,6 +135,7 @@ mod projection_tests;
 mod wrap_tests;
 
 mod content;
+mod header;
 mod outline;
 pub use outline::Control;
 mod follow;

@@ -277,3 +277,27 @@ fn chevron_keeps_drawn_source() {
   outline.fold(&mut panel, Fold::Close, 1);
   assert!(outline.closed(0));
 }
+
+#[test]
+fn empty_contents_explains_state() {
+  let outline = Outline::default();
+  let mut panel = Panel::new(PanelKind::Outline, vec![]);
+  outline.project(&mut panel);
+  for (note, message) in [
+    ("loading", "Preparing contents…"),
+    ("", "No headings. Use page jumps or search."),
+  ] {
+    panel.set_note(note);
+    for width in [2, 8, 21, 40, 50] {
+      let scene = draw(&mut panel, width);
+      let rows = lines(&scene, width);
+      assert_eq!(
+        rows[&1],
+        vpdf_model::text::clean(message, usize::from(width - 1))
+      );
+      assert_eq!(panel.row_at(0, 1), None);
+    }
+  }
+  panel.scene_list(&mut Vec::new(), At::default(), 40, 1);
+  assert_eq!(panel.row_at(0, 1), None);
+}

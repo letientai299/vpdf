@@ -1,5 +1,5 @@
 use super::{
-  Action, Color, Destination, Input, Layout, MIN_WIDTH, Motion, MouseButton,
+  Action, Destination, Input, Layout, MIN_WIDTH, Motion, MouseButton,
   MouseEvent, MouseEventKind, Panel, PanelKind, Pointing, Row, RowSearch,
   Screen, Target, UnicodeWidthStr, WHEEL_ROWS, Wheel, key_width, moved_row,
   screen_step,
@@ -361,7 +361,9 @@ impl Panel {
     {
       return None;
     }
-    if self.layout.is_some() && row >= self.height.saturating_sub(1) {
+    if (self.layout.is_some() || self.outline.is_some())
+      && row >= self.height.saturating_sub(1)
+    {
       return None;
     }
     let line = self.top + usize::from(row) - 1;
@@ -563,24 +565,20 @@ impl Panel {
       return;
     }
     let header_room = inner.saturating_sub(2);
-    let title =
-      vpdf_model::text::clean(&format!(" {} ", self.kind.title()), header_room);
     let selection = if self.is_recent_view() {
       self.selection_count()
     } else {
       String::new()
     };
-    let count = format!(" {} {}{selection}", self.rows.len(), self.note);
-    let count = vpdf_model::text::clean(
-      &count,
-      header_room.saturating_sub(title.width()),
-    );
-    crate::paint::move_to(scene, at, 0u16, 0u16);
-    scene.push(Op::Style(Role::Badge(Color::Cyan)));
-    scene.text(&title);
-    scene.push(Op::Style(Role::Muted));
-    scene.text(&count);
-    scene.push(Op::Spaces(inner - title.width() - count.width()));
+    let context = format!(" {}{selection}", self.note);
+    super::header::Header {
+      title: self.kind.title(),
+      count: self.rows.len(),
+      context: &context,
+      role: Role::Muted,
+    }
+    .scene(scene, at, header_room);
+    scene.push(Op::Spaces(inner - header_room));
     scene.push(Op::Style(Role::Reset));
     self.reflow(inner);
     let keys = key_width(&self.rows, inner);

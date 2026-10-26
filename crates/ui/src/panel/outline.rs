@@ -163,20 +163,13 @@ impl Panel {
     let auto = if outline.auto { "●" } else { "○" };
     let controls = if width >= 22 { 9 + auto.width() } else { 0 };
     let header_room = inner.saturating_sub(controls.max(2));
-    let count_label = format!(" {}", self.rows.len());
-    let title_room = header_room.saturating_sub(count_label.width());
-    let title = clean(" CONTENTS ", title_room);
-    crate::paint::move_to(scene, at, 0u16, 0u16);
-    scene.push(Op::Style(Role::Badge(super::Color::Cyan)));
-    scene.text(&title);
-    scene.push(Op::Style(Role::Bar));
-    let count_label = clean(&count_label, header_room - title.width());
-    scene.text(&count_label);
-    let note_room =
-      header_room.saturating_sub(title.width() + count_label.width());
-    let note = clean(&format!(" {}", self.note), note_room);
-    scene.text(&note);
-    scene.push(Op::Spaces(note_room - note.width()));
+    super::header::Header {
+      title: self.kind.title(),
+      count: self.rows.len(),
+      context: &format!(" {}", self.note),
+      role: Role::Bar,
+    }
+    .scene(scene, at, header_room);
     if controls > 0 {
       scene.text(" ");
       for (offset, text, control) in [
@@ -216,13 +209,23 @@ impl Panel {
     height: u16,
   ) {
     let inner = usize::from(width.saturating_sub(1));
-    self.reflow(inner);
     let count = height.saturating_sub(2) as usize;
     self.top = self
       .top
       .min(self.projection.sources().len().saturating_sub(count.max(1)));
     let outline = self.outline.as_ref().expect("outline decoration");
     let mut targets = self.outline_header(scene, at, width);
+    if self.rows.is_empty() && count > 0 {
+      let message = if self.note == "loading" {
+        "Preparing contents…"
+      } else {
+        "No headings. Use page jumps or search."
+      };
+      crate::paint::move_to(scene, at, 1u16, 0u16);
+      scene.push(Op::Style(Role::Muted));
+      scene.text(&clean(message, inner));
+      scene.push(Op::Style(Role::Reset));
+    }
     for (line, &source) in
       self.projection.sources().iter().skip(self.top).take(count).enumerate()
     {

@@ -40,6 +40,13 @@ branches; `zM` collapses all. Closing a branch preserves nested folds.
 close other branches. Manual fold commands turn auto-expand off. The row
 and header menus also offer these commands.
 
+Click a branch chevron to fold it without following its destination. Click a
+row title to follow while keeping panel focus; double-click the same row to
+focus content. The header controls expand all, collapse all, and toggle
+auto-expand. Hover a control for its action and key; hover a clipped title
+for its full text. Narrow panels hide the header controls; keys and menus
+remain available.
+
 New documents start fully expanded with auto-expand off. Folds and auto-expand
 persist per document across restarts. New panes start from the latest saved
 choices and then browse independently. Changed outlines discard saved fold
