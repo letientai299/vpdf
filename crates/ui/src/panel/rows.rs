@@ -1,10 +1,22 @@
 use super::{Destination, Row, RowKind, Style, UnicodeWidthStr};
 use std::ops::Range;
+use std::sync::atomic::{AtomicBool, Ordering};
 use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
 use vpdf_model::text::{clipped, tail};
 
 impl Row {
+  /// The label after its caption key, as in `Fig 2 Overview`, for
+  /// copies and hover; other keys only locate the row.
+  pub fn full_label(&self) -> String {
+    let label = self.label.trim();
+    let caption = matches!(self.kind, RowKind::Figure | RowKind::Table);
+    if self.key.is_empty() || !caption {
+      return label.to_owned();
+    }
+    format!("{} {label}", self.key)
+  }
+
   pub fn follows(&self) -> bool {
     !matches!(self.destination, Destination::None)
   }
@@ -32,6 +44,27 @@ impl Row {
     };
     let label = line.strip_prefix("# ").unwrap_or(line).to_owned();
     Self { style, ..Self::new(label, String::new(), Destination::None) }
+  }
+}
+
+impl Row {
+  /// `# Section` headings over their lines; lines before the first
+  /// heading form a header block: a title, then muted facts.
+  pub fn sections(text: &str) -> Vec<Self> {
+    let mut sections = false;
+    let mut rows: Vec<Self> = Vec::new();
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+      let row = Self::parse(line);
+      sections |= row.style == Style::Heading;
+      rows.push(if sections {
+        Self { depth: usize::from(row.style != Style::Heading), ..row }
+      } else if rows.is_empty() {
+        Self { style: Style::Plain, ..row }
+      } else {
+        Self { style: Style::Muted, ..row }
+      });
+    }
+    rows
   }
 }
 
@@ -148,20 +181,32 @@ pub(super) fn accented(base: Option<Role>) -> bool {
   matches!(base, Some(Role::Reset | Role::Dim | Role::Hover | Role::HoverDim))
 }
 
+/// Row glyphs in ASCII, for fonts or terminals without the symbols.
+static ASCII: AtomicBool = AtomicBool::new(false);
+
+pub fn set_ascii_glyphs(ascii: bool) {
+  ASCII.store(ascii, Ordering::Relaxed);
+}
+
 impl RowKind {
   pub fn glyph(self) -> Option<(char, Role)> {
-    Some(match self {
+    self.glyph_in(ASCII.load(Ordering::Relaxed))
+  }
+
+  pub(super) fn glyph_in(self, ascii: bool) -> Option<(char, Role)> {
+    let (symbol, plain, role) = match self {
       Self::Plain => return None,
-      Self::Figure => ('▣', Role::Heading),
-      Self::Section => ('§', Role::Heading),
-      Self::Table => ('▤', Role::Mode),
-      Self::Mention => ('¶', Role::Muted),
-      Self::Search => ('⌕', Role::Key),
-      Self::Link => ('↗', Role::Mode),
-      Self::Note => ('✎', Role::Key),
-      Self::Underline => ('‗', Role::Argument),
-      Self::Highlight => ('▇', Role::Key),
-    })
+      Self::Figure => ('▣', 'F', Role::Heading),
+      Self::Section => ('§', '#', Role::Heading),
+      Self::Table => ('▤', 'T', Role::Mode),
+      Self::Mention => ('¶', '~', Role::Muted),
+      Self::Search => ('⌕', '/', Role::Key),
+      Self::Link => ('↗', '>', Role::Mode),
+      Self::Note => ('✎', '*', Role::Key),
+      Self::Underline => ('‗', '_', Role::Argument),
+      Self::Highlight => ('▇', '=', Role::Key),
+    };
+    Some((if ascii { plain } else { symbol }, role))
   }
 }
 

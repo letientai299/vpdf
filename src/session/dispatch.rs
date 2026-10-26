@@ -9,6 +9,7 @@ impl Session {
     let previous_warning = self.config_warning.take();
     self.config_warning = loaded.warning.clone();
     self.settings = loaded.settings;
+    vpdf_ui::panel::set_ascii_glyphs(self.settings.ascii_glyphs());
     for tab in &mut self.tabs {
       for app in &mut tab.panes {
         if previous_warning.as_ref() == Some(&app.reader.message) {
@@ -169,7 +170,12 @@ impl Session {
         );
         let mark = Mark::new(app.path.clone(), app.reading_position()?);
         self.state.set_mark(name, mark);
+        self.refill_marks();
         self.changed();
+        Ok(())
+      }
+      Some(Request::MarkSet) => {
+        self.refill_marks();
         Ok(())
       }
       Some(Request::GoMark(name, exact)) => {

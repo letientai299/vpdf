@@ -111,6 +111,9 @@ impl App {
     let current =
       on_page.find(figure).or_else(|| (0..after).rev().find(figure));
     panel.view.mark_current(current);
+    let label = self.doc.label(page);
+    let place = format!("{}/{}", Row::page(label), self.doc.pages.len());
+    panel.view.set_place(&place);
   }
 
   pub fn panel_rows(&mut self, kind: PanelKind) -> Result<Vec<Row>> {
@@ -139,14 +142,14 @@ impl App {
               figure,
               *page,
               index + 1,
-              self.doc.label(*page).to_owned(),
+              Row::page(self.doc.label(*page)),
             )
           })
           .collect(),
         _ => Vec::new(),
       },
       PanelKind::Annotations => {
-        let rows = self.sidebar_rows(kind).into_iter().filter_map(|row| {
+        let rows = self.annotation_rows().into_iter().filter_map(|row| {
           let Destination::Annotation { position, .. } = &row.destination
           else {
             return None;
@@ -156,14 +159,10 @@ impl App {
         Row::paged(rows, |page| self.doc.label(page).to_owned())
       }
       PanelKind::Jumps => self.jump_rows(),
-      PanelKind::Version => crate::version::text(matches!(
-        self.frontend,
-        crate::raster::Frontend::Terminal
-      ))
-      .lines()
-      .map(Row::parse)
-      .collect(),
-      PanelKind::Info => self.info().lines().map(Row::parse).collect(),
+      PanelKind::Version => Row::sections(&crate::version::panel_text(
+        matches!(self.frontend, crate::raster::Frontend::Terminal),
+      )),
+      PanelKind::Info => Row::sections(&self.info()),
       PanelKind::Text | PanelKind::Recent | PanelKind::Marks => Vec::new(),
     })
   }
@@ -172,11 +171,13 @@ impl App {
   pub fn info(&self) -> String {
     let metadata = self.doc.metadata();
     let bytes = std::fs::metadata(&self.path).map_or(0, |m| m.len());
+    let home = std::env::var_os("HOME").map(PathBuf::from);
     let page = self.navigation_position().page;
     vpdf_ui::panel::Info {
       document: vpdf_ui::panel::DocumentInfo {
         metadata: &metadata,
         path: self.document_identity(),
+        home: home.as_deref(),
         bytes,
         pages: self.doc.pages.len(),
         label: self.doc.label(page),
@@ -243,7 +244,9 @@ impl App {
       }
       return self.relayout();
     }
-    self.want_sidebar(kind);
+    if kind == PanelKind::Annotations {
+      self.want_annotations();
+    }
     if kind == PanelKind::Outline {
       self.want_outline();
     }
@@ -309,12 +312,17 @@ impl App {
       return Ok(());
     }
     let rows = self.panel_rows(kind)?;
+    // Info refills each frame; regrouping would undo a row search.
+    let same = |panel: &PanelSession| panel.view.rows() == rows.as_slice();
+    if kind == PanelKind::Info && self.panel.as_ref().is_some_and(same) {
+      return Ok(());
+    }
     self.refill_rows(kind, rows);
     Ok(())
   }
 
   /// Gives the open `kind` panel `rows`, keeping groups and selection.
-  fn refill_rows(&mut self, kind: PanelKind, rows: Vec<Row>) {
+  pub(crate) fn refill_rows(&mut self, kind: PanelKind, rows: Vec<Row>) {
     let note = self.panel_note(kind);
     let topic = self.panel_topic(kind).to_owned();
     let landed = self.landed(kind);
@@ -368,7 +376,7 @@ impl App {
   }
 
   pub(crate) fn panel_note(&self, kind: PanelKind) -> &'static str {
-    if self.sidebar_loading(kind)
+    if kind == PanelKind::Annotations && self.annotations_loading()
       || kind == PanelKind::Outline && self.outline_pending()
       || kind == PanelKind::Figures
         && matches!(self.figures, crate::jobs::Figures::Running(_))
@@ -444,11 +452,11 @@ impl App {
     Ok(())
   }
 
-  pub(crate) fn confirming_recent(&self) -> bool {
+  pub(crate) fn confirming_removal(&self) -> bool {
     self.panel.as_ref().is_some_and(|panel| panel.view.confirming())
   }
 
-  pub(crate) fn confirm_recent(&mut self, key: vpdf_model::input::KeyEvent) {
+  pub(crate) fn confirm_removal(&mut self, key: vpdf_model::input::KeyEvent) {
     if let Some(panel) = &mut self.panel {
       let event = panel.view.confirm_key(key);
       self.request_removal(event);

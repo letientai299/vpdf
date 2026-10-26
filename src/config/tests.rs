@@ -13,12 +13,23 @@ fn example_matches_defaults() {
   assert_eq!(
     Settings::example().unwrap(),
     concat!(
-      "[appearance]\ntheme = \"default\"\n\n",
+      "[appearance]\ntheme = \"default\"\nascii_glyphs = false\n\n",
       "[reading]\ncursorline = true\nzoom = 1.0\n",
       "inactive_brightness = 0.8\n\n",
       "[ocr]\nlanguage = \"eng\"\n\n[keybindings]\n"
     )
   );
+}
+
+#[test]
+fn ascii_glyphs_read_a_boolean() {
+  for (value, ascii, warned) in
+    [("true", true, false), ("false", false, false), ("'yes'", false, true)]
+  {
+    let loaded = decoded(&format!("[appearance]\nascii_glyphs = {value}"));
+    assert_eq!(loaded.settings.ascii_glyphs(), ascii, "{value}");
+    assert_eq!(loaded.warning.is_some(), warned, "{value}");
+  }
 }
 
 #[test]

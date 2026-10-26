@@ -141,12 +141,17 @@ impl Panel {
       }
       _ => {}
     }
+    let tree = self.kind == PanelKind::Outline;
     Some(match self.route(action) {
       Route::AutoExpand => "toggle automatic expansion",
-      Route::Fold(Fold::Close) => "close branch or select parent",
-      Route::Fold(Fold::Open) => "open branch or select child",
-      Route::Fold(Fold::ExpandAll) => "expand all branches",
-      Route::Fold(Fold::CollapseAll) => "collapse all branches",
+      Route::Fold(Fold::Close) if tree => "close branch or select parent",
+      Route::Fold(Fold::Open) if tree => "open branch or select child",
+      Route::Fold(Fold::ExpandAll) if tree => "expand all branches",
+      Route::Fold(Fold::CollapseAll) if tree => "collapse all branches",
+      Route::Fold(Fold::Close) => "close group or select heading",
+      Route::Fold(Fold::Open) => "open group or select first row",
+      Route::Fold(Fold::ExpandAll) => "expand all groups",
+      Route::Fold(Fold::CollapseAll) => "collapse all groups",
       Route::Toggle => "toggle recent checkbox",
       Route::Remove if self.kind == PanelKind::Marks => "remove mark",
       Route::Remove => "remove recent files",
@@ -184,7 +189,7 @@ impl Panel {
         Route::Remove
       }
       Action::Cancel
-        if self.is_recent_view() && !self.recent.checked.is_empty() =>
+        if self.is_recent_view() && !self.removal.checked.is_empty() =>
       {
         Route::Clear
       }
@@ -280,6 +285,19 @@ mod tests {
     assert_eq!(panel(PanelKind::Recent).shortcut(Action::Swap), None);
     assert_eq!(panel(PanelKind::Outline).shortcut(Action::Peek), None);
     assert_eq!(panel(PanelKind::Annotations).shortcut(Action::Peek), Some("K"));
+  }
+
+  #[test]
+  fn fold_help_names_branches_or_groups() {
+    let mut results = panel(PanelKind::Results);
+    results.group(&[]);
+    let close = Action::Fold(Fold::Close);
+    for (view, noun) in
+      [(panel(PanelKind::Outline), "branch"), (results, "group")]
+    {
+      let purpose = view.purpose(close).unwrap_or_default();
+      assert!(purpose.contains(noun), "{purpose}");
+    }
   }
 
   #[test]

@@ -22,8 +22,9 @@ fn middle(session: &mut Session, at: (u16, u16)) -> Result<()> {
 fn keys(session: &mut Session, keys: &str) -> Result<()> {
   press(session, keys.as_bytes())?;
   session.settle()?;
-  if let Some(kind) = session.app().panel.as_ref().map(|p| p.view.kind()) {
-    crate::common::sidebar_loaded(session.app(), kind)?;
+  let kind = session.app().panel.as_ref().map(|p| p.view.kind());
+  if kind == Some(vpdf_ui::keys::PanelKind::Annotations) {
+    crate::common::annotations_loaded(session.app())?;
   }
   Ok(())
 }

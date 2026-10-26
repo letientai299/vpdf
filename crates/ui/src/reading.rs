@@ -73,12 +73,14 @@ pub fn navigation(
 }
 
 impl<S: TextSource + Pages> View<'_, S> {
-  fn text(&mut self) -> text_view::Pane<'_, &mut S> {
+  fn text_frame(&self) -> text_view::Frame {
     let frame = self.frame.pane;
-    self.text.bind(
-      &mut self.source,
-      text_view::Frame { screen: frame.screen, at: frame.at, left: frame.left },
-    )
+    text_view::Frame::new(frame.screen, frame.at, frame.left)
+  }
+
+  fn text(&mut self) -> text_view::Pane<'_, &mut S> {
+    let frame = self.text_frame();
+    self.text.bind(&mut self.source, frame)
   }
 
   fn page(&mut self) -> Viewport<'_, &mut S> {

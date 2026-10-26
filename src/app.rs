@@ -47,6 +47,8 @@ pub enum Request {
   /// A panel whose rows the session builds.
   Panel(PanelKind),
   SetMark(char),
+  /// A local mark was set; open Marks panels refill.
+  MarkSet,
   /// A pane command with its count; `file` opens in a new split.
   Window {
     command: Window,
@@ -173,7 +175,7 @@ impl App {
       || self.crop_scan.active()
       || matches!(self.outline_load, crate::jobs::Loading::Running(_))
       || matches!(self.figures, crate::jobs::Figures::Running(_))
-      || self.sidebar_loading(PanelKind::Annotations)
+      || self.annotations_loading()
       || self.ocr.is_some()
   }
 
@@ -443,19 +445,18 @@ impl App {
         PanelKind::Recent | PanelKind::Marks => true,
         PanelKind::Results => rerun.is_some(),
         PanelKind::Outline => self.outline_pending(),
-        PanelKind::Annotations => self.sidebar_loading(kind),
+        PanelKind::Annotations => self.annotations_loading(),
         PanelKind::Figures => {
           matches!(self.figures, crate::jobs::Figures::Running(_))
         }
         _ => false,
       };
-      let note = self.panel_note(kind);
       if kind == PanelKind::Outline {
         self.refill_panel(kind)?;
-      } else if let Some(panel) = self.panel.as_mut().filter(|panel| {
+      } else if self.panel.as_ref().is_some_and(|panel| {
         !rows.is_empty() || !refills && panel.view.explains_empty()
       }) {
-        panel.view.refill(rows, note);
+        self.refill_rows(kind, rows);
       } else if !refills {
         self.panel = None;
       }

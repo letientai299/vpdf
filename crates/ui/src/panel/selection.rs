@@ -74,16 +74,16 @@ const BUTTONS: [(&str, bool); 2] =
 
 impl Panel {
   pub fn confirming(&self) -> bool {
-    self.recent.confirmation.is_some()
+    self.removal.confirmation.is_some()
   }
 
-  pub fn leave_recent(&mut self) {
-    self.recent = Selection::default();
+  pub fn leave_removal(&mut self) {
+    self.removal = Selection::default();
   }
 
   pub fn clear_checked(&mut self) -> bool {
-    let changed = !self.recent.checked.is_empty();
-    self.recent.checked.clear();
+    let changed = !self.removal.checked.is_empty();
+    self.removal.checked.clear();
     changed
   }
 
@@ -93,8 +93,8 @@ impl Panel {
     else {
       return;
     };
-    if !self.recent.checked.remove(path) {
-      self.recent.checked.insert(path.clone());
+    if !self.removal.checked.remove(path) {
+      self.removal.checked.insert(path.clone());
     }
   }
 
@@ -105,22 +105,22 @@ impl Panel {
       let file = matches!(row.destination, Destination::Mark(_))
         .then(|| row.label.clone());
       let removal = Removal::Mark { name, file };
-      self.recent.confirmation =
+      self.removal.confirmation =
         Some(Confirmation { removal, buttons: Vec::new() });
       return;
     }
-    let targets = if self.recent.checked.is_empty() {
+    let targets = if self.removal.checked.is_empty() {
       match self.rows.get(self.selected).map(|row| &row.destination) {
         Some(Destination::File(path)) => vec![path.clone()],
         _ => return,
       }
     } else {
-      self.recent.checked.iter().cloned().collect()
+      self.removal.checked.iter().cloned().collect()
     };
     let mut targets = targets.into_iter();
     let Some(first) = targets.next() else { return };
     let removal = Removal::Files { first, rest: targets.collect() };
-    self.recent.confirmation =
+    self.removal.confirmation =
       Some(Confirmation { removal, buttons: Vec::new() });
   }
 
@@ -149,7 +149,7 @@ impl Panel {
     if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
       return Event::Stay;
     }
-    let Some(confirmation) = &self.recent.confirmation else {
+    let Some(confirmation) = &self.removal.confirmation else {
       return Event::Stay;
     };
     let pressed = confirmation.buttons.iter().find_map(|(rect, yes)| {
@@ -159,7 +159,7 @@ impl Panel {
   }
 
   fn answer(&mut self, yes: bool) -> Event {
-    match self.recent.confirmation.take() {
+    match self.removal.confirmation.take() {
       Some(confirmation) if yes => confirmation.removal.event(),
       _ => Event::Stay,
     }
@@ -173,7 +173,7 @@ impl Panel {
     width: u16,
     height: u16,
   ) {
-    let Some(confirmation) = &mut self.recent.confirmation else { return };
+    let Some(confirmation) = &mut self.removal.confirmation else { return };
     let (question, detail) = confirmation.removal.text();
     confirmation.buttons.clear();
     // Too small for buttons: the question names its keys.
@@ -219,13 +219,13 @@ impl Panel {
   }
 
   pub(super) fn selection_count(&self) -> String {
-    let count = self.recent.checked.len();
+    let count = self.removal.checked.len();
     let shown = self
       .rows
       .iter()
       .filter(|row| {
         matches!(&row.destination, Destination::File(path)
-        if self.recent.checked.contains(path))
+        if self.removal.checked.contains(path))
       })
       .count();
     if count > shown {

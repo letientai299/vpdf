@@ -198,7 +198,7 @@ impl Home {
       Id::Version => {
         self.view.show_info(
           vpdf_ui::keys::PanelKind::Version,
-          &crate::version::text(terminal),
+          &crate::version::panel_text(terminal),
         );
         Ok(Outcome::Stay)
       }

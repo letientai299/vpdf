@@ -36,9 +36,12 @@ lookup finds no destination.
 
 ## Notes and highlights
 
-`ga`, or `:annotations`, lists highlights and notes throughout the document.
-Select a row with `j` or `k`. Enter goes to its position. `K` shows the full
-comment; Escape closes the comment. `yy` copies the selected row's text.
+`ga`, or `:annotations`, lists highlights and notes throughout the document,
+grouped under a heading per page. A glyph in the annotation's color names its
+kind. Select a row with `j` or `k`; the selected row shows its note on a dim
+line below. Enter goes to its position. `K` shows the full comment; Escape
+closes the comment. `yy` copies the selected row's text. A PDF without
+annotations shows a short message instead of rows.
 Try the practice note in [Practice text][sample]. Its comment reads
 `Notes explain passages without changing your source PDF.`
 

@@ -440,6 +440,7 @@ fn horizontal_keys_preserve_queued_scroll() -> Result<()> {
 fn text_offsets_clamp_after_rows_pages_and_resize() -> Result<()> {
   let mut app = app("paper.pdf", true)?;
   app.screen.columns = 12;
+  // Too short for the header: one text row above the status line.
   app.screen.rows = 2;
   app.relayout()?;
   let text = app.doc.text(PageId(0))?;

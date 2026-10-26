@@ -29,8 +29,7 @@ pub fn canvas() -> Result<()> {
     hovered: &[],
   };
   let mut state = TextView::default();
-  let mut pane =
-    state.bind(&prepared, Frame { screen, at: At::default(), left: 0 });
+  let mut pane = state.bind(&prepared, Frame::new(screen, At::default(), 0));
   let mut out = Vec::new();
   presentation::try_draw(&mut out, None, |scene| pane.scene(scene, &paint))?;
   println!("text output {}", super::hash::digest(&out));

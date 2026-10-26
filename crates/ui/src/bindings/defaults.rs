@@ -206,9 +206,15 @@ fn reader_defaults(context: Context, entries: &mut Vec<(Sequence, Target)>) {
   if context == C::Normal {
     add(entries, "i", Target::Reader(Action::Cursor));
   }
-  // Recent and Marks remove rows; other panels ignore it.
+  // Recent and Marks remove rows with Recent's key; other panels
+  // ignore it.
   if context == C::Panel {
-    add(entries, "x", Target::Reader(Action::RecentRemove));
+    let remove = keys::RECENT_BINDINGS
+      .iter()
+      .filter(|(_, action, _)| *action == Action::RecentRemove);
+    for &(key, action, _) in remove {
+      add(entries, &keys::notation(key), Target::Reader(action));
+    }
   }
   if matches!(context, C::Visual | C::Operator) {
     add(entries, "i", Target::Control(Control::Object { around: false }));

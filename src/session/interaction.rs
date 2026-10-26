@@ -9,19 +9,19 @@ pub(super) enum Interaction {
 }
 
 impl Session {
-  pub(super) fn confirming_recent(&self) -> bool {
+  pub(super) fn confirming_removal(&self) -> bool {
     self.home.as_ref().is_some_and(|home| home.view.confirming())
       || self
         .tabs
         .get(self.active)
         .and_then(|tab| tab.panes.get(tab.focus))
-        .is_some_and(App::confirming_recent)
+        .is_some_and(App::confirming_removal)
   }
 
   pub(super) fn interact(&mut self, input: Interaction) -> Result<bool> {
-    if !self.tabs.is_empty() && self.app().confirming_recent() {
+    if !self.tabs.is_empty() && self.app().confirming_removal() {
       match input {
-        Interaction::Key(key) => self.app().confirm_recent(key),
+        Interaction::Key(key) => self.app().confirm_removal(key),
         Interaction::Mouse(report) => {
           if let Some(mouse) = self.screen_mouse(report) {
             self.app().confirm_click(mouse);

@@ -72,7 +72,7 @@ fn only_the_selected_row_shows_its_note() {
     assert_eq!(got, want, "{selected}");
     if selected == 1 {
       // Gutter, chevron, indent and glyph come first.
-      assert!(shown[&3].starts_with("       first note"), "{:?}", shown[&3]);
+      assert!(shown[&3].starts_with("       ✎ first note"), "{:?}", shown[&3]);
     }
     let below = shown
       .get(&(2 + want.len()))
@@ -89,6 +89,9 @@ fn bare_annotations_name_their_kind() {
   assert_eq!((ink.label.as_str(), ink.style), ("Ink", Style::Muted));
   let noted = crate::annotations::row(&text, page, note("Ink", "loop", None));
   assert_eq!((noted.label.as_str(), noted.style), ("loop", Style::Plain));
+  // The painted line stays muted.
+  let layout = Layout::annotations(&[ink], 40, 1);
+  assert_eq!(layout.lines[0].row.style, Style::Muted);
 }
 
 fn noted_rows(pages: &[usize]) -> Vec<Row> {
@@ -137,4 +140,30 @@ fn new_selections_keep_their_line() {
   panel.choose(7);
   panel.scene_list(&mut Vec::new(), At::default(), 40, 8);
   assert_eq!(panel.screen_line(7), line);
+}
+
+/// Wrapped lines start under the title at any width.
+#[test]
+fn wrapped_lines_align_with_the_title() {
+  let label = "alpha bravo charlie delta echo foxtrot golf hotel";
+  let rows =
+    [(crate::text::PageId(0), row(label, note("Highlight", "", None)))];
+  let rows = Row::paged(rows, |page| (page.0 + 1).to_string());
+  for width in 8..=40u16 {
+    let mut panel = Panel::new(PanelKind::Annotations, rows.clone());
+    panel.group(&[]);
+    panel.choose(1);
+    let mut scene = Vec::new();
+    panel.scene_list(&mut scene, At::default(), width, 12);
+    let shown = lines(&scene, width);
+    let column =
+      |line: &str| line.chars().position(|ch| ch.is_ascii_alphabetic());
+    let Some((&first, title)) =
+      shown.iter().find(|(_, line)| line.contains("al"))
+    else {
+      continue;
+    };
+    let title = column(title);
+    assert_eq!(column(&shown[&(first + 1)]), title, "{width}: {shown:?}");
+  }
 }

@@ -79,11 +79,8 @@ impl App {
         position.line = self.doc.text(position.page)?.lines.len();
         position.glyph = 0;
       }
-      let frame = vpdf_ui::text_view::Frame {
-        screen: self.screen,
-        at: self.at,
-        left: self.left,
-      };
+      let frame =
+        vpdf_ui::text_view::Frame::new(self.screen, self.at, self.left);
       self
         .text_view
         .bind(crate::pdf_text::PdfText(&mut self.doc), frame)

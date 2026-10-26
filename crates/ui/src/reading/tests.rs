@@ -181,6 +181,19 @@ fn text_uses_full_pane_height() -> Result<()> {
 }
 
 #[test]
+fn text_follow_keeps_the_cursor_row() -> Result<()> {
+  let mut fixture = Fixture::new();
+  fixture.frame.pane.text = true;
+  fixture.reader.enter_cursor();
+  fixture.reader.cursor = Position { line: 3, ..Position::default() };
+  let follow = ScrollInput::Keyboard { follow: true };
+  fixture.view().scroll(10.0, follow)?;
+  assert_eq!(fixture.text.top().line, 1);
+  assert_eq!(fixture.reader.cursor.line, 4);
+  Ok(())
+}
+
+#[test]
 fn reveal_cancels_before_source_failure() {
   for text in [false, true] {
     for operation in ["reveal", "land", "align"] {
@@ -1158,17 +1171,19 @@ fn text_hits_follow_frames() -> Result<()> {
     paint::Marks { cursorline: false, ..crate::testing::page::marks(&reader) };
   fixture.view().text().scene(&mut Vec::new(), &marks)?;
   fixture.view().text().scroll(2)?;
+  // Row 0 is the header; text starts on row 1.
+  assert_eq!(fixture.view().hit(HitFrame::Drawn, 0, 0, None)?, Hit::Nothing);
   for (frame, index) in
     [(HitFrame::Drawn, 0), (HitFrame::Pending, 1), (HitFrame::Drawn, 0)]
   {
     assert_eq!(
-      fixture.view().hit(frame, 0, 0, None)?,
+      fixture.view().hit(frame, 0, 1, None)?,
       Hit::Link(PageId(0), index)
     );
   }
   fixture.view().text().scene(&mut Vec::new(), &marks)?;
   assert_eq!(
-    fixture.view().hit(HitFrame::Drawn, 0, 0, None)?,
+    fixture.view().hit(HitFrame::Drawn, 0, 1, None)?,
     Hit::Link(PageId(0), 1)
   );
   Ok(())

@@ -269,3 +269,55 @@ fn version_has_no_current_line() {
     }
   }
 }
+
+#[test]
+fn sections_group_under_headings_with_default_folds() {
+  let text = [
+    "paper.pdf",
+    "/tmp/docs",
+    "2 pages · 1.0 MiB",
+    "# Document",
+    "Pages: 2",
+    "# Render",
+    "Cell: 8x16 px",
+    "# Terminal",
+    "Mouse: on",
+  ]
+  .join("\n");
+  let rows = Row::sections(&text);
+  let shape: Vec<_> = rows.iter().map(|row| (row.depth, row.style)).collect();
+  assert_eq!(
+    shape,
+    [
+      (0, Style::Plain),
+      (0, Style::Muted),
+      (0, Style::Muted),
+      (0, Style::Heading),
+      (1, Style::Key),
+      (0, Style::Heading),
+      (1, Style::Key),
+      (0, Style::Heading),
+      (1, Style::Key),
+    ]
+  );
+  let mut panel = Panel::new(PanelKind::Info, Vec::new());
+  panel.regroup(rows, "", "", None);
+  // Render and Terminal start folded; the first value is selected.
+  let closed: Vec<_> = (0..panel.rows().len())
+    .filter(|&source| panel.branch_closed(source) == Some(true))
+    .collect();
+  assert_eq!(closed, [5, 7]);
+  assert_eq!(panel.selected(), 4);
+  assert_eq!(Panel::width(PanelKind::Info, 200, None), 50);
+  assert_eq!(Panel::width(PanelKind::Version, 200, None), 64);
+}
+
+#[test]
+fn folded_groups_start_with_a_shown_item() {
+  let text = "vpdf 1\nA reader\n# Build\nsource abc\nhelp def";
+  let panel = Panel::grouped(PanelKind::Version, Row::sections(text), 20);
+  assert_eq!(panel.branch_closed(2), Some(true));
+  // Nothing under Build shows, so the heading holds the selection.
+  assert_eq!(panel.selected(), 2);
+  assert_eq!(panel.row_roles(2).0, Role::Selected);
+}

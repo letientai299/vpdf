@@ -125,25 +125,20 @@ fn at(line: usize, glyph: usize) -> Position {
 fn fallback_context() -> Result<()> {
   let (_dir, mut app) = text_app(&["Opening", "na\\357ve words,"])?;
   app.doc.pages[0].label = "iv".to_owned().into();
-  for (glyph, word) in
-    [(0, "“naïve”"), (5, "whitespace"), (6, "“words”"), (11, "“,”")]
-  {
+  for glyph in [0, 5, 11] {
     app.go_to(at(1, glyph), true)?;
     app.reader.clear_history();
     app.go_to(at(0, 0), true)?;
     let rows = past(&mut app)?;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].label, "naïve words,");
-    assert_eq!(
-      rows[0].detail,
-      format!("p. iv (#1) · L2 C{} · word {word}", glyph + 1)
-    );
+    assert_eq!(rows[0].detail, format!("piv L2 C{}", glyph + 1));
   }
   let (_dir, mut app) = text_app(&[""])?;
   app.reader.seed_reader(Reader::remember);
   let rows = past(&mut app)?;
   assert_eq!(rows[0].label, "No text");
-  assert_eq!(rows[0].detail, "p. 1 · L1 C1 · word —");
+  assert_eq!(rows[0].detail, "p1 L1 C1");
   Ok(())
 }
 
@@ -264,7 +259,8 @@ const PAGE: [&str; 7] = [
 ];
 
 fn landing_app(text_mode: bool) -> Result<(tempfile::TempDir, Solo)> {
-  let (columns, rows) = if text_mode { (10, 5) } else { (40, 6) };
+  // Text keeps four rows under its header.
+  let (columns, rows) = if text_mode { (10, 6) } else { (40, 6) };
   let (dir, mut app) = crate::common::temp_solo(
     |path| super::common::pages_pdf(path, &[&PAGE, &PAGE]),
     text_mode,
@@ -279,26 +275,26 @@ fn on(page: usize, line: usize, glyph: usize) -> Position {
   Position { page: PageId(page), line, glyph }
 }
 
-/// Scroll and every line start's cell.
-type View = (f32, Vec<Option<(u16, u16)>>);
+/// Scroll and every line's text view row.
+type View = (f32, Vec<Option<usize>>);
 
 fn view(app: &mut App) -> Result<View> {
-  let mut cells = Vec::new();
+  let mut rows = Vec::new();
   for page in 0..app.doc.pages.len() {
     let lines = app.doc.text(PageId(page))?.lines.len();
     for line in 0..lines {
-      cells.push(app.text().cell(on(page, line, 0))?);
+      rows.push(app.text().row(on(page, line, 0))?);
     }
   }
-  Ok((app.reader.scroll, cells))
+  Ok((app.reader.scroll, rows))
 }
 
 /// Cursor glyph's top and bottom in rows.
 fn cursor_rows(app: &mut App) -> Result<(f32, f32)> {
   let cursor = app.reader.cursor;
   if app.text_mode {
-    let cell = app.text().cell(cursor)?.expect("cursor shows");
-    let row = f32::from(cell.1);
+    // View rows, below the header.
+    let row = app.text().row(cursor)?.expect("cursor shows") as f32;
     return Ok((row, row + 1.0));
   }
   let text = app.doc.text(cursor.page)?;
@@ -434,7 +430,7 @@ fn jumps_land_near_the_top() -> Result<()> {
       Lands::Stays => {
         assert_eq!(app.reader.scroll, before.0, "{case}");
         if text_mode {
-          let row = before.1[at.line].map(|(_, row)| f32::from(row));
+          let row = before.1[at.line].map(|row| row as f32);
           assert_eq!(Some(top), row, "{case}");
         }
       }

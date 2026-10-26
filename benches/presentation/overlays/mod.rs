@@ -76,6 +76,7 @@ fn run(case: Prepared) -> Result<()> {
   let frame = Frame {
     screen,
     left: case.left,
+    header: 0,
     at: At { column: case.at.0, row: case.at.1 },
   };
   let mut pane = state.bind(&prepared, frame);

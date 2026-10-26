@@ -67,7 +67,7 @@ pub enum RowKind {
   Highlight,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Row {
   pub label: String,
   /// The page, right-aligned; Jumps keeps its position here.
@@ -101,6 +101,10 @@ pub struct Panel {
   note: &'static str,
   /// What the rows answer, such as the search query.
   topic: String,
+  /// The topic changed since rows were last grouped.
+  new_topic: bool,
+  /// Where the reader is, such as `p3/15`.
+  place: String,
   /// The row at the reading position.
   current: Option<usize>,
   /// Columns the last frame drew; presses beyond them miss the rows.
@@ -110,7 +114,8 @@ pub struct Panel {
   follow_pending: bool,
   /// Cards for recent documents; a reader pane shows them over its page.
   shelf: Option<Shelf>,
-  recent: selection::Selection,
+  /// Checked Recent rows and a pending Recent or Marks removal.
+  removal: selection::Selection,
   picker: crate::home::Picker,
   /// What the pointer rests on.
   pointing: Pointing,
@@ -158,9 +163,11 @@ impl Pointing {
   }
 }
 
-pub use info::{DocumentInfo, Info, document_lines, metadata_lines};
+pub use info::{
+  BUILD, DocumentInfo, Info, RENDER, TERMINAL, document_lines, metadata_lines,
+};
 pub use jumps::key as jump_key;
-pub use rows::key_width;
+pub use rows::{key_width, set_ascii_glyphs};
 mod info;
 
 #[cfg(test)]

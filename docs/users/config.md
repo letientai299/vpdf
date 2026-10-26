@@ -301,6 +301,15 @@ document fonts stay unchanged. Theme changes preserve cached PDF tiles. [Theme
 notices][theme-notices] retain palette attribution and licenses. [Palette
 provenance][palettes] records the imported source revisions.
 
+Side panels mark rows with symbols such as `▣` for a figure and `§` for a
+section. When the font lacks them or the terminal draws them at the wrong
+width, use ASCII letters instead:
+
+```toml
+[appearance]
+ascii_glyphs = true
+```
+
 ## Reload configuration
 
 `:config reload` rereads the original selected source. Each running process

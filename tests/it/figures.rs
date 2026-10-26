@@ -248,7 +248,7 @@ fn figure_rows(
           y: figure.bounds.y0,
         })
     );
-    assert_eq!(row.detail, app.doc.label(*page));
+    assert_eq!(row.detail, vpdf_ui::panel::Row::page(app.doc.label(*page)));
     let caption = figure.caption.split_whitespace().collect::<Vec<_>>();
     let caption = caption.join(" ");
     match vpdf_model::caption::parse(&caption) {

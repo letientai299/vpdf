@@ -3,7 +3,9 @@
 <!-- help-topic:troubleshooting -->
 
 Start with `:info` in the affected pane. It reports the document, reader, and
-terminal context. `:version` reports the build and bundled help identity.
+terminal context; Render and Terminal start folded, so press `l` on either
+heading or `zR` to open them. `:version` reports the build and bundled help
+identity under a Build heading, folded in a document pane.
 Record the exact message, command, frontend, and PDF when reporting a failure.
 Avoid sharing a private PDF or its extracted text in a public report.
 

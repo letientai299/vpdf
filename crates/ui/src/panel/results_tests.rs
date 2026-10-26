@@ -120,14 +120,37 @@ fn rows_paint_the_query_and_match() {
 
 #[test]
 fn refills_keep_folds_for_the_same_topic() {
-  // (topic after the refill, p3 stays closed)
-  for (topic, closed) in [("attention", true), ("model", false)] {
+  // (topic after the refill, p3 stays closed, selected)
+  for (topic, closed, selected) in [("attention", true, 3), ("model", false, 1)]
+  {
     let mut panel = results("attention");
     panel.choose(3);
     assert!(panel.fold(crate::keys::Fold::Close, 1));
     let rows = results(topic).rows().to_vec();
+    // A new search names its topic before its hits arrive.
+    panel.set_topic(topic);
     panel.regroup(rows, "", topic, None);
     assert_eq!(panel.branch_closed(3), Some(closed), "{topic}");
     assert_eq!(panel.branch_closed(0), Some(false), "{topic}");
+    assert_eq!(panel.selected(), selected, "{topic}");
+  }
+}
+
+#[test]
+fn headers_name_the_selected_hit_and_place() {
+  // (selected, place, header)
+  let cases = [
+    (1, "", " RESULTS  3 “attention”  1/3 "),
+    (4, "p3/9", " RESULTS  3 “attention”  3/3  p3/9 "),
+    (3, "", " RESULTS  3 “attention” "),
+  ];
+  for (selected, place, header) in cases {
+    let mut panel = results("attention");
+    panel.choose(selected);
+    panel.set_place(place);
+    let mut scene = Vec::new();
+    panel.scene_list(&mut scene, At::default(), 48, 4);
+    let shown = &lines(&scene, 48)[&0];
+    assert!(shown.starts_with(header), "{selected}: {shown:?}");
   }
 }

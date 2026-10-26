@@ -66,7 +66,8 @@ fn hints_project_visible_boxes() -> Result<()> {
     let hints = fixture.view().hints(true)?;
     assert_eq!(hints.items().len(), 1);
     let hint = &hints.items()[0];
-    assert_eq!(hint.cell, if text { (3, 2) } else { (4, 5) });
+    // Text rows start under the header row.
+    assert_eq!(hint.cell, if text { (3, 3) } else { (4, 5) });
     assert_eq!(hint.column, 3);
     assert_eq!(hint.target, target);
     assert_eq!(hints.into_target(0), Some((target, true)));
@@ -160,7 +161,8 @@ fn positions_ignore_screen_origin() -> Result<()> {
   fixture.frame.pane.text = true;
   let position = Position { line: 1, ..Position::default() };
   let rect = fixture.view().position_rect(position)?.unwrap();
-  assert_eq!(rect, Bounds { x0: 0.0, y0: 10.0, x1: 10.0, y1: 20.0 });
+  // Line 1 draws on pane row 2, under the header.
+  assert_eq!(rect, Bounds { x0: 0.0, y0: 20.0, x1: 10.0, y1: 30.0 });
   fixture.frame.pane.text = false;
   fixture.reader.scroll = 5.0;
   let rect = fixture.view().position_rect(position)?.unwrap();

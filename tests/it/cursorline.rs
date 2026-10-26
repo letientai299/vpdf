@@ -176,9 +176,10 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
   let frame = String::from_utf8(out)?;
   let fill = format!("{}{}", BAND, " ".repeat(16));
   assert_eq!(frame.matches(&fill).count(), 1);
+  // The first text row sits under the header.
   assert!(frame.starts_with(&format!(
     "{}{}",
-    vpdf_terminal::terminal::goto(app.at, 0_usize, app.left),
+    vpdf_terminal::terminal::goto(app.at, 1_usize, app.left),
     fill
   )));
   for style in [SELECTION, CURSOR, SEARCH] {
@@ -197,9 +198,10 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
   out = Vec::new();
   try_draw(&mut out, None, |s| app.scene_text(s))?;
   let frame = String::from_utf8(out)?;
+  // The second text row, under the header.
   assert!(frame.contains(&format!(
     "{}{}",
-    vpdf_terminal::terminal::goto(app.at, 1_usize, app.left),
+    vpdf_terminal::terminal::goto(app.at, 2_usize, app.left),
     fill
   )));
   app.reader.end_selection();

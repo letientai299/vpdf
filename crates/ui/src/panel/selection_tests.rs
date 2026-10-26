@@ -64,21 +64,21 @@ fn checkboxes_preserve_cursor_and_preview() {
   for count in [1, 0, 1] {
     assert_eq!(action(&mut panel, Action::RecentToggle), Event::Stay);
     assert_eq!(panel.selected(), 0);
-    assert_eq!(panel.recent.checked.len(), count);
+    assert_eq!(panel.removal.checked.len(), count);
   }
   action(&mut panel, Action::Motion(Motion::Down));
   assert_eq!(panel.selected(), 1);
-  assert_eq!(panel.recent.checked.len(), 1);
+  assert_eq!(panel.removal.checked.len(), 1);
   assert_eq!(action(&mut panel, Action::Follow), Event::Follow { focus: true });
   assert_eq!(
     panel.follow(&crate::find::Search::default()),
     Some(Follow::File("/missing/b.pdf".into()))
   );
   assert_eq!(action(&mut panel, Action::Cancel), Event::Stay);
-  assert!(panel.recent.checked.is_empty());
+  assert!(panel.removal.checked.is_empty());
   action(&mut panel, Action::RecentToggle);
   panel.focus(false);
-  assert!(panel.recent.checked.is_empty());
+  assert!(panel.removal.checked.is_empty());
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn confirmation_defaults_yes_and_cancels() {
     assert!(!panel.confirming());
     assert_eq!(panel.rows().len(), 2);
     assert_eq!(panel.selected(), 0);
-    assert_eq!(panel.recent.checked.len(), 1);
+    assert_eq!(panel.removal.checked.len(), 1);
   }
   for confirm in [KeyCode::Enter, KeyCode::Char('y')] {
     let mut panel = panel();
@@ -134,7 +134,7 @@ fn batch_targets_survive_filter_and_refresh() {
     panel.confirm_key(key(KeyCode::Enter)),
     Event::Forget(vec!["/missing/a.pdf".into(), "/missing/b.pdf".into()])
   );
-  assert!(panel.recent.checked.is_empty());
+  assert!(panel.removal.checked.is_empty());
 }
 
 #[test]
@@ -146,11 +146,11 @@ fn refresh_preserves_path_identity() {
   panel.refresh_recent(rows(&entries), &entries);
   assert_eq!(panel.selected(), 0);
   assert_eq!(
-    panel.recent.checked.iter().collect::<Vec<_>>(),
+    panel.removal.checked.iter().collect::<Vec<_>>(),
     vec![&PathBuf::from("/missing/b.pdf")]
   );
   panel.refresh_recent(rows(&entries[1..]), &entries[1..]);
-  assert!(panel.recent.checked.is_empty());
+  assert!(panel.removal.checked.is_empty());
   assert_eq!(panel.selected(), 0);
   panel.refresh_recent(Vec::new(), &[]);
   assert!(text(&mut panel).contains("A PDF reader with Vim keys."));
@@ -163,7 +163,7 @@ fn headings_and_welcome_cannot_select() {
     let mut panel = Panel::recent(rows, &[]);
     action(&mut panel, Action::RecentToggle);
     action(&mut panel, Action::RecentRemove);
-    assert!(panel.recent.checked.is_empty());
+    assert!(panel.removal.checked.is_empty());
     assert!(!panel.confirming());
   }
 }
@@ -240,7 +240,7 @@ fn confirm_buttons_answer_clicks() {
 
 fn marks() -> Panel {
   let position = Position::default();
-  let local = vec![Row::local_mark('a', position, None)];
+  let local = vec![Row::local_mark('a', position, None, "1")];
   let global =
     vec![Row::global_mark('A', position, std::path::Path::new("/x/doc.pdf"))];
   let mut panel = Panel::new(PanelKind::Marks, Row::marks(local, global));
@@ -320,4 +320,17 @@ fn small_confirm_bars_name_their_keys() {
       "{width}x{height}"
     );
   }
+}
+
+#[test]
+fn marks_headers_hint_the_jump() {
+  let position = Position::default();
+  let local = vec![Row::local_mark('a', position, None, "1")];
+  let mut panel = Panel::new(PanelKind::Marks, Row::marks(local, Vec::new()));
+  panel.group(&[]);
+  panel.choose(1);
+  let mut scene = Vec::new();
+  panel.scene_list(&mut scene, At::default(), 40, 4);
+  let header = &crate::testing::lines(&scene, 40)[&0];
+  assert!(header.starts_with(" MARKS  1  ’a jump"), "{header:?}");
 }

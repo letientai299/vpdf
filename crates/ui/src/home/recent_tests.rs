@@ -94,3 +94,13 @@ fn home_confirm_buttons_answer_clicks() -> Result<()> {
   }
   Ok(())
 }
+
+/// Home shows the build lines; it has no fold keys.
+#[test]
+fn home_version_shows_every_group() {
+  let mut home = home(Picker::Native);
+  home
+    .show_info(crate::keys::PanelKind::Version, "vpdf 1\n# Build\nsource abc");
+  let info = home.info.as_ref().unwrap();
+  assert_eq!(info.branch_closed(1), Some(false));
+}

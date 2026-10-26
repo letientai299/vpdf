@@ -1,7 +1,7 @@
 use super::{Destination, Row, RowKind, Style};
 use crate::text::{Line, PageId, Position, Text};
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use vpdf_model::caption::{Caption, Kind};
 use vpdf_model::document::{Figure, Heading, Target};
 use vpdf_reader::reader::JumpDescription;
@@ -24,35 +24,19 @@ impl Row {
       },
       super::jumps::title,
     );
-    let word = line
-      .and_then(|line| {
-        let (first, last) = line.run(position.glyph)?;
-        let word: String =
-          line.glyphs[first..=last].iter().map(|glyph| glyph.ch).collect();
-        Some(if word.trim().is_empty() {
-          "whitespace".into()
-        } else {
-          format!("“{word}”")
-        })
-      })
-      .unwrap_or_else(|| "—".into());
-    let page = position.page.0 + 1;
-
-    let page = if name.is_empty() || name == page.to_string() {
-      page.to_string()
-    } else {
-      format!("{name} (#{page})")
-    };
+    let number = (position.page.0 + 1).to_string();
+    let page = Self::page(if name.is_empty() { &number } else { name });
     let row = Self::new(
       label.split_whitespace().collect::<Vec<_>>().join(" "),
-      format!(
-        "p. {page} · L{} C{} · word {word}",
-        position.line + 1,
-        position.glyph + 1
-      ),
+      format!("{page} L{} C{}", position.line + 1, position.glyph + 1),
       Destination::Jump { position, description },
     );
     Self { kind, ..row }
+  }
+
+  /// A page as list panels show it: `p4`, or `piv` by its label.
+  pub fn page(label: &str) -> String {
+    format!("p{label}")
   }
 
   pub fn outline(item: &Heading, label: String) -> Self {
@@ -111,7 +95,7 @@ impl Row {
     for (page, row) in rows {
       if last != Some(page) {
         last = Some(page);
-        let heading = format!("p{}", label(page));
+        let heading = Self::page(&label(page));
         paged.push(Self::new(heading, String::new(), Destination::None));
       }
       paged.push(Self { depth: 1, ..row });
@@ -119,37 +103,40 @@ impl Row {
     paged
   }
 
-  /// A mark keyed `’a`, labeled with its line.
+  /// A mark keyed `’a`, labeled with its line; `page` is the page's
+  /// label.
   pub fn local_mark(
     name: char,
     position: Position,
     text: Option<&Text>,
+    page: &str,
   ) -> Self {
     let line = text.and_then(|text| text.lines.get(position.line));
     let line =
       line.map_or_else(String::new, |line| line.text().trim().to_owned());
-    let page = format!("p{}", position.page.0 + 1);
+    let page = Self::page(page);
     let row = Self::new(line, page, Destination::Position(position));
     Self { key: mark_key(name), depth: 1, ..row }
   }
 
-  /// A mark keyed `’A`, labeled with its file.
+  /// A mark keyed `’A`, labeled with its file; another file's page
+  /// labels are unknown, so its page reads by number.
   pub fn global_mark(name: char, position: Position, path: &Path) -> Self {
     let file = path.file_name().unwrap_or_default().to_string_lossy();
-    let page = format!("p{}", position.page.0 + 1);
+    let page = Self::page(&(position.page.0 + 1).to_string());
     let row = Self::new(file.into_owned(), page, Destination::Mark(name));
     Self { key: mark_key(name), depth: 1, style: Style::Document, ..row }
   }
 
-  /// Marks under `Local` and `Global` headings with their counts.
+  /// Marks under `Local` and `Global` headings; the header counts
+  /// them, and a folded heading its hidden rows.
   pub fn marks(local: Vec<Self>, global: Vec<Self>) -> Vec<Self> {
     let mut rows = Vec::new();
     for (title, marks) in [("Local", local), ("Global", global)] {
       if marks.is_empty() {
         continue;
       }
-      let count = marks.len().to_string();
-      rows.push(Self::new(title.into(), count, Destination::None));
+      rows.push(Self::new(title.into(), String::new(), Destination::None));
       rows.extend(marks);
     }
     rows
@@ -162,18 +149,23 @@ impl Row {
   }
 
   pub fn recent(path: &Path, page: PageId, home: Option<&Path>) -> Self {
-    let label = match home.map(|home| path.strip_prefix(home)) {
-      Some(Ok(rest)) => Path::new("~").join(rest),
-      _ => path.to_path_buf(),
-    };
+    let label = tilde(path, home);
     Self {
       style: Style::Path,
       ..Self::new(
         label.display().to_string(),
-        format!("p{}", page.0 + 1),
+        Self::page(&(page.0 + 1).to_string()),
         Destination::File(path.to_path_buf()),
       )
     }
+  }
+}
+
+/// `path` with the `home` folder written `~`.
+pub(super) fn tilde(path: &Path, home: Option<&Path>) -> PathBuf {
+  match home.map(|home| path.strip_prefix(home)) {
+    Some(Ok(rest)) => Path::new("~").join(rest),
+    _ => path.to_path_buf(),
   }
 }
 

@@ -15,11 +15,10 @@ mod worker;
 /// Cache key for the annotation rows' format.
 fn code() -> String {
   format!(
-    "{}{}{}{}",
+    "{}{}{}",
     include_str!("sidebar.rs"),
     include_str!("sidebar/worker.rs"),
     include_str!("../crates/ui/src/annotations.rs"),
-    include_str!("../crates/ui/src/panel/content.rs"),
   )
 }
 
@@ -81,14 +80,13 @@ struct Slot {
 #[derive(Default)]
 pub(crate) struct Sidebar {
   annotations: Load<Vec<Row>>,
+  /// The last loaded rows, shown while a reload runs.
+  previous: Vec<Row>,
   slot: Slot,
 }
 
 impl App {
-  pub(crate) fn want_sidebar(&mut self, kind: PanelKind) {
-    if kind != PanelKind::Annotations {
-      return;
-    }
+  pub(crate) fn want_annotations(&mut self) {
     let startable = self.sidebar.annotations.startable();
     let slot = &mut self.sidebar.slot;
     slot.queued = false;
@@ -110,23 +108,22 @@ impl App {
     });
     self.sidebar.annotations = Load::Running(job);
   }
-  pub(crate) fn sidebar_rows(&self, kind: PanelKind) -> Vec<Row> {
-    match (kind, &self.sidebar.annotations) {
-      (PanelKind::Annotations, Load::Ready(rows)) => rows.clone(),
-      _ => Vec::new(),
+  /// Loaded rows; a reload shows the previous ones until it ends.
+  pub(crate) fn annotation_rows(&self) -> Vec<Row> {
+    match &self.sidebar.annotations {
+      Load::Ready(rows) => rows.clone(),
+      _ => self.sidebar.previous.clone(),
     }
   }
-  pub fn sidebar_pending(&self, kind: PanelKind) -> bool {
-    self.sidebar_queued(kind)
-      || kind == PanelKind::Annotations && self.sidebar.annotations.pending()
+  pub fn annotations_pending(&self) -> bool {
+    self.annotations_queued() || self.sidebar.annotations.pending()
   }
   /// The load waits for its slot's worker to end.
-  pub(crate) fn sidebar_queued(&self, kind: PanelKind) -> bool {
-    kind == PanelKind::Annotations && self.sidebar.slot.queued
+  pub(crate) fn annotations_queued(&self) -> bool {
+    self.sidebar.slot.queued
   }
-  pub(crate) fn sidebar_loading(&self, kind: PanelKind) -> bool {
-    kind == PanelKind::Annotations
-      && matches!(self.sidebar.annotations, Load::Running(_))
+  pub(crate) fn annotations_loading(&self) -> bool {
+    matches!(self.sidebar.annotations, Load::Running(_))
   }
   pub(crate) fn prepare_sidebars(&mut self) {
     self.resume_outline();
@@ -134,7 +131,7 @@ impl App {
       self.want_figures();
     }
     if matches!(self.sidebar.annotations, Load::Deferred) {
-      self.want_sidebar(PanelKind::Annotations);
+      self.want_annotations();
     }
   }
   /// Loads a pass could start; one waiting on its slot starts when the
@@ -151,13 +148,16 @@ impl App {
   }
   pub(crate) fn refresh_sidebars(&mut self) -> Result<()> {
     let alive = Arc::clone(&self.sidebar.slot.alive);
-    self.sidebar =
-      Sidebar { slot: Slot { alive, queued: false }, ..Sidebar::default() };
-    if let Some(kind) = self.panel.as_ref().map(|p| p.view.kind()) {
-      self.want_sidebar(kind);
-      if kind == PanelKind::Annotations {
-        self.refill_panel(kind)?;
-      }
+    let previous = self.annotation_rows();
+    self.sidebar = Sidebar {
+      annotations: Load::default(),
+      previous,
+      slot: Slot { alive, queued: false },
+    };
+    let kind = PanelKind::Annotations;
+    if self.panel.as_ref().is_some_and(|p| p.view.kind() == kind) {
+      self.want_annotations();
+      self.refill_panel(kind)?;
     }
     Ok(())
   }
@@ -167,7 +167,7 @@ impl App {
     let visible = self.panel.as_ref().is_some_and(|p| p.view.kind() == kind);
     let deferred = matches!(self.sidebar.annotations, Load::Deferred);
     if self.sidebar.slot.queued || visible && deferred {
-      self.want_sidebar(kind);
+      self.want_annotations();
       if visible && matches!(self.sidebar.annotations, Load::Running(_)) {
         self.refill_panel(kind)?;
         changed = true;

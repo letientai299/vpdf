@@ -171,6 +171,7 @@ impl Session {
     config: crate::config::Loaded,
   ) -> Self {
     let state = store.as_deref().map_or_default(State::load);
+    vpdf_ui::panel::set_ascii_glyphs(config.settings.ascii_glyphs());
     Self {
       settings: config.settings,
       config_source: config.source,
@@ -282,12 +283,17 @@ impl Session {
     } else {
       self.state.remove_mark(name);
     }
+    self.refill_marks();
+    self.changed();
+    Ok(())
+  }
+
+  /// Refills every open Marks panel.
+  pub(crate) fn refill_marks(&mut self) {
     let global = self.state.marks.clone();
     for app in self.panes_mut() {
       app.refill_marks(&global);
     }
-    self.changed();
-    Ok(())
   }
 
   fn refresh_recent(&mut self) {

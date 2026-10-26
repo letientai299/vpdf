@@ -81,7 +81,7 @@ impl Panel {
   }
 
   pub fn auto_expand(&self) -> bool {
-    self.tree_view.as_ref().is_some_and(|outline| outline.auto == Some(true))
+    self.tree_view.as_ref().is_some_and(|tree| tree.auto == Some(true))
   }
 
   pub fn control_at(&self, column: u16, row: u16) -> Option<Control> {
@@ -137,7 +137,7 @@ impl Panel {
     at: At,
     width: u16,
   ) -> Vec<(Rect, Control)> {
-    let auto = self.tree_view.as_ref().and_then(|outline| outline.auto);
+    let auto = self.tree_view.as_ref().and_then(|tree| tree.auto);
     let controls = super::header::fold_controls(auto == Some(true));
     let shown = match auto {
       Some(_) => 3,
@@ -164,14 +164,18 @@ impl Panel {
   ) {
     let inner = usize::from(width.saturating_sub(1));
     let count = height.saturating_sub(2) as usize;
-    if self.kind == PanelKind::Annotations {
-      // Group rows indent two cells past the gutter.
-      self.reflow(inner.saturating_sub(GUTTER + 2));
+    match self.kind {
+      // Laid-out rows indent by depth as `Branch::meta` does.
+      PanelKind::Annotations => self.reflow(inner.saturating_sub(GUTTER)),
+      // Help lines sit under group headings, two cells past the gutter.
+      PanelKind::Version => self.reflow(inner.saturating_sub(GUTTER + 2)),
+      _ => {}
     }
     self.top = self.top.min(self.line_count().saturating_sub(count.max(1)));
     let mut targets = self.scene_tree_header(scene, at, width);
-    let outline = self.tree_view.as_ref().expect("outline decoration");
+    let tree = self.tree_view.as_ref().expect("tree decoration");
     let keys = key_cells(&self.rows, inner.saturating_sub(GUTTER));
+    let keys_width = super::key_width(&self.rows, inner.saturating_sub(GUTTER));
     if count > 0 {
       self.scene_empty(scene, at, inner);
     }
@@ -182,7 +186,7 @@ impl Panel {
         break;
       }
       let source = self.line_source(index);
-      let branch = &outline.branches[source];
+      let branch = &tree.branches[source];
       let laid = self.layout.as_ref().map(|layout| &layout.lines[index]);
       let item = &self.rows[source];
       let meta = branch.meta(item, width, keys);
@@ -221,14 +225,11 @@ impl Panel {
         ));
       }
       meta.lead(scene, base, &self.search.query);
-      let (used, cut) = if matches!(item.style, Style::Excerpt { .. }) {
-        let query = &self.search.query;
-        let used = item.scene(scene, Some(title_style), meta.room, 0, query);
-        (used, item.label.width() > meta.room)
-      } else {
-        // A laid-out row shows its first wrapped line.
-        let label = laid.map_or(item.label.as_str(), |line| &line.row.label);
-        let (title, cut) = clipped(label.trim_start(), meta.room);
+      // A laid-out row shows its first wrapped line.
+      let shown = laid.map_or(item, |line| &line.row);
+      let (used, cut) = if matches!(shown.style, Style::Plain | Style::Heading)
+      {
+        let (title, cut) = clipped(shown.label.trim_start(), meta.room);
         let cut = cut || laid.is_some_and(|line| line.clipped);
         super::rows::marked(
           scene,
@@ -238,9 +239,17 @@ impl Panel {
           branch.root.then_some(Role::Heading),
         );
         (title.width(), cut)
+      } else {
+        let query = &self.search.query;
+        let keys = laid.map_or(keys_width, |line| line.keys);
+        let used =
+          shown.scene(scene, Some(title_style), meta.room, keys, query);
+        let cut =
+          laid.map_or(item.label.width() > meta.room, |line| line.clipped);
+        (used, cut)
       };
       if hovered && cut {
-        self.hover_title = Some(item.label.trim().to_owned());
+        self.hover_title = Some(item.full_label());
       }
       scene.push(Op::Style(base));
       scene.push(Op::Spaces(meta.room - used));
@@ -256,7 +265,7 @@ impl Panel {
       );
       scene.push(Op::Style(Role::Reset));
     }
-    self.tree_view.as_mut().expect("outline decoration").targets = targets;
+    self.tree_view.as_mut().expect("tree decoration").targets = targets;
   }
 }
 

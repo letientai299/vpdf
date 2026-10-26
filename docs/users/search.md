@@ -47,6 +47,10 @@ and focus content, or `o` to follow and keep list focus. Tab changes focus;
 `q` closes the focused results panel. Searching while a panel owns focus
 searches its rows. Return focus to content to search the PDF.
 
+The header shows the query. Results group under a heading per page; each row is
+an excerpt centered on the match. `h` and `l` fold a page, and a folded page
+shows how many hits it hides. `▌` marks the hit the reader landed on.
+
 Search scans pages in the background and adds matches as they arrive. A partial
 result list is not a complete count. Rendering takes priority over scanning.
 `:cancel` stops the pane's search job along with OCR, outline, and region jobs.

@@ -206,18 +206,10 @@ impl Reader {
     self.future.clear();
   }
 
+  /// Recorded jumps, oldest first.
   pub fn jumps(&self) -> impl Iterator<Item = Position> {
-    self.described_jumps().map(|(position, _)| position)
-  }
-
-  pub fn described_jumps(
-    &self,
-  ) -> impl Iterator<Item = (Position, Option<&JumpDescription>)> {
-    self
-      .history
-      .iter()
-      .chain(self.future.iter().rev())
-      .map(|jump| (jump.location.cursor, jump.description.as_ref()))
+    let jumps = self.history.iter().chain(self.future.iter().rev());
+    jumps.map(|jump| jump.location.cursor)
   }
 
   /// Jump stops newest first, by their distance from the cursor: `+n`

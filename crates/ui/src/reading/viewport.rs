@@ -28,7 +28,11 @@ impl<S: TextSource + Pages> View<'_, S> {
       }
       Action::Screen(direction) => {
         let row = f32::from(self.frame.pane.screen.cell_height);
-        let rows = usize::from(self.layout.screen().rows.saturating_sub(1));
+        let rows = if self.frame.pane.text {
+          usize::from(self.text_frame().rows())
+        } else {
+          usize::from(self.layout.screen().rows.saturating_sub(1))
+        };
         let distance = screen_step(rows) as f32 * row;
         return self.scroll_key(
           direction as f32 * count * distance,

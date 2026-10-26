@@ -156,8 +156,8 @@ impl App {
   }
 
   pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
-    if self.confirming_recent() {
-      self.confirm_recent(key);
+    if self.confirming_removal() {
+      self.confirm_removal(key);
       return Ok(());
     }
     self.search.forget_yank();
@@ -794,10 +794,17 @@ mod tests {
       app.command("version")?;
       let panel = &app.panel.as_ref().expect("version panel").view;
       assert_eq!(panel.kind(), PanelKind::Version);
+      let text = crate::version::panel_text(terminal);
+      let lines = text.lines().map(|line| line.trim_start_matches("# "));
       assert_eq!(
         panel.rows().iter().map(|row| row.label.as_str()).collect::<Vec<_>>(),
-        crate::version::text(terminal).lines().collect::<Vec<_>>()
+        lines.collect::<Vec<_>>()
       );
+      // The build section starts folded, and stays so through a reload.
+      assert_eq!(panel.branch_closed(3), Some(true));
+      app.reload_with("")?;
+      let panel = &app.panel.as_ref().expect("version panel").view;
+      assert_eq!(panel.branch_closed(3), Some(true));
       assert!(!app.quit);
     }
     Ok(())

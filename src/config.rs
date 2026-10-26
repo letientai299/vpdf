@@ -70,6 +70,7 @@ impl PartialEq for Settings {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 struct Appearance {
   theme: vpdf_model::theme::Theme,
+  ascii_glyphs: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -182,6 +183,11 @@ impl Settings {
           vpdf_model::theme::Theme::parse(name).ok_or("unknown theme")
         }),
       ),
+      "appearance.ascii_glyphs" => replace_setting(
+        &mut self.appearance.ascii_glyphs,
+        &previous.appearance.ascii_glyphs,
+        value.as_bool().ok_or("expected boolean"),
+      ),
       "reading.cursorline" => replace_setting(
         &mut self.reading.cursorline,
         &previous.reading.cursorline,
@@ -215,6 +221,10 @@ impl Settings {
       ),
       _ => Err("unknown setting"),
     }
+  }
+
+  pub fn ascii_glyphs(&self) -> bool {
+    self.appearance.ascii_glyphs
   }
 
   pub fn cursorline(&self) -> bool {

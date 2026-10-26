@@ -299,7 +299,7 @@ impl Session {
     let Some(drop) = self.drop_step(body, typing, out)? else {
       return Ok(false);
     };
-    if !self.tabs.is_empty() && self.app().confirming_recent() {
+    if !self.tabs.is_empty() && self.app().confirming_removal() {
       answer(out, &drop.finish(false))?;
       return Ok(false);
     }

@@ -32,8 +32,11 @@ page-based navigation because pagination may have changed.
 ## Return from a detour
 
 `Ctrl-o` goes back through jumps; `Ctrl-i` goes forward. Run `:jumps` to choose
-a recorded destination directly. Repeated jumps can cross pages and restore
-the recorded view. Scrolling alone does not create a bookmark for every row.
+a recorded destination directly. Each row names its stop's distance from the
+cursor: `now`, `−2` for two `Ctrl-o` presses back, `+1` for one `Ctrl-i`. A dim
+line gives the page, line and column. `▌` marks `now`. Repeated jumps can
+cross pages and restore the recorded view. Scrolling alone does not create a
+bookmark for every row.
 
 Going back and making a new jump discards the old forward branch. Use named
 marks when you need both places regardless of later detours. Jumps to a target

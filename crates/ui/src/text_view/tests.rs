@@ -221,6 +221,7 @@ fn recorded_advances_match_hits() -> Result<()> {
     screen: crate::testing::screen::cells(4, 2),
     at: At { column: 7, row: 3 },
     left: 0,
+    header: 0,
   };
   let mut state = TextView::default();
   let mut pane = state.bind(pages, frame);
@@ -252,6 +253,7 @@ fn hits_follow_pending_and_drawn_frames() -> Result<()> {
     screen: crate::testing::screen::cells(6, 3),
     at: At::default(),
     left: 2,
+    header: 0,
   };
   let mut state = TextView::default();
   let mut pane = state.bind(pages, frame);
@@ -285,6 +287,7 @@ fn cursorline_follows_reader_mode() -> Result<()> {
         screen: crate::testing::screen::cells(10, 2),
         at: At::default(),
         left: 0,
+        header: 0,
       };
       let mut state = TextView::default();
       let mut scene = Vec::new();

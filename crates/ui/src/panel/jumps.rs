@@ -34,7 +34,7 @@ pub fn key(offset: isize) -> String {
 impl Layout {
   /// Each row with its position on a dim second line.
   pub(crate) fn jumps(rows: &[Row], columns: usize, selected: usize) -> Self {
-    Self::expanded(rows, columns, selected, |_, row| Some(&row.detail))
+    Self::expanded(rows, columns, selected, |_, row| Some(row.detail.clone()))
   }
 }
 
@@ -100,8 +100,9 @@ mod tests {
     reader.history(false);
     let labels = |reader: &Reader| -> Vec<String> {
       reader
-        .described_jumps()
-        .map(|(_, description)| title(description.unwrap()).1)
+        .stops()
+        .filter(|(offset, ..)| *offset != 0)
+        .map(|(.., description)| title(description.unwrap()).1)
         .collect()
     };
     let other = Query { text: "other".into(), ..query.clone() };
@@ -116,11 +117,11 @@ mod tests {
   #[test]
   fn expanded_jumps_keep_context() {
     let label = "A line containing café and 世界";
-    let detail = "p. iv (#4) · L12 C8 · word “café”";
+    let detail = "piv L12 C8";
     let rows = || {
       vec![
         Row::new(label.into(), detail.into(), Destination::None),
-        Row::new("Other".into(), "p. 5 · L1 C1".into(), Destination::None),
+        Row::new("Other".into(), "p5 L1 C1".into(), Destination::None),
       ]
     };
     let compact = |value: &str| -> String {

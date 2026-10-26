@@ -298,3 +298,40 @@ fn projected_keyed_rows_report_their_cut() {
     }
   }
 }
+
+#[test]
+fn ascii_glyphs_stay_distinct() {
+  use RowKind as K;
+  let kinds = [
+    K::Figure,
+    K::Table,
+    K::Mention,
+    K::Section,
+    K::Search,
+    K::Link,
+    K::Note,
+    K::Underline,
+    K::Highlight,
+  ];
+  let glyphs: Vec<_> =
+    kinds.iter().map(|kind| kind.glyph_in(true).unwrap()).collect();
+  for ((glyph, role), kind) in glyphs.iter().zip(kinds) {
+    assert!(glyph.is_ascii_graphic(), "{kind:?}");
+    assert_eq!(Some(*role), kind.glyph_in(false).map(|(_, role)| role));
+  }
+  let unique: std::collections::BTreeSet<_> =
+    glyphs.iter().map(|(glyph, _)| glyph).collect();
+  assert_eq!(unique.len(), kinds.len());
+  assert_eq!(K::Plain.glyph_in(true), None);
+}
+
+#[test]
+fn copies_keep_caption_keys() {
+  let mark = Row { key: "’a".into(), ..figure(0) };
+  let mark = Row { kind: RowKind::Plain, ..mark };
+  for (row, copied) in [(figure(0), "Fig 1 "), (mark, "")] {
+    let label = row.label.trim().to_owned();
+    let panel = Panel::new(PanelKind::Figures, vec![row]);
+    assert_eq!(panel.yank_text(), Some(format!("{copied}{label}\n")));
+  }
+}

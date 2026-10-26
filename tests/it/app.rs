@@ -209,6 +209,36 @@ fn info_tracks_frames() -> Result<()> {
 }
 
 #[test]
+fn info_facts_name_format_and_encryption() -> Result<()> {
+  let app = text_app()?;
+  let info = app.info();
+  let facts = info.lines().nth(2).unwrap_or_default();
+  assert!(facts.contains(" · PDF 1."), "{facts}");
+  assert!(facts.ends_with(" · no encryption"), "{facts}");
+  assert!(!info.contains("Format: "), "{info}");
+  Ok(())
+}
+
+#[test]
+fn info_search_shows_folded_rows_across_frames() -> Result<()> {
+  let mut app = text_app()?;
+  app.command("info")?;
+  app.draw(&mut Vec::new())?;
+  let panel = &mut app.panel.as_mut().unwrap().view;
+  panel.begin_search(false);
+  assert!(panel.preview("Last tile"));
+  for render_ms in [12.5, 25.0] {
+    app.render_ms = render_ms;
+    app.draw(&mut Vec::new())?;
+    let panel = &app.panel.as_ref().unwrap().view;
+    let selected = panel.selected();
+    assert!(panel.rows()[selected].label.starts_with("Last tile: "));
+    assert!(panel.is_visible(selected), "{render_ms}");
+  }
+  Ok(())
+}
+
+#[test]
 fn info_tracks_prefetched_tiles() -> Result<()> {
   use vpdf_model::tile::TileKey;
   use vpdf_terminal::payload::{Encoder, Tile};
@@ -274,7 +304,8 @@ fn text_view_scrolls_without_moving_the_selection() -> Result<()> {
   app.reader.visual(vpdf_reader::reader::SelectionKind::Character);
   app.ensure_cursor()?;
   let input = Input::plain(Action::Quit);
-  for (fraction, row) in [(0.0, 0), (1.0, 18), (0.5, 9)] {
+  // Pane rows: eighteen text rows sit under the header.
+  for (fraction, row) in [(0.0, 1), (1.0, 18), (0.5, 10)] {
     app.action(Input { action: Action::Align(fraction), ..input })?;
     {
       let (app, _) = app.parts();
@@ -866,11 +897,17 @@ fn hover_hits_lines_rows_and_thumbnails() -> Result<()> {
   let press = |column, row| {
     MouseEvent::new(MouseEventKind::Down(MouseButton::Left), column, row)
   };
+  // Past the gutter and chevrons.
   for row in 0..app.screen.rows - 1 {
-    let hit = app.hovered(Region::Panel, 1, row, None)?;
+    let hit = app.hovered(Region::Panel, 4, row, None)?;
     let pressed =
-      app.panel.as_mut().expect("panel").view.pointer(press(1, row));
-    assert_eq!(hit, pressed.map_or(Hit::Nothing, Hit::Label), "row {row}");
+      app.panel.as_mut().expect("panel").view.pointer(press(4, row));
+    // A group heading folds, so it hits as a row.
+    let index = match hit {
+      Hit::Label(index) | Hit::Row(index) => Some(index),
+      _ => None,
+    };
+    assert_eq!(index, pressed, "row {row}");
     if row < 2 {
       assert_eq!(hit, [Hit::Nothing, Hit::Label(0)][usize::from(row)]);
     }

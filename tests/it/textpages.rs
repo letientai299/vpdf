@@ -25,8 +25,8 @@ const LINK: &str = "\x1b[0;4;36m";
 
 const WIDE: &str = "P1 L0 a wide line";
 
-/// Three pages of four lines in an eight-row text view, with web
-/// links over `(page, line)`s.
+/// Three pages of four lines in an eight-row text view under its
+/// header, with web links over `(page, line)`s.
 fn app(links: &[(usize, usize)]) -> Result<(tempfile::TempDir, Solo)> {
   let pages = PAGES.each_ref().map(|lines| &lines[..]);
   app_of(&pages, links)
@@ -40,7 +40,7 @@ fn app_of(
   common::temp_solo(
     |path| common::linked_pages_pdf(path, pages, links),
     true,
-    common::cells(40, 9),
+    common::cells(40, 10),
   )
 }
 
@@ -48,7 +48,7 @@ fn on(page: usize, line: usize, glyph: usize) -> Position {
   Position { page: PageId(page), line, glyph }
 }
 
-/// The text view's rows as drawn, styles kept.
+/// The text view's rows as drawn, styles kept, without the header.
 fn drawn(app: &mut App) -> Result<Vec<String>> {
   let mut out = Vec::new();
   vpdf::presentation::try_draw(&mut out, None, |s| app.scene_text(s))?;
@@ -72,7 +72,8 @@ fn drawn(app: &mut App) -> Result<Vec<String>> {
       }
     }
   }
-  Ok(rows)
+  // Row 0 is the header.
+  Ok(rows.into_iter().skip(1).collect())
 }
 
 /// Rows scrolled down from the top, as the wheel does.
@@ -90,17 +91,19 @@ fn rows_show_later_pages_after_a_break() -> Result<()> {
   assert!(rows[4].contains("── 2 ─"), "{rows:?}");
   assert!(rows[5].contains("P1 L0"), "{rows:?}");
   for (name, position, cell) in [
-    ("first page", on(0, 3, 0), Some((0, 3))),
-    ("after the break", on(1, 0, 1), Some((1, 5))),
-    ("last row", on(1, 2, 0), Some((0, 7))),
+    // Pane rows: the header takes row 0.
+    ("first page", on(0, 3, 0), Some((0, 4))),
+    ("after the break", on(1, 0, 1), Some((1, 6))),
+    ("last row", on(1, 2, 0), Some((0, 8))),
     ("below the view", on(1, 3, 0), None),
   ] {
     assert_eq!(app.text().cell(position)?, cell, "{name}");
   }
   let end = app.doc.text(PageId(0))?.lines[3].glyphs.len() - 1;
   for (name, (column, row), position, hit) in [
-    ("next page", (1, 5), on(1, 0, 1), Hit::Text),
-    ("the break", (1, 4), on(0, 3, end), Hit::Nothing),
+    ("next page", (1, 6), on(1, 0, 1), Hit::Text),
+    ("the break", (1, 5), on(0, 3, end), Hit::Nothing),
+    ("the header", (1, 0), on(0, 0, 1), Hit::Nothing),
   ] {
     assert_eq!(app.text().position(column, row)?, position, "{name}");
     assert_eq!(app.hovered(Region::Page, column, row, None)?, hit, "{name}");
@@ -111,18 +114,19 @@ fn rows_show_later_pages_after_a_break() -> Result<()> {
 #[test]
 fn scrolling_steps_rows_through_breaks() -> Result<()> {
   for (rows, cell) in
-    [(1, Some((0, 4))), (4, Some((0, 1))), (5, Some((0, 0))), (6, None)]
+    [(1, Some((0, 5))), (4, Some((0, 2))), (5, Some((0, 1))), (6, None)]
   {
     let (_dir, mut app) = scrolled(rows)?;
     assert_eq!(app.text().cell(on(1, 0, 0))?, cell, "{rows} rows");
     app.scroll(-f32::from(rows) * 16.0)?;
-    assert_eq!(app.text().cell(on(1, 0, 0))?, Some((0, 5)), "{rows} back");
+    assert_eq!(app.text().cell(on(1, 0, 0))?, Some((0, 6)), "{rows} back");
   }
   // The last line stays at the bottom.
   let (_dir, mut app) = scrolled(100)?;
-  assert_eq!(app.text().cell(on(2, 3, 0))?, Some((0, 7)));
+  assert_eq!(app.text().cell(on(2, 3, 0))?, Some((0, 8)));
   app.screen.rows = 13;
   app.relayout()?;
+  // Header and status rows leave eleven, the last on pane row 11.
   assert_eq!(app.text().cell(on(2, 3, 0))?, Some((0, 11)), "taller");
   Ok(())
 }
@@ -162,8 +166,8 @@ fn hints_and_tints_reach_later_pages() -> Result<()> {
   app.start_hints(false)?;
   let hints = app.overlays.close_hints().expect("hints");
   let rows: Vec<_> = hints.items().iter().map(|hint| hint.cell.1).collect();
-  assert_eq!(rows, [0, 6]);
-  let hit = app.hovered(Region::Page, 2, 6, None)?;
+  assert_eq!(rows, [1, 7]);
+  let hit = app.hovered(Region::Page, 2, 7, None)?;
   assert_eq!(hit, Hit::Link(PageId(1), 0));
   app.hover.point(hit, None, std::time::Instant::now);
   let rows = drawn(&mut app)?;
@@ -204,7 +208,7 @@ fn middle_drags_move_text_by_whole_rows() -> Result<()> {
   let press = |kind, row| page_route(pane, kind, (5, row));
   app.mouse(press(MouseEventKind::Down(MouseButton::Middle), 6))?;
   // (drag to row) -> row of the second page's first line
-  for (row, shown) in [(6, 5), (4, 3), (1, 0), (2, 1), (6, 5), (8, 5)] {
+  for (row, shown) in [(6, 6), (4, 4), (1, 1), (2, 2), (6, 6), (8, 6)] {
     app.mouse(press(MouseEventKind::Drag(MouseButton::Middle), row))?;
     assert_eq!(app.text().cell(on(1, 0, 0))?, Some((0, shown)), "row {row}");
   }
@@ -309,15 +313,15 @@ fn panning_spans_pages() -> Result<()> {
   let press = |kind, column| page_route(pane, kind, (column, 2));
   app.mouse(press(MouseEventKind::Down(MouseButton::Middle), 10))?;
   app.mouse(press(MouseEventKind::Drag(MouseButton::Middle), 7))?;
-  assert_eq!(app.text().cell(on(1, 0, 3))?, Some((0, 5)), "drag");
-  assert_eq!(app.text().cell(on(0, 0, 3))?, Some((0, 0)), "drag");
+  assert_eq!(app.text().cell(on(1, 0, 3))?, Some((0, 6)), "drag");
+  assert_eq!(app.text().cell(on(0, 0, 3))?, Some((0, 1)), "drag");
   // The widest drawn line bounds the offset.
   app.mouse(press(MouseEventKind::Drag(MouseButton::Middle), 0))?;
-  assert_eq!(app.text().cell(on(1, 0, 5))?, Some((0, 5)), "bound");
+  assert_eq!(app.text().cell(on(1, 0, 5))?, Some((0, 6)), "bound");
   app.mouse(press(MouseEventKind::Up(MouseButton::Middle), 0))?;
   // Scrolling the wide line away resets it.
   app.scroll(6.0 * 16.0)?;
-  assert_eq!(app.text().cell(on(1, 3, 0))?, Some((0, 2)), "scrolled");
+  assert_eq!(app.text().cell(on(1, 3, 0))?, Some((0, 3)), "scrolled");
   Ok(())
 }
 
@@ -343,10 +347,13 @@ fn presses_on_rules_select_nothing() -> Result<()> {
   drawn(&mut app)?;
   let pane = app.id;
   let press = |kind, row| page_route(pane, kind, (2, row));
+  // The rule sits on pane row 5, under the header.
+  for row in [5, 0] {
+    app.mouse(press(MouseEventKind::Down(MouseButton::Left), row))?;
+    app.mouse(press(MouseEventKind::Up(MouseButton::Left), row))?;
+    assert_eq!(app.reader.target(), None, "row {row}");
+  }
   app.mouse(press(MouseEventKind::Down(MouseButton::Left), 4))?;
-  app.mouse(press(MouseEventKind::Up(MouseButton::Left), 4))?;
-  assert_eq!(app.reader.target(), None);
-  app.mouse(press(MouseEventKind::Down(MouseButton::Left), 3))?;
   assert_eq!(app.reader.target(), Some(on(0, 3, 2)));
   Ok(())
 }
@@ -365,5 +372,28 @@ fn rules_show_page_labels() -> Result<()> {
   let mut app = Solo::open(&path, "", true, app.screen)?;
   let rows = drawn(&mut app)?;
   assert!(rows[4].contains("── ii ─"), "{rows:?}");
+  Ok(())
+}
+
+/// The header names the pages the rows show and the copy modes.
+#[test]
+fn the_header_names_shown_pages() -> Result<()> {
+  // The frame's first row, up to the move to the second.
+  let header = |app: &mut App| -> Result<String> {
+    let mut out = Vec::new();
+    vpdf::presentation::try_draw(&mut out, None, |s| app.scene_text(s))?;
+    let out = String::from_utf8(out)?;
+    let first = out.split_once("\x1b[1;1H").map_or("", |(_, rest)| rest);
+    Ok(first.split("\x1b[2;").next().unwrap_or_default().to_owned())
+  };
+  let (_dir, mut app) = app(&[])?;
+  let top = header(&mut app)?;
+  assert!(
+    top.contains(" TEXT ") && top.contains(" p1–2 joined · yY raw"),
+    "{top:?}"
+  );
+  app.text().scroll(100)?;
+  let bottom = header(&mut app)?;
+  assert!(bottom.contains(" p2–3 joined"), "{bottom:?}");
   Ok(())
 }

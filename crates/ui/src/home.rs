@@ -116,8 +116,11 @@ impl Home {
   }
 
   pub fn show_info(&mut self, kind: crate::keys::PanelKind, text: &str) {
-    self.panel.leave_recent();
-    self.info = Some(Panel::new(kind, text.lines().map(Row::parse).collect()));
+    self.panel.leave_removal();
+    let mut info = Panel::grouped(kind, Row::sections(text), self.screen.rows);
+    // Home has no fold keys; every group shows.
+    info.fold(crate::keys::Fold::ExpandAll, 1);
+    self.info = Some(info);
   }
 
   pub fn shelf_mut(&mut self) -> Option<&mut Shelf> {
@@ -373,6 +376,7 @@ impl Home {
             {
               return Ok(Effect::Stay);
             }
+
             None if self.keys.awaiting().is_some() => return Ok(Effect::Stay),
             None
               if crate::bindings::Sequence::from_keys(&[key]).is_ok_and(

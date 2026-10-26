@@ -41,12 +41,28 @@ impl PanelKind {
 
   /// Rows group under headings the panel owns.
   pub fn grouped(self) -> bool {
-    matches!(self, Self::Results | Self::Annotations | Self::Marks)
+    matches!(
+      self,
+      Self::Results
+        | Self::Annotations
+        | Self::Marks
+        | Self::Info
+        | Self::Version
+    )
+  }
+
+  /// Groups that start closed.
+  pub fn folded(self) -> &'static [&'static str] {
+    match self {
+      Self::Info => &[crate::panel::RENDER, crate::panel::TERMINAL],
+      Self::Version => &[crate::panel::BUILD],
+      _ => &[],
+    }
   }
 
   /// List rows keep a gutter for the current-row marker.
   pub fn marks_current(self) -> bool {
-    matches!(self, Self::Results | Self::Figures | Self::Jumps)
+    matches!(self, Self::Figures | Self::Jumps)
   }
 }
 

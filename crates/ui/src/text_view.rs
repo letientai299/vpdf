@@ -24,6 +24,27 @@ pub struct Frame {
   pub screen: Screen,
   pub at: At,
   pub left: u16,
+  /// Rows above the text: the header, when a text row fits below it.
+  pub header: u16,
+}
+
+impl Frame {
+  /// A pane's text view; cells stay pane-relative.
+  pub fn new(screen: Screen, at: At, left: u16) -> Self {
+    // Header, a text row, and the status row.
+    let header = u16::from(screen.rows > 2);
+    Self { screen, at, left, header }
+  }
+
+  /// Text rows between the header and the status row.
+  pub fn rows(self) -> u16 {
+    self.screen.rows.saturating_sub(1 + self.header)
+  }
+
+  /// The view row at a pane row; none on the header.
+  fn view_row(self, row: u16) -> Option<usize> {
+    row.checked_sub(self.header).map(usize::from)
+  }
 }
 
 pub struct Pane<'a, S> {
@@ -444,7 +465,7 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
 
   /// Text view rows and columns.
   fn text_size(&self) -> (usize, usize) {
-    let height = usize::from(self.frame.screen.rows.saturating_sub(1));
+    let height = usize::from(self.frame.rows());
     let columns =
       usize::from(self.frame.screen.columns.saturating_sub(self.frame.left));
     (height, columns)
@@ -488,16 +509,18 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
     }))
   }
 
+  /// Draws the rows; the pages they show.
   pub fn scene<'a>(
     &mut self,
     scene: &mut impl Draw<'a>,
     paint: &Marks<'_>,
-  ) -> Result<()> {
+  ) -> Result<std::ops::Range<usize>> {
     let view = self.next_text_view()?;
     self.state.top = view.top;
     self.state.drawn = Some(view.top);
     let hovered = paint.hovered;
     for (row, shown) in view.rows().enumerate() {
+      let row = row + usize::from(self.frame.header);
       crate::paint::move_to(scene, self.frame.at, row, self.frame.left);
       let (at, line) = match shown {
         Row::Line(at, line) => (at, line),
@@ -545,7 +568,7 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
       }
       scene.push(Op::Style(Role::Reset));
     }
-    Ok(())
+    Ok(view.shown_pages())
   }
 
   /// A rule naming the next page, at break `at`.
@@ -569,7 +592,7 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
   /// Glyph `view` draws at a pane cell.
   fn glyph_in(&self, view: &View, column: u16, row: u16) -> Option<Position> {
     let column = usize::from(column.saturating_sub(self.frame.left));
-    view.hit(column, usize::from(row))
+    view.hit(column, self.frame.view_row(row)?)
   }
 
   /// The view on screen.
@@ -580,16 +603,18 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
     }
   }
 
+  /// The position at a pane cell; the header reads as the first row.
   pub fn position(&mut self, column: u16, row: u16) -> Result<Position> {
     let view = self.shown_text_view()?;
     let column = usize::from(column.saturating_sub(self.frame.left));
-    Ok(view.position(column, usize::from(row)))
+    Ok(view.position(column, self.frame.view_row(row).unwrap_or(0)))
   }
 
-  /// Whether a shown row is a page break.
+  /// Whether a pane row shows no text: a page break or the header.
   pub fn is_break(&mut self, row: u16) -> Result<bool> {
+    let Some(row) = self.frame.view_row(row) else { return Ok(true) };
     let view = self.shown_text_view()?;
-    Ok(matches!(view.rows().nth(usize::from(row)), Some(Row::Break(_))))
+    Ok(matches!(view.rows().nth(row), Some(Row::Break(_))))
   }
 
   /// Next frame's row of `position`'s line.
@@ -617,7 +642,8 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
     let Some((column, row)) = view.cell(position) else {
       return Ok(None);
     };
-    Ok(Some((self.frame.left + u16::try_from(column)?, u16::try_from(row)?)))
+    let row = self.frame.header + u16::try_from(row)?;
+    Ok(Some((self.frame.left + u16::try_from(column)?, row)))
   }
 
   /// Cursor line `fraction` down the view.
@@ -655,8 +681,10 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
     self.reveal(cursor)
   }
 
+  /// Glyph nearest a pane `point`, which counts the header row.
   pub fn nearest(&mut self, point: (f32, f32)) -> Result<Option<Position>> {
     let view = self.next_text_view()?;
+    let header = f32::from(self.frame.header);
     let mut nearest = None;
     let mut distance = (f32::INFINITY, f32::INFINITY);
     for (row, item) in view.rows().enumerate() {
@@ -666,7 +694,7 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
           continue;
         }
         let next = (
-          (row as f32 - point.1).abs(),
+          (row as f32 + header - point.1).abs(),
           (column as f32 + f32::from(self.frame.left) - point.0).abs(),
         );
         if next < distance {
@@ -738,6 +766,32 @@ impl Marks<'_> {
       && self.reader.uses_cursor()
       && position.page == self.reader.cursor.page
       && position.line == self.reader.cursor.line
+  }
+}
+
+/// The text view's top row: the pages it shows and the copy modes.
+pub struct Header<'a> {
+  pub first: &'a str,
+  pub last: &'a str,
+}
+
+impl Header<'_> {
+  pub fn scene<'a>(&self, scene: &mut impl Draw<'a>, at: At, columns: u16) {
+    let pages = if self.first == self.last {
+      format!(" p{}", self.first)
+    } else {
+      format!(" p{}–{}", self.first, self.last)
+    };
+    let context = format!("{pages} joined · yY raw");
+    crate::paint::move_to(scene, at, 0u16, 0u16);
+    let title = vpdf_model::text::clean(" TEXT ", usize::from(columns));
+    let room = usize::from(columns).saturating_sub(title.width());
+    let context = vpdf_model::text::clean(&context, room);
+    scene.push(Op::Style(Role::Badge(vpdf_model::style::Color::Cyan)));
+    scene.text(&title);
+    scene.push(Op::Style(Role::Muted));
+    scene.text(&context);
+    scene.extend([Op::Spaces(room - context.width()), Op::Style(Role::Reset)]);
   }
 }
 

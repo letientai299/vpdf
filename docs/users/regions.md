@@ -11,6 +11,9 @@ cannot save regions.
 
 `]f` selects the next figure and `[f` the previous one. `zF` fits the selected
 figure in the view. `gf` opens FIGURES; choose a row and follow it with Enter.
+Rows lead with their caption label, such as `Fig 2` or `Tab 1`, and `▌` marks
+the figure on the page in view. Dim rows are body text that names a figure.
+Panel search matches labels, so `/tab 3` finds Table 3.
 `gF` opens actions for the selected figure. A PDF with no detected figures can
 still use manual capture. Figure detection is a navigation aid, not a guarantee
 that every diagram or vector drawing receives its own entry.

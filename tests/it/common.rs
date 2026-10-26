@@ -94,13 +94,10 @@ pub fn outline_loaded(app: &mut App) -> Result<()> {
   })
 }
 
-pub fn sidebar_loaded(
-  app: &mut App,
-  kind: vpdf_ui::keys::PanelKind,
-) -> Result<()> {
-  wait_until(10, "Sidebar", || {
+pub fn annotations_loaded(app: &mut App) -> Result<()> {
+  wait_until(10, "Annotations", || {
     app.sidebar_updates()?;
-    Ok(!app.sidebar_pending(kind))
+    Ok(!app.annotations_pending())
   })
 }
 

@@ -82,7 +82,7 @@ fn panel_lists_marked_text_and_notes() -> Result<()> {
   let (file, words) = annotated()?;
   let mut app = Solo::open(file.path(), "", false, screen())?;
   app.open_panel(PanelKind::Annotations)?;
-  crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
+  crate::common::annotations_loaded(&mut app)?;
   let rows = &app.panel.as_ref().unwrap().view.rows();
   // A page heading, then marked text or the note.
   let labels: Vec<_> =
@@ -106,7 +106,7 @@ fn enter_positions_cursor_and_note() -> Result<()> {
         keys(&mut app, b"v")?;
       }
       app.open_panel(PanelKind::Annotations)?;
-      crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
+      crate::common::annotations_loaded(&mut app)?;
       // The first annotation, under its page heading.
       let expected = position(&app, 1);
       keys(&mut app, b"\r")?;
@@ -140,7 +140,7 @@ fn k_previews_selected_note() -> Result<()> {
   for text in [false, true] {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
-    crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
+    crate::common::annotations_loaded(&mut app)?;
     assert_eq!(position(&app, 2), position(&app, 3));
     let original = app.reader.cursor;
     app.panel.as_mut().unwrap().view.choose(3);
@@ -172,7 +172,7 @@ fn k_preserves_visual_range() -> Result<()> {
   for text in [false, true] {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
-    crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
+    crate::common::annotations_loaded(&mut app)?;
     app.panel.as_mut().unwrap().view.choose(2);
     keys(&mut app, b"\r\x1b")?;
     let cursor = app.reader.cursor;
@@ -196,7 +196,7 @@ fn notes_scroll_and_resize() -> Result<()> {
   for text in [false, true] {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
-    crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
+    crate::common::annotations_loaded(&mut app)?;
     app.panel.as_mut().unwrap().view.choose(4);
     keys(&mut app, b"\r")?;
     let cursor = app.reader.cursor;
@@ -233,7 +233,7 @@ fn empty_notes_and_panel_focus() -> Result<()> {
   for text in [false, true] {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
-    crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
+    crate::common::annotations_loaded(&mut app)?;
     app.panel.as_mut().unwrap().view.choose(5);
     let expected = position(&app, 5);
     keys(&mut app, b"\r")?;
@@ -343,7 +343,7 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   }
   // Clipped rows show whole; selection stays.
   session.app().open_panel(PanelKind::Annotations)?;
-  crate::common::sidebar_loaded(session.app(), PanelKind::Annotations)?;
+  crate::common::annotations_loaded(session.app())?;
   let focused = session.app().panel_focused();
   // Row 1 is the page heading.
   let (_, drawn) = hover(&mut session, (1, 3))?;
@@ -360,7 +360,7 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   session.app().close_panel()?;
   // A panel opened under a resting pointer.
   session.app().open_panel(PanelKind::Annotations)?;
-  crate::common::sidebar_loaded(session.app(), PanelKind::Annotations)?;
+  crate::common::annotations_loaded(session.app())?;
   session.draw_frame(&mut Vec::new())?;
   if session.redraw_due() {
     session.draw_frame(&mut Vec::new())?;
@@ -655,7 +655,7 @@ fn note_row_menus_show_notes() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let mut session = noted_session(directory.path())?;
   session.app().open_panel(PanelKind::Annotations)?;
-  crate::common::sidebar_loaded(session.app(), PanelKind::Annotations)?;
+  crate::common::annotations_loaded(session.app())?;
   session.draw_focused(&mut Vec::new())?;
   // Row 1 is the page heading; row 2 the unnoted highlight.
   crate::mouse::right(&mut session, (1, 3))?;
@@ -680,7 +680,7 @@ fn annotations_panel_explains_empty() -> Result<()> {
     crate::common::cells(100, 20),
   )?;
   app.open_panel(PanelKind::Annotations)?;
-  crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
+  crate::common::annotations_loaded(&mut app)?;
   let panel = &mut app.panel.as_mut().unwrap().view;
   assert!(panel.rows().is_empty());
   let mut scene = Vec::new();
@@ -705,7 +705,7 @@ fn highlight_rows_quote_marked_text() -> Result<()> {
   let mut session = noted_session(directory.path())?;
   let app = session.app();
   app.open_panel(PanelKind::Annotations)?;
-  crate::common::sidebar_loaded(app, PanelKind::Annotations)?;
+  crate::common::annotations_loaded(app)?;
   let rows = app.panel.as_ref().unwrap().view.rows();
   let kinds: Vec<_> = rows.iter().map(|row| (row.depth, row.kind)).collect();
   assert_eq!(

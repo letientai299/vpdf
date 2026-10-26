@@ -92,8 +92,10 @@ impl Panel {
       height: 0,
       layout: None,
       follow_pending: false,
+      new_topic: false,
+      place: String::new(),
       shelf: None,
-      recent: super::selection::Selection::default(),
+      removal: super::selection::Selection::default(),
       picker: crate::home::Picker::Terminal { fzf: false },
       pointing: Pointing::Away,
       hover_title: None,
@@ -115,7 +117,7 @@ impl Panel {
   ) {
     if self.shelf.as_mut().is_some_and(|shelf| shelf.refresh(entries)) {
       self
-        .recent
+        .removal
         .checked
         .retain(|path| entries.iter().any(|entry| entry.path == *path));
       self.refill(rows, "");
@@ -155,7 +157,7 @@ impl Panel {
 
   pub fn focus(&mut self, focused: bool) {
     if !focused {
-      self.leave_recent();
+      self.leave_removal();
     }
     self.focused = focused;
   }
@@ -168,6 +170,7 @@ impl Panel {
       return;
     }
     topic.clone_into(&mut self.topic);
+    self.new_topic = true;
     if let Some(mut folds) = self.folds.take() {
       folds.expand_all();
       folds.project(self, None);
@@ -183,11 +186,37 @@ impl Panel {
     self.rows.iter().filter(|row| row.depth > 0).count()
   }
 
-  /// Header text after the count: the topic, the note, the selection.
+  pub fn set_place(&mut self, place: &str) {
+    if self.place != place {
+      place.clone_into(&mut self.place);
+    }
+  }
+
+  /// The selected hit's number among the results, from 1.
+  fn item_index(&self) -> Option<usize> {
+    let row = self.rows.get(self.selected)?;
+    if self.kind != PanelKind::Results || row.depth == 0 {
+      return None;
+    }
+    let before = &self.rows[..self.selected];
+    Some(before.iter().filter(|row| row.depth > 0).count() + 1)
+  }
+
+  /// Header text after the count: the topic, the selected hit or mark,
+  /// the place, the note and the selection.
   pub(super) fn context(&self) -> Vec<(String, Option<Role>)> {
     let mut context = Vec::new();
     if !self.topic.is_empty() {
       context.push((format!(" “{}”", self.topic), Some(Role::Key)));
+    }
+    if let Some(index) = self.item_index() {
+      context.push((format!("  {index}/{}", self.row_count()), None));
+    }
+    if let Some(name) = self.rows.get(self.selected).and_then(Row::mark_name) {
+      context.push((format!("  ’{name} jump"), None));
+    }
+    if !self.place.is_empty() {
+      context.push((format!("  {}", self.place), None));
     }
     let selection = if self.is_recent_view() {
       self.selection_count()
@@ -252,8 +281,8 @@ impl Panel {
       self.pointing = Pointing::Away;
     }
     self.hover_title = None;
-    if let Some(outline) = &mut self.tree_view {
-      outline.targets.clear();
+    if let Some(tree) = &mut self.tree_view {
+      tree.targets.clear();
     }
     self.layout = None;
     self.top = self.line_start(source);
@@ -415,7 +444,7 @@ impl Panel {
   /// What `yy` copies from the selected row: its label.
   pub fn yank_text(&self) -> Option<String> {
     let row = self.rows.get(self.selected)?;
-    Some(format!("{}\n", row.label.trim()))
+    Some(format!("{}\n", row.full_label()))
   }
 
   /// The row at a panel cell.
@@ -490,7 +519,7 @@ impl Panel {
     )
   }
 
-  pub(super) fn is_visible(&self, source: usize) -> bool {
+  pub fn is_visible(&self, source: usize) -> bool {
     self.projection.position(source).is_some()
   }
 
@@ -518,22 +547,17 @@ impl Panel {
       .as_ref()
       .and_then(|layout| layout.selected)
       .is_some_and(|selected| selected != self.selected);
-    if fresh
-      && matches!(
-        self.kind,
-        PanelKind::Version
-          | PanelKind::Outline
-          | PanelKind::Jumps
-          | PanelKind::Annotations
-      )
-      || !matches!(
-        self.kind,
-        PanelKind::Version
-          | PanelKind::Jumps
-          | PanelKind::Outline
-          | PanelKind::Annotations
-      ) && self.projection.sources().len() == self.rows.len()
-    {
+    let partial = self.projection.sources().len() != self.rows.len();
+    let build: fn(&[Row], usize, usize) -> Layout = match self.kind {
+      PanelKind::Jumps => Layout::jumps,
+      PanelKind::Annotations => Layout::annotations,
+      PanelKind::Version => |rows, columns, _| Layout::help(rows, columns),
+      // A projected list keeps the cut its hover reads.
+      _ if partial => |rows, columns, _| Layout::plain(rows, columns),
+      // Other lists paint their rows directly.
+      _ => return,
+    };
+    if fresh {
       return;
     }
     let source = self.line_source(self.top);
@@ -543,17 +567,8 @@ impl Panel {
     let shown = (self.top..self.top + visible).contains(&selected);
     // A new selection keeps its screen line as other rows collapse.
     let anchor = selected.checked_sub(self.top).filter(|_| moved && shown);
-    self.layout = Some(
-      match self.kind {
-        PanelKind::Jumps => Layout::jumps(&self.rows, columns, self.selected),
-        PanelKind::Annotations => {
-          Layout::annotations(&self.rows, columns, self.selected)
-        }
-        PanelKind::Version => Layout::help(&self.rows, columns),
-        _ => Layout::plain(&self.rows, columns),
-      }
-      .project(&self.projection),
-    );
+    self.layout =
+      Some(build(&self.rows, columns, self.selected).project(&self.projection));
     let start = self.line_start(source);
     let length = self.line_start(source + 1).saturating_sub(start);
     self.top = match anchor {
@@ -567,12 +582,13 @@ impl Panel {
 
   /// Panel columns: dragged, else by kind.
   pub fn width(kind: PanelKind, columns: u16, dragged: Option<u16>) -> u16 {
-    let wide = matches!(kind, PanelKind::Info | PanelKind::Version);
+    let (share, most) = match kind {
+      PanelKind::Info => (2, 50),
+      PanelKind::Version => (2, 64),
+      _ => (3, 50),
+    };
     let width = dragged.map_or_else(
-      || {
-        let width = if wide { columns / 2 } else { columns / 3 };
-        width.clamp(1, if wide { 64 } else { 50 })
-      },
+      || (columns / share).clamp(1, most),
       |dragged| dragged.max(MIN_WIDTH),
     );
     width.min(columns.saturating_sub(12))
@@ -609,7 +625,9 @@ impl Panel {
   }
 
   pub(super) fn row_roles(&self, source: usize) -> (Role, Role) {
-    let selected = self.kind != PanelKind::Version && source == self.selected;
+    // The flat help view has no selection to show.
+    let flat = self.kind == PanelKind::Version && self.folds.is_none();
+    let selected = !flat && source == self.selected;
     let plain = match (selected, self.focused) {
       (true, true) => Role::Selected,
       (true, false) => Role::Current,
@@ -637,7 +655,7 @@ impl Panel {
       title: self.kind.title(),
       count: self.row_count(),
       context: &self.context(),
-      role: Role::Muted,
+      role: Role::Bar,
       controls: &[],
     }
     .scene(scene, at, width, self.pointing);
@@ -654,8 +672,8 @@ impl Panel {
     self.columns = width;
     self.height = height;
     self.hover_title = None;
-    if let Some(outline) = &mut self.tree_view {
-      outline.targets.clear();
+    if let Some(tree) = &mut self.tree_view {
+      tree.targets.clear();
     }
     if width < 2 || height == 0 {
       return;
@@ -713,7 +731,7 @@ impl Panel {
         && matches!(item.destination, Destination::File(_))
       {
         let checked = matches!(&item.destination, Destination::File(path)
-          if self.recent.checked.contains(path));
+          if self.removal.checked.contains(path));
         if checked { "[x] " } else { "[ ] " }
       } else {
         ""
@@ -733,8 +751,7 @@ impl Panel {
           None => item.scene(&mut (), Some(base), usize::MAX, keys, "") > used,
         };
         if clipped {
-          // Outline rows indent by depth.
-          self.hover_title = Some(self.rows[source].label.trim().to_owned());
+          self.hover_title = Some(self.rows[source].full_label());
         }
       }
       let detail = meta.page.trim_start();

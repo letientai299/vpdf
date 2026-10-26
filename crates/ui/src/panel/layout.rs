@@ -1,4 +1,4 @@
-use crate::panel::{Destination, Row, Style};
+use crate::panel::{Destination, Row, RowKind, Style};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
@@ -160,6 +160,7 @@ impl Layout {
     Self { columns, lines: Vec::new(), starts: Vec::new(), selected: None }
   }
 
+  /// One line per row, for a projected list.
   pub(crate) fn plain(rows: &[Row], columns: usize) -> Self {
     let mut layout = Self::empty(columns);
     let keys = super::key_width(rows, columns);
@@ -180,11 +181,11 @@ impl Layout {
 
   /// Each row's label lines, then the dim text `second` gives it, which
   /// replaces the label's detail; the selected row wraps both.
-  pub(crate) fn expanded<'a>(
-    rows: &'a [Row],
+  pub(crate) fn expanded(
+    rows: &[Row],
     columns: usize,
     selected: usize,
-    second: impl Fn(usize, &'a Row) -> Option<&'a str>,
+    second: impl Fn(usize, &Row) -> Option<String>,
   ) -> Self {
     let mut layout = Self { selected: Some(selected), ..Self::empty(columns) };
     let keys = key_cells(rows, columns);
@@ -196,20 +197,22 @@ impl Layout {
       };
       let label = Row { detail: String::new(), ..row.clone() };
       let lead = layout.label(source, &label, keys, selected);
-      layout.secondary(source, text, selected, lead);
+      layout.secondary(source, &text, selected, lead);
     }
     layout.starts.push(layout.lines.len());
     layout
   }
 
-  /// Annotations; the selected one shows its note.
+  /// Annotations; the selected one shows its note after `✎`.
   pub(crate) fn annotations(
     rows: &[Row],
     columns: usize,
     selected: usize,
   ) -> Self {
+    let glyph = RowKind::Note.glyph().map_or('✎', |(glyph, _)| glyph);
     Self::expanded(rows, columns, selected, |source, row| {
-      row.note().filter(|_| source == selected)
+      let note = row.note().filter(|_| source == selected)?;
+      Some(format!("{glyph} {note}"))
     })
   }
 
@@ -232,15 +235,17 @@ impl Layout {
   }
 
   /// The row's label lines; the first keeps its glyph, key and page,
-  /// and the rest start under the title. Returns the title's column.
+  /// and the rest start under the title. Rows indent by depth, as the
+  /// tree paints them, outside the lines. Returns the indent and the
+  /// title's column within the lines.
   pub(crate) fn label(
     &mut self,
     source: usize,
     row: &Row,
     key_column: usize,
     selected: usize,
-  ) -> usize {
-    let meta = Meta::new(row, self.columns, key_column, 0, 0);
+  ) -> (usize, usize) {
+    let meta = Meta::new(row, self.columns, key_column, row.depth, 0);
     let lead = meta.lead_cells();
     let Meta { room, page, .. } = meta;
     let (labels, cut) = if source == selected {
@@ -252,7 +257,11 @@ impl Layout {
     for (index, label) in labels.into_iter().enumerate() {
       let label =
         if index == 0 { label } else { format!("{}{label}", " ".repeat(lead)) };
-      let line = Row::new(label, String::new(), Destination::None);
+      // Continuation lines keep the row's style, such as muted.
+      let line = Row {
+        style: row.style,
+        ..Row::new(label, String::new(), Destination::None)
+      };
       self.lines.push(Line {
         source,
         keys: 0,
@@ -269,19 +278,21 @@ impl Layout {
         },
       });
     }
-    lead
+    (meta.indent, lead)
   }
 
-  /// Dim lines of `text`, `indent` cells in.
+  /// Dim lines of `text`, `lead` cells in past a row's unpainted
+  /// `indent`.
   pub(crate) fn secondary(
     &mut self,
     source: usize,
     text: &str,
     selected: usize,
-    indent: usize,
+    (indent, lead): (usize, usize),
   ) {
-    let indent = self.columns.saturating_sub(1).min(indent);
-    let room = self.columns.saturating_sub(indent);
+    let columns = self.columns.saturating_sub(indent);
+    let indent = columns.saturating_sub(1).min(lead);
+    let room = columns.saturating_sub(indent);
     let lines = if source == selected {
       wrap(text, room)
     } else {

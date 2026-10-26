@@ -591,7 +591,7 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
       *screen = size;
       session.resize(size).map(|()| true)
     }
-    Input::Open(_) if session.confirming_recent() => Ok(false),
+    Input::Open(_) if session.confirming_removal() => Ok(false),
     Input::Open(path) => {
       if session.blocked() {
         session.native_opens.push_back(path);

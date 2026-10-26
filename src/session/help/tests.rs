@@ -807,11 +807,7 @@ fn refresh_retains_page_separator() -> Result<()> {
     line: app.doc.text(page)?.lines.len(),
     glyph: 0,
   };
-  let frame = vpdf_ui::text_view::Frame {
-    screen: app.screen,
-    at: app.at,
-    left: app.left,
-  };
+  let frame = vpdf_ui::text_view::Frame::new(app.screen, app.at, app.left);
   app
     .text_view
     .bind(crate::pdf_text::PdfText(&mut app.doc), frame)

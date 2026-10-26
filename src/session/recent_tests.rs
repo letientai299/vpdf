@@ -329,7 +329,7 @@ fn marks_remove_by_key_and_click() -> Result<()> {
   // A local mark, by key.
   session.app().panel.as_mut().unwrap().view.choose(1);
   recent_key(&mut session, KeyCode::Char('x'))?;
-  assert!(session.app().confirming_recent());
+  assert!(session.app().confirming_removal());
   recent_key(&mut session, KeyCode::Char('y'))?;
   assert!(session.app().marks.is_empty());
   assert_eq!(shown(&mut session), ["Global", "’A"]);
@@ -344,7 +344,7 @@ fn marks_remove_by_key_and_click() -> Result<()> {
     let press =
       MouseEvent::new(MouseEventKind::Down(MouseButton::Left), column, row);
     session.interact(Interaction::Mouse(Mouse::from(press)))?;
-    assert!(!session.app().confirming_recent(), "{removed}");
+    assert!(!session.app().confirming_removal(), "{removed}");
     assert_eq!(session.state.marks.is_empty(), removed);
   }
   assert!(session.app().panel.as_ref().unwrap().view.rows().is_empty());
@@ -353,5 +353,21 @@ fn marks_remove_by_key_and_click() -> Result<()> {
   let saved = State::load(session.store.as_deref().unwrap());
   assert!(saved.marks.is_empty());
   assert!(saved.recent.iter().all(|entry| entry.marks.is_empty()));
+  Ok(())
+}
+
+/// Setting a mark shows it in an open Marks panel.
+#[test]
+fn marks_show_new_marks() -> Result<()> {
+  let (_root, mut session, _pdf) = reader()?;
+  session.app().request = Some(Request::Panel(PanelKind::Marks));
+  session.settle()?;
+  for name in ['a', 'A'] {
+    session.app().set_mark(name)?;
+    session.settle()?;
+  }
+  let rows = session.app().panel.as_ref().unwrap().view.rows();
+  let keys: Vec<_> = rows.iter().map(|row| row.key.as_str()).collect();
+  assert_eq!(keys, ["", "’a", "", "’A"]);
   Ok(())
 }

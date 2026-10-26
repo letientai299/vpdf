@@ -161,6 +161,7 @@ impl Panel {
   /// Groups rows by their depth; headings named in `closed` start
   /// closed.
   pub fn group(&mut self, closed: &[String]) {
+    self.new_topic = false;
     let mut folds =
       Folds::new(Tree::from_depths(self.rows.iter().map(|row| row.depth)));
     for (source, row) in self.rows.iter().enumerate() {
@@ -168,12 +169,18 @@ impl Panel {
         folds.close(source);
       }
     }
-    folds.project(self, None);
+    // A row search keeps its match shown, as typing did.
+    if self.searching() {
+      folds.preview(self, None);
+    } else {
+      folds.project(self, None);
+    }
     self.folds = Some(folds);
   }
 
   /// Refills grouped rows: the same topic keeps closed groups, and a
-  /// panel that was empty selects the landed row, else the first item.
+  /// panel that was empty or answered another topic selects the landed
+  /// row, else the first item.
   pub fn regroup(
     &mut self,
     rows: Vec<super::Row>,
@@ -182,18 +189,41 @@ impl Panel {
     landed: Option<crate::text::Position>,
   ) -> bool {
     self.set_topic(topic);
-    let closed = self.closed_groups();
-    let empty = self.rows.is_empty();
+    let fresh = self.rows.is_empty() || self.new_topic;
+    let closed = if fresh {
+      self.kind.folded().iter().map(|&group| group.to_owned()).collect()
+    } else {
+      self.closed_groups()
+    };
     let kept = self.refill(rows, note);
     self.group(&closed);
     self.mark_landed(landed);
-    if empty {
-      let first = self.rows.iter().position(super::Row::follows);
+    if fresh {
+      self.top = 0;
+      // The first shown item, else the first heading; header lines
+      // are neither.
+      let shown = |row: &usize| self.is_visible(*row);
+      let first = (0..self.rows.len())
+        .filter(shown)
+        .find(|&row| self.rows[row].depth > 0)
+        .or_else(|| {
+          (0..self.rows.len())
+            .filter(shown)
+            .find(|&row| self.branch_closed(row).is_some())
+        });
       if let Some(row) = self.current.or(first) {
         self.select(row);
       }
     }
     kept
+  }
+
+  /// A grouped panel `height` rows tall, with its default folds.
+  pub fn grouped(kind: PanelKind, rows: Vec<super::Row>, height: u16) -> Self {
+    let mut panel = Self::new(kind, Vec::new());
+    panel.resize(height);
+    panel.regroup(rows, "", "", None);
+    panel
   }
 
   /// Labels of the closed group headings.

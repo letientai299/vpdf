@@ -77,6 +77,7 @@ impl App {
     } else {
       let position = self.reading_position()?;
       self.marks.insert(name, position);
+      self.request = Some(Request::MarkSet);
     }
     self.reader.notice(format!("Mark {name} set"));
     Ok(())
@@ -123,7 +124,8 @@ impl App {
       .into_iter()
       .map(|(name, position)| {
         let text = self.doc.text(position.page).ok();
-        Row::local_mark(name, position, text.as_deref())
+        let page = self.doc.label(position.page);
+        Row::local_mark(name, position, text.as_deref(), page)
       })
       .collect();
     let global = global

@@ -47,6 +47,11 @@ auto-expand. Hover a control for its action and key; hover a clipped title
 for its full text. Narrow panels hide the header controls; keys and menus
 remain available.
 
+RESULTS, ANNOTATIONS, MARKS, and INFO group rows under headings. The fold keys,
+chevrons, header controls, and heading menu work there too, without
+auto-expand. Their folds last for the pane; a new search query opens every
+page.
+
 New documents start fully expanded with auto-expand off. Folds and auto-expand
 persist per document across restarts. New panes start from the latest saved
 choices and then browse independently. Changed outlines discard saved fold

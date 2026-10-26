@@ -19,9 +19,9 @@ The [configuration chapter][configuration] explains setting its initial value.
 ## Text preview
 
 `:text` opens extracted text, wrapped to the pane width, and scrolls through
-successive pages. Page separators identify each new page. Cursor and Visual
-modes still navigate and select document text. Search and link destinations
-retain their document positions.
+successive pages. Page separators identify each new page, and the top row names
+the pages in view. Cursor and Visual modes still navigate and select document
+text. Search and link destinations retain their document positions.
 
 Press `q` to leave text preview before closing the document. Text preview can
 make small split panes easier to read. It depends on extracted or recognized

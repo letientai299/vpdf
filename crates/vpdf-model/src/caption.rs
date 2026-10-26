@@ -43,7 +43,7 @@ pub fn parse(text: &str) -> Option<Caption<'_>> {
     && number.ends_with(')')
     && number.split_once('(').is_some_and(|(base, _)| numbered(base));
   // A capitalized title may follow without a separator.
-  let titled = !rest.starts_with(char::is_lowercase);
+  let titled = rest.starts_with(char::is_uppercase);
   let labeled = numbered(bare) && (standalone || separated || titled);
   (lettered || labeled).then(|| Caption {
     kind,
@@ -81,6 +81,9 @@ mod tests {
       ("Figure 2.10(a) gives an example", None),
       ("Figure 4.3b. This is called a network", None),
       ("Table 3.1).", None),
+      ("Figure 3 (left) shows the loss", None),
+      ("Table 4 [12] reports results", None),
+      ("Figure 5 2D view", None),
     ];
     for (text, want) in cases {
       let got = parse(text).map(|c| (c.kind, c.number, c.rest));

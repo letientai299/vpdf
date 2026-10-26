@@ -328,7 +328,7 @@ impl App {
 
 impl App {
   fn text_frame(&self) -> Frame {
-    Frame { screen: self.screen, at: self.at, left: self.left }
+    Frame::new(self.screen, self.at, self.left)
   }
 
   pub fn text(&mut self) -> Pane<'_, PdfText<'_>> {
@@ -341,6 +341,21 @@ impl App {
     let hovered = self.hover_segments();
     let dim = self.panel_focused();
     let paint = self.reader.marks(&self.search, self.cursorline, dim, &hovered);
-    self.text_view.bind(PdfText(&mut self.doc), frame).scene(scene, &paint)
+    let pages = self
+      .text_view
+      .bind(PdfText(&mut self.doc), frame)
+      .scene(scene, &paint)?;
+    let header = vpdf_ui::text_view::Header {
+      first: self.doc.label(PageId(pages.start)),
+      last: self.doc.label(PageId(pages.end.saturating_sub(1))),
+    };
+    let at = vpdf_model::geometry::At {
+      column: self.at.column + self.left,
+      ..self.at
+    };
+    if frame.header > 0 {
+      header.scene(scene, at, self.screen.columns.saturating_sub(self.left));
+    }
+    Ok(())
   }
 }

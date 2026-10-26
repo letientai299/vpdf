@@ -19,9 +19,9 @@ fn app() -> Result<(tempfile::TempDir, App)> {
   Ok((root, app))
 }
 
-fn loaded(app: &mut App, kind: PanelKind) -> Result<()> {
+fn loaded(app: &mut App) -> Result<()> {
   let start = Instant::now();
-  while app.sidebar_pending(kind) {
+  while app.annotations_pending() {
     app.sidebar_updates()?;
     anyhow::ensure!(
       start.elapsed() < Duration::from_secs(5),
@@ -37,7 +37,7 @@ fn opening_is_cancelable() -> Result<()> {
   let (_root, mut app) = app()?;
   let kind = PanelKind::Annotations;
   app.open_panel(kind)?;
-  assert!(app.sidebar_loading(kind));
+  assert!(app.annotations_loading());
   assert!(app.panel.as_ref().unwrap().view.rows().is_empty());
   let (send, stopped) = mpsc::channel();
   app.sidebar.annotations =
@@ -51,9 +51,9 @@ fn opening_is_cancelable() -> Result<()> {
   app.cancel_sidebars();
   assert!(stopped.recv_timeout(Duration::from_secs(5))?);
   app.prepare_sidebars();
-  assert!(!app.sidebar_pending(kind));
+  assert!(!app.annotations_pending());
   app.open_panel(kind)?;
-  loaded(&mut app, kind)?;
+  loaded(&mut app)?;
   let rows = app.panel.as_ref().unwrap().view.rows();
   assert_eq!(rows.iter().filter(|row| row.follows()).count(), 2);
   Ok(())
@@ -65,46 +65,46 @@ fn opening_is_cancelable() -> Result<()> {
 #[test]
 fn workers_wait_for_their_slot() -> Result<()> {
   let (_root, mut app) = app()?;
-  let kind = PanelKind::Annotations;
   let held = hold_annotations(&app);
-  app.want_sidebar(kind);
+  app.want_annotations();
   app.refresh_sidebars()?;
-  app.want_sidebar(kind);
+  app.want_annotations();
   app.sidebar_updates()?;
-  assert!(!app.sidebar_loading(kind));
-  assert!(app.sidebar_pending(kind), "queued loads are pending");
+  assert!(!app.annotations_loading());
+  assert!(app.annotations_pending(), "queued loads are pending");
   app.prepare_sidebars();
   assert!(!app.sidebars_deferred(), "queued loads let the loop sleep");
   drop(held);
   app.sidebar_updates()?;
-  assert!(app.sidebar_loading(kind));
-  loaded(&mut app, kind)?;
-  assert_eq!(app.sidebar_rows(kind).len(), 2);
+  assert!(app.annotations_loading());
+  loaded(&mut app)?;
+  assert_eq!(app.annotation_rows().len(), 2);
   app.refresh_sidebars()?;
   let held = hold_annotations(&app);
-  app.want_sidebar(kind);
+  app.want_annotations();
   app.cancel_sidebars();
   drop(held);
   app.sidebar_updates()?;
-  assert!(!app.sidebar_loading(kind));
+  assert!(!app.annotations_loading());
   Ok(())
 }
 
+/// A reload shows the old rows until the new ones load.
 #[test]
-fn reload_discards_old_rows() -> Result<()> {
+fn reload_replaces_old_rows() -> Result<()> {
   let (root, mut app) = app()?;
   let kind = PanelKind::Annotations;
   app.open_panel(kind)?;
-  loaded(&mut app, kind)?;
-  assert_eq!(app.sidebar_rows(kind).len(), 2);
+  loaded(&mut app)?;
+  assert_eq!(app.annotation_rows().len(), 2);
   let replacement = root.path().join("replacement.pdf");
   crate::fixtures::pdf(&replacement, &["no notes", "second page"], "")?;
   std::fs::rename(replacement, &app.path)?;
   app.reload_with("")?;
-  assert!(app.sidebar_loading(kind));
-  assert!(app.sidebar_rows(kind).is_empty());
-  loaded(&mut app, kind)?;
-  assert!(app.sidebar_rows(kind).is_empty());
+  assert!(app.annotations_loading());
+  assert_eq!(app.panel.as_ref().unwrap().view.rows().len(), 4);
+  loaded(&mut app)?;
+  assert!(app.annotation_rows().is_empty());
   Ok(())
 }
 

@@ -359,10 +359,14 @@ impl Index {
     let mut printed = Self::default();
     // Twice the cells in glyphs covers wide text without reading a
     // long line's whole prefix.
-    let from = match first.glyph.checked_sub(CONTEXT * 2) {
-      Some(glyph) => Position { glyph, ..first },
-      None => {
-        Position { line: first.line.saturating_sub(1), glyph: 0, ..first }
+    let from = match (first.glyph.checked_sub(CONTEXT * 2), first.line) {
+      (Some(glyph), _) => Position { glyph, ..first },
+      (None, 0) => Position { glyph: 0, ..first },
+      // The previous line's end supplies the rest.
+      (None, line) => {
+        let length = self.lines[line - 1].chars().count();
+        let glyph = length.saturating_sub(CONTEXT * 2 - first.glyph);
+        Position { line: line - 1, glyph, ..first }
       }
     };
     self.print(&mut printed, from, Some(first), usize::MAX);
@@ -562,6 +566,12 @@ mod tests {
       let from = hits[0].matched.start;
       assert_eq!(&hits[0].excerpt[from..], excerpt, "{query}");
     }
+    let wide = format!("{}tail", "x".repeat(500));
+    let text = sample(&[&wide, "needle here"]);
+    let hits =
+      Index::new(PageId(0), &text).matches(&compile("needle", false)?, 1)?;
+    let before = &hits[0].excerpt[..hits[0].matched.start];
+    assert!(before.ends_with("xtail "), "{before}");
     let long = sample(&[&"Word ".repeat(30)]);
     let hits =
       Index::new(PageId(0), &long).matches(&compile("word", false)?, 1)?;
