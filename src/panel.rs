@@ -235,8 +235,9 @@ impl App {
     panel.view.resize(self.screen.rows);
     if kind == PanelKind::Outline {
       self.outline.sync(&self.doc.outline);
-      panel.view.project(self.outline.tree().project(|_| false));
-      panel.view.select(self.reading_view().current_section().unwrap_or(0));
+      panel.view.choose(self.reading_view().current_section().unwrap_or(0));
+      self.outline.project(&mut panel.view);
+      panel.view.reveal();
     }
     self.panel = Some(panel);
     self.relayout()
@@ -255,7 +256,7 @@ impl App {
     let Some(panel) = &mut self.panel else { return Ok(()) };
     let kept = panel.view.refill(rows, note);
     if kind == PanelKind::Outline {
-      panel.view.project(self.outline.tree().project(|_| false));
+      self.outline.project(&mut panel.view);
     }
     if !kept
       && kind != PanelKind::Info
@@ -367,6 +368,10 @@ impl App {
       vpdf_ui::panel::Event::Unhandled => return Ok(false),
       vpdf_ui::panel::Event::Forget(paths) => {
         self.request = Some(Request::ForgetRecent(paths));
+      }
+      vpdf_ui::panel::Event::Fold { operation, count } => {
+        self.outline.fold(&mut panel.view, operation, count);
+        self.overlays.close_menu();
       }
       vpdf_ui::panel::Event::Stay => {}
       vpdf_ui::panel::Event::Close => self.close_panel()?,

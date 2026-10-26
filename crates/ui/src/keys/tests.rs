@@ -715,3 +715,24 @@ fn window_arrows_preserve_counts() {
     }
   }
 }
+
+#[test]
+fn counted_tree_keys() {
+  for (typed, action, count) in [
+    ("3h", Action::Motion(Motion::Left), 3),
+    ("2l", Action::Motion(Motion::Right), 2),
+    ("4zR", Action::Fold(Fold::ExpandAll), 4),
+    ("5zM", Action::Fold(Fold::CollapseAll), 5),
+    ("zr", Action::Rotate, 1),
+    ("zc", Action::Crop, 1),
+  ] {
+    let mut keys = Keys::default();
+    let inputs: Vec<_> = parse(typed)
+      .unwrap()
+      .into_iter()
+      .filter_map(|key| keys.feed(key, Grammar::Panel))
+      .collect();
+    assert_eq!(inputs.len(), 1, "{typed}");
+    assert_eq!((inputs[0].action, inputs[0].count), (action, count));
+  }
+}

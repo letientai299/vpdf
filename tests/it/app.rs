@@ -1235,3 +1235,47 @@ fn overlay_clues_follow_policy() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn contents_manual_folding() -> Result<()> {
+  use vpdf_reader::motion::Motion;
+  use vpdf_ui::keys::Fold;
+  let mut app = solo("paper.pdf", false, common::cells(120, 50))?;
+  common::outline_loaded(&mut app)?;
+  app.open_panel(PanelKind::Outline)?;
+  let branch = app
+    .outline
+    .tree()
+    .nodes()
+    .iter()
+    .position(|node| node.descendants > 0)
+    .unwrap();
+  let end = app.outline.tree().nodes()[branch].end;
+  let cursor = app.reader.cursor;
+  app.panel.as_mut().unwrap().view.choose(branch);
+  common::keys(&mut app, b"h")?;
+  assert!(app.outline.closed(branch));
+  common::keys(&mut app, b"j")?;
+  assert_eq!(app.panel.as_ref().unwrap().view.selected(), end);
+  app.close_panel()?;
+  app.open_panel(PanelKind::Outline)?;
+  assert!(app.outline.closed(branch));
+  app.panel.as_mut().unwrap().view.choose(branch);
+  app.action(Input::plain(Action::Motion(Motion::Down)))?;
+  assert_eq!(app.panel.as_ref().unwrap().view.selected(), end);
+  common::keys(&mut app, b"zR")?;
+  assert!(!app.outline.closed(branch));
+  app.panel.as_mut().unwrap().view.choose(branch + 1);
+  common::keys(&mut app, b"zM")?;
+  assert_eq!(
+    app.outline.tree().nodes()[app.panel.as_ref().unwrap().view.selected()]
+      .parent,
+    None
+  );
+  assert_eq!(app.reader.cursor, cursor);
+  app.open_panel(PanelKind::Version)?;
+  app.action(Input::plain(Action::Fold(Fold::ExpandAll)))?;
+  assert!(app.outline.closed(branch));
+  Ok(())
+}

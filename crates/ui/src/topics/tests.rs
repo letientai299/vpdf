@@ -361,7 +361,7 @@ fn inactive_aliases_do_not_affect_named_prefixes() {
       topic("xy_details", &[]),
       topic("unique", &["uniq_a", "uniq_z"]),
     ],
-    bindings.snapshot(),
+    bindings.snapshot().in_panel(crate::keys::PanelKind::Annotations),
   )
   .unwrap();
   assert_eq!(
@@ -703,4 +703,48 @@ fn lookup_recovers_spelling_and_quotes() {
     registry.suggest("unrecognized-topic", Context::Normal),
     [] as [String; 0]
   );
+}
+
+#[test]
+fn contents_folds_use_custom_bindings() {
+  use crate::keys::{Fold, Input, Keys, PanelKind};
+  use crate::panel::{Event, Panel};
+  let mut bindings = Bindings::default();
+  let fold = Action::Fold(Fold::CollapseAll);
+  remap(&mut bindings, Context::Panel, &[("x", Some(Target::Reader(fold)))]);
+  let registry =
+    Registry::new(authored(), bindings.snapshot().in_panel(PanelKind::Outline))
+      .unwrap();
+  assert_eq!(registry.lookup("x", Context::Panel), action(fold));
+  let topic =
+    registry.action(&TopicId::parse("outline.collapse-all").unwrap()).unwrap();
+  assert!(topic.effective.iter().any(|row| row.context == Context::Panel
+    && row.sequence.to_string() == "x"
+    && row.purpose == "collapse all branches"));
+  let mut keys = Keys::default();
+  let inputs: Vec<_> = sequence("3x")
+    .keys()
+    .iter()
+    .filter_map(|&key| match keys.feed_with(key, Context::Panel, &bindings) {
+      Some(Dispatch::Input(input)) => Some(input),
+      _ => None,
+    })
+    .collect();
+  assert_eq!(inputs.len(), 1);
+  let mut panel = Panel::new(PanelKind::Outline, vec![]);
+  assert_eq!(
+    panel.input(inputs[0], 20),
+    Event::Fold { operation: Fold::CollapseAll, count: 3 }
+  );
+  assert_eq!(
+    panel.input(Input::plain(Action::Fold(Fold::Open)), 20),
+    Event::Fold { operation: Fold::Open, count: 1 }
+  );
+  for kind in [PanelKind::Annotations, PanelKind::Recent] {
+    let snapshot = bindings.snapshot().in_panel(kind);
+    assert!(
+      !snapshot.effective.iter().any(|row| row.context == Context::Panel
+        && matches!(row.target, Target::Reader(Action::Fold(_))))
+    );
+  }
 }

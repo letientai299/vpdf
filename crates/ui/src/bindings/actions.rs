@@ -1,4 +1,4 @@
-use crate::keys::{Action, PanelKind};
+use crate::keys::{Action, Fold, PanelKind};
 use crate::window::Window;
 use vpdf_reader::motion::Motion;
 use vpdf_reader::objects::Object;
@@ -200,6 +200,10 @@ specs! {
   "panel.marks" => Kind::Fixed(Action::Panel(PanelKind::Marks)),
   "panel.jumps" => Kind::Fixed(Action::Panel(PanelKind::Jumps)),
   "panel.annotations" => Kind::Fixed(Action::Panel(PanelKind::Annotations)),
+  "outline.close" => Kind::Fixed(Action::Fold(Fold::Close)),
+  "outline.open" => Kind::Fixed(Action::Fold(Fold::Open)),
+  "outline.expand-all" => Kind::Fixed(Action::Fold(Fold::ExpandAll)),
+  "outline.collapse-all" => Kind::Fixed(Action::Fold(Fold::CollapseAll)),
   "panel.close" => Kind::Fixed(Action::ClosePanel),
   "focus.toggle" => Kind::Fixed(Action::LocalFocus),
   "follow" => Kind::Fixed(Action::Follow),

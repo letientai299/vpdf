@@ -204,6 +204,8 @@ fn panel_and_overview_menus_run_their_items() -> Result<()> {
     ("Open in split", ""),
     ("Copy row", "yy"),
     ("Close panel", "q"),
+    ("Expand all", "zR"),
+    ("Collapse all", "zM"),
   ];
   let thumbnail = [
     ("Open", "<CR>"),

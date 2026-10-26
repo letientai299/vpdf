@@ -1,5 +1,5 @@
 use crate::bindings::{Bindings, Context, Control, Target as Binding};
-use crate::keys::{self, Action, PanelKind};
+use crate::keys::{self, Action, Fold, PanelKind};
 use crate::paint::Frame;
 use crate::panel::{Destination, Panel};
 use crate::pointer::Items;
@@ -82,6 +82,7 @@ pub struct Item<C = Command> {
 #[derive(Clone, Copy, Debug)]
 pub enum Shortcut {
   Action(Action),
+  Fold(Fold),
   SelectWord,
 }
 
@@ -135,6 +136,19 @@ fn panel_bound(
     command,
     shortcut: panel.shortcut_action(action).map(Shortcut::Action),
   }
+}
+
+fn fold_shortcut(bindings: &Bindings, source: Context, fold: Fold) -> String {
+  let key = bindings.shortcut(source, &Binding::Reader(Action::Fold(fold)));
+  if !key.is_empty() {
+    return key;
+  }
+  let motion = match fold {
+    Fold::Close => Motion::Left,
+    Fold::Open => Motion::Right,
+    _ => return key,
+  };
+  bindings.shortcut(source, &Binding::Reader(Action::Motion(motion)))
 }
 
 fn item(label: &'static str, key: &str, command: Command) -> Item {
@@ -203,6 +217,9 @@ impl<C> ContextMenu<C> {
       item.key = match item.shortcut {
         Some(Shortcut::Action(action)) => {
           bindings.shortcut(self.source, &Binding::Reader(action))
+        }
+        Some(Shortcut::Fold(fold)) => {
+          fold_shortcut(bindings, self.source, fold)
         }
         Some(Shortcut::SelectWord) => {
           let visual = if self.source == Context::Visual {
@@ -498,6 +515,30 @@ pub fn panel_items(
   items.push(panel_bound(panel, "Close panel", Action::ClosePanel, close));
   items
 }
+pub fn outline_items(panel: &Panel, branch: Option<bool>) -> Vec<Item> {
+  let mut actions = Vec::new();
+  if let Some(closed) = branch {
+    actions.push(if closed {
+      ("Expand branch", Fold::Open)
+    } else {
+      ("Collapse branch", Fold::Close)
+    });
+  }
+  actions.extend([
+    ("Expand all", Fold::ExpandAll),
+    ("Collapse all", Fold::CollapseAll),
+  ]);
+  actions
+    .into_iter()
+    .map(|(label, fold)| {
+      let action = Action::Fold(fold);
+      let mut item = panel_bound(panel, label, action, Command::Key(action));
+      item.shortcut = Some(Shortcut::Fold(fold));
+      item
+    })
+    .collect()
+}
+
 pub fn overview_items(page: Option<PageId>) -> Vec<Item> {
   let mut items = Vec::new();
   if let Some(page) = page {
@@ -617,5 +658,79 @@ mod tests {
       ContextMenu::<()>::new(Vec::new(), (0, 0), (0, 0), 0, false);
     assert_eq!(empty.input(Action::Motion(Motion::Up)), Transition::Stay);
     assert_eq!(empty.into_command(), None);
+  }
+}
+
+#[cfg(test)]
+mod fold_tests {
+  use super::*;
+
+  #[test]
+  fn custom_branch_shortcuts() {
+    let mut bindings = Bindings::default();
+    let previous = bindings.map(Context::Panel);
+    let edit = crate::bindings::Edit {
+      sequence: crate::bindings::Sequence::parse("x").unwrap(),
+      change: crate::bindings::Change::Bind(Binding::Reader(Action::Fold(
+        Fold::Close,
+      ))),
+    };
+    let (map, diagnostics) = previous.apply_sourced(&previous, &[edit], |_| {
+      crate::reference::Source::File("bindings.toml".into())
+    });
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    bindings.set(Context::Panel, map);
+    let panel = Panel::new(PanelKind::Outline, vec![]);
+    let mut menu = ContextMenu::new(
+      outline_items(&panel, Some(false)),
+      (0, 0),
+      (0, 80),
+      24,
+      true,
+    );
+    menu.rebind(&bindings, Context::Panel);
+    assert_eq!(menu.items[0].key, "x");
+    menu.items[0].shortcut = Some(Shortcut::Fold(Fold::Open));
+    menu.refresh_bindings(&bindings);
+    assert_eq!(menu.items[0].key, "l");
+  }
+
+  #[test]
+  fn branch_and_header_commands() {
+    let panel = Panel::new(PanelKind::Outline, vec![]);
+    for (branch, expected) in [
+      (
+        None,
+        vec![
+          ("Expand all", "zR", Fold::ExpandAll),
+          ("Collapse all", "zM", Fold::CollapseAll),
+        ],
+      ),
+      (
+        Some(false),
+        vec![
+          ("Collapse branch", "h", Fold::Close),
+          ("Expand all", "zR", Fold::ExpandAll),
+          ("Collapse all", "zM", Fold::CollapseAll),
+        ],
+      ),
+      (
+        Some(true),
+        vec![
+          ("Expand branch", "l", Fold::Open),
+          ("Expand all", "zR", Fold::ExpandAll),
+          ("Collapse all", "zM", Fold::CollapseAll),
+        ],
+      ),
+    ] {
+      let items = outline_items(&panel, branch);
+      assert_eq!(items.len(), expected.len());
+      for (item, (label, key, fold)) in items.iter().zip(expected) {
+        assert_eq!(item.label, label);
+        assert_eq!(item.key, key);
+        let Command::Key(action) = item.command else { panic!("fold action") };
+        assert_eq!(action, Action::Fold(fold));
+      }
+    }
   }
 }

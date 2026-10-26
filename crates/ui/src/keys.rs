@@ -39,6 +39,25 @@ impl PanelKind {
   }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Fold {
+  Close,
+  Open,
+  ExpandAll,
+  CollapseAll,
+}
+
+impl Fold {
+  pub fn of(action: Action) -> Option<Self> {
+    match action {
+      Action::Fold(fold) => Some(fold),
+      Action::Motion(Motion::Left) => Some(Self::Close),
+      Action::Motion(Motion::Right) => Some(Self::Open),
+      _ => None,
+    }
+  }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
   Help,
@@ -68,6 +87,7 @@ pub enum Action {
   Result(bool),
   Panel(PanelKind),
   ClosePanel,
+  Fold(Fold),
   RecentToggle,
   RecentRemove,
   LocalFocus,
@@ -348,6 +368,8 @@ pub(crate) const BINDINGS: &[(&str, Action, &str)] = &[
   ("-", Action::Zoom(-1), "zoom out"),
   ("=", Action::Fit, "fit width"),
   ("zf", Action::FitPage, "fit page"),
+  ("zR", Action::Fold(Fold::ExpandAll), "expand all branches"),
+  ("zM", Action::Fold(Fold::CollapseAll), "collapse all branches"),
   ("zr", Action::Rotate, "rotate clockwise"),
   ("zc", Action::Crop, "crop margins"),
   ("C-ws", Action::Window(W::Split(Axis::Rows)), "split above"),

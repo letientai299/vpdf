@@ -93,6 +93,6 @@ impl Bindings {
     );
     snapshot.recognized.sort_by_key(ToString::to_string);
     snapshot.recognized.dedup();
-    snapshot.in_panel(PanelKind::Annotations)
+    snapshot.in_panel(PanelKind::Outline)
   }
 }

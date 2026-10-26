@@ -145,6 +145,10 @@ impl Target {
 fn reader_allowed(action: Action, context: Context) -> bool {
   use Context as C;
   match action {
+    Action::Fold(_) => context == C::Panel,
+    Action::Motion(
+      vpdf_reader::motion::Motion::Left | vpdf_reader::motion::Motion::Right,
+    ) if context == C::Panel => true,
     Action::RecentToggle | Action::RecentRemove => {
       matches!(context, C::Recent | C::HomeRecent | C::Panel | C::Home)
     }

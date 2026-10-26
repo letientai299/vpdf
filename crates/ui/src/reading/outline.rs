@@ -1,5 +1,5 @@
 use super::View;
-use crate::keys::PanelKind;
+use crate::keys::{Fold, PanelKind};
 use crate::panel::Panel;
 use crate::panel::tree::Tree;
 use crate::source::{self, Pages};
@@ -12,6 +12,7 @@ pub struct Outline {
   current: Option<usize>,
   tree: Tree,
   headings: Vec<Heading>,
+  closed: Vec<bool>,
 }
 
 impl Outline {
@@ -20,11 +21,79 @@ impl Outline {
       current: None,
       tree: Tree::new(headings),
       headings: headings.to_vec(),
+      closed: vec![false; headings.len()],
     }
   }
 
   pub fn tree(&self) -> &Tree {
     &self.tree
+  }
+
+  pub fn closed(&self, source: usize) -> bool {
+    self.closed.get(source).copied().unwrap_or(false)
+  }
+
+  fn visible_source(&self, source: usize) -> Option<usize> {
+    let mut node = self.tree.nodes().get(source)?;
+    let mut visible = source;
+    while let Some(parent) = node.parent {
+      if self.closed(parent) {
+        visible = parent;
+      }
+      node = &self.tree.nodes()[parent];
+    }
+    Some(visible)
+  }
+
+  pub fn project(&self, panel: &mut Panel) {
+    let projection = self.tree.project(|source| self.closed(source));
+    let selected = self.tree.visible_ancestor(panel.selected(), &projection);
+    if let Some(selected) = selected {
+      panel.choose(selected);
+    }
+    panel.project(projection);
+  }
+
+  pub fn fold(&mut self, panel: &mut Panel, operation: Fold, count: usize) {
+    if panel.kind() != PanelKind::Outline {
+      return;
+    }
+    match operation {
+      Fold::ExpandAll => self.closed.fill(false),
+      Fold::CollapseAll => {
+        for (closed, node) in self.closed.iter_mut().zip(self.tree.nodes()) {
+          *closed = node.descendants > 0;
+        }
+      }
+      Fold::Close | Fold::Open => {
+        for _ in 0..count {
+          let Some(source) = self.step(panel.selected(), operation) else {
+            break;
+          };
+          panel.choose(source);
+        }
+      }
+    }
+    self.project(panel);
+    panel.reveal();
+  }
+
+  fn step(&mut self, source: usize, operation: Fold) -> Option<usize> {
+    let node = self.tree.nodes().get(source)?;
+    match operation {
+      Fold::Close if node.descendants > 0 && !self.closed[source] => {
+        self.closed[source] = true;
+        Some(source)
+      }
+      Fold::Close => node.parent,
+      Fold::Open if node.descendants == 0 => None,
+      Fold::Open if self.closed[source] => {
+        self.closed[source] = false;
+        Some(source)
+      }
+      Fold::Open => Some(source + 1),
+      Fold::ExpandAll | Fold::CollapseAll => unreachable!(),
+    }
   }
 
   pub fn replace(&mut self, headings: &[Heading]) {
@@ -59,7 +128,10 @@ impl Outline {
     if let Some(panel) =
       panel.filter(|panel| panel.kind() == PanelKind::Outline)
     {
-      panel.track(section, changed);
+      panel.track(
+        section.map(|source| self.visible_source(source).unwrap_or(source)),
+        changed,
+      );
     }
   }
 }
@@ -173,5 +245,88 @@ mod tests {
     assert_eq!(outline.current(), None);
     outline.replace(&[]);
     assert!(outline.tree().nodes().is_empty());
+  }
+}
+
+#[cfg(test)]
+mod fold_tests {
+  use super::*;
+  use crate::panel::Row;
+
+  fn setup() -> (Outline, Panel) {
+    let headings: Vec<_> = [0, 3, 8, 3, 0, 2]
+      .into_iter()
+      .map(|depth| Heading {
+        depth,
+        title: "Duplicate".into(),
+        target: Target::Page(PageId(0)),
+      })
+      .collect();
+    let panel = Panel::new(
+      PanelKind::Outline,
+      headings
+        .iter()
+        .map(|heading| Row::outline(heading, "iv".into()))
+        .collect(),
+    );
+    (Outline::new(&headings), panel)
+  }
+
+  #[test]
+  fn nested_choices_survive() {
+    let (mut outline, mut panel) = setup();
+    panel.choose(1);
+    outline.fold(&mut panel, Fold::Close, 1);
+    assert!(outline.closed(1));
+    outline.fold(&mut panel, Fold::Close, 2);
+    assert_eq!(panel.selected(), 0);
+    assert!(outline.closed(0));
+    outline.fold(&mut panel, Fold::Open, 2);
+    assert_eq!(panel.selected(), 1);
+    assert!(outline.closed(1));
+    panel.navigate(crate::keys::Input::plain(crate::keys::Action::Rows(1)), 20);
+    assert_eq!(panel.selected(), 3);
+    outline.fold(&mut panel, Fold::Open, usize::MAX);
+    assert_eq!(panel.selected(), 3, "leaves stay selected");
+    assert_eq!(outline.visible_source(2), Some(1));
+    panel.choose(0);
+    outline.fold(&mut panel, Fold::Close, 1);
+    assert_eq!(outline.visible_source(2), Some(0));
+    let mut reopened = setup().1;
+    reopened.choose(2);
+    outline.project(&mut reopened);
+    assert_eq!(reopened.selected(), 0);
+    outline.sync(&outline.headings.clone());
+    assert!(outline.closed(0));
+    outline.replace(&outline.headings.clone());
+    assert!(!outline.closed(0));
+  }
+
+  #[test]
+  fn global_folds_and_counts() {
+    let (mut outline, mut panel) = setup();
+    panel.choose(2);
+    outline.fold(&mut panel, Fold::CollapseAll, 1);
+    assert_eq!(panel.selected(), 0);
+    panel.navigate(crate::keys::Input::plain(crate::keys::Action::Rows(1)), 20);
+    assert_eq!(panel.selected(), 4);
+    outline.fold(&mut panel, Fold::ExpandAll, 1);
+    panel.choose(0);
+    outline.fold(&mut panel, Fold::Open, usize::MAX);
+    assert_eq!(panel.selected(), 2);
+    outline.fold(&mut panel, Fold::Close, usize::MAX);
+    assert_eq!(panel.selected(), 0);
+    assert!(outline.closed(0) && outline.closed(1));
+    panel.focus(false);
+    panel.track(Some(4), true);
+    assert_eq!(panel.selected(), 4);
+    let (mut empty, mut view) =
+      (Outline::default(), Panel::new(PanelKind::Outline, vec![]));
+    for operation in
+      [Fold::Close, Fold::Open, Fold::ExpandAll, Fold::CollapseAll]
+    {
+      empty.fold(&mut view, operation, 1);
+      assert_eq!(view.selected(), 0);
+    }
   }
 }

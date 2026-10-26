@@ -48,8 +48,20 @@ impl App {
     }
     let destination =
       pressed.map(|index| &panel.view.rows()[index].destination);
-    let items =
+    let mut items =
       vpdf_ui::context::panel_items(&panel.view, destination, covered);
+    if panel.view.kind() == vpdf_ui::keys::PanelKind::Outline {
+      let branch = pressed.and_then(|source| {
+        self
+          .outline
+          .tree()
+          .nodes()
+          .get(source)
+          .filter(|node| node.descendants > 0)
+          .map(|_| self.outline.closed(source))
+      });
+      items.extend(vpdf_ui::context::outline_items(&panel.view, branch));
+    }
     // Cards draw over cells right of the rows.
     let columns = self.screen.columns;
     let right = if covered {

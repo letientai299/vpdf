@@ -33,6 +33,11 @@ follows the row and returns focus to content. `o` follows while keeping focus
 in the panel, useful for comparing sections. Tab changes content/panel focus;
 `q` closes the focused panel and `gq` closes a side panel from content.
 
+Use `h` to close a branch or select its parent; use `l` to open a branch
+or select its first child. Counts repeat these steps. `zR` expands all
+branches; `zM` collapses all. Closing a branch preserves nested folds.
+The row and header menus also offer fold commands.
+
 While the panel has focus, `/word` filters or searches its rows rather than
 the whole PDF. Enter accepts the query. `n` and `N` navigate panel matches;
 Escape cancels query entry. Use `gg` and `G` to reach the first and last rows.

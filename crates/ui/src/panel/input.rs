@@ -1,11 +1,12 @@
 use super::{
   Action, Annotation, Destination, Input, Panel, PanelKind, Position, Target,
 };
-use crate::keys;
+use crate::keys::{self, Fold};
 
 #[derive(Debug, PartialEq)]
 pub enum Event {
   Unhandled,
+  Fold { operation: Fold, count: usize },
   Forget(Vec<std::path::PathBuf>),
   Stay,
   Close,
@@ -16,6 +17,7 @@ pub enum Event {
 }
 
 enum Route {
+  Fold(Fold),
   Toggle,
   Remove,
   Clear,
@@ -43,6 +45,7 @@ impl Panel {
       return Event::Unhandled;
     }
     match self.route(input.action) {
+      Route::Fold(operation) => Event::Fold { operation, count: input.count },
       Route::Toggle => {
         self.toggle_checked();
         Event::Stay
@@ -96,6 +99,13 @@ impl Panel {
 
   pub fn shortcut_action(&self, action: Action) -> Option<Action> {
     Some(match self.route(action) {
+      Route::Fold(Fold::Close) => {
+        Action::Motion(vpdf_reader::motion::Motion::Left)
+      }
+      Route::Fold(Fold::Open) => {
+        Action::Motion(vpdf_reader::motion::Motion::Right)
+      }
+      Route::Fold(fold) => Action::Fold(fold),
       Route::Toggle => Action::RecentToggle,
       Route::Remove => Action::RecentRemove,
       Route::Clear => Action::Cancel,
@@ -127,6 +137,10 @@ impl Panel {
       _ => {}
     }
     Some(match self.route(action) {
+      Route::Fold(Fold::Close) => "close branch or select parent",
+      Route::Fold(Fold::Open) => "open branch or select child",
+      Route::Fold(Fold::ExpandAll) => "expand all branches",
+      Route::Fold(Fold::CollapseAll) => "collapse all branches",
       Route::Toggle => "toggle recent checkbox",
       Route::Remove => "remove recent files",
       Route::Clear => "clear recent selections",
@@ -141,6 +155,14 @@ impl Panel {
   }
 
   fn route(&self, action: Action) -> Route {
+    if self.kind == PanelKind::Outline
+      && let Some(fold) = Fold::of(action)
+    {
+      return Route::Fold(fold);
+    }
+    if matches!(action, Action::Fold(_)) {
+      return Route::Ignore;
+    }
     if super::view::Navigation::of(action).is_some() {
       return Route::Navigate;
     }
@@ -317,5 +339,36 @@ mod tests {
       view.input(Input::plain(Action::YankLine), 24),
       Event::Copy { text: format!("{uri}\n"), register: '"' }
     );
+  }
+}
+
+#[cfg(test)]
+mod fold_tests {
+  use super::*;
+  use vpdf_reader::motion::Motion;
+
+  #[test]
+  fn folds_require_focused_contents() {
+    for kind in [PanelKind::Outline, PanelKind::Annotations, PanelKind::Recent]
+    {
+      let mut panel = Panel::new(kind, vec![]);
+      for action in [
+        Action::Motion(Motion::Left),
+        Action::Motion(Motion::Right),
+        Action::Fold(Fold::ExpandAll),
+        Action::Fold(Fold::CollapseAll),
+      ] {
+        let input = Input { count: 3, ..Input::plain(action) };
+        let expected = if kind == PanelKind::Outline {
+          Event::Fold { operation: Fold::of(action).unwrap(), count: 3 }
+        } else {
+          Event::Stay
+        };
+        assert_eq!(panel.input(input, 20), expected);
+        panel.focus(false);
+        assert_eq!(panel.input(input, 20), Event::Unhandled);
+        panel.focus(true);
+      }
+    }
   }
 }
