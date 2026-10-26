@@ -25,6 +25,16 @@ const MAX_LINES: usize = 3;
 const MAX_CROWD: usize = 6;
 /// Pages on each side that set a page's body size.
 const NEIGHBORS: usize = 3;
+/// Wrapped lines within this size ratio join.
+const SAME_SIZE: f32 = 0.08;
+/// Lines spanning this share of the column are prose.
+const FULL_WIDTH: f32 = 0.92;
+/// Bold fonts may measure slightly under body size.
+const BOLD_BODY: f32 = 0.95;
+/// Unnumbered sizes within this ratio share a rank.
+const RANK_SPREAD: f32 = 0.92;
+/// Largest folio read as a roman numeral.
+const ROMAN_MAX: i64 = 100;
 
 struct Candidate {
   page: PageId,
@@ -51,20 +61,27 @@ fn size(line: &Line) -> Option<f32> {
   Some(heights[heights.len() / 2])
 }
 
-/// Section depth from `1`, `2.3`, `A.1`, or `IV.` numbering.
+/// Section depth from a title's `1`, `2.3`, `A.1`, or `IV.` numbering.
 fn numbering(title: &str) -> Option<usize> {
   let (number, rest) = title.split_once(' ')?;
   let rest = rest.trim_start();
   if rest.chars().next().is_none_or(char::is_lowercase) {
     return None;
   }
-  // A lone undotted letter reads as a word: "A Bayesian approach".
-  let word = number.len() == 1 && number.chars().all(char::is_alphabetic);
   // Initials start names: "J. C. Brewer".
   let initial = |w: &str| {
     w.len() == 2 && w.ends_with('.') && w.starts_with(char::is_uppercase)
   };
-  if word || initial(number) && rest.split(' ').next().is_some_and(initial) {
+  if initial(number) && rest.split(' ').next().is_some_and(initial) {
+    return None;
+  }
+  depth(number)
+}
+
+/// Depth of one section label.
+fn depth(number: &str) -> Option<usize> {
+  // A lone undotted letter reads as a word: "A Bayesian approach".
+  if number.len() == 1 && number.chars().all(char::is_alphabetic) {
     return None;
   }
   let number = number.trim_end_matches('.');
@@ -79,13 +96,10 @@ fn numbering(title: &str) -> Option<usize> {
   valid.then_some(parts.len())
 }
 
-/// A canonical roman numeral in one case: "xii", "IV", not "civil".
+/// A canonical roman numeral up to [`ROMAN_MAX`] in one case: "xii",
+/// "IV", not "civil" or "mix".
 fn roman(word: &str) -> bool {
-  const DIGITS: [(i64, &str); 13] = [
-    (1000, "m"),
-    (900, "cm"),
-    (500, "d"),
-    (400, "cd"),
+  const DIGITS: [(i64, &str); 9] = [
     (100, "c"),
     (90, "xc"),
     (50, "l"),
@@ -127,7 +141,7 @@ fn roman(word: &str) -> bool {
       rest -= amount;
     }
   }
-  cased && !word.is_empty() && canonical == lower
+  cased && (1..=ROMAN_MAX).contains(&total) && canonical == lower
 }
 
 /// Half-point size classes shared by body, running-head, and crowd counts.
@@ -169,7 +183,8 @@ fn plausible(title: &str, pages: usize) -> bool {
     && !sentence
     // Footnote marks end author lines: "Aidan N. Gomez∗†".
     && !title.ends_with(['.', ',', ';', ':', '-', '∗', '†', '‡', '§', '*'])
-    // Contents pages list titles with trailing page numbers.
+    // Contents pages list titles with trailing page numbers; TeX sets
+    // "Chapter 1" above the title it names.
     && !title.rsplit_once(' ').is_some_and(|(_, last)| {
       last.parse::<usize>().is_ok_and(|n| n <= pages)
         || roman(last) && last == last.to_lowercase()
@@ -210,7 +225,7 @@ pub fn summarize(text: &Text, styles: &[LineStyle]) -> Vec<Summary> {
     let edge = index < 2 || index + 2 >= count;
     if !line.paragraph
       && let Some(last) = out.last_mut()
-      && (style.size / last.style.size - 1.0).abs() < 0.08
+      && (style.size / last.style.size - 1.0).abs() < SAME_SIZE
       && (last.style.bold, last.style.mono) == (style.bold, style.mono)
     {
       if last.title.chars().count() <= MAX_CHARS {
@@ -226,13 +241,16 @@ pub fn summarize(text: &Text, styles: &[LineStyle]) -> Vec<Summary> {
     }
     let mut title = words(line);
     let mut glyphs = line.glyphs.len();
-    if numbering(&format!("{title} X")).is_some()
+    let mut span = width(line);
+    if !title.contains(' ')
+      && depth(&title).is_some()
       && let Some((next_index, next)) = lines.peek()
       && let (Some(a), Some(b)) = (line.glyphs.first(), next.glyphs.first())
       && (a.bounds.y1 - b.bounds.y1).abs() < a.bounds.height() / 2.0
     {
       title = format!("{title} {}", words(next));
       glyphs += next.glyphs.len();
+      span = span.max(width(next));
       // A bold exercise number beside regular text: "**18** (a) For".
       let joined = styles.get(*next_index).copied().unwrap_or_default();
       style.mixed |= joined.mixed || !joined.mono && joined.bold != style.bold;
@@ -242,7 +260,7 @@ pub fn summarize(text: &Text, styles: &[LineStyle]) -> Vec<Summary> {
       title,
       style,
       y: line.glyphs.first().map_or(0.0, |g| g.bounds.y0),
-      width: width(line),
+      width: span,
       paragraph: line.paragraph,
       glyphs,
       lines: 1,
@@ -368,8 +386,9 @@ fn introduces(rest: &[Summary], body: f32) -> bool {
 pub fn infer(pages: &[Vec<Summary>]) -> Vec<Heading> {
   let bodies = bodies(pages);
   let running = running(pages);
-  // Body-size numbered lines whose labels repeat are exercises or lists.
-  let mut labels: HashMap<&str, usize> = HashMap::new();
+  // Body-size numbered lines whose labels repeat with other titles are
+  // exercises; proceedings repeat "1 Introduction".
+  let mut labels: HashMap<&str, HashSet<&str>> = HashMap::new();
   for (index, page) in pages.iter().enumerate() {
     let Some(body) = bodies[index] else { continue };
     for line in page.iter().filter(|line| {
@@ -377,9 +396,9 @@ pub fn infer(pages: &[Vec<Summary>]) -> Vec<Heading> {
         && (body * SMALLER..body * LARGER).contains(&line.style.size)
     }) {
       if numbering(&line.title).is_some()
-        && let Some((label, _)) = line.title.split_once(' ')
+        && let Some((label, rest)) = line.title.split_once(' ')
       {
-        *labels.entry(label).or_default() += 1;
+        labels.entry(label).or_default().insert(rest);
       }
     }
   }
@@ -388,9 +407,8 @@ pub fn infer(pages: &[Vec<Summary>]) -> Vec<Heading> {
     let Some(body) = bodies[index] else { continue };
     let measure = measure(page);
     for (at, line) in page.iter().enumerate() {
-      let key = letters(&line.title);
       // Headings keep one style; labels run into body text.
-      if key.is_empty()
+      if !line.title.contains(char::is_alphabetic)
         || line.style.mixed
         || line.lines > MAX_LINES
         || !plausible(&line.title, pages.len())
@@ -403,12 +421,13 @@ pub fn infer(pages: &[Vec<Summary>]) -> Vec<Heading> {
       let prose = !larger
         && !line.style.bold
         && line.title.split_whitespace().count() >= 8
-        && measure.is_some_and(|measure| line.width >= measure * 0.92);
+        && measure.is_some_and(|measure| line.width >= measure * FULL_WIDTH);
       if prose {
         continue;
       }
-      let repeated =
-        |label: &str| !larger && labels.get(label).is_some_and(|n| *n >= 3);
+      let repeated = |label: &str| {
+        !larger && labels.get(label).is_some_and(|titles| titles.len() >= 3)
+      };
       let level = numbering(&line.title).filter(|_| {
         line.paragraph
           && line.style.size >= body * SMALLER
@@ -420,7 +439,7 @@ pub fn infer(pages: &[Vec<Summary>]) -> Vec<Heading> {
       let bold = line.style.bold
         && !line.style.mono
         && line.paragraph
-        && line.style.size >= body * 0.95;
+        && line.style.size >= body * BOLD_BODY;
       // Unnumbered lowercase words label figures and tables: "idx".
       let named = line.title.starts_with(|c: char| c.is_ascii_digit())
         || line
@@ -601,7 +620,7 @@ fn depths(candidates: Vec<Candidate>) -> Vec<Heading> {
   // Bold and plain sizes cluster separately; ranks stay largest first.
   let mut ranks: Vec<(f32, bool)> = Vec::new();
   for (size, bold) in sizes {
-    if !ranks.iter().any(|(top, b)| *b == bold && size >= top * 0.92) {
+    if !ranks.iter().any(|(top, b)| *b == bold && size >= top * RANK_SPREAD) {
       ranks.push((size, bold));
     }
   }
@@ -616,7 +635,7 @@ fn depths(candidates: Vec<Candidate>) -> Vec<Heading> {
             .position(|(size, bold)| {
               *bold == candidate.bold
                 && candidate.size <= *size
-                && candidate.size >= size * 0.92
+                && candidate.size >= size * RANK_SPREAD
             })
             .unwrap_or(0)
         },
@@ -822,26 +841,43 @@ mod tests {
 
   #[test]
   fn depths_close_gaps() {
-    let candidate = |title: &str, size: f32, level: Option<usize>| Candidate {
-      page: PageId(0),
-      y: 0.0,
-      size,
-      title: title.into(),
-      level,
-      bold: false,
-    };
-    let headings = depths(vec![
-      candidate("Book", 30.0, None),
-      candidate("Project", 12.0, None),
-      candidate("Preface", 30.0, None),
-      candidate("Features", 11.0, None),
-      candidate("1 Chapter", 14.0, Some(1)),
-      candidate("1.1.1 Deep", 11.0, Some(3)),
-      candidate("Aside", 12.0, None),
-      candidate("2 Chapter", 14.0, Some(1)),
-    ]);
-    let depths: Vec<_> = headings.iter().map(|h| h.depth).collect();
-    assert_eq!(depths, [0, 1, 0, 1, 0, 1, 1, 0]);
+    let candidate =
+      |title: &str, size: f32, level: Option<usize>, bold: bool| Candidate {
+        page: PageId(0),
+        y: 0.0,
+        size,
+        title: title.into(),
+        level,
+        bold,
+      };
+    let plain = |title, size, level| candidate(title, size, level, false);
+    let cases = [
+      (
+        vec![
+          plain("Book", 30.0, None),
+          plain("Project", 12.0, None),
+          plain("Preface", 30.0, None),
+          plain("Features", 11.0, None),
+          plain("1 Chapter", 14.0, Some(1)),
+          plain("1.1.1 Deep", 11.0, Some(3)),
+          plain("Aside", 12.0, None),
+          plain("2 Chapter", 14.0, Some(1)),
+        ],
+        vec![0, 1, 0, 1, 0, 1, 1, 0],
+      ),
+      (
+        vec![
+          candidate("Bold Part", 12.0, None, true),
+          plain("Plain Part", 12.0, None),
+          candidate("Bold Again", 12.0, None, true),
+        ],
+        vec![0, 1, 0],
+      ),
+    ];
+    for (candidates, expected) in cases {
+      let found: Vec<_> = depths(candidates).iter().map(|h| h.depth).collect();
+      assert_eq!(found, expected);
+    }
   }
 
   #[test]
@@ -858,6 +894,10 @@ mod tests {
       ("The __str__ method", true),
       ("Preface vii", false),
       ("Law and civil", true),
+      ("Audio mix", true),
+      ("DIV", true),
+      ("Chapter 12", false),
+      ("Methods 12", false),
       ("XIV", false),
       ("iv", false),
       ("Note ic", true),
@@ -869,6 +909,70 @@ mod tests {
     ];
     for (title, expected) in cases {
       assert_eq!(plausible(title, 100), expected, "{title}");
+    }
+  }
+
+  #[test]
+  fn summaries_join_lines() {
+    use crate::text::{Bounds, Glyph};
+    let line = |text: &str, x: f32, y: f32, paragraph: bool| Line {
+      paragraph,
+      glyphs: text
+        .chars()
+        .enumerate()
+        .map(|(at, ch)| {
+          let x0 = x + at as f32 * 5.0;
+          let bounds = Bounds { x0, y0: y, x1: x0 + 5.0, y1: y + 10.0 };
+          Glyph { ch, bounds, quad: None }
+        })
+        .collect(),
+      ocr: None,
+    };
+    let style =
+      |size: f32, bold: bool| LineStyle { size, bold, ..LineStyle::default() };
+    let long = "Word ".repeat(25);
+    let cases = [
+      (
+        "wrapped heading",
+        vec![
+          line("Wrapped heading", 0.0, 0.0, true),
+          line("goes on", 0.0, 12.0, false),
+        ],
+        vec![style(14.0, true); 2],
+        vec![("Wrapped heading goes on", 14.0, false, 2, 75.0)],
+      ),
+      (
+        "bold number beside regular text",
+        vec![line("4", 0.0, 0.0, true), line("Prove that", 20.0, 0.0, true)],
+        vec![style(10.0, true), style(10.0, false)],
+        vec![("4 Prove that", 10.0, true, 1, 50.0)],
+      ),
+      (
+        "glyph heights without font sizes",
+        vec![line("Results", 0.0, 0.0, true)],
+        vec![style(0.0, false)],
+        vec![("Results", 10.0, false, 1, 35.0)],
+      ),
+      (
+        "join stops past the title limit",
+        vec![line(long.trim(), 0.0, 0.0, true), line("Tail", 0.0, 12.0, false)],
+        vec![style(10.0, false); 2],
+        vec![(long.trim(), 10.0, false, 2, long.trim().len() as f32 * 5.0)],
+      ),
+    ];
+    for (name, lines, styles, expected) in cases {
+      let text = Text { lines, truncated: false };
+      let found: Vec<_> = summarize(&text, &styles)
+        .into_iter()
+        .map(|s| (s.title, s.style.size, s.style.mixed, s.lines, s.width))
+        .collect();
+      let expected: Vec<_> = expected
+        .into_iter()
+        .map(|(title, size, mixed, lines, width)| {
+          (title.to_owned(), size, mixed, lines, width)
+        })
+        .collect();
+      assert_eq!(found, expected, "{name}");
     }
   }
 
@@ -920,9 +1024,12 @@ mod tests {
     appended.extend((0..10).map(|_| titled(&[], 12.0)));
     appended[12] = titled(&[("Later Part", 14.0, false)], 12.0);
     let mut exercises = vec![titled(&[("1 Introduction", 14.0, false)], 10.0)];
-    exercises.extend((0..3).map(|_| {
+    exercises.extend(["Show", "Prove", "Find"].map(|verb| {
       titled(
-        &[("1 Show that", 10.0, false), ("2 Prove that", 10.0, false)],
+        &[
+          (format!("1 {verb} that").as_str(), 10.0, false),
+          (format!("2 {verb} this").as_str(), 10.0, false),
+        ],
         10.0,
       )
     }));
@@ -965,6 +1072,59 @@ mod tests {
       ("bold heading", bold, &["Random Numbers"]),
       ("full-width prose", prose, &[]),
     ];
+    assert_titles(cases);
+  }
+
+  #[test]
+  fn inference_skips_labels() {
+    let mut proceedings = Vec::new();
+    for _ in 0..3 {
+      proceedings.push(titled(&[("1 Introduction", 10.0, false)], 10.0));
+      proceedings.extend((0..3).map(|_| titled(&[], 10.0)));
+    }
+    let callouts = (0..20)
+      .map(|i| match i % 2 {
+        0 => titled(&[("Note", 14.0, false)], 10.0),
+        _ => titled(&[], 10.0),
+      })
+      .collect();
+    let mut long = titled(&[("Long Lead", 14.0, false)], 10.0);
+    long[0].lines = MAX_LINES + 1;
+    let ticks = vec![titled(
+      &[
+        (BODY, 10.0, false),
+        ("Chart Alpha", 14.0, false),
+        ("0.5 1.0 1.5", 8.0, false),
+        ("Year Axis", 8.0, false),
+        ("2020 2021", 8.0, false),
+      ],
+      10.0,
+    )];
+    let folios = ["xiii", "xiv", "xv"]
+      .map(|folio| {
+        titled(&[(format!("CONTENTS {folio}").as_str(), 12.0, false)], 10.0)
+      })
+      .into();
+    let cases: [(&str, Pages, &[&str]); 6] = [
+      (
+        "restarted numbering",
+        proceedings,
+        &["1 Introduction", "1 Introduction", "1 Introduction"],
+      ),
+      ("callouts", callouts, &[]),
+      ("too many lines", vec![long], &[]),
+      ("figure label", ticks, &[]),
+      ("running head with folios", folios, &[]),
+      (
+        "one page",
+        vec![titled(&[("Abstract", 12.0, false)], 10.0)],
+        &["Abstract"],
+      ),
+    ];
+    assert_titles(cases);
+  }
+
+  fn assert_titles<const N: usize>(cases: [(&str, Pages, &[&str]); N]) {
     for (name, pages, expected) in cases {
       let titles: Vec<_> = infer(&pages).into_iter().map(|h| h.title).collect();
       assert_eq!(titles, expected, "{name}");

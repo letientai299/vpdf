@@ -349,12 +349,11 @@ pub fn rect(rect: mupdf::Rect) -> Bounds {
   Bounds { x0: rect.x0, y0: rect.y0, x1: rect.x1, y1: rect.y1 }
 }
 
-pub use extraction::{
-  LineStyle, TEXT_FLAGS, extract, extract_list, extract_styled,
-};
+pub use extraction::{TEXT_FLAGS, extract, extract_list, extract_styled};
 #[cfg(test)]
 use metadata::date;
 use metadata::{metadata, outline};
+pub use style::LineStyle;
 pub use types::PageInfo;
 pub(crate) use types::target as link_target;
 pub use vpdf_model::document::{Annotation, Heading, Link, Target};
@@ -380,4 +379,5 @@ mod tests {
 mod annotations;
 mod extraction;
 mod metadata;
+mod style;
 mod types;

@@ -1,8 +1,8 @@
+use super::style::{LineStyle, style};
 use super::{
   DisplayList, GLYPH_LIMIT, Glyph, Line, Result, Text, TextPageFlags,
   quad_bounds,
 };
-use mupdf::text_page::{TextChar, TextCharFlags};
 
 pub const TEXT_FLAGS: TextPageFlags = TextPageFlags::PRESERVE_LIGATURES
   .union(TextPageFlags::PRESERVE_WHITESPACE)
@@ -11,18 +11,6 @@ pub const TEXT_FLAGS: TextPageFlags = TextPageFlags::PRESERVE_LIGATURES
 
 pub fn extract(page: &mupdf::Page) -> Result<Text> {
   Ok(read(&page.to_text_page(TEXT_FLAGS)?, None))
-}
-
-/// Font facts of one extracted line, which glyph boxes lack.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct LineStyle {
-  /// Median font size in points.
-  pub size: f32,
-  pub bold: bool,
-  pub mono: bool,
-  /// Weight or size changes within the line, as in run-in labels:
-  /// "**12** Prove that".
-  pub mixed: bool,
 }
 
 /// Text with one style per line.
@@ -35,73 +23,6 @@ pub fn extract_styled(page: &mupdf::Page) -> Result<(Text, Vec<LineStyle>)> {
 /// Text from a display list, which skips interpreting the page again.
 pub fn extract_list(list: &DisplayList) -> Result<Text> {
   Ok(read(&list.to_text_page(TEXT_FLAGS)?, None))
-}
-
-/// Bold and monospace from the font, which names them when flags do not.
-/// Each lookup is a native call, so callers sample a few letters.
-fn typeface(glyph: &TextChar) -> (bool, bool) {
-  let Some(font) = glyph.font() else {
-    return (false, false);
-  };
-  let name = font.name();
-  let named = |marks: &[&str]| marks.iter().any(|m| name.contains(m));
-  let bold = font.is_bold()
-    || named(&[
-      "Bold", "Black", "Heavy", "Semibold", "SemiBold", "Demi", "CMBX",
-      "CMMIB", "CMBSY",
-    ]);
-  let mono = font.is_monospaced()
-    || named(&["Mono", "Courier", "Consol", "CMTT", "Code"]);
-  (bold, mono)
-}
-
-/// Letters a line's weight is read from; each costs a native call.
-const SAMPLES: usize = 5;
-
-fn style(line: &mupdf::TextLine) -> LineStyle {
-  let visible: Vec<_> = line
-    .chars()
-    .filter(|g| g.char().is_some_and(|c| !c.is_whitespace() && !c.is_control()))
-    .collect();
-  let mut sizes: Vec<f32> = visible.iter().map(TextChar::size).collect();
-  sizes.sort_by(f32::total_cmp);
-  let flagged =
-    visible.iter().filter(|g| g.flags().contains(TextCharFlags::BOLD)).count();
-  let face = |glyph: &TextChar| {
-    let (bold, mono) = typeface(glyph);
-    (bold || glyph.flags().contains(TextCharFlags::BOLD), mono)
-  };
-  // Letters spread over the line; symbols use their own fonts.
-  let letters: Vec<_> = visible
-    .iter()
-    .filter(|g| g.char().is_some_and(char::is_alphanumeric))
-    .collect();
-  let faces: Vec<_> = (0..SAMPLES)
-    .filter_map(|at| {
-      letters.get(at * letters.len().saturating_sub(1) / (SAMPLES - 1))
-    })
-    .map(|glyph| face(glyph))
-    .collect();
-  // Code words keep their own weight: "The `while` statement".
-  let prose: Vec<bool> =
-    faces.iter().filter(|(_, mono)| !mono).map(|(bold, _)| *bold).collect();
-  let weights = if prose.is_empty() {
-    faces.iter().map(|(bold, _)| *bold).collect()
-  } else {
-    prose
-  };
-  let ends = (visible.first(), visible.last());
-  let (first, last) = (ends.0.map(TextChar::size), ends.1.map(TextChar::size));
-  let (first, last) = (first.unwrap_or_default(), last.unwrap_or_default());
-  LineStyle {
-    size: sizes.get(sizes.len() / 2).copied().unwrap_or_default(),
-    bold: flagged * 2 > visible.len()
-      || flagged == 0 && !weights.is_empty() && weights.iter().all(|b| *b),
-    mono: faces.first().is_some_and(|(_, mono)| *mono),
-    // Footnote marks end in a smaller size: "Data11".
-    mixed: weights.iter().any(|b| *b != weights[0])
-      || first.max(last) > first.min(last) * 1.15,
-  }
 }
 
 fn read(
@@ -199,6 +120,7 @@ mod tests {
   #[test]
   fn styles_report_font_facts() -> Result<()> {
     let content = "BT /R 10 Tf 20 180 Td (Body text) Tj ET \
+       BT /R 10 Tf 20 160 Td (Data) Tj /R 6 Tf (11) Tj ET \
        BT /B 14 Tf 20 140 Td (Heading) Tj ET \
        BT /B 10 Tf 20 100 Td (Lead) Tj /R 10 Tf ( in body) Tj ET \
        BT /C 10 Tf 20 60 Td (let x = 1) Tj ET \
@@ -232,6 +154,7 @@ mod tests {
       facts,
       [
         ("Body text".into(), 10.0, false, false, false),
+        ("Data11".into(), 10.0, false, false, true),
         ("Heading".into(), 14.0, true, false, false),
         ("Lead in body".into(), 10.0, false, false, true),
         ("let x = 1".into(), 10.0, false, true, false),
