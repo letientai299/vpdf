@@ -238,6 +238,18 @@ impl Session {
     {
       app.marks.clear();
     }
+    if self.state.entry(&app.path).is_none()
+      || !app.opened.same_document(self.state.open_revision(&app.path))
+    {
+      let saved =
+        self.state.entry(&app.path).and_then(|entry| entry.outline.clone());
+      app.outline.restore_preferences(saved);
+      if let Some(panel) = &mut app.panel
+        && panel.view.kind() == PanelKind::Outline
+      {
+        app.outline.project(&mut panel.view);
+      }
+    }
     app.opened = self.state.opened(app.reading_entry());
     self.changed();
   }

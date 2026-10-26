@@ -35,6 +35,12 @@ pub(crate) struct Visit {
   revision: Revision,
 }
 
+impl Visit {
+  pub fn same_document(self, other: Self) -> bool {
+    self.after == other.after
+  }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub(super) struct Ledger {
@@ -138,19 +144,26 @@ impl State {
     let mut opens = self.history.opens.clone();
     for entry in &disk.recent {
       let revision = disk.history.opened(&entry.path);
-      match recent.iter_mut().find(|own| own.path == entry.path) {
-        Some(own)
-          if (self.history.opened(&own.path), own.used)
-            >= (revision, entry.used) => {}
-        Some(own) => {
-          *own = entry.clone();
-          opens.insert(entry.path.clone(), revision);
+      let Some(own) = recent.iter_mut().find(|own| own.path == entry.path)
+      else {
+        recent.push(entry.clone());
+        opens.insert(entry.path.clone(), revision);
+        continue;
+      };
+      let visit = self.history.opened(&own.path);
+      let same = visit.same_document(revision);
+      if (visit, own.used) >= (revision, entry.used) {
+        if same {
+          own.merge_outline(entry);
         }
-        None => {
-          recent.push(entry.clone());
-          opens.insert(entry.path.clone(), revision);
-        }
+        continue;
       }
+      let mut newer = entry.clone();
+      if same {
+        newer.merge_outline(own);
+      }
+      *own = newer;
+      opens.insert(entry.path.clone(), revision);
     }
     self.history.opens = opens;
     self.history.floor = self.history.floor.max(disk.history.floor);

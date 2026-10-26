@@ -40,6 +40,11 @@ branches; `zM` collapses all. Closing a branch preserves nested folds.
 close other branches. Manual fold commands turn auto-expand off. The row
 and header menus also offer these commands.
 
+New documents start fully expanded with auto-expand off. Folds and auto-expand
+persist per document across restarts. New panes start from the latest saved
+choices and then browse independently. Changed outlines discard saved fold
+indices; auto-expand still follows the current section when enabled.
+
 While the panel has focus, `/word` searches its rows rather than the whole PDF.
 Enter accepts the query. `n` and `N` navigate panel matches. Search includes
 folded entries and page labels. Preview reveals a match; Escape restores folds,

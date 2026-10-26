@@ -387,11 +387,76 @@ fn contents_panes_browse_independently() -> Result<()> {
   session.settle()?;
   common::outline_loaded(session.app())?;
   session.app().open_panel(PanelKind::Outline)?;
+  assert!(session.app().outline.closed(branch));
   common::keys(session.app(), b"zRza")?;
   let panes = &session.tabs[session.active].panes;
   assert_eq!(panes.len(), 2);
   assert!(panes[0].outline.closed(branch));
   assert!(!panes[0].panel.as_ref().unwrap().view.auto_expand());
   assert!(panes[1].panel.as_ref().unwrap().view.auto_expand());
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn contents_preferences_survive_restart() -> Result<()> {
+  use vpdf::state::State;
+  for name in ["paper.pdf", "book.pdf"] {
+    let root = tempfile::tempdir()?;
+    let store = root.path().join("state.json");
+    let path = corpus(name)?.canonicalize()?;
+    let mut app = Solo::open(&path, "", false, SCREEN)?;
+    common::outline_loaded(&mut app)?;
+    app.open_panel(PanelKind::Outline)?;
+    common::keys(&mut app, b"zM")?;
+    let branch = app
+      .outline
+      .tree()
+      .nodes()
+      .iter()
+      .position(|node| node.descendants > 0)
+      .unwrap();
+    let mut state = State::default();
+    assert!(state.remember_pane(&app));
+    state.save(&store, &[], &[])?;
+    let saved = state.entry(&path).unwrap().clone();
+    app.begin_search(false)?;
+    app.incremental("not-a-real-outline-title")?;
+    app.abort_search()?;
+    app.cancel_prompt()?;
+    assert!(!state.remember_pane(&app));
+    drop(app);
+
+    let mut app = Solo::open(&path, "", false, SCREEN)?;
+    app.restore(&saved)?;
+    assert!(app.panel.is_none() && deferred(&app));
+    app.cancel_outline();
+    assert!(!state.remember_pane(&app));
+    state.save(&store, &[], &[])?;
+    assert_eq!(
+      State::load(&store).entry(&path).unwrap().outline,
+      saved.outline
+    );
+    app.command("reload")?;
+    state.remember_pane(&app);
+    assert_eq!(state.entry(&path).unwrap().outline, saved.outline);
+    common::outline_loaded(&mut app)?;
+    assert!(app.panel.is_none());
+    assert!(app.outline.closed(branch));
+    app.open_panel(PanelKind::Outline)?;
+    assert!(!app.panel.as_ref().unwrap().view.auto_expand());
+    common::keys(&mut app, b"za")?;
+    app.close_panel()?;
+    assert!(state.remember_pane(&app));
+    state.save(&store, &[], &[])?;
+    drop(app);
+
+    let mut session = Session::new(Some(store));
+    session.open(&path, true, SCREEN)?;
+    assert!(deferred(session.app()));
+    common::outline_loaded(session.app())?;
+    session.app().open_panel(PanelKind::Outline)?;
+    assert!(session.app().panel.as_ref().unwrap().view.auto_expand());
+  }
   Ok(())
 }

@@ -39,6 +39,7 @@ impl Outline {
     }
     Self::reveal_path(&self.tree, panel.selected(), &mut self.closed);
     self.auto = false;
+    self.commit_preferences();
     self.project(panel);
     panel.reveal();
   }

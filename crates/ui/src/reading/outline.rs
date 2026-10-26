@@ -14,8 +14,14 @@ pub struct Outline {
   headings: Vec<Heading>,
   closed: Vec<bool>,
   auto: bool,
+  saved: Option<Preferences>,
+  fingerprint: [u8; 32],
 }
 
+mod preferences;
+pub use preferences::Preferences;
+#[cfg(test)]
+mod preferences_tests;
 mod search;
 
 impl Outline {
@@ -26,6 +32,8 @@ impl Outline {
       headings: headings.to_vec(),
       closed: vec![false; headings.len()],
       auto: false,
+      saved: None,
+      fingerprint: preferences::fingerprint(headings),
     }
   }
 
@@ -76,7 +84,9 @@ impl Outline {
   }
 
   pub fn fold(&mut self, panel: &mut Panel, operation: Fold, count: usize) {
-    if panel.kind() != PanelKind::Outline {
+    if panel.kind() != PanelKind::Outline
+      || self.headings.is_empty() && !self.auto
+    {
       return;
     }
     self.auto = false;
@@ -96,6 +106,7 @@ impl Outline {
         }
       }
     }
+    self.commit_preferences();
     self.project(panel);
     panel.reveal();
   }
@@ -105,6 +116,7 @@ impl Outline {
     if self.auto {
       self.expand_current();
     }
+    self.commit_preferences();
     self.project(panel);
   }
 
@@ -139,12 +151,9 @@ impl Outline {
   }
 
   pub fn replace(&mut self, headings: &[Heading]) {
-    let auto = self.auto;
+    let saved = self.saved.take();
     *self = Self::new(headings);
-    self.auto = auto;
-    if self.auto {
-      self.expand_current();
-    }
+    self.restore_preferences(saved);
   }
 
   pub fn sync(&mut self, headings: &[Heading]) -> bool {
@@ -314,7 +323,7 @@ mod fold_tests {
   use super::*;
   use crate::panel::Row;
 
-  fn setup() -> (Outline, Panel) {
+  pub(super) fn setup() -> (Outline, Panel) {
     let headings: Vec<_> = [0, 3, 8, 3, 0, 2]
       .into_iter()
       .map(|depth| Heading {
@@ -360,7 +369,7 @@ mod fold_tests {
     outline.sync(&outline.headings.clone());
     assert!(outline.closed(0));
     outline.replace(&outline.headings.clone());
-    assert!(!outline.closed(0));
+    assert!(outline.closed(0));
   }
 
   #[test]

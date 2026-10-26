@@ -447,6 +447,8 @@ impl Session {
   }
 
   fn copy_pane(&mut self, screen: Screen) -> Result<App> {
+    self.record();
+    self.state.refresh_history(self.store.as_deref());
     let mut app = if let Some(owner) = self.app().manual.clone() {
       App::help_document(owner, screen, self.frontend.clone(), &self.settings)?
     } else {

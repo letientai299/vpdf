@@ -16,7 +16,7 @@ mod jump;
 mod location;
 mod navigation;
 mod outline;
-pub use outline::Outline;
+pub use outline::{Outline, Preferences};
 mod pane;
 mod pointer;
 mod preview;

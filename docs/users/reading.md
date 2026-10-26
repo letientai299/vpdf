@@ -37,17 +37,18 @@ Enter or `y` confirms; `n`, Escape, or `Ctrl-c` cancels. Files hidden by a
 filter remain checked and count toward removal. Escape outside confirmation
 clears checks before closing the panel. Leaving Recent clears its checks.
 
-Removal forgets saved positions and local marks. It preserves source PDFs,
-open reading panes, and global marks. Saving an already open pane does not
-restore its forgotten entry; explicitly reopening the file starts a new entry.
+Removal forgets saved positions, local marks, and outline choices. It preserves
+source PDFs, open reading panes, and global marks. Saving an already open pane
+does not restore its forgotten entry; explicitly reopening starts a new entry.
 Removing the final file returns Recent to the opening and help hints.
 
 ## Saved state and reload
 
-Reading positions, view choices, marks, and prompt history persist across
-launches. The performance toggle is saved too. These are separate from the
-configuration file. A saved position does not restore a layout of tabs, splits,
-panels, or running jobs. An explicit launch page overrides the saved position.
+Reading positions, view choices, marks, outline choices, and prompt history
+persist across launches. The performance toggle is saved too. These are
+separate from the configuration file. A saved position does not restore tabs,
+splits, panels, or running jobs. An explicit launch page overrides the saved
+position.
 
 State lives at `$XDG_STATE_HOME/vpdf/state.json`, falling back to
 `~/.local/state/vpdf/state.json`. Missing or unreadable state starts empty.

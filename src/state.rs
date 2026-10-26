@@ -23,6 +23,8 @@ mod cleanup;
 mod history;
 #[cfg(test)]
 mod history_tests;
+#[cfg(test)]
+mod outline_tests;
 pub(crate) use cleanup::Cleaner;
 pub(crate) use history::{Revision, Visit};
 
@@ -39,6 +41,20 @@ pub struct Entry {
   pub marks: BTreeMap<char, Position>,
   #[serde(default)]
   pub crop: Crop,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub outline: Option<vpdf_ui::reading::Preferences>,
+}
+
+impl Entry {
+  fn merge_outline(&mut self, other: &Self) -> bool {
+    if let Some(preferences) = &other.outline
+      && self.outline.as_ref().is_none_or(|own| preferences.newer(own))
+    {
+      self.outline = Some(preferences.clone());
+      return true;
+    }
+    false
+  }
 }
 
 /// An uppercase mark: a position in any document.
@@ -113,13 +129,19 @@ impl State {
   }
 
   /// Records `entry` as the latest visit; returns whether anything moved.
-  pub fn remember(&mut self, entry: Entry) -> bool {
+  pub fn remember(&mut self, mut entry: Entry) -> bool {
     if !self.history.allows_record(&entry.path) {
       return false;
     }
     let index = self.recent.iter().position(|old| old.path == entry.path);
     let previous = index.map(|index| self.recent.remove(index));
+    if let Some(old) = &previous {
+      entry.merge_outline(old);
+    }
     let moved = previous.as_ref().is_none_or(|old| {
+      if old.outline != entry.outline {
+        return true;
+      }
       (old.cursor, old.zoom, old.rotation, &old.marks, old.crop)
         != (entry.cursor, entry.zoom, entry.rotation, &entry.marks, entry.crop)
     });
@@ -192,10 +214,21 @@ impl State {
   /// Records where `app` is; a covered pane records nothing. Returns
   /// whether anything moved.
   pub fn remember_pane(&mut self, app: &App) -> bool {
-    if self.history.opened(&app.path) != app.opened {
+    let Some(entry) = app.saved_entry() else { return false };
+    let opened = self.history.opened(&app.path);
+    if opened == app.opened {
+      return self.remember(entry);
+    }
+    if !opened.same_document(app.opened)
+      || !self.history.allows_record(&app.path)
+    {
       return false;
     }
-    app.saved_entry().is_some_and(|entry| self.remember(entry))
+    self
+      .recent
+      .iter_mut()
+      .find(|old| old.path == entry.path)
+      .is_some_and(|old| old.merge_outline(&entry))
   }
 }
 
@@ -218,11 +251,13 @@ impl App {
       used: now(),
       marks: self.marks.clone(),
       crop: self.layout.crop(),
+      outline: self.outline.preferences().cloned(),
     }
   }
 
   /// Returns to a saved position and view.
   pub fn restore(&mut self, entry: &Entry) -> Result<()> {
+    self.outline.restore_preferences(entry.outline.clone());
     self.crop_scan.clear();
     self.marks.clone_from(&entry.marks);
     self.layout.restore(entry.zoom, entry.rotation, entry.crop);
@@ -286,6 +321,7 @@ pub(crate) mod tests {
       used,
       marks: BTreeMap::new(),
       crop: Crop::default(),
+      outline: None,
     }
   }
 
