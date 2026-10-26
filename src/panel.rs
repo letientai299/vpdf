@@ -261,12 +261,7 @@ impl App {
   /// Outline refills invalidate source identities.
   pub fn refill_panel(&mut self, kind: PanelKind) -> Result<()> {
     if kind == PanelKind::Outline && !self.outline.sync(&self.doc.outline) {
-      let note = self.panel_note(kind);
-      if let Some(panel) = &mut self.panel
-        && panel.view.kind() == kind
-      {
-        panel.view.set_note(note);
-      }
+      self.refresh_panel_note(kind);
       return Ok(());
     }
     if self.panel.as_ref().is_none_or(|panel| panel.view.kind() != kind) {
@@ -288,8 +283,18 @@ impl App {
     Ok(())
   }
 
+  pub(crate) fn refresh_panel_note(&mut self, kind: PanelKind) {
+    let note = self.panel_note(kind);
+    if let Some(panel) = &mut self.panel
+      && panel.view.kind() == kind
+    {
+      panel.view.set_note(note);
+    }
+  }
+
   pub(crate) fn panel_note(&self, kind: PanelKind) -> &'static str {
     if self.sidebar_loading(kind)
+      || kind == PanelKind::Outline && self.outline_pending()
       || kind == PanelKind::Figures
         && matches!(self.figures, crate::jobs::Figures::Running(_))
     {

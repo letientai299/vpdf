@@ -253,3 +253,25 @@ fn page_count_change_fails_scan() -> Result<()> {
   assert!(scan.is_err_and(|e| e.to_string().contains("page count changed")));
   Ok(())
 }
+
+#[test]
+fn outline_notes_follow_jobs() -> Result<()> {
+  let (_root, mut app) = app()?;
+  app.open_panel(PanelKind::Outline)?;
+  assert_eq!(app.panel.as_ref().unwrap().view.note(), "loading");
+  app.cancel_jobs()?;
+  assert_eq!(app.panel.as_ref().unwrap().view.note(), "");
+  app.open_panel(PanelKind::Outline)?;
+  assert_eq!(app.panel.as_ref().unwrap().view.note(), "loading");
+  let start = Instant::now();
+  while app.outline_pending() {
+    app.outline_updates()?;
+    anyhow::ensure!(
+      start.elapsed() < Duration::from_secs(5),
+      "Outline timeout"
+    );
+    std::thread::sleep(Duration::from_millis(1));
+  }
+  assert_eq!(app.panel.as_ref().unwrap().view.note(), "inferred");
+  Ok(())
+}

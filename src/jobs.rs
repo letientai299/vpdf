@@ -113,6 +113,7 @@ impl App {
   pub fn load_outline(&mut self) {
     self.outline_load =
       Loading::Running(spawn(&self.path, &self.password, &self.wake));
+    self.refresh_panel_note(PanelKind::Outline);
   }
 
   /// Starts a deferred or canceled load for a command that needs the
@@ -186,6 +187,7 @@ impl App {
   pub fn cancel_outline(&mut self) {
     if self.outline_pending() {
       self.outline_load = Loading::Canceled;
+      self.refresh_panel_note(PanelKind::Outline);
     }
   }
 
