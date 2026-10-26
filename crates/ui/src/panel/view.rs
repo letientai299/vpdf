@@ -1,7 +1,7 @@
 use super::{
   Action, Destination, Input, Layout, MIN_WIDTH, Motion, MouseButton,
   MouseEvent, MouseEventKind, Panel, PanelKind, Pointing, Row, RowSearch,
-  Screen, Target, UnicodeWidthStr, WHEEL_ROWS, Wheel, key_width, moved_row,
+  Screen, UnicodeWidthStr, WHEEL_ROWS, Wheel, key_width, moved_row,
   screen_step,
 };
 use vpdf_model::scene::{Draw, Op, Surface};
@@ -340,15 +340,10 @@ impl Panel {
     self.kind == PanelKind::Recent
   }
 
-  /// What `yy` copies from the selected row: a link's address, else
-  /// its label.
+  /// What `yy` copies from the selected row: its label.
   pub fn yank_text(&self) -> Option<String> {
     let row = self.rows.get(self.selected)?;
-    let value = match (&self.kind, &row.destination) {
-      (PanelKind::Links, Destination::Link(Target::Uri(uri))) => uri,
-      _ => &row.label,
-    };
-    Some(format!("{}\n", value.trim()))
+    Some(format!("{}\n", row.label.trim()))
   }
 
   /// The row at a panel cell.
@@ -446,10 +441,7 @@ impl Panel {
       && self.layout.as_ref().is_some_and(|layout| layout.columns == columns)
       || !matches!(
         self.kind,
-        PanelKind::Version
-          | PanelKind::Links
-          | PanelKind::Jumps
-          | PanelKind::Outline
+        PanelKind::Version | PanelKind::Jumps | PanelKind::Outline
       ) && self.projection.sources().len() == self.rows.len()
     {
       return;
@@ -461,7 +453,6 @@ impl Panel {
     let shown = (self.top..self.top + visible).contains(&selected);
     self.layout = Some(
       match self.kind {
-        PanelKind::Links => Layout::links(&self.rows, columns, self.selected),
         PanelKind::Jumps => Layout::jumps(&self.rows, columns, self.selected),
         PanelKind::Version => Layout::help(&self.rows, columns),
         _ => Layout::plain(&self.rows, columns),

@@ -113,10 +113,10 @@ fn clues_follow_overlay() {
         assert_eq!(labels, [] as [String; 0]);
         continue;
       }
-      for key in ["?", "T", "a", "l", "o", "q", "r", "s", "t"] {
+      for key in ["?", "T", "a", "o", "q", "r", "s", "t"] {
         assert!(labels.contains(&key.to_string()), "{owner:?} {key}");
       }
-      for key in ["E", "d", "v", "x"] {
+      for key in ["E", "d", "l", "v", "x"] {
         assert!(!labels.contains(&key.to_string()), "{owner:?} {key}");
       }
       assert_eq!(labels.contains(&"F".to_owned()), owner == InputOwner::Region);

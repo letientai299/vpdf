@@ -349,7 +349,7 @@ fn cursor_panel_enter_returns_normal() -> Result<()> {
     };
     let source = session.app().id;
     session.app().show_panel(
-      PanelKind::Links,
+      PanelKind::Results,
       vec![Row::new("target".into(), String::new(), destination)],
     )?;
     send(&mut session, b"o")?;

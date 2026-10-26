@@ -120,7 +120,7 @@ impl App {
           .collect(),
         _ => Vec::new(),
       },
-      PanelKind::Links | PanelKind::Annotations => self.sidebar_rows(kind),
+      PanelKind::Annotations => self.sidebar_rows(kind),
       PanelKind::Jumps => self.jump_rows(),
       PanelKind::Version => crate::version::text(matches!(
         self.frontend,
@@ -217,10 +217,7 @@ impl App {
       self.want_figures();
     }
     if self.panel.as_ref().is_some_and(|panel| panel.view.kind() == kind) {
-      if matches!(
-        kind,
-        PanelKind::Links | PanelKind::Figures | PanelKind::Annotations
-      ) {
+      if matches!(kind, PanelKind::Figures | PanelKind::Annotations) {
         self.refill_panel(kind)?;
       }
       if !self.panel_focused() {

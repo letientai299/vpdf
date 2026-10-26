@@ -361,8 +361,9 @@ mod tests {
     Ok(())
   }
 
-  /// Trimming keeps the most recently used packs within the budget and
-  /// leaves fresh temporary packs to their writers.
+  /// Trimming keeps the most recently used packs within the budget,
+  /// leaves fresh temporary packs to their writers, and drops retired
+  /// kinds.
   #[test]
   fn trim_drops_least_recent() -> Result<()> {
     let root = tempfile::tempdir()?;
@@ -382,6 +383,8 @@ mod tests {
     std::fs::write(&abandoned, b"partial")?;
     let old = SystemTime::now() - ABANDONED * 2;
     File::options().write(true).open(&abandoned)?.set_modified(old)?;
+    let legacy = root.path().join("rows.links");
+    std::fs::write(&legacy, b"rows")?;
     let size = std::fs::metadata(path(root.path(), &aliases[0]))?.len();
     trim(root.path(), size * 2)?;
     let kept: Vec<bool> =
@@ -389,6 +392,7 @@ mod tests {
     assert_eq!(kept, [false, true, true]);
     assert!(temp.exists());
     assert!(!abandoned.exists());
+    assert!(!legacy.exists());
     Ok(())
   }
 

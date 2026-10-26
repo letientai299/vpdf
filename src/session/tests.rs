@@ -1117,7 +1117,6 @@ fn sidebar_keys_toggle_focus() -> Result<()> {
   for (shortcut, kind, command) in [
     ("go", PanelKind::Outline, "toc"),
     ("gs", PanelKind::Results, ""),
-    ("gl", PanelKind::Links, ""),
     ("gr", PanelKind::Recent, "recent"),
     ("ga", PanelKind::Annotations, "annotations"),
   ] {

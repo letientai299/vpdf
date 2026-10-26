@@ -23,7 +23,6 @@ impl App {
     self.cancel_figures();
     self.cancel_sidebars();
     self.refill_panel(PanelKind::Annotations)?;
-    self.refill_panel(PanelKind::Links)?;
     self.refill_panel(PanelKind::Figures)?;
     self.cancel_crop()?;
     self.region_job = None;

@@ -191,7 +191,6 @@ specs! {
   "panel.outline" => Kind::Fixed(Action::Panel(PanelKind::Outline)),
   "panel.figures" => Kind::Fixed(Action::Panel(PanelKind::Figures)),
   "panel.results" => Kind::Fixed(Action::Panel(PanelKind::Results)),
-  "panel.links" => Kind::Fixed(Action::Panel(PanelKind::Links)),
   "panel.text" => Kind::Fixed(Action::Panel(PanelKind::Text)),
   "panel.help" => Kind::Fixed(Action::Help),
   "panel.version" => Kind::Fixed(Action::Panel(PanelKind::Version)),

@@ -9,33 +9,28 @@ use std::path::{Path, PathBuf};
 
 const LIMIT: u64 = 16 << 20;
 
+/// Extensions of kinds no longer written; trimming deletes them.
+pub(super) const RETIRED: [&str; 1] = ["links"];
+
 /// What a record holds, which names its file extension.
 #[derive(Clone, Copy)]
 pub enum Kind {
   Figures,
   Outline,
   Annotations,
-  Links,
   Recent,
   Ocr,
 }
 
 impl Kind {
-  pub(super) const ALL: [Self; 6] = [
-    Self::Figures,
-    Self::Outline,
-    Self::Annotations,
-    Self::Links,
-    Self::Recent,
-    Self::Ocr,
-  ];
+  pub(super) const ALL: [Self; 5] =
+    [Self::Figures, Self::Outline, Self::Annotations, Self::Recent, Self::Ocr];
 
   pub(super) fn ext(self) -> &'static str {
     match self {
       Self::Figures => "figures",
       Self::Outline => "outline",
       Self::Annotations => "annotations",
-      Self::Links => "links",
       Self::Recent => "recent",
       Self::Ocr => "ocr",
     }
@@ -206,7 +201,7 @@ mod tests {
         root.path().into(),
         &source,
         password,
-        Kind::Links,
+        Kind::Annotations,
         "code",
         || true,
       )

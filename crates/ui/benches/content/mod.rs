@@ -2,7 +2,8 @@ use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::document::{Heading, Target};
 use vpdf_model::text::Position;
-use vpdf_ui::panel::{Row, links};
+use vpdf_ui::citations;
+use vpdf_ui::panel::Row;
 
 #[derive(serde::Deserialize)]
 struct Prepared {
@@ -55,9 +56,9 @@ pub fn rows() -> Result<()> {
   super::measure("Row::jump prepared", || {
     black_box(jumps());
   })?;
-  super::measure("links::destination prepared", || {
+  super::measure("citations::destination prepared", || {
     for heading in &headings {
-      black_box(links::destination(
+      black_box(citations::destination(
         &heading.target,
         &headings,
         pages.metadata.len(),

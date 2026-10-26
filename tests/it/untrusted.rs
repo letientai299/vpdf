@@ -2,6 +2,7 @@ use crate::common;
 
 use std::fmt::Write as _;
 use std::path::Path;
+use std::time::Instant;
 use vpdf::Result;
 use vpdf::app::Tabline;
 use vpdf::solo::Solo;
@@ -9,6 +10,7 @@ use vpdf_model::document::Target;
 use vpdf_model::text::PageId;
 use vpdf_pdf::document::Document;
 use vpdf_ui::keys::PanelKind;
+use vpdf_ui::pointer::Hit;
 
 /// OSC, DCS, C1 OSC, and C1 CSI.
 const EVIL: &str = "\x1b]2;pwn\x07\x1bP0;1|\x1b\\\u{9d}\u{9b}\n";
@@ -99,7 +101,6 @@ fn document_strings_reach_the_screen_clean() -> Result<()> {
     Some(PanelKind::Outline),
     Some(PanelKind::Info),
     Some(PanelKind::Annotations),
-    Some(PanelKind::Links),
   ] {
     if let Some(kind) = panel {
       app.open_panel(kind)?;
@@ -108,19 +109,27 @@ fn document_strings_reach_the_screen_clean() -> Result<()> {
       let shown = rows.iter().any(|row| row.label.contains("]2;pwn"));
       assert!(shown, "{kind:?} lists the text");
     }
-    let mut frame = Vec::new();
-    {
-      let (app, graphics) = app.parts();
-      app.draw_pane(graphics, &mut frame)?;
-    }
-    let frame = String::from_utf8_lossy(&frame);
-    assert!(frame.contains("]2;pwn"), "{panel:?} shows the text");
-    let raw = frame.contains("\x1b]")
-      || frame.contains("\x1bP")
-      || frame.contains('\x07')
-      || frame.chars().any(|ch| ('\u{80}'..='\u{9f}').contains(&ch));
-    assert!(!raw, "{panel:?}: {frame:?}");
+    drawn_clean(&mut app, &format!("{panel:?}"))?;
   }
+  // The status line shows a hovered link's address.
+  app.close_panel()?;
+  app.hover.point(Hit::Link(PageId(0), 0), None, Instant::now);
+  drawn_clean(&mut app, "hovered link")
+}
+
+fn drawn_clean(app: &mut Solo, step: &str) -> Result<()> {
+  let mut frame = Vec::new();
+  {
+    let (app, graphics) = app.parts();
+    app.draw_pane(graphics, &mut frame)?;
+  }
+  let frame = String::from_utf8_lossy(&frame);
+  assert!(frame.contains("]2;pwn"), "{step} shows the text");
+  let raw = frame.contains("\x1b]")
+    || frame.contains("\x1bP")
+    || frame.contains('\x07')
+    || frame.chars().any(|ch| ('\u{80}'..='\u{9f}').contains(&ch));
+  assert!(!raw, "{step}: {frame:?}");
   Ok(())
 }
 

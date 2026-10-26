@@ -7,8 +7,6 @@ use vpdf::app::App;
 use vpdf::solo::Solo;
 use vpdf_model::document::Target;
 use vpdf_model::text::{Bounds, Glyph, Line, PageId, Text};
-use vpdf_ui::keys::PanelKind;
-use vpdf_ui::panel::Destination;
 use vpdf_ui::pointer::{Hit, Region};
 
 /// A target as text.
@@ -109,14 +107,6 @@ fn printed_links_reach_every_consumer() -> Result<()> {
     }
   }
   assert_eq!(hits, [Hit::Link(PageId(0), 0), Hit::Link(PageId(0), 1)]);
-  // `gl` lists them.
-  app.open_panel(PanelKind::Links)?;
-  common::sidebar_loaded(&mut app, PanelKind::Links)?;
-  let rows = &app.panel.as_ref().expect("link panel").view.rows();
-  let labels: Vec<_> = rows.iter().map(|row| row.label.as_str()).collect();
-  assert_eq!(labels, ["https://a.org/x", "doi:10.1000/abc"]);
-  assert!(matches!(&rows[1].destination, Destination::Link(t) if is_doi(t)));
-  app.close_panel()?;
   // `yf` labels them.
   common::keys(&mut app, b"yf")?;
   assert!(app.reader.operator.is_none());
@@ -187,11 +177,6 @@ fn real_preprint_addresses_are_links() -> Result<()> {
       .collect();
     assert_eq!(found, anchors, "{target}");
   }
-  app.command("17")?;
-  app.open_panel(PanelKind::Links)?;
-  common::sidebar_loaded(&mut app, PanelKind::Links)?;
-  let rows = &app.panel.as_ref().expect("link panel").view.rows();
-  assert!(rows.iter().any(|row| row.label == cases[0].1), "gl lists the DOI");
   Ok(())
 }
 

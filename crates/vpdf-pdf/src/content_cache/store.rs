@@ -1,4 +1,5 @@
-use super::{Kind, MEMO};
+use super::MEMO;
+use super::record::{Kind, RETIRED};
 use crate::Result;
 use std::cmp::Reverse;
 use std::fs::File;
@@ -62,6 +63,9 @@ pub(super) fn trim(root: &Path, budget: u64) -> Result<()> {
     let path = entry.path();
     match path.extension().and_then(|extension| extension.to_str()) {
       Some("id") => memos.push((modified, meta.len(), path)),
+      Some(ext) if RETIRED.contains(&ext) => {
+        drop(std::fs::remove_file(path));
+      }
       Some("tmp")
         if now.duration_since(modified).unwrap_or_default() > ABANDONED =>
       {

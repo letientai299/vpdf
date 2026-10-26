@@ -70,8 +70,8 @@ before replacing a source file if you need the original text or pagination.
 ## Content caches
 
 On macOS, extracted-content caches live at `~/Library/Caches/vpdf/content`.
-Search indexes, resolved outlines, figure lists, annotations, current-page
-links, recent preview cards, and eligible page OCR can persist there. These
+Search indexes, resolved outlines, figure lists, annotations, recent
+preview cards, and eligible page OCR can persist there. These
 records can contain PDF text. They are readable only by your account; PDFs
 opened with a password are excluded. The system may purge caches at any time.
 
@@ -86,7 +86,7 @@ text can be evicted from memory and disappears on reload or close; eligible
 cached recognition can avoid repeating Tesseract work on an unchanged image.
 A cache is not a backup of the source PDF.
 
-Contents, figures, annotations, and links prepare in the background after the
+Contents, figures, and annotations prepare in the background after the
 first complete view. Opening a panel requests its load immediately. `:cancel`
 stops preparation until explicitly requested; it does not delete saved caches.
 

@@ -137,7 +137,7 @@ mod tests {
     use vpdf_model::style::Shape;
     let clues = Clues::default();
     let mut panel = Panel::new(
-      PanelKind::Links,
+      PanelKind::Results,
       vec![
         Row::parse("No links"),
         Row::new(

@@ -229,7 +229,7 @@ mod tests {
   #[test]
   fn searches_labels_and_destinations() {
     let mut panel = Panel::new(
-      PanelKind::Links,
+      PanelKind::Outline,
       vec![
         Row::new(
           "Project page".into(),

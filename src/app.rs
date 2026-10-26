@@ -172,7 +172,6 @@ impl App {
       || matches!(self.outline_load, crate::jobs::Loading::Running(_))
       || matches!(self.figures, crate::jobs::Figures::Running(_))
       || self.sidebar_loading(PanelKind::Annotations)
-      || self.sidebar_loading(PanelKind::Links)
       || self.ocr.is_some()
   }
 
@@ -442,7 +441,7 @@ impl App {
         PanelKind::Recent | PanelKind::Marks => true,
         PanelKind::Results => rerun.is_some(),
         PanelKind::Outline => self.outline_pending(),
-        PanelKind::Annotations | PanelKind::Links => self.sidebar_loading(kind),
+        PanelKind::Annotations => self.sidebar_loading(kind),
         PanelKind::Figures => {
           matches!(self.figures, crate::jobs::Figures::Running(_))
         }

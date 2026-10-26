@@ -137,7 +137,7 @@ impl App {
     position: Position,
   ) -> JumpDescription {
     let text = self.doc.text(position.page).ok();
-    vpdf_ui::panel::links::description(
+    vpdf_ui::citations::description(
       target,
       position,
       text.as_deref(),

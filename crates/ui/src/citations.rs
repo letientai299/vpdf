@@ -1,7 +1,5 @@
-use super::layout::Layout;
-use super::{Destination, Row, Target};
 use crate::text::{PageId, Position, Text};
-use vpdf_model::document::{Heading, Link};
+use vpdf_model::document::{Heading, Link, Target};
 use vpdf_reader::reader::{JumpDescription, TextSource};
 
 /// Whether `anchor` cites what `context` starts: a number, a bracket,
@@ -55,36 +53,6 @@ fn below(text: &Text, x: f32, y: f32) -> Option<usize> {
     Some((index, dx * dx + 4.0 * dy * dy))
   });
   scored.min_by(|a, b| a.1.total_cmp(&b.1)).map(|(index, _)| index)
-}
-
-/// `name` gives a page's label.
-pub fn link_row<'a>(
-  link: Link,
-  anchor: String,
-  context: String,
-  name: impl Fn(PageId) -> Option<&'a str>,
-) -> Row {
-  let (label, detail) = match &link.target {
-    Target::Uri(uri) => {
-      let raw = anchor.is_empty()
-        || ["http://", "https://", "mailto:", "//"]
-          .iter()
-          .any(|prefix| anchor.starts_with(prefix));
-      (if raw { uri.clone() } else { anchor }, String::new())
-    }
-    Target::Page(page) | Target::Point { page, .. } => {
-      let label = name(*page)
-        .map_or_else(|| page.0.saturating_add(1).to_string(), str::to_owned);
-      let cited = cited(&anchor, context);
-      let text = if cited.is_empty() { anchor } else { cited };
-      if text.is_empty() {
-        (format!("Page {label}"), String::new())
-      } else {
-        (text, format!("p. {label}"))
-      }
-    }
-  };
-  Row::new(label, detail, Destination::Link(link.target))
 }
 
 /// A reference's anchor joined with the `context` it cites; empty
@@ -189,35 +157,11 @@ pub fn description(
   JumpDescription::Link(excerpt(text, target))
 }
 
-impl Layout {
-  pub fn links(rows: &[Row], columns: usize, selected: usize) -> Self {
-    let mut layout = Self { columns, lines: Vec::new(), starts: Vec::new() };
-    for (source, row) in rows.iter().enumerate() {
-      layout.starts.push(layout.lines.len());
-      layout.label(source, &row.label, &row.detail, selected);
-      if let Destination::Link(Target::Uri(uri)) = &row.destination
-        && *uri != row.label
-      {
-        layout.secondary(source, uri, selected);
-      }
-    }
-    layout.starts.push(layout.lines.len());
-    layout
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::Result;
   use crate::text::{Bounds, Glyph, Line as TextLine};
-  use crate::{
-    Result,
-    keys::{Action, Input, PanelKind},
-    panel::{Panel, Style},
-  };
-  use unicode_width::UnicodeWidthStr;
-  use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
-  use vpdf_reader::motion::Motion;
   #[test]
   fn failed_context_keeps_anchor() {
     struct Missing {
@@ -258,37 +202,7 @@ mod tests {
   }
 
   #[test]
-  fn labels_distinguish_targets() {
-    let pages = |_| Some("iv");
-    for (anchor, context, expected) in [
-      ("[12]", "Attention Is All You Need", "[12] Attention Is All You Need"),
-      ("†", "Equal contribution", "† Equal contribution"),
-      ("4", "4To illustrate the result", "4 To illustrate the result"),
-      ("2", "2 Code is available online", "2 Code is available online"),
-      ("12", "[12] Reference title", "[12] Reference title"),
-      ("", "Introduction", "Introduction"),
-      ("", "", "Page iv"),
-    ] {
-      let target = Target::Point { page: PageId(0), x: 12.0, y: 34.0 };
-      let link = Link::new(Bounds::default(), target);
-      let row = link_row(link, anchor.into(), context.into(), pages);
-      assert_eq!(row.label, expected);
-      assert!(matches!(
-        row.destination,
-        Destination::Link(Target::Point { x: 12.0, y: 34.0, .. })
-      ));
-    }
-    let uri = "https://example.com/paper";
-    for (anchor, expected) in
-      [("Read more", "Read more"), ("", uri), (uri, uri)]
-    {
-      let link = Link::new(Bounds::default(), Target::Uri(uri.into()));
-      let row = link_row(link, anchor.into(), String::new(), pages);
-      assert_eq!(row.label, expected);
-      assert_eq!(row.detail, "");
-      assert!(matches!(row.destination,
-        Destination::Link(Target::Uri(target)) if target == uri));
-    }
+  fn cites_numbers_brackets_and_authors() {
     for (anchor, expected) in [
       ("[12]", true),
       ("*", true),
@@ -354,6 +268,12 @@ mod tests {
     let cases = [
       ("13", "[13] Sepp Hochreiter.", Some("[13] Sepp Hochreiter.")),
       ("[2]", "Jimmy Ba.", Some("[2] Jimmy Ba.")),
+      ("[12]", "Attention", Some("[12] Attention")),
+      ("12", "[12] Reference title", Some("[12] Reference title")),
+      ("†", "Equal contribution", Some("† Equal contribution")),
+      ("4", "4To illustrate", Some("4 To illustrate")),
+      ("2", "2 Code is online", Some("2 Code is online")),
+      ("", "Introduction", Some("Introduction")),
       ("Vaswani et al., 2017", vaswani, Some(vaswani)),
       ("Section 3", "3 Model Architecture", None),
       ("See the results", "Results heading", None),
@@ -368,119 +288,5 @@ mod tests {
         cites(anchor, context).then(|| cited(anchor, context.to_owned()));
       assert_eq!(quoted.as_deref(), label, "{anchor}");
     }
-  }
-
-  fn row(label: &str, uri: &str) -> Row {
-    Row::new(
-      label.into(),
-      String::new(),
-      Destination::Link(Target::Uri(uri.into())),
-    )
-  }
-  #[test]
-  fn unselected_long_labels_clip() {
-    let long = "A label far wider than the panel";
-    let rows = [row(long, long), row(long, long), row("Short", "Short")];
-    let layout = Layout::links(&rows, 20, 0);
-    // (source) -> its label line clipped
-    let cases = [(0, false), (1, true), (2, false)];
-    for (source, want) in cases {
-      let label = &layout.lines[layout.starts[source]];
-      assert_eq!(label.clipped, want, "row {source}");
-    }
-    assert!(layout.lines.iter().filter(|line| line.source == 0).count() > 1);
-  }
-  #[test]
-  fn selected_urls_expand() {
-    let uri = "https://example.com/long/path?query=needle";
-    let rows = [row("Project page", uri), row(uri, uri)];
-    for columns in [4, 12, 30, 50] {
-      let layout = Layout::links(&rows, columns, 0);
-      let secondary: String = layout
-        .lines
-        .iter()
-        .filter(|line| line.source == 0 && line.row.style == Style::Muted)
-        .map(|line| line.row.label.trim_start())
-        .collect();
-      assert_eq!(secondary, uri);
-      assert!(layout.lines.iter().all(|line| line.row.label.width()
-        + line.row.detail.width()
-        <= columns));
-      assert_eq!(
-        layout.lines.iter().filter(|line| line.source == 1).count(),
-        1
-      );
-      let layout = Layout::links(&rows, columns, 1);
-      let raw: String = layout
-        .lines
-        .iter()
-        .filter(|line| line.source == 1)
-        .map(|line| line.row.label.as_str())
-        .collect();
-      assert_eq!(raw, uri);
-    }
-  }
-  #[test]
-  fn expanded_links_keep_targets() {
-    let uri = "https://example.com/long/path?query=needle";
-    let mut panel = Panel::new(
-      PanelKind::Links,
-      vec![row("Project page", uri), row("Other", "https://example.org")],
-    );
-    panel.scene_list(
-      &mut Vec::new(),
-      vpdf_model::geometry::At::default(),
-      24,
-      20,
-    );
-    let press =
-      |line| MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 4, line);
-    assert_eq!(panel.pointer(press(2)), Some(0));
-    panel.navigate(Input::plain(Action::Motion(Motion::Down)), 20);
-    panel.scene_list(
-      &mut Vec::new(),
-      vpdf_model::geometry::At::default(),
-      24,
-      20,
-    );
-    assert_eq!(panel.selected, 1);
-    panel.begin_search(false);
-    panel.preview("needle");
-    assert_eq!(panel.selected, 0);
-    assert_eq!(panel.count(), Some((1, 1)));
-    panel.scene_list(
-      &mut Vec::new(),
-      vpdf_model::geometry::At::default(),
-      12,
-      20,
-    );
-    assert_eq!(panel.pointer(press(3)), Some(0));
-  }
-  #[test]
-  fn wheel_scrolls_expanded_links() {
-    let uri = format!("https://example.com/{}", "long-path/".repeat(20));
-    let mut panel = Panel::new(
-      PanelKind::Links,
-      vec![row(&uri, &uri), row("Other", "https://example.org")],
-    );
-    panel.scene_list(
-      &mut Vec::new(),
-      vpdf_model::geometry::At::default(),
-      20,
-      6,
-    );
-    panel.pointer(MouseEvent::new(MouseEventKind::ScrollDown, 4, 2));
-    panel.scene_list(
-      &mut Vec::new(),
-      vpdf_model::geometry::At::default(),
-      20,
-      6,
-    );
-    assert_eq!((panel.selected, panel.top), (0, 3));
-    panel.navigate(Input::plain(Action::Motion(Motion::Down)), 6);
-    let mut out = Vec::new();
-    panel.scene_list(&mut out, vpdf_model::geometry::At::default(), 20, 6);
-    assert_eq!(panel.selected, 1);
-    assert!(crate::testing::text(&out).contains("Other"));
   }
 }

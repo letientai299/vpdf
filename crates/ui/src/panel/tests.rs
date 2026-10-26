@@ -28,7 +28,6 @@ fn hover_requires_destination() {
     PanelKind::Version,
     PanelKind::Outline,
     PanelKind::Results,
-    PanelKind::Links,
     PanelKind::Recent,
     PanelKind::Marks,
     PanelKind::Jumps,
@@ -80,7 +79,7 @@ fn hover_skips_indentation() {
 
 #[test]
 fn screen_scroll_keeps_panel_context() {
-  for kind in [PanelKind::Version, PanelKind::Links] {
+  for kind in [PanelKind::Version, PanelKind::Results] {
     let mut panel =
       Panel::new(kind, (0..40).map(|_| Row::parse("j: down")).collect());
     panel.scene_list(
@@ -105,7 +104,7 @@ fn screen_scroll_keeps_panel_context() {
 #[test]
 fn counted_list_boundaries() {
   let mut panel =
-    Panel::new(PanelKind::Links, (0..5).map(|_| Row::parse("row")).collect());
+    Panel::new(PanelKind::Results, (0..5).map(|_| Row::parse("row")).collect());
   for motion in [Motion::First, Motion::Last] {
     for (count, expected) in [(1, 0), (3, 2), (99, 4)] {
       let input =
@@ -140,13 +139,10 @@ fn refills_follow_rows() {
   // A clicked row that leaves ends its double click.
   panel.refill(vec![row("same", 2)], "");
   assert_eq!(panel.clicked, None);
-  // Web rows take two lines; `top` counts lines.
-  let web = |n: usize| {
-    let uri = Target::Uri(format!("https://example.com/{n}"));
-    Row::new(format!("site {n}"), String::new(), Destination::Link(uri))
-  };
-  let rows = |first| (first..9).map(web).collect::<Vec<_>>();
-  let mut panel = Panel::new(PanelKind::Links, rows(1));
+  // Jump rows take two lines; `top` counts lines.
+  let jump = |n: usize| Row::new(format!("jump {n}"), "p. 1".into(), at(n));
+  let rows = |first| (first..9).map(jump).collect::<Vec<_>>();
+  let mut panel = Panel::new(PanelKind::Jumps, rows(1));
   (panel.selected, panel.height) = (6, 12);
   panel.reflow(40);
   panel.top = panel.line_start(4);

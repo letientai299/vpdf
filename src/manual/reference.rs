@@ -53,7 +53,7 @@ fn bindings(rows: &[&Binding], defaults: &Bindings) -> Vec<Line> {
 fn teaching(id: &str) -> &'static str {
   if let Some(panel) = id.strip_prefix("panel.") {
     return match panel {
-      "annotations" | "links" => "links",
+      "annotations" => "links",
       "figures" => "regions",
       "marks" | "jumps" => "marks",
       "results" => "search",
@@ -420,7 +420,6 @@ mod tests {
     for (id, guide) in [
       ("url.open", "links"),
       ("panel.annotations", "links"),
-      ("panel.links", "links"),
       ("panel.figures", "regions"),
       ("panel.marks", "marks"),
       ("panel.jumps", "marks"),

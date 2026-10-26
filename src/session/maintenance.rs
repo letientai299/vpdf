@@ -218,9 +218,11 @@ mod tests {
     let start = Instant::now();
     let mut chores = Chores::new(start);
     session.app().complete = true;
-    let _held = crate::sidebar::hold_links(session.app());
+    let _held = crate::sidebar::hold_annotations(session.app());
     chores.run(&mut session, start);
-    assert!(session.app().sidebar_queued(vpdf_ui::keys::PanelKind::Links));
+    assert!(
+      session.app().sidebar_queued(vpdf_ui::keys::PanelKind::Annotations)
+    );
     assert!(chores.wait(&mut session, start, false) > Duration::ZERO);
     Ok(())
   }
@@ -240,7 +242,6 @@ mod tests {
     assert!(
       session.app().sidebar_loading(vpdf_ui::keys::PanelKind::Annotations)
     );
-    assert!(session.app().sidebar_loading(vpdf_ui::keys::PanelKind::Links));
     session.app().command("cancel")?;
     session.app().start_deferred();
     chores.run(&mut session, start);
@@ -248,7 +249,6 @@ mod tests {
     assert!(
       !session.app().sidebar_pending(vpdf_ui::keys::PanelKind::Annotations)
     );
-    assert!(!session.app().sidebar_pending(vpdf_ui::keys::PanelKind::Links));
     session.app().want_figures();
     assert!(matches!(session.app().figures, crate::jobs::Figures::Running(_)));
     Ok(())
@@ -280,15 +280,12 @@ mod tests {
     for tab in &session.tabs {
       assert!(tab.panes[0].outline_pending());
       assert!(matches!(tab.panes[0].figures, crate::jobs::Figures::Running(_)));
-      for kind in
-        [vpdf_ui::keys::PanelKind::Annotations, vpdf_ui::keys::PanelKind::Links]
-      {
-        assert!(tab.panes[0].sidebar_pending(kind));
-        loading += usize::from(tab.panes[0].sidebar_loading(kind));
-      }
+      let kind = vpdf_ui::keys::PanelKind::Annotations;
+      assert!(tab.panes[0].sidebar_pending(kind));
+      loading += usize::from(tab.panes[0].sidebar_loading(kind));
     }
     // Sidebar workers share one budget across panes.
-    assert_eq!(loading, crate::sidebar::budget().min(4));
+    assert_eq!(loading, crate::sidebar::budget().min(2));
     let deadline = Instant::now() + Duration::from_secs(5);
     while !session.app().figure_updates()? {
       assert!(Instant::now() < deadline);

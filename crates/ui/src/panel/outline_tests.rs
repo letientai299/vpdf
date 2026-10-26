@@ -245,7 +245,7 @@ fn auto_control_menu_and_action() {
     panel.input(Input::plain(Action::OutlineAuto), 8),
     Event::Unhandled
   );
-  let mut other = Panel::new(PanelKind::Links, vec![]);
+  let mut other = Panel::new(PanelKind::Results, vec![]);
   assert_eq!(other.input(Input::plain(Action::OutlineAuto), 8), Event::Stay);
 }
 

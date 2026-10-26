@@ -38,8 +38,9 @@ on the rendered page.
 
 ## Reference preview
 
-An internal citation opens a preview of its bibliography entry while the source
-passage and links panel remain visible.
+An internal citation opens a preview of its bibliography entry over the source
+passage. The capture predates removal of the links panel; its build remains in
+the [capture manifest][manifest].
 
 ![A bibliography preview over the source passage][preview]
 

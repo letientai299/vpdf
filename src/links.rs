@@ -1,4 +1,4 @@
-//! Links and notes: hover, follow, and listing.
+//! Links and notes: hover and follow.
 
 use crate::Result;
 use crate::app::App;
@@ -9,7 +9,7 @@ use vpdf_model::input::MouseEvent;
 use vpdf_model::text::{Bounds, PageId, Position, Text};
 use vpdf_pdf::document::Document;
 use vpdf_ui::annotations::{icon, marked};
-use vpdf_ui::panel::links::cited;
+use vpdf_ui::citations::cited;
 use vpdf_ui::pointer::{Hit, Hover};
 use vpdf_ui::preview::{Press, Preview};
 
@@ -175,7 +175,7 @@ impl App {
     link: &Link,
     text: Option<&Text>,
   ) -> (String, String) {
-    vpdf_ui::panel::links::context(
+    vpdf_ui::citations::context(
       page,
       link,
       text,
@@ -189,7 +189,7 @@ pub(crate) fn destination(
   doc: &Document,
   cited: &str,
 ) -> String {
-  vpdf_ui::panel::links::destination(
+  vpdf_ui::citations::destination(
     target,
     &doc.outline,
     doc.pages.len(),
@@ -247,19 +247,6 @@ impl App {
 mod tests {
   use super::*;
   use std::path::PathBuf;
-  use vpdf_ui::keys::{Action, Input, PanelKind};
-  use vpdf_ui::panel::Destination;
-
-  fn loaded(app: &mut App) -> Result<()> {
-    app.want_sidebar(PanelKind::Links);
-    let start = Instant::now();
-    while app.sidebar_pending(PanelKind::Links) {
-      app.sidebar_updates()?;
-      assert!(start.elapsed() < std::time::Duration::from_secs(10));
-      std::thread::sleep(std::time::Duration::from_millis(1));
-    }
-    Ok(())
-  }
 
   #[test]
   #[ignore = "requires verified public PDF corpus"]
@@ -267,30 +254,17 @@ mod tests {
     let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
     let screen = crate::screen::cells(120, 50);
     let mut app = App::with_screen(&root.join("paper.pdf"), "", true, screen)?;
-    app.go_to_page(PageId(1))?;
-    loaded(&mut app)?;
-    let rows = app.panel_rows(PanelKind::Links)?;
-    assert!(rows[0].label.starts_with("[13] Sepp Hochreiter"));
-    assert!(rows[0].label.contains("Long short-term memory"));
-    assert_eq!(rows[0].detail, "p. 11");
-    for row in rows.iter().filter(|row| !row.detail.is_empty()).take(3) {
-      let Destination::Link(target) = &row.destination else {
-        panic!("Reference destination");
+    let links = app.doc.links(PageId(1))?;
+    let internal = links.iter().filter(|l| !matches!(l.target, Target::Uri(_)));
+    for link in internal.take(3) {
+      app.follow(&link.target)?;
+      let (Target::Page(page) | Target::Point { page, .. }) = link.target
+      else {
+        unreachable!("internal link");
       };
-      app.follow(target)?;
+      assert_eq!(app.navigation_position().page, page);
     }
-    app.go_to_page(PageId(3))?;
-    loaded(&mut app)?;
-    let rows = app.panel_rows(PanelKind::Links)?;
-    assert!(rows[3].label.starts_with("4 To illustrate"));
-    assert_eq!(rows[3].detail, "p. 4");
-
-    app.go_to_page(PageId(10))?;
-    app.open_panel(PanelKind::Links)?;
-    loaded(&mut app)?;
-    let row = &app.panel.as_ref().unwrap().view.rows()[0];
-    assert_eq!(row.label, "arXiv:1610.02357");
-    // U21: hovers quote what references cite, as the panel does.
+    // U21: hovers quote what references cite.
     let text = app.doc.text(PageId(2))?;
     let first = app.doc.links(PageId(2))?.iter().position(|link| {
       let cites = matches!(link.target, Target::Point { page: PageId(9), .. });
@@ -308,11 +282,6 @@ mod tests {
       let shown = app.hover_label().unwrap_or_default();
       assert!(shown.starts_with(label), "{shown:?}");
     }
-    app.panel_input(Input { register: 'a', ..Input::plain(Action::Yank) })?;
-    assert_eq!(
-      app.reader.register('a').map(|text| &**text),
-      Some("http://arxiv.org/abs/1610.02357\n")
-    );
     Ok(())
   }
 }

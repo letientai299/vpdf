@@ -21,10 +21,9 @@ moves between the link and preview; leaving both closes it. A left click inside
 the preview follows. A middle click opens the destination in a split, keeping
 focus in the original pane. A middle click on an internal link does the same.
 
-`gl` opens LINKS for the current page. Choose a row with `j` or `k`; Enter
-follows. `o` follows while retaining panel focus. `yf` shows hints for copying
-web addresses instead of opening them. `gx` opens the URL at the cursor or
-selected link row. A middle click on a web link copies its address.
+`yf` shows hints for copying web addresses instead of opening them. `gx` opens
+the URL at the cursor or on the selected Contents row. A middle click on a web
+link copies its address.
 
 ## Citations and definitions
 

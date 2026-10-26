@@ -3,6 +3,7 @@ use vpdf_model::text;
 pub mod annotations;
 pub mod bindings;
 pub mod chrome;
+pub mod citations;
 pub mod clues;
 pub mod commands;
 pub mod context;

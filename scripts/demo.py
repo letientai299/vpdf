@@ -82,10 +82,7 @@ SCENES = {
         [
             ("text", "zc=+/[13]\r"),
             ("wait", "matches"),
-            ("text", ":nohlsearch\rgl"),
-            ("wait", "LINKS"),
-            ("key", "tab"),
-            ("text", "ilK"),
+            ("text", ":nohlsearch\rilK"),
             ("wait", "╭"),
         ],
     ),

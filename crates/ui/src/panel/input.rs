@@ -332,7 +332,7 @@ mod tests {
     );
     let uri = "https://example.org/paper";
     let mut view = Panel::new(
-      PanelKind::Links,
+      PanelKind::Outline,
       vec![Row::new(
         "paper".into(),
         String::new(),
@@ -345,7 +345,7 @@ mod tests {
     );
     assert_eq!(
       view.input(Input::plain(Action::YankLine), 24),
-      Event::Copy { text: format!("{uri}\n"), register: '"' }
+      Event::Copy { text: "paper\n".into(), register: '"' }
     );
   }
 }

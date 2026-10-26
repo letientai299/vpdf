@@ -157,7 +157,6 @@ mod view;
 pub use view::page_space;
 
 mod jumps;
-pub mod links;
 pub use layout::wrap;
 
 pub mod recent;

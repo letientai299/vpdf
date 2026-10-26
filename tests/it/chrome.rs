@@ -142,22 +142,28 @@ fn middle_clicks_split_rows_and_thumbnails() -> Result<()> {
   Ok(())
 }
 
+/// Contents with a web row second.
+fn web_contents(session: &mut Session) -> Result<()> {
+  use vpdf_model::document::{Heading, Target};
+  let heading =
+    |title: &str, target| Heading { title: title.into(), depth: 0, target };
+  keys(session, "go")?;
+  status(session)?;
+  let app = session.app();
+  app.doc.outline = vec![
+    heading("Opening", Target::Page(PageId(0))),
+    heading("Website", Target::Uri("https://example.com/".into())),
+  ];
+  app.refill_panel(vpdf_ui::keys::PanelKind::Outline)?;
+  status(session)?;
+  Ok(())
+}
+
 #[test]
 fn middle_clicks_copy_web_rows() -> Result<()> {
   let (_directory, mut session) = session(false)?;
-  keys(&mut session, "gl")?;
-  status(&mut session)?;
-  let rows = session.app().panel.as_ref().map(|p| p.view.rows().len());
-  let web = (0..rows.unwrap_or(0)).find(|&index| {
-    let panel = session.tab().panes[0].panel.as_ref();
-    panel.is_some_and(|panel| {
-      matches!(
-        panel.view.rows()[index].destination,
-        vpdf_ui::panel::Destination::Link(vpdf_model::document::Target::Uri(_))
-      )
-    })
-  });
-  let at = cell(&mut session, Hit::Row(web.expect("a web row")))?;
+  web_contents(&mut session)?;
+  let at = cell(&mut session, Hit::Row(1))?;
   middle(&mut session, at)?;
   let app = session.app();
   let got = app.reader.register('"').map(ToString::to_string);
@@ -259,14 +265,21 @@ fn panel_and_overview_menus_run_their_items() -> Result<()> {
 #[test]
 fn row_menus_copy_and_select() -> Result<()> {
   let (_directory, mut session) = session(false)?;
-  keys(&mut session, "gl")?;
-  status(&mut session)?;
+  web_contents(&mut session)?;
   let web = cell(&mut session, Hit::Row(1))?;
   crate::mouse::right(&mut session, web)?;
   let app = session.app();
   assert_eq!(app.panel.as_ref().map(|panel| panel.view.selected()), Some(1));
   assert!(app.panel_focused());
-  let want = ["Follow", "Follow, keep panel", "Copy address", "Close panel"];
+  let want = [
+    "Follow",
+    "Follow, keep panel",
+    "Copy address",
+    "Close panel",
+    "Expand all",
+    "Collapse all",
+    "Auto-expand",
+  ];
   assert_eq!(labels(&mut session), want);
   // A right drag onto the item and its release run it.
   let area =
@@ -1184,24 +1197,6 @@ fn match_count_opens_results() -> Result<()> {
 }
 
 #[test]
-fn refocusing_links_refreshes_page() -> Result<()> {
-  let (_directory, mut session) = session(false)?;
-  let app = session.app();
-  app.open_panel(vpdf_ui::keys::PanelKind::Links)?;
-  crate::common::sidebar_loaded(app, vpdf_ui::keys::PanelKind::Links)?;
-  app.panel.as_mut().unwrap().view.choose(1);
-  app.open_panel(vpdf_ui::keys::PanelKind::Links)?;
-  crate::common::sidebar_loaded(app, vpdf_ui::keys::PanelKind::Links)?;
-  assert_eq!(app.panel.as_ref().unwrap().view.selected(), 1);
-  crate::common::keys(app, b"\ti")?;
-  app.command("2")?;
-  app.open_panel(vpdf_ui::keys::PanelKind::Links)?;
-  crate::common::sidebar_loaded(app, vpdf_ui::keys::PanelKind::Links)?;
-  assert!(app.panel.as_ref().unwrap().view.rows().is_empty());
-  Ok(())
-}
-
-#[test]
 fn unfocused_matches_keep_identity() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   session.app().command("vsplit")?;
@@ -1251,7 +1246,7 @@ fn gx_reuses_url_scheme_checks() -> Result<()> {
   assert_eq!(app.reader.cursor.page, PageId(0));
   assert!(!app.text_mode);
   app.show_panel(
-    vpdf_ui::keys::PanelKind::Links,
+    vpdf_ui::keys::PanelKind::Outline,
     vec![vpdf_ui::panel::Row::new(
       "unsafe".into(),
       String::new(),

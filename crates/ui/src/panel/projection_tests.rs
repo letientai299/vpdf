@@ -152,7 +152,7 @@ fn outline_generation_reset() {
 #[test]
 fn wrapped_projection() {
   let (tree, mut panel) = outline();
-  panel.kind = PanelKind::Links;
+  panel.kind = PanelKind::Jumps;
   panel.rows[3].label = "one two three four five six seven eight".into();
   panel.choose(3);
   panel.reflow(12);
