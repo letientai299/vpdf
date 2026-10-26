@@ -27,3 +27,7 @@ mod fixtures;
 #[cfg(test)]
 #[path = "../../../tests/support/text.rs"]
 mod text_fixture;
+
+#[cfg(test)]
+#[path = "../../../tests/support/references.rs"]
+mod reference_fixture;

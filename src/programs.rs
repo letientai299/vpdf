@@ -195,7 +195,11 @@ fn run_fzf(root: &Path) -> Result<Option<PathBuf>> {
 fn preview(exe: &Path, graphics: crate::inline::Graphics) -> String {
   let exe = exe.to_string_lossy().replace('\'', r"'\''");
   let name = graphics.name();
-  format!("env {}={name} '{exe}' -- {{}}", crate::inline::VAR)
+  format!(
+    "env {}={name} {}=1 '{exe}' -- {{}}",
+    crate::inline::VAR,
+    crate::inline::PATH_VAR
+  )
 }
 
 /// Streams relative PDF paths, skipping folders it cannot read; stops
@@ -286,7 +290,10 @@ mod tests {
   fn preview_scopes_its_variable_and_ends_options() {
     let command =
       preview(Path::new("/a/it's/vpdf"), crate::inline::Graphics::Kitty);
-    assert_eq!(command, r"env VPDF_PREVIEW=kitty '/a/it'\''s/vpdf' -- {}");
+    assert_eq!(
+      command,
+      r"env VPDF_PREVIEW=kitty VPDF_PREVIEW_PATH=1 '/a/it'\''s/vpdf' -- {}"
+    );
   }
 
   #[test]

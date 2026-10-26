@@ -14,7 +14,9 @@ use std::time::{Duration, Instant};
 use vpdf_model::geometry::At;
 use vpdf_model::input::MouseKind;
 use vpdf_model::input::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
-use vpdf_model::text::{PageId, Position};
+#[cfg(test)]
+use vpdf_model::text::PageId;
+use vpdf_model::text::Position;
 use vpdf_pdf::document::PasswordRequired;
 use vpdf_terminal::decode::{Event, Size};
 use vpdf_terminal::dnd::{Dropped, Step};
@@ -56,7 +58,7 @@ pub struct Session {
   frontend: crate::raster::Frontend,
   observing: Option<()>,
   unlock: Option<unlock::Unlock>,
-  native_opens: std::collections::VecDeque<PathBuf>,
+  native_opens: std::collections::VecDeque<vpdf_model::reference::Reference>,
   pending_keys: std::collections::VecDeque<KeyEvent>,
   secret: Option<String>,
   picker: Option<crate::programs::Picker>,
@@ -202,7 +204,10 @@ impl Session {
   }
 
   fn present_startup(&mut self) {
-    if self.unlock.is_some() {
+    if self.unlock.is_some()
+      || (!self.tabs.is_empty() && self.app().error.is_some())
+      || self.home.as_ref().is_some_and(|home| home.view.error().is_some())
+    {
       return;
     }
     let Some(warning) = self.startup_warning.take() else { return };
@@ -213,9 +218,7 @@ impl Session {
         self.startup_warning = Some(warning);
       }
     } else {
-      let app = self.app();
-      app.error = None;
-      app.reader.notice(warning);
+      self.app().reader.notice(warning);
     }
   }
 
@@ -364,14 +367,10 @@ impl Session {
     true
   }
 
-  fn start_at(&mut self, page: Option<usize>) -> Result<()> {
+  #[cfg(test)]
+  fn start_at(&mut self, page: usize) -> Result<()> {
     self.activate(0)?;
-    if let Some(page) = page {
-      let app = self.app();
-      let page = PageId(page.saturating_sub(1).min(app.doc.pages.len() - 1));
-      app.reading_view().open_page(page)?;
-    }
-    Ok(())
+    self.app().reading_view().open_page(PageId(page - 1))
   }
 
   /// Records the focused pane and new history in memory, where the
@@ -433,6 +432,8 @@ mod pointer;
 mod printing;
 #[cfg(test)]
 mod recent_tests;
+#[cfg(test)]
+mod reference_tests;
 mod run;
 #[cfg(test)]
 mod sidebar_tests;

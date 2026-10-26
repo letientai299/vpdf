@@ -17,6 +17,8 @@ pub(crate) struct AutoOcr {
 
 impl App {
   pub(crate) fn cancel_jobs(&mut self) -> Result<()> {
+    self.cancel_reference();
+    self.reference.rectangle = None;
     self.cancel_search();
     self.cancel_ocr();
     self.cancel_outline();

@@ -124,6 +124,21 @@ impl Session {
     Ok(())
   }
 
+  fn pick_request(
+    &mut self,
+    root: &Path,
+    tab: bool,
+    screen: Screen,
+  ) -> Result<()> {
+    if matches!(self.frontend, crate::raster::Frontend::Native(_)) {
+      return self.pick(root, tab);
+    }
+    match crate::programs::pick_pdf(root)? {
+      Some(path) => self.open(&path, tab, screen),
+      None => Ok(()),
+    }
+  }
+
   fn dispatch(
     &mut self,
     request: Option<Request>,
@@ -137,6 +152,9 @@ impl Session {
         self.request_help(&topic, invocation, screen)
       }
       Some(Request::Open { path, tab }) => self.open(&path, tab, screen),
+      Some(Request::Reference { reference, tab }) => {
+        self.open_reference(&reference, tab, screen)
+      }
       Some(Request::Print) => self.print(),
       Some(Request::RecentTab) => self.recent_tab(screen),
       Some(Request::ForgetRecent(paths)) => self.forget_recent(&paths),
@@ -150,7 +168,7 @@ impl Session {
       }
       Some(Request::Tab(step)) => self.activate(self.step(step)),
       Some(Request::Window { command, count, explicit, file }) => {
-        self.window(command, (count, explicit), file.as_deref())
+        self.window(command, (count, explicit), file.as_ref())
       }
       Some(Request::Panel(kind)) => {
         self.pointer.release();
@@ -190,19 +208,11 @@ impl Session {
       }
       Some(Request::Keys(keys)) => self.replay_keys(keys),
       Some(Request::SplitMark(name)) => self.split_mark(name, screen),
-      Some(Request::Pick { root, tab })
-        if matches!(self.frontend, crate::raster::Frontend::Native(_)) =>
-      {
-        self.pick(&root, tab)
-      }
       Some(Request::Pick { root, tab }) => {
-        match crate::programs::pick_pdf(&root)? {
-          Some(path) => self.open(&path, tab, screen),
-          None => Ok(()),
-        }
+        self.pick_request(&root, tab, screen)
       }
-      Some(Request::TabClose(index)) => {
-        self.close_tab(index.unwrap_or(self.active))
+      Some(Request::TabClose(tab)) => {
+        self.close_tab(tab.unwrap_or(self.active))
       }
       Some(Request::QuitAll) => {
         self.quit = true;

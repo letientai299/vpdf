@@ -407,9 +407,11 @@ class Gallery:
             f"VPDF_TRACE={self.args.raw / (name + '.jsonl')}",
             str(self.args.binary),
             "--no-config",
-            "--page",
-            str(page),
-            *(str(self.args.corpus / f"{doc}.pdf") for doc in documents),
+            *(
+                (self.args.corpus / f"{doc}.pdf").resolve().as_uri()
+                + (f"#page={page}" if index == 0 else "")
+                for index, doc in enumerate(documents)
+            ),
         )
         if previous:
             self.remote("close-window", "--match", f"id:{previous}")

@@ -839,6 +839,18 @@ fn home_file_drops_open() -> Result<()> {
   let (landed, out) = drop(&mut session, &mut home, &pdf)?;
   assert!(matches!(landed, Landing::Opened) && ended(&out, "1"));
   assert_eq!(session.tabs.len(), 1);
+  let mut failed = Session::new(None);
+  let mut home = Home::new(&[], screen, &Wake::none(), true);
+  let invalid = PathBuf::from(format!("{}#page=99", pdf.display()));
+  let (landed, out) = drop(&mut failed, &mut home, &invalid)?;
+  assert!(matches!(landed, Landing::Opened) && ended(&out, "0"));
+  assert!(
+    failed
+      .app()
+      .error
+      .as_deref()
+      .is_some_and(|error| error.contains("Page outside document"))
+  );
   // The terminal's error shows and ends the drop.
   let mut home = Home::new(&[], screen, &Wake::none(), true);
   let mut out = Vec::new();
@@ -1249,7 +1261,7 @@ fn saved_view_launch_precedence() -> Result<()> {
   let mut original = Session::new(Some(store.clone()));
   original.open(&path, true, screen)?;
   original.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
-  original.start_at(Some(3))?;
+  original.start_at(3)?;
   original.record();
   original.save()?;
   let mut session =
@@ -1257,7 +1269,7 @@ fn saved_view_launch_precedence() -> Result<()> {
   session.open(&path, true, screen)?;
   assert_eq!(session.app().layout.zoom(), 3.0);
   assert_eq!(session.app().reader.cursor.page, PageId(2));
-  session.start_at(Some(2))?;
+  session.start_at(2)?;
   assert_eq!(session.app().reader.cursor.page, PageId(1));
   assert!(!session.app().cursorline);
   Ok(())
@@ -1301,7 +1313,7 @@ fn real_ocr_and_cancel() -> Result<()> {
   let source = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("scan.pdf");
   let mut session = Session::configured(None, loaded);
   session.open(&source, true, cells(120, 40))?;
-  session.start_at(Some(10))?;
+  session.start_at(10)?;
   let app = session.app();
   app.command("ocr")?;
   let result = app

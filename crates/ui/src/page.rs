@@ -37,6 +37,18 @@ struct Painter<'a, S, D> {
 }
 
 impl Canvas<'_> {
+  pub fn rectangle<'a>(
+    &self,
+    source: &mut (impl TextSource + Pages),
+    page: PageId,
+    bounds: Bounds,
+    scroll: f32,
+    scene: &mut impl Draw<'a>,
+  ) {
+    let mut painter = Painter { canvas: self, source, scene, scroll };
+    painter.polygon(page, bounds.into(), theme::MATCH, Layer::AboveText);
+  }
+
   pub fn scene<'a>(
     &self,
     source: &mut (impl TextSource + Pages),

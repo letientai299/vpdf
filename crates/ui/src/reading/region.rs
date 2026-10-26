@@ -4,9 +4,19 @@ use crate::overlays::Overlays;
 use crate::page::Point;
 use crate::region::Region;
 use crate::source::Pages;
+use crate::text::{Bounds, PageId};
 use vpdf_reader::reader::TextSource;
 
 impl<S: TextSource + Pages> View<'_, S> {
+  pub fn reveal_bounds(&mut self, page: PageId, bounds: Bounds) {
+    self.animation.cancel();
+    let projected = self.layout.project(page, bounds, 0.0);
+    let margin = f32::from(self.frame.pane.screen.cell_height);
+    self.reader.scroll =
+      self.layout.reveal(page, projected, self.reader.scroll, margin);
+    self.landing.record(self.landed_view(self.reader.cursor));
+  }
+
   pub fn figure_point(&mut self, region: Option<&Region>) -> Result<Point> {
     if let Some(region) = region {
       let selected = region.snapshot();

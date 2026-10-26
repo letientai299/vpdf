@@ -2,11 +2,44 @@
 
 <!-- help-topic:state -->
 
-Open a file with `vpdf book.pdf` from the shell. Multiple filenames open tabs;
-`--page 23` overrides the saved position with physical page 23. `vpdf --help`
+Open a file with `vpdf book.pdf` from the shell. Multiple references open tabs;
+`vpdf 'book.pdf#page=23'` overrides the saved position with physical page 23.
+`vpdf --help`
 shows the installed launch options. Without saved files, the start screen shows
 opening and help hints. Use `:recent` for saved files or `:edit book.pdf` to
 enter a path.
+
+## Document references
+
+Shell arguments and opening commands accept relative paths, absolute paths,
+and local file URIs such as `file:///home/me/book.pdf#page=23`.
+Relative inputs use the working directory. File URIs accept an empty host or
+`localhost`; other hosts and remote downloads fail. URI paths use percent
+encoding, including `%20` for spaces and `%23` for filename hashes. Ordinary
+paths preserve spaces and literal percent signs. Quote references in the shell.
+A bare `#` starts a target even when the full argument names an existing file.
+
+Targets follow [PDF fragment identifiers][fragments]:
+
+| Target                               | Example                           |
+| ------------------------------------ | --------------------------------- |
+| Physical page                        | `#page=23`                        |
+| Named destination                    | `#nameddest=proof`                |
+| Structure ID                         | `#structelem=section-id`          |
+| Annotation name on the selected page | `#page=23&comment=note-id`        |
+| Transient page rectangle             | `#page=23&highlight=10,100,20,50` |
+| First match of any quoted word       | `#search=%22proof%20theorem%22`   |
+
+Operations run from left to right; `&` and `#` separate parameters.
+Highlight coordinates are left, right, top, bottom in points from the page's
+upper-left corner. Rectangles require page view and do not change the PDF.
+Unknown parameters, invalid pages, missing IDs, and unresolved searches report
+errors. Parameters such as `zoom`, `view`, `ef`, and `fdf` are unsupported.
+
+Each argument carries its own target, including when its document is already
+open. Explicit targets apply after saved state and password entry; omitting a
+target restores the saved view when opening a document. OS file events and
+recent-file entries keep filesystem paths without fragments.
 
 ## Opening and discovery
 
@@ -135,3 +168,4 @@ copying][selection].
 
 [helpers]: install.md#optional-helpers
 [selection]: yank.md
+[fragments]: https://www.rfc-editor.org/rfc/rfc8118.html#section-3

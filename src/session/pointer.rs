@@ -337,7 +337,7 @@ impl Session {
       Target::Pdf(path) => path,
     };
     let screen = self.screen.unwrap_or(self.app().screen);
-    self.open(&path, true, screen)
+    self.open_reference(&path, true, screen)
   }
 
   /// Start-screen files open tabs; text edits prompts.
@@ -360,12 +360,14 @@ impl Session {
       answer(out, &drop.finish(false))?;
       return Ok(Landing::Shown);
     }
-    let opened = match crate::dnd::target(&drop, typing) {
+    let target = crate::dnd::target(&drop, typing);
+    let opening = matches!(&target, Ok(Target::Pdf(_)));
+    let opened = match target {
       Ok(Target::Text(text)) => {
         home.event(Event::Paste(text), &mut self.history).map(|_| false)
       }
       Ok(Target::Pdf(path)) => self
-        .open(&path, true, self.screen.unwrap_or(home.view.screen()))
+        .open_reference(&path, true, self.screen.unwrap_or(home.view.screen()))
         .map(|()| true),
       Err(error) => Err(error),
     };
@@ -373,6 +375,10 @@ impl Session {
     match opened {
       Ok(true) => Ok(Landing::Opened),
       Ok(false) => Ok(Landing::Shown),
+      Err(error) if opening && !self.tabs.is_empty() => {
+        self.app().error = Some(error.to_string());
+        Ok(Landing::Opened)
+      }
       Err(error) => {
         home.view.fail(error.to_string());
         Ok(Landing::Shown)

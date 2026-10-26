@@ -301,9 +301,9 @@ impl App {
       return self.edit_prompt(history, |prompt, _| Ok(prompt.paste(text)));
     }
     if self.reader.mode() == Mode::Normal
-      && let Some(path) = crate::dnd::pdf(text)
+      && let Some(reference) = crate::dnd::pdf(text)?
     {
-      self.request = Some(Request::Open { path, tab: false });
+      self.request = Some(Request::Reference { reference, tab: false });
     }
     Ok(())
   }
@@ -398,7 +398,9 @@ impl App {
       Id::Split | Id::VSplit => {
         let axis =
           if spec.id == Id::Split { Axis::Rows } else { Axis::Columns };
-        let file = (!argument.is_empty()).then(|| cmdline::expand(argument));
+        let file = (!argument.is_empty())
+          .then(|| cmdline::reference(argument))
+          .transpose()?;
         self.request = Some(Request::Window {
           command: Window::Split(axis),
           count: 1,
@@ -417,7 +419,7 @@ impl App {
         });
       }
       Id::Edit | Id::Open | Id::TabEdit | Id::TabNew => {
-        self.request_open(spec.id, argument);
+        self.request_open(spec.id, argument)?;
       }
       Id::TabNext => {
         let step = argument.parse().map_or(TabMove::Next(1), TabMove::Go);
@@ -436,12 +438,7 @@ impl App {
       Id::Marks => self.open_panel(PanelKind::Marks)?,
       Id::Jumps => self.open_panel(PanelKind::Jumps)?,
       Id::Annotations => self.open_panel(PanelKind::Annotations)?,
-      Id::Fzf => {
-        self.request = Some(match cmdline::picker_root(argument) {
-          Some(root) => Request::Pick { root, tab: false },
-          None => Request::Open { path: cmdline::expand(argument), tab: false },
-        });
-      }
+      Id::Fzf => self.request_picker(argument)?,
       Id::Cancel => {
         self.cancel_jobs()?;
         self.reader.notice("Jobs canceled");
@@ -485,7 +482,18 @@ impl App {
     Ok(())
   }
 
-  fn request_open(&mut self, command: Id, argument: &str) {
+  fn request_picker(&mut self, argument: &str) -> Result<()> {
+    self.request = Some(match cmdline::picker_root(argument) {
+      Some(root) => Request::Pick { root, tab: false },
+      None => Request::Reference {
+        reference: cmdline::reference(argument)?,
+        tab: false,
+      },
+    });
+    Ok(())
+  }
+
+  fn request_open(&mut self, command: Id, argument: &str) -> Result<()> {
     if command == Id::Open
       && argument.is_empty()
       && matches!(self.frontend, crate::raster::Frontend::Terminal)
@@ -495,11 +503,11 @@ impl App {
         .with_invocation(self.help_invocation());
       prompt.replace("open ");
       self.overlays.open_prompt(prompt);
-      return;
+      return Ok(());
     }
     self.request = Some(if !argument.is_empty() {
-      Request::Open {
-        path: cmdline::expand(argument),
+      Request::Reference {
+        reference: cmdline::reference(argument)?,
         tab: command != Id::Edit,
       }
     } else if command == Id::TabNew {
@@ -507,6 +515,7 @@ impl App {
     } else {
       Request::Pick { root: ".".into(), tab: command != Id::Edit }
     });
+    Ok(())
   }
 
   fn request_help(
@@ -729,7 +738,10 @@ mod tests {
           app.command("fzf notes.pdf")?;
           assert_eq!(
             app.request.take(),
-            Some(Request::Open { path: "notes.pdf".into(), tab: false })
+            Some(Request::Reference {
+              reference: cmdline::reference("notes.pdf")?,
+              tab: false
+            })
           );
         }
         for (name, tab) in [
@@ -749,7 +761,10 @@ mod tests {
           app.command(&format!("{name} notes.pdf"))?;
           assert_eq!(
             app.request.take(),
-            Some(Request::Open { path: "notes.pdf".into(), tab })
+            Some(Request::Reference {
+              reference: cmdline::reference("notes.pdf")?,
+              tab
+            })
           );
         }
         app.command("tabnew")?;
@@ -757,7 +772,10 @@ mod tests {
         app.command("tabnew notes.pdf")?;
         assert_eq!(
           app.request.take(),
-          Some(Request::Open { path: "notes.pdf".into(), tab: true })
+          Some(Request::Reference {
+            reference: cmdline::reference("notes.pdf")?,
+            tab: true
+          })
         );
       }
     }

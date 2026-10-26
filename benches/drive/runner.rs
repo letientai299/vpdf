@@ -122,9 +122,8 @@ impl Driver {
     let store = tempfile::tempdir()?;
     let (sender, wakes) = mpsc::sync_channel(1);
     let bridge = Bridge::configured(
-      paths,
+      paths.into_iter().map(Into::into).collect(),
       Some(store.path().join("state")),
-      None,
       vpdf::config::Loaded::default(),
       move || {
         let _ = sender.try_send(());

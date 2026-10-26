@@ -147,3 +147,78 @@ fn config_bypass_skips_reads() -> Result<()> {
   );
   Ok(())
 }
+
+#[test]
+fn preview_applies_reference_page() -> Result<()> {
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("a b%.pdf");
+  super::common::pages_pdf(&path, &[&["first page"], &["second page"]])?;
+  let shown = path.display().to_string();
+  let uri = format!("file://{}", shown.replace('%', "%25").replace(' ', "%20"));
+  for reference in [&shown, &uri] {
+    for (target, expected) in [
+      ("", "first page"),
+      ("#page=2", "second page"),
+      ("#page=2&page=1", "first page"),
+    ] {
+      let output = Command::new(env!("CARGO_BIN_EXE_vpdf"))
+        .env(vpdf::inline::VAR, "text")
+        .arg(format!("{reference}{target}"))
+        .output()?;
+      assert!(output.status.success(), "{output:?}");
+      assert_eq!(String::from_utf8(output.stdout)?.trim(), expected);
+    }
+  }
+  for (target, error) in [
+    ("#page=0", "Invalid physical page"),
+    ("#page=3", "Page outside document"),
+    ("#page=3&page=1", "Page outside document"),
+    ("#nameddest=proof", "Preview supports only page targets"),
+    ("#search=%22word%22", "Preview supports only page targets"),
+    ("#zoom=100", "Unsupported PDF target parameter"),
+  ] {
+    let output = Command::new(env!("CARGO_BIN_EXE_vpdf"))
+      .env(vpdf::inline::VAR, "text")
+      .arg(format!("{uri}{target}"))
+      .output()?;
+    assert!(!output.status.success(), "{target}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains(error));
+    assert_eq!(output.stdout, [] as [u8; 0]);
+  }
+  let relative = Command::new(env!("CARGO_BIN_EXE_vpdf"))
+    .current_dir(directory.path())
+    .env(vpdf::inline::VAR, "text")
+    .arg("a b%.pdf#page=2")
+    .output()?;
+  assert!(relative.status.success(), "{relative:?}");
+  assert_eq!(String::from_utf8(relative.stdout)?.trim(), "second page");
+  Ok(())
+}
+
+#[test]
+fn page_option_is_unknown() -> Result<()> {
+  let output = Command::new(env!("CARGO_BIN_EXE_vpdf"))
+    .args(["--page", "2", "book.pdf"])
+    .output()?;
+  assert!(!output.status.success());
+  assert!(
+    String::from_utf8_lossy(&output.stderr)
+      .contains("unexpected argument '--page'")
+  );
+  Ok(())
+}
+
+#[test]
+fn picker_preview_preserves_literal_hash() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let path = root.path().join("book.pdf#page=2.pdf");
+  super::common::text_pdf(&path, &["literal filename"])?;
+  let output = Command::new(env!("CARGO_BIN_EXE_vpdf"))
+    .env(vpdf::inline::VAR, "text")
+    .env(vpdf::inline::PATH_VAR, "1")
+    .arg(&path)
+    .output()?;
+  assert!(output.status.success(), "{output:?}");
+  assert_eq!(String::from_utf8(output.stdout)?.trim(), "literal filename");
+  Ok(())
+}

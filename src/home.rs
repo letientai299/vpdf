@@ -14,13 +14,14 @@ use vpdf_ui::home::Effect;
 use vpdf_ui::layout::Screen;
 use vpdf_ui::prompt::History;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Outcome {
   Stay,
   ConfigReload,
   Theme(vpdf_model::theme::Theme),
   Perf(Option<bool>),
   Open(PathBuf),
+  Reference(vpdf_model::reference::Reference),
   Forget(Vec<PathBuf>),
   Help(String),
   Pick { root: PathBuf, tab: bool },
@@ -164,7 +165,7 @@ impl Home {
       Effect::Quit => Outcome::Quit,
       Effect::Command(line) => return self.command(&line, terminal),
       Effect::Paste(text) => {
-        crate::dnd::pdf(&text).map_or(Outcome::Stay, Outcome::Open)
+        crate::dnd::pdf(&text)?.map_or(Outcome::Stay, Outcome::Reference)
       }
       Effect::Editor(text) => {
         let edited = crate::programs::edit(&text, terminal)?;
@@ -204,7 +205,7 @@ impl Home {
       Id::Edit | Id::Open | Id::TabEdit | Id::TabNew
         if !argument.is_empty() =>
       {
-        Ok(Outcome::Open(cmdline::expand(argument)))
+        Ok(Outcome::Reference(cmdline::reference(argument)?))
       }
       Id::Open if terminal && !cmdline::on_path("fzf") => {
         let mut prompt =
@@ -221,7 +222,7 @@ impl Home {
       Id::Recent | Id::TabNew => Ok(Outcome::Stay),
       Id::Fzf => Ok(match cmdline::picker_root(argument) {
         Some(root) => Outcome::Pick { root, tab: false },
-        None => Outcome::Open(cmdline::expand(argument)),
+        None => Outcome::Reference(cmdline::reference(argument)?),
       }),
       Id::Version => {
         self.view.show_info(
@@ -421,13 +422,13 @@ mod tests {
         );
         assert_eq!(
           resolve(&format!("{name} notes.pdf"), terminal)?,
-          Outcome::Open(PathBuf::from("notes.pdf"))
+          Outcome::Reference(cmdline::reference("notes.pdf")?)
         );
       }
       assert_eq!(resolve("tabnew", terminal)?, Outcome::Stay);
       assert_eq!(
         resolve("tabnew notes.pdf", terminal)?,
-        Outcome::Open(PathBuf::from("notes.pdf"))
+        Outcome::Reference(cmdline::reference("notes.pdf")?)
       );
     }
     Ok(())
@@ -444,7 +445,7 @@ mod tests {
     );
     assert_eq!(
       resolve("fzf notes.pdf", false)?,
-      Outcome::Open("notes.pdf".into())
+      Outcome::Reference(cmdline::reference("notes.pdf")?)
     );
     Ok(())
   }
@@ -510,8 +511,14 @@ mod tests {
 
   #[test]
   fn start_commands_open_or_quit() -> Result<()> {
-    assert_eq!(command("e a.pdf")?, Outcome::Open("a.pdf".into()));
-    assert_eq!(command("tabnew  b.pdf ")?, Outcome::Open("b.pdf".into()));
+    assert_eq!(
+      command("e a.pdf")?,
+      Outcome::Reference(cmdline::reference("a.pdf")?)
+    );
+    assert_eq!(
+      command("tabnew  b.pdf ")?,
+      Outcome::Reference(cmdline::reference("b.pdf")?)
+    );
     assert_eq!(command("q")?, Outcome::Quit);
     assert_eq!(command("")?, Outcome::Stay);
     assert_eq!(command("e")?, Outcome::Pick { root: ".".into(), tab: false });

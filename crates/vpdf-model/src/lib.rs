@@ -4,6 +4,7 @@ pub mod document;
 pub mod geometry;
 pub mod image;
 pub mod input;
+pub mod reference;
 pub mod reflow;
 pub mod scene;
 pub mod style;

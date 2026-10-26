@@ -184,6 +184,6 @@ fn pasted_pdf_paths_open_in_normal_mode() -> Result<()> {
   // The start screen opens one too.
   let mut home = Home::new(&[], screen(), &vpdf_pdf::jobs::Wake::none(), true);
   let opened = home.event(Event::Paste(pasted), &mut history)?;
-  assert_eq!(opened, Outcome::Open(b));
+  assert_eq!(opened, Outcome::Reference(b.into()));
   Ok(())
 }

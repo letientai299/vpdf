@@ -677,13 +677,13 @@ fn current_view_requests_keep_transients() -> Result<()> {
       command: Window::Split(Axis::Rows),
       count: 1,
       explicit: false,
-      file: Some(path.clone()),
+      file: Some(path.clone().into()),
     },
     Request::Window {
       command: Window::Split(Axis::Columns),
       count: 1,
       explicit: false,
-      file: Some(path),
+      file: Some(path.into()),
     },
     Request::Window {
       command: Window::Focus(Direction::Left),

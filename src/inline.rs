@@ -10,6 +10,8 @@ use vpdf_pdf::document::Document;
 /// the reader chose, since its fzf owns the terminal and the preview
 /// cannot query it.
 pub const VAR: &str = "VPDF_PREVIEW";
+/// Keeps internal picker filenames as paths.
+pub const PATH_VAR: &str = "VPDF_PREVIEW_PATH";
 
 /// How the picker's preview shows a page.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

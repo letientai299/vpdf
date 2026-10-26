@@ -36,7 +36,7 @@ see the online [development guide][development].
 ## Launching a reader
 
 Run `vpdf book.pdf` to open a book; pass more filenames for more tabs.
-`vpdf --page 23 book.pdf` starts at physical page 23. Omit filenames for the
+`vpdf 'book.pdf#page=23'` starts at physical page 23. Omit filenames for the
 start screen. The native app opens PDFs from Finder or drag and drop.
 To make it the default reader, select a PDF in Finder, choose Get Info,
 select Vpdf under Open with, then click Change All.

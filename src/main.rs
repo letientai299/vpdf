@@ -1,7 +1,8 @@
 use clap::Parser;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use vpdf::{Result, inline};
+use vpdf_model::reference::{Operation, Reference};
 use vpdf_model::text::PageId;
 use vpdf_pdf::document::Document;
 
@@ -13,12 +14,9 @@ use vpdf_pdf::document::Document;
 struct Args {
   #[command(flatten)]
   config: vpdf::config::Options,
-  /// Documents to open as tabs.
+  /// PDF paths or file URIs, e.g. book.pdf#page=2.
   #[arg(value_name = "PDF")]
   files: Vec<PathBuf>,
-  /// Page to open instead of the saved position.
-  #[arg(long)]
-  page: Option<usize>,
 }
 
 /// Preview area from fzf, else the terminal, else 80x24.
@@ -30,16 +28,29 @@ fn preview_size() -> (u16, u16) {
   }
 }
 
-/// Prints the first page of `file` for the picker's fzf.
-fn preview(file: &Path, graphics: inline::Graphics) -> Result<()> {
+/// Prints a referenced page for the picker.
+fn preview(reference: &Reference, graphics: inline::Graphics) -> Result<()> {
   let mut out = io::BufWriter::new(io::stdout());
-  let mut doc = Document::open(file, "")?;
+  let mut doc = Document::open(&reference.path, "")?;
+  let mut page = PageId(0);
+  for operation in &reference.operations {
+    match operation {
+      Operation::Page(number) => {
+        anyhow::ensure!(
+          number.get() <= doc.pages.len(),
+          "Page outside document"
+        );
+        page = PageId(number.get() - 1);
+      }
+      _ => anyhow::bail!("Preview supports only page targets"),
+    }
+  }
   match graphics {
     inline::Graphics::Kitty => {
-      inline::print(&mut doc, PageId(0), preview_size(), &mut out)?;
+      inline::print(&mut doc, page, preview_size(), &mut out)?;
     }
     inline::Graphics::Text => {
-      writeln!(out, "{}", doc.text(PageId(0))?.plain())?;
+      writeln!(out, "{}", doc.text(page)?.plain())?;
     }
   }
   out.flush()?;
@@ -50,13 +61,26 @@ fn run(args: &Args) -> Result<()> {
   if args.config.config_example {
     return vpdf::config::print_example();
   }
-  if let Some(graphics) = inline::Graphics::exported() {
-    let [file] = &args.files[..] else {
+  let graphics = inline::Graphics::exported();
+  let references = if graphics.is_some()
+    && std::env::var_os(inline::PATH_VAR).as_deref()
+      == Some(std::ffi::OsStr::new("1"))
+  {
+    args.files.iter().cloned().map(Reference::from).collect()
+  } else {
+    args
+      .files
+      .iter()
+      .map(|file| Reference::parse(file.as_os_str()))
+      .collect::<std::result::Result<Vec<_>, _>>()?
+  };
+  if let Some(graphics) = graphics {
+    let [file] = &references[..] else {
       anyhow::bail!("Preview takes one PDF");
     };
     return preview(file, graphics);
   }
-  vpdf::session::view(&args.files, args.page, args.config.load())
+  vpdf::session::view(&references, args.config.load())
 }
 
 fn main() {

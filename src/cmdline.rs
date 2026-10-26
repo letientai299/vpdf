@@ -6,6 +6,14 @@ use vpdf_model::input::KeyEvent;
 use vpdf_ui::commands::{self, Complete, View};
 use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
 
+const URI_PATH: &percent_encoding::AsciiSet =
+  &percent_encoding::NON_ALPHANUMERIC
+    .remove(b'/')
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
+
 pub(crate) struct Completion<'a> {
   pub view: View,
   pub terminal: bool,
@@ -150,6 +158,17 @@ pub fn expand(path: &str) -> PathBuf {
   }
 }
 
+pub fn reference(argument: &str) -> Result<vpdf_model::reference::Reference> {
+  let mut reference =
+    vpdf_model::reference::Reference::parse(argument.as_ref())?;
+  if let Ok(rest) = reference.path.strip_prefix("~")
+    && let Some(home) = std::env::var_os("HOME")
+  {
+    reference.path = PathBuf::from(home).join(rest);
+  }
+  Ok(reference)
+}
+
 pub(crate) fn picker_root(argument: &str) -> Option<PathBuf> {
   let root = expand(if argument.is_empty() { "." } else { argument });
   (argument.is_empty() || root.is_dir()).then_some(root)
@@ -157,6 +176,36 @@ pub(crate) fn picker_root(argument: &str) -> Option<PathBuf> {
 
 /// Directories and PDFs whose names extend the typed path.
 fn paths(argument: &str) -> Vec<String> {
+  let (path, fragment) = argument
+    .split_once('#')
+    .map_or((argument, ""), |(path, _)| (path, &argument[path.len()..]));
+  let uri = path.get(..5).is_some_and(|s| s.eq_ignore_ascii_case("file:"));
+  let decoded = if uri {
+    let Ok(reference) = reference(path) else { return Vec::new() };
+    let Ok(path) = reference.path.into_os_string().into_string() else {
+      return Vec::new();
+    };
+    path
+  } else {
+    path.to_owned()
+  };
+  filesystem_paths(&decoded)
+    .into_iter()
+    .filter_map(|candidate| {
+      let candidate = if uri || candidate.contains('#') {
+        let absolute = std::env::current_dir().ok()?.join(expand(&candidate));
+        let path = absolute.to_str()?;
+        let encoded = percent_encoding::utf8_percent_encode(path, URI_PATH);
+        format!("file://{encoded}")
+      } else {
+        candidate
+      };
+      Some(format!("{candidate}{fragment}"))
+    })
+    .collect()
+}
+
+fn filesystem_paths(argument: &str) -> Vec<String> {
   let split = argument.rfind('/').map_or(0, |slash| slash + 1);
   let (directory, prefix) = argument.split_at(split);
   let root = if directory.is_empty() { ".".into() } else { expand(directory) };
@@ -257,6 +306,30 @@ mod tests {
         candidates(&format!("{command} {base}b"), View::Document, false);
       assert_eq!((items.0, names(items.1)), (start, vec!["b.PDF".to_owned()]));
     }
+    Ok(())
+  }
+  #[test]
+  fn completion_preserves_targets() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    for name in ["a b%.pdf", "hash#name.pdf"] {
+      std::fs::write(root.path().join(name), "")?;
+    }
+    let base = root.path().display().to_string();
+    assert_eq!(
+      paths(&format!("{base}/a#page=2")),
+      [format!("{base}/a b%.pdf#page=2")]
+    );
+    let input = format!("file://{base}/a#page=2&comment=note");
+    let candidates = paths(&input);
+    assert_eq!(candidates.len(), 1);
+    let parsed = reference(&candidates[0])?;
+    assert_eq!(parsed.path, root.path().join("a b%.pdf"));
+    assert_eq!(parsed.operations.len(), 2);
+    let candidates = paths(&format!("{base}/hash"));
+    assert_eq!(candidates.len(), 1);
+    let parsed = reference(&candidates[0])?;
+    assert_eq!(parsed.path, root.path().join("hash#name.pdf"));
+    assert_eq!(parsed.operations, [] as [vpdf_model::reference::Operation; 0]);
     Ok(())
   }
 }

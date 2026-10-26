@@ -139,7 +139,17 @@ impl App {
       left: self.left,
       menu: self.context_rect(),
     };
-    canvas.scene(&mut PdfText(&mut self.doc), &paint, scene)
+    canvas.scene(&mut PdfText(&mut self.doc), &paint, scene)?;
+    if let Some(rectangle) = &self.reference.rectangle {
+      canvas.rectangle(
+        &mut PdfText(&mut self.doc),
+        rectangle.page,
+        rectangle.bounds,
+        self.reader.scroll,
+        scene,
+      );
+    }
+    Ok(())
   }
 
   /// Glyph rectangle in page-area pixels.

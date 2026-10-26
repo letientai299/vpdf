@@ -82,6 +82,16 @@ impl Chores {
       .filter(|(index, _)| *index != active)
       .flat_map(|(_, tab)| &mut tab.panes)
     {
+      if app.reference_pending() {
+        match app.search_updates() {
+          Ok(updated) => dirty |= updated,
+          Err(error) => app.error = Some(error.to_string()),
+        }
+        if !app.reference_pending() {
+          app.track_jobs();
+          app.search_worker = None;
+        }
+      }
       if let Err(error) = app
         .outline_updates()
         .and_then(|_| app.figure_updates())
@@ -142,6 +152,9 @@ pub(super) fn idle(
     if let Some(until) = app.reader.landing().deadline() {
       wait = wait.min(until.saturating_duration_since(now));
     }
+    if let Some(rectangle) = &app.reference.rectangle {
+      wait = wait.min(rectangle.until.saturating_duration_since(now));
+    }
     if let Some(until) = app.bar.deadline() {
       wait = wait.min(until.saturating_duration_since(now));
     }
@@ -167,6 +180,7 @@ impl Session {
     let mut dirty = false;
     for app in &mut self.tab().panes {
       dirty |= app.reader.expire_flash(now);
+      dirty |= app.expire_reference(now);
       dirty |= app.bar_expired(now);
     }
     dirty |= self.autoscroll(now);

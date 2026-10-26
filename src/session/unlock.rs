@@ -3,6 +3,7 @@ use super::{PathBuf, Result, Screen, Session};
 
 pub(super) enum Operation {
   Open(PathBuf),
+  Reference(vpdf_model::reference::Reference),
   Request(super::Request),
 }
 
@@ -44,8 +45,11 @@ impl Session {
   ) -> Result<()> {
     match operation {
       Operation::Open(path) => {
-        let result = self.open(&path, true, screen);
-        self.unlock_result(result, Some(Operation::Open(path)))?;
+        self.resume(Operation::Reference(path.into()), screen)
+      }
+      Operation::Reference(reference) => {
+        let result = self.open_reference(&reference, true, screen);
+        self.unlock_result(result, Some(Operation::Reference(reference)))?;
         if self.unlock.is_none() {
           self.home = None;
         }

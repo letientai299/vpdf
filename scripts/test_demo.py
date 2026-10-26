@@ -20,6 +20,37 @@ class DemoTests(unittest.TestCase):
         self.binary.write_bytes(b"reader executable")
         (self.root / "paper.pdf").write_bytes(b"document input")
 
+    def test_scene_launch_targets(self):
+        args = SimpleNamespace(
+            binary=self.binary,
+            corpus=self.root / "papers with space%",
+            raw=self.root,
+        )
+        gallery = demo.Gallery(args, self.root)
+        for name, (page, documents, _) in demo.SCENES.items():
+            with self.subTest(scene=name):
+                with patch.object(
+                    gallery, "remote", side_effect=InterruptedError
+                ) as remote:
+                    with self.assertRaises(InterruptedError):
+                        gallery.capture(name)
+                launch = remote.call_args.args
+                self.assertNotIn("--page", launch)
+                references = launch[launch.index(str(self.binary)) + 2 :]
+                self.assertEqual(len(references), len(documents))
+                for index, (document, reference) in enumerate(
+                    zip(documents, references)
+                ):
+                    path, separator, target = reference.partition("#")
+                    self.assertEqual(
+                        path,
+                        (args.corpus / f"{document}.pdf").resolve().as_uri(),
+                    )
+                    self.assertEqual(
+                        (separator, target),
+                        ("#", f"page={page}") if index == 0 else ("", ""),
+                    )
+
     def test_selected_dependencies(self):
         hashes = demo.input_hashes(self.root, ["figure", "mouse-menu"])
         self.assertEqual(set(hashes), {"paper"})

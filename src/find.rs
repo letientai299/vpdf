@@ -34,11 +34,12 @@ impl App {
     self.start_query_from(query, self.search.prompt_origin().map(|o| o.cursor))
   }
 
-  fn start_query_from(
+  pub(crate) fn start_query_from(
     &mut self,
     query: &Query,
     origin: Option<vpdf_model::text::Position>,
   ) -> Result<()> {
+    self.cancel_reference();
     search::compile(&query.text, query.whole)?;
     let origin = match origin {
       Some(origin) => origin,
@@ -99,10 +100,14 @@ impl App {
           // The next search starts a fresh worker.
           self.track_jobs();
           self.search_worker = None;
+          self.cancel_reference();
           self.error = Some(error);
           continue;
         }
       };
+      if self.reference_search(event.generation, done)? {
+        continue;
+      }
       let mut reading = self.reading_parts();
       reading.view.preview_search(reading.search, done)?;
       if done {

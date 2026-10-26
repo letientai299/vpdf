@@ -29,6 +29,10 @@ pub enum Request {
     path: PathBuf,
     tab: bool,
   },
+  Reference {
+    reference: vpdf_model::reference::Reference,
+    tab: bool,
+  },
   PanelOpen {
     path: PathBuf,
     position: Option<Position>,
@@ -54,7 +58,7 @@ pub enum Request {
     command: Window,
     count: usize,
     explicit: bool,
-    file: Option<PathBuf>,
+    file: Option<vpdf_model::reference::Reference>,
   },
   GoMark(char, bool),
   /// A new split lands here; focus stays.
@@ -130,6 +134,7 @@ pub struct App {
   /// The message the pointer last moved past.
   pub render_ms: f64,
   pub search: vpdf_ui::find::Search,
+  pub(crate) reference: crate::references::State,
   pub search_worker: Option<vpdf_pdf::jobs::search::SearchWorker>,
   /// Wakes the event loop when a job finishes.
   pub wake: vpdf_pdf::jobs::Wake,
@@ -301,6 +306,7 @@ impl App {
       error: None,
       render_ms: 0.0,
       search: vpdf_ui::find::Search::default(),
+      reference: crate::references::State::default(),
       search_worker: None,
       wake,
       marks: std::collections::BTreeMap::new(),
@@ -370,7 +376,9 @@ impl App {
   pub fn trim(&mut self) {
     self.crop_scan.clear();
     self.track_jobs();
-    self.search_worker = None;
+    if !self.reference_pending() {
+      self.search_worker = None;
+    }
     self.doc.trim();
     self.worker = self.frontend.raster(
       &self.path,
@@ -392,6 +400,8 @@ impl App {
     let stamp = crate::watch::stamp(&self.path);
     self.doc = Document::open(&self.path, password)?;
     self.refill_panel(PanelKind::Outline)?;
+    self.cancel_reference();
+    self.reference.rectangle = None;
     self.document_generation += 1;
     self.crop_scan.clear();
     self.layout.clear_crops();

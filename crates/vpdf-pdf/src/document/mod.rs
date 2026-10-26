@@ -379,5 +379,6 @@ mod tests {
 mod annotations;
 mod extraction;
 mod metadata;
+mod references;
 mod style;
 mod types;

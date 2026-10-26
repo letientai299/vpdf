@@ -28,6 +28,7 @@ mod preview;
 pub mod programs;
 pub mod raster;
 pub mod recent;
+mod references;
 mod region;
 pub mod scenario;
 mod scrollbar;
@@ -68,3 +69,7 @@ mod provenance;
 
 #[cfg(test)]
 mod provenance_tests;
+
+#[cfg(test)]
+#[path = "../tests/support/references.rs"]
+mod reference_fixture;

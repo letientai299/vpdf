@@ -1,23 +1,23 @@
-use std::os::unix::ffi::OsStringExt;
-use std::path::PathBuf;
+use std::path::Path;
+use vpdf_model::reference::Reference;
 use vpdf_terminal::dnd::Dropped;
 
 /// Pastes of more lines name no files.
 const LINES: usize = 16;
 
 /// What a drop gives the reader.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Target {
   /// Text for an open prompt.
   Text(String),
   /// A PDF to open.
-  Pdf(PathBuf),
+  Pdf(Reference),
 }
 
 /// File drops open PDFs; text edits prompts.
 pub fn target(drop: &Dropped, typing: bool) -> crate::Result<Target> {
   if drop.files() {
-    return first_pdf(drop.text())
+    return first_pdf(drop.text())?
       .map(Target::Pdf)
       .ok_or_else(|| anyhow::anyhow!("No PDF in the drop"));
   }
@@ -28,16 +28,57 @@ pub fn target(drop: &Dropped, typing: bool) -> crate::Result<Target> {
 }
 
 /// The first existing PDF a paste names; long pastes name none.
-pub fn pdf(text: &str) -> Option<PathBuf> {
-  (text.lines().count() <= LINES).then(|| first_pdf(text)).flatten()
+pub fn pdf(text: &str) -> crate::Result<Option<Reference>> {
+  if text.lines().count() > LINES {
+    return Ok(None);
+  }
+  first_pdf(text)
 }
 
-/// The first existing PDF a file list names: `file://` URIs, plain
-/// paths, or shell words, one or more per line.
-fn first_pdf(text: &str) -> Option<PathBuf> {
-  entries(text)
-    .flat_map(candidates)
-    .find(|path| crate::cmdline::is_pdf(path) && path.is_file())
+fn first_pdf(text: &str) -> crate::Result<Option<Reference>> {
+  for line in entries(text) {
+    let mut failure = None;
+    for (index, input) in candidates(line).into_iter().enumerate() {
+      let explicit = reference_input(&input);
+      match crate::cmdline::reference(&input) {
+        Ok(reference)
+          if crate::cmdline::is_pdf(&reference.path)
+            && reference.path.is_file() =>
+        {
+          return Ok(Some(reference));
+        }
+        Ok(reference)
+          if crate::cmdline::is_pdf(&reference.path)
+            && (!reference.operations.is_empty() || file_uri(&input)) =>
+        {
+          let error = anyhow::anyhow!("PDF file missing");
+          if index > 0 {
+            return Err(error);
+          }
+          failure = Some(error);
+        }
+        Err(error) if explicit && index > 0 => return Err(error),
+        Err(error) if explicit => failure = Some(error),
+        _ => {}
+      }
+    }
+    if let Some(error) = failure {
+      return Err(error);
+    }
+  }
+  Ok(None)
+}
+
+fn file_uri(text: &str) -> bool {
+  text.get(..5).is_some_and(|s| s.eq_ignore_ascii_case("file:"))
+}
+
+fn reference_input(text: &str) -> bool {
+  text.contains("://")
+    || file_uri(text)
+    || text
+      .split_once('#')
+      .is_some_and(|(path, _)| crate::cmdline::is_pdf(Path::new(path)))
 }
 
 /// Lines but blanks and `#` comments, trimmed.
@@ -50,27 +91,12 @@ fn entries(text: &str) -> impl Iterator<Item = &str> {
 
 /// Paths a line may name: a local `file://` URI, the line as typed, or
 /// its shell words.
-fn candidates(line: &str) -> Vec<PathBuf> {
-  if let Some(rest) = line.strip_prefix("file://") {
-    return local(rest).into_iter().collect();
+fn candidates(line: &str) -> Vec<String> {
+  let mut inputs = vec![line.to_owned()];
+  if !file_uri(line) {
+    inputs.extend(words(line));
   }
-  let mut paths = vec![PathBuf::from(line)];
-  paths.extend(words(line).into_iter().map(PathBuf::from));
-  paths
-}
-
-/// The path of a `file://` URI on this machine; other hosts name none.
-fn local(rest: &str) -> Option<PathBuf> {
-  let start = rest.find('/')?;
-  let host = &rest[..start];
-  (host.is_empty() || host == "localhost").then(|| decoded(&rest[start..]))
-}
-
-/// Percent-decoded bytes, which need not be UTF-8.
-fn decoded(text: &str) -> PathBuf {
-  let mut bytes = Vec::with_capacity(text.len());
-  bytes.extend(percent_encoding::percent_decode(text.as_bytes()));
-  PathBuf::from(std::ffi::OsString::from_vec(bytes))
+  inputs
 }
 
 /// Shell words: blanks split, backslashes escape, quotes group.
@@ -136,13 +162,19 @@ mod tests {
     let text = |text: &str| Some(Target::Text(text.into()));
     // (payload, data, a prompt open) -> target
     let cases = [
-      (true, uri.clone(), true, Some(Target::Pdf(pdf.clone()))),
+      (true, uri.clone(), true, Some(Target::Pdf(pdf.clone().into()))),
       (true, remote.clone(), true, None),
       (true, "# none\r\n".into(), true, None),
       (false, "two words".into(), true, text("two words")),
-      (true, uri.clone(), false, Some(Target::Pdf(pdf.clone()))),
-      // Drops name any number of files; only pastes stop at `LINES`.
-      (true, remote.repeat(LINES) + &uri, false, { Some(Target::Pdf(pdf)) }),
+      (true, uri.clone(), false, Some(Target::Pdf(pdf.clone().into()))),
+      (true, remote.repeat(LINES) + &uri, false, None),
+      // Only pastes stop at `LINES`.
+      (
+        true,
+        "# comment\n".repeat(LINES) + &uri,
+        false,
+        Some(Target::Pdf(pdf.into())),
+      ),
       (true, remote, false, None),
       (false, shown, false, None),
     ];
@@ -151,23 +183,6 @@ mod tests {
       assert_eq!(got, want, "{data:?} typing={typing}");
     }
     Ok(())
-  }
-
-  #[test]
-  fn uris_decode_to_bytes() {
-    // macOS refuses names that are not UTF-8, so no file backs these.
-    let bytes =
-      |bytes: &[u8]| PathBuf::from(std::ffi::OsString::from_vec(bytes.into()));
-    let cases = [
-      ("/a%20b.pdf", bytes(b"/a b.pdf")),
-      ("/caf%E9.pdf", bytes(b"/caf\xe9.pdf")),
-      ("/caf%e9.pdf", bytes(b"/caf\xe9.pdf")),
-      ("/a+b%2b.pdf", bytes(b"/a+b+.pdf")),
-      ("/%+5%zz%4", bytes(b"/%+5%zz%4")),
-    ];
-    for (text, want) in cases {
-      assert_eq!(decoded(text), want, "{text}");
-    }
   }
 
   #[test]
@@ -209,8 +224,38 @@ mod tests {
       (many, None),
     ];
     for (text, want) in cases {
-      assert_eq!(pdf(&text), want, "{text:?}");
+      assert_eq!(pdf(&text).ok().flatten().map(|r| r.path), want, "{text:?}");
     }
+    Ok(())
+  }
+  #[test]
+  fn explicit_failures_stop_file_lists() -> crate::Result<()> {
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("book.PDF");
+    std::fs::write(&path, b"%PDF")?;
+    for input in [
+      format!("{}#page=0\n{}", path.display(), path.display()),
+      format!("{}#page=0 {}", path.display(), path.display()),
+      format!("file://elsewhere/missing.pdf\n{}", path.display()),
+      format!("{}#page=2", root.path().join("missing.pdf").display()),
+    ] {
+      assert!(pdf(&input).is_err(), "{input}");
+    }
+    let reference = pdf(&format!("'{}#page=2'", path.display()))?.unwrap();
+    assert_eq!(reference.path, path);
+    assert_eq!(reference.operations.len(), 1);
+    for fragment in ["nameddest=proof", "comment=note", "structelem=section"] {
+      for prefix in ["", "file://"] {
+        let reference =
+          pdf(&format!("'{prefix}{}#{fragment}'", path.display()))?.unwrap();
+        assert_eq!(reference.path, path);
+        assert_eq!(reference.operations.len(), 1);
+      }
+    }
+    let reference =
+      pdf(&format!("notes.txt {}#page=2", path.display()))?.unwrap();
+    assert_eq!(reference.path, path);
+    assert_eq!(reference.operations.len(), 1);
     Ok(())
   }
 }

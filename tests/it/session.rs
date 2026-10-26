@@ -275,7 +275,7 @@ fn ctrl_w_splits_moves_and_closes_panes() -> Result<()> {
     command: Window::Split(Axis::Rows),
     count: 1,
     explicit: false,
-    file: Some(corpus("paper.pdf")?),
+    file: Some(corpus("paper.pdf")?.into()),
   });
   session.settle()?;
   assert_eq!(session.app().name(), "paper.pdf");

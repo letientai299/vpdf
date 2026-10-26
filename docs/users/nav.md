@@ -23,7 +23,7 @@ repeats the move. Backspace also moves to the previous page.
 Type a nonnumeric page label after the colon to find that label: `:iv` opens
 front matter labeled iv. Exact command names and aliases take precedence over
 labels. Numeric input always names a physical page, so `:1` does not mean the
-printed page labeled 1. Use `vpdf --page 23 book.pdf` to start at physical page
+printed page labeled 1. Use `vpdf 'book.pdf#page=23'` to start at physical page
 23 instead of the saved position.
 
 ## Chapters and the outline

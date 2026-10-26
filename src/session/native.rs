@@ -46,6 +46,7 @@ pub enum Input {
   Leave,
   Focus(bool),
   Open(PathBuf),
+  Reference(vpdf_model::reference::Reference),
   Presented {
     content: bool,
     bytes: usize,
@@ -209,16 +210,14 @@ pub struct Bridge {
 
 struct Launch {
   config: crate::config::Loaded,
-  paths: Vec<PathBuf>,
+  references: Vec<vpdf_model::reference::Reference>,
   store: Option<PathBuf>,
-  page: Option<usize>,
 }
 
 impl Bridge {
   pub fn configured(
-    paths: Vec<PathBuf>,
+    references: Vec<vpdf_model::reference::Reference>,
     store: Option<PathBuf>,
-    page: Option<usize>,
     config: crate::config::Loaded,
     repaint: impl Fn() + Send + Sync + 'static,
   ) -> Result<Self> {
@@ -236,7 +235,7 @@ impl Bridge {
     let worker =
       thread::Builder::new().name("vpdf-session".into()).spawn(move || {
         run(
-          Launch { config, paths, store, page },
+          Launch { config, references, store },
           &receive,
           &output,
           &repaint,
@@ -287,7 +286,7 @@ fn run(
   wake: &Wake,
   pending: &AtomicBool,
 ) -> Result<()> {
-  let mut starting = !launch.paths.is_empty();
+  let mut starting = !launch.references.is_empty();
   let mut session = Session::configured(launch.store, launch.config);
   session.frontend = crate::raster::Frontend::Native(wake.clone());
   let mut screen = Screen {
@@ -298,8 +297,8 @@ fn run(
     origin: (0, 0),
   };
   ensure_home(&mut session, screen);
-  for path in launch.paths {
-    apply(&mut session, Input::Open(path), &mut screen);
+  for reference in launch.references {
+    apply(&mut session, Input::Reference(reference), &mut screen);
   }
   session.resize(screen)?;
   let mut cache = Cache::new(BUDGET);
@@ -318,10 +317,10 @@ fn run(
       && session.pending_keys.is_empty()
       && let Some(path) = session.native_opens.pop_front()
     {
-      apply(&mut session, Input::Open(path), &mut screen);
+      apply(&mut session, Input::Reference(path), &mut screen);
       dirty = true;
     }
-    finish_launch(&mut session, &mut starting, launch.page)?;
+    finish_launch(&mut session, &mut starting)?;
     quit_when_closed(&mut session);
     session.perf.running(session.state.perf);
     session.perf.view.output("Upload");
@@ -438,17 +437,13 @@ fn drain(
   Some(applied)
 }
 
-fn finish_launch(
-  session: &mut Session,
-  starting: &mut bool,
-  page: Option<usize>,
-) -> Result<()> {
+fn finish_launch(session: &mut Session, starting: &mut bool) -> Result<()> {
   if !*starting || session.unlock.is_some() || !session.native_opens.is_empty()
   {
     return Ok(());
   }
   if !session.tabs.is_empty() {
-    session.start_at(page)?;
+    session.activate(0)?;
   }
   *starting = false;
   Ok(())
@@ -591,15 +586,11 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
       *screen = size;
       session.resize(size).map(|()| true)
     }
-    Input::Open(_) if session.confirming_removal() => Ok(false),
     Input::Open(path) => {
-      if session.blocked() {
-        session.native_opens.push_back(path);
-        Ok(true)
-      } else {
-        session.resume(Operation::Open(path), *screen).map(|()| true)
-      }
+      return apply(session, Input::Reference(path.into()), screen);
     }
+    Input::Reference(_) if session.confirming_removal() => Ok(false),
+    Input::Reference(reference) => open_input(session, reference, *screen),
     Input::Key(key) if session.tabs.is_empty() => {
       home_event(session, vpdf_model::input::Event::Key(key), *screen)
         .map(|()| true)
@@ -667,6 +658,19 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
   })
 }
 
+fn open_input(
+  session: &mut Session,
+  reference: vpdf_model::reference::Reference,
+  screen: Screen,
+) -> Result<bool> {
+  if session.blocked() {
+    session.native_opens.push_back(reference);
+    Ok(true)
+  } else {
+    session.resume(Operation::Reference(reference), screen).map(|()| true)
+  }
+}
+
 // Like the terminal, closing the last tab exits.
 fn quit_when_closed(session: &mut Session) {
   if session.tabs.is_empty()
@@ -720,6 +724,9 @@ fn home_event(
     }
     crate::home::Outcome::Help(topic) => {
       session.request_help(&topic, invocation, screen)?;
+    }
+    crate::home::Outcome::Reference(reference) => {
+      session.resume(Operation::Reference(reference), screen)?;
     }
     crate::home::Outcome::Quit => session.quit = true,
     crate::home::Outcome::Pick { root, tab } => session.pick(&root, tab)?,
@@ -1002,7 +1009,24 @@ mod tests {
     let (wake, wakes) = crate::fixtures::wake();
     let config = crate::config::Loaded::default();
     Ok((
-      Bridge::configured(paths, store, page, config, move || wake.wake())?,
+      Bridge::configured(
+        {
+          let mut references: Vec<vpdf_model::reference::Reference> =
+            paths.into_iter().map(Into::into).collect();
+          if let Some(page) = page {
+            references[0].operations.push(
+              vpdf_model::reference::Operation::Page(
+                std::num::NonZeroUsize::new(page)
+                  .expect("Test page is positive"),
+              ),
+            );
+          }
+          references
+        },
+        store,
+        config,
+        move || wake.wake(),
+      )?,
       wakes,
     ))
   }
@@ -1092,9 +1116,10 @@ mod tests {
     let encrypted = protected(&source)?;
     let (wake, wakes) = crate::fixtures::wake();
     let mut bridge = Bridge::configured(
-      vec![encrypted.path().into()],
+      vec![vpdf_model::reference::Reference::parse(
+        format!("{}#page=2", encrypted.path().display()).as_ref(),
+      )?],
       None,
-      Some(2),
       super::super::tests::settings_file(directory.path()),
       move || wake.wake(),
     )?;
@@ -1578,7 +1603,7 @@ mod tests {
         command: Window::Split(Axis::Columns),
         count: 1,
         explicit: false,
-        file: Some(path.clone()),
+        file: Some(path.clone().into()),
       },
       Request::GoMark('A', true),
       Request::PanelMark { name: 'A', focus: false },
@@ -1688,7 +1713,7 @@ mod tests {
     apply(&mut session, Input::Focus(false), &mut screen);
     assert_eq!(session.unlock.as_ref().unwrap().prompt.text(), "secret");
     apply(&mut session, Input::Open(path.clone()), &mut screen);
-    assert_eq!(session.native_opens.front(), Some(&path));
+    assert_eq!(session.native_opens.front(), Some(&path.into()));
     assert!(session.tabs.is_empty());
     apply(&mut session, key(KeyCode::Esc), &mut screen);
     assert!(session.unlock.is_none());
@@ -1992,11 +2017,11 @@ mod tests {
     let store = root.path().join("state.json");
     let canonical = std::fs::canonicalize(&first)?;
     for (page, expected) in
-      [(None, 2), (Some(0), 0), (Some(1), 0), (Some(2), 1), (Some(99), 2)]
+      [(None, 2), (Some(1), 0), (Some(2), 1), (Some(3), 2)]
     {
       let mut saved = Session::new(Some(store.clone()));
       saved.open(&first, true, sized())?;
-      saved.start_at(Some(3))?;
+      saved.start_at(3)?;
       saved.finish()?;
       drop(saved);
       let (mut bridge, wakes) =
@@ -2813,6 +2838,138 @@ mod tests {
     let scene = scene.into_scene();
     assert!(shows(&scene, ":edit <file>"));
     assert!(!shows(&scene, "Remove "));
+    Ok(())
+  }
+  #[test]
+  fn references_keep_per_document_targets() -> Result<()> {
+    use vpdf_model::reference::Reference;
+    let root = tempfile::tempdir()?;
+    let first = root.path().join("first.pdf");
+    let second = root.path().join("second.pdf");
+    crate::fixtures::pdf(&first, &["one", "two", "three"], "/Rotate 90")?;
+    crate::fixtures::pdf(&second, &["one", "two", "three"], "/Rotate 90")?;
+    let first = std::fs::canonicalize(first)?;
+    let second = std::fs::canonicalize(second)?;
+    let parse = |path: &std::path::Path, target: &str| -> Result<Reference> {
+      Ok(Reference::parse(format!("{}{target}", path.display()).as_ref())?)
+    };
+    let store = root.path().join("state");
+    let (wake, wakes) = crate::fixtures::wake();
+    let mut bridge = Bridge::configured(
+      vec![
+        parse(&first, "#search=%22two%22&page=3")?,
+        parse(&second, "#page=2")?,
+      ],
+      Some(store.clone()),
+      crate::config::Loaded::default(),
+      move || wake.wake(),
+    )?;
+    bridge.send(Input::Observe(true));
+    wait(&bridge, &wakes, |frame| {
+      frame.metrics.observation.document.as_ref() == Some(&first)
+        && frame.metrics.page == Some(vpdf_model::text::PageId(2))
+        && !frame.metrics.searching
+    })
+    .map_err(|error| anyhow::anyhow!("First reference: {error}"))?;
+    bridge.send(Input::Reference(parse(&second, "")?));
+    wait(&bridge, &wakes, |frame| {
+      frame.metrics.observation.document.as_ref() == Some(&second)
+        && frame.metrics.page == Some(vpdf_model::text::PageId(1))
+    })?;
+    bridge.send(Input::Reference(parse(&first, "#page=1")?));
+    wait(&bridge, &wakes, |frame| {
+      frame.metrics.observation.document.as_ref() == Some(&first)
+        && frame.metrics.page == Some(vpdf_model::text::PageId(0))
+    })?;
+    bridge.close()?;
+    let state = crate::state::State::load(&store);
+    assert_eq!(state.entry(&first).unwrap().cursor.page.0, 0);
+    assert_eq!(state.entry(&second).unwrap().cursor.page.0, 1);
+    Ok(())
+  }
+  #[test]
+  fn entrypoints_share_object_targets() -> Result<()> {
+    use vpdf_model::reference::Reference;
+    let file = crate::reference_fixture::pdf(90)?;
+    let reference = Reference::parse(
+      format!(
+        "{}{}",
+        file.path().display(),
+        concat!(
+          "#page=1&comment=note&nameddest=proof&structelem=%FF",
+          "&search=%22two%22&page=1&highlight=5,25,10,30"
+        )
+      )
+      .as_ref(),
+    )?;
+    let mut terminal = Session::new(None);
+    terminal.open_reference(&reference, true, cells(100, 35))?;
+    super::super::reference_tests::finish_search(terminal.app())?;
+    assert_eq!(terminal.app().reader.cursor.page.0, 0);
+    assert_eq!(terminal.app().reference.rectangle.as_ref().unwrap().page.0, 0);
+    let (wake, wakes) = crate::fixtures::wake();
+    let mut bridge = Bridge::configured(
+      vec![reference],
+      None,
+      crate::config::Loaded::default(),
+      move || wake.wake(),
+    )?;
+    bridge.send(Input::Observe(true));
+    wait(&bridge, &wakes, |frame| {
+      frame.metrics.observation.hits == 1
+        && frame.metrics.observation.error.is_none()
+        && !frame.metrics.searching
+        && frame.metrics.page == Some(vpdf_model::text::PageId(0))
+    })?;
+    for (target, expected) in [
+      ("#page=99", "Page outside document"),
+      ("#nameddest=missing", "Named destination missing"),
+      ("#structelem=missing", "Structure ID missing"),
+      ("#comment=missing", "Annotation name missing"),
+    ] {
+      bridge.send(Input::Reference(Reference::parse(
+        format!("{}{target}", file.path().display()).as_ref(),
+      )?));
+      wait(&bridge, &wakes, |frame| {
+        frame
+          .metrics
+          .observation
+          .error
+          .as_deref()
+          .is_some_and(|error| error.contains(expected))
+      })?;
+    }
+    bridge.close()
+  }
+  #[test]
+  fn reference_errors_survive_startup_warning() -> Result<()> {
+    use vpdf_model::reference::Reference;
+    let (_root, path) = temp_pdf(&["one"])?;
+    let warning = "Reference configuration warning";
+    for (input, expected) in [
+      (format!("{}#page=99", path.display()), "Page outside document"),
+      (format!("{}-missing.pdf#page=2", path.display()), "No such file"),
+    ] {
+      let config = crate::config::Loaded {
+        warning: Some(warning.into()),
+        ..crate::config::Loaded::default()
+      };
+      let (wake, wakes) = crate::fixtures::wake();
+      let mut bridge = Bridge::configured(
+        vec![Reference::parse(input.as_ref())?],
+        None,
+        config,
+        move || wake.wake(),
+      )?;
+      let failed =
+        wait(&bridge, &wakes, |frame| shows(&frame.scene, expected))?;
+      assert!(!shows(&failed.scene, warning));
+      bridge.send(Input::Reference(Reference::parse(
+        format!("{}#page=1", path.display()).as_ref(),
+      )?));
+      wait(&bridge, &wakes, |frame| shows(&frame.scene, warning))?;
+      bridge.close()?;
+    }
     Ok(())
   }
 }

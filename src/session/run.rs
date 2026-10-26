@@ -2,15 +2,14 @@ use super::interaction::Interaction;
 use super::maintenance::Chores;
 use super::{
   Act, Arc, Cause, Duration, Event, Home, Instant, IsTerminal, Ordering,
-  Outcome, Pacer, PathBuf, Result, Session, Shape, Sight, View, Write, io,
-  sight, terminal,
+  Outcome, Pacer, Result, Session, Shape, Sight, View, Write, io, sight,
+  terminal,
 };
 use vpdf_terminal::input::{Notice, notice};
 
 /// Opens paths or the start screen.
 pub fn view(
-  paths: &[PathBuf],
-  page: Option<usize>,
+  references: &[vpdf_model::reference::Reference],
   config: crate::config::Loaded,
 ) -> Result<()> {
   anyhow::ensure!(io::stdout().is_terminal(), "TUI requires a terminal");
@@ -27,7 +26,7 @@ pub fn view(
   let _ = vpdf_terminal::spool::start(vpdf_terminal::graphics::session());
   // The image cache reads the probe and the spool for its budget.
   session.graphics = vpdf_terminal::graphics::Graphics::live();
-  if paths.is_empty() {
+  if references.is_empty() {
     session.screen = Some(screen);
     session.home = Some(
       Home::new(
@@ -41,10 +40,10 @@ pub fn view(
     session.resize(screen)?;
     return run_saving(&mut session);
   }
-  for path in paths {
-    session.open(path, true, screen)?;
+  for reference in references {
+    session.open_reference(reference, true, screen)?;
   }
-  session.start_at(page)?;
+  session.activate(0)?;
   run_saving(&mut session)
 }
 
@@ -527,6 +526,17 @@ impl Session {
       Ok(Outcome::Open(path)) => {
         if self.leave_home(&mut home, &path) {
           return home.release(out);
+        }
+      }
+      Ok(Outcome::Reference(reference)) => {
+        let screen = self.screen.unwrap_or(home.view.screen());
+        match self.open_reference(&reference, true, screen) {
+          Ok(()) => return home.release(out),
+          Err(error) if !self.tabs.is_empty() => {
+            self.app().error = Some(error.to_string());
+            return home.release(out);
+          }
+          Err(error) => home.view.fail(error.to_string()),
         }
       }
       Ok(Outcome::Help(topic)) => {

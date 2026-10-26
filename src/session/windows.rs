@@ -127,6 +127,8 @@ impl Session {
     let found = self.existing(&path);
     if let Some((tab, pane)) = found {
       self.focus(tab, pane)?;
+      self.app().cancel_reference();
+      self.app().reference.rectangle = None;
       self.remember_open(tab, pane);
       return Ok(());
     }
@@ -148,6 +150,17 @@ impl Session {
     self.arrange()?;
     self.remember_open(self.active, self.tabs[self.active].focus);
     Ok(())
+  }
+
+  pub fn open_reference(
+    &mut self,
+    reference: &vpdf_model::reference::Reference,
+    tab: bool,
+    screen: Screen,
+  ) -> Result<()> {
+    self.open(&reference.path, tab, screen)?;
+    self.home = None;
+    self.app().apply_reference(&reference.operations)
   }
 
   /// Loads `path` and restores its saved view.
@@ -363,7 +376,7 @@ impl Session {
     &mut self,
     command: Window,
     (count, explicit): (usize, bool),
-    file: Option<&Path>,
+    file: Option<&vpdf_model::reference::Reference>,
   ) -> Result<()> {
     let area = self.area();
     let tab = self.tab();
@@ -372,7 +385,17 @@ impl Session {
     let at = order.iter().position(|pane| *pane == id).unwrap_or(0);
     let total = order.len();
     let target = match command {
-      Window::Split(axis) => return self.split(axis, file, Place::Before),
+      Window::Split(axis) => {
+        self.split(
+          axis,
+          file.map(|reference| reference.path.as_path()),
+          Place::Before,
+        )?;
+        if let Some(reference) = file {
+          self.app().apply_reference(&reference.operations)?;
+        }
+        return Ok(());
+      }
       Window::Close => return self.close_pane(),
       Window::Only => return self.only(),
       Window::ToTab => return self.move_to_tab(),

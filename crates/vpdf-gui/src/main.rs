@@ -16,10 +16,9 @@ use vpdf_model::geometry::Screen;
 struct Args {
   #[command(flatten)]
   config: vpdf::config::Options,
+  /// PDF paths or file URIs, e.g. book.pdf#page=2.
+  #[arg(value_name = "PDF")]
   files: Vec<PathBuf>,
-  /// Launch page overriding the saved position.
-  #[arg(long)]
-  page: Option<usize>,
   /// Open without activating the window.
   #[arg(long)]
   background: bool,
@@ -67,9 +66,12 @@ impl Window {
     let trace = Trace::from_env();
     let ctx = cc.egui_ctx.clone();
     let bridge = Bridge::configured(
-      args.files,
+      args
+        .files
+        .iter()
+        .map(|file| vpdf_model::reference::Reference::parse(file.as_os_str()))
+        .collect::<Result<Vec<_>, _>>()?,
       vpdf::state::location(),
-      args.page,
       config,
       move || ctx.request_repaint(),
     )?;
@@ -327,6 +329,14 @@ fn main() -> eframe::Result {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn page_option_is_unknown() {
+    let error = Args::try_parse_from(["vpdf-gui", "--page", "2", "book.pdf"])
+      .err()
+      .unwrap();
+    assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
+  }
 
   #[test]
   fn background_is_explicit() {
