@@ -177,8 +177,10 @@ impl App {
         .cloned()
         .unwrap_or_else(|| self.help_invocation());
       let settings = self.settings.clone();
+      let tabs = self.tabline.names.clone();
+      let completion = cmdline::Completion { view, terminal, tabs: &tabs };
       return self.edit_prompt(history, |prompt, history| {
-        cmdline::feed(prompt, key, history, view, terminal, |query| {
+        completion.feed(prompt, key, history, |query| {
           crate::manual::completions(&settings, &invocation, query)
         })
       });
@@ -432,7 +434,10 @@ impl App {
       Id::Jumps => self.open_panel(PanelKind::Jumps)?,
       Id::Annotations => self.open_panel(PanelKind::Annotations)?,
       Id::Fzf => {
-        self.request = Some(Request::Pick { tab: false });
+        self.request = Some(match cmdline::picker_root(argument) {
+          Some(root) => Request::Pick { root, tab: false },
+          None => Request::Open { path: cmdline::expand(argument), tab: false },
+        });
       }
       Id::Cancel => {
         self.cancel_jobs()?;
@@ -486,7 +491,7 @@ impl App {
     } else if command == Id::TabNew {
       Request::RecentTab
     } else {
-      Request::Pick { tab: command != Id::Edit }
+      Request::Pick { root: ".".into(), tab: command != Id::Edit }
     });
   }
 
@@ -699,6 +704,20 @@ mod tests {
         if covered {
           app.show_recent(&[])?;
         }
+        if matches!(app.frontend, crate::raster::Frontend::Native(_))
+          || cmdline::on_path("fzf")
+        {
+          app.command(&format!("fzf {}", root.path().display()))?;
+          assert_eq!(
+            app.request.take(),
+            Some(Request::Pick { root: root.path().into(), tab: false })
+          );
+          app.command("fzf notes.pdf")?;
+          assert_eq!(
+            app.request.take(),
+            Some(Request::Open { path: "notes.pdf".into(), tab: false })
+          );
+        }
         for (name, tab) in [
           ("edit", false),
           ("e", false),
@@ -709,7 +728,10 @@ mod tests {
           ("tabe", true),
         ] {
           app.command(name)?;
-          assert_eq!(app.request.take(), Some(Request::Pick { tab }));
+          assert_eq!(
+            app.request.take(),
+            Some(Request::Pick { root: ".".into(), tab })
+          );
           app.command(&format!("{name} notes.pdf"))?;
           assert_eq!(
             app.request.take(),

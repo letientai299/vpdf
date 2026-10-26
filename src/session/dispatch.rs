@@ -72,9 +72,9 @@ impl Session {
     self.refresh_help();
   }
 
-  pub(super) fn pick(&mut self, tab: bool) -> Result<()> {
+  pub(super) fn pick(&mut self, root: &Path, tab: bool) -> Result<()> {
     if self.picker.is_none() {
-      self.picker = Some(crate::programs::Picker::start(tab)?);
+      self.picker = Some(crate::programs::Picker::start(root, tab)?);
     }
     Ok(())
   }
@@ -191,13 +191,13 @@ impl Session {
       }
       Some(Request::Keys(keys)) => self.replay_keys(keys),
       Some(Request::SplitMark(name)) => self.split_mark(name, screen),
-      Some(Request::Pick { tab })
+      Some(Request::Pick { root, tab })
         if matches!(self.frontend, crate::raster::Frontend::Native(_)) =>
       {
-        self.pick(tab)
+        self.pick(&root, tab)
       }
-      Some(Request::Pick { tab }) => {
-        match crate::programs::pick_pdf(&std::env::current_dir()?)? {
+      Some(Request::Pick { root, tab }) => {
+        match crate::programs::pick_pdf(&root)? {
           Some(path) => self.open(&path, tab, screen),
           None => Ok(()),
         }

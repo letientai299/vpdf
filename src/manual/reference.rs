@@ -292,10 +292,18 @@ fn command_chapter(
     lines.push(format!("For example: {example}").into());
   }
   match spec.id {
+    Id::Fzf => lines.push(
+      concat!(
+        "Tab completes PDFs and directories. ",
+        "A PDF opens directly; a directory sets the picker root. ",
+        "No path uses the current directory."
+      )
+      .into(),
+    ),
     Id::Ocr => lines.push(
       concat!(
         "Requires Tesseract and installed language data. ",
-        "Uses configured language when omitted."
+        "Uses configured language when omitted. Tab completes after +."
       )
       .into(),
     ),

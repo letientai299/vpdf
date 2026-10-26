@@ -2,6 +2,7 @@
 pub enum Complete {
   Nothing,
   Language,
+  Tab,
   Help,
   Config,
   Theme,
@@ -120,12 +121,12 @@ commands! {
   VSplit "vsplit" ["vs"] "[file]" Path Recent "split this pane to the left";
   Close "close" ["clo"] "" Nothing Recent "close this pane";
   Only "only" ["on"] "" Nothing Recent "close every other pane";
-  TabNext "tabnext" ["tabn"] "[n]" Nothing Recent "go to the next or nth tab";
+  TabNext "tabnext" ["tabn"] "[n]" Tab Recent "go to the next or nth tab";
   TabPrevious "tabprevious" ["tabp", "tabN"] "" Nothing Recent
     "go to the previous tab";
   TabClose "tabclose" ["tabc"] "" Nothing Home "close this tab";
   Recent "recent" ["oldfiles"] "" Nothing Home "list recently opened PDFs";
-  Fzf "fzf" [] "" Nothing Home "pick a PDF below this directory"
+  Fzf "fzf" [] "[path]" Path Home "pick a PDF below this directory"
     requires "fzf";
   Marks "marks" [] "" Nothing Recent "list marks";
   Jumps "jumps" [] "" Nothing Recent "list jump destinations";
@@ -238,14 +239,22 @@ pub fn candidates(
     return (start, prefixed(names, word));
   };
   let argument = rest.trim_start();
-  let start = before.len() - argument.len();
+  let mut start = before.len() - argument.len();
   let items = match lookup(name, installed)
     .filter(|spec| spec.available(view))
     .map(|spec| spec.complete)
   {
     Some(Complete::Language) => {
-      prefixed(supply(Complete::Language, argument), argument)
+      let split = argument.rfind('+').map_or(0, |index| index + 1);
+      let (selected, prefix) = argument.split_at(split);
+      start += split;
+      let items = supply(Complete::Language, prefix)
+        .into_iter()
+        .filter(|item| !selected.split('+').any(|used| used == item))
+        .collect();
+      prefixed(items, prefix)
     }
+    Some(Complete::Tab) => prefixed(supply(Complete::Tab, argument), argument),
     Some(Complete::Path) => supply(Complete::Path, argument),
     Some(Complete::Help) => supply(Complete::Help, argument),
     Some(Complete::Theme) => prefixed(
@@ -423,6 +432,80 @@ mod tests {
         );
         assert_eq!(items, ["notes.pdf"]);
       }
+    }
+  }
+
+  #[test]
+  fn completes_compound_languages() {
+    for (before, start, expected) in [
+      ("ocr ", 4, vec!["eng", "deu", "vie"]),
+      ("ocr e", 4, vec!["eng"]),
+      ("ocr eng+", 8, vec!["deu", "vie"]),
+      ("ocr eng+v", 8, vec!["vie"]),
+      ("ocr eng+vie+E", 12, vec![]),
+      ("ocr deu+V", 8, vec!["vie"]),
+      ("ocr eng+vie+d", 12, vec!["deu"]),
+    ] {
+      let (offset, items) = candidates(
+        before,
+        View::Document,
+        |_| true,
+        |kind, _| {
+          assert_eq!(kind, Complete::Language);
+          ["eng", "deu", "vie"].map(str::to_owned).to_vec()
+        },
+      );
+      assert_eq!(offset, start, "{before}");
+      assert_eq!(items, expected, "{before}");
+    }
+  }
+
+  #[test]
+  fn completes_tab_numbers() {
+    for name in ["tabnext", "tabn"] {
+      for view in [View::Recent, View::Document] {
+        assert_eq!(
+          candidates(
+            &format!("{name} 1"),
+            view,
+            |_| true,
+            |kind, prefix| {
+              assert_eq!(kind, Complete::Tab);
+              assert_eq!(prefix, "1");
+              vec!["1".into(), "2".into(), "10".into()]
+            }
+          )
+          .1,
+          ["1", "10"]
+        );
+      }
+    }
+    assert_eq!(
+      candidates("tabnext ", View::Home, |_| true, |_, _| unreachable!()).1,
+      [] as [String; 0]
+    );
+  }
+
+  #[test]
+  fn fzf_completes_paths() {
+    for view in [View::Home, View::Recent, View::Document] {
+      assert_eq!(
+        candidates(
+          "fzf bo",
+          view,
+          |_| true,
+          |kind, argument| {
+            assert_eq!(kind, Complete::Path);
+            assert_eq!(argument, "bo");
+            vec!["books/".into(), "book.pdf".into()]
+          }
+        ),
+        (4, vec!["books/".into(), "book.pdf".into()])
+      );
+      assert_eq!(
+        candidates("fzf bo", view, |_| false, |_, _| unreachable!()).1,
+        [] as [String; 0]
+      );
     }
   }
 

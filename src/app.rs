@@ -67,6 +67,7 @@ pub enum Request {
   Keys(Vec<vpdf_model::input::KeyEvent>),
   /// Pick a PDF for this destination.
   Pick {
+    root: PathBuf,
     tab: bool,
   },
   Print,

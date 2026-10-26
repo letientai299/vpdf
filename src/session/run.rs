@@ -533,11 +533,9 @@ impl Session {
         self.home_help(&mut home, &topic);
       }
       Ok(Outcome::Quit) => return Ok(()),
-      Ok(Outcome::Pick { .. }) => {
+      Ok(Outcome::Pick { root, .. }) => {
         home.release(out)?;
-        let picked = std::env::current_dir()
-          .map_err(anyhow::Error::from)
-          .and_then(|root| crate::programs::pick_pdf(&root));
+        let picked = crate::programs::pick_pdf(&root);
         match picked {
           Ok(Some(path)) => {
             if self.leave_home(&mut home, &path) {

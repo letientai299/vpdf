@@ -13,6 +13,40 @@ use vpdf_pdf::jobs::Wake;
 use vpdf_terminal::decode::Reply;
 
 #[test]
+fn tab_completion_tracks_session() -> Result<()> {
+  use vpdf_ui::prompt::{Prompt, PromptKind};
+  let root = tempfile::tempdir()?;
+  let first = root.path().join("first.pdf");
+  let second = root.path().join("second.pdf");
+  crate::fixtures::pdf(&first, &["first"], "")?;
+  crate::fixtures::pdf(&second, &["second"], "")?;
+  let mut session = Session::new(None);
+  session.open(&first, true, cells(120, 40))?;
+  session.open(&second, true, cells(120, 40))?;
+  session.activate(0)?;
+  let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+  session.app().overlays.open_prompt(Prompt::new(PromptKind::Command));
+  session.app().overlays.prompt_mut().unwrap().paste("tabnext ");
+  session.type_key(tab)?;
+  let prompt = session.app().overlays.prompt().unwrap();
+  assert_eq!(
+    prompt.menu().unwrap().labels(),
+    ["1  first.pdf", "2  second.pdf"]
+  );
+  session.type_key(tab)?;
+  session.type_key(tab)?;
+  session.type_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))?;
+  session.settle()?;
+  assert_eq!(session.active, 1);
+  session.close_tab(0)?;
+  session.app().overlays.open_prompt(Prompt::new(PromptKind::Command));
+  session.app().overlays.prompt_mut().unwrap().paste("tabnext ");
+  session.type_key(tab)?;
+  assert_eq!(session.app().overlays.prompt().unwrap().text(), "tabnext 1");
+  Ok(())
+}
+
+#[test]
 fn cleanup_failure_survives_detached_home() -> Result<()> {
   let root = tempfile::tempdir()?;
   let store = root.path().join("state.json");

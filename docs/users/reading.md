@@ -18,7 +18,9 @@ open focuses its existing pane.
 
 In the terminal, `:fzf` finds PDFs below the current directory when fzf is on
 `PATH`; use its upstream setup in [Optional helpers][helpers]. Without fzf,
-enter a path with `:edit book.pdf` and Tab completion.
+enter a path with `:edit book.pdf` and Tab completion. With `:fzf `, Tab
+completes PDFs and directories. A PDF opens directly; a directory limits
+the picker to that tree.
 
 Dropped PDF files open new tabs in the native app and terminals with file-drop
 support, even while a prompt is open. Already open files focus their existing

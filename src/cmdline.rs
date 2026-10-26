@@ -6,48 +6,72 @@ use vpdf_model::input::KeyEvent;
 use vpdf_ui::commands::{self, Complete, View};
 use vpdf_ui::prompt::{History, Prompt, PromptEvent, PromptKind};
 
-/// Feeds `key` to `prompt`, completing commands and editing the line in
-/// `$EDITOR`; returns the event left for the caller.
-pub fn feed(
-  prompt: &mut Prompt,
-  key: KeyEvent,
-  history: &History,
-  view: View,
-  terminal: bool,
-  topics: impl FnOnce(&str) -> Result<Vec<vpdf_ui::topics::Candidate>>,
-) -> Result<PromptEvent> {
-  Ok(match prompt.feed(key, history) {
-    PromptEvent::Editor => {
-      let edited = crate::programs::edit(prompt.text(), terminal)?;
-      prompt.replace(&edited);
-      PromptEvent::Edited
-    }
-    PromptEvent::Complete if prompt.kind() == PromptKind::Command => {
-      let candidates =
-        topics(help_query(prompt.before_cursor()).unwrap_or(""))?;
-      let names: Vec<_> =
-        candidates.iter().map(|item| item.name.clone()).collect();
-      let (start, items) =
-        complete(prompt.before_cursor(), view, terminal, &names);
-      let help = help_query(prompt.before_cursor()).is_some();
-      prompt.complete(start, items);
-      if help {
-        prompt.describe(|name| describe(name, &candidates));
+pub(crate) struct Completion<'a> {
+  pub view: View,
+  pub terminal: bool,
+  pub tabs: &'a [String],
+}
+
+impl Completion<'_> {
+  /// Feeds `key` to `prompt`, completing commands and editing the line in
+  /// `$EDITOR`; returns the event left for the caller.
+  pub fn feed(
+    &self,
+    prompt: &mut Prompt,
+    key: KeyEvent,
+    history: &History,
+    topics: impl FnOnce(&str) -> Result<Vec<vpdf_ui::topics::Candidate>>,
+  ) -> Result<PromptEvent> {
+    Ok(match prompt.feed(key, history) {
+      PromptEvent::Editor => {
+        let edited = crate::programs::edit(prompt.text(), self.terminal)?;
+        prompt.replace(&edited);
+        PromptEvent::Edited
       }
-      PromptEvent::Edited
-    }
-    event => event,
-  })
+      PromptEvent::Complete if prompt.kind() == PromptKind::Command => {
+        let candidates =
+          topics(help_query(prompt.before_cursor()).unwrap_or(""))?;
+        let names: Vec<_> =
+          candidates.iter().map(|item| item.name.clone()).collect();
+        let (start, items) = complete(
+          prompt.before_cursor(),
+          self.view,
+          self.terminal,
+          &names,
+          self.tabs,
+        );
+        let help = help_query(prompt.before_cursor()).is_some();
+        prompt.complete(start, items);
+        if help {
+          prompt.describe(|name| describe(name, &candidates));
+        } else if query(prompt.before_cursor(), Complete::Tab).is_some() {
+          prompt.describe(|number| {
+            number
+              .parse::<usize>()
+              .ok()
+              .and_then(|index| index.checked_sub(1))
+              .and_then(|index| self.tabs.get(index))
+              .map_or_else(|| number.into(), |name| format!("{number}  {name}"))
+          });
+        }
+        PromptEvent::Edited
+      }
+      event => event,
+    })
+  }
 }
 
 pub(crate) fn help_query(before: &str) -> Option<&str> {
+  query(before, Complete::Help)
+}
+
+fn query(before: &str, kind: Complete) -> Option<&str> {
   let commands::Resolution::Command { spec, argument } =
     commands::resolve(before, View::Document, |_| true, |_| false).ok()?
   else {
     return None;
   };
-  matches!(spec.id, commands::Id::Help | commands::Id::HelpBeside)
-    .then_some(argument)
+  (spec.complete == kind).then_some(argument)
 }
 
 pub(crate) fn describe(
@@ -85,7 +109,7 @@ pub fn candidates(
   view: View,
   terminal: bool,
 ) -> (usize, Vec<String>) {
-  complete(before, view, terminal, &[])
+  complete(before, view, terminal, &[], &[])
 }
 
 pub(crate) fn complete(
@@ -93,6 +117,7 @@ pub(crate) fn complete(
   view: View,
   terminal: bool,
   topics: &[String],
+  tabs: &[String],
 ) -> (usize, Vec<String>) {
   commands::candidates(
     before,
@@ -101,6 +126,9 @@ pub(crate) fn complete(
     |kind, argument| match kind {
       Complete::Path => paths(argument),
       Complete::Language => languages().to_vec(),
+      Complete::Tab => {
+        (1..=tabs.len()).map(|index| index.to_string()).collect()
+      }
       Complete::Help => topics
         .iter()
         .filter(|name| name.starts_with(argument))
@@ -120,6 +148,11 @@ pub fn expand(path: &str) -> PathBuf {
     }
     _ => PathBuf::from(path),
   }
+}
+
+pub(crate) fn picker_root(argument: &str) -> Option<PathBuf> {
+  let root = expand(if argument.is_empty() { "." } else { argument });
+  (argument.is_empty() || root.is_dir()).then_some(root)
 }
 
 /// Directories and PDFs whose names extend the typed path.
@@ -182,6 +215,30 @@ pub(crate) fn is_pdf(path: &Path) -> bool {
 mod tests {
   use super::*;
   #[test]
+  fn tab_menu_inserts_numbers() -> Result<()> {
+    use vpdf_model::input::{KeyCode, KeyModifiers};
+    let history = History::default();
+    let names = vec!["first.pdf".into(), "second.pdf".into()];
+    let completion =
+      Completion { view: View::Document, terminal: true, tabs: &names };
+    let mut prompt = Prompt::new(PromptKind::Command);
+    prompt.paste("tabnext ");
+    let key = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+    completion.feed(&mut prompt, key, &history, |_| Ok(Vec::new()))?;
+    let menu = prompt.menu().unwrap();
+    assert_eq!(menu.items(), ["1", "2"]);
+    assert_eq!(menu.labels(), ["1  first.pdf", "2  second.pdf"]);
+    completion.feed(&mut prompt, key, &history, |_| Ok(Vec::new()))?;
+    completion.feed(&mut prompt, key, &history, |_| Ok(Vec::new()))?;
+    assert_eq!(prompt.text(), "tabnext 2");
+    assert_eq!(
+      complete("tabnext 3", View::Document, true, &[], &names).1,
+      [] as [String; 0]
+    );
+    Ok(())
+  }
+
+  #[test]
   fn completes_pdfs_and_directories() -> Result<()> {
     let root = tempfile::tempdir()?;
     for name in ["a.pdf", "b.PDF", "notes.txt", ".hidden.pdf"] {
@@ -195,9 +252,9 @@ mod tests {
     assert_eq!(names(paths(&base)), ["a.pdf", "archive/", "b.PDF"]);
     assert_eq!(names(paths(&format!("{base}a"))), ["a.pdf", "archive/"]);
     assert_eq!(names(paths(&format!("{base}."))), [".hidden.pdf"]);
-    for (command, start) in [("tabe", 5), ("tabnew", 7)] {
+    for (command, start) in [("tabe", 5), ("tabnew", 7), ("fzf", 4)] {
       let items =
-        candidates(&format!("{command} {base}b"), View::Document, true);
+        candidates(&format!("{command} {base}b"), View::Document, false);
       assert_eq!((items.0, names(items.1)), (start, vec!["b.PDF".to_owned()]));
     }
     Ok(())

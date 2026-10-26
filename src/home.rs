@@ -23,7 +23,7 @@ pub enum Outcome {
   Open(PathBuf),
   Forget(Vec<PathBuf>),
   Help(String),
-  Pick { tab: bool },
+  Pick { root: PathBuf, tab: bool },
   Quit,
 }
 
@@ -163,7 +163,7 @@ impl Home {
         let names: Vec<_> =
           topics.iter().map(|item| item.name.clone()).collect();
         let (start, items) =
-          cmdline::complete(&before, View::Home, terminal, &names);
+          cmdline::complete(&before, View::Home, terminal, &names, &[]);
         self.view.complete_prompt(start, items);
         if cmdline::help_query(&before).is_some() {
           self.view.describe_prompt(|name| cmdline::describe(name, &topics));
@@ -190,11 +190,14 @@ impl Home {
         Ok(Outcome::Open(cmdline::expand(argument)))
       }
       Id::Edit | Id::Open | Id::TabEdit => {
-        Ok(Outcome::Pick { tab: spec.id != Id::Edit })
+        Ok(Outcome::Pick { root: ".".into(), tab: spec.id != Id::Edit })
       }
       Id::Quit | Id::QuitAll | Id::TabClose => Ok(Outcome::Quit),
       Id::Recent | Id::TabNew => Ok(Outcome::Stay),
-      Id::Fzf => Ok(Outcome::Pick { tab: false }),
+      Id::Fzf => Ok(match cmdline::picker_root(argument) {
+        Some(root) => Outcome::Pick { root, tab: false },
+        None => Outcome::Open(cmdline::expand(argument)),
+      }),
       Id::Version => {
         self.view.show_info(
           vpdf_ui::keys::PanelKind::Version,
@@ -382,7 +385,10 @@ mod tests {
         ("tabedit", true),
         ("tabe", true),
       ] {
-        assert_eq!(resolve(name, terminal)?, Outcome::Pick { tab });
+        assert_eq!(
+          resolve(name, terminal)?,
+          Outcome::Pick { root: ".".into(), tab }
+        );
         assert_eq!(
           resolve(&format!("{name} notes.pdf"), terminal)?,
           Outcome::Open(PathBuf::from("notes.pdf"))
@@ -398,8 +404,27 @@ mod tests {
   }
 
   #[test]
+  fn fzf_paths_route() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let directory = root.path().join("books with spaces");
+    std::fs::create_dir(&directory)?;
+    assert_eq!(
+      resolve(&format!("fzf {}", directory.display()), false)?,
+      Outcome::Pick { root: directory, tab: false }
+    );
+    assert_eq!(
+      resolve("fzf notes.pdf", false)?,
+      Outcome::Open("notes.pdf".into())
+    );
+    Ok(())
+  }
+
+  #[test]
   fn native_commands_offer_picker() -> Result<()> {
-    assert_eq!(resolve("fzf", false)?, Outcome::Pick { tab: false });
+    assert_eq!(
+      resolve("fzf", false)?,
+      Outcome::Pick { root: ".".into(), tab: false }
+    );
     let (_, items) = cmdline::candidates("fz", View::Home, false);
     assert!(items.iter().any(|item| item.trim() == "fzf"));
     Ok(())
@@ -459,7 +484,7 @@ mod tests {
     assert_eq!(command("tabnew  b.pdf ")?, Outcome::Open("b.pdf".into()));
     assert_eq!(command("q")?, Outcome::Quit);
     assert_eq!(command("")?, Outcome::Stay);
-    assert_eq!(command("e")?, Outcome::Pick { tab: false });
+    assert_eq!(command("e")?, Outcome::Pick { root: ".".into(), tab: false });
     assert!(command("toc").is_err());
     assert!(
       cmdline::candidates("hel", View::Home, true)

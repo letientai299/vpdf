@@ -18,7 +18,9 @@ from the argument text; use Tab completion rather than shell quoting or shell
 expansion syntax. `:split` without a file duplicates the focused view.
 
 Tab completes command names and supported arguments, including paths, themes,
-OCR languages, and help topics. Up and Down recall prompt history. `Ctrl-u`
+OCR languages, and help topics. `:tabnext` completes open tab numbers with
+file labels. `:ocr eng+` completes another installed language, preserving
+selected languages. Up and Down recall prompt history. `Ctrl-u`
 clears text before the cursor. `Ctrl-x Ctrl-e` edits command or search text in
 the external editor selected by `VISUAL`, then `EDITOR`, then `vi`. Password
 entry excludes the external editor. See [Installation and setup][install].
@@ -54,6 +56,8 @@ or `:tabedit` chooses one for a new tab. The terminal picker requires fzf; the
 macOS app uses its system chooser. `:recent` browses saved file entries; Space
 checks files and `x` requests removal. See [Files and saved state][state].
 `:fzf` discovers PDFs below the current directory when its helper is installed.
+Tab completes paths after `:fzf `; a PDF opens directly, and a directory
+sets the picker root.
 
 Use `:cursorline off` to hide the cursor band, `:crop on` to crop margins,
 `:text` to inspect extracted text, and `:theme nord` to change the UI palette.

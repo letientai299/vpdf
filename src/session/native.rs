@@ -712,7 +712,7 @@ fn home_event(
       session.request_help(&topic, invocation, screen)?;
     }
     crate::home::Outcome::Quit => session.quit = true,
-    crate::home::Outcome::Pick { tab } => session.pick(tab)?,
+    crate::home::Outcome::Pick { root, tab } => session.pick(&root, tab)?,
     crate::home::Outcome::Perf(on) => session.toggle_perf(on)?,
     crate::home::Outcome::ConfigReload => session.reload_config(),
     crate::home::Outcome::Theme(theme) => session.set_theme(theme),

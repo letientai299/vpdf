@@ -128,7 +128,7 @@ pub(crate) struct Picker {
 }
 
 impl Picker {
-  pub fn start(tab: bool) -> Result<Self> {
+  pub fn start(root: &Path, tab: bool) -> Result<Self> {
     anyhow::ensure!(cfg!(target_os = "macos"), "Native picker requires macOS");
     let script = concat!(
       "on run argv\ntry\n",
@@ -137,7 +137,8 @@ impl Picker {
       "default location root)\n",
       "on error number -128\nreturn \"\"\nend try\nend run"
     );
-    let dialog = Dialog::osascript(&["-e", script], &std::env::current_dir()?)?;
+    let dialog =
+      Dialog::osascript(&["-e", script], &std::env::current_dir()?.join(root))?;
     Ok(Self { dialog, tab })
   }
 
