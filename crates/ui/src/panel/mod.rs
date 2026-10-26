@@ -59,6 +59,7 @@ pub struct Panel {
   kind: PanelKind,
   rows: Vec<Row>,
   projection: tree::Projection,
+  outline: Option<outline::OutlineView>,
   selected: usize,
   focused: bool,
   /// First visible row; moves only to keep the selection shown.
@@ -107,6 +108,7 @@ pub enum Pointing {
   #[default]
   Away,
   Row(usize),
+  Control(Control),
   /// The recent card.
   Card,
 }
@@ -114,8 +116,8 @@ pub enum Pointing {
 impl Pointing {
   pub fn row(self) -> Option<usize> {
     match self {
-      Self::Row(index) => Some(index),
-      Self::Away | Self::Card => None,
+      Self::Row(index) | Self::Control(Control::Branch(index)) => Some(index),
+      Self::Away | Self::Card | Self::Control(_) => None,
     }
   }
 }
@@ -134,7 +136,11 @@ mod projection_tests;
 mod wrap_tests;
 
 mod content;
+mod outline;
+pub use outline::Control;
 mod follow;
+#[cfg(test)]
+mod outline_tests;
 pub mod tree;
 pub use follow::{Activation, Focus, Follow, Press};
 mod input;

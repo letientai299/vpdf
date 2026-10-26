@@ -70,8 +70,19 @@ impl PanelSession {
 impl App {
   /// Follows section changes without interrupting panel browsing.
   pub fn track_outline(&mut self) {
-    let mut reading = self.reading_parts();
-    reading.outline.track(&mut reading.view, reading.panel);
+    let previous = self.outline.current();
+    let automatic =
+      self.panel.as_ref().is_some_and(|panel| panel.view.auto_expand());
+    {
+      let mut reading = self.reading_parts();
+      reading.outline.track(&mut reading.view, reading.panel);
+    }
+    if automatic
+      && previous != self.outline.current()
+      && self.overlays.menu().is_some_and(vpdf_ui::context::ContextMenu::is_row)
+    {
+      self.overlays.close_menu();
+    }
   }
 
   pub fn panel_rows(&mut self, kind: PanelKind) -> Result<Vec<Row>> {
@@ -373,6 +384,10 @@ impl App {
         self.outline.fold(&mut panel.view, operation, count);
         self.overlays.close_menu();
       }
+      vpdf_ui::panel::Event::AutoExpand => {
+        self.outline.toggle_auto(&mut panel.view);
+        self.overlays.close_menu();
+      }
       vpdf_ui::panel::Event::Stay => {}
       vpdf_ui::panel::Event::Close => self.close_panel()?,
       vpdf_ui::panel::Event::Copy { text, register } => {
@@ -403,6 +418,12 @@ impl App {
       return Ok(());
     };
     match press.activate(&mut panel.view, clicks) {
+      Activation::Control(control) => {
+        if let Some(action) = panel.view.control_action(control) {
+          self.panel_input(Input::plain(action))?;
+        }
+        Ok(())
+      }
       Activation::Stay => Ok(()),
       Activation::Context => {
         self.panel_context(mouse);

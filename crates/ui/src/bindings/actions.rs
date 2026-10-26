@@ -200,6 +200,7 @@ specs! {
   "panel.marks" => Kind::Fixed(Action::Panel(PanelKind::Marks)),
   "panel.jumps" => Kind::Fixed(Action::Panel(PanelKind::Jumps)),
   "panel.annotations" => Kind::Fixed(Action::Panel(PanelKind::Annotations)),
+  "outline.auto-expand" => Kind::Fixed(Action::OutlineAuto),
   "outline.close" => Kind::Fixed(Action::Fold(Fold::Close)),
   "outline.open" => Kind::Fixed(Action::Fold(Fold::Open)),
   "outline.expand-all" => Kind::Fixed(Action::Fold(Fold::ExpandAll)),

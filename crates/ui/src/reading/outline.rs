@@ -13,6 +13,7 @@ pub struct Outline {
   tree: Tree,
   headings: Vec<Heading>,
   closed: Vec<bool>,
+  auto: bool,
 }
 
 impl Outline {
@@ -22,6 +23,7 @@ impl Outline {
       tree: Tree::new(headings),
       headings: headings.to_vec(),
       closed: vec![false; headings.len()],
+      auto: false,
     }
   }
 
@@ -46,18 +48,29 @@ impl Outline {
   }
 
   pub fn project(&self, panel: &mut Panel) {
+    let previous = panel.selected();
     let projection = self.tree.project(|source| self.closed(source));
     let selected = self.tree.visible_ancestor(panel.selected(), &projection);
     if let Some(selected) = selected {
       panel.choose(selected);
     }
     panel.project(projection);
+    panel.decorate_outline(
+      &self.tree,
+      |source| self.closed(source),
+      self.current.and_then(|source| self.visible_source(source)),
+      self.auto,
+    );
+    if panel.selected() != previous {
+      panel.reveal();
+    }
   }
 
   pub fn fold(&mut self, panel: &mut Panel, operation: Fold, count: usize) {
     if panel.kind() != PanelKind::Outline {
       return;
     }
+    self.auto = false;
     match operation {
       Fold::ExpandAll => self.closed.fill(false),
       Fold::CollapseAll => {
@@ -76,6 +89,26 @@ impl Outline {
     }
     self.project(panel);
     panel.reveal();
+  }
+
+  pub fn toggle_auto(&mut self, panel: &mut Panel) {
+    self.auto = !self.auto;
+    if self.auto {
+      self.expand_current();
+    }
+    self.project(panel);
+  }
+
+  fn expand_current(&mut self) {
+    for (closed, node) in self.closed.iter_mut().zip(self.tree.nodes()) {
+      *closed = node.descendants > 0;
+    }
+    let mut source = self.current;
+    while let Some(index) = source {
+      let Some(node) = self.tree.nodes().get(index) else { break };
+      self.closed[index] = false;
+      source = node.parent;
+    }
   }
 
   fn step(&mut self, source: usize, operation: Fold) -> Option<usize> {
@@ -125,9 +158,17 @@ impl Outline {
     let section = view.current_section();
     let changed = self.current != section;
     self.current = section;
+    if changed && self.auto {
+      self.expand_current();
+    }
     if let Some(panel) =
       panel.filter(|panel| panel.kind() == PanelKind::Outline)
     {
+      if changed && self.auto {
+        self.project(panel);
+      }
+      panel
+        .mark_outline(section.and_then(|source| self.visible_source(source)));
       panel.track(
         section.map(|source| self.visible_source(source).unwrap_or(source)),
         changed,
@@ -300,6 +341,68 @@ mod fold_tests {
     assert!(outline.closed(0));
     outline.replace(&outline.headings.clone());
     assert!(!outline.closed(0));
+  }
+
+  #[test]
+  fn marker_and_auto_path() {
+    let (mut outline, mut panel) = setup();
+    outline.current = Some(2);
+    panel.choose(5);
+    outline.fold(&mut panel, Fold::CollapseAll, 1);
+    assert_eq!(panel.selected(), 4);
+    assert_eq!(outline.current(), Some(2));
+    let mut scene = Vec::new();
+    panel.scene_list(&mut scene, vpdf_model::geometry::At::default(), 30, 8);
+    let text = crate::testing::text(&scene);
+    assert!(text.contains("▌▸"));
+    outline.toggle_auto(&mut panel);
+    assert!(!outline.closed(0) && !outline.closed(1));
+    assert!(outline.closed(4));
+    assert_eq!(panel.selected(), 4);
+    assert!(panel.auto_expand());
+    outline.toggle_auto(&mut panel);
+    assert!(outline.closed(4));
+    assert!(!panel.auto_expand());
+    outline.current = None;
+    outline.toggle_auto(&mut panel);
+    assert!(outline.closed(0) && outline.closed(1) && outline.closed(4));
+  }
+
+  #[test]
+  fn auto_reveals_hidden_selection() {
+    let headings: Vec<_> = (0..21)
+      .map(|source| Heading {
+        depth: usize::from((1..11).contains(&source)),
+        title: format!("Entry {source}"),
+        target: Target::Page(PageId(0)),
+      })
+      .collect();
+    let mut outline = Outline::new(&headings);
+    let mut panel = Panel::new(
+      PanelKind::Outline,
+      headings
+        .iter()
+        .map(|heading| Row::outline(heading, "i".into()))
+        .collect(),
+    );
+    outline.project(&mut panel);
+    panel.scene_list(
+      &mut Vec::new(),
+      vpdf_model::geometry::At::default(),
+      30,
+      6,
+    );
+    panel.select(9);
+    assert!(panel.top() > 0);
+    outline.toggle_auto(&mut panel);
+    panel.scene_list(
+      &mut Vec::new(),
+      vpdf_model::geometry::At::default(),
+      30,
+      6,
+    );
+    assert_eq!(panel.selected(), 0);
+    assert_eq!(panel.row_at(0, 1), Some(0));
   }
 
   #[test]

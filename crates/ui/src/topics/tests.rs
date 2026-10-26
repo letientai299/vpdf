@@ -748,3 +748,36 @@ fn contents_folds_use_custom_bindings() {
     );
   }
 }
+
+#[test]
+fn contents_auto_uses_custom_binding() {
+  use crate::keys::{Input, Keys, PanelKind};
+  use crate::panel::{Event, Panel};
+  let mut bindings = Bindings::default();
+  remap(
+    &mut bindings,
+    Context::Panel,
+    &[("x", Some(Target::Reader(Action::OutlineAuto)))],
+  );
+  let registry =
+    Registry::new(authored(), bindings.snapshot().in_panel(PanelKind::Outline))
+      .unwrap();
+  assert_eq!(registry.lookup("x", Context::Panel), action(Action::OutlineAuto));
+  assert!(
+    registry.action(&TopicId::parse("outline.auto-expand").unwrap()).is_some()
+  );
+  let mut keys = Keys::default();
+  let key = sequence("x").keys()[0];
+  let Some(Dispatch::Input(input)) =
+    keys.feed_with(key, Context::Panel, &bindings)
+  else {
+    panic!("auto action")
+  };
+  let mut panel = Panel::new(PanelKind::Outline, vec![]);
+  assert_eq!(panel.input(input, 24), Event::AutoExpand);
+  panel.focus(false);
+  assert_eq!(
+    panel.input(Input::plain(Action::OutlineAuto), 24),
+    Event::Unhandled
+  );
+}

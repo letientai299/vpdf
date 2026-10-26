@@ -88,6 +88,7 @@ pub enum Action {
   Panel(PanelKind),
   ClosePanel,
   Fold(Fold),
+  OutlineAuto,
   RecentToggle,
   RecentRemove,
   LocalFocus,

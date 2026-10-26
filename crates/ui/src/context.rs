@@ -138,7 +138,11 @@ fn panel_bound(
   }
 }
 
-fn fold_shortcut(bindings: &Bindings, source: Context, fold: Fold) -> String {
+pub fn fold_shortcut(
+  bindings: &Bindings,
+  source: Context,
+  fold: Fold,
+) -> String {
   let key = bindings.shortcut(source, &Binding::Reader(Action::Fold(fold)));
   if !key.is_empty() {
     return key;
@@ -528,7 +532,7 @@ pub fn outline_items(panel: &Panel, branch: Option<bool>) -> Vec<Item> {
     ("Expand all", Fold::ExpandAll),
     ("Collapse all", Fold::CollapseAll),
   ]);
-  actions
+  let mut items: Vec<_> = actions
     .into_iter()
     .map(|(label, fold)| {
       let action = Action::Fold(fold);
@@ -536,7 +540,14 @@ pub fn outline_items(panel: &Panel, branch: Option<bool>) -> Vec<Item> {
       item.shortcut = Some(Shortcut::Fold(fold));
       item
     })
-    .collect()
+    .collect();
+  items.push(panel_bound(
+    panel,
+    if panel.auto_expand() { "✓ Auto-expand" } else { "Auto-expand" },
+    Action::OutlineAuto,
+    Command::Key(Action::OutlineAuto),
+  ));
+  items
 }
 
 pub fn overview_items(page: Option<PageId>) -> Vec<Item> {
@@ -724,7 +735,8 @@ mod fold_tests {
       ),
     ] {
       let items = outline_items(&panel, branch);
-      assert_eq!(items.len(), expected.len());
+      assert_eq!(items.len(), expected.len() + 1);
+      assert_eq!(items.last().unwrap().label, "Auto-expand");
       for (item, (label, key, fold)) in items.iter().zip(expected) {
         assert_eq!(item.label, label);
         assert_eq!(item.key, key);

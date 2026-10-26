@@ -71,6 +71,21 @@ impl App {
       Hit::Row(_) | Hit::Label(_) => {
         self.panel.as_ref()?.view.hover_title().map(str::to_owned)
       }
+      Hit::PanelControl(control) => {
+        let panel = &self.panel.as_ref()?.view;
+        let label = panel.control_tip(control)?;
+        let action = panel.control_action(control)?;
+        let bindings = self.settings.bindings();
+        let context = vpdf_ui::bindings::Context::Panel;
+        let key = match action {
+          Action::Fold(fold) => {
+            vpdf_ui::context::fold_shortcut(bindings, context, fold)
+          }
+          _ => bindings
+            .shortcut(context, &vpdf_ui::bindings::Target::Reader(action)),
+        };
+        Some(if key.is_empty() { label } else { format!("{label}  {key}") })
+      }
       Hit::Card(row) => self.panel.as_ref()?.view.shelf()?.detail(row),
       Hit::Thumbnail(page) => Some(self.page_line(page)),
       Hit::Link(..) => self.hover_label(),

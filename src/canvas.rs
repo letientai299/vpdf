@@ -249,6 +249,7 @@ impl App {
     if let Some(panel) = &mut self.panel {
       panel.view.point(match self.hover.hit() {
         Hit::Row(index) | Hit::Label(index) => Pointing::Row(index),
+        Hit::PanelControl(control) => Pointing::Control(control),
         Hit::Card(_) => Pointing::Card,
         _ => Pointing::Away,
       });

@@ -44,6 +44,7 @@ pub enum Activation {
   Split(usize),
   Follow { focus: bool },
   Refocus,
+  Control(super::Control),
 }
 
 /// Carries a press across pane relayout.
@@ -51,13 +52,15 @@ pub struct Press {
   mouse: MouseEvent,
   clicked: Option<usize>,
   covered: bool,
+  control: Option<super::Control>,
 }
 
 impl Panel {
   pub fn press(&mut self, mouse: MouseEvent) -> Press {
     let covered = self.covers_page();
+    let control = self.control_at(mouse.column, mouse.row);
     let clicked = self.pointer(mouse);
-    Press { mouse, clicked, covered }
+    Press { mouse, clicked, covered, control }
   }
 
   pub fn follow(&self, search: &Search) -> Option<Follow> {
@@ -103,7 +106,16 @@ impl Panel {
 
 impl Press {
   pub fn activate(self, panel: &mut Panel, clicks: u8) -> Activation {
-    let Self { mouse, clicked, covered } = self;
+    let Self { mouse, clicked, covered, control } = self;
+    if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+      && let Some(control) = control
+    {
+      panel.clicked = None;
+      if let super::Control::Branch(source) = control {
+        panel.choose(source);
+      }
+      return Activation::Control(control);
+    }
     if mouse.kind == MouseEventKind::Down(MouseButton::Right) {
       return Activation::Context;
     }

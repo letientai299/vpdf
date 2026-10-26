@@ -145,6 +145,7 @@ pub enum Hit {
   },
   /// Index into the panel's rows.
   Row(usize),
+  PanelControl(crate::panel::Control),
   /// A panel row without a destination.
   Label(usize),
   /// An overview thumbnail.
@@ -221,6 +222,7 @@ impl Hit {
       Self::Link(..)
       | Self::Note { text: false, .. }
       | Self::Row(_)
+      | Self::PanelControl(_)
       | Self::Thumbnail(_)
       | Self::Preview { follows: true }
       | Self::Item(_, Some(_))

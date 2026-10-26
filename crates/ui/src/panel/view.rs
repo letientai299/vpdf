@@ -77,6 +77,7 @@ impl Panel {
   pub fn new(kind: PanelKind, rows: Vec<Row>) -> Self {
     Self {
       kind,
+      outline: None,
       projection: super::tree::Projection::all(rows.len()),
       rows,
       selected: 0,
@@ -178,12 +179,15 @@ impl Panel {
     self.projection = projection;
     self.selected = self.visible_source(self.visible_position());
     self.clicked = self.clicked.filter(|&source| self.is_visible(source));
-    if let Pointing::Row(source) = self.pointing
+    if let Some(source) = self.pointing.row()
       && !self.is_visible(source)
     {
       self.pointing = Pointing::Away;
     }
     self.hover_title = None;
+    if let Some(outline) = &mut self.outline {
+      outline.targets.clear();
+    }
     self.layout = None;
     self.top = self.line_start(source);
   }
@@ -191,6 +195,7 @@ impl Panel {
   fn replace_outline(&mut self, rows: Vec<Row>, note: &'static str) {
     let projection = super::tree::Projection::all(rows.len());
     self.rows = rows;
+    self.outline = None;
     self.selected = 0;
     self.top = 0;
     self.search = RowSearch::default();
@@ -351,6 +356,11 @@ impl Panel {
     if row == 0 || column + 1 >= self.columns {
       return None;
     }
+    if self.outline.is_some()
+      && usize::from(self.columns) <= super::outline::GUTTER
+    {
+      return None;
+    }
     if self.layout.is_some() && row >= self.height.saturating_sub(1) {
       return None;
     }
@@ -507,6 +517,24 @@ impl Panel {
     drawn
   }
 
+  pub(super) fn row_roles(&self, source: usize) -> (Role, Role) {
+    let selected = self.kind != PanelKind::Version && source == self.selected;
+    let plain = match (selected, self.focused) {
+      (true, true) => Role::Selected,
+      (true, false) => Role::Current,
+      (false, true) => Role::Reset,
+      (false, false) => Role::Dim,
+    };
+    let hovered = self.pointing.row() == Some(source);
+    let follows = self.rows[source].follows();
+    let base = match (hovered && !selected && follows, self.focused) {
+      (true, true) => Role::Hover,
+      (true, false) => Role::HoverDim,
+      (false, _) => plain,
+    };
+    (plain, base)
+  }
+
   pub fn scene_list<'a>(
     &mut self,
     scene: &mut impl Draw<'a>,
@@ -517,7 +545,10 @@ impl Panel {
     self.columns = width;
     self.height = height;
     self.hover_title = None;
-    if width < 2 {
+    if let Some(outline) = &mut self.outline {
+      outline.targets.clear();
+    }
+    if width < 2 || height == 0 {
       return;
     }
     let inner = usize::from(width.saturating_sub(1));
@@ -526,6 +557,10 @@ impl Panel {
       scene.push(Op::Style(Role::Muted));
       scene.text("│");
       scene.push(Op::Style(Role::Reset));
+    }
+    if self.outline.is_some() {
+      self.scene_outline(scene, at, width, height);
+      return;
     }
     let title = format!(" {} ", self.kind.title());
     let selection = if self.is_recent_view() {
@@ -559,19 +594,7 @@ impl Panel {
         },
       );
       let hovered = self.pointing.row() == Some(source);
-      let selected = self.kind != PanelKind::Version && source == self.selected;
-      let plain = match (selected, self.focused) {
-        (true, true) => Role::Selected,
-        (true, false) => Role::Current,
-        (false, true) => Role::Reset,
-        (false, false) => Role::Dim,
-      };
-      let follows = self.rows[source].follows();
-      let base = match (hovered && !selected && follows, self.focused) {
-        (true, true) => Role::Hover,
-        (true, false) => Role::HoverDim,
-        (false, _) => plain,
-      };
+      let (plain, base) = self.row_roles(source);
       crate::paint::move_to(scene, at, row + 1, 0u16);
       scene.push(Op::Style(base));
       let checkbox = if self.is_recent_view()

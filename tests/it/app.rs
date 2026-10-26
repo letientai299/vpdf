@@ -810,6 +810,7 @@ fn hover_hits_links_text_and_blanks() -> Result<()> {
         }
         Hit::Note { .. }
         | Hit::Row(_)
+        | Hit::PanelControl(_)
         | Hit::Label(_)
         | Hit::Thumbnail(_)
         | Hit::Preview { .. }
@@ -1277,5 +1278,105 @@ fn contents_manual_folding() -> Result<()> {
   app.open_panel(PanelKind::Version)?;
   app.action(Input::plain(Action::Fold(Fold::ExpandAll)))?;
   assert!(app.outline.closed(branch));
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn contents_mouse_controls() -> Result<()> {
+  use vpdf_ui::keys::Fold;
+  use vpdf_ui::panel::Control;
+  let mut app = solo("paper.pdf", false, common::cells(120, 50))?;
+  common::outline_loaded(&mut app)?;
+  app.open_panel(PanelKind::Outline)?;
+  app.draw(&mut Vec::new())?;
+  let branch = app
+    .outline
+    .tree()
+    .nodes()
+    .iter()
+    .position(|node| node.descendants > 0)
+    .unwrap();
+  let cursor = app.reader.cursor;
+  let click = |column, row, button| {
+    MouseEvent::new(MouseEventKind::Down(button), column, row)
+  };
+  let (column, row) =
+    crate::harness::cell_where(&mut app, Region::Panel, 1..49, |hit| {
+      hit == Hit::PanelControl(Control::Branch(branch))
+    })?;
+  for clicks in [1, 2, 3] {
+    app.panel_mouse(click(column, row, MouseButton::Left), clicks)?;
+    assert_eq!(app.outline.closed(branch), clicks % 2 == 1);
+    assert!(app.panel_focused());
+    assert_eq!(app.reader.cursor, cursor);
+    app.draw(&mut Vec::new())?;
+  }
+  let (expand, _) =
+    crate::harness::cell_where(&mut app, Region::Panel, 0..1, |hit| {
+      hit == Hit::PanelControl(Control::ExpandAll)
+    })?;
+  app.panel_mouse(click(expand, 0, MouseButton::Left), 2)?;
+  assert!(!app.outline.closed(branch));
+  app.draw(&mut Vec::new())?;
+  let (auto, _) =
+    crate::harness::cell_where(&mut app, Region::Panel, 0..1, |hit| {
+      hit == Hit::PanelControl(Control::AutoExpand)
+    })?;
+  app.panel_mouse(click(auto, 0, MouseButton::Left), 2)?;
+  assert!(app.panel.as_ref().unwrap().view.auto_expand());
+  app.draw(&mut Vec::new())?;
+  app.panel_mouse(click(auto, 0, MouseButton::Right), 1)?;
+  let menu = app.overlays.menu().unwrap();
+  assert!(!menu.is_row());
+  assert!(menu.entries().iter().any(|item| item.label == "✓ Auto-expand"));
+  assert!(!menu.entries().iter().any(|item| item.label.contains("branch")));
+  app.overlays.close_menu();
+  app.action(Input::plain(Action::Fold(Fold::ExpandAll)))?;
+  assert!(!app.panel.as_ref().unwrap().view.auto_expand());
+  app.draw(&mut Vec::new())?;
+  let (_, branch_row) =
+    crate::harness::cell_where(&mut app, Region::Panel, 1..49, |hit| {
+      hit == Hit::PanelControl(Control::Branch(branch))
+    })?;
+  app.panel_mouse(click(3, branch_row, MouseButton::Right), 1)?;
+  assert!(app.overlays.menu().unwrap().is_row());
+  app.panel.as_mut().unwrap().view.choose(branch);
+  app.panel_input(Input::plain(Action::Fold(Fold::Close)))?;
+  assert!(app.overlays.menu().is_none());
+  assert_eq!(app.reader.cursor, cursor);
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn contents_auto_invalidates_row_menu() -> Result<()> {
+  use vpdf_ui::panel::Control;
+  let mut app = solo("paper.pdf", false, common::cells(120, 50))?;
+  common::outline_loaded(&mut app)?;
+  app.open_panel(PanelKind::Outline)?;
+  app.panel_input(Input::plain(Action::OutlineAuto))?;
+  app.draw(&mut Vec::new())?;
+  let branch = app
+    .outline
+    .tree()
+    .nodes()
+    .iter()
+    .position(|node| node.descendants > 0)
+    .unwrap();
+  let (column, row) =
+    crate::harness::cell_where(&mut app, Region::Panel, 1..49, |hit| {
+      hit == Hit::PanelControl(Control::Branch(branch))
+    })?;
+  app.panel_mouse(
+    MouseEvent::new(MouseEventKind::Down(MouseButton::Right), column, row),
+    1,
+  )?;
+  assert!(app.overlays.menu().unwrap().is_row());
+  let target = app.doc.outline[branch + 1].target.clone();
+  app.follow(&target)?;
+  app.track_outline();
+  assert!(!app.outline.closed(branch));
+  assert!(app.overlays.menu().is_none());
   Ok(())
 }

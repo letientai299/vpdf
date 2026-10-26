@@ -74,7 +74,9 @@ impl Targets<'_> {
       }
       Region::Panel => {
         let Some(panel) = self.panel else { return Some(Hit::Nothing) };
-        if let Some(index) = panel.row_at(column, row) {
+        if let Some(control) = panel.control_at(column, row) {
+          Hit::PanelControl(control)
+        } else if let Some(index) = panel.row_at(column, row) {
           if panel.rows()[index].follows() {
             Hit::Row(index)
           } else {

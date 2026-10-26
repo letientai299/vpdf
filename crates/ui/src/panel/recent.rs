@@ -147,7 +147,7 @@ impl Shelf {
     let pointing = match panel.pointing {
       Pointing::Row(index) => panel.screen_line(index),
       Pointing::Card => isize::MIN,
-      Pointing::Away => isize::MAX,
+      Pointing::Away | Pointing::Control(_) => isize::MAX,
     };
     if panel.selected != self.selected {
       self.keyed = true;

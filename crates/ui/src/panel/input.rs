@@ -6,6 +6,7 @@ use crate::keys::{self, Fold};
 #[derive(Debug, PartialEq)]
 pub enum Event {
   Unhandled,
+  AutoExpand,
   Fold { operation: Fold, count: usize },
   Forget(Vec<std::path::PathBuf>),
   Stay,
@@ -17,6 +18,7 @@ pub enum Event {
 }
 
 enum Route {
+  AutoExpand,
   Fold(Fold),
   Toggle,
   Remove,
@@ -45,6 +47,7 @@ impl Panel {
       return Event::Unhandled;
     }
     match self.route(input.action) {
+      Route::AutoExpand => Event::AutoExpand,
       Route::Fold(operation) => Event::Fold { operation, count: input.count },
       Route::Toggle => {
         self.toggle_checked();
@@ -99,6 +102,7 @@ impl Panel {
 
   pub fn shortcut_action(&self, action: Action) -> Option<Action> {
     Some(match self.route(action) {
+      Route::AutoExpand => Action::OutlineAuto,
       Route::Fold(Fold::Close) => {
         Action::Motion(vpdf_reader::motion::Motion::Left)
       }
@@ -137,6 +141,7 @@ impl Panel {
       _ => {}
     }
     Some(match self.route(action) {
+      Route::AutoExpand => "toggle automatic expansion",
       Route::Fold(Fold::Close) => "close branch or select parent",
       Route::Fold(Fold::Open) => "open branch or select child",
       Route::Fold(Fold::ExpandAll) => "expand all branches",
@@ -160,7 +165,10 @@ impl Panel {
     {
       return Route::Fold(fold);
     }
-    if matches!(action, Action::Fold(_)) {
+    if action == Action::OutlineAuto && self.kind == PanelKind::Outline {
+      return Route::AutoExpand;
+    }
+    if matches!(action, Action::Fold(_) | Action::OutlineAuto) {
       return Route::Ignore;
     }
     if super::view::Navigation::of(action).is_some() {

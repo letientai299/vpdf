@@ -132,7 +132,7 @@ fn styles<'a>(
   }
 }
 
-fn marked<'a>(
+pub(super) fn marked<'a>(
   scene: &mut impl Draw<'a>,
   text: &str,
   query: &str,
