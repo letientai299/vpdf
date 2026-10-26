@@ -222,9 +222,9 @@ fn auto_control_menu_and_action() {
     assert_eq!(panel.auto_expand(), enabled);
     let scene = draw(&mut panel, 30);
     assert!(crate::testing::text(&scene).contains(if enabled {
-      "◉"
+      "●"
     } else {
-      "◎"
+      "○"
     }));
     assert_eq!(
       panel.control_tip(Control::AutoExpand).as_deref(),

@@ -160,15 +160,16 @@ impl Panel {
     let inner = usize::from(width.saturating_sub(1));
     let outline = self.outline.as_ref().expect("outline decoration");
     let mut targets = Vec::new();
-    let controls = if width >= 22 { 8 } else { 0 };
-    let header_room = inner.saturating_sub(controls);
+    let auto = if outline.auto { "●" } else { "○" };
+    let controls = if width >= 22 { 9 + auto.width() } else { 0 };
+    let header_room = inner.saturating_sub(controls.max(2));
     let count_label = format!(" {}", self.rows.len());
     let title_room = header_room.saturating_sub(count_label.width());
     let title = clean(" CONTENTS ", title_room);
     crate::paint::move_to(scene, at, 0u16, 0u16);
     scene.push(Op::Style(Role::Badge(super::Color::Cyan)));
     scene.text(&title);
-    scene.push(Op::Style(Role::Muted));
+    scene.push(Op::Style(Role::Bar));
     let count_label = clean(&count_label, header_room - title.width());
     scene.text(&count_label);
     let note_room =
@@ -177,23 +178,21 @@ impl Panel {
     scene.text(&note);
     scene.push(Op::Spaces(note_room - note.width()));
     if controls > 0 {
+      scene.text(" ");
       for (offset, text, control) in [
         (0, "▾▾", Control::ExpandAll),
         (3, "▸▸", Control::CollapseAll),
-        (6, if outline.auto { "◉" } else { "◎" }, Control::AutoExpand),
+        (6, auto, Control::AutoExpand),
       ] {
         let hovered = self.pointing == Pointing::Control(control);
-        scene.push(Op::Style(if hovered {
-          Role::Hover
-        } else {
-          Role::Current
-        }));
+        scene.push(Op::Style(if hovered { Role::BarHover } else { Role::Bar }));
+        scene.push(Op::Style(Role::Heading));
         scene.text(text);
-        scene.push(Op::Style(Role::Reset));
+        scene.push(Op::Style(Role::Bar));
         scene.text(" ");
         targets.push((
           Rect {
-            column: (header_room + offset) as u16,
+            column: (header_room + 1 + offset) as u16,
             row: 0,
             columns: text.width() as u16,
             rows: 1,
@@ -201,6 +200,9 @@ impl Panel {
           control,
         ));
       }
+      scene.text(" ");
+    } else {
+      scene.push(Op::Spaces(inner - header_room));
     }
     scene.push(Op::Style(Role::Reset));
     targets

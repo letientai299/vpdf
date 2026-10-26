@@ -562,21 +562,25 @@ impl Panel {
       self.scene_outline(scene, at, width, height);
       return;
     }
-    let title = format!(" {} ", self.kind.title());
+    let header_room = inner.saturating_sub(2);
+    let title =
+      vpdf_model::text::clean(&format!(" {} ", self.kind.title()), header_room);
     let selection = if self.is_recent_view() {
       self.selection_count()
     } else {
       String::new()
     };
     let count = format!(" {} {}{selection}", self.rows.len(), self.note);
+    let count = vpdf_model::text::clean(
+      &count,
+      header_room.saturating_sub(title.width()),
+    );
     crate::paint::move_to(scene, at, 0u16, 0u16);
     scene.push(Op::Style(Role::Badge(Color::Cyan)));
-    scene.text(&vpdf_model::text::clean(&title, inner));
+    scene.text(&title);
     scene.push(Op::Style(Role::Muted));
-    scene.text(&vpdf_model::text::clean(
-      &count,
-      inner.saturating_sub(title.width()),
-    ));
+    scene.text(&count);
+    scene.push(Op::Spaces(inner - title.width() - count.width()));
     scene.push(Op::Style(Role::Reset));
     self.reflow(inner);
     let keys = key_width(&self.rows, inner);
