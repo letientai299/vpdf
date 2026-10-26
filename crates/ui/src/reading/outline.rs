@@ -16,6 +16,8 @@ pub struct Outline {
   auto: bool,
 }
 
+mod search;
+
 impl Outline {
   pub fn new(headings: &[Heading]) -> Self {
     Self {
@@ -48,17 +50,24 @@ impl Outline {
   }
 
   pub fn project(&self, panel: &mut Panel) {
+    self.project_folds(panel, &self.closed);
+  }
+
+  fn project_folds(&self, panel: &mut Panel, closed: &[bool]) {
     let previous = panel.selected();
-    let projection = self.tree.project(|source| self.closed(source));
+    let projection = self.tree.project(|source| closed[source]);
     let selected = self.tree.visible_ancestor(panel.selected(), &projection);
     if let Some(selected) = selected {
       panel.choose(selected);
     }
+    let current = self
+      .current
+      .and_then(|source| self.tree.visible_ancestor(source, &projection));
     panel.project(projection);
     panel.decorate_outline(
       &self.tree,
-      |source| self.closed(source),
-      self.current.and_then(|source| self.visible_source(source)),
+      |source| closed[source],
+      current,
       self.auto,
     );
     if panel.selected() != previous {
@@ -130,10 +139,15 @@ impl Outline {
   }
 
   pub fn replace(&mut self, headings: &[Heading]) {
+    let auto = self.auto;
     *self = Self::new(headings);
+    self.auto = auto;
+    if self.auto {
+      self.expand_current();
+    }
   }
 
-  pub fn sync(&mut self, headings: &[Heading]) {
+  pub fn sync(&mut self, headings: &[Heading]) -> bool {
     if self.headings.len() != headings.len()
       || self.headings.iter().zip(headings).any(|(old, new)| {
         old.depth != new.depth
@@ -142,7 +156,9 @@ impl Outline {
       })
     {
       self.replace(headings);
+      return true;
     }
+    false
   }
 
   pub fn current(&self) -> Option<usize> {
@@ -165,10 +181,14 @@ impl Outline {
       panel.filter(|panel| panel.kind() == PanelKind::Outline)
     {
       if changed && self.auto {
-        self.project(panel);
+        if panel.searching() {
+          let query = panel.query().to_owned();
+          self.preview_search(panel, &query);
+        } else {
+          self.project(panel);
+        }
       }
-      panel
-        .mark_outline(section.and_then(|source| self.visible_source(source)));
+      panel.mark_outline(&self.tree, section);
       panel.track(
         section.map(|source| self.visible_source(source).unwrap_or(source)),
         changed,
@@ -431,5 +451,85 @@ mod fold_tests {
       empty.fold(&mut view, operation, 1);
       assert_eq!(view.selected(), 0);
     }
+  }
+
+  #[test]
+  fn hidden_search_paths() {
+    let (mut outline, mut panel) = setup();
+    outline.fold(&mut panel, Fold::CollapseAll, 1);
+    panel.begin_search(false);
+    outline.preview_search(&mut panel, "iv");
+    assert_eq!((panel.selected(), panel.count()), (1, Some((2, 6))));
+    assert!(outline.closed(0), "preview leaves committed folds alone");
+    assert_eq!(
+      panel.control_action(crate::panel::Control::Branch(0)),
+      Some(crate::keys::Action::Fold(Fold::Close))
+    );
+    outline.preview_search(&mut panel, "missing");
+    assert_eq!(panel.selected(), 0);
+    assert_eq!(
+      panel.control_action(crate::panel::Control::Branch(0)),
+      Some(crate::keys::Action::Fold(Fold::Open))
+    );
+    outline.abort_search(&mut panel);
+    assert_eq!(panel.selected(), 0);
+    assert!(outline.closed(0) && outline.closed(1));
+
+    panel.begin_search(true);
+    outline.preview_search(&mut panel, "iv");
+    assert_eq!(panel.selected(), 5);
+    assert!(outline.closed(4));
+    assert!(outline.finish_search(&mut panel, "iv"));
+    assert_eq!(panel.selected(), 5);
+    assert!(!outline.closed(4));
+    assert!(outline.closed(0) && outline.closed(1));
+    outline.repeat_search(&mut panel, true, 3);
+    assert_eq!(panel.selected(), 2);
+    assert!(!outline.closed(0) && !outline.closed(1));
+  }
+
+  #[test]
+  fn search_auto_transitions() {
+    let (mut outline, mut panel) = setup();
+    outline.current = Some(5);
+    outline.toggle_auto(&mut panel);
+    panel.begin_search(false);
+    outline.preview_search(&mut panel, "iv");
+    assert!(panel.auto_expand());
+    outline.abort_search(&mut panel);
+    assert!(panel.auto_expand() && outline.closed(0));
+    panel.begin_search(false);
+    assert!(!outline.finish_search(&mut panel, "missing"));
+    assert!(panel.auto_expand() && outline.closed(0));
+    panel.begin_search(false);
+    assert!(outline.finish_search(&mut panel, "iv"));
+    assert!(!panel.auto_expand());
+    outline.toggle_auto(&mut panel);
+    outline.repeat_search(&mut panel, false, 1);
+    assert_eq!(panel.selected(), 1);
+    assert!(!panel.auto_expand());
+  }
+
+  #[test]
+  fn generation_preserves_mode() {
+    let (mut outline, mut panel) = setup();
+    outline.current = Some(2);
+    outline.toggle_auto(&mut panel);
+    let mut headings = outline.headings.clone();
+    assert!(!outline.sync(&headings));
+    assert_eq!(outline.current(), Some(2));
+    headings[1].title = "Replacement".into();
+    assert!(outline.sync(&headings));
+    outline.project(&mut panel);
+    assert!(panel.auto_expand());
+    assert!(outline.closed(0) && outline.closed(4));
+    outline.current = Some(5);
+    outline.expand_current();
+    let mut reopened = setup().1;
+    outline.project(&mut reopened);
+    assert!(reopened.auto_expand());
+    assert!(outline.closed(0) && !outline.closed(4));
+    outline.fold(&mut reopened, Fold::Open, 1);
+    assert!(!reopened.auto_expand());
   }
 }

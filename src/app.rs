@@ -387,7 +387,7 @@ impl App {
     // A write during the open shows up as a later change.
     let stamp = crate::watch::stamp(&self.path);
     self.doc = Document::open(&self.path, password)?;
-    self.outline.replace(&self.doc.outline);
+    self.refill_panel(PanelKind::Outline)?;
     self.document_generation += 1;
     self.crop_scan.clear();
     self.layout.clear_crops();

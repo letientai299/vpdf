@@ -371,6 +371,7 @@ pub(crate) const BINDINGS: &[(&str, Action, &str)] = &[
   ("zf", Action::FitPage, "fit page"),
   ("zR", Action::Fold(Fold::ExpandAll), "expand all branches"),
   ("zM", Action::Fold(Fold::CollapseAll), "collapse all branches"),
+  ("za", Action::OutlineAuto, "toggle automatic expansion"),
   ("zr", Action::Rotate, "rotate clockwise"),
   ("zc", Action::Crop, "crop margins"),
   ("C-ws", Action::Window(W::Split(Axis::Rows)), "split above"),

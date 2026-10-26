@@ -104,9 +104,10 @@ impl Panel {
     });
   }
 
-  pub fn mark_outline(&mut self, current: Option<usize>) {
+  pub fn mark_outline(&mut self, tree: &Tree, current: Option<usize>) {
     if let Some(outline) = &mut self.outline {
-      outline.current = current;
+      outline.current = current
+        .and_then(|source| tree.visible_ancestor(source, &self.projection));
     }
   }
 

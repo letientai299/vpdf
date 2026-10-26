@@ -206,7 +206,7 @@ fn panel_and_overview_menus_run_their_items() -> Result<()> {
     ("Close panel", "q"),
     ("Expand all", "zR"),
     ("Collapse all", "zM"),
-    ("Auto-expand", ""),
+    ("Auto-expand", "za"),
   ];
   let thumbnail = [
     ("Open", "<CR>"),

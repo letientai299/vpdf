@@ -36,13 +36,17 @@ in the panel, useful for comparing sections. Tab changes content/panel focus;
 Use `h` to close a branch or select its parent; use `l` to open a branch
 or select its first child. Counts repeat these steps. `zR` expands all
 branches; `zM` collapses all. Closing a branch preserves nested folds.
-The row and header menus also offer fold commands.
+`za` toggles auto-expand: open the current section and its ancestors, and
+close other branches. Manual fold commands turn auto-expand off. The row
+and header menus also offer these commands.
 
-While the panel has focus, `/word` filters or searches its rows rather than
-the whole PDF. Enter accepts the query. `n` and `N` navigate panel matches;
-Escape cancels query entry. Use `gg` and `G` to reach the first and last rows.
-A selected row is your panel choice. The current-section indicator follows
-the viewport; moving the row alone does not move the book.
+While the panel has focus, `/word` searches its rows rather than the whole PDF.
+Enter accepts the query. `n` and `N` navigate panel matches. Search includes
+folded entries and page labels. Preview reveals a match; Escape restores folds,
+selection, and scroll. Accepting a match retains its path and turns auto-expand
+off. Use `gg` and `G` to reach the first and last rows. A selected row is your
+panel choice. The current-section indicator follows the viewport; moving the row
+alone does not move the book.
 
 `]]` jumps to the next section and `[[` to the previous one. A count repeats
 section jumps. The reader uses the PDF's authored outline first. Without one,

@@ -138,8 +138,12 @@ impl App {
 
   /// Searches as the query is typed, like Vim's `incsearch`.
   pub fn incremental(&mut self, query: &str) -> Result<()> {
-    if let Some(panel) = self.row_search() {
-      panel.preview(query);
+    if let Some((panel, outline)) = self.row_search() {
+      if panel.kind() == PanelKind::Outline {
+        outline.preview_search(panel, query);
+      } else {
+        panel.preview(query);
+      }
       return Ok(());
     }
     let backward = matches!(
@@ -155,8 +159,13 @@ impl App {
 
   /// Keeps the previewed match and records the start as a jump.
   pub fn finish_search(&mut self, query: &str, backward: bool) -> Result<()> {
-    if let Some(panel) = self.row_search() {
-      if !panel.finish_search(query) {
+    if let Some((panel, outline)) = self.row_search() {
+      let found = if panel.kind() == PanelKind::Outline {
+        outline.finish_search(panel, query)
+      } else {
+        panel.finish_search(query)
+      };
+      if !found {
         anyhow::bail!("Pattern not found: {}", panel.query());
       }
       return Ok(());
@@ -177,8 +186,12 @@ impl App {
   }
 
   pub fn abort_search(&mut self) -> Result<()> {
-    if let Some(panel) = self.row_search() {
-      panel.abort_search();
+    if let Some((panel, outline)) = self.row_search() {
+      if panel.kind() == PanelKind::Outline {
+        outline.abort_search(panel);
+      } else {
+        panel.abort_search();
+      }
       return Ok(());
     }
     let running = matches!(self.search.phase(), Phase::Running { .. });
@@ -214,12 +227,11 @@ impl App {
     self.search.cancel();
   }
 
-  fn row_search(&mut self) -> Option<&mut Panel> {
-    self
-      .panel
-      .as_mut()
-      .map(|panel| &mut panel.view)
-      .filter(|panel| panel.searching())
+  fn row_search(
+    &mut self,
+  ) -> Option<(&mut Panel, &mut vpdf_ui::reading::Outline)> {
+    let panel = &mut self.panel.as_mut()?.view;
+    panel.searching().then_some((panel, &mut self.outline))
   }
 
   fn return_to_origin(&mut self) -> Result<()> {

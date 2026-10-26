@@ -223,3 +223,175 @@ fn outline_requests_and_cancels_override_deferral() -> Result<()> {
   assert!(!section.doc.outline.is_empty());
   Ok(())
 }
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn contents_auto_survives_delivery_and_reopening() -> Result<()> {
+  use vpdf_ui::keys::Fold;
+  for name in ["paper.pdf", "book.pdf"] {
+    let mut app = solo(name, false, SCREEN)?;
+    app.open_panel(PanelKind::Outline)?;
+    assert!(app.panel.as_ref().unwrap().view.rows().is_empty());
+    common::keys(&mut app, b"za")?;
+    app.open_panel(PanelKind::Version)?;
+    common::outline_loaded(&mut app)?;
+    app.open_panel(PanelKind::Outline)?;
+    assert!(app.panel.as_ref().unwrap().view.auto_expand());
+    let branch = app
+      .outline
+      .tree()
+      .nodes()
+      .iter()
+      .position(|node| node.descendants > 0)
+      .unwrap();
+    let target = app.doc.outline[branch + 1].target.clone();
+    app.close_panel()?;
+    app.follow(&target)?;
+    app.track_outline();
+    app.open_panel(PanelKind::Outline)?;
+    let current = app.outline.current().unwrap();
+    let mut path = vec![current];
+    let mut parent = app.outline.tree().nodes()[current].parent;
+    while let Some(source) = parent {
+      path.push(source);
+      parent = app.outline.tree().nodes()[source].parent;
+    }
+    for (source, node) in app.outline.tree().nodes().iter().enumerate() {
+      assert_eq!(
+        app.outline.closed(source),
+        node.descendants > 0 && !path.contains(&source),
+        "{name} {source}"
+      );
+    }
+    assert!(app.panel.as_ref().unwrap().view.auto_expand());
+    app.refill_panel(PanelKind::Outline)?;
+    assert_eq!(app.outline.current(), Some(current));
+    assert!(app.panel.as_ref().unwrap().view.auto_expand());
+    common::keys(&mut app, b"za")?;
+    assert!(!app.panel.as_ref().unwrap().view.auto_expand());
+    app.panel_input(Input::plain(Action::Fold(Fold::CollapseAll)))?;
+    app.close_panel()?;
+    app.open_panel(PanelKind::Outline)?;
+    assert!(app.outline.closed(branch));
+    assert!(matches!(app.outline_load, Loading::Loaded));
+    common::keys(&mut app, b"za")?;
+    app.command("reload")?;
+    common::outline_loaded(&mut app)?;
+    assert!(app.panel.as_ref().unwrap().view.auto_expand());
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn contents_search_and_tracking_lifecycle() -> Result<()> {
+  for name in ["paper.pdf", "book.pdf"] {
+    let mut app = solo(name, false, SCREEN)?;
+    common::outline_loaded(&mut app)?;
+    app.open_panel(PanelKind::Outline)?;
+    let source = app
+      .doc
+      .outline
+      .iter()
+      .enumerate()
+      .position(|(source, heading)| {
+        app.outline.tree().nodes()[source].parent.is_some()
+          && app
+            .doc
+            .outline
+            .iter()
+            .filter(|other| other.title == heading.title)
+            .count()
+            == 1
+      })
+      .unwrap();
+    let title = app.doc.outline[source].title.clone();
+    common::keys(&mut app, b"zM")?;
+    let cursor = app.reader.cursor;
+    let selected = app.panel.as_ref().unwrap().view.selected();
+    let top = app.panel.as_ref().unwrap().view.top();
+    app.begin_search(false)?;
+    app.incremental(&title)?;
+    app.draw(&mut Vec::new())?;
+    assert_eq!(app.panel.as_ref().unwrap().view.selected(), source);
+    assert_eq!(app.panel.as_ref().unwrap().view.count(), Some((1, 1)));
+    app.abort_search()?;
+    let panel = &app.panel.as_ref().unwrap().view;
+    assert_eq!((panel.selected(), panel.top()), (selected, top));
+    app.cancel_prompt()?;
+    app.begin_search(false)?;
+    app.incremental(&title)?;
+    app.finish_search(&title, false)?;
+    app.cancel_prompt()?;
+    assert_eq!(app.panel.as_ref().unwrap().view.selected(), source);
+    assert_eq!(app.reader.cursor, cursor);
+    common::keys(&mut app, b"zM")?;
+    common::keys(&mut app, b"n")?;
+    assert_eq!(app.panel.as_ref().unwrap().view.selected(), source);
+    assert!(!app.panel.as_ref().unwrap().view.auto_expand());
+    common::keys(&mut app, b"zM")?;
+    let selected = app.panel.as_ref().unwrap().view.selected();
+    let top = app.panel.as_ref().unwrap().view.top();
+    let target = app.doc.outline[source].target.clone();
+    app.follow(&target)?;
+    app.track_outline();
+    assert_eq!(app.panel.as_ref().unwrap().view.selected(), selected);
+    assert_eq!(app.panel.as_ref().unwrap().view.top(), top);
+    assert!(
+      app.outline.closed(app.outline.tree().nodes()[source].parent.unwrap())
+    );
+    app.panel.as_mut().unwrap().view.focus(false);
+    app.track_outline();
+    let current = app.outline.current().unwrap();
+    let mut ancestor = current;
+    while let Some(parent) = app.outline.tree().nodes()[ancestor].parent {
+      ancestor = parent;
+    }
+    assert_eq!(app.panel.as_ref().unwrap().view.selected(), ancestor);
+    app.open_panel(PanelKind::Outline)?;
+    common::keys(&mut app, b"za")?;
+    assert!(app.panel.as_ref().unwrap().view.auto_expand());
+    app.begin_search(false)?;
+    app.incremental(&title)?;
+    app.abort_search()?;
+    app.cancel_prompt()?;
+    assert!(app.panel.as_ref().unwrap().view.auto_expand());
+    app.begin_search(false)?;
+    assert!(app.finish_search("absent-outline-phrase", false).is_err());
+    app.cancel_prompt()?;
+    assert!(app.panel.as_ref().unwrap().view.auto_expand());
+    app.begin_search(false)?;
+    app.finish_search(&title, false)?;
+    app.cancel_prompt()?;
+    assert!(!app.panel.as_ref().unwrap().view.auto_expand());
+  }
+  Ok(())
+}
+
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn contents_panes_browse_independently() -> Result<()> {
+  let mut session = crate::harness::session(&corpus("paper.pdf")?, SCREEN)?;
+  common::outline_loaded(session.app())?;
+  session.app().open_panel(PanelKind::Outline)?;
+  common::keys(session.app(), b"zM")?;
+  let branch = session
+    .app()
+    .outline
+    .tree()
+    .nodes()
+    .iter()
+    .position(|node| node.descendants > 0)
+    .unwrap();
+  session.app().command("vsplit")?;
+  session.settle()?;
+  common::outline_loaded(session.app())?;
+  session.app().open_panel(PanelKind::Outline)?;
+  common::keys(session.app(), b"zRza")?;
+  let panes = &session.tabs[session.active].panes;
+  assert_eq!(panes.len(), 2);
+  assert!(panes[0].outline.closed(branch));
+  assert!(!panes[0].panel.as_ref().unwrap().view.auto_expand());
+  assert!(panes[1].panel.as_ref().unwrap().view.auto_expand());
+  Ok(())
+}

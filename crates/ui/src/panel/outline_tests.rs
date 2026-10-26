@@ -184,9 +184,9 @@ fn controls_and_stale_targets() {
 
 #[test]
 fn marker_selection_and_plain_text() {
-  let (_, mut panel) = setup();
+  let (outline, mut panel) = setup();
   panel.choose(3);
-  panel.mark_outline(Some(0));
+  panel.mark_outline(outline.tree(), Some(0));
   panel.point(Pointing::Row(1));
   let scene = draw(&mut panel, 28);
   let spans = crate::testing::spans(&scene);
@@ -203,7 +203,7 @@ fn marker_selection_and_plain_text() {
     Some("Chapter 3 世界 e\u{301} with a long title\n".into())
   );
   let top = panel.top();
-  panel.mark_outline(Some(1));
+  panel.mark_outline(outline.tree(), Some(1));
   assert_eq!((panel.selected(), panel.top()), (3, top));
   panel.begin_search(false);
   panel.preview("▾");

@@ -246,7 +246,11 @@ impl App {
     panel.view.resize(self.screen.rows);
     if kind == PanelKind::Outline {
       self.outline.sync(&self.doc.outline);
-      panel.view.choose(self.reading_view().current_section().unwrap_or(0));
+      {
+        let mut reading = self.reading_parts();
+        reading.outline.track(&mut reading.view, None);
+      }
+      panel.view.choose(self.outline.current().unwrap_or(0));
       self.outline.project(&mut panel.view);
       panel.view.reveal();
     }
@@ -256,8 +260,14 @@ impl App {
 
   /// Outline refills invalidate source identities.
   pub fn refill_panel(&mut self, kind: PanelKind) -> Result<()> {
-    if kind == PanelKind::Outline {
-      self.outline.replace(&self.doc.outline);
+    if kind == PanelKind::Outline && !self.outline.sync(&self.doc.outline) {
+      let note = self.panel_note(kind);
+      if let Some(panel) = &mut self.panel
+        && panel.view.kind() == kind
+      {
+        panel.view.set_note(note);
+      }
+      return Ok(());
     }
     if self.panel.as_ref().is_none_or(|panel| panel.view.kind() != kind) {
       return Ok(());
@@ -375,6 +385,14 @@ impl App {
       return Ok(true);
     }
     let Some(panel) = &mut self.panel else { return Ok(false) };
+    if panel.view.focused()
+      && panel.view.kind() == PanelKind::Outline
+      && let Action::Result(reverse) = input.action
+    {
+      self.outline.repeat_search(&mut panel.view, reverse, input.count);
+      self.overlays.close_menu();
+      return Ok(true);
+    }
     match panel.view.input(input, usize::from(self.screen.rows)) {
       vpdf_ui::panel::Event::Unhandled => return Ok(false),
       vpdf_ui::panel::Event::Forget(paths) => {

@@ -8,6 +8,7 @@ pub struct RowSearch {
   pub backward: bool,
   /// Selection and query when the prompt opened; `Some` while typing.
   origin: Option<(usize, String, bool)>,
+  top: usize,
 }
 
 /// Case-insensitive unless the query has uppercase (Vim's smartcase).
@@ -49,23 +50,26 @@ impl Panel {
   }
 
   pub fn begin_search(&mut self, backward: bool) {
+    self.search.top = self.top;
     self.search.origin =
       Some((self.selected, self.search.query.clone(), self.search.backward));
     self.search.backward = backward;
   }
 
   /// Selects the first match after the origin while typing.
-  pub fn preview(&mut self, query: &str) {
-    let Some((origin, _, _)) = self.search.origin else { return };
+  pub fn preview(&mut self, query: &str) -> bool {
+    let Some((origin, _, _)) = self.search.origin else { return false };
     self.selected = origin;
+    self.top = self.search.top;
     query.clone_into(&mut self.search.query);
-    if !query.is_empty() {
-      self.find(query, origin, self.search.backward, 1);
-    }
+    !query.is_empty() && self.find(query, origin, self.search.backward, 1)
   }
 
   /// Keeps the match; an empty query repeats the last one.
   pub fn finish_search(&mut self, query: &str) -> bool {
+    if self.search.origin.is_some() {
+      self.top = self.search.top;
+    }
     let (origin, previous, _) = self.search.origin.take().unwrap_or((
       self.selected,
       String::new(),
@@ -83,7 +87,7 @@ impl Panel {
       self.selected = origin;
       self.search.query = previous;
       self.search.backward = backward;
-      self.reveal();
+      self.top = self.search.top;
     }
   }
 
@@ -162,6 +166,22 @@ mod tests {
   fn panel(labels: &[&str]) -> Panel {
     let rows = labels.iter().map(|label| Row::parse(label)).collect();
     Panel::new(PanelKind::Version, rows)
+  }
+
+  #[test]
+  fn cancelled_search_restores_scroll() {
+    let mut panel = panel(&["a", "b", "c", "d", "e", "f", "g", "h"]);
+    panel.resize(5);
+    panel.select(4);
+    panel.top = 3;
+    panel.begin_search(false);
+    panel.preview("a");
+    assert_eq!(panel.top(), 0);
+    panel.preview("missing");
+    assert_eq!((panel.selected(), panel.top()), (4, 3));
+    panel.preview("h");
+    panel.abort_search();
+    assert_eq!((panel.selected(), panel.top()), (4, 3));
   }
 
   #[test]

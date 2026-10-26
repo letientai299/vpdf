@@ -723,6 +723,7 @@ fn counted_tree_keys() {
     ("2l", Action::Motion(Motion::Right), 2),
     ("4zR", Action::Fold(Fold::ExpandAll), 4),
     ("5zM", Action::Fold(Fold::CollapseAll), 5),
+    ("za", Action::OutlineAuto, 1),
     ("zr", Action::Rotate, 1),
     ("zc", Action::Crop, 1),
   ] {
