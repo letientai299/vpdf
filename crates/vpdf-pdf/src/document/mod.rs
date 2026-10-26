@@ -108,6 +108,12 @@ impl Handle {
     self.validate(page)?;
     extract(&self.native.load_page(page.0 as i32)?)
   }
+
+  /// Like [`Self::text`], with font facts per line.
+  pub fn styled_text(&self, page: PageId) -> Result<(Text, Vec<LineStyle>)> {
+    self.validate(page)?;
+    extract_styled(&self.native.load_page(page.0 as i32)?)
+  }
 }
 
 fn display(
@@ -343,7 +349,9 @@ pub fn rect(rect: mupdf::Rect) -> Bounds {
   Bounds { x0: rect.x0, y0: rect.y0, x1: rect.x1, y1: rect.y1 }
 }
 
-pub use extraction::{TEXT_FLAGS, extract, extract_list};
+pub use extraction::{
+  LineStyle, TEXT_FLAGS, extract, extract_list, extract_styled,
+};
 #[cfg(test)]
 use metadata::date;
 use metadata::{metadata, outline};

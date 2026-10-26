@@ -30,8 +30,8 @@ fn inferred_outline_matches_authored_one() -> Result<()> {
     let pages = (0..handle.pages)
       .map(|page| {
         handle
-          .text(PageId(page))
-          .map(|t| vpdf_pdf::jobs::outline::summarize(&t))
+          .styled_text(PageId(page))
+          .map(|(t, styles)| vpdf_pdf::jobs::outline::summarize(&t, &styles))
       })
       .collect::<Result<Vec<_>>>()?;
     let inferred = vpdf_pdf::jobs::outline::infer(&pages);
