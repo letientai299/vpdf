@@ -343,6 +343,7 @@ fn recent_menus_open_rows() -> Result<()> {
     marks: std::collections::BTreeMap::new(),
     crop: vpdf_ui::layout::Crop::default(),
     outline: None,
+    sidebar: None,
   };
   app.show_recent(&[entry])?;
   assert!(app.covered());

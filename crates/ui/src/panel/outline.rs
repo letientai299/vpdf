@@ -1,11 +1,12 @@
-use super::{Panel, Pointing, tree::Tree};
+use super::layout::{Meta, key_cells};
+use super::{Panel, tree::Tree};
 use crate::keys::{Action, Fold};
 use crate::split::Rect;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
 use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
-use vpdf_model::text::{clean, clipped};
+use vpdf_model::text::clipped;
 
 pub(super) const GUTTER: usize = 3;
 
@@ -24,69 +25,30 @@ struct Branch {
   closed: bool,
 }
 
-pub(super) struct OutlineView {
-  branches: Vec<Branch>,
-  current: Option<usize>,
-  auto: bool,
-  pub(super) targets: Vec<(Rect, Control)>,
-}
-
-struct RowLayout {
-  indent: usize,
-  title: String,
-  clipped: bool,
-  badge: String,
-  page: String,
-  padding: usize,
-}
-
-impl RowLayout {
-  fn new(branch: &Branch, row: &super::Row, width: u16) -> Self {
-    let inner = usize::from(width.saturating_sub(1));
-    let available = inner.saturating_sub(GUTTER);
-    let label = clean(&row.detail, available);
-    let page = if label.width() == row.detail.width()
-      && label.width() + 2 <= available
-      && !label.is_empty()
-    {
-      format!(" {label}")
-    } else {
-      String::new()
-    };
-    let badge = if width >= 28 && branch.closed && branch.descendants > 0 {
-      format!(" +{}", branch.descendants)
-    } else {
-      String::new()
-    };
-    let badge = if badge.width() + page.width() + 4 <= available {
-      badge
-    } else {
-      String::new()
-    };
-    let room = available.saturating_sub(page.width() + badge.width());
-    let indent =
-      branch.depth.min(12).saturating_mul(2).min(room.saturating_sub(4));
-    let (title, cut) = clipped(row.label.trim_start(), room - indent);
-    Self {
-      indent,
-      padding: room.saturating_sub(indent + title.width()),
-      title,
-      clipped: cut,
-      badge,
-      page,
-    }
+impl Branch {
+  /// Headings skip the key column; `+N` needs 28 cells.
+  fn meta(&self, row: &super::Row, width: u16, keys: usize) -> Meta {
+    let hidden = if width >= 28 && self.closed { self.descendants } else { 0 };
+    let keys = if self.descendants > 0 { 0 } else { keys };
+    let available = usize::from(width.saturating_sub(1)).saturating_sub(GUTTER);
+    Meta::new(row, available, keys, self.depth, hidden)
   }
 }
 
+pub(super) struct TreeView {
+  branches: Vec<Branch>,
+  auto: Option<bool>,
+  pub(super) targets: Vec<(Rect, Control)>,
+}
+
 impl Panel {
-  pub fn decorate_outline(
+  pub fn decorate_tree(
     &mut self,
     tree: &Tree,
     closed: impl Fn(usize) -> bool,
-    current: Option<usize>,
-    auto: bool,
+    auto: Option<bool>,
   ) {
-    self.outline = Some(OutlineView {
+    self.tree_view = Some(TreeView {
       branches: tree
         .nodes()
         .iter()
@@ -98,25 +60,32 @@ impl Panel {
           closed: closed(source),
         })
         .collect(),
-      current,
       auto,
       targets: Vec::new(),
     });
   }
 
-  pub fn mark_outline(&mut self, tree: &Tree, current: Option<usize>) {
-    if let Some(outline) = &mut self.outline {
-      outline.current = current
-        .and_then(|source| tree.visible_ancestor(source, &self.projection));
-    }
+  pub fn branch_closed(&self, source: usize) -> Option<bool> {
+    self
+      .tree_view
+      .as_ref()?
+      .branches
+      .get(source)
+      .filter(|branch| branch.descendants > 0)
+      .map(|branch| branch.closed)
+  }
+
+  pub(crate) fn row_control(&self, source: usize) -> Option<Control> {
+    (!self.rows.get(source)?.follows() && self.branch_closed(source).is_some())
+      .then_some(Control::Branch(source))
   }
 
   pub fn auto_expand(&self) -> bool {
-    self.outline.as_ref().is_some_and(|outline| outline.auto)
+    self.tree_view.as_ref().is_some_and(|outline| outline.auto == Some(true))
   }
 
   pub fn control_at(&self, column: u16, row: u16) -> Option<Control> {
-    self.outline.as_ref()?.targets.iter().find_map(|(rect, control)| {
+    self.tree_view.as_ref()?.targets.iter().find_map(|(rect, control)| {
       rect.contains(column, row).then_some(*control)
     })
   }
@@ -127,12 +96,15 @@ impl Panel {
         if !self.is_visible(source) {
           return None;
         }
-        let branch = self.outline.as_ref()?.branches.get(source)?;
+        let branch = self.tree_view.as_ref()?.branches.get(source)?;
         Action::Fold(if branch.closed { Fold::Open } else { Fold::Close })
       }
       Control::ExpandAll => Action::Fold(Fold::ExpandAll),
       Control::CollapseAll => Action::Fold(Fold::CollapseAll),
-      Control::AutoExpand => Action::OutlineAuto,
+      Control::AutoExpand => {
+        self.tree_view.as_ref()?.auto?;
+        Action::OutlineAuto
+      }
     })
   }
 
@@ -140,68 +112,25 @@ impl Panel {
     let action = self.control_action(control)?;
     let label = match control {
       Control::Branch(_) if matches!(action, Action::Fold(Fold::Open)) => {
-        "Expand branch"
+        if self.kind == crate::keys::PanelKind::Outline {
+          "Expand branch"
+        } else {
+          "Expand group"
+        }
       }
-      Control::Branch(_) => "Collapse branch",
-      Control::ExpandAll => "Expand all",
-      Control::CollapseAll => "Collapse all",
-      Control::AutoExpand if self.auto_expand() => "Auto-expand: on",
-      Control::AutoExpand => "Auto-expand: off",
+      Control::Branch(_) => {
+        if self.kind == crate::keys::PanelKind::Outline {
+          "Collapse branch"
+        } else {
+          "Collapse group"
+        }
+      }
+      _ => super::header::tip(control, self.auto_expand())?,
     };
     Some(label.into())
   }
 
-  fn outline_header<'a>(
-    &self,
-    scene: &mut impl Draw<'a>,
-    at: At,
-    width: u16,
-  ) -> Vec<(Rect, Control)> {
-    let inner = usize::from(width.saturating_sub(1));
-    let outline = self.outline.as_ref().expect("outline decoration");
-    let mut targets = Vec::new();
-    let auto = if outline.auto { "●" } else { "○" };
-    let controls = if width >= 22 { 9 + auto.width() } else { 0 };
-    let header_room = inner.saturating_sub(controls.max(2));
-    super::header::Header {
-      title: self.kind.title(),
-      count: self.rows.len(),
-      context: &format!(" {}", self.note),
-      role: Role::Bar,
-    }
-    .scene(scene, at, header_room);
-    if controls > 0 {
-      scene.text(" ");
-      for (offset, text, control) in [
-        (0, "▾▾", Control::ExpandAll),
-        (3, "▸▸", Control::CollapseAll),
-        (6, auto, Control::AutoExpand),
-      ] {
-        let hovered = self.pointing == Pointing::Control(control);
-        scene.push(Op::Style(if hovered { Role::BarHover } else { Role::Bar }));
-        scene.push(Op::Style(Role::Heading));
-        scene.text(text);
-        scene.push(Op::Style(Role::Bar));
-        scene.text(" ");
-        targets.push((
-          Rect {
-            column: (header_room + 1 + offset) as u16,
-            row: 0,
-            columns: text.width() as u16,
-            rows: 1,
-          },
-          control,
-        ));
-      }
-      scene.text(" ");
-    } else {
-      scene.push(Op::Spaces(inner - header_room));
-    }
-    scene.push(Op::Style(Role::Reset));
-    targets
-  }
-
-  pub(super) fn scene_outline<'a>(
+  pub(super) fn scene_tree<'a>(
     &mut self,
     scene: &mut impl Draw<'a>,
     at: At,
@@ -213,19 +142,22 @@ impl Panel {
     self.top = self
       .top
       .min(self.projection.sources().len().saturating_sub(count.max(1)));
-    let outline = self.outline.as_ref().expect("outline decoration");
-    let mut targets = self.outline_header(scene, at, width);
-    if self.rows.is_empty() && count > 0 {
-      let message = if self.note == "loading" {
-        "Preparing contents…"
-      } else {
-        "No headings. Use page jumps or search."
-      };
-      crate::paint::move_to(scene, at, 1u16, 0u16);
-      scene.push(Op::Style(Role::Muted));
-      scene.text(&clean(message, inner));
-      scene.push(Op::Style(Role::Reset));
+    let outline = self.tree_view.as_ref().expect("outline decoration");
+    let keys = key_cells(&self.rows, inner.saturating_sub(GUTTER));
+    let controls = super::header::fold_controls(outline.auto == Some(true));
+    let controls = &controls[..if outline.auto.is_some() { 3 } else { 2 }];
+    let mut targets = super::header::Header {
+      title: self.kind.title(),
+      count: self.rows.len(),
+      context: &format!(" {}", self.note),
+      role: Role::Bar,
+      controls,
     }
+    .scene(scene, at, width, self.pointing);
+    if count > 0 {
+      self.scene_empty(scene, at, inner);
+    }
+    let current = self.current_row();
     for (line, &source) in
       self.projection.sources().iter().skip(self.top).take(count).enumerate()
     {
@@ -234,19 +166,14 @@ impl Panel {
       }
       let branch = &outline.branches[source];
       let item = &self.rows[source];
-      let layout = RowLayout::new(branch, item, width);
+      let meta = branch.meta(item, width, keys);
+      let (title, cut) = clipped(item.label.trim_start(), meta.room);
       let hovered = self.pointing.row() == Some(source);
       let (base, title_style) = self.row_roles(source);
       crate::paint::move_to(scene, at, line + 1, 0u16);
       scene.push(Op::Style(base));
-      if outline.current == Some(source) {
-        scene.push(Op::Style(Role::Heading));
-        scene.text("▌");
-        scene.push(Op::Style(base));
-      } else {
-        scene.text(" ");
-      }
-      scene.push(Op::Spaces(layout.indent));
+      super::rows::gutter(scene, current == Some(source), base);
+      scene.push(Op::Spaces(meta.indent));
       scene.push(Op::Style(Role::Heading));
       scene.text(if branch.descendants == 0 {
         "  "
@@ -258,7 +185,7 @@ impl Panel {
       if branch.descendants > 0 {
         targets.push((
           Rect {
-            column: (1 + layout.indent) as u16,
+            column: (1 + meta.indent) as u16,
             row: line as u16 + 1,
             columns: 2,
             rows: 1,
@@ -266,30 +193,31 @@ impl Panel {
           Control::Branch(source),
         ));
       }
+      meta.lead(scene, base);
       super::rows::marked(
         scene,
-        &layout.title,
+        &title,
         &self.search.query,
         Some(title_style),
         branch.root.then_some(Role::Heading),
       );
-      if hovered && layout.clipped {
+      if hovered && cut {
         self.hover_title = Some(item.label.trim().to_owned());
       }
       scene.push(Op::Style(base));
-      scene.push(Op::Spaces(layout.padding));
+      scene.push(Op::Spaces(meta.room - title.width()));
       scene.push(Op::Style(Role::Muted));
-      scene.text(&layout.badge);
+      scene.text(&meta.badge);
       scene.push(Op::Style(base));
       super::rows::marked(
         scene,
-        &layout.page,
+        &meta.page,
         &self.search.query,
         Some(base),
         None,
       );
       scene.push(Op::Style(Role::Reset));
     }
-    self.outline.as_mut().expect("outline decoration").targets = targets;
+    self.tree_view.as_mut().expect("outline decoration").targets = targets;
   }
 }

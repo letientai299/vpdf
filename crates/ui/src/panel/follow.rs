@@ -108,7 +108,8 @@ impl Press {
   pub fn activate(self, panel: &mut Panel, clicks: u8) -> Activation {
     let Self { mouse, clicked, covered, control } = self;
     if mouse.kind == MouseEventKind::Down(MouseButton::Left)
-      && let Some(control) = control
+      && let Some(control) =
+        control.or_else(|| clicked.and_then(|source| panel.row_control(source)))
     {
       panel.clicked = None;
       if let super::Control::Branch(source) = control {

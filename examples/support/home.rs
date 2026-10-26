@@ -19,6 +19,7 @@ pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {
     marks: BTreeMap::default(),
     crop: Crop::default(),
     outline: None,
+    sidebar: None,
   };
   let rows = vpdf::panel::recent_rows(std::slice::from_ref(&saved));
   let row = rows.first().context("Missing recent row")?;

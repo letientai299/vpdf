@@ -1,13 +1,10 @@
-use super::{Outline, Panel, Tree};
+use super::{Outline, Panel};
 
 impl Outline {
   pub fn preview_search(&self, panel: &mut Panel, query: &str) {
     self.project(panel);
     if panel.preview(query) {
-      let mut closed = self.closed.clone();
-      Self::reveal_path(&self.tree, panel.selected(), &mut closed);
-      self.project_folds(panel, &closed);
-      panel.reveal();
+      self.folds.preview(panel, Some(self.auto));
     }
   }
 
@@ -37,18 +34,10 @@ impl Outline {
     if !found {
       return;
     }
-    Self::reveal_path(&self.tree, panel.selected(), &mut self.closed);
+    self.folds.reveal(panel.selected());
     self.auto = false;
     self.commit_preferences();
     self.project(panel);
     panel.reveal();
-  }
-
-  fn reveal_path(tree: &Tree, source: usize, closed: &mut [bool]) {
-    let mut parent = tree.nodes().get(source).and_then(|node| node.parent);
-    while let Some(source) = parent {
-      closed[source] = false;
-      parent = tree.nodes()[source].parent;
-    }
   }
 }

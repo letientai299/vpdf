@@ -31,7 +31,7 @@ impl Outline {
 
   pub fn restore_preferences(&mut self, saved: Option<Preferences>) {
     self.saved = saved;
-    self.closed.fill(false);
+    self.folds.expand_all();
     self.auto = false;
     let Some(saved) = &self.saved else { return };
     self.auto = saved.auto;
@@ -40,15 +40,11 @@ impl Outline {
     }
     if saved.fingerprint == self.fingerprint {
       for &source in &saved.closed {
-        if let Some(node) = self.tree.nodes().get(source)
-          && node.descendants > 0
-        {
-          self.closed[source] = true;
-        }
+        self.folds.close(source);
       }
     }
     if self.auto {
-      self.expand_current();
+      self.folds.focus(self.current);
     }
   }
 
@@ -63,12 +59,7 @@ impl Outline {
     let revision = Revision(*clock);
     let mut saved = Preferences {
       fingerprint: self.fingerprint,
-      closed: self
-        .closed
-        .iter()
-        .enumerate()
-        .filter_map(|(source, &closed)| closed.then_some(source))
-        .collect(),
+      closed: self.folds.closed_sources().collect(),
       auto: self.auto,
       revision,
     };

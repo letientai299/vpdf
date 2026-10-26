@@ -65,6 +65,7 @@ impl App {
       }
     };
     self.search.begin(query.clone(), generation, origin);
+    self.refresh_panel_note(PanelKind::Results);
     self.reader.notice("Searching…");
     Ok(())
   }
@@ -225,6 +226,7 @@ impl App {
       worker.cancel();
     }
     self.search.cancel();
+    self.refresh_panel_note(PanelKind::Results);
   }
 
   fn row_search(

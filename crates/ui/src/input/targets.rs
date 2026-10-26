@@ -77,7 +77,8 @@ impl Targets<'_> {
         if let Some(control) = panel.control_at(column, row) {
           Hit::PanelControl(control)
         } else if let Some(index) = panel.row_at(column, row) {
-          if panel.rows()[index].follows() {
+          if panel.rows()[index].follows() || panel.row_control(index).is_some()
+          {
             Hit::Row(index)
           } else {
             Hit::Label(index)
@@ -162,6 +163,62 @@ mod tests {
         targets.hit(Region::Panel, (1, row), || false, || None, || None);
       assert_eq!(actual, Some(hit));
       assert_eq!(hit.shape(), shape);
+    }
+  }
+
+  #[test]
+  fn group_heading_pointer() {
+    use crate::keys::PanelKind;
+    use crate::panel::{Destination, Pointing, Row};
+    use vpdf_model::geometry::At;
+    use vpdf_model::style::{Role, Shape};
+    let clues = Clues::default();
+    for follows in [false, true] {
+      for focused in [false, true] {
+        let destination = if follows {
+          Destination::Link(vpdf_model::document::Target::Page(PageId(0)))
+        } else {
+          Destination::None
+        };
+        let mut panel = Panel::new(
+          PanelKind::Annotations,
+          vec![
+            Row::new(
+              "Page 1 with a heading longer than the panel".into(),
+              String::new(),
+              destination,
+            ),
+            Row { depth: 1, ..Row::parse("Plain row") },
+          ],
+        );
+        panel.group();
+        panel.choose(1);
+        panel.focus(focused);
+        panel.scene_list(&mut Vec::new(), At::default(), 28, 8);
+        let mut routing = targets(&clues);
+        routing.panel = Some(&panel);
+        let hit = routing
+          .hit(Region::Panel, (5, 1), || false, || None, || None)
+          .unwrap();
+        assert_eq!(hit, Hit::Row(0));
+        assert_eq!(hit.shape(), Shape::Pointer);
+        assert_eq!(
+          routing.hit(Region::Panel, (5, 2), || false, || None, || None),
+          Some(Hit::Label(1))
+        );
+        panel.point(Pointing::Row(0));
+        let mut scene = Vec::new();
+        panel.scene_list(&mut scene, At::default(), 28, 8);
+        assert_eq!(
+          panel.hover_title(),
+          Some("Page 1 with a heading longer than the panel")
+        );
+        assert!(scene.contains(&vpdf_model::scene::Op::Style(if focused {
+          Role::Hover
+        } else {
+          Role::HoverDim
+        })));
+      }
     }
   }
 

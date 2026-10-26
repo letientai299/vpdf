@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use unicode_width::UnicodeWidthStr;
 use vpdf_model::scene::Op;
 use vpdf_model::style::Role;
 
@@ -26,6 +28,29 @@ pub fn spans(scene: &[Op<'_>]) -> Vec<(Role, String)> {
     }
   }
   spans
+}
+
+/// Painted text by row; asserts it stays within `width`.
+pub fn lines(scene: &[Op<'_>], width: u16) -> BTreeMap<usize, String> {
+  let mut lines = BTreeMap::<usize, String>::new();
+  let (mut column, mut row) = (0, 0);
+  for op in scene {
+    if let Op::Move { column: x, row: y } = op {
+      (column, row) = (*x, *y);
+      continue;
+    }
+    let text = text(std::slice::from_ref(op));
+    if text.is_empty() {
+      continue;
+    }
+    assert!(column + text.width() <= usize::from(width), "row {row}: {text:?}");
+    if column == 0 {
+      lines.insert(row, String::new());
+    }
+    lines.entry(row).or_default().push_str(&text);
+    column += text.width();
+  }
+  lines
 }
 
 pub fn empty() -> vpdf_model::scene::Recorder<

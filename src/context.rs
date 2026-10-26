@@ -61,6 +61,9 @@ impl App {
           .map(|_| self.outline.closed(source))
       });
       items.extend(vpdf_ui::context::outline_items(&panel.view, branch));
+    } else if panel.view.foldable() {
+      let branch = pressed.and_then(|source| panel.view.branch_closed(source));
+      items.extend(vpdf_ui::context::fold_items(&panel.view, branch, "group"));
     }
     // Cards draw over cells right of the rows.
     let columns = self.screen.columns;

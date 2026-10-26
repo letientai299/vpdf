@@ -76,11 +76,11 @@ live settings; invalid individual entries warn while valid ones apply. Initial
 zoom and cursorline affect newly opened documents. Saved and live pane values
 can differ from configured defaults; inspect both in `:help config`.
 
-A later launch restores eligible reading state, not a full workspace of tabs
-and panels. An explicit launch page overrides the saved position. Removing a
-Recent entry forgets its saved position and local marks, including in open
-panes. Explicitly reopen the file to save a new entry.
-See [Files and saved state][state].
+A later launch restores eligible reading state and each document's sidebar, not
+a full workspace of tabs and splits. An explicit launch page overrides the saved
+position. Removing a Recent entry forgets its saved position and local marks,
+including in open panes. Explicitly reopen the file to save a new entry. See
+[Files and saved state][state].
 
 [terminal]: install.md#terminal-setup
 [helpers]: install.md#optional-helpers

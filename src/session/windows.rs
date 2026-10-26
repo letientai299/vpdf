@@ -2,6 +2,7 @@ use super::{
   App, At, Axis, Direction, Node, Notice, PasswordRequired, Path, Place, Rect,
   Result, Screen, Session, Tab, TabMove, Tabline, Window, io, neighbor,
 };
+use vpdf_ui::keys::PanelKind;
 
 pub(super) fn full(screen: Screen) -> Rect {
   Rect { column: 0, row: 0, columns: screen.columns, rows: screen.rows }
@@ -129,7 +130,8 @@ impl Session {
       self.remember_open(tab, pane);
       return Ok(());
     }
-    let app = self.load(&path, "", screen)?;
+    let mut app = self.load(&path, "", screen)?;
+    self.reopen_sidebar(&mut app);
     self.leave()?;
     if tab || self.tabs.is_empty() {
       self.insert_tab(app)?;
@@ -180,6 +182,24 @@ impl Session {
     }
     app.opened = self.state.open_revision(path);
     Ok(app)
+  }
+
+  /// Reopens the document's saved sidebar, leaving the page focused;
+  /// splits of an open view skip this.
+  fn reopen_sidebar(&self, app: &mut App) {
+    let saved = self.state.entry(&app.path).and_then(|entry| entry.sidebar);
+    let Some(crate::state::Sidebar::Open(kind)) = saved else { return };
+    let opened = if kind == PanelKind::Marks {
+      app.show_marks(&self.state.marks)
+    } else {
+      app.open_panel(kind)
+    };
+    if let Err(error) = opened {
+      app.error = Some(format!("Sidebar unavailable: {error}"));
+    }
+    if let Some(panel) = &mut app.panel {
+      panel.view.focus(false);
+    }
   }
 
   /// Saves a closing pane's place, deletes its images, and stops
@@ -275,7 +295,11 @@ impl Session {
     let screen = self.app().screen;
     self.check_split(axis)?;
     let app = match path {
-      Some(path) => self.load(&path, "", screen)?,
+      Some(path) => {
+        let mut app = self.load(&path, "", screen)?;
+        self.reopen_sidebar(&mut app);
+        app
+      }
       None => self.copy_pane(screen)?,
     };
     self.insert_pane(app, axis, place)?;

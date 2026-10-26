@@ -6,7 +6,10 @@ use vpdf_reader::motion::Motion as M;
 use vpdf_reader::objects::Object as O;
 use vpdf_reader::reader::SelectionKind;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+  Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum PanelKind {
   Outline,
   Figures,
@@ -34,6 +37,11 @@ impl PanelKind {
       Self::Jumps => "JUMPS",
       Self::Annotations => "ANNOTATIONS",
     }
+  }
+
+  /// List rows keep a gutter for the current-row marker.
+  pub fn marks_current(self) -> bool {
+    matches!(self, Self::Results | Self::Figures | Self::Jumps)
   }
 }
 

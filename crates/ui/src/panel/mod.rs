@@ -43,10 +43,33 @@ pub enum Style {
   Path,
 }
 
+/// What a row points at; picks its glyph.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RowKind {
+  #[default]
+  Plain,
+  Figure,
+  Table,
+  /// A caption-like line in body text.
+  Mention,
+  Section,
+  Search,
+  Note,
+  Underline,
+  Highlight,
+}
+
 #[derive(Clone)]
 pub struct Row {
   pub label: String,
+  /// The page, right-aligned; Jumps keeps its position here.
   pub detail: String,
+  /// Accent text before the label, such as `Fig 1`.
+  pub key: String,
+  pub kind: RowKind,
+  /// 0 for a group heading, 1 for its rows; Contents keeps its
+  /// depths in its tree.
+  pub depth: usize,
   pub style: Style,
   pub destination: Destination,
 }
@@ -58,7 +81,9 @@ pub struct Panel {
   kind: PanelKind,
   rows: Vec<Row>,
   projection: tree::Projection,
-  outline: Option<outline::OutlineView>,
+  tree_view: Option<outline::TreeView>,
+  /// The panel's own groups; Contents keeps its folds in the reader.
+  folds: Option<folds::Folds>,
   selected: usize,
   focused: bool,
   /// First visible row; moves only to keep the selection shown.
@@ -66,6 +91,10 @@ pub struct Panel {
   search: RowSearch,
   /// Shown after the row count, such as "inferred".
   note: &'static str,
+  /// What the rows answer, such as the search query.
+  topic: String,
+  /// The row at the reading position.
+  current: Option<usize>,
   /// Columns the last frame drew; presses beyond them miss the rows.
   columns: u16,
   height: u16,
@@ -135,6 +164,10 @@ mod projection_tests;
 mod wrap_tests;
 
 mod content;
+mod empty;
+pub(crate) mod folds;
+#[cfg(test)]
+mod folds_tests;
 mod header;
 mod outline;
 pub use outline::Control;
@@ -149,6 +182,8 @@ mod selection;
 mod selection_tests;
 pub use input::Event;
 pub(crate) mod layout;
+#[cfg(test)]
+mod layout_tests;
 mod rows;
 mod search;
 #[cfg(test)]

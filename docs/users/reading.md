@@ -45,10 +45,11 @@ Removing the final file returns Recent to the opening and help hints.
 ## Saved state and reload
 
 Reading positions, view choices, marks, outline choices, and prompt history
-persist across launches. The performance toggle is saved too. These are
-separate from the configuration file. A saved position does not restore tabs,
-splits, panels, or running jobs. An explicit launch page overrides the saved
-position.
+persist across launches. The performance toggle is saved too. These are separate
+from the configuration file. Each document reopens with the sidebar it was left
+with, or closed; Results, Jumps, Recent, and Version reopen closed. A saved
+position does not restore tabs, splits, or running jobs. An explicit launch page
+overrides the saved position.
 
 State lives at `$XDG_STATE_HOME/vpdf/state.json`, falling back to
 `~/.local/state/vpdf/state.json`. Missing or unreadable state starts empty.

@@ -14,6 +14,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use vpdf_model::geometry::Crop;
 use vpdf_model::text::Position;
+use vpdf_ui::keys::PanelKind;
 use vpdf_ui::prompt::History;
 
 const RECENT: usize = 100;
@@ -43,6 +44,45 @@ pub struct Entry {
   pub crop: Crop,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub outline: Option<vpdf_ui::reading::Preferences>,
+  /// Unknown panels from newer versions read as unsaved.
+  #[serde(
+    default,
+    deserialize_with = "lenient",
+    skip_serializing_if = "Option::is_none"
+  )]
+  pub sidebar: Option<Sidebar>,
+}
+
+/// The sidebar a document was left with.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Sidebar {
+  Closed,
+  Open(PanelKind),
+}
+
+impl Sidebar {
+  /// Panels built from saved or document data reopen; session-only
+  /// ones (Results, Jumps, Recent) and Version save as closed.
+  pub fn of(kind: Option<PanelKind>) -> Self {
+    match kind {
+      Some(
+        kind @ (PanelKind::Outline
+        | PanelKind::Figures
+        | PanelKind::Annotations
+        | PanelKind::Marks
+        | PanelKind::Info),
+      ) => Self::Open(kind),
+      _ => Self::Closed,
+    }
+  }
+}
+
+fn lenient<'de, D: serde::Deserializer<'de>>(
+  deserializer: D,
+) -> std::result::Result<Option<Sidebar>, D::Error> {
+  let value = serde_json::Value::deserialize(deserializer)?;
+  Ok(serde_json::from_value(value).ok())
 }
 
 impl Entry {
@@ -139,7 +179,7 @@ impl State {
       entry.merge_outline(old);
     }
     let moved = previous.as_ref().is_none_or(|old| {
-      if old.outline != entry.outline {
+      if old.outline != entry.outline || old.sidebar != entry.sidebar {
         return true;
       }
       (old.cursor, old.zoom, old.rotation, &old.marks, old.crop)
@@ -252,6 +292,9 @@ impl App {
       marks: self.marks.clone(),
       crop: self.layout.crop(),
       outline: self.outline.preferences().cloned(),
+      sidebar: Some(Sidebar::of(
+        self.panel.as_ref().map(|panel| panel.view.kind()),
+      )),
     }
   }
 
@@ -322,6 +365,7 @@ pub(crate) mod tests {
       marks: BTreeMap::new(),
       crop: Crop::default(),
       outline: None,
+      sidebar: None,
     }
   }
 

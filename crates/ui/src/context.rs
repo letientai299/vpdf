@@ -125,7 +125,7 @@ fn bound(label: &'static str, action: Action, command: Command) -> Item {
 
 fn panel_bound(
   panel: &Panel,
-  label: &'static str,
+  label: impl Into<std::borrow::Cow<'static, str>>,
   action: Action,
   command: Command,
 ) -> Item {
@@ -491,7 +491,9 @@ pub fn panel_items(
     if !matches!(destination, Destination::None) && address.is_none() {
       items.push(item("Open in split", "", Command::RowSplit));
     }
-    if panel.shortcut(Action::Peek).is_some() {
+    if matches!(destination, Destination::Annotation { .. })
+      && panel.shortcut(Action::Peek).is_some()
+    {
       items.push(panel_bound(
         panel,
         "Show note",
@@ -520,17 +522,25 @@ pub fn panel_items(
   items
 }
 pub fn outline_items(panel: &Panel, branch: Option<bool>) -> Vec<Item> {
+  fold_items(panel, branch, "branch")
+}
+
+pub fn fold_items(
+  panel: &Panel,
+  branch: Option<bool>,
+  noun: &str,
+) -> Vec<Item> {
   let mut actions = Vec::new();
   if let Some(closed) = branch {
     actions.push(if closed {
-      ("Expand branch", Fold::Open)
+      (format!("Expand {noun}"), Fold::Open)
     } else {
-      ("Collapse branch", Fold::Close)
+      (format!("Collapse {noun}"), Fold::Close)
     });
   }
   actions.extend([
-    ("Expand all", Fold::ExpandAll),
-    ("Collapse all", Fold::CollapseAll),
+    ("Expand all".into(), Fold::ExpandAll),
+    ("Collapse all".into(), Fold::CollapseAll),
   ]);
   let mut items: Vec<_> = actions
     .into_iter()
@@ -541,12 +551,14 @@ pub fn outline_items(panel: &Panel, branch: Option<bool>) -> Vec<Item> {
       item
     })
     .collect();
-  items.push(panel_bound(
-    panel,
-    if panel.auto_expand() { "✓ Auto-expand" } else { "Auto-expand" },
-    Action::OutlineAuto,
-    Command::Key(Action::OutlineAuto),
-  ));
+  if panel.kind() == PanelKind::Outline {
+    items.push(panel_bound(
+      panel,
+      if panel.auto_expand() { "✓ Auto-expand" } else { "Auto-expand" },
+      Action::OutlineAuto,
+      Command::Key(Action::OutlineAuto),
+    ));
+  }
   items
 }
 

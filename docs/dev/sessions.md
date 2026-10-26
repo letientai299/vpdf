@@ -28,9 +28,9 @@ worker resource.
 ## Persistence
 
 [State][state] stores recent-document positions, view choices, marks, and prompt
-history. Per-document entries include cursor position, zoom, rotation, and crop.
-Document-local and cross-document marks persist too. This state does not restore
-a complete arrangement of tabs, splits, panels, and running jobs.
+history. Per-document entries include cursor position, zoom, rotation, crop,
+and the open sidebar. Document-local and cross-document marks persist too. This
+state does not restore a complete arrangement of tabs, splits, and running jobs.
 
 See [saved state and reload][saved-state] for the state-file location and
 user-visible persistence and reload constraints.

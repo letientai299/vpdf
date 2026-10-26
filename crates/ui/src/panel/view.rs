@@ -1,8 +1,8 @@
+use super::layout::{Meta, key_cells};
 use super::{
   Action, Destination, Input, Layout, MIN_WIDTH, Motion, MouseButton,
   MouseEvent, MouseEventKind, Panel, PanelKind, Pointing, Row, RowSearch,
-  Screen, UnicodeWidthStr, WHEEL_ROWS, Wheel, key_width, moved_row,
-  screen_step,
+  Screen, WHEEL_ROWS, Wheel, key_width, moved_row, screen_step,
 };
 use vpdf_model::scene::{Draw, Op, Surface};
 use vpdf_model::style::Role;
@@ -77,7 +77,8 @@ impl Panel {
   pub fn new(kind: PanelKind, rows: Vec<Row>) -> Self {
     Self {
       kind,
-      outline: None,
+      tree_view: None,
+      folds: None,
       projection: super::tree::Projection::all(rows.len()),
       rows,
       selected: 0,
@@ -85,6 +86,8 @@ impl Panel {
       top: 0,
       search: RowSearch::default(),
       note: "",
+      topic: String::new(),
+      current: None,
       columns: u16::MAX,
       height: 0,
       layout: None,
@@ -159,6 +162,25 @@ impl Panel {
   pub fn set_note(&mut self, note: &'static str) {
     self.note = note;
   }
+  pub fn set_topic(&mut self, topic: &str) {
+    topic.clone_into(&mut self.topic);
+  }
+
+  /// Marks the row at the reading position; never the selection.
+  pub fn mark_current(&mut self, source: Option<usize>) {
+    self.current = source;
+  }
+
+  /// The visible row holding the current one: itself, else the folded
+  /// heading over it. Projections come only from `Tree::project`, which
+  /// hides whole preorder subtrees, so the last shown row at or before
+  /// the current one is its shown ancestor.
+  pub(super) fn current_row(&self) -> Option<usize> {
+    let current = self.current.filter(|&source| source < self.rows.len())?;
+    let sources = self.projection.sources();
+    let shown = sources.partition_point(|&source| source <= current);
+    sources.get(shown.checked_sub(1)?).copied()
+  }
   pub fn resize(&mut self, height: u16) {
     self.height = height;
   }
@@ -185,7 +207,7 @@ impl Panel {
       self.pointing = Pointing::Away;
     }
     self.hover_title = None;
-    if let Some(outline) = &mut self.outline {
+    if let Some(outline) = &mut self.tree_view {
       outline.targets.clear();
     }
     self.layout = None;
@@ -195,11 +217,12 @@ impl Panel {
   fn replace_outline(&mut self, rows: Vec<Row>, note: &'static str) {
     let projection = super::tree::Projection::all(rows.len());
     self.rows = rows;
-    self.outline = None;
+    self.tree_view = None;
     self.selected = 0;
     self.top = 0;
     self.search = RowSearch::default();
     self.clicked = None;
+    self.current = None;
     self.pointing = Pointing::Away;
     self.follow_pending = false;
     self.note = note;
@@ -238,10 +261,14 @@ impl Panel {
     }
     self.search.follow(|origin| find(origin).unwrap_or(origin).min(last));
     self.clicked = self.clicked.and_then(find);
+    self.current = self.current.and_then(find);
     if let Pointing::Row(index) = self.pointing {
       self.pointing = find(index).map_or(Pointing::Away, Pointing::Row);
     }
     self.layout = None;
+    // Groups describe the old rows.
+    self.folds = None;
+    self.tree_view = None;
     self.projection = super::tree::Projection::all(rows.len());
     self.rows = rows;
     self.note = note;
@@ -351,12 +378,12 @@ impl Panel {
     if row == 0 || column + 1 >= self.columns {
       return None;
     }
-    if self.outline.is_some()
+    if self.tree_view.is_some()
       && usize::from(self.columns) <= super::outline::GUTTER
     {
       return None;
     }
-    if (self.layout.is_some() || self.outline.is_some())
+    if (self.layout.is_some() || self.tree_view.is_some())
       && row >= self.height.saturating_sub(1)
     {
       return None;
@@ -519,13 +546,37 @@ impl Panel {
       (false, false) => Role::Dim,
     };
     let hovered = self.pointing.row() == Some(source);
-    let follows = self.rows[source].follows();
-    let base = match (hovered && !selected && follows, self.focused) {
+    let actionable =
+      self.rows[source].follows() || self.row_control(source).is_some();
+    let base = match (hovered && !selected && actionable, self.focused) {
       (true, true) => Role::Hover,
       (true, false) => Role::HoverDim,
       (false, _) => plain,
     };
     (plain, base)
+  }
+
+  fn scene_heading<'a>(
+    &self,
+    scene: &mut impl Draw<'a>,
+    at: vpdf_model::geometry::At,
+    width: u16,
+  ) {
+    let selection = if self.is_recent_view() {
+      self.selection_count()
+    } else {
+      String::new()
+    };
+    let context = format!(" {}{selection}", self.note);
+    super::header::Header {
+      title: self.kind.title(),
+      count: self.rows.len(),
+      context: &context,
+      role: Role::Muted,
+      controls: &[],
+    }
+    .scene(scene, at, width, self.pointing);
+    scene.push(Op::Style(Role::Reset));
   }
 
   pub fn scene_list<'a>(
@@ -538,7 +589,7 @@ impl Panel {
     self.columns = width;
     self.height = height;
     self.hover_title = None;
-    if let Some(outline) = &mut self.outline {
+    if let Some(outline) = &mut self.tree_view {
       outline.targets.clear();
     }
     if width < 2 || height == 0 {
@@ -551,45 +602,48 @@ impl Panel {
       scene.text("│");
       scene.push(Op::Style(Role::Reset));
     }
-    if self.outline.is_some() {
-      self.scene_outline(scene, at, width, height);
+    if self.tree_view.is_some() {
+      self.scene_tree(scene, at, width, height);
       return;
     }
-    let header_room = inner.saturating_sub(2);
-    let selection = if self.is_recent_view() {
-      self.selection_count()
-    } else {
-      String::new()
-    };
-    let context = format!(" {}{selection}", self.note);
-    super::header::Header {
-      title: self.kind.title(),
-      count: self.rows.len(),
-      context: &context,
-      role: Role::Muted,
+    self.scene_heading(scene, at, width);
+    let count = height.saturating_sub(2) as usize;
+    if count > 0 {
+      self.scene_empty(scene, at, inner);
     }
-    .scene(scene, at, header_room);
-    scene.push(Op::Spaces(inner - header_room));
-    scene.push(Op::Style(Role::Reset));
+    let marker = usize::from(self.kind.marks_current()).min(inner);
+    let current = self.current_row();
+    let inner = inner - marker;
     self.reflow(inner);
     let keys = key_width(&self.rows, inner);
-    let count = height.saturating_sub(2) as usize;
+    let key_column = key_cells(&self.rows, inner);
     self.top = self.top.min(self.line_count().saturating_sub(count.max(1)));
     let start = self.top;
     for (row, index) in (start..self.line_count()).take(count).enumerate() {
-      let (source, item, keys, cut) = self.layout.as_ref().map_or_else(
-        || (index, &self.rows[index], keys, None),
+      let (source, item, keys, cut, first) = self.layout.as_ref().map_or_else(
+        || (index, &self.rows[index], keys, None, true),
         |help| {
           let line = &help.lines[index];
           // The row's label line, even scrolled off.
-          let label = &help.lines[help.starts[line.source]];
-          (line.source, &line.row, line.keys, Some(label.clipped))
+          let start = help.starts[line.source];
+          let label = &help.lines[start];
+          (
+            line.source,
+            &line.row,
+            line.keys,
+            Some(label.clipped),
+            index == start,
+          )
         },
       );
       let hovered = self.pointing.row() == Some(source);
       let (plain, base) = self.row_roles(source);
       crate::paint::move_to(scene, at, row + 1, 0u16);
       scene.push(Op::Style(base));
+      if marker > 0 {
+        let shown = first || row == 0;
+        super::rows::gutter(scene, shown && current == Some(source), base);
+      }
       let checkbox = if self.is_recent_view()
         && matches!(item.destination, Destination::File(_))
       {
@@ -601,14 +655,13 @@ impl Panel {
       };
       let gutter = checkbox.len().min(inner);
       scene.text(&checkbox[..gutter]);
-      let available = inner.saturating_sub(gutter);
-      let detail = vpdf_model::text::clean(&item.detail, available / 3);
-      let room = if detail.is_empty() {
-        available
-      } else {
-        available.saturating_sub(detail.width() + 1)
-      };
-      let used = item.scene(scene, Some(base), room, keys, &self.search.query);
+      // Only a row's first line reserves the key column.
+      let key_column = if first { key_column } else { 0 };
+      let meta =
+        Meta::new(item, inner.saturating_sub(gutter), key_column, 0, 0);
+      meta.lead(scene, plain);
+      let used =
+        item.scene(scene, Some(base), meta.room, keys, &self.search.query);
       if hovered {
         let clipped = match cut {
           Some(clipped) => clipped,
@@ -619,14 +672,16 @@ impl Panel {
           self.hover_title = Some(self.rows[source].label.trim().to_owned());
         }
       }
+      let detail = meta.page.trim_start();
+      let gap = usize::from(!detail.is_empty());
       scene.extend([
         Op::Style(plain),
-        Op::Spaces(available.saturating_sub(used + detail.width())),
+        Op::Spaces((meta.room + gap).saturating_sub(used)),
       ]);
       if plain == Role::Reset {
         scene.push(Op::Style(Role::Muted));
       }
-      scene.text(&detail);
+      scene.text(detail);
       scene.push(Op::Style(Role::Reset));
     }
   }

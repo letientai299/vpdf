@@ -1,4 +1,6 @@
-use super::{Destination, Row, Style, UnicodeWidthChar, UnicodeWidthStr};
+use super::{
+  Destination, Row, RowKind, Style, UnicodeWidthChar, UnicodeWidthStr,
+};
 use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
 
@@ -8,7 +10,15 @@ impl Row {
   }
 
   pub fn new(label: String, detail: String, destination: Destination) -> Self {
-    Self { label, detail, style: Style::Plain, destination }
+    Self {
+      label,
+      detail,
+      key: String::new(),
+      kind: RowKind::Plain,
+      depth: 0,
+      style: Style::Plain,
+      destination,
+    }
   }
 
   /// Reads `# heading` and `keys: description` lines.
@@ -21,7 +31,7 @@ impl Row {
       Style::Plain
     };
     let label = line.strip_prefix("# ").unwrap_or(line).to_owned();
-    Self { label, detail: String::new(), style, destination: Destination::None }
+    Self { style, ..Self::new(label, String::new(), Destination::None) }
   }
 }
 
@@ -48,10 +58,7 @@ impl Row {
     keys: usize,
     query: &str,
   ) -> usize {
-    let plain = matches!(
-      base,
-      Some(Role::Reset | Role::Dim | Role::Hover | Role::HoverDim)
-    );
+    let plain = accented(base);
     match (self.style, self.label.split_once(": ")) {
       (Style::Key | Style::ModeKey | Style::CommandKey, Some((key, text))) => {
         let key = vpdf_model::text::clean(key, room);
@@ -103,6 +110,27 @@ impl Row {
   }
 }
 
+/// Unselected rows show accent colors.
+pub(super) fn accented(base: Option<Role>) -> bool {
+  matches!(base, Some(Role::Reset | Role::Dim | Role::Hover | Role::HoverDim))
+}
+
+impl RowKind {
+  pub fn glyph(self) -> Option<(char, Role)> {
+    Some(match self {
+      Self::Plain => return None,
+      Self::Figure => ('▣', Role::Heading),
+      Self::Section => ('§', Role::Heading),
+      Self::Table => ('▤', Role::Mode),
+      Self::Mention => ('¶', Role::Muted),
+      Self::Search => ('⌕', Role::Key),
+      Self::Note => ('✎', Role::Key),
+      Self::Underline => ('‗', Role::Argument),
+      Self::Highlight => ('▇', Role::Key),
+    })
+  }
+}
+
 /// `text` within `columns`, cut from the left behind an ellipsis.
 fn tail(text: &str, columns: usize) -> String {
   let text: String = crate::text::printable(text).collect();
@@ -122,7 +150,18 @@ fn tail(text: &str, columns: usize) -> String {
   std::iter::once('…').chain(kept.into_iter().rev()).collect()
 }
 
-fn styles<'a>(
+/// The gutter cell: `▌` on the current row.
+pub(super) fn gutter<'a>(scene: &mut impl Draw<'a>, current: bool, base: Role) {
+  if current {
+    scene.push(Op::Style(Role::Heading));
+    scene.text("▌");
+    scene.push(Op::Style(base));
+  } else {
+    scene.text(" ");
+  }
+}
+
+pub(super) fn styles<'a>(
   scene: &mut impl Draw<'a>,
   base: Option<Role>,
   accent: Option<Role>,

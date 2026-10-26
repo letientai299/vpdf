@@ -59,14 +59,22 @@ impl Panel {
   /// Selects the first match after the origin while typing.
   pub fn preview(&mut self, query: &str) -> bool {
     let Some((origin, _, _)) = self.search.origin else { return false };
+    self.project_groups();
     self.selected = origin;
     self.top = self.search.top;
     query.clone_into(&mut self.search.query);
-    !query.is_empty() && self.find(query, origin, self.search.backward, 1)
+    let found =
+      !query.is_empty() && self.find(query, origin, self.search.backward, 1);
+    if found && let Some(folds) = self.folds.take() {
+      folds.preview(self, None);
+      self.folds = Some(folds);
+    }
+    found
   }
 
   /// Keeps the match; an empty query repeats the last one.
   pub fn finish_search(&mut self, query: &str) -> bool {
+    self.project_groups();
     if self.search.origin.is_some() {
       self.top = self.search.top;
     }
@@ -79,10 +87,14 @@ impl Panel {
       if query.is_empty() { previous } else { query.to_owned() };
     let query = self.search.query.clone();
     self.selected = origin;
-    !query.is_empty() && self.find(&query, origin, self.search.backward, 1)
+    let found =
+      !query.is_empty() && self.find(&query, origin, self.search.backward, 1);
+    self.reveal_match(found);
+    found
   }
 
   pub fn abort_search(&mut self) {
+    self.project_groups();
     if let Some((origin, previous, backward)) = self.search.origin.take() {
       self.selected = origin;
       self.search.query = previous;
@@ -95,7 +107,26 @@ impl Panel {
   pub fn repeat(&mut self, reverse: bool, count: usize) -> bool {
     let query = self.search.query.clone();
     let backward = self.search.backward != reverse;
-    !query.is_empty() && self.find(&query, self.selected, backward, count)
+    let found =
+      !query.is_empty() && self.find(&query, self.selected, backward, count);
+    self.reveal_match(found);
+    found
+  }
+
+  fn project_groups(&mut self) {
+    if let Some(folds) = self.folds.take() {
+      folds.project(self, None);
+      self.folds = Some(folds);
+    }
+  }
+
+  fn reveal_match(&mut self, found: bool) {
+    if found && let Some(mut folds) = self.folds.take() {
+      folds.reveal(self.selected);
+      folds.project(self, None);
+      self.reveal();
+      self.folds = Some(folds);
+    }
   }
 
   fn find(
@@ -143,7 +174,11 @@ impl Panel {
   pub fn heading(&mut self, forward: bool, count: usize) {
     let headings = |i: &usize| {
       self.projection.position(*i).is_some()
-        && self.rows[*i].style == Style::Heading
+        && (self.rows[*i].style == Style::Heading
+          || self
+            .folds
+            .as_ref()
+            .is_some_and(|folds| folds.tree().nodes()[*i].descendants > 0))
     };
     for _ in 0..count {
       let next = if forward {

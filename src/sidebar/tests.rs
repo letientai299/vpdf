@@ -181,6 +181,47 @@ fn cached_rows_skip_native() -> Result<()> {
   Ok(())
 }
 
+/// Cached rows derive the fields their records omit.
+#[test]
+fn cached_rows_round_trip() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let source = root.path().join("source.pdf");
+  crate::fixtures::pdf(&source, &["first page", "second page"], NOTE)?;
+  let cache = root.path().join("cache");
+  let scan = || {
+    worker::scan(
+      &source,
+      "",
+      vec![Bounds::default(); 2],
+      Vec::new(),
+      &AtomicBool::new(false),
+      Some(cache.clone()),
+    )
+  };
+  let scanned = scan()?;
+  let record = Record::open(
+    cache.clone(),
+    &source,
+    "",
+    Kind::Annotations,
+    &code(),
+    || true,
+  );
+  assert!(record.and_then(|record| record.read()).is_some());
+  let cached = scan()?;
+  assert_eq!(scanned.len(), 2);
+  assert_eq!(cached.len(), scanned.len());
+  for (cached, scanned) in cached.iter().zip(&scanned) {
+    let fields = |row: &Row| {
+      (row.label.clone(), row.detail.clone(), row.key.clone(), row.kind)
+    };
+    assert_eq!(fields(cached), fields(scanned));
+    assert_eq!((cached.depth, cached.style), (scanned.depth, scanned.style));
+    assert!(cached.destination == scanned.destination);
+  }
+  Ok(())
+}
+
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn real_sidebar_cache_parity() -> Result<()> {

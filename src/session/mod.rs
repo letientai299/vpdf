@@ -373,6 +373,8 @@ mod printing;
 mod recent_tests;
 mod run;
 #[cfg(test)]
+mod sidebar_tests;
+#[cfg(test)]
 mod tests;
 mod unlock;
 mod windows;

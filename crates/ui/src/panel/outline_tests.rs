@@ -1,7 +1,7 @@
 use super::*;
 use crate::keys::Fold;
 use crate::reading::Outline;
-use std::collections::BTreeMap;
+use crate::testing::lines;
 use vpdf_model::document::Heading;
 use vpdf_model::geometry::At;
 use vpdf_model::scene::Op;
@@ -31,28 +31,6 @@ fn draw(panel: &mut Panel, width: u16) -> Vec<Op<'static>> {
   let mut scene = Vec::new();
   panel.scene_list(&mut scene, At::default(), width, 8);
   scene
-}
-
-fn lines(scene: &[Op<'_>], width: u16) -> BTreeMap<usize, String> {
-  let mut lines = BTreeMap::<usize, String>::new();
-  let (mut column, mut row) = (0, 0);
-  for op in scene {
-    if let Op::Move { column: x, row: y } = op {
-      (column, row) = (*x, *y);
-      continue;
-    }
-    let text = crate::testing::text(std::slice::from_ref(op));
-    if text.is_empty() {
-      continue;
-    }
-    assert!(column + text.width() <= usize::from(width), "row {row}: {text:?}");
-    if column == 0 {
-      lines.insert(row, String::new());
-    }
-    lines.entry(row).or_default().push_str(&text);
-    column += text.width();
-  }
-  lines
 }
 
 fn activate(
@@ -184,9 +162,9 @@ fn controls_and_stale_targets() {
 
 #[test]
 fn marker_selection_and_plain_text() {
-  let (outline, mut panel) = setup();
+  let (_, mut panel) = setup();
   panel.choose(3);
-  panel.mark_outline(outline.tree(), Some(0));
+  panel.mark_current(Some(0));
   panel.point(Pointing::Row(1));
   let scene = draw(&mut panel, 28);
   let spans = crate::testing::spans(&scene);
@@ -203,7 +181,7 @@ fn marker_selection_and_plain_text() {
     Some("Chapter 3 世界 e\u{301} with a long title\n".into())
   );
   let top = panel.top();
-  panel.mark_outline(outline.tree(), Some(1));
+  panel.mark_current(Some(1));
   assert_eq!((panel.selected(), panel.top()), (3, top));
   panel.begin_search(false);
   panel.preview("▾");

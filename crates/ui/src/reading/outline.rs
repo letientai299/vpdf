@@ -1,6 +1,7 @@
 use super::View;
 use crate::keys::{Fold, PanelKind};
 use crate::panel::Panel;
+use crate::panel::folds::Folds;
 use crate::panel::tree::Tree;
 use crate::source::{self, Pages};
 use crate::text::{PageId, Position};
@@ -10,9 +11,8 @@ use vpdf_reader::reader::TextSource;
 #[derive(Default)]
 pub struct Outline {
   current: Option<usize>,
-  tree: Tree,
+  folds: Folds,
   headings: Vec<Heading>,
-  closed: Vec<bool>,
   auto: bool,
   saved: Option<Preferences>,
   fingerprint: [u8; 32],
@@ -28,9 +28,8 @@ impl Outline {
   pub fn new(headings: &[Heading]) -> Self {
     Self {
       current: None,
-      tree: Tree::new(headings),
+      folds: Folds::new(Tree::new(headings)),
       headings: headings.to_vec(),
-      closed: vec![false; headings.len()],
       auto: false,
       saved: None,
       fingerprint: preferences::fingerprint(headings),
@@ -38,49 +37,16 @@ impl Outline {
   }
 
   pub fn tree(&self) -> &Tree {
-    &self.tree
+    self.folds.tree()
   }
 
   pub fn closed(&self, source: usize) -> bool {
-    self.closed.get(source).copied().unwrap_or(false)
-  }
-
-  fn visible_source(&self, source: usize) -> Option<usize> {
-    let mut node = self.tree.nodes().get(source)?;
-    let mut visible = source;
-    while let Some(parent) = node.parent {
-      if self.closed(parent) {
-        visible = parent;
-      }
-      node = &self.tree.nodes()[parent];
-    }
-    Some(visible)
+    self.folds.closed(source)
   }
 
   pub fn project(&self, panel: &mut Panel) {
-    self.project_folds(panel, &self.closed);
-  }
-
-  fn project_folds(&self, panel: &mut Panel, closed: &[bool]) {
-    let previous = panel.selected();
-    let projection = self.tree.project(|source| closed[source]);
-    let selected = self.tree.visible_ancestor(panel.selected(), &projection);
-    if let Some(selected) = selected {
-      panel.choose(selected);
-    }
-    let current = self
-      .current
-      .and_then(|source| self.tree.visible_ancestor(source, &projection));
-    panel.project(projection);
-    panel.decorate_outline(
-      &self.tree,
-      |source| closed[source],
-      current,
-      self.auto,
-    );
-    if panel.selected() != previous {
-      panel.reveal();
-    }
+    panel.mark_current(self.current);
+    self.folds.project(panel, Some(self.auto));
   }
 
   pub fn fold(&mut self, panel: &mut Panel, operation: Fold, count: usize) {
@@ -90,64 +56,18 @@ impl Outline {
       return;
     }
     self.auto = false;
-    match operation {
-      Fold::ExpandAll => self.closed.fill(false),
-      Fold::CollapseAll => {
-        for (closed, node) in self.closed.iter_mut().zip(self.tree.nodes()) {
-          *closed = node.descendants > 0;
-        }
-      }
-      Fold::Close | Fold::Open => {
-        for _ in 0..count {
-          let Some(source) = self.step(panel.selected(), operation) else {
-            break;
-          };
-          panel.choose(source);
-        }
-      }
-    }
+    panel.mark_current(self.current);
+    self.folds.fold(panel, (operation, count), Some(false));
     self.commit_preferences();
-    self.project(panel);
-    panel.reveal();
   }
 
   pub fn toggle_auto(&mut self, panel: &mut Panel) {
     self.auto = !self.auto;
     if self.auto {
-      self.expand_current();
+      self.folds.focus(self.current);
     }
     self.commit_preferences();
     self.project(panel);
-  }
-
-  fn expand_current(&mut self) {
-    for (closed, node) in self.closed.iter_mut().zip(self.tree.nodes()) {
-      *closed = node.descendants > 0;
-    }
-    let mut source = self.current;
-    while let Some(index) = source {
-      let Some(node) = self.tree.nodes().get(index) else { break };
-      self.closed[index] = false;
-      source = node.parent;
-    }
-  }
-
-  fn step(&mut self, source: usize, operation: Fold) -> Option<usize> {
-    let node = self.tree.nodes().get(source)?;
-    match operation {
-      Fold::Close if node.descendants > 0 && !self.closed[source] => {
-        self.closed[source] = true;
-        Some(source)
-      }
-      Fold::Close => node.parent,
-      Fold::Open if node.descendants == 0 => None,
-      Fold::Open if self.closed[source] => {
-        self.closed[source] = false;
-        Some(source)
-      }
-      Fold::Open => Some(source + 1),
-      Fold::ExpandAll | Fold::CollapseAll => unreachable!(),
-    }
   }
 
   pub fn replace(&mut self, headings: &[Heading]) {
@@ -184,7 +104,7 @@ impl Outline {
     let changed = self.current != section;
     self.current = section;
     if changed && self.auto {
-      self.expand_current();
+      self.folds.focus(self.current);
     }
     if let Some(panel) =
       panel.filter(|panel| panel.kind() == PanelKind::Outline)
@@ -197,9 +117,9 @@ impl Outline {
           self.project(panel);
         }
       }
-      panel.mark_outline(&self.tree, section);
+      panel.mark_current(section);
       panel.track(
-        section.map(|source| self.visible_source(source).unwrap_or(source)),
+        section.map(|source| self.folds.visible(source).unwrap_or(source)),
         changed,
       );
     }
@@ -358,10 +278,10 @@ mod fold_tests {
     assert_eq!(panel.selected(), 3);
     outline.fold(&mut panel, Fold::Open, usize::MAX);
     assert_eq!(panel.selected(), 3, "leaves stay selected");
-    assert_eq!(outline.visible_source(2), Some(1));
+    assert_eq!(outline.folds.visible(2), Some(1));
     panel.choose(0);
     outline.fold(&mut panel, Fold::Close, 1);
-    assert_eq!(outline.visible_source(2), Some(0));
+    assert_eq!(outline.folds.visible(2), Some(0));
     let mut reopened = setup().1;
     reopened.choose(2);
     outline.project(&mut reopened);
@@ -533,7 +453,7 @@ mod fold_tests {
     assert!(panel.auto_expand());
     assert!(outline.closed(0) && outline.closed(4));
     outline.current = Some(5);
-    outline.expand_current();
+    outline.folds.focus(outline.current);
     let mut reopened = setup().1;
     outline.project(&mut reopened);
     assert!(reopened.auto_expand());

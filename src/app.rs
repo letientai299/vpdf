@@ -450,9 +450,9 @@ impl App {
       let note = self.panel_note(kind);
       if kind == PanelKind::Outline {
         self.refill_panel(kind)?;
-      } else if let Some(panel) =
-        self.panel.as_mut().filter(|_| !rows.is_empty())
-      {
+      } else if let Some(panel) = self.panel.as_mut().filter(|panel| {
+        !rows.is_empty() || !refills && panel.view.explains_empty()
+      }) {
         panel.view.refill(rows, note);
       } else if !refills {
         self.panel = None;

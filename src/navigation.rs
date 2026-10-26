@@ -111,6 +111,11 @@ impl App {
     self.reading_view().land_at(position)
   }
 
+  pub fn show_marks(&mut self, global: &BTreeMap<char, Mark>) -> Result<()> {
+    let rows = self.mark_rows(global);
+    self.show_panel(vpdf_ui::keys::PanelKind::Marks, rows)
+  }
+
   /// This document's marks, then global marks.
   pub fn mark_rows(&mut self, global: &BTreeMap<char, Mark>) -> Vec<Row> {
     let local: Vec<_> = self.marks.iter().map(|(n, p)| (*n, *p)).collect();

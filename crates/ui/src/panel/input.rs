@@ -160,7 +160,7 @@ impl Panel {
   }
 
   fn route(&self, action: Action) -> Route {
-    if self.kind == PanelKind::Outline
+    if self.foldable()
       && let Some(fold) = Fold::of(action)
     {
       return Route::Fold(fold);
@@ -356,7 +356,7 @@ mod fold_tests {
   use vpdf_reader::motion::Motion;
 
   #[test]
-  fn folds_require_focused_contents() {
+  fn folds_require_focused_tree() {
     for kind in [PanelKind::Outline, PanelKind::Annotations, PanelKind::Recent]
     {
       let mut panel = Panel::new(kind, vec![]);

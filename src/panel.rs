@@ -240,6 +240,7 @@ impl App {
     self.blur()?;
     let mut panel = PanelSession::new(kind, rows);
     panel.view.set_note(self.panel_note(kind));
+    panel.view.set_topic(self.panel_topic(kind));
     panel.view.resize(self.screen.rows);
     if kind == PanelKind::Outline {
       self.outline.sync(&self.doc.outline);
@@ -266,8 +267,10 @@ impl App {
     }
     let rows = self.panel_rows(kind)?;
     let note = self.panel_note(kind);
+    let topic = self.panel_topic(kind).to_owned();
     let Some(panel) = &mut self.panel else { return Ok(()) };
     let kept = panel.view.refill(rows, note);
+    panel.view.set_topic(&topic);
     if kind == PanelKind::Outline {
       self.outline.project(&mut panel.view);
     }
@@ -282,10 +285,12 @@ impl App {
 
   pub(crate) fn refresh_panel_note(&mut self, kind: PanelKind) {
     let note = self.panel_note(kind);
+    let topic = self.panel_topic(kind).to_owned();
     if let Some(panel) = &mut self.panel
       && panel.view.kind() == kind
     {
       panel.view.set_note(note);
+      panel.view.set_topic(&topic);
     }
   }
 
@@ -294,6 +299,7 @@ impl App {
       || kind == PanelKind::Outline && self.outline_pending()
       || kind == PanelKind::Figures
         && matches!(self.figures, crate::jobs::Figures::Running(_))
+      || kind == PanelKind::Results && self.search.phase().running()
     {
       "loading"
     } else if kind == PanelKind::Outline && self.doc.inferred {
@@ -301,6 +307,11 @@ impl App {
     } else {
       ""
     }
+  }
+
+  /// What the panel's rows answer: the search query for Results.
+  fn panel_topic(&self, kind: PanelKind) -> &str {
+    if kind == PanelKind::Results { &self.search.query().text } else { "" }
   }
 
   /// Covers the pane with `entries` and a card for the selected one,
@@ -401,7 +412,9 @@ impl App {
         self.request = Some(Request::ForgetRecent(paths));
       }
       vpdf_ui::panel::Event::Fold { operation, count } => {
-        self.outline.fold(&mut panel.view, operation, count);
+        if !panel.view.fold(operation, count) {
+          self.outline.fold(&mut panel.view, operation, count);
+        }
         self.overlays.close_menu();
       }
       vpdf_ui::panel::Event::AutoExpand => {

@@ -47,10 +47,8 @@ impl Entry {
     }
     let destination = Destination::Annotation { position, annotation };
     Some(Row {
-      label: self.label,
-      detail: self.detail,
       style: Style::Key,
-      destination,
+      ..Row::new(self.label, self.detail, destination)
     })
   }
 }

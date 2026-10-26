@@ -24,9 +24,15 @@ pub(super) fn label(description: &JumpDescription) -> String {
 impl Layout {
   pub(crate) fn jumps(rows: &[Row], columns: usize, selected: usize) -> Self {
     let mut layout = Self { columns, lines: Vec::new(), starts: Vec::new() };
+    let keys = super::layout::key_cells(rows, columns);
     for (source, row) in rows.iter().enumerate() {
       layout.starts.push(layout.lines.len());
-      layout.label(source, &row.label, "", selected);
+      layout.label(
+        source,
+        &Row { detail: String::new(), ..row.clone() },
+        keys,
+        selected,
+      );
       layout.secondary(source, &row.detail, selected);
     }
     layout.starts.push(layout.lines.len());

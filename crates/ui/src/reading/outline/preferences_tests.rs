@@ -46,7 +46,7 @@ fn fingerprint_covers_outline() {
     }
     let mut restored = Outline::new(&headings);
     restored.restore_preferences(saved.clone());
-    assert!(restored.closed.iter().all(|&closed| !closed), "{change}");
+    assert!(restored.folds.closed_sources().next().is_none(), "{change}");
   }
   let mut restored = Outline::new(&outline.headings);
   restored.restore_preferences(saved);
@@ -74,7 +74,7 @@ fn previews_preserve_revision() {
   restored.restore_preferences(saved.clone());
   assert!(restored.auto);
   restored.current = Some(2);
-  restored.expand_current();
+  restored.folds.focus(restored.current);
   assert_eq!(restored.preferences(), saved.as_ref());
   assert!(!restored.closed(0) && !restored.closed(1));
   assert!(restored.closed(4));

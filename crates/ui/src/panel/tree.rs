@@ -15,21 +15,26 @@ pub struct Tree {
 
 impl Tree {
   pub fn new(headings: &[Heading]) -> Self {
-    let mut nodes: Vec<Node> = Vec::with_capacity(headings.len());
+    Self::from_depths(headings.iter().map(|heading| heading.depth))
+  }
+
+  pub fn from_depths(depths: impl ExactSizeIterator<Item = usize>) -> Self {
+    let count = depths.len();
+    let mut nodes: Vec<Node> = Vec::with_capacity(count);
     let mut parents: Vec<usize> = Vec::new();
-    for (source, heading) in headings.iter().enumerate() {
+    for (source, depth) in depths.enumerate() {
       while let Some(&parent) = parents.last()
-        && nodes[parent].depth >= heading.depth
+        && nodes[parent].depth >= depth
       {
         nodes[parent].end = source;
         nodes[parent].descendants = source - parent - 1;
         parents.pop();
       }
       nodes.push(Node {
-        depth: heading.depth,
+        depth,
         parent: parents.last().copied(),
-        end: headings.len(),
-        descendants: headings.len() - source - 1,
+        end: count,
+        descendants: count - source - 1,
       });
       parents.push(source);
     }

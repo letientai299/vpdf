@@ -29,12 +29,7 @@ impl Layout {
         source,
         keys,
         clipped: false,
-        row: Row {
-          label,
-          style,
-          detail: String::new(),
-          destination: Destination::None,
-        },
+        row: Row { style, ..Row::new(label, String::new(), Destination::None) },
       });
     };
     let Some((key, text)) =

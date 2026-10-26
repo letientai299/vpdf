@@ -158,8 +158,7 @@ impl Session {
           return self.app().show_recent(&recent);
         }
         let global = self.state.marks.clone();
-        let rows = self.app().mark_rows(&global);
-        self.app().show_panel(kind, rows)
+        self.app().show_marks(&global)
       }
       Some(Request::SetMark(name)) => {
         let app = self.app();
