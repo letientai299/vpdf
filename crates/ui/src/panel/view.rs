@@ -162,8 +162,53 @@ impl Panel {
   pub fn set_note(&mut self, note: &'static str) {
     self.note = note;
   }
+  /// A new topic opens every group.
   pub fn set_topic(&mut self, topic: &str) {
+    if self.topic == topic {
+      return;
+    }
     topic.clone_into(&mut self.topic);
+    if let Some(mut folds) = self.folds.take() {
+      folds.expand_all();
+      folds.project(self, None);
+      self.folds = Some(folds);
+    }
+  }
+
+  /// Rows the header counts; group headings are not counted.
+  pub(super) fn row_count(&self) -> usize {
+    if self.folds.is_none() {
+      return self.rows.len();
+    }
+    self.rows.iter().filter(|row| row.depth > 0).count()
+  }
+
+  /// Header text after the count: the topic, the note, the selection.
+  pub(super) fn context(&self) -> Vec<(String, Option<Role>)> {
+    let mut context = Vec::new();
+    if !self.topic.is_empty() {
+      context.push((format!(" “{}”", self.topic), Some(Role::Key)));
+    }
+    let selection = if self.is_recent_view() {
+      self.selection_count()
+    } else {
+      String::new()
+    };
+    context.push((format!(" {}{selection}", self.note), None));
+    context
+  }
+
+  pub fn current(&self) -> Option<usize> {
+    self.current
+  }
+
+  /// Marks the row that lands on `landed`.
+  pub fn mark_landed(&mut self, landed: Option<crate::text::Position>) {
+    self.current = landed.and_then(|landed| {
+      self.rows.iter().position(|row| {
+        matches!(row.destination, Destination::Position(at) if at == landed)
+      })
+    });
   }
 
   /// Marks the row at the reading position; never the selection.
@@ -424,14 +469,14 @@ impl Panel {
     self.selected = self.line_source(self.top + offset);
   }
 
-  fn line_count(&self) -> usize {
+  pub(super) fn line_count(&self) -> usize {
     self
       .layout
       .as_ref()
       .map_or(self.projection.sources().len(), |help| help.lines.len())
   }
 
-  fn line_source(&self, line: usize) -> usize {
+  pub(super) fn line_source(&self, line: usize) -> usize {
     self.layout.as_ref().map_or_else(
       || self.projection.source(line).unwrap_or(self.rows.len()),
       |help| help.lines.get(line).map_or(self.rows.len(), |line| line.source),
@@ -464,11 +509,29 @@ impl Panel {
   }
 
   pub(super) fn reflow(&mut self, columns: usize) {
-    if matches!(self.kind, PanelKind::Version | PanelKind::Outline)
-      && self.layout.as_ref().is_some_and(|layout| layout.columns == columns)
+    let fresh = self.layout.as_ref().is_some_and(|layout| {
+      layout.columns == columns
+        && layout.selected.is_none_or(|selected| selected == self.selected)
+    });
+    let moved = self
+      .layout
+      .as_ref()
+      .and_then(|layout| layout.selected)
+      .is_some_and(|selected| selected != self.selected);
+    if fresh
+      && matches!(
+        self.kind,
+        PanelKind::Version
+          | PanelKind::Outline
+          | PanelKind::Jumps
+          | PanelKind::Annotations
+      )
       || !matches!(
         self.kind,
-        PanelKind::Version | PanelKind::Jumps | PanelKind::Outline
+        PanelKind::Version
+          | PanelKind::Jumps
+          | PanelKind::Outline
+          | PanelKind::Annotations
       ) && self.projection.sources().len() == self.rows.len()
     {
       return;
@@ -478,9 +541,14 @@ impl Panel {
     let selected = self.line_start(self.selected);
     let visible = usize::from(self.height.saturating_sub(2));
     let shown = (self.top..self.top + visible).contains(&selected);
+    // A new selection keeps its screen line as other rows collapse.
+    let anchor = selected.checked_sub(self.top).filter(|_| moved && shown);
     self.layout = Some(
       match self.kind {
         PanelKind::Jumps => Layout::jumps(&self.rows, columns, self.selected),
+        PanelKind::Annotations => {
+          Layout::annotations(&self.rows, columns, self.selected)
+        }
         PanelKind::Version => Layout::help(&self.rows, columns),
         _ => Layout::plain(&self.rows, columns),
       }
@@ -488,7 +556,10 @@ impl Panel {
     );
     let start = self.line_start(source);
     let length = self.line_start(source + 1).saturating_sub(start);
-    self.top = start + offset.min(length.saturating_sub(1));
+    self.top = match anchor {
+      Some(line) => self.line_start(self.selected).saturating_sub(line),
+      None => start + offset.min(length.saturating_sub(1)),
+    };
     if shown {
       self.reveal();
     }
@@ -562,16 +633,10 @@ impl Panel {
     at: vpdf_model::geometry::At,
     width: u16,
   ) {
-    let selection = if self.is_recent_view() {
-      self.selection_count()
-    } else {
-      String::new()
-    };
-    let context = format!(" {}{selection}", self.note);
     super::header::Header {
       title: self.kind.title(),
-      count: self.rows.len(),
-      context: &context,
+      count: self.row_count(),
+      context: &self.context(),
       role: Role::Muted,
       controls: &[],
     }
@@ -659,7 +724,7 @@ impl Panel {
       let key_column = if first { key_column } else { 0 };
       let meta =
         Meta::new(item, inner.saturating_sub(gutter), key_column, 0, 0);
-      meta.lead(scene, plain);
+      meta.lead(scene, plain, &self.search.query);
       let used =
         item.scene(scene, Some(base), meta.room, keys, &self.search.query);
       if hovered {

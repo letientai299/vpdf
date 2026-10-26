@@ -55,6 +55,7 @@ fn main() {
     "crates/vpdf-pdf/src/figures.rs",
     "crates/vpdf-pdf/src/jobs/figures.rs",
     "crates/vpdf-pdf/src/content_cache/record.rs",
+    "crates/vpdf-model/src/caption.rs",
   ]);
   println!("cargo::rustc-env=VPDF_FIGURE_CODE={figures:016x}");
   let recent = code(&[

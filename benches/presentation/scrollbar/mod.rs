@@ -42,7 +42,7 @@ pub fn draw() -> Result<()> {
     prepared
       .hits
       .into_iter()
-      .map(|(first, last, excerpt)| Hit { first, last, excerpt })
+      .map(|(first, last, excerpt)| Hit { first, last, excerpt, matched: 0..0 })
       .collect(),
   );
   let view = || View {

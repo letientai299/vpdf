@@ -3,6 +3,7 @@ use crate::document::TEXT_FLAGS;
 use crate::text::{Bounds, Text};
 use mupdf::text_page::TextBlockType;
 use mupdf::{DisplayList, TextPageFlags};
+use vpdf_model::caption;
 use vpdf_model::geometry::clip;
 
 pub use vpdf_model::document::{Figure, FigureSource as Source};
@@ -256,7 +257,7 @@ fn caption_title(
     if (row.x0 - bounds.x0).abs() > 3.0 {
       continue;
     }
-    if value.split_whitespace().next().is_some_and(caption_prefix)
+    if value.split_whitespace().next().and_then(caption::kind).is_some()
       || description
         && (row.height() < height * 0.7 || row.height() > height * 1.4)
     {
@@ -273,10 +274,6 @@ fn caption_title(
     }
   }
   Some((area, title))
-}
-
-fn caption_prefix(word: &str) -> bool {
-  word.eq_ignore_ascii_case("figure") || word.eq_ignore_ascii_case("table")
 }
 
 fn connection(a: Bounds, b: Bounds, lines: &[(Bounds, String)]) -> Option<f32> {
@@ -299,26 +296,7 @@ fn connection(a: Bounds, b: Bounds, lines: &[(Bounds, String)]) -> Option<f32> {
 }
 
 fn is_caption(text: &str) -> bool {
-  let mut words = text.split_whitespace();
-  let Some(prefix) = words.next() else { return false };
-  if !caption_prefix(prefix) {
-    return false;
-  }
-  let Some(number) = words.next() else { return false };
-  let standalone = words.next().is_none();
-  let numbered = |value: &str| {
-    value.starts_with(|c: char| c.is_ascii_digit())
-      && value.ends_with(|c: char| c.is_ascii_digit())
-      && value.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-')
-  };
-  let label = standalone
-    && number.ends_with(')')
-    && number.split_once('(').is_some_and(|(base, _)| numbered(base));
-  label
-    || numbered(number.trim_end_matches([':', '.']))
-      && (standalone
-        || prefix.eq_ignore_ascii_case("table")
-        || number.ends_with([':', '.']))
+  caption::parse(text).is_some()
 }
 
 fn near(a: Bounds, b: Bounds, gap: f32) -> bool {
@@ -602,19 +580,5 @@ mod tests {
     assert_eq!(figures[0].bounds.y1, 160.0);
     assert_eq!(figures[1].caption, "");
     assert_eq!(figures[2].caption, "Table 2. caption");
-    for (s, want) in [
-      ("Figure 12(a)", true),
-      ("table 2", true),
-      ("Table 1 alone here", true),
-      ("Figurehead 2", false),
-      ("Figure text", false),
-      ("Figure 2.6 shows some plots", false),
-      ("Figure 2.10(a) gives an example", false),
-      ("Figure 4.3b. This is called a network", false),
-      ("Table 3.1).", false),
-      ("Figure 2.4: A plot", true),
-    ] {
-      assert_eq!(is_caption(s), want, "{s}");
-    }
   }
 }

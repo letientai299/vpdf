@@ -3,7 +3,9 @@ use crate::bindings::{Bindings, Context, Target as Binding};
 use crate::keys::Dispatch;
 use crate::panel::recent::{Entry, Frame};
 use vpdf_model::geometry::At;
-use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
+use vpdf_model::input::{
+  KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 fn entry(path: &str) -> Entry {
   Entry {
@@ -91,7 +93,8 @@ fn confirmation_defaults_yes_and_cancels() {
     action(&mut panel, Action::RecentToggle);
     action(&mut panel, Action::RecentRemove);
     let before = text(&mut panel);
-    assert!(before.contains("Remove \"a.pdf\" from recent? [Y/n]"));
+    assert!(before.contains("Remove \"a.pdf\" from recent?"));
+    assert!(before.contains("[ Remove Y/Enter ] [ Cancel n/Esc ]"));
     assert!(
       before.contains("Saved position and local marks will be forgotten.")
     );
@@ -122,7 +125,7 @@ fn batch_targets_survive_filter_and_refresh() {
   panel.refill(rows(&[entry("/missing/b.pdf")]), "");
   assert!(text(&mut panel).contains("2 selected (1 hidden)"));
   action(&mut panel, Action::RecentRemove);
-  assert!(text(&mut panel).contains("Remove 2 files from recent? [Y/n]"));
+  assert!(text(&mut panel).contains("Remove 2 files from recent?"));
   panel.refresh_recent(
     rows(&[entry("/missing/c.pdf")]),
     &[entry("/missing/c.pdf")],
@@ -209,5 +212,112 @@ fn recent_help_matches_dispatch() {
         ))
       );
     }
+  }
+}
+
+fn press(column: u16, row: u16) -> MouseEvent {
+  MouseEvent::new(MouseEventKind::Down(MouseButton::Left), column, row)
+}
+
+#[test]
+fn confirm_buttons_answer_clicks() {
+  // (column on the button row, answer)
+  for (column, removed) in [(2, true), (21, false), (60, false)] {
+    let mut panel = panel();
+    action(&mut panel, Action::RecentRemove);
+    text(&mut panel);
+    let event = panel.confirm_press(press(column, 22));
+    let want = if removed {
+      Event::Forget(vec!["/missing/a.pdf".into()])
+    } else {
+      Event::Stay
+    };
+    assert_eq!(event, want, "{column}");
+    // A miss keeps asking; Cancel stops.
+    assert_eq!(panel.confirming(), column == 60, "{column}");
+  }
+}
+
+fn marks() -> Panel {
+  let position = Position::default();
+  let local = vec![Row::local_mark('a', position, None)];
+  let global =
+    vec![Row::global_mark('A', position, std::path::Path::new("/x/doc.pdf"))];
+  let mut panel = Panel::new(PanelKind::Marks, Row::marks(local, global));
+  panel.group(&[]);
+  panel
+}
+
+#[test]
+fn marks_confirm_names_the_mark() {
+  // (row, question, detail, event)
+  let cases = [
+    (1, "Remove mark ’a?", None, Event::RemoveMark('a')),
+    (
+      3,
+      "Remove global mark ’A to doc.pdf?",
+      Some("Every document loses it."),
+      Event::RemoveMark('A'),
+    ),
+  ];
+  for (row, question, detail, event) in cases {
+    let mut panel = marks();
+    panel.choose(row);
+    action(&mut panel, Action::RecentRemove);
+    let shown = text(&mut panel);
+    assert!(shown.contains(question), "{shown}");
+    assert_eq!(
+      detail.is_some_and(|detail| shown.contains(detail)),
+      detail.is_some()
+    );
+    assert_eq!(panel.confirm_key(key(KeyCode::Enter)), event);
+  }
+  // Headings name no mark.
+  let mut panel = marks();
+  panel.choose(0);
+  action(&mut panel, Action::RecentRemove);
+  assert!(!panel.confirming());
+}
+
+#[test]
+fn mark_rows_offer_removal() {
+  let mut panel = marks();
+  panel.choose(1);
+  let destination = panel.rows()[1].destination.clone();
+  let items = crate::context::panel_items(&panel, Some(&destination), false);
+  let remove = items.iter().find(|item| item.label == "Remove mark");
+  assert_eq!(remove.map(|item| item.key.as_str()), Some("x"));
+  // A press below the rows names no mark, whatever is selected.
+  let items = crate::context::panel_items(&panel, None, false);
+  assert!(items.iter().all(|item| item.label != "Remove mark"));
+  // Other panels ignore the key.
+  let mut outline = Panel::new(PanelKind::Outline, rows(&[entry("/a.pdf")]));
+  assert_eq!(action(&mut outline, Action::RecentRemove), Event::Stay);
+  assert!(!outline.confirming());
+}
+
+#[test]
+fn small_confirm_bars_name_their_keys() {
+  // (width, height, buttons)
+  for (width, height, buttons) in
+    [(100, 24, true), (100, 2, false), (18, 24, false)]
+  {
+    let mut panel = panel();
+    action(&mut panel, Action::RecentRemove);
+    let mut scene = crate::testing::empty();
+    panel.scene_confirmation(&mut scene, At::default(), width, height);
+    let shown = crate::testing::text(&scene.into_scene());
+    assert_eq!(shown.contains("[ Remove"), buttons, "{width}x{height}");
+    // A narrow bar clips the question first.
+    assert_eq!(
+      shown.contains("[Y/n]"),
+      !buttons && width > 40,
+      "{width}x{height}"
+    );
+    assert_eq!(
+      panel.confirm_press(press(2, height.saturating_sub(2))) == Event::Stay,
+      !buttons,
+      "{width}x{height}"
+    );
   }
 }

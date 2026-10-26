@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::text::{PageId, Position, Text};
 use fancy_regex::Regex;
+use std::ops::Range;
 use std::sync::OnceLock;
 use unicode_normalization::UnicodeNormalization;
 
@@ -93,7 +94,12 @@ pub struct Hit {
   pub first: Position,
   pub last: Position,
   pub excerpt: String,
+  /// The match's bytes in `excerpt`.
+  pub matched: Range<usize>,
 }
+
+/// Cells of printed text an excerpt keeps before its match.
+const CONTEXT: usize = 22;
 
 #[derive(Default)]
 pub struct Index {
@@ -336,29 +342,65 @@ impl Index {
           });
         }
       }
-      hits.push(Hit { first, last, excerpt: self.excerpt(first) });
+      hits.push(self.hit(first, last));
       hits.len() < limit
     })?;
     Ok(hits)
   }
 
-  /// 80 printed characters from `from`.
-  fn excerpt(&self, from: Position) -> String {
+  fn hit(&self, first: Position, last: Position) -> Hit {
+    let (excerpt, matched) = self.excerpt(first, last);
+    Hit { first, last, excerpt, matched }
+  }
+
+  /// Up to `CONTEXT` printed cells before `first`, then 80 printed
+  /// characters from it; the match's byte range in that text.
+  fn excerpt(&self, first: Position, last: Position) -> (String, Range<usize>) {
     let mut printed = Self::default();
-    let rows = self
-      .lines
-      .iter()
-      .enumerate()
-      .map(|(at, line)| (at, line.chars(), line.is_ascii()));
+    // Twice the cells in glyphs covers wide text without reading a
+    // long line's whole prefix.
+    let from = match first.glyph.checked_sub(CONTEXT * 2) {
+      Some(glyph) => Position { glyph, ..first },
+      None => {
+        Position { line: first.line.saturating_sub(1), glyph: 0, ..first }
+      }
+    };
+    self.print(&mut printed, from, Some(first), usize::MAX);
+    printed.text = vpdf_model::text::tail(&printed.text, CONTEXT);
+    let start = printed.text.len();
     // Four bytes cover any character.
-    printed.append(
-      rows.skip(from.line),
-      from.glyph,
-      Form::Printed,
-      80 * 4,
-      &self.joins,
-    );
-    printed.text.chars().take(80).collect()
+    let limit = start + 80 * 4;
+    let after = Position { glyph: last.glyph + 1, ..last };
+    self.print(&mut printed, first, Some(after), limit);
+    let end = printed.text.len();
+    self.print(&mut printed, after, None, limit);
+    let rest: String = printed.text[start..].chars().take(80).collect();
+    printed.text.truncate(start);
+    printed.text.push_str(&rest);
+    let end = end.min(printed.text.len());
+    (printed.text, start..end)
+  }
+
+  /// Appends printed lines from `from` until `to` or `limit` bytes.
+  fn print(
+    &self,
+    printed: &mut Self,
+    from: Position,
+    to: Option<Position>,
+    limit: usize,
+  ) {
+    for line in from.line..self.lines.len() {
+      let skip = if line == from.line { from.glyph } else { 0 };
+      let stop = to.filter(|to| to.line == line).map(|to| to.glyph);
+      let row = self.lines[line].chars().take(stop.unwrap_or(usize::MAX));
+      let row = row.skip(skip).map(|ch| (0, ch));
+      printed.append_row(row, line, Form::Printed, false, limit);
+      if stop.is_some() || printed.text.len() >= limit {
+        break;
+      }
+      let join = self.joins.get(line).copied().unwrap_or(Join::Space);
+      printed.join_line(join, Form::Printed);
+    }
   }
 
   pub fn definitions(
@@ -381,7 +423,7 @@ impl Index {
           glyph: text[..end].chars().count().saturating_sub(1),
           ..first
         };
-        Some(Hit { first, last, excerpt: self.excerpt(first) })
+        Some(self.hit(first, last))
       })
       .take(limit)
       .collect()
@@ -517,12 +559,47 @@ mod tests {
       ("café", "Café Next "),
     ] {
       let hits = index.matches(&compile(query, false)?, 1000)?;
-      assert_eq!(hits[0].excerpt, excerpt, "{query}");
+      let from = hits[0].matched.start;
+      assert_eq!(&hits[0].excerpt[from..], excerpt, "{query}");
     }
     let long = sample(&[&"Word ".repeat(30)]);
     let hits =
       Index::new(PageId(0), &long).matches(&compile("word", false)?, 1)?;
     assert_eq!(hits[0].excerpt.chars().count(), 80);
+    Ok(())
+  }
+
+  /// Excerpts keep context before the match and its printed range.
+  #[test]
+  fn excerpts_mark_matches() -> Result<()> {
+    let long = format!("{} needle", "x".repeat(40));
+    let cut = format!("…{} needle ", "x".repeat(20));
+    // (lines, query, excerpt, matched)
+    let cases: &[(&[&str], &str, &str, &str)] = &[
+      (&["The STRASSE runs"], "straße", "The STRASSE runs ", "STRASSE"),
+      (&["a ﬁsh tale"], "fish", "a ﬁsh tale ", "ﬁsh"),
+      (
+        &["long inter-", "national day"],
+        "international",
+        "long international day ",
+        "international",
+      ),
+      (&["日本語の検索テスト"], "検索", "日本語の検索テスト ", "検索"),
+      (
+        &["first line", "needle here"],
+        "needle",
+        "first line needle here ",
+        "needle",
+      ),
+      (&[&long], "needle", &cut, "needle"),
+    ];
+    for &(lines, query, excerpt, matched) in cases {
+      let index = Index::new(PageId(0), &sample(lines));
+      let hits = index.matches(&compile(query, false)?, 1)?;
+      let hit = &hits[0];
+      assert_eq!(hit.excerpt, excerpt, "{query}");
+      assert_eq!(&hit.excerpt[hit.matched.clone()], matched, "{query}");
+    }
     Ok(())
   }
 
@@ -583,14 +660,16 @@ mod tests {
         let line = format!("{prefix}-");
         let text = sample(&[&line, "b"]);
         let index = Index::new(PageId(0), &text);
-        let actual = index.excerpt(Position::default());
+        let at = Position::default();
+        let actual = index.excerpt(at, at).0;
         let expected: String = format!("{prefix}b ").chars().take(80).collect();
         assert_eq!(actual, expected, "{ch} {count}");
       }
     }
     let text = sample(&["  A\tB ", "", " C"]);
     let index = Index::new(PageId(0), &text);
-    assert_eq!(index.excerpt(Position::default()), " A B C ");
+    let at = Position::default();
+    assert_eq!(index.excerpt(at, at).0, " A B C ");
   }
 
   #[test]

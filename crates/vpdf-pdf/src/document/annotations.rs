@@ -84,8 +84,48 @@ impl Document {
       let author = clean(annotation.author()?);
       let kind =
         if kind == Kind::Text { "Note".into() } else { format!("{kind:?}") };
-      found.push(Annotation { kind, areas, contents, author });
+      let color = annotation.color()?.map(rgb);
+      found.push(Annotation { kind, areas, contents, author, color });
     }
     Ok(found)
+  }
+}
+
+/// A color as 8-bit RGB; CMYK converts without a profile.
+fn rgb(color: mupdf::color::AnnotationColor) -> [u8; 3] {
+  use mupdf::color::AnnotationColor as C;
+  let [red, green, blue] = match color {
+    C::Gray(gray) => [gray; 3],
+    C::Rgb { red, green, blue } => [red, green, blue],
+    C::Cmyk { cyan, magenta, yellow, key } => {
+      [cyan, magenta, yellow].map(|ink| (1.0 - ink) * (1.0 - key))
+    }
+  };
+  [red, green, blue]
+    .map(|channel| (channel.clamp(0.0, 1.0) * 255.0).round() as u8)
+}
+
+#[cfg(test)]
+mod tests {
+  use mupdf::color::AnnotationColor as C;
+
+  #[test]
+  fn colors_convert_to_rgb() {
+    let cases = [
+      (C::Gray(0.5), [128, 128, 128]),
+      (C::Rgb { red: 1.0, green: 0.92, blue: 0.23 }, [255, 235, 59]),
+      (C::Rgb { red: 2.0, green: -1.0, blue: 0.0 }, [255, 0, 0]),
+      (
+        C::Cmyk { cyan: 0.0, magenta: 0.0, yellow: 1.0, key: 0.0 },
+        [255, 255, 0],
+      ),
+      (
+        C::Cmyk { cyan: 0.0, magenta: 0.0, yellow: 0.0, key: 0.5 },
+        [128, 128, 128],
+      ),
+    ];
+    for (color, want) in cases {
+      assert_eq!(super::rgb(color), want, "{want:?}");
+    }
   }
 }

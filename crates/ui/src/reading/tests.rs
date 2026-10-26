@@ -317,7 +317,12 @@ fn normal_scroll_forgets_search_yank_before_failure() {
     let found = Position { line: 1, ..Position::default() };
     search.show(
       vpdf_search::query::Query::default(),
-      vec![Hit { first: found, last: found, excerpt: "a".into() }],
+      vec![Hit {
+        first: found,
+        last: found,
+        excerpt: "a".into(),
+        matched: 0..0,
+      }],
     );
     search
       .yank_after(Location::default(), Operator { count: 1, register: 'a' });
@@ -532,7 +537,12 @@ fn failed_search_yank_is_consumed_without_restoring() -> Result<()> {
   let mut search = Search::default();
   search.show(
     Query::default(),
-    vec![Hit { first: target, last: target, excerpt: "a".into() }],
+    vec![Hit {
+      first: target,
+      last: target,
+      excerpt: "a".into(),
+      matched: 0..0,
+    }],
   );
   let origin = Location {
     cursor: Position { line: 3, ..Position::default() },
@@ -932,7 +942,7 @@ fn viewport_failure_cancels_yank() {
   let found = Position { line: 1, ..Position::default() };
   search.show(
     Query::default(),
-    vec![Hit { first: found, last: found, excerpt: "a".into() }],
+    vec![Hit { first: found, last: found, excerpt: "a".into(), matched: 0..0 }],
   );
   search.yank_after(Location::default(), Operator { count: 1, register: 'a' });
   assert!(
@@ -1088,6 +1098,7 @@ fn page_hits_preserve_precedence() -> Result<()> {
       areas: vec![bounds],
       contents: "note".into(),
       author: String::new(),
+      color: None,
     });
     let result = fixture.view().hit(HitFrame::Pending, 1, 1, None);
     if let Some(expected) = expected {

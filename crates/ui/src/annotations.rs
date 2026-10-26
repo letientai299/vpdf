@@ -1,4 +1,4 @@
-use crate::panel::{Destination, Row, Style};
+use crate::panel::{Destination, Row, RowKind, Style};
 use crate::text::{PageId, Position, Text};
 use vpdf_model::document::Annotation;
 
@@ -7,26 +7,28 @@ const MARKUP: &[&str] = &["Highlight", "Underline", "Squiggly", "StrikeOut"];
 /// Kinds drawn as fixed-size icons.
 const ICONS: &[&str] = &["Note", "FileAttachment", "Sound"];
 
-pub fn row(
-  text: &Text,
-  page: PageId,
-  annotation: Annotation,
-  label: &str,
-) -> Row {
+/// A row quoting the marked text, else the note, else the kind.
+pub fn row(text: &Text, page: PageId, annotation: Annotation) -> Row {
   let (position, marked) = marked(text, page, &annotation);
-  let body = match (marked.is_empty(), annotation.contents.is_empty()) {
-    (false, false) => format!("{marked} — {}", annotation.contents),
-    (false, true) => marked,
-    _ => annotation.contents.clone(),
+  let label = [marked, annotation.contents.clone(), annotation.kind.clone()]
+    .into_iter()
+    .find(|label| !label.is_empty())
+    .unwrap_or_default();
+  entry(label, position, annotation)
+}
+
+/// The row for an annotation and its label, also as cached.
+pub fn entry(label: String, position: Position, annotation: Annotation) -> Row {
+  let kind = match annotation.kind.as_str() {
+    "Highlight" => RowKind::Highlight,
+    "Underline" | "Squiggly" | "StrikeOut" => RowKind::Underline,
+    _ => RowKind::Note,
   };
-  Row {
-    style: Style::Key,
-    ..Row::new(
-      format!("{}: {body}", annotation.kind),
-      label.to_owned(),
-      Destination::Annotation { position, annotation },
-    )
-  }
+  // A bare kind name says nothing the glyph does not.
+  let style =
+    if label == annotation.kind { Style::Muted } else { Style::Plain };
+  let destination = Destination::Annotation { position, annotation };
+  Row { kind, style, ..Row::new(label, String::new(), destination) }
 }
 
 pub fn at(
@@ -112,6 +114,7 @@ mod tests {
       .map(|from| Annotation {
         kind: "Note".into(),
         author: String::new(),
+        color: None,
         contents: from.to_string(),
         areas: vec![Bounds {
           x0: from,

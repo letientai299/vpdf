@@ -1387,7 +1387,7 @@ type Cut = fn(&mut Session, (u16, u16)) -> Result<()>;
 /// A filled box and a lone caption.
 fn figure_pdf(path: &Path) -> Result<()> {
   let content = "0.2 0.4 0.8 rg 60 20 180 50 re f \
-    BT /F1 12 Tf 20 180 Td (Table 1 alone here) Tj ET";
+    BT /F1 12 Tf 20 180 Td (Table 1 Alone here) Tj ET";
   let objects = [
     "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),

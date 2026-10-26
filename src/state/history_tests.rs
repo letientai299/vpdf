@@ -13,9 +13,7 @@ fn forget_survives_reload_and_stale_saves() -> Result<()> {
   saved.rotation = 90;
   saved.crop = Crop([1, 2, 3, 4]);
   state.opened(saved.clone());
-  state
-    .marks
-    .insert('A', Mark { path: saved.path.clone(), cursor: saved.cursor });
+  state.marks.insert('A', Mark::new(saved.path.clone(), saved.cursor));
   state.save(&file, &[], &[])?;
   let mut older = State::load(&file);
   state.forget(&[saved.path.clone()]);
@@ -149,5 +147,34 @@ fn unsaved_opens_cannot_overtake_removals() -> Result<()> {
   state.save(&file, &[], &[])?;
   older.save(&file, &[], &[])?;
   assert_eq!(State::load(&file).recent[0].cursor.page.0, 0);
+  Ok(())
+}
+
+/// A removed global mark stays removed through stale sessions' saves;
+/// setting it again later wins.
+#[test]
+fn removed_marks_survive_stale_saves() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let file = root.path().join("state.json");
+  let mark = |cursor: Position| Mark::new("/a.pdf".into(), cursor);
+  let mut state = State::default();
+  state.set_mark('A', mark(Position::default()));
+  state.set_mark('B', mark(Position::default()));
+  state.save(&file, &[], &[])?;
+  let mut older = State::load(&file);
+  state.remove_mark('A');
+  state.save(&file, &[], &[])?;
+  older.save(&file, &[], &[])?;
+  let loaded = State::load(&file);
+  assert!(!loaded.marks.contains_key(&'A'));
+  assert!(loaded.marks.contains_key(&'B'));
+  // The stale session sees the removal too.
+  assert!(!older.marks.contains_key(&'A'));
+  let mut later = mark(Position { line: 3, ..Position::default() });
+  later.set += 1_000;
+  older.set_mark('A', later);
+  older.save(&file, &[], &[])?;
+  state.save(&file, &[], &[])?;
+  assert_eq!(State::load(&file).marks[&'A'].cursor.line, 3);
   Ok(())
 }

@@ -16,7 +16,12 @@ fn text_requests_follow_visible_matches() -> Result<()> {
     .flat_map(|page| {
       let position = Position { page: PageId(page), ..Position::default() };
       std::iter::repeat_n(
-        Hit { first: position, last: position, excerpt: String::new() },
+        Hit {
+          first: position,
+          last: position,
+          excerpt: String::new(),
+          matched: 0..0,
+        },
         301,
       )
     })

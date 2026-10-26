@@ -33,9 +33,10 @@ the path, permissions, and password. Built-in help has no file to unlock.
 
 In Recent, press Space to check or uncheck a file without moving the cursor.
 Press `x` to remove checked files, or the cursor row when none are checked.
-Enter or `y` confirms; `n`, Escape, or `Ctrl-c` cancels. Files hidden by a
-filter remain checked and count toward removal. Escape outside confirmation
-clears checks before closing the panel. Leaving Recent clears its checks.
+Enter, `y`, or a click on Remove confirms; `n`, Escape, `Ctrl-c`, or Cancel
+cancels. Files hidden by a filter remain checked and count toward removal.
+Escape outside confirmation clears checks before closing the panel. Leaving
+Recent clears its checks.
 
 Removal forgets saved positions, local marks, and outline choices. It preserves
 source PDFs, open reading panes, and global marks. Saving an already open pane

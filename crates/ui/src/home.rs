@@ -326,6 +326,19 @@ impl Home {
     }
   }
 
+  /// A report in the view's cells, above its bottom row.
+  fn local_mouse(
+    &self,
+    mouse: vpdf_model::input::Mouse,
+  ) -> Option<vpdf_model::input::MouseEvent> {
+    let (rows, cell) = (self.screen.rows.saturating_sub(1), self.screen.cell());
+    mouse.cells(cell).and_then(|mut mouse| {
+      mouse.row = mouse.row.checked_sub(self.at.row)?;
+      mouse.column = mouse.column.checked_sub(self.at.column)?;
+      (mouse.row < rows).then_some(mouse)
+    })
+  }
+
   pub fn event(
     &mut self,
     event: Event,
@@ -337,7 +350,14 @@ impl Home {
           crate::panel::Event::Forget(paths) => Effect::Forget(paths),
           _ => Effect::Stay,
         },
-        _ => Effect::Stay,
+        Event::Mouse(mouse) => match self.local_mouse(mouse) {
+          Some(mouse) => match self.panel.confirm_press(mouse) {
+            crate::panel::Event::Forget(paths) => Effect::Forget(paths),
+            _ => Effect::Stay,
+          },
+          None => Effect::Stay,
+        },
+        Event::Paste(_) => Effect::Stay,
       });
     }
     match event {
@@ -381,14 +401,7 @@ impl Home {
       }
       // An open prompt owns the input.
       Event::Mouse(mouse) if self.prompt.is_none() => {
-        let (rows, cell) =
-          (self.screen.rows.saturating_sub(1), self.screen.cell());
-        let mouse = mouse.cells(cell).and_then(|mut mouse| {
-          mouse.row = mouse.row.checked_sub(self.at.row)?;
-          mouse.column = mouse.column.checked_sub(self.at.column)?;
-          (mouse.row < rows).then_some(mouse)
-        });
-        let Some(mouse) = mouse else {
+        let Some(mouse) = self.local_mouse(mouse) else {
           return Ok(Effect::Stay);
         };
         if let Some(info) = &mut self.info {

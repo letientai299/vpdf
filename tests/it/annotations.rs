@@ -84,13 +84,11 @@ fn panel_lists_marked_text_and_notes() -> Result<()> {
   app.open_panel(PanelKind::Annotations)?;
   crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
   let rows = &app.panel.as_ref().unwrap().view.rows();
+  // A page heading, then marked text or the note.
   let labels: Vec<_> =
-    rows.iter().take(2).map(|row| row.label.as_str()).collect();
-  assert_eq!(
-    labels,
-    [format!("Highlight: {words} — check this"), "Note: margin note".into()]
-  );
-  assert_eq!(rows.len(), 5);
+    rows.iter().take(3).map(|row| row.label.as_str()).collect();
+  assert_eq!(labels, ["p2", words.as_str(), "margin note"]);
+  assert_eq!(rows.len(), 6);
   Ok(())
 }
 
@@ -109,14 +107,15 @@ fn enter_positions_cursor_and_note() -> Result<()> {
       }
       app.open_panel(PanelKind::Annotations)?;
       crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
-      let expected = position(&app, 0);
+      // The first annotation, under its page heading.
+      let expected = position(&app, 1);
       keys(&mut app, b"\r")?;
       assert_eq!(app.reader.cursor, expected);
       assert_eq!(app.reader.target(), Some(expected));
       assert_eq!(app.reader.mode(), Mode::Cursor);
       assert_eq!(app.input_owner(), InputOwner::Peek);
       assert!(!app.panel_focused());
-      assert_eq!(app.panel.as_ref().unwrap().view.rows().len(), 5);
+      assert_eq!(app.panel.as_ref().unwrap().view.rows().len(), 6);
       assert!(drawn(&mut app)?.contains("check this"));
       keys(&mut app, b"\x1b")?;
       assert!(app.overlays.preview().is_none());
@@ -142,13 +141,13 @@ fn k_previews_selected_note() -> Result<()> {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
     crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
-    assert_eq!(position(&app, 1), position(&app, 2));
+    assert_eq!(position(&app, 2), position(&app, 3));
     let original = app.reader.cursor;
-    app.panel.as_mut().unwrap().view.choose(2);
+    app.panel.as_mut().unwrap().view.choose(3);
     keys(&mut app, b"K")?;
     // An off-screen source keeps it (U17).
     let shown = app.layout.visible(app.reader.scroll);
-    assert!(!shown.contains(&position(&app, 2).page.0), "off screen");
+    assert!(!shown.contains(&position(&app, 3).page.0), "off screen");
     app.drop_stray_preview();
     let out = drawn(&mut app)?;
     assert!(out.contains("another note"));
@@ -157,7 +156,7 @@ fn k_previews_selected_note() -> Result<()> {
     assert!(app.panel_focused());
     keys(&mut app, b"\x1b")?;
     assert_eq!(app.input_owner(), InputOwner::Panel);
-    let expected = position(&app, 2);
+    let expected = position(&app, 3);
     keys(&mut app, b"\r")?;
     assert_eq!(app.reader.cursor, expected);
     assert!(drawn(&mut app)?.contains("another note"));
@@ -174,7 +173,7 @@ fn k_preserves_visual_range() -> Result<()> {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
     crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
-    app.panel.as_mut().unwrap().view.choose(1);
+    app.panel.as_mut().unwrap().view.choose(2);
     keys(&mut app, b"\r\x1b")?;
     let cursor = app.reader.cursor;
     keys(&mut app, b"v")?;
@@ -198,7 +197,7 @@ fn notes_scroll_and_resize() -> Result<()> {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
     crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
-    app.panel.as_mut().unwrap().view.choose(3);
+    app.panel.as_mut().unwrap().view.choose(4);
     keys(&mut app, b"\r")?;
     let cursor = app.reader.cursor;
     let first = drawn(&mut app)?;
@@ -235,14 +234,14 @@ fn empty_notes_and_panel_focus() -> Result<()> {
     let mut app = Solo::open(file.path(), "", text, screen())?;
     app.open_panel(PanelKind::Annotations)?;
     crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
-    app.panel.as_mut().unwrap().view.choose(4);
-    let expected = position(&app, 4);
+    app.panel.as_mut().unwrap().view.choose(5);
+    let expected = position(&app, 5);
     keys(&mut app, b"\r")?;
     assert_eq!(app.reader.cursor, expected);
     assert_eq!(app.reader.mode(), Mode::Cursor);
     assert!(app.overlays.preview().is_none());
     keys(&mut app, b"\t")?;
-    app.panel.as_mut().unwrap().view.choose(1);
+    app.panel.as_mut().unwrap().view.choose(2);
     app.action(Input::plain(Action::Swap))?;
     assert!(app.panel_focused());
     assert!(app.overlays.preview().is_none());
@@ -269,12 +268,13 @@ fn noted_pdf(path: &std::path::Path) -> Result<()> {
     format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
     format!(
       "<< /Type /Annot /Subtype /Highlight /Rect [20 165 230 189] \
-       /QuadPoints {} >>",
+       /QuadPoints {} /C [0 0 0 0.5] >>",
       quads(189)
     ),
     format!(
       "<< /Type /Annot /Subtype /Highlight /Rect [20 141 230 165] \
-       /QuadPoints {} /Contents (check this note please) /T (Ada) >>",
+       /QuadPoints {} /Contents (check this note please) /T (Ada) \
+       /C [1 0.92 0.23] >>",
       quads(165)
     ),
     "<< /Type /Annot /Subtype /Link /Rect [20 141 40 165] \
@@ -345,17 +345,18 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   session.app().open_panel(PanelKind::Annotations)?;
   crate::common::sidebar_loaded(session.app(), PanelKind::Annotations)?;
   let focused = session.app().panel_focused();
-  let (_, drawn) = hover(&mut session, (1, 2))?;
+  // Row 1 is the page heading.
+  let (_, drawn) = hover(&mut session, (1, 3))?;
   let app = session.app();
-  assert_eq!(app.hover.hit(), Hit::Row(1));
-  let row = &app.panel.as_ref().unwrap().view.rows()[1].label;
+  assert_eq!(app.hover.hit(), Hit::Row(2));
+  let row = &app.panel.as_ref().unwrap().view.rows()[2].label;
   assert!(drawn.contains(row.as_str()), "{row}");
   assert!(drawn.contains("\x1b[0;4m"), "the row underlines");
-  assert_eq!(app.panel.as_ref().unwrap().view.selected(), 0);
+  assert_eq!(app.panel.as_ref().unwrap().view.selected(), 1);
   assert_eq!(app.panel_focused(), focused);
   // A short row adds nothing.
-  let (_, drawn) = hover(&mut session, (1, 3))?;
-  assert!(!drawn.contains("Note: margin note"), "{drawn}");
+  hover(&mut session, (1, 4))?;
+  assert_eq!(session.app().panel.as_ref().unwrap().view.hover_title(), None);
   session.app().close_panel()?;
   // A panel opened under a resting pointer.
   session.app().open_panel(PanelKind::Annotations)?;
@@ -365,7 +366,7 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
     session.draw_frame(&mut Vec::new())?;
   }
   assert!(!session.redraw_due(), "one follow-up at most");
-  assert_eq!(session.app().hover.hit(), Hit::Row(2));
+  assert_eq!(session.app().hover.hit(), Hit::Row(3));
   session.app().close_panel()?;
   // Thumbnails show their page label and section.
   let app = session.app();
@@ -656,7 +657,8 @@ fn note_row_menus_show_notes() -> Result<()> {
   session.app().open_panel(PanelKind::Annotations)?;
   crate::common::sidebar_loaded(session.app(), PanelKind::Annotations)?;
   session.draw_focused(&mut Vec::new())?;
-  crate::mouse::right(&mut session, (1, 2))?;
+  // Row 1 is the page heading; row 2 the unnoted highlight.
+  crate::mouse::right(&mut session, (1, 3))?;
   let app = session.app();
   let menu = app.overlays.menu_mut().expect("a menu");
   let index = menu.entries().iter().position(|item| item.label == "Show note");
@@ -666,5 +668,64 @@ fn note_row_menus_show_notes() -> Result<()> {
   assert!(app.overlays.preview().is_none());
   keys(app, b"\r")?;
   assert!(app.overlays.menu().is_none() && app.overlays.preview().is_some());
+  Ok(())
+}
+
+/// A PDF without annotations says so once its scan ends.
+#[test]
+fn annotations_panel_explains_empty() -> Result<()> {
+  let (_directory, mut app) = crate::common::temp_solo(
+    |path| crate::common::text_pdf(path, &["Plain text"]),
+    false,
+    crate::common::cells(100, 20),
+  )?;
+  app.open_panel(PanelKind::Annotations)?;
+  crate::common::sidebar_loaded(&mut app, PanelKind::Annotations)?;
+  let panel = &mut app.panel.as_mut().unwrap().view;
+  assert!(panel.rows().is_empty());
+  let mut scene = Vec::new();
+  panel.scene_list(&mut scene, vpdf_model::geometry::At::default(), 40, 6);
+  let text: String = scene
+    .iter()
+    .filter_map(|op| match op {
+      vpdf_model::scene::Op::Text(text) => Some(text.as_str()),
+      _ => None,
+    })
+    .collect();
+  assert!(text.contains("No annotations in this PDF."), "{text}");
+  Ok(())
+}
+
+/// Highlights quote their text with a swatch in the stroke color.
+#[test]
+fn highlight_rows_quote_marked_text() -> Result<()> {
+  use vpdf::trace::Drawable;
+  use vpdf_ui::panel::{Destination, RowKind as K};
+  let directory = tempfile::tempdir()?;
+  let mut session = noted_session(directory.path())?;
+  let app = session.app();
+  app.open_panel(PanelKind::Annotations)?;
+  crate::common::sidebar_loaded(app, PanelKind::Annotations)?;
+  let rows = app.panel.as_ref().unwrap().view.rows();
+  let kinds: Vec<_> = rows.iter().map(|row| (row.depth, row.kind)).collect();
+  assert_eq!(
+    kinds,
+    [(0, K::Plain), (1, K::Highlight), (1, K::Highlight), (1, K::Note)]
+  );
+  assert_eq!(rows[3].label, "margin note");
+  let colors: Vec<_> = rows[1..3]
+    .iter()
+    .map(|row| match &row.destination {
+      Destination::Annotation { annotation, .. } => annotation.color,
+      _ => None,
+    })
+    .collect();
+  assert_eq!(colors, [Some([128, 128, 128]), Some([255, 235, 59])]);
+  assert!(!rows[2].label.contains("check this note"), "{}", rows[2].label);
+  // The unselected highlight's swatch reaches the terminal.
+  let mut out = Vec::new();
+  session.draw_frame(&mut out)?;
+  let drawn = String::from_utf8_lossy(&out);
+  assert!(drawn.contains("\x1b[38;2;255;235;59m▇"), "{drawn}");
   Ok(())
 }

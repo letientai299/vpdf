@@ -10,7 +10,7 @@ use vpdf_pdf::{
   content_cache::{Kind, Record},
   document::Document,
 };
-use vpdf_ui::panel::{Destination, Row, Style};
+use vpdf_ui::panel::{Destination, Row};
 
 #[derive(Deserialize, Serialize)]
 enum Content {
@@ -20,7 +20,6 @@ enum Content {
 #[derive(Deserialize, Serialize)]
 struct Entry {
   label: String,
-  detail: String,
   content: Content,
 }
 
@@ -32,7 +31,7 @@ impl Entry {
       }
       _ => return None,
     };
-    Some(Self { label: row.label.clone(), detail: row.detail.clone(), content })
+    Some(Self { label: row.label.clone(), content })
   }
   fn row(self, pages: usize) -> Option<Row> {
     let Content::Annotation(position, annotation) = self.content;
@@ -45,11 +44,7 @@ impl Entry {
     {
       return None;
     }
-    let destination = Destination::Annotation { position, annotation };
-    Some(Row {
-      style: Style::Key,
-      ..Row::new(self.label, self.detail, destination)
-    })
+    Some(vpdf_ui::annotations::entry(self.label, position, annotation))
   }
 }
 
@@ -108,12 +103,7 @@ fn annotation_rows(
     }
     let text = doc.text(page)?;
     for annotation in annotations.iter().cloned() {
-      rows.push(vpdf_ui::annotations::row(
-        &text,
-        page,
-        annotation,
-        doc.label(page),
-      ));
+      rows.push(vpdf_ui::annotations::row(&text, page, annotation));
     }
   }
   Ok(rows)

@@ -6,7 +6,7 @@ fn at(page: usize) -> Position {
 }
 
 fn hit(page: usize) -> Hit {
-  Hit { first: at(page), last: at(page), excerpt: String::new() }
+  Hit { first: at(page), last: at(page), excerpt: String::new(), matched: 0..0 }
 }
 
 fn hits(pages: &[usize]) -> Vec<Hit> {

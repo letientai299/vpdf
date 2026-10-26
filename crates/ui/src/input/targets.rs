@@ -191,7 +191,7 @@ mod tests {
             Row { depth: 1, ..Row::parse("Plain row") },
           ],
         );
-        panel.group();
+        panel.group(&[]);
         panel.choose(1);
         panel.focus(focused);
         panel.scene_list(&mut Vec::new(), At::default(), 28, 8);

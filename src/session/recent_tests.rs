@@ -17,10 +17,7 @@ fn batch_forget_writes_once_and_preserves_files() -> Result<()> {
   let (_root, mut session, pdf) = reader()?;
   let bytes = std::fs::read(&pdf)?;
   session.app().marks.insert('a', Position::default());
-  session
-    .state
-    .marks
-    .insert('A', Mark { path: pdf.clone(), cursor: Position::default() });
+  session.state.marks.insert('A', Mark::new(pdf.clone(), Position::default()));
   session.record();
   session.flush()?;
   let writes = session.state.writes;
@@ -125,10 +122,7 @@ fn failed_open_does_not_revive_history() -> Result<()> {
 #[test]
 fn global_mark_reopens_forgotten_path() -> Result<()> {
   let (_root, mut session, pdf) = reader()?;
-  session
-    .state
-    .marks
-    .insert('A', Mark { path: pdf.clone(), cursor: Position::default() });
+  session.state.marks.insert('A', Mark::new(pdf.clone(), Position::default()));
   session.forget_recent(&[pdf])?;
   session.app().request = Some(Request::GoMark('A', true));
   session.settle()?;
@@ -301,5 +295,63 @@ fn recent_batch_saves_once() -> Result<()> {
   assert_eq!(session.state.recent, []);
   assert!(first.exists() && second.exists());
   assert_eq!(State::load(session.store.as_deref().unwrap()).recent, []);
+  Ok(())
+}
+
+/// Marks list under Local and Global headings; `x` asks first, and the
+/// confirm bar answers keys and clicks alike.
+#[test]
+fn marks_remove_by_key_and_click() -> Result<()> {
+  use super::interaction::Interaction;
+  use vpdf_model::input::{
+    KeyCode, Mouse, MouseButton, MouseEvent, MouseEventKind,
+  };
+  let (_root, mut session, pdf) = reader()?;
+  session.app().marks.insert('a', Position::default());
+  let cursor = Position::default();
+  session.state.set_mark('A', Mark::new(pdf, cursor));
+  // Saved first, so removal must outlast the merge with disk.
+  session.record();
+  session.flush()?;
+  session.app().request = Some(Request::Panel(PanelKind::Marks));
+  session.settle()?;
+  let shown =
+    |session: &mut Session| -> Vec<String> {
+      let rows = session.app().panel.as_ref().unwrap().view.rows();
+      rows
+        .iter()
+        .map(|row| {
+          if row.key.is_empty() { row.label.clone() } else { row.key.clone() }
+        })
+        .collect()
+    };
+  assert_eq!(shown(&mut session), ["Local", "’a", "Global", "’A"]);
+  // A local mark, by key.
+  session.app().panel.as_mut().unwrap().view.choose(1);
+  recent_key(&mut session, KeyCode::Char('x'))?;
+  assert!(session.app().confirming_recent());
+  recent_key(&mut session, KeyCode::Char('y'))?;
+  assert!(session.app().marks.is_empty());
+  assert_eq!(shown(&mut session), ["Global", "’A"]);
+  // A global mark: Cancel, then Remove, by click.
+  for (column, removed) in [(22, false), (2, true)] {
+    session.app().panel.as_mut().unwrap().view.choose(1);
+    recent_key(&mut session, KeyCode::Char('x'))?;
+    session.draw_focused(&mut Vec::new())?;
+    let app = session.app();
+    let row = app.at.row + app.screen.rows - 2;
+    let column = app.at.column + column;
+    let press =
+      MouseEvent::new(MouseEventKind::Down(MouseButton::Left), column, row);
+    session.interact(Interaction::Mouse(Mouse::from(press)))?;
+    assert!(!session.app().confirming_recent(), "{removed}");
+    assert_eq!(session.state.marks.is_empty(), removed);
+  }
+  assert!(session.app().panel.as_ref().unwrap().view.rows().is_empty());
+  // Saves keep both removals.
+  session.flush()?;
+  let saved = State::load(session.store.as_deref().unwrap());
+  assert!(saved.marks.is_empty());
+  assert!(saved.recent.iter().all(|entry| entry.marks.is_empty()));
   Ok(())
 }

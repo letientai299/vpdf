@@ -54,7 +54,8 @@ fn opening_is_cancelable() -> Result<()> {
   assert!(!app.sidebar_pending(kind));
   app.open_panel(kind)?;
   loaded(&mut app, kind)?;
-  assert_eq!(app.panel.as_ref().unwrap().view.rows().len(), 2);
+  let rows = app.panel.as_ref().unwrap().view.rows();
+  assert_eq!(rows.iter().filter(|row| row.follows()).count(), 2);
   Ok(())
 }
 

@@ -277,6 +277,8 @@ impl App {
     self.scene_preview(scene)?;
     self.scene_region(scene, snap_regions);
     self.track_outline();
+    self.track_figures();
+    self.track_jumps()?;
     self.refill_panel(vpdf_ui::keys::PanelKind::Info)?;
     if let Some(panel) = &mut self.panel {
       panel

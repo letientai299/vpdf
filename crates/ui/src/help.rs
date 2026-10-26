@@ -4,7 +4,7 @@ use vpdf_model::style::Role;
 
 impl Layout {
   pub fn help(rows: &[Row], columns: usize) -> Self {
-    let mut layout = Self { columns, lines: Vec::new(), starts: Vec::new() };
+    let mut layout = Self::empty(columns);
     let mut start = 0;
     while start < rows.len() {
       let end = rows[start + 1..]

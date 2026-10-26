@@ -139,6 +139,7 @@ impl Session {
       Some(Request::Print) => self.print(),
       Some(Request::RecentTab) => self.recent_tab(screen),
       Some(Request::ForgetRecent(paths)) => self.forget_recent(&paths),
+      Some(Request::RemoveMark(name)) => self.remove_mark(name),
       Some(Request::PanelOpen { path, position, focus }) => {
         self.panel_open(&path, position, focus, screen)
       }
@@ -166,9 +167,8 @@ impl Session {
           app.manual.is_none(),
           "Global marks unavailable for help"
         );
-        let mark =
-          Mark { path: app.path.clone(), cursor: app.reading_position()? };
-        self.state.marks.insert(name, mark);
+        let mark = Mark::new(app.path.clone(), app.reading_position()?);
+        self.state.set_mark(name, mark);
         self.changed();
         Ok(())
       }

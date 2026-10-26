@@ -192,14 +192,11 @@ mod tests {
       for query in ["international", "café", "日本", "x y", "Straße", "STRASSE"]
       {
         let pattern = compile(query, false)?;
+        let key = |hit: crate::search::Hit| {
+          (hit.first.line, hit.first.glyph, hit.excerpt, hit.matched)
+        };
         let hits = |index: &Index| -> Result<Vec<_>> {
-          Ok(
-            index
-              .matches(&pattern, 100)?
-              .into_iter()
-              .map(|hit| (hit.first.line, hit.first.glyph, hit.excerpt))
-              .collect(),
-          )
+          Ok(index.matches(&pattern, 100)?.into_iter().map(key).collect())
         };
         assert_eq!(hits(&decoded)?, hits(&index)?, "{query}");
       }

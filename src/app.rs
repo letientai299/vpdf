@@ -42,6 +42,8 @@ pub enum Request {
   /// A new tab listing recent documents over this one.
   RecentTab,
   ForgetRecent(Vec<PathBuf>),
+  /// Removes a local mark, or a global one for every document.
+  RemoveMark(char),
   /// A panel whose rows the session builds.
   Panel(PanelKind),
   SetMark(char),

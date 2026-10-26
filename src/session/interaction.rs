@@ -20,8 +20,14 @@ impl Session {
 
   pub(super) fn interact(&mut self, input: Interaction) -> Result<bool> {
     if !self.tabs.is_empty() && self.app().confirming_recent() {
-      if let Interaction::Key(key) = input {
-        self.app().confirm_recent(key);
+      match input {
+        Interaction::Key(key) => self.app().confirm_recent(key),
+        Interaction::Mouse(report) => {
+          if let Some(mouse) = self.screen_mouse(report) {
+            self.app().confirm_click(mouse);
+          }
+        }
+        Interaction::Paste(_) | Interaction::Leave => {}
       }
       self.settle()?;
       return Ok(true);

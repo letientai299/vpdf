@@ -2,6 +2,8 @@ use super::layout::{Layout, Meta};
 use super::*;
 use crate::testing::lines;
 use vpdf_model::geometry::At;
+use vpdf_model::scene::Op;
+use vpdf_model::style::Role;
 
 fn figure(depth: usize) -> Row {
   Row {
@@ -86,7 +88,7 @@ fn rows_keep_the_page_apart() {
   let grouped = |width| {
     let heading = Row { depth: 0, ..Row::parse("Page 3") };
     let mut panel = Panel::new(PanelKind::Figures, vec![heading, figure(1)]);
-    panel.group();
+    panel.group(&[]);
     let mut scene = Vec::new();
     panel.scene_list(&mut scene, At::default(), width, 4);
     let lines = lines(&scene, width);
@@ -122,10 +124,12 @@ fn jump_positions_skip_the_key_column() {
   };
   let mut panel = Panel::new(PanelKind::Jumps, vec![row]);
   let mut scene = Vec::new();
-  panel.scene_list(&mut scene, At::default(), 28, 4);
+  panel.scene_list(&mut scene, At::default(), 28, 6);
   let lines = lines(&scene, 28);
   assert!(lines[&1].starts_with(" −2 Heading: Intro"), "{:?}", lines[&1]);
-  assert_eq!(lines[&2].trim_end(), format!("   {position}"));
+  // Under the title, past the marker and key column.
+  assert_eq!(lines[&2].trim_end(), "    p. 5 · L1 C1");
+  assert_eq!(lines[&3].trim_end(), "    abcdefghijk");
 }
 
 #[test]
@@ -179,7 +183,7 @@ fn current_row_maps_to_its_shown_row() {
   for (grouped, closed, current, want) in cases {
     let mut panel = Panel::new(PanelKind::Figures, rows.clone());
     if grouped {
-      panel.group();
+      panel.group(&[]);
     }
     if let Some(source) = closed {
       panel.choose(source);
@@ -229,5 +233,68 @@ fn refills_keep_the_current_row() {
   let mut panel = Panel::new(PanelKind::Jumps, vec![row("a")]);
   for width in 0..4 {
     panel.scene_list(&mut Vec::new(), At::default(), width, 4);
+  }
+}
+
+fn keyed(key: &str, kind: RowKind, label: &str) -> Row {
+  Row {
+    key: key.into(),
+    kind,
+    ..Row::new(label.into(), "p2".into(), Destination::None)
+  }
+}
+
+#[test]
+fn row_search_finds_and_marks_keys() {
+  let rows = vec![
+    keyed("Fig 1", RowKind::Figure, "Encoder"),
+    keyed("Tab 3", RowKind::Table, "Costs"),
+    keyed("Fig 2", RowKind::Figure, "Decoder"),
+  ];
+  // (query, selected)
+  for (query, selected) in
+    [("tab 3", 1), ("table 3", 1), ("figure 2", 2), ("fig 2 dec", 2)]
+  {
+    let mut panel = Panel::new(PanelKind::Figures, rows.clone());
+    panel.begin_search(false);
+    assert!(panel.finish_search(query), "{query}");
+    assert_eq!(panel.selected(), selected, "{query}");
+  }
+  let mut panel = Panel::new(PanelKind::Figures, rows);
+  panel.begin_search(false);
+  assert!(panel.finish_search("tab 3"));
+  let mut scene = Vec::new();
+  panel.scene_list(&mut scene, At::default(), 40, 6);
+  let marked = scene.windows(2).any(|ops| {
+    matches!(ops, [Op::Style(Role::TextMatch), Op::Text(text)]
+      if text.as_str() == "Tab 3")
+  });
+  assert!(marked);
+}
+
+/// A projected keyed list paints the cut its layout reports.
+#[test]
+fn projected_keyed_rows_report_their_cut() {
+  let label = "The Transformer – model architecture";
+  let rows = vec![
+    keyed("Fig 1", RowKind::Figure, label),
+    keyed("Fig 2", RowKind::Figure, label),
+    keyed("Tab 3", RowKind::Table, "Short"),
+  ];
+  let tree = tree::Tree::from_depths([0, 1, 0].into_iter());
+  for width in 16..48 {
+    let mut panel = Panel::new(PanelKind::Figures, rows.clone());
+    panel.project(tree.project(|source| source == 0));
+    for (line, source, title) in [(1, 0, label), (2, 2, "Short")] {
+      panel.point(Pointing::Row(source));
+      let mut scene = Vec::new();
+      panel.scene_list(&mut scene, At::default(), width, 6);
+      let shown = &lines(&scene, width)[&line];
+      assert_eq!(
+        panel.hover_title().is_some(),
+        !shown.contains(title),
+        "{width} {source}: {shown:?}"
+      );
+    }
   }
 }

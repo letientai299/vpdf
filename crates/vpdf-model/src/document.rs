@@ -79,6 +79,9 @@ pub struct Annotation {
   pub areas: Vec<Bounds>,
   pub contents: String,
   pub author: String,
+  /// Stroke color, as RGB.
+  #[serde(default)]
+  pub color: Option<[u8; 3]>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]

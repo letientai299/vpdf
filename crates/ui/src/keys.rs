@@ -39,6 +39,11 @@ impl PanelKind {
     }
   }
 
+  /// Rows group under headings the panel owns.
+  pub fn grouped(self) -> bool {
+    matches!(self, Self::Results | Self::Annotations | Self::Marks)
+  }
+
   /// List rows keep a gutter for the current-row marker.
   pub fn marks_current(self) -> bool {
     matches!(self, Self::Results | Self::Figures | Self::Jumps)
@@ -426,7 +431,7 @@ pub(crate) const BINDINGS: &[(&str, Action, &str)] = &[
 
 pub const RECENT_BINDINGS: &[(&str, Action, &str)] = &[
   (" ", Action::RecentToggle, "toggle recent checkbox"),
-  ("x", Action::RecentRemove, "remove recent files"),
+  ("x", Action::RecentRemove, "remove recent files or a mark"),
 ];
 
 /// The first key bound to `action`.

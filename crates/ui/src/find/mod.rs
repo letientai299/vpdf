@@ -46,6 +46,8 @@ pub struct Search {
   query: Query,
   hidden: bool,
   origin: Position,
+  /// The hit the reader last landed on.
+  landed: Option<Position>,
   /// The search an open prompt replaces, and whether it was hidden.
   previous: Option<(Query, bool)>,
   prompt_origin: Option<Location>,
@@ -119,6 +121,14 @@ impl Search {
     self.origin
   }
 
+  pub fn landed(&self) -> Option<Position> {
+    self.landed
+  }
+
+  pub fn land(&mut self, hit: Position) {
+    self.landed = Some(hit);
+  }
+
   /// Starts showing scan `generation` of `query` from `origin`.
   pub fn begin(&mut self, query: Query, generation: u64, origin: Position) {
     self.generation = generation;
@@ -129,6 +139,7 @@ impl Search {
     self.query = query;
     self.hidden = false;
     self.origin = origin;
+    self.landed = None;
   }
 
   /// Installs finished `hits` for `query`, for tests and benches; the

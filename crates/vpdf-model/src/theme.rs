@@ -78,6 +78,7 @@ impl Theme {
       Tone::Bar if background => palette.surface,
       Tone::Bar => palette.muted,
       Tone::Error => palette.red,
+      Tone::Rgb(rgb) => rgb,
     }
   }
 }

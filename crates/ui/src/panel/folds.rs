@@ -158,12 +158,51 @@ fn reveal(tree: &Tree, source: usize, closed: &mut [bool]) {
 }
 
 impl Panel {
-  /// Groups rows by their depth; every group starts open.
-  pub fn group(&mut self) {
-    let folds =
+  /// Groups rows by their depth; headings named in `closed` start
+  /// closed.
+  pub fn group(&mut self, closed: &[String]) {
+    let mut folds =
       Folds::new(Tree::from_depths(self.rows.iter().map(|row| row.depth)));
+    for (source, row) in self.rows.iter().enumerate() {
+      if row.depth == 0 && closed.contains(&row.label) {
+        folds.close(source);
+      }
+    }
     folds.project(self, None);
     self.folds = Some(folds);
+  }
+
+  /// Refills grouped rows: the same topic keeps closed groups, and a
+  /// panel that was empty selects the landed row, else the first item.
+  pub fn regroup(
+    &mut self,
+    rows: Vec<super::Row>,
+    note: &'static str,
+    topic: &str,
+    landed: Option<crate::text::Position>,
+  ) -> bool {
+    self.set_topic(topic);
+    let closed = self.closed_groups();
+    let empty = self.rows.is_empty();
+    let kept = self.refill(rows, note);
+    self.group(&closed);
+    self.mark_landed(landed);
+    if empty {
+      let first = self.rows.iter().position(super::Row::follows);
+      if let Some(row) = self.current.or(first) {
+        self.select(row);
+      }
+    }
+    kept
+  }
+
+  /// Labels of the closed group headings.
+  pub fn closed_groups(&self) -> Vec<String> {
+    let Some(folds) = &self.folds else { return Vec::new() };
+    folds
+      .closed_sources()
+      .map(|source| self.rows[source].label.clone())
+      .collect()
   }
 
   pub fn foldable(&self) -> bool {

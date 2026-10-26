@@ -50,10 +50,11 @@ fn reader_workflows() -> Result<()> {
   assert!(!app.search.hits().is_empty());
   app.next_result(true, 2)?;
   app.open_panel(PanelKind::Results)?;
-  assert_eq!(
-    app.panel.as_ref().unwrap().view.rows().len(),
-    app.search.hits().len()
-  );
+  let rows = app.panel.as_ref().unwrap().view.rows();
+  let hits = rows.iter().filter(|row| row.follows()).count();
+  assert_eq!(hits, app.search.hits().len());
+  let pages = rows.iter().filter(|row| row.depth == 0).count();
+  assert_eq!(pages + hits, rows.len());
   app.action(Input::plain(Action::Cancel))?;
   assert!(!app.search.hidden());
   app.command("cancel")?;

@@ -1,8 +1,8 @@
-use super::{
-  Destination, Row, RowKind, Style, UnicodeWidthChar, UnicodeWidthStr,
-};
+use super::{Destination, Row, RowKind, Style, UnicodeWidthStr};
+use std::ops::Range;
 use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::Role;
+use vpdf_model::text::{clipped, tail};
 
 impl Row {
   pub fn follows(&self) -> bool {
@@ -90,9 +90,21 @@ impl Row {
         styles(scene, base, None);
         parent.width() + name.width()
       }
-      (Style::Muted, _) => {
+      (Style::Excerpt { start, end }, _) => {
+        let (text, matched) = excerpt(&self.label, start..end, room);
+        marked(scene, &text[..matched.start], query, base, None);
+        let hit = Some(Role::TextMatch);
+        marked(scene, &text[matched.clone()], query, base, hit);
+        marked(scene, &text[matched.end..], query, base, None);
+        styles(scene, base, None);
+        text.width()
+      }
+      (Style::Document | Style::Muted, _) => {
+        let role =
+          if self.style == Style::Muted { Role::Muted } else { Role::Argument };
         let text = vpdf_model::text::clean(&self.label, room);
-        marked(scene, &text, query, base, plain.then_some(Role::Muted));
+        marked(scene, &text, query, base, plain.then_some(role));
+        styles(scene, base, None);
         text.width()
       }
       (Style::Heading, _) => {
@@ -110,6 +122,27 @@ impl Row {
   }
 }
 
+impl Row {
+  /// The kind's glyph, in the annotation's own color when it has one.
+  pub(super) fn glyph(&self) -> Option<(char, Role)> {
+    let (glyph, role) = self.kind.glyph()?;
+    let color = match &self.destination {
+      Destination::Annotation { annotation, .. } => annotation.color,
+      _ => None,
+    };
+    Some((glyph, color.map_or(role, Role::Swatch)))
+  }
+
+  /// An annotation's note when the label quotes other text.
+  pub(super) fn note(&self) -> Option<&str> {
+    let Destination::Annotation { annotation, .. } = &self.destination else {
+      return None;
+    };
+    let note = annotation.contents.as_str();
+    (!note.is_empty() && note != self.label).then_some(note)
+  }
+}
+
 /// Unselected rows show accent colors.
 pub(super) fn accented(base: Option<Role>) -> bool {
   matches!(base, Some(Role::Reset | Role::Dim | Role::Hover | Role::HoverDim))
@@ -124,6 +157,7 @@ impl RowKind {
       Self::Table => ('▤', Role::Mode),
       Self::Mention => ('¶', Role::Muted),
       Self::Search => ('⌕', Role::Key),
+      Self::Link => ('↗', Role::Mode),
       Self::Note => ('✎', Role::Key),
       Self::Underline => ('‗', Role::Argument),
       Self::Highlight => ('▇', Role::Key),
@@ -131,23 +165,36 @@ impl RowKind {
   }
 }
 
-/// `text` within `columns`, cut from the left behind an ellipsis.
-fn tail(text: &str, columns: usize) -> String {
-  let text: String = crate::text::printable(text).collect();
-  if text.width() <= columns {
-    return text;
+/// `label` within `room` cells around its `matched` bytes, `…` at cut
+/// ends; the match's bytes in the result.
+pub(super) fn excerpt(
+  label: &str,
+  matched: Range<usize>,
+  room: usize,
+) -> (String, Range<usize>) {
+  let (before, hit, after) = match (
+    label.get(..matched.start),
+    label.get(matched.clone()),
+    label.get(matched.end..),
+  ) {
+    (Some(before), Some(hit), Some(after)) => (before, hit, after),
+    _ => ("", "", label),
+  };
+  let hit = clipped(hit, room).0;
+  let spare = room - hit.width();
+  // Half the spare cells each side; a short side lends the rest.
+  let before = tail(before, (spare / 2).max(spare - after.width().min(spare)));
+  let mut rest = spare.saturating_sub(before.width());
+  let start = before.len();
+  let end = start + hit.len();
+  loop {
+    let text = format!("{before}{hit}{}", clipped(after, rest).0);
+    // Joined parts can measure wider than each alone.
+    if text.width() <= room || rest == 0 {
+      return (text, start..end);
+    }
+    rest -= 1;
   }
-  let Some(room) = columns.checked_sub(1) else { return String::new() };
-  let mut width = 0;
-  let kept: Vec<char> = text
-    .chars()
-    .rev()
-    .take_while(|ch| {
-      width += ch.width().unwrap_or(0);
-      width <= room
-    })
-    .collect();
-  std::iter::once('…').chain(kept.into_iter().rev()).collect()
 }
 
 /// The gutter cell: `▌` on the current row.

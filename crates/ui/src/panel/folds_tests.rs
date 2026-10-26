@@ -16,7 +16,7 @@ fn grouped(kind: PanelKind) -> Panel {
     })
     .collect();
   let mut panel = Panel::new(kind, rows);
-  panel.group();
+  panel.group(&[]);
   panel
 }
 
@@ -241,6 +241,7 @@ fn group_note_menu() {
       areas: vec![],
       contents: "A note".into(),
       author: String::new(),
+      color: None,
     },
   };
   for (source, expected) in [(0, false), (1, true), (2, false)] {

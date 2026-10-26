@@ -33,11 +33,18 @@ impl<S: TextSource + Pages> View<'_, S> {
     // Repeated landings keep the view.
     let here = self.landing.matches(self.landed_view(position))
       && self.reader.cursor == position;
-    if !here {
-      self.jump_cursor(position)?;
-      self.land()?;
-      self.landing.record(self.landed_view(self.reader.cursor));
+    if here {
+      self.flash_landing();
+      return Ok(());
     }
+    self.jump_cursor(position)?;
+    self.land_here()
+  }
+
+  /// Brings the cursor into view and flashes it; records no jump.
+  pub fn land_here(&mut self) -> Result<()> {
+    self.land()?;
+    self.landing.record(self.landed_view(self.reader.cursor));
     self.flash_landing();
     Ok(())
   }

@@ -13,6 +13,17 @@ impl Session {
     self.mouse_report_at(report, Instant::now())
   }
 
+  /// A report in screen cells, clamped to the grid.
+  pub(super) fn screen_mouse(
+    &self,
+    report: vpdf_model::input::Mouse,
+  ) -> Option<MouseEvent> {
+    let screen = self.screen?;
+    let mut mouse = report.cells(screen.cell())?;
+    (mouse.column, mouse.row) = grid_cell(screen, report);
+    Some(mouse)
+  }
+
   /// One mouse report that arrived at `now`; whether it needs a frame.
   pub fn mouse_report_at(
     &mut self,
@@ -24,17 +35,13 @@ impl Session {
       return Ok(false);
     }
     let Some(screen) = self.screen else { return Ok(false) };
-    // Padding past the grid reports cells beyond it.
-    let (column, row) = report.cell(screen.cell());
-    let column = column.min(screen.columns.saturating_sub(1));
-    let row = row.min(screen.rows.saturating_sub(1));
+    let (column, row) = grid_cell(screen, report);
     if let Some(forward) = report.history() {
       return self.history_button(column, row, forward);
     }
-    let Some(mut mouse) = report.cells(screen.cell()) else {
+    let Some(mouse) = self.screen_mouse(report) else {
       return Ok(false);
     };
-    (mouse.column, mouse.row) = (column, row);
     let pixel =
       report.pixel().map(|(x, y)| Pixel { x, y, cell: screen.cell() });
     self.pointed(mouse, pixel, now)
@@ -655,4 +662,16 @@ impl Session {
     let panes = &self.tabs.get(self.active)?.panes;
     panes.iter().find_map(|app| app.autoscroll.deadline())
   }
+}
+
+/// The report's cell; padding past the grid reports cells beyond it.
+fn grid_cell(
+  screen: vpdf_ui::layout::Screen,
+  report: vpdf_model::input::Mouse,
+) -> (u16, u16) {
+  let (column, row) = report.cell(screen.cell());
+  (
+    column.min(screen.columns.saturating_sub(1)),
+    row.min(screen.rows.saturating_sub(1)),
+  )
 }

@@ -45,7 +45,7 @@ impl Meta {
     } else {
       String::new()
     };
-    let glyph = row.kind.glyph().filter(|_| keep(2, TITLE));
+    let glyph = row.glyph().filter(|_| keep(2, TITLE));
     let label = clean(&row.detail, available);
     let page = if !label.is_empty()
       && label.width() == row.detail.width()
@@ -57,7 +57,7 @@ impl Meta {
     };
     let badge = format!(" +{hidden}");
     let lead = (key_column == 0 || !key.is_empty())
-      && glyph.is_some() == row.kind.glyph().is_some();
+      && glyph.is_some() == row.glyph().is_some();
     // Contents keeps `+N` even when the page drops.
     let badge = if hidden > 0 && lead && room >= badge.width() + TITLE {
       room -= badge.width();
@@ -70,16 +70,33 @@ impl Meta {
     Self { indent, glyph, key, room: room - indent, badge, page }
   }
 
-  /// Paints the glyph and key in `base`, accented when unselected.
-  pub(crate) fn lead<'a>(&self, scene: &mut impl Draw<'a>, base: Role) {
+  /// Cells the glyph and key take before the title.
+  pub(crate) fn lead_cells(&self) -> usize {
+    self.glyph.map_or(0, |(glyph, _)| glyph.width().unwrap_or(1) + 1)
+      + self.key.width()
+  }
+
+  /// Paints the glyph and key in `base`, accented when unselected, with
+  /// `query` marked in the key.
+  pub(crate) fn lead<'a>(
+    &self,
+    scene: &mut impl Draw<'a>,
+    base: Role,
+    query: &str,
+  ) {
     let accent = |role| super::rows::accented(Some(base)).then_some(role);
     if let Some((glyph, role)) = self.glyph {
       super::rows::styles(scene, Some(base), accent(role));
       scene.text(&format!("{glyph} "));
     }
     if !self.key.is_empty() {
-      super::rows::styles(scene, Some(base), accent(Role::Mode));
-      scene.text(&self.key);
+      super::rows::marked(
+        scene,
+        &self.key,
+        query,
+        Some(base),
+        accent(Role::Mode),
+      );
     }
     scene.push(Op::Style(base));
   }
@@ -102,6 +119,8 @@ pub(crate) struct Layout {
   pub columns: usize,
   pub lines: Vec<Line>,
   pub starts: Vec<usize>,
+  /// The selected row the lines expand, when they depend on it.
+  pub selected: Option<usize>,
 }
 
 pub fn wrap(mut text: &str, columns: usize) -> Vec<String> {
@@ -137,8 +156,12 @@ pub fn wrap(mut text: &str, columns: usize) -> Vec<String> {
 }
 
 impl Layout {
+  pub(crate) fn empty(columns: usize) -> Self {
+    Self { columns, lines: Vec::new(), starts: Vec::new(), selected: None }
+  }
+
   pub(crate) fn plain(rows: &[Row], columns: usize) -> Self {
-    let mut layout = Self { columns, lines: Vec::new(), starts: Vec::new() };
+    let mut layout = Self::empty(columns);
     let keys = super::key_width(rows, columns);
     let key_column = key_cells(rows, columns);
     for (source, row) in rows.iter().enumerate() {
@@ -153,6 +176,41 @@ impl Layout {
     }
     layout.starts.push(layout.lines.len());
     layout
+  }
+
+  /// Each row's label lines, then the dim text `second` gives it, which
+  /// replaces the label's detail; the selected row wraps both.
+  pub(crate) fn expanded<'a>(
+    rows: &'a [Row],
+    columns: usize,
+    selected: usize,
+    second: impl Fn(usize, &'a Row) -> Option<&'a str>,
+  ) -> Self {
+    let mut layout = Self { selected: Some(selected), ..Self::empty(columns) };
+    let keys = key_cells(rows, columns);
+    for (source, row) in rows.iter().enumerate() {
+      layout.starts.push(layout.lines.len());
+      let Some(text) = second(source, row) else {
+        layout.label(source, row, keys, selected);
+        continue;
+      };
+      let label = Row { detail: String::new(), ..row.clone() };
+      let lead = layout.label(source, &label, keys, selected);
+      layout.secondary(source, text, selected, lead);
+    }
+    layout.starts.push(layout.lines.len());
+    layout
+  }
+
+  /// Annotations; the selected one shows its note.
+  pub(crate) fn annotations(
+    rows: &[Row],
+    columns: usize,
+    selected: usize,
+  ) -> Self {
+    Self::expanded(rows, columns, selected, |source, row| {
+      row.note().filter(|_| source == selected)
+    })
   }
 
   pub(crate) fn project(
@@ -173,16 +231,18 @@ impl Layout {
     self
   }
 
-  /// The row's label lines; the first keeps its glyph, key and page.
+  /// The row's label lines; the first keeps its glyph, key and page,
+  /// and the rest start under the title. Returns the title's column.
   pub(crate) fn label(
     &mut self,
     source: usize,
     row: &Row,
     key_column: usize,
     selected: usize,
-  ) {
-    let Meta { room, page, .. } =
-      Meta::new(row, self.columns, key_column, 0, 0);
+  ) -> usize {
+    let meta = Meta::new(row, self.columns, key_column, 0, 0);
+    let lead = meta.lead_cells();
+    let Meta { room, page, .. } = meta;
     let (labels, cut) = if source == selected {
       (wrap(&row.label, room), false)
     } else {
@@ -190,6 +250,8 @@ impl Layout {
       (vec![label], cut)
     };
     for (index, label) in labels.into_iter().enumerate() {
+      let label =
+        if index == 0 { label } else { format!("{}{label}", " ".repeat(lead)) };
       let line = Row::new(label, String::new(), Destination::None);
       self.lines.push(Line {
         source,
@@ -207,15 +269,18 @@ impl Layout {
         },
       });
     }
+    lead
   }
 
+  /// Dim lines of `text`, `indent` cells in.
   pub(crate) fn secondary(
     &mut self,
     source: usize,
     text: &str,
     selected: usize,
+    indent: usize,
   ) {
-    let indent = self.columns.saturating_sub(1).min(2);
+    let indent = self.columns.saturating_sub(1).min(indent);
     let room = self.columns.saturating_sub(indent);
     let lines = if source == selected {
       wrap(text, room)

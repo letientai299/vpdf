@@ -1,7 +1,7 @@
 use crate::bindings::{Bindings, Context, Control, Target as Binding};
 use crate::keys::{self, Action, Fold, PanelKind};
 use crate::paint::Frame;
-use crate::panel::{Destination, Panel};
+use crate::panel::{Destination, Panel, Row};
 use crate::pointer::Items;
 use crate::region::Operation;
 use crate::split::Rect;
@@ -507,6 +507,16 @@ pub fn panel_items(
       let copy = Command::CopyText(text, "Copied row");
       items.push(panel_bound(panel, "Copy row", Action::YankLine, copy));
     }
+  }
+  // The pressed row, as Recent's items require.
+  let pressed = destination.and_then(|destination| {
+    panel.rows().iter().find(|row| row.destination == *destination)
+  });
+  if panel.kind() == PanelKind::Marks
+    && pressed.and_then(Row::mark_name).is_some()
+  {
+    let remove = Command::Key(Action::RecentRemove);
+    items.push(panel_bound(panel, "Remove mark", Action::RecentRemove, remove));
   }
   if panel.is_recent_view() && matches!(destination, Some(Destination::File(_)))
   {

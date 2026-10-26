@@ -40,6 +40,8 @@ pub enum Role {
   PreviewBorder,
   PreviewText,
   Badge(Color),
+  /// Text in a color the document chose, such as a highlight's.
+  Swatch([u8; 3]),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,6 +58,7 @@ pub enum Tone {
   Error,
   PreviewBorder,
   PreviewText,
+  Rgb([u8; 3]),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,6 +154,7 @@ impl Role {
         Keep,
         &[Bold, Inverse],
       )),
+      Self::Swatch(rgb) => Patch(P::new(Set(T::Rgb(rgb)), Keep, &[])),
     }
   }
 }

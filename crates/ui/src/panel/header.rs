@@ -4,7 +4,7 @@ use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
 use vpdf_model::scene::{Draw, Op};
 use vpdf_model::style::{Color, Role};
-use vpdf_model::text::clean;
+use vpdf_model::text::{clean, clipped};
 
 pub(super) struct Button<'a> {
   pub text: &'a str,
@@ -14,7 +14,8 @@ pub(super) struct Button<'a> {
 pub(super) struct Header<'a> {
   pub title: &'a str,
   pub count: usize,
-  pub context: &'a str,
+  /// Text after the count; an accent role overrides `role`.
+  pub context: &'a [(String, Option<Role>)],
   pub role: Role,
   pub controls: &'a [Button<'a>],
 }
@@ -41,15 +42,23 @@ impl Header<'_> {
       columns.saturating_sub(count.width()),
     );
     let count = clean(&count, columns - title.width());
-    let room = columns - title.width() - count.width();
-    let context = clean(self.context, room);
+    let mut room = columns - title.width() - count.width();
     crate::paint::move_to(scene, at, 0u16, 0u16);
     scene.push(Op::Style(Role::Badge(Color::Cyan)));
     scene.text(&title);
     scene.push(Op::Style(self.role));
     scene.text(&count);
-    scene.text(&context);
-    scene.push(Op::Spaces(room - context.width()));
+    for (at, (text, accent)) in self.context.iter().enumerate() {
+      // Later spans keep their room; this one clips first.
+      let later: usize =
+        self.context[at + 1..].iter().map(|(text, _)| text.width()).sum();
+      let text = clipped(text, room.saturating_sub(later)).0;
+      room -= text.width();
+      scene.extend(accent.iter().map(|&role| Op::Style(role)));
+      scene.text(&text);
+      scene.push(Op::Style(self.role));
+    }
+    scene.push(Op::Spaces(room));
     let mut targets = Vec::new();
     let mut column = columns + 1;
     if controls.is_empty() {

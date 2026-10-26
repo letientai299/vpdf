@@ -12,6 +12,11 @@ as following a reference or search result. Both leave the source PDF unchanged.
 3. Type `'a` to return to the exercise's line. Type `'b` to return to the
    explanation. Backtick followed by `a` returns to the exact glyph column.
 4. Run `:marks` to list marks. Select a row with `j` or `k` and Enter to follow.
+5. Press `x` on a row to remove its mark. Enter, `y`, or a click on Remove
+   confirms; `n`, Escape, `Ctrl-c`, or Cancel keeps it.
+
+The list groups this pane's marks under Local and global marks under Global.
+Removing a global mark removes it for every document.
 
 A lowercase mark belongs to the current reading pane. A same-document split
 starts from a copy of its view, then keeps independent live reading state.

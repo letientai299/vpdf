@@ -122,9 +122,7 @@ mod tests {
     let path = root.path().join("missing.pdf");
     let mut state = State::default();
     state.opened(entry(path.to_str().unwrap(), 0, 1));
-    state
-      .marks
-      .insert('A', Mark { path: path.clone(), cursor: Position::default() });
+    state.marks.insert('A', Mark::new(path.clone(), Position::default()));
     state.save(&store, &[], &[])?;
     state.stale = Arc::new(scanned(&state));
     let mut newer = State::load(&store);
@@ -173,12 +171,8 @@ mod tests {
     for path in [&existing, &missing, &removed] {
       state.recent.push(entry(path.to_str().unwrap(), 0, 1));
     }
-    state
-      .marks
-      .insert('A', Mark { path: missing.clone(), cursor: Position::default() });
-    state
-      .marks
-      .insert('B', Mark { path: removed.clone(), cursor: Position::default() });
+    state.marks.insert('A', Mark::new(missing.clone(), Position::default()));
+    state.marks.insert('B', Mark::new(removed.clone(), Position::default()));
     let (wake, woken) = crate::fixtures::wake();
     let mut cleaner = Cleaner::default();
     cleaner.poll(&mut state, &wake);
@@ -201,7 +195,7 @@ mod tests {
     let old = entry(path.to_str().unwrap(), 0, 1);
     let mut state = State::default();
     state.recent.push(old.clone());
-    state.marks.insert('A', Mark { path, cursor: old.cursor });
+    state.marks.insert('A', Mark::new(path, old.cursor));
     state.save(&store, &["help".into()], &["query".into()])?;
     state.stale = Arc::new(scanned(&state));
     assert!(state.prune());

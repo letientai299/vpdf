@@ -1,6 +1,6 @@
 use super::layout::{Meta, key_cells};
-use super::{Panel, tree::Tree};
-use crate::keys::{Action, Fold};
+use super::{Panel, Style, tree::Tree};
+use crate::keys::{Action, Fold, PanelKind};
 use crate::split::Rect;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
@@ -112,14 +112,14 @@ impl Panel {
     let action = self.control_action(control)?;
     let label = match control {
       Control::Branch(_) if matches!(action, Action::Fold(Fold::Open)) => {
-        if self.kind == crate::keys::PanelKind::Outline {
+        if self.kind == PanelKind::Outline {
           "Expand branch"
         } else {
           "Expand group"
         }
       }
       Control::Branch(_) => {
-        if self.kind == crate::keys::PanelKind::Outline {
+        if self.kind == PanelKind::Outline {
           "Collapse branch"
         } else {
           "Collapse group"
@@ -128,6 +128,31 @@ impl Panel {
       _ => super::header::tip(control, self.auto_expand())?,
     };
     Some(label.into())
+  }
+
+  /// The header with its fold controls; their click targets.
+  fn scene_tree_header<'a>(
+    &self,
+    scene: &mut impl Draw<'a>,
+    at: At,
+    width: u16,
+  ) -> Vec<(Rect, Control)> {
+    let auto = self.tree_view.as_ref().and_then(|outline| outline.auto);
+    let controls = super::header::fold_controls(auto == Some(true));
+    let shown = match auto {
+      Some(_) => 3,
+      // Empty groups have nothing to fold.
+      None if self.rows.is_empty() => 0,
+      None => 2,
+    };
+    super::header::Header {
+      title: self.kind.title(),
+      count: self.row_count(),
+      context: &self.context(),
+      role: Role::Bar,
+      controls: &controls[..shown],
+    }
+    .scene(scene, at, width, self.pointing)
   }
 
   pub(super) fn scene_tree<'a>(
@@ -139,35 +164,37 @@ impl Panel {
   ) {
     let inner = usize::from(width.saturating_sub(1));
     let count = height.saturating_sub(2) as usize;
-    self.top = self
-      .top
-      .min(self.projection.sources().len().saturating_sub(count.max(1)));
+    if self.kind == PanelKind::Annotations {
+      // Group rows indent two cells past the gutter.
+      self.reflow(inner.saturating_sub(GUTTER + 2));
+    }
+    self.top = self.top.min(self.line_count().saturating_sub(count.max(1)));
+    let mut targets = self.scene_tree_header(scene, at, width);
     let outline = self.tree_view.as_ref().expect("outline decoration");
     let keys = key_cells(&self.rows, inner.saturating_sub(GUTTER));
-    let controls = super::header::fold_controls(outline.auto == Some(true));
-    let controls = &controls[..if outline.auto.is_some() { 3 } else { 2 }];
-    let mut targets = super::header::Header {
-      title: self.kind.title(),
-      count: self.rows.len(),
-      context: &format!(" {}", self.note),
-      role: Role::Bar,
-      controls,
-    }
-    .scene(scene, at, width, self.pointing);
     if count > 0 {
       self.scene_empty(scene, at, inner);
     }
     let current = self.current_row();
-    for (line, &source) in
-      self.projection.sources().iter().skip(self.top).take(count).enumerate()
-    {
+    let lines = self.top..self.line_count();
+    for (line, index) in lines.take(count).enumerate() {
       if inner < GUTTER {
         break;
       }
+      let source = self.line_source(index);
       let branch = &outline.branches[source];
+      let laid = self.layout.as_ref().map(|layout| &layout.lines[index]);
       let item = &self.rows[source];
       let meta = branch.meta(item, width, keys);
-      let (title, cut) = clipped(item.label.trim_start(), meta.room);
+      if let Some(extra) = laid.filter(|_| self.line_start(source) != index) {
+        let (base, _) = self.row_roles(source);
+        crate::paint::move_to(scene, at, line + 1, 0u16);
+        // Laid-out lines carry their own lead.
+        let indent = GUTTER + meta.indent;
+        let query = &self.search.query;
+        scene_extra(scene, &extra.row, query, base, (indent, inner));
+        continue;
+      }
       let hovered = self.pointing.row() == Some(source);
       let (base, title_style) = self.row_roles(source);
       crate::paint::move_to(scene, at, line + 1, 0u16);
@@ -193,19 +220,30 @@ impl Panel {
           Control::Branch(source),
         ));
       }
-      meta.lead(scene, base);
-      super::rows::marked(
-        scene,
-        &title,
-        &self.search.query,
-        Some(title_style),
-        branch.root.then_some(Role::Heading),
-      );
+      meta.lead(scene, base, &self.search.query);
+      let (used, cut) = if matches!(item.style, Style::Excerpt { .. }) {
+        let query = &self.search.query;
+        let used = item.scene(scene, Some(title_style), meta.room, 0, query);
+        (used, item.label.width() > meta.room)
+      } else {
+        // A laid-out row shows its first wrapped line.
+        let label = laid.map_or(item.label.as_str(), |line| &line.row.label);
+        let (title, cut) = clipped(label.trim_start(), meta.room);
+        let cut = cut || laid.is_some_and(|line| line.clipped);
+        super::rows::marked(
+          scene,
+          &title,
+          &self.search.query,
+          Some(title_style),
+          branch.root.then_some(Role::Heading),
+        );
+        (title.width(), cut)
+      };
       if hovered && cut {
         self.hover_title = Some(item.label.trim().to_owned());
       }
       scene.push(Op::Style(base));
-      scene.push(Op::Spaces(meta.room - title.width()));
+      scene.push(Op::Spaces(meta.room - used));
       scene.push(Op::Style(Role::Muted));
       scene.text(&meta.badge);
       scene.push(Op::Style(base));
@@ -220,4 +258,22 @@ impl Panel {
     }
     self.tree_view.as_mut().expect("outline decoration").targets = targets;
   }
+}
+
+/// A row's wrapped or note line, `indent` cells in, marking `query`.
+fn scene_extra<'a>(
+  scene: &mut impl Draw<'a>,
+  row: &super::Row,
+  query: &str,
+  base: Role,
+  (indent, inner): (usize, usize),
+) {
+  let room = inner.saturating_sub(indent);
+  scene.extend([Op::Style(base), Op::Spaces(inner.min(indent))]);
+  let used = row.scene(scene, Some(base), room, 0, query);
+  scene.extend([
+    Op::Style(base),
+    Op::Spaces(room - used),
+    Op::Style(Role::Reset),
+  ]);
 }

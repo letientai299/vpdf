@@ -15,6 +15,7 @@ fn annotation() -> Annotation {
   Annotation {
     kind: "Note".into(),
     author: "Reader".into(),
+    color: None,
     contents: "A note".into(),
     areas: Vec::new(),
   }
@@ -27,7 +28,12 @@ fn follow_preserves_descriptions() {
   let mut search = Search::default();
   search.show(
     query.clone(),
-    vec![Hit { first: position, last: position, excerpt: "word".into() }],
+    vec![Hit {
+      first: position,
+      last: position,
+      excerpt: "word".into(),
+      matched: 0..0,
+    }],
   );
   let result = panel(PanelKind::Results, Destination::Position(position));
   for complete in [true, false] {

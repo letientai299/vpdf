@@ -52,15 +52,20 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
     app.go_to(Position { page: PageId(page), line: 2, glyph: 3 }, true)?;
     positions.push(app.reader.cursor);
   }
-  for (forward, expected) in [(false, [0, 2]), (false, [1, 2]), (true, [0, 2])]
-  {
+  // Newest first: every stop, keyed by its distance from the cursor.
+  for (forward, expected) in [
+    (false, ["+1", "now", "−1"]),
+    (false, ["+2", "+1", "now"]),
+    (true, ["+1", "now", "−1"]),
+  ] {
     keys(&mut app, if forward { b"\x1b[105;5u" } else { b"\x0f" })?;
     keys(&mut app, b":jumps\r")?;
     {
       let (app, _) = app.parts();
       let rows = &app.panel.as_ref().unwrap().view.rows();
-      assert_eq!(rows.len(), expected.len());
-      for (row, index) in rows.iter().zip(expected) {
+      let keys: Vec<_> = rows.iter().map(|row| row.key.as_str()).collect();
+      assert_eq!(keys, expected);
+      for (row, index) in rows.iter().zip([2, 1, 0]) {
         let Destination::Jump { position, .. } = row.destination else {
           panic!("Jump destination");
         };
@@ -82,7 +87,7 @@ fn jumps_panel_empty_and_recorded_destinations() -> Result<()> {
   }
   keys(&mut app, b":jumps\r")?;
   let origin = app.reader.cursor;
-  app.panel.as_mut().unwrap().view.choose(1);
+  app.panel.as_mut().unwrap().view.choose(0);
   // History changes must preserve recorded destinations.
   app.reader.clear_history();
   keys(&mut app, b"\r")?;
@@ -104,6 +109,14 @@ fn text_app(lines: &[&str]) -> Result<(tempfile::TempDir, Solo)> {
   Ok((dir, app))
 }
 
+/// Stops behind the cursor, oldest first.
+fn past(app: &mut App) -> Result<Vec<vpdf_ui::panel::Row>> {
+  let mut rows = app.panel_rows(PanelKind::Jumps)?;
+  rows.retain(|row| row.key.starts_with('−'));
+  rows.reverse();
+  Ok(rows)
+}
+
 fn at(line: usize, glyph: usize) -> Position {
   Position { page: PageId(0), line, glyph }
 }
@@ -118,7 +131,7 @@ fn fallback_context() -> Result<()> {
     app.go_to(at(1, glyph), true)?;
     app.reader.clear_history();
     app.go_to(at(0, 0), true)?;
-    let rows = app.panel_rows(PanelKind::Jumps)?;
+    let rows = past(&mut app)?;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].label, "naïve words,");
     assert_eq!(
@@ -128,7 +141,7 @@ fn fallback_context() -> Result<()> {
   }
   let (_dir, mut app) = text_app(&[""])?;
   app.reader.seed_reader(Reader::remember);
-  let rows = app.panel_rows(PanelKind::Jumps)?;
+  let rows = past(&mut app)?;
   assert_eq!(rows[0].label, "No text");
   assert_eq!(rows[0].detail, "p. 1 · L1 C1 · word —");
   Ok(())
@@ -153,20 +166,10 @@ fn semantic_history() -> Result<()> {
   super::common::search_loaded(&mut app)?;
   app.go_to(at(4, 0), true)?;
   let labels = |app: &mut App| -> Result<Vec<String>> {
-    Ok(
-      app
-        .panel_rows(PanelKind::Jumps)?
-        .into_iter()
-        .map(|row| row.label)
-        .collect(),
-    )
+    Ok(past(app)?.into_iter().map(|row| row.label).collect())
   };
-  let expected = vec![
-    "Opening",
-    "Heading: First section",
-    "Heading: Second section",
-    "Search [1/1] /needle/",
-  ];
+  let expected =
+    vec!["Opening", "First section", "Second section", "/needle/ 1/1"];
   assert_eq!(labels(&mut app)?, expected);
   // Later searches cannot relabel earlier visits.
   let other =
@@ -175,13 +178,14 @@ fn semantic_history() -> Result<()> {
   keys(&mut app, b"\x0f\x1b[105;5u")?;
   assert_eq!(labels(&mut app)?, expected);
   app.open_panel(PanelKind::Jumps)?;
-  app.panel.as_mut().unwrap().view.choose(3);
+  // Newest first: `now`, then the search.
+  app.panel.as_mut().unwrap().view.choose(1);
   app.reader.clear_history();
   keys(&mut app, b"\r")?;
   assert_eq!(app.reader.cursor, at(3, 0));
   app.close_panel()?;
   app.go_to(at(4, 0), true)?;
-  assert_eq!(labels(&mut app)?.last().unwrap(), "Search [1/1] /needle/");
+  assert_eq!(labels(&mut app)?.last().unwrap(), "/needle/ 1/1");
   Ok(())
 }
 
@@ -196,25 +200,25 @@ fn committed_searches() -> Result<()> {
   app.overlays.close_prompt();
   app.next_result(false, 1)?;
   app.go_to(at(0, 0), true)?;
-  let rows = app.panel_rows(PanelKind::Jumps)?;
+  let rows = past(&mut app)?;
   let labels: Vec<_> = rows
     .iter()
-    .filter(|row| row.label.starts_with("Search ["))
+    .filter(|row| row.kind == vpdf_ui::panel::RowKind::Search)
     .map(|row| row.label.as_str())
     .collect();
-  assert_eq!(labels, ["Search [1/2] /needle/", "Search [2/2] /needle/"]);
+  assert_eq!(labels, ["/needle/ 1/2", "/needle/ 2/2"]);
   app.open_panel(PanelKind::Results)?;
-  app.panel.as_mut().unwrap().view.choose(1);
+  app.panel.as_mut().unwrap().view.choose(2);
   keys(&mut app, b"\r")?;
   app.close_panel()?;
   app.go_to(at(0, 0), true)?;
-  let rows = app.panel_rows(PanelKind::Jumps)?;
-  assert_eq!(rows.last().unwrap().label, "Search [2/2] /needle/");
+  let rows = past(&mut app)?;
+  assert_eq!(rows.last().unwrap().label, "/needle/ 2/2");
   app.start_search("needle", true, false)?;
   super::common::search_loaded(&mut app)?;
   app.go_to(at(0, 0), true)?;
-  let rows = app.panel_rows(PanelKind::Jumps)?;
-  assert_eq!(rows.last().unwrap().label, "Search [2/2] ?needle?");
+  let rows = past(&mut app)?;
+  assert_eq!(rows.last().unwrap().label, "?needle? 2/2");
   Ok(())
 }
 
@@ -226,8 +230,9 @@ fn followed_links() -> Result<()> {
   let (x, y) = bounds.centre();
   app.follow(&Target::Point { page: PageId(0), x, y })?;
   app.go_to(at(2, 0), true)?;
-  let rows = app.panel_rows(PanelKind::Jumps)?;
-  assert!(rows[1].label.starts_with("Link: Reference title"));
+  let rows = past(&mut app)?;
+  assert!(rows[1].label.starts_with("Reference title"));
+  assert_eq!(rows[1].kind, vpdf_ui::panel::RowKind::Link);
   assert!(matches!(rows[1].destination,
     Destination::Jump { position, .. } if position == at(1, 0)));
   Ok(())
@@ -243,8 +248,8 @@ fn outline_preserves_selected_title() -> Result<()> {
   keys(&mut app, b"\r")?;
   app.close_panel()?;
   app.go_to(at(2, 0), true)?;
-  let rows = app.panel_rows(PanelKind::Jumps)?;
-  assert_eq!(rows.last().unwrap().label, "Heading: Section");
+  let rows = past(&mut app)?;
+  assert_eq!(rows.last().unwrap().label, "Section");
   Ok(())
 }
 
@@ -344,9 +349,12 @@ fn jump(app: &mut App, kind: Jump, at: Position) -> Result<()> {
       app.follow(&Target::Point { page: at.page, x, y })
     }
     Jump::Result => {
-      let index = app.search.hits().iter().position(|hit| hit.first == at);
       app.open_panel(PanelKind::Results)?;
-      app.panel.as_mut().unwrap().view.choose(index.expect("hit at target"));
+      let view = &mut app.panel.as_mut().unwrap().view;
+      let index = view.rows().iter().position(|row| {
+        matches!(row.destination, Destination::Position(hit) if hit == at)
+      });
+      view.choose(index.expect("hit at target"));
       keys(app, b"\r")?;
       Ok(())
     }
@@ -636,5 +644,91 @@ fn history_clears_column_goal() -> Result<()> {
     app.reader.cursor,
     Position { page: PageId(1), line: 2, glyph: 0 }
   );
+  Ok(())
+}
+
+#[test]
+fn results_mark_the_landed_hit() -> Result<()> {
+  let (_dir, mut app) = text_app(&["Opening", "needle one", "needle two"])?;
+  app.start_search("needle", false, false)?;
+  super::common::search_loaded(&mut app)?;
+  app.open_panel(PanelKind::Results)?;
+  let panel = &app.panel.as_ref().unwrap().view;
+  let depths: Vec<_> = panel.rows().iter().map(|row| row.depth).collect();
+  assert_eq!(depths, [0, 1, 1]);
+  assert_eq!(panel.current(), Some(1));
+  app.next_result(false, 1)?;
+  assert_eq!(app.panel.as_ref().unwrap().view.current(), Some(2));
+  app.panel.as_mut().unwrap().view.choose(1);
+  keys(&mut app, b"\r")?;
+  assert_eq!(app.panel.as_ref().unwrap().view.current(), Some(1));
+  Ok(())
+}
+
+#[test]
+fn typed_searches_mark_the_landed_hit() -> Result<()> {
+  let (_dir, mut app) = text_app(&["Opening", "needle one", "needle two"])?;
+  app.open_panel(PanelKind::Results)?;
+  keys(&mut app, b"\t/needle\r")?;
+  super::common::search_loaded(&mut app)?;
+  let panel = &app.panel.as_ref().unwrap().view;
+  assert_eq!(panel.current(), Some(1));
+  assert_eq!(panel.selected(), 1);
+  Ok(())
+}
+
+#[test]
+fn stops_count_from_the_cursor() {
+  type Stops = &'static [(isize, usize)];
+  let mut reader = Reader::default();
+  assert_eq!(reader.stops().count(), 0);
+  for page in 0..3 {
+    reader.cursor.page = PageId(page);
+    reader.remember();
+  }
+  reader.cursor.page = PageId(3);
+  let stops = |reader: &Reader| -> Vec<(isize, usize)> {
+    reader.stops().map(|(offset, at, _)| (offset, at.page.0)).collect()
+  };
+  assert_eq!(stops(&reader), [(0, 3), (-1, 2), (-2, 1), (-3, 0)]);
+  // (forward, stops)
+  let moves: [(bool, Stops); 3] = [
+    (false, &[(1, 3), (0, 2), (-1, 1), (-2, 0)]),
+    (false, &[(2, 3), (1, 2), (0, 1), (-1, 0)]),
+    (true, &[(1, 3), (0, 2), (-1, 1), (-2, 0)]),
+  ];
+  for (forward, want) in moves {
+    reader.history(forward);
+    assert_eq!(stops(&reader), want, "{forward}");
+  }
+}
+
+#[test]
+fn jumps_panel_keys_and_marks_now() -> Result<()> {
+  let (_dir, mut app) = text_app(&["Opening", "Middle", "End"])?;
+  app.go_to(at(1, 0), true)?;
+  app.go_to(at(2, 0), true)?;
+  app.open_panel(PanelKind::Jumps)?;
+  let state = |app: &mut Solo| -> Result<(Vec<String>, Option<usize>)> {
+    let (app, graphics) = app.parts();
+    app.draw_alone(graphics, &mut Vec::new())?;
+    let panel = &app.panel.as_ref().unwrap().view;
+    let keys = panel.rows().iter().map(|row| row.key.clone()).collect();
+    Ok((keys, panel.current()))
+  };
+  assert_eq!(
+    state(&mut app)?,
+    (vec!["now".into(), "−1".into(), "−2".into()], Some(0))
+  );
+  // `C-o` moves back; the panel follows without a refill request.
+  keys(&mut app, b"\t\x0f")?;
+  assert_eq!(
+    state(&mut app)?,
+    (vec!["+1".into(), "now".into(), "−1".into()], Some(1))
+  );
+  // Following `now` records nothing.
+  app.panel.as_mut().unwrap().view.choose(1);
+  keys(&mut app, b"\t\r")?;
+  assert_eq!(state(&mut app)?.0, ["+1", "now", "−1"]);
   Ok(())
 }

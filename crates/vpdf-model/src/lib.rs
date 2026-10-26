@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod caption;
 pub mod document;
 pub mod geometry;
 pub mod image;

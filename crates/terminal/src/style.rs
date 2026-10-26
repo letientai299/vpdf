@@ -48,11 +48,13 @@ pub const fn sgr(role: Role) -> &'static str {
     Role::Badge(Color::Magenta) => encoded!(Role::Badge(Color::Magenta)),
     Role::Badge(Color::Yellow) => encoded!(Role::Badge(Color::Yellow)),
     Role::Badge(Color::Cyan) => encoded!(Role::Badge(Color::Cyan)),
+    // `write` formats document colors.
+    Role::Swatch(_) => "",
   }
 }
 
 pub fn write(out: &mut impl Write, role: Role, theme: Theme) -> io::Result<()> {
-  if theme == Theme::Default {
+  if theme == Theme::Default && !matches!(role, Role::Swatch(_)) {
     return out.write_all(sgr(role).as_bytes());
   }
   out.write_all(b"\x1b[")?;
@@ -191,6 +193,9 @@ const fn palette(tone: Tone, background: bool) -> &'static str {
     (Tone::PreviewBorder, true) => "48;2;60;120;230",
     (Tone::PreviewText, false) => "38;2;20;20;20",
     (Tone::PreviewText, true) => "48;2;20;20;20",
+    // Only `write` sets document colors.
+    (Tone::Rgb(_), false) => "39",
+    (Tone::Rgb(_), true) => "49",
   }
 }
 
@@ -198,6 +203,16 @@ const fn palette(tone: Tone, background: bool) -> &'static str {
 mod tests {
   use super::*;
   use sha2::{Digest, Sha256};
+
+  #[test]
+  fn swatches_write_their_color() -> io::Result<()> {
+    for theme in [Theme::Default, Theme::Nord] {
+      let mut out = Vec::new();
+      write(&mut out, Role::Swatch([255, 235, 59]), theme)?;
+      assert_eq!(out, b"\x1b[38;2;255;235;59m", "{theme:?}");
+    }
+    Ok(())
+  }
 
   #[test]
   fn named_colors_are_explicit() -> io::Result<()> {

@@ -108,7 +108,7 @@ mod tests {
     assert!(headings.iter().all(|(_, color)| *color == theme::HEADING_TICK));
     let found = |page| {
       let at = Position { page: PageId(page), line: 0, glyph: 0 };
-      Found { first: at, last: at, excerpt: String::new() }
+      Found { first: at, last: at, excerpt: String::new(), matched: 0..0 }
     };
     // Three matches on two pages: two ticks.
     let query = vpdf_search::query::Query::default();

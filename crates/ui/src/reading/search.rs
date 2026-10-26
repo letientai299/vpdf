@@ -111,6 +111,7 @@ impl<S: TextSource + Pages> View<'_, S> {
             .binary_search_by_key(&self.reader.cursor, |hit| hit.first)
             .is_ok()
         {
+          search.land(self.reader.cursor);
           self
             .reader
             .describe_jump(Some(search.description(self.reader.cursor)));
@@ -165,6 +166,7 @@ impl<S: TextSource + Pages> View<'_, S> {
         self.preview(origin, target)?;
       } else {
         self.land_at(target)?;
+        search.land(target);
         self.reader.describe_jump(Some(search.description(self.reader.cursor)));
       }
       search.stop_jumping();
@@ -195,6 +197,7 @@ impl<S: TextSource + Pages> View<'_, S> {
     let target = hits[index].first;
     let wrapped = if backward { target >= cursor } else { target <= cursor };
     self.land_at(target)?;
+    search.land(target);
     self.reader.describe_jump(Some(search.description(self.reader.cursor)));
     search.set_hidden(false);
     self.reader.message = if wrapped {

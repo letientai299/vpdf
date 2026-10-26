@@ -102,6 +102,15 @@ impl Entry {
 pub struct Mark {
   pub path: PathBuf,
   pub cursor: Position,
+  /// When it was set, in milliseconds; older saves read 0.
+  #[serde(default)]
+  pub set: u64,
+}
+
+impl Mark {
+  pub fn new(path: PathBuf, cursor: Position) -> Self {
+    Self { path, cursor, set: now() }
+  }
 }
 
 /// Recent documents and prompt history kept across runs.
@@ -129,6 +138,9 @@ pub struct State {
   pub searches: Vec<String>,
   #[serde(default)]
   pub marks: BTreeMap<char, Mark>,
+  /// When global marks were removed, so other sessions' saves drop them.
+  #[serde(default)]
+  removed_marks: BTreeMap<char, u64>,
 }
 
 /// `$XDG_STATE_HOME/vpdf/state.json`, else under `~/.local/state`.
@@ -190,6 +202,18 @@ impl State {
     moved
   }
 
+  /// Sets global mark `name`, outliving an earlier removal.
+  pub fn set_mark(&mut self, name: char, mark: Mark) {
+    self.removed_marks.remove(&name);
+    self.marks.insert(name, mark);
+  }
+
+  /// Removes global mark `name`; saves drop it from other sessions too.
+  pub fn remove_mark(&mut self, name: char) {
+    self.marks.remove(&name);
+    self.removed_marks.insert(name, now());
+  }
+
   /// Merges with the file on disk, so concurrent readers keep entries;
   /// `commands` and `searches` are this session's history.
   pub fn save(
@@ -214,9 +238,13 @@ impl State {
     saved.prune();
     saved.merge_history(&disk);
     saved.history.compact();
-    let mut marks = disk.marks;
-    marks.append(&mut saved.marks);
-    saved.marks = marks;
+    (saved.marks, saved.removed_marks) = merge_marks([
+      (disk.marks, disk.removed_marks),
+      (
+        std::mem::take(&mut saved.marks),
+        std::mem::take(&mut saved.removed_marks),
+      ),
+    ]);
     saved.commands = merge(disk.commands, commands);
     saved.searches = merge(disk.searches, searches);
     if disk.perf_updated > self.perf_updated {
@@ -238,6 +266,38 @@ impl State {
     *self = saved;
     Ok(())
   }
+}
+
+type Marks = (BTreeMap<char, Mark>, BTreeMap<char, u64>);
+
+/// Each name's latest set or removal across `copies`, the last copy
+/// winning equal times; a removal wins a tie with a set.
+fn merge_marks(copies: [Marks; 2]) -> Marks {
+  let mut latest: BTreeMap<char, (u64, bool, Option<Mark>)> = BTreeMap::new();
+  for (marks, removed) in copies {
+    let sets = marks
+      .into_iter()
+      .map(|(name, mark)| (name, (mark.set, false, Some(mark))));
+    let removals =
+      removed.into_iter().map(|(name, at)| (name, (at, true, None)));
+    for (name, event) in sets.chain(removals) {
+      match latest.get(&name) {
+        Some(&(at, removal, _)) if (event.0, event.1) < (at, removal) => {}
+        _ => {
+          latest.insert(name, event);
+        }
+      }
+    }
+  }
+  let mut merged = Marks::default();
+  for (name, (at, _, mark)) in latest {
+    if let Some(mark) = mark {
+      merged.0.insert(name, mark);
+    } else {
+      merged.1.insert(name, at);
+    }
+  }
+  merged
 }
 
 /// Disk-only entries first, then this session's in order.

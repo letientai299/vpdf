@@ -85,7 +85,8 @@ fn cjk_continuations_survive_cache() -> Result<()> {
     let hits = index.matches(&pattern, 10)?;
     assert_eq!(hits.len(), 1);
     assert_eq!((hits[0].first.line, hits[0].last.line), (0, 1));
-    assert_eq!(hits[0].excerpt.trim_end(), "排版需求");
+    let from = hits[0].matched.start;
+    assert_eq!(hits[0].excerpt[from..].trim_end(), "排版需求");
     let exact = compile(r"\v排版", false)?;
     assert_eq!(index.matches(&exact, 10)?.len(), 1);
   }

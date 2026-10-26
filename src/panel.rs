@@ -4,6 +4,8 @@ use crate::Result;
 use crate::app::{App, Request};
 use crate::recent::Loader;
 use crate::state::Entry;
+use crate::state::Mark;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use vpdf_model::document::Target;
 use vpdf_model::geometry::At;
@@ -11,7 +13,9 @@ use vpdf_model::input::{MouseEvent, MouseEventKind};
 use vpdf_terminal::terminal;
 use vpdf_ui::keys::{Action, Input, PanelKind};
 use vpdf_ui::layout::Screen;
-use vpdf_ui::panel::{Activation, Destination, Focus, Follow, Panel, Row};
+use vpdf_ui::panel::{
+  Activation, Destination, Focus, Follow, Panel, Row, RowKind,
+};
 use vpdf_ui::split::Direction;
 use vpdf_ui::window::Window;
 
@@ -85,6 +89,30 @@ impl App {
     }
   }
 
+  /// Marks the first figure on the page in view, else the nearest one
+  /// before it.
+  pub fn track_figures(&mut self) {
+    let page = self.navigation_position().page;
+    let (Some(panel), crate::jobs::Figures::Ready(entries)) =
+      (&mut self.panel, &self.figures)
+    else {
+      return;
+    };
+    if panel.view.kind() != PanelKind::Figures {
+      return;
+    }
+    let rows = panel.view.rows();
+    let figure = |index: &usize| {
+      rows.get(*index).is_some_and(|row| row.kind != RowKind::Mention)
+    };
+    let after = entries.partition_point(|(at, _)| *at < page);
+    let mut on_page =
+      (after..entries.len()).take_while(|&at| entries[at].0 == page);
+    let current =
+      on_page.find(figure).or_else(|| (0..after).rev().find(figure));
+    panel.view.mark_current(current);
+  }
+
   pub fn panel_rows(&mut self, kind: PanelKind) -> Result<Vec<Row>> {
     let label = |target: &Target| match target {
       Target::Page(page) | Target::Point { page, .. } => {
@@ -99,12 +127,9 @@ impl App {
         .iter()
         .map(|item| Row::outline(item, label(&item.target)))
         .collect(),
-      PanelKind::Results => self
-        .search
-        .hits()
-        .iter()
-        .map(|hit| Row::result(hit, self.doc.label(hit.first.page).to_owned()))
-        .collect(),
+      PanelKind::Results => {
+        Row::results(self.search.hits(), |page| self.doc.label(page).to_owned())
+      }
       PanelKind::Figures => match &self.figures {
         crate::jobs::Figures::Ready(entries) => entries
           .iter()
@@ -120,7 +145,16 @@ impl App {
           .collect(),
         _ => Vec::new(),
       },
-      PanelKind::Annotations => self.sidebar_rows(kind),
+      PanelKind::Annotations => {
+        let rows = self.sidebar_rows(kind).into_iter().filter_map(|row| {
+          let Destination::Annotation { position, .. } = &row.destination
+          else {
+            return None;
+          };
+          Some((position.page, row))
+        });
+        Row::paged(rows, |page| self.doc.label(page).to_owned())
+      }
       PanelKind::Jumps => self.jump_rows(),
       PanelKind::Version => crate::version::text(matches!(
         self.frontend,
@@ -238,10 +272,19 @@ impl App {
 
   pub fn show_panel(&mut self, kind: PanelKind, rows: Vec<Row>) -> Result<()> {
     self.blur()?;
+    let note = self.panel_note(kind);
+    let topic = self.panel_topic(kind);
+    // Groups form once the panel has a height to reveal in.
+    let (rows, grouped) =
+      if kind.grouped() { (Vec::new(), Some(rows)) } else { (rows, None) };
     let mut panel = PanelSession::new(kind, rows);
-    panel.view.set_note(self.panel_note(kind));
-    panel.view.set_topic(self.panel_topic(kind));
     panel.view.resize(self.screen.rows);
+    if let Some(rows) = grouped {
+      panel.view.regroup(rows, note, topic, self.landed(kind));
+    } else {
+      panel.view.set_note(note);
+      panel.view.set_topic(topic);
+    }
     if kind == PanelKind::Outline {
       self.outline.sync(&self.doc.outline);
       {
@@ -262,15 +305,27 @@ impl App {
       self.refresh_panel_note(kind);
       return Ok(());
     }
-    if self.panel.as_ref().is_none_or(|panel| panel.view.kind() != kind) {
+    if self.panel_kind() != Some(kind) {
       return Ok(());
     }
     let rows = self.panel_rows(kind)?;
+    self.refill_rows(kind, rows);
+    Ok(())
+  }
+
+  /// Gives the open `kind` panel `rows`, keeping groups and selection.
+  fn refill_rows(&mut self, kind: PanelKind, rows: Vec<Row>) {
     let note = self.panel_note(kind);
     let topic = self.panel_topic(kind).to_owned();
-    let Some(panel) = &mut self.panel else { return Ok(()) };
-    let kept = panel.view.refill(rows, note);
-    panel.view.set_topic(&topic);
+    let landed = self.landed(kind);
+    let Some(panel) = &mut self.panel else { return };
+    let kept = if kind.grouped() {
+      panel.view.regroup(rows, note, &topic, landed)
+    } else {
+      let kept = panel.view.refill(rows, note);
+      panel.view.set_topic(&topic);
+      kept
+    };
     if kind == PanelKind::Outline {
       self.outline.project(&mut panel.view);
     }
@@ -280,7 +335,25 @@ impl App {
     {
       self.overlays.close_menu();
     }
-    Ok(())
+  }
+
+  /// The search hit the reader landed on, for Results.
+  fn landed(&self, kind: PanelKind) -> Option<vpdf_model::text::Position> {
+    self.search.landed().filter(|_| kind == PanelKind::Results)
+  }
+
+  fn panel_kind(&self) -> Option<PanelKind> {
+    self.panel.as_ref().map(|panel| panel.view.kind())
+  }
+
+  /// Marks the landed hit in an open Results panel.
+  pub(crate) fn mark_landed(&mut self) {
+    let landed = self.search.landed();
+    if let Some(panel) = &mut self.panel
+      && panel.view.kind() == PanelKind::Results
+    {
+      panel.view.mark_landed(landed);
+    }
   }
 
   pub(crate) fn refresh_panel_note(&mut self, kind: PanelKind) {
@@ -376,11 +449,45 @@ impl App {
   }
 
   pub(crate) fn confirm_recent(&mut self, key: vpdf_model::input::KeyEvent) {
-    if let Some(panel) = &mut self.panel
-      && let vpdf_ui::panel::Event::Forget(paths) = panel.view.confirm_key(key)
-    {
-      self.request = Some(Request::ForgetRecent(paths));
+    if let Some(panel) = &mut self.panel {
+      let event = panel.view.confirm_key(key);
+      self.request_removal(event);
     }
+  }
+
+  /// A press on the open confirmation, in screen cells.
+  pub(crate) fn confirm_click(&mut self, mut mouse: MouseEvent) {
+    let Some(panel) = &mut self.panel else { return };
+    let (Some(column), Some(row)) = (
+      mouse.column.checked_sub(self.at.column),
+      mouse.row.checked_sub(self.at.row),
+    ) else {
+      return;
+    };
+    (mouse.column, mouse.row) = (column, row);
+    let event = panel.view.confirm_press(mouse);
+    self.request_removal(event);
+  }
+
+  fn request_removal(&mut self, event: vpdf_ui::panel::Event) {
+    self.request = match event {
+      vpdf_ui::panel::Event::Forget(paths) => {
+        Some(Request::ForgetRecent(paths))
+      }
+      vpdf_ui::panel::Event::RemoveMark(name) => {
+        Some(Request::RemoveMark(name))
+      }
+      _ => return,
+    };
+  }
+
+  /// Rebuilds an open Marks panel, keeping its folds.
+  pub(crate) fn refill_marks(&mut self, global: &BTreeMap<char, Mark>) {
+    if self.panel_kind() != Some(PanelKind::Marks) {
+      return;
+    }
+    let rows = self.mark_rows(global);
+    self.refill_rows(PanelKind::Marks, rows);
   }
 
   pub fn panel_input(&mut self, input: Input) -> Result<bool> {
@@ -408,9 +515,8 @@ impl App {
     }
     match panel.view.input(input, usize::from(self.screen.rows)) {
       vpdf_ui::panel::Event::Unhandled => return Ok(false),
-      vpdf_ui::panel::Event::Forget(paths) => {
-        self.request = Some(Request::ForgetRecent(paths));
-      }
+      event @ (vpdf_ui::panel::Event::Forget(_)
+      | vpdf_ui::panel::Event::RemoveMark(_)) => self.request_removal(event),
       vpdf_ui::panel::Event::Fold { operation, count } => {
         if !panel.view.fold(operation, count) {
           self.outline.fold(&mut panel.view, operation, count);
@@ -509,9 +615,18 @@ impl App {
         return Ok(());
       }
       Follow::Focus(content) => return self.focus_content(content),
+      // Landing on the Jumps `now` row would record it.
+      Follow::Land { .. } if self.selects_now() => {
+        self.land_here()?;
+        Focus::Content
+      }
       Follow::Land { position, description } => {
         self.land_at(position)?;
         self.reader.describe_jump(description);
+        if self.panel_kind() == Some(PanelKind::Results) {
+          self.search.land(position);
+          self.mark_landed();
+        }
         Focus::Content
       }
       Follow::Link { target, description } => {

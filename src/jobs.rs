@@ -451,7 +451,10 @@ mod tests {
     assert!(app.figure_updates()?);
     let rows = app.panel.as_ref().unwrap().view.rows();
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].label, "Figure 1: OCR");
+    assert_eq!(
+      (rows[0].key.as_str(), rows[0].label.as_str()),
+      ("Fig 1", "OCR")
+    );
     app.panel = None;
     app.doc.seed(PageId(0), Arc::new(Text::default()));
     app.refresh_figures()?;

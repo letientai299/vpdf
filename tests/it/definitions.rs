@@ -51,7 +51,7 @@ fn ambiguous_definitions_offer_candidates() -> Result<()> {
   assert_eq!(app.reader.cursor.page, PageId(0));
   let panel = app.panel.as_ref().expect("Candidates");
   assert_eq!(panel.view.kind(), PanelKind::Results);
-  assert_eq!(panel.view.rows().len(), 2);
+  assert_eq!(panel.view.rows().iter().filter(|row| row.follows()).count(), 2);
   assert!(panel.view.focused());
   keys(&mut app, b"\r")?;
   assert_eq!(app.reader.cursor.page, PageId(1));
@@ -153,7 +153,8 @@ fn paper_caption_definition() -> Result<()> {
     candidates.extend(index.definitions(&reference, 100));
   }
   assert_eq!(candidates.len(), 1, "{candidates:?}");
-  assert!(candidates[0].excerpt.starts_with("Table 1:"));
+  let caption = &candidates[0].excerpt[candidates[0].matched.start..];
+  assert!(caption.starts_with("Table 1:"));
   assert!(candidates[0].excerpt.contains("Maximum path"));
   Ok(())
 }

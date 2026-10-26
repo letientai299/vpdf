@@ -178,7 +178,9 @@ impl App {
       self.start_query_from(query, submission.origin())?;
     }
     let mut reading = self.reading_parts();
-    reading.view.finish_search(reading.search, submission)
+    reading.view.finish_search(reading.search, submission)?;
+    self.mark_landed();
+    Ok(())
   }
 
   fn finish_search_yank(&mut self) -> Result<()> {
@@ -243,7 +245,9 @@ impl App {
 
   pub fn next_result(&mut self, reverse: bool, count: usize) -> Result<()> {
     let mut reading = self.reading_parts();
-    reading.view.next_result(reading.search, reverse, count)
+    reading.view.next_result(reading.search, reverse, count)?;
+    self.mark_landed();
+    Ok(())
   }
 
   pub fn word_search(&mut self) -> Result<()> {

@@ -177,6 +177,22 @@ fn real_figure_sidebar() -> Result<()> {
   keys(&mut app, b"o")?;
   assert!(app.panel_focused());
   assert_eq!(app.navigation_position().page, page);
+  // The marker follows the page, not the selection.
+  app.panel.as_mut().unwrap().view.choose(index + 1);
+  app.track_figures();
+  assert_eq!(app.panel.as_ref().unwrap().view.current(), Some(index));
+  app.go_to_page(PageId(0))?;
+  app.track_figures();
+  let before = expected.iter().position(|(at, _)| at.0 == 0);
+  assert_eq!(app.panel.as_ref().unwrap().view.current(), before);
+  let bare = (page.0 + 1..app.doc.pages.len())
+    .map(PageId)
+    .find(|at| expected.iter().all(|(page, _)| page != at))
+    .expect("page without figures");
+  app.go_to_page(bare)?;
+  app.track_figures();
+  let before = expected.iter().rposition(|(at, _)| *at < bare);
+  assert_eq!(app.panel.as_ref().unwrap().view.current(), before);
   keys(&mut app, b"\r")?;
   assert!(!app.panel_focused());
   keys(&mut app, b"gqgf")?;
@@ -209,7 +225,7 @@ fn figure_rows(
   app: &mut vpdf::app::App,
 ) -> Result<vpdf_pdf::jobs::figures::Entries> {
   use vpdf_model::document::Target;
-  use vpdf_ui::panel::Destination;
+  use vpdf_ui::panel::{Destination, RowKind};
   let mut expected = Vec::new();
   for page in 0..app.doc.pages.len() {
     for figure in app.doc.figures(PageId(page))?.iter() {
@@ -233,12 +249,17 @@ fn figure_rows(
         })
     );
     assert_eq!(row.detail, app.doc.label(*page));
-    if !figure.caption.trim().is_empty() {
-      assert_eq!(
-        row.label,
-        figure.caption.split_whitespace().collect::<Vec<_>>().join(" ")
-      );
+    let caption = figure.caption.split_whitespace().collect::<Vec<_>>();
+    let caption = caption.join(" ");
+    match vpdf_model::caption::parse(&caption) {
+      Some(parsed) => {
+        assert_eq!(row.label, parsed.rest, "{caption}");
+        assert!(row.key.ends_with(&format!(" {}", parsed.number)));
+      }
+      None if caption.is_empty() => assert_eq!(row.key, ""),
+      None => assert_eq!(row.kind, RowKind::Mention, "{caption}"),
     }
+    assert!(!caption.contains("summarizes our results"), "{caption}");
   }
   Ok(expected)
 }

@@ -110,8 +110,12 @@ fn results_choose_navigation() {
   let mut search = Search::default();
   assert_eq!(search.definition_result(), Definition::NotFound);
   let position = Position { page: PageId(1), ..Position::default() };
-  let hit =
-    Hit { first: position, last: position, excerpt: "Figure 1: Data".into() };
+  let hit = Hit {
+    first: position,
+    last: position,
+    excerpt: "Figure 1: Data".into(),
+    matched: 0..0,
+  };
   let query = Query { text: "figure 1".into(), ..Query::default() };
   search.show(query.clone(), vec![hit.clone()]);
   let definition = search.definition_result();

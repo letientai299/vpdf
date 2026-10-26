@@ -116,7 +116,8 @@ fn middle_clicks_split_rows_and_thumbnails() -> Result<()> {
   let cases = [
     ("go", Hit::Row(0), Some(PageId(1))),
     ("gp", Hit::Thumbnail(PageId(1)), Some(PageId(1))),
-    ("mAgg", Hit::Row(0), Some(PageId(1))),
+    // Under the Global heading.
+    ("mAgg", Hit::Row(1), Some(PageId(1))),
   ];
   for (typed, hit, page) in cases {
     let (_directory, mut session) = session(false)?;
@@ -481,7 +482,8 @@ fn mark_rows_of_other_documents_split_beside() -> Result<()> {
     Some(vpdf::app::Request::Panel(vpdf_ui::keys::PanelKind::Marks));
   session.settle()?;
   status(&mut session)?;
-  let at = cell(&mut session, Hit::Row(0))?;
+  // Row 0 is the Global heading.
+  let at = cell(&mut session, Hit::Row(1))?;
   middle(&mut session, at)?;
   // A double click splits once; its second press is dropped.
   let again =
@@ -1110,7 +1112,12 @@ fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
   let hit = |page| {
     let at =
       vpdf_model::text::Position { page: PageId(page), line: 0, glyph: 0 };
-    vpdf_search::search::Hit { first: at, last: at, excerpt: String::new() }
+    vpdf_search::search::Hit {
+      first: at,
+      last: at,
+      excerpt: String::new(),
+      matched: 0..0,
+    }
   };
   // Last-column placements: rows and crops.
   let column = format!(";{}H\x1b_Ga=p", edge + 1);

@@ -272,6 +272,24 @@ impl Session {
       .map_err(|error| anyhow::anyhow!("Recent removal not saved: {error}"))
   }
 
+  /// Removes the focused document's local mark, or a global mark for
+  /// every document.
+  pub fn remove_mark(&mut self, name: char) -> Result<()> {
+    if name.is_ascii_lowercase() {
+      self.app().marks.remove(&name);
+      // The hangup save reads the recorded pane.
+      self.record();
+    } else {
+      self.state.remove_mark(name);
+    }
+    let global = self.state.marks.clone();
+    for app in self.panes_mut() {
+      app.refill_marks(&global);
+    }
+    self.changed();
+    Ok(())
+  }
+
   fn refresh_recent(&mut self) {
     let entries = &self.state.recent;
     let rows = crate::panel::saved_rows(entries);

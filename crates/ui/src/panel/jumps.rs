@@ -1,42 +1,40 @@
 use super::layout::Layout;
-use super::{JumpDescription, Row};
-pub(super) fn label(description: &JumpDescription) -> String {
+use super::{JumpDescription, Row, RowKind};
+/// A jump's kind and title: a heading, a link's excerpt, or a search
+/// with its ordinal.
+pub(super) fn title(description: &JumpDescription) -> (RowKind, String) {
   match description {
-    JumpDescription::Heading(title) => format!("Heading: {title}"),
-    JumpDescription::Link(excerpt) => {
-      if excerpt.is_empty() {
-        "Link".into()
-      } else {
-        format!("Link: {excerpt}")
-      }
+    JumpDescription::Heading(title) => (RowKind::Section, title.clone()),
+    JumpDescription::Link(excerpt) if excerpt.is_empty() => {
+      (RowKind::Link, "Link".into())
     }
+    JumpDescription::Link(excerpt) => (RowKind::Link, excerpt.clone()),
     JumpDescription::Search { query, ordinal } => {
       let delimiter = if query.backward { '?' } else { '/' };
       let count = ordinal.map_or_else(
         || "counting…".into(),
         |(index, total)| format!("{index}/{total}"),
       );
-      format!("Search [{count}] {delimiter}{}{delimiter}", query.text)
+      // A long query still leaves room for the ordinal.
+      let text = vpdf_model::text::clipped(&query.text, 12).0;
+      (RowKind::Search, format!("{delimiter}{text}{delimiter} {count}"))
     }
   }
 }
 
+/// The key for a stop `offset` jumps from the cursor: `now`, `−2`, `+1`.
+pub fn key(offset: isize) -> String {
+  match offset {
+    0 => "now".into(),
+    ..0 => format!("−{}", offset.unsigned_abs()),
+    _ => format!("+{offset}"),
+  }
+}
+
 impl Layout {
+  /// Each row with its position on a dim second line.
   pub(crate) fn jumps(rows: &[Row], columns: usize, selected: usize) -> Self {
-    let mut layout = Self { columns, lines: Vec::new(), starts: Vec::new() };
-    let keys = super::layout::key_cells(rows, columns);
-    for (source, row) in rows.iter().enumerate() {
-      layout.starts.push(layout.lines.len());
-      layout.label(
-        source,
-        &Row { detail: String::new(), ..row.clone() },
-        keys,
-        selected,
-      );
-      layout.secondary(source, &row.detail, selected);
-    }
-    layout.starts.push(layout.lines.len());
-    layout
+    Self::expanded(rows, columns, selected, |_, row| Some(&row.detail))
   }
 }
 
@@ -57,13 +55,18 @@ mod tests {
       query: Query { text: "long search query ".repeat(8), ..Query::default() },
       ordinal: Some((2, 97)),
     };
-    let rows = [
-      Row::new("Other".into(), String::new(), Destination::None),
-      Row::new(label(&description), String::new(), Destination::None),
-    ];
-    let layout = Layout::jumps(&rows, 28, 0);
+    let (kind, label) = title(&description);
+    let search = Row {
+      key: key(-10),
+      kind,
+      ..Row::new(label, String::new(), Destination::None)
+    };
+    let rows =
+      [Row::new("Other".into(), String::new(), Destination::None), search];
+    // A narrow panel's text column, past the border and marker.
+    let layout = Layout::jumps(&rows, 26, 0);
     let label = &layout.lines[layout.starts[1]].row.label;
-    assert!(label.contains("[2/97]"), "{label}");
+    assert!(label.contains("2/97"), "{label}");
   }
 
   #[test]
@@ -75,7 +78,12 @@ mod tests {
       .into_iter()
       .map(|page| {
         let position = Position { page: PageId(page), ..Position::default() };
-        Hit { first: position, last: position, excerpt: "needle".into() }
+        Hit {
+          first: position,
+          last: position,
+          excerpt: "needle".into(),
+          matched: 0..0,
+        }
       })
       .collect();
     let mut reader = Reader::default();
@@ -93,16 +101,16 @@ mod tests {
     let labels = |reader: &Reader| -> Vec<String> {
       reader
         .described_jumps()
-        .map(|(_, description)| label(description.unwrap()))
+        .map(|(_, description)| title(description.unwrap()).1)
         .collect()
     };
     let other = Query { text: "other".into(), ..query.clone() };
     reader.finish_search_jumps(&other, &hits);
-    assert_eq!(labels(&reader), ["Search [counting…] /needle/"]);
+    assert_eq!(labels(&reader), ["/needle/ counting…"]);
     reader.finish_search_jumps(&query, &hits);
-    assert_eq!(labels(&reader), ["Search [3/3] /needle/"]);
+    assert_eq!(labels(&reader), ["/needle/ 3/3"]);
     reader.history(true);
-    assert_eq!(labels(&reader), ["Search [2/3] /needle/"]);
+    assert_eq!(labels(&reader), ["/needle/ 2/3"]);
   }
 
   #[test]

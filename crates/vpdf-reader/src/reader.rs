@@ -220,6 +220,31 @@ impl Reader {
       .map(|jump| (jump.location.cursor, jump.description.as_ref()))
   }
 
+  /// Jump stops newest first, by their distance from the cursor: `+n`
+  /// ahead for `C-i`, `0` at the cursor, `-n` back for `C-o`. Empty
+  /// without history.
+  pub fn stops(
+    &self,
+  ) -> impl Iterator<Item = (isize, Position, Option<&JumpDescription>)> {
+    let ahead = self.future.len();
+    let empty = ahead == 0 && self.history.is_empty();
+    let future = self.future.iter().enumerate().map(move |(index, jump)| {
+      let offset = (ahead - index) as isize;
+      (offset, jump.location.cursor, jump.description.as_ref())
+    });
+    let description = self
+      .description
+      .as_ref()
+      .filter(|(position, _)| *position == self.cursor)
+      .map(|(_, description)| description);
+    let now = std::iter::once((0, self.cursor, description));
+    let past = self.history.iter().rev().enumerate().map(|(index, jump)| {
+      let offset = -(index as isize) - 1;
+      (offset, jump.location.cursor, jump.description.as_ref())
+    });
+    future.chain(now).chain(past).filter(move |_| !empty)
+  }
+
   pub fn describe_jump(&mut self, description: Option<JumpDescription>) {
     self.description = description.map(|label| (self.cursor, label));
   }

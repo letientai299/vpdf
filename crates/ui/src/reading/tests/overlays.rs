@@ -41,6 +41,7 @@ fn note() -> Annotation {
     areas: vec![snapshot().bounds],
     contents: "A note".into(),
     author: String::new(),
+    color: None,
   }
 }
 

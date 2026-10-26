@@ -168,6 +168,7 @@ fn cursorline_text_fills_only_active_content_row() -> Result<()> {
     first: Position { glyph: 2, ..Position::default() },
     last: Position { glyph: 2, ..Position::default() },
     excerpt: "c".into(),
+    matched: 0..0,
   };
   app.search.show(vpdf_search::query::Query::default(), vec![hit]);
   let mut out = Vec::new();
@@ -322,6 +323,7 @@ fn landing_text_fills_row_below_glyph_styles() -> Result<()> {
     first: Position { glyph: 3, ..position },
     last: Position { glyph: 3, ..position },
     excerpt: String::new(),
+    matched: 0..0,
   };
   app.search.show(vpdf_search::query::Query::default(), vec![hit]);
   let mut out = Vec::new();

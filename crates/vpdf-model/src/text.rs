@@ -462,6 +462,31 @@ pub fn clipped(text: &str, columns: usize) -> (String, bool) {
   }
 }
 
+/// `text` within `columns`, cut from the left behind an ellipsis.
+pub fn tail(text: &str, columns: usize) -> String {
+  use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+  let text: String = printable(text).collect();
+  if text.width() <= columns {
+    return text;
+  }
+  let Some(room) = columns.checked_sub(1) else { return String::new() };
+  let mut width = 0;
+  let kept: Vec<char> = text
+    .chars()
+    .rev()
+    .take_while(|ch| {
+      width += ch.width().unwrap_or(0);
+      width <= room
+    })
+    .collect();
+  let mut kept: String = kept.into_iter().rev().collect();
+  // Sequences can be wider than their characters.
+  while kept.width() > room {
+    kept.remove(0);
+  }
+  format!("…{kept}")
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

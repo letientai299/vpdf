@@ -8,8 +8,8 @@ use std::time::Instant;
 use vpdf_model::document::Target;
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::JumpDescription;
-use vpdf_ui::keys::{Action, Input};
-use vpdf_ui::panel::Row;
+use vpdf_ui::keys::{Action, Input, PanelKind};
+use vpdf_ui::panel::{Destination, Row, jump_key};
 use vpdf_ui::reading::{ScrollInput, Sections, ViewportEvent};
 
 impl App {
@@ -113,25 +113,24 @@ impl App {
 
   pub fn show_marks(&mut self, global: &BTreeMap<char, Mark>) -> Result<()> {
     let rows = self.mark_rows(global);
-    self.show_panel(vpdf_ui::keys::PanelKind::Marks, rows)
+    self.show_panel(PanelKind::Marks, rows)
   }
 
-  /// This document's marks, then global marks.
+  /// This document's marks, then global marks, each under a heading.
   pub fn mark_rows(&mut self, global: &BTreeMap<char, Mark>) -> Vec<Row> {
     let local: Vec<_> = self.marks.iter().map(|(n, p)| (*n, *p)).collect();
-    let mut rows: Vec<_> = local
+    let local = local
       .into_iter()
       .map(|(name, position)| {
         let text = self.doc.text(position.page).ok();
         Row::local_mark(name, position, text.as_deref())
       })
       .collect();
-    rows.extend(
-      global
-        .iter()
-        .map(|(name, mark)| Row::global_mark(*name, mark.cursor, &mark.path)),
-    );
-    rows
+    let global = global
+      .iter()
+      .map(|(name, mark)| Row::global_mark(*name, mark.cursor, &mark.path))
+      .collect();
+    Row::marks(local, global)
   }
 }
 
@@ -150,22 +149,93 @@ impl App {
     )
   }
 
+  /// Jump stops newest first, keyed by their distance from the cursor.
   pub(crate) fn jump_rows(&mut self) -> Vec<Row> {
-    let jumps: Vec<_> = self
+    self.jump_rows_from(&[])
+  }
+
+  /// Jump rows, reusing `old` rows whose key and stop still match.
+  fn jump_rows_from(&mut self, old: &[Row]) -> Vec<Row> {
+    let stops: Vec<_> = self
       .reader
-      .described_jumps()
-      .map(|(position, description)| (position, description.cloned()))
+      .stops()
+      .map(|(offset, position, description)| {
+        (offset, position, description.cloned())
+      })
       .collect();
-    jumps
+    let now = stops.iter().position(|(offset, ..)| *offset == 0);
+    let now_key = jump_key(0);
+    let kept = old.len() == stops.len()
+      && now == old.iter().position(|row| row.key == now_key);
+    stops
       .into_iter()
-      .map(|(position, description)| {
+      .enumerate()
+      .map(|(index, (offset, position, description))| {
+        if let Some(row) = old
+          .get(index)
+          .filter(|row| kept && offset != 0 && jumps_to(row, position))
+        {
+          return row.clone();
+        }
         let text = self.doc.text(position.page).ok();
         let line = text.as_ref().and_then(|text| text.lines.get(position.line));
         let name = self.doc.get_label(position.page).unwrap_or_default();
-        Row::jump(position, description, line, name)
+        let row = Row::jump(position, description, line, name);
+        Row { key: jump_key(offset), ..row }
       })
       .collect()
   }
+
+  /// Refills an open Jumps panel when the stops move and marks `now`.
+  pub fn track_jumps(&mut self) -> Result<()> {
+    let Some(panel) = &self.panel else { return Ok(()) };
+    if panel.view.kind() != PanelKind::Jumps {
+      return Ok(());
+    }
+    let rows = panel.view.rows();
+    let stops: Vec<_> =
+      self.reader.stops().map(|(offset, at, _)| (offset, at)).collect();
+    let now = stops.iter().position(|(offset, _)| *offset == 0);
+    let now_key = jump_key(0);
+    // Offsets run without gaps, so `now` places every key.
+    let stale = rows.len() != stops.len()
+      || now != rows.iter().position(|row| row.key == now_key)
+      || rows.iter().zip(&stops).any(|(row, (_, at))| !jumps_to(row, *at));
+    if stale {
+      let old = rows.to_vec();
+      let rows = self.jump_rows_from(&old);
+      let note = self.panel_note(PanelKind::Jumps);
+      if let Some(panel) = &mut self.panel {
+        panel.view.refill(rows, note);
+      }
+    }
+    if let Some(panel) = &mut self.panel {
+      panel.view.mark_current(now);
+    }
+    Ok(())
+  }
+
+  /// Whether the selected panel row is the Jumps `now` row.
+  pub(crate) fn selects_now(&self) -> bool {
+    self.panel.as_ref().is_some_and(|panel| {
+      panel.view.kind() == PanelKind::Jumps
+        && panel
+          .view
+          .rows()
+          .get(panel.view.selected())
+          .is_some_and(|row| row.key == jump_key(0))
+    })
+  }
+
+  /// Brings the cursor into view without recording a jump.
+  pub(crate) fn land_here(&mut self) -> Result<()> {
+    self.reading_view().land_here()
+  }
+}
+
+fn jumps_to(row: &Row, at: Position) -> bool {
+  matches!(row.destination,
+    Destination::Jump { position, .. } if position == at)
 }
 
 impl App {

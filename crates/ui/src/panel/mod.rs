@@ -6,7 +6,7 @@ use crate::panel::search::RowSearch;
 use crate::pointer::{WHEEL_ROWS, Wheel};
 use crate::text::Position;
 use std::path::PathBuf;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthStr;
 use vpdf_model::document::{Annotation, Target};
 use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
 use vpdf_reader::motion::Motion;
@@ -41,6 +41,13 @@ pub enum Style {
   CommandKey,
   /// `parent/file`, with the file name highlighted.
   Path,
+  /// A file name, in magenta.
+  Document,
+  /// A search excerpt; the match's bytes in the label.
+  Excerpt {
+    start: usize,
+    end: usize,
+  },
 }
 
 /// What a row points at; picks its glyph.
@@ -54,6 +61,7 @@ pub enum RowKind {
   Mention,
   Section,
   Search,
+  Link,
   Note,
   Underline,
   Highlight,
@@ -151,15 +159,20 @@ impl Pointing {
 }
 
 pub use info::{DocumentInfo, Info, document_lines, metadata_lines};
+pub use jumps::key as jump_key;
 pub use rows::key_width;
 mod info;
 
+#[cfg(test)]
+mod annotations_tests;
 #[cfg(test)]
 mod focus_tests;
 #[cfg(test)]
 mod follow_tests;
 #[cfg(test)]
 mod projection_tests;
+#[cfg(test)]
+mod results_tests;
 #[cfg(test)]
 mod wrap_tests;
 

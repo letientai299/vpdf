@@ -262,6 +262,7 @@ fn cursor_rendering_keeps_visual_band_separate() -> Result<()> {
       first: hit,
       last: hit,
       excerpt: String::new(),
+      matched: 0..0,
     };
     app.search.show(vpdf_search::query::Query::default(), vec![hit]);
     keys(&mut app, b"i")?;

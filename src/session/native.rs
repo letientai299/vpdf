@@ -1579,10 +1579,7 @@ mod tests {
       let original = session.app().id;
       let position =
         Position { page: vpdf_model::text::PageId(1), ..Position::default() };
-      session
-        .state
-        .marks
-        .insert('A', Mark { path: path.clone(), cursor: position });
+      session.state.marks.insert('A', Mark::new(path.clone(), position));
       session.app().request = Some(request.clone());
       session.settle()?;
       assert!(session.unlock.is_some(), "{request:?}");

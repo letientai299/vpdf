@@ -9,6 +9,7 @@ pub enum Event {
   AutoExpand,
   Fold { operation: Fold, count: usize },
   Forget(Vec<std::path::PathBuf>),
+  RemoveMark(char),
   Stay,
   Close,
   Copy { text: String, register: char },
@@ -147,6 +148,7 @@ impl Panel {
       Route::Fold(Fold::ExpandAll) => "expand all branches",
       Route::Fold(Fold::CollapseAll) => "collapse all branches",
       Route::Toggle => "toggle recent checkbox",
+      Route::Remove if self.kind == PanelKind::Marks => "remove mark",
       Route::Remove => "remove recent files",
       Route::Clear => "clear recent selections",
       Route::Close => "close panel",
@@ -176,7 +178,11 @@ impl Panel {
     }
     match action {
       Action::RecentToggle if self.is_recent_view() => Route::Toggle,
-      Action::RecentRemove if self.is_recent_view() => Route::Remove,
+      Action::RecentRemove
+        if self.is_recent_view() || self.kind == PanelKind::Marks =>
+      {
+        Route::Remove
+      }
       Action::Cancel
         if self.is_recent_view() && !self.recent.checked.is_empty() =>
       {
@@ -184,8 +190,11 @@ impl Panel {
       }
       Action::Quit | Action::ClosePanel => Route::Close,
       Action::Yank | Action::YankLine => Route::Copy,
-      // Keep text actions within the panel.
-      Action::Motion(_)
+      // Keep text actions within the panel; removal and checkboxes
+      // belong to Recent and Marks.
+      Action::RecentToggle
+      | Action::RecentRemove
+      | Action::Motion(_)
       | Action::Visual(_)
       | Action::Object(..)
       | Action::Reselect
@@ -315,6 +324,7 @@ mod tests {
     let annotation = Annotation {
       kind: "Note".into(),
       author: "Reader".into(),
+      color: None,
       contents: "A note".into(),
       areas: Vec::new(),
     };

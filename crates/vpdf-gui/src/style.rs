@@ -94,6 +94,7 @@ fn resolve(tone: Tone, background: bool, theme: Theme) -> Color32 {
     Tone::Error => Color32::from_rgb(191, 97, 106),
     Tone::PreviewBorder => Color32::from_rgb(60, 120, 230),
     Tone::PreviewText => Color32::from_gray(20),
+    Tone::Rgb(color) => rgb(color),
   }
 }
 
