@@ -58,6 +58,12 @@ jobs:
         run: |
           mise run lint
           git diff --exit-code
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: tmp/corpus
+          key: corpus-${{ hashFiles('scripts/corpus.sh') }}
+      - name: Fetch corpus
+        run: mise run corpus
       - name: Test
         run: mise run test
       - name: Test benchmark input feature
