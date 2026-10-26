@@ -469,6 +469,13 @@ impl Panel {
     Some(self.line_source(line)).filter(|&index| index < self.rows.len())
   }
 
+  /// Panel row of the selection's first line, when shown.
+  pub fn selected_row(&self) -> Option<u16> {
+    let line = self.line_start(self.selected).checked_sub(self.top)?;
+    let row = u16::try_from(line + 1).ok()?;
+    (self.row_at(0, row) == Some(self.selected)).then_some(row)
+  }
+
   /// Selects row `index` and shows it.
   pub fn select(&mut self, index: usize) {
     self.selected = index;

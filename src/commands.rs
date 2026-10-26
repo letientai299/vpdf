@@ -89,6 +89,9 @@ impl App {
     if input.action == Action::YankPath {
       return self.yank_path(input.register);
     }
+    if input.action == Action::Menu {
+      return self.key_context();
+    }
     if !self.panel_focused()
       && self.overlays.overview().is_some()
       && self.overview_input(input)?

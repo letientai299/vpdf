@@ -2,7 +2,7 @@ use super::View;
 use crate::Result;
 use crate::hints::{self, Hints};
 use crate::source::{Markup, Pages};
-use crate::text::{Bounds, PageId};
+use crate::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::TextSource;
 
 impl<S: TextSource + Pages + Markup> View<'_, S> {
@@ -24,6 +24,20 @@ impl<S: TextSource + Pages + Markup> View<'_, S> {
     }
     let frame = self.frame.pane;
     Hints::new(found, copy, frame.left, frame.screen.columns)
+  }
+
+  /// Screen cell of the glyph at `position`, when shown.
+  pub fn glyph_cell(
+    &mut self,
+    position: Position,
+  ) -> Result<Option<(u16, u16)>> {
+    if self.frame.pane.text {
+      return self.text().cell(position);
+    }
+    let text = self.source.page_text(position.page)?;
+    let Some(glyph) = text.glyph(position) else { return Ok(None) };
+    let bounds = glyph.bounds;
+    self.link_cell(position.page, bounds)
   }
 
   fn link_cell(

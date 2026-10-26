@@ -217,6 +217,7 @@ specs! {
   "hints.copy" => Kind::Fixed(Action::Hints(true)),
   "preview" => Kind::Fixed(Action::Peek),
   "overview" => Kind::Fixed(Action::Overview),
+  "menu.open" => Kind::Fixed(Action::Menu),
   "fit.width" => Kind::Fixed(Action::Fit),
   "fit.page" => Kind::Fixed(Action::FitPage),
   "rotate" => Kind::Fixed(Action::Rotate),

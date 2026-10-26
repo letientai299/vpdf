@@ -250,6 +250,7 @@ fn reader_defaults(context: Context, entries: &mut Vec<(Sequence, Target)>) {
     ("<Home>", Action::Motion(Motion::First)),
     ("<End>", Action::Motion(Motion::Last)),
     ("<F1>", Action::Help),
+    ("<S-F10>", Action::Menu),
     ("<S-Tab>", Action::LocalFocus),
     ("<C-m>", Action::Follow),
     ("<C-]>", Action::Follow),

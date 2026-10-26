@@ -209,6 +209,35 @@ fn info_tracks_frames() -> Result<()> {
 }
 
 #[test]
+fn shift_f10_opens_menu_at_focus() -> Result<()> {
+  const SHIFT_F10: &[u8] = b"\x1b[21;2~";
+  let (_directory, path) = common::temp_pdf(|path| {
+    common::pages_pdf(path, &[&["First page"], &["Second page"]])
+  })?;
+  let mut app = Solo::open(&path, "", true, screen())?;
+  app.draw(&mut Vec::new())?;
+  common::typed(&mut app, b"i")?;
+  app.draw(&mut Vec::new())?;
+  common::typed(&mut app, SHIFT_F10)?;
+  let cursor = app.reader.cursor;
+  let cell = app.reading_view().glyph_cell(cursor)?.expect("cursor cell");
+  let menu = app.overlays.menu().expect("cursor menu");
+  assert!(!menu.is_row());
+  assert_eq!(menu.area().row, cell.1 + 1, "menu opens below the cursor");
+  assert!(menu.entries().iter().any(|item| item.label == "Select word"));
+  common::typed(&mut app, SHIFT_F10)?;
+  assert!(app.overlays.menu().is_none());
+  app.command("info")?;
+  app.panel.as_mut().unwrap().view.focus(true);
+  app.draw(&mut Vec::new())?;
+  common::typed(&mut app, SHIFT_F10)?;
+  assert!(
+    app.overlays.menu().is_some_and(vpdf_ui::context::ContextMenu::is_row)
+  );
+  Ok(())
+}
+
+#[test]
 fn info_facts_name_format_and_encryption() -> Result<()> {
   let app = text_app()?;
   let info = app.info();

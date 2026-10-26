@@ -217,7 +217,8 @@ impl Panel {
       | Action::Window(_)
       | Action::Tab(_)
       | Action::Panel(_)
-      | Action::Overview => Route::Unhandled,
+      | Action::Overview
+      | Action::Menu => Route::Unhandled,
       _ if self.is_recent_view() => Route::Ignore,
       _ => Route::Unhandled,
     }

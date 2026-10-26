@@ -249,6 +249,16 @@ impl Overview {
     Pointer::None
   }
 
+  /// Centre of the selected thumbnail, as the next frame shows it.
+  pub fn selected_point(&self, grid: &Grid, pages: usize) -> (f32, f32) {
+    let row = (self.selected / grid.columns)
+      .saturating_sub(self.shown_top(grid, pages));
+    let column = self.selected % grid.columns;
+    let x =
+      grid.gap + column as f32 * (grid.width + grid.gap) + grid.width / 2.0;
+    (x, grid.row_top(row) + grid.height / 2.0)
+  }
+
   pub fn hit(
     &self,
     (x, y): (f32, f32),

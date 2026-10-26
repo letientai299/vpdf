@@ -1,7 +1,9 @@
 use crate::Result;
 use crate::app::App;
 use crate::pdf_text::PdfText;
-use vpdf_model::input::MouseEvent;
+use vpdf_model::input::{
+  KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use vpdf_model::text::{Bounds, PageId, Position};
 use vpdf_reader::reader::SelectionKind;
 use vpdf_ui::context::{Command, ContextMenu, Item, PageContext, Transition};
@@ -88,6 +90,78 @@ impl App {
     let items = vpdf_ui::context::overview_items(page);
     let at = (mouse.column, mouse.row);
     self.open_menu(items, at, (self.left, self.screen.columns), false);
+  }
+
+  /// Opens the menu from a key at the focused item.
+  pub(crate) fn key_context(&mut self) -> Result<()> {
+    let kind = MouseEventKind::Down(MouseButton::Right);
+    let modifiers = KeyModifiers::NONE;
+    let mouse = |(column, row)| MouseEvent { kind, column, row, modifiers };
+    if self.panel_focused() {
+      let row = self.panel.as_ref().and_then(|p| p.view.selected_row());
+      self.panel_context(mouse((2, row.unwrap_or(1))));
+      return Ok(());
+    }
+    if let Some(overview) = self.overlays.overview() {
+      let page = PageId(overview.selected());
+      let (x, y) = overview.selected_point(&self.grid(), self.doc.pages.len());
+      let screen = self.layout.screen();
+      let column = self.left + (x / f32::from(screen.cell_width)) as u16;
+      let row = (y / f32::from(screen.cell_height)) as u16;
+      self.overview_context(mouse((column, row)), Some(page));
+      return Ok(());
+    }
+    self.cursor_context()
+  }
+
+  /// Opens the page menu at the cursor or target.
+  fn cursor_context(&mut self) -> Result<()> {
+    let mut reading = self.reading_view();
+    let near = reading.shown_target()?;
+    let cell = match near {
+      Some(position) => reading.glyph_cell(position)?,
+      None => None,
+    };
+    let point = match near {
+      Some(position) if !self.text_mode => self.glyph_point(position)?,
+      _ => None,
+    };
+    let link = near.map(|near| self.link_target(near)).transpose()?.flatten();
+    let note = match near {
+      Some(position) => self.note_at(position)?,
+      None => None,
+    };
+    let figure = match point {
+      Some((page, x, y)) => vpdf_ui::figures::at(
+        &mut PdfText(&mut self.doc),
+        vpdf_ui::page::Point { page, x, y },
+      )?
+      .map(|figure| (page, figure.bounds)),
+      None => None,
+    };
+    let items = vpdf_ui::context::page_items(PageContext {
+      reader: &self.reader,
+      link,
+      near,
+      glyph: near,
+      note,
+      figure,
+    });
+    // Below the cursor, keeping it visible.
+    let at = cell.map_or((self.left, 0), |(column, row)| (column, row + 1));
+    self.open_menu(items, at, (self.left, self.screen.columns), false);
+    Ok(())
+  }
+
+  /// The note on a glyph, with its index and comment.
+  fn note_at(
+    &mut self,
+    position: Position,
+  ) -> Result<Option<(PageId, usize, String)>> {
+    let Some(note) = self.annotation_at(position)? else { return Ok(None) };
+    let annotations = self.doc.annotations(position.page)?;
+    let index = annotations.iter().position(|other| *other == note);
+    Ok(index.map(|index| (position.page, index, note.contents)))
   }
 
   /// Opens a menu at a pane cell, inside `columns`.

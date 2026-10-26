@@ -40,7 +40,7 @@ fn route(action: Action) -> Route {
     Action::Motion(Motion::Down) => Route::Move(true),
     Action::Motion(Motion::Up) => Route::Move(false),
     Action::Follow => Route::Run,
-    Action::Quit | Action::Cancel => Route::Close,
+    Action::Quit | Action::Cancel | Action::Menu => Route::Close,
     Action::Command => Route::Command,
     _ if crate::input::transfers_overlay(action) => Route::Transfer,
     _ => Route::Ignore,

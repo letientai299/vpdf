@@ -123,18 +123,22 @@ impl<S: TextSource + Pages> View<'_, S> {
   }
 
   pub fn explicit_target(&mut self) -> Result<Option<Position>> {
+    let target = self.shown_target()?;
+    if target.is_none() {
+      self.reader.message = "Click text or jump to select a target".into();
+    }
+    Ok(target)
+  }
+
+  /// The cursor, or the target outside cursor modes, when visible.
+  pub fn shown_target(&mut self) -> Result<Option<Position>> {
     let target = if self.reader.uses_cursor() {
       Some(self.reader.cursor)
     } else {
       *self.target
     };
-    if let Some(target) = target
-      && self.visible(target)?
-    {
-      return Ok(Some(target));
-    }
-    self.reader.message = "Click text or jump to select a target".into();
-    Ok(None)
+    let Some(target) = target else { return Ok(None) };
+    Ok(self.visible(target)?.then_some(target))
   }
 
   pub fn enter_text(&mut self) -> Result<bool> {

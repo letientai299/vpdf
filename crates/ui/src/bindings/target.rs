@@ -158,6 +158,16 @@ fn reader_allowed(action: Action, context: Context) -> bool {
       context,
       C::Prompt | C::Command | C::Search | C::Password | C::Hints
     ),
+    Action::Menu => matches!(
+      context,
+      C::Normal
+        | C::Cursor
+        | C::Visual
+        | C::Panel
+        | C::Recent
+        | C::Overview
+        | C::Menu
+    ),
     Action::Window(crate::window::Window::Extend(_))
       if context == C::Resize =>
     {

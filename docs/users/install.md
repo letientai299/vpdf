@@ -151,7 +151,9 @@ for clipboard and link boundaries.
 A press focuses the pane or panel under it. The wheel scrolls the surface under
 the pointer without changing keyboard focus. Hover highlights and describes
 links, notes, rows, and thumbnails. Right-click for actions on that item; choose
-with the pointer or `j` and `k`, then click or Enter to run. A middle drag pans.
+with the pointer or `j` and `k`, then click or Enter to run. Shift-F10 opens
+the same menu for the cursor, selected row, or selected thumbnail. A middle drag
+pans.
 Middle-click an internal destination to open it in a split while retaining
 focus in the original pane.
 

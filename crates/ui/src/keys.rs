@@ -131,6 +131,8 @@ pub enum Action {
   Peek,
   /// Page thumbnail grid.
   Overview,
+  /// Context menu at the focused item.
+  Menu,
   Mark(char),
   /// Mark name and whether to keep the glyph column.
   GoMark(char, bool),

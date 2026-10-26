@@ -8,7 +8,7 @@ use vpdf_ui::overview::{Frame, Grid, Navigation, Overview, Pointer};
 use vpdf_ui::pointer::Hit;
 
 impl App {
-  fn grid(&self) -> Grid {
+  pub(crate) fn grid(&self) -> Grid {
     Grid::new(self.layout.screen(), self.doc.pages[0].bounds)
   }
   pub fn open_overview(&mut self) -> Result<()> {
