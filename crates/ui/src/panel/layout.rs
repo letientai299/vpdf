@@ -90,9 +90,7 @@ impl Meta {
     if progress {
       super::recent::scene_progress(scene, detail, plain);
     } else {
-      if plain == Role::Reset {
-        scene.push(Op::Style(Role::Muted));
-      }
+      scene.push(Op::Style(super::rows::quiet(plain)));
       scene.text(detail);
     }
     scene.push(Op::Style(Role::Reset));

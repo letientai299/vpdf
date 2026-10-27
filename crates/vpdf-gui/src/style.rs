@@ -170,6 +170,9 @@ mod tests {
     let sequences: &[&[Role]] = &[
       &[Role::Reset],
       &[Role::Reset, Role::Muted],
+      &[Role::Dim, Role::Muted],
+      &[Role::Hover, Role::Muted],
+      &[Role::HoverDim, Role::Muted],
       &[Role::Reset, Role::Heading],
       &[Role::Reset, Role::Key],
       &[Role::Reset, Role::Mode],
@@ -206,6 +209,25 @@ mod tests {
       for other in [Role::Bar, Role::TabInactive] {
         let ratio = contrast(tab, resolve(theme, &[other]).1);
         assert!(ratio >= 3.0, "{name}: tab vs {other:?} {ratio:.2}");
+      }
+    }
+  }
+
+  #[test]
+  fn muted_keeps_row_attributes() {
+    for (name, palette) in shipped() {
+      let theme = Colors::Palette(palette);
+      for base in [Role::Reset, Role::Dim, Role::Hover, Role::HoverDim] {
+        let mut style = Style::new(theme);
+        style.apply(base, theme);
+        let expected = Style { foreground: rgb(palette.muted), ..style };
+        style.apply(Role::Muted, theme);
+        assert_eq!(style, expected, "{name}: {base:?}");
+        assert_eq!(
+          style.underline,
+          matches!(base, Role::Hover | Role::HoverDim),
+          "{name}: {base:?}"
+        );
       }
     }
   }

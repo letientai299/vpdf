@@ -335,3 +335,78 @@ fn copies_keep_caption_keys() {
     assert_eq!(panel.yank_text(), Some(format!("{copied}{label}\n")));
   }
 }
+
+#[test]
+fn details_keep_row_styles() {
+  for (base, tail) in [
+    (Role::Reset, Role::Muted),
+    (Role::Dim, Role::Muted),
+    (Role::Hover, Role::Muted),
+    (Role::HoverDim, Role::Muted),
+    (Role::Selected, Role::Selected),
+    (Role::Current, Role::Current),
+  ] {
+    for (detail, progress, last) in [
+      ("", false, ""),
+      ("p123", false, "p123"),
+      ("12 pages", true, "12 pages"),
+      ("██··· 40%", true, "··· 40%"),
+    ] {
+      let row = Row::new("row".into(), detail.into(), Destination::None);
+      let meta = Meta::new(&row, 20, 0, 0, 0);
+      for used in [3, 25] {
+        let mut scene = Vec::new();
+        meta.trail(&mut scene, base, used, progress);
+        let gap = " ".repeat((20 - detail.width()).saturating_sub(used));
+        assert_eq!(crate::testing::text(&scene), format!("{gap}{detail}"));
+        let spans = crate::testing::spans(&scene);
+        if !gap.is_empty() {
+          assert_eq!(spans[0], (base, gap));
+        }
+        if !detail.is_empty() {
+          assert_eq!(spans.last(), Some(&(tail, last.into())), "{base:?}");
+        }
+        assert!(matches!(scene.last(), Some(Op::Style(Role::Reset))));
+      }
+    }
+  }
+}
+
+#[test]
+fn panel_details_stay_quiet() {
+  for focused in [true, false] {
+    for hovered in [true, false] {
+      let mut panel = Panel::new(
+        PanelKind::Figures,
+        ["first", "second"]
+          .into_iter()
+          .enumerate()
+          .map(|(page, label)| {
+            Row::new(
+              label.into(),
+              format!("p{}", page + 1),
+              Destination::Link(Target::Page(crate::text::PageId(page))),
+            )
+          })
+          .collect(),
+      );
+      panel.focus(focused);
+      if hovered {
+        panel.point(Pointing::Row(1));
+      }
+      let mut scene = Vec::new();
+      panel.scene_list(&mut scene, At::default(), 40, 4);
+      let spans = crate::testing::spans(&scene);
+      let selected = if focused { Role::Selected } else { Role::Current };
+      assert!(spans.contains(&(selected, "p1".into())));
+      assert!(spans.contains(&(Role::Muted, "p2".into())));
+      let label = match (focused, hovered) {
+        (true, true) => Role::Hover,
+        (false, true) => Role::HoverDim,
+        (true, false) => Role::Reset,
+        (false, false) => Role::Dim,
+      };
+      assert!(spans.contains(&(label, "second".into())));
+    }
+  }
+}
