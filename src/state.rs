@@ -42,6 +42,8 @@ pub struct Entry {
   pub marks: BTreeMap<char, Position>,
   #[serde(default)]
   pub crop: Crop,
+  #[serde(default)]
+  pub recolor: vpdf_model::recolor::Recolor,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub outline: Option<vpdf_ui::reading::Preferences>,
   /// Unknown panels from newer versions read as unsaved.
@@ -215,7 +217,10 @@ impl State {
       entry.merge_outline(old);
     }
     let moved = previous.as_ref().is_none_or(|old| {
-      if old.outline != entry.outline || old.sidebar != entry.sidebar {
+      if old.outline != entry.outline
+        || old.sidebar != entry.sidebar
+        || old.recolor != entry.recolor
+      {
         return true;
       }
       (old.cursor, old.zoom, old.rotation, &old.marks, old.crop)
@@ -381,6 +386,7 @@ impl App {
       used: now(),
       marks: self.marks.clone(),
       crop: self.layout.crop(),
+      recolor: self.layout.recolor(),
       outline: self.outline.preferences().cloned(),
       sidebar: Some(Sidebar::of(
         self.panel.as_ref().map(|panel| panel.view.kind()),
@@ -394,6 +400,7 @@ impl App {
     self.crop_scan.clear();
     self.marks.clone_from(&entry.marks);
     self.layout.restore(entry.zoom, entry.rotation, entry.crop);
+    self.layout.set_recolor(entry.recolor);
     self.layout.reflow(self.doc.pages.iter().map(|page| page.bounds));
     self.reading_view().restore_position(entry.cursor)?;
     if !entry.crop.is_none() && self.layout.crops().is_empty() {
@@ -454,6 +461,7 @@ pub(crate) mod tests {
       used,
       marks: BTreeMap::new(),
       crop: Crop::default(),
+      recolor: vpdf_model::recolor::Recolor::default(),
       outline: None,
       sidebar: None,
     }
@@ -503,12 +511,16 @@ pub(crate) mod tests {
       recent: vec![entry("/b.pdf", 2, 20), entry("/a.pdf", 9, 5)],
       ..State::default()
     };
+    other.recent[0].recolor =
+      vpdf_model::recolor::Recolor::parse("sepia").unwrap();
     let commands = ["page 3".into(), "ocr".into()];
     other.save(&file, &commands, &[])?;
     let mut own = State {
       recent: vec![entry("/a.pdf", 4, 30), entry("/c.pdf", 1, 10)],
       ..State::default()
     };
+    own.recent[0].recolor =
+      vpdf_model::recolor::Recolor::parse("dark 80").unwrap();
     let commands = ["ocr".into(), "help".into()];
     own.save(&file, &commands, &["attention".into()])?;
     let saved = State::load(&file);
@@ -521,6 +533,8 @@ pub(crate) mod tests {
       pages,
       [("/a.pdf".into(), 4), ("/b.pdf".into(), 2), ("/c.pdf".into(), 1)]
     );
+    assert_eq!(saved.recent[0].recolor, own.recent[0].recolor);
+    assert_eq!(saved.recent[1].recolor, other.recent[0].recolor);
     assert_eq!(saved.commands, ["page 3", "ocr", "help"]);
     assert_eq!(saved.searches, ["attention"]);
     Ok(())
@@ -584,6 +598,38 @@ mod recent_layout_tests {
     assert_eq!(
       State::load(&store).recent_layout,
       vpdf_ui::panel::recent::Preferences::default()
+    );
+    Ok(())
+  }
+}
+
+#[cfg(test)]
+mod recolor_tests {
+  use super::*;
+
+  #[test]
+  fn recolor_saves_and_isolates() -> Result<()> {
+    let mut state = State::default();
+    let original = tests::entry("one.pdf", 2, 10);
+    let mut entry = original.clone();
+    state.remember(entry.clone());
+    let mut value = serde_json::to_value(&entry)?;
+    value.as_object_mut().unwrap().remove("recolor");
+    assert_eq!(serde_json::from_value::<Entry>(value.clone())?, original);
+    for malformed in [
+      serde_json::json!({"preset":"unknown","amount":60}),
+      serde_json::json!({"preset":"sepia","amount":-1}),
+      serde_json::json!([1, 2, 3]),
+    ] {
+      value["recolor"] = malformed;
+      assert_eq!(serde_json::from_value::<Entry>(value.clone())?, original);
+    }
+    entry.recolor = vpdf_model::recolor::Recolor::parse("sepia 30").unwrap();
+    assert!(state.remember(entry.clone()));
+    assert!(!state.remember(entry.clone()));
+    assert_eq!(
+      serde_json::from_str::<Entry>(&serde_json::to_string(&entry)?)?,
+      entry
     );
     Ok(())
   }

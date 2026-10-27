@@ -26,6 +26,7 @@ impl Manifest {
       width: self.width,
       height: self.height,
       crop: vpdf_model::geometry::Crop(self.crop),
+      recolor: vpdf_model::recolor::Recolor::default(),
     }
   }
 }

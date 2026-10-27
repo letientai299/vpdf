@@ -6,6 +6,7 @@ pub enum Complete {
   Help,
   Config,
   Theme,
+  Recolor,
   Path,
   /// `on` or `off`.
   Switch,
@@ -136,6 +137,8 @@ commands! {
   Overview "overview" ["pages"] "" Nothing Recent "show page thumbnails";
   CursorLine "cursorline" [] "[on|off]" Switch Document
     "toggle the Cursor/Visual line band (default on)";
+  Recolor "recolor" [] "[dark|sepia [amount]|off]" Recolor Document
+    "recolor document pixels";
   Crop "crop" [] "[on|off]" Switch Document "toggle cropped page margins";
   Mouse "mouse" [] "[on|off]" Switch Recent
     "toggle mouse capture; off: terminal selects";
@@ -264,6 +267,9 @@ pub fn candidates(
         .collect();
       items.extend(supply(Complete::Theme, argument));
       prefixed(items, argument)
+    }
+    Some(Complete::Recolor) => {
+      prefixed(vec!["dark".into(), "sepia".into(), "off".into()], argument)
     }
     Some(Complete::Config) => prefixed(vec!["reload".into()], argument),
     Some(Complete::Switch) => {
@@ -588,7 +594,7 @@ mod tests {
       let complete =
         |before| candidates(before, view, |_| true, |_, _| unreachable!());
       let expected = if view == View::Document {
-        vec!["recent", "reload"]
+        vec!["recent", "recolor", "reload"]
       } else {
         vec!["recent"]
       };
@@ -624,5 +630,27 @@ mod tests {
       ),
       (2, vec!["paper.pdf".into()])
     );
+  }
+}
+
+#[cfg(test)]
+mod recolor_tests {
+  use super::*;
+
+  #[test]
+  fn presets_complete_in_documents() {
+    let spec = lookup("recolor", |_| true).unwrap();
+    assert!(spec.available(View::Document));
+    assert!(!spec.available(View::Home));
+    assert!(!spec.available(View::Recent));
+    for (input, expected) in [
+      ("recolor ", vec!["dark", "sepia", "off"]),
+      ("recolor s", vec!["sepia"]),
+      ("recolor dark ", vec![]),
+    ] {
+      let (_, items) =
+        candidates(input, View::Document, |_| true, |_, _| vec![]);
+      assert_eq!(items, expected);
+    }
   }
 }

@@ -130,12 +130,7 @@ impl App {
 
 impl Session {
   fn help_reference(&self, invocation: Invocation) -> Reference {
-    let mut reference = self.settings.help_reference(invocation);
-    reference.configuration.palette = self
-      .settings
-      .colors(vpdf_model::theme::Colors::Palette(self.system_palette))
-      .palette();
-    reference
+    self.settings.help_reference(invocation)
   }
 
   pub(super) fn find_pane(&self, id: u32) -> Option<(usize, usize)> {
@@ -239,7 +234,7 @@ impl Session {
 
   fn restore_help(&mut self) {
     if let Some((reference, document)) = self.help.cached.clone() {
-      self.help.runtime.reuse(&reference, document);
+      self.help.runtime.reuse(document);
       self.help.reference = Some(reference);
     }
   }

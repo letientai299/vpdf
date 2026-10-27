@@ -145,15 +145,17 @@ preparation until explicitly requested; it does not delete saved caches.
 
 ## Source boundaries
 
-Reading, selection, marks, crop, rotation, and OCR do not modify the source PDF.
+Reading, selection, marks, crop, rotation, recoloring, and OCR leave the source
+PDF unchanged.
 Region export creates a separate PNG. Copying uses the extracted text or image;
 printing uses the source PDF. Reader crop, zoom, selections, and temporary OCR
 do not change printed output.
 
 Built-in help stays out of recent files, file watching, disk content caches, and
-saved document state. Its identity is `builtin:help`. It supports session local
-marks, copying, and OCR; region export, printing, disk reload, and persistent
-global marks are unavailable.
+saved document state. Its identity is `builtin:help`. Its page colors stay fixed
+across interface themes; `:recolor` changes them for the current view. It
+supports session local marks, copying, and OCR; region export, printing, disk
+reload, and persistent global marks are unavailable.
 
 ## External actions
 

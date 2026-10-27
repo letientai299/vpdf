@@ -84,6 +84,7 @@ impl App {
     S::Error: Into<anyhow::Error>,
   {
     let frame = Frame {
+      recolor: self.layout.recolor(),
       pane: self.id,
       screen: self.layout.screen(),
       clip: self.uncovered(),

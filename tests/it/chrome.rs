@@ -344,6 +344,7 @@ fn recent_menus_open_rows() -> Result<()> {
     used: 0,
     marks: std::collections::BTreeMap::new(),
     crop: vpdf_ui::layout::Crop::default(),
+    recolor: vpdf_model::recolor::Recolor::default(),
     outline: None,
     sidebar: None,
   };

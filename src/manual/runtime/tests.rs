@@ -29,10 +29,7 @@ fn discards_obsolete_jobs() -> Result<()> {
       receive.recv_timeout(Duration::from_secs(10))?;
     }
     let mut runtime = Runtime {
-      state: State::Building {
-        key: Key { manual: "old-manual".into(), ..Key::new(&reference) },
-        job,
-      },
+      state: State::Building { key: Key { manual: "old-manual".into() }, job },
       selected: Some(Location::topic(TopicId::parse("half_down")?)),
       delivery: Some(Delivery::Open),
     };
@@ -65,7 +62,7 @@ fn failed_generation_retries() -> Result<()> {
     OneShot::spawn(&wake, |_| Some(Err(anyhow::anyhow!("Generation failed"))));
   receive.recv_timeout(Duration::from_secs(10))?;
   let mut runtime = Runtime {
-    state: State::Building { key: Key::new(&reference), job },
+    state: State::Building { key: Key::new(), job },
     selected: Some(Location::topic(TopicId::parse("config")?)),
     delivery: Some(Delivery::Open),
   };

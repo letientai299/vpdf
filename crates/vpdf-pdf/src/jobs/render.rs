@@ -197,7 +197,8 @@ enum Kind {
   Whole,
 }
 
-type PageKey = (PageId, u32, u16, Crop);
+type GeometryKey = (PageId, u32, u16, Crop);
+type PageKey = (GeometryKey, vpdf_model::recolor::Recolor);
 
 struct Pending {
   urgent: Vec<TileKey>,
@@ -213,7 +214,7 @@ struct Coordinator {
   source: (PathBuf, String),
   shared: Arc<Shared>,
   send: Sink,
-  kinds: HashMap<PageKey, Kind>,
+  kinds: HashMap<GeometryKey, Kind>,
   /// Whole pages the current request has drawn; their tiles are sent.
   wholes: HashSet<PageKey>,
   /// Pages drawn since `doc` opened.
@@ -370,14 +371,14 @@ impl Coordinator {
     let rect = transform(bounds, &matrix);
     let area = IRect::new(0, 0, rect.x1.ceil() as i32, rect.y1.ceil() as i32);
     let list = self.doc.display(key.page, &self.lists)?;
-    let kind = match self.kinds.get(&page) {
+    let kind = match self.kinds.get(&page.0) {
       Some(kind) => *kind,
       None => {
         let kind = classify(&list, &matrix, area)?;
         if self.kinds.len() >= 4096 {
           self.kinds.clear();
         }
-        self.kinds.insert(page, kind);
+        self.kinds.insert(page.0, kind);
         kind
       }
     };
@@ -437,7 +438,7 @@ fn classify(
 }
 
 fn page_of(tile: &TileKey) -> PageKey {
-  (tile.page, tile.scale, tile.rotation, tile.crop)
+  ((tile.page, tile.scale, tile.rotation, tile.crop), tile.recolor)
 }
 
 fn ms(started: Instant) -> f64 {
@@ -525,11 +526,7 @@ fn serve(pool: &Pool) {
     drop(tasks);
     let Task { shared, send, job, urgent } = task;
     let Job { tiles, work } = job;
-    #[cfg(test)]
-    if matches!(work, Work::Whole { .. }) {
-      shared.wholes.fetch_add(1, Ordering::Relaxed);
-    }
-    let handed = render(&tiles, work, &send);
+    let handed = render_current(&shared, &tiles, work, &send);
     // Held through delivery: a scan started between a view's bands would
     // hold `MuPDF`'s locks while the next band draws.
     drop(urgent);
@@ -552,10 +549,29 @@ fn serve(pool: &Pool) {
   }
 }
 
+fn render_current(
+  shared: &Shared,
+  tiles: &[TileKey],
+  work: Work,
+  send: &Sink,
+) -> Vec<Job> {
+  let recolor = tiles[0].recolor;
+  let current = shared.queue.lock().is_ok_and(|queue| {
+    !queue.stop && queue.wanted.iter().any(|key| key.recolor == recolor)
+  });
+  if !current {
+    return Vec::new();
+  }
+  #[cfg(test)]
+  if matches!(work, Work::Whole { .. }) {
+    shared.wholes.fetch_add(1, Ordering::Relaxed);
+  }
+  render(tiles, work, send)
+}
+
 /// Draws the job's band and sends each tile encoded; a whole page
 /// returns its rows as jobs for the pool to encode.
 fn render(tiles: &[TileKey], work: Work, send: &Sink) -> Vec<Job> {
-  let started = Instant::now();
   let (list, matrix, area, whole) = match work {
     Work::Band { list, matrix } => {
       let (first, last) = (tiles[0], tiles[tiles.len() - 1]);
@@ -574,6 +590,7 @@ fn render(tiles: &[TileKey], work: Work, send: &Sink) -> Vec<Job> {
       return Vec::new();
     }
   };
+  let started = Instant::now();
   let drawn = match raster::draw(&list, &matrix, area) {
     Ok(drawn) => drawn,
     Err(error) => {
@@ -615,7 +632,15 @@ fn deliver(
 ) {
   for (key, pixels) in tiles.iter().zip(pixels) {
     let tile = pixels
-      .map(|pixels| Rendered { key: *key, pixels, render_ms: drawn })
+      .map(|mut pixels| {
+        let mut render_ms = drawn;
+        if key.recolor != vpdf_model::recolor::Recolor::default() {
+          let started = Instant::now();
+          key.recolor.apply(&mut pixels);
+          render_ms += ms(started);
+        }
+        Rendered { key: *key, pixels, render_ms }
+      })
       .map_err(|error| error.to_string());
     if send.send(tile).is_err() {
       return;
@@ -680,6 +705,129 @@ mod tests {
     assert_eq!(tile.key, key);
     assert_eq!(tile.pixels.len(), (key.width * key.height * 3) as usize);
     assert_eq!(woken.try_iter().count(), 0);
+    Ok(())
+  }
+
+  #[test]
+  fn recolor_routes_match() -> Result<()> {
+    let file = tempfile::NamedTempFile::new()?;
+    crate::fixtures::pdf(file.path(), &["body"], "")?;
+    let mut doc = Document::open(file.path(), "")?;
+    let list = doc.display(PageId(0))?;
+    let matrix = page_matrix(doc.pages[0].bounds, 1024, 0);
+    let area = IRect::new(0, 0, 128, 64);
+    let original = raster::draw(&list, &matrix, area)?;
+    for command in
+      ["off", "dark 1", "dark 60", "dark 100", "sepia 30", "sepia 60"]
+    {
+      let recolor = vpdf_model::recolor::Recolor::parse(command).unwrap();
+      let tiles = [0, 64].map(|x| TileKey {
+        scale: 1024,
+        x,
+        width: 64,
+        height: 64,
+        recolor,
+        ..TileKey::default()
+      });
+      let expected: Vec<_> = tiles
+        .iter()
+        .map(|key| {
+          let mut pixels = raster::cut(&original, key).unwrap();
+          recolor.apply(&mut pixels);
+          pixels
+        })
+        .collect();
+      for work in [
+        Work::Band { list: Arc::clone(&list), matrix },
+        Work::Whole { list: Arc::clone(&list), matrix, area },
+      ] {
+        let (send, receive) = mpsc::channel();
+        let sink = Sink::new(move |tile| send.send(tile).is_ok());
+        let cuts = render(&tiles, work, &sink);
+        for cut in cuts {
+          assert!(render(&cut.tiles, cut.work, &sink).is_empty());
+        }
+        let results: Vec<_> = receive.try_iter().collect();
+        assert_eq!(results.len(), 2);
+        for ((result, key), pixels) in
+          results.into_iter().zip(tiles).zip(&expected)
+        {
+          let result = result.map_err(anyhow::Error::msg)?;
+          assert_eq!(result.key, key);
+          assert_eq!(&result.pixels, pixels, "{command}");
+        }
+      }
+      let other = TileKey {
+        recolor: vpdf_model::recolor::Recolor::parse("sepia 99").unwrap(),
+        ..tiles[0]
+      };
+      assert_ne!(page_of(&other), page_of(&tiles[0]));
+      assert_eq!(bands(&[tiles[0], other]).len(), 2);
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn recolor_skips_old_rows() -> Result<()> {
+    let old = TileKey { width: 1, height: 1, ..TileKey::default() };
+    let current = TileKey {
+      recolor: vpdf_model::recolor::Recolor::parse("dark 100").unwrap(),
+      ..old
+    };
+    let shared = Arc::new(Shared::default());
+    shared.queue.lock().unwrap().wanted.insert(current);
+    let (send, receive) = mpsc::channel();
+    let observed = Arc::clone(&shared);
+    let sink = Sink::new(move |tile| {
+      assert!(observed.queue.try_lock().is_ok());
+      send.send(tile).is_ok()
+    });
+    let row = || Work::Cut { pixels: vec![vec![255; 3]], drawn: 0.0 };
+    assert!(render_current(&shared, &[old], row(), &sink).is_empty());
+    assert_eq!(receive.try_iter().count(), 0);
+    // Whole-page cache warming includes unrequested positions.
+    let ahead = TileKey { x: 512, ..current };
+    assert!(render_current(&shared, &[ahead], row(), &sink).is_empty());
+    let tile = receive.recv()?.map_err(anyhow::Error::msg)?;
+    assert_eq!(tile.key, ahead);
+    assert_eq!(tile.pixels, [0; 3]);
+    shared.queue.lock().unwrap().wanted.clear();
+    render_current(&shared, &[current], row(), &sink);
+    assert_eq!(receive.try_iter().count(), 0);
+    {
+      let mut queue = shared.queue.lock().unwrap();
+      queue.wanted.insert(current);
+      queue.stop = true;
+    }
+    render_current(&shared, &[current], row(), &sink);
+    assert_eq!(receive.try_iter().count(), 0);
+    Ok(())
+  }
+
+  #[test]
+  fn recolor_time_reaches_delivery() -> Result<()> {
+    for command in ["off", "dark 60"] {
+      let key = TileKey {
+        recolor: vpdf_model::recolor::Recolor::parse(command).unwrap(),
+        width: 512,
+        height: 256,
+        ..TileKey::default()
+      };
+      let (send, receive) = mpsc::channel();
+      let sink = Sink::new(move |tile| send.send(tile).is_ok());
+      deliver(
+        &[key],
+        std::iter::once(Ok(vec![255; 512 * 256 * 3])),
+        12.0,
+        &sink,
+      );
+      let tile = receive.recv()?.map_err(anyhow::Error::msg)?;
+      if command == "off" {
+        assert_eq!(tile.render_ms, 12.0);
+      } else {
+        assert!(tile.render_ms > 12.0);
+      }
+    }
     Ok(())
   }
 

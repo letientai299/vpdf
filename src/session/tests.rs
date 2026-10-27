@@ -1608,3 +1608,76 @@ fn theme_commands_update_session() -> Result<()> {
   assert_eq!(std::fs::read(&config)?, original);
   Ok(())
 }
+
+#[test]
+fn recolor_views_and_restart() -> Result<()> {
+  use vpdf_model::recolor::Recolor;
+  let root = tempfile::tempdir()?;
+  let store = root.path().join("state.json");
+  let first = root.path().join("first.pdf");
+  let second = root.path().join("second.pdf");
+  for path in [&first, &second] {
+    crate::fixtures::pdf(path, &["first", "second"], "")?;
+  }
+  let screen = cells(120, 40);
+  let mut session = Session::new(Some(store.clone()));
+  session.open(&first, false, screen)?;
+  session.app().command("recolor sepia 30")?;
+  let sepia = Recolor::parse("sepia 30").unwrap();
+  assert_eq!(session.app().layout.recolor(), sepia);
+  let mut scene = vpdf_model::scene::Recorder::new(|_| true);
+  session.app().scene_pane(&mut scene, false)?;
+  let wanted = session.app().tiles.wanted().to_vec();
+  assert_ne!(wanted.len(), 0);
+  session.app().command("recolor sepia 30")?;
+  assert_eq!(session.app().tiles.wanted(), wanted);
+  session.app().reload_with("")?;
+  assert_eq!(session.app().layout.recolor(), sepia);
+  session.split(Axis::Columns, None, Place::After)?;
+  assert_eq!(session.app().layout.recolor(), sepia);
+  session.app().command("recolor dark 80")?;
+  let dark = Recolor::parse("dark 80").unwrap();
+  assert_eq!(session.app().layout.recolor(), dark);
+  assert!(session.app().command("recolor dark -1").is_err());
+  assert_eq!(session.app().layout.recolor(), dark);
+  session.close_pane()?;
+  assert_eq!(session.app().layout.recolor(), sepia);
+  session.open(&second, false, screen)?;
+  assert_eq!(session.app().layout.recolor(), Recolor::default());
+  session.close()?;
+  let mut restarted = Session::new(Some(store));
+  restarted.open(&first, false, screen)?;
+  assert_eq!(restarted.app().layout.recolor(), sepia);
+  restarted.close()?;
+  Ok(())
+}
+
+#[test]
+fn recolor_terminal_discards_old_tiles() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let path = root.path().join("one.pdf");
+  crate::fixtures::pdf(&path, &["body"], "")?;
+  let mut session = Session::new(None);
+  session.open(&path, false, cells(120, 40))?;
+  let old = vpdf_ui::layout::visible(&session.app().layout, 0.0)[0];
+  session.app().command("recolor sepia 60")?;
+  let new = vpdf_model::tile::TileKey {
+    recolor: session.app().layout.recolor(),
+    ..old
+  };
+  let owner = session.app().id;
+  let (send, receive) = std::sync::mpsc::channel();
+  session.app().worker.results = receive;
+  for key in [old, new] {
+    send.send(Ok(vpdf_terminal::payload::Tile {
+      key,
+      payload: vpdf_terminal::payload::Encoder::default().encode(&[0; 3])?,
+      render_ms: 0.0,
+    }))?;
+  }
+  let mut graphics = Graphics::default();
+  session.app().raster_updates(&mut graphics);
+  assert!(!graphics.has(&(owner, old)));
+  assert!(graphics.has(&(owner, new)));
+  Ok(())
+}

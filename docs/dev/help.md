@@ -119,7 +119,7 @@ refresh uses `config`. `Ready::fallback` identifies the removed location.
 Replaced jobs are canceled; their channels cannot deliver into the replacement
 request.
 
-The PDF cache uses manual identity and theme. Generated entries
+The PDF cache uses manual identity. Generated entries
 use built-in bindings and setting defaults, with no custom mappings, winning
 sources, warnings, or captured pane values. Built-in keys, settings, and Ex
 commands have separate sections. Key entries use the dispatcher's preferred
@@ -131,7 +131,9 @@ parameterized actions remain outside the outline. There is no dispatch appendix.
 
 The structured writer embeds DejaVu Sans Mono without external tools. The
 renderer pin records its source and hash. Authored and generated pages use the
-active UI theme and matching colors for commands, parameters, and links.
+fixed light colors for paper, commands, parameters, and links. Interface theme
+changes reuse the help PDF. The view can apply `:recolor` like other PDFs;
+its setting stays outside persisted document state.
 Font notices follow the reference. Unsupported glyphs and controls use
 reversible Unicode escapes; literal backslashes double.
 

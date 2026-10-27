@@ -40,6 +40,7 @@ impl Ready {
       width,
       height,
       crop: self.crop,
+      recolor: vpdf_model::recolor::Recolor::default(),
     }
   }
 }

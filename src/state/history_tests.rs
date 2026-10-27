@@ -12,6 +12,7 @@ fn forget_survives_reload_and_stale_saves() -> Result<()> {
   saved.zoom = 2.0;
   saved.rotation = 90;
   saved.crop = Crop([1, 2, 3, 4]);
+  saved.recolor = vpdf_model::recolor::Recolor::parse("dark 80").unwrap();
   state.opened(saved.clone());
   state.marks.insert('A', Mark::new(saved.path.clone(), saved.cursor));
   state.save(&file, &[], &[])?;
@@ -34,6 +35,7 @@ fn forget_survives_reload_and_stale_saves() -> Result<()> {
   assert_eq!(loaded.recent[0].zoom, 1.0);
   assert_eq!(loaded.recent[0].rotation, 0);
   assert_eq!(loaded.recent[0].crop, Crop::default());
+  assert_eq!(loaded.recent[0].recolor, vpdf_model::recolor::Recolor::default());
   assert!(loaded.marks.contains_key(&'A'));
   Ok(())
 }

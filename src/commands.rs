@@ -374,6 +374,20 @@ impl App {
     Ok(())
   }
 
+  fn recolor_command(
+    &mut self,
+    spec: &commands::Spec,
+    argument: &str,
+  ) -> Result<()> {
+    let recolor = vpdf_model::recolor::Recolor::parse(argument)
+      .ok_or_else(|| anyhow::anyhow!("Usage: :recolor {}", spec.usage))?;
+    if self.layout.recolor() != recolor {
+      self.layout.set_recolor(recolor);
+      self.tiles.invalidate();
+    }
+    Ok(())
+  }
+
   pub fn command(&mut self, line: &str) -> Result<()> {
     let invocation =
       self.overlays.prompt().and_then(Prompt::invocation).cloned();
@@ -432,6 +446,7 @@ impl App {
       Id::QuitAll => self.request = Some(Request::QuitAll),
       Id::Toc => self.open_panel(PanelKind::Outline)?,
       Id::Overview => self.open_overview()?,
+      Id::Recolor => self.recolor_command(spec, argument)?,
       Id::Crop => {
         self.set_crop(spec.switch(argument, self.crop_enabled())?)?;
       }

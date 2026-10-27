@@ -293,15 +293,15 @@ theme = "dark"
   report an appearance, it uses dark.
 - The terminal keeps its ANSI text colors, including tabs and badges. At launch,
   Vpdf queries the terminal background with OSC 11 and chooses a light or dark
-  theme file for page fills, RGB overlays, previews, and the built-in manual. No
-  reply means dark. Under tmux, the query needs passthrough; tmux may instead
-  answer with its own background. Text contrast depends on the terminal's ANSI
-  colors. Select `light`, `dark`, or a theme file for contrast that Vpdf checks.
+  theme file for page fills, RGB overlays, and previews. No reply means dark.
+  Under tmux, the query needs passthrough; tmux may instead answer with its own
+  background. Text contrast depends on the terminal's ANSI colors. Select
+  `light`, `dark`, or a theme file for contrast that Vpdf checks.
 
 `light`, `dark`, and theme files use explicit RGB colors in both frontends.
-Themes recolor text, bars, panels, menus, scrollbars, page overlays, and the
-built-in manual. Source PDF pixels and document fonts stay unchanged. Theme
-changes preserve cached source PDF tiles.
+Themes style text, bars, panels, menus, scrollbars, and page overlays.
+Help pages keep fixed light colors. Use `:recolor` to change PDF page colors,
+including help. Theme changes preserve cached PDF tiles.
 
 Use `:theme light`, `:theme dark`, or `:colorscheme <name|path>` to switch in
 the running process. Tab completion lists built-in names, directories, and TOML

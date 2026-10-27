@@ -15,6 +15,7 @@ pub struct TileKey {
   pub width: i32,
   pub height: i32,
   pub crop: Crop,
+  pub recolor: crate::recolor::Recolor,
 }
 
 /// Tile owners require explicit conversion.

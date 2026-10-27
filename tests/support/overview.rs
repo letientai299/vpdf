@@ -20,6 +20,7 @@ impl Pages for Source {
 pub fn frame() -> Frame {
   let screen = Screen { origin: (7, 3), ..screen::cells(100, 40) };
   Frame {
+    recolor: vpdf_model::recolor::Recolor::default(),
     pane: 1,
     screen,
     clip: screen,

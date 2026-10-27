@@ -18,9 +18,9 @@ from the argument text; use Tab completion rather than shell quoting or shell
 expansion syntax. `:split` without a file duplicates the focused view.
 
 Tab completes command names and supported arguments, including paths, themes,
-OCR languages, and help topics. `:tabnext` completes open tab numbers with
-file labels. `:ocr eng+` completes another installed language, preserving
-selected languages. Up and Down recall prompt history. `Ctrl-u`
+recolor presets, OCR languages, and help topics. `:tabnext` completes open tab
+numbers with file labels. `:ocr eng+` completes another installed language,
+preserving selected languages. Up and Down recall prompt history. `Ctrl-u`
 clears text before the cursor. `Ctrl-x Ctrl-e` edits command or search text in
 the external editor selected by `VISUAL`, then `EDITOR`, then `vi`. Password
 entry excludes the external editor. See [Installation and setup][install].
@@ -60,7 +60,8 @@ Tab completes paths after `:fzf `; a PDF opens directly, and a directory
 sets the picker root.
 
 Use `:cursorline off` to hide the cursor band, `:crop on` to crop margins,
-`:text` to inspect extracted text, and `:theme light` or `:theme dark` to change
+`:text` to inspect extracted text, `:recolor sepia` for page colors,
+and `:theme light` or `:theme dark` to change
 UI colors. Use `:theme ~/.config/vpdf/themes/nord.toml` for a theme file; see
 [UI themes][themes] for path resolution and fallback behavior.
 `:config reload` rereads the selected configuration file.

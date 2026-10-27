@@ -614,6 +614,7 @@ fn preview_key(layout: &Layout, page: PageId, top: i32) -> Result<TileKey> {
     width,
     height,
     crop: layout.crop_for(page),
+    recolor: layout.recolor(),
   })
 }
 
@@ -646,6 +647,7 @@ mod tests {
   struct Source {
     count: usize,
     requested: Vec<PageId>,
+    rasters: Vec<TileKey>,
   }
 
   impl TextSource for Source {
@@ -662,11 +664,53 @@ mod tests {
   impl Raster for Source {
     fn raster(
       &mut self,
-      _: TileKey,
-      _: impl FnOnce(&[u8], usize) -> Result<()>,
+      key: TileKey,
+      visit: impl FnOnce(&[u8], usize) -> Result<()>,
     ) -> Result<()> {
-      panic!("text preview requested pixels")
+      self.rasters.push(key);
+      let stride = key.width as usize * 3;
+      visit(&vec![255; stride * key.height as usize], stride)
     }
+  }
+
+  #[test]
+  fn recolor_refreshes_preview_once() -> Result<()> {
+    let screen = crate::testing::screen::cells(80, 30);
+    let bounds = Bounds { x0: 0.0, y0: 0.0, x1: 600.0, y1: 800.0 };
+    let mut layout = Layout::new([bounds], screen);
+    layout
+      .set_recolor(vpdf_model::recolor::Recolor::parse("dark 100").unwrap());
+    let mut source =
+      Source { count: 1, requested: Vec::new(), rasters: Vec::new() };
+    let mut preview = Preview::open(
+      Target::Page(PageId(0)),
+      Position::default(),
+      false,
+      false,
+      &layout,
+      &mut source,
+    )?;
+    let View::Image { key, rgb } = &preview.view else {
+      panic!("Missing image")
+    };
+    assert_eq!(key.recolor, layout.recolor());
+    assert_eq!(&rgb.pixels()[..4], [0, 0, 0, 255]);
+    let first = preview.serial;
+    layout
+      .set_recolor(vpdf_model::recolor::Recolor::parse("sepia 100").unwrap());
+    preview.scroll(0.0, &layout, &mut source)?;
+    assert_ne!(preview.serial, first);
+    let View::Image { key, rgb } = &preview.view else {
+      panic!("Missing image")
+    };
+    assert_eq!(key.recolor, layout.recolor());
+    assert_eq!(&rgb.pixels()[..4], [238, 220, 185, 255]);
+    let second = preview.serial;
+    let rasters = source.rasters.len();
+    preview.scroll(0.0, &layout, &mut source)?;
+    assert_eq!(preview.serial, second);
+    assert_eq!(source.rasters.len(), rasters);
+    Ok(())
   }
 
   #[test]
@@ -674,7 +718,8 @@ mod tests {
     let screen = crate::testing::screen::cells(80, 30);
     let bounds = Bounds { x0: 0.0, y0: 0.0, x1: 600.0, y1: 800.0 };
     let layout = Layout::new([bounds; 10], screen);
-    let mut source = Source { count: 10, requested: Vec::new() };
+    let mut source =
+      Source { count: 10, requested: Vec::new(), rasters: Vec::new() };
     let mut preview = Preview::open(
       Target::Page(PageId(0)),
       Position::default(),
@@ -693,6 +738,7 @@ mod tests {
     assert!(preview.keep(false), "initially offscreen survives");
     assert!(preview.keep(true));
     assert!(!preview.keep(false), "shown source left view");
+    assert_eq!(source.rasters, [] as [TileKey; 0]);
     source.count = 0;
     assert!(
       !preview.scroll(0.0, &layout, &mut source)?,

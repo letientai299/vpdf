@@ -156,6 +156,7 @@ pub enum Pointer {
 
 #[derive(Clone, Copy)]
 pub struct Frame {
+  pub recolor: vpdf_model::recolor::Recolor,
   pub pane: u32,
   pub screen: Screen,
   pub clip: Screen,
@@ -319,6 +320,7 @@ impl Overview {
         width: w,
         height: h,
         crop: Crop::default(),
+        recolor: frame.recolor,
       };
       // Keep tile keys reusable after scrolling.
       let bottom = (screen.height() - (y + dy).floor()).ceil() as i32;
@@ -426,6 +428,7 @@ mod tests {
   fn label_frame() -> Frame {
     let screen = crate::testing::screen::cells(100, 40);
     Frame {
+      recolor: vpdf_model::recolor::Recolor::default(),
       pane: 1,
       screen,
       clip: screen,

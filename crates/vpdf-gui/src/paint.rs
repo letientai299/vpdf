@@ -307,6 +307,7 @@ fn stand_in(
     .filter(|kept| {
       kept.key.rotation == key.rotation
         && kept.key.crop == key.crop
+        && kept.key.recolor == key.recolor
         && kept.key.scale != key.scale
     })
     .map(|kept| (kept, rect(kept)))
@@ -1326,6 +1327,13 @@ mod tests {
     );
     assert_eq!(image.1.min, Pos2::new(10.0, 0.0));
     assert_eq!(image.1.max, Pos2::new(18.0, 8.0));
+    for command in ["dark 60", "dark 80", "sepia 60"] {
+      let recolored = tile(TileKey {
+        recolor: vpdf_model::recolor::Recolor::parse(command).unwrap(),
+        ..new.key
+      });
+      assert_eq!(paint(&frame(vec![recolored], Vec::new())).1, (0, 1));
+    }
     let overlapping = tile(key(0, 512, 0, 2));
     paint(&frame(vec![overlapping], vec![overlapping]));
     let partial = tile(key(0, 2048, 0, 16));

@@ -16,6 +16,14 @@ PDF's glyphs as zoom and pane size change.
 hide the glyph cursor or remove the selection. `:cursorline on` restores it.
 The [configuration chapter][configuration] explains setting its initial value.
 
+## Page colors
+
+`:recolor dark 80` or `:recolor sepia 30` changes page pixels in the focused
+view. The setting is saved per document; splits inherit it and open views
+remain independent. `:recolor off` restores the original pixels. Use
+`:help :recolor` for amounts and defaults. Try recoloring the help PDF too;
+its setting lasts for the view’s session. `:theme` styles the interface.
+
 ## Text preview
 
 `:text` opens extracted text and scrolls through successive pages. The built-in

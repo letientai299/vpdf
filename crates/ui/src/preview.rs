@@ -93,6 +93,7 @@ pub fn image(
       result?;
     }
   }
+  key.recolor.apply_rgba(&mut rgba);
   vpdf_model::image::Rgb::rgba(key.width, key.height, rgba)
     .ok_or_else(|| anyhow::anyhow!("Invalid preview pixels"))
 }
@@ -156,6 +157,32 @@ mod tests {
           [0; 4]
         };
         assert_eq!(pixel, expected, "{x}, {y}");
+      }
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn recolor_preserves_transparent_gaps() -> Result<()> {
+    let (layout, key) = strip();
+    let mut source = Source::default();
+    let original = image(&layout, key, &mut source)?;
+    let recolor = vpdf_model::recolor::Recolor::parse("dark 100").unwrap();
+    let key = TileKey { recolor, ..key };
+    let recolored = image(&layout, key, &mut source)?;
+    for (before, after) in original
+      .pixels()
+      .as_chunks::<4>()
+      .0
+      .iter()
+      .zip(recolored.pixels().as_chunks::<4>().0)
+    {
+      assert_eq!(before[3], after[3]);
+      if before[3] != 0 {
+        assert_eq!(
+          *after,
+          [255 - before[0], 255 - before[1], 255 - before[2], 255]
+        );
       }
     }
     Ok(())

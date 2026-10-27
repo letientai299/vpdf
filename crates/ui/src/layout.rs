@@ -27,6 +27,7 @@ pub struct Layout {
   rotation: u16,
   pan: f32,
   crop: Crop,
+  recolor: vpdf_model::recolor::Recolor,
   crops: std::sync::Arc<Crops>,
 }
 
@@ -76,6 +77,7 @@ impl Layout {
       rotation: 0,
       pan: 0.0,
       crop: Crop::default(),
+      recolor: vpdf_model::recolor::Recolor::default(),
       crops: std::sync::Arc::default(),
     };
     layout.reflow(pages);
@@ -108,6 +110,14 @@ impl Layout {
 
   pub fn crop(&self) -> Crop {
     self.crop
+  }
+
+  pub fn recolor(&self) -> vpdf_model::recolor::Recolor {
+    self.recolor
+  }
+
+  pub fn set_recolor(&mut self, recolor: vpdf_model::recolor::Recolor) {
+    self.recolor = recolor;
   }
 
   pub fn crops(&self) -> &Crops {
@@ -148,6 +158,7 @@ impl Layout {
     self.zoom = other.zoom;
     self.rotation = other.rotation;
     self.crop = other.crop;
+    self.recolor = other.recolor;
     self.crops = std::sync::Arc::clone(&other.crops);
     self.pan = other.pan;
   }
@@ -401,6 +412,7 @@ pub fn visible(layout: &Layout, scroll: f32) -> Vec<TileKey> {
       width: data.width as i32,
       height: data.height as i32,
       crop: layout.crop_for(PageId(page)),
+      recolor: layout.recolor(),
     };
     tiles.extend(cover(whole, left..right, top..bottom));
   }
@@ -473,6 +485,31 @@ mod tests {
     assert_eq!(source.crops().len(), 1);
     layout.restore(99.0, 451, Crop::default());
     assert_eq!((layout.zoom(), layout.rotation()), (8.0, 90));
+  }
+
+  #[test]
+  fn recolor_survives_geometry() {
+    let mut layout = Layout::new([PAPER, PAPER], screen());
+    let setting = vpdf_model::recolor::Recolor::parse("sepia 30").unwrap();
+    let checkpoint = layout.checkpoint(PageId(0));
+    let old = visible(&layout, 0.0);
+    layout.set_recolor(setting);
+    assert_eq!(layout.checkpoint(PageId(0)), checkpoint);
+    assert_ne!(visible(&layout, 0.0), old);
+    let mut split = Layout::new([PAPER, PAPER], screen());
+    split.copy_view(&layout);
+    assert_eq!(split.recolor(), setting);
+    split.set_recolor(vpdf_model::recolor::Recolor::default());
+    assert_eq!(layout.recolor(), setting);
+    for rotation in [0, 90, 180, 270] {
+      layout.restore(2.0, rotation, Crop::default());
+      layout.reflow([PAPER, PAPER]);
+      for scroll in [0.0, layout.pages()[1].top] {
+        assert!(
+          visible(&layout, scroll).iter().all(|key| key.recolor == setting)
+        );
+      }
+    }
   }
 
   #[test]

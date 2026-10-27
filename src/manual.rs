@@ -4,6 +4,10 @@ mod reference;
 mod runtime;
 pub use runtime::{Location, Ready, Runtime};
 
+pub(crate) fn palette() -> vpdf_model::theme::Palette {
+  vpdf_model::theme::Palette::light()
+}
+
 pub const ID: &str = "builtin:help";
 
 pub const PDF: &[u8] =

@@ -27,6 +27,9 @@ impl App {
     for result in self.worker.results.try_iter() {
       match result {
         Ok(tile) => {
+          if tile.key.recolor != self.layout.recolor() {
+            continue;
+          }
           self.render_ms = tile.render_ms;
           changed |= self.tiles.wants(&tile.key) || info;
           graphics.keep(self.id, tile);

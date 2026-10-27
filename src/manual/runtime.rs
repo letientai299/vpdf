@@ -1,6 +1,6 @@
 use crate::Result;
 use std::sync::{Arc, mpsc::TryRecvError};
-use vpdf_model::{document::Target, text::PageId, theme::Palette};
+use vpdf_model::{document::Target, text::PageId};
 use vpdf_pdf::{
   jobs::Wake,
   manual::{Document, Job},
@@ -115,12 +115,11 @@ impl Location {
 #[derive(PartialEq)]
 struct Key {
   manual: String,
-  palette: Palette,
 }
 
 impl Key {
-  fn new(reference: &Reference) -> Self {
-    Self { manual: super::identity(), palette: reference.configuration.palette }
+  fn new() -> Self {
+    Self { manual: super::identity() }
   }
 }
 
@@ -169,36 +168,32 @@ pub struct Runtime {
 }
 
 impl Runtime {
-  pub(crate) fn reuse(
-    &mut self,
-    reference: &Reference,
-    document: Arc<Document>,
-  ) {
-    self.state = State::Cached { key: Key::new(reference), document };
+  pub(crate) fn reuse(&mut self, document: Arc<Document>) {
+    self.state = State::Cached { key: Key::new(), document };
     self.delivery = None;
   }
 
   pub fn request(
     &mut self,
-    reference: &Reference,
+    _reference: &Reference,
     topic: TopicId,
     wake: &Wake,
   ) {
     self.selected = Some(Location::topic(topic));
-    self.start(reference, Delivery::Open, wake);
+    self.start(Delivery::Open, wake);
   }
 
   pub fn locate(&mut self, location: Location) {
     self.selected = Some(location);
   }
 
-  fn start(&mut self, reference: &Reference, delivery: Delivery, wake: &Wake) {
-    let key = Key::new(reference);
+  fn start(&mut self, delivery: Delivery, wake: &Wake) {
+    let key = Key::new();
     self.delivery = Some(delivery);
     if self.state.key() != Some(&key) {
       let job = vpdf_pdf::manual::spawn(
         super::PDF,
-        key.palette,
+        super::palette(),
         super::reference::chapters,
         wake,
       );
@@ -208,9 +203,9 @@ impl Runtime {
     }
   }
 
-  pub fn refresh(&mut self, reference: &Reference, wake: &Wake) {
+  pub fn refresh(&mut self, _reference: &Reference, wake: &Wake) {
     if self.selected.is_some() {
-      self.start(reference, Delivery::Refresh, wake);
+      self.start(Delivery::Refresh, wake);
     }
   }
 

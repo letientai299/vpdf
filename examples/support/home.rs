@@ -18,6 +18,7 @@ pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {
     used: 0,
     marks: BTreeMap::default(),
     crop: Crop::default(),
+    recolor: vpdf_model::recolor::Recolor::default(),
     outline: None,
     sidebar: None,
   };

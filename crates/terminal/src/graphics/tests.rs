@@ -720,6 +720,20 @@ fn fallback_requires_matching_document_geometry() -> Result<()> {
     (0, TileKey { page: PageId(1), ..wanted }),
     (0, TileKey { rotation: 90, ..wanted }),
     (0, TileKey { crop, ..wanted }),
+    (
+      0,
+      TileKey {
+        recolor: vpdf_model::recolor::Recolor::parse("dark").unwrap(),
+        ..wanted
+      },
+    ),
+    (
+      0,
+      TileKey {
+        recolor: vpdf_model::recolor::Recolor::parse("sepia").unwrap(),
+        ..wanted
+      },
+    ),
   ] {
     let mut out = Vec::new();
     graphics.begin(&mut out)?;

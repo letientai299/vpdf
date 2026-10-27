@@ -860,6 +860,9 @@ fn completions(
     for result in raw.results.try_iter() {
       match result {
         Ok(tile) => {
+          if tile.key.recolor != app.layout.recolor() {
+            continue;
+          }
           dirty |= app.tiles.wants(&tile.key);
           let weight = tile.pixels.len();
           let id = TileId { owner: TileOwner::new(app.id), key: tile.key };
@@ -2013,7 +2016,7 @@ mod tests {
   }
 
   #[test]
-  fn help_refresh_invalidates_native_tiles() -> Result<()> {
+  fn help_theme_preserves_native_tiles() -> Result<()> {
     let mut screen = sized();
     let mut session = native();
     session.request_help(
@@ -2035,6 +2038,7 @@ mod tests {
     let owners: Vec<_> =
       session.tab().panes.iter().map(|app| TileOwner::new(app.id)).collect();
     let mut cache = Cache::new(BUDGET);
+    completions(&mut session, &mut cache, &mut Vec::new());
     for &owner in &owners {
       cache.insert(
         TileId { owner, key: vpdf_model::tile::TileKey::default() },
@@ -2049,20 +2053,20 @@ mod tests {
       &mut screen
     ));
     assert_eq!(session.system_palette, vpdf_model::theme::Palette::light());
-    while session.app().document_generation == 0 {
-      session.help_updates(&mut std::io::sink());
+    while !session.help_updates(&mut std::io::sink()) {
       assert!(Instant::now() < deadline, "Help refresh timed out");
       thread::sleep(Duration::from_millis(2));
     }
-    assert!(!Arc::ptr_eq(session.app().manual.as_ref().unwrap(), &original));
+    assert!(Arc::ptr_eq(session.app().manual.as_ref().unwrap(), &original));
+    assert_eq!(session.app().document_generation, 0);
     let mut reloaded = Vec::new();
-    assert!(completions(&mut session, &mut cache, &mut reloaded));
+    completions(&mut session, &mut cache, &mut reloaded);
+    assert_eq!(reloaded, [] as [TileOwner; 0]);
     for owner in owners {
-      assert!(reloaded.contains(&owner));
       assert!(
         cache
           .get(&TileId { owner, key: vpdf_model::tile::TileKey::default() })
-          .is_none()
+          .is_some()
       );
     }
     Ok(())
@@ -2970,6 +2974,35 @@ mod tests {
       &mut screen,
     );
     assert_eq!(session.app().overlays.prompt().unwrap().text(), "");
+    Ok(())
+  }
+
+  #[test]
+  fn recolor_prompt_discards_old_pixels() -> Result<()> {
+    use vpdf_pdf::jobs::render::Rendered;
+    let mut screen = crate::screen::pixels(60, 20, 10, 20);
+    let (_root, _, mut session) = opened(&["body"], screen)?;
+    let old = vpdf_ui::layout::visible(&session.app().layout, 0.0)[0];
+    apply(&mut session, key(KeyCode::Char(':')), &mut screen);
+    apply(&mut session, Input::Paste("recolor dark 60".into()), &mut screen);
+    apply(&mut session, key(KeyCode::Enter), &mut screen);
+    let app = session.app();
+    let recolor = vpdf_model::recolor::Recolor::parse("dark 60").unwrap();
+    assert_eq!(app.layout.recolor(), recolor);
+    let new = vpdf_model::tile::TileKey { recolor, ..old };
+    let owner = TileOwner::new(app.id);
+    let (send, receive) = mpsc::sync_channel(2);
+    for key in [old, new] {
+      send.send(Ok(Rendered { key, pixels: vec![0; 3], render_ms: 0.0 }))?;
+    }
+    app.worker.raw = Some(crate::raster::Raw {
+      results: receive,
+      overflow: Arc::new(AtomicBool::new(false)),
+    });
+    let mut cache = Cache::new(BUDGET);
+    completions(&mut session, &mut cache, &mut Vec::new());
+    assert!(!cache.contains(&TileId { owner, key: old }));
+    assert!(cache.contains(&TileId { owner, key: new }));
     Ok(())
   }
 

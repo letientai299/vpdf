@@ -137,7 +137,8 @@ pub fn encode(
 
 pub fn render(doc: &mut Document, key: TileKey) -> anyhow::Result<Tile> {
   let started = Instant::now();
-  let pixels = raster(doc, key)?;
+  let mut pixels = raster(doc, key)?;
+  key.recolor.apply(&mut pixels);
   encode(&Encoder::live(), key, &pixels, 0.0, started)
 }
 

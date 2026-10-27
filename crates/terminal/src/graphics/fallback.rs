@@ -30,6 +30,7 @@ impl Graphics {
           && other.1.page == tile.page
           && other.1.rotation == tile.rotation
           && other.1.crop == tile.crop
+          && other.1.recolor == tile.recolor
           && other.1.scale != tile.scale
           && other.1.scale != 0
       })

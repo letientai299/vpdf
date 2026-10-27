@@ -308,6 +308,97 @@ fn worker_tiles_equal_full_page_pixels() -> Result<()> {
   Ok(())
 }
 
+#[test]
+#[ignore = "requires verified public PDF corpus"]
+fn recolor_worker_pixels_match_frontends() -> Result<()> {
+  use vpdf::raster::Raster;
+  use vpdf_model::recolor::Recolor;
+  use vpdf_terminal::payload::Encoder;
+  for file in ["paper.pdf", "form.pdf", "ocr.pdf"] {
+    let path = corpus(file)?;
+    let before = std::fs::read(&path)?;
+    let mut doc = Document::open(&path, "")?;
+    let key =
+      TileKey { scale: 1024, width: 512, height: 256, ..TileKey::default() };
+    let clipped = raster(&mut doc, key)?;
+    let page = doc.native.load_page(0)?;
+    let full = page.to_pixmap(
+      &Matrix::IDENTITY,
+      &Colorspace::device_rgb(),
+      false,
+      true,
+    )?;
+    let mut original = Vec::new();
+    for row in 0..key.height as usize {
+      let start = row * full.stride() as usize;
+      original.extend_from_slice(
+        &full.samples()[start..start + key.width as usize * 3],
+      );
+    }
+    let (send, receive) = std::sync::mpsc::channel();
+    let sink = vpdf_pdf::jobs::render::Sink::new(move |result| {
+      send.send(result).is_ok()
+    });
+    let worker =
+      vpdf_pdf::jobs::render::RenderWorker::new(&path, "", doc.lists(), sink);
+    for command in [
+      "off",
+      "dark 1",
+      "dark 30",
+      "dark 60",
+      "dark 100",
+      "sepia 1",
+      "sepia 30",
+      "sepia 60",
+      "sepia 100",
+      "off",
+    ] {
+      let key = TileKey { recolor: Recolor::parse(command).unwrap(), ..key };
+      let mut expected = original.clone();
+      key.recolor.apply(&mut expected);
+      worker.request(&[key], 1);
+      let raw = loop {
+        let tile = receive
+          .recv_timeout(std::time::Duration::from_secs(20))?
+          .map_err(anyhow::Error::msg)?;
+        if tile.key == key {
+          break tile;
+        }
+      };
+      assert!(raw.pixels == expected, "{file}: {command}");
+      let terminal = Raster::start(
+        &path,
+        "",
+        doc.lists(),
+        &Wake::none(),
+        Encoder::default(),
+        false,
+      );
+      terminal.service.request(&[key], 1);
+      let encoded = loop {
+        let tile = terminal
+          .results
+          .recv_timeout(std::time::Duration::from_secs(20))?
+          .map_err(anyhow::Error::msg)?;
+        if tile.key == key {
+          break tile;
+        }
+      };
+      let reference = Encoder::default().encode(&expected)?;
+      match (encoded.payload, reference) {
+        (
+          vpdf_terminal::payload::Payload::Encoded(actual),
+          vpdf_terminal::payload::Payload::Encoded(expected),
+        ) => assert!(actual == expected, "{file}: {command} encoded"),
+        _ => unreachable!(),
+      }
+      assert!(raster(&mut doc, key)? == clipped, "original raster changed");
+    }
+    assert_eq!(std::fs::read(&path)?, before);
+  }
+  Ok(())
+}
+
 fn assert_tile(
   tile: &vpdf_terminal::payload::Tile,
   full: &mupdf::Pixmap,

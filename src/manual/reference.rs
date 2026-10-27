@@ -209,7 +209,7 @@ fn command_guide(id: vpdf_ui::commands::Id) -> &'static str {
     Id::Marks | Id::Jumps => "marks",
     Id::Annotations => "links",
     Id::Toc | Id::Overview => "navigation",
-    Id::CursorLine | Id::Crop | Id::Text => "zoom",
+    Id::CursorLine | Id::Crop | Id::Recolor | Id::Text => "zoom",
     Id::Ocr => "ocr",
     Id::Perf | Id::Cancel | Id::NoHlSearch => "status",
     Id::Mouse | Id::Info | Id::Version => "troubleshooting",
@@ -249,6 +249,43 @@ fn command_syntax(spec: &vpdf_ui::commands::Spec) -> String {
   syntax
 }
 
+fn command_example(id: vpdf_ui::commands::Id) -> &'static str {
+  use vpdf_ui::commands::Id;
+  match id {
+    Id::Config => ":config reload",
+    Id::Theme => ":theme dark",
+    Id::Recolor => ":recolor sepia 30",
+    Id::Edit => ":edit book.pdf",
+    Id::Open => ":open",
+    Id::TabEdit => ":tabedit notes.pdf",
+    Id::TabNew => ":tabnew",
+    Id::Split => ":split",
+    Id::VSplit => ":vsplit",
+    Id::TabNext => ":tabnext 2",
+    Id::Ocr => ":ocr eng+vie",
+    Id::Help => ":help :split",
+    Id::HelpBeside => ":help! search",
+    _ => "",
+  }
+}
+
+fn recolor_help() -> Line {
+  format!(
+    "No argument selects dark at {0}. Dark and sepia default to {0}. \
+       Amounts are unsigned decimal integers, clamped to {1}. \
+       Off or amount zero restores original pixels. \
+       Saved per document; split views inherit the setting. \
+       Open views remain independent. Source PDFs stay unchanged. \
+       Try :recolor dark 80 or :recolor sepia 30 on this help PDF. \
+       Use :recolor off to restore its original colors. \
+       Help recoloring lasts for this view's session. \
+       Interface themes do not change help page colors.",
+    vpdf_model::recolor::DEFAULT_AMOUNT,
+    vpdf_model::recolor::MAX_AMOUNT,
+  )
+  .into()
+}
+
 fn command_chapter(
   spec: &vpdf_ui::commands::Spec,
   guides: &BTreeMap<String, String>,
@@ -273,25 +310,12 @@ fn command_chapter(
     };
     lines.push(requirement.into());
   }
-  let example = match spec.id {
-    Id::Config => ":config reload",
-    Id::Theme => ":theme dark",
-    Id::Edit => ":edit book.pdf",
-    Id::Open => ":open",
-    Id::TabEdit => ":tabedit notes.pdf",
-    Id::TabNew => ":tabnew",
-    Id::Split => ":split",
-    Id::VSplit => ":vsplit",
-    Id::TabNext => ":tabnext 2",
-    Id::Ocr => ":ocr eng+vie",
-    Id::Help => ":help :split",
-    Id::HelpBeside => ":help! search",
-    _ => "",
-  };
+  let example = command_example(spec.id);
   if !example.is_empty() {
     lines.push(format!("For example: {example}").into());
   }
   match spec.id {
+    Id::Recolor => lines.push(recolor_help()),
     Id::Fzf => lines.push(
       concat!(
         "Tab completes PDFs and directories. ",

@@ -304,7 +304,7 @@ fn failed_lookup_keeps_document() -> Result<()> {
 }
 
 #[test]
-fn refresh_replaces_all_split_generations() -> Result<()> {
+fn theme_preserves_all_split_generations() -> Result<()> {
   let mut session = Session::new(None);
   invoke(&mut session, "config")?;
   session.split(
@@ -318,8 +318,8 @@ fn refresh_replaces_all_split_generations() -> Result<()> {
   session.set_theme(vpdf_model::theme::Theme::Light);
   wait(&mut session);
   for app in &session.tabs[session.active].panes {
-    assert_eq!(app.document_generation, 1);
-    assert!(app.marks.is_empty());
+    assert_eq!(app.document_generation, 0);
+    assert_eq!(app.marks.len(), 1);
     assert!(app.manual.is_some());
   }
   assert_eq!(session.state.recent, [] as [crate::state::Entry; 0]);
@@ -438,7 +438,7 @@ fn closing_during_refresh_keeps_home() -> Result<()> {
 }
 
 #[test]
-fn normal_refresh_preserves_field_and_discards_crops() -> Result<()> {
+fn theme_preserves_field_and_crops() -> Result<()> {
   use vpdf_model::document::Target;
   use vpdf_model::geometry::Crop;
   let mut session = Session::new(None);
@@ -469,14 +469,9 @@ fn normal_refresh_preserves_field_and_discards_crops() -> Result<()> {
   session.set_theme(vpdf_model::theme::Theme::Light);
   wait(&mut session);
   let app = session.app();
-  assert!(app.layout.crops().is_empty());
+  assert_eq!(app.layout.crops().len(), 1);
   assert_eq!(app.help_location(), Some(logical));
-  let deadline = Instant::now() + Duration::from_secs(10);
-  while !app.crop_updates()? {
-    assert!(Instant::now() < deadline, "Help crop scan timed out");
-    std::thread::sleep(Duration::from_millis(2));
-  }
-  assert!(app.layout.crops().is_empty());
+  assert!(std::sync::Arc::ptr_eq(app.manual.as_ref().unwrap(), &document));
   Ok(())
 }
 
@@ -808,7 +803,7 @@ fn refresh_retains_page_separator() -> Result<()> {
   wait(&mut session);
   let app = session.app();
   assert!(app.error.is_none(), "{:?}", app.error);
-  assert!(!std::sync::Arc::ptr_eq(app.manual.as_ref().unwrap(), &document));
+  assert!(std::sync::Arc::ptr_eq(app.manual.as_ref().unwrap(), &document));
   assert_eq!(app.text_view.top(), position);
   Ok(())
 }
@@ -908,4 +903,39 @@ fn builtin_topic(query: &str, context: vpdf_ui::bindings::Context) -> String {
     Lookup::Found(Destination::Action(id)) => id.as_str().into(),
     other => panic!("Unexpected built-in lookup: {other:?}"),
   }
+}
+
+#[test]
+fn recolor_help_survives_themes() -> Result<()> {
+  for frontend in [
+    crate::raster::Frontend::Terminal,
+    crate::raster::Frontend::Native(vpdf_pdf::jobs::Wake::none()),
+  ] {
+    let mut session = Session { frontend, ..Session::new(None) };
+    invoke(&mut session, "ex.recolor")?;
+    let manual = session.app().manual.clone().unwrap();
+    let original = session.app().layout.recolor();
+    session.app().command("recolor dark 80")?;
+    let dark = vpdf_model::recolor::Recolor::parse("dark 80").unwrap();
+    assert_eq!(session.app().layout.recolor(), dark);
+    session.set_theme(vpdf_model::theme::Theme::Dark);
+    wait(&mut session);
+    session.set_theme(vpdf_model::theme::Theme::Light);
+    wait(&mut session);
+    assert!(std::sync::Arc::ptr_eq(
+      session.app().manual.as_ref().unwrap(),
+      &manual
+    ));
+    assert_eq!(session.app().layout.recolor(), dark);
+    assert!(session.app().saved_entry().is_none());
+    session.app().command("recolor sepia 30")?;
+    assert_eq!(
+      session.app().layout.recolor(),
+      vpdf_model::recolor::Recolor::parse("sepia 30").unwrap()
+    );
+    session.app().command("recolor off")?;
+    assert_eq!(session.app().layout.recolor(), original);
+    assert_eq!(session.state.recent, [] as [crate::state::Entry; 0]);
+  }
+  Ok(())
 }

@@ -440,7 +440,7 @@ fn font_notices_include_license() -> crate::Result<()> {
 }
 
 #[test]
-fn theme_colors_and_monospace() -> crate::Result<()> {
+fn fixed_colors_and_monospace() -> crate::Result<()> {
   use vpdf_model::theme::Theme;
   let mut previous = None;
   for theme in [Theme::Light, Theme::Dark] {
@@ -463,7 +463,7 @@ fn theme_colors_and_monospace() -> crate::Result<()> {
         true,
       )?;
       for (&actual, expected) in
-        pixels.samples()[..3].iter().zip(theme.palette().background)
+        pixels.samples()[..3].iter().zip(palette().background)
       {
         assert!(actual.abs_diff(expected) <= 1, "{actual} != {expected}");
       }
@@ -615,7 +615,7 @@ fn command_colors_match_semantics() -> crate::Result<()> {
     let guide = format!("|{guide}|");
     let ready = request(&mut Runtime::default(), &reference, "ex.cursorline")?;
     let native = PdfDocument::open(ready.document.path())?;
-    let palette = theme.palette();
+    let palette = palette();
     for (topic, needle, expected) in [
       ("ex.tabprevious", ":tabp[revious]", palette.highlight),
       ("ex.tabprevious", ":tabN", palette.highlight),
@@ -724,7 +724,7 @@ fn hint_labels_share_destination() -> crate::Result<()> {
 }
 
 #[test]
-fn theme_change_replaces_cached_pdf() -> crate::Result<()> {
+fn theme_change_preserves_cached_pdf() -> crate::Result<()> {
   let mut runtime = Runtime::default();
   let mut reference = snapshot();
   let setting = reference
@@ -746,10 +746,24 @@ fn theme_change_replaces_cached_pdf() -> crate::Result<()> {
     .unwrap()
     .effective = "dark".into();
   let second = request(&mut runtime, &reference, "config")?;
-  assert!(!Arc::ptr_eq(&first.document, &second.document));
+  assert!(Arc::ptr_eq(&first.document, &second.document));
   assert_eq!(
     text(&first.document, "config")?,
     text(&second.document, "config")?
   );
+  Ok(())
+}
+
+#[test]
+fn recolor_examples_work_on_help() -> crate::Result<()> {
+  let ready = request(&mut Runtime::default(), &snapshot(), "ex.recolor")?;
+  let text = text(&ready.document, "ex.recolor")?
+    .split_whitespace()
+    .collect::<Vec<_>>()
+    .join(" ");
+  for example in [":recolor dark 80", ":recolor sepia 30", ":recolor off"] {
+    assert!(text.contains(example), "{example}: {text}");
+  }
+  assert!(text.contains("help PDF"), "{text}");
   Ok(())
 }
