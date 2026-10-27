@@ -608,14 +608,8 @@ impl Shelf {
   ) -> Result<(), S::Error> {
     let Area { at, column, columns, screen, now } = area;
     let rows = usize::from(screen.rows.saturating_sub(1));
-    for row in 0..rows {
-      crate::paint::move_to(scene, at, row, column + columns - 1);
-      scene.push(Op::Style(Role::Muted));
-      scene.text("│");
-      scene.push(Op::Style(Role::Reset));
-    }
-    // One column of margin on each side of the text.
-    let inner = usize::from(columns).saturating_sub(3);
+    // One column of margin on each side.
+    let inner = usize::from(columns).saturating_sub(2);
     let picture = if pictures { rows.saturating_sub(9) } else { 0 };
     let (cell_width, cell_height) =
       (u32::from(screen.cell_width), u32::from(screen.cell_height));
@@ -805,7 +799,9 @@ fn lines(entry: &Entry, card: Option<&Card>, now: u64) -> Vec<String> {
     lines.push(format!("# {title}"));
     lines.push(String::new());
   }
-  lines.push(format!("Page: {}", entry.cursor.page.0.saturating_add(1)));
+  let total = facts.map_or_else(|| "…".into(), |facts| facts.pages.to_string());
+  lines
+    .push(format!("Page: {}/{total}", entry.cursor.page.0.saturating_add(1)));
   if let Some(section) = facts.and_then(|facts| facts.section.as_deref()) {
     lines.push(format!("Section: {section}"));
   }
@@ -819,6 +815,15 @@ fn lines(entry: &Entry, card: Option<&Card>, now: u64) -> Vec<String> {
   }
   if entry.marks > 0 {
     lines.push(format!("Marks: {}", entry.marks));
+  }
+  if let Some(facts) = facts {
+    let metadata: Vec<_> = facts
+      .metadata
+      .iter()
+      .filter(|(name, value)| name != "Title" && !value.trim().is_empty())
+      .cloned()
+      .collect();
+    lines.extend(panel::metadata_lines(&metadata).into_iter().skip(1));
   }
   match card.map(|card| &card.facts) {
     None => lines.push("Loading…".into()),
@@ -872,6 +877,107 @@ mod tests {
   use super::*;
   use crate::keys::PanelKind;
   use vpdf_model::input::{MouseEvent, MouseEventKind};
+  #[test]
+  fn card_shows_metadata_and_pages() {
+    let entry = Entry {
+      path: "book.pdf".into(),
+      cursor: vpdf_model::text::Position {
+        page: vpdf_model::text::PageId(5),
+        ..Default::default()
+      },
+      rotation: 0,
+      used: 0,
+      marks: 2,
+    };
+    let mut shelf = Shelf::new(std::slice::from_ref(&entry));
+    shelf.accept(
+      entry.path.clone(),
+      LoadedFacts {
+        generation: 0,
+        fit: None,
+        facts: Ok(Facts {
+          pages: 24,
+          bytes: 1_048_576,
+          metadata: vec![
+            ("Title".into(), "A book".into()),
+            ("Author".into(), "An author".into()),
+            ("Publisher".into(), "A publisher".into()),
+            ("Subject".into(), "First\nSecond".into()),
+            ("Keywords".into(), "  ".into()),
+          ],
+          section: Some("Chapter one".into()),
+          thumb: None,
+        }),
+      },
+    );
+    let card = shelf.cards.get(&entry.path).unwrap();
+    assert_eq!(
+      lines(&entry, Some(card), 0),
+      [
+        "# A book",
+        "",
+        "Page: 6/24",
+        "Section: Chapter one",
+        "Last read: just now",
+        "Size: 1.0 MiB",
+        "Marks: 2",
+        "Author: An author",
+        "Publisher: A publisher",
+        "Subject: First Second",
+      ]
+    );
+    assert!(lines(&entry, None, 0).contains(&"Page: 6/…".into()));
+    let error = Card {
+      fit: card.fit,
+      serial: card.serial,
+      facts: Err("Unavailable".into()),
+    };
+    let failed = lines(&entry, Some(&error), 0);
+    assert!(failed.contains(&"Page: 6/…".into()));
+    assert!(failed.contains(&"Error: Unavailable".into()));
+  }
+
+  #[test]
+  fn card_has_no_outer_divider() -> Result<()> {
+    let entry = Entry {
+      path: "book.pdf".into(),
+      cursor: vpdf_model::text::Position::default(),
+      rotation: 0,
+      used: 0,
+      marks: 0,
+    };
+    for (columns, rows) in [(120, 36), (48, 32)] {
+      let mut panel = Panel::recent(
+        vec![Row::recent(&entry.path, entry.cursor.page, None)],
+        std::slice::from_ref(&entry),
+      );
+      let screen = crate::testing::screen::cells(columns, rows);
+      let mut scene = crate::testing::empty();
+      panel.scene(
+        &mut scene,
+        Frame { at: At::default(), width: columns, screen, now: 0 },
+        false,
+      )?;
+      let scene = scene.into_scene();
+      crate::testing::lines(&scene, columns);
+      let preview = Geometry::new(columns, rows, None, None).preview;
+      let (mut column, mut row) = (0, 0);
+      for op in &scene {
+        if let Op::Move { column: x, row: y } = op {
+          (column, row) = (*x, *y);
+        }
+        if let Op::Text(text) = op {
+          assert!(
+            !(row >= usize::from(preview.row)
+              && column == usize::from(columns - 1)
+              && text.as_str() == "│")
+          );
+        }
+      }
+    }
+    Ok(())
+  }
+
   #[test]
   fn refresh_preserves_paths_and_releases_cards() {
     let mut entries: Vec<_> = (0..30)
@@ -1470,7 +1576,7 @@ mod review_tests {
     )?;
     let request = panel.shelf_mut().unwrap().take_request().unwrap();
     let (width, height) = request.fit.unwrap();
-    assert_eq!(width, 27 * u32::from(screen.cell_width));
+    assert_eq!(width, 28 * u32::from(screen.cell_width));
     assert!(height > 14 * u32::from(screen.cell_height));
     assert!(
       !crate::testing::text(&scene.into_scene()).contains("First-page preview")
