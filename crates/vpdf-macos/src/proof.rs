@@ -73,6 +73,26 @@ impl Integration {
     self.menu.performKeyEquivalent(&event)
   }
 
+  /// Opens the first Open Recent file.
+  pub fn invoke_recent(&self) {
+    super::fill_recent(&self.handler, &self.recent);
+    if self.recent.numberOfItems() > 1 {
+      self.recent.performActionForItemAtIndex(0);
+    }
+  }
+
+  pub fn represented(&self) -> Option<std::path::PathBuf> {
+    self.window.representedURL()?.to_file_path()
+  }
+
+  pub fn minimize(&self) {
+    self.window.miniaturize(None);
+  }
+
+  pub fn minimized(&self) -> bool {
+    self.window.isMiniaturized()
+  }
+
   /// Delegates, application menu, sheet parent, command availability.
   pub fn inspect(&self) -> (bool, bool, bool, bool) {
     let current =

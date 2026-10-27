@@ -312,6 +312,8 @@ impl Session {
       }
     }
     app.opened = self.state.opened(app.reading_entry());
+    let path = app.path.clone();
+    native::commands::note_recent(self, &path);
     self.changed();
   }
 

@@ -84,11 +84,6 @@ impl Window {
     config: vpdf::config::Loaded,
     #[cfg(target_os = "macos")] documents: fmv_macos_events::Inbox,
   ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-    #[cfg(target_os = "macos")]
-    {
-      let ctx = cc.egui_ctx.clone();
-      documents.set_wake(move || ctx.request_repaint());
-    }
     vpdf_gui::fonts::install(&cc.egui_ctx);
     #[cfg(feature = "bench-events")]
     let events = args
@@ -120,6 +115,18 @@ impl Window {
     }
     #[cfg(target_os = "macos")]
     let native = vpdf_gui::platform::Native::new(cc);
+    // Minimized windows run no frames to drain the inbox.
+    #[cfg(target_os = "macos")]
+    {
+      let ctx = cc.egui_ctx.clone();
+      let restore = native.as_ref().map(vpdf_gui::platform::Native::restorer);
+      documents.set_wake(move || {
+        if let Some(restore) = &restore {
+          restore();
+        }
+        ctx.request_repaint();
+      });
+    }
     let input = input::Adapter::default();
     #[cfg(target_os = "macos")]
     let input = {

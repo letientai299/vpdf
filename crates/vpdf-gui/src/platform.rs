@@ -32,12 +32,16 @@ impl Native {
       })
       .collect();
     let integration =
-      vpdf_macos::Integration::install(cc, &entries, move |index| {
-        if let Some(command) = MENUS
-          .get(index)
-          .and_then(|entry| current.borrow().command(entry.action))
-        {
-          pending.borrow_mut().push(Input::Action(command));
+      vpdf_macos::Integration::install(cc, &entries, move |request| {
+        let input = match request {
+          vpdf_macos::Request::Menu(index) => MENUS
+            .get(index)
+            .and_then(|entry| current.borrow().command(entry.action))
+            .map(Input::Action),
+          vpdf_macos::Request::Open(path) => Some(Input::Open(path)),
+        };
+        if let Some(input) = input {
+          pending.borrow_mut().push(input);
           wake.request_repaint();
         }
       })?;
@@ -52,6 +56,11 @@ impl Native {
           .integration
           .enable(index, snapshot.command(entry.action).is_some());
       }
+      self.integration.enable_recent(snapshot.command(Action::Open).is_some());
+      // Help has a builtin, relative identity.
+      self
+        .integration
+        .represent(snapshot.path.as_deref().filter(|path| path.is_absolute()));
     }
     for effect in effects {
       match effect {
@@ -63,6 +72,8 @@ impl Native {
             context.request_repaint();
           });
         }
+        Effect::Recent(path) => self.integration.note_recent(&path),
+        Effect::Reveal(path) => self.integration.reveal(&path),
       }
     }
   }
@@ -93,6 +104,14 @@ impl Native {
       }
       "cancel" => self.integration.cancel(),
       "inspect" => println!("native-state: {:?}", self.integration.inspect()),
+      "recent" => self.integration.invoke_recent(),
+      "represented" => {
+        println!("native-represented: {:?}", self.integration.represented());
+      }
+      "minimize" => self.integration.minimize(),
+      "minimized" => {
+        println!("native-minimized: {}", self.integration.minimized());
+      }
       command if command.starts_with("menu ") => {
         self.integration.invoke_menu(&command[5..]);
       }
@@ -106,6 +125,10 @@ impl Native {
 
   pub fn cancel(&mut self) {
     self.integration.cancel();
+  }
+
+  pub fn restorer(&self) -> impl Fn() + 'static {
+    self.integration.restorer()
   }
 }
 
@@ -131,6 +154,7 @@ pub const MENUS: &[Entry] = &[
   entry("File", "Open…", "o", Action::Open),
   entry("File", "New Tab", "t", Action::NewTab),
   entry("File", "Close Tab", "w", Action::CloseTab),
+  entry("File", "Reveal in Finder", "", Action::Reveal),
   entry("File", "Print…", "p", Action::Print),
   entry("Edit", "Undo", "z", Action::Undo),
   entry("Edit", "Cut", "x", Action::Cut),

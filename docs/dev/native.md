@@ -41,9 +41,33 @@ window. Open uses AppKit's [asynchronous sheet API][sheet]. Completion queues
 paths to the worker. Cancellation queues an empty result. Shutdown cancels the
 sheet; destruction disables callbacks and removes only the installed menu.
 
-The initial integration selects one file. PDF-only filtering, multiple-file
-selection, replacing the existing reader picker, and system recents remain
-separate work. Source documents remain unchanged.
+The panel selects one or more PDFs. The worker queues them and opens one per
+session turn, so the first document draws before the rest load. Each file uses
+the same reference handling as Finder and drop opens. The reader's terminal
+picker remains. Source documents remain unchanged.
+
+## Documents and recents
+
+`remember_open` emits a recent-document effect for successful opens, including
+focusing an open file or splitting beside it; help, failed opens, and the
+terminal frontend emit none. The adapter passes it to
+`NSDocumentController`, which also feeds the Dock menu. Open Recent uses the
+adapter's own selectors and menu delegate, so AppKit never routes a recent
+item through `NSDocument`. Its items enqueue ordinary open inputs. The submenu
+is enabled only while the worker offers Open, so it cannot replace the target
+of a pending sheet.
+
+Clear Menu clears only the system list. The Recent view and its tombstones stay
+separate, and macOS has no per-item removal API.
+
+Each changed snapshot sets the window's represented URL from its absolute
+document path, and clears it for Home and help. Reveal in Finder is a worker
+command that returns the focused path as an effect.
+
+A minimized window runs no Eframe frames, so the Finder inbox drains only after
+restoration. Its wake callback therefore deminiaturizes the window when an Apple
+event arrives for an active app. Background `open -g` requests leave the window
+minimized and open the documents after the user restores it.
 
 ## Unsafe boundary
 

@@ -35,7 +35,7 @@ commands that the focused view cannot perform.
 
 | Shortcut                        | Action                                              |
 | ------------------------------- | --------------------------------------------------- |
-| Command-O                       | Open a PDF in a window sheet                        |
+| Command-O                       | Open PDFs in a window sheet                         |
 | Command-T                       | Open the Recent view in a new tab                   |
 | Control-Tab / Control-Shift-Tab | Next / previous tab                                 |
 | Command-W                       | Close the tab and its splits; last tab returns Home |
@@ -50,6 +50,11 @@ commands that the focused view cannot perform.
 On empty Home, Command-W closes the window. Close Pane remains a separate
 Window menu action. Zoom Window resizes the window; View zoom magnifies the PDF.
 Help opens the embedded manual.
+
+File > Open Recent lists the system's recent documents. Its Clear Menu clears
+only that list; the Recent view keeps its entries. Removing a file from the
+Recent view leaves its system entry, because macOS offers no per-file removal.
+The title bar shows the focused PDF, and File > Reveal in Finder selects it.
 
 Document Select All preserves the reading location. Copy processes the whole
 document one page at a time, up to the clipboard size limit; further input

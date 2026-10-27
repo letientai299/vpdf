@@ -620,7 +620,7 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
       }
     }
     Input::Picked { request, paths } => {
-      commands::picked(session, request, paths, *screen)
+      commands::picked(session, request, paths)
     }
     input => {
       if matches!(
@@ -1185,6 +1185,7 @@ mod tests {
     let (root, path) = temp_pdf(pages)?;
     let mut session = native();
     session.open(&path, true, screen)?;
+    session.native.effects.clear();
     Ok((root, path, session))
   }
 
@@ -3220,7 +3221,7 @@ mod tests {
   }
   #[test]
   fn native_commands_reject_stale_targets() -> Result<()> {
-    use commands::{Action, Effect};
+    use commands::Action;
     let (_root, path, mut session) = opened(&["one"], sized())?;
     let (_other, picked) = temp_pdf(&["two"])?;
     let mut screen = sized();
@@ -3235,7 +3236,7 @@ mod tests {
     let command = session.native.snapshot.command(Action::Open).unwrap();
     assert!(apply(&mut session, Input::Action(command), &mut screen));
     assert!(!apply(&mut session, Input::Action(command), &mut screen));
-    let Effect::Open { request } = session.native.effects[0];
+    let request = requested(&session);
     assert_eq!(session.native.effects.len(), 1);
     session.app().document_generation += 1;
     assert!(apply(
@@ -3258,6 +3259,7 @@ mod tests {
     commands::refresh(&mut session);
     let old = session.native.snapshot.command(Action::Open).unwrap();
     session.open(&path, true, screen)?;
+    session.native.effects.clear();
     commands::refresh(&mut session);
     session.activate(0)?;
     assert!(!apply(&mut session, Input::Action(old), &mut screen));
@@ -3265,9 +3267,29 @@ mod tests {
     Ok(())
   }
 
+  fn requested(session: &Session) -> commands::RequestId {
+    session
+      .native
+      .effects
+      .iter()
+      .rev()
+      .find_map(|effect| match effect {
+        commands::Effect::Open { request } => Some(*request),
+        _ => None,
+      })
+      .expect("Open request")
+  }
+
+  // Mirrors the run loop's one-per-turn queue.
+  fn open_queued(session: &mut Session, screen: &mut Screen) {
+    while let Some(path) = session.native_opens.pop_front() {
+      apply(session, Input::Reference(path), screen);
+    }
+  }
+
   #[test]
   fn native_panel_completion_is_once() -> Result<()> {
-    use commands::{Action, Effect};
+    use commands::Action;
     let (_root, path) = temp_pdf(&["one"])?;
     let mut session = native();
     let mut screen = sized();
@@ -3275,7 +3297,7 @@ mod tests {
     commands::refresh(&mut session);
     let command = session.native.snapshot.command(Action::Open).unwrap();
     apply(&mut session, Input::Action(command), &mut screen);
-    let Effect::Open { request } = session.native.effects[0];
+    let request = requested(&session);
     let source = std::fs::read(&path)?;
     assert!(apply(
       &mut session,
@@ -3287,11 +3309,12 @@ mod tests {
       Input::Picked { request, paths: vec![path.clone()] },
       &mut screen
     ));
+    open_queued(&mut session, &mut screen);
     assert_eq!(session.tabs.len(), 1);
     assert_eq!(std::fs::read(path)?, source);
     let command = session.native.snapshot.command(Action::Open).unwrap();
     apply(&mut session, Input::Action(command), &mut screen);
-    let Effect::Open { request } = *session.native.effects.last().unwrap();
+    let request = requested(&session);
     assert!(apply(
       &mut session,
       Input::Picked { request, paths: Vec::new() },
@@ -3299,6 +3322,81 @@ mod tests {
     ));
     assert!(session.native.snapshot.command(Action::Open).is_some());
     assert_eq!(session.tabs.len(), 1);
+    Ok(())
+  }
+
+  #[test]
+  fn native_panel_queues_many_files() -> Result<()> {
+    use commands::{Action, Effect};
+    let (_first_root, first) = temp_pdf(&["first"])?;
+    let (_other, unicode) = temp_pdf(&["third"])?;
+    let renamed = unicode.with_file_name("Résumé 文書.pdf");
+    std::fs::rename(&unicode, &renamed)?;
+    let mut session = native();
+    let mut screen = sized();
+    ensure_home(&mut session, screen);
+    commands::refresh(&mut session);
+    let command = session.native.snapshot.command(Action::Open).unwrap();
+    apply(&mut session, Input::Action(command), &mut screen);
+    let request = requested(&session);
+    let paths =
+      vec![first.clone(), PathBuf::from("/missing.pdf"), renamed.clone()];
+    assert!(apply(&mut session, Input::Picked { request, paths }, &mut screen));
+    assert!(session.tabs.is_empty());
+    assert_eq!(session.native_opens.len(), 3);
+    open_queued(&mut session, &mut screen);
+    assert_eq!(session.tabs.len(), 2);
+    apply(&mut session, Input::Open(first.clone()), &mut screen);
+    assert_eq!(session.tabs.len(), 2);
+    let recent: Vec<_> = session
+      .native
+      .effects
+      .iter()
+      .filter_map(|effect| match effect {
+        Effect::Recent(path) => Some(path.clone()),
+        _ => None,
+      })
+      .collect();
+    let first = first.canonicalize()?;
+    assert_eq!(recent, [first.clone(), renamed.canonicalize()?, first.clone()]);
+    assert_eq!(session.native.snapshot.path.as_deref(), Some(first.as_path()));
+    Ok(())
+  }
+
+  #[test]
+  fn native_reveal_targets_documents() -> Result<()> {
+    use commands::{Action, Effect};
+    let (_root, path, mut session) = opened(&["one"], sized())?;
+    let mut screen = sized();
+    commands::refresh(&mut session);
+    let command = session.native.snapshot.command(Action::Reveal).unwrap();
+    assert!(apply(&mut session, Input::Action(command), &mut screen));
+    assert_eq!(
+      session.native.effects.last(),
+      Some(&Effect::Reveal(path.canonicalize()?))
+    );
+    session.request_help("", vpdf_ui::topics::Invocation::Home, screen)?;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while session.app().manual.is_none() {
+      session.help_updates(&mut std::io::sink());
+      assert!(Instant::now() < deadline, "Help generation timed out");
+      thread::sleep(Duration::from_millis(2));
+    }
+    commands::refresh(&mut session);
+    assert!(session.native.snapshot.command(Action::Reveal).is_none());
+    assert!(
+      session.native.snapshot.path.as_ref().is_some_and(|p| !p.is_absolute())
+    );
+    assert!(matches!(session.native.effects.last(), Some(Effect::Reveal(_))));
+    Ok(())
+  }
+
+  #[test]
+  fn terminal_opens_skip_system_recents() -> Result<()> {
+    let (_root, path) = temp_pdf(&["one"])?;
+    let mut session = Session::new(None);
+    session.open(&path, true, sized())?;
+    assert_eq!(session.native.effects, []);
     Ok(())
   }
 

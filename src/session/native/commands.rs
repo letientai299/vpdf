@@ -1,5 +1,5 @@
 //! Worker-owned native commands and presentation state.
-use super::{Session, open_input, report};
+use super::{Session, report};
 use std::path::PathBuf;
 use std::sync::Arc;
 use vpdf_model::geometry::Screen;
@@ -56,6 +56,7 @@ pub enum Action {
   Outline,
   Overview,
   ClosePane,
+  Reveal,
   Help,
 }
 
@@ -65,9 +66,14 @@ pub struct Command {
   pub action: Action,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Effect {
-  Open { request: RequestId },
+  Open {
+    request: RequestId,
+  },
+  /// A successful user open for system recents.
+  Recent(PathBuf),
+  Reveal(PathBuf),
 }
 
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -196,31 +202,8 @@ fn available(session: &Session, focus: Focus, target: Target) -> Vec<Action> {
     {
       commands.extend([Action::NextResult, Action::PreviousResult]);
     }
-    if readable {
-      commands.extend([
-        Action::SelectAll,
-        Action::FitWidth,
-        Action::FitPage,
-        Action::ZoomIn,
-        Action::ZoomOut,
-        Action::Rotate,
-        Action::Back,
-        Action::Forward,
-        Action::Outline,
-        Action::Overview,
-        Action::ClosePane,
-      ]);
-      if app.is_some_and(|app| app.reader.selection.is_some())
-        || session.native.all == Some(target)
-      {
-        commands.push(Action::Copy);
-      }
-      if cfg!(target_os = "macos")
-        && session.printing.is_none()
-        && app.is_some_and(|app| app.manual.is_none())
-      {
-        commands.push(Action::Print);
-      }
+    if readable && let Some(app) = app {
+      reading(session, app, target, &mut commands);
     }
   }
   if editable && !session.quit {
@@ -234,6 +217,39 @@ fn available(session: &Session, focus: Focus, target: Target) -> Vec<Action> {
   }
 
   commands
+}
+
+fn reading(
+  session: &Session,
+  app: &crate::app::App,
+  target: Target,
+  commands: &mut Vec<Action>,
+) {
+  commands.extend([
+    Action::SelectAll,
+    Action::FitWidth,
+    Action::FitPage,
+    Action::ZoomIn,
+    Action::ZoomOut,
+    Action::Rotate,
+    Action::Back,
+    Action::Forward,
+    Action::Outline,
+    Action::Overview,
+    Action::ClosePane,
+  ]);
+  if app.manual.is_none() {
+    commands.push(Action::Reveal);
+  }
+  if app.reader.selection.is_some() || session.native.all == Some(target) {
+    commands.push(Action::Copy);
+  }
+  if cfg!(target_os = "macos")
+    && session.printing.is_none()
+    && app.manual.is_none()
+  {
+    commands.push(Action::Print);
+  }
 }
 
 pub(super) fn dispatch(
@@ -318,6 +334,10 @@ fn execute(
     }
     Action::Paste => {}
     Action::Print => session.print()?,
+    Action::Reveal => {
+      let path = session.app().path.clone();
+      session.native.effects.push(Effect::Reveal(path));
+    }
     Action::Help if session.tabs.is_empty() => {
       session.request_help("", vpdf_ui::topics::Invocation::home(), screen)?;
     }
@@ -466,11 +486,19 @@ pub(super) fn copy_update(session: &mut Session) -> bool {
   true
 }
 
+pub(in crate::session) fn note_recent(
+  session: &mut Session,
+  path: &std::path::Path,
+) {
+  if matches!(session.frontend, crate::raster::Frontend::Native(_)) {
+    session.native.effects.push(Effect::Recent(path.to_owned()));
+  }
+}
+
 pub(super) fn picked(
   session: &mut Session,
   request: RequestId,
   paths: Vec<PathBuf>,
-  screen: Screen,
 ) -> bool {
   let Some((pending, target)) = session.native.pending else { return false };
   if pending != request {
@@ -483,13 +511,7 @@ pub(super) fn picked(
   {
     return true;
   }
-  for path in paths {
-    let result = open_input(session, path.into(), screen).map(|_| ());
-    let failed = result.is_err();
-    report(session, result);
-    if failed {
-      break;
-    }
-  }
+  // The run loop opens one per turn, so the first shows promptly.
+  session.native_opens.extend(paths.into_iter().map(Into::into));
   true
 }

@@ -1,21 +1,33 @@
 //! Main-thread menu and window-sheet adapter.
 use block2::RcBlock;
 use objc2::rc::Retained;
+use objc2::runtime::{ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-  NSApplication, NSEventModifierFlags, NSMenu, NSMenuItem, NSModalResponseOK,
-  NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSView, NSWindow,
+  NSApplication, NSDocumentController, NSEventModifierFlags, NSMenu,
+  NSMenuDelegate, NSMenuItem, NSModalResponseOK, NSOpenPanel, NSPasteboard,
+  NSPasteboardTypeString, NSView, NSWindow, NSWorkspace,
 };
 use objc2_foundation::{
-  MainThreadMarker, NSObject, NSObjectProtocol, NSString, ns_string,
+  MainThreadMarker, NSArray, NSObject, NSObjectProtocol, NSString, NSURL,
+  ns_string,
 };
+use objc2_uniform_type_identifiers::UTTypePDF;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::cell::Cell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+/// A menu choice for the worker.
+pub enum Request {
+  /// Index into the installed entries.
+  Menu(usize),
+  /// An Open Recent file.
+  Open(PathBuf),
+}
+
 struct Callback {
-  invoke: Box<dyn Fn(usize)>,
+  invoke: Box<dyn Fn(Request)>,
 }
 
 define_class!(
@@ -31,11 +43,81 @@ define_class!(
     #[unsafe(method(openReader:))]
     fn open(&self, sender: &NSMenuItem) {
       if sender.isEnabled() {
-        (self.ivars().invoke)(sender.tag() as usize);
+        (self.ivars().invoke)(Request::Menu(sender.tag() as usize));
       }
+    }
+
+    // SAFETY: These items supply their sender.
+    #[unsafe(method(openRecent:))]
+    fn open_recent(&self, sender: &NSMenuItem) {
+      let path = sender.representedObject().and_then(|object| {
+        object.downcast_ref::<NSURL>().and_then(NSURL::to_file_path)
+      });
+      if let Some(path) = path {
+        (self.ivars().invoke)(Request::Open(path));
+      }
+    }
+
+    // SAFETY: These items supply their sender.
+    #[unsafe(method(clearRecent:))]
+    fn clear_recent(&self, _sender: &NSMenuItem) {
+      let documents =
+        NSDocumentController::sharedDocumentController(self.mtm());
+      // SAFETY: AppKit permits nil action senders.
+      unsafe { documents.clearRecentDocuments(None) };
+    }
+  }
+
+  // SAFETY: Only the Open Recent menu uses this delegate.
+  unsafe impl NSMenuDelegate for Handler {
+    #[unsafe(method(menuNeedsUpdate:))]
+    fn menu_needs_update(&self, menu: &NSMenu) {
+      fill_recent(self, menu);
     }
   }
 );
+
+// Our own selectors keep AppKit from managing this menu.
+fn fill_recent(handler: &Handler, menu: &NSMenu) {
+  let mtm = handler.mtm();
+  menu.removeAllItems();
+  let urls =
+    NSDocumentController::sharedDocumentController(mtm).recentDocumentURLs();
+  for url in &urls {
+    let Some(name) = url.lastPathComponent() else { continue };
+    let item = menu_item(mtm, &name, sel!(openRecent:), handler);
+    // SAFETY: Menu items retain any represented object.
+    unsafe { item.setRepresentedObject(Some(&url)) };
+    menu.addItem(&item);
+  }
+  if !urls.is_empty() {
+    menu.addItem(&NSMenuItem::separatorItem(mtm));
+  }
+  let clear =
+    menu_item(mtm, ns_string!("Clear Menu"), sel!(clearRecent:), handler);
+  clear.setEnabled(!urls.is_empty());
+  menu.addItem(&clear);
+}
+
+fn menu_item(
+  mtm: MainThreadMarker,
+  title: &NSString,
+  action: Sel,
+  handler: &Handler,
+) -> Retained<NSMenuItem> {
+  // SAFETY: Handler implements each one-argument action.
+  let item = unsafe {
+    NSMenuItem::initWithTitle_action_keyEquivalent(
+      NSMenuItem::alloc(mtm),
+      title,
+      Some(action),
+      ns_string!(""),
+    )
+  };
+  // SAFETY: Integration retains Handler until removal.
+  unsafe { item.setTarget(Some(handler)) };
+  item
+}
 
 pub struct Integration {
   handler: Retained<Handler>,
@@ -43,6 +125,8 @@ pub struct Integration {
   menu: Retained<NSMenu>,
   roots: Vec<Retained<NSMenuItem>>,
   items: Vec<Retained<NSMenuItem>>,
+  recent: Retained<NSMenu>,
+  recent_root: Retained<NSMenuItem>,
   #[cfg(feature = "bench-events")]
   open: Retained<NSMenuItem>,
   panel: Option<Retained<NSOpenPanel>>,
@@ -63,7 +147,7 @@ impl Integration {
   pub fn install(
     parent: &impl HasWindowHandle,
     entries: &[Item],
-    invoke: impl Fn(usize) + 'static,
+    invoke: impl Fn(Request) + 'static,
   ) -> Option<Self> {
     let mtm = MainThreadMarker::new()?;
     let borrowed = parent.window_handle().ok()?;
@@ -94,15 +178,13 @@ impl Integration {
         roots.push(root);
         previous = entry.menu;
       }
-      // SAFETY: Handler implements this one-argument action.
-      let item = unsafe {
-        NSMenuItem::initWithTitle_action_keyEquivalent(
-          NSMenuItem::alloc(mtm),
-          &NSString::from_str(entry.title),
-          Some(sel!(openReader:)),
-          &NSString::from_str(entry.key),
-        )
-      };
+      let item = menu_item(
+        mtm,
+        &NSString::from_str(entry.title),
+        sel!(openReader:),
+        &handler,
+      );
+      item.setKeyEquivalent(&NSString::from_str(entry.key));
       item.setTag(index as isize);
       let mut modifiers = if entry.control {
         NSEventModifierFlags::Control
@@ -113,14 +195,21 @@ impl Integration {
         modifiers |= NSEventModifierFlags::Shift;
       }
       item.setKeyEquivalentModifierMask(modifiers);
-      // SAFETY: Integration retains Handler until removal.
-      unsafe { item.setTarget(Some(&handler)) };
       item.setEnabled(false);
       submenu.addItem(&item);
       items.push(item);
     }
     #[cfg(feature = "bench-events")]
     let open = items.first()?.clone();
+    // Open Recent follows the first entry.
+    let recent = NSMenu::new(mtm);
+    recent.setAutoenablesItems(false);
+    recent.setDelegate(Some(ProtocolObject::from_ref(&*handler)));
+    let recent_root = NSMenuItem::new(mtm);
+    recent_root.setTitle(ns_string!("Open Recent"));
+    recent_root.setSubmenu(Some(&recent));
+    recent_root.setEnabled(false);
+    roots.first()?.submenu()?.insertItem_atIndex(&recent_root, 1);
     for (title, selector) in [
       ("Minimize", sel!(performMiniaturize:)),
       ("Zoom Window", sel!(performZoom:)),
@@ -153,6 +242,8 @@ impl Integration {
       menu,
       roots,
       items,
+      recent,
+      recent_root,
       #[cfg(feature = "bench-events")]
       open,
       panel: None,
@@ -166,6 +257,11 @@ impl Integration {
     if let Some(item) = self.items.get(index) {
       item.setEnabled(enabled);
     }
+  }
+
+  /// Open Recent follows the Open command.
+  pub fn enable_recent(&self, enabled: bool) {
+    self.recent_root.setEnabled(enabled);
   }
 
   pub fn paste(&self) -> Option<String> {
@@ -182,7 +278,9 @@ impl Integration {
     panel.setTitle(Some(ns_string!("Open PDF")));
     panel.setCanChooseFiles(true);
     panel.setCanChooseDirectories(false);
-    panel.setAllowsMultipleSelection(false);
+    panel.setAllowsMultipleSelection(true);
+    // SAFETY: UniformTypeIdentifiers owns this constant.
+    panel.setAllowedContentTypes(&NSArray::from_slice(&[unsafe { UTTypePDF }]));
     let selected = objc2::rc::Weak::from_retained(&panel);
     let alive = Rc::clone(&self.alive);
     let handler = RcBlock::new(move |result| {
@@ -191,17 +289,7 @@ impl Integration {
       }
       let Some(selected) = selected.load() else { return };
       let paths = if result == NSModalResponseOK {
-        selected
-          .URLs()
-          .iter()
-          .filter_map(|url| {
-            url
-              .isFileURL()
-              .then(|| url.path())
-              .flatten()
-              .map(|path| PathBuf::from(path.to_string()))
-          })
-          .collect()
+        selected.URLs().iter().filter_map(|url| url.to_file_path()).collect()
       } else {
         Vec::new()
       };
@@ -209,6 +297,40 @@ impl Integration {
     });
     panel.beginSheetModalForWindow_completionHandler(&self.window, &handler);
     self.panel = Some(panel);
+  }
+
+  /// Sets the title-bar document; None clears it.
+  pub fn represent(&self, path: Option<&Path>) {
+    let url = path.and_then(NSURL::from_file_path);
+    self.window.setRepresentedURL(url.as_deref());
+  }
+
+  pub fn note_recent(&self, path: &Path) {
+    if let Some(url) = NSURL::from_file_path(path) {
+      NSDocumentController::sharedDocumentController(self.handler.mtm())
+        .noteNewRecentDocumentURL(&url);
+    }
+  }
+
+  pub fn reveal(&self, path: &Path) {
+    if let Some(url) = NSURL::from_file_path(path) {
+      NSWorkspace::sharedWorkspace()
+        .activateFileViewerSelectingURLs(&NSArray::from_retained_slice(&[url]));
+    }
+  }
+
+  /// Shows a minimized window only for an active app.
+  pub fn restorer(&self) -> impl Fn() + 'static {
+    let window = objc2::rc::Weak::from_retained(&self.window);
+    let mtm = self.handler.mtm();
+    move || {
+      let Some(window) = window.load() else { return };
+      if NSApplication::sharedApplication(mtm).isActive()
+        && window.isMiniaturized()
+      {
+        window.deminiaturize(None);
+      }
+    }
   }
 
   pub fn cancel(&mut self) {
@@ -223,6 +345,8 @@ impl Drop for Integration {
   fn drop(&mut self) {
     self.alive.set(false);
     self.cancel();
+    self.recent.setDelegate(None);
+    self.recent.removeAllItems();
     for root in &self.roots {
       self.menu.removeItem(root);
     }
