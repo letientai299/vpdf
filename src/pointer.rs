@@ -315,7 +315,9 @@ impl App {
   ) -> Result<()> {
     if self.page_turn(route) {
       self.wheel.precise(precise);
-      return self.mouse(route);
+      let result = self.mouse(route);
+      self.wheel.unsize();
+      return result;
     }
     for _ in 0..precise.whole {
       self.mouse(route)?;

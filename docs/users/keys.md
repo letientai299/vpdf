@@ -69,7 +69,11 @@ Desktop & Dock, Close windows when quitting an application), the app also
 reopens its last tabs, splits, pane positions, and full-screen state. The last
 active tab opens first; the others follow without blocking input. Files opened
 from Finder or the command line keep focus. Missing or password-protected files
-stay closed and are listed in a notice; passwords are never saved. Set
+stay closed and are listed in a notice; passwords are never saved. A tab whose
+files are all missing or unreadable stays saved for three launches, so a
+disconnected drive can return; locked tabs and missing split panes are dropped.
+If you read a document in the terminal after quitting, its first pane opens
+where you left it there. Set
 `reading.restore_session` to change this ([configuration][config]).
 
 Document Select All preserves the reading location. Copy processes the whole

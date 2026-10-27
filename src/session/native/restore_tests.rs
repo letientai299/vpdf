@@ -35,7 +35,9 @@ fn saved(root: &Path) -> Result<(Vec<PathBuf>, Layout)> {
   session.split(Axis::Columns, None, Place::After)?;
   session.app().reading_view().open_page(PageId(3))?;
   session.settle()?;
-  Ok((paths, session.layout()))
+  let layout = session.layout();
+  session.finish()?;
+  Ok((paths, layout))
 }
 
 fn restoring(root: &Path, layout: Layout) -> Result<Session> {
@@ -122,6 +124,72 @@ fn unavailable_files_are_reported() -> Result<()> {
     session.app().error.as_deref(),
     Some("Not reopened: a.pdf (missing), c.pdf (locked)")
   );
+  // Missing files keep their tab for later launches; locked ones do not.
+  let mut saved = session.layout();
+  for missed in 1..ATTEMPTS {
+    let kept: Vec<_> = saved.tabs.iter().map(|tab| tab.missed).collect();
+    assert_eq!(kept, [0, missed]);
+    assert_eq!(saved.tabs[1].panes[0].path, files[0]);
+    let mut session = restoring(root.path(), saved)?;
+    restore_all(&mut session);
+    saved = session.layout();
+  }
+  assert_eq!(saved.tabs.len(), 1);
+  Ok(())
+}
+
+#[test]
+fn newer_reading_state_wins() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let (files, layout) = saved(root.path())?;
+  let mut other = session(root.path())?;
+  other.open(&files[1], true, cells(80, 24))?;
+  other.app().reading_view().open_page(PageId(6))?;
+  other.settle()?;
+  let moved = other.app().navigation_position();
+  other.finish()?;
+  let mut session = restoring(root.path(), layout.clone())?;
+  restore_all(&mut session);
+  let views: Vec<_> = session.tabs[1]
+    .panes
+    .iter()
+    .map(crate::app::App::navigation_position)
+    .collect();
+  // The first pane follows reading state; the split keeps its view.
+  assert_eq!(views, [moved, layout.tabs[1].panes[1].cursor]);
+  Ok(())
+}
+
+#[test]
+fn split_views_survive_relaunch() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let [path] = pdfs(root.path(), &["s.pdf"])?.try_into().unwrap();
+  let mut first = session(root.path())?;
+  first.open(&path, true, cells(80, 24))?;
+  first.split(Axis::Columns, None, Place::After)?;
+  first.app().reading_view().open_page(PageId(5))?;
+  first.settle()?;
+  let layout = first.layout();
+  first.finish()?;
+  let mut session = restoring(root.path(), layout.clone())?;
+  restore_all(&mut session);
+  let views: Vec<_> = session.tabs[0]
+    .panes
+    .iter()
+    .map(crate::app::App::navigation_position)
+    .collect();
+  let saved: Vec<_> = layout.tabs[0].panes.iter().map(|p| p.cursor).collect();
+  assert_ne!(saved[0], saved[1]);
+  assert_eq!(views, saved);
+  Ok(())
+}
+
+#[test]
+fn unopened_active_tab_keeps_focus() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let (_, layout) = saved(root.path())?;
+  let session = restoring(root.path(), layout.clone())?;
+  assert_eq!(session.layout().active, layout.active);
   Ok(())
 }
 
@@ -181,7 +249,10 @@ fn stores_are_claimed_once() -> Result<()> {
     second: Box::new(Shape::Pane(0)),
   };
   std::fs::write(&file, serde_json::to_vec(&broken)?)?;
-  assert_eq!(store.load().unwrap().tabs, layout.tabs[1..2]);
+  let loaded = store.load().unwrap();
+  assert_eq!(loaded.tabs, layout.tabs[1..2]);
+  // The active tab keeps focus after dropped tabs.
+  assert_eq!(loaded.active, 0);
   Ok(())
 }
 

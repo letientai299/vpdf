@@ -54,6 +54,11 @@ impl Wheel {
     self.precise = Some(precise);
   }
 
+  /// Drops a size no turn used.
+  pub fn unsize(&mut self) {
+    self.precise = None;
+  }
+
   pub fn turn(&mut self, route: Route, frame: Frame, preview: bool) -> Turn {
     let precise = self.precise.take();
     let mouse = route.mouse;

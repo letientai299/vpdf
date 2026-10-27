@@ -20,6 +20,8 @@ use vpdf_ui::split::{Node, Shape};
 const VERSION: u32 = 1;
 /// Coalesces writes after input.
 const DELAY: Duration = Duration::from_secs(2);
+/// Launches a tab may fail before it is dropped.
+const ATTEMPTS: u8 = 3;
 
 /// Open tabs and window state, as last saved.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -36,6 +38,9 @@ struct Saved {
   panes: Vec<Pane>,
   shape: Shape,
   focus: usize,
+  /// Launches that could not reopen any pane.
+  #[serde(default)]
+  missed: u8,
 }
 
 impl Saved {
@@ -71,6 +76,9 @@ struct Pane {
   rotation: u16,
   #[serde(default)]
   crop: Crop,
+  /// The reading-state visit this view belongs to.
+  #[serde(default)]
+  opened: crate::state::Visit,
 }
 
 /// The claimed session file.
@@ -102,7 +110,16 @@ impl Store {
   pub fn load(&mut self) -> Option<Layout> {
     let bytes = std::fs::read(&self.path).ok()?;
     let mut layout: Layout = serde_json::from_slice(&bytes).ok()?;
-    layout.tabs.retain(Saved::valid);
+    let active = layout.active;
+    let mut index = 0;
+    let mut before = 0;
+    layout.tabs.retain(|tab| {
+      let valid = tab.valid();
+      before += usize::from(valid && index < active);
+      index += 1;
+      valid
+    });
+    layout.active = before;
     (layout.version == VERSION).then(|| {
       self.written = Some(layout.clone());
       layout
@@ -155,6 +172,8 @@ impl Store {
 #[derive(Default)]
 pub struct Windows {
   pub restoring: Option<Restoring>,
+  /// Tabs whose files may return, saved after the open ones.
+  unopened: Vec<Saved>,
   /// The window fills its screen.
   pub fullscreen: bool,
 }
@@ -165,6 +184,7 @@ impl Windows {
     Self {
       fullscreen: layout.fullscreen,
       restoring: Some(Restoring::new(layout)),
+      unopened: Vec::new(),
     }
   }
 
@@ -251,8 +271,12 @@ impl Session {
     after.sort_by_key(|(index, _)| *index);
     let mut tabs = Vec::new();
     let mut active = 0;
+    // Until a tab opens, the saved active tab keeps focus.
+    let waiting = self.windows.restoring.as_ref().map(|r| r.active);
     let pending = |list: Vec<(usize, Saved)>| {
-      list.into_iter().map(|(_, saved)| (false, saved))
+      list.into_iter().map(move |(index, saved)| {
+        (self.tabs.is_empty() && Some(index) == waiting, saved)
+      })
     };
     for (focused, saved) in pending(before).chain(live).chain(pending(after)) {
       if focused {
@@ -260,6 +284,7 @@ impl Session {
       }
       tabs.push(saved);
     }
+    tabs.extend(self.windows.unopened.iter().cloned());
     Layout {
       version: VERSION,
       tabs,
@@ -305,10 +330,11 @@ impl Session {
 
   fn restore_tab(&mut self, index: usize, saved: &Saved, screen: Screen) {
     let content = self.content(screen);
-    let mut panes = Vec::new();
+    let mut panes: Vec<crate::app::App> = Vec::new();
     let mut ids = Vec::new();
+    let mut locked = false;
     for pane in &saved.panes {
-      match self.restore_pane(pane, content) {
+      match self.restore_pane(pane, &panes, content) {
         Ok(app) => {
           ids.push(Some(app.id));
           panes.push(app);
@@ -316,6 +342,7 @@ impl Session {
         Err(error) => {
           ids.push(None);
           let name = pane.path.file_name().unwrap_or(pane.path.as_os_str());
+          locked |= error.is::<PasswordRequired>();
           let reason = if error.is::<PasswordRequired>() {
             "locked"
           } else if !pane.path.exists() {
@@ -340,22 +367,34 @@ impl Session {
         .and_then(|id| panes.iter().position(|app| app.id == id))
         .unwrap_or(0);
       self.insert_restored(index, Tab { panes, tree, focus, last: None });
+    } else if !locked && saved.missed.saturating_add(1) < ATTEMPTS {
+      // Files on absent volumes may return.
+      let missed = saved.missed + 1;
+      self.windows.unopened.push(Saved { missed, ..saved.clone() });
     }
   }
 
+  /// Panes keep their saved views unless another reader opened the
+  /// document since; then reading state places its first pane.
   fn restore_pane(
     &mut self,
     pane: &Pane,
+    tab: &[crate::app::App],
     screen: Screen,
   ) -> Result<crate::app::App> {
     let path = std::fs::canonicalize(&pane.path)?;
+    let reopened = self.state.entry(&path).is_some()
+      && self.state.open_revision(&path) != pane.opened;
+    let shown = self.panes().chain(tab).any(|app| app.path == path);
     let mut app = self.load(&path, "", screen)?;
-    let mut entry = app.reading_entry();
-    entry.cursor = pane.cursor;
-    entry.zoom = pane.zoom;
-    entry.rotation = pane.rotation;
-    entry.crop = pane.crop;
-    app.restore(&entry)?;
+    if shown || !reopened {
+      let mut entry = app.reading_entry();
+      entry.cursor = pane.cursor;
+      entry.zoom = pane.zoom;
+      entry.rotation = pane.rotation;
+      entry.crop = pane.crop;
+      app.restore(&entry)?;
+    }
     self.reopen_sidebar(&mut app);
     Ok(app)
   }
@@ -417,10 +456,12 @@ fn saved_tab(tab: &Tab) -> Option<Saved> {
           zoom: entry.zoom,
           rotation: entry.rotation,
           crop: entry.crop,
+          opened: app.opened,
         }
       })
       .collect(),
     shape,
+    missed: 0,
   })
 }
 

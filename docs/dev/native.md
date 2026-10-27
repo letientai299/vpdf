@@ -103,9 +103,13 @@ onto the main display when no display shows its title bar.
 
 [`restore.rs`][restore] keeps tabs, split shapes, pane views, and full-screen
 state in `native-session.json` beside the reading state. Reading state still
-owns marks, outlines, and sidebars; the session file holds only paths and
-views. Writes are atomic, coalesce two seconds after input, and run again at
-shutdown. Unknown versions and corrupt files read as no session.
+owns marks, outlines, and sidebars; the session file holds paths and pane views.
+Each pane records the reading-state visit it belongs to. When another reader has
+opened the document since, reading state places its first pane; later panes keep
+their saved views. A tab with no reopened file stays saved, counting launches
+that fail; the third drops it. Locked tabs drop at once, and a split drops only
+its missing panes. Writes are atomic, coalesce two seconds after input, and run
+again at shutdown. Unknown versions and corrupt files read as no session.
 
 An exclusive lock on `native-session.lock` makes one instance the session
 owner. Later concurrent instances neither restore nor save it, and the
