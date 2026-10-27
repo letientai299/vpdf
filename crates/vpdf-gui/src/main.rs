@@ -37,6 +37,8 @@ fn system_palette(ctx: &egui::Context) -> vpdf_model::theme::Palette {
 }
 
 fn set_theme(ctx: &egui::Context, palette: vpdf_model::theme::Palette) {
+  // Window overrides block system theme notifications.
+  ctx.options_mut(|options| options.sync_window_theme = false);
   ctx.set_theme(if vpdf_model::theme::is_light(palette.background) {
     egui::Theme::Light
   } else {
@@ -377,6 +379,7 @@ mod tests {
     for (system, expected) in [
       (Some(egui::Theme::Light), Palette::light()),
       (Some(egui::Theme::Dark), Palette::dark()),
+      (Some(egui::Theme::Light), Palette::light()),
       (None, Palette::dark()),
     ] {
       let mut output = ctx.run_ui(
@@ -394,6 +397,16 @@ mod tests {
           }
         },
       );
+      assert!(output.viewport_output.values().all(|viewport| {
+        viewport.commands.iter().all(|command| {
+          !matches!(
+            command,
+            ViewportCommand::SetTheme(
+              egui::SystemTheme::Light | egui::SystemTheme::Dark
+            )
+          )
+        })
+      }));
       output.textures_delta.clear();
     }
   }
