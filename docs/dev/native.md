@@ -75,6 +75,13 @@ of a pending sheet.
 Clear Menu clears only the system list. The Recent view and its tombstones stay
 separate, and macOS has no per-item removal API.
 
+Settings… in the application menu is a worker command. The worker creates an
+empty config file when missing and returns its path as an effect; the adapter
+opens it in the default plain-text editor, or TextEdit before macOS 12, and
+logs launch failures. Without a config source the command is unavailable.
+`native app menu` lists the application menu; probes do not open the editor,
+which would take focus.
+
 Each changed snapshot sets the window's represented URL from its absolute
 document path, and clears it for Home and help. Reveal in Finder is a worker
 command that returns the focused path as an effect.

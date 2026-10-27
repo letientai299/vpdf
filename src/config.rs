@@ -361,7 +361,29 @@ pub enum Source {
   },
 }
 
+/// Creates an empty file at `path` unless one exists; existing files
+/// may be read-only.
+pub(crate) fn ensure_file(path: &Path) -> io::Result<()> {
+  if path.exists() {
+    return Ok(());
+  }
+  if let Some(parent) = path.parent() {
+    std::fs::create_dir_all(parent)?;
+  }
+  match std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
+    Err(error) if error.kind() != io::ErrorKind::AlreadyExists => Err(error),
+    _ => Ok(()),
+  }
+}
+
 impl Source {
+  pub fn path(&self) -> Option<&Path> {
+    match self {
+      Self::File { path, .. } => Some(path),
+      Self::Disabled => None,
+    }
+  }
+
   fn file(path: &Path, explicit: bool) -> Self {
     let path = if path.is_absolute() {
       path.to_owned()

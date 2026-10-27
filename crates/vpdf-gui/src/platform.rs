@@ -108,6 +108,7 @@ impl Native {
         }
         Effect::Recent(path) => self.integration.note_recent(&path),
         Effect::Reveal(path) => self.integration.reveal(&path),
+        Effect::EditConfig(path) => self.integration.edit(&path),
       }
     }
   }
@@ -148,6 +149,9 @@ impl Native {
       }
       "toolbar" => {
         println!("native-toolbar: {}", self.integration.toolbar_state());
+      }
+      "app menu" => {
+        println!("native-app: {:?}", self.integration.application_menu());
       }
       "edit page" => {
         println!("native-editing: {}", self.integration.edit_page());
@@ -334,6 +338,7 @@ pub const MENUS: &[Entry] = &[
   },
   entry("Window", "Close Pane", "", Action::ClosePane),
   entry("Help", "Vpdf Help", "", Action::Help),
+  entry("", "Settings…", ",", Action::Settings),
 ];
 
 pub fn shortcuts() -> Vec<egui::KeyboardShortcut> {

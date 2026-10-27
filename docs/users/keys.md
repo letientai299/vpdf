@@ -36,6 +36,7 @@ commands that the focused view cannot perform.
 | Shortcut                        | Action                                              |
 | ------------------------------- | --------------------------------------------------- |
 | Command-O                       | Open PDFs in a window sheet                         |
+| Command-Comma                   | Open the config file in the plain-text editor       |
 | Command-T                       | Open the Recent view in a new tab                   |
 | Control-Tab / Control-Shift-Tab | Next / previous tab                                 |
 | Command-W                       | Close the tab and its splits; last tab returns Home |

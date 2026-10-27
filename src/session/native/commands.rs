@@ -59,6 +59,7 @@ pub enum Action {
   GoToPage,
   ClosePane,
   Reveal,
+  Settings,
   Help,
 }
 
@@ -76,6 +77,8 @@ pub enum Effect {
   /// A successful user open for system recents.
   Recent(PathBuf),
   Reveal(PathBuf),
+  /// The config file to open in an editor.
+  EditConfig(PathBuf),
 }
 
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -195,6 +198,9 @@ fn available(session: &Session, focus: Focus, target: Target) -> Vec<Action> {
   }
   if ordinary {
     commands.extend([Action::CloseTab, Action::NewTab, Action::Help]);
+    if session.config_source.path().is_some() {
+      commands.push(Action::Settings);
+    }
     if matches!(focus, Focus::Reader(_)) {
       commands.push(Action::Find);
     }
@@ -357,6 +363,13 @@ fn execute(
     Action::Reveal => {
       let path = session.app().path.clone();
       session.native.effects.push(Effect::Reveal(path));
+    }
+    Action::Settings => {
+      let path = session.config_source.path().expect("Settings needs a file");
+      crate::config::ensure_file(path).map_err(|error| {
+        anyhow::anyhow!("Config {}: {error}", path.display())
+      })?;
+      session.native.effects.push(Effect::EditConfig(path.to_owned()));
     }
     Action::Help if session.tabs.is_empty() => {
       session.request_help("", vpdf_ui::topics::Invocation::home(), screen)?;

@@ -186,4 +186,20 @@ impl Integration {
       bar.count.stringValue().to_string(),
     )
   }
+
+  /// Application menu titles, enabled ones marked with `*`.
+  pub fn application_menu(&self) -> Vec<String> {
+    let Some(app) = self.menu.itemAtIndex(0).and_then(|root| root.submenu())
+    else {
+      return Vec::new();
+    };
+    app.update();
+    (0..app.numberOfItems())
+      .filter_map(|index| app.itemAtIndex(index))
+      .map(|item| {
+        let mark = if item.isEnabled() { "*" } else { "" };
+        format!("{}{mark}", item.title())
+      })
+      .collect()
+  }
 }

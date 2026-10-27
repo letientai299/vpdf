@@ -3866,4 +3866,30 @@ mod tests {
     assert_eq!(session.app().reader.cursor.page.0, 0);
     Ok(())
   }
+
+  #[test]
+  fn mac_settings_opens_config_file() -> Result<()> {
+    use commands::{Action, Effect};
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("vpdf/config.toml");
+    let source =
+      crate::config::Source::File { path: path.clone(), explicit: false };
+    let config = crate::config::Loaded { source, ..Default::default() };
+    let mut session = Session::configured(None, config);
+    session.frontend = crate::raster::Frontend::Native(Wake::none());
+    let mut screen = sized();
+    ensure_home(&mut session, screen);
+    command(&mut session, Action::Settings, &mut screen);
+    assert_eq!(std::fs::read(&path)?, b"");
+    let opened = Effect::EditConfig(path.clone());
+    assert_eq!(session.native.effects.last(), Some(&opened));
+    std::fs::write(&path, "[reading]\nzoom = 2.0\n")?;
+    command(&mut session, Action::Settings, &mut screen);
+    assert_eq!(std::fs::read_to_string(&path)?, "[reading]\nzoom = 2.0\n");
+    let mut disabled = native();
+    ensure_home(&mut disabled, screen);
+    commands::refresh(&mut disabled);
+    assert!(disabled.native.snapshot.command(Action::Settings).is_none());
+    Ok(())
+  }
 }

@@ -4,20 +4,20 @@ use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{
-  ClassType, DefinedClass, MainThreadOnly, define_class, msg_send, sel,
+  ClassType, DefinedClass, MainThreadOnly, Message, define_class, msg_send, sel,
 };
 use objc2_app_kit::{
   NSApplication, NSControl, NSControlTextEditingDelegate, NSDocumentController,
   NSEventModifierFlags, NSMenu, NSMenuDelegate, NSMenuItem, NSModalResponseOK,
   NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSScreen,
   NSTextFieldDelegate, NSTextView, NSToolbar, NSToolbarDelegate, NSToolbarItem,
-  NSView, NSWindow, NSWorkspace,
+  NSView, NSWindow, NSWorkspace, NSWorkspaceOpenConfiguration,
 };
 use objc2_foundation::{
   MainThreadMarker, NSArray, NSNotification, NSObject, NSObjectProtocol,
   NSPoint, NSRect, NSSize, NSString, NSURL, NSUserDefaults, ns_string,
 };
-use objc2_uniform_type_identifiers::UTTypePDF;
+use objc2_uniform_type_identifiers::{UTTypePDF, UTTypePlainText};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::cell::{Cell, OnceCell, RefCell};
 use std::ffi::CStr;
@@ -291,6 +291,8 @@ pub struct Integration {
   window: Retained<NSWindow>,
   menu: Retained<NSMenu>,
   roots: Vec<Retained<NSMenuItem>>,
+  /// Items added to the application menu.
+  extras: Vec<Retained<NSMenuItem>>,
   /// Window actions outside the entries.
   items: Vec<Retained<NSMenuItem>>,
   recent: Retained<NSMenu>,
@@ -304,6 +306,7 @@ pub struct Integration {
 }
 
 pub struct Item {
+  /// Empty for the application menu.
   pub menu: &'static str,
   pub title: &'static str,
   pub key: &'static str,
@@ -343,8 +346,9 @@ impl Integration {
     let mut installed = Vec::new();
     let mut previous = "";
     let mut submenu = NSMenu::new(mtm);
+    let mut extras = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
-      if entry.menu != previous {
+      if !entry.menu.is_empty() && entry.menu != previous {
         let root = NSMenuItem::new(mtm);
         root.setTitle(&NSString::from_str(entry.menu));
         submenu = NSMenu::new(mtm);
@@ -377,7 +381,11 @@ impl Integration {
       }
       item.setKeyEquivalentModifierMask(modifiers);
       item.setEnabled(false);
-      submenu.addItem(&item);
+      if entry.menu.is_empty() {
+        add_application(&menu, &item, &mut extras);
+      } else {
+        submenu.addItem(&item);
+      }
       installed.push(Entry {
         item,
         enabled: false,
@@ -456,6 +464,7 @@ impl Integration {
       window,
       menu,
       roots,
+      extras,
       items,
       recent,
       recent_root,
@@ -557,6 +566,39 @@ impl Integration {
     }
   }
 
+  /// Opens `path` in the default text editor, else TextEdit.
+  pub fn edit(&self, path: &Path) {
+    let Some(url) = NSURL::from_file_path(path) else { return };
+    let workspace = NSWorkspace::sharedWorkspace();
+    // macOS 12 added the content-type lookup.
+    let default = workspace
+      .respondsToSelector(sel!(URLForApplicationToOpenContentType:))
+      .then(|| {
+        // SAFETY: UniformTypeIdentifiers owns this constant.
+        workspace.URLForApplicationToOpenContentType(unsafe { UTTypePlainText })
+      })
+      .flatten();
+    let Some(editor) = default.or_else(|| {
+      workspace
+        .URLForApplicationWithBundleIdentifier(ns_string!("com.apple.TextEdit"))
+    }) else {
+      eprintln!("No text editor for {}", path.display());
+      return;
+    };
+    let shown = path.display().to_string();
+    let done = RcBlock::new(move |_, error: *mut objc2_foundation::NSError| {
+      if !error.is_null() {
+        eprintln!("Editor failed to open {shown}");
+      }
+    });
+    workspace.openURLs_withApplicationAtURL_configuration_completionHandler(
+      &NSArray::from_retained_slice(&[url]),
+      &editor,
+      &NSWorkspaceOpenConfiguration::configuration(),
+      Some(&done),
+    );
+  }
+
   pub fn reveal(&self, path: &Path) {
     if let Some(url) = NSURL::from_file_path(path) {
       NSWorkspace::sharedWorkspace()
@@ -598,6 +640,22 @@ impl Integration {
       unsafe { panel.cancel(None) };
     }
   }
+}
+
+/// Adds `item` and a separator after the application menu's About.
+fn add_application(
+  menu: &NSMenu,
+  item: &NSMenuItem,
+  added: &mut Vec<Retained<NSMenuItem>>,
+) {
+  let Some(app) = menu.itemAtIndex(0).and_then(|root| root.submenu()) else {
+    return;
+  };
+  let at = app.numberOfItems().min(2);
+  let separator = NSMenuItem::separatorItem(app.mtm());
+  app.insertItem_atIndex(&separator, at);
+  app.insertItem_atIndex(item, at);
+  added.extend([item.retain(), separator]);
 }
 
 /// Quits through AppKit, which ends the event loop without a frame.
@@ -657,6 +715,14 @@ impl Drop for Integration {
     }
     for root in &self.roots {
       self.menu.removeItem(root);
+    }
+    if let Some(app) = self.menu.itemAtIndex(0).and_then(|root| root.submenu())
+    {
+      for extra in &self.extras {
+        if app.indexOfItem(extra) >= 0 {
+          app.removeItem(extra);
+        }
+      }
     }
     let entries = self.handler.ivars().entries.borrow();
     for item in self.items.iter().chain(entries.iter().map(|e| &e.item)) {

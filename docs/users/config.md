@@ -2,9 +2,12 @@
 
 <!-- help-topic:configuration -->
 
-Vpdf reads one optional TOML file at launch for both frontends. It never creates
-or rewrites that file. Use `:config reload` to apply edits throughout the
-running process. Reloading a PDF keeps the current settings.
+Vpdf reads one optional TOML file at launch for both frontends. It never
+rewrites that file. In the macOS app, Vpdf > Settings… (Command-Comma) opens it
+in the app that opens plain text, first creating an empty file at the default
+path when none exists. A missing `-u` path disables the command. Use
+`:config reload` to apply edits throughout the running process. Reloading a PDF
+keeps the current settings.
 
 Use `:help config` to inspect built-in setting defaults. Help describes the
 built-in keys, even when your configuration changes them.

@@ -1053,3 +1053,17 @@ fn ui_font_size_validates_range() {
     assert_eq!(loaded.settings.zoom(), Settings::default().zoom());
   }
 }
+
+#[test]
+fn ensure_file_creates_once_and_keeps_contents() -> crate::Result<()> {
+  use std::os::unix::fs::PermissionsExt;
+  let directory = tempfile::tempdir()?;
+  let path = directory.path().join("vpdf/config.toml");
+  ensure_file(&path)?;
+  assert_eq!(std::fs::read(&path)?, b"");
+  std::fs::write(&path, "[reading]\nzoom = 2.0\n")?;
+  std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444))?;
+  ensure_file(&path)?;
+  assert_eq!(std::fs::read_to_string(&path)?, "[reading]\nzoom = 2.0\n");
+  Ok(())
+}
