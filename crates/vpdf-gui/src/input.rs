@@ -1,5 +1,5 @@
 use eframe::egui::{self, Event, Key, Modifiers, PointerButton};
-use vpdf::session::native::Input;
+use vpdf::session::native::{Gesture, Input, Precise};
 use vpdf_model::geometry::Screen;
 use vpdf_model::input::{
   KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
@@ -73,6 +73,7 @@ impl Adapter {
     self.position = self.position.or(pointer);
     let mut output = Vec::new();
     let mut text_modifiers = modifiers;
+    let mut pinch = None;
     for event in events {
       if let Some(events) = self.keyboard(event, &mut text_modifiers) {
         output.extend(events);
@@ -148,8 +149,18 @@ impl Adapter {
             step,
           ));
         }
+        Event::Zoom(factor) if factor.is_finite() && *factor > 0.0 => {
+          pinch = Some(pinch.unwrap_or(1.0) * factor);
+        }
         _ => {}
       }
+    }
+    // One zoom a frame; the worker relayouts once.
+    if let (Some(pos), Some(pinch)) = (self.position, pinch) {
+      let (event, pixels) =
+        report(pos, MouseEventKind::ScrollUp, Modifiers::NONE, screen, scale);
+      let gesture = Gesture::Pinch(pinch);
+      output.push(Input::Gesture { event, gesture, pixels, screen });
     }
     output
   }
@@ -322,15 +333,23 @@ impl Adapter {
       self.wheel[axis] += delta;
       let turns = self.wheel[axis].trunc();
       self.wheel[axis] -= turns;
-      let kind = match (axis, turns.is_sign_positive()) {
+      let kind = match (axis, delta.is_sign_positive()) {
         (0, true) => MouseEventKind::ScrollLeft,
         (0, false) => MouseEventKind::ScrollRight,
         (_, true) => MouseEventKind::ScrollUp,
         (_, false) => MouseEventKind::ScrollDown,
       };
+      let whole = turns.abs().min(WHEEL_TURNS) as u16;
+      // Trackpads move the page by fractions.
+      if unit == egui::MouseWheelUnit::Point && delta != 0.0 {
+        let (event, pixels) = report(pos, kind, modifiers, screen, scale);
+        let gesture = Gesture::Turn(Precise { turns: delta.abs(), whole });
+        output.push(Input::Gesture { event, gesture, pixels, screen });
+        continue;
+      }
       output.extend(
         std::iter::repeat_with(|| mouse(pos, kind, modifiers, screen, scale))
-          .take(turns.abs().min(WHEEL_TURNS) as usize),
+          .take(usize::from(whole)),
       );
     }
     if phase == egui::TouchPhase::End {
@@ -347,19 +366,27 @@ fn mouse(
   screen: Screen,
   scale: f32,
 ) -> Input {
+  let (event, pixels) = report(pos, kind, modifiers, screen, scale);
+  Input::Mouse { event, pixels, screen }
+}
+
+fn report(
+  pos: egui::Pos2,
+  kind: MouseEventKind,
+  modifiers: Modifiers,
+  screen: Screen,
+  scale: f32,
+) -> (MouseEvent, (u16, u16)) {
   let (x, y) = physical(pos, scale);
   let y =
     y.min(screen.rows.saturating_mul(screen.cell_height).saturating_sub(1));
-  Input::Mouse {
-    event: MouseEvent {
-      kind,
-      column: x / screen.cell_width.max(1),
-      row: y / screen.cell_height.max(1),
-      modifiers: key_modifiers(modifiers),
-    },
-    pixels: (x, y),
-    screen,
-  }
+  let event = MouseEvent {
+    kind,
+    column: x / screen.cell_width.max(1),
+    row: y / screen.cell_height.max(1),
+    modifiers: key_modifiers(modifiers),
+  };
+  (event, (x, y))
 }
 
 fn physical(pos: egui::Pos2, scale: f32) -> (u16, u16) {
@@ -854,14 +881,21 @@ mod tests {
       egui::MouseWheelUnit::Point,
       Modifiers::NONE,
     );
-    let half = std::slice::from_ref(&event);
-    assert!(feed(&mut adapter, half, 2.0, pos).is_empty());
-    let output = feed(&mut adapter, &[event], 2.0, pos);
-    let Input::Mouse { event, pixels, .. } = output[0] else {
-      panic!("Expected wheel")
-    };
-    assert_eq!(event.kind, MouseEventKind::ScrollDown);
-    assert_eq!(pixels, (27, 51));
+    // Each half turn carries its fraction; the second completes a turn.
+    let mut whole = Vec::new();
+    for _ in 0..2 {
+      let output = feed(&mut adapter, std::slice::from_ref(&event), 2.0, pos);
+      let [Input::Gesture { event, gesture: Gesture::Turn(turn), pixels, .. }] =
+        output[..]
+      else {
+        panic!("Expected one precise turn")
+      };
+      assert_eq!(event.kind, MouseEventKind::ScrollDown);
+      assert_eq!(pixels, (27, 51));
+      assert_eq!(turn.turns, 0.5);
+      whole.push(turn.whole);
+    }
+    assert_eq!(whole, [0, 1]);
     let modifiers = Modifiers { ctrl: true, ..Modifiers::NONE };
     let line =
       wheel(egui::vec2(-1.0, 1.0), egui::MouseWheelUnit::Line, modifiers);
@@ -877,6 +911,26 @@ mod tests {
       })
       .collect();
     assert_eq!(kinds, [MouseEventKind::ScrollRight, MouseEventKind::ScrollUp]);
+  }
+
+  #[test]
+  fn pinches_coalesce_at_the_pointer() {
+    let mut adapter = Adapter::default();
+    let pos = Some(egui::pos2(10.0, 20.0));
+    let events = [
+      Event::Zoom(1.25),
+      Event::Zoom(f32::NAN),
+      Event::Zoom(0.0),
+      Event::Zoom(2.0),
+    ];
+    let output = feed(&mut adapter, &events, 2.0, pos);
+    let [Input::Gesture { event, gesture, pixels, .. }] = output[..] else {
+      panic!("Expected one pinch")
+    };
+    assert_eq!(gesture, Gesture::Pinch(2.5));
+    assert_eq!((event.kind, pixels), (MouseEventKind::ScrollUp, (20, 40)));
+    let mut idle = Adapter::default();
+    assert!(feed(&mut idle, &[Event::Zoom(1.5)], 2.0, None).is_empty());
   }
 
   #[test]

@@ -5,6 +5,8 @@ pub(super) enum Interaction {
   Key(KeyEvent),
   Paste(String),
   Mouse(Mouse),
+  /// A trackpad turn or pinch at a wheel report.
+  Gesture(Mouse, super::pointer::Gesture),
   Leave,
 }
 
@@ -27,7 +29,9 @@ impl Session {
             self.app().confirm_click(mouse);
           }
         }
-        Interaction::Paste(_) | Interaction::Leave => {}
+        Interaction::Paste(_)
+        | Interaction::Gesture(..)
+        | Interaction::Leave => {}
       }
       self.settle()?;
       return Ok(true);
@@ -39,6 +43,9 @@ impl Session {
         tab.panes[tab.focus].paste(&text, &mut self.history).map(|()| true)
       }
       Interaction::Mouse(mouse) => self.mouse_report(mouse),
+      Interaction::Gesture(mouse, trackpad) => {
+        self.gesture_report(mouse, trackpad)
+      }
       // Native leaving skips pending requests.
       Interaction::Leave => return Ok(self.pointer_left()),
     }?;

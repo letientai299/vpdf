@@ -35,6 +35,8 @@ pub struct Layout {
 pub enum Zoom {
   To(f32),
   Steps(f32),
+  /// Multiplies, as a pinch does.
+  Scale(f32),
   Width,
   Page(PageId),
 }
@@ -128,16 +130,20 @@ impl Layout {
   pub fn request_zoom(&mut self, zoom: Zoom) {
     match zoom {
       Zoom::To(value) => self.zoom = value,
-      Zoom::Steps(steps) => {
-        self.zoom = (self.zoom * 1.15_f32.powf(steps))
-          .clamp(MIN_ZOOM as f32, MAX_ZOOM as f32);
-      }
+      Zoom::Steps(steps) => self.scale(1.15_f32.powf(steps)),
+      Zoom::Scale(factor) => self.scale(factor),
       Zoom::Width => self.zoom = DEFAULT_ZOOM,
       Zoom::Page(page) => {
         let page = &self.pages[page.0];
         self.zoom *= (self.screen.height() / page.height)
           .min(self.screen.width() / page.width);
       }
+    }
+  }
+
+  fn scale(&mut self, factor: f32) {
+    if factor.is_finite() && factor > 0.0 {
+      self.zoom = (self.zoom * factor).clamp(MIN_ZOOM as f32, MAX_ZOOM as f32);
     }
   }
 

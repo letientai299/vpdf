@@ -80,7 +80,9 @@ impl Session {
         unlock.prompt.feed(*key, &History::default())
       }
       Input::Paste(text) => unlock.prompt.paste(text),
-      Input::Mouse { .. } | Input::History { .. } => return Ok(true),
+      Input::Mouse { .. } | Input::Gesture { .. } | Input::History { .. } => {
+        return Ok(true);
+      }
       _ => return Ok(false),
     };
     match event {

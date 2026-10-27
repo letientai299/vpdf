@@ -43,7 +43,11 @@ pub struct Frame {
 #[derive(Clone, Copy)]
 pub enum ScrollInput {
   Wheel,
-  Keyboard { follow: bool },
+  /// A trackpad: follows at once, without easing.
+  Precise,
+  Keyboard {
+    follow: bool,
+  },
 }
 
 pub struct View<'a, S> {
@@ -224,9 +228,12 @@ impl<S: TextSource + Pages> View<'_, S> {
 
   pub fn scroll(&mut self, delta: f32, input: ScrollInput) -> Result<()> {
     let (follow, sync) = match input {
-      ScrollInput::Wheel => (false, self.reader.mode() == Mode::Cursor),
+      ScrollInput::Wheel | ScrollInput::Precise => {
+        (false, self.reader.mode() == Mode::Cursor)
+      }
       ScrollInput::Keyboard { follow } => (follow, self.reader.uses_cursor()),
     };
+    let eased = !matches!(input, ScrollInput::Precise);
     self.reader.disarm();
     let displayed = self.reader.scroll;
     if let Some(target) = self.animation.finish() {
@@ -247,7 +254,9 @@ impl<S: TextSource + Pages> View<'_, S> {
       if !follow {
         point.1 -= target - start;
       }
-      self.animation.start(target, Instant::now());
+      if eased {
+        self.animation.start(target, Instant::now());
+      }
     }
     if sync
       && (follow || !self.visible(self.reader.cursor)?)
@@ -257,7 +266,7 @@ impl<S: TextSource + Pages> View<'_, S> {
       self.reader.desired = None;
       *self.target = Some(cursor);
     }
-    if !self.frame.pane.text {
+    if eased && !self.frame.pane.text {
       self.reader.scroll = displayed;
     }
     Ok(())

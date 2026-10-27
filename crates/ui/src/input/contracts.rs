@@ -2,7 +2,7 @@ use super::{
   edge::Edge,
   gesture::{Gesture, Swept},
   grab::Grab,
-  wheel::{Turn, Wheel},
+  wheel::{Precise, Turn, Wheel},
 };
 use crate::paint::Frame;
 use crate::pointer::{Region, Route};
@@ -103,6 +103,36 @@ fn preview_wheel_fallback_is_temporary() {
   wheel.cancel();
   assert_eq!(wheel.turn(page, frame(), true), Turn::Scroll(rows * 16.0));
   assert_eq!(wheel.turn(preview, frame(), true), Turn::Scroll(rows * 16.0));
+}
+
+#[test]
+fn precise_turns_move_pages_by_fractions_and_rows_whole() {
+  let rows = f32::from(crate::pointer::WHEEL_ROWS);
+  let quarter = Precise { turns: 0.25, whole: 0 };
+  let page = route(MouseEventKind::ScrollDown, Region::Page);
+  let text = Frame { text: true, ..frame() };
+  let preview = route(MouseEventKind::ScrollDown, Region::Preview);
+  let sideways = route(MouseEventKind::ScrollRight, Region::Page);
+  let mut zoom = route(MouseEventKind::ScrollUp, Region::Page);
+  zoom.mouse.modifiers = KeyModifiers::CONTROL;
+  for (route, frame, precise, expected) in [
+    (page, frame(), quarter, Turn::Exact(rows * 4.0)),
+    (page, text, quarter, Turn::None),
+    (page, text, Precise { whole: 2, ..quarter }, Turn::Scroll(rows * 32.0)),
+    (sideways, frame(), quarter, Turn::Pan(rows * 2.0)),
+    (preview, frame(), quarter, Turn::None),
+    (preview, frame(), Precise { whole: 1, ..quarter }, Turn::Preview(rows)),
+    (zoom, frame(), quarter, Turn::Zoom { steps: 0.125, at: (84.0, 72.0) }),
+  ] {
+    let mut wheel = Wheel::default();
+    wheel.precise(precise);
+    assert_eq!(wheel.turn(route, frame, true), expected);
+  }
+  // A size lasts one turn.
+  let mut wheel = Wheel::default();
+  wheel.precise(quarter);
+  wheel.turn(page, frame(), true);
+  assert_eq!(wheel.turn(page, frame(), true), Turn::Scroll(rows * 16.0));
 }
 
 #[test]

@@ -9,6 +9,7 @@ use vpdf_model::document::Target;
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::JumpDescription;
 use vpdf_ui::keys::{Action, Input, PanelKind};
+use vpdf_ui::layout::Zoom;
 use vpdf_ui::panel::{Destination, Row, jump_key};
 use vpdf_ui::reading::{ScrollInput, Sections, ViewportEvent};
 
@@ -49,17 +50,12 @@ impl App {
     Ok(true)
   }
 
-  /// Zooms by `steps` of 15 %.
-  fn zoom_by(&mut self, steps: f32) -> Result<()> {
-    self.layout.request_zoom(vpdf_ui::layout::Zoom::Steps(steps));
-    self.relayout()
-  }
-
   /// Zooms keeping the page point at a page-area pixel in place, where
   /// the view allows.
-  pub(super) fn zoom_at(&mut self, steps: f32, at: (f32, f32)) -> Result<()> {
+  pub(super) fn zoom_at(&mut self, zoom: Zoom, at: (f32, f32)) -> Result<()> {
     let anchor = self.anchor_at(at);
-    self.zoom_by(steps)?;
+    self.layout.request_zoom(zoom);
+    self.relayout()?;
     self.restore_at(anchor, at);
     Ok(())
   }
@@ -275,7 +271,15 @@ impl App {
   }
 
   pub fn scroll(&mut self, delta: f32) -> Result<()> {
+    self.scroll_as(delta, ScrollInput::Wheel)
+  }
+
+  pub(crate) fn scroll_as(
+    &mut self,
+    delta: f32,
+    input: ScrollInput,
+  ) -> Result<()> {
     self.search.forget_yank();
-    self.reading_view().scroll(delta, ScrollInput::Wheel)
+    self.reading_view().scroll(delta, input)
   }
 }

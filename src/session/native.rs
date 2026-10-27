@@ -19,6 +19,9 @@ use vpdf_pdf::jobs::Wake;
 pub mod commands;
 pub mod restore;
 
+pub use super::pointer::Gesture;
+pub use vpdf_ui::input::wheel::Precise;
+
 const BUDGET: usize = 64 << 20;
 /// Inputs one frame takes beyond the first, so a stream cannot hold it.
 const BATCH: usize = 64;
@@ -56,6 +59,13 @@ pub enum Input {
   Paste(String),
   Mouse {
     event: MouseEvent,
+    pixels: (u16, u16),
+    screen: Screen,
+  },
+  /// A trackpad turn or pinch; `event` gives its wheel direction.
+  Gesture {
+    event: MouseEvent,
+    gesture: Gesture,
     pixels: (u16, u16),
     screen: Screen,
   },
@@ -741,6 +751,7 @@ fn apply_reader(
       Input::Key(_)
         | Input::Paste(_)
         | Input::Mouse { .. }
+        | Input::Gesture { .. }
         | Input::History { .. }
     )
   {
@@ -749,7 +760,10 @@ fn apply_reader(
   commands::prepare_prompt(session);
   match session.password_input(&input, *screen) {
     Ok(true) => {
-      return !matches!(input, Input::Mouse { .. } | Input::History { .. });
+      return !matches!(
+        input,
+        Input::Mouse { .. } | Input::Gesture { .. } | Input::History { .. }
+      );
     }
     Err(error) => {
       report(session, Err(error));
@@ -776,29 +790,13 @@ fn apply_reader(
     }
     Input::Key(key) => session.interact(Interaction::Key(key)),
     Input::Paste(text) => session.interact(Interaction::Paste(text)),
-    Input::Mouse { event, pixels: (x, y), screen: drawn }
+    Input::Mouse { event, pixels, screen: drawn } if drawn == *screen => {
+      mouse_input(session, event, pixels, *screen)
+    }
+    Input::Gesture { event, gesture, pixels, screen: drawn }
       if drawn == *screen =>
     {
-      let mut report = vpdf_model::input::Mouse::from(event);
-      report.at = vpdf_model::input::Spot::Pixel { x, y };
-      if session.tabs.is_empty() {
-        let held = session
-          .home
-          .as_mut()
-          .and_then(|home| home.view.shelf_mut())
-          .is_some_and(|shelf| shelf.dragging());
-        if matches!(event.kind, vpdf_model::input::MouseEventKind::Moved)
-          || matches!(event.kind, vpdf_model::input::MouseEventKind::Drag(_))
-            && !held
-        {
-          Ok(false)
-        } else {
-          home_event(session, vpdf_model::input::Event::Mouse(report), *screen)
-            .map(|()| true)
-        }
-      } else {
-        session.interact(Interaction::Mouse(report))
-      }
+      gesture_input(session, pixel_report(event, pixels), gesture, *screen)
     }
     Input::History { forward, pixels: (x, y), screen: drawn }
       if drawn == *screen && !session.tabs.is_empty() =>
@@ -832,6 +830,57 @@ fn apply_reader(
     report(session, Err(error));
     true
   })
+}
+
+fn pixel_report(
+  event: MouseEvent,
+  (x, y): (u16, u16),
+) -> vpdf_model::input::Mouse {
+  let mut report = vpdf_model::input::Mouse::from(event);
+  report.at = vpdf_model::input::Spot::Pixel { x, y };
+  report
+}
+
+fn mouse_input(
+  session: &mut Session,
+  event: MouseEvent,
+  pixels: (u16, u16),
+  screen: Screen,
+) -> Result<bool> {
+  use vpdf_model::input::MouseEventKind;
+  let report = pixel_report(event, pixels);
+  if !session.tabs.is_empty() {
+    return session.interact(Interaction::Mouse(report));
+  }
+  let held = session
+    .home
+    .as_mut()
+    .and_then(|home| home.view.shelf_mut())
+    .is_some_and(|shelf| shelf.dragging());
+  if event.kind == MouseEventKind::Moved
+    || matches!(event.kind, MouseEventKind::Drag(_)) && !held
+  {
+    return Ok(false);
+  }
+  home_event(session, vpdf_model::input::Event::Mouse(report), screen)
+    .map(|()| true)
+}
+
+fn gesture_input(
+  session: &mut Session,
+  report: vpdf_model::input::Mouse,
+  gesture: Gesture,
+  screen: Screen,
+) -> Result<bool> {
+  if !session.tabs.is_empty() {
+    return session.interact(Interaction::Gesture(report, gesture));
+  }
+  // Home lists move in whole turns.
+  let Gesture::Turn(precise) = gesture else { return Ok(false) };
+  for _ in 0..precise.whole {
+    home_event(session, vpdf_model::input::Event::Mouse(report), screen)?;
+  }
+  Ok(precise.whole > 0)
 }
 
 fn resize(
@@ -2959,6 +3008,108 @@ mod tests {
     }
     apply(&mut session, up, &mut screen);
     assert!(session.app().layout.zoom() > zoom);
+    Ok(())
+  }
+
+  fn gesture(
+    kind: MouseEventKind,
+    pixels: (u16, u16),
+    screen: Screen,
+    gesture: Gesture,
+  ) -> Input {
+    let Input::Mouse { event, .. } = mouse(kind, pixels, screen) else {
+      unreachable!()
+    };
+    Input::Gesture { event, gesture, pixels, screen }
+  }
+
+  #[test]
+  fn trackpad_turns_move_pages_exactly_and_rows_whole() -> Result<()> {
+    use vpdf_ui::keys::PanelKind;
+    let mut screen = cells(80, 24);
+    let pages = ["one", "two", "three", "four"];
+    let (_root, _, mut session) = opened(&pages, screen)?;
+    let mut cache = Cache::new(BUDGET);
+    frame(&mut session, &mut cache, screen)?;
+    let rows = f32::from(vpdf_ui::pointer::WHEEL_ROWS);
+    let step = rows * f32::from(screen.cell_height);
+    let turn = |turns, whole| Gesture::Turn(Precise { turns, whole });
+    let down = MouseEventKind::ScrollDown;
+    for turns in [0.1, 0.25] {
+      let scroll = session.app().reader.scroll;
+      let input = gesture(down, (320, 100), screen, turn(turns, 0));
+      assert!(apply(&mut session, input, &mut screen));
+      assert_eq!(session.app().reader.scroll, scroll + turns * step);
+      assert!(!session.app().reader.animation().active());
+    }
+    session.app().show_panel(
+      PanelKind::Version,
+      (0..80)
+        .map(|row| vpdf_ui::panel::Row::parse(&format!("row {row}")))
+        .collect(),
+    )?;
+    frame(&mut session, &mut cache, screen)?;
+    let scroll = session.app().reader.scroll;
+    let top =
+      |session: &mut Session| session.app().panel.as_ref().unwrap().view.top();
+    let input = gesture(down, (8, 80), screen, turn(0.4, 0));
+    apply(&mut session, input, &mut screen);
+    assert_eq!(top(&mut session), 0);
+    let input = gesture(down, (8, 80), screen, turn(0.4, 1));
+    apply(&mut session, input, &mut screen);
+    assert_eq!(top(&mut session), usize::from(vpdf_ui::pointer::WHEEL_ROWS));
+    // Pinches over a panel leave the page.
+    let zoom = session.app().layout.zoom();
+    let input = gesture(down, (8, 80), screen, Gesture::Pinch(1.5));
+    assert!(!apply(&mut session, input, &mut screen));
+    assert_eq!(session.app().layout.zoom(), zoom);
+    assert_eq!(session.app().reader.scroll, scroll);
+    Ok(())
+  }
+
+  #[test]
+  fn pinches_keep_the_page_under_the_pointer() -> Result<()> {
+    let mut screen = cells(80, 24);
+    let pages = ["one", "two", "three", "four"];
+    let (_root, _, mut session) = opened(&pages, screen)?;
+    let mut cache = Cache::new(BUDGET);
+    frame(&mut session, &mut cache, screen)?;
+    let pixels = (320, 100);
+    let spot = (pixels.0 / screen.cell_width, pixels.1 / screen.cell_height);
+    let pixel = Some(vpdf_ui::pointer::Pixel {
+      x: pixels.0,
+      y: pixels.1,
+      cell: screen.cell(),
+    });
+    let under = |session: &mut Session| {
+      session.app().page_point(spot.0, spot.1, pixel).expect("page point")
+    };
+    let start = (session.app().layout.zoom(), under(&mut session));
+    let kind = MouseEventKind::ScrollUp;
+    for factor in [1.25, 1.25, 1.25, 0.8, 0.8, 0.8] {
+      let before = under(&mut session);
+      let zoom = session.app().layout.zoom();
+      let input = gesture(kind, pixels, screen, Gesture::Pinch(factor));
+      assert!(apply(&mut session, input, &mut screen));
+      assert!((session.app().layout.zoom() - zoom * factor).abs() < 1e-4);
+      let after = under(&mut session);
+      assert_eq!(after.0, before.0);
+      assert!((after.1 - before.1).abs() < 0.5, "{before:?} {after:?}");
+      assert!((after.2 - before.2).abs() < 0.5, "{before:?} {after:?}");
+    }
+    let end = (session.app().layout.zoom(), under(&mut session));
+    assert!((end.0 - start.0).abs() < 1e-4);
+    assert_eq!(end.1.0, start.1.0);
+    assert!((end.1.2 - start.1.2).abs() < 0.5, "{start:?} {end:?}");
+    // Zoom stays finite and bounded.
+    for factor in [f32::INFINITY, 1e9, 1e-9] {
+      let input = gesture(kind, pixels, screen, Gesture::Pinch(factor));
+      apply(&mut session, input, &mut screen);
+      let zoom = f64::from(session.app().layout.zoom());
+      assert!(
+        (vpdf_ui::layout::MIN_ZOOM..=vpdf_ui::layout::MAX_ZOOM).contains(&zoom)
+      );
+    }
     Ok(())
   }
 

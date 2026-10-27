@@ -157,6 +157,11 @@ pans.
 Middle-click an internal destination to open it in a split while retaining
 focus in the original pane.
 
+In the macOS app, a trackpad moves the page by exact amounts with the system's
+momentum; panels and lists still move in whole wheel steps. A pinch zooms the
+page under the pointer, keeping that point in place. Fit and keyboard zoom
+still apply.
+
 Kitty reserves Shift-click and Shift-drag for terminal selection. `:mouse off`
 returns all clicks and drags to the terminal; `:mouse on` restores capture.
 Under tmux, mouse events instead follow its `mouse` setting: with it on, a drag

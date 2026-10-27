@@ -4,6 +4,13 @@ use super::{
   Session, Shape, Step, Target, Write, answer, terminal,
 };
 
+/// Trackpad input carried on a wheel report.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Gesture {
+  Turn(vpdf_ui::input::wheel::Precise),
+  Pinch(f32),
+}
+
 impl Session {
   /// One terminal mouse report; whether it needs a frame.
   pub fn mouse_report(
@@ -30,6 +37,25 @@ impl Session {
     report: vpdf_model::input::Mouse,
     now: Instant,
   ) -> Result<bool> {
+    self.report_at(report, now, None)
+  }
+
+  /// A trackpad turn or pinch at a wheel report; whether it needs a
+  /// frame.
+  pub(super) fn gesture_report(
+    &mut self,
+    report: vpdf_model::input::Mouse,
+    trackpad: Gesture,
+  ) -> Result<bool> {
+    self.report_at(report, Instant::now(), Some(trackpad))
+  }
+
+  fn report_at(
+    &mut self,
+    report: vpdf_model::input::Mouse,
+    now: Instant,
+    trackpad: Option<Gesture>,
+  ) -> Result<bool> {
     // Reports in flight after `:mouse off`.
     if !terminal::mouse() {
       return Ok(false);
@@ -44,7 +70,7 @@ impl Session {
     };
     let pixel =
       report.pixel().map(|(x, y)| Pixel { x, y, cell: screen.cell() });
-    self.pointed(mouse, pixel, now)
+    self.pointed(mouse, pixel, now, trackpad)
   }
 
   /// `Ctrl-o` or `Ctrl-i` where pointed.
@@ -78,7 +104,7 @@ impl Session {
 
   /// A report in cells; whether it needs a frame.
   pub fn mouse(&mut self, mouse: MouseEvent) -> Result<bool> {
-    self.pointed(mouse, None, Instant::now())
+    self.pointed(mouse, None, Instant::now(), None)
   }
 
   fn stationary_scroll(
@@ -133,6 +159,7 @@ impl Session {
     mouse: MouseEvent,
     pixel: Option<Pixel>,
     now: Instant,
+    trackpad: Option<Gesture>,
   ) -> Result<bool> {
     if mouse.kind == MouseEventKind::Moved {
       return Ok(self.pointer_moved(mouse, pixel, now));
@@ -217,7 +244,11 @@ impl Session {
     if matches!(mouse.kind, MouseEventKind::Down(_)) {
       app.clear_notes();
     }
-    app.mouse(route)?;
+    match trackpad {
+      None => app.mouse(route)?,
+      Some(Gesture::Turn(precise)) => app.precise_wheel(route, precise)?,
+      Some(Gesture::Pinch(factor)) => app.pinch(route, factor)?,
+    }
     let moved = view.is_none_or(|view| view != app.wheel_view());
     let read = before.is_none_or(|before| before != reading(app));
     let changed = read && moved;

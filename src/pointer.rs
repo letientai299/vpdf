@@ -6,10 +6,11 @@ use vpdf_model::input::{MouseButton, MouseEvent, MouseEventKind};
 use vpdf_model::text::{PageId, Position};
 use vpdf_ui::input::InputOwner;
 use vpdf_ui::input::links::Step;
-use vpdf_ui::input::mouse::{Dispatch, Surface};
-use vpdf_ui::input::wheel::{self, Background, Turn};
+use vpdf_ui::input::mouse::{Content, Dispatch, Surface};
+use vpdf_ui::input::wheel::{self, Background, Precise, Turn};
+use vpdf_ui::layout::Zoom;
 use vpdf_ui::pointer::{Hit, Pixel, Region, Route, WHEEL_ROWS};
-use vpdf_ui::reading::HitFrame;
+use vpdf_ui::reading::{HitFrame, ScrollInput};
 
 /// What a wheel turn moves; an equal view needs no frame.
 #[derive(Clone, Copy, PartialEq)]
@@ -285,14 +286,58 @@ impl App {
 }
 
 impl App {
-  /// A turn over a menu or the status row moves the surface beneath it.
-  pub(super) fn menu_wheel(&mut self, route: Route) -> Result<()> {
-    match wheel::background(
+  /// What a turn over a menu or the status row moves.
+  fn wheel_background(&self, route: Route) -> Background {
+    wheel::background(
       route.mouse.column,
       self.left,
       self.covered(),
       self.overlays.overview().is_some(),
-    ) {
+    )
+  }
+
+  /// Whether a turn reaches `page_wheel`, which takes fractions.
+  fn page_turn(&self, route: Route) -> bool {
+    match self.pointer_targets().surface(route.mouse.kind, route.region) {
+      Surface::PageWheel => true,
+      Surface::MenuWheel => self.wheel_background(route) == Background::Page,
+      Surface::Content(Content::Page) => self.overlays.overview().is_none(),
+      _ => false,
+    }
+  }
+
+  /// A trackpad turn: the page follows its fraction; rows take whole
+  /// turns.
+  pub fn precise_wheel(
+    &mut self,
+    route: Route,
+    precise: Precise,
+  ) -> Result<()> {
+    if self.page_turn(route) {
+      self.wheel.precise(precise);
+      return self.mouse(route);
+    }
+    for _ in 0..precise.whole {
+      self.mouse(route)?;
+    }
+    Ok(())
+  }
+
+  /// A pinch zooms the page under the pointer by `factor`.
+  pub fn pinch(&mut self, route: Route, factor: f32) -> Result<()> {
+    let frame = self.frame(self.screen);
+    if frame.text || !self.page_turn(route) {
+      return Ok(());
+    }
+    self.cancel_definition();
+    let mouse = route.mouse;
+    let at = frame.point(mouse.column, mouse.row, route.pixel);
+    self.zoom_at(Zoom::Scale(factor), at)
+  }
+
+  /// A turn over a menu or the status row moves the surface beneath it.
+  pub(super) fn menu_wheel(&mut self, route: Route) -> Result<()> {
+    match self.wheel_background(route) {
       Background::Panel => self.panel_mouse(route.mouse, route.clicks),
       Background::Overview => self.overview_mouse(route.mouse),
       Background::Page => self.page_wheel(route),
@@ -305,9 +350,10 @@ impl App {
     let frame = self.frame(self.screen);
     match self.wheel.turn(route, frame, self.overlays.preview().is_some()) {
       Turn::None => Ok(()),
-      Turn::Zoom { steps, at } => self.zoom_at(steps, at),
+      Turn::Zoom { steps, at } => self.zoom_at(Zoom::Steps(steps), at),
       Turn::Pan(delta) => self.pan(delta),
       Turn::Scroll(delta) => self.scroll(delta),
+      Turn::Exact(delta) => self.scroll_as(delta, ScrollInput::Precise),
       Turn::Preview(rows) => self.scroll_preview(rows),
     }
   }

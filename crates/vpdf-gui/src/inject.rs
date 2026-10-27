@@ -4,8 +4,9 @@
 //! `--events` path (usually a FIFO) feeds one event per line:
 //! `key SPEC...`, `resize W H`, `place X Y`, `mark NAME`, `quit`,
 //! `move X Y`, `down|up X Y [left|right|middle|back|forward] [MODS]`,
-//! `wheel DX DY [point|line|page] [MODS]`, `mods [MODS]`, `gone`,
-//! `focus 0|1`, `preedit TEXT`, `commit TEXT`, `paste TEXT`, `drop PATH`.
+//! `wheel DX DY [point|line|page] [MODS]`, `pinch FACTOR`, `mods [MODS]`,
+//! `gone`, `focus 0|1`, `preedit TEXT`, `commit TEXT`, `paste TEXT`,
+//! `drop PATH`.
 //! Coordinates are window points; MODS joins ctrl, alt, shift, cmd with `+`.
 
 use crate::input::{KEYS, egui_modifiers};
@@ -318,6 +319,7 @@ fn parse(line: &str) -> Option<Injected> {
       Event::Ime(ImeEvent::Preedit { text: text(), active_range_chars: None })
     }
     "commit" => Event::Ime(ImeEvent::Commit(text())),
+    "pinch" => Event::Zoom(rest.parse().ok()?),
     _ => return pointer(verb, rest).map(Injected::Event),
   };
   Some(Injected::Event(event))
@@ -563,7 +565,12 @@ mod tests {
       parse("mods"),
       Some(Injected::Event(Event::ModifiersChanged(Modifiers::NONE)))
     ));
-    for line in ["down 1", "jump 1 2", "move x 2", "drop", "mods none"] {
+    assert!(matches!(
+      parse("pinch 1.25"),
+      Some(Injected::Event(Event::Zoom(1.25)))
+    ));
+    for line in ["down 1", "jump 1 2", "move x 2", "drop", "mods none", "pinch"]
+    {
       assert!(parse(line).is_none(), "{line}");
     }
   }
