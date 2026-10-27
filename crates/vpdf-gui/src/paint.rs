@@ -738,23 +738,27 @@ impl Grid {
       if cell.text.is_empty() || cell.text == " " {
         continue;
       }
-      let eighths = match cell.text.as_str() {
-        "█" => 8,
-        "▉" => 7,
-        "▊" => 6,
-        "▋" => 5,
-        "▌" => 4,
-        "▍" => 3,
-        "▎" => 2,
-        "▏" => 1,
-        _ => 0,
+      let (width, height) = match cell.text.as_str() {
+        "█" => (8, 8),
+        "▉" => (7, 8),
+        "▊" => (6, 8),
+        "▋" => (5, 8),
+        "▌" => (4, 8),
+        "▍" => (3, 8),
+        "▎" => (2, 8),
+        "▏" => (1, 8),
+        "▄" => (8, 4),
+        _ => (0, 0),
       };
-      if eighths > 0 {
+      if width > 0 {
         // Mesh edges avoid glyph gaps and feathering.
         blocks.add_colored_rect(
           Rect::from_min_size(
-            pos,
-            Vec2::new(size.x * eighths as f32 / 8.0, size.y),
+            pos + Vec2::new(0.0, size.y * (8 - height) as f32 / 8.0),
+            Vec2::new(
+              size.x * width as f32 / 8.0,
+              size.y * height as f32 / 8.0,
+            ),
           ),
           cell.style.foreground,
         );
@@ -882,7 +886,7 @@ mod tests {
     for scale in [1.0, 1.5, 2.0] {
       let mut grid = Grid::new(screen);
       grid.op(&Op::Move { column: 0, row: 1 });
-      grid.op(&Op::Text(Text::new("██▉▊▋▌▍▎▏· 57%")));
+      grid.op(&Op::Text(Text::new("██▉▊▋▌▍▎▏▄▄· 57%")));
       let ctx = egui::Context::default();
       let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         grid.paint(ui.painter(), screen, scale, FONT_SIZE);
@@ -898,21 +902,34 @@ mod tests {
       assert_eq!(meshes.len(), 1);
       let mesh = meshes[0];
       assert!(mesh.is_valid());
-      assert_eq!(mesh.indices.len(), 9 * 6);
-      assert_eq!(mesh.vertices.len(), 9 * 4);
+      assert_eq!(mesh.indices.len(), 11 * 6);
+      assert_eq!(mesh.vertices.len(), 11 * 4);
       let size = Vec2::new(11.0, 19.0) / scale;
-      for (column, (vertices, eighths)) in mesh
+      for (column, (vertices, (width, height))) in mesh
         .vertices
         .as_chunks::<4>()
         .0
         .iter()
-        .zip([8, 8, 7, 6, 5, 4, 3, 2, 1])
+        .zip([
+          (8, 8),
+          (8, 8),
+          (7, 8),
+          (6, 8),
+          (5, 8),
+          (4, 8),
+          (3, 8),
+          (2, 8),
+          (1, 8),
+          (8, 4),
+          (8, 4),
+        ])
         .enumerate()
       {
         let left = column as f32 * size.x;
-        let right = left + size.x * eighths as f32 / 8.0;
-        assert_eq!(vertices[0].pos, Pos2::new(left, size.y));
-        assert_eq!(vertices[1].pos, Pos2::new(right, size.y));
+        let right = left + size.x * width as f32 / 8.0;
+        let top = size.y * (2.0 - height as f32 / 8.0);
+        assert_eq!(vertices[0].pos, Pos2::new(left, top));
+        assert_eq!(vertices[1].pos, Pos2::new(right, top));
         assert_eq!(vertices[2].pos, Pos2::new(left, size.y * 2.0));
         assert_eq!(vertices[3].pos, Pos2::new(right, size.y * 2.0));
         assert!(vertices.iter().all(|vertex| {

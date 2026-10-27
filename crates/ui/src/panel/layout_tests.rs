@@ -346,12 +346,9 @@ fn details_keep_row_styles() {
     (Role::Selected, Role::Selected),
     (Role::Current, Role::Current),
   ] {
-    for (detail, progress, last) in [
-      ("", false, ""),
-      ("p123", false, "p123"),
-      ("12 pages", true, "12 pages"),
-      ("██··· 40%", true, "··· 40%"),
-    ] {
+    for (detail, progress, last) in
+      [("", false, ""), ("p123", false, "p123"), ("12 pages", true, "12 pages")]
+    {
       let row = Row::new("row".into(), detail.into(), Destination::None);
       let meta = Meta::new(&row, 20, 0, 0, 0);
       for used in [3, 25] {

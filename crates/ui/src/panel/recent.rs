@@ -776,12 +776,9 @@ fn reading_position(page: usize, total: Option<usize>, cells: usize) -> String {
   if cells == 0 {
     return format!("{percent:>3}%");
   }
-  let units = ratio * cells as f64;
-  let full = units.floor() as usize;
-  let fraction = ((units - full as f64) * 8.0).floor() as usize;
-  let partial = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"][fraction];
-  let empty = cells.saturating_sub(full + usize::from(fraction > 0));
-  format!("{}{}{} {percent:>3}%", "█".repeat(full), partial, "·".repeat(empty))
+  let full = (ratio * cells as f64).round() as usize;
+  let empty = cells.saturating_sub(full);
+  format!("{}{} {percent:>3}%", "▄".repeat(full), " ".repeat(empty))
 }
 
 /// The card's place in a pane.
@@ -836,20 +833,22 @@ pub(super) fn scene_progress<'a>(
   detail: &str,
   base: Role,
 ) {
-  let track = detail.trim_end().split(' ').next().unwrap_or("");
-  let is_bar =
-    track.chars().any(|ch| ch == '█' || ch == '·' || ('▉'..='▏').contains(&ch));
   let tail = super::rows::quiet(base);
-  if !is_bar {
+  let track = detail.get(..detail.len().saturating_sub(5)).filter(|track| {
+    !track.is_empty() && track.chars().all(|ch| ch == '▄' || ch == ' ')
+  });
+  let Some(track) = track else {
     scene.push(Op::Style(tail));
     scene.text(detail);
     return;
-  }
-  let end = track.find('·').unwrap_or(track.len());
+  };
+  let full = track.trim_end_matches(' ');
   scene.push(Op::Style(Role::Mode));
-  scene.text(&track[..end]);
+  scene.text(full);
+  scene.push(Op::Style(Role::Muted));
+  scene.text(&"▄".repeat(track.len() - full.len()));
   scene.push(Op::Style(tail));
-  scene.text(&detail[end..]);
+  scene.text(&detail[track.len()..]);
   scene.push(Op::Style(base));
 }
 
@@ -1139,10 +1138,24 @@ mod design_tests {
       (1, Some(0), 24, "…"),
       (1, Some(3), 0, " 33%"),
       (20, Some(10), 0, "100%"),
-      (1, Some(16), 4, "▎···   6%"),
     ] {
       assert_eq!(reading_position(page, total, cells), expected);
     }
+  }
+
+  #[test]
+  fn tiny_progress_stays_empty() {
+    let mut scene = vpdf_model::scene::Scene::new();
+    scene_progress(
+      &mut scene,
+      &reading_position(1, Some(1000), 24),
+      Role::Reset,
+    );
+    assert!(
+      crate::testing::spans(&scene)
+        .iter()
+        .all(|(role, text)| { *role != Role::Mode || text.is_empty() })
+    );
   }
 
   #[test]
@@ -1367,16 +1380,6 @@ mod presentation_tests {
     assert!(
       spans
         .iter()
-        .any(|(role, text)| *role == Role::Mode && text.contains('█'))
-    );
-    assert!(
-      spans
-        .iter()
-        .any(|(role, text)| *role == Role::Selected && text.contains('·'))
-    );
-    assert!(
-      spans
-        .iter()
         .any(|(role, text)| *role == Role::File && text.contains("a.pdf"))
     );
     Ok(())
@@ -1513,9 +1516,9 @@ mod review_tests {
       (Role::Selected, Role::Selected),
       (Role::Current, Role::Current),
     ] {
-      for detail in ["██··· 40%", "12 pages"] {
+      for detail in [reading_position(2, Some(5), 5), "12 pages".into()] {
         let mut scene = vpdf_model::scene::Scene::new();
-        scene_progress(&mut scene, detail, base);
+        scene_progress(&mut scene, &detail, base);
         let spans = crate::testing::spans(&scene);
         assert_eq!(spans.last().unwrap().0, tail, "{base:?}: {detail}");
       }
