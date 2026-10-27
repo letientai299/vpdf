@@ -27,10 +27,7 @@ impl App {
           self.reading_view().restore_history(location)?;
         }
       }
-      Action::Quit => {
-        self.quit = true;
-        self.ensure_cursor()?;
-      }
+      Action::Quit => self.quit = true,
       _ => {
         let mut reading = self.reading_parts();
         return reading.view.navigate(input, reading.search);
