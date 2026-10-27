@@ -179,13 +179,650 @@
           "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
         }
       }
+    },
+    "3a424424dba5fabf": {
+      "captured_at": "2026-10-27T08:19:39Z",
+      "commit": "fa8b7d772c6c47a17553c2407c608c9faae464ec",
+      "binary_version": "vpdf fa8b7d7 (2026-10-27)",
+      "build_profile": "debug",
+      "binary_sha256": "774d1af3e378b7dcbd307b3099e7182426b593662d0e0d888ca010d206983d32",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1280",
+        "initial_window_height": "1440",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "ee929ba45751615f": {
+      "captured_at": "2026-10-27T08:24:18Z",
+      "commit": "fa8b7d772c6c47a17553c2407c608c9faae464ec",
+      "binary_version": "vpdf fa8b7d7 (2026-10-27)",
+      "build_profile": "debug",
+      "binary_sha256": "774d1af3e378b7dcbd307b3099e7182426b593662d0e0d888ca010d206983d32",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1280",
+        "initial_window_height": "1440",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "767d4b068750d437": {
+      "captured_at": "2026-10-27T08:29:35Z",
+      "commit": "fa8b7d772c6c47a17553c2407c608c9faae464ec",
+      "binary_version": "vpdf fa8b7d7 (2026-10-27)",
+      "build_profile": "debug",
+      "binary_sha256": "774d1af3e378b7dcbd307b3099e7182426b593662d0e0d888ca010d206983d32",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1280",
+        "initial_window_height": "1440",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": {
+        "engine": "tesseract 5.5.3",
+        "language": "eng",
+        "input_has_embedded_text": false
+      },
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "scan": {
+          "file": "scan.pdf",
+          "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
+        }
+      }
+    },
+    "c7e615eea5ddda3c": {
+      "captured_at": "2026-10-27T08:30:54Z",
+      "commit": "fa8b7d772c6c47a17553c2407c608c9faae464ec",
+      "binary_version": "vpdf fa8b7d7 (2026-10-27)",
+      "build_profile": "debug",
+      "binary_sha256": "774d1af3e378b7dcbd307b3099e7182426b593662d0e0d888ca010d206983d32",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": {
+        "engine": "tesseract 5.5.3",
+        "language": "eng",
+        "input_has_embedded_text": false
+      },
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "scan": {
+          "file": "scan.pdf",
+          "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
+        }
+      }
+    },
+    "cc69d920606e8276": {
+      "captured_at": "2026-10-27T08:32:50Z",
+      "commit": "fa8b7d772c6c47a17553c2407c608c9faae464ec",
+      "binary_version": "vpdf fa8b7d7 (2026-10-27)",
+      "build_profile": "debug",
+      "binary_sha256": "774d1af3e378b7dcbd307b3099e7182426b593662d0e0d888ca010d206983d32",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "ScreenCaptureKit desktop-independent window; visible Kitty; no activation",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "42ce64a36788428d": {
+      "captured_at": "2026-10-27T08:33:23Z",
+      "commit": "fa8b7d772c6c47a17553c2407c608c9faae464ec",
+      "binary_version": "vpdf fa8b7d7 (2026-10-27)",
+      "build_profile": "debug",
+      "binary_sha256": "774d1af3e378b7dcbd307b3099e7182426b593662d0e0d888ca010d206983d32",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "ScreenCaptureKit desktop-independent window; visible Kitty; no activation",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "bd5e14ef24f4bb1b": {
+      "captured_at": "2026-10-27T08:33:59Z",
+      "commit": "fa8b7d772c6c47a17553c2407c608c9faae464ec",
+      "binary_version": "vpdf fa8b7d7 (2026-10-27)",
+      "build_profile": "debug",
+      "binary_sha256": "774d1af3e378b7dcbd307b3099e7182426b593662d0e0d888ca010d206983d32",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "ScreenCaptureKit desktop-independent window; visible Kitty; no activation",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "a5192470b6ca7e19": {
+      "captured_at": "2026-10-27T12:47:26Z",
+      "commit": "fa8b7d772c6c47a17553c2407c608c9faae464ec",
+      "binary_version": "vpdf fa8b7d7 (2026-10-27)",
+      "build_profile": "debug",
+      "binary_sha256": "62c8f1d2944146b3873d6efdd8ac5c3f19821172ea9d4c1c012322ca6bac3c2b",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1280",
+        "initial_window_height": "1440",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": {
+        "engine": "tesseract 5.5.3",
+        "language": "eng",
+        "input_has_embedded_text": false
+      },
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "scan": {
+          "file": "scan.pdf",
+          "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
+        }
+      }
+    },
+    "0e2dee354836de5d": {
+      "captured_at": "2026-10-27T12:49:24Z",
+      "commit": "fa8b7d772c6c47a17553c2407c608c9faae464ec",
+      "binary_version": "vpdf fa8b7d7 (2026-10-27)",
+      "build_profile": "debug",
+      "binary_sha256": "62c8f1d2944146b3873d6efdd8ac5c3f19821172ea9d4c1c012322ca6bac3c2b",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1280",
+        "initial_window_height": "1440",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": {
+        "engine": "tesseract 5.5.3",
+        "language": "eng",
+        "input_has_embedded_text": false
+      },
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "scan": {
+          "file": "scan.pdf",
+          "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
+        }
+      }
+    },
+    "10ad2f4ff95d6927": {
+      "captured_at": "2026-10-27T12:46:19Z",
+      "commit": "fa8b7d772c6c47a17553c2407c608c9faae464ec",
+      "binary_version": "vpdf fa8b7d7 (2026-10-27)",
+      "build_profile": "debug",
+      "binary_sha256": "62c8f1d2944146b3873d6efdd8ac5c3f19821172ea9d4c1c012322ca6bac3c2b",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1280",
+        "initial_window_height": "1440",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": {
+        "engine": "tesseract 5.5.3",
+        "language": "eng",
+        "input_has_embedded_text": false
+      },
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "scan": {
+          "file": "scan.pdf",
+          "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
+        }
+      }
+    },
+    "e18514ec31f4a411": {
+      "captured_at": "2026-10-27T12:48:32Z",
+      "commit": "fa8b7d772c6c47a17553c2407c608c9faae464ec",
+      "binary_version": "vpdf fa8b7d7 (2026-10-27)",
+      "build_profile": "debug",
+      "binary_sha256": "62c8f1d2944146b3873d6efdd8ac5c3f19821172ea9d4c1c012322ca6bac3c2b",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1280",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1280,
+        1000
+      ],
+      "capture": "ScreenCaptureKit desktop-independent window; visible Kitty; no activation",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
     }
   },
   "scenes": {
     "overview": {
       "image": "overview.jpg",
-      "sha256": "abdaf163c070dff899dba265bbc62e60137ba96c5afa18f9f7c6ec7e47e37557",
-      "bytes": 996225,
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "a0978dd6f736de1856d1e7492a89ac1b195f38d814a93b5503e1e7b382499393",
+      "bytes": 530146,
       "start_page": 2,
       "documents": [
         "paper",
@@ -253,10 +890,6 @@
         [
           "text",
           "=3+7ggv"
-        ],
-        [
-          "wait",
-          "Selection unavailable"
         ],
         [
           "text",
@@ -327,86 +960,87 @@
           "\u256d"
         ]
       ],
-      "capture": "61cabc806f2baf09",
-      "reencoded_from": {
-        "image": "overview.webp",
-        "sha256": "167fbef4e2795844bfc806fbdc4b7901efca186abd4c2ea553eef80218167ead"
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 62,
+        "fully_visible": true,
+        "window": {
+          "X": 3860,
+          "Height": 1000,
+          "Y": 50,
+          "Width": 1880
+        },
+        "focus_changed": false
       },
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+      "resolved_targets": [],
+      "ocr_mode": "explicit request",
+      "capture": "c7e615eea5ddda3c"
     },
     "help": {
       "image": "help.jpg",
-      "sha256": "5bfda3096c612a3eadfa913270c262ee3bac5b6c66f7cc620b5ab1f07a278d46",
-      "bytes": 957831,
-      "start_page": 2,
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "a02077c8eb920a85b57c80a570a0635db51ea11f415d41b61ab7256db71520d2",
+      "bytes": 522031,
+      "start_page": 1,
       "documents": [
+        "paper"
+      ],
+      "launch_documents": [
         "paper"
       ],
       "steps": [
         [
           "text",
-          "zc=3+2gg:info\r"
+          ":help navigation\r"
         ],
         [
           "wait",
-          "INFO"
+          "Help"
         ],
         [
           "text",
-          ":vsplit\r"
-        ],
-        [
-          "key",
-          "ctrl+w"
-        ],
-        [
-          "text",
-          "L"
-        ],
-        [
-          "text",
-          "zc=3+2gg:help\r"
+          "go"
         ],
         [
           "wait",
-          "HELP"
-        ],
-        [
-          "text",
-          "}zt"
-        ],
-        [
-          "text",
-          ":split\r"
-        ],
-        [
-          "key",
-          "ctrl+w"
-        ],
-        [
-          "text",
-          "x"
-        ],
-        [
-          "text",
-          "zc=3+2ggg"
-        ],
-        [
-          "wait",
-          "table of contents"
+          "CONTENTS"
         ]
       ],
-      "capture": "2208654b64ec0f1f",
-      "reencoded_from": {
-        "image": "help.webp",
-        "sha256": "3aff344a0ce2b24039098495b866602f9fad0ebe13d251c5795546287a9d2b42"
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 30,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "focus_changed": false
       },
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+      "ocr_mode": null,
+      "capture": "3a424424dba5fabf"
     },
     "search": {
       "image": "search.jpg",
-      "sha256": "507c61f083b1a972b9e6e5491a9d3834564fdf6a3fa4935920d0d794a1376018",
-      "bytes": 737833,
+      "sha256": "f4b7b5d19aca024f7856d2e1f689cc752ade90c6d2afd7243ca2d1e7a7095b08",
+      "bytes": 725480,
       "start_page": 2,
       "documents": [
         "paper"
@@ -434,20 +1068,32 @@
         "image": "search.webp",
         "sha256": "590bb980202b823444a26fd174af397018d74e99fe2922da604d667c5f1535a8"
       },
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+      "encoding": "JPEG; quality 91; 4:4:4; progressive; optimized Huffman coding",
+      "reencodings": [
+        {
+          "image": "search.jpg",
+          "sha256": "507c61f083b1a972b9e6e5491a9d3834564fdf6a3fa4935920d0d794a1376018",
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Publication replacement smoke test; no recapture"
+        }
+      ]
     },
     "preview": {
       "image": "preview.jpg",
-      "sha256": "e74a2a69a8a2704420a3975ff73f87b34ad636dbdfd8a8f978034bf9d07e52c6",
-      "bytes": 710208,
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "26b0f284ab394e791ae8c7c5faf0c0971bfbde4f438b63c3e916d366789a49fd",
+      "bytes": 441958,
       "start_page": 2,
       "documents": [
+        "paper"
+      ],
+      "launch_documents": [
         "paper"
       ],
       "steps": [
         [
           "text",
-          "zc=+/[13]\r"
+          "zc=/[13]\r"
         ],
         [
           "wait",
@@ -455,31 +1101,35 @@
         ],
         [
           "text",
-          ":nohlsearch\rgl"
-        ],
-        [
-          "wait",
-          "LINKS"
-        ],
-        [
-          "key",
-          "tab"
-        ],
-        [
-          "text",
-          "ilK"
+          ":nohlsearch\rilK"
         ],
         [
           "wait",
           "\u256d"
         ]
       ],
-      "capture": "2208654b64ec0f1f",
-      "reencoded_from": {
-        "image": "preview.webp",
-        "sha256": "f6f7c8d999fab58042338047b1b1a83f5343d27ff3979431b2dae5a69e5c330f"
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 28,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "focus_changed": false
       },
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+      "ocr_mode": null,
+      "capture": "ee929ba45751615f"
     },
     "figure": {
       "image": "figure.jpg",
@@ -788,24 +1438,20 @@
     },
     "ocr": {
       "image": "ocr.jpg",
-      "sha256": "875b8f7112c475e875f59eab75b57e6efd85fa2f3c5c074e5f15794146c2419b",
-      "bytes": 992883,
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "60f1eabb042102912101716c8326be38a6c798b1cd659a3d96fc7ec09de7904d",
+      "bytes": 536799,
       "start_page": 7,
       "documents": [
         "scan"
       ],
+      "launch_documents": [
+        "scan"
+      ],
       "steps": [
         [
-          "text",
-          "v"
-        ],
-        [
-          "wait",
-          "Selection unavailable"
-        ],
-        [
-          "text",
-          "=3+7gg"
+          "pause",
+          2
         ],
         [
           "text",
@@ -813,31 +1459,1877 @@
         ],
         [
           "text",
-          "7gg:ocr eng\r"
-        ],
-        [
-          "wait",
-          "OCR ready"
-        ],
-        [
-          "text",
           ":text\r"
         ],
         [
+          "wait",
+          "DEFINITIONS"
+        ],
+        [
           "text",
-          "i}vip"
+          "i0v3e"
         ],
         [
           "wait",
           "VISUAL"
         ]
       ],
-      "capture": "2208654b64ec0f1f",
-      "reencoded_from": {
-        "image": "ocr.webp",
-        "sha256": "041c167f9e36a4b0e4f03c8ec458a9635979fc216fac7f6cc3d1a55943b38d0c"
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 88,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1822
+          ]
+        ]
       },
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+      "resolved_targets": [],
+      "ocr_mode": "automatic; cache initially empty",
+      "capture": "0e2dee354836de5d"
+    },
+    "help-split": {
+      "image": "help-split.jpg",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "ce7788d93d70132403e62efa0d35b8e4923832be0200da7818de189520435633",
+      "bytes": 375208,
+      "start_page": 39,
+      "documents": [
+        "book"
+      ],
+      "launch_documents": [
+        "book"
+      ],
+      "steps": [
+        [
+          "text",
+          ":help! panes\r"
+        ],
+        [
+          "wait",
+          "Help"
+        ]
+      ],
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 123,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "focus_changed": false
+      },
+      "ocr_mode": null,
+      "capture": "ee929ba45751615f"
+    },
+    "definition": {
+      "image": "definition.jpg",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "01f03d1a2fe0e6835908613c2b1c232ac4c1107ffb98a30d36325e87aefddc4e",
+      "bytes": 258747,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "/Figure 1\r"
+        ],
+        [
+          "wait",
+          "matches"
+        ],
+        [
+          "text",
+          "n:nohlsearch\rilgd"
+        ],
+        [
+          "wait",
+          "Reference found"
+        ],
+        [
+          "pause",
+          1
+        ]
+      ],
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 55,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "focus_changed": false
+      },
+      "ocr_mode": null,
+      "capture": "ee929ba45751615f"
+    },
+    "continuous-text": {
+      "image": "continuous-text.jpg",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "ffaef3290d1a8c58d5e067fbf8524baece88c3e6f445b44c78b1638d0d9b718b",
+      "bytes": 605795,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          ":text\ri50j"
+        ],
+        [
+          "pause",
+          1
+        ]
+      ],
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 74,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "focus_changed": false
+      },
+      "ocr_mode": null,
+      "capture": "3a424424dba5fabf"
+    },
+    "annotations": {
+      "image": "annotations.jpg",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "8387358136350506adc85843866629ce5ebd6e5d8c28d7fb3978401c9b68b812",
+      "bytes": 276823,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          ":help sample\r"
+        ],
+        [
+          "wait",
+          "Help"
+        ],
+        [
+          "text",
+          "ga"
+        ],
+        [
+          "wait",
+          "ANNOTATIONS"
+        ],
+        [
+          "text",
+          "jK"
+        ],
+        [
+          "wait",
+          "Notes explain"
+        ],
+        [
+          "note",
+          "hover"
+        ],
+        [
+          "wait",
+          "Vpdf"
+        ]
+      ],
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 36,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "focus_changed": false
+      },
+      "resolved_targets": [
+        {
+          "target": "practice note",
+          "action": "hover",
+          "pixels": [
+            1223.5,
+            74.5
+          ]
+        }
+      ],
+      "ocr_mode": null,
+      "capture": "767d4b068750d437"
+    },
+    "marks": {
+      "image": "marks.jpg",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "0926ebf3aa69d6773f53ae38e6eee83238e84b09ce9ad0556702a87de22936e7",
+      "bytes": 300847,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "ma4ggmA2gg:marks\r"
+        ],
+        [
+          "wait",
+          "MARKS"
+        ]
+      ],
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 142,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "focus_changed": false
+      },
+      "ocr_mode": null,
+      "capture": "ee929ba45751615f"
+    },
+    "find-return": {
+      "kind": "video",
+      "image": "find-return.mp4",
+      "sha256": "f0ca662d0f409f7a73720bc9a70baa289d4a6fc3fbe2da628a8c1decce311366",
+      "bytes": 1811504,
+      "documents": [
+        "paper"
+      ],
+      "start_page": 2,
+      "dimensions": [
+        1880,
+        1112
+      ],
+      "duration": 24.266667,
+      "encoding": {
+        "codec": "H.264",
+        "encoder": "libx264",
+        "crf": 20,
+        "encoded_fps": 30,
+        "overlay": "FFmpeg overlay; timestamped ImageMagick key strip outside viewport",
+        "edits": "No cuts or time compression; idle frames retained; constant-rate encoding"
+      },
+      "recording": {
+        "actual_captured_fps": 29.270277441347787,
+        "duration": 24.251041000010446,
+        "first_frame_monotonic": 658549.895078791,
+        "frame_status_counts": {
+          "0": 26,
+          "1": 682
+        },
+        "frames": 708,
+        "requested_fps": 30,
+        "source_delivery_gap_slots": 0,
+        "source_drop_note": "Source drop counts are not exposed by ScreenCaptureKit.",
+        "source_dropped_frames": null,
+        "writer_dropped_frames": 0,
+        "input_timeline": [
+          {
+            "phase": "setup",
+            "kind": "text",
+            "value": "zc=",
+            "input_monotonic_ns": 658548279056166,
+            "completed_monotonic_ns": 658548303934166
+          },
+          {
+            "phase": "setup",
+            "kind": "pause",
+            "value": 1,
+            "input_monotonic_ns": 658548614016958,
+            "completed_monotonic_ns": 658549622418750
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "/multi-head",
+            "input_monotonic_ns": 658551904574791,
+            "completed_monotonic_ns": 658551938591166,
+            "label": "/multi-head",
+            "caption": "Search this document.",
+            "planned_seconds": 2
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "enter",
+            "input_monotonic_ns": 658553903591333,
+            "completed_monotonic_ns": 658553937733333,
+            "label": "Enter",
+            "caption": "Show matching passages.",
+            "planned_seconds": 4
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "matches",
+            "input_monotonic_ns": 658553937820166,
+            "completed_monotonic_ns": 658553966564333
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "n",
+            "input_monotonic_ns": 658556899827000,
+            "completed_monotonic_ns": 658556934849958,
+            "label": "n",
+            "caption": "Move to the next match.",
+            "planned_seconds": 7
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "gs",
+            "input_monotonic_ns": 658559904515375,
+            "completed_monotonic_ns": 658559940111458,
+            "label": "g then s",
+            "caption": "Inspect search results.",
+            "planned_seconds": 10
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "RESULTS",
+            "input_monotonic_ns": 658559940165166,
+            "completed_monotonic_ns": 658559972080833
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "enter",
+            "input_monotonic_ns": 658563903466375,
+            "completed_monotonic_ns": 658563936655083,
+            "label": "Enter",
+            "caption": "Follow the selected result.",
+            "planned_seconds": 14
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "ctrl+o",
+            "input_monotonic_ns": 658567897068041,
+            "completed_monotonic_ns": 658567929562250,
+            "label": "Ctrl-o",
+            "caption": "Return to the source passage.",
+            "planned_seconds": 18
+          }
+        ],
+        "first_frame_monotonic_ns": 658549895078791,
+        "window_checks": {
+          "launch": "open -g -n; hidden Kitty; live place helper",
+          "front": [
+            "net.kovidgoyal.kitty",
+            1822
+          ],
+          "checks": 106,
+          "fully_visible": true,
+          "window": {
+            "X": 3860,
+            "Height": 1000,
+            "Y": 50,
+            "Width": 1880
+          },
+          "focus_changed": false
+        },
+        "viewport": [
+          1880,
+          1000
+        ],
+        "source_sha256": "5349b82cf943882e072c4254c3bc4c58c4855cfa862aed6a3c999bbbf2ba4064",
+        "source_bytes": 15793858,
+        "source_media": {
+          "dimensions": [
+            1880,
+            1000
+          ],
+          "codec": "h264",
+          "duration": 24.251667,
+          "frame_rate": "141800/4857",
+          "pixel_format": "yuv420p"
+        }
+      },
+      "overlay_segments": [
+        {
+          "start": 0.0,
+          "label": "",
+          "caption": "Find and return",
+          "end": 2.009496
+        },
+        {
+          "start": 2.009496,
+          "label": "/multi-head",
+          "caption": "Search this document.",
+          "end": 4.008512542
+        },
+        {
+          "start": 4.008512542,
+          "label": "Enter",
+          "caption": "Show matching passages.",
+          "end": 7.004748209
+        },
+        {
+          "start": 7.004748209,
+          "label": "n",
+          "caption": "Move to the next match.",
+          "end": 10.009436584
+        },
+        {
+          "start": 10.009436584,
+          "label": "g then s",
+          "caption": "Inspect search results.",
+          "end": 14.008387584
+        },
+        {
+          "start": 14.008387584,
+          "label": "Enter",
+          "caption": "Follow the selected result.",
+          "end": 18.00198925
+        },
+        {
+          "start": 18.00198925,
+          "label": "Ctrl-o",
+          "caption": "Return to the source passage.",
+          "end": 24.251667
+        }
+      ],
+      "overlay_font_sha256": "dc256e0b39c2a6fec947129d421fef41b8b429f58f9b6e5d1b148c87f775c1f6",
+      "frame_rate": "30/1",
+      "pixel_format": "yuv420p",
+      "capture": "cc69d920606e8276"
+    },
+    "find-return-poster": {
+      "kind": "poster",
+      "image": "find-return-poster.jpg",
+      "sha256": "b1d57d9c5c98dd1a61e8bada131883476f34b8e2e5918836850f6393b3fa44c9",
+      "bytes": 414481,
+      "documents": [
+        "paper"
+      ],
+      "dimensions": [
+        1880,
+        1112
+      ],
+      "video": "find-return",
+      "frame_seconds": 12,
+      "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
+      "video_sha256": "f0ca662d0f409f7a73720bc9a70baa289d4a6fc3fbe2da628a8c1decce311366",
+      "capture": "cc69d920606e8276"
+    },
+    "inspect-reference": {
+      "kind": "video",
+      "image": "inspect-reference.mp4",
+      "sha256": "7e938d18fa0bae27d59390bf663f09268f5dbfa87f384193744b10fcf52e6ce0",
+      "bytes": 1413325,
+      "documents": [
+        "paper"
+      ],
+      "start_page": 2,
+      "dimensions": [
+        1880,
+        1112
+      ],
+      "duration": 27.166667,
+      "encoding": {
+        "codec": "H.264",
+        "encoder": "libx264",
+        "crf": 20,
+        "encoded_fps": 30,
+        "overlay": "FFmpeg overlay; timestamped ImageMagick key strip outside viewport",
+        "edits": "No cuts or time compression; idle frames retained; constant-rate encoding"
+      },
+      "recording": {
+        "actual_captured_fps": 29.32389746877466,
+        "duration": 27.153785458067432,
+        "first_frame_monotonic": 658583.37082925,
+        "frame_status_counts": {
+          "0": 23,
+          "1": 771
+        },
+        "frames": 794,
+        "requested_fps": 30,
+        "source_delivery_gap_slots": 0,
+        "source_drop_note": "Source drop counts are not exposed by ScreenCaptureKit.",
+        "source_dropped_frames": null,
+        "writer_dropped_frames": 0,
+        "input_timeline": [
+          {
+            "phase": "setup",
+            "kind": "text",
+            "value": "zc=/[13]\r",
+            "input_monotonic_ns": 658581080135208,
+            "completed_monotonic_ns": 658581104849666
+          },
+          {
+            "phase": "setup",
+            "kind": "wait",
+            "value": "matches",
+            "input_monotonic_ns": 658581414939250,
+            "completed_monotonic_ns": 658581443525500
+          },
+          {
+            "phase": "setup",
+            "kind": "text",
+            "value": ":nohlsearch\r",
+            "input_monotonic_ns": 658581750549875,
+            "completed_monotonic_ns": 658581781782000
+          },
+          {
+            "phase": "setup",
+            "kind": "pause",
+            "value": 1,
+            "input_monotonic_ns": 658582089516500,
+            "completed_monotonic_ns": 658583091546916
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "i",
+            "input_monotonic_ns": 658585380634916,
+            "completed_monotonic_ns": 658585410885750,
+            "label": "i",
+            "caption": "Place the glyph cursor.",
+            "planned_seconds": 2
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "l",
+            "input_monotonic_ns": 658587380583791,
+            "completed_monotonic_ns": 658587413996500,
+            "label": "l",
+            "caption": "Move onto the citation.",
+            "planned_seconds": 4
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "K",
+            "input_monotonic_ns": 658589380540291,
+            "completed_monotonic_ns": 658589414872875,
+            "label": "K",
+            "caption": "Preview the reference.",
+            "planned_seconds": 6
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "\u256d",
+            "input_monotonic_ns": 658589414908291,
+            "completed_monotonic_ns": 658589678371458
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "j",
+            "input_monotonic_ns": 658593370940375,
+            "completed_monotonic_ns": 658593404798250,
+            "label": "j",
+            "caption": "Scroll the preview.",
+            "planned_seconds": 10
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "k",
+            "input_monotonic_ns": 658595380094291,
+            "completed_monotonic_ns": 658595409030875,
+            "label": "k",
+            "caption": "Scroll back.",
+            "planned_seconds": 12
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "escape",
+            "input_monotonic_ns": 658598376385833,
+            "completed_monotonic_ns": 658598404323625,
+            "label": "Escape",
+            "caption": "Close the preview.",
+            "planned_seconds": 15
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "gd",
+            "input_monotonic_ns": 658601378963833,
+            "completed_monotonic_ns": 658601412681000,
+            "label": "g then d",
+            "caption": "Resolve the reference.",
+            "planned_seconds": 18
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "ctrl+o",
+            "input_monotonic_ns": 658605377207625,
+            "completed_monotonic_ns": 658605409716750,
+            "label": "Ctrl-o",
+            "caption": "Return to the citation.",
+            "planned_seconds": 22
+          }
+        ],
+        "first_frame_monotonic_ns": 658583370829250,
+        "window_checks": {
+          "launch": "open -g -n; hidden Kitty; live place helper",
+          "front": [
+            "net.kovidgoyal.kitty",
+            1822
+          ],
+          "checks": 120,
+          "fully_visible": true,
+          "window": {
+            "X": 3860,
+            "Height": 1000,
+            "Y": 50,
+            "Width": 1880
+          },
+          "focus_changed": false
+        },
+        "viewport": [
+          1880,
+          1000
+        ],
+        "source_sha256": "e4905cf6c7f503a7e87edc194c99ef3480a1bb9eaf9a1074843f47a2161c28cb",
+        "source_bytes": 12653027,
+        "source_media": {
+          "dimensions": [
+            1880,
+            1000
+          ],
+          "codec": "h264",
+          "duration": 27.153333,
+          "frame_rate": "59625/2039",
+          "pixel_format": "yuv420p"
+        }
+      },
+      "overlay_segments": [
+        {
+          "start": 0.0,
+          "label": "",
+          "caption": "Inspect a reference",
+          "end": 2.009805666
+        },
+        {
+          "start": 2.009805666,
+          "label": "i",
+          "caption": "Place the glyph cursor.",
+          "end": 4.009754541
+        },
+        {
+          "start": 4.009754541,
+          "label": "l",
+          "caption": "Move onto the citation.",
+          "end": 6.009711041
+        },
+        {
+          "start": 6.009711041,
+          "label": "K",
+          "caption": "Preview the reference.",
+          "end": 10.000111125
+        },
+        {
+          "start": 10.000111125,
+          "label": "j",
+          "caption": "Scroll the preview.",
+          "end": 12.009265041
+        },
+        {
+          "start": 12.009265041,
+          "label": "k",
+          "caption": "Scroll back.",
+          "end": 15.005556583
+        },
+        {
+          "start": 15.005556583,
+          "label": "Escape",
+          "caption": "Close the preview.",
+          "end": 18.008134583
+        },
+        {
+          "start": 18.008134583,
+          "label": "g then d",
+          "caption": "Resolve the reference.",
+          "end": 22.006378375
+        },
+        {
+          "start": 22.006378375,
+          "label": "Ctrl-o",
+          "caption": "Return to the citation.",
+          "end": 27.153333
+        }
+      ],
+      "overlay_font_sha256": "dc256e0b39c2a6fec947129d421fef41b8b429f58f9b6e5d1b148c87f775c1f6",
+      "frame_rate": "30/1",
+      "pixel_format": "yuv420p",
+      "capture": "42ce64a36788428d"
+    },
+    "inspect-reference-poster": {
+      "kind": "poster",
+      "image": "inspect-reference-poster.jpg",
+      "sha256": "edc0f1d42d6f393644eb2adea21cf32da4504b9faee1f2275555c33da2c500bb",
+      "bytes": 313988,
+      "documents": [
+        "paper"
+      ],
+      "dimensions": [
+        1880,
+        1112
+      ],
+      "video": "inspect-reference",
+      "frame_seconds": 8,
+      "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
+      "video_sha256": "7e938d18fa0bae27d59390bf663f09268f5dbfa87f384193744b10fcf52e6ce0",
+      "capture": "42ce64a36788428d"
+    },
+    "compare-passages": {
+      "kind": "video",
+      "image": "compare-passages.mp4",
+      "sha256": "95d6f160e0f581afe7903963563af9e2e7444a864c297df04939b20c88add0aa",
+      "bytes": 2263060,
+      "documents": [
+        "paper"
+      ],
+      "start_page": 2,
+      "dimensions": [
+        1880,
+        1112
+      ],
+      "duration": 25.866667,
+      "encoding": {
+        "codec": "H.264",
+        "encoder": "libx264",
+        "crf": 20,
+        "encoded_fps": 30,
+        "overlay": "FFmpeg overlay; timestamped ImageMagick key strip outside viewport",
+        "edits": "No cuts or time compression; idle frames retained; constant-rate encoding"
+      },
+      "recording": {
+        "actual_captured_fps": 29.341641438393605,
+        "duration": 25.870304792071693,
+        "first_frame_monotonic": 658618.790086458,
+        "frame_status_counts": {
+          "0": 29,
+          "1": 728
+        },
+        "frames": 757,
+        "requested_fps": 30,
+        "source_delivery_gap_slots": 0,
+        "source_drop_note": "Source drop counts are not exposed by ScreenCaptureKit.",
+        "source_dropped_frames": null,
+        "writer_dropped_frames": 0,
+        "input_timeline": [
+          {
+            "phase": "setup",
+            "kind": "text",
+            "value": "zc=",
+            "input_monotonic_ns": 658617182774083,
+            "completed_monotonic_ns": 658617206021000
+          },
+          {
+            "phase": "setup",
+            "kind": "pause",
+            "value": 1,
+            "input_monotonic_ns": 658617512078083,
+            "completed_monotonic_ns": 658618513689208
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "ctrl+w",
+            "input_monotonic_ns": 658620800188875,
+            "completed_monotonic_ns": 658620833995458,
+            "label": "Ctrl-w",
+            "caption": "Begin a pane command.",
+            "planned_seconds": 2
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "v",
+            "input_monotonic_ns": 658621800070708,
+            "completed_monotonic_ns": 658621832227083,
+            "label": "v",
+            "caption": "Duplicate this passage.",
+            "planned_seconds": 3
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "3gg",
+            "input_monotonic_ns": 658624797260083,
+            "completed_monotonic_ns": 658624824856041,
+            "label": "3 g g",
+            "caption": "Move the second pane.",
+            "planned_seconds": 6
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "ctrl+w",
+            "input_monotonic_ns": 658626796027166,
+            "completed_monotonic_ns": 658626829262875,
+            "label": "Ctrl-w",
+            "caption": "Choose another pane.",
+            "planned_seconds": 8
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "p",
+            "input_monotonic_ns": 658627800081458,
+            "completed_monotonic_ns": 658627835064083,
+            "label": "p",
+            "caption": "Return focus to the first pane.",
+            "planned_seconds": 9
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "8",
+            "input_monotonic_ns": 658630791855708,
+            "completed_monotonic_ns": 658630824272583,
+            "label": "8",
+            "caption": "Set a resize count.",
+            "planned_seconds": 12
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "ctrl+w",
+            "input_monotonic_ns": 658631292320750,
+            "completed_monotonic_ns": 658631325882000,
+            "label": "Ctrl-w",
+            "caption": "Begin a pane command.",
+            "planned_seconds": 12.5
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": ">",
+            "input_monotonic_ns": 658631792155541,
+            "completed_monotonic_ns": 658631817238750,
+            "label": ">",
+            "caption": "Widen the focused pane.",
+            "planned_seconds": 13
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "ctrl+w",
+            "input_monotonic_ns": 658634794664375,
+            "completed_monotonic_ns": 658634829254833,
+            "label": "Ctrl-w",
+            "caption": "Begin a pane command.",
+            "planned_seconds": 16
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "=",
+            "input_monotonic_ns": 658635792183625,
+            "completed_monotonic_ns": 658635826338916,
+            "label": "=",
+            "caption": "Equalize the panes.",
+            "planned_seconds": 17
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "ctrl+w",
+            "input_monotonic_ns": 658638792449000,
+            "completed_monotonic_ns": 658638824995166,
+            "label": "Ctrl-w",
+            "caption": "Begin a pane command.",
+            "planned_seconds": 20
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "c",
+            "input_monotonic_ns": 658639794287791,
+            "completed_monotonic_ns": 658639825672041,
+            "label": "c",
+            "caption": "Close the focused pane.",
+            "planned_seconds": 21
+          }
+        ],
+        "first_frame_monotonic_ns": 658618790086458,
+        "window_checks": {
+          "launch": "open -g -n; hidden Kitty; live place helper",
+          "front": [
+            "net.kovidgoyal.kitty",
+            1822
+          ],
+          "checks": 113,
+          "fully_visible": true,
+          "window": {
+            "X": 3860,
+            "Height": 1000,
+            "Y": 50,
+            "Width": 1880
+          },
+          "focus_changed": false
+        },
+        "viewport": [
+          1880,
+          1000
+        ],
+        "source_sha256": "aec779760c54532ace487aeb97b302f4cd747271469d199ae1ade8b57e92012a",
+        "source_bytes": 16852682,
+        "source_media": {
+          "dimensions": [
+            1880,
+            1000
+          ],
+          "codec": "h264",
+          "duration": 25.87,
+          "frame_rate": "227400/7771",
+          "pixel_format": "yuv420p"
+        }
+      },
+      "overlay_segments": [
+        {
+          "start": 0.0,
+          "label": "",
+          "caption": "Compare passages",
+          "end": 2.010102417
+        },
+        {
+          "start": 2.010102417,
+          "label": "Ctrl-w",
+          "caption": "Begin a pane command.",
+          "end": 3.00998425
+        },
+        {
+          "start": 3.00998425,
+          "label": "v",
+          "caption": "Duplicate this passage.",
+          "end": 6.007173625
+        },
+        {
+          "start": 6.007173625,
+          "label": "3 g g",
+          "caption": "Move the second pane.",
+          "end": 8.005940708
+        },
+        {
+          "start": 8.005940708,
+          "label": "Ctrl-w",
+          "caption": "Choose another pane.",
+          "end": 9.009995
+        },
+        {
+          "start": 9.009995,
+          "label": "p",
+          "caption": "Return focus to the first pane.",
+          "end": 12.00176925
+        },
+        {
+          "start": 12.00176925,
+          "label": "8",
+          "caption": "Set a resize count.",
+          "end": 12.502234292
+        },
+        {
+          "start": 12.502234292,
+          "label": "Ctrl-w",
+          "caption": "Begin a pane command.",
+          "end": 13.002069083
+        },
+        {
+          "start": 13.002069083,
+          "label": ">",
+          "caption": "Widen the focused pane.",
+          "end": 16.004577917
+        },
+        {
+          "start": 16.004577917,
+          "label": "Ctrl-w",
+          "caption": "Begin a pane command.",
+          "end": 17.002097167
+        },
+        {
+          "start": 17.002097167,
+          "label": "=",
+          "caption": "Equalize the panes.",
+          "end": 20.002362542
+        },
+        {
+          "start": 20.002362542,
+          "label": "Ctrl-w",
+          "caption": "Begin a pane command.",
+          "end": 21.004201333
+        },
+        {
+          "start": 21.004201333,
+          "label": "c",
+          "caption": "Close the focused pane.",
+          "end": 25.87
+        }
+      ],
+      "overlay_font_sha256": "dc256e0b39c2a6fec947129d421fef41b8b429f58f9b6e5d1b148c87f775c1f6",
+      "frame_rate": "30/1",
+      "pixel_format": "yuv420p",
+      "capture": "bd5e14ef24f4bb1b"
+    },
+    "compare-passages-poster": {
+      "kind": "poster",
+      "image": "compare-passages-poster.jpg",
+      "sha256": "ca281b9be8f6903a8f52304edc0be00725e3302fb33c20e4283ac7335ec2ddae",
+      "bytes": 444191,
+      "documents": [
+        "paper"
+      ],
+      "dimensions": [
+        1880,
+        1112
+      ],
+      "video": "compare-passages",
+      "frame_seconds": 14,
+      "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
+      "video_sha256": "95d6f160e0f581afe7903963563af9e2e7444a864c297df04939b20c88add0aa",
+      "capture": "bd5e14ef24f4bb1b"
+    },
+    "annotation-actions": {
+      "image": "annotation-actions.jpg",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "9710dcc2ff25d34f75ea8698e4169a454dc82d83fd56f2d2ad236c6d61c0a1db",
+      "bytes": 286542,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          ":help sample\r"
+        ],
+        [
+          "wait",
+          "Help"
+        ],
+        [
+          "text",
+          "ga"
+        ],
+        [
+          "wait",
+          "ANNOTATIONS"
+        ],
+        [
+          "text",
+          "jK"
+        ],
+        [
+          "wait",
+          "Notes explain"
+        ],
+        [
+          "note",
+          "hover"
+        ],
+        [
+          "wait",
+          "Vpdf"
+        ],
+        [
+          "key",
+          "escape"
+        ],
+        [
+          "note",
+          "context"
+        ],
+        [
+          "wait",
+          "Copy comment"
+        ]
+      ],
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 43,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1822
+          ]
+        ]
+      },
+      "resolved_targets": [
+        {
+          "target": "practice note",
+          "action": "hover",
+          "pixels": [
+            1223.5,
+            74.5
+          ]
+        },
+        {
+          "target": "practice note",
+          "action": "context",
+          "pixels": [
+            1223.5,
+            74.5
+          ]
+        }
+      ],
+      "ocr_mode": null,
+      "capture": "a5192470b6ca7e19"
+    },
+    "figures": {
+      "image": "figures.jpg",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "a3e9c8059b2d2228252be12d531d4ffecc27d5c5ff3715aae384acfeedc530ce",
+      "bytes": 318458,
+      "start_page": 3,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "]fzFgfj"
+        ],
+        [
+          "wait",
+          "FIGURES"
+        ]
+      ],
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 28,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1822
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "0e2dee354836de5d"
+    },
+    "zoom": {
+      "image": "zoom.jpg",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "22ef474f205366a2c80b35943a291e8ddcea8ab1b5a1e747d7b4ecd931c763ec",
+      "bytes": 564855,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          ":help sample\r"
+        ],
+        [
+          "wait",
+          "Help"
+        ],
+        [
+          "text",
+          ":vsplit\r"
+        ],
+        [
+          "text",
+          "zc=+zr"
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "p"
+        ],
+        [
+          "text",
+          ":text\r"
+        ]
+      ],
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 56,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1822
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "0e2dee354836de5d"
+    },
+    "theme-dark": {
+      "image": "theme-dark.jpg",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "c70f461e12853144f9f539cc5240792570f3063d6f431fbfdef366ad4c63c736",
+      "bytes": 461479,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          ":help sample\r"
+        ],
+        [
+          "wait",
+          "Help"
+        ],
+        [
+          "text",
+          ":theme dark\r"
+        ],
+        [
+          "text",
+          "go"
+        ],
+        [
+          "wait",
+          "CONTENTS"
+        ]
+      ],
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 77,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1822
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "10ad2f4ff95d6927"
+    },
+    "theme-light": {
+      "image": "theme-light.jpg",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "36d87b9ea165a416efc57e93e1b9b6982aa2188efcc24153ff3d70fb05e46e9f",
+      "bytes": 433009,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          ":help sample\r"
+        ],
+        [
+          "wait",
+          "Help"
+        ],
+        [
+          "text",
+          ":theme light\r"
+        ],
+        [
+          "pause",
+          2
+        ],
+        [
+          "text",
+          "go"
+        ],
+        [
+          "wait",
+          "CONTENTS"
+        ]
+      ],
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 77,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1822
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "a5192470b6ca7e19"
+    },
+    "theme-nord": {
+      "image": "theme-nord.jpg",
+      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "e557adac625389c7b4e545547e95da77cd73265394297c49dd39de2517509bd0",
+      "bytes": 444111,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          ":help sample\r"
+        ],
+        [
+          "wait",
+          "Help"
+        ],
+        [
+          "text",
+          ":theme nord\r"
+        ],
+        [
+          "pause",
+          2
+        ],
+        [
+          "text",
+          "go"
+        ],
+        [
+          "wait",
+          "CONTENTS"
+        ]
+      ],
+      "dimensions": [
+        1280,
+        1440
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1822
+        ],
+        "checks": 111,
+        "fully_visible": true,
+        "window": {
+          "X": 10,
+          "Height": 1440,
+          "Y": 60,
+          "Width": 1280
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1822
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "a5192470b6ca7e19"
+    },
+    "select-capture": {
+      "kind": "video",
+      "image": "select-capture.mp4",
+      "sha256": "ae87905e04feee1e35600953e0a553ae0fbed624f2a24ace1e76bbf31874d4e7",
+      "bytes": 644455,
+      "documents": [
+        "paper"
+      ],
+      "start_page": 3,
+      "dimensions": [
+        1280,
+        1112
+      ],
+      "duration": 26.466667,
+      "frame_rate": "30/1",
+      "pixel_format": "yuv420p",
+      "encoding": {
+        "codec": "H.264",
+        "encoder": "libx264",
+        "crf": 20,
+        "encoded_fps": 30,
+        "overlay": "FFmpeg overlay; timestamped ImageMagick key strip outside viewport",
+        "edits": "No cuts or time compression; idle frames retained; constant-rate encoding"
+      },
+      "recording": {
+        "actual_captured_fps": 28.78672092461098,
+        "duration": 26.47137704200577,
+        "first_frame_monotonic": 664209.062380041,
+        "frame_status_counts": {
+          "0": 24,
+          "1": 736
+        },
+        "frames": 760,
+        "requested_fps": 30,
+        "source_delivery_gap_slots": 14,
+        "source_drop_note": "Source drop counts are not exposed by ScreenCaptureKit.",
+        "source_dropped_frames": null,
+        "writer_dropped_frames": 0,
+        "input_timeline": [
+          {
+            "phase": "setup",
+            "kind": "text",
+            "value": "/Encoder\r",
+            "input_monotonic_ns": 664206636340958,
+            "completed_monotonic_ns": 664206653312208
+          },
+          {
+            "phase": "setup",
+            "kind": "wait",
+            "value": "matches",
+            "input_monotonic_ns": 664206957031666,
+            "completed_monotonic_ns": 664206989007958
+          },
+          {
+            "phase": "setup",
+            "kind": "text",
+            "value": ":nohlsearch\r",
+            "input_monotonic_ns": 664207294126541,
+            "completed_monotonic_ns": 664207324786750
+          },
+          {
+            "phase": "setup",
+            "kind": "pause",
+            "value": 1,
+            "input_monotonic_ns": 664207624988000,
+            "completed_monotonic_ns": 664208627510791
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "i",
+            "input_monotonic_ns": 664211063324208,
+            "completed_monotonic_ns": 664211091830833,
+            "label": "i",
+            "caption": "Enter Cursor mode.",
+            "planned_seconds": 2
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "v",
+            "input_monotonic_ns": 664213065662333,
+            "completed_monotonic_ns": 664213097978291,
+            "label": "v",
+            "caption": "Start a selection.",
+            "planned_seconds": 4
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "VISUAL",
+            "input_monotonic_ns": 664213098010416,
+            "completed_monotonic_ns": 664213124367708
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "2e",
+            "input_monotonic_ns": 664215066958708,
+            "completed_monotonic_ns": 664215096601583,
+            "label": "2 e",
+            "caption": "Extend the selection.",
+            "planned_seconds": 6
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "R",
+            "input_monotonic_ns": 664217064064500,
+            "completed_monotonic_ns": 664217081694833,
+            "label": "R",
+            "caption": "Start a capture rectangle.",
+            "planned_seconds": 8
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "REGION",
+            "input_monotonic_ns": 664217081716416,
+            "completed_monotonic_ns": 664217112544791
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "8l",
+            "input_monotonic_ns": 664220066120125,
+            "completed_monotonic_ns": 664220098628916,
+            "label": "8 l",
+            "caption": "Widen the rectangle.",
+            "planned_seconds": 11
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "4j",
+            "input_monotonic_ns": 664222064652958,
+            "completed_monotonic_ns": 664222092414166,
+            "label": "4 j",
+            "caption": "Extend its height.",
+            "planned_seconds": 13
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "enter",
+            "input_monotonic_ns": 664225063687875,
+            "completed_monotonic_ns": 664225106152958,
+            "label": "Enter",
+            "caption": "Confirm the rectangle.",
+            "planned_seconds": 16
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "Copy text",
+            "input_monotonic_ns": 664225106183833,
+            "completed_monotonic_ns": 664225128893208
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "l",
+            "input_monotonic_ns": 664227072442708,
+            "completed_monotonic_ns": 664227105738833,
+            "label": "l",
+            "caption": "Choose Copy text.",
+            "planned_seconds": 18
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "enter",
+            "input_monotonic_ns": 664229062747791,
+            "completed_monotonic_ns": 664229084975208,
+            "label": "Enter",
+            "caption": "Copy the captured text.",
+            "planned_seconds": 20
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "Text copied",
+            "input_monotonic_ns": 664229085002583,
+            "completed_monotonic_ns": 664229105000958
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "escape",
+            "input_monotonic_ns": 664233069474500,
+            "completed_monotonic_ns": 664233101924166,
+            "label": "Escape",
+            "caption": "Close capture actions.",
+            "planned_seconds": 24
+          }
+        ],
+        "first_frame_monotonic_ns": 664209062380041,
+        "window_checks": {
+          "launch": "open -g -n; hidden Kitty; live place helper",
+          "front": [
+            "net.kovidgoyal.kitty",
+            1822
+          ],
+          "checks": 122,
+          "fully_visible": true,
+          "window": {
+            "X": 10,
+            "Height": 1000,
+            "Y": 60,
+            "Width": 1280
+          },
+          "task_received_focus": false,
+          "foreground_states": [
+            [
+              "net.kovidgoyal.kitty",
+              1822
+            ]
+          ]
+        },
+        "viewport": [
+          1280,
+          1000
+        ],
+        "source_sha256": "c956b97c8af7e758607c8dd6ba7d6dab4a19578bcef7c67adb5dc91f7e3ba1f4",
+        "source_bytes": 8467828,
+        "source_media": {
+          "dimensions": [
+            1280,
+            1000
+          ],
+          "codec": "h264",
+          "duration": 26.471667,
+          "frame_rate": "152200/5301",
+          "pixel_format": "yuv420p"
+        }
+      },
+      "overlay_segments": [
+        {
+          "start": 0.0,
+          "label": "",
+          "caption": "Select and capture",
+          "end": 2.000944167
+        },
+        {
+          "start": 2.000944167,
+          "label": "i",
+          "caption": "Enter Cursor mode.",
+          "end": 4.003282292
+        },
+        {
+          "start": 4.003282292,
+          "label": "v",
+          "caption": "Start a selection.",
+          "end": 6.004578667
+        },
+        {
+          "start": 6.004578667,
+          "label": "2 e",
+          "caption": "Extend the selection.",
+          "end": 8.001684459
+        },
+        {
+          "start": 8.001684459,
+          "label": "R",
+          "caption": "Start a capture rectangle.",
+          "end": 11.003740084
+        },
+        {
+          "start": 11.003740084,
+          "label": "8 l",
+          "caption": "Widen the rectangle.",
+          "end": 13.002272917
+        },
+        {
+          "start": 13.002272917,
+          "label": "4 j",
+          "caption": "Extend its height.",
+          "end": 16.001307834
+        },
+        {
+          "start": 16.001307834,
+          "label": "Enter",
+          "caption": "Confirm the rectangle.",
+          "end": 18.010062667
+        },
+        {
+          "start": 18.010062667,
+          "label": "l",
+          "caption": "Choose Copy text.",
+          "end": 20.00036775
+        },
+        {
+          "start": 20.00036775,
+          "label": "Enter",
+          "caption": "Copy the captured text.",
+          "end": 24.007094459
+        },
+        {
+          "start": 24.007094459,
+          "label": "Escape",
+          "caption": "Close capture actions.",
+          "end": 26.471667
+        }
+      ],
+      "overlay_font_sha256": "dc256e0b39c2a6fec947129d421fef41b8b429f58f9b6e5d1b148c87f775c1f6",
+      "capture": "e18514ec31f4a411"
+    },
+    "select-capture-poster": {
+      "kind": "poster",
+      "image": "select-capture-poster.jpg",
+      "sha256": "d2e07b22aab6e9cd53ec6f0175eebaaf02a26835a91162f3295c6259bd22855f",
+      "bytes": 222157,
+      "documents": [
+        "paper"
+      ],
+      "dimensions": [
+        1280,
+        1112
+      ],
+      "video": "select-capture",
+      "video_sha256": "ae87905e04feee1e35600953e0a553ae0fbed624f2a24ace1e76bbf31874d4e7",
+      "frame_seconds": 19.5,
+      "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
+      "capture": "e18514ec31f4a411"
     }
   }
 }

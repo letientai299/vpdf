@@ -129,6 +129,59 @@ class DemoTests(unittest.TestCase):
         )
         self.assertNotIn("figure", manifest["scenes"])
 
+    def test_separate_manifest_retains_history(self):
+        output = self.root / "encoded"
+        output.mkdir()
+        report = self.root / "capture.json"
+        image = self.root / "new.jpg"
+        image.write_bytes(b"new")
+        manifest = {"captures": {"old": {"commit": "old"}}, "scenes": {}}
+        scene = {"image": "new.jpg", "sha256": demo.digest(image)}
+        updated = demo.publish_scene(
+            output,
+            manifest,
+            {"commit": "new"},
+            "search",
+            scene,
+            image,
+            report,
+        )
+        self.assertIn("old", updated["captures"])
+        self.assertEqual(json.loads(report.read_text()), updated)
+        self.assertTrue((output / "new.jpg").exists())
+        self.assertFalse((output / "capture.json").exists())
+
+    def test_output_guard(self):
+        with self.assertRaisesRegex(RuntimeError, "tracked paths"):
+            demo.verify_output(demo.ROOT / "docs/assets")
+        demo.verify_output(demo.ROOT / "tmp/demo")
+        demo.verify_output(self.root)
+
+    def test_other_repository_outputs_rejected(self):
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        (self.root / ".gitignore").write_text("cache/\n")
+        assets = self.root / "docs/assets"
+        assets.mkdir(parents=True)
+        alias = self.root / "asset-link"
+        alias.symlink_to(assets)
+        for path in (assets, assets / "new/nested", alias):
+            with (
+                self.subTest(path=path),
+                self.assertRaisesRegex(RuntimeError, "tracked paths"),
+            ):
+                demo.verify_output(path)
+        demo.verify_output(self.root / "cache/new")
+        cache = self.root / "cache"
+        cache.mkdir()
+        tracked = cache / "tracked.jpg"
+        tracked.write_bytes(b"preserved")
+        subprocess.run(
+            ["git", "-C", str(self.root), "add", "-f", str(tracked)],
+            check=True,
+        )
+        with self.assertRaisesRegex(RuntimeError, "tracked paths"):
+            demo.verify_output(cache)
+
     def test_manifest_failure(self):
         original_replace = Path.replace
 

@@ -48,8 +48,11 @@ design rationale, and reproduction procedures here. Categorize pages by purpose
 in this index; keep related instructions and facts together. Link to
 implementation files for current limits, task definitions, and protocol details.
 
-Keep all image and future video demonstrations in [Demos][demo], with media in
-`assets/`. Reuse individual images in other pages when useful.
+Keep demonstrations in [Demos][demo], with media hosted on the dedicated closed
+GitHub issue. Capture identities, attribution, and publication records stay in
+`assets/`; app icons and source artwork stay there too. See
+[Demo media publication][demo-media] for review, regeneration, and recovery.
+Reuse individual published images in other pages when useful.
 
 Keep changing measurements in versioned evidence. Historical demonstrations must
 identify their build and capture conditions; they do not describe every current
@@ -83,3 +86,4 @@ sources][manual] under `users/`. Avoid copying inventories into Markdown.
 [configuration]: users/config.md
 [book]: ../scripts/help/book.json
 [native]: dev/native.md
+[demo-media]: dev/demo-media.md

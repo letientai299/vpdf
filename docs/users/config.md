@@ -483,6 +483,8 @@ and previous working values on reload. Warnings name the file and affected
 settings; syntax errors include parser locations.
 Dismiss them using the normal status-message controls.
 
+See [theme examples][theme-demo].
+
 [xdg]: https://specifications.freedesktop.org/basedir/latest/
 [keys]: keys.md
 [helpers]: install.md#optional-helpers
@@ -494,3 +496,4 @@ Dismiss them using the normal status-message controls.
 
 [defaults]: #built-in-defaults
 [theme-files]: ../../etc/themes/
+[theme-demo]: ../demos.md#themes

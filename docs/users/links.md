@@ -27,12 +27,11 @@ link copies its address.
 
 ## Citations and definitions
 
-`gd` looks for a definition or reference destination for the cursor text or
-selection. Recognizable citations, numbered references, and definitions in the
-PDF's extracted text can supply destinations. A plain word without a matching
-entry may have none. `gd` cannot fetch missing references from the internet.
-Try a PDF link first when the publisher supplied one; use text search when
-lookup finds no destination.
+`gd` follows a supplied PDF link or looks for a recognizable reference label in
+extracted text, such as `Figure 1` or `Section 3.2`. Plain words and arbitrary
+unlinked citations may have no destination. `gd` cannot fetch missing references
+from the internet. Try a PDF link first when the publisher supplied one; use
+text search when lookup finds no destination.
 
 ## Notes and highlights
 
@@ -58,5 +57,9 @@ rejected. Opening a PDF alone never launches its links. Desktop integrations run
 on the machine hosting Vpdf; over SSH that can be the remote machine. See
 [Installation and setup][install] if an opener or clipboard helper is missing.
 
+See [reference previews][preview-demo] and [annotation comments][notes-demo].
+
 [sample]: sample.md
 [install]: install.md
+[preview-demo]: ../demos.md#reference-preview
+[notes-demo]: ../demos.md#annotation-comments

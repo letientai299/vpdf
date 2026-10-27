@@ -596,15 +596,17 @@ including PDF images, through Kitty's screenshot API. Install Kitty using its
 [upstream instructions][kitty-install]; both `kitty` and `kitten` must be on
 `PATH`, and `kitten @ screenshot --help` must succeed. Also install Python 3
 and [ImageMagick][imagemagick] with JPEG support and the `magick` command.
-Capture needs a desktop graphics session, without screen-recording permission.
+The background window runner currently requires a macOS desktop session. Kitty's
+screenshot API does not require screen-recording permission; interaction video
+capture does. See [Demo media publication][demo-media] for video setup.
 
 OCR scenes also need [Tesseract and English language data][ocr-setup] and
 [Poppler][poppler]'s `pdftotext` to verify that the scanned input has no
 embedded text. On macOS, install the capture helpers with
-`brew install python imagemagick poppler tesseract`. On Ubuntu, install
-`python3 poppler-utils tesseract-ocr tesseract-ocr-eng` with `apt-get`; obtain
-ImageMagick with the `magick` command from its linked installation guide. These
-capture helpers need separate setup from `mise install`.
+`brew install python imagemagick poppler tesseract`. For Linux corpus and OCR
+checks, install `python3 poppler-utils tesseract-ocr tesseract-ocr-eng` with
+`apt-get`; obtain ImageMagick from its installation guide. These capture helpers
+need separate setup from `mise install`.
 
 ```sh
 mise run demo
@@ -632,29 +634,33 @@ its existing PDFs. Use the script's `--help` for font, executable, output, and
 individual scene overrides. For a custom executable, `--build-profile` records
 its compiler profile; omitting it records an unknown profile. The manifest reads
 the executable's version rather than attributing it to the checkout. Mouse
-recipes send terminal pixel reports to the reader. The script defines the
-required pixel dimensions and exposes font controls through `--help`. It rejects
-other pixel dimensions instead of resizing the screenshot. User terminal
+recipes send terminal pixel reports to the reader. Use the script's geometry and
+placement options when a smaller visible window is needed. The script checks the
+requested pixel dimensions without resizing screenshots. User terminal
 configuration and saved reader state stay separate from the capture instance.
 
 The [optimizer][demo-optimize] writes optimized JPEG and verifies that it
 decodes at the original dimensions. JPEG compression is lossy; full color
-resolution keeps colored text readable. Tracked images and their generated
-capture manifest live in `docs/assets/`; raw PNGs, screen text, and terminal
-logs stay in gitignored `tmp/demo/`. The manifest identifies the executable
-hash, commit, build profile, machine, terminal, font settings, document hashes,
-and scene inputs. Inspect every image for complete rendering and readable
-content before publishing. See the [gallery][demo] for document attribution and
-capture scope.
+resolution keeps colored text readable. The capture manifest stays in
+`docs/assets/`; new JPEGs, raw PNGs, screen text, and terminal logs default to
+host-local `~/.cache/vpdf/demo-media/<checkout>/` directories. Capture and
+publication are separate; see [Demo media publication][demo-media]. The manifest
+identifies the executable hash, commit, build profile, machine, terminal, font
+settings, document hashes, and scene inputs. Inspect every image for complete
+rendering and readable content before publishing. See the [gallery][demo] for
+document attribution and capture scope.
 
 The `test` task checks dependency selection, executable identity, and
 publication failure handling without opening Kitty.
 
-Keep all published image and future video demos in the [demo catalog][demo],
-with their media under `docs/assets/`. Individual images may also be reused in
-other documentation. Refresh images when the showcased workflow changes. Keep
-PDFs, raw traces, and unedited recordings outside git. For future feature and
-performance videos, record actual terminal graphics at normal speed and disclose
+Keep published demonstrations in the [demo catalog][demo], with media on the
+[closed hosting issue][demo-host]. The [publication workflow][demo-media]
+separates offline capture from reviewed uploads, verifies anonymous bytes, and
+retains superseded URLs. App icons and provenance stay in `docs/assets/`.
+Individual images may also be reused in other documentation. Refresh images
+when the showcased workflow changes. Keep PDFs, raw traces, and unedited
+recordings outside git. For feature and performance videos, record actual
+terminal graphics at normal speed and disclose
 edits or time compression. Record the viewport, capture rate, cold and revisited
 pages, cache conditions, and build identity with the demonstration. A video's
 capture rate does not establish application frame rate or physical input
@@ -725,3 +731,5 @@ a result needs a reproducible release reference.
 [hook-script]: ../../scripts/hooks.py
 [nextest-filters]: https://nexte.st/docs/filtersets/reference/
 [prek-run]: https://prek.j178.dev/running-hooks/
+[demo-media]: demo-media.md
+[demo-host]: https://github.com/letientai299/vpdf/issues/9

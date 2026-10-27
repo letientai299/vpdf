@@ -1,40 +1,50 @@
 # Demo backlog
 
-The gallery's original captures used `b617f73` on 2026-10-18. Converting those
-images to JPEG preserved their scenes and build identity. These later features
-need new captures; this list does not claim live capture validation.
+The [gallery][gallery] and its [capture manifest][manifest] record completed
+examples and their executable identities. Capture recipes use the current
+[executable key table][keys] and [user lessons][lessons]; historical pixels keep
+their original provenance. Publication and recovery use the
+[media workflow][capture].
 
-## First additions
+## Current coverage
 
-| Feature           | Scene                                                                           |
-| ----------------- | ------------------------------------------------------------------------------- |
-| Reference lookup  | Use `gd` on an unlinked figure or section reference; show ambiguous candidates. |
-| Continuous text   | Scroll `:text` across a page boundary and select across pages.                  |
-| Expanded previews | Scroll a link preview past its target page; middle-click it into a split.       |
+| Workflow           | Example                                       |
+| ------------------ | --------------------------------------------- |
+| Manual and panes   | Manual document and help beside a book        |
+| Reference lookup   | `K` preview and `gd` on a body figure label   |
+| Continuous text    | Text crossing a page separator                |
+| Notes              | Authored comment, hover author, and actions   |
+| Figures and tables | Caption list beside a selected diagram        |
+| Marks              | Local/global marks and return context         |
+| Reading layout     | Crop, zoom, rotation, and narrow-pane text    |
+| Themes             | A small set of readable built-in palettes     |
+| Interactions       | Find/return, reference, panes, select/capture |
 
-Reference lookup resolves document labels, not arbitrary term definitions or
-unlinked citations. Use a real PDF containing the relevant reference.
+`gd` resolves supplied PDF links and recognizable document labels. It does not
+look up arbitrary words or fetch missing references. Ambiguous matches can
+require choosing an outline entry or result; that branch needs its own example.
 
-## Further additions
+## Later captures
 
-| Feature             | Scene                                                                                                       |
-| ------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Scrollbar           | Show heading and search-match ticks while scrubbing with the page and section label visible.                |
-| Mouse layout        | Middle-click a destination into a split, drag pane and panel dividers, then double-click to restore sizing. |
-| Annotation comments | Open a note, show its author and comment, and expose Copy comment in its menu.                              |
-| Performance display | Show `:perf` above a reading layout; explain that it measures application output.                           |
+| Workflow          | Scene                                                            |
+| ----------------- | ---------------------------------------------------------------- |
+| Preview expansion | Scroll past its target page; middle-click into a split           |
+| Scrollbar         | Scrub with heading/match ticks and a visible section label       |
+| Mouse layout      | Drag dividers, restore sizing, and middle-click a destination    |
+| Pointer selection | Hold selection at an edge and show scrolling                     |
+| Page movement     | Space/Shift-Space with retained reading overlap                  |
+| Menus and status  | Panel/thumbnail context menus and clickable status actions       |
+| OCR to selection  | Recognition mode, empty/cache-hit state, and selection in a clip |
+| Continuous text   | Page-boundary movement and selection in a clip                   |
+| Performance panel | Explain application-output metrics separately from display time  |
 
-Use short recordings for pane resizing, middle-drag panning, selection held at
-an edge, and Space/Shift-Space scrolling with two rows of overlap. Include panel
-and thumbnail context menus and clickable status items when showing mouse
-navigation.
-
-Search-index reuse and stored page OCR output suit a separate recording with
-explicit cold and warm conditions. Screenshots cannot establish a speedup.
-
-Keep new media in the [gallery][gallery], with provenance and attribution under
-the [capture workflow][capture]. Check each workflow against executable help
-before recording.
+Search-index reuse and stored OCR need explicit cold and warm conditions.
+Show waits at normal speed or label every omitted interval. Screenshots and
+recording frame rates cannot establish a speedup. Future performance comparisons
+need separate matched, repeated measurements.
 
 [gallery]: ../demos.md
-[capture]: dev.md#gallery-capture
+[manifest]: ../assets/capture.json
+[keys]: ../../crates/ui/src/keys.rs
+[lessons]: ../users/readme.md
+[capture]: demo-media.md

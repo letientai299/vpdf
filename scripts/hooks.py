@@ -144,6 +144,9 @@ def format_staged(root, source, paths, env):
 PYTHON_TASKS = {
     "startup": "test:startup",
     "demo": "test:demo",
+    "demo_media": "test:demo",
+    "demo_video": "test:demo",
+    "demo_window": "test:demo",
     "packages": "test:packages",
     "help_assets": "test:help-assets",
     "build_cache": "test:build-cache",

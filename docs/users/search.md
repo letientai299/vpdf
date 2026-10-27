@@ -62,4 +62,7 @@ scanned page merely because you searched. Display an image page or request
 `:ocr` before expecting its recognized text to be searchable. See
 [Scanned pages and OCR][ocr] for coverage and cache limits.
 
+Watch [find and return][search-demo].
+
 [ocr]: ocr.md
+[search-demo]: ../demos.md#find-and-return

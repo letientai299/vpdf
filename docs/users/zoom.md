@@ -18,15 +18,20 @@ The [configuration chapter][configuration] explains setting its initial value.
 
 ## Text preview
 
-`:text` opens extracted text, wrapped to the pane width, and scrolls through
-successive pages. Page separators identify each new page, and the top row names
-the pages in view. Cursor and Visual modes still navigate and select document
-text. Search and link destinations retain their document positions.
+`:text` opens extracted text and scrolls through successive pages. The built-in
+manual wraps its text to the pane width. Page separators identify each new page,
+and the top row names the pages in view. Cursor and Visual modes still navigate
+and select document text. Search and link destinations retain their document
+positions.
 
 Press `q` to leave text preview before closing the document. Text preview can
 make small split panes easier to read. It depends on extracted or recognized
 text: it cannot reconstruct missing characters, columns, equations, or the
 original authoring format. A scan may need [OCR][ocr].
 
+See [continuous text][text-demo] and [zoom and rotation][zoom-demo].
+
 [configuration]: config.md
 [ocr]: ocr.md
+[text-demo]: ../demos.md#continuous-text
+[zoom-demo]: ../demos.md#zoom-crop-and-rotation

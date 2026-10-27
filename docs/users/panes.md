@@ -64,4 +64,8 @@ Closing saves eligible reading state, not a snapshot of the full layout.
 The next launch can restore a book's position and view; it does not rebuild
 tabs, splits, panels, or background jobs. See [Files and saved state][state].
 
+See [help beside a book][help-demo] and [a pane comparison][panes-demo].
+
 [state]: reading.md
+[help-demo]: ../demos.md#built-in-manual
+[panes-demo]: ../demos.md#compare-passages

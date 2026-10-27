@@ -53,6 +53,10 @@ helper, destination, or clipboard policy and retry. `:cancel` stops pane region
 work as well as the other background jobs. See [Scanned pages and OCR][ocr]
 and [Troubleshooting][troubleshooting] for recovery.
 
+See [figure navigation][figures-demo] and [selection and capture][capture-demo].
+
 [install]: install.md
 [ocr]: ocr.md
 [troubleshooting]: troubleshooting.md
+[figures-demo]: ../demos.md#figures-and-tables
+[capture-demo]: ../demos.md#select-and-capture

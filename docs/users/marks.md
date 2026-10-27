@@ -48,4 +48,7 @@ view choices, and marks. Large edits to the PDF can move the passage beneath
 a saved position. Help is excluded from saved document state. See
 [Files and saved state][state] for file locations and save boundaries.
 
+See [local and global marks][marks-demo].
+
 [state]: reading.md
+[marks-demo]: ../demos.md#marks-and-return-context

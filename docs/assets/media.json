@@ -1,0 +1,807 @@
+{
+  "repository": "letientai299/vpdf",
+  "issue": 9,
+  "owner": "letientai299",
+  "assets": {
+    "overview-shot": {
+      "kind": "image",
+      "scene": "overview",
+      "reference": "overview",
+      "title": "Overview",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. Think Python, second edition, Allen B. Downey. First Draft of a Report on the EDVAC, John von Neumann; MIT's scan of the IEEE reprint credits Michael D. Godfrey's corrected transcription. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "consumers": [
+        {
+          "path": "README.md",
+          "reference": "overview"
+        }
+      ],
+      "publication": {
+        "id": "overview-shot",
+        "kind": "image",
+        "sha256": "a0978dd6f736de1856d1e7492a89ac1b195f38d814a93b5503e1e7b382499393",
+        "capture": "c7e615eea5ddda3c",
+        "url": "https://github.com/user-attachments/assets/feee9af7-54ff-45bc-aa03-64459bd70e3f",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1000
+          ]
+        },
+        "published_at": "2026-10-27T12:42:41.024981+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/7d85fbdf-ad7c-43a8-926f-f1873cd8d48a",
+            "sha256": "abdaf163c070dff899dba265bbc62e60137ba96c5afa18f9f7c6ec7e47e37557",
+            "capture": "61cabc806f2baf09",
+            "published_at": "2026-10-27T08:06:23.128301+00:00",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            }
+          }
+        ],
+        "comment_id": 6436805012
+      }
+    },
+    "help-shot": {
+      "kind": "image",
+      "scene": "help",
+      "reference": "help",
+      "title": "Help",
+      "attribution": "Vpdf embedded manual by Tai Le, MIT license.",
+      "publication": {
+        "id": "help-shot",
+        "kind": "image",
+        "sha256": "a02077c8eb920a85b57c80a570a0635db51ea11f415d41b61ab7256db71520d2",
+        "capture": "3a424424dba5fabf",
+        "url": "https://github.com/user-attachments/assets/1c5f1c1e-bd79-4031-97d5-1727b489185a",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:40:31.442343+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/c2a3ab69-408d-44e9-a6c2-b2ec8a1511ae",
+            "sha256": "5bfda3096c612a3eadfa913270c262ee3bac5b6c66f7cc620b5ab1f07a278d46",
+            "capture": "2208654b64ec0f1f",
+            "published_at": "2026-10-27T08:06:40.915032+00:00",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            }
+          }
+        ],
+        "comment_id": 6436809683
+      }
+    },
+    "search-shot": {
+      "kind": "image",
+      "scene": "search",
+      "reference": "search",
+      "title": "Search",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "capture": "2208654b64ec0f1f",
+        "history": [
+          {
+            "capture": "2208654b64ec0f1f",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            },
+            "published_at": "2026-10-27T07:59:02.949239+00:00",
+            "sha256": "507c61f083b1a972b9e6e5491a9d3834564fdf6a3fa4935920d0d794a1376018",
+            "url": "https://github.com/user-attachments/assets/7a376a3a-6b21-4dcb-ae6a-bbff2ef716d6"
+          }
+        ],
+        "id": "search-shot",
+        "kind": "image",
+        "metadata": {
+          "dimensions": [
+            2560,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T08:02:58.732803+00:00",
+        "sha256": "f4b7b5d19aca024f7856d2e1f689cc752ade90c6d2afd7243ca2d1e7a7095b08",
+        "url": "https://github.com/user-attachments/assets/af3490e1-844f-4dd8-8213-55a7f9083ab3",
+        "comment_id": 6436692249
+      }
+    },
+    "preview-shot": {
+      "kind": "image",
+      "scene": "preview",
+      "reference": "preview",
+      "title": "Preview",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "preview-shot",
+        "kind": "image",
+        "sha256": "26b0f284ab394e791ae8c7c5faf0c0971bfbde4f438b63c3e916d366789a49fd",
+        "capture": "ee929ba45751615f",
+        "url": "https://github.com/user-attachments/assets/b533f77d-9bbb-4edc-bfd8-93ac4b2aa74b",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:41:08.947634+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/f60dac5f-b753-4086-bbf5-ff92a21f5653",
+            "sha256": "e74a2a69a8a2704420a3975ff73f87b34ad636dbdfd8a8f978034bf9d07e52c6",
+            "capture": "2208654b64ec0f1f",
+            "published_at": "2026-10-27T08:07:02.023777+00:00",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            }
+          }
+        ],
+        "comment_id": 6436815544
+      }
+    },
+    "figure-shot": {
+      "kind": "image",
+      "scene": "figure",
+      "reference": "figure",
+      "title": "Figure",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "figure-shot",
+        "kind": "image",
+        "sha256": "c1e25ab28cf54383d35922d67981f0f28b228b1e9c2be147bfe6cbfdf6ad5210",
+        "capture": "2208654b64ec0f1f",
+        "url": "https://github.com/user-attachments/assets/cf953a6b-a559-4790-a53a-2cc49f3098e3",
+        "metadata": {
+          "dimensions": [
+            2560,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T08:10:31.702487+00:00",
+        "history": [],
+        "comment_id": 6436869831
+      }
+    },
+    "mouse-menu-shot": {
+      "kind": "image",
+      "scene": "mouse-menu",
+      "reference": "mouse-menu",
+      "title": "Mouse menu",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "mouse-menu-shot",
+        "kind": "image",
+        "sha256": "c444f9f88e849cc28191aa6e2cf1a329a726c79c2d4f853228bcc97f9a568b57",
+        "capture": "61cabc806f2baf09",
+        "url": "https://github.com/user-attachments/assets/2fb1fa49-f091-4929-9d84-7069f9511c51",
+        "metadata": {
+          "dimensions": [
+            2560,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T08:12:03.878166+00:00",
+        "history": [],
+        "comment_id": 6436895189
+      }
+    },
+    "mouse-hints-shot": {
+      "kind": "image",
+      "scene": "mouse-hints",
+      "reference": "mouse-hints",
+      "title": "Mouse hints",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "mouse-hints-shot",
+        "kind": "image",
+        "sha256": "59f400ddf946c4b643342f70a20420aebd257c303980b0df2364c089214d8b60",
+        "capture": "7dbed3285fd3ec9c",
+        "url": "https://github.com/user-attachments/assets/5b300331-1bda-4fc7-980f-776164d13a4b",
+        "metadata": {
+          "dimensions": [
+            2560,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T08:13:59.861372+00:00",
+        "history": [],
+        "comment_id": 6436928787
+      }
+    },
+    "mouse-region-shot": {
+      "kind": "image",
+      "scene": "mouse-region",
+      "reference": "mouse-region",
+      "title": "Mouse region",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "mouse-region-shot",
+        "kind": "image",
+        "sha256": "58faff1cbb1935af2c596274abf0ad52db5aa754f92a0b215723547e00e3de3b",
+        "capture": "7dbed3285fd3ec9c",
+        "url": "https://github.com/user-attachments/assets/df82a7f1-03d5-4380-9657-b10cd6394185",
+        "metadata": {
+          "dimensions": [
+            2560,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T08:14:18.082504+00:00",
+        "history": [],
+        "comment_id": 6436933723
+      }
+    },
+    "pages-shot": {
+      "kind": "image",
+      "scene": "pages",
+      "reference": "pages",
+      "title": "Pages",
+      "attribution": "Vpdf terminal capture. Think Python, second edition, Allen B. Downey. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "pages-shot",
+        "kind": "image",
+        "sha256": "dce68e51a4040c82b0670fb07853de6d2526601fc81ddb0d2376dd53c8fee954",
+        "capture": "2208654b64ec0f1f",
+        "url": "https://github.com/user-attachments/assets/59d78455-4174-484f-86f3-3915acc9fbe8",
+        "metadata": {
+          "dimensions": [
+            2560,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T08:14:34.734397+00:00",
+        "history": [],
+        "comment_id": 6436938359
+      }
+    },
+    "recent-shot": {
+      "kind": "image",
+      "scene": "recent",
+      "reference": "recent",
+      "title": "Recent",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. Think Python, second edition, Allen B. Downey. First Draft of a Report on the EDVAC, John von Neumann; MIT's scan of the IEEE reprint credits Michael D. Godfrey's corrected transcription. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "recent-shot",
+        "kind": "image",
+        "sha256": "c705a9b88f0d179eebd59209c5acef29072ca4c688af4387fd00d1621d0d7da5",
+        "capture": "2208654b64ec0f1f",
+        "url": "https://github.com/user-attachments/assets/ea1b0baa-d065-4cbc-bbda-747aaa0fec10",
+        "metadata": {
+          "dimensions": [
+            2560,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T08:14:51.701295+00:00",
+        "history": [],
+        "comment_id": 6436942922
+      }
+    },
+    "jumps-shot": {
+      "kind": "image",
+      "scene": "jumps",
+      "reference": "jumps",
+      "title": "Jumps",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "jumps-shot",
+        "kind": "image",
+        "sha256": "fb6bc52a1ce0d4c6de08c405c22ba950b82f2d449ce6c0ec3300908ae84d3272",
+        "capture": "2208654b64ec0f1f",
+        "url": "https://github.com/user-attachments/assets/71764f60-821c-4710-818f-f95cf2b737dc",
+        "metadata": {
+          "dimensions": [
+            2560,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T08:15:09.113575+00:00",
+        "history": [],
+        "comment_id": 6436947687
+      }
+    },
+    "ocr-shot": {
+      "kind": "image",
+      "scene": "ocr",
+      "reference": "ocr",
+      "title": "Ocr",
+      "attribution": "Vpdf terminal capture. First Draft of a Report on the EDVAC, John von Neumann; MIT's scan of the IEEE reprint credits Michael D. Godfrey's corrected transcription. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "ocr-shot",
+        "kind": "image",
+        "sha256": "60f1eabb042102912101716c8326be38a6c798b1cd659a3d96fc7ec09de7904d",
+        "capture": "0e2dee354836de5d",
+        "url": "https://github.com/user-attachments/assets/eb32e49a-8255-42d7-84b8-8ede423861d3",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:55:41.219142+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/299d2af3-e3bd-4fc6-be55-2d29942f3462",
+            "sha256": "875b8f7112c475e875f59eab75b57e6efd85fa2f3c5c074e5f15794146c2419b",
+            "capture": "2208654b64ec0f1f",
+            "published_at": "2026-10-27T08:15:26.602742+00:00",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            }
+          }
+        ],
+        "comment_id": 6436952526
+      }
+    },
+    "help-split-shot": {
+      "kind": "image",
+      "scene": "help-split",
+      "reference": "help-split",
+      "title": "Help split",
+      "attribution": "Vpdf embedded manual by Tai Le, MIT license. Think Python, second edition, Allen B. Downey. The book retains its author\u2019s rights.",
+      "publication": {
+        "id": "help-split-shot",
+        "kind": "image",
+        "sha256": "ce7788d93d70132403e62efa0d35b8e4923832be0200da7818de189520435633",
+        "capture": "ee929ba45751615f",
+        "url": "https://github.com/user-attachments/assets/b0cd6933-0749-4186-a157-46f00cc48612",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:40:50.262898+00:00",
+        "history": [],
+        "comment_id": 6442122352
+      }
+    },
+    "definition-shot": {
+      "kind": "image",
+      "scene": "definition",
+      "reference": "definition",
+      "title": "Definition",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights.",
+      "publication": {
+        "id": "definition-shot",
+        "kind": "image",
+        "sha256": "01f03d1a2fe0e6835908613c2b1c232ac4c1107ffb98a30d36325e87aefddc4e",
+        "capture": "ee929ba45751615f",
+        "url": "https://github.com/user-attachments/assets/5e474613-97dc-4f5d-bfbb-8747cb1d9490",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:41:27.996677+00:00",
+        "history": [],
+        "comment_id": 6442134740
+      }
+    },
+    "continuous-text-shot": {
+      "kind": "image",
+      "scene": "continuous-text",
+      "reference": "continuous-text",
+      "title": "Continuous text",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights.",
+      "publication": {
+        "id": "continuous-text-shot",
+        "kind": "image",
+        "sha256": "ffaef3290d1a8c58d5e067fbf8524baece88c3e6f445b44c78b1638d0d9b718b",
+        "capture": "3a424424dba5fabf",
+        "url": "https://github.com/user-attachments/assets/283281bd-de4f-45f0-9dfa-c20f9c591f1b",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:41:46.004218+00:00",
+        "history": [],
+        "comment_id": 6442140694
+      }
+    },
+    "annotations-shot": {
+      "kind": "image",
+      "scene": "annotations",
+      "reference": "annotations",
+      "title": "Annotations",
+      "attribution": "Vpdf embedded manual by Tai Le, MIT license.",
+      "publication": {
+        "id": "annotations-shot",
+        "kind": "image",
+        "sha256": "8387358136350506adc85843866629ce5ebd6e5d8c28d7fb3978401c9b68b812",
+        "capture": "767d4b068750d437",
+        "url": "https://github.com/user-attachments/assets/d31b8ba2-b314-4432-a64f-59208e3d82f8",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:42:04.252788+00:00",
+        "history": [],
+        "comment_id": 6442146468
+      }
+    },
+    "marks-shot": {
+      "kind": "image",
+      "scene": "marks",
+      "reference": "marks",
+      "title": "Marks",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights.",
+      "publication": {
+        "id": "marks-shot",
+        "kind": "image",
+        "sha256": "0926ebf3aa69d6773f53ae38e6eee83238e84b09ce9ad0556702a87de22936e7",
+        "capture": "ee929ba45751615f",
+        "url": "https://github.com/user-attachments/assets/507418d7-c12d-4c2d-a7e6-7175bf72be7d",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:42:22.239113+00:00",
+        "history": [],
+        "comment_id": 6442152213
+      }
+    },
+    "find-return-video": {
+      "kind": "video",
+      "scene": "find-return",
+      "reference": "find-return-video",
+      "title": "Find return",
+      "attribution": "Vpdf terminal recording. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights. The key strip reproduces captured input times; no cuts or time compression.",
+      "publication": {
+        "id": "find-return-video",
+        "kind": "video",
+        "sha256": "f0ca662d0f409f7a73720bc9a70baa289d4a6fc3fbe2da628a8c1decce311366",
+        "capture": "cc69d920606e8276",
+        "url": "https://github.com/user-attachments/assets/d0c7a5bc-ddee-4c49-ab13-757e2fd4f964",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1112
+          ],
+          "codec": "h264",
+          "duration": 24.266667,
+          "frame_rate": "30/1",
+          "pixel_format": "yuv420p"
+        },
+        "published_at": "2026-10-27T12:42:58.874367+00:00",
+        "history": [],
+        "comment_id": 6442164224
+      }
+    },
+    "find-return-poster": {
+      "kind": "image",
+      "scene": "find-return-poster",
+      "reference": "find-return-poster",
+      "title": "Find return poster",
+      "attribution": "Vpdf terminal recording. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights. The key strip reproduces captured input times; no cuts or time compression.",
+      "publication": {
+        "id": "find-return-poster",
+        "kind": "image",
+        "sha256": "b1d57d9c5c98dd1a61e8bada131883476f34b8e2e5918836850f6393b3fa44c9",
+        "capture": "cc69d920606e8276",
+        "url": "https://github.com/user-attachments/assets/9c0f3f9c-7c17-4591-90eb-277d463cac62",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1112
+          ]
+        },
+        "published_at": "2026-10-27T12:43:18.971971+00:00",
+        "history": [],
+        "comment_id": 6442170710
+      }
+    },
+    "inspect-reference-video": {
+      "kind": "video",
+      "scene": "inspect-reference",
+      "reference": "inspect-reference-video",
+      "title": "Inspect reference",
+      "attribution": "Vpdf terminal recording. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights. The key strip reproduces captured input times; no cuts or time compression.",
+      "publication": {
+        "id": "inspect-reference-video",
+        "kind": "video",
+        "sha256": "7e938d18fa0bae27d59390bf663f09268f5dbfa87f384193744b10fcf52e6ce0",
+        "capture": "42ce64a36788428d",
+        "url": "https://github.com/user-attachments/assets/4db2675d-c1b4-4e98-9e63-cce7a76cce0f",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1112
+          ],
+          "codec": "h264",
+          "duration": 27.166667,
+          "frame_rate": "30/1",
+          "pixel_format": "yuv420p"
+        },
+        "published_at": "2026-10-27T12:43:37.513288+00:00",
+        "history": [],
+        "comment_id": 6442176726
+      }
+    },
+    "inspect-reference-poster": {
+      "kind": "image",
+      "scene": "inspect-reference-poster",
+      "reference": "inspect-reference-poster",
+      "title": "Inspect reference poster",
+      "attribution": "Vpdf terminal recording. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights. The key strip reproduces captured input times; no cuts or time compression.",
+      "publication": {
+        "id": "inspect-reference-poster",
+        "kind": "image",
+        "sha256": "edc0f1d42d6f393644eb2adea21cf32da4504b9faee1f2275555c33da2c500bb",
+        "capture": "42ce64a36788428d",
+        "url": "https://github.com/user-attachments/assets/d2a9a301-ff79-4c11-90f6-c2064ceca1a9",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1112
+          ]
+        },
+        "published_at": "2026-10-27T12:43:56.014312+00:00",
+        "history": [],
+        "comment_id": 6442182388
+      }
+    },
+    "compare-passages-video": {
+      "kind": "video",
+      "scene": "compare-passages",
+      "reference": "compare-passages-video",
+      "title": "Compare passages",
+      "attribution": "Vpdf terminal recording. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights. The key strip reproduces captured input times; no cuts or time compression.",
+      "publication": {
+        "id": "compare-passages-video",
+        "kind": "video",
+        "sha256": "95d6f160e0f581afe7903963563af9e2e7444a864c297df04939b20c88add0aa",
+        "capture": "bd5e14ef24f4bb1b",
+        "url": "https://github.com/user-attachments/assets/70907979-9791-4eea-966b-92385dab0530",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1112
+          ],
+          "codec": "h264",
+          "duration": 25.866667,
+          "frame_rate": "30/1",
+          "pixel_format": "yuv420p"
+        },
+        "published_at": "2026-10-27T12:44:14.192216+00:00",
+        "history": [],
+        "comment_id": 6442188323
+      }
+    },
+    "compare-passages-poster": {
+      "kind": "image",
+      "scene": "compare-passages-poster",
+      "reference": "compare-passages-poster",
+      "title": "Compare passages poster",
+      "attribution": "Vpdf terminal recording. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights. The key strip reproduces captured input times; no cuts or time compression.",
+      "publication": {
+        "id": "compare-passages-poster",
+        "kind": "image",
+        "sha256": "ca281b9be8f6903a8f52304edc0be00725e3302fb33c20e4283ac7335ec2ddae",
+        "capture": "bd5e14ef24f4bb1b",
+        "url": "https://github.com/user-attachments/assets/8442cbf5-f518-485d-bac9-2c7057dfb87c",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1112
+          ]
+        },
+        "published_at": "2026-10-27T12:44:33.983599+00:00",
+        "history": [],
+        "comment_id": 6442194444
+      }
+    },
+    "annotation-actions-shot": {
+      "kind": "image",
+      "scene": "annotation-actions",
+      "reference": "annotation-actions",
+      "title": "Annotation actions",
+      "attribution": "Vpdf embedded manual by Tai Le, MIT license.",
+      "publication": {
+        "id": "annotation-actions-shot",
+        "kind": "image",
+        "sha256": "9710dcc2ff25d34f75ea8698e4169a454dc82d83fd56f2d2ad236c6d61c0a1db",
+        "capture": "a5192470b6ca7e19",
+        "url": "https://github.com/user-attachments/assets/336992ca-644c-404c-8556-fcb48bde363e",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:53:49.961541+00:00",
+        "history": [],
+        "comment_id": 6442378349
+      }
+    },
+    "figures-shot": {
+      "kind": "image",
+      "scene": "figures",
+      "reference": "figures",
+      "title": "Figures",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights.",
+      "publication": {
+        "id": "figures-shot",
+        "kind": "image",
+        "sha256": "a3e9c8059b2d2228252be12d531d4ffecc27d5c5ff3715aae384acfeedc530ce",
+        "capture": "0e2dee354836de5d",
+        "url": "https://github.com/user-attachments/assets/59ac8670-e069-4afa-a7a5-90ba5dcd9916",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:54:07.993749+00:00",
+        "history": [],
+        "comment_id": 6442383980
+      }
+    },
+    "zoom-shot": {
+      "kind": "image",
+      "scene": "zoom",
+      "reference": "zoom",
+      "title": "Zoom",
+      "attribution": "Vpdf embedded manual by Tai Le, MIT license.",
+      "publication": {
+        "id": "zoom-shot",
+        "kind": "image",
+        "sha256": "22ef474f205366a2c80b35943a291e8ddcea8ab1b5a1e747d7b4ecd931c763ec",
+        "capture": "0e2dee354836de5d",
+        "url": "https://github.com/user-attachments/assets/cb420fb1-3839-482f-a773-a69ac5c01cfc",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:54:26.093549+00:00",
+        "history": [],
+        "comment_id": 6442390559
+      }
+    },
+    "theme-dark-shot": {
+      "kind": "image",
+      "scene": "theme-dark",
+      "reference": "theme-dark",
+      "title": "Theme dark",
+      "attribution": "Vpdf embedded manual by Tai Le, MIT license.",
+      "publication": {
+        "id": "theme-dark-shot",
+        "kind": "image",
+        "sha256": "c70f461e12853144f9f539cc5240792570f3063d6f431fbfdef366ad4c63c736",
+        "capture": "10ad2f4ff95d6927",
+        "url": "https://github.com/user-attachments/assets/1efcb184-6791-440b-9ad3-f3589d928d62",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:54:44.755958+00:00",
+        "history": [],
+        "comment_id": 6442396876
+      }
+    },
+    "theme-light-shot": {
+      "kind": "image",
+      "scene": "theme-light",
+      "reference": "theme-light",
+      "title": "Theme light",
+      "attribution": "Vpdf embedded manual by Tai Le, MIT license.",
+      "publication": {
+        "id": "theme-light-shot",
+        "kind": "image",
+        "sha256": "36d87b9ea165a416efc57e93e1b9b6982aa2188efcc24153ff3d70fb05e46e9f",
+        "capture": "a5192470b6ca7e19",
+        "url": "https://github.com/user-attachments/assets/dc0b622f-4844-4546-a333-59361e5c01d7",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:55:03.706574+00:00",
+        "history": [],
+        "comment_id": 6442403220
+      }
+    },
+    "theme-nord-shot": {
+      "kind": "image",
+      "scene": "theme-nord",
+      "reference": "theme-nord",
+      "title": "Theme nord",
+      "attribution": "Vpdf embedded manual by Tai Le, MIT license.",
+      "publication": {
+        "id": "theme-nord-shot",
+        "kind": "image",
+        "sha256": "e557adac625389c7b4e545547e95da77cd73265394297c49dd39de2517509bd0",
+        "capture": "a5192470b6ca7e19",
+        "url": "https://github.com/user-attachments/assets/4abfdf74-e0e7-4446-a04f-4ce860ff6b60",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T12:55:22.622850+00:00",
+        "history": [],
+        "comment_id": 6442409688
+      }
+    },
+    "select-capture-video": {
+      "kind": "video",
+      "scene": "select-capture",
+      "reference": "select-capture-video",
+      "title": "Select capture",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights.",
+      "publication": {
+        "id": "select-capture-video",
+        "kind": "video",
+        "sha256": "ae87905e04feee1e35600953e0a553ae0fbed624f2a24ace1e76bbf31874d4e7",
+        "capture": "e18514ec31f4a411",
+        "url": "https://github.com/user-attachments/assets/87267719-61a1-4a35-81a4-46fd4743517d",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1112
+          ],
+          "codec": "h264",
+          "duration": 26.466667,
+          "frame_rate": "30/1",
+          "pixel_format": "yuv420p"
+        },
+        "published_at": "2026-10-27T12:55:59.757290+00:00",
+        "history": [],
+        "comment_id": 6442422265
+      }
+    },
+    "select-capture-poster": {
+      "kind": "image",
+      "scene": "select-capture-poster",
+      "reference": "select-capture-poster",
+      "title": "Select capture poster",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights.",
+      "publication": {
+        "id": "select-capture-poster",
+        "kind": "image",
+        "sha256": "d2e07b22aab6e9cd53ec6f0175eebaaf02a26835a91162f3295c6259bd22855f",
+        "capture": "e18514ec31f4a411",
+        "url": "https://github.com/user-attachments/assets/e3421241-9bc7-4b17-821d-49388c3eb5ad",
+        "metadata": {
+          "dimensions": [
+            1280,
+            1112
+          ]
+        },
+        "published_at": "2026-10-27T12:56:19.125117+00:00",
+        "history": [],
+        "comment_id": 6442428440
+      }
+    }
+  }
+}

@@ -59,7 +59,10 @@ validation.
 
 - Keep the README concise; categorize user guidance in [the docs index][docs].
   Keep maintainer material under `docs/dev/`, demos in [demos.md][demos], and
-  media in `docs/assets/`. Reuse individual images where useful.
+  published media on the dedicated closed GitHub issue. Keep app icons,
+  source artwork, capture metadata, and publication records in `docs/assets/`.
+  Keep raw and encoded demo files in host-local storage outside git. Reuse
+  individual published images where useful.
 - Keep interface inventories in executable help and changing versions, limits,
   and defaults in their owning sources. Update affected prose and diagrams.
 - When adding an external tool, document when it is needed and how to install

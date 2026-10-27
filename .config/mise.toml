@@ -299,11 +299,23 @@ depends = ["build"]
 raw_args = true
 run = 'python3 scripts/demo.py --binary "${CARGO_TARGET_DIR:-target}/release/vpdf" --build-profile release'
 
+[tasks."demo:video"]
+description = "Record captioned terminal interaction recipes offline"
+run = "python3 -B scripts/demo_video.py"
+
+[tasks."demo:publish"]
+description = "Plan reviewed demo publication; --apply writes to GitHub"
+run = "python3 -B scripts/demo_media.py"
+
+[tasks."demo:check"]
+description = "Check demo provenance and publication references"
+run = "python3 -B scripts/demo_media.py --check"
+
 [tasks."test:demo"]
 hide = true
 env.VPDF_CACHE = "off"
 description = "Check screenshot provenance and publication failures"
-run = "python3 -B -m unittest discover -s scripts -p test_demo.py"
+run = "python3 -B -m unittest discover -s scripts -p 'test_demo*.py'"
 
 [tasks."test:startup"]
 hide = true

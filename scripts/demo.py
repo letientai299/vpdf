@@ -16,7 +16,10 @@ import termios
 import time
 from pathlib import Path
 
+from demo_window import Window
+
 ROOT = Path(__file__).resolve().parent.parent
+CACHE = Path.home() / ".cache/vpdf/demo-media" / ROOT.name
 ENCODING = "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
 SCENES = {
     "overview": (
@@ -36,7 +39,6 @@ SCENES = {
             ("key", "ctrl+w"),
             ("text", "x"),
             ("text", "=3+7ggv"),
-            ("wait", "Selection unavailable"),
             ("text", ":ocr eng\r"),
             ("wait", "OCR ready"),
             ("text", "i}vipzt"),
@@ -80,7 +82,7 @@ SCENES = {
         2,
         ["paper"],
         [
-            ("text", "zc=+/[13]\r"),
+            ("text", "zc=/[13]\r"),
             ("wait", "matches"),
             ("text", ":nohlsearch\rilK"),
             ("wait", "╭"),
@@ -146,9 +148,9 @@ SCENES = {
             ("text", "gt3gg"),
             ("text", ":recent\r"),
             ("wait", "RECENT"),
-            ("wait", "Metadata"),
+            ("hover", "paper.pdf"),
             ("hover", "scan.pdf"),
-            ("wait", "49"),
+            ("pause", 3),
         ],
     ),
     "jumps": (
@@ -162,26 +164,104 @@ SCENES = {
             ("key", "ctrl+o"),
             ("text", ":jumps\r"),
             ("wait", "JUMPS"),
-            ("wait", "Heading:"),
-            ("wait", "Search ["),
+            ("wait", "Model Architecture"),
+            ("wait", "/multi-head/"),
         ],
     ),
     "ocr": (
         7,
         ["scan"],
         [
-            ("text", "v"),
-            ("wait", "Selection unavailable"),
-            ("text", "=3+7gg"),
+            ("pause", 2),
             ("text", ":vsplit\r"),
-            ("text", "7gg:ocr eng\r"),
-            ("wait", "OCR ready"),
             ("text", ":text\r"),
-            ("text", "i}vip"),
+            ("wait", "DEFINITIONS"),
+            ("text", "i0v3e"),
             ("wait", "VISUAL"),
         ],
     ),
+    "help-split": (
+        39,
+        ["book"],
+        [("text", ":help! panes\r"), ("wait", "Help")],
+    ),
+    "definition": (
+        2,
+        ["paper"],
+        [
+            ("text", "/Figure 1\r"),
+            ("wait", "matches"),
+            ("text", "n:nohlsearch\rilgd"),
+            ("wait", "Reference found"),
+            ("pause", 1),
+        ],
+    ),
+    "continuous-text": (
+        2,
+        ["paper"],
+        [("text", ":text\ri50j"), ("pause", 1)],
+    ),
+    "annotations": (
+        2,
+        ["paper"],
+        [
+            ("text", ":help sample\r"),
+            ("wait", "Help"),
+            ("text", "ga"),
+            ("wait", "ANNOTATIONS"),
+            ("text", "jK"),
+            ("wait", "Notes explain"),
+        ],
+    ),
+    "figures": (
+        3,
+        ["paper"],
+        [("text", "]fzFgfj"), ("wait", "FIGURES")],
+    ),
+    "marks": (
+        2,
+        ["paper"],
+        [("text", "ma4ggmA2gg:marks\r"), ("wait", "MARKS")],
+    ),
 }
+
+SCENES["annotations"][2].extend([("note", "hover"), ("wait", "Vpdf")])
+SCENES["annotation-actions"] = (
+    2,
+    ["paper"],
+    [
+        *SCENES["annotations"][2],
+        ("key", "escape"),
+        ("note", "context"),
+        ("wait", "Copy comment"),
+    ],
+)
+SCENES["zoom"] = (
+    2,
+    ["paper"],
+    [
+        ("text", ":help sample\r"),
+        ("wait", "Help"),
+        ("text", ":vsplit\r"),
+        ("text", "zc=+zr"),
+        ("key", "ctrl+w"),
+        ("text", "p"),
+        ("text", ":text\r"),
+    ],
+)
+for theme in ("dark", "light", "nord"):
+    SCENES["theme-" + theme] = (
+        2,
+        ["paper"],
+        [
+            ("text", ":help sample\r"),
+            ("wait", "Help"),
+            ("text", ":theme " + theme + "\r"),
+            ("pause", 2),
+            ("text", "go"),
+            ("wait", "CONTENTS"),
+        ],
+    )
 
 
 def run(*args):
@@ -189,7 +269,8 @@ def run(*args):
 
 
 def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    with path.open("rb") as file:
+        return hashlib.file_digest(file, "sha256").hexdigest()
 
 
 def scene_documents(name):
@@ -247,9 +328,9 @@ def capture_identity(args, options, ocr, inputs):
         "kitty_options": options,
         "font_scale": args.scale,
         "base_font_points": args.base_font,
-        "dimensions": [2560, 1440],
+        "dimensions": [args.width, args.height],
         "capture": "Kitty screenshot API; graphics included; no resizing",
-        "cache_conditions": "Fresh reader and private saved state per scene",
+        "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
         "encoding": ENCODING,
         "ocr": ocr,
         "inputs": inputs,
@@ -289,25 +370,30 @@ def verify_inputs(args, identity):
             raise RuntimeError(f"Source PDF changed: {name}")
 
 
-def publish_scene(output, manifest, identity, name, scene, image):
+def publish_scene(
+    output, manifest, identity, name, scene, image, manifest_path=None
+):
     capture_id = capture_key(identity)
     scenes = {**manifest["scenes"], name: {**scene, "capture": capture_id}}
-    used = {record["capture"] for record in scenes.values()}
     captures = {**manifest["captures"], capture_id: identity}
     updated = {
-        "captures": {
-            key: value for key, value in captures.items() if key in used
-        },
+        "captures": captures,
         "scenes": scenes,
     }
     target = output / scene["image"]
-    with tempfile.TemporaryDirectory(
-        prefix=".capture-", dir=output
-    ) as directory:
+    manifest_path = manifest_path or output / "capture.json"
+    with (
+        tempfile.TemporaryDirectory(
+            prefix=".capture-", dir=output
+        ) as directory,
+        tempfile.TemporaryDirectory(
+            prefix=".capture-", dir=manifest_path.parent
+        ) as reports,
+    ):
         directory = Path(directory)
         staged = directory / scene["image"]
         shutil.copyfile(image, staged)
-        report = directory / "capture.json"
+        report = Path(reports) / "capture.json"
         report.write_text(json.dumps(updated, indent=2) + "\n")
         backup = directory / "previous.jpg"
         if target.exists():
@@ -316,7 +402,7 @@ def publish_scene(output, manifest, identity, name, scene, image):
         try:
             staged.replace(target)
             installed = True
-            report.replace(output / "capture.json")
+            report.replace(manifest_path)
         except BaseException:
             if installed:
                 if backup.exists():
@@ -335,7 +421,12 @@ class Gallery:
         self.window = None
 
     def remote(self, *args):
-        return run(self.args.kitten, "@", "--to", self.socket, *args)
+        if hasattr(self, "host"):
+            self.host.watch()
+        result = run(self.args.kitten, "@", "--to", self.socket, *args)
+        if hasattr(self, "host"):
+            self.host.watch()
+        return result
 
     def wait(self, expected):
         deadline = time.monotonic() + 30
@@ -392,8 +483,51 @@ class Gallery:
                 return
         raise RuntimeError(f"Pointer label missing: {label}")
 
-    def capture(self, name):
-        page, documents, steps = SCENES[name]
+    def note(self, action):
+        if self.resolved_targets:
+            x, y = self.resolved_targets[-1]["pixels"]
+        else:
+            image = self.directory / "note-target.png"
+            self.remote(
+                "screenshot",
+                "--match-tab",
+                f"window_id:{self.window}",
+                str(image),
+            )
+            geometry = run(
+                "magick",
+                str(image),
+                "-fuzz",
+                "5%",
+                "-fill",
+                "black",
+                "+opaque",
+                "#ffff00",
+                "-fill",
+                "white",
+                "-opaque",
+                "#ffff00",
+                "-format",
+                "%@",
+                "info:",
+            )
+            match = re.fullmatch(r"(\d+)x(\d+)\+(\d+)\+(\d+)", geometry)
+            if not match:
+                raise RuntimeError("Practice note icon missing")
+            width, height, left, top = map(int, match.groups())
+            if not (4 <= width <= 64 and 4 <= height <= 64):
+                raise RuntimeError("Practice note icon is ambiguous")
+            x, y = left + width / 2, top + height / 2
+        self.pointer("move", x, y)
+        if action == "context":
+            self.pointer("right-down", x, y)
+            self.pointer("right-up", x, y)
+        self.resolved_targets.append(
+            {"target": "practice note", "action": action, "pixels": [x, y]}
+        )
+
+    def launch_scene(self, name, page, documents):
+        self.resolved_targets = []
         previous = self.window
         self.window = self.remote(
             "launch",
@@ -402,7 +536,9 @@ class Gallery:
             "--cwd",
             str(ROOT),
             "--env",
-            f"XDG_STATE_HOME={self.directory / name}",
+            f"XDG_STATE_HOME={self.directory / name / 'state'}",
+            "--env",
+            f"XDG_CACHE_HOME={self.directory / name / 'cache'}",
             "--env",
             f"VPDF_TRACE={self.args.raw / (name + '.jsonl')}",
             str(self.args.binary),
@@ -417,14 +553,24 @@ class Gallery:
         if previous:
             self.remote("close-window", "--match", f"id:{previous}")
         self.wait("NORMAL")
+
+    def actions(self, steps, timeline=None, phase="setup", pace=0.3):
         for kind, value in steps:
+            started = time.monotonic_ns()
             if kind == "wait":
                 self.wait(value)
-                continue
-            if kind == "mouse":
-                self.pointer(*value)
+            elif kind == "pause":
+                time.sleep(float(value))
+            elif kind == "mouse":
+                self.pointer(
+                    value[0],
+                    value[1] * self.args.width / 2560,
+                    value[2] * self.args.height / 1440,
+                )
             elif kind == "hover":
                 self.hover(value)
+            elif kind == "note":
+                self.note(value)
             elif kind == "open":
                 command, document = value
                 self.remote(
@@ -441,8 +587,22 @@ class Gallery:
                     f"id:{self.window}",
                     value.replace("{corpus}", str(self.args.corpus)),
                 )
-            time.sleep(0.3)
+            if timeline is not None:
+                timeline.append(
+                    {
+                        "phase": phase,
+                        "kind": kind,
+                        "value": value,
+                        "input_monotonic_ns": started,
+                        "completed_monotonic_ns": time.monotonic_ns(),
+                    }
+                )
+            time.sleep(pace)
 
+    def capture(self, name):
+        page, documents, steps = SCENES[name]
+        self.launch_scene(name, page, documents)
+        self.actions(steps)
         raw = self.args.raw / f"{name}.png"
         # Wait for raster work and animations.
         time.sleep(1)
@@ -464,7 +624,13 @@ class Gallery:
         screen = self.remote("get-text", "--match", f"id:{self.window}")
         (self.args.raw / f"{name}.txt").write_text(screen + "\n")
         target = self.directory / f"{name}.jpg"
-        run("sh", str(ROOT / "scripts/demo-optimize.sh"), str(raw), str(target))
+        run(
+            "sh",
+            str(ROOT / "scripts/demo-optimize.sh"),
+            str(raw),
+            str(target),
+            f"{self.args.width}x{self.args.height}",
+        )
         print(f"Captured {name}: {target.stat().st_size} bytes", flush=True)
         scene = {
             "image": target.name,
@@ -475,26 +641,35 @@ class Gallery:
             "documents": scene_documents(name),
             "launch_documents": documents,
             "steps": steps,
+            "dimensions": [self.args.width, self.args.height],
+            "window_checks": self.host.evidence(),
+            "resolved_targets": self.resolved_targets,
+            "ocr_mode": (
+                "explicit request"
+                if any(
+                    kind == "text" and ":ocr" in str(value)
+                    for kind, value in steps
+                )
+                else "automatic; cache initially empty"
+                if "scan" in scene_documents(name)
+                else None
+            ),
         }
         return scene, target
 
     def close(self):
-        if not hasattr(self, "process"):
-            return
-        self.process.terminate()
-        try:
-            self.process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait()
+        if hasattr(self, "host"):
+            self.host.close()
 
     def start(self, log):
         font_size = self.args.base_font * self.args.scale
         options = {
             "allow_remote_control": "socket-only",
-            "initial_window_width": "2560",
-            "initial_window_height": "1440",
+            "initial_window_width": str(self.args.width),
+            "initial_window_height": str(self.args.height),
             "remember_window_size": "no",
+            "confirm_os_window_close": "0",
+            "macos_quit_when_last_window_closed": "yes",
             "hide_window_decorations": "yes",
             "tab_bar_style": "hidden",
             "window_padding_width": "0",
@@ -521,34 +696,45 @@ class Gallery:
             "--listen-on",
             self.socket,
             "--start-as",
-            "normal",
+            "hidden",
+            "--single-instance",
+            "--instance-group",
+            self.directory.name,
         ]
         for key, value in options.items():
             command.extend(["-o", f"{key}={value}"])
         command.extend(["/bin/sleep", "3600"])
-        self.process = subprocess.Popen(
-            command, cwd=ROOT, stdout=log, stderr=log
-        )
+        self.host = Window(self.args, self.directory)
+        self.host.launch(command, self.socket, log)
         deadline = time.monotonic() + 30
         while not (self.directory / "kitty.sock").exists():
-            if self.process.poll() is not None or time.monotonic() > deadline:
+            self.host.watch()
+            if time.monotonic() > deadline:
                 raise RuntimeError("Kitty startup failed; inspect kitty.log")
             time.sleep(0.2)
         # Never persist environments from ls.
         windows = json.loads(self.remote("ls"))
         self.window = str(windows[0]["tabs"][0]["windows"][0]["id"])
+        self.os_window = windows[0]["platform_window_id"]
+        self.host.show(self.remote)
         return options
 
 
-def parse_args(argv=None):
+def arg_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--binary", type=Path, default=ROOT / "target/release/vpdf"
     )
     parser.add_argument("--build-profile", default="unknown")
     parser.add_argument("--corpus", type=Path, default=ROOT / "tmp/corpus")
-    parser.add_argument("--output", type=Path, default=ROOT / "docs/assets")
-    parser.add_argument("--raw", type=Path, default=ROOT / "tmp/demo")
+    parser.add_argument("--output", type=Path, default=CACHE / "encoded")
+    parser.add_argument(
+        "--manifest", type=Path, default=ROOT / "docs/assets/capture.json"
+    )
+    parser.add_argument("--raw", type=Path, default=CACHE / "raw")
+    parser.add_argument("--width", type=int, default=2560)
+    parser.add_argument("--height", type=int, default=1440)
+    parser.add_argument("--place", type=int, nargs=2, metavar=("X", "Y"))
     parser.add_argument("--kitty", default=shutil.which("kitty"))
     parser.add_argument("--kitten", default=shutil.which("kitten"))
     parser.add_argument("--font", default="monospace")
@@ -561,13 +747,54 @@ def parse_args(argv=None):
         help="Recapture this scene; repeat for several; omit for all",
     )
     parser.add_argument("--list-scenes", action="store_true")
-    args = parser.parse_args(argv)
-    for name in ("binary", "corpus", "output", "raw"):
+    return parser
+
+
+def resolve_args(args):
+    for name in ("binary", "corpus", "output", "raw", "manifest"):
         setattr(args, name, getattr(args, name).resolve())
     return args
 
 
+def parse_args(argv=None):
+    return resolve_args(arg_parser().parse_args(argv))
+
+
+def verify_output(path):
+    path = path.resolve()
+    parent = path
+    while not parent.is_dir():
+        parent = parent.parent
+    repository = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=parent,
+        capture_output=True,
+        text=True,
+    )
+    if repository.returncode != 0:
+        return
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z", "--", str(path)],
+        cwd=Path(repository.stdout.strip()),
+        capture_output=True,
+        check=True,
+    )
+    result = subprocess.run(
+        ["git", "check-ignore", "--no-index", "--quiet", str(path)],
+        cwd=Path(repository.stdout.strip()),
+    )
+    if tracked.stdout or result.returncode != 0:
+        raise RuntimeError("Demo output must stay outside tracked paths")
+
+
 def preflight(args, selected):
+    verify_output(args.output)
+    verify_output(args.raw)
+    if (
+        not (1 <= args.width <= 8192 and 1 <= args.height <= 8192)
+        or args.width * args.height > 16_777_216
+    ):
+        raise RuntimeError("Demo dimensions exceed capture bounds")
     if not args.kitty or not args.kitten or not shutil.which("magick"):
         raise RuntimeError("Kitty, kitten, and ImageMagick are required")
     if not args.binary.is_file():
@@ -580,11 +807,7 @@ def preflight(args, selected):
             "Font size and scale must be positive finite numbers"
         )
     run(args.kitten, "@", "screenshot", "--help")
-    if not any(
-        kind == "text" and ":ocr " in value
-        for name in selected
-        for kind, value in SCENES[name][2]
-    ):
+    if not any("scan" in scene_documents(name) for name in selected):
         return None
     if not shutil.which("tesseract"):
         raise RuntimeError("OCR capture requires Tesseract")
@@ -620,13 +843,14 @@ def main():
     inputs = input_hashes(args.corpus, selected)
     args.output.mkdir(parents=True, exist_ok=True)
     args.raw.mkdir(parents=True, exist_ok=True)
-    path = args.output / "capture.json"
+    args.manifest.parent.mkdir(parents=True, exist_ok=True)
+    path = args.manifest
     manifest = load_manifest(path)
     if not args.scene:
         manifest["scenes"] = {
             name: scene
             for name, scene in manifest["scenes"].items()
-            if name in SCENES
+            if name in SCENES or scene.get("kind") in {"video", "poster"}
         }
     with tempfile.TemporaryDirectory(
         prefix="vpdf-demo-", dir="/tmp"
@@ -640,7 +864,13 @@ def main():
                     scene, image = gallery.capture(name)
                     verify_inputs(args, identity)
                     manifest = publish_scene(
-                        args.output, manifest, identity, name, scene, image
+                        args.output,
+                        manifest,
+                        identity,
+                        name,
+                        scene,
+                        image,
+                        args.manifest,
                     )
             finally:
                 gallery.close()
