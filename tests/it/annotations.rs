@@ -218,7 +218,7 @@ fn notes_scroll_and_resize() -> Result<()> {
     let narrow = drawn(&mut app)?;
     assert!(narrow.contains("BEGIN"));
     assert_ne!(first, narrow);
-    let label = narrow.split_once('╭').unwrap().1.split('╮').next().unwrap();
+    let label = narrow.split_once('┌').unwrap().1.split('┐').next().unwrap();
     assert!(
       label.chars().count() + 2 <= usize::from(app.layout.screen().columns)
     );

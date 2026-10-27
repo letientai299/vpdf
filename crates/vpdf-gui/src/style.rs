@@ -182,6 +182,7 @@ mod tests {
         (Role::TabActive, p.background, Some(p.foreground)),
         (Role::TabInactive, p.muted, Some(p.background)),
         (Role::TextSelection, p.background, Some(p.highlight)),
+        (Role::PreviewBorder, p.accent, None),
         (Role::PreviewText, p.foreground, Some(p.background)),
       ] {
         style.apply(role, theme);

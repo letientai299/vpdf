@@ -221,16 +221,19 @@ mod tests {
     {
       let mut out = Vec::new();
       write(&mut out, role, Colors::Terminal)?;
+      let background = if role == Role::PreviewBorder {
+        String::new()
+      } else {
+        format!(
+          ";48;2;{};{};{}",
+          p.background[0], p.background[1], p.background[2]
+        )
+      };
       assert_eq!(
         String::from_utf8(out).unwrap(),
         format!(
-          "\x1b[0;38;2;{};{};{};48;2;{};{};{}m",
-          foreground[0],
-          foreground[1],
-          foreground[2],
-          p.background[0],
-          p.background[1],
-          p.background[2]
+          "\x1b[0;38;2;{};{};{}{background}m",
+          foreground[0], foreground[1], foreground[2]
         )
       );
     }

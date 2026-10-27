@@ -61,7 +61,7 @@ fn preview_scroll_clamps_without_moving_target() -> Result<()> {
       let view = (app.reader.scroll, app.text().position(0, 0)?);
       keys(&mut app, b"9999k")?;
       let first = drawn(&mut app)?;
-      assert!(first.contains(&format!("╭ {label} ")));
+      assert!(first.contains(&format!("┌ p{label} ")));
       assert!(!first.contains('↑'));
       assert!(first.contains('↓'));
       keys(&mut app, b"3j")?;
@@ -78,7 +78,7 @@ fn preview_scroll_clamps_without_moving_target() -> Result<()> {
       let last = drawn(&mut app)?;
       assert!(!last.contains('↓'));
       // It runs to the last page (U12).
-      assert!(!last.contains(&format!("╭ {label} ")), "text={text}");
+      assert!(!last.contains(&format!("┌ p{label} ")), "text={text}");
       keys(&mut app, b"9999j")?;
       assert_eq!(drawn(&mut app)?, last);
       assert_eq!(
@@ -182,9 +182,9 @@ fn preview_border_stays_inside_resized_pane() -> Result<()> {
       app.layout.restore(1.5, rotation, Crop([50, 50, 50, 50]));
       app.relayout()?;
       let out = drawn(&mut app)?;
-      assert_eq!(out.matches('╭').count(), 1);
-      assert_eq!(out.matches('╰').count(), 1);
-      let label = out.split_once('╭').unwrap().1.split('╮').next().unwrap();
+      assert_eq!(out.matches('┌').count(), 1);
+      assert_eq!(out.matches('└').count(), 1);
+      let label = out.split_once('┌').unwrap().1.split('┐').next().unwrap();
       assert!(label.width() + 2 <= usize::from(app.layout.screen().columns));
       for part in out.split("\x1b[") {
         let Some((position, _)) = part.split_once('H') else { continue };
@@ -272,7 +272,7 @@ fn preview_label_keeps_arrow() -> Result<()> {
     let wide = format!("界{}", app.doc.label(page)).repeat(200);
     app.doc.pages[page.0].label = wide.into();
     let out = drawn(&mut app)?;
-    let border = out.split_once('╭').unwrap().1.split('╮').next().unwrap();
+    let border = out.split_once('┌').unwrap().1.split('┐').next().unwrap();
     assert!(border.contains('↑'));
     assert!(border.width() + 2 <= usize::from(app.layout.screen().columns));
   }

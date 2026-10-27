@@ -144,9 +144,7 @@ impl Role {
       }
       Self::HintPicked => Reset(P::new(Set(T::BrightWhite), Set(T::Blue), &[])),
       Self::TextLink => Reset(P::new(Set(T::Cyan), Keep, &[Underline])),
-      Self::PreviewBorder => {
-        Reset(P::new(Set(T::PreviewBorder), Set(T::BrightWhite), &[]))
-      }
+      Self::PreviewBorder => Reset(P::new(Set(T::PreviewBorder), Keep, &[])),
       Self::PreviewText => {
         Reset(P::new(Set(T::PreviewText), Set(T::BrightWhite), &[]))
       }

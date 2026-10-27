@@ -2063,18 +2063,18 @@ fn previews_cross_page_ends() -> Result<()> {
     session.resize(vpdf_ui::layout::Screen { rows: 12, ..screen() })?;
     key_open(&mut session)?;
     let first = status(&mut session)?;
-    assert!(first.contains("╭ 1 "), "text={text_mode}: starts on page 1");
+    assert!(first.contains("┌ p1 "), "text={text_mode}: starts on page 1");
     if text_mode {
       assert!(first.contains("Back to the top"), "a page 1 line shows");
     }
     if text_mode {
       // The break row starts page 2.
       session.app().scroll_preview(1.0)?;
-      assert!(status(&mut session)?.contains("╭ 2 "), "break row");
+      assert!(status(&mut session)?.contains("┌ p2 "), "break row");
     }
     session.app().scroll_preview(100.0)?;
     let last = status(&mut session)?;
-    assert!(last.contains("╭ 2 "), "text={text_mode}: reaches page 2");
+    assert!(last.contains("┌ p2 "), "text={text_mode}: reaches page 2");
   }
   Ok(())
 }

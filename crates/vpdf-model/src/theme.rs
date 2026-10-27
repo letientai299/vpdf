@@ -78,7 +78,8 @@ impl Colors {
         if patch.foreground == ColorChange::Keep {
           patch.foreground = ColorChange::Default;
         }
-        if patch.background == ColorChange::Keep {
+        if patch.background == ColorChange::Keep && role != Role::PreviewBorder
+        {
           patch.background = ColorChange::Default;
         }
         match role {

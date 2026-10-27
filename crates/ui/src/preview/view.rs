@@ -13,7 +13,7 @@ use vpdf_model::document::{Annotation, Target};
 use vpdf_model::input::{
   KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use vpdf_model::scene::{Op, Stage, Surface, Text as SceneText};
+use vpdf_model::scene::{Draw, Layer, Op, Stage, Surface, Text as SceneText};
 use vpdf_model::style::Role;
 use vpdf_model::tile::TileKey;
 use vpdf_reader::motion::Motion;
@@ -129,6 +129,7 @@ enum View {
   Image {
     key: TileKey,
     rgb: vpdf_model::image::Rgb,
+    background: Option<[u8; 4]>,
   },
   /// Lines from its page onward; page `starts`.
   Text {
@@ -142,6 +143,18 @@ enum View {
     columns: usize,
     lines: Vec<String>,
   },
+}
+
+impl View {
+  fn image(
+    layout: &Layout,
+    key: TileKey,
+    source: &mut impl Raster,
+  ) -> Result<Self> {
+    let rgb = super::image(layout, key, source)?;
+    let background = image_background(&rgb);
+    Ok(Self::Image { key, rgb, background })
+  }
 }
 
 impl Preview {
@@ -172,7 +185,7 @@ impl Preview {
       let projected =
         layout.pages()[page.0].matrix.transform_xy(x, y - ABOVE).1;
       let key = preview_key(layout, page, projected as i32)?;
-      View::Image { key, rgb: super::image(layout, key, source)? }
+      View::image(layout, key, source)?
     };
     Ok(Self {
       target,
@@ -381,8 +394,7 @@ impl Preview {
         if *key == next {
           return Ok(true);
         }
-        let rgb = super::image(layout, next, source)?;
-        self.view = View::Image { key: next, rgb };
+        self.view = View::image(layout, next, source)?;
         self.serial = vpdf_model::image::PictureId::fresh();
       }
     }
@@ -488,7 +500,13 @@ impl Preview {
     if over_page {
       // Image peeks cover text panes too.
       let pane = paint::Frame { text: false, screen, ..input.pane };
-      paint::backdrop(scene, pane, frame, theme::PREVIEW_FILL);
+      let color = match &self.view {
+        View::Image { background: Some(color), .. } => {
+          theme::Paint::Rgba(*color)
+        }
+        _ => theme::PREVIEW_FILL,
+      };
+      backdrop(scene, pane, frame, label.width(), color);
     }
     let bridge = input
       .link
@@ -500,10 +518,10 @@ impl Preview {
     let text_style = if over_page { Role::PreviewText } else { Role::Reset };
     paint::move_to(scene, input.pane.at, top, column);
     scene.push(Op::Style(border));
-    scene.text("╭");
+    scene.text("┌");
     scene.text(&label);
     scene.text(&rule);
-    scene.text("╮");
+    scene.text("┐");
     scene.push(Op::Style(Role::Reset));
     match &self.view {
       View::Image { rgb, .. } => {
@@ -541,14 +559,70 @@ impl Preview {
     let rule = "─".repeat(columns.saturating_sub(1));
     paint::move_to(scene, input.pane.at, top + rows + 1, column);
     scene.push(Op::Style(border));
-    scene.text("╰");
+    scene.text("└");
     scene.text(marker);
     scene.text(&rule);
-    scene.text("╯");
+    scene.text("┘");
     scene.push(Op::Style(Role::Reset));
     Ok(())
   }
 }
+fn backdrop<'a>(
+  scene: &mut impl Draw<'a>,
+  pane: paint::Frame,
+  cells: Rect,
+  label: usize,
+  color: theme::Paint,
+) {
+  let mut rect = paint::cell_bounds(pane.screen, pane.left, cells);
+  let half_width = f32::from(pane.screen.cell_width) / 2.0;
+  let half_height = f32::from(pane.screen.cell_height) / 2.0;
+  rect.x0 += half_width;
+  rect.x1 -= half_width;
+  rect.y0 += half_height;
+  rect.y1 -= half_height;
+  scene.fill(rect, color, Layer::BelowText, pane.stage());
+  // Keep title legible above the rule.
+  let title = Bounds {
+    x0: rect.x0 + half_width,
+    x1: rect.x0 + half_width + label as f32 * half_width * 2.0,
+    y0: rect.y0 - half_height,
+    y1: rect.y0,
+  };
+  scene.fill(title, color, Layer::BelowText, pane.stage());
+  if label == 0 {
+    return;
+  }
+  let label = Bounds { y1: title.y1 + half_height, ..title };
+  for edge in [
+    Bounds { y1: label.y0 + 1.0, ..label },
+    Bounds { y0: label.y1 - 1.0, ..label },
+    Bounds { x1: label.x0 + 1.0, ..label },
+    Bounds { x0: label.x1 - 1.0, ..label },
+  ] {
+    scene.fill(edge, theme::BADGE_FILL, Layer::BelowText, pane.stage());
+  }
+}
+
+fn image_background(image: &vpdf_model::image::Rgb) -> Option<[u8; 4]> {
+  let (width, height) = (image.width() as usize, image.height() as usize);
+  let channels = image.pixels().len() / (width * height);
+  let edge = (0..width).flat_map(|x| [(x, 0), (x, height - 1)]).chain(
+    (1..height.saturating_sub(1)).flat_map(|y| [(0, y), (width - 1, y)]),
+  );
+  let mut colors = std::collections::BTreeMap::new();
+  for (x, y) in edge {
+    let at = (y * width + x) * channels;
+    let pixel = &image.pixels()[at..at + channels];
+    if channels == 4 && pixel[3] != 255 {
+      continue;
+    }
+    let color = [pixel[0], pixel[1], pixel[2], 255];
+    *colors.entry(color).or_insert(0usize) += 1;
+  }
+  colors.into_iter().max_by_key(|&(_, count)| count).map(|(color, _)| color)
+}
+
 /// Cells from `link`'s edge row to `frame` (U2).
 fn bridge(input: &Frame<'_>, frame: Rect, link: Bounds) -> Rect {
   let screen = input.layout.screen();
@@ -623,10 +697,11 @@ fn layout_end(layout: &Layout) -> f32 {
 }
 fn border_label(label: &str, columns: usize, clipped: bool) -> String {
   let marker = if clipped { "↑" } else { "" };
-  if columns < 4 {
+  if columns < label.width().saturating_add(marker.width() + 4) {
     return vpdf_model::text::clean(marker, columns);
   }
-  let label = vpdf_model::text::clean(label, columns - marker.width() - 3);
+  let label =
+    vpdf_model::text::clean(&format!("p{label}"), columns - marker.width() - 3);
   format!(" {label} {marker} ")
 }
 
@@ -690,27 +765,143 @@ mod tests {
       &layout,
       &mut source,
     )?;
-    let View::Image { key, rgb } = &preview.view else {
+    let View::Image { key, rgb, background } = &preview.view else {
       panic!("Missing image")
     };
     assert_eq!(key.recolor, layout.recolor());
     assert_eq!(&rgb.pixels()[..4], [0, 0, 0, 255]);
+    assert_eq!(*background, Some([0, 0, 0, 255]));
     let first = preview.serial;
     layout
       .set_recolor(vpdf_model::recolor::Recolor::parse("sepia 100").unwrap());
     preview.scroll(0.0, &layout, &mut source)?;
     assert_ne!(preview.serial, first);
-    let View::Image { key, rgb } = &preview.view else {
+    let View::Image { key, rgb, background } = &preview.view else {
       panic!("Missing image")
     };
     assert_eq!(key.recolor, layout.recolor());
     assert_eq!(&rgb.pixels()[..4], [238, 220, 185, 255]);
+    assert_eq!(*background, Some([238, 220, 185, 255]));
     let second = preview.serial;
     let rasters = source.rasters.len();
     preview.scroll(0.0, &layout, &mut source)?;
     assert_eq!(preview.serial, second);
     assert_eq!(source.rasters.len(), rasters);
     Ok(())
+  }
+
+  #[test]
+  fn backdrop_stays_inside_border() {
+    use vpdf_model::scene::Scene;
+
+    let pane = paint::Frame {
+      at: vpdf_model::geometry::At { column: 7, row: 3 },
+      screen: crate::testing::screen::cells(80, 30),
+      left: 4,
+      text: false,
+    };
+    let cells = Rect { column: 10, row: 5, columns: 20, rows: 8 };
+    let mut scene = Scene::new();
+    backdrop(&mut scene, pane, cells, 3, theme::PREVIEW_FILL);
+    let fills: Vec<_> = scene
+      .iter()
+      .filter_map(|op| {
+        let Op::Fill(fill) = op else { panic!("Expected backdrop") };
+        assert_eq!(fill.layer(), Layer::BelowText);
+        assert_eq!(fill.stage(), pane.stage());
+        (fill.color() == theme::PREVIEW_FILL).then(|| fill.rect())
+      })
+      .collect();
+    assert_eq!(
+      fills,
+      [
+        Bounds { x0: 52.0, y0: 88.0, x1: 204.0, y1: 200.0 },
+        Bounds { x0: 56.0, y0: 80.0, x1: 80.0, y1: 88.0 },
+      ]
+    );
+    let edges: Vec<_> = scene
+      .iter()
+      .filter_map(|op| {
+        let Op::Fill(fill) = op else { panic!("Expected label border") };
+        (fill.color() == theme::BADGE_FILL).then(|| fill.rect())
+      })
+      .collect();
+    assert_eq!(edges.len(), 4);
+    for (x, y) in [
+      (56.5, 80.5),
+      (79.5, 80.5),
+      (56.5, 95.5),
+      (79.5, 95.5),
+      (60.0, 80.5),
+      (60.0, 95.5),
+    ] {
+      assert!(edges.iter().any(|edge| edge.contains(x, y)));
+    }
+    assert!(edges.iter().all(|edge| !edge.contains(60.0, 88.0)));
+    for (x, y) in [(49.0, 100.0), (207.0, 100.0), (100.0, 81.0), (100.0, 207.0)]
+    {
+      assert!(!fills.iter().any(|fill| fill.contains(x, y)));
+    }
+  }
+
+  #[test]
+  fn labels_identify_page_numbers() {
+    assert_eq!(border_label("11", 8, false), " p11  ");
+    assert_eq!(border_label("11", 8, true), " p11 ↑ ");
+    assert_eq!(border_label("11", 4, true), "↑");
+    assert_eq!(border_label("11", 5, true), "↑");
+    assert_eq!(border_label("11", 5, false), "");
+    assert_eq!(border_label("11", 6, true), "↑");
+    assert_eq!(border_label("11", 6, false), " p11  ");
+    assert_eq!(border_label("", 0, false), "");
+    assert_eq!(border_label("11", 1, true), "↑");
+  }
+
+  #[test]
+  fn background_ignores_ink() {
+    use vpdf_model::image::Rgb;
+
+    for paper in [[255; 4], [25, 35, 45, 255], [240, 220, 190, 255]] {
+      for channels in [3, 4] {
+        let mut pixels = paper[..channels].repeat(25);
+        pixels[..3].fill(0);
+        pixels[12 * channels..12 * channels + 3].fill(0);
+        let image = if channels == 3 {
+          Rgb::new(5, 5, pixels).unwrap()
+        } else {
+          pixels[9 * channels + 3] = 0;
+          Rgb::rgba(5, 5, pixels).unwrap()
+        };
+        assert_eq!(image_background(&image), Some(paper));
+      }
+    }
+    let blank = Rgb::rgba(2, 2, vec![0; 16]).unwrap();
+    assert_eq!(image_background(&blank), None);
+  }
+
+  #[test]
+  fn colorful_edges_bound_fills() {
+    use vpdf_model::image::Rgb;
+    use vpdf_model::scene::Scene;
+
+    let pixels: Vec<_> =
+      (0..1280 * 16).flat_map(|i| [i as u8, (i / 256) as u8, 1, 255]).collect();
+    let image = Rgb::rgba(1280, 16, pixels).unwrap();
+    let color = theme::Paint::Rgba(image_background(&image).unwrap());
+    let pane = paint::Frame {
+      at: vpdf_model::geometry::At::default(),
+      screen: crate::testing::screen::cells(200, 30),
+      left: 0,
+      text: false,
+    };
+    let cells = Rect { column: 2, row: 2, columns: 162, rows: 3 };
+    let mut scene = Scene::new();
+    backdrop(&mut scene, pane, cells, 6, color);
+    assert_eq!(scene.len(), 6);
+    for op in scene.iter().take(2) {
+      let Op::Fill(fill) = op else { panic!("Expected background") };
+      assert_eq!(fill.color(), color);
+    }
   }
 
   #[test]

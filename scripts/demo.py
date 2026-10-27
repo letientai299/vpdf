@@ -55,7 +55,7 @@ SCENES = {
             ("text", "/[13]\r"),
             ("wait", "matches"),
             ("text", ":nohlsearch\rilK"),
-            ("wait", "╭"),
+            ("wait", "┌"),
         ],
     ),
     "help": (
@@ -85,7 +85,7 @@ SCENES = {
             ("text", "zc=/[13]\r"),
             ("wait", "matches"),
             ("text", ":nohlsearch\rilK"),
-            ("wait", "╭"),
+            ("wait", "┌"),
         ],
     ),
     "figure": (
