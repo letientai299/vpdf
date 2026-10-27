@@ -79,7 +79,7 @@ pub enum Request {
   TabClose(Option<usize>),
   QuitAll,
   ConfigReload,
-  Theme(vpdf_model::theme::Theme),
+  Theme(String),
   /// `:mouse`: takes the pointer, or leaves it to the terminal.
   Mouse(bool),
   Perf(Option<bool>),

@@ -60,7 +60,9 @@ Tab completes paths after `:fzf `; a PDF opens directly, and a directory
 sets the picker root.
 
 Use `:cursorline off` to hide the cursor band, `:crop on` to crop margins,
-`:text` to inspect extracted text, and `:theme nord` to change the UI palette.
+`:text` to inspect extracted text, and `:theme light` or `:theme dark` to change
+UI colors. Use `:theme ~/.config/vpdf/themes/nord.toml` for a theme file; see
+[UI themes][themes] for path resolution and fallback behavior.
 `:config reload` rereads the selected configuration file.
 
 Use `:cancel` to stop pane jobs and `:nohlsearch` to hide search highlights.
@@ -81,3 +83,4 @@ installed reader for the current interface.
 [navigation]: nav.md
 [home]: readme.md
 [state]: reading.md
+[themes]: config.md#ui-themes

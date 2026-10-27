@@ -5,7 +5,6 @@ use crate::Result;
 use crate::layout::Layout;
 use crate::source::Raster;
 use crate::text::PageId;
-use crate::theme;
 use vpdf_model::tile::TileKey;
 
 pub fn on_anchor(
@@ -28,8 +27,8 @@ pub fn image(
   key: TileKey,
   source: &mut impl Raster,
 ) -> Result<vpdf_model::image::Rgb> {
-  let stride = usize::try_from(key.width)? * 3;
-  let mut rgb = vec![theme::PREVIEW_GAP; stride * usize::try_from(key.height)?];
+  let stride = usize::try_from(key.width)? * 4;
+  let mut rgba = vec![0; stride * usize::try_from(key.height)?];
   let first = layout.pages()[key.page.0].top as i32;
   let end = key.y + key.height;
   for index in key.page.0..layout.pages().len() {
@@ -67,7 +66,7 @@ pub fn image(
     let offset = usize::try_from(from - key.y)?;
     // Fitting pages centre, as in the view.
     let indent = if pan == 0 { (key.width - width) / 2 } else { 0 };
-    let indent = usize::try_from(indent)? * 3;
+    let indent = usize::try_from(indent)? * 4;
     let result = source.raster(part, |pixels, source_stride| {
       let rows = usize::try_from(part.height)?;
       anyhow::ensure!(
@@ -77,7 +76,16 @@ pub fn image(
       );
       for (line, pixels) in pixels.chunks(source_stride).enumerate() {
         let at = (offset + line) * stride + indent;
-        rgb[at..at + row].copy_from_slice(&pixels[..row]);
+        let target = &mut rgba[at..at + row / 3 * 4];
+        for (source, target) in pixels[..row]
+          .as_chunks::<3>()
+          .0
+          .iter()
+          .zip(target.as_chunks_mut::<4>().0)
+        {
+          target[..3].copy_from_slice(source);
+          target[3] = 255;
+        }
       }
       Ok(())
     });
@@ -85,7 +93,7 @@ pub fn image(
       result?;
     }
   }
-  vpdf_model::image::Rgb::new(key.width, key.height, rgb)
+  vpdf_model::image::Rgb::rgba(key.width, key.height, rgba)
     .ok_or_else(|| anyhow::anyhow!("Invalid preview pixels"))
 }
 
@@ -138,16 +146,16 @@ mod tests {
     assert_eq!(source.requested.len(), 2);
     assert_eq!((source.requested[0].y, source.requested[0].height), (95, 5));
     assert_eq!((source.requested[1].y, source.requested[1].height), (0, 16));
-    for (y, row) in rgb.pixels().chunks(360).enumerate() {
-      for (x, pixel) in row.chunks(3).enumerate() {
+    for (y, row) in rgb.pixels().chunks(480).enumerate() {
+      for (x, pixel) in row.chunks(4).enumerate() {
         let expected = if y < 5 && (10..110).contains(&x) {
-          1
+          [1, 1, 1, 255]
         } else if (15..31).contains(&y) && (52..68).contains(&x) {
-          2
+          [2, 2, 2, 255]
         } else {
-          theme::PREVIEW_GAP
+          [0; 4]
         };
-        assert_eq!(pixel, &[expected; 3], "{x}, {y}");
+        assert_eq!(pixel, expected, "{x}, {y}");
       }
     }
     Ok(())
@@ -158,9 +166,7 @@ mod tests {
     let (layout, key) = strip();
     let mut source = Source { failed: Some(PageId(1)), ..Source::default() };
     let rgb = image(&layout, key, &mut source)?;
-    assert!(
-      rgb.pixels()[5 * 360..].iter().all(|&byte| byte == theme::PREVIEW_GAP)
-    );
+    assert!(rgb.pixels()[5 * 480..].iter().all(|&byte| byte == 0));
     source.failed = Some(PageId(0));
     assert!(image(&layout, key, &mut source).is_err());
     Ok(())

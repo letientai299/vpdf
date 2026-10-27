@@ -59,11 +59,26 @@ impl Session {
     self.refresh_help();
   }
 
-  pub(super) fn set_theme(&mut self, theme: vpdf_model::theme::Theme) {
-    self.settings.set_theme(theme);
+  pub(super) fn choose_theme(&mut self, name: &str) {
+    let selected = crate::config::ThemeChoice::load(name, Path::new("."));
+    self.set_theme(selected.as_ref().cloned().unwrap_or_default());
+    if let Err(error) = selected {
+      let warning = format!("appearance.theme: {error}");
+      self.startup_warning =
+        Some(vpdf_model::text::printable(&warning).collect());
+      self.present_startup();
+    }
+  }
+
+  pub(super) fn set_theme(
+    &mut self,
+    theme: impl Into<crate::config::ThemeChoice>,
+  ) {
+    let theme = theme.into();
+    self.settings.set_theme(theme.clone());
     for tab in &mut self.tabs {
       for app in &mut tab.panes {
-        app.settings.set_theme(theme);
+        app.settings.set_theme(theme.clone());
       }
     }
     if let Some(home) = &mut self.home {
@@ -223,7 +238,7 @@ impl Session {
         Ok(())
       }
       Some(Request::Theme(theme)) => {
-        self.set_theme(theme);
+        self.choose_theme(&theme);
         Ok(())
       }
       Some(Request::Perf(on)) => self.toggle_perf(on),

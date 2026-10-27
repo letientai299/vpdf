@@ -29,6 +29,21 @@ struct Args {
   events: Option<PathBuf>,
 }
 
+fn system_palette(ctx: &egui::Context) -> vpdf_model::theme::Palette {
+  match ctx.system_theme() {
+    Some(egui::Theme::Light) => vpdf_model::theme::Palette::light(),
+    Some(egui::Theme::Dark) | None => vpdf_model::theme::Palette::dark(),
+  }
+}
+
+fn set_theme(ctx: &egui::Context, palette: vpdf_model::theme::Palette) {
+  ctx.set_theme(if vpdf_model::theme::is_light(palette.background) {
+    egui::Theme::Light
+  } else {
+    egui::Theme::Dark
+  });
+}
+
 struct Window {
   #[cfg(target_os = "macos")]
   documents: fmv_macos_events::Inbox,
@@ -37,6 +52,7 @@ struct Window {
   renderer: Renderer,
   input: input::Adapter,
   screen: Option<Screen>,
+  system_palette: vpdf_model::theme::Palette,
   capture: Option<PathBuf>,
   #[cfg(feature = "bench-events")]
   events: Option<inject::Injector>,
@@ -46,6 +62,14 @@ struct Window {
 }
 
 impl Window {
+  fn refresh_system(&mut self, ctx: &egui::Context) {
+    let system_palette = system_palette(ctx);
+    if system_palette != self.system_palette {
+      self.system_palette = system_palette;
+      self.bridge.send(Input::SystemPalette(system_palette));
+    }
+  }
+
   fn new(
     cc: &eframe::CreationContext<'_>,
     args: Args,
@@ -63,6 +87,12 @@ impl Window {
       .events
       .as_deref()
       .map(|path| inject::spawn(path, cc.egui_ctx.clone()));
+    let system_palette = system_palette(&cc.egui_ctx);
+    let palette = config
+      .settings
+      .colors(vpdf_model::theme::Colors::Palette(system_palette))
+      .palette();
+    set_theme(&cc.egui_ctx, palette);
     let trace = Trace::from_env();
     let ctx = cc.egui_ctx.clone();
     let bridge = Bridge::configured(
@@ -75,6 +105,7 @@ impl Window {
       config,
       move || ctx.request_repaint(),
     )?;
+    bridge.send(Input::SystemPalette(system_palette));
     if trace.enabled() {
       bridge.send(Input::Observe(true));
     }
@@ -89,6 +120,7 @@ impl Window {
         .map_or_else(Renderer::default, Renderer::with_gpu),
       input: input::Adapter::default(),
       screen: None,
+      system_palette,
       capture: args.capture,
       #[cfg(feature = "bench-events")]
       events,
@@ -133,6 +165,7 @@ impl eframe::App for Window {
   fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
     let started = std::time::Instant::now();
     let ctx = ui.ctx().clone();
+    self.refresh_system(&ctx);
     let scale = ctx.pixels_per_point();
     let font = FontId::monospace(paint::FONT_SIZE);
     let cell = ctx.fonts_mut(|fonts| {
@@ -171,6 +204,9 @@ impl eframe::App for Window {
         ctx.copy_text(text.clone());
       }
       self.frame = Some(frame);
+    }
+    if let Some(frame) = &self.frame {
+      set_theme(&ctx, paint::scene_theme(&frame.scene).palette());
     }
     self.input.editing(
       self.frame.as_ref().and_then(|frame| input::purpose(&frame.scene)),
@@ -302,10 +338,6 @@ fn options(args: &Args) -> Result<eframe::NativeOptions, image::ImageError> {
 
 fn main() -> eframe::Result {
   let args = vpdf::version::parse::<Args>(false);
-  if args.config.config_example {
-    return vpdf::config::print_example()
-      .map_err(|error| eframe::Error::AppCreation(error.into()));
-  }
   let config = args.config.load();
   let options = options(&args)
     .map_err(|error| eframe::Error::AppCreation(Box::new(error)))?;
@@ -336,6 +368,34 @@ mod tests {
       .err()
       .unwrap();
     assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
+  }
+
+  #[test]
+  fn system_input_selects_palette() {
+    use vpdf_model::theme::Palette;
+    let ctx = egui::Context::default();
+    for (system, expected) in [
+      (Some(egui::Theme::Light), Palette::light()),
+      (Some(egui::Theme::Dark), Palette::dark()),
+      (None, Palette::dark()),
+    ] {
+      let mut output = ctx.run_ui(
+        egui::RawInput { system_theme: system, ..Default::default() },
+        |ui| {
+          let ctx = ui.ctx();
+          assert_eq!(system_palette(ctx), expected);
+          for (palette, theme) in [
+            (Palette::light(), egui::Theme::Light),
+            (Palette::dark(), egui::Theme::Dark),
+          ] {
+            set_theme(ctx, palette);
+            assert_eq!(ctx.theme(), theme);
+            assert_eq!(system_palette(ctx), expected);
+          }
+        },
+      );
+      output.textures_delta.clear();
+    }
   }
 
   #[test]

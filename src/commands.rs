@@ -369,7 +369,8 @@ impl App {
   }
 
   fn theme_command(&mut self, argument: &str) -> Result<()> {
-    self.request = Some(Request::Theme(commands::theme(argument)?));
+    anyhow::ensure!(!argument.is_empty(), "Usage: :theme <name|path>");
+    self.request = Some(Request::Theme(argument.to_owned()));
     Ok(())
   }
 

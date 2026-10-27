@@ -1,0 +1,14 @@
+# Source: https://github.com/folke/tokyonight.nvim
+# Revision: cdc07ac78467a233fd62c493de29a17e0cf2b2b6
+# License: Apache-2.0; see docs/licenses/themes.txt.
+
+background = "#1a1b26"
+foreground = "#c0caf5"
+surface = "#292e42"
+cursorline = "#394b70"
+muted = "#737aa2"
+accent = "#7aa2f7"
+highlight = "#bb9af7"
+match = "#e0af68"
+link = "#7dcfff"
+error = "#f7768e"

@@ -275,7 +275,7 @@ fn command_chapter(
   }
   let example = match spec.id {
     Id::Config => ":config reload",
-    Id::Theme => ":theme nord",
+    Id::Theme => ":theme dark",
     Id::Edit => ":edit book.pdf",
     Id::Open => ":open",
     Id::TabEdit => ":tabedit notes.pdf",

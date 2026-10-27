@@ -55,7 +55,7 @@ impl Spec {
 
 pub fn theme(argument: &str) -> crate::Result<vpdf_model::theme::Theme> {
   vpdf_model::theme::Theme::parse(argument).ok_or_else(|| {
-    anyhow::anyhow!("Usage: :theme <name>; choose a built-in theme")
+    anyhow::anyhow!("appearance.theme: {}", vpdf_model::theme::Theme::EXPECTED)
   })
 }
 
@@ -109,7 +109,7 @@ macro_rules! commands {
 commands! {
   Config "config" [] "reload" Config Home
     "reload configuration";
-  Theme "theme" ["colorscheme"] "<name>" Theme Home "switch UI theme";
+  Theme "theme" ["colorscheme"] "<name|path>" Theme Home "switch UI theme";
   Edit "edit" ["e"] "[file]" Path Home "pick or open a PDF in this pane";
   Open "open" [] "[file]" Path Home
     "pick or open a PDF in a new tab";
@@ -257,13 +257,14 @@ pub fn candidates(
     Some(Complete::Tab) => prefixed(supply(Complete::Tab, argument), argument),
     Some(Complete::Path) => supply(Complete::Path, argument),
     Some(Complete::Help) => supply(Complete::Help, argument),
-    Some(Complete::Theme) => prefixed(
-      vpdf_model::theme::Theme::ALL
+    Some(Complete::Theme) => {
+      let mut items: Vec<_> = vpdf_model::theme::Theme::ALL
         .iter()
         .map(|theme| theme.name().to_owned())
-        .collect(),
-      argument,
-    ),
+        .collect();
+      items.extend(supply(Complete::Theme, argument));
+      prefixed(items, argument)
+    }
     Some(Complete::Config) => prefixed(vec!["reload".into()], argument),
     Some(Complete::Switch) => {
       prefixed(vec!["on".into(), "off".into()], argument)
@@ -299,12 +300,8 @@ mod tests {
       assert_eq!(spec.id, Id::Theme);
       for view in [View::Home, View::Recent, View::Document] {
         assert!(spec.available(view));
-        let (_, items) = candidates(
-          &format!("{name} "),
-          view,
-          |_| true,
-          |_, _| unreachable!(),
-        );
+        let (_, items) =
+          candidates(&format!("{name} "), view, |_| true, |_, _| Vec::new());
         assert_eq!(
           items,
           Theme::ALL
@@ -312,13 +309,9 @@ mod tests {
             .map(|theme| theme.name().to_owned())
             .collect::<Vec<_>>()
         );
-        let (_, items) = candidates(
-          &format!("{name} github-"),
-          view,
-          |_| true,
-          |_, _| unreachable!(),
-        );
-        assert_eq!(items, ["github-light", "github-dark"]);
+        let (_, items) =
+          candidates(&format!("{name} d"), view, |_| true, |_, _| Vec::new());
+        assert_eq!(items, ["dark"]);
       }
     }
     for &selected in Theme::ALL {

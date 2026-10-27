@@ -40,10 +40,10 @@ Run `vpdf book.pdf` to open a book; pass more filenames for more tabs.
 start screen. The native app opens PDFs from Finder or drag and drop.
 To make it the default reader, select a PDF in Finder, choose Get Info,
 select Vpdf under Open with, then click Change All.
-`--help`, `--version`,
-and `--config-example` print information and exit. `--config PATH` selects
-one TOML file; `--no-config` uses built-in settings. See
-[Configuring the reader][configuration] before remapping keys.
+`--help` and `--version` print information and exit. `-u PATH` (or
+`--config PATH`) selects one TOML file; `-u NONE` uses built-in settings when
+`NONE` is not a readable file. See the [configuration defaults][defaults]
+before remapping keys.
 
 ## Terminal setup
 
@@ -188,7 +188,6 @@ used in a particular build.
 [homebrew]: https://brew.sh/
 [mise]: https://mise.jdx.dev/
 [development]: https://github.com/letientai299/vpdf/blob/main/docs/dev/dev.md#build-from-source
-[configuration]: config.md
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
 [tmux-install]: https://github.com/tmux/tmux/wiki/Installing
 [placeholders]: https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders
@@ -212,3 +211,4 @@ used in a particular build.
 [mupdf-license]: https://mupdf.readthedocs.io/en/latest/license.html
 [manifest]: https://github.com/letientai299/vpdf/blob/main/Cargo.toml
 [lockfile]: https://github.com/letientai299/vpdf/blob/main/Cargo.lock
+[defaults]: config.md#built-in-defaults

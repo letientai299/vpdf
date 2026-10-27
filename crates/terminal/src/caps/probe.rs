@@ -155,7 +155,7 @@ pub(super) fn request(route: &Route) -> Vec<u8> {
     b"\x1b[?2026$p\x1b[?1016$p\x1b[?2048$p\x1b[?u\x1b]72;t=q\x1b\\",
   );
   // tmux drops OSC 22; wrap it.
-  let query = b"\x1b]22;?pointer\x1b\\\x1b[?5522$p";
+  let query = b"\x1b]11;?\x1b\\\x1b]22;?pointer\x1b\\\x1b[?5522$p";
   if matches!(route, Route::Tmux(_)) {
     // The outer DA1 follows this same path.
     crate::terminal::passthrough(&mut request, query, true)
@@ -207,6 +207,10 @@ pub(super) fn caps(route: Route, replies: &[Reply]) -> Caps {
       _ => None,
     }),
     keyboard: replies.iter().find_map(flags),
+    background: replies.iter().find_map(|reply| match reply {
+      Reply::Osc { code: 11, body } => background(body),
+      _ => None,
+    }),
     sync: mode(2026).unwrap_or(Support::Missing),
     pixels: mode(1016).unwrap_or(Support::Missing),
     resize: mode(2048).unwrap_or(Support::Missing),
@@ -229,6 +233,23 @@ pub(super) fn caps(route: Route, replies: &[Reply]) -> Caps {
     caps.pointer = Support::Named;
   }
   caps
+}
+
+fn background(body: &str) -> Option<[u8; 3]> {
+  let mut channels = body.strip_prefix("rgb:")?.split('/');
+  let mut rgb = [0; 3];
+  for value in &mut rgb {
+    let text = channels.next()?;
+    if !(1..=4).contains(&text.len())
+      || !text.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+      return None;
+    }
+    let channel = u32::from_str_radix(text, 16).ok()?;
+    let maximum = (1_u32 << (text.len() * 4)) - 1;
+    *value = u8::try_from((channel * 255 + maximum / 2) / maximum).ok()?;
+  }
+  channels.next().is_none().then_some(rgb)
 }
 
 /// The flags of a `CSI ? u` answer.
@@ -413,6 +434,15 @@ pub(super) fn rounds(
 }
 
 impl Caps {
+  pub fn palette(&self) -> vpdf_model::theme::Palette {
+    use vpdf_model::theme::{Palette, is_light};
+    if self.background.is_some_and(is_light) {
+      Palette::light()
+    } else {
+      Palette::dark()
+    }
+  }
+
   /// The outer terminal's XTVERSION; under tmux, the client's.
   pub fn terminal(&self) -> Option<&str> {
     match &self.host {

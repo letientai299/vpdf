@@ -1,10 +1,12 @@
 mod bindings;
 mod reference;
+mod theme;
 use clap::Args;
 use serde::Serialize;
 use std::ffi::OsStr;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
+pub use theme::ThemeChoice;
 use vpdf_ui::layout::{MAX_ZOOM, MIN_ZOOM};
 
 pub(crate) fn reload_command(argument: &str) -> crate::Result<()> {
@@ -15,14 +17,8 @@ pub(crate) fn reload_command(argument: &str) -> crate::Result<()> {
 #[derive(Args, Debug, Default)]
 pub struct Options {
   /// Read one configuration file.
-  #[arg(long, value_name = "PATH", conflicts_with = "no_config")]
+  #[arg(short = 'u', long = "config", value_name = "PATH")]
   pub config: Option<PathBuf>,
-  /// Use built-in settings.
-  #[arg(long)]
-  pub no_config: bool,
-  /// Print default configuration and exit.
-  #[arg(long)]
-  pub config_example: bool,
 }
 
 impl Options {
@@ -34,11 +30,15 @@ impl Options {
   }
 
   fn load_from(&self, xdg: Option<&OsStr>, home: Option<&OsStr>) -> Loaded {
-    if self.no_config {
-      return Loaded::default();
-    }
     if let Some(path) = &self.config {
-      return Source::file(path, true).reload(&Settings::default());
+      let Ok(text) = std::fs::read_to_string(path) else {
+        return Loaded::default();
+      };
+      let source = Source::file(path, true);
+      let Source::File { path, .. } = &source else { unreachable!() };
+      let mut loaded = parse_with(path, &text, &Settings::default());
+      loaded.source = source;
+      return loaded;
     }
     discover(xdg, home).map_or_else(Loaded::default, |path| {
       Source::file(&path, false).reload(&Settings::default())
@@ -69,7 +69,7 @@ impl PartialEq for Settings {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 struct Appearance {
-  theme: vpdf_model::theme::Theme,
+  theme: ThemeChoice,
   ascii_glyphs: bool,
 }
 
@@ -152,12 +152,19 @@ impl TryFrom<String> for Language {
 }
 
 impl Settings {
-  pub fn theme(&self) -> vpdf_model::theme::Theme {
-    self.appearance.theme
+  pub fn colors(
+    &self,
+    system: vpdf_model::theme::Colors,
+  ) -> vpdf_model::theme::Colors {
+    self.appearance.theme.colors(system)
   }
 
-  pub(crate) fn set_theme(&mut self, theme: vpdf_model::theme::Theme) {
-    self.appearance.theme = theme;
+  pub fn theme(&self) -> &ThemeChoice {
+    &self.appearance.theme
+  }
+
+  pub(crate) fn set_theme(&mut self, theme: impl Into<ThemeChoice>) {
+    self.appearance.theme = theme.into();
     self.reference.generation += 1;
     self
       .reference
@@ -174,15 +181,19 @@ impl Settings {
     name: &str,
     value: &toml::Value,
     previous: &Self,
-  ) -> Result<(), &'static str> {
+    path: &Path,
+  ) -> Result<(), String> {
+    if name == "appearance.theme" {
+      let theme = value
+        .as_str()
+        .ok_or_else(|| vpdf_model::theme::Theme::EXPECTED.to_owned())
+        .and_then(|name| {
+          ThemeChoice::load(name, path.parent().unwrap_or(Path::new(".")))
+        });
+      self.appearance.theme = theme.as_ref().cloned().unwrap_or_default();
+      return theme.map(|_| ());
+    }
     match name {
-      "appearance.theme" => replace_setting(
-        &mut self.appearance.theme,
-        &previous.appearance.theme,
-        value.as_str().ok_or("expected theme name").and_then(|name| {
-          vpdf_model::theme::Theme::parse(name).ok_or("unknown theme")
-        }),
-      ),
       "appearance.ascii_glyphs" => replace_setting(
         &mut self.appearance.ascii_glyphs,
         &previous.appearance.ascii_glyphs,
@@ -221,6 +232,7 @@ impl Settings {
       ),
       _ => Err("unknown setting"),
     }
+    .map_err(str::to_owned)
   }
 
   pub fn ascii_glyphs(&self) -> bool {
@@ -243,16 +255,9 @@ impl Settings {
     self.reading.inactive_brightness.0
   }
 
-  pub fn example() -> crate::Result<String> {
+  #[cfg(test)]
+  fn example() -> crate::Result<String> {
     Ok(toml::to_string_pretty(&Self::default())?)
-  }
-}
-
-pub fn print_example() -> crate::Result<()> {
-  let text = Settings::example()?;
-  match io::stdout().lock().write_all(text.as_bytes()) {
-    Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(()),
-    result => Ok(result?),
   }
 }
 
@@ -371,11 +376,16 @@ fn parse_with(path: &Path, text: &str, previous: &Settings) -> Loaded {
       };
       for (key, value) in table {
         let name = format!("{section}.{key}");
-        let result = settings.apply(&name, value, previous);
+        let result = settings.apply(&name, value, previous, path);
         if let Err(error) = result {
           warnings.push(format!("{name}: {error}"));
-          let source =
-            previous.reference.sources.get(&name).cloned().unwrap_or_default();
+          let source = previous
+            .reference
+            .sources
+            .get(&name)
+            .filter(|_| name != "appearance.theme")
+            .cloned()
+            .unwrap_or_default();
           settings.reference.sources.insert(name, source);
         } else {
           settings

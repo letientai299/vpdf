@@ -94,7 +94,7 @@ impl Writer {
   pub fn heading(&mut self, text: &str) -> Result<()> {
     for line in wrap(&self.encode(&format!("== {text} =="))?, 60) {
       self.position()?;
-      self.draw(&line, 48.0, self.palette.blue, 14.0)?;
+      self.draw(&line, 48.0, self.palette.accent, 14.0)?;
       self.y -= 26.0;
     }
     Ok(())
@@ -132,7 +132,7 @@ impl Writer {
 
   pub fn binding(&mut self, keys: &str, description: &str) -> Result<()> {
     let color = if description.starts_with("Command:") {
-      self.palette.magenta
+      self.palette.highlight
     } else {
       self.palette.foreground
     };
@@ -140,16 +140,16 @@ impl Writer {
       let mut runs = Vec::new();
       for word in keys.split_inclusive(' ') {
         let color = if word.starts_with(':') || word.trim().is_empty() {
-          self.palette.magenta
+          self.palette.highlight
         } else {
-          self.palette.yellow
+          self.palette.r#match
         };
         runs.push((word, color));
       }
       self.colored_at(&runs, 0)?;
       return self.description(description);
     }
-    self.styled(keys, self.palette.yellow)?;
+    self.styled(keys, self.palette.r#match)?;
     self.styled_at(description, color, 24)
   }
 
@@ -163,16 +163,16 @@ impl Writer {
       .iter()
       .any(|prefix| text.starts_with(prefix))
     {
-      self.palette.cyan
+      self.palette.link
     } else if text.starts_with("Removed default:")
       || text.starts_with("Rejected")
       || text.starts_with("Warning:")
     {
-      self.palette.red
+      self.palette.error
     } else if text.starts_with("Action:") {
-      self.palette.magenta
+      self.palette.highlight
     } else if text.ends_with(':') {
-      self.palette.blue
+      self.palette.accent
     } else {
       self.palette.foreground
     };
@@ -292,7 +292,7 @@ fn inline(text: &str, palette: Palette) -> Vec<(&str, [u8; 3])> {
   if text.starts_with("See |") && text.ends_with("|.") {
     return vec![
       (&text[..4], palette.foreground),
-      (&text[4..text.len() - 1], palette.cyan),
+      (&text[4..text.len() - 1], palette.link),
       (&text[text.len() - 1..], palette.foreground),
     ];
   }
@@ -301,7 +301,7 @@ fn inline(text: &str, palette: Palette) -> Vec<(&str, [u8; 3])> {
   while let Some(start) = rest.find('`') {
     let Some(end) = rest[start + 1..].find('`') else { break };
     runs.push((&rest[..start], palette.foreground));
-    runs.push((&rest[start + 1..start + 1 + end], palette.yellow));
+    runs.push((&rest[start + 1..start + 1 + end], palette.r#match));
     rest = &rest[start + end + 2..];
   }
   runs.push((rest, palette.foreground));

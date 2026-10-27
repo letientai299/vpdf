@@ -6,6 +6,7 @@ pub(crate) fn bare(host: Host) -> Caps {
     host,
     version: None,
     keyboard: None,
+    background: None,
     sync: Support::Missing,
     pixels: Support::Missing,
     resize: Support::Missing,

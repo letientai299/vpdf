@@ -15,6 +15,9 @@
         "source": "https://raw.githubusercontent.com/folke/tokyonight.nvim/cdc07ac78467a233fd62c493de29a17e0cf2b2b6/LICENSE",
         "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
       }
+    ],
+    "palettes": [
+      "etc/themes/tokyonight-night.toml"
     ]
   },
   "nord": {
@@ -29,6 +32,9 @@
         "source": "https://raw.githubusercontent.com/nordtheme/nord/1cef71605416a222e57225b544540ce0fcec18d4/license",
         "sha256": "25ac8188d670bd2ad2ce2f4f55ab88573010ee9f7a4502543cb1eea1e2274f8a"
       }
+    ],
+    "palettes": [
+      "etc/themes/nord.toml"
     ]
   },
   "github": {
@@ -55,6 +61,10 @@
         "source": "https://raw.githubusercontent.com/primer/primitives/ec3eee6ac930cf942e97a86a722aac2c3fb4f3a9/LICENSE",
         "sha256": "e63582a78dddebe610b6cb59f0e7f5f761c1bb6a1c9551443beddc64fe525c3a"
       }
+    ],
+    "palettes": [
+      "etc/themes/github-light.toml",
+      "etc/themes/github-dark.toml"
     ]
   },
   "dracula": {
@@ -69,6 +79,9 @@
         "source": "https://raw.githubusercontent.com/dracula/dracula-theme/e22ebcc048b8aff586f9bc94db30ff5347070b42/LICENSE",
         "sha256": "38b806a7e799cca4e9821e6f8d65cf0d8bfaaddbe454b41f12e5baad52d310f1"
       }
+    ],
+    "palettes": [
+      "etc/themes/dracula.toml"
     ]
   }
 }

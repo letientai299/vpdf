@@ -1215,7 +1215,7 @@ pub(super) fn settings_file(directory: &Path) -> crate::config::Loaded {
     ),
   )
   .unwrap();
-  crate::config::Options { config: Some(path), ..Default::default() }.load()
+  crate::config::Options { config: Some(path) }.load()
 }
 
 #[test]
@@ -1307,9 +1307,7 @@ fn real_ocr_and_cancel() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let config = directory.path().join("config.toml");
   std::fs::write(&config, "[ocr]\nlanguage = 'vpdf_missing_language'")?;
-  let loaded =
-    crate::config::Options { config: Some(config), ..Default::default() }
-      .load();
+  let loaded = crate::config::Options { config: Some(config) }.load();
   let source = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("scan.pdf");
   let mut session = Session::configured(None, loaded);
   session.open(&source, true, cells(120, 40))?;
@@ -1380,7 +1378,7 @@ fn config_reload_reaches_inactive_panes() -> Result<()> {
   std::fs::write(
     directory.path().join("config.toml"),
     concat!(
-      "[appearance]\ntheme = 'dracula'\n",
+      "[appearance]\ntheme = 'dark'\n",
       "[reading]\nzoom = 4\ncursorline = false\n",
       "inactive_brightness = 0.4\n[ocr]\nlanguage = 'vie'",
     ),
@@ -1389,7 +1387,10 @@ fn config_reload_reaches_inactive_panes() -> Result<()> {
   let mut positions = positions.into_iter();
   for tab in &session.tabs {
     for app in &tab.panes {
-      assert_eq!(app.settings.theme(), vpdf_model::theme::Theme::Dracula);
+      assert_eq!(
+        app.settings.theme(),
+        &crate::config::ThemeChoice::Builtin(vpdf_model::theme::Theme::Dark)
+      );
       assert_eq!(app.settings.zoom(), 4.0);
       assert_eq!(app.settings.inactive_brightness(), 0.4);
       assert_eq!(app.settings.language(), "vie");
@@ -1453,11 +1454,7 @@ fn prompt_remaps_and_reload_preserve_editing() -> Result<()> {
       "'<D-q>' = { action = 'prompt.cancel' }\n",
     ),
   )?;
-  let loaded = crate::config::Options {
-    config: Some(config.clone()),
-    ..Default::default()
-  }
-  .load();
+  let loaded = crate::config::Options { config: Some(config.clone()) }.load();
   assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
   let mut session = Session::configured(None, loaded);
   session.open(&path, true, cells(120, 40))?;
@@ -1489,6 +1486,7 @@ fn prompt_remaps_and_reload_preserve_editing() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn theme_reload_preserves_real_raster() -> Result<()> {
   use sha2::{Digest, Sha256};
+  use vpdf_model::scene::Op;
   use vpdf_model::theme::Theme;
   let path = PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
   assert_eq!(
@@ -1500,11 +1498,7 @@ fn theme_reload_preserves_real_raster() -> Result<()> {
   std::fs::write(&config, "")?;
   let mut session = Session::configured(
     None,
-    crate::config::Options {
-      config: Some(config.clone()),
-      ..Default::default()
-    }
-    .load(),
+    crate::config::Options { config: Some(config.clone()) }.load(),
   );
   session.open(&path, true, cells(100, 32))?;
   let raster = |session: &mut Session| {
@@ -1533,10 +1527,11 @@ fn theme_reload_preserves_real_raster() -> Result<()> {
     let mut scene = vpdf_model::scene::Recorder::new(|_| true);
     session.app().scene_pane(&mut scene, false)?;
     let scene = scene.into_scene();
-    let has_theme = scene.iter().any(|op| {
-      matches!(op, vpdf_model::scene::Op::Theme(selected) if *selected == theme)
-    });
-    assert_eq!(has_theme, theme != Theme::Default);
+    let colors = session.settings.colors(vpdf_model::theme::Colors::Terminal);
+    let has_theme = scene
+      .iter()
+      .any(|op| matches!(op, Op::Theme(selected) if *selected == colors));
+    assert_eq!(has_theme, theme != Theme::System);
   }
   Ok(())
 }
@@ -1563,31 +1558,53 @@ fn theme_commands_update_session() -> Result<()> {
     for &theme in Theme::ALL {
       session.app().command(&format!("{name} {}", theme.name()))?;
       session.settle()?;
-      assert_eq!(session.settings.theme(), theme);
+      assert_eq!(
+        session.settings.theme(),
+        &crate::config::ThemeChoice::Builtin(theme)
+      );
       for tab in &session.tabs {
         for app in &tab.panes {
-          assert_eq!(app.settings.theme(), theme);
+          assert_eq!(
+            app.settings.theme(),
+            &crate::config::ThemeChoice::Builtin(theme)
+          );
         }
       }
       assert_eq!(session.app().reader.cursor, position);
       assert_eq!(session.app().layout.zoom(), zoom);
       assert_eq!(session.app().tiles.wanted(), tiles);
     }
-    session.app().command(&format!("{name} nord"))?;
+    session.app().command(&format!("{name} dark"))?;
     session.settle()?;
-    for argument in ["", "unknown", "nord extra"] {
-      assert!(session.app().command(&format!("{name} {argument}")).is_err());
-      assert_eq!(session.app().request, None);
-      assert_eq!(session.settings.theme(), Theme::Nord);
+    assert!(session.app().command(&format!("{name} ")).is_err());
+    for argument in ["default", "nord", "unknown"] {
+      session.app().command(&format!("{name} {argument}"))?;
+      session.settle()?;
+      assert_eq!(
+        session.settings.theme(),
+        &crate::config::ThemeChoice::Builtin(Theme::System)
+      );
+      assert!(session.app().reader.message.contains("etc/themes/"));
     }
+    session.app().command(&format!("{name} dark"))?;
+    session.settle()?;
   }
   session.split(Axis::Columns, None, Place::After)?;
-  assert_eq!(session.app().settings.theme(), Theme::Nord);
+  assert_eq!(
+    session.app().settings.theme(),
+    &crate::config::ThemeChoice::Builtin(Theme::Dark)
+  );
   session.open(&path, true, screen)?;
-  assert_eq!(session.app().settings.theme(), Theme::Nord);
+  assert_eq!(
+    session.app().settings.theme(),
+    &crate::config::ThemeChoice::Builtin(Theme::Dark)
+  );
   assert_eq!(std::fs::read(&config)?, original);
   session.reload_config();
-  assert_eq!(session.settings.theme(), Theme::Default);
+  assert_eq!(
+    session.settings.theme(),
+    &crate::config::ThemeChoice::Builtin(Theme::System)
+  );
   assert_eq!(std::fs::read(&config)?, original);
   Ok(())
 }

@@ -44,7 +44,8 @@ class Kitty(Runtime):
                 {
                     "command": [
                         str(self.binary.resolve()),
-                        "--no-config",
+                        "-u",
+                        "NONE",
                         *map(str, self.files),
                     ],
                     "env": {

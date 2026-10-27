@@ -27,7 +27,7 @@ Read the status label first. Escape dismisses a prompt, hint, preview, region,
 or pending sequence before leaving Cursor or Visual. Tab changes panel focus;
 Ctrl-w changes pane focus. Use `:help panel:j` to inspect a panel key and
 `:help j` for the invoking context. `:help config` shows rejected mappings
-and their sources. Launch with `--no-config` to compare shipped bindings.
+and their sources. Launch with `-u NONE` to compare shipped bindings.
 
 Under tmux in Kitty, Ctrl-i can arrive as Tab. Use `:jumps` for a forward
 history destination. The native reader and a directly compatible terminal

@@ -1,5 +1,5 @@
 use crate::input::Preedit;
-use crate::style::{BACKGROUND, Style};
+use crate::style::Style;
 use eframe::egui::{
   self, Color32, FontId, Painter, Pos2, Rect, TextureHandle, TextureOptions,
   Vec2,
@@ -14,7 +14,7 @@ use vpdf_model::geometry::Screen;
 use vpdf_model::image::PictureId;
 use vpdf_model::scene::{Layer, Op, Stage, TilePlacement};
 use vpdf_model::text::PageId;
-use vpdf_model::theme::Theme;
+use vpdf_model::theme::Colors;
 use vpdf_model::tile::{TileId, TileKey, TileOwner};
 
 const BUDGET: usize = 64 << 20;
@@ -356,7 +356,7 @@ fn clip(stage: Stage, scale: f32) -> Rect {
 }
 
 fn fills(painter: &Painter, scene: &[Op<'_>], layer: Layer, scale: f32) {
-  let mut theme = Theme::Default;
+  let mut theme = Colors::Terminal;
   for op in scene {
     if let Op::Theme(selected) = op {
       theme = *selected;
@@ -426,7 +426,7 @@ struct Grid {
   cursor: (usize, usize),
   saved: (usize, usize, Style),
   style: Style,
-  theme: Theme,
+  theme: Colors,
   visible: bool,
   masked: bool,
   input: std::ops::Range<usize>,
@@ -735,7 +735,7 @@ impl Grid {
   }
 }
 
-pub fn scene_theme(scene: &[Op<'_>]) -> Theme {
+pub fn scene_theme(scene: &[Op<'_>]) -> Colors {
   scene
     .iter()
     .find_map(|op| match op {
@@ -746,7 +746,7 @@ pub fn scene_theme(scene: &[Op<'_>]) -> Theme {
 }
 
 pub fn background() -> Color32 {
-  BACKGROUND
+  crate::style::rgb(Colors::Terminal.palette().background)
 }
 
 #[cfg(test)]
@@ -847,7 +847,11 @@ mod tests {
     };
     let ctx = egui::Context::default();
     let mut renderer = Renderer::default();
-    for &theme in Theme::ALL {
+    for &theme in &[
+      Colors::Terminal,
+      Colors::Palette(vpdf_model::theme::Palette::light()),
+      Colors::Palette(vpdf_model::theme::Palette::dark()),
+    ] {
       let frame = Frame {
         scene: vec![
           Op::Theme(theme),
@@ -1031,6 +1035,53 @@ mod tests {
     reloaded.reloaded.push(owner);
     assert_eq!(paint(&reloaded).1, (0, 2));
     assert_eq!(paint(&frame(vec![new], vec![new])).1, (0, 0));
+  }
+
+  #[test]
+  fn transparent_previews_follow_palette() {
+    use vpdf_model::image::Rgb;
+    use vpdf_model::scene::{Draw, Recorder, Surface};
+    use vpdf_model::theme::{Overlay, Paint, Palette};
+    let screen = crate::screen::pixels(4, 2, 10, 20);
+    let id = PictureId::fresh();
+    let image = Rgb::rgba(2, 1, vec![0, 0, 0, 0, 255, 255, 255, 255]).unwrap();
+    let stage = Stage { screen, left: 0 };
+    let ctx = egui::Context::default();
+    let mut renderer = Renderer::default();
+    let mut custom = Palette::dark();
+    custom.background = [0x12, 0x34, 0x56];
+    for palette in [Palette::light(), Palette::dark(), custom] {
+      let mut frame = blank(screen);
+      let mut scene = Recorder::new(|_| false);
+      scene.push(Op::Theme(Colors::Palette(palette)));
+      scene.fill(
+        vpdf_model::text::Bounds { x0: 0.0, y0: 0.0, x1: 20.0, y1: 20.0 },
+        Paint::Overlay(Overlay::Preview),
+        Layer::BelowText,
+        stage,
+      );
+      scene.picture(id, &image, (0.0, 0.0), stage).unwrap();
+      frame.scene = scene.into_scene();
+      let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        renderer.paint(ui.painter(), &frame, screen, 1.0, None);
+      });
+      assert!(output.shapes.iter().any(|shape| {
+        matches!(&shape.shape, egui::Shape::Rect(rect)
+          if rect.fill == crate::style::rgb(palette.background))
+      }));
+      let texture = renderer.textures.get(&ImageId::Picture(id)).unwrap();
+      if let Some(delta) = output
+        .textures_delta
+        .set
+        .get(&texture.handle.id())
+        .and_then(|deltas| deltas.first())
+      {
+        let egui::ImageData::Color(pixels) = &delta.image;
+        assert_eq!(pixels.pixels, [Color32::TRANSPARENT, Color32::WHITE]);
+      }
+      assert_eq!(renderer.uploaded, 1);
+      output.textures_delta.clear();
+    }
   }
 
   #[test]

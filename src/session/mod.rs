@@ -45,6 +45,7 @@ pub struct Tab {
 pub struct Session {
   help: help::Help,
   settings: crate::config::Settings,
+  system_palette: vpdf_model::theme::Palette,
   config_source: crate::config::Source,
   startup_warning: Option<String>,
   config_warning: Option<String>,
@@ -184,6 +185,22 @@ impl Session {
       store,
       ..Self::default()
     }
+  }
+
+  fn set_system_palette(
+    &mut self,
+    palette: vpdf_model::theme::Palette,
+  ) -> bool {
+    let changed = self.system_palette != palette;
+    self.system_palette = palette;
+    let system = matches!(
+      self.settings.theme(),
+      crate::config::ThemeChoice::Builtin(vpdf_model::theme::Theme::System)
+    );
+    if changed && system {
+      self.refresh_help();
+    }
+    changed && system
   }
 
   /// Password prompt or file picker holds input.

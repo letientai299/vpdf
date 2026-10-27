@@ -21,6 +21,10 @@ pub fn view(
   )?;
   terminal::restore_on_panic();
   let (_terminal, screen) = vpdf_terminal::gate::enter()?;
+  session.set_system_palette(
+    vpdf_terminal::caps::get()
+      .map_or_default(vpdf_terminal::caps::Caps::palette),
+  );
   session.observer = vpdf_terminal::tmux_observer::Observer::start();
   // Before input; a spool that fails to start leaves tiles encoded.
   let _ = vpdf_terminal::spool::start(vpdf_terminal::graphics::session());
@@ -567,7 +571,7 @@ impl Session {
       }
       Ok(Outcome::Theme(theme)) => {
         self.home = Some(home);
-        self.set_theme(theme);
+        self.choose_theme(&theme);
         return Ok(());
       }
       Ok(Outcome::Forget(paths)) => {

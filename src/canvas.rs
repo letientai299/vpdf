@@ -61,8 +61,12 @@ impl App {
   where
     S::Error: Into<anyhow::Error>,
   {
-    if self.settings.theme() != vpdf_model::theme::Theme::Default {
-      scene.push(Op::Theme(self.settings.theme()));
+    if self.settings.colors(vpdf_model::theme::Colors::Terminal)
+      != vpdf_model::theme::Colors::Terminal
+    {
+      scene.push(Op::Theme(
+        self.settings.colors(vpdf_model::theme::Colors::Terminal),
+      ));
     }
     self.request_crop();
     let (screen, left) = (self.uncovered(), self.left);
@@ -122,8 +126,12 @@ impl App {
     scene: &mut impl Draw<'a>,
     screen: Screen,
   ) -> Result<()> {
-    if self.settings.theme() != vpdf_model::theme::Theme::Default {
-      scene.push(Op::Theme(self.settings.theme()));
+    if self.settings.colors(vpdf_model::theme::Colors::Terminal)
+      != vpdf_model::theme::Colors::Terminal
+    {
+      scene.push(Op::Theme(
+        self.settings.colors(vpdf_model::theme::Colors::Terminal),
+      ));
     }
     let mut hovered = self.hover_segments();
     if hovered.is_empty()
@@ -215,8 +223,12 @@ impl App {
   where
     S::Error: Into<anyhow::Error>,
   {
-    if self.settings.theme() != vpdf_model::theme::Theme::Default {
-      scene.push(Op::Theme(self.settings.theme()));
+    if self.settings.colors(vpdf_model::theme::Colors::Terminal)
+      != vpdf_model::theme::Colors::Terminal
+    {
+      scene.push(Op::Theme(
+        self.settings.colors(vpdf_model::theme::Colors::Terminal),
+      ));
     }
     self.scene_content(scene, snap_regions)?;
     let alpha =

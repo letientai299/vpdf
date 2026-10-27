@@ -1,4 +1,4 @@
-Theme palette data adapted for Vpdf semantic roles.
+Theme palette data in etc/themes/ adapted for Vpdf semantic roles.
 
 folke/tokyonight.nvim
 Revision: cdc07ac78467a233fd62c493de29a17e0cf2b2b6

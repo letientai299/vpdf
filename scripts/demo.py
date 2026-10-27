@@ -406,7 +406,8 @@ class Gallery:
             "--env",
             f"VPDF_TRACE={self.args.raw / (name + '.jsonl')}",
             str(self.args.binary),
-            "--no-config",
+            "-u",
+            "NONE",
             *(
                 (self.args.corpus / f"{doc}.pdf").resolve().as_uri()
                 + (f"#page={page}" if index == 0 else "")

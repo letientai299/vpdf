@@ -16,6 +16,7 @@ pub struct Caps {
   /// Kitty keyboard flags the probe found, before the reader pushes
   /// its own; None without the protocol.
   pub keyboard: Option<u32>,
+  pub background: Option<[u8; 3]>,
   /// Synchronized output, mode 2026.
   pub sync: Support,
   /// SGR pixel mouse reports, mode 1016.

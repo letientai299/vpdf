@@ -1,0 +1,14 @@
+# Source: https://github.com/dracula/dracula-theme
+# Revision: e22ebcc048b8aff586f9bc94db30ff5347070b42
+# License: MIT; see docs/licenses/themes.txt.
+
+background = "#282a36"
+foreground = "#f8f8f2"
+surface = "#44475a"
+cursorline = "#44475a"
+muted = "#6272a4"
+accent = "#bd93f9"
+highlight = "#ff79c6"
+match = "#f1fa8c"
+link = "#8be9fd"
+error = "#ff5555"

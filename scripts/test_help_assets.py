@@ -26,6 +26,7 @@ class HelpAssetTests(unittest.TestCase):
             "crates/ui/src/topics.rs",
             "crates/ui/examples/help_metadata.rs",
             "crates/ui/Cargo.toml",
+            "Cargo.toml",
             "Cargo.lock",
             ".config/mise.toml",
         ]
@@ -223,6 +224,38 @@ class HelpAssetTests(unittest.TestCase):
             path.write_text(bad)
             with self.subTest(source=bad), self.assertRaises(ValueError):
                 help.chapter(path, self.facts, topics)
+
+    def test_repository_links(self):
+        folder = self.root / "etc/themes"
+        folder.mkdir(parents=True)
+        palette = folder / "green night.toml"
+        palette.write_text('background = "#ffffff"')
+        (self.root / "Cargo.toml").write_text(
+            '[package]\nrepository = "https://github.com/example/reader"\n'
+        )
+        path = self.root / "docs/users/readme.md"
+        source = (
+            "# Manual\n\n<!-- help-topic:introduction -->\n\n"
+            "Use [themes][themes] or [palette][palette].\n\n"
+            "[themes]: ../../etc/themes/\n"
+            "[palette]: <../../etc/themes/green night.toml>\n"
+        )
+        path.write_text(source)
+        topics = {"introduction": {"kind": "authored", "title": "Manual"}}
+        with patch.object(help, "ROOT", self.root):
+            _, rendered = help.chapter(path, self.facts, topics)
+            self.assertIn("/tree/main/etc/themes", rendered)
+            self.assertIn("/blob/main/etc/themes/green%20night.toml", rendered)
+            outside = self.root.parent / "outside-theme.toml"
+            (folder / "outside.toml").symlink_to(outside)
+            for target in [
+                "../../etc/missing.toml",
+                "../../../outside-theme.toml",
+                "../../etc/themes/outside.toml",
+            ]:
+                path.write_text(source.replace("../../etc/themes/", target, 1))
+                with self.subTest(target=target), self.assertRaises(ValueError):
+                    help.chapter(path, self.facts, topics)
 
     def test_wrapped_markdown(self):
         refs, body = help.references(

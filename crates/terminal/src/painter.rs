@@ -1,7 +1,7 @@
 use crate::graphics::Graphics;
 use std::io::{self, Write};
 use vpdf_model::scene::{Draw, FillArea, Layer, Op, Stage, Surface, Text};
-use vpdf_model::theme::{Paint, Theme};
+use vpdf_model::theme::{Colors, Paint};
 use vpdf_model::{text::Bounds, tile::TileId};
 
 pub fn paint(out: &mut impl Write, scene: &[Op<'_>]) -> io::Result<()> {
@@ -14,13 +14,13 @@ pub fn paint(out: &mut impl Write, scene: &[Op<'_>]) -> io::Result<()> {
 pub struct Painter<'out, W> {
   out: &'out mut W,
   error: Option<io::Error>,
-  theme: Theme,
+  theme: Colors,
   graphics: Option<&'out mut Graphics>,
 }
 
 impl<'out, W: Write> Painter<'out, W> {
   pub fn new(out: &'out mut W) -> Self {
-    Self { out, error: None, graphics: None, theme: Theme::Default }
+    Self { out, error: None, graphics: None, theme: Colors::Terminal }
   }
 
   #[must_use]
@@ -50,7 +50,7 @@ impl<'out, W: Write> Painter<'out, W> {
 
   fn output<F>(&mut self, paint: F)
   where
-    F: FnOnce(&mut W, Option<&mut Graphics>, &mut Theme) -> io::Result<()>,
+    F: FnOnce(&mut W, Option<&mut Graphics>, &mut Colors) -> io::Result<()>,
   {
     if self.error.is_none() {
       self.error =
@@ -87,7 +87,7 @@ impl<'a, W: Write> Draw<'a> for Painter<'_, W> {
   ) {
     let color = color.into();
     self.output(|out, graphics, theme| {
-      paint_fill(out, graphics, rect, color.resolve(*theme), layer, stage)
+      paint_fill(out, graphics, rect, resolve(color, *theme), layer, stage)
     });
   }
 
@@ -100,7 +100,7 @@ impl<'a, W: Write> Draw<'a> for Painter<'_, W> {
   ) {
     let color = color.into();
     self.output(|out, graphics, theme| {
-      paint_stretch(out, graphics, color.resolve(*theme), layer, cells, stage)
+      paint_stretch(out, graphics, resolve(color, *theme), layer, cells, stage)
     });
   }
 }
@@ -135,11 +135,21 @@ impl<W: Write> Surface<'_> for Painter<'_, W> {
   }
 }
 
+fn resolve(paint: Paint, theme: Colors) -> [u8; 4] {
+  let theme = match theme {
+    Colors::Terminal => Colors::Palette(
+      crate::caps::get().map_or_default(crate::caps::Caps::palette),
+    ),
+    theme @ Colors::Palette(_) => theme,
+  };
+  paint.resolve(theme)
+}
+
 fn command(
   out: &mut impl Write,
   op: &Op<'_>,
   mut graphics: Option<&mut Graphics>,
-  theme: &mut Theme,
+  theme: &mut Colors,
 ) -> io::Result<()> {
   match op {
     Op::Theme(selected) => {
@@ -195,7 +205,7 @@ fn command(
           out,
           graphics.as_deref_mut(),
           rect,
-          fill.color().resolve(*theme),
+          resolve(fill.color(), *theme),
           fill.layer(),
           fill.stage(),
         )?;
@@ -206,14 +216,14 @@ fn command(
         out,
         graphics,
         fill.rect(),
-        fill.color().resolve(*theme),
+        resolve(fill.color(), *theme),
         fill.layer(),
         fill.stage(),
       )?,
       FillArea::Cells { column, columns, rows } => paint_stretch(
         out,
         graphics,
-        fill.color().resolve(*theme),
+        resolve(fill.color(), *theme),
         fill.layer(),
         (column, columns, rows),
         fill.stage(),
@@ -326,6 +336,20 @@ mod tests {
       cell_offsets: bits & 4 != 0,
       report_missing: false,
     })
+  }
+
+  #[test]
+  fn rgb_surfaces_use_palettes() {
+    use vpdf_model::theme::{Overlay, Palette};
+    for theme in [
+      Colors::Terminal,
+      Colors::Palette(Palette::light()),
+      Colors::Palette(Palette::dark()),
+    ] {
+      let preview = resolve(Paint::Overlay(Overlay::Preview), theme);
+      assert_eq!(preview[..3], theme.palette().background);
+      assert_eq!(resolve([1, 2, 3, 4].into(), theme), [1, 2, 3, 4]);
+    }
   }
 
   #[test]

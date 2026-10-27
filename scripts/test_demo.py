@@ -36,7 +36,7 @@ class DemoTests(unittest.TestCase):
                         gallery.capture(name)
                 launch = remote.call_args.args
                 self.assertNotIn("--page", launch)
-                references = launch[launch.index(str(self.binary)) + 2 :]
+                references = launch[launch.index(str(self.binary)) + 3 :]
                 self.assertEqual(len(references), len(documents))
                 for index, (document, reference) in enumerate(
                     zip(documents, references)

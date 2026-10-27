@@ -9,7 +9,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import tomllib
 import unittest
 from pathlib import Path
 
@@ -94,14 +93,10 @@ class AppTests(unittest.TestCase):
                     self.assertEqual(minimum, expected)
 
     def verify_config_output(self, binary):
-        example = subprocess.check_output(
-            [binary, "--config-example"], text=True, timeout=30
-        )
-        self.assertIn("reading", tomllib.loads(example))
         with tempfile.TemporaryDirectory(prefix="vpdf-config-") as temporary:
             config = Path(temporary) / "broken.toml"
             config.write_text("[broken")
-            for flag in ("--help", "--version", "--config-example"):
+            for flag in ("--help", "--version"):
                 result = subprocess.run(
                     [binary, "--config", config, flag],
                     capture_output=True,
@@ -110,21 +105,18 @@ class AppTests(unittest.TestCase):
                     check=True,
                 )
                 self.assertEqual(result.stderr, "")
-                if flag == "--config-example":
-                    self.assertEqual(result.stdout, example)
 
-        for flag in ("--version", "--config-example"):
-            reader, writer = socket.socketpair()
-            reader.close()
-            with writer:
-                result = subprocess.run(
-                    [binary, flag],
-                    stdout=writer,
-                    stderr=subprocess.PIPE,
-                    timeout=30,
-                    check=True,
-                )
-            self.assertEqual(result.stderr, b"")
+        reader, writer = socket.socketpair()
+        reader.close()
+        with writer:
+            result = subprocess.run(
+                [binary, "--version"],
+                stdout=writer,
+                stderr=subprocess.PIPE,
+                timeout=30,
+                check=True,
+            )
+        self.assertEqual(result.stderr, b"")
 
     def verify_app(self, app):
         subprocess.run(["codesign", "--verify", "--strict", app], check=True)
@@ -366,7 +358,8 @@ class DocumentTests(unittest.TestCase):
                         root / "stderr",
                         "--args",
                         "--background",
-                        "--no-config",
+                        "-u",
+                        "NONE",
                     ],
                     check=True,
                     timeout=30,

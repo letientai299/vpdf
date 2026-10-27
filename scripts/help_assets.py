@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
+import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -21,6 +23,7 @@ INPUTS = (
     "crates/ui/src",
     "crates/ui/examples/help_metadata.rs",
     "crates/ui/Cargo.toml",
+    "Cargo.toml",
     "Cargo.lock",
     ".config/mise.toml",
 )
@@ -192,6 +195,23 @@ def authored_heading(text):
     )
 
 
+def repository_link(destination, anchor):
+    destination = destination.resolve()
+    try:
+        relative = destination.relative_to(ROOT.resolve())
+    except ValueError as error:
+        raise ValueError("Help link leaves the repository") from error
+    if not destination.is_file() and not destination.is_dir():
+        raise ValueError("Missing repository link target")
+    package = tomllib.loads((ROOT / "Cargo.toml").read_text())["package"]
+    repository = package["repository"].rstrip("/")
+    kind = "tree" if destination.is_dir() else "blob"
+    target = (
+        f"{repository}/{kind}/main/{urllib.parse.quote(relative.as_posix())}"
+    )
+    return target + ("#" + urllib.parse.quote(anchor) if anchor else "")
+
+
 def chapter(path, facts, topics):
     examples = {}
 
@@ -229,11 +249,13 @@ def chapter(path, facts, topics):
         if file.endswith(".md") or (not file and anchor):
             destination = path.parent / file if file else path
             if destination.parent.resolve() != path.parent.resolve():
-                raise ValueError("Help link leaves the manual")
+                refs[name] = repository_link(destination, anchor)
+                continue
             source = authored_heading(destination.read_text())
             heading = re.search(r"^# .+ \{#([\w.-]+)\}$", source, re.M)
             if not heading or heading[1] not in topics:
-                raise ValueError("Unknown help chapter link")
+                refs[name] = repository_link(destination, anchor)
+                continue
             if anchor:
                 headings = re.findall(r"^## (.+)$", source, re.M)
                 if anchor not in [slug(title) for title in headings]:
@@ -241,6 +263,8 @@ def chapter(path, facts, topics):
                 refs[name] = f"section:{heading[1]}.{anchor}"
             else:
                 refs[name] = f"help:{heading[1]}"
+        elif file and not target.startswith(("help:", "section:")):
+            refs[name] = repository_link(path.parent / file, anchor)
     for name, topic in overrides.items():
         if name not in refs or topic not in topics:
             raise ValueError("Unknown help reference override")
@@ -331,7 +355,7 @@ def render(root, stage, facts):
     for name in chapters:
         if Path(name).name != name or not name.endswith(".md"):
             raise ValueError("Invalid help chapter path")
-        key, source = chapter(stage / "users" / name, facts, topics)
+        key, source = chapter(root / "docs/users" / name, facts, topics)
         declared.append(key)
         content.append(source)
     if set(declared) != expected or len(declared) != len(expected):

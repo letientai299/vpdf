@@ -420,7 +420,7 @@ fn screen_wins_over_tmux() {
 fn requests_per_route() {
   let direct = b"\x1b[>0q\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\
     \x1b[?2026$p\x1b[?1016$p\x1b[?2048$p\x1b[?u\
-    \x1b]72;t=q\x1b\\\x1b]22;?pointer\x1b\\\x1b[?5522$p";
+    \x1b]72;t=q\x1b\\\x1b]11;?\x1b\\\x1b]22;?pointer\x1b\\\x1b[?5522$p";
   assert_eq!(request(&Route::Direct), direct);
   let tmux = request(&tmux_with(None));
   assert!(!tmux.windows(3).any(|window| window == b"\x1b_G"));
@@ -889,7 +889,7 @@ fn clipboard_requires_explicit_answer() {
     }
   }
   let mut wrapped = Vec::new();
-  let query = b"\x1b]22;?pointer\x1b\\\x1b[?5522$p";
+  let query = b"\x1b]11;?\x1b\\\x1b]22;?pointer\x1b\\\x1b[?5522$p";
   crate::terminal::passthrough(&mut wrapped, query, true).unwrap();
   assert!(request(&tmux_with(None)).ends_with(&wrapped));
 }
@@ -966,4 +966,39 @@ fn passthrough_reset_preserves_changes() {
     assert_eq!(state.get(), expected);
     assert_eq!(queried.get(), changed == Some(All));
   }
+}
+
+#[test]
+fn background_palettes() {
+  use vpdf_model::theme::Palette;
+  for (body, rgb, palette) in [
+    ("rgb:ffff/ffff/ffff", Some([255; 3]), Palette::light()),
+    ("rgb:ff/ff/ff", Some([255; 3]), Palette::light()),
+    ("rgb:0000/0000/0000", Some([0; 3]), Palette::dark()),
+    ("rgb:12/34/56", Some([18, 52, 86]), Palette::dark()),
+    ("rgb:1212/3434/5656", Some([18, 52, 86]), Palette::dark()),
+    ("rgb:8080/8080/8080", Some([128; 3]), Palette::light()),
+    ("rgb:f/0/0", Some([255, 0, 0]), Palette::light()),
+    ("rgb:/ff/ff", None, Palette::dark()),
+    ("rgb:gg/ff/ff", None, Palette::dark()),
+    ("rgb:fffff/0/0", None, Palette::dark()),
+    ("rgb:ff/ff/ff/ff", None, Palette::dark()),
+    ("rgb:ff/ff", None, Palette::dark()),
+    ("#ffffff", None, Palette::dark()),
+  ] {
+    for ending in ["\x07", "\x1b\\"] {
+      let bytes = format!("\x1b]11;{body}{ending}\x1b[?62c");
+      let caps = caps(Route::Direct, &replies(bytes.as_bytes()));
+      assert_eq!(caps.background, rgb, "{body:?}");
+      assert_eq!(caps.palette(), palette, "{body:?}");
+    }
+  }
+}
+
+#[test]
+fn silent_background_uses_dark() -> Result<()> {
+  let caps = rounds(Route::Direct, true, |_| Ok(Vec::new()))?;
+  assert_eq!(caps.background, None);
+  assert_eq!(caps.palette(), vpdf_model::theme::Palette::dark());
+  Ok(())
 }

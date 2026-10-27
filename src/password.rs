@@ -15,7 +15,7 @@ pub fn password(settings: &crate::config::Settings) -> crate::Result<String> {
     vpdf_terminal::style::write(
       &mut out,
       vpdf_model::style::Role::Reset,
-      settings.theme(),
+      settings.colors(vpdf_model::theme::Colors::Terminal),
     )?;
     vpdf_terminal::terminal::line(
       &mut out,

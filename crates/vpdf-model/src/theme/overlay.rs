@@ -1,4 +1,4 @@
-use super::Theme;
+use super::Colors;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Overlay {
@@ -36,7 +36,7 @@ impl From<[u8; 4]> for Paint {
 }
 
 impl Paint {
-  pub fn resolve(self, theme: Theme) -> [u8; 4] {
+  pub fn resolve(self, theme: Colors) -> [u8; 4] {
     match self {
       Self::Rgba(rgba) => rgba,
       Self::Overlay(overlay) => overlay.resolve(theme),
@@ -45,8 +45,8 @@ impl Paint {
 }
 
 impl Overlay {
-  pub fn resolve(self, theme: Theme) -> [u8; 4] {
-    if theme == Theme::Default {
+  pub fn resolve(self, theme: Colors) -> [u8; 4] {
+    if theme == Colors::Terminal {
       return self.default_color();
     }
     let p = theme.palette();
@@ -55,16 +55,37 @@ impl Overlay {
       | Self::Cursor
       | Self::RegionEdge
       | Self::Badge
-      | Self::HeadingTick => p.blue,
+      | Self::HeadingTick => p.accent,
       Self::RingHover | Self::Track | Self::Thumb => p.muted,
-      Self::Landing | Self::Match | Self::Hint | Self::MatchTick => p.yellow,
+      Self::Landing | Self::Match | Self::Hint | Self::MatchTick => p.r#match,
       Self::PaneVeil | Self::RegionVeil | Self::Preview => p.background,
-      Self::Selection => p.magenta,
-      Self::Cursorline => p.selection,
+      Self::Selection => p.highlight,
+      Self::Cursorline => p.cursorline,
       Self::Bar => p.surface,
-      Self::Link => p.cyan,
+      Self::Link => p.link,
     };
-    [rgb[0], rgb[1], rgb[2], self.default_color()[3]]
+    [rgb[0], rgb[1], rgb[2], self.alpha(rgb)]
+  }
+
+  fn alpha(self, rgb: [u8; 3]) -> u8 {
+    let alpha = self.default_color()[3];
+    match self {
+      Self::Cursor
+      | Self::Selection
+      | Self::Match
+      | Self::Landing
+      | Self::PaneVeil
+      | Self::RegionVeil
+      | Self::Cursorline
+      | Self::Link => {
+        // Preserve 4.5:1 page contrast.
+        // https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html
+        let maximum =
+          (255.0 * 0.825 / (1.0 + 3.5 * super::luminance(rgb))).floor() as u8;
+        alpha.min(maximum)
+      }
+      _ => alpha,
+    }
   }
 
   const fn default_color(self) -> [u8; 4] {
@@ -88,6 +109,38 @@ impl Overlay {
       Self::MatchTick => [255, 190, 30, 240],
       Self::Link => [40, 180, 220, 70],
       Self::Preview => [255; 4],
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::theme::{Palette, luminance};
+
+  #[test]
+  fn fills_preserve_page_contrast() {
+    for mut palette in [Palette::light(), Palette::dark()] {
+      for cursor in [palette.accent, [255; 3]] {
+        palette.accent = cursor;
+        for overlay in [
+          Overlay::Cursor,
+          Overlay::Selection,
+          Overlay::Match,
+          Overlay::Landing,
+          Overlay::PaneVeil,
+          Overlay::RegionVeil,
+          Overlay::Cursorline,
+          Overlay::Link,
+        ] {
+          let [r, g, b, a] = overlay.resolve(Colors::Palette(palette));
+          let alpha = f64::from(a) / 255.0;
+          let ink = alpha * luminance([r, g, b]);
+          let paper = 1.0 - alpha + ink;
+          let ratio = (paper + 0.05) / (ink + 0.05);
+          assert!(ratio >= 4.5, "{overlay:?}: {ratio}");
+        }
+      }
     }
   }
 }

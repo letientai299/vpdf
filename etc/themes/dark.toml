@@ -1,0 +1,12 @@
+# Vpdf logo palette. License: MIT.
+
+background = "#06100b"
+foreground = "#d6f0df"
+surface = "#0f2117"
+cursorline = "#183d2a"
+muted = "#8fb29f"
+accent = "#5fb987"
+highlight = "#ff8a8a"
+match = "#e8bd65"
+link = "#98d5b1"
+error = "#ff8a8a"

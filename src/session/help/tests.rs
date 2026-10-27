@@ -51,11 +51,7 @@ fn lookup_during_refresh_uses_builtins() -> Result<()> {
   let root = tempfile::tempdir()?;
   let config = root.path().join("config.toml");
   std::fs::write(&config, "")?;
-  let loaded = crate::config::Options {
-    config: Some(config.clone()),
-    ..Default::default()
-  }
-  .load();
+  let loaded = crate::config::Options { config: Some(config.clone()) }.load();
   assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
   let mut session = Session::configured(None, loaded);
   invoke(&mut session, "navigation")?;
@@ -138,7 +134,7 @@ fn lookup_and_refresh_retain_preview() -> Result<()> {
       session.app().command("text")?;
       assert_eq!(session.app().preview, Some(false));
       if refresh {
-        session.set_theme(vpdf_model::theme::Theme::Nord);
+        session.set_theme(vpdf_model::theme::Theme::Light);
         wait(&mut session);
       } else {
         invoke(&mut session, "sample")?;
@@ -163,11 +159,7 @@ fn nested_lookup_uses_builtin_bindings() -> Result<()> {
     &config,
     "[keybindings.cursor]\nh = { action = 'fit.page' }\n",
   )?;
-  let loaded = crate::config::Options {
-    config: Some(config.clone()),
-    ..Default::default()
-  }
-  .load();
+  let loaded = crate::config::Options { config: Some(config.clone()) }.load();
   assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
   let mut session = Session::configured(None, loaded);
   invoke(&mut session, "navigation")?;
@@ -323,7 +315,7 @@ fn refresh_replaces_all_split_generations() -> Result<()> {
   for app in &mut session.tab().panes {
     app.marks.insert('a', vpdf_model::text::Position::default());
   }
-  session.set_theme(vpdf_model::theme::Theme::Nord);
+  session.set_theme(vpdf_model::theme::Theme::Light);
   wait(&mut session);
   for app in &session.tabs[session.active].panes {
     assert_eq!(app.document_generation, 1);
@@ -436,7 +428,7 @@ fn newer_focus_discards_pending_open() -> Result<()> {
 fn closing_during_refresh_keeps_home() -> Result<()> {
   let mut session = Session::new(None);
   invoke(&mut session, "config")?;
-  session.set_theme(vpdf_model::theme::Theme::Nord);
+  session.set_theme(vpdf_model::theme::Theme::Light);
   assert!(session.help.pending.is_some());
   session.close()?;
   wait(&mut session);
@@ -474,7 +466,7 @@ fn normal_refresh_preserves_field_and_discards_crops() -> Result<()> {
   let mut crops = vpdf_model::geometry::Crops::default();
   crops.insert(page, Crop([1, 10, 10, 10]));
   app.layout.resolve_crops(std::sync::Arc::new(crops));
-  session.set_theme(vpdf_model::theme::Theme::Nord);
+  session.set_theme(vpdf_model::theme::Theme::Light);
   wait(&mut session);
   let app = session.app();
   assert!(app.layout.crops().is_empty());
@@ -499,9 +491,7 @@ fn configured_command_preserves_operator_context() -> Result<()> {
     &config,
     "[keybindings.operator]\n'<F2>' = { command = 'help p' }\n",
   )?;
-  let loaded =
-    crate::config::Options { config: Some(config), ..Default::default() }
-      .load();
+  let loaded = crate::config::Options { config: Some(config) }.load();
   assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
   let mut session = Session::configured(None, loaded);
   session.open(&path, true, cells(120, 40))?;
@@ -532,9 +522,7 @@ fn remaps_unbinding_and_path_policy() -> Result<()> {
       "q = { unbind = true }\n"
     ),
   )?;
-  let loaded =
-    crate::config::Options { config: Some(config), ..Default::default() }
-      .load();
+  let loaded = crate::config::Options { config: Some(config) }.load();
   assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
   let mut session = Session::configured(None, loaded);
   session.open(&path, true, cells(120, 40))?;
@@ -715,9 +703,7 @@ fn refresh_retains_wrapped_position() -> Result<()> {
     let root = tempfile::tempdir()?;
     let config = root.path().join("config.toml");
     std::fs::write(&config, "")?;
-    let loaded =
-      crate::config::Options { config: Some(config), ..Default::default() }
-        .load();
+    let loaded = crate::config::Options { config: Some(config) }.load();
     let mut session = Session::configured(None, loaded);
     invoke(&mut session, "introduction")?;
     session.resize(cells(36, 8))?;
@@ -738,7 +724,7 @@ fn refresh_retains_wrapped_position() -> Result<()> {
       if reload {
         session.reload_config();
       } else {
-        session.set_theme(vpdf_model::theme::Theme::Nord);
+        session.set_theme(vpdf_model::theme::Theme::Light);
       }
       wait(&mut session);
       let app = session.app();
@@ -788,7 +774,7 @@ fn help_reuses_correct_placement() -> Result<()> {
   assert_eq!(session.app().id, split);
   assert_eq!(session.tabs[0].panes.len(), 2);
   assert_eq!(session.tabs[0].panes[0].id, book);
-  session.set_theme(vpdf_model::theme::Theme::Nord);
+  session.set_theme(vpdf_model::theme::Theme::Light);
   wait(&mut session);
   assert!(session.app().error.is_none(), "{:?}", session.app().error);
   assert_eq!(session.app().id, split);
@@ -817,7 +803,7 @@ fn refresh_retains_page_separator() -> Result<()> {
     .origin(position)?;
   assert_eq!(app.text_view.top(), position);
   let document = app.manual.clone().unwrap();
-  session.set_theme(vpdf_model::theme::Theme::Nord);
+  session.set_theme(vpdf_model::theme::Theme::Light);
   assert!(session.help.pending.is_some());
   wait(&mut session);
   let app = session.app();

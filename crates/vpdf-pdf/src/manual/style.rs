@@ -38,12 +38,12 @@ fn recolor(mut contents: PdfObject, palette: Palette) -> Result<()> {
   let colors = [
     palette.background,
     palette.foreground,
-    palette.blue,
-    palette.yellow,
-    palette.cyan,
-    palette.magenta,
-    palette.magenta,
-    palette.cyan,
+    palette.accent,
+    palette.r#match,
+    palette.link,
+    palette.highlight,
+    palette.highlight,
+    palette.link,
   ];
   for (swatch, color) in SWATCHES.into_iter().zip(colors) {
     for operator in ["scn", "SCN"] {

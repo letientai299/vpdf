@@ -460,6 +460,26 @@ mod tests {
     Ok(())
   }
 
+  #[test]
+  fn background_timeout_keeps_reply() -> Result<()> {
+    for body in [None, Some("rgb:ffff/ffff/ffff")] {
+      let (mut reader, [mut terminal, _waker, _signal]) = reader()?;
+      if let Some(body) = body {
+        write!(terminal, "\x1b]11;{body}\x1b\\")?;
+      }
+      let timeout = Duration::from_millis(30);
+      let start = Instant::now();
+      let replies = reader.ask(timeout)?;
+      assert!(start.elapsed() >= timeout);
+      let expected: Vec<_> = body
+        .map(|body| Reply::Osc { code: 11, body: body.into() })
+        .into_iter()
+        .collect();
+      assert_eq!(replies, expected);
+    }
+    Ok(())
+  }
+
   /// Without DA1's answer the probe ends at the deadline with what came.
   #[test]
   fn ask_ends_without_attributes() -> Result<()> {

@@ -337,11 +337,8 @@ fn reload_keeps_builtin_defaults() -> crate::Result<()> {
       "h = { action = 'scroll', amount = 0.5 }\n"
     ),
   )?;
-  let loaded = crate::config::Options {
-    config: Some(file.path().into()),
-    ..Default::default()
-  }
-  .load();
+  let loaded =
+    crate::config::Options { config: Some(file.path().into()) }.load();
   assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
   let reference = loaded.settings.help_reference(Invocation::Home);
   std::fs::write(file.path(), "[reading]\nzoom = 3.0\n")?;
@@ -359,7 +356,7 @@ fn reload_keeps_builtin_defaults() -> crate::Result<()> {
 fn sample_note_refreshes() -> crate::Result<()> {
   let mut runtime = Runtime::default();
   let mut reference = snapshot();
-  for theme in ["github-light", "nord", "github-light"] {
+  for theme in ["light", "dark", "light"] {
     reference
       .configuration
       .settings
@@ -367,6 +364,8 @@ fn sample_note_refreshes() -> crate::Result<()> {
       .find(|setting| setting.name == "appearance.theme")
       .unwrap()
       .effective = theme.into();
+    reference.configuration.palette =
+      vpdf_model::theme::Theme::parse(theme).unwrap().palette();
     let ready = request(&mut runtime, &reference, "sample")?;
     let native = PdfDocument::open(ready.document.path())?;
     let notes: Vec<_> = native
@@ -390,11 +389,8 @@ fn custom_commands_are_not_documented() -> crate::Result<()> {
     file.path(),
     "[keybindings.normal]\nQ = { command = 'help sample' }\n",
   )?;
-  let loaded = crate::config::Options {
-    config: Some(file.path().into()),
-    ..Default::default()
-  }
-  .load();
+  let loaded =
+    crate::config::Options { config: Some(file.path().into()) }.load();
   assert!(loaded.warning.is_none());
   let reference = loaded.settings.help_reference(Invocation::Home);
   assert_eq!(
@@ -447,7 +443,7 @@ fn font_notices_include_license() -> crate::Result<()> {
 fn theme_colors_and_monospace() -> crate::Result<()> {
   use vpdf_model::theme::Theme;
   let mut previous = None;
-  for theme in [Theme::GithubLight, Theme::Nord] {
+  for theme in [Theme::Light, Theme::Dark] {
     let mut reference = snapshot();
     reference
       .configuration
@@ -456,6 +452,7 @@ fn theme_colors_and_monospace() -> crate::Result<()> {
       .find(|setting| setting.name == "appearance.theme")
       .unwrap()
       .effective = theme.name().into();
+    reference.configuration.palette = theme.palette();
     let ready = request(&mut Runtime::default(), &reference, "half_down")?;
     let native = PdfDocument::open(ready.document.path())?;
     for index in [0, page(&ready.target) as i32] {
@@ -600,7 +597,7 @@ fn references_lead_with_syntax() -> crate::Result<()> {
 #[test]
 fn command_colors_match_semantics() -> crate::Result<()> {
   use vpdf_model::theme::Theme;
-  for theme in [Theme::GithubLight, Theme::Nord] {
+  for theme in [Theme::Light, Theme::Dark] {
     let mut reference = snapshot();
     reference
       .configuration
@@ -609,6 +606,7 @@ fn command_colors_match_semantics() -> crate::Result<()> {
       .find(|setting| setting.name == "appearance.theme")
       .unwrap()
       .effective = theme.name().into();
+    reference.configuration.palette = theme.palette();
     let guide = vpdf_ui::topics::authored()
       .into_iter()
       .find(|topic| topic.id.as_str() == "zoom")
@@ -619,11 +617,11 @@ fn command_colors_match_semantics() -> crate::Result<()> {
     let native = PdfDocument::open(ready.document.path())?;
     let palette = theme.palette();
     for (topic, needle, expected) in [
-      ("ex.tabprevious", ":tabp[revious]", palette.magenta),
-      ("ex.tabprevious", ":tabN", palette.magenta),
-      ("ex.cursorline", "[on|off]", palette.yellow),
-      ("ex.cursorline", "default on", palette.yellow),
-      ("ex.cursorline", guide.as_str(), palette.cyan),
+      ("ex.tabprevious", ":tabp[revious]", palette.highlight),
+      ("ex.tabprevious", ":tabN", palette.highlight),
+      ("ex.cursorline", "[on|off]", palette.r#match),
+      ("ex.cursorline", "default on", palette.r#match),
+      ("ex.cursorline", guide.as_str(), palette.link),
     ] {
       let glyphs =
         colored_glyphs(&native, page(&ready.document.topics[topic]))?;
@@ -735,15 +733,18 @@ fn theme_change_replaces_cached_pdf() -> crate::Result<()> {
     .iter_mut()
     .find(|setting| setting.name == "appearance.theme")
     .unwrap();
-  setting.effective = "github-light".into();
+  setting.effective = "light".into();
   let first = request(&mut runtime, &reference, "config")?;
+  let mut palette = reference.configuration.palette;
+  palette.background = [240, 245, 240];
+  reference.configuration.palette = palette;
   reference
     .configuration
     .settings
     .iter_mut()
     .find(|setting| setting.name == "appearance.theme")
     .unwrap()
-    .effective = "nord".into();
+    .effective = "dark".into();
   let second = request(&mut runtime, &reference, "config")?;
   assert!(!Arc::ptr_eq(&first.document, &second.document));
   assert_eq!(

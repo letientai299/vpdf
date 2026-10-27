@@ -24,10 +24,14 @@ impl Drawable for Session {
     let (tab, graphics) = (&mut self.tabs[self.active], &mut self.graphics);
     let snap_regions = graphics.crop_quirk();
     let mut painter = Painter::new(out).with_graphics(graphics);
-    if self.settings.theme() != vpdf_model::theme::Theme::Default {
+    if self.settings.colors(vpdf_model::theme::Colors::Terminal)
+      != vpdf_model::theme::Colors::Terminal
+    {
       vpdf_model::scene::Draw::push(
         &mut painter,
-        vpdf_model::scene::Op::Theme(self.settings.theme()),
+        vpdf_model::scene::Op::Theme(
+          self.settings.colors(vpdf_model::theme::Colors::Terminal),
+        ),
       );
     }
     let result = Self::scene_tab(
@@ -264,7 +268,7 @@ mod tests {
           .iter()
           .filter_map(|op| match op {
             Op::Fill(fill)
-              if fill.color().resolve(vpdf_model::theme::Theme::Default)
+              if fill.color().resolve(vpdf_model::theme::Colors::Terminal)
                 == [0, 0, 0, 51] =>
             {
               Some(fill)
@@ -304,11 +308,8 @@ mod tests {
         &config,
         format!("[reading]\ninactive_brightness = {brightness}"),
       )?;
-      let loaded = crate::config::Options {
-        config: Some(config.clone()),
-        ..Default::default()
-      }
-      .load();
+      let loaded =
+        crate::config::Options { config: Some(config.clone()) }.load();
       assert!(loaded.warning.is_none());
       let app = &mut session.tabs[session.active].panes[1];
       app.settings = loaded.settings;
@@ -317,7 +318,7 @@ mod tests {
       let scene = recorder.into_scene();
       let veil = scene.iter().last().and_then(|op| match op {
         Op::Fill(fill) => {
-          Some(fill.color().resolve(vpdf_model::theme::Theme::Default))
+          Some(fill.color().resolve(vpdf_model::theme::Colors::Terminal))
         }
         _ => None,
       });

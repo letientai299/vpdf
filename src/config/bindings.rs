@@ -159,7 +159,7 @@ fn target(value: &Value, context: Context) -> crate::Result<Option<Target>> {
     if spec.id == Id::Config {
       super::reload_command(argument)?;
     }
-    if spec.id == Id::Theme {
+    if spec.id == Id::Theme && !super::ThemeChoice::is_path(argument) {
       commands::theme(argument)?;
     }
     Target::Command(command.to_owned())

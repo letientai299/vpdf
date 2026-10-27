@@ -20,6 +20,7 @@ pub struct Setting {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Configuration {
   pub generation: u64,
+  pub palette: vpdf_model::theme::Palette,
   pub settings: Vec<Setting>,
   pub warnings: Vec<String>,
 }

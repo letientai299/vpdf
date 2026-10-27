@@ -31,6 +31,7 @@ pub enum Input {
     ack: Option<mpsc::Sender<std::result::Result<(), String>>>,
   },
   Resize(Screen),
+  SystemPalette(vpdf_model::theme::Palette),
   Key(KeyEvent),
   Paste(String),
   Mouse {
@@ -582,6 +583,7 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
     Ok(false) => {}
   }
   let applied = match input {
+    Input::SystemPalette(palette) => Ok(session.set_system_palette(palette)),
     Input::Resize(size) => {
       *screen = size;
       session.resize(size).map(|()| true)
@@ -732,7 +734,7 @@ fn home_event(
     crate::home::Outcome::Pick { root, tab } => session.pick(&root, tab)?,
     crate::home::Outcome::Perf(on) => session.toggle_perf(on)?,
     crate::home::Outcome::ConfigReload => session.reload_config(),
-    crate::home::Outcome::Theme(theme) => session.set_theme(theme),
+    crate::home::Outcome::Theme(theme) => session.choose_theme(&theme),
     crate::home::Outcome::Forget(paths) => session.forget_recent(&paths)?,
     crate::home::Outcome::Stay => {}
   }
@@ -808,9 +810,11 @@ fn prepare_scene(
   session: &mut Session,
   scene: &mut impl vpdf_model::scene::Draw<'static>,
 ) {
-  if session.settings.theme() != vpdf_model::theme::Theme::Default {
-    scene.push(Op::Theme(session.settings.theme()));
-  }
+  scene.push(Op::Theme(
+    session
+      .settings
+      .colors(vpdf_model::theme::Colors::Palette(session.system_palette)),
+  ));
   session.present_startup();
   if let Some(home) = &mut session.home {
     home.configure(&session.settings);
@@ -1075,6 +1079,43 @@ mod tests {
     let (column, row) =
       (pixels.0 / screen.cell_width, pixels.1 / screen.cell_height);
     Input::Mouse { event: MouseEvent::new(kind, column, row), pixels, screen }
+  }
+
+  #[test]
+  fn native_system_repaints() -> Result<()> {
+    use vpdf_model::theme::{Colors, Palette, Theme};
+    let mut session = native();
+    let mut screen = sized();
+    ensure_home(&mut session, screen);
+    for palette in [Palette::light(), Palette::dark()] {
+      assert!(apply(&mut session, Input::SystemPalette(palette), &mut screen));
+      assert!(!apply(&mut session, Input::SystemPalette(palette), &mut screen));
+      let rendered = frame(&mut session, &mut Cache::new(BUDGET), screen)?;
+      assert_eq!(
+        rendered.scene.first(),
+        Some(&Op::Theme(Colors::Palette(palette)))
+      );
+      assert!(rendered.scene.iter().all(|op| match op {
+        Op::Theme(colors) => *colors == Colors::Palette(palette),
+        _ => true,
+      }));
+      assert_eq!(
+        session.settings.theme(),
+        &crate::config::ThemeChoice::Builtin(Theme::System)
+      );
+    }
+    session.set_theme(Theme::Light);
+    assert!(!apply(
+      &mut session,
+      Input::SystemPalette(Palette::light()),
+      &mut screen
+    ));
+    let rendered = frame(&mut session, &mut Cache::new(BUDGET), screen)?;
+    assert_eq!(
+      rendered.scene.first(),
+      Some(&Op::Theme(Colors::Palette(Palette::light())))
+    );
+    Ok(())
   }
 
   #[test]
@@ -1815,7 +1856,7 @@ mod tests {
 
   #[test]
   fn help_refresh_invalidates_native_tiles() -> Result<()> {
-    let screen = sized();
+    let mut screen = sized();
     let mut session = native();
     session.request_help(
       "config",
@@ -1843,12 +1884,19 @@ mod tests {
         3,
       );
     }
-    session.set_theme(vpdf_model::theme::Theme::Nord);
+    let original = session.app().manual.clone().unwrap();
+    assert!(apply(
+      &mut session,
+      Input::SystemPalette(vpdf_model::theme::Palette::light()),
+      &mut screen
+    ));
+    assert_eq!(session.system_palette, vpdf_model::theme::Palette::light());
     while session.app().document_generation == 0 {
       session.help_updates(&mut std::io::sink());
       assert!(Instant::now() < deadline, "Help refresh timed out");
       thread::sleep(Duration::from_millis(2));
     }
+    assert!(!Arc::ptr_eq(session.app().manual.as_ref().unwrap(), &original));
     let mut reloaded = Vec::new();
     assert!(completions(&mut session, &mut cache, &mut reloaded));
     for owner in owners {
@@ -2226,7 +2274,13 @@ mod tests {
         let mut expected = Vec::new();
         streamed.draw_frame(&mut expected)?;
         let screen = recorded.screen.unwrap();
-        let retained = frame(&mut recorded, &mut cache, screen)?;
+        let mut retained = frame(&mut recorded, &mut cache, screen)?;
+        assert_eq!(
+          retained.scene.remove(0),
+          Op::Theme(vpdf_model::theme::Colors::Palette(
+            recorded.system_palette
+          ))
+        );
         let mut actual = Vec::new();
         write!(actual, "{}{}", terminal::frame_start(), sgr(Role::Reset))?;
         graphics.begin(&mut actual)?;

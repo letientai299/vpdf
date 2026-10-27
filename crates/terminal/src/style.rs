@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use vpdf_model::style::{
   Attribute, Color, ColorChange, Role, StyleChange, Tone,
 };
-use vpdf_model::theme::Theme;
+use vpdf_model::theme::Colors;
 
 pub const fn sgr(role: Role) -> &'static str {
   macro_rules! encoded {
@@ -53,8 +53,12 @@ pub const fn sgr(role: Role) -> &'static str {
   }
 }
 
-pub fn write(out: &mut impl Write, role: Role, theme: Theme) -> io::Result<()> {
-  if theme == Theme::Default && !matches!(role, Role::Swatch(_)) {
+pub fn write(
+  out: &mut impl Write,
+  role: Role,
+  theme: Colors,
+) -> io::Result<()> {
+  if theme == Colors::Terminal && !matches!(role, Role::Swatch(_)) {
     return out.write_all(sgr(role).as_bytes());
   }
   out.write_all(b"\x1b[")?;
@@ -206,7 +210,9 @@ mod tests {
 
   #[test]
   fn swatches_write_their_color() -> io::Result<()> {
-    for theme in [Theme::Default, Theme::Nord] {
+    for theme in
+      [Colors::Terminal, Colors::Palette(vpdf_model::theme::Palette::dark())]
+    {
       let mut out = Vec::new();
       write(&mut out, Role::Swatch([255, 235, 59]), theme)?;
       assert_eq!(out, b"\x1b[38;2;255;235;59m", "{theme:?}");
@@ -216,10 +222,14 @@ mod tests {
 
   #[test]
   fn named_colors_are_explicit() -> io::Result<()> {
-    for &theme in Theme::ALL {
+    for &theme in &[
+      Colors::Terminal,
+      Colors::Palette(vpdf_model::theme::Palette::light()),
+      Colors::Palette(vpdf_model::theme::Palette::dark()),
+    ] {
       let mut out = Vec::new();
       write(&mut out, Role::Reset, theme)?;
-      if theme == Theme::Default {
+      if theme == Colors::Terminal {
         assert_eq!(out, b"\x1b[0m");
         continue;
       }
@@ -240,7 +250,7 @@ mod tests {
       write(&mut out, Role::Heading, theme)?;
       assert_eq!(
         String::from_utf8(out).unwrap(),
-        format!("\x1b[1;38;2;{};{};{}m", p.blue[0], p.blue[1], p.blue[2])
+        format!("\x1b[1;38;2;{};{};{}m", p.accent[0], p.accent[1], p.accent[2])
       );
     }
     Ok(())

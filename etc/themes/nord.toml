@@ -1,0 +1,14 @@
+# Source: https://github.com/nordtheme/nord
+# Revision: 1cef71605416a222e57225b544540ce0fcec18d4
+# License: MIT; see docs/licenses/themes.txt.
+
+background = "#2e3440"
+foreground = "#d8dee9"
+surface = "#3b4252"
+cursorline = "#434c5e"
+muted = "#4c566a"
+accent = "#81a1c1"
+highlight = "#b48ead"
+match = "#ebcb8b"
+link = "#88c0d0"
+error = "#bf616a"

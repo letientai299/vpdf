@@ -133,6 +133,9 @@ pub(crate) fn complete(
     |program| available(program, terminal),
     |kind, argument| match kind {
       Complete::Path => paths(argument),
+      Complete::Theme => filesystem_paths(argument, |path| {
+        path.to_str().is_some_and(crate::config::ThemeChoice::is_path)
+      }),
       Complete::Language => languages().to_vec(),
       Complete::Tab => {
         (1..=tabs.len()).map(|index| index.to_string()).collect()
@@ -189,7 +192,7 @@ fn paths(argument: &str) -> Vec<String> {
   } else {
     path.to_owned()
   };
-  filesystem_paths(&decoded)
+  filesystem_paths(&decoded, is_pdf)
     .into_iter()
     .filter_map(|candidate| {
       let candidate = if uri || candidate.contains('#') {
@@ -205,7 +208,10 @@ fn paths(argument: &str) -> Vec<String> {
     .collect()
 }
 
-fn filesystem_paths(argument: &str) -> Vec<String> {
+fn filesystem_paths(
+  argument: &str,
+  accepts: impl Fn(&Path) -> bool,
+) -> Vec<String> {
   let split = argument.rfind('/').map_or(0, |slash| slash + 1);
   let (directory, prefix) = argument.split_at(split);
   let root = if directory.is_empty() { ".".into() } else { expand(directory) };
@@ -224,7 +230,7 @@ fn filesystem_paths(argument: &str) -> Vec<String> {
       if kind.is_dir() || (kind.is_symlink() && entry.path().is_dir()) {
         return Some(format!("{name}/"));
       }
-      is_pdf(Path::new(&name)).then_some(name)
+      accepts(Path::new(&name)).then_some(name)
     })
     .collect();
   names.sort_unstable();
@@ -284,6 +290,24 @@ mod tests {
       complete("tabnext 3", View::Document, true, &[], &names).1,
       [] as [String; 0]
     );
+    Ok(())
+  }
+
+  #[test]
+  fn completes_theme_files() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    std::fs::write(root.path().join("custom.toml"), "")?;
+    std::fs::write(root.path().join("document.pdf"), "")?;
+    std::fs::create_dir(root.path().join("palettes"))?;
+    let prefix = format!("{}/", root.path().display());
+    for command in ["theme", "colorscheme"] {
+      let (_, items) =
+        candidates(&format!("{command} {prefix}"), View::Home, true);
+      assert_eq!(
+        items,
+        [format!("{prefix}custom.toml"), format!("{prefix}palettes/")]
+      );
+    }
     Ok(())
   }
 

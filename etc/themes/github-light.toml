@@ -1,0 +1,14 @@
+# Source: https://github.com/primer/primitives
+# Revision: ec3eee6ac930cf942e97a86a722aac2c3fb4f3a9
+# License: MIT; see docs/licenses/themes.txt.
+
+background = "#ffffff"
+foreground = "#1f2328"
+surface = "#f6f8fa"
+cursorline = "#ddf4ff"
+muted = "#59636e"
+accent = "#0969da"
+highlight = "#8250df"
+match = "#9a6700"
+link = "#0550ae"
+error = "#cf222e"

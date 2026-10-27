@@ -11,11 +11,8 @@ built-in keys, even when your configuration changes them.
 
 ## Create a configuration
 
-Run `vpdf --config-example` to print the supported keys and built-in defaults.
-The native executable supports the same output. Both commands exit without
-reading configuration or opening a frontend.
-
-Save and edit that output at `$XDG_CONFIG_HOME/vpdf/config.toml`, or
+Create a TOML file using the [built-in defaults][defaults] as a reference.
+Save it at `$XDG_CONFIG_HOME/vpdf/config.toml`, or
 `$HOME/.config/vpdf/config.toml` when `XDG_CONFIG_HOME` is unset, empty, or
 relative. Vpdf uses the same location on macOS and Linux, following the [XDG
 base directory rules][xdg]. Without an absolute base directory it uses
@@ -32,11 +29,11 @@ cursorline = false
 language = "eng+vie"
 ```
 
-Omitted settings keep their built-in values. `vpdf --config path/to/config.toml`
-selects one file explicitly; a relative path resolves from the invocation
-directory. `vpdf --no-config book.pdf` uses built-ins. `--config` and
-`--no-config` cannot be combined. The native executable accepts the same
-options.
+Omitted settings keep their built-in values. `vpdf -u path/to/config.toml`
+(or `--config PATH`) selects one file explicitly; a relative path resolves
+from the invocation directory. Missing or unreadable explicit paths disable
+configuration silently. Use `vpdf -u NONE book.pdf` to select built-ins when
+`NONE` is not a readable file. The native executable accepts the same option.
 
 Keep TOML table names and quoted key sequences as shown. Each value belongs to
 the most recent table heading. Start with this minimal file, run
@@ -119,13 +116,13 @@ Each entry contains exactly one target: `action`, `command`, or `unbind = true`.
 Actions take typed fields where required. Commands use existing Ex command
 names and arguments without the leading colon. They execute directly; bindings
 never expand other bindings or replay a string of keystrokes. For example,
-`{ command = "theme nord" }` selects a theme, while `{ action = "tab.next" }`
+`{ command = "theme dark" }` selects a theme, while `{ action = "tab.next" }`
 selects the next tab.
 
-`vpdf --config-example` prints current setting names and built-in values. It
-leaves `[keybindings]` empty. Use the built-in key and action references in
-`:help` to find operations. Generated topic IDs can differ from configuration
-action names: a motion needs `action = "motion"` and a separate `motion` field.
+The [built-in defaults][defaults] list setting names and values. Use the
+built-in key and action references in `:help` to find operations. Generated
+topic IDs can differ from configuration action names: a motion needs
+`action = "motion"` and a separate `motion` field.
 
 ## Key notation and terminal caveats
 
@@ -281,25 +278,68 @@ the key on the surface you customized.
 
 ## UI themes
 
-Set `appearance.theme` to a built-in theme:
+Set `appearance.theme` to `system`, `light`, `dark`, or a theme file path:
 
 ```toml
 [appearance]
-theme = "nord"
+theme = "dark"
 ```
 
-Use `:theme <name>` or `:colorscheme <name>` to switch themes in the running
-process. Tab completion lists built-in names. The selection applies to all tabs
-and splits, including documents opened later. It does not change the
-configuration file or saved state. `:config reload` restores the configured
-theme.
+`system` follows each frontend:
 
-The default theme preserves the current appearance and terminal palette
-inheritance. Named themes use explicit RGB colors in both frontends. UI colors
-include text, bars, panels, menus, scrollbars, and page overlays. PDF pixels and
-document fonts stay unchanged. Theme changes preserve cached PDF tiles. [Theme
-notices][theme-notices] retain palette attribution and licenses. [Palette
-provenance][palettes] records the imported source revisions.
+- The native app follows OS light/dark appearance changes. If the OS does not
+  report an appearance, it uses dark.
+- The terminal keeps its ANSI text colors. At launch, Vpdf queries the terminal
+  background with OSC 11 and chooses a light or dark palette for RGB overlays,
+  preview fills, and the built-in manual. No reply means dark. Under tmux, the
+  query needs passthrough; tmux may instead answer with its own background.
+
+`light`, `dark`, and theme files use explicit RGB colors in both frontends.
+Themes recolor text, bars, panels, menus, scrollbars, page overlays, and the
+built-in manual. Source PDF pixels and document fonts stay unchanged. Theme
+changes preserve cached source PDF tiles.
+
+Use `:theme light`, `:theme dark`, or `:colorscheme <name|path>` to switch in
+the running process. Tab completion lists built-in names, directories, and TOML
+files. The selection applies to every tab and split, including documents opened
+later. It does not change the configuration file or saved state.
+`:config reload` restores the configured theme.
+
+### Theme files
+
+Copy a [theme file][theme-files] and select its path:
+
+```toml
+[appearance]
+theme = "themes/nord.toml"
+```
+
+Configuration paths resolve from the configuration file's directory. Runtime
+commands such as `:theme ~/.config/vpdf/themes/nord.toml` resolve relative paths
+from the process's working directory. Both expand `~`. A value containing `/`
+or ending in `.toml` names a file. Former built-in names such as `nord` require
+file paths now. Unknown names and unreadable or invalid theme files warn and
+select `system`, including during configuration reload.
+
+A theme file contains these required top-level tokens, each as a quoted
+`#rrggbb` color. Missing tokens, extra tokens, and invalid colors reject the
+file.
+
+| Token        | Use                             |
+| ------------ | ------------------------------- |
+| `background` | Reader and manual background    |
+| `foreground` | Main text                       |
+| `surface`    | Bars, panels, and menus         |
+| `cursorline` | Cursor line band                |
+| `muted`      | Dim text and secondary controls |
+| `accent`     | Headings, cursors, and badges   |
+| `highlight`  | Visual selection                |
+| `match`      | Search matches and hint labels  |
+| `link`       | Links and active tabs           |
+| `error`      | Errors                          |
+
+[Theme notices][theme-notices] retain attribution and licenses for imported
+palettes. [Palette provenance][palettes] records their source revisions.
 
 Side panels mark rows with symbols such as `▣` for a figure and `§` for a
 section. When the font lacks them or the terminal draws them at the wrong
@@ -313,8 +353,8 @@ ascii_glyphs = true
 ## Reload configuration
 
 `:config reload` rereads the original selected source. Each running process
-reloads independently; `--no-config` keeps built-ins. Changing environment
-variables does not select another file.
+reloads independently; a disabled configuration keeps built-ins. Changing
+environment variables does not select another file.
 
 Bindings and themes apply to every open tab and split. Inactive brightness
 applies to existing splits. OCR language applies to subsequent requests; running
@@ -324,30 +364,32 @@ and prompt text. It clears incomplete key sequences, counts, registers,
 operators, and prompt editing prefixes.
 
 Omitted values restore built-ins. Invalid values keep their previous working
-values while valid entries apply. Unreadable files, malformed TOML, and missing
+values while valid entries apply, except theme names and files use the
+`system` fallback described above. Unreadable files, malformed TOML, and missing
 explicit files preserve all live settings and warn. A missing discovered file
 acts as empty configuration.
 
 ## Built-in defaults
 
 The [setting defaults][defaults] (`:help config`) list built-in configuration
-values. Use `:theme` followed by Tab to list valid built-in themes, or
-`vpdf --config-example` for current setting names and defaults.
+values. Use `:theme` followed by Tab to list valid built-in themes.
 
 Your TOML file, saved reading state, and runtime commands can change the active
 values. Test those changes in the reader; the manual always describes defaults.
 
 ## Errors
 
-A missing discovered file silently uses built-ins. Other read failures, invalid
-UTF-8, or TOML syntax errors use all built-ins and show a startup warning in the
-status bar, including on the start screen. A missing explicitly selected file
-also warns. Configuration errors never stop startup.
+A missing discovered file silently uses built-ins. Missing or unreadable
+explicit paths disable configuration without warning, including invalid UTF-8.
+Other discovered-file read failures and TOML syntax errors use built-ins and
+show a startup warning in the status bar, including on the start screen.
+Configuration errors never stop startup.
 
 With valid TOML syntax, Vpdf keeps each valid recognized setting and warns about
-invalid values and unknown keys. At startup, an invalid section or value keeps
-its built-in default; on reload it keeps the previous working value. Warnings
-name the file and affected settings; syntax errors include parser locations.
+invalid values and unknown keys. Theme names and files use the `system`
+fallback above. Other invalid values keep their built-in defaults at startup
+and previous working values on reload. Warnings name the file and affected
+settings; syntax errors include parser locations.
 Dismiss them using the normal status-message controls.
 
 [xdg]: https://specifications.freedesktop.org/basedir/latest/
@@ -360,3 +402,4 @@ Dismiss them using the normal status-message controls.
 <!-- help:defaults=config -->
 
 [defaults]: #built-in-defaults
+[theme-files]: ../../etc/themes/

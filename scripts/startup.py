@@ -95,7 +95,7 @@ def launch(binary, args, env, size, quiet, timeout):
         return (time.perf_counter() - started) * 1000
 
     child = subprocess.Popen(
-        [str(binary), "--no-config", *args],
+        [str(binary), "-u", "NONE", *args],
         stdin=slave,
         stdout=slave,
         stderr=slave,

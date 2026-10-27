@@ -75,6 +75,7 @@ inherits = "release"
 codegen-units = 1
 
 [workspace.dependencies]
+toml = "1.1.8"
 vpdf-ui = { path = "crates/ui" }
 vpdf-terminal = { path = "crates/terminal" }
 vpdf-pdf = { path = "crates/vpdf-pdf" }
@@ -115,7 +116,7 @@ font-kit = "0.14"
 bench-events = []
 
 [dependencies]
-toml = "1.1.8"
+toml.workspace = true
 vpdf-ui.workspace = true
 vpdf-terminal.workspace = true
 vpdf-pdf.workspace = true

@@ -58,9 +58,6 @@ fn preview(reference: &Reference, graphics: inline::Graphics) -> Result<()> {
 }
 
 fn run(args: &Args) -> Result<()> {
-  if args.config.config_example {
-    return vpdf::config::print_example();
-  }
   let graphics = inline::Graphics::exported();
   let references = if graphics.is_some()
     && std::env::var_os(inline::PATH_VAR).as_deref()

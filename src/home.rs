@@ -18,7 +18,7 @@ use vpdf_ui::prompt::History;
 pub enum Outcome {
   Stay,
   ConfigReload,
-  Theme(vpdf_model::theme::Theme),
+  Theme(String),
   Perf(Option<bool>),
   Open(PathBuf),
   Reference(vpdf_model::reference::Reference),
@@ -32,7 +32,7 @@ pub struct Home {
   pub view: vpdf_ui::home::Home,
   loader: Loader,
   graphics: Graphics,
-  theme: vpdf_model::theme::Theme,
+  theme: vpdf_model::theme::Colors,
   settings: crate::config::Settings,
 }
 
@@ -66,7 +66,7 @@ impl Home {
       view,
       loader: Loader::new("", wake),
       graphics: Graphics::live(),
-      theme: vpdf_model::theme::Theme::Default,
+      theme: vpdf_model::theme::Colors::Terminal,
       settings: crate::config::Settings::default(),
     }
   }
@@ -81,7 +81,7 @@ impl Home {
 
   pub(crate) fn configure(&mut self, settings: &crate::config::Settings) {
     self.settings = settings.clone();
-    self.theme = settings.theme();
+    self.theme = settings.colors(vpdf_model::theme::Colors::Terminal);
     self.view.set_bindings(settings.bindings().clone());
   }
 
@@ -93,7 +93,7 @@ impl Home {
     &mut self,
     scene: &mut S,
   ) -> std::result::Result<(), S::Error> {
-    if self.theme != vpdf_model::theme::Theme::Default {
+    if self.theme != vpdf_model::theme::Colors::Terminal {
       vpdf_model::scene::Draw::push(
         scene,
         vpdf_model::scene::Op::Theme(self.theme),
@@ -109,7 +109,7 @@ impl Home {
     self.updates();
     self.graphics.begin(out)?;
     crate::presentation::draw(out, Some(&mut self.graphics), |scene| {
-      if self.theme != vpdf_model::theme::Theme::Default {
+      if self.theme != vpdf_model::theme::Colors::Terminal {
         vpdf_model::scene::Draw::push(
           scene,
           vpdf_model::scene::Op::Theme(self.theme),
@@ -236,7 +236,10 @@ impl Home {
         crate::config::reload_command(argument)?;
         Ok(Outcome::ConfigReload)
       }
-      Id::Theme => commands::theme(argument).map(Outcome::Theme),
+      Id::Theme => {
+        anyhow::ensure!(!argument.is_empty(), "Usage: :theme <name|path>");
+        Ok(Outcome::Theme(argument.to_owned()))
+      }
       Id::Perf => crate::perf::switch(argument).map(Outcome::Perf),
       _ => anyhow::bail!("Open a document before :{}", spec.name),
     }
@@ -293,16 +296,13 @@ mod tests {
 
   #[test]
   fn theme_commands_work_at_home() -> Result<()> {
-    use vpdf_model::theme::Theme;
     for terminal in [true, false] {
       for name in ["theme", "colorscheme"] {
         assert_eq!(
-          resolve(&format!("{name} nord"), terminal)?,
-          Outcome::Theme(Theme::Nord)
+          resolve(&format!("{name} dark"), terminal)?,
+          Outcome::Theme("dark".into())
         );
-        for argument in ["", "unknown", "nord extra"] {
-          assert!(resolve(&format!("{name} {argument}"), terminal).is_err());
-        }
+        assert!(resolve(&format!("{name} "), terminal).is_err());
       }
     }
     Ok(())

@@ -129,6 +129,15 @@ impl App {
 }
 
 impl Session {
+  fn help_reference(&self, invocation: Invocation) -> Reference {
+    let mut reference = self.settings.help_reference(invocation);
+    reference.configuration.palette = self
+      .settings
+      .colors(vpdf_model::theme::Colors::Palette(self.system_palette))
+      .palette();
+    reference
+  }
+
   pub(super) fn find_pane(&self, id: u32) -> Option<(usize, usize)> {
     self
       .tabs
@@ -159,8 +168,7 @@ impl Session {
     });
     let (context, query) =
       vpdf_ui::topics::query_context(query, invocation.context());
-    let mut reference =
-      self.settings.help_reference(invocation.in_context(context));
+    let mut reference = self.help_reference(invocation.in_context(context));
     let registry =
       Registry::new(vpdf_ui::topics::authored(), reference.bindings.clone())?;
     let query = if query.is_empty() { "introduction" } else { query };
@@ -215,7 +223,7 @@ impl Session {
         self.restore_help();
         reference = previous;
       } else {
-        reference = self.settings.help_reference(if explicit {
+        reference = self.help_reference(if explicit {
           previous.invocation.in_context(context)
         } else {
           previous.invocation
@@ -247,7 +255,7 @@ impl Session {
       self.help.runtime.locate(location);
       self.help.pending = Some(Delivery::Refresh);
     }
-    reference = self.settings.help_reference(reference.invocation);
+    reference = self.help_reference(reference.invocation);
     self.help.runtime.refresh(&reference, &self.frontend.wake());
     self.help.reference = Some(reference);
   }

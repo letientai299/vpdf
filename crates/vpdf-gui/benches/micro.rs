@@ -10,7 +10,7 @@ use vpdf_model::geometry::Screen;
 use vpdf_model::scene::{Op, Stage, Text, TilePlacement};
 use vpdf_model::style::Role;
 use vpdf_model::text::PageId;
-use vpdf_model::theme::Theme;
+use vpdf_model::theme::Colors;
 use vpdf_model::tile::{TileId, TileKey, TileOwner};
 
 /// A 1680x2160 window of 10x20 cells.
@@ -36,7 +36,7 @@ enum Rows {
 fn frame(rows: Rows) -> Frame {
   let owner = TileOwner::new(1);
   let stage = Stage { screen: SCREEN, left: 0 };
-  let mut scene = vec![Op::Theme(Theme::Default), Op::Style(Role::Reset)];
+  let mut scene = vec![Op::Theme(Colors::Terminal), Op::Style(Role::Reset)];
   let line = "The quick brown fox jumps over the lazy dog. ".repeat(4);
   let fill = match rows {
     Rows::Status => None,

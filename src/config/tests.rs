@@ -13,7 +13,7 @@ fn example_matches_defaults() {
   assert_eq!(
     Settings::example().unwrap(),
     concat!(
-      "[appearance]\ntheme = \"default\"\nascii_glyphs = false\n\n",
+      "[appearance]\ntheme = \"system\"\nascii_glyphs = false\n\n",
       "[reading]\ncursorline = true\nzoom = 1.0\n",
       "inactive_brightness = 0.8\n\n",
       "[ocr]\nlanguage = \"eng\"\n\n[keybindings]\n"
@@ -207,31 +207,60 @@ fn file_errors_and_selection() -> crate::Result<()> {
   assert_eq!(load(&path, true).settings, Settings::default());
   assert!(load(&path, true).warning.is_some());
   std::fs::write(&path, "[reading]\nzoom = 2")?;
-  let options = Options { config: Some(path), ..Options::default() };
+  let options = Options { config: Some(path) };
   assert_eq!(options.load_from(None, None).settings.zoom(), 2.0);
-  let options = Options { no_config: true, ..options };
+  let options = Options { config: Some(dir.path().join("NONE")) };
   assert_eq!(options.load_from(None, None).settings, Settings::default());
   assert!(load(dir.path(), true).warning.is_some());
   Ok(())
 }
 
 #[test]
-fn selection_flags_conflict() {
+fn selection_flags() {
   #[derive(Parser)]
   struct Cli {
     #[command(flatten)]
     options: Options,
   }
-  assert!(
-    Cli::try_parse_from(["vpdf", "--config", "a", "--no-config"]).is_err()
-  );
-  for flag in ["--config-help", "--config-licenses"] {
+  for flag in
+    ["--config-help", "--config-licenses", "--no-config", "--config-example"]
+  {
     let error = Cli::try_parse_from(["vpdf", flag]).err().unwrap();
     assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
   }
-  let options =
-    Cli::try_parse_from(["vpdf", "--config", "relative.toml"]).unwrap().options;
-  assert_eq!(options.config, Some(PathBuf::from("relative.toml")));
+  for flag in ["-u", "--config"] {
+    let options =
+      Cli::try_parse_from(["vpdf", flag, "relative.toml"]).unwrap().options;
+    assert_eq!(options.config, Some(PathBuf::from("relative.toml")));
+  }
+}
+
+#[test]
+fn explicit_files_disable_or_warn() -> crate::Result<()> {
+  let root = tempfile::tempdir()?;
+  for name in ["NONE", "missing.toml"] {
+    let options = Options { config: Some(root.path().join(name)) };
+    let loaded = options.load_from(None, None);
+    assert_eq!(loaded.settings, Settings::default());
+    assert_eq!(loaded.source, Source::Disabled);
+    assert!(loaded.warning.is_none());
+  }
+  let path = root.path().join("bad.toml");
+  std::fs::write(&path, [0xff])?;
+  let loaded = Options { config: Some(path.clone()) }.load_from(None, None);
+  assert_eq!(loaded.source, Source::Disabled);
+  assert!(loaded.warning.is_none());
+  for text in ["[broken", "[reading]\nzoom = 'bad'"] {
+    std::fs::write(&path, text)?;
+    let loaded = Options { config: Some(path.clone()) }.load_from(None, None);
+    assert!(loaded.warning.unwrap().contains("bad.toml"));
+    assert_eq!(loaded.source, Source::file(&path, true));
+  }
+  let loaded =
+    Options { config: Some(root.path().to_owned()) }.load_from(None, None);
+  assert_eq!(loaded.source, Source::Disabled);
+  assert!(loaded.warning.is_none());
+  Ok(())
 }
 
 #[test]
@@ -266,7 +295,7 @@ fn discovery_loads_one_file() -> crate::Result<()> {
       .zoom(),
     1.0
   );
-  let options = Options { no_config: true, ..options };
+  let options = Options { config: Some(root.path().join("NONE")) };
   assert_eq!(
     options.load_from(None, Some(home.as_os_str())).settings,
     Settings::default()
@@ -276,16 +305,17 @@ fn discovery_loads_one_file() -> crate::Result<()> {
 
 #[test]
 #[cfg(unix)]
-fn unreadable_file_warns() -> crate::Result<()> {
+fn unreadable_file_disables() -> crate::Result<()> {
   use std::os::unix::fs::PermissionsExt;
   let root = tempfile::tempdir()?;
   let path = root.path().join("config.toml");
   std::fs::write(&path, "[reading]\nzoom = 2")?;
   std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o0))?;
-  let loaded = load(&path, true);
+  let loaded = Options { config: Some(path.clone()) }.load_from(None, None);
   std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
   assert_eq!(loaded.settings, Settings::default());
-  assert!(loaded.warning.unwrap().contains("config.toml"));
+  assert!(loaded.warning.is_none());
+  assert_eq!(loaded.source, Source::Disabled);
   Ok(())
 }
 
@@ -295,7 +325,7 @@ fn explicit_relative_file() -> crate::Result<()> {
   let path = Path::new(root.path().file_name().unwrap()).join("config.toml");
   assert!(path.is_relative());
   std::fs::write(&path, "[reading]\nzoom = 2")?;
-  let options = Options { config: Some(path), ..Default::default() };
+  let options = Options { config: Some(path) };
   assert_eq!(
     options.load_from(Some(OsStr::new("/ignored")), None).settings.zoom(),
     2.0
@@ -367,7 +397,7 @@ fn reload_source_failures_preserve_settings() -> crate::Result<()> {
   assert_eq!(optional.source, Source::file(&path, false));
   std::fs::write(&path, "[reading]\nzoom = 3")?;
   assert_eq!(optional.source.reload(&optional.settings).settings.zoom(), 3.0);
-  let disabled = Options { no_config: true, ..Default::default() }.load();
+  let disabled = Options { config: Some(root.path().join("NONE")) }.load();
   assert_eq!(disabled.source, Source::Disabled);
   assert_eq!(
     disabled.source.reload(&loaded.settings).settings,
@@ -558,29 +588,29 @@ fn themes_reload_independently() {
       &previous,
     );
     assert!(loaded.warning.is_none());
-    assert_eq!(loaded.settings.theme(), theme);
+    assert_eq!(loaded.settings.theme(), &ThemeChoice::Builtin(theme));
     assert_eq!(
       decoded(&toml::to_string_pretty(&loaded.settings).unwrap()).settings,
       loaded.settings
     );
     previous = loaded.settings;
   }
-  for value in ["'unknown'", "42", "[]"] {
+  for value in ["'default'", "'nord'", "'unknown'", "42", "[]"] {
     let loaded = parse_with(
       Path::new("settings.toml"),
       &format!("[appearance]\ntheme = {value}\n[reading]\nzoom = 3"),
       &previous,
     );
-    assert_eq!(loaded.settings.theme(), Theme::Nord);
+    assert_eq!(loaded.settings.theme(), &ThemeChoice::Builtin(Theme::System));
     assert_eq!(loaded.settings.zoom(), 3.0);
     assert!(loaded.warning.unwrap().contains("appearance.theme"));
   }
   let invalid =
     parse_with(Path::new("settings.toml"), "appearance = false", &previous);
-  assert_eq!(invalid.settings.theme(), Theme::Nord);
+  assert_eq!(invalid.settings.theme(), &ThemeChoice::Builtin(Theme::Dark));
   let omitted =
     parse_with(Path::new("settings.toml"), "[appearance]", &previous);
-  assert_eq!(omitted.settings.theme(), Theme::Default);
+  assert_eq!(omitted.settings.theme(), &ThemeChoice::Builtin(Theme::System));
 }
 
 #[test]
@@ -624,7 +654,7 @@ fn references_keep_values_sources_and_warnings() {
       .all(|setting| setting.source == Origin::Default)
   );
   let mut settings = next.settings;
-  settings.set_theme(vpdf_model::theme::Theme::Nord);
+  settings.set_theme(vpdf_model::theme::Theme::Dark);
   assert_eq!(
     settings
       .reference()
@@ -759,5 +789,172 @@ r = { action = 'recent.remove' }\n";
   assert_eq!(
     bindings.map(Context::Recent).get(&Sequence::parse("r").unwrap()),
     Some(&Target::Reader(Action::RecentRemove))
+  );
+}
+
+fn write_palette(path: &Path, background: &str) -> crate::Result<()> {
+  let mut value: toml::Value =
+    toml::from_str(include_str!("../../etc/themes/dark.toml"))?;
+  value["background"] = background.into();
+  std::fs::write(path, toml::to_string(&value)?)?;
+  Ok(())
+}
+
+#[test]
+fn theme_paths_reload() -> crate::Result<()> {
+  use vpdf_model::theme::Colors;
+  let root = tempfile::tempdir()?;
+  let directory = root.path().join("settings");
+  std::fs::create_dir_all(directory.join("palettes"))?;
+  let palette = directory.join("palettes/custom.toml");
+  let config = directory.join("config.toml");
+  write_palette(&palette, "#123456")?;
+  std::fs::write(
+    &config,
+    "[appearance]\ntheme = 'palettes/custom.toml'\n[reading]\nzoom = 2",
+  )?;
+  let loaded = Options { config: Some(config) }.load();
+  assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
+  let ThemeChoice::File { path, palette: colors } = loaded.settings.theme()
+  else {
+    panic!("Expected theme file");
+  };
+  assert_eq!(path, &palette);
+  assert_eq!(colors.background, [0x12, 0x34, 0x56]);
+  assert_eq!(
+    loaded.settings.colors(Colors::Terminal),
+    Colors::Palette(*colors)
+  );
+  let serialized = toml::to_string(&loaded.settings)?;
+  assert_eq!(decoded(&serialized).settings, loaded.settings);
+  write_palette(&palette, "#abcdef")?;
+  let reloaded = loaded.source.reload(&loaded.settings);
+  assert!(reloaded.warning.is_none());
+  assert_eq!(
+    reloaded.settings.colors(Colors::Terminal).palette().background,
+    [0xab, 0xcd, 0xef]
+  );
+  std::fs::remove_file(&palette)?;
+  let missing = loaded.source.reload(&reloaded.settings);
+  assert!(missing.warning.unwrap().contains("custom.toml"));
+  assert_eq!(missing.settings.colors(Colors::Terminal), Colors::Terminal);
+  assert_eq!(missing.settings.zoom(), 2.0);
+  Ok(())
+}
+
+#[test]
+fn theme_files_fall_back() -> crate::Result<()> {
+  use vpdf_model::theme::{Colors, Theme};
+  let root = tempfile::tempdir()?;
+  let config = root.path().join("config.toml");
+  let palette = root.path().join("custom.toml");
+  let text = include_str!("../../etc/themes/dark.toml");
+  let missing_token = text
+    .lines()
+    .filter(|line| !line.starts_with("foreground ="))
+    .collect::<Vec<_>>()
+    .join("\n");
+  let mut invalid_hex: toml::Value = toml::from_str(text)?;
+  invalid_hex["foreground"] = "#bad".into();
+  let mut previous = Settings::default();
+  previous.set_theme(Theme::Dark);
+  for contents in [
+    b"[broken".to_vec(),
+    missing_token.into_bytes(),
+    toml::to_string(&invalid_hex)?.into_bytes(),
+    vec![0xff],
+  ] {
+    std::fs::write(&palette, contents)?;
+    let loaded = parse_with(
+      &config,
+      "[appearance]\ntheme = 'custom.toml'\n[reading]\nzoom = 3",
+      &previous,
+    );
+    let warning = loaded.warning.unwrap();
+    assert!(warning.contains("appearance.theme"), "{warning}");
+    assert!(warning.contains("custom.toml"), "{warning}");
+    assert_eq!(loaded.settings.colors(Colors::Terminal), Colors::Terminal);
+    assert_eq!(loaded.settings.zoom(), 3.0);
+  }
+  std::fs::remove_file(&palette)?;
+  std::fs::create_dir(&palette)?;
+  let loaded =
+    parse_with(&config, "[appearance]\ntheme = 'custom.toml'", &previous);
+  assert!(loaded.warning.is_some());
+  assert_eq!(loaded.settings.colors(Colors::Terminal), Colors::Terminal);
+  Ok(())
+}
+
+#[test]
+fn theme_tilde_paths() -> crate::Result<()> {
+  let Some(home) = std::env::var_os("HOME") else { return Ok(()) };
+  let home = Path::new(&home);
+  let root =
+    tempfile::Builder::new().prefix(".vpdf-theme-").tempdir_in(home)?;
+  let path = root.path().join("custom.toml");
+  write_palette(&path, "#123456")?;
+  let relative = path.strip_prefix(home)?;
+  let text = format!("[appearance]\ntheme = '~/{}'", relative.display());
+  let loaded = parse(Path::new("/unrelated/config.toml"), &text);
+  assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
+  let ThemeChoice::File { path: chosen, .. } = loaded.settings.theme() else {
+    panic!("Expected theme file");
+  };
+  assert_eq!(chosen, &path);
+  Ok(())
+}
+
+#[test]
+fn theme_file_commands() -> crate::Result<()> {
+  use vpdf_model::theme::Colors;
+  let root = tempfile::tempdir_in(std::env::current_dir()?)?;
+  let path = root.path().join("custom.toml");
+  write_palette(&path, "#123456")?;
+  let pdf = root.path().join("document.pdf");
+  crate::fixtures::pdf(&pdf, &["Theme file"], "")?;
+  let mut session = crate::session::Session::new(None);
+  session.open(&pdf, true, crate::screen::cells(100, 30))?;
+  let relative = path.strip_prefix(std::env::current_dir()?)?;
+  session.app().command(&format!("theme {}", relative.display()))?;
+  session.settle()?;
+  let reference = session.app().settings.reference();
+  let theme =
+    reference.settings.iter().find(|s| s.name == "appearance.theme").unwrap();
+  assert_eq!(theme.source, vpdf_ui::reference::Source::Command);
+  assert_eq!(reference.palette.background, [0x12, 0x34, 0x56]);
+  assert!(std::fs::read_to_string(&path)?.contains("#123456"));
+  std::fs::write(&path, "[broken")?;
+  session.app().command(&format!("theme {}", relative.display()))?;
+  session.settle()?;
+  assert_eq!(session.app().settings.colors(Colors::Terminal), Colors::Terminal);
+  assert!(session.app().reader.message.contains("custom.toml"));
+  write_palette(&path, "#abcdef")?;
+  session.app().command(&format!("theme {}", relative.display()))?;
+  session.settle()?;
+  assert_eq!(
+    session.app().settings.colors(Colors::Terminal).palette().background,
+    [0xab, 0xcd, 0xef]
+  );
+  std::fs::remove_file(&path)?;
+  session.app().command(&format!("theme {}", relative.display()))?;
+  session.settle()?;
+  assert_eq!(session.app().settings.colors(Colors::Terminal), Colors::Terminal);
+  assert!(session.app().reader.message.contains("custom.toml"));
+  Ok(())
+}
+
+#[test]
+fn theme_file_bindings() {
+  use vpdf_ui::bindings::{Context, Sequence, Target};
+  let loaded =
+    decoded("[keybindings.normal]\nQ = { command = 'theme missing.toml' }");
+  assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
+  assert_eq!(
+    loaded
+      .settings
+      .bindings()
+      .map(Context::Normal)
+      .get(&Sequence::parse("Q").unwrap()),
+    Some(&Target::Command("theme missing.toml".into()))
   );
 }

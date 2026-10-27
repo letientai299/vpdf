@@ -66,6 +66,7 @@ impl Settings {
     }
     Configuration {
       generation: self.reference.generation,
+      palette: self.colors(vpdf_model::theme::Colors::Terminal).palette(),
       settings,
       warnings: self.reference.warnings.clone(),
     }

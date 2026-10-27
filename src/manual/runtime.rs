@@ -1,6 +1,6 @@
 use crate::Result;
 use std::sync::{Arc, mpsc::TryRecvError};
-use vpdf_model::{document::Target, text::PageId, theme::Theme};
+use vpdf_model::{document::Target, text::PageId, theme::Palette};
 use vpdf_pdf::{
   jobs::Wake,
   manual::{Document, Job},
@@ -115,20 +115,12 @@ impl Location {
 #[derive(PartialEq)]
 struct Key {
   manual: String,
-  theme: Theme,
+  palette: Palette,
 }
 
 impl Key {
   fn new(reference: &Reference) -> Self {
-    let theme = reference
-      .configuration
-      .settings
-      .iter()
-      .find(|setting| setting.name == "appearance.theme")
-      .and_then(|setting| setting.effective.as_str())
-      .and_then(Theme::parse)
-      .unwrap_or_default();
-    Self { manual: super::identity(), theme }
+    Self { manual: super::identity(), palette: reference.configuration.palette }
   }
 }
 
@@ -206,7 +198,7 @@ impl Runtime {
     if self.state.key() != Some(&key) {
       let job = vpdf_pdf::manual::spawn(
         super::PDF,
-        key.theme.palette(),
+        key.palette,
         super::reference::chapters,
         wake,
       );

@@ -57,16 +57,14 @@ fn output_handles_closed_pipe() -> Result<()> {
   use std::os::unix::net::UnixStream;
   use std::process::Stdio;
 
-  for flag in ["--version", "--config-example"] {
-    let (reader, writer) = UnixStream::pair()?;
-    drop(reader);
-    let output = Command::new(env!("CARGO_BIN_EXE_vpdf"))
-      .arg(flag)
-      .stdout(Stdio::from(OwnedFd::from(writer)))
-      .output()?;
-    assert!(output.status.success(), "{flag}: {:?}", output.status);
-    assert!(output.stderr.is_empty(), "{flag}: {:?}", output.stderr);
-  }
+  let (reader, writer) = UnixStream::pair()?;
+  drop(reader);
+  let output = Command::new(env!("CARGO_BIN_EXE_vpdf"))
+    .arg("--version")
+    .stdout(Stdio::from(OwnedFd::from(writer)))
+    .output()?;
+  assert!(output.status.success(), "{:?}", output.status);
+  assert!(output.stderr.is_empty(), "{:?}", output.stderr);
   Ok(())
 }
 
@@ -75,7 +73,7 @@ fn config_output_skips_files() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let path = directory.path().join("broken.toml");
   std::fs::write(&path, "[broken")?;
-  for flag in ["--help", "--version", "--config-example"] {
+  for flag in ["--help", "--version"] {
     let output = Command::new(env!("CARGO_BIN_EXE_vpdf"))
       .arg("--config")
       .arg(&path)
@@ -83,18 +81,7 @@ fn config_output_skips_files() -> Result<()> {
       .output()?;
     assert!(output.status.success(), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
-    if flag == "--config-example" {
-      assert_eq!(
-        String::from_utf8(output.stdout)?,
-        vpdf::config::Settings::example()?
-      );
-    }
   }
-  let output = Command::new(env!("CARGO_BIN_EXE_vpdf"))
-    .args(["--config", "missing", "--no-config"])
-    .output()?;
-  assert!(!output.status.success());
-  assert!(String::from_utf8_lossy(&output.stderr).contains("cannot be used"));
   Ok(())
 }
 
@@ -128,7 +115,7 @@ fn config_bypass_skips_reads() -> Result<()> {
   let mut child = Command::new(env!("CARGO_BIN_EXE_vpdf"))
     .env_remove(vpdf::inline::VAR)
     .env("XDG_CONFIG_HOME", directory.path())
-    .arg("--no-config")
+    .args(["-u", "NONE"])
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
     .spawn()?;

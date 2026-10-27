@@ -25,5 +25,3 @@ pub const MATCH_TICK: Paint = Paint::Overlay(Overlay::MatchTick);
 /// The hovered link's tint.
 pub const LINK: Paint = Paint::Overlay(Overlay::Link);
 pub const PREVIEW_FILL: Paint = Paint::Overlay(Overlay::Preview);
-/// Gray gaps between preview pages.
-pub const PREVIEW_GAP: u8 = 200;
