@@ -392,20 +392,18 @@ fn fills(
     let color =
       Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);
     let painter = painter.with_clip_rect(clip(stage, scale));
-    let cue = matches!(
-      fill.color(),
-      vpdf_model::theme::Paint::Overlay(
-        Overlay::Selection
-          | Overlay::Cursor
-          | Overlay::Ring
-          | Overlay::RingHover
-      )
-    );
+    let cue = display.contrast
+      && matches!(
+        fill.color(),
+        vpdf_model::theme::Paint::Overlay(
+          Overlay::Selection
+            | Overlay::Cursor
+            | Overlay::Ring
+            | Overlay::RingHover
+        )
+      );
     let stroke = if cue {
-      egui::Stroke::new(
-        if display.contrast { 2.0 } else { 1.0 },
-        Color32::BLACK,
-      )
+      egui::Stroke::new(2.0, Color32::BLACK)
     } else {
       egui::Stroke::NONE
     };
@@ -1621,6 +1619,64 @@ mod polygon_tests {
   use super::*;
   use vpdf_model::scene::Draw;
   use vpdf_model::text::{Bounds, Quad};
+
+  #[test]
+  fn overlay_outlines_follow_contrast() {
+    use vpdf_model::theme::Paint;
+    let screen = crate::screen::pixels(10, 8, 10, 10);
+    let stage = Stage { screen, left: 0 };
+    let bounds = Bounds { x0: 0.0, y0: 0.0, x1: 80.0, y1: 60.0 };
+    let quad = Quad([(0.0, 30.0), (70.0, 10.0), (70.0, 30.0), (0.0, 50.0)]);
+    for (overlay, polygon) in [
+      (Overlay::Cursor, false),
+      (Overlay::Cursor, true),
+      (Overlay::Selection, false),
+      (Overlay::Selection, true),
+    ] {
+      let mut scene = Vec::new();
+      let color = Paint::Overlay(overlay);
+      if polygon {
+        scene.quad(quad, bounds, color, Layer::AboveText, stage);
+      } else {
+        scene.fill(bounds, color, Layer::AboveText, stage);
+      }
+      for contrast in [false, true] {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+          fills(
+            ui.painter(),
+            &scene,
+            Layer::AboveText,
+            1.0,
+            Display { contrast, ..Display::default() },
+          );
+        });
+        output.textures_delta.clear();
+        let outlines = output
+          .shapes
+          .iter()
+          .filter(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) => rect.stroke.width > 0.0,
+            egui::Shape::Path(path) => path.stroke.width > 0.0,
+            _ => false,
+          })
+          .count();
+        assert_eq!(outlines, if contrast { 2 } else { 0 });
+        let expected = color.resolve(Colors::Terminal, Opacity::default());
+        let expected = Color32::from_rgba_unmultiplied(
+          expected[0],
+          expected[1],
+          expected[2],
+          expected[3],
+        );
+        assert!(output.shapes.iter().any(|shape| match &shape.shape {
+          egui::Shape::Rect(rect) => rect.fill == expected,
+          egui::Shape::Path(path) => path.fill == expected,
+          _ => false,
+        }));
+      }
+    }
+  }
 
   #[test]
   fn native_polygons_clip() {
