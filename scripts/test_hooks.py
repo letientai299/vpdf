@@ -12,6 +12,44 @@ import build_cache
 import hooks
 
 
+class WidthTests(unittest.TestCase):
+    def check(self, text, locale):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "source.rs"
+            path.write_text(text, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    "sh",
+                    str(Path(hooks.__file__).with_name("width.sh")),
+                    str(path),
+                ],
+                env=dict(os.environ)
+                | {
+                    "LC_ALL": locale,
+                    "PYTHONUTF8": "0",
+                    "PYTHONCOERCECLOCALE": "0",
+                },
+                capture_output=True,
+                text=True,
+            )
+            return result
+
+    def test_unicode_width_locales(self):
+        for locale in ["C", "C.UTF-8"]:
+            with self.subTest(locale=locale):
+                result = self.check("界" * 80 + "\n", locale)
+                self.assertEqual(
+                    result.returncode, 0, result.stdout + result.stderr
+                )
+                self.assertEqual(result.stdout, "")
+
+    def test_width_boundary(self):
+        result = self.check("x" * 80 + "\n" + "界" * 81 + "\n", "C")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(len(result.stdout.splitlines()), 1)
+        self.assertIn("source.rs:2: exceeds 80 columns", result.stdout)
+
+
 class RoutingTests(unittest.TestCase):
     packages = {
         ".": "vpdf",
@@ -70,6 +108,8 @@ class RoutingTests(unittest.TestCase):
             "scripts/test_demo_video.py": "test:demo",
             "scripts/test_packages.py": "test:packages",
             "scripts/test_build_cache.py": "test:build-cache",
+            "scripts/ci.py": "test:ci",
+            "scripts/test_ci.py": "test:ci",
             "benches/live/runtime.py": "test:bench-report",
         }
         for name, expected in cases.items():
@@ -446,8 +486,8 @@ class SnapshotTests(unittest.TestCase):
         seen = []
         with patch.object(
             hooks,
-            "full_checks",
-            side_effect=lambda source, env: seen.append(
+            "execute",
+            side_effect=lambda command, source, env: seen.append(
                 (source / "README.md").read_text()
             ),
         ):
@@ -455,19 +495,33 @@ class SnapshotTests(unittest.TestCase):
         self.assertCountEqual(seen, ["# Reader\n", "# Second\n"])
         self.assertEqual((self.root / "README.md").read_text(), "# Unstaged\n")
 
+    def test_push_failure_blocks(self):
+        commit = self.git("rev-parse", "HEAD").decode().strip()
+        refs = f"refs/heads/main {commit} refs/heads/main {'0' * 40}\n"
+        with (
+            patch.object(
+                hooks,
+                "execute",
+                side_effect=subprocess.CalledProcessError(1, "ci:check"),
+            ) as check,
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            hooks.pre_push(self.root, io.StringIO(refs))
+        self.assertEqual(check.call_args.args[0], ["mise", "run", "ci:check"])
+
     def test_annotated_tag_validation(self):
         commit = self.git("rev-parse", "HEAD").decode().strip()
         self.git("tag", "-am", "fixture", "fixture-tag")
         tag = self.git("rev-parse", "refs/tags/fixture-tag").decode().strip()
         null = "0" * 40
         refs = f"refs/heads/main {commit} refs/heads/main {null}\nrefs/tags/fixture-tag {tag} refs/tags/fixture-tag {null}\n"
-        with patch.object(hooks, "full_checks") as checks:
+        with patch.object(hooks, "execute") as checks:
             hooks.pre_push(self.root, io.StringIO(refs))
         self.assertEqual(checks.call_count, 1)
 
     def test_push_deletion_skips(self):
         null = "0" * 40
-        with patch.object(hooks, "full_checks") as checks:
+        with patch.object(hooks, "execute") as checks:
             hooks.pre_push(
                 self.root,
                 io.StringIO(f"(delete) {null} refs/heads/old {'1' * 40}\n"),
@@ -493,7 +547,7 @@ class SnapshotTests(unittest.TestCase):
         self.assertTrue((folder / "pre-commit").stat().st_mode & 0o111)
         self.assertTrue((folder / "pre-push").stat().st_mode & 0o111)
 
-    def test_native_partial_preserved(self):
+    def install_native(self, config=None):
         self.write("scripts/hooks.py", Path(hooks.__file__).read_text())
         self.write(
             "scripts/build_worker.py",
@@ -517,7 +571,8 @@ class SnapshotTests(unittest.TestCase):
         shim.chmod(0o755)
         self.write(
             ".config/mise.toml",
-            (
+            config
+            or (
                 Path(hooks.__file__).resolve().parent.parent
                 / ".config/mise.toml"
             ).read_text(),
@@ -532,6 +587,39 @@ class SnapshotTests(unittest.TestCase):
         )
         self.commit()
         hooks.install_hooks(self.root)
+
+    def test_native_push_tip(self):
+        self.write(
+            "scripts/probe.py",
+            "import sys\n"
+            "from pathlib import Path\n\n"
+            'print("checked:" + Path("README.md").read_text().strip())\n'
+            "sys.exit(23)\n",
+        )
+        self.stage("scripts/probe.py")
+        self.install_native(
+            '[tasks."ci:check"]\nrun = "python3 -B scripts/probe.py"\n'
+        )
+        commit = self.git("rev-parse", "HEAD").decode().strip()
+        self.write("README.md", "# Dirty caller\n")
+        refs = f"refs/heads/main {commit} refs/heads/main {'0' * 40}\n"
+        result = subprocess.run(
+            [str(self.root / ".git/hooks/pre-push")],
+            cwd=self.root,
+            input=refs,
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("checked:# Reader", result.stdout)
+        self.assertNotIn("checked:# Dirty caller", result.stdout)
+        self.assertEqual(
+            (self.root / "README.md").read_text(), "# Dirty caller\n"
+        )
+        self.assertEqual(self.git("show", ":README.md"), b"# Reader\n")
+
+    def test_native_partial_preserved(self):
+        self.install_native()
         self.write("README.md", "# Reader\n\nStaged.\n")
         self.stage("README.md")
         self.write("README.md", "# Reader\n\nUnstaged.\n")

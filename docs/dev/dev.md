@@ -108,8 +108,9 @@ Successful lint and test checks write local receipts outside the worker's
 mutable directory. Validation and hooks reuse them only for matching source
 contents and modes, Git revision, tags and configuration, environment, tools,
 and corpus contents. A full test receipt can cover the affected Rust test
-subset; an affected subset cannot cover the full suite. Packaging and special
-test tasks still run separately. Changed provenance invalidates receipts even
+subset; an affected subset cannot cover the full suite. The CI recipe records
+feature and packaging checks separately; standard-test receipts cannot cover
+them. Changed provenance invalidates receipts even
 when source contents match. Receipts are local evidence, not CI results.
 
 Set `VPDF_VALIDATE_FORCE=1` to rerun checks. CI, isolated execution, source or
@@ -331,8 +332,31 @@ stable snapshot outside the checkout; build artifacts stay outside that
 snapshot. `mise run hook:commit` repeats this staged check.
 Compilation and shared-code changes can lengthen a commit.
 
-Before a push, every distinct pushed commit tip receives full tests and
-read-only lint in its own snapshot, including tips outside the current branch.
+Before a push, every distinct pushed commit tip runs `ci:check` in its own
+snapshot, including tips outside the current branch. The current platform
+runs the same non-publishing recipe as [CI][ci]: verified corpus preparation,
+read-only lint, standard and benchmark-feature tests, release packing, and
+archive verification. Archive checks validate its checksum, single executable,
+and startup after unpacking. CI also runs read-only lint on macOS.
+
+Run `mise run ci:check` to check the working snapshot before committing. The
+[shared recipe][ci-script] checks that validation leaves source inputs unchanged
+and reuses matching successful lint, test, feature, and packaging receipts.
+Failed stages rerun without discarding earlier successful stages. Packaging
+reuse also requires matching executable/archive contents and permissions;
+missing or changed outputs rerun packaging. Help assets are prepared even
+when lint is reused. CI always runs fresh; `VPDF_VALIDATE_FORCE=1` forces local
+checks. The packaging key also includes UPX on Linux.
+It shares Cargo compilation caches and copies release outputs into
+`target/dist`, respecting `CARGO_TARGET_DIR`. Its compiler and benchmark-input
+settings live in the task configuration and match CI. It requires the build
+and development tools described above, including UPX for Linux packing.
+
+A passing push check covers the current platform. CI checks both supported
+platforms. Hosted artifact uploads, publication, published-binary installation,
+and Homebrew updates remain separate post-push checks. Ignored corpus/OCR
+and app/DMG checks still run separately when applicable.
+
 Branch deletions need no tests. The shared worker serializes validation across
 worktrees and reuses unchanged files and Cargo artifacts across runs.
 
@@ -728,6 +752,7 @@ a result needs a reproducible release reference.
 [bench-support]: ../../benches/support/mod.rs
 [scenario-driver]: ../../benches/drive.rs
 [live-driver]: ../../benches/live/drive.py
+[ci-script]: ../../scripts/ci.py
 [hook-script]: ../../scripts/hooks.py
 [nextest-filters]: https://nexte.st/docs/filtersets/reference/
 [prek-run]: https://prek.j178.dev/running-hooks/

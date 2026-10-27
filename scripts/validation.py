@@ -5,6 +5,7 @@ import json
 import os
 import platform
 import shutil
+import stat
 import subprocess
 import time
 from pathlib import Path
@@ -65,7 +66,7 @@ def digest_file(path):
         return digest.hexdigest()
 
 
-def fingerprint(root, env, details=None):
+def fingerprint(root, env, details=None, *, tools=()):
     details = {} if details is None else details
 
     def unavailable(reason):
@@ -95,6 +96,7 @@ def fingerprint(root, env, details=None):
         "VPDF_BUILD_CACHE_GIB",
         "VPDF_BUILD_MODE",
         "VPDF_CACHE",
+        "VPDF_BENCH_EVENTS",
         "VPDF_CORPUS",
         "VPDF_VALIDATE_FORCE",
         "VPDF_BUILD_WORKERS",
@@ -187,7 +189,7 @@ def fingerprint(root, env, details=None):
             },
             "environment",
         )
-        for name in TOOLS:
+        for name in dict.fromkeys((*TOOLS, *tools)):
             tool = shutil.which(name, path=environment.get("PATH"))
             if not tool:
                 return unavailable("tool-unavailable")
@@ -268,12 +270,26 @@ def receipt_path(root, env, identity, scope):
     return cache_root(env, root) / "receipts" / f"{key}.json"
 
 
-def completed(root, env, identity, scope):
+def output_state(root, paths):
+    state = {}
+    for name in paths:
+        path = root / name
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("Validation output must be a regular file")
+        state[str(name)] = [stat.S_IMODE(info.st_mode), digest_file(path)]
+    return state
+
+
+def completed(root, env, identity, scope, artifacts=()):
     if identity is None:
         return False
     try:
         data = json.loads(receipt_path(root, env, identity, scope).read_text())
-        return data == {"identity": identity, "scope": scope, "passed": True}
+        expected = {"identity": identity, "scope": scope, "passed": True}
+        if artifacts:
+            expected["outputs"] = output_state(root, artifacts)
+        return data == expected
     except (OSError, ValueError):
         return False
 
@@ -299,18 +315,21 @@ def invalidate_tests(root, env, identity):
             path.unlink(missing_ok=True)
 
 
-def run_check(root, env, scope, action, covered_by=None):
+def run_check(
+    root, env, scope, action, covered_by=None, *, artifacts=(), tools=()
+):
     started = time.monotonic()
     details = {}
-    identity = fingerprint(root, env, details)
+    identity = fingerprint(root, env, details, tools=tools)
     candidates = [scope, *([covered_by] if covered_by else [])]
     reused = env.get("VPDF_VALIDATE_FORCE") != "1" and any(
-        completed(root, env, identity, candidate) for candidate in candidates
+        completed(root, env, identity, candidate, artifacts)
+        for candidate in candidates
     )
     diagnose(root, env, scope, identity, details, reused)
     if reused:
         print(f"Validation reused: {scope}", flush=True)
-        return
+        return True
     if identity is not None:
         if scope == "test" or (
             env.get("VPDF_VALIDATE_FORCE") == "1" and test_scope(scope)
@@ -319,17 +338,19 @@ def run_check(root, env, scope, action, covered_by=None):
         for candidate in candidates:
             receipt_path(root, env, identity, candidate).unlink(missing_ok=True)
     action()
-    if identity is not None and fingerprint(root, env) == identity:
+    if identity is not None and fingerprint(root, env, tools=tools) == identity:
+        data = {"identity": identity, "scope": scope, "passed": True}
+        if artifacts:
+            data["outputs"] = output_state(root, artifacts)
         path = receipt_path(root, env, identity, scope)
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         replace_file(
             path,
-            json.dumps(
-                {"identity": identity, "scope": scope, "passed": True}
-            ).encode(),
+            json.dumps(data).encode(),
             0o600,
         )
     print(
         f"Validation {scope}: {time.monotonic() - started:.3f}s",
         flush=True,
     )
+    return False

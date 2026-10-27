@@ -734,6 +734,11 @@ mod tests {
 
   #[test]
   fn opening_commands_route() -> Result<()> {
+    if crate::program_fixture::picker_paths(
+      "commands::tests::opening_commands_route",
+    )? {
+      return Ok(());
+    }
     let root = tempfile::tempdir()?;
     let path = root.path().join("source.pdf");
     crate::fixtures::pdf(&path, &["first"], "")?;
@@ -777,9 +782,18 @@ mod tests {
           ("tabe", true),
         ] {
           app.command(name)?;
+          let fallback =
+            matches!(app.frontend, crate::raster::Frontend::Terminal)
+              && matches!(name, "open" | "op")
+              && !cmdline::on_path("fzf");
           assert_eq!(
             app.request.take(),
-            Some(Request::Pick { root: ".".into(), tab })
+            (!fallback).then_some(Request::Pick { root: ".".into(), tab })
+          );
+          let prompt = app.overlays.close_prompt();
+          assert_eq!(
+            prompt.as_ref().map(Prompt::text),
+            fallback.then_some("open ")
           );
           app.command(&format!("{name} notes.pdf"))?;
           assert_eq!(

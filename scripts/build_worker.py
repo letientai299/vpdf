@@ -341,6 +341,7 @@ def copy_outputs(task, root, target, env):
             "build:app",
             "build:install",
             "release",
+            "ci:check",
         }
         and env.get("VPDF_BUILD_WORKER")
     ):
@@ -359,9 +360,15 @@ def copy_outputs(task, root, target, env):
         task == "build:install" and (target / "dist/Vpdf.app").exists()
     ):
         copy_app(output / "dist", target / "dist")
-    elif task == "release":
+    elif task in {"release", "ci:check"}:
         for binary in [Path("release/vpdf"), Path("dist/vpdf")]:
             copy_binary(target / binary, output / binary)
+        if task == "ci:check":
+            from ci import archive_paths
+
+            for path in archive_paths(root, env):
+                relative = Path("dist") / path.name
+                copy_binary(target / relative, output / relative)
         print(f"Release executable: {output / 'dist/vpdf'}")
 
 
@@ -409,6 +416,7 @@ def run(args):
     if task not in {
         "build",
         "validate",
+        "ci:check",
         "release",
         "build:debug",
         "build:app",

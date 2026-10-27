@@ -108,6 +108,45 @@ class ReceiptTests(unittest.TestCase):
         self.check(action=first)
         first.assert_called_once()
 
+    def test_outputs_verified(self):
+        output = self.root / "binary"
+
+        def build():
+            output.unlink(missing_ok=True)
+            output.write_bytes(b"verified")
+            output.chmod(0o755)
+
+        action = Mock(side_effect=build)
+        self.check("ci:release", action=action, artifacts=(output,))
+        self.check("ci:release", action=action, artifacts=(output,))
+        self.assertEqual(action.call_count, 1)
+        for mutation in [
+            lambda: output.write_bytes(b"corrupt"),
+            lambda: output.chmod(0o644),
+            lambda: output.unlink(),
+            lambda: (output.unlink(), output.symlink_to(self.root / "missing")),
+        ]:
+            mutation()
+            calls = action.call_count
+            self.check("ci:release", action=action, artifacts=(output,))
+            self.assertEqual(action.call_count, calls + 1)
+
+    def test_missing_outputs_uncached(self):
+        output = self.root / "missing"
+        with self.assertRaises(FileNotFoundError):
+            self.check("ci:release", artifacts=(output,))
+        self.assertFalse(
+            validation.completed(self.root, self.env, "first", "ci:release")
+        )
+
+    def test_reuse_result(self):
+        self.assertFalse(
+            validation.run_check(self.root, self.env, "lint", Mock())
+        )
+        self.assertTrue(
+            validation.run_check(self.root, self.env, "lint", Mock())
+        )
+
 
 class FingerprintTests(unittest.TestCase):
     def setUp(self):
@@ -313,6 +352,31 @@ class FingerprintTests(unittest.TestCase):
                 validation.fingerprint(self.root, self.env | changes, details)
             )
             self.assertEqual(details["disabled"], expected)
+
+    def test_benchmark_setting_hashed(self):
+        disabled = self.identity(VPDF_BENCH_EVENTS="0")
+        self.assertIsNotNone(disabled)
+        self.assertNotEqual(disabled, self.identity(VPDF_BENCH_EVENTS="1"))
+
+    def test_extra_tool_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tool = Path(directory) / "packer"
+            tool.write_text("#!/bin/sh\necho first\n")
+            tool.chmod(0o755)
+            first = validation.fingerprint(
+                self.root, self.env, tools=(str(tool),)
+            )
+            self.assertIsNotNone(first)
+            self.assertNotEqual(first, self.identity())
+            tool.write_text("#!/bin/sh\necho second\n")
+            self.assertNotEqual(
+                first,
+                validation.fingerprint(self.root, self.env, tools=(str(tool),)),
+            )
+            tool.unlink()
+            self.assertIsNone(
+                validation.fingerprint(self.root, self.env, tools=(str(tool),))
+            )
 
     def test_tool_failure_disables(self):
         with patch.object(validation, "TOOLS", ("missing-vpdf-tool",)):

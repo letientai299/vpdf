@@ -135,17 +135,17 @@ mod tests {
     )??;
     loader.request(&mut cards);
     let deadline = Instant::now() + Duration::from_secs(10);
+    // Logo and count notifications may arrive first.
     let (path, card) = loop {
+      woken.recv_timeout(deadline.saturating_duration_since(Instant::now()))?;
       if let Some(card) = loader.worker.updates().next() {
         break card;
       }
-      woken.recv_timeout(deadline.saturating_duration_since(Instant::now()))?;
     };
     assert_eq!(path, entry.path);
     let facts = card.facts.map_err(anyhow::Error::msg)?;
     assert_eq!(facts.pages, 1);
     assert!(facts.thumb.is_some());
-    assert_eq!(woken.try_iter().count(), 0);
     Ok(())
   }
   #[test]

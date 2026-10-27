@@ -68,8 +68,8 @@ def identity(root, facts):
     }
 
 
-def run(*args, **kwargs):
-    return subprocess.check_output(args, text=True, timeout=180, **kwargs)
+def run(*args, timeout=180, **kwargs):
+    return subprocess.check_output(args, text=True, timeout=timeout, **kwargs)
 
 
 def render_tool(*args, env):
@@ -87,7 +87,6 @@ def export_facts(root):
         run(
             "cargo",
             "run",
-            "--quiet",
             "--locked",
             "-p",
             "vpdf-ui",
@@ -96,6 +95,7 @@ def export_facts(root):
             "--target",
             host,
             cwd=root,
+            timeout=600,
         )
     )
 

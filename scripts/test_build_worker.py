@@ -395,6 +395,25 @@ class WorkerTests(unittest.TestCase):
         )
         self.assertEqual((destination / "Vpdf.dmg").read_text(), "image")
 
+    def test_ci_outputs(self):
+        from ci import archive_paths
+
+        target = self.root / "worker/target"
+        archive, digest = archive_paths(self.repo, {})
+        names = [
+            "release/vpdf",
+            "dist/vpdf",
+            f"dist/{archive.name}",
+            f"dist/{digest.name}",
+        ]
+        for name in names:
+            path = target / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(name)
+        build_worker.copy_outputs("ci:check", self.repo, target, {})
+        for name in names:
+            self.assertEqual((self.repo / "target" / name).read_text(), name)
+
     def test_install_outputs(self):
         target = self.root / "worker/target"
         (target / "release").mkdir(parents=True)

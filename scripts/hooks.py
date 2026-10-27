@@ -151,6 +151,7 @@ PYTHON_TASKS = {
     "help_assets": "test:help-assets",
     "build_cache": "test:build-cache",
     "build_worker": "test:build-worker",
+    "ci": "test:ci",
 }
 PACKAGING = {
     "scripts/build-app.sh",
@@ -188,6 +189,7 @@ FULL_TEST_TASKS = {
     "test:build-cache",
     "test:build-worker",
     "test:validation",
+    "test:ci",
 }
 
 
@@ -424,8 +426,9 @@ def pre_push(root, stream):
         commits.add(commit)
         print(f"Push validation: {name}", flush=True)
     for commit in sorted(commits):
+        print(f"Push commit: {commit}", flush=True)
         with snapshot(root, commit) as (source, env):
-            full_checks(source, env)
+            execute(["mise", "run", "ci:check"], source, env)
     return 0
 
 
@@ -506,7 +509,7 @@ def main():
             f"Validation build: {time.monotonic() - started:.3f}s", flush=True
         )
     else:
-        full_checks(root, os.environ.copy())
+        execute(["mise", "run", "ci:check"], root, os.environ.copy())
     return 0
 
 

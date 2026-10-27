@@ -44,6 +44,19 @@ class HelpAssetTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(name)
 
+    def test_cold_metadata_budget(self):
+        def output(args, *, timeout, **kwargs):
+            if args[0] == "rustc":
+                self.assertEqual(timeout, 180)
+                return "test-host\n"
+            if timeout <= 180:
+                raise subprocess.TimeoutExpired(args, timeout)
+            self.assertLessEqual(timeout, 600)
+            return json.dumps(self.facts)
+
+        with patch.object(subprocess, "check_output", side_effect=output):
+            self.assertEqual(help.export_facts(self.root), self.facts)
+
     def render(self, root, stage, facts):
         for name in help.OUTPUTS:
             (stage / name).write_text(name)

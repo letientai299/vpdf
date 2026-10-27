@@ -6,7 +6,7 @@ hooks = [
   { id = "commit", name = "staged formatting and affected tests", entry = "mise run hook:commit", language = "system", pass_filenames = false, always_run = true, stages = [
     "pre-commit",
   ] },
-  { id = "check", name = "full validation", entry = "mise run hook:check", language = "system", pass_filenames = false, always_run = true, stages = [
+  { id = "check", name = "current-platform CI validation", entry = "mise run hook:check", language = "system", pass_filenames = false, always_run = true, stages = [
     "pre-push",
   ] },
 ]

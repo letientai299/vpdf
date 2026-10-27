@@ -65,6 +65,10 @@ pub(crate) use reader_fixture::SeedReader;
 pub mod presentation;
 
 #[cfg(test)]
+#[path = "../tests/support/programs.rs"]
+mod program_fixture;
+
+#[cfg(test)]
 mod provenance;
 
 #[cfg(test)]

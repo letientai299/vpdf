@@ -14,9 +14,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: '0'
-  CARGO_PROFILE_DEV_OPT_LEVEL: '1'
-  VPDF_BENCH_EVENTS: '0'
 
 jobs:
   build:
@@ -27,10 +24,10 @@ jobs:
         include:
           - os: ubuntu-24.04
             platform: linux-x86_64
-            tools: rust aqua:nextest-rs/nextest/cargo-nextest rumdl taplo upx typst aqua:jgm/pandoc
+            tools: rust aqua:nextest-rs/nextest/cargo-nextest ruff rumdl taplo upx typst aqua:jgm/pandoc
           - os: macos-14
             platform: macos-aarch64
-            tools: rust aqua:nextest-rs/nextest/cargo-nextest typst aqua:jgm/pandoc
+            tools: rust aqua:nextest-rs/nextest/cargo-nextest ruff rumdl taplo typst aqua:jgm/pandoc
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -55,32 +52,12 @@ jobs:
       - name: Discard restored help assets
         # Rust cache prunes non-Rust help files.
         run: rm -rf target/help
-      - name: Lint
-        if: runner.os == 'Linux'
-        # Lint applies fixes; any change means the commit lacked them.
-        run: |
-          mise run lint
-          git diff --exit-code
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tmp/corpus
           key: corpus-${{ hashFiles('scripts/corpus.sh') }}
-      - name: Fetch corpus
-        run: mise run corpus
-      - name: Test
-        run: mise run test
-      - name: Test benchmark input feature
-        run: mise run test:events
-      - name: Build and pack executable
-        run: mise run release
-      - name: Archive executable
-        env:
-          PLATFORM: ${{ matrix.platform }}
-        run: |
-          archive="vpdf-${PLATFORM}.tar.gz"
-          tar -czf "target/dist/$archive" -C target/dist vpdf
-          cd target/dist
-          shasum -a 256 "$archive" > "$archive.sha256"
+      - name: Validate and package
+        run: mise run ci:check
       - name: Upload binary
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

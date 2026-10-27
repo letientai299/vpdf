@@ -24,6 +24,19 @@ description = "Validate one snapshot and build the debug reader"
 env.VPDF_CACHE = "off"
 run = "python3 -B scripts/build_worker.py validate"
 
+[tasks."ci:check"]
+description = "Run current-platform CI checks and verify release archives"
+env.CARGO_PROFILE_DEV_OPT_LEVEL = "1"
+env.CARGO_INCREMENTAL = "0"
+env.VPDF_BENCH_EVENTS = "0"
+env.VPDF_CACHE = "off"
+env.NEXTEST_RETRIES = "0"
+run = "python3 -B scripts/build_worker.py ci:check"
+
+[tasks."_ci:check"]
+hide = true
+run = "python3 -B scripts/ci.py"
+
 [tasks._validate]
 hide = true
 run = "python3 -B scripts/hooks.py validate"
@@ -211,6 +224,7 @@ depends = [
   "test:validation",
   "test:packages",
   "test:hooks",
+  "test:ci",
   "test:docs",
   "help:build",
   "test:help-assets",
@@ -268,6 +282,12 @@ run = "python3 -B scripts/build_worker.py hook:check"
 hide = true
 env.VPDF_CACHE = "off"
 run = "python3 -B scripts/hooks.py check"
+
+[tasks."test:ci"]
+hide = true
+env.VPDF_CACHE = "off"
+description = "Test CI failure propagation and release archives"
+run = "python3 -B -m unittest discover -s scripts -p test_ci.py"
 
 [tasks."test:hooks"]
 hide = true
