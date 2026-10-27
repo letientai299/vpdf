@@ -1058,6 +1058,7 @@ fn prepare_scene(
   if let Some(home) = &mut session.home {
     home.configure(&session.settings);
   }
+  commands::prepare_prompt(session);
 }
 
 fn resolve_themes(scene: &mut [Op<'_>], palette: vpdf_model::theme::Palette) {
@@ -1342,6 +1343,34 @@ mod tests {
     let (column, row) =
       (pixels.0 / screen.cell_width, pixels.1 / screen.cell_height);
     Input::Mouse { event: MouseEvent::new(kind, column, row), pixels, screen }
+  }
+
+  #[test]
+  fn prompts_inset_first_frame() -> Result<()> {
+    let mut screen = sized();
+    let (_root, _path, mut session) = opened(&["body"], screen)?;
+    let mut cache = Cache::new(BUDGET);
+    for ch in [':', '/', '?'] {
+      apply(&mut session, key(KeyCode::Char(ch)), &mut screen);
+      let rendered = frame(&mut session, &mut cache, screen)?;
+      assert!(rendered.scene.ends_with(&[
+        Op::Move { row: 39, column: 3 },
+        Op::InputArea { column: 2, columns: 98, masked: false },
+        Op::BlockCursor,
+        Op::ShowCursor,
+      ]));
+      apply(&mut session, key(KeyCode::Esc), &mut screen);
+    }
+    let mut session = native();
+    ensure_home(&mut session, screen);
+    apply(&mut session, key(KeyCode::Char(':')), &mut screen);
+    let rendered = frame(&mut session, &mut cache, screen)?;
+    assert!(rendered.scene.contains(&Op::InputArea {
+      column: 2,
+      columns: 98,
+      masked: false,
+    }));
+    Ok(())
   }
 
   #[test]

@@ -190,13 +190,17 @@ impl Prompt {
         scene.extend([Op::Text(Text::new(text)), Op::Spaces(pad)]);
       }
     }
+    let padding = if self.native { 2.min(screen.columns - 1) } else { 0 };
+    if padding > 0 {
+      crate::paint::move_to(scene, at, row, 0u16);
+      scene.push(Op::Spaces(usize::from(padding)));
+    }
+    let at = At { column: at.column + padding, ..at };
+    let columns = usize::from(screen.columns - padding);
     let (text, ghost, column) = self.display();
-    let room = usize::from(screen.columns).saturating_sub(text.width());
+    let room = columns.saturating_sub(text.width());
     crate::paint::move_to(scene, at, row, 0u16);
-    scene.push(Op::Text(Text::new(vpdf_model::text::clean(
-      &text,
-      usize::from(screen.columns),
-    ))));
+    scene.push(Op::Text(Text::new(vpdf_model::text::clean(&text, columns))));
     let ghost = vpdf_model::text::clean(ghost, room);
     let pad = room.saturating_sub(ghost.width());
     scene.extend([
@@ -214,7 +218,7 @@ impl Prompt {
       } else {
         (1 + self.text[..range.start].width(), self.text[range].to_owned())
       };
-      let room = usize::from(screen.columns).saturating_sub(start);
+      let room = columns.saturating_sub(start);
       if room > 0 {
         crate::paint::move_to(scene, at, row, start);
         scene.push(Op::Style(Role::TextSelection));
@@ -223,13 +227,13 @@ impl Prompt {
         scene.push(Op::Style(Role::Reset));
       }
     }
-    let column = column.min(usize::from(screen.columns) - 1);
+    let column = column.min(columns - 1);
     crate::paint::move_to(scene, at, row, column);
     scene.extend([
       Op::InputArea {
         masked: self.kind == PromptKind::Password,
         column: usize::from(at.column),
-        columns: usize::from(screen.columns),
+        columns,
       },
       Op::BlockCursor,
       Op::ShowCursor,
@@ -1095,6 +1099,80 @@ mod tests {
 #[cfg(test)]
 mod native_tests {
   use super::*;
+
+  #[test]
+  fn prompts_inset_native_input() {
+    let screen = crate::testing::screen::cells(10, 2);
+    let at = At { column: 7, row: 3 };
+    for (kind, prefix) in [
+      (PromptKind::Command, ":"),
+      (PromptKind::Search(false), "/"),
+      (PromptKind::Search(true), "?"),
+    ] {
+      for native in [false, true] {
+        let mut prompt = Prompt::new(kind);
+        if native {
+          prompt.native();
+        }
+        prompt.replace("界a");
+        let padding = if native { 2 } else { 0 };
+        let mut scene = vpdf_model::scene::Scene::new();
+        prompt.scene(&mut scene, screen, at, None);
+        assert_eq!(
+          crate::testing::text(&scene),
+          format!(
+            "{}{prefix}界a{}",
+            " ".repeat(padding),
+            " ".repeat(6 - padding)
+          )
+        );
+        assert!(scene.ends_with(&[
+          Op::Move { row: 4, column: 11 + padding },
+          Op::InputArea {
+            column: 7 + padding,
+            columns: 10 - padding,
+            masked: false
+          },
+          Op::BlockCursor,
+          Op::ShowCursor,
+        ]));
+        if !native {
+          continue;
+        }
+        key(&mut prompt, KeyCode::Left, KeyModifiers::SHIFT);
+        scene.clear();
+        prompt.scene(&mut scene, screen, at, None);
+        assert!(scene.windows(3).any(|ops| ops
+          == [
+            Op::Move { row: 4, column: 10 + padding },
+            Op::Style(Role::TextSelection),
+            Op::Text(Text::new("a")),
+          ]));
+      }
+    }
+  }
+
+  #[test]
+  fn inset_fits_narrow_prompts() {
+    for columns in 1..=4 {
+      let screen = crate::testing::screen::cells(columns, 2);
+      let mut prompt = Prompt::new(PromptKind::Command);
+      prompt.native();
+      prompt.replace("long command");
+      let mut scene = vpdf_model::scene::Scene::new();
+      prompt.scene(&mut scene, screen, At { column: 7, row: 3 }, None);
+      assert_eq!(crate::testing::text(&scene).width(), usize::from(columns));
+      assert!(scene.iter().all(|op| match op {
+        Op::Move { column, .. } =>
+          (7..7 + usize::from(columns)).contains(column),
+        Op::InputArea { column, columns: width, .. } => {
+          *column + *width == 7 + usize::from(columns)
+        }
+        _ => true,
+      }));
+    }
+  }
+
   fn key(prompt: &mut Prompt, code: KeyCode, modifiers: KeyModifiers) {
     prompt.feed(KeyEvent::new(code, modifiers), &History::default());
   }
