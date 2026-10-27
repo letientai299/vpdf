@@ -655,16 +655,18 @@ impl Grid {
       Vec2::new(f32::from(screen.cell_width), f32::from(screen.cell_height))
         / scale;
     for (pos, cell) in self.written(size) {
-      if let Some(color) = cell.style.background {
-        painter.rect_filled(
-          Rect::from_min_size(
-            pos,
-            size * Vec2::new(f32::from(cell.columns.max(1)), 1.0),
-          ),
-          0.0,
-          color,
-        );
+      let Some(color) = cell.style.background else { continue };
+      let mut rect = Rect::from_min_size(
+        pos,
+        size * Vec2::new(f32::from(cell.columns.max(1)), 1.0),
+      );
+      if pos.y >= f32::from(screen.rows.saturating_sub(1)) * size.y {
+        rect.max.y = rect.max.y.max(painter.clip_rect().bottom());
+        if rect.max.x >= f32::from(screen.columns) * size.x {
+          rect.max.x = rect.max.x.max(painter.clip_rect().right());
+        }
       }
+      painter.rect_filled(rect, 0.0, color);
     }
     let mut blocks = egui::Mesh::default();
     for (pos, cell) in self.written(size) {
@@ -809,6 +811,55 @@ mod tests {
         })
         .collect();
       assert_eq!(text, "·57%");
+      output.textures_delta.clear();
+    }
+  }
+
+  #[test]
+  fn status_fills_bottom_remainder() {
+    use vpdf_model::style::Role;
+    let screen = crate::screen::pixels(2, 2, 11, 19);
+    for scale in [1.0, 1.5, 2.0] {
+      let mut grid = Grid::new(screen);
+      grid.op(&Op::Style(Role::Bar));
+      grid.op(&Op::Spaces(2));
+      grid.op(&Op::Move { column: 0, row: 1 });
+      grid.op(&Op::Style(Role::StatusFile));
+      grid.op(&Op::Spaces(1));
+      grid.op(&Op::Style(Role::Bar));
+      grid.op(&Op::Spaces(1));
+      let bounds =
+        Rect::from_min_size(Pos2::ZERO, Vec2::new(27.0, 45.0) / scale);
+      let ctx = egui::Context::default();
+      let mut output = ctx.run_ui(
+        egui::RawInput { screen_rect: Some(bounds), ..Default::default() },
+        |ui| grid.paint(&ui.painter().with_clip_rect(bounds), screen, scale),
+      );
+      let backgrounds: Vec<_> = output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+          egui::Shape::Rect(rect) => Some(rect),
+          _ => None,
+        })
+        .collect();
+      assert_eq!(backgrounds.len(), 4);
+      for (column, rect) in backgrounds[..2].iter().enumerate() {
+        assert_eq!(
+          rect.rect,
+          Rect::from_min_size(
+            Pos2::new(column as f32 * 11.0 / scale, 0.0),
+            Vec2::new(11.0, 19.0) / scale,
+          )
+        );
+      }
+      for (column, rect) in backgrounds[2..].iter().enumerate() {
+        assert_eq!(rect.rect.top(), 19.0 / scale);
+        assert_eq!(rect.rect.bottom(), bounds.bottom());
+        assert_eq!(rect.fill, grid.cells[2 + column].style.background.unwrap());
+      }
+      assert_eq!(backgrounds[2].rect.right(), backgrounds[3].rect.left());
+      assert_eq!(backgrounds[3].rect.right(), bounds.right());
       output.textures_delta.clear();
     }
   }
