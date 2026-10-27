@@ -1,4 +1,4 @@
-pub use vpdf_model::style::{Color, Role};
+pub use vpdf_model::style::{Badge, Role};
 pub use vpdf_model::theme::{Overlay, Paint};
 
 /// Thumbnail rings: selected, hovered.

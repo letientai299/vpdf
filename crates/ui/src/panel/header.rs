@@ -3,7 +3,7 @@ use crate::split::Rect;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
 use vpdf_model::scene::{Draw, Op};
-use vpdf_model::style::{Color, Role};
+use vpdf_model::style::{Badge, Role};
 use vpdf_model::text::{clean, clipped};
 
 pub(super) struct Button<'a> {
@@ -44,7 +44,7 @@ impl Header<'_> {
     let count = clean(&count, columns - title.width());
     let mut room = columns - title.width() - count.width();
     crate::paint::move_to(scene, at, 0u16, 0u16);
-    scene.push(Op::Style(Role::Badge(Color::Cyan)));
+    scene.push(Op::Style(Role::Badge(Badge::Cursor)));
     scene.text(&title);
     scene.push(Op::Style(self.role));
     scene.text(&count);

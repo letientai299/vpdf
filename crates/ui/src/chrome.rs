@@ -6,7 +6,7 @@ use crate::layout::{Layout, Screen};
 use crate::panel::Panel;
 use crate::region::Region;
 use crate::text::PageId;
-use crate::theme::Color;
+use crate::theme::Badge;
 use std::fmt::Write as _;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::input::MouseButton;
@@ -160,37 +160,37 @@ impl Bar<'_> {
     self.view.panel.is_some_and(Panel::covers_page)
   }
 
-  fn mode(&self) -> (&'static str, Color) {
+  fn mode(&self) -> (&'static str, Badge) {
     if self.view.keys.resizing() {
-      return ("RESIZE", Color::Yellow);
+      return ("RESIZE", Badge::Transient);
     }
     match self.view.owner {
-      InputOwner::Prompt => return ("PROMPT", Color::Yellow),
-      InputOwner::Hints => return ("HINT", Color::Yellow),
-      InputOwner::Context => return ("MENU", Color::Yellow),
-      InputOwner::Peek => return ("PEEK", Color::Yellow),
+      InputOwner::Prompt => return ("PROMPT", Badge::Transient),
+      InputOwner::Hints => return ("HINT", Badge::Transient),
+      InputOwner::Context => return ("MENU", Badge::Transient),
+      InputOwner::Peek => return ("PEEK", Badge::Transient),
       InputOwner::Region => {
         let label = if self.view.capture.is_some_and(Region::is_bar) {
           "ACTIONS"
         } else {
           "REGION"
         };
-        return (label, Color::Yellow);
+        return (label, Badge::Transient);
       }
       InputOwner::Panel => {
         if let Some(panel) = self.view.panel {
-          return (panel.kind().title(), Color::Cyan);
+          return (panel.kind().title(), Badge::Cursor);
         }
       }
-      InputOwner::Overview => return ("PAGES", Color::Cyan),
+      InputOwner::Overview => return ("PAGES", Badge::Cursor),
       InputOwner::Content => {}
     }
     match self.view.reader.mode() {
-      Mode::Visual(SelectionKind::Character) => ("VISUAL", Color::Magenta),
-      Mode::Visual(SelectionKind::Line) => ("V-LINE", Color::Magenta),
-      _ if self.view.reader.operator.is_some() => ("YANK", Color::Yellow),
-      Mode::Cursor => ("CURSOR", Color::Cyan),
-      Mode::Normal => ("NORMAL", Color::Blue),
+      Mode::Visual(SelectionKind::Character) => ("VISUAL", Badge::Visual),
+      Mode::Visual(SelectionKind::Line) => ("V-LINE", Badge::Visual),
+      _ if self.view.reader.operator.is_some() => ("YANK", Badge::Transient),
+      Mode::Cursor => ("CURSOR", Badge::Cursor),
+      Mode::Normal => ("NORMAL", Badge::Normal),
     }
   }
 
@@ -246,7 +246,7 @@ impl Bar<'_> {
       }
       return Ok(());
     };
-    let badge = if focused { Role::Badge(line.color) } else { Role::Bar };
+    let badge = if focused { Role::Badge(line.badge) } else { Role::Bar };
     scene.push(Op::Style(badge));
     scene.text(&line.left);
     scene.push(Op::Style(Role::Bar));
@@ -266,7 +266,7 @@ impl Bar<'_> {
   /// The status line's parts.
   fn line(&self, detail: Option<&str>) -> Result<Line> {
     let columns = usize::from(self.screen.columns);
-    let (mode, color) = self.mode();
+    let (mode, badge) = self.mode();
     let page = self.document.page.0;
     let mut right = self.view.keys.pending();
     if !right.is_empty() {
@@ -300,7 +300,7 @@ impl Bar<'_> {
     let left = format!(" {mode} ");
     let mut line = Line {
       left,
-      color,
+      badge,
       tabs: None,
       message: String::new(),
       style: Role::Bar,
@@ -416,7 +416,7 @@ impl Tabs {
 /// Status line parts; spans in columns.
 struct Line {
   left: String,
-  color: Color,
+  badge: Badge,
   /// None when only `right` fits.
   tabs: Option<Tabs>,
   message: String,

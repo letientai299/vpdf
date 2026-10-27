@@ -1,4 +1,4 @@
-use crate::style::Color;
+use crate::style::Badge;
 use serde::{Deserialize, Deserializer};
 use std::sync::OnceLock;
 
@@ -118,13 +118,13 @@ impl Palette {
     toml::from_str(text)
   }
 
-  /// Text and fill colors of a `color` badge.
-  pub fn badge(self, color: Color) -> ([u8; 3], [u8; 3]) {
-    let (fill, token) = match color {
-      Color::Blue => (self.mode.normal, self.accent),
-      Color::Cyan => (self.mode.cursor, self.link),
-      Color::Magenta => (self.mode.visual, self.highlight),
-      Color::Yellow => (self.mode.transient, self.r#match),
+  /// Text and fill for a badge.
+  pub fn badge(self, badge: Badge) -> ([u8; 3], [u8; 3]) {
+    let (fill, token) = match badge {
+      Badge::Normal => (self.mode.normal, self.accent),
+      Badge::Cursor => (self.mode.cursor, self.link),
+      Badge::Visual => (self.mode.visual, self.highlight),
+      Badge::Transient => (self.mode.transient, self.r#match),
     };
     let fill = fill.unwrap_or(token);
     (self.text_on(fill), fill)
@@ -187,7 +187,7 @@ mod tests {
   fn mode_fills_override_badges() {
     let base = include_str!("../../../../etc/themes/dark.toml");
     let dark = Palette::parse(base).unwrap();
-    assert_eq!(dark.badge(Color::Blue).1, dark.accent);
+    assert_eq!(dark.badge(Badge::Normal).1, dark.accent);
     let palette = Palette::parse(&format!(
       "{base}\n[mode]\nnormal = \"#ff0000\"\nvisual = \"#101010\"\n"
     ))
@@ -197,14 +197,14 @@ mod tests {
       Palette::parse(&format!("{light}\n[mode]\nvisual = \"#ffff00\"\n"))
         .unwrap();
     // Background text, else black or white.
-    for (palette, color, text, fill) in [
-      (palette, Color::Blue, [0; 3], [255, 0, 0]),
-      (palette, Color::Magenta, [255; 3], [16; 3]),
-      (palette, Color::Cyan, dark.badge(Color::Cyan).0, dark.link),
-      (palette, Color::Yellow, dark.badge(Color::Yellow).0, dark.r#match),
-      (light, Color::Magenta, [0; 3], [255, 255, 0]),
+    for (palette, badge, text, fill) in [
+      (palette, Badge::Normal, [0; 3], [255, 0, 0]),
+      (palette, Badge::Visual, [255; 3], [16; 3]),
+      (palette, Badge::Cursor, dark.badge(Badge::Cursor).0, dark.link),
+      (palette, Badge::Transient, dark.badge(Badge::Transient).0, dark.r#match),
+      (light, Badge::Visual, [0; 3], [255, 255, 0]),
     ] {
-      assert_eq!(palette.badge(color), (text, fill), "{color:?}");
+      assert_eq!(palette.badge(badge), (text, fill), "{badge:?}");
     }
     let error = Palette::parse(&format!("{base}\nmode = \"red\"\n"))
       .unwrap_err()

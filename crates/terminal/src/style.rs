@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 use vpdf_model::style::{
-  Attribute, Color, ColorChange, Role, StyleChange, Tone,
+  Attribute, Badge, ColorChange, Role, StyleChange, Tone,
 };
 use vpdf_model::theme::Colors;
 
@@ -45,10 +45,10 @@ pub const fn sgr(role: Role) -> &'static str {
     Role::TextLink => encoded!(Role::TextLink),
     Role::PreviewBorder => encoded!(Role::PreviewBorder),
     Role::PreviewText => encoded!(Role::PreviewText),
-    Role::Badge(Color::Blue) => encoded!(Role::Badge(Color::Blue)),
-    Role::Badge(Color::Magenta) => encoded!(Role::Badge(Color::Magenta)),
-    Role::Badge(Color::Yellow) => encoded!(Role::Badge(Color::Yellow)),
-    Role::Badge(Color::Cyan) => encoded!(Role::Badge(Color::Cyan)),
+    Role::Badge(Badge::Normal) => encoded!(Role::Badge(Badge::Normal)),
+    Role::Badge(Badge::Visual) => encoded!(Role::Badge(Badge::Visual)),
+    Role::Badge(Badge::Transient) => encoded!(Role::Badge(Badge::Transient)),
+    Role::Badge(Badge::Cursor) => encoded!(Role::Badge(Badge::Cursor)),
     Role::Chosen => encoded!(Role::Chosen),
     // `write` formats document colors.
     Role::Swatch(_) => "",
@@ -296,7 +296,7 @@ mod tests {
       Palette::parse(&format!("{dark}\n[mode]\nvisual = \"#101010\"\n"))
         .map_err(io::Error::other)?;
     let mut out = Vec::new();
-    write(&mut out, Role::Badge(Color::Magenta), Colors::Palette(palette))?;
+    write(&mut out, Role::Badge(Badge::Visual), Colors::Palette(palette))?;
     assert_eq!(out, b"\x1b[0;1;38;2;255;255;255;48;2;16;16;16m");
     Ok(())
   }
@@ -374,10 +374,10 @@ mod tests {
       Role::HintPickedTyped,
       Role::HintPicked,
       Role::TextLink,
-      Role::Badge(Color::Blue),
-      Role::Badge(Color::Magenta),
-      Role::Badge(Color::Yellow),
-      Role::Badge(Color::Cyan),
+      Role::Badge(Badge::Normal),
+      Role::Badge(Badge::Visual),
+      Role::Badge(Badge::Transient),
+      Role::Badge(Badge::Cursor),
     ];
     let mut hash = Sha256::new();
     for role in roles {

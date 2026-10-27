@@ -12,7 +12,7 @@ use crate::panel::Panel;
 use crate::panel::recent::{Entry, Shelf};
 use crate::panel::{Destination, Row};
 use crate::prompt::{History, Prompt, PromptEvent, PromptKind};
-use crate::theme::Color;
+use crate::theme::Badge;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
@@ -275,10 +275,10 @@ impl Home {
   pub fn scene_footer<'a>(&self, scene: &mut impl Draw<'a>) {
     let columns = usize::from(self.screen.columns);
     let resizing = self.keys.resizing();
-    let (badge, color) = if resizing {
-      (" RESIZE ", Color::Yellow)
+    let (badge, style) = if resizing {
+      (" RESIZE ", Badge::Transient)
     } else {
-      (" Vpdf ", Color::Blue)
+      (" Vpdf ", Badge::Normal)
     };
     let badge = if columns >= 32 || resizing { badge } else { "" };
     let badge_width = badge.width().min(columns);
@@ -292,7 +292,7 @@ impl Home {
       0u16,
     );
     if !badge.is_empty() {
-      scene.push(Op::Style(Role::Badge(color)));
+      scene.push(Op::Style(Role::Badge(style)));
       scene.push(Op::Text(Text::fit(badge, columns)));
       scene.push(Op::Style(Role::Bar));
       scene.push(Op::Spaces(gap));

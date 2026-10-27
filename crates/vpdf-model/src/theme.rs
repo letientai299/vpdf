@@ -97,7 +97,7 @@ impl Colors {
           }
           Role::Badge(_) | Role::Chosen => {
             let (text, color) = match role {
-              Role::Badge(color) => palette.badge(color),
+              Role::Badge(badge) => palette.badge(badge),
               _ => (palette.text_on(palette.accent), palette.accent),
             };
             fill(&mut patch, text, color);

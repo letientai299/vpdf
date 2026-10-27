@@ -255,7 +255,7 @@ mod tests {
 
   #[test]
   fn shipped_roles_are_readable() {
-    use vpdf_model::style::Color;
+    use vpdf_model::style::Badge;
     use vpdf_model::theme::{TEXT_CONTRAST, contrast};
     let sequences: &[&[Role]] = &[
       &[Role::Reset],
@@ -282,10 +282,10 @@ mod tests {
       &[Role::Hint],
       &[Role::HintPicked],
       &[Role::Chosen],
-      &[Role::Badge(Color::Blue)],
-      &[Role::Badge(Color::Cyan)],
-      &[Role::Badge(Color::Magenta)],
-      &[Role::Badge(Color::Yellow)],
+      &[Role::Badge(Badge::Normal)],
+      &[Role::Badge(Badge::Cursor)],
+      &[Role::Badge(Badge::Visual)],
+      &[Role::Badge(Badge::Transient)],
     ];
     for (name, palette) in shipped() {
       let theme = Colors::Palette(palette);
@@ -351,7 +351,7 @@ mod tests {
 
   #[test]
   fn mode_fills_color_badges() {
-    use vpdf_model::style::Color;
+    use vpdf_model::style::Badge;
     use vpdf_model::theme::Palette;
     let dark = include_str!("../../../etc/themes/dark.toml");
     let palette = Palette::parse(&format!(
@@ -362,8 +362,8 @@ mod tests {
     gray.accent = [0x33; 3];
     // Chosen items keep `accent`, not `[mode] normal`.
     for (theme, role, foreground, background) in [
-      (palette, Role::Badge(Color::Magenta), [255; 3], [16; 3]),
-      (palette, Role::Badge(Color::Blue), [0; 3], [255, 0, 0]),
+      (palette, Role::Badge(Badge::Visual), [255; 3], [16; 3]),
+      (palette, Role::Badge(Badge::Normal), [0; 3], [255, 0, 0]),
       (palette, Role::Chosen, palette.background, palette.accent),
       (gray, Role::Chosen, [255; 3], [0x33; 3]),
     ] {

@@ -788,7 +788,7 @@ impl Header<'_> {
     let title = vpdf_model::text::clean(" TEXT ", usize::from(columns));
     let room = usize::from(columns).saturating_sub(title.width());
     let context = vpdf_model::text::clean(&context, room);
-    scene.push(Op::Style(Role::Badge(vpdf_model::style::Color::Cyan)));
+    scene.push(Op::Style(Role::Badge(vpdf_model::style::Badge::Cursor)));
     scene.text(&title);
     scene.extend([Op::Style(Role::Reset), Op::Style(Role::Muted)]);
     scene.text(&context);

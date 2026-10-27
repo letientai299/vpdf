@@ -1,9 +1,9 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Color {
-  Blue = 34,
-  Magenta = 35,
-  Yellow = 33,
-  Cyan = 36,
+pub enum Badge {
+  Normal,
+  Cursor,
+  Visual,
+  Transient,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,7 +40,7 @@ pub enum Role {
   TextLink,
   PreviewBorder,
   PreviewText,
-  Badge(Color),
+  Badge(Badge),
   /// A chosen menu item or page label.
   Chosen,
   /// Text in a color the document chose, such as a highlight's.
@@ -148,17 +148,17 @@ impl Role {
       Self::PreviewText => {
         Reset(P::new(Set(T::PreviewText), Set(T::BrightWhite), &[]))
       }
-      Self::Badge(color) => Reset(P::new(
-        Set(match color {
-          Color::Blue => T::Blue,
-          Color::Magenta => T::Magenta,
-          Color::Yellow => T::Yellow,
-          Color::Cyan => T::Cyan,
+      Self::Badge(badge) => Reset(P::new(
+        Set(match badge {
+          Badge::Normal => T::Blue,
+          Badge::Visual => T::Magenta,
+          Badge::Transient => T::Yellow,
+          Badge::Cursor => T::Cyan,
         }),
         Keep,
         &[Bold, Inverse],
       )),
-      Self::Chosen => Self::Badge(Color::Blue).style(),
+      Self::Chosen => Self::Badge(Badge::Normal).style(),
       Self::Swatch(rgb) => Patch(P::new(Set(T::Rgb(rgb)), Keep, &[])),
     }
   }
