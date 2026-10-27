@@ -1,13 +1,39 @@
 {
   "version": "typst 0.15.1 (9dfd3a08)",
+  "markdown": "pandoc 3.13",
   "fonts": [
-    "DejaVu Sans Mono"
+    "Vpdf Mono"
   ],
-  "assets_crate": "typst-assets 0.15.1",
-  "assets_sha256": "bcee505dac6702dd1c5e65aa2e94a6179d19ee09e2e5637d7313db91765dc4e0",
-  "runtime_font": {
-    "source": "https://github.com/dejavu-fonts/dejavu-fonts/releases/download/version_2_37/dejavu-fonts-ttf-2.37.zip",
-    "archive_sha256": "7576310b219e04159d35ff61dd4a4ec4cdba4f35c00e002a136f00e96a908b0a",
-    "sha256": "b4a6c3e4faab8773f4ff761d56451646409f29abedd68f05d38c2df667d3c582"
-  }
+  "font_source": {
+    "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/patched-fonts/Iosevka/IosevkaNerdFontMono-Regular.ttf",
+    "sha256": "f803b8eac0897b94eef776c54dd0468cd1780ec065b6877ad839cf79fcc6f162",
+    "fonttools": "4.61.1",
+    "base_version": "Iosevka 34.8.0 / Nerd Fonts 3.5.1",
+    "styles": {
+      "Bold": {
+        "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/patched-fonts/Iosevka/IosevkaNerdFontMono-Bold.ttf",
+        "sha256": "cb71bce0356159a074a92c77ee9aff5317fd53b3ef374118332a7b544c6798d9"
+      },
+      "Italic": {
+        "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/patched-fonts/Iosevka/IosevkaNerdFontMono-Italic.ttf",
+        "sha256": "ea95fe353e4e448a28be08ab5a97a52502048f8088a0f58937e5185de4cd8257"
+      },
+      "BoldItalic": {
+        "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/patched-fonts/Iosevka/IosevkaNerdFontMono-BoldItalic.ttf",
+        "sha256": "f77deb60986f36dfd857295a150320109cf2cae4fca3b396ab27eefea205b904"
+      }
+    }
+  },
+  "font_files": {
+    "VpdfMono.ttf": "910502cc31543fb1b0543b692882e881d6a32466d3d83ac9e79ed18e4e37a200",
+    "VpdfMonoText.ttf": "f87c450c00619b1de6e4de58a258a81ee00198d65cd2731bbcdfbb2bfb9e6ff7",
+    "VpdfMonoBold.ttf": "fcf60ae0a8a3f8bb9667da14753db4685a55d345945623af9a6cd0a5def9f4a4",
+    "VpdfMonoItalic.ttf": "8b0fcb34c353641d436ce66f79dd6ecdd22a0b1caeb03bacea9e97274752ccee",
+    "VpdfMonoBoldItalic.ttf": "650f4c76d2b6b88fea3a15cf65d540027087bd014fa1a3c9d6ddeaca3178cd6b"
+  },
+  "notices": [
+    "iosevka.txt",
+    "nerd-fonts.txt",
+    "icons.txt"
+  ]
 }

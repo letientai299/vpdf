@@ -10,7 +10,7 @@ Try this exercise with default bindings. With customized bindings, use
 1. Open a book, or start `vpdf` without a filename. Type `:help` and press
    Enter. The manual opens in a reusable tab; your book keeps its place.
 2. Press `f`. Labels appear beside visible links. Type the label beside
-   [Practice text][sample]. You arrive at that chapter. If the link is off
+   [Practice text][practice]. You arrive at that chapter. If the link is off
    screen, scroll with `j` until it is visible, then press `f`.
 3. Press `Ctrl-o` to return here. `Ctrl-i` goes forward to the practice text.
    Press `Ctrl-o` again. Escape cancels unfinished hint input.
@@ -32,7 +32,7 @@ cancels the prompt; it does not mean that all document jobs have stopped.
 
 ## Copy a sentence
 
-1. Type `:help sample` and Enter, then `/Select this sentence` and Enter.
+1. Type `:help practice` and Enter, then `/Select this sentence` and Enter.
 2. Press Escape if a temporary interaction owns input. In Normal mode, press
    `i` to enter Cursor mode. Use `h`, `j`, `k`, and `l` to reach the sentence.
 3. Type `yis`: `y` starts copying, `i` means inner, and `s` means sentence.
@@ -56,5 +56,5 @@ Use `:help` again to start at the manual's first page. Use `gt` or `gT` to
 revisit an existing help tab at its current place. Help is one document:
 looking up a topic retains its search, local marks, and jump history.
 
-[sample]: sample.md
+[practice]: practice.md
 [selection]: yank.md

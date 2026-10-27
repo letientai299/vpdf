@@ -49,6 +49,8 @@ TOOLS = (
     "rumdl",
     "taplo",
     "typst",
+    "pandoc",
+    "qpdf",
     "git",
     "cc",
     "make",

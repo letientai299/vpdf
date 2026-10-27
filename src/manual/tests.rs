@@ -41,7 +41,10 @@ fn embedded_topics_resolve() -> crate::Result<()> {
     for link in page.links()? {
       if let Some(topic) = link.uri.strip_prefix("vpdf-help:") {
         dynamic.insert(topic.to_owned());
-      } else if link.uri.starts_with("https://") {
+      } else if ["https://", "http://", "mailto:"]
+        .iter()
+        .any(|scheme| link.uri.starts_with(scheme))
+      {
         assert!(link.dest.is_none());
       } else {
         let target = link.dest.expect("Internal destination");
@@ -65,8 +68,7 @@ fn embedded_topics_resolve() -> crate::Result<()> {
       page.to_text_page(TextPageFlags::empty())?.to_text()?.contains(title)
     );
   }
-  for needle in
-    ["café", "cà phê", "Ελληνικά", "SIL OPEN FONT LICENSE", "Bitstream"]
+  for needle in ["café", "cà phê", "Ελληνικά", "SIL Open Font License", "MuPDF"]
   {
     assert!(text.contains(needle), "Missing embedded text: {needle}");
   }

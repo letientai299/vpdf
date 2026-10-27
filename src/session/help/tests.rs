@@ -112,7 +112,7 @@ fn topic_lookup_retains_state() -> Result<()> {
       assert_eq!(app.search.hits().len(), hits);
       assert!(jumps.iter().all(|jump| app.reader.jumps().any(|p| p == *jump)));
       app.go_mark('a', true)?;
-      assert_eq!(app.navigation_position(), mark);
+      assert_eq!(app.reading_position()?, mark);
     }
     assert_eq!(session.help.reference, Some(reference));
     session.close()?;

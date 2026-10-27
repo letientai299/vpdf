@@ -10,7 +10,7 @@ follows. In Cursor mode, put the glyph cursor on the link and press Enter or
 
 ## Inspect a reference
 
-1. Open [Practice text][sample] and put the cursor on its Navigation link.
+1. Open [Practice text][practice] and put the cursor on its Navigation link.
 2. Press `K` to preview the internal destination. `j` and `k` scroll the
    preview; page scrolling continues beyond the target page.
 3. Press Escape or `q` to close the preview without moving the main view.
@@ -41,7 +41,7 @@ kind. Select a row with `j` or `k`; the selected row shows its note on a dim
 line below. Enter goes to its position. `K` shows the full comment; Escape
 closes the comment. `yy` copies the selected row's text. A PDF without
 annotations shows a short message instead of rows.
-Try the practice note in [Practice text][sample]. Its comment reads
+Try the practice note in [Practice text][practice]. Its comment reads
 `Notes explain passages without changing your source PDF.`
 
 Hovering a note or commented highlight shows author and comment in the status
@@ -59,7 +59,7 @@ on the machine hosting Vpdf; over SSH that can be the remote machine. See
 
 See [reference previews][preview-demo] and [annotation comments][notes-demo].
 
-[sample]: sample.md
+[practice]: practice.md
 [install]: install.md
 [preview-demo]: ../demos.md#reference-preview
 [notes-demo]: ../demos.md#annotation-comments

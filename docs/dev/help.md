@@ -7,11 +7,13 @@ frontends route help through the shared session.
 
 ## Build and check
 
-Run `mise install` for the pinned [Typst compiler][typst]. Builds use its
-bundled fonts, disable system fonts, clear Typst environment overrides, and need
-no font downloads. The [renderer pin][renderer] records the compiler identity
-and its bundled font source. [Font notices][notices] accompany the embedded PDF
-and the app's resources.
+Run `mise install` for the pinned [Pandoc parser][pandoc] and
+[Typst compiler][typst]. Install [QPDF][qpdf] for lossless PDF compression;
+on macOS, use `brew install qpdf`. Builds use vendored fonts, disable system
+fonts, clear Typst environment overrides, and need no font downloads. The
+[renderer pin][renderer] records tool identities and font hashes.
+Short legal notices appear in the PDF. Full [font notices][notices] accompany
+the binary and app resources.
 
 ```sh
 mise run help:build
@@ -19,8 +21,8 @@ mise run help:check
 mise run test:help
 ```
 
-`test:help` also needs [QPDF][qpdf] and [Poppler][poppler] for independent
-structure, font, and text checks. On macOS, use `brew install qpdf poppler`. The
+`test:help` also needs [Poppler][poppler] for independent font and text checks.
+On macOS, use `brew install poppler`. The
 native tests check outlines, internal destinations, reference placeholders, and
 extracted text directly from the embedded bytes.
 
@@ -41,8 +43,8 @@ assets. Application execution needs neither source files nor generation tools.
 
 After changing manual inputs or help navigation, run `mise run lint`,
 `mise run test`, and `mise run test:help`. Check relative links after moving
-guides. All pages under `docs/users/` belong to the chapter order; keep setup
-and workflow guidance available in both the book and bundled help.
+guides. All pages under `docs/users/` belong to the section order; keep setup
+and workflow guidance available in both the manual and bundled help.
 
 Build both packages with `mise run release` and `mise run build:app`. Copy them
 and a verified corpus PDF to a directory outside the checkout. Open help without
@@ -58,7 +60,7 @@ gaps. Build Linux in a container; copy only binaries and test PDFs to the host.
 
 ## Authoring
 
-[Chapter ordering][book] names the Markdown files. Each file starts with its
+[Section ordering][contents] names the Markdown files. Each file starts with its
 title and a stable topic comment:
 
 ```markdown
@@ -72,12 +74,16 @@ titles must match the [topic registry][topics]; aliases stay with that registry.
 Pagination comes from [Typst introspection][metadata], with zero-based pages and
 positions in PDF points measured from the upper left.
 
-The converter accepts paragraphs, second-level headings, numbered and bullet
-lists, inline code, fenced code blocks, reference-style links, and footnotes.
-Manual chapters contain no graphics. It rejects unsupported markup and renderer
-diagnostics, including font warnings. Indent wrapped footnotes by four spaces
+Pandoc parses [GitHub Flavored Markdown][gfm], including tables, nested lists,
+task lists, strikethrough, autolinks, images, HTML, and footnotes. Its Typst
+writer preserves heading levels and fenced-code languages. HTML becomes static
+content; vendor images under `docs/users/` or `docs/assets/` so their bytes
+participate in the build fingerprint. Typst highlights TOML
+and flows sections continuously with justified prose. Tables and code retain
+their alignment. Diagnostics, including font warnings, fail generation.
+Indent wrapped footnotes by four spaces
 and list continuations to the item's text. Use reference-style relative Markdown
-links between chapters and their sections; the converter resolves them to PDF
+links between sections and their sections; the converter resolves them to PDF
 destinations. HTTPS links remain external. For a generated reference, link to
 the relevant instructions on GitHub and add `<!-- help:name=topic_id -->` beside
 its definition. The converter redirects that reference to the generated entry in
@@ -95,7 +101,7 @@ compiles the reader to export facts.
 
 ## Invalidation and packaging
 
-The [generator][generator] fingerprints authored files, chapter ordering,
+The [generator][generator] fingerprints authored files, section ordering,
 figures, topic and binding facts, templates, font and renderer pins, notices,
 generator code, the lockfile, and the task configuration. Its receipt hashes
 every required output. Generation uses a locked staging directory, checks inputs
@@ -104,8 +110,8 @@ previous generations intact; they cannot satisfy a changed fingerprint.
 
 The build script checks the receipt and facts without invoking Typst. Release
 packaging also compares the staged executable's identity with current assets.
-The font licenses stay available in the PDF and the binary; app packages also
-carry a plain text copy.
+The PDF links to license texts. The binary embeds full notices; app packages
+also carry a plain text copy.
 
 ## Runtime snapshots
 
@@ -129,13 +135,30 @@ settings and Ex commands. Mark setting, mark jumps, counts, and hint labels use
 parameter entries; concrete key lookups share those destinations. Other
 parameterized actions remain outside the outline. There is no dispatch appendix.
 
-The structured writer embeds DejaVu Sans Mono without external tools. The
-renderer pin records its source and hash. Authored and generated pages use the
-fixed light colors for paper, commands, parameters, and links. Interface theme
-changes reuse the help PDF. The view can apply `:recolor` like other PDFs;
-its setting stays outside persisted document state.
-Font notices follow the reference. Unsupported glyphs and controls use
-reversible Unicode escapes; literal backslashes double.
+The manual, generated reference, and native interface embed Vpdf Mono, derived
+from [Iosevka Nerd Font Mono][nerd-font]. The native app requires no font
+installation. Iosevka uses the SIL Open Font License; icon notices retain
+their upstream attributions and licenses. The terminal interface uses the
+terminal's configured font.
+
+The [font preparation script][font-script] removes unused shaping glyphs and
+renames the derivative. The note symbol aliases the Nerd Font pencil. It
+preserves the full Unicode map for the native UI and authored manual; a text
+subset keeps the runtime reference smaller. Normal builds consume the checked-in
+files without FontTools. To reproduce them, download the regular, bold, italic,
+and bold italic sources recorded in the renderer pin into one directory and run
+the script with [uv][uv] and the pinned FontTools version:
+
+```sh
+uv run --no-project --with fonttools==4.61.1 python scripts/help_font.py SOURCE.ttf
+```
+
+Authored and generated pages use the fixed light colors for paper, commands,
+parameters, and links. Interface theme changes reuse the help PDF. The view can
+apply `:recolor` like other PDFs; its setting stays outside persisted document
+state. Short legal notices follow the reference; linked license texts stay
+outside the PDF. Unsupported glyphs and controls use reversible Unicode escapes;
+literal backslashes double.
 
 The document owns a private temporary PDF because existing workers reopen paths.
 Retain its `Arc` until every reader and worker using that path stops. Each
@@ -169,14 +192,39 @@ unavailable. Open another document before using those path-based actions.
 
 [users]: ../users/readme.md
 [typst]: https://typst.app/open-source/
+[pandoc]: https://pandoc.org/installing.html
+[gfm]: https://github.github.com/gfm/
+[nerd-font]: https://github.com/ryanoasis/nerd-fonts/tree/v3.5.1/patched-fonts/Iosevka
+[font-script]: ../../scripts/help_font.py
+[uv]: https://docs.astral.sh/uv/getting-started/installation/
 [renderer]: ../../scripts/help/renderer.json
 [notices]: ../../scripts/help/notices/
 [qpdf]: https://qpdf.readthedocs.io/en/stable/
 [poppler]: https://poppler.freedesktop.org/
-[book]: ../../scripts/help/book.json
+[contents]: ../../scripts/help/contents.json
 [topics]: ../../crates/ui/src/topics.rs
 [metadata]: https://typst.app/docs/reference/introspection/metadata/
 [exporter]: ../../crates/ui/examples/help_metadata.rs
 [generator]: ../../scripts/help_assets.py
 [runtime]: ../../src/manual/runtime.rs
 [events]: dev.md#native-window
+
+## Dependency notices
+
+The PDF links to full notices instead of reproducing license texts.
+`third-party-notices.txt` embeds those texts in both binaries and accompanies
+app resources. It includes font, theme, Rust dependency, and MuPDF notices.
+
+After changing `Cargo.lock`, regenerate notices with [cargo-about][cargo-about]
+0.9.3 on the maintainer machine. The tool needs network access to retrieve
+licenses omitted from published crates. Run through Mise's optional Cargo tool:
+
+```sh
+mise exec cargo:cargo-about@0.9.3 -- python3 scripts/licenses.py
+```
+
+The inventory includes all workspace features and platform dependencies.
+MuPDF's bundled components retain their native notices separately. Help tests
+reject inventories from a different lockfile.
+
+[cargo-about]: https://embarkstudios.github.io/cargo-about/

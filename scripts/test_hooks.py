@@ -25,7 +25,6 @@ class RoutingTests(unittest.TestCase):
             (["crates/ui/src/help.txt"], {"vpdf-ui"}),
             (["src/input.rs", "crates/ui/src/help.txt"], {"vpdf", "vpdf-ui"}),
             (["tests/it/keys.rs"], {"vpdf"}),
-            (["docs/assets/vpdf.png"], {"vpdf-gui"}),
         ]
         for paths, expected in cases:
             with self.subTest(paths=paths):
@@ -34,6 +33,14 @@ class RoutingTests(unittest.TestCase):
                 )
                 self.assertEqual(owners, expected)
                 self.assertFalse(tasks or reasons)
+
+    def test_help_image_owners(self):
+        owners, tasks, reasons = hooks.select_tests(
+            ["docs/assets/vpdf.png"], self.packages
+        )
+        self.assertEqual(owners, {"vpdf-gui"})
+        self.assertEqual(tasks, {"test:help"})
+        self.assertEqual(reasons, [])
 
     def test_conservative_fallback(self):
         for name in [

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>name</key><string>Vpdf help</string>
+  <key>settings</key><array>
+    <dict><key>settings</key><dict>
+      <key>foreground</key><string>#202030</string>
+      <key>background</key><string>#F5F5F5</string>
+    </dict></dict>
+    <dict><key>scope</key><string>comment</string>
+      <key>settings</key><dict><key>foreground</key><string>#596579</string></dict></dict>
+    <dict><key>scope</key><string>string</string>
+      <key>settings</key><dict><key>foreground</key><string>#245C39</string></dict></dict>
+    <dict><key>scope</key><string>constant.numeric, constant.language</string>
+      <key>settings</key><dict><key>foreground</key><string>#8B3C12</string></dict></dict>
+    <dict><key>scope</key><string>entity, keyword, support, variable</string>
+      <key>settings</key><dict><key>foreground</key><string>#334F96</string></dict></dict>
+  </array>
+</dict></plist>

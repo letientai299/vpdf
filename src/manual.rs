@@ -17,7 +17,7 @@ pub const TOPICS: &str =
 pub const MANIFEST: &str =
   include_str!(concat!(env!("VPDF_HELP_DIR"), "/manifest.json"));
 pub const NOTICES: &str =
-  include_str!(concat!(env!("VPDF_HELP_DIR"), "/font-notices.txt"));
+  include_str!(concat!(env!("VPDF_HELP_DIR"), "/third-party-notices.txt"));
 
 pub(crate) fn identity() -> String {
   static IDENTITY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -30,7 +30,7 @@ fn verify_identity() -> String {
   for (name, bytes) in [
     ("base.pdf", PDF),
     ("topics.json", TOPICS.as_bytes()),
-    ("font-notices.txt", NOTICES.as_bytes()),
+    ("third-party-notices.txt", NOTICES.as_bytes()),
   ] {
     assert_eq!(
       manifest["outputs"][name].as_str(),

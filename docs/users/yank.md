@@ -3,7 +3,7 @@
 <!-- help-topic:selection -->
 
 Copying reads extracted glyphs. It never edits the PDF. Start with a paragraph
-in [Practice text][sample], then repeat the exercise on your book.
+in [Practice text][practice], then repeat the exercise on your book.
 
 ## Select a passage
 
@@ -63,6 +63,6 @@ support. See [Optional helpers][helpers] for installation. Terminal selection
 is independent: `:mouse off` gives clicks and drags back to the terminal;
 `:mouse on` restores reader capture.
 
-[sample]: sample.md
+[practice]: practice.md
 [ocr]: ocr.md
 [helpers]: install.md#optional-helpers

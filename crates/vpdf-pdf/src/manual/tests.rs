@@ -182,7 +182,7 @@ fn private_files_skip_records() -> Result<()> {
 }
 
 #[test]
-fn entries_indent_wrapped_descriptions() -> Result<()> {
+fn entries_join_wrapped_descriptions() -> Result<()> {
   let description = "Edit the PDF in this tab. ".repeat(160);
   let chapter = Chapter {
     id: "ex.edit".into(),
@@ -206,25 +206,31 @@ fn entries_indent_wrapped_descriptions() -> Result<()> {
   let handle = crate::document::Handle::open(document.path(), "")?;
   let mut rendered = String::new();
   let mut links = 0;
+  let mut prose_end = None;
   for index in 1..handle.native.page_count()? {
     for line in &handle.text(crate::text::PageId(index as usize))?.lines {
       let Some(first) = line.glyphs.first() else { continue };
       let text: String = line.glyphs.iter().map(|glyph| glyph.ch).collect();
-      let expected =
-        if text.starts_with(":e[dit]") { 48.0 } else { 48.0 + 24.0 * 6.6226 };
+      let expected = if text.starts_with("Available in") { 60.0 } else { 48.0 };
       assert!((first.bounds.x0 - expected).abs() < 1.0, "{text}");
+      if text.len() > 60 && prose_end.is_none() {
+        prose_end = line.glyphs.last().map(|glyph| glyph.bounds.x1);
+      }
       rendered.push_str(&text);
       rendered.push(' ');
     }
     links += handle.native.load_page(index)?.links()?.count();
   }
-  assert!(rendered.starts_with(":e[dit] <file>"));
+  assert!(rendered.starts_with(":e[dit] <file>  Edit the PDF in this tab."));
+  assert!(rendered.contains(":help introduction"));
+  assert!(!rendered.contains("See |"));
   assert!(rendered.contains("Available in document views."));
+  assert!((prose_end.unwrap() - 564.0).abs() < 2.5);
   assert!(!rendered.contains("== :edit =="));
   assert!(!rendered.contains("Read:"));
   let flat = rendered.split_whitespace().collect::<String>();
   assert!(flat.contains(&description.split_whitespace().collect::<String>()));
-  assert_eq!(links, 2);
+  assert_eq!(links, 1);
   assert!(document.topics.contains_key("ex.edit.details"));
   Ok(())
 }
@@ -263,5 +269,45 @@ fn section_destination_includes_unlisted_opening() -> Result<()> {
   assert_eq!(section.down.len(), 1);
   assert_eq!(section.down[0].title, "Listed entry");
   assert_eq!(document.topics["unlisted"], document.topics["unlisted.alias"]);
+  Ok(())
+}
+
+#[test]
+fn entries_preserve_literal_keys_and_links() -> Result<()> {
+  let chapter = Chapter {
+    id: "intro".into(),
+    title: "Literal keys".into(),
+    related: "introduction".into(),
+    related_title: "Introduction".into(),
+    section: None,
+    listed: true,
+    aliases: Vec::new(),
+    links: vec![("Self".into(), "intro".into())],
+    anchors: BTreeMap::new(),
+    lines: vec![
+      Line::Binding {
+        keys: "`{mark}".into(),
+        description: "Jump to the saved glyph.".into(),
+      },
+      "The view follows the saved position.".into(),
+    ],
+  };
+  let document = compose(&base()?, &[chapter], || true)?;
+  let native = PdfDocument::open(document.path())?;
+  let page = native.load_page(1)?;
+  let text = page.to_text_page(mupdf::TextPageFlags::empty())?.to_text()?;
+  assert!(text.contains("`{mark}  Jump to the saved glyph."), "{text}");
+  assert!(text.contains("The view follows the saved position."));
+  assert!(!text.contains("See |"));
+  let links: Vec<_> = page.links()?.collect();
+  assert_eq!(links.len(), 2);
+  assert_ne!(links[0].dest, links[1].dest);
+  for link in &links {
+    assert!(link.bounds.width() < 160.0, "{link:?}");
+  }
+  assert!(
+    links[0].bounds.x1 <= links[1].bounds.x0
+      || links[1].bounds.y0 > links[0].bounds.y0
+  );
   Ok(())
 }

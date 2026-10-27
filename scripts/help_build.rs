@@ -10,6 +10,10 @@ pub fn prepare() {
   .expect("Write help facts");
   println!("cargo::rerun-if-env-changed=CARGO_TARGET_DIR");
   println!("cargo::rerun-if-changed=docs/users");
+  println!("cargo::rerun-if-changed=docs/assets");
+  println!("cargo::rerun-if-changed=docs/licenses");
+  println!("cargo::rerun-if-changed=LICENSE");
+  println!("cargo::rerun-if-changed=LICENSE-AGPL");
   let result = Command::new("python3")
     .args(["-B", "scripts/help_assets.py", "--check", "--facts"])
     .arg(facts)

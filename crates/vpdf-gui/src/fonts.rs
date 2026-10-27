@@ -27,10 +27,23 @@ pub fn screen(
 }
 
 pub fn install(ctx: &egui::Context) {
-  let fonts = egui::FontDefinitions::default();
+  let fonts = bundled();
   #[cfg(target_os = "macos")]
   let fonts = installed(fonts);
   ctx.set_fonts(fonts);
+}
+
+fn bundled() -> egui::FontDefinitions {
+  let mut fonts = egui::FontDefinitions::default();
+  fonts.font_data.insert(
+    "vpdf-mono".into(),
+    egui::FontData::from_static(include_bytes!("../../ui/assets/VpdfMono.ttf"))
+      .into(),
+  );
+  for family in [egui::FontFamily::Monospace, egui::FontFamily::Proportional] {
+    fonts.families.entry(family).or_default().insert(0, "vpdf-mono".into());
+  }
+  fonts
 }
 
 #[cfg(target_os = "macos")]
@@ -74,6 +87,39 @@ fn data(handle: font_kit::handle::Handle) -> Option<egui::FontData> {
     Handle::Memory { bytes, font_index } => {
       Some(egui::FontData::from_blob(bytes, font_index))
     }
+  }
+}
+
+#[cfg(test)]
+mod bundled_tests {
+  use super::*;
+
+  #[test]
+  fn narrow_font_covers_symbols() {
+    let ctx = egui::Context::default();
+    ctx.set_fonts(bundled());
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+      ui.fonts_mut(|fonts| {
+        for family in
+          [egui::FontFamily::Monospace, egui::FontFamily::Proportional]
+        {
+          let font = egui::FontId::new(16.0, family);
+          assert!(fonts.has_glyphs(
+            &font,
+            "café Ελληνικά → ≤ ▣ § ▤ ¶ ⌕ ↗ ✎ ‗ ▇    \u{e0b0} \u{f0001}"
+          ));
+          let cell = fonts.glyph_width(&font, 'm');
+          assert!((cell - 8.0).abs() < 0.1, "{cell}");
+          assert!(
+            "imW0 ."
+              .chars()
+              .map(|ch| fonts.glyph_width(&font, ch))
+              .all(|width| (width - cell).abs() < 0.01)
+          );
+        }
+      });
+    });
+    output.textures_delta.clear();
   }
 }
 
@@ -152,6 +198,7 @@ mod tests {
   #[test]
   fn fallback_covers_cjk() {
     let ctx = egui::Context::default();
+    ctx.set_fonts(bundled());
     let font = egui::FontId::monospace(FONT_SIZE);
     let mut baseline = None;
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {

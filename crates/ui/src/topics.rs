@@ -127,7 +127,7 @@ pub fn authored() -> Vec<Topic> {
     ("introduction", "Vpdf user manual", &["intro", "help", "helphelp"][..]),
     ("first-session", "First session", &["tutorial"][..]),
     ("navigation", "Navigation", &["reading"][..]),
-    ("sample", "Practice text", &[][..]),
+    ("practice", "Practice text", &["sample"][..]),
     ("search", "Search", &["searching"][..]),
     ("panes", "Tabs and panes", &["windows", "splits"][..]),
     (

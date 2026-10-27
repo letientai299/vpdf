@@ -7,7 +7,7 @@ The [user manual][manual] is the starting point on GitHub and the first page of
 bare `:help`. Read its chapters in order, from the first reading exercise to
 setup and command reference. Every chapter under `users/` is included in the
 built-in manual, followed by generated action, configuration, and command
-entries. The [chapter order][book] defines the sequence.
+entries. The [chapter order][contents] defines the sequence.
 
 See [Demos][demo] for demonstrations on real documents.
 
@@ -84,6 +84,6 @@ sources][manual] under `users/`. Avoid copying inventories into Markdown.
 [licensing]: users/install.md#licensing
 [performance]: users/status.md#performance-display
 [configuration]: users/config.md
-[book]: ../scripts/help/book.json
+[contents]: ../scripts/help/contents.json
 [native]: dev/native.md
 [demo-media]: dev/demo-media.md

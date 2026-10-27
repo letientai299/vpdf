@@ -20,7 +20,7 @@ app="$staged/image/Vpdf.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 install -m 755 "$binary" "$app/Contents/MacOS/vpdf-gui"
 cp LICENSE LICENSE-AGPL "$app/Contents/Resources/"
-cp "$help_assets/font-notices.txt" "$app/Contents/Resources/"
+cp "$help_assets/third-party-notices.txt" "$app/Contents/Resources/"
 cp docs/assets/vpdf.icns "$app/Contents/Resources/Vpdf.icns"
 version=$(cargo metadata --locked --no-deps --format-version 1 |
   python3 -c '

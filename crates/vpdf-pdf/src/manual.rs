@@ -94,7 +94,9 @@ impl Document {
       .anchors
       .iter()
       .filter(|anchor| {
-        anchor.name.is_none() && position(&anchor.target).0 == page.0
+        anchor.name.is_none()
+          && position(&anchor.target).0 == page.0
+          && position(&anchor.target).1 <= 48.0
       })
       .min_by(|a, b| position(&a.target).1.total_cmp(&position(&b.target).1));
     let boundary = |anchor: &Anchor| {
@@ -144,7 +146,7 @@ fn compose(
   ensure!(ready(), "Help generation canceled");
   let mut native = PdfDocument::from_copied_bytes(base)?;
   style::authored(&native, palette)?;
-  sample_note(&native)?;
+  practice_note(&native)?;
   let mut outlines = native.outlines()?;
   let notices = take_notices(&mut native, &mut outlines)?;
   let mut names = destinations::read(&native)?;
@@ -157,15 +159,13 @@ fn compose(
     if let Some(section) = chapter.section
       && !references.contains_key(&section)
     {
-      writer.flush()?;
-      let (page, _) = writer.position()?;
-      references.insert(
-        section,
-        destinations::outline(section.title(), page, Vec::new()),
-      );
+      let (page, y) = writer.section(5)?;
+      references
+        .insert(section, destinations::outline_at(section.title(), page, y));
       writer.heading(section.title())?;
     }
-    let (page, y) = writer.section()?;
+    let entry = matches!(chapter.lines.first(), Some(Line::Binding { .. }));
+    let (page, y) = writer.section(if entry { 3 } else { 5 })?;
     ensure!(!names.contains_key(&chapter.id), "Duplicate help destination");
     if let Some(section) = chapter.section
       && chapter.listed
@@ -179,17 +179,16 @@ fn compose(
       .get(&chapter.related)
       .ok_or_else(|| anyhow::anyhow!("Missing help teaching destination"))?
       .clone();
-    let entry = matches!(chapter.lines.first(), Some(Line::Binding { .. }));
     if !entry {
       writer.heading(&chapter.title)?;
       writer.line(&format!("Read: {}", chapter.related_title))?;
-      writer.link(related.clone());
+      writer.link(related);
     }
     ensure!(
       chapter.anchors.keys().all(|&index| index < chapter.lines.len()),
       "Invalid help anchor line"
     );
-    for (index, line) in chapter.lines.iter().enumerate() {
+    for (index, line) in reference_lines(chapter) {
       ensure!(ready(), "Help generation canceled");
       if let Some(anchor) = chapter.anchors.get(&index) {
         ensure!(
@@ -208,19 +207,19 @@ fn compose(
         ));
         anchored.push((name, page, y));
       }
-      writer.reference_line(line, entry)?;
-    }
-    if entry {
-      writer.description(&format!("See |{}|.", chapter.related_title))?;
-      writer.link(related);
-    }
-    for (label, target) in &chapter.links {
-      if entry {
-        writer.description(&format!("See |{label}|."))?;
+      if let Line::Binding { keys, description } = &line {
+        let tags =
+          if index == 0 { reference_tags(chapter) } else { Vec::new() };
+        writer.entry(keys, description, &tags)?;
       } else {
-        writer.line(label)?;
+        writer.reference_line(&line, entry)?;
       }
-      writer.named_link(target.clone());
+    }
+    if !entry {
+      for (label, target) in &chapter.links {
+        writer.line(label)?;
+        writer.named_link(target.clone());
+      }
     }
     writer.line("")?;
     locations.push((chapter.id.clone(), None, chapter.id.clone()));
@@ -237,6 +236,32 @@ fn compose(
   destinations::resolve(&native, &names)?;
   native.set_outlines(&outlines)?;
   finish(&native, &names, locations, ready)
+}
+
+fn reference_lines(chapter: &Chapter) -> Vec<(usize, Line)> {
+  let mut lines: Vec<(usize, Line)> = Vec::new();
+  for (index, line) in chapter.lines.iter().enumerate() {
+    if !chapter.anchors.contains_key(&index)
+      && let Line::Text(text) = line
+      && let Some((_, Line::Binding { description, .. })) = lines.last_mut()
+    {
+      description.push(' ');
+      description.push_str(text);
+      continue;
+    }
+    lines.push((index, line.clone()));
+  }
+  lines
+}
+
+fn reference_tags(chapter: &Chapter) -> Vec<String> {
+  let mut tags = vec![chapter.related.clone()];
+  for (_, target) in &chapter.links {
+    if !tags.contains(target) {
+      tags.push(target.clone());
+    }
+  }
+  tags
 }
 
 fn finish(
@@ -256,7 +281,9 @@ fn finish(
   ensure!(ready(), "Help generation canceled");
   let mut file =
     tempfile::Builder::new().prefix("vpdf-help-").suffix(".pdf").tempfile()?;
-  native.write_to(file.as_file_mut())?;
+  let mut options = mupdf::pdf::PdfWriteOptions::default();
+  options.set_compress(true).set_compress_fonts(true).set_garbage_level(3);
+  native.write_to_with_options(file.as_file_mut(), options)?;
   ensure!(ready(), "Help generation canceled");
   let private = crate::content_cache::Private::new(file.path())?;
   let anchors = locations
@@ -280,7 +307,7 @@ fn append_notices(
     for notice in notices {
       native.insert_page(native.page_count()?, &notice)?;
     }
-    outlines.push(destinations::outline("Font notices", page, Vec::new()));
+    outlines.push(destinations::outline("Legal notices", page, Vec::new()));
   }
   Ok(())
 }
@@ -291,7 +318,7 @@ fn take_notices(
 ) -> Result<Vec<mupdf::pdf::PdfObject>> {
   let appendix = outlines
     .iter()
-    .position(|row| row.title == "Font notices")
+    .position(|row| row.title == "Legal notices")
     .and_then(|index| outlines.remove(index).dest)
     .map(|dest| dest.loc.page_number as i32);
   let mut notices = Vec::new();
@@ -306,13 +333,17 @@ fn take_notices(
   Ok(notices)
 }
 
-fn sample_note(native: &mupdf::pdf::PdfDocument) -> Result<()> {
-  let Some(target) = native.resolve_link("#nameddest=sample")? else {
+fn practice_note(native: &mupdf::pdf::PdfDocument) -> Result<()> {
+  let Some(target) = native.resolve_link("#nameddest=practice")? else {
     return Ok(());
   };
   let mut page = native.load_pdf_page(target.loc.page_number as i32)?;
+  let y = match target.kind {
+    mupdf::DestinationKind::XYZ { top, .. } => top.unwrap_or(48.0),
+    _ => 48.0,
+  };
   let mut note = page.create_annotation(mupdf::pdf::PdfAnnotationType::Text)?;
-  note.set_rect(mupdf::Rect::new(564.0, 80.0, 584.0, 100.0))?;
+  note.set_rect(mupdf::Rect::new(564.0, y, 584.0, y + 20.0))?;
   note
     .set_contents("Notes explain passages without changing your source PDF.")?;
   note.set_author("Vpdf")?;

@@ -12,6 +12,7 @@ impl<S: TextSource + Pages> View<'_, S> {
     bar: &mut crate::scrollbar::Bar,
   ) -> Result<()> {
     let landed = self.target.filter(|&target| self.matches_landing(target));
+    let aimed = landed.and_then(|_| self.landing.aimed().cloned());
     let anchor = self
       .layout
       .anchor_at((self.layout.screen().width() / 2.0, 0.0), self.reader.scroll);
@@ -33,6 +34,9 @@ impl<S: TextSource + Pages> View<'_, S> {
     bar.reflow(scrolled, self.reader.scroll);
     if let Some(target) = landed {
       self.landing.record(self.landed_view(target));
+      if let Some(aimed) = aimed {
+        self.landing.aim(aimed);
+      }
     }
     Ok(())
   }

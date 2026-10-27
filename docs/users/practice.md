@@ -1,6 +1,6 @@
 # Practice text
 
-<!-- help-topic:sample -->
+<!-- help-topic:practice -->
 
 Select this sentence to try text selection. Search for navigation to find
 another chapter. Characters remain text: café, naïve, Ελληνικά, →, ≤.

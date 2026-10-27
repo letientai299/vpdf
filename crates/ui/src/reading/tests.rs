@@ -696,6 +696,12 @@ fn resize_preserves_landing_after_completed_reflow() -> Result<()> {
     fixture.frame.pane.text = text;
     let position = Position { line: 5, ..Position::default() };
     fixture.view().land_at(position)?;
+    let target = vpdf_model::document::Target::Point {
+      page: position.page,
+      x: 10.0,
+      y: 100.0,
+    };
+    fixture.landing.aim(target.clone());
     let before = fixture.view().landed_view(position);
     let deadline = fixture.landing.deadline();
     fixture.animation.start(200.0, Instant::now());
@@ -708,6 +714,7 @@ fn resize_preserves_landing_after_completed_reflow() -> Result<()> {
     assert_eq!(fixture.layout.screen().columns, 8);
     assert_eq!(fixture.animation.active(), fail);
     assert_eq!(fixture.landing.deadline(), deadline);
+    assert_eq!(fixture.landing.aimed(), Some(&target));
     if fail {
       assert!(fixture.landing.matches(before));
     } else {

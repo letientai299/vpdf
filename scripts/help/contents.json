@@ -1,8 +1,8 @@
 {
-  "chapters": [
+  "sections": [
     "readme.md",
     "intro.md",
-    "sample.md",
+    "practice.md",
     "keys.md",
     "nav.md",
     "zoom.md",

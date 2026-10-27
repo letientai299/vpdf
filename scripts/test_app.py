@@ -144,8 +144,12 @@ class AppTests(unittest.TestCase):
         self.assertTrue(lines[0].startswith("Vpdf:"))
         self.assertTrue(lines[-1].startswith("vpdf-gui "))
         self.assertRegex(version, r"(?m)^Help assets: [0-9a-f]{64}$")
-        notices = (app / "Contents/Resources/font-notices.txt").read_text()
+        notices = (
+            app / "Contents/Resources/third-party-notices.txt"
+        ).read_text()
         for path in (ROOT / "scripts/help/notices").glob("*.txt"):
+            self.assertIn(path.read_text(), notices)
+        for path in (ROOT / "docs/licenses").glob("*.txt"):
             self.assertIn(path.read_text(), notices)
         metadata = json.loads(
             subprocess.check_output(

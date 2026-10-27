@@ -205,7 +205,7 @@ SCENES = {
         2,
         ["paper"],
         [
-            ("text", ":help sample\r"),
+            ("text", ":help practice\r"),
             ("wait", "Help"),
             ("text", "ga"),
             ("wait", "ANNOTATIONS"),
@@ -240,7 +240,7 @@ SCENES["zoom"] = (
     2,
     ["paper"],
     [
-        ("text", ":help sample\r"),
+        ("text", ":help practice\r"),
         ("wait", "Help"),
         ("text", ":vsplit\r"),
         ("text", "zc=+zr"),
@@ -254,7 +254,7 @@ for theme in ("dark", "light", "nord"):
         2,
         ["paper"],
         [
-            ("text", ":help sample\r"),
+            ("text", ":help practice\r"),
             ("wait", "Help"),
             ("text", ":theme " + theme + "\r"),
             ("pause", 2),

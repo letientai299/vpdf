@@ -323,6 +323,9 @@ later. It does not change the configuration file or saved state.
 
 ### Native UI text size
 
+The native app bundles a narrow monospace font with Nerd Font symbols. Help
+uses the same typeface; no font installation is needed.
+
 Set `appearance.ui_font_size` in the configuration file, then run
 `:config reload`. The generated configuration reference lists its default.
 This changes native interface text and its hit targets independently of PDF

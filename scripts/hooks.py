@@ -215,8 +215,14 @@ def select_tests(paths, packages):
     owners, tasks, reasons = set(), set(), []
     folders = sorted(packages, key=len, reverse=True)
     for name in paths:
-        if name.startswith(("docs/users/", "scripts/help/")) or name in {
+        if name.startswith("docs/assets/"):
+            tasks.add("test:help")
+        if name.startswith(
+            ("docs/users/", "docs/licenses/", "scripts/help/")
+        ) or name in {
             "scripts/help_assets.py",
+            "scripts/help_markdown.py",
+            "scripts/help_font.py",
             "scripts/help_build.rs",
         }:
             tasks.add("test:help")

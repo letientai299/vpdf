@@ -123,14 +123,20 @@ fn refresh_retains_view_anchor() -> crate::Result<()> {
   let mut runtime = Runtime::default();
   let mut reference = snapshot();
   let first = request(&mut runtime, &reference, "half_down")?;
-  for topic in ["introduction", "first-session", "navigation", "sample"] {
+  for topic in ["introduction", "first-session", "navigation", "practice"] {
     let target = &first.document.topics[topic];
     let page = PageId(page(target));
     let y = match target {
       Target::Point { y, .. } => *y,
       _ => 0.0,
     };
-    for y in [0.0, y, y + 5.0] {
+    if y > 48.0 {
+      assert_ne!(
+        Location::at(&first.document, page, 0.0).unwrap().id().as_str(),
+        topic
+      );
+    }
+    for y in [y, y + 5.0] {
       let location = Location::at(&first.document, page, y).unwrap();
       assert_eq!(location.id().as_str(), topic);
     }
@@ -353,7 +359,7 @@ fn reload_keeps_builtin_defaults() -> crate::Result<()> {
 }
 
 #[test]
-fn sample_note_refreshes() -> crate::Result<()> {
+fn practice_note_refreshes() -> crate::Result<()> {
   let mut runtime = Runtime::default();
   let mut reference = snapshot();
   for theme in ["light", "dark", "light"] {
@@ -366,7 +372,7 @@ fn sample_note_refreshes() -> crate::Result<()> {
       .effective = theme.into();
     reference.configuration.palette =
       vpdf_model::theme::Theme::parse(theme).unwrap().palette();
-    let ready = request(&mut runtime, &reference, "sample")?;
+    let ready = request(&mut runtime, &reference, "practice")?;
     let native = PdfDocument::open(ready.document.path())?;
     let notes: Vec<_> = native
       .load_pdf_page(page(&ready.target) as i32)?
@@ -387,7 +393,7 @@ fn custom_commands_are_not_documented() -> crate::Result<()> {
   let file = tempfile::NamedTempFile::new()?;
   std::fs::write(
     file.path(),
-    "[keybindings.normal]\nQ = { command = 'help sample' }\n",
+    "[keybindings.normal]\nQ = { command = 'help practice' }\n",
   )?;
   let loaded =
     crate::config::Options { config: Some(file.path().into()) }.load();
@@ -402,7 +408,7 @@ fn custom_commands_are_not_documented() -> crate::Result<()> {
     !ready
       .document
       .topics
-      .contains_key(&Target::Command("help sample".into()).topic())
+      .contains_key(&Target::Command("help practice".into()).topic())
   );
   assert!(
     !ready.document.topics.keys().any(|name| name.ends_with(".dispatch"))
@@ -411,7 +417,9 @@ fn custom_commands_are_not_documented() -> crate::Result<()> {
 }
 
 #[test]
-fn font_notices_include_license() -> crate::Result<()> {
+fn legal_notices_link_licenses() -> crate::Result<()> {
+  assert!(NOTICES.contains("SIL OPEN FONT LICENSE"));
+  assert!(NOTICES.contains("GNU AFFERO GENERAL PUBLIC LICENSE"));
   let ready = request(&mut Runtime::default(), &snapshot(), "config")?;
   for native in [
     PdfDocument::from_copied_bytes(PDF)?,
@@ -419,13 +427,13 @@ fn font_notices_include_license() -> crate::Result<()> {
   ] {
     let outlines = native.outlines()?;
     let notices = outlines.last().unwrap();
-    assert_eq!(notices.title, "Font notices");
+    assert_eq!(notices.title, "Legal notices");
     let start = notices.dest.unwrap().loc.page_number as i32;
     let first = native
       .load_page(start)?
       .to_text_page(TextPageFlags::empty())?
       .to_text()?;
-    for needle in ["Font notices", "SIL OPEN FONT LICENSE"] {
+    for needle in ["Legal notices", "SIL Open Font License"] {
       assert!(first.contains(needle), "Missing {needle}: {first}");
     }
     for index in start..native.page_count()? {
@@ -433,7 +441,8 @@ fn font_notices_include_license() -> crate::Result<()> {
         .load_page(index)?
         .to_text_page(TextPageFlags::empty())?
         .to_text()?;
-      assert!(!text.trim().is_empty(), "Empty font notice page: {index}");
+      assert!(!text.trim().is_empty(), "Empty legal notice page: {index}");
+      assert!(!text.contains("GNU AFFERO GENERAL PUBLIC LICENSE"));
     }
   }
   Ok(())
@@ -477,7 +486,7 @@ fn fixed_colors_and_monospace() -> crate::Result<()> {
         let (_, font) = font?;
         let name = font.get_dict("BaseFont")?.unwrap().as_name()?;
         let name = String::from_utf8(name)?;
-        assert!(name.replace(' ', "").contains("DejaVuSansMono"), "{name}");
+        assert!(name.replace(' ', "").contains("VpdfMono"), "{name}");
       }
     }
     let rendered = text(&ready.document, "half_down")?;
@@ -487,7 +496,7 @@ fn fixed_colors_and_monospace() -> crate::Result<()> {
     previous = Some(rendered);
     let outlines = native.outlines()?;
     let appendix = outlines.last().unwrap();
-    assert_eq!(appendix.title, "Font notices");
+    assert_eq!(appendix.title, "Legal notices");
     assert!(
       appendix.dest.unwrap().loc.page_number > page(&ready.target) as u32
     );
@@ -607,12 +616,6 @@ fn command_colors_match_semantics() -> crate::Result<()> {
       .unwrap()
       .effective = theme.name().into();
     reference.configuration.palette = theme.palette();
-    let guide = vpdf_ui::topics::authored()
-      .into_iter()
-      .find(|topic| topic.id.as_str() == "zoom")
-      .unwrap()
-      .title;
-    let guide = format!("|{guide}|");
     let ready = request(&mut Runtime::default(), &reference, "ex.cursorline")?;
     let native = PdfDocument::open(ready.document.path())?;
     let palette = palette();
@@ -621,7 +624,7 @@ fn command_colors_match_semantics() -> crate::Result<()> {
       ("ex.tabprevious", ":tabN", palette.highlight),
       ("ex.cursorline", "[on|off]", palette.r#match),
       ("ex.cursorline", "default on", palette.r#match),
-      ("ex.cursorline", guide.as_str(), palette.link),
+      ("ex.cursorline", ":help zoom", palette.link),
     ] {
       let glyphs =
         colored_glyphs(&native, page(&ready.document.topics[topic]))?;
@@ -642,6 +645,22 @@ fn command_colors_match_semantics() -> crate::Result<()> {
     }
   }
   Ok(())
+}
+
+#[test]
+fn toml_examples_are_highlighted() -> crate::Result<()> {
+  let native = PdfDocument::from_copied_bytes(PDF)?;
+  for page in 0..native.page_count()? {
+    let glyphs = colored_glyphs(&native, page as usize)?;
+    let text: String = glyphs.iter().map(|(ch, _)| ch).collect();
+    let Some(at) = text.find("cursorline = false") else { continue };
+    let start = text[..at].chars().count();
+    let key = glyphs[start].1;
+    let value = glyphs[start + "cursorline = ".len()].1;
+    assert_ne!(key, value);
+    return Ok(());
+  }
+  anyhow::bail!("Missing TOML help example")
 }
 
 fn colored_glyphs(
@@ -715,7 +734,7 @@ fn hint_labels_share_destination() -> crate::Result<()> {
   let rendered = text(&ready.document, &first)?;
   assert!(rendered.contains("{label}"), "{rendered}");
   assert!(!rendered.contains("hint type; character:"), "{rendered}");
-  assert!(rendered.contains("|Links and notes|"), "{rendered}");
+  assert!(rendered.contains(":help links"), "{rendered}");
   for character in 'a'..='z' {
     let topic = BindingTarget::Hint(HintAction::Type { character }).topic();
     assert_eq!(ready.document.topics[&first], ready.document.topics[&topic]);

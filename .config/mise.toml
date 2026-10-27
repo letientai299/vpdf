@@ -6,6 +6,7 @@ ruff = "0.17.1"
 rumdl = "0.3.0"
 taplo = "0.10.0"
 typst = "0.15.1"
+"aqua:jgm/pandoc" = "3.13"
 upx = { version = "5.2.1", os = ["linux"] }
 
 [vars]
@@ -153,6 +154,7 @@ run = "python3 -B scripts/build_worker.py test:help"
 hide = true
 depends = ["help:build"]
 run = [
+  "python3 -B scripts/licenses.py --check",
   "python3 -B -m unittest discover -s scripts -p test_help_assets.py",
   "python3 -B scripts/help_assets.py --check --verify-pdf",
   "cargo nextest run --locked -p vpdf -p vpdf-pdf -E 'test(manual::)'",
@@ -455,7 +457,10 @@ run = "python3 -B -m unittest discover -s benches/live -p 'test_*.py'"
 [tasks."test:help-assets"]
 hide = true
 description = "Test help invalidation and atomic publication"
-run = "python3 -B -m unittest discover -s scripts -p test_help_assets.py"
+run = [
+  "python3 -B scripts/licenses.py --check",
+  "python3 -B -m unittest discover -s scripts -p test_help_assets.py",
+]
 
 [tasks."test:display"]
 description = "Verify macOS display notifications on the main thread"

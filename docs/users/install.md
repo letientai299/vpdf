@@ -190,6 +190,11 @@ The base14 fonts inside MuPDF retain their upstream licenses. Consult [the
 manifest][manifest] and [lockfile][lockfile] when identifying the dependencies
 used in a particular build.
 
+The help PDF and native interface bundle an Iosevka-derived font under the SIL
+Open Font License, with Nerd Fonts icon attributions. Short notices and license
+links appear at the end of help. Full notices accompany the binaries and the
+macOS app's resources.
+
 [homebrew]: https://brew.sh/
 [mise]: https://mise.jdx.dev/
 [development]: https://github.com/letientai299/vpdf/blob/main/docs/dev/dev.md#build-from-source
