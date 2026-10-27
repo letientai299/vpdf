@@ -38,11 +38,13 @@ pub enum Injected {
   Event(Event),
   Drop(PathBuf),
   Step(Step),
+  Native(String),
 }
 
 pub struct Injector {
   receiver: Receiver<Injected>,
   pending: Option<Injected>,
+  native: Option<String>,
   geometry: Option<(Geometry, Instant)>,
 }
 
@@ -53,7 +55,11 @@ enum Geometry {
 
 impl Injector {
   fn new(receiver: Receiver<Injected>) -> Self {
-    Self { receiver, pending: None, geometry: None }
+    Self { receiver, pending: None, geometry: None, native: None }
+  }
+
+  pub fn take_native(&mut self) -> Option<String> {
+    self.native.take()
   }
 
   fn ready(&mut self, ctx: &egui::Context, raw: &RawInput) -> bool {
@@ -90,6 +96,11 @@ impl Injector {
     }
     let injected =
       self.pending.take().or_else(|| self.receiver.try_recv().ok())?;
+    if let Injected::Native(command) = injected {
+      self.native = Some(command);
+      ctx.request_repaint();
+      return None;
+    }
     if burst(&injected) {
       apply_injected(injected, ctx, raw);
       for _ in 1..256 {
@@ -135,6 +146,7 @@ fn apply_injected(
   raw: &mut RawInput,
 ) -> Option<String> {
   match injected {
+    Injected::Native(_) => None,
     Injected::Event(event) => {
       if let Event::PointerButton { modifiers, .. }
       | Event::MouseWheel { modifiers, .. } = &event
@@ -291,6 +303,9 @@ fn parse(line: &str) -> Option<Injected> {
       return None;
     }
     return Some(Injected::Step(step));
+  }
+  if verb == "native" {
+    return Some(Injected::Native(rest.into()));
   }
   let text = || rest.to_owned();
   let event = match verb {

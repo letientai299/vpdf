@@ -48,6 +48,8 @@ fn set_theme(ctx: &egui::Context, palette: vpdf_model::theme::Palette) {
 
 struct Window {
   #[cfg(target_os = "macos")]
+  native: Option<vpdf_gui::platform::Native>,
+  #[cfg(target_os = "macos")]
   documents: fmv_macos_events::Inbox,
   bridge: Bridge,
   frame: Option<Frame>,
@@ -112,7 +114,23 @@ impl Window {
     if trace.enabled() {
       bridge.send(Input::Observe(true));
     }
+    #[cfg(target_os = "macos")]
+    let native = vpdf_gui::platform::Native::new(cc);
+    let input = input::Adapter::default();
+    #[cfg(target_os = "macos")]
+    let input = {
+      let mut input = input;
+      if native.is_some() {
+        input.reserve(egui::KeyboardShortcut::new(
+          egui::Modifiers::MAC_CMD,
+          egui::Key::O,
+        ));
+      }
+      input
+    };
     Ok(Self {
+      #[cfg(target_os = "macos")]
+      native,
       #[cfg(target_os = "macos")]
       documents,
       bridge,
@@ -121,7 +139,7 @@ impl Window {
         .wgpu_render_state
         .clone()
         .map_or_else(Renderer::default, Renderer::with_gpu),
-      input: input::Adapter::default(),
+      input,
       screen: None,
       system_palette,
       palette,
@@ -132,6 +150,25 @@ impl Window {
       mark: None,
       trace,
     })
+  }
+
+  fn receive_frame(&mut self, ctx: &egui::Context) -> bool {
+    let Some(frame) = self.bridge.take() else { return false };
+    #[cfg(target_os = "macos")]
+    let mut frame = frame;
+    #[cfg(target_os = "macos")]
+    if let Some(native) = &mut self.native {
+      native.update(&frame.ui, std::mem::take(&mut frame.effects));
+    }
+    ctx.send_viewport_cmd(ViewportCommand::Title(frame.title.clone()));
+    if frame.quit {
+      ctx.send_viewport_cmd(ViewportCommand::Close);
+    }
+    if let Some(text) = &frame.clipboard {
+      ctx.copy_text(text.clone());
+    }
+    self.frame = Some(frame);
+    true
   }
 
   fn send_input(&mut self, input: Input) {
@@ -195,20 +232,15 @@ impl eframe::App for Window {
     }
     #[cfg(target_os = "macos")]
     self.receive_documents(&ctx);
-    let mut content = false;
-    let mut received = false;
-    if let Some(frame) = self.bridge.take() {
-      content = frame.content;
-      received = true;
-      ctx.send_viewport_cmd(ViewportCommand::Title(frame.title.clone()));
-      if frame.quit {
-        ctx.send_viewport_cmd(ViewportCommand::Close);
+    #[cfg(target_os = "macos")]
+    if let Some(native) = &self.native {
+      for input in native.drain() {
+        self.bridge.send(input);
       }
-      if let Some(text) = &frame.clipboard {
-        ctx.copy_text(text.clone());
-      }
-      self.frame = Some(frame);
     }
+    let received = self.receive_frame(&ctx);
+    let content =
+      received && self.frame.as_ref().is_some_and(|frame| frame.content);
     if let Some(frame) = &self.frame {
       self.palette = paint::scene_theme(&frame.scene).palette();
       set_theme(&ctx, self.palette);
@@ -272,6 +304,12 @@ impl eframe::App for Window {
   fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
     if let Some(events) = &mut self.events {
       self.mark = events.apply(ctx, raw);
+      #[cfg(target_os = "macos")]
+      if let Some(command) = events.take_native()
+        && let Some(native) = &mut self.native
+      {
+        native.probe(&command);
+      }
     }
   }
 
@@ -280,6 +318,10 @@ impl eframe::App for Window {
     egui::Color32::from_rgb(r, g, b).to_normalized_gamma_f32()
   }
   fn on_exit(&mut self) {
+    #[cfg(target_os = "macos")]
+    if let Some(native) = &mut self.native {
+      native.cancel();
+    }
     if let Err(error) = self.bridge.close() {
       eprintln!("Close failed: {error}");
     }

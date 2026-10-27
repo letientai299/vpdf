@@ -16,11 +16,18 @@ use vpdf_model::scene::{Op, Recorder, Scene};
 use vpdf_model::tile::{TileId, TileOwner};
 use vpdf_pdf::jobs::Wake;
 
+pub mod commands;
+
 const BUDGET: usize = 64 << 20;
 /// Inputs one frame takes beyond the first, so a stream cannot hold it.
 const BATCH: usize = 64;
 
 pub enum Input {
+  Action(commands::Command),
+  Picked {
+    request: commands::RequestId,
+    paths: Vec<PathBuf>,
+  },
   Observe(bool),
   #[cfg(feature = "bench-events")]
   Snapshot,
@@ -177,6 +184,8 @@ impl Resources {
 }
 
 pub struct Frame {
+  pub ui: Arc<commands::Snapshot>,
+  pub effects: Vec<commands::Effect>,
   pub metrics: Metrics,
   pub screen: Screen,
   pub scene: Scene<'static>,
@@ -556,11 +565,31 @@ fn publish(latest: &Mutex<Option<Frame>>, mut frame: Frame) {
   frame.content |= output.as_ref().is_some_and(|previous| previous.content);
   if let Some(previous) = output.as_mut() {
     frame.reloaded.append(&mut previous.reloaded);
+    let mut effects = std::mem::take(&mut previous.effects);
+    effects.append(&mut frame.effects);
+    frame.effects = effects;
   }
   *output = Some(frame);
 }
 
 fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
+  commands::refresh(session);
+  let changed = match input {
+    Input::Action(command) => commands::dispatch(session, command),
+    Input::Picked { request, paths } => {
+      commands::picked(session, request, paths, *screen)
+    }
+    input => apply_reader(session, input, screen),
+  };
+  commands::refresh(session);
+  changed
+}
+
+fn apply_reader(
+  session: &mut Session,
+  input: Input,
+  screen: &mut Screen,
+) -> bool {
   if session.picker.is_some()
     && matches!(
       input,
@@ -910,17 +939,16 @@ fn frame(
       Some(Image { id, pixels: Arc::clone(cache.get(&id)?) })
     })
     .collect();
-  let clipboard = session
-    .panes_mut()
-    .filter_map(|app| app.reader.take_yank())
-    .filter(|yank| crate::clipboard::synced(yank.register))
-    .fold(None, |_, yank| Some(yank.text));
+  let clipboard = take_clipboard(session);
   let cursor = if session.tabs.is_empty() || !vpdf_terminal::terminal::mouse() {
     vpdf_model::style::Shape::Default
   } else {
     session.shape()
   };
+  commands::refresh(session);
   Ok(Frame {
+    ui: Arc::clone(&session.native.snapshot),
+    effects: std::mem::take(&mut session.native.effects),
     metrics: frame_metrics(session, started, cache, &visible),
     screen,
     scene,
@@ -934,6 +962,14 @@ fn frame(
     quit: session.quit,
     clipboard,
   })
+}
+
+fn take_clipboard(session: &mut Session) -> Option<String> {
+  session
+    .panes_mut()
+    .filter_map(|app| app.reader.take_yank())
+    .filter(|yank| crate::clipboard::synced(yank.register))
+    .fold(None, |_, yank| Some(yank.text))
 }
 
 fn frame_metrics(
@@ -1623,6 +1659,8 @@ mod tests {
   #[test]
   fn publish_merges_untaken_frames() {
     let frame = |owner: u32, clipboard: Option<&str>| Frame {
+      ui: Arc::default(),
+      effects: Vec::new(),
       metrics: Metrics::default(),
       screen: sized(),
       scene: Scene::new(),
@@ -3042,6 +3080,107 @@ mod tests {
       wait(&bridge, &wakes, |frame| shows(&frame.scene, warning))?;
       bridge.close()?;
     }
+    Ok(())
+  }
+  #[test]
+  fn native_commands_reject_stale_targets() -> Result<()> {
+    use commands::{Action, Effect};
+    let (_root, path, mut session) = opened(&["one"], sized())?;
+    let (_other, picked) = temp_pdf(&["two"])?;
+    let mut screen = sized();
+    commands::refresh(&mut session);
+    let command = session.native.snapshot.command(Action::Open).unwrap();
+    let old = Arc::clone(&session.native.snapshot);
+    commands::refresh(&mut session);
+    assert!(Arc::ptr_eq(&old, &session.native.snapshot));
+    session.app().document_generation += 1;
+    assert!(!apply(&mut session, Input::Action(command), &mut screen));
+    assert_eq!(session.native.effects, []);
+    let command = session.native.snapshot.command(Action::Open).unwrap();
+    assert!(apply(&mut session, Input::Action(command), &mut screen));
+    assert!(!apply(&mut session, Input::Action(command), &mut screen));
+    let Effect::Open { request } = session.native.effects[0];
+    assert_eq!(session.native.effects.len(), 1);
+    session.app().document_generation += 1;
+    assert!(apply(
+      &mut session,
+      Input::Picked { request, paths: vec![picked] },
+      &mut screen,
+    ));
+    assert_eq!(session.tabs.len(), 1);
+    assert_eq!(session.app().document_identity(), path.canonicalize()?);
+    assert!(session.native.snapshot.command(Action::Open).is_some());
+    Ok(())
+  }
+
+  #[test]
+  fn native_commands_track_focus_epochs() -> Result<()> {
+    use commands::Action;
+    let (_root, _path, mut session) = opened(&["one"], sized())?;
+    let (_other, path) = temp_pdf(&["two"])?;
+    let mut screen = sized();
+    commands::refresh(&mut session);
+    let old = session.native.snapshot.command(Action::Open).unwrap();
+    session.open(&path, true, screen)?;
+    commands::refresh(&mut session);
+    session.activate(0)?;
+    assert!(!apply(&mut session, Input::Action(old), &mut screen));
+    assert_eq!(session.native.effects, []);
+    Ok(())
+  }
+
+  #[test]
+  fn native_panel_completion_is_once() -> Result<()> {
+    use commands::{Action, Effect};
+    let (_root, path) = temp_pdf(&["one"])?;
+    let mut session = native();
+    let mut screen = sized();
+    ensure_home(&mut session, screen);
+    commands::refresh(&mut session);
+    let command = session.native.snapshot.command(Action::Open).unwrap();
+    apply(&mut session, Input::Action(command), &mut screen);
+    let Effect::Open { request } = session.native.effects[0];
+    let source = std::fs::read(&path)?;
+    assert!(apply(
+      &mut session,
+      Input::Picked { request, paths: vec![path.clone()] },
+      &mut screen
+    ));
+    assert!(!apply(
+      &mut session,
+      Input::Picked { request, paths: vec![path.clone()] },
+      &mut screen
+    ));
+    assert_eq!(session.tabs.len(), 1);
+    assert_eq!(std::fs::read(path)?, source);
+    let command = session.native.snapshot.command(Action::Open).unwrap();
+    apply(&mut session, Input::Action(command), &mut screen);
+    let Effect::Open { request } = *session.native.effects.last().unwrap();
+    assert!(apply(
+      &mut session,
+      Input::Picked { request, paths: Vec::new() },
+      &mut screen
+    ));
+    assert!(session.native.snapshot.command(Action::Open).is_some());
+    assert_eq!(session.tabs.len(), 1);
+    Ok(())
+  }
+
+  #[test]
+  fn native_effects_survive_frame_replacement() -> Result<()> {
+    use commands::Action;
+    let (_root, _path, mut session) = opened(&["one"], sized())?;
+    let mut screen = sized();
+    commands::refresh(&mut session);
+    let command = session.native.snapshot.command(Action::Open).unwrap();
+    apply(&mut session, Input::Action(command), &mut screen);
+    let mut cache = Cache::new(BUDGET);
+    let latest = Mutex::new(None);
+    publish(&latest, frame(&mut session, &mut cache, screen)?);
+    publish(&latest, frame(&mut session, &mut cache, screen)?);
+    assert_eq!(latest.lock().unwrap().take().unwrap().effects.len(), 1);
+    publish(&latest, frame(&mut session, &mut cache, screen)?);
+    assert_eq!(latest.lock().unwrap().take().unwrap().effects, []);
     Ok(())
   }
 }

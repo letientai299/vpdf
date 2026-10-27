@@ -11,7 +11,8 @@ ALLOWED = {
     "vpdf-pdf": {"vpdf-model", "vpdf-search"},
     "vpdf-terminal": {"vpdf-model", "vpdf-protocol"},
     "vpdf-ui": {"vpdf-model", "vpdf-reader", "vpdf-search"},
-    "vpdf-gui": {"vpdf", "vpdf-model"},
+    "vpdf-gui": {"vpdf", "vpdf-model", "vpdf-macos"},
+    "vpdf-macos": set(),
     "vpdf": {
         "vpdf-model",
         "vpdf-reader",

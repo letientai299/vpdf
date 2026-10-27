@@ -37,6 +37,7 @@ Maintainer documentation lives under `dev/`.
 | [Packages][packages]           | Package contracts, dependency gates, and focused checks     |
 | [Rendering][rendering]         | Tiles, scheduling, terminal transport, and memory tradeoffs |
 | [Text and search][text]        | Glyph coordinates, normalized search, outlines, and OCR     |
+| [Native integration][native]   | Main-thread menus, sheets, and worker commands              |
 | [Sessions and state][sessions] | Panes, focus, persistence, and live reload                  |
 
 ## Documentation boundaries
@@ -81,3 +82,4 @@ sources][manual] under `users/`. Avoid copying inventories into Markdown.
 [performance]: users/status.md#performance-display
 [configuration]: users/config.md
 [book]: ../scripts/help/book.json
+[native]: dev/native.md

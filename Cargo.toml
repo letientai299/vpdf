@@ -22,6 +22,7 @@ members = [
   "crates/terminal",
   "crates/ui",
   "crates/vpdf-gui",
+  "crates/vpdf-macos",
 ]
 resolver = "3"
 

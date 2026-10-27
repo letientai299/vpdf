@@ -10,17 +10,18 @@ The [dependency policy][policy] defines permitted internal edges. It applies to
 normal, development, build, optional, and platform-specific dependencies.
 External dependencies must preserve each owner's boundary.
 
-| Owner                      | Responsibility                                |
-| -------------------------- | --------------------------------------------- |
-| [Model][model]             | Shared values, geometry, text reconstruction  |
-| [Search][search]           | Indexing, matching, index encoding            |
-| [Reader][reader]           | Motions, selections, registers, jump history  |
-| [Protocol][protocol]       | Terminal input byte decoding                  |
-| [PDF][pdf]                 | Native access, document jobs, content caches  |
-| [Terminal][terminal]       | Terminal lifecycle, input, graphics, spooling |
-| [UI][ui]                   | Bindings, components, layout, theme, scenes   |
-| [Application][application] | Composition, persistence, CLI, OS effects     |
-| [GUI][gui]                 | Native window, event adaptation, textures     |
+| Owner                      | Responsibility                                 |
+| -------------------------- | ---------------------------------------------- |
+| [Model][model]             | Shared values, geometry, text reconstruction   |
+| [Search][search]           | Indexing, matching, index encoding             |
+| [Reader][reader]           | Motions, selections, registers, jump history   |
+| [Protocol][protocol]       | Terminal input byte decoding                   |
+| [PDF][pdf]                 | Native access, document jobs, content caches   |
+| [Terminal][terminal]       | Terminal lifecycle, input, graphics, spooling  |
+| [UI][ui]                   | Bindings, components, layout, theme, scenes    |
+| [Application][application] | Composition, persistence, CLI, OS effects      |
+| [Mac adapter][macos]       | Main-thread AppKit callbacks and window sheets |
+| [GUI][gui]                 | Native window, event adaptation, textures      |
 
 Use the dependency policy for permitted edges and the
 [workspace manifest][workspace] for package names and paths. The application
@@ -28,7 +29,10 @@ connects the owners, consuming normalized input from the selected frontend.
 Import owners directly; do not add application forwarding exports.
 
 MuPDF belongs to PDF and the application; the GUI reaches it through the
-application. GUI libraries belong only to the GUI package. UI and terminal tests
+application. Eframe/Winit libraries belong only to the GUI package.
+The [native adapter][native] contains the audited Objective-C boundary and
+exposes safe callbacks to the GUI. It cannot depend on the reader or PDF.
+UI and terminal tests
 and benchmarks must remain native-free, as must model, search, reader, and
 protocol. Do not introduce a native fixture helper as a development dependency
 there. UI tests and benchmarks also exclude terminal and protocol transport.
@@ -181,3 +185,5 @@ corpus, OCR, and terminal checks when they change.
 [interaction]: ../../src/session/interaction.rs
 [input-values]: ../../crates/vpdf-model/src/input.rs
 [input-adapter]: ../../src/input.rs
+[macos]: ../../crates/vpdf-macos/src/lib.rs
+[native]: native.md

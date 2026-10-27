@@ -27,6 +27,14 @@ set a mark and a quote or backtick followed by `{mark}` to jump. Counts use
 change these entries. Use `:help config` for built-in setting defaults.
 Check your TOML configuration when a key behaves differently from the manual.
 
+## Native Mac opening
+
+In the macOS app, File → Open and Command-O open a window sheet from Home
+or document content. This platform shortcut takes precedence over custom
+bindings. It is disabled during prompts, overlays, and another open request.
+Cancel leaves the document unchanged. Other reader bindings keep their
+configured behavior.
+
 ## Change modes
 
 In Normal, `h`, `j`, `k`, and `l` scroll the viewport. Press `i` to enter

@@ -1,0 +1,43 @@
+[package]
+name = "vpdf-macos"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+
+[features]
+bench-events = ["objc2-app-kit/NSEvent", "objc2-app-kit/NSGraphicsContext"]
+
+# Objective-C callbacks require an audited FFI boundary.
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_qualifications = "deny"
+
+[lints.clippy]
+all = "deny"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.5"
+block2 = "0.6.2"
+raw-window-handle = "0.6"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "block2",
+  "NSApplication",
+  "NSMenu",
+  "NSMenuItem",
+  "NSResponder",
+  "NSWindow",
+  "NSView",
+  "NSOpenPanel",
+  "NSSavePanel",
+  "NSControl",
+  "NSPanel",
+] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "NSObject",
+  "NSString",
+  "NSURL",
+  "NSArray",
+] }

@@ -43,6 +43,7 @@ pub struct Tab {
 /// Kitty image cache.
 #[derive(Default)]
 pub struct Session {
+  native: native::commands::State,
   help: help::Help,
   settings: crate::config::Settings,
   system_palette: vpdf_model::theme::Palette,

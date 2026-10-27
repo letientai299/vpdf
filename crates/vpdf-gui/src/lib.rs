@@ -5,6 +5,8 @@ pub mod fonts;
 pub mod inject;
 pub mod input;
 pub mod paint;
+#[cfg(target_os = "macos")]
+pub mod platform;
 #[cfg(test)]
 #[path = "../../../tests/support/screen.rs"]
 pub mod screen;

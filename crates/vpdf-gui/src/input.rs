@@ -16,6 +16,7 @@ pub struct Preedit {
 
 #[derive(Default)]
 pub struct Adapter {
+  menu: Option<egui::KeyboardShortcut>,
   held: Vec<MouseButton>,
   position: Option<egui::Pos2>,
   wheel: egui::Vec2,
@@ -29,6 +30,9 @@ pub struct Adapter {
 }
 
 impl Adapter {
+  pub fn reserve(&mut self, shortcut: egui::KeyboardShortcut) {
+    self.menu = Some(shortcut);
+  }
   pub fn editing(&mut self, purpose: Option<egui::IMEPurpose>) {
     if self.editing != purpose {
       self.cancel();
@@ -207,6 +211,13 @@ impl Adapter {
         self.cancel();
         self.wheel = egui::Vec2::ZERO;
         output.push(Input::Paste(text.clone()));
+      }
+      Event::Key { key, modifiers: keys, .. }
+        if self.menu.is_some_and(|shortcut| {
+          shortcut.logical_key == *key && keys.matches_exact(shortcut.modifiers)
+        }) =>
+      {
+        *modifiers = *keys;
       }
       Event::Key { key, pressed: true, repeat, modifiers: keys, .. } => {
         *modifiers = *keys;
@@ -860,5 +871,28 @@ mod integration {
     app.paste(text, &mut history)?;
     assert_eq!(app.overlays.prompt().unwrap().text(), "alpha 日本語beta");
     Ok(())
+  }
+  #[test]
+  fn native_open_has_one_route() {
+    let mut adapter = Adapter::default();
+    let mut modifiers = Modifiers::MAC_CMD;
+    let event = Event::Key {
+      key: Key::O,
+      physical_key: None,
+      pressed: true,
+      repeat: false,
+      modifiers,
+    };
+    assert_eq!(adapter.keyboard(&event, &mut modifiers).unwrap().len(), 1);
+    adapter.reserve(egui::KeyboardShortcut::new(Modifiers::MAC_CMD, Key::O));
+    assert!(adapter.keyboard(&event, &mut modifiers).unwrap().is_empty());
+    let event = Event::Key {
+      key: Key::O,
+      physical_key: None,
+      pressed: true,
+      repeat: false,
+      modifiers: Modifiers::CTRL,
+    };
+    assert_eq!(adapter.keyboard(&event, &mut modifiers).unwrap().len(), 1);
   }
 }

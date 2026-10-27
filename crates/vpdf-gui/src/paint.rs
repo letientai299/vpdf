@@ -867,6 +867,8 @@ mod tests {
 
   fn blank(screen: Screen) -> Frame {
     Frame {
+      ui: Arc::default(),
+      effects: Vec::new(),
       metrics: vpdf::session::native::Metrics::default(),
       content: true,
       screen,

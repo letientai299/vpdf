@@ -72,6 +72,8 @@ fn frame(rows: Rows) -> Frame {
     Op::Text(Text::new(status)),
   ]);
   Frame {
+    ui: Arc::default(),
+    effects: Vec::new(),
     metrics: Metrics::default(),
     content: true,
     screen: SCREEN,
