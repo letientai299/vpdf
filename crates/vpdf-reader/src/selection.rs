@@ -63,7 +63,7 @@ impl Reader {
     let range = range(first, last);
     let lines = covered_lines(range, true, source)?;
     let text = reflow(&lines, &context(range, source)?);
-    self.store(op.register, text + "\n")?;
+    self.store(op.register, text)?;
     self.end_selection();
     Ok(())
   }
@@ -97,11 +97,8 @@ impl Reader {
     source: &mut impl TextSource,
   ) -> Result<()> {
     let lines = covered_lines(range(first, last), linewise, source)?;
-    let mut output =
+    let output =
       lines.into_iter().map(|(_, line)| line).collect::<Vec<_>>().join("\n");
-    if linewise {
-      output.push('\n');
-    }
     self.store(register, output)?;
     self.end_selection();
     Ok(())
@@ -136,7 +133,10 @@ impl Reader {
   }
 
   /// Saves yanked text to `register` and queues clipboard delivery.
-  pub fn store(&mut self, register: char, text: String) -> Result<()> {
+  pub fn store(&mut self, register: char, mut text: String) -> Result<()> {
+    text.truncate(text.trim_end().len());
+    let start = text.len() - text.trim_start().len();
+    text.drain(..start);
     self.save_register(register, &text)?;
     self.message = format!("Yanked {} characters", text.chars().count());
     self.pending_yank = Some(Yank { text, register });

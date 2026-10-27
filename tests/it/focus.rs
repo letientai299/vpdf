@@ -244,8 +244,8 @@ fn yy_joins_prose_and_keeps_code() -> Result<()> {
   let cases = [
     ("paper.pdf", "The dominant sequence", false, "recurrent or convolutional"),
     ("paper.pdf", "The dominant sequence", true, "recurrent or\nconvolutional"),
-    ("book.pdf", ">>> a = 'banana'", false, "'banana'\n>>> b = 'banana'\n"),
-    ("book.pdf", ">>> a = 'banana'", true, "'banana'\n>>> b = 'banana'\n"),
+    ("book.pdf", ">>> a = 'banana'", false, "'banana'\n>>> b = 'banana'"),
+    ("book.pdf", ">>> a = 'banana'", true, "'banana'\n>>> b = 'banana'"),
   ];
   for (name, start, raw, want) in cases {
     let mut doc = vpdf_pdf::document::Document::open(&file(name)?, "")?;

@@ -29,7 +29,7 @@ fn words_operators_and_registers() -> Result<()> {
   assert_eq!(reader.registers.get(&'a').map(|text| &**text), Some("one"));
   reader.yank(1, '"', &mut source)?;
   reader.motion(Motion::Word, 1, false, &mut source)?;
-  assert_eq!(reader.pending_yank.take().unwrap().text, "one ");
+  assert_eq!(reader.pending_yank.take().unwrap().text, "one");
   assert_eq!(reader.cursor.glyph, 0);
   reader.motion(Motion::Word, 1, false, &mut source)?;
   assert_eq!(reader.cursor.glyph, 4);
@@ -96,7 +96,7 @@ fn linewise_yank_and_operator_counts() -> Result<()> {
   reader.yank_lines(2, '"', &mut source)?;
   assert_eq!(
     reader.pending_yank.take().unwrap().text,
-    "one two\n\ncafé Straße\n"
+    "one two\n\ncafé Straße"
   );
   assert_eq!(reader.cursor, Position::default());
   // `Y` in visual mode yanks the selected lines and arms nothing.
@@ -106,29 +106,26 @@ fn linewise_yank_and_operator_counts() -> Result<()> {
   reader.visual(SelectionKind::Line);
   assert_eq!(reader.selection.map(|s| s.anchor), Some(Position::default()));
   reader.yank_lines(1, '"', &mut source)?;
-  assert_eq!(reader.pending_yank.take().unwrap().text, "one two\n");
+  assert_eq!(reader.pending_yank.take().unwrap().text, "one two");
   assert!(reader.operator.is_none());
   reader.yank(1, '"', &mut source)?;
   reader.motion(Motion::Last, 1, false, &mut source)?;
   assert_eq!(
     reader.pending_yank.take().unwrap().text,
-    "one two\ncafé Straße\nlast page\n"
+    "one two\ncafé Straße\nlast page"
   );
   Ok(())
 }
 
 #[test]
-fn reverse_line_selection_has_newline() -> Result<()> {
+fn reverse_selection_trims_whitespace() -> Result<()> {
   let mut source = pages();
   let mut reader = Reader::default();
   reader.cursor.line = 1;
   reader.visual(SelectionKind::Line);
   reader.motion(Motion::Up, 1, false, &mut source)?;
   reader.yank(1, '"', &mut source)?;
-  assert_eq!(
-    reader.pending_yank.take().unwrap().text,
-    "one two\ncafé Straße\n"
-  );
+  assert_eq!(reader.pending_yank.take().unwrap().text, "one two\ncafé Straße");
   Ok(())
 }
 
@@ -186,5 +183,35 @@ fn line_end_counts_and_goal() -> Result<()> {
   );
   assert_eq!(reader.cursor, Position::default());
   assert_eq!(reader.desired, None);
+  Ok(())
+}
+
+#[test]
+fn stored_yanks_trim_whitespace() -> Result<()> {
+  for (input, expected) in [
+    ("  alpha  beta  ", "alpha  beta"),
+    ("\t\r\nalpha\n  beta\n\r\t", "alpha\n  beta"),
+    ("\u{2003}café\u{a0}", "café"),
+    (" \t\r\n", ""),
+    ("", ""),
+  ] {
+    let mut reader = Reader::default();
+    reader.store('a', input.into())?;
+    let yank = reader.pending_yank.take().unwrap();
+    assert_eq!(yank.text, expected);
+    assert_eq!(yank.register, 'a');
+    for register in ['a', '"', '0'] {
+      assert_eq!(reader.registers.get(&register).unwrap().as_ref(), expected);
+    }
+    assert_eq!(
+      reader.message,
+      format!("Yanked {} characters", expected.chars().count())
+    );
+    reader.store('A', "  next \n".into())?;
+    assert_eq!(
+      reader.registers.get(&'a').unwrap().as_ref(),
+      format!("{expected}next")
+    );
+  }
   Ok(())
 }

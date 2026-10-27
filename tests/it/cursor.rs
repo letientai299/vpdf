@@ -51,7 +51,8 @@ fn cursor_entry_positions_visual_ranges() -> Result<()> {
     keys(&mut app, ESC)?;
     assert_eq!(app.reader.mode(), Mode::Cursor);
     keys(&mut app, b"Vy")?;
-    assert!(app.reader.take_yank().unwrap().text.ends_with('\n'));
+    let text = app.reader.take_yank().unwrap().text;
+    assert_eq!(text, text.trim());
     assert_eq!(app.reader.mode(), Mode::Cursor);
     keys(&mut app, ESC)?;
     assert_eq!(app.reader.mode(), Mode::Normal);
@@ -475,9 +476,9 @@ fn rejected_keys_cancel_yanks() -> Result<()> {
 fn search_yank_finishes_at_original_range() -> Result<()> {
   for preview in [false, true] {
     for (start, search, expected) in [
-      (b"i0".as_slice(), b"\"ay/the".as_slice(), "See "),
+      (b"i0".as_slice(), b"\"ay/the".as_slice(), "See"),
       (b"i0$".as_slice(), b"\"ay?the".as_slice(), "the result"),
-      (b"i0".as_slice(), b"\"a2y/the".as_slice(), "See the results\nVisit "),
+      (b"i0".as_slice(), b"\"a2y/the".as_slice(), "See the results\nVisit"),
     ] {
       let (_directory, mut session) = crate::mouse::session(false)?;
       let app = session.app();

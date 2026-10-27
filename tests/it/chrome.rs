@@ -1294,7 +1294,7 @@ fn panel_yank_keeps_named_register() -> Result<()> {
   crate::common::keys(app, b"y")?;
   let yank = app.reader.take_yank().unwrap();
   assert_eq!(yank.register, 'a');
-  assert_eq!(yank.text, "Results\n");
+  assert_eq!(yank.text, "Results");
   assert!(app.reader.operator.is_none());
   assert_eq!(app.keys.pending(), "");
   Ok(())

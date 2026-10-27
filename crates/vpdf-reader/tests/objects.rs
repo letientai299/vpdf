@@ -58,7 +58,7 @@ fn object_words_and_counts() -> Result<()> {
   for (kind, around, count, want) in [
     (Object::Word, false, 1, "beta"),
     (Object::BigWord, false, 1, "α-beta,"),
-    (Object::BigWord, true, 1, "α-beta,  "),
+    (Object::BigWord, true, 1, "α-beta,"),
     (Object::BigWord, false, 3, "α-beta,  next\nlast"),
     (Object::BigWord, false, 4, "α-beta,  next\nlast\npage"),
   ] {
@@ -170,7 +170,7 @@ fn object_quote_delimiter_edges() -> Result<()> {
           false,
           1
         )?,
-        expected
+        expected.trim()
       );
     }
   }
@@ -290,7 +290,7 @@ fn object_copies() -> Result<()> {
       ]),
       &[
         ((0, 1, 3), Paragraph, false, 1, "first\nwrapped"),
-        ((0, 1, 3), Paragraph, true, 1, "first\nwrapped\n"),
+        ((0, 1, 3), Paragraph, true, 1, "first\nwrapped"),
         ((0, 1, 3), Paragraph, false, 2, "first\nwrapped\nsecond\ncontinued"),
         ((2, 0, 2), Paragraph, false, 1, "second\ncontinued"),
       ],
@@ -299,9 +299,9 @@ fn object_copies() -> Result<()> {
       "quotes keep stream context",
       pages(&[&[(r#""hello ", then "world""#, true)]]),
       &[
-        ((0, 0, 0), Double, false, 1, "hello "),
-        ((0, 0, 3), Double, false, 1, "hello "),
-        ((0, 0, 7), Double, false, 1, "hello "),
+        ((0, 0, 0), Double, false, 1, "hello"),
+        ((0, 0, 3), Double, false, 1, "hello"),
+        ((0, 0, 7), Double, false, 1, "hello"),
         ((0, 0, 15), Double, false, 1, "world"),
         ((0, 0, 18), Double, false, 1, "world"),
         ((0, 0, 20), Double, false, 1, "world"),
@@ -311,7 +311,7 @@ fn object_copies() -> Result<()> {
       "quotes wrap across pages",
       pages(&[&[(wrapped, true)], &[], &[(r#"text ", then "next""#, true)]]),
       &[
-        ((2, 0, 5), Double, false, 1, "wrapped\ntext "),
+        ((2, 0, 5), Double, false, 1, "wrapped\ntext"),
         ((2, 0, 5), Double, false, 2, "wrapped\ntext \", then \"next"),
       ],
     ),

@@ -41,7 +41,7 @@ fn object_raw_keys_preserve_normal_and_copy_blocks() -> Result<()> {
     app.go_to(position, true)?;
     let scroll = app.reader.scroll;
     keys(&mut app, b"yip")?;
-    assert_eq!(app.reader.take_yank().unwrap().text, expected.trim_end());
+    assert_eq!(app.reader.take_yank().unwrap().text, expected.trim());
     assert_eq!(app.reader.scroll, scroll);
     assert!(app.reader.selection.is_none() && app.reader.operator.is_none());
     keys(&mut app, b"vip")?;
