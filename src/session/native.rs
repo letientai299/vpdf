@@ -616,11 +616,15 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
       let mut report = vpdf_model::input::Mouse::from(event);
       report.at = vpdf_model::input::Spot::Pixel { x, y };
       if session.tabs.is_empty() {
-        if matches!(
-          event.kind,
-          vpdf_model::input::MouseEventKind::Moved
-            | vpdf_model::input::MouseEventKind::Drag(_)
-        ) {
+        let held = session
+          .home
+          .as_mut()
+          .and_then(|home| home.view.shelf_mut())
+          .is_some_and(|shelf| shelf.dragging());
+        if matches!(event.kind, vpdf_model::input::MouseEventKind::Moved)
+          || matches!(event.kind, vpdf_model::input::MouseEventKind::Drag(_))
+            && !held
+        {
           Ok(false)
         } else {
           home_event(session, vpdf_model::input::Event::Mouse(report), *screen)
@@ -675,12 +679,15 @@ fn quit_when_closed(session: &mut Session) {
 
 fn ensure_home(session: &mut Session, screen: Screen) {
   if session.tabs.is_empty() && session.home.is_none() && !session.quit {
-    session.home = Some(Home::new(
-      &session.state.recent,
-      session.content(screen),
-      &session.frontend.wake(),
-      false,
-    ));
+    session.home = Some(
+      Home::new(
+        &session.state.recent,
+        session.content(screen),
+        &session.frontend.wake(),
+        false,
+      )
+      .with_layout(session.state.recent_layout),
+    );
     let resized = session.resize(screen);
     report(session, resized);
   }
@@ -704,7 +711,10 @@ fn home_event(
   let Some(home) = &mut session.home else { return Ok(()) };
   home.configure(&session.settings);
   let invocation = home.view.invocation();
-  match home.native_event(event, &mut session.history)? {
+  let outcome = home.native_event(event, &mut session.history);
+  let preferences = home.view.shelf_mut().unwrap().preferences();
+  session.remember_recent_layout(preferences);
+  match outcome? {
     crate::home::Outcome::Open(path) => {
       session.resume(Operation::Open(path), screen)?;
     }
@@ -2488,6 +2498,39 @@ mod tests {
   }
 
   #[test]
+  fn home_divider_dispatches_drags() -> Result<()> {
+    use vpdf_model::input::MouseButton;
+    let (_root, path) = temp_pdf(&["recent"])?;
+    let mut screen = cells(120, 40);
+    let mut session = native();
+    session.state.recent =
+      vec![crate::state::tests::entry(&path.to_string_lossy(), 0, 0)];
+    session.home =
+      Some(Home::new(&session.state.recent, screen, &Wake::none(), false));
+    session.resize(screen)?;
+    let mut cache = Cache::new(BUDGET);
+    frame(&mut session, &mut cache, screen)?;
+    for (kind, column) in [
+      (MouseEventKind::Down(MouseButton::Left), 89),
+      (MouseEventKind::Drag(MouseButton::Left), 59),
+      (MouseEventKind::Up(MouseButton::Left), 59),
+    ] {
+      let pixels = (column * screen.cell_width + 1, 10 * screen.cell_height);
+      assert!(apply(&mut session, mouse(kind, pixels, screen), &mut screen));
+    }
+    frame(&mut session, &mut cache, screen)?;
+    assert_eq!(
+      session.home.as_mut().unwrap().view.shelf_mut().unwrap().start(),
+      Some(60)
+    );
+    assert_ne!(
+      session.state.recent_layout,
+      vpdf_ui::panel::recent::Preferences::default()
+    );
+    Ok(())
+  }
+
+  #[test]
   fn start_screen_click_opens_the_selected_file() -> Result<()> {
     use vpdf_model::input::MouseButton;
     let (_root, path) = temp_pdf(&["recent"])?;
@@ -2505,6 +2548,13 @@ mod tests {
     ] {
       apply(&mut session, mouse(kind, (32, 20), screen), &mut screen);
     }
+    assert!(session.tabs.is_empty());
+    let y = screen.cell_height * 2 + 4;
+    apply(
+      &mut session,
+      mouse(MouseEventKind::Down(MouseButton::Left), (64, y), screen),
+      &mut screen,
+    );
     assert_eq!(session.tabs.len(), 1);
     assert_eq!(session.app().path, std::fs::canonicalize(path)?);
     assert!(session.home.is_none());
@@ -2761,7 +2811,7 @@ mod tests {
     let mut scene = Recorder::new(|_| false);
     home.scene(&mut scene)?;
     let scene = scene.into_scene();
-    assert!(shows(&scene, "A PDF reader with Vim keys."));
+    assert!(shows(&scene, ":edit <file>"));
     assert!(!shows(&scene, "Remove "));
     Ok(())
   }

@@ -83,7 +83,8 @@ impl Targets<'_> {
           } else {
             Hit::Label(index)
           }
-        } else if panel.shelf().is_some_and(|shelf| shelf.covers(column)) {
+        } else if panel.shelf().is_some_and(|shelf| shelf.contains(column, row))
+        {
           Hit::Card(row)
         } else {
           Hit::Nothing

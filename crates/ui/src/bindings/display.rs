@@ -235,6 +235,25 @@ impl Bindings {
     format!("{shortcut} {about}")
   }
 
+  pub fn resize_hints(&self) -> String {
+    use crate::split::Direction;
+    use crate::window::Window;
+    [
+      (Action::Window(Window::Extend(Direction::Left)), "left"),
+      (Action::Window(Window::Extend(Direction::Down)), "down"),
+      (Action::Window(Window::Extend(Direction::Up)), "up"),
+      (Action::Window(Window::Extend(Direction::Right)), "right"),
+      (Action::Cancel, "done"),
+    ]
+    .into_iter()
+    .map(|(action, about)| {
+      self.hint(Context::Resize, &Target::Reader(action), about)
+    })
+    .filter(|hint| !hint.is_empty())
+    .collect::<Vec<_>>()
+    .join("  ")
+  }
+
   pub fn region_hint(&self, drawing: bool) -> String {
     use vpdf_reader::motion::Motion as M;
     if *self == Self::default() {

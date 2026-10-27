@@ -199,7 +199,7 @@ fn recent_pick_opens_in_covered_pane() -> Result<()> {
     if click {
       session.draw_focused(&mut Vec::new())?;
       let app = session.app();
-      let column = app.at.column + 2;
+      let column = app.at.column + 4;
       let row = usize::from(app.at.row) + index
         - app.panel.as_ref().unwrap().view.top();
       send(&mut session, format!("\x1b[<0;{column};{}M", row + 2).as_bytes())?;
@@ -579,6 +579,8 @@ fn outline_row_survives_focus_and_draw() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn narrow_recent_press_restores_cover_geometry() -> Result<()> {
+  use vpdf_model::style::Role;
+  use vpdf_terminal::style::sgr;
   let mut session = session(&file("paper.pdf")?, screen())?;
   let source = session.app().id;
   session.app().command("recent")?;
@@ -599,7 +601,8 @@ fn narrow_recent_press_restores_cover_geometry() -> Result<()> {
     assert!(app.panel.as_ref().unwrap().view.is_recent_view());
     let mut out = Vec::new();
     session.draw_focused(&mut out)?;
-    assert!(String::from_utf8_lossy(&out).contains("Enter open"));
+    let hint = format!("{}Enter{} open", sgr(Role::Key), sgr(Role::Bar));
+    assert!(String::from_utf8_lossy(&out).contains(&hint));
   }
   Ok(())
 }

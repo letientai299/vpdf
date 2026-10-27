@@ -25,6 +25,7 @@ pub enum Destination {
   },
   Link(Target),
   File(PathBuf),
+  Directory(PathBuf),
   /// A global mark, resolved by the session.
   Mark(char),
   None,
@@ -130,7 +131,8 @@ pub struct Panel {
 fn moved_row(old: &[Row], index: usize, new: &[Row]) -> Option<usize> {
   let row = old.get(index)?;
   let same = |other: &Row| {
-    if let (Destination::File(path), Destination::File(other)) =
+    if let (Destination::File(path), Destination::File(other))
+    | (Destination::Directory(path), Destination::Directory(other)) =
       (&row.destination, &other.destination)
     {
       return path == other;

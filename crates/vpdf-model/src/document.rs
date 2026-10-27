@@ -119,11 +119,19 @@ pub struct Facts {
   pub thumb: Option<Thumbnail>,
 }
 
+pub const RECENT_COUNTS: usize = 64;
+
+pub struct CountsRequest {
+  pub generation: u64,
+  pub files: Vec<(PathBuf, Option<usize>)>,
+}
+
 /// Pixel box a thumbnail fits; none without graphics.
 pub type Fit = Option<(u32, u32)>;
 
 /// A recent document whose facts and thumbnail to load.
 pub struct FactsRequest {
+  pub generation: u64,
   pub path: PathBuf,
   pub cursor: Position,
   pub rotation: u16,
@@ -132,6 +140,7 @@ pub struct FactsRequest {
 
 /// Facts loaded for a request's path and fit.
 pub struct LoadedFacts {
+  pub generation: u64,
   pub fit: Fit,
   pub facts: Result<Facts, String>,
 }

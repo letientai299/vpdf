@@ -349,10 +349,20 @@ fn recent_menus_open_rows() -> Result<()> {
   };
   app.show_recent(&[entry])?;
   assert!(app.covered());
-  // Before the card first draws, near the list's right end: 121 columns
-  // leave the card 48.
-  let row = cell(&mut session, Hit::Row(0))?;
-  crate::mouse::right(&mut session, (121 - 48 - 3, row.1))?;
+  let rows = session.app().panel.as_ref().unwrap().view.rows();
+  let source = rows
+    .iter()
+    .position(|row| {
+      matches!(row.destination, vpdf_ui::panel::Destination::File(_))
+    })
+    .unwrap();
+  let row = cell(&mut session, Hit::Row(source))?;
+  let app = session.app();
+  let columns = vpdf_ui::panel::recent::Shelf::list_columns(
+    &app.panel.as_ref().unwrap().view,
+    app.screen.columns,
+  );
+  crate::mouse::right(&mut session, (columns - 3, row.1))?;
   let want = [
     "Open",
     "Open in split",

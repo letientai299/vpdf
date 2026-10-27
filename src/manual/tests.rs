@@ -20,7 +20,10 @@ fn picker_help_describes_frontends() -> crate::Result<()> {
       })
       .collect::<String>();
     assert!(text.contains("system file picker"), "{topic}: {text}");
-    assert!(text.contains("fzf on PATH"), "{topic}: {text}");
+    assert!(text.contains("fzf"), "{topic}: {text}");
+    if id == Id::Open {
+      assert!(text.contains("Tab completion"), "{text}");
+    }
   }
   Ok(())
 }

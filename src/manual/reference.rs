@@ -310,7 +310,7 @@ fn command_chapter(
     Id::Edit | Id::Open | Id::TabEdit => lines.push(
       concat!(
         "No file: choose a PDF with the frontend's picker. ",
-        "Terminal picking requires fzf on PATH. ",
+        "Without fzf, :open starts path entry with Tab completion. ",
         "The native app uses the system file picker. ",
         "Cancel keeps the current view."
       )

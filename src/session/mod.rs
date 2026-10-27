@@ -219,6 +219,44 @@ impl Session {
     }
   }
 
+  fn remember_recent_layout(
+    &mut self,
+    preferences: vpdf_ui::panel::recent::Preferences,
+  ) {
+    if self.state.set_recent_layout(preferences) {
+      self.changed();
+    }
+  }
+
+  fn record_recent_layout(&mut self) {
+    let preferences = self
+      .tabs
+      .get(self.active)
+      .and_then(|tab| tab.panes.get(tab.focus))
+      .and_then(|app| app.panel.as_ref())
+      .and_then(|panel| panel.view.shelf())
+      .map(vpdf_ui::panel::recent::Shelf::preferences);
+    if let Some(preferences) = preferences {
+      self.remember_recent_layout(preferences);
+    }
+  }
+
+  fn show_recent(&mut self) -> Result<()> {
+    let recent = self.state.recent.clone();
+    let preferences = self.state.recent_layout;
+    self.app().show_recent(&recent)?;
+    self
+      .app()
+      .panel
+      .as_mut()
+      .unwrap()
+      .view
+      .shelf_mut()
+      .unwrap()
+      .set_preferences(preferences);
+    Ok(())
+  }
+
   pub fn save(&mut self) -> Result<()> {
     if let Some(store) = &self.store {
       let history = &self.history;

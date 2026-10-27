@@ -42,6 +42,7 @@ impl Session {
       // Native leaving skips pending requests.
       Interaction::Leave => return Ok(self.pointer_left()),
     }?;
+    self.record_recent_layout();
     self.settle()?;
     Ok(changed)
   }

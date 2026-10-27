@@ -431,7 +431,11 @@ fn contents_preferences_survive_restart() -> Result<()> {
     app.restore(&saved)?;
     assert!(app.panel.is_none() && deferred(&app));
     app.cancel_outline();
-    assert!(!state.remember_pane(&app));
+    assert!(state.remember_pane(&app));
+    assert_eq!(
+      state.entry(&path).unwrap().sidebar,
+      Some(vpdf::state::Sidebar::Closed)
+    );
     state.save(&store, &[], &[])?;
     assert_eq!(
       State::load(&store).entry(&path).unwrap().outline,

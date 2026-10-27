@@ -141,8 +141,14 @@ impl Row {
         text.width()
       }
       (Style::Heading, _) => {
-        let text = vpdf_model::text::clean(&self.label, room);
-        marked(scene, &text, query, base, Some(Role::Heading));
+        let directory = matches!(self.destination, Destination::Directory(_));
+        let text = if directory {
+          tail(&self.label, room)
+        } else {
+          vpdf_model::text::clean(&self.label, room)
+        };
+        let role = if directory { Role::Muted } else { Role::Heading };
+        marked(scene, &text, query, base, Some(role));
         styles(scene, base, None);
         text.width()
       }

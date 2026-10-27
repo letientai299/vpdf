@@ -80,7 +80,12 @@ impl App {
   /// Ends held drags, pans, and scrubs whose release may never come;
   /// whether any was held.
   pub(crate) fn drop_held(&mut self) -> bool {
-    self.end_gestures() | self.drop_grab() | self.drop_scrub()
+    let panel = self
+      .panel
+      .as_mut()
+      .and_then(|panel| panel.view.shelf_mut())
+      .is_some_and(vpdf_ui::panel::recent::Shelf::release_pointer);
+    panel | self.end_gestures() | self.drop_grab() | self.drop_scrub()
   }
 
   /// Ends a lost press; whether it panned.

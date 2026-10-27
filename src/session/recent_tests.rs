@@ -150,7 +150,7 @@ fn removal_refreshes_home_and_all_recent_panels() -> Result<()> {
   assert!(scene.into_scene().iter().any(|op| {
     match op {
       vpdf_model::scene::Op::Text(text) => {
-        text.as_str().contains("A PDF reader with Vim keys.")
+        text.as_str().contains(":edit <file>")
       }
       _ => false,
     }
@@ -249,7 +249,7 @@ fn recent_removal_uses_session_in_both_frontends() -> Result<()> {
           _ => None,
         })
         .collect::<String>();
-      assert!(text.contains("A PDF reader with Vim keys."));
+      assert!(text.contains(":edit <file>"));
       if native {
         assert!(text.contains(":open"));
       }
@@ -369,5 +369,34 @@ fn marks_show_new_marks() -> Result<()> {
   let rows = session.app().panel.as_ref().unwrap().view.rows();
   let keys: Vec<_> = rows.iter().map(|row| row.key.as_str()).collect();
   assert_eq!(keys, ["", "’a", "", "’A"]);
+  Ok(())
+}
+
+#[test]
+fn recent_ratios_survive_panel_reopening() -> Result<()> {
+  let (_root, mut session, _pdf) = reader()?;
+  session.show_recent()?;
+  let preferences = serde_json::from_str(r#"{"beside":600,"below":500}"#)?;
+  session
+    .app()
+    .panel
+    .as_mut()
+    .unwrap()
+    .view
+    .shelf_mut()
+    .unwrap()
+    .set_preferences(preferences);
+  session.record_recent_layout();
+  session.app().close_panel()?;
+  session.show_recent()?;
+  assert_eq!(
+    session.app().panel.as_ref().unwrap().view.shelf().unwrap().preferences(),
+    preferences
+  );
+  session.finish()?;
+  assert_eq!(
+    State::load(session.store.as_deref().unwrap()).recent_layout,
+    preferences
+  );
   Ok(())
 }

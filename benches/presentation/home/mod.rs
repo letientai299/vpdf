@@ -52,6 +52,7 @@ pub fn draw() -> Result<()> {
   home.shelf_mut().expect("recent shelf").accept(
     data.path,
     LoadedFacts {
+      generation: 0,
       fit: data.fit,
       facts: Ok(Facts {
         pages: data.pages,

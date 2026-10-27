@@ -252,7 +252,11 @@ impl Bar<'_> {
     scene.push(Op::Style(Role::Bar));
     tabs.scene(scene);
     scene.push(Op::Style(line.style));
-    scene.text(&line.message);
+    if self.covered() && line.style == Role::Bar && detail.is_none() {
+      crate::paint::key_hints(scene, &line.message);
+    } else {
+      scene.text(&line.message);
+    }
     scene.extend([Op::Style(Role::Bar), Op::Spaces(line.fill)]);
     scene.text(&line.right);
     scene.push(Op::Style(Role::Reset));

@@ -216,7 +216,11 @@ impl Renderer {
       };
       Handle::Native(handle)
     } else {
-      let image = egui::ColorImage::from_rgb(size, pixels);
+      let image = if pixels.len() == size[0] * size[1] * 4 {
+        egui::ColorImage::from_rgba_unmultiplied(size, pixels)
+      } else {
+        egui::ColorImage::from_rgb(size, pixels)
+      };
       Handle::Managed(painter.ctx().load_texture(
         format!("image {id:?}"),
         image,

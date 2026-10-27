@@ -771,3 +771,30 @@ fn prefetched_tiles_cover_pending_scales() -> Result<()> {
   assert_eq!(uploads, 1);
   Ok(())
 }
+
+#[test]
+fn transparent_pictures_keep_alpha() -> Result<()> {
+  let mut graphics = Graphics::default();
+  let rect = Bounds { x0: 0.0, y0: 0.0, x1: 1.0, y1: 1.0 };
+  let mut output = Vec::new();
+  graphics.picture(
+    900,
+    (1, 1, &[20, 40, 60, 80]),
+    rect,
+    SCREEN,
+    0,
+    &mut output,
+  )?;
+  assert!(commands(&output).iter().any(|command| has(command, &[("f", "32")])));
+  output.clear();
+  graphics.picture(
+    900,
+    (1, 1, &[20, 40, 60, 80]),
+    rect,
+    SCREEN,
+    0,
+    &mut output,
+  )?;
+  assert!(!commands(&output).iter().any(|command| has(command, &[("a", "t")])));
+  Ok(())
+}

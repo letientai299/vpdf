@@ -10,67 +10,69 @@ pub enum Picker {
   Native,
 }
 
+impl Picker {
+  pub fn command(self) -> &'static str {
+    match self {
+      Self::Terminal { fzf: true } => "fzf",
+      Self::Terminal { fzf: false } | Self::Native => "open",
+    }
+  }
+}
+
 pub(crate) fn scene<'a>(
   scene: &mut impl Draw<'a>,
   screen: Screen,
   at: At,
   picker: Picker,
 ) {
-  let (action, label) = match picker {
-    Picker::Terminal { fzf: true } => (":fzf", "Find a PDF"),
-    Picker::Terminal { fzf: false } => {
-      (":help install", "fzf unavailable; optional helpers")
-    }
-    Picker::Native => (":open", "Open a PDF"),
-  };
-  let mut commands = [
-    (action, label),
+  commands(scene, screen, at, picker, 0);
+}
+
+pub(crate) fn commands<'a>(
+  scene: &mut impl Draw<'a>,
+  screen: Screen,
+  at: At,
+  picker: Picker,
+  image_rows: u16,
+) {
+  let opening = format!(":{}", picker.command());
+  let commands = [
+    (opening.as_str(), "Open a PDF"),
     (":edit <file>", "Open by path"),
     (":help", "Learn the reader"),
     (":q", "Quit"),
   ];
-  if matches!(picker, Picker::Terminal { fzf: false }) {
-    commands.swap(0, 1);
-  }
   let height = screen.rows.saturating_sub(1);
-  let compact = height < 9 || screen.columns < 44;
-  let gap = u16::from(!compact);
-  let lines = 6 + gap;
-  let top = height.saturating_sub(lines) / 3;
-  let width = commands
-    .iter()
-    .map(|(command, label)| command.width() + label.width() + 3)
-    .chain(["A PDF reader with Vim keys.".len()])
-    .max()
-    .unwrap_or(0)
-    .min(usize::from(screen.columns));
+  let decoration = if height >= 7 { image_rows.max(1) } else { 0 };
+  let lines = decoration + 4;
+  let top = height.saturating_sub(lines) / 2;
+  let keys =
+    commands.iter().map(|(command, _)| command.width()).max().unwrap_or(0);
+  let width =
+    (keys + 2 + "Learn the reader".width()).min(usize::from(screen.columns));
   let column = (usize::from(screen.columns) - width) / 2;
-  let mut draw = |row: u16, role, text: &str| {
-    if row >= height || screen.columns == 0 {
-      return;
-    }
-    scene.extend([
-      Op::Move {
-        row: usize::from(at.row) + usize::from(row),
-        column: usize::from(at.column) + column,
-      },
-      Op::Style(role),
-      Op::Text(Text::new(vpdf_model::text::clean(text, width))),
-      Op::Style(Role::Reset),
-    ]);
-  };
-  draw(top, Role::Heading, "Vpdf");
-  // Short windows prioritize opening commands.
-  let intro = u16::from(height >= lines);
-  if intro != 0 {
-    draw(top + 1, Role::Muted, "A PDF reader with Vim keys.");
+  if decoration > 0 && image_rows == 0 {
+    let title_column = screen.columns.saturating_sub(4) / 2;
+    crate::paint::move_to(scene, at, top, title_column);
+    scene.push(Op::Style(Role::Heading));
+    scene.push(Op::Text(Text::fit("Vpdf", usize::from(screen.columns))));
   }
   for (index, (command, label)) in commands.iter().enumerate() {
-    let text = if compact {
-      format!("{command}  {label}")
-    } else {
-      format!("{command} — {label}")
-    };
-    draw(top + 1 + intro + gap + index as u16, Role::Bar, &text);
+    let row = top + decoration + index as u16;
+    if row >= height {
+      break;
+    }
+    crate::paint::move_to(scene, at, row, column);
+    scene.push(Op::Style(Role::Key));
+    let command = vpdf_model::text::clean(command, width);
+    scene.text(&command);
+    let used = command.width();
+    let padding =
+      (keys + 2).saturating_sub(used).min(width.saturating_sub(used));
+    scene.push(Op::Spaces(padding));
+    scene.push(Op::Style(Role::Muted));
+    scene
+      .push(Op::Text(Text::fit(label, width.saturating_sub(used + padding))));
+    scene.push(Op::Style(Role::Reset));
   }
 }

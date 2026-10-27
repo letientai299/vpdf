@@ -156,8 +156,7 @@ impl Session {
         self.pointer.release();
         if kind == PanelKind::Recent {
           self.record();
-          let recent = self.state.recent.clone();
-          return self.app().show_recent(&recent);
+          return self.show_recent();
         }
         let global = self.state.marks.clone();
         self.app().show_marks(&global)

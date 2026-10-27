@@ -70,6 +70,34 @@ impl Meta {
     Self { indent, glyph, key, room: room - indent, badge, page }
   }
 
+  pub(super) fn trail<'a>(
+    &self,
+    scene: &mut impl Draw<'a>,
+    plain: Role,
+    used: usize,
+    progress: bool,
+  ) {
+    let detail = if progress {
+      self.page.strip_prefix(' ').unwrap_or(&self.page)
+    } else {
+      self.page.trim_start()
+    };
+    let gap = usize::from(!detail.is_empty());
+    scene.extend([
+      Op::Style(plain),
+      Op::Spaces((self.room + gap).saturating_sub(used)),
+    ]);
+    if progress {
+      super::recent::scene_progress(scene, detail, plain);
+    } else {
+      if plain == Role::Reset {
+        scene.push(Op::Style(Role::Muted));
+      }
+      scene.text(detail);
+    }
+    scene.push(Op::Style(Role::Reset));
+  }
+
   /// Cells the glyph and key take before the title.
   pub(crate) fn lead_cells(&self) -> usize {
     self.glyph.map_or(0, |(glyph, _)| glyph.width().unwrap_or(1) + 1)
@@ -173,6 +201,29 @@ impl Layout {
         row: row.clone(),
         keys,
         clipped: row.label.width() > room,
+      });
+    }
+    layout.starts.push(layout.lines.len());
+    layout
+  }
+
+  pub(crate) fn recent(rows: &[Row], columns: usize) -> Self {
+    let mut layout = Self::empty(columns);
+    for (source, row) in rows.iter().enumerate() {
+      if source > 0 && matches!(row.destination, Destination::Directory(_)) {
+        layout.lines.push(Line {
+          source: source - 1,
+          keys: 0,
+          clipped: false,
+          row: Row::new(String::new(), String::new(), Destination::None),
+        });
+      }
+      layout.starts.push(layout.lines.len());
+      layout.lines.push(Line {
+        source,
+        row: row.clone(),
+        keys: 0,
+        clipped: false,
       });
     }
     layout.starts.push(layout.lines.len());

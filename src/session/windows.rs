@@ -416,8 +416,7 @@ impl Session {
       Window::New => {
         self.record();
         self.split(Axis::Rows, None, Place::Before)?;
-        let recent = self.state.recent.clone();
-        return self.app().show_recent(&recent);
+        return self.show_recent();
       }
       Window::Move(direction) => {
         tab.tree.move_to_edge(id, direction);
@@ -491,8 +490,7 @@ impl Session {
     let app = self.copy_pane(screen)?;
     self.leave()?;
     self.insert_tab(app)?;
-    let recent = self.state.recent.clone();
-    self.app().show_recent(&recent)
+    self.show_recent()
   }
 
   /// Fits the start screen or every pane to a new terminal size.

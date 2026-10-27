@@ -47,6 +47,14 @@ impl Panel {
     if !self.focused() {
       return Event::Unhandled;
     }
+    if self.is_recent_view()
+      && let Action::Window(crate::window::Window::Extend(direction)) =
+        input.action
+      && let Some(shelf) = &mut self.shelf
+    {
+      shelf.extend(direction, input.count.try_into().unwrap_or(u16::MAX));
+      return Event::Stay;
+    }
     match self.route(input.action) {
       Route::AutoExpand => Event::AutoExpand,
       Route::Fold(operation) => Event::Fold { operation, count: input.count },
@@ -208,6 +216,14 @@ impl Panel {
       | Action::Cancel => Route::Ignore,
       Action::Peek if self.kind == PanelKind::Annotations => Route::Preview,
       Action::OpenUrl => Route::OpenUri,
+      Action::Follow
+        if self.is_recent_view()
+          && self.rows.get(self.selected).is_some_and(|row| {
+            matches!(row.destination, Destination::Directory(_))
+          }) =>
+      {
+        Route::Toggle
+      }
       Action::Follow => Route::Follow,
       Action::Swap if !self.is_recent_view() => Route::Keep,
       Action::Help

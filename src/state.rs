@@ -85,6 +85,13 @@ fn lenient<'de, D: serde::Deserializer<'de>>(
   Ok(serde_json::from_value(value).ok())
 }
 
+fn recent_layout<'de, D: serde::Deserializer<'de>>(
+  deserializer: D,
+) -> std::result::Result<vpdf_ui::panel::recent::Preferences, D::Error> {
+  let value = serde_json::Value::deserialize(deserializer)?;
+  Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
 impl Entry {
   fn merge_outline(&mut self, other: &Self) -> bool {
     if let Some(preferences) = &other.outline
@@ -126,6 +133,10 @@ pub struct State {
   #[cfg(test)]
   #[serde(skip)]
   pub(crate) writes: usize,
+  #[serde(default, deserialize_with = "recent_layout")]
+  pub recent_layout: vpdf_ui::panel::recent::Preferences,
+  #[serde(default)]
+  recent_layout_updated: u64,
   #[serde(default)]
   pub perf: bool,
   #[serde(default)]
@@ -169,6 +180,19 @@ impl State {
       .unwrap_or_default();
     state.baseline = state.history.clock;
     state
+  }
+
+  pub fn set_recent_layout(
+    &mut self,
+    preferences: vpdf_ui::panel::recent::Preferences,
+  ) -> bool {
+    if self.recent_layout == preferences {
+      return false;
+    }
+    self.recent_layout = preferences;
+    self.recent_layout_updated =
+      now().max(self.recent_layout_updated.saturating_add(1));
+    true
   }
 
   pub fn set_perf(&mut self, on: bool) {
@@ -251,6 +275,10 @@ impl State {
       saved.perf = disk.perf;
       saved.perf_updated = disk.perf_updated;
     }
+    if disk.recent_layout_updated > self.recent_layout_updated {
+      saved.recent_layout = disk.recent_layout;
+      saved.recent_layout_updated = disk.recent_layout_updated;
+    }
     let mut staged =
       tempfile::Builder::new().suffix(".tmp").tempfile_in(directory)?;
     staged.write_all(&serde_json::to_vec(&saved)?)?;
@@ -259,6 +287,8 @@ impl State {
     // Keep the live preference until explicitly toggled.
     saved.perf = self.perf;
     saved.perf_updated = self.perf_updated;
+    saved.recent_layout = self.recent_layout;
+    saved.recent_layout_updated = self.recent_layout_updated;
     #[cfg(test)]
     {
       saved.writes += 1;
@@ -525,6 +555,36 @@ pub(crate) mod tests {
     let file = root.path().join("state.json");
     std::fs::write(&file, "{not json")?;
     assert_eq!(State::load(&file).recent, []);
+    Ok(())
+  }
+}
+
+#[cfg(test)]
+mod recent_layout_tests {
+  use super::*;
+
+  #[test]
+  fn ratios_persist_without_stale_overwrites() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let store = root.path().join("state.json");
+    let mut stale = State::default();
+    let mut resized = stale.clone();
+    let preferences = serde_json::from_str(r#"{"beside":600,"below":500}"#)?;
+    assert!(resized.set_recent_layout(preferences));
+    assert!(!resized.set_recent_layout(preferences));
+    resized.save(&store, &[], &[])?;
+    stale.save(&store, &["help".into()], &[])?;
+    let loaded = State::load(&store);
+    assert_eq!(loaded.recent_layout, preferences);
+    assert_eq!(loaded.commands, ["help"]);
+    let mut value = serde_json::to_value(loaded)?;
+    value["recent_layout"] = serde_json::json!({"beside":1001});
+    std::fs::write(&store, serde_json::to_vec(&value)?)?;
+    assert_eq!(State::load(&store).commands, ["help"]);
+    assert_eq!(
+      State::load(&store).recent_layout,
+      vpdf_ui::panel::recent::Preferences::default()
+    );
     Ok(())
   }
 }

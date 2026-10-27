@@ -42,7 +42,7 @@ impl Home {
     wake: &vpdf_pdf::jobs::Wake,
     terminal: bool,
   ) -> Self {
-    let view = vpdf_ui::home::Home::new(
+    let mut view = vpdf_ui::home::Home::new(
       crate::panel::recent_rows(recent),
       &crate::recent::entries(recent),
       screen,
@@ -52,6 +52,15 @@ impl Home {
         vpdf_ui::home::Picker::Native
       },
     );
+    view.set_pictures(
+      !terminal
+        || vpdf_terminal::caps::get().is_none_or(|caps| {
+          !matches!(
+            caps.profile(),
+            vpdf_terminal::caps::Profile::Unsupported(_)
+          )
+        }),
+    );
     Self {
       view,
       loader: Loader::new("", wake),
@@ -59,6 +68,14 @@ impl Home {
       theme: vpdf_model::theme::Theme::Default,
       settings: crate::config::Settings::default(),
     }
+  }
+
+  pub(crate) fn with_layout(
+    mut self,
+    preferences: vpdf_ui::panel::recent::Preferences,
+  ) -> Self {
+    self.view.shelf_mut().unwrap().set_preferences(preferences);
+    self
   }
 
   pub(crate) fn configure(&mut self, settings: &crate::config::Settings) {
@@ -189,6 +206,14 @@ impl Home {
       {
         Ok(Outcome::Open(cmdline::expand(argument)))
       }
+      Id::Open if terminal && !cmdline::on_path("fzf") => {
+        let mut prompt =
+          vpdf_ui::prompt::Prompt::new(vpdf_ui::prompt::PromptKind::Command)
+            .with_invocation(self.view.invocation());
+        prompt.replace("open ");
+        self.view.open_prompt(prompt);
+        Ok(Outcome::Stay)
+      }
       Id::Edit | Id::Open | Id::TabEdit => {
         Ok(Outcome::Pick { root: ".".into(), tab: spec.id != Id::Edit })
       }
@@ -253,11 +278,12 @@ mod tests {
           _ => None,
         })
         .collect::<String>();
-      assert!(text.contains("A PDF reader with Vim keys."), "{text}");
+      assert!(text.contains(":edit <file>"), "{text}");
       assert!(!text.contains("missing.pdf"), "{text}");
       assert!(!text.contains('│'), "{text}");
       if !terminal {
-        assert!(text.contains(":open — Open a PDF"), "{text}");
+        assert!(text.contains(":open"), "{text}");
+        assert!(text.contains("Open a PDF"), "{text}");
         assert!(!text.contains(":fzf"), "{text}");
       }
     }
@@ -339,7 +365,7 @@ mod tests {
       )?;
       let mut out = Vec::new();
       home.draw(&mut out)?;
-      assert!(String::from_utf8(out)?.contains("A PDF reader with Vim keys."));
+      assert!(String::from_utf8(out)?.contains(":edit <file>"));
     }
     Ok(())
   }
@@ -357,14 +383,18 @@ mod tests {
     home.draw(&mut output)?;
     assert!(String::from_utf8_lossy(&output).contains("Loading…"));
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !home.updates() {
+    loop {
+      home.updates();
+      output.clear();
+      home.draw(&mut output)?;
+      if String::from_utf8_lossy(&output).contains("Size") {
+        break;
+      }
       anyhow::ensure!(Instant::now() < deadline, "Home card never loaded");
       std::thread::sleep(Duration::from_millis(5));
     }
-    output.clear();
-    home.draw(&mut output)?;
     let text = String::from_utf8_lossy(&output);
-    for expected in ["Pages", "Metadata", "a=t,"] {
+    for expected in ["Page", "Size", "a=t,"] {
       assert!(text.contains(expected), "{expected}");
     }
     output.clear();

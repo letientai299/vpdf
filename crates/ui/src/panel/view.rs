@@ -75,13 +75,21 @@ impl Panel {
   }
 
   pub fn new(kind: PanelKind, rows: Vec<Row>) -> Self {
+    let selected = if kind == PanelKind::Recent {
+      rows
+        .iter()
+        .position(|row| matches!(row.destination, Destination::File(_)))
+        .unwrap_or(0)
+    } else {
+      0
+    };
     Self {
       kind,
       tree_view: None,
       folds: None,
       projection: super::tree::Projection::all(rows.len()),
       rows,
-      selected: 0,
+      selected,
       focused: true,
       top: 0,
       search: RowSearch::default(),
@@ -104,10 +112,12 @@ impl Panel {
   }
 
   pub fn recent(rows: Vec<Row>, entries: &[super::recent::Entry]) -> Self {
-    Self {
+    let mut panel = Self {
       shelf: Some(super::Shelf::new(entries)),
       ..Self::new(PanelKind::Recent, rows)
-    }
+    };
+    panel.sync_members();
+    panel
   }
 
   pub fn refresh_recent(
@@ -121,6 +131,7 @@ impl Panel {
         .checked
         .retain(|path| entries.iter().any(|entry| entry.path == *path));
       self.refill(rows, "");
+      self.sync_members();
     }
   }
 
@@ -180,6 +191,13 @@ impl Panel {
 
   /// Rows the header counts; group headings are not counted.
   pub(super) fn row_count(&self) -> usize {
+    if self.is_recent_view() {
+      return self
+        .rows
+        .iter()
+        .filter(|row| matches!(row.destination, Destination::File(_)))
+        .count();
+    }
     if self.folds.is_none() {
       return self.rows.len();
     }
@@ -352,6 +370,11 @@ impl Panel {
   /// Applies list motions; `page` rows per full-screen scroll.
   pub fn navigate(&mut self, input: Input, page: usize) -> bool {
     let Some(navigation) = Navigation::of(input.action) else { return false };
+    let page = if self.is_recent_view() && self.height > 0 {
+      usize::from(self.height)
+    } else {
+      page
+    };
     let last = self.projection.sources().len().saturating_sub(1);
     let position = self.visible_position();
     let count = input.count;
@@ -368,12 +391,23 @@ impl Panel {
       Navigation::Edge(false) => self.visible_source(0),
       Navigation::Edge(true) => self.visible_source(last),
       Navigation::Scroll(_) | Navigation::Screen(_) | Navigation::Rows(_) => {
-        let rows = navigation.rows(count, page);
+        let rows = navigation.rows(
+          count,
+          if self.is_recent_view() { page.saturating_sub(2) } else { page },
+        );
         if matches!(self.kind, PanelKind::Version) && self.layout.is_some() {
           self.scroll_lines(rows, page);
           return true;
         }
-        self.visible_source(position.saturating_add_signed(rows).min(last))
+        if self.is_recent_view() {
+          let line = self
+            .line_start(self.selected)
+            .saturating_add_signed(rows)
+            .min(self.line_count().saturating_sub(1));
+          self.line_source(line)
+        } else {
+          self.visible_source(position.saturating_add_signed(rows).min(last))
+        }
       }
       Navigation::Heading(forward) => {
         self.heading(forward, count);
@@ -401,7 +435,13 @@ impl Panel {
     if matches!(mouse.kind, MouseEventKind::Down(_)) {
       self.focused = true;
     }
-    let card = self.shelf.as_mut().filter(|shelf| shelf.covers(mouse.column));
+    if self.shelf.as_mut().is_some_and(|shelf| shelf.divider_input(mouse)) {
+      return None;
+    }
+    let card = self
+      .shelf
+      .as_mut()
+      .filter(|shelf| shelf.contains(mouse.column, mouse.row));
     if let (Some(shelf), Some(turn)) = (card, Wheel::of(mouse.kind)) {
       let rows = isize::from(WHEEL_ROWS);
       match turn {
@@ -457,12 +497,23 @@ impl Panel {
     {
       return None;
     }
-    if (self.layout.is_some() || self.tree_view.is_some())
+    if (self.is_recent_view() && self.height > 0
+      || self.layout.is_some()
+      || self.tree_view.is_some())
       && row >= self.height.saturating_sub(1)
     {
       return None;
     }
     let line = self.top + usize::from(row) - 1;
+    if self.is_recent_view()
+      && self.layout.as_ref().is_some_and(|layout| {
+        layout.lines.get(line).is_some_and(|line| {
+          line.row.label.is_empty() && line.row.destination == Destination::None
+        })
+      })
+    {
+      return None;
+    }
     if line >= self.line_count() {
       return None;
     }
@@ -556,6 +607,7 @@ impl Panel {
       .is_some_and(|selected| selected != self.selected);
     let partial = self.projection.sources().len() != self.rows.len();
     let build: fn(&[Row], usize, usize) -> Layout = match self.kind {
+      PanelKind::Recent => |rows, columns, _| Layout::recent(rows, columns),
       PanelKind::Jumps => Layout::jumps,
       PanelKind::Annotations => Layout::annotations,
       PanelKind::Version => |rows, columns, _| Layout::help(rows, columns),
@@ -609,7 +661,11 @@ impl Panel {
   ) -> Result<(), S::Error> {
     let crate::panel::recent::Frame { width, screen, at, .. } = frame;
     if self.is_recent_view() && self.rows.is_empty() {
-      crate::home::welcome::scene(scene, screen, at, self.picker);
+      if let Some(shelf) = &self.shelf {
+        shelf.welcome(scene, screen, at, self.picker, pictures)?;
+      } else {
+        crate::home::welcome::scene(scene, screen, at, self.picker);
+      }
       self.scene_confirmation(scene, at, width, screen.rows);
       return Ok(());
     }
@@ -619,7 +675,7 @@ impl Panel {
       return Ok(());
     };
     if width < screen.columns || !self.focused {
-      cards.hide();
+      cards.suspend();
       self.shelf = Some(cards);
       self.scene_list(scene, at, width, screen.rows);
       self.scene_confirmation(scene, at, width, screen.rows);
@@ -662,7 +718,7 @@ impl Panel {
       title: self.kind.title(),
       count: self.row_count(),
       context: &self.context(),
-      role: Role::Bar,
+      role: if self.is_recent_view() { Role::Reset } else { Role::Bar },
       controls: &[],
     }
     .scene(scene, at, width, self.pointing);
@@ -685,7 +741,8 @@ impl Panel {
     if width < 2 || height == 0 {
       return;
     }
-    let inner = usize::from(width.saturating_sub(1));
+    let margin = if self.is_recent_view() && width >= 24 { 3 } else { 1 };
+    let inner = usize::from(width.saturating_sub(margin));
     for row in 1..height {
       crate::paint::move_to(scene, at, row - 1, width - 1);
       scene.push(Op::Style(Role::Muted));
@@ -719,13 +776,23 @@ impl Panel {
           let label = &help.lines[start];
           (
             line.source,
-            &line.row,
+            if self.is_recent_view() && index == start {
+              &self.rows[line.source]
+            } else {
+              &line.row
+            },
             line.keys,
-            Some(label.clipped),
+            if self.is_recent_view() { None } else { Some(label.clipped) },
             index == start,
           )
         },
       );
+      if self.is_recent_view()
+        && item.label.is_empty()
+        && item.destination == Destination::None
+      {
+        continue;
+      }
       let hovered = self.pointing.row() == Some(source);
       let (plain, base) = self.row_roles(source);
       crate::paint::move_to(scene, at, row + 1, 0u16);
@@ -734,17 +801,13 @@ impl Panel {
         let shown = first || row == 0;
         super::rows::gutter(scene, shown && current == Some(source), base);
       }
-      let checkbox = if self.is_recent_view()
-        && matches!(item.destination, Destination::File(_))
-      {
-        let checked = matches!(&item.destination, Destination::File(path)
-          if self.removal.checked.contains(path));
-        if checked { "[x] " } else { "[ ] " }
-      } else {
-        ""
-      };
-      let gutter = checkbox.len().min(inner);
-      scene.text(&checkbox[..gutter]);
+      let recent = self.is_recent_view()
+        && matches!(
+          item.destination,
+          Destination::File(_) | Destination::Directory(_)
+        );
+      let gutter =
+        if recent { self.scene_check(scene, source, inner, base) } else { 0 };
       // Only a row's first line reserves the key column.
       let key_column = if first { key_column } else { 0 };
       let meta =
@@ -752,6 +815,7 @@ impl Panel {
       meta.lead(scene, plain, &self.search.query);
       let used =
         item.scene(scene, Some(base), meta.room, keys, &self.search.query);
+      let progress = recent && matches!(item.destination, Destination::File(_));
       if hovered {
         let clipped = match cut {
           Some(clipped) => clipped,
@@ -761,17 +825,7 @@ impl Panel {
           self.hover_title = Some(self.rows[source].full_label());
         }
       }
-      let detail = meta.page.trim_start();
-      let gap = usize::from(!detail.is_empty());
-      scene.extend([
-        Op::Style(plain),
-        Op::Spaces((meta.room + gap).saturating_sub(used)),
-      ]);
-      if plain == Role::Reset {
-        scene.push(Op::Style(Role::Muted));
-      }
-      scene.text(detail);
-      scene.push(Op::Style(Role::Reset));
+      meta.trail(scene, plain, used, progress);
     }
   }
 }

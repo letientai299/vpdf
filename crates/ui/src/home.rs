@@ -44,6 +44,7 @@ pub struct Home {
   keys: Keys,
   bindings: Bindings,
   picker: Picker,
+  pictures: bool,
 }
 
 impl Home {
@@ -64,11 +65,16 @@ impl Home {
       keys: Keys::default(),
       bindings: Bindings::default(),
       picker,
+      pictures: true,
     }
   }
 
   pub fn refresh_recent(&mut self, rows: Vec<Row>, entries: &[Entry]) {
     self.panel.refresh_recent(rows, entries);
+  }
+
+  pub fn set_pictures(&mut self, pictures: bool) {
+    self.pictures = pictures;
   }
 
   pub fn set_bindings(&mut self, bindings: Bindings) {
@@ -80,6 +86,9 @@ impl Home {
 
   pub fn reset_input(&mut self) {
     self.keys.clear();
+    if let Some(shelf) = self.panel.shelf_mut() {
+      shelf.release_pointer();
+    }
     if let Some(prompt) = &mut self.prompt {
       prompt.reset_input();
     }
@@ -89,13 +98,16 @@ impl Home {
     self.error = None;
   }
 
-  pub fn invocation(&self) -> crate::topics::Invocation {
-    let context = if self.info.is_none() && !self.panel.rows().is_empty() {
+  fn context(&self) -> Context {
+    if self.info.is_none() && !self.panel.rows().is_empty() {
       Context::HomeRecent
     } else {
       Context::Home
-    };
-    crate::topics::Invocation::home().in_context(context)
+    }
+  }
+
+  pub fn invocation(&self) -> crate::topics::Invocation {
+    crate::topics::Invocation::home().in_context(self.context())
   }
 
   pub fn screen(&self) -> Screen {
@@ -117,6 +129,9 @@ impl Home {
 
   pub fn show_info(&mut self, kind: crate::keys::PanelKind, text: &str) {
     self.panel.leave_removal();
+    if let Some(shelf) = self.panel.shelf_mut() {
+      shelf.suspend();
+    }
     let mut info = Panel::grouped(kind, Row::sections(text), self.screen.rows);
     // Home has no fold keys; every group shows.
     info.fold(crate::keys::Fold::ExpandAll, 1);
@@ -138,7 +153,15 @@ impl Home {
     }
     self.scene_clear(scene);
     if self.info.is_none() && self.panel.rows().is_empty() {
-      welcome::scene(scene, self.screen, self.at, self.picker);
+      if let Some(shelf) = self.panel.shelf_mut() {
+        shelf.welcome(
+          scene,
+          self.screen,
+          self.at,
+          self.picker,
+          self.pictures,
+        )?;
+      }
       self.panel.scene_confirmation(
         scene,
         self.at,
@@ -154,7 +177,7 @@ impl Home {
           screen: self.screen,
           now,
         },
-        true,
+        self.pictures,
       );
       if let Some(cards) = self.panel.shelf_mut() {
         request(cards);
@@ -174,17 +197,11 @@ impl Home {
   }
 
   fn footer(&self) -> String {
-    let context =
-      if self.info.is_some() { Context::Home } else { Context::HomeRecent };
-    if self.bindings == Bindings::default() {
-      if self.info.is_some() {
-        "j/k scroll  Esc close".into()
-      } else if self.panel.rows().is_empty() {
-        "Enter open  :help  :e file  :q quit".into()
-      } else {
-        "Enter open  Space select  x remove  :help  :q".into()
-      }
-    } else {
+    let context = self.context();
+    if self.keys.resizing() {
+      return self.bindings.resize_hints();
+    }
+    {
       let mut hints = if self.info.is_some() {
         vec![
           self.bindings.hint(
@@ -221,11 +238,6 @@ impl Home {
           ),
           self.bindings.hint(
             context,
-            &crate::bindings::Target::Reader(Action::Help),
-            "help",
-          ),
-          self.bindings.hint(
-            context,
             &crate::bindings::Target::Reader(Action::Quit),
             "quit",
           ),
@@ -242,6 +254,15 @@ impl Home {
           ));
         }
       }
+      if self.info.is_none() {
+        let help = self.bindings.hint(
+          context,
+          &crate::bindings::Target::Reader(Action::Help),
+          "help",
+        );
+        hints.insert(0, help);
+        hints.insert(0, format!(":{}", self.picker.command()));
+      }
       hints
         .into_iter()
         .filter(|hint| !hint.is_empty())
@@ -251,38 +272,43 @@ impl Home {
   }
 
   pub fn scene_footer<'a>(&self, scene: &mut impl Draw<'a>) {
-    let footer = self.footer();
-    let (text, style) = match &self.error {
-      Some(error) => (error.as_str(), Role::Error),
-      None => (footer.as_str(), Role::Bar),
-    };
     let columns = usize::from(self.screen.columns);
-    if columns < 8 {
-      scene.push(Op::Style(style));
-      crate::paint::line(
-        scene,
-        self.at,
-        self.screen.rows.saturating_sub(1),
-        text,
-        self.screen.columns,
-      );
-      scene.extend([Op::Style(Role::Reset), Op::HideCursor]);
-      return;
+    let resizing = self.keys.resizing();
+    let (badge, color) = if resizing {
+      (" RESIZE ", Color::Yellow)
+    } else {
+      (" Vpdf ", Color::Blue)
+    };
+    let badge = if columns >= 32 || resizing { badge } else { "" };
+    let badge_width = badge.width().min(columns);
+    let gap = usize::from(badge_width > 0 && badge_width < columns);
+    let margin = badge_width + gap;
+    let room = columns.saturating_sub(margin);
+    crate::paint::move_to(
+      scene,
+      self.at,
+      self.screen.rows.saturating_sub(1),
+      0u16,
+    );
+    if !badge.is_empty() {
+      scene.push(Op::Style(Role::Badge(color)));
+      scene.push(Op::Text(Text::fit(badge, columns)));
+      scene.push(Op::Style(Role::Bar));
+      scene.push(Op::Spaces(gap));
     }
-    let text = vpdf_model::text::clean(text, columns.saturating_sub(8));
-    let fill = columns.saturating_sub(7 + text.width());
+    let text = if let Some(error) = &self.error {
+      scene.push(Op::Style(Role::Error));
+      let text = vpdf_model::text::clean(error, room);
+      scene.text(&text);
+      text
+    } else {
+      let text = vpdf_model::text::clean(&self.footer(), room);
+      crate::paint::key_hints(scene, &text);
+      text
+    };
     scene.extend([
-      Op::Move {
-        column: usize::from(self.at.column),
-        row: usize::from(self.at.row)
-          + usize::from(self.screen.rows.saturating_sub(1)),
-      },
-      Op::Style(Role::Badge(Color::Blue)),
-      Op::Text(Text::new(" Vpdf ")),
-      Op::Style(style),
-      Op::Text(Text::new(" ")),
-      Op::Text(Text::new(text)),
-      Op::Spaces(fill),
+      Op::Style(Role::Bar),
+      Op::Spaces(room.saturating_sub(text.width())),
       Op::Style(Role::Reset),
       Op::HideCursor,
     ]);
@@ -318,6 +344,9 @@ impl Home {
   }
 
   pub fn open_prompt(&mut self, prompt: Prompt) {
+    if let Some(shelf) = self.panel.shelf_mut() {
+      shelf.release_pointer();
+    }
     self.prompt = Some(prompt);
   }
 
@@ -335,11 +364,61 @@ impl Home {
     mouse: vpdf_model::input::Mouse,
   ) -> Option<vpdf_model::input::MouseEvent> {
     let (rows, cell) = (self.screen.rows.saturating_sub(1), self.screen.cell());
+    let held = self.panel.shelf().is_some_and(Shelf::dragging);
     mouse.cells(cell).and_then(|mut mouse| {
+      if held {
+        mouse.row =
+          mouse.row.saturating_sub(self.at.row).min(rows.saturating_sub(1));
+        mouse.column = mouse
+          .column
+          .saturating_sub(self.at.column)
+          .min(self.screen.columns.saturating_sub(1));
+        return Some(mouse);
+      }
       mouse.row = mouse.row.checked_sub(self.at.row)?;
       mouse.column = mouse.column.checked_sub(self.at.column)?;
       (mouse.row < rows).then_some(mouse)
     })
+  }
+
+  fn footer_command(&self, mouse: vpdf_model::input::Mouse) -> Option<String> {
+    use vpdf_model::input::{MouseButton, MouseEventKind};
+    let mouse = mouse.cells(self.screen.cell())?;
+    if self.screen.columns == 0
+      || self.screen.rows == 0
+      || mouse.kind != MouseEventKind::Down(MouseButton::Left)
+      || mouse.row != self.at.row + self.screen.rows.saturating_sub(1)
+      || self.error.is_some()
+      || self.info.is_some()
+      || self.keys.resizing()
+    {
+      return None;
+    }
+    let margin = if self.screen.columns < 32 { 0 } else { 7 };
+    let column =
+      usize::from(mouse.column.checked_sub(self.at.column + margin)?);
+    let footer = self.footer();
+    let context = self.context();
+    for (hint, command) in [
+      (format!(":{}", self.picker.command()), self.picker.command().to_owned()),
+      (
+        self.bindings.hint(
+          context,
+          &crate::bindings::Target::Reader(Action::Help),
+          "help",
+        ),
+        "help".into(),
+      ),
+    ] {
+      let start = footer.find(&hint).filter(|_| !hint.is_empty());
+      if start.is_some_and(|start| {
+        (footer[..start].width()..footer[..start].width() + hint.width())
+          .contains(&column)
+      }) {
+        return Some(command);
+      }
+    }
+    None
   }
 
   pub fn event(
@@ -405,6 +484,9 @@ impl Home {
       }
       // An open prompt owns the input.
       Event::Mouse(mouse) if self.prompt.is_none() => {
+        if let Some(command) = self.footer_command(mouse) {
+          return Ok(Effect::Command(command));
+        }
         let Some(mouse) = self.local_mouse(mouse) else {
           return Ok(Effect::Stay);
         };
@@ -413,6 +495,10 @@ impl Home {
           return Ok(Effect::Stay);
         }
         Ok(match self.panel.pointer(mouse) {
+          Some(_) if self.panel.checked_cell(mouse.column) => {
+            self.panel.toggle_checked();
+            Effect::Stay
+          }
           Some(_) => self.selected(),
           None => Effect::Stay,
         })
@@ -423,8 +509,9 @@ impl Home {
 
   fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<Effect> {
     let Some(prompt) = &mut self.prompt else {
-      let Some(dispatch) =
-        self.keys.feed_with(key, Context::HomeRecent, &self.bindings)
+      let context = self.context();
+      let resizing = self.keys.resizing();
+      let Some(dispatch) = self.keys.feed_with(key, context, &self.bindings)
       else {
         return Ok(Effect::Stay);
       };
@@ -432,10 +519,17 @@ impl Home {
         Dispatch::Command(command) => return Ok(Effect::Command(command)),
         Dispatch::Input(input) => input,
       };
+      if resizing && input.action == Action::Cancel {
+        return Ok(Effect::Stay);
+      }
       if matches!(
         input.action,
         Action::RecentToggle | Action::RecentRemove | Action::Cancel
       ) {
+        self.panel.input(input, usize::from(self.screen.rows));
+        return Ok(Effect::Stay);
+      }
+      if let Action::Window(crate::window::Window::Extend(_)) = input.action {
         self.panel.input(input, usize::from(self.screen.rows));
         return Ok(Effect::Stay);
       }
@@ -445,14 +539,14 @@ impl Home {
       return Ok(match input.action {
         Action::Follow | Action::Swap => self.selected(),
         Action::Command => {
-          self.prompt = Some(
+          self.open_prompt(
             Prompt::new(PromptKind::Command).with_invocation(self.invocation()),
           );
           Effect::Stay
         }
         Action::Search(backward) => {
           self.panel.begin_search(backward);
-          self.prompt = Some(Prompt::new(PromptKind::Search(backward)));
+          self.open_prompt(Prompt::new(PromptKind::Search(backward)));
           Effect::Stay
         }
         Action::Help => Effect::Command("help".into()),
@@ -506,7 +600,16 @@ impl Home {
     Ok(Effect::Stay)
   }
 
-  fn selected(&self) -> Effect {
+  fn selected(&mut self) -> Effect {
+    if self
+      .panel
+      .rows()
+      .get(self.panel.selected())
+      .is_some_and(|row| matches!(row.destination, Destination::Directory(_)))
+    {
+      self.panel.toggle_checked();
+      return Effect::Stay;
+    }
     match self.panel.rows().get(self.panel.selected()).map(|r| &r.destination) {
       Some(Destination::File(path)) => Effect::Open(path.clone()),
       _ => Effect::Stay,
@@ -658,7 +761,7 @@ mod tests {
     for (row, expected) in [(1, Effect::Stay), (5, Effect::Open(file.into()))] {
       let click = Event::Mouse(Mouse {
         kind: MouseKind::Press(Button::LEFT),
-        at: Spot::Cell { column: 5, row },
+        at: Spot::Cell { column: 8, row },
         modifiers: KeyModifiers::NONE,
       });
       assert_eq!(home.event(click, &mut History::default())?, expected);
@@ -677,7 +780,7 @@ mod tests {
     let screen = crate::testing::screen::cells(80, 24);
     let click = Event::Mouse(Mouse {
       kind: MouseKind::Press(Button::LEFT),
-      at: Spot::Cell { column: 5, row: 1 },
+      at: Spot::Cell { column: 8, row: 1 },
       modifiers: KeyModifiers::NONE,
     });
     for (typed, expected) in [

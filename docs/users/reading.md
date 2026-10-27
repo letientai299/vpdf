@@ -12,15 +12,16 @@ enter a path.
 
 `:edit book.pdf` opens in the focused pane; `:open book.pdf` and
 `:tabedit book.pdf` open in a new tab. Omit the path to choose a file: the
-terminal uses fzf and the macOS app uses its system file chooser. Canceling
-keeps the current view. `:tabnew` creates a recent-files tab. A file already
-open focuses its existing pane.
+terminal uses fzf when available and the macOS app uses its system file chooser.
+Without fzf, `:open` starts path entry with Tab completion. Canceling keeps the
+current view. `:tabnew` creates a recent-files tab. A file already open focuses
+its existing pane.
 
 In the terminal, `:fzf` finds PDFs below the current directory when fzf is on
-`PATH`; use its upstream setup in [Optional helpers][helpers]. Without fzf,
-enter a path with `:edit book.pdf` and Tab completion. With `:fzf `, Tab
-completes PDFs and directories. A PDF opens directly; a directory limits
-the picker to that tree.
+`PATH`; use its upstream setup in [Optional helpers][helpers]. Without fzf, use
+`:open` or enter a path with `:edit book.pdf` and Tab completion. With `:fzf `,
+Tab completes PDFs and directories. A PDF opens directly; a directory limits the
+picker to that tree.
 
 Dropped PDF files open new tabs in the native app and terminals with file-drop
 support, even while a prompt is open. Already open files focus their existing
@@ -31,14 +32,29 @@ the hovered row without changing the selected entry.
 are not command-line arguments. Inspect `:info` after an open failure and check
 the path, permissions, and password. Built-in help has no file to unlock.
 
+The bar and percentage show the saved reading position, not pages read. Unknown
+page counts show `…` until background loading finishes. Preview details retain
+the exact saved page, even when a changed document has fewer pages.
+
+The preview sits beside the list or below it in narrower windows. Drag its
+divider to resize; double-click to reset. Press `Ctrl-r`, then `h/l` beside the
+list or `j/k` below it; Escape leaves resize mode. The status bar shows `RESIZE`
+while these keys move the divider. Each placement remembers its ratio across
+window changes and restarts. Small windows omit the preview to keep navigation
+and path entry usable.
+
 ## Removing recent files
 
-In Recent, press Space to check or uncheck a file without moving the cursor.
-Press `x` to remove checked files, or the cursor row when none are checked.
-Enter, `y`, or a click on Remove confirms; `n`, Escape, `Ctrl-c`, or Cancel
-cancels. Files hidden by a filter remain checked and count toward removal.
-Escape outside confirmation clears checks before closing the panel. Leaving
-Recent clears its checks.
+Recent groups files by parent directory. Press Space to select a file or all
+files in a directory. Directory marks show none (`○`), some (`◐`), or all (`●`)
+selected. Enter or clicking a directory toggles its selection; Enter on a file
+opens its saved position. Directory selection includes offscreen files.
+
+Press `x` to remove checked files, or the focused file or directory's files when
+none are checked. Enter, `y`, or a click on Remove confirms; `n`, Escape,
+`Ctrl-c`, or Cancel cancels. Files hidden by a filter remain checked and count
+toward removal. Escape outside confirmation clears checks before closing the
+panel. Leaving Recent clears its checks.
 
 Removal forgets saved positions, local marks, and outline choices. It preserves
 source PDFs, open reading panes, and global marks. Saving an already open pane
@@ -74,25 +90,25 @@ before replacing a source file if you need the original text or pagination.
 ## Content caches
 
 On macOS, extracted-content caches live at `~/Library/Caches/vpdf/content`.
-Search indexes, resolved outlines, figure lists, annotations, recent
-preview cards, and eligible page OCR can persist there. These
-records can contain PDF text. They are readable only by your account; PDFs
-opened with a password are excluded. The system may purge caches at any time.
+Search indexes, resolved outlines, figure lists, annotations, recent preview
+cards, and eligible page OCR can persist there. These records can contain PDF
+text. They are readable only by your account; PDFs opened with a password are
+excluded. The system may purge caches at any time.
 
-Set `VPDF_CACHE` to a directory to select another location, or to `off` to
-keep extracted content in memory only. For example, launch
+Set `VPDF_CACHE` to a directory to select another location, or to `off` to keep
+extracted content in memory only. For example, launch
 `VPDF_CACHE=off vpdf book.pdf` for a sensitive document. Linux requires an
-explicit cache directory for disk caching. This option controls content
-caches; it does not disable the separate saved reading state or prompt history.
+explicit cache directory for disk caching. This option controls content caches;
+it does not disable the separate saved reading state or prompt history.
 
 Missing, damaged, or stale cache records fall back to PDF extraction. Page OCR
 text can be evicted from memory and disappears on reload or close; eligible
-cached recognition can avoid repeating Tesseract work on an unchanged image.
-A cache is not a backup of the source PDF.
+cached recognition can avoid repeating Tesseract work on an unchanged image. A
+cache is not a backup of the source PDF.
 
-Contents, figures, and annotations prepare in the background after the
-first complete view. Opening a panel requests its load immediately. `:cancel`
-stops preparation until explicitly requested; it does not delete saved caches.
+Contents, figures, and annotations prepare in the background after the first
+complete view. Opening a panel requests its load immediately. `:cancel` stops
+preparation until explicitly requested; it does not delete saved caches.
 
 ## Source boundaries
 
@@ -101,10 +117,10 @@ Region export creates a separate PNG. Copying uses the extracted text or image;
 printing uses the source PDF. Reader crop, zoom, selections, and temporary OCR
 do not change printed output.
 
-Built-in help stays out of recent files, file watching, disk content caches,
-and saved document state. Its identity is `builtin:help`. It supports session
-local marks, copying, and OCR; region export, printing, disk reload, and
-persistent global marks are unavailable.
+Built-in help stays out of recent files, file watching, disk content caches, and
+saved document state. Its identity is `builtin:help`. It supports session local
+marks, copying, and OCR; region export, printing, disk reload, and persistent
+global marks are unavailable.
 
 ## External actions
 
@@ -114,8 +130,8 @@ an error. Both frontends remain responsive; a logged-in graphical session is
 required on the machine running Vpdf, including over SSH.
 
 Followed HTTP, HTTPS, and mail links use the hosting machine's desktop opener.
-Clipboard delivery has different local and SSH boundaries; see
-[Selecting and copying][selection].
+Clipboard delivery has different local and SSH boundaries; see [Selecting and
+copying][selection].
 
 [helpers]: install.md#optional-helpers
 [selection]: yank.md

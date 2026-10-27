@@ -486,6 +486,17 @@ impl App {
   }
 
   fn request_open(&mut self, command: Id, argument: &str) {
+    if command == Id::Open
+      && argument.is_empty()
+      && matches!(self.frontend, crate::raster::Frontend::Terminal)
+      && !cmdline::on_path("fzf")
+    {
+      let mut prompt = Prompt::new(PromptKind::Command)
+        .with_invocation(self.help_invocation());
+      prompt.replace("open ");
+      self.overlays.open_prompt(prompt);
+      return;
+    }
     self.request = Some(if !argument.is_empty() {
       Request::Open {
         path: cmdline::expand(argument),

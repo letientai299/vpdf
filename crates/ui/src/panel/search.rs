@@ -23,6 +23,9 @@ fn matches(row: &Row, hit: &impl Fn(&str) -> bool) -> bool {
   hit(&row.label)
     || row.keyed_texts().any(|text| hit(&text))
     || hit(&row.detail)
+    || matches!(&row.destination,
+      Destination::File(path) | Destination::Directory(path)
+      if hit(&path.to_string_lossy()))
     || matches!(&row.destination, Destination::Link(Target::Uri(uri))
       if hit(uri))
 }

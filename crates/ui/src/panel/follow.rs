@@ -66,7 +66,7 @@ impl Panel {
   pub fn follow(&self, search: &Search) -> Option<Follow> {
     let row = self.rows.get(self.selected)?;
     Some(match row.destination.clone() {
-      Destination::None => return None,
+      Destination::None | Destination::Directory(_) => return None,
       Destination::File(path) => Follow::File(path),
       Destination::Mark(name) => Follow::Mark(name),
       Destination::Position(position) => Follow::Land {
@@ -94,7 +94,7 @@ impl Panel {
   pub fn refocus(&self) -> Option<Follow> {
     let row = self.rows.get(self.selected)?;
     Some(match row.destination.clone() {
-      Destination::None => return None,
+      Destination::None | Destination::Directory(_) => return None,
       Destination::Mark(name) => Follow::Mark(name),
       Destination::Annotation { position, annotation } => {
         Follow::Focus(Focus::Annotation { position, annotation })
@@ -131,6 +131,25 @@ impl Press {
       panel.clicked
     };
     let Some(index) = clicked else { return Activation::Stay };
+    if panel.is_recent_view()
+      && panel.checked_cell(mouse.column)
+      && panel
+        .rows
+        .get(index)
+        .is_some_and(|row| matches!(row.destination, Destination::File(_)))
+    {
+      panel.toggle_checked();
+      return Activation::Stay;
+    }
+    if panel.is_recent_view()
+      && panel
+        .rows
+        .get(index)
+        .is_some_and(|row| matches!(row.destination, Destination::Directory(_)))
+    {
+      panel.toggle_checked();
+      return Activation::Stay;
+    }
     if covered {
       return Activation::Follow { focus: true };
     }

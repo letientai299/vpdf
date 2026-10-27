@@ -29,12 +29,15 @@ pub fn view(
   session.graphics = vpdf_terminal::graphics::Graphics::live();
   if paths.is_empty() {
     session.screen = Some(screen);
-    session.home = Some(Home::new(
-      &session.state.recent,
-      session.content(screen),
-      &session.frontend.wake(),
-      true,
-    ));
+    session.home = Some(
+      Home::new(
+        &session.state.recent,
+        session.content(screen),
+        &session.frontend.wake(),
+        true,
+      )
+      .with_layout(session.state.recent_layout),
+    );
     session.resize(screen)?;
     return run_saving(&mut session);
   }
@@ -68,15 +71,11 @@ pub(super) fn updates(
   Ok(dirty)
 }
 
-/// Pointer input the start screen ignores: motion, drags, leaving.
+/// Passive start-screen pointer reports.
 pub(super) fn passive(event: &Event) -> bool {
   match event {
     Event::Mouse(mouse) => {
-      matches!(
-        mouse.kind,
-        vpdf_terminal::decode::MouseKind::Moved
-          | vpdf_terminal::decode::MouseKind::Drag(_)
-      )
+      matches!(mouse.kind, vpdf_terminal::decode::MouseKind::Moved)
     }
     Event::Leave => true,
     _ => false,
@@ -523,6 +522,7 @@ impl Session {
     outcome: Result<Outcome>,
     out: &mut crate::perf::Output<impl Write>,
   ) -> Result<()> {
+    self.remember_recent_layout(home.view.shelf_mut().unwrap().preferences());
     match outcome {
       Ok(Outcome::Open(path)) => {
         if self.leave_home(&mut home, &path) {
@@ -573,5 +573,19 @@ impl Session {
     }
     self.home = Some(home);
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod home_pointer_tests {
+  use super::*;
+  use vpdf_model::input::{Mouse, MouseButton, MouseEvent, MouseEventKind};
+
+  #[test]
+  fn home_dispatches_divider_drags() {
+    let drag = MouseEvent::new(MouseEventKind::Drag(MouseButton::Left), 10, 10);
+    assert!(!passive(&Event::Mouse(Mouse::from(drag))));
+    let moved = MouseEvent::new(MouseEventKind::Moved, 10, 10);
+    assert!(passive(&Event::Mouse(Mouse::from(moved))));
   }
 }

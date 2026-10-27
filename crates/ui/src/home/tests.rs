@@ -10,31 +10,22 @@ fn render(home: &mut Home) -> Result<Vec<Op<'static>>> {
 #[test]
 fn welcome_matches_picker() -> Result<()> {
   for (picker, expected, absent) in [
-    (Picker::Terminal { fzf: true }, ":fzf — Find a PDF", ":open"),
-    (Picker::Native, ":open — Open a PDF", ":fzf"),
-    (Picker::Terminal { fzf: false }, ":help install", ":fzf"),
+    (Picker::Terminal { fzf: true }, ":fzf", ":open"),
+    (Picker::Native, ":open", ":fzf"),
+    (Picker::Terminal { fzf: false }, ":open", ":fzf"),
   ] {
     let mut home =
       Home::new(vec![], &[], crate::testing::screen::cells(80, 24), picker);
     let scene = render(&mut home)?;
     let text = crate::testing::text(&scene);
-    for hint in [
-      "Vpdf",
-      "A PDF reader with Vim keys.",
-      expected,
-      ":edit <file> — Open by path",
-      ":help — Learn the reader",
-      ":q — Quit",
-    ] {
+    for hint in ["Vpdf", expected, ":edit <file>", "Learn the reader", "Quit"] {
       assert!(text.contains(hint), "{hint}: {text}");
     }
     assert!(!text.contains(absent), "{text}");
     assert!(!text.contains('│'), "{text}");
     assert!(!text.contains("RECENT"), "{text}");
     assert!(text.contains(" Vpdf "), "{text}");
-    if matches!(picker, Picker::Terminal { fzf: false }) {
-      assert!(text.contains("fzf unavailable; optional helpers"), "{text}");
-    }
+    assert!(!text.contains("A PDF reader with Vim keys."));
   }
   Ok(())
 }
@@ -138,5 +129,72 @@ fn zero_size_skips_drawing() -> Result<()> {
       Effect::Stay
     );
   }
+  Ok(())
+}
+
+#[test]
+fn welcome_columns_and_fallback() -> Result<()> {
+  let mut home = Home::new(
+    vec![],
+    &[],
+    crate::testing::screen::cells(80, 28),
+    Picker::Native,
+  );
+  let scene = render(&mut home)?;
+  let lines = crate::testing::lines(&scene, 80);
+  let descriptions: Vec<_> = lines
+    .values()
+    .filter_map(|line| {
+      ["Open a PDF", "Open by path", "Learn the reader", "Quit"]
+        .iter()
+        .find_map(|description| line.find(description))
+    })
+    .collect();
+  assert_eq!(descriptions.len(), 4);
+  assert!(descriptions.iter().all(|column| *column == descriptions[0]));
+  home
+    .shelf_mut()
+    .unwrap()
+    .set_logo(vpdf_model::image::Rgb::rgba(1, 1, vec![0, 0, 0, 0]).unwrap());
+  assert!(render(&mut home)?.iter().any(|op| matches!(op, Op::Picture(_))));
+  home.set_pictures(false);
+  let scene = render(&mut home)?;
+  assert!(!scene.iter().any(|op| matches!(op, Op::Picture(_))));
+  assert!(crate::testing::text(&scene).contains("Vpdf"));
+  Ok(())
+}
+
+#[test]
+fn footer_uses_bound_keys_and_clicks() -> Result<()> {
+  use crate::bindings::{Map, Sequence, Target};
+  use vpdf_model::input::{Mouse, MouseButton, MouseEvent, MouseEventKind};
+  let mut home = Home::new(
+    vec![],
+    &[],
+    crate::testing::screen::cells(24, 8),
+    Picker::Terminal { fzf: false },
+  );
+  let mut bindings = Bindings::default();
+  bindings.set(
+    Context::Home,
+    Map::new(vec![(Sequence::parse("H")?, Target::Reader(Action::Help))])?,
+  );
+  home.set_bindings(bindings);
+  let footer = home.footer();
+  assert_eq!(footer, ":open  H help");
+  let mut history = History::default();
+  assert_eq!(
+    home.event(
+      Event::Key(KeyEvent::new(KeyCode::Char('H'), KeyModifiers::NONE)),
+      &mut history
+    )?,
+    Effect::Command("help".into())
+  );
+  let click =
+    Mouse::from(MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 1, 7));
+  assert_eq!(
+    home.event(Event::Mouse(click), &mut history)?,
+    Effect::Command("open".into())
+  );
   Ok(())
 }

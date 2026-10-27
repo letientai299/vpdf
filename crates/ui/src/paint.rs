@@ -38,6 +38,18 @@ pub fn line<'a>(
   scene.extend([Op::Text(Text::new(text)), Op::Spaces(pad)]);
 }
 
+/// Hints separate entries with two spaces.
+pub fn key_hints<'a>(scene: &mut impl Draw<'a>, text: &str) {
+  for hint in text.split_inclusive("  ") {
+    let end = hint.find(' ').unwrap_or(hint.len());
+    scene.push(Op::Style(vpdf_model::style::Role::Bar));
+    scene.push(Op::Style(vpdf_model::style::Role::Key));
+    scene.text(&hint[..end]);
+    scene.push(Op::Style(vpdf_model::style::Role::Bar));
+    scene.text(&hint[end..]);
+  }
+}
+
 pub struct Marks<'a> {
   pub reader: &'a Reader,
   pub matches: &'a [Hit],

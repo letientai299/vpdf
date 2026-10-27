@@ -473,7 +473,13 @@ pub fn panel_items(
       _ => None,
     };
     if !matches!(destination, Destination::None) {
-      let label = if covered { "Open" } else { "Follow" };
+      let label = if matches!(destination, Destination::Directory(_)) {
+        "Select directory"
+      } else if covered {
+        "Open"
+      } else {
+        "Follow"
+      };
       let action =
         if address.is_some() { Action::OpenUrl } else { Action::Follow };
       items.push(panel_bound(panel, label, action, Command::Key(action)));
@@ -488,7 +494,9 @@ pub fn panel_items(
       }
     }
     // Addresses split by copying; the copy item does that.
-    if !matches!(destination, Destination::None) && address.is_none() {
+    if !matches!(destination, Destination::None | Destination::Directory(_))
+      && address.is_none()
+    {
       items.push(item("Open in split", "", Command::RowSplit));
     }
     if matches!(destination, Destination::Annotation { .. })
@@ -518,7 +526,11 @@ pub fn panel_items(
     let remove = Command::Key(Action::RecentRemove);
     items.push(panel_bound(panel, "Remove mark", Action::RecentRemove, remove));
   }
-  if panel.is_recent_view() && matches!(destination, Some(Destination::File(_)))
+  if panel.is_recent_view()
+    && matches!(
+      destination,
+      Some(Destination::File(_) | Destination::Directory(_))
+    )
   {
     for (label, action) in [
       ("Toggle checkbox", Action::RecentToggle),

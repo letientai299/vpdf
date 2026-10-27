@@ -403,7 +403,8 @@ impl Session {
           self.content(screen),
           &self.frontend.wake(),
           matches!(self.frontend, crate::raster::Frontend::Terminal),
-        );
+        )
+        .with_layout(self.state.recent_layout);
         home.configure(&self.settings);
         self.home = Some(home);
       }

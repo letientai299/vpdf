@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Validated, shared RGB pixels.
+/// Validated, shared RGB or RGBA pixels.
 ///
 /// ```compile_fail
 /// use vpdf_model::image::Rgb;
@@ -20,14 +20,26 @@ impl Rgb {
     height: i32,
     pixels: impl Into<Arc<Vec<u8>>>,
   ) -> Option<Self> {
+    Self::sized(width, height, pixels.into(), 3)
+  }
+
+  pub fn rgba(width: i32, height: i32, pixels: Vec<u8>) -> Option<Self> {
+    Self::sized(width, height, Arc::new(pixels), 4)
+  }
+
+  fn sized(
+    width: i32,
+    height: i32,
+    pixels: Arc<Vec<u8>>,
+    channels: usize,
+  ) -> Option<Self> {
     if width <= 0 || height <= 0 {
       return None;
     }
     let length = usize::try_from(width)
       .ok()?
       .checked_mul(usize::try_from(height).ok()?)?
-      .checked_mul(3)?;
-    let pixels = pixels.into();
+      .checked_mul(channels)?;
     (pixels.len() == length).then_some(Self { width, height, pixels })
   }
 
@@ -79,5 +91,19 @@ mod tests {
     assert!(Arc::ptr_eq(image.pixels(), copy.pixels()));
     assert_eq!((copy.width(), copy.height()), (2, 1));
     assert_ne!(PictureId::fresh(), PictureId::fresh());
+  }
+}
+
+#[cfg(test)]
+mod alpha_tests {
+  use super::*;
+
+  #[test]
+  fn rgba_retains_opacity_and_validates_size() {
+    assert!(Rgb::rgba(1, 1, vec![0; 3]).is_none());
+    assert!(Rgb::rgba(0, 1, Vec::new()).is_none());
+    let image = Rgb::rgba(1, 1, vec![10, 20, 30, 40]).unwrap();
+    assert_eq!(image.pixels().as_slice(), &[10, 20, 30, 40]);
+    assert!(Arc::ptr_eq(image.pixels(), image.clone().pixels()));
   }
 }

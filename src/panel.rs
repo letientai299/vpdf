@@ -215,9 +215,45 @@ pub(crate) fn saved_rows(entries: &[Entry]) -> Vec<Row> {
 
 fn history_rows<'a>(entries: impl Iterator<Item = &'a Entry>) -> Vec<Row> {
   let home = std::env::var_os("HOME").map(PathBuf::from);
-  entries
-    .map(|entry| Row::recent(&entry.path, entry.cursor.page, home.as_deref()))
-    .collect()
+  let mut entries: Vec<_> = entries.collect();
+  entries.sort_by_key(|entry| std::cmp::Reverse(entry.used));
+  let mut groups: Vec<(PathBuf, Vec<Row>)> = Vec::new();
+  for entry in entries {
+    let parent = entry.path.parent().unwrap_or(&entry.path).to_path_buf();
+    let index = groups
+      .iter()
+      .position(|(path, _)| *path == parent)
+      .unwrap_or_else(|| {
+        groups.push((parent, Vec::new()));
+        groups.len() - 1
+      });
+    let mut row = Row::recent(&entry.path, entry.cursor.page, home.as_deref());
+    row.label =
+      entry.path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+    row.depth = 1;
+    row.style = vpdf_ui::panel::Style::Path;
+    groups[index].1.push(row);
+  }
+  let mut rows = Vec::new();
+  for (parent, files) in groups {
+    let label = home
+      .as_deref()
+      .and_then(|home| parent.strip_prefix(home).ok())
+      .map_or_else(
+        || parent.display().to_string(),
+        |rest| PathBuf::from("~").join(rest).display().to_string(),
+      );
+    rows.push(Row {
+      style: vpdf_ui::panel::Style::Heading,
+      ..Row::new(
+        label,
+        format!("{} files", files.len()),
+        Destination::Directory(parent),
+      )
+    });
+    rows.extend(files);
+  }
+  rows
 }
 
 impl App {
@@ -410,6 +446,9 @@ impl App {
       &self.password,
       &self.wake,
     );
+    if let Some(shelf) = panel.view.shelf_mut() {
+      shelf.set_pages(self.path.clone(), self.doc.pages.len());
+    }
     panel.view.set_picker(match self.frontend {
       crate::raster::Frontend::Terminal => {
         vpdf_ui::home::Picker::Terminal { fzf: crate::cmdline::on_path("fzf") }
@@ -601,7 +640,7 @@ impl App {
         Request::PanelOpen { path, position: None, focus: false }
       }
       Destination::Link(target) => return self.open_split(&target),
-      Destination::None => return Ok(()),
+      Destination::None | Destination::Directory(_) => return Ok(()),
     };
     self.request = Some(request);
     Ok(())
@@ -669,5 +708,52 @@ impl App {
       self.preview_annotation(position, &annotation);
     }
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod recent_tests {
+  use super::*;
+
+  #[test]
+  fn groups_keep_paths_and_recency() {
+    let entries = [
+      crate::state::tests::entry("/one/a.pdf", 2, 30),
+      crate::state::tests::entry("/two/a.pdf", 3, 20),
+      crate::state::tests::entry("/one/日本 語.pdf", 4, 10),
+    ];
+    let rows = history_rows(entries.iter());
+    let targets: Vec<_> =
+      rows.iter().map(|row| row.destination.clone()).collect();
+    assert!(
+      targets
+        == vec![
+          Destination::Directory("/one".into()),
+          Destination::File("/one/a.pdf".into()),
+          Destination::File("/one/日本 語.pdf".into()),
+          Destination::Directory("/two".into()),
+          Destination::File("/two/a.pdf".into()),
+        ]
+    );
+    assert_eq!(rows[1].label, "a.pdf");
+    assert_eq!(rows[2].label, "日本 語.pdf");
+  }
+}
+
+#[cfg(test)]
+mod recent_path_tests {
+  use super::*;
+  use std::os::unix::ffi::OsStringExt;
+
+  #[test]
+  fn display_preserves_native_identity() {
+    let path = PathBuf::from(std::ffi::OsString::from_vec(
+      b"/books/file\xff.pdf".to_vec(),
+    ));
+    let mut entry = crate::state::tests::entry("placeholder.pdf", 0, 0);
+    entry.path = path.clone();
+    let rows = history_rows(std::iter::once(&entry));
+    assert!(rows[1].destination == Destination::File(path));
+    assert_eq!(rows[1].label, "file�.pdf");
   }
 }

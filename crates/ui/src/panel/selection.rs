@@ -1,6 +1,6 @@
 use super::{Destination, Event, Panel};
 use crate::split::Rect;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::input::{
@@ -13,6 +13,7 @@ use vpdf_model::style::Role;
 #[derive(Default)]
 pub(super) struct Selection {
   pub checked: BTreeSet<PathBuf>,
+  pub groups: BTreeMap<PathBuf, Vec<PathBuf>>,
   confirmation: Option<Confirmation>,
 }
 
@@ -72,13 +73,68 @@ impl Removal {
 const BUTTONS: [(&str, bool); 2] =
   [("[ Remove Y/Enter ]", true), ("[ Cancel n/Esc ]", false)];
 
+pub(super) fn indent(target: &Destination, width: u16) -> usize {
+  let directory = matches!(target, Destination::Directory(_));
+  if width >= 40 {
+    if directory { 2 } else { 4 }
+  } else if width >= 24 {
+    if directory { 1 } else { 2 }
+  } else {
+    0
+  }
+}
+
 impl Panel {
+  pub(crate) fn checked_cell(&self, column: u16) -> bool {
+    let Some(row) = self.rows.get(self.selected) else { return false };
+    if !self.is_recent_view()
+      || !matches!(row.destination, Destination::File(_))
+    {
+      return false;
+    }
+    let lead = indent(&row.destination, self.columns);
+    (lead..lead + 2).contains(&usize::from(column))
+  }
+
+  pub(super) fn scene_check<'a>(
+    &self,
+    scene: &mut impl Draw<'a>,
+    source: usize,
+    available: usize,
+    base: Role,
+  ) -> usize {
+    let target = &self.rows[source].destination;
+    let lead = indent(target, self.columns).min(available);
+    scene.push(Op::Style(Role::Reset));
+    if source == self.selected && self.focused && lead >= 2 {
+      scene.push(Op::Spaces(lead - 2));
+      scene.push(Op::Style(Role::Mode));
+      scene.text("› ");
+    } else {
+      scene.push(Op::Spaces(lead));
+    }
+    scene.push(Op::Style(base));
+    let checkbox = self.selection_mark(target);
+    let gutter = checkbox.width().min(available.saturating_sub(lead));
+    scene.push(Op::Style(if checkbox.starts_with('○') {
+      Role::Muted
+    } else {
+      Role::Key
+    }));
+    scene.push(Op::Text(vpdf_model::scene::Text::fit(checkbox, gutter)));
+    let gap = usize::from(self.columns >= 24 && available > lead + gutter);
+    scene.push(Op::Spaces(gap));
+    scene.push(Op::Style(base));
+    lead + gutter + gap
+  }
+
   pub fn confirming(&self) -> bool {
     self.removal.confirmation.is_some()
   }
 
   pub fn leave_removal(&mut self) {
-    self.removal = Selection::default();
+    self.removal.checked.clear();
+    self.removal.confirmation = None;
   }
 
   pub fn clear_checked(&mut self) -> bool {
@@ -87,14 +143,51 @@ impl Panel {
     changed
   }
 
-  pub(super) fn toggle_checked(&mut self) {
-    let Some(Destination::File(path)) =
-      self.rows.get(self.selected).map(|row| &row.destination)
-    else {
-      return;
-    };
-    if !self.removal.checked.remove(path) {
-      self.removal.checked.insert(path.clone());
+  pub(super) fn recent_members(&self, target: &Destination) -> Vec<PathBuf> {
+    match target {
+      Destination::File(path) => vec![path.clone()],
+      Destination::Directory(path) => {
+        self.removal.groups.get(path).cloned().unwrap_or_default()
+      }
+      _ => Vec::new(),
+    }
+  }
+
+  pub(super) fn sync_members(&mut self) {
+    self.removal.groups.clear();
+    for row in &self.rows {
+      if let Destination::File(path) = &row.destination {
+        let parent = path.parent().unwrap_or(path).to_path_buf();
+        self.removal.groups.entry(parent).or_default().push(path.clone());
+      }
+    }
+  }
+
+  pub(super) fn selection_mark(&self, target: &Destination) -> &'static str {
+    let members = self.recent_members(target);
+    let selected = members
+      .iter()
+      .filter(|path| self.removal.checked.contains(*path))
+      .count();
+    if selected == 0 {
+      "○ "
+    } else if selected == members.len() {
+      "● "
+    } else {
+      "◐ "
+    }
+  }
+
+  pub fn toggle_checked(&mut self) {
+    let Some(row) = self.rows.get(self.selected) else { return };
+    let members = self.recent_members(&row.destination);
+    let all = members.iter().all(|path| self.removal.checked.contains(path));
+    for path in members {
+      if all {
+        self.removal.checked.remove(&path);
+      } else {
+        self.removal.checked.insert(path);
+      }
     }
   }
 
@@ -111,7 +204,7 @@ impl Panel {
     }
     let targets = if self.removal.checked.is_empty() {
       match self.rows.get(self.selected).map(|row| &row.destination) {
-        Some(Destination::File(path)) => vec![path.clone()],
+        Some(target) => self.recent_members(target),
         _ => return,
       }
     } else {

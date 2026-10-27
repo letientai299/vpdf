@@ -104,3 +104,80 @@ fn home_version_shows_every_group() {
   let info = home.info.as_ref().unwrap();
   assert_eq!(info.branch_closed(1), Some(false));
 }
+
+#[test]
+fn home_resize_uses_reader_chord() -> Result<()> {
+  let path = std::path::Path::new("/books/a.pdf");
+  let entry = Entry {
+    path: path.into(),
+    cursor: crate::text::Position::default(),
+    rotation: 0,
+    used: 0,
+    marks: 0,
+  };
+  let mut home = Home::new(
+    vec![Row::recent(path, entry.cursor.page, None)],
+    &[entry],
+    crate::testing::screen::cells(120, 36),
+    Picker::Native,
+  );
+  let mut scene = crate::testing::empty();
+  home.scene(&mut scene, 0, |_| {})?;
+  let before = home.shelf_mut().unwrap().start().unwrap();
+  let mut history = History::default();
+  home.event(
+    Event::Key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+    &mut history,
+  )?;
+  home.event(key(KeyCode::Char('l')), &mut history)?;
+  home.scene(&mut crate::testing::empty(), 0, |_| {})?;
+  assert_eq!(home.shelf_mut().unwrap().start(), Some(before + 1));
+  Ok(())
+}
+
+#[test]
+fn resize_mode_explains_input() -> Result<()> {
+  use crate::bindings::{Map, Sequence, Target};
+  use crate::split::Direction;
+  use crate::window::Window;
+  for columns in [1, 7, 24, 120] {
+    let mut home = home(Picker::Native);
+    home.resize(crate::testing::screen::cells(columns, 24), At::default());
+    let mut bindings = Bindings::default();
+    bindings.set(
+      Context::Resize,
+      Map::new(vec![
+        (
+          Sequence::parse("L")?,
+          Target::Reader(Action::Window(Window::Extend(Direction::Right))),
+        ),
+        (Sequence::parse("<Esc>")?, Target::Reader(Action::Cancel)),
+      ])?,
+    );
+    home.set_bindings(bindings);
+    let mut history = History::default();
+    home.event(key(KeyCode::Char(' ')), &mut history)?;
+    home.event(
+      Event::Key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+      &mut history,
+    )?;
+    let mut scene = crate::testing::empty();
+    home.scene(&mut scene, 0, |_| {})?;
+    let scene = scene.into_scene();
+    crate::testing::lines(&scene, columns);
+    if columns >= 24 {
+      let text = crate::testing::text(&scene);
+      assert!(text.contains("RESIZE") && text.contains("L right"));
+      assert!(
+        crate::testing::spans(&scene)
+          .iter()
+          .any(|(role, text)| *role == Role::Key && text == "L")
+      );
+      assert!(!text.contains("q quit"));
+    }
+    home.event(key(KeyCode::Esc), &mut history)?;
+    assert!(!home.keys.resizing());
+    assert!(home.panel.clear_checked());
+  }
+  Ok(())
+}

@@ -76,7 +76,29 @@ impl Graphics {
     let id = self.base + PREVIEW;
     self.pictured = true;
     if self.preview != serial {
-      transmit(self.transport, out, id, width, height, 24, &encode(rgb)?)?;
+      let pixels = usize::try_from(width)
+        .ok()
+        .and_then(|width| {
+          usize::try_from(height)
+            .ok()
+            .and_then(|height| width.checked_mul(height))
+        })
+        .filter(|&pixels| pixels > 0)
+        .ok_or_else(|| anyhow::anyhow!("Invalid picture dimensions"))?;
+      let bits = if pixels.checked_mul(4) == Some(rgb.len()) { 32 } else { 24 };
+      anyhow::ensure!(
+        pixels.checked_mul(bits / 8) == Some(rgb.len()),
+        "Invalid picture pixels"
+      );
+      transmit(
+        self.transport,
+        out,
+        id,
+        width,
+        height,
+        bits as u8,
+        &encode(rgb)?,
+      )?;
       self.preview = serial;
     }
     // Whole pixels, so the crop matches the image unless the screen cuts it.

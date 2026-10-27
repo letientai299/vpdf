@@ -58,7 +58,7 @@ fn text(panel: &mut Panel) -> String {
 fn checkboxes_preserve_cursor_and_preview() {
   let mut panel = panel();
   let first = text(&mut panel);
-  assert_eq!(first.matches("[ ]").count(), 2);
+  assert_eq!(first.matches("○").count(), 2);
   assert!(first.contains("0 selected"));
   panel.point(Pointing::Row(1));
   for count in [1, 0, 1] {
@@ -153,7 +153,7 @@ fn refresh_preserves_path_identity() {
   assert!(panel.removal.checked.is_empty());
   assert_eq!(panel.selected(), 0);
   panel.refresh_recent(Vec::new(), &[]);
-  assert!(text(&mut panel).contains("A PDF reader with Vim keys."));
+  assert!(text(&mut panel).contains(":edit <file>"));
   assert!(panel.shelf_mut().unwrap().take_request().is_none());
 }
 
@@ -333,4 +333,57 @@ fn marks_headers_hint_the_jump() {
   panel.scene_list(&mut scene, At::default(), 40, 4);
   let header = &crate::testing::lines(&scene, 40)[&0];
   assert!(header.starts_with(" MARKS  1  ’a jump"), "{header:?}");
+}
+
+#[test]
+fn directory_selection_keeps_hidden_members() {
+  let entries =
+    [entry("/books/a.pdf"), entry("/books/b.pdf"), entry("/other/a.pdf")];
+  let mut grouped = vec![Row::new(
+    "/books".into(),
+    String::new(),
+    Destination::Directory("/books".into()),
+  )];
+  grouped.extend(rows(&entries));
+  let mut panel = Panel::recent(grouped, &entries);
+  assert_eq!(panel.selection_mark(&panel.rows[0].destination), "○ ");
+  panel.choose(1);
+  action(&mut panel, Action::RecentToggle);
+  assert_eq!(panel.selection_mark(&panel.rows[0].destination), "◐ ");
+  panel.choose(0);
+  assert_eq!(action(&mut panel, Action::Follow), Event::Stay);
+  assert_eq!(panel.removal.checked.len(), 2);
+  assert_eq!(panel.selection_mark(&panel.rows[0].destination), "● ");
+  action(&mut panel, Action::RecentToggle);
+  assert!(panel.removal.checked.is_empty());
+  // A projection cannot redefine directory membership.
+  let tree = tree::Tree::from_depths([0, 1, 1, 0].into_iter());
+  panel.project(tree.project(|source| source == 0));
+  panel.choose(0);
+  action(&mut panel, Action::RecentRemove);
+  assert_eq!(
+    panel.confirm_key(key(KeyCode::Enter)),
+    Event::Forget(vec!["/books/a.pdf".into(), "/books/b.pdf".into()])
+  );
+}
+
+#[test]
+fn recent_mouse_matches_group_keys() {
+  let entries = [entry("/books/a.pdf"), entry("/books/b.pdf")];
+  let mut grouped = vec![Row::new(
+    "/books".into(),
+    String::new(),
+    Destination::Directory("/books".into()),
+  )];
+  grouped.extend(rows(&entries));
+  let mut panel = Panel::recent(grouped, &entries);
+  panel.scene_list(&mut Vec::new(), At::default(), 80, 12);
+  let click = panel.press(press(4, 1));
+  assert_eq!(click.activate(&mut panel, 1), Activation::Stay);
+  assert_eq!(panel.removal.checked.len(), 2);
+  assert_eq!(panel.selected(), 0);
+  let click = panel.press(press(4, 2));
+  assert_eq!(click.activate(&mut panel, 1), Activation::Stay);
+  assert_eq!(panel.removal.checked.len(), 1);
+  assert_eq!(panel.selection_mark(&panel.rows[0].destination), "◐ ");
 }

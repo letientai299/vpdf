@@ -127,7 +127,8 @@ impl Target {
       }
       Self::Control(Control::Resize) => matches!(
         context,
-        C::Normal
+        C::Home
+          | C::Normal
           | C::Cursor
           | C::Visual
           | C::Operator

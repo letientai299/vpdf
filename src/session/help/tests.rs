@@ -570,12 +570,16 @@ fn help_open_releases_home_preview() -> Result<()> {
   let mut drawn = Vec::new();
   home.draw(&mut drawn)?;
   let deadline = Instant::now() + Duration::from_secs(10);
-  while !home.updates() {
+  loop {
+    home.updates();
+    drawn.clear();
+    home.draw(&mut drawn)?;
+    if String::from_utf8_lossy(&drawn).contains("a=t,") {
+      break;
+    }
     assert!(Instant::now() < deadline, "Home thumbnail timed out");
     std::thread::sleep(Duration::from_millis(2));
   }
-  drawn.clear();
-  home.draw(&mut drawn)?;
   assert!(String::from_utf8_lossy(&drawn).contains("a=t,"));
   let mut session = Session { home: Some(home), ..Session::new(None) };
   session.request_help("introduction", Invocation::Home, screen)?;
@@ -628,8 +632,7 @@ fn help_close_clears_images() -> Result<()> {
   let output = String::from_utf8_lossy(&returned);
   assert_eq!(output.matches("a=d,d=I,").count(), 2);
   assert!(
-    output.find("a=d,d=I,").unwrap()
-      < output.find("A PDF reader with Vim keys.").unwrap()
+    output.find("a=d,d=I,").unwrap() < output.find(":edit <file>").unwrap()
   );
   returned.clear();
   session.draw_home(&mut home, &mut returned)?;
