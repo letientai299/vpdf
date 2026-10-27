@@ -38,6 +38,8 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
   "NSEvent",
   "NSPasteboard",
   "NSDocumentController",
+  "NSScreen",
+  "objc2-core-foundation",
   "objc2-uniform-type-identifiers",
 ] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
@@ -50,6 +52,8 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
   "NSURL",
   "NSArray",
   "NSEnumerator",
+  "NSGeometry",
+  "NSUserDefaults",
 ] }
 objc2-uniform-type-identifiers = { version = "0.3.2", default-features = false, features = [
   "std",

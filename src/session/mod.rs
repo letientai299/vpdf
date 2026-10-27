@@ -62,6 +62,7 @@ pub struct Session {
   observing: Option<()>,
   unlock: Option<unlock::Unlock>,
   native_opens: std::collections::VecDeque<vpdf_model::reference::Reference>,
+  windows: native::restore::Windows,
   pending_keys: std::collections::VecDeque<KeyEvent>,
   secret: Option<String>,
   picker: Option<crate::programs::Picker>,

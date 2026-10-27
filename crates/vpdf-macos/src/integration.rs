@@ -1,4 +1,5 @@
 //! Main-thread menu and window-sheet adapter.
+use crate::placement;
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{ProtocolObject, Sel};
@@ -6,11 +7,11 @@ use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
   NSApplication, NSDocumentController, NSEventModifierFlags, NSMenu,
   NSMenuDelegate, NSMenuItem, NSModalResponseOK, NSOpenPanel, NSPasteboard,
-  NSPasteboardTypeString, NSView, NSWindow, NSWorkspace,
+  NSPasteboardTypeString, NSScreen, NSView, NSWindow, NSWorkspace,
 };
 use objc2_foundation::{
-  MainThreadMarker, NSArray, NSObject, NSObjectProtocol, NSString, NSURL,
-  ns_string,
+  MainThreadMarker, NSArray, NSObject, NSObjectProtocol, NSPoint, NSRect,
+  NSSize, NSString, NSURL, NSUserDefaults, ns_string,
 };
 use objc2_uniform_type_identifiers::UTTypePDF;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -155,6 +156,7 @@ impl Integration {
     // SAFETY: Borrowed AppKit handles guarantee live NSViews.
     let view = unsafe { raw.ns_view.cast::<NSView>().as_ref() };
     let window = view.window()?;
+    restore_frame(&window, mtm);
     let menu = NSApplication::sharedApplication(mtm).mainMenu()?;
     #[cfg(feature = "bench-events")]
     let identity = proof::Identity::capture(&window, &menu, mtm);
@@ -338,6 +340,34 @@ impl Integration {
       // SAFETY: AppKit permits nil action senders.
       unsafe { panel.cancel(None) };
     }
+  }
+}
+
+/// Whether the system reopens windows on relaunch; unset means yes.
+pub fn reopens_windows() -> bool {
+  let defaults = NSUserDefaults::standardUserDefaults();
+  let key = ns_string!("NSQuitAlwaysKeepsWindows");
+  defaults.objectForKey(key).is_none() || defaults.boolForKey(key)
+}
+
+/// Reapplies the saved frame where a display can show it.
+fn restore_frame(window: &NSWindow, mtm: MainThreadMarker) {
+  let name = ns_string!("Vpdf");
+  window.setFrameUsingName(name);
+  window.setFrameAutosaveName(name);
+  let rect = |frame: NSRect| {
+    [frame.origin.x, frame.origin.y, frame.size.width, frame.size.height]
+  };
+  let areas: Vec<_> = NSScreen::screens(mtm)
+    .iter()
+    .map(|screen| rect(screen.visibleFrame()))
+    .collect();
+  let Some(main) = NSScreen::mainScreen(mtm) else { return };
+  let fitted =
+    placement::fit(rect(window.frame()), &areas, rect(main.visibleFrame()));
+  if let Some([x, y, width, height]) = fitted {
+    let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(width, height));
+    window.setFrame_display(frame, false);
   }
 }
 

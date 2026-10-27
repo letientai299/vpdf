@@ -17,6 +17,7 @@ use vpdf_model::tile::{TileId, TileOwner};
 use vpdf_pdf::jobs::Wake;
 
 pub mod commands;
+pub mod restore;
 
 const BUDGET: usize = 64 << 20;
 /// Inputs one frame takes beyond the first, so a stream cannot hold it.
@@ -65,6 +66,7 @@ pub enum Input {
   },
   Leave,
   Focus(bool),
+  Fullscreen(bool),
   Open(PathBuf),
   Reference(vpdf_model::reference::Reference),
   Presented {
@@ -229,21 +231,40 @@ pub struct Bridge {
   next: AtomicU64,
   latest: Arc<Mutex<Option<Frame>>>,
   thread: Option<JoinHandle<Result<()>>>,
+  fullscreen: bool,
 }
 
-struct Launch {
-  config: crate::config::Loaded,
-  references: Vec<vpdf_model::reference::Reference>,
-  store: Option<PathBuf>,
+#[derive(Default)]
+pub struct Launch {
+  pub config: crate::config::Loaded,
+  pub references: Vec<vpdf_model::reference::Reference>,
+  /// Reading state; the window session is saved beside it.
+  pub store: Option<PathBuf>,
+  /// The system asks apps to reopen their windows.
+  pub system_reopen: bool,
+}
+
+impl Launch {
+  fn reopen(&self) -> bool {
+    match self.config.settings.restore_session() {
+      crate::config::Restore::System => self.system_reopen,
+      crate::config::Restore::Always => true,
+      crate::config::Restore::Never => false,
+    }
+  }
 }
 
 impl Bridge {
   pub fn configured(
-    references: Vec<vpdf_model::reference::Reference>,
-    store: Option<PathBuf>,
-    config: crate::config::Loaded,
+    launch: Launch,
     repaint: impl Fn() + Send + Sync + 'static,
   ) -> Result<Self> {
+    let mut windows = launch.store.as_deref().and_then(restore::Store::claim);
+    let layout = windows
+      .as_mut()
+      .filter(|_| launch.reopen())
+      .and_then(restore::Store::load);
+    let fullscreen = layout.as_ref().is_some_and(|layout| layout.fullscreen);
     let (send, receive) = mpsc::channel();
     let latest = Arc::new(Mutex::new(None));
     let output = Arc::clone(&latest);
@@ -258,7 +279,8 @@ impl Bridge {
     let worker =
       thread::Builder::new().name("vpdf-session".into()).spawn(move || {
         run(
-          Launch { config, references, store },
+          launch,
+          Resume { store: windows, layout },
           &receive,
           &output,
           &repaint,
@@ -271,7 +293,13 @@ impl Bridge {
       next: AtomicU64::new(1),
       latest,
       thread: Some(worker),
+      fullscreen,
     })
+  }
+
+  /// The restored window filled its screen.
+  pub fn fullscreen(&self) -> bool {
+    self.fullscreen
   }
 
   pub fn send(&self, input: Input) -> Ticket {
@@ -301,8 +329,33 @@ impl Drop for Bridge {
   }
 }
 
+/// The claimed window session and the layout to reopen.
+struct Resume {
+  store: Option<restore::Store>,
+  layout: Option<restore::Layout>,
+}
+
+impl Resume {
+  fn poll(&mut self, session: &mut Session, now: Instant) -> Option<Duration> {
+    self.store.as_mut()?.poll(session, now)
+  }
+
+  fn touch(&mut self, now: Instant) {
+    if let Some(store) = &mut self.store {
+      store.touch(now);
+    }
+  }
+
+  fn flush(&mut self, session: &mut Session) {
+    if let Some(store) = &mut self.store {
+      store.flush(session);
+    }
+  }
+}
+
 fn run(
   launch: Launch,
+  mut windows: Resume,
   receive: &mpsc::Receiver<(Ticket, Input)>,
   latest: &Mutex<Option<Frame>>,
   repaint: &impl Fn(),
@@ -312,6 +365,7 @@ fn run(
   let mut starting = !launch.references.is_empty();
   let mut session = Session::configured(launch.store, launch.config);
   session.frontend = crate::raster::Frontend::Native(wake.clone());
+  session.windows = restore::Windows::new(windows.layout.take());
   let mut screen = Screen {
     columns: 100,
     rows: 40,
@@ -337,13 +391,7 @@ fn run(
     dirty |= session.print_update();
     dirty |= picker_update(&mut session, screen);
     dirty |= resume_keys(&mut session);
-    if !session.blocked()
-      && session.pending_keys.is_empty()
-      && let Some(path) = session.native_opens.pop_front()
-    {
-      apply(&mut session, Input::Reference(path), &mut screen);
-      dirty = true;
-    }
+    dirty |= open_next(&mut session, &mut screen);
     finish_launch(&mut session, &mut starting)?;
     quit_when_closed(&mut session);
     session.perf.running(session.state.perf);
@@ -384,7 +432,11 @@ fn run(
     if session.quit {
       break;
     }
-    let wait = wait_time(&mut session, &chores, animation_due, Instant::now());
+    let now = Instant::now();
+    let mut wait = wait_time(&mut session, &chores, animation_due, now);
+    if let Some(due) = windows.poll(&mut session, now) {
+      wait = wait.min(due);
+    }
     let input = match receive.recv_timeout(wait) {
       Ok(input) => input,
       Err(mpsc::RecvTimeoutError::Timeout) => continue,
@@ -397,12 +449,28 @@ fn run(
         applied = applied.max(ticket);
         input
       });
-    match drain(&mut session, inputs, &mut chores, &mut screen, pending) {
+    let drained =
+      drain(&mut session, inputs, &mut chores, &mut screen, pending);
+    windows.touch(Instant::now());
+    match drained {
       Some(applied) => dirty |= applied,
       None => break,
     }
   }
+  windows.flush(&mut session);
   session.finish()
+}
+
+/// Opens one queued file, else one saved tab; whether either ran.
+fn open_next(session: &mut Session, screen: &mut Screen) -> bool {
+  if session.blocked() || !session.pending_keys.is_empty() {
+    return false;
+  }
+  if let Some(path) = session.native_opens.pop_front() {
+    apply(session, Input::Reference(path), screen);
+    return true;
+  }
+  session.restore_next(*screen)
 }
 
 /// Applies queued input; whether any needs a frame, or None on close.
@@ -563,8 +631,12 @@ fn wait_time(
   animation_due: Instant,
   now: Instant,
 ) -> Duration {
+  let restoring =
+    session.windows.restoring.as_ref().is_some_and(restore::Restoring::waiting);
   if !session.blocked()
-    && (!session.native_opens.is_empty() || !session.pending_keys.is_empty())
+    && (!session.native_opens.is_empty()
+      || !session.pending_keys.is_empty()
+      || restoring)
   {
     return Duration::ZERO;
   }
@@ -675,10 +747,7 @@ fn apply_reader(
   let applied = match input {
     Input::SystemPalette(palette) => Ok(session.set_system_palette(palette)),
     Input::ReduceMotion(reduce) => Ok(set_motion(session, reduce)),
-    Input::Resize(size) => {
-      *screen = size;
-      session.resize(size).map(|()| true)
-    }
+    Input::Resize(size) => resize(session, screen, size),
     Input::Open(path) => {
       return apply(session, Input::Reference(path.into()), screen);
     }
@@ -733,6 +802,7 @@ fn apply_reader(
     Input::Leave => session.interact(Interaction::Leave).inspect(|_changed| {
       session.drop_pointer();
     }),
+    Input::Fullscreen(full) => Ok(session.windows.fullscreen(full)),
     Input::Focus(focused) => {
       session.sight =
         if focused { super::Sight::Focused } else { super::Sight::Unfocused };
@@ -749,6 +819,16 @@ fn apply_reader(
     report(session, Err(error));
     true
   })
+}
+
+fn resize(
+  session: &mut Session,
+  screen: &mut Screen,
+  size: Screen,
+) -> Result<bool> {
+  *screen = size;
+  session.windows.sized();
+  session.resize(size).map(|()| true)
 }
 
 fn open_input(
@@ -1102,7 +1182,7 @@ mod tests {
   use crate::screen::cells;
   use vpdf_model::input::{KeyCode, KeyModifiers, MouseEventKind};
 
-  fn wait(
+  pub(super) fn wait(
     bridge: &Bridge,
     wakes: &mpsc::Receiver<()>,
     accept: impl Fn(&Frame) -> bool,
@@ -1127,21 +1207,24 @@ mod tests {
     let config = crate::config::Loaded::default();
     Ok((
       Bridge::configured(
-        {
-          let mut references: Vec<vpdf_model::reference::Reference> =
-            paths.into_iter().map(Into::into).collect();
-          if let Some(page) = page {
-            references[0].operations.push(
-              vpdf_model::reference::Operation::Page(
-                std::num::NonZeroUsize::new(page)
-                  .expect("Test page is positive"),
-              ),
-            );
-          }
-          references
+        Launch {
+          references: {
+            let mut references: Vec<vpdf_model::reference::Reference> =
+              paths.into_iter().map(Into::into).collect();
+            if let Some(page) = page {
+              references[0].operations.push(
+                vpdf_model::reference::Operation::Page(
+                  std::num::NonZeroUsize::new(page)
+                    .expect("Test page is positive"),
+                ),
+              );
+            }
+            references
+          },
+          store,
+          config,
+          ..Launch::default()
         },
-        store,
-        config,
         move || wake.wake(),
       )?,
       wakes,
@@ -1316,11 +1399,14 @@ mod tests {
     let encrypted = protected(&source)?;
     let (wake, wakes) = crate::fixtures::wake();
     let mut bridge = Bridge::configured(
-      vec![vpdf_model::reference::Reference::parse(
-        format!("{}#page=2", encrypted.path().display()).as_ref(),
-      )?],
-      None,
-      super::super::tests::settings_file(directory.path()),
+      Launch {
+        references: vec![vpdf_model::reference::Reference::parse(
+          format!("{}#page=2", encrypted.path().display()).as_ref(),
+        )?],
+        store: None,
+        config: super::super::tests::settings_file(directory.path()),
+        ..Launch::default()
+      },
       move || wake.wake(),
     )?;
     wait(&bridge, &wakes, masked)?;
@@ -1684,7 +1770,9 @@ mod tests {
     Ok(())
   }
 
-  fn protected(path: &std::path::Path) -> Result<tempfile::NamedTempFile> {
+  pub(super) fn protected(
+    path: &std::path::Path,
+  ) -> Result<tempfile::NamedTempFile> {
     let mut source = vpdf_pdf::document::Document::open(path, "")?;
     crate::encryption::encrypt(&mut source.native)
   }
@@ -3103,12 +3191,15 @@ mod tests {
     let store = root.path().join("state");
     let (wake, wakes) = crate::fixtures::wake();
     let mut bridge = Bridge::configured(
-      vec![
-        parse(&first, "#search=%22two%22&page=3")?,
-        parse(&second, "#page=2")?,
-      ],
-      Some(store.clone()),
-      crate::config::Loaded::default(),
+      Launch {
+        references: vec![
+          parse(&first, "#search=%22two%22&page=3")?,
+          parse(&second, "#page=2")?,
+        ],
+        store: Some(store.clone()),
+        config: crate::config::Loaded::default(),
+        ..Launch::default()
+      },
       move || wake.wake(),
     )?;
     bridge.send(Input::Observe(true));
@@ -3156,9 +3247,12 @@ mod tests {
     assert_eq!(terminal.app().reference.rectangle.as_ref().unwrap().page.0, 0);
     let (wake, wakes) = crate::fixtures::wake();
     let mut bridge = Bridge::configured(
-      vec![reference],
-      None,
-      crate::config::Loaded::default(),
+      Launch {
+        references: vec![reference],
+        store: None,
+        config: crate::config::Loaded::default(),
+        ..Launch::default()
+      },
       move || wake.wake(),
     )?;
     bridge.send(Input::Observe(true));
@@ -3203,9 +3297,12 @@ mod tests {
       };
       let (wake, wakes) = crate::fixtures::wake();
       let mut bridge = Bridge::configured(
-        vec![Reference::parse(input.as_ref())?],
-        None,
-        config,
+        Launch {
+          references: vec![Reference::parse(input.as_ref())?],
+          store: None,
+          config,
+          ..Launch::default()
+        },
         move || wake.wake(),
       )?;
       let failed =

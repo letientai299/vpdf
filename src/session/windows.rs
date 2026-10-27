@@ -199,7 +199,7 @@ impl Session {
 
   /// Reopens the document's saved sidebar, leaving the page focused;
   /// splits of an open view skip this.
-  fn reopen_sidebar(&self, app: &mut App) {
+  pub(super) fn reopen_sidebar(&self, app: &mut App) {
     let saved = self.state.entry(&app.path).and_then(|entry| entry.sidebar);
     let Some(crate::state::Sidebar::Open(kind)) = saved else { return };
     let opened = if kind == PanelKind::Marks {

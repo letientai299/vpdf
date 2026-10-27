@@ -55,6 +55,15 @@ position. Cursor highlight starts from `reading.cursorline`; `:cursorline`
 changes it in the current pane. Reloading a PDF preserves live pane values. A
 same-document split copies the source view.
 
+The macOS native app reopens its last tabs when the system reopens windows.
+`reading.restore_session = "always"` reopens them regardless; `"never"` starts
+at Home. Window size and position are kept either way:
+
+```toml
+[reading]
+restore_session = "never"
+```
+
 To make the focused pane easier to distinguish when comparing documents:
 
 ```toml

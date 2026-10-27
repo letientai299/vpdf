@@ -69,6 +69,31 @@ restoration. Its wake callback therefore deminiaturizes the window when an Apple
 event arrives for an active app. Background `open -g` requests leave the window
 minimized and open the documents after the user restores it.
 
+## Window and session restoration
+
+AppKit's frame autosave keeps the window size and position under the `Vpdf`
+name. At launch the adapter reapplies it, then centers and shrinks the window
+onto the main display when no display shows its title bar.
+
+[`restore.rs`][restore] keeps tabs, split shapes, pane views, and full-screen
+state in `native-session.json` beside the reading state. Reading state still
+owns marks, outlines, and sidebars; the session file holds only paths and
+views. Writes are atomic, coalesce two seconds after input, and run again at
+shutdown. Unknown versions and corrupt files read as no session.
+
+An exclusive lock on `native-session.lock` makes one instance the session
+owner. Later concurrent instances neither restore nor save it, and the
+terminal reader never touches it.
+
+`reading.restore_session` defaults to the macOS `NSQuitAlwaysKeepsWindows`
+preference; an unset preference reopens. The GUI drains Finder launch events
+before creating the bridge, so they count as explicit launch files. The worker
+waits for the first window size, opens the saved active tab, then one saved tab
+per loop turn between inputs. Restored tabs keep their saved order around
+explicit opens without taking focus. Missing, locked, or unreadable files are
+skipped and reported once. A shutdown before restoration finishes saves the
+unopened tabs in place.
+
 ## Unsafe boundary
 
 The adapter is the only new workspace crate with Objective-C unsafe code.
@@ -113,3 +138,4 @@ scope. These menu and sheet probes make no accessibility claim.
 [sheet]: https://developer.apple.com/documentation/appkit/nssavepanel/beginsheetmodal(for:completionhandler:)
 
 [display]: ../../crates/vpdf-macos/src/display.rs
+[restore]: ../../src/session/native/restore.rs

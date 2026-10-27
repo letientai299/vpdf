@@ -1,7 +1,7 @@
 use clap::Parser;
 use eframe::egui::{self, ViewportCommand};
 use std::path::PathBuf;
-use vpdf::session::native::{Bridge, Frame, Input};
+use vpdf::session::native::{Bridge, Frame, Input, Launch};
 #[cfg(feature = "bench-events")]
 use vpdf_gui::inject;
 use vpdf_gui::{
@@ -58,6 +58,7 @@ struct Window {
   renderer: Renderer,
   input: input::Adapter,
   screen: Option<Screen>,
+  fullscreen: Option<bool>,
   system_palette: vpdf_model::theme::Palette,
   palette: vpdf_model::theme::Palette,
   font_size: f32,
@@ -75,6 +76,13 @@ impl Window {
     if system_palette != self.system_palette {
       self.system_palette = system_palette;
       self.bridge.send(Input::SystemPalette(system_palette));
+    }
+    let fullscreen = ctx.input(|input| input.viewport().fullscreen);
+    if let Some(full) = fullscreen
+      && fullscreen != self.fullscreen
+    {
+      self.fullscreen = fullscreen;
+      self.bridge.send(Input::Fullscreen(full));
     }
   }
 
@@ -99,17 +107,33 @@ impl Window {
     set_theme(&cc.egui_ctx, palette);
     let trace = Trace::from_env();
     let ctx = cc.egui_ctx.clone();
+    let files = args
+      .files
+      .iter()
+      .map(|file| vpdf_model::reference::Reference::parse(file.as_os_str()));
+    // Finder launch opens arrive before the window.
+    #[cfg(target_os = "macos")]
+    let (opened, quit) = launch_events(&documents);
+    #[cfg(target_os = "macos")]
+    let files = files.chain(opened.into_iter().map(|path| Ok(path.into())));
+    let references = files.collect::<Result<Vec<_>, _>>()?;
     let bridge = Bridge::configured(
-      args
-        .files
-        .iter()
-        .map(|file| vpdf_model::reference::Reference::parse(file.as_os_str()))
-        .collect::<Result<Vec<_>, _>>()?,
-      vpdf::state::location(),
-      config,
+      Launch {
+        config,
+        references,
+        store: vpdf::state::location(),
+        system_reopen: system_reopen(),
+      },
       move || ctx.request_repaint(),
     )?;
+    if bridge.fullscreen() {
+      cc.egui_ctx.send_viewport_cmd(ViewportCommand::Fullscreen(true));
+    }
     bridge.send(Input::SystemPalette(system_palette));
+    #[cfg(target_os = "macos")]
+    if quit {
+      cc.egui_ctx.send_viewport_cmd(ViewportCommand::Close);
+    }
     if trace.enabled() {
       bridge.send(Input::Observe(true));
     }
@@ -156,6 +180,7 @@ impl Window {
         .map_or_else(Renderer::default, Renderer::with_gpu),
       input,
       screen: None,
+      fullscreen: None,
       system_palette,
       palette,
       font_size,
@@ -359,6 +384,30 @@ impl eframe::App for Window {
       eprintln!("Close failed: {error}");
     }
   }
+}
+
+/// Documents and quits Finder sent before the window opened.
+#[cfg(target_os = "macos")]
+fn launch_events(documents: &fmv_macos_events::Inbox) -> (Vec<PathBuf>, bool) {
+  let mut opened = Vec::new();
+  let mut quit = false;
+  for event in documents.drain() {
+    match event {
+      fmv_macos_events::Event::Open(paths) => opened.extend(paths),
+      fmv_macos_events::Event::Quit => quit = true,
+    }
+  }
+  (opened, quit)
+}
+
+#[cfg(target_os = "macos")]
+fn system_reopen() -> bool {
+  vpdf_macos::reopens_windows()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_reopen() -> bool {
+  true
 }
 
 /// A complete frame with pixels, worth a `--capture`.

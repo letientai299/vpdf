@@ -1,11 +1,13 @@
 //! Window splits within a tab, as a binary tree like Vim's layout.
 
+use serde::{Deserialize, Serialize};
 use vpdf_model::scene::{Draw, Op, Text};
 use vpdf_model::style::Role;
 
 /// `Rows` stacks panes (`Ctrl-w s`); `Columns` sets them side by side
 /// (`Ctrl-w v`).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Axis {
   Rows,
   Columns,
@@ -53,6 +55,14 @@ pub enum Place {
   After,
 }
 
+/// A split tree whose leaves index a saved pane list.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Shape {
+  Pane(usize),
+  Split { axis: Axis, ratio: f32, first: Box<Self>, second: Box<Self> },
+}
+
 #[derive(Debug)]
 pub struct Node {
   kind: Kind,
@@ -79,6 +89,53 @@ fn span(axis: Axis, area: Rect) -> u16 {
 impl Node {
   pub fn leaf(id: u32) -> Self {
     Self { kind: Kind::Leaf(id) }
+  }
+
+  /// This tree with each pane id mapped through `index`; a sibling
+  /// takes an unmapped pane's space. None when no pane maps.
+  pub fn shape(&self, index: &impl Fn(u32) -> Option<usize>) -> Option<Shape> {
+    match &self.kind {
+      Kind::Leaf(id) => index(*id).map(Shape::Pane),
+      Kind::Split { axis, ratio, first, second } => {
+        match (first.shape(index), second.shape(index)) {
+          (Some(first), Some(second)) => Some(Shape::Split {
+            axis: *axis,
+            ratio: *ratio,
+            first: Box::new(first),
+            second: Box::new(second),
+          }),
+          (first, second) => first.or(second),
+        }
+      }
+    }
+  }
+
+  /// A tree of `shape`, its panes mapped through `id`; a sibling takes
+  /// an unmapped pane's space. None when no pane maps.
+  pub fn from_shape(
+    shape: &Shape,
+    id: &impl Fn(usize) -> Option<u32>,
+  ) -> Option<Self> {
+    match shape {
+      Shape::Pane(index) => id(*index).map(Self::leaf),
+      Shape::Split { axis, ratio, first, second } => {
+        match (Self::from_shape(first, id), Self::from_shape(second, id)) {
+          (Some(first), Some(second)) => Some(Self {
+            kind: Kind::Split {
+              axis: *axis,
+              ratio: if ratio.is_finite() {
+                ratio.clamp(0.1, 0.9)
+              } else {
+                0.5
+              },
+              first: Box::new(first),
+              second: Box::new(second),
+            },
+          }),
+          (first, second) => first.or(second),
+        }
+      }
+    }
   }
 
   pub fn scene_dividers<'a>(&self, scene: &mut impl Draw<'a>, area: Rect) {
@@ -634,6 +691,41 @@ mod tests {
     let mut out = Vec::new();
     node.layout(AREA, &mut out);
     out
+  }
+
+  #[test]
+  fn shapes_rebuild_with_new_ids() {
+    let mut tree = Node::leaf(1);
+    tree.split(1, Axis::Columns, 2, Place::Before);
+    tree.split(1, Axis::Rows, 3, Place::After);
+    tree.drag(0, 35, AREA);
+    let shape = tree.shape(&|id| Some(id as usize - 1)).unwrap();
+    let json = serde_json::to_string(&shape).unwrap();
+    assert_eq!(serde_json::from_str::<Shape>(&json).unwrap(), shape);
+    let shifted = |id: u32| id + 10;
+    let rebuilt =
+      Node::from_shape(&shape, &|index| Some(shifted(index as u32 + 1)))
+        .unwrap();
+    let expected: Vec<_> =
+      rects(&tree).into_iter().map(|(id, rect)| (shifted(id), rect)).collect();
+    assert_eq!(rects(&rebuilt), expected);
+    // A missing pane gives its sibling the space.
+    let without = Node::from_shape(&shape, &|index| {
+      (index != 1).then_some(index as u32 + 1)
+    })
+    .unwrap();
+    let mut expected = tree;
+    expected.remove(2);
+    assert_eq!(rects(&without), rects(&expected));
+    assert!(Node::from_shape(&shape, &|_| None).is_none());
+    let skewed = Shape::Split {
+      axis: Axis::Rows,
+      ratio: f32::NAN,
+      first: Box::new(Shape::Pane(0)),
+      second: Box::new(Shape::Pane(1)),
+    };
+    let even = Node::from_shape(&skewed, &|index| Some(index as u32)).unwrap();
+    assert_eq!(rects(&even)[0].1.rows, 20);
   }
 
   #[test]

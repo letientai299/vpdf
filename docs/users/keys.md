@@ -56,6 +56,15 @@ only that list; the Recent view keeps its entries. Removing a file from the
 Recent view leaves its system entry, because macOS offers no per-file removal.
 The title bar shows the focused PDF, and File > Reveal in Finder selects it.
 
+The window reopens at its last size and position, moved onto a connected
+display when needed. When macOS reopens windows on relaunch (System Settings >
+Desktop & Dock, Close windows when quitting an application), the app also
+reopens its last tabs, splits, pane positions, and full-screen state. The last
+active tab opens first; the others follow without blocking input. Files opened
+from Finder or the command line keep focus. Missing or password-protected files
+stay closed and are listed in a notice; passwords are never saved. Set
+`reading.restore_session` to change this ([configuration][config]).
+
 Document Select All preserves the reading location. Copy processes the whole
 document one page at a time, up to the clipboard size limit; further input
 cancels unfinished work. A limit or extraction error leaves the clipboard
@@ -114,3 +123,4 @@ holding a pointer drag does not create another reading mode. Custom bindings
 can replace cancellation too; check your configuration when a key differs.
 
 [selection]: yank.md
+[config]: config.md#reading-behavior

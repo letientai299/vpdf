@@ -80,11 +80,40 @@ struct Appearance {
 struct Reading {
   cursorline: bool,
   zoom: Zoom,
+  restore_session: Restore,
 }
 
 impl Default for Reading {
   fn default() -> Self {
-    Self { cursorline: true, zoom: Zoom(vpdf_ui::layout::DEFAULT_ZOOM) }
+    Self {
+      cursorline: true,
+      zoom: Zoom(vpdf_ui::layout::DEFAULT_ZOOM),
+      restore_session: Restore::default(),
+    }
+  }
+}
+
+/// Whether the native app reopens the last session.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Restore {
+  /// Follows the macOS window-reopening preference.
+  #[default]
+  System,
+  Always,
+  Never,
+}
+
+impl std::str::FromStr for Restore {
+  type Err = &'static str;
+
+  fn from_str(value: &str) -> Result<Self, Self::Err> {
+    match value {
+      "system" => Ok(Self::System),
+      "always" => Ok(Self::Always),
+      "never" => Ok(Self::Never),
+      _ => Err("expected system, always, or never"),
+    }
   }
 }
 
@@ -241,6 +270,11 @@ impl Settings {
           .map_err(|_| "expected number")
           .and_then(Zoom::try_from),
       ),
+      "reading.restore_session" => replace_setting(
+        &mut self.reading.restore_session,
+        &previous.reading.restore_session,
+        value.as_str().ok_or("expected string").and_then(str::parse),
+      ),
       "ocr.language" => replace_setting(
         &mut self.ocr.language,
         &previous.ocr.language,
@@ -264,6 +298,10 @@ impl Settings {
 
   pub fn zoom(&self) -> f32 {
     self.reading.zoom.0
+  }
+
+  pub fn restore_session(&self) -> Restore {
+    self.reading.restore_session
   }
 
   pub fn language(&self) -> &str {
@@ -362,7 +400,7 @@ fn load(path: &Path, explicit: bool) -> Loaded {
 }
 
 #[cfg(test)]
-fn parse(path: &Path, text: &str) -> Loaded {
+pub(crate) fn parse(path: &Path, text: &str) -> Loaded {
   parse_with(path, text, &Settings::default())
 }
 

@@ -16,7 +16,8 @@ fn example_matches_defaults() {
       "[appearance]\ntheme = \"system\"\nascii_glyphs = false\n",
       "ui_font_size = 16\n\n",
       "[appearance.opacity]\n\n",
-      "[reading]\ncursorline = true\nzoom = 1.0\n\n",
+      "[reading]\ncursorline = true\nzoom = 1.0\n",
+      "restore_session = \"system\"\n\n",
       "[ocr]\nlanguage = \"eng\"\n\n[keybindings]\n"
     )
   );
@@ -29,6 +30,21 @@ fn ascii_glyphs_read_a_boolean() {
   {
     let loaded = decoded(&format!("[appearance]\nascii_glyphs = {value}"));
     assert_eq!(loaded.settings.ascii_glyphs(), ascii, "{value}");
+    assert_eq!(loaded.warning.is_some(), warned, "{value}");
+  }
+}
+
+#[test]
+fn restore_session_reads_a_choice() {
+  for (value, expected, warned) in [
+    ("'never'", Restore::Never, false),
+    ("'always'", Restore::Always, false),
+    ("'system'", Restore::System, false),
+    ("false", Restore::System, true),
+    ("'later'", Restore::System, true),
+  ] {
+    let loaded = decoded(&format!("[reading]\nrestore_session = {value}"));
+    assert_eq!(loaded.settings.restore_session(), expected, "{value}");
     assert_eq!(loaded.warning.is_some(), warned, "{value}");
   }
 }
