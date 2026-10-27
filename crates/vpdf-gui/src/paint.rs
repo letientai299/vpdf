@@ -666,8 +666,31 @@ impl Grid {
         );
       }
     }
+    let mut blocks = egui::Mesh::default();
     for (pos, cell) in self.written(size) {
       if cell.text.is_empty() || cell.text == " " {
+        continue;
+      }
+      let eighths = match cell.text.as_str() {
+        "█" => 8,
+        "▉" => 7,
+        "▊" => 6,
+        "▋" => 5,
+        "▌" => 4,
+        "▍" => 3,
+        "▎" => 2,
+        "▏" => 1,
+        _ => 0,
+      };
+      if eighths > 0 {
+        // Mesh edges avoid glyph gaps and feathering.
+        blocks.add_colored_rect(
+          Rect::from_min_size(
+            pos,
+            Vec2::new(size.x * eighths as f32 / 8.0, size.y),
+          ),
+          cell.style.foreground,
+        );
         continue;
       }
       let font = FontId::monospace(FONT_SIZE);
@@ -698,6 +721,9 @@ impl Grid {
         );
       }
     }
+    if !blocks.is_empty() {
+      painter.add(blocks);
+    }
     if self.visible && self.cursor.0 < self.columns {
       let pos =
         Pos2::new(self.cursor.0 as f32 * size.x, self.cursor.1 as f32 * size.y);
@@ -727,6 +753,65 @@ pub fn background() -> Color32 {
 mod tests {
   use super::*;
   use vpdf_model::scene::Text;
+
+  #[test]
+  fn progress_blocks_fill_cells() {
+    let screen = crate::screen::pixels(16, 2, 11, 19);
+    for scale in [1.0, 1.5, 2.0] {
+      let mut grid = Grid::new(screen);
+      grid.op(&Op::Move { column: 0, row: 1 });
+      grid.op(&Op::Text(Text::new("██▉▊▋▌▍▎▏· 57%")));
+      let ctx = egui::Context::default();
+      let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        grid.paint(ui.painter(), screen, scale);
+      });
+      let meshes: Vec<_> = output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+          egui::Shape::Mesh(mesh) => Some(mesh),
+          _ => None,
+        })
+        .collect();
+      assert_eq!(meshes.len(), 1);
+      let mesh = meshes[0];
+      assert!(mesh.is_valid());
+      assert_eq!(mesh.indices.len(), 9 * 6);
+      assert_eq!(mesh.vertices.len(), 9 * 4);
+      let size = Vec2::new(11.0, 19.0) / scale;
+      for (column, (vertices, eighths)) in mesh
+        .vertices
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip([8, 8, 7, 6, 5, 4, 3, 2, 1])
+        .enumerate()
+      {
+        let left = column as f32 * size.x;
+        let right = left + size.x * eighths as f32 / 8.0;
+        assert_eq!(vertices[0].pos, Pos2::new(left, size.y));
+        assert_eq!(vertices[1].pos, Pos2::new(right, size.y));
+        assert_eq!(vertices[2].pos, Pos2::new(left, size.y * 2.0));
+        assert_eq!(vertices[3].pos, Pos2::new(right, size.y * 2.0));
+        assert!(vertices.iter().all(|vertex| {
+          vertex.color == grid.cells[16 + column].style.foreground
+            && vertex.uv == egui::epaint::WHITE_UV
+        }));
+      }
+      assert_eq!(mesh.vertices[1].pos, mesh.vertices[4].pos);
+      assert_eq!(mesh.vertices[5].pos, mesh.vertices[8].pos);
+      let text: String = output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+          egui::Shape::Text(text) => Some(text.galley.job.text.as_str()),
+          _ => None,
+        })
+        .collect();
+      assert_eq!(text, "·57%");
+      output.textures_delta.clear();
+    }
+  }
 
   fn blank(screen: Screen) -> Frame {
     Frame {
