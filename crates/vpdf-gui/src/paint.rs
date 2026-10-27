@@ -164,7 +164,7 @@ impl Renderer {
     cells.compose(preedit);
     cells.accommodate(self.display);
     cells.paint(painter, screen, scale, frame.ui_font_size);
-    let ime = cells.ime(screen, scale);
+    let ime = cells.ime(screen, scale, painter.clip_rect().bottom());
     fills(painter, &frame.scene, Layer::AboveText, scale, self.display);
     for op in &frame.scene {
       let Op::Picture(picture) = op else { continue };
@@ -657,7 +657,12 @@ impl Grid {
     self.cursor.1 = start.1;
     self.style = style;
   }
-  fn ime(&self, screen: Screen, scale: f32) -> Option<egui::output::IMEOutput> {
+  fn ime(
+    &self,
+    screen: Screen,
+    scale: f32,
+    bottom: f32,
+  ) -> Option<egui::output::IMEOutput> {
     if !self.visible
       || !self.input.contains(&self.cursor.0)
       || self.cursor.1 >= usize::from(screen.rows)
@@ -668,8 +673,10 @@ impl Grid {
       f32::from(screen.cell_width) / scale,
       f32::from(screen.cell_height) / scale,
     );
-    let pos =
-      egui::pos2(self.cursor.0 as f32 * size.x, self.cursor.1 as f32 * size.y);
+    let pos = egui::pos2(
+      self.cursor.0 as f32 * size.x,
+      self.row_y(self.cursor.1, size, bottom),
+    );
     Some(egui::output::IMEOutput {
       purpose: if self.masked {
         egui::IMEPurpose::Password
@@ -684,12 +691,19 @@ impl Grid {
       should_interrupt_composition: false,
     })
   }
-  /// Cells of dirty rows at their positions for cells of `size`.
-  fn written(&self, size: Vec2) -> impl Iterator<Item = (Pos2, &Cell)> {
+  fn row_y(&self, row: usize, size: Vec2, bottom: f32) -> f32 {
+    let y = row as f32 * size.y;
+    if row + 1 == self.dirty.len() { y.max(bottom - size.y) } else { y }
+  }
+  fn written(
+    &self,
+    size: Vec2,
+    bottom: f32,
+  ) -> impl Iterator<Item = (Pos2, &Cell)> {
     let rows = self.cells.chunks(self.columns.max(1)).enumerate();
     rows.zip(&self.dirty).filter(|(_, dirty)| **dirty).flat_map(
       move |((row, cells), _)| {
-        let y = row as f32 * size.y;
+        let y = self.row_y(row, size, bottom);
         cells.iter().enumerate().map(move |(column, cell)| {
           (Pos2::new(column as f32 * size.x, y), cell)
         })
@@ -719,22 +733,21 @@ impl Grid {
     let size =
       Vec2::new(f32::from(screen.cell_width), f32::from(screen.cell_height))
         / scale;
-    for (pos, cell) in self.written(size) {
+    for (pos, cell) in self.written(size, painter.clip_rect().bottom()) {
       let Some(color) = cell.style.background else { continue };
       let mut rect = Rect::from_min_size(
         pos,
         size * Vec2::new(f32::from(cell.columns.max(1)), 1.0),
       );
-      if pos.y >= f32::from(screen.rows.saturating_sub(1)) * size.y {
-        rect.max.y = rect.max.y.max(painter.clip_rect().bottom());
-        if rect.max.x >= f32::from(screen.columns) * size.x {
-          rect.max.x = rect.max.x.max(painter.clip_rect().right());
-        }
+      if pos.y >= f32::from(screen.rows.saturating_sub(1)) * size.y
+        && rect.max.x >= f32::from(screen.columns) * size.x
+      {
+        rect.max.x = rect.max.x.max(painter.clip_rect().right());
       }
       painter.rect_filled(rect, 0.0, color);
     }
     let mut blocks = egui::Mesh::default();
-    for (pos, cell) in self.written(size) {
+    for (pos, cell) in self.written(size, painter.clip_rect().bottom()) {
       if cell.text.is_empty() || cell.text == " " {
         continue;
       }
@@ -774,10 +787,11 @@ impl Grid {
           ..Default::default()
         },
       ));
-      painter.galley(pos, Arc::clone(&galley), cell.style.foreground);
+      let text_pos = pos + Vec2::new(0.0, (size.y - galley.size().y) * 0.5);
+      painter.galley(text_pos, Arc::clone(&galley), cell.style.foreground);
       if cell.style.bold {
         painter.galley(
-          pos + Vec2::new(0.35, 0.0),
+          text_pos + Vec2::new(0.35, 0.0),
           galley,
           cell.style.foreground,
         );
@@ -796,8 +810,10 @@ impl Grid {
       painter.add(blocks);
     }
     if self.visible && self.cursor.0 < self.columns {
-      let pos =
-        Pos2::new(self.cursor.0 as f32 * size.x, self.cursor.1 as f32 * size.y);
+      let pos = Pos2::new(
+        self.cursor.0 as f32 * size.x,
+        self.row_y(self.cursor.1, size, painter.clip_rect().bottom()),
+      );
       let rect = Rect::from_min_size(pos, size);
       painter.rect_stroke(
         rect,
@@ -852,7 +868,7 @@ mod tests {
           grid.op(&Op::InputArea { column: 1, columns: 4, masked: false });
           grid.op(&Op::ShowCursor);
           grid.compose(Some(&Preedit { text: "章".into(), active: None }));
-          let ime = grid.ime(screen, scale).unwrap();
+          let ime = grid.ime(screen, scale, screen.height() / scale).unwrap();
           let cell = Vec2::new(
             f32::from(screen.cell_width),
             f32::from(screen.cell_height),
@@ -888,9 +904,21 @@ mod tests {
       grid.op(&Op::Move { column: 0, row: 1 });
       grid.op(&Op::Text(Text::new("██▉▊▋▌▍▎▏▄▄· 57%")));
       let ctx = egui::Context::default();
-      let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-        grid.paint(ui.painter(), screen, scale, FONT_SIZE);
-      });
+      let bounds = Rect::from_min_size(
+        Pos2::ZERO,
+        Vec2::new(screen.width(), screen.height()) / scale,
+      );
+      let mut output = ctx.run_ui(
+        egui::RawInput { screen_rect: Some(bounds), ..Default::default() },
+        |ui| {
+          grid.paint(
+            &ui.painter().with_clip_rect(bounds),
+            screen,
+            scale,
+            FONT_SIZE,
+          );
+        },
+      );
       let meshes: Vec<_> = output
         .shapes
         .iter()
@@ -953,7 +981,7 @@ mod tests {
   }
 
   #[test]
-  fn status_fills_bottom_remainder() {
+  fn status_stays_one_row() {
     use vpdf_model::style::Role;
     let screen = crate::screen::pixels(2, 2, 11, 19);
     for scale in [1.0, 1.5, 2.0] {
@@ -998,7 +1026,8 @@ mod tests {
         );
       }
       for (column, rect) in backgrounds[2..].iter().enumerate() {
-        assert_eq!(rect.rect.top(), 19.0 / scale);
+        assert!((rect.rect.top() - 26.0 / scale).abs() < 0.001);
+        assert!((rect.rect.height() - 19.0 / scale).abs() < 0.001);
         assert_eq!(rect.rect.bottom(), bounds.bottom());
         assert_eq!(rect.fill, grid.cells[2 + column].style.background.unwrap());
       }
@@ -1006,6 +1035,74 @@ mod tests {
       assert_eq!(backgrounds[3].rect.right(), bounds.right());
       output.textures_delta.clear();
     }
+  }
+
+  #[test]
+  fn status_centers_zoomed_text() {
+    for font_size in [10.0, 12.0, 16.0, 20.0, 24.0, 32.0] {
+      for scale in [1.0, 1.25, 1.5, 2.0] {
+        for height in [157.0, 160.0, 173.5] {
+          check_status_alignment(font_size, scale, height);
+        }
+      }
+    }
+  }
+
+  fn check_status_alignment(font_size: f32, scale: f32, height: f32) {
+    let ctx = egui::Context::default();
+    ctx.set_pixels_per_point(scale);
+    let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(240.0, height));
+    let mut output = ctx.run_ui(
+      egui::RawInput { screen_rect: Some(bounds), ..Default::default() },
+      |ui| {
+        let screen =
+          crate::fonts::screen(&ctx, bounds.size(), font_size, scale);
+        let mut grid = Grid::new(screen);
+        grid.op(&Op::Move { column: 0, row: usize::from(screen.rows - 1) });
+        grid.op(&Op::Style(vpdf_model::style::Role::StatusFile));
+        grid.op(&Op::Text(Text::new("x")));
+        grid.op(&Op::ShowCursor);
+        grid.paint(
+          &ui.painter().with_clip_rect(bounds),
+          screen,
+          scale,
+          font_size,
+        );
+        let ime = grid.ime(screen, scale, bounds.bottom()).unwrap();
+        let cell = f32::from(screen.cell_height) / scale;
+        assert!((ime.cursor_rect.bottom() - bounds.bottom()).abs() < 0.001);
+        assert!((ime.cursor_rect.height() - cell).abs() < 0.001);
+      },
+    );
+    let background = output
+      .shapes
+      .iter()
+      .find_map(|shape| match &shape.shape {
+        egui::Shape::Rect(rect) => Some(rect.rect),
+        _ => None,
+      })
+      .unwrap();
+    let texts: Vec<_> = output
+      .shapes
+      .iter()
+      .filter_map(|shape| match &shape.shape {
+        egui::Shape::Text(text) => Some(text),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(texts.len(), 2);
+    for text in texts {
+      let center = text.pos.y + text.galley.size().y * 0.5;
+      assert!((center - background.center().y).abs() < 0.001);
+    }
+    for rect in output.shapes.iter().filter_map(|shape| match &shape.shape {
+      egui::Shape::Rect(rect) => Some(rect.rect),
+      _ => None,
+    }) {
+      assert!((rect.top() - background.top()).abs() < 0.001);
+      assert!((rect.bottom() - bounds.bottom()).abs() < 0.001);
+    }
+    output.textures_delta.clear();
   }
 
   fn blank(screen: Screen) -> Frame {
@@ -1074,9 +1171,22 @@ mod tests {
         owners: vec![owner],
         ..blank(screen)
       };
-      let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-        renderer.paint(ui.painter(), &frame, screen, 1.0, None);
-      });
+      let bounds = Rect::from_min_size(
+        Pos2::ZERO,
+        Vec2::new(screen.width(), screen.height()),
+      );
+      let mut output = ctx.run_ui(
+        egui::RawInput { screen_rect: Some(bounds), ..Default::default() },
+        |ui| {
+          renderer.paint(
+            &ui.painter().with_clip_rect(bounds),
+            &frame,
+            screen,
+            1.0,
+            None,
+          );
+        },
+      );
       output.textures_delta.clear();
       let texture = renderer.textures.get(&ImageId::Tile(id)).unwrap();
       let tile = output
@@ -1382,7 +1492,7 @@ mod tests {
     assert_eq!(text, "***");
     assert_eq!(grid.cursor, (2, 0));
     assert_eq!(
-      grid.ime(screen, 1.0).unwrap().purpose,
+      grid.ime(screen, 1.0, screen.height()).unwrap().purpose,
       egui::IMEPurpose::Password
     );
   }
@@ -1456,7 +1566,7 @@ mod tests {
     grid.op(&Op::Move { column: 1, row: 1 });
     grid.op(&Op::Text(Text::new("suffix")));
     grid.op(&Op::Move { column: 1, row: 1 });
-    assert!(grid.ime(screen, 2.0).is_none());
+    assert!(grid.ime(screen, 2.0, screen.height() / 2.0).is_none());
     grid.op(&Op::ShowCursor);
     grid.compose(Some(&Preedit {
       text: "章a\u{301}".into(),
@@ -1466,7 +1576,7 @@ mod tests {
     assert_eq!(grid.cells[3 + 8].text, "a\u{301}");
     assert!(grid.cells[1 + 8].style.underline);
     assert_eq!(grid.cells[4 + 8].text, "s");
-    let ime = grid.ime(screen, 2.0).unwrap();
+    let ime = grid.ime(screen, 2.0, screen.height() / 2.0).unwrap();
     assert_eq!(ime.cursor_rect.min, egui::pos2(40.0, 20.0));
     assert_eq!(
       ime.rect,
@@ -1491,7 +1601,10 @@ mod tests {
     assert_eq!(grid.cells[12].text, "章");
     assert_eq!(grid.cells[15].text, "r");
     assert_eq!(grid.cursor, (3, 1));
-    assert_eq!(grid.ime(screen, 1.0).unwrap().rect.width(), 40.0);
+    assert_eq!(
+      grid.ime(screen, 1.0, screen.height()).unwrap().rect.width(),
+      40.0
+    );
   }
 }
 

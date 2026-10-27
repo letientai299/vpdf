@@ -348,6 +348,8 @@ fn mouse(
   scale: f32,
 ) -> Input {
   let (x, y) = physical(pos, scale);
+  let y =
+    y.min(screen.rows.saturating_mul(screen.cell_height).saturating_sub(1));
   Input::Mouse {
     event: MouseEvent {
       kind,
@@ -734,6 +736,26 @@ mod tests {
     assert!(adapter.interrupt());
     assert!(!adapter.interrupt());
   }
+  #[test]
+  fn bottom_remainder_hits_status() {
+    let screen = screen();
+    for scale in [1.0, 1.25, 1.5, 2.0] {
+      let pos = egui::pos2(5.0, (screen.height() + 5.0) / scale);
+      let input =
+        mouse(pos, MouseEventKind::Moved, Modifiers::NONE, screen, scale);
+      let Input::Mouse { event, pixels, .. } = input else {
+        panic!("Expected mouse")
+      };
+      assert_eq!(event.row, screen.rows - 1);
+      let mut report = vpdf_model::input::Mouse::from(event);
+      report.at = vpdf_model::input::Spot::Pixel { x: pixels.0, y: pixels.1 };
+      assert_eq!(
+        report.cell((screen.cell_width, screen.cell_height)).1,
+        event.row
+      );
+    }
+  }
+
   #[test]
   fn drags_cross_frames_and_release_on_focus_loss() {
     let mut adapter = Adapter::default();
