@@ -89,7 +89,9 @@ mod tests {
         (Role::Current, p.accent, None),
         (Role::Dim, p.muted, None),
         (Role::HoverDim, p.muted, None),
-        (Role::StatusFile, p.background, Some(p.link)),
+        (Role::StatusFile, p.background, Some(p.foreground)),
+        (Role::TabActive, p.background, Some(p.foreground)),
+        (Role::TabInactive, p.muted, Some(p.background)),
         (Role::TextSelection, p.background, Some(p.highlight)),
         (Role::PreviewText, p.foreground, Some(p.background)),
       ] {
@@ -127,6 +129,111 @@ mod tests {
       assert_eq!(style.background, Some(rgb(p.accent)));
       style.apply(Role::Reset, theme);
       assert_eq!(style, Style::new(theme));
+    }
+  }
+
+  fn shipped() -> Vec<(String, vpdf_model::theme::Palette)> {
+    let folder =
+      std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../etc/themes");
+    let mut palettes: Vec<_> = std::fs::read_dir(folder)
+      .unwrap()
+      .map(|entry| entry.unwrap().path())
+      .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
+      .map(|path| {
+        let text = std::fs::read_to_string(&path).unwrap();
+        let name = path.file_stem().unwrap().to_string_lossy().into_owned();
+        (name, vpdf_model::theme::Palette::parse(&text).unwrap())
+      })
+      .collect();
+    palettes.sort_by(|a, b| a.0.cmp(&b.0));
+    palettes
+  }
+
+  /// Text and fill after applying `roles`.
+  fn resolve(theme: Colors, roles: &[Role]) -> ([u8; 3], [u8; 3]) {
+    let mut style = Style::new(theme);
+    for &role in roles {
+      style.apply(role, theme);
+    }
+    let fill = style.background.map_or(theme.palette().background, |fill| {
+      let [r, g, b, _] = fill.to_array();
+      [r, g, b]
+    });
+    let [r, g, b, _] = style.foreground.to_array();
+    ([r, g, b], fill)
+  }
+
+  #[test]
+  fn shipped_roles_are_readable() {
+    use vpdf_model::style::Color;
+    use vpdf_model::theme::{TEXT_CONTRAST, contrast};
+    let sequences: &[&[Role]] = &[
+      &[Role::Reset],
+      &[Role::Reset, Role::Muted],
+      &[Role::Reset, Role::Heading],
+      &[Role::Reset, Role::Key],
+      &[Role::Reset, Role::Mode],
+      &[Role::Bar],
+      &[Role::Bar, Role::Key],
+      &[Role::Bar, Role::Error],
+      &[Role::Selected],
+      &[Role::Selected, Role::File],
+      &[Role::Current],
+      &[Role::TextCursorline],
+      &[Role::TextCursor],
+      &[Role::TextSelection],
+      &[Role::TextMatch],
+      &[Role::TextLink],
+      &[Role::StatusFile],
+      &[Role::TabInactive],
+      &[Role::Hint],
+      &[Role::HintPicked],
+      &[Role::Chosen],
+      &[Role::Badge(Color::Blue)],
+      &[Role::Badge(Color::Cyan)],
+      &[Role::Badge(Color::Magenta)],
+      &[Role::Badge(Color::Yellow)],
+    ];
+    for (name, palette) in shipped() {
+      let theme = Colors::Palette(palette);
+      for roles in sequences {
+        let (text, fill) = resolve(theme, roles);
+        let ratio = contrast(text, fill);
+        assert!(ratio >= TEXT_CONTRAST, "{name}: {roles:?} {ratio:.2}");
+      }
+      // Active tab needs 3:1.
+      let tab = resolve(theme, &[Role::TabActive]).1;
+      for other in [Role::Bar, Role::TabInactive] {
+        let ratio = contrast(tab, resolve(theme, &[other]).1);
+        assert!(ratio >= 3.0, "{name}: tab vs {other:?} {ratio:.2}");
+      }
+    }
+  }
+
+  #[test]
+  fn mode_fills_color_badges() {
+    use vpdf_model::style::Color;
+    use vpdf_model::theme::Palette;
+    let dark = include_str!("../../../etc/themes/dark.toml");
+    let palette = Palette::parse(&format!(
+      "{dark}\n[mode]\nnormal = \"#ff0000\"\nvisual = \"#101010\"\n"
+    ))
+    .unwrap();
+    let mut gray = palette;
+    gray.accent = [0x33; 3];
+    // Chosen items keep `accent`, not `[mode] normal`.
+    for (theme, role, foreground, background) in [
+      (palette, Role::Badge(Color::Magenta), [255; 3], [16; 3]),
+      (palette, Role::Badge(Color::Blue), palette.background, [255, 0, 0]),
+      (palette, Role::Chosen, palette.background, palette.accent),
+      (gray, Role::Chosen, [255; 3], [0x33; 3]),
+    ] {
+      let theme = Colors::Palette(theme);
+      let mut style = Style::new(theme);
+      style.apply(role, theme);
+      assert_eq!(style.foreground, rgb(foreground), "{role:?}");
+      assert_eq!(style.background, Some(rgb(background)), "{role:?}");
+      assert!(style.bold, "{role:?}");
     }
   }
 }

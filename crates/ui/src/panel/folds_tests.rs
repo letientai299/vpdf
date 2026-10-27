@@ -96,6 +96,8 @@ fn group_headers_and_badges() {
       assert_eq!(text.contains("▾▾"), width >= 22);
       assert_eq!(text.contains("+2"), width >= 28);
       assert!(!text.contains(['●', '○']));
+      let quiet = crate::testing::quiet_on_selected(&scene);
+      assert!(quiet.is_empty(), "{quiet:?}");
       let controls: Vec<_> =
         (0..width).filter_map(|column| panel.control_at(column, 0)).collect();
       assert_eq!(

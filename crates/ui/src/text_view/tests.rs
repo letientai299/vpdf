@@ -341,3 +341,20 @@ fn wrapped_rows_preserve_positions() -> Result<()> {
   assert_eq!(top, at(0, 0, 0));
   Ok(())
 }
+
+#[test]
+fn header_context_leaves_the_badge_fill() {
+  let mut scene = vpdf_model::scene::Scene::new();
+  Header { first: "3", last: "4" }.scene(&mut scene, At::default(), 60);
+  let roles: Vec<_> = scene
+    .iter()
+    .filter_map(|op| match op {
+      Op::Style(role) => Some(*role),
+      _ => None,
+    })
+    .collect();
+  let badge =
+    roles.iter().position(|role| matches!(role, Role::Badge(_))).unwrap();
+  // Badge fills persist until a reset.
+  assert_eq!(roles[badge + 1..badge + 3], [Role::Reset, Role::Muted]);
+}

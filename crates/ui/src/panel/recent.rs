@@ -839,15 +839,16 @@ pub(super) fn scene_progress<'a>(
   let track = detail.trim_end().split(' ').next().unwrap_or("");
   let is_bar =
     track.chars().any(|ch| ch == '█' || ch == '·' || ('▉'..='▏').contains(&ch));
+  let tail = super::rows::quiet(base);
   if !is_bar {
-    scene.push(Op::Style(Role::Muted));
+    scene.push(Op::Style(tail));
     scene.text(detail);
     return;
   }
   let end = track.find('·').unwrap_or(track.len());
   scene.push(Op::Style(Role::Mode));
   scene.text(&track[..end]);
-  scene.push(Op::Style(Role::Muted));
+  scene.push(Op::Style(tail));
   scene.text(&detail[end..]);
   scene.push(Op::Style(base));
 }
@@ -1371,7 +1372,7 @@ mod presentation_tests {
     assert!(
       spans
         .iter()
-        .any(|(role, text)| *role == Role::Muted && text.contains('·'))
+        .any(|(role, text)| *role == Role::Selected && text.contains('·'))
     );
     assert!(
       spans
@@ -1487,5 +1488,49 @@ mod review_tests {
       ]
     );
     assert_eq!(rows[1].row.style, super::super::Style::Heading);
+  }
+
+  #[test]
+  fn selected_rows_avoid_muted() {
+    let heading = Row {
+      style: super::super::Style::Heading,
+      ..Row::new(
+        "/a/books".into(),
+        String::new(),
+        Destination::Directory("/a/books".into()),
+      )
+    };
+    let command = Row {
+      style: super::super::Style::CommandKey,
+      ..Row::new(
+        ":edit <file>: open".into(),
+        String::new(),
+        Destination::Directory("/a/books".into()),
+      )
+    };
+    for (base, tail) in [
+      (Role::Reset, Role::Muted),
+      (Role::Selected, Role::Selected),
+      (Role::Current, Role::Current),
+    ] {
+      for detail in ["██··· 40%", "12 pages"] {
+        let mut scene = vpdf_model::scene::Scene::new();
+        scene_progress(&mut scene, detail, base);
+        let spans = crate::testing::spans(&scene);
+        assert_eq!(spans.last().unwrap().0, tail, "{base:?}: {detail}");
+      }
+      let mut scene = vpdf_model::scene::Scene::new();
+      heading.scene(&mut scene, Some(base), 40, 0, "");
+      let spans = crate::testing::spans(&scene);
+      assert_eq!(spans[0].0, tail, "{base:?}: heading");
+      let mut scene = vpdf_model::scene::Scene::new();
+      command.scene(&mut scene, Some(base), 40, 12, "");
+      let quiet = crate::testing::quiet_on_selected(&scene);
+      assert!(quiet.is_empty(), "{base:?}: {quiet:?}");
+      let argument = crate::testing::spans(&scene)
+        .into_iter()
+        .any(|(role, text)| role == Role::Argument && text == "<file>");
+      assert_eq!(argument, base == Role::Reset, "{base:?}");
+    }
   }
 }

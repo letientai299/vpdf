@@ -1,14 +1,15 @@
 # Source: https://github.com/dracula/dracula-theme
 # Revision: e22ebcc048b8aff586f9bc94db30ff5347070b42
 # License: MIT; see docs/licenses/themes.txt.
+# Lightened for 4.5:1 text contrast: muted, accent, error.
 
 background = "#282a36"
 foreground = "#f8f8f2"
 surface = "#44475a"
 cursorline = "#44475a"
-muted = "#6272a4"
-accent = "#bd93f9"
+muted = "#8390b7"
+accent = "#c9a7fa"
 highlight = "#ff79c6"
 match = "#f1fa8c"
 link = "#8be9fd"
-error = "#ff5555"
+error = "#ff9a9a"

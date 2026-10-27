@@ -1,3 +1,4 @@
+use crate::style::Color;
 use serde::{Deserialize, Deserializer};
 use std::sync::OnceLock;
 
@@ -24,6 +25,28 @@ pub struct Palette {
   pub link: [u8; 3],
   #[serde(deserialize_with = "hex")]
   pub error: [u8; 3],
+  #[serde(default)]
+  pub mode: ModeFills,
+}
+
+/// Badge fills; unset keys use tokens.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, expecting = "a [mode] table of #rrggbb fills")]
+pub struct ModeFills {
+  #[serde(default, deserialize_with = "some_hex")]
+  pub normal: Option<[u8; 3]>,
+  #[serde(default, deserialize_with = "some_hex")]
+  pub cursor: Option<[u8; 3]>,
+  #[serde(default, deserialize_with = "some_hex")]
+  pub visual: Option<[u8; 3]>,
+  #[serde(default, deserialize_with = "some_hex")]
+  pub transient: Option<[u8; 3]>,
+}
+
+fn some_hex<'de, D: Deserializer<'de>>(
+  deserializer: D,
+) -> Result<Option<[u8; 3]>, D::Error> {
+  hex(deserializer).map(Some)
 }
 
 fn hex<'de, D: Deserializer<'de>>(
@@ -41,6 +64,9 @@ fn hex<'de, D: Deserializer<'de>>(
   Ok([(value >> 16) as u8, (value >> 8) as u8, value as u8])
 }
 
+/// WCAG AA minimum for ordinary text.
+pub const TEXT_CONTRAST: f64 = 4.5;
+
 impl Default for Palette {
   fn default() -> Self {
     Self::dark()
@@ -51,6 +77,12 @@ pub fn is_light(rgb: [u8; 3]) -> bool {
   // Prefer higher black/white text contrast.
   let crossover = (1.05_f64 * 0.05).sqrt() - 0.05;
   luminance(rgb) > crossover
+}
+
+/// WCAG contrast ratio of two colors.
+pub fn contrast(first: [u8; 3], second: [u8; 3]) -> f64 {
+  let (first, second) = (luminance(first), luminance(second));
+  (first.max(second) + 0.05) / (first.min(second) + 0.05)
 }
 
 pub fn luminance(rgb: [u8; 3]) -> f64 {
@@ -68,6 +100,30 @@ pub fn luminance(rgb: [u8; 3]) -> f64 {
 impl Palette {
   pub fn parse(text: &str) -> Result<Self, toml::de::Error> {
     toml::from_str(text)
+  }
+
+  /// Text and fill colors of a `color` badge.
+  pub fn badge(self, color: Color) -> ([u8; 3], [u8; 3]) {
+    let (fill, token) = match color {
+      Color::Blue => (self.mode.normal, self.accent),
+      Color::Cyan => (self.mode.cursor, self.link),
+      Color::Magenta => (self.mode.visual, self.highlight),
+      Color::Yellow => (self.mode.transient, self.r#match),
+    };
+    let fill = fill.unwrap_or(token);
+    (self.text_on(fill), fill)
+  }
+
+  /// `background`, or black or white when unreadable.
+  pub fn text_on(self, fill: [u8; 3]) -> [u8; 3] {
+    // Black or white always reaches 4.5:1.
+    if contrast(self.background, fill) >= TEXT_CONTRAST {
+      self.background
+    } else if is_light(fill) {
+      [0; 3]
+    } else {
+      [255; 3]
+    }
   }
 
   /// # Panics
@@ -108,6 +164,38 @@ mod tests {
         Palette::parse(&text)
           .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
       }
+    }
+  }
+
+  #[test]
+  fn mode_fills_override_badges() {
+    let base = include_str!("../../../../etc/themes/dark.toml");
+    let dark = Palette::parse(base).unwrap();
+    assert_eq!(dark.badge(Color::Blue).1, dark.accent);
+    let palette = Palette::parse(&format!(
+      "{base}\n[mode]\nnormal = \"#ff0000\"\nvisual = \"#101010\"\n"
+    ))
+    .unwrap();
+    let light = include_str!("../../../../etc/themes/light.toml");
+    let light =
+      Palette::parse(&format!("{light}\n[mode]\nvisual = \"#ffff00\"\n"))
+        .unwrap();
+    // Background text, else black or white.
+    for (palette, color, text, fill) in [
+      (palette, Color::Blue, dark.background, [255, 0, 0]),
+      (palette, Color::Magenta, [255; 3], [16; 3]),
+      (palette, Color::Cyan, dark.badge(Color::Cyan).0, dark.link),
+      (palette, Color::Yellow, dark.badge(Color::Yellow).0, dark.r#match),
+      (light, Color::Magenta, [0; 3], [255, 255, 0]),
+    ] {
+      assert_eq!(palette.badge(color), (text, fill), "{color:?}");
+    }
+    let error = Palette::parse(&format!("{base}\nmode = \"red\"\n"))
+      .unwrap_err()
+      .to_string();
+    assert!(error.contains("[mode] table"), "{error}");
+    for invalid in ["[mode]\nnormal = \"red\"", "[mode]\nyank = \"#ffffff\""] {
+      assert!(Palette::parse(&format!("{base}\n{invalid}\n")).is_err());
     }
   }
 

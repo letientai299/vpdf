@@ -138,7 +138,7 @@ mod tests {
           let ink = alpha * luminance([r, g, b]);
           let paper = 1.0 - alpha + ink;
           let ratio = (paper + 0.05) / (ink + 0.05);
-          assert!(ratio >= 4.5, "{overlay:?}: {ratio}");
+          assert!(ratio >= crate::theme::TEXT_CONTRAST, "{overlay:?}: {ratio}");
         }
       }
     }

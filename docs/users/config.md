@@ -289,10 +289,13 @@ theme = "dark"
 
 - The native app follows OS light/dark appearance changes. If the OS does not
   report an appearance, it uses dark.
-- The terminal keeps its ANSI text colors. At launch, Vpdf queries the terminal
-  background with OSC 11 and chooses a light or dark palette for RGB overlays,
-  preview fills, and the built-in manual. No reply means dark. Under tmux, the
-  query needs passthrough; tmux may instead answer with its own background.
+- The terminal keeps its ANSI text colors, including tabs and badges. At
+  launch, Vpdf queries the terminal background with OSC 11 and chooses a light
+  or dark palette for RGB overlays, preview fills, and the built-in manual. No
+  reply means dark. Under tmux, the query needs passthrough; tmux may instead
+  answer with its own background. Text contrast depends on the terminal's ANSI
+  colors. Select `light`, `dark`, or a theme file for contrast that Vpdf
+  checks.
 
 `light`, `dark`, and theme files use explicit RGB colors in both frontends.
 Themes recolor text, bars, panels, menus, scrollbars, page overlays, and the
@@ -328,15 +331,41 @@ file.
 | Token        | Use                             |
 | ------------ | ------------------------------- |
 | `background` | Reader and manual background    |
-| `foreground` | Main text                       |
+| `foreground` | Main text and the active tab    |
 | `surface`    | Bars, panels, and menus         |
 | `cursorline` | Cursor line band                |
-| `muted`      | Dim text and secondary controls |
-| `accent`     | Headings, cursors, and badges   |
+| `muted`      | Dim text and inactive tabs      |
+| `accent`     | Headings, cursors, chosen items |
 | `highlight`  | Visual selection                |
 | `match`      | Search matches and hint labels  |
-| `link`       | Links and active tabs           |
+| `link`       | Links                           |
 | `error`      | Errors                          |
+
+An optional `[mode]` table sets badge fills. Each key is optional and
+defaults to the listed token:
+
+```toml
+[mode]
+normal = "#81a1c1"
+cursor = "#88c0d0"
+visual = "#b48ead"
+transient = "#ebcb8b"
+```
+
+| Key         | Badges                                          | Default     |
+| ----------- | ----------------------------------------------- | ----------- |
+| `normal`    | Normal and the home badge                       | `accent`    |
+| `cursor`    | Cursor, Pages, panel and text-view titles       | `link`      |
+| `visual`    | Visual and V-Line                               | `highlight` |
+| `transient` | Yank, Resize, Hint, Menu, Peek, Region, Actions | `match`     |
+
+Badge text uses `background` when it reaches 4.5:1 contrast on the fill, and
+black or white otherwise. Chosen menu items and the selected Pages label use
+`accent` with the same text rule; `[mode]` does not change them.
+
+Tests check shipped theme files for 4.5:1 contrast on the main text styles in
+the native renderer. Imported palettes lighten failing tokens and note it in
+the file header.
 
 [Theme notices][theme-notices] retain attribution and licenses for imported
 palettes. [Palette provenance][palettes] records their source revisions.

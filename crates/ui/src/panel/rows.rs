@@ -103,7 +103,7 @@ impl Row {
         let mut written = 0;
         for (start, end, token) in crate::help::key_styles(&key, self.style) {
           marked(scene, &key[written..start], query, base, style);
-          marked(scene, &key[start..end], query, base, Some(token));
+          marked(scene, &key[start..end], query, base, plain.then_some(token));
           written = end;
         }
         marked(scene, &key[written..], query, base, style);
@@ -147,8 +147,12 @@ impl Row {
         } else {
           vpdf_model::text::clean(&self.label, room)
         };
-        let role = if directory { Role::Muted } else { Role::Heading };
-        marked(scene, &text, query, base, Some(role));
+        let role = if directory {
+          plain.then_some(Role::Muted)
+        } else {
+          Some(Role::Heading)
+        };
+        marked(scene, &text, query, base, role);
         styles(scene, base, None);
         text.width()
       }
@@ -185,6 +189,11 @@ impl Row {
 /// Unselected rows show accent colors.
 pub(super) fn accented(base: Option<Role>) -> bool {
   matches!(base, Some(Role::Reset | Role::Dim | Role::Hover | Role::HoverDim))
+}
+
+/// Muted on unselected rows; else `base`.
+pub(super) fn quiet(base: Role) -> Role {
+  if accented(Some(base)) { Role::Muted } else { base }
 }
 
 /// Row glyphs in ASCII, for fonts or terminals without the symbols.

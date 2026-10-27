@@ -38,6 +38,10 @@ fn key(code: KeyCode) -> KeyEvent {
 }
 
 fn text(panel: &mut Panel) -> String {
+  crate::testing::text(&scene(panel))
+}
+
+fn scene(panel: &mut Panel) -> Vec<vpdf_model::scene::Op<'static>> {
   let mut scene = crate::testing::empty();
   panel
     .scene(
@@ -51,7 +55,14 @@ fn text(panel: &mut Panel) -> String {
       false,
     )
     .unwrap();
-  crate::testing::text(&scene.into_scene())
+  scene.into_scene()
+}
+
+#[test]
+fn selected_checkboxes_keep_the_row_fill() {
+  let mut panel = panel();
+  let quiet = crate::testing::quiet_on_selected(&scene(&mut panel));
+  assert!(quiet.is_empty(), "{quiet:?}");
 }
 
 #[test]

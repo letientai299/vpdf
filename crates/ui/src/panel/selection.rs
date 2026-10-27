@@ -117,7 +117,7 @@ impl Panel {
     let checkbox = self.selection_mark(target);
     let gutter = checkbox.width().min(available.saturating_sub(lead));
     scene.push(Op::Style(if checkbox.starts_with('○') {
-      Role::Muted
+      super::rows::quiet(base)
     } else {
       Role::Key
     }));

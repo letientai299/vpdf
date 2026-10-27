@@ -40,6 +40,8 @@ pub enum Role {
   PreviewBorder,
   PreviewText,
   Badge(Color),
+  /// A chosen menu item or page label.
+  Chosen,
   /// Text in a color the document chose, such as a highlight's.
   Swatch([u8; 3]),
 }
@@ -154,6 +156,7 @@ impl Role {
         Keep,
         &[Bold, Inverse],
       )),
+      Self::Chosen => Self::Badge(Color::Blue).style(),
       Self::Swatch(rgb) => Patch(P::new(Set(T::Rgb(rgb)), Keep, &[])),
     }
   }

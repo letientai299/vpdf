@@ -16,18 +16,40 @@ pub fn text(scene: &[Op<'_>]) -> String {
 }
 
 pub fn spans(scene: &[Op<'_>]) -> Vec<(Role, String)> {
-  let mut role = Role::Reset;
+  filled_spans(scene).into_iter().map(|(_, role, text)| (role, text)).collect()
+}
+
+/// Spans with the last resetting role, which sets the fill.
+fn filled_spans(scene: &[Op<'_>]) -> Vec<(Role, Role, String)> {
+  use vpdf_model::style::StyleChange;
+  let (mut fill, mut role) = (Role::Reset, Role::Reset);
   let mut spans = Vec::new();
   for op in scene {
     if let Op::Style(next) = op {
       role = *next;
+      if matches!(next.style(), StyleChange::Reset(_)) {
+        fill = *next;
+      }
     }
     let text = text(std::slice::from_ref(op));
     if !text.is_empty() {
-      spans.push((role, text));
+      spans.push((fill, role, text));
     }
   }
   spans
+}
+
+/// Muted or argument text on selected rows.
+pub fn quiet_on_selected(scene: &[Op<'_>]) -> Vec<String> {
+  filled_spans(scene)
+    .into_iter()
+    .filter(|(fill, role, text)| {
+      *fill == Role::Selected
+        && matches!(role, Role::Muted | Role::Argument)
+        && !text.trim().is_empty()
+    })
+    .map(|(_, _, text)| text)
+    .collect()
 }
 
 /// Painted text by row; asserts it stays within `width`.

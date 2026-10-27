@@ -253,7 +253,7 @@ impl Panel {
       }
       scene.push(Op::Style(base));
       scene.push(Op::Spaces(meta.room - used));
-      scene.push(Op::Style(Role::Muted));
+      scene.push(Op::Style(super::rows::quiet(base)));
       scene.text(&meta.badge);
       scene.push(Op::Style(base));
       super::rows::marked(

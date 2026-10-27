@@ -1,8 +1,12 @@
 mod overlay;
 mod palette;
-use crate::style::{Attribute, ColorChange, Role, StyleChange, Tone};
+use crate::style::{
+  Attribute, ColorChange, Role, StyleChange, StylePatch, Tone,
+};
 pub use overlay::{Overlay, Paint};
-pub use palette::{Palette, is_light, luminance};
+pub use palette::{
+  ModeFills, Palette, TEXT_CONTRAST, contrast, is_light, luminance,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -59,9 +63,14 @@ impl Colors {
 
   pub fn style(self, role: Role) -> StyleChange {
     let change = role.style();
-    if self == Self::Terminal {
-      return change;
-    }
+    let palette = match self {
+      Self::Terminal => return change,
+      Self::Palette(palette) => palette,
+    };
+    let fill = |patch: &mut StylePatch, text, fill| {
+      patch.foreground = ColorChange::Set(Tone::Rgb(text));
+      patch.background = ColorChange::Set(Tone::Rgb(fill));
+    };
     match change {
       StyleChange::Reset(mut patch) => {
         if patch.foreground == ColorChange::Keep {
@@ -73,8 +82,7 @@ impl Colors {
         match role {
           Role::TextLanding => patch.foreground = ColorChange::Set(Tone::Black),
           Role::TextCursorline => {
-            patch.background =
-              ColorChange::Set(Tone::Rgb(self.palette().cursorline));
+            patch.background = ColorChange::Set(Tone::Rgb(palette.cursorline));
           }
           Role::Dim => {
             patch.foreground = ColorChange::Set(Tone::Bar);
@@ -83,6 +91,22 @@ impl Colors {
           Role::HoverDim => {
             patch.foreground = ColorChange::Set(Tone::Bar);
             patch.attributes = &[Attribute::Underline];
+          }
+          Role::Badge(_) | Role::Chosen => {
+            let (text, color) = match role {
+              Role::Badge(color) => palette.badge(color),
+              _ => (palette.text_on(palette.accent), palette.accent),
+            };
+            fill(&mut patch, text, color);
+            // An explicit fill replaces inverse.
+            patch.attributes = &[Attribute::Bold];
+          }
+          // Sets the tab apart from the bar.
+          Role::StatusFile | Role::TabActive => {
+            fill(&mut patch, palette.background, palette.foreground);
+          }
+          Role::TabInactive => {
+            fill(&mut patch, palette.muted, palette.background);
           }
           _ => {}
         }

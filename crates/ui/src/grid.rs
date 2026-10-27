@@ -2,7 +2,6 @@
 //! drawn in rows above the status line.
 
 use crate::layout::Screen;
-use crate::theme::Color;
 use unicode_width::UnicodeWidthStr;
 use vpdf_model::geometry::At;
 use vpdf_model::scene::{Draw, Op, Text};
@@ -86,7 +85,7 @@ pub fn scene_cell<'a>(
   let pad = width.saturating_sub(1 + text.width());
   if shown == Shown::Chosen {
     scene.extend([
-      Op::Style(Role::Badge(Color::Blue)),
+      Op::Style(Role::Chosen),
       Op::Text(Text::new(" ")),
       Op::Text(Text::new(text)),
       Op::Spaces(pad),

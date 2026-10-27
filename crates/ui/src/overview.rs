@@ -375,8 +375,7 @@ impl Frame {
     let label = vpdf_model::text::clean(label(), columns);
     let column = (x / f32::from(screen.cell_width)) as usize
       + (columns.saturating_sub(label.width())) / 2;
-    let style =
-      if selected { Role::Badge(theme::Color::Blue) } else { Role::Muted };
+    let style = if selected { Role::Chosen } else { Role::Muted };
     crate::paint::move_to(scene, self.at, row, usize::from(self.left) + column);
     scene.push(Op::Style(style));
     scene.text(&label);

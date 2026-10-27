@@ -789,7 +789,7 @@ impl Header<'_> {
     let context = vpdf_model::text::clean(&context, room);
     scene.push(Op::Style(Role::Badge(vpdf_model::style::Color::Cyan)));
     scene.text(&title);
-    scene.push(Op::Style(Role::Muted));
+    scene.extend([Op::Style(Role::Reset), Op::Style(Role::Muted)]);
     scene.text(&context);
     scene.extend([Op::Spaces(room - context.width()), Op::Style(Role::Reset)]);
   }

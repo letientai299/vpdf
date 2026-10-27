@@ -48,6 +48,7 @@ pub const fn sgr(role: Role) -> &'static str {
     Role::Badge(Color::Magenta) => encoded!(Role::Badge(Color::Magenta)),
     Role::Badge(Color::Yellow) => encoded!(Role::Badge(Color::Yellow)),
     Role::Badge(Color::Cyan) => encoded!(Role::Badge(Color::Cyan)),
+    Role::Chosen => encoded!(Role::Chosen),
     // `write` formats document colors.
     Role::Swatch(_) => "",
   }
@@ -253,6 +254,19 @@ mod tests {
         format!("\x1b[1;38;2;{};{};{}m", p.accent[0], p.accent[1], p.accent[2])
       );
     }
+    Ok(())
+  }
+
+  #[test]
+  fn badges_write_mode_fills() -> io::Result<()> {
+    use vpdf_model::theme::Palette;
+    let dark = include_str!("../../../etc/themes/dark.toml");
+    let palette =
+      Palette::parse(&format!("{dark}\n[mode]\nvisual = \"#101010\"\n"))
+        .map_err(io::Error::other)?;
+    let mut out = Vec::new();
+    write(&mut out, Role::Badge(Color::Magenta), Colors::Palette(palette))?;
+    assert_eq!(out, b"\x1b[0;1;38;2;255;255;255;48;2;16;16;16m");
     Ok(())
   }
 
