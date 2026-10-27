@@ -385,6 +385,7 @@ def publish_video(
         args.output, manifest, identity, name, scene, target, args.manifest
     )
     poster = directory / f"{name}-poster.jpg"
+    frame = directory / f"{name}-poster.png"
     subprocess.run(
         [
             "ffmpeg",
@@ -398,15 +399,14 @@ def publish_video(
             str(target),
             "-frames:v",
             "1",
-            "-q:v",
-            "2",
             "-pix_fmt",
-            "yuvj444p",
-            str(poster),
+            "rgb24",
+            str(frame),
         ],
         check=True,
         timeout=60,
     )
+    demo.optimize_image(frame, poster, final["dimensions"])
     poster_scene = {
         "kind": "poster",
         "image": poster.name,
@@ -417,7 +417,7 @@ def publish_video(
         "video": name,
         "video_sha256": scene["sha256"],
         "frame_seconds": recipe["poster_at"],
-        "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
+        "encoding": demo.ENCODING + "; frame extracted from captioned video",
     }
     return demo.publish_scene(
         args.output,

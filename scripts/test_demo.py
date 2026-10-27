@@ -268,7 +268,7 @@ class OptimizerTests(unittest.TestCase):
             ],
             text=True,
         )
-        self.assertEqual(decoded.strip(), "JPEG 2560x1440 1x1,1x1,1x1 JPEG 92")
+        self.assertEqual(decoded.strip(), "JPEG 2560x1440 1x1,1x1,1x1 JPEG 75")
         self.assertEqual(self.target.stat().st_mode & 0o777, 0o644)
         self.assertFalse(list(self.root.glob("capture.jpg.*")))
 

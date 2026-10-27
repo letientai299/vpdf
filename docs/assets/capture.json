@@ -815,14 +815,132 @@
           "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
         }
       }
+    },
+    "f738804319345264": {
+      "captured_at": "2026-10-18T06:25:19Z",
+      "commit": "b617f73b07dd82564fca383ad6ff84d44e6fa9f9",
+      "build_profile": "release",
+      "binary_sha256": "70a483cd485f7cfdb06f0a52c52059e03999894f5bdf1ee4c667224ee87278e4",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.2 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "2560",
+        "initial_window_height": "1440",
+        "remember_window_size": "no",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "Iosevka Nerd Font Mono",
+        "font_size": "26",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 2,
+      "base_font_points": 13,
+      "dimensions": [
+        2560,
+        1440
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader and private saved state per scene",
+      "encoding": "lossless WebP; decoded pixels verified against PNG",
+      "ocr": {
+        "engine": "tesseract 5.5.3",
+        "language": "eng",
+        "input_has_embedded_text": false
+      },
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "scan": {
+          "file": "scan.pdf",
+          "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
+        }
+      }
+    },
+    "004143d2035b557e": {
+      "captured_at": "2026-10-18T06:28:19Z",
+      "commit": "b617f73b07dd82564fca383ad6ff84d44e6fa9f9",
+      "build_profile": "release",
+      "binary_sha256": "70a483cd485f7cfdb06f0a52c52059e03999894f5bdf1ee4c667224ee87278e4",
+      "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.2 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "2560",
+        "initial_window_height": "1440",
+        "remember_window_size": "no",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "Iosevka Nerd Font Mono",
+        "font_size": "26",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 2,
+      "base_font_points": 13,
+      "dimensions": [
+        2560,
+        1440
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader and private saved state per scene",
+      "encoding": "lossless WebP; decoded pixels verified against PNG",
+      "ocr": null,
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "scan": {
+          "file": "scan.pdf",
+          "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
+        }
+      }
     }
   },
   "scenes": {
     "overview": {
       "image": "overview.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "a0978dd6f736de1856d1e7492a89ac1b195f38d814a93b5503e1e7b382499393",
-      "bytes": 530146,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "e96e225ebc4e5772b8eb728f2aa5a60a33f3e7502767e8e5ece1b4fec4f499c9",
+      "bytes": 343758,
       "start_page": 2,
       "documents": [
         "paper",
@@ -982,13 +1100,24 @@
       },
       "resolved_targets": [],
       "ocr_mode": "explicit request",
-      "capture": "c7e615eea5ddda3c"
+      "capture": "c7e615eea5ddda3c",
+      "reencodings": [
+        {
+          "image": "overview.jpg",
+          "sha256": "a0978dd6f736de1856d1e7492a89ac1b195f38d814a93b5503e1e7b382499393",
+          "bytes": 530146,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "509e43153f7d150209b6b5896e0b1202618b90c4c03c85b4c8fc3ace38a8403b",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "help": {
       "image": "help.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "a02077c8eb920a85b57c80a570a0635db51ea11f415d41b61ab7256db71520d2",
-      "bytes": 522031,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "d8e13916f09f3f8136686fd894c0065d87438e3f321b4da0fd4f63d2b5b946a8",
+      "bytes": 319269,
       "start_page": 1,
       "documents": [
         "paper"
@@ -1035,12 +1164,23 @@
         "focus_changed": false
       },
       "ocr_mode": null,
-      "capture": "3a424424dba5fabf"
+      "capture": "3a424424dba5fabf",
+      "reencodings": [
+        {
+          "image": "help.jpg",
+          "sha256": "a02077c8eb920a85b57c80a570a0635db51ea11f415d41b61ab7256db71520d2",
+          "bytes": 522031,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "7244dda01193af049cb36d4d4e62cae75f01f54a3f13cbc34b609fc7734bec0f",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "search": {
       "image": "search.jpg",
-      "sha256": "f4b7b5d19aca024f7856d2e1f689cc752ade90c6d2afd7243ca2d1e7a7095b08",
-      "bytes": 725480,
+      "sha256": "16a352f55ff4dcb395f2b2d443d5dfbc84a8ded9a1e1d7eef607657a15ef6b09",
+      "bytes": 493570,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1063,26 +1203,35 @@
           "RESULTS"
         ]
       ],
-      "capture": "2208654b64ec0f1f",
+      "capture": "f738804319345264",
       "reencoded_from": {
         "image": "search.webp",
         "sha256": "590bb980202b823444a26fd174af397018d74e99fe2922da604d667c5f1535a8"
       },
-      "encoding": "JPEG; quality 91; 4:4:4; progressive; optimized Huffman coding",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
       "reencodings": [
         {
           "image": "search.jpg",
           "sha256": "507c61f083b1a972b9e6e5491a9d3834564fdf6a3fa4935920d0d794a1376018",
           "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
           "reason": "Publication replacement smoke test; no recapture"
+        },
+        {
+          "image": "search.jpg",
+          "sha256": "f4b7b5d19aca024f7856d2e1f689cc752ade90c6d2afd7243ca2d1e7a7095b08",
+          "bytes": 725480,
+          "encoding": "JPEG; quality 91; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "f4b7b5d19aca024f7856d2e1f689cc752ade90c6d2afd7243ca2d1e7a7095b08",
+          "source_kind": "previous published JPEG"
         }
       ]
     },
     "preview": {
       "image": "preview.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "26b0f284ab394e791ae8c7c5faf0c0971bfbde4f438b63c3e916d366789a49fd",
-      "bytes": 441958,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "77a670b4509208fa4147202aa37646621f661fe465cd2d3db5d0cfb5eaf988de",
+      "bytes": 301165,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1129,12 +1278,23 @@
         "focus_changed": false
       },
       "ocr_mode": null,
-      "capture": "ee929ba45751615f"
+      "capture": "ee929ba45751615f",
+      "reencodings": [
+        {
+          "image": "preview.jpg",
+          "sha256": "26b0f284ab394e791ae8c7c5faf0c0971bfbde4f438b63c3e916d366789a49fd",
+          "bytes": 441958,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "e548bdb8de9d28ac63e21942a2da221aa0cf2c617c960868441d29df274e7287",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "figure": {
       "image": "figure.jpg",
-      "sha256": "c1e25ab28cf54383d35922d67981f0f28b228b1e9c2be147bfe6cbfdf6ad5210",
-      "bytes": 262986,
+      "sha256": "b5fdc9223e64067e47e0edb1f0c23874b7348737f7176af7167953edc368efdc",
+      "bytes": 190439,
       "start_page": 3,
       "documents": [
         "paper"
@@ -1153,17 +1313,28 @@
           "Copy text"
         ]
       ],
-      "capture": "2208654b64ec0f1f",
+      "capture": "f738804319345264",
       "reencoded_from": {
         "image": "figure.webp",
         "sha256": "de4a4565c5d9978d2b1dbbb47c6b5c62a75cca7aa6e0171c113324d9de0aed17"
       },
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "reencodings": [
+        {
+          "image": "figure.jpg",
+          "sha256": "c1e25ab28cf54383d35922d67981f0f28b228b1e9c2be147bfe6cbfdf6ad5210",
+          "bytes": 262986,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "c1e25ab28cf54383d35922d67981f0f28b228b1e9c2be147bfe6cbfdf6ad5210",
+          "source_kind": "previous published JPEG"
+        }
+      ]
     },
     "mouse-menu": {
       "image": "mouse-menu.jpg",
-      "sha256": "c444f9f88e849cc28191aa6e2cf1a329a726c79c2d4f853228bcc97f9a568b57",
-      "bytes": 606919,
+      "sha256": "ac01176fb62f4736cd1f695cc1d67fcb0803c0465d7a3e0c52740b13ac8879f0",
+      "bytes": 409737,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1234,12 +1405,23 @@
         "image": "mouse-menu.webp",
         "sha256": "d56b8c8ae6b6362df5a47b00c1476ff742bf79d7851e170a23a303c29d570d35"
       },
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "reencodings": [
+        {
+          "image": "mouse-menu.jpg",
+          "sha256": "c444f9f88e849cc28191aa6e2cf1a329a726c79c2d4f853228bcc97f9a568b57",
+          "bytes": 606919,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "c444f9f88e849cc28191aa6e2cf1a329a726c79c2d4f853228bcc97f9a568b57",
+          "source_kind": "previous published JPEG"
+        }
+      ]
     },
     "mouse-hints": {
       "image": "mouse-hints.jpg",
-      "sha256": "59f400ddf946c4b643342f70a20420aebd257c303980b0df2364c089214d8b60",
-      "bytes": 685701,
+      "sha256": "6bacb679e5931edd249b8c2defef32bee88d14bf3968be30b42e594cc38038ad",
+      "bytes": 478283,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1258,17 +1440,28 @@
           "a"
         ]
       ],
-      "capture": "7dbed3285fd3ec9c",
+      "capture": "004143d2035b557e",
       "reencoded_from": {
         "image": "mouse-hints.webp",
         "sha256": "d4c4935146dba9de38c5eabd66e06b4be005e1b3f85a18c57eb688afda13d5b4"
       },
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "reencodings": [
+        {
+          "image": "mouse-hints.jpg",
+          "sha256": "59f400ddf946c4b643342f70a20420aebd257c303980b0df2364c089214d8b60",
+          "bytes": 685701,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "59f400ddf946c4b643342f70a20420aebd257c303980b0df2364c089214d8b60",
+          "source_kind": "previous published JPEG"
+        }
+      ]
     },
     "mouse-region": {
       "image": "mouse-region.jpg",
-      "sha256": "58faff1cbb1935af2c596274abf0ad52db5aa754f92a0b215723547e00e3de3b",
-      "bytes": 242238,
+      "sha256": "cba7b3df5334a90ccd173197d09e6b22a4c4e998da8d09ae8399144809ba4610",
+      "bytes": 178845,
       "start_page": 3,
       "documents": [
         "paper"
@@ -1299,17 +1492,28 @@
           "Release captures; Esc cancels"
         ]
       ],
-      "capture": "7dbed3285fd3ec9c",
+      "capture": "004143d2035b557e",
       "reencoded_from": {
         "image": "mouse-region.webp",
         "sha256": "f87b02c18404957eebcd99a2b172264aef9d613c0ae4087e7d500913e140975a"
       },
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "reencodings": [
+        {
+          "image": "mouse-region.jpg",
+          "sha256": "58faff1cbb1935af2c596274abf0ad52db5aa754f92a0b215723547e00e3de3b",
+          "bytes": 242238,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "58faff1cbb1935af2c596274abf0ad52db5aa754f92a0b215723547e00e3de3b",
+          "source_kind": "previous published JPEG"
+        }
+      ]
     },
     "pages": {
       "image": "pages.jpg",
-      "sha256": "dce68e51a4040c82b0670fb07853de6d2526601fc81ddb0d2376dd53c8fee954",
-      "bytes": 519702,
+      "sha256": "2a37b228adada25e97391daab782e24275abd8304ef579cb3c2e97a9aa51525a",
+      "bytes": 334621,
       "start_page": 64,
       "documents": [
         "book",
@@ -1325,17 +1529,28 @@
           "PAGES"
         ]
       ],
-      "capture": "2208654b64ec0f1f",
+      "capture": "f738804319345264",
       "reencoded_from": {
         "image": "pages.webp",
         "sha256": "e19f7d1f1208bc4b759b6432ba9c4712a7a6db52b79c0bc4ed9d956bc15e3c42"
       },
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "reencodings": [
+        {
+          "image": "pages.jpg",
+          "sha256": "dce68e51a4040c82b0670fb07853de6d2526601fc81ddb0d2376dd53c8fee954",
+          "bytes": 519702,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "dce68e51a4040c82b0670fb07853de6d2526601fc81ddb0d2376dd53c8fee954",
+          "source_kind": "previous published JPEG"
+        }
+      ]
     },
     "recent": {
       "image": "recent.jpg",
-      "sha256": "c705a9b88f0d179eebd59209c5acef29072ca4c688af4387fd00d1621d0d7da5",
-      "bytes": 252189,
+      "sha256": "7b945c8d0d512919ca4c5f22d3c8156cb3be7ff987498fa9567121b74968f354",
+      "bytes": 162328,
       "start_page": 2,
       "documents": [
         "paper",
@@ -1376,17 +1591,28 @@
           "49"
         ]
       ],
-      "capture": "2208654b64ec0f1f",
+      "capture": "f738804319345264",
       "reencoded_from": {
         "image": "recent.webp",
         "sha256": "0a841d24f9cceb23f4eef218757c7eb899a59542e59e0b5eb26eaa22f1f162dd"
       },
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "reencodings": [
+        {
+          "image": "recent.jpg",
+          "sha256": "c705a9b88f0d179eebd59209c5acef29072ca4c688af4387fd00d1621d0d7da5",
+          "bytes": 252189,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "c705a9b88f0d179eebd59209c5acef29072ca4c688af4387fd00d1621d0d7da5",
+          "source_kind": "previous published JPEG"
+        }
+      ]
     },
     "jumps": {
       "image": "jumps.jpg",
-      "sha256": "fb6bc52a1ce0d4c6de08c405c22ba950b82f2d449ce6c0ec3300908ae84d3272",
-      "bytes": 598663,
+      "sha256": "72a76a946f265e50ed23e00818acc56bc68c4f17314689268be2256d0bb16de6",
+      "bytes": 402114,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1429,18 +1655,29 @@
           "Search ["
         ]
       ],
-      "capture": "2208654b64ec0f1f",
+      "capture": "f738804319345264",
       "reencoded_from": {
         "image": "jumps.webp",
         "sha256": "32291b4d32c4d3fe437d949b6b8734f4bad3121b4d87dcbd9c61b027728d58ca"
       },
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "reencodings": [
+        {
+          "image": "jumps.jpg",
+          "sha256": "fb6bc52a1ce0d4c6de08c405c22ba950b82f2d449ce6c0ec3300908ae84d3272",
+          "bytes": 598663,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "fb6bc52a1ce0d4c6de08c405c22ba950b82f2d449ce6c0ec3300908ae84d3272",
+          "source_kind": "previous published JPEG"
+        }
+      ]
     },
     "ocr": {
       "image": "ocr.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "60f1eabb042102912101716c8326be38a6c798b1cd659a3d96fc7ec09de7904d",
-      "bytes": 536799,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "59363e97e8d8a69229de851b5daa419bbc181fa827b0e9c3e75f9016db980051",
+      "bytes": 344311,
       "start_page": 7,
       "documents": [
         "scan"
@@ -1502,13 +1739,24 @@
       },
       "resolved_targets": [],
       "ocr_mode": "automatic; cache initially empty",
-      "capture": "0e2dee354836de5d"
+      "capture": "0e2dee354836de5d",
+      "reencodings": [
+        {
+          "image": "ocr.jpg",
+          "sha256": "60f1eabb042102912101716c8326be38a6c798b1cd659a3d96fc7ec09de7904d",
+          "bytes": 536799,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "d464bf8abc2437acbc2864ce8a8f4e61b1c7dce6cd88d2d458d21a2a5729430b",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "help-split": {
       "image": "help-split.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "ce7788d93d70132403e62efa0d35b8e4923832be0200da7818de189520435633",
-      "bytes": 375208,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "ead1af2166f997d50a6279193d03eecb61a9067c914ac7e7c53d9edba5b46142",
+      "bytes": 233103,
       "start_page": 39,
       "documents": [
         "book"
@@ -1547,13 +1795,24 @@
         "focus_changed": false
       },
       "ocr_mode": null,
-      "capture": "ee929ba45751615f"
+      "capture": "ee929ba45751615f",
+      "reencodings": [
+        {
+          "image": "help-split.jpg",
+          "sha256": "ce7788d93d70132403e62efa0d35b8e4923832be0200da7818de189520435633",
+          "bytes": 375208,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "eded71daa44900f8206154899e1c6f095c452e39e3acf220f9c956bdac74d77f",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "definition": {
       "image": "definition.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "01f03d1a2fe0e6835908613c2b1c232ac4c1107ffb98a30d36325e87aefddc4e",
-      "bytes": 258747,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "f29a41edc78e0013f3968a6f36f0c705562d44354732e2d4aca510d008cda29c",
+      "bytes": 178657,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1604,13 +1863,24 @@
         "focus_changed": false
       },
       "ocr_mode": null,
-      "capture": "ee929ba45751615f"
+      "capture": "ee929ba45751615f",
+      "reencodings": [
+        {
+          "image": "definition.jpg",
+          "sha256": "01f03d1a2fe0e6835908613c2b1c232ac4c1107ffb98a30d36325e87aefddc4e",
+          "bytes": 258747,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "29a7958cd6a18d2818f3a28e5e4bc1a39e5964503e9e5d1f46d0ac67e2c87e14",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "continuous-text": {
       "image": "continuous-text.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "ffaef3290d1a8c58d5e067fbf8524baece88c3e6f445b44c78b1638d0d9b718b",
-      "bytes": 605795,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "0abaa0930df0e8f261c0096df6e0f6d34949be5ebaba3a1fd6122098f2af92b8",
+      "bytes": 383380,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1649,13 +1919,24 @@
         "focus_changed": false
       },
       "ocr_mode": null,
-      "capture": "3a424424dba5fabf"
+      "capture": "3a424424dba5fabf",
+      "reencodings": [
+        {
+          "image": "continuous-text.jpg",
+          "sha256": "ffaef3290d1a8c58d5e067fbf8524baece88c3e6f445b44c78b1638d0d9b718b",
+          "bytes": 605795,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "c3d8f32ae665b7be969b7ba09f34b936334c67f97e6ceddee90d3dcb52926c58",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "annotations": {
       "image": "annotations.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "8387358136350506adc85843866629ce5ebd6e5d8c28d7fb3978401c9b68b812",
-      "bytes": 276823,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "f640689245a6d4b401e136c1c194bca3ef76abd6b3dd6f0189645b9dc2b061d1",
+      "bytes": 169148,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1728,13 +2009,24 @@
         }
       ],
       "ocr_mode": null,
-      "capture": "767d4b068750d437"
+      "capture": "767d4b068750d437",
+      "reencodings": [
+        {
+          "image": "annotations.jpg",
+          "sha256": "8387358136350506adc85843866629ce5ebd6e5d8c28d7fb3978401c9b68b812",
+          "bytes": 276823,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "418404300ede1e3ea4b645c5ace47c5e4c0b14b602ffcca7e8e3f8e853cf4eab",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "marks": {
       "image": "marks.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "0926ebf3aa69d6773f53ae38e6eee83238e84b09ce9ad0556702a87de22936e7",
-      "bytes": 300847,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "171ad11f1ceffab8fa36fb7d5086d27b018385e772b49e9e2aebf315509ea008",
+      "bytes": 199371,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1773,7 +2065,18 @@
         "focus_changed": false
       },
       "ocr_mode": null,
-      "capture": "ee929ba45751615f"
+      "capture": "ee929ba45751615f",
+      "reencodings": [
+        {
+          "image": "marks.jpg",
+          "sha256": "0926ebf3aa69d6773f53ae38e6eee83238e84b09ce9ad0556702a87de22936e7",
+          "bytes": 300847,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "4d2cd43f5282f5be9f9fbd98e337229dab24d889b5cbf6379a34cfa6a8a32b37",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "find-return": {
       "kind": "video",
@@ -1987,8 +2290,8 @@
     "find-return-poster": {
       "kind": "poster",
       "image": "find-return-poster.jpg",
-      "sha256": "b1d57d9c5c98dd1a61e8bada131883476f34b8e2e5918836850f6393b3fa44c9",
-      "bytes": 414481,
+      "sha256": "07ddd978027340c0e766827238b89aac13f774d5a3afb0f3fe68eaa6915a6810",
+      "bytes": 268896,
       "documents": [
         "paper"
       ],
@@ -1998,9 +2301,20 @@
       ],
       "video": "find-return",
       "frame_seconds": 12,
-      "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
       "video_sha256": "f0ca662d0f409f7a73720bc9a70baa289d4a6fc3fbe2da628a8c1decce311366",
-      "capture": "cc69d920606e8276"
+      "capture": "cc69d920606e8276",
+      "reencodings": [
+        {
+          "image": "find-return-poster.jpg",
+          "sha256": "b1d57d9c5c98dd1a61e8bada131883476f34b8e2e5918836850f6393b3fa44c9",
+          "bytes": 414481,
+          "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "b1d57d9c5c98dd1a61e8bada131883476f34b8e2e5918836850f6393b3fa44c9",
+          "source_kind": "previous published JPEG"
+        }
+      ]
     },
     "inspect-reference": {
       "kind": "video",
@@ -2253,8 +2567,8 @@
     "inspect-reference-poster": {
       "kind": "poster",
       "image": "inspect-reference-poster.jpg",
-      "sha256": "edc0f1d42d6f393644eb2adea21cf32da4504b9faee1f2275555c33da2c500bb",
-      "bytes": 313988,
+      "sha256": "419ecf825ae23759c2aa1c084ddba58b1fb777deccafe229886a291096634d8a",
+      "bytes": 205335,
       "documents": [
         "paper"
       ],
@@ -2264,9 +2578,20 @@
       ],
       "video": "inspect-reference",
       "frame_seconds": 8,
-      "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
       "video_sha256": "7e938d18fa0bae27d59390bf663f09268f5dbfa87f384193744b10fcf52e6ce0",
-      "capture": "42ce64a36788428d"
+      "capture": "42ce64a36788428d",
+      "reencodings": [
+        {
+          "image": "inspect-reference-poster.jpg",
+          "sha256": "edc0f1d42d6f393644eb2adea21cf32da4504b9faee1f2275555c33da2c500bb",
+          "bytes": 313988,
+          "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "edc0f1d42d6f393644eb2adea21cf32da4504b9faee1f2275555c33da2c500bb",
+          "source_kind": "previous published JPEG"
+        }
+      ]
     },
     "compare-passages": {
       "kind": "video",
@@ -2562,8 +2887,8 @@
     "compare-passages-poster": {
       "kind": "poster",
       "image": "compare-passages-poster.jpg",
-      "sha256": "ca281b9be8f6903a8f52304edc0be00725e3302fb33c20e4283ac7335ec2ddae",
-      "bytes": 444191,
+      "sha256": "8efa7bc2facf358049a8f0a2d07377b5f021fa6d8825ee8f69586c057b539d5b",
+      "bytes": 292157,
       "documents": [
         "paper"
       ],
@@ -2573,15 +2898,26 @@
       ],
       "video": "compare-passages",
       "frame_seconds": 14,
-      "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
       "video_sha256": "95d6f160e0f581afe7903963563af9e2e7444a864c297df04939b20c88add0aa",
-      "capture": "bd5e14ef24f4bb1b"
+      "capture": "bd5e14ef24f4bb1b",
+      "reencodings": [
+        {
+          "image": "compare-passages-poster.jpg",
+          "sha256": "ca281b9be8f6903a8f52304edc0be00725e3302fb33c20e4283ac7335ec2ddae",
+          "bytes": 444191,
+          "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "ca281b9be8f6903a8f52304edc0be00725e3302fb33c20e4283ac7335ec2ddae",
+          "source_kind": "previous published JPEG"
+        }
+      ]
     },
     "annotation-actions": {
       "image": "annotation-actions.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "9710dcc2ff25d34f75ea8698e4169a454dc82d83fd56f2d2ad236c6d61c0a1db",
-      "bytes": 286542,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "f82c6423b9a3edda488916ed46463ce6ee6d5b4c6722340abb7e5558d50ce7d1",
+      "bytes": 175127,
       "start_page": 2,
       "documents": [
         "paper"
@@ -2680,13 +3016,24 @@
         }
       ],
       "ocr_mode": null,
-      "capture": "a5192470b6ca7e19"
+      "capture": "a5192470b6ca7e19",
+      "reencodings": [
+        {
+          "image": "annotation-actions.jpg",
+          "sha256": "9710dcc2ff25d34f75ea8698e4169a454dc82d83fd56f2d2ad236c6d61c0a1db",
+          "bytes": 286542,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "b183a18e281ebcf97391faac125bdf4efce8cca2b5611d17c576173382fca388",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "figures": {
       "image": "figures.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "a3e9c8059b2d2228252be12d531d4ffecc27d5c5ff3715aae384acfeedc530ce",
-      "bytes": 318458,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "b7632b4eb9270b19dd690c6771950b56d1e6c56d25ec07cf20fa60a6b57ff569",
+      "bytes": 209099,
       "start_page": 3,
       "documents": [
         "paper"
@@ -2732,13 +3079,24 @@
       },
       "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "0e2dee354836de5d"
+      "capture": "0e2dee354836de5d",
+      "reencodings": [
+        {
+          "image": "figures.jpg",
+          "sha256": "a3e9c8059b2d2228252be12d531d4ffecc27d5c5ff3715aae384acfeedc530ce",
+          "bytes": 318458,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "3b7c4ac0ee8f55ac5493ba1d531fd3e620f54c086bb8c0c48c20267711e86f00",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "zoom": {
       "image": "zoom.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "22ef474f205366a2c80b35943a291e8ddcea8ab1b5a1e747d7b4ecd931c763ec",
-      "bytes": 564855,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "9605911bf68d9c98cd29485233ac180454ae2a35a4dc3f1ec9d084c3c34d00ad",
+      "bytes": 352288,
       "start_page": 2,
       "documents": [
         "paper"
@@ -2804,13 +3162,24 @@
       },
       "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "0e2dee354836de5d"
+      "capture": "0e2dee354836de5d",
+      "reencodings": [
+        {
+          "image": "zoom.jpg",
+          "sha256": "22ef474f205366a2c80b35943a291e8ddcea8ab1b5a1e747d7b4ecd931c763ec",
+          "bytes": 564855,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "266627e7c66e79ff7dcc4d2912ae843f51f18ae7c20042083ef34702bf3ab7a0",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "theme-dark": {
       "image": "theme-dark.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "c70f461e12853144f9f539cc5240792570f3063d6f431fbfdef366ad4c63c736",
-      "bytes": 461479,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "71defffda8d2579705d57065ec71d3aeaa3737367040f88b05c870c19cdaedb4",
+      "bytes": 280282,
       "start_page": 2,
       "documents": [
         "paper"
@@ -2868,13 +3237,24 @@
       },
       "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "10ad2f4ff95d6927"
+      "capture": "10ad2f4ff95d6927",
+      "reencodings": [
+        {
+          "image": "theme-dark.jpg",
+          "sha256": "c70f461e12853144f9f539cc5240792570f3063d6f431fbfdef366ad4c63c736",
+          "bytes": 461479,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "5fb8d416b53ce0038d5363fc89bc66fc930b2c21aec1a64ac781f271aea26520",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "theme-light": {
       "image": "theme-light.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "36d87b9ea165a416efc57e93e1b9b6982aa2188efcc24153ff3d70fb05e46e9f",
-      "bytes": 433009,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "352b7b9e1d677008a202a233c95907e559b8128e43fb00548ef1ccfe51b20f1e",
+      "bytes": 272355,
       "start_page": 2,
       "documents": [
         "paper"
@@ -2936,13 +3316,24 @@
       },
       "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "a5192470b6ca7e19"
+      "capture": "a5192470b6ca7e19",
+      "reencodings": [
+        {
+          "image": "theme-light.jpg",
+          "sha256": "36d87b9ea165a416efc57e93e1b9b6982aa2188efcc24153ff3d70fb05e46e9f",
+          "bytes": 433009,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "ed39e9f28091db982aaf5b64f7e3fcf08597817410dbe5ca495557ece6df1f61",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "theme-nord": {
       "image": "theme-nord.jpg",
-      "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "e557adac625389c7b4e545547e95da77cd73265394297c49dd39de2517509bd0",
-      "bytes": 444111,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "3ef42e0051919f23136993c93e32a2093cbcddd8dc37abd586549240cdc805c2",
+      "bytes": 272000,
       "start_page": 2,
       "documents": [
         "paper"
@@ -3004,7 +3395,18 @@
       },
       "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "a5192470b6ca7e19"
+      "capture": "a5192470b6ca7e19",
+      "reencodings": [
+        {
+          "image": "theme-nord.jpg",
+          "sha256": "e557adac625389c7b4e545547e95da77cd73265394297c49dd39de2517509bd0",
+          "bytes": 444111,
+          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "aaceacdd9d0fb33dc1a2bb0fa3ebbfa2e45582afea1a02d48b0345e0d440d146",
+          "source_kind": "original PNG verified against prior JPEG hash"
+        }
+      ]
     },
     "select-capture": {
       "kind": "video",
@@ -3316,8 +3718,8 @@
     "select-capture-poster": {
       "kind": "poster",
       "image": "select-capture-poster.jpg",
-      "sha256": "d2e07b22aab6e9cd53ec6f0175eebaaf02a26835a91162f3295c6259bd22855f",
-      "bytes": 222157,
+      "sha256": "08a0d8e20e1405f5688088b0f6761270abc687dff88579aa8ee287848422e172",
+      "bytes": 141978,
       "documents": [
         "paper"
       ],
@@ -3328,8 +3730,19 @@
       "video": "select-capture",
       "video_sha256": "ae87905e04feee1e35600953e0a553ae0fbed624f2a24ace1e76bbf31874d4e7",
       "frame_seconds": 19.5,
-      "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
-      "capture": "e18514ec31f4a411"
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "capture": "e18514ec31f4a411",
+      "reencodings": [
+        {
+          "image": "select-capture-poster.jpg",
+          "sha256": "d2e07b22aab6e9cd53ec6f0175eebaaf02a26835a91162f3295c6259bd22855f",
+          "bytes": 222157,
+          "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
+          "reason": "Smaller JPEG; no recapture",
+          "source_sha256": "d2e07b22aab6e9cd53ec6f0175eebaaf02a26835a91162f3295c6259bd22855f",
+          "source_kind": "previous published JPEG"
+        }
+      ]
     }
   }
 }

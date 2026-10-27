@@ -20,7 +20,7 @@ from demo_window import Window
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = Path.home() / ".cache/vpdf/demo-media" / ROOT.name
-ENCODING = "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding"
+ENCODING = "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding"
 SCENES = {
     "overview": (
         2,
@@ -266,6 +266,16 @@ for theme in ("dark", "light", "nord"):
 
 def run(*args):
     return subprocess.check_output(args, text=True, cwd=ROOT).rstrip()
+
+
+def optimize_image(source, target, dimensions):
+    run(
+        "sh",
+        str(ROOT / "scripts/demo-optimize.sh"),
+        str(source),
+        str(target),
+        f"{dimensions[0]}x{dimensions[1]}",
+    )
 
 
 def digest(path):
@@ -624,13 +634,7 @@ class Gallery:
         screen = self.remote("get-text", "--match", f"id:{self.window}")
         (self.args.raw / f"{name}.txt").write_text(screen + "\n")
         target = self.directory / f"{name}.jpg"
-        run(
-            "sh",
-            str(ROOT / "scripts/demo-optimize.sh"),
-            str(raw),
-            str(target),
-            f"{self.args.width}x{self.args.height}",
-        )
+        optimize_image(raw, target, [self.args.width, self.args.height])
         print(f"Captured {name}: {target.stat().st_size} bytes", flush=True)
         scene = {
             "image": target.name,

@@ -18,26 +18,38 @@
       "publication": {
         "id": "overview-shot",
         "kind": "image",
-        "sha256": "a0978dd6f736de1856d1e7492a89ac1b195f38d814a93b5503e1e7b382499393",
+        "sha256": "e96e225ebc4e5772b8eb728f2aa5a60a33f3e7502767e8e5ece1b4fec4f499c9",
         "capture": "c7e615eea5ddda3c",
-        "url": "https://github.com/user-attachments/assets/feee9af7-54ff-45bc-aa03-64459bd70e3f",
+        "url": "https://github.com/user-attachments/assets/2be01fa8-8b03-48c9-b135-32458351aa2a",
         "metadata": {
           "dimensions": [
             1880,
             1000
           ]
         },
-        "published_at": "2026-10-27T12:42:41.024981+00:00",
+        "published_at": "2026-10-27T13:40:43.572267+00:00",
         "history": [
           {
-            "url": "https://github.com/user-attachments/assets/7d85fbdf-ad7c-43a8-926f-f1873cd8d48a",
-            "sha256": "abdaf163c070dff899dba265bbc62e60137ba96c5afa18f9f7c6ec7e47e37557",
             "capture": "61cabc806f2baf09",
-            "published_at": "2026-10-27T08:06:23.128301+00:00",
             "metadata": {
               "dimensions": [
                 2560,
                 1440
+              ]
+            },
+            "published_at": "2026-10-27T08:06:23.128301+00:00",
+            "sha256": "abdaf163c070dff899dba265bbc62e60137ba96c5afa18f9f7c6ec7e47e37557",
+            "url": "https://github.com/user-attachments/assets/7d85fbdf-ad7c-43a8-926f-f1873cd8d48a"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/feee9af7-54ff-45bc-aa03-64459bd70e3f",
+            "sha256": "a0978dd6f736de1856d1e7492a89ac1b195f38d814a93b5503e1e7b382499393",
+            "capture": "c7e615eea5ddda3c",
+            "published_at": "2026-10-27T12:42:41.024981+00:00",
+            "metadata": {
+              "dimensions": [
+                1880,
+                1000
               ]
             }
           }
@@ -54,25 +66,37 @@
       "publication": {
         "id": "help-shot",
         "kind": "image",
-        "sha256": "a02077c8eb920a85b57c80a570a0635db51ea11f415d41b61ab7256db71520d2",
+        "sha256": "d8e13916f09f3f8136686fd894c0065d87438e3f321b4da0fd4f63d2b5b946a8",
         "capture": "3a424424dba5fabf",
-        "url": "https://github.com/user-attachments/assets/1c5f1c1e-bd79-4031-97d5-1727b489185a",
+        "url": "https://github.com/user-attachments/assets/237e8c23-e0b6-4644-8280-50514f7bbf22",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:40:31.442343+00:00",
+        "published_at": "2026-10-27T13:41:02.682030+00:00",
         "history": [
           {
-            "url": "https://github.com/user-attachments/assets/c2a3ab69-408d-44e9-a6c2-b2ec8a1511ae",
-            "sha256": "5bfda3096c612a3eadfa913270c262ee3bac5b6c66f7cc620b5ab1f07a278d46",
             "capture": "2208654b64ec0f1f",
-            "published_at": "2026-10-27T08:06:40.915032+00:00",
             "metadata": {
               "dimensions": [
                 2560,
+                1440
+              ]
+            },
+            "published_at": "2026-10-27T08:06:40.915032+00:00",
+            "sha256": "5bfda3096c612a3eadfa913270c262ee3bac5b6c66f7cc620b5ab1f07a278d46",
+            "url": "https://github.com/user-attachments/assets/c2a3ab69-408d-44e9-a6c2-b2ec8a1511ae"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/1c5f1c1e-bd79-4031-97d5-1727b489185a",
+            "sha256": "a02077c8eb920a85b57c80a570a0635db51ea11f415d41b61ab7256db71520d2",
+            "capture": "3a424424dba5fabf",
+            "published_at": "2026-10-27T12:40:31.442343+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
                 1440
               ]
             }
@@ -88,7 +112,18 @@
       "title": "Search",
       "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
       "publication": {
-        "capture": "2208654b64ec0f1f",
+        "id": "search-shot",
+        "kind": "image",
+        "sha256": "16a352f55ff4dcb395f2b2d443d5dfbc84a8ded9a1e1d7eef607657a15ef6b09",
+        "capture": "f738804319345264",
+        "url": "https://github.com/user-attachments/assets/58754861-bb18-4ba4-8e23-68e54630093d",
+        "metadata": {
+          "dimensions": [
+            2560,
+            1440
+          ]
+        },
+        "published_at": "2026-10-27T13:41:23.692360+00:00",
         "history": [
           {
             "capture": "2208654b64ec0f1f",
@@ -101,19 +136,20 @@
             "published_at": "2026-10-27T07:59:02.949239+00:00",
             "sha256": "507c61f083b1a972b9e6e5491a9d3834564fdf6a3fa4935920d0d794a1376018",
             "url": "https://github.com/user-attachments/assets/7a376a3a-6b21-4dcb-ae6a-bbff2ef716d6"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/af3490e1-844f-4dd8-8213-55a7f9083ab3",
+            "sha256": "f4b7b5d19aca024f7856d2e1f689cc752ade90c6d2afd7243ca2d1e7a7095b08",
+            "capture": "2208654b64ec0f1f",
+            "published_at": "2026-10-27T08:02:58.732803+00:00",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            }
           }
         ],
-        "id": "search-shot",
-        "kind": "image",
-        "metadata": {
-          "dimensions": [
-            2560,
-            1440
-          ]
-        },
-        "published_at": "2026-10-27T08:02:58.732803+00:00",
-        "sha256": "f4b7b5d19aca024f7856d2e1f689cc752ade90c6d2afd7243ca2d1e7a7095b08",
-        "url": "https://github.com/user-attachments/assets/af3490e1-844f-4dd8-8213-55a7f9083ab3",
         "comment_id": 6436692249
       }
     },
@@ -126,25 +162,37 @@
       "publication": {
         "id": "preview-shot",
         "kind": "image",
-        "sha256": "26b0f284ab394e791ae8c7c5faf0c0971bfbde4f438b63c3e916d366789a49fd",
+        "sha256": "77a670b4509208fa4147202aa37646621f661fe465cd2d3db5d0cfb5eaf988de",
         "capture": "ee929ba45751615f",
-        "url": "https://github.com/user-attachments/assets/b533f77d-9bbb-4edc-bfd8-93ac4b2aa74b",
+        "url": "https://github.com/user-attachments/assets/003bf1e3-85ab-4f52-8ac9-e826a866115c",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:41:08.947634+00:00",
+        "published_at": "2026-10-27T13:41:42.840434+00:00",
         "history": [
           {
-            "url": "https://github.com/user-attachments/assets/f60dac5f-b753-4086-bbf5-ff92a21f5653",
-            "sha256": "e74a2a69a8a2704420a3975ff73f87b34ad636dbdfd8a8f978034bf9d07e52c6",
             "capture": "2208654b64ec0f1f",
-            "published_at": "2026-10-27T08:07:02.023777+00:00",
             "metadata": {
               "dimensions": [
                 2560,
+                1440
+              ]
+            },
+            "published_at": "2026-10-27T08:07:02.023777+00:00",
+            "sha256": "e74a2a69a8a2704420a3975ff73f87b34ad636dbdfd8a8f978034bf9d07e52c6",
+            "url": "https://github.com/user-attachments/assets/f60dac5f-b753-4086-bbf5-ff92a21f5653"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/b533f77d-9bbb-4edc-bfd8-93ac4b2aa74b",
+            "sha256": "26b0f284ab394e791ae8c7c5faf0c0971bfbde4f438b63c3e916d366789a49fd",
+            "capture": "ee929ba45751615f",
+            "published_at": "2026-10-27T12:41:08.947634+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
                 1440
               ]
             }
@@ -162,17 +210,30 @@
       "publication": {
         "id": "figure-shot",
         "kind": "image",
-        "sha256": "c1e25ab28cf54383d35922d67981f0f28b228b1e9c2be147bfe6cbfdf6ad5210",
-        "capture": "2208654b64ec0f1f",
-        "url": "https://github.com/user-attachments/assets/cf953a6b-a559-4790-a53a-2cc49f3098e3",
+        "sha256": "b5fdc9223e64067e47e0edb1f0c23874b7348737f7176af7167953edc368efdc",
+        "capture": "f738804319345264",
+        "url": "https://github.com/user-attachments/assets/70f257dd-b0c9-4979-a7a9-74620f89650d",
         "metadata": {
           "dimensions": [
             2560,
             1440
           ]
         },
-        "published_at": "2026-10-27T08:10:31.702487+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:42:02.030568+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/cf953a6b-a559-4790-a53a-2cc49f3098e3",
+            "sha256": "c1e25ab28cf54383d35922d67981f0f28b228b1e9c2be147bfe6cbfdf6ad5210",
+            "capture": "2208654b64ec0f1f",
+            "published_at": "2026-10-27T08:10:31.702487+00:00",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6436869831
       }
     },
@@ -185,17 +246,30 @@
       "publication": {
         "id": "mouse-menu-shot",
         "kind": "image",
-        "sha256": "c444f9f88e849cc28191aa6e2cf1a329a726c79c2d4f853228bcc97f9a568b57",
+        "sha256": "ac01176fb62f4736cd1f695cc1d67fcb0803c0465d7a3e0c52740b13ac8879f0",
         "capture": "61cabc806f2baf09",
-        "url": "https://github.com/user-attachments/assets/2fb1fa49-f091-4929-9d84-7069f9511c51",
+        "url": "https://github.com/user-attachments/assets/b5b6619a-498c-42b3-8261-a2a957c5ad5a",
         "metadata": {
           "dimensions": [
             2560,
             1440
           ]
         },
-        "published_at": "2026-10-27T08:12:03.878166+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:42:19.770640+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/2fb1fa49-f091-4929-9d84-7069f9511c51",
+            "sha256": "c444f9f88e849cc28191aa6e2cf1a329a726c79c2d4f853228bcc97f9a568b57",
+            "capture": "61cabc806f2baf09",
+            "published_at": "2026-10-27T08:12:03.878166+00:00",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6436895189
       }
     },
@@ -208,17 +282,30 @@
       "publication": {
         "id": "mouse-hints-shot",
         "kind": "image",
-        "sha256": "59f400ddf946c4b643342f70a20420aebd257c303980b0df2364c089214d8b60",
-        "capture": "7dbed3285fd3ec9c",
-        "url": "https://github.com/user-attachments/assets/5b300331-1bda-4fc7-980f-776164d13a4b",
+        "sha256": "6bacb679e5931edd249b8c2defef32bee88d14bf3968be30b42e594cc38038ad",
+        "capture": "004143d2035b557e",
+        "url": "https://github.com/user-attachments/assets/b5272ec1-f8ca-42dc-9ef1-4f6dd5e14331",
         "metadata": {
           "dimensions": [
             2560,
             1440
           ]
         },
-        "published_at": "2026-10-27T08:13:59.861372+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:42:38.943741+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/5b300331-1bda-4fc7-980f-776164d13a4b",
+            "sha256": "59f400ddf946c4b643342f70a20420aebd257c303980b0df2364c089214d8b60",
+            "capture": "7dbed3285fd3ec9c",
+            "published_at": "2026-10-27T08:13:59.861372+00:00",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6436928787
       }
     },
@@ -231,17 +318,30 @@
       "publication": {
         "id": "mouse-region-shot",
         "kind": "image",
-        "sha256": "58faff1cbb1935af2c596274abf0ad52db5aa754f92a0b215723547e00e3de3b",
-        "capture": "7dbed3285fd3ec9c",
-        "url": "https://github.com/user-attachments/assets/df82a7f1-03d5-4380-9657-b10cd6394185",
+        "sha256": "cba7b3df5334a90ccd173197d09e6b22a4c4e998da8d09ae8399144809ba4610",
+        "capture": "004143d2035b557e",
+        "url": "https://github.com/user-attachments/assets/8dbd7958-af0b-4bb6-88cd-6a6c81b56209",
         "metadata": {
           "dimensions": [
             2560,
             1440
           ]
         },
-        "published_at": "2026-10-27T08:14:18.082504+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:42:58.389348+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/df82a7f1-03d5-4380-9657-b10cd6394185",
+            "sha256": "58faff1cbb1935af2c596274abf0ad52db5aa754f92a0b215723547e00e3de3b",
+            "capture": "7dbed3285fd3ec9c",
+            "published_at": "2026-10-27T08:14:18.082504+00:00",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6436933723
       }
     },
@@ -254,17 +354,30 @@
       "publication": {
         "id": "pages-shot",
         "kind": "image",
-        "sha256": "dce68e51a4040c82b0670fb07853de6d2526601fc81ddb0d2376dd53c8fee954",
-        "capture": "2208654b64ec0f1f",
-        "url": "https://github.com/user-attachments/assets/59d78455-4174-484f-86f3-3915acc9fbe8",
+        "sha256": "2a37b228adada25e97391daab782e24275abd8304ef579cb3c2e97a9aa51525a",
+        "capture": "f738804319345264",
+        "url": "https://github.com/user-attachments/assets/5b2e216b-6c85-482b-a1ab-2c386ea9b967",
         "metadata": {
           "dimensions": [
             2560,
             1440
           ]
         },
-        "published_at": "2026-10-27T08:14:34.734397+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:43:16.134663+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/59d78455-4174-484f-86f3-3915acc9fbe8",
+            "sha256": "dce68e51a4040c82b0670fb07853de6d2526601fc81ddb0d2376dd53c8fee954",
+            "capture": "2208654b64ec0f1f",
+            "published_at": "2026-10-27T08:14:34.734397+00:00",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6436938359
       }
     },
@@ -277,17 +390,30 @@
       "publication": {
         "id": "recent-shot",
         "kind": "image",
-        "sha256": "c705a9b88f0d179eebd59209c5acef29072ca4c688af4387fd00d1621d0d7da5",
-        "capture": "2208654b64ec0f1f",
-        "url": "https://github.com/user-attachments/assets/ea1b0baa-d065-4cbc-bbda-747aaa0fec10",
+        "sha256": "7b945c8d0d512919ca4c5f22d3c8156cb3be7ff987498fa9567121b74968f354",
+        "capture": "f738804319345264",
+        "url": "https://github.com/user-attachments/assets/3cf580dc-1686-4b1a-86b6-ac23ccd3ab38",
         "metadata": {
           "dimensions": [
             2560,
             1440
           ]
         },
-        "published_at": "2026-10-27T08:14:51.701295+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:43:35.024928+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/ea1b0baa-d065-4cbc-bbda-747aaa0fec10",
+            "sha256": "c705a9b88f0d179eebd59209c5acef29072ca4c688af4387fd00d1621d0d7da5",
+            "capture": "2208654b64ec0f1f",
+            "published_at": "2026-10-27T08:14:51.701295+00:00",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6436942922
       }
     },
@@ -300,17 +426,30 @@
       "publication": {
         "id": "jumps-shot",
         "kind": "image",
-        "sha256": "fb6bc52a1ce0d4c6de08c405c22ba950b82f2d449ce6c0ec3300908ae84d3272",
-        "capture": "2208654b64ec0f1f",
-        "url": "https://github.com/user-attachments/assets/71764f60-821c-4710-818f-f95cf2b737dc",
+        "sha256": "72a76a946f265e50ed23e00818acc56bc68c4f17314689268be2256d0bb16de6",
+        "capture": "f738804319345264",
+        "url": "https://github.com/user-attachments/assets/7540c436-f636-444f-9722-48fdc4a4812e",
         "metadata": {
           "dimensions": [
             2560,
             1440
           ]
         },
-        "published_at": "2026-10-27T08:15:09.113575+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:43:54.118560+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/71764f60-821c-4710-818f-f95cf2b737dc",
+            "sha256": "fb6bc52a1ce0d4c6de08c405c22ba950b82f2d449ce6c0ec3300908ae84d3272",
+            "capture": "2208654b64ec0f1f",
+            "published_at": "2026-10-27T08:15:09.113575+00:00",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6436947687
       }
     },
@@ -323,25 +462,37 @@
       "publication": {
         "id": "ocr-shot",
         "kind": "image",
-        "sha256": "60f1eabb042102912101716c8326be38a6c798b1cd659a3d96fc7ec09de7904d",
+        "sha256": "59363e97e8d8a69229de851b5daa419bbc181fa827b0e9c3e75f9016db980051",
         "capture": "0e2dee354836de5d",
-        "url": "https://github.com/user-attachments/assets/eb32e49a-8255-42d7-84b8-8ede423861d3",
+        "url": "https://github.com/user-attachments/assets/bb3a5bf2-755a-4a2f-b641-2f9f6d32e133",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:55:41.219142+00:00",
+        "published_at": "2026-10-27T13:44:12.900151+00:00",
         "history": [
           {
-            "url": "https://github.com/user-attachments/assets/299d2af3-e3bd-4fc6-be55-2d29942f3462",
-            "sha256": "875b8f7112c475e875f59eab75b57e6efd85fa2f3c5c074e5f15794146c2419b",
             "capture": "2208654b64ec0f1f",
-            "published_at": "2026-10-27T08:15:26.602742+00:00",
             "metadata": {
               "dimensions": [
                 2560,
+                1440
+              ]
+            },
+            "published_at": "2026-10-27T08:15:26.602742+00:00",
+            "sha256": "875b8f7112c475e875f59eab75b57e6efd85fa2f3c5c074e5f15794146c2419b",
+            "url": "https://github.com/user-attachments/assets/299d2af3-e3bd-4fc6-be55-2d29942f3462"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/eb32e49a-8255-42d7-84b8-8ede423861d3",
+            "sha256": "60f1eabb042102912101716c8326be38a6c798b1cd659a3d96fc7ec09de7904d",
+            "capture": "0e2dee354836de5d",
+            "published_at": "2026-10-27T12:55:41.219142+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
                 1440
               ]
             }
@@ -359,17 +510,30 @@
       "publication": {
         "id": "help-split-shot",
         "kind": "image",
-        "sha256": "ce7788d93d70132403e62efa0d35b8e4923832be0200da7818de189520435633",
+        "sha256": "ead1af2166f997d50a6279193d03eecb61a9067c914ac7e7c53d9edba5b46142",
         "capture": "ee929ba45751615f",
-        "url": "https://github.com/user-attachments/assets/b0cd6933-0749-4186-a157-46f00cc48612",
+        "url": "https://github.com/user-attachments/assets/aff76a07-0ddd-4975-a767-64be70a04743",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:40:50.262898+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:44:31.155132+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/b0cd6933-0749-4186-a157-46f00cc48612",
+            "sha256": "ce7788d93d70132403e62efa0d35b8e4923832be0200da7818de189520435633",
+            "capture": "ee929ba45751615f",
+            "published_at": "2026-10-27T12:40:50.262898+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6442122352
       }
     },
@@ -382,17 +546,30 @@
       "publication": {
         "id": "definition-shot",
         "kind": "image",
-        "sha256": "01f03d1a2fe0e6835908613c2b1c232ac4c1107ffb98a30d36325e87aefddc4e",
+        "sha256": "f29a41edc78e0013f3968a6f36f0c705562d44354732e2d4aca510d008cda29c",
         "capture": "ee929ba45751615f",
-        "url": "https://github.com/user-attachments/assets/5e474613-97dc-4f5d-bfbb-8747cb1d9490",
+        "url": "https://github.com/user-attachments/assets/c56ec85d-a5a1-4e09-8181-564766c2d790",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:41:27.996677+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:44:49.692793+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/5e474613-97dc-4f5d-bfbb-8747cb1d9490",
+            "sha256": "01f03d1a2fe0e6835908613c2b1c232ac4c1107ffb98a30d36325e87aefddc4e",
+            "capture": "ee929ba45751615f",
+            "published_at": "2026-10-27T12:41:27.996677+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6442134740
       }
     },
@@ -405,17 +582,30 @@
       "publication": {
         "id": "continuous-text-shot",
         "kind": "image",
-        "sha256": "ffaef3290d1a8c58d5e067fbf8524baece88c3e6f445b44c78b1638d0d9b718b",
+        "sha256": "0abaa0930df0e8f261c0096df6e0f6d34949be5ebaba3a1fd6122098f2af92b8",
         "capture": "3a424424dba5fabf",
-        "url": "https://github.com/user-attachments/assets/283281bd-de4f-45f0-9dfa-c20f9c591f1b",
+        "url": "https://github.com/user-attachments/assets/bebfc118-8bad-4ff1-8813-b9844bd9468f",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:41:46.004218+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:45:07.369779+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/283281bd-de4f-45f0-9dfa-c20f9c591f1b",
+            "sha256": "ffaef3290d1a8c58d5e067fbf8524baece88c3e6f445b44c78b1638d0d9b718b",
+            "capture": "3a424424dba5fabf",
+            "published_at": "2026-10-27T12:41:46.004218+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6442140694
       }
     },
@@ -428,17 +618,30 @@
       "publication": {
         "id": "annotations-shot",
         "kind": "image",
-        "sha256": "8387358136350506adc85843866629ce5ebd6e5d8c28d7fb3978401c9b68b812",
+        "sha256": "f640689245a6d4b401e136c1c194bca3ef76abd6b3dd6f0189645b9dc2b061d1",
         "capture": "767d4b068750d437",
-        "url": "https://github.com/user-attachments/assets/d31b8ba2-b314-4432-a64f-59208e3d82f8",
+        "url": "https://github.com/user-attachments/assets/5a3343e5-8fa3-4592-8e05-e557591122c0",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:42:04.252788+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:45:25.517930+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/d31b8ba2-b314-4432-a64f-59208e3d82f8",
+            "sha256": "8387358136350506adc85843866629ce5ebd6e5d8c28d7fb3978401c9b68b812",
+            "capture": "767d4b068750d437",
+            "published_at": "2026-10-27T12:42:04.252788+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6442146468
       }
     },
@@ -451,17 +654,30 @@
       "publication": {
         "id": "marks-shot",
         "kind": "image",
-        "sha256": "0926ebf3aa69d6773f53ae38e6eee83238e84b09ce9ad0556702a87de22936e7",
+        "sha256": "171ad11f1ceffab8fa36fb7d5086d27b018385e772b49e9e2aebf315509ea008",
         "capture": "ee929ba45751615f",
-        "url": "https://github.com/user-attachments/assets/507418d7-c12d-4c2d-a7e6-7175bf72be7d",
+        "url": "https://github.com/user-attachments/assets/af502147-5324-41da-a190-f8a9f34f3ea3",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:42:22.239113+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:45:44.302125+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/507418d7-c12d-4c2d-a7e6-7175bf72be7d",
+            "sha256": "0926ebf3aa69d6773f53ae38e6eee83238e84b09ce9ad0556702a87de22936e7",
+            "capture": "ee929ba45751615f",
+            "published_at": "2026-10-27T12:42:22.239113+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6442152213
       }
     },
@@ -501,17 +717,30 @@
       "publication": {
         "id": "find-return-poster",
         "kind": "image",
-        "sha256": "b1d57d9c5c98dd1a61e8bada131883476f34b8e2e5918836850f6393b3fa44c9",
+        "sha256": "07ddd978027340c0e766827238b89aac13f774d5a3afb0f3fe68eaa6915a6810",
         "capture": "cc69d920606e8276",
-        "url": "https://github.com/user-attachments/assets/9c0f3f9c-7c17-4591-90eb-277d463cac62",
+        "url": "https://github.com/user-attachments/assets/fb7867b8-bef0-4050-8714-c8d129dbe9f5",
         "metadata": {
           "dimensions": [
             1880,
             1112
           ]
         },
-        "published_at": "2026-10-27T12:43:18.971971+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:46:06.197971+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/9c0f3f9c-7c17-4591-90eb-277d463cac62",
+            "sha256": "b1d57d9c5c98dd1a61e8bada131883476f34b8e2e5918836850f6393b3fa44c9",
+            "capture": "cc69d920606e8276",
+            "published_at": "2026-10-27T12:43:18.971971+00:00",
+            "metadata": {
+              "dimensions": [
+                1880,
+                1112
+              ]
+            }
+          }
+        ],
         "comment_id": 6442170710
       }
     },
@@ -551,17 +780,30 @@
       "publication": {
         "id": "inspect-reference-poster",
         "kind": "image",
-        "sha256": "edc0f1d42d6f393644eb2adea21cf32da4504b9faee1f2275555c33da2c500bb",
+        "sha256": "419ecf825ae23759c2aa1c084ddba58b1fb777deccafe229886a291096634d8a",
         "capture": "42ce64a36788428d",
-        "url": "https://github.com/user-attachments/assets/d2a9a301-ff79-4c11-90f6-c2064ceca1a9",
+        "url": "https://github.com/user-attachments/assets/e6d251d5-532f-43ef-ad2e-3fb9e8fddec4",
         "metadata": {
           "dimensions": [
             1880,
             1112
           ]
         },
-        "published_at": "2026-10-27T12:43:56.014312+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:46:29.572236+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/d2a9a301-ff79-4c11-90f6-c2064ceca1a9",
+            "sha256": "edc0f1d42d6f393644eb2adea21cf32da4504b9faee1f2275555c33da2c500bb",
+            "capture": "42ce64a36788428d",
+            "published_at": "2026-10-27T12:43:56.014312+00:00",
+            "metadata": {
+              "dimensions": [
+                1880,
+                1112
+              ]
+            }
+          }
+        ],
         "comment_id": 6442182388
       }
     },
@@ -601,17 +843,30 @@
       "publication": {
         "id": "compare-passages-poster",
         "kind": "image",
-        "sha256": "ca281b9be8f6903a8f52304edc0be00725e3302fb33c20e4283ac7335ec2ddae",
+        "sha256": "8efa7bc2facf358049a8f0a2d07377b5f021fa6d8825ee8f69586c057b539d5b",
         "capture": "bd5e14ef24f4bb1b",
-        "url": "https://github.com/user-attachments/assets/8442cbf5-f518-485d-bac9-2c7057dfb87c",
+        "url": "https://github.com/user-attachments/assets/9fe6c0fd-d6ff-40e8-8094-9f5710698466",
         "metadata": {
           "dimensions": [
             1880,
             1112
           ]
         },
-        "published_at": "2026-10-27T12:44:33.983599+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:46:57.952613+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/8442cbf5-f518-485d-bac9-2c7057dfb87c",
+            "sha256": "ca281b9be8f6903a8f52304edc0be00725e3302fb33c20e4283ac7335ec2ddae",
+            "capture": "bd5e14ef24f4bb1b",
+            "published_at": "2026-10-27T12:44:33.983599+00:00",
+            "metadata": {
+              "dimensions": [
+                1880,
+                1112
+              ]
+            }
+          }
+        ],
         "comment_id": 6442194444
       }
     },
@@ -624,17 +879,30 @@
       "publication": {
         "id": "annotation-actions-shot",
         "kind": "image",
-        "sha256": "9710dcc2ff25d34f75ea8698e4169a454dc82d83fd56f2d2ad236c6d61c0a1db",
+        "sha256": "f82c6423b9a3edda488916ed46463ce6ee6d5b4c6722340abb7e5558d50ce7d1",
         "capture": "a5192470b6ca7e19",
-        "url": "https://github.com/user-attachments/assets/336992ca-644c-404c-8556-fcb48bde363e",
+        "url": "https://github.com/user-attachments/assets/8cb57837-e6bf-4800-b967-058cab0c9a01",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:53:49.961541+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:47:18.498760+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/336992ca-644c-404c-8556-fcb48bde363e",
+            "sha256": "9710dcc2ff25d34f75ea8698e4169a454dc82d83fd56f2d2ad236c6d61c0a1db",
+            "capture": "a5192470b6ca7e19",
+            "published_at": "2026-10-27T12:53:49.961541+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6442378349
       }
     },
@@ -647,17 +915,30 @@
       "publication": {
         "id": "figures-shot",
         "kind": "image",
-        "sha256": "a3e9c8059b2d2228252be12d531d4ffecc27d5c5ff3715aae384acfeedc530ce",
+        "sha256": "b7632b4eb9270b19dd690c6771950b56d1e6c56d25ec07cf20fa60a6b57ff569",
         "capture": "0e2dee354836de5d",
-        "url": "https://github.com/user-attachments/assets/59ac8670-e069-4afa-a7a5-90ba5dcd9916",
+        "url": "https://github.com/user-attachments/assets/476fba9a-4297-4f5e-a48d-d08882cb021e",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:54:07.993749+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:47:35.883558+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/59ac8670-e069-4afa-a7a5-90ba5dcd9916",
+            "sha256": "a3e9c8059b2d2228252be12d531d4ffecc27d5c5ff3715aae384acfeedc530ce",
+            "capture": "0e2dee354836de5d",
+            "published_at": "2026-10-27T12:54:07.993749+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6442383980
       }
     },
@@ -670,17 +951,30 @@
       "publication": {
         "id": "zoom-shot",
         "kind": "image",
-        "sha256": "22ef474f205366a2c80b35943a291e8ddcea8ab1b5a1e747d7b4ecd931c763ec",
+        "sha256": "9605911bf68d9c98cd29485233ac180454ae2a35a4dc3f1ec9d084c3c34d00ad",
         "capture": "0e2dee354836de5d",
-        "url": "https://github.com/user-attachments/assets/cb420fb1-3839-482f-a773-a69ac5c01cfc",
+        "url": "https://github.com/user-attachments/assets/06b534dc-5ba0-400c-aa1e-61b0f51b07e7",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:54:26.093549+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:47:54.390359+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/cb420fb1-3839-482f-a773-a69ac5c01cfc",
+            "sha256": "22ef474f205366a2c80b35943a291e8ddcea8ab1b5a1e747d7b4ecd931c763ec",
+            "capture": "0e2dee354836de5d",
+            "published_at": "2026-10-27T12:54:26.093549+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6442390559
       }
     },
@@ -693,17 +987,30 @@
       "publication": {
         "id": "theme-dark-shot",
         "kind": "image",
-        "sha256": "c70f461e12853144f9f539cc5240792570f3063d6f431fbfdef366ad4c63c736",
+        "sha256": "71defffda8d2579705d57065ec71d3aeaa3737367040f88b05c870c19cdaedb4",
         "capture": "10ad2f4ff95d6927",
-        "url": "https://github.com/user-attachments/assets/1efcb184-6791-440b-9ad3-f3589d928d62",
+        "url": "https://github.com/user-attachments/assets/c8435906-7b90-4c35-9e35-0bd2961b9e77",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:54:44.755958+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:48:12.251410+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/1efcb184-6791-440b-9ad3-f3589d928d62",
+            "sha256": "c70f461e12853144f9f539cc5240792570f3063d6f431fbfdef366ad4c63c736",
+            "capture": "10ad2f4ff95d6927",
+            "published_at": "2026-10-27T12:54:44.755958+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6442396876
       }
     },
@@ -716,17 +1023,30 @@
       "publication": {
         "id": "theme-light-shot",
         "kind": "image",
-        "sha256": "36d87b9ea165a416efc57e93e1b9b6982aa2188efcc24153ff3d70fb05e46e9f",
+        "sha256": "352b7b9e1d677008a202a233c95907e559b8128e43fb00548ef1ccfe51b20f1e",
         "capture": "a5192470b6ca7e19",
-        "url": "https://github.com/user-attachments/assets/dc0b622f-4844-4546-a333-59361e5c01d7",
+        "url": "https://github.com/user-attachments/assets/1741672e-03be-4ddf-a419-e2263868d9a6",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:55:03.706574+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:48:30.036435+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/dc0b622f-4844-4546-a333-59361e5c01d7",
+            "sha256": "36d87b9ea165a416efc57e93e1b9b6982aa2188efcc24153ff3d70fb05e46e9f",
+            "capture": "a5192470b6ca7e19",
+            "published_at": "2026-10-27T12:55:03.706574+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6442403220
       }
     },
@@ -739,17 +1059,30 @@
       "publication": {
         "id": "theme-nord-shot",
         "kind": "image",
-        "sha256": "e557adac625389c7b4e545547e95da77cd73265394297c49dd39de2517509bd0",
+        "sha256": "3ef42e0051919f23136993c93e32a2093cbcddd8dc37abd586549240cdc805c2",
         "capture": "a5192470b6ca7e19",
-        "url": "https://github.com/user-attachments/assets/4abfdf74-e0e7-4446-a04f-4ce860ff6b60",
+        "url": "https://github.com/user-attachments/assets/c6489a93-15e0-4cd5-a90e-6c917130516e",
         "metadata": {
           "dimensions": [
             1280,
             1440
           ]
         },
-        "published_at": "2026-10-27T12:55:22.622850+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:48:48.028503+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/4abfdf74-e0e7-4446-a04f-4ce860ff6b60",
+            "sha256": "e557adac625389c7b4e545547e95da77cd73265394297c49dd39de2517509bd0",
+            "capture": "a5192470b6ca7e19",
+            "published_at": "2026-10-27T12:55:22.622850+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
+                1440
+              ]
+            }
+          }
+        ],
         "comment_id": 6442409688
       }
     },
@@ -789,17 +1122,30 @@
       "publication": {
         "id": "select-capture-poster",
         "kind": "image",
-        "sha256": "d2e07b22aab6e9cd53ec6f0175eebaaf02a26835a91162f3295c6259bd22855f",
+        "sha256": "08a0d8e20e1405f5688088b0f6761270abc687dff88579aa8ee287848422e172",
         "capture": "e18514ec31f4a411",
-        "url": "https://github.com/user-attachments/assets/e3421241-9bc7-4b17-821d-49388c3eb5ad",
+        "url": "https://github.com/user-attachments/assets/334bd685-2bdc-40ea-89cb-1c9de301ee8c",
         "metadata": {
           "dimensions": [
             1280,
             1112
           ]
         },
-        "published_at": "2026-10-27T12:56:19.125117+00:00",
-        "history": [],
+        "published_at": "2026-10-27T13:49:10.940557+00:00",
+        "history": [
+          {
+            "url": "https://github.com/user-attachments/assets/e3421241-9bc7-4b17-821d-49388c3eb5ad",
+            "sha256": "d2e07b22aab6e9cd53ec6f0175eebaaf02a26835a91162f3295c6259bd22855f",
+            "capture": "e18514ec31f4a411",
+            "published_at": "2026-10-27T12:56:19.125117+00:00",
+            "metadata": {
+              "dimensions": [
+                1280,
+                1112
+              ]
+            }
+          }
+        ],
         "comment_id": 6442428440
       }
     }

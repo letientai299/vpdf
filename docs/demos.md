@@ -200,63 +200,42 @@ Transcript: `i` enters Cursor mode; `v` starts a selection and `2e` extends it.
 Copy text and Enter runs it. Escape closes capture. Setup searches for
 `Encoder` in the paper.
 
-## Capture identity
-
-Screenshots preserve their source dimensions. Video key strips sit below the
-reading viewport and use the same monotonic timestamps as dispatched inputs.
-Setup is separate from demonstrated inputs. Waits run at normal speed; these
-clips contain no cuts or time compression. Posters link to stable player
-comments. Direct H.264 links also render as inline players on GitHub.
-
-The manifest separates capture from encoding: requested capture rate, delivered
-frame rate and statuses, writer drops, delivery gaps, encoded rate, dimensions,
-duration, overlays, and input timeline remain inspectable. ScreenCaptureKit does
-not expose a source-drop counter; its record says unknown. Encoded frame rate
-does not establish application frame rate or physical input latency.
-
-These examples demonstrate reading states and interactions. They do not measure
-performance, OCR accuracy, or clipboard delivery on another machine. Source
-PDFs retain their authors' rights. See [text extraction][text-guide] for OCR
-limits and the [development guide][capture] for regeneration and recovery.
-
 [paper]: https://arxiv.org/abs/1706.03762
 [book]: https://greenteapress.com/wp/think-python-2e/
 [reading]: users/reading.md
-[overview]: https://github.com/user-attachments/assets/feee9af7-54ff-45bc-aa03-64459bd70e3f
-[help]: https://github.com/user-attachments/assets/1c5f1c1e-bd79-4031-97d5-1727b489185a
-[search]: https://github.com/user-attachments/assets/af3490e1-844f-4dd8-8213-55a7f9083ab3
-[preview]: https://github.com/user-attachments/assets/b533f77d-9bbb-4edc-bfd8-93ac4b2aa74b
-[figure]: https://github.com/user-attachments/assets/cf953a6b-a559-4790-a53a-2cc49f3098e3
-[mouse-menu]: https://github.com/user-attachments/assets/2fb1fa49-f091-4929-9d84-7069f9511c51
-[mouse-hints]: https://github.com/user-attachments/assets/5b300331-1bda-4fc7-980f-776164d13a4b
-[mouse-region]: https://github.com/user-attachments/assets/df82a7f1-03d5-4380-9657-b10cd6394185
-[pages]: https://github.com/user-attachments/assets/59d78455-4174-484f-86f3-3915acc9fbe8
-[recent]: https://github.com/user-attachments/assets/ea1b0baa-d065-4cbc-bbda-747aaa0fec10
-[jumps]: https://github.com/user-attachments/assets/71764f60-821c-4710-818f-f95cf2b737dc
-[ocr]: https://github.com/user-attachments/assets/eb32e49a-8255-42d7-84b8-8ede423861d3
+[overview]: https://github.com/user-attachments/assets/2be01fa8-8b03-48c9-b135-32458351aa2a
+[help]: https://github.com/user-attachments/assets/237e8c23-e0b6-4644-8280-50514f7bbf22
+[search]: https://github.com/user-attachments/assets/58754861-bb18-4ba4-8e23-68e54630093d
+[preview]: https://github.com/user-attachments/assets/003bf1e3-85ab-4f52-8ac9-e826a866115c
+[figure]: https://github.com/user-attachments/assets/70f257dd-b0c9-4979-a7a9-74620f89650d
+[mouse-menu]: https://github.com/user-attachments/assets/b5b6619a-498c-42b3-8261-a2a957c5ad5a
+[mouse-hints]: https://github.com/user-attachments/assets/b5272ec1-f8ca-42dc-9ef1-4f6dd5e14331
+[mouse-region]: https://github.com/user-attachments/assets/8dbd7958-af0b-4bb6-88cd-6a6c81b56209
+[pages]: https://github.com/user-attachments/assets/5b2e216b-6c85-482b-a1ab-2c386ea9b967
+[recent]: https://github.com/user-attachments/assets/3cf580dc-1686-4b1a-86b6-ac23ccd3ab38
+[jumps]: https://github.com/user-attachments/assets/7540c436-f636-444f-9722-48fdc4a4812e
+[ocr]: https://github.com/user-attachments/assets/bb3a5bf2-755a-4a2f-b641-2f9f6d32e133
 [scan]: https://web.mit.edu/sts.035/www/PDFs/edvac.pdf
 [manifest]: assets/capture.json
-[capture]: dev/dev.md#gallery-capture
-[text-guide]: dev/text.md
 [corpus]: ../scripts/corpus.sh
-[help-split]: https://github.com/user-attachments/assets/b0cd6933-0749-4186-a157-46f00cc48612
-[definition]: https://github.com/user-attachments/assets/5e474613-97dc-4f5d-bfbb-8747cb1d9490
-[continuous-text]: https://github.com/user-attachments/assets/283281bd-de4f-45f0-9dfa-c20f9c591f1b
-[annotations]: https://github.com/user-attachments/assets/d31b8ba2-b314-4432-a64f-59208e3d82f8
-[annotation-actions]: https://github.com/user-attachments/assets/336992ca-644c-404c-8556-fcb48bde363e
-[figures]: https://github.com/user-attachments/assets/59ac8670-e069-4afa-a7a5-90ba5dcd9916
-[marks]: https://github.com/user-attachments/assets/507418d7-c12d-4c2d-a7e6-7175bf72be7d
-[zoom]: https://github.com/user-attachments/assets/cb420fb1-3839-482f-a773-a69ac5c01cfc
-[theme-dark]: https://github.com/user-attachments/assets/1efcb184-6791-440b-9ad3-f3589d928d62
-[theme-light]: https://github.com/user-attachments/assets/dc0b622f-4844-4546-a333-59361e5c01d7
-[theme-nord]: https://github.com/user-attachments/assets/4abfdf74-e0e7-4446-a04f-4ce860ff6b60
-[find-return-poster]: https://github.com/user-attachments/assets/9c0f3f9c-7c17-4591-90eb-277d463cac62
+[help-split]: https://github.com/user-attachments/assets/aff76a07-0ddd-4975-a767-64be70a04743
+[definition]: https://github.com/user-attachments/assets/c56ec85d-a5a1-4e09-8181-564766c2d790
+[continuous-text]: https://github.com/user-attachments/assets/bebfc118-8bad-4ff1-8813-b9844bd9468f
+[annotations]: https://github.com/user-attachments/assets/5a3343e5-8fa3-4592-8e05-e557591122c0
+[annotation-actions]: https://github.com/user-attachments/assets/8cb57837-e6bf-4800-b967-058cab0c9a01
+[figures]: https://github.com/user-attachments/assets/476fba9a-4297-4f5e-a48d-d08882cb021e
+[marks]: https://github.com/user-attachments/assets/af502147-5324-41da-a190-f8a9f34f3ea3
+[zoom]: https://github.com/user-attachments/assets/06b534dc-5ba0-400c-aa1e-61b0f51b07e7
+[theme-dark]: https://github.com/user-attachments/assets/c8435906-7b90-4c35-9e35-0bd2961b9e77
+[theme-light]: https://github.com/user-attachments/assets/1741672e-03be-4ddf-a419-e2263868d9a6
+[theme-nord]: https://github.com/user-attachments/assets/c6489a93-15e0-4cd5-a90e-6c917130516e
+[find-return-poster]: https://github.com/user-attachments/assets/fb7867b8-bef0-4050-8714-c8d129dbe9f5
 [find-return-video]: https://github.com/user-attachments/assets/d0c7a5bc-ddee-4c49-ab13-757e2fd4f964
-[inspect-reference-poster]: https://github.com/user-attachments/assets/d2a9a301-ff79-4c11-90f6-c2064ceca1a9
+[inspect-reference-poster]: https://github.com/user-attachments/assets/e6d251d5-532f-43ef-ad2e-3fb9e8fddec4
 [inspect-reference-video]: https://github.com/user-attachments/assets/4db2675d-c1b4-4e98-9e63-cce7a76cce0f
-[compare-passages-poster]: https://github.com/user-attachments/assets/8442cbf5-f518-485d-bac9-2c7057dfb87c
+[compare-passages-poster]: https://github.com/user-attachments/assets/9fe6c0fd-d6ff-40e8-8094-9f5710698466
 [compare-passages-video]: https://github.com/user-attachments/assets/70907979-9791-4eea-966b-92385dab0530
-[select-capture-poster]: https://github.com/user-attachments/assets/e3421241-9bc7-4b17-821d-49388c3eb5ad
+[select-capture-poster]: https://github.com/user-attachments/assets/334bd685-2bdc-40ea-89cb-1c9de301ee8c
 [select-capture-video]: https://github.com/user-attachments/assets/87267719-61a1-4a35-81a4-46fd4743517d
 [media]: assets/media.json
 [host]: https://github.com/letientai299/vpdf/issues/9

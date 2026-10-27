@@ -639,9 +639,9 @@ placement options when a smaller visible window is needed. The script checks the
 requested pixel dimensions without resizing screenshots. User terminal
 configuration and saved reader state stay separate from the capture instance.
 
-The [optimizer][demo-optimize] writes optimized JPEG and verifies that it
-decodes at the original dimensions. JPEG compression is lossy; full color
-resolution keeps colored text readable. The capture manifest stays in
+Screenshots and video posters share the [JPEG optimizer][demo-optimize]. It
+verifies decoding at the original dimensions. JPEG compression is lossy; full
+color resolution keeps colored text readable. The capture manifest stays in
 `docs/assets/`; new JPEGs, raw PNGs, screen text, and terminal logs default to
 host-local `~/.cache/vpdf/demo-media/<checkout>/` directories. Capture and
 publication are separate; see [Demo media publication][demo-media]. The manifest

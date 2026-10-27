@@ -15,7 +15,7 @@ fi
 staged=$(mktemp "${target_image}.XXXXXX")
 trap 'rm -f "$staged"' EXIT HUP INT TERM
 magick "$source_image" -colorspace sRGB -background white -alpha remove \
-  -alpha off -strip -depth 8 -sampling-factor 4:4:4 -quality 92 \
+  -alpha off -strip -depth 8 -sampling-factor 4:4:4 -quality 75 \
   -interlace Plane -define jpeg:optimize-coding=true "jpeg:$staged"
 decoded=$(magick -regard-warnings "$staged" -format '%m %wx%h' info:)
 if [ "$decoded" != "JPEG $expected" ]; then
