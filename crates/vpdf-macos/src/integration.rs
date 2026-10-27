@@ -7,19 +7,26 @@ use objc2::{
   ClassType, DefinedClass, MainThreadOnly, define_class, msg_send, sel,
 };
 use objc2_app_kit::{
-  NSApplication, NSDocumentController, NSEventModifierFlags, NSMenu,
-  NSMenuDelegate, NSMenuItem, NSModalResponseOK, NSOpenPanel, NSPasteboard,
-  NSPasteboardTypeString, NSScreen, NSView, NSWindow, NSWorkspace,
+  NSApplication, NSControl, NSControlTextEditingDelegate, NSDocumentController,
+  NSEventModifierFlags, NSMenu, NSMenuDelegate, NSMenuItem, NSModalResponseOK,
+  NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSScreen,
+  NSTextFieldDelegate, NSTextView, NSToolbar, NSToolbarDelegate, NSToolbarItem,
+  NSView, NSWindow, NSWorkspace,
 };
 use objc2_foundation::{
-  MainThreadMarker, NSArray, NSObject, NSObjectProtocol, NSPoint, NSRect,
-  NSSize, NSString, NSURL, NSUserDefaults, ns_string,
+  MainThreadMarker, NSArray, NSNotification, NSObject, NSObjectProtocol,
+  NSPoint, NSRect, NSSize, NSString, NSURL, NSUserDefaults, ns_string,
 };
 use objc2_uniform_type_identifiers::UTTypePDF;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use std::cell::Cell;
+use std::cell::{Cell, OnceCell, RefCell};
+use std::ffi::CStr;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+pub use toolbar::Tool;
+
+/// User default that keeps the toolbar hidden.
+const HIDDEN: &str = "VpdfToolbarHidden";
 
 /// A menu choice for the worker.
 pub enum Request {
@@ -27,12 +34,24 @@ pub enum Request {
   Menu(usize),
   /// An Open Recent file.
   Open(PathBuf),
+  /// A one-based page from the toolbar.
+  Page(usize),
   /// Work scheduled by `deferrer`, outside the scheduling callback.
   Deferred,
 }
 
 struct Callback {
   invoke: Box<dyn Fn(Request)>,
+  entries: RefCell<Vec<Entry>>,
+  bar: OnceCell<toolbar::Bar>,
+  toggle: OnceCell<Retained<NSMenuItem>>,
+}
+
+struct Entry {
+  item: Retained<NSMenuItem>,
+  enabled: bool,
+  /// The standard action while toolbar text is editing.
+  responder: Option<Sel>,
 }
 
 define_class!(
@@ -47,9 +66,46 @@ define_class!(
     // SAFETY: These items supply their sender.
     #[unsafe(method(openReader:))]
     fn open(&self, sender: &NSMenuItem) {
-      if sender.isEnabled() {
-        (self.ivars().invoke)(Request::Menu(sender.tag() as usize));
+      let index = sender.tag() as usize;
+      if let Some(action) = self.forwarded(index) {
+        let app = NSApplication::sharedApplication(self.mtm());
+        // SAFETY: Standard edit actions take any sender.
+        unsafe { app.sendAction_to_from(action, None, Some(sender)) };
+        return;
       }
+      self.choose(index, sender.isEnabled());
+    }
+
+    // SAFETY: These items supply their sender.
+    #[unsafe(method(toolbarAction:))]
+    fn toolbar_action(&self, sender: &NSToolbarItem) {
+      self.choose(sender.tag() as usize, sender.isEnabled());
+    }
+
+    // SAFETY: Menus pass the item they validate.
+    #[unsafe(method(validateMenuItem:))]
+    fn validate(&self, item: &NSMenuItem) -> bool {
+      let index = item.tag() as usize;
+      let entries = self.ivars().entries.borrow();
+      match self.forwarded(index) {
+        Some(action) => self.ivars().bar.get().is_some_and(|b| b.can(action)),
+        None => {
+          item.action() != Some(sel!(openReader:))
+            || entries.get(index).is_some_and(|entry| entry.enabled)
+        }
+      }
+    }
+
+    // SAFETY: These items supply their sender.
+    #[unsafe(method(toggleToolbar:))]
+    fn toggle_toolbar(&self, _sender: &NSMenuItem) {
+      let Some(bar) = self.ivars().bar.get() else { return };
+      bar.focus_content();
+      let visible = !bar.toolbar.isVisible();
+      bar.toolbar.setVisible(visible);
+      NSUserDefaults::standardUserDefaults()
+        .setBool_forKey(!visible, &NSString::from_str(HIDDEN));
+      self.retitle_toggle();
     }
 
     // SAFETY: These items supply their sender.
@@ -79,6 +135,54 @@ define_class!(
     }
   }
 
+  // SAFETY: Only the toolbar uses this delegate.
+  unsafe impl NSToolbarDelegate for Handler {
+    // Autoreleased: `method_id` exceeds 80 columns.
+    #[unsafe(method(toolbar:itemForItemIdentifier:willBeInsertedIntoToolbar:))]
+    fn toolbar_item(
+      &self,
+      _toolbar: &NSToolbar,
+      id: &NSString,
+      _inserted: bool,
+    ) -> *mut NSToolbarItem {
+      let item = self.ivars().bar.get().and_then(|bar| bar.item(id));
+      item.map_or(std::ptr::null_mut(), Retained::autorelease_return)
+    }
+
+    #[unsafe(method_id(toolbarDefaultItemIdentifiers:))]
+    fn defaults(&self, _toolbar: &NSToolbar) -> Retained<NSArray<NSString>> {
+      self.identifiers()
+    }
+
+    #[unsafe(method_id(toolbarAllowedItemIdentifiers:))]
+    fn allowed(&self, _toolbar: &NSToolbar) -> Retained<NSArray<NSString>> {
+      self.identifiers()
+    }
+  }
+
+  // SAFETY: Only the toolbar page field uses this delegate.
+  unsafe impl NSControlTextEditingDelegate for Handler {
+    #[unsafe(method(controlTextDidEndEditing:))]
+    fn ended(&self, _notification: &NSNotification) {
+      if let Some(bar) = self.ivars().bar.get() {
+        bar.revert();
+      }
+    }
+
+    #[unsafe(method(control:textView:doCommandBySelector:))]
+    unsafe fn command(
+      &self,
+      _control: &NSControl,
+      view: &NSTextView,
+      selector: Sel,
+    ) -> bool {
+      self.field_command(view, selector)
+    }
+  }
+
+  // SAFETY: The protocol adds no required methods.
+  unsafe impl NSTextFieldDelegate for Handler {}
+
   // SAFETY: Only the Open Recent menu uses this delegate.
   unsafe impl NSMenuDelegate for Handler {
     #[unsafe(method(menuNeedsUpdate:))]
@@ -87,6 +191,58 @@ define_class!(
     }
   }
 );
+
+impl Handler {
+  /// Return submits the page; Escape and Tab abandon it. All leave
+  /// the field, whose end of editing restores the shown page.
+  fn field_command(&self, view: &NSTextView, selector: Sel) -> bool {
+    let Some(bar) = self.ivars().bar.get() else { return false };
+    let submit = selector == sel!(insertNewline:);
+    let leave =
+      [sel!(cancelOperation:), sel!(insertTab:), sel!(insertBacktab:)];
+    if !submit && !leave.contains(&selector) {
+      return false;
+    }
+    let page = toolbar::requested_page(&view.string().to_string());
+    bar.focus_content();
+    if let Some(page) = page.filter(|_| submit) {
+      (self.ivars().invoke)(Request::Page(page));
+    }
+    true
+  }
+
+  /// The standard action replacing `index` while the page field edits.
+  fn forwarded(&self, index: usize) -> Option<Sel> {
+    let editing = self.ivars().bar.get().is_some_and(toolbar::Bar::editing);
+    let entries = self.ivars().entries.borrow();
+    entries.get(index).and_then(|entry| entry.responder).filter(|_| editing)
+  }
+
+  /// Leaves page editing, then sends an enabled entry.
+  fn choose(&self, index: usize, enabled: bool) {
+    if let Some(bar) = self.ivars().bar.get() {
+      bar.focus_content();
+    }
+    if enabled {
+      (self.ivars().invoke)(Request::Menu(index));
+    }
+  }
+
+  fn identifiers(&self) -> Retained<NSArray<NSString>> {
+    self.ivars().bar.get().map_or_else(NSArray::new, toolbar::Bar::identifiers)
+  }
+
+  fn retitle_toggle(&self) {
+    let Some(bar) = self.ivars().bar.get() else { return };
+    let Some(toggle) = self.ivars().toggle.get() else { return };
+    let visible = bar.toolbar.isVisible();
+    toggle.setTitle(if visible {
+      ns_string!("Hide Toolbar")
+    } else {
+      ns_string!("Show Toolbar")
+    });
+  }
+}
 
 // Our own selectors keep AppKit from managing this menu.
 fn fill_recent(handler: &Handler, menu: &NSMenu) {
@@ -135,6 +291,7 @@ pub struct Integration {
   window: Retained<NSWindow>,
   menu: Retained<NSMenu>,
   roots: Vec<Retained<NSMenuItem>>,
+  /// Window actions outside the entries.
   items: Vec<Retained<NSMenuItem>>,
   recent: Retained<NSMenu>,
   recent_root: Retained<NSMenuItem>,
@@ -152,12 +309,15 @@ pub struct Item {
   pub key: &'static str,
   pub shift: bool,
   pub control: bool,
+  /// The standard action while toolbar text is editing.
+  pub responder: Option<&'static CStr>,
 }
 
 impl Integration {
   pub fn install(
     parent: &impl HasWindowHandle,
     entries: &[Item],
+    tools: &[Tool],
     invoke: impl Fn(Request) + 'static,
   ) -> Option<Self> {
     let mtm = MainThreadMarker::new()?;
@@ -166,17 +326,21 @@ impl Integration {
     // SAFETY: Borrowed AppKit handles guarantee live NSViews.
     let view = unsafe { raw.ns_view.cast::<NSView>().as_ref() };
     let window = view.window()?;
-    restore_frame(&window, mtm);
     let menu = NSApplication::sharedApplication(mtm).mainMenu()?;
     #[cfg(feature = "bench-events")]
     let identity = proof::Identity::capture(&window, &menu, mtm);
-    let allocated =
-      Handler::alloc(mtm).set_ivars(Callback { invoke: Box::new(invoke) });
+    let allocated = Handler::alloc(mtm).set_ivars(Callback {
+      invoke: Box::new(invoke),
+      entries: RefCell::default(),
+      bar: OnceCell::new(),
+      toggle: OnceCell::new(),
+    });
     // SAFETY: NSObject initializes our retained subclass.
     let handler: Retained<Handler> =
       unsafe { msg_send![super(allocated), init] };
     let mut roots: Vec<Retained<NSMenuItem>> = Vec::new();
     let mut items = Vec::new();
+    let mut installed = Vec::new();
     let mut previous = "";
     let mut submenu = NSMenu::new(mtm);
     for (index, entry) in entries.iter().enumerate() {
@@ -184,7 +348,12 @@ impl Integration {
         let root = NSMenuItem::new(mtm);
         root.setTitle(&NSString::from_str(entry.menu));
         submenu = NSMenu::new(mtm);
-        submenu.setAutoenablesItems(false);
+        // Validation enables standard edits during page editing.
+        submenu.setAutoenablesItems(
+          entries
+            .iter()
+            .any(|other| other.menu == entry.menu && other.responder.is_some()),
+        );
         root.setSubmenu(Some(&submenu));
         menu.addItem(&root);
         roots.push(root);
@@ -209,10 +378,14 @@ impl Integration {
       item.setKeyEquivalentModifierMask(modifiers);
       item.setEnabled(false);
       submenu.addItem(&item);
-      items.push(item);
+      installed.push(Entry {
+        item,
+        enabled: false,
+        responder: entry.responder.map(Sel::register),
+      });
     }
     #[cfg(feature = "bench-events")]
-    let open = items.first()?.clone();
+    let open = installed.first()?.item.clone();
     // Open Recent follows the first entry.
     let recent = NSMenu::new(mtm);
     recent.setAutoenablesItems(false);
@@ -248,6 +421,36 @@ impl Integration {
       submenu.addItem(&item);
       items.push(item);
     }
+    let toggle = menu_item(
+      mtm,
+      ns_string!("Hide Toolbar"),
+      sel!(toggleToolbar:),
+      &handler,
+    );
+    toggle.setKeyEquivalent(ns_string!("t"));
+    toggle.setKeyEquivalentModifierMask(
+      NSEventModifierFlags::Command | NSEventModifierFlags::Option,
+    );
+    if let Some(view_menu) = roots
+      .iter()
+      .find(|item| item.title().to_string() == "View")
+      .and_then(|root| root.submenu())
+    {
+      view_menu.addItem(&NSMenuItem::separatorItem(mtm));
+      view_menu.addItem(&toggle);
+      items.push(toggle.clone());
+      let _ = handler.ivars().toggle.set(toggle);
+    }
+    *handler.ivars().entries.borrow_mut() = installed;
+    let bar = toolbar::Bar::new(&handler, tools, entries, &window, view);
+    let hidden = NSUserDefaults::standardUserDefaults()
+      .boolForKey(&NSString::from_str(HIDDEN));
+    let _ = handler.ivars().bar.set(bar);
+    if let Some(bar) = handler.ivars().bar.get() {
+      bar.attach(&handler, &window, !hidden);
+    }
+    handler.retitle_toggle();
+    restore_frame(&window, mtm);
     Some(Self {
       handler,
       window,
@@ -265,9 +468,39 @@ impl Integration {
     })
   }
 
-  pub fn enable(&self, index: usize, enabled: bool) {
-    if let Some(item) = self.items.get(index) {
+  /// Enables each entry by index, with the controls that show it.
+  pub fn enable(&self, states: &[bool]) {
+    let items: Vec<_> = {
+      let mut entries = self.handler.ivars().entries.borrow_mut();
+      for (entry, &enabled) in entries.iter_mut().zip(states) {
+        entry.enabled = enabled;
+      }
+      entries.iter().map(|entry| (entry.item.clone(), entry.enabled)).collect()
+    };
+    for (item, enabled) in items {
       item.setEnabled(enabled);
+    }
+    if let Some(bar) = self.handler.ivars().bar.get() {
+      bar.enable(states);
+    }
+  }
+
+  pub fn retitle(&self, index: usize, title: &str) {
+    let item =
+      self.handler.ivars().entries.borrow().get(index).map(|e| e.item.clone());
+    let title = NSString::from_str(title);
+    if let Some(item) = item {
+      item.setTitle(&title);
+    }
+    if let Some(bar) = self.handler.ivars().bar.get() {
+      bar.retitle(index, &title);
+    }
+  }
+
+  /// Shows the one-based page of a count; `enabled` allows jumps.
+  pub fn page(&self, location: Option<(usize, usize)>, enabled: bool) {
+    if let Some(bar) = self.handler.ivars().bar.get() {
+      bar.page(location, enabled);
     }
   }
 
@@ -419,10 +652,14 @@ impl Drop for Integration {
     self.cancel();
     self.recent.setDelegate(None);
     self.recent.removeAllItems();
+    if let Some(bar) = self.handler.ivars().bar.get() {
+      bar.detach();
+    }
     for root in &self.roots {
       self.menu.removeItem(root);
     }
-    for item in &self.items {
+    let entries = self.handler.ivars().entries.borrow();
+    for item in self.items.iter().chain(entries.iter().map(|e| &e.item)) {
       // SAFETY: Disconnect before releasing the retained target.
       unsafe { item.setTarget(None) };
     }
@@ -432,3 +669,5 @@ impl Drop for Integration {
 #[cfg(feature = "bench-events")]
 #[path = "proof.rs"]
 mod proof;
+#[path = "toolbar.rs"]
+mod toolbar;

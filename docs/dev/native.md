@@ -34,6 +34,21 @@ Command-W closes the active tab and all its splits. The last tab returns Home;
 closing empty Home retains Eframe's root-window exit behavior. Terminal close
 behavior is unchanged.
 
+## Toolbar
+
+The adapter attaches an `NSToolbar` to Eframe's window without a full-size
+content view, so AppKit insets the Eframe view: layout, hit testing, captures,
+and IME positions need no toolbar offsets. Buttons and the Fit pull-down send
+menu entry indexes, so they share menu commands, targets, and enablement.
+Snapshots add the page count and open panel; the toolbar shows the page and
+retitles Show Sidebar. Customization is off. A user default keeps visibility
+without saving item lists that would hide later items.
+
+The page field sends `Input::Page`, which validates its command like Paste.
+While the field edits, Edit menu entries send their standard actions to the
+field editor. Any other menu or toolbar command first returns focus to the
+document view.
+
 ## Window sheets
 
 The adapter borrows Eframe's window handle on the main thread and retains its

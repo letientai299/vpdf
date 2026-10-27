@@ -1,9 +1,10 @@
 //! Native integration probes without window activation.
 use super::Integration;
 use objc2::rc::Retained;
-use objc2::{ClassType, MainThreadOnly, msg_send};
+use objc2::{ClassType, DefinedClass, MainThreadOnly, msg_send};
 use objc2_app_kit::{
-  NSApplication, NSEvent, NSEventType, NSMenu, NSMenuItem, NSWindow,
+  NSApplication, NSEvent, NSEventType, NSMenu, NSMenuItem,
+  NSStandardKeyBindingResponding, NSWindow,
 };
 use objc2_foundation::{MainThreadMarker, NSPoint};
 
@@ -48,11 +49,17 @@ impl Integration {
   }
 
   pub fn invoke_key(&self, title: &str) -> bool {
-    let Some(item) =
-      self.items.iter().find(|item| item.title().to_string() == title)
+    let entries = self.handler.ivars().entries.borrow();
+    let Some(item) = entries
+      .iter()
+      .map(|entry| &entry.item)
+      .chain(&self.items)
+      .find(|item| item.title().to_string() == title)
+      .cloned()
     else {
       return false;
     };
+    drop(entries);
     let characters = item.keyEquivalent();
     // SAFETY: Arguments match AppKit's key-event factory.
     let event: Option<Retained<NSEvent>> = unsafe {
@@ -111,5 +118,72 @@ impl Integration {
       .and_then(|sheet| sheet.sheetParent())
       .is_some_and(|parent| std::ptr::eq(&*parent, &*self.window));
     (delegates, menu, sheet, self.open.isEnabled())
+  }
+
+  /// Clicks the toolbar button with `label`.
+  pub fn invoke_tool(&self, label: &str) {
+    let Some(bar) = self.handler.ivars().bar.get() else { return };
+    let app = NSApplication::sharedApplication(self.handler.mtm());
+    for super::toolbar::Control { item, .. } in bar.items.iter().flatten() {
+      if item.label().to_string() == label
+        && let Some(action) = item.action()
+      {
+        // SAFETY: Toolbar actions take their item.
+        unsafe {
+          app.sendAction_to_from(action, item.target().as_deref(), Some(item))
+        };
+      }
+    }
+  }
+
+  /// Types `text` into the page field, then presses Return or Escape.
+  pub fn submit_page(&self, text: &str, cancel: bool) {
+    let Some(bar) = self.handler.ivars().bar.get() else { return };
+    self.window.makeFirstResponder(Some(&bar.field));
+    let Some(editor) = bar.field.currentEditor() else { return };
+    editor.setString(&objc2_foundation::NSString::from_str(text));
+    let key = if cancel {
+      objc2::sel!(cancelOperation:)
+    } else {
+      objc2::sel!(insertNewline:)
+    };
+    // SAFETY: Field editors handle these standard commands.
+    unsafe { editor.doCommandBySelector(key) };
+  }
+
+  /// Starts editing the page field.
+  pub fn edit_page(&self) -> bool {
+    let Some(bar) = self.handler.ivars().bar.get() else { return false };
+    self.window.makeFirstResponder(Some(&bar.field))
+  }
+
+  /// Visibility, editing, page text, and enabled labels.
+  pub fn toolbar_state(&self) -> String {
+    let Some(bar) = self.handler.ivars().bar.get() else {
+      return "none".into();
+    };
+    let enabled: Vec<_> = bar
+      .items
+      .iter()
+      .flatten()
+      .filter(|control| control.item.isEnabled())
+      .map(|control| control.item.label().to_string())
+      .collect();
+    let content = self.window.firstResponder().is_some_and(|responder| {
+      bar.view.load().is_some_and(|view| {
+        std::ptr::eq(
+          Retained::as_ptr(&responder).cast::<()>(),
+          Retained::as_ptr(&view).cast(),
+        )
+      })
+    });
+    format!(
+      "visible={} editing={} content={content} page={:?} count={:?} \
+       enabled={enabled:?}",
+      bar.toolbar.isVisible(),
+      bar.editing(),
+      bar.field.stringValue().to_string(),
+      bar.count.stringValue().to_string(),
+    )
   }
 }

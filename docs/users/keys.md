@@ -45,11 +45,17 @@ commands that the focused view cannot perform.
 | Command-A                       | Select all document text or prompt text             |
 | Command-X / V / Z               | Cut / paste / undo in a prompt                      |
 | Command-P                       | Print through the existing print dialog             |
+| Option-Command-T                | Hide or show the toolbar                            |
 | Command-Q                       | Quit                                                |
 
 On empty Home, Command-W closes the window. Close Pane remains a separate
 Window menu action. Zoom Window resizes the window; View zoom magnifies the PDF.
 Help opens the embedded manual.
+
+The toolbar toggles the sidebar, shows the page, zooms, fits the page or its
+width, and starts Find. Type a page number and press Return to go there; Escape
+returns to the document. Hidden toolbars stay hidden on relaunch. Narrow windows
+move controls into the toolbar's overflow menu.
 
 File > Open Recent lists the system's recent documents. Its Clear Menu clears
 only that list; the Recent view keeps its entries. Removing a file from the

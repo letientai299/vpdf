@@ -55,6 +55,8 @@ pub enum Action {
   Forward,
   Outline,
   Overview,
+  Sidebar,
+  GoToPage,
   ClosePane,
   Reveal,
   Help,
@@ -84,6 +86,9 @@ pub struct Snapshot {
   pub focus: Focus,
   pub commands: Vec<Action>,
   pub location: Option<Position>,
+  pub pages: usize,
+  /// The active pane's panel.
+  pub panel: Option<vpdf_ui::keys::PanelKind>,
   pub selection: Option<(Position, Position)>,
   pub busy: bool,
   pub searching: bool,
@@ -146,6 +151,8 @@ pub(super) fn refresh(session: &mut Session) {
     focus,
     commands,
     location: app.map(crate::app::App::navigation_position),
+    pages: app.map_or(0, |app| app.doc.pages.len()),
+    panel: app.and_then(|app| app.panel.as_ref()).map(|p| p.view.kind()),
     selection: app.and_then(|app| {
       app
         .reader
@@ -192,7 +199,7 @@ fn available(session: &Session, focus: Focus, target: Target) -> Vec<Action> {
       commands.push(Action::Find);
     }
     if matches!(focus, Focus::Reader(InputOwner::Panel)) {
-      commands.push(Action::Copy);
+      commands.extend([Action::Copy, Action::Sidebar]);
     }
     if session.tabs.len() > 1 {
       commands.extend([Action::NextTab, Action::PreviousTab]);
@@ -236,6 +243,8 @@ fn reading(
     Action::Forward,
     Action::Outline,
     Action::Overview,
+    Action::Sidebar,
+    Action::GoToPage,
     Action::ClosePane,
   ]);
   if app.manual.is_none() {
@@ -252,12 +261,22 @@ fn reading(
   }
 }
 
+/// Whether `command` is `action` on the current target.
+pub(super) fn accepts(
+  session: &Session,
+  command: Command,
+  action: Action,
+) -> bool {
+  command.action == action
+    && session.native.snapshot.command(action) == Some(command)
+}
+
 pub(super) fn dispatch(
   session: &mut Session,
   command: Command,
   screen: Screen,
 ) -> bool {
-  if session.native.snapshot.command(command.action) != Some(command) {
+  if !accepts(session, command, command.action) {
     return false;
   }
   let result = execute(session, command, screen);
@@ -332,7 +351,8 @@ fn execute(
       let ch = if command.action == Action::Undo { 'z' } else { 'a' };
       edit_key(session, ch, screen);
     }
-    Action::Paste => {}
+    // These carry values through their own inputs.
+    Action::Paste | Action::GoToPage => {}
     Action::Print => session.print()?,
     Action::Reveal => {
       let path = session.app().path.clone();
@@ -377,6 +397,7 @@ fn reader_action(
 ) -> crate::Result<()> {
   use vpdf_ui::keys::{Action as Reader, Input};
 
+  let native = action;
   let action = match action {
     Action::NextResult => Reader::Result(false),
     Action::PreviousResult => Reader::Result(true),
@@ -387,16 +408,40 @@ fn reader_action(
     Action::Rotate => Reader::Rotate,
     Action::Back => Reader::History(false),
     Action::Forward => Reader::History(true),
-    Action::Outline => Reader::Panel(vpdf_ui::keys::PanelKind::Outline),
+    Action::Sidebar if session.app().panel.is_some() => Reader::ClosePanel,
+    Action::Outline | Action::Sidebar => {
+      Reader::Panel(vpdf_ui::keys::PanelKind::Outline)
+    }
     Action::Overview => Reader::Overview,
     Action::ClosePane => Reader::Window(vpdf_ui::window::Window::Close),
     Action::Help => Reader::Help,
     _ => unreachable!(),
   };
   session.app().action(Input::plain(action))?;
+  // The sidebar control keeps reading focus.
+  if native == Action::Sidebar
+    && let Some(panel) = &mut session.app().panel
+  {
+    panel.view.focus(false);
+  }
   session.settle()?;
   super::ensure_home(session, screen);
   Ok(())
+}
+
+/// Goes to a one-based page.
+pub(super) fn go_to_page(
+  session: &mut Session,
+  command: Command,
+  page: usize,
+) -> bool {
+  if !accepts(session, command, Action::GoToPage) {
+    return false;
+  }
+  let page = vpdf_model::text::PageId(page.saturating_sub(1));
+  let result = session.app().go_to_page(page).and_then(|()| session.settle());
+  report(session, result);
+  true
 }
 
 fn edit_key(session: &mut Session, ch: char, mut screen: Screen) {

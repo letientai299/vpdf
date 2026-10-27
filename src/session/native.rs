@@ -43,6 +43,11 @@ pub enum Input {
     command: commands::Command,
     text: String,
   },
+  /// A one-based page for `GoToPage`.
+  Page {
+    command: commands::Command,
+    page: usize,
+  },
   Observe(bool),
   #[cfg(feature = "bench-events")]
   Snapshot,
@@ -706,13 +711,11 @@ fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
   let changed = match input {
     Input::Action(command) => commands::dispatch(session, command, *screen),
     Input::PasteTarget { command, text } => {
-      if command.action == commands::Action::Paste
-        && session.native.snapshot.command(command.action) == Some(command)
-      {
-        apply_reader(session, Input::Paste(text), screen)
-      } else {
-        false
-      }
+      commands::accepts(session, command, commands::Action::Paste)
+        && apply_reader(session, Input::Paste(text), screen)
+    }
+    Input::Page { command, page } => {
+      commands::go_to_page(session, command, page)
     }
     Input::Picked { request, paths } => {
       commands::picked(session, request, paths)
@@ -3817,6 +3820,50 @@ mod tests {
     assert_eq!(session.app().overlays.prompt().unwrap().text(), "one");
     apply(&mut session, key(KeyCode::Esc), &mut screen);
     assert_eq!(session.app().navigation_position(), location);
+    Ok(())
+  }
+
+  #[test]
+  fn mac_toolbar_toggles_sidebar_and_pages() -> Result<()> {
+    use commands::Action;
+    let (_root, _path, mut session) =
+      opened(&["first", "second", "last"], sized())?;
+    let mut screen = sized();
+    commands::refresh(&mut session);
+    assert_eq!(session.native.snapshot.pages, 3);
+    assert_eq!(session.native.snapshot.panel, None);
+    command(&mut session, Action::Sidebar, &mut screen);
+    assert_eq!(
+      session.native.snapshot.panel,
+      Some(vpdf_ui::keys::PanelKind::Outline)
+    );
+    assert_eq!(
+      session.native.snapshot.focus,
+      commands::Focus::Reader(vpdf_ui::input::InputOwner::Content)
+    );
+    command(&mut session, Action::Sidebar, &mut screen);
+    assert_eq!(session.native.snapshot.panel, None);
+    let go = session.native.snapshot.command(Action::GoToPage).unwrap();
+    for (page, expected) in [(3, 2), (9, 2), (0, 0)] {
+      assert!(apply(
+        &mut session,
+        Input::Page { command: go, page },
+        &mut screen
+      ));
+      assert_eq!(session.app().reader.cursor.page.0, expected);
+    }
+    let paste = Input::Page {
+      command: commands::Command { action: Action::Paste, ..go },
+      page: 2,
+    };
+    assert!(!apply(&mut session, paste, &mut screen));
+    session.app().document_generation += 1;
+    assert!(!apply(
+      &mut session,
+      Input::Page { command: go, page: 2 },
+      &mut screen
+    ));
+    assert_eq!(session.app().reader.cursor.page.0, 0);
     Ok(())
   }
 }

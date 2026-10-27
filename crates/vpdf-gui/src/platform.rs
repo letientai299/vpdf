@@ -38,15 +38,23 @@ impl Native {
         key: entry.item.key,
         shift: entry.item.shift,
         control: entry.item.control,
+        responder: entry.item.responder,
       })
       .collect();
-    let integration =
-      vpdf_macos::Integration::install(cc, &entries, move |request| {
+    let integration = vpdf_macos::Integration::install(
+      cc,
+      &entries,
+      &tools(),
+      move |request| {
         let input = match request {
           vpdf_macos::Request::Menu(index) => MENUS
             .get(index)
             .and_then(|entry| current.borrow().command(entry.action))
             .map(Input::Action),
+          vpdf_macos::Request::Page(page) => current
+            .borrow()
+            .command(Action::GoToPage)
+            .map(|command| Input::Page { command, page }),
           vpdf_macos::Request::Open(path) => Some(Input::Open(path)),
           // Outside Eframe's handler, so AppKit may end the loop.
           vpdf_macos::Request::Deferred => {
@@ -59,7 +67,8 @@ impl Native {
           pending.borrow_mut().push(input);
           wake.request_repaint();
         }
-      })?;
+      },
+    )?;
     let _ = restore.set(Box::new(integration.restorer()));
     documents.set_wake(integration.deferrer());
     Some(Self { integration, snapshot, inputs, context })
@@ -68,12 +77,20 @@ impl Native {
   pub fn update(&mut self, snapshot: &Arc<Snapshot>, effects: Vec<Effect>) {
     if !Arc::ptr_eq(&self.snapshot.borrow(), snapshot) {
       *self.snapshot.borrow_mut() = Arc::clone(snapshot);
-      for (index, entry) in MENUS.iter().enumerate() {
-        self
-          .integration
-          .enable(index, snapshot.command(entry.action).is_some());
-      }
+      let states: Vec<_> = MENUS
+        .iter()
+        .map(|entry| snapshot.command(entry.action).is_some())
+        .collect();
+      self.integration.enable(&states);
       self.integration.enable_recent(snapshot.command(Action::Open).is_some());
+      self.integration.retitle(
+        index(Action::Sidebar),
+        if snapshot.panel.is_some() { "Hide Sidebar" } else { "Show Sidebar" },
+      );
+      self.integration.page(
+        snapshot.location.map(|location| (location.page.0 + 1, snapshot.pages)),
+        snapshot.command(Action::GoToPage).is_some(),
+      );
       // Help has a builtin, relative identity.
       self
         .integration
@@ -128,6 +145,21 @@ impl Native {
       "minimize" => self.integration.minimize(),
       "minimized" => {
         println!("native-minimized: {}", self.integration.minimized());
+      }
+      "toolbar" => {
+        println!("native-toolbar: {}", self.integration.toolbar_state());
+      }
+      "edit page" => {
+        println!("native-editing: {}", self.integration.edit_page());
+      }
+      command if command.starts_with("tool ") => {
+        self.integration.invoke_tool(&command[5..]);
+      }
+      command if command.starts_with("page ") => {
+        self.integration.submit_page(&command[5..], false);
+      }
+      command if command.starts_with("unpage ") => {
+        self.integration.submit_page(&command[7..], true);
       }
       command if command.starts_with("menu ") => {
         self.integration.invoke_menu(&command[5..]);
@@ -185,9 +217,63 @@ const fn entry(
   action: Action,
 ) -> Entry {
   Entry {
-    item: vpdf_macos::Item { menu, title, key, shift: false, control: false },
+    item: vpdf_macos::Item {
+      menu,
+      title,
+      key,
+      shift: false,
+      control: false,
+      responder: None,
+    },
     action,
   }
+}
+
+/// An Edit entry that page-field editing sends to `responder`.
+const fn edit(
+  title: &'static str,
+  key: &'static str,
+  action: Action,
+  responder: &'static std::ffi::CStr,
+) -> Entry {
+  let mut entry = entry("Edit", title, key, action);
+  entry.item.responder = Some(responder);
+  entry
+}
+
+fn index(action: Action) -> usize {
+  MENUS
+    .iter()
+    .position(|entry| entry.action == action)
+    .expect("Menu entry for action")
+}
+
+fn tools() -> Vec<vpdf_macos::Tool> {
+  use vpdf_macos::Tool;
+  let button = |action, label, symbol| Tool::Button {
+    entry: index(action),
+    label,
+    symbol,
+    keep: false,
+  };
+  vec![
+    button(Action::Sidebar, "Sidebar", "sidebar.left"),
+    Tool::Page,
+    Tool::Space,
+    button(Action::ZoomOut, "Zoom Out", "minus.magnifyingglass"),
+    button(Action::ZoomIn, "Zoom In", "plus.magnifyingglass"),
+    Tool::Menu {
+      label: "Fit",
+      symbol: "arrow.up.left.and.arrow.down.right",
+      entries: vec![index(Action::FitWidth), index(Action::FitPage)],
+    },
+    Tool::Button {
+      entry: index(Action::Find),
+      label: "Find",
+      symbol: "magnifyingglass",
+      keep: true,
+    },
+  ]
 }
 
 pub const MENUS: &[Entry] = &[
@@ -196,11 +282,11 @@ pub const MENUS: &[Entry] = &[
   entry("File", "Close Tab", "w", Action::CloseTab),
   entry("File", "Reveal in Finder", "", Action::Reveal),
   entry("File", "Print…", "p", Action::Print),
-  entry("Edit", "Undo", "z", Action::Undo),
-  entry("Edit", "Cut", "x", Action::Cut),
-  entry("Edit", "Copy", "c", Action::Copy),
-  entry("Edit", "Paste", "v", Action::Paste),
-  entry("Edit", "Select All", "a", Action::SelectAll),
+  edit("Undo", "z", Action::Undo, c"undo:"),
+  edit("Cut", "x", Action::Cut, c"cut:"),
+  edit("Copy", "c", Action::Copy, c"copy:"),
+  edit("Paste", "v", Action::Paste, c"paste:"),
+  edit("Select All", "a", Action::SelectAll, c"selectAll:"),
   entry("Edit", "Find…", "f", Action::Find),
   entry("Edit", "Find Next", "g", Action::NextResult),
   Entry {
@@ -210,9 +296,11 @@ pub const MENUS: &[Entry] = &[
       key: "g",
       shift: true,
       control: false,
+      responder: None,
     },
     action: Action::PreviousResult,
   },
+  entry("View", "Show Sidebar", "", Action::Sidebar),
   entry("View", "Fit Width", "", Action::FitWidth),
   entry("View", "Fit Page", "", Action::FitPage),
   entry("View", "Zoom In", "+", Action::ZoomIn),
@@ -229,6 +317,7 @@ pub const MENUS: &[Entry] = &[
       key: "\t",
       shift: false,
       control: true,
+      responder: None,
     },
     action: Action::NextTab,
   },
@@ -239,6 +328,7 @@ pub const MENUS: &[Entry] = &[
       key: "\t",
       shift: true,
       control: true,
+      responder: None,
     },
     action: Action::PreviousTab,
   },
@@ -247,6 +337,11 @@ pub const MENUS: &[Entry] = &[
 ];
 
 pub fn shortcuts() -> Vec<egui::KeyboardShortcut> {
+  // The adapter's Hide Toolbar item.
+  let toolbar = egui::KeyboardShortcut::new(
+    egui::Modifiers::MAC_CMD | egui::Modifiers::ALT,
+    egui::Key::T,
+  );
   MENUS
     .iter()
     .filter_map(|entry| {
@@ -263,5 +358,6 @@ pub fn shortcuts() -> Vec<egui::KeyboardShortcut> {
       modifiers.shift = entry.item.shift;
       Some(egui::KeyboardShortcut::new(modifiers, key))
     })
+    .chain([toolbar])
     .collect()
 }
