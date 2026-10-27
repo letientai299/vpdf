@@ -2,8 +2,10 @@
 use crate::placement;
 use block2::RcBlock;
 use objc2::rc::Retained;
-use objc2::runtime::{ProtocolObject, Sel};
-use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send, sel};
+use objc2::runtime::{AnyObject, ProtocolObject, Sel};
+use objc2::{
+  ClassType, DefinedClass, MainThreadOnly, define_class, msg_send, sel,
+};
 use objc2_app_kit::{
   NSApplication, NSDocumentController, NSEventModifierFlags, NSMenu,
   NSMenuDelegate, NSMenuItem, NSModalResponseOK, NSOpenPanel, NSPasteboard,
@@ -25,6 +27,8 @@ pub enum Request {
   Menu(usize),
   /// An Open Recent file.
   Open(PathBuf),
+  /// Work scheduled by `deferrer`, outside the scheduling callback.
+  Deferred,
 }
 
 struct Callback {
@@ -57,6 +61,12 @@ define_class!(
       if let Some(path) = path {
         (self.ivars().invoke)(Request::Open(path));
       }
+    }
+
+    // SAFETY: Delayed performs pass a nil object.
+    #[unsafe(method(deferred:))]
+    fn deferred(&self, _object: Option<&AnyObject>) {
+      (self.ivars().invoke)(Request::Deferred);
     }
 
     // SAFETY: These items supply their sender.
@@ -335,11 +345,32 @@ impl Integration {
     }
   }
 
+  /// Schedules `Request::Deferred` on the main run loop; minimized
+  /// windows still run it.
+  pub fn deferrer(&self) -> impl Fn() + 'static {
+    let handler = objc2::rc::Weak::from_retained(&self.handler);
+    move || {
+      let Some(handler) = handler.load() else { return };
+      // SAFETY: Handler implements `deferred:`, which takes a nullable object.
+      let () = unsafe {
+        msg_send![&*handler, performSelector: sel!(deferred:),
+          withObject: None::<&AnyObject>, afterDelay: 0.0f64]
+      };
+    }
+  }
+
   pub fn cancel(&mut self) {
     if let Some(panel) = self.panel.take() {
       // SAFETY: AppKit permits nil action senders.
       unsafe { panel.cancel(None) };
     }
+  }
+}
+
+/// Quits through AppKit, which ends the event loop without a frame.
+pub fn terminate() {
+  if let Some(mtm) = MainThreadMarker::new() {
+    NSApplication::sharedApplication(mtm).terminate(None);
   }
 }
 
@@ -363,8 +394,14 @@ fn restore_frame(window: &NSWindow, mtm: MainThreadMarker) {
     .map(|screen| rect(screen.visibleFrame()))
     .collect();
   let Some(main) = NSScreen::mainScreen(mtm) else { return };
-  let fitted =
-    placement::fit(rect(window.frame()), &areas, rect(main.visibleFrame()));
+  // AppKit's frame setters skip the minimum size.
+  let min = window.minSize();
+  let fitted = placement::fit(
+    rect(window.frame()),
+    [min.width, min.height],
+    &areas,
+    rect(main.visibleFrame()),
+  );
   if let Some([x, y, width, height]) = fitted {
     let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(width, height));
     window.setFrame_display(frame, false);
@@ -374,6 +411,11 @@ fn restore_frame(window: &NSWindow, mtm: MainThreadMarker) {
 impl Drop for Integration {
   fn drop(&mut self) {
     self.alive.set(false);
+    // SAFETY: NSObject's class method takes any target.
+    let () = unsafe {
+      msg_send![NSObject::class(),
+        cancelPreviousPerformRequestsWithTarget: &*self.handler]
+    };
     self.cancel();
     self.recent.setDelegate(None);
     self.recent.removeAllItems();

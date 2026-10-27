@@ -227,8 +227,7 @@ impl Frame {
 }
 
 pub struct Bridge {
-  send: Mutex<mpsc::Sender<(Ticket, Input)>>,
-  next: AtomicU64,
+  sender: Sender,
   latest: Arc<Mutex<Option<Frame>>>,
   thread: Option<JoinHandle<Result<()>>>,
   fullscreen: bool,
@@ -251,6 +250,21 @@ impl Launch {
       crate::config::Restore::Always => true,
       crate::config::Restore::Never => false,
     }
+  }
+}
+
+/// Queues worker input from any thread.
+#[derive(Clone)]
+pub struct Sender {
+  send: mpsc::Sender<(Ticket, Input)>,
+  next: Arc<AtomicU64>,
+}
+
+impl Sender {
+  pub fn send(&self, input: Input) -> Ticket {
+    let ticket = Ticket(self.next.fetch_add(1, Ordering::Relaxed));
+    let _ = self.send.send((ticket, input));
+    ticket
   }
 }
 
@@ -289,8 +303,7 @@ impl Bridge {
         )
       })?;
     Ok(Self {
-      send: Mutex::new(send),
-      next: AtomicU64::new(1),
+      sender: Sender { send, next: Arc::new(AtomicU64::new(1)) },
       latest,
       thread: Some(worker),
       fullscreen,
@@ -303,11 +316,11 @@ impl Bridge {
   }
 
   pub fn send(&self, input: Input) -> Ticket {
-    let sender =
-      self.send.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    let ticket = Ticket(self.next.fetch_add(1, Ordering::Relaxed));
-    let _ = sender.send((ticket, input));
-    ticket
+    self.sender.send(input)
+  }
+
+  pub fn sender(&self) -> Sender {
+    self.sender.clone()
   }
 
   pub fn take(&self) -> Option<Frame> {
@@ -849,6 +862,7 @@ fn quit_when_closed(session: &mut Session) {
   if session.tabs.is_empty()
     && session.home.is_none()
     && session.unlock.is_none()
+    && session.windows.restoring.is_none()
   {
     session.quit = true;
   }
@@ -2075,6 +2089,31 @@ mod tests {
     ));
     session.settle()?;
     assert!(session.tabs.is_empty());
+    Ok(())
+  }
+
+  #[test]
+  fn close_interrupts_a_running_search() -> Result<()> {
+    let pages = vec!["text"; 4000];
+    let (directory, path) = temp_pdf(&pages)?;
+    let (mut bridge, wakes) =
+      launch(vec![path], Some(directory.path().join("state.json")), None)?;
+    bridge.send(Input::Resize(sized()));
+    for input in [
+      key(KeyCode::Char('/')),
+      Input::Paste("absent".into()),
+      key(KeyCode::Enter),
+    ] {
+      bridge.send(input);
+    }
+    wait(&bridge, &wakes, |frame| frame.metrics.searching)?;
+    let started = Instant::now();
+    bridge.close()?;
+    assert!(
+      started.elapsed() < Duration::from_secs(1),
+      "{:?}",
+      started.elapsed()
+    );
     Ok(())
   }
 

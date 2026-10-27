@@ -7,7 +7,7 @@ use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::scenario::{Step, Wait};
-use vpdf::session::native::{Bridge, Frame, Input, Ticket};
+use vpdf::session::native::{Bridge, Frame, Input, Launch, Ticket};
 use vpdf::trace::{Coverage, Log};
 use vpdf_model::geometry::Screen;
 use vpdf_model::input::{MouseEvent, MouseEventKind};
@@ -122,9 +122,11 @@ impl Driver {
     let store = tempfile::tempdir()?;
     let (sender, wakes) = mpsc::sync_channel(1);
     let bridge = Bridge::configured(
-      paths.into_iter().map(Into::into).collect(),
-      Some(store.path().join("state")),
-      vpdf::config::Loaded::default(),
+      Launch {
+        references: paths.into_iter().map(Into::into).collect(),
+        store: Some(store.path().join("state")),
+        ..Launch::default()
+      },
       move || {
         let _ = sender.try_send(());
       },

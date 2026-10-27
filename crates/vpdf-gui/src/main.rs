@@ -138,18 +138,12 @@ impl Window {
       bridge.send(Input::Observe(true));
     }
     #[cfg(target_os = "macos")]
-    let native = vpdf_gui::platform::Native::new(cc);
-    // Minimized windows run no frames to drain the inbox.
+    let native =
+      vpdf_gui::platform::Native::new(cc, &documents, bridge.sender());
     #[cfg(target_os = "macos")]
-    {
+    if native.is_none() {
       let ctx = cc.egui_ctx.clone();
-      let restore = native.as_ref().map(vpdf_gui::platform::Native::restorer);
-      documents.set_wake(move || {
-        if let Some(restore) = &restore {
-          restore();
-        }
-        ctx.request_repaint();
-      });
+      documents.set_wake(move || ctx.request_repaint());
     }
     let input = input::Adapter::default();
     #[cfg(target_os = "macos")]
@@ -236,22 +230,6 @@ impl Window {
     self.bridge.send(input);
   }
 
-  #[cfg(target_os = "macos")]
-  fn receive_documents(&mut self, ctx: &egui::Context) {
-    for event in self.documents.drain() {
-      match event {
-        fmv_macos_events::Event::Open(paths) => {
-          for path in paths {
-            self.send_input(Input::Open(path));
-          }
-        }
-        fmv_macos_events::Event::Quit => {
-          ctx.send_viewport_cmd(ViewportCommand::Close);
-        }
-      }
-    }
-  }
-
   #[cfg(feature = "bench-events")]
   fn record_mark(&mut self) {
     if let Some(name) = self.mark.take()
@@ -290,8 +268,16 @@ impl eframe::App for Window {
       self.screen = Some(screen);
       self.bridge.send(Input::Resize(screen));
     }
+    // Without the adapter, frames drain Finder events.
     #[cfg(target_os = "macos")]
-    self.receive_documents(&ctx);
+    if self.native.is_none() {
+      let documents = self.documents.clone();
+      vpdf_gui::platform::route(
+        &documents,
+        |path| self.send_input(Input::Open(path)),
+        || ctx.send_viewport_cmd(ViewportCommand::Close),
+      );
+    }
     #[cfg(target_os = "macos")]
     if let Some(native) = &self.native {
       for input in native.drain() {
@@ -391,12 +377,11 @@ impl eframe::App for Window {
 fn launch_events(documents: &fmv_macos_events::Inbox) -> (Vec<PathBuf>, bool) {
   let mut opened = Vec::new();
   let mut quit = false;
-  for event in documents.drain() {
-    match event {
-      fmv_macos_events::Event::Open(paths) => opened.extend(paths),
-      fmv_macos_events::Event::Quit => quit = true,
-    }
-  }
+  vpdf_gui::platform::route(
+    documents,
+    |path| opened.push(path),
+    || quit = true,
+  );
   (opened, quit)
 }
 
@@ -457,6 +442,8 @@ fn options(args: &Args) -> Result<eframe::NativeOptions, image::ImageError> {
       .with_title("Vpdf")
       .with_icon(icon()?)
       .with_inner_size([1100.0, 800.0])
+      // Recovers saved frames too small to read.
+      .with_min_inner_size([360.0, 240.0])
       .with_active(!args.background),
     ..Default::default()
   };

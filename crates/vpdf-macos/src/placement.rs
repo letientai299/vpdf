@@ -6,17 +6,25 @@ pub type Rect = [f64; 4];
 /// Grabbable title-bar strip, in points.
 const GRIP: [f64; 2] = [64.0, 24.0];
 
-/// Where `frame` goes when no display shows its title bar: the main
-/// `area`, centered and shrunk to fit; None keeps it.
-pub fn fit(frame: Rect, areas: &[Rect], main: Rect) -> Option<Rect> {
+/// Where `frame` goes: grown to `min` below its top edge, then onto the
+/// main `area`, centered and shrunk to fit, when no display shows its
+/// title bar. None keeps it.
+pub fn fit(
+  frame: Rect,
+  min: [f64; 2],
+  areas: &[Rect],
+  main: Rect,
+) -> Option<Rect> {
   let [x, y, width, height] = frame;
-  let bar = [x, y + height - GRIP[1], width, GRIP[1]];
+  let (width, height) = (width.max(min[0]), height.max(min[1]));
+  let grown = [x, y + frame[3] - height, width, height];
+  let bar = [x, grown[1] + height - GRIP[1], width, GRIP[1]];
   let reachable = areas.iter().any(|area| {
     let [w, h] = overlap(bar, *area);
     w >= GRIP[0].min(width) && h > 0.0
   });
   if reachable {
-    return None;
+    return (grown != frame).then_some(grown);
   }
   let [ax, ay, aw, ah] = main;
   let (width, height) = (width.min(aw), height.min(ah));
@@ -63,7 +71,17 @@ mod tests {
         Some([320.0, 137.5, 800.0, 600.0]),
       ),
     ] {
-      assert_eq!(fit(frame, &areas, MAIN), expected, "{frame:?}");
+      assert_eq!(fit(frame, [0.0; 2], &areas, MAIN), expected, "{frame:?}");
     }
+  }
+
+  #[test]
+  fn tiny_frames_grow_below_their_top() {
+    let min = [360.0, 260.0];
+    assert_eq!(
+      fit([100.0, 500.0, 50.0, 40.0], min, &[MAIN], MAIN),
+      Some([100.0, 280.0, 360.0, 260.0])
+    );
+    assert_eq!(fit([100.0, 500.0, 400.0, 300.0], min, &[MAIN], MAIN), None);
   }
 }

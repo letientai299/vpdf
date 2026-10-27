@@ -1,10 +1,10 @@
 //! Native callbacks enqueue worker inputs.
 use eframe::egui;
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
-use vpdf::session::native::Input;
 use vpdf::session::native::commands::{Action, Effect, Snapshot};
+use vpdf::session::native::{Input, Sender};
 
 pub struct Native {
   integration: vpdf_macos::Integration,
@@ -14,13 +14,22 @@ pub struct Native {
 }
 
 impl Native {
-  pub fn new(cc: &eframe::CreationContext<'_>) -> Option<Self> {
+  /// Finder events in `documents` reach `sender` without a frame, so
+  /// minimized and hidden windows still open and quit.
+  pub fn new(
+    cc: &eframe::CreationContext<'_>,
+    documents: &fmv_macos_events::Inbox,
+    sender: Sender,
+  ) -> Option<Self> {
     let snapshot = Rc::new(RefCell::new(Arc::new(Snapshot::default())));
     let inputs = Rc::new(RefCell::new(Vec::new()));
     let current = Rc::clone(&snapshot);
     let pending = Rc::clone(&inputs);
     let context = cc.egui_ctx.clone();
     let wake = context.clone();
+    let restore: Rc<Restorer> = Rc::default();
+    let restorer = Rc::clone(&restore);
+    let inbox = documents.clone();
     let entries: Vec<_> = MENUS
       .iter()
       .map(|entry| vpdf_macos::Item {
@@ -39,12 +48,20 @@ impl Native {
             .and_then(|entry| current.borrow().command(entry.action))
             .map(Input::Action),
           vpdf_macos::Request::Open(path) => Some(Input::Open(path)),
+          // Outside Eframe's handler, so AppKit may end the loop.
+          vpdf_macos::Request::Deferred => {
+            let open = |path| reopen(&restorer, &sender, path);
+            route(&inbox, open, vpdf_macos::terminate);
+            None
+          }
         };
         if let Some(input) = input {
           pending.borrow_mut().push(input);
           wake.request_repaint();
         }
       })?;
+    let _ = restore.set(Box::new(integration.restorer()));
+    documents.set_wake(integration.deferrer());
     Some(Self { integration, snapshot, inputs, context })
   }
 
@@ -126,9 +143,32 @@ impl Native {
   pub fn cancel(&mut self) {
     self.integration.cancel();
   }
+}
 
-  pub fn restorer(&self) -> impl Fn() + 'static {
-    self.integration.restorer()
+/// Set once the adapter can find its window.
+type Restorer = OnceCell<Box<dyn Fn()>>;
+
+/// Shows a minimized window for an active app, then opens `path`.
+fn reopen(restore: &Restorer, sender: &Sender, path: std::path::PathBuf) {
+  if let Some(restore) = restore.get() {
+    restore();
+  }
+  sender.send(Input::Open(path));
+}
+
+/// Hands each queued Finder open and quit to its handler.
+pub fn route(
+  documents: &fmv_macos_events::Inbox,
+  mut open: impl FnMut(std::path::PathBuf),
+  mut quit: impl FnMut(),
+) {
+  for event in documents.drain() {
+    match event {
+      fmv_macos_events::Event::Open(paths) => {
+        paths.into_iter().for_each(&mut open);
+      }
+      fmv_macos_events::Event::Quit => quit(),
+    }
   }
 }
 

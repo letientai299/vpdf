@@ -64,10 +64,14 @@ Each changed snapshot sets the window's represented URL from its absolute
 document path, and clears it for Home and help. Reveal in Finder is a worker
 command that returns the focused path as an effect.
 
-A minimized window runs no Eframe frames, so the Finder inbox drains only after
-restoration. Its wake callback therefore deminiaturizes the window when an Apple
-event arrives for an active app. Background `open -g` requests leave the window
-minimized and open the documents after the user restores it.
+A minimized or hidden window runs no Eframe frames. The Finder inbox therefore
+wakes the adapter, which drains it on the next main run-loop turn through a
+delayed selector. Opens go straight to the worker through a cloned input
+sender; the window is deminiaturized only for an active app, so background
+`open -g` requests stay minimized and still open. A quit Apple event calls
+`NSApplication terminate:`. Winit turns `applicationWillTerminate:` into
+`LoopExiting`, and Eframe calls `on_exit`, which closes the bridge and saves
+state without a frame.
 
 ## Window and session restoration
 
@@ -93,6 +97,12 @@ per loop turn between inputs. Restored tabs keep their saved order around
 explicit opens without taking focus. Missing, locked, or unreadable files are
 skipped and reported once. A shutdown before restoration finishes saves the
 unopened tabs in place.
+
+Closing the window still quits: Eframe exits with its root viewport, so the
+app cannot stay open without a window and recreate it from the Dock. Restoring
+on relaunch covers that case. Bridge shutdown joins the worker after it leaves
+its current loop turn; background search, render, and OCR threads are detached
+and stop with the process.
 
 ## Unsafe boundary
 

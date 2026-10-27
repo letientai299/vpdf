@@ -95,6 +95,20 @@ fn layouts_reopen_active_tab_first() -> Result<()> {
 }
 
 #[test]
+fn closing_mid_restore_keeps_running() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let (files, layout) = saved(root.path())?;
+  let mut session = restoring(root.path(), layout)?;
+  session.restore_next(cells(80, 24));
+  session.close()?;
+  super::super::quit_when_closed(&mut session);
+  assert!(!session.quit);
+  restore_all(&mut session);
+  assert_eq!(paths(&session), [vec![files[0].clone()], vec![files[2].clone()]]);
+  Ok(())
+}
+
+#[test]
 fn unavailable_files_are_reported() -> Result<()> {
   let root = tempfile::tempdir()?;
   let (files, layout) = saved(root.path())?;
@@ -118,8 +132,9 @@ fn explicit_opens_keep_focus() -> Result<()> {
   let [explicit] = pdfs(root.path(), &["x.pdf"])?.try_into().unwrap();
   for (opened, expected, active) in [
     (&explicit, vec![&files[0], &files[1], &files[2], &explicit], 3),
-    // The saved tab of an opened document is skipped.
+    // The saved tab of an opened document is skipped but holds its place.
     (&files[2], vec![&files[0], &files[1], &files[2]], 2),
+    (&files[0], vec![&files[0], &files[1], &files[2]], 0),
   ] {
     let mut session = restoring(root.path(), layout.clone())?;
     session.open(opened, true, cells(80, 24))?;
@@ -151,11 +166,22 @@ fn stores_are_claimed_once() -> Result<()> {
   assert_eq!(store.load(), Some(layout.clone()));
   for corrupt in [
     b"{".to_vec(),
-    serde_json::to_vec(&Layout { version: VERSION + 1, ..layout })?,
+    serde_json::to_vec(&Layout { version: VERSION + 1, ..layout.clone() })?,
   ] {
     std::fs::write(&file, corrupt)?;
     assert!(store.load().is_none());
   }
+  // Tabs whose shape misses or repeats panes are dropped.
+  let mut broken = layout.clone();
+  broken.tabs[0].panes.clear();
+  broken.tabs[2].shape = Shape::Split {
+    axis: Axis::Rows,
+    ratio: 0.5,
+    first: Box::new(Shape::Pane(0)),
+    second: Box::new(Shape::Pane(0)),
+  };
+  std::fs::write(&file, serde_json::to_vec(&broken)?)?;
+  assert_eq!(store.load().unwrap().tabs, layout.tabs[1..2]);
   Ok(())
 }
 

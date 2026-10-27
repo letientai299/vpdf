@@ -38,6 +38,30 @@ struct Saved {
   focus: usize,
 }
 
+impl Saved {
+  /// Each pane appears in the shape exactly once.
+  fn valid(&self) -> bool {
+    let mut seen = vec![false; self.panes.len()];
+    let mut ok = true;
+    let mut visit = |shape: &Shape| {
+      let mut stack = vec![shape];
+      while let Some(shape) = stack.pop() {
+        match shape {
+          Shape::Pane(index) => match seen.get_mut(*index) {
+            Some(seen) if !*seen => *seen = true,
+            _ => ok = false,
+          },
+          Shape::Split { first, second, .. } => {
+            stack.extend([first.as_ref(), second.as_ref()]);
+          }
+        }
+      }
+    };
+    visit(&self.shape);
+    ok && !seen.is_empty() && seen.iter().all(|seen| *seen)
+  }
+}
+
 /// A pane's view; reading state keeps the rest of the document's place.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 struct Pane {
@@ -77,7 +101,8 @@ impl Store {
   /// version.
   pub fn load(&mut self) -> Option<Layout> {
     let bytes = std::fs::read(&self.path).ok()?;
-    let layout: Layout = serde_json::from_slice(&bytes).ok()?;
+    let mut layout: Layout = serde_json::from_slice(&bytes).ok()?;
+    layout.tabs.retain(Saved::valid);
     (layout.version == VERSION).then(|| {
       self.written = Some(layout.clone());
       layout
@@ -93,6 +118,7 @@ impl Store {
     let mut staged =
       tempfile::Builder::new().suffix(".tmp").tempfile_in(directory)?;
     staged.write_all(&serde_json::to_vec(&layout)?)?;
+    staged.as_file().sync_all()?;
     staged.persist(&self.path).map_err(|error| error.error)?;
     self.written = Some(layout);
     Ok(())
@@ -248,16 +274,33 @@ impl Session {
     if !restoring.sized {
       return false;
     }
-    let Some((index, saved)) = restoring.pending.pop_front() else {
-      return false;
-    };
-    // An explicit open already shows this document.
-    let single = saved.panes.len() == 1;
-    if !(single && self.existing(&saved.panes[0].path).is_some()) {
+    self.claim_open();
+    let restoring = restoring_mut(self);
+    if let Some((index, saved)) = restoring.pending.pop_front() {
       self.restore_tab(index, &saved, screen);
     }
     self.finish_restore();
     true
+  }
+
+  /// Saved single-pane tabs that explicit opens already show hold their
+  /// places instead of opening twice.
+  fn claim_open(&mut self) {
+    let pending = std::mem::take(&mut restoring_mut(self).pending);
+    let mut kept = VecDeque::new();
+    let mut claimed = Vec::new();
+    for (index, saved) in pending {
+      let open = (saved.panes.len() == 1)
+        .then(|| self.existing(&saved.panes[0].path))
+        .flatten();
+      match open {
+        Some((tab, _)) => claimed.push((index, self.tabs[tab].panes[0].id)),
+        None => kept.push_back((index, saved)),
+      }
+    }
+    let restoring = restoring_mut(self);
+    restoring.pending = kept;
+    restoring.placed.extend(claimed);
   }
 
   fn restore_tab(&mut self, index: usize, saved: &Saved, screen: Screen) {
@@ -281,12 +324,7 @@ impl Session {
             "unreadable"
           };
           let note = format!("{} ({reason})", name.display());
-          let skipped = &mut self
-            .windows
-            .restoring
-            .as_mut()
-            .expect("Restore queue")
-            .skipped;
+          let skipped = &mut restoring_mut(self).skipped;
           if !skipped.iter().any(|(_, seen)| *seen == note) {
             skipped.push((index, note));
           }
@@ -355,6 +393,10 @@ impl Session {
       super::report(self, Err(error));
     }
   }
+}
+
+fn restoring_mut(session: &mut Session) -> &mut Restoring {
+  session.windows.restoring.as_mut().expect("Restore queue")
 }
 
 fn saved_tab(tab: &Tab) -> Option<Saved> {
