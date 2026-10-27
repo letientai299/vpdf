@@ -810,14 +810,23 @@ fn prepare_scene(
   session: &mut Session,
   scene: &mut impl vpdf_model::scene::Draw<'static>,
 ) {
-  scene.push(Op::Theme(
-    session
-      .settings
-      .colors(vpdf_model::theme::Colors::Palette(session.system_palette)),
-  ));
+  session.settings.scene_theme(
+    scene,
+    vpdf_model::theme::Colors::Palette(session.system_palette),
+  );
   session.present_startup();
   if let Some(home) = &mut session.home {
     home.configure(&session.settings);
+  }
+}
+
+fn resolve_themes(scene: &mut [Op<'_>], palette: vpdf_model::theme::Palette) {
+  for op in scene {
+    if let Op::Theme(theme) = op
+      && theme.colors == vpdf_model::theme::Colors::Terminal
+    {
+      theme.colors = vpdf_model::theme::Colors::Palette(palette);
+    }
   }
 }
 
@@ -887,7 +896,8 @@ fn frame(
   if screen.rows == 0 {
     complete = false;
   }
-  let scene = recorder.into_scene();
+  let mut scene = recorder.into_scene();
+  resolve_themes(&mut scene, session.system_palette);
   let mut seen = HashSet::new();
   let images = scene
     .iter()
@@ -1087,16 +1097,23 @@ mod tests {
     let mut session = native();
     let mut screen = sized();
     ensure_home(&mut session, screen);
+    let directory = tempfile::tempdir()?;
+    let config = directory.path().join("opacity.toml");
+    std::fs::write(&config, "[appearance.opacity]\nselection = 0.6")?;
+    session.settings =
+      crate::config::Options { config: Some(config) }.load().settings;
+    let opacity = session.settings.opacity();
     for palette in [Palette::light(), Palette::dark()] {
       assert!(apply(&mut session, Input::SystemPalette(palette), &mut screen));
       assert!(!apply(&mut session, Input::SystemPalette(palette), &mut screen));
       let rendered = frame(&mut session, &mut Cache::new(BUDGET), screen)?;
       assert_eq!(
         rendered.scene.first(),
-        Some(&Op::Theme(Colors::Palette(palette)))
+        Some(&Op::theme(Colors::Palette(palette), opacity))
       );
       assert!(rendered.scene.iter().all(|op| match op {
-        Op::Theme(colors) => *colors == Colors::Palette(palette),
+        Op::Theme(theme) =>
+          theme.colors == Colors::Palette(palette) && theme.opacity == opacity,
         _ => true,
       }));
       assert_eq!(
@@ -1113,7 +1130,7 @@ mod tests {
     let rendered = frame(&mut session, &mut Cache::new(BUDGET), screen)?;
     assert_eq!(
       rendered.scene.first(),
-      Some(&Op::Theme(Colors::Palette(Palette::light())))
+      Some(&Op::theme(Colors::Palette(Palette::light()), opacity))
     );
     Ok(())
   }
@@ -2277,9 +2294,10 @@ mod tests {
         let mut retained = frame(&mut recorded, &mut cache, screen)?;
         assert_eq!(
           retained.scene.remove(0),
-          Op::Theme(vpdf_model::theme::Colors::Palette(
-            recorded.system_palette
-          ))
+          Op::theme(
+            vpdf_model::theme::Colors::Palette(recorded.system_palette),
+            vpdf_model::theme::Opacity::default()
+          )
         );
         let mut actual = Vec::new();
         write!(actual, "{}{}", terminal::frame_start(), sgr(Role::Reset))?;

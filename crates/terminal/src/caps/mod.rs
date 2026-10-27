@@ -31,3 +31,7 @@ mod tests;
 mod keyboard;
 mod probe;
 mod types;
+
+pub(crate) fn palette() -> vpdf_model::theme::Palette {
+  get().map_or_default(Caps::palette)
+}

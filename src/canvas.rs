@@ -61,13 +61,7 @@ impl App {
   where
     S::Error: Into<anyhow::Error>,
   {
-    if self.settings.colors(vpdf_model::theme::Colors::Terminal)
-      != vpdf_model::theme::Colors::Terminal
-    {
-      scene.push(Op::Theme(
-        self.settings.colors(vpdf_model::theme::Colors::Terminal),
-      ));
-    }
+    self.settings.scene_theme(scene, vpdf_model::theme::Colors::Terminal);
     self.request_crop();
     let (screen, left) = (self.uncovered(), self.left);
     let view = vpdf_ui::layout::tiles::View {
@@ -126,13 +120,7 @@ impl App {
     scene: &mut impl Draw<'a>,
     screen: Screen,
   ) -> Result<()> {
-    if self.settings.colors(vpdf_model::theme::Colors::Terminal)
-      != vpdf_model::theme::Colors::Terminal
-    {
-      scene.push(Op::Theme(
-        self.settings.colors(vpdf_model::theme::Colors::Terminal),
-      ));
-    }
+    self.settings.scene_theme(scene, vpdf_model::theme::Colors::Terminal);
     let mut hovered = self.hover_segments();
     if hovered.is_empty()
       && let Some((page, areas)) = self.hover_icon()
@@ -223,23 +211,18 @@ impl App {
   where
     S::Error: Into<anyhow::Error>,
   {
-    if self.settings.colors(vpdf_model::theme::Colors::Terminal)
-      != vpdf_model::theme::Colors::Terminal
-    {
-      scene.push(Op::Theme(
-        self.settings.colors(vpdf_model::theme::Colors::Terminal),
-      ));
-    }
+    self.settings.scene_theme(scene, vpdf_model::theme::Colors::Terminal);
     self.scene_content(scene, snap_regions)?;
-    let alpha =
-      ((1.0 - self.settings.inactive_brightness()) * 255.0).round() as u8;
+    let veil = vpdf_model::theme::Overlay::Inactive;
+    let alpha = veil
+      .resolve(vpdf_model::theme::Colors::Terminal, self.settings.opacity())[3];
     if !self.focused
       && alpha > 0
       && self.screen.rows >= 2
       && self.screen.columns > 0
     {
       scene.stretch(
-        [0, 0, 0, alpha],
+        vpdf_model::theme::Paint::Overlay(veil),
         Layer::AboveText,
         (0, self.screen.columns, self.screen.rows - 1),
         Stage { screen: self.screen, left: self.left },

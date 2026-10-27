@@ -57,7 +57,7 @@ impl Style {
     for attribute in patch.attributes {
       match attribute {
         Attribute::Bold => self.bold = true,
-        Attribute::Dim => self.foreground = self.foreground.gamma_multiply(0.5),
+        Attribute::Dim => self.foreground = rgb(theme.palette().muted),
         Attribute::Italic => self.italic = true,
         Attribute::Underline => self.underline = true,
         Attribute::Inverse => {

@@ -24,16 +24,9 @@ impl Drawable for Session {
     let (tab, graphics) = (&mut self.tabs[self.active], &mut self.graphics);
     let snap_regions = graphics.crop_quirk();
     let mut painter = Painter::new(out).with_graphics(graphics);
-    if self.settings.colors(vpdf_model::theme::Colors::Terminal)
-      != vpdf_model::theme::Colors::Terminal
-    {
-      vpdf_model::scene::Draw::push(
-        &mut painter,
-        vpdf_model::scene::Op::Theme(
-          self.settings.colors(vpdf_model::theme::Colors::Terminal),
-        ),
-      );
-    }
+    self
+      .settings
+      .scene_theme(&mut painter, vpdf_model::theme::Colors::Terminal);
     let result = Self::scene_tab(
       tab,
       area,
@@ -268,8 +261,14 @@ mod tests {
           .iter()
           .filter_map(|op| match op {
             Op::Fill(fill)
-              if fill.color().resolve(vpdf_model::theme::Colors::Terminal)
-                == [0, 0, 0, 51] =>
+              if fill.color().resolve(
+                vpdf_model::theme::Colors::Terminal,
+                vpdf_model::theme::Opacity::default(),
+              ) == {
+                let [r, g, b] =
+                  vpdf_model::theme::Colors::Terminal.palette().background;
+                [r, g, b, 51]
+              } =>
             {
               Some(fill)
             }
@@ -295,7 +294,7 @@ mod tests {
   }
 
   #[test]
-  fn configured_pane_brightness() -> Result<()> {
+  fn configured_pane_opacity() -> Result<()> {
     use vpdf_model::scene::{Op, Recorder};
 
     let root = tempfile::tempdir()?;
@@ -303,10 +302,10 @@ mod tests {
     let config = root.path().join("config.toml");
     crate::fixtures::pdf(&path, &["first", "second"], "")?;
     let mut session = split_session(&path, false)?;
-    for (brightness, alpha) in [(0.0, 255), (0.8, 51), (0.9, 25), (1.0, 0)] {
+    for (opacity, alpha) in [(1.0, 255), (0.2, 51), (0.1, 26), (0.0, 0)] {
       std::fs::write(
         &config,
-        format!("[reading]\ninactive_brightness = {brightness}"),
+        format!("[appearance.opacity]\ninactive = {opacity}"),
       )?;
       let loaded =
         crate::config::Options { config: Some(config.clone()) }.load();
@@ -317,12 +316,14 @@ mod tests {
       app.scene_pane(&mut recorder, false)?;
       let scene = recorder.into_scene();
       let veil = scene.iter().last().and_then(|op| match op {
-        Op::Fill(fill) => {
-          Some(fill.color().resolve(vpdf_model::theme::Colors::Terminal))
-        }
+        Op::Fill(fill) => Some(fill.color().resolve(
+          vpdf_model::theme::Colors::Terminal,
+          app.settings.opacity(),
+        )),
         _ => None,
       });
-      assert_eq!(veil, (alpha > 0).then_some([0, 0, 0, alpha]));
+      let [r, g, b] = vpdf_model::theme::Colors::Terminal.palette().background;
+      assert_eq!(veil, (alpha > 0).then_some([r, g, b, alpha]));
     }
     Ok(())
   }

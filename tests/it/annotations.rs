@@ -204,7 +204,8 @@ fn notes_scroll_and_resize() -> Result<()> {
     assert!(first.contains("BEGIN"));
     assert!(first.contains('↓'));
     if !text {
-      assert!(first.contains("48;2;255;255;255m"));
+      let [r, g, b] = vpdf_model::theme::Colors::Terminal.palette().background;
+      assert!(first.contains(&format!("48;2;{r};{g};{b}m")));
     }
     app.scroll_preview(9999.0)?;
     let last = drawn(&mut app)?;

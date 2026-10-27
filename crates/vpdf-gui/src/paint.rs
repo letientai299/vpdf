@@ -14,7 +14,7 @@ use vpdf_model::geometry::Screen;
 use vpdf_model::image::PictureId;
 use vpdf_model::scene::{Layer, Op, Stage, TilePlacement};
 use vpdf_model::text::PageId;
-use vpdf_model::theme::Colors;
+use vpdf_model::theme::{Colors, Opacity, Overlay};
 use vpdf_model::tile::{TileId, TileKey, TileOwner};
 
 const BUDGET: usize = 64 << 20;
@@ -357,9 +357,11 @@ fn clip(stage: Stage, scale: f32) -> Rect {
 
 fn fills(painter: &Painter, scene: &[Op<'_>], layer: Layer, scale: f32) {
   let mut theme = Colors::Terminal;
+  let mut opacity = Opacity::default();
   for op in scene {
     if let Op::Theme(selected) = op {
-      theme = *selected;
+      theme = selected.colors;
+      opacity = selected.opacity;
     }
     let fill = match op {
       Op::Fill(fill) => **fill,
@@ -372,7 +374,7 @@ fn fills(painter: &Painter, scene: &[Op<'_>], layer: Layer, scale: f32) {
     let stage = fill.stage();
     let origin = offset(stage, scale);
     let point = |(x, y): (f32, f32)| origin + Vec2::new(x, y) / scale;
-    let color = fill.color().resolve(theme);
+    let color = fill.color().resolve(theme, opacity);
     let color =
       Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);
     let painter = painter.with_clip_rect(clip(stage, scale));
@@ -427,6 +429,7 @@ struct Grid {
   saved: (usize, usize, Style),
   style: Style,
   theme: Colors,
+  opacity: Opacity,
   visible: bool,
   masked: bool,
   input: std::ops::Range<usize>,
@@ -478,8 +481,9 @@ impl Grid {
         self.previous = None;
       }
       Op::Theme(theme) => {
-        self.theme = *theme;
-        self.style = Style::new(*theme);
+        self.theme = theme.colors;
+        self.opacity = theme.opacity;
+        self.style = Style::new(theme.colors);
       }
       Op::Style(role) => self.style.apply(*role, self.theme),
       Op::Text(text) => {
@@ -730,8 +734,9 @@ impl Grid {
       let pos =
         Pos2::new(self.cursor.0 as f32 * size.x, self.cursor.1 as f32 * size.y);
       painter.rect_filled(Rect::from_min_size(pos, size), 0.0, {
-        let [r, g, b] = self.theme.palette().foreground;
-        Color32::from_rgba_unmultiplied(r, g, b, 100)
+        let [r, g, b, a] =
+          Overlay::TextCursor.resolve(self.theme, self.opacity);
+        Color32::from_rgba_unmultiplied(r, g, b, a)
       });
     }
   }
@@ -741,14 +746,10 @@ pub fn scene_theme(scene: &[Op<'_>]) -> Colors {
   scene
     .iter()
     .find_map(|op| match op {
-      Op::Theme(theme) => Some(*theme),
+      Op::Theme(theme) => Some(theme.colors),
       _ => None,
     })
     .unwrap_or_default()
-}
-
-pub fn background() -> Color32 {
-  crate::style::rgb(Colors::Terminal.palette().background)
 }
 
 #[cfg(test)]
@@ -905,7 +906,7 @@ mod tests {
     ] {
       let frame = Frame {
         scene: vec![
-          Op::Theme(theme),
+          Op::theme(theme, Opacity::default()),
           Op::Style(Role::Reset),
           Op::Move { column: 0, row: 0 },
           Op::Erase(4),
@@ -1089,6 +1090,45 @@ mod tests {
   }
 
   #[test]
+  fn configured_fills_and_cursor() {
+    use vpdf_model::scene::Draw;
+    use vpdf_model::theme::{Paint, Palette};
+    let screen = crate::screen::pixels(4, 2, 10, 20);
+    let palette = Palette::light();
+    let opacity = Opacity {
+      selection: Some(0.4.try_into().unwrap()),
+      text_cursor: Some(0.2.try_into().unwrap()),
+      ..Opacity::default()
+    };
+    let mut scene = Vec::new();
+    scene.push(Op::theme(Colors::Palette(palette), opacity));
+    scene.fill(
+      vpdf_model::text::Bounds { x0: 0.0, y0: 0.0, x1: 10.0, y1: 20.0 },
+      Paint::Overlay(Overlay::Selection),
+      Layer::BelowText,
+      Stage { screen, left: 0 },
+    );
+    scene.push(Op::Move { column: 1, row: 0 });
+    scene.push(Op::ShowCursor);
+    let frame = Frame { scene, ..blank(screen) };
+    let ctx = egui::Context::default();
+    let mut renderer = Renderer::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+      renderer.paint(ui.painter(), &frame, screen, 1.0, None);
+    });
+    for (rgb, alpha) in [(palette.highlight, 102), (palette.foreground, 51)] {
+      let color =
+        Color32::from_rgba_unmultiplied(rgb[0], rgb[1], rgb[2], alpha);
+      assert!(
+        output.shapes.iter().any(|shape| matches!(&shape.shape,
+        egui::Shape::Rect(rect) if rect.fill == color)),
+        "{color:?}"
+      );
+    }
+    output.textures_delta.clear();
+  }
+
+  #[test]
   fn transparent_previews_follow_palette() {
     use vpdf_model::image::Rgb;
     use vpdf_model::scene::{Draw, Recorder, Surface};
@@ -1104,7 +1144,7 @@ mod tests {
     for palette in [Palette::light(), Palette::dark(), custom] {
       let mut frame = blank(screen);
       let mut scene = Recorder::new(|_| false);
-      scene.push(Op::Theme(Colors::Palette(palette)));
+      scene.push(Op::theme(Colors::Palette(palette), Opacity::default()));
       scene.fill(
         vpdf_model::text::Bounds { x0: 0.0, y0: 0.0, x1: 20.0, y1: 20.0 },
         Paint::Overlay(Overlay::Preview),

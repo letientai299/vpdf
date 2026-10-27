@@ -14,8 +14,8 @@ fn example_matches_defaults() {
     Settings::example().unwrap(),
     concat!(
       "[appearance]\ntheme = \"system\"\nascii_glyphs = false\n\n",
-      "[reading]\ncursorline = true\nzoom = 1.0\n",
-      "inactive_brightness = 0.8\n\n",
+      "[appearance.opacity]\n\n",
+      "[reading]\ncursorline = true\nzoom = 1.0\n\n",
       "[ocr]\nlanguage = \"eng\"\n\n[keybindings]\n"
     )
   );
@@ -33,30 +33,89 @@ fn ascii_glyphs_read_a_boolean() {
 }
 
 #[test]
-fn inactive_brightness_validates_range() {
-  assert_eq!(Settings::default().inactive_brightness(), 0.8);
-  for (value, expected, valid) in [
-    ("0", 0.0, true),
-    ("0.9", 0.9, true),
-    ("1", 1.0, true),
-    ("-0.1", 0.8, false),
-    ("1.1", 0.8, false),
-    ("nan", 0.8, false),
-    ("inf", 0.8, false),
-    ("-inf", 0.8, false),
-    ("true", 0.8, false),
-    ("'0.9'", 0.8, false),
-  ] {
-    let loaded = decoded(&format!(
-      "[reading]\ncursorline = false\ninactive_brightness = {value}"
-    ));
-    assert_eq!(loaded.settings.inactive_brightness(), expected, "{value}");
-    assert!(!loaded.settings.cursorline());
-    assert_eq!(loaded.warning.is_none(), valid, "{value}");
-    if let Some(warning) = loaded.warning {
-      assert!(warning.contains("reading.inactive_brightness"));
+fn opacity_validates_keys() {
+  for (key, default) in Opacity::default().values() {
+    for (value, expected) in [
+      ("0", Some(0.0)),
+      ("0.9", Some(0.9)),
+      ("1", Some(1.0)),
+      ("-0.1", None),
+      ("1.1", None),
+      ("nan", None),
+      ("inf", None),
+      ("-inf", None),
+      ("true", None),
+      ("'0.9'", None),
+    ] {
+      let loaded = decoded(&format!(
+        "[reading]\ncursorline = false\n[appearance.opacity]\n{key} = {value}"
+      ));
+      assert_eq!(
+        loaded
+          .settings
+          .opacity()
+          .values()
+          .find(|(name, _)| *name == key)
+          .unwrap()
+          .1,
+        expected.unwrap_or(default),
+        "{key}: {value}"
+      );
+      assert!(!loaded.settings.cursorline());
+      assert_eq!(
+        loaded.warning.is_none(),
+        expected.is_some(),
+        "{key}: {value}"
+      );
+      if let Some(warning) = loaded.warning {
+        assert!(warning.contains(&format!("appearance.opacity.{key}")));
+      }
     }
   }
+  for text in [
+    "[appearance.opacity]\nunknown = 0.5",
+    "[reading]\ninactive_brightness = 0.8",
+  ] {
+    let loaded = decoded(text);
+    assert_eq!(loaded.settings.opacity(), Opacity::default());
+    assert!(loaded.warning.unwrap().contains("unknown setting"));
+  }
+}
+
+#[test]
+fn opacity_reload_retains_sources() {
+  use vpdf_ui::reference::Source as Origin;
+  let first = parse(
+    Path::new("first.toml"),
+    "[appearance.opacity]\nselection = 1\nveil = 0.5",
+  );
+  let next = parse_with(
+    Path::new("next.toml"),
+    "[appearance.opacity]\nselection = -1\ninactive = 0.4",
+    &first.settings,
+  );
+  assert_eq!(next.settings.opacity().selection.unwrap().get(), 1.0);
+  assert_eq!(next.settings.opacity().veil, None);
+  let reference = next.settings.reference();
+  let selection = reference
+    .settings
+    .iter()
+    .find(|s| s.name == "appearance.opacity.selection")
+    .unwrap();
+  assert_eq!(selection.source, Origin::File("first.toml".into()));
+  assert_eq!(selection.default, serde_json::json!(85.0 / 255.0));
+  assert_eq!(selection.effective, serde_json::json!(1.0));
+  let invalid = parse_with(
+    Path::new("bad.toml"),
+    "[appearance]\nopacity = false",
+    &first.settings,
+  );
+  assert_eq!(invalid.settings.opacity(), first.settings.opacity());
+  assert!(invalid.warning.is_some());
+  assert_eq!(
+    decoded(&toml::to_string(&first.settings).unwrap()).settings.opacity(),
+    first.settings.opacity()
+  );
 }
 
 #[test]
@@ -341,21 +400,21 @@ fn reload_retains_invalid_and_resets_omitted() -> crate::Result<()> {
     &path,
     concat!(
       "[reading]\nzoom = 2\ncursorline = false\n",
-      "inactive_brightness = 0.3\n[ocr]\nlanguage = 'vie'",
+      "[appearance.opacity]\ninactive = 0.3\n[ocr]\nlanguage = 'vie'",
     ),
   )?;
   let loaded = load(&path, true);
   std::fs::write(
     &path,
     concat!(
-      "[reading]\nzoom = 'bad'\ninactive_brightness = 0.5\n",
+      "[reading]\nzoom = 'bad'\n[appearance.opacity]\ninactive = 0.5\n",
       "[ocr]\nlanguage = 7\nunknown = true",
     ),
   )?;
   let reloaded = loaded.source.reload(&loaded.settings);
   assert_eq!(reloaded.settings.zoom(), 2.0);
   assert!(reloaded.settings.cursorline());
-  assert_eq!(reloaded.settings.inactive_brightness(), 0.5);
+  assert_eq!(reloaded.settings.opacity().inactive.unwrap().get(), 0.5);
   assert_eq!(reloaded.settings.language(), "vie");
   let warning = reloaded.warning.unwrap();
   for key in ["reading.zoom", "ocr.language", "ocr.unknown"] {
@@ -802,7 +861,7 @@ fn write_palette(path: &Path, background: &str) -> crate::Result<()> {
 
 #[test]
 fn theme_paths_reload() -> crate::Result<()> {
-  use vpdf_model::theme::Colors;
+  use Colors;
   let root = tempfile::tempdir()?;
   let directory = root.path().join("settings");
   std::fs::create_dir_all(directory.join("palettes"))?;
@@ -906,7 +965,7 @@ fn theme_tilde_paths() -> crate::Result<()> {
 
 #[test]
 fn theme_file_commands() -> crate::Result<()> {
-  use vpdf_model::theme::Colors;
+  use Colors;
   let root = tempfile::tempdir_in(std::env::current_dir()?)?;
   let path = root.path().join("custom.toml");
   write_palette(&path, "#123456")?;

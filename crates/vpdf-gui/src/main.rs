@@ -55,6 +55,7 @@ struct Window {
   input: input::Adapter,
   screen: Option<Screen>,
   system_palette: vpdf_model::theme::Palette,
+  palette: vpdf_model::theme::Palette,
   capture: Option<PathBuf>,
   #[cfg(feature = "bench-events")]
   events: Option<inject::Injector>,
@@ -123,6 +124,7 @@ impl Window {
       input: input::Adapter::default(),
       screen: None,
       system_palette,
+      palette,
       capture: args.capture,
       #[cfg(feature = "bench-events")]
       events,
@@ -208,7 +210,8 @@ impl eframe::App for Window {
       self.frame = Some(frame);
     }
     if let Some(frame) = &self.frame {
-      set_theme(&ctx, paint::scene_theme(&frame.scene).palette());
+      self.palette = paint::scene_theme(&frame.scene).palette();
+      set_theme(&ctx, self.palette);
     }
     self.input.editing(
       self.frame.as_ref().and_then(|frame| input::purpose(&frame.scene)),
@@ -273,7 +276,8 @@ impl eframe::App for Window {
   }
 
   fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] {
-    paint::background().to_normalized_gamma_f32()
+    let [r, g, b] = self.palette.background;
+    egui::Color32::from_rgb(r, g, b).to_normalized_gamma_f32()
   }
   fn on_exit(&mut self) {
     if let Err(error) = self.bridge.close() {

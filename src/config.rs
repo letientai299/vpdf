@@ -7,6 +7,7 @@ use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 pub use theme::ThemeChoice;
+use vpdf_model::theme::{Colors, Opacity, UnitInterval};
 use vpdf_ui::layout::{MAX_ZOOM, MIN_ZOOM};
 
 pub(crate) fn reload_command(argument: &str) -> crate::Result<()> {
@@ -71,38 +72,18 @@ impl PartialEq for Settings {
 struct Appearance {
   theme: ThemeChoice,
   ascii_glyphs: bool,
+  opacity: Opacity,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 struct Reading {
   cursorline: bool,
   zoom: Zoom,
-  inactive_brightness: Brightness,
 }
 
 impl Default for Reading {
   fn default() -> Self {
-    Self {
-      cursorline: true,
-      zoom: Zoom(vpdf_ui::layout::DEFAULT_ZOOM),
-      inactive_brightness: Brightness(0.8),
-    }
-  }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
-#[serde(transparent)]
-struct Brightness(f64);
-
-impl TryFrom<f64> for Brightness {
-  type Error = &'static str;
-
-  fn try_from(value: f64) -> Result<Self, Self::Error> {
-    if value.is_finite() && (0.0..=1.0).contains(&value) {
-      Ok(Self(value))
-    } else {
-      Err("brightness outside supported range")
-    }
+    Self { cursorline: true, zoom: Zoom(vpdf_ui::layout::DEFAULT_ZOOM) }
   }
 }
 
@@ -152,10 +133,7 @@ impl TryFrom<String> for Language {
 }
 
 impl Settings {
-  pub fn colors(
-    &self,
-    system: vpdf_model::theme::Colors,
-  ) -> vpdf_model::theme::Colors {
+  pub fn colors(&self, system: Colors) -> Colors {
     self.appearance.theme.colors(system)
   }
 
@@ -193,6 +171,22 @@ impl Settings {
       self.appearance.theme = theme.as_ref().cloned().unwrap_or_default();
       return theme.map(|_| ());
     }
+    if let Some(key) = name.strip_prefix("appearance.opacity.") {
+      let mut old = previous.opacity();
+      let target =
+        self.appearance.opacity.field(key).ok_or("unknown setting")?;
+      return replace_setting(
+        target,
+        old.field(key).expect("known opacity key"),
+        value
+          .clone()
+          .try_into::<f64>()
+          .map_err(|_| "expected number")
+          .and_then(UnitInterval::try_from)
+          .map(Some),
+      )
+      .map_err(str::to_owned);
+    }
     match name {
       "appearance.ascii_glyphs" => replace_setting(
         &mut self.appearance.ascii_glyphs,
@@ -212,15 +206,6 @@ impl Settings {
           .try_into::<f64>()
           .map_err(|_| "expected number")
           .and_then(Zoom::try_from),
-      ),
-      "reading.inactive_brightness" => replace_setting(
-        &mut self.reading.inactive_brightness,
-        &previous.reading.inactive_brightness,
-        value
-          .clone()
-          .try_into::<f64>()
-          .map_err(|_| "expected number")
-          .and_then(Brightness::try_from),
       ),
       "ocr.language" => replace_setting(
         &mut self.ocr.language,
@@ -251,8 +236,20 @@ impl Settings {
     &self.ocr.language.0
   }
 
-  pub fn inactive_brightness(&self) -> f64 {
-    self.reading.inactive_brightness.0
+  pub fn opacity(&self) -> Opacity {
+    self.appearance.opacity
+  }
+
+  pub(crate) fn scene_theme<'a>(
+    &self,
+    scene: &mut impl vpdf_model::scene::Draw<'a>,
+    system: Colors,
+  ) {
+    let colors = self.colors(system);
+    let opacity = self.opacity();
+    if colors != Colors::Terminal || opacity != Opacity::default() {
+      scene.push(vpdf_model::scene::Op::theme(colors, opacity));
+    }
   }
 
   #[cfg(test)]
@@ -364,40 +361,58 @@ fn parse_with(path: &Path, text: &str, previous: &Settings) -> Loaded {
           "ocr" => settings.ocr = previous.ocr.clone(),
           _ => {}
         }
-        settings.reference.sources.extend(
-          previous
-            .reference
-            .sources
-            .iter()
-            .filter(|(name, _)| name.starts_with(&format!("{section}.")))
-            .map(|(name, source)| (name.clone(), source.clone())),
-        );
+        settings.reference.inherit(&previous.reference, section);
         continue;
       };
-      for (key, value) in table {
-        let name = format!("{section}.{key}");
-        let result = settings.apply(&name, value, previous, path);
-        if let Err(error) = result {
-          warnings.push(format!("{name}: {error}"));
-          let source = previous
-            .reference
-            .sources
-            .get(&name)
-            .filter(|_| name != "appearance.theme")
-            .cloned()
-            .unwrap_or_default();
-          settings.reference.sources.insert(name, source);
-        } else {
-          settings
-            .reference
-            .sources
-            .insert(name, vpdf_ui::reference::Source::File(path.to_owned()));
-        }
-      }
+      apply_fields(
+        &mut settings,
+        section,
+        table,
+        previous,
+        path,
+        &mut warnings,
+      );
     }
   }
   settings.bindings.remember(&previous.bindings);
   finish(path, settings, &warnings)
+}
+
+fn apply_fields(
+  settings: &mut Settings,
+  section: &str,
+  table: &toml::Table,
+  previous: &Settings,
+  path: &Path,
+  warnings: &mut Vec<String>,
+) {
+  for (key, value) in table {
+    let name = format!("{section}.{key}");
+    if name == "appearance.opacity" {
+      if let Some(table) = value.as_table() {
+        apply_fields(settings, &name, table, previous, path, warnings);
+      } else {
+        settings.appearance.opacity = previous.opacity();
+        warnings.push(format!("{name}: expected table"));
+        settings.reference.inherit(&previous.reference, &name);
+      }
+      continue;
+    }
+    let source = match settings.apply(&name, value, previous, path) {
+      Ok(()) => vpdf_ui::reference::Source::File(path.to_owned()),
+      Err(error) => {
+        warnings.push(format!("{name}: {error}"));
+        previous
+          .reference
+          .sources
+          .get(&name)
+          .filter(|_| name != "appearance.theme")
+          .cloned()
+          .unwrap_or_default()
+      }
+    };
+    settings.reference.sources.insert(name, source);
+  }
 }
 
 fn replace_setting<T: Clone>(

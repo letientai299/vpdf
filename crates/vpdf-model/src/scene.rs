@@ -2,7 +2,7 @@ use crate::geometry::{PixelRect, Screen};
 use crate::image::{PictureId, Rgb};
 use crate::style::Role;
 use crate::text::{Bounds, Quad};
-use crate::theme::{Colors, Paint};
+use crate::theme::{Colors, Opacity, Paint};
 mod polygon;
 use crate::tile::TileId;
 pub use polygon::Polygon;
@@ -223,6 +223,12 @@ impl Character {
   }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SceneTheme {
+  pub colors: Colors,
+  pub opacity: Opacity,
+}
+
 /// Ordered cell drawing, independent of transport.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Op<'a> {
@@ -231,7 +237,7 @@ pub enum Op<'a> {
     column: usize,
     row: usize,
   },
-  Theme(Colors),
+  Theme(Box<SceneTheme>),
   Style(Role),
   Text(Text<'a>),
   Character(Character),
@@ -257,6 +263,12 @@ pub enum Op<'a> {
   Tile(Box<TilePlacement>),
   /// Pictures above fills and text.
   Picture(Box<Picture>),
+}
+
+impl Op<'_> {
+  pub fn theme(colors: Colors, opacity: Opacity) -> Self {
+    Self::Theme(Box::new(SceneTheme { colors, opacity }))
+  }
 }
 
 pub type Scene<'a> = Vec<Op<'a>>;
@@ -429,7 +441,10 @@ mod tests {
       Fill::stretched([23, 45, 67, 89], Layer::BelowText, (4, 1, 2), stage);
     assert_eq!(fill.area(), FillArea::Cells { column: 4, columns: 1, rows: 2 });
     assert_eq!(fill.rect(), Bounds { x0: 16.0, y0: 0.0, x1: 20.0, y1: 16.0 });
-    assert_eq!(fill.color().resolve(Colors::Terminal), [23, 45, 67, 89]);
+    assert_eq!(
+      fill.color().resolve(Colors::Terminal, Opacity::default()),
+      [23, 45, 67, 89]
+    );
     assert_eq!(fill.layer(), Layer::BelowText);
     assert_eq!(fill.stage(), stage);
   }

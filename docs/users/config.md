@@ -58,12 +58,14 @@ same-document split copies the source view.
 To make the focused pane easier to distinguish when comparing documents:
 
 ```toml
-[reading]
-inactive_brightness = 0.6
+[appearance.opacity]
+inactive = 0.4
 ```
 
-`reading.inactive_brightness` sets inactive split content brightness between `0`
-(black) and `1` (full brightness). Status lines stay unchanged.
+`appearance.opacity.inactive` fades inactive split content toward the theme
+background. `0` leaves content unchanged; `1` covers it. Status lines stay
+unchanged. This replaces `reading.inactive_brightness`; the old key now warns.
+Use `inactive = 1 - old_brightness` when migrating.
 
 Document positions, marks, histories, and the performance toggle remain in
 [saved reading state][state]. They are separate from this configuration.
@@ -289,13 +291,12 @@ theme = "dark"
 
 - The native app follows OS light/dark appearance changes. If the OS does not
   report an appearance, it uses dark.
-- The terminal keeps its ANSI text colors, including tabs and badges. At
-  launch, Vpdf queries the terminal background with OSC 11 and chooses a light
-  or dark palette for RGB overlays, preview fills, and the built-in manual. No
+- The terminal keeps its ANSI text colors, including tabs and badges. At launch,
+  Vpdf queries the terminal background with OSC 11 and chooses a light or dark
+  theme file for page fills, RGB overlays, previews, and the built-in manual. No
   reply means dark. Under tmux, the query needs passthrough; tmux may instead
   answer with its own background. Text contrast depends on the terminal's ANSI
-  colors. Select `light`, `dark`, or a theme file for contrast that Vpdf
-  checks.
+  colors. Select `light`, `dark`, or a theme file for contrast that Vpdf checks.
 
 `light`, `dark`, and theme files use explicit RGB colors in both frontends.
 Themes recolor text, bars, panels, menus, scrollbars, page overlays, and the
@@ -385,18 +386,53 @@ ascii_glyphs = true
 reloads independently; a disabled configuration keeps built-ins. Changing
 environment variables does not select another file.
 
-Bindings and themes apply to every open tab and split. Inactive brightness
-applies to existing splits. OCR language applies to subsequent requests; running
-OCR continues. Initial zoom and cursorline apply to newly opened documents.
-Reload preserves current page, live zoom, selection, reading position, history,
-and prompt text. It clears incomplete key sequences, counts, registers,
-operators, and prompt editing prefixes.
+Bindings, themes, and opacity apply to every open tab and split. OCR language
+applies to subsequent requests; running OCR continues. Initial zoom and
+cursorline apply to newly opened documents. Reload preserves current page, live
+zoom, selection, reading position, history, and prompt text. It clears
+incomplete key sequences, counts, registers, operators, and prompt editing
+prefixes.
 
 Omitted values restore built-ins. Invalid values keep their previous working
 values while valid entries apply, except theme names and files use the
 `system` fallback described above. Unreadable files, malformed TOML, and missing
 explicit files preserve all live settings and warn. A missing discovered file
 acts as empty configuration.
+
+## Overlay opacity
+
+`[appearance.opacity]` accepts numbers from `0` (transparent) to `1` (opaque).
+Omitted keys retain their built-in opacity and page contrast cap. Explicit
+values bypass that cap, including a value equal to the built-in default.
+Choose explicit values with readable PDF text in mind.
+
+```toml
+[appearance.opacity]
+selection = 0.4
+veil = 0.2
+inactive = 0.15
+```
+
+The [setting defaults][defaults] list each key and its built-in value.
+
+| Key           | Applies to                          |
+| ------------- | ----------------------------------- |
+| `selection`   | Page selection                      |
+| `search`      | Search match; landing uses ×65/90   |
+| `cursor`      | Page cursor                         |
+| `text_cursor` | Native text input cursor            |
+| `cursorline`  | Page cursor line                    |
+| `link`        | Link highlight                      |
+| `veil`        | Pane veil; region veil uses ×100/70 |
+| `ring`        | Ring; hover uses ×70/90             |
+| `scrollbar`   | Track; thumb uses ×190/50           |
+| `inactive`    | Inactive split                      |
+
+Linked fills clamp at `1`. Hint, badge, bar, and preview fills stay opaque;
+region edges and heading/search tick marks keep fixed opacity. The automatic
+4.5:1 page contrast cap applies to unset cursor, selection, search, landing,
+pane/region veil, cursorline, and link fills. Opacity changes preserve source
+PDF pixels and cached renders.
 
 ## Built-in defaults
 

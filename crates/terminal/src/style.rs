@@ -59,6 +59,13 @@ pub fn write(
   role: Role,
   theme: Colors,
 ) -> io::Result<()> {
+  let theme = if theme == Colors::Terminal
+    && matches!(role, Role::PreviewBorder | Role::PreviewText)
+  {
+    Colors::Palette(crate::caps::palette())
+  } else {
+    theme
+  };
   if theme == Colors::Terminal && !matches!(role, Role::Swatch(_)) {
     return out.write_all(sgr(role).as_bytes());
   }
@@ -176,12 +183,12 @@ const fn palette(tone: Tone, background: bool) -> &'static str {
   match (tone, background) {
     (Tone::Black, false) => "30",
     (Tone::Black, true) => "40",
-    (Tone::White, false) => "37",
-    (Tone::White, true) => "47",
+    (Tone::White | Tone::PreviewText, false) => "37",
+    (Tone::White | Tone::PreviewText, true) => "47",
     (Tone::BrightWhite, false) => "97",
-    (Tone::BrightWhite, true) => "48;2;255;255;255",
-    (Tone::Blue, false) => "34",
-    (Tone::Blue, true) => "44",
+    (Tone::BrightWhite, true) => "107",
+    (Tone::Blue | Tone::PreviewBorder, false) => "34",
+    (Tone::Blue | Tone::PreviewBorder, true) => "44",
     (Tone::Magenta, false) => "35",
     (Tone::Magenta, true) => "45",
     (Tone::Yellow, false) => "33",
@@ -194,10 +201,6 @@ const fn palette(tone: Tone, background: bool) -> &'static str {
     (Tone::ActiveBar, true) => "104",
     (Tone::Error, false) => "31",
     (Tone::Error, true) => "41",
-    (Tone::PreviewBorder, false) => "38;2;60;120;230",
-    (Tone::PreviewBorder, true) => "48;2;60;120;230",
-    (Tone::PreviewText, false) => "38;2;20;20;20",
-    (Tone::PreviewText, true) => "48;2;20;20;20",
     // Only `write` sets document colors.
     (Tone::Rgb(_), false) => "39",
     (Tone::Rgb(_), true) => "49",
@@ -208,6 +211,30 @@ const fn palette(tone: Tone, background: bool) -> &'static str {
 mod tests {
   use super::*;
   use sha2::{Digest, Sha256};
+
+  #[test]
+  fn system_previews_use_palette() -> io::Result<()> {
+    let p = crate::caps::palette();
+    for (role, foreground) in
+      [(Role::PreviewBorder, p.accent), (Role::PreviewText, p.foreground)]
+    {
+      let mut out = Vec::new();
+      write(&mut out, role, Colors::Terminal)?;
+      assert_eq!(
+        String::from_utf8(out).unwrap(),
+        format!(
+          "\x1b[0;38;2;{};{};{};48;2;{};{};{}m",
+          foreground[0],
+          foreground[1],
+          foreground[2],
+          p.background[0],
+          p.background[1],
+          p.background[2]
+        )
+      );
+    }
+    Ok(())
+  }
 
   #[test]
   fn swatches_write_their_color() -> io::Result<()> {
@@ -321,8 +348,6 @@ mod tests {
       Role::HintPickedTyped,
       Role::HintPicked,
       Role::TextLink,
-      Role::PreviewBorder,
-      Role::PreviewText,
       Role::Badge(Color::Blue),
       Role::Badge(Color::Magenta),
       Role::Badge(Color::Yellow),
@@ -332,11 +357,11 @@ mod tests {
     for role in roles {
       hash.update(sgr(role).as_bytes());
     }
-    // Original palette, in declaration order, then badges.
+    // ANSI roles exclude palette-backed previews.
     let expected: [u8; 32] = [
-      0x8c, 0x78, 0xa1, 0x3f, 0xd4, 0xa4, 0x78, 0xed, 0x03, 0x4e, 0xeb, 0x5f,
-      0x88, 0xe1, 0xcd, 0x07, 0x6f, 0xcd, 0x63, 0x40, 0x01, 0xe8, 0x7a, 0x4f,
-      0x35, 0x1f, 0xef, 0x86, 0xae, 0x47, 0xd4, 0xb0,
+      0xe7, 0xaa, 0x0d, 0x3a, 0x20, 0xe0, 0x1b, 0x09, 0x0e, 0x68, 0x46, 0x4c,
+      0x4d, 0x28, 0x68, 0x4a, 0x36, 0xf3, 0xe0, 0x64, 0x80, 0x66, 0xf1, 0xb0,
+      0x20, 0xf4, 0x17, 0xd5, 0xe5, 0x89, 0xf6, 0xf6,
     ];
     assert_eq!(hash.finalize().as_slice(), expected.as_slice());
   }

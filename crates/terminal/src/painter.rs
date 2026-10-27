@@ -1,6 +1,8 @@
 use crate::graphics::Graphics;
 use std::io::{self, Write};
-use vpdf_model::scene::{Draw, FillArea, Layer, Op, Stage, Surface, Text};
+use vpdf_model::scene::{
+  Draw, FillArea, Layer, Op, SceneTheme, Stage, Surface, Text,
+};
 use vpdf_model::theme::{Colors, Paint};
 use vpdf_model::{text::Bounds, tile::TileId};
 
@@ -14,13 +16,13 @@ pub fn paint(out: &mut impl Write, scene: &[Op<'_>]) -> io::Result<()> {
 pub struct Painter<'out, W> {
   out: &'out mut W,
   error: Option<io::Error>,
-  theme: Colors,
+  theme: SceneTheme,
   graphics: Option<&'out mut Graphics>,
 }
 
 impl<'out, W: Write> Painter<'out, W> {
   pub fn new(out: &'out mut W) -> Self {
-    Self { out, error: None, graphics: None, theme: Colors::Terminal }
+    Self { out, error: None, graphics: None, theme: SceneTheme::default() }
   }
 
   #[must_use]
@@ -50,7 +52,7 @@ impl<'out, W: Write> Painter<'out, W> {
 
   fn output<F>(&mut self, paint: F)
   where
-    F: FnOnce(&mut W, Option<&mut Graphics>, &mut Colors) -> io::Result<()>,
+    F: FnOnce(&mut W, Option<&mut Graphics>, &mut SceneTheme) -> io::Result<()>,
   {
     if self.error.is_none() {
       self.error =
@@ -135,33 +137,34 @@ impl<W: Write> Surface<'_> for Painter<'_, W> {
   }
 }
 
-fn resolve(paint: Paint, theme: Colors) -> [u8; 4] {
+fn resolve(
+  paint: Paint,
+  SceneTheme { colors: theme, opacity }: SceneTheme,
+) -> [u8; 4] {
   let theme = match theme {
-    Colors::Terminal => Colors::Palette(
-      crate::caps::get().map_or_default(crate::caps::Caps::palette),
-    ),
+    Colors::Terminal => Colors::Palette(crate::caps::palette()),
     theme @ Colors::Palette(_) => theme,
   };
-  paint.resolve(theme)
+  paint.resolve(theme, opacity)
 }
 
 fn command(
   out: &mut impl Write,
   op: &Op<'_>,
   mut graphics: Option<&mut Graphics>,
-  theme: &mut Colors,
+  theme: &mut SceneTheme,
 ) -> io::Result<()> {
   match op {
     Op::Theme(selected) => {
-      *theme = *selected;
-      crate::style::write(out, vpdf_model::style::Role::Reset, *theme)?;
+      *theme = **selected;
+      crate::style::write(out, vpdf_model::style::Role::Reset, theme.colors)?;
     }
     Op::Move { column, row } => {
       let row = position(*row)?;
       let column = position(*column)?;
       write!(out, "\x1b[{row};{column}H")?;
     }
-    Op::Style(role) => crate::style::write(out, *role, *theme)?,
+    Op::Style(role) => crate::style::write(out, *role, theme.colors)?,
     Op::Text(text) => out.write_all(text.as_str().as_bytes())?,
     Op::Character(character) => {
       let mut bytes = [0; 4];
@@ -327,6 +330,7 @@ mod tests {
   use vpdf_model::geometry::Screen;
   use vpdf_model::scene::Text;
   use vpdf_model::style::Role;
+  use vpdf_model::theme::Opacity;
 
   /// Every transport, crop, and offset combination.
   fn profiles() -> impl Iterator<Item = crate::graphics::Presentation> {
@@ -346,9 +350,18 @@ mod tests {
       Colors::Palette(Palette::light()),
       Colors::Palette(Palette::dark()),
     ] {
-      let preview = resolve(Paint::Overlay(Overlay::Preview), theme);
+      let preview = resolve(
+        Paint::Overlay(Overlay::Preview),
+        SceneTheme { colors: theme, opacity: Opacity::default() },
+      );
       assert_eq!(preview[..3], theme.palette().background);
-      assert_eq!(resolve([1, 2, 3, 4].into(), theme), [1, 2, 3, 4]);
+      assert_eq!(
+        resolve(
+          [1, 2, 3, 4].into(),
+          SceneTheme { colors: theme, opacity: Opacity::default() }
+        ),
+        [1, 2, 3, 4]
+      );
     }
   }
 

@@ -1380,7 +1380,7 @@ fn config_reload_reaches_inactive_panes() -> Result<()> {
     concat!(
       "[appearance]\ntheme = 'dark'\n",
       "[reading]\nzoom = 4\ncursorline = false\n",
-      "inactive_brightness = 0.4\n[ocr]\nlanguage = 'vie'",
+      "[appearance.opacity]\ninactive = 0.4\n[ocr]\nlanguage = 'vie'",
     ),
   )?;
   session.reload_config();
@@ -1392,7 +1392,7 @@ fn config_reload_reaches_inactive_panes() -> Result<()> {
         &crate::config::ThemeChoice::Builtin(vpdf_model::theme::Theme::Dark)
       );
       assert_eq!(app.settings.zoom(), 4.0);
-      assert_eq!(app.settings.inactive_brightness(), 0.4);
+      assert_eq!(app.settings.opacity().inactive.unwrap().get(), 0.4);
       assert_eq!(app.settings.language(), "vie");
       assert_eq!(app.layout.zoom(), 3.0);
       assert!(app.cursorline);
@@ -1470,9 +1470,9 @@ fn prompt_remaps_and_reload_preserve_editing() -> Result<()> {
   session.interact(key(KeyCode::Char('a'), KeyModifiers::SUPER))?;
   session.interact(key(KeyCode::Char('x'), KeyModifiers::NONE))?;
   assert_eq!(session.app().overlays.prompt().unwrap().text(), "xabc!");
-  std::fs::write(&config, "[reading]\ninactive_brightness = 0.3")?;
+  std::fs::write(&config, "[appearance.opacity]\ninactive = 0.3")?;
   session.interact(key(KeyCode::Char('r'), KeyModifiers::SUPER))?;
-  assert_eq!(session.app().settings.inactive_brightness(), 0.3);
+  assert_eq!(session.app().settings.opacity().inactive.unwrap().get(), 0.3);
   assert_eq!(session.app().overlays.prompt().unwrap().text(), "xabc!");
   session.interact(key(KeyCode::Char('a'), KeyModifiers::CONTROL))?;
   session.interact(key(KeyCode::Char('y'), KeyModifiers::NONE))?;
@@ -1530,7 +1530,7 @@ fn theme_reload_preserves_real_raster() -> Result<()> {
     let colors = session.settings.colors(vpdf_model::theme::Colors::Terminal);
     let has_theme = scene
       .iter()
-      .any(|op| matches!(op, Op::Theme(selected) if *selected == colors));
+      .any(|op| matches!(op, Op::Theme(selected) if selected.colors == colors));
     assert_eq!(has_theme, theme != Theme::System);
   }
   Ok(())

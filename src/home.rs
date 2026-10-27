@@ -32,7 +32,6 @@ pub struct Home {
   pub view: vpdf_ui::home::Home,
   loader: Loader,
   graphics: Graphics,
-  theme: vpdf_model::theme::Colors,
   settings: crate::config::Settings,
 }
 
@@ -66,7 +65,6 @@ impl Home {
       view,
       loader: Loader::new("", wake),
       graphics: Graphics::live(),
-      theme: vpdf_model::theme::Colors::Terminal,
       settings: crate::config::Settings::default(),
     }
   }
@@ -81,7 +79,6 @@ impl Home {
 
   pub(crate) fn configure(&mut self, settings: &crate::config::Settings) {
     self.settings = settings.clone();
-    self.theme = settings.colors(vpdf_model::theme::Colors::Terminal);
     self.view.set_bindings(settings.bindings().clone());
   }
 
@@ -93,15 +90,17 @@ impl Home {
     &mut self,
     scene: &mut S,
   ) -> std::result::Result<(), S::Error> {
-    if self.theme != vpdf_model::theme::Colors::Terminal {
-      vpdf_model::scene::Draw::push(
-        scene,
-        vpdf_model::scene::Op::Theme(self.theme),
-      );
-    }
-    self
-      .view
-      .scene(scene, crate::state::now(), |cards| self.loader.request(cards))
+    Self::scene_view(&mut self.view, &mut self.loader, &self.settings, scene)
+  }
+
+  fn scene_view<'a, S: vpdf_model::scene::Surface<'a>>(
+    view: &mut vpdf_ui::home::Home,
+    loader: &mut Loader,
+    settings: &crate::config::Settings,
+    scene: &mut S,
+  ) -> std::result::Result<(), S::Error> {
+    settings.scene_theme(scene, vpdf_model::theme::Colors::Terminal);
+    view.scene(scene, crate::state::now(), |cards| loader.request(cards))
   }
 
   pub fn draw(&mut self, out: &mut impl Write) -> Result<()> {
@@ -109,15 +108,7 @@ impl Home {
     self.updates();
     self.graphics.begin(out)?;
     crate::presentation::draw(out, Some(&mut self.graphics), |scene| {
-      if self.theme != vpdf_model::theme::Colors::Terminal {
-        vpdf_model::scene::Draw::push(
-          scene,
-          vpdf_model::scene::Op::Theme(self.theme),
-        );
-      }
-      self
-        .view
-        .scene(scene, crate::state::now(), |cards| self.loader.request(cards))
+      Self::scene_view(&mut self.view, &mut self.loader, &self.settings, scene)
     })??;
     self.graphics.end(out)?;
     write!(out, "{}", terminal::frame_end())?;

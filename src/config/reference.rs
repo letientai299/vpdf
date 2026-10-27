@@ -9,6 +9,19 @@ pub(super) struct Resolved {
   pub warnings: Vec<String>,
 }
 
+impl Resolved {
+  pub fn inherit(&mut self, previous: &Self, section: &str) {
+    let prefix = format!("{section}.");
+    self.sources.extend(
+      previous
+        .sources
+        .iter()
+        .filter(|(name, _)| name.starts_with(&prefix))
+        .map(|(name, source)| (name.clone(), source.clone())),
+    );
+  }
+}
+
 impl Settings {
   pub fn help_reference(
     &self,
@@ -34,6 +47,15 @@ impl Settings {
         serde_json::to_value(&self.appearance),
       ),
       (
+        "appearance.opacity",
+        serde_json::to_value(
+          defaults.opacity().values().collect::<BTreeMap<_, _>>(),
+        ),
+        serde_json::to_value(
+          self.opacity().values().collect::<BTreeMap<_, _>>(),
+        ),
+      ),
+      (
         "reading",
         serde_json::to_value(&defaults.reading),
         serde_json::to_value(&self.reading),
@@ -47,21 +69,24 @@ impl Settings {
     let mut settings = Vec::new();
     for (section, defaults, effective) in sections {
       let defaults = defaults.unwrap_or_default();
-      if let Some(table) = effective.unwrap_or_default().as_object() {
-        for (key, value) in table {
-          let name = format!("{section}.{key}");
-          settings.push(Setting {
-            source: self
-              .reference
-              .sources
-              .get(&name)
-              .cloned()
-              .unwrap_or_default(),
-            name,
-            default: defaults[key].clone(),
-            effective: value.clone(),
-          });
-        }
+      let effective = effective.unwrap_or_default();
+      let Some(table) = effective.as_object() else { continue };
+      for (key, value) in table
+        .iter()
+        .filter(|(key, _)| section != "appearance" || key.as_str() != "opacity")
+      {
+        let name = format!("{section}.{key}");
+        settings.push(Setting {
+          source: self
+            .reference
+            .sources
+            .get(&name)
+            .cloned()
+            .unwrap_or_default(),
+          name,
+          default: defaults[key].clone(),
+          effective: value.clone(),
+        });
       }
     }
     Configuration {

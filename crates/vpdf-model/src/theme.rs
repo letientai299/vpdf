@@ -1,4 +1,6 @@
+mod opacity;
 mod overlay;
+pub use opacity::{Opacity, UnitInterval};
 mod palette;
 use crate::style::{
   Attribute, ColorChange, Role, StyleChange, StylePatch, Tone,

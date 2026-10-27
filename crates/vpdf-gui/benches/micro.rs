@@ -36,7 +36,10 @@ enum Rows {
 fn frame(rows: Rows) -> Frame {
   let owner = TileOwner::new(1);
   let stage = Stage { screen: SCREEN, left: 0 };
-  let mut scene = vec![Op::Theme(Colors::Terminal), Op::Style(Role::Reset)];
+  let mut scene = vec![
+    Op::theme(Colors::Terminal, vpdf_model::theme::Opacity::default()),
+    Op::Style(Role::Reset),
+  ];
   let line = "The quick brown fox jumps over the lazy dog. ".repeat(4);
   let fill = match rows {
     Rows::Status => None,
