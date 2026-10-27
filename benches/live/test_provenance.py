@@ -34,3 +34,23 @@ class ProvenanceTests(unittest.TestCase):
                 return_value=Mock(returncode=1, stdout=""),
             ):
                 self.assertIsNone(checkout(".")["runtime_checkout_dirty"])
+
+    def test_explained_build_identity(self):
+        for dirty, expected in [
+            ("true", True),
+            ("false", False),
+            ("unknown", None),
+        ]:
+            with self.subTest(dirty=dirty):
+                self.assertEqual(
+                    embedded(
+                        "Source revision: abc\nGit commit used for this build.\n"
+                        f"Local changes: {dirty}\nSource patch: def\n"
+                        "Help assets: fingerprint\n"
+                    ),
+                    dict(revision="abc", dirty=expected, patch="def"),
+                )
+        self.assertEqual(
+            embedded("Source revision: unknown\nLocal changes: unknown\n"),
+            dict(revision=None, dirty=None, patch=None),
+        )

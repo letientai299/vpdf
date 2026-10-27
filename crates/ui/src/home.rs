@@ -25,6 +25,7 @@ use vpdf_model::style::Role;
 pub enum Effect {
   Stay,
   Open(PathBuf),
+  OpenUri(String),
   Forget(Vec<PathBuf>),
   Quit,
   Command(String),
@@ -458,6 +459,9 @@ impl Home {
             Some(Dispatch::Command(command)) => {
               return Ok(Effect::Command(command));
             }
+            Some(Dispatch::Input(input)) if input.action == Action::Follow => {
+              return Ok(info_link(info));
+            }
             Some(Dispatch::Input(input))
               if info.navigate(input, usize::from(self.screen.rows)) =>
             {
@@ -499,7 +503,9 @@ impl Home {
           return Ok(Effect::Stay);
         };
         if let Some(info) = &mut self.info {
-          info.pointer(mouse);
+          if info.pointer(mouse).is_some() {
+            return Ok(info_link(info));
+          }
           return Ok(Effect::Stay);
         }
         Ok(match self.panel.pointer(mouse) {
@@ -625,9 +631,38 @@ impl Home {
   }
 }
 
+fn info_link(info: &Panel) -> Effect {
+  match info.rows().get(info.selected()).map(|row| &row.destination) {
+    Some(Destination::Link(vpdf_model::document::Target::Uri(uri))) => {
+      Effect::OpenUri(uri.clone())
+    }
+    _ => Effect::Stay,
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn version_links_open_from_home() -> Result<()> {
+    use vpdf_model::input::{KeyCode, KeyModifiers};
+    let url = "https://example.com/commit/abc";
+    let mut home = Home::new(
+      Vec::new(),
+      &[],
+      crate::testing::screen::cells(80, 24),
+      Picker::Native,
+    );
+    home.show_info(crate::keys::PanelKind::Version, url);
+    let effect = home.event(
+      Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+      &mut History::default(),
+    )?;
+    assert_eq!(effect, Effect::OpenUri(url.into()));
+    assert!(home.info.is_some());
+    Ok(())
+  }
 
   #[test]
   fn version_scrolls_on_small_screens() -> Result<()> {

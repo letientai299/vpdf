@@ -152,6 +152,10 @@ impl Home {
     Ok(match self.view.event(event, history)? {
       Effect::Stay => Outcome::Stay,
       Effect::Open(path) => Outcome::Open(path),
+      Effect::OpenUri(uri) => {
+        crate::commands::open_uri(&uri)?;
+        Outcome::Stay
+      }
       Effect::Forget(paths) => Outcome::Forget(paths),
       Effect::Quit => Outcome::Quit,
       Effect::Command(line) => return self.command(&line, terminal),

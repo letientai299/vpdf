@@ -143,7 +143,7 @@ class AppTests(unittest.TestCase):
         self.assertIn("https://github.com/letientai299/vpdf", lines)
         self.assertTrue(lines[0].startswith("Vpdf:"))
         self.assertTrue(lines[-1].startswith("vpdf-gui "))
-        self.assertRegex(version, r"(?m)^help-assets [0-9a-f]{64}$")
+        self.assertRegex(version, r"(?m)^Help assets: [0-9a-f]{64}$")
         notices = (app / "Contents/Resources/font-notices.txt").read_text()
         for path in (ROOT / "scripts/help/notices").glob("*.txt"):
             self.assertIn(path.read_text(), notices)

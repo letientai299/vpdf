@@ -34,7 +34,8 @@ impl Identity {
 
 impl Integration {
   pub fn invoke_menu(&self, title: &str) {
-    for root in &self.roots {
+    let application = self.menu.itemAtIndex(0);
+    for root in application.iter().chain(&self.roots) {
       let Some(menu) = root.submenu() else { continue };
       let found = (0..menu.numberOfItems()).find(|&index| {
         menu

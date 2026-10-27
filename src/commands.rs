@@ -647,21 +647,7 @@ impl App {
       }
       Target::Uri(uri) => uri,
     };
-    let Some(uri) = openable(uri) else {
-      anyhow::bail!("Unsupported link scheme");
-    };
-    let executable =
-      if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
-    let mut child = Command::new(executable)
-      .arg(uri)
-      .stdin(Stdio::null())
-      .stdout(Stdio::null())
-      .stderr(Stdio::null())
-      .spawn()?;
-    std::thread::spawn(move || {
-      let _ = child.wait();
-    });
-    Ok(())
+    open_uri(uri)
   }
 
   /// Goes to a page target, describing the jump.
@@ -716,6 +702,23 @@ fn openable(uri: &str) -> Option<&str> {
     return Some(uri);
   }
   uri.starts_with("mailto:").then(|| uri.split('?').next().unwrap_or(uri))
+}
+
+pub(crate) fn open_uri(uri: &str) -> Result<()> {
+  let Some(uri) = openable(uri) else {
+    anyhow::bail!("Unsupported link scheme");
+  };
+  let executable = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+  let mut child = Command::new(executable)
+    .arg(uri)
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .spawn()?;
+  std::thread::spawn(move || {
+    let _ = child.wait();
+  });
+  Ok(())
 }
 
 #[cfg(test)]
@@ -865,7 +868,10 @@ mod tests {
       let panel = &app.panel.as_ref().expect("version panel").view;
       assert_eq!(panel.kind(), PanelKind::Version);
       let text = crate::version::panel_text(terminal);
-      let lines = text.lines().map(|line| line.trim_start_matches("# "));
+      let lines = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| line.trim_start_matches("# "));
       assert_eq!(
         panel.rows().iter().map(|row| row.label.as_str()).collect::<Vec<_>>(),
         lines.collect::<Vec<_>>()

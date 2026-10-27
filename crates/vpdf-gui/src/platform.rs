@@ -41,7 +41,7 @@ impl Native {
         responder: entry.item.responder,
       })
       .collect();
-    let integration = vpdf_macos::Integration::install(
+    let mut integration = vpdf_macos::Integration::install(
       cc,
       &entries,
       &tools(),
@@ -69,6 +69,12 @@ impl Native {
         }
       },
     )?;
+    integration.set_about(vpdf_macos::About {
+      version: vpdf::version::BUILD,
+      description: vpdf::version::DESCRIPTION,
+      repository: vpdf::version::REPOSITORY,
+      build: &vpdf::version::build_details(),
+    });
     let _ = restore.set(Box::new(integration.restorer()));
     documents.set_wake(integration.deferrer());
     Some(Self { integration, snapshot, inputs, context })

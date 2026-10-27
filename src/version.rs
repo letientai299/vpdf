@@ -1,7 +1,13 @@
+use std::fmt::Write as _;
 use std::io::{self, Write};
 
 pub const ABOUT: &str =
   concat!(env!("CARGO_PKG_DESCRIPTION"), "\n", env!("CARGO_PKG_REPOSITORY"));
+pub const DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
+pub const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
+const REVISION: &str = env!("VPDF_SOURCE_REVISION");
+const DIRTY: &str = env!("VPDF_SOURCE_DIRTY");
+const PATCH: &str = env!("VPDF_SOURCE_PATCH");
 
 pub const BUILD: &str = if cfg!(feature = "bench-events") {
   concat!(env!("VPDF_VERSION"), " [bench-events]")
@@ -10,15 +16,13 @@ pub const BUILD: &str = if cfg!(feature = "bench-events") {
 };
 
 pub fn text(terminal: bool) -> String {
-  let [source, help] = build();
-  format!("{ABOUT}\n{source}\n{help}\n{}", name(terminal))
+  format!("{ABOUT}\n\n{}\n\n{}", build_details(), name(terminal))
 }
 
 /// The panel's text: the name and summary, then a `# Build` section.
 pub fn panel_text(terminal: bool) -> String {
-  let [source, help] = build();
   let build = vpdf_ui::panel::BUILD;
-  format!("{}\n{ABOUT}\n# {build}\n{source}\n{help}", name(terminal))
+  format!("{}\n{ABOUT}\n# {build}\n{}", name(terminal), build_details())
 }
 
 fn name(terminal: bool) -> String {
@@ -26,16 +30,39 @@ fn name(terminal: bool) -> String {
   format!("{name} {BUILD}")
 }
 
-/// Source and help asset identities.
-fn build() -> [String; 2] {
-  let revision = env!("VPDF_SOURCE_REVISION");
-  let dirty = env!("VPDF_SOURCE_DIRTY");
-  let patch = env!("VPDF_SOURCE_PATCH");
-  let help = crate::manual::identity();
-  [
-    format!("build-source {revision} {dirty} {patch}"),
-    format!("help-assets {help}"),
-  ]
+pub fn build_details() -> String {
+  details(REVISION, DIRTY, PATCH, &crate::manual::identity())
+}
+
+fn details(revision: &str, dirty: &str, patch: &str, help: &str) -> String {
+  let source = match dirty {
+    "true" => "Includes uncommitted changes; links show the base commit.",
+    "false" => "Built from an unmodified source tree.",
+    _ => "Source tree status is unavailable.",
+  };
+  let mut text = format!(
+    "Source revision: {revision}\n\
+     Git commit used to build this executable.\n"
+  );
+  if revision != "unknown" {
+    writeln!(text, "{REPOSITORY}/commit/{revision}").unwrap();
+  }
+  write!(
+    text,
+    "\nLocal changes: {dirty}\n{source}\n\n\
+     Source patch: {patch}\n\
+     Git blob hash of the local source changes.\n\
+     Local fingerprint; cannot open as a GitHub commit.\n\n\
+     Help assets: {help}\n\
+     SHA-256 of help inputs and generated reference metadata.\n\
+     Identifies bundled help; this is not a Git commit."
+  )
+  .unwrap();
+  if revision != "unknown" {
+    write!(text, "\n{REPOSITORY}/blob/{revision}/scripts/help_assets.py")
+      .unwrap();
+  }
+  text
 }
 
 pub fn parse<T: clap::Parser>(terminal: bool) -> T {
@@ -53,5 +80,34 @@ pub fn parse<T: clap::Parser>(terminal: bool) -> T {
       std::process::exit(code);
     }
     Err(error) => error.exit(),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  #[test]
+  fn diagnostics_match_frontends() {
+    let details = super::build_details();
+    for terminal in [true, false] {
+      assert!(super::text(terminal).contains(&details));
+      assert!(super::panel_text(terminal).contains(&details));
+    }
+  }
+
+  #[test]
+  fn source_links_respect_provenance() {
+    for (dirty, explanation) in [
+      ("true", "Includes uncommitted changes"),
+      ("false", "unmodified source tree"),
+      ("unknown", "status is unavailable"),
+    ] {
+      let text = super::details("abc123", dirty, "patch", "help");
+      assert!(text.contains(explanation));
+      assert!(text.contains("/commit/abc123"));
+      assert!(text.contains("/blob/abc123/scripts/help_assets.py"));
+    }
+    let text = super::details("unknown", "unknown", "unknown", "help");
+    assert!(!text.contains("/commit/"));
+    assert!(!text.contains("/blob/"));
   }
 }

@@ -4,6 +4,21 @@ import subprocess
 
 
 def embedded(version):
+    fields = dict(
+        line.split(": ", 1) for line in version.splitlines() if ": " in line
+    )
+    if "Source revision" in fields:
+        return dict(
+            revision=fields["Source revision"]
+            if fields["Source revision"] != "unknown"
+            else None,
+            dirty={"true": True, "false": False}.get(
+                fields.get("Local changes")
+            ),
+            patch=fields.get("Source patch")
+            if fields.get("Source patch") != "unknown"
+            else None,
+        )
     for line in version.splitlines():
         words = line.split()
         if len(words) == 4 and words[0] == "build-source":

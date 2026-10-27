@@ -1,3 +1,5 @@
+#[cfg(target_os = "macos")]
+mod about;
 pub mod display;
 #[cfg(target_os = "macos")]
 mod integration;

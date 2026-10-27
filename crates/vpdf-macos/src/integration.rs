@@ -1,4 +1,5 @@
 //! Main-thread menu and window-sheet adapter.
+pub use crate::about::About;
 use crate::placement;
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -9,7 +10,7 @@ use objc2::{
 use objc2_app_kit::{
   NSApplication, NSControl, NSControlTextEditingDelegate, NSDocumentController,
   NSEventModifierFlags, NSMenu, NSMenuDelegate, NSMenuItem, NSModalResponseOK,
-  NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSScreen,
+  NSOpenPanel, NSPanel, NSPasteboard, NSPasteboardTypeString, NSScreen,
   NSTextFieldDelegate, NSTextView, NSToolbar, NSToolbarDelegate, NSToolbarItem,
   NSView, NSWindow, NSWorkspace, NSWorkspaceOpenConfiguration,
 };
@@ -45,6 +46,7 @@ struct Callback {
   entries: RefCell<Vec<Entry>>,
   bar: OnceCell<toolbar::Bar>,
   toggle: OnceCell<Retained<NSMenuItem>>,
+  about: OnceCell<Retained<NSPanel>>,
 }
 
 struct Entry {
@@ -63,6 +65,21 @@ define_class!(
   // SAFETY: NSObjectProtocol adds no subclass invariants.
   unsafe impl NSObjectProtocol for Handler {}
   impl Handler {
+    // SAFETY: The About menu supplies its sender.
+    #[unsafe(method(showAbout:))]
+    fn show_about(&self, _sender: &NSMenuItem) {
+      if let Some(panel) = self.ivars().about.get() {
+        if !panel.isVisible() {
+          panel.center();
+        }
+        if NSApplication::sharedApplication(self.mtm()).isActive() {
+          panel.makeKeyAndOrderFront(None);
+        } else {
+          panel.orderFront(None);
+        }
+      }
+    }
+
     // SAFETY: These items supply their sender.
     #[unsafe(method(openReader:))]
     fn open(&self, sender: &NSMenuItem) {
@@ -290,6 +307,7 @@ pub struct Integration {
   handler: Retained<Handler>,
   window: Retained<NSWindow>,
   menu: Retained<NSMenu>,
+  about: Option<Retained<NSMenuItem>>,
   roots: Vec<Retained<NSMenuItem>>,
   /// Items added to the application menu.
   extras: Vec<Retained<NSMenuItem>>,
@@ -337,6 +355,7 @@ impl Integration {
       entries: RefCell::default(),
       bar: OnceCell::new(),
       toggle: OnceCell::new(),
+      about: OnceCell::new(),
     });
     // SAFETY: NSObject initializes our retained subclass.
     let handler: Retained<Handler> =
@@ -463,6 +482,7 @@ impl Integration {
       handler,
       window,
       menu,
+      about: None,
       roots,
       extras,
       items,
@@ -475,6 +495,28 @@ impl Integration {
       #[cfg(feature = "bench-events")]
       identity,
     })
+  }
+
+  pub fn set_about(&mut self, about: About<'_>) {
+    let Some(menu) = self.menu.itemAtIndex(0).and_then(|i| i.submenu()) else {
+      return;
+    };
+    let item = menu
+      .itemArray()
+      .iter()
+      .find(|item| item.action() == Some(sel!(orderFrontStandardAboutPanel:)));
+    let Some(item) = item else { return };
+    let _ = self
+      .handler
+      .ivars()
+      .about
+      .set(crate::about::panel(&about, self.handler.mtm()));
+    // SAFETY: Integration retains the action target.
+    unsafe {
+      item.setTarget(Some(&self.handler));
+      item.setAction(Some(sel!(showAbout:)));
+    }
+    self.about = Some(item);
   }
 
   /// Enables each entry by index, with the controls that show it.
@@ -701,6 +743,16 @@ fn restore_frame(window: &NSWindow, mtm: MainThreadMarker) {
 
 impl Drop for Integration {
   fn drop(&mut self) {
+    if let Some(panel) = self.handler.ivars().about.get() {
+      panel.close();
+    }
+    if let Some(item) = &self.about {
+      // SAFETY: Restore AppKit's standard responder-chain action.
+      unsafe {
+        item.setTarget(None);
+        item.setAction(Some(sel!(orderFrontStandardAboutPanel:)));
+      }
+    }
     self.alive.set(false);
     // SAFETY: NSObject's class method takes any target.
     let () = unsafe {

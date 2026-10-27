@@ -271,6 +271,17 @@ fn version_has_no_current_line() {
 }
 
 #[test]
+fn version_sections_follow_urls() {
+  let url = "https://example.com/commit/abc";
+  let rows = Row::sections(&format!("Reader\n# Build\n{url}"));
+  assert!(rows[2].destination == Destination::Link(Target::Uri(url.into())));
+  assert_eq!(rows[2].depth, 1);
+  assert!(
+    Row::parse("See https://example.com").destination == Destination::None
+  );
+}
+
+#[test]
 fn sections_group_under_headings_with_default_folds() {
   let text = [
     "paper.pdf",

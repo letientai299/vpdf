@@ -43,7 +43,14 @@ impl Row {
       Style::Plain
     };
     let label = line.strip_prefix("# ").unwrap_or(line).to_owned();
-    Self { style, ..Self::new(label, String::new(), Destination::None) }
+    let destination = if line.starts_with("https://")
+      && !line.chars().any(char::is_whitespace)
+    {
+      Destination::Link(super::Target::Uri(line.to_owned()))
+    } else {
+      Destination::None
+    };
+    Self { style, ..Self::new(label, String::new(), destination) }
   }
 }
 

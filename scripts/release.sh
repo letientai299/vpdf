@@ -3,7 +3,7 @@ set -eu
 build_dir="${CARGO_TARGET_DIR:-target}"
 help_assets=$(python3 -B scripts/help_assets.py --check)
 fingerprint=$(basename "$help_assets")
-"$build_dir/release/vpdf" --version | grep -Fx "help-assets $fingerprint"
+"$build_dir/release/vpdf" --version | grep -Fx "Help assets: $fingerprint"
 release_dir="$build_dir/dist"
 mkdir -p "$release_dir"
 staged=$(mktemp -d "$release_dir/.release.XXXXXX")
