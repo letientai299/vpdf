@@ -14,6 +14,7 @@ bench-events = ["vpdf/bench-events", "vpdf-macos/bench-events"]
 [dependencies]
 vpdf = { path = "../.." }
 vpdf-model.workspace = true
+vpdf-macos = { path = "../vpdf-macos" }
 eframe = { version = "0.37", default-features = false, features = [
   "default_fonts",
   "clipboard",
@@ -28,7 +29,6 @@ clap.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-vpdf-macos = { path = "../vpdf-macos" }
 fmv-macos-events = "0.1"
 font-kit.workspace = true
 winit = { version = "0.30", default-features = false }

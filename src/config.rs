@@ -72,6 +72,7 @@ impl PartialEq for Settings {
 struct Appearance {
   theme: ThemeChoice,
   ascii_glyphs: bool,
+  ui_font_size: FontSize,
   opacity: Opacity,
 }
 
@@ -132,7 +133,32 @@ impl TryFrom<String> for Language {
   }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+struct FontSize(u16);
+
+impl Default for FontSize {
+  fn default() -> Self {
+    Self(16)
+  }
+}
+
+impl TryFrom<i64> for FontSize {
+  type Error = &'static str;
+  fn try_from(value: i64) -> Result<Self, Self::Error> {
+    if (10..=32).contains(&value) {
+      Ok(Self(value as u16))
+    } else {
+      Err("UI font size outside supported range")
+    }
+  }
+}
+
 impl Settings {
+  pub fn ui_font_size(&self) -> f32 {
+    f32::from(self.appearance.ui_font_size.0)
+  }
+
   pub fn colors(&self, system: Colors) -> Colors {
     self.appearance.theme.colors(system)
   }
@@ -188,6 +214,14 @@ impl Settings {
       .map_err(str::to_owned);
     }
     match name {
+      "appearance.ui_font_size" => replace_setting(
+        &mut self.appearance.ui_font_size,
+        &previous.appearance.ui_font_size,
+        value
+          .as_integer()
+          .ok_or("expected integer")
+          .and_then(FontSize::try_from),
+      ),
       "appearance.ascii_glyphs" => replace_setting(
         &mut self.appearance.ascii_glyphs,
         &previous.appearance.ascii_glyphs,

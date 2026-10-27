@@ -1,4 +1,5 @@
 use crate::input::Preedit;
+use crate::preferences::Display;
 use crate::style::Style;
 use eframe::egui::{
   self, Color32, FontId, Painter, Pos2, Rect, TextureHandle, TextureOptions,
@@ -54,6 +55,7 @@ pub struct Renderer {
   /// Tiles of the last paint.
   pub coverage: Coverage,
   grid: Grid,
+  display: Display,
 }
 
 impl Default for Renderer {
@@ -65,11 +67,15 @@ impl Default for Renderer {
       upload_bytes: 0,
       coverage: Coverage::default(),
       grid: Grid::default(),
+      display: Display::default(),
     }
   }
 }
 
 impl Renderer {
+  pub fn display(&mut self, display: Display) {
+    self.display = display;
+  }
   pub fn staging_capacity(&self) -> usize {
     self.uploads.as_ref().map_or(0, crate::upload::Uploads::capacity)
   }
@@ -149,16 +155,17 @@ impl Renderer {
       coverage.stand_in_pixels += covered;
       coverage.missing_pixels += area - covered;
     }
-    fills(painter, &frame.scene, Layer::BelowText, scale);
+    fills(painter, &frame.scene, Layer::BelowText, scale, self.display);
     let cells = &mut self.grid;
     cells.reset(screen);
     for op in &frame.scene {
       cells.op(op);
     }
     cells.compose(preedit);
-    cells.paint(painter, screen, scale);
+    cells.accommodate(self.display);
+    cells.paint(painter, screen, scale, frame.ui_font_size);
     let ime = cells.ime(screen, scale);
-    fills(painter, &frame.scene, Layer::AboveText, scale);
+    fills(painter, &frame.scene, Layer::AboveText, scale, self.display);
     for op in &frame.scene {
       let Op::Picture(picture) = op else { continue };
       let image = picture.image();
@@ -355,7 +362,13 @@ fn clip(stage: Stage, scale: f32) -> Rect {
   )
 }
 
-fn fills(painter: &Painter, scene: &[Op<'_>], layer: Layer, scale: f32) {
+fn fills(
+  painter: &Painter,
+  scene: &[Op<'_>],
+  layer: Layer,
+  scale: f32,
+  display: Display,
+) {
   let mut theme = Colors::Terminal;
   let mut opacity = Opacity::default();
   for op in scene {
@@ -378,27 +391,54 @@ fn fills(painter: &Painter, scene: &[Op<'_>], layer: Layer, scale: f32) {
     let color =
       Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);
     let painter = painter.with_clip_rect(clip(stage, scale));
+    let cue = matches!(
+      fill.color(),
+      vpdf_model::theme::Paint::Overlay(
+        Overlay::Selection
+          | Overlay::Cursor
+          | Overlay::Ring
+          | Overlay::RingHover
+      )
+    );
+    let stroke = if cue {
+      egui::Stroke::new(
+        if display.contrast { 2.0 } else { 1.0 },
+        Color32::BLACK,
+      )
+    } else {
+      egui::Stroke::NONE
+    };
     if let Op::Polygon(polygon) = op {
       let bounds = polygon.clip();
       let clip = Rect::from_min_max(
         point((bounds.x0, bounds.y0)),
         point((bounds.x1, bounds.y1)),
       );
-      painter.with_clip_rect(clip).add(egui::Shape::convex_polygon(
-        polygon.quad().0.map(point).to_vec(),
-        color,
-        egui::Stroke::NONE,
-      ));
+      let painter = painter.with_clip_rect(clip);
+      let points = polygon.quad().0.map(point).to_vec();
+      if cue {
+        painter.add(egui::Shape::closed_line(
+          points.clone(),
+          (stroke.width + 2.0, Color32::WHITE),
+        ));
+      }
+      painter.add(egui::Shape::convex_polygon(points, color, stroke));
     } else {
       let bounds = fill.rect();
-      painter.rect_filled(
-        Rect::from_min_max(
-          point((bounds.x0, bounds.y0)),
-          point((bounds.x1, bounds.y1)),
-        ),
-        0.0,
-        color,
+      let rect = Rect::from_min_max(
+        point((bounds.x0, bounds.y0)),
+        point((bounds.x1, bounds.y1)),
       );
+      painter.rect_filled(rect, 0.0, color);
+      if cue {
+        painter.rect_stroke(
+          rect,
+          0.0,
+          (stroke.width + 2.0, Color32::WHITE),
+          egui::StrokeKind::Inside,
+        );
+        painter.rect_stroke(rect, 0.0, stroke, egui::StrokeKind::Inside);
+      }
     }
   }
 }
@@ -432,6 +472,7 @@ struct Grid {
   opacity: Opacity,
   visible: bool,
   masked: bool,
+  contrast: bool,
   input: std::ops::Range<usize>,
   previous: Option<usize>,
 }
@@ -594,7 +635,8 @@ impl Grid {
     }
     self.cells[first..first + width].iter_mut().for_each(Cell::clear);
     let style = self.style;
-    self.style = Style { underline: true, ..Style::new(self.theme) };
+    self.style = Style::new(self.theme);
+    self.style.underline = true;
     self.previous = None;
     let caret = preedit.active.as_ref().map_or(usize::MAX, |range| range.end);
     let mut cursor = None;
@@ -654,7 +696,26 @@ impl Grid {
       },
     )
   }
-  fn paint(&self, painter: &Painter, screen: Screen, scale: f32) {
+  fn accommodate(&mut self, display: Display) {
+    self.contrast = display.contrast;
+    for (row, dirty) in
+      self.cells.chunks_mut(self.columns.max(1)).zip(&self.dirty)
+    {
+      if !dirty {
+        continue;
+      }
+      for cell in row {
+        cell.style.accommodate(display, self.theme);
+      }
+    }
+  }
+  fn paint(
+    &self,
+    painter: &Painter,
+    screen: Screen,
+    scale: f32,
+    font_size: f32,
+  ) {
     let size =
       Vec2::new(f32::from(screen.cell_width), f32::from(screen.cell_height))
         / scale;
@@ -699,7 +760,7 @@ impl Grid {
         );
         continue;
       }
-      let font = FontId::monospace(FONT_SIZE);
+      let font = FontId::monospace(font_size);
       let galley = painter.layout_job(egui::text::LayoutJob::single_section(
         cell.text.clone(),
         egui::TextFormat {
@@ -733,7 +794,17 @@ impl Grid {
     if self.visible && self.cursor.0 < self.columns {
       let pos =
         Pos2::new(self.cursor.0 as f32 * size.x, self.cursor.1 as f32 * size.y);
-      painter.rect_filled(Rect::from_min_size(pos, size), 0.0, {
+      let rect = Rect::from_min_size(pos, size);
+      painter.rect_stroke(
+        rect,
+        0.0,
+        (
+          if self.contrast { 2.0 } else { 1.0 },
+          crate::style::rgb(self.theme.palette().foreground),
+        ),
+        egui::StrokeKind::Inside,
+      );
+      painter.rect_filled(rect, 0.0, {
         let [r, g, b, a] =
           Overlay::TextCursor.resolve(self.theme, self.opacity);
         Color32::from_rgba_unmultiplied(r, g, b, a)
@@ -758,6 +829,54 @@ mod tests {
   use vpdf_model::scene::Text;
 
   #[test]
+  fn text_scaling_keeps_coordinates() {
+    let ctx = egui::Context::default();
+    crate::fonts::install(&ctx);
+    for font_size in [10.0, 16.0, 24.0, 32.0] {
+      for scale in [1.0, 1.5, 2.0] {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+          let screen = crate::fonts::screen(
+            &ctx,
+            Vec2::new(240.0, 160.0),
+            font_size,
+            scale,
+          );
+          assert!(screen.width() <= 240.0 * scale);
+          assert!(screen.height() <= 160.0 * scale);
+          let mut grid = Grid::new(screen);
+          grid.op(&Op::Move { column: 1, row: 1 });
+          grid.op(&Op::InputArea { column: 1, columns: 4, masked: false });
+          grid.op(&Op::ShowCursor);
+          grid.compose(Some(&Preedit { text: "章".into(), active: None }));
+          let ime = grid.ime(screen, scale).unwrap();
+          let cell = Vec2::new(
+            f32::from(screen.cell_width),
+            f32::from(screen.cell_height),
+          ) / scale;
+          assert_eq!(ime.cursor_rect.min, egui::pos2(3.0 * cell.x, cell.y));
+          assert_eq!(ime.rect.width(), 4.0 * cell.x);
+          let pointer = ime.cursor_rect.min + cell * 0.5;
+          assert_eq!(
+            (
+              (pointer.x * scale) as u16 / screen.cell_width,
+              (pointer.y * scale) as u16 / screen.cell_height
+            ),
+            (3, 1)
+          );
+          grid.paint(ui.painter(), screen, scale, font_size);
+        });
+        assert!(
+          output
+            .shapes
+            .iter()
+            .any(|shape| matches!(shape.shape, egui::Shape::Text(_)))
+        );
+        output.textures_delta.clear();
+      }
+    }
+  }
+
+  #[test]
   fn progress_blocks_fill_cells() {
     let screen = crate::screen::pixels(16, 2, 11, 19);
     for scale in [1.0, 1.5, 2.0] {
@@ -766,7 +885,7 @@ mod tests {
       grid.op(&Op::Text(Text::new("██▉▊▋▌▍▎▏· 57%")));
       let ctx = egui::Context::default();
       let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-        grid.paint(ui.painter(), screen, scale);
+        grid.paint(ui.painter(), screen, scale, FONT_SIZE);
       });
       let meshes: Vec<_> = output
         .shapes
@@ -834,7 +953,14 @@ mod tests {
       let ctx = egui::Context::default();
       let mut output = ctx.run_ui(
         egui::RawInput { screen_rect: Some(bounds), ..Default::default() },
-        |ui| grid.paint(&ui.painter().with_clip_rect(bounds), screen, scale),
+        |ui| {
+          grid.paint(
+            &ui.painter().with_clip_rect(bounds),
+            screen,
+            scale,
+            FONT_SIZE,
+          );
+        },
       );
       let backgrounds: Vec<_> = output
         .shapes
@@ -870,6 +996,7 @@ mod tests {
       ui: Arc::default(),
       effects: Vec::new(),
       metrics: vpdf::session::native::Metrics::default(),
+      ui_font_size: FONT_SIZE,
       content: true,
       screen,
       scene: Vec::new(),
@@ -1368,8 +1495,8 @@ mod polygon_tests {
     scene.quad(quad, bounds, [20, 80, 160, 90], Layer::AboveText, stage);
     let ctx = egui::Context::default();
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-      fills(ui.painter(), &scene, Layer::BelowText, 2.0);
-      fills(ui.painter(), &scene, Layer::AboveText, 2.0);
+      fills(ui.painter(), &scene, Layer::BelowText, 2.0, Display::default());
+      fills(ui.painter(), &scene, Layer::AboveText, 2.0, Display::default());
     });
     output.textures_delta.clear();
     let polygons: Vec<_> = output

@@ -57,6 +57,18 @@ live view during window lookup. Sheet completion holds a weak panel reference,
 so retaining the callback cannot form a panel cycle. AppKit access remains on
 the main thread, enforced by retained main-thread-only types.
 
+## Display preferences
+
+The [display observer][display] reads workspace preferences on the main thread.
+The workspace notification wakes Egui without polling; dropping the observer
+removes its retained token. Reduce Motion settles pending scrolls on the session
+thread. Contrast changes affect interface text and overlay outlines, preserving
+PDF pixels and explicit theme backgrounds. The canvas stays opaque.
+
+UI text size uses configuration reload. Frames carry the requested font size;
+the frontend requests new cell geometry before painting the changed text.
+Clipboard and native effects still drain while geometry catches up.
+
 ## Verification
 
 Use the [development tasks][tasks] for package tests and combined validation.
@@ -75,3 +87,5 @@ scope. These menu and sheet probes make no accessibility claim.
 [adapter]: ../../crates/vpdf-macos/src/lib.rs
 [tasks]: ../../.config/mise.toml
 [sheet]: https://developer.apple.com/documentation/appkit/nssavepanel/beginsheetmodal(for:completionhandler:)
+
+[display]: ../../crates/vpdf-macos/src/display.rs

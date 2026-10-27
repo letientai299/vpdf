@@ -5,6 +5,7 @@ pub mod fonts;
 pub mod inject;
 pub mod input;
 pub mod paint;
+pub use vpdf_macos::display as preferences;
 #[cfg(target_os = "macos")]
 pub mod platform;
 #[cfg(test)]

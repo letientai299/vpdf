@@ -24,6 +24,8 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
   "std",
   "block2",
   "NSApplication",
+  "NSAccessibility",
+  "NSWorkspace",
   "NSMenu",
   "NSMenuItem",
   "NSResponder",
@@ -39,7 +41,11 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
   "std",
   "NSObject",
+  "NSNotification",
+  "NSOperation",
+  "block2",
   "NSString",
   "NSURL",
   "NSArray",
+  "NSEnumerator",
 ] }

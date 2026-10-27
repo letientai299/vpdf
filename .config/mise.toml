@@ -200,6 +200,7 @@ hide = true
 env.VPDF_CACHE = "off"
 depends = [
   "test:demo",
+  "test:display",
   "test:startup",
   "test:bench-report",
   "test:build-features",
@@ -443,3 +444,11 @@ run = "python3 -B -m unittest discover -s benches/live -p 'test_*.py'"
 hide = true
 description = "Test help invalidation and atomic publication"
 run = "python3 -B -m unittest discover -s scripts -p test_help_assets.py"
+
+[tasks."test:display"]
+description = "Verify macOS display notifications on the main thread"
+run = "python3 -B scripts/build_worker.py test:display"
+
+[tasks."_test:display"]
+hide = true
+run = "cargo run --locked -p vpdf-macos --example display-probe"

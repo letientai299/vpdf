@@ -90,6 +90,12 @@ impl Pane {
     self.tracking.animation.finish()
   }
 
+  pub fn settle_scroll(&mut self) -> bool {
+    let Some(target) = self.finish_scroll() else { return false };
+    self.reader.scroll = target;
+    true
+  }
+
   pub fn animate_to(&mut self, target: f32, now: std::time::Instant) {
     self.tracking.animation.start(target, now);
   }

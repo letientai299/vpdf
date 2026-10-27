@@ -2,6 +2,13 @@ use eframe::egui::Color32;
 use vpdf_model::style::{Attribute, ColorChange, Role, StyleChange};
 use vpdf_model::theme::Colors;
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Cue {
+  #[default]
+  None,
+  Selection,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Style {
   pub foreground: Color32,
@@ -9,6 +16,7 @@ pub struct Style {
   pub bold: bool,
   pub underline: bool,
   pub italic: bool,
+  cue: Cue,
 }
 
 impl Default for Style {
@@ -30,6 +38,33 @@ impl Style {
       bold: false,
       underline: false,
       italic: false,
+      cue: Cue::None,
+    }
+  }
+
+  pub fn accommodate(
+    &mut self,
+    display: crate::preferences::Display,
+    theme: Colors,
+  ) {
+    self.underline |= self.cue == Cue::Selection;
+    if !display.contrast {
+      return;
+    }
+    let fill =
+      self.background.unwrap_or_else(|| rgb(theme.palette().background));
+    let bytes = |color: Color32| {
+      let [r, g, b, _] = color.to_array();
+      [r, g, b]
+    };
+    if vpdf_model::theme::contrast(bytes(self.foreground), bytes(fill)) < 7.0 {
+      self.foreground = [Color32::BLACK, Color32::WHITE]
+        .into_iter()
+        .max_by(|a, b| {
+          vpdf_model::theme::contrast(bytes(*a), bytes(fill))
+            .total_cmp(&vpdf_model::theme::contrast(bytes(*b), bytes(fill)))
+        })
+        .unwrap();
     }
   }
 
@@ -42,6 +77,16 @@ impl Style {
       }
       StyleChange::Patch(patch) => patch,
     };
+    if matches!(
+      role,
+      Role::Selected
+        | Role::TabActive
+        | Role::Current
+        | Role::TextCursor
+        | Role::TextSelection
+    ) {
+      self.cue = Cue::Selection;
+    }
     match patch.foreground {
       ColorChange::Keep => {}
       ColorChange::Default => self.foreground = rgb(theme.palette().foreground),
@@ -74,6 +119,37 @@ impl Style {
 #[cfg(test)]
 mod tests {
   use super::*;
+  #[test]
+  fn accommodations_keep_theme_and_cues() {
+    for (_, palette) in shipped() {
+      let theme = Colors::Palette(palette);
+      for role in
+        [Role::Selected, Role::TabActive, Role::Current, Role::TextSelection]
+      {
+        let mut style = Style::new(theme);
+        style.apply(role, theme);
+        let original = style;
+        style.accommodate(crate::preferences::Display::default(), theme);
+        assert!(style.underline);
+        assert_eq!(style.foreground, original.foreground);
+        assert_eq!(style.background, original.background);
+        style.accommodate(
+          crate::preferences::Display { contrast: true, ..Default::default() },
+          theme,
+        );
+        let bytes = |color: Color32| {
+          let [r, g, b, _] = color.to_array();
+          [r, g, b]
+        };
+        let fill = style.background.unwrap_or_else(|| rgb(palette.background));
+        assert!(
+          vpdf_model::theme::contrast(bytes(style.foreground), bytes(fill))
+            >= 4.5
+        );
+      }
+    }
+  }
+
   #[test]
   fn named_roles_resolve_palette() {
     for theme in [

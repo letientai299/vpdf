@@ -22,6 +22,13 @@ const BUDGET: usize = 64 << 20;
 /// Inputs one frame takes beyond the first, so a stream cannot hold it.
 const BATCH: usize = 64;
 
+#[derive(Default, Eq, PartialEq)]
+pub(super) enum Motion {
+  #[default]
+  Full,
+  Reduced,
+}
+
 pub enum Input {
   Action(commands::Command),
   Picked {
@@ -43,6 +50,7 @@ pub enum Input {
   },
   Resize(Screen),
   SystemPalette(vpdf_model::theme::Palette),
+  ReduceMotion(bool),
   Key(KeyEvent),
   Paste(String),
   Mouse {
@@ -191,6 +199,7 @@ pub struct Frame {
   pub ui: Arc<commands::Snapshot>,
   pub effects: Vec<commands::Effect>,
   pub metrics: Metrics,
+  pub ui_font_size: f32,
   pub screen: Screen,
   pub scene: Scene<'static>,
   pub images: Vec<Image>,
@@ -519,7 +528,24 @@ fn picked_path(
   session.resume(operation, screen)
 }
 
+fn set_motion(session: &mut Session, reduce: bool) -> bool {
+  let motion = if reduce { Motion::Reduced } else { Motion::Full };
+  let changed = session.motion != motion;
+  session.motion = motion;
+  changed
+}
+
 fn animate(session: &mut Session, due: &mut Instant, now: Instant) -> bool {
+  if session.motion == Motion::Reduced {
+    *due = now;
+    let mut changed = false;
+    for tab in &mut session.tabs {
+      for app in &mut tab.panes {
+        changed |= app.reader.settle_scroll();
+      }
+    }
+    return changed;
+  }
   if !session.animating() {
     *due = now;
     return false;
@@ -648,6 +674,7 @@ fn apply_reader(
   }
   let applied = match input {
     Input::SystemPalette(palette) => Ok(session.set_system_palette(palette)),
+    Input::ReduceMotion(reduce) => Ok(set_motion(session, reduce)),
     Input::Resize(size) => {
       *screen = size;
       session.resize(size).map(|()| true)
@@ -985,6 +1012,7 @@ fn frame(
     ui: Arc::clone(&session.native.snapshot),
     effects: std::mem::take(&mut session.native.effects),
     metrics: frame_metrics(session, started, cache, &visible),
+    ui_font_size: session.settings.ui_font_size(),
     screen,
     scene,
     images,
@@ -1161,6 +1189,44 @@ mod tests {
     let (column, row) =
       (pixels.0 / screen.cell_width, pixels.1 / screen.cell_height);
     Input::Mouse { event: MouseEvent::new(kind, column, row), pixels, screen }
+  }
+
+  #[test]
+  fn reduced_motion_settles_navigation() -> Result<()> {
+    let mut screen = sized();
+    let (_root, _path, mut session) = opened(&["navigation"], screen)?;
+    let now = Instant::now();
+    let mut due = now + Duration::from_secs(1);
+    session.app().reader.animate_to(100.0, now);
+    assert!(apply(&mut session, Input::ReduceMotion(true), &mut screen));
+    assert!(!apply(&mut session, Input::ReduceMotion(true), &mut screen));
+    assert!(animate(&mut session, &mut due, now));
+    assert!(!session.app().reader.animation().active());
+    assert_eq!(session.app().reader.scroll, 100.0);
+    assert!(!animate(&mut session, &mut due, now));
+    assert!(apply(&mut session, Input::ReduceMotion(false), &mut screen));
+    session.app().reader.animate_to(200.0, now);
+    animate(&mut session, &mut due, now);
+    assert!(session.app().reader.animation().active());
+    Ok(())
+  }
+
+  #[test]
+  fn font_reload_updates_frame() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let config = super::super::tests::settings_file(directory.path());
+    let mut session = Session::configured(None, config);
+    let screen = sized();
+    ensure_home(&mut session, screen);
+    let mut cache = Cache::new(BUDGET);
+    assert_eq!(frame(&mut session, &mut cache, screen)?.ui_font_size, 16.0);
+    std::fs::write(
+      directory.path().join("config.toml"),
+      "[appearance]\nui_font_size = 24",
+    )?;
+    session.reload_config();
+    assert_eq!(frame(&mut session, &mut cache, screen)?.ui_font_size, 24.0);
+    Ok(())
   }
 
   #[test]
@@ -1698,6 +1764,7 @@ mod tests {
       ui: Arc::default(),
       effects: Vec::new(),
       metrics: Metrics::default(),
+      ui_font_size: 16.0,
       screen: sized(),
       scene: Scene::new(),
       images: Vec::new(),

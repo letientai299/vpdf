@@ -309,6 +309,19 @@ files. The selection applies to every tab and split, including documents opened
 later. It does not change the configuration file or saved state.
 `:config reload` restores the configured theme.
 
+### Native UI text size
+
+Set `appearance.ui_font_size` in the configuration file, then run
+`:config reload`. The generated configuration reference lists its default.
+This changes native interface text and its hit targets independently of PDF
+zoom and display pixel density. The terminal uses its terminal font settings.
+
+On macOS, Increase Contrast strengthens interface text and focus outlines;
+Reduce Motion completes navigation without easing. Selection and focus use
+underlines or outlines as well as color. Changes apply while Vpdf is open.
+Explicit themes retain their backgrounds and PDF pixels retain their colors.
+The native canvas remains opaque with Reduce Transparency enabled.
+
 ### Theme files
 
 Copy a [theme file][theme-files] and select its path:

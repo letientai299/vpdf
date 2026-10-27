@@ -75,6 +75,7 @@ fn frame(rows: Rows) -> Frame {
     ui: Arc::default(),
     effects: Vec::new(),
     metrics: Metrics::default(),
+    ui_font_size: 16.0,
     content: true,
     screen: SCREEN,
     scene,

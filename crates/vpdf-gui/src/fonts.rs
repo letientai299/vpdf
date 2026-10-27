@@ -1,5 +1,31 @@
 use eframe::egui;
 
+pub fn screen(
+  ctx: &egui::Context,
+  size: egui::Vec2,
+  font_size: f32,
+  scale: f32,
+) -> vpdf_model::geometry::Screen {
+  let font = egui::FontId::monospace(font_size);
+  let cell = ctx.fonts_mut(|fonts| {
+    let width = fonts
+      .layout_no_wrap("m".into(), font.clone(), egui::Color32::WHITE)
+      .size()
+      .x;
+    egui::vec2(width, fonts.row_height(&font))
+  });
+  let physical = size * scale;
+  let cell_width = (cell.x * scale).ceil().max(1.0) as u16;
+  let cell_height = (cell.y * scale).ceil().max(1.0) as u16;
+  vpdf_model::geometry::Screen {
+    columns: (physical.x / f32::from(cell_width)).floor().max(1.0) as u16,
+    rows: (physical.y / f32::from(cell_height)).floor().max(2.0) as u16,
+    cell_width,
+    cell_height,
+    origin: (0, 0),
+  }
+}
+
 pub fn install(ctx: &egui::Context) {
   let fonts = egui::FontDefinitions::default();
   #[cfg(target_os = "macos")]

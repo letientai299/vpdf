@@ -13,7 +13,8 @@ fn example_matches_defaults() {
   assert_eq!(
     Settings::example().unwrap(),
     concat!(
-      "[appearance]\ntheme = \"system\"\nascii_glyphs = false\n\n",
+      "[appearance]\ntheme = \"system\"\nascii_glyphs = false\n",
+      "ui_font_size = 16\n\n",
       "[appearance.opacity]\n\n",
       "[reading]\ncursorline = true\nzoom = 1.0\n\n",
       "[ocr]\nlanguage = \"eng\"\n\n[keybindings]\n"
@@ -1016,4 +1017,23 @@ fn theme_file_bindings() {
       .get(&Sequence::parse("Q").unwrap()),
     Some(&Target::Command("theme missing.toml".into()))
   );
+}
+
+#[test]
+fn ui_font_size_validates_range() {
+  for (value, expected, warned) in [
+    ("10", 10.0, false),
+    ("24", 24.0, false),
+    ("32", 32.0, false),
+    ("9", 16.0, true),
+    ("33", 16.0, true),
+    ("nan", 16.0, true),
+    ("16.5", 16.0, true),
+    ("'large'", 16.0, true),
+  ] {
+    let loaded = decoded(&format!("[appearance]\nui_font_size = {value}"));
+    assert_eq!(loaded.settings.ui_font_size(), expected, "{value}");
+    assert_eq!(loaded.warning.is_some(), warned, "{value}");
+    assert_eq!(loaded.settings.zoom(), Settings::default().zoom());
+  }
 }

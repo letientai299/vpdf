@@ -47,6 +47,7 @@ pub struct Session {
   help: help::Help,
   settings: crate::config::Settings,
   system_palette: vpdf_model::theme::Palette,
+  motion: native::Motion,
   config_source: crate::config::Source,
   startup_warning: Option<String>,
   config_warning: Option<String>,

@@ -1,5 +1,5 @@
 use clap::Parser;
-use eframe::egui::{self, FontId, ViewportCommand};
+use eframe::egui::{self, ViewportCommand};
 use std::path::PathBuf;
 use vpdf::session::native::{Bridge, Frame, Input};
 #[cfg(feature = "bench-events")]
@@ -51,6 +51,8 @@ struct Window {
   native: Option<vpdf_gui::platform::Native>,
   #[cfg(target_os = "macos")]
   documents: fmv_macos_events::Inbox,
+  #[cfg(target_os = "macos")]
+  preferences: vpdf_gui::preferences::Observer,
   bridge: Bridge,
   frame: Option<Frame>,
   renderer: Renderer,
@@ -58,6 +60,7 @@ struct Window {
   screen: Option<Screen>,
   system_palette: vpdf_model::theme::Palette,
   palette: vpdf_model::theme::Palette,
+  font_size: f32,
   capture: Option<PathBuf>,
   #[cfg(feature = "bench-events")]
   events: Option<inject::Injector>,
@@ -92,6 +95,7 @@ impl Window {
       .events
       .as_deref()
       .map(|path| inject::spawn(path, cc.egui_ctx.clone()));
+    let font_size = config.settings.ui_font_size();
     let system_palette = system_palette(&cc.egui_ctx);
     let palette = config
       .settings
@@ -132,6 +136,11 @@ impl Window {
       native,
       #[cfg(target_os = "macos")]
       documents,
+      #[cfg(target_os = "macos")]
+      preferences: {
+        let ctx = cc.egui_ctx.clone();
+        vpdf_gui::preferences::Observer::new(move || ctx.request_repaint())
+      },
       bridge,
       frame: None,
       renderer: cc
@@ -142,6 +151,7 @@ impl Window {
       screen: None,
       system_palette,
       palette,
+      font_size,
       capture: args.capture,
       #[cfg(feature = "bench-events")]
       events,
@@ -151,24 +161,42 @@ impl Window {
     })
   }
 
-  fn receive_frame(&mut self, ctx: &egui::Context) -> bool {
-    let Some(frame) = self.bridge.take() else { return false };
-    #[cfg(target_os = "macos")]
-    let mut frame = frame;
-    #[cfg(target_os = "macos")]
-    if let Some(native) = &mut self.native {
-      native.update(&frame.ui, std::mem::take(&mut frame.effects));
+  fn receive_frame(
+    &mut self,
+    ctx: &egui::Context,
+    screen: Screen,
+  ) -> (bool, bool) {
+    let mut content = false;
+    let mut received = false;
+    if let Some(mut frame) = self.bridge.take() {
+      #[cfg(target_os = "macos")]
+      if let Some(native) = &mut self.native {
+        native.update(&frame.ui, std::mem::take(&mut frame.effects));
+      }
+      self.input.snapshot(std::sync::Arc::clone(&frame.ui));
+      ctx.send_viewport_cmd(ViewportCommand::Title(frame.title.clone()));
+      if frame.quit {
+        ctx.send_viewport_cmd(ViewportCommand::Close);
+      }
+      if let Some(text) = &frame.clipboard {
+        ctx.copy_text(text.clone());
+      }
+      let matches = self.font_size.to_bits() == frame.ui_font_size.to_bits()
+        && frame.screen == screen;
+      if self.font_size.to_bits() != frame.ui_font_size.to_bits() {
+        self.font_size = frame.ui_font_size;
+        self.screen = None;
+        ctx.request_repaint();
+      }
+      if matches {
+        content = frame.content;
+        received = true;
+        self.frame = Some(frame);
+      } else if let Some(previous) = &mut self.frame {
+        previous.reloaded.append(&mut frame.reloaded);
+      }
     }
-    ctx.send_viewport_cmd(ViewportCommand::Title(frame.title.clone()));
-    if frame.quit {
-      ctx.send_viewport_cmd(ViewportCommand::Close);
-    }
-    self.input.snapshot(std::sync::Arc::clone(&frame.ui));
-    if let Some(text) = &frame.clipboard {
-      ctx.copy_text(text.clone());
-    }
-    self.frame = Some(frame);
-    true
+    (content, received)
   }
 
   fn send_input(&mut self, input: Input) {
@@ -207,25 +235,25 @@ impl eframe::App for Window {
     let started = std::time::Instant::now();
     let ctx = ui.ctx().clone();
     self.refresh_system(&ctx);
+    #[cfg(target_os = "macos")]
+    if let Some(preferences) = self.preferences.take() {
+      self.renderer.display(preferences);
+      self.bridge.send(Input::ReduceMotion(preferences.motion));
+      ctx.all_styles_mut(|style| {
+        style.animation_time = if preferences.motion {
+          0.0
+        } else {
+          egui::Style::default().animation_time
+        };
+      });
+    }
     let scale = ctx.pixels_per_point();
-    let font = FontId::monospace(paint::FONT_SIZE);
-    let cell = ctx.fonts_mut(|fonts| {
-      let width = fonts
-        .layout_no_wrap("m".into(), font.clone(), egui::Color32::WHITE)
-        .size()
-        .x;
-      egui::vec2(width, fonts.row_height(&font))
-    });
-    let physical = ui.max_rect().size() * scale;
-    let cell_width = (cell.x * scale).ceil().max(1.0) as u16;
-    let cell_height = (cell.y * scale).ceil().max(1.0) as u16;
-    let screen = Screen {
-      columns: (physical.x / f32::from(cell_width)).floor().max(1.0) as u16,
-      rows: (physical.y / f32::from(cell_height)).floor().max(2.0) as u16,
-      cell_width,
-      cell_height,
-      origin: (0, 0),
-    };
+    let screen = vpdf_gui::fonts::screen(
+      &ctx,
+      ui.max_rect().size(),
+      self.font_size,
+      scale,
+    );
     if self.screen != Some(screen) {
       self.screen = Some(screen);
       self.bridge.send(Input::Resize(screen));
@@ -238,9 +266,7 @@ impl eframe::App for Window {
         self.bridge.send(input);
       }
     }
-    let received = self.receive_frame(&ctx);
-    let content =
-      received && self.frame.as_ref().is_some_and(|frame| frame.content);
+    let (content, received) = self.receive_frame(&ctx, screen);
     if let Some(frame) = &self.frame {
       self.palette = paint::scene_theme(&frame.scene).palette();
       set_theme(&ctx, self.palette);
