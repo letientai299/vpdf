@@ -521,10 +521,13 @@ mod pointer {
     // Open the panel before the overview.
     act(&mut session, Action::Panel(PanelKind::Version))?;
     act(&mut session, Action::Overview)?;
-    mouse(&mut session, Down(Left), (2, 3))?;
+    let panel = &session.app().unwrap().panel.as_ref().unwrap().view;
+    let index = panel.row_at(2, 1).expect("passive panel row");
+    assert!(!panel.rows()[index].follows());
+    mouse(&mut session, Down(Left), (2, 1))?;
     assert!(
       session.app().unwrap().overlays.overview().is_some(),
-      "Panel rows keep overview"
+      "passive rows keep overview"
     );
     Ok(())
   }

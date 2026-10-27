@@ -990,7 +990,9 @@ fn prepare_scene(
     vpdf_model::theme::Colors::Palette(session.system_palette),
   );
   session.present_startup();
-  commands::prepare_prompt(session);
+  if matches!(session.frontend, crate::raster::Frontend::Native(_)) {
+    commands::prepare_prompt(session);
+  }
 }
 
 fn resolve_themes(scene: &mut [Op<'_>], palette: vpdf_model::theme::Palette) {
