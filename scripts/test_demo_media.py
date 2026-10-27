@@ -210,6 +210,19 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(record["capture"], "original")
         self.assertEqual(len(self.github.items), 1)
 
+    def test_capture_correction_reuses_attachment(self):
+        self.add_comment(self.record(capture="legacy-alias"))
+        self.publisher.apply()
+        current = media.comment_record(self.github.items[0], self.asset)
+        self.assertEqual(current["capture"], "original")
+        self.assertEqual(current["url"], URL)
+        self.assertEqual(current["history"][0]["capture"], "legacy-alias")
+        self.assertEqual(self.github.uploads, 0)
+        self.assertEqual(
+            self.github.writes,
+            [(self.github.base + "/issues/comments/99", "PATCH")],
+        )
+
     def test_duplicate_and_owner_rejected(self):
         for duplicate in (False, True):
             with self.subTest(duplicate=duplicate):

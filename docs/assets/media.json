@@ -115,7 +115,7 @@
         "id": "search-shot",
         "kind": "image",
         "sha256": "16a352f55ff4dcb395f2b2d443d5dfbc84a8ded9a1e1d7eef607657a15ef6b09",
-        "capture": "f738804319345264",
+        "capture": "2208654b64ec0f1f",
         "url": "https://github.com/user-attachments/assets/58754861-bb18-4ba4-8e23-68e54630093d",
         "metadata": {
           "dimensions": [
@@ -123,7 +123,7 @@
             1440
           ]
         },
-        "published_at": "2026-10-27T13:41:23.692360+00:00",
+        "published_at": "2026-10-27T14:01:10.458752+00:00",
         "history": [
           {
             "capture": "2208654b64ec0f1f",
@@ -138,10 +138,22 @@
             "url": "https://github.com/user-attachments/assets/7a376a3a-6b21-4dcb-ae6a-bbff2ef716d6"
           },
           {
-            "url": "https://github.com/user-attachments/assets/af3490e1-844f-4dd8-8213-55a7f9083ab3",
-            "sha256": "f4b7b5d19aca024f7856d2e1f689cc752ade90c6d2afd7243ca2d1e7a7095b08",
             "capture": "2208654b64ec0f1f",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            },
             "published_at": "2026-10-27T08:02:58.732803+00:00",
+            "sha256": "f4b7b5d19aca024f7856d2e1f689cc752ade90c6d2afd7243ca2d1e7a7095b08",
+            "url": "https://github.com/user-attachments/assets/af3490e1-844f-4dd8-8213-55a7f9083ab3"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/58754861-bb18-4ba4-8e23-68e54630093d",
+            "sha256": "16a352f55ff4dcb395f2b2d443d5dfbc84a8ded9a1e1d7eef607657a15ef6b09",
+            "capture": "f738804319345264",
+            "published_at": "2026-10-27T13:41:23.692360+00:00",
             "metadata": {
               "dimensions": [
                 2560,
@@ -211,7 +223,7 @@
         "id": "figure-shot",
         "kind": "image",
         "sha256": "b5fdc9223e64067e47e0edb1f0c23874b7348737f7176af7167953edc368efdc",
-        "capture": "f738804319345264",
+        "capture": "2208654b64ec0f1f",
         "url": "https://github.com/user-attachments/assets/70f257dd-b0c9-4979-a7a9-74620f89650d",
         "metadata": {
           "dimensions": [
@@ -219,13 +231,25 @@
             1440
           ]
         },
-        "published_at": "2026-10-27T13:42:02.030568+00:00",
+        "published_at": "2026-10-27T14:01:20.802268+00:00",
         "history": [
           {
-            "url": "https://github.com/user-attachments/assets/cf953a6b-a559-4790-a53a-2cc49f3098e3",
-            "sha256": "c1e25ab28cf54383d35922d67981f0f28b228b1e9c2be147bfe6cbfdf6ad5210",
             "capture": "2208654b64ec0f1f",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            },
             "published_at": "2026-10-27T08:10:31.702487+00:00",
+            "sha256": "c1e25ab28cf54383d35922d67981f0f28b228b1e9c2be147bfe6cbfdf6ad5210",
+            "url": "https://github.com/user-attachments/assets/cf953a6b-a559-4790-a53a-2cc49f3098e3"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/70f257dd-b0c9-4979-a7a9-74620f89650d",
+            "sha256": "b5fdc9223e64067e47e0edb1f0c23874b7348737f7176af7167953edc368efdc",
+            "capture": "f738804319345264",
+            "published_at": "2026-10-27T13:42:02.030568+00:00",
             "metadata": {
               "dimensions": [
                 2560,
@@ -283,7 +307,7 @@
         "id": "mouse-hints-shot",
         "kind": "image",
         "sha256": "6bacb679e5931edd249b8c2defef32bee88d14bf3968be30b42e594cc38038ad",
-        "capture": "004143d2035b557e",
+        "capture": "7dbed3285fd3ec9c",
         "url": "https://github.com/user-attachments/assets/b5272ec1-f8ca-42dc-9ef1-4f6dd5e14331",
         "metadata": {
           "dimensions": [
@@ -291,13 +315,25 @@
             1440
           ]
         },
-        "published_at": "2026-10-27T13:42:38.943741+00:00",
+        "published_at": "2026-10-27T14:01:29.703227+00:00",
         "history": [
           {
-            "url": "https://github.com/user-attachments/assets/5b300331-1bda-4fc7-980f-776164d13a4b",
-            "sha256": "59f400ddf946c4b643342f70a20420aebd257c303980b0df2364c089214d8b60",
             "capture": "7dbed3285fd3ec9c",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            },
             "published_at": "2026-10-27T08:13:59.861372+00:00",
+            "sha256": "59f400ddf946c4b643342f70a20420aebd257c303980b0df2364c089214d8b60",
+            "url": "https://github.com/user-attachments/assets/5b300331-1bda-4fc7-980f-776164d13a4b"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/b5272ec1-f8ca-42dc-9ef1-4f6dd5e14331",
+            "sha256": "6bacb679e5931edd249b8c2defef32bee88d14bf3968be30b42e594cc38038ad",
+            "capture": "004143d2035b557e",
+            "published_at": "2026-10-27T13:42:38.943741+00:00",
             "metadata": {
               "dimensions": [
                 2560,
@@ -319,7 +355,7 @@
         "id": "mouse-region-shot",
         "kind": "image",
         "sha256": "cba7b3df5334a90ccd173197d09e6b22a4c4e998da8d09ae8399144809ba4610",
-        "capture": "004143d2035b557e",
+        "capture": "7dbed3285fd3ec9c",
         "url": "https://github.com/user-attachments/assets/8dbd7958-af0b-4bb6-88cd-6a6c81b56209",
         "metadata": {
           "dimensions": [
@@ -327,13 +363,25 @@
             1440
           ]
         },
-        "published_at": "2026-10-27T13:42:58.389348+00:00",
+        "published_at": "2026-10-27T14:01:38.508100+00:00",
         "history": [
           {
-            "url": "https://github.com/user-attachments/assets/df82a7f1-03d5-4380-9657-b10cd6394185",
-            "sha256": "58faff1cbb1935af2c596274abf0ad52db5aa754f92a0b215723547e00e3de3b",
             "capture": "7dbed3285fd3ec9c",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            },
             "published_at": "2026-10-27T08:14:18.082504+00:00",
+            "sha256": "58faff1cbb1935af2c596274abf0ad52db5aa754f92a0b215723547e00e3de3b",
+            "url": "https://github.com/user-attachments/assets/df82a7f1-03d5-4380-9657-b10cd6394185"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/8dbd7958-af0b-4bb6-88cd-6a6c81b56209",
+            "sha256": "cba7b3df5334a90ccd173197d09e6b22a4c4e998da8d09ae8399144809ba4610",
+            "capture": "004143d2035b557e",
+            "published_at": "2026-10-27T13:42:58.389348+00:00",
             "metadata": {
               "dimensions": [
                 2560,
@@ -355,7 +403,7 @@
         "id": "pages-shot",
         "kind": "image",
         "sha256": "2a37b228adada25e97391daab782e24275abd8304ef579cb3c2e97a9aa51525a",
-        "capture": "f738804319345264",
+        "capture": "2208654b64ec0f1f",
         "url": "https://github.com/user-attachments/assets/5b2e216b-6c85-482b-a1ab-2c386ea9b967",
         "metadata": {
           "dimensions": [
@@ -363,13 +411,25 @@
             1440
           ]
         },
-        "published_at": "2026-10-27T13:43:16.134663+00:00",
+        "published_at": "2026-10-27T14:01:47.067320+00:00",
         "history": [
           {
-            "url": "https://github.com/user-attachments/assets/59d78455-4174-484f-86f3-3915acc9fbe8",
-            "sha256": "dce68e51a4040c82b0670fb07853de6d2526601fc81ddb0d2376dd53c8fee954",
             "capture": "2208654b64ec0f1f",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            },
             "published_at": "2026-10-27T08:14:34.734397+00:00",
+            "sha256": "dce68e51a4040c82b0670fb07853de6d2526601fc81ddb0d2376dd53c8fee954",
+            "url": "https://github.com/user-attachments/assets/59d78455-4174-484f-86f3-3915acc9fbe8"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/5b2e216b-6c85-482b-a1ab-2c386ea9b967",
+            "sha256": "2a37b228adada25e97391daab782e24275abd8304ef579cb3c2e97a9aa51525a",
+            "capture": "f738804319345264",
+            "published_at": "2026-10-27T13:43:16.134663+00:00",
             "metadata": {
               "dimensions": [
                 2560,
@@ -391,7 +451,7 @@
         "id": "recent-shot",
         "kind": "image",
         "sha256": "7b945c8d0d512919ca4c5f22d3c8156cb3be7ff987498fa9567121b74968f354",
-        "capture": "f738804319345264",
+        "capture": "2208654b64ec0f1f",
         "url": "https://github.com/user-attachments/assets/3cf580dc-1686-4b1a-86b6-ac23ccd3ab38",
         "metadata": {
           "dimensions": [
@@ -399,13 +459,25 @@
             1440
           ]
         },
-        "published_at": "2026-10-27T13:43:35.024928+00:00",
+        "published_at": "2026-10-27T14:01:56.199102+00:00",
         "history": [
           {
-            "url": "https://github.com/user-attachments/assets/ea1b0baa-d065-4cbc-bbda-747aaa0fec10",
-            "sha256": "c705a9b88f0d179eebd59209c5acef29072ca4c688af4387fd00d1621d0d7da5",
             "capture": "2208654b64ec0f1f",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            },
             "published_at": "2026-10-27T08:14:51.701295+00:00",
+            "sha256": "c705a9b88f0d179eebd59209c5acef29072ca4c688af4387fd00d1621d0d7da5",
+            "url": "https://github.com/user-attachments/assets/ea1b0baa-d065-4cbc-bbda-747aaa0fec10"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/3cf580dc-1686-4b1a-86b6-ac23ccd3ab38",
+            "sha256": "7b945c8d0d512919ca4c5f22d3c8156cb3be7ff987498fa9567121b74968f354",
+            "capture": "f738804319345264",
+            "published_at": "2026-10-27T13:43:35.024928+00:00",
             "metadata": {
               "dimensions": [
                 2560,
@@ -427,7 +499,7 @@
         "id": "jumps-shot",
         "kind": "image",
         "sha256": "72a76a946f265e50ed23e00818acc56bc68c4f17314689268be2256d0bb16de6",
-        "capture": "f738804319345264",
+        "capture": "2208654b64ec0f1f",
         "url": "https://github.com/user-attachments/assets/7540c436-f636-444f-9722-48fdc4a4812e",
         "metadata": {
           "dimensions": [
@@ -435,13 +507,25 @@
             1440
           ]
         },
-        "published_at": "2026-10-27T13:43:54.118560+00:00",
+        "published_at": "2026-10-27T14:02:05.385409+00:00",
         "history": [
           {
-            "url": "https://github.com/user-attachments/assets/71764f60-821c-4710-818f-f95cf2b737dc",
-            "sha256": "fb6bc52a1ce0d4c6de08c405c22ba950b82f2d449ce6c0ec3300908ae84d3272",
             "capture": "2208654b64ec0f1f",
+            "metadata": {
+              "dimensions": [
+                2560,
+                1440
+              ]
+            },
             "published_at": "2026-10-27T08:15:09.113575+00:00",
+            "sha256": "fb6bc52a1ce0d4c6de08c405c22ba950b82f2d449ce6c0ec3300908ae84d3272",
+            "url": "https://github.com/user-attachments/assets/71764f60-821c-4710-818f-f95cf2b737dc"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/7540c436-f636-444f-9722-48fdc4a4812e",
+            "sha256": "72a76a946f265e50ed23e00818acc56bc68c4f17314689268be2256d0bb16de6",
+            "capture": "f738804319345264",
+            "published_at": "2026-10-27T13:43:54.118560+00:00",
             "metadata": {
               "dimensions": [
                 2560,

@@ -185,6 +185,14 @@ def comment_record(comment, asset):
     return {**record, "comment_id": comment["id"]}
 
 
+def same_media(record, scene, info):
+    return (
+        record is not None
+        and record["sha256"] == scene["sha256"]
+        and record["metadata"] == info
+    )
+
+
 def render_comment(asset, record):
     visible = f"![{asset['title']}]({record['url']})"
     if asset["kind"] == "video":
@@ -543,17 +551,20 @@ class Publisher:
             self.github.preflight()
             found = find_comments(self.github.comments(), self.config["owner"])
         for asset in self.selected():
-            _, scene, _ = self.local_asset(asset, allow_missing=True)
+            _, scene, info = self.local_asset(asset, allow_missing=True)
             comment = found.get(asset["id"])
             old = comment_record(comment, asset) if comment else None
-            unchanged = (
-                old
-                and old["sha256"] == scene["sha256"]
-                and old["capture"] == scene["capture"]
-            )
-            if unchanged:
+            reusable = same_media(old, scene, info)
+            unchanged = reusable and old["capture"] == scene["capture"]
+            if reusable:
                 verify_remote(old, asset["kind"])
-            action = "verify/skip upload" if unchanged else "upload"
+            action = (
+                "verify/skip upload"
+                if unchanged
+                else "reuse attachment"
+                if reusable
+                else "upload"
+            )
             target = (
                 f"reuse comment {comment['id']}"
                 if unchanged
@@ -577,14 +588,11 @@ class Publisher:
         found = find_comments(self.github.comments(), self.config["owner"])
         comment = found.get(asset["id"])
         old = comment_record(comment, asset) if comment else None
+        reusable = same_media(old, scene, info)
         pending = self.journal["pending"].get(asset["id"])
         if pending and pending["sha256"] != scene["sha256"]:
             raise RuntimeError("Pending publication uses another capture")
-        if (
-            old
-            and old["sha256"] == scene["sha256"]
-            and old["capture"] == scene["capture"]
-        ):
+        if reusable and old["capture"] == scene["capture"]:
             record = old
         else:
             if not pending:
@@ -600,8 +608,10 @@ class Publisher:
                     "Ambiguous comment write; inspect remote before retry"
                 )
             if "url" not in pending:
-                pending["url"] = self.github.upload(
-                    asset, archive, pending, self.save
+                pending["url"] = (
+                    old["url"]
+                    if reusable
+                    else self.github.upload(asset, archive, pending, self.save)
                 )
                 self.save()
             history = list(old.get("history", [])) if old else []

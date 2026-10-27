@@ -83,7 +83,8 @@ The publisher uploads through `gh issue edit --attach`. A marked block in the
 issue body holds the upload until its exact marked comment is durable. The
 [comment API][comments] updates that comment by ID. Cached IDs are hints; exact
 markers determine ownership. Capture identity stays separate from publication
-time. Canonical GitHub attachment URLs, hashes, dimensions, and superseded
+time. Metadata corrections reuse verified attachments; changed bytes upload
+new files. Canonical GitHub attachment URLs, hashes, dimensions, and superseded
 attachments remain in the comment and catalog. The issue stays closed.
 
 Only managed Markdown reference definitions change, including additional

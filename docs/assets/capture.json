@@ -1203,7 +1203,7 @@
           "RESULTS"
         ]
       ],
-      "capture": "f738804319345264",
+      "capture": "2208654b64ec0f1f",
       "reencoded_from": {
         "image": "search.webp",
         "sha256": "590bb980202b823444a26fd174af397018d74e99fe2922da604d667c5f1535a8"
@@ -1313,7 +1313,7 @@
           "Copy text"
         ]
       ],
-      "capture": "f738804319345264",
+      "capture": "2208654b64ec0f1f",
       "reencoded_from": {
         "image": "figure.webp",
         "sha256": "de4a4565c5d9978d2b1dbbb47c6b5c62a75cca7aa6e0171c113324d9de0aed17"
@@ -1440,7 +1440,7 @@
           "a"
         ]
       ],
-      "capture": "004143d2035b557e",
+      "capture": "7dbed3285fd3ec9c",
       "reencoded_from": {
         "image": "mouse-hints.webp",
         "sha256": "d4c4935146dba9de38c5eabd66e06b4be005e1b3f85a18c57eb688afda13d5b4"
@@ -1492,7 +1492,7 @@
           "Release captures; Esc cancels"
         ]
       ],
-      "capture": "004143d2035b557e",
+      "capture": "7dbed3285fd3ec9c",
       "reencoded_from": {
         "image": "mouse-region.webp",
         "sha256": "f87b02c18404957eebcd99a2b172264aef9d613c0ae4087e7d500913e140975a"
@@ -1529,7 +1529,7 @@
           "PAGES"
         ]
       ],
-      "capture": "f738804319345264",
+      "capture": "2208654b64ec0f1f",
       "reencoded_from": {
         "image": "pages.webp",
         "sha256": "e19f7d1f1208bc4b759b6432ba9c4712a7a6db52b79c0bc4ed9d956bc15e3c42"
@@ -1591,7 +1591,7 @@
           "49"
         ]
       ],
-      "capture": "f738804319345264",
+      "capture": "2208654b64ec0f1f",
       "reencoded_from": {
         "image": "recent.webp",
         "sha256": "0a841d24f9cceb23f4eef218757c7eb899a59542e59e0b5eb26eaa22f1f162dd"
@@ -1655,7 +1655,7 @@
           "Search ["
         ]
       ],
-      "capture": "f738804319345264",
+      "capture": "2208654b64ec0f1f",
       "reencoded_from": {
         "image": "jumps.webp",
         "sha256": "32291b4d32c4d3fe437d949b6b8734f4bad3121b4d87dcbd9c61b027728d58ca"
