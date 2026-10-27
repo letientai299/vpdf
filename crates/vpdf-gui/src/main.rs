@@ -121,10 +121,9 @@ impl Window {
     let input = {
       let mut input = input;
       if native.is_some() {
-        input.reserve(egui::KeyboardShortcut::new(
-          egui::Modifiers::MAC_CMD,
-          egui::Key::O,
-        ));
+        for shortcut in vpdf_gui::platform::shortcuts() {
+          input.reserve(shortcut);
+        }
       }
       input
     };
@@ -164,6 +163,7 @@ impl Window {
     if frame.quit {
       ctx.send_viewport_cmd(ViewportCommand::Close);
     }
+    self.input.snapshot(std::sync::Arc::clone(&frame.ui));
     if let Some(text) = &frame.clipboard {
       ctx.copy_text(text.clone());
     }

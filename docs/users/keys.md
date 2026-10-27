@@ -27,13 +27,39 @@ set a mark and a quote or backtick followed by `{mark}` to jump. Counts use
 change these entries. Use `:help config` for built-in setting defaults.
 Check your TOML configuration when a key behaves differently from the manual.
 
-## Native Mac opening
+## Native Mac commands
 
-In the macOS app, File → Open and Command-O open a window sheet from Home
-or document content. This platform shortcut takes precedence over custom
-bindings. It is disabled during prompts, overlays, and another open request.
-Cancel leaves the document unchanged. Other reader bindings keep their
-configured behavior.
+In the macOS app, menu shortcuts take precedence over custom bindings.
+Vim keys and terminal bindings keep their configured behavior. Menus disable
+commands that the focused view cannot perform.
+
+| Shortcut                        | Action                                              |
+| ------------------------------- | --------------------------------------------------- |
+| Command-O                       | Open a PDF in a window sheet                        |
+| Command-T                       | Open the Recent view in a new tab                   |
+| Control-Tab / Control-Shift-Tab | Next / previous tab                                 |
+| Command-W                       | Close the tab and its splits; last tab returns Home |
+| Command-F                       | Find in the active PDF                              |
+| Command-G / Shift-Command-G     | Next / previous document result                     |
+| Command-C                       | Copy the focused selection                          |
+| Command-A                       | Select all document text or prompt text             |
+| Command-X / V / Z               | Cut / paste / undo in a prompt                      |
+| Command-P                       | Print through the existing print dialog             |
+| Command-Q                       | Quit                                                |
+
+On empty Home, Command-W closes the window. Close Pane remains a separate
+Window menu action. Zoom Window resizes the window; View zoom magnifies the PDF.
+Help opens the embedded manual.
+
+Document Select All preserves the reading location. Copy processes the whole
+document one page at a time, up to the clipboard size limit; further input
+cancels unfinished work. A limit or extraction error leaves the clipboard
+unchanged. Other panels retain their existing selection operations.
+
+Prompts support Shift-arrow selection, Command-arrow line movement, Option-arrow
+word movement, replacement by typing or paste, selection deletion, and undo.
+Option-produced characters and composed input enter prompt text. Passwords
+remain masked, cannot be copied or cut, and never enter prompt history.
 
 ## Change modes
 

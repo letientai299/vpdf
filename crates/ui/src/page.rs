@@ -80,6 +80,20 @@ impl Canvas<'_> {
     {
       painter.range((hit.first, hit.last), false, theme::MATCH)?;
     }
+    if marks.reader.document_selected {
+      painter.range(
+        (
+          Position::default(),
+          Position {
+            page: PageId(usize::MAX),
+            line: usize::MAX,
+            glyph: usize::MAX,
+          },
+        ),
+        true,
+        theme::SELECTION,
+      )?;
+    }
     if let Some(selection) = marks.reader.selection {
       painter.range(
         (selection.anchor, marks.reader.cursor),

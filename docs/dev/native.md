@@ -1,9 +1,10 @@
 # Native integration
 
 The [session bridge][bridge] owns PDF work on its session thread. AppKit owns
-menus and sheets on the main thread through the [macOS adapter][adapter].
-Winit retains its application and window delegates; the existing Finder inbox
-retains Apple-event delivery. The adapter appends File to the existing menu.
+menus and sheets on the main thread through the [macOS adapter][adapter]. Winit
+retains its application and window delegates; the existing Finder inbox retains
+Apple-event delivery. The adapter appends File, Edit, View, Window, and Help
+menus.
 
 ## Commands and state
 
@@ -18,10 +19,20 @@ request has its own ID and retains the originating target. Completion consumes
 that request once; stale targets and duplicate replies do no document work.
 An untaken frame passes its effects to the next frame in order.
 
-AppKit owns Command-O. The Egui adapter consumes a duplicate raw Command-O
-without dispatching it again. This reservation applies only after native menu
-installation. Worker validation remains authoritative if menu state lags.
-Other platform commands require their own dispatch and validation work.
+AppKit owns menu key equivalents. After menu installation, the Egui adapter
+reserves those raw chords. Semantic Copy and Cut events use the same typed
+commands. Paste carries the originating target and clipboard text; the worker
+checks focus before inserting it. Worker validation remains authoritative if
+menu state lags. The system application menu retains Quit and Hide.
+
+Whole-document selection keeps the reading position and highlights visible
+text without extracting hidden pages. Copy extracts one page per session turn,
+yields for input, and rejects changed targets. Extraction or size-limit errors
+do not deliver partial text. Further reader input cancels the copy.
+
+Command-W closes the active tab and all its splits. The last tab returns Home;
+closing empty Home retains Eframe's root-window exit behavior. Terminal close
+behavior is unchanged.
 
 ## Window sheets
 
@@ -51,7 +62,8 @@ the main thread, enforced by retained main-thread-only types.
 Use the [development tasks][tasks] for package tests and combined validation.
 The benchmark feature adds `native menu`, `native key`, `native inspect`, and
 `native cancel` to the existing event injector. These exercise AppKit action
-routing and sheet lifecycle without activating the application. Inspection
+routing and sheet lifecycle without activating the application. Append a menu
+title to `native menu` or `native key` to probe another command. Inspection
 reports delegate preservation, application-menu preservation, sheet parent,
 and command availability, in that order.
 

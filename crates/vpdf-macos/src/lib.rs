@@ -4,11 +4,11 @@ use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-  NSApplication, NSMenu, NSMenuItem, NSModalResponseOK, NSOpenPanel, NSView,
-  NSWindow,
+  NSApplication, NSEventModifierFlags, NSMenu, NSMenuItem, NSModalResponseOK,
+  NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSView, NSWindow,
 };
 use objc2_foundation::{
-  MainThreadMarker, NSObject, NSObjectProtocol, ns_string,
+  MainThreadMarker, NSObject, NSObjectProtocol, NSString, ns_string,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::cell::Cell;
@@ -16,8 +16,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 struct Callback {
-  enabled: Cell<bool>,
-  invoke: Box<dyn Fn()>,
+  invoke: Box<dyn Fn(usize)>,
 }
 
 define_class!(
@@ -29,11 +28,11 @@ define_class!(
   // SAFETY: NSObjectProtocol adds no subclass invariants.
   unsafe impl NSObjectProtocol for Handler {}
   impl Handler {
-    // SAFETY: AppKit actions accept a nullable sender.
+    // SAFETY: These items supply their sender.
     #[unsafe(method(openReader:))]
-    fn open(&self, _: Option<&NSObject>) {
-      if self.ivars().enabled.get() {
-        (self.ivars().invoke)();
+    fn open(&self, sender: &NSMenuItem) {
+      if sender.isEnabled() {
+        (self.ivars().invoke)(sender.tag() as usize);
       }
     }
   }
@@ -43,7 +42,9 @@ pub struct Integration {
   handler: Retained<Handler>,
   window: Retained<NSWindow>,
   menu: Retained<NSMenu>,
-  root: Retained<NSMenuItem>,
+  roots: Vec<Retained<NSMenuItem>>,
+  items: Vec<Retained<NSMenuItem>>,
+  #[cfg(feature = "bench-events")]
   open: Retained<NSMenuItem>,
   panel: Option<Retained<NSOpenPanel>>,
   alive: Rc<Cell<bool>>,
@@ -51,10 +52,19 @@ pub struct Integration {
   identity: proof::Identity,
 }
 
+pub struct Item {
+  pub menu: &'static str,
+  pub title: &'static str,
+  pub key: &'static str,
+  pub shift: bool,
+  pub control: bool,
+}
+
 impl Integration {
   pub fn install(
     parent: &impl HasWindowHandle,
-    invoke: impl Fn() + 'static,
+    entries: &[Item],
+    invoke: impl Fn(usize) + 'static,
   ) -> Option<Self> {
     let mtm = MainThreadMarker::new()?;
     let borrowed = parent.window_handle().ok()?;
@@ -65,37 +75,86 @@ impl Integration {
     let menu = NSApplication::sharedApplication(mtm).mainMenu()?;
     #[cfg(feature = "bench-events")]
     let identity = proof::Identity::capture(&window, &menu, mtm);
-    let allocated = Handler::alloc(mtm).set_ivars(Callback {
-      enabled: Cell::new(false),
-      invoke: Box::new(invoke),
-    });
+    let allocated =
+      Handler::alloc(mtm).set_ivars(Callback { invoke: Box::new(invoke) });
     // SAFETY: NSObject initializes our retained subclass.
     let handler: Retained<Handler> =
       unsafe { msg_send![super(allocated), init] };
-    let root = NSMenuItem::new(mtm);
-    root.setTitle(ns_string!("File"));
-    let submenu = NSMenu::new(mtm);
-    submenu.setAutoenablesItems(false);
-    // SAFETY: Handler implements this one-argument action.
-    let open = unsafe {
-      NSMenuItem::initWithTitle_action_keyEquivalent(
-        NSMenuItem::alloc(mtm),
-        ns_string!("Open…"),
-        Some(sel!(openReader:)),
-        ns_string!("o"),
-      )
-    };
-    // SAFETY: Integration retains Handler until removal.
-    unsafe { open.setTarget(Some(&handler)) };
-    open.setEnabled(false);
-    submenu.addItem(&open);
-    root.setSubmenu(Some(&submenu));
-    menu.addItem(&root);
+    let mut roots: Vec<Retained<NSMenuItem>> = Vec::new();
+    let mut items = Vec::new();
+    let mut previous = "";
+    let mut submenu = NSMenu::new(mtm);
+    for (index, entry) in entries.iter().enumerate() {
+      if entry.menu != previous {
+        let root = NSMenuItem::new(mtm);
+        root.setTitle(&NSString::from_str(entry.menu));
+        submenu = NSMenu::new(mtm);
+        submenu.setAutoenablesItems(false);
+        root.setSubmenu(Some(&submenu));
+        menu.addItem(&root);
+        roots.push(root);
+        previous = entry.menu;
+      }
+      // SAFETY: Handler implements this one-argument action.
+      let item = unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+          NSMenuItem::alloc(mtm),
+          &NSString::from_str(entry.title),
+          Some(sel!(openReader:)),
+          &NSString::from_str(entry.key),
+        )
+      };
+      item.setTag(index as isize);
+      let mut modifiers = if entry.control {
+        NSEventModifierFlags::Control
+      } else {
+        NSEventModifierFlags::Command
+      };
+      if entry.shift {
+        modifiers |= NSEventModifierFlags::Shift;
+      }
+      item.setKeyEquivalentModifierMask(modifiers);
+      // SAFETY: Integration retains Handler until removal.
+      unsafe { item.setTarget(Some(&handler)) };
+      item.setEnabled(false);
+      submenu.addItem(&item);
+      items.push(item);
+    }
+    #[cfg(feature = "bench-events")]
+    let open = items.first()?.clone();
+    for (title, selector) in [
+      ("Minimize", sel!(performMiniaturize:)),
+      ("Zoom Window", sel!(performZoom:)),
+      ("Enter Full Screen", sel!(toggleFullScreen:)),
+    ] {
+      // SAFETY: NSWindow implements these AppKit actions.
+      let item = unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+          NSMenuItem::alloc(mtm),
+          &NSString::from_str(title),
+          Some(selector),
+          ns_string!(""),
+        )
+      };
+      // SAFETY: Integration retains the target window.
+      unsafe { item.setTarget(Some(&window)) };
+      let Some(submenu) = roots
+        .iter()
+        .find(|item| item.title().to_string() == "Window")
+        .and_then(|root| root.submenu())
+      else {
+        continue;
+      };
+      submenu.addItem(&item);
+      items.push(item);
+    }
     Some(Self {
       handler,
       window,
       menu,
-      root,
+      roots,
+      items,
+      #[cfg(feature = "bench-events")]
       open,
       panel: None,
       alive: Rc::new(Cell::new(true)),
@@ -104,10 +163,18 @@ impl Integration {
     })
   }
 
-  pub fn enable(&self, enabled: bool) {
-    if self.handler.ivars().enabled.replace(enabled) != enabled {
-      self.open.setEnabled(enabled);
+  pub fn enable(&self, index: usize, enabled: bool) {
+    if let Some(item) = self.items.get(index) {
+      item.setEnabled(enabled);
     }
+  }
+
+  pub fn paste(&self) -> Option<String> {
+    let board = NSPasteboard::generalPasteboard();
+    // SAFETY: AppKit owns the string type constant.
+    board
+      .stringForType(unsafe { NSPasteboardTypeString })
+      .map(|text| text.to_string())
   }
 
   pub fn pick(&mut self, complete: impl Fn(Vec<PathBuf>) + 'static) {
@@ -157,9 +224,13 @@ impl Drop for Integration {
   fn drop(&mut self) {
     self.alive.set(false);
     self.cancel();
-    self.menu.removeItem(&self.root);
-    // SAFETY: Disconnect before releasing the retained target.
-    unsafe { self.open.setTarget(None) };
+    for root in &self.roots {
+      self.menu.removeItem(root);
+    }
+    for item in &self.items {
+      // SAFETY: Disconnect before releasing the retained target.
+      unsafe { item.setTarget(None) };
+    }
   }
 }
 

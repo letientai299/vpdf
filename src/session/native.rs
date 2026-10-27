@@ -28,6 +28,10 @@ pub enum Input {
     request: commands::RequestId,
     paths: Vec<PathBuf>,
   },
+  PasteTarget {
+    command: commands::Command,
+    text: String,
+  },
   Observe(bool),
   #[cfg(feature = "bench-events")]
   Snapshot,
@@ -318,6 +322,7 @@ fn run(
   let mut animation_due = Instant::now();
   let mut applied = Ticket::default();
   loop {
+    dirty |= commands::copy_update(&mut session);
     dirty |= session.clean_state();
     dirty |= session.help_updates(&mut std::io::sink());
     dirty |= session.print_update();
@@ -537,6 +542,9 @@ fn wait_time(
   {
     return Duration::ZERO;
   }
+  if commands::copying(session) {
+    return Duration::ZERO;
+  }
   let mut wait = if session.tabs.is_empty() {
     Duration::from_secs(2)
   } else {
@@ -575,11 +583,37 @@ fn publish(latest: &Mutex<Option<Frame>>, mut frame: Frame) {
 fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
   commands::refresh(session);
   let changed = match input {
-    Input::Action(command) => commands::dispatch(session, command),
+    Input::Action(command) => commands::dispatch(session, command, *screen),
+    Input::PasteTarget { command, text } => {
+      if command.action == commands::Action::Paste
+        && session.native.snapshot.command(command.action) == Some(command)
+      {
+        apply_reader(session, Input::Paste(text), screen)
+      } else {
+        false
+      }
+    }
     Input::Picked { request, paths } => {
       commands::picked(session, request, paths, *screen)
     }
-    input => apply_reader(session, input, screen),
+    input => {
+      if matches!(
+        input,
+        Input::Key(_)
+          | Input::Mouse {
+            event: MouseEvent {
+              kind: vpdf_model::input::MouseEventKind::Down(_)
+                | vpdf_model::input::MouseEventKind::Drag(_),
+              ..
+            },
+            ..
+          }
+          | Input::History { .. }
+      ) {
+        commands::cancel_selection(session);
+      }
+      apply_reader(session, input, screen)
+    }
   };
   commands::refresh(session);
   changed
@@ -601,6 +635,7 @@ fn apply_reader(
   {
     return false;
   }
+  commands::prepare_prompt(session);
   match session.password_input(&input, *screen) {
     Ok(true) => {
       return !matches!(input, Input::Mouse { .. } | Input::History { .. });
@@ -965,11 +1000,12 @@ fn frame(
 }
 
 fn take_clipboard(session: &mut Session) -> Option<String> {
-  session
+  let pane = session
     .panes_mut()
     .filter_map(|app| app.reader.take_yank())
     .filter(|yank| crate::clipboard::synced(yank.register))
-    .fold(None, |_, yank| Some(yank.text))
+    .fold(None, |_, yank| Some(yank.text));
+  session.native.clipboard.take().or(pane)
 }
 
 fn frame_metrics(
@@ -3181,6 +3217,121 @@ mod tests {
     assert_eq!(latest.lock().unwrap().take().unwrap().effects.len(), 1);
     publish(&latest, frame(&mut session, &mut cache, screen)?);
     assert_eq!(latest.lock().unwrap().take().unwrap().effects, []);
+    Ok(())
+  }
+  fn command(
+    session: &mut Session,
+    action: commands::Action,
+    screen: &mut Screen,
+  ) {
+    commands::refresh(session);
+    let command =
+      session.native.snapshot.command(action).expect("Command available");
+    assert!(apply(session, Input::Action(command), screen));
+  }
+
+  #[test]
+  fn mac_commands_close_tabs_and_splits() -> Result<()> {
+    use commands::Action;
+    let (_root, _path, mut session) = opened(&["one"], sized())?;
+    let mut screen = sized();
+    session.split(
+      vpdf_ui::split::Axis::Columns,
+      None,
+      vpdf_ui::split::Place::After,
+    )?;
+    command(&mut session, Action::NewTab, &mut screen);
+    assert_eq!(session.tabs.len(), 2);
+    command(&mut session, Action::PreviousTab, &mut screen);
+    assert_eq!(session.tabs[session.active].panes.len(), 2);
+    command(&mut session, Action::CloseTab, &mut screen);
+    assert_eq!(session.tabs.len(), 1);
+    command(&mut session, Action::CloseTab, &mut screen);
+    assert!(session.tabs.is_empty());
+    assert!(session.home.is_some());
+    assert!(!session.quit);
+    command(&mut session, Action::CloseTab, &mut screen);
+    assert!(session.quit);
+    Ok(())
+  }
+
+  #[test]
+  fn mac_prompt_clipboard_is_selection_aware() -> Result<()> {
+    use commands::Action;
+    let (_root, _path, mut session) = opened(&["one"], sized())?;
+    let mut screen = sized();
+    apply(&mut session, key(KeyCode::Char(':')), &mut screen);
+    apply(&mut session, Input::Paste("alpha beta".into()), &mut screen);
+    command(&mut session, Action::SelectAll, &mut screen);
+    session.app().reader.store('"', "older".into())?;
+    command(&mut session, Action::Copy, &mut screen);
+    assert_eq!(take_clipboard(&mut session).as_deref(), Some("alpha beta"));
+    assert!(take_clipboard(&mut session).is_none());
+    command(&mut session, Action::Cut, &mut screen);
+    assert_eq!(take_clipboard(&mut session).as_deref(), Some("alpha beta"));
+    assert_eq!(session.app().overlays.prompt().unwrap().text(), "");
+    command(&mut session, Action::Undo, &mut screen);
+    assert_eq!(session.app().overlays.prompt().unwrap().text(), "alpha beta");
+    let old = session.native.snapshot.command(Action::Paste).unwrap();
+    apply(&mut session, key(KeyCode::Esc), &mut screen);
+    assert!(!apply(
+      &mut session,
+      Input::PasteTarget { command: old, text: "lost".into() },
+      &mut screen
+    ));
+    assert!(session.app().overlays.prompt().is_none());
+    Ok(())
+  }
+
+  #[test]
+  fn mac_document_copy_yields_and_cancels() -> Result<()> {
+    use commands::Action;
+    let (_root, path, mut session) =
+      opened(&["first", "second", "last"], sized())?;
+    let hash = std::fs::read(&path)?;
+    let mut screen = sized();
+    let location = session.app().navigation_position();
+    let cached = session.app().doc.cache_bytes();
+    command(&mut session, Action::SelectAll, &mut screen);
+    assert_eq!(session.app().navigation_position(), location);
+    assert_eq!(session.app().doc.cache_bytes(), cached);
+    assert!(session.app().reader.document_selected);
+    command(&mut session, Action::Copy, &mut screen);
+    assert!(commands::copy_update(&mut session));
+    assert!(take_clipboard(&mut session).is_none());
+    assert!(commands::copying(&session));
+    assert!(commands::copy_update(&mut session));
+    assert!(commands::copy_update(&mut session));
+    assert_eq!(
+      take_clipboard(&mut session).as_deref(),
+      Some("first\nsecond\nlast\n")
+    );
+    command(&mut session, Action::Copy, &mut screen);
+    commands::copy_update(&mut session);
+    apply(&mut session, key(KeyCode::Esc), &mut screen);
+    assert!(!commands::copying(&session));
+    assert!(!session.app().reader.document_selected);
+    assert!(take_clipboard(&mut session).is_none());
+    assert_eq!(std::fs::read(path)?, hash);
+    Ok(())
+  }
+  #[test]
+  fn mac_find_preserves_query_and_location() -> Result<()> {
+    use commands::Action;
+    let (_root, _path, mut session) = opened(&["one two one"], sized())?;
+    let mut screen = sized();
+    let location = session.app().navigation_position();
+    command(&mut session, Action::Find, &mut screen);
+    apply(&mut session, Input::Paste("one".into()), &mut screen);
+    command(&mut session, Action::Find, &mut screen);
+    assert_eq!(
+      session.app().overlays.prompt().unwrap().selected(),
+      Some("one")
+    );
+    command(&mut session, Action::NextResult, &mut screen);
+    assert_eq!(session.app().overlays.prompt().unwrap().text(), "one");
+    apply(&mut session, key(KeyCode::Esc), &mut screen);
+    assert_eq!(session.app().navigation_position(), location);
     Ok(())
   }
 }

@@ -225,18 +225,19 @@ shapes follow the same shared policy; focus loss and exit release held gestures.
 Wheel points, lines, and pages become shared mouse reports, retaining pointer
 position and modifiers for panel scrolling, previews, pan, and Ctrl-zoom.
 Prompts accept IME composition through the shared editor. Marked text stays
-uncommitted until confirmation; candidate windows follow the prompt caret.
-Alt chords retain the terminal's word-editing behavior.
-Region captures use the shared jobs and clipboard helpers. Completed text from
-background panes reaches the GUI clipboard when focus moves elsewhere.
-On macOS, UI text uses installed system fonts for missing CJK glyphs.
-Protected documents use the shared masked password prompt. Cancel keeps the
-previous view; retry resumes the original open, split, or mark command.
-Switching windows preserves committed passwords and cancels IME composition.
-On macOS, `:fzf` uses the system file chooser through the built-in `osascript`;
-it starts in the current directory and replaces the focused pane. File drops
-open tabs. Closing the last tab exits, as in the terminal. External prompt
-editing requires the terminal reader.
+uncommitted until confirmation; candidate windows follow the prompt caret. Alt
+chords retain the terminal's word-editing behavior. Region captures use the
+shared jobs and clipboard helpers. Completed text from background panes reaches
+the GUI clipboard when focus moves elsewhere. On macOS, UI text uses installed
+system fonts for missing CJK glyphs. Protected documents use the shared masked
+password prompt. Cancel keeps the previous view; retry resumes the original
+open, split, or mark command. Switching windows preserves committed passwords
+and cancels IME composition. On macOS, `:fzf` uses the system file chooser
+through the built-in `osascript`; it starts in the current directory and
+replaces the focused pane. File drops open tabs. Command-W closes the active tab
+and its splits; the last tab returns Home. Closing empty Home exits. The
+terminal retains its existing close behavior. External prompt editing requires
+the terminal reader.
 
 On macOS, `--background` disables automatic activation; combine it with
 `open -g` when launching the app bundle. macOS delivers posted keys to a

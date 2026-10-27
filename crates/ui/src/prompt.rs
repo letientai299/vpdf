@@ -139,6 +139,8 @@ pub struct Prompt {
   /// History suffix offered after the cursor, like zsh-autosuggestions.
   ghost: String,
   cursor: usize,
+  anchor: Option<usize>,
+  native: bool,
   recall: Option<Recall>,
   kill: String,
   undo: Vec<(String, usize)>,
@@ -203,6 +205,24 @@ impl Prompt {
       Op::Style(Role::Reset),
       Op::Spaces(pad),
     ]);
+    if let Some(range) = self.selection() {
+      let (start, selected) = if self.kind == PromptKind::Password {
+        (
+          10 + self.text[..range.start].chars().count(),
+          "*".repeat(self.text[range].chars().count()),
+        )
+      } else {
+        (1 + self.text[..range.start].width(), self.text[range].to_owned())
+      };
+      let room = usize::from(screen.columns).saturating_sub(start);
+      if room > 0 {
+        crate::paint::move_to(scene, at, row, start);
+        scene.push(Op::Style(Role::TextSelection));
+        scene
+          .push(Op::Text(Text::new(vpdf_model::text::clean(&selected, room))));
+        scene.push(Op::Style(Role::Reset));
+      }
+    }
     let column = column.min(usize::from(screen.columns) - 1);
     crate::paint::move_to(scene, at, row, column);
     scene.extend([
@@ -237,6 +257,8 @@ impl Prompt {
       menu: None,
       ghost: String::new(),
       cursor: 0,
+      anchor: None,
+      native: false,
       recall: None,
       kill: String::new(),
       undo: Vec::new(),
@@ -289,25 +311,26 @@ impl Prompt {
     self.ghost.clear();
     self.text.clear();
     self.cursor = 0;
+    self.anchor = None;
     self.insert(&text.replace(['\n', '\r'], " "));
   }
 
   /// Inserts pasted text as one undoable edit.
   pub fn paste(&mut self, text: &str) -> PromptEvent {
+    if text.chars().all(char::is_control) {
+      return PromptEvent::Pending;
+    }
     self.snapshot();
     self.menu = None;
     self.recall = None;
     self.ghost.clear();
-    let before = self.text.len();
+    let before = self.text.clone();
     self.insert(text);
-    if self.text.len() == before {
-      PromptEvent::Pending
-    } else {
-      PromptEvent::Edited
-    }
+    if self.text == before { PromptEvent::Pending } else { PromptEvent::Edited }
   }
 
   pub fn insert(&mut self, text: &str) {
+    self.delete_selection();
     for ch in text.chars().filter(|ch| !ch.is_control()) {
       if self.text.len() + ch.len_utf8() > LIMIT {
         break;
@@ -344,6 +367,11 @@ impl Prompt {
   }
 
   fn dispatch(&mut self, key: KeyEvent, history: &History) -> PromptEvent {
+    if self.native
+      && let Some(event) = self.native_key(key, history)
+    {
+      return event;
+    }
     match self.pending.feed_cancellable(&self.bindings, key, Target::cancels) {
       Match::Target(Target::Prompt(action)) => self.action(action, history),
       Match::Target(Target::Command(command)) => {
@@ -384,11 +412,23 @@ impl Prompt {
   ) -> PromptEvent {
     use PromptAction as A;
     if let A::Complete { forward } = action {
+      self.anchor = None;
       return self.cycle(forward);
     }
     self.menu = None;
     if !matches!(action, A::History { .. }) {
       self.recall = None;
+    }
+    if matches!(
+      action,
+      A::Start
+        | A::End
+        | A::Move { .. }
+        | A::Word { .. }
+        | A::History { .. }
+        | A::Transpose
+    ) {
+      self.anchor = None;
     }
     let before = self.text.clone();
     match action {
@@ -413,14 +453,25 @@ impl Prompt {
           self.cursor = line::word_start(&self.text, self.cursor, chars);
         }
       }
-      A::Delete { backward: true } => self.edit(Self::delete_back),
+      A::Delete { backward: true } => self.edit(|p| {
+        if !p.delete_selection() {
+          p.delete_back();
+        }
+      }),
       A::Delete { backward: false } | A::DeleteOrComplete => {
         if action == A::DeleteOrComplete && self.cursor == self.text.len() {
           return self.cycle(true);
         }
-        self.edit(|p| p.remove(p.cursor..p.next_char()));
+        self.edit(|p| {
+          if !p.delete_selection() {
+            p.remove(p.cursor..p.next_char());
+          }
+        });
       }
       A::Kill { to_start } => self.edit(|p| {
+        if p.delete_selection() {
+          return;
+        }
         if to_start {
           p.remove(0..p.cursor);
         } else {
@@ -428,6 +479,9 @@ impl Prompt {
         }
       }),
       A::DeleteWord { forward, shell } => self.edit(|p| {
+        if p.delete_selection() {
+          return;
+        }
         let chars = if shell { SHELL } else { NARROW };
         if forward {
           p.remove(p.cursor..line::word_end(&p.text, p.cursor, chars));
@@ -447,6 +501,111 @@ impl Prompt {
       A::Complete { .. } => unreachable!(),
     }
     if self.text == before { PromptEvent::Pending } else { PromptEvent::Edited }
+  }
+
+  pub fn native(&mut self) {
+    self.native = true;
+  }
+
+  pub fn selection(&self) -> Option<std::ops::Range<usize>> {
+    let anchor = self.anchor?;
+    (anchor != self.cursor)
+      .then_some(anchor.min(self.cursor)..anchor.max(self.cursor))
+  }
+
+  pub fn can_undo(&self) -> bool {
+    !self.undo.is_empty()
+  }
+
+  pub fn selected(&self) -> Option<&str> {
+    if self.kind == PromptKind::Password {
+      return None;
+    }
+    self.selection().map(|range| &self.text[range])
+  }
+
+  fn delete_selection(&mut self) -> bool {
+    let range = self.selection();
+    self.anchor = None;
+    if let Some(range) = range {
+      self.text.replace_range(range.clone(), "");
+      self.cursor = range.start;
+      return true;
+    }
+    false
+  }
+
+  fn native_key(
+    &mut self,
+    key: KeyEvent,
+    history: &History,
+  ) -> Option<PromptEvent> {
+    let mods = key.modifiers;
+    let base = mods - KeyModifiers::SHIFT;
+    if base == KeyModifiers::SUPER {
+      match key.code {
+        KeyCode::Char('a') => {
+          self.anchor = Some(0);
+          self.cursor = self.text.len();
+          self.ghost.clear();
+          return Some(PromptEvent::Pending);
+        }
+        KeyCode::Char('x') if self.kind != PromptKind::Password => {
+          self.snapshot();
+          return Some(if self.delete_selection() {
+            PromptEvent::Edited
+          } else {
+            PromptEvent::Pending
+          });
+        }
+        KeyCode::Char('z') => {
+          return Some(self.action(PromptAction::Undo, history));
+        }
+        _ => {}
+      }
+    }
+    let moving = matches!(
+      key.code,
+      KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
+    );
+    if !moving
+      || !matches!(
+        base,
+        KeyModifiers::NONE | KeyModifiers::ALT | KeyModifiers::SUPER
+      )
+    {
+      return None;
+    }
+    if mods == KeyModifiers::NONE && self.selection().is_none() {
+      return None;
+    }
+    let old = self.cursor;
+    let forward = matches!(key.code, KeyCode::Right | KeyCode::End);
+    if base == KeyModifiers::SUPER
+      || matches!(key.code, KeyCode::Home | KeyCode::End)
+    {
+      self.cursor = if forward { self.text.len() } else { 0 };
+    } else if base == KeyModifiers::ALT {
+      self.cursor = if forward {
+        line::next_word(&self.text, self.cursor, NARROW)
+      } else {
+        line::word_start(&self.text, self.cursor, NARROW)
+      };
+    } else if !mods.contains(KeyModifiers::SHIFT) && self.selection().is_some()
+    {
+      let range = self.selection().unwrap();
+      self.cursor = if forward { range.end } else { range.start };
+    } else {
+      self.step(if forward { 1 } else { -1 });
+    }
+    if mods.contains(KeyModifiers::SHIFT) {
+      self.anchor.get_or_insert(old);
+    } else {
+      self.anchor = None;
+    }
+    self.menu = None;
+    self.ghost.clear();
+    Some(PromptEvent::Pending)
   }
 
   /// At the end of the line, also takes the suggestion's next word.
@@ -521,6 +680,7 @@ impl Prompt {
     };
     self.text = text;
     self.cursor = cursor;
+    self.anchor = None;
     PromptEvent::Edited
   }
 
@@ -929,5 +1089,55 @@ mod tests {
     prompt.feed(KeyEvent::new(KeyCode::Char('x'), CTRL), &history);
     let event = prompt.feed(KeyEvent::new(KeyCode::Char('e'), CTRL), &history);
     assert_eq!(event, PromptEvent::Editor);
+  }
+}
+
+#[cfg(test)]
+mod native_tests {
+  use super::*;
+  fn key(prompt: &mut Prompt, code: KeyCode, modifiers: KeyModifiers) {
+    prompt.feed(KeyEvent::new(code, modifiers), &History::default());
+  }
+  #[test]
+  fn selection_replaces_and_undoes() {
+    let mut p = Prompt::new(PromptKind::Command);
+    p.native();
+    p.paste("café 日本語");
+    key(&mut p, KeyCode::Char('a'), KeyModifiers::SUPER);
+    assert_eq!(p.selected(), Some("café 日本語"));
+    p.paste("章");
+    assert_eq!(p.text(), "章");
+    key(&mut p, KeyCode::Char('z'), KeyModifiers::SUPER);
+    assert_eq!(p.text(), "café 日本語");
+    key(&mut p, KeyCode::Left, KeyModifiers::SHIFT);
+    assert_eq!(p.selected(), Some("語"));
+    key(&mut p, KeyCode::Backspace, KeyModifiers::NONE);
+    assert_eq!(p.text(), "café 日本");
+    key(&mut p, KeyCode::Home, KeyModifiers::SHIFT);
+    assert_eq!(p.selected(), Some("café 日本"));
+    key(&mut p, KeyCode::Char('x'), KeyModifiers::SUPER);
+    assert_eq!(p.text(), "");
+    key(&mut p, KeyCode::Char('z'), KeyModifiers::SUPER);
+    key(&mut p, KeyCode::Home, KeyModifiers::NONE);
+    key(&mut p, KeyCode::Right, KeyModifiers::ALT | KeyModifiers::SHIFT);
+    assert_eq!(p.selected(), Some("café "));
+    key(&mut p, KeyCode::Char('!'), KeyModifiers::NONE);
+    assert_eq!(p.text(), "!日本");
+  }
+  #[test]
+  fn passwords_never_copy_or_enter_history() {
+    let mut p = Prompt::new(PromptKind::Password);
+    p.native();
+    p.paste("secret");
+    key(&mut p, KeyCode::Char('a'), KeyModifiers::SUPER);
+    assert!(p.selected().is_none());
+    key(&mut p, KeyCode::Char('x'), KeyModifiers::SUPER);
+    assert_eq!(p.text(), "secret");
+    key(&mut p, KeyCode::Delete, KeyModifiers::NONE);
+    assert_eq!(p.text(), "");
+    let mut history = History::default();
+    history.push(PromptKind::Password, "secret");
+    assert_eq!(history.commands(), [] as [String; 0]);
+    assert_eq!(history.searches(), [] as [String; 0]);
   }
 }

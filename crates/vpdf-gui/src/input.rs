@@ -16,7 +16,8 @@ pub struct Preedit {
 
 #[derive(Default)]
 pub struct Adapter {
-  menu: Option<egui::KeyboardShortcut>,
+  menu: Vec<egui::KeyboardShortcut>,
+  snapshot: std::sync::Arc<vpdf::session::native::commands::Snapshot>,
   held: Vec<MouseButton>,
   position: Option<egui::Pos2>,
   wheel: egui::Vec2,
@@ -31,7 +32,13 @@ pub struct Adapter {
 
 impl Adapter {
   pub fn reserve(&mut self, shortcut: egui::KeyboardShortcut) {
-    self.menu = Some(shortcut);
+    self.menu.push(shortcut);
+  }
+  pub fn snapshot(
+    &mut self,
+    snapshot: std::sync::Arc<vpdf::session::native::commands::Snapshot>,
+  ) {
+    self.snapshot = snapshot;
   }
   pub fn editing(&mut self, purpose: Option<egui::IMEPurpose>) {
     if self.editing != purpose {
@@ -146,17 +153,49 @@ impl Adapter {
     }
     output
   }
+  fn clipboard(&mut self, event: &Event) -> Option<Vec<Input>> {
+    let mut output = Vec::new();
+    match event {
+      Event::Copy | Event::Cut => {
+        use vpdf::session::native::commands::Action;
+        let action =
+          if matches!(event, Event::Copy) { Action::Copy } else { Action::Cut };
+        if let Some(command) = self.snapshot.command(action) {
+          output.push(Input::Action(command));
+        }
+      }
+      Event::Paste(text) if !self.menu.is_empty() => {
+        self.cancel();
+        if let Some(command) =
+          self.snapshot.command(vpdf::session::native::commands::Action::Paste)
+        {
+          output.push(Input::PasteTarget { command, text: text.clone() });
+        }
+      }
+      Event::Paste(text) => {
+        self.cancel();
+        self.wheel = egui::Vec2::ZERO;
+        output.push(Input::Paste(text.clone()));
+      }
+      _ => return None,
+    }
+    Some(output)
+  }
   fn keyboard(
     &mut self,
     event: &Event,
     modifiers: &mut Modifiers,
   ) -> Option<Vec<Input>> {
+    if let Some(output) = self.clipboard(event) {
+      return Some(output);
+    }
     let mut output = Vec::new();
     match event {
       Event::Text(text)
         if !modifiers.ctrl
           && !modifiers.mac_cmd
-          && !modifiers.alt
+          && (!modifiers.alt
+            || (cfg!(target_os = "macos") && self.editing.is_some()))
           && self.preedit.is_none() =>
       {
         self.wheel = egui::Vec2::ZERO;
@@ -207,13 +246,8 @@ impl Adapter {
           );
         }
       }
-      Event::Paste(text) => {
-        self.cancel();
-        self.wheel = egui::Vec2::ZERO;
-        output.push(Input::Paste(text.clone()));
-      }
       Event::Key { key, modifiers: keys, .. }
-        if self.menu.is_some_and(|shortcut| {
+        if self.menu.iter().any(|shortcut| {
           shortcut.logical_key == *key && keys.matches_exact(shortcut.modifiers)
         }) =>
       {
@@ -226,6 +260,15 @@ impl Adapter {
           if *key == Key::Escape {
             self.cancel();
           }
+          return Some(output);
+        }
+        if cfg!(target_os = "macos")
+          && self.editing.is_some()
+          && keys.alt
+          && !keys.ctrl
+          && !keys.mac_cmd
+          && key.symbol_or_name().len() == 1
+        {
           return Some(output);
         }
         let Some(code) = key_code(*key, *keys) else { return Some(output) };
@@ -469,6 +512,48 @@ mod tests {
       repeat: false,
       modifiers,
     }
+  }
+
+  #[test]
+  fn clipboard_events_and_reserved_keys_emit_once() {
+    use vpdf::session::native::commands::{Action, Snapshot};
+    let mut adapter = Adapter::default();
+    adapter.snapshot(std::sync::Arc::new(Snapshot {
+      commands: vec![Action::Copy, Action::Cut, Action::Paste],
+      ..Snapshot::default()
+    }));
+    adapter.reserve(egui::KeyboardShortcut::new(Modifiers::MAC_CMD, Key::C));
+    adapter.reserve(egui::KeyboardShortcut::new(Modifiers::MAC_CMD, Key::X));
+    let input = feed(
+      &mut adapter,
+      &[
+        key(Key::C, Modifiers::MAC_CMD),
+        Event::Copy,
+        key(Key::X, Modifiers::MAC_CMD),
+        Event::Cut,
+      ],
+      1.0,
+      None,
+    );
+    let [Input::Action(copy), Input::Action(cut)] = input.as_slice() else {
+      panic!("Expected clipboard commands")
+    };
+    assert_eq!(copy.action, Action::Copy);
+    assert_eq!(cut.action, Action::Cut);
+    let input = feed(&mut adapter, &[Event::Paste("日本語".into())], 1.0, None);
+    assert!(
+      matches!(&input[..], [Input::PasteTarget { text, .. }] if text == "日本語")
+    );
+    adapter.snapshot(std::sync::Arc::new(Snapshot::default()));
+    assert!(
+      feed(
+        &mut adapter,
+        &[Event::Copy, Event::Cut, Event::Paste("secret".into())],
+        1.0,
+        None
+      )
+      .is_empty()
+    );
   }
 
   #[test]

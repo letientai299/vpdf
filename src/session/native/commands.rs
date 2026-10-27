@@ -32,6 +32,31 @@ pub enum Focus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {
   Open,
+  NewTab,
+  CloseTab,
+  NextTab,
+  PreviousTab,
+  Find,
+  NextResult,
+  PreviousResult,
+  Copy,
+  Cut,
+  Paste,
+  SelectAll,
+  Undo,
+  Print,
+  Quit,
+  FitWidth,
+  FitPage,
+  ZoomIn,
+  ZoomOut,
+  Rotate,
+  Back,
+  Forward,
+  Outline,
+  Overview,
+  ClosePane,
+  Help,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -56,6 +81,8 @@ pub struct Snapshot {
   pub selection: Option<(Position, Position)>,
   pub busy: bool,
   pub searching: bool,
+  pub all_selected: bool,
+  pub edit_selection: Option<std::ops::Range<usize>>,
 }
 
 impl Snapshot {
@@ -73,6 +100,9 @@ pub(crate) struct State {
   pub effects: Vec<Effect>,
   pending: Option<(RequestId, Target)>,
   next: u64,
+  pub(super) clipboard: Option<String>,
+  all: Option<Target>,
+  copy: Option<CopyJob>,
 }
 
 pub(super) fn refresh(session: &mut Session) {
@@ -102,16 +132,13 @@ pub(super) fn refresh(session: &mut Session) {
   } else {
     Target(old.target.0.checked_add(1).expect("Native target exhausted"))
   };
-  let open = !session.quit
-    && !session.blocked()
-    && session.native.pending.is_none()
-    && matches!(focus, Focus::Home | Focus::Reader(InputOwner::Content));
+  let commands = available(session, focus, target);
   let snapshot = Snapshot {
     target,
     document,
     path: app.map(|app| app.document_identity().to_owned()),
     focus,
-    commands: if open { vec![Action::Open] } else { Vec::new() },
+    commands,
     location: app.map(crate::app::App::navigation_position),
     selection: app.and_then(|app| {
       app
@@ -121,16 +148,113 @@ pub(super) fn refresh(session: &mut Session) {
     }),
     busy: app.is_some_and(crate::app::App::busy),
     searching: app.is_some_and(|app| app.search.phase().running()),
+    all_selected: session.native.all == Some(target),
+    edit_selection: prompt(session)
+      .and_then(vpdf_ui::prompt::Prompt::selection),
   };
+  let stale = session.native.all.is_some_and(|old| old != target);
   if **old != snapshot {
     session.native.snapshot = Arc::new(snapshot);
   }
+  if stale {
+    cancel_selection(session);
+  }
 }
 
-pub(super) fn dispatch(session: &mut Session, command: Command) -> bool {
+fn available(session: &Session, focus: Focus, target: Target) -> Vec<Action> {
+  let app = session.tabs.get(session.active).map(|tab| &tab.panes[tab.focus]);
+  let open = !session.quit
+    && !session.blocked()
+    && session.native.pending.is_none()
+    && matches!(focus, Focus::Home | Focus::Reader(InputOwner::Content));
+  let editable = matches!(
+    focus,
+    Focus::HomePrompt | Focus::Password | Focus::Reader(InputOwner::Prompt)
+  );
+  let readable = matches!(focus, Focus::Reader(InputOwner::Content));
+  let ordinary = !session.quit
+    && !session.blocked()
+    && session.native.pending.is_none()
+    && !matches!(focus, Focus::Dialog);
+  let mut commands = vec![Action::Quit];
+  if open {
+    commands.push(Action::Open);
+  }
+  if ordinary {
+    commands.extend([Action::CloseTab, Action::NewTab, Action::Help]);
+    if matches!(focus, Focus::Reader(_)) {
+      commands.push(Action::Find);
+    }
+    if matches!(focus, Focus::Reader(InputOwner::Panel)) {
+      commands.push(Action::Copy);
+    }
+    if session.tabs.len() > 1 {
+      commands.extend([Action::NextTab, Action::PreviousTab]);
+    }
+    if matches!(focus, Focus::Reader(InputOwner::Content | InputOwner::Prompt))
+      && app.is_some_and(|app| !app.search.query().text.is_empty())
+    {
+      commands.extend([Action::NextResult, Action::PreviousResult]);
+    }
+    if readable {
+      commands.extend([
+        Action::SelectAll,
+        Action::FitWidth,
+        Action::FitPage,
+        Action::ZoomIn,
+        Action::ZoomOut,
+        Action::Rotate,
+        Action::Back,
+        Action::Forward,
+        Action::Outline,
+        Action::Overview,
+        Action::ClosePane,
+      ]);
+      if app.is_some_and(|app| app.reader.selection.is_some())
+        || session.native.all == Some(target)
+      {
+        commands.push(Action::Copy);
+      }
+      if cfg!(target_os = "macos")
+        && session.printing.is_none()
+        && app.is_some_and(|app| app.manual.is_none())
+      {
+        commands.push(Action::Print);
+      }
+    }
+  }
+  if editable && !session.quit {
+    commands.extend([Action::SelectAll, Action::Paste]);
+    if prompt(session).is_some_and(vpdf_ui::prompt::Prompt::can_undo) {
+      commands.push(Action::Undo);
+    }
+    if prompt(session).and_then(vpdf_ui::prompt::Prompt::selected).is_some() {
+      commands.extend([Action::Copy, Action::Cut]);
+    }
+  }
+
+  commands
+}
+
+pub(super) fn dispatch(
+  session: &mut Session,
+  command: Command,
+  screen: Screen,
+) -> bool {
   if session.native.snapshot.command(command.action) != Some(command) {
     return false;
   }
+  let result = execute(session, command, screen);
+  report(session, result);
+  true
+}
+
+fn execute(
+  session: &mut Session,
+  command: Command,
+  screen: Screen,
+) -> crate::Result<()> {
+  use vpdf_ui::keys::{Action as Reader, Input};
   match command.action {
     Action::Open => {
       session.native.next =
@@ -139,6 +263,205 @@ pub(super) fn dispatch(session: &mut Session, command: Command) -> bool {
       session.native.pending = Some((request, command.target));
       session.native.effects.push(Effect::Open { request });
     }
+    Action::Quit => session.quit = true,
+    Action::CloseTab => {
+      if session.tabs.is_empty() {
+        session.quit = true;
+      } else {
+        session.close()?;
+        super::ensure_home(session, screen);
+      }
+    }
+    Action::NewTab => {
+      if session.tabs.is_empty() {
+        super::ensure_home(session, screen);
+      } else {
+        session.recent_tab(screen)?;
+      }
+    }
+    Action::NextTab | Action::PreviousTab => {
+      let forward = command.action == Action::NextTab;
+      let step = if forward {
+        vpdf_ui::window::TabMove::Next(1)
+      } else {
+        vpdf_ui::window::TabMove::Previous(1)
+      };
+      session.activate(session.step(step))?;
+    }
+    Action::Copy | Action::Cut => {
+      if let Some(text) =
+        prompt(session).and_then(|p| p.selected().map(str::to_owned))
+      {
+        session.native.clipboard = Some(text);
+        if command.action == Action::Cut {
+          edit_key(session, 'x', screen);
+        }
+      } else if session.native.all == Some(command.target) {
+        session.native.copy = Some(CopyJob {
+          target: command.target,
+          page: 0,
+          text: String::new(),
+        });
+      } else {
+        session.app().action(Input::plain(Reader::Yank))?;
+      }
+    }
+    Action::SelectAll if prompt(session).is_none() => {
+      session.app().reader.normal();
+      session.app().reader.select_document(true);
+      session.native.all = Some(command.target);
+      session.app().reader.notice("All document text selected");
+    }
+    Action::SelectAll | Action::Undo => {
+      let ch = if command.action == Action::Undo { 'z' } else { 'a' };
+      edit_key(session, ch, screen);
+    }
+    Action::Paste => {}
+    Action::Print => session.print()?,
+    Action::Help if session.tabs.is_empty() => {
+      session.request_help("", vpdf_ui::topics::Invocation::home(), screen)?;
+    }
+    Action::Find => find(session, screen)?,
+    action => reader_action(session, action, screen)?,
+  }
+  Ok(())
+}
+
+fn find(session: &mut Session, screen: Screen) -> crate::Result<()> {
+  use vpdf_ui::prompt::PromptKind;
+  if prompt(session)
+    .is_some_and(|prompt| matches!(prompt.kind(), PromptKind::Search(_)))
+  {
+    edit_key(session, 'a', screen);
+    return Ok(());
+  }
+  if prompt(session).is_some() {
+    session.app().cancel_input()?;
+  }
+  if let Some(panel) = &mut session.app().panel {
+    panel.view.focus(false);
+  }
+  let query = session.app().search.query().text.clone();
+  session.app().begin_search(false)?;
+  if !query.is_empty() {
+    super::apply_reader(session, super::Input::Paste(query), &mut { screen });
+    edit_key(session, 'a', screen);
+  }
+  Ok(())
+}
+
+fn reader_action(
+  session: &mut Session,
+  action: Action,
+  screen: Screen,
+) -> crate::Result<()> {
+  use vpdf_ui::keys::{Action as Reader, Input};
+
+  let action = match action {
+    Action::NextResult => Reader::Result(false),
+    Action::PreviousResult => Reader::Result(true),
+    Action::FitWidth => Reader::Fit,
+    Action::FitPage => Reader::FitPage,
+    Action::ZoomIn => Reader::Zoom(1),
+    Action::ZoomOut => Reader::Zoom(-1),
+    Action::Rotate => Reader::Rotate,
+    Action::Back => Reader::History(false),
+    Action::Forward => Reader::History(true),
+    Action::Outline => Reader::Panel(vpdf_ui::keys::PanelKind::Outline),
+    Action::Overview => Reader::Overview,
+    Action::ClosePane => Reader::Window(vpdf_ui::window::Window::Close),
+    Action::Help => Reader::Help,
+    _ => unreachable!(),
+  };
+  session.app().action(Input::plain(action))?;
+  session.settle()?;
+  super::ensure_home(session, screen);
+  Ok(())
+}
+
+fn edit_key(session: &mut Session, ch: char, mut screen: Screen) {
+  use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
+  super::apply_reader(
+    session,
+    super::Input::Key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::SUPER)),
+    &mut screen,
+  );
+}
+
+pub(super) fn prepare_prompt(session: &mut Session) {
+  let prompt = if let Some(unlock) = &mut session.unlock {
+    Some(&mut unlock.prompt)
+  } else if let Some(home) = &mut session.home {
+    home.view.prompt_mut()
+  } else {
+    session
+      .tabs
+      .get_mut(session.active)
+      .and_then(|tab| tab.panes[tab.focus].overlays.prompt_mut())
+  };
+  if let Some(prompt) = prompt {
+    prompt.native();
+  }
+}
+
+fn prompt(session: &Session) -> Option<&vpdf_ui::prompt::Prompt> {
+  if let Some(unlock) = &session.unlock {
+    return Some(&unlock.prompt);
+  }
+  if let Some(home) = &session.home {
+    return home.view.prompt();
+  }
+  let tab = session.tabs.get(session.active)?;
+  tab.panes[tab.focus].overlays.prompt()
+}
+
+struct CopyJob {
+  target: Target,
+  page: usize,
+  text: String,
+}
+
+pub(super) fn copying(session: &Session) -> bool {
+  session.native.copy.is_some()
+}
+
+pub(super) fn cancel_selection(session: &mut Session) {
+  session.native.all = None;
+  session.native.copy = None;
+  for app in session.panes_mut() {
+    app.reader.select_document(false);
+  }
+}
+
+pub(super) fn copy_update(session: &mut Session) -> bool {
+  let Some(mut job) = session.native.copy.take() else { return false };
+  refresh(session);
+  if session.native.snapshot.target != job.target
+    || session.native.all != Some(job.target)
+  {
+    return true;
+  }
+  let result = (|| -> crate::Result<bool> {
+    let app = session.app();
+    let page = app.doc.text(vpdf_model::text::PageId(job.page))?;
+    anyhow::ensure!(!page.truncated, "Page text exceeds extraction limit");
+    for line in &page.lines {
+      let text = line.text();
+      anyhow::ensure!(
+        job.text.len() + text.len() + 1 < vpdf_reader::reader::YANK_LIMIT,
+        "Selection exceeds {} MiB",
+        vpdf_reader::reader::YANK_LIMIT >> 20
+      );
+      job.text.push_str(&text);
+      job.text.push('\n');
+    }
+    job.page += 1;
+    Ok(job.page == app.doc.pages.len())
+  })();
+  match result {
+    Ok(true) => session.native.clipboard = Some(job.text),
+    Ok(false) => session.native.copy = Some(job),
+    Err(error) => report(session, Err(error)),
   }
   true
 }

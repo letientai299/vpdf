@@ -8,7 +8,7 @@ use vpdf_search::search::Hit;
 /// Bytes all registers keep together.
 const REGISTERS: usize = 32 << 20;
 /// Bytes one yank or register holds at most.
-pub(crate) const YANK_LIMIT: usize = 8 << 20;
+pub const YANK_LIMIT: usize = 8 << 20;
 
 pub trait TextSource {
   fn page_count(&self) -> usize;
@@ -116,6 +116,7 @@ pub struct Reader {
   pub cursor: Position,
   pub scroll: f32,
   pub selection: Option<Selection>,
+  pub document_selected: bool,
   pub operator: Option<Operator>,
   pub last_selection: Option<(Selection, Position)>,
   pub desired: Option<usize>,
@@ -135,6 +136,7 @@ impl Default for Reader {
       cursor: Position::default(),
       scroll: 0.0,
       selection: None,
+      document_selected: false,
       operator: None,
       last_selection: None,
       desired: None,
@@ -173,6 +175,7 @@ impl Reader {
   }
 
   pub fn normal(&mut self) {
+    self.document_selected = false;
     self.entry = EntryMode::Normal;
   }
 
@@ -320,6 +323,7 @@ impl Reader {
   }
 
   pub fn cancel(&mut self) {
+    self.document_selected = false;
     self.end_selection();
     self.disarm();
     self.message.clear();

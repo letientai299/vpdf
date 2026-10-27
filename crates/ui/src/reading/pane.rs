@@ -32,6 +32,13 @@ impl Deref for Pane {
 }
 
 impl Pane {
+  pub fn select_document(&mut self, selected: bool) {
+    if selected {
+      self.reader.cancel();
+    }
+    self.reader.document_selected = selected;
+  }
+
   pub fn new(reader: Reader, tracking: Tracking) -> Self {
     Self { reader, tracking }
   }

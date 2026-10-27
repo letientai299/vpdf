@@ -3,10 +3,9 @@ use super::Integration;
 use objc2::rc::Retained;
 use objc2::{ClassType, MainThreadOnly, msg_send};
 use objc2_app_kit::{
-  NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSMenu,
-  NSMenuItem, NSWindow,
+  NSApplication, NSEvent, NSEventType, NSMenu, NSMenuItem, NSWindow,
 };
-use objc2_foundation::{MainThreadMarker, NSPoint, ns_string};
+use objc2_foundation::{MainThreadMarker, NSPoint};
 
 pub(super) struct Identity {
   app: usize,
@@ -33,26 +32,41 @@ impl Identity {
 }
 
 impl Integration {
-  pub fn invoke_menu(&self) {
-    if let Some(menu) = self.root.submenu() {
-      menu.performActionForItemAtIndex(0);
+  pub fn invoke_menu(&self, title: &str) {
+    for root in &self.roots {
+      let Some(menu) = root.submenu() else { continue };
+      let found = (0..menu.numberOfItems()).find(|&index| {
+        menu
+          .itemAtIndex(index)
+          .is_some_and(|item| item.title().to_string() == title)
+      });
+      if let Some(index) = found {
+        menu.performActionForItemAtIndex(index);
+        return;
+      }
     }
   }
 
-  pub fn invoke_key(&self) -> bool {
+  pub fn invoke_key(&self, title: &str) -> bool {
+    let Some(item) =
+      self.items.iter().find(|item| item.title().to_string() == title)
+    else {
+      return false;
+    };
+    let characters = item.keyEquivalent();
     // SAFETY: Arguments match AppKit's key-event factory.
     let event: Option<Retained<NSEvent>> = unsafe {
       msg_send![NSEvent::class(),
         keyEventWithType: NSEventType::KeyDown,
         location: NSPoint::new(0.0, 0.0),
-        modifierFlags: NSEventModifierFlags::Command,
+        modifierFlags: item.keyEquivalentModifierMask(),
         timestamp: 0.0_f64,
         windowNumber: self.window.windowNumber(),
         context: std::ptr::null::<objc2_app_kit::NSGraphicsContext>(),
-        characters: ns_string!("o"),
-        charactersIgnoringModifiers: ns_string!("o"),
+        characters: &*characters,
+        charactersIgnoringModifiers: &*characters,
         isARepeat: false,
-        keyCode: 31_u16,
+        keyCode: 0_u16,
       ]
     };
     let Some(event) = event else { return false };

@@ -741,12 +741,13 @@ impl Marks<'_> {
 
   /// Whether the selection covers `position`.
   fn selects(&self, position: Position) -> bool {
-    self.reader.selection.is_some_and(|selection| {
-      let range =
-        vpdf_reader::motion::range(selection.anchor, self.reader.cursor);
-      let linewise = selection.kind == SelectionKind::Line;
-      vpdf_reader::motion::covers(range, linewise, position)
-    })
+    self.reader.document_selected
+      || self.reader.selection.is_some_and(|selection| {
+        let range =
+          vpdf_reader::motion::range(selection.anchor, self.reader.cursor);
+        let linewise = selection.kind == SelectionKind::Line;
+        vpdf_reader::motion::covers(range, linewise, position)
+      })
   }
 
   fn line_style(&self, position: Position) -> Role {

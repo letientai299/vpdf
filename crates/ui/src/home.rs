@@ -323,6 +323,14 @@ impl Home {
     self.prompt.is_some()
   }
 
+  pub fn prompt_mut(&mut self) -> Option<&mut Prompt> {
+    self.prompt.as_mut()
+  }
+
+  pub fn prompt(&self) -> Option<&Prompt> {
+    self.prompt.as_ref()
+  }
+
   pub fn replace_prompt(&mut self, text: &str) {
     if let Some(prompt) = &mut self.prompt {
       prompt.replace(text);
