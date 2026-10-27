@@ -118,15 +118,19 @@ commands! {
     "pick or open a PDF in a new tab";
   TabNew "tabnew" [] "[file]" Path Home
     "open a PDF or recent list in a new tab";
-  Split "split" ["sp"] "[file]" Path Recent "split this pane above";
-  VSplit "vsplit" ["vs"] "[file]" Path Recent "split this pane to the left";
-  Close "close" ["clo"] "" Nothing Recent "close this pane";
-  Only "only" ["on"] "" Nothing Recent "close every other pane";
-  TabNext "tabnext" ["tabn"] "[n]" Tab Recent "go to the next or nth tab";
-  TabPrevious "tabprevious" ["tabp", "tabN"] "" Nothing Recent
+  BDelete "bdelete" ["bd"] "" Nothing Home "unload this document";
+  New "new" [] "[file]" Path Home "split above with Recent or a PDF";
+  VNew "vnew" [] "[file]" Path Home "split left with Recent or a PDF";
+  Split "split" ["sp"] "[file]" Path Home "split this pane above";
+  VSplit "vsplit" ["vs"] "[file]" Path Home "split this pane to the left";
+  Close "close" ["clo"] "" Nothing Home "close this pane";
+  Only "only" ["on"] "" Nothing Home "close every other pane";
+  TabNext "tabnext" ["tabn"] "[n]" Tab Home "go to the next or nth tab";
+  TabPrevious "tabprevious" ["tabp", "tabN"] "" Nothing Home
     "go to the previous tab";
   TabClose "tabclose" ["tabc"] "" Nothing Home "close this tab";
-  Recent "recent" ["oldfiles"] "" Nothing Home "list recently opened PDFs";
+  Recent "recent" ["oldfiles", "enew"] "" Nothing Home
+    "list recently opened PDFs";
   Fzf "fzf" [] "[path]" Path Home "pick a PDF below this directory"
     requires "fzf";
   Marks "marks" [] "" Nothing Recent "list marks";
@@ -148,7 +152,8 @@ commands! {
   NoHlSearch "nohlsearch" ["noh"] "" Nothing Document "hide search highlights";
   Text "text" [] "" Nothing Recent "preview extracted page text";
   Info "info" [] "" Nothing Recent "document, reader, and terminal info";
-  Reload "reload" [] "" Nothing Document "reread the file from disk";
+  Reload "reload" ["e!"] "" Nothing Document
+    "reread the file from disk";
   #[cfg(target_os = "macos")]
   Print "print" [] "" Nothing Document "open the system print dialog";
   Password "password" [] "" Nothing Document "unlock and reopen the document";
@@ -156,8 +161,9 @@ commands! {
   Help "help" ["h"] "[topic]" Help Home "open the built-in manual";
   HelpBeside "help!" ["h!"] "[topic]" Help Home "open help beside this pane";
   Version "version" [] "" Nothing Home "show build information";
-  Quit "quit" ["q"] "" Nothing Home "close this pane, tab, then reader";
-  QuitAll "qall" ["qa", "quitall"] "" Nothing Home "close every tab";
+  Quit "quit" ["q", "q!", "x", "wq"] "" Nothing Home
+    "close this pane, tab, then reader";
+  QuitAll "qall" ["qa", "quitall", "qa!"] "" Nothing Home "close every tab";
 }
 
 /// Command named `name` or aliased to it.
@@ -480,7 +486,7 @@ mod tests {
       }
     }
     assert_eq!(
-      candidates("tabnext ", View::Home, |_| true, |_, _| unreachable!()).1,
+      candidates("tabnext ", View::Home, |_| true, |_, _| Vec::new()).1,
       [] as [String; 0]
     );
   }
@@ -527,7 +533,7 @@ mod tests {
       ("perf", true, true),
       ("version", true, true),
       ("tabclose", true, true),
-      ("split", false, true),
+      ("split", true, true),
       ("toc", false, true),
       ("help", true, true),
       ("mouse", false, true),
@@ -614,7 +620,7 @@ mod tests {
       Vec::<String>::new()
     );
     assert_eq!(
-      candidates("split p", View::Home, |_| true, |_, _| unreachable!()).1,
+      candidates("split p", View::Home, |_| true, |_, _| Vec::new()).1,
       Vec::<String>::new()
     );
     assert_eq!(

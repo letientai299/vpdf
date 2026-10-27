@@ -46,7 +46,10 @@ fn uri(path: &Path) -> String {
 /// Documents of the active tab's panes, and the focused one.
 fn shown(session: &mut Session) -> (Vec<PathBuf>, usize) {
   let tab = session.tab();
-  (tab.panes.iter().map(|app| app.path.clone()).collect(), tab.focus)
+  (
+    tab.panes.iter().map(|app| app.document().unwrap().path.clone()).collect(),
+    tab.focus,
+  )
 }
 
 const FILES: &str = "text/uri-list";
@@ -94,13 +97,13 @@ fn drops_open_tabs() -> Result<()> {
     original.panes.iter().map(|app| app.id).collect::<Vec<_>>(),
     owners
   );
-  assert!(original.panes.iter().all(|app| app.path == a));
+  assert!(original.panes.iter().all(|app| app.document().unwrap().path == a));
   // Reusing the current view preserves pending keys.
   send(&mut session, b"2")?;
   drop_on(&mut session, on_left, FILES, &uri(&b)).1?;
   assert_eq!(session.tabs.len(), 2);
   assert_eq!(session.active, 1);
-  assert_eq!(session.app().keys.pending(), "2");
+  assert_eq!(session.app().unwrap().keys.pending(), "2");
   drop_on(&mut session, on_right, FILES, &uri(&a)).1?;
   assert_eq!(session.tabs.len(), 2);
   assert_eq!(session.active, 0);
@@ -127,11 +130,18 @@ fn file_and_text_drops() -> Result<()> {
   drop_on(&mut session, on_right, FILES, &uri(&c)).1?;
   assert_eq!(session.tabs.len(), 2);
   assert_eq!(shown(&mut session), (vec![c], 0));
-  assert!(session.tabs[0].panes.iter().all(|app| app.path == a));
+  assert!(
+    session.tabs[0].panes.iter().all(|app| app.document().unwrap().path == a)
+  );
   let before = shown(&mut session);
   send(&mut session, b":")?;
   let typed = |session: &mut Session| {
-    session.app().overlays.prompt().map(|prompt| prompt.text().to_owned())
+    session
+      .app()
+      .unwrap()
+      .overlays
+      .prompt()
+      .map(|prompt| prompt.text().to_owned())
   };
   assert_eq!(typed(&mut session), Some(String::new()));
   let (replies, ended) =
@@ -139,7 +149,7 @@ fn file_and_text_drops() -> Result<()> {
   ended?;
   assert!(replies.contains("t=m:o=1;text/plain;charset=utf-8"));
   assert_eq!(typed(&mut session), Some(" page".into()));
-  session.app().cancel_prompt()?;
+  session.app().unwrap().cancel_prompt()?;
   // Text is refused without a prompt.
   let (replies, ended) = drop_on(&mut session, on_right, "text/plain", "x");
   ended?;
@@ -177,9 +187,9 @@ fn pasted_pdf_paths_open_in_normal_mode() -> Result<()> {
   ];
   for (keys, text, want) in cases {
     send(&mut session, keys)?;
-    session.app().paste(&text, &mut history)?;
+    session.app().unwrap().paste(&text, &mut history)?;
     session.settle()?;
-    assert_eq!(session.app().path, want, "{text}");
+    assert_eq!(session.app().unwrap().path, want, "{text}");
   }
   // The start screen opens one too.
   let mut home = Home::new(&[], screen(), &vpdf_pdf::jobs::Wake::none(), true);

@@ -48,16 +48,14 @@ impl Session {
         self.resume(Operation::Reference(path.into()), screen)
       }
       Operation::Reference(reference) => {
-        let result = self.open_reference(&reference, true, screen);
+        let tab = self.tabs.is_empty() || !self.focused().is_recent();
+        let result = self.open_reference(&reference, tab, screen);
         self.unlock_result(result, Some(Operation::Reference(reference)))?;
-        if self.unlock.is_none() {
-          self.home = None;
-        }
         Ok(())
       }
       Operation::Request(request) => {
-        self.app().request = Some(request);
-        self.settle()
+        let result = self.dispatch(Some(request.clone()), screen);
+        self.unlock_result(result, Some(Operation::Request(request)))
       }
     }
   }

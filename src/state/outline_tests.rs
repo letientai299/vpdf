@@ -165,12 +165,13 @@ fn reopening_resets_forgotten_preferences() -> Result<()> {
   session.open(&path, true, screen)?;
   session
     .app()
+    .unwrap()
     .outline
     .restore_preferences(Some(preferences(Fold::CollapseAll)));
   session.open(&path, true, screen)?;
-  assert!(session.app().outline.preferences().is_some());
+  assert!(session.app().unwrap().outline.preferences().is_some());
   session.forget_recent(std::slice::from_ref(&path))?;
   session.open(&path, true, screen)?;
-  assert!(session.app().outline.preferences().is_none());
+  assert!(session.app().unwrap().outline.preferences().is_none());
   Ok(())
 }

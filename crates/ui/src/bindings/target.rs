@@ -192,6 +192,9 @@ fn reader_allowed(action: Action, context: Context) -> bool {
           | Action::Command
           | Action::Search(_)
           | Action::Quit
+          | Action::Alternate
+          | Action::Window(_)
+          | Action::Tab(_)
       ) || crate::panel::Panel::new(crate::keys::PanelKind::Recent, Vec::new())
         .navigate_available(action)
     }

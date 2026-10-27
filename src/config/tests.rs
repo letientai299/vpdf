@@ -614,6 +614,7 @@ fn remapped_grammar_preserves_counts_and_registers() {
     "'x' = { action = 'object.select', object = 'word' }\n",
     "[keybindings.normal]\n",
     "'M' = { action = 'mark.choose' }\n",
+    "'ZZ' = { unbind = true }\n'ZQ' = { unbind = true }\n",
     "'Z' = { action = 'mark.jump', exact = true }\n",
     "[keybindings.mark-jump]\n",
     "'<D-b>' = { action = 'history.previous' }\n",
@@ -991,31 +992,43 @@ fn theme_file_commands() -> crate::Result<()> {
   let mut session = crate::session::Session::new(None);
   session.open(&pdf, true, crate::screen::cells(100, 30))?;
   let relative = path.strip_prefix(std::env::current_dir()?)?;
-  session.app().command(&format!("theme {}", relative.display()))?;
+  session.app().unwrap().command(&format!("theme {}", relative.display()))?;
   session.settle()?;
-  let reference = session.app().settings.reference();
+  let reference = session.app().unwrap().settings.reference();
   let theme =
     reference.settings.iter().find(|s| s.name == "appearance.theme").unwrap();
   assert_eq!(theme.source, vpdf_ui::reference::Source::Command);
   assert_eq!(reference.palette.background, [0x12, 0x34, 0x56]);
   assert!(std::fs::read_to_string(&path)?.contains("#123456"));
   std::fs::write(&path, "[broken")?;
-  session.app().command(&format!("theme {}", relative.display()))?;
-  session.settle()?;
-  assert_eq!(session.app().settings.colors(Colors::Terminal), Colors::Terminal);
-  assert!(session.app().reader.message.contains("custom.toml"));
-  write_palette(&path, "#abcdef")?;
-  session.app().command(&format!("theme {}", relative.display()))?;
+  session.app().unwrap().command(&format!("theme {}", relative.display()))?;
   session.settle()?;
   assert_eq!(
-    session.app().settings.colors(Colors::Terminal).palette().background,
+    session.app().unwrap().settings.colors(Colors::Terminal),
+    Colors::Terminal
+  );
+  assert!(session.app().unwrap().reader.message.contains("custom.toml"));
+  write_palette(&path, "#abcdef")?;
+  session.app().unwrap().command(&format!("theme {}", relative.display()))?;
+  session.settle()?;
+  assert_eq!(
+    session
+      .app()
+      .unwrap()
+      .settings
+      .colors(Colors::Terminal)
+      .palette()
+      .background,
     [0xab, 0xcd, 0xef]
   );
   std::fs::remove_file(&path)?;
-  session.app().command(&format!("theme {}", relative.display()))?;
+  session.app().unwrap().command(&format!("theme {}", relative.display()))?;
   session.settle()?;
-  assert_eq!(session.app().settings.colors(Colors::Terminal), Colors::Terminal);
-  assert!(session.app().reader.message.contains("custom.toml"));
+  assert_eq!(
+    session.app().unwrap().settings.colors(Colors::Terminal),
+    Colors::Terminal
+  );
+  assert!(session.app().unwrap().reader.message.contains("custom.toml"));
   Ok(())
 }
 

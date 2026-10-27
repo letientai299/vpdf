@@ -222,7 +222,7 @@ fn presses_beyond_the_list_miss_its_rows() {
 }
 
 #[test]
-fn covered_pages_keep_width() {
+fn panels_reserve_page_space() {
   let screen =
     Screen { origin: (3, 5), ..crate::testing::screen::cells(100, 24) };
   let outline = Panel::new(PanelKind::Outline, Vec::new());
@@ -234,7 +234,7 @@ fn covered_pages_keep_width() {
     (Some(&help), None, 50, 50),
     (Some(&outline), Some(1), 8, 92),
     (Some(&outline), Some(100), 88, 12),
-    (Some(&recent), Some(100), 100, 100),
+    (Some(&recent), Some(100), 88, 12),
   ] {
     let (offset, page) = page_space(screen, panel, dragged);
     assert_eq!((offset, page.columns), (left, columns));

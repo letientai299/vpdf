@@ -13,15 +13,9 @@ pub fn page_space(
   panel: Option<&Panel>,
   dragged: Option<u16>,
 ) -> (u16, Screen) {
-  let covered = panel.is_some_and(Panel::covers_page);
-  let beside = match panel {
-    Some(panel) if !covered => {
-      Panel::width(panel.kind(), screen.columns, dragged)
-    }
-    _ => 0,
-  };
-  let left = if covered { screen.columns } else { beside };
-  (left, Screen { columns: screen.columns.saturating_sub(beside), ..screen })
+  let left = panel
+    .map_or(0, |panel| Panel::width(panel.kind(), screen.columns, dragged));
+  (left, Screen { columns: screen.columns.saturating_sub(left), ..screen })
 }
 
 #[derive(Clone, Copy)]
@@ -470,10 +464,6 @@ impl Panel {
       _ => {}
     }
     None
-  }
-
-  pub fn covers_page(&self) -> bool {
-    self.is_recent_view() && self.focused()
   }
 
   /// Recent rows open with Enter alone.

@@ -1,6 +1,7 @@
 use super::{
-  App, At, Axis, Direction, Node, Notice, PasswordRequired, Path, Place, Rect,
-  Result, Screen, Session, Tab, TabMove, Tabline, Window, io, neighbor,
+  App, At, Axis, Body, Direction, Home, Node, Notice, Pane, PasswordRequired,
+  Path, Place, Rect, Result, Screen, Session, Tab, TabMove, Tabline, Window,
+  io, neighbor,
 };
 use vpdf_ui::keys::PanelKind;
 
@@ -39,7 +40,9 @@ impl Session {
     self.active = tab;
     self.refocus();
     // A rest from before focus is stale.
-    self.app().calm_hover();
+    if let Ok(app) = self.app() {
+      app.calm_hover();
+    }
     self.arrange()
   }
 
@@ -78,16 +81,6 @@ impl Session {
       let Some(index) = tab.index(id) else { continue };
       let focused = index == tab.focus;
       let app = &mut tab.panes[index];
-      // Another tab or pane may have drawn over these rows. After a
-      // resize the clear also erases images `WezTerm` keeps in cells,
-      // which it no longer deletes by placement id.
-      app.blank = false;
-      app.focused = focused;
-      app.tabline = if focused {
-        tabline.take().unwrap_or_default()
-      } else {
-        Tabline::default()
-      };
       let pane = Screen {
         columns: rect.columns,
         rows: rect.rows,
@@ -95,27 +88,32 @@ impl Session {
         ..screen
       };
       let at = At { column: rect.column, row: rect.row };
-      let before = (app.screen.columns, app.screen.rows, app.screen.origin);
-      if before != (pane.columns, pane.rows, pane.origin) || app.at != at {
-        // Hint labels and link previews sit at the old size.
-        app.overlays.resized();
-        app.screen = pane;
-        app.at = at;
-        app.tiles.invalidate();
-        app.relayout()?;
-      }
+      app.layout(
+        pane,
+        at,
+        focused,
+        if focused {
+          tabline.take().unwrap_or_default()
+        } else {
+          Tabline::default()
+        },
+      )?;
     }
     Ok(())
   }
 
   pub(super) fn existing(&self, path: &Path) -> Option<(usize, usize)> {
     if let Some(tab) = self.tabs.get(self.active)
-      && tab.panes[tab.focus].path == path
+      && tab.panes[tab.focus].document().is_some_and(|app| app.path == path)
     {
       return Some((self.active, tab.focus));
     }
     self.tabs.iter().enumerate().find_map(|(t, tab)| {
-      tab.panes.iter().position(|app| app.path == path).map(|p| (t, p))
+      tab
+        .panes
+        .iter()
+        .position(|pane| pane.document().is_some_and(|app| app.path == path))
+        .map(|p| (t, p))
     })
   }
 
@@ -127,27 +125,26 @@ impl Session {
     let found = self.existing(&path);
     if let Some((tab, pane)) = found {
       self.focus(tab, pane)?;
-      self.app().cancel_reference();
-      self.app().reference.rectangle = None;
+      self.app()?.cancel_reference();
+      self.app()?.reference.rectangle = None;
       self.remember_open(tab, pane);
       return Ok(());
     }
     let mut app = self.load(&path, "", screen)?;
     self.reopen_sidebar(&mut app);
-    self.leave()?;
     if tab || self.tabs.is_empty() {
-      self.insert_tab(app)?;
+      self.leave()?;
+      self.insert_tab(app.into())?;
       self.remember_open(self.active, self.tabs[self.active].focus);
       return Ok(());
     }
+    let alternate = self.alternate_reference()?;
     let tab = self.tab();
     let focus = tab.focus;
-    let old = std::mem::replace(&mut tab.panes[focus], app);
-    let id = tab.panes[focus].id;
-    tab.tree.replace(old.id, id);
-    self.retire(&old);
-    self.refocus();
-    self.arrange()?;
+    let mut replacement = Pane::from(app);
+    replacement.alternate =
+      alternate.or_else(|| tab.panes[focus].alternate.take());
+    self.replace_pane(replacement)?;
     self.remember_open(self.active, self.tabs[self.active].focus);
     Ok(())
   }
@@ -159,8 +156,7 @@ impl Session {
     screen: Screen,
   ) -> Result<()> {
     self.open(&reference.path, tab, screen)?;
-    self.home = None;
-    self.app().apply_reference(&reference.operations)
+    self.app()?.apply_reference(&reference.operations)
   }
 
   /// Loads `path` and restores its saved view.
@@ -171,28 +167,37 @@ impl Session {
     screen: Screen,
   ) -> Result<App> {
     let mut secret = self.secret.take().unwrap_or_else(|| password.to_owned());
-    let mut app = loop {
-      match App::configured(
-        path,
-        &secret,
-        false,
-        screen,
-        self.frontend.clone(),
-        &self.settings,
-      ) {
+    loop {
+      match self.load_once(path, &secret, screen) {
         Err(error)
           if error.is::<PasswordRequired>()
             && matches!(self.frontend, crate::raster::Frontend::Terminal) =>
         {
           secret = crate::password::password(&self.settings)?;
         }
-        result => break result?,
+        result => return result,
       }
-    };
-    self.watcher.add(path);
+    }
+  }
+
+  pub(super) fn load_once(
+    &mut self,
+    path: &Path,
+    password: &str,
+    screen: Screen,
+  ) -> Result<App> {
+    let mut app = App::configured(
+      path,
+      password,
+      false,
+      screen,
+      self.frontend.clone(),
+      &self.settings,
+    )?;
     if let Some(entry) = self.state.entry(path) {
       app.restore(entry)?;
     }
+    self.watcher.add(path);
     app.opened = self.state.open_revision(path);
     Ok(app)
   }
@@ -217,12 +222,15 @@ impl Session {
 
   /// Saves a closing pane's place, deletes its images, and stops
   /// watching its file.
-  fn retire(&mut self, app: &App) {
-    self.graphics.forget(app.id);
+  pub(super) fn retire(&mut self, pane: &Pane) {
+    self.graphics.forget(pane.id);
+    let Some(app) = pane.document() else { return };
     if app.manual.is_none() {
       self.watcher.remove(&app.path);
     }
-    self.state.remember_pane(app);
+    if self.state.remember_pane(app) {
+      self.changed();
+    }
   }
 
   pub fn activate(&mut self, index: usize) -> Result<()> {
@@ -247,7 +255,11 @@ impl Session {
       self.leave()?;
     }
     let tab = self.tabs.remove(index);
-    let help = tab.panes.iter().any(|app| app.manual.is_some())
+    let help = tab
+      .panes
+      .iter()
+      .filter_map(Pane::document)
+      .any(|app| app.manual.is_some())
       && !self.panes().any(|app| app.manual.is_some());
     for app in &tab.panes {
       self.retire(app);
@@ -279,7 +291,9 @@ impl Session {
     let app = self.tab().detach(area);
     self.retire(&app);
     self.refocus();
-    if app.manual.is_some() && !self.panes().any(|app| app.manual.is_some()) {
+    if app.document().is_some_and(|app| app.manual.is_some())
+      && !self.panes().any(|app| app.manual.is_some())
+    {
       self.return_from_help()?;
     }
     self.arrange()
@@ -305,13 +319,13 @@ impl Session {
     if explicit {
       self.state.refresh_history(self.store.as_deref());
     }
-    let screen = self.app().screen;
+    let screen = self.focused().screen;
     self.check_split(axis)?;
     let app = match path {
       Some(path) => {
         let mut app = self.load(&path, "", screen)?;
         self.reopen_sidebar(&mut app);
-        app
+        app.into()
       }
       None => self.copy_pane(screen)?,
     };
@@ -324,7 +338,7 @@ impl Session {
 
   pub(super) fn check_split(&mut self, axis: Axis) -> Result<()> {
     anyhow::ensure!(
-      Node::fits(axis, full(self.app().screen)),
+      Node::fits(axis, full(self.focused().screen)),
       "Not enough room"
     );
     Ok(())
@@ -332,7 +346,7 @@ impl Session {
 
   pub(super) fn insert_pane(
     &mut self,
-    app: App,
+    app: Pane,
     axis: Axis,
     place: Place,
   ) -> Result<()> {
@@ -355,7 +369,7 @@ impl Session {
     self.keeping_pointer(|session| {
       session.split(Axis::Columns, None, Place::After)?;
       // Focus returns even when landing fails.
-      let landed = land(session.app());
+      let landed = land(session.app()?);
       session.focus(tab, pane)?;
       landed
     })
@@ -392,7 +406,7 @@ impl Session {
           Place::Before,
         )?;
         if let Some(reference) = file {
-          self.app().apply_reference(&reference.operations)?;
+          self.app()?.apply_reference(&reference.operations)?;
         }
         return Ok(());
       }
@@ -436,11 +450,7 @@ impl Session {
         );
         None
       }
-      Window::New => {
-        self.record();
-        self.split(Axis::Rows, None, Place::Before)?;
-        return self.show_recent();
-      }
+      Window::New => return self.new_split(Axis::Rows, None),
       Window::Move(direction) => {
         tab.tree.move_to_edge(id, direction);
         None
@@ -484,7 +494,7 @@ impl Session {
   }
 
   /// Puts `app` in a tab after the active one and focuses it.
-  pub(super) fn insert_tab(&mut self, app: App) -> Result<()> {
+  pub(super) fn insert_tab(&mut self, app: Pane) -> Result<()> {
     let index = if self.tabs.is_empty() { 0 } else { self.active + 1 };
     self.tabs.insert(index, Tab::new(app));
     self.active = index;
@@ -492,46 +502,72 @@ impl Session {
     self.arrange()
   }
 
-  fn copy_pane(&mut self, screen: Screen) -> Result<App> {
+  pub(super) fn copy_pane(&mut self, screen: Screen) -> Result<Pane> {
+    if self.focused().is_recent() {
+      return Ok(self.recent_pane(screen));
+    }
     self.record();
     self.state.refresh_history(self.store.as_deref());
-    let mut app = if let Some(owner) = self.app().manual.clone() {
+    let mut app = if let Some(owner) = self.app()?.manual.clone() {
       App::help_document(owner, screen, self.frontend.clone(), &self.settings)?
     } else {
-      let path = self.app().path.clone();
-      let password = self.app().password.clone();
+      let path = self.app()?.path.clone();
+      let password = self.app()?.password.clone();
       self.load(&path, &password, screen)?
     };
-    app.mirror(self.app())?;
-    app.opened = self.app().opened;
-    Ok(app)
+    app.mirror(self.app()?)?;
+    app.opened = self.app()?.opened;
+    Ok(app.into())
   }
 
-  /// Copies the focused view into a new tab covered by recent documents.
-  pub(super) fn recent_tab(&mut self, screen: Screen) -> Result<()> {
+  pub(super) fn recent_pane(&self, screen: Screen) -> Pane {
+    let mut home = Home::new(
+      &self.state.recent,
+      screen,
+      &self.frontend.wake(),
+      matches!(self.frontend, crate::raster::Frontend::Terminal),
+    )
+    .with_layout(self.state.recent_layout);
+    home.configure(&self.settings);
+    Pane {
+      id: crate::app::next_id(),
+      screen,
+      at: At::default(),
+      body: Body::Recent(Box::new(home)),
+      alternate: None,
+    }
+  }
+
+  pub fn recent_tab(&mut self, screen: Screen) -> Result<()> {
     self.record();
-    let app = self.copy_pane(screen)?;
     self.leave()?;
-    self.insert_tab(app)?;
-    self.show_recent()
+    self.screen = Some(screen);
+    self.insert_tab(self.recent_pane(screen))
   }
 
-  /// Fits the start screen or every pane to a new terminal size.
+  pub(super) fn new_split(
+    &mut self,
+    axis: Axis,
+    file: Option<&Path>,
+  ) -> Result<()> {
+    if file.is_some() {
+      return self.split(axis, file, Place::Before);
+    }
+    let pane = self.recent_pane(self.focused().screen);
+    self.insert_pane(pane, axis, Place::Before)
+  }
+
   pub fn resize(&mut self, screen: Screen) -> Result<()> {
     self.perf.view.invalidate();
     self.screen = Some(screen);
-    let content = self.content(screen);
-    if let Some(home) = &mut self.home {
-      home.view.resize(
-        content,
-        At { row: content.origin.1 - screen.origin.1, ..At::default() },
-      );
-    }
     if self.tabs.is_empty() {
       return Ok(());
     }
-    for app in self.panes_mut() {
-      app.at = At { column: u16::MAX, row: u16::MAX };
+    for pane in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
+      pane.at = At { column: u16::MAX, row: u16::MAX };
+      if let Some(app) = pane.document_mut() {
+        app.at = At { column: u16::MAX, row: u16::MAX };
+      }
     }
     self.arrange()
   }
@@ -561,13 +597,13 @@ impl Session {
 }
 
 impl Tab {
-  pub(super) fn new(app: App) -> Self {
+  pub(super) fn new(app: Pane) -> Self {
     Self { tree: Node::leaf(app.id), panes: vec![app], focus: 0, last: None }
   }
 
   /// Each pane's pointer geometry and focused id.
   pub(super) fn pointer_panes(&self) -> (Vec<vpdf_ui::pointer::Pane>, u32) {
-    let panes = self.panes.iter().map(App::pointer_pane).collect();
+    let panes = self.panes.iter().map(Pane::pointer_pane).collect();
     (panes, self.panes[self.focus].id)
   }
 
@@ -580,7 +616,7 @@ impl Tab {
     self.tree.leaves()
   }
 
-  pub(super) fn detach(&mut self, area: Rect) -> App {
+  pub(super) fn detach(&mut self, area: Rect) -> Pane {
     let id = self.panes[self.focus].id;
     let mut rects = Vec::new();
     self.tree.layout(area, &mut rects);
@@ -604,14 +640,41 @@ impl Session {
     &mut self.tabs[self.active]
   }
 
-  pub fn app(&mut self) -> &mut App {
+  pub fn recent(&self) -> Option<&Home> {
+    self.tabs.get(self.active).and_then(|tab| tab.panes[tab.focus].recent())
+  }
+
+  pub fn recent_mut(&mut self) -> Option<&mut Home> {
+    self
+      .tabs
+      .get_mut(self.active)
+      .and_then(|tab| tab.panes[tab.focus].recent_mut())
+  }
+
+  pub fn focused(&self) -> &Pane {
+    let tab = &self.tabs[self.active];
+    &tab.panes[tab.focus]
+  }
+
+  pub fn focused_mut(&mut self) -> &mut Pane {
     let tab = self.tab();
     &mut tab.panes[tab.focus]
   }
 
+  pub fn app(&mut self) -> Result<&mut App> {
+    self
+      .tabs
+      .get_mut(self.active)
+      .and_then(|tab| tab.panes.get_mut(tab.focus))
+      .and_then(Pane::document_mut)
+      .ok_or_else(|| anyhow::anyhow!("No document"))
+  }
+
   /// Readies the newly focused pane to request its view again.
   pub(super) fn refocus(&mut self) {
-    self.app().tiles.invalidate();
+    if let Ok(app) = self.app() {
+      app.tiles.invalidate();
+    }
   }
 
   pub(super) fn step(&self, step: TabMove) -> usize {

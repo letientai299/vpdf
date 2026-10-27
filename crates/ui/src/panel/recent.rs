@@ -394,6 +394,10 @@ impl Shelf {
     })
   }
 
+  pub fn edge_at(&self, column: u16, row: u16) -> Option<bool> {
+    self.geometry.divider.contains(column, row).then_some(self.geometry.stacked)
+  }
+
   pub fn contains(&self, column: u16, row: u16) -> bool {
     self.geometry.preview.contains(column, row)
   }

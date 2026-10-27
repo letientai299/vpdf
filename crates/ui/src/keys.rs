@@ -108,6 +108,7 @@ pub enum Action {
   Reselect,
   Cancel,
   Quit,
+  Alternate,
   Search(bool),
   WordSearch,
   Definition,
@@ -147,7 +148,7 @@ pub enum Action {
   Crop,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Input {
   pub action: Action,
   pub count: usize,
@@ -351,6 +352,10 @@ pub(crate) const BINDINGS: &[(&str, Action, &str)] = &[
   ("o", Action::Swap, "other selection end"),
   ("gv", Action::Reselect, "reselect"),
   ("q", Action::Quit, "quit"),
+  ("ZZ", Action::Window(crate::window::Window::Close), "close pane"),
+  ("ZQ", Action::Window(crate::window::Window::Close), "close pane"),
+  ("C-^", Action::Alternate, "alternate document"),
+  ("C-6", Action::Alternate, "alternate document"),
   ("C-c", Action::Cancel, "cancel"),
   ("/", Action::Search(false), "search forward"),
   ("?", Action::Search(true), "search backward"),

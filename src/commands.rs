@@ -73,18 +73,14 @@ impl App {
       return Ok(());
     }
     if input.action == Action::LocalFocus {
-      if self.panel.is_none() {
-        return Ok(());
-      }
-      self.blur()?;
-      if let Some(panel) = &mut self.panel {
-        panel.view.focus(!panel.view.focused());
-        self.relayout()?;
-      }
-      return Ok(());
+      return self.local_focus();
     }
     if input.action == Action::Cancel {
       return self.cancel_input();
+    }
+    if input.action == Action::Alternate {
+      self.request = Some(Request::Alternate);
+      return Ok(());
     }
     if input.action == Action::YankPath {
       return self.yank_path(input.register);
@@ -158,6 +154,18 @@ impl App {
     Ok(())
   }
 
+  fn local_focus(&mut self) -> Result<()> {
+    if self.panel.is_none() {
+      return Ok(());
+    }
+    self.blur()?;
+    if let Some(panel) = &mut self.panel {
+      panel.view.focus(!panel.view.focused());
+      self.relayout()?;
+    }
+    Ok(())
+  }
+
   pub fn key(&mut self, key: KeyEvent, history: &mut History) -> Result<()> {
     if self.confirming_removal() {
       self.confirm_removal(key);
@@ -171,7 +179,7 @@ impl App {
       prompt.set_bindings(
         self.settings.bindings().map(Context::prompt(prompt.kind())),
       );
-      let view = self.command_view();
+      let view = View::Document;
       let terminal = matches!(self.frontend, crate::raster::Frontend::Terminal);
       let invocation = self
         .overlays
@@ -357,21 +365,11 @@ impl App {
     Ok(())
   }
 
-  fn command_view(&self) -> View {
-    if self.covered() { View::Recent } else { View::Document }
-  }
-
   pub(crate) fn command_available(&self, program: &str) -> bool {
     cmdline::available(
       program,
       matches!(self.frontend, crate::raster::Frontend::Terminal),
     )
-  }
-
-  fn theme_command(&mut self, argument: &str) -> Result<()> {
-    anyhow::ensure!(!argument.is_empty(), "Usage: :theme <name|path>");
-    self.request = Some(Request::Theme(argument.to_owned()));
-    Ok(())
   }
 
   fn recolor_command(
@@ -401,7 +399,7 @@ impl App {
   ) -> Result<()> {
     let (spec, argument) = match commands::resolve(
       line,
-      self.command_view(),
+      View::Document,
       |program| self.command_available(program),
       |name| self.doc.page_number(name).is_some(),
     )? {
@@ -409,52 +407,29 @@ impl App {
       commands::Resolution::Page(name) => return self.page(name),
       commands::Resolution::Command { spec, argument } => (spec, argument),
     };
+    let terminal = matches!(self.frontend, crate::raster::Frontend::Terminal);
+    if let Some(prompt) =
+      path_prompt(spec.id, argument, terminal, || self.help_invocation())
+    {
+      self.overlays.open_prompt(prompt);
+      return Ok(());
+    }
+    if let Some(request) = command_request(spec, argument, || {
+      invocation.unwrap_or_else(|| self.help_invocation())
+    })? {
+      self.request = Some(request);
+      return Ok(());
+    }
     match spec.id {
-      Id::Split | Id::VSplit => {
-        let axis =
-          if spec.id == Id::Split { Axis::Rows } else { Axis::Columns };
-        let file = (!argument.is_empty())
-          .then(|| cmdline::reference(argument))
-          .transpose()?;
-        self.request = Some(Request::Window {
-          command: Window::Split(axis),
-          count: 1,
-          explicit: false,
-          file,
-        });
-      }
-      Id::Close | Id::Only => {
-        let command =
-          if spec.id == Id::Close { Window::Close } else { Window::Only };
-        self.request = Some(Request::Window {
-          command,
-          count: 1,
-          explicit: false,
-          file: None,
-        });
-      }
-      Id::Edit | Id::Open | Id::TabEdit | Id::TabNew => {
-        self.request_open(spec.id, argument)?;
-      }
-      Id::TabNext => {
-        let step = argument.parse().map_or(TabMove::Next(1), TabMove::Go);
-        self.request = Some(Request::Tab(step));
-      }
-      Id::TabPrevious => {
-        self.request = Some(Request::Tab(TabMove::Previous(1)));
-      }
-      Id::QuitAll => self.request = Some(Request::QuitAll),
       Id::Toc => self.open_panel(PanelKind::Outline)?,
       Id::Overview => self.open_overview()?,
       Id::Recolor => self.recolor_command(spec, argument)?,
       Id::Crop => {
         self.set_crop(spec.switch(argument, self.crop_enabled())?)?;
       }
-      Id::Recent => self.open_panel(PanelKind::Recent)?,
       Id::Marks => self.open_panel(PanelKind::Marks)?,
       Id::Jumps => self.open_panel(PanelKind::Jumps)?,
       Id::Annotations => self.open_panel(PanelKind::Annotations)?,
-      Id::Fzf => self.request_picker(argument)?,
       Id::Cancel => {
         self.cancel_jobs()?;
         self.reader.notice("Jobs canceled");
@@ -462,9 +437,6 @@ impl App {
       Id::NoHlSearch => self.search.set_hidden(true),
       Id::CursorLine => {
         self.cursorline = spec.switch(argument, self.cursorline)?;
-      }
-      Id::Perf => {
-        self.request = Some(Request::Perf(crate::perf::switch(argument)?));
       }
       Id::Mouse => {
         let on = spec.switch(argument, vpdf_terminal::terminal::mouse())?;
@@ -475,8 +447,6 @@ impl App {
       }
       Id::Text => self.open_panel(PanelKind::Text)?,
       Id::Info => self.open_panel(PanelKind::Info)?,
-      Id::Config => self.reload_config(argument)?,
-      Id::Theme => self.theme_command(argument)?,
       Id::Reload => self.reload_with(&self.password.clone())?,
       Id::Print => self.print(argument)?,
       Id::Password => {
@@ -489,68 +459,9 @@ impl App {
         self.start_ocr(&language)?;
       }
       Id::Version => self.open_panel(PanelKind::Version)?,
-      Id::Help | Id::HelpBeside => {
-        self.request_help(argument, invocation, spec.id == Id::HelpBeside);
-      }
       Id::Quit => self.quit = true,
-      Id::TabClose => self.request = Some(Request::TabClose(None)),
+      _ => anyhow::bail!("Unknown command: {}", spec.name),
     }
-    Ok(())
-  }
-
-  fn request_picker(&mut self, argument: &str) -> Result<()> {
-    self.request = Some(match cmdline::picker_root(argument) {
-      Some(root) => Request::Pick { root, tab: false },
-      None => Request::Reference {
-        reference: cmdline::reference(argument)?,
-        tab: false,
-      },
-    });
-    Ok(())
-  }
-
-  fn request_open(&mut self, command: Id, argument: &str) -> Result<()> {
-    if command == Id::Open
-      && argument.is_empty()
-      && matches!(self.frontend, crate::raster::Frontend::Terminal)
-      && !cmdline::on_path("fzf")
-    {
-      let mut prompt = Prompt::new(PromptKind::Command)
-        .with_invocation(self.help_invocation());
-      prompt.replace("open ");
-      self.overlays.open_prompt(prompt);
-      return Ok(());
-    }
-    self.request = Some(if !argument.is_empty() {
-      Request::Reference {
-        reference: cmdline::reference(argument)?,
-        tab: command != Id::Edit,
-      }
-    } else if command == Id::TabNew {
-      Request::RecentTab
-    } else {
-      Request::Pick { root: ".".into(), tab: command != Id::Edit }
-    });
-    Ok(())
-  }
-
-  fn request_help(
-    &mut self,
-    topic: &str,
-    invocation: Option<vpdf_ui::topics::Invocation>,
-    beside: bool,
-  ) {
-    let invocation = invocation.unwrap_or_else(|| self.help_invocation());
-    self.request = Some(if beside {
-      Request::HelpBeside { topic: topic.into(), invocation }
-    } else {
-      Request::Help { topic: topic.into(), invocation }
-    });
-  }
-
-  fn reload_config(&mut self, argument: &str) -> Result<()> {
-    crate::config::reload_command(argument)?;
-    self.request = Some(Request::ConfigReload);
     Ok(())
   }
 
@@ -721,6 +632,102 @@ pub(crate) fn open_uri(uri: &str) -> Result<()> {
   Ok(())
 }
 
+pub(crate) fn path_prompt(
+  command: Id,
+  argument: &str,
+  terminal: bool,
+  invocation: impl FnOnce() -> vpdf_ui::topics::Invocation,
+) -> Option<Prompt> {
+  if command != Id::Open
+    || !argument.is_empty()
+    || !terminal
+    || cmdline::on_path("fzf")
+  {
+    return None;
+  }
+  let mut prompt =
+    Prompt::new(PromptKind::Command).with_invocation(invocation());
+  prompt.replace("open ");
+  Some(prompt)
+}
+
+pub(crate) fn command_request(
+  spec: &commands::Spec,
+  argument: &str,
+  invocation: impl FnOnce() -> vpdf_ui::topics::Invocation,
+) -> Result<Option<Request>> {
+  let file =
+    || (!argument.is_empty()).then(|| cmdline::reference(argument)).transpose();
+  let window = |command, file| Request::Window {
+    command,
+    file,
+    count: 1,
+    explicit: false,
+  };
+  let request = match spec.id {
+    Id::BDelete => {
+      anyhow::ensure!(argument.is_empty(), "Usage: :bdelete");
+      Request::DeleteBuffer
+    }
+    Id::New | Id::VNew => Request::NewSplit {
+      axis: if spec.id == Id::New { Axis::Rows } else { Axis::Columns },
+      file: file()?,
+    },
+    Id::Split | Id::VSplit => window(
+      Window::Split(if spec.id == Id::Split {
+        Axis::Rows
+      } else {
+        Axis::Columns
+      }),
+      file()?,
+    ),
+    Id::Close => window(Window::Close, None),
+    Id::Only => window(Window::Only, None),
+    Id::Edit if argument == "#" => Request::Alternate,
+    Id::Edit | Id::Open | Id::TabEdit | Id::TabNew if !argument.is_empty() => {
+      Request::Reference {
+        reference: cmdline::reference(argument)?,
+        tab: spec.id != Id::Edit,
+      }
+    }
+    Id::TabNew => Request::RecentTab,
+    Id::Edit | Id::Open | Id::TabEdit => {
+      Request::Pick { root: ".".into(), tab: spec.id != Id::Edit }
+    }
+    Id::Recent => Request::Panel(PanelKind::Recent),
+    Id::TabNext => {
+      Request::Tab(argument.parse().map_or(TabMove::Next(1), TabMove::Go))
+    }
+    Id::TabPrevious => Request::Tab(TabMove::Previous(1)),
+    Id::TabClose => Request::TabClose(None),
+    Id::QuitAll => Request::QuitAll,
+    Id::Fzf => match cmdline::picker_root(argument) {
+      Some(root) => Request::Pick { root, tab: false },
+      None => Request::Reference {
+        reference: cmdline::reference(argument)?,
+        tab: false,
+      },
+    },
+    Id::Config => {
+      crate::config::reload_command(argument)?;
+      Request::ConfigReload
+    }
+    Id::Theme => {
+      anyhow::ensure!(!argument.is_empty(), "Usage: :theme <name|path>");
+      Request::Theme(argument.into())
+    }
+    Id::Perf => Request::Perf(crate::perf::switch(argument)?),
+    Id::Help => {
+      Request::Help { topic: argument.into(), invocation: invocation() }
+    }
+    Id::HelpBeside => {
+      Request::HelpBeside { topic: argument.into(), invocation: invocation() }
+    }
+    _ => return Ok(None),
+  };
+  Ok(Some(request))
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -742,10 +749,7 @@ mod tests {
         frontend,
         &crate::config::Settings::default(),
       )?;
-      for covered in [false, true] {
-        if covered {
-          app.show_recent(&[])?;
-        }
+      {
         if matches!(app.frontend, crate::raster::Frontend::Native(_))
           || cmdline::on_path("fzf")
         {
@@ -824,17 +828,8 @@ mod tests {
     let path =
       std::path::PathBuf::from(std::env::var("VPDF_CORPUS")?).join("paper.pdf");
     let screen = crate::screen::cells(80, 24);
-    for covered in [false, true] {
+    {
       let mut app = App::with_screen(&path, "", false, screen)?;
-      if covered {
-        app.panel = Some(crate::panel::PanelSession::recent(
-          Vec::new(),
-          &[],
-          "",
-          &app.wake,
-        ));
-      }
-      assert_eq!(app.covered(), covered);
       let mut prompt = Prompt::new(PromptKind::Command);
       prompt.replace("re");
       app.overlays.open_prompt(prompt);
@@ -842,10 +837,7 @@ mod tests {
         KeyEvent::new(vpdf_model::input::KeyCode::Tab, KeyModifiers::NONE),
         &mut History::default(),
       )?;
-      assert_eq!(
-        app.overlays.prompt().unwrap().text(),
-        if covered { "recent" } else { "re" }
-      );
+      assert_eq!(app.overlays.prompt().unwrap().text(), "re");
     }
     Ok(())
   }

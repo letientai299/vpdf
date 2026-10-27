@@ -14,6 +14,11 @@ use vpdf_ui::layout::{Layout, Screen};
 use vpdf_ui::reading::Pane;
 use vpdf_ui::window::{TabMove, Window};
 
+pub(crate) fn next_id() -> u32 {
+  static NEXT: AtomicU32 = AtomicU32::new(1);
+  NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 /// Work a tab hands to the session.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Request {
@@ -45,6 +50,12 @@ pub enum Request {
   Tab(TabMove),
   /// A new tab listing recent documents over this one.
   RecentTab,
+  Alternate,
+  DeleteBuffer,
+  NewSplit {
+    axis: vpdf_ui::split::Axis,
+    file: Option<vpdf_model::reference::Reference>,
+  },
   ForgetRecent(Vec<PathBuf>),
   /// Removes a local mark, or a global one for every document.
   RemoveMark(char),
@@ -255,7 +266,6 @@ impl App {
     settings: &crate::config::Settings,
     manual: Option<std::sync::Arc<vpdf_pdf::manual::Document>>,
   ) -> Result<Self> {
-    static NEXT: AtomicU32 = AtomicU32::new(1);
     let doc = Document::open(path, password)?;
     let mut layout =
       Layout::new(doc.pages.iter().map(|page| page.bounds), screen);
@@ -274,7 +284,7 @@ impl App {
     };
     let worker = frontend.raster(path, password, doc.lists(), &wake, false);
     Ok(Self {
-      id: NEXT.fetch_add(1, Ordering::Relaxed),
+      id: next_id(),
       document_generation: 0,
       retired_jobs: Vec::new(),
       outline: vpdf_ui::reading::Outline::new(&doc.outline),

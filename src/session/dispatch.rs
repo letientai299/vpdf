@@ -1,6 +1,6 @@
 use super::{
-  Axis, KeyEvent, Mark, PanelKind, Path, Place, Position, Request, Result,
-  Screen, Session, Sight, terminal,
+  Axis, KeyEvent, Mark, Pane, PanelKind, Path, Place, Position, Request,
+  Result, Screen, Session, Sight, terminal,
 };
 
 impl Session {
@@ -11,7 +11,7 @@ impl Session {
     self.settings = loaded.settings;
     vpdf_ui::panel::set_ascii_glyphs(self.settings.ascii_glyphs());
     for tab in &mut self.tabs {
-      for app in &mut tab.panes {
+      for app in tab.panes.iter_mut().filter_map(Pane::document_mut) {
         if previous_warning.as_ref() == Some(&app.reader.message) {
           app.reader.notice("");
         }
@@ -48,7 +48,12 @@ impl Session {
       unlock.prompt.reset_input();
     }
     self.startup_warning = loaded.warning;
-    if let Some(home) = &mut self.home {
+    for home in self
+      .tabs
+      .iter_mut()
+      .flat_map(|tab| &mut tab.panes)
+      .filter_map(Pane::recent_mut)
+    {
       home.configure(&self.settings);
       home.view.reset_input();
       if home.view.error() == previous_warning.as_deref() {
@@ -77,11 +82,16 @@ impl Session {
     let theme = theme.into();
     self.settings.set_theme(theme.clone());
     for tab in &mut self.tabs {
-      for app in &mut tab.panes {
+      for app in tab.panes.iter_mut().filter_map(Pane::document_mut) {
         app.settings.set_theme(theme.clone());
       }
     }
-    if let Some(home) = &mut self.home {
+    for home in self
+      .tabs
+      .iter_mut()
+      .flat_map(|tab| &mut tab.panes)
+      .filter_map(Pane::recent_mut)
+    {
       home.configure(&self.settings);
     }
     self.refresh_help();
@@ -109,12 +119,15 @@ impl Session {
     if self.tabs.is_empty() {
       return Ok(());
     }
-    let fallback = self.app().screen;
-    if self.app().quit {
+    let fallback = self.focused().screen;
+    if self.focused().is_recent() {
+      return Ok(());
+    }
+    if self.app()?.quit {
       return self.close_pane();
     }
     let screen = self.screen.unwrap_or(fallback);
-    let request = self.app().request.take();
+    let request = self.app()?.request.take();
     let retry = if matches!(self.frontend, crate::raster::Frontend::Native(_)) {
       request.clone()
     } else {
@@ -124,7 +137,7 @@ impl Session {
     self.unlock_result(result, retry.map(super::unlock::Operation::Request))
   }
 
-  fn replay_keys(&mut self, keys: Vec<KeyEvent>) -> Result<()> {
+  pub(super) fn replay_keys(&mut self, keys: Vec<KeyEvent>) -> Result<()> {
     let mut keys = keys.into_iter();
     while let Some(key) = keys.next() {
       self.interact(super::interaction::Interaction::Key(key))?;
@@ -154,7 +167,7 @@ impl Session {
     }
   }
 
-  fn dispatch(
+  pub(super) fn dispatch(
     &mut self,
     request: Option<Request>,
     screen: Screen,
@@ -169,6 +182,15 @@ impl Session {
       Some(Request::Open { path, tab }) => self.open(&path, tab, screen),
       Some(Request::Reference { reference, tab }) => {
         self.open_reference(&reference, tab, screen)
+      }
+      Some(Request::Alternate) => self.alternate(false),
+      Some(Request::DeleteBuffer) => self.delete_buffer(),
+      Some(Request::NewSplit { axis, file }) => {
+        self.new_split(axis, file.as_ref().map(|r| r.path.as_path()))?;
+        if let Some(file) = file {
+          self.app()?.apply_reference(&file.operations)?;
+        }
+        Ok(())
       }
       Some(Request::Print) => self.print(),
       Some(Request::RecentTab) => self.recent_tab(screen),
@@ -192,20 +214,9 @@ impl Session {
           return self.show_recent();
         }
         let global = self.state.marks.clone();
-        self.app().show_marks(&global)
+        self.app()?.show_marks(&global)
       }
-      Some(Request::SetMark(name)) => {
-        let app = self.app();
-        anyhow::ensure!(
-          app.manual.is_none(),
-          "Global marks unavailable for help"
-        );
-        let mark = Mark::new(app.path.clone(), app.reading_position()?);
-        self.state.set_mark(name, mark);
-        self.refill_marks();
-        self.changed();
-        Ok(())
-      }
+      Some(Request::SetMark(name)) => self.set_global_mark(name),
       Some(Request::MarkSet) => {
         self.refill_marks();
         Ok(())
@@ -213,7 +224,7 @@ impl Session {
       Some(Request::GoMark(name, exact)) => {
         let mark = self.global_mark(name)?;
         self.open(&mark.path, true, screen)?;
-        self.app().go_to(mark.cursor, exact)
+        self.app()?.go_to(mark.cursor, exact)
       }
       Some(Request::SplitAt(position)) => {
         self.split_beside(|app| app.land_at(position))
@@ -255,13 +266,23 @@ impl Session {
 
   fn split_mark(&mut self, name: char, screen: Screen) -> Result<()> {
     let mark = self.global_mark(name)?;
-    if mark.path == self.app().path {
+    if mark.path == self.app()?.path {
       self.state.refresh_history(self.store.as_deref());
       self.split_beside(|app| app.land_at(mark.cursor))?;
       self.remember_open(self.active, self.tabs[self.active].focus);
       return Ok(());
     }
     self.panel_open(&mark.path, Some(mark.cursor), false, screen)
+  }
+
+  fn set_global_mark(&mut self, name: char) -> Result<()> {
+    let app = self.app()?;
+    anyhow::ensure!(app.manual.is_none(), "Global marks unavailable for help");
+    let mark = Mark::new(app.path.clone(), app.reading_position()?);
+    self.state.set_mark(name, mark);
+    self.refill_marks();
+    self.changed();
+    Ok(())
   }
 
   fn global_mark(&self, name: char) -> Result<Mark> {
@@ -279,8 +300,8 @@ impl Session {
     let path = std::fs::canonicalize(path)?;
     self.state.refresh_history(self.store.as_deref());
     let source = (self.active, self.tab().focus);
-    // The recent view picks a document for the pane it covers.
-    let here = focus && self.app().covered();
+    // Recent entries fill their own pane.
+    let here = focus && self.focused().is_recent();
     let found = self.existing(&path);
     let target = if let Some(target) = found {
       target
@@ -295,14 +316,9 @@ impl Session {
       }
       (self.active, self.tab().focus)
     };
-    if here && target != source {
-      let app = &mut self.tabs[source.0].panes[source.1];
-      if let Some(panel) = &mut app.panel {
-        panel.view.focus(false);
-      }
-      app.relayout()?;
-    }
-    let app = &mut self.tabs[target.0].panes[target.1];
+    let app = self.tabs[target.0].panes[target.1]
+      .document_mut()
+      .ok_or_else(|| anyhow::anyhow!("No document"))?;
     if let Some(position) = position {
       app.land_at(position)?;
     }
@@ -325,23 +341,29 @@ impl Session {
     Ok(())
   }
 
-  /// Types `key` into the focused pane.
-  pub(super) fn type_key(&mut self, key: KeyEvent) -> Result<()> {
+  pub fn type_key(&mut self, key: KeyEvent) -> Result<()> {
+    self.resizing = None;
+    if self.focused().is_recent() {
+      return self.recent_event(vpdf_model::input::Event::Key(key));
+    }
     let tab = &mut self.tabs[self.active];
-    // `App::key` closes the focused one's.
     let focus = tab.focus;
-    for (index, app) in tab.panes.iter_mut().enumerate() {
+    for (index, app) in tab
+      .panes
+      .iter_mut()
+      .enumerate()
+      .filter_map(|(i, p)| p.document_mut().map(|a| (i, a)))
+    {
       if index != focus {
         app.drop_hover_preview();
       }
     }
-    let app = &mut tab.panes[tab.focus];
+    let app = tab.panes[focus]
+      .document_mut()
+      .ok_or_else(|| anyhow::anyhow!("No document"))?;
     let before =
       app.panel.as_ref().filter(|p| p.view.focused()).map(|p| p.view.kind());
     app.clear_notes();
-    // Keys may change the tree mid-drag.
-    self.resizing = None;
-    // Clues close even when the key fails.
     let result = app.key(key, &mut self.history);
     app.after_key();
     let after =
@@ -350,5 +372,104 @@ impl Session {
       self.pointer.release();
     }
     result
+  }
+
+  pub(super) fn recent_event(
+    &mut self,
+    event: vpdf_model::input::Event,
+  ) -> Result<()> {
+    let terminal = matches!(self.frontend, crate::raster::Frontend::Terminal);
+    let tab = &mut self.tabs[self.active];
+    let Some(home) = tab.panes[tab.focus].recent_mut() else { return Ok(()) };
+    let outcome = home.handle(event, &mut self.history, terminal)?;
+    self.record_recent_layout();
+    self.recent_outcome(outcome)
+  }
+
+  pub(super) fn recent_outcome(
+    &mut self,
+    outcome: crate::home::Outcome,
+  ) -> Result<()> {
+    use crate::home::Outcome;
+    use vpdf_ui::keys::Action;
+    let screen = self.screen.unwrap_or(self.focused().screen);
+    let request = match outcome {
+      Outcome::Stay => return Ok(()),
+      Outcome::Open(path) => Request::Open { path, tab: false },
+      Outcome::Reference(reference) => {
+        Request::Reference { reference, tab: false }
+      }
+      Outcome::Forget(paths) => Request::ForgetRecent(paths),
+      Outcome::Command(line) => return self.command(&line),
+      Outcome::Quit => return self.dismiss_recent(true),
+      Outcome::Dismiss => return self.dismiss_recent(false),
+      Outcome::Input(input) => match input.action {
+        Action::Alternate => Request::Alternate,
+        Action::Window(command) => Request::Window {
+          command,
+          count: input.count,
+          explicit: input.explicit,
+          file: None,
+        },
+        Action::Tab(forward) => Request::Tab(match (forward, input.explicit) {
+          (true, true) => super::TabMove::Go(input.count),
+          (true, false) => super::TabMove::Next(input.count),
+          (false, _) => super::TabMove::Previous(input.count),
+        }),
+        _ => return Ok(()),
+      },
+    };
+    let result = self.dispatch(Some(request.clone()), screen);
+    self.unlock_result(result, Some(super::unlock::Operation::Request(request)))
+  }
+
+  pub fn command(&mut self, line: &str) -> Result<()> {
+    use vpdf_ui::commands::{self, Id, View};
+    if !self.focused().is_recent() {
+      self.app()?.command(line)?;
+      return self.settle();
+    }
+    let terminal = matches!(self.frontend, crate::raster::Frontend::Terminal);
+    let commands::Resolution::Command { spec, argument } = commands::resolve(
+      line,
+      View::Home,
+      |p| crate::cmdline::available(p, terminal),
+      |_| false,
+    )?
+    else {
+      return Ok(());
+    };
+    let invocation = self
+      .focused()
+      .recent()
+      .map_or_else(vpdf_ui::topics::Invocation::home, |home| {
+        home.view.invocation()
+      });
+    if let Some(prompt) =
+      crate::commands::path_prompt(spec.id, argument, terminal, || {
+        invocation.clone()
+      })
+    {
+      self.focused_mut().open_prompt(prompt);
+      return Ok(());
+    }
+    let request =
+      match crate::commands::command_request(spec, argument, || invocation)? {
+        Some(request) => request,
+        None if spec.id == Id::Quit => return self.close_pane(),
+        None if spec.id == Id::Version => {
+          if let Some(home) = self.focused_mut().recent_mut() {
+            home.view.show_info(
+              PanelKind::Version,
+              &crate::version::panel_text(terminal),
+            );
+          }
+          return Ok(());
+        }
+        None => anyhow::bail!("Open a document before :{}", spec.name),
+      };
+    let screen = self.screen.unwrap_or(self.focused().screen);
+    let result = self.dispatch(Some(request.clone()), screen);
+    self.unlock_result(result, Some(super::unlock::Operation::Request(request)))
   }
 }

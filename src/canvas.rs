@@ -216,19 +216,12 @@ impl App {
   {
     self.settings.scene_theme(scene, vpdf_model::theme::Colors::Terminal);
     self.scene_content(scene, snap_regions)?;
-    let veil = vpdf_model::theme::Overlay::Inactive;
-    let alpha = veil
-      .resolve(vpdf_model::theme::Colors::Terminal, self.settings.opacity())[3];
-    if !self.focused
-      && alpha > 0
-      && self.screen.rows >= 2
-      && self.screen.columns > 0
-    {
-      scene.stretch(
-        vpdf_model::theme::Paint::Overlay(veil),
-        Layer::AboveText,
-        (0, self.screen.columns, self.screen.rows - 1),
-        Stage { screen: self.screen, left: self.left },
+    if !self.focused {
+      crate::presentation::inactive(
+        scene,
+        self.screen,
+        self.left,
+        self.settings.opacity(),
       );
     }
     Ok(())
@@ -242,8 +235,8 @@ impl App {
   where
     S::Error: Into<anyhow::Error>,
   {
-    // Views without tiles show whole at once; a covered one shows none.
-    self.complete = !self.covered();
+    // Plain views finish without tiles.
+    self.complete = true;
     // A shrunken terminal can leave no room below the status line.
     if self.screen.rows < 2 || self.screen.columns == 0 {
       return Ok(());
@@ -261,17 +254,6 @@ impl App {
         Hit::Card(_) => Pointing::Card,
         _ => Pointing::Away,
       });
-    }
-    if self.covered()
-      && let Some(panel) = &mut self.panel
-    {
-      // Panes share one picture id; only the focused pane shows it.
-      let picture = !self.text_mode && self.focused;
-      panel
-        .scene(scene, self.at, self.left, self.screen, picture)
-        .map_err(Into::into)?;
-      self.scene_context(scene);
-      return self.scene_bottom(scene);
     }
     if self.overlays.overview().is_some() {
       self.scene_overview(scene)?;

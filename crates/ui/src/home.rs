@@ -21,13 +21,15 @@ use vpdf_model::input::{KeyEvent, KeyEventKind};
 use vpdf_model::scene::{Draw, Op, Surface, Text};
 use vpdf_model::style::Role;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Effect {
   Stay,
   Open(PathBuf),
   OpenUri(String),
   Forget(Vec<PathBuf>),
   Quit,
+  Input(crate::keys::Input),
+  Dismiss,
   Command(String),
   Paste(String),
   Editor(String),
@@ -46,6 +48,9 @@ pub struct Home {
   bindings: Bindings,
   picker: Picker,
   pictures: bool,
+  names: Vec<String>,
+  active: usize,
+  focused: bool,
 }
 
 impl Home {
@@ -67,7 +72,71 @@ impl Home {
       bindings: Bindings::default(),
       picker,
       pictures: true,
+      names: Vec::new(),
+      active: 0,
+      focused: true,
     }
+  }
+
+  pub fn set_tabs(&mut self, names: Vec<String>, active: usize, focused: bool) {
+    self.names = names;
+    self.active = active;
+    self.focused = focused;
+  }
+
+  fn names(&self) -> crate::chrome::Names<'_> {
+    crate::chrome::Names {
+      file: "Recent",
+      names: &self.names,
+      active: self.active,
+    }
+  }
+
+  pub fn chrome_at(
+    &self,
+    column: u16,
+    row: u16,
+  ) -> Option<crate::chrome::Item> {
+    if row != self.screen.rows.saturating_sub(1)
+      || self.typing()
+      || self.names.len() < 2
+    {
+      return None;
+    }
+    let margin = if self.screen.columns < 32 { 0 } else { 9 };
+    self.names().item(
+      usize::from(self.screen.columns).saturating_sub(margin.into()) / 2,
+      usize::from(column.checked_sub(margin)?),
+    )
+  }
+
+  pub fn hit(&self, column: u16, row: u16) -> crate::pointer::Hit {
+    use crate::pointer::Hit;
+    if self.typing() || self.info.is_some() {
+      return Hit::Nothing;
+    }
+    if self.chrome_at(column, row).is_some() {
+      return Hit::Chrome;
+    }
+    if let Some(shelf) = self.panel.shelf() {
+      if let Some(rows) = shelf.edge_at(column, row) {
+        return Hit::Edge { rows };
+      }
+      if shelf.contains(column, row) {
+        return Hit::Card(row);
+      }
+    }
+    self.panel.row_at(column, row).map_or(Hit::Nothing, Hit::Row)
+  }
+
+  pub fn point(&mut self, hit: Option<crate::pointer::Hit>) {
+    use crate::panel::Pointing;
+    use crate::pointer::Hit;
+    self.panel.point(match hit {
+      Some(Hit::Row(index) | Hit::Label(index)) => Pointing::Row(index),
+      Some(Hit::Card(_)) => Pointing::Card,
+      _ => Pointing::Away,
+    });
   }
 
   pub fn refresh_recent(&mut self, rows: Vec<Row>, entries: &[Entry]) {
@@ -137,6 +206,10 @@ impl Home {
     // Home has no fold keys; every group shows.
     info.fold(crate::keys::Fold::ExpandAll, 1);
     self.info = Some(info);
+  }
+
+  pub fn shelf(&self) -> Option<&Shelf> {
+    self.panel.shelf()
   }
 
   pub fn shelf_mut(&mut self) -> Option<&mut Shelf> {
@@ -278,13 +351,13 @@ impl Home {
     let (badge, style) = if resizing {
       (" RESIZE ", Badge::Transient)
     } else {
-      (" Vpdf ", Badge::Normal)
+      (" RECENT ", Badge::Normal)
     };
     let badge = if columns >= 32 || resizing { badge } else { "" };
     let badge_width = badge.width().min(columns);
     let gap = usize::from(badge_width > 0 && badge_width < columns);
     let margin = badge_width + gap;
-    let room = columns.saturating_sub(margin);
+    let mut room = columns.saturating_sub(margin);
     crate::paint::move_to(
       scene,
       self.at,
@@ -292,10 +365,18 @@ impl Home {
       0u16,
     );
     if !badge.is_empty() {
-      scene.push(Op::Style(Role::Badge(style)));
+      scene.push(Op::Style(if self.focused {
+        Role::Badge(style)
+      } else {
+        Role::Bar
+      }));
       scene.push(Op::Text(Text::fit(badge, columns)));
       scene.push(Op::Style(Role::Bar));
       scene.push(Op::Spaces(gap));
+    }
+    if self.names.len() > 1 {
+      let width = self.names().scene(scene, room / 2);
+      room = room.saturating_sub(width);
     }
     let text = if let Some(error) = &self.error {
       scene.push(Op::Style(Role::Error));
@@ -403,9 +484,18 @@ impl Home {
     {
       return None;
     }
-    let margin = if self.screen.columns < 32 { 0 } else { 7 };
+    let margin = if self.screen.columns < 32 { 0 } else { 9 };
+    let tabs = if self.names.len() > 1 {
+      self.names().width(
+        usize::from(self.screen.columns).saturating_sub(usize::from(margin))
+          / 2,
+      )
+    } else {
+      0
+    };
     let column =
-      usize::from(mouse.column.checked_sub(self.at.column + margin)?);
+      usize::from(mouse.column.checked_sub(self.at.column + margin)?)
+        .checked_sub(tabs)?;
     let footer = self.footer();
     let context = self.context();
     for (hint, command) in [
@@ -536,10 +626,11 @@ impl Home {
       if resizing && input.action == Action::Cancel {
         return Ok(Effect::Stay);
       }
-      if matches!(
-        input.action,
-        Action::RecentToggle | Action::RecentRemove | Action::Cancel
-      ) {
+      if input.action == Action::Cancel && self.panel.has_checked() {
+        self.panel.input(input, usize::from(self.screen.rows));
+        return Ok(Effect::Stay);
+      }
+      if matches!(input.action, Action::RecentToggle | Action::RecentRemove) {
         self.panel.input(input, usize::from(self.screen.rows));
         return Ok(Effect::Stay);
       }
@@ -565,6 +656,10 @@ impl Home {
         }
         Action::Help => Effect::Command("help".into()),
         Action::Quit => Effect::Quit,
+        Action::Cancel => Effect::Dismiss,
+        Action::Alternate | Action::Window(_) | Action::Tab(_) => {
+          Effect::Input(input)
+        }
         _ => Effect::Stay,
       });
     };
@@ -765,7 +860,7 @@ mod tests {
     )
     .scene(&mut recorder, 0, |_| {})?;
     let scene = recorder.into_scene();
-    assert!(crate::testing::text(&scene).contains(" Vpdf "));
+    assert!(crate::testing::text(&scene).contains(" RECENT "));
     let columns = scene.iter().filter_map(|op| match op {
       Op::Move { column, .. } => Some(*column),
       _ => None,

@@ -519,36 +519,18 @@ fn reload_clamps_text_view_and_invalidates_hit_testing() -> Result<()> {
 #[test]
 #[ignore = "requires verified public PDF corpus"]
 fn recent_cover_preserves_view_and_explicit_job_control() -> Result<()> {
-  for text_mode in [false, true] {
-    let mut app = app("paper.pdf", text_mode)?;
-    keys(&mut app, b"10j+3l")?;
-    settle(&mut app);
-    app.draw(&mut Vec::new())?;
-    let view = (app.reader.scroll, app.layout.pan());
-    let top = app.text().position(0, 0)?;
-    let columns = app.layout.screen().columns;
-    app.start_search("attention", false, false)?;
-    app.start_ocr("eng")?;
-    let generation = app.search.generation();
-    app.show_recent(&[])?;
-    assert!(app.covered() && app.panel_focused());
-    assert_eq!(app.layout.screen().columns, columns);
-    assert_eq!((app.reader.scroll, app.layout.pan()), view);
-    assert_eq!(app.search.generation(), generation);
-    assert!(!app.search.hidden() && app.ocr.is_some());
-    app.command("cancel")?;
-    assert!(app.covered() && app.panel_focused());
-    assert!(app.ocr.is_none());
-    assert!(matches!(app.search.phase(), vpdf_ui::find::Phase::Idle));
-    keys(&mut app, b"\x1b[27u")?;
-    assert!(!app.covered() && app.panel.is_none());
-    app.draw(&mut Vec::new())?;
-    assert_eq!((app.reader.scroll, app.layout.pan()), view);
-    if text_mode {
-      assert_eq!(app.text().position(0, 0)?, top);
-    }
-    assert!(app.reader.selection.is_none());
-  }
+  let path = corpus("paper.pdf")?;
+  let screen = crate::common::cells(120, 40);
+  let mut session = crate::harness::session(&path, screen)?;
+  session.app()?.command("3")?;
+  let position = session.app()?.navigation_position();
+  session.command("recent")?;
+  assert!(session.focused().document().is_none());
+  assert!(session.command("cancel").is_err());
+  session.command("e #")?;
+  assert_eq!(session.app()?.navigation_position(), position);
+  assert!(session.app()?.ocr.is_none());
+  assert!(session.app()?.reader.selection.is_none());
   Ok(())
 }
 

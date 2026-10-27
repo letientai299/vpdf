@@ -291,7 +291,7 @@ impl App {
     wheel::background(
       route.mouse.column,
       self.left,
-      self.covered(),
+      false,
       self.overlays.overview().is_some(),
     )
   }

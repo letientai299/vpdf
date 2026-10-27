@@ -23,8 +23,7 @@ fn welcome_matches_picker() -> Result<()> {
     }
     assert!(!text.contains(absent), "{text}");
     assert!(!text.contains('│'), "{text}");
-    assert!(!text.contains("RECENT"), "{text}");
-    assert!(text.contains(" Vpdf "), "{text}");
+    assert!(text.contains(" RECENT "), "{text}");
     assert!(!text.contains("A PDF reader with Vim keys."));
   }
   Ok(())

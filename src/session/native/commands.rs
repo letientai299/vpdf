@@ -114,13 +114,17 @@ pub(crate) struct State {
   pub effects: Vec<Effect>,
   pending: Option<(RequestId, Target)>,
   next: u64,
+  pane: Option<u32>,
   pub(super) clipboard: Option<String>,
   all: Option<Target>,
   copy: Option<CopyJob>,
 }
 
 pub(super) fn refresh(session: &mut Session) {
-  let app = session.tabs.get(session.active).map(|tab| &tab.panes[tab.focus]);
+  let app = session
+    .tabs
+    .get(session.active)
+    .and_then(|tab| tab.panes[tab.focus].document());
   let document = app.map(|app| DocumentId {
     pane: TileOwner::new(app.id),
     generation: app.document_generation,
@@ -129,7 +133,12 @@ pub(super) fn refresh(session: &mut Session) {
     Focus::Password
   } else if session.picker.is_some() || session.confirming_removal() {
     Focus::Dialog
-  } else if session.home.as_ref().is_some_and(|home| home.view.typing()) {
+  } else if session
+    .tabs
+    .get(session.active)
+    .and_then(|t| t.panes[t.focus].recent())
+    .is_some_and(|home| home.view.typing())
+  {
     Focus::HomePrompt
   } else {
     app.map_or(Focus::Home, |app| {
@@ -141,11 +150,17 @@ pub(super) fn refresh(session: &mut Session) {
     })
   };
   let old = &session.native.snapshot;
-  let target = if old.document == document && old.focus == focus {
+  let pane =
+    session.tabs.get(session.active).map(|tab| tab.panes[tab.focus].id);
+  let target = if old.document == document
+    && old.focus == focus
+    && session.native.pane == pane
+  {
     old.target
   } else {
     Target(old.target.0.checked_add(1).expect("Native target exhausted"))
   };
+  session.native.pane = pane;
   let commands = available(session, focus, target);
   let snapshot = Snapshot {
     target,
@@ -178,7 +193,10 @@ pub(super) fn refresh(session: &mut Session) {
 }
 
 fn available(session: &Session, focus: Focus, target: Target) -> Vec<Action> {
-  let app = session.tabs.get(session.active).map(|tab| &tab.panes[tab.focus]);
+  let app = session
+    .tabs
+    .get(session.active)
+    .and_then(|tab| tab.panes[tab.focus].document());
   let open = !session.quit
     && !session.blocked()
     && session.native.pending.is_none()
@@ -198,6 +216,9 @@ fn available(session: &Session, focus: Focus, target: Target) -> Vec<Action> {
   }
   if ordinary {
     commands.extend([Action::CloseTab, Action::NewTab, Action::Help]);
+    if focus == Focus::Home {
+      commands.push(Action::ClosePane);
+    }
     if session.config_source.path().is_some() {
       commands.push(Action::Settings);
     }
@@ -310,12 +331,12 @@ fn execute(
         session.quit = true;
       } else {
         session.close()?;
-        super::ensure_home(session, screen);
+        super::quit_when_closed(session);
       }
     }
     Action::NewTab => {
       if session.tabs.is_empty() {
-        super::ensure_home(session, screen);
+        super::quit_when_closed(session);
       } else {
         session.recent_tab(screen)?;
       }
@@ -344,14 +365,14 @@ fn execute(
           text: String::new(),
         });
       } else {
-        session.app().action(Input::plain(Reader::Yank))?;
+        session.app()?.action(Input::plain(Reader::Yank))?;
       }
     }
     Action::SelectAll if prompt(session).is_none() => {
-      session.app().reader.normal();
-      session.app().reader.select_document(true);
+      session.app()?.reader.normal();
+      session.app()?.reader.select_document(true);
       session.native.all = Some(command.target);
-      session.app().reader.notice("All document text selected");
+      session.app()?.reader.notice("All document text selected");
     }
     Action::SelectAll | Action::Undo => {
       let ch = if command.action == Action::Undo { 'z' } else { 'a' };
@@ -361,7 +382,7 @@ fn execute(
     Action::Paste | Action::GoToPage => {}
     Action::Print => session.print()?,
     Action::Reveal => {
-      let path = session.app().path.clone();
+      let path = session.app()?.path.clone();
       session.native.effects.push(Effect::Reveal(path));
     }
     Action::Settings => {
@@ -371,7 +392,12 @@ fn execute(
       })?;
       session.native.effects.push(Effect::EditConfig(path.to_owned()));
     }
-    Action::Help if session.tabs.is_empty() => {
+    Action::ClosePane if session.focused().is_recent() => {
+      session.close_pane()?;
+    }
+    Action::Help
+      if session.tabs.is_empty() || session.focused().is_recent() =>
+    {
       session.request_help("", vpdf_ui::topics::Invocation::home(), screen)?;
     }
     Action::Find => find(session, screen)?,
@@ -389,13 +415,13 @@ fn find(session: &mut Session, screen: Screen) -> crate::Result<()> {
     return Ok(());
   }
   if prompt(session).is_some() {
-    session.app().cancel_input()?;
+    session.app()?.cancel_input()?;
   }
-  if let Some(panel) = &mut session.app().panel {
+  if let Some(panel) = &mut session.app()?.panel {
     panel.view.focus(false);
   }
-  let query = session.app().search.query().text.clone();
-  session.app().begin_search(false)?;
+  let query = session.app()?.search.query().text.clone();
+  session.app()?.begin_search(false)?;
   if !query.is_empty() {
     super::apply_reader(session, super::Input::Paste(query), &mut { screen });
     edit_key(session, 'a', screen);
@@ -406,7 +432,7 @@ fn find(session: &mut Session, screen: Screen) -> crate::Result<()> {
 fn reader_action(
   session: &mut Session,
   action: Action,
-  screen: Screen,
+  _screen: Screen,
 ) -> crate::Result<()> {
   use vpdf_ui::keys::{Action as Reader, Input};
 
@@ -421,7 +447,7 @@ fn reader_action(
     Action::Rotate => Reader::Rotate,
     Action::Back => Reader::History(false),
     Action::Forward => Reader::History(true),
-    Action::Sidebar if session.app().panel.is_some() => Reader::ClosePanel,
+    Action::Sidebar if session.app()?.panel.is_some() => Reader::ClosePanel,
     Action::Outline | Action::Sidebar => {
       Reader::Panel(vpdf_ui::keys::PanelKind::Outline)
     }
@@ -430,15 +456,15 @@ fn reader_action(
     Action::Help => Reader::Help,
     _ => unreachable!(),
   };
-  session.app().action(Input::plain(action))?;
+  session.app()?.action(Input::plain(action))?;
   // The sidebar control keeps reading focus.
   if native == Action::Sidebar
-    && let Some(panel) = &mut session.app().panel
+    && let Some(panel) = &mut session.app()?.panel
   {
     panel.view.focus(false);
   }
   session.settle()?;
-  super::ensure_home(session, screen);
+  super::quit_when_closed(session);
   Ok(())
 }
 
@@ -452,7 +478,10 @@ pub(super) fn go_to_page(
     return false;
   }
   let page = vpdf_model::text::PageId(page.saturating_sub(1));
-  let result = session.app().go_to_page(page).and_then(|()| session.settle());
+  let result = session
+    .app()
+    .and_then(|app| app.go_to_page(page))
+    .and_then(|()| session.settle());
   report(session, result);
   true
 }
@@ -469,13 +498,11 @@ fn edit_key(session: &mut Session, ch: char, mut screen: Screen) {
 pub(super) fn prepare_prompt(session: &mut Session) {
   let prompt = if let Some(unlock) = &mut session.unlock {
     Some(&mut unlock.prompt)
-  } else if let Some(home) = &mut session.home {
-    home.view.prompt_mut()
   } else {
     session
       .tabs
       .get_mut(session.active)
-      .and_then(|tab| tab.panes[tab.focus].overlays.prompt_mut())
+      .and_then(|tab| tab.panes[tab.focus].prompt_mut())
   };
   if let Some(prompt) = prompt {
     prompt.native();
@@ -486,11 +513,9 @@ fn prompt(session: &Session) -> Option<&vpdf_ui::prompt::Prompt> {
   if let Some(unlock) = &session.unlock {
     return Some(&unlock.prompt);
   }
-  if let Some(home) = &session.home {
-    return home.view.prompt();
-  }
+
   let tab = session.tabs.get(session.active)?;
-  tab.panes[tab.focus].overlays.prompt()
+  tab.panes[tab.focus].prompt()
 }
 
 struct CopyJob {
@@ -520,7 +545,7 @@ pub(super) fn copy_update(session: &mut Session) -> bool {
     return true;
   }
   let result = (|| -> crate::Result<bool> {
-    let app = session.app();
+    let app = session.app()?;
     let page = app.doc.text(vpdf_model::text::PageId(job.page))?;
     anyhow::ensure!(!page.truncated, "Page text exceeds extraction limit");
     for line in &page.lines {

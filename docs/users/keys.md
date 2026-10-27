@@ -33,25 +33,25 @@ In the macOS app, menu shortcuts take precedence over custom bindings.
 Vim keys and terminal bindings keep their configured behavior. Menus disable
 commands that the focused view cannot perform.
 
-| Shortcut                        | Action                                              |
-| ------------------------------- | --------------------------------------------------- |
-| Command-O                       | Open PDFs in a window sheet                         |
-| Command-Comma                   | Open the config file in the plain-text editor       |
-| Command-T                       | Open the Recent view in a new tab                   |
-| Control-Tab / Control-Shift-Tab | Next / previous tab                                 |
-| Command-W                       | Close the tab and its splits; last tab returns Home |
-| Command-F                       | Find in the active PDF                              |
-| Command-G / Shift-Command-G     | Next / previous document result                     |
-| Command-C                       | Copy the focused selection                          |
-| Command-A                       | Select all document text or prompt text             |
-| Command-X / V / Z               | Cut / paste / undo in a prompt                      |
-| Command-P                       | Print through the existing print dialog             |
-| Option-Command-T                | Hide or show the toolbar                            |
-| Command-Q                       | Quit                                                |
+| Shortcut                        | Action                                        |
+| ------------------------------- | --------------------------------------------- |
+| Command-O                       | Open PDFs in a window sheet                   |
+| Command-Comma                   | Open the config file in the plain-text editor |
+| Command-T                       | Open the Recent view in a new tab             |
+| Control-Tab / Control-Shift-Tab | Next / previous tab                           |
+| Command-W                       | Close the tab and its splits; last tab quits  |
+| Command-F                       | Find in the active PDF                        |
+| Command-G / Shift-Command-G     | Next / previous document result               |
+| Command-C                       | Copy the focused selection                    |
+| Command-A                       | Select all document text or prompt text       |
+| Command-X / V / Z               | Cut / paste / undo in a prompt                |
+| Command-P                       | Print through the existing print dialog       |
+| Option-Command-T                | Hide or show the toolbar                      |
+| Command-Q                       | Quit                                          |
 
-On empty Home, Command-W closes the window. Close Pane remains a separate
-Window menu action. Zoom Window resizes the window; View zoom magnifies the PDF.
-Help opens the embedded manual.
+On the last Recent tab, Command-W closes the window. Close Pane remains a
+separate Window menu action. Zoom Window resizes the window; View zoom magnifies
+the PDF. Help opens the embedded manual.
 
 The toolbar toggles the sidebar, shows the page, zooms, fits the page or its
 width, and starts Find. Type a page number and press Return to go there; Escape
@@ -100,6 +100,11 @@ moving end and the anchor. `y` copies; `gv` selects the last range again.
 Escape leaves Visual for the mode that started it. Escape in Cursor returns
 to Normal. Vpdf reads text: `i` does not insert, and there is no edit buffer.
 
+`Ctrl-^` (also `Ctrl-6`) and `:e #` reopen the pane's alternate document.
+On Recent, `q` and Escape return to that document from saved state; without an
+alternate, `q` closes the pane and Escape does nothing. `ZZ` and `ZQ` close
+the pane, as do `:q`, `:q!`, `:x`, and `:wq`. See [Tabs and panes][panes].
+
 ## Counts and operators
 
 A leading count repeats an operation: `3j` moves three rows or lines, according
@@ -135,3 +140,4 @@ can replace cancellation too; check your configuration when a key differs.
 
 [selection]: yank.md
 [config]: config.md#reading-behavior
+[panes]: panes.md

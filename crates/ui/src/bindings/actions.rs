@@ -182,6 +182,7 @@ specs! {
   "selection.restore" => Kind::Fixed(Action::Reselect),
   "cancel" => Kind::Fixed(Action::Cancel),
   "quit" => Kind::Fixed(Action::Quit),
+  "alternate" => Kind::Fixed(Action::Alternate),
   "search.forward" => Kind::Fixed(Action::Search(false)),
   "search.backward" => Kind::Fixed(Action::Search(true)),
   "search.word" => Kind::Fixed(Action::WordSearch),

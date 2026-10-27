@@ -182,10 +182,11 @@ mod tests {
     let screen = crate::screen::cells(120, 40);
     let mut session = Session::new(None);
     session.open(&root.join("paper.pdf"), true, screen)?;
-    session.app().move_figure(true, 1)?;
-    session.app().open_region()?;
-    let old = session.app().overlays.region().unwrap().snapshot().clone();
-    let pane = session.app().id;
+    session.app().unwrap().move_figure(true, 1)?;
+    session.app().unwrap().open_region()?;
+    let old =
+      session.app().unwrap().overlays.region().unwrap().snapshot().clone();
+    let pane = session.app().unwrap().id;
     let now = Instant::now();
     session.image_write = Some(ImageWrite {
       pane,
@@ -196,10 +197,11 @@ mod tests {
       wait_time(&session, Duration::from_secs(2), now),
       Duration::from_millis(500)
     );
-    session.app().select_region(old.page, old.bounds)?;
-    let new = session.app().overlays.region().unwrap().snapshot().clone();
+    session.app().unwrap().select_region(old.page, old.bounds)?;
+    let new =
+      session.app().unwrap().overlays.region().unwrap().snapshot().clone();
     assert_ne!(old.id, new.id);
-    session.app().region_status(new.id, "New operation".into());
+    session.app().unwrap().region_status(new.id, "New operation".into());
     let mut events = VecDeque::new();
     vpdf_terminal::decode::Parser::default()
       .feed(b"\x1b]5522;type=write:status=DONE\x1b\\", &mut events);
@@ -208,19 +210,20 @@ mod tests {
     input(&mut session, event, &mut Vec::new())?;
     assert!(session.image_write.is_none());
     assert_eq!(
-      session.app().overlays.region().unwrap().status(),
+      session.app().unwrap().overlays.region().unwrap().status(),
       Some("New operation")
     );
-    assert_eq!(session.app().reader.message, "New operation");
+    assert_eq!(session.app().unwrap().reader.message, "New operation");
     session.image_write =
       Some(ImageWrite { pane, capture: old.id, state: ImageState::TimedOut });
-    session.app().region_send = Some(Transfer { id: new.id, png: vec![1] });
+    session.app().unwrap().region_send =
+      Some(Transfer { id: new.id, png: vec![1] });
     let mut output = Vec::new();
     assert!(session.image_updates(&mut output));
     assert_eq!(output, [] as [u8; 0]);
     assert_eq!(session.image_write.as_ref().unwrap().capture, old.id);
     assert_eq!(
-      session.app().reader.message,
+      session.app().unwrap().reader.message,
       "Image clipboard awaiting previous status"
     );
     assert!(session.image_status("type=write:status=EPERM"));

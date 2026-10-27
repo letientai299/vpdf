@@ -11,7 +11,6 @@ use vpdf_model::input::{Event, MouseButton, MouseEvent, MouseEventKind};
 use vpdf_ui::keys::{Action, Input};
 use vpdf_ui::layout::Screen;
 use vpdf_ui::pointer::{Hit, Region, Route};
-use vpdf_ui::prompt::History;
 
 pub fn screen() -> Screen {
   crate::common::cells(121, 40)
@@ -45,7 +44,7 @@ pub fn action(app: &mut App, action: Action) -> Result<()> {
 
 pub fn dispatch(session: &mut Session, event: &Event) -> Result<()> {
   match event {
-    Event::Key(key) => session.app().key(*key, &mut History::default()),
+    Event::Key(key) => session.type_key(*key),
     Event::Mouse(mouse) => session.mouse_report(*mouse).map(|_| ()),
     Event::Paste(_) => panic!("input bytes"),
   }
@@ -100,13 +99,16 @@ pub fn draw(app: &mut impl Drawable) -> Result<String> {
 }
 
 pub fn pane(session: &mut Session, index: usize) -> &mut App {
-  &mut session.tab().panes[index]
+  session.tab().panes[index].document_mut().unwrap()
 }
 
 /// The pane with `id`, in any tab.
 pub fn pane_id(session: &mut Session, id: u32) -> &mut App {
   let mut panes = session.tabs.iter_mut().flat_map(|tab| &mut tab.panes);
-  panes.find(|app| app.id == id).expect("a pane with the id")
+  panes
+    .find(|app| app.id == id)
+    .and_then(vpdf::session::Pane::document_mut)
+    .expect("a document with the id")
 }
 
 pub fn cell_in(

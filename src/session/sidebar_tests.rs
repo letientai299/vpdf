@@ -6,7 +6,7 @@ use crate::state::Sidebar;
 fn reopen(store: &Path, pdf: &Path) -> Result<(Session, Option<PanelKind>)> {
   let mut session = Session::new(Some(store.to_path_buf()));
   session.open(pdf, true, cells(120, 40))?;
-  let panel = session.app().panel.as_ref();
+  let panel = session.app().unwrap().panel.as_ref();
   assert!(panel.is_none_or(|panel| !panel.view.focused()));
   let kind = panel.map(|panel| panel.view.kind());
   Ok((session, kind))
@@ -36,9 +36,9 @@ fn sidebars_reopen_per_document() -> Result<()> {
   let mut last = [None, None];
   for (pdf, open, want) in cases {
     let (mut session, _) = reopen(&store, pdf)?;
-    session.app().close_panel()?;
+    session.app().unwrap().close_panel()?;
     if let Some(kind) = open {
-      session.app().open_panel(kind)?;
+      session.app().unwrap().open_panel(kind)?;
     }
     session.close()?;
     let (mut session, kind) = reopen(&store, pdf)?;
@@ -84,12 +84,12 @@ fn splits_of_an_open_view_skip_the_sidebar() -> Result<()> {
   let pdf = root.path().join("a.pdf");
   crate::fixtures::pdf(&pdf, &["first"], "")?;
   let (mut session, _) = reopen(&store, &pdf)?;
-  session.app().open_panel(PanelKind::Info)?;
+  session.app().unwrap().open_panel(PanelKind::Info)?;
   session.close()?;
   let (mut session, kind) = reopen(&store, &pdf)?;
   assert_eq!(kind, Some(PanelKind::Info));
   session.split(Axis::Columns, None, Place::After)?;
-  assert!(session.app().panel.is_none());
+  assert!(session.app().unwrap().panel.is_none());
   Ok(())
 }
 
@@ -99,7 +99,7 @@ fn results_note_follows_the_search() -> Result<()> {
   let pdf = root.path().join("a.pdf");
   crate::fixtures::pdf(&pdf, &["first"], "")?;
   let (mut session, _) = reopen(&root.path().join("state.json"), &pdf)?;
-  let app = session.app();
+  let app = session.app().unwrap();
   app.open_panel(PanelKind::Results)?;
   let query =
     vpdf_search::query::Query { text: "first".into(), ..Default::default() };

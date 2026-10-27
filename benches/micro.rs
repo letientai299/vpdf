@@ -70,7 +70,7 @@ fn hover() -> Result<()> {
   let motion = |column| MouseEvent::new(MouseEventKind::Moved, column, 20);
   let mut session = vpdf::session::Session::new(None);
   session.open(&corpus("paper.pdf")?, true, PANE)?;
-  session.app().command("2")?;
+  session.app().unwrap().command("2")?;
   let mut column = 0;
   measure("Session::mouse motion", || {
     column = (column + 1) % 120;
@@ -97,7 +97,7 @@ fn wheel() -> Result<()> {
     |kind, modifiers| MouseEvent { kind, column: 60, row: 20, modifiers };
   let mut session = vpdf::session::Session::new(None);
   session.open(&corpus("paper.pdf")?, true, PANE)?;
-  session.app().command("2")?;
+  session.app().unwrap().command("2")?;
   let cases = [
     ("scroll", KeyModifiers::NONE),
     ("ctrl zoom", KeyModifiers::CONTROL),
@@ -105,8 +105,12 @@ fn wheel() -> Result<()> {
   ];
   for (name, modifiers) in cases {
     if modifiers == KeyModifiers::SHIFT {
-      session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(2.0));
-      session.app().relayout()?;
+      session
+        .app()
+        .unwrap()
+        .layout
+        .request_zoom(vpdf_ui::layout::Zoom::To(2.0));
+      session.app().unwrap().relayout()?;
     }
     measure(&format!("Session::mouse wheel {name}"), || {
       for kind in [MouseEventKind::ScrollUp, MouseEventKind::ScrollDown] {
@@ -126,7 +130,7 @@ fn drag() -> Result<()> {
   for clicks in [1, 2] {
     let mut session = vpdf::session::Session::new(None);
     session.open(&corpus("paper.pdf")?, true, PANE)?;
-    session.app().command("2")?;
+    session.app().unwrap().command("2")?;
     let press = MouseEventKind::Down(MouseButton::Left);
     for _ in 1..clicks {
       session.mouse(event(press, 40))?;
@@ -143,9 +147,9 @@ fn drag() -> Result<()> {
   // Middle drags pan a zoomed page.
   let mut session = vpdf::session::Session::new(None);
   session.open(&corpus("paper.pdf")?, true, PANE)?;
-  session.app().command("2")?;
-  session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
-  session.app().relayout()?;
+  session.app().unwrap().command("2")?;
+  session.app().unwrap().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
+  session.app().unwrap().relayout()?;
   session.mouse(event(MouseEventKind::Down(MouseButton::Middle), 60))?;
   let mut column = 60;
   measure("Session::mouse drag middle", || {
@@ -156,8 +160,8 @@ fn drag() -> Result<()> {
   // Held at the status row: no scroll.
   let mut session = vpdf::session::Session::new(None);
   session.open(&corpus("paper.pdf")?, true, PANE)?;
-  session.app().command("2")?;
-  let base = session.app().reader.scroll;
+  session.app().unwrap().command("2")?;
+  let base = session.app().unwrap().reader.scroll;
   session.mouse(event(MouseEventKind::Down(MouseButton::Left), 40))?;
   let mut column = 40;
   measure("Session::mouse drag held edge", || {
@@ -172,7 +176,7 @@ fn drag() -> Result<()> {
   let mut now = session.autoscroll_due().expect("a held edge drag");
   measure("Session::autoscroll step", || {
     now += Duration::from_millis(50);
-    session.app().reading_view().scrub_scroll(base);
+    session.app().unwrap().reading_view().scrub_scroll(base);
     black_box(session.autoscroll(black_box(now)));
   })
 }
@@ -216,7 +220,7 @@ fn split_frame() -> Result<()> {
   use vpdf_model::input::{MouseEvent, MouseEventKind};
   let mut session = vpdf::session::Session::new(None);
   session.open(&corpus("paper.pdf")?, true, PANE)?;
-  session.app().command("vsplit")?;
+  session.app().unwrap().command("vsplit")?;
   session.settle()?;
   let rest = |column| MouseEvent::new(MouseEventKind::Moved, column, 20);
   session.mouse(rest(30))?;
@@ -364,7 +368,7 @@ fn routing_pointer() -> Result<()> {
   session.open(&app.path, true, app.screen)?;
   let mouse = MouseEvent::new(MouseEventKind::ScrollDown, 80, 12);
   measure("Session::mouse wheel", || {
-    session.app().reading_view().scrub_scroll(0.0);
+    session.app().unwrap().reading_view().scrub_scroll(0.0);
     session.mouse(black_box(mouse)).expect("reading wheel");
   })
 }
@@ -402,10 +406,10 @@ fn transitions() -> Result<()> {
   let app = paper(false)?;
   let mut session = vpdf::session::Session::new(None);
   session.open(&app.path, true, app.screen)?;
-  session.app().command("vsplit")?;
+  session.app().unwrap().command("vsplit")?;
   session.settle()?;
   measure("Session::mouse pane press", || {
-    let column = if session.app().at.column == 0 { 90 } else { 10 };
+    let column = if session.app().unwrap().at.column == 0 { 90 } else { 10 };
     let mouse =
       MouseEvent::new(MouseEventKind::Down(MouseButton::Left), column, 39);
     session.mouse(black_box(mouse)).expect("pane press");

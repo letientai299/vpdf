@@ -1,4 +1,5 @@
 //! Shared session maintenance policy.
+use super::Pane;
 use super::{App, Duration, Instant, Session};
 
 /// Reading-state check interval.
@@ -12,11 +13,11 @@ fn watch(session: &mut Session, force: bool, now: Instant) -> bool {
   let tab = &mut session.tabs[session.active];
   let mut dirty = false;
   for index in 0..tab.panes.len() {
-    let app = &tab.panes[index];
+    let Some(app) = tab.panes[index].document() else { continue };
     if !(force || app.settling.is_some() || touched.contains(&app.path)) {
       continue;
     }
-    let app = &mut tab.panes[index];
+    let Some(app) = tab.panes[index].document_mut() else { continue };
     dirty |= app.watch_at(now).unwrap_or_else(|error| {
       app.error = Some(format!("Reload failed: {error}"));
       true
@@ -68,7 +69,7 @@ impl Chores {
 
   /// Checks files, clues, and saved positions.
   pub(super) fn run(&mut self, session: &mut Session, now: Instant) -> bool {
-    let mut dirty = session.app().clue_due(now);
+    let mut dirty = session.app().is_ok_and(|app| app.clue_due(now));
     let force = self.watch_due(now);
     if force {
       self.watched = now;
@@ -81,6 +82,7 @@ impl Chores {
       .enumerate()
       .filter(|(index, _)| *index != active)
       .flat_map(|(_, tab)| &mut tab.panes)
+      .filter_map(Pane::document_mut)
     {
       if app.reference_pending() {
         match app.search_updates() {
@@ -115,7 +117,7 @@ impl Chores {
         Ok(true) => self.written = self.checked,
         Ok(false) => {}
         Err(error) => {
-          session.app().error = Some(format!("State not saved: {error}"));
+          session.focused_mut().fail(format!("State not saved: {error}"));
         }
       }
     }
@@ -135,7 +137,7 @@ pub(super) fn idle(
   if changed || session.unsaved {
     wait = wait.min(CHECK.saturating_sub(now.duration_since(checked)));
   }
-  if let Some(clue) = session.app().clue_wait(now) {
+  if let Some(clue) = session.app().ok().and_then(|app| app.clue_wait(now)) {
     wait = wait.min(clue);
   }
   let held = session.pointer.holding();
@@ -148,7 +150,7 @@ pub(super) fn idle(
   {
     wait = wait.min(due.saturating_duration_since(now));
   }
-  for app in &session.tab().panes {
+  for app in session.tab().panes.iter().filter_map(Pane::document) {
     if let Some(until) = app.reader.landing().deadline() {
       wait = wait.min(until.saturating_duration_since(now));
     }
@@ -159,7 +161,13 @@ pub(super) fn idle(
       wait = wait.min(until.saturating_duration_since(now));
     }
   }
-  if session.tab().panes.iter().any(|app| app.settling.is_some()) {
+  if session
+    .tab()
+    .panes
+    .iter()
+    .filter_map(Pane::document)
+    .any(|app| app.settling.is_some())
+  {
     wait = wait.min(crate::watch::SETTLE);
   }
   wait
@@ -169,16 +177,15 @@ impl Session {
   fn sidebars_due(&self) -> bool {
     self.sight != super::Sight::Hidden
       && !self.pointer.holding()
-      && self.tabs[self.active]
-        .panes
-        .iter()
-        .all(|app| app.complete && !app.images_stale)
+      && self.tabs[self.active].panes.iter().all(|pane| {
+        pane.document().is_none_or(|app| app.complete && !app.images_stale)
+      })
       && self.panes().any(App::sidebars_deferred)
   }
 
   pub(super) fn maintain(&mut self, now: Instant) -> bool {
     let mut dirty = false;
-    for app in &mut self.tab().panes {
+    for app in self.tab().panes.iter_mut().filter_map(Pane::document_mut) {
       dirty |= app.reader.expire_flash(now);
       dirty |= app.expire_reference(now);
       dirty |= app.bar_expired(now);
@@ -191,7 +198,7 @@ impl Session {
 
   pub(super) fn animate(&mut self, now: Instant) -> bool {
     let mut dirty = false;
-    for app in &mut self.tab().panes {
+    for app in self.tab().panes.iter_mut().filter_map(Pane::document_mut) {
       dirty |= app.animate_at(now);
     }
     dirty
@@ -201,6 +208,7 @@ impl Session {
     self.tabs[self.active]
       .panes
       .iter()
+      .filter_map(Pane::document)
       .any(|app| app.reader.animation().active())
   }
 }
@@ -231,10 +239,10 @@ mod tests {
     let mut session = opened(root.path())?;
     let start = Instant::now();
     let mut chores = Chores::new(start);
-    session.app().complete = true;
-    let _held = crate::sidebar::hold_annotations(session.app());
+    session.app().unwrap().complete = true;
+    let _held = crate::sidebar::hold_annotations(session.app().unwrap());
     chores.run(&mut session, start);
-    assert!(session.app().annotations_queued());
+    assert!(session.app().unwrap().annotations_queued());
     assert!(chores.wait(&mut session, start, false) > Duration::ZERO);
     Ok(())
   }
@@ -246,19 +254,31 @@ mod tests {
     let start = Instant::now();
     let mut chores = Chores::new(start);
     chores.run(&mut session, start);
-    assert!(matches!(session.app().figures, crate::jobs::Figures::Deferred));
-    session.app().complete = true;
-    session.app().start_deferred();
-    assert!(session.app().outline_pending());
-    assert!(matches!(session.app().figures, crate::jobs::Figures::Running(_)));
-    assert!(session.app().annotations_loading());
-    session.app().command("cancel")?;
-    session.app().start_deferred();
+    assert!(matches!(
+      session.app().unwrap().figures,
+      crate::jobs::Figures::Deferred
+    ));
+    session.app().unwrap().complete = true;
+    session.app().unwrap().start_deferred();
+    assert!(session.app().unwrap().outline_pending());
+    assert!(matches!(
+      session.app().unwrap().figures,
+      crate::jobs::Figures::Running(_)
+    ));
+    assert!(session.app().unwrap().annotations_loading());
+    session.app().unwrap().command("cancel")?;
+    session.app().unwrap().start_deferred();
     chores.run(&mut session, start);
-    assert!(matches!(session.app().figures, crate::jobs::Figures::Idle));
-    assert!(!session.app().annotations_pending());
-    session.app().want_figures();
-    assert!(matches!(session.app().figures, crate::jobs::Figures::Running(_)));
+    assert!(matches!(
+      session.app().unwrap().figures,
+      crate::jobs::Figures::Idle
+    ));
+    assert!(!session.app().unwrap().annotations_pending());
+    session.app().unwrap().want_figures();
+    assert!(matches!(
+      session.app().unwrap().figures,
+      crate::jobs::Figures::Running(_)
+    ));
     Ok(())
   }
 
@@ -268,39 +288,43 @@ mod tests {
     let mut session = opened(root.path())?;
     let other = root.path().join("other.pdf");
     crate::fixtures::pdf(&other, &["other"], "")?;
-    let screen = session.app().screen;
+    let screen = session.app().unwrap().screen;
     session.open(&other, true, screen)?;
     for tab in &mut session.tabs {
-      for app in &mut tab.panes {
+      for app in tab.panes.iter_mut().filter_map(Pane::document_mut) {
         app.complete = true;
       }
     }
-    session.tabs[0].panes[0].complete = false;
-    session.app().load_outline();
+    session.tabs[0].panes[0].document_mut().unwrap().complete = false;
+    session.app().unwrap().load_outline();
     let start = Instant::now();
     let mut chores = Chores::new(start);
     chores.run(&mut session, start);
     assert!(matches!(
-      session.tabs[session.active].panes[0].figures,
+      session.tabs[session.active].panes[0].document().unwrap().figures,
       crate::jobs::Figures::Running(_)
     ));
     let mut loading = 0;
     for tab in &session.tabs {
-      assert!(tab.panes[0].outline_pending());
-      assert!(matches!(tab.panes[0].figures, crate::jobs::Figures::Running(_)));
-      assert!(tab.panes[0].annotations_pending());
-      loading += usize::from(tab.panes[0].annotations_loading());
+      assert!(tab.panes[0].document().unwrap().outline_pending());
+      assert!(matches!(
+        tab.panes[0].document().unwrap().figures,
+        crate::jobs::Figures::Running(_)
+      ));
+      assert!(tab.panes[0].document().unwrap().annotations_pending());
+      loading +=
+        usize::from(tab.panes[0].document().unwrap().annotations_loading());
     }
     // A finished worker frees its budget slot before its load is polled.
     assert!((1..=2).contains(&loading), "{loading}");
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !session.app().figure_updates()? {
+    while !session.app().unwrap().figure_updates()? {
       assert!(Instant::now() < deadline);
       std::thread::sleep(Duration::from_millis(1));
     }
     chores.run(&mut session, start);
     while matches!(
-      session.tabs[0].panes[0].figures,
+      session.tabs[0].panes[0].document().unwrap().figures,
       crate::jobs::Figures::Running(_)
     ) {
       assert!(Instant::now() < deadline);
@@ -308,7 +332,7 @@ mod tests {
       std::thread::sleep(Duration::from_millis(1));
     }
     assert!(matches!(
-      session.tabs[0].panes[0].figures,
+      session.tabs[0].panes[0].document().unwrap().figures,
       crate::jobs::Figures::Ready(_)
     ));
     Ok(())
@@ -318,12 +342,12 @@ mod tests {
   fn expiry_deadlines_clear_once() -> Result<()> {
     let root = tempfile::tempdir()?;
     let mut session = opened(root.path())?;
-    session.app().command("vsplit")?;
+    session.app().unwrap().command("vsplit")?;
     session.settle()?;
     session.record();
     session.flush()?;
     let start = Instant::now();
-    for app in &mut session.tab().panes {
+    for app in session.tab().panes.iter_mut().filter_map(Pane::document_mut) {
       app.reader.flash(app.reader.cursor, Span::Line, start);
       app.bar.observe(0.0, start);
       app.bar.observe(1.0, start);
@@ -349,8 +373,15 @@ mod tests {
       chores.wait(&mut session, start + Bar::SHOWN, false),
       WATCH.checked_sub(Bar::SHOWN).unwrap()
     );
-    assert!(session.tab().panes.iter().all(|app| app.bar.deadline().is_none()
-      && app.reader.landing().deadline().is_none()));
+    assert!(
+      session.tab().panes.iter().all(|app| app
+        .document()
+        .unwrap()
+        .bar
+        .deadline()
+        .is_none()
+        && app.document().unwrap().reader.landing().deadline().is_none())
+    );
     Ok(())
   }
 
@@ -359,8 +390,8 @@ mod tests {
     let root = tempfile::tempdir()?;
     let mut session = opened(root.path())?;
     let start = Instant::now();
-    session.app().reader.flash(Position::default(), Span::Line, start);
-    session.app().reader.clear_flash();
+    session.app().unwrap().reader.flash(Position::default(), Span::Line, start);
+    session.app().unwrap().reader.clear_flash();
     let chores = Chores::new(start);
     assert_eq!(chores.wait(&mut session, start, false), WATCH);
     assert!(!session.maintain(start + Landing::DURATION));
@@ -376,7 +407,7 @@ mod tests {
     session.flush()?;
     let start = Instant::now();
     let mut chores = Chores::new(start);
-    session.app().command("2")?;
+    session.app().unwrap().command("2")?;
     chores.touch(start + Duration::from_millis(1));
     assert_eq!(chores.wait(&mut session, start, false), CHECK);
     assert!(!chores.run(
@@ -423,15 +454,15 @@ mod tests {
     let root = tempfile::tempdir()?;
     let mut session = opened(root.path())?;
     let start = Instant::now();
-    session.app().reader.animate_to(100.0, start);
+    session.app().unwrap().reader.animate_to(100.0, start);
     session.sight = Sight::Hidden;
-    let before = session.app().reader.scroll;
+    let before = session.app().unwrap().reader.scroll;
     session.maintain(start + Duration::from_millis(16));
-    assert_eq!(session.app().reader.scroll, before);
+    assert_eq!(session.app().unwrap().reader.scroll, before);
     assert!(session.animating());
     session.sight = Sight::Focused;
     assert!(session.animate(start + Duration::from_millis(16)));
-    assert!(session.app().reader.scroll > before);
+    assert!(session.app().unwrap().reader.scroll > before);
     Ok(())
   }
 
@@ -439,7 +470,7 @@ mod tests {
   fn fallback_watch_reloads_after_settling() -> Result<()> {
     let root = tempfile::tempdir()?;
     let mut session = opened(root.path())?;
-    let path = session.app().path.clone();
+    let path = session.app().unwrap().path.clone();
     crate::fixtures::pdf(&path, &["changed document"], "")?;
     let start = Instant::now();
     let mut chores = Chores::new(start);
@@ -449,7 +480,7 @@ mod tests {
     ));
     assert!(chores.watch_due(start + WATCH));
     chores.run(&mut session, start + WATCH);
-    assert!(session.app().settling.is_some());
+    assert!(session.app().unwrap().settling.is_some());
     assert!(
       chores.wait(&mut session, start + WATCH, false) <= crate::watch::SETTLE
     );
@@ -462,9 +493,9 @@ mod tests {
       )
     );
     assert!(chores.run(&mut session, start + WATCH + crate::watch::SETTLE));
-    assert_eq!(session.app().doc.pages.len(), 1);
-    assert!(session.app().images_stale);
-    assert!(session.app().settling.is_none());
+    assert_eq!(session.app().unwrap().doc.pages.len(), 1);
+    assert!(session.app().unwrap().images_stale);
+    assert!(session.app().unwrap().settling.is_none());
     Ok(())
   }
 }

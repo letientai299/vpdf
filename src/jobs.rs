@@ -32,8 +32,6 @@ impl App {
   }
 
   pub(crate) fn job_updates(&mut self) -> bool {
-    let panel =
-      self.panel.as_mut().is_some_and(crate::panel::PanelSession::updates);
     let updated = self.search_updates().and_then(|search| {
       Ok(
         search
@@ -44,11 +42,10 @@ impl App {
           | self.crop_updates()?,
       )
     });
-    panel
-      | updated.unwrap_or_else(|error| {
-        self.error = Some(error.to_string());
-        true
-      })
+    updated.unwrap_or_else(|error| {
+      self.error = Some(error.to_string());
+      true
+    })
   }
 
   pub fn start_ocr(&mut self, language: &str) -> Result<()> {
@@ -138,7 +135,6 @@ impl App {
   fn start_auto_ocr(&mut self) {
     if self.auto_ocr.stopped
       || self.ocr.is_some()
-      || self.covered()
       || self.overlays.overview().is_some()
       || self.reader.animation().active()
     {
@@ -161,7 +157,6 @@ impl App {
     if self.ocr.as_ref().is_some_and(|job| {
       job.is_automatic()
         && (!self.complete
-          || self.covered()
           || self.overlays.overview().is_some()
           || self.reader.animation().active()
           || job.page != page)

@@ -9,7 +9,7 @@ use vpdf_model::style::Role;
 use vpdf_terminal::graphics::Graphics;
 use vpdf_terminal::style::sgr;
 use vpdf_terminal::terminal;
-use vpdf_ui::commands::{self, Id, View};
+use vpdf_ui::commands::View;
 use vpdf_ui::home::Effect;
 use vpdf_ui::layout::Screen;
 use vpdf_ui::prompt::History;
@@ -17,14 +17,12 @@ use vpdf_ui::prompt::History;
 #[derive(Debug, PartialEq)]
 pub enum Outcome {
   Stay,
-  ConfigReload,
-  Theme(String),
-  Perf(Option<bool>),
+  Command(String),
+  Input(vpdf_ui::keys::Input),
+  Dismiss,
   Open(PathBuf),
   Reference(vpdf_model::reference::Reference),
   Forget(Vec<PathBuf>),
-  Help(String),
-  Pick { root: PathBuf, tab: bool },
   Quit,
 }
 
@@ -33,6 +31,7 @@ pub struct Home {
   loader: Loader,
   graphics: Graphics,
   settings: crate::config::Settings,
+  focused: bool,
 }
 
 impl Home {
@@ -66,6 +65,7 @@ impl Home {
       loader: Loader::new("", wake),
       graphics: Graphics::live(),
       settings: crate::config::Settings::default(),
+      focused: true,
     }
   }
 
@@ -82,6 +82,15 @@ impl Home {
     self.view.set_bindings(settings.bindings().clone());
   }
 
+  pub(crate) fn set_tabline(
+    &mut self,
+    tabline: crate::app::Tabline,
+    focused: bool,
+  ) {
+    self.view.set_tabs(tabline.names, tabline.active, focused);
+    self.focused = focused;
+  }
+
   pub(crate) fn updates(&mut self) -> bool {
     self.view.shelf_mut().is_some_and(|cards| self.loader.updates(cards))
   }
@@ -90,7 +99,16 @@ impl Home {
     &mut self,
     scene: &mut S,
   ) -> std::result::Result<(), S::Error> {
-    Self::scene_view(&mut self.view, &mut self.loader, &self.settings, scene)
+    Self::scene_view(&mut self.view, &mut self.loader, &self.settings, scene)?;
+    if !self.focused {
+      crate::presentation::inactive(
+        scene,
+        self.view.screen(),
+        0,
+        self.settings.opacity(),
+      );
+    }
+    Ok(())
   }
 
   fn scene_view<'a, S: vpdf_model::scene::Surface<'a>>(
@@ -135,15 +153,7 @@ impl Home {
     self.handle(event, history, true)
   }
 
-  pub(crate) fn native_event(
-    &mut self,
-    event: Event,
-    history: &mut History,
-  ) -> Result<Outcome> {
-    self.handle(event, history, false)
-  }
-
-  fn handle(
+  pub(crate) fn handle(
     &mut self,
     event: Event,
     history: &mut History,
@@ -158,7 +168,9 @@ impl Home {
       }
       Effect::Forget(paths) => Outcome::Forget(paths),
       Effect::Quit => Outcome::Quit,
-      Effect::Command(line) => return self.command(&line, terminal),
+      Effect::Command(line) => Outcome::Command(line),
+      Effect::Input(input) => Outcome::Input(input),
+      Effect::Dismiss => Outcome::Dismiss,
       Effect::Paste(text) => {
         crate::dnd::pdf(&text)?.map_or(Outcome::Stay, Outcome::Reference)
       }
@@ -185,75 +197,12 @@ impl Home {
       }
     })
   }
-
-  fn command(&mut self, line: &str, terminal: bool) -> Result<Outcome> {
-    let resolved = commands::resolve(
-      line,
-      View::Home,
-      |program| cmdline::available(program, terminal),
-      |_| false,
-    )?;
-    let commands::Resolution::Command { spec, argument } = resolved else {
-      return Ok(Outcome::Stay);
-    };
-    match spec.id {
-      Id::Edit | Id::Open | Id::TabEdit | Id::TabNew
-        if !argument.is_empty() =>
-      {
-        Ok(Outcome::Reference(cmdline::reference(argument)?))
-      }
-      Id::Open if terminal && !cmdline::on_path("fzf") => {
-        let mut prompt =
-          vpdf_ui::prompt::Prompt::new(vpdf_ui::prompt::PromptKind::Command)
-            .with_invocation(self.view.invocation());
-        prompt.replace("open ");
-        self.view.open_prompt(prompt);
-        Ok(Outcome::Stay)
-      }
-      Id::Edit | Id::Open | Id::TabEdit => {
-        Ok(Outcome::Pick { root: ".".into(), tab: spec.id != Id::Edit })
-      }
-      Id::Quit | Id::QuitAll | Id::TabClose => Ok(Outcome::Quit),
-      Id::Recent | Id::TabNew => Ok(Outcome::Stay),
-      Id::Fzf => Ok(match cmdline::picker_root(argument) {
-        Some(root) => Outcome::Pick { root, tab: false },
-        None => Outcome::Reference(cmdline::reference(argument)?),
-      }),
-      Id::Version => {
-        self.view.show_info(
-          vpdf_ui::keys::PanelKind::Version,
-          &crate::version::panel_text(terminal),
-        );
-        Ok(Outcome::Stay)
-      }
-      Id::Help | Id::HelpBeside => Ok(Outcome::Help(argument.into())),
-      Id::Config => {
-        crate::config::reload_command(argument)?;
-        Ok(Outcome::ConfigReload)
-      }
-      Id::Theme => {
-        anyhow::ensure!(!argument.is_empty(), "Usage: :theme <name|path>");
-        Ok(Outcome::Theme(argument.to_owned()))
-      }
-      Id::Perf => crate::perf::switch(argument).map(Outcome::Perf),
-      _ => anyhow::bail!("Open a document before :{}", spec.name),
-    }
-  }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
   use vpdf_pdf::jobs::Wake;
-
-  fn resolve(line: &str, terminal: bool) -> Result<Outcome> {
-    let screen = crate::screen::cells(80, 24);
-    Home::new(&[], screen, &Wake::none(), terminal).command(line, terminal)
-  }
-
-  fn command(line: &str) -> Result<Outcome> {
-    resolve(line, true)
-  }
 
   #[test]
   fn missing_history_shows_welcome() -> Result<()> {
@@ -285,83 +234,6 @@ mod tests {
         assert!(text.contains("Open a PDF"), "{text}");
         assert!(!text.contains(":fzf"), "{text}");
       }
-    }
-    Ok(())
-  }
-
-  #[test]
-  fn theme_commands_work_at_home() -> Result<()> {
-    for terminal in [true, false] {
-      for name in ["theme", "colorscheme"] {
-        assert_eq!(
-          resolve(&format!("{name} dark"), terminal)?,
-          Outcome::Theme("dark".into())
-        );
-        assert!(resolve(&format!("{name} "), terminal).is_err());
-      }
-    }
-    Ok(())
-  }
-
-  #[test]
-  fn reload_command_works_at_home() -> Result<()> {
-    assert_eq!(command("config reload")?, Outcome::ConfigReload);
-    for argument in ["", "help", "bindings", "bindings normal", "licenses"] {
-      assert!(command(&format!("config {argument}")).is_err());
-    }
-    assert_eq!(
-      cmdline::candidates("config ", View::Home, true),
-      (7, vec!["reload".to_owned()]),
-    );
-    assert!(command("config reload extra").is_err());
-    assert_eq!(
-      cmdline::candidates("config r", View::Home, true),
-      (7, vec!["reload".to_owned()]),
-    );
-    Ok(())
-  }
-
-  #[test]
-  fn reference_on_start_screen() -> Result<()> {
-    use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
-    let screen = crate::screen::cells(160, 40);
-    for (command, heading, terminal) in
-      [("version", "VERSION", true), ("version", "VERSION", false)]
-    {
-      let mut home = Home::new(&[], screen, &Wake::none(), terminal);
-      home.graphics = Graphics::default();
-      let mut history = History::default();
-      for ch in format!(":{command}").chars().chain(['\r']) {
-        let code = if ch == '\r' { KeyCode::Enter } else { KeyCode::Char(ch) };
-        assert_eq!(
-          home.handle(
-            Event::Key(KeyEvent::new(code, KeyModifiers::NONE)),
-            &mut history,
-            terminal
-          )?,
-          Outcome::Stay
-        );
-      }
-      let mut out = Vec::new();
-      home.draw(&mut out)?;
-      let text = String::from_utf8(out)?;
-      assert!(text.contains(heading));
-      if command == "version" {
-        assert!(
-          text.contains(crate::version::text(terminal).lines().last().unwrap())
-        );
-      }
-      if command == "version" && terminal {
-        assert!(text.contains(env!("CARGO_PKG_REPOSITORY")));
-      }
-      home.handle(
-        Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
-        &mut history,
-        terminal,
-      )?;
-      let mut out = Vec::new();
-      home.draw(&mut out)?;
-      assert!(String::from_utf8(out)?.contains(":edit <file>"));
     }
     Ok(())
   }
@@ -400,134 +272,6 @@ mod tests {
   }
 
   #[test]
-  fn opening_commands_route() -> Result<()> {
-    for terminal in [true, false] {
-      for (name, tab) in [
-        ("edit", false),
-        ("e", false),
-        ("ed", false),
-        ("open", true),
-        ("op", true),
-        ("tabedit", true),
-        ("tabe", true),
-      ] {
-        assert_eq!(
-          resolve(name, terminal)?,
-          Outcome::Pick { root: ".".into(), tab }
-        );
-        assert_eq!(
-          resolve(&format!("{name} notes.pdf"), terminal)?,
-          Outcome::Reference(cmdline::reference("notes.pdf")?)
-        );
-      }
-      assert_eq!(resolve("tabnew", terminal)?, Outcome::Stay);
-      assert_eq!(
-        resolve("tabnew notes.pdf", terminal)?,
-        Outcome::Reference(cmdline::reference("notes.pdf")?)
-      );
-    }
-    Ok(())
-  }
-
-  #[test]
-  fn fzf_paths_route() -> Result<()> {
-    let root = tempfile::tempdir()?;
-    let directory = root.path().join("books with spaces");
-    std::fs::create_dir(&directory)?;
-    assert_eq!(
-      resolve(&format!("fzf {}", directory.display()), false)?,
-      Outcome::Pick { root: directory, tab: false }
-    );
-    assert_eq!(
-      resolve("fzf notes.pdf", false)?,
-      Outcome::Reference(cmdline::reference("notes.pdf")?)
-    );
-    Ok(())
-  }
-
-  #[test]
-  fn native_commands_offer_picker() -> Result<()> {
-    assert_eq!(
-      resolve("fzf", false)?,
-      Outcome::Pick { root: ".".into(), tab: false }
-    );
-    let (_, items) = cmdline::candidates("fz", View::Home, false);
-    assert!(items.iter().any(|item| item.trim() == "fzf"));
-    Ok(())
-  }
-
-  #[test]
-  fn help_commands_and_shortcuts() -> Result<()> {
-    use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
-    for terminal in [true, false] {
-      assert_eq!(
-        resolve("help config", terminal)?,
-        Outcome::Help("config".into())
-      );
-      assert_eq!(resolve("h", terminal)?, Outcome::Help(String::new()));
-      for sequence in ["g?", "<F1>"] {
-        let mut home = Home::new(
-          &[],
-          crate::screen::cells(120, 40),
-          &Wake::none(),
-          terminal,
-        );
-        let mut history = History::default();
-        let mut outcome = Outcome::Stay;
-        for &key in vpdf_ui::bindings::Sequence::parse(sequence)?.keys() {
-          outcome = home.handle(Event::Key(key), &mut history, terminal)?;
-        }
-        assert_eq!(outcome, Outcome::Help(String::new()));
-        home.handle(
-          Event::Key(KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE)),
-          &mut history,
-          terminal,
-        )?;
-        home.handle(
-          Event::Paste("help conf".into()),
-          &mut history,
-          terminal,
-        )?;
-        home.handle(
-          Event::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
-          &mut history,
-          terminal,
-        )?;
-        let outcome = home.handle(
-          Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-          &mut history,
-          terminal,
-        )?;
-        assert_eq!(outcome, Outcome::Help("config".into()));
-      }
-    }
-    Ok(())
-  }
-
-  #[test]
-  fn start_commands_open_or_quit() -> Result<()> {
-    assert_eq!(
-      command("e a.pdf")?,
-      Outcome::Reference(cmdline::reference("a.pdf")?)
-    );
-    assert_eq!(
-      command("tabnew  b.pdf ")?,
-      Outcome::Reference(cmdline::reference("b.pdf")?)
-    );
-    assert_eq!(command("q")?, Outcome::Quit);
-    assert_eq!(command("")?, Outcome::Stay);
-    assert_eq!(command("e")?, Outcome::Pick { root: ".".into(), tab: false });
-    assert!(command("toc").is_err());
-    assert!(
-      cmdline::candidates("hel", View::Home, true)
-        .1
-        .iter()
-        .any(|item| item.trim() == "help")
-    );
-    Ok(())
-  }
-
-  #[test]
   fn start_completion_uses_home_scope() -> Result<()> {
     use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
     use vpdf_terminal::decode::Event;
@@ -538,7 +282,10 @@ mod tests {
     home.event(key(KeyCode::Char(':')), &mut history)?;
     home.event(Event::Paste("re".into()), &mut history)?;
     home.event(key(KeyCode::Tab), &mut history)?;
-    assert_eq!(home.event(key(KeyCode::Enter), &mut history)?, Outcome::Stay);
+    assert_eq!(
+      home.event(key(KeyCode::Enter), &mut history)?,
+      Outcome::Command("recent".into())
+    );
     assert_eq!(history.commands().last().map(String::as_str), Some("recent"));
     Ok(())
   }

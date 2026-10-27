@@ -99,6 +99,28 @@ pub struct Names<'a> {
 }
 
 impl Names<'_> {
+  pub fn width(&self, room: usize) -> usize {
+    self.fit(room, 0).width
+  }
+
+  pub fn scene<'a>(&self, scene: &mut impl Draw<'a>, room: usize) -> usize {
+    let tabs = self.fit(room, 0);
+    tabs.scene(scene);
+    tabs.width
+  }
+
+  pub fn item(&self, room: usize, column: usize) -> Option<Item> {
+    let tabs = self.fit(room, 0);
+    let mut edge = 0;
+    for (index, width) in tabs.labels.iter().enumerate() {
+      if (edge..edge + width).contains(&column) {
+        return Some(Item::Tab(index));
+      }
+      edge += width;
+    }
+    None
+  }
+
   /// Tab names that fit in `room` beside `detail` columns, with their
   /// display width; else the active file's name.
   fn fit(&self, room: usize, detail: usize) -> Tabs {
@@ -156,10 +178,6 @@ pub fn shows_detail(error: Option<&str>, message: &str, covered: bool) -> bool {
 }
 
 impl Bar<'_> {
-  fn covered(&self) -> bool {
-    self.view.panel.is_some_and(Panel::covers_page)
-  }
-
   fn mode(&self) -> (&'static str, Badge) {
     if self.view.keys.resizing() {
       return ("RESIZE", Badge::Transient);
@@ -252,11 +270,7 @@ impl Bar<'_> {
     scene.push(Op::Style(Role::Bar));
     tabs.scene(scene);
     scene.push(Op::Style(line.style));
-    if self.covered() && line.style == Role::Bar && detail.is_none() {
-      crate::paint::key_hints(scene, &line.message);
-    } else {
-      scene.text(&line.message);
-    }
+    scene.text(&line.message);
     scene.extend([Op::Style(Role::Bar), Op::Spaces(line.fill)]);
     scene.text(&line.right);
     scene.push(Op::Style(Role::Reset));
@@ -272,10 +286,9 @@ impl Bar<'_> {
     if !right.is_empty() {
       right.push_str("  ");
     }
-    let (mut pages, mut zoom, mut matches) = (0..0, 0..0, 0..0);
-    // The recent view's document is closed; it shows no position.
-    let covered = self.covered();
-    if !covered {
+    let pages;
+    let (mut zoom, mut matches) = (0..0, 0..0);
+    {
       let start = right.width();
       right += &self.search_count();
       if !self.view.panel.is_some_and(Panel::focused) {
@@ -292,7 +305,7 @@ impl Bar<'_> {
       )?;
       pages = start..right.width();
     }
-    if !covered && (self.view.layout.zoom() - 1.0).abs() > 0.005 {
+    if (self.view.layout.zoom() - 1.0).abs() > 0.005 {
       let start = right.width();
       write!(right, " zoom {:.0}% ", self.view.layout.zoom() * 100.0)?;
       zoom = start..right.width();
@@ -322,7 +335,6 @@ impl Bar<'_> {
     let (message, style) = match (self.error, section) {
       (Some(error), _) => (error, Role::Error),
       (None, _) if let Some(detail) = detail => (detail, Role::Bar),
-      (None, _) if covered => ("Enter open  :e file  q close", Role::Bar),
       (None, Some(title)) if self.view.reader.message.is_empty() => {
         line.section = true;
         (title, Role::StatusSection)
@@ -345,7 +357,7 @@ impl Bar<'_> {
   /// Whether a detail would show: messages and errors stay until a
   /// key or click.
   fn shows_detail(&self) -> bool {
-    shows_detail(self.error, &self.view.reader.message, self.covered())
+    shows_detail(self.error, &self.view.reader.message, false)
   }
 
   /// The pane's status item there.

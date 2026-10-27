@@ -225,30 +225,30 @@ fn cursor_focus_reuses_durable_mode() -> Result<()> {
   let book = app("book.pdf", false)?.app.path;
   let mut session = crate::harness::session(&paper, screen())?;
   send(&mut session, b"i2lgo\ti\t")?;
-  assert!(session.app().panel_focused());
-  assert_eq!(session.app().reader.mode(), Mode::Cursor);
+  assert!(session.app().unwrap().panel_focused());
+  assert_eq!(session.app().unwrap().reader.mode(), Mode::Cursor);
   send(&mut session, b"\x1b[27u\t")?;
-  let pane = session.app().id;
-  let cursor = session.app().reader.cursor;
+  let pane = session.app().unwrap().id;
+  let cursor = session.app().unwrap().reader.cursor;
   session.open(&book, true, screen())?;
-  assert_eq!(session.app().reader.mode(), Mode::Normal);
+  assert_eq!(session.app().unwrap().reader.mode(), Mode::Normal);
   for command in ["e", "tabe", "split", "vsplit"] {
     send(&mut session, format!(":{command} {}\r", paper.display()).as_bytes())?;
-    assert_eq!(session.app().id, pane);
-    assert_eq!(session.app().reader.mode(), Mode::Cursor);
-    assert_eq!(session.app().reader.cursor, cursor);
+    assert_eq!(session.app().unwrap().id, pane);
+    assert_eq!(session.app().unwrap().reader.mode(), Mode::Cursor);
+    assert_eq!(session.app().unwrap().reader.cursor, cursor);
     assert_eq!(session.tabs.len(), 2);
     session.open(&book, true, screen())?;
   }
   session.open(&paper, true, screen())?;
-  assert_eq!(session.app().id, pane);
-  assert_eq!(session.app().reader.mode(), Mode::Cursor);
-  assert_eq!(session.app().reader.cursor, cursor);
+  assert_eq!(session.app().unwrap().id, pane);
+  assert_eq!(session.app().unwrap().reader.mode(), Mode::Cursor);
+  assert_eq!(session.app().unwrap().reader.cursor, cursor);
   send(&mut session, b":vsplit\r")?;
-  assert_eq!(session.app().reader.mode(), Mode::Normal);
+  assert_eq!(session.app().unwrap().reader.mode(), Mode::Normal);
   send(&mut session, b"\x17p")?;
-  assert_eq!(session.app().id, pane);
-  assert_eq!(session.app().reader.mode(), Mode::Cursor);
+  assert_eq!(session.app().unwrap().id, pane);
+  assert_eq!(session.app().unwrap().reader.mode(), Mode::Cursor);
   Ok(())
 }
 
@@ -341,30 +341,30 @@ fn cursor_panel_enter_returns_normal() -> Result<()> {
     let book = app("book.pdf", false)?.app.path;
     let mut session = crate::harness::session(&paper, screen())?;
     send(&mut session, b"i2l")?;
-    let pane = session.app().id;
-    let cursor = session.app().reader.cursor;
+    let pane = session.app().unwrap().id;
+    let cursor = session.app().unwrap().reader.cursor;
     let destination = if cross_document {
       session.open(&book, true, screen())?;
       Destination::File(paper)
     } else {
       Destination::Position(cursor)
     };
-    let source = session.app().id;
-    session.app().show_panel(
+    let source = session.app().unwrap().id;
+    session.app().unwrap().show_panel(
       PanelKind::Results,
       vec![Row::new("target".into(), String::new(), destination)],
     )?;
     send(&mut session, b"o")?;
-    assert_eq!(session.app().id, source);
-    assert_eq!(session.app().input_owner(), InputOwner::Panel);
+    assert_eq!(session.app().unwrap().id, source);
+    assert_eq!(session.app().unwrap().input_owner(), InputOwner::Panel);
     let target = crate::harness::pane_id(&mut session, pane);
     assert_eq!(target.reader.mode(), Mode::Cursor);
     assert_eq!(target.reader.cursor, cursor);
     send(&mut session, b"\r")?;
-    assert_eq!(session.app().id, pane);
-    assert_eq!(session.app().input_owner(), InputOwner::Content);
-    assert_eq!(session.app().reader.mode(), Mode::Normal);
-    assert_eq!(session.app().reader.cursor, cursor);
+    assert_eq!(session.app().unwrap().id, pane);
+    assert_eq!(session.app().unwrap().input_owner(), InputOwner::Content);
+    assert_eq!(session.app().unwrap().reader.mode(), Mode::Normal);
+    assert_eq!(session.app().unwrap().reader.cursor, cursor);
   }
   Ok(())
 }
@@ -408,7 +408,7 @@ fn count_cancel_preserves_cursor() -> Result<()> {
   for text in [false, true] {
     for cancel in [b"\x1b[99;5u".as_slice(), b"\x1b[99;69u", b"\x1b[99;133u"] {
       let (_directory, mut session) = crate::mouse::session(text)?;
-      let app = session.app();
+      let app = session.app().unwrap();
       keys(app, b"i3")?;
       assert_eq!(app.reader.mode(), Mode::Cursor);
       keys(app, cancel)?;
@@ -430,7 +430,7 @@ fn cancel_layer_preserves_visual() -> Result<()> {
       }
       for cancel in [ESC, b"\x03"] {
         let (_directory, mut session) = crate::mouse::session(text)?;
-        let app = session.app();
+        let app = session.app().unwrap();
         keys(app, b"ivw")?;
         let range = (app.reader.cursor, app.reader.selection);
         keys(app, layer)?;
@@ -451,7 +451,7 @@ fn cancel_layer_preserves_visual() -> Result<()> {
 fn rejected_keys_cancel_yanks() -> Result<()> {
   for rejected in [b"x".as_slice(), b"+", b"gZ"] {
     let (_directory, mut session) = crate::mouse::session(false)?;
-    let app = session.app();
+    let app = session.app().unwrap();
     app.reader.store('a', "keep".into())?;
     app.reader.take_yank();
     keys(app, b"\"ay")?;
@@ -464,7 +464,7 @@ fn rejected_keys_cancel_yanks() -> Result<()> {
   }
   for valid in [b"\"a2y3w".as_slice(), b"\"ayiw", b"\"ayp"] {
     let (_directory, mut session) = crate::mouse::session(false)?;
-    let app = session.app();
+    let app = session.app().unwrap();
     keys(app, valid)?;
     assert!(app.reader.operator.is_none());
     assert!(app.reader.register('a').is_some());
@@ -481,7 +481,7 @@ fn search_yank_finishes_at_original_range() -> Result<()> {
       (b"i0".as_slice(), b"\"a2y/the".as_slice(), "See the results\nVisit"),
     ] {
       let (_directory, mut session) = crate::mouse::session(false)?;
-      let app = session.app();
+      let app = session.app().unwrap();
       keys(app, start)?;
       let origin = app.reader.cursor;
       keys(app, search)?;
@@ -504,7 +504,7 @@ fn failed_search_yanks_preserve_register() -> Result<()> {
     [b"/absent\r".as_slice(), b"/\\v[\r", b"/the\x1b[27u", b"/the\rj"]
   {
     let (_directory, mut session) = crate::mouse::session(false)?;
-    let app = session.app();
+    let app = session.app().unwrap();
     app.reader.store('a', "keep".into())?;
     app.reader.take_yank();
     keys(app, b"i\"ay")?;
@@ -524,7 +524,7 @@ fn scroll_then_motion_uses_visible_cursor() -> Result<()> {
   for text in [false, true] {
     for scroll in [b"\x04".as_slice(), b"\x06", b"8\x05"] {
       let (_directory, mut session) = short_session(text)?;
-      let app = session.app();
+      let app = session.app().unwrap();
       keys(app, b"i")?;
       let origin = app.reader.cursor;
       keys(app, scroll)?;
@@ -556,7 +556,7 @@ fn scroll_then_motion_uses_visible_cursor() -> Result<()> {
 fn visual_keyboard_scroll_moves_only_endpoint() -> Result<()> {
   for text in [false, true] {
     let (_directory, mut session) = short_session(text)?;
-    let app = session.app();
+    let app = session.app().unwrap();
     keys(app, b"iv")?;
     let anchor = app.reader.selection;
     let origin = app.reader.cursor;
@@ -578,7 +578,7 @@ fn visual_keyboard_scroll_moves_only_endpoint() -> Result<()> {
 fn cursor_wheel_clamps_without_changing_mode() -> Result<()> {
   for text in [false, true] {
     let (_directory, mut session) = short_session(text)?;
-    let app = session.app();
+    let app = session.app().unwrap();
     keys(app, b"i")?;
     let origin = app.reader.cursor;
     app.scroll(160.0)?;

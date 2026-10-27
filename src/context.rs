@@ -42,7 +42,6 @@ impl App {
   /// the row its items act on.
   pub(crate) fn panel_context(&mut self, mouse: MouseEvent) {
     let (column, row) = (mouse.column, mouse.row);
-    let covered = self.covered();
     let Some(panel) = &mut self.panel else { return };
     let pressed = panel.view.row_at(column, row);
     if let Some(index) = pressed {
@@ -51,7 +50,7 @@ impl App {
     let destination =
       pressed.map(|index| &panel.view.rows()[index].destination);
     let mut items =
-      vpdf_ui::context::panel_items(&panel.view, destination, covered);
+      vpdf_ui::context::panel_items(&panel.view, destination, false);
     if panel.view.kind() == vpdf_ui::keys::PanelKind::Outline {
       let branch = pressed.and_then(|source| {
         self
@@ -67,13 +66,7 @@ impl App {
       let branch = pressed.and_then(|source| panel.view.branch_closed(source));
       items.extend(vpdf_ui::context::fold_items(&panel.view, branch, "group"));
     }
-    // Cards draw over cells right of the rows.
-    let columns = self.screen.columns;
-    let right = if covered {
-      vpdf_ui::panel::recent::Shelf::list_columns(&panel.view, columns)
-    } else {
-      columns
-    };
+    let right = self.screen.columns;
     self.open_menu(items, (column, row), (0, right), pressed.is_some());
   }
 

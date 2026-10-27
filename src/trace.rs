@@ -36,6 +36,7 @@ struct Frame {
 }
 
 /// What a frame showed of the focused pane.
+#[derive(Default)]
 pub struct Observation {
   /// Image bytes sent so far.
   pub uploaded: u64,
@@ -50,6 +51,20 @@ pub struct Observation {
 }
 
 impl Observation {
+  pub(crate) fn pane(pane: &crate::session::Pane, graphics: &Graphics) -> Self {
+    pane.document().map_or_else(
+      || Self {
+        uploaded: graphics.uploaded,
+        outcome: crate::session::native::Observation::pane(pane),
+        complete: true,
+        missing: graphics.missing_tiles,
+        stand_ins: graphics.stand_ins,
+        ..Self::default()
+      },
+      |app| Self::of(app, graphics),
+    )
+  }
+
   pub fn of(app: &App, graphics: &Graphics) -> Self {
     Self {
       uploaded: graphics.uploaded,

@@ -7,11 +7,11 @@ use vpdf_terminal::graphics::Graphics;
 pub fn prepare(source: &Path, screen: Screen) -> Result<Vec<u8>> {
   let mut session = vpdf::session::Session::new(None);
   session.open(source, true, screen)?;
-  session.app().command("2")?;
+  session.app().unwrap().command("2")?;
   let press = (40, 20);
   let kind = MouseEventKind::Down(MouseButton::Right);
   session.mouse(MouseEvent::new(kind, press.0, press.1))?;
-  let app = session.app();
+  let app = session.app().unwrap();
   let mut graphics = Graphics::default();
   let mut output = Vec::new();
   graphics.begin(&mut output)?;

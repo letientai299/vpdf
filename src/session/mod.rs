@@ -1,11 +1,13 @@
 use crate::Result;
 use crate::app::{App, Request, Tabline};
 use crate::dnd::Target;
-use crate::home::{Home, Outcome};
+use crate::home::Home;
 use crate::pace::Pacer;
 use crate::state::{Mark, State};
 use crate::trace::Drawable;
 use crate::watch::Watcher;
+pub use pane::Pane;
+use pane::{Alternate, Body};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -32,7 +34,7 @@ use vpdf_ui::window::{TabMove, Window};
 
 /// Panes of one tab, laid out by a split tree.
 pub struct Tab {
-  pub panes: Vec<App>,
+  pub panes: Vec<Pane>,
   pub tree: Node,
   pub focus: usize,
   /// Pane focused before the current one, for `Ctrl-w p`.
@@ -68,8 +70,6 @@ pub struct Session {
   picker: Option<crate::programs::Picker>,
   printing: Option<printing::Job>,
   perf: crate::perf::Monitor,
-  /// Start screen while no document is open.
-  pub home: Option<Home>,
   /// The whole terminal; panes divide it.
   screen: Option<Screen>,
   watcher: Watcher,
@@ -164,7 +164,7 @@ impl Act {
 /// What `event` asks of the session; None for input it ignores yet,
 /// which must not count as typing: other replies, buttons past 9,
 /// back and forward only on press, and key releases.
-use run::{Landing, answer};
+use run::answer;
 
 impl Session {
   /// `store` holds recent documents and history between runs.
@@ -212,11 +212,15 @@ impl Session {
   }
 
   fn panes(&self) -> impl Iterator<Item = &App> {
-    self.tabs.iter().flat_map(|tab| &tab.panes)
+    self.tabs.iter().flat_map(|tab| &tab.panes).filter_map(Pane::document)
   }
 
   fn panes_mut(&mut self) -> impl Iterator<Item = &mut App> {
-    self.tabs.iter_mut().flat_map(|tab| &mut tab.panes)
+    self
+      .tabs
+      .iter_mut()
+      .flat_map(|tab| &mut tab.panes)
+      .filter_map(Pane::document_mut)
   }
 
   fn pane_mut(&mut self, id: u32) -> Option<&mut App> {
@@ -224,21 +228,18 @@ impl Session {
   }
 
   fn present_startup(&mut self) {
-    if self.unlock.is_some()
-      || (!self.tabs.is_empty() && self.app().error.is_some())
-      || self.home.as_ref().is_some_and(|home| home.view.error().is_some())
-    {
+    if self.unlock.is_some() || self.tabs.is_empty() {
       return;
     }
-    let Some(warning) = self.startup_warning.take() else { return };
-    if self.tabs.is_empty() {
-      if let Some(home) = &mut self.home {
-        home.view.fail(warning);
-      } else {
-        self.startup_warning = Some(warning);
+    let occupied = match &self.focused().body {
+      Body::Document(app) => app.error.is_some(),
+      Body::Recent(home) => home.view.error().is_some(),
+    };
+    if !occupied && let Some(warning) = self.startup_warning.take() {
+      match &mut self.focused_mut().body {
+        Body::Document(app) => app.reader.notice(warning),
+        Body::Recent(home) => home.view.fail(warning),
       }
-    } else {
-      self.app().reader.notice(warning);
     }
   }
 
@@ -255,29 +256,12 @@ impl Session {
     let preferences = self
       .tabs
       .get(self.active)
-      .and_then(|tab| tab.panes.get(tab.focus))
-      .and_then(|app| app.panel.as_ref())
-      .and_then(|panel| panel.view.shelf())
+      .and_then(|tab| tab.panes[tab.focus].recent())
+      .and_then(|home| home.view.shelf())
       .map(vpdf_ui::panel::recent::Shelf::preferences);
     if let Some(preferences) = preferences {
       self.remember_recent_layout(preferences);
     }
-  }
-
-  fn show_recent(&mut self) -> Result<()> {
-    let recent = self.state.recent.clone();
-    let preferences = self.state.recent_layout;
-    self.app().show_recent(&recent)?;
-    self
-      .app()
-      .panel
-      .as_mut()
-      .unwrap()
-      .view
-      .shelf_mut()
-      .unwrap()
-      .set_preferences(preferences);
-    Ok(())
   }
 
   pub fn save(&mut self) -> Result<()> {
@@ -291,7 +275,7 @@ impl Session {
 
   fn remember_open(&mut self, tab: usize, pane: usize) {
     self.state.refresh_history(self.store.as_deref());
-    let app = &mut self.tabs[tab].panes[pane];
+    let Some(app) = self.tabs[tab].panes[pane].document_mut() else { return };
     if app.manual.is_some() {
       return;
     }
@@ -340,7 +324,7 @@ impl Session {
   /// every document.
   pub fn remove_mark(&mut self, name: char) -> Result<()> {
     if name.is_ascii_lowercase() {
-      self.app().marks.remove(&name);
+      self.app()?.marks.remove(&name);
       // The hangup save reads the recorded pane.
       self.record();
     } else {
@@ -359,17 +343,26 @@ impl Session {
     }
   }
 
+  fn recent_updates(&mut self) -> bool {
+    self
+      .tabs
+      .iter_mut()
+      .flat_map(|tab| &mut tab.panes)
+      .filter_map(Pane::recent_mut)
+      .fold(false, |dirty, home| home.updates() | dirty)
+  }
+
   fn refresh_recent(&mut self) {
     let entries = &self.state.recent;
     let rows = crate::panel::saved_rows(entries);
     let cards = crate::recent::entries(entries);
-    if let Some(home) = &mut self.home {
+    for home in self
+      .tabs
+      .iter_mut()
+      .flat_map(|tab| &mut tab.panes)
+      .filter_map(Pane::recent_mut)
+    {
       home.view.refresh_recent(rows.clone(), &cards);
-    }
-    for app in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
-      if let Some(panel) = &mut app.panel {
-        panel.view.refresh_recent(rows.clone(), &cards);
-      }
     }
   }
 
@@ -392,7 +385,7 @@ impl Session {
   #[cfg(test)]
   fn start_at(&mut self, page: usize) -> Result<()> {
     self.activate(0)?;
-    self.app().reading_view().open_page(PageId(page - 1))
+    self.app()?.reading_view().open_page(PageId(page - 1))
   }
 
   /// Records the focused pane and new history in memory, where the
@@ -402,7 +395,9 @@ impl Session {
       return;
     }
     let tab = &self.tabs[self.active];
-    let moved = self.state.remember_pane(&tab.panes[tab.focus]);
+    let moved = tab.panes[tab.focus]
+      .document()
+      .is_some_and(|app| self.state.remember_pane(app));
     if moved || self.history.revision() != self.recorded {
       self.changed();
     }
@@ -432,7 +427,8 @@ impl Session {
     self.clean_state();
     self.printing = None;
     let focused = self.tabs.get(self.active).map(|tab| tab.panes[tab.focus].id);
-    let panes = self.tabs.iter().flat_map(|tab| &tab.panes);
+    let panes =
+      self.tabs.iter().flat_map(|tab| &tab.panes).filter_map(Pane::document);
     let (last, others): (Vec<_>, Vec<_>) =
       panes.partition(|app| Some(app.id) == focused);
     for app in others.into_iter().chain(last) {
@@ -442,6 +438,9 @@ impl Session {
   }
 }
 
+#[cfg(test)]
+mod buffer_tests;
+mod buffers;
 mod clipboard;
 mod dispatch;
 mod edges;
@@ -450,6 +449,7 @@ mod help;
 mod interaction;
 mod maintenance;
 pub mod native;
+mod pane;
 mod pointer;
 mod printing;
 #[cfg(test)]

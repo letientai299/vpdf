@@ -719,48 +719,21 @@ fn clue_wait_ends_once_due() -> Result<()> {
 
 #[test]
 fn recent_view_covers_the_pane() -> Result<()> {
-  let (_directory, mut app) = common::temp_solo(
-    |path| common::text_pdf(path, &["first page text"]),
-    true,
-    common::cells(120, 20),
-  )?;
-  app.doc.pages[0].label = "iv".to_owned().into();
-  app.show_recent(&[])?;
-  assert_eq!(app.left, app.screen.columns);
-  let input = Input::plain;
-  let scroll = app.reader.scroll;
-  for action in [Action::Rows(5), Action::Panel(PanelKind::Recent)] {
-    app.action(input(action))?;
-    assert!(app.panel_focused(), "{action:?}");
-    assert!(app.covered(), "{action:?}");
+  let (_root, path) =
+    common::temp_pdf(|path| common::text_pdf(path, &["first page text"]))?;
+  let mut session = session(&path, common::cells(120, 20))?;
+  let id = session.app()?.id;
+  session.command("recent")?;
+  assert!(session.focused().is_recent());
+  assert!(session.focused().document().is_none());
+  for command in ["1", "iv", "text", "reload"] {
+    assert!(session.command(command).is_err());
   }
-  assert_eq!(app.reader.scroll, scroll);
-  for command in ["1", "iv"] {
-    assert!(app.command(command).is_err(), "{command}");
-    assert!(app.covered() && app.overlays.overview().is_none(), "{command}");
-  }
-  app.draw(&mut Vec::new())?;
-  app.action(input(Action::Quit))?;
-  assert!(!app.quit && app.panel.is_none());
-  let path = app.path.clone();
-  app.show_panel(
-    PanelKind::Recent,
-    vec![Row::new(
-      "fixture.pdf".into(),
-      String::new(),
-      vpdf_ui::panel::Destination::File(path),
-    )],
-  )?;
-  app.action(input(Action::RecentToggle))?;
-  app.action(input(Action::Cancel))?;
-  assert!(app.covered() && app.panel_focused());
-  app.action(input(Action::Cancel))?;
-  assert!(!app.covered() && app.panel.is_none());
-  assert_eq!(app.reader.scroll, scroll);
-  app.show_recent(&[])?;
-  app.command("text")?;
-  assert!(app.text_mode && !app.covered() && !app.panel_focused());
-  assert!(app.panel.as_ref().unwrap().view.is_recent_view());
+  session.draw_focused(&mut Vec::new())?;
+  session.command("e #")?;
+  assert_ne!(session.app()?.id, id);
+  assert_eq!(session.app()?.path, path.canonicalize()?);
+  assert!(session.app()?.reader.selection.is_none());
   Ok(())
 }
 
@@ -961,14 +934,14 @@ fn hover_hits_lines_rows_and_thumbnails() -> Result<()> {
 fn frames_follow_scrolled_thumbnails() -> Result<()> {
   use vpdf::trace::Drawable;
   let mut session = session(&corpus("book.pdf")?, screen())?;
-  session.app().command("39")?;
+  session.app().unwrap().command("39")?;
   let moved = MouseEvent::new(MouseEventKind::Moved, 20, 5);
   session.mouse(moved)?;
-  session.app().open_overview()?;
+  session.app().unwrap().open_overview()?;
   // The hit predicts the scroll; no second frame.
   session.draw_frame(&mut Vec::new())?;
   assert!(!session.redraw_due());
-  let app = session.app();
+  let app = session.app().unwrap();
   let under = app.hovered(Region::Overview, 20, 5, None)?;
   assert_eq!(app.hover.hit(), under);
   assert!(matches!(under, Hit::Thumbnail(page) if page.0 > 20), "{under:?}");
@@ -979,10 +952,10 @@ fn frames_follow_scrolled_thumbnails() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn motion_redraws_only_for_new_targets() -> Result<()> {
   let mut session = session(&corpus("paper.pdf")?, screen())?;
-  let app = session.app();
+  let app = session.app().unwrap();
   app.command("2")?;
   session.draw_focused(&mut Vec::new())?;
-  let app = session.app();
+  let app = session.app().unwrap();
   let targets = hover_targets(app)?;
   let link = targets.iter().find(|(_, hit)| matches!(hit, Hit::Link(..)));
   let ((column, row), _) = *link.expect("a visible link");
@@ -1009,9 +982,12 @@ fn motion_redraws_only_for_new_targets() -> Result<()> {
   for (step, (cell, redraw)) in cases.into_iter().enumerate() {
     assert_eq!(session.mouse(moved(cell))?, redraw, "step {step}: {cell:?}");
   }
-  assert!(session.app().overlays.hints().is_some(), "motion keeps hints");
+  assert!(
+    session.app().unwrap().overlays.hints().is_some(),
+    "motion keeps hints"
+  );
   send(&mut session, b"\x1b[27u")?;
-  let app = session.app();
+  let app = session.app().unwrap();
   let Hit::Link(page, index) = link.expect("a visible link").1 else {
     unreachable!()
   };
@@ -1021,7 +997,10 @@ fn motion_redraws_only_for_new_targets() -> Result<()> {
     app.doc.text(page)?.nearest(page, x, f32::midpoint(bounds.y0, bounds.y1));
   app.go_to(position, true)?;
   send(&mut session, b"K")?;
-  assert!(session.app().overlays.preview().is_some(), "K previews the link");
+  assert!(
+    session.app().unwrap().overlays.preview().is_some(),
+    "K previews the link"
+  );
   // SGR cells count from one.
   let sgr = |flags, (column, row): (u16, u16)| {
     format!("\x1b[<{flags};{};{}M", column + 1, row + 1)
@@ -1030,14 +1009,17 @@ fn motion_redraws_only_for_new_targets() -> Result<()> {
     send(&mut session, sgr(35, cell).as_bytes())?;
   }
   assert!(
-    session.app().overlays.preview().is_some(),
+    session.app().unwrap().overlays.preview().is_some(),
     "motion keeps the preview"
   );
   send(&mut session, b"\x1b[27u")?;
   // Motion after a press: the release got lost.
   let drag = [sgr(0, first), sgr(35, second), sgr(32, (column, row))];
   send(&mut session, drag.concat().as_bytes())?;
-  assert!(session.app().reader.selection.is_none(), "no capture to drag");
+  assert!(
+    session.app().unwrap().reader.selection.is_none(),
+    "no capture to drag"
+  );
   Ok(())
 }
 
@@ -1063,16 +1045,19 @@ fn text_hover_hits_the_next_frame() -> Result<()> {
 fn frames_retest_a_resting_pointer() -> Result<()> {
   use vpdf::trace::Drawable;
   let mut session = session(&corpus("paper.pdf")?, screen())?;
-  session.app().command("2")?;
+  session.app().unwrap().command("2")?;
   session.draw_frame(&mut Vec::new())?;
-  let targets = hover_targets(session.app())?;
+  let targets = hover_targets(session.app().unwrap())?;
   let link = targets.iter().find(|(_, hit)| matches!(hit, Hit::Link(..)));
   let (cell, hit) = *link.expect("a visible link");
   let moved = MouseEvent::new(MouseEventKind::Moved, cell.0, cell.1);
   assert!(session.mouse(moved)?);
   // Half a screen puts another target there.
-  session.app().reader.seed_reader(|reader| reader.scroll += 300.0);
-  assert_ne!(session.app().hovered(Region::Page, cell.0, cell.1, None)?, hit);
+  session.app().unwrap().reader.seed_reader(|reader| reader.scroll += 300.0);
+  assert_ne!(
+    session.app().unwrap().hovered(Region::Page, cell.0, cell.1, None)?,
+    hit
+  );
   session.draw_frame(&mut Vec::new())?;
   assert!(!session.mouse(moved)?, "the frame retested the pointer");
   Ok(())
@@ -1084,10 +1069,10 @@ fn pixel_reports_hit_their_pixel() -> Result<()> {
   use vpdf_model::input::{Button, Mouse, MouseKind, Spot};
   use vpdf_ui::pointer::Pixel;
   let mut session = session(&corpus("paper.pdf")?, screen())?;
-  session.app().command("2")?;
+  session.app().unwrap().command("2")?;
   let at = |x, y| Some(Pixel { x, y, cell: (8, 16) });
   for panel in [false, true] {
-    let app = session.app();
+    let app = session.app().unwrap();
     if panel {
       app.open_panel(PanelKind::Version)?;
     }
@@ -1114,9 +1099,9 @@ fn pixel_reports_hit_their_pixel() -> Result<()> {
       app.page_point(column, row, centre)
     );
   }
-  session.app().close_panel()?;
+  session.app().unwrap().close_panel()?;
   // A press lands on the glyph nearest its pixel, not the cell centre.
-  let app = session.app();
+  let app = session.app().unwrap();
   let nearest = |app: &mut App, column, pixel| -> Result<_> {
     let (page, x, y) = app.page_point(column, 11, pixel).expect("on a page");
     Ok(app.doc.text(page)?.nearest(page, x, y))
@@ -1139,7 +1124,7 @@ fn pixel_reports_hit_their_pixel() -> Result<()> {
     modifiers: KeyModifiers::NONE,
   };
   assert!(session.mouse_report(press)?);
-  assert_eq!(session.app().reader.cursor, glyph);
+  assert_eq!(session.app().unwrap().reader.cursor, glyph);
   // Drags draw only once they move the selection.
   let drag = |x| Mouse {
     kind: MouseKind::Drag(Button::LEFT),
@@ -1166,7 +1151,7 @@ fn pixel_drags_draw_on_new_glyphs() -> Result<()> {
   let (_directory, path) =
     common::temp_pdf(|path| common::text_pdf(path, &["Hello pointer world"]))?;
   let mut session = session(&path, screen())?;
-  let app = session.app();
+  let app = session.app().unwrap();
   let rows = 0..app.screen.rows - 1;
   let text = |hit| hit == Hit::Text;
   let (column, row) =
@@ -1190,7 +1175,10 @@ fn pixel_drags_draw_on_new_glyphs() -> Result<()> {
   for (step, (kind, x, frame)) in cases.into_iter().enumerate() {
     assert_eq!(session.mouse_report(report(kind, x))?, frame, "step {step}");
   }
-  assert!(session.app().reader.selection.is_some(), "the drag selected");
+  assert!(
+    session.app().unwrap().reader.selection.is_some(),
+    "the drag selected"
+  );
   assert!(session.pointer_left());
   Ok(())
 }
@@ -1200,15 +1188,12 @@ fn pixel_drags_draw_on_new_glyphs() -> Result<()> {
 fn covered_panes_record_no_visit() -> Result<()> {
   let (_root, path) =
     common::temp_pdf(|path| common::text_pdf(path, &["Visited text"]))?;
-  let screen = common::cells(80, 24);
-  let mut app = Solo::open(&path, "", false, screen)?;
-  let mut state = vpdf::state::State::default();
-  app.show_recent(&[])?;
-  assert!(!state.remember_pane(&app));
-  assert_eq!(state.recent, [] as [vpdf::state::Entry; 0]);
-  app.close_panel()?;
-  assert!(state.remember_pane(&app));
-  assert_eq!(state.recent.len(), 1);
+  let mut session = session(&path, common::cells(80, 24))?;
+  session.command("recent")?;
+  assert!(session.focused().document().is_none());
+  assert_eq!(session.state.recent.len(), 1);
+  session.save()?;
+  assert_eq!(session.state.recent.len(), 1);
   Ok(())
 }
 
@@ -1224,13 +1209,6 @@ fn panel_clues_use_current_focus_and_scope() -> Result<()> {
       list.items().iter().map(|(key, _)| key.clone()).collect()
     }))
   };
-  app.show_recent(&[])?;
-  assert_eq!(show(&mut app, "y")?, ["p", "y"]);
-  app.action(Input::plain(Action::Cancel))?;
-  assert_eq!(show(&mut app, "m")?, [] as [String; 0]);
-  assert_eq!(app.clue_wait(Instant::now()), None);
-  app.action(Input::plain(Action::Cancel))?;
-  app.close_panel()?;
   app.open_panel(PanelKind::Outline)?;
   let focused = show(&mut app, "g")?;
   assert!(focused.contains(&"g".into()) && !focused.contains(&"d".into()));

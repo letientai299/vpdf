@@ -1,9 +1,8 @@
 use super::interaction::Interaction;
 use super::maintenance::Chores;
 use super::{
-  Act, Arc, Cause, Duration, Event, Home, Instant, IsTerminal, Ordering,
-  Outcome, Pacer, Result, Session, Shape, Sight, View, Write, io, sight,
-  terminal,
+  Act, Arc, Cause, Duration, Event, Instant, IsTerminal, Ordering, Pacer,
+  Result, Session, Sight, View, Write, io, sight, terminal,
 };
 use vpdf_terminal::input::{Notice, notice};
 
@@ -31,17 +30,7 @@ pub fn view(
   // The image cache reads the probe and the spool for its budget.
   session.graphics = vpdf_terminal::graphics::Graphics::live();
   if references.is_empty() {
-    session.screen = Some(screen);
-    session.home = Some(
-      Home::new(
-        &session.state.recent,
-        session.content(screen),
-        &session.frontend.wake(),
-        true,
-      )
-      .with_layout(session.state.recent_layout),
-    );
-    session.resize(screen)?;
+    session.recent_tab(screen)?;
     return run_saving(&mut session);
   }
   for reference in references {
@@ -67,22 +56,12 @@ pub(super) fn updates(
   let mut dirty = session.images_lost(out)?;
   dirty |= session.image_updates(out);
   let tab = &mut session.tabs[session.active];
-  for app in &mut tab.panes {
+  for app in tab.panes.iter_mut().filter_map(super::Pane::document_mut) {
     dirty |= app.raster_updates(&mut session.graphics);
     dirty |= app.job_updates();
   }
+  dirty |= session.recent_updates();
   Ok(dirty)
-}
-
-/// Passive start-screen pointer reports.
-pub(super) fn passive(event: &Event) -> bool {
-  match event {
-    Event::Mouse(mouse) => {
-      matches!(mouse.kind, vpdf_terminal::decode::MouseKind::Moved)
-    }
-    Event::Leave => true,
-    _ => false,
-  }
 }
 
 pub(super) fn act(event: Event) -> Option<Act> {
@@ -180,22 +159,19 @@ pub(super) fn run(session: &mut Session) -> Result<()> {
       dirty = true;
     }
     dirty |= session.observe(&mut out)?;
-    if session.tabs.is_empty() {
-      session.home(&mut out)?;
-      dirty = true;
-      continue;
-    }
     session.perf.bytes(Instant::now(), out.take());
     session.perf_tick(&mut out)?;
     dirty |= updates(session, &mut out)?;
-    session.app().clipboard(&mut out)?;
+    if let Ok(app) = session.app() {
+      app.clipboard(&mut out)?;
+    }
     dirty |= session.notify();
     let now = Instant::now();
     let shown = session.sight != Sight::Hidden;
     if pacer.ready(now) && shown {
       dirty |= session.animate(now);
       if dirty {
-        let current = session.app().title();
+        let current = session.focused().title();
         if current != title {
           terminal::set_title(&mut out, &current)?;
           title = current;
@@ -267,15 +243,6 @@ pub(super) fn wait_time(
   wait
 }
 
-/// Where a drop on the start screen leaves it.
-pub(super) enum Landing {
-  Wait,
-  /// A document opened in a tab.
-  Opened,
-  /// The start screen redraws: its prompt took text, or an error shows.
-  Shown,
-}
-
 /// Sends a reply the terminal waits for.
 pub(super) fn answer(out: &mut impl Write, reply: &str) -> Result<()> {
   out.write_all(reply.as_bytes())?;
@@ -288,15 +255,13 @@ pub(super) fn report(session: &mut Session, result: Result<()>) {
   if let Err(error) = result
     && !session.tabs.is_empty()
   {
-    session.app().error = Some(error.to_string());
+    session.focused_mut().fail(error.to_string());
   }
 }
 
 impl Session {
   pub(super) fn running(&self) -> bool {
-    !self.quit
-      && !self.hangup.load(Ordering::Relaxed)
-      && (!self.tabs.is_empty() || self.home.is_some())
+    !self.quit && !self.hangup.load(Ordering::Relaxed) && !self.tabs.is_empty()
   }
 
   /// Shows the next tmux notice once the status line is free; whether
@@ -305,7 +270,8 @@ impl Session {
     let now = Instant::now();
     let mut changed = self.image_timeout(now);
     changed |= self.maintain(now);
-    let reader = &mut self.app().reader;
+    let Ok(app) = self.app() else { return changed };
+    let reader = &mut app.reader;
     if !reader.message.is_empty() {
       return changed;
     }
@@ -404,202 +370,5 @@ impl Session {
     };
     self.observed = Some(next);
     Ok(dirty || resized || lost)
-  }
-
-  pub(super) fn draw_home(
-    &mut self,
-    home: &mut Home,
-    out: &mut impl Write,
-  ) -> Result<()> {
-    // Its thumbnail would cover what tmux shows instead.
-    if self.sight != Sight::Hidden {
-      // Start-screen motion is passive.
-      self.pointer.leave();
-      terminal::point(out, Shape::Default)?;
-      self.perf.running(self.state.perf);
-      if let Some(warning) = self.startup_warning.take() {
-        home.view.fail(warning);
-      }
-      self.graphics.clear(out)?;
-      home.configure(&self.settings);
-      home.draw(out)?;
-      self.perf.frame(Instant::now());
-      if self.state.perf
-        && let Some(screen) = self.screen
-      {
-        self.perf.draw(out, screen)?;
-        out.flush()?;
-      }
-    }
-    if let Some(unmeasured) = &self.unmeasured {
-      crate::presentation::draw(out, None, |scene| unmeasured.scene(scene))?;
-      out.flush()?;
-    }
-    Ok(())
-  }
-
-  fn home_help(&mut self, home: &mut Home, topic: &str) {
-    if let Err(error) =
-      self.request_help(topic, home.view.invocation(), home.view.screen())
-    {
-      home.view.fail(error.to_string());
-    }
-  }
-
-  fn home_sight(&mut self, event: &Event) {
-    if matches!(event, Event::Key(_)) {
-      self.sight = Sight::Focused;
-    }
-    if matches!(event, Event::Mouse(_)) && self.sight == Sight::Hidden {
-      self.sight = Sight::Unfocused;
-    }
-  }
-
-  /// Draws the start screen and handles one input.
-  pub(super) fn home(
-    &mut self,
-    out: &mut crate::perf::Output<impl Write>,
-  ) -> Result<()> {
-    let Some(mut home) = self.home.take() else { return Ok(()) };
-    self.draw_home(&mut home, out)?;
-    let event = loop {
-      // A wake may come from the hangup thread; the caller checks it.
-      self.perf.bytes(Instant::now(), out.take());
-      self.perf_tick(out)?;
-      let wait = (self.state.perf && self.sight != Sight::Hidden)
-        .then(|| self.perf.wait(Instant::now()));
-      let Some(event) = vpdf_terminal::input::next(wait)? else {
-        if !self.quit
-          && !self.hangup.load(Ordering::Relaxed)
-          && !self.clean_state()
-          && wait.is_some()
-          && !home.updates()
-        {
-          continue;
-        }
-        self.home = Some(home);
-        return Ok(());
-      };
-      if let Event::Reply(reply) = &event
-        && let Some(Notice::Drop(body)) = notice(reply)
-      {
-        match self.home_drop(&mut home, body, out)? {
-          Landing::Wait => continue,
-          Landing::Opened => return home.release(out),
-          Landing::Shown => {
-            self.home = Some(home);
-            return Ok(());
-          }
-        }
-      }
-      if !passive(&event) {
-        break event;
-      }
-    };
-    if let Event::Focus(gained) = event {
-      self.home = Some(home);
-      return if gained {
-        self.turn(Sight::Focused, out).map(drop)
-      } else {
-        self.look(Cause::FocusOut, out).map(drop)
-      };
-    }
-    self.home_sight(&event);
-    if let Event::Resize(report) = event {
-      let measured = terminal::resized(report, self.screen);
-      self.home = Some(home);
-      let refit = self.refit(measured, crossterm::terminal::size);
-      if let (Err(error), Some(home)) = (refit, &mut self.home) {
-        home.view.fail(error.to_string());
-      }
-      return Ok(());
-    }
-    home.configure(&self.settings);
-    let outcome = home.event(event, &mut self.history);
-    self.home_outcome(home, outcome, out)
-  }
-
-  fn home_outcome(
-    &mut self,
-    mut home: Home,
-    outcome: Result<Outcome>,
-    out: &mut crate::perf::Output<impl Write>,
-  ) -> Result<()> {
-    self.remember_recent_layout(home.view.shelf_mut().unwrap().preferences());
-    match outcome {
-      Ok(Outcome::Open(path)) => {
-        if self.leave_home(&mut home, &path) {
-          return home.release(out);
-        }
-      }
-      Ok(Outcome::Reference(reference)) => {
-        let screen = self.screen.unwrap_or(home.view.screen());
-        match self.open_reference(&reference, true, screen) {
-          Ok(()) => return home.release(out),
-          Err(error) if !self.tabs.is_empty() => {
-            self.app().error = Some(error.to_string());
-            return home.release(out);
-          }
-          Err(error) => home.view.fail(error.to_string()),
-        }
-      }
-      Ok(Outcome::Help(topic)) => {
-        self.home_help(&mut home, &topic);
-      }
-      Ok(Outcome::Quit) => return Ok(()),
-      Ok(Outcome::Pick { root, .. }) => {
-        home.release(out)?;
-        let picked = crate::programs::pick_pdf(&root);
-        match picked {
-          Ok(Some(path)) => {
-            if self.leave_home(&mut home, &path) {
-              return Ok(());
-            }
-          }
-          Ok(None) => {}
-          Err(error) => home.view.fail(error.to_string()),
-        }
-      }
-      Ok(Outcome::Perf(on)) => {
-        self.home = Some(home);
-        return self.toggle_perf(on);
-      }
-      Ok(Outcome::ConfigReload) => {
-        self.home = Some(home);
-        self.reload_config();
-        return Ok(());
-      }
-      Ok(Outcome::Theme(theme)) => {
-        self.home = Some(home);
-        self.choose_theme(&theme);
-        return Ok(());
-      }
-      Ok(Outcome::Forget(paths)) => {
-        self.home = Some(home);
-        let result = self.forget_recent(&paths);
-        if let (Err(error), Some(home)) = (result, &mut self.home) {
-          home.view.fail(error.to_string());
-        }
-        return Ok(());
-      }
-      Ok(Outcome::Stay) => {}
-      Err(error) => home.view.fail(error.to_string()),
-    }
-    self.home = Some(home);
-    Ok(())
-  }
-}
-
-#[cfg(test)]
-mod home_pointer_tests {
-  use super::*;
-  use vpdf_model::input::{Mouse, MouseButton, MouseEvent, MouseEventKind};
-
-  #[test]
-  fn home_dispatches_divider_drags() {
-    let drag = MouseEvent::new(MouseEventKind::Drag(MouseButton::Left), 10, 10);
-    assert!(!passive(&Event::Mouse(Mouse::from(drag))));
-    let moved = MouseEvent::new(MouseEventKind::Moved, 10, 10);
-    assert!(passive(&Event::Mouse(Mouse::from(moved))));
   }
 }

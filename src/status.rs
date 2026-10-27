@@ -125,7 +125,7 @@ impl App {
       document: Document {
         page,
         pages: self.doc.pages.len(),
-        label: if self.covered() { "" } else { self.doc.label(page) },
+        label: self.doc.label(page),
         section: self
           .outline
           .current()
@@ -162,7 +162,7 @@ impl App {
     vpdf_ui::chrome::shows_detail(
       self.error.as_deref(),
       &self.reader.message,
-      self.covered(),
+      false,
     )
   }
 }

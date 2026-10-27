@@ -33,7 +33,7 @@ fn saved(root: &Path) -> Result<(Vec<PathBuf>, Layout)> {
   }
   session.activate(1)?;
   session.split(Axis::Columns, None, Place::After)?;
-  session.app().reading_view().open_page(PageId(3))?;
+  session.app().unwrap().reading_view().open_page(PageId(3))?;
   session.settle()?;
   let layout = session.layout();
   session.finish()?;
@@ -56,7 +56,9 @@ fn paths(session: &Session) -> Vec<Vec<PathBuf>> {
   session
     .tabs
     .iter()
-    .map(|tab| tab.panes.iter().map(|app| app.path.clone()).collect())
+    .map(|tab| {
+      tab.panes.iter().map(|app| app.document().unwrap().path.clone()).collect()
+    })
     .collect()
 }
 
@@ -69,7 +71,7 @@ fn layouts_reopen_active_tab_first() -> Result<()> {
   let mut session = restoring(root.path(), layout.clone())?;
   assert!(session.restore_next(cells(80, 24)));
   assert_eq!(paths(&session), [vec![files[1].clone(), files[1].clone()]]);
-  assert!(session.home.is_none());
+  assert!(session.recent().is_none());
   // Unopened tabs keep their saved places.
   assert_eq!(session.layout(), layout);
   restore_all(&mut session);
@@ -88,10 +90,14 @@ fn layouts_reopen_active_tab_first() -> Result<()> {
     tab.order(),
     tab.panes.iter().map(|app| app.id).collect::<Vec<_>>()
   );
-  let pages: Vec<_> =
-    tab.panes.iter().map(|app| app.navigation_position().page).collect();
+  let pages: Vec<_> = tab
+    .panes
+    .iter()
+    .filter_map(crate::session::Pane::document)
+    .map(|app| app.navigation_position().page)
+    .collect();
   assert_eq!(pages, [PageId(0), PageId(3)]);
-  assert!(session.app().error.is_none());
+  assert!(session.app().unwrap().error.is_none());
   assert_eq!(session.layout(), layout);
   Ok(())
 }
@@ -121,7 +127,7 @@ fn unavailable_files_are_reported() -> Result<()> {
   restore_all(&mut session);
   assert_eq!(paths(&session), [vec![files[1].clone(), files[1].clone()]]);
   assert_eq!(
-    session.app().error.as_deref(),
+    session.app().unwrap().error.as_deref(),
     Some("Not reopened: a.pdf (missing), c.pdf (locked)")
   );
   // Missing files keep their tab for later launches; locked ones do not.
@@ -144,15 +150,16 @@ fn newer_reading_state_wins() -> Result<()> {
   let (files, layout) = saved(root.path())?;
   let mut other = session(root.path())?;
   other.open(&files[1], true, cells(80, 24))?;
-  other.app().reading_view().open_page(PageId(6))?;
+  other.app().unwrap().reading_view().open_page(PageId(6))?;
   other.settle()?;
-  let moved = other.app().navigation_position();
+  let moved = other.app().unwrap().navigation_position();
   other.finish()?;
   let mut session = restoring(root.path(), layout.clone())?;
   restore_all(&mut session);
   let views: Vec<_> = session.tabs[1]
     .panes
     .iter()
+    .filter_map(crate::session::Pane::document)
     .map(crate::app::App::navigation_position)
     .collect();
   // The first pane follows reading state; the split keeps its view.
@@ -167,7 +174,7 @@ fn split_views_survive_relaunch() -> Result<()> {
   let mut first = session(root.path())?;
   first.open(&path, true, cells(80, 24))?;
   first.split(Axis::Columns, None, Place::After)?;
-  first.app().reading_view().open_page(PageId(5))?;
+  first.app().unwrap().reading_view().open_page(PageId(5))?;
   first.settle()?;
   let layout = first.layout();
   first.finish()?;
@@ -176,6 +183,7 @@ fn split_views_survive_relaunch() -> Result<()> {
   let views: Vec<_> = session.tabs[0]
     .panes
     .iter()
+    .filter_map(crate::session::Pane::document)
     .map(crate::app::App::navigation_position)
     .collect();
   let saved: Vec<_> = layout.tabs[0].panes.iter().map(|p| p.cursor).collect();
@@ -207,11 +215,14 @@ fn explicit_opens_keep_focus() -> Result<()> {
     let mut session = restoring(root.path(), layout.clone())?;
     session.open(opened, true, cells(80, 24))?;
     restore_all(&mut session);
-    let firsts: Vec<_> =
-      session.tabs.iter().map(|tab| &tab.panes[0].path).collect();
+    let firsts: Vec<_> = session
+      .tabs
+      .iter()
+      .map(|tab| &tab.panes[0].document().unwrap().path)
+      .collect();
     assert_eq!(firsts, expected);
     assert_eq!(session.active, active);
-    assert_eq!(&session.app().path, opened);
+    assert_eq!(&session.app().unwrap().path, opened);
   }
   Ok(())
 }
@@ -319,5 +330,25 @@ fn bridges_save_on_close_and_reopen() -> Result<()> {
     saved.tabs.iter().map(|tab| tab.panes[0].path.clone()).collect();
   assert_eq!(opened, files);
   assert_eq!((saved.active, saved.fullscreen), (0, true));
+  Ok(())
+}
+
+#[test]
+fn recent_panes_are_transient() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let files = pdfs(root.path(), &["book.pdf"])?;
+  let mut session = session(root.path())?;
+  session.open(&files[0], true, cells(120, 40))?;
+  session.command("vnew")?;
+  session.command("tabnew")?;
+  let layout = session.layout();
+  assert_eq!(layout.tabs.len(), 1);
+  assert_eq!(layout.tabs[0].panes.len(), 1);
+  assert_eq!(layout.tabs[0].panes[0].path, files[0]);
+  assert_eq!(layout.tabs[0].shape, Shape::Pane(0));
+  let mut reopened = restoring(root.path(), layout)?;
+  restore_all(&mut reopened);
+  assert_eq!(paths(&reopened), [files]);
+  assert!(reopened.tabs[0].panes[0].alternate.is_none());
   Ok(())
 }

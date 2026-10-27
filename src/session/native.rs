@@ -1,8 +1,9 @@
 //! Session ownership for native windows.
+use super::Pane;
 use super::interaction::Interaction;
 use super::maintenance::Chores;
 use super::unlock::Operation;
-use super::{Home, Screen, Session};
+use super::{Screen, Session};
 use crate::Result;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -156,6 +157,13 @@ pub struct Observation {
 }
 
 impl Observation {
+  pub(crate) fn pane(pane: &Pane) -> Self {
+    pane.document().map_or_else(
+      || Self { pane: Some(pane.id), panel: "RECENT", ..Self::default() },
+      Self::of,
+    )
+  }
+
   pub(crate) fn of(app: &crate::app::App) -> Self {
     let position = app.reader.cursor;
     let hits = app.search.hits();
@@ -429,9 +437,7 @@ fn run(
     if sampled {
       session.perf.sample(now);
     }
-    if let Some(home) = &mut session.home {
-      dirty |= home.updates();
-    }
+    dirty |= session.recent_updates();
     if !session.tabs.is_empty() {
       dirty |= session.maintain(now);
       dirty |= completions(&mut session, &mut cache, &mut reloaded);
@@ -581,8 +587,7 @@ fn resume_keys(session: &mut Session) -> bool {
   if keys.is_empty() {
     return false;
   }
-  session.app().request = Some(super::Request::Keys(keys.into()));
-  let result = session.settle();
+  let result = session.replay_keys(keys.into());
   if result.is_err() || session.quit || session.tabs.is_empty() {
     session.pending_keys.clear();
   }
@@ -636,7 +641,7 @@ fn animate(session: &mut Session, due: &mut Instant, now: Instant) -> bool {
     *due = now;
     let mut changed = false;
     for tab in &mut session.tabs {
-      for app in &mut tab.panes {
+      for app in tab.panes.iter_mut().filter_map(Pane::document_mut) {
         changed |= app.reader.settle_scroll();
       }
     }
@@ -706,7 +711,11 @@ fn publish(latest: &Mutex<Option<Frame>>, mut frame: Frame) {
   *output = Some(frame);
 }
 
-fn apply(session: &mut Session, input: Input, screen: &mut Screen) -> bool {
+pub(super) fn apply(
+  session: &mut Session,
+  input: Input,
+  screen: &mut Screen,
+) -> bool {
   commands::refresh(session);
   let changed = match input {
     Input::Action(command) => commands::dispatch(session, command, *screen),
@@ -783,14 +792,6 @@ fn apply_reader(
     }
     Input::Reference(_) if session.confirming_removal() => Ok(false),
     Input::Reference(reference) => open_input(session, reference, *screen),
-    Input::Key(key) if session.tabs.is_empty() => {
-      home_event(session, vpdf_model::input::Event::Key(key), *screen)
-        .map(|()| true)
-    }
-    Input::Paste(text) if session.tabs.is_empty() => {
-      home_event(session, vpdf_model::input::Event::Paste(text), *screen)
-        .map(|()| true)
-    }
     Input::Key(key) => session.interact(Interaction::Key(key)),
     Input::Paste(text) => session.interact(Interaction::Paste(text)),
     Input::Mouse { event, pixels, screen: drawn } if drawn == *screen => {
@@ -850,40 +851,18 @@ fn mouse_input(
   pixels: (u16, u16),
   screen: Screen,
 ) -> Result<bool> {
-  use vpdf_model::input::MouseEventKind;
   let report = pixel_report(event, pixels);
-  if !session.tabs.is_empty() {
-    return session.interact(Interaction::Mouse(report));
-  }
-  let held = session
-    .home
-    .as_mut()
-    .and_then(|home| home.view.shelf_mut())
-    .is_some_and(|shelf| shelf.dragging());
-  if event.kind == MouseEventKind::Moved
-    || matches!(event.kind, MouseEventKind::Drag(_)) && !held
-  {
-    return Ok(false);
-  }
-  home_event(session, vpdf_model::input::Event::Mouse(report), screen)
-    .map(|()| true)
+  let _ = screen;
+  session.interact(Interaction::Mouse(report))
 }
 
 fn gesture_input(
   session: &mut Session,
   report: vpdf_model::input::Mouse,
   gesture: Gesture,
-  screen: Screen,
+  _screen: Screen,
 ) -> Result<bool> {
-  if !session.tabs.is_empty() {
-    return session.interact(Interaction::Gesture(report, gesture));
-  }
-  // Home lists move in whole turns.
-  let Gesture::Turn(precise) = gesture else { return Ok(false) };
-  for _ in 0..precise.whole {
-    home_event(session, vpdf_model::input::Event::Mouse(report), screen)?;
-  }
-  Ok(precise.whole > 0)
+  session.interact(Interaction::Gesture(report, gesture))
 }
 
 fn resize(
@@ -912,7 +891,6 @@ fn open_input(
 // Like the terminal, closing the last tab exits.
 fn quit_when_closed(session: &mut Session) {
   if session.tabs.is_empty()
-    && session.home.is_none()
     && session.unlock.is_none()
     && session.windows.restoring.is_none()
   {
@@ -921,61 +899,18 @@ fn quit_when_closed(session: &mut Session) {
 }
 
 fn ensure_home(session: &mut Session, screen: Screen) {
-  if session.tabs.is_empty() && session.home.is_none() && !session.quit {
-    session.home = Some(
-      Home::new(
-        &session.state.recent,
-        session.content(screen),
-        &session.frontend.wake(),
-        false,
-      )
-      .with_layout(session.state.recent_layout),
-    );
-    let resized = session.resize(screen);
-    report(session, resized);
+  if session.tabs.is_empty() && !session.quit {
+    let result = session.recent_tab(screen);
+    report(session, result);
   }
 }
 
 fn report(session: &mut Session, result: Result<()>) {
-  if let Err(error) = result {
-    if let Some(home) = &mut session.home {
-      home.view.fail(error.to_string());
-    } else if !session.tabs.is_empty() {
-      session.app().error = Some(error.to_string());
-    }
+  if let Err(error) = result
+    && !session.tabs.is_empty()
+  {
+    session.focused_mut().fail(error.to_string());
   }
-}
-
-fn home_event(
-  session: &mut Session,
-  event: vpdf_model::input::Event,
-  screen: Screen,
-) -> Result<()> {
-  let Some(home) = &mut session.home else { return Ok(()) };
-  home.configure(&session.settings);
-  let invocation = home.view.invocation();
-  let outcome = home.native_event(event, &mut session.history);
-  let preferences = home.view.shelf_mut().unwrap().preferences();
-  session.remember_recent_layout(preferences);
-  match outcome? {
-    crate::home::Outcome::Open(path) => {
-      session.resume(Operation::Open(path), screen)?;
-    }
-    crate::home::Outcome::Help(topic) => {
-      session.request_help(&topic, invocation, screen)?;
-    }
-    crate::home::Outcome::Reference(reference) => {
-      session.resume(Operation::Reference(reference), screen)?;
-    }
-    crate::home::Outcome::Quit => session.quit = true,
-    crate::home::Outcome::Pick { root, tab } => session.pick(&root, tab)?,
-    crate::home::Outcome::Perf(on) => session.toggle_perf(on)?,
-    crate::home::Outcome::ConfigReload => session.reload_config(),
-    crate::home::Outcome::Theme(theme) => session.choose_theme(&theme),
-    crate::home::Outcome::Forget(paths) => session.forget_recent(&paths)?,
-    crate::home::Outcome::Stay => {}
-  }
-  Ok(())
 }
 
 fn completions(
@@ -985,7 +920,7 @@ fn completions(
 ) -> bool {
   let mut dirty = session.image_updates(&mut std::io::sink());
   let mut evicted = Vec::new();
-  for app in &mut session.tab().panes {
+  for app in session.tab().panes.iter_mut().filter_map(Pane::document_mut) {
     let stale = std::mem::take(&mut app.images_stale);
     if stale {
       let owner = TileOwner::new(app.id);
@@ -1055,9 +990,6 @@ fn prepare_scene(
     vpdf_model::theme::Colors::Palette(session.system_palette),
   );
   session.present_startup();
-  if let Some(home) = &mut session.home {
-    home.configure(&session.settings);
-  }
   commands::prepare_prompt(session);
 }
 
@@ -1082,6 +1014,7 @@ fn frame(
     .get(session.active)
     .into_iter()
     .flat_map(|tab| &tab.panes)
+    .filter_map(Pane::document)
     .map(|app| TileOwner::new(app.id))
     .collect();
   let visible: HashSet<_> = owners.iter().map(|owner| owner.get()).collect();
@@ -1097,10 +1030,7 @@ fn frame(
   let mut complete = true;
   prepare_scene(session, &mut recorder);
   let title = if session.tabs.is_empty() {
-    if let Some(home) = &mut session.home {
-      home.scene(&mut recorder)?;
-    }
-    "Vpdf".to_owned()
+    "Vpdf".into()
   } else {
     session.prepare_frame();
     let area = session.area();
@@ -1110,9 +1040,9 @@ fn frame(
       area,
       session.unmeasured.as_ref(),
       &mut recorder,
-      |app, scene| {
-        app.scene_pane(scene, false)?;
-        complete &= app.complete || app.covered();
+      |pane, scene| {
+        pane.scene_pane(scene, false)?;
+        complete &= pane.document().is_none_or(|app| app.complete);
         Ok(())
       },
     )?;
@@ -1199,7 +1129,7 @@ fn frame_metrics(
       .tabs
       .get(session.active)
       .map_or_else(Observation::default, |tab| {
-        Observation::of(&tab.panes[tab.focus])
+        Observation::pane(&tab.panes[tab.focus])
       });
     metrics.observation.animating = metrics.animating;
     metrics.observation.tab = session.active + 1;
@@ -1222,10 +1152,11 @@ fn frame_metrics(
 
 fn metrics(session: &Session, started: Instant) -> Metrics {
   let tab = session.tabs.get(session.active);
-  let apps = || tab.into_iter().flat_map(|tab| &tab.panes);
+  let apps =
+    || tab.into_iter().flat_map(|tab| &tab.panes).filter_map(Pane::document);
   let animating = apps().any(|app| app.reader.animation().active());
   let busy = apps().any(crate::app::App::busy);
-  let focused = tab.map(|tab| &tab.panes[tab.focus]);
+  let focused = tab.and_then(|tab| tab.panes[tab.focus].document());
   let built = Instant::now();
   Metrics {
     ticket: Ticket::default(),
@@ -1379,17 +1310,17 @@ mod tests {
     let (_root, _path, mut session) = opened(&["navigation"], screen)?;
     let now = Instant::now();
     let mut due = now + Duration::from_secs(1);
-    session.app().reader.animate_to(100.0, now);
+    session.app().unwrap().reader.animate_to(100.0, now);
     assert!(apply(&mut session, Input::ReduceMotion(true), &mut screen));
     assert!(!apply(&mut session, Input::ReduceMotion(true), &mut screen));
     assert!(animate(&mut session, &mut due, now));
-    assert!(!session.app().reader.animation().active());
-    assert_eq!(session.app().reader.scroll, 100.0);
+    assert!(!session.app().unwrap().reader.animation().active());
+    assert_eq!(session.app().unwrap().reader.scroll, 100.0);
     assert!(!animate(&mut session, &mut due, now));
     assert!(apply(&mut session, Input::ReduceMotion(false), &mut screen));
-    session.app().reader.animate_to(200.0, now);
+    session.app().unwrap().reader.animate_to(200.0, now);
     animate(&mut session, &mut due, now);
-    assert!(session.app().reader.animation().active());
+    assert!(session.app().unwrap().reader.animation().active());
     Ok(())
   }
 
@@ -1469,18 +1400,18 @@ mod tests {
       ensure_home(&mut session, screen);
       if document {
         session.open(&source, true, screen)?;
-        session.app().reader.notice("Ordinary startup");
+        session.app().unwrap().reader.notice("Ordinary startup");
       }
       let warning = session.startup_warning.clone().unwrap();
       let rendered = frame(&mut session, &mut Cache::new(BUDGET), screen)?;
       assert!(shows(&rendered.scene, "Config"));
       if document {
-        assert_eq!(session.app().reader.message, warning);
-        assert!(!session.app().cursorline);
-        assert_eq!(session.app().layout.zoom(), 2.0);
+        assert_eq!(session.app().unwrap().reader.message, warning);
+        assert!(!session.app().unwrap().cursorline);
+        assert_eq!(session.app().unwrap().layout.zoom(), 2.0);
       } else {
         assert_eq!(
-          session.home.as_ref().unwrap().view.error(),
+          session.recent().unwrap().view.error(),
           Some(warning.as_str())
         );
       }
@@ -1558,10 +1489,14 @@ mod tests {
     assert_eq!(enabled.observation.resources.len(), 1);
     assert!(enabled.built >= disabled.built);
     assert!(enabled.build >= enabled.observation_time.unwrap());
-    session.app().command("vsplit")?;
+    session.app().unwrap().command("vsplit")?;
     session.settle()?;
     let tab = &mut session.tabs[session.active];
-    tab.panes[1 - tab.focus].reader.animate_to(100.0, started);
+    tab.panes[1 - tab.focus]
+      .document_mut()
+      .unwrap()
+      .reader
+      .animate_to(100.0, started);
     let split = frame_metrics(&session, started, &cache, &visible);
     assert!(split.animating && split.observation.animating);
     Ok(())
@@ -1664,7 +1599,7 @@ mod tests {
   fn unrelated_wakes_keep_animation_deadline() -> Result<()> {
     let (_root, _, mut session) = opened(&["first", "second"], sized())?;
     let start = Instant::now();
-    session.app().reader.animate_to(100.0, start);
+    session.app().unwrap().reader.animate_to(100.0, start);
     let mut due = start + ANIMATION;
     let mut chores = Chores::new(start);
     let mut screen = sized();
@@ -1682,14 +1617,14 @@ mod tests {
       );
       assert!(!pending.load(Ordering::Acquire));
       assert!(!animate(&mut session, &mut due, start + ANIMATION * step / 8));
-      assert_eq!(session.app().reader.scroll, 0.0);
+      assert_eq!(session.app().unwrap().reader.scroll, 0.0);
       assert_eq!(due, start + ANIMATION);
     }
     assert!(animate(&mut session, &mut due, start + ANIMATION));
-    let scroll = session.app().reader.scroll;
+    let scroll = session.app().unwrap().reader.scroll;
     assert!(scroll > 0.0);
     assert!(!animate(&mut session, &mut due, start + ANIMATION));
-    assert_eq!(session.app().reader.scroll, scroll);
+    assert_eq!(session.app().unwrap().reader.scroll, scroll);
     session.unsaved = false;
     assert_eq!(
       wait_time(&mut session, &chores, due, start + ANIMATION),
@@ -1705,7 +1640,7 @@ mod tests {
       deadline + Duration::from_millis(1)
     ));
     assert_eq!(due, deadline + ANIMATION);
-    session.app().reader.cancel_scroll();
+    session.app().unwrap().reader.cancel_scroll();
     assert!(!animate(&mut session, &mut due, start + ANIMATION));
     assert_eq!(
       wait_time(&mut session, &chores, due, start),
@@ -1725,17 +1660,48 @@ mod tests {
     assert_eq!(left.pointer.holding(), right.pointer.holding());
     assert_eq!(left.history.commands(), right.history.commands());
     for (left, right) in left.tab().panes.iter().zip(&right.tab().panes) {
-      assert_eq!(left.reader.cursor, right.reader.cursor);
-      assert_eq!(left.reader.scroll, right.reader.scroll);
-      assert_eq!(left.reader.mode(), right.reader.mode());
-      assert_eq!(left.reader.selection, right.reader.selection);
-      assert_eq!(left.layout.zoom(), right.layout.zoom());
-      assert_eq!(left.error, right.error);
       assert_eq!(
-        left.overlays.prompt().map(vpdf_ui::prompt::Prompt::text),
-        right.overlays.prompt().map(vpdf_ui::prompt::Prompt::text)
+        left.document().unwrap().reader.cursor,
+        right.document().unwrap().reader.cursor
       );
-      assert!(left.request.is_none() && right.request.is_none());
+      assert_eq!(
+        left.document().unwrap().reader.scroll,
+        right.document().unwrap().reader.scroll
+      );
+      assert_eq!(
+        left.document().unwrap().reader.mode(),
+        right.document().unwrap().reader.mode()
+      );
+      assert_eq!(
+        left.document().unwrap().reader.selection,
+        right.document().unwrap().reader.selection
+      );
+      assert_eq!(
+        left.document().unwrap().layout.zoom(),
+        right.document().unwrap().layout.zoom()
+      );
+      assert_eq!(
+        left.document().unwrap().error,
+        right.document().unwrap().error
+      );
+      assert_eq!(
+        left
+          .document()
+          .unwrap()
+          .overlays
+          .prompt()
+          .map(vpdf_ui::prompt::Prompt::text),
+        right
+          .document()
+          .unwrap()
+          .overlays
+          .prompt()
+          .map(vpdf_ui::prompt::Prompt::text)
+      );
+      assert!(
+        left.document().unwrap().request.is_none()
+          && right.document().unwrap().request.is_none()
+      );
     }
   }
 
@@ -1809,20 +1775,27 @@ mod tests {
     for (step, (term_input, native_input)) in inputs.into_iter().enumerate() {
       run::apply(&mut terminal, term_input, &mut Vec::new());
       apply(&mut native, native_input, &mut screen);
-      assert!(terminal.app().error.is_none(), "terminal step {step}");
-      assert!(native.app().error.is_none(), "native step {step}");
+      assert!(terminal.app().unwrap().error.is_none(), "terminal step {step}");
+      assert!(native.app().unwrap().error.is_none(), "native step {step}");
       if let Some((_, page)) = pages.iter().find(|(at, _)| *at == step) {
         assert_eq!(terminal.tab().panes.len(), 2, "step {step}");
-        assert_eq!(terminal.app().reader.cursor.page, *page, "step {step}");
+        assert_eq!(
+          terminal.app().unwrap().reader.cursor.page,
+          *page,
+          "step {step}"
+        );
       }
       if step == pasted || step == undone {
         let expected = if step == pasted { "章a\u{301}" } else { "" };
-        assert_eq!(terminal.app().overlays.prompt().unwrap().text(), expected);
+        assert_eq!(
+          terminal.app().unwrap().overlays.prompt().unwrap().text(),
+          expected
+        );
       }
       assert_sessions_match(&mut terminal, &mut native);
     }
     assert_eq!(terminal.tab().focus, 0);
-    assert!(terminal.app().overlays.prompt().is_none());
+    assert!(terminal.app().unwrap().overlays.prompt().is_none());
     Ok(())
   }
 
@@ -1831,7 +1804,8 @@ mod tests {
     let mut screen = sized();
     let (_root, path, mut session) = opened(&["body"], screen)?;
     let stale = Screen { columns: screen.columns - 1, ..screen };
-    session.app().request = Some(super::super::Request::Perf(Some(true)));
+    session.app().unwrap().request =
+      Some(super::super::Request::Perf(Some(true)));
     for input in [
       Input::Leave,
       Input::Focus(false),
@@ -1841,7 +1815,7 @@ mod tests {
     ] {
       apply(&mut session, input, &mut screen);
       assert!(!session.state.perf);
-      assert!(session.app().request.is_some());
+      assert!(session.app().unwrap().request.is_some());
     }
     session.unlock_result(
       Err(super::super::PasswordRequired.into()),
@@ -1857,7 +1831,7 @@ mod tests {
     ] {
       apply(&mut session, input, &mut screen);
       assert!(!session.state.perf);
-      assert!(session.app().request.is_some());
+      assert!(session.app().unwrap().request.is_some());
       assert_eq!(session.pending_keys.len(), 1);
       assert!(!resume_keys(&mut session));
     }
@@ -1886,8 +1860,8 @@ mod tests {
         crate::fixtures::pdf(&path, &["body"], "")?;
         session.open(&path, true, screen)?;
       }
-      session.tabs[0].panes[0].quit = true;
-      session.app().request = Some(Request::TabClose(None));
+      session.tabs[0].panes[0].document_mut().unwrap().quit = true;
+      session.app().unwrap().request = Some(Request::TabClose(None));
       if native {
         apply(
           &mut session,
@@ -1906,8 +1880,8 @@ mod tests {
         );
       }
       assert_eq!(session.tabs.len(), 1);
-      assert!(session.app().quit);
-      assert!(session.app().error.is_none());
+      assert!(session.app().unwrap().quit);
+      assert!(session.app().unwrap().error.is_none());
     }
     Ok(())
   }
@@ -1929,7 +1903,7 @@ mod tests {
       }
       assert!(session.pointer.holding());
       assert!(session.pointer.target().is_some());
-      session.app().request = Some(Request::SetMark('a'));
+      session.app().unwrap().request = Some(Request::SetMark('a'));
       if native {
         apply(&mut session, Input::Leave, &mut screen);
       } else {
@@ -1937,9 +1911,9 @@ mod tests {
       }
       assert!(session.pointer.target().is_none());
       assert_eq!(session.pointer.holding(), !native);
-      assert_eq!(session.app().request.is_some(), native);
+      assert_eq!(session.app().unwrap().request.is_some(), native);
       assert_eq!(session.state.marks.contains_key(&'a'), !native);
-      assert!(session.app().error.is_none());
+      assert!(session.app().unwrap().error.is_none());
     }
     Ok(())
   }
@@ -1997,18 +1971,18 @@ mod tests {
       let mut screen = sized();
       let mut session = native();
       session.open(&source, true, screen)?;
-      let original = session.app().id;
+      let original = session.app().unwrap().id;
       let position =
         Position { page: vpdf_model::text::PageId(1), ..Position::default() };
       session.state.marks.insert('A', Mark::new(path.clone(), position));
-      session.app().request = Some(request.clone());
+      session.app().unwrap().request = Some(request.clone());
       session.settle()?;
       assert!(session.unlock.is_some(), "{request:?}");
-      assert_eq!(session.app().id, original);
+      assert_eq!(session.app().unwrap().id, original);
       apply(&mut session, Input::Paste("wrong".into()), &mut screen);
       apply(&mut session, key(KeyCode::Enter), &mut screen);
       assert!(session.unlock.as_ref().unwrap().retry);
-      assert_eq!(session.app().id, original);
+      assert_eq!(session.app().unwrap().id, original);
       let resized = Screen { columns: 120, rows: 45, ..screen };
       apply(&mut session, Input::Resize(resized), &mut screen);
       apply(&mut session, Input::Paste("test-reader".into()), &mut screen);
@@ -2034,22 +2008,27 @@ mod tests {
     match request {
       Request::Open { tab: false, .. } => {
         assert_eq!(session.tabs.len(), 1);
-        assert_ne!(session.app().id, original);
+        assert_ne!(session.app().unwrap().id, original);
       }
       Request::Window { .. } => {
         assert_eq!(session.tabs.len(), 1);
         assert_eq!(session.tab().panes.len(), 2);
-        assert_eq!(session.app().path, path);
+        assert_eq!(session.app().unwrap().path, path);
       }
       Request::PanelMark { .. } => {
-        assert_eq!(session.app().id, original);
+        assert_eq!(session.app().unwrap().id, original);
         assert_eq!(session.tab().panes.len(), 2);
       }
       _ => assert_eq!(session.tabs.len(), 2),
     }
     if matches!(request, Request::GoMark(..) | Request::PanelMark { .. }) {
       assert_eq!(
-        session.tabs[target.0].panes[target.1].reader.cursor.page,
+        session.tabs[target.0].panes[target.1]
+          .document()
+          .unwrap()
+          .reader
+          .cursor
+          .page,
         position.page
       );
     }
@@ -2090,7 +2069,7 @@ mod tests {
     let mut session = native();
     ensure_home(&mut session, screen);
     apply(&mut session, Input::Open(encrypted.path().into()), &mut screen);
-    assert!(session.home.is_some());
+    assert!(session.recent().is_some());
     apply(&mut session, Input::Paste("secret".into()), &mut screen);
     let mut cache = Cache::new(BUDGET);
     let drawn = frame(&mut session, &mut cache, screen)?;
@@ -2100,11 +2079,11 @@ mod tests {
     assert_eq!(session.unlock.as_ref().unwrap().prompt.text(), "secret");
     apply(&mut session, Input::Open(path.clone()), &mut screen);
     assert_eq!(session.native_opens.front(), Some(&path.into()));
-    assert!(session.tabs.is_empty());
+    assert!(session.focused().is_recent());
     apply(&mut session, key(KeyCode::Esc), &mut screen);
     assert!(session.unlock.is_none());
-    assert!(session.tabs.is_empty());
-    assert!(session.home.is_some() && !session.quit);
+    assert!(session.focused().is_recent());
+    assert!(session.recent().is_some() && !session.quit);
     let (mut bridge, wakes) =
       launch(vec![encrypted.path().into()], None, None)?;
     wait(&bridge, &wakes, masked)?;
@@ -2133,20 +2112,23 @@ mod tests {
         ]
         .map(|code| KeyEvent::new(code, KeyModifiers::NONE)),
       );
-      session.app().request = Some(Request::Keys(keys));
+      session.app().unwrap().request = Some(Request::Keys(keys));
       session.settle()?;
       assert!(session.unlock.is_some());
       assert_eq!(session.pending_keys.len(), 3);
       if cancel {
         apply(&mut session, key(KeyCode::Esc), &mut screen);
         assert!(!resume_keys(&mut session));
-        assert_eq!(session.app().path, std::fs::canonicalize(&source)?);
+        assert_eq!(
+          session.app().unwrap().path,
+          std::fs::canonicalize(&source)?
+        );
       } else {
         apply(&mut session, Input::Paste("test-reader".into()), &mut screen);
         apply(&mut session, key(KeyCode::Enter), &mut screen);
         assert!(resume_keys(&mut session));
         assert_eq!(
-          session.app().reader.cursor.page,
+          session.app().unwrap().reader.cursor.page,
           vpdf_model::text::PageId(1)
         );
       }
@@ -2158,7 +2140,7 @@ mod tests {
   #[test]
   fn close_keys_stop() -> Result<()> {
     let (_root, _, mut session) = opened(&["first"], sized())?;
-    session.app().request = Some(super::super::Request::Keys(
+    session.app().unwrap().request = Some(super::super::Request::Keys(
       [
         KeyCode::Char(':'),
         KeyCode::Char('q'),
@@ -2207,18 +2189,18 @@ mod tests {
     ensure_home(&mut session, screen);
     apply(&mut session, Input::Focus(true), &mut screen);
     assert_eq!(
-      session.home.as_ref().unwrap().view.screen(),
+      session.recent().unwrap().view.screen(),
       session.content(screen)
     );
-    assert!(session.home.as_ref().unwrap().view.screen().origin.1 > 0);
+    assert!(session.recent().unwrap().view.screen().origin.1 > 0);
     apply(
       &mut session,
       Input::Open(PathBuf::from("/missing.pdf")),
       &mut screen,
     );
-    assert!(session.home.is_some() && !session.quit);
+    assert!(session.recent().is_some() && !session.quit);
     apply(&mut session, Input::Open(path), &mut screen);
-    assert!(session.home.is_none());
+    assert!(session.recent().is_none());
     apply(&mut session, key(KeyCode::Char('q')), &mut screen);
     assert!(session.tabs.is_empty() && session.quit);
     Ok(())
@@ -2234,7 +2216,7 @@ mod tests {
       screen,
     )?;
     let deadline = Instant::now() + Duration::from_secs(15);
-    while session.tabs.is_empty() {
+    while !session.panes().any(|app| app.manual.is_some()) {
       session.help_updates(&mut std::io::sink());
       assert!(Instant::now() < deadline, "Help generation timed out");
       thread::sleep(Duration::from_millis(2));
@@ -2255,7 +2237,7 @@ mod tests {
         3,
       );
     }
-    let original = session.app().manual.clone().unwrap();
+    let original = session.app().unwrap().manual.clone().unwrap();
     assert!(apply(
       &mut session,
       Input::SystemPalette(vpdf_model::theme::Palette::light()),
@@ -2266,8 +2248,11 @@ mod tests {
       assert!(Instant::now() < deadline, "Help refresh timed out");
       thread::sleep(Duration::from_millis(2));
     }
-    assert!(Arc::ptr_eq(session.app().manual.as_ref().unwrap(), &original));
-    assert_eq!(session.app().document_generation, 0);
+    assert!(Arc::ptr_eq(
+      session.app().unwrap().manual.as_ref().unwrap(),
+      &original
+    ));
+    assert_eq!(session.app().unwrap().document_generation, 0);
     let mut reloaded = Vec::new();
     completions(&mut session, &mut cache, &mut reloaded);
     assert_eq!(reloaded, [] as [TileOwner; 0]);
@@ -2293,7 +2278,7 @@ mod tests {
       let mut session = native();
       picked_path(&mut session, first.clone(), tab, screen)?;
       assert_eq!(session.tabs.len(), 1);
-      let original = session.app().id;
+      let original = session.app().unwrap().id;
       session.picker = Some(crate::programs::Picker::exited(
         tab,
         Some(second.to_str().unwrap()),
@@ -2301,7 +2286,7 @@ mod tests {
       assert!(picker_update(&mut session, screen));
       assert!(session.picker.is_none());
       assert_eq!(session.tabs.len(), if tab { 2 } else { 1 });
-      assert_eq!(session.app().path, std::fs::canonicalize(&second)?);
+      assert_eq!(session.app().unwrap().path, std::fs::canonicalize(&second)?);
       if tab {
         assert_eq!(session.tabs[0].panes[0].id, original);
       }
@@ -2321,10 +2306,10 @@ mod tests {
         let screen = sized();
         let mut session = native();
         if empty {
-          session.home = Some(Home::new(&[], screen, &Wake::none(), false));
+          session.recent_tab(screen).unwrap();
         } else {
           session.open(&source, true, screen)?;
-          session.app().show_recent(&[])?;
+          session.show_recent()?;
         }
         let original = session.tabs.first().map(|t| t.panes[0].id);
         session.picker = Some(crate::programs::Picker::exited(tab, result)?);
@@ -2334,11 +2319,11 @@ mod tests {
         assert_eq!(session.tabs.first().map(|t| t.panes[0].id), original);
         if empty {
           assert_eq!(
-            session.home.as_ref().unwrap().view.error().is_some(),
+            session.recent().unwrap().view.error().is_some(),
             result.is_none()
           );
         } else {
-          assert!(session.app().covered());
+          assert!(session.focused().is_recent());
         }
       }
     }
@@ -2377,7 +2362,7 @@ mod tests {
           apply(&mut session, Input::Paste("test-reader".into()), &mut screen);
           apply(&mut session, key(KeyCode::Enter), &mut screen);
           assert_eq!(session.tabs.len(), if !empty && tab { 2 } else { 1 });
-          assert_eq!(session.app().path, path);
+          assert_eq!(session.app().unwrap().path, path);
         }
         assert!(session.unlock.is_none());
       }
@@ -2584,28 +2569,36 @@ mod tests {
     use vpdf_ui::keys::{Action, Input};
     let mut session = Session::new(None);
     session.open(path, true, sized())?;
-    session.app().command("tabnew")?;
-    session.settle()?;
+    let copied = session.copy_pane(sized())?;
+    session.insert_tab(copied)?;
     for command in ["vsplit", "split"] {
-      session.app().command(command)?;
+      session.app().unwrap().command(command)?;
       session.settle()?;
     }
     session.focus(session.active, focus)?;
-    for app in &mut session.tabs[session.active].panes {
+    for app in session.tabs[session.active]
+      .panes
+      .iter_mut()
+      .filter_map(Pane::document_mut)
+    {
       app.close_panel()?;
       match view {
-        "page" => {}
-        "covered" => {
-          app.show_recent(&[])?;
-          assert!(app.covered());
-        }
+        "page" | "covered" => {}
         "overview" => app.open_overview()?,
         _ => app.text_mode = true,
       }
     }
+    if view == "covered" {
+      let count = session.tab().panes.len();
+      for index in 0..count {
+        session.focus(session.active, index)?;
+        session.show_recent()?;
+      }
+      session.focus(session.active, focus)?;
+    }
     if view == "prompt" {
-      session.app().action(Input::plain(Action::Command))?;
-      session.app().overlays.prompt_mut().unwrap().paste("set ");
+      session.app().unwrap().action(Input::plain(Action::Command))?;
+      session.app().unwrap().overlays.prompt_mut().unwrap().paste("set ");
     }
     let screen = match view {
       "tiny" => Screen { columns: 3, rows: 2, ..sized() },
@@ -2673,15 +2666,29 @@ mod tests {
           .iter()
           .zip(&recorded.tabs[recorded.active].panes)
         {
-          assert_eq!(left.complete, right.complete, "{view}");
-          assert_eq!(left.tiles.wanted(), right.tiles.wanted(), "{view}");
-          assert_eq!(left.outline_pending(), right.outline_pending(), "{view}");
+          assert_eq!(left.is_recent(), right.is_recent(), "{view}");
+          assert_eq!(
+            left.document().map(|app| (
+              app.complete,
+              app.tiles.wanted(),
+              app.outline_pending()
+            )),
+            right.document().map(|app| (
+              app.complete,
+              app.tiles.wanted(),
+              app.outline_pending()
+            )),
+            "{view}"
+          );
         }
         let tab = &recorded.tabs[recorded.active];
         assert_eq!(
           retained.complete,
           screen.rows != 0
-            && tab.panes.iter().all(|app| app.complete || app.covered())
+            && tab
+              .panes
+              .iter()
+              .all(|pane| pane.document().is_none_or(|app| app.complete))
         );
         assert_eq!(retained.title, tab.panes[tab.focus].title());
         if view == "prompt" {
@@ -2713,13 +2720,13 @@ mod tests {
     let tab = &mut session.tabs[session.active];
     for index in 0..tab.panes.len() {
       if index != tab.focus {
-        tab.panes[index].draw_pane(&mut session.graphics, &mut out)?;
+        legacy_pane(&mut tab.panes[index], &mut session.graphics, &mut out)?;
       }
     }
     crate::presentation::draw(&mut out, None, |scene| {
       tab.tree.scene_dividers(scene, area);
     })?;
-    tab.panes[tab.focus].draw_pane(&mut session.graphics, &mut out)?;
+    legacy_pane(&mut tab.panes[tab.focus], &mut session.graphics, &mut out)?;
     if let Some(notice) = &session.unmeasured {
       crate::presentation::draw(&mut out, None, |scene| notice.scene(scene))?;
     }
@@ -2727,6 +2734,20 @@ mod tests {
     write!(out, "{}", terminal::frame_end())?;
     session.finish_frame();
     Ok(out)
+  }
+
+  fn legacy_pane(
+    pane: &mut Pane,
+    graphics: &mut vpdf_terminal::graphics::Graphics,
+    out: &mut Vec<u8>,
+  ) -> Result<()> {
+    if let Some(app) = pane.document_mut() {
+      app.draw_pane(graphics, out)
+    } else {
+      crate::presentation::draw(out, Some(graphics), |scene| {
+        pane.recent_mut().unwrap().scene(scene)
+      })?
+    }
   }
 
   #[test]
@@ -2748,14 +2769,22 @@ mod tests {
       assert_waiting(session);
     }
     for session in [&mut streamed, &mut legacy] {
-      for app in &mut session.tabs[session.active].panes {
+      for app in session.tabs[session.active]
+        .panes
+        .iter_mut()
+        .filter_map(Pane::document_mut)
+      {
         for key in vpdf_ui::layout::visible(&app.layout, app.reader.scroll) {
           let tile = crate::raster::render(&mut app.doc, key)?;
           session.graphics.keep(app.id, tile);
         }
       }
     }
-    for app in &mut recorded.tabs[recorded.active].panes {
+    for app in recorded.tabs[recorded.active]
+      .panes
+      .iter_mut()
+      .filter_map(Pane::document_mut)
+    {
       for key in vpdf_ui::layout::visible(&app.layout, app.reader.scroll) {
         let pixels = vpdf_pdf::raster::raster(&mut app.doc, key)?;
         let weight = pixels.len();
@@ -2770,32 +2799,42 @@ mod tests {
     assert_frame_usage(&mut streamed, &mut legacy)?;
     assert_upload_order(&streamed);
     let resident = streamed.graphics.usage();
-    let focused_bytes = resident.bytes - streamed.app().image_usage.bytes;
+    let focused_bytes =
+      resident.bytes - streamed.app().unwrap().image_usage.bytes;
     for session in [&mut streamed, &mut recorded, &mut legacy] {
       session.drawn();
-      assert!(
-        session.tabs[session.active]
-          .panes
-          .iter()
-          .all(|app| !matches!(app.outline_load, Loading::Deferred))
-      );
+      assert!(session.tabs[session.active].panes.iter().all(|app| !matches!(
+        app.document().unwrap().outline_load,
+        Loading::Deferred
+      )));
     }
-    assert!(streamed.app().image_usage.uploaded > 0);
-    streamed.app().images_stale = true;
-    legacy.app().images_stale = true;
+    assert!(streamed.app().unwrap().image_usage.uploaded > 0);
+    streamed.app().unwrap().images_stale = true;
+    legacy.app().unwrap().images_stale = true;
     assert_frame_usage(&mut streamed, &mut legacy)?;
     let tab = &streamed.tabs[streamed.active];
-    assert_eq!(tab.panes[1].image_usage.bytes, resident.bytes);
-    assert_eq!(tab.panes[2].image_usage.bytes, resident.bytes);
-    assert_eq!(tab.panes[0].image_usage.bytes, resident.bytes - focused_bytes);
-    assert!(!tab.panes[0].images_stale);
+    assert_eq!(
+      tab.panes[1].document().unwrap().image_usage.bytes,
+      resident.bytes
+    );
+    assert_eq!(
+      tab.panes[2].document().unwrap().image_usage.bytes,
+      resident.bytes
+    );
+    assert_eq!(
+      tab.panes[0].document().unwrap().image_usage.bytes,
+      resident.bytes - focused_bytes
+    );
+    assert!(!tab.panes[0].document().unwrap().images_stale);
     assert_eq!(streamed.graphics.usage().bytes, resident.bytes - focused_bytes);
     assert_eq!(streamed.graphics.usage().uploaded, resident.uploaded);
     Ok(())
   }
 
   fn assert_waiting(session: &Session) {
-    for app in &session.tabs[session.active].panes {
+    for app in
+      session.tabs[session.active].panes.iter().filter_map(Pane::document)
+    {
       assert!(!app.complete);
       assert!(matches!(app.outline_load, crate::jobs::Loading::Deferred));
     }
@@ -2804,9 +2843,9 @@ mod tests {
   fn assert_upload_order(session: &Session) {
     let tab = &session.tabs[session.active];
     let samples = [
-      tab.panes[1].image_usage,
-      tab.panes[2].image_usage,
-      tab.panes[0].image_usage,
+      tab.panes[1].document().unwrap().image_usage,
+      tab.panes[2].document().unwrap().image_usage,
+      tab.panes[0].document().unwrap().image_usage,
       session.graphics.usage(),
     ];
     assert_eq!((samples[0].bytes, samples[0].uploaded), (0, 0));
@@ -2829,9 +2868,18 @@ mod tests {
       .iter()
       .zip(&legacy.tabs[legacy.active].panes)
     {
-      assert_eq!(left.image_usage.bytes, right.image_usage.bytes);
-      assert_eq!(left.image_usage.uploaded, right.image_usage.uploaded);
-      assert_eq!(left.complete, right.complete);
+      assert_eq!(
+        left.document().unwrap().image_usage.bytes,
+        right.document().unwrap().image_usage.bytes
+      );
+      assert_eq!(
+        left.document().unwrap().image_usage.uploaded,
+        right.document().unwrap().image_usage.uploaded
+      );
+      assert_eq!(
+        left.document().unwrap().complete,
+        right.document().unwrap().complete
+      );
     }
     Ok(())
   }
@@ -2845,7 +2893,10 @@ mod tests {
     let screen = cells(120, 40);
     let mut session = native();
     session.open(&path, true, screen)?;
-    session.app().show_preview(Target::Page(PageId(1)), Position::default())?;
+    session
+      .app()
+      .unwrap()
+      .show_preview(Target::Page(PageId(1)), Position::default())?;
     let mut cache = Cache::new(BUDGET);
     let first = frame(&mut session, &mut cache, screen)?;
     let image = first
@@ -2857,7 +2908,7 @@ mod tests {
       })
       .ok_or_else(|| anyhow::anyhow!("Missing native preview picture"))?;
     assert!(image.pixels().iter().any(|byte| *byte != 255));
-    session.app().overlays.close_preview();
+    session.app().unwrap().overlays.close_preview();
     let closed = frame(&mut session, &mut cache, screen)?;
     assert!(!closed.scene.iter().any(|op| matches!(op, Op::Picture(_))));
     drop(session);
@@ -2877,7 +2928,7 @@ mod tests {
     let mut screen = cells(120, 40);
     let mut session = native();
     session.open(&path, true, screen)?;
-    let app = session.app();
+    let app = session.app().unwrap();
     let link = app
       .doc
       .links(PageId(1))?
@@ -2910,7 +2961,7 @@ mod tests {
       mouse(MouseEventKind::Moved, pixels, drawn),
       &mut screen
     ));
-    let old_page = session.app().reader.cursor.page;
+    let old_page = session.app().unwrap().reader.cursor.page;
     let stale = Screen { columns: 119, ..screen };
     apply(
       &mut session,
@@ -2918,7 +2969,7 @@ mod tests {
       &mut screen,
     );
     assert!(!session.pointer.holding());
-    assert_eq!(session.app().reader.cursor.page, old_page);
+    assert_eq!(session.app().unwrap().reader.cursor.page, old_page);
     for kind in [
       MouseEventKind::Down(MouseButton::Left),
       MouseEventKind::Up(MouseButton::Left),
@@ -2929,19 +2980,19 @@ mod tests {
       Target::Page(page) | Target::Point { page, .. } => page,
       Target::Uri(_) => unreachable!(),
     };
-    assert_eq!(session.app().reader.cursor.page, target);
+    assert_eq!(session.app().unwrap().reader.cursor.page, target);
     apply(
       &mut session,
       Input::History { forward: false, pixels, screen: drawn },
       &mut screen,
     );
-    assert_eq!(session.app().reader.cursor.page, source.page);
+    assert_eq!(session.app().unwrap().reader.cursor.page, source.page);
     apply(
       &mut session,
       Input::History { forward: true, pixels, screen: drawn },
       &mut screen,
     );
-    assert_eq!(session.app().reader.cursor.page, target);
+    assert_eq!(session.app().unwrap().reader.cursor.page, target);
     apply(&mut session, Input::Focus(false), &mut screen);
     assert!(!session.pointer.holding());
     assert!(session.pointer.target().is_none());
@@ -2956,8 +3007,7 @@ mod tests {
     let mut session = native();
     session.state.recent =
       vec![crate::state::tests::entry(&path.to_string_lossy(), 0, 0)];
-    session.home =
-      Some(Home::new(&session.state.recent, screen, &Wake::none(), false));
+    session.recent_tab(screen)?;
     session.resize(screen)?;
     let mut cache = Cache::new(BUDGET);
     frame(&mut session, &mut cache, screen)?;
@@ -2971,7 +3021,7 @@ mod tests {
     }
     frame(&mut session, &mut cache, screen)?;
     assert_eq!(
-      session.home.as_mut().unwrap().view.shelf_mut().unwrap().start(),
+      session.recent_mut().unwrap().view.shelf_mut().unwrap().start(),
       Some(60)
     );
     assert_ne!(
@@ -2989,8 +3039,7 @@ mod tests {
     let mut session = native();
     session.state.recent =
       vec![crate::state::tests::entry(&path.to_string_lossy(), 0, 0)];
-    session.home =
-      Some(Home::new(&session.state.recent, screen, &Wake::none(), false));
+    session.recent_tab(screen)?;
     session.resize(screen)?;
     frame(&mut session, &mut Cache::new(BUDGET), screen)?;
     for kind in [
@@ -2999,7 +3048,7 @@ mod tests {
     ] {
       apply(&mut session, mouse(kind, (32, 20), screen), &mut screen);
     }
-    assert!(session.tabs.is_empty());
+    assert!(session.focused().is_recent());
     let y = screen.cell_height * 2 + 4;
     apply(
       &mut session,
@@ -3007,8 +3056,8 @@ mod tests {
       &mut screen,
     );
     assert_eq!(session.tabs.len(), 1);
-    assert_eq!(session.app().path, std::fs::canonicalize(path)?);
-    assert!(session.home.is_none());
+    assert_eq!(session.app().unwrap().path, std::fs::canonicalize(path)?);
+    assert!(session.recent().is_none());
     Ok(())
   }
 
@@ -3017,7 +3066,7 @@ mod tests {
     use vpdf_ui::keys::PanelKind;
     let mut screen = cells(80, 24);
     let (_root, _, mut session) = opened(&["first", "second"], screen)?;
-    session.app().show_panel(
+    session.app().unwrap().show_panel(
       PanelKind::Version,
       (0..80)
         .map(|row| vpdf_ui::panel::Row::parse(&format!("row {row}")))
@@ -3025,13 +3074,13 @@ mod tests {
     )?;
     let mut cache = Cache::new(BUDGET);
     frame(&mut session, &mut cache, screen)?;
-    let scroll = session.app().reader.scroll;
+    let scroll = session.app().unwrap().reader.scroll;
     let down = mouse(MouseEventKind::ScrollDown, (8, 80), screen);
     apply(&mut session, down, &mut screen);
-    assert!(session.app().panel.as_ref().unwrap().view.top() > 0);
-    assert_eq!(session.app().reader.scroll, scroll);
-    session.app().close_panel()?;
-    let zoom = session.app().layout.zoom();
+    assert!(session.app().unwrap().panel.as_ref().unwrap().view.top() > 0);
+    assert_eq!(session.app().unwrap().reader.scroll, scroll);
+    session.app().unwrap().close_panel()?;
+    let zoom = session.app().unwrap().layout.zoom();
     let moved = mouse(MouseEventKind::Moved, (320, 100), screen);
     apply(&mut session, moved, &mut screen);
     let mut up = mouse(MouseEventKind::ScrollUp, (320, 100), screen);
@@ -3039,7 +3088,7 @@ mod tests {
       event.modifiers = KeyModifiers::CONTROL;
     }
     apply(&mut session, up, &mut screen);
-    assert!(session.app().layout.zoom() > zoom);
+    assert!(session.app().unwrap().layout.zoom() > zoom);
     Ok(())
   }
 
@@ -3068,22 +3117,23 @@ mod tests {
     let turn = |turns, whole| Gesture::Turn(Precise { turns, whole });
     let down = MouseEventKind::ScrollDown;
     for turns in [0.1, 0.25] {
-      let scroll = session.app().reader.scroll;
+      let scroll = session.app().unwrap().reader.scroll;
       let input = gesture(down, (320, 100), screen, turn(turns, 0));
       assert!(apply(&mut session, input, &mut screen));
-      assert_eq!(session.app().reader.scroll, scroll + turns * step);
-      assert!(!session.app().reader.animation().active());
+      assert_eq!(session.app().unwrap().reader.scroll, scroll + turns * step);
+      assert!(!session.app().unwrap().reader.animation().active());
     }
-    session.app().show_panel(
+    session.app().unwrap().show_panel(
       PanelKind::Version,
       (0..80)
         .map(|row| vpdf_ui::panel::Row::parse(&format!("row {row}")))
         .collect(),
     )?;
     frame(&mut session, &mut cache, screen)?;
-    let scroll = session.app().reader.scroll;
-    let top =
-      |session: &mut Session| session.app().panel.as_ref().unwrap().view.top();
+    let scroll = session.app().unwrap().reader.scroll;
+    let top = |session: &mut Session| {
+      session.app().unwrap().panel.as_ref().unwrap().view.top()
+    };
     let input = gesture(down, (8, 80), screen, turn(0.4, 0));
     apply(&mut session, input, &mut screen);
     assert_eq!(top(&mut session), 0);
@@ -3091,11 +3141,11 @@ mod tests {
     apply(&mut session, input, &mut screen);
     assert_eq!(top(&mut session), usize::from(vpdf_ui::pointer::WHEEL_ROWS));
     // Pinches over a panel leave the page.
-    let zoom = session.app().layout.zoom();
+    let zoom = session.app().unwrap().layout.zoom();
     let input = gesture(down, (8, 80), screen, Gesture::Pinch(1.5));
     assert!(!apply(&mut session, input, &mut screen));
-    assert_eq!(session.app().layout.zoom(), zoom);
-    assert_eq!(session.app().reader.scroll, scroll);
+    assert_eq!(session.app().unwrap().layout.zoom(), zoom);
+    assert_eq!(session.app().unwrap().reader.scroll, scroll);
     Ok(())
   }
 
@@ -3114,22 +3164,28 @@ mod tests {
       cell: screen.cell(),
     });
     let under = |session: &mut Session| {
-      session.app().page_point(spot.0, spot.1, pixel).expect("page point")
+      session
+        .app()
+        .unwrap()
+        .page_point(spot.0, spot.1, pixel)
+        .expect("page point")
     };
-    let start = (session.app().layout.zoom(), under(&mut session));
+    let start = (session.app().unwrap().layout.zoom(), under(&mut session));
     let kind = MouseEventKind::ScrollUp;
     for factor in [1.25, 1.25, 1.25, 0.8, 0.8, 0.8] {
       let before = under(&mut session);
-      let zoom = session.app().layout.zoom();
+      let zoom = session.app().unwrap().layout.zoom();
       let input = gesture(kind, pixels, screen, Gesture::Pinch(factor));
       assert!(apply(&mut session, input, &mut screen));
-      assert!((session.app().layout.zoom() - zoom * factor).abs() < 1e-4);
+      assert!(
+        (session.app().unwrap().layout.zoom() - zoom * factor).abs() < 1e-4
+      );
       let after = under(&mut session);
       assert_eq!(after.0, before.0);
       assert!((after.1 - before.1).abs() < 0.5, "{before:?} {after:?}");
       assert!((after.2 - before.2).abs() < 0.5, "{before:?} {after:?}");
     }
-    let end = (session.app().layout.zoom(), under(&mut session));
+    let end = (session.app().unwrap().layout.zoom(), under(&mut session));
     assert!((end.0 - start.0).abs() < 1e-4);
     assert_eq!(end.1.0, start.1.0);
     assert!((end.1.2 - start.1.2).abs() < 0.5, "{start:?} {end:?}");
@@ -3137,7 +3193,7 @@ mod tests {
     for factor in [f32::INFINITY, 1e9, 1e-9] {
       let input = gesture(kind, pixels, screen, Gesture::Pinch(factor));
       apply(&mut session, input, &mut screen);
-      let zoom = f64::from(session.app().layout.zoom());
+      let zoom = f64::from(session.app().unwrap().layout.zoom());
       assert!(
         (vpdf_ui::layout::MIN_ZOOM..=vpdf_ui::layout::MAX_ZOOM).contains(&zoom)
       );
@@ -3176,10 +3232,13 @@ mod tests {
     let mut cache = Cache::new(BUDGET);
     for (register, expected) in [('a', "first"), ('"', "second")] {
       session.tabs[0].panes[0]
+        .document_mut()
+        .unwrap()
         .reader
         .deliver_yank(Yank { text: "first".into(), register: '"' });
       session
         .app()
+        .unwrap()
         .reader
         .deliver_yank(Yank { text: "second".into(), register });
       assert_eq!(
@@ -3209,23 +3268,31 @@ mod tests {
     let mut session = Session::new(None);
     session.frontend = crate::raster::Frontend::Native(wake);
     session.open(&first, true, screen)?;
-    session.app().select_region(
+    session.app().unwrap().select_region(
       PageId(0),
       Bounds { x0: 10.0, y0: 10.0, x1: 50.0, y1: 50.0 },
     )?;
-    session.app().region_operation(Operation::Save)?;
+    session.app().unwrap().region_operation(Operation::Save)?;
     session
       .app()
+      .unwrap()
       .reader
       .deliver_yank(Yank { text: "pending region text".into(), register: '"' });
     session.open(&second, true, screen)?;
     let mut cache = Cache::new(BUDGET);
     let deadline = Instant::now() + Duration::from_secs(10);
-    while session.tabs[0].panes[0].region_job.is_some() {
+    while session.tabs[0].panes[0].document().unwrap().region_job.is_some() {
       wakes.recv_timeout(deadline.saturating_duration_since(Instant::now()))?;
       completions(&mut session, &mut cache, &mut Vec::new());
     }
-    assert!(session.tabs[0].panes[0].reader.message.starts_with("Saved "));
+    assert!(
+      session.tabs[0].panes[0]
+        .document()
+        .unwrap()
+        .reader
+        .message
+        .starts_with("Saved ")
+    );
     assert!(
       std::fs::read(root.path().join("first-p1-region-1.png"))?
         .starts_with(b"\x89PNG\r\n\x1a\n")
@@ -3250,18 +3317,18 @@ mod tests {
     ensure_home(&mut session, screen);
     apply(&mut session, Input::Resize(screen), &mut screen);
     apply(&mut session, key(KeyCode::Char(':')), &mut screen);
-    assert!(session.home.as_ref().unwrap().view.typing());
+    assert!(session.recent().unwrap().view.typing());
     apply(&mut session, Input::Open(first.clone()), &mut screen);
-    assert!(session.home.is_none());
-    session.app().command("vsplit")?;
+    assert!(session.recent().is_none());
+    session.app().unwrap().command("vsplit")?;
     session.settle()?;
     let owners: Vec<_> = session.tab().panes.iter().map(|app| app.id).collect();
     apply(&mut session, key(KeyCode::Char(':')), &mut screen);
-    assert!(session.app().overlays.prompt().is_some());
+    assert!(session.app().unwrap().overlays.prompt().is_some());
     apply(&mut session, Input::Open(second.clone()), &mut screen);
     assert_eq!(session.tabs.len(), 2);
     assert_eq!(session.active, 1);
-    assert_eq!(session.app().path, std::fs::canonicalize(second)?);
+    assert_eq!(session.app().unwrap().path, std::fs::canonicalize(second)?);
     assert_eq!(
       session.tabs[0].panes.iter().map(|app| app.id).collect::<Vec<_>>(),
       owners
@@ -3278,13 +3345,16 @@ mod tests {
     let (_root, _, mut session) = opened(&["body"], screen)?;
     apply(&mut session, key(KeyCode::Char('/')), &mut screen);
     apply(&mut session, Input::Paste("章a\u{301}".into()), &mut screen);
-    assert_eq!(session.app().overlays.prompt().unwrap().text(), "章a\u{301}");
+    assert_eq!(
+      session.app().unwrap().overlays.prompt().unwrap().text(),
+      "章a\u{301}"
+    );
     apply(
       &mut session,
       Input::Key(KeyEvent::new(KeyCode::Char('_'), KeyModifiers::CONTROL)),
       &mut screen,
     );
-    assert_eq!(session.app().overlays.prompt().unwrap().text(), "");
+    assert_eq!(session.app().unwrap().overlays.prompt().unwrap().text(), "");
     Ok(())
   }
 
@@ -3293,11 +3363,11 @@ mod tests {
     use vpdf_pdf::jobs::render::Rendered;
     let mut screen = crate::screen::pixels(60, 20, 10, 20);
     let (_root, _, mut session) = opened(&["body"], screen)?;
-    let old = vpdf_ui::layout::visible(&session.app().layout, 0.0)[0];
+    let old = vpdf_ui::layout::visible(&session.app().unwrap().layout, 0.0)[0];
     apply(&mut session, key(KeyCode::Char(':')), &mut screen);
     apply(&mut session, Input::Paste("recolor dark 60".into()), &mut screen);
     apply(&mut session, key(KeyCode::Enter), &mut screen);
-    let app = session.app();
+    let app = session.app().unwrap();
     let recolor = vpdf_model::recolor::Recolor::parse("dark 60").unwrap();
     assert_eq!(app.layout.recolor(), recolor);
     let new = vpdf_model::tile::TileKey { recolor, ..old };
@@ -3322,7 +3392,7 @@ mod tests {
     use vpdf_pdf::jobs::render::Rendered;
     let screen = crate::screen::pixels(60, 20, 10, 20);
     let (_root, _, mut session) = opened(&["body"], screen)?;
-    let app = session.app();
+    let app = session.app().unwrap();
     let key = vpdf_ui::layout::visible(&app.layout, app.reader.scroll)[0];
     let id = TileId { owner: TileOwner::new(app.id), key };
     let (send, receive) = mpsc::sync_channel(1);
@@ -3342,6 +3412,7 @@ mod tests {
     assert!(
       !session
         .app()
+        .unwrap()
         .worker
         .raw
         .as_ref()
@@ -3378,18 +3449,17 @@ mod tests {
       0,
     ));
     let mut screen = cells(120, 40);
-    session.home =
-      Some(Home::new(&session.state.recent, screen, &Wake::none(), false));
+    session.recent_tab(screen)?;
     assert!(apply(&mut session, key(KeyCode::Char(' ')), &mut screen));
     assert!(apply(&mut session, key(KeyCode::Char('x')), &mut screen));
     assert!(!apply(&mut session, Input::Open(pdf.clone()), &mut screen));
-    assert!(session.tabs.is_empty());
+    assert!(session.focused().is_recent());
     assert!(apply(&mut session, Input::Paste(":q".into()), &mut screen));
     assert!(apply(&mut session, key(KeyCode::Enter), &mut screen));
     assert_eq!(session.state.recent, []);
     assert_eq!(session.history.commands(), [] as [String; 0]);
     assert!(pdf.exists());
-    let home = session.home.as_mut().unwrap();
+    let home = session.recent_mut().unwrap();
     let mut scene = Recorder::new(|_| false);
     home.scene(&mut scene)?;
     let scene = scene.into_scene();
@@ -3464,9 +3534,12 @@ mod tests {
     )?;
     let mut terminal = Session::new(None);
     terminal.open_reference(&reference, true, cells(100, 35))?;
-    super::super::reference_tests::finish_search(terminal.app())?;
-    assert_eq!(terminal.app().reader.cursor.page.0, 0);
-    assert_eq!(terminal.app().reference.rectangle.as_ref().unwrap().page.0, 0);
+    super::super::reference_tests::finish_search(terminal.app().unwrap())?;
+    assert_eq!(terminal.app().unwrap().reader.cursor.page.0, 0);
+    assert_eq!(
+      terminal.app().unwrap().reference.rectangle.as_ref().unwrap().page.0,
+      0
+    );
     let (wake, wakes) = crate::fixtures::wake();
     let mut bridge = Bridge::configured(
       Launch {
@@ -3549,7 +3622,7 @@ mod tests {
     let old = Arc::clone(&session.native.snapshot);
     commands::refresh(&mut session);
     assert!(Arc::ptr_eq(&old, &session.native.snapshot));
-    session.app().document_generation += 1;
+    session.app().unwrap().document_generation += 1;
     assert!(!apply(&mut session, Input::Action(command), &mut screen));
     assert_eq!(session.native.effects, []);
     let command = session.native.snapshot.command(Action::Open).unwrap();
@@ -3557,14 +3630,17 @@ mod tests {
     assert!(!apply(&mut session, Input::Action(command), &mut screen));
     let request = requested(&session);
     assert_eq!(session.native.effects.len(), 1);
-    session.app().document_generation += 1;
+    session.app().unwrap().document_generation += 1;
     assert!(apply(
       &mut session,
       Input::Picked { request, paths: vec![picked] },
       &mut screen,
     ));
     assert_eq!(session.tabs.len(), 1);
-    assert_eq!(session.app().document_identity(), path.canonicalize()?);
+    assert_eq!(
+      session.app().unwrap().document_identity(),
+      path.canonicalize()?
+    );
     assert!(session.native.snapshot.command(Action::Open).is_some());
     Ok(())
   }
@@ -3661,7 +3737,7 @@ mod tests {
     let paths =
       vec![first.clone(), PathBuf::from("/missing.pdf"), renamed.clone()];
     assert!(apply(&mut session, Input::Picked { request, paths }, &mut screen));
-    assert!(session.tabs.is_empty());
+    assert!(session.focused().is_recent());
     assert_eq!(session.native_opens.len(), 3);
     open_queued(&mut session, &mut screen);
     assert_eq!(session.tabs.len(), 2);
@@ -3696,7 +3772,7 @@ mod tests {
     );
     session.request_help("", vpdf_ui::topics::Invocation::Home, screen)?;
     let deadline = Instant::now() + Duration::from_secs(15);
-    while session.app().manual.is_none() {
+    while session.app().unwrap().manual.is_none() {
       session.help_updates(&mut std::io::sink());
       assert!(Instant::now() < deadline, "Help generation timed out");
       thread::sleep(Duration::from_millis(2));
@@ -3765,9 +3841,7 @@ mod tests {
     assert_eq!(session.tabs.len(), 1);
     command(&mut session, Action::CloseTab, &mut screen);
     assert!(session.tabs.is_empty());
-    assert!(session.home.is_some());
-    assert!(!session.quit);
-    command(&mut session, Action::CloseTab, &mut screen);
+    assert!(session.recent().is_none());
     assert!(session.quit);
     Ok(())
   }
@@ -3780,15 +3854,18 @@ mod tests {
     apply(&mut session, key(KeyCode::Char(':')), &mut screen);
     apply(&mut session, Input::Paste("alpha beta".into()), &mut screen);
     command(&mut session, Action::SelectAll, &mut screen);
-    session.app().reader.store('"', "older".into())?;
+    session.app().unwrap().reader.store('"', "older".into())?;
     command(&mut session, Action::Copy, &mut screen);
     assert_eq!(take_clipboard(&mut session).as_deref(), Some("alpha beta"));
     assert!(take_clipboard(&mut session).is_none());
     command(&mut session, Action::Cut, &mut screen);
     assert_eq!(take_clipboard(&mut session).as_deref(), Some("alpha beta"));
-    assert_eq!(session.app().overlays.prompt().unwrap().text(), "");
+    assert_eq!(session.app().unwrap().overlays.prompt().unwrap().text(), "");
     command(&mut session, Action::Undo, &mut screen);
-    assert_eq!(session.app().overlays.prompt().unwrap().text(), "alpha beta");
+    assert_eq!(
+      session.app().unwrap().overlays.prompt().unwrap().text(),
+      "alpha beta"
+    );
     let old = session.native.snapshot.command(Action::Paste).unwrap();
     apply(&mut session, key(KeyCode::Esc), &mut screen);
     assert!(!apply(
@@ -3796,7 +3873,7 @@ mod tests {
       Input::PasteTarget { command: old, text: "lost".into() },
       &mut screen
     ));
-    assert!(session.app().overlays.prompt().is_none());
+    assert!(session.app().unwrap().overlays.prompt().is_none());
     Ok(())
   }
 
@@ -3807,12 +3884,12 @@ mod tests {
       opened(&["first", "second", "last"], sized())?;
     let hash = std::fs::read(&path)?;
     let mut screen = sized();
-    let location = session.app().navigation_position();
-    let cached = session.app().doc.cache_bytes();
+    let location = session.app().unwrap().navigation_position();
+    let cached = session.app().unwrap().doc.cache_bytes();
     command(&mut session, Action::SelectAll, &mut screen);
-    assert_eq!(session.app().navigation_position(), location);
-    assert_eq!(session.app().doc.cache_bytes(), cached);
-    assert!(session.app().reader.document_selected);
+    assert_eq!(session.app().unwrap().navigation_position(), location);
+    assert_eq!(session.app().unwrap().doc.cache_bytes(), cached);
+    assert!(session.app().unwrap().reader.document_selected);
     command(&mut session, Action::Copy, &mut screen);
     assert!(commands::copy_update(&mut session));
     assert!(take_clipboard(&mut session).is_none());
@@ -3827,7 +3904,7 @@ mod tests {
     commands::copy_update(&mut session);
     apply(&mut session, key(KeyCode::Esc), &mut screen);
     assert!(!commands::copying(&session));
-    assert!(!session.app().reader.document_selected);
+    assert!(!session.app().unwrap().reader.document_selected);
     assert!(take_clipboard(&mut session).is_none());
     assert_eq!(std::fs::read(path)?, hash);
     Ok(())
@@ -3837,18 +3914,18 @@ mod tests {
     use commands::Action;
     let (_root, _path, mut session) = opened(&["one two one"], sized())?;
     let mut screen = sized();
-    let location = session.app().navigation_position();
+    let location = session.app().unwrap().navigation_position();
     command(&mut session, Action::Find, &mut screen);
     apply(&mut session, Input::Paste("one".into()), &mut screen);
     command(&mut session, Action::Find, &mut screen);
     assert_eq!(
-      session.app().overlays.prompt().unwrap().selected(),
+      session.app().unwrap().overlays.prompt().unwrap().selected(),
       Some("one")
     );
     command(&mut session, Action::NextResult, &mut screen);
-    assert_eq!(session.app().overlays.prompt().unwrap().text(), "one");
+    assert_eq!(session.app().unwrap().overlays.prompt().unwrap().text(), "one");
     apply(&mut session, key(KeyCode::Esc), &mut screen);
-    assert_eq!(session.app().navigation_position(), location);
+    assert_eq!(session.app().unwrap().navigation_position(), location);
     Ok(())
   }
 
@@ -3879,20 +3956,20 @@ mod tests {
         Input::Page { command: go, page },
         &mut screen
       ));
-      assert_eq!(session.app().reader.cursor.page.0, expected);
+      assert_eq!(session.app().unwrap().reader.cursor.page.0, expected);
     }
     let paste = Input::Page {
       command: commands::Command { action: Action::Paste, ..go },
       page: 2,
     };
     assert!(!apply(&mut session, paste, &mut screen));
-    session.app().document_generation += 1;
+    session.app().unwrap().document_generation += 1;
     assert!(!apply(
       &mut session,
       Input::Page { command: go, page: 2 },
       &mut screen
     ));
-    assert_eq!(session.app().reader.cursor.page.0, 0);
+    assert_eq!(session.app().unwrap().reader.cursor.page.0, 0);
     Ok(())
   }
 

@@ -153,28 +153,34 @@ fn outline_waits_for_the_whole_first_view() -> Result<()> {
   };
   // No tile has arrived, so the first frame shows no whole view.
   frame(&mut session)?;
-  assert!(!session.app().complete && deferred(session.app()));
+  assert!(!session.app().unwrap().complete && deferred(session.app().unwrap()));
   // The view moves before its tiles arrive; the new view governs.
-  session.app().command("30")?;
+  session.app().unwrap().command("30")?;
   common::wait_until(20, "Tiles", || {
-    assert!(deferred(session.app()));
+    assert!(deferred(session.app().unwrap()));
     let tab = &mut session.tabs[session.active];
-    tab.panes[tab.focus].raster_updates(&mut session.graphics);
+    tab.panes[tab.focus]
+      .document_mut()
+      .unwrap()
+      .raster_updates(&mut session.graphics);
     frame(&mut session)?;
-    Ok(session.app().complete)
+    Ok(session.app().unwrap().complete)
   })?;
-  assert_eq!(session.app().reader.cursor.page.0, 29);
-  assert!(running(session.app()));
-  assert!(deferred(&session.tabs[0].panes[0]), "hidden tab waits");
+  assert_eq!(session.app().unwrap().reader.cursor.page.0, 29);
+  assert!(running(session.app().unwrap()));
+  assert!(
+    deferred(session.tabs[0].panes[0].document().unwrap()),
+    "hidden tab waits"
+  );
   // Overview thumbnails count like tiles; a covered pane never completes.
   let mut app = solo("paper.pdf", false, SCREEN)?;
   app.open_overview()?;
   app.draw(&mut Vec::new())?;
   assert!(!app.complete, "no thumbnail yet");
   app.close_overview();
-  app.show_recent(&[])?;
-  app.draw(&mut Vec::new())?;
-  assert!(app.covered() && !app.complete);
+  session.command("recent")?;
+  session.draw_frame(&mut Vec::new())?;
+  assert!(session.focused().is_recent());
   // Text views have no tiles to wait for.
   let mut text = solo("paper.pdf", true, SCREEN)?;
   text.draw(&mut Vec::new())?;
@@ -372,28 +378,33 @@ fn contents_search_and_tracking_lifecycle() -> Result<()> {
 #[ignore = "requires verified public PDF corpus"]
 fn contents_panes_browse_independently() -> Result<()> {
   let mut session = crate::harness::session(&corpus("paper.pdf")?, SCREEN)?;
-  common::outline_loaded(session.app())?;
-  session.app().open_panel(PanelKind::Outline)?;
-  common::keys(session.app(), b"zM")?;
+  common::outline_loaded(session.app().unwrap())?;
+  session.app().unwrap().open_panel(PanelKind::Outline)?;
+  common::keys(session.app().unwrap(), b"zM")?;
   let branch = session
     .app()
+    .unwrap()
     .outline
     .tree()
     .nodes()
     .iter()
     .position(|node| node.descendants > 0)
     .unwrap();
-  session.app().command("vsplit")?;
+  session.app().unwrap().command("vsplit")?;
   session.settle()?;
-  common::outline_loaded(session.app())?;
-  session.app().open_panel(PanelKind::Outline)?;
-  assert!(session.app().outline.closed(branch));
-  common::keys(session.app(), b"zRza")?;
+  common::outline_loaded(session.app().unwrap())?;
+  session.app().unwrap().open_panel(PanelKind::Outline)?;
+  assert!(session.app().unwrap().outline.closed(branch));
+  common::keys(session.app().unwrap(), b"zRza")?;
   let panes = &session.tabs[session.active].panes;
   assert_eq!(panes.len(), 2);
-  assert!(panes[0].outline.closed(branch));
-  assert!(!panes[0].panel.as_ref().unwrap().view.auto_expand());
-  assert!(panes[1].panel.as_ref().unwrap().view.auto_expand());
+  assert!(panes[0].document().unwrap().outline.closed(branch));
+  assert!(
+    !panes[0].document().unwrap().panel.as_ref().unwrap().view.auto_expand()
+  );
+  assert!(
+    panes[1].document().unwrap().panel.as_ref().unwrap().view.auto_expand()
+  );
   Ok(())
 }
 
@@ -457,10 +468,10 @@ fn contents_preferences_survive_restart() -> Result<()> {
 
     let mut session = Session::new(Some(store));
     session.open(&path, true, SCREEN)?;
-    assert!(deferred(session.app()));
-    common::outline_loaded(session.app())?;
-    session.app().open_panel(PanelKind::Outline)?;
-    assert!(session.app().panel.as_ref().unwrap().view.auto_expand());
+    assert!(deferred(session.app().unwrap()));
+    common::outline_loaded(session.app().unwrap())?;
+    session.app().unwrap().open_panel(PanelKind::Outline)?;
+    assert!(session.app().unwrap().panel.as_ref().unwrap().view.auto_expand());
   }
   Ok(())
 }

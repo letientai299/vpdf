@@ -32,7 +32,7 @@ impl Session {
   pub(super) fn print(&mut self) -> Result<()> {
     anyhow::ensure!(cfg!(target_os = "macos"), "Printing requires macOS");
     anyhow::ensure!(self.printing.is_none(), "Print dialog already open");
-    let app = self.app();
+    let app = self.app()?;
     anyhow::ensure!(app.manual.is_none(), "Help printing unavailable");
     let stamp = crate::watch::stamp(&app.path);
     anyhow::ensure!(stamp.is_some(), "Cannot open PDF for printing");
@@ -132,19 +132,22 @@ mod tests {
   fn completion_tracks_origin() -> Result<()> {
     let root = tempfile::tempdir()?;
     let mut session = opened(root.path())?;
-    let pane = session.app().id;
-    session.app().command("vsplit")?;
+    let pane = session.app().unwrap().id;
+    session.app().unwrap().command("vsplit")?;
     session.settle()?;
-    assert_ne!(session.app().id, pane);
+    assert_ne!(session.app().unwrap().id, pane);
     session.printing = Some(response(pane, "failed")?);
     assert_eq!(
       session.print_wait(Duration::from_secs(2)),
       Duration::from_millis(50)
     );
     assert!(session.print_update());
-    assert!(session.app().error.is_none());
+    assert!(session.app().unwrap().error.is_none());
     let origin = session.tab().panes.iter().find(|app| app.id == pane).unwrap();
-    assert_eq!(origin.error.as_deref(), Some("Print dialog failed"));
+    assert_eq!(
+      origin.document().unwrap().error.as_deref(),
+      Some("Print dialog failed")
+    );
     assert!(session.printing.is_none());
     assert_eq!(
       session.print_wait(Duration::from_secs(2)),
@@ -157,7 +160,7 @@ mod tests {
     session.tab().focus = 0;
     session.close_pane()?;
     assert!(session.print_update());
-    assert!(session.app().error.is_none());
+    assert!(session.app().unwrap().error.is_none());
     Ok(())
   }
 
@@ -167,7 +170,7 @@ mod tests {
     let mut session = opened(root.path())?;
     let dialog = Dialog::spawn(Command::new("/bin/sleep").arg("30"))?;
     let pid = dialog.child.id();
-    session.printing = Some(Job { pane: session.app().id, dialog });
+    session.printing = Some(Job { pane: session.app().unwrap().id, dialog });
     assert!(!session.print_update());
     session.finish()?;
     assert!(session.printing.is_none());
@@ -188,23 +191,23 @@ mod tests {
     let root = tempfile::tempdir()?;
     let mut session = opened(root.path())?;
     assert_eq!(
-      session.app().command("print 1-2").unwrap_err().to_string(),
+      session.app().unwrap().command("print 1-2").unwrap_err().to_string(),
       "Usage: :print"
     );
-    assert!(session.app().request.is_none());
-    session.app().command("print")?;
+    assert!(session.app().unwrap().request.is_none());
+    session.app().unwrap().command("print")?;
     assert_eq!(
-      session.app().request.take(),
+      session.app().unwrap().request.take(),
       Some(super::super::Request::Print)
     );
-    session.printing = Some(response(session.app().id, "cancelled")?);
+    session.printing = Some(response(session.app().unwrap().id, "cancelled")?);
     assert_eq!(
       session.print().unwrap_err().to_string(),
       "Print dialog already open"
     );
     assert!(session.print_update());
-    assert!(session.app().error.is_none());
-    let path = session.app().path.clone();
+    assert!(session.app().unwrap().error.is_none());
+    let path = session.app().unwrap().path.clone();
     std::fs::write(&path, "changed")?;
     assert_eq!(
       session.print().unwrap_err().to_string(),
@@ -224,7 +227,8 @@ mod tests {
   fn pdfkit_rejects_encryption() -> Result<()> {
     let root = tempfile::tempdir()?;
     let mut session = opened(root.path())?;
-    let encrypted = crate::encryption::encrypt(&mut session.app().doc.native)?;
+    let encrypted =
+      crate::encryption::encrypt(&mut session.app().unwrap().doc.native)?;
     let path = root.path().join("-quoted ' café 日本.pdf");
     std::fs::copy(encrypted.path(), &path)?;
     let before = std::fs::read(&path)?;

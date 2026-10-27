@@ -2,7 +2,6 @@
 
 use crate::Result;
 use crate::app::{App, Request};
-use crate::recent::Loader;
 use crate::state::Entry;
 use crate::state::Mark;
 use std::collections::BTreeMap;
@@ -21,29 +20,11 @@ use vpdf_ui::window::Window;
 
 pub struct PanelSession {
   pub view: Panel,
-  loader: Option<Loader>,
 }
 
 impl PanelSession {
   pub fn new(kind: PanelKind, rows: Vec<Row>) -> Self {
-    Self { view: Panel::new(kind, rows), loader: None }
-  }
-
-  pub fn recent(
-    rows: Vec<Row>,
-    entries: &[Entry],
-    password: &str,
-    wake: &vpdf_pdf::jobs::Wake,
-  ) -> Self {
-    let view = Panel::recent(rows, &crate::recent::entries(entries));
-    Self { view, loader: Some(Loader::new(password, wake)) }
-  }
-
-  pub fn updates(&mut self) -> bool {
-    match (self.loader.as_ref(), self.view.shelf_mut()) {
-      (Some(loader), Some(cards)) => loader.updates(cards),
-      _ => false,
-    }
+    Self { view: Panel::new(kind, rows) }
   }
 
   pub(crate) fn scene<'a, S: vpdf_model::scene::Surface<'a>>(
@@ -54,7 +35,7 @@ impl PanelSession {
     screen: Screen,
     pictures: bool,
   ) -> std::result::Result<(), S::Error> {
-    let drawn = self.view.scene(
+    self.view.scene(
       scene,
       vpdf_ui::panel::recent::Frame {
         at,
@@ -63,11 +44,7 @@ impl PanelSession {
         now: crate::state::now(),
       },
       pictures,
-    );
-    if let (Some(loader), Some(cards)) = (&self.loader, self.view.shelf_mut()) {
-      loader.request(cards);
-    }
-    drawn
+    )
   }
 }
 
@@ -431,51 +408,12 @@ impl App {
     if kind == PanelKind::Results { &self.search.query().text } else { "" }
   }
 
-  /// Covers the pane with `entries` and a card for the selected one,
-  /// releasing what the hidden document rebuilds on return.
-  pub fn show_recent(&mut self, entries: &[Entry]) -> Result<()> {
-    self.blur()?;
-    self.overlays.close_overview();
-    if self.preview.is_some() {
-      self.close_text_preview()?;
-    }
-    self.trim();
-    let mut panel = PanelSession::recent(
-      recent_rows(entries),
-      entries,
-      &self.password,
-      &self.wake,
-    );
-    if let Some(shelf) = panel.view.shelf_mut() {
-      shelf.set_pages(self.path.clone(), self.doc.pages.len());
-    }
-    panel.view.set_picker(match self.frontend {
-      crate::raster::Frontend::Terminal => {
-        vpdf_ui::home::Picker::Terminal { fzf: crate::cmdline::on_path("fzf") }
-      }
-      crate::raster::Frontend::Native(_) => vpdf_ui::home::Picker::Native,
-    });
-    panel.view.resize(self.screen.rows);
-    self.panel = Some(panel);
-    self.relayout()
-  }
-
-  /// Whether the recent view covers the pane.
-  pub fn covered(&self) -> bool {
-    self.panel.as_ref().is_some_and(|panel| panel.view.covers_page())
-  }
-
   pub fn close_panel(&mut self) -> Result<()> {
     if self.panel_focused() {
       self.blur()?;
     }
-    let covered = self.covered();
     self.panel = None;
     self.relayout()?;
-    // Changes while covered waited; settling picks them up.
-    if covered {
-      self.watch()?;
-    }
     Ok(())
   }
 
@@ -540,7 +478,6 @@ impl App {
   pub fn panel_input(&mut self, input: Input) -> Result<bool> {
     if let Action::Window(Window::Extend(direction)) = input.action
       && self.panel_focused()
-      && !self.covered()
     {
       let cells = u16::try_from(input.count).unwrap_or(u16::MAX);
       let width = match direction {
@@ -595,11 +532,7 @@ impl App {
     if matches!(mouse.kind, MouseEventKind::Down(_)) && !self.panel_focused() {
       self.blur()?;
     }
-    let covered = self.covered();
     let press = self.panel.as_mut().map(|panel| panel.view.press(mouse));
-    if self.covered() != covered {
-      self.relayout()?;
-    }
     let (Some(panel), Some(press)) = (&mut self.panel, press) else {
       return Ok(());
     };

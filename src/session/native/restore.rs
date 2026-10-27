@@ -366,7 +366,15 @@ impl Session {
       let focus = focused
         .and_then(|id| panes.iter().position(|app| app.id == id))
         .unwrap_or(0);
-      self.insert_restored(index, Tab { panes, tree, focus, last: None });
+      self.insert_restored(
+        index,
+        Tab {
+          panes: panes.into_iter().map(Into::into).collect(),
+          tree,
+          focus,
+          last: None,
+        },
+      );
     } else if !locked && saved.missed.saturating_add(1) < ATTEMPTS {
       // Files on absent volumes may return.
       let missed = saved.missed + 1;
@@ -400,6 +408,14 @@ impl Session {
   }
 
   fn insert_restored(&mut self, index: usize, tab: Tab) {
+    if self.tabs.len() == 1
+      && self.tabs[0].panes.len() == 1
+      && self.tabs[0].panes[0].is_recent()
+      && self.tabs[0].panes[0].alternate.is_none()
+      && self.tabs[0].panes[0].prompt().is_none()
+    {
+      self.tabs.clear();
+    }
     let restoring = self.windows.restoring.as_mut().expect("Restore queue");
     let at = restoring.place(index, &self.tabs);
     restoring.placed.push((index, tab.panes[0].id));
@@ -407,7 +423,6 @@ impl Session {
     self.tabs.insert(at, tab);
     if first {
       self.active = 0;
-      self.home = None;
       self.refocus();
       let arranged = self.arrange();
       super::report(self, arranged);
@@ -439,8 +454,12 @@ fn restoring_mut(session: &mut Session) -> &mut Restoring {
 }
 
 fn saved_tab(tab: &Tab) -> Option<Saved> {
-  let kept: Vec<_> =
-    tab.panes.iter().filter(|app| app.manual.is_none()).collect();
+  let kept: Vec<_> = tab
+    .panes
+    .iter()
+    .filter_map(crate::session::Pane::document)
+    .filter(|app| app.manual.is_none())
+    .collect();
   let index = |id: u32| kept.iter().position(|app| app.id == id);
   let shape = tab.tree.shape(&index)?;
   let focused = tab.panes[tab.focus].id;

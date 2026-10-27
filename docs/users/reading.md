@@ -4,10 +4,9 @@
 
 Open a file with `vpdf book.pdf` from the shell. Multiple references open tabs;
 `vpdf 'book.pdf#page=23'` overrides the saved position with physical page 23.
-`vpdf --help`
-shows the installed launch options. Without saved files, the start screen shows
-opening and help hints. Use `:recent` for saved files or `:edit book.pdf` to
-enter a path.
+`vpdf --help` shows the installed launch options. Without a file, the reader
+starts in a Recent pane. With no saved files, Recent shows opening and help
+hints. Use `:recent` for saved files or `:edit book.pdf` to enter a path.
 
 ## Document references
 
@@ -47,8 +46,8 @@ recent-file entries keep filesystem paths without fragments.
 `:tabedit book.pdf` open in a new tab. Omit the path to choose a file: the
 terminal uses fzf when available and the macOS app uses its system file chooser.
 Without fzf, `:open` starts path entry with Tab completion. Canceling keeps the
-current view. `:tabnew` creates a recent-files tab. A file already open focuses
-its existing pane.
+current view. `:tabnew` creates a tab with an unloaded Recent pane. A file
+already open focuses its existing pane.
 
 In the terminal, `:fzf` finds PDFs below the current directory when fzf is on
 `PATH`; use its upstream setup in [Optional helpers][helpers]. Without fzf, use
@@ -56,10 +55,11 @@ In the terminal, `:fzf` finds PDFs below the current directory when fzf is on
 Tab completes PDFs and directories. A PDF opens directly; a directory limits the
 picker to that tree.
 
-Dropped PDF files open new tabs in the native app and terminals with file-drop
-support, even while a prompt is open. Already open files focus their existing
-views. Text drops and pastes still edit a prompt. Recent-file previews follow
-the hovered row without changing the selected entry.
+Dropped and OS-opened PDFs fill a focused Recent pane. On a document, they open
+new tabs, including while a prompt is open. Already open files focus their
+existing panes and leave the source pane unchanged. Text drops and pastes still
+edit a prompt. Recent-file previews follow the hovered row without changing the
+selected entry.
 
 `:password` opens hidden password entry and reopens the focused PDF. Passwords
 are not command-line arguments. Inspect `:info` after an open failure and check
@@ -86,8 +86,8 @@ opens its saved position. Directory selection includes offscreen files.
 Press `x` to remove checked files, or the focused file or directory's files when
 none are checked. Enter, `y`, or a click on Remove confirms; `n`, Escape,
 `Ctrl-c`, or Cancel cancels. Files hidden by a filter remain checked and count
-toward removal. Escape outside confirmation clears checks before closing the
-panel. Leaving Recent clears its checks.
+toward removal. Escape outside confirmation clears checks before returning to
+the alternate document. Leaving Recent clears its checks.
 
 Removal forgets saved positions, local marks, and outline choices. It preserves
 source PDFs, open reading panes, and global marks. Saving an already open pane
@@ -115,10 +115,10 @@ filesystem reports as missing. Other access errors preserve saved entries.
 Disconnected storage that reports missing paths can lose its saved state.
 
 The reader reloads a changed PDF while retaining a useful position, view
-choices, and marks. `:reload` requests this explicitly. Reload clears temporary
-OCR and jump history. Hidden panes check for changes when shown again. Large
-edits can move the passage beneath a retained position. Keep a separate copy
-before replacing a source file if you need the original text or pagination.
+choices, and marks. `:reload` or `:e!` requests this explicitly. Reload clears
+temporary OCR and jump history. Hidden panes check for changes when shown again.
+Large edits can move the passage beneath a retained position. Keep a separate
+copy before replacing a source file if you need the original text or pagination.
 
 ## Content caches
 

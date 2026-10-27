@@ -1,4 +1,5 @@
-use super::{App, Home, Result, Screen, Session};
+use super::Pane;
+use super::{App, Result, Screen, Session};
 use crate::manual::{Location, Runtime};
 use vpdf_ui::topics::{
   Destination, Invocation, Lookup, Reference, Registry, TopicId,
@@ -157,6 +158,9 @@ impl Session {
     screen: Screen,
     beside: bool,
   ) -> Result<()> {
+    if self.tabs.is_empty() {
+      self.recent_tab(screen)?;
+    }
     let full_query = query;
     let explicit = query.split_once(':').is_some_and(|(name, _)| {
       vpdf_ui::bindings::Context::parse(name).is_some()
@@ -200,17 +204,15 @@ impl Session {
           candidates.iter().map(|candidate| candidate.name.clone()).collect(),
         );
         prompt.describe(|name| crate::cmdline::describe(name, &candidates));
-        if let Some(home) = &mut self.home {
-          home.view.open_prompt(prompt);
-        } else if !self.tabs.is_empty() {
-          self.app().overlays.open_prompt(prompt);
+        if !self.tabs.is_empty() {
+          self.focused_mut().open_prompt(prompt);
         }
         return Ok(());
       }
     };
     let source = self.tabs.get(self.active).map(|tab| &tab.panes[tab.focus]);
     let id = source.map(|app| app.id);
-    if source.is_some_and(|app| app.manual.is_some())
+    if source.and_then(Pane::document).is_some_and(|app| app.manual.is_some())
       && let Some((previous, _)) = self.help.cached.clone()
     {
       // Keep the manual's source snapshot stable.
@@ -271,10 +273,8 @@ impl Session {
       result.and_then(|ready| self.deliver_help(ready, delivery, out));
     if let Err(error) = result {
       self.restore_help();
-      if let Some(home) = &mut self.home {
-        home.view.fail(error.to_string());
-      } else if !self.tabs.is_empty() {
-        self.app().error = Some(error.to_string());
+      if !self.tabs.is_empty() {
+        self.focused_mut().fail(error.to_string());
       }
     }
   }
@@ -283,7 +283,7 @@ impl Session {
     &mut self,
     ready: crate::manual::Ready,
     delivery: Delivery,
-    out: &mut impl std::io::Write,
+    _out: &mut impl std::io::Write,
   ) -> Result<()> {
     if let Delivery::Open(source, _) = delivery {
       let current =
@@ -297,37 +297,7 @@ impl Session {
       .screen
       .ok_or_else(|| anyhow::anyhow!("Help needs screen dimensions"))?;
     let beside = matches!(delivery, Delivery::Open(Some(_), true));
-    let invoking_help = match delivery {
-      Delivery::Open(Some(id), _) => self
-        .find_pane(id)
-        .filter(|&(tab, pane)| self.tabs[tab].panes[pane].manual.is_some()),
-      _ => None,
-    };
-    let local_help = self.tabs.get(self.active).and_then(|tab| {
-      tab
-        .panes
-        .iter()
-        .position(|app| app.manual.is_some())
-        .map(|pane| (self.active, pane))
-    });
-    let existing = invoking_help.or(local_help).or_else(|| {
-      self
-        .tabs
-        .iter()
-        .enumerate()
-        .filter(|(index, tab)| {
-          if matches!(delivery, Delivery::Refresh) {
-            true
-          } else if beside {
-            *index == self.active
-          } else {
-            tab.panes.iter().all(|app| app.manual.is_some())
-          }
-        })
-        .find_map(|(t, tab)| {
-          tab.panes.iter().position(|app| app.manual.is_some()).map(|p| (t, p))
-        })
-    });
+    let existing = self.find_help(delivery);
     if matches!(delivery, Delivery::Refresh) && existing.is_none() {
       return Ok(());
     }
@@ -341,7 +311,7 @@ impl Session {
       .map(|reference| (reference, ready.document.clone()));
     // Replace page-based state after reflow.
     for tab in &mut self.tabs {
-      for app in &mut tab.panes {
+      for app in tab.panes.iter_mut().filter_map(Pane::document_mut) {
         let Some(old) = &app.manual else { continue };
         if std::sync::Arc::ptr_eq(old, &ready.document) {
           continue;
@@ -355,7 +325,9 @@ impl Session {
       return self.arrange();
     }
     if let Some((tab, pane)) = existing {
-      let app = &mut self.tabs[tab].panes[pane];
+      let app = self.tabs[tab].panes[pane]
+        .document_mut()
+        .ok_or_else(|| anyhow::anyhow!("No document"))?;
       app.close_panel()?;
       app.close_overview();
       app.follow(&ready.target)?;
@@ -371,13 +343,12 @@ impl Session {
       self.leave()?;
       self.place_help(app, beside)?;
     }
-    if let Some(mut home) = self.home.take() {
-      home.release(out)?;
-    }
     if let Delivery::Open(source, _) = delivery
-      && source
-        .and_then(|id| self.find_pane(id))
-        .is_none_or(|(tab, pane)| self.tabs[tab].panes[pane].manual.is_none())
+      && source.and_then(|id| self.find_pane(id)).is_none_or(|(tab, pane)| {
+        self.tabs[tab].panes[pane]
+          .document()
+          .is_none_or(|app| app.manual.is_none())
+      })
     {
       self.help.return_to = source;
     }
@@ -385,11 +356,52 @@ impl Session {
     self.arrange()
   }
 
+  fn find_help(&self, delivery: Delivery) -> Option<(usize, usize)> {
+    let beside = matches!(delivery, Delivery::Open(Some(_), true));
+    let invoking_help = match delivery {
+      Delivery::Open(Some(id), _) => {
+        self.find_pane(id).filter(|&(tab, pane)| {
+          self.tabs[tab].panes[pane]
+            .document()
+            .is_some_and(|app| app.manual.is_some())
+        })
+      }
+      _ => None,
+    };
+    let local_help = self.tabs.get(self.active).and_then(|tab| {
+      tab.panes.iter().position(Pane::is_help).map(|pane| (self.active, pane))
+    });
+    invoking_help.or(local_help).or_else(|| {
+      self
+        .tabs
+        .iter()
+        .enumerate()
+        .filter(|(index, tab)| {
+          if matches!(delivery, Delivery::Refresh) {
+            true
+          } else if beside {
+            *index == self.active
+          } else {
+            tab.panes.iter().all(Pane::is_help)
+          }
+        })
+        .find_map(|(t, tab)| {
+          tab.panes.iter().position(Pane::is_help).map(|p| (t, p))
+        })
+    })
+  }
+
   fn place_help(&mut self, app: App, beside: bool) -> Result<()> {
     if !beside {
-      return self.insert_tab(app);
+      return self.insert_tab(app.into());
     }
-    self.insert_pane(app, super::Axis::Columns, super::Place::After)
+    self.insert_pane(app.into(), super::Axis::Columns, super::Place::After)
+  }
+
+  pub(super) fn retarget_help(&mut self, old: u32, new: u32) {
+    if self.help.return_to == Some(old) {
+      self.help.return_to = Some(new);
+    }
   }
 
   pub(super) fn return_from_help(&mut self) -> Result<()> {
@@ -397,20 +409,6 @@ impl Session {
       self.help.return_to.and_then(|id| self.find_pane(id))
     {
       return self.focus(tab, pane);
-    }
-    if self.tabs.is_empty() {
-      self.active = 0;
-      if let Some(screen) = self.screen {
-        let mut home = Home::new(
-          &self.state.recent,
-          self.content(screen),
-          &self.frontend.wake(),
-          matches!(self.frontend, crate::raster::Frontend::Terminal),
-        )
-        .with_layout(self.state.recent_layout);
-        home.configure(&self.settings);
-        self.home = Some(home);
-      }
     }
     Ok(())
   }

@@ -306,7 +306,7 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let mut session = noted_session(directory.path())?;
   let on_page = |session: &mut Session, wanted: fn(Hit) -> bool| {
-    cell_where(session.app(), Region::Page, 0..39, wanted)
+    cell_where(session.app().unwrap(), Region::Page, 0..39, wanted)
   };
   let note =
     on_page(&mut session, |hit| matches!(hit, Hit::Note { text: true, .. }))?;
@@ -343,12 +343,12 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
     }
   }
   // Clipped rows show whole; selection stays.
-  session.app().open_panel(PanelKind::Annotations)?;
-  crate::common::annotations_loaded(session.app())?;
-  let focused = session.app().panel_focused();
+  session.app().unwrap().open_panel(PanelKind::Annotations)?;
+  crate::common::annotations_loaded(session.app().unwrap())?;
+  let focused = session.app().unwrap().panel_focused();
   // Row 1 is the page heading.
   let (_, drawn) = hover(&mut session, (1, 3))?;
-  let app = session.app();
+  let app = session.app().unwrap();
   assert_eq!(app.hover.hit(), Hit::Row(2));
   let row = &app.panel.as_ref().unwrap().view.rows()[2].label;
   assert!(drawn.contains(row.as_str()), "{row}");
@@ -357,31 +357,35 @@ fn hover_details_notes_rows_and_pages() -> Result<()> {
   assert_eq!(app.panel_focused(), focused);
   // A short row adds nothing.
   hover(&mut session, (1, 4))?;
-  assert_eq!(session.app().panel.as_ref().unwrap().view.hover_title(), None);
-  session.app().close_panel()?;
+  assert_eq!(
+    session.app().unwrap().panel.as_ref().unwrap().view.hover_title(),
+    None
+  );
+  session.app().unwrap().close_panel()?;
   // A panel opened under a resting pointer.
-  session.app().open_panel(PanelKind::Annotations)?;
-  crate::common::annotations_loaded(session.app())?;
+  session.app().unwrap().open_panel(PanelKind::Annotations)?;
+  crate::common::annotations_loaded(session.app().unwrap())?;
   session.draw_frame(&mut Vec::new())?;
   if session.redraw_due() {
     session.draw_frame(&mut Vec::new())?;
   }
   assert!(!session.redraw_due(), "one follow-up at most");
-  assert_eq!(session.app().hover.hit(), Hit::Row(3));
-  session.app().close_panel()?;
+  assert_eq!(session.app().unwrap().hover.hit(), Hit::Row(3));
+  session.app().unwrap().close_panel()?;
   // Thumbnails show their page label and section.
-  let app = session.app();
+  let app = session.app().unwrap();
   app.doc.outline.push(Heading {
     title: "Opening".into(),
     depth: 0,
     target: Target::Page(PageId(0)),
   });
   app.open_overview()?;
-  let thumbnail = cell_where(session.app(), Region::Overview, 0..39, |hit| {
-    matches!(hit, Hit::Thumbnail(_))
-  })?;
+  let thumbnail =
+    cell_where(session.app().unwrap(), Region::Overview, 0..39, |hit| {
+      matches!(hit, Hit::Thumbnail(_))
+    })?;
   let (_, drawn) = hover(&mut session, thumbnail)?;
-  assert_eq!(session.app().hover.hit(), Hit::Thumbnail(PageId(0)));
+  assert_eq!(session.app().unwrap().hover.hit(), Hit::Thumbnail(PageId(0)));
   assert!(drawn.contains("p. 1 · Opening"));
   Ok(())
 }
@@ -397,14 +401,14 @@ fn outline_hovers_drop_the_indent() -> Result<()> {
   let mut session = noted_session(directory.path())?;
   let title = "Applications of attention in our model, ".repeat(2);
   let title = title.trim_end();
-  let app = session.app();
+  let app = session.app().unwrap();
   for (title, depth) in [("Opening", 0), (title, 2)] {
     let target = Target::Page(PageId(0));
     app.doc.outline.push(Heading { title: title.into(), depth, target });
   }
   app.open_panel(PanelKind::Outline)?;
   session.draw_focused(&mut Vec::new())?;
-  let app = session.app();
+  let app = session.app().unwrap();
   let (column, row) = (0..app.screen.columns)
     .find_map(|column| {
       let hit = app.hovered(Region::Panel, column, 2, None).ok();
@@ -415,7 +419,7 @@ fn outline_hovers_drop_the_indent() -> Result<()> {
   let mut out = Vec::new();
   session.draw_frame(&mut out)?;
   let drawn = String::from_utf8_lossy(&out);
-  assert_eq!(session.app().hover.hit(), Hit::Row(1));
+  assert_eq!(session.app().unwrap().hover.hit(), Hit::Row(1));
   assert!(drawn.contains(title), "{drawn}");
   assert!(!drawn.contains(&format!(" {title}")), "{drawn}");
   Ok(())
@@ -464,29 +468,29 @@ fn notes_open_by_mouse() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let mut session = noted_session(directory.path())?;
   let mut find = |wanted: fn(Hit) -> bool| {
-    cell_where(session.app(), Region::Page, 0..39, wanted)
+    cell_where(session.app().unwrap(), Region::Page, 0..39, wanted)
   };
   let icon = find(|hit| matches!(hit, Hit::Note { text: false, .. }))?;
   let marked = find(|hit| matches!(hit, Hit::Note { text: true, .. }))?;
   // Icons tint and take the pointer shape.
   mouse(&mut session, MouseEventKind::Moved, icon)?;
-  let app = session.app();
+  let app = session.app().unwrap();
   assert_eq!(app.hover.hit().shape(), Shape::Pointer);
   assert!(app.hover_icon().is_some(), "a tint");
   // Highlights stay text (H3).
-  let app = session.app();
+  let app = session.app().unwrap();
   let Hit::Note { index: sticky, .. } = app.hover.hit() else {
     panic!("an icon")
   };
   assert!(icon_notes(app).iter().all(|index| *index == sticky));
   // Clicks open the note, then close it.
-  let target = session.app().reader.target();
+  let target = session.app().unwrap().reader.target();
   let start = std::time::Instant::now();
   let later = |ms| start + std::time::Duration::from_millis(ms);
   click_at(&mut session, icon, later(0))?;
   let frame = crate::common::focused_frame(&mut session)?;
   assert!(frame.contains("margin note"));
-  let app = session.app();
+  let app = session.app().unwrap();
   assert_eq!(app.input_owner(), InputOwner::Peek);
   assert_eq!(app.reader.target(), target, "the cursor stays");
   let area = app.preview_cells().expect("a drawn popup");
@@ -494,20 +498,23 @@ fn notes_open_by_mouse() -> Result<()> {
   assert!(near(area.row) || near(area.row + area.rows), "{area:?} {icon:?}");
   // Past the double-click window, a click closes it.
   click_at(&mut session, icon, later(1000))?;
-  assert!(session.app().overlays.preview().is_none());
+  assert!(session.app().unwrap().overlays.preview().is_none());
   // The menu's Show note sits by the icon too.
   crate::mouse::tap(&mut session, MouseButton::Right, icon)?;
   crate::mouse::choose(&mut session, "Show note")?;
   crate::common::focused_frame(&mut session)?;
-  let app = session.app();
+  let app = session.app().unwrap();
   let area = app.preview_cells().expect("a drawn popup");
   assert!(near(area.row) || near(area.row + area.rows), "{area:?} {icon:?}");
   app.overlays.close_preview();
   // Highlight clicks and icon drags select.
   crate::mouse::tap(&mut session, MouseButton::Left, marked)?;
-  assert!(session.app().overlays.preview().is_none(), "a highlight click");
+  assert!(
+    session.app().unwrap().overlays.preview().is_none(),
+    "a highlight click"
+  );
   drag(&mut session, icon, marked)?;
-  let app = session.app();
+  let app = session.app().unwrap();
   assert!(
     app.overlays.preview().is_none() && app.reader.selection.is_some(),
     "a drag"
@@ -517,7 +524,7 @@ fn notes_open_by_mouse() -> Result<()> {
   let cases = [("Show note", true, false), ("Copy comment", false, true)];
   for (label, shown, copied) in cases {
     crate::mouse::tap(&mut session, MouseButton::Right, marked)?;
-    let app = session.app();
+    let app = session.app().unwrap();
     let menu = app.overlays.menu().expect("a menu");
     let index = menu.entries().iter().position(|item| item.label == label);
     let shortcuts: Vec<_> =
@@ -531,7 +538,7 @@ fn notes_open_by_mouse() -> Result<()> {
     let comment = "check this note please";
     let frame = crate::common::focused_frame(&mut session)?;
     assert_eq!(frame.contains(comment), shown, "{label}");
-    let app = session.app();
+    let app = session.app().unwrap();
     let register = app.reader.register('"').map(|text| &**text);
     if copied {
       assert_eq!(register, Some(comment), "{label}");
@@ -574,9 +581,9 @@ fn note_icons_by_kind() -> Result<()> {
   for text_mode in [false, true] {
     let mut session = crate::harness::session(&path, screen())?;
     if text_mode {
-      session.app().command("text")?;
+      session.app().unwrap().command("text")?;
     }
-    let app = session.app();
+    let app = session.app().unwrap();
     let hit = |app: &mut App, kind: &str| {
       grid().find_map(|(column, row)| {
         let hit = app.hovered(Region::Page, column, row, None).ok()?;
@@ -595,22 +602,25 @@ fn note_icons_by_kind() -> Result<()> {
     let start = std::time::Instant::now();
     let later = |ms| start + std::time::Duration::from_millis(ms);
     click_at(&mut session, boxed, later(0))?;
-    let app = session.app();
+    let app = session.app().unwrap();
     assert!(app.overlays.preview().is_none(), "text={text_mode}: a box click");
     let line = app.reader.target().map(|target| target.line);
     assert_eq!(line, Some(1), "text={text_mode}: the box click targets");
     // A double click keeps the note open.
     click_at(&mut session, sticky, later(1000))?;
     click_at(&mut session, sticky, later(1100))?;
-    let open = session.app().overlays.preview().is_some();
+    let open = session.app().unwrap().overlays.preview().is_some();
     assert_eq!(open, !text_mode, "text={text_mode}: a double click");
     if text_mode {
       continue;
     }
     // Scrolling the icon away closes it (U17).
-    session.app().reader.seed_reader(|reader| reader.scroll += 400.0);
+    session.app().unwrap().reader.seed_reader(|reader| reader.scroll += 400.0);
     session.draw_frame(&mut Vec::new())?;
-    assert!(session.app().overlays.preview().is_none(), "scrolled away");
+    assert!(
+      session.app().unwrap().overlays.preview().is_none(),
+      "scrolled away"
+    );
   }
   Ok(())
 }
@@ -623,14 +633,9 @@ fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
     (None, "", false, true),
     (Some("Failed"), "", false, false),
     (None, "Copied", false, false),
-    (None, "Copied", true, true),
-    (Some("Failed"), "", true, false),
   ];
   for (error, message, covered, shown) in cases {
     let mut app = Solo::open(&path, "", false, screen())?;
-    if covered {
-      app.show_recent(&[])?;
-    }
     app.error = error.map(str::to_owned);
     app.reader.notice(message);
     let mut out = Vec::new();
@@ -655,12 +660,12 @@ fn hover_detail_yields_to_messages_and_caches() -> Result<()> {
 fn note_row_menus_show_notes() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let mut session = noted_session(directory.path())?;
-  session.app().open_panel(PanelKind::Annotations)?;
-  crate::common::annotations_loaded(session.app())?;
+  session.app().unwrap().open_panel(PanelKind::Annotations)?;
+  crate::common::annotations_loaded(session.app().unwrap())?;
   session.draw_focused(&mut Vec::new())?;
   // Row 1 is the page heading; row 2 the unnoted highlight.
   crate::mouse::right(&mut session, (1, 3))?;
-  let app = session.app();
+  let app = session.app().unwrap();
   let menu = app.overlays.menu_mut().expect("a menu");
   let index = menu.entries().iter().position(|item| item.label == "Show note");
   let index = index.expect("Show note");
@@ -704,7 +709,7 @@ fn highlight_rows_quote_marked_text() -> Result<()> {
   use vpdf_ui::panel::{Destination, RowKind as K};
   let directory = tempfile::tempdir()?;
   let mut session = noted_session(directory.path())?;
-  let app = session.app();
+  let app = session.app().unwrap();
   app.open_panel(PanelKind::Annotations)?;
   crate::common::annotations_loaded(app)?;
   let rows = app.panel.as_ref().unwrap().view.rows();

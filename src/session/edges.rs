@@ -17,25 +17,31 @@ impl Session {
       return Some(Edge::Split(divider));
     }
     // The panel's last column, beside the page.
-    let border = tab.panes.iter().map(App::pointer_pane).find(|pane| {
-      let panel = pane.area(Region::Panel);
-      let edge = Rect {
-        column: pane.rect.column + panel.columns.saturating_sub(2),
-        row: pane.rect.row,
-        columns: panel.columns.min(2),
-        rows: panel.rows,
-      };
-      (1..pane.rect.columns).contains(&pane.panel) && edge.contains(column, row)
-    });
+    let border = tab
+      .panes
+      .iter()
+      .filter_map(super::Pane::document)
+      .map(App::pointer_pane)
+      .find(|pane| {
+        let panel = pane.area(Region::Panel);
+        let edge = Rect {
+          column: pane.rect.column + panel.columns.saturating_sub(2),
+          row: pane.rect.row,
+          columns: panel.columns.min(2),
+          rows: panel.rows,
+        };
+        (1..pane.rect.columns).contains(&pane.panel)
+          && edge.contains(column, row)
+      });
     if let Some(pane) = border {
       return Some(Edge::Panel(pane.id));
     }
     // Status items stay clickable.
     let item = || {
-      tab.panes.iter().any(|app| {
-        let pane = app.pointer_pane().rect;
-        pane.contains(column, row)
-          && app.chrome_at(column - pane.column, row - pane.row).is_some()
+      tab.panes.iter().any(|pane| {
+        let rect = pane.pointer_pane().rect;
+        rect.contains(column, row)
+          && pane.chrome_at(column - rect.column, row - rect.row).is_some()
       })
     };
     on(Axis::Rows).filter(|_| !item()).map(Edge::Split)
@@ -72,7 +78,7 @@ impl Session {
     // Overlays and held presses take the press.
     let free = !self.tabs.is_empty()
       && !self.pointer.holding()
-      && !self.app().overlaid();
+      && self.focused().document().is_none_or(|app| !app.overlaid());
     let edge = self.edge_at(mouse.column, mouse.row).filter(|_| free)?;
     let pane = match edge {
       Edge::Split(_) => 0,
@@ -100,7 +106,9 @@ impl Session {
       Edge::Split(divider) => self.tab().tree.equalize_at(divider.index, area),
       Edge::Panel(id) => {
         if let Some(index) = self.tab().index(id) {
-          let app = &mut self.tab().panes[index];
+          let Some(app) = self.tab().panes[index].document_mut() else {
+            return Ok(true);
+          };
           app.panel_width = None;
           app.relayout()?;
         }
@@ -132,7 +140,9 @@ impl Session {
       }
       Edge::Panel(id) => {
         let Some(index) = self.tab().index(id) else { return Ok(false) };
-        let app = &mut self.tab().panes[index];
+        let Some(app) = self.tab().panes[index].document_mut() else {
+          return Ok(false);
+        };
         return app.resize_panel(
           mouse.column.saturating_sub(app.at.column).saturating_add(1),
         );

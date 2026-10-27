@@ -39,25 +39,30 @@ Look up a colon name even when an optional helper is missing: `:help :fzf`
 explains its requirement while `:fzf` can be absent from command completion.
 
 Opening commands, configuration, themes, help, version, and quit-all work from
-the start screen. Reading commands need a document or recent-files pane; page
-OCR and reload need a PDF. `:print` is macOS only. Built-in help cannot print,
-reload from disk, export a region, or hold persistent global marks.
+the start screen. Reading commands need a document; page OCR and reload need a
+PDF. `:print` is macOS only. Built-in help cannot print, reload from disk,
+export a region, or hold persistent global marks.
 
 `:split` and `:vsplit` correspond to `Ctrl-w s` and `Ctrl-w v`; `:close` to
 `Ctrl-w c`; `:only` to `Ctrl-w o`; tab navigation to `gt` and `gT`.
 `:toc`, `:annotations`, and `:overview` correspond to `go`, `ga`, and `gp`.
 `:help! search` consults help beside a book; `Ctrl-w p` returns focus.
+Bare `:new` and `:vnew` split with Recent; with a file, they match `:split`
+and `:vsplit`.
 
 ## Common requests
 
-Use `:edit book.pdf` to replace the focused document, or `:tabedit notes.pdf`
-to keep it open. Bare `:edit` chooses a file for the focused pane; bare `:open`
-or `:tabedit` chooses one for a new tab. The terminal picker requires fzf; the
-macOS app uses its system chooser. `:recent` browses saved file entries; Space
-checks files and `x` requests removal. See [Files and saved state][state].
-`:fzf` discovers PDFs below the current directory when its helper is installed.
-Tab completes paths after `:fzf `; a PDF opens directly, and a directory
-sets the picker root.
+Use `:edit book.pdf` to replace the focused document, or `:tabedit notes.pdf` to
+keep it open. Bare `:edit` chooses a file for the focused pane; bare `:open` or
+`:tabedit` chooses one for a new tab. The terminal picker requires fzf; the
+macOS app uses its system chooser. `:recent` or `:enew` saves and unloads the
+document, then browses saved files. `Ctrl-^` and `:e #` reopen the alternate;
+`q` or Escape on Recent does the same from saved state. `:bd[elete]` unloads the
+focused document and reopens the alternate, or shows Recent. On Recent or help,
+`:bd` closes the pane. Space checks files and `x` requests removal. See
+[Files and saved state][state]. `:fzf` discovers PDFs below the current
+directory when its helper is installed. Tab completes paths after `:fzf `; a PDF
+opens directly, and a directory sets the picker root.
 
 Use `:cursorline off` to hide the cursor band, `:crop on` to crop margins,
 `:text` to inspect extracted text, `:recolor sepia` for page colors,
@@ -67,13 +72,16 @@ UI colors. Use `:theme ~/.config/vpdf/themes/nord.toml` for a theme file; see
 `:config reload` rereads the selected configuration file.
 
 Use `:cancel` to stop pane jobs and `:nohlsearch` to hide search highlights.
-`:reload` rereads the source PDF. `:password` opens hidden password entry and
-reopens the document. `:ocr eng+vie` recognizes the page with installed models.
-`:print` opens macOS printing for an unencrypted file-backed PDF.
+`:reload` or `:e!` rereads the source PDF. `:password` opens hidden password
+entry and reopens the document. `:ocr eng+vie` recognizes the page with
+installed models. `:print` opens macOS printing for an unencrypted file-backed
+PDF.
 
 Use `:info` for document, reader, and terminal diagnostics; `:version` for build
 identity; `:perf` for performance statistics. `:close` closes a pane,
 `:tabclose` its entire tab, and `:qall` every tab and the reader.
+`:q!`, `:x`, and `:wq` match `:q`; `:qa!` matches `:qall`. `ZZ` and `ZQ`
+also close the focused pane.
 
 This ends the teaching chapters. In the reader, continue into the generated
 action, configuration, and command references, or return to the

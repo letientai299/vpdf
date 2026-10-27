@@ -1,5 +1,6 @@
 use super::*;
 use crate::screen::cells;
+use crate::trace::Drawable;
 use std::time::{Duration, Instant};
 
 #[test]
@@ -12,14 +13,14 @@ fn interrupted_lookup_preserves_snapshot() -> Result<()> {
   for outcome in ["superseded", "discarded", "failed"] {
     let mut session = Session::new(None);
     session.open(&first, true, cells(120, 40))?;
-    let original = session.app().id;
+    let original = session.app().unwrap().id;
     invoke(&mut session, "navigation")?;
     let help = session.active;
     let reference = session.help.reference.clone().unwrap();
-    let document = session.app().manual.clone().unwrap();
-    session.app().set_mark('a')?;
+    let document = session.app().unwrap().manual.clone().unwrap();
+    session.app().unwrap().set_mark('a')?;
     session.open(&second, true, cells(120, 40))?;
-    session.app().command("help config")?;
+    session.app().unwrap().command("help config")?;
     session.settle()?;
     assert!(session.help.pending.is_some());
     if outcome == "failed" {
@@ -34,14 +35,14 @@ fn interrupted_lookup_preserves_snapshot() -> Result<()> {
       assert_eq!(session.help.reference, Some(reference.clone()));
     }
     invoke(&mut session, "sample")?;
-    assert!(session.app().marks.contains_key(&'a'));
+    assert!(session.app().unwrap().marks.contains_key(&'a'));
     assert!(std::sync::Arc::ptr_eq(
-      session.app().manual.as_ref().unwrap(),
+      session.app().unwrap().manual.as_ref().unwrap(),
       &document
     ));
     assert_eq!(session.help.reference, Some(reference));
     session.close()?;
-    assert_eq!(session.app().id, original);
+    assert_eq!(session.app().unwrap().id, original);
   }
   Ok(())
 }
@@ -64,7 +65,7 @@ fn lookup_during_refresh_uses_builtins() -> Result<()> {
   assert!(session.help.pending.is_some());
   invoke(&mut session, "h")?;
   assert_eq!(
-    session.app().help_location().unwrap().id().as_str(),
+    session.app().unwrap().help_location().unwrap().id().as_str(),
     builtin_topic("h", vpdf_ui::bindings::Context::Normal)
   );
   let reference = session.help.reference.as_ref().unwrap();
@@ -84,26 +85,26 @@ fn topic_lookup_retains_state() -> Result<()> {
   ] {
     let mut session = Session { frontend, ..Session::new(None) };
     session.open(&path, true, cells(120, 40))?;
-    let source = session.app().id;
+    let source = session.app().unwrap().id;
     invoke(&mut session, "navigation")?;
     let reference = session.help.reference.clone().unwrap();
-    let document = session.app().manual.clone().unwrap();
-    session.app().set_mark('a')?;
-    let mark = session.app().marks[&'a'];
-    session.app().start_search("navigation", false, false)?;
+    let document = session.app().unwrap().manual.clone().unwrap();
+    session.app().unwrap().set_mark('a')?;
+    let mark = session.app().unwrap().marks[&'a'];
+    session.app().unwrap().start_search("navigation", false, false)?;
     let deadline = Instant::now() + Duration::from_secs(15);
-    while session.app().search.phase().running() {
-      session.app().search_updates()?;
+    while session.app().unwrap().search.phase().running() {
+      session.app().unwrap().search_updates()?;
       assert!(Instant::now() < deadline, "Help search timed out");
       std::thread::sleep(Duration::from_millis(2));
     }
-    let hits = session.app().search.hits().len();
+    let hits = session.app().unwrap().search.hits().len();
     assert!(hits > 0);
-    let jumps: Vec<_> = session.app().reader.jumps().collect();
+    let jumps: Vec<_> = session.app().unwrap().reader.jumps().collect();
     assert_ne!(jumps, [] as [vpdf_model::text::Position; 0]);
     for topic in ["sample", "sample"] {
       invoke(&mut session, topic)?;
-      let app = session.app();
+      let app = session.app().unwrap();
       assert!(std::sync::Arc::ptr_eq(app.manual.as_ref().unwrap(), &document));
       assert_eq!(app.document_generation, 0);
       assert_eq!(app.marks.get(&'a'), Some(&mark));
@@ -115,7 +116,7 @@ fn topic_lookup_retains_state() -> Result<()> {
     }
     assert_eq!(session.help.reference, Some(reference));
     session.close()?;
-    assert_eq!(session.app().id, source);
+    assert_eq!(session.app().unwrap().id, source);
   }
   Ok(())
 }
@@ -130,22 +131,22 @@ fn lookup_and_refresh_retain_preview() -> Result<()> {
     ] {
       let mut session = Session { frontend, ..Session::new(None) };
       invoke(&mut session, "sample")?;
-      let id = session.app().id;
-      session.app().command("text")?;
-      assert_eq!(session.app().preview, Some(false));
+      let id = session.app().unwrap().id;
+      session.app().unwrap().command("text")?;
+      assert_eq!(session.app().unwrap().preview, Some(false));
       if refresh {
         session.set_theme(vpdf_model::theme::Theme::Light);
         wait(&mut session);
       } else {
         invoke(&mut session, "sample")?;
       }
-      assert!(session.app().text_mode);
-      session.app().action(Input::plain(Action::Quit))?;
+      assert!(session.app().unwrap().text_mode);
+      session.app().unwrap().action(Input::plain(Action::Quit))?;
       session.settle()?;
-      assert_eq!(session.tabs.len(), 1);
-      assert_eq!(session.app().id, id);
-      assert!(!session.app().text_mode);
-      assert!(session.app().preview.is_none());
+      assert_eq!(session.tabs.len(), 2);
+      assert_eq!(session.app().unwrap().id, id);
+      assert!(!session.app().unwrap().text_mode);
+      assert!(session.app().unwrap().preview.is_none());
     }
   }
   Ok(())
@@ -163,17 +164,17 @@ fn nested_lookup_uses_builtin_bindings() -> Result<()> {
   assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
   let mut session = Session::configured(None, loaded);
   invoke(&mut session, "navigation")?;
-  session.app().set_mark('a')?;
-  session.app().reader.enter_cursor();
-  let document = session.app().manual.clone().unwrap();
+  session.app().unwrap().set_mark('a')?;
+  session.app().unwrap().reader.enter_cursor();
+  let document = session.app().unwrap().manual.clone().unwrap();
   invoke(&mut session, "h")?;
   assert_eq!(
-    session.app().help_location().unwrap().id().as_str(),
+    session.app().unwrap().help_location().unwrap().id().as_str(),
     builtin_topic("h", vpdf_ui::bindings::Context::Cursor)
   );
-  assert!(session.app().marks.contains_key(&'a'));
+  assert!(session.app().unwrap().marks.contains_key(&'a'));
   assert!(std::sync::Arc::ptr_eq(
-    session.app().manual.as_ref().unwrap(),
+    session.app().unwrap().manual.as_ref().unwrap(),
     &document
   ));
   std::fs::write(
@@ -182,18 +183,18 @@ fn nested_lookup_uses_builtin_bindings() -> Result<()> {
   )?;
   session.reload_config();
   wait(&mut session);
-  session.app().reader.enter_cursor();
+  session.app().unwrap().reader.enter_cursor();
   let reference = session.help.reference.clone().unwrap();
   assert_eq!(reference.configuration, session.settings.reference());
-  let document = session.app().manual.clone().unwrap();
+  let document = session.app().unwrap().manual.clone().unwrap();
   invoke(&mut session, "h")?;
   assert_eq!(
-    session.app().help_location().unwrap().id().as_str(),
+    session.app().unwrap().help_location().unwrap().id().as_str(),
     builtin_topic("h", vpdf_ui::bindings::Context::Cursor)
   );
   assert_eq!(session.help.reference, Some(reference));
   assert!(std::sync::Arc::ptr_eq(
-    session.app().manual.as_ref().unwrap(),
+    session.app().unwrap().manual.as_ref().unwrap(),
     &document
   ));
   Ok(())
@@ -212,11 +213,15 @@ fn invoke(session: &mut Session, query: &str) -> Result<()> {
   if session.tabs.is_empty() {
     session.request_help(query, Invocation::Home, cells(120, 40))?;
   } else {
-    session.app().command(&format!("help {query}"))?;
+    session.app().unwrap().command(&format!("help {query}"))?;
     session.settle()?;
   }
   wait(session);
-  assert!(session.app().error.is_none(), "{:?}", session.app().error);
+  assert!(
+    session.app().unwrap().error.is_none(),
+    "{:?}",
+    session.app().unwrap().error
+  );
   Ok(())
 }
 
@@ -224,22 +229,22 @@ fn invoke(session: &mut Session, query: &str) -> Result<()> {
 fn home_reuses_help_and_returns() -> Result<()> {
   let mut session = Session::new(None);
   invoke(&mut session, "config")?;
-  let id = session.app().id;
-  assert_eq!(session.app().name(), "Help");
+  let id = session.app().unwrap().id;
+  assert_eq!(session.app().unwrap().name(), "Help");
   assert_eq!(
-    session.app().document_identity(),
+    session.app().unwrap().document_identity(),
     std::path::Path::new(crate::manual::ID)
   );
   assert_eq!(session.state.recent, [] as [crate::state::Entry; 0]);
-  assert!(!session.app().watch()?);
+  assert!(!session.app().unwrap().watch()?);
   invoke(&mut session, "")?;
-  assert_eq!(session.tabs.len(), 1);
-  assert_eq!(session.app().id, id);
-  assert_eq!(session.app().navigation_position().page.0, 0);
-  let path = session.app().path.clone();
-  let wake = session.app().wake.clone();
+  assert_eq!(session.tabs.len(), 2);
+  assert_eq!(session.app().unwrap().id, id);
+  assert_eq!(session.app().unwrap().navigation_position().page.0, 0);
+  let path = session.app().unwrap().path.clone();
+  let wake = session.app().unwrap().wake.clone();
   session.close()?;
-  assert!(session.tabs.is_empty() && session.home.is_some());
+  assert!(session.tabs.len() == 1 && session.recent().is_some());
   assert!(!session.quit);
   assert_eq!(session.state.recent, [] as [crate::state::Entry; 0]);
   drop(session);
@@ -260,9 +265,9 @@ fn returns_to_invoking_pane_after_splits() -> Result<()> {
   crate::fixtures::pdf(&path, &["first", "second"], "")?;
   let mut session = Session::new(Some(root.path().join("state.json")));
   session.open(&path, true, cells(120, 40))?;
-  session.app().command("2")?;
-  let original = session.app().id;
-  let position = session.app().navigation_position();
+  session.app().unwrap().command("2")?;
+  let original = session.app().unwrap().id;
+  let position = session.app().unwrap().navigation_position();
   invoke(&mut session, "half_down")?;
   session.split(
     super::super::Axis::Columns,
@@ -270,14 +275,20 @@ fn returns_to_invoking_pane_after_splits() -> Result<()> {
     super::super::Place::Before,
   )?;
   assert_eq!(session.tab().panes.len(), 2);
-  assert!(session.tab().panes.iter().all(|app| app.manual.is_some()));
-  let help = session.app().id;
+  assert!(
+    session.tab().panes.iter().all(|app| app
+      .document()
+      .unwrap()
+      .manual
+      .is_some())
+  );
+  let help = session.app().unwrap().id;
   invoke(&mut session, "h")?;
   assert_eq!(session.tabs.len(), 2);
-  assert_eq!(session.app().id, help);
+  assert_eq!(session.app().unwrap().id, help);
   session.close()?;
-  assert_eq!(session.app().id, original);
-  assert_eq!(session.app().navigation_position(), position);
+  assert_eq!(session.app().unwrap().id, original);
+  assert_eq!(session.app().unwrap().navigation_position(), position);
   session.finish()?;
   assert_eq!(session.state.recent.len(), 1);
   assert!(session.state.marks.is_empty());
@@ -291,12 +302,12 @@ fn failed_lookup_keeps_document() -> Result<()> {
   crate::fixtures::pdf(&path, &["first"], "")?;
   let mut session = Session::new(None);
   session.open(&path, true, cells(120, 40))?;
-  let id = session.app().id;
+  let id = session.app().unwrap().id;
   {
     let query = "unknown-topic";
-    session.app().command(&format!("help {query}"))?;
+    session.app().unwrap().command(&format!("help {query}"))?;
     assert!(session.settle().is_err());
-    assert_eq!(session.app().id, id);
+    assert_eq!(session.app().unwrap().id, id);
     assert_eq!(session.tabs.len(), 1);
   }
   assert!(session.help.pending.is_none());
@@ -312,12 +323,14 @@ fn theme_preserves_all_split_generations() -> Result<()> {
     None,
     super::super::Place::Before,
   )?;
-  for app in &mut session.tab().panes {
+  for app in session.tab().panes.iter_mut().filter_map(Pane::document_mut) {
     app.marks.insert('a', vpdf_model::text::Position::default());
   }
   session.set_theme(vpdf_model::theme::Theme::Light);
   wait(&mut session);
-  for app in &session.tabs[session.active].panes {
+  for app in
+    session.tabs[session.active].panes.iter().filter_map(Pane::document)
+  {
     assert_eq!(app.document_generation, 0);
     assert_eq!(app.marks.len(), 1);
     assert!(app.manual.is_some());
@@ -333,24 +346,27 @@ fn failures_and_closed_sources_preserve_focus() -> Result<()> {
   crate::fixtures::pdf(&path, &["first"], "")?;
   let mut session = Session::new(None);
   session.open(&path, true, cells(120, 40))?;
-  let id = session.app().id;
-  let position = session.app().navigation_position();
-  session.app().command("help config")?;
+  let id = session.app().unwrap().id;
+  let position = session.app().unwrap().navigation_position();
+  session.app().unwrap().command("help config")?;
   session.settle()?;
   session.help_result(
     Err(anyhow::anyhow!("Help generation failed")),
     &mut std::io::sink(),
   );
-  assert_eq!(session.app().error.as_deref(), Some("Help generation failed"));
-  assert_eq!(session.app().id, id);
-  assert_eq!(session.app().navigation_position(), position);
+  assert_eq!(
+    session.app().unwrap().error.as_deref(),
+    Some("Help generation failed")
+  );
+  assert_eq!(session.app().unwrap().id, id);
+  assert_eq!(session.app().unwrap().navigation_position(), position);
   session.help = Help::default();
   invoke(&mut session, "config")?;
   let help = session.active;
   session.close_tab(0)?;
   assert!(session.active < help);
   session.close()?;
-  assert!(session.home.is_some());
+  assert!(!session.running());
   Ok(())
 }
 
@@ -368,38 +384,40 @@ fn prompt_keeps_mode_and_literal_completion() -> Result<()> {
     let mut session = Session { frontend, ..Session::new(None) };
     session.open(&path, true, cells(120, 40))?;
     let mut history = History::default();
-    session.app().reader.enter_cursor();
-    let invocation = session.app().help_invocation();
+    session.app().unwrap().reader.enter_cursor();
+    let invocation = session.app().unwrap().help_invocation();
     for key in vpdf_ui::keys::parse(":").unwrap() {
-      session.app().key(key, &mut history)?;
+      session.app().unwrap().key(key, &mut history)?;
     }
-    session.app().paste("help h", &mut history)?;
+    session.app().unwrap().paste("help h", &mut history)?;
     session
       .app()
+      .unwrap()
       .key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &mut history)?;
-    let prompt = session.app().overlays.prompt().unwrap();
+    let prompt = session.app().unwrap().overlays.prompt().unwrap();
     assert_eq!(prompt.invocation(), Some(&invocation));
     let names = prompt.menu().unwrap().items();
     assert!(names.iter().any(|name| name == "h"));
     assert!(names.iter().any(|name| name == "half_down"));
     assert!(names.iter().all(|name| name.starts_with('h')));
-    session.app().cancel_prompt()?;
+    session.app().unwrap().cancel_prompt()?;
     for key in vpdf_ui::keys::parse(":").unwrap() {
-      session.app().key(key, &mut history)?;
+      session.app().unwrap().key(key, &mut history)?;
     }
-    session.app().paste("help h", &mut history)?;
+    session.app().unwrap().paste("help h", &mut history)?;
     session
       .app()
+      .unwrap()
       .key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
     let Some(super::super::Request::Help { invocation: captured, .. }) =
-      &session.app().request
+      &session.app().unwrap().request
     else {
       panic!("Help request missing")
     };
     assert_eq!(*captured, invocation);
     session.settle()?;
     wait(&mut session);
-    assert!(session.app().manual.is_some());
+    assert!(session.app().unwrap().manual.is_some());
     assert_eq!(session.help.reference.as_ref().unwrap().invocation, invocation);
   }
   Ok(())
@@ -414,12 +432,12 @@ fn newer_focus_discards_pending_open() -> Result<()> {
     crate::fixtures::pdf(&path, &[name], "")?;
     session.open(&path, true, cells(120, 40))?;
   }
-  let invocation = session.app().help_invocation();
+  let invocation = session.app().unwrap().help_invocation();
   session.request_help("config", invocation, cells(120, 40))?;
   session.activate(0)?;
-  let id = session.app().id;
+  let id = session.app().unwrap().id;
   wait(&mut session);
-  assert_eq!(session.app().id, id);
+  assert_eq!(session.app().unwrap().id, id);
   assert_eq!(session.tabs.len(), 2);
   Ok(())
 }
@@ -432,7 +450,7 @@ fn closing_during_refresh_keeps_home() -> Result<()> {
   assert!(session.help.pending.is_some());
   session.close()?;
   wait(&mut session);
-  assert!(session.tabs.is_empty() && session.home.is_some());
+  assert!(session.tabs.len() == 1 && session.recent().is_some());
   assert!(!session.quit);
   Ok(())
 }
@@ -443,7 +461,7 @@ fn theme_preserves_field_and_crops() -> Result<()> {
   use vpdf_model::geometry::Crop;
   let mut session = Session::new(None);
   invoke(&mut session, "config")?;
-  let app = session.app();
+  let app = session.app().unwrap();
   let document = app.manual.clone().unwrap();
   let (page, y) = document
     .anchors
@@ -468,7 +486,7 @@ fn theme_preserves_field_and_crops() -> Result<()> {
   app.layout.resolve_crops(std::sync::Arc::new(crops));
   session.set_theme(vpdf_model::theme::Theme::Light);
   wait(&mut session);
-  let app = session.app();
+  let app = session.app().unwrap();
   assert_eq!(app.layout.crops().len(), 1);
   assert_eq!(app.help_location(), Some(logical));
   assert!(std::sync::Arc::ptr_eq(app.manual.as_ref().unwrap(), &document));
@@ -490,8 +508,8 @@ fn configured_command_preserves_operator_context() -> Result<()> {
   assert!(loaded.warning.is_none(), "{:?}", loaded.warning);
   let mut session = Session::configured(None, loaded);
   session.open(&path, true, cells(120, 40))?;
-  session.app().action(Input::plain(Action::Yank))?;
-  let invocation = session.app().help_invocation();
+  session.app().unwrap().action(Input::plain(Action::Yank))?;
+  let invocation = session.app().unwrap().help_invocation();
   assert_eq!(invocation.context(), vpdf_ui::bindings::Context::Operator);
   for &key in vpdf_ui::bindings::Sequence::parse("<F2>")?.keys() {
     session.type_key(key)?;
@@ -499,7 +517,10 @@ fn configured_command_preserves_operator_context() -> Result<()> {
   session.settle()?;
   wait(&mut session);
   assert_eq!(session.help.reference.as_ref().unwrap().invocation, invocation);
-  assert_eq!(session.app().help_location().unwrap().id().as_str(), "yank.path");
+  assert_eq!(
+    session.app().unwrap().help_location().unwrap().id().as_str(),
+    "yank.path"
+  );
   Ok(())
 }
 
@@ -523,15 +544,15 @@ fn remaps_unbinding_and_path_policy() -> Result<()> {
   session.open(&path, true, cells(120, 40))?;
   invoke(&mut session, "h")?;
   assert_eq!(
-    session.app().help_location().unwrap().id().as_str(),
+    session.app().unwrap().help_location().unwrap().id().as_str(),
     builtin_topic("h", vpdf_ui::bindings::Context::Normal)
   );
   invoke(&mut session, "q")?;
   assert_eq!(
-    session.app().help_location().unwrap().id().as_str(),
+    session.app().unwrap().help_location().unwrap().id().as_str(),
     builtin_topic("q", vpdf_ui::bindings::Context::Normal)
   );
-  let app = session.app();
+  let app = session.app().unwrap();
   assert!(!app.info().contains(&app.path.display().to_string()));
   assert!(app.command("reload").is_err());
   assert!(app.region_operation(vpdf_ui::region::Operation::Save).is_err());
@@ -548,23 +569,21 @@ fn help_open_releases_home_preview() -> Result<()> {
   crate::fixtures::pdf(&path, &["first"], "")?;
   let entry = crate::state::tests::entry(&path.to_string_lossy(), 0, 0);
   let screen = cells(120, 40);
-  let mut home =
-    Home::new(&[entry], screen, &vpdf_pdf::jobs::Wake::none(), true);
+  let mut session = Session::new(None);
+  session.state.recent = vec![entry];
+  session.recent_tab(screen)?;
   let mut drawn = Vec::new();
-  home.draw(&mut drawn)?;
   let deadline = Instant::now() + Duration::from_secs(10);
   loop {
-    home.updates();
+    session.recent_mut().unwrap().updates();
     drawn.clear();
-    home.draw(&mut drawn)?;
+    session.draw_frame(&mut drawn)?;
     if String::from_utf8_lossy(&drawn).contains("a=t,") {
       break;
     }
     assert!(Instant::now() < deadline, "Home thumbnail timed out");
     std::thread::sleep(Duration::from_millis(2));
   }
-  assert!(String::from_utf8_lossy(&drawn).contains("a=t,"));
-  let mut session = Session { home: Some(home), ..Session::new(None) };
   session.request_help("introduction", Invocation::Home, screen)?;
   let mut cleared = Vec::new();
   while session.help.pending.is_some() {
@@ -572,7 +591,8 @@ fn help_open_releases_home_preview() -> Result<()> {
     assert!(Instant::now() < deadline, "Help open timed out");
     std::thread::sleep(Duration::from_millis(2));
   }
-  assert!(session.home.is_none());
+  assert!(session.recent().is_none());
+  session.draw_frame(&mut cleared)?;
   assert!(String::from_utf8_lossy(&cleared).contains("a=d,"));
   Ok(())
 }
@@ -581,8 +601,8 @@ fn help_open_releases_home_preview() -> Result<()> {
 fn help_close_clears_images() -> Result<()> {
   let mut session = Session::new(None);
   invoke(&mut session, "config")?;
-  let screen = session.app().screen;
-  let id = session.app().id;
+  let screen = session.app().unwrap().screen;
+  let id = session.app().unwrap().id;
   let tile = vpdf_terminal::payload::Tile {
     key: vpdf_model::tile::TileKey {
       width: 1,
@@ -606,19 +626,19 @@ fn help_close_clears_images() -> Result<()> {
   )?;
   session.graphics.end(&mut drawn)?;
   assert!(String::from_utf8_lossy(&drawn).contains("a=t,"));
-  session.app().command("quit")?;
+  session.app().unwrap().command("quit")?;
   session.settle()?;
-  assert!(session.tabs.is_empty());
-  let mut home = session.home.take().expect("Returned start screen");
+  assert_eq!(session.tabs.len(), 1);
+  assert!(session.focused().is_recent());
   let mut returned = Vec::new();
-  session.draw_home(&mut home, &mut returned)?;
+  session.draw_frame(&mut returned)?;
   let output = String::from_utf8_lossy(&returned);
   assert_eq!(output.matches("a=d,d=I,").count(), 2);
   assert!(
     output.find("a=d,d=I,").unwrap() < output.find(":edit <file>").unwrap()
   );
   returned.clear();
-  session.draw_home(&mut home, &mut returned)?;
+  session.draw_frame(&mut returned)?;
   assert!(!String::from_utf8_lossy(&returned).contains("a=d,d=I,"));
   Ok(())
 }
@@ -634,22 +654,25 @@ fn help_beside_preserves_book() -> Result<()> {
   )?;
   let mut session = Session::new(None);
   session.open(&path, true, cells(120, 40))?;
-  session.app().command("2")?;
-  let original = session.app().id;
-  let position = session.app().navigation_position();
+  session.app().unwrap().command("2")?;
+  let original = session.app().unwrap().id;
+  let position = session.app().unwrap().navigation_position();
   invoke(&mut session, "navigation")?;
   session.activate(0)?;
-  session.app().command("help! search")?;
+  session.app().unwrap().command("help! search")?;
   session.settle()?;
   wait(&mut session);
   assert_eq!(session.active, 0);
   assert_eq!(session.tabs.len(), 2);
   assert_eq!(session.tab().panes.len(), 2);
-  assert!(session.app().manual.is_some());
-  assert_eq!(session.app().help_location().unwrap().id().as_str(), "search");
+  assert!(session.app().unwrap().manual.is_some());
+  assert_eq!(
+    session.app().unwrap().help_location().unwrap().id().as_str(),
+    "search"
+  );
   session.close_pane()?;
-  assert_eq!(session.app().id, original);
-  assert_eq!(session.app().navigation_position(), position);
+  assert_eq!(session.app().unwrap().id, original);
+  assert_eq!(session.app().unwrap().navigation_position(), position);
   Ok(())
 }
 
@@ -657,24 +680,26 @@ fn help_beside_preserves_book() -> Result<()> {
 fn ambiguity_offers_persistent_choices() -> Result<()> {
   let mut session = Session::new(None);
   invoke(&mut session, "sample")?;
-  let original = session.app().navigation_position();
-  session.app().command("help panel.")?;
+  let original = session.app().unwrap().navigation_position();
+  session.app().unwrap().command("help panel.")?;
   session.settle()?;
-  assert_eq!(session.app().navigation_position(), original);
-  let prompt = session.app().overlays.prompt().unwrap();
+  assert_eq!(session.app().unwrap().navigation_position(), original);
+  let prompt = session.app().unwrap().overlays.prompt().unwrap();
   assert_eq!(prompt.text(), "help panel.");
   let menu = prompt.menu().unwrap();
   assert!(menu.items().len() > 1);
   assert!(menu.labels().iter().all(|label| label.contains("[Action]")));
   let topic = menu.items()[0].clone();
-  session.app().key(
+  session.app().unwrap().key(
     vpdf_model::input::KeyEvent::new(
       vpdf_model::input::KeyCode::Tab,
       vpdf_model::input::KeyModifiers::NONE,
     ),
     &mut vpdf_ui::prompt::History::default(),
   )?;
-  assert!(session.app().overlays.prompt().unwrap().text().ends_with(&topic));
+  assert!(
+    session.app().unwrap().overlays.prompt().unwrap().text().ends_with(&topic)
+  );
   Ok(())
 }
 
@@ -682,7 +707,7 @@ fn ambiguity_offers_persistent_choices() -> Result<()> {
 fn explicit_context_retains_document() -> Result<()> {
   let mut session = Session::new(None);
   invoke(&mut session, "sample")?;
-  session.app().command("help search:<Tab>")?;
+  session.app().unwrap().command("help search:<Tab>")?;
   session.settle()?;
   wait(&mut session);
   assert_eq!(
@@ -702,18 +727,18 @@ fn refresh_retains_wrapped_position() -> Result<()> {
     let mut session = Session::configured(None, loaded);
     invoke(&mut session, "introduction")?;
     session.resize(cells(36, 8))?;
-    session.app().command("text")?;
+    session.app().unwrap().command("text")?;
     for _ in 0..20 {
-      if session.app().text_view.top().glyph > 0 {
+      if session.app().unwrap().text_view.top().glyph > 0 {
         break;
       }
-      session.app().reading_view().edge_scroll(1)?;
+      session.app().unwrap().reading_view().edge_scroll(1)?;
     }
-    let position = session.app().text_view.top();
+    let position = session.app().unwrap().text_view.top();
     assert!(position.glyph > 0);
     if cursor {
-      session.app().land_at(position)?;
-      session.app().reader.enter_cursor();
+      session.app().unwrap().land_at(position)?;
+      session.app().unwrap().reader.enter_cursor();
     }
     for reload in [false, true] {
       if reload {
@@ -722,7 +747,7 @@ fn refresh_retains_wrapped_position() -> Result<()> {
         session.set_theme(vpdf_model::theme::Theme::Light);
       }
       wait(&mut session);
-      let app = session.app();
+      let app = session.app().unwrap();
       assert!(app.error.is_none(), "{:?}", app.error);
       assert_eq!(app.reader.viewport_mode(), !cursor);
       if cursor {
@@ -742,39 +767,50 @@ fn help_reuses_correct_placement() -> Result<()> {
   crate::fixtures::pdf(&path, &["Book"], "")?;
   let mut session = Session::new(None);
   session.open(&path, true, cells(120, 40))?;
-  let book = session.app().id;
-  session.app().command("help! search")?;
+  let book = session.app().unwrap().id;
+  session.app().unwrap().command("help! search")?;
   session.settle()?;
   wait(&mut session);
-  let split = session.app().id;
+  let split = session.app().unwrap().id;
   invoke(&mut session, "navigation")?;
-  assert_eq!(session.app().id, split);
+  assert_eq!(session.app().unwrap().id, split);
   assert_eq!(session.tabs.len(), 1);
   session.focus(0, 0)?;
   invoke(&mut session, "zoom")?;
   assert_eq!(session.tabs.len(), 1);
   assert_eq!(session.active, 0);
-  assert_eq!(session.app().id, split);
-  assert_eq!(session.app().help_location().unwrap().id().as_str(), "zoom");
+  assert_eq!(session.app().unwrap().id, split);
+  assert_eq!(
+    session.app().unwrap().help_location().unwrap().id().as_str(),
+    "zoom"
+  );
   session.focus(0, 0)?;
   invoke(&mut session, "search")?;
-  assert_eq!(session.app().id, split);
+  assert_eq!(session.app().unwrap().id, split);
   session.focus(0, 0)?;
   session.resize(cells(40, 12))?;
-  assert!(session.app().screen.columns <= 20);
-  session.app().command("help! zoom")?;
+  assert!(session.app().unwrap().screen.columns <= 20);
+  session.app().unwrap().command("help! zoom")?;
   session.settle()?;
   wait(&mut session);
-  assert!(session.app().error.is_none(), "{:?}", session.app().error);
-  assert_eq!(session.app().id, split);
+  assert!(
+    session.app().unwrap().error.is_none(),
+    "{:?}",
+    session.app().unwrap().error
+  );
+  assert_eq!(session.app().unwrap().id, split);
   assert_eq!(session.tabs[0].panes.len(), 2);
   assert_eq!(session.tabs[0].panes[0].id, book);
   session.set_theme(vpdf_model::theme::Theme::Light);
   wait(&mut session);
-  assert!(session.app().error.is_none(), "{:?}", session.app().error);
-  assert_eq!(session.app().id, split);
+  assert!(
+    session.app().unwrap().error.is_none(),
+    "{:?}",
+    session.app().unwrap().error
+  );
+  assert_eq!(session.app().unwrap().id, split);
   session.close_pane()?;
-  assert_eq!(session.app().id, book);
+  assert_eq!(session.app().unwrap().id, book);
   Ok(())
 }
 
@@ -783,7 +819,7 @@ fn refresh_retains_page_separator() -> Result<()> {
   let mut session = Session::new(None);
   invoke(&mut session, "introduction")?;
   session.resize(cells(36, 8))?;
-  let app = session.app();
+  let app = session.app().unwrap();
   app.command("text")?;
   let page = vpdf_model::text::PageId(0);
   let position = vpdf_model::text::Position {
@@ -801,7 +837,7 @@ fn refresh_retains_page_separator() -> Result<()> {
   session.set_theme(vpdf_model::theme::Theme::Light);
   assert!(session.help.pending.is_some());
   wait(&mut session);
-  let app = session.app();
+  let app = session.app().unwrap();
   assert!(app.error.is_none(), "{:?}", app.error);
   assert!(std::sync::Arc::ptr_eq(app.manual.as_ref().unwrap(), &document));
   assert_eq!(app.text_view.top(), position);
@@ -815,25 +851,27 @@ fn pending_help_checks_size() -> Result<()> {
   crate::fixtures::pdf(&path, &["Book"], "")?;
   let mut session = Session::new(None);
   session.open(&path, true, cells(120, 40))?;
-  let book = session.app().id;
+  let book = session.app().unwrap().id;
   invoke(&mut session, "navigation")?;
-  session.app().set_mark('a')?;
-  let manual = session.app().manual.clone().unwrap();
+  session.app().unwrap().set_mark('a')?;
+  let manual = session.app().unwrap().manual.clone().unwrap();
   let reference = session.help.reference.clone();
   session.activate(0)?;
-  session.app().reader.enter_cursor();
-  session.app().command("help! search")?;
+  session.app().unwrap().reader.enter_cursor();
+  session.app().unwrap().command("help! search")?;
   session.settle()?;
   assert!(session.help.pending.is_some());
   session.resize(cells(20, 10))?;
   wait(&mut session);
-  assert_eq!(session.app().error.as_deref(), Some("Not enough room"));
+  assert_eq!(session.app().unwrap().error.as_deref(), Some("Not enough room"));
   assert_eq!(session.tab().panes.len(), 1);
-  assert_eq!(session.app().id, book);
+  assert_eq!(session.app().unwrap().id, book);
   assert_eq!(session.help.reference, reference);
-  assert!(session.tabs[1].panes[0].marks.contains_key(&'a'));
+  assert!(
+    session.tabs[1].panes[0].document().unwrap().marks.contains_key(&'a')
+  );
   assert!(std::sync::Arc::ptr_eq(
-    session.tabs[1].panes[0].manual.as_ref().unwrap(),
+    session.tabs[1].panes[0].document().unwrap().manual.as_ref().unwrap(),
     &manual
   ));
   Ok(())
@@ -849,20 +887,29 @@ fn shorthand_lookup_and_completion() -> Result<()> {
   session.open(&path, true, cells(120, 40))?;
   let mut history = vpdf_ui::prompt::History::default();
   for key in vpdf_ui::keys::parse(":").unwrap() {
-    session.app().key(key, &mut history)?;
+    session.app().unwrap().key(key, &mut history)?;
   }
-  session.app().paste("h c-d", &mut history)?;
+  session.app().unwrap().paste("h c-d", &mut history)?;
   session
     .app()
+    .unwrap()
     .key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &mut history)?;
-  assert_eq!(session.app().overlays.prompt().unwrap().text(), "h c-d");
+  assert_eq!(session.app().unwrap().overlays.prompt().unwrap().text(), "h c-d");
   session
     .app()
+    .unwrap()
     .key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut history)?;
   session.settle()?;
   wait(&mut session);
-  assert!(session.app().error.is_none(), "{:?}", session.app().error);
-  assert_eq!(session.app().help_location().unwrap().id().as_str(), "half_down");
+  assert!(
+    session.app().unwrap().error.is_none(),
+    "{:?}",
+    session.app().unwrap().error
+  );
+  assert_eq!(
+    session.app().unwrap().help_location().unwrap().id().as_str(),
+    "half_down"
+  );
   Ok(())
 }
 
@@ -870,26 +917,29 @@ fn shorthand_lookup_and_completion() -> Result<()> {
 fn lookup_recovery_keeps_position() -> Result<()> {
   let mut session = Session::new(None);
   invoke(&mut session, "sample")?;
-  let id = session.app().id;
-  let position = session.app().navigation_position();
-  session.app().command("help serach")?;
+  let id = session.app().unwrap().id;
+  let position = session.app().unwrap().navigation_position();
+  session.app().unwrap().command("help serach")?;
   let error = session.settle().unwrap_err().to_string();
   assert!(error.contains("serach"), "{error}");
   assert!(error.contains(":help search"), "{error}");
-  assert_eq!(session.app().id, id);
-  assert_eq!(session.app().navigation_position(), position);
+  assert_eq!(session.app().unwrap().id, id);
+  assert_eq!(session.app().unwrap().navigation_position(), position);
   invoke(&mut session, "'reading.zoom'")?;
   assert_eq!(
-    session.app().help_location().unwrap().id().as_str(),
+    session.app().unwrap().help_location().unwrap().id().as_str(),
     "configuration"
   );
   invoke(&mut session, "helphelp")?;
   assert_eq!(
-    session.app().help_location().unwrap().id().as_str(),
+    session.app().unwrap().help_location().unwrap().id().as_str(),
     "introduction"
   );
   invoke(&mut session, "quickref")?;
-  assert_eq!(session.app().help_location().unwrap().id().as_str(), "keys");
+  assert_eq!(
+    session.app().unwrap().help_location().unwrap().id().as_str(),
+    "keys"
+  );
   Ok(())
 }
 
@@ -913,28 +963,28 @@ fn recolor_help_survives_themes() -> Result<()> {
   ] {
     let mut session = Session { frontend, ..Session::new(None) };
     invoke(&mut session, "ex.recolor")?;
-    let manual = session.app().manual.clone().unwrap();
-    let original = session.app().layout.recolor();
-    session.app().command("recolor dark 80")?;
+    let manual = session.app().unwrap().manual.clone().unwrap();
+    let original = session.app().unwrap().layout.recolor();
+    session.app().unwrap().command("recolor dark 80")?;
     let dark = vpdf_model::recolor::Recolor::parse("dark 80").unwrap();
-    assert_eq!(session.app().layout.recolor(), dark);
+    assert_eq!(session.app().unwrap().layout.recolor(), dark);
     session.set_theme(vpdf_model::theme::Theme::Dark);
     wait(&mut session);
     session.set_theme(vpdf_model::theme::Theme::Light);
     wait(&mut session);
     assert!(std::sync::Arc::ptr_eq(
-      session.app().manual.as_ref().unwrap(),
+      session.app().unwrap().manual.as_ref().unwrap(),
       &manual
     ));
-    assert_eq!(session.app().layout.recolor(), dark);
-    assert!(session.app().saved_entry().is_none());
-    session.app().command("recolor sepia 30")?;
+    assert_eq!(session.app().unwrap().layout.recolor(), dark);
+    assert!(session.app().unwrap().saved_entry().is_none());
+    session.app().unwrap().command("recolor sepia 30")?;
     assert_eq!(
-      session.app().layout.recolor(),
+      session.app().unwrap().layout.recolor(),
       vpdf_model::recolor::Recolor::parse("sepia 30").unwrap()
     );
-    session.app().command("recolor off")?;
-    assert_eq!(session.app().layout.recolor(), original);
+    session.app().unwrap().command("recolor off")?;
+    assert_eq!(session.app().unwrap().layout.recolor(), original);
     assert_eq!(session.state.recent, [] as [crate::state::Entry; 0]);
   }
   Ok(())

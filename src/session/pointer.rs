@@ -1,7 +1,7 @@
 use super::{
-  App, Dropped, Event, Hit, Home, Hover, Instant, Landing, MouseButton,
-  MouseEvent, MouseEventKind, Path, Pixel, Region, Rehover, Result, Route,
-  Session, Shape, Step, Target, Write, answer, terminal,
+  App, Dropped, Hit, Hover, Instant, MouseButton, MouseEvent, MouseEventKind,
+  Pixel, Region, Rehover, Result, Route, Session, Shape, Step, Target, Write,
+  answer, terminal,
 };
 
 /// Trackpad input carried on a wheel report.
@@ -87,18 +87,24 @@ impl Session {
     if self.pointer.holding() || self.on_completion(mouse) {
       return Ok(false);
     }
-    self.app().calm_hover();
-    if self.app().dismiss_click()? {
+    if let Ok(app) = self.app() {
+      app.calm_hover();
+    }
+    if self.app().map_or(Ok(false), App::dismiss_click)? {
       self.pointer.release();
       return Ok(true);
     }
     let Some((index, _)) = self.under(mouse) else { return Ok(false) };
-    self.app().interrupt();
+    if let Ok(app) = self.app() {
+      app.interrupt();
+    }
     self.pointer.release();
     self.focus(self.active, index)?;
     let history =
       vpdf_ui::keys::Input::plain(vpdf_ui::keys::Action::History(forward));
-    self.app().action(history)?;
+    if let Ok(app) = self.app() {
+      app.action(history)?;
+    }
     Ok(true)
   }
 
@@ -148,8 +154,7 @@ impl Session {
     }
     let left = self.leave_check();
     // Bare motion: a release got lost.
-    let app = self.app();
-    let dropped = app.drop_held();
+    let dropped = self.app().is_ok_and(App::drop_held);
     let resized = self.resizing.take().is_some();
     dropped || resized || seen || left
   }
@@ -168,12 +173,14 @@ impl Session {
       return Ok(changed);
     }
     let wheel = vpdf_ui::pointer::Wheel::of(mouse.kind).is_some();
-    if wheel && self.app().overlays.prompt().is_some() {
+    if wheel && self.focused().prompt().is_some() {
       return Ok(false);
     }
     // Presses and releases end rests in every pane.
     if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_)) {
-      for app in &mut self.tab().panes {
+      for app in
+        self.tab().panes.iter_mut().filter_map(super::Pane::document_mut)
+      {
         app.calm_hover();
       }
     }
@@ -185,7 +192,7 @@ impl Session {
     }
     // A double click keeps a note open.
     if mouse.kind == MouseEventKind::Down(MouseButton::Left)
-      && self.app().on_anchor(mouse, pixel)
+      && self.app().is_ok_and(|app| app.on_anchor(mouse, pixel))
       && self.pointer.repeats(mouse, pixel, now)
     {
       return Ok(false);
@@ -202,15 +209,18 @@ impl Session {
     let interrupts = vpdf_ui::pointer::interrupts(mouse.kind)
       && !(wheel
         && route.as_ref().is_some_and(|route| route.region == Region::Overlay));
-    let app = self.app();
-    // Disarming changes the status line and hides clue rows.
-    let armed = interrupts
-      && (!app.keys.pending().is_empty()
-        || app.overlays.clues().shown().is_some()
-        || app.reader.operator.is_some());
-    if interrupts {
-      app.disarm();
-    }
+    let armed = if let Ok(app) = self.app() {
+      let armed = interrupts
+        && (!app.keys.pending().is_empty()
+          || app.overlays.clues().shown().is_some()
+          || app.reader.operator.is_some());
+      if interrupts {
+        app.disarm();
+      }
+      armed
+    } else {
+      false
+    };
     let Some(route) = route else { return Ok(armed) };
     let Some(index) = self.tab().index(route.pane) else { return Ok(armed) };
     if route.focus {
@@ -218,7 +228,12 @@ impl Session {
       let active = self.active;
       self.keeping_pointer(|session| session.focus(active, index))?;
     }
-    let app = &mut self.tab().panes[index];
+    if self.tab().panes[index].is_recent() {
+      return self.recent_pointer(index, mouse, pixel, trackpad);
+    }
+    let app = self.tab().panes[index]
+      .document_mut()
+      .ok_or_else(|| anyhow::anyhow!("No document"))?;
     // Per-pixel drags; edges scroll.
     let reading = |app: &App| {
       let menu =
@@ -255,6 +270,48 @@ impl Session {
     Ok(armed || changed)
   }
 
+  fn recent_pointer(
+    &mut self,
+    index: usize,
+    mouse: MouseEvent,
+    pixel: Option<Pixel>,
+    trackpad: Option<Gesture>,
+  ) -> Result<bool> {
+    let turns = match trackpad {
+      Some(Gesture::Pinch(_)) => return Ok(false),
+      Some(Gesture::Turn(precise)) => precise.whole,
+      None => 1,
+    };
+    if turns == 0 {
+      return Ok(false);
+    }
+    if matches!(mouse.kind, MouseEventKind::Drag(_))
+      && self.tab().panes[index]
+        .recent()
+        .and_then(|home| home.view.shelf())
+        .is_none_or(|shelf| !shelf.dragging())
+    {
+      return Ok(false);
+    }
+    let mut report = vpdf_model::input::Mouse::from(mouse);
+    if let Some(pixel) = pixel {
+      report.at = vpdf_model::input::Spot::Pixel { x: pixel.x, y: pixel.y };
+    }
+    let terminal = matches!(self.frontend, crate::raster::Frontend::Terminal);
+    for _ in 0..turns {
+      let (tab, history) = (&mut self.tabs[self.active], &mut self.history);
+      let Some(home) = tab.panes[index].recent_mut() else { return Ok(false) };
+      let outcome = home.handle(
+        vpdf_model::input::Event::Mouse(report),
+        history,
+        terminal,
+      )?;
+      self.record_recent_layout();
+      self.recent_outcome(outcome)?;
+    }
+    Ok(true)
+  }
+
   /// Presses taken before panes; whether drawn.
   fn press_first(
     &mut self,
@@ -271,8 +328,9 @@ impl Session {
       self.resizing = None;
     }
     self.press_hover_pane(mouse)?;
-    let app = self.app();
-    if app.item_press(mouse)? || app.context_press(mouse) {
+    if self.app().map_or(Ok(false), |app| -> Result<bool> {
+      Ok(app.item_press(mouse)? || app.context_press(mouse))
+    })? {
       self.pointer.release();
       return Ok(Some(true));
     }
@@ -280,7 +338,7 @@ impl Session {
     if self.on_completion(mouse) {
       return Ok(Some(false));
     }
-    if self.app().preview_press(mouse)? {
+    if self.app().map_or(Ok(false), |app| app.preview_press(mouse))? {
       if mouse.kind == MouseEventKind::Down(MouseButton::Middle) {
         // Its run drops a double click's repeat.
         let (panes, focused) = self.tab().pointer_panes();
@@ -290,7 +348,7 @@ impl Session {
       }
       return Ok(Some(true));
     }
-    if self.app().dismiss_click()? {
+    if self.app().map_or(Ok(false), App::dismiss_click)? {
       self.pointer.release();
       return Ok(Some(true));
     }
@@ -299,7 +357,9 @@ impl Session {
     }
     if let Some(edge) = self.edge_at(mouse.column, mouse.row) {
       // Keys and notes end, as on blanks.
-      self.app().interrupt();
+      if let Ok(app) = self.app() {
+        app.interrupt();
+      }
       // Boundaries never focus; left presses drag.
       if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
         return Ok(Some(true));
@@ -325,12 +385,11 @@ impl Session {
     out: &mut impl Write,
   ) -> Result<bool> {
     let tab = self.tabs.get(self.active);
-    let typing =
-      tab.is_some_and(|tab| tab.panes[tab.focus].overlays.prompt().is_some());
+    let typing = tab.is_some_and(|tab| tab.panes[tab.focus].prompt().is_some());
     let Some(drop) = self.drop_step(body, typing, out)? else {
       return Ok(false);
     };
-    if !self.tabs.is_empty() && self.app().confirming_removal() {
+    if self.confirming_removal() {
       answer(out, &drop.finish(false))?;
       return Ok(false);
     }
@@ -362,81 +421,25 @@ impl Session {
   pub(super) fn dropped(&mut self, target: Target) -> Result<()> {
     let path = match target {
       Target::Text(text) => {
-        let tab = &mut self.tabs[self.active];
-        return tab.panes[tab.focus].paste(&text, &mut self.history);
+        return self
+          .interact(super::interaction::Interaction::Paste(text))
+          .map(|_| ());
       }
       Target::Pdf(path) => path,
     };
-    let screen = self.screen.unwrap_or(self.app().screen);
-    self.open_reference(&path, true, screen)
-  }
-
-  /// Start-screen files open tabs; text edits prompts.
-  pub(super) fn home_drop(
-    &mut self,
-    home: &mut Home,
-    body: &str,
-    out: &mut impl Write,
-  ) -> Result<Landing> {
-    let typing = home.view.typing();
-    let drop = match self.drop_step(body, typing, out) {
-      Ok(Some(drop)) => drop,
-      Ok(None) => return Ok(Landing::Wait),
-      Err(error) => {
-        home.view.fail(error.to_string());
-        return Ok(Landing::Shown);
-      }
-    };
-    if home.view.confirming() {
-      answer(out, &drop.finish(false))?;
-      return Ok(Landing::Shown);
-    }
-    let target = crate::dnd::target(&drop, typing);
-    let opening = matches!(&target, Ok(Target::Pdf(_)));
-    let opened = match target {
-      Ok(Target::Text(text)) => {
-        home.event(Event::Paste(text), &mut self.history).map(|_| false)
-      }
-      Ok(Target::Pdf(path)) => self
-        .open_reference(&path, true, self.screen.unwrap_or(home.view.screen()))
-        .map(|()| true),
-      Err(error) => Err(error),
-    };
-    answer(out, &drop.finish(opened.is_ok()))?;
-    match opened {
-      Ok(true) => Ok(Landing::Opened),
-      Ok(false) => Ok(Landing::Shown),
-      Err(error) if opening && !self.tabs.is_empty() => {
-        self.app().error = Some(error.to_string());
-        Ok(Landing::Opened)
-      }
-      Err(error) => {
-        home.view.fail(error.to_string());
-        Ok(Landing::Shown)
-      }
-    }
-  }
-
-  /// Opens `path` from the start screen in a new tab; whether it did. A
-  /// failure shows on the start screen.
-  pub(super) fn leave_home(&mut self, home: &mut Home, path: &Path) -> bool {
-    let opened =
-      self.open(path, true, self.screen.unwrap_or(home.view.screen()));
-    if let Err(error) = &opened {
-      home.view.fail(error.to_string());
-    }
-    opened.is_ok()
+    let screen = self.screen.unwrap_or(self.focused().screen);
+    self.open_reference(&path, !self.focused().is_recent(), screen)
   }
 
   /// Whether a press hits completions.
   fn on_completion(&mut self, mouse: MouseEvent) -> bool {
-    self.app().overlays.prompt().is_some()
+    self.focused().prompt().is_some()
       && self.focused_in(Region::Overlay, mouse).is_some()
   }
 
   /// `mouse` routed in the focused pane's `region`.
   fn focused_in(&mut self, region: Region, mouse: MouseEvent) -> Option<Route> {
-    let pane = self.app().pointer_pane();
+    let pane = self.focused().pointer_pane();
     let local = vpdf_ui::pointer::route(&[pane], pane.id, None, mouse);
     local.filter(|route| route.region == region)
   }
@@ -448,13 +451,23 @@ impl Session {
     if route.region != Region::Status {
       return Ok(false);
     }
-    let app = &self.tabs[self.active].panes[index];
-    let item = app.chrome_at(route.mouse.column, route.mouse.row);
+    let pane = &self.tabs[self.active].panes[index];
+    let item = pane.chrome_at(route.mouse.column, route.mouse.row);
     let Some(item) = item else { return Ok(false) };
     self.focus(self.active, index)?;
-    let app = self.app();
-    app.interrupt();
-    app.chrome_press(item, button)?;
+    if self.focused().is_recent() {
+      match item.press(button) {
+        Some(vpdf_ui::chrome::Press::Tab(index)) => self.activate(index)?,
+        Some(vpdf_ui::chrome::Press::CloseTab(index)) => {
+          self.close_tab(index)?;
+        }
+        _ => return Ok(false),
+      }
+    } else {
+      let app = self.app()?;
+      app.interrupt();
+      app.chrome_press(item, button)?;
+    }
     self.pointer.release();
     Ok(true)
   }
@@ -478,7 +491,7 @@ impl Session {
     let spot = self.pointer.spot().map(|(mouse, _)| mouse);
     let Some(tab) = self.tabs.get_mut(self.active) else { return false };
     let mut left = false;
-    for app in &mut tab.panes {
+    for app in tab.panes.iter_mut().filter_map(super::Pane::document_mut) {
       if app.hover_peek().is_none() {
         continue;
       }
@@ -495,11 +508,13 @@ impl Session {
   /// Inside another pane's preview focuses it; outside closes it.
   fn press_hover_pane(&mut self, mouse: MouseEvent) -> Result<()> {
     let tab = self.tab();
-    let shows = tab.panes.iter().position(|app| app.hover_peek().is_some());
+    let shows = tab.panes.iter().position(|pane| {
+      pane.document().is_some_and(|app| app.hover_peek().is_some())
+    });
     let Some(index) = shows.filter(|index| *index != tab.focus) else {
       return Ok(());
     };
-    let app = &mut tab.panes[index];
+    let Some(app) = tab.panes[index].document_mut() else { return Ok(()) };
     if app.in_preview(mouse) {
       return self.focus(self.active, index);
     }
@@ -517,19 +532,23 @@ impl Session {
   fn pointed_pane(&mut self) -> Option<&mut App> {
     let pane = self.pointer.target()?.pane;
     let tab = self.tabs.get_mut(self.active)?;
-    tab.panes.iter_mut().find(|app| app.id == pane)
+    tab
+      .panes
+      .iter_mut()
+      .find(|app| app.id == pane)
+      .and_then(super::Pane::document_mut)
   }
 
   /// The pointed pane, when free to preview.
   pub(super) fn resting(&mut self) -> Option<&mut App> {
     let tab = self.tabs.get(self.active)?;
     // Keyboard overlays hold rests everywhere.
-    let owner = tab.panes[tab.focus].input_owner();
+    let owner = tab.panes[tab.focus].document()?.input_owner();
     let free = !owner.is_overlay();
-    // Previews and recent cards share one picture.
-    let pictured =
-      |app: &App| app.overlays.preview().is_some() || app.covered();
-    if !free || tab.panes.iter().any(pictured) {
+    // Document previews share one picture.
+    let pictured = |app: &App| app.overlays.preview().is_some();
+    if !free || tab.panes.iter().filter_map(super::Pane::document).any(pictured)
+    {
       return None;
     }
     self.pointed_pane()
@@ -551,6 +570,7 @@ impl Session {
       tab
         .panes
         .iter()
+        .filter_map(super::Pane::document)
         .any(|app| Some(app.id) == pane && app.reader.animation().active())
     })
   }
@@ -565,9 +585,12 @@ impl Session {
     if region != Region::Page {
       return None;
     }
-    let turning =
-      self.tabs[self.active].panes[index].reader.animation().active()
-        || self.pointer.turn_end().is_some_and(|end| Instant::now() < end);
+    let turning = self.tabs[self.active].panes[index]
+      .document()?
+      .reader
+      .animation()
+      .active()
+      || self.pointer.turn_end().is_some_and(|end| Instant::now() < end);
     if !turning {
       return None;
     }
@@ -579,8 +602,14 @@ impl Session {
   fn show_hover(&mut self) {
     let hover = self.pointer.target();
     let Some(tab) = self.tabs.get_mut(self.active) else { return };
-    for app in &mut tab.panes {
-      app.point(hover.filter(|hover| hover.pane == app.id));
+    for pane in &mut tab.panes {
+      let pointed = hover.filter(|hover| hover.pane == pane.id);
+      match &mut pane.body {
+        super::Body::Document(app) => app.point(pointed),
+        super::Body::Recent(home) => {
+          home.view.point(pointed.map(|hover| hover.hit));
+        }
+      }
     }
   }
 
@@ -588,7 +617,11 @@ impl Session {
   fn moved_onto(&mut self) {
     let Some(hover) = self.pointer.target() else { return };
     let Some(tab) = self.tabs.get_mut(self.active) else { return };
-    let app = tab.panes.iter_mut().find(|app| app.id == hover.pane);
+    let app = tab
+      .panes
+      .iter_mut()
+      .find(|app| app.id == hover.pane)
+      .and_then(super::Pane::document_mut);
     if let Some(app) = app {
       app.moved_onto(hover.hit);
     }
@@ -600,10 +633,15 @@ impl Session {
       return edge.hit().shape();
     }
     let tab = &self.tabs[self.active];
-    if tab.panes[tab.focus].grabbing() {
+    if tab.panes[tab.focus].document().is_some_and(App::grabbing) {
       return Shape::Grabbing;
     }
-    if self.tabs[self.active].panes.iter().any(App::sweeping) {
+    if self.tabs[self.active]
+      .panes
+      .iter()
+      .filter_map(super::Pane::document)
+      .any(App::sweeping)
+    {
       return Shape::Crosshair;
     }
     self.pointer.target().map_or_default(|hover| hover.hit).shape()
@@ -620,8 +658,17 @@ impl Session {
     }
     let (index, route) = self.under(mouse)?;
     let Route { pane, region, mouse, .. } = route;
-    let app = &mut self.tab().panes[index];
     let (column, row) = (mouse.column, mouse.row);
+    if let Some(home) = self.tab().panes[index].recent() {
+      let hit = home.view.hit(column, row);
+      return (hit != Hit::Nothing).then_some(Hover {
+        pane,
+        region,
+        hit,
+        beneath: None,
+      });
+    }
+    let app = self.tab().panes[index].document_mut()?;
     // Hover is advisory; failures find nothing.
     let hit = app.hovered(region, column, row, pixel).unwrap_or_default();
     let below = if region.popup() {
@@ -697,7 +744,10 @@ impl Session {
   /// When the held edge drag next scrolls.
   pub fn autoscroll_due(&self) -> Option<Instant> {
     let panes = &self.tabs.get(self.active)?.panes;
-    panes.iter().find_map(|app| app.autoscroll.deadline())
+    panes
+      .iter()
+      .filter_map(super::Pane::document)
+      .find_map(|app| app.autoscroll.deadline())
   }
 }
 

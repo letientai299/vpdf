@@ -10,7 +10,7 @@ impl App {
       &self.layout,
       self.text_mode,
       self.overlays.overview().is_some(),
-      self.covered(),
+      false,
     )
   }
 

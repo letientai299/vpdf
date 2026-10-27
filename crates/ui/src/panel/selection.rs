@@ -85,6 +85,10 @@ pub(super) fn indent(target: &Destination, width: u16) -> usize {
 }
 
 impl Panel {
+  pub(crate) fn has_checked(&self) -> bool {
+    !self.removal.checked.is_empty()
+  }
+
   pub(crate) fn checked_cell(&self, column: u16) -> bool {
     let Some(row) = self.rows.get(self.selected) else { return false };
     if !self.is_recent_view()

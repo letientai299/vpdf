@@ -1,4 +1,4 @@
-use super::{App, KeyEvent, Result, Session};
+use super::{KeyEvent, Result, Session};
 use vpdf_model::input::Mouse;
 
 pub(super) enum Interaction {
@@ -12,21 +12,35 @@ pub(super) enum Interaction {
 
 impl Session {
   pub(super) fn confirming_removal(&self) -> bool {
-    self.home.as_ref().is_some_and(|home| home.view.confirming())
-      || self
-        .tabs
-        .get(self.active)
-        .and_then(|tab| tab.panes.get(tab.focus))
-        .is_some_and(App::confirming_removal)
+    self.tabs.get(self.active).is_some_and(|tab| {
+      match &tab.panes[tab.focus].body {
+        super::Body::Document(app) => app.confirming_removal(),
+        super::Body::Recent(home) => home.view.confirming(),
+      }
+    })
   }
 
   pub(super) fn interact(&mut self, input: Interaction) -> Result<bool> {
-    if !self.tabs.is_empty() && self.app().confirming_removal() {
+    if self.confirming_removal() {
+      if self.focused().is_recent() {
+        match input {
+          Interaction::Key(key) => {
+            self.recent_event(vpdf_model::input::Event::Key(key))?;
+          }
+          Interaction::Mouse(mouse) => {
+            self.recent_event(vpdf_model::input::Event::Mouse(mouse))?;
+          }
+          Interaction::Paste(_)
+          | Interaction::Gesture(..)
+          | Interaction::Leave => {}
+        }
+        return Ok(true);
+      }
       match input {
-        Interaction::Key(key) => self.app().confirm_removal(key),
+        Interaction::Key(key) => self.app()?.confirm_removal(key),
         Interaction::Mouse(report) => {
           if let Some(mouse) = self.screen_mouse(report) {
-            self.app().confirm_click(mouse);
+            self.app()?.confirm_click(mouse);
           }
         }
         Interaction::Paste(_)
@@ -39,8 +53,18 @@ impl Session {
     let changed = match input {
       Interaction::Key(key) => self.type_key(key).map(|()| true),
       Interaction::Paste(text) => {
-        let tab = &mut self.tabs[self.active];
-        tab.panes[tab.focus].paste(&text, &mut self.history).map(|()| true)
+        if self.focused().is_recent() {
+          self
+            .recent_event(vpdf_model::input::Event::Paste(text))
+            .map(|()| true)
+        } else {
+          let tab = &mut self.tabs[self.active];
+          tab.panes[tab.focus]
+            .document_mut()
+            .ok_or_else(|| anyhow::anyhow!("No document"))?
+            .paste(&text, &mut self.history)
+            .map(|()| true)
+        }
       }
       Interaction::Mouse(mouse) => self.mouse_report(mouse),
       Interaction::Gesture(mouse, trackpad) => {

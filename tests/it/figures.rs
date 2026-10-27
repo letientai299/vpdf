@@ -137,26 +137,26 @@ fn raw_region_pointer_transfer() -> Result<()> {
   use vpdf_ui::input::InputOwner;
   let mut session = crate::harness::session(&corpus("paper.pdf")?, screen())?;
   send(&mut session, b"i]fvgF")?;
-  let mode = session.app().reader.mode();
-  let cursor = session.app().reader.cursor;
-  let scroll = session.app().reader.scroll;
+  let mode = session.app().unwrap().reader.mode();
+  let cursor = session.app().unwrap().reader.cursor;
+  let scroll = session.app().unwrap().reader.scroll;
   send(&mut session, b"\x1b[<65;60;8M")?;
-  assert_eq!(session.app().input_owner(), InputOwner::Region);
-  assert_eq!(session.app().reader.scroll, scroll);
+  assert_eq!(session.app().unwrap().input_owner(), InputOwner::Region);
+  assert_eq!(session.app().unwrap().reader.scroll, scroll);
   send(&mut session, b"\x1b[<0;60;8M\x1b[<0;60;8m")?;
-  assert_eq!(session.app().input_owner(), InputOwner::Content);
-  assert_eq!(session.app().reader.mode(), mode);
-  assert_eq!(session.app().reader.cursor, cursor);
+  assert_eq!(session.app().unwrap().input_owner(), InputOwner::Content);
+  assert_eq!(session.app().unwrap().reader.mode(), mode);
+  assert_eq!(session.app().unwrap().reader.cursor, cursor);
   send(&mut session, b"gF\x17")?;
-  assert_eq!(session.app().input_owner(), InputOwner::Content);
-  assert_eq!(session.app().keys.awaiting(), Some("C-w"));
+  assert_eq!(session.app().unwrap().input_owner(), InputOwner::Content);
+  assert_eq!(session.app().unwrap().keys.awaiting(), Some("C-w"));
   send(&mut session, b"v")?;
   assert_eq!(session.tab().panes.len(), 2);
-  assert_eq!(session.app().reader.mode(), Mode::Normal);
+  assert_eq!(session.app().unwrap().reader.mode(), Mode::Normal);
   send(&mut session, b"\x17p")?;
-  assert_eq!(session.app().reader.mode(), mode);
-  assert_eq!(session.app().reader.cursor, cursor);
-  assert!(session.app().overlays.region().is_none());
+  assert_eq!(session.app().unwrap().reader.mode(), mode);
+  assert_eq!(session.app().unwrap().reader.cursor, cursor);
+  assert!(session.app().unwrap().overlays.region().is_none());
   Ok(())
 }
 

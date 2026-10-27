@@ -16,7 +16,7 @@ fn reader() -> Result<(tempfile::TempDir, Session, PathBuf)> {
 fn batch_forget_writes_once_and_preserves_files() -> Result<()> {
   let (_root, mut session, pdf) = reader()?;
   let bytes = std::fs::read(&pdf)?;
-  session.app().marks.insert('a', Position::default());
+  session.app().unwrap().marks.insert('a', Position::default());
   session.state.marks.insert('A', Mark::new(pdf.clone(), Position::default()));
   session.record();
   session.flush()?;
@@ -25,7 +25,7 @@ fn batch_forget_writes_once_and_preserves_files() -> Result<()> {
   assert_eq!(session.state.writes, writes + 1);
   assert!(!session.flush()?);
   assert_eq!(session.state.recent, []);
-  assert!(session.app().marks.is_empty());
+  assert!(session.app().unwrap().marks.is_empty());
   assert!(session.state.marks.contains_key(&'A'));
   assert_eq!(std::fs::read(&pdf)?, bytes);
   session.record();
@@ -49,7 +49,7 @@ fn batch_forget_writes_once_and_preserves_files() -> Result<()> {
 #[test]
 fn stale_panes_cannot_restore_marks_after_reopen() -> Result<()> {
   let (_root, mut old, pdf) = reader()?;
-  old.app().marks.insert('a', Position::default());
+  old.app().unwrap().marks.insert('a', Position::default());
   old.record();
   old.flush()?;
   let mut newer = Session::new(old.store.clone());
@@ -62,7 +62,7 @@ fn stale_panes_cannot_restore_marks_after_reopen() -> Result<()> {
   assert_eq!(loaded.recent.len(), 1);
   assert!(loaded.recent[0].marks.is_empty());
   old.open(&pdf, true, cells(120, 40))?;
-  assert!(old.app().marks.is_empty());
+  assert!(old.app().unwrap().marks.is_empty());
   old.finish()?;
   assert!(
     State::load(old.store.as_deref().unwrap()).recent[0].marks.is_empty()
@@ -124,7 +124,7 @@ fn global_mark_reopens_forgotten_path() -> Result<()> {
   let (_root, mut session, pdf) = reader()?;
   session.state.marks.insert('A', Mark::new(pdf.clone(), Position::default()));
   session.forget_recent(&[pdf])?;
-  session.app().request = Some(Request::GoMark('A', true));
+  session.app().unwrap().request = Some(Request::GoMark('A', true));
   session.settle()?;
   session.flush()?;
   assert_eq!(session.state.recent.len(), 1);
@@ -134,17 +134,13 @@ fn global_mark_reopens_forgotten_path() -> Result<()> {
 #[test]
 fn removal_refreshes_home_and_all_recent_panels() -> Result<()> {
   let (_root, mut session, pdf) = reader()?;
-  let recent = session.state.recent.clone();
-  session.home = Some(Home::new(&recent, cells(120, 40), &Wake::none(), true));
   session.split(Axis::Columns, None, Place::After)?;
-  for app in session.panes_mut() {
-    app.show_recent(&recent)?;
-  }
+  session.show_recent()?;
+  session.focus(0, 0)?;
+  session.show_recent()?;
   session.forget_recent(&[pdf])?;
-  for app in session.panes() {
-    assert!(app.panel.as_ref().unwrap().view.rows().is_empty());
-  }
-  let home = session.home.as_mut().unwrap();
+  assert_eq!(session.panes().count(), 0);
+  let home = session.recent_mut().unwrap();
   let mut scene = vpdf_model::scene::Recorder::new(|_| false);
   home.scene(&mut scene)?;
   assert!(scene.into_scene().iter().any(|op| {
@@ -161,7 +157,7 @@ fn removal_refreshes_home_and_all_recent_panels() -> Result<()> {
 #[test]
 fn removal_during_load_clears_restored_marks() -> Result<()> {
   let (_root, mut first, pdf) = reader()?;
-  first.app().marks.insert('a', Position::default());
+  first.app().unwrap().marks.insert('a', Position::default());
   first.record();
   first.flush()?;
   let mut opening = Session::new(first.store.clone());
@@ -169,10 +165,10 @@ fn removal_during_load_clears_restored_marks() -> Result<()> {
   let app = opening.load(&pdf, "", screen)?;
   assert!(app.marks.contains_key(&'a'));
   first.forget_recent(std::slice::from_ref(&pdf))?;
-  opening.insert_tab(app)?;
+  opening.insert_tab(app.into())?;
   opening.remember_open(0, 0);
   opening.flush()?;
-  assert!(opening.app().marks.is_empty());
+  assert!(opening.app().unwrap().marks.is_empty());
   assert_eq!(State::load(opening.store.as_deref().unwrap()).recent.len(), 1);
   Ok(())
 }
@@ -206,41 +202,30 @@ fn recent_removal_uses_session_in_both_frontends() -> Result<()> {
       let (_root, mut session, pdf) = reader()?;
       if native {
         session.frontend = crate::raster::Frontend::Native(Wake::none());
-        session.app().frontend = session.frontend.clone();
+        session.app().unwrap().frontend = session.frontend.clone();
       }
       if new_tab {
         session.recent_tab(cells(120, 40))?;
       } else {
-        let entries = session.state.recent.clone();
-        session.app().show_recent(&entries)?;
+        session.show_recent()?;
       }
       recent_key(&mut session, KeyCode::Char(' '))?;
       recent_key(&mut session, KeyCode::Char('x'))?;
-      let before = session.app().reader.cursor;
+      let before = session.focused().id;
       session.interact(interaction::Interaction::Paste(":q".into()))?;
       recent_key(&mut session, KeyCode::Char('j'))?;
-      assert_eq!(session.app().reader.cursor, before);
-      assert!(session.app().panel.as_ref().unwrap().view.confirming());
-      assert!(session.app().overlays.prompt().is_none());
+      assert_eq!(session.focused().id, before);
+      assert!(session.recent().unwrap().view.confirming());
+      assert!(!session.recent().unwrap().view.typing());
       let writes = session.state.writes;
       recent_key(&mut session, KeyCode::Enter)?;
       assert_eq!(session.state.writes, writes + 1);
       assert_eq!(session.state.recent, []);
       assert!(pdf.exists());
       assert_eq!(session.history.commands(), [] as [String; 0]);
-      let panel = &mut session.app().panel.as_mut().unwrap().view;
-      assert!(panel.rows().is_empty());
+      let home = session.recent_mut().unwrap();
       let mut scene = vpdf_model::scene::Recorder::new(|_| false);
-      panel.scene(
-        &mut scene,
-        vpdf_ui::panel::recent::Frame {
-          at: At::default(),
-          width: 120,
-          screen: cells(120, 40),
-          now: 0,
-        },
-        false,
-      )?;
+      home.scene(&mut scene)?;
       let text = scene
         .into_scene()
         .iter()
@@ -262,13 +247,12 @@ fn recent_removal_uses_session_in_both_frontends() -> Result<()> {
 fn escape_clears_before_closing_recent() -> Result<()> {
   use vpdf_model::input::KeyCode;
   let (_root, mut session, _pdf) = reader()?;
-  let entries = session.state.recent.clone();
-  session.app().show_recent(&entries)?;
+  session.show_recent()?;
   recent_key(&mut session, KeyCode::Char(' '))?;
   recent_key(&mut session, KeyCode::Esc)?;
-  assert!(session.app().panel.is_some());
+  assert!(session.focused().is_recent());
   recent_key(&mut session, KeyCode::Esc)?;
-  assert!(session.app().panel.is_none());
+  assert!(session.app().is_ok());
   Ok(())
 }
 
@@ -279,8 +263,7 @@ fn recent_batch_saves_once() -> Result<()> {
   let second = root.path().join("second.pdf");
   crate::fixtures::pdf(&second, &["second"], "")?;
   session.open(&second, true, cells(120, 40))?;
-  let entries = session.state.recent.clone();
-  session.app().show_recent(&entries)?;
+  session.show_recent()?;
   for code in [
     KeyCode::Char(' '),
     KeyCode::Char('j'),
@@ -307,17 +290,17 @@ fn marks_remove_by_key_and_click() -> Result<()> {
     KeyCode, Mouse, MouseButton, MouseEvent, MouseEventKind,
   };
   let (_root, mut session, pdf) = reader()?;
-  session.app().marks.insert('a', Position::default());
+  session.app().unwrap().marks.insert('a', Position::default());
   let cursor = Position::default();
   session.state.set_mark('A', Mark::new(pdf, cursor));
   // Saved first, so removal must outlast the merge with disk.
   session.record();
   session.flush()?;
-  session.app().request = Some(Request::Panel(PanelKind::Marks));
+  session.app().unwrap().request = Some(Request::Panel(PanelKind::Marks));
   session.settle()?;
   let shown =
     |session: &mut Session| -> Vec<String> {
-      let rows = session.app().panel.as_ref().unwrap().view.rows();
+      let rows = session.app().unwrap().panel.as_ref().unwrap().view.rows();
       rows
         .iter()
         .map(|row| {
@@ -327,27 +310,29 @@ fn marks_remove_by_key_and_click() -> Result<()> {
     };
   assert_eq!(shown(&mut session), ["Local", "’a", "Global", "’A"]);
   // A local mark, by key.
-  session.app().panel.as_mut().unwrap().view.choose(1);
+  session.app().unwrap().panel.as_mut().unwrap().view.choose(1);
   recent_key(&mut session, KeyCode::Char('x'))?;
-  assert!(session.app().confirming_removal());
+  assert!(session.app().unwrap().confirming_removal());
   recent_key(&mut session, KeyCode::Char('y'))?;
-  assert!(session.app().marks.is_empty());
+  assert!(session.app().unwrap().marks.is_empty());
   assert_eq!(shown(&mut session), ["Global", "’A"]);
   // A global mark: Cancel, then Remove, by click.
   for (column, removed) in [(22, false), (2, true)] {
-    session.app().panel.as_mut().unwrap().view.choose(1);
+    session.app().unwrap().panel.as_mut().unwrap().view.choose(1);
     recent_key(&mut session, KeyCode::Char('x'))?;
     session.draw_focused(&mut Vec::new())?;
-    let app = session.app();
+    let app = session.app().unwrap();
     let row = app.at.row + app.screen.rows - 2;
     let column = app.at.column + column;
     let press =
       MouseEvent::new(MouseEventKind::Down(MouseButton::Left), column, row);
     session.interact(Interaction::Mouse(Mouse::from(press)))?;
-    assert!(!session.app().confirming_removal(), "{removed}");
+    assert!(!session.app().unwrap().confirming_removal(), "{removed}");
     assert_eq!(session.state.marks.is_empty(), removed);
   }
-  assert!(session.app().panel.as_ref().unwrap().view.rows().is_empty());
+  assert!(
+    session.app().unwrap().panel.as_ref().unwrap().view.rows().is_empty()
+  );
   // Saves keep both removals.
   session.flush()?;
   let saved = State::load(session.store.as_deref().unwrap());
@@ -360,13 +345,13 @@ fn marks_remove_by_key_and_click() -> Result<()> {
 #[test]
 fn marks_show_new_marks() -> Result<()> {
   let (_root, mut session, _pdf) = reader()?;
-  session.app().request = Some(Request::Panel(PanelKind::Marks));
+  session.app().unwrap().request = Some(Request::Panel(PanelKind::Marks));
   session.settle()?;
   for name in ['a', 'A'] {
-    session.app().set_mark(name)?;
+    session.app().unwrap().set_mark(name)?;
     session.settle()?;
   }
-  let rows = session.app().panel.as_ref().unwrap().view.rows();
+  let rows = session.app().unwrap().panel.as_ref().unwrap().view.rows();
   let keys: Vec<_> = rows.iter().map(|row| row.key.as_str()).collect();
   assert_eq!(keys, ["", "’a", "", "’A"]);
   Ok(())
@@ -378,19 +363,17 @@ fn recent_ratios_survive_panel_reopening() -> Result<()> {
   session.show_recent()?;
   let preferences = serde_json::from_str(r#"{"beside":600,"below":500}"#)?;
   session
-    .app()
-    .panel
-    .as_mut()
+    .recent_mut()
     .unwrap()
     .view
     .shelf_mut()
     .unwrap()
     .set_preferences(preferences);
   session.record_recent_layout();
-  session.app().close_panel()?;
+  session.dismiss_recent(false)?;
   session.show_recent()?;
   assert_eq!(
-    session.app().panel.as_ref().unwrap().view.shelf().unwrap().preferences(),
+    session.recent().unwrap().view.shelf().unwrap().preferences(),
     preferences
   );
   session.finish()?;

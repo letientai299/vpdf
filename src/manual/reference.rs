@@ -195,7 +195,10 @@ fn command_guide(id: vpdf_ui::commands::Id) -> &'static str {
   use vpdf_ui::commands::Id;
   match id {
     Id::Config | Id::Theme => "configuration",
-    Id::Split
+    Id::BDelete
+    | Id::New
+    | Id::VNew
+    | Id::Split
     | Id::VSplit
     | Id::Close
     | Id::Only
@@ -259,6 +262,9 @@ fn command_example(id: vpdf_ui::commands::Id) -> &'static str {
     Id::Open => ":open",
     Id::TabEdit => ":tabedit notes.pdf",
     Id::TabNew => ":tabnew",
+    Id::BDelete => ":bd",
+    Id::New => ":new",
+    Id::VNew => ":vnew",
     Id::Split => ":split",
     Id::VSplit => ":vsplit",
     Id::TabNext => ":tabnext 2",
@@ -314,57 +320,7 @@ fn command_chapter(
   if !example.is_empty() {
     lines.push(format!("For example: {example}").into());
   }
-  match spec.id {
-    Id::Recolor => lines.push(recolor_help()),
-    Id::Fzf => lines.push(
-      concat!(
-        "Tab completes PDFs and directories. ",
-        "A PDF opens directly; a directory sets the picker root. ",
-        "No path uses the current directory."
-      )
-      .into(),
-    ),
-    Id::Ocr => lines.push(
-      concat!(
-        "Requires Tesseract and installed language data. ",
-        "Uses configured language when omitted. Tab completes after +."
-      )
-      .into(),
-    ),
-    Id::Edit | Id::Open | Id::TabEdit => lines.push(
-      concat!(
-        "No file: choose a PDF with the frontend's picker. ",
-        "Without fzf, :open starts path entry with Tab completion. ",
-        "The native app uses the system file picker. ",
-        "Cancel keeps the current view."
-      )
-      .into(),
-    ),
-    Id::Reload | Id::Password => lines.push(
-      "Requires a file-backed PDF; unavailable for built-in help.".into(),
-    ),
-    Id::Split | Id::VSplit => lines.push(
-      concat!(
-        "No file: duplicate this view. ",
-        "An already open file focuses its existing pane."
-      )
-      .into(),
-    ),
-    Id::CursorLine | Id::Crop | Id::Mouse | Id::Perf => lines.push(
-      "No argument toggles; `on` and `off` set an explicit value.".into(),
-    ),
-    _ => {}
-  }
-  #[cfg(target_os = "macos")]
-  if spec.id == Id::Print {
-    lines.push(
-      concat!(
-        "macOS only. Requires a graphical session; ",
-        "encrypted PDFs and built-in help cannot print."
-      )
-      .into(),
-    );
-  }
+  lines.extend(command_notes(spec));
   Chapter {
     id: spec.topic(),
     title: format!(":{}", spec.name),
@@ -404,6 +360,84 @@ fn configuration() -> Chapter {
   }
 }
 
+fn command_notes(spec: &vpdf_ui::commands::Spec) -> Vec<Line> {
+  use vpdf_ui::commands::Id;
+  let mut lines = Vec::new();
+  match spec.id {
+    Id::Recolor => lines.push(recolor_help()),
+    Id::Fzf => lines.push(
+      concat!(
+        "Tab completes PDFs and directories. ",
+        "A PDF opens directly; a directory sets the picker root. ",
+        "No path uses the current directory."
+      )
+      .into(),
+    ),
+    Id::Ocr => lines.push(
+      concat!(
+        "Requires Tesseract and installed language data. ",
+        "Uses configured language when omitted. Tab completes after +."
+      )
+      .into(),
+    ),
+    Id::Edit | Id::Open | Id::TabEdit => lines.push(
+      concat!(
+        "No file: choose a PDF with the frontend's picker. ",
+        "Without fzf, :open starts path entry with Tab completion. ",
+        "The native app uses the system file picker. ",
+        "Cancel keeps the current view."
+      )
+      .into(),
+    ),
+    Id::Reload | Id::Password => lines.push(
+      "Requires a file-backed PDF; unavailable for built-in help.".into(),
+    ),
+    Id::BDelete => lines.push(
+      concat!(
+        "Unloads this document and reopens its alternate, else shows Recent. ",
+        "On Recent or help, closes the pane. No filename argument."
+      )
+      .into(),
+    ),
+    Id::New | Id::VNew => lines.push(
+      concat!(
+        "No file: split with Recent. With a file: split and open it. ",
+        "An already open file focuses its pane."
+      )
+      .into(),
+    ),
+    Id::Recent => lines.push(
+      concat!(
+        "Saves and unloads the document. ",
+        "q or Escape reopens its alternate from saved state."
+      )
+      .into(),
+    ),
+    Id::Split | Id::VSplit => lines.push(
+      concat!(
+        "No file: duplicate this view. ",
+        "An already open file focuses its existing pane."
+      )
+      .into(),
+    ),
+    Id::CursorLine | Id::Crop | Id::Mouse | Id::Perf => lines.push(
+      "No argument toggles; `on` and `off` set an explicit value.".into(),
+    ),
+    _ => {}
+  }
+  #[cfg(target_os = "macos")]
+  if spec.id == Id::Print {
+    lines.push(
+      concat!(
+        "macOS only. Requires a graphical session; ",
+        "encrypted PDFs and built-in help cannot print."
+      )
+      .into(),
+    );
+  }
+  lines
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -436,7 +470,7 @@ mod tests {
     }
     for (name, expected) in [
       ("edit", ":e[dit] [file]"),
-      ("quit", ":q[uit]"),
+      ("quit", ":q[uit]  :q!  :x  :wq"),
       ("help!", ":help!  :h! [topic]"),
       ("split", ":s[plit] [file]"),
       ("tabprevious", ":tabp[revious]  :tabN"),

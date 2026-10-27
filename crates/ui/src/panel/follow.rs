@@ -51,16 +51,16 @@ pub enum Activation {
 pub struct Press {
   mouse: MouseEvent,
   clicked: Option<usize>,
-  covered: bool,
+  recent: bool,
   control: Option<super::Control>,
 }
 
 impl Panel {
   pub fn press(&mut self, mouse: MouseEvent) -> Press {
-    let covered = self.covers_page();
+    let recent = self.is_recent_view() && self.focused();
     let control = self.control_at(mouse.column, mouse.row);
     let clicked = self.pointer(mouse);
-    Press { mouse, clicked, covered, control }
+    Press { mouse, clicked, recent, control }
   }
 
   pub fn follow(&self, search: &Search) -> Option<Follow> {
@@ -106,7 +106,7 @@ impl Panel {
 
 impl Press {
   pub fn activate(self, panel: &mut Panel, clicks: u8) -> Activation {
-    let Self { mouse, clicked, covered, control } = self;
+    let Self { mouse, clicked, recent, control } = self;
     if mouse.kind == MouseEventKind::Down(MouseButton::Left)
       && let Some(control) =
         control.or_else(|| clicked.and_then(|source| panel.row_control(source)))
@@ -150,7 +150,7 @@ impl Press {
       panel.toggle_checked();
       return Activation::Stay;
     }
-    if covered {
+    if recent {
       return Activation::Follow { focus: true };
     }
     if clicks > 1 && followed == Some(index) {

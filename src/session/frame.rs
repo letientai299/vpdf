@@ -1,3 +1,4 @@
+use super::Pane;
 use super::{
   App, Cause, Drawable, Hover, Instant, Notice, Rect, Rehover, Result, Session,
   Sight, Tab, Write, terminal,
@@ -53,15 +54,17 @@ impl Drawable for Session {
 
   fn observe(&self) -> Observation {
     let tab = &self.tabs[self.active];
-    let mut seen = Observation::of(&tab.panes[tab.focus], &self.graphics);
-    seen.busy = tab.panes.iter().any(App::busy);
+    let mut seen = Observation::pane(&tab.panes[tab.focus], &self.graphics);
+    seen.busy = tab.panes.iter().filter_map(Pane::document).any(App::busy);
     seen.outcome.tab = self.active + 1;
     seen.outcome.pane_count = tab.panes.len();
     seen.outcome.resources = self
       .tabs
       .iter()
       .enumerate()
-      .flat_map(|(index, tab)| tab.panes.iter().map(move |app| (index, app)))
+      .flat_map(|(index, tab)| {
+        tab.panes.iter().filter_map(Pane::document).map(move |app| (index, app))
+      })
       .map(|(index, app)| {
         let tiles = self.graphics.owner_bytes(app.id);
         super::native::Resources::of(app, index == self.active, tiles)
@@ -77,7 +80,7 @@ impl Session {
     area: Rect,
     notice: Option<&Notice>,
     scene: &mut S,
-    mut pane: impl FnMut(&mut App, &mut S) -> Result<()>,
+    mut pane: impl FnMut(&mut Pane, &mut S) -> Result<()>,
   ) -> Result<()> {
     for index in 0..tab.panes.len() {
       if index != tab.focus {
@@ -93,7 +96,7 @@ impl Session {
   }
 
   pub(super) fn prepare_frame(&mut self) {
-    for app in &mut self.tab().panes {
+    for app in self.tab().panes.iter_mut().filter_map(Pane::document_mut) {
       app.drop_stray_preview();
     }
     self.rehover();
@@ -145,7 +148,11 @@ impl Session {
   /// deferred until their whole view was on screen.
   pub fn drawn(&mut self) {
     if let Some(tab) = self.tabs.get_mut(self.active) {
-      tab.panes.iter_mut().for_each(App::start_deferred);
+      tab
+        .panes
+        .iter_mut()
+        .filter_map(Pane::document_mut)
+        .for_each(App::start_deferred);
     }
   }
 
@@ -155,9 +162,7 @@ impl Session {
     self.sight = Sight::Hidden;
     write!(out, "{}", terminal::frame_end())?;
     self.release_pointer(out)?;
-    if self.tabs.is_empty() {
-      return self.home.as_mut().map_or(Ok(()), |home| home.release(out));
-    }
+
     self.graphics.clear(out)
   }
 
@@ -190,7 +195,12 @@ impl Session {
     self.perf.view.invalidate();
     vpdf_terminal::graphics::release(out)?;
     self.graphics.lost();
-    if let Some(home) = &mut self.home {
+    for home in self
+      .tabs
+      .iter_mut()
+      .flat_map(|t| &mut t.panes)
+      .filter_map(Pane::recent_mut)
+    {
       home.images_lost();
     }
     self.drop_pointer();
@@ -211,10 +221,14 @@ mod tests {
     let screen = crate::screen::cells(80, 24);
     let mut session = Session::new(None);
     session.open(path, true, screen)?;
-    session.app().command("vsplit")?;
+    session.app().unwrap().command("vsplit")?;
     session.settle()?;
     session.focus(session.active, 0)?;
-    for app in &mut session.tabs[session.active].panes {
+    for app in session.tabs[session.active]
+      .panes
+      .iter_mut()
+      .filter_map(Pane::document_mut)
+    {
       app.text_mode = text_mode;
       app.images_stale = true;
     }
@@ -227,13 +241,19 @@ mod tests {
     let tab = &mut session.tabs[session.active];
     for index in 0..tab.panes.len() {
       if index != tab.focus {
-        tab.panes[index].draw_pane(&mut session.graphics, out)?;
+        tab.panes[index]
+          .document_mut()
+          .unwrap()
+          .draw_pane(&mut session.graphics, out)?;
       }
     }
     crate::presentation::draw(out, None, |scene| {
       tab.tree.scene_dividers(scene, area);
     })?;
-    tab.panes[tab.focus].draw_pane(&mut session.graphics, out)?;
+    tab.panes[tab.focus]
+      .document_mut()
+      .unwrap()
+      .draw_pane(&mut session.graphics, out)?;
     crate::presentation::draw(out, None, |scene| {
       session.unmeasured.as_ref().unwrap().scene(scene);
     })
@@ -276,7 +296,7 @@ mod tests {
           })
           .collect();
         assert_eq!(veils.len(), 1);
-        let inactive = &tab.panes[1 - focus];
+        let inactive = tab.panes[1 - focus].document().unwrap();
         assert_eq!(veils[0].layer(), Layer::AboveText);
         let stage = Stage { screen: inactive.screen, left: inactive.left };
         assert_eq!(veils[0].stage(), stage);
@@ -310,7 +330,7 @@ mod tests {
       let loaded =
         crate::config::Options { config: Some(config.clone()) }.load();
       assert!(loaded.warning.is_none());
-      let app = &mut session.tabs[session.active].panes[1];
+      let app = session.tabs[session.active].panes[1].document_mut().unwrap();
       app.settings = loaded.settings;
       let mut recorder = Recorder::new(|_| false);
       app.scene_pane(&mut recorder, false)?;
@@ -382,21 +402,40 @@ mod tests {
         assert_eq!(actual.into_inner(), expected.into_inner(), "limit {limit}");
         if limit == 0 {
           let tab = &streamed.tabs[streamed.active];
-          assert!(tab.panes.iter().all(|app| app.tiles.wanted().is_empty()));
-          assert!(tab.panes[tab.focus].images_stale);
-          assert!(!tab.panes[1].images_stale);
+          assert!(
+            tab.panes.iter().all(|app| app
+              .document()
+              .unwrap()
+              .tiles
+              .wanted()
+              .is_empty())
+          );
+          assert!(tab.panes[tab.focus].document().unwrap().images_stale);
+          assert!(!tab.panes[1].document().unwrap().images_stale);
         }
         for (left, right) in streamed.tabs[streamed.active]
           .panes
           .iter()
           .zip(&legacy.tabs[legacy.active].panes)
         {
-          assert_eq!(left.blank, right.blank, "limit {limit}");
-          assert_eq!(left.complete, right.complete, "limit {limit}");
-          assert_eq!(left.images_stale, right.images_stale, "limit {limit}");
           assert_eq!(
-            left.tiles.wanted(),
-            right.tiles.wanted(),
+            left.document().unwrap().blank,
+            right.document().unwrap().blank,
+            "limit {limit}"
+          );
+          assert_eq!(
+            left.document().unwrap().complete,
+            right.document().unwrap().complete,
+            "limit {limit}"
+          );
+          assert_eq!(
+            left.document().unwrap().images_stale,
+            right.document().unwrap().images_stale,
+            "limit {limit}"
+          );
+          assert_eq!(
+            left.document().unwrap().tiles.wanted(),
+            right.document().unwrap().tiles.wanted(),
             "limit {limit}"
           );
         }

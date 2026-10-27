@@ -509,7 +509,7 @@ fn splits_land_near_the_top() -> Result<()> {
       let rows = if text_mode { 5 } else { 6 };
       let screen = crate::common::cells(80, rows);
       let mut session = crate::harness::session(&path, screen)?;
-      let app = session.app();
+      let app = session.app().unwrap();
       super::common::outline_loaded(app)?;
       if text_mode {
         // Both panes keep the visible presentation.
@@ -528,7 +528,7 @@ fn splits_land_near_the_top() -> Result<()> {
       session.settle()?;
       let tab = session.tab();
       assert_eq!((tab.panes.len(), tab.focus), (2, 0), "{case}");
-      let app = &mut tab.panes[1];
+      let app = tab.panes[1].document_mut().unwrap();
       assert_eq!(app.text_mode, text_mode, "{case}");
       assert_eq!(app.reader.cursor, at, "{case}");
       let (top, _) = cursor_rows(app)?;

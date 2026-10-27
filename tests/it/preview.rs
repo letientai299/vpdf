@@ -146,15 +146,15 @@ fn preview_pane_chord_dispatches_once() -> Result<()> {
   let app = open(false)?;
   let cursor = app.reader.cursor;
   let mut session = crate::harness::session(&app.path, screen())?;
-  session.app().go_to(cursor, true)?;
+  session.app().unwrap().go_to(cursor, true)?;
   send(&mut session, b"K3g")?;
-  assert_eq!(session.app().input_owner(), InputOwner::Peek);
+  assert_eq!(session.app().unwrap().input_owner(), InputOwner::Peek);
   send(&mut session, b"t")?;
-  assert!(session.app().overlays.preview().is_none());
-  session.app().go_to(cursor, true)?;
+  assert!(session.app().unwrap().overlays.preview().is_none());
+  session.app().unwrap().go_to(cursor, true)?;
   send(&mut session, b"K\x1b[119;5u")?;
-  assert!(session.app().overlays.preview().is_none());
-  assert_eq!(session.app().keys.awaiting(), Some("C-w"));
+  assert!(session.app().unwrap().overlays.preview().is_none());
+  assert_eq!(session.app().unwrap().keys.awaiting(), Some("C-w"));
   send(&mut session, b"v")?;
   assert_eq!(session.tabs[session.active].panes.len(), 2);
   Ok(())

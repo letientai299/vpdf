@@ -9,7 +9,6 @@ use crate::screen::cells;
 use vpdf_model::input::{Button, Mouse, Spot};
 use vpdf_model::input::{KeyCode, KeyModifiers};
 use vpdf_model::text::Bounds;
-use vpdf_pdf::jobs::Wake;
 use vpdf_terminal::decode::Reply;
 
 #[test]
@@ -25,10 +24,10 @@ fn tab_completion_tracks_session() -> Result<()> {
   session.open(&second, true, cells(120, 40))?;
   session.activate(0)?;
   let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
-  session.app().overlays.open_prompt(Prompt::new(PromptKind::Command));
-  session.app().overlays.prompt_mut().unwrap().paste("tabnext ");
+  session.app().unwrap().overlays.open_prompt(Prompt::new(PromptKind::Command));
+  session.app().unwrap().overlays.prompt_mut().unwrap().paste("tabnext ");
   session.type_key(tab)?;
-  let prompt = session.app().overlays.prompt().unwrap();
+  let prompt = session.app().unwrap().overlays.prompt().unwrap();
   assert_eq!(
     prompt.menu().unwrap().labels(),
     ["1  first.pdf", "2  second.pdf"]
@@ -39,10 +38,13 @@ fn tab_completion_tracks_session() -> Result<()> {
   session.settle()?;
   assert_eq!(session.active, 1);
   session.close_tab(0)?;
-  session.app().overlays.open_prompt(Prompt::new(PromptKind::Command));
-  session.app().overlays.prompt_mut().unwrap().paste("tabnext ");
+  session.app().unwrap().overlays.open_prompt(Prompt::new(PromptKind::Command));
+  session.app().unwrap().overlays.prompt_mut().unwrap().paste("tabnext ");
   session.type_key(tab)?;
-  assert_eq!(session.app().overlays.prompt().unwrap().text(), "tabnext 1");
+  assert_eq!(
+    session.app().unwrap().overlays.prompt().unwrap().text(),
+    "tabnext 1"
+  );
   Ok(())
 }
 
@@ -72,9 +74,9 @@ fn cleanup_failure_survives_detached_home() -> Result<()> {
       .as_deref()
       .is_some_and(|warning| { warning.starts_with("State not saved:") })
   );
-  session.home = Some(Home::new(&[], cells(100, 40), &Wake::none(), true));
+  session.recent_tab(cells(100, 40))?;
   session.present_startup();
-  assert!(session.home.as_ref().unwrap().view.error().is_some());
+  assert!(session.recent().unwrap().view.error().is_some());
   Ok(())
 }
 
@@ -112,13 +114,13 @@ fn perf_is_global_and_persistent() -> Result<()> {
   let mut session = paper()?;
   session.store = Some(store.clone());
   let screen = session.screen.expect("screen");
-  session.app().command("perf on")?;
+  session.app().unwrap().command("perf on")?;
   session.settle()?;
   assert!(session.state.perf);
   let content = screen.rows - vpdf_ui::perf::rows(screen);
-  assert_eq!(session.app().screen.rows, content);
-  assert_eq!(session.app().at.row, vpdf_ui::perf::rows(screen));
-  session.app().command("vsplit")?;
+  assert_eq!(session.app().unwrap().screen.rows, content);
+  assert_eq!(session.app().unwrap().at.row, vpdf_ui::perf::rows(screen));
+  session.app().unwrap().command("vsplit")?;
   session.settle()?;
   assert!(session.tab().panes.iter().all(|a| a.screen.rows == content));
   let mut out = Vec::new();
@@ -127,11 +129,11 @@ fn perf_is_global_and_persistent() -> Result<()> {
   assert_eq!(text.matches("FPS").count(), 1);
   session.save()?;
   assert!(Session::new(Some(store)).state.perf);
-  session.app().command("perf")?;
+  session.app().unwrap().command("perf")?;
   session.settle()?;
   assert!(!session.state.perf);
   assert!(session.tab().panes.iter().all(|a| a.screen.rows == screen.rows));
-  assert!(session.app().command("perf maybe").is_err());
+  assert!(session.app().unwrap().command("perf maybe").is_err());
   Ok(())
 }
 
@@ -141,7 +143,7 @@ fn perf_split_respects_focused_pane_size() -> Result<()> {
   let mut session = paper()?;
   session.toggle_perf(Some(true))?;
   for _ in 0..16 {
-    let fits = Node::fits(Axis::Columns, full(session.app().screen));
+    let fits = Node::fits(Axis::Columns, full(session.app().unwrap().screen));
     let count = session.tab().panes.len();
     let result = session.split(Axis::Columns, None, Place::After);
     if !fits {
@@ -160,17 +162,14 @@ fn perf_start_screen_reserves_once() -> Result<()> {
   let mut session = paper()?;
   let screen = session.screen.expect("screen");
   session.tabs.clear();
-  session.home = Some(Home::new(&[], screen, &Wake::none(), true));
+  session.recent_tab(screen).unwrap();
   session.toggle_perf(Some(true))?;
   let content = screen.rows - vpdf_ui::perf::rows(screen);
-  assert_eq!(session.home.as_ref().expect("home").view.screen().rows, content);
+  assert_eq!(session.recent().expect("home").view.screen().rows, content);
   session.toggle_perf(Some(true))?;
-  assert_eq!(session.home.as_ref().expect("home").view.screen().rows, content);
+  assert_eq!(session.recent().expect("home").view.screen().rows, content);
   session.toggle_perf(Some(false))?;
-  assert_eq!(
-    session.home.as_ref().expect("home").view.screen().rows,
-    screen.rows
-  );
+  assert_eq!(session.recent().expect("home").view.screen().rows, screen.rows);
   Ok(())
 }
 
@@ -183,7 +182,7 @@ fn paper() -> Result<Session> {
   let screen = cells(120, 40);
   let mut session = Session::new(None);
   session.open(&root.join("paper.pdf"), true, screen)?;
-  session.app().command("2")?;
+  session.app().unwrap().command("2")?;
   Ok(session)
 }
 
@@ -193,11 +192,11 @@ pub(super) fn find(
   wanted: fn(Hit) -> bool,
 ) -> Result<(u16, u16)> {
   let page = Region::Page;
-  let screen = session.app().screen;
+  let screen = session.app().unwrap().screen;
   for (row, column) in (0..screen.rows.saturating_sub(1))
     .flat_map(|row| (0..screen.columns).map(move |column| (row, column)))
   {
-    if wanted(session.app().hovered(page, column, row, None)?) {
+    if wanted(session.app().unwrap().hovered(page, column, row, None)?) {
       return Ok((column, row));
     }
   }
@@ -273,17 +272,17 @@ fn frames_write_changed_shapes() -> Result<()> {
 fn scrollbars_wake_and_hide() -> Result<()> {
   let mut session = paper()?;
   session.draw_frame(&mut Vec::new())?;
-  session.app().reader.seed_reader(|reader| reader.scroll += 64.0);
+  session.app().unwrap().reader.seed_reader(|reader| reader.scroll += 64.0);
   session.draw_frame(&mut Vec::new())?;
   let now = Instant::now();
   let wait = idle(&mut session, now, now, false, Instant::now());
   assert!(wait <= vpdf_ui::scrollbar::Bar::SHOWN, "{wait:?}");
   assert!(!session.notify(), "shown until the deadline");
   let past = now.checked_sub(vpdf_ui::scrollbar::Bar::SHOWN * 2).unwrap();
-  let app = session.app();
+  let app = session.app().unwrap();
   app.bar.observe(app.reader.scroll + 1.0, past);
   assert!(session.notify(), "the deadline draws a frame");
-  assert_eq!(session.app().bar.deadline(), None);
+  assert_eq!(session.app().unwrap().bar.deadline(), None);
   Ok(())
 }
 
@@ -316,14 +315,14 @@ fn held_gestures_write_shapes() -> Result<()> {
   ];
   for (command, kind, cell, want) in steps {
     if !command.is_empty() {
-      session.app().command(command)?;
+      session.app().unwrap().command(command)?;
       session.settle()?;
     }
     let got = shape_after(&mut session, kind, cell)?;
     assert_eq!(got, want, "{kind:?} at {cell:?}");
   }
-  session.app().open_panel(PanelKind::Outline)?;
-  let edge = session.app().left - 1;
+  session.app().unwrap().open_panel(PanelKind::Outline)?;
+  let edge = session.app().unwrap().left - 1;
   // (cell) -> written
   let steps = [
     ((edge - 1, 3), vec!["col-resize"]),
@@ -343,7 +342,7 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
   let screen = cells(120, 40);
   let mut session = Session::new(None);
   session.open(&root.join("paper.pdf"), true, screen)?;
-  session.app().request = Some(Request::Window {
+  session.app().unwrap().request = Some(Request::Window {
     command: Window::Split(Axis::Columns),
     count: 1,
     explicit: false,
@@ -351,7 +350,7 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
   });
   session.settle()?;
   let now = Instant::now();
-  for app in &mut session.tab().panes {
+  for app in session.tab().panes.iter_mut().filter_map(Pane::document_mut) {
     app.reader.flash(
       app.reader.cursor,
       vpdf_ui::page::landing::Span::Line,
@@ -366,7 +365,7 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
   let wait = idle(&mut session, now, now, false, Instant::now());
   assert!(wait <= vpdf_ui::page::landing::Landing::DURATION);
   assert!(!session.notify());
-  for app in &mut session.tab().panes {
+  for app in session.tab().panes.iter_mut().filter_map(Pane::document_mut) {
     app.reader.flash(
       app.reader.cursor,
       vpdf_ui::page::landing::Span::Line,
@@ -379,7 +378,7 @@ fn landing_deadlines_expire_across_panes() -> Result<()> {
   );
   assert!(session.notify());
   assert!(
-    session.tab().panes.iter().all(|app| app
+    session.tab().panes.iter().filter_map(Pane::document).all(|app| app
       .reader
       .landing()
       .position()
@@ -394,7 +393,7 @@ fn refit_keeps_the_layout_without_metrics() {
   let screen = cells(80, 24);
   let lost = Notice::new(20, 70, terminal::NO_CELL.into());
   let mut session = Session::new(None);
-  session.home = Some(Home::new(&[], screen, &Wake::none(), true));
+  session.recent_tab(screen).unwrap();
   let failed = || Err(anyhow::anyhow!(terminal::NO_CELL));
   let grid = || Ok((70, 20));
   // (measured, want unmeasured, want start screen rows)
@@ -406,7 +405,7 @@ fn refit_keeps_the_layout_without_metrics() {
   for (index, (measured, unmeasured, rows)) in cases.into_iter().enumerate() {
     assert!(session.refit(measured, grid).is_ok(), "case {index}");
     assert_eq!(session.unmeasured, unmeasured, "case {index}");
-    let home = session.home.as_ref().map(|home| home.view.screen().rows);
+    let home = session.recent().map(|home| home.view.screen().rows);
     assert_eq!(home, Some(rows), "case {index}");
   }
 }
@@ -415,9 +414,9 @@ fn refit_keeps_the_layout_without_metrics() {
 #[ignore = "requires verified public PDF corpus"]
 fn client_changes_preserve_positions() -> Result<()> {
   let mut session = paper()?;
-  session.app().command("vsplit")?;
+  session.app().unwrap().command("vsplit")?;
   session.settle()?;
-  session.app().command("3")?;
+  session.app().unwrap().command("3")?;
   let before: Vec<_> = session.panes().map(App::navigation_position).collect();
   let snapshot = |pid| {
     vpdf_terminal::tmux_observer::parse(&format!(
@@ -426,7 +425,7 @@ fn client_changes_preserve_positions() -> Result<()> {
     .unwrap()
   };
   session.observation(snapshot(10), &mut Vec::new())?;
-  let pane = session.app().id;
+  let pane = session.app().unwrap().id;
   session.resizing = Some(Edge::Panel(pane));
   assert!(session.observation(snapshot(11), &mut Vec::new())?);
   let after: Vec<_> = session.panes().map(App::navigation_position).collect();
@@ -628,26 +627,26 @@ fn mouse_command_toggles_capture() -> Result<()> {
   ];
   for (command, on, hover) in steps {
     // A held pan gets no release once capture ends.
-    session.app().grab.begin((0.0, 0.0));
-    session.app().grab.pixels((0.0, 0.0));
-    session.app().command(command)?;
+    session.app().unwrap().grab.begin((0.0, 0.0));
+    session.app().unwrap().grab.pixels((0.0, 0.0));
+    session.app().unwrap().command(command)?;
     session.settle()?;
     assert_eq!(terminal::mouse(), on, "{command}");
-    assert_eq!(session.app().grabbing(), on, "{command}: pan");
+    assert_eq!(session.app().unwrap().grabbing(), on, "{command}: pan");
     assert_eq!(hovered(&session), None, "{command}: dropped");
-    let info = session.app().info();
+    let info = session.app().unwrap().info();
     assert_eq!(info.contains("Mouse: on"), on, "{command}: info");
     session.mouse_report(moved)?;
     assert_eq!(hovered(&session), hover, "{command}: report");
     session.pointer.leave();
   }
-  assert!(session.app().command("mouse maybe").is_err());
+  assert!(session.app().unwrap().command("mouse maybe").is_err());
   Ok(())
 }
 
 fn panel_session(directory: &Path) -> Result<Session> {
   let mut session = line_session(directory, "", cells(80, 24))?;
-  session.app().open_panel(PanelKind::Version)?;
+  session.app().unwrap().open_panel(PanelKind::Version)?;
   Ok(session)
 }
 
@@ -659,7 +658,7 @@ fn menu_backdrops_skip_the_panel() -> Result<()> {
 
   let directory = tempfile::tempdir()?;
   let mut session = panel_session(directory.path())?;
-  let left = session.app().left;
+  let left = session.app().unwrap().left;
   // (pressed column) -> backdrop's page-area x range
   let cases = [(1, None), (left - 3, Some(0.0))];
   for (column, want) in cases {
@@ -667,7 +666,7 @@ fn menu_backdrops_skip_the_panel() -> Result<()> {
       let modifiers = KeyModifiers::NONE;
       session.mouse(MouseEvent { kind, column, row: 3, modifiers })?;
     }
-    let app = session.app();
+    let app = session.app().unwrap();
     let area = app.overlays.menu().expect("a menu").area();
     let rect = app.context_rect();
     assert_eq!(rect.map(|rect| rect.x0), want, "{column}");
@@ -698,7 +697,7 @@ fn veils_skip_menus() -> Result<()> {
 
   let directory = tempfile::tempdir()?;
   let mut session = panel_session(directory.path())?;
-  let left = session.app().left;
+  let left = session.app().unwrap().left;
   // A stretched pixel: `c=` columns wide.
   let veiled = |out: &[u8]| {
     let text = String::from_utf8_lossy(out);
@@ -707,13 +706,13 @@ fn veils_skip_menus() -> Result<()> {
   // (pressed column) -> veiled
   let cases = [(None, true), (Some(1), true), (Some(left - 3), false)];
   for (column, want) in cases {
-    session.app().overlays.close_menu();
+    session.app().unwrap().overlays.close_menu();
     for kind in column.map_or_default(|_| vec![Down(Right), Up(Right)]) {
       let column = column.unwrap_or_default();
       let modifiers = KeyModifiers::NONE;
       session.mouse(MouseEvent { kind, column, row: 3, modifiers })?;
     }
-    assert!(session.app().panel_focused(), "{column:?}");
+    assert!(session.app().unwrap().panel_focused(), "{column:?}");
     let mut out = Vec::new();
     session.draw_focused(&mut out)?;
     assert_eq!(veiled(&out), want, "{column:?}");
@@ -729,9 +728,9 @@ fn overview_rings_skip_the_menu() -> Result<()> {
   let directory = tempfile::tempdir()?;
   let screen = cells(80, 24);
   let mut session = line_session(directory.path(), "", screen)?;
-  session.app().open_overview()?;
+  session.app().unwrap().open_overview()?;
   session.draw_focused(&mut Vec::new())?;
-  let app = session.app();
+  let app = session.app().unwrap();
   let mut cells = (0..23).flat_map(|row| (0..80).map(move |c| (c, row)));
   let thumbnail =
     cells.find(|&(column, row)| app.thumbnail_at(column, row).is_some());
@@ -740,10 +739,11 @@ fn overview_rings_skip_the_menu() -> Result<()> {
     let modifiers = KeyModifiers::NONE;
     session.mouse(MouseEvent { kind, column, row, modifiers })?;
   }
-  let menu = session.app().context_rect().expect("a menu over the page");
+  let menu =
+    session.app().unwrap().context_rect().expect("a menu over the page");
   let mut out = Vec::new();
   session.draw_focused(&mut out)?;
-  let rings = highlights(&out, session.app().left);
+  let rings = highlights(&out, session.app().unwrap().left);
   assert!(!rings.is_empty(), "the selected ring shows");
   let over = |b: &Bounds| {
     b.x0 < menu.x1 && menu.x0 < b.x1 && b.y0 < menu.y1 && menu.y0 < b.y1
@@ -771,7 +771,7 @@ fn edge_drags_scroll_until_focus_loss() -> Result<()> {
   };
   for modifiers in [plain, alt] {
     let event = |kind, row| MouseEvent { kind, column, row, modifiers };
-    session.app().reader.seed_reader(|reader| reader.scroll = 0.0);
+    session.app().unwrap().reader.seed_reader(|reader| reader.scroll = 0.0);
     session.mouse(event(Down(Left), row))?;
     // The status row is past it.
     session.mouse(event(Drag(Left), 23))?;
@@ -779,10 +779,10 @@ fn edge_drags_scroll_until_focus_loss() -> Result<()> {
     assert!(
       idle(&mut session, now, now, false, Instant::now()) <= Edge::INTERVAL
     );
-    let before = corner(session.app());
+    let before = corner(session.app().unwrap());
     assert!(session.maintain(due), "{modifiers:?}");
     // Sweeps follow the scroll too.
-    let moved = corner(session.app()) != before;
+    let moved = corner(session.app().unwrap()) != before;
     assert_eq!(moved, modifiers == alt, "{modifiers:?}");
     input(&mut session, Act::Focus(false), &mut Vec::new())?;
     let later = Instant::now() + Edge::INTERVAL;
@@ -791,8 +791,8 @@ fn edge_drags_scroll_until_focus_loss() -> Result<()> {
     // Drags after it hold nothing.
     session.mouse(event(Drag(Left), 23))?;
     assert_eq!(session.autoscroll_due(), None, "{modifiers:?}");
-    assert!(!session.app().sweeping(), "{modifiers:?}");
-    assert_eq!(session.app().sweep_hint(), None);
+    assert!(!session.app().unwrap().sweeping(), "{modifiers:?}");
+    assert_eq!(session.app().unwrap().sweep_hint(), None);
   }
   Ok(())
 }
@@ -805,60 +805,23 @@ fn home_file_drops_open() -> Result<()> {
   let notes = directory.path().join("notes.txt");
   std::fs::write(&notes, "text")?;
   let screen = cells(80, 24);
-  let list = |path: &Path| {
-    let uri = format!("file://{}\r\n", path.display());
-    base64::engine::general_purpose::STANDARD.encode(uri)
-  };
-  let drop = |session: &mut Session, home: &mut Home, path: &Path| {
+  for (path, valid) in [(&pdf, true), (&notes, false)] {
+    let mut session = Session::new(None);
+    session.recent_tab(screen)?;
+    let uri = base64::engine::general_purpose::STANDARD
+      .encode(format!("file://{}\r\n", path.display()));
     let mut out = Vec::new();
-    let mut landed = Landing::Wait;
-    for body in [
-      "t=M:x=1:y=1:o=1;text/uri-list".to_owned(),
-      format!("t=r:x=1;{}", list(path)),
-      "t=r:x=1".to_owned(),
-    ] {
-      landed = session.home_drop(home, &body, &mut out)?;
-    }
-    Ok::<_, anyhow::Error>((landed, String::from_utf8_lossy(&out).into()))
-  };
-  let ended =
-    |out: &String, how: &str| out.ends_with(&format!("t=r:o={how}\x1b\\"));
-  // File drops open even with a prompt.
-  let mut session = Session::new(None);
-  let mut home = Home::new(&[], screen, &Wake::none(), true);
-  let colon = KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE);
-  home.event(Event::Key(colon), &mut session.history)?;
-  let (landed, out) = drop(&mut session, &mut home, &pdf)?;
-  assert!(matches!(landed, Landing::Opened) && ended(&out, "1"));
-  assert_eq!(session.tabs.len(), 1);
-  // Without a prompt the PDF opens; a list with none is cancelled.
-  let mut home = Home::new(&[], screen, &Wake::none(), true);
-  let (landed, out) = drop(&mut session, &mut home, &notes)?;
-  assert!(matches!(landed, Landing::Shown) && ended(&out, "0"));
-  assert_eq!(home.view.error(), Some("No PDF in the drop"));
-  let (landed, out) = drop(&mut session, &mut home, &pdf)?;
-  assert!(matches!(landed, Landing::Opened) && ended(&out, "1"));
-  assert_eq!(session.tabs.len(), 1);
-  let mut failed = Session::new(None);
-  let mut home = Home::new(&[], screen, &Wake::none(), true);
-  let invalid = PathBuf::from(format!("{}#page=99", pdf.display()));
-  let (landed, out) = drop(&mut failed, &mut home, &invalid)?;
-  assert!(matches!(landed, Landing::Opened) && ended(&out, "0"));
-  assert!(
-    failed
-      .app()
-      .error
-      .as_deref()
-      .is_some_and(|error| error.contains("Page outside document"))
-  );
-  // The terminal's error shows and ends the drop.
-  let mut home = Home::new(&[], screen, &Wake::none(), true);
-  let mut out = Vec::new();
-  session.home_drop(&mut home, "t=M:x=1:y=1:o=1;text/uri-list", &mut out)?;
-  let landed = session.home_drop(&mut home, "t=R:x=1;EIO", &mut out)?;
-  assert!(matches!(landed, Landing::Shown));
-  assert!(ended(&String::from_utf8_lossy(&out).into(), "0"));
-  assert_eq!(home.view.error(), Some("Drop failed: EIO"));
+    session.drop_event("t=M:x=1:y=1:o=1;text/uri-list", &mut out)?;
+    session.drop_event(&format!("t=r:x=1;{uri}"), &mut out)?;
+    let result = session.drop_event("t=r:x=1", &mut out);
+    assert_eq!(result.is_ok(), valid);
+    assert_eq!(session.tabs.len(), 1);
+    assert_eq!(session.focused().is_recent(), !valid);
+    assert!(
+      String::from_utf8_lossy(&out)
+        .ends_with(&format!("t=r:o={}\x1b\\", u8::from(valid)))
+    );
+  }
   Ok(())
 }
 
@@ -945,9 +908,9 @@ fn local_keys_clear_capture() -> Result<()> {
     &b"\x1b[<32;100;32M\x1b[<0;100;32m"[..],
   ] {
     if bytes == b"\t" {
-      session.app().open_panel(PanelKind::Version)?;
+      session.app().unwrap().open_panel(PanelKind::Version)?;
     }
-    let cursor = session.app().reader.cursor;
+    let cursor = session.app().unwrap().reader.cursor;
     parser.feed(bytes, &mut events);
     for event in events.drain(..) {
       let act = act(event).expect("actionable bytes");
@@ -955,11 +918,11 @@ fn local_keys_clear_capture() -> Result<()> {
       session.settle()?;
     }
     if bytes.starts_with(b"\x1b[<32;100") {
-      assert_eq!(session.app().reader.cursor, cursor);
+      assert_eq!(session.app().unwrap().reader.cursor, cursor);
     }
   }
-  assert!(session.app().reader.selection.is_some());
-  assert!(!session.app().panel_focused());
+  assert!(session.app().unwrap().reader.selection.is_some());
+  assert!(!session.app().unwrap().panel_focused());
   Ok(())
 }
 
@@ -971,11 +934,11 @@ fn keys_close_other_previews() -> Result<()> {
                 /Dest[3 0 R/XYZ 0 50 0]>>]";
   let screen = cells(121, 40);
   let mut session = line_session(directory.path(), link, screen)?;
-  session.app().command("vsplit")?;
+  session.app().unwrap().command("vsplit")?;
   session.settle()?;
   let tab = session.tab();
   let index = 1 - tab.focus;
-  let app = &mut tab.panes[index];
+  let app = tab.panes[index].document_mut().unwrap();
   let bounds = app.doc.links(PageId(0))?[0].first();
   let rect = app.layout.project(PageId(0), bounds, app.reader.scroll);
   let (x, y) = rect.centre();
@@ -984,14 +947,21 @@ fn keys_close_other_previews() -> Result<()> {
   let (kind, modifiers) = (MouseEventKind::Moved, KeyModifiers::NONE);
   session.mouse(MouseEvent { kind, column, row, modifiers })?;
   assert!(session.hover_preview(Instant::now() + vpdf_ui::input::links::REST));
-  assert!(session.tab().panes[index].overlays.preview().is_some());
+  assert!(
+    session.tab().panes[index].document().unwrap().overlays.preview().is_some()
+  );
   let mut events = std::collections::VecDeque::new();
   vpdf_terminal::decode::Parser::default().feed(b"j", &mut events);
   for event in events {
     input(&mut session, act(event).expect("a key"), &mut Vec::new())?;
   }
   assert!(
-    session.tab().panes.iter().all(|app| app.overlays.preview().is_none())
+    session.tab().panes.iter().all(|app| app
+      .document()
+      .unwrap()
+      .overlays
+      .preview()
+      .is_none())
   );
   Ok(())
 }
@@ -1004,11 +974,15 @@ fn static_pane_keeps_hover() -> Result<()> {
   let screen = cells(121, 40);
   session.open(&path, true, screen)?;
   let modifiers = KeyModifiers::NONE;
-  session.app().command("vsplit")?;
+  session.app().unwrap().command("vsplit")?;
   session.settle()?;
   let pointed = session.tab().panes[0].id;
-  session.tab().panes[1].reader.animate_to(20.0, Instant::now());
-  let app = &session.tab().panes[0];
+  session.tab().panes[1]
+    .document_mut()
+    .unwrap()
+    .reader
+    .animate_to(20.0, Instant::now());
+  let app = session.tab().panes[0].document().unwrap();
   let mouse = MouseEvent {
     kind: MouseEventKind::Moved,
     column: app.at.column + app.left + 1,
@@ -1019,7 +993,7 @@ fn static_pane_keeps_hover() -> Result<()> {
   session.rehover();
   assert_eq!(session.pointer.target().map(|hover| hover.pane), Some(pointed));
   assert!(!session.skimmed);
-  session.tab().panes[1].reader.cancel_scroll();
+  session.tab().panes[1].document_mut().unwrap().reader.cancel_scroll();
   Ok(())
 }
 
@@ -1031,7 +1005,7 @@ fn wheel_turns_defer_page_hover() -> Result<()> {
                 /Dest[0 0 R/XYZ 0 50 0]>>]";
   let screen = cells(121, 40);
   let mut session = line_session(directory.path(), link, screen)?;
-  let app = session.app();
+  let app = session.app().unwrap();
   let bounds = app.doc.links(PageId(0))?[0].first();
   let rect = app.layout.project(PageId(0), bounds, app.reader.scroll);
   let (x, y) = rect.centre();
@@ -1051,7 +1025,7 @@ fn wheel_turns_defer_page_hover() -> Result<()> {
     modifiers,
   })?;
   assert!(link_hit(&session));
-  session.app().reader.animate_to(20.0, Instant::now());
+  session.app().unwrap().reader.animate_to(20.0, Instant::now());
   session.rehover();
   assert!(!session.mouse(MouseEvent {
     kind: MouseEventKind::Moved,
@@ -1061,7 +1035,7 @@ fn wheel_turns_defer_page_hover() -> Result<()> {
   })?);
   assert!(!link_hit(&session));
   assert_eq!(session.hover_settle_due(), None);
-  session.app().reader.cancel_scroll();
+  session.app().unwrap().reader.cancel_scroll();
   session.rehover();
   assert!(link_hit(&session));
   // At the top, the turn moves nothing yet starts a gesture.
@@ -1108,18 +1082,26 @@ fn deferred_panels_clear_capture() -> Result<()> {
       command,
       b"\x1b[<32;40;15M\x1b[<0;40;15m".as_slice(),
     ] {
-      let cursor = session.app().reader.cursor;
+      let cursor = session.focused().document().map(|app| app.reader.cursor);
       parser.feed(bytes, &mut events);
       for event in events.drain(..) {
         input(&mut session, act(event).expect("input bytes"), &mut Vec::new())?;
         session.settle()?;
       }
       if bytes.starts_with(b"\x1b[<32;40") {
-        assert_eq!(session.app().reader.cursor, cursor);
+        assert_eq!(
+          session.focused().document().map(|app| app.reader.cursor),
+          cursor
+        );
       }
     }
-    assert!(session.app().panel_focused());
-    assert!(session.app().reader.selection.is_some());
+    if command == b":recent\r" {
+      assert!(session.focused().is_recent());
+      assert!(session.focused().alternate.is_some());
+    } else {
+      assert!(session.app().unwrap().panel_focused());
+      assert!(session.app().unwrap().reader.selection.is_some());
+    }
   }
   Ok(())
 }
@@ -1134,21 +1116,21 @@ fn decoded_commands_change_state() -> Result<()> {
   let mut events = std::collections::VecDeque::new();
   parser.feed(b"\x1b[58;1:3u", &mut events);
   assert!(act(events.pop_front().unwrap()).is_none());
-  assert!(session.app().overlays.prompt().is_none());
+  assert!(session.app().unwrap().overlays.prompt().is_none());
   parser.feed(b"\x1b[58;1:2u", &mut events);
   let action = act(events.pop_front().unwrap()).unwrap();
   let Act::Key(key) = &action else { panic!("key") };
   assert_eq!(key.code, KeyCode::Char(':'));
   assert_eq!(key.kind, vpdf_model::input::KeyEventKind::Repeat);
   input(&mut session, action, &mut Vec::new())?;
-  assert!(session.app().overlays.prompt().is_some());
+  assert!(session.app().unwrap().overlays.prompt().is_some());
   parser.feed(b"\x1b[200~info\x1b[201~\r", &mut events);
   for event in events {
     input(&mut session, act(event).unwrap(), &mut Vec::new())?;
   }
-  assert!(session.app().overlays.prompt().is_none());
+  assert!(session.app().unwrap().overlays.prompt().is_none());
   assert_eq!(
-    session.app().panel.as_ref().unwrap().view.kind(),
+    session.app().unwrap().panel.as_ref().unwrap().view.kind(),
     PanelKind::Info
   );
   Ok(())
@@ -1163,7 +1145,6 @@ fn sidebar_keys_toggle_focus() -> Result<()> {
   for (shortcut, kind, command) in [
     ("go", PanelKind::Outline, "toc"),
     ("gs", PanelKind::Results, ""),
-    ("gr", PanelKind::Recent, "recent"),
     ("ga", PanelKind::Annotations, "annotations"),
   ] {
     for (keys, focused) in [
@@ -1178,28 +1159,34 @@ fn sidebar_keys_toggle_focus() -> Result<()> {
         session.settle()?;
       }
       assert_eq!(
-        session.app().panel.is_some(),
+        session.app().unwrap().panel.is_some(),
         focused.is_some(),
         "{shortcut}"
       );
       if let Some(focused) = focused {
-        let panel = &session.app().panel.as_ref().unwrap().view;
+        let panel = &session.app().unwrap().panel.as_ref().unwrap().view;
         assert_eq!(panel.kind(), kind, "{shortcut}");
         assert_eq!(panel.focused(), focused, "{shortcut}");
       }
     }
-    assert!(session.app().panel_focused(), "{shortcut}");
-    session.app().action(vpdf_ui::keys::Input::plain(
+    assert!(session.app().unwrap().panel_focused(), "{shortcut}");
+    session.app().unwrap().action(vpdf_ui::keys::Input::plain(
       vpdf_ui::keys::Action::Panel(kind),
     ))?;
     session.settle()?;
-    assert_eq!(session.app().panel.as_ref().unwrap().view.kind(), kind);
-    assert!(session.app().panel_focused());
+    assert_eq!(
+      session.app().unwrap().panel.as_ref().unwrap().view.kind(),
+      kind
+    );
+    assert!(session.app().unwrap().panel_focused());
     if !command.is_empty() {
-      session.app().command(command)?;
+      session.app().unwrap().command(command)?;
       session.settle()?;
-      assert_eq!(session.app().panel.as_ref().unwrap().view.kind(), kind);
-      assert!(session.app().panel_focused());
+      assert_eq!(
+        session.app().unwrap().panel.as_ref().unwrap().view.kind(),
+        kind
+      );
+      assert!(session.app().unwrap().panel_focused());
     }
   }
   Ok(())
@@ -1228,26 +1215,27 @@ fn configured_views_and_reload() -> Result<()> {
   let mut session = Session::configured(None, settings_file(directory.path()));
   let screen = cells(120, 40);
   session.open(&path, true, screen)?;
-  assert!(!session.app().cursorline);
-  assert_eq!(session.app().layout.zoom(), 2.0);
-  let width = session.app().layout.pages()[0].width;
-  let default = App::with_screen(&path, "", false, session.app().screen)?;
+  assert!(!session.app().unwrap().cursorline);
+  assert_eq!(session.app().unwrap().layout.zoom(), 2.0);
+  let width = session.app().unwrap().layout.pages()[0].width;
+  let default =
+    App::with_screen(&path, "", false, session.app().unwrap().screen)?;
   assert!((width - default.layout.pages()[0].width * 2.0).abs() <= 1.0);
-  assert_eq!(session.app().settings.language(), "eng+vie");
-  session.app().command("cursorline")?;
-  session.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
+  assert_eq!(session.app().unwrap().settings.language(), "eng+vie");
+  session.app().unwrap().command("cursorline")?;
+  session.app().unwrap().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
   std::fs::write(directory.path().join("config.toml"), "[reading]\nzoom = 4")?;
-  session.app().reload_with("")?;
-  assert_eq!(session.app().settings.language(), "eng+vie");
-  assert!(session.app().cursorline);
-  assert_eq!(session.app().layout.zoom(), 3.0);
+  session.app().unwrap().reload_with("")?;
+  assert_eq!(session.app().unwrap().settings.language(), "eng+vie");
+  assert!(session.app().unwrap().cursorline);
+  assert_eq!(session.app().unwrap().layout.zoom(), 3.0);
   session.split(Axis::Columns, None, Place::After)?;
-  assert_eq!(session.app().layout.zoom(), 3.0);
+  assert_eq!(session.app().unwrap().layout.zoom(), 3.0);
   session.open(&second, true, screen)?;
-  assert!(!session.app().cursorline);
-  assert_eq!(session.app().layout.zoom(), 2.0);
+  assert!(!session.app().unwrap().cursorline);
+  assert_eq!(session.app().unwrap().layout.zoom(), 2.0);
   session.open(&path, false, screen)?;
-  assert_eq!(session.app().layout.zoom(), 3.0);
+  assert_eq!(session.app().unwrap().layout.zoom(), 3.0);
   Ok(())
 }
 
@@ -1260,18 +1248,18 @@ fn saved_view_launch_precedence() -> Result<()> {
   let screen = cells(120, 40);
   let mut original = Session::new(Some(store.clone()));
   original.open(&path, true, screen)?;
-  original.app().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
+  original.app().unwrap().layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
   original.start_at(3)?;
   original.record();
   original.save()?;
   let mut session =
     Session::configured(Some(store), settings_file(directory.path()));
   session.open(&path, true, screen)?;
-  assert_eq!(session.app().layout.zoom(), 3.0);
-  assert_eq!(session.app().reader.cursor.page, PageId(2));
+  assert_eq!(session.app().unwrap().layout.zoom(), 3.0);
+  assert_eq!(session.app().unwrap().reader.cursor.page, PageId(2));
   session.start_at(2)?;
-  assert_eq!(session.app().reader.cursor.page, PageId(1));
-  assert!(!session.app().cursorline);
+  assert_eq!(session.app().unwrap().reader.cursor.page, PageId(1));
+  assert!(!session.app().unwrap().cursorline);
   Ok(())
 }
 
@@ -1283,21 +1271,21 @@ fn terminal_startup_warning() -> Result<()> {
   let warning = config.warning.clone().unwrap();
   let mut session = Session::configured(None, config);
   session.screen = Some(screen);
-  let mut home = Home::new(&[], screen, &Wake::none(), true);
+  session.recent_tab(screen)?;
   let mut out = Vec::new();
-  session.draw_home(&mut home, &mut out)?;
-  assert_eq!(home.view.error(), Some(warning.as_str()));
+  session.draw_frame(&mut out)?;
+  assert_eq!(session.recent().unwrap().view.error(), Some(warning.as_str()));
   assert!(String::from_utf8_lossy(&out).contains("Config"));
   let path = directory.path().join("source.pdf");
   crate::fixtures::pdf(&path, &["one"], "")?;
   let mut session = Session::configured(None, settings_file(directory.path()));
   session.open(&path, true, screen)?;
-  session.app().reader.notice("Normal startup");
+  session.app().unwrap().reader.notice("Normal startup");
   session.draw_frame(&mut Vec::new())?;
-  assert_eq!(session.app().reader.message, warning);
-  session.app().reader.cancel();
+  assert_eq!(session.app().unwrap().reader.message, warning);
+  session.app().unwrap().reader.cancel();
   session.draw_frame(&mut Vec::new())?;
-  assert_eq!(session.app().reader.message, "");
+  assert_eq!(session.app().unwrap().reader.message, "");
   Ok(())
 }
 
@@ -1312,7 +1300,7 @@ fn real_ocr_and_cancel() -> Result<()> {
   let mut session = Session::configured(None, loaded);
   session.open(&source, true, cells(120, 40))?;
   session.start_at(10)?;
-  let app = session.app();
+  let app = session.app().unwrap();
   app.command("ocr")?;
   let result = app
     .ocr
@@ -1357,7 +1345,7 @@ fn config_reload_reaches_inactive_panes() -> Result<()> {
   session.split(Axis::Columns, None, Place::After)?;
   session.open(&second, true, screen)?;
   for tab in &mut session.tabs {
-    for app in &mut tab.panes {
+    for app in tab.panes.iter_mut().filter_map(Pane::document_mut) {
       app.layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
       app.cursorline = true;
       app.keys.feed(
@@ -1373,7 +1361,9 @@ fn config_reload_reaches_inactive_panes() -> Result<()> {
   let positions: Vec<_> = session
     .tabs
     .iter()
-    .flat_map(|tab| tab.panes.iter().map(|app| app.reader.cursor))
+    .flat_map(|tab| {
+      tab.panes.iter().map(|app| app.document().unwrap().reader.cursor)
+    })
     .collect();
   std::fs::write(
     directory.path().join("config.toml"),
@@ -1386,7 +1376,7 @@ fn config_reload_reaches_inactive_panes() -> Result<()> {
   session.reload_config();
   let mut positions = positions.into_iter();
   for tab in &session.tabs {
-    for app in &tab.panes {
+    for app in tab.panes.iter().filter_map(Pane::document) {
       assert_eq!(
         app.settings.theme(),
         &crate::config::ThemeChoice::Builtin(vpdf_model::theme::Theme::Dark)
@@ -1404,16 +1394,18 @@ fn config_reload_reaches_inactive_panes() -> Result<()> {
   let third = directory.path().join("three.pdf");
   crate::fixtures::pdf(&third, &["third"], "")?;
   session.open(&third, true, screen)?;
-  assert_eq!(session.app().layout.zoom(), 4.0);
-  assert!(!session.app().cursorline);
+  assert_eq!(session.app().unwrap().layout.zoom(), 4.0);
+  assert!(!session.app().unwrap().cursorline);
   for argument in
     ["", "help", "bindings", "bindings normal", "licenses", "reload extra"]
   {
-    assert!(session.app().command(&format!("config {argument}")).is_err());
-    assert_eq!(session.app().request, None);
+    assert!(
+      session.app().unwrap().command(&format!("config {argument}")).is_err()
+    );
+    assert_eq!(session.app().unwrap().request, None);
   }
-  session.app().command("config reload")?;
-  assert_eq!(session.app().request, Some(Request::ConfigReload));
+  session.app().unwrap().command("config reload")?;
+  assert_eq!(session.app().unwrap().request, Some(Request::ConfigReload));
   session.settle()?;
   Ok(())
 }
@@ -1426,13 +1418,13 @@ fn reload_replaces_config_diagnostics() -> Result<()> {
   let mut session = Session::configured(None, settings_file(directory.path()));
   session.open(&path, true, cells(120, 40))?;
   session.present_startup();
-  assert!(session.app().reader.message.contains("Config"));
+  assert!(session.app().unwrap().reader.message.contains("Config"));
   std::fs::write(directory.path().join("config.toml"), "")?;
   session.reload_config();
-  assert_eq!(session.app().reader.message, "");
-  session.app().reader.notice("Other message");
+  assert_eq!(session.app().unwrap().reader.message, "");
+  session.app().unwrap().reader.notice("Other message");
   session.reload_config();
-  assert_eq!(session.app().reader.message, "Other message");
+  assert_eq!(session.app().unwrap().reader.message, "Other message");
   Ok(())
 }
 
@@ -1466,19 +1458,25 @@ fn prompt_remaps_and_reload_preserve_editing() -> Result<()> {
   session.interact(key(KeyCode::Esc, KeyModifiers::NONE))?;
   session.interact(key(KeyCode::Char('a'), KeyModifiers::CONTROL))?;
   session.interact(key(KeyCode::Char('!'), KeyModifiers::NONE))?;
-  assert_eq!(session.app().overlays.prompt().unwrap().text(), "abc!");
+  assert_eq!(session.app().unwrap().overlays.prompt().unwrap().text(), "abc!");
   session.interact(key(KeyCode::Char('a'), KeyModifiers::SUPER))?;
   session.interact(key(KeyCode::Char('x'), KeyModifiers::NONE))?;
-  assert_eq!(session.app().overlays.prompt().unwrap().text(), "xabc!");
+  assert_eq!(session.app().unwrap().overlays.prompt().unwrap().text(), "xabc!");
   std::fs::write(&config, "[appearance.opacity]\ninactive = 0.3")?;
   session.interact(key(KeyCode::Char('r'), KeyModifiers::SUPER))?;
-  assert_eq!(session.app().settings.opacity().inactive.unwrap().get(), 0.3);
-  assert_eq!(session.app().overlays.prompt().unwrap().text(), "xabc!");
+  assert_eq!(
+    session.app().unwrap().settings.opacity().inactive.unwrap().get(),
+    0.3
+  );
+  assert_eq!(session.app().unwrap().overlays.prompt().unwrap().text(), "xabc!");
   session.interact(key(KeyCode::Char('a'), KeyModifiers::CONTROL))?;
   session.interact(key(KeyCode::Char('y'), KeyModifiers::NONE))?;
-  assert_eq!(session.app().overlays.prompt().unwrap().text(), "yxabc!");
+  assert_eq!(
+    session.app().unwrap().overlays.prompt().unwrap().text(),
+    "yxabc!"
+  );
   session.interact(key(KeyCode::Esc, KeyModifiers::NONE))?;
-  assert!(session.app().overlays.prompt().is_none());
+  assert!(session.app().unwrap().overlays.prompt().is_none());
   Ok(())
 }
 
@@ -1503,7 +1501,7 @@ fn theme_reload_preserves_real_raster() -> Result<()> {
   session.open(&path, true, cells(100, 32))?;
   let raster = |session: &mut Session| {
     vpdf_pdf::raster::visit_page(
-      &mut session.app().doc,
+      &mut session.app().unwrap().doc,
       PageId(0),
       512,
       |_, _, bytes| Ok(Sha256::digest(bytes).to_vec()),
@@ -1511,21 +1509,21 @@ fn theme_reload_preserves_real_raster() -> Result<()> {
   };
   let original = raster(&mut session)?;
   session.draw_frame(&mut Vec::new())?;
-  let keys = session.app().tiles.wanted().to_vec();
-  let zoom = session.app().layout.zoom();
-  let position = session.app().reader.cursor;
+  let keys = session.app().unwrap().tiles.wanted().to_vec();
+  let zoom = session.app().unwrap().layout.zoom();
+  let position = session.app().unwrap().reader.cursor;
   for &theme in Theme::ALL {
     std::fs::write(
       &config,
       format!("[appearance]\ntheme = '{}'", theme.name()),
     )?;
     session.reload_config();
-    assert_eq!(session.app().layout.zoom(), zoom);
-    assert_eq!(session.app().reader.cursor, position);
-    assert_eq!(session.app().tiles.wanted(), keys);
+    assert_eq!(session.app().unwrap().layout.zoom(), zoom);
+    assert_eq!(session.app().unwrap().reader.cursor, position);
+    assert_eq!(session.app().unwrap().tiles.wanted(), keys);
     assert_eq!(raster(&mut session)?, original, "{theme:?}");
     let mut scene = vpdf_model::scene::Recorder::new(|_| true);
-    session.app().scene_pane(&mut scene, false)?;
+    session.app().unwrap().scene_pane(&mut scene, false)?;
     let scene = scene.into_scene();
     let colors = session.settings.colors(vpdf_model::theme::Colors::Terminal);
     let has_theme = scene
@@ -1551,52 +1549,52 @@ fn theme_commands_update_session() -> Result<()> {
   session.open(&path, true, screen)?;
   session.split(Axis::Columns, None, Place::After)?;
   session.open(&second, true, screen)?;
-  let position = session.app().reader.cursor;
-  let zoom = session.app().layout.zoom();
-  let tiles = session.app().tiles.wanted().to_vec();
+  let position = session.app().unwrap().reader.cursor;
+  let zoom = session.app().unwrap().layout.zoom();
+  let tiles = session.app().unwrap().tiles.wanted().to_vec();
   for name in ["theme", "colorscheme"] {
     for &theme in Theme::ALL {
-      session.app().command(&format!("{name} {}", theme.name()))?;
+      session.app().unwrap().command(&format!("{name} {}", theme.name()))?;
       session.settle()?;
       assert_eq!(
         session.settings.theme(),
         &crate::config::ThemeChoice::Builtin(theme)
       );
       for tab in &session.tabs {
-        for app in &tab.panes {
+        for app in tab.panes.iter().filter_map(Pane::document) {
           assert_eq!(
             app.settings.theme(),
             &crate::config::ThemeChoice::Builtin(theme)
           );
         }
       }
-      assert_eq!(session.app().reader.cursor, position);
-      assert_eq!(session.app().layout.zoom(), zoom);
-      assert_eq!(session.app().tiles.wanted(), tiles);
+      assert_eq!(session.app().unwrap().reader.cursor, position);
+      assert_eq!(session.app().unwrap().layout.zoom(), zoom);
+      assert_eq!(session.app().unwrap().tiles.wanted(), tiles);
     }
-    session.app().command(&format!("{name} dark"))?;
+    session.app().unwrap().command(&format!("{name} dark"))?;
     session.settle()?;
-    assert!(session.app().command(&format!("{name} ")).is_err());
+    assert!(session.app().unwrap().command(&format!("{name} ")).is_err());
     for argument in ["default", "nord", "unknown"] {
-      session.app().command(&format!("{name} {argument}"))?;
+      session.app().unwrap().command(&format!("{name} {argument}"))?;
       session.settle()?;
       assert_eq!(
         session.settings.theme(),
         &crate::config::ThemeChoice::Builtin(Theme::System)
       );
-      assert!(session.app().reader.message.contains("etc/themes/"));
+      assert!(session.app().unwrap().reader.message.contains("etc/themes/"));
     }
-    session.app().command(&format!("{name} dark"))?;
+    session.app().unwrap().command(&format!("{name} dark"))?;
     session.settle()?;
   }
   session.split(Axis::Columns, None, Place::After)?;
   assert_eq!(
-    session.app().settings.theme(),
+    session.app().unwrap().settings.theme(),
     &crate::config::ThemeChoice::Builtin(Theme::Dark)
   );
   session.open(&path, true, screen)?;
   assert_eq!(
-    session.app().settings.theme(),
+    session.app().unwrap().settings.theme(),
     &crate::config::ThemeChoice::Builtin(Theme::Dark)
   );
   assert_eq!(std::fs::read(&config)?, original);
@@ -1622,32 +1620,32 @@ fn recolor_views_and_restart() -> Result<()> {
   let screen = cells(120, 40);
   let mut session = Session::new(Some(store.clone()));
   session.open(&first, false, screen)?;
-  session.app().command("recolor sepia 30")?;
+  session.app().unwrap().command("recolor sepia 30")?;
   let sepia = Recolor::parse("sepia 30").unwrap();
-  assert_eq!(session.app().layout.recolor(), sepia);
+  assert_eq!(session.app().unwrap().layout.recolor(), sepia);
   let mut scene = vpdf_model::scene::Recorder::new(|_| true);
-  session.app().scene_pane(&mut scene, false)?;
-  let wanted = session.app().tiles.wanted().to_vec();
+  session.app().unwrap().scene_pane(&mut scene, false)?;
+  let wanted = session.app().unwrap().tiles.wanted().to_vec();
   assert_ne!(wanted.len(), 0);
-  session.app().command("recolor sepia 30")?;
-  assert_eq!(session.app().tiles.wanted(), wanted);
-  session.app().reload_with("")?;
-  assert_eq!(session.app().layout.recolor(), sepia);
+  session.app().unwrap().command("recolor sepia 30")?;
+  assert_eq!(session.app().unwrap().tiles.wanted(), wanted);
+  session.app().unwrap().reload_with("")?;
+  assert_eq!(session.app().unwrap().layout.recolor(), sepia);
   session.split(Axis::Columns, None, Place::After)?;
-  assert_eq!(session.app().layout.recolor(), sepia);
-  session.app().command("recolor dark 80")?;
+  assert_eq!(session.app().unwrap().layout.recolor(), sepia);
+  session.app().unwrap().command("recolor dark 80")?;
   let dark = Recolor::parse("dark 80").unwrap();
-  assert_eq!(session.app().layout.recolor(), dark);
-  assert!(session.app().command("recolor dark -1").is_err());
-  assert_eq!(session.app().layout.recolor(), dark);
+  assert_eq!(session.app().unwrap().layout.recolor(), dark);
+  assert!(session.app().unwrap().command("recolor dark -1").is_err());
+  assert_eq!(session.app().unwrap().layout.recolor(), dark);
   session.close_pane()?;
-  assert_eq!(session.app().layout.recolor(), sepia);
+  assert_eq!(session.app().unwrap().layout.recolor(), sepia);
   session.open(&second, false, screen)?;
-  assert_eq!(session.app().layout.recolor(), Recolor::default());
+  assert_eq!(session.app().unwrap().layout.recolor(), Recolor::default());
   session.close()?;
   let mut restarted = Session::new(Some(store));
   restarted.open(&first, false, screen)?;
-  assert_eq!(restarted.app().layout.recolor(), sepia);
+  assert_eq!(restarted.app().unwrap().layout.recolor(), sepia);
   restarted.close()?;
   Ok(())
 }
@@ -1659,15 +1657,15 @@ fn recolor_terminal_discards_old_tiles() -> Result<()> {
   crate::fixtures::pdf(&path, &["body"], "")?;
   let mut session = Session::new(None);
   session.open(&path, false, cells(120, 40))?;
-  let old = vpdf_ui::layout::visible(&session.app().layout, 0.0)[0];
-  session.app().command("recolor sepia 60")?;
+  let old = vpdf_ui::layout::visible(&session.app().unwrap().layout, 0.0)[0];
+  session.app().unwrap().command("recolor sepia 60")?;
   let new = vpdf_model::tile::TileKey {
-    recolor: session.app().layout.recolor(),
+    recolor: session.app().unwrap().layout.recolor(),
     ..old
   };
-  let owner = session.app().id;
+  let owner = session.app().unwrap().id;
   let (send, receive) = std::sync::mpsc::channel();
-  session.app().worker.results = receive;
+  session.app().unwrap().worker.results = receive;
   for key in [old, new] {
     send.send(Ok(vpdf_terminal::payload::Tile {
       key,
@@ -1676,7 +1674,7 @@ fn recolor_terminal_discards_old_tiles() -> Result<()> {
     }))?;
   }
   let mut graphics = Graphics::default();
-  session.app().raster_updates(&mut graphics);
+  session.app().unwrap().raster_updates(&mut graphics);
   assert!(!graphics.has(&(owner, old)));
   assert!(graphics.has(&(owner, new)));
   Ok(())

@@ -1,5 +1,28 @@
 include!("presentation/draw.rs");
 
+pub(crate) fn inactive<'a>(
+  scene: &mut impl vpdf_model::scene::Draw<'a>,
+  screen: vpdf_ui::layout::Screen,
+  left: u16,
+  opacity: vpdf_model::theme::Opacity,
+) {
+  use vpdf_model::scene::{Layer, Stage};
+  use vpdf_model::theme::{Colors, Overlay, Paint};
+  let veil = Overlay::Inactive;
+  if veil.resolve(Colors::Terminal, opacity)[3] == 0
+    || screen.rows < 2
+    || screen.columns == 0
+  {
+    return;
+  }
+  scene.stretch(
+    Paint::Overlay(veil),
+    Layer::AboveText,
+    (0, screen.columns, screen.rows - 1),
+    Stage { screen, left },
+  );
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

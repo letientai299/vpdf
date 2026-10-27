@@ -22,7 +22,7 @@ fn panel_ends_at_the_last_column() -> Result<()> {
     .scene(scene, 0, |_| {})
   })??;
   let out = String::from_utf8(out)?;
-  assert!(out.contains(" Vpdf "));
+  assert!(out.contains(" RECENT "));
   let columns = out.split("\x1b[").filter_map(|code| {
     let (row, column) = code.split_once('H')?.0.split_once(';')?;
     row.parse::<u16>().ok()?;
