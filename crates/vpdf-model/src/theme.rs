@@ -129,6 +129,8 @@ impl Colors {
       Tone::Cyan | Tone::ActiveBar => palette.link,
       Tone::Bar if background => palette.surface,
       Tone::Bar => palette.muted,
+      Tone::Track => palette.track(),
+      Tone::SelectionBg => palette.selection_bg(),
       Tone::Error => palette.error,
       Tone::Rgb(rgb) => rgb,
     }

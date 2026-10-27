@@ -845,7 +845,7 @@ pub(super) fn scene_progress<'a>(
   let full = track.trim_end_matches(' ');
   scene.push(Op::Style(Role::Mode));
   scene.text(full);
-  scene.push(Op::Style(Role::Muted));
+  scene.push(Op::Style(Role::Track));
   scene.text(&"▄".repeat(track.len() - full.len()));
   scene.push(Op::Style(tail));
   scene.text(&detail[track.len()..]);
@@ -1140,6 +1140,28 @@ mod design_tests {
       (20, Some(10), 0, "100%"),
     ] {
       assert_eq!(reading_position(page, total, cells), expected);
+    }
+  }
+
+  #[test]
+  fn progress_preserves_connected_cells() {
+    for base in [Role::Reset, Role::Selected, Role::Current, Role::Hover] {
+      for (page, full, empty) in [(0, 0, 5), (2, 2, 3), (5, 5, 0)] {
+        let mut scene = vpdf_model::scene::Scene::new();
+        scene_progress(&mut scene, &reading_position(page, Some(5), 5), base);
+        let spans = crate::testing::spans(&scene);
+        for (role, cells) in [(Role::Mode, full), (Role::Track, empty)] {
+          let text = spans
+            .iter()
+            .filter(|(style, _)| *style == role)
+            .map(|(_, text)| text.as_str())
+            .collect::<String>();
+          assert_eq!(text, "▄".repeat(cells), "{base:?}: {page}");
+        }
+        let (role, percent) = spans.last().unwrap();
+        assert_eq!(*role, super::super::rows::quiet(base));
+        assert_eq!(percent.trim(), format!("{}%", page * 20));
+      }
     }
   }
 

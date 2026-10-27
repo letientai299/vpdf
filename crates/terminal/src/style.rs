@@ -29,6 +29,7 @@ pub const fn sgr(role: Role) -> &'static str {
     Role::Argument => encoded!(Role::Argument),
     Role::File => encoded!(Role::File),
     Role::Muted => encoded!(Role::Muted),
+    Role::Track => encoded!(Role::Track),
     Role::Dim => encoded!(Role::Dim),
     Role::StatusSection => encoded!(Role::StatusSection),
     Role::Error => encoded!(Role::Error),
@@ -195,8 +196,8 @@ const fn palette(tone: Tone, background: bool) -> &'static str {
     (Tone::Yellow, true) => "43",
     (Tone::Cyan, false) => "36",
     (Tone::Cyan, true) => "46",
-    (Tone::Bar, false) => "90",
-    (Tone::Bar, true) => "100",
+    (Tone::Bar | Tone::Track | Tone::SelectionBg, false) => "90",
+    (Tone::Bar | Tone::Track | Tone::SelectionBg, true) => "100",
     (Tone::ActiveBar, false) => "94",
     (Tone::ActiveBar, true) => "104",
     (Tone::Error, false) => "31",
@@ -294,6 +295,28 @@ mod tests {
     let mut out = Vec::new();
     write(&mut out, Role::Badge(Color::Magenta), Colors::Palette(palette))?;
     assert_eq!(out, b"\x1b[0;1;38;2;255;255;255;48;2;16;16;16m");
+    Ok(())
+  }
+
+  #[test]
+  fn track_and_selection_colors() -> io::Result<()> {
+    use vpdf_model::theme::Palette;
+    for mut palette in [Palette::light(), Palette::dark()] {
+      palette.track = Some([1, 2, 3]);
+      palette.selection_bg = Some([4, 5, 6]);
+      let theme = Colors::Palette(palette);
+      let mut out = Vec::new();
+      write(&mut out, Role::Selected, theme)?;
+      write(&mut out, Role::Track, theme)?;
+      let [r, g, b] = palette.foreground;
+      assert_eq!(
+        out,
+        format!("\x1b[0;1;38;2;{r};{g};{b};48;2;4;5;6m\x1b[38;2;1;2;3m")
+          .as_bytes()
+      );
+    }
+    assert_eq!(sgr(Role::Track), sgr(Role::Muted));
+    assert_eq!(sgr(Role::Selected), "\x1b[0;1;100m");
     Ok(())
   }
 

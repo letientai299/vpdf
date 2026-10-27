@@ -25,6 +25,10 @@ pub struct Palette {
   pub link: [u8; 3],
   #[serde(deserialize_with = "hex")]
   pub error: [u8; 3],
+  #[serde(default, deserialize_with = "some_hex")]
+  pub track: Option<[u8; 3]>,
+  #[serde(default, deserialize_with = "some_hex")]
+  pub selection_bg: Option<[u8; 3]>,
   #[serde(default)]
   pub mode: ModeFills,
 }
@@ -98,6 +102,18 @@ pub fn luminance(rgb: [u8; 3]) -> f64 {
 }
 
 impl Palette {
+  pub fn track(self) -> [u8; 3] {
+    self.track.unwrap_or_else(|| {
+      std::array::from_fn(|i| {
+        ((u16::from(self.surface[i]) * 2 + u16::from(self.muted[i])) / 3) as u8
+      })
+    })
+  }
+
+  pub fn selection_bg(self) -> [u8; 3] {
+    self.selection_bg.unwrap_or(self.surface)
+  }
+
   pub fn parse(text: &str) -> Result<Self, toml::de::Error> {
     toml::from_str(text)
   }
@@ -182,7 +198,7 @@ mod tests {
         .unwrap();
     // Background text, else black or white.
     for (palette, color, text, fill) in [
-      (palette, Color::Blue, dark.background, [255, 0, 0]),
+      (palette, Color::Blue, [0; 3], [255, 0, 0]),
       (palette, Color::Magenta, [255; 3], [16; 3]),
       (palette, Color::Cyan, dark.badge(Color::Cyan).0, dark.link),
       (palette, Color::Yellow, dark.badge(Color::Yellow).0, dark.r#match),
@@ -200,11 +216,37 @@ mod tests {
   }
 
   #[test]
-  fn tokens_are_required_hex() {
+  fn optional_tokens_resolve_independently() {
+    let base = include_str!("../../../../etc/themes/dark.toml")
+      .lines()
+      .filter(|line| {
+        !line.starts_with("track =") && !line.starts_with("selection_bg =")
+      })
+      .collect::<Vec<_>>()
+      .join("\n");
+    let palette = Palette::parse(&base).unwrap();
+    assert_eq!(palette.selection_bg(), palette.surface);
+    assert_eq!(palette.track(), [69, 95, 81]);
+    let track =
+      Palette::parse(&format!("{base}\ntrack = \"#123456\"\n")).unwrap();
+    assert_eq!(track.track(), [0x12, 0x34, 0x56]);
+    assert_eq!(track.selection_bg(), palette.surface);
+    let selected =
+      Palette::parse(&format!("{base}\nselection_bg = \"#654321\"\n")).unwrap();
+    assert_eq!(selected.selection_bg(), [0x65, 0x43, 0x21]);
+    assert_eq!(selected.track(), palette.track());
+  }
+
+  #[test]
+  fn tokens_validate_hex() {
     let text = include_str!("../../../../etc/themes/dark.toml");
     for line in text.lines().filter(|line| line.contains(" = ")) {
-      assert!(Palette::parse(&text.replace(line, "")).is_err(), "{line}");
       let (key, _) = line.split_once(" = ").unwrap();
+      assert_eq!(
+        Palette::parse(&text.replace(line, "")).is_ok(),
+        matches!(key, "track" | "selection_bg"),
+        "{key}"
+      );
       for invalid in
         ["red", "#xyzxyz", "#12345", "#1234567", "123456", "#１２３"]
       {

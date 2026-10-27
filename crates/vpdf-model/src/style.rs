@@ -24,6 +24,7 @@ pub enum Role {
   Argument,
   File,
   Muted,
+  Track,
   Dim,
   StatusSection,
   Error,
@@ -57,6 +58,8 @@ pub enum Tone {
   Cyan,
   Bar,
   ActiveBar,
+  Track,
+  SelectionBg,
   Error,
   PreviewBorder,
   PreviewText,
@@ -112,7 +115,7 @@ impl Role {
     match self {
       Self::Reset => Reset(P::new(Keep, Keep, &[])),
       Self::Bar | Self::TextCursorline => Reset(P::new(Keep, Set(T::Bar), &[])),
-      Self::Selected => Reset(P::new(Keep, Set(T::Bar), &[Bold])),
+      Self::Selected => Reset(P::new(Keep, Set(T::SelectionBg), &[Bold])),
       Self::StatusFile | Self::TabActive => {
         Reset(P::new(Set(T::Black), Set(T::ActiveBar), &[Bold]))
       }
@@ -126,6 +129,7 @@ impl Role {
       Self::Mode => Patch(P::new(Set(T::Cyan), Keep, &[])),
       Self::Argument => Patch(P::new(Set(T::Magenta), Keep, &[])),
       Self::Muted => Patch(P::new(Set(T::Bar), Keep, &[])),
+      Self::Track => Patch(P::new(Set(T::Track), Keep, &[])),
       Self::Dim => Reset(P::new(Keep, Keep, &[Dim])),
       Self::StatusSection => Reset(P::new(Keep, Set(T::Bar), &[Italic])),
       Self::Error => Patch(P::new(Set(T::Error), Keep, &[Bold])),

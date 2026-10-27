@@ -355,6 +355,19 @@ file.
 | `link`       | Links                           |
 | `error`      | Errors                          |
 
+Two optional top-level tokens separate indicator and selection colors:
+
+| Token          | Use                                     | Default                               |
+| -------------- | --------------------------------------- | ------------------------------------- |
+| `track`        | Unfinished progress and scrollbar rails | Two parts `surface`, one part `muted` |
+| `selection_bg` | Selected list row background            | `surface`                             |
+
+The `track` default mixes RGB channels. Scrollbar rails apply
+`opacity.scrollbar`; their thumbs retain `muted` at a higher opacity.
+Completed progress retains `link`. `selection_bg` changes only the row fill;
+text roles and selection markers remain. It is independent of PDF text
+selection (`highlight`) and cursor-line bands (`cursorline`).
+
 An optional `[mode]` table sets badge fills. Each key is optional and
 defaults to the listed token:
 

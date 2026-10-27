@@ -10,6 +10,12 @@ enum Cue {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Content {
+  Text,
+  Track,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Style {
   pub foreground: Color32,
   pub background: Option<Color32>,
@@ -17,6 +23,7 @@ pub struct Style {
   pub underline: bool,
   pub italic: bool,
   cue: Cue,
+  content: Content,
 }
 
 impl Default for Style {
@@ -39,6 +46,7 @@ impl Style {
       underline: false,
       italic: false,
       cue: Cue::None,
+      content: Content::Text,
     }
   }
 
@@ -48,7 +56,7 @@ impl Style {
     theme: Colors,
   ) {
     self.underline |= self.cue == Cue::Selection;
-    if !display.contrast {
+    if !display.contrast || self.content == Content::Track {
       return;
     }
     let fill =
@@ -76,6 +84,10 @@ impl Style {
         patch
       }
       StyleChange::Patch(patch) => patch,
+    };
+    self.content = match role {
+      Role::Track => Content::Track,
+      _ => Content::Text,
     };
     if matches!(
       role,
@@ -161,6 +173,7 @@ mod tests {
       for (role, foreground, background) in [
         (Role::Reset, p.foreground, None),
         (Role::Bar, p.foreground, Some(p.surface)),
+        (Role::Selected, p.foreground, Some(p.selection_bg())),
         (Role::TextCursorline, p.foreground, Some(p.cursorline)),
         (Role::Current, p.accent, None),
         (Role::Dim, p.muted, None),
@@ -290,6 +303,33 @@ mod tests {
   }
 
   #[test]
+  fn track_preserves_selected_fill() {
+    for palette in
+      [vpdf_model::theme::Palette::light(), vpdf_model::theme::Palette::dark()]
+    {
+      let theme = Colors::Palette(palette);
+      let mut style = Style::new(theme);
+      style.apply(Role::Selected, theme);
+      style.apply(Role::Track, theme);
+      assert_eq!(style.background, Some(rgb(palette.selection_bg())));
+      assert_eq!(style.foreground, rgb(palette.track()));
+      assert!(style.bold);
+      style.accommodate(
+        crate::preferences::Display { contrast: true, ..Default::default() },
+        theme,
+      );
+      assert_eq!(style.foreground, rgb(palette.track()));
+      assert!(style.underline);
+      style.apply(Role::Muted, theme);
+      assert_eq!(style.foreground, rgb(palette.muted));
+      assert_eq!(style.background, Some(rgb(palette.selection_bg())));
+      assert!(
+        vpdf_model::theme::contrast(palette.link, palette.track()) >= 3.0
+      );
+    }
+  }
+
+  #[test]
   fn muted_keeps_row_attributes() {
     for (name, palette) in shipped() {
       let theme = Colors::Palette(palette);
@@ -322,7 +362,7 @@ mod tests {
     // Chosen items keep `accent`, not `[mode] normal`.
     for (theme, role, foreground, background) in [
       (palette, Role::Badge(Color::Magenta), [255; 3], [16; 3]),
-      (palette, Role::Badge(Color::Blue), palette.background, [255, 0, 0]),
+      (palette, Role::Badge(Color::Blue), [0; 3], [255, 0, 0]),
       (palette, Role::Chosen, palette.background, palette.accent),
       (gray, Role::Chosen, [255; 3], [0x33; 3]),
     ] {

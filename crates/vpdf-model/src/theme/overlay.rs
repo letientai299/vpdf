@@ -55,7 +55,8 @@ impl Overlay {
       | Self::RegionEdge
       | Self::Badge
       | Self::HeadingTick => p.accent,
-      Self::RingHover | Self::Track | Self::Thumb => p.muted,
+      Self::RingHover | Self::Thumb => p.muted,
+      Self::Track => p.track(),
       Self::Landing | Self::Match | Self::Hint | Self::MatchTick => p.r#match,
       Self::PaneVeil | Self::Inactive | Self::RegionVeil | Self::Preview => {
         p.background
@@ -221,6 +222,8 @@ mod tests {
       (Overlay::Inactive, palette.background),
       (Overlay::Preview, palette.background),
       (Overlay::Link, palette.link),
+      (Overlay::Track, palette.track()),
+      (Overlay::Thumb, palette.muted),
     ] {
       assert_eq!(
         overlay.resolve(Colors::Terminal, Opacity::default())[..3],
@@ -229,6 +232,23 @@ mod tests {
       assert_eq!(
         overlay.resolve(Colors::Terminal, Opacity::default()),
         overlay.resolve(Colors::Palette(palette), Opacity::default())
+      );
+    }
+  }
+
+  #[test]
+  fn scrollbar_colors_are_independent() {
+    for mut palette in [Palette::light(), Palette::dark()] {
+      palette.track = Some([0x12, 0x34, 0x56]);
+      let theme = Colors::Palette(palette);
+      assert_eq!(
+        Overlay::Track.resolve(theme, Opacity::default()),
+        [0x12, 0x34, 0x56, 50]
+      );
+      let [r, g, b] = palette.muted;
+      assert_eq!(
+        Overlay::Thumb.resolve(theme, Opacity::default()),
+        [r, g, b, 190]
       );
     }
   }
