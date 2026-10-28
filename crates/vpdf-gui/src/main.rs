@@ -53,6 +53,8 @@ struct Window {
   documents: fmv_macos_events::Inbox,
   #[cfg(target_os = "macos")]
   preferences: vpdf_gui::preferences::Observer,
+  #[cfg(target_os = "macos")]
+  presentation: Option<vpdf_macos::Presentation>,
   bridge: Bridge,
   frame: Option<Frame>,
   renderer: Renderer,
@@ -162,6 +164,8 @@ impl Window {
       #[cfg(target_os = "macos")]
       documents,
       #[cfg(target_os = "macos")]
+      presentation: vpdf_macos::Presentation::new(cc),
+      #[cfg(target_os = "macos")]
       preferences: {
         let ctx = cc.egui_ctx.clone();
         vpdf_gui::preferences::Observer::new(move || ctx.request_repaint())
@@ -241,6 +245,13 @@ impl Window {
 }
 
 impl eframe::App for Window {
+  #[cfg(target_os = "macos")]
+  fn raw_input_hook(&mut self, _: &egui::Context, _: &mut egui::RawInput) {
+    if let Some(presentation) = &self.presentation {
+      presentation.prepare_frame();
+    }
+  }
+
   fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
     let started = std::time::Instant::now();
     let ctx = ui.ctx().clone();

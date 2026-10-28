@@ -1,6 +1,6 @@
 //! Main-thread menu and window-sheet adapter.
 pub use crate::about::About;
-use crate::placement;
+use crate::{placement, presentation};
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
@@ -12,14 +12,14 @@ use objc2_app_kit::{
   NSEventModifierFlags, NSMenu, NSMenuDelegate, NSMenuItem, NSModalResponseOK,
   NSOpenPanel, NSPanel, NSPasteboard, NSPasteboardTypeString, NSScreen,
   NSTextFieldDelegate, NSTextView, NSToolbar, NSToolbarDelegate, NSToolbarItem,
-  NSView, NSWindow, NSWorkspace, NSWorkspaceOpenConfiguration,
+  NSWindow, NSWorkspace, NSWorkspaceOpenConfiguration,
 };
 use objc2_foundation::{
   MainThreadMarker, NSArray, NSNotification, NSObject, NSObjectProtocol,
   NSPoint, NSRect, NSSize, NSString, NSURL, NSUserDefaults, ns_string,
 };
 use objc2_uniform_type_identifiers::{UTTypePDF, UTTypePlainText};
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use raw_window_handle::HasWindowHandle;
 use std::cell::{Cell, OnceCell, RefCell};
 use std::ffi::CStr;
 use std::path::{Path, PathBuf};
@@ -342,10 +342,7 @@ impl Integration {
     invoke: impl Fn(Request) + 'static,
   ) -> Option<Self> {
     let mtm = MainThreadMarker::new()?;
-    let borrowed = parent.window_handle().ok()?;
-    let RawWindowHandle::AppKit(raw) = borrowed.as_raw() else { return None };
-    // SAFETY: Borrowed AppKit handles guarantee live NSViews.
-    let view = unsafe { raw.ns_view.cast::<NSView>().as_ref() };
+    let view = presentation::view(parent)?;
     let window = view.window()?;
     let menu = NSApplication::sharedApplication(mtm).mainMenu()?;
     #[cfg(feature = "bench-events")]
@@ -469,7 +466,7 @@ impl Integration {
       let _ = handler.ivars().toggle.set(toggle);
     }
     *handler.ivars().entries.borrow_mut() = installed;
-    let bar = toolbar::Bar::new(&handler, tools, entries, &window, view);
+    let bar = toolbar::Bar::new(&handler, tools, entries, &window, &view);
     let hidden = NSUserDefaults::standardUserDefaults()
       .boolForKey(&NSString::from_str(HIDDEN));
     let _ = handler.ivars().bar.set(bar);
