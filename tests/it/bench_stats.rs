@@ -1,4 +1,4 @@
-#[path = "../../benches/support/percentile.rs"]
+#[path = "../../crates/vpdf-dev/support/percentile.rs"]
 mod stats;
 
 #[test]

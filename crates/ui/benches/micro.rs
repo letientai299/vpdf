@@ -1,6 +1,6 @@
-#[path = "../../../benches/support/directory.rs"]
+#[path = "../../vpdf-dev/support/directory.rs"]
 mod directory;
-#[path = "../../../benches/support/layout.rs"]
+#[path = "../../vpdf-dev/support/layout.rs"]
 mod layouts;
 use anyhow::Result;
 use std::hint::black_box;
@@ -8,29 +8,29 @@ use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
 use vpdf_model::text::PageId;
 use vpdf_ui::layout::visible;
 mod content;
-#[path = "../../../benches/support/fixtures.rs"]
+#[path = "../../vpdf-dev/support/fixtures.rs"]
 mod fixtures;
 mod gestures;
 mod page;
 mod preview;
-#[path = "../../../benches/support/raster.rs"]
+#[path = "../../vpdf-dev/support/raster.rs"]
 mod raster;
 mod scenes;
 use fixtures::{bounds, read as fixture};
-#[path = "../../../benches/support/hash.rs"]
+#[path = "../../vpdf-dev/support/hash.rs"]
 mod hash;
 mod jumps;
 mod links;
-#[path = "../../../benches/support/pages.rs"]
+#[path = "../../vpdf-dev/support/pages.rs"]
 mod pages;
 mod reading;
 #[path = "../../../tests/support/screen.rs"]
 mod screen;
 mod search;
 mod sections;
-#[path = "../../../benches/support/mod.rs"]
+#[path = "../../vpdf-dev/support/mod.rs"]
 mod support;
-#[path = "../../../benches/support/text_source.rs"]
+#[path = "../../vpdf-dev/support/text_source.rs"]
 mod text_source;
 use support::measure;
 

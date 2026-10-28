@@ -142,6 +142,6 @@ to release native resources. The policy and thresholds live in the
 [development]: dev.md
 [packages]: packages.md
 [adapter]: ../../src/pdf_text.rs
-[policy]: ../../scripts/check_packages.py
+[policy]: ../../tools/check/packages.py
 
 [maintenance]: ../../src/session/maintenance.rs

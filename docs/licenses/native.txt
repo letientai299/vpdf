@@ -1,6 +1,6 @@
 MuPDF and bundled third-party notices
 
-Cargo.lock SHA-256: b6e70776aee88950ad82a3890de7d0757635dc281ab703239e254e462874563f
+Cargo.lock SHA-256: c2e312dfe8f9b8e98fbaa43c8aa6ddf974deb9af86b466d51e8e1ec3835a1287
 
 Source: git+https://github.com/messense/mupdf-rs?rev=7aa360d38be068cfca21ab7d840e0676dc6db52c#7aa360d38be068cfca21ab7d840e0676dc6db52c
 

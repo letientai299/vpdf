@@ -1,4 +1,4 @@
-//! Byte fixtures. "Recorded" ones are reads `scripts/record.py` logged:
+//! Byte fixtures. "Recorded" ones are reads `tools/check/record.py` logged:
 //! kitty 0.49.1 driven by `kitten @ send-key` and `send-text`, real
 //! pointer motion in that window, and `WezTerm` 20240203-110809-5046fc22
 //! replies from a headless mux. "Source" ones follow the cited protocol

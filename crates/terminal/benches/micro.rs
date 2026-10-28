@@ -1,9 +1,9 @@
-#[path = "../../../benches/support/directory.rs"]
+#[path = "../../vpdf-dev/support/directory.rs"]
 mod directory;
 use anyhow::Result;
-#[path = "../../../benches/support/hash.rs"]
+#[path = "../../vpdf-dev/support/hash.rs"]
 mod hash;
-#[path = "../../../benches/support/raster.rs"]
+#[path = "../../vpdf-dev/support/raster.rs"]
 mod raster;
 use raster::fixture;
 use std::hint::black_box;
@@ -17,7 +17,7 @@ use vpdf_terminal::spool::Spool;
 
 #[path = "../../../tests/support/screen.rs"]
 mod screen;
-#[path = "../../../benches/support/mod.rs"]
+#[path = "../../vpdf-dev/support/mod.rs"]
 mod support;
 use support::measure;
 

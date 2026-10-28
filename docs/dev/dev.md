@@ -47,6 +47,18 @@ zlib, and reject non-system dynamic libraries. These checks cover the
 executable; optional helpers remain separate programs. [Build scripts][build]
 and the [CI matrix][ci] define supported hosts.
 
+## Tooling layout
+
+The `vpdf` application sits at the repository root; other Cargo packages live
+in `crates/<name>/`. The [development crate][vpdf-dev] holds
+application benchmarks and the fixture and help export binaries; it never
+ships. Other development tools live in `tools/<group>/` beside the data they
+read. The `vpdf` [build script][cargo-build] is the one Cargo file there.
+
+Python tools form the `tools` package. Use absolute imports, run modules with
+`python3 -B -m tools.<group>.<module>` from the repository root, and keep tests
+beside the modules they cover. Mise puts `tools/shims` first on `PATH`.
+
 ## Build cache
 
 Build and validation tasks share compilation by default. Worktrees keep
@@ -156,13 +168,6 @@ artifacts, and final outputs share that budget with direct Cargo's isolated
 caches. Active commands protect their caches until exit and can temporarily
 exceed the budget. Set `VPDF_BUILD_CACHE_GIB` to override the budget. Worktree
 removal preserves the warm worker cache for reuse.
-
-Run `mise run cache:prune` to remove idle legacy isolated build caches and
-legacy hook sources belonging to currently registered worktrees. It preserves
-the shared worker, active legacy builds, caller outputs, and unrelated
-repositories. Legacy hook sources from already removed worktrees cannot be
-identified safely and are left in the operating system's temporary directory.
-Existing unmanaged build directories remain until cleaned separately.
 
 Set `VPDF_BUILD_MODE=isolated` to run a task in its calling worktree without
 the shared worker. An explicit `CARGO_BUILD_BUILD_DIR` also opts out and stays
@@ -410,18 +415,18 @@ mise run bench:stages
 
 The [scenario driver][scenario-driver] runs the real session without a window.
 Scenario headers pin PDF hashes, layout, and crop mode. Run
-`mise run bench:drive -- benches/scenarios/keys.txt`; results and traces stay in
-the host cache. The catalog defaults to `sdm.pdf`; `mise run corpus:huge -- sdm`
-fetches and verifies it. Use `--huge DIRECTORY` for an additional large PDF with
-its own hash-pinned scenario. Headless delivery measures frame collection,
-excluding GPU painting and terminal output. Each headless scenario replicate
-runs in a fresh process; its populate/hide/restore sequence shares that process.
-Reports separate embedded build provenance from the runtime checkout, whose
-status stays unknown when Git fails. Patch identity includes tracked changes and
-nonignored untracked files. Executable hashes identify copied builds. The
-general latency cases use this bridge; crop measurements retain their component
-loop. Enqueue time measures input submission, rather than the former direct
-action CPU time.
+`mise run bench:drive -- tools/bench/scenarios/keys.txt`; results and traces
+stay in the host cache. The catalog defaults to `sdm.pdf`;
+`mise run corpus:huge -- sdm` fetches and verifies it. Use `--huge DIRECTORY`
+for an additional large PDF with its own hash-pinned scenario. Headless delivery
+measures frame collection, excluding GPU painting and terminal output. Each
+headless scenario replicate runs in a fresh process; its populate/hide/restore
+sequence shares that process. Reports separate embedded build provenance from
+the runtime checkout, whose status stays unknown when Git fails. Patch identity
+includes tracked changes and nonignored untracked files. Executable hashes
+identify copied builds. The general latency cases use this bridge; crop
+measurements retain their component loop. Enqueue time measures input
+submission, rather than the former direct action CPU time.
 
 Summarize marks with `mise run bench:report -- TRACE --json REPORT`. CPU means
 use the sampler's rolling percentages. A `clock` row anchors reader timestamps
@@ -459,7 +464,7 @@ output through bounded nonblocking queues. Failed runs retain their error and
 cleanup records. Retain one real macOS resize check per release; FIFO geometry
 bypasses OS input paths.
 
-Use `benches/scenarios/keys-120.txt` and `keys-240.txt` to stress cadence;
+Use `tools/bench/scenarios/keys-120.txt` and `keys-240.txt` to stress cadence;
 `keys-1000.txt` stresses input throughput. Reports separate requested input
 rates, reader input cadence, and frame cadence. The report's frame budget comes
 from its application FPS target. Input throughput does not establish rendering
@@ -471,15 +476,15 @@ pty. Its `startup` scenario reports reader readiness separately from output
 delivery. It shares transport helpers with the existing startup task.
 
 The [microbenchmarks][micro] accept case filters and `--package` selection.
-Model, search, reader, terminal, and UI cases use prepared real-PDF fixtures.
-UI cases measure scene construction without terminal serialization. Combined
+Model, search, reader, terminal, and UI cases use prepared real-PDF fixtures. UI
+cases measure scene construction without terminal serialization. Combined
 UI/terminal workloads run under the application `presentation` benchmark,
-included by `bench:micro -- --package vpdf`; their workload names are unchanged.
-Fixture hashes are checked and source identity is recorded outside the timed
-loops. Preparation requires MuPDF; these packages and protocol execute their
-benchmarks without it. PDF benchmarks open native documents; application cases
-retain integrated frames, routing, and latency. Run `mise run corpus` before
-native cases to verify their inputs.
+included by `bench:micro -- --package vpdf-dev`; their workload names are
+unchanged. Fixture hashes are checked and source identity is recorded outside
+the timed loops. Preparation requires MuPDF; these packages and protocol execute
+their benchmarks without it. PDF benchmarks open native documents; application
+cases retain integrated frames, routing, and latency. Run `mise run corpus`
+before native cases to verify their inputs.
 
 The PDF `crop worker` case measures a sampled batch with interpreted display
 lists and a subsequent page with a cached list. It opens the document and worker
@@ -639,7 +644,7 @@ List scene names without opening a terminal, or repeat `--scene` to refresh a
 subset:
 
 ```sh
-python3 scripts/demo.py --list-scenes
+python3 -m tools.demo.capture --list-scenes
 mise run demo -- --scene mouse-menu
 mise run demo -- --scene mouse-hints --scene mouse-region
 ```
@@ -706,35 +711,37 @@ a result needs a reproducible release reference.
 [packages]: packages.md
 [mise]: https://mise.jdx.dev/
 [pkgconf]: https://formulae.brew.sh/formula/pkgconf
-[build]: ../../scripts/build.sh
-[build-cache]: ../../scripts/build_cache.py
-[validation]: ../../scripts/validation.py
-[build-worker]: ../../scripts/build_worker.py
-[build-app]: ../../scripts/build-app.sh
+[build]: ../../tools/build/build.sh
+[cargo-build]: ../../tools/build/cargo.rs
+[vpdf-dev]: ../../crates/vpdf-dev/Cargo.toml
+[build-cache]: ../../tools/build/cache.py
+[validation]: ../../tools/build/receipts.py
+[build-worker]: ../../tools/build/worker.py
+[build-app]: ../../tools/package/app.sh
 [document-events]: https://docs.rs/fmv-macos-events/latest/fmv_macos_events/
 [icon]: ../assets/vpdf.svg
 [inject]: ../../crates/vpdf-gui/src/inject.rs
 [scenario]: ../../src/scenario.rs
 [apple-distribution]: https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution
-[install]: ../../scripts/install.sh
+[install]: ../../tools/package/install.sh
 [ci]: ../../.github/workflows/ci.yml
 [hooks]: ../../prek.toml
 [ruff]: https://docs.astral.sh/ruff/
 [rumdl]: ../../.config/rumdl.toml
-[corpus]: ../../scripts/corpus.sh
+[corpus]: ../../tools/corpus/corpus.sh
 [corpus-tests]: ../../tests/it/corpus.rs
 [pdf-corpus-tests]: ../../crates/vpdf-pdf/tests/corpus.rs
-[micro]: ../../scripts/bench-micro.sh
-[reader-bench]: ../../benches/reader.rs
-[latency]: ../../benches/latency.rs
-[stages]: ../../benches/stages.rs
+[micro]: ../../tools/bench/micro.sh
+[reader-bench]: ../../crates/vpdf-dev/benches/reader.rs
+[latency]: ../../crates/vpdf-dev/benches/latency.rs
+[stages]: ../../crates/vpdf-dev/benches/stages.rs
 [render-worker]: ../../crates/vpdf-pdf/src/jobs/render.rs
-[startup]: ../../scripts/startup.py
+[startup]: ../../tools/bench/startup.py
 [trace]: ../../src/trace.rs
-[package]: ../../scripts/release.sh
+[package]: ../../tools/package/release.sh
 [release]: ../../.github/workflows/release.yml
-[demo-script]: ../../scripts/demo.py
-[demo-optimize]: ../../scripts/demo-optimize.sh
+[demo-script]: ../../tools/demo/capture.py
+[demo-optimize]: ../../tools/demo/optimize.sh
 [demo]: ../demos.md
 [demo-backlog]: demo-backlog.md
 [kitty-capture]: https://sw.kovidgoyal.net/kitty/remote-control/#kitten-screenshot
@@ -747,12 +754,12 @@ a result needs a reproducible release reference.
 [poppler]: https://poppler.freedesktop.org/
 [ocr-setup]: ../users/install.md#optional-helpers
 [preview]: ../../crates/ui/src/preview.rs
-[manuals]: ../../benches/manuals.rs
-[bench-support]: ../../benches/support/mod.rs
-[scenario-driver]: ../../benches/drive.rs
-[live-driver]: ../../benches/live/drive.py
-[ci-script]: ../../scripts/ci.py
-[hook-script]: ../../scripts/hooks.py
+[manuals]: ../../crates/vpdf-dev/benches/manuals.rs
+[bench-support]: ../../crates/vpdf-dev/support/mod.rs
+[scenario-driver]: ../../crates/vpdf-dev/benches/drive.rs
+[live-driver]: ../../tools/bench/live/drive.py
+[ci-script]: ../../tools/check/ci.py
+[hook-script]: ../../tools/check/hooks.py
 [nextest-filters]: https://nexte.st/docs/filtersets/reference/
 [prek-run]: https://prek.j178.dev/running-hooks/
 [demo-media]: demo-media.md

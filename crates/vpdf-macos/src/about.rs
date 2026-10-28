@@ -185,7 +185,7 @@ mod tests {
   #[test]
   fn diagnostic_links_handle_unicode() {
     let text = "📖 Source\nhttps://example.com/commit/abc\nHelp\n\
-                https://example.com/blob/abc/scripts/help_assets.py";
+                https://example.com/blob/abc/tools/help/assets.py";
     let result = attributed(text);
     assert_eq!(result.string().to_string(), text);
     for url in text.split_whitespace().filter(|s| s.starts_with("https://")) {

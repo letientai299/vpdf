@@ -1,12 +1,12 @@
-#[path = "../../../benches/support/directory.rs"]
+#[path = "../../vpdf-dev/support/directory.rs"]
 mod directory;
 use anyhow::{Context, Result};
 use std::hint::black_box;
-#[path = "../../../benches/support/fixtures.rs"]
+#[path = "../../vpdf-dev/support/fixtures.rs"]
 mod fixtures;
-#[path = "../../../benches/support/hash.rs"]
+#[path = "../../vpdf-dev/support/hash.rs"]
 mod hash;
-#[path = "../../../benches/support/mod.rs"]
+#[path = "../../vpdf-dev/support/mod.rs"]
 mod support;
 
 #[derive(serde::Deserialize)]

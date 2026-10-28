@@ -1,17 +1,17 @@
-#[path = "../../../benches/support/directory.rs"]
+#[path = "../../vpdf-dev/support/directory.rs"]
 mod directory;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::motion::Motion;
 use vpdf_reader::reader::Reader;
-#[path = "../../../benches/support/fixtures.rs"]
+#[path = "../../vpdf-dev/support/fixtures.rs"]
 mod fixtures;
-#[path = "../../../benches/support/hash.rs"]
+#[path = "../../vpdf-dev/support/hash.rs"]
 mod hash;
-#[path = "../../../benches/support/mod.rs"]
+#[path = "../../vpdf-dev/support/mod.rs"]
 mod support;
-#[path = "../../../benches/support/text_source.rs"]
+#[path = "../../vpdf-dev/support/text_source.rs"]
 mod text_source;
 use support::measure;
 

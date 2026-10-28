@@ -3506,6 +3506,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "vpdf-dev"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "mupdf",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sysinfo",
+ "tempfile",
+ "vpdf",
+ "vpdf-model",
+ "vpdf-pdf",
+ "vpdf-reader",
+ "vpdf-search",
+ "vpdf-terminal",
+ "vpdf-ui",
+]
+
+[[package]]
 name = "vpdf-gui"
 version = "0.1.0"
 dependencies = [

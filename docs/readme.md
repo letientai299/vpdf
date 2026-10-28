@@ -84,6 +84,6 @@ sources][manual] under `users/`. Avoid copying inventories into Markdown.
 [licensing]: users/install.md#licensing
 [performance]: users/status.md#performance-display
 [configuration]: users/config.md
-[contents]: ../scripts/help/contents.json
+[contents]: ../tools/help/help/contents.json
 [native]: dev/native.md
 [demo-media]: dev/demo-media.md

@@ -1,14 +1,14 @@
-#[path = "../../../benches/support/directory.rs"]
+#[path = "../../vpdf-dev/support/directory.rs"]
 mod directory;
 use anyhow::Result;
 use std::hint::black_box;
 use vpdf_model::text::PageId;
 use vpdf_search::search::{Index, compile};
-#[path = "../../../benches/support/fixtures.rs"]
+#[path = "../../vpdf-dev/support/fixtures.rs"]
 mod fixtures;
-#[path = "../../../benches/support/hash.rs"]
+#[path = "../../vpdf-dev/support/hash.rs"]
 mod hash;
-#[path = "../../../benches/support/mod.rs"]
+#[path = "../../vpdf-dev/support/mod.rs"]
 mod support;
 use support::measure;
 

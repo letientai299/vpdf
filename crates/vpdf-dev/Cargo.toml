@@ -1,0 +1,59 @@
+[package]
+name = "vpdf-dev"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+bench-events = ["vpdf/bench-events"]
+
+[dependencies]
+vpdf = { path = "../.." }
+vpdf-model.workspace = true
+vpdf-search.workspace = true
+vpdf-pdf.workspace = true
+vpdf-reader.workspace = true
+vpdf-terminal.workspace = true
+vpdf-ui.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+mupdf.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sysinfo.workspace = true
+tempfile.workspace = true
+
+[[bench]]
+name = "reader"
+harness = false
+
+[[bench]]
+name = "latency"
+harness = false
+required-features = ["bench-events"]
+
+[[bench]]
+name = "stages"
+harness = false
+
+[[bench]]
+name = "micro"
+harness = false
+
+[[bench]]
+name = "manuals"
+harness = false
+
+[[bench]]
+name = "presentation"
+harness = false
+
+[[bench]]
+name = "drive"
+harness = false
+required-features = ["bench-events"]

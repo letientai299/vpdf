@@ -51,7 +51,7 @@ impl Writer {
     Ok(Self {
       native,
       typography: serde_json::from_str(include_str!(
-        "../../../../scripts/help/typography.json"
+        "../../../../tools/help/help/typography.json"
       ))?,
       font,
       palette,

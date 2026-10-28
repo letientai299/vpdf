@@ -15,7 +15,7 @@ upx = { version = "5.2.1", os = ["linux"] }
 ocr_tests = "test(real_ocr_and_cancel) | test(real_ocr_cache_policy)"
 
 [env]
-_.path = ["{{config_root}}/scripts/tools"]
+_.path = ["{{config_root}}/tools/shims"]
 # Lets check and build share MuPDF.
 CARGO_BUILD_TARGET = "{{ arch(x64='x86_64', arm64='aarch64') }}-{{ os(macos='apple-darwin', linux='unknown-linux-gnu') }}"
 # Corpus tests and benches; `corpus:huge` fills tmp/huge for ad hoc runs.
@@ -24,7 +24,7 @@ VPDF_CORPUS = "{{config_root}}/tmp/corpus"
 [tasks.validate]
 description = "Validate one snapshot and build the debug reader"
 env.VPDF_CACHE = "off"
-run = "python3 -B scripts/build_worker.py validate"
+run = "python3 -B -m tools.build.worker validate"
 
 [tasks."ci:check"]
 description = "Run current-platform CI checks and verify release archives"
@@ -33,23 +33,19 @@ env.CARGO_INCREMENTAL = "0"
 env.VPDF_BENCH_EVENTS = "0"
 env.VPDF_CACHE = "off"
 env.NEXTEST_RETRIES = "0"
-run = "python3 -B scripts/build_worker.py ci:check"
+run = "python3 -B -m tools.build.worker ci:check"
 
 [tasks."_ci:check"]
 hide = true
-run = "python3 -B scripts/ci.py"
+run = "python3 -B -m tools.check.ci"
 
 [tasks._validate]
 hide = true
-run = "python3 -B scripts/hooks.py validate"
-
-[tasks."cache:prune"]
-description = "Remove idle legacy build and hook snapshots"
-run = "python3 -B scripts/build_worker.py --clean-old"
+run = "python3 -B -m tools.check.hooks validate"
 
 [tasks."build:gui"]
 description = "Build the debug native reader"
-run = "python3 -B scripts/build_worker.py build:gui"
+run = "python3 -B -m tools.build.worker build:gui"
 
 [tasks."_build:gui"]
 hide = true
@@ -58,7 +54,7 @@ run = "cargo build --locked -p vpdf-gui"
 
 [tasks."build:debug"]
 description = "Build the debug reader"
-run = "python3 -B scripts/build_worker.py build:debug"
+run = "python3 -B -m tools.build.worker build:debug"
 
 [tasks."_build:debug"]
 hide = true
@@ -67,60 +63,60 @@ run = "cargo build --locked -p vpdf"
 
 [tasks."build"]
 description = "Build the optimized reader"
-run = "python3 -B scripts/build_worker.py build"
+run = "python3 -B -m tools.build.worker build"
 
 [tasks."_build"]
 hide = true
-run = "sh scripts/build.sh"
+run = "sh tools/build/build.sh"
 
 [tasks."build:app"]
 description = "Build the macOS app and DMG"
-run = "python3 -B scripts/build_worker.py build:app"
+run = "python3 -B -m tools.build.worker build:app"
 
 [tasks."_build:app"]
 hide = true
-run = "sh scripts/build-app.sh"
+run = "sh tools/package/app.sh"
 
 [tasks."build:icon"]
 description = "Render the Vpdf app icon from SVG"
-run = "sh scripts/build-icon.sh"
+run = "sh tools/package/icon.sh"
 
 [tasks."install:app"]
 description = "Install the macOS app into ~/Applications"
 env.VPDF_APP_DMG = "0"
 run = [
-  "python3 -B scripts/build_worker.py build:app",
-  "sh scripts/install-app.sh",
+  "python3 -B -m tools.build.worker build:app",
+  "sh tools/package/install-app.sh",
 ]
 
 [tasks."install:cli"]
 description = "Install the optimized terminal reader"
 depends = ["build"]
-run = "sh scripts/install.sh"
+run = "sh tools/package/install.sh"
 
 [tasks."test:app"]
 env.VPDF_CACHE = "off"
 description = "Verify macOS packaging and installation"
 depends = ["build:app"]
-run = "python3 -B -m unittest discover -s scripts -p test_app.py"
+run = "python3 -B -m unittest discover -s tools/package -t . -p test_app.py"
 
 [tasks."test:app:open"]
 description = "Check Finder document events in a background app"
 depends = ["build:app"]
 env.VPDF_TEST_OPEN = "1"
 run = [
-  "sh scripts/corpus.sh corpus paper",
-  "python3 -B -m unittest discover -s scripts -p test_app.py -k DocumentTests",
+  "sh tools/corpus/corpus.sh corpus paper",
+  "python3 -B -m unittest discover -s tools/package -t . -p test_app.py -k DocumentTests",
 ]
 
 [tasks.release]
 description = "Package the release executable with UPX on Linux"
-run = "python3 -B scripts/build_worker.py release"
+run = "python3 -B -m tools.build.worker release"
 
 [tasks."_release"]
 hide = true
 depends = ["build"]
-run = "sh scripts/release.sh"
+run = "sh tools/package/release.sh"
 
 [tasks.try]
 depends = ["build:debug"]
@@ -138,7 +134,7 @@ run = '"${CARGO_TARGET_DIR:-target}/debug/vpdf-gui"'
 
 [tasks."check"]
 description = "Check every workspace target"
-run = "python3 -B scripts/build_worker.py check"
+run = "python3 -B -m tools.build.worker check"
 
 [tasks."_check"]
 hide = true
@@ -147,31 +143,31 @@ run = "cargo check --locked --workspace --all-targets"
 
 [tasks."help:build"]
 description = "Generate the embedded help PDF and topic manifest"
-run = "python3 -B scripts/build_worker.py help:build"
+run = "python3 -B -m tools.build.worker help:build"
 
 [tasks."_help:build"]
 hide = true
-run = "python3 -B scripts/help_assets.py"
+run = "python3 -B -m tools.help.assets"
 
 [tasks."help:check"]
 description = "Reject missing, stale, or corrupt help assets"
-run = "python3 -B scripts/build_worker.py help:check"
+run = "python3 -B -m tools.build.worker help:check"
 
 [tasks."_help:check"]
 hide = true
-run = "python3 -B scripts/help_assets.py --check"
+run = "python3 -B -m tools.help.assets --check"
 
 [tasks."test:help"]
 description = "Check help generation and embedded PDF destinations"
-run = "python3 -B scripts/build_worker.py test:help"
+run = "python3 -B -m tools.build.worker test:help"
 
 [tasks."_test:help"]
 hide = true
 depends = ["help:build"]
 run = [
-  "python3 -B scripts/licenses.py --check",
-  "python3 -B -m unittest discover -s scripts -p test_help_assets.py",
-  "python3 -B scripts/help_assets.py --check --verify-pdf",
+  "python3 -B -m tools.help.licenses --check",
+  "python3 -B -m unittest discover -s tools/help -t . -p test_assets.py",
+  "python3 -B -m tools.help.assets --check --verify-pdf",
   "cargo nextest run --locked -p vpdf -p vpdf-pdf -E 'test(manual::)'",
 ]
 
@@ -183,13 +179,13 @@ run = [
   "taplo fmt",
   "rumdl check --fix .",
   "mise run lint:rust",
-  "sh scripts/width.sh",
+  "sh tools/check/width.sh",
 ]
 
 [tasks."lint:rust"]
 hide = true
 description = "Check Rust lint without changing source"
-run = "python3 -B scripts/build_worker.py lint:rust"
+run = "python3 -B -m tools.build.worker lint:rust"
 
 [tasks."_lint:rust"]
 hide = true
@@ -202,15 +198,15 @@ run = ["ruff check --fix .", "ruff format .", "ruff check ."]
 
 [tasks."lint:check"]
 description = "Check lint without changing files"
-run = "python3 -B scripts/build_worker.py lint:check"
+run = "python3 -B -m tools.build.worker lint:check"
 
 [tasks."_lint:check"]
 hide = true
-run = "python3 -B scripts/hooks.py lint"
+run = "python3 -B -m tools.check.hooks lint"
 
 [tasks."test"]
 description = "Run all standard tests"
-run = "python3 -B scripts/build_worker.py test"
+run = "python3 -B -m tools.build.worker test"
 
 [tasks."_test"]
 hide = true
@@ -236,7 +232,7 @@ run = "cargo nextest run --locked --workspace --test-threads \"${NEXTEST_TEST_TH
 
 [tasks."test:docs"]
 description = "Check Rust documentation examples"
-run = "python3 -B scripts/build_worker.py test:docs"
+run = "python3 -B -m tools.build.worker test:docs"
 
 [tasks."_test:docs"]
 hide = true
@@ -246,135 +242,135 @@ run = "cargo test --locked --workspace --doc"
 
 [tasks."test:events"]
 description = "Check feature-gated benchmark input"
-run = "python3 -B scripts/build_worker.py test:events"
+run = "python3 -B -m tools.build.worker test:events"
 
 [tasks."_test:events"]
 hide = true
 depends = ["help:build"]
 env.VPDF_CACHE = "off"
 run = [
-  "cargo clippy --locked --workspace --all-targets --features vpdf-gui/bench-events -- -D warnings",
+  "cargo clippy --locked --workspace --all-targets --features vpdf-gui/bench-events,vpdf-dev/bench-events -- -D warnings",
   "cargo nextest run --locked -p vpdf -p vpdf-gui --features vpdf-gui/bench-events --no-fail-fast",
 ]
 
 [tasks."check:packages"]
 description = "Check workspace dependencies and native isolation"
-run = "python3 -B scripts/check_packages.py"
+run = "python3 -B -m tools.check.packages"
 
 [tasks."test:packages"]
 env.VPDF_CACHE = "off"
 description = "Test package boundary enforcement"
-run = "python3 -B -m unittest discover -s scripts -p test_packages.py"
+run = "python3 -B -m unittest discover -s tools/check -t . -p test_packages.py"
 
 [tasks.hooks]
 description = "Install staged and pushed snapshot validation"
-run = "python3 -B scripts/hooks.py install"
+run = "python3 -B -m tools.check.hooks install"
 
 [tasks."hook:commit"]
 env.VPDF_CACHE = "off"
 description = "Format staged files and test affected code"
-run = "python3 -B scripts/hooks.py pre-commit"
+run = "python3 -B -m tools.check.hooks pre-commit"
 
 [tasks."hook:check"]
 hide = true
 description = "Run full read-only validation"
-run = "python3 -B scripts/build_worker.py hook:check"
+run = "python3 -B -m tools.build.worker hook:check"
 
 [tasks."_hook:check"]
 hide = true
 env.VPDF_CACHE = "off"
-run = "python3 -B scripts/hooks.py check"
+run = "python3 -B -m tools.check.hooks check"
 
 [tasks."test:ci"]
 hide = true
 env.VPDF_CACHE = "off"
 description = "Test CI failure propagation and release archives"
-run = "python3 -B -m unittest discover -s scripts -p test_ci.py"
+run = "python3 -B -m unittest discover -s tools/check -t . -p test_ci.py"
 
 [tasks."test:hooks"]
 hide = true
 env.VPDF_CACHE = "off"
 description = "Test hook snapshots and affected-code routing"
-run = "python3 -B -m unittest discover -s scripts -p test_hooks.py"
+run = "python3 -B -m unittest discover -s tools/check -t . -p test_hooks.py"
 
 [tasks.install]
 description = "Install the terminal reader and, on macOS, the app"
 run = """
-python3 -B scripts/build_worker.py build:install
-sh scripts/install.sh
-if [ "$(uname -s)" = Darwin ]; then sh scripts/install-app.sh; fi
+python3 -B -m tools.build.worker build:install
+sh tools/package/install.sh
+if [ "$(uname -s)" = Darwin ]; then sh tools/package/install-app.sh; fi
 """
 
 [tasks."_build:install"]
 hide = true
 env.VPDF_APP_DMG = "0"
 run = """
-sh scripts/build.sh
-if [ "$(uname -s)" = Darwin ]; then sh scripts/build-app.sh; fi
+sh tools/build/build.sh
+if [ "$(uname -s)" = Darwin ]; then sh tools/package/app.sh; fi
 """
 
 [tasks.corpus]
 description = "Fetch and verify the public test PDFs into tmp/corpus"
-run = "sh scripts/corpus.sh corpus"
+run = "sh tools/corpus/corpus.sh corpus"
 
 [tasks.demo]
 description = "Capture and optimize the QHD screenshot gallery"
 depends = ["build"]
 raw_args = true
-run = 'python3 scripts/demo.py --binary "${CARGO_TARGET_DIR:-target}/release/vpdf" --build-profile release'
+run = 'python3 -m tools.demo.capture --binary "${CARGO_TARGET_DIR:-target}/release/vpdf" --build-profile release'
 
 [tasks."demo:video"]
 description = "Record captioned terminal interaction recipes offline"
-run = "python3 -B scripts/demo_video.py"
+run = "python3 -B -m tools.demo.video"
 
 [tasks."demo:publish"]
 description = "Plan reviewed demo publication; --apply writes to GitHub"
-run = "python3 -B scripts/demo_media.py"
+run = "python3 -B -m tools.demo.media"
 
 [tasks."demo:check"]
 description = "Check demo provenance and publication references"
-run = "python3 -B scripts/demo_media.py --check"
+run = "python3 -B -m tools.demo.media --check"
 
 [tasks."test:demo"]
 hide = true
 env.VPDF_CACHE = "off"
 description = "Check screenshot provenance and publication failures"
-run = "python3 -B -m unittest discover -s scripts -p 'test_demo*.py'"
+run = "python3 -B -m unittest discover -s tools/demo -t . -p 'test_*.py'"
 
 [tasks."test:startup"]
 hide = true
 env.VPDF_CACHE = "off"
 description = "Check startup trace compatibility"
-run = "python3 -B -m unittest discover -s scripts -p test_startup.py"
+run = "python3 -B -m unittest discover -s tools/bench -t . -p test_startup.py"
 
 [tasks."test:build-features"]
 hide = true
 env.VPDF_CACHE = "off"
 description = "Check injection build opt-in"
-run = "python3 -B -m unittest discover -s scripts -p test_build_features.py"
+run = "python3 -B -m unittest discover -s tools/build -t . -p test_features.py"
 
 [tasks."test:build-cache"]
 hide = true
 description = "Check build cache limits and locking"
-run = "python3 -B -m unittest discover -s scripts -p test_build_cache.py"
+run = "python3 -B -m unittest discover -s tools/build -t . -p test_cache.py"
 
 [tasks."test:validation"]
 hide = true
 description = "Check validation result reuse"
-run = "python3 -B -m unittest discover -s scripts -p test_validation.py"
+run = "python3 -B -m unittest discover -s tools/build -t . -p test_receipts.py"
 
 [tasks."test:build-worker"]
 hide = true
 description = "Check shared snapshot reuse and isolation"
-run = "python3 -B -m unittest discover -s scripts -p test_build_worker.py"
+run = "python3 -B -m unittest discover -s tools/build -t . -p test_worker.py"
 
 [tasks."corpus:huge"]
 description = "Fetch large stress PDFs into tmp/huge for ad hoc runs"
-run = "sh scripts/corpus.sh huge"
+run = "sh tools/corpus/corpus.sh huge"
 
 [tasks."test:corpus"]
 description = "Test real PDFs from tmp/corpus, except OCR"
-run = "python3 -B scripts/build_worker.py test:corpus"
+run = "python3 -B -m tools.build.worker test:corpus"
 
 [tasks."_test:corpus"]
 hide = true
@@ -384,7 +380,7 @@ run = "cargo nextest run --locked --workspace --run-ignored only --no-fail-fast 
 
 [tasks."test:ocr"]
 description = "Test OCR on real PDFs"
-run = "python3 -B scripts/build_worker.py test:ocr"
+run = "python3 -B -m tools.build.worker test:ocr"
 
 [tasks."_test:ocr"]
 hide = true
@@ -396,36 +392,36 @@ run = "cargo nextest run --locked --workspace --run-ignored only -E '{{vars.ocr_
 env.VPDF_CACHE = "off"
 description = "Measure real-PDF warm frames and search"
 depends = ["corpus", "help:build"]
-run = "cargo bench --locked -p vpdf --profile release --bench reader"
+run = "cargo bench --locked -p vpdf-dev --profile release --bench reader"
 
 [tasks."bench:latency"]
 env.VPDF_CACHE = "off"
 description = "Measure opens, jumps, zooms, searches, and paced scrolling"
 depends = ["corpus:huge sdm", "help:build"]
-run = "cargo bench --locked -p vpdf --profile release --features bench-events --bench latency"
+run = "cargo bench --locked -p vpdf-dev --profile release --features bench-events --bench latency"
 
 [tasks."bench:stages"]
 env.VPDF_CACHE = "off"
 description = "Attribute cold page cost to load, text, list, raster, encode"
 depends = ["corpus", "help:build"]
-run = "cargo bench --locked -p vpdf --profile release --bench stages"
+run = "cargo bench --locked -p vpdf-dev --profile release --bench stages"
 
 [tasks."bench:micro"]
 depends = ["help:build"]
 env.VPDF_CACHE = "off"
 description = "Time single hot functions; arguments filter cases"
-run = 'sh scripts/bench-micro.sh'
+run = 'sh tools/bench/micro.sh'
 
 [tasks."bench:startup"]
 env.VPDF_CACHE = "off"
 description = "Time launch to complete first view in this terminal"
 depends = ["corpus"]
 raw = true
-run = "python3 scripts/startup.py"
+run = "python3 -B -m tools.bench.startup"
 
 [tasks."test:crate"]
 description = "Test one workspace package; pass its name and filters"
-run = "python3 -B scripts/build_worker.py test:crate"
+run = "python3 -B -m tools.build.worker test:crate"
 
 [tasks."_test:crate"]
 hide = true
@@ -436,19 +432,19 @@ run = "cargo nextest run --locked -p"
 env.VPDF_CACHE = "off"
 description = "Prepare verified native-free render fixtures"
 depends = ["corpus", "help:build"]
-run = 'cargo run --locked --release --example bench-fixtures -- "$VPDF_CORPUS/paper.pdf" "${VPDF_BENCH_FIXTURES:-target/bench-fixtures}"'
+run = 'cargo run --locked --release -p vpdf-dev --bin bench-fixtures -- "$VPDF_CORPUS/paper.pdf" "${VPDF_BENCH_FIXTURES:-target/bench-fixtures}"'
 
 [tasks."bench:manuals"]
 depends = ["help:build"]
 env.VPDF_CACHE = "off"
 description = "Measure verified manuals; arguments filter cases"
-run = 'cargo bench --locked --profile release -p vpdf --bench manuals --'
+run = 'cargo bench --locked --profile release -p vpdf-dev --bench manuals --'
 
 [tasks."bench:drive"]
 env.VPDF_CACHE = "off"
 description = "Drive headless, native, or Kitty scenarios"
 raw_args = true
-run = 'python3 -B benches/dispatch.py'
+run = 'python3 -B -m tools.bench.dispatch'
 
 [tasks."bench:headless"]
 hide = true
@@ -456,37 +452,37 @@ env.VPDF_CACHE = "off"
 description = "Drive full-session headless scenarios"
 depends = ["corpus:huge sdm", "help:build"]
 raw_args = true
-run = 'cargo bench --locked --profile release -p vpdf --features bench-events --bench drive --'
+run = 'cargo bench --locked --profile release -p vpdf-dev --features bench-events --bench drive --'
 
 [tasks."bench:live"]
 hide = true
 env.VPDF_CACHE = "off"
 description = "Drive native and Kitty scenarios in background windows"
 raw_args = true
-run = 'python3 -B benches/live/drive.py'
+run = 'python3 -B -m tools.bench.live.drive'
 
 [tasks."bench:report"]
 env.VPDF_CACHE = "off"
 description = "Summarize marked reader traces"
 raw_args = true
-run = 'python3 -B benches/live/report.py'
+run = 'python3 -B -m tools.bench.live.report'
 
 [tasks."test:bench-report"]
 hide = true
 env.VPDF_CACHE = "off"
-run = "python3 -B -m unittest discover -s benches/live -p 'test_*.py'"
+run = "python3 -B -m unittest discover -s tools/bench/live -t . -p 'test_*.py'"
 
 [tasks."test:help-assets"]
 hide = true
 description = "Test help invalidation and atomic publication"
 run = [
-  "python3 -B scripts/licenses.py --check",
-  "python3 -B -m unittest discover -s scripts -p test_help_assets.py",
+  "python3 -B -m tools.help.licenses --check",
+  "python3 -B -m unittest discover -s tools/help -t . -p test_assets.py",
 ]
 
 [tasks."test:display"]
 description = "Verify macOS display notifications on the main thread"
-run = "python3 -B scripts/build_worker.py test:display"
+run = "python3 -B -m tools.build.worker test:display"
 
 [tasks."_test:display"]
 hide = true

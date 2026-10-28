@@ -22,6 +22,7 @@ External dependencies must preserve each owner's boundary.
 | [Application][application] | Composition, persistence, CLI, OS effects      |
 | [Mac adapter][macos]       | Main-thread AppKit callbacks and window sheets |
 | [GUI][gui]                 | Native window, event adaptation, textures      |
+| [Development][dev-crate]   | App benchmarks, fixture and help export        |
 
 Use the dependency policy for permitted edges and the
 [workspace manifest][workspace] for package names and paths. The application
@@ -135,15 +136,16 @@ mise run bench:micro -- --package vpdf-ui
 ```
 
 The same selectors work for each package, including `vpdf` for application
-integration tests and benchmarks. Combined UI/terminal workloads live in the
-application `presentation` benchmark; `bench:micro -- --package vpdf` includes
-them. Their workload names and output checks remain unchanged. UI scene
-benchmarks have distinct names and cannot be compared with delivery timings.
-[Development][development] lists focused
-mise test tasks and real-PDF fixture preparation. Pure package benchmarks use
-prepared, hash-verified data; PDF benchmarks open documents directly. Keep data
-preparation outside measured loops. A component timing does not establish
-whole-reader performance; retain integrated latency and live-terminal checks.
+integration tests and `vpdf-dev` for application benchmarks. Combined
+UI/terminal workloads live in the application `presentation` benchmark;
+`bench:micro -- --package vpdf-dev` includes them. Their workload names and
+output checks remain unchanged. UI scene benchmarks have distinct names and
+cannot be compared with delivery timings. [Development][development] lists
+focused mise test tasks and real-PDF fixture preparation. Pure package
+benchmarks use prepared, hash-verified data; PDF benchmarks open documents
+directly. Keep data preparation outside measured loops. A component timing does
+not establish whole-reader performance; retain integrated latency and
+live-terminal checks.
 
 ```sh
 mise run check:packages
@@ -159,7 +161,7 @@ A dependency graph proves isolation of dependencies, not correct state
 ownership or runtime behavior. Review those contracts and run the relevant
 corpus, OCR, and terminal checks when they change.
 
-[policy]: ../../scripts/check_packages.py
+[policy]: ../../tools/check/packages.py
 [workspace]: ../../Cargo.toml
 [model]: ../../crates/vpdf-model/src/lib.rs
 [search]: ../../crates/vpdf-search/src/lib.rs
@@ -180,6 +182,7 @@ corpus, OCR, and terminal checks when they change.
 [scene]: ../../crates/vpdf-model/src/scene.rs
 [painter]: ../../crates/terminal/src/painter.rs
 [gui]: ../../crates/vpdf-gui/src/lib.rs
+[dev-crate]: ../../crates/vpdf-dev/Cargo.toml
 [pictures]: ../../crates/vpdf-model/src/image.rs
 [styles]: ../../crates/vpdf-model/src/style.rs
 [interaction]: ../../src/session/interaction.rs

@@ -217,7 +217,7 @@ Copy text and Enter runs it. Escape closes capture. Setup searches for
 [ocr]: https://github.com/user-attachments/assets/bb3a5bf2-755a-4a2f-b641-2f9f6d32e133
 [scan]: https://web.mit.edu/sts.035/www/PDFs/edvac.pdf
 [manifest]: assets/capture.json
-[corpus]: ../scripts/corpus.sh
+[corpus]: ../tools/corpus/corpus.sh
 [help-split]: https://github.com/user-attachments/assets/aff76a07-0ddd-4975-a767-64be70a04743
 [definition]: https://github.com/user-attachments/assets/c56ec85d-a5a1-4e09-8181-564766c2d790
 [continuous-text]: https://github.com/user-attachments/assets/bebfc118-8bad-4ff1-8813-b9844bd9468f

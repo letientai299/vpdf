@@ -2,7 +2,7 @@
 name = "vpdf"
 version = "0.1.0"
 edition.workspace = true
-build = "scripts/build.rs"
+build = "tools/build/cargo.rs"
 rust-version.workspace = true
 license = "MIT"
 description = "Vpdf: a Vim-inspired terminal PDF reader powered by MuPDF and the Kitty graphics protocol."
@@ -23,6 +23,7 @@ members = [
   "crates/ui",
   "crates/vpdf-gui",
   "crates/vpdf-macos",
+  "crates/vpdf-dev",
 ]
 resolver = "3"
 
@@ -149,36 +150,6 @@ sha2.workspace = true
 [build-dependencies]
 vpdf-ui.workspace = true
 
-[[bench]]
-name = "reader"
-harness = false
-
-[[bench]]
-name = "latency"
-harness = false
-required-features = ["bench-events"]
-
-[[bench]]
-name = "stages"
-harness = false
-
-[[bench]]
-name = "micro"
-harness = false
-
 [patch.crates-io]
 mupdf = { git = "https://github.com/messense/mupdf-rs", rev = "7aa360d38be068cfca21ab7d840e0676dc6db52c" }
 mupdf-sys = { git = "https://github.com/messense/mupdf-rs", rev = "7aa360d38be068cfca21ab7d840e0676dc6db52c" }
-
-[[bench]]
-name = "manuals"
-harness = false
-
-[[bench]]
-name = "presentation"
-harness = false
-
-[[bench]]
-name = "drive"
-harness = false
-required-features = ["bench-events"]

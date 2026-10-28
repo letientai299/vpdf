@@ -5,9 +5,10 @@ pub const ABOUT: &str =
   concat!(env!("CARGO_PKG_DESCRIPTION"), "\n", env!("CARGO_PKG_REPOSITORY"));
 pub const DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
 pub const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
-const REVISION: &str = env!("VPDF_SOURCE_REVISION");
-const DIRTY: &str = env!("VPDF_SOURCE_DIRTY");
-const PATCH: &str = env!("VPDF_SOURCE_PATCH");
+pub const VERSION: &str = env!("VPDF_VERSION");
+pub const REVISION: &str = env!("VPDF_SOURCE_REVISION");
+pub const DIRTY: &str = env!("VPDF_SOURCE_DIRTY");
+pub const PATCH: &str = env!("VPDF_SOURCE_PATCH");
 
 pub const BUILD: &str = if cfg!(feature = "bench-events") {
   concat!(env!("VPDF_VERSION"), " [bench-events]")
@@ -59,7 +60,7 @@ fn details(revision: &str, dirty: &str, patch: &str, help: &str) -> String {
   )
   .unwrap();
   if revision != "unknown" {
-    write!(text, "\n{REPOSITORY}/blob/{revision}/scripts/help_assets.py")
+    write!(text, "\n{REPOSITORY}/blob/{revision}/tools/help/assets.py")
       .unwrap();
   }
   text
@@ -104,7 +105,7 @@ mod tests {
       let text = super::details("abc123", dirty, "patch", "help");
       assert!(text.contains(explanation));
       assert!(text.contains("/commit/abc123"));
-      assert!(text.contains("/blob/abc123/scripts/help_assets.py"));
+      assert!(text.contains("/blob/abc123/tools/help/assets.py"));
     }
     let text = super::details("unknown", "unknown", "unknown", "help");
     assert!(!text.contains("/commit/"));

@@ -1,4 +1,4 @@
-#[path = "../../../benches/support/mod.rs"]
+#[path = "../../vpdf-dev/support/mod.rs"]
 mod support;
 use anyhow::Result;
 use eframe::egui;

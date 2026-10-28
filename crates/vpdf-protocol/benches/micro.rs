@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::hint::black_box;
 use std::io::Write;
-#[path = "../../../benches/support/mod.rs"]
+#[path = "../../vpdf-dev/support/mod.rs"]
 mod support;
 use support::measure;
 

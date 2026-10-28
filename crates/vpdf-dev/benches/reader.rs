@@ -1,0 +1,271 @@
+use serde::Serialize;
+use std::hint::black_box;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+use vpdf::Result;
+use vpdf::app::App;
+use vpdf::pdf_text::PdfText;
+use vpdf::raster;
+use vpdf::solo::Solo;
+use vpdf_model::text::PageId;
+use vpdf_model::tile::TileKey;
+use vpdf_pdf::content_cache::{alias, hex};
+use vpdf_pdf::document::{Document, extract};
+use vpdf_pdf::jobs::Wake;
+use vpdf_pdf::jobs::search::SearchWorker;
+use vpdf_reader::motion::Motion;
+use vpdf_search::query::Query;
+use vpdf_search::search::{self, Index};
+use vpdf_ui::layout::Screen;
+
+/// The query every search case measures.
+const QUERY: &str = "the";
+
+#[path = "../support/timing.rs"]
+mod stats;
+use stats::{Timing, timing};
+
+fn measure(
+  mut run: impl FnMut() -> Result<()>,
+  count: usize,
+) -> Result<Timing> {
+  let mut times = Vec::with_capacity(count);
+  for _ in 0..count {
+    let started = Instant::now();
+    run()?;
+    times.push(started.elapsed().as_secs_f64() * 1000.0);
+  }
+  Ok(timing(times))
+}
+
+#[derive(Serialize)]
+struct Report {
+  document: String,
+  sha256: String,
+  page: usize,
+  pages: usize,
+  open: Timing,
+  extract: Timing,
+  tile: Timing,
+  index_build: Timing,
+  index_search: Timing,
+  motion: Timing,
+  frame: Timing,
+  search_frame: Timing,
+  warm_scroll_upload_bytes: u64,
+  cold_search_ms: f64,
+  warm_search_ms: f64,
+  first_hit_ms: f64,
+}
+
+fn document(path: &Path, page: usize) -> Result<Report> {
+  let hash = hex(&alias(&mut std::fs::File::open(path)?)?);
+  let open = measure(
+    || {
+      black_box(Document::open(path, "")?);
+      Ok(())
+    },
+    10,
+  )?;
+  let mut doc = Document::open(path, "")?;
+  let native = doc.native.load_page(page as i32)?;
+  let extract = measure(
+    || {
+      black_box(extract(&native)?);
+      Ok(())
+    },
+    100,
+  )?;
+  let key = TileKey {
+    page: PageId(page),
+    scale: 2048,
+    x: 128,
+    y: 256,
+    width: 512,
+    height: 256,
+    ..TileKey::default()
+  };
+  raster::render(&mut doc, key)?;
+  let tile = measure(
+    || {
+      black_box(raster::render(&mut doc, key)?);
+      Ok(())
+    },
+    100,
+  )?;
+  let text = doc.text(PageId(page))?;
+  let index_build = measure(
+    || {
+      black_box(Index::new(PageId(page), &text));
+      Ok(())
+    },
+    100,
+  )?;
+  let index = Index::new(PageId(page), &text);
+  let query = search::compile(QUERY, false)?;
+  let index_search = measure(
+    || {
+      black_box(index.matches(&query, 1000)?);
+      Ok(())
+    },
+    100,
+  )?;
+  let mut app = App::with_screen(
+    path,
+    "",
+    false,
+    Screen {
+      columns: 160,
+      rows: 60,
+      cell_width: 9,
+      cell_height: 18,
+      origin: (0, 0),
+    },
+  )?;
+  let motion = motions(&mut app, PageId(page))?;
+  let mut app = Solo::new(app);
+  let (frame, uploaded) = frames(&mut app)?;
+  let text = Query { text: QUERY.into(), ..Query::default() };
+  app.search.show(text, index.matches(&query, 1000)?);
+  let (search_frame, _) = frames(&mut app)?;
+  let (cold_search_ms, first_hit_ms, warm_search_ms) = searches(path)?;
+  Ok(Report {
+    document: path.file_name().unwrap().to_string_lossy().into(),
+    sha256: hash,
+    page: page + 1,
+    pages: doc.pages.len(),
+    open,
+    extract,
+    tile,
+    index_build,
+    index_search,
+    motion,
+    frame,
+    search_frame,
+    warm_scroll_upload_bytes: uploaded,
+    cold_search_ms,
+    first_hit_ms,
+    warm_search_ms,
+  })
+}
+
+fn motions(app: &mut App, page: PageId) -> Result<Timing> {
+  let mut reader = vpdf_reader::reader::Reader::default();
+  reader.edge(page, false, &mut PdfText(&mut app.doc))?;
+  app.reader =
+    vpdf_ui::reading::Pane::new(reader, app.reader.tracking().clone());
+  app.ensure_cursor()?;
+  let mut reader = (*app.reader).clone();
+  let timing = measure(
+    || {
+      reader.motion(Motion::Right, 1, false, &mut PdfText(&mut app.doc))?;
+      reader.motion(Motion::Left, 1, false, &mut PdfText(&mut app.doc))?;
+      Ok(())
+    },
+    1000,
+  )?;
+  app.reader =
+    vpdf_ui::reading::Pane::new(reader, app.reader.tracking().clone());
+  Ok(timing)
+}
+
+fn frames(app: &mut Solo) -> Result<(Timing, u64)> {
+  let base = app.reader.scroll;
+  let mut out = io::sink();
+  for frame in 0..40 {
+    let scroll = app.layout.clamp_scroll(base + frame as f32 * 4.0);
+    for key in vpdf_ui::layout::visible(&app.layout, scroll) {
+      if !app.graphics.contains(&(app.id, key)) {
+        let tile = raster::render(&mut app.doc, key)?;
+        app.graphics.upload(app.id, &tile, &mut out)?;
+      }
+    }
+  }
+  let uploaded = app.graphics.uploaded;
+  let mut frame = 0;
+  let mut serialized = Vec::with_capacity(64 * 1024);
+  let timing = measure(
+    || {
+      let scroll = app.layout.clamp_scroll(base + (frame % 40) as f32 * 4.0);
+      app.reading_view().scrub_scroll(scroll);
+      serialized.clear();
+      app.draw(&mut serialized)?;
+      black_box(&serialized);
+      frame += 1;
+      Ok(())
+    },
+    1001,
+  )?;
+  app.reading_view().scrub_scroll(base);
+  Ok((timing, app.graphics.uploaded - uploaded))
+}
+
+fn searches(path: &Path) -> Result<(f64, f64, f64)> {
+  let pages = Document::open(path, "")?.pages.len();
+  let worker = SearchWorker::new(path, "", pages, &Wake::none());
+  let mut total = Vec::new();
+  let mut first = 0.0;
+  for run in 0..2 {
+    let started = Instant::now();
+    let generation = worker
+      .lookup(&Query { text: QUERY.into(), ..Query::default() }, PageId(0))?;
+    loop {
+      let event = worker.wait(Duration::from_secs(30))?;
+      if event.generation != generation {
+        continue;
+      }
+      if let Some(error) = event.error {
+        anyhow::bail!(error);
+      }
+      if first == 0.0 && !event.hits.is_empty() {
+        first = started.elapsed().as_secs_f64() * 1000.0;
+      }
+      if event.done {
+        break;
+      }
+    }
+    total.push(started.elapsed().as_secs_f64() * 1000.0);
+    if run == 0 {
+      std::thread::sleep(Duration::from_millis(20));
+    }
+  }
+  Ok((total[0], first, total[1]))
+}
+
+#[path = "../support/workspace.rs"]
+mod workspace;
+
+fn main() -> Result<()> {
+  workspace::enter()?;
+  let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+  let mut reports = Vec::new();
+  for (name, page) in
+    [("book.pdf", 38), ("paper.pdf", 2), ("form.pdf", 0), ("ocr.pdf", 0)]
+  {
+    reports.push(document(&root.join(name), page)?);
+  }
+  let output = serde_json::to_string_pretty(&reports)?;
+  if let Ok(path) = std::env::var("VPDF_BENCH_OUTPUT") {
+    std::fs::write(path, &output)?;
+  }
+  writeln!(io::stdout(), "{output}")?;
+  if std::env::var_os("VPDF_PERF_CHECK").is_some() {
+    for report in &reports {
+      anyhow::ensure!(
+        report.frame.p95_ms.is_some_and(|time| time < 8.33)
+          && report.search_frame.p95_ms.is_some_and(|time| time < 8.33),
+        "Warm frame exceeds 8.33 ms"
+      );
+      anyhow::ensure!(
+        report.motion.p95_ms.is_some_and(|time| time < 1.0),
+        "Warm motion exceeds 1 ms"
+      );
+      anyhow::ensure!(
+        report.warm_scroll_upload_bytes == 0,
+        "Warm scroll uploaded base images"
+      );
+    }
+  }
+  Ok(())
+}

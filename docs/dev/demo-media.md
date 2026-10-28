@@ -159,4 +159,4 @@ comments. Capture and review remain separate from publication.
 [host]: https://github.com/letientai299/vpdf/issues/9
 [sck]: https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-in-macos
 [ffmpeg]: https://ffmpeg.org/download.html
-[video-script]: ../../scripts/demo_video.py
+[video-script]: ../../tools/demo/video.py

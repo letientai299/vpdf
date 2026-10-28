@@ -152,7 +152,7 @@ and bold italic sources recorded in the renderer pin into one directory and run
 the script with [uv][uv] and the pinned FontTools version:
 
 ```sh
-uv run --no-project --with fonttools==4.61.1 python scripts/help_font.py SOURCE.ttf
+uv run --no-project --with fonttools==4.61.1 python -B -m tools.help.font SOURCE.ttf
 ```
 
 Reference descriptions align within each section, including wrapped lines.
@@ -200,17 +200,17 @@ unavailable. Open another document before using those path-based actions.
 [pandoc]: https://pandoc.org/installing.html
 [gfm]: https://github.github.com/gfm/
 [nerd-font]: https://github.com/ryanoasis/nerd-fonts/tree/v3.5.1/patched-fonts/Iosevka
-[font-script]: ../../scripts/help_font.py
+[font-script]: ../../tools/help/font.py
 [uv]: https://docs.astral.sh/uv/getting-started/installation/
-[renderer]: ../../scripts/help/renderer.json
-[notices]: ../../scripts/help/notices/
+[renderer]: ../../tools/help/help/renderer.json
+[notices]: ../../tools/help/help/notices/
 [qpdf]: https://qpdf.readthedocs.io/en/stable/
 [poppler]: https://poppler.freedesktop.org/
-[contents]: ../../scripts/help/contents.json
+[contents]: ../../tools/help/help/contents.json
 [topics]: ../../crates/ui/src/topics.rs
 [metadata]: https://typst.app/docs/reference/introspection/metadata/
 [exporter]: ../../crates/ui/examples/help_metadata.rs
-[generator]: ../../scripts/help_assets.py
+[generator]: ../../tools/help/assets.py
 [runtime]: ../../src/manual/runtime.rs
 [events]: dev.md#native-window
 
@@ -225,7 +225,7 @@ After changing `Cargo.lock`, regenerate notices with [cargo-about][cargo-about]
 licenses omitted from published crates. Run through Mise's optional Cargo tool:
 
 ```sh
-mise exec cargo:cargo-about@0.9.3 -- python3 scripts/licenses.py
+mise exec cargo:cargo-about@0.9.3 -- python3 -B -m tools.help.licenses
 ```
 
 The inventory includes all workspace features and platform dependencies.

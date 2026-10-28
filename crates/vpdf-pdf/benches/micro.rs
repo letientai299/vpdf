@@ -4,9 +4,9 @@ use std::hint::black_box;
 use vpdf_model::geometry::{page_matrix, transform};
 use vpdf_model::text::PageId;
 use vpdf_pdf::document::{Document, Handle};
-#[path = "../../../benches/support/corpus.rs"]
+#[path = "../../vpdf-dev/support/corpus.rs"]
 mod corpus;
-#[path = "../../../benches/support/mod.rs"]
+#[path = "../../vpdf-dev/support/mod.rs"]
 mod support;
 use corpus::corpus;
 use support::measure;
