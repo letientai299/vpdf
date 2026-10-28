@@ -5,7 +5,7 @@ use crate::app::{App, Request};
 use std::time::{Duration, Instant};
 use vpdf_model::document::Target;
 use vpdf_model::input::{KeyEvent, MouseEvent};
-use vpdf_ui::hints::Transition;
+use vpdf_ui::hints::{Mode, Transition};
 use vpdf_ui::input::{Dismiss, InputOwner, Targets};
 use vpdf_ui::paint::Frame;
 use vpdf_ui::pointer::{Hit, List};
@@ -126,9 +126,9 @@ impl App {
 }
 
 impl App {
-  /// Labels links in view; `copy` copies URIs instead of opening them.
-  pub fn start_hints(&mut self, copy: bool) -> Result<()> {
-    let hints = self.reading_view().hints(copy)?;
+  /// Labels visible links.
+  pub fn start_hints(&mut self, mode: Mode) -> Result<()> {
+    let hints = self.reading_view().hints(mode)?;
     self.overlays.open_hints(hints);
     Ok(())
   }
@@ -166,10 +166,28 @@ impl App {
 
   pub(crate) fn run_hint(&mut self, index: usize) -> Result<()> {
     let Some(hints) = self.overlays.close_hints() else { return Ok(()) };
-    let Some((target, copy)) = hints.into_target(index) else { return Ok(()) };
-    match target {
-      Target::Uri(uri) if copy => self.copy_address(uri),
-      target => self.follow(&target),
+    let Some((target, mode)) = hints.into_target(index) else { return Ok(()) };
+    match mode {
+      Mode::Follow => self.follow(&target),
+      Mode::Copy => {
+        let uri = match target {
+          Target::Uri(uri) => uri,
+          Target::Page(page) | Target::Point { page, .. } => {
+            format!(
+              "{}#page={}",
+              crate::cmdline::file_uri(&self.path)?,
+              page.0 + 1
+            )
+          }
+        };
+        self.copy_address(uri)
+      }
+      Mode::Cursor => {
+        let Target::Point { page, x, y } = target else { return Ok(()) };
+        let position = self.reading_view().destination(page, Some((x, y)))?;
+        self.focus_content(vpdf_ui::panel::Focus::Cursor)?;
+        self.land_at(position)
+      }
     }
   }
 

@@ -125,8 +125,8 @@ pub enum Action {
   History(bool),
   Command,
   Tab(bool),
-  /// Link hints; `true` copies URIs instead of opening them.
-  Hints(bool),
+  /// Link hint action.
+  Hints(crate::hints::Mode),
   Window(crate::window::Window),
   /// Preview the link under the cursor.
   Peek,
@@ -378,8 +378,17 @@ pub(crate) const BINDINGS: &[(&str, Action, &str)] = &[
   ("zF", Action::FigureFit, "fit figure"),
   ("gF", Action::Region, "figure actions"),
   ("R", Action::RegionStart, "capture rectangle"),
-  ("f", Action::Hints(false), "link hints"),
-  ("yf", Action::Hints(true), "link hints, copy URLs"),
+  ("f", Action::Hints(crate::hints::Mode::Follow), "link hints"),
+  (
+    "F",
+    Action::Hints(crate::hints::Mode::Cursor),
+    "link hints, enter Cursor mode",
+  ),
+  (
+    "yf",
+    Action::Hints(crate::hints::Mode::Copy),
+    "link hints, copy reference URI",
+  ),
   ("gt", Action::Tab(true), "next tab, or [count] tab"),
   ("gT", Action::Tab(false), "previous tab"),
   ("Enter", Action::Follow, "follow link"),

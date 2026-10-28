@@ -18,6 +18,7 @@ pub enum Follow {
 #[derive(Debug, PartialEq)]
 pub enum Focus {
   Content,
+  Cursor,
   Annotation { position: Position, annotation: Annotation },
 }
 
@@ -27,6 +28,10 @@ impl Focus {
     match self {
       Self::Content => {
         reader.normal();
+        None
+      }
+      Self::Cursor => {
+        reader.enter_cursor();
         None
       }
       Self::Annotation { position, annotation } => {

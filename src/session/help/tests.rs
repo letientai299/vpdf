@@ -1007,3 +1007,97 @@ fn help_accepts_prefix_spellings() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn hint_actions_preserve_source() -> Result<()> {
+  use std::ffi::OsStr;
+  use vpdf_model::document::Target;
+  use vpdf_model::reference::{Operation, Reference};
+  for (text_mode, origin) in [false, true]
+    .into_iter()
+    .flat_map(|text| ["normal", "visual", "panel"].map(|origin| (text, origin)))
+  {
+    let mut session = Session::new(None);
+    invoke(&mut session, "practice")?;
+    let app = session.app().unwrap();
+    if app.text_mode != text_mode {
+      app.command("text")?;
+    }
+    match origin {
+      "visual" => {
+        app.reader.visual(vpdf_reader::reader::SelectionKind::Character);
+      }
+      "panel" => app.show_panel(vpdf_ui::keys::PanelKind::Info, Vec::new())?,
+      _ => {}
+    }
+    let original_mode = app.reader.mode();
+    let focused = app.panel_focused();
+    app.start_hints(vpdf_ui::hints::Mode::Follow)?;
+    let hint = app
+      .overlays
+      .hints()
+      .unwrap()
+      .items()
+      .iter()
+      .find(|hint| !matches!(hint.target, Target::Uri(_)))
+      .unwrap();
+    let label = hint.label.clone();
+    let target = hint.target.clone();
+    let source = app.reader.cursor.page;
+    app.start_hints(vpdf_ui::hints::Mode::Copy)?;
+    hint_keys(app, &label)?;
+    assert_eq!(app.reader.cursor.page, source);
+    let copied = app.reader.take_yank().unwrap().text;
+    let reference = Reference::parse(OsStr::new(&copied))?;
+    assert_eq!(reference.path, std::path::absolute(&app.path)?);
+    let page = match target {
+      Target::Page(page) | Target::Point { page, .. } => page,
+      Target::Uri(_) => unreachable!(),
+    };
+    assert_eq!(
+      reference.operations,
+      [Operation::Page((page.0 + 1).try_into()?)]
+    );
+    assert_eq!(app.reader.mode(), original_mode);
+    assert_eq!(app.panel_focused(), focused);
+    hint_keys(app, "F")?;
+    app.hint_key(vpdf_model::input::KeyEvent::new(
+      vpdf_model::input::KeyCode::Esc,
+      vpdf_model::input::KeyModifiers::NONE,
+    ))?;
+    assert_eq!(app.reader.mode(), original_mode);
+    assert_eq!(app.panel_focused(), focused);
+    hint_keys(app, "F")?;
+    hint_keys(app, &label)?;
+    assert_eq!(
+      app.reader.mode(),
+      vpdf_reader::reader::Mode::Cursor,
+      "{origin}"
+    );
+    assert!(!app.panel_focused(), "{origin}");
+    assert_eq!(app.reader.cursor.page, source);
+    let target = app.link_target(app.reader.cursor)?.expect("cursor on link");
+    hint_keys(app, "K")?;
+    assert!(app.overlays.preview().is_some());
+    app.overlays.close_preview();
+    hint_keys(app, "gd")?;
+    let page = match target {
+      Target::Page(page) | Target::Point { page, .. } => page,
+      Target::Uri(_) => unreachable!(),
+    };
+    assert_eq!(app.reader.cursor.page, page);
+  }
+  Ok(())
+}
+
+fn hint_keys(app: &mut App, keys: &str) -> Result<()> {
+  use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
+  let mut history = vpdf_ui::prompt::History::default();
+  for character in keys.chars() {
+    app.key(
+      KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE),
+      &mut history,
+    )?;
+  }
+  Ok(())
+}

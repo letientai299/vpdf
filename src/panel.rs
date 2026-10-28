@@ -631,7 +631,7 @@ impl App {
   }
 
   /// Leaves the panel for content; notes open.
-  fn focus_content(&mut self, focus: Focus) -> Result<()> {
+  pub(crate) fn focus_content(&mut self, focus: Focus) -> Result<()> {
     let annotation = focus.apply(&mut self.reader);
     if let Some(panel) = &mut self.panel {
       panel.view.focus(false);

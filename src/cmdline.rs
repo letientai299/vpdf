@@ -172,6 +172,15 @@ pub fn reference(argument: &str) -> Result<vpdf_model::reference::Reference> {
   Ok(reference)
 }
 
+pub(crate) fn file_uri(path: &Path) -> Result<String> {
+  let absolute = std::path::absolute(path)?;
+  let encoded = percent_encoding::percent_encode(
+    absolute.as_os_str().as_encoded_bytes(),
+    URI_PATH,
+  );
+  Ok(format!("file://{encoded}"))
+}
+
 pub(crate) fn picker_root(argument: &str) -> Option<PathBuf> {
   let root = expand(if argument.is_empty() { "." } else { argument });
   (argument.is_empty() || root.is_dir()).then_some(root)
@@ -196,10 +205,7 @@ fn paths(argument: &str) -> Vec<String> {
     .into_iter()
     .filter_map(|candidate| {
       let candidate = if uri || candidate.contains('#') {
-        let absolute = std::env::current_dir().ok()?.join(expand(&candidate));
-        let path = absolute.to_str()?;
-        let encoded = percent_encoding::utf8_percent_encode(path, URI_PATH);
-        format!("file://{encoded}")
+        file_uri(&expand(&candidate)).ok()?
       } else {
         candidate
       };
@@ -269,6 +275,28 @@ pub(crate) fn is_pdf(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
   use super::*;
+  #[test]
+  fn file_uri_round_trips() -> Result<()> {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+    use vpdf_model::reference::Reference;
+    for path in [
+      PathBuf::from("/tmp/a #?%é.pdf"),
+      PathBuf::from("relative #?.pdf"),
+      PathBuf::from(OsString::from_vec(b"/tmp/a\xff.pdf".to_vec())),
+    ] {
+      let uri = file_uri(&path)?;
+      let reference = Reference::parse(uri.as_ref())?;
+      assert_eq!(reference.path, std::path::absolute(&path)?);
+      assert_eq!(reference.operations, []);
+    }
+    assert_eq!(
+      file_uri(Path::new("/tmp/a #?%é.pdf"))?,
+      "file:///tmp/a%20%23%3F%25%C3%A9.pdf"
+    );
+    Ok(())
+  }
+
   #[test]
   fn tab_menu_inserts_numbers() -> Result<()> {
     use vpdf_model::input::{KeyCode, KeyModifiers};

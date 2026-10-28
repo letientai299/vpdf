@@ -397,7 +397,9 @@ impl Keys {
     let Capture::Operator { panel } = self.capture else { return true };
     match target {
       Target::Reader(
-        Action::Hints(true) | Action::YankPath | Action::YankRaw,
+        Action::Hints(crate::hints::Mode::Copy)
+        | Action::YankPath
+        | Action::YankRaw,
       )
       | Target::Control(Control::Object { .. })
       | Target::TextObject(_)

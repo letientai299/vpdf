@@ -14,7 +14,7 @@ fn raw_figure_bindings() {
     (&b"gF"[..], Action::Region),
     (&b"R"[..], Action::RegionStart),
     (&b"gf"[..], Action::Panel(PanelKind::Figures)),
-    (&b"f"[..], Action::Hints(false)),
+    (&b"f"[..], Action::Hints(vpdf_ui::hints::Mode::Follow)),
   ] {
     let mut events = VecDeque::new();
     Parser::default().feed(bytes, &mut events);

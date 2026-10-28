@@ -637,12 +637,15 @@ fn copy_hints_follow_yank_prefix() {
     let continuation =
       if grammar == Grammar::Panel { Grammar::Panel } else { Grammar::Objects };
     let input = keys.feed(key('f'), continuation).unwrap();
-    assert_eq!(input.action, Action::Hints(true));
+    assert_eq!(input.action, Action::Hints(crate::hints::Mode::Copy));
     assert_eq!(keys.pending(), "");
-    assert!(keys.feed(key('F'), grammar).is_none());
+    assert_eq!(
+      keys.feed(key('F'), grammar).unwrap().action,
+      Action::Hints(crate::hints::Mode::Cursor)
+    );
     assert_eq!(
       keys.feed(key('f'), grammar).unwrap().action,
-      Action::Hints(false)
+      Action::Hints(crate::hints::Mode::Follow)
     );
   }
 }

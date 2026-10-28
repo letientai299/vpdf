@@ -299,7 +299,7 @@ fn wrapped_links_tint_whole() -> Result<()> {
     let mut plain = Vec::new();
     session.draw_frame(&mut plain)?;
     // Hints list the address once.
-    session.app().unwrap().start_hints(false)?;
+    session.app().unwrap().start_hints(vpdf_ui::hints::Mode::Follow)?;
     let hints = session
       .app()
       .unwrap()
@@ -315,7 +315,7 @@ fn wrapped_links_tint_whole() -> Result<()> {
         .unwrap()
         .reader
         .seed_reader(|reader| reader.scroll = line.y1 * 968.0 / 300.0 + 1.0);
-      session.app().unwrap().start_hints(false)?;
+      session.app().unwrap().start_hints(vpdf_ui::hints::Mode::Follow)?;
       let hints = session
         .app()
         .unwrap()
@@ -1933,7 +1933,7 @@ fn right_drags_choose_menu_items() -> Result<()> {
 fn hint_labels_sit_on_their_line() -> Result<()> {
   for text_mode in [false, true] {
     let (_directory, mut session) = session(text_mode)?;
-    session.app().unwrap().start_hints(false)?;
+    session.app().unwrap().start_hints(vpdf_ui::hints::Mode::Follow)?;
     let hints = session.app().unwrap().overlays.close_hints().expect("hints");
     let links = session.app().unwrap().doc.links(PageId(0))?;
     let text = session.app().unwrap().doc.text(PageId(0))?;
@@ -1972,7 +1972,7 @@ fn hint_labels_follow_the_shown_part() -> Result<()> {
   let top = app.layout.project(PageId(0), link, 0.0);
   // 40 px above the top edge.
   app.reader.seed_reader(|reader| reader.scroll = top.y0 + 40.0);
-  app.start_hints(false)?;
+  app.start_hints(vpdf_ui::hints::Mode::Follow)?;
   let hints = app.overlays.close_hints().expect("hints");
   let shown = (top.y1 - top.y0 - 40.0) / 2.0;
   assert_eq!(hints.items()[0].cell.1, (shown / 16.0) as u16);
@@ -2000,7 +2000,7 @@ fn hint_labels_keep_off_neighbours() -> Result<()> {
     app.command(&page.to_string())?;
     session.draw_frame(&mut Vec::new())?;
     let app = session.app().unwrap();
-    app.start_hints(false)?;
+    app.start_hints(vpdf_ui::hints::Mode::Follow)?;
     let hints = app.overlays.close_hints().expect("hints");
     let target = |app: &mut App, column, row| -> Result<_> {
       let hit = app.hovered(Region::Page, column, row, None)?;
@@ -2043,7 +2043,11 @@ fn hint_labels_follow_the_pointer() -> Result<()> {
     let (_directory, mut session) = session(text_mode)?;
     // Label cells; `copy` starts `yf`.
     let start = |session: &mut Session, copy| -> Result<Found> {
-      session.app().unwrap().start_hints(copy)?;
+      session.app().unwrap().start_hints(if copy {
+        vpdf_ui::hints::Mode::Copy
+      } else {
+        vpdf_ui::hints::Mode::Follow
+      })?;
       status(session)?;
       let screen = session.app().unwrap().screen;
       let rows = screen.rows - 1;

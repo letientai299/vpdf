@@ -223,7 +223,7 @@ fn reader_defaults(context: Context, entries: &mut Vec<(Sequence, Target)>) {
   if context == C::Operator {
     for (key, action) in [
       ("y", Action::Yank),
-      ("f", Action::Hints(true)),
+      ("f", Action::Hints(crate::hints::Mode::Copy)),
       ("p", Action::YankPath),
       ("Y", Action::YankRaw),
     ] {

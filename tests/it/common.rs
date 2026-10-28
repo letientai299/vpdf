@@ -242,7 +242,8 @@ pub fn hints(
   let found = (0..count)
     .map(|row| (((cell.0, cell.1 + row), cell.0), target.clone()))
     .collect();
-  vpdf_ui::hints::Hints::new(found, false, 0, 80).expect("hint candidates")
+  vpdf_ui::hints::Hints::new(found, vpdf_ui::hints::Mode::Follow, 0, 80)
+    .expect("hint candidates")
 }
 
 #[path = "../support/reader.rs"]

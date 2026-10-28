@@ -163,7 +163,7 @@ fn marks_and_bands_cross_breaks() -> Result<()> {
 fn hints_and_tints_reach_later_pages() -> Result<()> {
   let (_dir, mut app) = app(&[(0, 0), (1, 1)])?;
   drawn(&mut app)?;
-  app.start_hints(false)?;
+  app.start_hints(vpdf_ui::hints::Mode::Follow)?;
   let hints = app.overlays.close_hints().expect("hints");
   let rows: Vec<_> = hints.items().iter().map(|hint| hint.cell.1).collect();
   assert_eq!(rows, [1, 7]);

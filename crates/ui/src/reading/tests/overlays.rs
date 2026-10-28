@@ -63,14 +63,14 @@ fn hints_project_visible_boxes() -> Result<()> {
       target.clone(),
     ));
     fixture.source.links.push(link);
-    let hints = fixture.view().hints(true)?;
+    let hints = fixture.view().hints(crate::hints::Mode::Copy)?;
     assert_eq!(hints.items().len(), 1);
     let hint = &hints.items()[0];
     // Text rows start under the header row.
     assert_eq!(hint.cell, if text { (3, 3) } else { (4, 5) });
     assert_eq!(hint.column, 3);
     assert_eq!(hint.target, target);
-    assert_eq!(hints.into_target(0), Some((target, true)));
+    assert_eq!(hints.into_target(0), Some((target, crate::hints::Mode::Copy)));
     assert_eq!(fixture.source.reads > 0, text);
     assert_eq!(fixture.source.lookups, ["links"]);
   }
@@ -84,7 +84,12 @@ fn hints_preserve_lazy_failures() {
     fixture.frame.pane.text = text;
     fixture.source.fail = 1;
     fixture.source.fail_lookup = 1;
-    let error = fixture.view().hints(false).err().unwrap().to_string();
+    let error = fixture
+      .view()
+      .hints(crate::hints::Mode::Follow)
+      .err()
+      .unwrap()
+      .to_string();
     assert_eq!(
       error,
       if text { "Text unavailable" } else { "Links unavailable" }
@@ -94,7 +99,7 @@ fn hints_preserve_lazy_failures() {
   }
   let mut fixture = Fixture::new();
   assert_eq!(
-    fixture.view().hints(false).err().unwrap().to_string(),
+    fixture.view().hints(crate::hints::Mode::Follow).err().unwrap().to_string(),
     "No links in view"
   );
   assert_eq!(fixture.source.reads, 0);
@@ -299,4 +304,54 @@ fn anchor_hits_skip_surroundings() {
   assert!(!crate::preview::on_anchor(anchor, frame, mouse, |_, _| {
     crate::pointer::Hit::Scrollbar
   }));
+}
+
+#[test]
+fn cursor_hints_use_source() -> Result<()> {
+  use crate::hints::Mode;
+  for text in [false, true] {
+    let mut fixture = Fixture::new();
+    fixture.frame.pane.text = text;
+    let page = PageId(0);
+    let mut link = Link::new(
+      Bounds { x0: 10.0, y0: 900.0, x1: 20.0, y1: 910.0 },
+      Target::Page(PageId(9)),
+    );
+    link.push(Bounds { x0: 10.0, y0: 35.0, x1: 20.0, y1: 65.0 });
+    fixture.source.links.push(link.clone());
+    let hints = fixture.view().hints(Mode::Cursor)?;
+    let Target::Point { page: source, x, y } = hints.items()[0].target else {
+      panic!("Cursor hint must carry its source");
+    };
+    assert_eq!(source, page);
+    assert!(link.last().contains(x, y));
+    let position = fixture.source.text.nearest(page, x, y);
+    let glyph = fixture.source.text.glyph(position).unwrap();
+    assert!(link.contains(glyph.bounds.centre().0, glyph.bounds.centre().1));
+  }
+  Ok(())
+}
+
+#[test]
+fn cursor_hints_skip_hidden() -> Result<()> {
+  use crate::hints::Mode;
+  let mut fixture = Fixture::new();
+  let page = PageId(0);
+  let bounds = Bounds { x0: 10.0, y0: 10.0, x1: 20.0, y1: 65.0 };
+  fixture.source.links.push(Link::new(bounds, Target::Page(PageId(9))));
+  let hidden = Position { page, line: 0, glyph: 0 };
+  let visible = Position { page, line: 2, glyph: 0 };
+  fixture.reader.scroll = fixture
+    .layout
+    .project(page, fixture.source.text.glyph(visible).unwrap().bounds, 0.0)
+    .y0;
+  assert!(!fixture.view().visible(hidden)?);
+  assert!(fixture.view().visible(visible)?);
+  let hints = fixture.view().hints(Mode::Cursor)?;
+  let Target::Point { page, x, y } = hints.items()[0].target else {
+    panic!("Cursor hint must carry its source");
+  };
+  let position = fixture.source.text.nearest(page, x, y);
+  assert!(fixture.view().visible(position)?, "Cursor hint chose hidden text");
+  Ok(())
 }

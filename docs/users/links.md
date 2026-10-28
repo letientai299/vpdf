@@ -8,6 +8,9 @@ page, so scroll first when the desired link is off screen. A click also
 follows. In Cursor mode, put the glyph cursor on the link and press Enter or
 `Ctrl-]`. `Ctrl-o` returns from an internal jump.
 
+`F` labels visible links and places the cursor on the selected link in Cursor
+mode. Press `gd` to follow it or `K` to preview it.
+
 ## Inspect a reference
 
 1. Open [Practice text][practice] and put the cursor on its Navigation link.
@@ -21,7 +24,8 @@ moves between the link and preview; leaving both closes it. A left click inside
 the preview follows. A middle click opens the destination in a split, keeping
 focus in the original pane. A middle click on an internal link does the same.
 
-`yf` shows hints for copying web addresses instead of opening them. `gx` opens
+`yf` copies the selected link’s URI. Internal references copy a file URI with
+the destination page; external links copy their address. `gx` opens
 the URL at the cursor or on the selected Contents row. A middle click on a web
 link copies its address.
 

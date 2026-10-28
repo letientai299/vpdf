@@ -393,7 +393,7 @@ mod tests {
     let clues = Clues::default();
     let hints = Hints::new(
       vec![(((4, 5), 8), vpdf_model::document::Target::Page(PageId(0)))],
-      false,
+      crate::hints::Mode::Follow,
       0,
       80,
     )?;

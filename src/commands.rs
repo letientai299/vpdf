@@ -122,7 +122,7 @@ impl App {
         );
       }
       Action::Mark(name) => self.set_mark(name)?,
-      Action::Hints(copy) => self.start_hints(copy)?,
+      Action::Hints(mode) => self.start_hints(mode)?,
       Action::Window(command) => {
         self.request = Some(Request::Window {
           command,

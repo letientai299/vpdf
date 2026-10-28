@@ -420,14 +420,14 @@ fn link_hints_follow_typed_labels() -> Result<()> {
   app.command("2")?;
   let page = app.reader.cursor.page;
   for modifiers in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
-    app.start_hints(false)?;
+    app.start_hints(vpdf_ui::hints::Mode::Follow)?;
     let hints = app.overlays.hints().unwrap();
     let first = hints.items()[0].label.chars().next().unwrap();
     app.hint_key(KeyEvent::new(KeyCode::Char(first), modifiers))?;
     assert!(app.overlays.hints().is_none(), "{modifiers:?} closes hints");
     assert_eq!(app.reader.cursor.page, page, "{modifiers:?} follows nothing");
   }
-  app.start_hints(false)?;
+  app.start_hints(vpdf_ui::hints::Mode::Follow)?;
   let hints = app.overlays.hints().unwrap();
   assert!(hints.items().len() > 3);
   let label = hints.items()[0].label.clone();
@@ -436,7 +436,7 @@ fn link_hints_follow_typed_labels() -> Result<()> {
   }
   assert!(app.overlays.hints().is_none());
   assert!(app.reader.cursor.page.0 > 1, "citation jumps to the references");
-  app.start_hints(false)?;
+  app.start_hints(vpdf_ui::hints::Mode::Follow)?;
   let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
   app.hint_key(escape)?;
   assert!(app.overlays.hints().is_none());
@@ -519,7 +519,7 @@ fn overview_places_thumbnails_and_opens_pages() -> Result<()> {
   })?;
   let view = (app.reader.scroll, app.reader.cursor);
   for action in [
-    Action::Hints(false),
+    Action::Hints(vpdf_ui::hints::Mode::Follow),
     Action::Peek,
     Action::Result(false),
     Action::Search(false),
@@ -963,7 +963,7 @@ fn motion_redraws_only_for_new_targets() -> Result<()> {
   let [(first, _), (second, _)] = *text.expect("a word") else {
     unreachable!()
   };
-  app.start_hints(false)?;
+  app.start_hints(vpdf_ui::hints::Mode::Follow)?;
   let moved =
     |(column, row)| MouseEvent::new(MouseEventKind::Moved, column, row);
   // cell -> redraw

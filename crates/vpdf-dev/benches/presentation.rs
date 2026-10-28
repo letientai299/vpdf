@@ -76,7 +76,8 @@ fn hints() -> Result<()> {
   let prepared: Prepared = fixture("hints")?;
   let [columns, rows, cell_width, cell_height] = prepared.screen;
   let screen = screen::pixels(columns, rows, cell_width, cell_height);
-  let mut hints = Hints::new(prepared.found, false, 0, columns)?;
+  let mut hints =
+    Hints::new(prepared.found, vpdf_ui::hints::Mode::Follow, 0, columns)?;
   measure("Hints::accepts batch", || {
     for key in [
       KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE),

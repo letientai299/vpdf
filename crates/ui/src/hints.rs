@@ -42,12 +42,18 @@ pub struct Hint {
   pub column: u16,
 }
 
-/// Link labels on screen; typing one follows its link.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+  Follow,
+  Copy,
+  Cursor,
+}
+
+/// Link labels on screen.
 pub struct Hints {
   items: Vec<Hint>,
   typed: String,
-  /// `yf` copies URIs instead of opening.
-  copy: bool,
+  mode: Mode,
   /// The pointer's label; Enter runs it.
   selected: Option<usize>,
   pending: Pending,
@@ -121,7 +127,7 @@ impl Room<'_> {
 impl Hints {
   pub fn new(
     mut found: Vec<(Spot, Target)>,
-    copy: bool,
+    mode: Mode,
     left: u16,
     right: u16,
   ) -> Result<Self> {
@@ -136,7 +142,7 @@ impl Hints {
       })
       .collect();
     let typed = String::new();
-    Ok(Self { items, typed, copy, selected: None, pending: Pending::default() })
+    Ok(Self { items, typed, mode, selected: None, pending: Pending::default() })
   }
 
   pub fn items(&self) -> &[Hint] {
@@ -154,8 +160,8 @@ impl Hints {
     self.selected = shown.then_some(index);
   }
 
-  pub fn into_target(self, index: usize) -> Option<(Target, bool)> {
-    self.items.into_iter().nth(index).map(|hint| (hint.target, self.copy))
+  pub fn into_target(self, index: usize) -> Option<(Target, Mode)> {
+    self.items.into_iter().nth(index).map(|hint| (hint.target, self.mode))
   }
 
   pub fn reset_input(&mut self) {
@@ -409,7 +415,7 @@ mod tests {
     let found = (0..=count)
       .map(|row| (((10, row), 12), Target::Page(PageId(0))))
       .collect();
-    let mut hints = Hints::new(found, false, 0, 80)?;
+    let mut hints = Hints::new(found, Mode::Follow, 0, 80)?;
     let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
     hints.select(1);
     assert_eq!(hints.key(key(KeyCode::Enter)), Transition::Run(1));
@@ -426,14 +432,21 @@ mod tests {
       hints.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)),
       Transition::Close
     );
-    let mut hints =
-      Hints::new(vec![(((10, 0), 12), Target::Page(PageId(0)))], true, 0, 80)?;
+    let mut hints = Hints::new(
+      vec![(((10, 0), 12), Target::Page(PageId(0)))],
+      Mode::Copy,
+      0,
+      80,
+    )?;
     assert_eq!(
       hints.key(key(KeyCode::Char('b'))),
       Transition::Miss("b".into())
     );
-    assert_eq!(hints.into_target(0), Some((Target::Page(PageId(0)), true)));
-    assert!(Hints::new(Vec::new(), false, 0, 80).is_err());
+    assert_eq!(
+      hints.into_target(0),
+      Some((Target::Page(PageId(0)), Mode::Copy))
+    );
+    assert!(Hints::new(Vec::new(), Mode::Follow, 0, 80).is_err());
     Ok(())
   }
 
@@ -445,7 +458,7 @@ mod tests {
     {
       let found =
         (0..25).map(|row| (((10, row), 12), Target::Page(PageId(0)))).collect();
-      let mut hints = Hints::new(found, false, 0, 80)?;
+      let mut hints = Hints::new(found, Mode::Follow, 0, 80)?;
       if typed {
         hints.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
       }
@@ -502,7 +515,7 @@ mod binding_tests {
     bindings.set(Context::Hints, map);
     let found =
       (0..25).map(|row| (((10, row), 12), Target::Page(PageId(0)))).collect();
-    let mut hints = Hints::new(found, false, 0, 80)?;
+    let mut hints = Hints::new(found, Mode::Follow, 0, 80)?;
     let key = |ch, modifiers| KeyEvent::new(KeyCode::Char(ch), modifiers);
     assert!(matches!(
       hints.feed(key('a', vpdf_model::input::KeyModifiers::NONE), &bindings),
