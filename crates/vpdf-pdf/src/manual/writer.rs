@@ -4,12 +4,14 @@ use mupdf::{Buffer, Font};
 use std::fmt::Write;
 use vpdf_model::theme::Palette;
 
-const FONT: &[u8] = include_bytes!("../../../ui/assets/VpdfMonoText.ttf");
+pub(super) const FONT: &[u8] =
+  include_bytes!("../../../ui/assets/VpdfMonoText.ttf");
 #[derive(serde::Deserialize)]
 struct Typography {
   body: f32,
   leading: f32,
   paragraph: f32,
+  code: f32,
 }
 
 impl Typography {
@@ -24,6 +26,16 @@ impl Typography {
   }
 }
 
+/// Item names sit this many cells right of headings.
+const NAME: usize = 4;
+
+/// Shaded code block padding.
+const CODE_PAD: f32 = 6.0;
+
+fn help_labels(targets: &[String]) -> Vec<String> {
+  targets.iter().map(|target| format!(" :help {target}")).collect()
+}
+
 pub(super) struct Writer {
   pub native: PdfDocument,
   typography: Typography,
@@ -34,6 +46,8 @@ pub(super) struct Writer {
   links: Vec<([f32; 4], Link)>,
   y: f32,
   column: usize,
+  /// Entry name color for the current section.
+  name: [u8; 3],
 }
 
 enum Link {
@@ -60,6 +74,7 @@ impl Writer {
       links: Vec::new(),
       y: 744.0,
       column: 8,
+      name: palette.r#match,
     })
   }
 
@@ -157,22 +172,35 @@ impl Writer {
     chapter: &super::Chapter,
     chapters: &[super::Chapter],
   ) {
-    self.column = match chapter.section {
-      Some(super::Section::Configuration | super::Section::Commands) => {
-        chapters
-          .iter()
-          .filter(|row| row.section == chapter.section)
-          .flat_map(|row| &row.lines)
-          .filter_map(|line| match line {
-            super::Line::Binding { keys, .. } => Some(keys.chars().count() + 2),
-            super::Line::Text(_) => None,
-          })
-          .max()
-          .unwrap_or(8)
-          .clamp(8, self.typography.columns() / 2)
-      }
-      Some(super::Section::Keys) | None => 8,
+    // Action names share the Ex command color.
+    self.name = if chapter.section == Some(super::Section::Actions) {
+      self.palette.highlight
+    } else {
+      self.palette.r#match
     };
+    self.column = NAME
+      + match chapter.section {
+        // Names wider than this sit above their entry.
+        Some(super::Section::Actions) => 16,
+        Some(super::Section::Configuration | super::Section::Commands) => {
+          chapters
+            .iter()
+            .filter(|row| row.section == chapter.section)
+            .flat_map(|row| &row.lines)
+            .filter_map(|line| match line {
+              super::Line::Binding { keys, .. } => {
+                Some(keys.chars().count() + 2)
+              }
+              super::Line::Text(_)
+              | super::Line::Code(_)
+              | super::Line::Item(_) => None,
+            })
+            .max()
+            .unwrap_or(8)
+            .clamp(8, self.typography.columns() / 2)
+        }
+        Some(super::Section::Keys) | None => 8,
+      };
   }
 
   pub fn reference_line(
@@ -186,11 +214,95 @@ impl Writer {
       super::Line::Binding { keys, description } => {
         self.binding(keys, description)
       }
+      super::Line::Code(code) => self.code(&[code]),
+      super::Line::Item(text) => self.item(text),
     }
+  }
+
+  /// Leaves one blank line.
+  pub fn gap(&mut self) {
+    self.y -= self.typography.line_height();
+  }
+
+  /// A bulleted paragraph with a hanging indent.
+  pub fn item(&mut self, text: &str) -> Result<()> {
+    self.position()?;
+    let x = 48.0 + self.column as f32 * self.typography.cell();
+    self.draw("-", x, self.palette.foreground, self.typography.body)?;
+    let runs = inline(text, self.palette);
+    self.paragraph(&runs, self.column + 2, &[], false)
+  }
+
+  /// A shaded, unjustified block, kept on one page.
+  pub fn code(&mut self, lines: &[&str]) -> Result<()> {
+    const PAD: f32 = CODE_PAD;
+    let size = self.typography.code;
+    let height = size + 3.0;
+    let block = self.code_height(lines.len());
+    if self.y + self.typography.body - block < 48.0 {
+      self.flush()?;
+    }
+    self.position()?;
+    let x = 48.0 + self.column as f32 * self.typography.cell();
+    let top = self.y + self.typography.body;
+    writeln!(
+      self.content,
+      "0.96 0.96 0.96 rg {x} {} {} {block} re f",
+      top - block,
+      564.0 - x
+    )?;
+    self.y = top - PAD - size * 0.8;
+    let cell = size * 0.5;
+    for line in lines {
+      let mut column = 0;
+      for (run, color) in toml(line, self.palette) {
+        let encoded = self.encode(run)?;
+        self.draw(&encoded, x + PAD + column as f32 * cell, color, size)?;
+        column += encoded.chars().count();
+      }
+      self.y -= height;
+    }
+    self.y = top - block - self.typography.paragraph - self.typography.body;
+    Ok(())
   }
 
   pub fn binding(&mut self, keys: &str, description: &str) -> Result<()> {
     self.entry(keys, description, &[])
+  }
+
+  /// Starts a new page when the entry would otherwise split.
+  pub fn reserve_entry(
+    &mut self,
+    keys: &str,
+    description: &str,
+    targets: &[String],
+    code: usize,
+  ) -> Result<()> {
+    let mut text = String::new();
+    for (run, _) in inline(description, self.palette) {
+      text.push_str(&self.encode(run)?);
+    }
+    for label in help_labels(targets) {
+      text.push_str(&self.encode(&label)?);
+    }
+    let mut lines = wrap(&text, self.typography.columns() - self.column).len();
+    if NAME + self.encode(keys)?.chars().count() >= self.column {
+      lines += 1;
+    }
+    let mut height =
+      lines.saturating_sub(1) as f32 * self.typography.line_height();
+    if code > 0 {
+      height += self.typography.line_height() + self.code_height(code);
+    }
+    if self.y - height < 48.0 && height < 744.0 - 48.0 {
+      self.flush()?;
+    }
+    Ok(())
+  }
+
+  /// Vertical space a shaded block of `lines` takes.
+  fn code_height(&self, lines: usize) -> f32 {
+    lines as f32 * (self.typography.code + 3.0) + 2.0 * CODE_PAD
   }
 
   pub fn entry(
@@ -199,8 +311,7 @@ impl Writer {
     description: &str,
     targets: &[String],
   ) -> Result<()> {
-    let labels: Vec<_> =
-      targets.iter().map(|target| format!(" :help {target}")).collect();
+    let labels = help_labels(targets);
     let mut runs = Vec::new();
     if keys.starts_with(':') {
       for word in keys.split_inclusive(' ') {
@@ -212,15 +323,15 @@ impl Writer {
         runs.push((word, color));
       }
     } else {
-      runs.push((keys, self.palette.r#match));
+      runs.push((keys, self.name));
     }
-    self.colored_at(&runs, 0)?;
-    if self.encode(keys)?.chars().count() < self.column {
+    self.colored_at(&runs, NAME)?;
+    if NAME + self.encode(keys)?.chars().count() < self.column {
       self.y += self.typography.line_height();
     }
     let mut runs = inline(description, self.palette);
     runs.extend(labels.iter().map(|label| (label.as_str(), self.palette.link)));
-    self.paragraph(&runs, self.column, targets)?;
+    self.paragraph(&runs, self.column, targets, true)?;
     self.y -= self.typography.line_height();
     Ok(())
   }
@@ -284,7 +395,7 @@ impl Writer {
     runs: &[(&str, [u8; 3])],
     indent: usize,
   ) -> Result<()> {
-    self.paragraph(runs, indent, &[])
+    self.paragraph(runs, indent, &[], true)
   }
 
   fn paragraph(
@@ -292,6 +403,7 @@ impl Writer {
     runs: &[(&str, [u8; 3])],
     indent: usize,
     targets: &[String],
+    justify: bool,
   ) -> Result<()> {
     let mut text = String::new();
     let mut colors = Vec::new();
@@ -322,7 +434,7 @@ impl Writer {
       self.position()?;
       let chars: Vec<_> = line.chars().collect();
       let spaces = chars.iter().filter(|&&ch| ch == ' ').count();
-      let spacing = if index + 1 < lines.len() && spaces > 0 {
+      let spacing = if justify && index + 1 < lines.len() && spaces > 0 {
         (columns - indent - chars.len()) as f32 * cell / spaces as f32
       } else {
         0.0
@@ -428,23 +540,100 @@ fn wrap(text: &str, columns: usize) -> Vec<String> {
   lines
 }
 
+/// Markdown code spans; a doubled fence may contain backticks.
 fn inline(text: &str, palette: Palette) -> Vec<(&str, [u8; 3])> {
   let mut runs = Vec::new();
   let mut rest = text;
   while let Some(start) = rest.find('`') {
-    let Some(end) = rest[start + 1..].find('`') else { break };
+    let fence = if rest[start..].starts_with("``") { "``" } else { "`" };
+    let open = start + fence.len();
+    let Some(end) = rest[open..].find(fence) else { break };
     runs.push((&rest[..start], palette.foreground));
-    let code = &rest[start + 1..start + 1 + end];
+    let code = &rest[open..open + end];
+    let code = if fence.len() > 1 { code.trim() } else { code };
     let color = if code.starts_with(":help ") {
       palette.link
-    } else if code.starts_with(':') {
+    } else if code.len() > 1 && code.starts_with(':') {
       palette.highlight
     } else {
       palette.r#match
     };
     runs.push((code, color));
-    rest = &rest[start + end + 2..];
+    rest = &rest[open + end + fence.len()..];
   }
   runs.push((rest, palette.foreground));
   runs
+}
+
+// Token colors from tools/help/help/help.tmTheme.
+const TOML_STRING: [u8; 3] = [0x24, 0x5C, 0x39];
+const TOML_CONSTANT: [u8; 3] = [0x8B, 0x3C, 0x12];
+const TOML_KEY: [u8; 3] = [0x33, 0x4F, 0x96];
+
+/// Highlights one TOML line like the authored manual.
+fn toml(line: &str, palette: Palette) -> Vec<(&str, [u8; 3])> {
+  let mut runs = Vec::new();
+  let mut rest = line;
+  while let Some(ch) = rest.chars().next() {
+    let end = if ch == '"' {
+      rest[1..].find('"').map_or(rest.len(), |end| end + 2)
+    } else if ch.is_ascii_alphanumeric() || "_-.+".contains(ch) {
+      rest
+        .find(|ch: char| !(ch.is_ascii_alphanumeric() || "_-.+".contains(ch)))
+        .unwrap_or(rest.len())
+    } else {
+      ch.len_utf8()
+    };
+    let token = &rest[..end];
+    let color = if ch == '"' {
+      TOML_STRING
+    } else if token == "true"
+      || token == "false"
+      || token.parse::<f64>().is_ok()
+    {
+      TOML_CONSTANT
+    } else if ch.is_ascii_alphabetic() {
+      TOML_KEY
+    } else {
+      palette.foreground
+    };
+    runs.push((token, color));
+    rest = &rest[end..];
+  }
+  runs
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn toml_matches_authored_theme() {
+    let theme = include_str!("../../../../tools/help/help/help.tmTheme");
+    for color in [TOML_STRING, TOML_CONSTANT, TOML_KEY] {
+      let hex = format!("#{:02X}{:02X}{:02X}", color[0], color[1], color[2]);
+      assert!(theme.contains(&hex), "{hex}");
+    }
+    let palette = Palette::default();
+    let runs = toml(r#""<F2>" = { action = "zoom", amount = -1 }"#, palette);
+    let color = |token: &str| runs.iter().find(|run| run.0 == token).unwrap().1;
+    assert_eq!(color(r#""<F2>""#), TOML_STRING);
+    assert_eq!(color("action"), TOML_KEY);
+    assert_eq!(color("-1"), TOML_CONSTANT);
+    assert_eq!(color("{"), palette.foreground);
+    let line: String = runs.iter().map(|run| run.0).collect();
+    assert!(line.ends_with("-1 }"));
+  }
+
+  #[test]
+  fn doubled_spans_hold_backticks() {
+    let palette = Palette::default();
+    let runs = inline("keys: `'{mark}`, `` `{mark} ``, `:`.", palette);
+    let codes: Vec<_> =
+      runs.iter().filter(|run| run.1 == palette.r#match).collect();
+    assert_eq!(
+      codes.iter().map(|run| run.0).collect::<Vec<_>>(),
+      ["'{mark}", "`{mark}", ":"]
+    );
+  }
 }

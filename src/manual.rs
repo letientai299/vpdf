@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 
+mod catalog;
 mod reference;
 mod runtime;
 pub use runtime::{Location, Ready, Runtime};
@@ -50,9 +51,26 @@ pub(crate) fn completions(
   prefix: &str,
 ) -> crate::Result<Vec<vpdf_ui::topics::Candidate>> {
   let reference = settings.help_reference(invocation.clone());
-  let registry = vpdf_ui::topics::Registry::new(
+  Ok(registry(&reference)?.complete(prefix, invocation.context()))
+}
+
+/// The topic registry for a help snapshot, including setting names.
+pub(crate) fn registry(
+  reference: &vpdf_ui::topics::Reference,
+) -> crate::Result<vpdf_ui::topics::Registry> {
+  let settings = &reference.configuration.settings;
+  let titles: Vec<_> = settings
+    .iter()
+    .map(|setting| crate::config::describe(&setting.name))
+    .collect::<crate::Result<_>>()?;
+  vpdf_ui::topics::Registry::new(
     vpdf_ui::topics::authored(),
-    reference.bindings,
-  )?;
-  Ok(registry.complete(prefix, invocation.context()))
+    reference.bindings.clone(),
+  )?
+  .with_settings(
+    settings
+      .iter()
+      .zip(&titles)
+      .map(|(setting, field)| (setting.name.as_str(), field.summary)),
+  )
 }

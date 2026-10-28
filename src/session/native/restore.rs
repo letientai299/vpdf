@@ -256,7 +256,7 @@ impl Session {
   /// Open tabs, then ones not yet restored, at their saved places.
   pub(in crate::session) fn layout(&self) -> Layout {
     let live = self.tabs.iter().enumerate().filter_map(|(index, tab)| {
-      let saved = saved_tab(tab)?;
+      let saved = saved_tab(tab, &self.state)?;
       Some((index == self.active, saved))
     });
     let (mut before, mut after) = (Vec::new(), Vec::new());
@@ -453,30 +453,40 @@ fn restoring_mut(session: &mut Session) -> &mut Restoring {
   session.windows.restoring.as_mut().expect("Restore queue")
 }
 
-fn saved_tab(tab: &Tab) -> Option<Saved> {
+/// Help panes save the document they replaced.
+fn saved_tab(tab: &Tab, state: &crate::state::State) -> Option<Saved> {
   let kept: Vec<_> = tab
     .panes
     .iter()
-    .filter_map(crate::session::Pane::document)
-    .filter(|app| app.manual.is_none())
+    .filter_map(|pane| {
+      let app = pane.document()?;
+      if app.manual.is_none() {
+        let entry = app.reading_entry();
+        return Some((app.id, entry, app.opened));
+      }
+      let alternate = pane.alternate.as_ref()?;
+      if alternate.manual.is_some() {
+        return None;
+      }
+      let mut entry = state.entry(&alternate.path)?.clone();
+      entry.cursor = alternate.position;
+      Some((pane.id, entry, state.open_revision(&alternate.path)))
+    })
     .collect();
-  let index = |id: u32| kept.iter().position(|app| app.id == id);
+  let index = |id: u32| kept.iter().position(|(kept, ..)| *kept == id);
   let shape = tab.tree.shape(&index)?;
   let focused = tab.panes[tab.focus].id;
   Some(Saved {
     focus: index(focused).unwrap_or(0),
     panes: kept
-      .iter()
-      .map(|app| {
-        let entry = app.reading_entry();
-        Pane {
-          path: entry.path,
-          cursor: entry.cursor,
-          zoom: entry.zoom,
-          rotation: entry.rotation,
-          crop: entry.crop,
-          opened: app.opened,
-        }
+      .into_iter()
+      .map(|(_, entry, opened)| Pane {
+        path: entry.path,
+        cursor: entry.cursor,
+        zoom: entry.zoom,
+        rotation: entry.rotation,
+        crop: entry.crop,
+        opened,
       })
       .collect(),
     shape,

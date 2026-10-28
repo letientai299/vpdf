@@ -73,6 +73,8 @@ pub struct Session {
   /// The whole terminal; panes divide it.
   screen: Option<Screen>,
   watcher: Watcher,
+  /// The config file present at startup, if any.
+  config_watch: Option<crate::watch::ConfigWatch>,
   store: Option<PathBuf>,
   /// Set by SIGHUP or SIGTERM, so the session ends and saves.
   hangup: Arc<AtomicBool>,
@@ -180,6 +182,10 @@ impl Session {
     vpdf_ui::panel::set_ascii_glyphs(config.settings.ascii_glyphs());
     Self {
       settings: config.settings,
+      config_watch: config
+        .source
+        .path()
+        .and_then(crate::watch::ConfigWatch::new),
       config_source: config.source,
       config_warning: config.warning.clone(),
       startup_warning: config.warning,
@@ -442,6 +448,8 @@ impl Session {
 mod buffer_tests;
 mod buffers;
 mod clipboard;
+#[cfg(test)]
+mod config_tests;
 mod dispatch;
 mod edges;
 mod frame;

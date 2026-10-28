@@ -138,13 +138,7 @@ impl Session {
       self.remember_open(self.active, self.tabs[self.active].focus);
       return Ok(());
     }
-    let alternate = self.alternate_reference()?;
-    let tab = self.tab();
-    let focus = tab.focus;
-    let mut replacement = Pane::from(app);
-    replacement.alternate =
-      alternate.or_else(|| tab.panes[focus].alternate.take());
-    self.replace_pane(replacement)?;
+    self.replace_keeping_alternate(app.into())?;
     self.remember_open(self.active, self.tabs[self.active].focus);
     Ok(())
   }
@@ -283,6 +277,15 @@ impl Session {
 
   /// Closes the focused pane, then its tab when it was the last.
   pub(super) fn close_pane(&mut self) -> Result<()> {
+    // Help returns to what it replaced.
+    if self.focused().is_help() {
+      if self.focused().alternate.is_some() {
+        return self.alternate(true);
+      }
+      if self.tab().panes.len() == 1 && self.help_invoker().is_none() {
+        return self.close_to_recent();
+      }
+    }
     if self.tab().panes.len() == 1 {
       return self.close();
     }
@@ -483,7 +486,7 @@ impl Session {
   }
 
   /// `Ctrl-w T`: moves the focused pane into a new tab.
-  fn move_to_tab(&mut self) -> Result<()> {
+  pub(super) fn move_to_tab(&mut self) -> Result<()> {
     if self.tab().panes.len() == 1 {
       return Ok(());
     }

@@ -25,11 +25,11 @@
     }
   },
   "font_files": {
-    "VpdfMono.ttf": "910502cc31543fb1b0543b692882e881d6a32466d3d83ac9e79ed18e4e37a200",
-    "VpdfMonoText.ttf": "f87c450c00619b1de6e4de58a258a81ee00198d65cd2731bbcdfbb2bfb9e6ff7",
-    "VpdfMonoBold.ttf": "fcf60ae0a8a3f8bb9667da14753db4685a55d345945623af9a6cd0a5def9f4a4",
-    "VpdfMonoItalic.ttf": "8b0fcb34c353641d436ce66f79dd6ecdd22a0b1caeb03bacea9e97274752ccee",
-    "VpdfMonoBoldItalic.ttf": "650f4c76d2b6b88fea3a15cf65d540027087bd014fa1a3c9d6ddeaca3178cd6b"
+    "VpdfMono.ttf": "b2224da8fd011d8ae1079a32dade938b8e4a3bbddb1e2b4b70ecb8dc9327bc5e",
+    "VpdfMonoText.ttf": "e3e728f54672c7ec7961a7de9c7b2e35fdc2ee1a8214c2de855c35e86d623cdb",
+    "VpdfMonoBold.ttf": "37e42e958429f353504c0b6a52f50f7d4ac14f48371ceedd383d6f00cb9ce182",
+    "VpdfMonoItalic.ttf": "1aadf4518455fbc50fb0090f5aa88824e5f65dfa96c5982bbe27575c707136a9",
+    "VpdfMonoBoldItalic.ttf": "00d2f1f09ed6bf77e37c50037d4532f0ee53dd50fbb675da1ca844cd678e7090"
   },
   "notices": [
     "iosevka.txt",

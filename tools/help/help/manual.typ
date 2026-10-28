@@ -8,8 +8,12 @@
 #let link-color = rgb(31.25%, 12.5%, 18.75%)
 #let command-color = rgb(37.5%, 12.5%, 18.75%)
 #let example-color = rgb(50%, 12.5%, 18.75%)
-#set page(width: 612pt, height: 792pt, margin: 48pt, fill: background,
-  footer: context align(center)[#counter(page).display()])
+// Body text sits four cells right of headings.
+#let indent = 4 * type.body * 0.5pt
+#set page(width: 612pt, height: 792pt, fill: background,
+  margin: (left: 48pt + indent, rest: 48pt),
+  footer: context pad(left: -indent,
+    align(center)[#counter(page).display()]))
 #set text(font: fonts.first(), size: type.body * 1pt, fallback: false, fill: body,
   top-edge: 0.8em, bottom-edge: -0.2em, ligatures: false)
 #set raw(theme: "help.tmTheme")
@@ -20,10 +24,15 @@
   example-color
 } else { key-color }, raw(value))
 #show heading: set text(fill: heading-color)
-#show heading.where(level: 1): set block(above: 22pt, below: 12pt)
-#show heading.where(level: 2): set block(above: 16pt, below: 8pt)
-#show heading.where(level: 3): set block(above: 12pt, below: 6pt)
-#show link: it => text(fill: link-color, underline(it))
+// Headings stick to the text below instead of ending a page.
+#let heading-spacing = ((22pt, 12pt), (16pt, 8pt), (12pt, 6pt))
+#show heading: set block(above: 0pt, below: 0pt)
+#show heading: it => {
+  let (above, below) = heading-spacing.at(calc.min(it.level, 3) - 1)
+  block(sticky: true, above: above, below: below, pad(left: -indent, it))
+}
+// A hyphen would split one link into two hint targets.
+#show link: it => text(fill: link-color, hyphenate: false, underline(it))
 #set par(justify: true, leading: type.leading * 1pt, spacing: (type.leading + type.paragraph) * 1pt)
 #set list(tight: false, spacing: 6pt)
 #set enum(tight: false, spacing: 6pt)
@@ -54,5 +63,5 @@
 HELP_CHAPTERS
 
 #pagebreak()
-#set page(footer: none)
+#set page(footer: none, margin: 48pt)
 #include "legal.typ"

@@ -22,12 +22,13 @@ pub struct Chapter {
   pub listed: bool,
   pub aliases: Vec<String>,
   pub links: Vec<(String, String)>,
-  pub anchors: BTreeMap<usize, String>,
+  pub anchors: BTreeMap<usize, Vec<String>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Section {
   Keys,
+  Actions,
   Configuration,
   Commands,
 }
@@ -36,8 +37,17 @@ impl Section {
   fn title(self) -> &'static str {
     match self {
       Self::Keys => "Built-in keybindings",
+      Self::Actions => "Actions",
       Self::Configuration => "Built-in settings",
       Self::Commands => "Built-in Ex commands",
+    }
+  }
+
+  /// Help destination naming the section heading.
+  const fn topic(self) -> Option<&'static str> {
+    match self {
+      Self::Actions => Some("actions"),
+      Self::Keys | Self::Configuration | Self::Commands => None,
     }
   }
 }
@@ -45,7 +55,14 @@ impl Section {
 #[derive(Clone, Debug)]
 pub enum Line {
   Text(String),
-  Binding { keys: String, description: String },
+  Binding {
+    keys: String,
+    description: String,
+  },
+  /// One line of a code block in the entry column.
+  Code(String),
+  /// One bulleted item in the entry column.
+  Item(String),
 }
 
 impl From<String> for Line {
@@ -116,6 +133,12 @@ impl Document {
   }
 }
 
+/// Whether `name` can follow a topic ID in a destination name.
+pub fn valid_anchor(name: &str) -> bool {
+  !name.is_empty()
+    && name.bytes().all(|ch| ch.is_ascii_alphanumeric() || b"._-".contains(&ch))
+}
+
 pub type Job = OneShot<Result<Arc<Document>>>;
 
 pub fn spawn(
@@ -162,6 +185,10 @@ fn compose(
       let (page, y) = writer.section(5)?;
       references
         .insert(section, destinations::outline_at(section.title(), page, y));
+      if let Some(topic) = section.topic() {
+        anchored.push((topic.into(), page, y));
+        locations.push((topic.into(), None, topic.into()));
+      }
       writer.heading(section.title())?;
     }
     writer.reference_column(chapter, chapters);
@@ -189,33 +216,14 @@ fn compose(
       chapter.anchors.keys().all(|&index| index < chapter.lines.len()),
       "Invalid help anchor line"
     );
-    for (index, line) in reference_lines(chapter) {
-      ensure!(ready(), "Help generation canceled");
-      if let Some(anchor) = chapter.anchors.get(&index) {
-        ensure!(
-          !anchor.is_empty()
-            && anchor
-              .bytes()
-              .all(|ch| ch.is_ascii_alphanumeric() || b"._-".contains(&ch)),
-          "Invalid help anchor"
-        );
-        let (page, y) = writer.position()?;
-        let name = format!("{}.{}", chapter.id, anchor);
-        locations.push((
-          chapter.id.clone(),
-          Some(anchor.clone()),
-          name.clone(),
-        ));
-        anchored.push((name, page, y));
-      }
-      if let Line::Binding { keys, description } = &line {
-        let tags =
-          if index == 0 { reference_tags(chapter) } else { Vec::new() };
-        writer.entry(keys, description, &tags)?;
-      } else {
-        writer.reference_line(&line, entry)?;
-      }
-    }
+    lines(
+      &mut writer,
+      chapter,
+      entry,
+      &mut locations,
+      &mut anchored,
+      &mut ready,
+    )?;
     if !entry {
       for (label, target) in &chapter.links {
         writer.line(label)?;
@@ -241,10 +249,69 @@ fn compose(
   finish(&native, &names, locations, ready)
 }
 
+/// Writes a chapter's lines and records their anchors.
+fn lines(
+  writer: &mut writer::Writer,
+  chapter: &Chapter,
+  entry: bool,
+  locations: &mut Vec<(String, Option<String>, String)>,
+  anchored: &mut Vec<(String, i32, f32)>,
+  ready: &mut impl FnMut() -> bool,
+) -> Result<()> {
+  use anyhow::ensure;
+  let lines = reference_lines(chapter);
+  let mut rest = lines.iter().peekable();
+  while let Some((index, line)) = rest.next() {
+    let index = *index;
+    ensure!(ready(), "Help generation canceled");
+    let tags = if index == 0 { reference_tags(chapter) } else { Vec::new() };
+    if let Line::Binding { keys, description } = line {
+      if index > 0 && matches!(chapter.lines[index - 1], Line::Item(_)) {
+        writer.gap();
+      }
+      let code = rest
+        .clone()
+        .take_while(|(_, line)| matches!(line, Line::Code(_)))
+        .count();
+      writer.reserve_entry(keys, description, &tags, code)?;
+    }
+    for anchor in chapter.anchors.get(&index).into_iter().flatten() {
+      ensure!(valid_anchor(anchor), "Invalid help anchor");
+      let (page, y) = writer.position()?;
+      let name = format!("{}.{}", chapter.id, anchor);
+      locations.push((chapter.id.clone(), Some(anchor.clone()), name.clone()));
+      anchored.push((name, page, y));
+    }
+    match line {
+      Line::Binding { keys, description } => {
+        writer.entry(keys, description, &tags)?;
+      }
+      Line::Code(first) => {
+        let mut block = vec![first.as_str()];
+        while let Some((_, Line::Code(code))) = rest.peek() {
+          block.push(code);
+          rest.next();
+        }
+        writer.code(&block)?;
+      }
+      Line::Text(_) | Line::Item(_) => {
+        writer.reference_line(line, entry)?;
+      }
+    }
+  }
+  if entry && matches!(lines.last(), Some((_, Line::Item(_)))) {
+    writer.gap();
+  }
+  Ok(())
+}
+
 fn reference_lines(chapter: &Chapter) -> Vec<(usize, Line)> {
   let mut lines: Vec<(usize, Line)> = Vec::new();
   for (index, line) in chapter.lines.iter().enumerate() {
+    // A label before a list stays on its own line.
+    let label = matches!(chapter.lines.get(index + 1), Some(Line::Item(_)));
     if !chapter.anchors.contains_key(&index)
+      && !label
       && let Line::Text(text) = line
       && let Some((_, Line::Binding { description, .. })) = lines.last_mut()
     {

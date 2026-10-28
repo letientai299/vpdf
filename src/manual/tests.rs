@@ -16,7 +16,7 @@ fn picker_help_describes_frontends() -> crate::Result<()> {
       .iter()
       .filter_map(|line| match line {
         Line::Text(text) => Some(text.as_str()),
-        Line::Binding { .. } => None,
+        Line::Binding { .. } | Line::Code(_) | Line::Item(_) => None,
       })
       .collect::<String>();
     assert!(text.contains("system file picker"), "{topic}: {text}");

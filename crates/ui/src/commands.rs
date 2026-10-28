@@ -108,8 +108,8 @@ macro_rules! commands {
 
 // id, name, aliases, usage, completion, view, help
 commands! {
-  Config "config" [] "reload" Config Home
-    "reload configuration";
+  Config "config" [] "reload|edit" Config Home
+    "reload or edit configuration";
   Theme "theme" ["colorscheme"] "<name|path>" Theme Home "switch UI theme";
   Edit "edit" ["e"] "[file]" Path Home "pick or open a PDF in this pane";
   Open "open" [] "[file]" Path Home
@@ -279,7 +279,9 @@ pub fn candidates(
     Some(Complete::Recolor) => {
       prefixed(vec!["dark".into(), "sepia".into(), "off".into()], argument)
     }
-    Some(Complete::Config) => prefixed(vec!["reload".into()], argument),
+    Some(Complete::Config) => {
+      prefixed(vec!["edit".into(), "reload".into()], argument)
+    }
     Some(Complete::Switch) => {
       prefixed(vec!["on".into(), "off".into()], argument)
     }

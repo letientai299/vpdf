@@ -27,6 +27,13 @@ set a mark and a quote or backtick followed by `{mark}` to jump. Counts use
 change these entries. Use `:help config` for built-in setting defaults.
 Check your TOML configuration when a key behaves differently from the manual.
 
+Each entry shows a full key sequence. Keys typed after an operator or text
+object prefix appear under the full sequence with a note: `yf` copies a link
+and says that `f` completes it in operator mode. `:help yf` and
+`:help operator:f` both land on that entry. A key with different effects in
+different modes lists each effect with its modes. Each entry links to its
+configuration action, such as `:help action.hints.copy`.
+
 ## Native Mac commands
 
 In the macOS app, menu shortcuts take precedence over custom bindings.

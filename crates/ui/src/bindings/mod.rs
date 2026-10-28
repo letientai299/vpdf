@@ -1,6 +1,8 @@
 pub mod actions;
+pub mod catalog;
 mod defaults;
 mod display;
+pub use display::topic_text;
 pub mod window;
 pub use defaults::Bindings;
 mod target;

@@ -15,8 +15,10 @@ pub fn facts() -> crate::Result<Value> {
         "aliases": topic.aliases,
         "kind": match topic.destination {
           Destination::Authored(_) => "authored",
-          Destination::Action(_) => "action",
+          Destination::Action(_) | Destination::Key(_) => "action",
           Destination::Command(_) => "command",
+          Destination::Catalog(_) => "catalog",
+          Destination::Setting(_) => "setting",
           Destination::Configuration => "configuration",
         },
       })

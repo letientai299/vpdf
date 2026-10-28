@@ -69,7 +69,8 @@ Use `:cursorline off` to hide the cursor band, `:crop on` to crop margins,
 and `:theme light` or `:theme dark` to change
 UI colors. Use `:theme ~/.config/vpdf/themes/nord.toml` for a theme file; see
 [UI themes][themes] for path resolution and fallback behavior.
-`:config reload` rereads the selected configuration file.
+`:config edit` opens the selected configuration file; `:config reload` rereads
+it.
 
 Use `:cancel` to stop pane jobs and `:nohlsearch` to hide search highlights.
 `:reload` or `:e!` rereads the source PDF. `:password` opens hidden password

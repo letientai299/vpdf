@@ -72,6 +72,16 @@ visible query. OCR text and jump history belong to the old document and are
 cleared. The operation preserves a useful reading position; it does not map a
 paragraph's identity across arbitrary document edits.
 
+The configuration file present at launch uses the same watcher, settling, and
+fallback poll in both frontends, waking the frontend that owns the session. A
+version reloads once, only when its contents changed; a missing file keeps the
+live settings. `:config edit` enrolls the file it creates; files created
+another way are not enrolled. The terminal
+`:config edit` runs the editor on the session thread after suspending the
+terminal, so input and painting stop; on return the session applies the saved
+version before reading input. [Configuration reload][config-reload] applies to
+every pane.
+
 ## External actions
 
 [Clipboard delivery][clipboard] owns text and image copying across native
@@ -86,6 +96,7 @@ user-visible clipboard, SSH, link, and password behavior.
 [hangup]: ../../src/state.rs
 [watch]: ../../src/watch.rs
 [reload]: ../../src/app.rs
+[config-reload]: ../../src/session/dispatch.rs
 [clipboard]: ../../src/clipboard.rs
 [external]: ../users/reading.md#external-actions
 [saved-state]: ../users/reading.md#saved-state-and-reload

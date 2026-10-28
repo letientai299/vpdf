@@ -3,14 +3,30 @@
 <!-- help-topic:configuration -->
 
 Vpdf reads one optional TOML file at launch for both frontends. It never
-rewrites that file. In the macOS app, Vpdf > Settings… (Command-Comma) opens it
-in the app that opens plain text, first creating an empty file at the default
-path when none exists. A missing `-u` path disables the command. Use
-`:config reload` to apply edits throughout the running process. Reloading a PDF
-keeps the current settings.
+rewrites that file. `:config edit` opens it, first creating an empty file at
+the selected path when none exists. Saving a file that existed at launch, or
+that `:config edit` created, reloads it automatically; `:config reload` applies
+a file created another way.
+Reloading a PDF keeps the current settings.
 
-Use `:help config` to inspect built-in setting defaults. Help describes the
-built-in keys, even when your configuration changes them.
+Use `:help config` for built-in setting defaults and `:help actions` for
+binding actions. Help describes the built-in keys, even when your
+configuration changes them.
+
+## Edit configuration
+
+In the macOS app, `:config edit` and Vpdf > Settings… (Command-Comma) open the
+file in the app that opens plain text. In the terminal, `:config edit` runs
+`$EDITOR` in the same pane; when `EDITOR` is unset or empty it tries `nvim`,
+then `vim`, on `PATH`. `EDITOR` may include arguments and shell quoting; the
+file path is passed as one argument. The reader returns and redraws when the
+editor exits. An explicit `EDITOR` that fails to start reports an error
+instead of trying another editor. Prompt editing (`Ctrl-x Ctrl-e`) keeps its
+own `VISUAL`, `EDITOR`, `vi` order and edits a temporary file.
+
+A missing `-u` path or `-u NONE` disables configuration, so `:config edit`
+reports that nothing can be edited. Editing never overwrites an existing
+file.
 
 ## Create a configuration
 
@@ -40,7 +56,8 @@ configuration silently. Use `vpdf -u NONE book.pdf` to select built-ins when
 
 Keep TOML table names and quoted key sequences as shown. Each value belongs to
 the most recent table heading. Start with this minimal file, run
-`:config reload`, and inspect `:help config` before adding more mappings.
+`:config reload` or restart Vpdf, and check the result in the reader before
+adding more mappings. After a restart, saves reload automatically.
 
 ## Reading behavior
 
@@ -133,10 +150,24 @@ never expand other bindings or replay a string of keystrokes. For example,
 `{ command = "theme dark" }` selects a theme, while `{ action = "tab.next" }`
 selects the next tab.
 
-The [built-in defaults][defaults] list setting names and values. Use the
-built-in key and action references in `:help` to find operations. Generated
-topic IDs can differ from configuration action names: a motion needs
-`action = "motion"` and a separate `motion` field.
+The [built-in defaults][defaults] list setting names and values.
+
+## Find actions
+
+`:help actions` lists every action the configuration accepts, including
+actions without a default key. Each entry shows its contexts, required fields
+with allowed values, a TOML example to copy, and a few default keys.
+`:help` with an action name, such as `:help mark.jump`, opens its entry;
+`:help action.zoom` reaches an action that shares a guide's or Ex command's
+name.
+`:help target.command` and `:help target.unbind` describe the other two
+targets.
+
+Key entries name built-in shortcuts, which can differ from action names.
+`:help half_down` describes `<C-d>`, configured as
+`{ action = "scroll", amount = 0.5 }`. Each key entry links to its action
+entry. To find an action by what it does, search the manual with `/`, for
+example `/copy URL`.
 
 ## Key notation and terminal caveats
 
@@ -157,8 +188,8 @@ Angle brackets name special keys or modified keys:
 `<S-a>` and `A` name the same key. `<C-i>` and `<Tab>` are separate bindings
 inside Vpdf, but a terminal may send the same event for both. The terminal or
 window manager can intercept shortcuts before Vpdf receives them. Choose keys
-that your frontend delivers, and inspect the relevant context with `:help`,
-for example `:help normal:<C-n>`.
+that your frontend delivers, and check the built-in binding in the relevant
+context with `:help`, for example `:help normal:<C-n>`.
 
 ## Preserve prefix families such as g
 
@@ -423,6 +454,14 @@ ascii_glyphs = true
 
 ## Reload configuration
 
+Vpdf watches the selected file when it exists at launch or once `:config edit`
+creates it. Saving it reloads the configuration once the file holds still,
+including saves that replace the file by rename. The terminal applies a save
+made in `:config edit` when the editor exits. A file created another way after
+launch is not watched; use `:config reload` or restart. Deleting the file keeps
+the current settings until a new version appears. An unchanged save does not
+reload.
+
 `:config reload` rereads the original selected source. Each running process
 reloads independently; a disabled configuration keeps built-ins. Changing
 environment variables does not select another file.
@@ -437,8 +476,9 @@ prefixes.
 Omitted values restore built-ins. Invalid values keep their previous working
 values while valid entries apply, except theme names and files use the
 `system` fallback described above. Unreadable files, malformed TOML, and missing
-explicit files preserve all live settings and warn. A missing discovered file
-acts as empty configuration.
+explicit files preserve all live settings and warn once per saved version. A
+missing discovered file acts as empty configuration on manual reload. A valid
+empty file restores built-ins.
 
 ## Overlay opacity
 

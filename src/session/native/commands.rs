@@ -385,13 +385,7 @@ fn execute(
       let path = session.app()?.path.clone();
       session.native.effects.push(Effect::Reveal(path));
     }
-    Action::Settings => {
-      let path = session.config_source.path().expect("Settings needs a file");
-      crate::config::ensure_file(path).map_err(|error| {
-        anyhow::anyhow!("Config {}: {error}", path.display())
-      })?;
-      session.native.effects.push(Effect::EditConfig(path.to_owned()));
-    }
+    Action::Settings => session.edit_config()?,
     Action::ClosePane if session.focused().is_recent() => {
       session.close_pane()?;
     }

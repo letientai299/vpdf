@@ -4,10 +4,15 @@ import hashlib
 import json
 import sys
 import tempfile
+import unicodedata
 from pathlib import Path
 
 import fontTools
 from fontTools import subset
+from fontTools.pens.boundsPen import BoundsPen
+from fontTools.pens.recordingPen import DecomposingRecordingPen
+from fontTools.pens.transformPen import TransformPen
+from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,6 +61,7 @@ def rebuild(pin, source, staging):
             )
         )
         subsetter.subset(font)
+        fit_cells(font)
         for identifier, text in [
             (1, "Vpdf Mono"),
             (2, style),
@@ -81,6 +87,87 @@ def rebuild(pin, source, staging):
         (ROOT / "tools/help/help/renderer.json").write_text(
             json.dumps(pin, indent=2) + "\n"
         )
+
+
+# Ink may overhang its cell by this share of the advance.
+OVERHANG = 0.1
+# Fitted ink keeps this share of the advance as side margins.
+MARGIN = 0.05
+
+
+def fit_cells(font):
+    """Shrink wide symbols into their one-cell advance.
+
+    The Nerd Font Mono patch gives wide Iosevka symbols, such as
+    circles and arrows, a one-cell advance without narrowing their
+    outlines, so they overlap the next character. Combining marks and
+    private-use icons overhang by design, and East Asian wide characters
+    take two cells, so they stay unchanged.
+    """
+    glyphs = font["glyf"]
+    metrics = font["hmtx"]
+    targets = set()
+    for code, name in font.getBestCmap().items():
+        glyph = glyphs[name]
+        advance = metrics[name][0]
+        if (
+            glyph.numberOfContours == 0
+            or advance == 0
+            or unicodedata.combining(chr(code))
+            or unicodedata.category(chr(code)) in {"Mn", "Me", "Co"}
+            or unicodedata.east_asian_width(chr(code)) in {"W", "F"}
+        ):
+            continue
+        glyph.recalcBounds(glyphs)
+        if max(glyph.xMax - advance, -glyph.xMin) > advance * OVERHANG:
+            targets.add(name)
+    # Composites that use a target keep their original outlines.
+    dependents = {
+        name
+        for name in glyphs.keys()
+        if name not in targets and uses(glyphs, name, targets)
+    }
+    shapes = font.getGlyphSet()
+    outlines = {}
+    for name in sorted(targets | dependents):
+        pen = DecomposingRecordingPen(shapes)
+        shapes[name].draw(pen)
+        bounds = BoundsPen(shapes)
+        pen.replay(bounds)
+        outlines[name] = (pen, *bounds.bounds)
+    for name, (pen, x0, y0, x1, y1) in outlines.items():
+        advance = metrics[name][0]
+        transform = (1, 0, 0, 1, 0, 0)
+        if name in targets:
+            scale = min(1, advance * (1 - 2 * MARGIN) / (x1 - x0))
+            middle = (y0 + y1) / 2
+            transform = (
+                scale,
+                0,
+                0,
+                scale,
+                advance / 2 - scale * (x0 + x1) / 2,
+                middle - scale * middle,
+            )
+        output = TTGlyphPen(None)
+        pen.replay(TransformPen(output, transform))
+        glyph = output.glyph()
+        glyph.recalcBounds(glyphs)
+        glyphs[name] = glyph
+        metrics[name] = (advance, glyph.xMin)
+
+
+def uses(glyphs, name, targets):
+    pending = [name]
+    while pending:
+        glyph = glyphs[pending.pop()]
+        if not glyph.isComposite():
+            continue
+        for component in glyph.components:
+            if component.glyphName in targets:
+                return True
+            pending.append(component.glyphName)
+    return False
 
 
 if __name__ == "__main__":

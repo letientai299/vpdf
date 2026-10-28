@@ -1,9 +1,7 @@
 use super::Pane;
 use super::{App, Result, Screen, Session};
 use crate::manual::{Location, Runtime};
-use vpdf_ui::topics::{
-  Destination, Invocation, Lookup, Reference, Registry, TopicId,
-};
+use vpdf_ui::topics::{Destination, Invocation, Lookup, Reference, TopicId};
 
 #[derive(Default)]
 pub(super) struct Help {
@@ -12,6 +10,8 @@ pub(super) struct Help {
   cached: Option<(Reference, std::sync::Arc<vpdf_pdf::manual::Document>)>,
   pending: Option<Delivery>,
   return_to: Option<u32>,
+  /// A refresh skipped help kept only as an alternate.
+  stale: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -168,16 +168,25 @@ impl Session {
     let (context, query) =
       vpdf_ui::topics::query_context(query, invocation.context());
     let mut reference = self.help_reference(invocation.in_context(context));
-    let registry =
-      Registry::new(vpdf_ui::topics::authored(), reference.bindings.clone())?;
+    let registry = crate::manual::registry(&reference)?;
     let query = if query.is_empty() { "introduction" } else { query };
-    let topic = match registry.lookup(query, reference.invocation.context()) {
+    let location = match registry.lookup(query, reference.invocation.context())
+    {
       Lookup::Found(
         Destination::Authored(id)
         | Destination::Action(id)
-        | Destination::Command(id),
-      ) => id,
-      Lookup::Found(Destination::Configuration) => TopicId::parse("config")?,
+        | Destination::Command(id)
+        | Destination::Catalog(id),
+      ) => Location::topic(id),
+      Lookup::Found(Destination::Key(key)) => {
+        Location::anchored(key.action.clone(), &key.anchor())?
+      }
+      Lookup::Found(Destination::Configuration) => {
+        Location::topic(TopicId::parse("config")?)
+      }
+      Lookup::Found(Destination::Setting(id)) => {
+        Location::anchored(TopicId::parse("config")?, id.as_str())?
+      }
       Lookup::Missing => {
         let suggestions = registry.suggest(query, context);
         if suggestions.is_empty() {
@@ -229,7 +238,7 @@ impl Session {
     }
     self.screen.get_or_insert(screen);
     self.help.pending = Some(Delivery::Open(id, beside));
-    self.help.runtime.request(&reference, topic, &self.frontend.wake());
+    self.help.runtime.request(&reference, location, &self.frontend.wake());
     self.help.reference = Some(reference);
     Ok(())
   }
@@ -248,10 +257,14 @@ impl Session {
         .panes_mut()
         .find(|app| app.manual.is_some())
         .and_then(App::help_location);
-      let Some(location) = location else { return };
+      let Some(location) = location else {
+        self.help.stale = true;
+        return;
+      };
       self.help.runtime.locate(location);
       self.help.pending = Some(Delivery::Refresh);
     }
+    self.help.stale = false;
     reference = self.help_reference(reference.invocation);
     self.help.runtime.refresh(&reference, &self.frontend.wake());
     self.help.reference = Some(reference);
@@ -343,7 +356,7 @@ impl Session {
       self.leave()?;
       self.place_help(app, beside)?;
     }
-    if let Delivery::Open(source, _) = delivery
+    if let Delivery::Open(source, true) = delivery
       && source.and_then(|id| self.find_pane(id)).is_none_or(|(tab, pane)| {
         self.tabs[tab].panes[pane]
           .document()
@@ -357,7 +370,6 @@ impl Session {
   }
 
   fn find_help(&self, delivery: Delivery) -> Option<(usize, usize)> {
-    let beside = matches!(delivery, Delivery::Open(Some(_), true));
     let invoking_help = match delivery {
       Delivery::Open(Some(id), _) => {
         self.find_pane(id).filter(|&(tab, pane)| {
@@ -376,26 +388,30 @@ impl Session {
         .tabs
         .iter()
         .enumerate()
-        .filter(|(index, tab)| {
-          if matches!(delivery, Delivery::Refresh) {
-            true
-          } else if beside {
-            *index == self.active
-          } else {
-            tab.panes.iter().all(Pane::is_help)
-          }
-        })
+        .filter(|_| matches!(delivery, Delivery::Refresh))
         .find_map(|(t, tab)| {
           tab.panes.iter().position(Pane::is_help).map(|p| (t, p))
         })
     })
   }
 
+  /// Plain help replaces the focused pane, keeping it as alternate.
   fn place_help(&mut self, app: App, beside: bool) -> Result<()> {
-    if !beside {
-      return self.insert_tab(app.into());
+    if beside {
+      return self.insert_pane(
+        app.into(),
+        super::Axis::Columns,
+        super::Place::After,
+      );
     }
-    self.insert_pane(app.into(), super::Axis::Columns, super::Place::After)
+    self.replace_keeping_alternate(app.into())
+  }
+
+  /// Revives help held as an alternate after a skipped refresh.
+  pub(super) fn revive_help(&mut self) {
+    if self.focused().is_help() && std::mem::take(&mut self.help.stale) {
+      self.refresh_help();
+    }
   }
 
   pub(super) fn retarget_help(&mut self, old: u32, new: u32) {
@@ -404,10 +420,12 @@ impl Session {
     }
   }
 
+  pub(super) fn help_invoker(&self) -> Option<(usize, usize)> {
+    self.help.return_to.and_then(|id| self.find_pane(id))
+  }
+
   pub(super) fn return_from_help(&mut self) -> Result<()> {
-    if let Some((tab, pane)) =
-      self.help.return_to.and_then(|id| self.find_pane(id))
-    {
+    if let Some((tab, pane)) = self.help_invoker() {
       return self.focus(tab, pane);
     }
     Ok(())

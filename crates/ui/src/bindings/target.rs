@@ -49,6 +49,11 @@ pub enum HintAction {
   Cancel,
 }
 
+impl HintAction {
+  pub const NAMES: &[&str] =
+    &["hint.type", "hint.erase", "hint.follow", "hint.close", "hint.cancel"];
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Target {
   Reader(Action),

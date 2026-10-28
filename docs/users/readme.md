@@ -2,8 +2,9 @@
 
 <!-- help-topic:introduction -->
 
-Open help with `:help`, `g?`, or F1. By default it opens a tab;
-`:help!` opens beside the book. Later lookups reuse help in the current tab.
+Open help with `:help`, `g?`, or F1. It replaces the book in the current pane,
+and the book becomes the alternate document. `:help!` opens beside the book.
+Later lookups reuse help in the current tab.
 
 With default bindings:
 
@@ -13,11 +14,11 @@ With default bindings:
 - Type `/` to search, then Enter; `n` finds the next match.
 - Type `:close` and Enter to return to the book.
 
-For customized bindings, use `:help` followed by a key.
-`:h c-w` and `:h <c-w>` open the pane guide. Other unfinished key prefixes
-open key notation. Modifier and named-key spellings accept either case;
-letter keys keep their case.
-`:help helphelp` returns here. Vpdf leaves source PDFs unchanged.
+`:help` followed by a key describes its built-in effect. `:h c-w` and `:h <c-w>`
+open the `<C-w>` key entries. A prefix shared by several actions, such as `g`,
+opens key notation. Modifier and named-key spellings accept either case; letter
+keys keep their case. `:help helphelp` returns here. Vpdf leaves source PDFs
+unchanged.
 
 ## How to read this manual
 
@@ -52,13 +53,28 @@ key in the invoking mode. Use an explicit context for another surface, for
 example `:help panel:j` or `:help search:<Tab>`. Tab completes topics; Enter
 opens the selected candidate. Escape dismisses completion.
 
-The lessons and generated keybinding reference describe built-in shortcuts.
-Custom mappings do not change the reference. The [setting defaults][defaults]
-(`:help config`) list built-in configuration values.
+Help describes built-in keys and configuration defaults. Custom mappings and
+configured values do not change it. Four generated references follow the
+lessons:
 
-Plain `:help` always returns to this first page. Switching back to the existing
-help tab retains its reading position. Close the final help pane with `:close`
-to resume the invoking pane when it remains open.
+- [Keys][keys]: `:help yf` lands on the `yf` entry; `:help y` then Tab lists
+  sequences starting with `y` and their modes.
+- [Actions][actions]: `:help actions` lists every configuration action with
+  its fields, contexts, and a TOML example; `:help mark.jump` opens one.
+- [Commands][commands]: `:help :split` opens one Ex command.
+- [Settings][defaults]: `:help config` lists setting defaults;
+  `:help reading.zoom` opens one setting.
+
+`:config edit` opens your configuration file; see
+[Configuring the reader][configuration].
+
+Tab completes topic names and keys; it does not search descriptions. Inside
+help, `/` searches the manual text, including generated descriptions. For
+example, `/copy URL` finds the `yf` entry and its `hints.copy` action.
+
+Plain `:help` always returns to this first page. `Ctrl-^` switches between help
+and the book, and each keeps its reading position. `:close`, `:bd`, or `q`
+closes help and reopens the book it replaced.
 
 [first]: intro.md
 [practice]: practice.md
@@ -76,9 +92,11 @@ to resume the invoking pane when it remains open.
 [state]: reading.md
 [status]: status.md
 [install]: install.md
-[troubleshooting]: troubleshooting.md
+[troubleshooting]: debug.md
 [commands]: commands.md
 
 <!-- help:defaults=config -->
+<!-- help:actions=actions -->
 
 [defaults]: config.md#built-in-defaults
+[actions]: config.md#find-actions

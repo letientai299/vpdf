@@ -207,7 +207,7 @@ fn recent_keys_preserve_other_paging() {
 
 #[test]
 fn recent_help_matches_dispatch() {
-  use crate::topics::{Destination, Lookup, Registry, TopicId};
+  use crate::topics::{Lookup, Registry, TopicId};
   let registry =
     Registry::new(crate::topics::authored(), Bindings::default().snapshot())
       .unwrap();
@@ -216,11 +216,12 @@ fn recent_help_matches_dispatch() {
       [("<Space>", Action::RecentToggle), ("x", Action::RecentRemove)]
     {
       let target = Binding::Reader(action);
+      let Lookup::Found(destination) = registry.lookup(key, context) else {
+        panic!("Missing key topic: {key}");
+      };
       assert_eq!(
-        registry.lookup(key, context),
-        Lookup::Found(Destination::Action(
-          TopicId::parse(&target.topic()).unwrap()
-        ))
+        destination.action(),
+        Some(&TopicId::parse(&target.topic()).unwrap())
       );
     }
   }

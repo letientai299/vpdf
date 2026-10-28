@@ -33,7 +33,11 @@ fn discards_obsolete_jobs() -> Result<()> {
       selected: Some(Location::topic(TopicId::parse("half_down")?)),
       delivery: Some(Delivery::Open),
     };
-    runtime.request(&reference, TopicId::parse("config")?, &wake);
+    runtime.request(
+      &reference,
+      Location::topic(TopicId::parse("config")?),
+      &wake,
+    );
     if !queued {
       release.send(())?;
       done.recv_timeout(Duration::from_secs(10))?;

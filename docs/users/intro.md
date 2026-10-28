@@ -2,13 +2,14 @@
 
 <!-- help-topic:first-session -->
 
-Try this exercise with default bindings. With customized bindings, use
-`:help` followed by the key to see what it does in the current mode.
+Try this exercise with default bindings. Help describes built-in keys; if
+you changed a key in your configuration, check that file instead.
 
 ## Open and follow
 
 1. Open a book, or start `vpdf` without a filename. Type `:help` and press
-   Enter. The manual opens in a reusable tab; your book keeps its place.
+   Enter. The manual replaces the book in this pane; `Ctrl-^` or `:close`
+   returns to it.
 2. Press `f`. Labels appear beside visible links. Type the label beside
    [Practice text][practice]. You arrive at that chapter. If the link is off
    screen, scroll with `j` until it is visible, then press `f`.
@@ -48,13 +49,14 @@ PDF extraction determines the characters and boundaries. See
 ## Resume the book
 
 Press `Ctrl-o` to return through your help jumps. Type `:close` and Enter to
-close this help pane. If the invoking book is still open, it regains focus at
-its reading position. From that book, `:help! search` opens the search lesson
-beside it; `Ctrl-w p` returns focus to the book.
+close help; the book it replaced reopens at its reading position. `Ctrl-^`
+switches between help and the book without closing either place. From the book,
+`:help! search` opens the search lesson beside it; `Ctrl-w p` returns focus to
+the book.
 
-Use `:help` again to start at the manual's first page. Use `gt` or `gT` to
-revisit an existing help tab at its current place. Help is one document:
-looking up a topic retains its search, local marks, and jump history.
+Use `:help` again to start at the manual's first page. Looking up a topic from
+within help retains its search, local marks, and jump history. Switching back
+with `Ctrl-^` keeps only the reading position.
 
 [practice]: practice.md
 [selection]: yank.md

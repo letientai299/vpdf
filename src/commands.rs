@@ -712,10 +712,10 @@ pub(crate) fn command_request(
         tab: false,
       },
     },
-    Id::Config => {
-      crate::config::reload_command(argument)?;
-      Request::ConfigReload
-    }
+    Id::Config => match crate::config::command(argument)? {
+      crate::config::Command::Reload => Request::ConfigReload,
+      crate::config::Command::Edit => Request::ConfigEdit,
+    },
     Id::Theme => {
       anyhow::ensure!(!argument.is_empty(), "Usage: :theme <name|path>");
       Request::Theme(argument.into())

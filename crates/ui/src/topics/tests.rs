@@ -24,11 +24,7 @@ fn command_topics_identify_targets() {
   let registry = Registry::new(authored(), bindings.snapshot()).unwrap();
   let mut ids = Vec::new();
   for (key, command) in [("Q", "help sample"), ("<Space>r", "config reload")] {
-    let Lookup::Found(Destination::Action(id)) =
-      registry.lookup(key, Context::Normal)
-    else {
-      panic!("Missing command topic: {key}");
-    };
+    let id = semantic(registry.lookup(key, Context::Normal));
     let reference = registry.action(&id).unwrap();
     assert_eq!(reference.title, format!("Command: {command}"));
     assert!(
@@ -45,8 +41,8 @@ fn command_topics_identify_targets() {
   }
   assert_ne!(ids[0], ids[1]);
   assert_eq!(
-    registry.lookup("Q", Context::Normal),
-    registry.lookup("<F2>", Context::Normal)
+    semantic(registry.lookup("Q", Context::Normal)),
+    semantic(registry.lookup("<F2>", Context::Normal))
   );
 }
 
@@ -69,10 +65,16 @@ fn remap(
   bindings.set(context, map);
 }
 
-fn action(action: Action) -> Lookup {
-  Lookup::Found(Destination::Action(
-    TopicId::parse(&Target::Reader(action).topic()).unwrap(),
-  ))
+fn action(action: Action) -> TopicId {
+  TopicId::parse(&Target::Reader(action).topic()).unwrap()
+}
+
+/// The semantic action a lookup reaches.
+fn semantic(lookup: Lookup) -> TopicId {
+  match lookup {
+    Lookup::Found(destination) => destination.action().cloned().unwrap(),
+    other => panic!("No action: {other:?}"),
+  }
 }
 
 fn topic(id: &str, aliases: &[&str]) -> Topic {
@@ -106,10 +108,14 @@ fn defaults_resolve_modes_and_sequences() {
     ),
     ("ma", Context::Normal, Action::Mark('a')),
   ] {
-    assert_eq!(registry.lookup(key, context), action(expected), "{key}");
+    assert_eq!(
+      semantic(registry.lookup(key, context)),
+      action(expected),
+      "{key}"
+    );
   }
   assert_eq!(
-    registry.lookup("half_down", Context::Normal),
+    semantic(registry.lookup("half_down", Context::Normal)),
     action(Action::Scroll(0.5))
   );
   for key in ["iw", "x", "<A-z>"] {
@@ -142,11 +148,11 @@ fn remaps_override_aliases_and_keep_unbound_actions() {
     Registry::new(vec![topic("history", &["h", "d"])], bindings.snapshot())
       .unwrap();
   assert_eq!(
-    registry.lookup("h", Context::Normal),
+    semantic(registry.lookup("h", Context::Normal)),
     action(Action::Scroll(0.5))
   );
   assert_eq!(
-    registry.lookup("h", Context::Cursor),
+    semantic(registry.lookup("h", Context::Cursor)),
     action(Action::Motion(Motion::Right))
   );
   for key in ["d", "<C-d>"] {
@@ -198,7 +204,7 @@ fn stable_actions_survive_without_bindings() {
   assert_eq!(reference.effective, Vec::<Binding>::new());
   assert_ne!(reference.defaults, Vec::<Binding>::new());
   assert_eq!(
-    registry.lookup("half_down", Context::Normal),
+    semantic(registry.lookup("half_down", Context::Normal)),
     action(Action::Scroll(0.5))
   );
   assert!(
@@ -374,7 +380,7 @@ fn inactive_aliases_do_not_affect_named_prefixes() {
   );
   assert_eq!(registry.lookup("h", Context::Panel), Lookup::Missing);
   assert_eq!(
-    registry.lookup("<C-S-d>", Context::Normal),
+    semantic(registry.lookup("<C-S-d>", Context::Normal)),
     action(Action::Scroll(0.5))
   );
 }
@@ -408,7 +414,9 @@ fn prefixes_keep_reference_data_without_key_topics() {
     && row.is_prefix()));
   assert_eq!(
     registry.lookup("register.choose", Context::Normal),
-    Lookup::Found(Destination::Action(id))
+    Lookup::Found(Destination::Catalog(
+      TopicId::parse("action.register.choose").unwrap()
+    ))
   );
   for key in ["\"", "1"] {
     assert_eq!(
@@ -434,14 +442,17 @@ fn canonical_topics_survive_key_collisions() {
   );
   let registry = Registry::new(authored(), bindings.snapshot()).unwrap();
   let expected = action(Action::Scroll(0.5));
-  assert_eq!(registry.lookup("half_down", Context::Normal), expected);
   assert_eq!(
-    registry.lookup("<h>alf_down", Context::Normal),
+    registry.lookup("half_down", Context::Normal),
+    Lookup::Found(Destination::Action(expected.clone()))
+  );
+  assert_eq!(
+    semantic(registry.lookup("<h>alf_down", Context::Normal)),
     action(Action::Quit)
   );
   let candidates = registry.complete("half", Context::Normal);
   let candidate = candidates.iter().find(|c| c.name == "half_down").unwrap();
-  assert_eq!(Lookup::Found(candidate.destination.clone()), expected);
+  assert_eq!(candidate.destination.action(), Some(&expected));
 }
 
 #[test]
@@ -463,7 +474,10 @@ fn panel_references_describe_effects_and_filter_ignored_keys() {
       Event::Follow { focus: false },
     ),
   ] {
-    assert_eq!(registry.lookup(key, Context::Panel), self::action(action));
+    assert_eq!(
+      semantic(registry.lookup(key, Context::Panel)),
+      self::action(action)
+    );
     let id = TopicId::parse(&Target::Reader(action).topic()).unwrap();
     let reference = registry.action(&id).unwrap();
     assert!(
@@ -509,12 +523,12 @@ fn panel_references_describe_effects_and_filter_ignored_keys() {
   );
   for registry in [&registry, &recent] {
     assert_eq!(
-      registry.lookup("<Esc>", Context::Panel),
+      semantic(registry.lookup("<Esc>", Context::Panel)),
       action(Action::Cancel)
     );
     for key in ["<Tab>", "<S-Tab>"] {
       assert_eq!(
-        registry.lookup(key, Context::Panel),
+        semantic(registry.lookup(key, Context::Panel)),
         action(Action::LocalFocus)
       );
     }
@@ -537,10 +551,12 @@ fn help_modes_and_notation() {
     registry.lookup("search:<Tab>", Context::Normal),
     registry.lookup("<Tab>", Context::Normal)
   );
-  assert_eq!(
-    registry.lookup("m", Context::Normal),
-    Lookup::Found(Destination::Authored(TopicId::parse("keys").unwrap()))
-  );
+  let Lookup::Found(Destination::Key(key)) =
+    registry.lookup("m", Context::Normal)
+  else {
+    panic!("m resolves to its key entry");
+  };
+  assert!(key.action.as_str().starts_with("mark.set"));
   assert!(
     registry
       .complete("search:<", Context::Normal)
@@ -590,7 +606,7 @@ fn control_shorthand_resolves() {
   );
   let registry = Registry::new(authored(), bindings.snapshot()).unwrap();
   assert_eq!(
-    registry.lookup("c-d", Context::Normal),
+    semantic(registry.lookup("c-d", Context::Normal)),
     action(Action::Motion(Motion::Left))
   );
   assert_eq!(registry.complete("c-d", Context::Normal)[0].name, "c-d");
@@ -651,7 +667,10 @@ fn browsing_collapses_dispatch_aliases() {
   assert!(!candidates.iter().any(|row| row.name.contains(['<', '>'])));
   assert!(!candidates.iter().any(|row| row.name.contains("Esc")));
   let alias = "<C-A-S-Esc>";
-  assert_eq!(registry.lookup(alias, Context::Normal), action(Action::Cancel));
+  assert_eq!(
+    semantic(registry.lookup(alias, Context::Normal)),
+    action(Action::Cancel)
+  );
   assert!(
     registry
       .complete(alias, Context::Normal)
@@ -715,7 +734,7 @@ fn contents_folds_use_custom_bindings() {
   let registry =
     Registry::new(authored(), bindings.snapshot().in_panel(PanelKind::Outline))
       .unwrap();
-  assert_eq!(registry.lookup("x", Context::Panel), action(fold));
+  assert_eq!(semantic(registry.lookup("x", Context::Panel)), action(fold));
   let topic =
     registry.action(&TopicId::parse("outline.collapse-all").unwrap()).unwrap();
   assert!(topic.effective.iter().any(|row| row.context == Context::Panel
@@ -762,7 +781,10 @@ fn contents_auto_uses_custom_binding() {
   let registry =
     Registry::new(authored(), bindings.snapshot().in_panel(PanelKind::Outline))
       .unwrap();
-  assert_eq!(registry.lookup("x", Context::Panel), action(Action::OutlineAuto));
+  assert_eq!(
+    semantic(registry.lookup("x", Context::Panel)),
+    action(Action::OutlineAuto)
+  );
   assert!(
     registry.action(&TopicId::parse("outline.auto-expand").unwrap()).is_some()
   );
@@ -787,6 +809,9 @@ fn key_prefixes_and_notation_resolve() {
   let registry =
     Registry::new(authored(), Bindings::default().snapshot()).unwrap();
   let panes = registry.lookup("panes", Context::Normal);
+  let window = registry.lookup("<C-w><lt>", Context::Normal);
+  assert!(matches!(&window, Lookup::Found(Destination::Key(key))
+    if key.action.as_str().starts_with("window.")));
   for query in [
     "c-w",
     "C-w",
@@ -797,7 +822,7 @@ fn key_prefixes_and_notation_resolve() {
     "<ctrl-w>",
     "normal:<c-w>",
   ] {
-    assert_eq!(registry.lookup(query, Context::Normal), panes, "{query}");
+    assert_eq!(registry.lookup(query, Context::Normal), window, "{query}");
     assert!(!registry.complete(query, Context::Normal).is_empty(), "{query}");
   }
   for (query, canonical) in [
@@ -880,4 +905,109 @@ fn incomplete_notation_completes_case_insensitively() {
     assert!(!names(query).is_empty(), "{query}");
     assert_eq!(names(query), names(canonical), "{query}");
   }
+}
+
+#[test]
+fn key_lookups_keep_sequence_and_context() {
+  let registry =
+    Registry::new(authored(), Bindings::default().snapshot()).unwrap();
+  let topic = |action: &str, context, keys: &str| {
+    Lookup::Found(Destination::Key(KeyTopic {
+      action: TopicId::parse(action).unwrap(),
+      context,
+      sequence: sequence(keys),
+    }))
+  };
+  for (query, context, expected) in [
+    ("f", Context::Normal, topic("hints.open", Context::Normal, "f")),
+    ("normal:f", Context::Cursor, topic("hints.open", Context::Normal, "f")),
+    ("yf", Context::Normal, topic("hints.copy", Context::Normal, "yf")),
+    ("normal:yf", Context::Panel, topic("hints.copy", Context::Normal, "yf")),
+    (
+      "operator:f",
+      Context::Normal,
+      topic("hints.copy", Context::Operator, "f"),
+    ),
+    ("yy", Context::Panel, topic("yank.line", Context::Panel, "yy")),
+    (
+      "yiw",
+      Context::Cursor,
+      topic("object.around_false.object_word", Context::Cursor, "yiw"),
+    ),
+    ("<C-d>", Context::Normal, topic("half_down", Context::Normal, "<C-d>")),
+    ("<C-D>", Context::Normal, topic("half_down", Context::Normal, "<C-D>")),
+    ("c-d", Context::Normal, topic("half_down", Context::Normal, "<C-d>")),
+    ("Ctrl-D", Context::Normal, topic("half_down", Context::Normal, "<C-d>")),
+  ] {
+    assert_eq!(registry.lookup(query, context), expected, "{query}");
+  }
+  assert_ne!(
+    key_anchor(Context::Normal, &sequence("yf")),
+    key_anchor(Context::Operator, &sequence("f"))
+  );
+  for keys in ["<C-d>", "\"", "'", "(", "yf"] {
+    let anchor = key_anchor(Context::Normal, &sequence(keys));
+    assert!(TopicId::parse(&format!("a.{anchor}")).is_ok(), "{anchor}");
+  }
+}
+
+#[test]
+fn setting_names_reach_their_fields() {
+  let registry = Registry::new(authored(), Bindings::default().snapshot())
+    .unwrap()
+    .with_settings([
+      ("reading.zoom", "Initial zoom"),
+      ("reading.cursorline", "Initial cursor line"),
+    ])
+    .unwrap();
+  let setting = |name: &str| {
+    Lookup::Found(Destination::Setting(TopicId::parse(name).unwrap()))
+  };
+  for (query, expected) in [
+    ("reading.zoom", setting("reading.zoom")),
+    ("'reading.zoom'", setting("reading.zoom")),
+    ("reading.cursorline", setting("reading.cursorline")),
+    ("'reading.cursorline'", setting("reading.cursorline")),
+    ("config", Lookup::Found(Destination::Configuration)),
+    (
+      "configuration",
+      Lookup::Found(Destination::Authored(
+        TopicId::parse("configuration").unwrap(),
+      )),
+    ),
+    ("reading.nothing", Lookup::Missing),
+  ] {
+    assert_eq!(registry.lookup(query, Context::Normal), expected, "{query}");
+  }
+  let candidates = registry.complete("reading.", Context::Normal);
+  for name in ["reading.zoom", "reading.cursorline"] {
+    let candidate = candidates.iter().find(|row| row.name == name).unwrap();
+    assert_eq!(Lookup::Found(candidate.destination.clone()), setting(name));
+  }
+  assert!(
+    !registry
+      .complete("", Context::Normal)
+      .iter()
+      .any(|row| row.name.starts_with("reading."))
+  );
+}
+
+#[test]
+fn prefix_completion_lists_continuations() {
+  let registry =
+    Registry::new(authored(), Bindings::default().snapshot()).unwrap();
+  let candidates = registry.complete("y", Context::Normal);
+  let copy = candidates.iter().find(|row| row.name == "yf").unwrap();
+  assert_eq!(copy.description, "link hints, copy reference URI in normal mode");
+  let operator = registry.complete("operator:", Context::Normal);
+  assert!(operator.iter().any(|row| row.name == "operator:f"
+    && row.description.ends_with("in operator mode")));
+  assert_eq!(
+    registry.lookup("y", Context::Normal),
+    Lookup::Found(Destination::Key(KeyTopic {
+      action: TopicId::parse("yank").unwrap(),
+      context: Context::Normal,
+      sequence: sequence("y"),
+    }))
+  );
 }

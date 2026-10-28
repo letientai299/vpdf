@@ -240,11 +240,12 @@ fn encrypted_alternate_keeps_password() -> Result<()> {
 fn help_alternate_returns() -> Result<()> {
   let root = tempfile::tempdir()?;
   let path = root.path().join("book.pdf");
-  crate::fixtures::pdf(&path, &["book"], "")?;
+  crate::fixtures::pdf(&path, &["book", "two"], "")?;
   for native in [false, true] {
     let mut session = session(native, None)?;
     session.command(&format!("e {}", path.display()))?;
-    let book = session.focused().id;
+    session.command("2")?;
+    let book = session.app()?.navigation_position();
     session.command("help navigation")?;
     let deadline = Instant::now() + Duration::from_secs(20);
     while !session.panes().any(|app| app.manual.is_some()) {
@@ -252,22 +253,20 @@ fn help_alternate_returns() -> Result<()> {
       anyhow::ensure!(Instant::now() < deadline, "Help did not open");
       std::thread::sleep(Duration::from_millis(5));
     }
+    assert_eq!(session.tabs.len(), 1);
+    assert_eq!(session.tab().panes.len(), 1);
     assert!(session.app()?.manual.is_some());
     session.command("2")?;
-    let position = session.app()?.navigation_position();
-    session.command("recent")?;
-    assert!(session.focused().document().is_none());
+    let help = session.app()?.navigation_position();
+    session.command("e #")?;
+    assert!(session.app()?.path.ends_with("book.pdf"));
+    assert_eq!(session.app()?.navigation_position(), book);
     session.command("e #")?;
     assert!(session.app()?.manual.is_some());
-    assert_eq!(session.app()?.navigation_position(), position);
-    session.activate(0)?;
-    assert_eq!(session.focused().id, book);
-    session.command("recent")?;
-    let invoker = session.focused().id;
-    session.activate(1)?;
+    assert_eq!(session.app()?.navigation_position(), help);
     session.command("bd")?;
-    assert_eq!(session.focused().id, invoker);
-    assert!(session.focused().is_recent());
+    assert!(session.app()?.path.ends_with("book.pdf"));
+    assert!(!session.panes().any(|app| app.manual.is_some()));
     assert_eq!(session.tabs.len(), 1);
   }
   Ok(())

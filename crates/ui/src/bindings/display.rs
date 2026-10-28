@@ -90,7 +90,11 @@ impl Target {
 }
 
 fn topic_value(value: &Value) -> String {
-  let value = value.as_str().map_or_else(|| value.to_string(), str::to_owned);
+  topic_text(&value.as_str().map_or_else(|| value.to_string(), str::to_owned))
+}
+
+/// Keeps ID-safe bytes and hex-escapes the rest.
+pub fn topic_text(value: &str) -> String {
   value
     .bytes()
     .map(|byte| {

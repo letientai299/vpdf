@@ -90,6 +90,7 @@ pub enum Request {
   TabClose(Option<usize>),
   QuitAll,
   ConfigReload,
+  ConfigEdit,
   Theme(String),
   /// `:mouse`: takes the pointer, or leaves it to the terminal.
   Mouse(bool),

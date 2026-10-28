@@ -1,7 +1,10 @@
 mod bindings;
+mod fields;
 mod reference;
 mod theme;
+pub(crate) use bindings::inline as binding_target;
 use clap::Args;
+pub(crate) use fields::describe;
 use serde::Serialize;
 use std::ffi::OsStr;
 use std::io;
@@ -10,9 +13,18 @@ pub use theme::ThemeChoice;
 use vpdf_model::theme::{Colors, Opacity, UnitInterval};
 use vpdf_ui::layout::{MAX_ZOOM, MIN_ZOOM};
 
-pub(crate) fn reload_command(argument: &str) -> crate::Result<()> {
-  anyhow::ensure!(argument.trim() == "reload", "Usage: :config reload");
-  Ok(())
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Command {
+  Reload,
+  Edit,
+}
+
+pub(crate) fn command(argument: &str) -> crate::Result<Command> {
+  match argument.trim() {
+    "reload" => Ok(Command::Reload),
+    "edit" => Ok(Command::Edit),
+    _ => anyhow::bail!("Usage: :config reload|edit"),
+  }
 }
 
 #[derive(Args, Debug, Default)]
@@ -139,16 +151,27 @@ pub enum Restore {
   Never,
 }
 
+impl Restore {
+  pub(crate) const ALL: &[Self] = &[Self::System, Self::Always, Self::Never];
+
+  pub(crate) const fn name(self) -> &'static str {
+    match self {
+      Self::System => "system",
+      Self::Always => "always",
+      Self::Never => "never",
+    }
+  }
+}
+
 impl std::str::FromStr for Restore {
   type Err = &'static str;
 
   fn from_str(value: &str) -> Result<Self, Self::Err> {
-    match value {
-      "system" => Ok(Self::System),
-      "always" => Ok(Self::Always),
-      "never" => Ok(Self::Never),
-      _ => Err("expected system, always, or never"),
-    }
+    Self::ALL
+      .iter()
+      .copied()
+      .find(|restore| restore.name() == value)
+      .ok_or("expected system, always, or never")
   }
 }
 
@@ -207,10 +230,12 @@ impl Default for FontSize {
   }
 }
 
+const FONT_SIZES: std::ops::RangeInclusive<i64> = 10..=32;
+
 impl TryFrom<i64> for FontSize {
   type Error = &'static str;
   fn try_from(value: i64) -> Result<Self, Self::Error> {
-    if (10..=32).contains(&value) {
+    if FONT_SIZES.contains(&value) {
       Ok(Self(value as u16))
     } else {
       Err("UI font size outside supported range")

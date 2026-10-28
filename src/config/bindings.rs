@@ -122,6 +122,15 @@ fn report(
   }
 }
 
+/// Parses one inline binding target, as written in a context table.
+pub(crate) fn inline(
+  table: &str,
+  context: Context,
+) -> crate::Result<Option<Target>> {
+  let value: toml::Table = toml::from_str(&format!("target = {table}"))?;
+  target(&value["target"], context)
+}
+
 fn target(value: &Value, context: Context) -> crate::Result<Option<Target>> {
   let table = value
     .as_table()
@@ -157,7 +166,7 @@ fn target(value: &Value, context: Context) -> crate::Result<Option<Target>> {
       anyhow::bail!("Expected named command")
     };
     if spec.id == Id::Config {
-      super::reload_command(argument)?;
+      super::command(argument)?;
     }
     if spec.id == Id::Theme && !super::ThemeChoice::is_path(argument) {
       commands::theme(argument)?;
@@ -169,11 +178,11 @@ fn target(value: &Value, context: Context) -> crate::Result<Option<Target>> {
       .and_then(Value::as_str)
       .ok_or_else(|| anyhow::anyhow!("Expected action name"))?;
     if name.starts_with("prompt.") {
-      Target::Prompt(value.clone().try_into::<PromptAction>()?)
+      Target::Prompt(exact::<PromptAction>(value.clone(), table)?)
     } else if name.starts_with("hint.") {
-      Target::Hint(value.clone().try_into::<HintAction>()?)
+      Target::Hint(exact::<HintAction>(value.clone(), table)?)
     } else if Control::NAMES.contains(&name) {
-      Target::Control(value.clone().try_into::<Control>()?)
+      Target::Control(exact::<Control>(value.clone(), table)?)
     } else if name == "object.select" {
       let argument: TextObject = arguments(table)?;
       Target::TextObject(
@@ -195,9 +204,32 @@ fn target(value: &Value, context: Context) -> crate::Result<Option<Target>> {
 fn arguments<T: serde::de::DeserializeOwned>(
   table: &toml::Table,
 ) -> crate::Result<T> {
+  Ok(rest(table).try_into()?)
+}
+
+/// The table without its action name.
+fn rest(table: &toml::Table) -> Value {
   let mut table = table.clone();
   table.remove("action");
-  Ok(Value::Table(table).try_into()?)
+  Value::Table(table)
+}
+
+/// Parses a tagged enum, rejecting fields serde would skip.
+///
+/// `deny_unknown_fields` does not cover unit variants of internally
+/// tagged enums, so the parsed value's own keys bound `table`.
+fn exact<T: serde::de::DeserializeOwned + serde::Serialize>(
+  value: Value,
+  table: &toml::Table,
+) -> crate::Result<T> {
+  let parsed: T = value.try_into()?;
+  let known = Value::try_from(&parsed)?;
+  if let Some(key) =
+    table.keys().find(|key| *key != "action" && known.get(key).is_none())
+  {
+    anyhow::bail!("Unknown field: {key}");
+  }
+  Ok(parsed)
 }
 
 #[derive(Deserialize)]
@@ -294,7 +326,7 @@ fn reader(
       Argument::Shift { dx: argument.dx, dy: argument.dy }
     }
     Kind::Window => {
-      let argument = arguments::<WindowArg>(table)?;
+      let argument: WindowArg = exact(rest(table), table)?;
       if let WindowArg::Resize { amount, .. } = argument {
         anyhow::ensure!(
           (-10_000..=10_000).contains(&amount),

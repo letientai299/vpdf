@@ -22,6 +22,23 @@ impl Session {
     self.replace_pane(pane)
   }
 
+  /// Replaces the focused pane; its document becomes the alternate.
+  pub(super) fn replace_keeping_alternate(
+    &mut self,
+    mut pane: Pane,
+  ) -> Result<()> {
+    let alternate = self.alternate_reference()?;
+    pane.alternate = alternate.or_else(|| self.focused_mut().alternate.take());
+    self.replace_pane(pane)
+  }
+
+  /// Shows Recent without an alternate.
+  pub(super) fn close_to_recent(&mut self) -> Result<()> {
+    self.show_recent()?;
+    self.focused_mut().alternate = None;
+    Ok(())
+  }
+
   pub(super) fn replace_pane(&mut self, pane: Pane) -> Result<()> {
     self.leave()?;
     let tab = self.tab();
@@ -70,19 +87,18 @@ impl Session {
     pane.alternate = current;
     self.replace_pane(pane)?;
     self.remember_open(self.active, self.tabs[self.active].focus);
+    self.revive_help();
     Ok(())
   }
 
   pub(super) fn delete_buffer(&mut self) -> Result<()> {
     match &self.focused().body {
-      Body::Recent(_) => self.close_pane(),
-      Body::Document(app) if app.manual.is_some() => self.close_pane(),
       Body::Document(_) if self.focused().alternate.is_some() => {
         self.alternate(true)
       }
-      Body::Document(_) => self.show_recent().map(|()| {
-        self.focused_mut().alternate = None;
-      }),
+      Body::Recent(_) => self.close_pane(),
+      Body::Document(app) if app.manual.is_some() => self.close_pane(),
+      Body::Document(_) => self.close_to_recent(),
     }
   }
 

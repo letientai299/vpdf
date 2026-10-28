@@ -36,8 +36,55 @@ impl TopicId {
 pub enum Destination {
   Authored(TopicId),
   Action(TopicId),
+  Key(KeyTopic),
   Command(TopicId),
+  Catalog(TopicId),
+  Setting(TopicId),
   Configuration,
+}
+
+/// A key sequence matched in one context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeyTopic {
+  pub action: TopicId,
+  pub context: Context,
+  pub sequence: Sequence,
+}
+
+impl KeyTopic {
+  fn new(row: &Binding) -> Self {
+    Self {
+      action: TopicId(row.target.topic()),
+      context: row.context,
+      sequence: row.sequence.clone(),
+    }
+  }
+
+  pub fn anchor(&self) -> String {
+    key_anchor(self.context, &self.sequence)
+  }
+}
+
+/// Names a key row within its action entry.
+pub fn key_anchor(context: Context, sequence: &Sequence) -> String {
+  format!(
+    "{}.{}",
+    context.name(),
+    crate::bindings::topic_text(&sequence.to_string())
+  )
+}
+
+impl Destination {
+  pub const fn action(&self) -> Option<&TopicId> {
+    match self {
+      Self::Action(id) | Self::Key(KeyTopic { action: id, .. }) => Some(id),
+      Self::Authored(_)
+      | Self::Command(_)
+      | Self::Catalog(_)
+      | Self::Setting(_)
+      | Self::Configuration => None,
+    }
+  }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -146,6 +193,9 @@ pub struct Topic {
   pub destination: Destination,
 }
 
+/// The configuration action index.
+pub const ACTIONS: &str = "actions";
+
 pub fn authored() -> Vec<Topic> {
   [
     ("introduction", "Vpdf user manual", &["intro", "help", "helphelp"][..]),
@@ -153,7 +203,7 @@ pub fn authored() -> Vec<Topic> {
     ("navigation", "Navigation", &["reading"][..]),
     ("practice", "Practice text", &["sample"][..]),
     ("search", "Search", &["searching"][..]),
-    ("panes", "Tabs and panes", &["windows", "splits", "<C-w>"][..]),
+    ("panes", "Tabs and panes", &["windows", "splits"][..]),
     (
       "keys",
       "Keys and input modes",
@@ -172,7 +222,7 @@ pub fn authored() -> Vec<Topic> {
     (
       "configuration",
       "Configuring the reader",
-      &["keybindings", "settings", "reading.zoom"][..],
+      &["keybindings", "settings"][..],
     ),
     ("state", "Files and saved state", &["persistence", "cache"][..]),
     ("status", "Status and progress", &["performance"][..]),
@@ -291,7 +341,57 @@ impl Registry {
         destination: Destination::Command(id),
       })?;
     }
+    registry.catalog()?;
     Ok(registry)
+  }
+
+  /// Registers setting names; each reaches its `config` anchor.
+  pub fn with_settings<'a>(
+    mut self,
+    settings: impl IntoIterator<Item = (&'a str, &'a str)>,
+  ) -> crate::Result<Self> {
+    for (name, title) in settings {
+      let id = TopicId::parse(name)?;
+      self.insert(Topic {
+        id: id.clone(),
+        aliases: Vec::new(),
+        title: title.into(),
+        destination: Destination::Setting(id),
+      })?;
+    }
+    Ok(self)
+  }
+
+  /// Registers action entries after key and command names.
+  fn catalog(&mut self) -> crate::Result<()> {
+    let index = TopicId::parse(ACTIONS)?;
+    self.insert(Topic {
+      id: index.clone(),
+      aliases: Vec::new(),
+      title: "Actions".into(),
+      destination: Destination::Catalog(index),
+    })?;
+    for family in crate::bindings::catalog::families()? {
+      let id = TopicId::parse(&family.topic())?;
+      let owner = self.names.remove(family.name);
+      if let Some(owner) = owner.filter(|owner| {
+        !matches!(self.topics[owner].destination, Destination::Action(_))
+      }) {
+        self.names.insert(family.name.into(), owner);
+      }
+      let aliases = if self.names.contains_key(family.name) {
+        Vec::new()
+      } else {
+        vec![family.name.into()]
+      };
+      self.insert(Topic {
+        id: id.clone(),
+        aliases,
+        title: family.purpose,
+        destination: Destination::Catalog(id),
+      })?;
+    }
+    Ok(())
   }
 
   fn insert(&mut self, topic: Topic) -> crate::Result<()> {
@@ -353,7 +453,8 @@ impl Registry {
       .and_then(|q| q.strip_suffix('\''))
       .unwrap_or(query);
     if let Some(id) = self.names.get(query)
-      && id.as_str() == query
+      && (id.as_str() == query
+        || matches!(self.topics[id].destination, Destination::Catalog(_)))
     {
       return Lookup::Found(self.topics[id].destination.clone());
     }
@@ -361,7 +462,7 @@ impl Registry {
     if let Some(row) =
       self.active(context).find(|row| Some(&row.sequence) == sequence.as_ref())
     {
-      return Lookup::Found(Destination::Action(TopicId(row.target.topic())));
+      return Lookup::Found(Destination::Key(KeyTopic::new(row)));
     }
     if let Some((prefix, key)) = control_prefix(query) {
       return self.lookup(&control_notation(prefix, key), context);
@@ -369,6 +470,9 @@ impl Registry {
     if let Some(sequence) = sequence.as_ref()
       && self.key_prefix(sequence, context)
     {
+      if let Some(row) = self.continuations(sequence, context) {
+        return Lookup::Found(Destination::Key(KeyTopic::new(row)));
+      }
       let name = sequence.to_string();
       return self
         .names
@@ -398,6 +502,27 @@ impl Registry {
       [] => Lookup::Missing,
       _ => Lookup::Ambiguous(candidates),
     }
+  }
+
+  /// First key row when one action family owns the prefix.
+  fn continuations(
+    &self,
+    prefix: &Sequence,
+    context: Context,
+  ) -> Option<&Binding> {
+    use crate::bindings::catalog::Family;
+    let rows: Vec<_> = self
+      .active(context)
+      .filter(|row| {
+        row.sequence.keys().len() > prefix.keys().len()
+          && row.sequence.starts_with(prefix.keys())
+      })
+      .collect();
+    let family = Family::topic_of(&rows.first()?.target);
+    if rows.iter().any(|row| Family::topic_of(&row.target) != family) {
+      return None;
+    }
+    rows.into_iter().min_by_key(|row| row.target.topic())
   }
 
   fn key_prefix(&self, sequence: &Sequence, context: Context) -> bool {
@@ -513,14 +638,14 @@ impl Registry {
       if self.names.get(&name).is_some_and(|id| id.as_str() == name) {
         continue;
       }
-      let id = TopicId(row.target.topic());
+      let key = KeyTopic::new(row);
       candidates.insert(
         name.clone(),
         Candidate {
           name,
-          description: row.purpose.clone(),
-          destination: Destination::Action(id.clone()),
-          action: Some(id),
+          description: format!("{} in {} mode", row.purpose, context.name()),
+          action: Some(key.action.clone()),
+          destination: Destination::Key(key),
         },
       );
     }
@@ -535,18 +660,23 @@ impl Registry {
       .into_values()
       .filter(|candidate| {
         if candidate.action.is_none()
+          && matches!(candidate.destination, Destination::Action(_))
           && self.names.get(&candidate.name).is_some_and(TopicId::parameterized)
           && !prefix.contains('.')
         {
           return false;
         }
+        let page = matches!(&candidate.destination,
+          Destination::Catalog(id) if id.as_str() != ACTIONS)
+          || matches!(candidate.destination, Destination::Setting(_));
         !prefix.is_empty()
           || candidate.action.is_some()
           || (self
             .names
             .get(&candidate.name)
             .is_some_and(|id| id.as_str() == candidate.name)
-            && !self.names[&candidate.name].parameterized())
+            && !self.names[&candidate.name].parameterized()
+            && !page)
       })
       .collect();
     rank_candidates(candidates, prefix)

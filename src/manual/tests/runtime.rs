@@ -46,11 +46,19 @@ fn request(
   reference: &Reference,
   topic: &str,
 ) -> crate::Result<Ready> {
+  request_at(runtime, reference, Location::topic(TopicId::parse(topic)?))
+}
+
+fn request_at(
+  runtime: &mut Runtime,
+  reference: &Reference,
+  location: Location,
+) -> crate::Result<Ready> {
   let (send, receive) = mpsc::channel();
   let wake = Wake::new(move || {
     let _ = send.send(());
   });
-  runtime.request(reference, TopicId::parse(topic)?, &wake);
+  runtime.request(reference, location, &wake);
   loop {
     if let Some(ready) = runtime.poll() {
       return ready;
@@ -738,7 +746,11 @@ fn hint_labels_share_destination() -> crate::Result<()> {
   use vpdf_ui::bindings::{HintAction, Target as BindingTarget};
   let ready = request(&mut Runtime::default(), &snapshot(), "links")?;
   let first = BindingTarget::Hint(HintAction::Type { character: 'a' }).topic();
-  let rendered = text(&ready.document, &first)?;
+  // Justified rows can extract one word per line.
+  let rendered = text(&ready.document, &first)?
+    .split_whitespace()
+    .collect::<Vec<_>>()
+    .join(" ");
   assert!(rendered.contains("{label}"), "{rendered}");
   assert!(!rendered.contains("hint type; character:"), "{rendered}");
   assert!(rendered.contains(":help links"), "{rendered}");
@@ -791,5 +803,156 @@ fn recolor_examples_work_on_help() -> crate::Result<()> {
     assert!(text.contains(example), "{example}: {text}");
   }
   assert!(text.contains("help PDF"), "{text}");
+  Ok(())
+}
+
+/// Text of the rendered row at a help destination.
+fn row(handle: &Handle, target: &Target) -> crate::Result<String> {
+  let Target::Point { page, y, .. } = target else {
+    anyhow::bail!("Help row needs a point");
+  };
+  let mut glyphs: Vec<_> = handle
+    .text(*page)?
+    .lines
+    .iter()
+    .flat_map(|line| line.glyphs.iter())
+    .filter(|glyph| (glyph.bounds.y0 - y).abs() < 6.0)
+    .map(|glyph| (glyph.bounds.x0, glyph.bounds.x1, glyph.ch))
+    .collect();
+  glyphs.sort_by(|a, b| a.0.total_cmp(&b.0));
+  let mut text = String::new();
+  let mut end = f32::INFINITY;
+  for (x0, x1, ch) in glyphs {
+    // Column gaps separate keys from descriptions.
+    if x0 - end > 3.0 {
+      text.push(' ');
+    }
+    text.push(ch);
+    end = x1;
+  }
+  Ok(text)
+}
+
+#[test]
+fn key_lookups_land_on_their_rows() -> crate::Result<()> {
+  use vpdf_ui::topics::{Destination, Lookup, Registry, authored};
+  let reference = Settings::default().help_reference(Invocation::Home);
+  let registry = Registry::new(authored(), reference.bindings.clone())?;
+  let mut runtime = Runtime::default();
+  let mut handle = None;
+  for (query, context, action, keys) in [
+    ("f", Context::Normal, "hints.open", "f"),
+    ("normal:f", Context::Cursor, "hints.open", "f"),
+    ("yf", Context::Normal, "hints.copy", "yf"),
+    ("normal:yf", Context::Panel, "hints.copy", "yf"),
+    ("operator:f", Context::Normal, "hints.copy", "yf"),
+    ("yy", Context::Panel, "yank.line", "yy"),
+    ("yiw", Context::Cursor, "object.around_false.object_word", "yiw"),
+    ("operator:iw", Context::Normal, "object.around_false.object_word", "yiw"),
+    ("<C-D>", Context::Normal, "half_down", "<C-d>"),
+    ("c-d", Context::Normal, "half_down", "<C-d>"),
+    ("h", Context::Normal, "motion.motion_left", "h"),
+    ("panel:h", Context::Normal, "motion.motion_left", "h"),
+    (
+      "resize:h",
+      Context::Normal,
+      "window.direction_left.operation_extend",
+      "h",
+    ),
+  ] {
+    let Lookup::Found(Destination::Key(key)) = registry.lookup(query, context)
+    else {
+      panic!("Missing key topic: {query}");
+    };
+    assert_eq!(key.action.as_str(), action, "{query}");
+    let location = Location::anchored(key.action.clone(), &key.anchor())?;
+    let ready = request_at(&mut runtime, &reference, location)?;
+    let name = format!("{action}.{}", key.anchor());
+    assert_eq!(ready.target, ready.document.topics[&name], "{query}");
+    let handle = handle.get_or_insert(Handle::open(ready.document.path(), "")?);
+    let text = row(handle, &ready.target)?;
+    assert_eq!(text.split_whitespace().next(), Some(keys), "{query}: {text}");
+  }
+  Ok(())
+}
+
+#[test]
+fn every_key_anchor_lands_on_its_row() -> crate::Result<()> {
+  use vpdf_pdf::manual::{Line, Section};
+  let reference = Settings::default().help_reference(Invocation::Home);
+  let ready = request(&mut Runtime::default(), &reference, "introduction")?;
+  let handle = Handle::open(ready.document.path(), "")?;
+  let mut checked = 0;
+  for chapter in reference::chapters()? {
+    if chapter.section != Some(Section::Keys) {
+      continue;
+    }
+    for (index, anchors) in &chapter.anchors {
+      let Line::Binding { keys, .. } = &chapter.lines[*index] else {
+        panic!("Anchor without key row: {}", chapter.id);
+      };
+      for anchor in anchors {
+        let target =
+          &ready.document.topics[&format!("{}.{anchor}", chapter.id)];
+        let text = row(&handle, target)?;
+        assert_eq!(
+          text.split_whitespace().next(),
+          Some(keys.as_str()),
+          "{}.{anchor}: {text}",
+          chapter.id
+        );
+        checked += 1;
+      }
+    }
+  }
+  assert!(checked > 500, "{checked}");
+  Ok(())
+}
+
+#[test]
+fn removed_key_anchor_opens_its_action() -> crate::Result<()> {
+  let reference = Settings::default().help_reference(Invocation::Home);
+  let location =
+    Location::anchored(TopicId::parse("hints.copy")?, "normal.removed")?;
+  let ready =
+    request_at(&mut Runtime::default(), &reference, location.clone())?;
+  assert_eq!(ready.target, ready.document.topics["hints.copy"]);
+  assert_eq!(ready.location, Location::topic(TopicId::parse("hints.copy")?));
+  assert_eq!(ready.fallback, Some(location));
+  Ok(())
+}
+
+#[test]
+fn setting_lookups_land_on_their_rows() -> crate::Result<()> {
+  use vpdf_ui::topics::{Destination, Lookup};
+  let reference = Settings::default().help_reference(Invocation::Home);
+  let registry = registry(&reference)?;
+  let ready = request(&mut Runtime::default(), &reference, "config")?;
+  let handle = Handle::open(ready.document.path(), "")?;
+  assert!(reference.configuration.settings.len() > 10);
+  for setting in &reference.configuration.settings {
+    for query in [setting.name.clone(), format!("'{}'", setting.name)] {
+      let Lookup::Found(Destination::Setting(id)) =
+        registry.lookup(&query, Context::Normal)
+      else {
+        panic!("Missing setting topic: {query}");
+      };
+      let location =
+        Location::anchored(TopicId::parse("config")?, id.as_str())?;
+      let target = location.target(&ready.document).unwrap();
+      let name = format!("config.{}", id.as_str());
+      assert_eq!(target, ready.document.topics[&name]);
+      let rendered = row(&handle, &target)?;
+      assert_eq!(
+        rendered.split_whitespace().next(),
+        Some(setting.name.as_str())
+      );
+    }
+  }
+  let zoom = text(&ready.document, "config")?
+    .split_whitespace()
+    .collect::<Vec<_>>()
+    .join(" ");
+  assert!(zoom.contains("Saved document zoom takes precedence"), "{zoom}");
   Ok(())
 }

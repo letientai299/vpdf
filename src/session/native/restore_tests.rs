@@ -1,5 +1,6 @@
 use super::*;
 use crate::screen::cells;
+use std::time::{Duration, Instant};
 use vpdf_model::text::PageId;
 use vpdf_pdf::jobs::Wake;
 use vpdf_ui::split::{Axis, Place};
@@ -350,5 +351,26 @@ fn recent_panes_are_transient() -> Result<()> {
   restore_all(&mut reopened);
   assert_eq!(paths(&reopened), [files]);
   assert!(reopened.tabs[0].panes[0].alternate.is_none());
+  Ok(())
+}
+
+#[test]
+fn help_saves_the_book_it_replaced() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let files = pdfs(root.path(), &["book.pdf"])?;
+  let mut session = session(root.path())?;
+  session.open(&files[0], true, cells(80, 24))?;
+  session.app().unwrap().reading_view().go_to_page(PageId(3))?;
+  session.command("help navigation")?;
+  let deadline = Instant::now() + Duration::from_secs(20);
+  while !session.focused().is_help() {
+    session.help_updates(&mut std::io::sink());
+    assert!(Instant::now() < deadline, "Help did not open");
+    std::thread::sleep(Duration::from_millis(5));
+  }
+  let layout = session.layout();
+  assert_eq!(layout.tabs.len(), 1);
+  assert_eq!(layout.tabs[0].panes[0].path, files[0]);
+  assert_eq!(layout.tabs[0].panes[0].cursor.page, PageId(3));
   Ok(())
 }

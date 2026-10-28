@@ -2,9 +2,37 @@ use super::{
   Axis, KeyEvent, Mark, Pane, PanelKind, Path, Place, Position, Request,
   Result, Screen, Session, Sight, terminal,
 };
+use crate::watch::ConfigWatch;
+use std::time::Instant;
 
 impl Session {
+  /// Reloads a startup config file after it changes and settles.
+  pub(super) fn watch_config(&mut self, force: bool, now: Instant) -> bool {
+    let wake = self.frontend.wake();
+    let Some(watch) = &mut self.config_watch else { return false };
+    watch.start(move || wake.wake());
+    if !watch.due(force, now) {
+      return false;
+    }
+    self.reload_config();
+    true
+  }
+
+  pub(super) fn config_settling(&self) -> bool {
+    self.config_watch.as_ref().is_some_and(ConfigWatch::settling)
+  }
+
+  /// Applies the editor's saved version before input resumes.
+  fn config_edited(&mut self) {
+    if self.config_watch.as_mut().is_some_and(ConfigWatch::reconcile) {
+      self.reload_config();
+    }
+  }
+
   pub(super) fn reload_config(&mut self) {
+    if let Some(watch) = &mut self.config_watch {
+      watch.applied();
+    }
     let loaded = self.config_source.reload(&self.settings);
     let previous_warning = self.config_warning.take();
     self.config_warning = loaded.warning.clone();
@@ -123,7 +151,7 @@ impl Session {
     if self.focused().is_recent() {
       return Ok(());
     }
-    if self.app()?.quit {
+    if std::mem::take(&mut self.app()?.quit) {
       return self.close_pane();
     }
     let screen = self.screen.unwrap_or(fallback);
@@ -165,6 +193,52 @@ impl Session {
       Some(path) => self.open(&path, tab, screen),
       None => Ok(()),
     }
+  }
+
+  /// Opens the selected config file, creating it when missing.
+  pub(super) fn edit_config(&mut self) -> Result<()> {
+    let editor = crate::programs::Editor::from_env();
+    if !self.native_frontend()
+      && let Err(error) = &editor
+    {
+      anyhow::bail!("{error}");
+    }
+    self.edit_config_with(|path| crate::programs::edit_config(path, &editor?))
+  }
+
+  /// Runs `edit` in place of the terminal editor.
+  ///
+  /// A file created here joins the watch, so later saves reload.
+  pub(super) fn edit_config_with(
+    &mut self,
+    edit: impl FnOnce(&Path) -> Result<()>,
+  ) -> Result<()> {
+    let path = self
+      .config_source
+      .path()
+      .ok_or_else(|| {
+        anyhow::anyhow!("Configuration disabled; nothing to edit")
+      })?
+      .to_owned();
+    crate::config::ensure_file(&path)
+      .map_err(|error| anyhow::anyhow!("Config {}: {error}", path.display()))?;
+    if self.config_watch.is_none() {
+      self.config_watch = ConfigWatch::new(&path);
+    }
+    if self.native_frontend() {
+      self
+        .native
+        .effects
+        .push(super::native::commands::Effect::EditConfig(path));
+      return Ok(());
+    }
+    let edited = edit(&path);
+    self.config_edited();
+    edited
+  }
+
+  fn native_frontend(&self) -> bool {
+    matches!(self.frontend, crate::raster::Frontend::Native(_))
   }
 
   pub(super) fn dispatch(
@@ -248,6 +322,7 @@ impl Session {
         self.reload_config();
         Ok(())
       }
+      Some(Request::ConfigEdit) => self.edit_config(),
       Some(Request::Theme(theme)) => {
         self.choose_theme(&theme);
         Ok(())

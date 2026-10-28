@@ -5,6 +5,8 @@ use anyhow::Context;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::task::Poll;
 use tempfile::NamedTempFile;
 use vpdf_terminal::terminal;
@@ -25,18 +27,114 @@ pub fn edit(text: &str, terminal: bool) -> Result<String> {
   let editor = ["VISUAL", "EDITOR"]
     .iter()
     .find_map(|name| std::env::var(name).ok().filter(|v| !v.trim().is_empty()))
-    .unwrap_or_else(|| "vi".into());
-  let mut words = editor.split_whitespace();
-  let program = words.next().unwrap_or("vi").to_owned();
-  let mut command = Command::new(&program);
-  command.args(words);
+    .map_or(Editor::Program("vi"), Editor::Shell);
   edit_file(text, scratch_file("line", "txt")?, |path| {
-    terminal::suspend()?;
-    let status = command.arg(path).status();
-    terminal::resume()?;
-    anyhow::ensure!(status?.success(), "{program} exited with an error");
-    Ok(())
+    handoff(|| editor.run(path))
   })
+}
+
+/// Lends the terminal to a child program, then restores the reader.
+///
+/// Interrupts reach the child, not Vpdf, while it runs; the terminal is
+/// restored even when `run` fails.
+pub fn handoff<T>(run: impl FnOnce() -> Result<T>) -> Result<T> {
+  let default = interrupts()?;
+  default.store(false, Ordering::SeqCst);
+  let result = terminal::suspend().and_then(|()| run());
+  let resumed = terminal::resume();
+  default.store(true, Ordering::SeqCst);
+  // A dead terminal outranks the child's own failure.
+  resumed?;
+  result
+}
+
+/// Whether SIGINT and SIGQUIT keep their default action in Vpdf.
+///
+/// A caught signal, unlike an ignored one, resets to default in an
+/// exec'd child, so the child stays interruptible.
+fn interrupts() -> io::Result<&'static AtomicBool> {
+  use signal_hook::consts::{SIGINT, SIGQUIT};
+  static DEFAULT: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+  if let Some(default) = DEFAULT.get() {
+    return Ok(default);
+  }
+  let default = Arc::new(AtomicBool::new(true));
+  for signal in [SIGINT, SIGQUIT] {
+    signal_hook::flag::register_conditional_default(
+      signal,
+      Arc::clone(&default),
+    )?;
+  }
+  Ok(DEFAULT.get_or_init(|| default))
+}
+
+/// The terminal editor for `:config edit`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Editor {
+  /// `$EDITOR`, run by `sh` so it keeps its arguments and quoting.
+  Shell(String),
+  /// A fallback found on `PATH`.
+  Program(&'static str),
+}
+
+impl Editor {
+  pub fn from_env() -> Result<Self> {
+    Self::select(std::env::var("EDITOR").ok(), crate::cmdline::on_path)
+  }
+
+  /// `$EDITOR`, else `nvim`, else `vim`; never `$VISUAL` or `vi`.
+  fn select(
+    editor: Option<String>,
+    found: impl Fn(&str) -> bool,
+  ) -> Result<Self> {
+    if let Some(editor) = editor.filter(|editor| !editor.trim().is_empty()) {
+      return Ok(Self::Shell(editor));
+    }
+    ["nvim", "vim"]
+      .into_iter()
+      .find(|program| found(program))
+      .map(Self::Program)
+      .ok_or_else(|| anyhow::anyhow!("Set $EDITOR or install nvim or vim"))
+  }
+
+  fn name(&self) -> &str {
+    match self {
+      Self::Shell(editor) => editor,
+      Self::Program(program) => program,
+    }
+  }
+
+  fn command(&self, path: &Path) -> Command {
+    let mut command = match self {
+      Self::Shell(editor) => {
+        let mut command = Command::new("/bin/sh");
+        command.arg("-c").arg(format!("{editor} \"$@\"")).arg("vpdf-editor");
+        command
+      }
+      Self::Program(program) => Command::new(program),
+    };
+    command.arg(path);
+    command
+  }
+
+  fn run(&self, path: &Path) -> Result<()> {
+    let status = self.command(path).status();
+    let name = self.name();
+    let status = status.with_context(|| format!("Cannot run {name}"))?;
+    match status.code() {
+      Some(0) => Ok(()),
+      Some(127) if matches!(self, Self::Shell(_)) => {
+        anyhow::bail!("Editor not found: {name}")
+      }
+      Some(code) => anyhow::bail!("{name} exited with status {code}"),
+      None => anyhow::bail!("{name} was interrupted"),
+    }
+  }
+}
+
+/// Edits the config file in this terminal pane, then resumes Vpdf.
+pub fn edit_config(path: &Path, editor: &Editor) -> Result<()> {
+  handoff(|| editor.run(path))
 }
 
 fn edit_file(
@@ -67,10 +165,7 @@ pub fn pick_pdf(root: &Path) -> Result<Option<PathBuf>> {
     crate::cmdline::on_path("fzf"),
     "Install fzf and add it to PATH"
   );
-  terminal::suspend()?;
-  let result = run_fzf(root);
-  terminal::resume()?;
-  result
+  handoff(|| run_fzf(root))
 }
 
 /// A macOS dialog process; dropping it closes the dialog.
@@ -245,6 +340,64 @@ mod tests {
     let mut picker =
       Picker { dialog: Dialog::exited("/usr/bin/false", &[])?, tab: false };
     assert!(picker.poll().is_err());
+    Ok(())
+  }
+
+  #[test]
+  fn config_editor_selection() {
+    let found = |names: &'static [&'static str]| {
+      move |program: &str| names.contains(&program)
+    };
+    for (editor, installed, expected) in [
+      (Some("hx -c x"), &[][..], Some(Editor::Shell("hx -c x".into()))),
+      (Some(" "), &["vim"][..], Some(Editor::Program("vim"))),
+      (None, &["nvim", "vim"][..], Some(Editor::Program("nvim"))),
+      (None, &["vim", "vi"][..], Some(Editor::Program("vim"))),
+      (None, &["vi"][..], None),
+    ] {
+      let selected = Editor::select(editor.map(Into::into), found(installed));
+      assert_eq!(selected.ok(), expected, "{editor:?} {installed:?}");
+    }
+  }
+
+  #[test]
+  fn config_editor_runs_and_reports() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let source = root.path().join("new config.toml");
+    std::fs::write(&source, "[reading]\nzoom = 2.0\n")?;
+    let path = root.path().join("my config.toml");
+    std::fs::write(&path, "")?;
+    let copy = format!("cp '{}'", source.display());
+    Editor::Shell(copy).run(&path)?;
+    assert_eq!(std::fs::read(&path)?, std::fs::read(&source)?);
+    for (editor, message) in [
+      ("false", "false exited with status 1"),
+      ("vpdf-missing-editor", "Editor not found: vpdf-missing-editor"),
+      ("kill -TERM $$; :", "kill -TERM $$; : was interrupted"),
+    ] {
+      let error = Editor::Shell(editor.into()).run(&path).unwrap_err();
+      assert_eq!(error.to_string(), message);
+    }
+    let error = Editor::Program("vpdf-missing-editor").run(&path).unwrap_err();
+    assert_eq!(error.to_string(), "Cannot run vpdf-missing-editor");
+    assert_eq!(std::fs::read(&path)?, std::fs::read(&source)?);
+    Ok(())
+  }
+
+  #[test]
+  fn children_take_interrupts() -> Result<()> {
+    use signal_hook::consts::SIGINT;
+    let default = interrupts()?;
+    default.store(false, Ordering::SeqCst);
+    signal_hook::low_level::raise(SIGINT)?;
+    let path = NamedTempFile::new()?;
+    let error = Editor::Shell("kill -INT $$; :".into()).run(path.path());
+    default.store(true, Ordering::SeqCst);
+    assert_eq!(
+      error.unwrap_err().to_string(),
+      "kill -INT $$; : was interrupted"
+    );
+    assert!(std::ptr::eq(default, interrupts()?));
     Ok(())
   }
 

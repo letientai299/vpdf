@@ -40,7 +40,7 @@ the pane in place, reports the error, and clears the alternate.
 
 `:bd[elete]` saves and unloads the focused document, then reopens its alternate
 or shows Recent. It leaves other panes of the same file unchanged. On Recent,
-`:bd` closes the pane; on help, it closes help and returns to its invoker.
+`:bd` closes the pane; on help, it reopens the document help replaced.
 `:bd` accepts no filename.
 
 `:new` and `:vnew` create Recent panes above and to the left. A file argument
@@ -53,16 +53,18 @@ the same focus, resize, tab, and pointer operations as document panes.
 `:tabnext 2` also selects tab 2. `:tabnew` opens recent files in a new tab.
 `:tabclose` closes the current tab and every pane in it.
 
-From a book, `:help` reuses a help-only tab or creates one. `:help! search`
-opens help beside the invoking pane. `Ctrl-w p` returns focus to the book.
-Topic lookups from within help stay in that pane and retain local marks,
-search, and jump history. Bare `:help` returns to the manual's first page;
-switching tabs keeps the place you left.
+From a book, `:help` reuses a help pane in the current tab or replaces the
+book, which becomes the alternate. `Ctrl-^` switches back and forth.
+`:help! search` opens help beside the invoking pane. `Ctrl-w p` returns focus to
+the book. Topic lookups from within help stay in that pane and retain local
+marks, search, and jump history. Bare `:help` returns to the manual's first
+page.
 
-Closing the final help pane returns to its invoking pane if it still exists,
-otherwise an adjacent tab. Closing the last tab quits. Opening help from another
-book refreshes its captured settings context. Splits of help share its document
-while keeping independent reading positions.
+Closing help reopens its alternate document. Help without one returns focus to
+the book it was opened beside, if still open; otherwise a lone help pane turns
+into Recent and a split help pane closes. Opening help
+from another book refreshes its captured settings context. Splits of help share
+its document while keeping independent reading positions.
 
 ## Resize and arrange
 

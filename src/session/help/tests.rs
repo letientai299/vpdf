@@ -2,6 +2,7 @@ use super::*;
 use crate::screen::cells;
 use crate::trace::Drawable;
 use std::time::{Duration, Instant};
+use vpdf_ui::topics::Registry;
 
 #[test]
 fn interrupted_lookup_preserves_snapshot() -> Result<()> {
@@ -13,7 +14,6 @@ fn interrupted_lookup_preserves_snapshot() -> Result<()> {
   for outcome in ["superseded", "discarded", "failed"] {
     let mut session = Session::new(None);
     session.open(&first, true, cells(120, 40))?;
-    let original = session.app().unwrap().id;
     invoke(&mut session, "navigation")?;
     let help = session.active;
     let reference = session.help.reference.clone().unwrap();
@@ -41,8 +41,8 @@ fn interrupted_lookup_preserves_snapshot() -> Result<()> {
       &document
     ));
     assert_eq!(session.help.reference, Some(reference));
-    session.close()?;
-    assert_eq!(session.app().unwrap().id, original);
+    session.close_pane()?;
+    assert!(session.app().unwrap().path.ends_with("first.pdf"));
   }
   Ok(())
 }
@@ -85,7 +85,6 @@ fn topic_lookup_retains_state() -> Result<()> {
   ] {
     let mut session = Session { frontend, ..Session::new(None) };
     session.open(&path, true, cells(120, 40))?;
-    let source = session.app().unwrap().id;
     invoke(&mut session, "navigation")?;
     let reference = session.help.reference.clone().unwrap();
     let document = session.app().unwrap().manual.clone().unwrap();
@@ -115,8 +114,8 @@ fn topic_lookup_retains_state() -> Result<()> {
       assert_eq!(app.reading_position()?, mark);
     }
     assert_eq!(session.help.reference, Some(reference));
-    session.close()?;
-    assert_eq!(session.app().unwrap().id, source);
+    session.close_pane()?;
+    assert!(session.app().unwrap().path.ends_with("source.pdf"));
   }
   Ok(())
 }
@@ -143,7 +142,7 @@ fn lookup_and_refresh_retain_preview() -> Result<()> {
       assert!(session.app().unwrap().text_mode);
       session.app().unwrap().action(Input::plain(Action::Quit))?;
       session.settle()?;
-      assert_eq!(session.tabs.len(), 2);
+      assert_eq!(session.tabs.len(), 1);
       assert_eq!(session.app().unwrap().id, id);
       assert!(!session.app().unwrap().text_mode);
       assert!(session.app().unwrap().preview.is_none());
@@ -210,7 +209,7 @@ fn wait(session: &mut Session) {
 }
 
 fn invoke(session: &mut Session, query: &str) -> Result<()> {
-  if session.tabs.is_empty() {
+  if session.tabs.is_empty() || session.focused().is_recent() {
     session.request_help(query, Invocation::Home, cells(120, 40))?;
   } else {
     session.app().unwrap().command(&format!("help {query}"))?;
@@ -238,12 +237,12 @@ fn home_reuses_help_and_returns() -> Result<()> {
   assert_eq!(session.state.recent, [] as [crate::state::Entry; 0]);
   assert!(!session.app().unwrap().watch()?);
   invoke(&mut session, "")?;
-  assert_eq!(session.tabs.len(), 2);
+  assert_eq!(session.tabs.len(), 1);
   assert_eq!(session.app().unwrap().id, id);
   assert_eq!(session.app().unwrap().navigation_position().page.0, 0);
   let path = session.app().unwrap().path.clone();
   let wake = session.app().unwrap().wake.clone();
-  session.close()?;
+  session.close_pane()?;
   assert!(session.tabs.len() == 1 && session.recent().is_some());
   assert!(!session.quit);
   assert_eq!(session.state.recent, [] as [crate::state::Entry; 0]);
@@ -266,7 +265,6 @@ fn returns_to_invoking_pane_after_splits() -> Result<()> {
   let mut session = Session::new(Some(root.path().join("state.json")));
   session.open(&path, true, cells(120, 40))?;
   session.app().unwrap().command("2")?;
-  let original = session.app().unwrap().id;
   let position = session.app().unwrap().navigation_position();
   invoke(&mut session, "half_down")?;
   session.split(
@@ -284,10 +282,12 @@ fn returns_to_invoking_pane_after_splits() -> Result<()> {
   );
   let help = session.app().unwrap().id;
   invoke(&mut session, "h")?;
-  assert_eq!(session.tabs.len(), 2);
+  assert_eq!(session.tabs.len(), 1);
   assert_eq!(session.app().unwrap().id, help);
-  session.close()?;
-  assert_eq!(session.app().unwrap().id, original);
+  while session.focused().is_help() {
+    session.close_pane()?;
+  }
+  assert!(session.app().unwrap().path.ends_with("source.pdf"));
   assert_eq!(session.app().unwrap().navigation_position(), position);
   session.finish()?;
   assert_eq!(session.state.recent.len(), 1);
@@ -361,6 +361,7 @@ fn failures_and_closed_sources_preserve_focus() -> Result<()> {
   assert_eq!(session.app().unwrap().id, id);
   assert_eq!(session.app().unwrap().navigation_position(), position);
   session.help = Help::default();
+  session.recent_tab(cells(120, 40))?;
   invoke(&mut session, "config")?;
   let help = session.active;
   session.close_tab(0)?;
@@ -448,7 +449,7 @@ fn closing_during_refresh_keeps_home() -> Result<()> {
   invoke(&mut session, "config")?;
   session.set_theme(vpdf_model::theme::Theme::Light);
   assert!(session.help.pending.is_some());
-  session.close()?;
+  session.close_pane()?;
   wait(&mut session);
   assert!(session.tabs.len() == 1 && session.recent().is_some());
   assert!(!session.quit);
@@ -585,6 +586,7 @@ fn help_open_releases_home_preview() -> Result<()> {
     std::thread::sleep(Duration::from_millis(2));
   }
   session.request_help("introduction", Invocation::Home, screen)?;
+  let deadline = Instant::now() + Duration::from_secs(15);
   let mut cleared = Vec::new();
   while session.help.pending.is_some() {
     session.help_updates(&mut cleared);
@@ -657,6 +659,7 @@ fn help_beside_preserves_book() -> Result<()> {
   session.app().unwrap().command("2")?;
   let original = session.app().unwrap().id;
   let position = session.app().unwrap().navigation_position();
+  session.recent_tab(cells(120, 40))?;
   invoke(&mut session, "navigation")?;
   session.activate(0)?;
   session.app().unwrap().command("help! search")?;
@@ -673,6 +676,52 @@ fn help_beside_preserves_book() -> Result<()> {
   session.close_pane()?;
   assert_eq!(session.app().unwrap().id, original);
   assert_eq!(session.app().unwrap().navigation_position(), position);
+  session.app().unwrap().command("help! search")?;
+  session.settle()?;
+  wait(&mut session);
+  session.move_to_tab()?;
+  assert!(session.focused().is_help());
+  let tabs = session.tabs.len();
+  session.close_pane()?;
+  assert_eq!(session.tabs.len(), tabs - 1);
+  assert!(!session.focused().is_recent());
+  Ok(())
+}
+
+#[test]
+fn failed_return_keeps_help() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let path = root.path().join("book.pdf");
+  crate::fixtures::pdf(&path, &["Book"], "")?;
+  let mut session = Session::new(None);
+  session.open(&path, true, cells(120, 40))?;
+  invoke(&mut session, "navigation")?;
+  std::fs::remove_file(&path)?;
+  session.app().unwrap().command("q")?;
+  assert!(session.settle().is_err());
+  assert!(session.focused().is_help());
+  session.settle()?;
+  assert!(session.focused().is_help());
+  Ok(())
+}
+
+#[test]
+fn alternate_help_follows_skipped_refresh() -> Result<()> {
+  let root = tempfile::tempdir()?;
+  let path = root.path().join("book.pdf");
+  crate::fixtures::pdf(&path, &["Book"], "")?;
+  let mut session = Session::new(None);
+  session.open(&path, true, cells(120, 40))?;
+  invoke(&mut session, "navigation")?;
+  session.app().unwrap().command("e #")?;
+  session.settle()?;
+  session.set_theme(vpdf_model::theme::Theme::Light);
+  assert!(session.help.stale && session.help.pending.is_none());
+  session.app().unwrap().command("e #")?;
+  session.settle()?;
+  assert!(session.focused().is_help());
+  assert!(!session.help.stale && session.help.pending.is_some());
+  wait(&mut session);
   Ok(())
 }
 
@@ -688,7 +737,7 @@ fn ambiguity_offers_persistent_choices() -> Result<()> {
   assert_eq!(prompt.text(), "help panel.");
   let menu = prompt.menu().unwrap();
   assert!(menu.items().len() > 1);
-  assert!(menu.labels().iter().all(|label| label.contains("[Action]")));
+  assert!(menu.labels().iter().all(|label| label.contains("[Config]")));
   let topic = menu.items()[0].clone();
   session.app().unwrap().key(
     vpdf_model::input::KeyEvent::new(
@@ -852,6 +901,7 @@ fn pending_help_checks_size() -> Result<()> {
   let mut session = Session::new(None);
   session.open(&path, true, cells(120, 40))?;
   let book = session.app().unwrap().id;
+  session.recent_tab(cells(120, 40))?;
   invoke(&mut session, "navigation")?;
   session.app().unwrap().set_mark('a')?;
   let manual = session.app().unwrap().manual.clone().unwrap();
@@ -928,7 +978,7 @@ fn lookup_recovery_keeps_position() -> Result<()> {
   invoke(&mut session, "'reading.zoom'")?;
   assert_eq!(
     session.app().unwrap().help_location().unwrap().id().as_str(),
-    "configuration"
+    "config"
   );
   invoke(&mut session, "helphelp")?;
   assert_eq!(
@@ -950,7 +1000,9 @@ fn builtin_topic(query: &str, context: vpdf_ui::bindings::Context) -> String {
   )
   .unwrap();
   match registry.lookup(query, context) {
-    Lookup::Found(Destination::Action(id)) => id.as_str().into(),
+    Lookup::Found(destination) if destination.action().is_some() => {
+      destination.action().unwrap().as_str().into()
+    }
     other => panic!("Unexpected built-in lookup: {other:?}"),
   }
 }
@@ -1001,7 +1053,7 @@ fn help_accepts_prefix_spellings() -> Result<()> {
     assert!(session.app().unwrap().error.is_none(), "{query}");
     assert_eq!(
       session.app().unwrap().help_location().unwrap().id().as_str(),
-      "panes",
+      "window.amount_-1.axis_columns.operation_resize",
       "{query}"
     );
   }
@@ -1043,6 +1095,7 @@ fn hint_actions_preserve_source() -> Result<()> {
       .unwrap();
     let label = hint.label.clone();
     let target = hint.target.clone();
+    let hinted = target.clone();
     let source = app.reader.cursor.page;
     app.start_hints(vpdf_ui::hints::Mode::Copy)?;
     hint_keys(app, &label)?;
@@ -1075,8 +1128,9 @@ fn hint_actions_preserve_source() -> Result<()> {
       "{origin}"
     );
     assert!(!app.panel_focused(), "{origin}");
-    assert_eq!(app.reader.cursor.page, source);
+    // The lesson may continue on the next page; focus stays on the link.
     let target = app.link_target(app.reader.cursor)?.expect("cursor on link");
+    assert_eq!(target, hinted, "{origin}");
     hint_keys(app, "K")?;
     assert!(app.overlays.preview().is_some());
     app.overlays.close_preview();
@@ -1098,6 +1152,95 @@ fn hint_keys(app: &mut App, keys: &str) -> Result<()> {
       KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE),
       &mut history,
     )?;
+  }
+  Ok(())
+}
+
+#[test]
+fn key_help_lands_on_sequence_row() -> Result<()> {
+  for frontend in [
+    crate::raster::Frontend::Terminal,
+    crate::raster::Frontend::Native(vpdf_pdf::jobs::Wake::none()),
+  ] {
+    for size in [cells(120, 40), cells(30, 10)] {
+      let mut session =
+        Session { frontend: frontend.clone(), ..Session::new(None) };
+      session.request_help("intro", Invocation::Home, size)?;
+      wait(&mut session);
+      for (query, name) in [
+        ("yf", "hints.copy.normal.yf"),
+        ("operator:f", "hints.copy.operator.f"),
+        ("normal:f", "hints.open.normal.f"),
+        ("panel:yy", "yank.line.panel.yy"),
+        ("cursor:yiw", "object.around_false.object_word.cursor.yiw"),
+        ("<C-D>", "half_down.normal._3cC-D_3e"),
+      ] {
+        session.app().unwrap().command(&format!("help {query}"))?;
+        session.settle()?;
+        wait(&mut session);
+        let app = session.app().unwrap();
+        assert!(app.error.is_none(), "{query}: {:?}", app.error);
+        let expected = app.manual.as_ref().unwrap().topics[name].clone();
+        assert_eq!(app.reader.landing().aimed(), Some(&expected), "{query}");
+      }
+    }
+  }
+  Ok(())
+}
+
+#[test]
+fn catalog_pages_are_reachable() -> Result<()> {
+  let mut session = Session::new(None);
+  for (query, topic) in [
+    ("actions", "actions"),
+    ("scroll", "action.scroll"),
+    ("prompt.history", "action.prompt.history"),
+    ("action.hints.copy", "action.hints.copy"),
+    ("target.unbind", "target.unbind"),
+  ] {
+    invoke(&mut session, query)?;
+    let app = session.app().unwrap();
+    assert_eq!(app.help_location().unwrap().id().as_str(), topic, "{query}");
+  }
+  let candidates =
+    crate::manual::completions(&session.settings, &Invocation::Home, "scr")?;
+  let scroll = Destination::Catalog(TopicId::parse("action.scroll")?);
+  assert!(candidates.iter().any(
+    |candidate| candidate.name == "scroll" && candidate.destination == scroll
+  ));
+  let browse =
+    crate::manual::completions(&session.settings, &Invocation::Home, "")?;
+  assert!(browse.iter().any(|candidate| candidate.name == "actions"));
+  assert!(
+    !browse.iter().any(|candidate| candidate.name.starts_with("action."))
+  );
+  let pages = crate::manual::completions(
+    &session.settings,
+    &Invocation::Home,
+    "action.",
+  )?;
+  assert!(pages.iter().any(|candidate| candidate.name == "action.scroll"));
+  Ok(())
+}
+
+#[test]
+fn setting_help_survives_reflow() -> Result<()> {
+  let mut session = Session::new(None);
+  invoke(&mut session, "intro")?;
+  for query in ["reading.cursorline", "'reading.zoom'"] {
+    invoke(&mut session, query)?;
+    let name = query.trim_matches('\'');
+    let app = session.app().unwrap();
+    let expected =
+      app.manual.as_ref().unwrap().topics[&format!("config.{name}")].clone();
+    assert_eq!(app.reader.landing().aimed(), Some(&expected), "{query}");
+    session.resize(cells(36, 10))?;
+    session.set_theme(vpdf_model::theme::Theme::Dark);
+    wait(&mut session);
+    let location = session.app().unwrap().help_location().unwrap();
+    assert_eq!(location.id().as_str(), "config", "{query}");
+    assert_eq!(location.anchor(), Some(name), "{query}");
+    session.resize(cells(120, 40))?;
   }
   Ok(())
 }

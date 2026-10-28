@@ -117,25 +117,38 @@ also carry a plain text copy.
 
 ## Runtime snapshots
 
-Pass the running settings' `help_reference` snapshot and a canonical topic ID to
-`manual::Runtime::request`. Capture the invoking pane before changing focus.
-`poll` returns a composed document and its resolved destination. After normal
-PDF navigation, capture `manual::Location::at` and pass it to `locate`.
-`refresh` resolves that logical topic and anchor when pagination changes. If an
-anchor disappears, refresh uses its topic's start. If the topic also disappears,
-refresh uses `config`. `Ready::fallback` identifies the removed location.
-Replaced jobs are canceled; their channels cannot deliver into the replacement
-request.
+Pass the running settings' `help_reference` snapshot and a `manual::Location` to
+`manual::Runtime::request`. Topic lookups use `Location::topic`; key lookups
+keep their action, context, and sequence and use `Location::anchored` with
+`topics::key_anchor`. Setting lookups anchor within `config`. Capture the
+invoking pane before changing focus. `poll` returns a composed document and its
+resolved destination. After normal PDF navigation, capture
+`manual::Location::at` and pass it to `locate`. `refresh` resolves that logical
+topic and anchor when pagination changes. If an anchor disappears, open and
+refresh use its topic's start. If the topic also disappears, refresh uses
+`config`. `Ready::fallback` identifies the removed location. Replaced jobs are
+canceled; their channels cannot deliver into the replacement request.
 
 The PDF cache uses manual identity. Generated entries
 use built-in bindings and setting defaults, with no custom mappings, winning
-sources, warnings, or captured pane values. Built-in keys, settings, and Ex
-commands have separate sections. Key entries use the dispatcher's preferred
-shortcut, omit encoding variants, and combine modes with the same behavior.
+sources, warnings, or captured pane values. Built-in keys, configuration
+actions, settings, and Ex commands have separate sections. Key entries use the
+dispatcher's preferred shortcut, omit encoding variants, and combine modes with
+the same behavior. One entry holds each key; differing effects carry mode
+labels. Operator and object continuations fold into their full sequence. Every
+key row has an anchor per context and sequence, including hidden aliases.
+Parameter families have one template row; their keys land on its topic.
+
+[Action metadata][catalog] lists each parser-accepted action family with
+fields and a TOML example; tests parse every example against the
+configuration parser. [Setting metadata][fields] supplies each setting's
+value, precedence, and reload text.
+
 Outline visibility is separate from section placement: all key entries precede
-settings and Ex commands. Mark setting, mark jumps, counts, and hint labels use
-parameter entries; concrete key lookups share those destinations. Other
-parameterized actions remain outside the outline. There is no dispatch appendix.
+settings and Ex commands. Every key entry with a default binding has an outline
+heading, so the status line names the landed entry. Mark setting, mark jumps,
+counts, and hint labels use parameter entries; concrete key lookups share those
+destinations. There is no dispatch appendix.
 
 The manual, generated reference, and native interface embed Vpdf Mono, derived
 from [Iosevka Nerd Font Mono][nerd-font]. The native app requires no font
@@ -176,20 +189,20 @@ finishes.
 
 ## Session navigation
 
-`:help [topic]`, `g?`, and F1 open a reusable document tab. `:help! [topic]`
-opens beside the invoking pane; `Ctrl-w p` returns focus. Later lookups prefer
-an existing help pane in the current tab, keeping its placement. Key queries
-accept an explicit context, such as `search:<Tab>`. Ambiguous topics open a
-persistent completion list with descriptions. Plain calls return to the
-introduction. Lookup and completion use the invoking mode and applied
-built-in binding map; failed lookup leaves the document and position intact.
-Lookups within help retain bookmarks, search, jump history, and text preview
-return behavior. Key lookup uses the current mode.
+`:help [topic]`, `g?`, and F1 replace the focused pane and keep the replaced
+document as its alternate. `:help! [topic]` opens beside the invoking pane;
+`Ctrl-w p` returns focus. Later lookups prefer an existing help pane in the
+current tab, keeping its placement. Key queries accept an explicit context, such
+as `search:<Tab>`. Ambiguous topics open a persistent completion list with
+descriptions. Plain calls return to the introduction. Lookup and completion use
+the invoking mode and applied built-in binding map; failed lookup leaves the
+document and position intact. Lookups within help retain bookmarks, search, jump
+history, and text preview return behavior. Key lookup uses the current mode.
 
 Splits share the composed document, with independent reading positions. Refresh
-resolves logical anchors and clears page-based navigation and crops. Closing the
-final help pane returns to the invoking pane when it exists, otherwise an
-adjacent tab or the start screen.
+resolves logical anchors and clears page-based navigation and crops. Closing
+help reopens its alternate. Without one, closing returns to the invoking pane
+when it exists; otherwise a lone help pane becomes Recent.
 
 Path copying reports `builtin:help`. Help supports region copying and OCR;
 region saving, printing, disk reload, and persistent global marks are
@@ -212,6 +225,8 @@ unavailable. Open another document before using those path-based actions.
 [exporter]: ../../crates/ui/examples/help_metadata.rs
 [generator]: ../../tools/help/assets.py
 [runtime]: ../../src/manual/runtime.rs
+[catalog]: ../../crates/ui/src/bindings/catalog.rs
+[fields]: ../../src/config/fields.rs
 [events]: dev.md#native-window
 
 ## Dependency notices

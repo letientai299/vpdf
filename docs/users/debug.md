@@ -25,9 +25,10 @@ changing zoom or switching to extracted text.
 
 Read the status label first. Escape dismisses a prompt, hint, preview, region,
 or pending sequence before leaving Cursor or Visual. Tab changes panel focus;
-Ctrl-w changes pane focus. Use `:help panel:j` to inspect a panel key and
-`:help j` for the invoking context. `:help config` shows rejected mappings
-and their sources. Launch with `-u NONE` to compare shipped bindings.
+Ctrl-w changes pane focus. Use `:help panel:j` to read about a built-in panel
+key and `:help j` for the invoking context. Help describes built-in keys, not
+your mappings. `:config reload` warns about rejected mappings. Launch with
+`-u NONE` to compare shipped bindings.
 
 Under tmux in Kitty, Ctrl-i can arrive as Tab. Use `:jumps` for a forward
 history destination. The native reader and a directly compatible terminal
@@ -73,10 +74,12 @@ OCR overlays do not alter printed source pages.
 
 ## Settings or state appear unchanged
 
+Saving a configuration file that existed at launch reloads it; otherwise
 `:config reload` rereads the originally selected file. Malformed TOML preserves
 live settings; invalid individual entries warn while valid ones apply. Initial
 zoom and cursorline affect newly opened documents. Saved and live pane values
-can differ from configured defaults; inspect both in `:help config`.
+can differ from configured defaults. `:help config` lists built-in defaults,
+not the values in use.
 
 A later launch restores eligible reading state and each document's sidebar, not
 a full workspace of tabs and splits. An explicit launch page overrides the saved

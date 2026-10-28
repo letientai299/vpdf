@@ -29,10 +29,7 @@ impl Location {
 
   pub fn anchored(topic: TopicId, anchor: &str) -> Result<Self> {
     anyhow::ensure!(
-      !anchor.is_empty()
-        && anchor
-          .bytes()
-          .all(|ch| ch.is_ascii_alphanumeric() || b"._-".contains(&ch)),
+      vpdf_pdf::manual::valid_anchor(anchor),
       "Invalid help anchor"
     );
     Ok(Self {
@@ -83,6 +80,11 @@ impl Location {
 
   pub fn id(&self) -> &TopicId {
     &self.topic
+  }
+
+  #[cfg(test)]
+  pub fn anchor(&self) -> Option<&str> {
+    self.anchor.as_deref()
   }
 
   pub(crate) fn target(&self, document: &Document) -> Option<Target> {
@@ -176,10 +178,10 @@ impl Runtime {
   pub fn request(
     &mut self,
     _reference: &Reference,
-    topic: TopicId,
+    location: Location,
     wake: &Wake,
   ) {
-    self.selected = Some(Location::topic(topic));
+    self.selected = Some(location);
     self.start(Delivery::Open, wake);
   }
 
@@ -234,14 +236,15 @@ impl Runtime {
     let mut location = self.selected.clone()?;
     let mut fallback = None;
     self.delivery = None;
-    if matches!(delivery, Delivery::Refresh)
-      && !document.topics.contains_key(&location.name())
-    {
+    // A removed anchor falls back to its topic, then on refresh to `config`.
+    if !document.topics.contains_key(&location.name()) {
       fallback = Some(location.clone());
       location.anchor = None;
       location.offset = 0;
       location.origin = Origin::Anchor;
-      if !document.topics.contains_key(location.topic.as_str()) {
+      if matches!(delivery, Delivery::Refresh)
+        && !document.topics.contains_key(location.topic.as_str())
+      {
         location.topic = match TopicId::parse("config") {
           Ok(topic) => topic,
           Err(error) => return Some(Err(error)),

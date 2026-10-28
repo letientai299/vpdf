@@ -91,8 +91,13 @@ pub(crate) fn describe(
     |candidate| {
       let group = match (&candidate.destination, &candidate.action) {
         (vpdf_ui::topics::Destination::Authored(_), _) => "Guide",
-        (vpdf_ui::topics::Destination::Configuration, _) => "Settings",
+        (
+          vpdf_ui::topics::Destination::Configuration
+          | vpdf_ui::topics::Destination::Setting(_),
+          _,
+        ) => "Settings",
         (vpdf_ui::topics::Destination::Command(_), _) => "Command",
+        (vpdf_ui::topics::Destination::Catalog(_), _) => "Config",
         (_, Some(_)) => "Key",
         _ => "Action",
       };

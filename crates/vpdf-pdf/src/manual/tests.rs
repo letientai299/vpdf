@@ -193,7 +193,7 @@ fn entries_join_wrapped_descriptions() -> Result<()> {
     listed: true,
     aliases: Vec::new(),
     links: vec![("Introduction".into(), "introduction".into())],
-    anchors: BTreeMap::from([(1, "details".into())]),
+    anchors: BTreeMap::from([(1, vec!["details".into()])]),
     lines: vec![
       Line::Binding {
         keys: ":e[dit] <file>".into(),
@@ -223,7 +223,7 @@ fn entries_join_wrapped_descriptions() -> Result<()> {
           .map(|glyph| glyph.bounds.x0);
       }
       let expected =
-        if text.starts_with(":e[dit]") { 48.0 } else { prose_start.unwrap() };
+        if text.starts_with(":e[dit]") { 72.0 } else { prose_start.unwrap() };
       assert!((first.bounds.x0 - expected).abs() < 1.0, "{text}");
       if text.len() > 40 && prose_end.is_none() {
         prose_end = line.glyphs.last().map(|glyph| glyph.bounds.x1);
@@ -379,17 +379,21 @@ fn reference_geometry(section: Section, keys: [&str; 2]) -> Result<f32> {
     })
     .unwrap();
   assert!((label.glyphs[0].bounds.y0 - description.y0).abs() < 0.1);
-  let continuation: Vec<_> = text
-    .lines
-    .iter()
-    .filter_map(|line| line.glyphs.first())
-    .filter(|glyph| {
-      glyph.bounds.y0 > description.y0 + 1.0 && glyph.bounds.y0 < other.y0 - 1.0
-    })
-    .collect();
-  assert!(!continuation.is_empty());
-  for glyph in continuation {
-    assert!((glyph.bounds.x0 - description.x0).abs() < 0.1);
+  // Row starts; wide justification can split one row's text.
+  let mut continuation: Vec<(f32, f32)> = Vec::new();
+  for glyph in &glyphs {
+    let (x, y) = (glyph.bounds.x0, glyph.bounds.y0);
+    if y <= description.y0 + 1.0 || y >= other.y0 - 1.0 {
+      continue;
+    }
+    match continuation.iter_mut().find(|row| (row.1 - y).abs() < 0.1) {
+      Some(row) => row.0 = row.0.min(x),
+      None => continuation.push((x, y)),
+    }
+  }
+  assert_ne!(continuation, [] as [(f32, f32); 0]);
+  for (x, _) in continuation {
+    assert!((x - description.x0).abs() < 0.1);
   }
   let last = glyphs
     .iter()
@@ -412,5 +416,63 @@ fn reference_columns_align_and_separate() -> Result<()> {
   )?;
   let commands = reference_geometry(Section::Commands, [":config", ":theme"])?;
   assert!(keys < commands && keys < settings);
+  Ok(())
+}
+
+/// Wide symbols must fit their one-cell advance, or they cover the next
+/// character, as `○` once covered `)` in Files and saved state.
+#[test]
+fn manual_symbols_fit_their_cells() -> Result<()> {
+  let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+  let mut symbols = std::collections::BTreeSet::new();
+  for directory in ["docs/users", "crates/ui/src"] {
+    let mut pending = vec![root.join(directory)];
+    while let Some(path) = pending.pop() {
+      if path.is_dir() {
+        pending
+          .extend(std::fs::read_dir(&path)?.map(|entry| entry.unwrap().path()));
+      } else if path.extension().is_some_and(|ext| ext == "md" || ext == "rs") {
+        symbols.extend(
+          std::fs::read_to_string(&path)?.chars().filter(|ch| !ch.is_ascii()),
+        );
+      }
+    }
+  }
+  for ch in ['○', '◐', '●', '▣'] {
+    assert!(symbols.contains(&ch), "{ch}");
+  }
+  // Stroked bounds grow by one unit; font units make that negligible.
+  let stroke = mupdf::StrokeState::default();
+  let units = mupdf::Matrix::new_scale(1000.0, 1000.0);
+  for (name, bytes) in [
+    ("VpdfMonoText", writer::FONT),
+    ("VpdfMono", &include_bytes!("../../../ui/assets/VpdfMono.ttf")[..]),
+  ] {
+    let font = mupdf::Font::from_bytes(name, bytes)?;
+    let mut checked = 0;
+    for &ch in &symbols {
+      let glyph = font.encode_character(ch as i32)?;
+      // Zero-advance marks and private-use icons overhang by design.
+      let advance = font.advance_glyph(glyph)? * 1000.0;
+      if glyph == 0 || advance == 0.0 || ('\u{E000}'..='\u{F8FF}').contains(&ch)
+      {
+        continue;
+      }
+      let Some(path) = font.outline_glyph_with_ctm(glyph, &units)? else {
+        continue;
+      };
+      let ink = path.bounds(&stroke, &mupdf::Matrix::IDENTITY)?;
+      if ink.is_empty() {
+        continue;
+      }
+      assert!(
+        ink.x0 >= -0.1 * advance - 1.0 && ink.x1 <= 1.1 * advance + 1.0,
+        "{name} {ch} U+{:04X}: {ink:?} advance {advance}",
+        ch as u32
+      );
+      checked += 1;
+    }
+    assert!(checked > 20, "{name}: {checked}");
+  }
   Ok(())
 }

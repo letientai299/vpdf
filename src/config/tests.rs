@@ -1097,3 +1097,36 @@ fn link_appearance_validates_values() {
     assert_eq!(loaded.settings.link_width(), 1.0);
   }
 }
+
+#[test]
+fn setting_metadata_matches_loader() {
+  let samples = |name: &str| match name {
+    "appearance.theme" => ("\"dark\"", "1"),
+    "appearance.ascii_glyphs" | "appearance.link_underline" => {
+      ("true", "\"yes\"")
+    }
+    "appearance.ui_font_size" => ("18", "40"),
+    "appearance.link_focus" => ("false", "1"),
+    "appearance.link_width" => ("3", "5"),
+    "reading.cursorline" => ("false", "\"no\""),
+    "reading.zoom" => ("1.25", "9"),
+    "reading.restore_session" => ("\"never\"", "\"sometimes\""),
+    "ocr.language" => ("\"eng+vie\"", "\"eng+\""),
+    _ if name.starts_with("appearance.opacity.") => ("0.5", "1.5"),
+    _ => panic!("Missing sample: {name}"),
+  };
+  for setting in Settings::default().reference().settings {
+    let field = describe(&setting.name).unwrap();
+    let (section, key) = setting.name.rsplit_once('.').unwrap();
+    let (valid, invalid) = samples(&setting.name);
+    for (value, warned) in [(valid, false), (invalid, true)] {
+      let loaded = decoded(&format!("[{section}]\n{key} = {value}"));
+      let warning = loaded.warning.unwrap_or_default();
+      assert_eq!(!warning.is_empty(), warned, "{}: {value}", setting.name);
+      if warned {
+        assert!(warning.contains(&setting.name), "{warning}");
+      }
+    }
+    assert!(!field.summary.is_empty() && !field.reload.is_empty());
+  }
+}

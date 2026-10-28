@@ -1,51 +1,182 @@
 use crate::Result;
 use std::collections::BTreeMap;
+use std::fmt::Write;
 use vpdf_model::input::{KeyCode, KeyModifiers};
 use vpdf_pdf::manual::{Chapter, Line, Section};
 use vpdf_ui::bindings::Binding;
-use vpdf_ui::bindings::{Bindings, Control, HintAction, Target};
+use vpdf_ui::bindings::catalog::Family;
+use vpdf_ui::bindings::{Bindings, Context, Control, HintAction, Target};
 use vpdf_ui::keys::Action;
-use vpdf_ui::topics::{Destination, Registry, authored};
+use vpdf_ui::topics::{Destination, Registry, authored, key_anchor};
 
-fn bindings(rows: &[&Binding], defaults: &Bindings) -> Vec<Line> {
+struct Shortcut<'a> {
+  row: &'a Binding,
+  modes: Vec<Context>,
+  purpose: String,
+  anchors: Vec<String>,
+}
+
+fn preferred<'a>(rows: &[&'a Binding], defaults: &Bindings) -> &'a Binding {
+  let preferred = defaults.shortcut(rows[0].context, &rows[0].target);
+  rows
+    .iter()
+    .min_by_key(|row| {
+      let sequence = row.sequence.to_string();
+      let uppercase = row
+        .sequence
+        .keys()
+        .iter()
+        .filter(|key| {
+          key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char(ch) if ch.is_ascii_uppercase())
+        })
+        .count();
+      (
+        sequence != preferred,
+        row.sequence.keys().len(),
+        uppercase,
+        sequence.len(),
+        sequence,
+      )
+    })
+    .unwrap()
+}
+
+/// A key sequence that enters a continuation mode.
+struct Prefix {
+  from: Context,
+  into: Context,
+  keys: Vec<vpdf_model::input::KeyEvent>,
+}
+
+/// Default sequences that start an operator or a text object.
+fn prefixes(rows: &[Binding]) -> Vec<Prefix> {
+  rows
+    .iter()
+    .filter_map(|row| {
+      let into = match row.target {
+        Target::Reader(Action::Yank) | Target::Control(Control::Yank) => {
+          Context::Operator
+        }
+        Target::Control(Control::Object { .. }) => Context::Object,
+        _ => return None,
+      };
+      Some(Prefix {
+        from: row.context,
+        into,
+        keys: row.sequence.keys().to_vec(),
+      })
+    })
+    .collect()
+}
+
+/// Reader modes whose prefixes lead into a continuation mode.
+const fn origins(context: Context) -> &'static [Context] {
+  use Context as C;
+  match context {
+    C::Operator => &[C::Normal, C::Cursor, C::Visual],
+    C::Object => &[C::Normal, C::Cursor, C::Visual, C::Operator],
+    _ => &[],
+  }
+}
+
+/// Lists one entry per key; contexts label differing effects.
+fn bindings(
+  rows: &[&Binding],
+  defaults: &Bindings,
+  prefixes: &[Prefix],
+) -> Vec<(Line, Vec<String>)> {
   let mut contexts = BTreeMap::<_, Vec<&Binding>>::new();
   for row in rows {
     contexts.entry((row.context, row.purpose.clone())).or_default().push(row);
   }
-  let mut groups = BTreeMap::<_, Vec<&str>>::new();
-  for ((context, purpose), rows) in contexts {
-    let preferred = defaults.shortcut(context, &rows[0].target);
-    let row = rows
-      .iter()
-      .min_by_key(|row| {
-        let sequence = row.sequence.to_string();
-        let uppercase = row.sequence.keys().iter().filter(|key| {
-        key.modifiers.contains(KeyModifiers::CONTROL)
-          && matches!(key.code, KeyCode::Char(ch) if ch.is_ascii_uppercase())
-      }).count();
-        (
-          sequence != preferred,
-          row.sequence.keys().len(),
-          uppercase,
-          sequence.len(),
-          sequence,
-        )
-      })
-      .unwrap();
-    groups
-      .entry((row.sequence.to_string(), purpose))
-      .or_default()
-      .push(context.name());
-  }
-  groups
+  let shortcuts: Vec<_> = contexts
     .into_iter()
-    .map(|((keys, purpose), modes)| Line::Binding {
-      keys,
-      description: format!(
-        "{purpose} in {} {}.",
-        modes.join(", "),
-        if modes.len() == 1 { "mode" } else { "modes" }
-      ),
+    .map(|((context, purpose), rows)| Shortcut {
+      row: preferred(&rows, defaults),
+      modes: vec![context],
+      purpose,
+      anchors: rows
+        .iter()
+        .map(|row| key_anchor(row.context, &row.sequence))
+        .collect(),
+    })
+    .collect();
+  let mut entries = BTreeMap::<String, Vec<Shortcut>>::new();
+  let mut notes = Vec::new();
+  for shortcut in &shortcuts {
+    let context = shortcut.modes[0];
+    let full = shortcuts
+      .iter()
+      .filter(|other| {
+        let full = other.row.sequence.keys();
+        let tail = shortcut.row.sequence.keys();
+        origins(context).contains(&other.modes[0])
+          && origins(other.modes[0]).is_empty()
+          && full.len() > tail.len()
+          && full.ends_with(tail)
+          && prefixes.iter().any(|prefix| {
+            prefix.from == other.modes[0]
+              && prefix.into == context
+              && prefix.keys == full[..full.len() - tail.len()]
+          })
+      })
+      .min_by_key(|other| other.row.sequence.keys().len());
+    if let Some(full) = full {
+      notes.push((full.row.sequence.to_string(), shortcut));
+      continue;
+    }
+    let keys = shortcut.row.sequence.to_string();
+    let effects = entries.entry(keys).or_default();
+    if let Some(effect) =
+      effects.iter_mut().find(|effect| effect.purpose == shortcut.purpose)
+    {
+      effect.modes.push(context);
+      effect.anchors.extend(shortcut.anchors.iter().cloned());
+    } else {
+      effects.push(Shortcut {
+        row: shortcut.row,
+        modes: vec![context],
+        purpose: shortcut.purpose.clone(),
+        anchors: shortcut.anchors.clone(),
+      });
+    }
+  }
+  entries
+    .into_iter()
+    .map(|(keys, effects)| {
+      let mut description = effects
+        .iter()
+        .map(|effect| {
+          format!(
+            "{} in {} {}",
+            effect.purpose,
+            effect
+              .modes
+              .iter()
+              .map(|mode| mode.name())
+              .collect::<Vec<_>>()
+              .join(", "),
+            if effect.modes.len() == 1 { "mode" } else { "modes" }
+          )
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+      description.push('.');
+      let mut anchors: Vec<_> =
+        effects.iter().flat_map(|effect| effect.anchors.clone()).collect();
+      for (_, continuation) in notes.iter().filter(|(full, _)| *full == keys) {
+        let _ = write!(
+          description,
+          " In {} mode, `{}` completes it.",
+          continuation.modes[0].name(),
+          continuation.row.sequence
+        );
+        anchors.extend(continuation.anchors.iter().cloned());
+      }
+      anchors.sort_unstable();
+      anchors.dedup();
+      (Line::Binding { keys, description }, anchors)
     })
     .collect()
 }
@@ -129,11 +260,13 @@ pub(super) fn chapters() -> Result<Vec<Chapter>> {
     .into_iter()
     .map(|topic| (topic.id.as_str().to_owned(), topic.title))
     .collect();
+  let prefixes = prefixes(&snapshot.defaults);
   let rows = grouped(&snapshot.defaults);
   let mut entries = BTreeMap::<String, Chapter>::new();
   for topic in registry.topics() {
     let Destination::Action(original) = &topic.destination else { continue };
     let rows = rows.get(original.as_str()).map_or(&[][..], Vec::as_slice);
+    let mut anchors = BTreeMap::new();
     let (id, title, lines, listed) = if let Some((id, syntax, description)) =
       rows.first().and_then(|row| family(&row.target))
     {
@@ -147,7 +280,11 @@ pub(super) fn chapters() -> Result<Vec<Chapter>> {
         true,
       )
     } else {
-      let mut lines = bindings(rows, &defaults);
+      let mut lines = Vec::new();
+      for (line, names) in bindings(rows, &defaults, &prefixes) {
+        anchors.insert(lines.len(), names);
+        lines.push(line);
+      }
       if lines.is_empty() {
         lines.push(Line::Binding {
           keys: topic.title.clone(),
@@ -158,9 +295,17 @@ pub(super) fn chapters() -> Result<Vec<Chapter>> {
         original.as_str().to_owned(),
         topic.title.clone(),
         lines,
-        !original.parameterized() && !rows.is_empty(),
+        !rows.is_empty(),
       )
     };
+    let catalog = rows.first().map_or_else(
+      || format!("action.{}", original.as_str()),
+      |row| Family::topic_of(&row.target),
+    );
+    let catalog = registry
+      .topics()
+      .any(|topic| topic.id.as_str() == catalog)
+      .then_some(catalog);
     let chapter = entries.entry(id.clone()).or_insert_with(|| {
       let guide = teaching(&id);
       Chapter {
@@ -169,11 +314,14 @@ pub(super) fn chapters() -> Result<Vec<Chapter>> {
         lines,
         related: guide.into(),
         related_title: guides[guide].clone(),
-        anchors: BTreeMap::new(),
+        anchors,
         section: Some(Section::Keys),
         listed,
         aliases: Vec::new(),
-        links: Vec::new(),
+        links: catalog
+          .into_iter()
+          .map(|topic| ("Configure:".into(), topic))
+          .collect(),
       }
     });
     if original.as_str() != id {
@@ -181,7 +329,21 @@ pub(super) fn chapters() -> Result<Vec<Chapter>> {
     }
   }
   let mut chapters: Vec<_> = entries.into_values().collect();
-  chapters.push(configuration());
+  chapters.extend(super::catalog::chapters(
+    &defaults,
+    &guides,
+    teaching,
+    |row| {
+      family(&row.target).map_or_else(
+        || {
+          let keys = defaults.shortcut(row.context, &row.target);
+          if keys.is_empty() { row.sequence.to_string() } else { keys }
+        },
+        |(_, syntax, _)| syntax.into(),
+      )
+    },
+  )?);
+  chapters.push(configuration()?);
   chapters.extend(
     vpdf_ui::commands::COMMANDS
       .iter()
@@ -255,7 +417,7 @@ fn command_syntax(spec: &vpdf_ui::commands::Spec) -> String {
 fn command_example(id: vpdf_ui::commands::Id) -> &'static str {
   use vpdf_ui::commands::Id;
   match id {
-    Id::Config => ":config reload",
+    Id::Config => ":config edit",
     Id::Theme => ":theme dark",
     Id::Recolor => ":recolor sepia 30",
     Id::Edit => ":edit book.pdf",
@@ -335,18 +497,24 @@ fn command_chapter(
   }
 }
 
-fn configuration() -> Chapter {
+fn configuration() -> Result<Chapter> {
   let config = crate::config::Settings::default().reference();
   let mut lines = Vec::new();
   let mut anchors = BTreeMap::new();
   for setting in config.settings {
-    anchors.insert(lines.len(), setting.name.clone());
+    let field = crate::config::describe(&setting.name)?;
+    anchors.insert(lines.len(), vec![setting.name.clone()]);
     lines.push(Line::Binding {
       keys: setting.name,
-      description: format!("Default: {}", setting.default),
+      description: format!(
+        "{}. Default: {}. {}",
+        field.summary,
+        setting.default,
+        field.details()
+      ),
     });
   }
-  Chapter {
+  Ok(Chapter {
     id: "config".into(),
     title: "Configuration defaults".into(),
     lines,
@@ -357,7 +525,7 @@ fn configuration() -> Chapter {
     aliases: Vec::new(),
     links: Vec::new(),
     anchors,
-  }
+  })
 }
 
 fn command_notes(spec: &vpdf_ui::commands::Spec) -> Vec<Line> {
@@ -365,6 +533,15 @@ fn command_notes(spec: &vpdf_ui::commands::Spec) -> Vec<Line> {
   let mut lines = Vec::new();
   match spec.id {
     Id::Recolor => lines.push(recolor_help()),
+    Id::Config => lines.push(
+      concat!(
+        "edit opens the file, creating it when missing: the native app uses ",
+        "the system editor; the terminal runs $EDITOR, else nvim, else vim, ",
+        "in this pane. A file present at launch, or created by edit, reloads ",
+        "when saved; use reload for a file created another way."
+      )
+      .into(),
+    ),
     Id::Fzf => lines.push(
       concat!(
         "Tab completes PDFs and directories. ",
@@ -395,7 +572,8 @@ fn command_notes(spec: &vpdf_ui::commands::Spec) -> Vec<Line> {
     Id::BDelete => lines.push(
       concat!(
         "Unloads this document and reopens its alternate, else shows Recent. ",
-        "On Recent or help, closes the pane. No filename argument."
+        "On help, reopens the replaced document, else closes the pane. ",
+        "On Recent, closes the pane. No filename argument."
       )
       .into(),
     ),
@@ -441,6 +619,7 @@ fn command_notes(spec: &vpdf_ui::commands::Spec) -> Vec<Line> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use vpdf_pdf::manual::Chapter;
 
   #[test]
   fn command_signatures_match_parser() {
@@ -502,15 +681,24 @@ mod tests {
   #[test]
   fn builtins_have_no_dispatch() -> Result<()> {
     let chapters = chapters()?;
-    assert!(
-      chapters.iter().all(|chapter| !chapter.id.ends_with(".dispatch")
-        && chapter.links.is_empty())
-    );
+    assert!(chapters.iter().all(|chapter| !chapter.id.ends_with(".dispatch")));
+    let keys: Vec<_> = chapters
+      .iter()
+      .filter(|row| row.section == Some(Section::Keys))
+      .collect();
+    for chapter in &keys {
+      assert!(
+        chapter.links.iter().all(|(_, target)| target.starts_with("action.")
+          || target.starts_with("target.")),
+        "{}",
+        chapter.id
+      );
+    }
     let action = chapters.iter().find(|row| row.id == "half_down").unwrap();
     assert_eq!(action.section, Some(Section::Keys));
     assert!(action.lines.iter().any(|line| matches!(line,
       Line::Binding { keys, .. } if keys.contains("<C-d>"))));
-    assert!(chapters.iter().filter(|row| row.listed).count() < 150);
+    assert!(keys.iter().filter(|row| row.listed).count() < 250);
     Ok(())
   }
   #[test]
@@ -568,6 +756,113 @@ mod tests {
         .unwrap();
       assert!(at < commands, "{key}");
     }
+    Ok(())
+  }
+
+  /// Labels repeat only across actions in disjoint modes.
+  #[test]
+  fn key_entries_are_unique_and_anchored() -> Result<()> {
+    let chapters = chapters()?;
+    let mut labels = BTreeMap::<&str, Vec<&Chapter>>::new();
+    for chapter in
+      chapters.iter().filter(|row| row.section == Some(Section::Keys))
+    {
+      let mut seen = Vec::new();
+      for line in &chapter.lines {
+        let Line::Binding { keys, .. } = line else { continue };
+        assert!(!seen.contains(&keys), "{}: {keys}", chapter.id);
+        seen.push(keys);
+        labels.entry(keys).or_default().push(chapter);
+      }
+    }
+    let ids = |label: &str| -> Vec<&str> {
+      labels[label].iter().map(|chapter| chapter.id.as_str()).collect()
+    };
+    assert_eq!(ids("f"), ["hints.open"]);
+    assert_eq!(ids("yf"), ["hints.copy"]);
+    assert_eq!(
+      ids("h"),
+      ["motion.motion_left", "window.direction_left.operation_extend"]
+    );
+    for chapter in [labels["yf"][0], labels["h"][0]] {
+      assert_eq!(chapter.lines.len(), 1, "{}", chapter.id);
+    }
+    for (label, chapters) in &labels {
+      let suffix = format!(".{}", vpdf_ui::bindings::topic_text(label));
+      let contexts: Vec<_> = chapters
+        .iter()
+        .flat_map(|chapter| chapter.anchors.values().flatten())
+        .filter_map(|anchor| anchor.strip_suffix(&suffix))
+        .collect();
+      let mut unique = contexts.clone();
+      unique.sort_unstable();
+      unique.dedup();
+      assert_eq!(unique.len(), contexts.len(), "{label}: {contexts:?}");
+    }
+    let snapshot = Bindings::default().snapshot();
+    for row in snapshot.defaults.iter().filter(|row| !row.is_prefix()) {
+      if family(&row.target).is_some() {
+        continue;
+      }
+      let chapter = chapters
+        .iter()
+        .find(|chapter| chapter.id == row.target.topic())
+        .unwrap();
+      let anchor = key_anchor(row.context, &row.sequence);
+      assert!(
+        chapter.anchors.values().flatten().any(|name| *name == anchor),
+        "{}: {anchor}",
+        chapter.id
+      );
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn continuations_follow_full_sequences() -> Result<()> {
+    let chapters = chapters()?;
+    let line = |id: &str| -> Vec<(String, String)> {
+      chapters
+        .iter()
+        .find(|chapter| chapter.id == id)
+        .unwrap()
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+          Line::Binding { keys, description } => {
+            Some((keys.clone(), description.clone()))
+          }
+          Line::Text(_) | Line::Code(_) | Line::Item(_) => None,
+        })
+        .collect()
+    };
+    let copy = line("hints.copy");
+    assert_eq!(copy.len(), 1);
+    assert_eq!(copy[0].0, "yf");
+    assert!(copy[0].1.contains("normal"), "{}", copy[0].1);
+    assert!(copy[0].1.ends_with("In operator mode, `f` completes it."));
+    let word = line("object.around_false.object_word");
+    assert!(word.iter().all(|(keys, _)| keys != "w"), "{word:?}");
+    assert!(word.iter().any(|(keys, description)| keys == "iw"
+      && description.contains("In object mode, `w` completes it.")));
+    let left = line("motion.motion_left");
+    assert_eq!(left.len(), 1);
+    assert!(left[0].1.contains("left in normal"), "{}", left[0].1);
+    assert!(
+      left[0].1.contains("; close branch or select parent in panel mode")
+    );
+    let notes = chapters
+      .iter()
+      .flat_map(|chapter| &chapter.lines)
+      .filter(|line| {
+        matches!(line, Line::Binding { description, .. }
+          if description.contains("completes it."))
+      })
+      .count();
+    assert_eq!(notes, 35);
+    let page = line("screen.amount_1");
+    assert!(page.iter().any(|(keys, description)| keys == "<Space>"
+      && description.contains("operator")));
     Ok(())
   }
 

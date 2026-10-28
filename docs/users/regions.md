@@ -57,6 +57,6 @@ See [figure navigation][figures-demo] and [selection and capture][capture-demo].
 
 [install]: install.md
 [ocr]: ocr.md
-[troubleshooting]: troubleshooting.md
+[troubleshooting]: debug.md
 [figures-demo]: ../demos.md#figures-and-tables
 [capture-demo]: ../demos.md#select-and-capture

@@ -75,6 +75,7 @@ impl Chores {
       self.watched = now;
     }
     dirty |= watch(session, force, now);
+    dirty |= session.watch_config(force, now);
     let active = session.active;
     for app in session
       .tabs
@@ -167,6 +168,7 @@ pub(super) fn idle(
     .iter()
     .filter_map(Pane::document)
     .any(|app| app.settling.is_some())
+    || session.config_settling()
   {
     wait = wait.min(crate::watch::SETTLE);
   }
