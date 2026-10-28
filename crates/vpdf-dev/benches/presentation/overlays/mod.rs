@@ -70,6 +70,7 @@ fn run(case: Prepared) -> Result<()> {
     cursorline: case.cursorline,
     dim: false,
     hovered: &hovered,
+    links: vpdf_ui::paint::LinkMarks::default(),
   };
   let canvas = Canvas { layout: &layout, screen, left: case.left, menu: None };
   let mut state = TextView::default();

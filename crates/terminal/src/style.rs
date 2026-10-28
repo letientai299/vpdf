@@ -43,6 +43,8 @@ pub const fn sgr(role: Role) -> &'static str {
     Role::HintPickedTyped => encoded!(Role::HintPickedTyped),
     Role::HintPicked => encoded!(Role::HintPicked),
     Role::TextLink => encoded!(Role::TextLink),
+    Role::LinkUnderline => encoded!(Role::LinkUnderline),
+    Role::LinkFocus => encoded!(Role::LinkFocus),
     Role::PreviewBorder => encoded!(Role::PreviewBorder),
     Role::PreviewText => encoded!(Role::PreviewText),
     Role::Badge(Badge::Normal) => encoded!(Role::Badge(Badge::Normal)),

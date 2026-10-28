@@ -27,6 +27,7 @@ pub fn canvas() -> Result<()> {
     cursorline: true,
     dim: false,
     hovered: &[],
+    links: vpdf_ui::paint::LinkMarks::default(),
   };
   let mut state = TextView::default();
   let mut pane = state.bind(&prepared, Frame::new(screen, At::default(), 0));

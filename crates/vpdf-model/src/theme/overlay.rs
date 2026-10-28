@@ -22,6 +22,7 @@ pub enum Overlay {
   HeadingTick,
   MatchTick,
   Link,
+  LinkDecoration,
   Preview,
 }
 
@@ -65,7 +66,7 @@ impl Overlay {
       Self::TextCursor => p.foreground,
       Self::Cursorline => p.cursorline,
       Self::Bar => p.surface,
-      Self::Link => p.link,
+      Self::Link | Self::LinkDecoration => p.link,
     };
     [rgb[0], rgb[1], rgb[2], self.alpha(rgb, opacity)]
   }
@@ -120,7 +121,11 @@ impl Overlay {
       Self::RegionVeil | Self::TextCursor => 100,
       Self::RegionEdge => 220,
       Self::Cursorline => 30,
-      Self::Hint | Self::Badge | Self::Bar | Self::Preview => 255,
+      Self::Hint
+      | Self::Badge
+      | Self::Bar
+      | Self::Preview
+      | Self::LinkDecoration => 255,
       Self::Track => 50,
       Self::Thumb => 190,
       Self::HeadingTick => 230,

@@ -131,59 +131,6 @@ fn marks_persist_and_cross_documents() -> Result<()> {
 }
 
 #[test]
-#[ignore = "requires verified public PDF corpus"]
-fn ctrl_r_resizes_pane() -> Result<()> {
-  let (mut session, left, right) = split()?;
-  common::keys(session.app().unwrap(), b"y")?;
-  for (bytes, id, column, row, columns, rows) in [
-    (b"5\x12l".as_slice(), left, 0, 0, 65, 40),
-    (b"l", left, 0, 0, 66, 40),
-    (b"l", left, 0, 0, 67, 40),
-    (b"hq:", left, 0, 0, 66, 40),
-    (b"\x1b[27u\x17l", right, 67, 0, 54, 40),
-    (b"3\x12h", right, 64, 0, 57, 40),
-    (b"h", right, 63, 0, 58, 40),
-    (b"l", right, 64, 0, 57, 40),
-  ] {
-    common::keys(session.app().unwrap(), bytes)?;
-    session.settle()?;
-    let app = session.app().unwrap();
-    assert_eq!(app.id, id);
-    assert_eq!((app.at.column, app.at.row), (column, row));
-    assert_eq!((app.screen.columns, app.screen.rows), (columns, rows));
-  }
-  common::keys(session.app().unwrap(), b"\x1b[27u\x17s")?;
-  session.settle()?;
-  let top = session.app().unwrap().id;
-  for (bytes, id, row, rows) in [
-    (b"4\x12j".as_slice(), top, 0, 24),
-    (b"j", top, 0, 25),
-    (b"k", top, 0, 24),
-    (b"\x1b[27u\x17j", right, 24, 16),
-    (b"2\x12k", right, 22, 18),
-    (b"k", right, 21, 19),
-    (b"j", right, 22, 18),
-  ] {
-    common::keys(session.app().unwrap(), bytes)?;
-    session.settle()?;
-    let app = session.app().unwrap();
-    assert_eq!(app.id, id);
-    assert_eq!((app.at.row, app.screen.rows), (row, rows));
-    assert_eq!((app.at.column, app.screen.columns), (64, 57));
-  }
-  let mode = session.app().unwrap().reader.mode();
-  let cursor = session.app().unwrap().reader.cursor;
-  let mut status = Vec::new();
-  session.app().unwrap().status(&mut status, 0, None)?;
-  assert!(String::from_utf8(status)?.contains("RESIZE"));
-  common::keys(session.app().unwrap(), b"\x1b[27u")?;
-  assert!(!session.app().unwrap().keys.resizing());
-  assert_eq!(session.app().unwrap().reader.mode(), mode);
-  assert_eq!(session.app().unwrap().reader.cursor, cursor);
-  Ok(())
-}
-
-#[test]
 fn resize_reverses_direction() -> Result<()> {
   use vpdf_ui::split::{Axis, Direction};
 

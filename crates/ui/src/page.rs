@@ -101,6 +101,7 @@ impl Canvas<'_> {
         theme::SELECTION,
       )?;
     }
+    painter.links(&marks.links);
     if marks.reader.uses_cursor() {
       painter.glyph(marks.reader.cursor)?;
     }
@@ -109,6 +110,47 @@ impl Canvas<'_> {
 }
 
 impl<'a, S: TextSource + Pages, D: Draw<'a>> Painter<'_, S, D> {
+  fn links(&mut self, links: &crate::paint::LinkMarks) {
+    for &(page, bounds) in &links.underlined {
+      self.underline(page, bounds, links);
+    }
+    for &(page, bounds) in &links.focused {
+      let scale = self.canvas.layout.pages()[page.0].scale as f32 / 1024.0;
+      let pad = (links.width + 1.0) / scale;
+      let width = links.width / scale;
+      let outer = Bounds {
+        x0: bounds.x0 - pad,
+        y0: bounds.y0 - pad,
+        x1: bounds.x1 + pad,
+        y1: bounds.y1 + pad,
+      };
+      let inner = Bounds {
+        x0: outer.x0 + width,
+        y0: outer.y0 + width,
+        x1: outer.x1 - width,
+        y1: outer.y1 - width,
+      };
+      for edge in outside(outer, Some(inner)) {
+        self.polygon(page, edge.into(), links.color, Layer::AboveText);
+      }
+      if !links.underlined.contains(&(page, bounds)) {
+        self.underline(page, bounds, links);
+      }
+    }
+  }
+
+  fn underline(
+    &mut self,
+    page: PageId,
+    bounds: Bounds,
+    links: &crate::paint::LinkMarks,
+  ) {
+    let scale = self.canvas.layout.pages()[page.0].scale as f32 / 1024.0;
+    let line =
+      Bounds { y0: (bounds.y1 - links.width / scale).max(bounds.y0), ..bounds };
+    self.polygon(page, line.into(), links.color, Layer::AboveText);
+  }
+
   fn glyph(&mut self, position: Position) -> Result<()> {
     let text = self.source.page_text(position.page)?;
     if let Some(quad) = text.lines.get(position.line).and_then(|line| {

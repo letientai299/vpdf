@@ -38,6 +38,8 @@ pub enum Role {
   HintPickedTyped,
   HintPicked,
   TextLink,
+  LinkUnderline,
+  LinkFocus,
   PreviewBorder,
   PreviewText,
   Badge(Badge),
@@ -143,6 +145,8 @@ impl Role {
         Reset(P::new(Set(T::BrightWhite), Set(T::Blue), &[Bold]))
       }
       Self::HintPicked => Reset(P::new(Set(T::BrightWhite), Set(T::Blue), &[])),
+      Self::LinkUnderline => Patch(P::new(Keep, Keep, &[Underline])),
+      Self::LinkFocus => Patch(P::new(Keep, Keep, &[Bold, Underline])),
       Self::TextLink => Reset(P::new(Set(T::Cyan), Keep, &[Underline])),
       Self::PreviewBorder => Reset(P::new(Set(T::PreviewBorder), Keep, &[])),
       Self::PreviewText => {

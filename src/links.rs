@@ -45,9 +45,60 @@ impl App {
       return Vec::new();
     };
     let Some(link) = links.get(index) else { return Vec::new() };
+    self.link_segments(page, link)
+  }
+
+  fn link_segments(
+    &mut self,
+    page: PageId,
+    link: &Link,
+  ) -> Vec<(PageId, Bounds)> {
     let mut boxes: Vec<_> = link.boxes().map(|b| (page, b)).collect();
     boxes.extend(vpdf_pdf::wraps::page_parts(&mut self.doc, page, link));
     boxes
+  }
+
+  pub(crate) fn cursor_link(&mut self) -> Option<(PageId, Link)> {
+    if !self.settings.link_focus()
+      || !self.reader.uses_cursor()
+      || self.panel_focused()
+    {
+      return None;
+    }
+    let (page, x, y) = self.glyph_point(self.reader.cursor).ok()??;
+    let index = self.link_at(page, x, y).ok()??;
+    Some((page, self.link(page, index).ok()??))
+  }
+
+  pub(crate) fn link_marks(&mut self) -> Result<vpdf_ui::paint::LinkMarks> {
+    let mut underlined = Vec::new();
+    if self.settings.link_underline() {
+      let pages = if self.text_mode {
+        self.text().pages()?
+      } else {
+        self.layout.visible(self.reader.scroll)
+      };
+      for page in pages {
+        let page = PageId(page);
+        for link in self.doc.links(page)?.iter() {
+          underlined.extend(link.boxes().map(|bounds| (page, bounds)));
+        }
+      }
+    }
+    let focused = self
+      .cursor_link()
+      .map_or_default(|(page, link)| self.link_segments(page, &link));
+    Ok(vpdf_ui::paint::LinkMarks {
+      underlined,
+      focused,
+      width: self.settings.link_width(),
+      ..vpdf_ui::paint::LinkMarks::default()
+    })
+  }
+
+  pub(crate) fn cursor_label(&mut self) -> Option<String> {
+    let (page, link) = self.cursor_link()?;
+    Some(self.link_label(page, &link))
   }
 
   /// The hovered link's destination; citations show the reference.
@@ -247,6 +298,51 @@ impl App {
 mod tests {
   use super::*;
   use std::path::PathBuf;
+
+  #[test]
+  #[ignore = "requires verified public PDF corpus"]
+  fn cursor_link_decorations() -> Result<()> {
+    let root = PathBuf::from(std::env::var("VPDF_CORPUS")?);
+    let screen = crate::screen::cells(120, 50);
+    let mut app = App::with_screen(&root.join("paper.pdf"), "", false, screen)?;
+    let page = PageId(1);
+    let links = app.doc.links(page)?;
+    let text = app.doc.text(page)?;
+    let (line, glyph) = text
+      .lines
+      .iter()
+      .enumerate()
+      .find_map(|(line, row)| {
+        row.glyphs.iter().enumerate().find_map(|(glyph, ch)| {
+          let (x, y) = ch.bounds.centre();
+          links.iter().any(|link| link.contains(x, y)).then_some((line, glyph))
+        })
+      })
+      .expect("link with text");
+    let mut reader = vpdf_reader::reader::Reader::default();
+    reader.cursor = Position { page, line, glyph };
+    reader.scroll = app.layout.pages()[page.0].top;
+    app.reader = vpdf_ui::reading::Pane::new(
+      reader,
+      vpdf_ui::reading::Tracking::default(),
+    );
+    assert!(app.cursor_link().is_none());
+    app.command("links on")?;
+    assert_ne!(app.link_marks()?.underlined, []);
+    app.command("links")?;
+    assert_eq!(app.link_marks()?.underlined, []);
+    app.reader.enter_cursor();
+    assert_ne!(app.link_marks()?.focused, []);
+    assert!(app.cursor_label().is_some());
+    let loaded = crate::config::parse(
+      std::path::Path::new("settings.toml"),
+      "[appearance]\nlink_focus = false\nlink_underline = true\n",
+    );
+    app.settings = loaded.settings;
+    assert!(app.cursor_link().is_none());
+    assert_ne!(app.link_marks()?.underlined, []);
+    Ok(())
+  }
 
   #[test]
   #[ignore = "requires verified public PDF corpus"]

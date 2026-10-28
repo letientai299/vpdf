@@ -131,7 +131,10 @@ impl App {
       hovered.extend(areas.into_iter().map(|bounds| (page, bounds)));
     }
     let dim = self.panel_focused();
-    let paint = self.reader.marks(&self.search, self.cursorline, dim, &hovered);
+    let links = self.link_marks()?;
+    let mut paint =
+      self.reader.marks(&self.search, self.cursorline, dim, &hovered);
+    paint.links = links;
     let canvas = vpdf_ui::page::Canvas {
       layout: &self.layout,
       screen,
@@ -292,7 +295,10 @@ impl App {
     // After the panel, which finds clipped rows.
     // Hidden details cost nothing.
     let detail = if self.shows_detail() {
-      self.sweep_hint().or_else(|| self.hover_detail())
+      self
+        .sweep_hint()
+        .or_else(|| self.cursor_label())
+        .or_else(|| self.hover_detail())
     } else {
       None
     };
@@ -330,7 +336,10 @@ impl App {
     let frame = self.text_frame();
     let hovered = self.hover_segments();
     let dim = self.panel_focused();
-    let paint = self.reader.marks(&self.search, self.cursorline, dim, &hovered);
+    let links = self.link_marks()?;
+    let mut paint =
+      self.reader.marks(&self.search, self.cursorline, dim, &hovered);
+    paint.links = links;
     let pages = self
       .text_view
       .bind(PdfText(&mut self.doc), frame)

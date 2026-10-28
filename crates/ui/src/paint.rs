@@ -58,6 +58,38 @@ pub struct Marks<'a> {
   pub cursorline: bool,
   pub dim: bool,
   pub hovered: &'a [(PageId, Bounds)],
+  pub links: LinkMarks,
+}
+
+pub struct LinkMarks {
+  pub underlined: Vec<(PageId, Bounds)>,
+  pub focused: Vec<(PageId, Bounds)>,
+  pub width: f32,
+  pub color: crate::theme::Paint,
+}
+
+impl Default for LinkMarks {
+  fn default() -> Self {
+    Self {
+      underlined: Vec::new(),
+      focused: Vec::new(),
+      width: 1.0,
+      color: crate::theme::Paint::Overlay(
+        vpdf_model::theme::Overlay::LinkDecoration,
+      ),
+    }
+  }
+}
+
+impl LinkMarks {
+  pub fn contains(
+    areas: &[(PageId, Bounds)],
+    page: PageId,
+    bounds: Bounds,
+  ) -> bool {
+    let (x, y) = bounds.centre();
+    areas.iter().any(|(on, area)| *on == page && area.contains(x, y))
+  }
 }
 
 #[derive(Clone, Copy)]

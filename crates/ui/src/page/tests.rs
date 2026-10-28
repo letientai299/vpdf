@@ -228,3 +228,37 @@ fn cursorline_follows_reader_mode() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn link_decorations_follow_rotation() -> Result<()> {
+  use vpdf_model::scene::Op;
+  let mut source = Source::new();
+  source.page.bounds.y1 = 100.0;
+  let bounds = source.page.text.lines[0].glyphs[0].bounds;
+  for rotation in [0, 90, 180, 270] {
+    let mut layout = Layout::new(
+      (0..3).map(|page| source.bounds(PageId(page))),
+      Screen { columns: 100, rows: 100, ..layout(&source).screen() },
+    );
+    layout.restore(1.0, rotation, crate::layout::Crop::default());
+    layout.reflow((0..3).map(|page| source.bounds(PageId(page))));
+    let reader = Reader::default();
+    let mut marks = marks(&reader);
+    marks.links.underlined.push((PageId(0), bounds));
+    marks.links.focused.push((PageId(0), bounds));
+    let canvas =
+      Canvas { layout: &layout, screen: layout.screen(), left: 0, menu: None };
+    let mut scene = Vec::new();
+    canvas.scene(&mut source, &marks, &mut scene)?;
+    let polygons = scene
+      .iter()
+      .filter(|op| match op {
+        Op::Fill(f) => f.color() == marks.links.color,
+        Op::Polygon(p) => p.fill().color() == marks.links.color,
+        _ => false,
+      })
+      .count();
+    assert_eq!(polygons, 5, "rotation {rotation}");
+  }
+  Ok(())
+}

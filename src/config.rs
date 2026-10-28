@@ -74,6 +74,41 @@ struct Appearance {
   ascii_glyphs: bool,
   ui_font_size: FontSize,
   opacity: Opacity,
+  link_underline: bool,
+  link_focus: LinkFocus,
+  link_width: LinkWidth,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+struct LinkFocus(bool);
+
+impl Default for LinkFocus {
+  fn default() -> Self {
+    Self(true)
+  }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+struct LinkWidth(u8);
+
+impl Default for LinkWidth {
+  fn default() -> Self {
+    Self(1)
+  }
+}
+
+impl TryFrom<i64> for LinkWidth {
+  type Error = &'static str;
+
+  fn try_from(value: i64) -> Result<Self, Self::Error> {
+    if (1..=4).contains(&value) {
+      Ok(Self(value as u8))
+    } else {
+      Err("expected integer from 1 to 4")
+    }
+  }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -256,6 +291,24 @@ impl Settings {
         &previous.appearance.ascii_glyphs,
         value.as_bool().ok_or("expected boolean"),
       ),
+      "appearance.link_underline" => replace_setting(
+        &mut self.appearance.link_underline,
+        &previous.appearance.link_underline,
+        value.as_bool().ok_or("expected boolean"),
+      ),
+      "appearance.link_focus" => replace_setting(
+        &mut self.appearance.link_focus,
+        &previous.appearance.link_focus,
+        value.as_bool().map(LinkFocus).ok_or("expected boolean"),
+      ),
+      "appearance.link_width" => replace_setting(
+        &mut self.appearance.link_width,
+        &previous.appearance.link_width,
+        value
+          .as_integer()
+          .ok_or("expected integer")
+          .and_then(LinkWidth::try_from),
+      ),
       "reading.cursorline" => replace_setting(
         &mut self.reading.cursorline,
         &previous.reading.cursorline,
@@ -290,6 +343,22 @@ impl Settings {
 
   pub fn ascii_glyphs(&self) -> bool {
     self.appearance.ascii_glyphs
+  }
+
+  pub fn link_underline(&self) -> bool {
+    self.appearance.link_underline
+  }
+
+  pub(crate) fn set_link_underline(&mut self, enabled: bool) {
+    self.appearance.link_underline = enabled;
+  }
+
+  pub fn link_focus(&self) -> bool {
+    self.appearance.link_focus.0
+  }
+
+  pub fn link_width(&self) -> f32 {
+    f32::from(self.appearance.link_width.0)
   }
 
   pub fn cursorline(&self) -> bool {

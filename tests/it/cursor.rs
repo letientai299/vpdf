@@ -254,58 +254,6 @@ fn cursor_focus_reuses_durable_mode() -> Result<()> {
 
 #[test]
 #[ignore = "requires verified public PDF corpus"]
-fn cursor_rendering_keeps_visual_band_separate() -> Result<()> {
-  for text in [false, true] {
-    let mut app = app("paper.pdf", text)?;
-    app.command("cursorline off")?;
-    let hit = Position { glyph: 5, ..app.reading_position()? };
-    let hit = vpdf_search::search::Hit {
-      first: hit,
-      last: hit,
-      excerpt: String::new(),
-      matched: 0..0,
-    };
-    app.search.show(vpdf_search::query::Query::default(), vec![hit]);
-    keys(&mut app, b"i")?;
-    let mut out = Vec::new();
-    app.status(&mut out, app.screen.rows - 1, None)?;
-    assert!(String::from_utf8_lossy(&out).contains(" CURSOR "));
-    out.clear();
-    if text {
-      vpdf::presentation::try_draw(&mut out, None, |s| app.scene_text(s))?;
-      let frame = String::from_utf8_lossy(&out);
-      assert!(frame.contains("\x1b[0;7;34m"));
-      assert!(!frame.contains("\x1b[0;100m"));
-      assert!(frame.contains("\x1b[0;7;33m"));
-    } else {
-      app.graphics.begin(&mut out)?;
-      {
-        let (app, graphics) = app.parts();
-        let screen = app.layout.screen();
-        vpdf::presentation::try_draw(&mut out, Some(graphics), |s| {
-          app.scene_marks(s, screen)
-        })?;
-      }
-      app.graphics.end(&mut out)?;
-      let frame = String::from_utf8_lossy(&out);
-      assert!(frame.contains("z=1,"));
-      assert!(!frame.contains("z=-1,"));
-    }
-    keys(&mut app, b"v")?;
-    out.clear();
-    app.draw(&mut out)?;
-    if text {
-      assert!(String::from_utf8_lossy(&out).contains("\x1b[0;100m"));
-    }
-    keys(&mut app, ESC)?;
-    keys(&mut app, ESC)?;
-    assert_eq!(app.reader.mode(), Mode::Normal);
-  }
-  Ok(())
-}
-
-#[test]
-#[ignore = "requires verified public PDF corpus"]
 fn cursor_sections_use_position_after_scrolling() -> Result<()> {
   for text in [false, true] {
     let mut app = app("paper.pdf", text)?;

@@ -210,7 +210,7 @@ fn command_guide(id: vpdf_ui::commands::Id) -> &'static str {
     | Id::Quit
     | Id::QuitAll => "panes",
     Id::Marks | Id::Jumps => "marks",
-    Id::Annotations => "links",
+    Id::Annotations | Id::Links => "links",
     Id::Toc | Id::Overview => "navigation",
     Id::CursorLine | Id::Crop | Id::Recolor | Id::Text => "zoom",
     Id::Ocr => "ocr",
@@ -420,7 +420,7 @@ fn command_notes(spec: &vpdf_ui::commands::Spec) -> Vec<Line> {
       )
       .into(),
     ),
-    Id::CursorLine | Id::Crop | Id::Mouse | Id::Perf => lines.push(
+    Id::CursorLine | Id::Links | Id::Crop | Id::Mouse | Id::Perf => lines.push(
       "No argument toggles; `on` and `off` set an explicit value.".into(),
     ),
     _ => {}

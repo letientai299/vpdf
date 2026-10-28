@@ -141,6 +141,8 @@ commands! {
   Overview "overview" ["pages"] "" Nothing Recent "show page thumbnails";
   CursorLine "cursorline" [] "[on|off]" Switch Document
     "toggle the Cursor/Visual line band (default on)";
+  Links "links" [] "[on|off]" Switch Document
+    "toggle link underlines";
   Recolor "recolor" [] "[dark|sepia [amount]|off]" Recolor Document
     "recolor document pixels";
   Crop "crop" [] "[on|off]" Switch Document "toggle cropped page margins";

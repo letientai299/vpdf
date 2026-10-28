@@ -438,6 +438,10 @@ impl App {
       Id::CursorLine => {
         self.cursorline = spec.switch(argument, self.cursorline)?;
       }
+      Id::Links => {
+        let enabled = spec.switch(argument, self.settings.link_underline())?;
+        self.settings.set_link_underline(enabled);
+      }
       Id::Mouse => {
         let on = spec.switch(argument, vpdf_terminal::terminal::mouse())?;
         self.request = Some(Request::Mouse(on));

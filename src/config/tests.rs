@@ -14,7 +14,8 @@ fn example_matches_defaults() {
     Settings::example().unwrap(),
     concat!(
       "[appearance]\ntheme = \"system\"\nascii_glyphs = false\n",
-      "ui_font_size = 16\n\n",
+      "ui_font_size = 16\nlink_underline = false\n",
+      "link_focus = true\nlink_width = 1\n\n",
       "[appearance.opacity]\n\n",
       "[reading]\ncursorline = true\nzoom = 1.0\n",
       "restore_session = \"system\"\n\n",
@@ -1079,4 +1080,20 @@ fn ensure_file_creates_once_and_keeps_contents() -> crate::Result<()> {
   ensure_file(&path)?;
   assert_eq!(std::fs::read_to_string(&path)?, "[reading]\nzoom = 2.0\n");
   Ok(())
+}
+
+#[test]
+fn link_appearance_validates_values() {
+  let loaded = decoded(
+    "[appearance]\nlink_underline = true\nlink_focus = false\nlink_width = 3\n",
+  );
+  assert!(loaded.warning.is_none());
+  assert!(loaded.settings.link_underline());
+  assert!(!loaded.settings.link_focus());
+  assert_eq!(loaded.settings.link_width(), 3.0);
+  for value in ["0", "5", "'wide'"] {
+    let loaded = decoded(&format!("[appearance]\nlink_width = {value}"));
+    assert!(loaded.warning.is_some());
+    assert_eq!(loaded.settings.link_width(), 1.0);
+  }
 }

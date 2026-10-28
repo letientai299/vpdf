@@ -72,6 +72,7 @@ pub(crate) fn marks(reader: &Reader) -> Marks<'_> {
     cursorline: true,
     dim: false,
     hovered: &[],
+    links: vpdf_ui::paint::LinkMarks::default(),
   }
 }
 

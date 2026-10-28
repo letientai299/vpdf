@@ -556,11 +556,13 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
           bounds.contains(x, y)
         });
         let style = paint.text_style(pos, linked);
+        let decoration = paint.link_style(style, at.page, ch.bounds);
         let style =
           if style == Role::Reset && paint.dim { Role::Dim } else { style };
-        if Some(style) != current {
+        if Some((style, decoration)) != current {
           scene.push(Op::Style(style));
-          current = Some(style);
+          scene.extend(decoration.map(Op::Style));
+          current = Some((style, decoration));
         }
         if let Some(character) = Character::new(ch.ch) {
           scene.push(Op::Character(character));
@@ -722,6 +724,22 @@ impl<S: TextSource + crate::source::Pages> Pane<'_, S> {
   }
 }
 impl Marks<'_> {
+  fn link_style(
+    &self,
+    style: Role,
+    page: PageId,
+    bounds: Bounds,
+  ) -> Option<Role> {
+    if !matches!(style, Role::Reset | Role::TextCursorline | Role::TextLink) {
+      return None;
+    }
+    if crate::paint::LinkMarks::contains(&self.links.focused, page, bounds) {
+      return Some(Role::LinkFocus);
+    }
+    crate::paint::LinkMarks::contains(&self.links.underlined, page, bounds)
+      .then_some(Role::LinkUnderline)
+  }
+
   fn text_style(&self, position: Position, linked: bool) -> Role {
     let flashed = self.flash == Some(position);
     if flashed || self.reader.uses_cursor() && position == self.reader.cursor {

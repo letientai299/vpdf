@@ -109,6 +109,7 @@ impl Pane {
       cursorline,
       dim,
       hovered,
+      links: crate::paint::LinkMarks::default(),
     }
   }
 

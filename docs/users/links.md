@@ -11,6 +11,32 @@ follows. In Cursor mode, put the glyph cursor on the link and press Enter or
 `F` labels visible links and places the cursor on the selected link in Cursor
 mode. Press `gd` to follow it or `K` to preview it.
 
+## Link appearance
+
+In Cursor mode, the link beneath the glyph cursor gains an underline and an
+unfilled outline. Wrapped links show a separate outline around each segment.
+The status line shows the destination. Moving onto a link does not open a
+preview; press `K` to inspect it.
+
+Use `:links` to toggle underlines for every clickable link in the current pane.
+`:links on` and `:links off` set the state explicitly.
+
+To enable underlines by default, add this to the
+[reader configuration][config]:
+
+```toml
+[appearance]
+link_underline = true
+```
+
+`appearance.link_focus` switches cursor feedback independently.
+`appearance.link_width` sets the page decoration width in screen pixels. See
+`:help config` for defaults. Width accepts integers from 1 to 4. Decorations use
+the theme's `link` color and preserve the PDF's text colors. Text view uses
+underlines for links and adds bold emphasis to the link beneath the cursor.
+Search matches, selection, and the glyph cursor retain their emphasis. Mouse
+hover keeps its own appearance. These settings do not change the source PDF.
+
 ## Inspect a reference
 
 1. Open [Practice text][practice] and put the cursor on its Navigation link.
@@ -67,3 +93,5 @@ See [reference previews][preview-demo] and [annotation comments][notes-demo].
 [install]: install.md
 [preview-demo]: ../demos.md#reference-preview
 [notes-demo]: ../demos.md#annotation-comments
+
+[config]: config.md
