@@ -41,7 +41,7 @@ licensing][notices].
 
 [mupdf]: https://mupdf.com/
 [kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
-[overview]: https://github.com/user-attachments/assets/2be01fa8-8b03-48c9-b135-32458351aa2a
+[overview]: https://github.com/user-attachments/assets/9622fbb2-be4c-4fec-a309-bf9ab040088b
 [demo]: docs/demos.md
 [setup]: docs/users/install.md#terminal-setup
 [reading]: docs/users/readme.md

@@ -75,7 +75,7 @@ can remain beside the document.
 ## Figure capture
 
 A detected figure offers image copying, text copying, PNG export, and optional
-OCR. The historical capture points at Copy text.
+OCR. The action bar highlights Copy text.
 
 ![A selected diagram with its capture actions][figure]
 
@@ -110,8 +110,8 @@ identifies the active book, inactive paper tab, and page total.
 
 ## Recent documents
 
-This historical capture shows the hovered scan beside the selected paper.
-Current cards show a first-page thumbnail, reading position, and file size.
+Hovering the scan previews its first page and file details beside the selected
+paper. The list shows each document's reading position.
 
 ![A hovered scan preview in recent documents][recent]
 
@@ -203,40 +203,40 @@ Copy text and Enter runs it. Escape closes capture. Setup searches for
 [paper]: https://arxiv.org/abs/1706.03762
 [book]: https://greenteapress.com/wp/think-python-2e/
 [reading]: users/reading.md
-[overview]: https://github.com/user-attachments/assets/2be01fa8-8b03-48c9-b135-32458351aa2a
-[help]: https://github.com/user-attachments/assets/237e8c23-e0b6-4644-8280-50514f7bbf22
-[search]: https://github.com/user-attachments/assets/58754861-bb18-4ba4-8e23-68e54630093d
-[preview]: https://github.com/user-attachments/assets/003bf1e3-85ab-4f52-8ac9-e826a866115c
-[figure]: https://github.com/user-attachments/assets/70f257dd-b0c9-4979-a7a9-74620f89650d
-[mouse-menu]: https://github.com/user-attachments/assets/b5b6619a-498c-42b3-8261-a2a957c5ad5a
-[mouse-hints]: https://github.com/user-attachments/assets/b5272ec1-f8ca-42dc-9ef1-4f6dd5e14331
-[mouse-region]: https://github.com/user-attachments/assets/8dbd7958-af0b-4bb6-88cd-6a6c81b56209
-[pages]: https://github.com/user-attachments/assets/5b2e216b-6c85-482b-a1ab-2c386ea9b967
-[recent]: https://github.com/user-attachments/assets/3cf580dc-1686-4b1a-86b6-ac23ccd3ab38
-[jumps]: https://github.com/user-attachments/assets/7540c436-f636-444f-9722-48fdc4a4812e
-[ocr]: https://github.com/user-attachments/assets/bb3a5bf2-755a-4a2f-b641-2f9f6d32e133
+[overview]: https://github.com/user-attachments/assets/9622fbb2-be4c-4fec-a309-bf9ab040088b
+[help]: https://github.com/user-attachments/assets/2a4d2a01-7e69-464a-b5f4-b4d09e90cdf8
+[search]: https://github.com/user-attachments/assets/a7ba5556-8b83-4bba-a266-1536a214878f
+[preview]: https://github.com/user-attachments/assets/4fd1093b-1ab0-496e-8544-aaa98dbae025
+[figure]: https://github.com/user-attachments/assets/0517fe6d-871e-46d4-b822-6865e1a0a0fa
+[mouse-menu]: https://github.com/user-attachments/assets/83beb354-8316-4e25-9fca-d66a102d534c
+[mouse-hints]: https://github.com/user-attachments/assets/67e64c56-3757-4032-87b0-f1e28cf333a9
+[mouse-region]: https://github.com/user-attachments/assets/7e82428d-8328-4e5f-8064-6c4207d65094
+[pages]: https://github.com/user-attachments/assets/0506e0b7-a35c-4bba-98d7-8c13b393a0f0
+[recent]: https://github.com/user-attachments/assets/bfe28dc8-af5b-4dd3-b58e-4a1572cf024b
+[jumps]: https://github.com/user-attachments/assets/5e9f4775-ec56-4af0-a64b-78249e892401
+[ocr]: https://github.com/user-attachments/assets/1223fd13-5fdc-4a70-aabc-1eeaa1a6aed3
 [scan]: https://web.mit.edu/sts.035/www/PDFs/edvac.pdf
 [manifest]: assets/capture.json
 [corpus]: ../scripts/corpus.sh
-[help-split]: https://github.com/user-attachments/assets/aff76a07-0ddd-4975-a767-64be70a04743
-[definition]: https://github.com/user-attachments/assets/c56ec85d-a5a1-4e09-8181-564766c2d790
-[continuous-text]: https://github.com/user-attachments/assets/bebfc118-8bad-4ff1-8813-b9844bd9468f
-[annotations]: https://github.com/user-attachments/assets/5a3343e5-8fa3-4592-8e05-e557591122c0
-[annotation-actions]: https://github.com/user-attachments/assets/8cb57837-e6bf-4800-b967-058cab0c9a01
-[figures]: https://github.com/user-attachments/assets/476fba9a-4297-4f5e-a48d-d08882cb021e
-[marks]: https://github.com/user-attachments/assets/af502147-5324-41da-a190-f8a9f34f3ea3
-[zoom]: https://github.com/user-attachments/assets/06b534dc-5ba0-400c-aa1e-61b0f51b07e7
-[theme-dark]: https://github.com/user-attachments/assets/c8435906-7b90-4c35-9e35-0bd2961b9e77
-[theme-light]: https://github.com/user-attachments/assets/1741672e-03be-4ddf-a419-e2263868d9a6
-[theme-nord]: https://github.com/user-attachments/assets/c6489a93-15e0-4cd5-a90e-6c917130516e
-[find-return-poster]: https://github.com/user-attachments/assets/fb7867b8-bef0-4050-8714-c8d129dbe9f5
-[find-return-video]: https://github.com/user-attachments/assets/d0c7a5bc-ddee-4c49-ab13-757e2fd4f964
-[inspect-reference-poster]: https://github.com/user-attachments/assets/e6d251d5-532f-43ef-ad2e-3fb9e8fddec4
-[inspect-reference-video]: https://github.com/user-attachments/assets/4db2675d-c1b4-4e98-9e63-cce7a76cce0f
-[compare-passages-poster]: https://github.com/user-attachments/assets/9fe6c0fd-d6ff-40e8-8094-9f5710698466
-[compare-passages-video]: https://github.com/user-attachments/assets/70907979-9791-4eea-966b-92385dab0530
-[select-capture-poster]: https://github.com/user-attachments/assets/334bd685-2bdc-40ea-89cb-1c9de301ee8c
-[select-capture-video]: https://github.com/user-attachments/assets/87267719-61a1-4a35-81a4-46fd4743517d
+[help-split]: https://github.com/user-attachments/assets/556091c8-0229-4357-a4d6-c136ed717b58
+[definition]: https://github.com/user-attachments/assets/a359a06e-c261-4593-ab11-da19bd38170f
+[continuous-text]: https://github.com/user-attachments/assets/d4b29ff4-6bbb-4c97-b680-4c2d5440dd3c
+[annotations]: https://github.com/user-attachments/assets/dfd5dd81-2d95-48b9-a1e3-8b1b4e6c2fdc
+[annotation-actions]: https://github.com/user-attachments/assets/eacfd20c-9807-4678-afa1-8c8ea0b5c054
+[figures]: https://github.com/user-attachments/assets/baeb1158-bc3e-42c0-a226-04badf79694a
+[marks]: https://github.com/user-attachments/assets/8eef889c-020f-4f99-adb5-95efcede1e6d
+[zoom]: https://github.com/user-attachments/assets/c1edd09b-7457-4a3c-b206-ad0ae4e059ed
+[theme-dark]: https://github.com/user-attachments/assets/984b2e33-3dfd-428b-b9ac-99ec9ff5794f
+[theme-light]: https://github.com/user-attachments/assets/a3b1523a-93e6-4fb4-8ea1-f6fb6aaa7dff
+[theme-nord]: https://github.com/user-attachments/assets/75da4ac4-dfb3-4f64-979f-0ab1e615d978
+[find-return-poster]: https://github.com/user-attachments/assets/b6f78488-3d59-4d31-8f35-b59a35ff129d
+[find-return-video]: https://github.com/user-attachments/assets/b0994a42-0c41-45c7-8db3-f0f68459bf9e
+[inspect-reference-poster]: https://github.com/user-attachments/assets/661b402d-c0fc-485e-847e-dec202baf6f8
+[inspect-reference-video]: https://github.com/user-attachments/assets/25c9c0c0-0241-4464-aa07-fcc2f766b63a
+[compare-passages-poster]: https://github.com/user-attachments/assets/d353185f-39b7-48d0-a410-d35b346da0c4
+[compare-passages-video]: https://github.com/user-attachments/assets/ed5d5dbe-d8c4-46ec-99c1-20ada18b7bed
+[select-capture-poster]: https://github.com/user-attachments/assets/90bda437-acc3-4b60-ab05-0a01e9a8ba28
+[select-capture-video]: https://github.com/user-attachments/assets/a9ef4104-f558-4c7c-b1e2-97d57f353bc2
 [media]: assets/media.json
 [host]: https://github.com/letientai299/vpdf/issues/9
 [theme-notices]: licenses/themes.txt

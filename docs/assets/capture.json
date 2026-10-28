@@ -933,14 +933,286 @@
           "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
         }
       }
+    },
+    "abef9234b9b7ac6e": {
+      "captured_at": "2026-10-28T00:34:29Z",
+      "commit": "e10484f95bdca1cdbeeccecf7f29c95f6957f15f",
+      "binary_version": "vpdf e10484f (2026-10-28)",
+      "build_profile": "release",
+      "binary_sha256": "55d68074457822727b1635403e8a3f6cee8068925ece37d1a67910d077d50d47",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": {
+        "engine": "tesseract 5.5.3",
+        "language": "eng",
+        "input_has_embedded_text": false
+      },
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "scan": {
+          "file": "scan.pdf",
+          "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
+        }
+      }
+    },
+    "67d388726bb408f5": {
+      "captured_at": "2026-10-28T00:38:45Z",
+      "commit": "e10484f95bdca1cdbeeccecf7f29c95f6957f15f",
+      "binary_version": "vpdf e10484f (2026-10-28)",
+      "build_profile": "release",
+      "binary_sha256": "55d68074457822727b1635403e8a3f6cee8068925ece37d1a67910d077d50d47",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "ScreenCaptureKit desktop-independent window; visible Kitty; no activation",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "9d6e4e754fd1895c": {
+      "captured_at": "2026-10-28T00:40:10Z",
+      "commit": "e10484f95bdca1cdbeeccecf7f29c95f6957f15f",
+      "binary_version": "vpdf e10484f (2026-10-28)",
+      "build_profile": "release",
+      "binary_sha256": "55d68074457822727b1635403e8a3f6cee8068925ece37d1a67910d077d50d47",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "ScreenCaptureKit desktop-independent window; visible Kitty; no activation",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "66bba68af518853d": {
+      "captured_at": "2026-10-28T00:40:46Z",
+      "commit": "e10484f95bdca1cdbeeccecf7f29c95f6957f15f",
+      "binary_version": "vpdf e10484f (2026-10-28)",
+      "build_profile": "release",
+      "binary_sha256": "55d68074457822727b1635403e8a3f6cee8068925ece37d1a67910d077d50d47",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "ScreenCaptureKit desktop-independent window; visible Kitty; no activation",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "1e103fafb05bb9d7": {
+      "captured_at": "2026-10-28T00:41:21Z",
+      "commit": "e10484f95bdca1cdbeeccecf7f29c95f6957f15f",
+      "binary_version": "vpdf e10484f (2026-10-28)",
+      "build_profile": "release",
+      "binary_sha256": "55d68074457822727b1635403e8a3f6cee8068925ece37d1a67910d077d50d47",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "ScreenCaptureKit desktop-independent window; visible Kitty; no activation",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
     }
   },
   "scenes": {
     "overview": {
       "image": "overview.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "e96e225ebc4e5772b8eb728f2aa5a60a33f3e7502767e8e5ece1b4fec4f499c9",
-      "bytes": 343758,
+      "sha256": "5c50c2a1276b4c51a11c785b6aeadcbf50e6bcbf94697da8996180150736a49a",
+      "bytes": 345121,
       "start_page": 2,
       "documents": [
         "paper",
@@ -1075,7 +1347,7 @@
         ],
         [
           "wait",
-          "\u256d"
+          "\u250c"
         ]
       ],
       "dimensions": [
@@ -1086,38 +1358,33 @@
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 62,
+        "checks": 67,
         "fully_visible": true,
         "window": {
-          "X": 3860,
+          "X": 30,
           "Height": 1000,
-          "Y": 50,
+          "Y": 80,
           "Width": 1880
         },
-        "focus_changed": false
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
       "resolved_targets": [],
       "ocr_mode": "explicit request",
-      "capture": "c7e615eea5ddda3c",
-      "reencodings": [
-        {
-          "image": "overview.jpg",
-          "sha256": "a0978dd6f736de1856d1e7492a89ac1b195f38d814a93b5503e1e7b382499393",
-          "bytes": 530146,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "509e43153f7d150209b6b5896e0b1202618b90c4c03c85b4c8fc3ace38a8403b",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "help": {
       "image": "help.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "d8e13916f09f3f8136686fd894c0065d87438e3f321b4da0fd4f63d2b5b946a8",
-      "bytes": 319269,
+      "sha256": "c6a00a4355db7717a27f04b1a994d442028b6949aae9503d919b4a4f12655bc2",
+      "bytes": 287348,
       "start_page": 1,
       "documents": [
         "paper"
@@ -1144,45 +1411,45 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 30,
+        "checks": 89,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
-        "focus_changed": false
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
+      "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "3a424424dba5fabf",
-      "reencodings": [
-        {
-          "image": "help.jpg",
-          "sha256": "a02077c8eb920a85b57c80a570a0635db51ea11f415d41b61ab7256db71520d2",
-          "bytes": 522031,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "7244dda01193af049cb36d4d4e62cae75f01f54a3f13cbc34b609fc7734bec0f",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "search": {
       "image": "search.jpg",
-      "sha256": "16a352f55ff4dcb395f2b2d443d5dfbc84a8ded9a1e1d7eef607657a15ef6b09",
-      "bytes": 493570,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "b9bca7c18033e5e64472f60ad1228a295fca675ad81de5f379abbf055a075766",
+      "bytes": 303529,
       "start_page": 2,
       "documents": [
+        "paper"
+      ],
+      "launch_documents": [
         "paper"
       ],
       "steps": [
@@ -1203,35 +1470,41 @@
           "RESULTS"
         ]
       ],
-      "capture": "2208654b64ec0f1f",
-      "reencoded_from": {
-        "image": "search.webp",
-        "sha256": "590bb980202b823444a26fd174af397018d74e99fe2922da604d667c5f1535a8"
-      },
-      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "reencodings": [
-        {
-          "image": "search.jpg",
-          "sha256": "507c61f083b1a972b9e6e5491a9d3834564fdf6a3fa4935920d0d794a1376018",
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Publication replacement smoke test; no recapture"
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1544
+        ],
+        "checks": 110,
+        "fully_visible": true,
+        "window": {
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
-        {
-          "image": "search.jpg",
-          "sha256": "f4b7b5d19aca024f7856d2e1f689cc752ade90c6d2afd7243ca2d1e7a7095b08",
-          "bytes": 725480,
-          "encoding": "JPEG; quality 91; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "f4b7b5d19aca024f7856d2e1f689cc752ade90c6d2afd7243ca2d1e7a7095b08",
-          "source_kind": "previous published JPEG"
-        }
-      ]
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "abef9234b9b7ac6e"
     },
     "preview": {
       "image": "preview.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "77a670b4509208fa4147202aa37646621f661fe465cd2d3db5d0cfb5eaf988de",
-      "bytes": 301165,
+      "sha256": "1fd7042a6934a206fbb0f21a2940e63f016690c7df4a3a1b6b169d2ef61964de",
+      "bytes": 205075,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1254,55 +1527,55 @@
         ],
         [
           "wait",
-          "\u256d"
+          "\u250c"
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 28,
+        "checks": 131,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
-        "focus_changed": false
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
+      "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "ee929ba45751615f",
-      "reencodings": [
-        {
-          "image": "preview.jpg",
-          "sha256": "26b0f284ab394e791ae8c7c5faf0c0971bfbde4f438b63c3e916d366789a49fd",
-          "bytes": 441958,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "e548bdb8de9d28ac63e21942a2da221aa0cf2c617c960868441d29df274e7287",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "figure": {
       "image": "figure.jpg",
-      "sha256": "b5fdc9223e64067e47e0edb1f0c23874b7348737f7176af7167953edc368efdc",
-      "bytes": 190439,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "088b48947835283cffe81b87006ff3f394c717b7e13535cd345c89edf3cab879",
+      "bytes": 115395,
       "start_page": 3,
       "documents": [
+        "paper"
+      ],
+      "launch_documents": [
         "paper"
       ],
       "steps": [
         [
           "text",
-          "]i[izFgF"
+          "]f[fzFgF"
         ],
         [
           "wait",
@@ -1313,28 +1586,41 @@
           "Copy text"
         ]
       ],
-      "capture": "2208654b64ec0f1f",
-      "reencoded_from": {
-        "image": "figure.webp",
-        "sha256": "de4a4565c5d9978d2b1dbbb47c6b5c62a75cca7aa6e0171c113324d9de0aed17"
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1544
+        ],
+        "checks": 150,
+        "fully_visible": true,
+        "window": {
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
-      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "reencodings": [
-        {
-          "image": "figure.jpg",
-          "sha256": "c1e25ab28cf54383d35922d67981f0f28b228b1e9c2be147bfe6cbfdf6ad5210",
-          "bytes": 262986,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "c1e25ab28cf54383d35922d67981f0f28b228b1e9c2be147bfe6cbfdf6ad5210",
-          "source_kind": "previous published JPEG"
-        }
-      ]
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "abef9234b9b7ac6e"
     },
     "mouse-menu": {
       "image": "mouse-menu.jpg",
-      "sha256": "ac01176fb62f4736cd1f695cc1d67fcb0803c0465d7a3e0c52740b13ac8879f0",
-      "bytes": 409737,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "50736b7bf6fee706c7caffc601a4f7a4b378739c68234db8f912f2394bb6a4aa",
+      "bytes": 241124,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1400,30 +1686,46 @@
           "Search for selection"
         ]
       ],
-      "capture": "61cabc806f2baf09",
-      "reencoded_from": {
-        "image": "mouse-menu.webp",
-        "sha256": "d56b8c8ae6b6362df5a47b00c1476ff742bf79d7851e170a23a303c29d570d35"
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1544
+        ],
+        "checks": 178,
+        "fully_visible": true,
+        "window": {
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
-      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "reencodings": [
-        {
-          "image": "mouse-menu.jpg",
-          "sha256": "c444f9f88e849cc28191aa6e2cf1a329a726c79c2d4f853228bcc97f9a568b57",
-          "bytes": 606919,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "c444f9f88e849cc28191aa6e2cf1a329a726c79c2d4f853228bcc97f9a568b57",
-          "source_kind": "previous published JPEG"
-        }
-      ]
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "abef9234b9b7ac6e"
     },
     "mouse-hints": {
       "image": "mouse-hints.jpg",
-      "sha256": "6bacb679e5931edd249b8c2defef32bee88d14bf3968be30b42e594cc38038ad",
-      "bytes": 478283,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "b04f5377cc3db5ec7515468a86600a348869705d91e0fb1c908ea0c43fb0b9c0",
+      "bytes": 223965,
       "start_page": 2,
       "documents": [
+        "paper"
+      ],
+      "launch_documents": [
         "paper"
       ],
       "steps": [
@@ -1440,36 +1742,52 @@
           "a"
         ]
       ],
-      "capture": "7dbed3285fd3ec9c",
-      "reencoded_from": {
-        "image": "mouse-hints.webp",
-        "sha256": "d4c4935146dba9de38c5eabd66e06b4be005e1b3f85a18c57eb688afda13d5b4"
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1544
+        ],
+        "checks": 197,
+        "fully_visible": true,
+        "window": {
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
-      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "reencodings": [
-        {
-          "image": "mouse-hints.jpg",
-          "sha256": "59f400ddf946c4b643342f70a20420aebd257c303980b0df2364c089214d8b60",
-          "bytes": 685701,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "59f400ddf946c4b643342f70a20420aebd257c303980b0df2364c089214d8b60",
-          "source_kind": "previous published JPEG"
-        }
-      ]
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "abef9234b9b7ac6e"
     },
     "mouse-region": {
       "image": "mouse-region.jpg",
-      "sha256": "cba7b3df5334a90ccd173197d09e6b22a4c4e998da8d09ae8399144809ba4610",
-      "bytes": 178845,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "92d73977c9763dc27d8e6cdbea821887b9b507ccb7725950f3f00b27d9287110",
+      "bytes": 105094,
       "start_page": 3,
       "documents": [
+        "paper"
+      ],
+      "launch_documents": [
         "paper"
       ],
       "steps": [
         [
           "text",
-          "]i[izF"
+          "]f[fzF"
         ],
         [
           "mouse",
@@ -1492,30 +1810,47 @@
           "Release captures; Esc cancels"
         ]
       ],
-      "capture": "7dbed3285fd3ec9c",
-      "reencoded_from": {
-        "image": "mouse-region.webp",
-        "sha256": "f87b02c18404957eebcd99a2b172264aef9d613c0ae4087e7d500913e140975a"
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1544
+        ],
+        "checks": 218,
+        "fully_visible": true,
+        "window": {
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
-      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "reencodings": [
-        {
-          "image": "mouse-region.jpg",
-          "sha256": "58faff1cbb1935af2c596274abf0ad52db5aa754f92a0b215723547e00e3de3b",
-          "bytes": 242238,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "58faff1cbb1935af2c596274abf0ad52db5aa754f92a0b215723547e00e3de3b",
-          "source_kind": "previous published JPEG"
-        }
-      ]
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "abef9234b9b7ac6e"
     },
     "pages": {
       "image": "pages.jpg",
-      "sha256": "2a37b228adada25e97391daab782e24275abd8304ef579cb3c2e97a9aa51525a",
-      "bytes": 334621,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "3fd19921f7174ade988e38963b9a3423cab2edad9b1b4060537d89f64cf74591",
+      "bytes": 232495,
       "start_page": 64,
       "documents": [
+        "book",
+        "paper"
+      ],
+      "launch_documents": [
         "book",
         "paper"
       ],
@@ -1529,30 +1864,48 @@
           "PAGES"
         ]
       ],
-      "capture": "2208654b64ec0f1f",
-      "reencoded_from": {
-        "image": "pages.webp",
-        "sha256": "e19f7d1f1208bc4b759b6432ba9c4712a7a6db52b79c0bc4ed9d956bc15e3c42"
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1544
+        ],
+        "checks": 237,
+        "fully_visible": true,
+        "window": {
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
-      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "reencodings": [
-        {
-          "image": "pages.jpg",
-          "sha256": "dce68e51a4040c82b0670fb07853de6d2526601fc81ddb0d2376dd53c8fee954",
-          "bytes": 519702,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "dce68e51a4040c82b0670fb07853de6d2526601fc81ddb0d2376dd53c8fee954",
-          "source_kind": "previous published JPEG"
-        }
-      ]
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "abef9234b9b7ac6e"
     },
     "recent": {
       "image": "recent.jpg",
-      "sha256": "7b945c8d0d512919ca4c5f22d3c8156cb3be7ff987498fa9567121b74968f354",
-      "bytes": 162328,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "01c970d5ca0432e5b7a2cf66d6abca76acf66e7c6891be286fff66c9d6aaaedf",
+      "bytes": 102986,
       "start_page": 2,
       "documents": [
+        "paper",
+        "book",
+        "scan"
+      ],
+      "launch_documents": [
         "paper",
         "book",
         "scan"
@@ -1579,42 +1932,58 @@
           "RECENT"
         ],
         [
-          "wait",
-          "Metadata"
+          "hover",
+          "paper.pdf"
         ],
         [
           "hover",
           "scan.pdf"
         ],
         [
-          "wait",
-          "49"
+          "pause",
+          3
         ]
       ],
-      "capture": "2208654b64ec0f1f",
-      "reencoded_from": {
-        "image": "recent.webp",
-        "sha256": "0a841d24f9cceb23f4eef218757c7eb899a59542e59e0b5eb26eaa22f1f162dd"
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1544
+        ],
+        "checks": 274,
+        "fully_visible": true,
+        "window": {
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
-      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "reencodings": [
-        {
-          "image": "recent.jpg",
-          "sha256": "c705a9b88f0d179eebd59209c5acef29072ca4c688af4387fd00d1621d0d7da5",
-          "bytes": 252189,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "c705a9b88f0d179eebd59209c5acef29072ca4c688af4387fd00d1621d0d7da5",
-          "source_kind": "previous published JPEG"
-        }
-      ]
+      "resolved_targets": [],
+      "ocr_mode": "automatic; cache initially empty",
+      "capture": "abef9234b9b7ac6e"
     },
     "jumps": {
       "image": "jumps.jpg",
-      "sha256": "72a76a946f265e50ed23e00818acc56bc68c4f17314689268be2256d0bb16de6",
-      "bytes": 402114,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "34d2636d9b27e860d86a40c8ddb7513689a84a4fa5631ea8484069b5c600a0e2",
+      "bytes": 247129,
       "start_page": 2,
       "documents": [
+        "paper"
+      ],
+      "launch_documents": [
         "paper"
       ],
       "steps": [
@@ -1648,36 +2017,48 @@
         ],
         [
           "wait",
-          "Heading:"
+          "Model Architecture"
         ],
         [
           "wait",
-          "Search ["
+          "/multi-head/"
         ]
       ],
-      "capture": "2208654b64ec0f1f",
-      "reencoded_from": {
-        "image": "jumps.webp",
-        "sha256": "32291b4d32c4d3fe437d949b6b8734f4bad3121b4d87dcbd9c61b027728d58ca"
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          1544
+        ],
+        "checks": 302,
+        "fully_visible": true,
+        "window": {
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
-      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "reencodings": [
-        {
-          "image": "jumps.jpg",
-          "sha256": "fb6bc52a1ce0d4c6de08c405c22ba950b82f2d449ce6c0ec3300908ae84d3272",
-          "bytes": 598663,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "fb6bc52a1ce0d4c6de08c405c22ba950b82f2d449ce6c0ec3300908ae84d3272",
-          "source_kind": "previous published JPEG"
-        }
-      ]
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "abef9234b9b7ac6e"
     },
     "ocr": {
       "image": "ocr.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "59363e97e8d8a69229de851b5daa419bbc181fa827b0e9c3e75f9016db980051",
-      "bytes": 344311,
+      "sha256": "c1cdbc933a99a59e771f7506342a33aceebcb1ead977676e05adfe31aa59e245",
+      "bytes": 401498,
       "start_page": 7,
       "documents": [
         "scan"
@@ -1712,51 +2093,40 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 88,
+        "checks": 334,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
         "task_received_focus": false,
         "foreground_states": [
           [
             "net.kovidgoyal.kitty",
-            1822
+            1544
           ]
         ]
       },
       "resolved_targets": [],
       "ocr_mode": "automatic; cache initially empty",
-      "capture": "0e2dee354836de5d",
-      "reencodings": [
-        {
-          "image": "ocr.jpg",
-          "sha256": "60f1eabb042102912101716c8326be38a6c798b1cd659a3d96fc7ec09de7904d",
-          "bytes": 536799,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "d464bf8abc2437acbc2864ce8a8f4e61b1c7dce6cd88d2d458d21a2a5729430b",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "help-split": {
       "image": "help-split.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "ead1af2166f997d50a6279193d03eecb61a9067c914ac7e7c53d9edba5b46142",
-      "bytes": 233103,
+      "sha256": "572d8a30675573a00b91d873a784cc0d65e12d04d1b40d4289204ae8216af8a2",
+      "bytes": 220636,
       "start_page": 39,
       "documents": [
         "book"
@@ -1775,44 +2145,40 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 123,
+        "checks": 353,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
-        "focus_changed": false
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
+      "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "ee929ba45751615f",
-      "reencodings": [
-        {
-          "image": "help-split.jpg",
-          "sha256": "ce7788d93d70132403e62efa0d35b8e4923832be0200da7818de189520435633",
-          "bytes": 375208,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "eded71daa44900f8206154899e1c6f095c452e39e3acf220f9c956bdac74d77f",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "definition": {
       "image": "definition.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "f29a41edc78e0013f3968a6f36f0c705562d44354732e2d4aca510d008cda29c",
-      "bytes": 178657,
+      "sha256": "920d90bb255f16f1b4ec044e059a7acd398e296fb97bd305539cb1388b2a133d",
+      "bytes": 236406,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1843,44 +2209,40 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 55,
+        "checks": 378,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
-        "focus_changed": false
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
+      "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "ee929ba45751615f",
-      "reencodings": [
-        {
-          "image": "definition.jpg",
-          "sha256": "01f03d1a2fe0e6835908613c2b1c232ac4c1107ffb98a30d36325e87aefddc4e",
-          "bytes": 258747,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "29a7958cd6a18d2818f3a28e5e4bc1a39e5964503e9e5d1f46d0ac67e2c87e14",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "continuous-text": {
       "image": "continuous-text.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "0abaa0930df0e8f261c0096df6e0f6d34949be5ebaba3a1fd6122098f2af92b8",
-      "bytes": 383380,
+      "sha256": "2c76146716e6e07c7409c4d2a0388c5c3ba5348385b5b16111f5ab485cc7cfc4",
+      "bytes": 295488,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1899,44 +2261,40 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 74,
+        "checks": 401,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
-        "focus_changed": false
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
+      "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "3a424424dba5fabf",
-      "reencodings": [
-        {
-          "image": "continuous-text.jpg",
-          "sha256": "ffaef3290d1a8c58d5e067fbf8524baece88c3e6f445b44c78b1638d0d9b718b",
-          "bytes": 605795,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "c3d8f32ae665b7be969b7ba09f34b936334c67f97e6ceddee90d3dcb52926c58",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "annotations": {
       "image": "annotations.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "f640689245a6d4b401e136c1c194bca3ef76abd6b3dd6f0189645b9dc2b061d1",
-      "bytes": 169148,
+      "sha256": "0da10f6a0409950544c70e2c4c90843479b798492fa933a249e1391d5848b1f3",
+      "bytes": 159490,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1947,7 +2305,7 @@
       "steps": [
         [
           "text",
-          ":help sample\r"
+          ":help practice\r"
         ],
         [
           "wait",
@@ -1979,54 +2337,49 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 36,
+        "checks": 428,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
-        "focus_changed": false
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
       "resolved_targets": [
         {
           "target": "practice note",
           "action": "hover",
           "pixels": [
-            1223.5,
-            74.5
+            1789.5,
+            21.5
           ]
         }
       ],
       "ocr_mode": null,
-      "capture": "767d4b068750d437",
-      "reencodings": [
-        {
-          "image": "annotations.jpg",
-          "sha256": "8387358136350506adc85843866629ce5ebd6e5d8c28d7fb3978401c9b68b812",
-          "bytes": 276823,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "418404300ede1e3ea4b645c5ace47c5e4c0b14b602ffcca7e8e3f8e853cf4eab",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "marks": {
       "image": "marks.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "171ad11f1ceffab8fa36fb7d5086d27b018385e772b49e9e2aebf315509ea008",
-      "bytes": 199371,
+      "sha256": "b479c4ace480bd8e2c22259976537a216133d4927b2a113eea6da94451c009f7",
+      "bytes": 208279,
       "start_page": 2,
       "documents": [
         "paper"
@@ -2045,44 +2398,40 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 142,
+        "checks": 465,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
-        "focus_changed": false
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            1544
+          ]
+        ]
       },
+      "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "ee929ba45751615f",
-      "reencodings": [
-        {
-          "image": "marks.jpg",
-          "sha256": "0926ebf3aa69d6773f53ae38e6eee83238e84b09ce9ad0556702a87de22936e7",
-          "bytes": 300847,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "4d2cd43f5282f5be9f9fbd98e337229dab24d889b5cbf6379a34cfa6a8a32b37",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "find-return": {
       "kind": "video",
       "image": "find-return.mp4",
-      "sha256": "f0ca662d0f409f7a73720bc9a70baa289d4a6fc3fbe2da628a8c1decce311366",
-      "bytes": 1811504,
+      "sha256": "bff8c946fa296d94e1047e8ab46ffc31c7038d8502a19b06dcaedc9e85c36034",
+      "bytes": 1675387,
       "documents": [
         "paper"
       ],
@@ -2091,7 +2440,9 @@
         1880,
         1112
       ],
-      "duration": 24.266667,
+      "duration": 24.033333,
+      "frame_rate": "30/1",
+      "pixel_format": "yuv420p",
       "encoding": {
         "codec": "H.264",
         "encoder": "libx264",
@@ -2101,12 +2452,12 @@
         "edits": "No cuts or time compression; idle frames retained; constant-rate encoding"
       },
       "recording": {
-        "actual_captured_fps": 29.270277441347787,
-        "duration": 24.251041000010446,
-        "first_frame_monotonic": 658549.895078791,
+        "actual_captured_fps": 29.413639614331245,
+        "duration": 24.04533100000026,
+        "first_frame_monotonic": 2200.547737208,
         "frame_status_counts": {
-          "0": 26,
-          "1": 682
+          "0": 23,
+          "1": 685
         },
         "frames": 708,
         "requested_fps": 30,
@@ -2119,22 +2470,22 @@
             "phase": "setup",
             "kind": "text",
             "value": "zc=",
-            "input_monotonic_ns": 658548279056166,
-            "completed_monotonic_ns": 658548303934166
+            "input_monotonic_ns": 2198981452916,
+            "completed_monotonic_ns": 2198995537583
           },
           {
             "phase": "setup",
             "kind": "pause",
             "value": 1,
-            "input_monotonic_ns": 658548614016958,
-            "completed_monotonic_ns": 658549622418750
+            "input_monotonic_ns": 2199300626291,
+            "completed_monotonic_ns": 2200303159500
           },
           {
             "phase": "demo",
             "kind": "text",
             "value": "/multi-head",
-            "input_monotonic_ns": 658551904574791,
-            "completed_monotonic_ns": 658551938591166,
+            "input_monotonic_ns": 2202552826958,
+            "completed_monotonic_ns": 2202573141125,
             "label": "/multi-head",
             "caption": "Search this document.",
             "planned_seconds": 2
@@ -2143,8 +2494,8 @@
             "phase": "demo",
             "kind": "key",
             "value": "enter",
-            "input_monotonic_ns": 658553903591333,
-            "completed_monotonic_ns": 658553937733333,
+            "input_monotonic_ns": 2204552789250,
+            "completed_monotonic_ns": 2204570538875,
             "label": "Enter",
             "caption": "Show matching passages.",
             "planned_seconds": 4
@@ -2153,15 +2504,15 @@
             "phase": "assert",
             "kind": "wait",
             "value": "matches",
-            "input_monotonic_ns": 658553937820166,
-            "completed_monotonic_ns": 658553966564333
+            "input_monotonic_ns": 2204570565041,
+            "completed_monotonic_ns": 2204585154958
           },
           {
             "phase": "demo",
             "kind": "text",
             "value": "n",
-            "input_monotonic_ns": 658556899827000,
-            "completed_monotonic_ns": 658556934849958,
+            "input_monotonic_ns": 2207552777333,
+            "completed_monotonic_ns": 2207571443833,
             "label": "n",
             "caption": "Move to the next match.",
             "planned_seconds": 7
@@ -2170,8 +2521,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "gs",
-            "input_monotonic_ns": 658559904515375,
-            "completed_monotonic_ns": 658559940111458,
+            "input_monotonic_ns": 2210552777416,
+            "completed_monotonic_ns": 2210571861500,
             "label": "g then s",
             "caption": "Inspect search results.",
             "planned_seconds": 10
@@ -2180,15 +2531,15 @@
             "phase": "assert",
             "kind": "wait",
             "value": "RESULTS",
-            "input_monotonic_ns": 658559940165166,
-            "completed_monotonic_ns": 658559972080833
+            "input_monotonic_ns": 2210571883750,
+            "completed_monotonic_ns": 2210588580208
           },
           {
             "phase": "demo",
             "kind": "key",
             "value": "enter",
-            "input_monotonic_ns": 658563903466375,
-            "completed_monotonic_ns": 658563936655083,
+            "input_monotonic_ns": 2214552781583,
+            "completed_monotonic_ns": 2214573179958,
             "label": "Enter",
             "caption": "Follow the selected result.",
             "planned_seconds": 14
@@ -2197,44 +2548,50 @@
             "phase": "demo",
             "kind": "key",
             "value": "ctrl+o",
-            "input_monotonic_ns": 658567897068041,
-            "completed_monotonic_ns": 658567929562250,
+            "input_monotonic_ns": 2218552772916,
+            "completed_monotonic_ns": 2218571456333,
             "label": "Ctrl-o",
             "caption": "Return to the source passage.",
             "planned_seconds": 18
           }
         ],
-        "first_frame_monotonic_ns": 658549895078791,
+        "first_frame_monotonic_ns": 2200547737208,
         "window_checks": {
           "launch": "open -g -n; hidden Kitty; live place helper",
           "front": [
             "net.kovidgoyal.kitty",
-            1822
+            1544
           ],
-          "checks": 106,
+          "checks": 110,
           "fully_visible": true,
           "window": {
             "X": 3860,
             "Height": 1000,
-            "Y": 50,
+            "Y": 31,
             "Width": 1880
           },
-          "focus_changed": false
+          "task_received_focus": false,
+          "foreground_states": [
+            [
+              "net.kovidgoyal.kitty",
+              1544
+            ]
+          ]
         },
         "viewport": [
           1880,
           1000
         ],
-        "source_sha256": "5349b82cf943882e072c4254c3bc4c58c4855cfa862aed6a3c999bbbf2ba4064",
-        "source_bytes": 15793858,
+        "source_sha256": "a017f095d09443d94dc3f9926dfbb0a7681dcfd0f10243a2acef30d5d1b132ef",
+        "source_bytes": 15692290,
         "source_media": {
           "dimensions": [
             1880,
             1000
           ],
           "codec": "h264",
-          "duration": 24.251667,
-          "frame_rate": "141800/4857",
+          "duration": 24.045,
+          "frame_rate": "425400/14447",
           "pixel_format": "yuv420p"
         }
       },
@@ -2243,55 +2600,53 @@
           "start": 0.0,
           "label": "",
           "caption": "Find and return",
-          "end": 2.009496
+          "end": 2.00508975
         },
         {
-          "start": 2.009496,
+          "start": 2.00508975,
           "label": "/multi-head",
           "caption": "Search this document.",
-          "end": 4.008512542
+          "end": 4.005052042
         },
         {
-          "start": 4.008512542,
+          "start": 4.005052042,
           "label": "Enter",
           "caption": "Show matching passages.",
-          "end": 7.004748209
+          "end": 7.005040125
         },
         {
-          "start": 7.004748209,
+          "start": 7.005040125,
           "label": "n",
           "caption": "Move to the next match.",
-          "end": 10.009436584
+          "end": 10.005040208
         },
         {
-          "start": 10.009436584,
+          "start": 10.005040208,
           "label": "g then s",
           "caption": "Inspect search results.",
-          "end": 14.008387584
+          "end": 14.005044375
         },
         {
-          "start": 14.008387584,
+          "start": 14.005044375,
           "label": "Enter",
           "caption": "Follow the selected result.",
-          "end": 18.00198925
+          "end": 18.005035708
         },
         {
-          "start": 18.00198925,
+          "start": 18.005035708,
           "label": "Ctrl-o",
           "caption": "Return to the source passage.",
-          "end": 24.251667
+          "end": 24.045
         }
       ],
       "overlay_font_sha256": "dc256e0b39c2a6fec947129d421fef41b8b429f58f9b6e5d1b148c87f775c1f6",
-      "frame_rate": "30/1",
-      "pixel_format": "yuv420p",
-      "capture": "cc69d920606e8276"
+      "capture": "67d388726bb408f5"
     },
     "find-return-poster": {
       "kind": "poster",
       "image": "find-return-poster.jpg",
-      "sha256": "07ddd978027340c0e766827238b89aac13f774d5a3afb0f3fe68eaa6915a6810",
-      "bytes": 268896,
+      "sha256": "b8c4962a2f74acbfc5e9a141aad8b5d9d59eda849cc86853faa9035a52f4186d",
+      "bytes": 269911,
       "documents": [
         "paper"
       ],
@@ -2300,27 +2655,16 @@
         1112
       ],
       "video": "find-return",
+      "video_sha256": "bff8c946fa296d94e1047e8ab46ffc31c7038d8502a19b06dcaedc9e85c36034",
       "frame_seconds": 12,
-      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "video_sha256": "f0ca662d0f409f7a73720bc9a70baa289d4a6fc3fbe2da628a8c1decce311366",
-      "capture": "cc69d920606e8276",
-      "reencodings": [
-        {
-          "image": "find-return-poster.jpg",
-          "sha256": "b1d57d9c5c98dd1a61e8bada131883476f34b8e2e5918836850f6393b3fa44c9",
-          "bytes": 414481,
-          "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "b1d57d9c5c98dd1a61e8bada131883476f34b8e2e5918836850f6393b3fa44c9",
-          "source_kind": "previous published JPEG"
-        }
-      ]
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding; frame extracted from captioned video",
+      "capture": "67d388726bb408f5"
     },
     "inspect-reference": {
       "kind": "video",
       "image": "inspect-reference.mp4",
-      "sha256": "7e938d18fa0bae27d59390bf663f09268f5dbfa87f384193744b10fcf52e6ce0",
-      "bytes": 1413325,
+      "sha256": "5dcd1110723bfa58edc146bd225e92cfea32da813ec48f578ae22671d8dd6653",
+      "bytes": 1414617,
       "documents": [
         "paper"
       ],
@@ -2329,7 +2673,9 @@
         1880,
         1112
       ],
-      "duration": 27.166667,
+      "duration": 27.766667,
+      "frame_rate": "30/1",
+      "pixel_format": "yuv420p",
       "encoding": {
         "codec": "H.264",
         "encoder": "libx264",
@@ -2339,16 +2685,16 @@
         "edits": "No cuts or time compression; idle frames retained; constant-rate encoding"
       },
       "recording": {
-        "actual_captured_fps": 29.32389746877466,
-        "duration": 27.153785458067432,
-        "first_frame_monotonic": 658583.37082925,
+        "actual_captured_fps": 29.40441157232117,
+        "duration": 27.760416000000077,
+        "first_frame_monotonic": 2285.51394175,
         "frame_status_counts": {
-          "0": 23,
-          "1": 771
+          "0": 22,
+          "1": 795
         },
-        "frames": 794,
+        "frames": 817,
         "requested_fps": 30,
-        "source_delivery_gap_slots": 0,
+        "source_delivery_gap_slots": 1,
         "source_drop_note": "Source drop counts are not exposed by ScreenCaptureKit.",
         "source_dropped_frames": null,
         "writer_dropped_frames": 0,
@@ -2357,36 +2703,36 @@
             "phase": "setup",
             "kind": "text",
             "value": "zc=/[13]\r",
-            "input_monotonic_ns": 658581080135208,
-            "completed_monotonic_ns": 658581104849666
+            "input_monotonic_ns": 2283306168000,
+            "completed_monotonic_ns": 2283319981250
           },
           {
             "phase": "setup",
             "kind": "wait",
             "value": "matches",
-            "input_monotonic_ns": 658581414939250,
-            "completed_monotonic_ns": 658581443525500
+            "input_monotonic_ns": 2283625022083,
+            "completed_monotonic_ns": 2283639475750
           },
           {
             "phase": "setup",
             "kind": "text",
             "value": ":nohlsearch\r",
-            "input_monotonic_ns": 658581750549875,
-            "completed_monotonic_ns": 658581781782000
+            "input_monotonic_ns": 2283944541833,
+            "completed_monotonic_ns": 2283964545916
           },
           {
             "phase": "setup",
             "kind": "pause",
             "value": 1,
-            "input_monotonic_ns": 658582089516500,
-            "completed_monotonic_ns": 658583091546916
+            "input_monotonic_ns": 2284269628750,
+            "completed_monotonic_ns": 2285271270416
           },
           {
             "phase": "demo",
             "kind": "text",
             "value": "i",
-            "input_monotonic_ns": 658585380634916,
-            "completed_monotonic_ns": 658585410885750,
+            "input_monotonic_ns": 2287518988125,
+            "completed_monotonic_ns": 2287534012875,
             "label": "i",
             "caption": "Place the glyph cursor.",
             "planned_seconds": 2
@@ -2395,8 +2741,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "l",
-            "input_monotonic_ns": 658587380583791,
-            "completed_monotonic_ns": 658587413996500,
+            "input_monotonic_ns": 2289518990083,
+            "completed_monotonic_ns": 2289537510666,
             "label": "l",
             "caption": "Move onto the citation.",
             "planned_seconds": 4
@@ -2405,8 +2751,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "K",
-            "input_monotonic_ns": 658589380540291,
-            "completed_monotonic_ns": 658589414872875,
+            "input_monotonic_ns": 2291518964958,
+            "completed_monotonic_ns": 2291539357250,
             "label": "K",
             "caption": "Preview the reference.",
             "planned_seconds": 6
@@ -2414,16 +2760,16 @@
           {
             "phase": "assert",
             "kind": "wait",
-            "value": "\u256d",
-            "input_monotonic_ns": 658589414908291,
-            "completed_monotonic_ns": 658589678371458
+            "value": "\u250c",
+            "input_monotonic_ns": 2291539378125,
+            "completed_monotonic_ns": 2291780765916
           },
           {
             "phase": "demo",
             "kind": "text",
             "value": "j",
-            "input_monotonic_ns": 658593370940375,
-            "completed_monotonic_ns": 658593404798250,
+            "input_monotonic_ns": 2295518987458,
+            "completed_monotonic_ns": 2295538829833,
             "label": "j",
             "caption": "Scroll the preview.",
             "planned_seconds": 10
@@ -2432,8 +2778,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "k",
-            "input_monotonic_ns": 658595380094291,
-            "completed_monotonic_ns": 658595409030875,
+            "input_monotonic_ns": 2297518976666,
+            "completed_monotonic_ns": 2297533459041,
             "label": "k",
             "caption": "Scroll back.",
             "planned_seconds": 12
@@ -2442,8 +2788,8 @@
             "phase": "demo",
             "kind": "key",
             "value": "escape",
-            "input_monotonic_ns": 658598376385833,
-            "completed_monotonic_ns": 658598404323625,
+            "input_monotonic_ns": 2300518989833,
+            "completed_monotonic_ns": 2300535659416,
             "label": "Escape",
             "caption": "Close the preview.",
             "planned_seconds": 15
@@ -2452,8 +2798,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "gd",
-            "input_monotonic_ns": 658601378963833,
-            "completed_monotonic_ns": 658601412681000,
+            "input_monotonic_ns": 2303518980208,
+            "completed_monotonic_ns": 2303548274916,
             "label": "g then d",
             "caption": "Resolve the reference.",
             "planned_seconds": 18
@@ -2462,44 +2808,58 @@
             "phase": "demo",
             "kind": "key",
             "value": "ctrl+o",
-            "input_monotonic_ns": 658605377207625,
-            "completed_monotonic_ns": 658605409716750,
+            "input_monotonic_ns": 2307516082791,
+            "completed_monotonic_ns": 2307534668125,
             "label": "Ctrl-o",
             "caption": "Return to the citation.",
             "planned_seconds": 22
           }
         ],
-        "first_frame_monotonic_ns": 658583370829250,
+        "first_frame_monotonic_ns": 2285513941750,
         "window_checks": {
           "launch": "open -g -n; hidden Kitty; live place helper",
           "front": [
             "net.kovidgoyal.kitty",
-            1822
+            1544
           ],
-          "checks": 120,
+          "checks": 127,
           "fully_visible": true,
           "window": {
             "X": 3860,
             "Height": 1000,
-            "Y": 50,
+            "Y": 31,
             "Width": 1880
           },
-          "focus_changed": false
+          "task_received_focus": false,
+          "foreground_states": [
+            [
+              "net.kovidgoyal.kitty",
+              1544
+            ],
+            [
+              "io.github.letientai299.vpdf",
+              36169
+            ],
+            [
+              "net.kovidgoyal.kitty",
+              1544
+            ]
+          ]
         },
         "viewport": [
           1880,
           1000
         ],
-        "source_sha256": "e4905cf6c7f503a7e87edc194c99ef3480a1bb9eaf9a1074843f47a2161c28cb",
-        "source_bytes": 12653027,
+        "source_sha256": "10acf5a170a66e464e932ffc1f04dac1b86528798454affe728fd41cb530f98f",
+        "source_bytes": 13217432,
         "source_media": {
           "dimensions": [
             1880,
             1000
           ],
           "codec": "h264",
-          "duration": 27.153333,
-          "frame_rate": "59625/2039",
+          "duration": 27.76,
+          "frame_rate": "122700/4169",
           "pixel_format": "yuv420p"
         }
       },
@@ -2508,67 +2868,65 @@
           "start": 0.0,
           "label": "",
           "caption": "Inspect a reference",
-          "end": 2.009805666
+          "end": 2.005046375
         },
         {
-          "start": 2.009805666,
+          "start": 2.005046375,
           "label": "i",
           "caption": "Place the glyph cursor.",
-          "end": 4.009754541
+          "end": 4.005048333
         },
         {
-          "start": 4.009754541,
+          "start": 4.005048333,
           "label": "l",
           "caption": "Move onto the citation.",
-          "end": 6.009711041
+          "end": 6.005023208
         },
         {
-          "start": 6.009711041,
+          "start": 6.005023208,
           "label": "K",
           "caption": "Preview the reference.",
-          "end": 10.000111125
+          "end": 10.005045708
         },
         {
-          "start": 10.000111125,
+          "start": 10.005045708,
           "label": "j",
           "caption": "Scroll the preview.",
-          "end": 12.009265041
+          "end": 12.005034916
         },
         {
-          "start": 12.009265041,
+          "start": 12.005034916,
           "label": "k",
           "caption": "Scroll back.",
-          "end": 15.005556583
+          "end": 15.005048083
         },
         {
-          "start": 15.005556583,
+          "start": 15.005048083,
           "label": "Escape",
           "caption": "Close the preview.",
-          "end": 18.008134583
+          "end": 18.005038458
         },
         {
-          "start": 18.008134583,
+          "start": 18.005038458,
           "label": "g then d",
           "caption": "Resolve the reference.",
-          "end": 22.006378375
+          "end": 22.002141041
         },
         {
-          "start": 22.006378375,
+          "start": 22.002141041,
           "label": "Ctrl-o",
           "caption": "Return to the citation.",
-          "end": 27.153333
+          "end": 27.76
         }
       ],
       "overlay_font_sha256": "dc256e0b39c2a6fec947129d421fef41b8b429f58f9b6e5d1b148c87f775c1f6",
-      "frame_rate": "30/1",
-      "pixel_format": "yuv420p",
-      "capture": "42ce64a36788428d"
+      "capture": "9d6e4e754fd1895c"
     },
     "inspect-reference-poster": {
       "kind": "poster",
       "image": "inspect-reference-poster.jpg",
-      "sha256": "419ecf825ae23759c2aa1c084ddba58b1fb777deccafe229886a291096634d8a",
-      "bytes": 205335,
+      "sha256": "a1ee947b5e85991c6344d0620c16b6cf7832d789f0e9e795ab06bee135e4ea88",
+      "bytes": 206613,
       "documents": [
         "paper"
       ],
@@ -2577,27 +2935,16 @@
         1112
       ],
       "video": "inspect-reference",
+      "video_sha256": "5dcd1110723bfa58edc146bd225e92cfea32da813ec48f578ae22671d8dd6653",
       "frame_seconds": 8,
-      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "video_sha256": "7e938d18fa0bae27d59390bf663f09268f5dbfa87f384193744b10fcf52e6ce0",
-      "capture": "42ce64a36788428d",
-      "reencodings": [
-        {
-          "image": "inspect-reference-poster.jpg",
-          "sha256": "edc0f1d42d6f393644eb2adea21cf32da4504b9faee1f2275555c33da2c500bb",
-          "bytes": 313988,
-          "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "edc0f1d42d6f393644eb2adea21cf32da4504b9faee1f2275555c33da2c500bb",
-          "source_kind": "previous published JPEG"
-        }
-      ]
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding; frame extracted from captioned video",
+      "capture": "9d6e4e754fd1895c"
     },
     "compare-passages": {
       "kind": "video",
       "image": "compare-passages.mp4",
-      "sha256": "95d6f160e0f581afe7903963563af9e2e7444a864c297df04939b20c88add0aa",
-      "bytes": 2263060,
+      "sha256": "be52fa98d753ecf8f24059cdd2ee30e3954e02de2e35e70061407c02ce3d060c",
+      "bytes": 2286070,
       "documents": [
         "paper"
       ],
@@ -2606,7 +2953,9 @@
         1880,
         1112
       ],
-      "duration": 25.866667,
+      "duration": 25.766667,
+      "frame_rate": "30/1",
+      "pixel_format": "yuv420p",
       "encoding": {
         "codec": "H.264",
         "encoder": "libx264",
@@ -2616,14 +2965,14 @@
         "edits": "No cuts or time compression; idle frames retained; constant-rate encoding"
       },
       "recording": {
-        "actual_captured_fps": 29.341641438393605,
-        "duration": 25.870304792071693,
-        "first_frame_monotonic": 658618.790086458,
+        "actual_captured_fps": 29.417134267723835,
+        "duration": 25.77841554099996,
+        "first_frame_monotonic": 2321.16849975,
         "frame_status_counts": {
-          "0": 29,
-          "1": 728
+          "0": 28,
+          "1": 731
         },
-        "frames": 757,
+        "frames": 759,
         "requested_fps": 30,
         "source_delivery_gap_slots": 0,
         "source_drop_note": "Source drop counts are not exposed by ScreenCaptureKit.",
@@ -2634,22 +2983,22 @@
             "phase": "setup",
             "kind": "text",
             "value": "zc=",
-            "input_monotonic_ns": 658617182774083,
-            "completed_monotonic_ns": 658617206021000
+            "input_monotonic_ns": 2319587580916,
+            "completed_monotonic_ns": 2319601827583
           },
           {
             "phase": "setup",
             "kind": "pause",
             "value": 1,
-            "input_monotonic_ns": 658617512078083,
-            "completed_monotonic_ns": 658618513689208
+            "input_monotonic_ns": 2319906932000,
+            "completed_monotonic_ns": 2320909847916
           },
           {
             "phase": "demo",
             "kind": "key",
             "value": "ctrl+w",
-            "input_monotonic_ns": 658620800188875,
-            "completed_monotonic_ns": 658620833995458,
+            "input_monotonic_ns": 2323173569000,
+            "completed_monotonic_ns": 2323188748583,
             "label": "Ctrl-w",
             "caption": "Begin a pane command.",
             "planned_seconds": 2
@@ -2658,8 +3007,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "v",
-            "input_monotonic_ns": 658621800070708,
-            "completed_monotonic_ns": 658621832227083,
+            "input_monotonic_ns": 2324173549791,
+            "completed_monotonic_ns": 2324194328583,
             "label": "v",
             "caption": "Duplicate this passage.",
             "planned_seconds": 3
@@ -2668,8 +3017,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "3gg",
-            "input_monotonic_ns": 658624797260083,
-            "completed_monotonic_ns": 658624824856041,
+            "input_monotonic_ns": 2327173562208,
+            "completed_monotonic_ns": 2327193401958,
             "label": "3 g g",
             "caption": "Move the second pane.",
             "planned_seconds": 6
@@ -2678,8 +3027,8 @@
             "phase": "demo",
             "kind": "key",
             "value": "ctrl+w",
-            "input_monotonic_ns": 658626796027166,
-            "completed_monotonic_ns": 658626829262875,
+            "input_monotonic_ns": 2329173518625,
+            "completed_monotonic_ns": 2329188484208,
             "label": "Ctrl-w",
             "caption": "Choose another pane.",
             "planned_seconds": 8
@@ -2688,8 +3037,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "p",
-            "input_monotonic_ns": 658627800081458,
-            "completed_monotonic_ns": 658627835064083,
+            "input_monotonic_ns": 2330173547458,
+            "completed_monotonic_ns": 2330193071833,
             "label": "p",
             "caption": "Return focus to the first pane.",
             "planned_seconds": 9
@@ -2698,8 +3047,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "8",
-            "input_monotonic_ns": 658630791855708,
-            "completed_monotonic_ns": 658630824272583,
+            "input_monotonic_ns": 2333173545875,
+            "completed_monotonic_ns": 2333193709500,
             "label": "8",
             "caption": "Set a resize count.",
             "planned_seconds": 12
@@ -2708,8 +3057,8 @@
             "phase": "demo",
             "kind": "key",
             "value": "ctrl+w",
-            "input_monotonic_ns": 658631292320750,
-            "completed_monotonic_ns": 658631325882000,
+            "input_monotonic_ns": 2333673560875,
+            "completed_monotonic_ns": 2333692745166,
             "label": "Ctrl-w",
             "caption": "Begin a pane command.",
             "planned_seconds": 12.5
@@ -2718,8 +3067,8 @@
             "phase": "demo",
             "kind": "text",
             "value": ">",
-            "input_monotonic_ns": 658631792155541,
-            "completed_monotonic_ns": 658631817238750,
+            "input_monotonic_ns": 2334168599666,
+            "completed_monotonic_ns": 2334184489166,
             "label": ">",
             "caption": "Widen the focused pane.",
             "planned_seconds": 13
@@ -2728,8 +3077,8 @@
             "phase": "demo",
             "kind": "key",
             "value": "ctrl+w",
-            "input_monotonic_ns": 658634794664375,
-            "completed_monotonic_ns": 658634829254833,
+            "input_monotonic_ns": 2337173547666,
+            "completed_monotonic_ns": 2337193290083,
             "label": "Ctrl-w",
             "caption": "Begin a pane command.",
             "planned_seconds": 16
@@ -2738,8 +3087,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "=",
-            "input_monotonic_ns": 658635792183625,
-            "completed_monotonic_ns": 658635826338916,
+            "input_monotonic_ns": 2338173540833,
+            "completed_monotonic_ns": 2338192703208,
             "label": "=",
             "caption": "Equalize the panes.",
             "planned_seconds": 17
@@ -2748,8 +3097,8 @@
             "phase": "demo",
             "kind": "key",
             "value": "ctrl+w",
-            "input_monotonic_ns": 658638792449000,
-            "completed_monotonic_ns": 658638824995166,
+            "input_monotonic_ns": 2341173550541,
+            "completed_monotonic_ns": 2341194239041,
             "label": "Ctrl-w",
             "caption": "Begin a pane command.",
             "planned_seconds": 20
@@ -2758,44 +3107,54 @@
             "phase": "demo",
             "kind": "text",
             "value": "c",
-            "input_monotonic_ns": 658639794287791,
-            "completed_monotonic_ns": 658639825672041,
+            "input_monotonic_ns": 2342173550583,
+            "completed_monotonic_ns": 2342192670958,
             "label": "c",
             "caption": "Close the focused pane.",
             "planned_seconds": 21
           }
         ],
-        "first_frame_monotonic_ns": 658618790086458,
+        "first_frame_monotonic_ns": 2321168499750,
         "window_checks": {
           "launch": "open -g -n; hidden Kitty; live place helper",
           "front": [
             "net.kovidgoyal.kitty",
-            1822
+            1544
           ],
-          "checks": 113,
+          "checks": 117,
           "fully_visible": true,
           "window": {
             "X": 3860,
             "Height": 1000,
-            "Y": 50,
+            "Y": 31,
             "Width": 1880
           },
-          "focus_changed": false
+          "task_received_focus": false,
+          "foreground_states": [
+            [
+              "io.github.letientai299.vpdf",
+              36169
+            ],
+            [
+              "net.kovidgoyal.kitty",
+              1544
+            ]
+          ]
         },
         "viewport": [
           1880,
           1000
         ],
-        "source_sha256": "aec779760c54532ace487aeb97b302f4cd747271469d199ae1ade8b57e92012a",
-        "source_bytes": 16852682,
+        "source_sha256": "af8b88fc637b374615419cd54a2412093760b74334d9f6b4d0cfa2b2ed5fbb81",
+        "source_bytes": 16834357,
         "source_media": {
           "dimensions": [
             1880,
             1000
           ],
           "codec": "h264",
-          "duration": 25.87,
-          "frame_rate": "227400/7771",
+          "duration": 25.778333,
+          "frame_rate": "456000/15487",
           "pixel_format": "yuv420p"
         }
       },
@@ -2804,91 +3163,89 @@
           "start": 0.0,
           "label": "",
           "caption": "Compare passages",
-          "end": 2.010102417
+          "end": 2.00506925
         },
         {
-          "start": 2.010102417,
+          "start": 2.00506925,
           "label": "Ctrl-w",
           "caption": "Begin a pane command.",
-          "end": 3.00998425
+          "end": 3.005050041
         },
         {
-          "start": 3.00998425,
+          "start": 3.005050041,
           "label": "v",
           "caption": "Duplicate this passage.",
-          "end": 6.007173625
+          "end": 6.005062458
         },
         {
-          "start": 6.007173625,
+          "start": 6.005062458,
           "label": "3 g g",
           "caption": "Move the second pane.",
-          "end": 8.005940708
+          "end": 8.005018875
         },
         {
-          "start": 8.005940708,
+          "start": 8.005018875,
           "label": "Ctrl-w",
           "caption": "Choose another pane.",
-          "end": 9.009995
+          "end": 9.005047708
         },
         {
-          "start": 9.009995,
+          "start": 9.005047708,
           "label": "p",
           "caption": "Return focus to the first pane.",
-          "end": 12.00176925
+          "end": 12.005046125
         },
         {
-          "start": 12.00176925,
+          "start": 12.005046125,
           "label": "8",
           "caption": "Set a resize count.",
-          "end": 12.502234292
+          "end": 12.505061125
         },
         {
-          "start": 12.502234292,
+          "start": 12.505061125,
           "label": "Ctrl-w",
           "caption": "Begin a pane command.",
-          "end": 13.002069083
+          "end": 13.000099916
         },
         {
-          "start": 13.002069083,
+          "start": 13.000099916,
           "label": ">",
           "caption": "Widen the focused pane.",
-          "end": 16.004577917
+          "end": 16.005047916
         },
         {
-          "start": 16.004577917,
+          "start": 16.005047916,
           "label": "Ctrl-w",
           "caption": "Begin a pane command.",
-          "end": 17.002097167
+          "end": 17.005041083
         },
         {
-          "start": 17.002097167,
+          "start": 17.005041083,
           "label": "=",
           "caption": "Equalize the panes.",
-          "end": 20.002362542
+          "end": 20.005050791
         },
         {
-          "start": 20.002362542,
+          "start": 20.005050791,
           "label": "Ctrl-w",
           "caption": "Begin a pane command.",
-          "end": 21.004201333
+          "end": 21.005050833
         },
         {
-          "start": 21.004201333,
+          "start": 21.005050833,
           "label": "c",
           "caption": "Close the focused pane.",
-          "end": 25.87
+          "end": 25.778333
         }
       ],
       "overlay_font_sha256": "dc256e0b39c2a6fec947129d421fef41b8b429f58f9b6e5d1b148c87f775c1f6",
-      "frame_rate": "30/1",
-      "pixel_format": "yuv420p",
-      "capture": "bd5e14ef24f4bb1b"
+      "capture": "66bba68af518853d"
     },
     "compare-passages-poster": {
       "kind": "poster",
       "image": "compare-passages-poster.jpg",
-      "sha256": "8efa7bc2facf358049a8f0a2d07377b5f021fa6d8825ee8f69586c057b539d5b",
-      "bytes": 292157,
+      "sha256": "53671da4c7b7edfe923b512832e137a4e99b212998ef30f54038391845501362",
+      "bytes": 293989,
       "documents": [
         "paper"
       ],
@@ -2897,27 +3254,16 @@
         1112
       ],
       "video": "compare-passages",
+      "video_sha256": "be52fa98d753ecf8f24059cdd2ee30e3954e02de2e35e70061407c02ce3d060c",
       "frame_seconds": 14,
-      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "video_sha256": "95d6f160e0f581afe7903963563af9e2e7444a864c297df04939b20c88add0aa",
-      "capture": "bd5e14ef24f4bb1b",
-      "reencodings": [
-        {
-          "image": "compare-passages-poster.jpg",
-          "sha256": "ca281b9be8f6903a8f52304edc0be00725e3302fb33c20e4283ac7335ec2ddae",
-          "bytes": 444191,
-          "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "ca281b9be8f6903a8f52304edc0be00725e3302fb33c20e4283ac7335ec2ddae",
-          "source_kind": "previous published JPEG"
-        }
-      ]
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding; frame extracted from captioned video",
+      "capture": "66bba68af518853d"
     },
     "annotation-actions": {
       "image": "annotation-actions.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "f82c6423b9a3edda488916ed46463ce6ee6d5b4c6722340abb7e5558d50ce7d1",
-      "bytes": 175127,
+      "sha256": "bdf0b26dc6f301456b23fead57ec41271542314bcb4f36ee4bc13380565bf216",
+      "bytes": 162524,
       "start_page": 2,
       "documents": [
         "paper"
@@ -2928,7 +3274,7 @@
       "steps": [
         [
           "text",
-          ":help sample\r"
+          ":help practice\r"
         ],
         [
           "wait",
@@ -2972,28 +3318,28 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 43,
+        "checks": 496,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
         "task_received_focus": false,
         "foreground_states": [
           [
             "net.kovidgoyal.kitty",
-            1822
+            1544
           ]
         ]
       },
@@ -3002,38 +3348,27 @@
           "target": "practice note",
           "action": "hover",
           "pixels": [
-            1223.5,
-            74.5
+            1789.5,
+            21.5
           ]
         },
         {
           "target": "practice note",
           "action": "context",
           "pixels": [
-            1223.5,
-            74.5
+            1789.5,
+            21.5
           ]
         }
       ],
       "ocr_mode": null,
-      "capture": "a5192470b6ca7e19",
-      "reencodings": [
-        {
-          "image": "annotation-actions.jpg",
-          "sha256": "9710dcc2ff25d34f75ea8698e4169a454dc82d83fd56f2d2ad236c6d61c0a1db",
-          "bytes": 286542,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "b183a18e281ebcf97391faac125bdf4efce8cca2b5611d17c576173382fca388",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "figures": {
       "image": "figures.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "b7632b4eb9270b19dd690c6771950b56d1e6c56d25ec07cf20fa60a6b57ff569",
-      "bytes": 209099,
+      "sha256": "885fbf92d24f1f9990851b4f9dc73115b94f0dced6c0265cd2e84b0eebd6e8b6",
+      "bytes": 153144,
       "start_page": 3,
       "documents": [
         "paper"
@@ -3052,51 +3387,40 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 28,
+        "checks": 447,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
         "task_received_focus": false,
         "foreground_states": [
           [
             "net.kovidgoyal.kitty",
-            1822
+            1544
           ]
         ]
       },
       "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "0e2dee354836de5d",
-      "reencodings": [
-        {
-          "image": "figures.jpg",
-          "sha256": "a3e9c8059b2d2228252be12d531d4ffecc27d5c5ff3715aae384acfeedc530ce",
-          "bytes": 318458,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "3b7c4ac0ee8f55ac5493ba1d531fd3e620f54c086bb8c0c48c20267711e86f00",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "zoom": {
       "image": "zoom.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "9605911bf68d9c98cd29485233ac180454ae2a35a4dc3f1ec9d084c3c34d00ad",
-      "bytes": 352288,
+      "sha256": "007305a071f1f1abfb4aa4213a2ed47e820d3ae4b188bd438ca3ce150febe20d",
+      "bytes": 381957,
       "start_page": 2,
       "documents": [
         "paper"
@@ -3107,7 +3431,7 @@
       "steps": [
         [
           "text",
-          ":help sample\r"
+          ":help practice\r"
         ],
         [
           "wait",
@@ -3135,51 +3459,40 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 56,
+        "checks": 522,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
         "task_received_focus": false,
         "foreground_states": [
           [
             "net.kovidgoyal.kitty",
-            1822
+            1544
           ]
         ]
       },
       "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "0e2dee354836de5d",
-      "reencodings": [
-        {
-          "image": "zoom.jpg",
-          "sha256": "22ef474f205366a2c80b35943a291e8ddcea8ab1b5a1e747d7b4ecd931c763ec",
-          "bytes": 564855,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "266627e7c66e79ff7dcc4d2912ae843f51f18ae7c20042083ef34702bf3ab7a0",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "theme-dark": {
       "image": "theme-dark.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "71defffda8d2579705d57065ec71d3aeaa3737367040f88b05c870c19cdaedb4",
-      "bytes": 280282,
+      "sha256": "c055187d8f0adefb70e27c7113854db779643b129df80db0cc3d1a0a4751f75d",
+      "bytes": 220397,
       "start_page": 2,
       "documents": [
         "paper"
@@ -3190,7 +3503,7 @@
       "steps": [
         [
           "text",
-          ":help sample\r"
+          ":help practice\r"
         ],
         [
           "wait",
@@ -3199,6 +3512,10 @@
         [
           "text",
           ":theme dark\r"
+        ],
+        [
+          "pause",
+          2
         ],
         [
           "text",
@@ -3210,51 +3527,40 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 77,
+        "checks": 553,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
         "task_received_focus": false,
         "foreground_states": [
           [
             "net.kovidgoyal.kitty",
-            1822
+            1544
           ]
         ]
       },
       "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "10ad2f4ff95d6927",
-      "reencodings": [
-        {
-          "image": "theme-dark.jpg",
-          "sha256": "c70f461e12853144f9f539cc5240792570f3063d6f431fbfdef366ad4c63c736",
-          "bytes": 461479,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "5fb8d416b53ce0038d5363fc89bc66fc930b2c21aec1a64ac781f271aea26520",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "theme-light": {
       "image": "theme-light.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "352b7b9e1d677008a202a233c95907e559b8128e43fb00548ef1ccfe51b20f1e",
-      "bytes": 272355,
+      "sha256": "6a283d774800089d4ba910ebab15c9667f8dde81f9c1719baed12817ff0abb52",
+      "bytes": 208948,
       "start_page": 2,
       "documents": [
         "paper"
@@ -3265,7 +3571,7 @@
       "steps": [
         [
           "text",
-          ":help sample\r"
+          ":help practice\r"
         ],
         [
           "wait",
@@ -3289,51 +3595,40 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 77,
+        "checks": 584,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
         "task_received_focus": false,
         "foreground_states": [
           [
             "net.kovidgoyal.kitty",
-            1822
+            1544
           ]
         ]
       },
       "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "a5192470b6ca7e19",
-      "reencodings": [
-        {
-          "image": "theme-light.jpg",
-          "sha256": "36d87b9ea165a416efc57e93e1b9b6982aa2188efcc24153ff3d70fb05e46e9f",
-          "bytes": 433009,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "ed39e9f28091db982aaf5b64f7e3fcf08597817410dbe5ca495557ece6df1f61",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "theme-nord": {
       "image": "theme-nord.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "3ef42e0051919f23136993c93e32a2093cbcddd8dc37abd586549240cdc805c2",
-      "bytes": 272000,
+      "sha256": "a5ad48a442456644e432b979c808b2c785ddb0c71fdc42a9e668a50010697ad4",
+      "bytes": 219209,
       "start_page": 2,
       "documents": [
         "paper"
@@ -3344,7 +3639,7 @@
       "steps": [
         [
           "text",
-          ":help sample\r"
+          ":help practice\r"
         ],
         [
           "wait",
@@ -3368,60 +3663,49 @@
         ]
       ],
       "dimensions": [
-        1280,
-        1440
+        1880,
+        1000
       ],
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1822
+          1544
         ],
-        "checks": 111,
+        "checks": 616,
         "fully_visible": true,
         "window": {
-          "X": 10,
-          "Height": 1440,
-          "Y": 60,
-          "Width": 1280
+          "X": 30,
+          "Height": 1000,
+          "Y": 80,
+          "Width": 1880
         },
         "task_received_focus": false,
         "foreground_states": [
           [
             "net.kovidgoyal.kitty",
-            1822
+            1544
           ]
         ]
       },
       "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "a5192470b6ca7e19",
-      "reencodings": [
-        {
-          "image": "theme-nord.jpg",
-          "sha256": "e557adac625389c7b4e545547e95da77cd73265394297c49dd39de2517509bd0",
-          "bytes": 444111,
-          "encoding": "JPEG; quality 92; 4:4:4; progressive; optimized Huffman coding",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "aaceacdd9d0fb33dc1a2bb0fa3ebbfa2e45582afea1a02d48b0345e0d440d146",
-          "source_kind": "original PNG verified against prior JPEG hash"
-        }
-      ]
+      "capture": "abef9234b9b7ac6e"
     },
     "select-capture": {
       "kind": "video",
       "image": "select-capture.mp4",
-      "sha256": "ae87905e04feee1e35600953e0a553ae0fbed624f2a24ace1e76bbf31874d4e7",
-      "bytes": 644455,
+      "sha256": "825ac06470165520adfd1e76916ba82dcec250286851a04c5074342e67391353",
+      "bytes": 1004409,
       "documents": [
         "paper"
       ],
       "start_page": 3,
       "dimensions": [
-        1280,
+        1880,
         1112
       ],
-      "duration": 26.466667,
+      "duration": 26.033333,
       "frame_rate": "30/1",
       "pixel_format": "yuv420p",
       "encoding": {
@@ -3433,16 +3717,16 @@
         "edits": "No cuts or time compression; idle frames retained; constant-rate encoding"
       },
       "recording": {
-        "actual_captured_fps": 28.78672092461098,
-        "duration": 26.47137704200577,
-        "first_frame_monotonic": 664209.062380041,
+        "actual_captured_fps": 29.419339389406264,
+        "duration": 26.04600174999996,
+        "first_frame_monotonic": 2356.4207585,
         "frame_status_counts": {
-          "0": 24,
-          "1": 736
+          "0": 27,
+          "1": 740
         },
-        "frames": 760,
+        "frames": 767,
         "requested_fps": 30,
-        "source_delivery_gap_slots": 14,
+        "source_delivery_gap_slots": 0,
         "source_drop_note": "Source drop counts are not exposed by ScreenCaptureKit.",
         "source_dropped_frames": null,
         "writer_dropped_frames": 0,
@@ -3451,36 +3735,36 @@
             "phase": "setup",
             "kind": "text",
             "value": "/Encoder\r",
-            "input_monotonic_ns": 664206636340958,
-            "completed_monotonic_ns": 664206653312208
+            "input_monotonic_ns": 2354207981916,
+            "completed_monotonic_ns": 2354221938166
           },
           {
             "phase": "setup",
             "kind": "wait",
             "value": "matches",
-            "input_monotonic_ns": 664206957031666,
-            "completed_monotonic_ns": 664206989007958
+            "input_monotonic_ns": 2354527011416,
+            "completed_monotonic_ns": 2354546354166
           },
           {
             "phase": "setup",
             "kind": "text",
             "value": ":nohlsearch\r",
-            "input_monotonic_ns": 664207294126541,
-            "completed_monotonic_ns": 664207324786750
+            "input_monotonic_ns": 2354851427250,
+            "completed_monotonic_ns": 2354871322208
           },
           {
             "phase": "setup",
             "kind": "pause",
             "value": 1,
-            "input_monotonic_ns": 664207624988000,
-            "completed_monotonic_ns": 664208627510791
+            "input_monotonic_ns": 2355176409375,
+            "completed_monotonic_ns": 2356177798791
           },
           {
             "phase": "demo",
             "kind": "text",
             "value": "i",
-            "input_monotonic_ns": 664211063324208,
-            "completed_monotonic_ns": 664211091830833,
+            "input_monotonic_ns": 2358425849083,
+            "completed_monotonic_ns": 2358443601833,
             "label": "i",
             "caption": "Enter Cursor mode.",
             "planned_seconds": 2
@@ -3489,8 +3773,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "v",
-            "input_monotonic_ns": 664213065662333,
-            "completed_monotonic_ns": 664213097978291,
+            "input_monotonic_ns": 2360425797791,
+            "completed_monotonic_ns": 2360445365333,
             "label": "v",
             "caption": "Start a selection.",
             "planned_seconds": 4
@@ -3499,15 +3783,15 @@
             "phase": "assert",
             "kind": "wait",
             "value": "VISUAL",
-            "input_monotonic_ns": 664213098010416,
-            "completed_monotonic_ns": 664213124367708
+            "input_monotonic_ns": 2360445387500,
+            "completed_monotonic_ns": 2360462631916
           },
           {
             "phase": "demo",
             "kind": "text",
             "value": "2e",
-            "input_monotonic_ns": 664215066958708,
-            "completed_monotonic_ns": 664215096601583,
+            "input_monotonic_ns": 2362425798958,
+            "completed_monotonic_ns": 2362445786500,
             "label": "2 e",
             "caption": "Extend the selection.",
             "planned_seconds": 6
@@ -3516,8 +3800,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "R",
-            "input_monotonic_ns": 664217064064500,
-            "completed_monotonic_ns": 664217081694833,
+            "input_monotonic_ns": 2364425783833,
+            "completed_monotonic_ns": 2364440746416,
             "label": "R",
             "caption": "Start a capture rectangle.",
             "planned_seconds": 8
@@ -3526,15 +3810,15 @@
             "phase": "assert",
             "kind": "wait",
             "value": "REGION",
-            "input_monotonic_ns": 664217081716416,
-            "completed_monotonic_ns": 664217112544791
+            "input_monotonic_ns": 2364440768416,
+            "completed_monotonic_ns": 2364458414000
           },
           {
             "phase": "demo",
             "kind": "text",
             "value": "8l",
-            "input_monotonic_ns": 664220066120125,
-            "completed_monotonic_ns": 664220098628916,
+            "input_monotonic_ns": 2367425782000,
+            "completed_monotonic_ns": 2367447627416,
             "label": "8 l",
             "caption": "Widen the rectangle.",
             "planned_seconds": 11
@@ -3543,8 +3827,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "4j",
-            "input_monotonic_ns": 664222064652958,
-            "completed_monotonic_ns": 664222092414166,
+            "input_monotonic_ns": 2369425809625,
+            "completed_monotonic_ns": 2369455019125,
             "label": "4 j",
             "caption": "Extend its height.",
             "planned_seconds": 13
@@ -3553,8 +3837,8 @@
             "phase": "demo",
             "kind": "key",
             "value": "enter",
-            "input_monotonic_ns": 664225063687875,
-            "completed_monotonic_ns": 664225106152958,
+            "input_monotonic_ns": 2372422539041,
+            "completed_monotonic_ns": 2372459400250,
             "label": "Enter",
             "caption": "Confirm the rectangle.",
             "planned_seconds": 16
@@ -3563,15 +3847,15 @@
             "phase": "assert",
             "kind": "wait",
             "value": "Copy text",
-            "input_monotonic_ns": 664225106183833,
-            "completed_monotonic_ns": 664225128893208
+            "input_monotonic_ns": 2372459424708,
+            "completed_monotonic_ns": 2372476678791
           },
           {
             "phase": "demo",
             "kind": "text",
             "value": "l",
-            "input_monotonic_ns": 664227072442708,
-            "completed_monotonic_ns": 664227105738833,
+            "input_monotonic_ns": 2374424976583,
+            "completed_monotonic_ns": 2374455903041,
             "label": "l",
             "caption": "Choose Copy text.",
             "planned_seconds": 18
@@ -3580,8 +3864,8 @@
             "phase": "demo",
             "kind": "key",
             "value": "enter",
-            "input_monotonic_ns": 664229062747791,
-            "completed_monotonic_ns": 664229084975208,
+            "input_monotonic_ns": 2376424972250,
+            "completed_monotonic_ns": 2376445575125,
             "label": "Enter",
             "caption": "Copy the captured text.",
             "planned_seconds": 20
@@ -3590,57 +3874,65 @@
             "phase": "assert",
             "kind": "wait",
             "value": "Text copied",
-            "input_monotonic_ns": 664229085002583,
-            "completed_monotonic_ns": 664229105000958
+            "input_monotonic_ns": 2376445600916,
+            "completed_monotonic_ns": 2376461967916
           },
           {
             "phase": "demo",
             "kind": "key",
             "value": "escape",
-            "input_monotonic_ns": 664233069474500,
-            "completed_monotonic_ns": 664233101924166,
+            "input_monotonic_ns": 2380425806958,
+            "completed_monotonic_ns": 2380444480250,
             "label": "Escape",
             "caption": "Close capture actions.",
             "planned_seconds": 24
           }
         ],
-        "first_frame_monotonic_ns": 664209062380041,
+        "first_frame_monotonic_ns": 2356420758500,
         "window_checks": {
           "launch": "open -g -n; hidden Kitty; live place helper",
           "front": [
             "net.kovidgoyal.kitty",
-            1822
+            1544
           ],
-          "checks": 122,
+          "checks": 120,
           "fully_visible": true,
           "window": {
-            "X": 10,
+            "X": 3860,
             "Height": 1000,
-            "Y": 60,
-            "Width": 1280
+            "Y": 31,
+            "Width": 1880
           },
           "task_received_focus": false,
           "foreground_states": [
             [
               "net.kovidgoyal.kitty",
-              1822
+              1544
+            ],
+            [
+              "com.microsoft.teams2",
+              6094
+            ],
+            [
+              "net.kovidgoyal.kitty",
+              1544
             ]
           ]
         },
         "viewport": [
-          1280,
+          1880,
           1000
         ],
-        "source_sha256": "c956b97c8af7e758607c8dd6ba7d6dab4a19578bcef7c67adb5dc91f7e3ba1f4",
-        "source_bytes": 8467828,
+        "source_sha256": "fa9e95b402a041b26de46d738f6896cf295eb4a580b2d61534072e4bc5147c03",
+        "source_bytes": 9756469,
         "source_media": {
           "dimensions": [
-            1280,
+            1880,
             1000
           ],
           "codec": "h264",
-          "duration": 26.471667,
-          "frame_rate": "152200/5301",
+          "duration": 26.046667,
+          "frame_rate": "4800/163",
           "pixel_format": "yuv420p"
         }
       },
@@ -3649,100 +3941,89 @@
           "start": 0.0,
           "label": "",
           "caption": "Select and capture",
-          "end": 2.000944167
+          "end": 2.005090583
         },
         {
-          "start": 2.000944167,
+          "start": 2.005090583,
           "label": "i",
           "caption": "Enter Cursor mode.",
-          "end": 4.003282292
+          "end": 4.005039291
         },
         {
-          "start": 4.003282292,
+          "start": 4.005039291,
           "label": "v",
           "caption": "Start a selection.",
-          "end": 6.004578667
+          "end": 6.005040458
         },
         {
-          "start": 6.004578667,
+          "start": 6.005040458,
           "label": "2 e",
           "caption": "Extend the selection.",
-          "end": 8.001684459
+          "end": 8.005025333
         },
         {
-          "start": 8.001684459,
+          "start": 8.005025333,
           "label": "R",
           "caption": "Start a capture rectangle.",
-          "end": 11.003740084
+          "end": 11.0050235
         },
         {
-          "start": 11.003740084,
+          "start": 11.0050235,
           "label": "8 l",
           "caption": "Widen the rectangle.",
-          "end": 13.002272917
+          "end": 13.005051125
         },
         {
-          "start": 13.002272917,
+          "start": 13.005051125,
           "label": "4 j",
           "caption": "Extend its height.",
-          "end": 16.001307834
+          "end": 16.001780541
         },
         {
-          "start": 16.001307834,
+          "start": 16.001780541,
           "label": "Enter",
           "caption": "Confirm the rectangle.",
-          "end": 18.010062667
+          "end": 18.004218083
         },
         {
-          "start": 18.010062667,
+          "start": 18.004218083,
           "label": "l",
           "caption": "Choose Copy text.",
-          "end": 20.00036775
+          "end": 20.00421375
         },
         {
-          "start": 20.00036775,
+          "start": 20.00421375,
           "label": "Enter",
           "caption": "Copy the captured text.",
-          "end": 24.007094459
+          "end": 24.005048458
         },
         {
-          "start": 24.007094459,
+          "start": 24.005048458,
           "label": "Escape",
           "caption": "Close capture actions.",
-          "end": 26.471667
+          "end": 26.046667
         }
       ],
       "overlay_font_sha256": "dc256e0b39c2a6fec947129d421fef41b8b429f58f9b6e5d1b148c87f775c1f6",
-      "capture": "e18514ec31f4a411"
+      "capture": "1e103fafb05bb9d7"
     },
     "select-capture-poster": {
       "kind": "poster",
       "image": "select-capture-poster.jpg",
-      "sha256": "08a0d8e20e1405f5688088b0f6761270abc687dff88579aa8ee287848422e172",
-      "bytes": 141978,
+      "sha256": "342e437b35b3cbe5a8e13d9cf0f999050f64d05519d176afc703f4daca4eac63",
+      "bytes": 218636,
       "documents": [
         "paper"
       ],
       "dimensions": [
-        1280,
+        1880,
         1112
       ],
       "video": "select-capture",
-      "video_sha256": "ae87905e04feee1e35600953e0a553ae0fbed624f2a24ace1e76bbf31874d4e7",
+      "video_sha256": "825ac06470165520adfd1e76916ba82dcec250286851a04c5074342e67391353",
       "frame_seconds": 19.5,
-      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "capture": "e18514ec31f4a411",
-      "reencodings": [
-        {
-          "image": "select-capture-poster.jpg",
-          "sha256": "d2e07b22aab6e9cd53ec6f0175eebaaf02a26835a91162f3295c6259bd22855f",
-          "bytes": 222157,
-          "encoding": "JPEG; FFmpeg q:v 2; yuvj444p; extracted from captioned video",
-          "reason": "Smaller JPEG; no recapture",
-          "source_sha256": "d2e07b22aab6e9cd53ec6f0175eebaaf02a26835a91162f3295c6259bd22855f",
-          "source_kind": "previous published JPEG"
-        }
-      ]
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding; frame extracted from captioned video",
+      "capture": "1e103fafb05bb9d7"
     }
   }
 }

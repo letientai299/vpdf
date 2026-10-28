@@ -66,7 +66,7 @@ RECIPES = {
         "steps": [
             (2, "text", "i", "i", "Place the glyph cursor.", None),
             (4, "text", "l", "l", "Move onto the citation.", None),
-            (6, "text", "K", "K", "Preview the reference.", "╭"),
+            (6, "text", "K", "K", "Preview the reference.", "┌"),
             (10, "text", "j", "j", "Scroll the preview.", None),
             (12, "text", "k", "k", "Scroll back.", None),
             (15, "key", "escape", "Escape", "Close the preview.", None),
