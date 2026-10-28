@@ -245,10 +245,23 @@ impl Window {
 }
 
 impl eframe::App for Window {
-  #[cfg(target_os = "macos")]
-  fn raw_input_hook(&mut self, _: &egui::Context, _: &mut egui::RawInput) {
+  #[cfg(any(target_os = "macos", feature = "bench-events"))]
+  fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+    #[cfg(not(feature = "bench-events"))]
+    let _ = (ctx, raw);
+    #[cfg(target_os = "macos")]
     if let Some(presentation) = &self.presentation {
       presentation.prepare_frame();
+    }
+    #[cfg(feature = "bench-events")]
+    if let Some(events) = &mut self.events {
+      self.mark = events.apply(ctx, raw);
+      #[cfg(target_os = "macos")]
+      if let Some(command) = events.take_native()
+        && let Some(native) = &mut self.native
+      {
+        native.probe(&command);
+      }
     }
   }
 
@@ -355,19 +368,6 @@ impl eframe::App for Window {
       frame.reloaded.clear();
     }
   }
-  #[cfg(feature = "bench-events")]
-  fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
-    if let Some(events) = &mut self.events {
-      self.mark = events.apply(ctx, raw);
-      #[cfg(target_os = "macos")]
-      if let Some(command) = events.take_native()
-        && let Some(native) = &mut self.native
-      {
-        native.probe(&command);
-      }
-    }
-  }
-
   fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] {
     let [r, g, b] = self.palette.background;
     egui::Color32::from_rgb(r, g, b).to_normalized_gamma_f32()
