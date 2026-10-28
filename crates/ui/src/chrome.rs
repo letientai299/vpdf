@@ -310,6 +310,7 @@ impl Bar<'_> {
       write!(right, " zoom {:.0}% ", self.view.layout.zoom() * 100.0)?;
       zoom = start..right.width();
     }
+    let mode = if columns < 120 { &mode[..1] } else { mode };
     let left = format!(" {mode} ");
     let mut line = Line {
       left,
@@ -456,6 +457,72 @@ mod tests {
       (spans(&scene), self.width)
     }
   }
+  #[test]
+  fn narrow_modes_preserve_section() -> Result<()> {
+    let mut reader = Reader::default();
+    let screen = crate::testing::screen::cells(40, 24);
+    let layout = Layout::new([], screen);
+    let search = Search::default();
+    let keys = Keys::default();
+    for cursor in [false, true] {
+      if cursor {
+        reader.enter_cursor();
+      }
+      let full = if cursor { "CURSOR" } else { "NORMAL" };
+      for columns in [20, 40, 80, 119, 120, 160] {
+        let bar = Bar {
+          view: View {
+            reader: &reader,
+            layout: &layout,
+            search: &search,
+            keys: &keys,
+            panel: None,
+            owner: InputOwner::Content,
+            capture: None,
+            text: true,
+            overview: false,
+          },
+          document: Document {
+            page: PageId(0),
+            pages: 1,
+            label: "1",
+            section: Some("Introduction"),
+          },
+          names: Names { file: "p.pdf", names: &[], active: 0 },
+          screen: Screen { columns, ..screen },
+          error: None,
+        };
+        let line = bar.line(None)?;
+        let label = if columns < 120 { &full[..1] } else { full };
+        assert_eq!(line.left, format!(" {label} "));
+        let mut scene = Vec::new();
+        bar.scene(
+          &mut scene,
+          vpdf_model::geometry::At::default(),
+          23,
+          true,
+          None,
+        )?;
+        let rows = crate::testing::lines(&scene, columns);
+        assert_eq!(rows[&23].width(), usize::from(columns));
+        if columns != 40 {
+          continue;
+        }
+        assert_eq!(line.message, "Introduction");
+        let start = line.left.width() + line.tabs.as_ref().unwrap().width;
+        for column in start..start + line.message.width() {
+          assert_eq!(bar.hit(column as u16, 23, false), Some(Item::Section));
+        }
+        assert_eq!(bar.hit((start - 1) as u16, 23, false), None);
+        assert_eq!(
+          bar.hit((start + line.message.width()) as u16, 23, false),
+          None
+        );
+      }
+    }
+    Ok(())
+  }
+
   #[test]
   fn unmeasured_resize_shows_on_the_last_row() {
     let mut scene = Vec::new();

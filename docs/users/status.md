@@ -5,7 +5,8 @@
 The status line identifies the active reading mode or temporary interaction.
 It also shows the current section, physical page counter, optional printed
 label, tab names, pending keys, and messages. An inactive pane can retain a
-selection while another surface owns keyboard input.
+selection while another surface owns keyboard input. Narrow panes show only
+the first letter of the mode label to leave room for the section name.
 
 ## Reading labels
 
