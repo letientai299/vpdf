@@ -269,13 +269,35 @@ def check_assets(root, output, facts):
     return directory
 
 
+def export_pdf(root, output):
+    with tempfile.TemporaryDirectory(
+        prefix=".export-", dir=output
+    ) as temporary:
+        pdf = Path(temporary) / "help.pdf"
+        run(
+            "cargo",
+            "run",
+            "--locked",
+            "-p",
+            "vpdf",
+            "--example",
+            "help-pdf",
+            "--",
+            str(pdf),
+            cwd=root,
+            timeout=600,
+        )
+        pdf.replace(output / "help.pdf")
+
+
 def prepare(root, output, facts):
     output.mkdir(parents=True, exist_ok=True)
     with (output / ".lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         directory, expected = generation(root, output, facts)
         if directory.exists():
-            return check_assets(root, output, facts)
+            directory = check_assets(root, output, facts)
+            return directory
         with tempfile.TemporaryDirectory(
             prefix=".generate-", dir=output
         ) as temporary:
@@ -340,6 +362,8 @@ def main():
     )
     action = check_assets if args.check else prepare
     directory = action(ROOT, output.resolve(), facts)
+    if not args.check:
+        export_pdf(ROOT, output.resolve())
     if args.verify_pdf:
         check_pdf(directory)
     print(directory)

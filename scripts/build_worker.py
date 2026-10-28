@@ -405,6 +405,7 @@ def copy_help(output, target, env):
     destination.mkdir(parents=True, exist_ok=True)
     for name in (*OUTPUTS, "manifest.json"):
         copy_binary(directory / name, destination / name)
+    copy_binary(target / "help/help.pdf", output / "help/help.pdf")
 
 
 def run(args):

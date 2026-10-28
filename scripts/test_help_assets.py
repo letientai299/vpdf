@@ -91,6 +91,38 @@ class HelpAssetTests(unittest.TestCase):
             self.facts["topics"].append({"id": "new-action"})
             self.assertNotEqual(self.prepare(), first)
 
+    def test_export_replaces_base_symlink(self):
+        self.output.mkdir(parents=True)
+        base = self.output / "base.pdf"
+        base.write_bytes(b"base")
+        pdf = self.output / "help.pdf"
+        pdf.symlink_to(base.name)
+
+        def export(*args, **kwargs):
+            self.assertEqual(kwargs["cwd"], self.root)
+            Path(args[-1]).write_bytes(b"readable manual")
+
+        with patch.object(help, "run", side_effect=export):
+            help.export_pdf(self.root, self.output)
+        self.assertFalse(pdf.is_symlink())
+        self.assertEqual(pdf.read_bytes(), b"readable manual")
+        self.assertEqual(base.read_bytes(), b"base")
+
+    def test_failed_export_preserves_manual(self):
+        self.output.mkdir(parents=True)
+        pdf = self.output / "help.pdf"
+        pdf.write_bytes(b"previous manual")
+
+        def fail(*args, **kwargs):
+            Path(args[-1]).write_bytes(b"partial export")
+            raise subprocess.CalledProcessError(1, args)
+
+        with patch.object(help, "run", side_effect=fail):
+            with self.assertRaises(subprocess.CalledProcessError):
+                help.export_pdf(self.root, self.output)
+        self.assertEqual(pdf.read_bytes(), b"previous manual")
+        self.assertEqual(list(self.output.iterdir()), [pdf])
+
     def test_incomplete_and_corrupt_outputs(self):
         with patch.object(help, "render", side_effect=self.render):
             directory = self.prepare()
@@ -117,7 +149,7 @@ class HelpAssetTests(unittest.TestCase):
                 self.prepare()
         self.assertEqual(
             sorted(p.name for p in self.output.iterdir()),
-            [".lock", previous.name],
+            sorted([".lock", previous.name]),
         )
         self.assertTrue((previous / "base.pdf").is_file())
         with self.assertRaises(FileNotFoundError):

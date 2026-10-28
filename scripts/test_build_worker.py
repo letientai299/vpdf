@@ -458,6 +458,7 @@ class WorkerTests(unittest.TestCase):
             (generation / name).write_text("asset")
         (generation / "notices").mkdir()
         (generation / "notices/source.txt").write_text("renderer input")
+        (target / "help/help.pdf").write_text("readable manual")
         for name in ["release/vpdf", "dist/vpdf"]:
             path = target / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -478,6 +479,9 @@ class WorkerTests(unittest.TestCase):
                         "VPDF_BUILD_WORKER": str(target.parent / "source"),
                     },
                 )
+            link = self.repo / "target/help/help.pdf"
+            self.assertFalse(link.is_symlink())
+            self.assertEqual(link.read_text(), "readable manual")
             destination = self.repo / "target/help/generation"
             self.assertEqual(
                 {path.name for path in destination.iterdir()},

@@ -33,7 +33,10 @@ corrupt generation directory before rebuilding it; valid generations remain
 immutable.
 
 Outputs live in fingerprint directories under `target/help`, respecting
-`CARGO_TARGET_DIR`. Use the same `CARGO_TARGET_DIR` for generation and Cargo,
+`CARGO_TARGET_DIR`. Builds export the readable, composed manual to
+`target/help/help.pdf`, including built-in references and resolved links. The
+fingerprinted `base.pdf` contains placeholder colors for runtime composition.
+Use the same `CARGO_TARGET_DIR` for generation and Cargo,
 including when passing Cargo's `--target-dir`. A clean source build generates
 assets. Application execution needs neither source files nor generation tools.
 `--version` verifies the bundled hashes and reports their shared identity.
