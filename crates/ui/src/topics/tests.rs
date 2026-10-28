@@ -112,7 +112,7 @@ fn defaults_resolve_modes_and_sequences() {
     registry.lookup("half_down", Context::Normal),
     action(Action::Scroll(0.5))
   );
-  for key in ["g", "iw", "x", "<A-z>"] {
+  for key in ["iw", "x", "<A-z>"] {
     assert_eq!(registry.lookup(key, Context::Normal), Lookup::Missing, "{key}");
   }
   assert_ne!(
@@ -780,4 +780,104 @@ fn contents_auto_uses_custom_binding() {
     panel.input(Input::plain(Action::OutlineAuto), 24),
     Event::Unhandled
   );
+}
+
+#[test]
+fn key_prefixes_and_notation_resolve() {
+  let registry =
+    Registry::new(authored(), Bindings::default().snapshot()).unwrap();
+  let panes = registry.lookup("panes", Context::Normal);
+  for query in [
+    "c-w",
+    "C-w",
+    "ctrl-w",
+    "Ctrl-W",
+    "<c-w>",
+    "<C-w>",
+    "<ctrl-w>",
+    "normal:<c-w>",
+  ] {
+    assert_eq!(registry.lookup(query, Context::Normal), panes, "{query}");
+    assert!(!registry.complete(query, Context::Normal).is_empty(), "{query}");
+  }
+  for (query, canonical) in [
+    ("<c-d>", "<C-d>"),
+    ("<esc>", "<Esc>"),
+    ("<f1>", "<F1>"),
+    ("<c-w>v", "<C-w>v"),
+    ("c-wv", "<C-w>v"),
+    ("Ctrl-WH", "<C-w>H"),
+  ] {
+    assert_eq!(
+      registry.lookup(query, Context::Normal),
+      registry.lookup(canonical, Context::Normal),
+      "{query}"
+    );
+    assert!(
+      matches!(registry.lookup(query, Context::Normal), Lookup::Found(_)),
+      "{query}"
+    );
+  }
+  for key in ["g", "z", "[", "]"] {
+    assert_eq!(
+      registry.lookup(key, Context::Normal),
+      registry.lookup("keys", Context::Normal),
+      "{key}"
+    );
+  }
+  assert_eq!(
+    registry.lookup("c-w", Context::Prompt),
+    registry.lookup("<C-w>", Context::Prompt)
+  );
+  assert_ne!(registry.lookup("c-w", Context::Prompt), panes);
+  for candidate in registry.complete("c-w", Context::Normal) {
+    assert_eq!(
+      registry.lookup(&candidate.name, Context::Normal),
+      Lookup::Found(candidate.destination)
+    );
+  }
+}
+
+#[test]
+fn removed_prefixes_do_not_use_guides() {
+  let mut snapshot = Bindings::default().snapshot();
+  let prefix = sequence("<C-w>");
+  snapshot.effective.retain(|row| {
+    row.context != Context::Normal || !row.sequence.starts_with(prefix.keys())
+  });
+  let registry = Registry::new(authored(), snapshot).unwrap();
+  assert_eq!(registry.lookup("c-w", Context::Normal), Lookup::Missing);
+  assert_eq!(registry.lookup("<c-w>", Context::Normal), Lookup::Missing);
+}
+
+#[test]
+fn malformed_help_notation_stays_missing() {
+  let registry =
+    Registry::new(authored(), Bindings::default().snapshot()).unwrap();
+  for query in ["c-", "Ctrl-", "<C-", "<c-w", "<c-C-w>", "<f0>"] {
+    assert_eq!(
+      registry.lookup(query, Context::Normal),
+      Lookup::Missing,
+      "{query}"
+    );
+  }
+}
+
+#[test]
+fn incomplete_notation_completes_case_insensitively() {
+  let registry =
+    Registry::new(authored(), Bindings::default().snapshot()).unwrap();
+  for (query, canonical) in
+    [("<c-", "<C-"), ("<ctrl-", "<C-"), ("<c-w", "<C-w"), ("<c-w>", "<C-w>")]
+  {
+    let names = |prefix| {
+      registry
+        .complete(prefix, Context::Normal)
+        .into_iter()
+        .map(|row| row.name)
+        .collect::<Vec<_>>()
+    };
+    assert!(!names(query).is_empty(), "{query}");
+    assert_eq!(names(query), names(canonical), "{query}");
+  }
 }

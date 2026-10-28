@@ -33,6 +33,7 @@ pub(super) struct Writer {
   content: String,
   links: Vec<([f32; 4], Link)>,
   y: f32,
+  column: usize,
 }
 
 enum Link {
@@ -58,6 +59,7 @@ impl Writer {
       content: String::new(),
       links: Vec::new(),
       y: 744.0,
+      column: 8,
     })
   }
 
@@ -150,6 +152,29 @@ impl Writer {
     ));
   }
 
+  pub fn reference_column(
+    &mut self,
+    chapter: &super::Chapter,
+    chapters: &[super::Chapter],
+  ) {
+    self.column = match chapter.section {
+      Some(super::Section::Configuration | super::Section::Commands) => {
+        chapters
+          .iter()
+          .filter(|row| row.section == chapter.section)
+          .flat_map(|row| &row.lines)
+          .filter_map(|line| match line {
+            super::Line::Binding { keys, .. } => Some(keys.chars().count() + 2),
+            super::Line::Text(_) => None,
+          })
+          .max()
+          .unwrap_or(8)
+          .clamp(8, self.typography.columns() / 2)
+      }
+      Some(super::Section::Keys) | None => 8,
+    };
+  }
+
   pub fn reference_line(
     &mut self,
     line: &super::Line,
@@ -189,15 +214,20 @@ impl Writer {
     } else {
       runs.push((keys, self.palette.r#match));
     }
-    runs.push(("  ", self.palette.foreground));
-    runs.extend(inline(description, self.palette));
+    self.colored_at(&runs, 0)?;
+    if self.encode(keys)?.chars().count() < self.column {
+      self.y += self.typography.line_height();
+    }
+    let mut runs = inline(description, self.palette);
     runs.extend(labels.iter().map(|label| (label.as_str(), self.palette.link)));
-    self.paragraph(&runs, 0, targets)
+    self.paragraph(&runs, self.column, targets)?;
+    self.y -= self.typography.line_height();
+    Ok(())
   }
 
   pub fn description(&mut self, text: &str) -> Result<()> {
     let runs = inline(text, self.palette);
-    self.colored_at(&runs, 2)
+    self.colored_at(&runs, self.column)
   }
 
   pub fn line(&mut self, text: &str) -> Result<()> {

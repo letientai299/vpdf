@@ -114,6 +114,30 @@ fn control_prefix(query: &str) -> Option<(&str, &str)> {
     .then_some((prefix, key))
 }
 
+fn control_notation(control: &str, key: &str) -> String {
+  let chord = if control.len() > 1 { key.to_lowercase() } else { key.into() };
+  if let Ok(sequence) = Sequence::parse(&format!("<C-{chord}>")) {
+    return sequence.to_string();
+  }
+  let Some(first) = key.chars().next() else {
+    return "<C-".into();
+  };
+  let chord = if control.len() > 1 {
+    first.to_lowercase().to_string()
+  } else {
+    first.to_string()
+  };
+  format!("<C-{chord}>{}", &key[first.len_utf8()..])
+}
+
+fn completion_notation(prefix: &str) -> Option<String> {
+  ["", ">", "Esc>", "-Esc>"].into_iter().find_map(|suffix| {
+    let canonical =
+      Sequence::parse(&format!("{prefix}{suffix}")).ok()?.to_string();
+    canonical.strip_suffix(suffix).map(str::to_owned)
+  })
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Topic {
   pub id: TopicId,
@@ -129,7 +153,7 @@ pub fn authored() -> Vec<Topic> {
     ("navigation", "Navigation", &["reading"][..]),
     ("practice", "Practice text", &["sample"][..]),
     ("search", "Search", &["searching"][..]),
-    ("panes", "Tabs and panes", &["windows", "splits"][..]),
+    ("panes", "Tabs and panes", &["windows", "splits", "<C-w>"][..]),
     (
       "keys",
       "Keys and input modes",
@@ -340,25 +364,27 @@ impl Registry {
       return Lookup::Found(Destination::Action(TopicId(row.target.topic())));
     }
     if let Some((prefix, key)) = control_prefix(query) {
-      let key = if prefix.len() > 1 { key.to_lowercase() } else { key.into() };
-      return self.lookup(&format!("<C-{key}>"), context);
+      return self.lookup(&control_notation(prefix, key), context);
     }
-    if self.key_query(query) {
-      if self.bindings.effective.iter().any(|row| {
-        row.context == context
-          && row.is_prefix()
-          && Some(&row.sequence) == sequence.as_ref()
-      }) {
-        return self.names.get("keys").map_or(Lookup::Missing, |id| {
+    if let Some(sequence) = sequence.as_ref()
+      && self.key_prefix(sequence, context)
+    {
+      let name = sequence.to_string();
+      return self
+        .names
+        .get(&name)
+        .or_else(|| self.names.get("keys"))
+        .map_or(Lookup::Missing, |id| {
           Lookup::Found(self.topics[id].destination.clone())
         });
-      }
+    }
+    if self.key_query(query) || (query.starts_with('<') && sequence.is_none()) {
       return Lookup::Missing;
     }
     if let Some(id) = self.names.get(query) {
       return Lookup::Found(self.topics[id].destination.clone());
     }
-    let mut candidates = self.named(query);
+    let mut candidates = self.named(query, context);
     let mut seen = Vec::new();
     candidates.retain(|candidate| {
       if seen.contains(&candidate.destination) {
@@ -374,6 +400,15 @@ impl Registry {
     }
   }
 
+  fn key_prefix(&self, sequence: &Sequence, context: Context) -> bool {
+    self.bindings.effective.iter().any(|row| {
+      row.context == context
+        && ((row.is_prefix() && row.sequence == *sequence)
+          || (row.sequence.keys().len() > sequence.keys().len()
+            && row.sequence.starts_with(sequence.keys())))
+    })
+  }
+
   fn key_query(&self, query: &str) -> bool {
     Sequence::parse(query).is_ok_and(|sequence| {
       sequence.keys().len() == 1
@@ -382,13 +417,16 @@ impl Registry {
     })
   }
 
-  fn named(&self, prefix: &str) -> Vec<Candidate> {
+  fn named(&self, prefix: &str, context: Context) -> Vec<Candidate> {
     self
       .names
       .iter()
       .filter(|(name, id)| {
         name.starts_with(prefix)
-          && (name.as_str() == id.as_str() || !self.key_query(name))
+          && (name.as_str() == id.as_str()
+            || !self.key_query(name)
+            || Sequence::parse(name)
+              .is_ok_and(|sequence| self.key_prefix(&sequence, context)))
       })
       .map(|(name, id)| Candidate {
         name: name.clone(),
@@ -405,23 +443,25 @@ impl Registry {
     context: Context,
   ) -> Vec<Candidate> {
     if let Some((control, key)) = control_prefix(prefix) {
-      let normalized =
-        if control.len() > 1 { key.to_lowercase() } else { key.into() };
+      let normalized = control_notation(control, key);
+      let normalized = normalized.strip_suffix('>').unwrap_or(&normalized);
       self
-        .complete(&format!("<C-{normalized}"), context)
+        .complete(normalized, context)
         .into_iter()
         .filter_map(|mut candidate| {
-          let suffix = candidate.name.strip_prefix("<C-")?.strip_suffix('>')?;
-          if suffix.contains(['<', '>']) {
+          let (suffix, rest) =
+            candidate.name.strip_prefix("<C-")?.split_once('>')?;
+          if rest.contains(['<', '>']) {
             return None;
           }
-          let suffix =
-            if control.len() > 1 && key.chars().any(char::is_uppercase) {
-              suffix.to_uppercase()
-            } else {
-              suffix.into()
-            };
-          candidate.name = format!("{control}-{suffix}");
+          let suffix = if control.len() > 1
+            && key.chars().next().is_some_and(char::is_uppercase)
+          {
+            suffix.to_uppercase()
+          } else {
+            suffix.into()
+          };
+          candidate.name = format!("{control}-{suffix}{rest}");
           Some(candidate)
         })
         .collect::<Vec<_>>()
@@ -442,9 +482,15 @@ impl Registry {
         })
         .collect();
     }
+    if prefix.contains('<')
+      && let Some(canonical) = completion_notation(prefix)
+      && canonical != prefix
+    {
+      return self.complete(&canonical, context);
+    }
     let aliases = self.control_candidates(prefix, context);
     let mut candidates: BTreeMap<_, _> = self
-      .named(prefix)
+      .named(prefix, context)
       .into_iter()
       .map(|candidate| (candidate.name.clone(), candidate))
       .collect();
@@ -489,7 +535,7 @@ impl Registry {
       .into_values()
       .filter(|candidate| {
         if candidate.action.is_none()
-          && self.names[&candidate.name].parameterized()
+          && self.names.get(&candidate.name).is_some_and(TopicId::parameterized)
           && !prefix.contains('.')
         {
           return false;

@@ -153,6 +153,9 @@ the script with [uv][uv] and the pinned FontTools version:
 uv run --no-project --with fonttools==4.61.1 python scripts/help_font.py SOURCE.ttf
 ```
 
+Reference descriptions align within each section, including wrapped lines.
+Blank lines separate entries. Long labels occupy their own line.
+
 Authored and generated pages use the fixed light colors for paper, commands,
 parameters, and links. Interface theme changes reuse the help PDF. The view can
 apply `:recolor` like other PDFs; its setting stays outside persisted document

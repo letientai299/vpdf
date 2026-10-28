@@ -164,6 +164,7 @@ fn compose(
         .insert(section, destinations::outline_at(section.title(), page, y));
       writer.heading(section.title())?;
     }
+    writer.reference_column(chapter, chapters);
     let entry = matches!(chapter.lines.first(), Some(Line::Binding { .. }));
     let (page, y) = writer.section(if entry { 3 } else { 5 })?;
     ensure!(!names.contains_key(&chapter.id), "Duplicate help destination");
@@ -221,7 +222,9 @@ fn compose(
         writer.named_link(target.clone());
       }
     }
-    writer.line("")?;
+    if !entry {
+      writer.line("")?;
+    }
     locations.push((chapter.id.clone(), None, chapter.id.clone()));
   }
   writer.flush()?;

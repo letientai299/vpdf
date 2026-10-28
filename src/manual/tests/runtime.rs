@@ -626,15 +626,22 @@ fn command_colors_match_semantics() -> crate::Result<()> {
       ("ex.cursorline", "default on", palette.r#match),
       ("ex.cursorline", ":help zoom", palette.link),
     ] {
-      let glyphs =
-        colored_glyphs(&native, page(&ready.document.topics[topic]))?;
+      let glyphs: Vec<_> =
+        colored_glyphs(&native, page(&ready.document.topics[topic]))?
+          .into_iter()
+          .filter(|(ch, _)| !ch.is_whitespace())
+          .collect();
       let text: String = glyphs.iter().map(|(ch, _)| ch).collect();
-      let at = text.find(needle).unwrap_or_else(|| panic!("{needle}: {text}"));
+      let search: String =
+        needle.chars().filter(|ch| !ch.is_whitespace()).collect();
+      let at = text
+        .find(search.as_str())
+        .unwrap_or_else(|| panic!("{needle}: {text}"));
       let start = text[..at].chars().count();
       let range = if needle == "default on" {
-        start + "default ".len()..start + needle.len()
+        start + "default".len()..start + search.len()
       } else {
-        start..start + needle.chars().count()
+        start..start + search.chars().count()
       };
       for &(_, argb) in &glyphs[range] {
         let actual = [(argb >> 16) as u8, (argb >> 8) as u8, argb as u8];

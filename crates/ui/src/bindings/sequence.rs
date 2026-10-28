@@ -144,37 +144,37 @@ fn chord(text: &str) -> crate::Result<KeyEvent> {
   let mut rest = text;
   let mut modifiers = KeyModifiers::NONE;
   while let Some((prefix, tail)) = rest.split_once('-') {
-    let flag = match prefix {
-      "C" => KeyModifiers::CONTROL,
-      "A" | "M" => KeyModifiers::ALT,
-      "S" => KeyModifiers::SHIFT,
-      "D" | "Super" => KeyModifiers::SUPER,
-      "H" => KeyModifiers::HYPER,
-      "Meta" => KeyModifiers::META,
+    let flag = match prefix.to_ascii_lowercase().as_str() {
+      "c" | "ctrl" => KeyModifiers::CONTROL,
+      "a" | "m" => KeyModifiers::ALT,
+      "s" => KeyModifiers::SHIFT,
+      "d" | "super" => KeyModifiers::SUPER,
+      "h" => KeyModifiers::HYPER,
+      "meta" => KeyModifiers::META,
       _ => break,
     };
     anyhow::ensure!(!modifiers.contains(flag), "Duplicate key modifier");
     modifiers |= flag;
     rest = tail;
   }
-  let code = match rest {
-    "Space" => KeyCode::Char(' '),
+  let code = match rest.to_ascii_lowercase().as_str() {
+    "space" => KeyCode::Char(' '),
     "lt" => KeyCode::Char('<'),
-    "Esc" => KeyCode::Esc,
-    "CR" | "Enter" => KeyCode::Enter,
-    "Tab" => KeyCode::Tab,
-    "BS" | "Backspace" => KeyCode::Backspace,
-    "Del" | "Delete" => KeyCode::Delete,
-    "Insert" => KeyCode::Insert,
-    "Left" => KeyCode::Left,
-    "Right" => KeyCode::Right,
-    "Up" => KeyCode::Up,
-    "Down" => KeyCode::Down,
-    "Home" => KeyCode::Home,
-    "End" => KeyCode::End,
-    "PageUp" => KeyCode::PageUp,
-    "PageDown" => KeyCode::PageDown,
-    _ if rest.starts_with('F') && rest.len() > 1 => {
+    "esc" => KeyCode::Esc,
+    "cr" | "enter" => KeyCode::Enter,
+    "tab" => KeyCode::Tab,
+    "bs" | "backspace" => KeyCode::Backspace,
+    "del" | "delete" => KeyCode::Delete,
+    "insert" => KeyCode::Insert,
+    "left" => KeyCode::Left,
+    "right" => KeyCode::Right,
+    "up" => KeyCode::Up,
+    "down" => KeyCode::Down,
+    "home" => KeyCode::Home,
+    "end" => KeyCode::End,
+    "pageup" => KeyCode::PageUp,
+    "pagedown" => KeyCode::PageDown,
+    _ if rest.starts_with(['F', 'f']) && rest.len() > 1 => {
       let number =
         rest[1..].parse::<u8>().ok().filter(|n| (1..=35).contains(n));
       KeyCode::F(number.ok_or_else(|| anyhow::anyhow!("Invalid function key"))?)
@@ -234,6 +234,27 @@ mod tests {
       Sequence::parse("<Left>").unwrap(),
       Sequence::parse("h").unwrap()
     );
+  }
+
+  #[test]
+  fn notation_names_ignore_case() {
+    for (lower, canonical) in [
+      ("<c-w>", "<C-w>"),
+      ("<CTRL-w>", "<C-w>"),
+      ("<a-s-left>", "<A-S-Left>"),
+      ("<esc>", "<Esc>"),
+      ("<f1>", "<F1>"),
+    ] {
+      assert_eq!(
+        Sequence::parse(lower).unwrap(),
+        Sequence::parse(canonical).unwrap()
+      );
+    }
+    assert_ne!(
+      Sequence::parse("<c-w>").unwrap(),
+      Sequence::parse("<c-W>").unwrap()
+    );
+    assert!(Sequence::parse("<c-C-w>").is_err());
   }
 
   #[test]

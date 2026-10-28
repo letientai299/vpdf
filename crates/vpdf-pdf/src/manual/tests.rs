@@ -189,7 +189,7 @@ fn entries_join_wrapped_descriptions() -> Result<()> {
     title: ":edit".into(),
     related: "introduction".into(),
     related_title: "Introduction".into(),
-    section: None,
+    section: Some(Section::Commands),
     listed: true,
     aliases: Vec::new(),
     links: vec![("Introduction".into(), "introduction".into())],
@@ -207,13 +207,25 @@ fn entries_join_wrapped_descriptions() -> Result<()> {
   let mut rendered = String::new();
   let mut links = 0;
   let mut prose_end = None;
+  let mut prose_start = None;
   for index in 1..handle.native.page_count()? {
     for line in &handle.text(crate::text::PageId(index as usize))?.lines {
       let Some(first) = line.glyphs.first() else { continue };
       let text: String = line.glyphs.iter().map(|glyph| glyph.ch).collect();
-      let expected = if text.starts_with("Available in") { 60.0 } else { 48.0 };
+      if text.starts_with("Built-in") {
+        continue;
+      }
+      if prose_start.is_none() {
+        prose_start = line
+          .glyphs
+          .iter()
+          .find(|glyph| glyph.ch == 'E')
+          .map(|glyph| glyph.bounds.x0);
+      }
+      let expected =
+        if text.starts_with(":e[dit]") { 48.0 } else { prose_start.unwrap() };
       assert!((first.bounds.x0 - expected).abs() < 1.0, "{text}");
-      if text.len() > 60 && prose_end.is_none() {
+      if text.len() > 40 && prose_end.is_none() {
         prose_end = line.glyphs.last().map(|glyph| glyph.bounds.x1);
       }
       rendered.push_str(&text);
@@ -221,7 +233,12 @@ fn entries_join_wrapped_descriptions() -> Result<()> {
     }
     links += handle.native.load_page(index)?.links()?.count();
   }
-  assert!(rendered.starts_with(":e[dit] <file>  Edit the PDF in this tab."));
+  assert!(
+    rendered
+      .split_whitespace()
+      .collect::<String>()
+      .starts_with(":e[dit]<file>EditthePDFinthistab.")
+  );
   assert!(rendered.contains(":help introduction"));
   assert!(!rendered.contains("See |"));
   assert!(rendered.contains("Available in document views."));
@@ -296,8 +313,19 @@ fn entries_preserve_literal_keys_and_links() -> Result<()> {
   let native = PdfDocument::open(document.path())?;
   let page = native.load_page(1)?;
   let text = page.to_text_page(mupdf::TextPageFlags::empty())?.to_text()?;
-  assert!(text.contains("`{mark}  Jump to the saved glyph."), "{text}");
-  assert!(text.contains("The view follows the saved position."));
+  assert!(
+    text
+      .split_whitespace()
+      .collect::<String>()
+      .contains("`{mark}Jumptothesavedglyph."),
+    "{text}"
+  );
+  assert!(
+    text
+      .split_whitespace()
+      .collect::<String>()
+      .contains("Theviewfollowsthesavedposition.")
+  );
   assert!(!text.contains("See |"));
   let links: Vec<_> = page.links()?.collect();
   assert_eq!(links.len(), 2);
@@ -309,5 +337,80 @@ fn entries_preserve_literal_keys_and_links() -> Result<()> {
     links[0].bounds.x1 <= links[1].bounds.x0
       || links[1].bounds.y0 > links[0].bounds.y0
   );
+  Ok(())
+}
+
+fn reference_geometry(section: Section, keys: [&str; 2]) -> Result<f32> {
+  let chapter = Chapter {
+    id: "layout".into(),
+    title: "Layout".into(),
+    related: "introduction".into(),
+    related_title: "Introduction".into(),
+    section: Some(section),
+    listed: true,
+    aliases: Vec::new(),
+    links: Vec::new(),
+    anchors: BTreeMap::new(),
+    lines: vec![
+      Line::Binding {
+        keys: keys[0].into(),
+        description: format!("Description {}end.", "continued ".repeat(22)),
+      },
+      Line::Binding { keys: keys[1].into(), description: "Other.".into() },
+    ],
+  };
+  let document = compose(&base()?, &[chapter], || true)?;
+  let handle = crate::document::Handle::open(document.path(), "")?;
+  let text = handle.text(crate::text::PageId(1))?;
+  let glyphs: Vec<_> =
+    text.lines.iter().flat_map(|line| &line.glyphs).collect();
+  let description = glyphs.iter().find(|glyph| glyph.ch == 'D').unwrap().bounds;
+  let other = glyphs.iter().find(|glyph| glyph.ch == 'O').unwrap().bounds;
+  let label = text
+    .lines
+    .iter()
+    .find(|line| {
+      line
+        .glyphs
+        .iter()
+        .map(|glyph| glyph.ch)
+        .collect::<String>()
+        .starts_with(keys[0])
+    })
+    .unwrap();
+  assert!((label.glyphs[0].bounds.y0 - description.y0).abs() < 0.1);
+  let continuation: Vec<_> = text
+    .lines
+    .iter()
+    .filter_map(|line| line.glyphs.first())
+    .filter(|glyph| {
+      glyph.bounds.y0 > description.y0 + 1.0 && glyph.bounds.y0 < other.y0 - 1.0
+    })
+    .collect();
+  assert!(!continuation.is_empty());
+  for glyph in continuation {
+    assert!((glyph.bounds.x0 - description.x0).abs() < 0.1);
+  }
+  let last = glyphs
+    .iter()
+    .map(|glyph| glyph.bounds.y0)
+    .filter(|&y| y < other.y0 - 1.0)
+    .max_by(f32::total_cmp)
+    .unwrap();
+  assert!((other.y0 - last - 34.0).abs() < 0.1);
+  assert!(glyphs.iter().all(|glyph| glyph.bounds.x1 <= 564.5));
+  Ok(description.x0)
+}
+
+#[test]
+fn reference_columns_align_and_separate() -> Result<()> {
+  let keys = reference_geometry(Section::Keys, ["zt", "zz"])?;
+  assert_eq!(reference_geometry(Section::Keys, ["{count}", "<Space>"])?, keys);
+  let settings = reference_geometry(
+    Section::Configuration,
+    ["appearance.opacity.cursorline", "appearance.ui_font_size"],
+  )?;
+  let commands = reference_geometry(Section::Commands, [":config", ":theme"])?;
+  assert!(keys < commands && keys < settings);
   Ok(())
 }

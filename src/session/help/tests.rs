@@ -989,3 +989,21 @@ fn recolor_help_survives_themes() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn help_accepts_prefix_spellings() -> Result<()> {
+  let mut session = Session::new(None);
+  invoke(&mut session, "c-w")?;
+  for query in ["c-w", "<c-w>", "Ctrl-W", "normal:<c-w>"] {
+    session.app().unwrap().command(&format!("h {query}"))?;
+    session.settle()?;
+    wait(&mut session);
+    assert!(session.app().unwrap().error.is_none(), "{query}");
+    assert_eq!(
+      session.app().unwrap().help_location().unwrap().id().as_str(),
+      "panes",
+      "{query}"
+    );
+  }
+  Ok(())
+}

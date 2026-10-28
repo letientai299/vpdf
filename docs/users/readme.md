@@ -14,6 +14,9 @@ With default bindings:
 - Type `:close` and Enter to return to the book.
 
 For customized bindings, use `:help` followed by a key.
+`:h c-w` and `:h <c-w>` open the pane guide. Other unfinished key prefixes
+open key notation. Modifier and named-key spellings accept either case;
+letter keys keep their case.
 `:help helphelp` returns here. Vpdf leaves source PDFs unchanged.
 
 ## How to read this manual
