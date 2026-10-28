@@ -209,7 +209,7 @@ def fingerprint(root, env, details=None, *, tools=()):
         corpus = root / env.get("VPDF_CORPUS", "tmp/corpus")
         if corpus.is_symlink():
             return unavailable("corpus-symlink")
-        add(str(corpus.resolve()), "corpus")
+        add(str(corpus.absolute()), "corpus")
         for path in sorted(corpus.rglob("*")):
             if path.is_symlink():
                 return unavailable("corpus-symlink")

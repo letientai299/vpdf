@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from tools.build import receipts
+from tools.check import hooks
 
 
 class ReceiptTests(unittest.TestCase):
@@ -36,6 +37,23 @@ class ReceiptTests(unittest.TestCase):
         self.check(action=action)
         self.check(action=action)
         self.assertEqual(action.call_count, 1)
+
+    def test_test_command_reuses(self):
+        with (
+            patch.object(hooks.sys, "argv", ["hooks.py", "test"]),
+            patch.object(hooks, "git", return_value=os.fsencode(self.root)),
+            patch.dict(os.environ, self.env, clear=True),
+            patch.object(hooks, "execute") as execute,
+        ):
+            self.assertEqual(hooks.main(), 0)
+            self.assertEqual(hooks.main(), 0)
+            execute.assert_called_once_with(
+                ["mise", "run", "_test:full"], self.root, self.env
+            )
+            self.env["VPDF_VALIDATE_FORCE"] = "1"
+            os.environ["VPDF_VALIDATE_FORCE"] = "1"
+            self.assertEqual(hooks.main(), 0)
+            self.assertEqual(execute.call_count, 2)
 
     def test_full_covers_subset(self):
         self.check()
@@ -209,6 +227,25 @@ class FingerprintTests(unittest.TestCase):
         original = self.identity()
         path.write_bytes(b"other")
         self.assertNotEqual(self.identity(), original)
+
+    def test_corpus_parent_relocation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            external = Path(directory)
+            for name in ["first", "second"]:
+                corpus = external / name / "corpus"
+                corpus.mkdir(parents=True)
+                (corpus / "input").write_bytes(b"same")
+            (self.root / ".gitignore").write_text("/corpus/\n/inputs\n")
+            link = self.root / "inputs"
+            link.symlink_to(external / "first", target_is_directory=True)
+            env = {"VPDF_CORPUS": str(link / "corpus")}
+            original = self.identity(**env)
+            self.assertIsNotNone(original)
+            link.unlink()
+            link.symlink_to(external / "second", target_is_directory=True)
+            self.assertEqual(self.identity(**env), original)
+            (link / "corpus/input").write_bytes(b"changed")
+            self.assertNotEqual(self.identity(**env), original)
 
     def test_relative_corpus_contents(self):
         corpus = self.root / "corpus"

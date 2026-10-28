@@ -116,8 +116,9 @@ snapshot and never print environment values. A category change explains a key
 change; it does not establish that the changed input can safely be ignored.
 
 Successful lint and test checks write local receipts outside the worker's
-mutable directory. Validation and hooks reuse them only for matching source
-contents and modes, Git revision, tags and configuration, environment, tools,
+mutable directory. `mise run test`, validation, and hooks reuse them only for
+matching source contents and modes, Git revision, tags and configuration,
+environment, tools,
 and corpus contents. A full test receipt can cover the affected Rust test
 subset; an affected subset cannot cover the full suite. The CI recipe records
 feature and packaging checks separately; standard-test receipts cannot cover

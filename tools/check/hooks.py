@@ -482,6 +482,7 @@ def main():
             "pre-push",
             "check",
             "lint",
+            "test",
             "validate",
         ],
     )
@@ -498,6 +499,15 @@ def main():
         return pre_push(root, sys.stdin)
     elif args.stage == "lint":
         check_lint(root, os.environ.copy())
+    elif args.stage == "test":
+        run_check(
+            root,
+            os.environ.copy(),
+            "test",
+            lambda: execute(
+                ["mise", "run", "_test:full"], root, os.environ.copy()
+            ),
+        )
     elif args.stage == "validate":
         env = os.environ.copy()
         full_checks(root, env)
